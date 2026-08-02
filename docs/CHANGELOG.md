@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [0.3.1] - 2026-08-02
+- 规划补充:语法覆盖矩阵、renderer 技术选择(vanilla TS)、G1/G4 依赖清单
+- 修复里程碑缺口:表格/代码块/引用/图片 渲染并入 G1
+
 ## [0.3.0] - 2026-08-02
 - 需求变更为 Windows GUI 应用,重新规划:Eelectron 43 + docx 自研渲染 + 自研 printToPDF 管线(弃 md-to-pdf)
 - 重写路线图(功能规划 MVP、里程碑 G1-G5);新增 ADR-002,修订 ADR-001 pdf 路线
