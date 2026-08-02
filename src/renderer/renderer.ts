@@ -1,5 +1,5 @@
 /**
- * G3 阶段:renderer 接入转换逻辑。
+ * G3 阶段:renderer 接入转换逻辑(含转换完成弹窗)。
  * 文件选择(系统对话框 + 拖放)与格式选择;docx 转换已接通(主进程执行),
  * PDF 待 G4;转换按钮点击后走 window.api.convert,进度经 onConvertProgress 订阅。
  * 主进程 API 经 preload 以 window.api 暴露(contextIsolation),契约见下方类型声明。
@@ -33,6 +33,15 @@ const filePathEl = document.getElementById("filePath") as HTMLParagraphElement;
 const statusEl = document.getElementById("status") as HTMLParagraphElement;
 const convertBtn = document.getElementById("convertBtn") as HTMLButtonElement;
 const convertHint = document.querySelector<HTMLSpanElement>(".convert .hint");
+const completeDialog = document.getElementById(
+  "completeDialog",
+) as HTMLDivElement;
+const completeOutputPath = document.getElementById(
+  "completeOutputPath",
+) as HTMLParagraphElement;
+const completeDialogOk = document.getElementById(
+  "completeDialogOk",
+) as HTMLButtonElement;
 const formatInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="format"]',
 );
@@ -126,6 +135,7 @@ async function runConvert(
       const outputPath = result.outputPath ?? "";
       setStatus(`转换完成:${outputPath}`);
       statusEl.title = outputPath; // 长路径悬停可看完整
+      showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
     } else {
       setError(`转换失败:${result.error ?? "未知错误"}`);
     }
@@ -136,6 +146,19 @@ async function runConvert(
     converting = false;
     convertBtn.disabled = false;
   }
+}
+
+/* ---------- 转换完成弹窗 ---------- */
+function showCompleteDialog(outputPath: string): void {
+  completeOutputPath.textContent = outputPath;
+  completeOutputPath.title = outputPath; // 路径超长滚动时悬停可看全文
+  completeDialog.classList.remove("hidden");
+  completeDialogOk.focus(); // 焦点落在默认操作(确定)上
+}
+
+function hideCompleteDialog(): void {
+  completeDialog.classList.add("hidden");
+  convertBtn.focus(); // 焦点还给触发按钮,便于键盘继续操作
 }
 
 /* ---------- 事件绑定 ---------- */
@@ -223,6 +246,18 @@ unsubscribeProgress = window.api.onConvertProgress((stage) => {
 
 // 窗口关闭时取消进度订阅
 window.addEventListener("unload", () => unsubscribeProgress?.());
+
+// 完成弹窗关闭:确定按钮 / 点击遮罩 / Esc 三种方式
+completeDialogOk.addEventListener("click", hideCompleteDialog);
+completeDialog.addEventListener("click", (event) => {
+  // 只响应遮罩本身,点卡片内部不关闭
+  if (event.target === completeDialog) hideCompleteDialog();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !completeDialog.classList.contains("hidden")) {
+    hideCompleteDialog();
+  }
+});
 
 /* ---------- 初始化 ---------- */
 // HTML 中按钮为 G2 阶段禁用态(disabled 属性写死),docx 已可用,解除禁用

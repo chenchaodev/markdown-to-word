@@ -308,3 +308,82 @@ body {
 .file-name {
   user-select: text;
 }
+
+/* 转换完成弹窗 */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.4); /* 半透明遮罩 */
+  animation: dialog-overlay-in 0.15s ease-out;
+}
+
+.dialog {
+  width: min(560px, 100%);
+  padding: 24px 28px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.12);
+  animation: dialog-in 0.15s ease-out;
+}
+
+.dialog-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.dialog-desc {
+  margin: 8px 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* 结果路径:等宽字体、可选中复制、长路径自动换行 */
+.dialog-path {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  word-break: break-all;
+  max-height: 132px;
+  overflow-y: auto;
+  color: var(--text);
+  background: #f7f7f7;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  user-select: text;
+  cursor: text;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+@keyframes dialog-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

@@ -84,6 +84,27 @@
       </footer>
     </main>
 
+    <!-- 转换完成弹窗(仅成功时弹出;失败保持状态区红字提示) -->
+    <div
+      id="completeDialog"
+      class="dialog-overlay hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="completeDialogTitle"
+      aria-describedby="completeDialogDesc"
+    >
+      <div class="dialog">
+        <h2 id="completeDialogTitle" class="dialog-title">转换完成</h2>
+        <p id="completeDialogDesc" class="dialog-desc">文档已生成,输出路径如下</p>
+        <p id="completeOutputPath" class="dialog-path" tabindex="0"></p>
+        <div class="dialog-actions">
+          <button type="button" id="completeDialogOk" class="btn btn-primary">
+            确定
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="./renderer.js"></script>
   </body>
 </html>
