@@ -3,4 +3,12 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("api", {
   openMarkdownDialog: (): Promise<string | null> => ipcRenderer.invoke("dialog:openMarkdown"),
+  convert: (filePath: string, format: "docx" | "pdf") => ipcRenderer.invoke("convert", filePath, format),
+  onConvertProgress: (cb: (stage: string) => void): (() => void) => {
+    const listener = (_event: unknown, data: { stage: string }): void => cb(data.stage);
+    ipcRenderer.on("convert:progress", listener);
+    return () => {
+      ipcRenderer.removeListener("convert:progress", listener);
+    };
+  },
 });

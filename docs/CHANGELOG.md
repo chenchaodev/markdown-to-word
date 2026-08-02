@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [0.4.2] - 2026-08-02
+- G3 完成:convert IPC 端到端(读→解析→渲染→落盘,同目录换 .docx 扩展名)
+- 进度事件 read/render/done 推送 + renderer 进度文案;转换按钮启用(pdf 待 G4)
+- convertImpl 抽为纯函数(main 内),smoke 自测覆盖 convert 链路
+- 验证:typecheck/build/smoke(docx 8978 bytes)全通过
+
 ## [0.4.1] - 2026-08-02
 - G2 完成:Electron 43 骨架(主进程窗口/dialog/IPC + preload contextBridge + renderer UI)
 - renderer:Win11 浅色风格,文件选择/拖放(md 扩展名校验)/格式单选/状态反馈,CSP 已配置

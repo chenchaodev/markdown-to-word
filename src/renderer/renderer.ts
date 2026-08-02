@@ -1,12 +1,23 @@
 /**
- * G2 阶段:renderer 骨架。
- * 仅实现文件选择(系统对话框 + 拖放)与格式选择;转换逻辑未接入,转换按钮禁用。
+ * G3 阶段:renderer 接入转换逻辑。
+ * 文件选择(系统对话框 + 拖放)与格式选择;docx 转换已接通(主进程执行),
+ * PDF 待 G4;转换按钮点击后走 window.api.convert,进度经 onConvertProgress 订阅。
  * 主进程 API 经 preload 以 window.api 暴露(contextIsolation),契约见下方类型声明。
  */
 
 declare global {
   interface Window {
-    api: { openMarkdownDialog: () => Promise<string | null> };
+    api: {
+      openMarkdownDialog: () => Promise<string | null>;
+      convert: (
+        filePath: string,
+        format: "docx" | "pdf",
+      ) => Promise<{ ok: boolean; outputPath?: string; error?: string }>;
+      /** 订阅转换进度(read / render / done),返回取消订阅函数。 */
+      onConvertProgress: (
+        cb: (stage: "read" | "render" | "done") => void,
+      ) => () => void;
+    };
   }
 }
 
@@ -20,13 +31,18 @@ const dropFile = document.getElementById("dropFile") as HTMLDivElement;
 const fileNameEl = document.getElementById("fileName") as HTMLParagraphElement;
 const filePathEl = document.getElementById("filePath") as HTMLParagraphElement;
 const statusEl = document.getElementById("status") as HTMLParagraphElement;
+const convertBtn = document.getElementById("convertBtn") as HTMLButtonElement;
+const convertHint = document.querySelector<HTMLSpanElement>(".convert .hint");
 const formatInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="format"]',
 );
 
 /* ---------- 状态 ---------- */
+let selectedFile: string | null = null;
 let selectedFormat: "docx" | "pdf" = "docx";
+let converting = false;
 let errorFlashTimer: number | undefined;
+let unsubscribeProgress: (() => void) | undefined;
 
 const ERROR_MESSAGE = "仅支持 .md / .markdown 文件";
 
@@ -62,6 +78,7 @@ function setError(message: string): void {
 
 /** 记录已选文件并更新界面。 */
 function showFile(filePath: string): void {
+  selectedFile = filePath;
   const fileName = filePath.split(/[\\/]/).pop() ?? filePath;
   fileNameEl.textContent = fileName;
   filePathEl.textContent = filePath;
@@ -86,6 +103,38 @@ async function openDialog(): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setError(`打开文件对话框失败:${message}`);
+  }
+}
+
+/* ---------- 转换 ---------- */
+const STAGE_TEXT: Record<"read" | "render" | "done", string> = {
+  read: "正在读取文件…",
+  render: "正在渲染文档…",
+  done: "正在完成…",
+};
+
+async function runConvert(
+  filePath: string,
+  format: "docx" | "pdf",
+): Promise<void> {
+  converting = true;
+  convertBtn.disabled = true; // 防止重复点击
+  setStatus("正在转换…");
+  try {
+    const result = await window.api.convert(filePath, format);
+    if (result.ok) {
+      const outputPath = result.outputPath ?? "";
+      setStatus(`转换完成:${outputPath}`);
+      statusEl.title = outputPath; // 长路径悬停可看完整
+    } else {
+      setError(`转换失败:${result.error ?? "未知错误"}`);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    setError(`转换失败:${message}`);
+  } finally {
+    converting = false;
+    convertBtn.disabled = false;
   }
 }
 
@@ -143,7 +192,7 @@ dropZone.addEventListener("drop", (event) => {
 document.addEventListener("dragover", (event) => event.preventDefault());
 document.addEventListener("drop", (event) => event.preventDefault());
 
-// 格式选择:记录当前选中格式(G3 转换时使用)
+// 格式选择:记录当前选中格式(转换时使用)
 formatInputs.forEach((input) => {
   input.addEventListener("change", () => {
     if (input.checked) {
@@ -152,4 +201,31 @@ formatInputs.forEach((input) => {
   });
 });
 
-// 转换按钮 G2 阶段禁用;G3 接入转换逻辑后移除 disabled 并绑定点击事件
+// 转换按钮:docx 直接转换,pdf 待 G4
+convertBtn.addEventListener("click", () => {
+  if (!selectedFile) {
+    setError("请先选择 Markdown 文件");
+    return;
+  }
+  if (selectedFormat === "pdf") {
+    setError("PDF 功能暂未支持(开发中)");
+    return;
+  }
+  void runConvert(selectedFile, selectedFormat);
+});
+
+// 进度订阅:主进程推送 read / render / done 阶段,实时更新状态文案
+unsubscribeProgress = window.api.onConvertProgress((stage) => {
+  if (!converting) return; // 转换结束后的迟到事件直接忽略
+  const text = STAGE_TEXT[stage];
+  if (text) setStatus(text);
+});
+
+// 窗口关闭时取消进度订阅
+window.addEventListener("unload", () => unsubscribeProgress?.());
+
+/* ---------- 初始化 ---------- */
+// HTML 中按钮为 G2 阶段禁用态(disabled 属性写死),docx 已可用,解除禁用
+convertBtn.disabled = false;
+// 按钮旁说明文案同步更新(原为「转换功能开发中」)
+if (convertHint) convertHint.textContent = "PDF 功能开发中";
