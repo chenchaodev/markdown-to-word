@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- 背景:Win11 风格蓝色渐变圆角方块 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b88d8"/>
+      <stop offset="1" stop-color="#0078d4"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg)"/>
+
+  <!-- 源文档(左):三条白色文本线 -->
+  <rect x="280" y="380" width="340" height="56" rx="28" fill="#ffffff"/>
+  <rect x="280" y="492" width="420" height="56" rx="28" fill="#ffffff"/>
+  <rect x="280" y="604" width="300" height="56" rx="28" fill="#ffffff"/>
+
+  <!-- 转换箭头(中):右向实心三角 -->
+  <path d="M 700 468 L 756 520 L 700 572 Z" fill="#ffffff"/>
+
+  <!-- 输出文档(右):白色文档页 + 蓝色内容线 -->
+  <rect x="776" y="368" width="176" height="288" rx="24" fill="#ffffff"/>
+  <rect x="800" y="412" width="128" height="22" rx="11" fill="#0078d4"/>
+  <rect x="800" y="454" width="128" height="22" rx="11" fill="#0078d4"/>
+  <rect x="800" y="496" width="128" height="22" rx="11" fill="#0078d4"/>
+  <rect x="800" y="538" width="96" height="22" rx="11" fill="#0078d4"/>
+</svg>

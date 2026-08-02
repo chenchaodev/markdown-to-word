@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [0.5.4] - 2026-08-02
+- 应用图标:build/icon.svg(「源文档 → 转换 → 输出文档」蓝渐变 Win11 风格,纯几何无字体依赖)+ scripts/svg-to-ico.mjs(SVG → 6 尺寸 ICO)
+- 打包验证:exe 图标生效(无 default icon 警告,32x32 提取成功),安装包 89.5MB
+
 ## [0.5.3] - 2026-08-02
 - 修复打包版启动崩溃:files 排除 highlight.js es/ 导致 exports import 条件目标缺失(ERR_MODULE_NOT_FOUND)
 - 移除 es/ 排除(体积 +0.3MB),styles/ 排除保留;教训落盘研究结论.md
