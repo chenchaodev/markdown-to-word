@@ -1,0 +1,14 @@
+{
+  "name": "markdown-to-word",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Markdown 转 Word/PDF 等格式的命令行工具",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  }
+}
