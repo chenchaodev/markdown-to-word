@@ -12,6 +12,8 @@ export interface ConvertResult {
   ok: boolean;
   outputPath?: string;
   error?: string;
+  /** 非致命警告(如缺失本地图片),成功时可能携带 */
+  warnings?: string[];
 }
 
 function createWindow(): BrowserWindow {
@@ -40,7 +42,7 @@ export async function convertImpl(
   filePath: string,
   format: ConvertFormat,
   onProgress?: (stage: string) => void,
-): Promise<{ outputPath: string }> {
+): Promise<{ outputPath: string; warnings: string[] }> {
   if (!/\.(md|markdown)$/i.test(filePath)) {
     throw new Error("仅支持 .md / .markdown 文件");
   }
@@ -48,9 +50,11 @@ export async function convertImpl(
   const md = await fs.readFile(filePath, "utf8");
 
   onProgress?.("render");
+  const warnings: string[] = [];
   const artifact = await convert(md, format, {
     baseDir: path.dirname(filePath),
     title: path.basename(filePath).replace(/\.(md|markdown)$/i, ""),
+    warnings,
     imageResolver: async (src: string) => {
       if (/^https?:\/\//.test(src)) return null;
       const p = path.resolve(path.dirname(filePath), src);
@@ -62,7 +66,7 @@ export async function convertImpl(
     const outputPath = filePath.replace(/\.(md|markdown)$/i, ".docx");
     await fs.writeFile(outputPath, artifact.buffer);
     onProgress?.("done");
-    return { outputPath };
+    return { outputPath, warnings };
   }
 
   // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘
@@ -86,7 +90,7 @@ export async function convertImpl(
     const outputPath = filePath.replace(/\.(md|markdown)$/i, ".pdf");
     await fs.writeFile(outputPath, data);
     onProgress?.("done");
-    return { outputPath };
+    return { outputPath, warnings };
   } finally {
     printWin.destroy();
     await fs.rm(htmlPath, { force: true });
@@ -109,8 +113,8 @@ function registerIpc(): void {
     const win = BrowserWindow.fromWebContents(event.sender);
     const send = (stage: string) => win?.webContents.send("convert:progress", { stage });
     try {
-      const { outputPath } = await convertImpl(filePath, format, send);
-      return { ok: true, outputPath };
+      const { outputPath, warnings } = await convertImpl(filePath, format, send);
+      return { ok: true, outputPath, warnings };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

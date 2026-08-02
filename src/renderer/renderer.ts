@@ -12,7 +12,7 @@ declare global {
       convert: (
         filePath: string,
         format: "docx" | "pdf",
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string }>;
+      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: string[] }>;
       /** 订阅转换进度(read / render / done),返回取消订阅函数。 */
       onConvertProgress: (
         cb: (stage: "read" | "render" | "done") => void,
@@ -68,9 +68,10 @@ function truncateMiddle(text: string, max = 88): string {
   return `${text.slice(0, head)}…${text.slice(-tail)}`;
 }
 
-function setStatus(text: string, isError = false): void {
+function setStatus(text: string, isError = false, isWarning = false): void {
   statusEl.textContent = text;
   statusEl.classList.toggle("status--error", isError);
+  statusEl.classList.toggle("status--warning", isWarning);
   statusEl.title = text;
 }
 
@@ -136,6 +137,11 @@ async function runConvert(
       setStatus(`转换完成:${outputPath}`);
       statusEl.title = outputPath; // 长路径悬停可看完整
       showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
+      if (result.warnings?.length) {
+        // 缺失图片等警告:黄色覆盖状态区(悬停 title 保留完成路径 + 警告全文)
+        setStatus(`⚠ 警告:${result.warnings.join("; ")}`, false, true);
+        statusEl.title = `转换完成:${outputPath}\n警告:${result.warnings.join("; ")}`;
+      }
     } else {
       setError(`转换失败:${result.error ?? "未知错误"}`);
     }

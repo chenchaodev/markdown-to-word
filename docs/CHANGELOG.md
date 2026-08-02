@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [0.5.1] - 2026-08-02
+- 缺失图片警告:转换前统一检查 mdast 图片节点,本地路径不存在时收集 warnings 经 IPC 返回
+- renderer 以黄色 `.status--warning` 展示(「⚠ 警告:缺少图片文件: xxx」),不打断弹窗路径展示
+- 验证:typecheck/build/smoke 全通过;core 直测(相对/绝对坏路径均警告,存在图片不误报)
+
 ## [0.5.0] - 2026-08-02
 - G4 完成:PDF 自研管线(markdown-it + HTML 模板 + printToPDF)
   - `src/core/pdf/render.ts`:markdown-it 14.3 + @mdit/plugin-tasklist + highlight.js(lib/common)

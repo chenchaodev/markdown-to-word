@@ -6,6 +6,9 @@
 import { parseMarkdown } from "./parse.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml, PDF_FOOTER_TEMPLATE } from "./pdf/render.js";
+import { stat } from "node:fs/promises";
+import path from "node:path";
+import type { Root, Node } from "mdast";
 
 export type ConvertFormat = "docx" | "pdf";
 
@@ -16,6 +19,40 @@ export interface ConvertContext {
   imageResolver?: (src: string) => Promise<Buffer | null>;
   /** 文档标题(pdf 用 <title>) */
   title?: string;
+  /** 警告收集器(可选):转换中发现的非致命问题(如缺失图片)追加至此 */
+  warnings?: string[];
+}
+
+/**
+ * 遍历 mdast 检查本地图片是否存在,缺失的追加警告文案到 warnings。
+ * 跳过 http(s)/data: 开头的远程或内嵌图片;异步 stat 并行执行。
+ */
+async function collectMissingImageWarnings(
+  ast: Root,
+  baseDir: string,
+  warnings: string[],
+): Promise<void> {
+  const checks: Promise<void>[] = [];
+  const walk = (node: Node): void => {
+    if (node.type === "image") {
+      const src = (node as { url?: string }).url;
+      if (!src || /^(https?:|data:)/i.test(src)) return;
+      checks.push(
+        stat(path.resolve(baseDir, src)).then(
+          () => undefined,
+          () => {
+            warnings.push(`缺少图片文件: ${src}`);
+          },
+        ),
+      );
+      return;
+    }
+    if ("children" in node && Array.isArray(node.children)) {
+      for (const child of node.children) walk(child);
+    }
+  };
+  walk(ast);
+  await Promise.all(checks);
 }
 
 export interface DocxArtifact {
@@ -39,6 +76,10 @@ export async function convert(
   format: ConvertFormat,
   context: ConvertContext,
 ): Promise<ConvertArtifact> {
+  const warnings = context.warnings ?? [];
+  const ast = parseMarkdown(md);
+  await collectMissingImageWarnings(ast, context.baseDir, warnings);
+
   if (format === "pdf") {
     return {
       kind: "pdf",
@@ -49,7 +90,6 @@ export async function convert(
       footerTemplate: PDF_FOOTER_TEMPLATE,
     };
   }
-  const ast = parseMarkdown(md);
   return {
     kind: "docx",
     buffer: await renderDocx(ast, {
