@@ -3,7 +3,7 @@
 ## 硬约束(勿回退)
 - 技术栈:Node.js + TypeScript,ESM(`"type": "module"`),Node >= 18
 - npm 走国内镜像:项目 `.npmrc` 已配置 npmmirror,勿移除;install 失败先怀疑网络
-- 转换核心库选型未定(候选:docx / pdfmake / pandoc 绑定),选定后须在 `docs/开发者手册.md` 记录验证事实再使用
+- 转换核心(docx 路线):`docx` 9.x + remark 自研渲染管线;pdf 路线:`md-to-pdf` 5.x;选型结论见 `docs/路线图与迭代规划.md`,实际验证事实记录于 `docs/研究结论.md`
 - 架构方向:转换逻辑与 CLI 入口分离,便于测试与复用(开发时细化)
 
 ## 规则
