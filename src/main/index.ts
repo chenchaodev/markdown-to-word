@@ -93,7 +93,11 @@ function registerIpc(): void {
 
 app.whenReady().then(async () => {
   registerIpc();
-  createWindow();
+  const win = createWindow();
+  // 渲染进程 console 错误转发到主进程输出(诊断用)
+  win.webContents.on("console-message", (_event, level, message) => {
+    console.log(`[renderer:${level}] ${message}`);
+  });
   if (SMOKE) {
     // 冒烟自测:构造样例 md → 走完整 convertImpl 链路 → 校验产物
     try {
@@ -109,6 +113,30 @@ app.whenReady().then(async () => {
       console.log(`[smoke] convert ok: ${outputPath} (${stat.size} bytes)`);
     } catch (err) {
       console.error("[smoke] convert FAILED:", err);
+      app.exit(1);
+      return;
+    }
+    // renderer 侧诊断:window.api 是否注入、转换按钮是否可点、点击后状态区反馈
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500)); // 等页面加载
+      const diag = await win.webContents.executeJavaScript(`(async () => {
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const report = { api: typeof window.api };
+        const btn = document.getElementById("convertBtn");
+        report.btnExists = !!btn;
+        if (btn) {
+          report.btnDisabledBefore = btn.disabled;
+          btn.click();
+          await sleep(50);
+          const status = document.getElementById("status");
+          report.statusAfterClick = status ? status.textContent : "";
+          report.statusIsError = status ? status.classList.contains("status--error") : null;
+        }
+        return report;
+      })()`);
+      console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
+    } catch (err) {
+      console.error("[smoke] renderer diag FAILED:", err);
       app.exit(1);
       return;
     }
