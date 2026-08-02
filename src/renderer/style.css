@@ -1,0 +1,310 @@
+/* Markdown 转换工具 — G2 渲染层样式(Windows 11 浅色风格) */
+
+:root {
+  --bg: #f3f3f3;
+  --surface: #ffffff;
+  --border: #e5e5e5;
+  --border-strong: #c9c9c9;
+  --text: #1b1b1b;
+  --text-secondary: #616161;
+  --text-tertiary: #8f8f8f;
+  --accent: #0078d4;
+  --accent-hover: #006cbd;
+  --accent-soft: #e6f1fb;
+  --error: #c42b1c;
+  --radius: 12px;
+  --radius-sm: 6px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow-y: auto;
+}
+
+/* 应用卡片 */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 32px);
+  margin: 16px;
+  padding: 28px 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+/* 标题区 */
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* 文件选择区 */
+.file-area {
+  flex: 1;
+  display: flex;
+  min-height: 240px;
+}
+
+.drop-zone {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: #fafafa;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease,
+    border-style 0.15s ease;
+}
+
+.drop-zone:hover {
+  border-color: var(--accent);
+}
+
+.drop-zone.has-file {
+  border-style: solid;
+  border-color: var(--border-strong);
+}
+
+.drop-zone.has-file:hover {
+  border-color: var(--accent);
+}
+
+.drop-zone.dragover {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.drop-zone.dragover .drop-title {
+  color: var(--accent);
+}
+
+/* 错误反馈:短暂红色描边(JS 控制移除时机) */
+.drop-zone--error {
+  border-color: var(--error) !important;
+  background: #fdf1f0 !important;
+}
+
+.drop-zone:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 拖放区默认提示态 */
+.drop-default {
+  padding: 0 32px;
+  text-align: center;
+}
+
+.drop-icon {
+  display: block;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 10px;
+  color: #bfbfbf;
+}
+
+.drop-title {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.drop-or {
+  margin: 6px 0 12px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* 拖放区已选文件态 */
+.drop-file {
+  width: 100%;
+  padding: 0 40px;
+  text-align: center;
+}
+
+.file-name {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-path {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drop-change {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 状态区 */
+.status {
+  min-height: 20px;
+  margin: 14px 0 0;
+  padding: 0 2px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status--error {
+  color: var(--error);
+}
+
+/* 底部操作栏 */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.formats {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.formats legend {
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.format-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.format-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.convert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 按钮 */
+.btn {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 7px 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-secondary {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  background: #f3f3f3;
+}
+
+.btn-secondary:active {
+  background: #eaeaea;
+}
+
+.btn-primary {
+  min-width: 132px;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+  background: #e6e6e6;
+  color: #a0a0a0;
+  cursor: default;
+}
+
+.hidden {
+  display: none;
+}
+
+/* 路径等文本允许选中复制 */
+.status,
+.file-path,
+.file-name {
+  user-select: text;
+}

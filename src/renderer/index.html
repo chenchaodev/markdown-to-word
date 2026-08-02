@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'"
+    />
+    <title>Markdown 转换工具</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <!-- 标题区 -->
+      <header class="header">
+        <h1 class="title">Markdown 转换工具</h1>
+        <p class="subtitle">将 Markdown 文件转换为 Word 或 PDF 文档</p>
+      </header>
+
+      <!-- 文件选择区:拖放区 + 选择文件按钮 -->
+      <section class="file-area" aria-label="文件选择">
+        <div
+          id="dropZone"
+          class="drop-zone"
+          role="button"
+          tabindex="0"
+          aria-label="点击选择或拖入 Markdown 文件"
+          title="点击选择或拖入 Markdown 文件"
+        >
+          <!-- 默认提示态 -->
+          <div id="dropDefault" class="drop-default">
+            <svg
+              class="drop-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <path d="M14 2v6h6" />
+            </svg>
+            <p class="drop-title">将 Markdown 文件拖到此处</p>
+            <p class="drop-or">或</p>
+            <button type="button" id="selectBtn" class="btn btn-secondary">
+              选择文件
+            </button>
+          </div>
+
+          <!-- 已选文件态 -->
+          <div id="dropFile" class="drop-file hidden">
+            <p id="fileName" class="file-name"></p>
+            <p id="filePath" class="file-path"></p>
+            <p class="drop-change">点击或拖入新文件可更换</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 状态区:路径 / 错误提示 -->
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <!-- 底部操作栏:格式选择 + 转换按钮 -->
+      <footer class="actions">
+        <fieldset class="formats">
+          <legend>输出格式</legend>
+          <label class="format-option">
+            <input type="radio" name="format" value="docx" checked />
+            <span>Word (.docx)</span>
+          </label>
+          <label class="format-option">
+            <input type="radio" name="format" value="pdf" />
+            <span>PDF (.pdf)</span>
+          </label>
+        </fieldset>
+        <div class="convert">
+          <button type="button" id="convertBtn" class="btn btn-primary" disabled>
+            开始转换
+          </button>
+          <span class="hint">转换功能开发中</span>
+        </div>
+      </footer>
+    </main>
+
+    <script type="module" src="./renderer.js"></script>
+  </body>
+</html>

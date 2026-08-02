@@ -1,18 +1,22 @@
 {
   "name": "markdown-to-word",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Markdown 转 Word/PDF 等格式的命令行工具",
+  "description": "Markdown 转 Word/PDF 等格式的 Windows 桌面工具",
   "type": "module",
+  "main": "dist/main/index.js",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "build": "tsc && node scripts/copy-renderer.mjs",
+    "dev": "npm run build && electron .",
+    "start": "electron ."
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
+    "electron": "^43.2.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {

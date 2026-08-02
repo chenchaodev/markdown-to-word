@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [0.4.1] - 2026-08-02
+- G2 完成:Electron 43 骨架(主进程窗口/dialog/IPC + preload contextBridge + renderer UI)
+- renderer:Win11 浅色风格,文件选择/拖放(md 扩展名校验)/格式单选/状态反馈,CSP 已配置
+- 验证:`typecheck`/`build`/`electron . --smoke` 全通过
+- .npmrc 固化 electron 双镜像(勿回退)
+
 ## [0.4.0] - 2026-08-02
 - G1 完成:实现 `src/core` 转换管线(remark + remark-gfm 解析,docx 9.x 渲染)
 - 支持:标题1-6/段落/粗斜体/删除线/行内代码/链接/有序无序嵌套列表/表格(表头加粗)/代码块/引用/图片(魔数识别+resolver 注入)/分割线
