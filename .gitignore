@@ -2,6 +2,9 @@
 node_modules/
 dist/
 
+# 转换产物(样例输出)
+output/
+
 # 日志
 *.log
 npm-debug.log*

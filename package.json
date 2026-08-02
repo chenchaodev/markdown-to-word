@@ -10,5 +10,14 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "docx": "^9.7.1",
+    "remark": "^15.0.1",
+    "remark-gfm": "^4.0.1"
   }
 }
