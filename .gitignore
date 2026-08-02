@@ -1,6 +1,8 @@
 # 依赖与构建产物
 node_modules/
 dist/
+release/
+release2/
 
 # 转换产物(样例输出)
 output/

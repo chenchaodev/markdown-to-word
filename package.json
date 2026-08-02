@@ -1,6 +1,6 @@
 {
   "name": "markdown-to-word",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Markdown 转 Word/PDF 等格式的 Windows 桌面工具",
   "type": "module",
@@ -12,12 +12,46 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc && node scripts/copy-renderer.mjs",
     "dev": "npm run build && electron .",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --win nsis --x64 --publish never"
+  },
+  "build": {
+    "appId": "com.markdown.tools.m2w",
+    "productName": "MarkdownToWord",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json",
+      "!node_modules/highlight.js/es/**",
+      "!node_modules/highlight.js/styles/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "electronLanguages": [
+        "zh-CN",
+        "en-US"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    }
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.1.2",
     "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^7.0.2"
   },
   "dependencies": {
