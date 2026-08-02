@@ -15,12 +15,16 @@
     "start": "electron ."
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.1.2",
     "electron": "^43.2.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@mdit/plugin-tasklist": "^1.0.2",
     "docx": "^9.7.1",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.3.0",
     "remark": "^15.0.1",
     "remark-gfm": "^4.0.1"
   }

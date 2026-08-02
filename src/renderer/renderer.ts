@@ -224,14 +224,10 @@ formatInputs.forEach((input) => {
   });
 });
 
-// 转换按钮:docx 直接转换,pdf 待 G4
+// 转换按钮:docx / pdf 均已支持
 convertBtn.addEventListener("click", () => {
   if (!selectedFile) {
     setError("请先选择 Markdown 文件");
-    return;
-  }
-  if (selectedFormat === "pdf") {
-    setError("PDF 功能暂未支持(开发中)");
     return;
   }
   void runConvert(selectedFile, selectedFormat);
@@ -262,5 +258,5 @@ document.addEventListener("keydown", (event) => {
 /* ---------- 初始化 ---------- */
 // HTML 中按钮为 G2 阶段禁用态(disabled 属性写死),docx 已可用,解除禁用
 convertBtn.disabled = false;
-// 按钮旁说明文案同步更新(原为「转换功能开发中」)
-if (convertHint) convertHint.textContent = "PDF 功能开发中";
+// 按钮旁说明文案(docx / pdf 均已支持)
+if (convertHint) convertHint.textContent = "输出格式:docx / PDF";

@@ -1,14 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseMarkdown } from "../core/parse.js";
-import { renderDocx } from "../core/docx/render.js";
+import { convert, type ConvertFormat } from "../core/convert.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.argv.includes("--smoke");
-
-export type ConvertFormat = "docx" | "pdf";
 
 export interface ConvertResult {
   ok: boolean;
@@ -34,8 +32,9 @@ function createWindow(): BrowserWindow {
 }
 
 /**
- * 转换实现:读取 md → 解析 → 渲染 → 落盘(同目录同名换扩展名)。
+ * 转换实现:读取 md → core 注册表渲染 → 落盘(同目录同名换扩展名)。
  * 纯函数便于 smoke 自测与未来 CLI 复用;进度经 onProgress 上报。
+ * pdf 链路:core 产出 HTML → 写临时文件 → 隐藏窗口 loadFile → printToPDF。
  */
 export async function convertImpl(
   filePath: string,
@@ -47,24 +46,51 @@ export async function convertImpl(
   }
   onProgress?.("read");
   const md = await fs.readFile(filePath, "utf8");
-  const ast = parseMarkdown(md);
-
-  if (format === "pdf") {
-    throw new Error("PDF 功能暂未支持(开发中)");
-  }
 
   onProgress?.("render");
-  const buffer = await renderDocx(ast, {
+  const artifact = await convert(md, format, {
+    baseDir: path.dirname(filePath),
+    title: path.basename(filePath).replace(/\.(md|markdown)$/i, ""),
     imageResolver: async (src: string) => {
       if (/^https?:\/\//.test(src)) return null;
       const p = path.resolve(path.dirname(filePath), src);
       return fs.readFile(p).catch(() => null);
     },
   });
-  const outputPath = filePath.replace(/\.(md|markdown)$/i, ".docx");
-  await fs.writeFile(outputPath, buffer);
-  onProgress?.("done");
-  return { outputPath };
+
+  if (artifact.kind === "docx") {
+    const outputPath = filePath.replace(/\.(md|markdown)$/i, ".docx");
+    await fs.writeFile(outputPath, artifact.buffer);
+    onProgress?.("done");
+    return { outputPath };
+  }
+
+  // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘
+  const htmlPath = path.join(os.tmpdir(), `m2w-${process.pid}-${Date.now()}.html`);
+  const printWin = new BrowserWindow({
+    show: false,
+    webPreferences: { contextIsolation: true, sandbox: true },
+  });
+  try {
+    await fs.writeFile(htmlPath, artifact.html, "utf8");
+    await printWin.loadFile(htmlPath);
+    const data = await printWin.webContents.printToPDF({
+      pageSize: "A4",
+      margins: { top: 0, bottom: 0, left: 0, right: 0 }, // 边距由 @page 控制(preferCSSPageSize)
+      printBackground: true,
+      preferCSSPageSize: true,
+      displayHeaderFooter: true,
+      headerTemplate: "<span></span>",
+      footerTemplate: artifact.footerTemplate,
+    });
+    const outputPath = filePath.replace(/\.(md|markdown)$/i, ".pdf");
+    await fs.writeFile(outputPath, data);
+    onProgress?.("done");
+    return { outputPath };
+  } finally {
+    printWin.destroy();
+    await fs.rm(htmlPath, { force: true });
+  }
 }
 
 function registerIpc(): void {
@@ -111,6 +137,43 @@ app.whenReady().then(async () => {
       const { outputPath } = await convertImpl(sampleMd, "docx");
       const stat = await fs.stat(outputPath);
       console.log(`[smoke] convert ok: ${outputPath} (${stat.size} bytes)`);
+      // G4:pdf 链路(中文/表格/代码块/任务列表/本地图片 → printToPDF)
+      const pngPath = path.join(outDir, "g4-smoke.png");
+      await fs.writeFile(
+        pngPath,
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+          "base64",
+        ),
+      );
+      const pdfSampleMd = path.join(outDir, "g4-smoke.md");
+      await fs.writeFile(
+        pdfSampleMd,
+        [
+          "# G4 PDF 冒烟 中文标题",
+          "",
+          "| 列A | 列B |",
+          "| --- | --- |",
+          "| 你好 | world |",
+          "",
+          "```ts",
+          "const x: number = 1;",
+          "```",
+          "",
+          "- [x] 已完成项",
+          "- [ ] 待办项",
+          "",
+          "~~删除线~~ 与 `行内代码`",
+          "",
+          "![本地图片](g4-smoke.png)",
+          "",
+        ].join("\n"),
+      );
+      const pdfResult = await convertImpl(pdfSampleMd, "pdf");
+      const pdfStat = await fs.stat(pdfResult.outputPath);
+      const pdfHead = (await fs.readFile(pdfResult.outputPath)).subarray(0, 5).toString("latin1");
+      if (pdfHead !== "%PDF-") throw new Error(`PDF 魔数校验失败: ${pdfHead}`);
+      console.log(`[smoke] pdf convert ok: ${pdfResult.outputPath} (${pdfStat.size} bytes)`);
     } catch (err) {
       console.error("[smoke] convert FAILED:", err);
       app.exit(1);

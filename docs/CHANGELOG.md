@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [0.5.0] - 2026-08-02
+- G4 完成:PDF 自研管线(markdown-it + HTML 模板 + printToPDF)
+  - `src/core/pdf/render.ts`:markdown-it 14.3 + @mdit/plugin-tasklist + highlight.js(lib/common)
+  - `src/core/convert.ts`:格式注册表(docx → Buffer / pdf → HTML + footerTemplate)
+  - 任务列表 checkbox 打印 bug 规避:☐/☑ 字符替换;图片统一转 file:// URL
+  - printToPDF:A4 + @page 边距 + 页码页脚,模板样式经 designer 润色(标题节奏/表格/代码高亮补齐)
+  - renderer 解锁 pdf 格式选择;smoke 扩展 pdf 链路(魔数校验)
+- 验证:typecheck/build/smoke 全通过;PDF 产物经 observer 视觉验收(中文/表格/高亮/任务列表/图片/页码 7/8 正常,1 项为源 md 间距问题)
+
 ## [0.4.4] - 2026-08-02
 - 修复弹窗 hidden 失效:.hidden 加 !important,避免被后定义的 .dialog-overlay{display:flex} 覆盖(启动即显示、确定关不掉)
 - smoke renderer 诊断增加弹窗启动隐藏检查(防回归)
