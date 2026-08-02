@@ -298,8 +298,10 @@ body {
   cursor: default;
 }
 
+/* 隐藏工具类:必须带 !important,否则会被文件中更靠后的单类 display 规则
+   (如 .dialog-overlay 的 display: flex)覆盖,导致 hidden 失效 */
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 /* 路径等文本允许选中复制 */

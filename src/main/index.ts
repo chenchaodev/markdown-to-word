@@ -132,6 +132,11 @@ app.whenReady().then(async () => {
           report.statusAfterClick = status ? status.textContent : "";
           report.statusIsError = status ? status.classList.contains("status--error") : null;
         }
+        // 防回归:完成弹窗启动时必须隐藏(曾因 CSS 特异性覆盖而失效)
+        const dlg = document.getElementById("completeDialog");
+        report.dialogExists = !!dlg;
+        report.dialogHiddenAtStart = dlg ? dlg.classList.contains("hidden") : null;
+        report.dialogVisibleAtStart = dlg ? getComputedStyle(dlg).display !== "none" : null;
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
