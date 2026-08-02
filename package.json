@@ -24,7 +24,6 @@
     "files": [
       "dist/**",
       "package.json",
-      "!node_modules/highlight.js/es/**",
       "!node_modules/highlight.js/styles/**"
     ],
     "win": {

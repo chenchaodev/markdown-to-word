@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [0.5.3] - 2026-08-02
+- 修复打包版启动崩溃:files 排除 highlight.js es/ 导致 exports import 条件目标缺失(ERR_MODULE_NOT_FOUND)
+- 移除 es/ 排除(体积 +0.3MB),styles/ 排除保留;教训落盘研究结论.md
+- 验证:asar 校验(es/common.js 在、styles 0 条)、win-unpacked 启动、静默安装/启动/卸载全通过
+
 ## [0.5.2] - 2026-08-02
 - G5 完成:electron-builder(26.15.3)NSIS 打包
   - build 配置:output release/、files 白名单 + highlight.js es/styles 排除、electronLanguages 裁剪(zh-CN/en-US)、NSIS 向导式安装(oneClick:false + 可改目录)
