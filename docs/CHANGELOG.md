@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [0.7.0] - 2026-08-03
+- 二期批次 2「保真 + 正式文档化」完成
+  - 外链图片下载嵌入:`src/main/image-downloader.ts` createImageResolver(本地读文件 + http(s) 下载 10s 超时/仅 2xx/同 URL 去重);docx 嵌入 + pdf 渲染后并发 3 下载转 data URL;失败保留原 URL + 警告(与缺失图片警告同构)
+  - 目录 TOC:docx 内置 `TableOfContents` 类生成 Word 域(目录页 + 静态占位,Word/WPS 右键更新域 F9 生成;仅含标题时生成,封面后/文档最前);pdf 渲染后提取 h1-h3 生成无页码锚点链接目录(printToPDF 实测保留页内锚点为可点击 PDF 链接,含跨页)
+  - 封面页 + YAML:`src/core/frontmatter.ts` 手写零依赖解析(title/author/date);有 title 时自动生成封面页(docx 居中排版 + pdf 居中版式);title 优先级 metadata.title > 文件名
+  - PDF 预览:完成弹窗新增「预览」按钮(preview:open IPC → convert pdf → 临时 HTML → 独立预览窗口 900×1100,关闭清理)
+  - 修复:分页符 div 后紧跟 h1 叠加 break-before 产生空白页(Chromium 相邻 break 不合并)→ 例外规则 `.page-break + h1 { break-before: auto }`
+- 验证:typecheck/build/smoke 全通过;core 断言 21 项(frontmatter/封面/外链图/回归)+ docx TOC 12 项 + pdf TOC 18 项 + 分页空白页修复 6 项 + PDF e2e 6 项(5 页无空白页/锚点可点击);验收样例 output/批次2验收.{md,docx,pdf} 待 Word/WPS 实测
+
 ## [0.6.0] - 2026-08-03
 - 二期批次 1「排版控制 + 设置底座」完成
   - 设置持久化:`src/main/settings.ts` 手写 userData/settings.json(原子写/整文件形状校验/patch 白名单 sanitize);记忆输出格式/页面设置/H1 分页开关/导出后行为;IPC settings:get/set + preload 4 新 API
