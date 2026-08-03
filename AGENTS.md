@@ -10,7 +10,4 @@
 ## 规则
 - 提交策略:一次提交 = 一个可独立回退的逻辑单元;message 用 prefix 风格(`feat:` / `fix:` / `docs:` / `chore:` / `refactor:`)
 - 提交前:过 typecheck / build,`git status` 只含本逻辑单元文件
-- 会话收尾:更新 `docs/状态速查.md` 与 `docs/CHANGELOG.md`,保持工作区干净
-
-## 当前阶段
-- 仅脚手架初始化,未开始功能开发;首个开发步骤见 `docs/开发者手册.md`
+- 迭代完成时(不依赖会话结束):更新 `docs/状态速查.md` 与 `docs/CHANGELOG.md` 并提交,状态固化绑定「迭代完成并验证通过」节点(会话随时可能中断,勿等收尾)
