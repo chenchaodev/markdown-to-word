@@ -1,9 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import JSZip from "jszip";
 import { convert, type ConvertFormat } from "../core/convert.js";
+import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.argv.includes("--smoke");
@@ -46,6 +48,7 @@ export async function convertImpl(
   if (!/\.(md|markdown)$/i.test(filePath)) {
     throw new Error("仅支持 .md / .markdown 文件");
   }
+  const settings = await loadSettings();
   onProgress?.("read");
   const md = await fs.readFile(filePath, "utf8");
 
@@ -55,6 +58,8 @@ export async function convertImpl(
     baseDir: path.dirname(filePath),
     title: path.basename(filePath).replace(/\.(md|markdown)$/i, ""),
     warnings,
+    pageSetup: settings.pageSetup,
+    breakBeforeH1: settings.breakBeforeH1,
     imageResolver: async (src: string) => {
       if (/^https?:\/\//.test(src)) return null;
       const p = path.resolve(path.dirname(filePath), src);
@@ -66,6 +71,7 @@ export async function convertImpl(
     const outputPath = filePath.replace(/\.(md|markdown)$/i, ".docx");
     await fs.writeFile(outputPath, artifact.buffer);
     onProgress?.("done");
+    await runAfterConvert(settings.afterConvert, outputPath);
     return { outputPath, warnings };
   }
 
@@ -90,10 +96,26 @@ export async function convertImpl(
     const outputPath = filePath.replace(/\.(md|markdown)$/i, ".pdf");
     await fs.writeFile(outputPath, data);
     onProgress?.("done");
+    await runAfterConvert(settings.afterConvert, outputPath);
     return { outputPath, warnings };
   } finally {
     printWin.destroy();
     await fs.rm(htmlPath, { force: true });
+  }
+}
+
+/**
+ * 导出后行为(按设置):资源管理器中显示 / 默认程序打开。
+ * openPath 返回非空字符串即失败,仅日志记录,不抛给用户。
+ */
+async function runAfterConvert(action: AppSettings["afterConvert"], outputPath: string): Promise<void> {
+  if (action === "show-in-folder") {
+    shell.showItemInFolder(outputPath);
+    return;
+  }
+  if (action === "open") {
+    const error = await shell.openPath(outputPath);
+    if (error) console.log(`[afterConvert] 打开失败: ${error}`);
   }
 }
 
@@ -119,6 +141,23 @@ function registerIpc(): void {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
+
+  // 设置:读取 / 更新(更新经 updateSettings 白名单校验 + 原子持久化)
+  ipcMain.handle("settings:get", (): AppSettings => loadSettings());
+
+  ipcMain.handle("settings:set", (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
+    return updateSettings(patch);
+  });
+
+  // 导出后行为:资源管理器中显示 / 默认程序打开
+  ipcMain.handle("shell:reveal", (_event, filePath: string): void => {
+    shell.showItemInFolder(filePath);
+  });
+
+  ipcMain.handle("shell:open", async (_event, filePath: string): Promise<{ ok: boolean; error?: string }> => {
+    const error = await shell.openPath(filePath);
+    return error ? { ok: false, error } : { ok: true };
+  });
 }
 
 app.whenReady().then(async () => {
@@ -136,11 +175,28 @@ app.whenReady().then(async () => {
       await fs.mkdir(outDir, { recursive: true });
       await fs.writeFile(
         sampleMd,
-        "# 冒烟测试 中文标题\n\n| 列A | 列B |\n| --- | --- |\n| 你好 | world |\n\n- 项目一\n- 项目二\n",
+        "# 冒烟测试 中文标题\n\n<!-- page-break -->\n\n| 列A | 列B |\n| --- | --- |\n| 你好 | world |\n\n- 项目一\n- 项目二\n",
       );
       const { outputPath } = await convertImpl(sampleMd, "docx");
       const stat = await fs.stat(outputPath);
       console.log(`[smoke] convert ok: ${outputPath} (${stat.size} bytes)`);
+      // 批次 1:设置持久化往返 + 页面设置端到端(landscape → docx pgSz orient)
+      const origSettings = loadSettings();
+      try {
+        await updateSettings({ breakBeforeH1: true });
+        if (!loadSettings().breakBeforeH1) throw new Error("设置持久化失败: breakBeforeH1 未生效");
+        console.log("[smoke] settings persist ok");
+        await updateSettings({ pageSetup: { ...origSettings.pageSetup, orientation: "landscape" } });
+        const landResult = await convertImpl(sampleMd, "docx");
+        const landZip = await JSZip.loadAsync(await fs.readFile(landResult.outputPath));
+        const landEntry = landZip.file("word/document.xml");
+        if (!landEntry) throw new Error("docx 缺少 document.xml");
+        const landXml = await landEntry.async("string");
+        if (!landXml.includes('w:orient="landscape"')) throw new Error("页面设置 landscape 未生效");
+        console.log("[smoke] pageSetup landscape ok");
+      } finally {
+        await updateSettings(origSettings);
+      }
       // G4:pdf 链路(中文/表格/代码块/任务列表/本地图片 → printToPDF)
       const pngPath = path.join(outDir, "g4-smoke.png");
       await fs.writeFile(
@@ -159,6 +215,8 @@ app.whenReady().then(async () => {
           "| 列A | 列B |",
           "| --- | --- |",
           "| 你好 | world |",
+          "",
+          "<!-- page-break -->",
           "",
           "```ts",
           "const x: number = 1;",

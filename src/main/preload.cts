@@ -1,5 +1,6 @@
 // preload:CJS 输出(preload.cjs),沙箱兼容;contextBridge 白名单暴露 API
 import { contextBridge, ipcRenderer } from "electron";
+import type { AppSettings } from "./settings.js";
 
 contextBridge.exposeInMainWorld("api", {
   openMarkdownDialog: (): Promise<string | null> => ipcRenderer.invoke("dialog:openMarkdown"),
@@ -11,4 +12,8 @@ contextBridge.exposeInMainWorld("api", {
       ipcRenderer.removeListener("convert:progress", listener);
     };
   },
+  settingsGet: (): Promise<AppSettings> => ipcRenderer.invoke("settings:get"),
+  settingsSet: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke("settings:set", patch),
+  revealInFolder: (filePath: string): Promise<void> => ipcRenderer.invoke("shell:reveal", filePath),
+  openFile: (filePath: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke("shell:open", filePath),
 });

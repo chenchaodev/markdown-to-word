@@ -202,6 +202,191 @@ body {
   color: var(--warning);
 }
 
+/* 页面设置面板(可折叠,改动即时生效) */
+.settings {
+  margin-top: 14px;
+  background: #fafafa;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.settings-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  list-style: none; /* Firefox 隐藏默认三角 */
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.settings-summary::-webkit-details-marker {
+  display: none; /* Chromium 隐藏默认三角 */
+}
+
+.settings-summary:hover {
+  background: #f2f2f2;
+}
+
+.settings-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.settings-summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
+  transform: rotate(-45deg); /* 收起态:朝右的箭头 */
+  transition: transform 0.15s ease;
+}
+
+.settings[open] .settings-summary::before {
+  transform: rotate(45deg); /* 展开态:朝下 */
+}
+
+.settings-summary-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-summary-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.settings-body {
+  padding: 14px 14px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  align-items: start;
+}
+
+.setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.setting-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.setting-fieldset legend {
+  margin: 0;
+  padding: 0;
+}
+
+.setting-label {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.setting-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+
+.setting-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.setting-option input,
+.setting-check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.setting-select {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.setting-select:focus-visible,
+.margin-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.setting-margins {
+  grid-column: 1 / -1;
+}
+
+.margin-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.margin-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.margin-input {
+  width: 64px;
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  text-align: right;
+  user-select: text;
+}
+
+.setting-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  grid-column: 1 / -1;
+}
+
+.setting-after {
+  grid-column: 1 / -1;
+}
+
+.settings-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
 /* 底部操作栏 */
 .actions {
   display: flex;
@@ -371,8 +556,29 @@ body {
 
 .dialog-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 20px;
+}
+
+.dialog-actions-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 打开文件失败等非致命错误:弹窗内提示,不打断弹窗 */
+.dialog-error {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--error);
+  background: #fdf1f0;
+  border: 1px solid #f0c8c3;
+  border-radius: var(--radius-sm);
+  word-break: break-all;
 }
 
 @keyframes dialog-overlay-in {

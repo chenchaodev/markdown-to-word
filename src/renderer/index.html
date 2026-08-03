@@ -62,6 +62,88 @@
       <!-- 状态区:路径 / 错误提示 -->
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
+      <!-- 页面设置:可折叠面板,改动即时生效并自动保存 -->
+      <details id="settingsPanel" class="settings">
+        <summary class="settings-summary">
+          <span class="settings-summary-title">页面设置</span>
+          <span class="settings-summary-hint">纸张、边距、分页与导出行为</span>
+        </summary>
+        <div class="settings-body">
+          <div class="settings-grid">
+            <div class="setting-field">
+              <label class="setting-label" for="paperSelect">纸张</label>
+              <select id="paperSelect" class="setting-select">
+                <option value="A4">A4</option>
+                <option value="A3">A3</option>
+                <option value="A5">A5</option>
+                <option value="Letter">Letter</option>
+                <option value="Legal">Legal</option>
+              </select>
+            </div>
+
+            <fieldset class="setting-field setting-fieldset">
+              <legend class="setting-label">方向</legend>
+              <div class="setting-options">
+                <label class="setting-option">
+                  <input type="radio" name="orientation" value="portrait" />
+                  <span>纵向</span>
+                </label>
+                <label class="setting-option">
+                  <input type="radio" name="orientation" value="landscape" />
+                  <span>横向</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset class="setting-field setting-fieldset setting-margins">
+              <legend class="setting-label">边距 (mm)</legend>
+              <div class="margin-grid">
+                <label class="margin-field">
+                  <span class="margin-name">上</span>
+                  <input type="number" id="marginTop" class="margin-input" min="0" step="0.5" />
+                </label>
+                <label class="margin-field">
+                  <span class="margin-name">下</span>
+                  <input type="number" id="marginBottom" class="margin-input" min="0" step="0.5" />
+                </label>
+                <label class="margin-field">
+                  <span class="margin-name">左</span>
+                  <input type="number" id="marginLeft" class="margin-input" min="0" step="0.5" />
+                </label>
+                <label class="margin-field">
+                  <span class="margin-name">右</span>
+                  <input type="number" id="marginRight" class="margin-input" min="0" step="0.5" />
+                </label>
+              </div>
+            </fieldset>
+
+            <label class="setting-check">
+              <input type="checkbox" id="breakBeforeH1" />
+              <span>每个一级标题前分页</span>
+            </label>
+
+            <fieldset class="setting-field setting-fieldset setting-after">
+              <legend class="setting-label">导出后</legend>
+              <div class="setting-options">
+                <label class="setting-option">
+                  <input type="radio" name="afterConvert" value="none" />
+                  <span>不执行(仅弹窗提示)</span>
+                </label>
+                <label class="setting-option">
+                  <input type="radio" name="afterConvert" value="show-in-folder" />
+                  <span>打开所在文件夹</span>
+                </label>
+                <label class="setting-option">
+                  <input type="radio" name="afterConvert" value="open" />
+                  <span>打开文件</span>
+                </label>
+              </div>
+            </fieldset>
+          </div>
+          <p class="settings-note">设置即时生效并自动保存</p>
+        </div>
+      </details>
+
       <!-- 底部操作栏:格式选择 + 转换按钮 -->
       <footer class="actions">
         <fieldset class="formats">
@@ -97,7 +179,16 @@
         <h2 id="completeDialogTitle" class="dialog-title">转换完成</h2>
         <p id="completeDialogDesc" class="dialog-desc">文档已生成,输出路径如下</p>
         <p id="completeOutputPath" class="dialog-path" tabindex="0"></p>
+        <p id="completeDialogError" class="dialog-error hidden" role="alert"></p>
         <div class="dialog-actions">
+          <div class="dialog-actions-secondary">
+            <button type="button" id="completeDialogReveal" class="btn btn-secondary">
+              打开所在文件夹
+            </button>
+            <button type="button" id="completeDialogOpen" class="btn btn-secondary">
+              打开文件
+            </button>
+          </div>
           <button type="button" id="completeDialogOk" class="btn btn-primary">
             确定
           </button>
