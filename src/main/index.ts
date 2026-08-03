@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
 import { convert, type ConvertFormat } from "../core/convert.js";
+import { createImageResolver } from "./image-downloader.js";
 import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,11 +61,8 @@ export async function convertImpl(
     warnings,
     pageSetup: settings.pageSetup,
     breakBeforeH1: settings.breakBeforeH1,
-    imageResolver: async (src: string) => {
-      if (/^https?:\/\//.test(src)) return null;
-      const p = path.resolve(path.dirname(filePath), src);
-      return fs.readFile(p).catch(() => null);
-    },
+    // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重
+    imageResolver: createImageResolver(path.dirname(filePath)),
   });
 
   if (artifact.kind === "docx") {
@@ -119,6 +117,55 @@ async function runAfterConvert(action: AppSettings["afterConvert"], outputPath: 
   }
 }
 
+/**
+ * 预览窗口:读 md → convert("pdf") 复用 PDF 排版 HTML → 写临时文件 → 可见窗口 loadFile。
+ * 允许并发打开多个预览(各自独立临时文件);closed 事件里清理临时文件。
+ * 任何失败:销毁窗口(如已创建)+ 删除临时文件,返回 { ok: false, error }。
+ */
+async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?: string }> {
+  let win: BrowserWindow | null = null;
+  let htmlPath = "";
+  try {
+    const settings = await loadSettings();
+    const md = await fs.readFile(mdPath, "utf8");
+    const baseName = path.basename(mdPath).replace(/\.(md|markdown)$/i, "");
+    const artifact = await convert(md, "pdf", {
+      baseDir: path.dirname(mdPath),
+      title: baseName,
+      pageSetup: settings.pageSetup,
+      breakBeforeH1: settings.breakBeforeH1,
+      imageResolver: createImageResolver(path.dirname(mdPath)),
+    });
+    if (artifact.kind !== "pdf") throw new Error("预览仅支持 pdf 渲染");
+    htmlPath = path.join(
+      os.tmpdir(),
+      `m2w-preview-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`,
+    );
+    await fs.writeFile(htmlPath, artifact.html, "utf8");
+    win = new BrowserWindow({
+      width: 900,
+      height: 1100,
+      title: `预览 - ${baseName}`,
+      autoHideMenuBar: true,
+      webPreferences: { contextIsolation: true, sandbox: true },
+    });
+    win.on("closed", () => {
+      fs.rm(htmlPath, { force: true }).catch(() => {
+        // 临时文件删除失败(如仍被 Chromium 占用)仅记录,不阻断
+        console.log(`[preview] 临时文件清理失败: ${htmlPath}`);
+      });
+    });
+    await win.loadFile(htmlPath);
+    return { ok: true };
+  } catch (err) {
+    win?.destroy();
+    if (htmlPath) {
+      await fs.rm(htmlPath, { force: true }).catch(() => undefined);
+    }
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 function registerIpc(): void {
   // 选择 markdown 文件
   ipcMain.handle("dialog:openMarkdown", async () => {
@@ -157,6 +204,11 @@ function registerIpc(): void {
   ipcMain.handle("shell:open", async (_event, filePath: string): Promise<{ ok: boolean; error?: string }> => {
     const error = await shell.openPath(filePath);
     return error ? { ok: false, error } : { ok: true };
+  });
+
+  // 预览:独立可见窗口展示与 PDF 同排版的 HTML(复用 renderPdfHtml),多窗口并发安全
+  ipcMain.handle("preview:open", (_event, mdPath: string): Promise<{ ok: boolean; error?: string }> => {
+    return openPreviewWindow(mdPath);
   });
 }
 

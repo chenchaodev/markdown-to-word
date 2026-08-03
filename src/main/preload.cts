@@ -16,4 +16,6 @@ contextBridge.exposeInMainWorld("api", {
   settingsSet: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke("settings:set", patch),
   revealInFolder: (filePath: string): Promise<void> => ipcRenderer.invoke("shell:reveal", filePath),
   openFile: (filePath: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke("shell:open", filePath),
+  openPreview: (mdPath: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("preview:open", mdPath),
 });

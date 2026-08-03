@@ -2,6 +2,8 @@
  * G3 阶段:renderer 接入转换逻辑(含转换完成弹窗)。
  * 二期批次 1:页面设置面板(纸张/方向/边距/H1 分页/导出后行为)与持久化,
  * 完成弹窗新增「打开所在文件夹 / 打开文件」按钮。
+ * 二期批次 2:完成弹窗新增「预览」按钮,经主进程打开独立预览窗口
+ * (与 PDF 同排版),预览使用源 md 路径(selectedFile)。
  * 导出后行为的自动执行由主进程在转换完成后按设置触发(runAfterConvert),
  * renderer 只负责持久化与弹窗内手动操作,避免重复执行。
  * 主进程 API 经 preload 以 window.api 暴露(contextIsolation),契约见下方类型声明。
@@ -27,6 +29,8 @@ declare global {
       revealInFolder: (filePath: string) => Promise<void>;
       /** 用系统默认程序打开目标文件;失败返回 { ok: false, error }。 */
       openFile: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
+      /** 在主进程独立窗口预览转换排版(与 PDF 同排版);失败返回 { ok: false, error }。 */
+      openPreview: (mdPath: string) => Promise<{ ok: boolean; error?: string }>;
     };
   }
 }
@@ -118,6 +122,9 @@ const completeDialogReveal = document.getElementById(
 ) as HTMLButtonElement;
 const completeDialogOpen = document.getElementById(
   "completeDialogOpen",
+) as HTMLButtonElement;
+const completeDialogPreview = document.getElementById(
+  "completeDialogPreview",
 ) as HTMLButtonElement;
 const completeDialogError = document.getElementById(
   "completeDialogError",
@@ -422,7 +429,25 @@ afterConvertInputs.forEach((input) => {
   marginInputs[key].addEventListener("change", () => handleMarginChange(key));
 });
 
-// 完成弹窗:打开所在文件夹 / 打开文件(失败在弹窗内提示,不打断)
+// 完成弹窗:预览 / 打开所在文件夹 / 打开文件(失败在弹窗内提示,不打断)
+completeDialogPreview.addEventListener("click", () => {
+  // 预览使用源 md 路径(selectedFile);转换成功必然先选了文件,此处仅做兜底
+  if (!selectedFile) {
+    showDialogError("无法预览:源文件路径缺失");
+    return;
+  }
+  window.api
+    .openPreview(selectedFile)
+    .then((result) => {
+      if (!result.ok) showDialogError(result.error ?? "无法打开预览");
+    })
+    .catch((err) =>
+      showDialogError(
+        `无法打开预览:${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+});
+
 completeDialogReveal.addEventListener("click", () => {
   if (!dialogOutputPath) return;
   window.api
