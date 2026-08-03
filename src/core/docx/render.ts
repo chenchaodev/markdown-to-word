@@ -11,6 +11,7 @@ import {
   Paragraph,
   Table,
   TableCell,
+  TableOfContents,
   TableRow,
   TextRun,
   WidthType,
@@ -32,6 +33,7 @@ import type {
 import { CODE_FONT, CODE_SIZE, DEFAULT_FONT, LINK_COLOR } from "./theme.js";
 import { DEFAULT_PAGE_SETUP } from "../convert.js";
 import type { PageSetup } from "../convert.js";
+import type { DocMetadata } from "../frontmatter.js";
 import { docxBookmarkId } from "../slug.js";
 
 /** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
@@ -39,6 +41,10 @@ export type ImageResolver = (src: string) => Promise<Buffer | null>;
 
 export interface RenderOptions {
   imageResolver?: ImageResolver;
+  /** frontmatter 元数据(metadata.title 存在时渲染封面页) */
+  metadata?: DocMetadata;
+  /** 警告收集(外链图片下载失败等,与缺失图片警告同构) */
+  warnings?: string[];
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
   pageSetup?: PageSetup;
   /** 一级标题前分页(默认关) */
@@ -47,6 +53,7 @@ export interface RenderOptions {
 
 interface Ctx {
   imageResolver?: ImageResolver;
+  warnings?: string[];
   listLevel: number;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
@@ -103,10 +110,19 @@ function numberingOptions(): INumberingOptions {
 export async function renderDocx(ast: Root, options: RenderOptions = {}): Promise<Buffer> {
   const ctx: Ctx = {
     imageResolver: options.imageResolver,
+    warnings: options.warnings,
     listLevel: 0,
     breakBeforeH1: options.breakBeforeH1,
   };
-  const children: (Paragraph | Table)[] = [];
+  const children: (Paragraph | Table | TableOfContents)[] = [];
+  // 封面页:metadata.title 存在时置于文档最前(独占一页,不计入标题层级/书签)
+  if (options.metadata?.title) {
+    children.push(...renderCoverPage(options.metadata));
+  }
+  // 目录页:正文含标题节点时插入(封面之后/文档最前,独占一页;无标题的短文档不生成)
+  if (ast.children.some((node) => node.type === "heading")) {
+    children.push(...renderTocPage());
+  }
   for (const node of ast.children) {
     if (isSupportedBlock(node)) {
       children.push(...(await renderBlock(node, ctx)));
@@ -144,6 +160,73 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
 }
 
 // ---------- 块级节点 ----------
+
+/**
+ * 封面页:标题居中加粗(44 half-points = 22pt,与 pdf 封面标题字号一致)+
+ * 下方 author/date 居中灰色小字;末尾 PageBreak 独占一页。
+ * 用普通 Paragraph(不用 HeadingLevel),不进导航窗格/标题层级/书签。
+ */
+function renderCoverPage(metadata: DocMetadata): Paragraph[] {
+  const paragraphs: Paragraph[] = [];
+  // 顶部留白:Word 忽略页首段落的 before 间距,故用空段落撑开(视觉居中)
+  paragraphs.push(new Paragraph({ spacing: { after: 2400 }, children: [] }));
+  paragraphs.push(new Paragraph({ spacing: { after: 2400 }, children: [] }));
+  paragraphs.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 0, after: 600 },
+      children: [new TextRun({ text: metadata.title ?? "", bold: true, size: 44 })],
+    }),
+  );
+  if (metadata.author) {
+    paragraphs.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 120 },
+        children: [new TextRun({ text: metadata.author, color: "808080", size: 22 })],
+      }),
+    );
+  }
+  if (metadata.date) {
+    paragraphs.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 0 },
+        children: [new TextRun({ text: metadata.date, color: "808080", size: 22 })],
+      }),
+    );
+  }
+  paragraphs.push(new Paragraph({ children: [new PageBreak()] }));
+  return paragraphs;
+}
+
+/**
+ * 目录页:标题居中加粗(36 half-points = 18pt)+ TOC 域,独占一页。
+ * 标题用普通 Paragraph(不用 HeadingLevel,避免被 TOC 域 \o "1-3" 收集到目录自身);
+ * 域结构(begin/instrText/separate/end)由 docx 9.x TableOfContents 生成,
+ * Word/WPS 打开后右键 → 更新域 生成目录;更新前显示域内占位文案。
+ */
+function renderTocPage(): (Paragraph | TableOfContents)[] {
+  return [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 240, after: 480 },
+      children: [new TextRun({ text: "目录", bold: true, size: 36 })],
+    }),
+    new TableOfContents("目录", {
+      hyperlink: true, // \h
+      headingStyleRange: "1-3", // \o "1-3"
+      useAppliedParagraphOutlineLevel: true, // \u
+      hideTabAndPageNumbersInWebView: true, // \z
+      contentChildren: [
+        new Paragraph({
+          children: [new TextRun("(目录:请右键 → 更新域 生成)")],
+        }),
+      ],
+    }),
+    new Paragraph({ children: [new PageBreak()] }),
+  ];
+}
 
 async function renderBlock(node: BlockContent, ctx: Ctx): Promise<(Paragraph | Table)[]> {
   switch (node.type) {
@@ -391,17 +474,28 @@ function pushRunsSync(runs: TextRun[], node: PhrasingContent, ctx: Ctx, style: R
   }
 }
 
-/** 行内图片:经 resolver 加载为 ImageRun;失败时占位文本 */
+/** 行内图片:经 resolver 加载为 ImageRun;失败时占位文本。
+ *  外链(http/s)失败额外追加警告(本地缺失已由 collectMissingImageWarnings 处理)。 */
 async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<InlineChild> {
   const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: "808080", ...style });
-  if (!ctx.imageResolver) return fallback();
+  const isExternal = /^https?:/i.test(node.url);
+  const warnExternal = (): void => {
+    if (isExternal) ctx.warnings?.push(`外链图片下载失败: ${node.url}`);
+  };
+  if (!ctx.imageResolver) {
+    warnExternal();
+    return fallback();
+  }
   let data: Buffer | null;
   try {
     data = await ctx.imageResolver(node.url);
   } catch {
     data = null;
   }
-  if (!data) return fallback();
+  if (!data) {
+    warnExternal();
+    return fallback();
+  }
   return new ImageRun({
     type: sniffImageType(data),
     data,

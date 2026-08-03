@@ -12,11 +12,21 @@ import hljs from "highlight.js/lib/common";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_PAGE_SETUP, type PageSetup } from "../convert.js";
+import type { DocMetadata } from "../frontmatter.js";
 import { uniqueSlug } from "../slug.js";
+
+/** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
+export type ImageResolver = (src: string) => Promise<Buffer | null>;
 
 export interface RenderPdfHtmlOptions {
   /** markdown 文件所在目录,相对路径图片以此为基准 */
   baseDir: string;
+  /** frontmatter 元数据(metadata.title 存在时渲染封面页,标题优先级高于 options.title) */
+  metadata?: DocMetadata;
+  /** 警告收集(外链图片下载失败等,与缺失图片警告同构) */
+  warnings?: string[];
+  /** 外链图片下载注入(主进程提供;失败返回 null) */
+  imageResolver?: ImageResolver;
   /** 页面 <title>,缺省取文件名(不含扩展名) */
   title?: string;
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
@@ -117,6 +127,10 @@ function buildTemplateCss(pageSetup: PageSetup, breakBeforeH1: boolean): string 
   return `
   @page { size: ${size}; margin: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm; }
   .page-break { break-before: page; height: 0; }
+  /* 分页符后紧跟的 h1 不再强制分页:breakBeforeH1 下两个相邻 break-before 叠加,
+     Chromium printToPDF 会产生 1 个空白页(实测确认,相邻分页符不合并);
+     breakBeforeH1 关闭时 h1 无 break-before,本规则无副作用,故无条件加 */
+  .page-break + h1 { break-before: auto; }
   * { box-sizing: border-box; }
 
   /* 基础排版:1.65 行高兼顾中英混排;orphans/widows 保证跨页段落不零碎 */
@@ -130,6 +144,20 @@ function buildTemplateCss(pageSetup: PageSetup, breakBeforeH1: boolean): string 
      标题行高收紧,且不与后续内容分离(break-after: avoid,避免孤立标题) */
   h1, h2, h3, h4, h5, h6 { line-height: 1.3; break-after: avoid; }
   body > :first-child { margin-top: 0; } /* 文档首元素不产生多余顶距 */
+
+  /* 封面页:居中大标题 + 灰色作者/日期,顶部留白视觉居中 */
+  .cover { text-align: center; padding-top: 80mm; }
+  .cover-title { font-size: 28pt; font-weight: 700; margin: 0 0 20px; }
+  .cover-meta { font-size: 12pt; color: #888; }
+
+  /* 目录页:无页码,条目为页内锚点链接(printToPDF 保留为可点击链接);
+     层级靠左缩进区分,链接沿用正文颜色(继承而非蓝色) */
+  .toc-title { font-size: 18pt; font-weight: 700; margin-bottom: 16px; }
+  .toc ul { list-style: none; padding: 0; margin: 0; }
+  .toc-l1 { margin: 6px 0; }
+  .toc-l2 { margin-left: 1.5em; }
+  .toc-l3 { margin-left: 3em; }
+  .toc a { color: inherit; text-decoration: none; }
   h1 { font-size: 22pt; border-bottom: 2px solid #d0d7de; padding-bottom: 8px; margin: 0 0 16px; }
   h2 { font-size: 17pt; border-bottom: 1px solid #d0d7de; padding-bottom: 6px; margin: 24px 0 12px; }
   h3 { font-size: 14pt; margin: 20px 0 10px; }
@@ -234,6 +262,133 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * 封面 HTML:metadata.title 存在时生成。居中大标题(28pt)+ 作者/日期灰色小字,
+ * 末尾 <div class="page-break"></div> 复用现有分页样式,封面独占一页。
+ */
+function buildCoverHtml(metadata: DocMetadata | undefined): string {
+  if (!metadata?.title) return "";
+  const metaLine = [metadata.author, metadata.date].filter(Boolean).join(" · ");
+  return (
+    '<div class="cover">' +
+    `<div class="cover-title">${escapeHtml(metadata.title)}</div>` +
+    (metaLine ? `<div class="cover-meta">${escapeHtml(metaLine)}</div>` : "") +
+    "</div>" +
+    '<div class="page-break"></div>'
+  );
+}
+
+/** HTML 实体解码(目录标题文本用;markdown-it 输出的常见实体,零依赖手写)。
+ *  命名实体先于 &amp; 解码,避免 "&amp;lt;" 二次解码为 "<"。 */
+function decodeEntities(text: string): string {
+  const decodeNumeric = (match: string, digits: string, radix: number): string => {
+    const cp = parseInt(digits, radix);
+    return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : match;
+  };
+  return text
+    .replace(/&#x([0-9a-f]+);/gi, (m, hex: string) => decodeNumeric(m, hex, 16))
+    .replace(/&#(\d+);/g, (m, dec: string) => decodeNumeric(m, dec, 10))
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * 目录 HTML:从渲染后正文提取 h1-h3(id 由 overrideHeadingIdRule 生成,与正文锚点
+ * 一一对应),生成无页码锚点链接列表(实测 printToPDF 保留页内锚点为可点击链接,
+ * 含跨页)。标题文本剥行内标签 + 实体解码;标题不足 1 个返回空串(不生成目录)。
+ * 输出:<div class="toc">…<ul>…</ul></div> + 分页 div。
+ */
+function buildTocHtml(bodyHtml: string): string {
+  const items: string[] = [];
+  for (const match of bodyHtml.matchAll(/<h([1-3])[^>]*id="([^"]+)"[^>]*>(.*?)<\/h\1>/g)) {
+    const [, level, id, raw] = match;
+    const text = decodeEntities(raw.replace(/<[^>]+>/g, ""));
+    items.push(`<li class="toc-l${level}"><a href="#${id}">${escapeHtml(text)}</a></li>`);
+  }
+  if (items.length === 0) return "";
+  return (
+    '<div class="toc">' +
+    '<div class="toc-title">目录</div>' +
+    `<ul>${items.join("")}</ul>` +
+    "</div>" +
+    '<div class="page-break"></div>'
+  );
+}
+
+/** 外链图片并发下载上限 */
+const EXTERNAL_IMAGE_CONCURRENCY = 3;
+
+/**
+ * 渲染后处理:收集 <img src="https?://..."> 的 URL,经 imageResolver 并行下载
+ * (并发限制 3),成功内嵌为 data URL(Chromium 加载 data URL 无需网络,file://
+ * HTML 下可用);失败保留原 URL 并追加警告。
+ */
+async function embedExternalImages(
+  html: string,
+  resolver: ImageResolver | undefined,
+  warnings: string[],
+): Promise<string> {
+  if (!resolver) return html;
+  const urls = Array.from(
+    new Set([...html.matchAll(/<img[^>]*\ssrc="(https?:\/\/[^"]+)"/gi)].map((m) => m[1])),
+  );
+  if (urls.length === 0) return html;
+
+  const results = new Map<string, string>();
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < urls.length) {
+      const url = urls[next++];
+      try {
+        const data = await resolver(url);
+        if (data && data.length > 0) {
+          results.set(url, `data:${mimeFromBuffer(data)};base64,${data.toString("base64")}`);
+        } else {
+          warnings.push(`外链图片下载失败: ${url}`);
+        }
+      } catch {
+        warnings.push(`外链图片下载失败: ${url}`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(EXTERNAL_IMAGE_CONCURRENCY, urls.length) }, worker));
+
+  let out = html;
+  for (const [url, dataUrl] of results) {
+    // 精确替换 src 属性,避免 URL 互为子串时误替换
+    out = out.replace(new RegExp(`src="${escapeRegExp(url)}"`, "g"), `src="${dataUrl}"`);
+  }
+  return out;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** 魔数判断图片 MIME(data URL 用;png/jpeg/gif/webp,未知回退 png) */
+function mimeFromBuffer(data: Buffer): string {
+  if (data.length >= 4 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
+    return "image/png";
+  }
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8) {
+    return "image/jpeg";
+  }
+  if (data.length >= 4 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x38) {
+    return "image/gif";
+  }
+  if (
+    data.length >= 12 &&
+    data.toString("ascii", 0, 4) === "RIFF" &&
+    data.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return "image/png";
+}
+
+/**
  * markdown → 完整 HTML 文档(供 loadFile 后 printToPDF)。
  * 返回 Promise 仅为与 docx 渲染签名保持一致,当前实现为同步。
  */
@@ -246,10 +401,16 @@ export async function renderPdfHtml(
   overrideImageRule(md, options.baseDir);
   // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
   overrideHeadingIdRule(md, new Map<string, number>());
-  const title = options.title ?? "文档";
+  // 标题优先级:frontmatter metadata.title > options.title
+  const title = options.metadata?.title ?? options.title ?? "文档";
+  const warnings = options.warnings ?? [];
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource));
+  // 封面 + 目录 + 正文:buildCoverHtml/buildTocHtml 各自以 page-break 结尾,
+  // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
+  const fullBody = buildCoverHtml(options.metadata) + buildTocHtml(bodyHtml) + bodyHtml;
+  const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings);
   return buildTemplate(
-    bodyHtml,
+    processedBody,
     title,
     buildTemplateCss(pageSetup, options.breakBeforeH1 ?? false),
   );

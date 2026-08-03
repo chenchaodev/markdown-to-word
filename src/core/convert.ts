@@ -4,6 +4,7 @@
  * 图片等外部资源经 context 注入,保持 core 纯逻辑。
  */
 import { parseMarkdown } from "./parse.js";
+import { parseFrontmatter } from "./frontmatter.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml, PDF_FOOTER_TEMPLATE } from "./pdf/render.js";
 import { stat } from "node:fs/promises";
@@ -101,15 +102,20 @@ export async function convert(
   context: ConvertContext,
 ): Promise<ConvertArtifact> {
   const warnings = context.warnings ?? [];
-  const ast = parseMarkdown(md);
+  // 先剥离 frontmatter:解析与图片警告检查均只作用于正文(body)
+  const { metadata, body } = parseFrontmatter(md);
+  const ast = parseMarkdown(body);
   await collectMissingImageWarnings(ast, context.baseDir, warnings);
 
   if (format === "pdf") {
     return {
       kind: "pdf",
-      html: await renderPdfHtml(md, {
+      html: await renderPdfHtml(body, {
         baseDir: context.baseDir,
         title: context.title,
+        metadata,
+        warnings,
+        imageResolver: context.imageResolver,
         pageSetup: context.pageSetup,
         breakBeforeH1: context.breakBeforeH1,
       }),
@@ -120,6 +126,8 @@ export async function convert(
     kind: "docx",
     buffer: await renderDocx(ast, {
       imageResolver: context.imageResolver,
+      metadata,
+      warnings,
       pageSetup: context.pageSetup,
       breakBeforeH1: context.breakBeforeH1,
     }),
