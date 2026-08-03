@@ -11,12 +11,18 @@ import { tasklist } from "@mdit/plugin-tasklist";
 import hljs from "highlight.js/lib/common";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { DEFAULT_PAGE_SETUP, type PageSetup } from "../convert.js";
+import { uniqueSlug } from "../slug.js";
 
 export interface RenderPdfHtmlOptions {
   /** markdown 文件所在目录,相对路径图片以此为基准 */
   baseDir: string;
   /** 页面 <title>,缺省取文件名(不含扩展名) */
   title?: string;
+  /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
+  pageSetup?: PageSetup;
+  /** 一级标题前分页(默认关) */
+  breakBeforeH1?: boolean;
 }
 
 /** 页码页脚模板(printToPDF footerTemplate 用;模板内必须内联样式,字体大小需显式设置)。 */
@@ -34,7 +40,7 @@ function replaceTaskCheckboxes(html: string): string {
 
 function buildMarkdownIt(): MarkdownIt {
   const md = new MarkdownIt({
-    html: false,
+    html: true,
     linkify: true,
     typographer: false,
     highlight(str: string, lang?: string): string {
@@ -53,7 +59,22 @@ function buildMarkdownIt(): MarkdownIt {
     },
   });
   md.use(tasklist);
+  overrideHtmlRules(md);
   return md;
+}
+
+/** HTML 白名单:仅放行 trim 后精确等于 <!-- page-break --> 的裸 HTML(→ 分页 div),
+ *  其余一律转义输出,维持"裸 HTML 不渲染"的安全行为。 */
+function overrideHtmlRules(md: MarkdownIt): void {
+  const escapeHtml = md.utils.escapeHtml;
+  const renderHtml = (token: { content: string }): string => {
+    const content = token.content.trim();
+    return content === "<!-- page-break -->"
+      ? '<div class="page-break"></div>'
+      : escapeHtml(token.content);
+  };
+  md.renderer.rules.html_block = (tokens, idx) => renderHtml(tokens[idx]);
+  md.renderer.rules.html_inline = (tokens, idx) => renderHtml(tokens[idx]);
 }
 
 /** 图片规则:相对/绝对路径统一转 file:// URL,http(s) 保留原样。 */
@@ -71,9 +92,31 @@ function overrideImageRule(md: MarkdownIt, baseDir: string): void {
     };
 }
 
-/** 转换矩阵与 docx 路线对齐的文档模板样式(分页、中文字体、代码高亮、表格、跨页避让)。 */
-const TEMPLATE_CSS = `
-  @page { size: A4; margin: 18mm 16mm 22mm; }
+/** 标题 id(批次 2 锚点目录/内部跳转底座):seen 在渲染闭包内维护,按文档顺序去重。
+ *  注意:markdown-it 14.3 的 heading_open token 不带 content(初始为 "" 且不填充,
+ *  标题纯文本落在下一个 inline token 上),故用 || 兜底取 tokens[idx + 1].content;
+ *  若契约声明的 token.content 非空则优先使用。 */
+function overrideHeadingIdRule(md: MarkdownIt, seen: Map<string, number>): void {
+  const defaultRule = md.renderer.rules.heading_open;
+  md.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
+    const token = tokens[idx];
+    const text = token.content || tokens[idx + 1]?.content || "";
+    token.attrSet("id", uniqueSlug(text, seen));
+    return defaultRule
+      ? defaultRule(tokens, idx, options, env, self)
+      : self.renderToken(tokens, idx, options);
+  };
+}
+
+/** 转换矩阵与 docx 路线对齐的文档模板样式(分页、中文字体、代码高亮、表格、跨页避让)。
+ *  @page 尺寸/边距由 pageSetup 生成(margin 顺序 top right bottom left);
+ *  breakBeforeH1 为 true 时追加一级标题前分页规则。 */
+function buildTemplateCss(pageSetup: PageSetup, breakBeforeH1: boolean): string {
+  const size = pageSetup.paper + (pageSetup.orientation === "landscape" ? " landscape" : "");
+  const { marginTop, marginRight, marginBottom, marginLeft } = pageSetup;
+  return `
+  @page { size: ${size}; margin: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm; }
+  .page-break { break-before: page; height: 0; }
   * { box-sizing: border-box; }
 
   /* 基础排版:1.65 行高兼顾中英混排;orphans/widows 保证跨页段落不零碎 */
@@ -160,15 +203,20 @@ const TEMPLATE_CSS = `
   .hljs-addition { color: #116329; background: #dafbe1; }
   .hljs-emphasis { font-style: italic; }
   .hljs-strong { font-weight: 600; }
+${breakBeforeH1 ? `
+  /* 一级标题前分页(breakBeforeH1);文档首元素为 h1 时避免空白首页 */
+  h1 { break-before: page; }
+  body > h1:first-child { break-before: auto; }` : ""}
 `;
+}
 
-function buildTemplate(bodyHtml: string, title: string): string {
+function buildTemplate(bodyHtml: string, title: string, css: string): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <title>${escapeHtml(title)}</title>
-<style>${TEMPLATE_CSS}</style>
+<style>${css}</style>
 </head>
 <body>
 ${bodyHtml}
@@ -193,9 +241,16 @@ export async function renderPdfHtml(
   mdSource: string,
   options: RenderPdfHtmlOptions,
 ): Promise<string> {
+  const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
   const md = buildMarkdownIt();
   overrideImageRule(md, options.baseDir);
+  // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
+  overrideHeadingIdRule(md, new Map<string, number>());
   const title = options.title ?? "文档";
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource));
-  return buildTemplate(bodyHtml, title);
+  return buildTemplate(
+    bodyHtml,
+    title,
+    buildTemplateCss(pageSetup, options.breakBeforeH1 ?? false),
+  );
 }

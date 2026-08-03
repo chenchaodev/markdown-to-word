@@ -1,10 +1,13 @@
 import {
   AlignmentType,
+  Bookmark,
   BorderStyle,
   Document,
   HeadingLevel,
   ImageRun,
   Packer,
+  PageBreak,
+  PageOrientation,
   Paragraph,
   Table,
   TableCell,
@@ -27,22 +30,47 @@ import type {
   Table as MdTable,
 } from "mdast";
 import { CODE_FONT, CODE_SIZE, DEFAULT_FONT, LINK_COLOR } from "./theme.js";
+import { DEFAULT_PAGE_SETUP } from "../convert.js";
+import type { PageSetup } from "../convert.js";
+import { docxBookmarkId } from "../slug.js";
 
 /** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
 export type ImageResolver = (src: string) => Promise<Buffer | null>;
 
 export interface RenderOptions {
   imageResolver?: ImageResolver;
+  /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
+  pageSetup?: PageSetup;
+  /** 一级标题前分页(默认关) */
+  breakBeforeH1?: boolean;
 }
 
 interface Ctx {
   imageResolver?: ImageResolver;
   listLevel: number;
+  /** 一级标题前分页(默认关) */
+  breakBeforeH1?: boolean;
+}
+
+/** 纸张 mm 尺寸表(宽 × 高) */
+const PAPER_SIZES_MM: Record<PageSetup["paper"], { width: number; height: number }> = {
+  A4: { width: 210, height: 297 },
+  A3: { width: 297, height: 420 },
+  A5: { width: 148, height: 210 },
+  Letter: { width: 215.9, height: 279.4 },
+  Legal: { width: 215.9, height: 355.6 },
+};
+
+/** mm → twips(docx 长度单位;1mm = 56.6929 twips,四舍五入) */
+function mmToTwips(mm: number): number {
+  return Math.round(mm * 56.6929);
 }
 
 /** G1 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理) */
 function isSupportedBlock(node: RootContent): node is BlockContent {
-  return ["heading", "paragraph", "list", "table", "code", "blockquote", "thematicBreak"].includes(node.type);
+  return ["heading", "paragraph", "list", "table", "code", "blockquote", "thematicBreak", "html"].includes(
+    node.type,
+  );
 }
 
 /** 列表编号配置:bullet 与 decimal 各一套,0-3 级缩进(docx 9.x:Document 直接收 INumberingOptions) */
@@ -73,14 +101,34 @@ function numberingOptions(): INumberingOptions {
  * core 层保持无 IO:图片一律经 imageResolver 注入(由调用方负责读文件)。
  */
 export async function renderDocx(ast: Root, options: RenderOptions = {}): Promise<Buffer> {
-  const ctx: Ctx = { imageResolver: options.imageResolver, listLevel: 0 };
+  const ctx: Ctx = {
+    imageResolver: options.imageResolver,
+    listLevel: 0,
+    breakBeforeH1: options.breakBeforeH1,
+  };
   const children: (Paragraph | Table)[] = [];
   for (const node of ast.children) {
     if (isSupportedBlock(node)) {
       children.push(...(await renderBlock(node, ctx)));
     }
-    // html / definition 等:跳过不渲染
+    // definition 等:跳过不渲染
   }
+  const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
+  const paper = PAPER_SIZES_MM[pageSetup.paper];
+  const landscape = pageSetup.orientation === "landscape";
+  // docx 库在 orientation=landscape 时自动交换 width/height 写入 pgSz,
+  // 故此处始终传原始(纵向)尺寸,勿手动交换(实测:手动交换会双重交换导致宽高反)
+  const size = {
+    width: mmToTwips(paper.width),
+    height: mmToTwips(paper.height),
+    orientation: landscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
+  };
+  const margin = {
+    top: mmToTwips(pageSetup.marginTop),
+    bottom: mmToTwips(pageSetup.marginBottom),
+    left: mmToTwips(pageSetup.marginLeft),
+    right: mmToTwips(pageSetup.marginRight),
+  };
   const doc = new Document({
     styles: {
       default: {
@@ -90,7 +138,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
       },
     },
     numbering: numberingOptions(),
-    sections: [{ children }],
+    sections: [{ properties: { page: { size, margin } }, children }],
   });
   return Packer.toBuffer(doc);
 }
@@ -113,6 +161,12 @@ async function renderBlock(node: BlockContent, ctx: Ctx): Promise<(Paragraph | T
       return renderBlockquote(node, ctx);
     case "thematicBreak":
       return [renderThematicBreak()];
+    case "html":
+      // 显式分页符:<!-- page-break -->(trim 后精确匹配);其他 html 跳过
+      if (node.value.trim() === "<!-- page-break -->") {
+        return [new Paragraph({ children: [new PageBreak()] })];
+      }
+      return [];
     default:
       return [];
   }
@@ -127,10 +181,18 @@ function renderHeading(node: Heading, ctx: Ctx): Paragraph {
     5: HeadingLevel.HEADING_5,
     6: HeadingLevel.HEADING_6,
   };
+  const runs = renderPhrasingSync(node.children, ctx);
+  // parse.ts 将标题 id 挂于 data.id(mdast Data 已声明合并,见 parse.ts)
+  const id = node.data?.id;
   return new Paragraph({
     heading: levels[node.depth] ?? HeadingLevel.HEADING_6,
     spacing: { before: 240, after: 120 },
-    children: renderPhrasingSync(node.children, ctx),
+    pageBreakBefore: node.depth === 1 && ctx.breakBeforeH1 === true,
+    // docx 9.x Paragraph 无 bookmarks 选项:书签以 Bookmark 组件包裹标题 runs 实现
+    children:
+      typeof id === "string" && id !== ""
+        ? [new Bookmark({ id: docxBookmarkId(id), children: runs })]
+        : runs,
   });
 }
 

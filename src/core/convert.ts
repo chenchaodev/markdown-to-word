@@ -12,6 +12,26 @@ import type { Root, Node } from "mdast";
 
 export type ConvertFormat = "docx" | "pdf";
 
+/** 页面设置(批次 1:docx section / pdf @page 参数化;单位 mm)。 */
+export interface PageSetup {
+  paper: "A4" | "A3" | "A5" | "Letter" | "Legal";
+  orientation: "portrait" | "landscape";
+  marginTop: number;
+  marginBottom: number;
+  marginLeft: number;
+  marginRight: number;
+}
+
+/** 默认页面设置:近似 Word 默认(A4 纵向,上下 25mm 左右 32mm)。 */
+export const DEFAULT_PAGE_SETUP: PageSetup = {
+  paper: "A4",
+  orientation: "portrait",
+  marginTop: 25,
+  marginBottom: 25,
+  marginLeft: 32,
+  marginRight: 32,
+};
+
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */
   baseDir: string;
@@ -21,6 +41,10 @@ export interface ConvertContext {
   title?: string;
   /** 警告收集器(可选):转换中发现的非致命问题(如缺失图片)追加至此 */
   warnings?: string[];
+  /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
+  pageSetup?: PageSetup;
+  /** 一级标题前分页(默认关) */
+  breakBeforeH1?: boolean;
 }
 
 /**
@@ -86,6 +110,8 @@ export async function convert(
       html: await renderPdfHtml(md, {
         baseDir: context.baseDir,
         title: context.title,
+        pageSetup: context.pageSetup,
+        breakBeforeH1: context.breakBeforeH1,
       }),
       footerTemplate: PDF_FOOTER_TEMPLATE,
     };
@@ -94,6 +120,8 @@ export async function convert(
     kind: "docx",
     buffer: await renderDocx(ast, {
       imageResolver: context.imageResolver,
+      pageSetup: context.pageSetup,
+      breakBeforeH1: context.breakBeforeH1,
     }),
   };
 }
