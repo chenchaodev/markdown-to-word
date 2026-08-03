@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.6.0] - 2026-08-03
+- 二期批次 1「排版控制 + 设置底座」完成
+  - 设置持久化:`src/main/settings.ts` 手写 userData/settings.json(原子写/整文件形状校验/patch 白名单 sanitize);记忆输出格式/页面设置/H1 分页开关/导出后行为;IPC settings:get/set + preload 4 新 API
+  - 导出后行为:完成弹窗新增「打开所在文件夹/打开文件」按钮(shell:reveal/shell:open IPC);设置项控制转换后自动执行(默认不自动,防打断)
+  - 分页控制:显式分页符 `<!-- page-break -->`(docx PageBreak / pdf 白名单 page-break div,裸 HTML 其余转义)+ H1 前分页开关(docx pageBreakBefore / pdf break-before CSS,默认关)
+  - 页面设置面板(完整版):纸张 A4/A3/A5/Letter/Legal、纵向/横向、四边距 mm(docx section pgSz/pgMar 参数化、pdf @page size/margin 参数化);UI 即时生效自动保存
+  - 标题 slug/id 底座:`src/core/slug.ts` + mdast 标题 data.id 声明合并;docx 标题书签 / pdf 标题 id(批次 2 TOC 铺路)
+  - 修复:docx landscape 宽高双重交换 bug(库自动交换,勿手动)
+- 验证:typecheck/build/smoke 全通过;双格式渲染断言 17 项(分页符/书签/pgSz/边距/转义/去重);分页符 PDF 页数确定性验证(/Count=2);验收样例 output/批次1验收-*.docx 待 Word/WPS 实测
+
 ## [0.5.4] - 2026-08-02
 - 应用图标:build/icon.svg(「源文档 → 转换 → 输出文档」蓝渐变 Win11 风格,纯几何无字体依赖)+ scripts/svg-to-ico.mjs(SVG → 6 尺寸 ICO)
 - 打包验证:exe 图标生效(无 default icon 警告,32x32 提取成功),安装包 89.5MB
