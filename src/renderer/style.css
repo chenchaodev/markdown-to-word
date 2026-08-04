@@ -13,6 +13,7 @@
   --accent-soft: #e6f1fb;
   --error: #c42b1c;
   --warning: #9a6700;
+  --success: #107c10;
   --radius: 12px;
   --radius-sm: 6px;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
@@ -83,6 +84,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden; /* 多文件列表在内部滚动,不撑破卡片 */
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius);
   background: #fafafa;
@@ -180,6 +182,58 @@ body {
   margin: 10px 0 0;
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+/* 拖放区多文件态:数量 + 可滚动名称列表 */
+.drop-multi {
+  align-self: stretch;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 28px 14px;
+  text-align: left;
+  min-height: 0;
+}
+
+.multi-count {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multi-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  user-select: text;
+}
+
+.multi-item {
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--border);
+}
+
+.multi-item:last-child {
+  border-bottom: 0;
+}
+
+.multi-item:hover {
+  background: #f6f6f6;
 }
 
 /* 状态区 */
@@ -599,4 +653,102 @@ body {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* 批量结果汇总弹窗:限高,结果列表内部滚动 */
+.dialog--batch {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 100%);
+  max-height: calc(100vh - 48px);
+}
+
+.batch-summary {
+  margin: 8px 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.batch-summary--fail {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.batch-result-list {
+  flex: 1;
+  min-height: 0;
+  max-height: 360px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  background: #fafafa;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.batch-result-list:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.batch-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.batch-item:last-child {
+  border-bottom: 0;
+}
+
+.batch-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-item-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.batch-item--success .batch-item-icon {
+  color: var(--success);
+}
+
+.batch-item--fail .batch-item-icon {
+  color: var(--error);
+}
+
+.batch-item-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+.batch-item-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0 24px;
+}
+
+.batch-item-msg {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  word-break: break-all;
+  user-select: text;
+}
+
+.batch-item-msg--error {
+  color: var(--error);
+}
+
+.batch-item-msg--warning {
+  color: var(--warning);
 }

@@ -4,8 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
-import { convert, type ConvertFormat } from "../core/convert.js";
-import { createImageResolver } from "./image-downloader.js";
+import { convert, type ConvertFormat, type PdfArtifact } from "../core/convert.js";
+import { mergeMarkdowns } from "../core/merge.js";
+import { createImageResolver, type ImageResolver } from "./image-downloader.js";
 import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,45 @@ export interface ConvertResult {
   error?: string;
   /** 非致命警告(如缺失本地图片),成功时可能携带 */
   warnings?: string[];
+}
+
+export interface ConvertOptions {
+  /** 批量模式跳过 runAfterConvert(避免批量后自动打开 N 个文件) */
+  skipAfterConvert?: boolean;
+}
+
+export interface BatchProgressInfo {
+  index: number;
+  total: number;
+  file: string;
+  stage: string;
+}
+
+export interface BatchItem {
+  file: string;
+  ok: boolean;
+  outputPath?: string;
+  error?: string;
+  warnings?: string[];
+}
+
+export interface BatchResult {
+  ok: true;
+  items: BatchItem[];
+  okCount: number;
+  failCount: number;
+}
+
+/** 批量共享 imageResolver:按 baseDir 缓存,HTTP 去重缓存跨文件生效(转换后不清理,键为路径,无泄漏风险) */
+const resolverCache = new Map<string, ImageResolver>();
+
+function getImageResolver(baseDir: string): ImageResolver {
+  let resolver = resolverCache.get(baseDir);
+  if (!resolver) {
+    resolver = createImageResolver(baseDir);
+    resolverCache.set(baseDir, resolver);
+  }
+  return resolver;
 }
 
 function createWindow(): BrowserWindow {
@@ -45,6 +85,7 @@ export async function convertImpl(
   filePath: string,
   format: ConvertFormat,
   onProgress?: (stage: string) => void,
+  options?: ConvertOptions,
 ): Promise<{ outputPath: string; warnings: string[] }> {
   if (!/\.(md|markdown)$/i.test(filePath)) {
     throw new Error("仅支持 .md / .markdown 文件");
@@ -61,19 +102,31 @@ export async function convertImpl(
     warnings,
     pageSetup: settings.pageSetup,
     breakBeforeH1: settings.breakBeforeH1,
-    // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重
-    imageResolver: createImageResolver(path.dirname(filePath)),
+    // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
+    imageResolver: getImageResolver(path.dirname(filePath)),
   });
 
   if (artifact.kind === "docx") {
     const outputPath = filePath.replace(/\.(md|markdown)$/i, ".docx");
     await fs.writeFile(outputPath, artifact.buffer);
     onProgress?.("done");
-    await runAfterConvert(settings.afterConvert, outputPath);
+    if (!options?.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
     return { outputPath, warnings };
   }
 
-  // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘
+  // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘(与合并共用 renderPdf)
+  const outputPath = filePath.replace(/\.(md|markdown)$/i, ".pdf");
+  await renderPdf(artifact, outputPath);
+  onProgress?.("done");
+  if (!options?.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
+  return { outputPath, warnings };
+}
+
+/**
+ * pdf 产物落盘:临时 HTML → 隐藏窗口 printToPDF → 写输出文件。
+ * 单文件/合并共用;临时文件与窗口在 finally 中清理,失败也会销毁窗口。
+ */
+async function renderPdf(artifact: PdfArtifact, outputPath: string): Promise<void> {
   const htmlPath = path.join(os.tmpdir(), `m2w-${process.pid}-${Date.now()}.html`);
   const printWin = new BrowserWindow({
     show: false,
@@ -91,11 +144,7 @@ export async function convertImpl(
       headerTemplate: "<span></span>",
       footerTemplate: artifact.footerTemplate,
     });
-    const outputPath = filePath.replace(/\.(md|markdown)$/i, ".pdf");
     await fs.writeFile(outputPath, data);
-    onProgress?.("done");
-    await runAfterConvert(settings.afterConvert, outputPath);
-    return { outputPath, warnings };
   } finally {
     printWin.destroy();
     await fs.rm(htmlPath, { force: true });
@@ -115,6 +164,121 @@ async function runAfterConvert(action: AppSettings["afterConvert"], outputPath: 
     const error = await shell.openPath(outputPath);
     if (error) console.log(`[afterConvert] 打开失败: ${error}`);
   }
+}
+
+/**
+ * 批量转换:并发上限 2 的简单池,每文件独立 convertImpl,失败不中断。
+ * 批量模式跳过 runAfterConvert;进度经 onProgress 上报(index 从 1 开始,file=文件名)。
+ */
+export async function batchConvertImpl(
+  files: string[],
+  format: ConvertFormat,
+  onProgress?: (info: BatchProgressInfo) => void,
+): Promise<BatchResult> {
+  const total = files.length;
+  const items: BatchItem[] = new Array<BatchItem>(total);
+  let okCount = 0;
+  let failCount = 0;
+  let next = 0; // 下一个待取任务的索引(worker 共享,JS 单线程自增安全)
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = next++;
+      if (index >= total) return;
+      const file = files[index];
+      const send = (stage: string): void =>
+        onProgress?.({ index: index + 1, total, file: path.basename(file), stage });
+      try {
+        const { outputPath, warnings } = await convertImpl(file, format, send, { skipAfterConvert: true });
+        items[index] = { file, ok: true, outputPath, warnings };
+        okCount++;
+      } catch (err) {
+        items[index] = { file, ok: false, error: err instanceof Error ? err.message : String(err) };
+        failCount++;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(2, total) }, () => worker()));
+  return { ok: true, items, okCount, failCount };
+}
+
+/**
+ * 合并转换:读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片绝对化)→ 单次 convert。
+ * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;执行 runAfterConvert(单输出,与单文件一致)。
+ * 任一步失败直接抛(调用方 catch 为 { ok:false, error })。
+ */
+export async function mergeConvertImpl(files: string[], format: ConvertFormat): Promise<ConvertResult> {
+  if (files.length === 0) throw new Error("未选择文件");
+  const settings = await loadSettings();
+  const inputs = await Promise.all(
+    files.map(async (file) => ({ content: await fs.readFile(file, "utf8"), baseDir: path.dirname(file) })),
+  );
+  const mergedMd = mergeMarkdowns(inputs);
+  const baseName = path.basename(files[0]).replace(/\.(md|markdown)$/i, "");
+  const warnings: string[] = [];
+  const artifact = await convert(mergedMd, format, {
+    baseDir: path.dirname(files[0]),
+    title: baseName,
+    warnings,
+    pageSetup: settings.pageSetup,
+    breakBeforeH1: settings.breakBeforeH1,
+    imageResolver: getImageResolver(path.dirname(files[0])),
+  });
+  const outputPath = path.join(
+    path.dirname(files[0]),
+    `${baseName}-合并${format === "docx" ? ".docx" : ".pdf"}`,
+  );
+  if (artifact.kind === "docx") {
+    await fs.writeFile(outputPath, artifact.buffer);
+  } else {
+    await renderPdf(artifact, outputPath);
+  }
+  await runAfterConvert(settings.afterConvert, outputPath);
+  return { ok: true, outputPath, warnings };
+}
+
+const MARKDOWN_EXT_RE = /\.(md|markdown)$/i;
+
+/**
+ * 收集 markdown 路径:目录递归收集其下所有 .md/.markdown 文件(跳过点开头的目录,如 .git),
+ * 文件直接保留;非 md 的传入路径进 skipped(目录内非 md 文件静默忽略,目录不列入 skipped)。
+ * 结果按字典序排序(大小写不敏感);seen 集合防符号链接循环。
+ */
+async function collectMarkdownPaths(paths: string[]): Promise<{ files: string[]; skipped: string[] }> {
+  const files: string[] = [];
+  const skipped: string[] = [];
+  const seen = new Set<string>();
+
+  async function visit(p: string, passedDirectly: boolean): Promise<void> {
+    const resolved = path.resolve(p);
+    if (seen.has(resolved)) return; // 循环保护
+    seen.add(resolved);
+    let st: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      st = await fs.stat(resolved);
+    } catch {
+      if (passedDirectly) skipped.push(p); // 不存在/无法访问的传入路径
+      return;
+    }
+    if (st.isDirectory()) {
+      const entries = await fs.readdir(resolved, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith(".")) continue; // 跳过 .git 等点开头目录
+        await visit(path.join(resolved, entry.name), false);
+      }
+      return;
+    }
+    if (MARKDOWN_EXT_RE.test(resolved)) {
+      files.push(resolved);
+    } else if (passedDirectly) {
+      skipped.push(p);
+    }
+  }
+
+  for (const p of paths) await visit(p, true);
+  files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  return { files, skipped };
 }
 
 /**
@@ -177,6 +341,16 @@ function registerIpc(): void {
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
+  // 选择多个 markdown 文件(批量/合并入口;取消返回 [])
+  ipcMain.handle("dialog:openMarkdowns", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "选择 Markdown 文件",
+      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+      properties: ["openFile", "multiSelections"],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
+
   // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示
   ipcMain.handle("convert", async (event, filePath: string, format: ConvertFormat): Promise<ConvertResult> => {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -189,7 +363,36 @@ function registerIpc(): void {
     }
   });
 
-  // 设置:读取 / 更新(更新经 updateSettings 白名单校验 + 原子持久化)
+  // 拖放路径收集:目录递归取 md,非 md 的传入路径进 skipped
+  ipcMain.handle(
+    "paths:collectMarkdown",
+    (_event, paths: string[]): Promise<{ files: string[]; skipped: string[] }> => {
+      return collectMarkdownPaths(Array.isArray(paths) ? paths : []);
+    },
+  );
+
+  // 批量转换:并发 2,失败不中断,进度走 batch:progress
+  ipcMain.handle(
+    "convert:batch",
+    async (event, files: string[], format: ConvertFormat): Promise<BatchResult | { ok: false; error: string }> => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const send = (info: BatchProgressInfo): void => win?.webContents.send("batch:progress", info);
+      try {
+        return await batchConvertImpl(files, format, send);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  // 合并转换:多文件 → mergeMarkdowns → 单次 convert,输出 {首文件名}-合并.{ext}
+  ipcMain.handle("convert:merge", async (_event, files: string[], format: ConvertFormat): Promise<ConvertResult> => {
+    try {
+      return await mergeConvertImpl(files, format);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
   ipcMain.handle("settings:get", (): AppSettings => loadSettings());
 
   ipcMain.handle("settings:set", (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
@@ -288,6 +491,41 @@ app.whenReady().then(async () => {
       const pdfHead = (await fs.readFile(pdfResult.outputPath)).subarray(0, 5).toString("latin1");
       if (pdfHead !== "%PDF-") throw new Error(`PDF 魔数校验失败: ${pdfHead}`);
       console.log(`[smoke] pdf convert ok: ${pdfResult.outputPath} (${pdfStat.size} bytes)`);
+      // 批次 3:批量转换(3 成功 + 1 缺失 → 汇总逐条正确)+ 合并转换(frontmatter 仅首个/图片嵌入/标题齐全)
+      const batchFiles = ["batch-a.md", "batch-b.md", "batch-c.md"].map((name) => path.join(outDir, name));
+      for (const [i, f] of batchFiles.entries()) {
+        await fs.writeFile(f, `# 批量文件 ${i + 1}\n\n正文 ${i + 1}\n`);
+      }
+      const batchMissing = path.join(outDir, "batch-missing.md"); // 故意不写盘
+      const batch = await batchConvertImpl([...batchFiles, batchMissing], "docx");
+      if (batch.okCount !== 3 || batch.failCount !== 1) {
+        throw new Error(`批量汇总错误: ok=${batch.okCount} fail=${batch.failCount}`);
+      }
+      const failItem = batch.items.find((i) => !i.ok);
+      if (failItem?.file !== batchMissing || !failItem.error) {
+        throw new Error("批量失败项汇总不正确");
+      }
+      for (const f of batchFiles) {
+        await fs.stat(f.replace(/\.md$/, ".docx")); // 批量产物存在
+      }
+      console.log(`[smoke] batch ok: 3 成功 1 失败(汇总逐条正确)`);
+      const mergeA = path.join(outDir, "merge-a.md");
+      const mergeB = path.join(outDir, "merge-b.md");
+      await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](g4-smoke.png)\n`);
+      await fs.writeFile(mergeB, `---\ntitle: 合并第二文件\n---\n\n# 合并第二章\n\n正文\n`);
+      const mergeResult = await mergeConvertImpl([mergeA, mergeB], "docx");
+      if (!mergeResult.ok || !mergeResult.outputPath?.endsWith("-合并.docx")) {
+        throw new Error(`合并输出异常: ${mergeResult.error ?? mergeResult.outputPath}`);
+      }
+      const mergeZip = await JSZip.loadAsync(await fs.readFile(mergeResult.outputPath));
+      const mergeXml = await mergeZip.file("word/document.xml")!.async("string");
+      if (!mergeXml.includes("合并第一章") || !mergeXml.includes("合并第二章")) {
+        throw new Error("合并产物缺少文件标题");
+      }
+      if (mergeXml.includes("合并第二文件")) throw new Error("合并产物残留后续 frontmatter title");
+      const mergeRels = await mergeZip.file("word/_rels/document.xml.rels")!.async("string");
+      if (!mergeRels.includes("image")) throw new Error("合并产物图片未嵌入");
+      console.log(`[smoke] merge ok: ${path.basename(mergeResult.outputPath)} (frontmatter/图片/标题正确)`);
     } catch (err) {
       console.error("[smoke] convert FAILED:", err);
       app.exit(1);

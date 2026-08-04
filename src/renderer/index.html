@@ -25,7 +25,7 @@
           class="drop-zone"
           role="button"
           tabindex="0"
-          aria-label="点击选择或拖入 Markdown 文件"
+          aria-label="点击选择或拖入 Markdown 文件(支持多个)"
           title="点击选择或拖入 Markdown 文件"
         >
           <!-- 默认提示态 -->
@@ -43,23 +43,30 @@
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <path d="M14 2v6h6" />
             </svg>
-            <p class="drop-title">将 Markdown 文件拖到此处</p>
+            <p class="drop-title">将 Markdown 文件或文件夹拖到此处</p>
             <p class="drop-or">或</p>
             <button type="button" id="selectBtn" class="btn btn-secondary">
               选择文件
             </button>
           </div>
 
-          <!-- 已选文件态 -->
+          <!-- 已选单文件态 -->
           <div id="dropFile" class="drop-file hidden">
             <p id="fileName" class="file-name"></p>
             <p id="filePath" class="file-path"></p>
             <p class="drop-change">点击或拖入新文件可更换</p>
           </div>
+
+          <!-- 已选多文件态:数量 + 可滚动文件列表 -->
+          <div id="dropMulti" class="drop-multi hidden">
+            <p id="multiCount" class="multi-count"></p>
+            <ul id="multiList" class="multi-list"></ul>
+            <p class="drop-change">点击或拖入可更换</p>
+          </div>
         </div>
       </section>
 
-      <!-- 状态区:路径 / 错误提示 -->
+      <!-- 状态区:路径 / 错误提示 / 批量进度 -->
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
       <!-- 页面设置:可折叠面板,改动即时生效并自动保存 -->
@@ -144,7 +151,7 @@
         </div>
       </details>
 
-      <!-- 底部操作栏:格式选择 + 转换按钮 -->
+      <!-- 底部操作栏:格式选择 + 转换按钮(单文件 / 批量 / 合并) -->
       <footer class="actions">
         <fieldset class="formats">
           <legend>输出格式</legend>
@@ -158,15 +165,34 @@
           </label>
         </fieldset>
         <div class="convert">
+          <!-- 单文件:开始转换;多文件:批量转换(主) + 合并转换(次),按选择数量切换 -->
           <button type="button" id="convertBtn" class="btn btn-primary" disabled>
             开始转换
           </button>
-          <span class="hint">转换功能开发中</span>
+          <button
+            type="button"
+            id="batchBtn"
+            class="btn btn-primary hidden"
+            title="为每个文件单独生成一个文档"
+            disabled
+          >
+            批量转换
+          </button>
+          <button
+            type="button"
+            id="mergeBtn"
+            class="btn btn-secondary hidden"
+            title="将所有文件合成一个文档,输出文件名含「-合并」"
+            disabled
+          >
+            合并转换
+          </button>
+          <span class="hint">输出格式:docx / PDF</span>
         </div>
       </footer>
     </main>
 
-    <!-- 转换完成弹窗(仅成功时弹出;失败保持状态区红字提示) -->
+    <!-- 转换完成弹窗(单文件 / 合并,仅成功时弹出;失败保持状态区红字提示) -->
     <div
       id="completeDialog"
       class="dialog-overlay hidden"
@@ -193,6 +219,33 @@
             </button>
           </div>
           <button type="button" id="completeDialogOk" class="btn btn-primary">
+            确定
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 批量转换结果汇总弹窗(成功失败均弹出,逐条展示) -->
+    <div
+      id="batchDialog"
+      class="dialog-overlay hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="batchDialogTitle"
+      aria-describedby="batchSummary"
+    >
+      <div class="dialog dialog--batch">
+        <h2 id="batchDialogTitle" class="dialog-title">批量转换完成</h2>
+        <p id="batchSummary" class="batch-summary"></p>
+        <ul id="batchResultList" class="batch-result-list" tabindex="0"></ul>
+        <p id="batchDialogError" class="dialog-error hidden" role="alert"></p>
+        <div class="dialog-actions">
+          <div class="dialog-actions-secondary">
+            <button type="button" id="batchDialogReveal" class="btn btn-secondary">
+              打开所在文件夹
+            </button>
+          </div>
+          <button type="button" id="batchDialogOk" class="btn btn-primary">
             确定
           </button>
         </div>

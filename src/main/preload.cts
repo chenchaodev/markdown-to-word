@@ -4,12 +4,27 @@ import type { AppSettings } from "./settings.js";
 
 contextBridge.exposeInMainWorld("api", {
   openMarkdownDialog: (): Promise<string | null> => ipcRenderer.invoke("dialog:openMarkdown"),
+  openMarkdowns: (): Promise<string[]> => ipcRenderer.invoke("dialog:openMarkdowns"),
+  collectMarkdowns: (paths: string[]): Promise<{ files: string[]; skipped: string[] }> =>
+    ipcRenderer.invoke("paths:collectMarkdown", paths),
   convert: (filePath: string, format: "docx" | "pdf") => ipcRenderer.invoke("convert", filePath, format),
+  convertBatch: (files: string[], format: "docx" | "pdf") =>
+    ipcRenderer.invoke("convert:batch", files, format),
+  convertMerge: (files: string[], format: "docx" | "pdf") =>
+    ipcRenderer.invoke("convert:merge", files, format),
   onConvertProgress: (cb: (stage: string) => void): (() => void) => {
     const listener = (_event: unknown, data: { stage: string }): void => cb(data.stage);
     ipcRenderer.on("convert:progress", listener);
     return () => {
       ipcRenderer.removeListener("convert:progress", listener);
+    };
+  },
+  onBatchProgress: (cb: (info: { index: number; total: number; file: string; stage: string }) => void): (() => void) => {
+    const listener = (_event: unknown, data: { index: number; total: number; file: string; stage: string }): void =>
+      cb(data);
+    ipcRenderer.on("batch:progress", listener);
+    return () => {
+      ipcRenderer.removeListener("batch:progress", listener);
     };
   },
   settingsGet: (): Promise<AppSettings> => ipcRenderer.invoke("settings:get"),
