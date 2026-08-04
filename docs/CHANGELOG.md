@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [0.8.1] - 2026-08-04
+- 批次 3 用户实测反馈与修复:
+  - 修复拖放取路径:File.path 已被 Electron 32+ 移除 → preload 暴露 `webUtils.getPathForFile`(文件/文件夹拖入均报「无法获取文件路径」)
+  - 文件列表排序:拖拽 + 上移/下移按钮,序号实时刷新,重排 selectedFiles 影响批量/合并顺序
+- 实测反馈:PDF 侧边栏书签为空(页面内目录正常)→ 批次 4 开工,书签优先
+
 ## [0.8.0] - 2026-08-04
 - 二期批次 3「批量 + 合并」完成
   - 批量转换:对话框多选 + 拖放多文件/文件夹(`paths:collectMarkdown` 递归收集,跳过点开头目录,字典序);队列并发 2(评审定稿,docx/pdf 统一);失败不中断,逐条汇总 `{ file, ok, outputPath?, error?, warnings? }`;批量模式跳过 runAfterConvert(防批量后自动打开 N 个文件);进度 `batch:progress`(第 i/N 个 + 阶段)
