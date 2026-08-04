@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.8.0] - 2026-08-04
+- 二期批次 3「批量 + 合并」完成
+  - 批量转换:对话框多选 + 拖放多文件/文件夹(`paths:collectMarkdown` 递归收集,跳过点开头目录,字典序);队列并发 2(评审定稿,docx/pdf 统一);失败不中断,逐条汇总 `{ file, ok, outputPath?, error?, warnings? }`;批量模式跳过 runAfterConvert(防批量后自动打开 N 个文件);进度 `batch:progress`(第 i/N 个 + 阶段)
+  - 多文件合并:`src/core/merge.ts` mergeMarkdowns(首文件 frontmatter 保留、后续剥离;图片相对路径 → 绝对,保留 title;`<!-- page-break -->` 拼接;空文件跳过);输出与首文件同目录 `{首文件名}-合并.{ext}`;封面/全局 TOC 自动成立(单文档渲染)
+  - imageResolver 跨文件共享:按 baseDir 缓存 createImageResolver(HTTP 去重缓存跨文件生效,规划风险项闭环)
+  - renderer:多文件列表态(数量 + 可滚动列表)、批量/合并双按钮(按选择数量切换)、批量进度状态区、批量结果汇总弹窗(逐条 ✓/✗ + 警告/错误,打开所在文件夹定位首个成功项)
+  - preload 新增 5 API:openMarkdowns / collectMarkdowns / convertBatch / convertMerge / onBatchProgress
+  - smoke 扩展:批量 3 成功 1 缺失(汇总逐条正确)+ 合并 docx(frontmatter 仅首个/图片嵌入/两文件标题齐全)
+- 验证:typecheck/build/smoke 全通过;验收样例 output/批次3验收 待用户 GUI 实测
+
 ## [0.7.0] - 2026-08-03
 - 二期批次 2「保真 + 正式文档化」完成
   - 外链图片下载嵌入:`src/main/image-downloader.ts` createImageResolver(本地读文件 + http(s) 下载 10s 超时/仅 2xx/同 URL 去重);docx 嵌入 + pdf 渲染后并发 3 下载转 data URL;失败保留原 URL + 警告(与缺失图片警告同构)
