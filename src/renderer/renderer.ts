@@ -18,6 +18,8 @@ declare global {
   interface Window {
     api: {
       openMarkdownDialog: () => Promise<string | null>;
+      /** 拖放文件 → 真实路径(File.path 已被 Electron 32+ 移除,须经主进程 webUtils 解析)。 */
+      getPathForFile: (file: File) => string;
       /** 多选文件对话框,返回所选文件路径数组;空数组 = 用户取消。 */
       openMarkdowns: () => Promise<string[]>;
       /** 展开拖入路径(文件 + 文件夹递归),过滤出 Markdown 文件;skipped 为被跳过的项。 */
@@ -667,11 +669,12 @@ dropZone.addEventListener("drop", (event) => {
   const files = event.dataTransfer?.files;
   if (!files || files.length === 0) return;
 
-  // Chromium 桌面端 File 对象带 path 属性(非 Web 标准,仅 Electron 可用);
+  // 拖放路径解析:File.path 已被 Electron 32+ 移除,须经 preload 的
+  // webUtils.getPathForFile 获取真实路径(文件夹同样适用);
   // 文件 + 文件夹路径统一交给主进程 collectMarkdowns 展开与过滤
   const paths: string[] = [];
   for (const file of Array.from(files)) {
-    const filePath = (file as File & { path?: string }).path;
+    const filePath = window.api.getPathForFile(file);
     if (filePath) paths.push(filePath);
   }
   if (paths.length === 0) {

@@ -1,8 +1,10 @@
 // preload:CJS 输出(preload.cjs),沙箱兼容;contextBridge 白名单暴露 API
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppSettings } from "./settings.js";
 
 contextBridge.exposeInMainWorld("api", {
+  /** 拖放取路径:File.path 已随 Electron 32+ 移除,须经 webUtils 解析(勿回退) */
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   openMarkdownDialog: (): Promise<string | null> => ipcRenderer.invoke("dialog:openMarkdown"),
   openMarkdowns: (): Promise<string[]> => ipcRenderer.invoke("dialog:openMarkdowns"),
   collectMarkdowns: (paths: string[]): Promise<{ files: string[]; skipped: string[] }> =>
