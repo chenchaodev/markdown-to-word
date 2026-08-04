@@ -9,6 +9,8 @@
  *   - 状态:1 个文件保持单文件态;≥2 个文件显示数量 + 可滚动名称列表。
  *   - 批量:convertBatch + onBatchProgress 实时进度,完成弹汇总弹窗逐条展示;
  *   - 合并:convertMerge 合成一个文档,复用现有完成弹窗。
+ * 二期批次 4:多文件列表排序(序号 + 上移/下移按钮 + 拖拽排序),直接重排
+ * selectedFiles 数组,批量 / 合并按新顺序执行(合并顺序即文档章节顺序)。
  * 导出后行为的自动执行由主进程在转换完成后按设置触发(runAfterConvert),
  * renderer 只负责持久化与弹窗内手动操作,避免重复执行。
  * 主进程 API 经 preload 以 window.api 暴露(contextIsolation),契约见下方类型声明。
@@ -210,6 +212,9 @@ let unsubscribeProgress: (() => void) | undefined;
 let unsubscribeBatchProgress: (() => void) | undefined;
 /** 最近一次批量结果(供弹窗「打开所在文件夹」定位成功项)。 */
 let lastBatchItems: BatchItem[] | null = null;
+/** 拖拽排序状态:源项下标 / 是否插到悬停项之后(-1 表示未在拖拽中)。 */
+let dragIndex = -1;
+let dragDropAfter = false;
 /** 当前设置的内存态(乐观更新,持久化走 settingsSet) */
 let settings: AppSettings = {
   ...DEFAULT_SETTINGS,
@@ -276,21 +281,95 @@ function renderSelection(): void {
     dropFile.classList.remove("hidden");
     dropMulti.classList.add("hidden");
   } else {
-    multiCount.textContent = `已选择 ${n} 个 Markdown 文件`;
-    multiList.replaceChildren(
-      ...selectedFiles.map((filePath) => {
-        const li = document.createElement("li");
-        li.className = "multi-item";
-        li.textContent = baseName(filePath);
-        li.title = filePath; // 截断展示,悬停看完整路径
-        return li;
-      }),
-    );
+    renderMultiList();
     dropDefault.classList.add("hidden");
     dropFile.classList.add("hidden");
     dropMulti.classList.remove("hidden");
   }
   updateActionButtons();
+}
+
+/** 重建多文件列表:序号 + 文件名 + 上移/下移按钮,严格按 selectedFiles 顺序渲染。 */
+function renderMultiList(): void {
+  const n = selectedFiles.length;
+  multiCount.textContent = `已选择 ${n} 个 Markdown 文件`;
+  multiList.replaceChildren(
+    ...selectedFiles.map((filePath, index) => {
+      const li = document.createElement("li");
+      li.className = "multi-item";
+      li.draggable = true; // 整行可拖拽排序
+      li.dataset.index = String(index);
+      li.title = filePath; // 截断展示,悬停看完整路径
+
+      const num = document.createElement("span");
+      num.className = "multi-index";
+      num.textContent = String(index + 1);
+
+      const name = document.createElement("span");
+      name.className = "multi-name";
+      name.textContent = baseName(filePath);
+
+      const actions = document.createElement("span");
+      actions.className = "multi-actions";
+      actions.append(
+        makeMoveButton("up", index > 0, baseName(filePath)),
+        makeMoveButton("down", index < n - 1, baseName(filePath)),
+      );
+
+      li.append(num, name, actions);
+      return li;
+    }),
+  );
+}
+
+/** 上移 / 下移图标按钮(首项上移、末项下移禁用)。 */
+function makeMoveButton(
+  dir: "up" | "down",
+  enabled: boolean,
+  fileName: string,
+): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "multi-move";
+  btn.dataset.dir = dir;
+  btn.disabled = !enabled;
+  btn.title = dir === "up" ? "上移" : "下移";
+  btn.setAttribute(
+    "aria-label",
+    `${dir === "up" ? "上移" : "下移"} ${fileName}`,
+  );
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", dir === "up" ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6");
+  svg.appendChild(path);
+  btn.appendChild(svg);
+  return btn;
+}
+
+/** 相邻交换并重建列表(上移 / 下移按钮共用)。 */
+function moveItem(index: number, offset: -1 | 1): void {
+  const target = index + offset;
+  if (index < 0 || target < 0 || target >= selectedFiles.length) return;
+  const [moved] = selectedFiles.splice(index, 1);
+  selectedFiles.splice(target, 0, moved);
+  renderMultiList();
+}
+
+/** 清理拖拽排序的临时状态与视觉类。 */
+function clearDragState(): void {
+  dragIndex = -1;
+  dragDropAfter = false;
+  multiList.querySelectorAll(".multi-item").forEach((el) => {
+    el.classList.remove("dragging", "drop-before", "drop-after");
+  });
 }
 
 /**
@@ -644,12 +723,97 @@ dropZone.addEventListener("keydown", (event) => {
   }
 });
 
-// 多文件列表:点击列表本身不触发换文件(避免滚动/复制文本时误开对话框)
-multiList.addEventListener("click", (event) => event.stopPropagation());
+// 多文件列表:点击列表本身不触发换文件(避免误开对话框);
+// 上移/下移按钮走事件委托,点击后重排 selectedFiles 并重建列表
+multiList.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (converting) return;
+  const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(
+    ".multi-move",
+  );
+  if (!btn) return;
+  const li = btn.closest<HTMLLIElement>(".multi-item");
+  if (!li) return;
+  const index = Number(li.dataset.index);
+  const dir = btn.dataset.dir;
+  moveItem(index, dir === "up" ? -1 : 1);
+});
+
+// 拖拽排序(HTML5 drag events):列表位于可滚动容器内,悬停边缘时自动滚动。
+// 所有内部拖拽事件 stopPropagation,避免触发拖放区的外部文件高亮 / 换文件逻辑。
+multiList.addEventListener("dragstart", (event) => {
+  if (converting) {
+    event.preventDefault();
+    return;
+  }
+  const li = (event.target as HTMLElement).closest<HTMLLIElement>(
+    ".multi-item",
+  );
+  if (!li) return;
+  dragIndex = Number(li.dataset.index);
+  dragDropAfter = false;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    // 部分平台需 setData 才会启动拖拽
+    event.dataTransfer.setData("text/plain", String(dragIndex));
+  }
+  li.classList.add("dragging");
+});
+
+multiList.addEventListener("dragover", (event) => {
+  event.preventDefault(); // 允许 drop
+  event.stopPropagation(); // 不触发拖放区的外部拖入高亮
+  if (dragIndex < 0 || converting) return;
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  const li = (event.target as HTMLElement).closest<HTMLLIElement>(
+    ".multi-item",
+  );
+  if (!li) return;
+  const targetIndex = Number(li.dataset.index);
+  const rect = li.getBoundingClientRect();
+  dragDropAfter = event.clientY > rect.top + rect.height / 2;
+
+  // 更新插入指示:目标项上/下沿高亮
+  multiList.querySelectorAll(".multi-item").forEach((el) => {
+    el.classList.remove("drop-before", "drop-after");
+  });
+  if (targetIndex !== dragIndex) {
+    li.classList.add(dragDropAfter ? "drop-after" : "drop-before");
+  }
+
+  // 列表边缘自动滚动(拖到可视区上下沿时)
+  const listRect = multiList.getBoundingClientRect();
+  const threshold = 36;
+  if (event.clientY < listRect.top + threshold) multiList.scrollTop -= 14;
+  else if (event.clientY > listRect.bottom - threshold) multiList.scrollTop += 14;
+});
+
+multiList.addEventListener("drop", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  if (dragIndex < 0 || converting) return;
+  const li = (event.target as HTMLElement).closest<HTMLLIElement>(
+    ".multi-item",
+  );
+  if (!li || Number(li.dataset.index) === dragIndex) {
+    clearDragState(); // 落在自身或列表空白处:放弃
+    return;
+  }
+  const targetIndex = Number(li.dataset.index);
+  let insertAt = dragDropAfter ? targetIndex + 1 : targetIndex;
+  if (insertAt > dragIndex) insertAt -= 1; // 移除源项后目标下标前移
+  const [moved] = selectedFiles.splice(dragIndex, 1);
+  selectedFiles.splice(insertAt, 0, moved);
+  renderMultiList();
+  clearDragState();
+});
+
+multiList.addEventListener("dragend", () => clearDragState());
 
 // 拖放:dragover 必须 preventDefault,否则 drop 不会触发
 dropZone.addEventListener("dragover", (event) => {
   event.preventDefault();
+  if (dragIndex >= 0) return; // 内部排序拖拽:不显示外部拖入高亮
   dropZone.classList.add("dragover");
 });
 
@@ -664,6 +828,10 @@ dropZone.addEventListener("dragleave", (event) => {
 dropZone.addEventListener("drop", (event) => {
   event.preventDefault();
   dropZone.classList.remove("dragover");
+  if (dragIndex >= 0) {
+    clearDragState(); // 内部排序拖拽落到列表外:放弃排序
+    return;
+  }
   if (converting) return;
 
   const files = event.dataTransfer?.files;
