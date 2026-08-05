@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.9.0] - 2026-08-05
+- 二期批次 4「长文档」第一项:**PDF 书签大纲注入**(修复用户实测「PDF 侧边栏书签为空」)
+  - `src/core/pdf/bookmarks.ts`(纯逻辑,可单测):`lookupNamedDest`(名称树 + 旧式直接 /Dests 字典双兼容,PDFName key 百分号编码解码,PDFDict 间接目标取 /D)+ `setOutline`(marp setOutline 样板:嵌套 First/Last/Count、F 标志、页面 PDFRef 收集)+ `buildBookmarkTree`(扁平标题 → 按 level 嵌套)+ `injectBookmarks`(主入口,解析失败回退首页不抛错)
+  - `src/core/pdf/render.ts`:`extractHeadings` 抽出为公共导出(目录 HTML 与书签同源,从渲染后 HTML 提取 h1-h3 id+文本)
+  - `src/main/index.ts` renderPdf:printToPDF 后读 /Dests 命名目标 → 注入 Outlines(标题 id 即命名目标名,免文本定位);单文件 + 合并共用,无标题时原样落盘
+  - 中文标题 UTF-16BE hex(PDFHexString.fromText);依赖 pdf-lib(package.json 原已依赖 ^1.17.1)
+  - smoke 扩展:单文件 pdf + 合并 pdf 读回 Outlines,断言中文标题解码正确(覆盖用户实测场景回归)
+  - 验收样例:scripts/make-batch4-sample.mjs → output/批次4验收/01-简介-合并.pdf(18 条书签,嵌套层级正确)
+- 验证:typecheck/build/smoke 全通过;真实产物注入读回验证(Type/Count/中文标题/兄弟链/嵌套)
+
 ## [0.8.1] - 2026-08-04
 - 批次 3 用户实测反馈与修复:
   - 修复拖放取路径:File.path 已被 Electron 32+ 移除 → preload 暴露 `webUtils.getPathForFile`(文件/文件夹拖入均报「无法获取文件路径」)

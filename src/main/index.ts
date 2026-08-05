@@ -4,8 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
+import { PDFDict, PDFDocument, PDFHexString, PDFName } from "pdf-lib";
 import { convert, type ConvertFormat, type PdfArtifact } from "../core/convert.js";
 import { mergeMarkdowns } from "../core/merge.js";
+import { buildBookmarkTree, injectBookmarks } from "../core/pdf/bookmarks.js";
+import { extractHeadings } from "../core/pdf/render.js";
 import { createImageResolver, type ImageResolver } from "./image-downloader.js";
 import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
 
@@ -144,7 +147,15 @@ async function renderPdf(artifact: PdfArtifact, outputPath: string): Promise<voi
       headerTemplate: "<span></span>",
       footerTemplate: artifact.footerTemplate,
     });
-    await fs.writeFile(outputPath, data);
+    // 批次 4:从渲染后 HTML 提取标题(与目录同源,封面/目录本身非 h 标签不受影响),
+    // 注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即命名目标名,无需文本定位)。
+    // 无标题时原样落盘(输出为 Buffer → Uint8Array 无拷贝)。
+    const headings = extractHeadings(artifact.html);
+    const output =
+      headings.length > 0
+        ? await injectBookmarks(new Uint8Array(data), buildBookmarkTree(headings))
+        : new Uint8Array(data);
+    await fs.writeFile(outputPath, output);
   } finally {
     printWin.destroy();
     await fs.rm(htmlPath, { force: true });
@@ -491,6 +502,22 @@ app.whenReady().then(async () => {
       const pdfHead = (await fs.readFile(pdfResult.outputPath)).subarray(0, 5).toString("latin1");
       if (pdfHead !== "%PDF-") throw new Error(`PDF 魔数校验失败: ${pdfHead}`);
       console.log(`[smoke] pdf convert ok: ${pdfResult.outputPath} (${pdfStat.size} bytes)`);
+      // 批次 4:书签注入断言(读回 /Outlines,标题中文正确;覆盖用户实测「侧边栏书签为空」问题)
+      {
+        const outlineDoc = await PDFDocument.load(await fs.readFile(pdfResult.outputPath));
+        const outlinesRef = outlineDoc.catalog.get(PDFName.of("Outlines"));
+        if (!outlinesRef) throw new Error("PDF 缺少 Outlines 大纲");
+        const outlinesDict = outlineDoc.context.lookup(outlinesRef, PDFDict);
+        if (!outlinesDict) throw new Error("Outlines 字典解析失败");
+        const firstRef = outlinesDict.get(PDFName.of("First"));
+        if (!firstRef) throw new Error("大纲缺少 First 条目");
+        const firstDict = outlineDoc.context.lookup(firstRef, PDFDict);
+        const title = firstDict?.get(PDFName.of("Title"));
+        if (!(title instanceof PDFHexString) || title.decodeText() !== "G4 PDF 冒烟 中文标题") {
+          throw new Error(`书签标题异常: ${title?.toString()}`);
+        }
+        console.log(`[smoke] pdf 书签 ok: Outlines 注入,中文标题正确`);
+      }
       // 批次 3:批量转换(3 成功 + 1 缺失 → 汇总逐条正确)+ 合并转换(frontmatter 仅首个/图片嵌入/标题齐全)
       const batchFiles = ["batch-a.md", "batch-b.md", "batch-c.md"].map((name) => path.join(outDir, name));
       for (const [i, f] of batchFiles.entries()) {
@@ -526,6 +553,26 @@ app.whenReady().then(async () => {
       const mergeRels = await mergeZip.file("word/_rels/document.xml.rels")!.async("string");
       if (!mergeRels.includes("image")) throw new Error("合并产物图片未嵌入");
       console.log(`[smoke] merge ok: ${path.basename(mergeResult.outputPath)} (frontmatter/图片/标题正确)`);
+      // 批次 4:合并 PDF 书签断言(用户实测「合并 PDF 侧边栏书签为空」的直接回归场景)
+      const mergePdfResult = await mergeConvertImpl([mergeA, mergeB], "pdf");
+      if (!mergePdfResult.ok || !mergePdfResult.outputPath?.endsWith("-合并.pdf")) {
+        throw new Error(`合并 PDF 输出异常: ${mergePdfResult.error ?? mergePdfResult.outputPath}`);
+      }
+      {
+        const outlineDoc = await PDFDocument.load(await fs.readFile(mergePdfResult.outputPath));
+        const outlinesRef = outlineDoc.catalog.get(PDFName.of("Outlines"));
+        if (!outlinesRef) throw new Error("合并 PDF 缺少 Outlines 大纲");
+        const outlinesDict = outlineDoc.context.lookup(outlinesRef, PDFDict);
+        if (!outlinesDict) throw new Error("合并 PDF Outlines 字典解析失败");
+        const firstRef = outlinesDict.get(PDFName.of("First"));
+        if (!firstRef) throw new Error("合并 PDF 大纲缺少 First 条目");
+        const firstDict = outlineDoc.context.lookup(firstRef, PDFDict);
+        const title = firstDict?.get(PDFName.of("Title"));
+        if (!(title instanceof PDFHexString) || title.decodeText() !== "合并第一章") {
+          throw new Error(`合并 PDF 书签标题异常: ${title?.toString()}`);
+        }
+        console.log(`[smoke] merge pdf 书签 ok: 合并产物 Outlines 注入,中文标题正确`);
+      }
     } catch (err) {
       console.error("[smoke] convert FAILED:", err);
       app.exit(1);

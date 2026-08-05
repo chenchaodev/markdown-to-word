@@ -14,6 +14,7 @@ import { pathToFileURL } from "node:url";
 import { DEFAULT_PAGE_SETUP, type PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
 import { uniqueSlug } from "../slug.js";
+import type { PdfHeading } from "./bookmarks.js";
 
 /** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
 export type ImageResolver = (src: string) => Promise<Buffer | null>;
@@ -295,18 +296,29 @@ function decodeEntities(text: string): string {
 }
 
 /**
+ * 从渲染后正文提取 h1-h3 标题(id 由 overrideHeadingIdRule 生成,与正文锚点
+ * 一一对应)。目录 HTML 与 PDF 书签(批次 4)共用;标题文本剥行内标签 + 实体解码。
+ */
+export function extractHeadings(bodyHtml: string): PdfHeading[] {
+  const headings: PdfHeading[] = [];
+  for (const match of bodyHtml.matchAll(/<h([1-3])[^>]*id="([^"]+)"[^>]*>(.*?)<\/h\1>/g)) {
+    const [, level, id, raw] = match;
+    const text = decodeEntities(raw.replace(/<[^>]+>/g, ""));
+    headings.push({ level: Number(level), id, text });
+  }
+  return headings;
+}
+
+/**
  * 目录 HTML:从渲染后正文提取 h1-h3(id 由 overrideHeadingIdRule 生成,与正文锚点
  * 一一对应),生成无页码锚点链接列表(实测 printToPDF 保留页内锚点为可点击链接,
  * 含跨页)。标题文本剥行内标签 + 实体解码;标题不足 1 个返回空串(不生成目录)。
  * 输出:<div class="toc">…<ul>…</ul></div> + 分页 div。
  */
 function buildTocHtml(bodyHtml: string): string {
-  const items: string[] = [];
-  for (const match of bodyHtml.matchAll(/<h([1-3])[^>]*id="([^"]+)"[^>]*>(.*?)<\/h\1>/g)) {
-    const [, level, id, raw] = match;
-    const text = decodeEntities(raw.replace(/<[^>]+>/g, ""));
-    items.push(`<li class="toc-l${level}"><a href="#${id}">${escapeHtml(text)}</a></li>`);
-  }
+  const items = extractHeadings(bodyHtml).map(
+    ({ level, id, text }) => `<li class="toc-l${level}"><a href="#${id}">${escapeHtml(text)}</a></li>`,
+  );
   if (items.length === 0) return "";
   return (
     '<div class="toc">' +
