@@ -130,6 +130,7 @@ export async function convert(
       warnings,
       pageSetup: context.pageSetup,
       breakBeforeH1: context.breakBeforeH1,
+      title: context.title,
     }),
   };
 }

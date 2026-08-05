@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [0.10.0] - 2026-08-05
+- 二期批次 4「长文档」第二/三项:**脚注 + 页眉页脚页码**
+  - docx 页眉页脚:`src/core/docx/render.ts` 新增 `renderHeader`(文档标题居中灰色 7pt,仅 metadata.title/title 存在时生成)与 `renderFooter`(第 X 页 / 共 X 页,PageNumber.CURRENT/TOTAL_PAGES 域,与 PDF footerTemplate 文案一致);挂载于 sections[].headers/footers(9.x 仅支持 section 级);`RenderOptions` 增 `title`(convert.ts docx 分支透传 context.title)
+  - docx 脚注:Document 级 `footnotes` 配置 + `FootnoteReferenceRun(id)`(零新依赖,docx@9.7.1 内置);footnoteDefinition 预扫建索引,Ctx 带全局递增计数器(合并场景编号天然连续);重复引用各占新 id(与 markdown-it 编号语义对齐);定义内容复用现有块渲染(paragraph/list/code/blockquote/thematicBreak,table 跳过);标题等同步场景引用降级为字面 `[^label]`
+  - PDF 脚注:依赖 `@mdit/plugin-footnote@1.0.2`(peer 显式 markdown-it ^14.2.0,与 tasklist 同源);`buildMarkdownIt` 注册插件 + `buildTemplateCss` 追加 6 条脚注区样式(9pt/分隔线/防跨页);锚点为文档内链接,printToPDF 保留可点击
+  - 注意(HTML→PDF 固有行为):Chromium 不支持 `float: footnote`,PDF 脚注按文档流集中在内容末尾渲染,非页脚
+- 验收脚本:`scripts/make-batch4-sample.mjs` 重构(htmlToPdf 抽取 + 明文 zip 部件断言),新增 02-脚注测试.{docx,pdf}(docx 断言 footnotes.xml/footer1.xml/header1.xml 存在;pdf 断言 footnotes 区 + footnote-ref 结构)
+- 验证:typecheck/build 通过;验收脚本三项断言全通过(合并 PDF 18 条书签 + docx 部件 + pdf 脚注结构);待用户 Word/WPS + GUI 实测
+
 ## [0.9.1] - 2026-08-05
 - 修复书签点击不跳转(用户实测):destKeyText 对 PDFName key 直接 `decodeURIComponent(asString())` 永远匹配不上(内部编码 `%`→`#25`)→ 全部书签回退首页;改为 `decodeText()` 还原百分号形式再解码
 - smoke 补断言:`Dest[0] instanceof PDFRef`(单文件 + 合并两处),防「全部回退首页」类回归

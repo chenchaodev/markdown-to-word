@@ -7,6 +7,7 @@
  * - 任务列表 checkbox 有 Chromium 打印 bug,渲染后用 ☐/☑ 字符替代(打印稳定)
  */
 import MarkdownIt from "markdown-it";
+import { footnote } from "@mdit/plugin-footnote";
 import { tasklist } from "@mdit/plugin-tasklist";
 import hljs from "highlight.js/lib/common";
 import path from "node:path";
@@ -70,6 +71,7 @@ function buildMarkdownIt(): MarkdownIt {
     },
   });
   md.use(tasklist);
+  md.use(footnote);
   overrideHtmlRules(md);
   return md;
 }
@@ -208,6 +210,14 @@ function buildTemplateCss(pageSetup: PageSetup, breakBeforeH1: boolean): string 
   li > p:last-child { margin-bottom: 0; }
   li.task-list-item { list-style: none; margin-left: -18px; }
   li.task-list-item::before { content: ""; }
+  /* 脚注区:缩小字号与正文区分(Chromium 不支持 float: footnote,
+     脚注按文档流集中在内容末尾渲染,为 HTML→PDF 固有行为) */
+  .footnotes { font-size: 9pt; }
+  hr.footnotes-sep { border: none; border-top: 1px solid #d0d7de; margin: 16px 0 8px; }
+  ol.footnotes-list { padding-left: 22px; }
+  li.footnote-item { break-inside: avoid; }
+  sup.footnote-ref a { text-decoration: none; color: inherit; }
+  a.footnote-backref { text-decoration: none; margin-left: 2px; }
   del { color: #8c959f; }
 
   /* 代码高亮(GitHub Light 色板;printBackground 打印背景) */

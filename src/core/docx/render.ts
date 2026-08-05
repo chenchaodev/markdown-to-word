@@ -3,10 +3,14 @@ import {
   Bookmark,
   BorderStyle,
   Document,
+  Footer,
+  FootnoteReferenceRun,
+  Header,
   HeadingLevel,
   ImageRun,
   Packer,
   PageBreak,
+  PageNumber,
   PageOrientation,
   Paragraph,
   Table,
@@ -21,6 +25,7 @@ import type {
   BlockContent,
   Blockquote,
   Code,
+  FootnoteDefinition,
   Heading,
   Image,
   List,
@@ -43,6 +48,8 @@ export interface RenderOptions {
   imageResolver?: ImageResolver;
   /** frontmatter 元数据(metadata.title 存在时渲染封面页) */
   metadata?: DocMetadata;
+  /** 文档标题(docx 页眉用;优先级低于 metadata.title) */
+  title?: string;
   /** 警告收集(外链图片下载失败等,与缺失图片警告同构) */
   warnings?: string[];
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
@@ -57,6 +64,12 @@ interface Ctx {
   listLevel: number;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
+  /** 脚注定义索引:identifier → definition 节点(renderDocx 预扫) */
+  footnoteDefinitions: Map<string, FootnoteDefinition>;
+  /** 脚注收集器:引用渲染时写入,id 字符串从 "1" 起 */
+  footnotes: Record<string, { children: Paragraph[] }>;
+  /** 下一个脚注 id(可变对象,嵌套引用共用计数器) */
+  footnoteNextId: { value: number };
 }
 
 /** 纸张 mm 尺寸表(宽 × 高) */
@@ -113,7 +126,18 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     warnings: options.warnings,
     listLevel: 0,
     breakBeforeH1: options.breakBeforeH1,
+    footnoteDefinitions: new Map(),
+    footnotes: {},
+    footnoteNextId: { value: 1 },
   };
+  // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
+  const title = options.metadata?.title ?? options.title;
+  // 预扫脚注定义:identifier → definition 节点(正文循环跳过,引用渲染时取内容)
+  for (const node of ast.children) {
+    if (node.type === "footnoteDefinition") {
+      ctx.footnoteDefinitions.set(node.identifier, node);
+    }
+  }
   const children: (Paragraph | Table | TableOfContents)[] = [];
   // 封面页:metadata.title 存在时置于文档最前(独占一页,不计入标题层级/书签)
   if (options.metadata?.title) {
@@ -154,7 +178,16 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
       },
     },
     numbering: numberingOptions(),
-    sections: [{ properties: { page: { size, margin } }, children }],
+    // 空脚注表不生成 footnotes part(避免空 part 导致打开异常)
+    footnotes: Object.keys(ctx.footnotes).length > 0 ? ctx.footnotes : undefined,
+    sections: [
+      {
+        properties: { page: { size, margin } },
+        headers: title ? { default: renderHeader(title) } : undefined,
+        footers: { default: renderFooter() },
+        children,
+      },
+    ],
   });
   return Packer.toBuffer(doc);
 }
@@ -226,6 +259,32 @@ function renderTocPage(): (Paragraph | TableOfContents)[] {
     }),
     new Paragraph({ children: [new PageBreak()] }),
   ];
+}
+
+/** 页眉:文档标题居中灰色小字(size 14 = 7pt,颜色 888888);无标题时不调用 */
+function renderHeader(title: string): Header {
+  return new Header({
+    children: [new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: title, size: 14, color: "888888" })],
+    })],
+  });
+}
+
+/** 页脚:第 X 页 / 共 X 页 居中(与 PDF footerTemplate 文案一致;PageNumber 域) */
+function renderFooter(): Footer {
+  return new Footer({
+    children: [new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [
+        new TextRun({ text: "第 ", size: 14, color: "888888" }),
+        new TextRun({ size: 14, color: "888888", children: [PageNumber.CURRENT] }),
+        new TextRun({ text: " 页 / 共 ", size: 14, color: "888888" }),
+        new TextRun({ size: 14, color: "888888", children: [PageNumber.TOTAL_PAGES] }),
+        new TextRun({ text: " 页", size: 14, color: "888888" }),
+      ],
+    })],
+  });
 }
 
 async function renderBlock(node: BlockContent, ctx: Ctx): Promise<(Paragraph | Table)[]> {
@@ -379,8 +438,8 @@ interface RunStyle {
   strike?: boolean;
 }
 
-/** 段落内可出现的 docx 子元素:文本 run 或行内图片 */
-type InlineChild = TextRun | ImageRun;
+/** 段落内可出现的 docx 子元素:文本 run、行内图片或脚注引用 */
+type InlineChild = TextRun | ImageRun | FootnoteReferenceRun;
 
 /** 行内节点 → 元素数组;样式沿父子链累积传递 */
 async function renderPhrasing(
@@ -434,6 +493,15 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
     case "image":
       runs.push(await imageToDocx(node, ctx, style));
       break;
+    case "footnoteReference": {
+      const def = ctx.footnoteDefinitions.get(node.identifier);
+      if (def) {
+        const id = ctx.footnoteNextId.value++;
+        ctx.footnotes[String(id)] = { children: await renderFootnoteDefinition(def, ctx) };
+        runs.push(new FootnoteReferenceRun(id));
+      }
+      break;
+    }
     default:
       break;
   }
@@ -469,9 +537,40 @@ function pushRunsSync(runs: TextRun[], node: PhrasingContent, ctx: Ctx, style: R
     case "image":
       runs.push(new TextRun({ text: `[图片: ${node.alt || ""}]`, color: "808080" }));
       break;
+    case "footnoteReference":
+      // 同步场景(标题等)无脚注收集器:渲染为字面标记避免静默丢失
+      runs.push(new TextRun({ text: `[^${node.label ?? node.identifier}]`, ...style }));
+      break;
     default:
       break;
   }
+}
+
+/** 脚注定义内容 → Paragraph[](复用现有块渲染;table 等罕见块跳过) */
+async function renderFootnoteDefinition(def: FootnoteDefinition, ctx: Ctx): Promise<Paragraph[]> {
+  const paragraphs: Paragraph[] = [];
+  for (const child of def.children) {
+    switch (child.type) {
+      case "paragraph":
+        paragraphs.push(new Paragraph({ children: await renderPhrasing(child.children, ctx) }));
+        break;
+      case "list":
+        paragraphs.push(...(await renderList(child, ctx)));
+        break;
+      case "code":
+        paragraphs.push(renderCode(child));
+        break;
+      case "blockquote":
+        paragraphs.push(...(await renderBlockquote(child, ctx)));
+        break;
+      case "thematicBreak":
+        paragraphs.push(renderThematicBreak());
+        break;
+      default:
+        break; // table 等:跳过
+    }
+  }
+  return paragraphs;
 }
 
 /** 行内图片:经 resolver 加载为 ImageRun;失败时占位文本。
