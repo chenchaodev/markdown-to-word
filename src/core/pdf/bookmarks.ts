@@ -83,14 +83,21 @@ export function lookupNamedDest(doc: PDFDocument, name: string): PDFArray | null
   return null;
 }
 
-/** 命名目标 key → 文本:PDFName 为百分号编码 UTF-8(如 %E7%9B%AE%E6%A0%87=目标),PDFString/PDFHexString 按字面 */
+/**
+ * 命名目标 key → 文本:
+ * - PDFName:pdf-lib 的 asString() 返回内部编码(`%` 已转义为 `#25`),必须先
+ *   decodeText() 还原为百分号形式(如 `%E7%9B%AE%E6%A0%87`),再 decodeURIComponent
+ *   得到 UTF-8 中文(如「目标」);直接用 asString() 会永远匹配不上(实测坑,勿回退)
+ * - PDFString/PDFHexString:decodeText() 按字面/UTF-16BE 解码即可
+ */
 function destKeyText(key: unknown): string | null {
   if (key instanceof PDFString || key instanceof PDFHexString) return key.decodeText();
   if (key instanceof PDFName) {
+    const literal = key.decodeText(); // #25 → %,得到百分号编码形式
     try {
-      return decodeURIComponent(key.asString());
+      return decodeURIComponent(literal);
     } catch {
-      return key.asString();
+      return literal; // 非百分号编码(纯 ASCII 名)原样返回
     }
   }
   return null;

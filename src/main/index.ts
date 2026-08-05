@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
-import { PDFDict, PDFDocument, PDFHexString, PDFName } from "pdf-lib";
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
 import { convert, type ConvertFormat, type PdfArtifact } from "../core/convert.js";
 import { mergeMarkdowns } from "../core/merge.js";
 import { buildBookmarkTree, injectBookmarks } from "../core/pdf/bookmarks.js";
@@ -516,7 +516,12 @@ app.whenReady().then(async () => {
         if (!(title instanceof PDFHexString) || title.decodeText() !== "G4 PDF 冒烟 中文标题") {
           throw new Error(`书签标题异常: ${title?.toString()}`);
         }
-        console.log(`[smoke] pdf 书签 ok: Outlines 注入,中文标题正确`);
+        // 回归:书签 Dest[0] 必须是页面 PDFRef(曾全部回退首页致点击不跳转,见批次 4 修复)
+        const destArr = firstDict?.get(PDFName.of("Dest"));
+        if (!(destArr instanceof PDFArray) || !(destArr.asArray()[0] instanceof PDFRef)) {
+          throw new Error(`书签 Dest 异常: ${destArr?.toString()}`);
+        }
+        console.log(`[smoke] pdf 书签 ok: Outlines 注入,中文标题 + Dest 页面引用正确`);
       }
       // 批次 3:批量转换(3 成功 + 1 缺失 → 汇总逐条正确)+ 合并转换(frontmatter 仅首个/图片嵌入/标题齐全)
       const batchFiles = ["batch-a.md", "batch-b.md", "batch-c.md"].map((name) => path.join(outDir, name));
@@ -571,7 +576,12 @@ app.whenReady().then(async () => {
         if (!(title instanceof PDFHexString) || title.decodeText() !== "合并第一章") {
           throw new Error(`合并 PDF 书签标题异常: ${title?.toString()}`);
         }
-        console.log(`[smoke] merge pdf 书签 ok: 合并产物 Outlines 注入,中文标题正确`);
+        // 回归:合并书签 Dest[0] 必须是页面 PDFRef(曾全部回退首页致点击不跳转)
+        const destArr = firstDict?.get(PDFName.of("Dest"));
+        if (!(destArr instanceof PDFArray) || !(destArr.asArray()[0] instanceof PDFRef)) {
+          throw new Error(`合并 PDF 书签 Dest 异常: ${destArr?.toString()}`);
+        }
+        console.log(`[smoke] merge pdf 书签 ok: 合并产物 Outlines 注入,中文标题 + Dest 页面引用正确`);
       }
     } catch (err) {
       console.error("[smoke] convert FAILED:", err);
