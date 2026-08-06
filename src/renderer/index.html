@@ -151,6 +151,102 @@
         </div>
       </details>
 
+      <!-- 排版设置:可折叠面板,改动即时生效并自动保存 -->
+      <details id="typographyPanel" class="settings">
+        <summary class="settings-summary">
+          <span class="settings-summary-title">排版</span>
+          <span class="settings-summary-hint">字体、字号、行距与段落样式</span>
+        </summary>
+        <div class="settings-body">
+          <div class="settings-grid">
+            <div class="setting-field">
+              <label class="setting-label" for="fontAscii">
+                西文字体<span class="setting-label-hint">(正文中的字母与数字)</span>
+              </label>
+              <input
+                type="text"
+                id="fontAscii"
+                class="setting-input"
+                list="fontAsciiSuggestions"
+              />
+              <datalist id="fontAsciiSuggestions">
+                <option value="Calibri"></option>
+                <option value="Arial"></option>
+                <option value="Times New Roman"></option>
+                <option value="Consolas"></option>
+                <option value="Segoe UI"></option>
+              </datalist>
+            </div>
+
+            <div class="setting-field">
+              <label class="setting-label" for="fontEastAsia">
+                中文字体<span class="setting-label-hint">(正文中的汉字)</span>
+              </label>
+              <input
+                type="text"
+                id="fontEastAsia"
+                class="setting-input"
+                list="fontEastAsiaSuggestions"
+              />
+              <datalist id="fontEastAsiaSuggestions">
+                <option value="微软雅黑"></option>
+                <option value="宋体"></option>
+                <option value="黑体"></option>
+                <option value="楷体"></option>
+                <option value="仿宋"></option>
+                <option value="等线"></option>
+              </datalist>
+            </div>
+
+            <div class="setting-field">
+              <label class="setting-label" for="bodySizePt">
+                正文字号<span class="setting-label-hint">(pt)</span>
+              </label>
+              <input
+                type="number"
+                id="bodySizePt"
+                class="setting-number"
+                min="8"
+                max="24"
+                step="1"
+              />
+            </div>
+
+            <div class="setting-field">
+              <label class="setting-label" for="lineSpacing">
+                行距<span class="setting-label-hint">(倍数)</span>
+              </label>
+              <input
+                type="number"
+                id="lineSpacing"
+                class="setting-number"
+                min="1.0"
+                max="2.5"
+                step="0.1"
+              />
+            </div>
+
+            <label class="setting-check">
+              <input type="checkbox" id="firstLineIndent" />
+              <span>首行缩进 2 字符</span>
+            </label>
+
+            <label class="setting-check">
+              <input type="checkbox" id="alignJustify" />
+              <span>
+                两端对齐<span class="setting-label-hint">(取消后为左对齐)</span>
+              </span>
+            </label>
+
+            <label class="setting-check">
+              <input type="checkbox" id="headingNumbering" />
+              <span>章节自动编号</span>
+            </label>
+          </div>
+          <p class="settings-note">设置即时生效并自动保存</p>
+        </div>
+      </details>
+
       <!-- 底部操作栏:格式选择 + 转换按钮(单文件 / 批量 / 合并) -->
       <footer class="actions">
         <fieldset class="formats">

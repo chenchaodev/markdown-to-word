@@ -14,6 +14,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_PAGE_SETUP, type PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
+import type { TypographySettings } from "../typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../typography.js";
 import { uniqueSlug } from "../slug.js";
 import type { PdfHeading } from "./bookmarks.js";
 
@@ -33,9 +35,12 @@ export interface RenderPdfHtmlOptions {
   title?: string;
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
   pageSetup?: PageSetup;
+  /** 排版设置(缺省 DEFAULT_TYPOGRAPHY):模板 CSS body 字体/字号/行距 + 缩进/对齐 */
+  typography?: TypographySettings;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
-  /** 标题章节编号(1 / 1.1 / 1.1.1,与 docx 侧 decimal 编号语义一致;默认开) */
+  /** 标题章节编号(1 / 1.1 / 1.1.1,与 docx 侧 decimal 编号语义一致;
+   *  显式传值优先,否则取 typography.headingNumbering;默认开) */
   headingNumbering?: boolean;
 }
 
@@ -126,12 +131,14 @@ function overrideHeadingIdRule(md: MarkdownIt, seen: Map<string, number>): void 
 /** 转换矩阵与 docx 路线对齐的文档模板样式(分页、中文字体、代码高亮、表格、跨页避让)。
  *  @page 尺寸/边距由 pageSetup 生成(margin 顺序 top right bottom left);
  *  breakBeforeH1 为 true 时追加一级标题前分页规则;
+ *  typography 参数化 body 字体/字号/行距,并追加首行缩进/两端对齐规则;
  *  headingNumbering 为 true 时追加章节编号规则(与 docx 侧 decimal 编号语义一致)。
  *  注意:编号经 ::before 伪元素渲染,不进入 HTML 文本节点,
  *  故 extractHeadings/书签/目录文本不受影响(与 docx 侧书签不含编号一致)。 */
 function buildTemplateCss(
   pageSetup: PageSetup,
   breakBeforeH1: boolean,
+  typography: TypographySettings,
   headingNumbering: boolean,
 ): string {
   const size = pageSetup.paper + (pageSetup.orientation === "landscape" ? " landscape" : "");
@@ -145,10 +152,11 @@ function buildTemplateCss(
   .page-break + h1 { break-before: auto; }
   * { box-sizing: border-box; }
 
-  /* 基础排版:1.65 行高兼顾中英混排;orphans/widows 保证跨页段落不零碎 */
+  /* 基础排版:行高兼顾中英混排(排版设置参数化);orphans/widows 保证跨页段落不零碎。
+     字体/字号/行距由排版设置参数化(中文为主 + 西文衬底) */
   body {
-    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-    font-size: 11pt; line-height: 1.65; color: #1f2328; margin: 0;
+    font-family: "${typography.fontEastAsia}", "${typography.fontAscii}", sans-serif;
+    font-size: ${typography.bodySizePt}pt; line-height: ${typography.lineSpacing}; color: #1f2328; margin: 0;
     orphans: 2; widows: 2;
   }
 
@@ -264,6 +272,12 @@ ${headingNumbering ? `
   h1::before { content: counter(h1c) " "; }
   h2::before { content: counter(h1c) "." counter(h2c) " "; }
   h3::before { content: counter(h1c) "." counter(h2c) "." counter(h3c) " "; }` : ""}
+${typography.firstLineIndent ? `
+  /* 首行缩进 2 字符(排版设置;中文排版惯例,与 docx 侧 firstLineChars=200 语义一致) */
+  p { text-indent: 2em; }` : ""}
+${typography.align === "justify" ? `
+  /* 正文两端对齐(排版设置) */
+  p { text-align: justify; }` : ""}
 `;
 }
 
@@ -437,6 +451,7 @@ export async function renderPdfHtml(
   options: RenderPdfHtmlOptions,
 ): Promise<string> {
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
+  const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
   const md = buildMarkdownIt();
   overrideImageRule(md, options.baseDir);
   // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
@@ -449,9 +464,15 @@ export async function renderPdfHtml(
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
   const fullBody = buildCoverHtml(options.metadata) + buildTocHtml(bodyHtml) + bodyHtml;
   const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings);
+  // headingNumbering 优先级:显式选项 > typography 设置(默认 true,与 docx 侧一致)
   return buildTemplate(
     processedBody,
     title,
-    buildTemplateCss(pageSetup, options.breakBeforeH1 ?? false, options.headingNumbering ?? true),
+    buildTemplateCss(
+      pageSetup,
+      options.breakBeforeH1 ?? false,
+      typography,
+      options.headingNumbering ?? typography.headingNumbering,
+    ),
   );
 }

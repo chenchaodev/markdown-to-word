@@ -105,6 +105,7 @@ export async function convertImpl(
     title: path.basename(filePath).replace(/\.(md|markdown)$/i, ""),
     warnings,
     pageSetup: settings.pageSetup,
+    typography: settings.typography,
     breakBeforeH1: settings.breakBeforeH1,
     // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
     imageResolver: getImageResolver(path.dirname(filePath)),
@@ -237,6 +238,7 @@ export async function mergeConvertImpl(files: string[], format: ConvertFormat): 
     title: baseName,
     warnings,
     pageSetup: settings.pageSetup,
+    typography: settings.typography,
     breakBeforeH1: settings.breakBeforeH1,
     imageResolver: getImageResolver(path.dirname(files[0])),
   });
@@ -312,6 +314,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
       baseDir: path.dirname(mdPath),
       title: baseName,
       pageSetup: settings.pageSetup,
+      typography: settings.typography,
       breakBeforeH1: settings.breakBeforeH1,
       imageResolver: createImageResolver(path.dirname(mdPath)),
     });

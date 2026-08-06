@@ -10,11 +10,15 @@ import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { PageSetup } from "../core/convert.js";
 import { DEFAULT_PAGE_SETUP } from "../core/convert.js";
+import type { TypographySettings } from "../core/typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../core/typography.js";
 
 export interface AppSettings {
   version: 1;
   format: "docx" | "pdf";
   pageSetup: PageSetup;
+  /** 排版设置(字号/字体/行距/缩进/对齐/标题编号) */
+  typography: TypographySettings;
   /** H1 前分页(默认关) */
   breakBeforeH1: boolean;
   /** 导出后行为(默认不自动执行) */
@@ -25,6 +29,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   version: 1,
   format: "docx",
   pageSetup: { ...DEFAULT_PAGE_SETUP },
+  typography: { ...DEFAULT_TYPOGRAPHY },
   breakBeforeH1: false,
   afterConvert: "none",
 };
@@ -34,9 +39,10 @@ const FORMATS = ["docx", "pdf"] as const;
 const AFTER_CONVERT_ACTIONS = ["none", "show-in-folder", "open"] as const;
 const PAPERS = ["A4", "A3", "A5", "Letter", "Legal"] as const;
 const ORIENTATIONS = ["portrait", "landscape"] as const;
+const ALIGNS = ["left", "justify"] as const;
 const MARGIN_MIN_MM = 0;
 const MARGIN_MAX_MM = 1000;
-const SETTING_KEYS = ["version", "format", "pageSetup", "breakBeforeH1", "afterConvert"] as const;
+const SETTING_KEYS = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "afterConvert"] as const;
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
 let settingsCache: AppSettings | null = null;
@@ -82,7 +88,11 @@ export function loadSettings(): AppSettings {
   try {
     const raw = readFileSync(settingsFilePath(), "utf8");
     const parsed: unknown = JSON.parse(raw);
-    if (isValidSettings(parsed)) loaded = parsed;
+    if (isValidSettings(parsed)) {
+      // typography 不参与整文件形状校验:旧 settings.json 缺该字段时,
+      // 其余设置保留,typography 经 sanitize 自然落到默认,不报错
+      loaded = { ...parsed, typography: sanitizeTypography(parsed.typography) };
+    }
   } catch {
     // 缺文件 / 读取失败 / parse 失败 → 默认值(不写盘)
   }
@@ -133,6 +143,9 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
         if (pageSetup) out.pageSetup = pageSetup;
         break;
       }
+      case "typography":
+        out.typography = sanitizeTypography(src.typography);
+        break;
     }
   }
   return out;
@@ -151,5 +164,32 @@ function sanitizePageSetup(value: unknown): PageSetup | undefined {
   out.marginBottom = clamp(ps.marginBottom, DEFAULT_PAGE_SETUP.marginBottom);
   out.marginLeft = clamp(ps.marginLeft, DEFAULT_PAGE_SETUP.marginLeft);
   out.marginRight = clamp(ps.marginRight, DEFAULT_PAGE_SETUP.marginRight);
+  return out;
+}
+
+/**
+ * typography 逐字段校验:字体非空字符串、字号 8-24pt、行距 1.0-2.5、
+ * firstLineIndent/headingNumbering 布尔、align 枚举;任一非法(或缺失字段)
+ * → 该项回退 DEFAULT_TYPOGRAPHY 默认值。始终返回合法完整对象(整块兜底)。
+ */
+function sanitizeTypography(value: unknown): TypographySettings {
+  const src =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const out: TypographySettings = { ...DEFAULT_TYPOGRAPHY };
+  if (typeof src.fontAscii === "string" && src.fontAscii.trim() !== "") out.fontAscii = src.fontAscii;
+  if (typeof src.fontEastAsia === "string" && src.fontEastAsia.trim() !== "") {
+    out.fontEastAsia = src.fontEastAsia;
+  }
+  if (isFiniteNumber(src.bodySizePt) && src.bodySizePt >= 8 && src.bodySizePt <= 24) {
+    out.bodySizePt = src.bodySizePt;
+  }
+  if (isFiniteNumber(src.lineSpacing) && src.lineSpacing >= 1.0 && src.lineSpacing <= 2.5) {
+    out.lineSpacing = src.lineSpacing;
+  }
+  if (typeof src.firstLineIndent === "boolean") out.firstLineIndent = src.firstLineIndent;
+  if (isOneOf(src.align, ALIGNS)) out.align = src.align;
+  if (typeof src.headingNumbering === "boolean") out.headingNumbering = src.headingNumbering;
   return out;
 }

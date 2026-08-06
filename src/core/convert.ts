@@ -6,6 +6,7 @@
 import { parseMarkdown } from "./parse.js";
 import { parseFrontmatter } from "./frontmatter.js";
 import type { DocMetadata } from "./frontmatter.js";
+import type { TypographySettings } from "./typography.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml, PDF_FOOTER_TEMPLATE } from "./pdf/render.js";
 import { stat } from "node:fs/promises";
@@ -45,6 +46,8 @@ export interface ConvertContext {
   warnings?: string[];
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
   pageSetup?: PageSetup;
+  /** 排版设置(缺省 DEFAULT_TYPOGRAPHY;docx 与 pdf 双格式共用) */
+  typography?: TypographySettings;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
 }
@@ -120,6 +123,7 @@ export async function convert(
         warnings,
         imageResolver: context.imageResolver,
         pageSetup: context.pageSetup,
+        typography: context.typography,
         breakBeforeH1: context.breakBeforeH1,
       }),
       footerTemplate: PDF_FOOTER_TEMPLATE,
@@ -133,6 +137,7 @@ export async function convert(
       metadata,
       warnings,
       pageSetup: context.pageSetup,
+      typography: context.typography,
       breakBeforeH1: context.breakBeforeH1,
       title: context.title,
     }),

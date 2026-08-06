@@ -13,6 +13,9 @@
  * selectedFiles 数组,批量 / 合并按新顺序执行(合并顺序即文档章节顺序)。
  * 导出后行为的自动执行由主进程在转换完成后按设置触发(runAfterConvert),
  * renderer 只负责持久化与弹窗内手动操作,避免重复执行。
+ * 二期批次 5a:排版设置面板(西文/中文字体、字号、行距、首行缩进、两端对齐、章节编号)。
+ * renderer 侧类型、默认值与控件接线先行就位;主进程 settings.ts 的 typography 字段由
+ * 下一批次补充,因此加载设置时对缺失的 typography 按默认值兜底(防御性合并)。
  * 主进程 API 经 preload 以 window.api 暴露(contextIsolation),契约见下方类型声明。
  */
 
@@ -74,10 +77,29 @@ interface PageSetup {
   marginRight: number;
 }
 type AfterConvert = "none" | "show-in-folder" | "open";
+/** 排版设置:字体 / 字号 / 行距 / 段落样式(与主进程 settings.ts 契约一致)。 */
+type BodyAlign = "left" | "justify";
+interface TypographySettings {
+  /** 西文字体(正文拉丁字符) */
+  fontAscii: string;
+  /** 中文字体(正文汉字) */
+  fontEastAsia: string;
+  /** 正文字号 pt */
+  bodySizePt: number;
+  /** 行距倍数 */
+  lineSpacing: number;
+  /** 首行缩进 2 字符 */
+  firstLineIndent: boolean;
+  /** 正文对齐:两端对齐 / 左对齐 */
+  align: BodyAlign;
+  /** 章节自动编号 */
+  headingNumbering: boolean;
+}
 interface AppSettings {
   version: 1;
   format: "docx" | "pdf";
   pageSetup: PageSetup;
+  typography: TypographySettings;
   breakBeforeH1: boolean;
   afterConvert: AfterConvert;
 }
@@ -117,6 +139,15 @@ const DEFAULT_SETTINGS: AppSettings = {
     marginLeft: 32,
     marginRight: 32,
   },
+  typography: {
+    fontAscii: "Calibri",
+    fontEastAsia: "微软雅黑",
+    bodySizePt: 12,
+    lineSpacing: 1.5,
+    firstLineIndent: true,
+    align: "justify",
+    headingNumbering: true,
+  },
   breakBeforeH1: false,
   afterConvert: "none",
 };
@@ -124,6 +155,12 @@ const DEFAULT_SETTINGS: AppSettings = {
 /** 边距钳制范围,与主进程 sanitizePageSetup 一致 */
 const MARGIN_MIN = 0;
 const MARGIN_MAX = 1000;
+
+/** 字号与行距的合法范围(与控件 min/max 一致,范围外回显当前值) */
+const BODY_SIZE_MIN = 8;
+const BODY_SIZE_MAX = 24;
+const LINE_SPACING_MIN = 1.0;
+const LINE_SPACING_MAX = 2.5;
 
 export {};
 
@@ -171,6 +208,26 @@ const marginInputs = {
   marginLeft: document.getElementById("marginLeft") as HTMLInputElement,
   marginRight: document.getElementById("marginRight") as HTMLInputElement,
 };
+// 排版设置面板
+const fontAsciiInput = document.getElementById("fontAscii") as HTMLInputElement;
+const fontEastAsiaInput = document.getElementById(
+  "fontEastAsia",
+) as HTMLInputElement;
+const bodySizePtInput = document.getElementById(
+  "bodySizePt",
+) as HTMLInputElement;
+const lineSpacingInput = document.getElementById(
+  "lineSpacing",
+) as HTMLInputElement;
+const firstLineIndentInput = document.getElementById(
+  "firstLineIndent",
+) as HTMLInputElement;
+const alignJustifyInput = document.getElementById(
+  "alignJustify",
+) as HTMLInputElement;
+const headingNumberingInput = document.getElementById(
+  "headingNumbering",
+) as HTMLInputElement;
 // 完成弹窗附加按钮与错误提示
 const completeDialogReveal = document.getElementById(
   "completeDialogReveal",
@@ -219,6 +276,7 @@ let dragDropAfter = false;
 let settings: AppSettings = {
   ...DEFAULT_SETTINGS,
   pageSetup: { ...DEFAULT_SETTINGS.pageSetup },
+  typography: { ...DEFAULT_SETTINGS.typography },
 };
 /** 回填控件期间置位,避免回填触发 change 事件写回 */
 let hydratingSettings = false;
@@ -563,7 +621,13 @@ async function loadSettings(): Promise<void> {
   } catch {
     loaded = DEFAULT_SETTINGS;
   }
-  settings = { ...loaded, pageSetup: { ...loaded.pageSetup } };
+  // 防御性合并:主进程 settings.ts 尚未含 typography 时(旧版本),字段按默认值兜底
+  settings = {
+    ...DEFAULT_SETTINGS,
+    ...loaded,
+    pageSetup: { ...DEFAULT_SETTINGS.pageSetup, ...loaded.pageSetup },
+    typography: { ...DEFAULT_SETTINGS.typography, ...loaded.typography },
+  };
   hydratingSettings = true;
   applySettingsToControls();
   hydratingSettings = false;
@@ -581,6 +645,13 @@ function applySettingsToControls(): void {
       marginInputs[key].value = String(settings.pageSetup[key]);
     },
   );
+  fontAsciiInput.value = settings.typography.fontAscii;
+  fontEastAsiaInput.value = settings.typography.fontEastAsia;
+  bodySizePtInput.value = String(settings.typography.bodySizePt);
+  lineSpacingInput.value = String(settings.typography.lineSpacing);
+  firstLineIndentInput.checked = settings.typography.firstLineIndent;
+  alignJustifyInput.checked = settings.typography.align === "justify";
+  headingNumberingInput.checked = settings.typography.headingNumbering;
   breakBeforeH1Input.checked = settings.breakBeforeH1;
   afterConvertInputs.forEach(
     (input) => (input.checked = input.value === settings.afterConvert),
@@ -602,6 +673,11 @@ function persistPageSetup(): void {
   persistSettings({ pageSetup: { ...settings.pageSetup } });
 }
 
+/** 排版相关字段(字体/字号/行距/段落样式)整体写回。 */
+function persistTypography(): void {
+  persistSettings({ typography: { ...settings.typography } });
+}
+
 /** 边距输入:非法值回显当前设置,合法值钳制后写回。 */
 function handleMarginChange(key: keyof typeof marginInputs): void {
   if (hydratingSettings) return;
@@ -615,6 +691,23 @@ function handleMarginChange(key: keyof typeof marginInputs): void {
   settings.pageSetup[key] = clamped;
   input.value = String(clamped); // 回显钳制后的值,与主进程持久化结果一致
   persistPageSetup();
+}
+
+/** 字号 / 行距输入:空、非数字或超出范围时回显当前设置值。 */
+function handleTypographyNumberChange(
+  key: "bodySizePt" | "lineSpacing",
+  min: number,
+  max: number,
+): void {
+  if (hydratingSettings) return;
+  const input = key === "bodySizePt" ? bodySizePtInput : lineSpacingInput;
+  const value = input.valueAsNumber;
+  if (!Number.isFinite(value) || value < min || value > max) {
+    input.value = String(settings.typography[key]); // 空/非法/超范围:恢复为当前设置值
+    return;
+  }
+  settings.typography[key] = value;
+  persistTypography();
 }
 
 /* ---------- 转换完成弹窗(单文件 / 合并) ---------- */
@@ -897,6 +990,55 @@ afterConvertInputs.forEach((input) => {
 
 (Object.keys(marginInputs) as (keyof typeof marginInputs)[]).forEach((key) => {
   marginInputs[key].addEventListener("change", () => handleMarginChange(key));
+});
+
+/* ---------- 排版设置面板:任一控件变更即时生效并持久化 ---------- */
+fontAsciiInput.addEventListener("change", () => {
+  if (hydratingSettings) return;
+  const value = fontAsciiInput.value.trim();
+  if (!value) {
+    fontAsciiInput.value = settings.typography.fontAscii; // 空输入:恢复为当前设置值
+    return;
+  }
+  settings.typography.fontAscii = value;
+  persistTypography();
+});
+
+fontEastAsiaInput.addEventListener("change", () => {
+  if (hydratingSettings) return;
+  const value = fontEastAsiaInput.value.trim();
+  if (!value) {
+    fontEastAsiaInput.value = settings.typography.fontEastAsia; // 空输入:恢复为当前设置值
+    return;
+  }
+  settings.typography.fontEastAsia = value;
+  persistTypography();
+});
+
+bodySizePtInput.addEventListener("change", () =>
+  handleTypographyNumberChange("bodySizePt", BODY_SIZE_MIN, BODY_SIZE_MAX),
+);
+
+lineSpacingInput.addEventListener("change", () =>
+  handleTypographyNumberChange("lineSpacing", LINE_SPACING_MIN, LINE_SPACING_MAX),
+);
+
+firstLineIndentInput.addEventListener("change", () => {
+  if (hydratingSettings) return;
+  settings.typography.firstLineIndent = firstLineIndentInput.checked;
+  persistTypography();
+});
+
+alignJustifyInput.addEventListener("change", () => {
+  if (hydratingSettings) return;
+  settings.typography.align = alignJustifyInput.checked ? "justify" : "left";
+  persistTypography();
+});
+
+headingNumberingInput.addEventListener("change", () => {
+  if (hydratingSettings) return;
+  settings.typography.headingNumbering = headingNumberingInput.checked;
+  persistTypography();
 });
 
 // 完成弹窗:预览 / 打开所在文件夹 / 打开文件(失败在弹窗内提示,不打断)

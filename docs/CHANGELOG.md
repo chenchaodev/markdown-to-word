@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [0.13.0] - 2026-08-06
+- 二期批次 5「中文排版深化 + 保真补全」第三项:**排版参数化 + 设置面板**(5a)
+  - 设置模型:`src/core/typography.ts`(新)`TypographySettings` + `DEFAULT_TYPOGRAPHY`(fontAscii Calibri / fontEastAsia 微软雅黑 / bodySizePt 12 / lineSpacing 1.5 / firstLineIndent true / align justify / headingNumbering true);renderer 侧有平行定义(进程隔离),契约字段保持一致
+  - 持久化:`src/main/settings.ts` `SETTING_KEYS` 增 `typography`(此前 UI 写入会被静默忽略);`sanitizeTypography` 逐字段校验(字体非空、bodySizePt 8-24、lineSpacing 1.0-2.5、align 枚举),非法/缺失回退默认;旧 settings.json 缺字段时其余设置保留、仅 typography 落默认,不报错
+  - docx 应用(`src/core/docx/render.ts`):styles.default 字体(ascii/eastAsia/hAnsi 三槽)+ 字号 `bodySizePt×2` half-points(替换硬编码 24);正文段落两端对齐 JUSTIFIED、行距 `spacing.line = round(lineSpacing×240)` + LineRuleType.AUTO、首行缩进 `indent.firstLineChars: 200`(2 字符,9.7.1 实证支持;仅普通正文段落,heading/列表/代码/表格不受影响);headingNumbering 显式选项优先、默认取设置
+  - PDF 应用(`src/core/pdf/render.ts`):模板 body `font-family: "<eastAsia>", "<ascii>"`、`font-size: ${bodySizePt}pt`、`line-height: ${lineSpacing}`(替换硬编码 11pt/1.65);firstLineIndent → `p { text-indent: 2em }`;align justify → `p { text-align: justify }`;headingNumbering 与 docx 侧联动(默认 true)
+  - 主进程:`src/main/index.ts` 3 个 convert() 调用点(单文件/合并/预览)context 均透传 `settings.typography`
+  - UI(des-1):设置面板新增「排版」区块(西文/中文字体文本输入 + datalist 建议、正文字号 8-24、行距 1.0-2.5、首行缩进/两端对齐/章节编号开关),与「页面设置」面板同构,控件变更乐观更新 + 整体写回
+  - 验收:make-batch4-sample.mjs 新增 05-排版设置测试(自定义 typography:字号 28 half-points、宋体、两端对齐、编号关闭 → 断言 styles.xml `w:sz w:val="28"`/宋体、document.xml `w:jc both`/无 w:numPr、PDF 模板 14pt/2em/justify/宋体/无 counter);typecheck/build + 验收九断言全通过
+  - 实证(OOXML 序列化细节):字号元素为 `w:sz`(非 `w:size`);docx 库 JUSTIFIED 序列化为 `w:jc w:val="both"`;`IIndentAttributesProperties.firstLineChars` 存在(字符单位,中文排版 2 字符=200)
+  - 待实测:设置面板排版设置持久化 + docx/PDF 产物对照目测(重点:首行缩进、两端对齐、字号行距双格式一致)
+
 ## [0.12.0] - 2026-08-06
 - 二期批次 5「中文排版深化 + 保真补全」第二项:**PDF 章节编号 + 元数据注入**
   - PDF 章节编号:`src/core/pdf/render.ts` `RenderPdfHtmlOptions` 增 `headingNumbering`(默认开);`buildTemplateCss` 追加 CSS counter 规则(h1/h2/h3 counter-increment/reset + `::before` 渲染 1 / 1.1 / 1.1.1,与 docx 侧 decimal 编号语义一致);编号经伪元素渲染**不进入 HTML 文本节点**,extractHeadings/书签/目录文本不受影响(与 docx 侧书签不含编号一致)

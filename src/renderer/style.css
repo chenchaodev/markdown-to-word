@@ -519,6 +519,37 @@ body {
   color: var(--text-tertiary);
 }
 
+/* 排版设置:文本 / 数字输入与标签内说明 */
+.setting-input,
+.setting-number {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  user-select: text;
+}
+
+.setting-input:focus-visible,
+.setting-number:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.setting-number {
+  width: 64px;
+  text-align: right;
+}
+
+/* 标签内说明:紧跟 label 文字,弱化处理 */
+.setting-label-hint {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
 /* 底部操作栏 */
 .actions {
   display: flex;

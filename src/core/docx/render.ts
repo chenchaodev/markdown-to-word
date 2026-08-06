@@ -10,6 +10,7 @@ import {
   HeadingLevel,
   ImageRun,
   InternalHyperlink,
+  LineRuleType,
   Packer,
   PageBreak,
   PageNumber,
@@ -37,10 +38,12 @@ import type {
   RootContent,
   Table as MdTable,
 } from "mdast";
-import { CODE_FONT, CODE_SIZE, DEFAULT_FONT, LINK_COLOR } from "./theme.js";
+import { CODE_FONT, CODE_SIZE, LINK_COLOR } from "./theme.js";
 import { DEFAULT_PAGE_SETUP } from "../convert.js";
 import type { PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
+import type { TypographySettings } from "../typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../typography.js";
 import { docxBookmarkId } from "../slug.js";
 
 /** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
@@ -56,9 +59,11 @@ export interface RenderOptions {
   warnings?: string[];
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
   pageSetup?: PageSetup;
+  /** 排版设置(缺省 DEFAULT_TYPOGRAPHY):字号/字体/行距/缩进/对齐/标题编号 */
+  typography?: TypographySettings;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
-  /** 标题章节自动编号(h1-h3 挂 numbering,默认开) */
+  /** 标题章节自动编号(h1-h3 挂 numbering;显式传值优先,否则取 typography.headingNumbering) */
   headingNumbering?: boolean;
 }
 
@@ -66,6 +71,8 @@ interface Ctx {
   imageResolver?: ImageResolver;
   warnings?: string[];
   listLevel: number;
+  /** 排版设置(已解析默认,渲染时以 typography 为准) */
+  typography: TypographySettings;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
   /** 标题章节自动编号(h1-h3 挂 numbering,默认开) */
@@ -146,12 +153,14 @@ function headingNumberingOptions(): INumberingOptions {
  * core 层保持无 IO:图片一律经 imageResolver 注入(由调用方负责读文件)。
  */
 export async function renderDocx(ast: Root, options: RenderOptions = {}): Promise<Buffer> {
+  const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
   const ctx: Ctx = {
     imageResolver: options.imageResolver,
     warnings: options.warnings,
     listLevel: 0,
+    typography,
     breakBeforeH1: options.breakBeforeH1,
-    headingNumbering: options.headingNumbering ?? true,
+    headingNumbering: options.headingNumbering ?? typography.headingNumbering,
     footnoteDefinitions: new Map(),
     footnotes: {},
     footnoteNextId: { value: 1 },
@@ -199,7 +208,16 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     styles: {
       default: {
         document: {
-          run: { font: { ...DEFAULT_FONT }, size: 24 },
+          // 排版设置:字体以 typography 为准(theme.ts 保留作兜底);
+          // 字号 half-points = pt × 2(如 14pt → 28)
+          run: {
+            font: {
+              ascii: typography.fontAscii,
+              eastAsia: typography.fontEastAsia,
+              hAnsi: typography.fontAscii,
+            },
+            size: Math.round(typography.bodySizePt * 2),
+          },
         },
       },
     },
@@ -318,7 +336,17 @@ async function renderBlock(node: BlockContent, ctx: Ctx): Promise<(Paragraph | T
     case "heading":
       return [renderHeading(node, ctx)];
     case "paragraph":
-      return [new Paragraph({ children: await renderPhrasing(node.children, ctx) })];
+      // 普通正文段落:应用排版设置(对齐/行距/首行缩进)。
+      // 作用范围仅限正文:heading/列表/代码/表格等段落保持各自样式,
+      // 列表项不加首行缩进(与 PDF 侧 p { text-indent } 规则对齐语义)。
+      return [
+        new Paragraph({
+          alignment: ctx.typography.align === "justify" ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
+          spacing: { line: Math.round(ctx.typography.lineSpacing * 240), lineRule: LineRuleType.AUTO },
+          indent: ctx.typography.firstLineIndent ? { firstLineChars: 200 } : undefined,
+          children: await renderPhrasing(node.children, ctx),
+        }),
+      ];
     case "list":
       return renderList(node, ctx);
     case "table":
