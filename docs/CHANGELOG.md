@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [0.11.0] - 2026-08-06
+- 二期批次 5「中文排版深化 + 保真补全」第一项:**docx 标题章节自动编号 + 内部/外部链接跳转**
+  - 标题编号:`src/core/docx/render.ts` 新增 `headingNumberingOptions()`(reference "md-heading",levels 0-2,text `%1`/`%1.%2`/`%1.%2.%3`,decimal,indent 360/360);`renderHeading` 对 h1-h3 挂段落级 `numbering: { reference, level: depth-1 }`(**静态渲染,打开 Word/WPS 无需 F9 即显示**;heading + numbering + Bookmark 三层不冲突,9.7.1 实证);`RenderOptions` 增 `headingNumbering`(默认开)
+  - 内部链接:`[text](#slug)` → `InternalHyperlink({ anchor: docxBookmarkId(slug) })` 跳转同名标题书签(9.7.1 无 Hyperlink 类,9.x 拆分;anchor 与书签 id 字符串精确匹配);外链 http(s) → `ExternalHyperlink({ link })` 真超链接(替代假链接);相对路径保持假链接样式;pushRuns/pushRunsSync 双侧同步;`InlineChild` 类型加宽接纳超链接
+  - 验收:make-batch4-sample.mjs 新增 03-标题编号链接测试.docx(解包断言 numbering 多级 text 模板 + hyperlink anchor + 书签保留);typecheck/build + 验收四项断言全通过
+  - 待实测:Word/WPS 打开 03-标题编号链接测试.docx 目测编号层级/点击跳转;PDF 侧章节编号在批次 5 后续(5a)跟进
+- 注:PDF 侧章节编号未在本提交实现(规划批次 5 剩余项,与排版参数化同批)
+
 ## [0.10.0] - 2026-08-05
 - 二期批次 4「长文档」第二/三项:**脚注 + 页眉页脚页码**
   - docx 页眉页脚:`src/core/docx/render.ts` 新增 `renderHeader`(文档标题居中灰色 7pt,仅 metadata.title/title 存在时生成)与 `renderFooter`(第 X 页 / 共 X 页,PageNumber.CURRENT/TOTAL_PAGES 域,与 PDF footerTemplate 文案一致);挂载于 sections[].headers/footers(9.x 仅支持 section 级);`RenderOptions` 增 `title`(convert.ts docx 分支透传 context.title)

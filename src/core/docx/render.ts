@@ -3,11 +3,13 @@ import {
   Bookmark,
   BorderStyle,
   Document,
+  ExternalHyperlink,
   Footer,
   FootnoteReferenceRun,
   Header,
   HeadingLevel,
   ImageRun,
+  InternalHyperlink,
   Packer,
   PageBreak,
   PageNumber,
@@ -56,6 +58,8 @@ export interface RenderOptions {
   pageSetup?: PageSetup;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
+  /** 标题章节自动编号(h1-h3 挂 numbering,默认开) */
+  headingNumbering?: boolean;
 }
 
 interface Ctx {
@@ -64,6 +68,8 @@ interface Ctx {
   listLevel: number;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
+  /** 标题章节自动编号(h1-h3 挂 numbering,默认开) */
+  headingNumbering?: boolean;
   /** 脚注定义索引:identifier → definition 节点(renderDocx 预扫) */
   footnoteDefinitions: Map<string, FootnoteDefinition>;
   /** 脚注收集器:引用渲染时写入,id 字符串从 "1" 起 */
@@ -116,6 +122,25 @@ function numberingOptions(): INumberingOptions {
   };
 }
 
+/** 标题章节编号:h1-h3 挂段落级 numbering(静态渲染,打开 Word/WPS 无需 F9 即显示) */
+function headingNumberingOptions(): INumberingOptions {
+  const textFor = (level: number): string =>
+    Array.from({ length: level + 1 }, (_, i) => `%${i + 1}`).join(".");
+  const levels = [0, 1, 2].map((level) => ({
+    level,
+    format: "decimal" as const,
+    text: textFor(level),
+    alignment: AlignmentType.LEFT,
+    start: 1,
+    style: {
+      paragraph: {
+        indent: { left: 360, hanging: 360 },
+      },
+    },
+  }));
+  return { config: [{ reference: "md-heading", levels }] };
+}
+
 /**
  * 将 mdast AST 渲染为 docx Buffer。
  * core 层保持无 IO:图片一律经 imageResolver 注入(由调用方负责读文件)。
@@ -126,6 +151,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     warnings: options.warnings,
     listLevel: 0,
     breakBeforeH1: options.breakBeforeH1,
+    headingNumbering: options.headingNumbering ?? true,
     footnoteDefinitions: new Map(),
     footnotes: {},
     footnoteNextId: { value: 1 },
@@ -177,7 +203,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
         },
       },
     },
-    numbering: numberingOptions(),
+    numbering: { config: [...numberingOptions().config, ...headingNumberingOptions().config] },
     // 空脚注表不生成 footnotes part(避免空 part 导致打开异常)
     footnotes: Object.keys(ctx.footnotes).length > 0 ? ctx.footnotes : undefined,
     sections: [
@@ -330,6 +356,10 @@ function renderHeading(node: Heading, ctx: Ctx): Paragraph {
     heading: levels[node.depth] ?? HeadingLevel.HEADING_6,
     spacing: { before: 240, after: 120 },
     pageBreakBefore: node.depth === 1 && ctx.breakBeforeH1 === true,
+    numbering:
+      node.depth <= 3 && ctx.headingNumbering === true
+        ? { reference: "md-heading", level: node.depth - 1 }
+        : undefined,
     // docx 9.x Paragraph 无 bookmarks 选项:书签以 Bookmark 组件包裹标题 runs 实现
     children:
       typeof id === "string" && id !== ""
@@ -438,8 +468,11 @@ interface RunStyle {
   strike?: boolean;
 }
 
-/** 段落内可出现的 docx 子元素:文本 run、行内图片或脚注引用 */
-type InlineChild = TextRun | ImageRun | FootnoteReferenceRun;
+/** 段落内可出现的 docx 子元素:文本 run、行内图片、脚注引用或超链接 */
+type InlineChild = TextRun | ImageRun | FootnoteReferenceRun | InternalHyperlink | ExternalHyperlink;
+
+/** 同步场景(标题等)可产生的 docx 子元素:文本 run 或超链接(图片/脚注降级为文本) */
+type InlineSyncChild = TextRun | InternalHyperlink | ExternalHyperlink;
 
 /** 行内节点 → 元素数组;样式沿父子链累积传递 */
 async function renderPhrasing(
@@ -455,8 +488,8 @@ async function renderPhrasing(
 }
 
 /** 标题等无图片需求的场景用同步版(图片退化为占位文本) */
-function renderPhrasingSync(nodes: PhrasingContent[], ctx: Ctx): TextRun[] {
-  const runs: TextRun[] = [];
+function renderPhrasingSync(nodes: PhrasingContent[], ctx: Ctx): InlineSyncChild[] {
+  const runs: InlineSyncChild[] = [];
   for (const node of nodes) {
     pushRunsSync(runs, node, ctx, {});
   }
@@ -480,16 +513,32 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
     case "inlineCode":
       runs.push(new TextRun({ text: node.value, font: CODE_FONT, size: CODE_SIZE, ...style }));
       break;
-    case "link":
-      runs.push(
-        new TextRun({
-          text: node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join(""),
-          color: LINK_COLOR,
-          underline: {},
-          ...style,
-        }),
-      );
+    case "link": {
+      const text = node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join("");
+      const url = node.url;
+      if (url.startsWith("#")) {
+        // 内部锚点:[text](#slug) → 跳转同名书签(标题已用 docxBookmarkId 生成)
+        runs.push(
+          new InternalHyperlink({
+            anchor: docxBookmarkId(url.slice(1)),
+            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
+          }),
+        );
+        break;
+      }
+      if (/^https?:/i.test(url)) {
+        runs.push(
+          new ExternalHyperlink({
+            link: url,
+            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
+          }),
+        );
+        break;
+      }
+      // 相对路径等:保持假链接样式
+      runs.push(new TextRun({ text, color: LINK_COLOR, underline: {}, ...style }));
       break;
+    }
     case "image":
       runs.push(await imageToDocx(node, ctx, style));
       break;
@@ -507,7 +556,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
   }
 }
 
-function pushRunsSync(runs: TextRun[], node: PhrasingContent, ctx: Ctx, style: RunStyle): void {
+function pushRunsSync(runs: InlineSyncChild[], node: PhrasingContent, ctx: Ctx, style: RunStyle): void {
   switch (node.type) {
     case "text":
       runs.push(new TextRun({ text: node.value, ...style }));
@@ -524,16 +573,32 @@ function pushRunsSync(runs: TextRun[], node: PhrasingContent, ctx: Ctx, style: R
     case "inlineCode":
       runs.push(new TextRun({ text: node.value, font: CODE_FONT, size: CODE_SIZE, ...style }));
       break;
-    case "link":
-      runs.push(
-        new TextRun({
-          text: node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join(""),
-          color: LINK_COLOR,
-          underline: {},
-          ...style,
-        }),
-      );
+    case "link": {
+      const text = node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join("");
+      const url = node.url;
+      if (url.startsWith("#")) {
+        // 内部锚点:[text](#slug) → 跳转同名书签(标题已用 docxBookmarkId 生成)
+        runs.push(
+          new InternalHyperlink({
+            anchor: docxBookmarkId(url.slice(1)),
+            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
+          }),
+        );
+        break;
+      }
+      if (/^https?:/i.test(url)) {
+        runs.push(
+          new ExternalHyperlink({
+            link: url,
+            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
+          }),
+        );
+        break;
+      }
+      // 相对路径等:保持假链接样式
+      runs.push(new TextRun({ text, color: LINK_COLOR, underline: {}, ...style }));
       break;
+    }
     case "image":
       runs.push(new TextRun({ text: `[图片: ${node.alt || ""}]`, color: "808080" }));
       break;

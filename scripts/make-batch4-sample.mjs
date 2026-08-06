@@ -4,12 +4,15 @@
  * 链路与 GUI renderPdf 一致(convert → 临时 html → printToPDF → injectBookmarks)。
  * 另含批次 4 剩余两项验收:02-脚注测试(脚注 md → docx/pdf,断言 footnotes/footer 部件
  * 与 PDF 脚注 HTML 结构)、页眉页脚(metadata.title 存在时断言 header 部件)。
+ * 批次 5b 验收:03-标题编号链接测试(docx 标题章节编号 + 内部/外部链接跳转,解包断言)。
  * 用法: npx electron scripts/make-batch4-sample.mjs(需已 build)
  */
 import { app, BrowserWindow } from "electron";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { convert } from "../dist/core/convert.js";
 import { mergeMarkdowns } from "../dist/core/merge.js";
@@ -36,6 +39,19 @@ async function collectMarkdown(dir) {
 /** zip 是明文中央目录:部件名以明文可搜索,无需解压即可断言部件存在 */
 function zipContains(buffer, name) {
   return buffer.includes(Buffer.from(name, "utf8"));
+}
+
+/** 解包 docx 并读取指定部件文本(tar 支持 zip;解包到临时目录后读取)。 */
+function unzipPart(buffer, partName) {
+  const tmpDir = fsSync.mkdtempSync(path.join(os.tmpdir(), "m2w-docx-"));
+  try {
+    const zipPath = path.join(tmpDir, "doc.docx");
+    fsSync.writeFileSync(zipPath, buffer);
+    execFileSync("tar", ["-xf", zipPath, "-C", tmpDir], { stdio: "ignore" });
+    return fsSync.readFileSync(path.join(tmpDir, partName), "utf8");
+  } finally {
+    fsSync.rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 /** printToPDF 工具:写临时 html → 隐藏窗口加载 → 打印 → 清理 */
@@ -134,6 +150,44 @@ date: 2026-08-05
     console.log("[ok] PDF 脚注:footnotes 区与 footnote-ref 引用结构存在");
     const footnotePdf = await htmlToPdf(pdfArtifact.html, pdfArtifact.footerTemplate);
     await fs.writeFile(path.join(outDir, "02-脚注测试.pdf"), footnotePdf);
+
+    // ---------- 3) 标题编号 + 内部/外部链接(批次 5b) ----------
+    // 内部锚点 [x](#二级标题) → InternalHyperlink(anchor=docxBookmarkId);外链 → ExternalHyperlink
+    const linkMd = `---
+title: 标题编号与链接测试
+---
+
+# 第一章
+
+正文,链接到[二级标题](#二级标题),以及外链[示例站](https://example.com)。
+
+## 二级标题
+
+三级子节见下。
+
+### 三级子节
+
+- 项目一
+- 项目二
+`;
+    const linkDocx = await convert(linkMd, "docx", { baseDir: root, warnings: [] });
+    const numberingXml = unzipPart(linkDocx.buffer, "word/numbering.xml");
+    const documentXml = unzipPart(linkDocx.buffer, "word/document.xml");
+    // 标题编号:numbering.xml 含多级 text 模板 %1 / %1.%2 / %1.%2.%3
+    // (reference 名 "md-heading" 是库内部标识,不写进 XML,断言 text 模板即可)
+    if (!numberingXml.includes('w:lvlText w:val="%1"/>') || !numberingXml.includes('w:lvlText w:val="%1.%2"/>')) {
+      throw new Error("标题编号断言失败:numbering.xml 缺少多级 text 模板");
+    }
+    // 内部链接:document.xml 含 w:hyperlink w:anchor 指向标题书签
+    if (!documentXml.includes('w:hyperlink') || !documentXml.includes('w:anchor="二级标题"')) {
+      throw new Error("内部链接断言失败:document.xml 缺少 w:hyperlink w:anchor");
+    }
+    // 标题书签仍在(编号不破坏 Bookmark)
+    if (!documentXml.includes('w:bookmarkStart w:name="二级标题"')) {
+      throw new Error("标题书签断言失败:编号后 Bookmark 丢失");
+    }
+    console.log("[ok] docx 标题编号/内部链接:numbering md-heading + hyperlink anchor + 书签齐全");
+    await fs.writeFile(path.join(outDir, "03-标题编号链接测试.docx"), linkDocx.buffer);
 
     // ---------- 落盘 ----------
     await fs.mkdir(outDir, { recursive: true });
