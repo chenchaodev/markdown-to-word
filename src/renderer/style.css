@@ -519,6 +519,27 @@ body {
   color: var(--text-tertiary);
 }
 
+/* 模板预设:设置面板顶部的套用行(label + select + hint) */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border); /* 与下方设置栅格分隔 */
+}
+
+.settings-row .setting-select {
+  flex: none;
+}
+
+/* hint 复用 settings-note 文字样式,但行内布局不保留默认外边距 */
+.settings-row .settings-note {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
 /* 排版设置:文本 / 数字输入与标签内说明 */
 .setting-input,
 .setting-number {

@@ -152,6 +152,93 @@ const DEFAULT_SETTINGS: AppSettings = {
   afterConvert: "none",
 };
 
+/* ---------- 模板预设:排版 + 页面设置的快照(套用后仍可微调,不写死模板 id) ---------- */
+interface TemplatePreset {
+  id: string;
+  /** 中文名,用户可见 */
+  name: string;
+  /** 简短说明,显示在模板选择行 */
+  hint: string;
+  typography: TypographySettings;
+  pageSetup: PageSetup;
+}
+
+/** 预设值已定稿,勿改(与批次 6 规划一致)。 */
+const TEMPLATE_PRESETS: TemplatePreset[] = [
+  {
+    id: "default",
+    name: "默认",
+    hint: "常规文档:微软雅黑正文、两端对齐、行距 1.5",
+    typography: { ...DEFAULT_SETTINGS.typography },
+    pageSetup: { ...DEFAULT_SETTINGS.pageSetup },
+  },
+  {
+    id: "paper",
+    name: "学术论文",
+    hint: "论文常用:宋体正文 + Times New Roman 西文、两端对齐、标准页边距",
+    typography: {
+      fontAscii: "Times New Roman",
+      fontEastAsia: "宋体",
+      bodySizePt: 12,
+      lineSpacing: 1.5,
+      firstLineIndent: true,
+      align: "justify",
+      headingNumbering: true,
+    },
+    pageSetup: {
+      paper: "A4",
+      orientation: "portrait",
+      marginTop: 25.4,
+      marginBottom: 25.4,
+      marginLeft: 31.7,
+      marginRight: 31.7,
+    },
+  },
+  {
+    id: "business",
+    name: "商务简报",
+    hint: "简报常用:微软雅黑正文、左对齐、行距 1.15、页边距更紧凑",
+    typography: {
+      fontAscii: "Calibri",
+      fontEastAsia: "微软雅黑",
+      bodySizePt: 11,
+      lineSpacing: 1.15,
+      firstLineIndent: false,
+      align: "left",
+      headingNumbering: false,
+    },
+    pageSetup: {
+      paper: "A4",
+      orientation: "portrait",
+      marginTop: 19.1,
+      marginBottom: 19.1,
+      marginLeft: 25.4,
+      marginRight: 25.4,
+    },
+  },
+];
+
+/** 当前排版与页面设置是否与某预设完全一致(用于回填时选中对应模板)。 */
+function matchesPreset(preset: TemplatePreset, settings: AppSettings): boolean {
+  const { typography: t, pageSetup: p } = preset;
+  const { typography: st, pageSetup: sp } = settings;
+  return (
+    t.fontAscii === st.fontAscii &&
+    t.fontEastAsia === st.fontEastAsia &&
+    t.bodySizePt === st.bodySizePt &&
+    t.lineSpacing === st.lineSpacing &&
+    t.firstLineIndent === st.firstLineIndent &&
+    t.align === st.align &&
+    t.headingNumbering === st.headingNumbering &&
+    p.paper === sp.paper &&
+    p.orientation === sp.orientation &&
+    p.marginTop === sp.marginTop &&
+    p.marginBottom === sp.marginBottom &&
+    p.marginLeft === sp.marginLeft &&
+    p.marginRight === sp.marginRight
+  );
+}
+
 /** 边距钳制范围,与主进程 sanitizePageSetup 一致 */
 const MARGIN_MIN = 0;
 const MARGIN_MAX = 1000;
@@ -228,6 +315,13 @@ const alignJustifyInput = document.getElementById(
 const headingNumberingInput = document.getElementById(
   "headingNumbering",
 ) as HTMLInputElement;
+// 模板预设
+const templatePresetSelect = document.getElementById(
+  "templatePreset",
+) as HTMLSelectElement;
+const templatePresetHint = document.getElementById(
+  "templatePresetHint",
+) as HTMLSpanElement;
 // 完成弹窗附加按钮与错误提示
 const completeDialogReveal = document.getElementById(
   "completeDialogReveal",
@@ -652,6 +746,13 @@ function applySettingsToControls(): void {
   firstLineIndentInput.checked = settings.typography.firstLineIndent;
   alignJustifyInput.checked = settings.typography.align === "justify";
   headingNumberingInput.checked = settings.typography.headingNumbering;
+  // 模板预设:与某预设完全一致时选中,否则回退「默认」;hint 同步显示
+  const matchedPreset = TEMPLATE_PRESETS.find((preset) =>
+    matchesPreset(preset, settings),
+  );
+  templatePresetSelect.value = matchedPreset?.id ?? "default";
+  templatePresetHint.textContent =
+    (matchedPreset ?? TEMPLATE_PRESETS[0]).hint;
   breakBeforeH1Input.checked = settings.breakBeforeH1;
   afterConvertInputs.forEach(
     (input) => (input.checked = input.value === settings.afterConvert),
@@ -1039,6 +1140,26 @@ headingNumberingInput.addEventListener("change", () => {
   if (hydratingSettings) return;
   settings.typography.headingNumbering = headingNumberingInput.checked;
   persistTypography();
+});
+
+// 模板预设:整体套用排版与页面设置,一次性回填所有相关控件并持久化
+templatePresetSelect.addEventListener("change", () => {
+  if (hydratingSettings) return;
+  const preset = TEMPLATE_PRESETS.find(
+    (p) => p.id === templatePresetSelect.value,
+  );
+  if (!preset) return;
+  settings.typography = { ...preset.typography };
+  settings.pageSetup = { ...preset.pageSetup };
+  // hydration 保护下统一回填,避免逐个控件触发 change 写回;
+  // 回填同时按匹配结果同步 select 与 hint(当前即所选预设)
+  hydratingSettings = true;
+  applySettingsToControls();
+  hydratingSettings = false;
+  persistSettings({
+    typography: { ...settings.typography },
+    pageSetup: { ...settings.pageSetup },
+  });
 });
 
 // 完成弹窗:预览 / 打开所在文件夹 / 打开文件(失败在弹窗内提示,不打断)

@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [0.15.0] - 2026-08-06
+- 二期批次 6「学术正式化」第一项:**预设模板包**(设置面板「模板预设」下拉,一键套用排版 + 页面设置快照)
+  - 3 个预设(renderer 侧定义,核心无新逻辑——渲染只认具体 typography/pageSetup 值):`default` 默认(引用 DEFAULT_SETTINGS,无第二份定义)、`paper` 学术论文(Times New Roman/宋体/12pt/1.5/缩进/两端对齐/编号;A4 上下 25.4 左右 31.7)、`business` 商务简报(Calibri/微软雅黑/11pt/1.15/无缩进/左对齐/无编号;A4 上下 19.1 左右 25.4)
+  - 交互:「排版」面板顶部新增模板下拉 + hint;change → 整体替换 settings.typography/pageSetup → hydration 保护下统一回填全部控件 → 整体持久化;`matchesPreset` 逐字段精确比较,持久化值与预设一致时启动回选该模板,微调后回退「默认」;模板 id 不写入设置(套用后即具体值,可继续微调)
+  - 验证:typecheck/build 通过;套用效果待用户 GUI 实测(选「学术论文」→ 转换 → docx/pdf 对照字体字号边距)
+
 ## [0.14.0] - 2026-08-06
 - 二期批次 5「中文排版深化 + 保真补全」最后一项:**raw HTML 白名单**(双格式一致,安全最小集)
   - 白名单(14 个无属性内联标签):`strong/b`(粗)、`em/i`(斜)、`u`、`s/del`(删除线)、`code/kbd`(等宽 Consolas)、`sub`、`sup`、`mark`(高亮 yellow)、`br`(换行)、`span`(透传);可嵌套(栈式解析);**带属性或非白名单标签 → 整串回退安全行为**(pdf 转义 / docx 跳过,危险段含内容整体丢弃)
