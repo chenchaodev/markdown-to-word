@@ -17,7 +17,9 @@ import { fileURLToPath } from "node:url";
 import { convert } from "../dist/core/convert.js";
 import { mergeMarkdowns } from "../dist/core/merge.js";
 import { injectBookmarks, buildBookmarkTree } from "../dist/core/pdf/bookmarks.js";
+import { setPdfMetadata } from "../dist/core/pdf/metadata.js";
 import { extractHeadings } from "../dist/core/pdf/render.js";
+import { PDFDocument } from "pdf-lib";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../output/批次3验收");
 const outDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../output/批次4验收");
@@ -149,7 +151,24 @@ date: 2026-08-05
     }
     console.log("[ok] PDF 脚注:footnotes 区与 footnote-ref 引用结构存在");
     const footnotePdf = await htmlToPdf(pdfArtifact.html, pdfArtifact.footerTemplate);
-    await fs.writeFile(path.join(outDir, "02-脚注测试.pdf"), footnotePdf);
+    // 批次 5c:与主进程 renderPdf 链路对齐(printToPDF → 书签 → 元数据注入)
+    const footnotePdfMeta = await setPdfMetadata(new Uint8Array(footnotePdf), pdfArtifact.metadata);
+    await fs.writeFile(path.join(outDir, "02-脚注测试.pdf"), footnotePdfMeta);
+
+    // ---------- 4) PDF 章节编号 + 元数据(批次 5c) ----------
+    // 章节编号:CSS counter 规则(::before 伪元素,1/1.1/1.1.1)进入模板样式
+    if (!pdfArtifact.html.includes("counter(h1c)") || !pdfArtifact.html.includes("h1::before")) {
+      throw new Error("PDF 章节编号断言失败:缺少 counter 编号 CSS");
+    }
+    // 元数据:frontmatter title/author/date → PDF Info(读回验证)
+    const pdfDoc = await PDFDocument.load(footnotePdfMeta);
+    const pdfTitle = pdfDoc.getTitle();
+    const pdfAuthor = pdfDoc.getAuthor();
+    if (pdfTitle !== "脚注与页眉页脚验收" || pdfAuthor !== "测试") {
+      throw new Error(`PDF 元数据断言失败: title=${pdfTitle} author=${pdfAuthor}`);
+    }
+    console.log("[ok] PDF 章节编号:counter CSS 存在(1/1.1/1.1.1)");
+    console.log(`[ok] PDF 元数据:title="${pdfTitle}" author="${pdfAuthor}" 读回一致`);
 
     // ---------- 3) 标题编号 + 内部/外部链接(批次 5b) ----------
     // 内部锚点 [x](#二级标题) → InternalHyperlink(anchor=docxBookmarkId);外链 → ExternalHyperlink

@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [0.12.0] - 2026-08-06
+- 二期批次 5「中文排版深化 + 保真补全」第二项:**PDF 章节编号 + 元数据注入**
+  - PDF 章节编号:`src/core/pdf/render.ts` `RenderPdfHtmlOptions` 增 `headingNumbering`(默认开);`buildTemplateCss` 追加 CSS counter 规则(h1/h2/h3 counter-increment/reset + `::before` 渲染 1 / 1.1 / 1.1.1,与 docx 侧 decimal 编号语义一致);编号经伪元素渲染**不进入 HTML 文本节点**,extractHeadings/书签/目录文本不受影响(与 docx 侧书签不含编号一致)
+  - PDF 元数据:`src/core/pdf/metadata.ts`(新,纯逻辑可测)`setPdfMetadata` —— frontmatter title/author/date → PDF Info(title/author 仅注入非空,date 解析失败用当前时间兜底 + 设 modificationDate);`PdfArtifact` 增 `metadata?: DocMetadata`;`src/main/index.ts` renderPdf 在书签注入后追加(顺序固定:书签 → 元数据,pdf-lib 整体重存必须最后执行,否则丢书签)
+  - 验收:make-batch4-sample.mjs 链路对齐主进程(补 setPdfMetadata 调用)+ 新增断言(counter CSS 存在、PDF 读回 title/author 与 frontmatter 一致);typecheck/build + 验收六断言全通过
+  - 待实测:PDF 文档属性(title/author/date)与章节编号目测(对照 docx 03 样例编号层级)
+
 ## [0.11.0] - 2026-08-06
 - 二期批次 5「中文排版深化 + 保真补全」第一项:**docx 标题章节自动编号 + 内部/外部链接跳转**
   - 标题编号:`src/core/docx/render.ts` 新增 `headingNumberingOptions()`(reference "md-heading",levels 0-2,text `%1`/`%1.%2`/`%1.%2.%3`,decimal,indent 360/360);`renderHeading` 对 h1-h3 挂段落级 `numbering: { reference, level: depth-1 }`(**静态渲染,打开 Word/WPS 无需 F9 即显示**;heading + numbering + Bookmark 三层不冲突,9.7.1 实证);`RenderOptions` 增 `headingNumbering`(默认开)

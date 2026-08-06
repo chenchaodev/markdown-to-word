@@ -5,6 +5,7 @@
  */
 import { parseMarkdown } from "./parse.js";
 import { parseFrontmatter } from "./frontmatter.js";
+import type { DocMetadata } from "./frontmatter.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml, PDF_FOOTER_TEMPLATE } from "./pdf/render.js";
 import { stat } from "node:fs/promises";
@@ -92,6 +93,8 @@ export interface PdfArtifact {
   html: string;
   /** printToPDF 的 footerTemplate(页码) */
   footerTemplate: string;
+  /** frontmatter 元数据(PDF Info 注入用) */
+  metadata?: DocMetadata;
 }
 
 export type ConvertArtifact = DocxArtifact | PdfArtifact;
@@ -120,6 +123,7 @@ export async function convert(
         breakBeforeH1: context.breakBeforeH1,
       }),
       footerTemplate: PDF_FOOTER_TEMPLATE,
+      metadata,
     };
   }
   return {

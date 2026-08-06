@@ -35,6 +35,8 @@ export interface RenderPdfHtmlOptions {
   pageSetup?: PageSetup;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
+  /** 标题章节编号(1 / 1.1 / 1.1.1,与 docx 侧 decimal 编号语义一致;默认开) */
+  headingNumbering?: boolean;
 }
 
 /** 页码页脚模板(printToPDF footerTemplate 用;模板内必须内联样式,字体大小需显式设置)。 */
@@ -123,8 +125,15 @@ function overrideHeadingIdRule(md: MarkdownIt, seen: Map<string, number>): void 
 
 /** 转换矩阵与 docx 路线对齐的文档模板样式(分页、中文字体、代码高亮、表格、跨页避让)。
  *  @page 尺寸/边距由 pageSetup 生成(margin 顺序 top right bottom left);
- *  breakBeforeH1 为 true 时追加一级标题前分页规则。 */
-function buildTemplateCss(pageSetup: PageSetup, breakBeforeH1: boolean): string {
+ *  breakBeforeH1 为 true 时追加一级标题前分页规则;
+ *  headingNumbering 为 true 时追加章节编号规则(与 docx 侧 decimal 编号语义一致)。
+ *  注意:编号经 ::before 伪元素渲染,不进入 HTML 文本节点,
+ *  故 extractHeadings/书签/目录文本不受影响(与 docx 侧书签不含编号一致)。 */
+function buildTemplateCss(
+  pageSetup: PageSetup,
+  breakBeforeH1: boolean,
+  headingNumbering: boolean,
+): string {
   const size = pageSetup.paper + (pageSetup.orientation === "landscape" ? " landscape" : "");
   const { marginTop, marginRight, marginBottom, marginLeft } = pageSetup;
   return `
@@ -246,6 +255,15 @@ ${breakBeforeH1 ? `
   /* 一级标题前分页(breakBeforeH1);文档首元素为 h1 时避免空白首页 */
   h1 { break-before: page; }
   body > h1:first-child { break-before: auto; }` : ""}
+${headingNumbering ? `
+  /* 章节编号:与 docx 标题编号语义一致(1 / 1.1 / 1.1.1) */
+  body { counter-reset: h1c h2c h3c; }
+  h1 { counter-increment: h1c; counter-reset: h2c h3c; }
+  h2 { counter-increment: h2c; counter-reset: h3c; }
+  h3 { counter-increment: h3c; }
+  h1::before { content: counter(h1c) " "; }
+  h2::before { content: counter(h1c) "." counter(h2c) " "; }
+  h3::before { content: counter(h1c) "." counter(h2c) "." counter(h3c) " "; }` : ""}
 `;
 }
 
@@ -434,6 +452,6 @@ export async function renderPdfHtml(
   return buildTemplate(
     processedBody,
     title,
-    buildTemplateCss(pageSetup, options.breakBeforeH1 ?? false),
+    buildTemplateCss(pageSetup, options.breakBeforeH1 ?? false, options.headingNumbering ?? true),
   );
 }

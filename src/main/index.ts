@@ -8,6 +8,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "p
 import { convert, type ConvertFormat, type PdfArtifact } from "../core/convert.js";
 import { mergeMarkdowns } from "../core/merge.js";
 import { buildBookmarkTree, injectBookmarks } from "../core/pdf/bookmarks.js";
+import { setPdfMetadata } from "../core/pdf/metadata.js";
 import { extractHeadings } from "../core/pdf/render.js";
 import { createImageResolver, type ImageResolver } from "./image-downloader.js";
 import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
@@ -151,10 +152,13 @@ async function renderPdf(artifact: PdfArtifact, outputPath: string): Promise<voi
     // 注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即命名目标名,无需文本定位)。
     // 无标题时原样落盘(输出为 Buffer → Uint8Array 无拷贝)。
     const headings = extractHeadings(artifact.html);
-    const output =
+    const bookmarked =
       headings.length > 0
         ? await injectBookmarks(new Uint8Array(data), buildBookmarkTree(headings))
         : new Uint8Array(data);
+    // 批次 5c:书签注入之后追加 PDF Info 元数据注入(frontmatter title/author/date → 文档属性)。
+    // 顺序固定:书签 → 元数据(后者经 pdf-lib 整体重存,必须最后执行,否则会丢弃书签)。
+    const output = await setPdfMetadata(bookmarked, artifact.metadata);
     await fs.writeFile(outputPath, output);
   } finally {
     printWin.destroy();
