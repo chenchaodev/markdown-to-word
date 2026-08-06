@@ -83,15 +83,108 @@ function buildMarkdownIt(): MarkdownIt {
   return md;
 }
 
-/** HTML 白名单:仅放行 trim 后精确等于 <!-- page-break --> 的裸 HTML(→ 分页 div),
- *  其余一律转义输出,维持"裸 HTML 不渲染"的安全行为。 */
+/** 内联格式白名单标签(批次 5 契约:无属性才渲染,与 src/core/docx/render.ts
+ *  的 isAllowedInlineHtml 逐字一致,双格式必须同步修改) */
+const ALLOWED_INLINE_TAGS = new Set([
+  "strong", "b", "em", "i", "u", "s", "del", "code", "kbd", "sub", "sup", "mark", "br", "span",
+]);
+
+/**
+ * 内联 HTML 白名单判定:整串须完全由「白名单无属性标签 + 文本」构成才合法。
+ * 开标签仅允许纯标签名(可带尾随空白,`<strong>` / `<strong >` 无属性合法,
+ * 带属性如 `<strong class="x">` 一律非法);闭标签须与栈顶匹配;br 为空标签
+ * 不入栈;文本段不允许出现 `<`;扫描结束栈须为空。未闭合/错配/带属性/
+ * 非白名单 → false(调用方按安全兜底处理:pdf 转义 / docx 跳过)。
+ */
+function isAllowedInlineHtml(content: string): boolean {
+  const text = content.trim();
+  const stack: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const open = text.indexOf("<", i);
+    if (open === -1) break; // 剩余均为文本(不含 <)
+    const close = text.indexOf(">", open + 1);
+    if (close === -1) return false; // 未闭合
+    const inner = text.slice(open + 1, close);
+    if (inner.startsWith("/")) {
+      const name = inner.slice(1).trim().toLowerCase();
+      if (!/^[a-z][a-z0-9]*$/.test(name)) return false; // 闭标签带属性/非法
+      if (name === "br" || !ALLOWED_INLINE_TAGS.has(name)) return false;
+      if (stack.length === 0 || stack[stack.length - 1] !== name) return false; // 无对应/错配
+      stack.pop();
+    } else {
+      if (!/^[a-z][a-z0-9]*\s*$/i.test(inner)) return false; // 带属性/非法开标签
+      const name = inner.trim().toLowerCase();
+      if (!ALLOWED_INLINE_TAGS.has(name)) return false;
+      if (name !== "br") stack.push(name); // br 空标签不入栈
+    }
+    i = close + 1;
+  }
+  return stack.length === 0;
+}
+
+/**
+ * 从 src 的 pos(`<` 处)起匹配一个完整白名单表达式(标签对可嵌套,br 可单独,
+ * 文本段不含 `<`);返回表达式长度;无法匹配(非白名单/带属性/未闭合)→ -1。
+ * 供 html_inline 解析层组合 token 使用:markdown-it 14.3 的默认 html_inline
+ * 只匹配单个标签(HTML_TAG_RE 无嵌套),白名单整串须在此提前组合。
+ */
+function matchAllowedHtmlExpression(src: string, pos: number): number {
+  const stack: string[] = [];
+  let i = pos;
+  while (i < src.length) {
+    const open = src.indexOf("<", i);
+    if (open === -1) return -1; // 残留文本,表达式不完整
+    const close = src.indexOf(">", open + 1);
+    if (close === -1) return -1; // 未闭合
+    const inner = src.slice(open + 1, close);
+    if (inner.startsWith("/")) {
+      const name = inner.slice(1).trim().toLowerCase();
+      if (!/^[a-z][a-z0-9]*$/.test(name)) return -1;
+      if (name === "br" || !ALLOWED_INLINE_TAGS.has(name)) return -1;
+      if (stack.length === 0 || stack[stack.length - 1] !== name) return -1;
+      stack.pop();
+      if (stack.length === 0) return close + 1 - pos; // 完整表达式
+    } else {
+      if (!/^[a-z][a-z0-9]*\s*$/i.test(inner)) return -1;
+      const name = inner.trim().toLowerCase();
+      if (!ALLOWED_INLINE_TAGS.has(name)) return -1;
+      if (name === "br") {
+        if (stack.length === 0) return close + 1 - pos; // 独立 <br>
+        // 嵌套内的 br:继续扫描
+      } else {
+        stack.push(name);
+      }
+    }
+    i = close + 1;
+  }
+  return -1;
+}
+
+/** HTML 白名单:page-break 注释 → 分页 div;白名单整串(无属性行内标签对)→ 原样输出
+ *  (Chromium 渲染,与 docx 侧一致);其余裸 HTML 一律转义输出,维持"裸 HTML 不渲染"的安全行为。
+ *  注意:html_block 也放行白名单整串——markdown-it 会把行首的 <strong>粗体</strong>
+ *  归为 html_block 而非 html_inline,不放行则行首白名单在 pdf 侧被转义,双格式不一致;
+ *  div/table/script 等块级标签不在白名单集内,依旧转义。 */
 function overrideHtmlRules(md: MarkdownIt): void {
   const escapeHtml = md.utils.escapeHtml;
+  // 解析层:html_inline 之前组合白名单表达式(默认规则只产出单标签 token)
+  md.inline.ruler.before("html_inline", "html_whitelist", (state, silent) => {
+    if (!state.md.options.html || state.src.charCodeAt(state.pos) !== 0x3c /* < */) return false;
+    const len = matchAllowedHtmlExpression(state.src, state.pos);
+    if (len < 0) return false;
+    if (!silent) {
+      const token = state.push("html_inline", "", 0);
+      token.content = state.src.slice(state.pos, state.pos + len);
+    }
+    state.pos += len;
+    return true;
+  });
   const renderHtml = (token: { content: string }): string => {
     const content = token.content.trim();
-    return content === "<!-- page-break -->"
-      ? '<div class="page-break"></div>'
-      : escapeHtml(token.content);
+    if (content === "<!-- page-break -->") return '<div class="page-break"></div>';
+    if (isAllowedInlineHtml(content)) return token.content;
+    return escapeHtml(token.content);
   };
   md.renderer.rules.html_block = (tokens, idx) => renderHtml(tokens[idx]);
   md.renderer.rules.html_inline = (tokens, idx) => renderHtml(tokens[idx]);

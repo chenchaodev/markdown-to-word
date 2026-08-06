@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [0.14.0] - 2026-08-06
+- 二期批次 5「中文排版深化 + 保真补全」最后一项:**raw HTML 白名单**(双格式一致,安全最小集)
+  - 白名单(14 个无属性内联标签):`strong/b`(粗)、`em/i`(斜)、`u`、`s/del`(删除线)、`code/kbd`(等宽 Consolas)、`sub`、`sup`、`mark`(高亮 yellow)、`br`(换行)、`span`(透传);可嵌套(栈式解析);**带属性或非白名单标签 → 整串回退安全行为**(pdf 转义 / docx 跳过,危险段含内容整体丢弃)
+  - pdf 侧(`src/core/pdf/render.ts`):实证 markdown-it 14.3 `html_inline` 仅匹配单标签 → 新增解析层规则 `html_whitelist` 组合整串 token;渲染三分支:page-break → 分页 div、白名单整串 → 原样输出(Chromium 渲染)、其余 → escapeHtml;html_block 与 html_inline 同规则(行首白名单串归 html_block,须同判定保证双格式一致)
+  - docx 侧(`src/core/docx/render.ts`):`normalizeInlineHtml` 段落内 html/text 归一化(白名单合并、危险段丢弃、孤立闭标签丢弃,接入 paragraph/list/blockquote/表格单元格/脚注段落);`parseInlineHtml` 栈式样式解析(纯字符串→结构,零依赖);`renderInlineHtmlParagraph` 复用正文段落渲染(5a 排版设置生效)
+  - 实证(docx 9.7.1):TextRun 选项为 `italics`/`strike`/`subScript`/`superScript`/`highlight`/`underline: {}`;`<br>` 用 `break: 1`;OOXML 序列化 `w:b/`/`w:i/`/`w:strike/`/`w:vertAlign`(subscript/superscript)/`w:highlight`/`w:u w:val="single"`/`w:br`
+  - 验收:make-batch4-sample.mjs 第 6 段(白名单全部标签 + 嵌套 + script/div/带属性三类危险样例,docx 断言样式运行齐全且危险内容零残留、pdf 断言原样输出 + 转义形式);typecheck/build + 验收十一断言全通过
+  - 待实测:06-raw-html-白名单测试.{docx,pdf} 目测双格式渲染效果
+
 ## [0.13.0] - 2026-08-06
 - 二期批次 5「中文排版深化 + 保真补全」第三项:**排版参数化 + 设置面板**(5a)
   - 设置模型:`src/core/typography.ts`(新)`TypographySettings` + `DEFAULT_TYPOGRAPHY`(fontAscii Calibri / fontEastAsia 微软雅黑 / bodySizePt 12 / lineSpacing 1.5 / firstLineIndent true / align justify / headingNumbering true);renderer 侧有平行定义(进程隔离),契约字段保持一致

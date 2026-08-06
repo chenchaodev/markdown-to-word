@@ -331,6 +331,17 @@ function renderFooter(): Footer {
   });
 }
 
+/** 正文段落(排版设置:两端对齐/行距/首行缩进)。
+ *  普通正文段落与白名单 html 段落共用,保证白名单段落排版与正文一致。 */
+function renderBodyParagraph(children: InlineChild[], ctx: Ctx): Paragraph {
+  return new Paragraph({
+    alignment: ctx.typography.align === "justify" ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
+    spacing: { line: Math.round(ctx.typography.lineSpacing * 240), lineRule: LineRuleType.AUTO },
+    indent: ctx.typography.firstLineIndent ? { firstLineChars: 200 } : undefined,
+    children,
+  });
+}
+
 async function renderBlock(node: BlockContent, ctx: Ctx): Promise<(Paragraph | Table)[]> {
   switch (node.type) {
     case "heading":
@@ -339,14 +350,7 @@ async function renderBlock(node: BlockContent, ctx: Ctx): Promise<(Paragraph | T
       // 普通正文段落:应用排版设置(对齐/行距/首行缩进)。
       // 作用范围仅限正文:heading/列表/代码/表格等段落保持各自样式,
       // 列表项不加首行缩进(与 PDF 侧 p { text-indent } 规则对齐语义)。
-      return [
-        new Paragraph({
-          alignment: ctx.typography.align === "justify" ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
-          spacing: { line: Math.round(ctx.typography.lineSpacing * 240), lineRule: LineRuleType.AUTO },
-          indent: ctx.typography.firstLineIndent ? { firstLineChars: 200 } : undefined,
-          children: await renderPhrasing(node.children, ctx),
-        }),
-      ];
+      return [renderBodyParagraph(await renderPhrasing(normalizeInlineHtml(node.children), ctx), ctx)];
     case "list":
       return renderList(node, ctx);
     case "table":
@@ -358,11 +362,20 @@ async function renderBlock(node: BlockContent, ctx: Ctx): Promise<(Paragraph | T
     case "thematicBreak":
       return [renderThematicBreak()];
     case "html":
-      // 显式分页符:<!-- page-break -->(trim 后精确匹配);其他 html 跳过
-      if (node.value.trim() === "<!-- page-break -->") {
-        return [new Paragraph({ children: [new PageBreak()] })];
+      // 显式分页符:<!-- page-break -->(trim 后精确匹配);
+      // 内联格式白名单(无属性标签对,契约与 PDF 侧 isAllowedInlineHtml 逐字一致)
+      // → 渲染为正文段落(排版设置生效);
+      // 其余 html(脚本/块级/带属性标签)维持现状:跳过,安全兜底
+      {
+        const value = node.value.trim();
+        if (value === "<!-- page-break -->") {
+          return [new Paragraph({ children: [new PageBreak()] })];
+        }
+        if (isAllowedInlineHtml(value)) {
+          return [renderInlineHtmlParagraph(node.value, ctx)];
+        }
+        return [];
       }
-      return [];
     default:
       return [];
   }
@@ -408,7 +421,7 @@ async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
         result.push(
           new Paragraph({
             numbering: { reference, level: Math.min(ctx.listLevel, 3) },
-            children: await renderPhrasing(child.children, ctx),
+            children: await renderPhrasing(normalizeInlineHtml(child.children), ctx),
           }),
         );
       }
@@ -444,7 +457,7 @@ async function renderBlockquote(node: Blockquote, ctx: Ctx): Promise<Paragraph[]
       paragraphs.push(
         new Paragraph({
           indent: { left: 720 },
-          children: await renderPhrasing(child.children, ctx),
+          children: await renderPhrasing(normalizeInlineHtml(child.children), ctx),
           shading: { type: "clear", fill: "F2F2F2" },
         }),
       );
@@ -461,7 +474,7 @@ async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
     const row = node.children[rowIndex];
     const cells: TableCell[] = [];
     for (const cell of row.children) {
-      const runs = await renderPhrasing(cell.children, ctx, rowIndex === 0 ? { bold: true } : {});
+      const runs = await renderPhrasing(normalizeInlineHtml(cell.children), ctx, rowIndex === 0 ? { bold: true } : {});
       cells.push(new TableCell({ children: [new Paragraph({ children: runs })] }));
     }
     rows.push(new TableRow({ children: cells }));
@@ -579,6 +592,13 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       }
       break;
     }
+    case "html":
+      // 白名单行内 html(经 normalizeInlineHtml 已合并为整串):渲染为样式运行;
+      // 非白名单(理论不可达,防御):跳过
+      if (isAllowedInlineHtml(node.value)) {
+        runs.push(...inlineHtmlItemsToRuns(parseInlineHtml(node.value)));
+      }
+      break;
     default:
       break;
   }
@@ -645,7 +665,7 @@ async function renderFootnoteDefinition(def: FootnoteDefinition, ctx: Ctx): Prom
   for (const child of def.children) {
     switch (child.type) {
       case "paragraph":
-        paragraphs.push(new Paragraph({ children: await renderPhrasing(child.children, ctx) }));
+        paragraphs.push(new Paragraph({ children: await renderPhrasing(normalizeInlineHtml(child.children), ctx) }));
         break;
       case "list":
         paragraphs.push(...(await renderList(child, ctx)));
@@ -709,4 +729,205 @@ function sniffImageType(data: Buffer): "png" | "jpg" | "gif" {
     return "gif";
   }
   return "png";
+}
+
+// ---------- 内联格式白名单(批次 5) ----------
+
+/** 内联格式白名单标签(无属性才渲染;与 src/core/pdf/render.ts 的
+ *  isAllowedInlineHtml 逐字一致,双格式契约,须同步修改) */
+const ALLOWED_INLINE_TAGS = new Set([
+  "strong", "b", "em", "i", "u", "s", "del", "code", "kbd", "sub", "sup", "mark", "br", "span",
+]);
+
+/**
+ * 内联 HTML 白名单判定:整串须完全由「白名单无属性标签 + 文本」构成才合法。
+ * 开标签仅允许纯标签名(可带尾随空白,`<strong>` / `<strong >` 无属性合法,
+ * 带属性一律非法);闭标签须与栈顶匹配;br 为空标签不入栈;文本段不允许
+ * 出现 `<`;扫描结束栈须为空。未闭合/错配/带属性/非白名单 → false。
+ * 与 PDF 侧逐字一致(双格式契约),实现同步修改时勿漂移。
+ */
+function isAllowedInlineHtml(content: string): boolean {
+  const text = content.trim();
+  const stack: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const open = text.indexOf("<", i);
+    if (open === -1) break; // 剩余均为文本(不含 <)
+    const close = text.indexOf(">", open + 1);
+    if (close === -1) return false; // 未闭合
+    const inner = text.slice(open + 1, close);
+    if (inner.startsWith("/")) {
+      const name = inner.slice(1).trim().toLowerCase();
+      if (!/^[a-z][a-z0-9]*$/.test(name)) return false; // 闭标签带属性/非法
+      if (name === "br" || !ALLOWED_INLINE_TAGS.has(name)) return false;
+      if (stack.length === 0 || stack[stack.length - 1] !== name) return false; // 无对应/错配
+      stack.pop();
+    } else {
+      if (!/^[a-z][a-z0-9]*\s*$/i.test(inner)) return false; // 带属性/非法开标签
+      const name = inner.trim().toLowerCase();
+      if (!ALLOWED_INLINE_TAGS.has(name)) return false;
+      if (name !== "br") stack.push(name); // br 空标签不入栈
+    }
+    i = close + 1;
+  }
+  return stack.length === 0;
+}
+
+/** 白名单解析项:文本段(带累积样式标志)或换行;纯 core 结构,不依赖 docx 类型 */
+interface InlineHtmlStyleFlags {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  mono?: boolean;
+  sub?: boolean;
+  sup?: boolean;
+  highlight?: boolean;
+}
+interface InlineHtmlText extends InlineHtmlStyleFlags {
+  text: string;
+}
+type InlineHtmlItem = InlineHtmlText | { break: true };
+
+/** 标签 → 样式增量(与白名单契约表一一对应;span 为透传空样式) */
+const INLINE_TAG_STYLES: Record<string, InlineHtmlStyleFlags> = {
+  strong: { bold: true },
+  b: { bold: true },
+  em: { italic: true },
+  i: { italic: true },
+  u: { underline: true },
+  s: { strike: true },
+  del: { strike: true },
+  code: { mono: true },
+  kbd: { mono: true },
+  sub: { sub: true },
+  sup: { sup: true },
+  mark: { highlight: true },
+  span: {},
+};
+
+/**
+ * 白名单表达式 → 解析项序列(调用方须先经 isAllowedInlineHtml 校验)。
+ * 栈式扫描:开标签压入样式增量,闭标签弹出,文本段合并当前栈样式;<br> 产出 break 项。
+ */
+function parseInlineHtml(value: string): InlineHtmlItem[] {
+  const items: InlineHtmlItem[] = [];
+  const stack: InlineHtmlStyleFlags[] = [];
+  let i = 0;
+  let segStart = 0;
+  const pushText = (text: string): void => {
+    if (text === "") return;
+    const merged = stack.reduce((acc, s) => Object.assign(acc, s), {} as InlineHtmlStyleFlags);
+    items.push({ text, ...merged });
+  };
+  while (i < value.length) {
+    const open = value.indexOf("<", i);
+    if (open === -1) {
+      pushText(value.slice(segStart));
+      break;
+    }
+    pushText(value.slice(segStart, open));
+    const close = value.indexOf(">", open + 1);
+    if (close === -1) break; // 校验层保证可达,防御终止
+    const inner = value.slice(open + 1, close);
+    if (inner.startsWith("/")) {
+      stack.pop();
+    } else {
+      const name = inner.trim().toLowerCase();
+      if (name === "br") items.push({ break: true });
+      else stack.push(INLINE_TAG_STYLES[name] ?? {});
+    }
+    i = close + 1;
+    segStart = i;
+  }
+  return items;
+}
+
+/**
+ * 段落行内 html 归一化。micromark 将 `<em>斜</em>` 拆为 html("<em>") + text("斜") +
+ * html("</em>") 三个节点,白名单表达式须合并回整串才能通过 isAllowedInlineHtml 校验:
+ * 1. 白名单合并:从 html 节点起累积后续 html/text 节点,累积串一旦构成完整白名单
+ *    表达式即合并为单个 html 节点(渲染为样式运行);
+ * 2. 危险段丢弃:无法构成白名单表达式的开标签(带属性/非白名单),连同其内容直到
+ *    第一个闭标签 html 节点整体丢弃(与"白名单外 html 跳过"安全语义一致,内容文本
+ *    不残留);找不到闭标签则丢弃到段落尾;
+ * 3. 孤立闭标签丢弃。
+ * 纯结构变换,不依赖 docx 类型,与 PDF 侧 html_whitelist 组合语义对齐。
+ */
+function normalizeInlineHtml(nodes: PhrasingContent[]): PhrasingContent[] {
+  const result: PhrasingContent[] = [];
+  let i = 0;
+  while (i < nodes.length) {
+    const node = nodes[i];
+    if (node.type !== "html") {
+      result.push(node);
+      i++;
+      continue;
+    }
+    if (/^<\//.test(node.value.trim())) {
+      i++; // 孤立闭标签(前无白名单开标签):丢弃
+      continue;
+    }
+    // 白名单合并:累积后续 html/text 节点直到构成完整表达式
+    let buf = node.value;
+    let j = i + 1;
+    let merged = false;
+    while (j < nodes.length) {
+      const next = nodes[j];
+      if (next.type === "html" || next.type === "text") buf += next.value;
+      else break;
+      if (isAllowedInlineHtml(buf)) {
+        merged = true;
+        break;
+      }
+      j++;
+    }
+    if (merged) {
+      result.push({ type: "html", value: buf });
+      i = j + 1;
+      continue;
+    }
+    // 危险段丢弃:开标签起,丢弃直到并包括第一个闭标签 html 节点
+    i++;
+    while (i < nodes.length) {
+      const cur = nodes[i];
+      if (cur.type === "html" && /^<\//.test(cur.value.trim())) {
+        i++;
+        break;
+      }
+      i++;
+    }
+  }
+  return result;
+}
+
+/** 白名单解析项 → TextRun 序列(break 项 → 换行 run;选项名经 d.ts 实证:
+ *  italics/strike/subScript/superScript/highlight,underline 传空对象) */
+function inlineHtmlItemsToRuns(items: InlineHtmlItem[]): TextRun[] {
+  const runs: TextRun[] = [];
+  for (const item of items) {
+    if ("break" in item) {
+      runs.push(new TextRun({ text: "", break: 1 }));
+    } else {
+      runs.push(
+        new TextRun({
+          text: item.text,
+          bold: item.bold,
+          italics: item.italic,
+          underline: item.underline ? {} : undefined,
+          strike: item.strike,
+          font: item.mono ? CODE_FONT : undefined,
+          subScript: item.sub,
+          superScript: item.sup,
+          highlight: item.highlight ? "yellow" : undefined,
+        }),
+      );
+    }
+  }
+  return runs;
+}
+
+/** 白名单 html 块节点 → 正文段落(复用 renderBodyParagraph,排版设置生效) */
+function renderInlineHtmlParagraph(value: string, ctx: Ctx): Paragraph {
+  return renderBodyParagraph(inlineHtmlItemsToRuns(parseInlineHtml(value)), ctx);
 }
