@@ -7,6 +7,10 @@ contextBridge.exposeInMainWorld("api", {
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   openMarkdownDialog: (): Promise<string | null> => ipcRenderer.invoke("dialog:openMarkdown"),
   openMarkdowns: (): Promise<string[]> => ipcRenderer.invoke("dialog:openMarkdowns"),
+  /** 批次 7:选择输出目录(取消返回 null) */
+  selectDir: (): Promise<string | null> => ipcRenderer.invoke("dialog:selectDir"),
+  /** 批次 7:取消当前转换(单文件/批量/合并通用) */
+  convertCancel: (): Promise<void> => ipcRenderer.invoke("convert:cancel"),
   collectMarkdowns: (paths: string[]): Promise<{ files: string[]; skipped: string[] }> =>
     ipcRenderer.invoke("paths:collectMarkdown", paths),
   convert: (filePath: string, format: "docx" | "pdf") => ipcRenderer.invoke("convert", filePath, format),

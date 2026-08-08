@@ -264,7 +264,8 @@ body {
   gap: 2px;
 }
 
-.multi-move {
+.multi-move,
+.multi-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -280,7 +281,8 @@ body {
     border-color 0.15s ease;
 }
 
-.multi-move svg {
+.multi-move svg,
+.multi-remove svg {
   width: 14px;
   height: 14px;
 }
@@ -291,14 +293,28 @@ body {
   border-color: var(--border-strong);
 }
 
-.multi-move:focus-visible {
+/* 移除按钮悬停:红色语义,提示破坏性操作 */
+.multi-remove:hover:not(:disabled) {
+  color: var(--error);
+  background: #fdf1f0;
+  border-color: #f0c8c3;
+}
+
+.multi-move:focus-visible,
+.multi-remove:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.multi-move:disabled {
+.multi-move:disabled,
+.multi-remove:disabled {
   color: #c8c8c8;
   cursor: default;
+}
+
+/* 列表行选中态(Del 键移除的前置动作) */
+.multi-item.selected {
+  background: var(--accent-soft);
 }
 
 /* 拖拽排序视觉:源项半透明,目标项上下沿显示插入位置 */
@@ -881,4 +897,269 @@ body {
 
 .batch-item-msg--warning {
   color: var(--warning);
+}
+
+/* ---------- 批次 7:体验优化(增删单项 / 进度 / 汇总 / 输出目录 / 输入提示) ---------- */
+
+/* 小按钮:用于工具条 / 弹窗内次级操作 */
+.btn-small {
+  padding: 4px 10px;
+  font-size: 12.5px;
+  border-radius: 4px;
+}
+
+/* 幽灵按钮:次级中的次级,仅文字 + 悬停底色 */
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: #f0f0f0;
+  color: var(--text);
+}
+
+.btn-ghost:disabled {
+  color: #c8c8c8;
+  cursor: default;
+}
+
+/* 单文件态:说明 + 移除按钮同行 */
+.drop-file-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.drop-file-actions .drop-change {
+  margin: 0;
+}
+
+/* 多文件态工具条:数量 + 追加 / 清空 */
+.multi-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.multi-head .multi-count {
+  flex: 1;
+  min-width: 0;
+}
+
+.multi-tools {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+.multi-tools .btn-small {
+  padding: 3px 10px;
+}
+
+/* 转换进度条:与现有圆角 / 配色体系一致 */
+.progress-area {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fafafa;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.progress-track {
+  height: 6px;
+  overflow: hidden;
+  background: #e8e8e8;
+  border-radius: 3px;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 常驻结果汇总条:成功绿 / 失败红,打开引导按钮 + 可折叠警告 */
+.result-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fafafa;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.result-summary--ok {
+  background: #f4faf4;
+  border-color: #c9e6c9;
+}
+
+.result-summary--fail {
+  background: #fdf1f0;
+  border-color: #f0c8c3;
+}
+
+.result-summary-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.result-summary-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+}
+
+.result-summary--ok .result-summary-icon {
+  color: var(--success);
+}
+
+.result-summary--fail .result-summary-icon {
+  color: var(--error);
+}
+
+.result-summary-texts {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-summary-text {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.result-summary-path {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-summary-error {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--error);
+  user-select: text;
+  word-break: break-all;
+}
+
+.result-summary-actions {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+/* 警告折叠区:黄色警示行,不顶掉完成路径 */
+.summary-warnings-summary {
+  padding: 2px 0;
+  font-size: 12.5px;
+  color: var(--warning);
+  cursor: pointer;
+  user-select: none;
+}
+
+.summary-warnings-list {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  list-style: none;
+  background: #fdf9ec;
+  border: 1px solid #ecd9a8;
+  border-radius: var(--radius-sm);
+}
+
+.summary-warnings-item {
+  padding: 2px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--warning);
+  word-break: break-all;
+  user-select: text;
+}
+
+/* 模板自定义模式提示:黄色,与普通 hint 区分 */
+.template-hint--custom {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* 字段级错误提示:控件旁红字,不再静默还原 */
+.field-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--error);
+}
+
+.setting-margins .field-error {
+  margin-top: 6px;
+}
+
+/* 输出目录行 */
+.setting-outputdir {
+  grid-column: 1 / -1;
+}
+
+.outputdir-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.outputdir-value {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+/* 完成弹窗:路径 + 复制按钮同行;失败态路径红字 */
+.dialog-path-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.dialog-path-row .dialog-path {
+  flex: 1;
+  min-width: 0;
+}
+
+.dialog-path-row .btn-small {
+  flex: none;
+  align-self: flex-start;
+}
+
+.dialog-path--error {
+  color: var(--error);
 }

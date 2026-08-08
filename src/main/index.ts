@@ -12,6 +12,7 @@ import { setPdfMetadata } from "../core/pdf/metadata.js";
 import { extractHeadings } from "../core/pdf/render.js";
 import { createImageResolver, type ImageResolver } from "./image-downloader.js";
 import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
+import { decodeMarkdown } from "../core/encoding.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.argv.includes("--smoke");
@@ -22,6 +23,8 @@ export interface ConvertResult {
   error?: string;
   /** 非致命警告(如缺失本地图片),成功时可能携带 */
   warnings?: string[];
+  /** 用户主动取消(非错误) */
+  canceled?: boolean;
 }
 
 export interface ConvertOptions {
@@ -42,6 +45,8 @@ export interface BatchItem {
   outputPath?: string;
   error?: string;
   warnings?: string[];
+  /** 用户主动取消(未开始即跳过) */
+  canceled?: boolean;
 }
 
 export interface BatchResult {
@@ -49,10 +54,75 @@ export interface BatchResult {
   items: BatchItem[];
   okCount: number;
   failCount: number;
+  /** 用户主动取消的未开始项数量 */
+  canceledCount: number;
 }
 
 /** 批量共享 imageResolver:按 baseDir 缓存,HTTP 去重缓存跨文件生效(转换后不清理,键为路径,无泄漏风险) */
 const resolverCache = new Map<string, ImageResolver>();
+
+/** 取消标志:renderer 经 convert:cancel IPC 置位;转换循环在检查点读取(批次 7) */
+let cancelRequested = false;
+
+class ConvertCanceledError extends Error {
+  constructor() {
+    super("已取消");
+    this.name = "ConvertCanceledError";
+  }
+}
+
+function throwIfCanceled(): void {
+  if (cancelRequested) throw new ConvertCanceledError();
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 解析输出路径(批次 7「体验优化」):
+ * - outputDir 空串 → 源文件同目录;非空 → outputDir(不存在则创建,失败回落源目录)
+ * - 重名自动加序号「名 (2).ext」,绝不覆盖已有文件
+ * - 超长路径(>250 字符)→ 回落源目录并警告(Windows MAX_PATH 限制,Electron 侧无解)
+ * 返回 warnings 携带回落原因;调用方负责把 warnings 并入转换结果。
+ */
+async function resolveOutputPath(
+  filePath: string,
+  format: ConvertFormat,
+  outputDir: string,
+  baseName?: string,
+): Promise<{ outputPath: string; warnings: string[] }> {
+  const warnings: string[] = [];
+  const name = baseName ?? path.basename(filePath).replace(MARKDOWN_EXT_RE, "");
+  const ext = format === "docx" ? ".docx" : ".pdf";
+  const srcDir = path.dirname(filePath);
+  let dir = outputDir && outputDir.trim() !== "" ? path.resolve(outputDir) : srcDir;
+  if (dir !== srcDir) {
+    try {
+      await fs.mkdir(dir, { recursive: true });
+    } catch {
+      warnings.push(`输出目录不可用(${dir}),已输出到源文件目录`);
+      dir = srcDir;
+    }
+  }
+  let candidate = path.join(dir, `${name}${ext}`);
+  if (candidate.length > 250) {
+    warnings.push("输出路径过长,已输出到源文件目录");
+    dir = srcDir;
+    candidate = path.join(dir, `${name}${ext}`);
+  }
+  let i = 2;
+  while (await pathExists(candidate)) {
+    candidate = path.join(dir, `${name} (${i})${ext}`);
+    i++;
+  }
+  return { outputPath: candidate, warnings };
+}
 
 function getImageResolver(baseDir: string): ImageResolver {
   let resolver = resolverCache.get(baseDir);
@@ -94,12 +164,14 @@ export async function convertImpl(
   if (!/\.(md|markdown)$/i.test(filePath)) {
     throw new Error("仅支持 .md / .markdown 文件");
   }
+  throwIfCanceled();
   const settings = await loadSettings();
   onProgress?.("read");
-  const md = await fs.readFile(filePath, "utf8");
+  const warnings: string[] = [];
+  const { text: md, encoding } = decodeMarkdown(await fs.readFile(filePath));
+  if (encoding === "gbk") warnings.push("已按 GBK 编码读取:文件编码非 UTF-8");
 
   onProgress?.("render");
-  const warnings: string[] = [];
   const artifact = await convert(md, format, {
     baseDir: path.dirname(filePath),
     title: path.basename(filePath).replace(/\.(md|markdown)$/i, ""),
@@ -112,9 +184,16 @@ export async function convertImpl(
     // 批次 6:KaTeX 资源目录(app.getAppPath() 保证 dev/打包一致;docx 走 MathML 不需要)
     katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
   });
+  throwIfCanceled();
+
+  const { outputPath, warnings: outWarnings } = await resolveOutputPath(
+    filePath,
+    format,
+    settings.outputDir,
+  );
+  warnings.push(...outWarnings);
 
   if (artifact.kind === "docx") {
-    const outputPath = filePath.replace(/\.(md|markdown)$/i, ".docx");
     await fs.writeFile(outputPath, artifact.buffer);
     onProgress?.("done");
     if (!options?.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
@@ -122,7 +201,6 @@ export async function convertImpl(
   }
 
   // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘(与合并共用 renderPdf)
-  const outputPath = filePath.replace(/\.(md|markdown)$/i, ".pdf");
   await renderPdf(artifact, outputPath);
   onProgress?.("done");
   if (!options?.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
@@ -189,7 +267,8 @@ async function runAfterConvert(action: AppSettings["afterConvert"], outputPath: 
 
 /**
  * 批量转换:并发上限 2 的简单池,每文件独立 convertImpl,失败不中断。
- * 批量模式跳过 runAfterConvert;进度经 onProgress 上报(index 从 1 开始,file=文件名)。
+ * 批次 7:取消支持(未开始项跳过,记 canceledCount);完成后按 afterConvert
+ * 打开第一个成功项(与单文件一致,不再强制跳过);进度经 onProgress 上报。
  */
 export async function batchConvertImpl(
   files: string[],
@@ -200,20 +279,37 @@ export async function batchConvertImpl(
   const items: BatchItem[] = new Array<BatchItem>(total);
   let okCount = 0;
   let failCount = 0;
+  let canceledCount = 0;
   let next = 0; // 下一个待取任务的索引(worker 共享,JS 单线程自增安全)
+  cancelRequested = false;
 
   async function worker(): Promise<void> {
     for (;;) {
+      if (cancelRequested) {
+        // 未开始项(含当前索引)标记取消,不再处理
+        for (let i = next; i < total; i++) {
+          if (!items[i]) {
+            items[i] = { file: files[i], ok: false, canceled: true };
+            canceledCount++;
+          }
+        }
+        return;
+      }
       const index = next++;
       if (index >= total) return;
       const file = files[index];
       const send = (stage: string): void =>
         onProgress?.({ index: index + 1, total, file: path.basename(file), stage });
       try {
-        const { outputPath, warnings } = await convertImpl(file, format, send, { skipAfterConvert: true });
+        const { outputPath, warnings } = await convertImpl(file, format, send);
         items[index] = { file, ok: true, outputPath, warnings };
         okCount++;
       } catch (err) {
+        if (err instanceof ConvertCanceledError) {
+          items[index] = { file, ok: false, canceled: true };
+          canceledCount++;
+          return;
+        }
         items[index] = { file, ok: false, error: err instanceof Error ? err.message : String(err) };
         failCount++;
       }
@@ -221,7 +317,15 @@ export async function batchConvertImpl(
   }
 
   await Promise.all(Array.from({ length: Math.min(2, total) }, () => worker()));
-  return { ok: true, items, okCount, failCount };
+  // 批量导出后行为:与单文件一致,作用于第一个成功项(避免打开 N 个文件)
+  if (!cancelRequested) {
+    const firstOk = items.find((i) => i.ok);
+    if (firstOk?.outputPath) {
+      const settings = await loadSettings();
+      await runAfterConvert(settings.afterConvert, firstOk.outputPath);
+    }
+  }
+  return { ok: true, items, okCount, failCount, canceledCount };
 }
 
 /**
@@ -231,13 +335,18 @@ export async function batchConvertImpl(
  */
 export async function mergeConvertImpl(files: string[], format: ConvertFormat): Promise<ConvertResult> {
   if (files.length === 0) throw new Error("未选择文件");
+  throwIfCanceled();
   const settings = await loadSettings();
+  const warnings: string[] = [];
   const inputs = await Promise.all(
-    files.map(async (file) => ({ content: await fs.readFile(file, "utf8"), baseDir: path.dirname(file) })),
+    files.map(async (file) => {
+      const { text, encoding } = decodeMarkdown(await fs.readFile(file));
+      if (encoding === "gbk") warnings.push(`已按 GBK 编码读取:${path.basename(file)}`);
+      return { content: text, baseDir: path.dirname(file) };
+    }),
   );
   const mergedMd = mergeMarkdowns(inputs);
   const baseName = path.basename(files[0]).replace(/\.(md|markdown)$/i, "");
-  const warnings: string[] = [];
   const artifact = await convert(mergedMd, format, {
     baseDir: path.dirname(files[0]),
     title: baseName,
@@ -248,10 +357,14 @@ export async function mergeConvertImpl(files: string[], format: ConvertFormat): 
     imageResolver: getImageResolver(path.dirname(files[0])),
     katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
   });
-  const outputPath = path.join(
-    path.dirname(files[0]),
-    `${baseName}-合并${format === "docx" ? ".docx" : ".pdf"}`,
+  throwIfCanceled();
+  const { outputPath, warnings: outWarnings } = await resolveOutputPath(
+    files[0],
+    format,
+    settings.outputDir,
+    `${baseName}-合并`,
   );
+  warnings.push(...outWarnings);
   if (artifact.kind === "docx") {
     await fs.writeFile(outputPath, artifact.buffer);
   } else {
@@ -314,7 +427,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
   let htmlPath = "";
   try {
     const settings = await loadSettings();
-    const md = await fs.readFile(mdPath, "utf8");
+    const { text: md } = decodeMarkdown(await fs.readFile(mdPath));
     const baseName = path.basename(mdPath).replace(/\.(md|markdown)$/i, "");
     const artifact = await convert(md, "pdf", {
       baseDir: path.dirname(mdPath),
@@ -376,16 +489,32 @@ function registerIpc(): void {
     return result.canceled ? [] : result.filePaths;
   });
 
-  // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示
+  // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示;用户取消返回 { ok:false, canceled:true }
   ipcMain.handle("convert", async (event, filePath: string, format: ConvertFormat): Promise<ConvertResult> => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const send = (stage: string) => win?.webContents.send("convert:progress", { stage });
+    cancelRequested = false;
     try {
       const { outputPath, warnings } = await convertImpl(filePath, format, send);
       return { ok: true, outputPath, warnings };
     } catch (err) {
+      if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  // 取消当前转换(单文件/批量/合并通用;批量由 batchConvertImpl 内部检查)
+  ipcMain.handle("convert:cancel", (): void => {
+    cancelRequested = true;
+  });
+
+  // 选择输出目录(批次 7;取消返回 null)
+  ipcMain.handle("dialog:selectDir", async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: "选择输出目录",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
   // 拖放路径收集:目录递归取 md,非 md 的传入路径进 skipped

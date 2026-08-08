@@ -23,6 +23,8 @@ export interface AppSettings {
   breakBeforeH1: boolean;
   /** 导出后行为(默认不自动执行) */
   afterConvert: "none" | "show-in-folder" | "open";
+  /** 输出目录:空串 = 输出到源文件同目录(默认);非空 = 固定输出目录(须绝对路径) */
+  outputDir: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   typography: { ...DEFAULT_TYPOGRAPHY },
   breakBeforeH1: false,
   afterConvert: "none",
+  outputDir: "",
 };
 
 const SETTINGS_FILE_NAME = "settings.json";
@@ -42,7 +45,15 @@ const ORIENTATIONS = ["portrait", "landscape"] as const;
 const ALIGNS = ["left", "justify"] as const;
 const MARGIN_MIN_MM = 0;
 const MARGIN_MAX_MM = 1000;
-const SETTING_KEYS = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "afterConvert"] as const;
+const SETTING_KEYS = [
+  "version",
+  "format",
+  "pageSetup",
+  "typography",
+  "breakBeforeH1",
+  "afterConvert",
+  "outputDir",
+] as const;
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
 let settingsCache: AppSettings | null = null;
@@ -59,6 +70,11 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/** 输出目录:空串(源文件同目录)或绝对路径字符串;其余(相对路径/非字符串)非法 */
+function isValidOutputDir(value: unknown): value is string {
+  return typeof value === "string" && (value === "" || path.isAbsolute(value));
+}
+
 /** 整文件形状校验:任一字段非法即视为损坏,整体回退默认 */
 function isValidSettings(value: unknown): value is AppSettings {
   if (typeof value !== "object" || value === null) return false;
@@ -67,6 +83,8 @@ function isValidSettings(value: unknown): value is AppSettings {
   if (!isOneOf(s.format, FORMATS)) return false;
   if (!isOneOf(s.afterConvert, AFTER_CONVERT_ACTIONS)) return false;
   if (typeof s.breakBeforeH1 !== "boolean") return false;
+  // outputDir 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "";存在则须合法
+  if ("outputDir" in s && !isValidOutputDir(s.outputDir)) return false;
   const ps = s.pageSetup as Record<string, unknown> | undefined;
   if (typeof ps !== "object" || ps === null) return false;
   if (!isOneOf(ps.paper, PAPERS)) return false;
@@ -91,7 +109,12 @@ export function loadSettings(): AppSettings {
     if (isValidSettings(parsed)) {
       // typography 不参与整文件形状校验:旧 settings.json 缺该字段时,
       // 其余设置保留,typography 经 sanitize 自然落到默认,不报错
-      loaded = { ...parsed, typography: sanitizeTypography(parsed.typography) };
+      // outputDir 同理:缺失(旧文件)→ 兜底 ""
+      loaded = {
+        ...parsed,
+        outputDir: isValidOutputDir(parsed.outputDir) ? parsed.outputDir : "",
+        typography: sanitizeTypography(parsed.typography),
+      };
     }
   } catch {
     // 缺文件 / 读取失败 / parse 失败 → 默认值(不写盘)
@@ -137,6 +160,9 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
       case "breakBeforeH1":
         out.breakBeforeH1 =
           typeof src.breakBeforeH1 === "boolean" ? src.breakBeforeH1 : DEFAULT_SETTINGS.breakBeforeH1;
+        break;
+      case "outputDir":
+        out.outputDir = isValidOutputDir(src.outputDir) ? src.outputDir : DEFAULT_SETTINGS.outputDir;
         break;
       case "pageSetup": {
         const pageSetup = sanitizePageSetup(src.pageSetup);

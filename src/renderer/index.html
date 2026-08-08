@@ -45,7 +45,12 @@
             </svg>
             <p class="drop-title">将 Markdown 文件或文件夹拖到此处</p>
             <p class="drop-or">或</p>
-            <button type="button" id="selectBtn" class="btn btn-secondary">
+            <button
+              type="button"
+              id="selectBtn"
+              class="btn btn-secondary"
+              title="选择 Markdown 文件(Ctrl+O)"
+            >
               选择文件
             </button>
           </div>
@@ -54,26 +59,109 @@
           <div id="dropFile" class="drop-file hidden">
             <p id="fileName" class="file-name"></p>
             <p id="filePath" class="file-path"></p>
-            <p class="drop-change">点击或拖入新文件可更换</p>
+            <div class="drop-file-actions">
+              <p class="drop-change">点击或拖入可继续添加文件</p>
+              <button type="button" id="removeFileBtn" class="btn btn-ghost btn-small">
+                移除
+              </button>
+            </div>
           </div>
 
-          <!-- 已选多文件态:数量 + 可滚动文件列表(可排序) -->
+          <!-- 已选多文件态:数量 + 工具条 + 可滚动文件列表(可排序、可移除) -->
           <div id="dropMulti" class="drop-multi hidden">
-            <p id="multiCount" class="multi-count"></p>
+            <div class="multi-head">
+              <p id="multiCount" class="multi-count"></p>
+              <div class="multi-tools">
+                <button
+                  type="button"
+                  id="appendBtn"
+                  class="btn btn-secondary btn-small"
+                  title="添加更多文件(Ctrl+O)"
+                >
+                  追加文件
+                </button>
+                <button type="button" id="clearListBtn" class="btn btn-ghost btn-small">
+                  清空列表
+                </button>
+              </div>
+            </div>
             <ul id="multiList" class="multi-list"></ul>
-            <p class="drop-change">按钮或拖拽可调整顺序;点击或拖入可更换</p>
+            <p class="drop-change">拖拽或按钮可调整顺序;点击或拖入可继续添加</p>
           </div>
         </div>
       </section>
 
-      <!-- 状态区:路径 / 错误提示 / 批量进度 -->
+      <!-- 状态区:路径 / 错误提示 -->
       <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <!-- 转换进度:进度条 + 百分比 + 取消按钮(转换中显示) -->
+      <div id="progressArea" class="progress-area hidden">
+        <div
+          id="progressTrack"
+          class="progress-track"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          aria-label="转换进度"
+        >
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <div class="progress-row">
+          <span id="progressText" class="progress-text">0%</span>
+          <button type="button" id="cancelBtn" class="btn btn-ghost btn-small">取消</button>
+        </div>
+      </div>
+
+      <!-- 转换结果汇总:常驻(不依赖弹窗),完成路径 + 打开引导 + 可折叠警告 -->
+      <div id="resultSummary" class="result-summary hidden">
+        <div class="result-summary-main">
+          <svg
+            id="summaryIcon"
+            class="result-summary-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+          <div class="result-summary-texts">
+            <p id="summaryText" class="result-summary-text"></p>
+            <p id="summaryPath" class="result-summary-path hidden"></p>
+            <p id="summaryError" class="result-summary-error hidden"></p>
+          </div>
+          <div class="result-summary-actions">
+            <button
+              type="button"
+              id="summaryRevealBtn"
+              class="btn btn-secondary btn-small hidden"
+              title="在资源管理器中显示输出文件"
+            >
+              打开所在文件夹
+            </button>
+            <button type="button" id="summaryOpenBtn" class="btn btn-secondary btn-small hidden">
+              打开文件
+            </button>
+            <button type="button" id="summaryDetailsBtn" class="btn btn-secondary btn-small hidden">
+              失败详情
+            </button>
+          </div>
+        </div>
+        <details id="summaryWarnings" class="summary-warnings hidden">
+          <summary id="summaryWarningsToggle" class="summary-warnings-summary"></summary>
+          <ul id="summaryWarningsList" class="summary-warnings-list"></ul>
+        </details>
+      </div>
 
       <!-- 页面设置:可折叠面板,改动即时生效并自动保存 -->
       <details id="settingsPanel" class="settings">
         <summary class="settings-summary">
           <span class="settings-summary-title">页面设置</span>
-          <span class="settings-summary-hint">纸张、边距、分页与导出行为</span>
+          <span class="settings-summary-hint">纸张、边距、分页、输出目录与导出行为</span>
         </summary>
         <div class="settings-body">
           <div class="settings-grid">
@@ -122,6 +210,7 @@
                   <input type="number" id="marginRight" class="margin-input" min="0" step="0.5" />
                 </label>
               </div>
+              <p id="marginError" class="field-error hidden"></p>
             </fieldset>
 
             <label class="setting-check">
@@ -134,7 +223,7 @@
               <div class="setting-options">
                 <label class="setting-option">
                   <input type="radio" name="afterConvert" value="none" />
-                  <span>不执行(仅弹窗提示)</span>
+                  <span>不自动执行</span>
                 </label>
                 <label class="setting-option">
                   <input type="radio" name="afterConvert" value="show-in-folder" />
@@ -146,6 +235,19 @@
                 </label>
               </div>
             </fieldset>
+
+            <div class="setting-field setting-outputdir">
+              <span class="setting-label" id="outputDirLabel">输出目录</span>
+              <div class="outputdir-row">
+                <span id="outputDirValue" class="outputdir-value" title="">源文件所在目录</span>
+                <button type="button" id="outputDirPick" class="btn btn-secondary btn-small">
+                  选择…
+                </button>
+                <button type="button" id="outputDirReset" class="btn btn-ghost btn-small">
+                  恢复默认
+                </button>
+              </div>
+            </div>
           </div>
           <p class="settings-note">设置即时生效并自动保存</p>
         </div>
@@ -187,6 +289,7 @@
                 <option value="Consolas"></option>
                 <option value="Segoe UI"></option>
               </datalist>
+              <p id="fontAsciiError" class="field-error hidden"></p>
             </div>
 
             <div class="setting-field">
@@ -207,6 +310,7 @@
                 <option value="仿宋"></option>
                 <option value="等线"></option>
               </datalist>
+              <p id="fontEastAsiaError" class="field-error hidden"></p>
             </div>
 
             <div class="setting-field">
@@ -221,6 +325,7 @@
                 max="24"
                 step="1"
               />
+              <p id="bodySizeError" class="field-error hidden"></p>
             </div>
 
             <div class="setting-field">
@@ -235,6 +340,7 @@
                 max="2.5"
                 step="0.1"
               />
+              <p id="lineSpacingError" class="field-error hidden"></p>
             </div>
 
             <label class="setting-check">
@@ -273,14 +379,20 @@
         </fieldset>
         <div class="convert">
           <!-- 单文件:开始转换;多文件:批量转换(主) + 合并转换(次),按选择数量切换 -->
-          <button type="button" id="convertBtn" class="btn btn-primary" disabled>
+          <button
+            type="button"
+            id="convertBtn"
+            class="btn btn-primary"
+            title="开始转换(Ctrl+Enter)"
+            disabled
+          >
             开始转换
           </button>
           <button
             type="button"
             id="batchBtn"
             class="btn btn-primary hidden"
-            title="为每个文件单独生成一个文档"
+            title="批量转换:每个文件单独生成一个文档(Ctrl+Enter)"
             disabled
           >
             批量转换
@@ -289,17 +401,17 @@
             type="button"
             id="mergeBtn"
             class="btn btn-secondary hidden"
-            title="将所有文件合成一个文档,输出文件名含「-合并」"
+            title="合并转换:将所有文件合成一个文档,输出文件名含「-合并」"
             disabled
           >
             合并转换
           </button>
-          <span class="hint">输出格式:docx / PDF</span>
+          <span class="hint">输出格式:Word / PDF</span>
         </div>
       </footer>
     </main>
 
-    <!-- 转换完成弹窗(单文件 / 合并,仅成功时弹出;失败保持状态区红字提示) -->
+    <!-- 转换完成弹窗(单文件 / 合并;成功与失败均弹出,失败态展示错误原因) -->
     <div
       id="completeDialog"
       class="dialog-overlay hidden"
@@ -311,7 +423,12 @@
       <div class="dialog">
         <h2 id="completeDialogTitle" class="dialog-title">转换完成</h2>
         <p id="completeDialogDesc" class="dialog-desc">文档已生成,输出路径如下</p>
-        <p id="completeOutputPath" class="dialog-path" tabindex="0"></p>
+        <div class="dialog-path-row">
+          <p id="completeOutputPath" class="dialog-path" tabindex="0"></p>
+          <button type="button" id="completeDialogCopy" class="btn btn-ghost btn-small">
+            复制路径
+          </button>
+        </div>
         <p id="completeDialogError" class="dialog-error hidden" role="alert"></p>
         <div class="dialog-actions">
           <div class="dialog-actions-secondary">

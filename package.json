@@ -61,6 +61,7 @@
     "@mdit/plugin-tasklist": "^1.0.2",
     "docx": "^9.7.1",
     "highlight.js": "^11.11.1",
+    "iconv-lite": "^0.7.3",
     "markdown-it": "^14.3.0",
     "pdf-lib": "^1.17.1",
     "remark": "^15.0.1",

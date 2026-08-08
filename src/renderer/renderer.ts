@@ -34,7 +34,7 @@ declare global {
       convert: (
         filePath: string,
         format: "docx" | "pdf",
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: string[] }>;
+      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: string[]; canceled?: boolean }>;
       /** 批量转换:每文件独立输出;始终 ok:true,成败看 items 逐条。 */
       convertBatch: (
         files: string[],
@@ -44,7 +44,11 @@ declare global {
       convertMerge: (
         files: string[],
         format: "docx" | "pdf",
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: string[] }>;
+      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: string[]; canceled?: boolean }>;
+      /** 请求取消当前转换(单文件 / 批量 / 合并通用;批量在文件间检查)。 */
+      convertCancel: () => Promise<void>;
+      /** 选择输出目录对话框(批次 7);用户取消返回 null。 */
+      selectDir: () => Promise<string | null>;
       /** 订阅转换进度(read / render / done),返回取消订阅函数。 */
       onConvertProgress: (
         cb: (stage: "read" | "render" | "done") => void,
@@ -102,6 +106,8 @@ interface AppSettings {
   typography: TypographySettings;
   breakBeforeH1: boolean;
   afterConvert: AfterConvert;
+  /** 输出目录;空串 = 源文件同目录(批次 7 新增)。 */
+  outputDir: string;
 }
 
 /* ---------- 批量 / 合并契约类型 ---------- */
@@ -118,6 +124,8 @@ interface BatchItem {
   outputPath?: string;
   error?: string;
   warnings?: string[];
+  /** 用户取消导致未执行转换的项。 */
+  canceled?: boolean;
 }
 
 interface BatchResult {
@@ -125,6 +133,8 @@ interface BatchResult {
   items: BatchItem[];
   okCount: number;
   failCount: number;
+  /** 用户取消未执行的项数。 */
+  canceledCount: number;
 }
 
 /** 与主进程 DEFAULT_SETTINGS 一致;设置读取失败时静默回退到此值。 */
@@ -150,6 +160,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   breakBeforeH1: false,
   afterConvert: "none",
+  outputDir: "",
 };
 
 /* ---------- 模板预设:排版 + 页面设置的快照(套用后仍可微调,不写死模板 id) ---------- */
@@ -350,6 +361,80 @@ const batchDialogReveal = document.getElementById(
 const batchDialogError = document.getElementById(
   "batchDialogError",
 ) as HTMLParagraphElement;
+// 批次 7:列表工具(单文件移除 / 多文件追加与清空)
+const removeFileBtn = document.getElementById(
+  "removeFileBtn",
+) as HTMLButtonElement;
+const appendBtn = document.getElementById("appendBtn") as HTMLButtonElement;
+const clearListBtn = document.getElementById(
+  "clearListBtn",
+) as HTMLButtonElement;
+// 批次 7:转换进度(进度条 + 百分比 + 取消)
+const progressArea = document.getElementById("progressArea") as HTMLDivElement;
+const progressTrack = document.getElementById(
+  "progressTrack",
+) as HTMLDivElement;
+const progressFill = document.getElementById("progressFill") as HTMLDivElement;
+const progressText = document.getElementById("progressText") as HTMLSpanElement;
+const cancelBtn = document.getElementById("cancelBtn") as HTMLButtonElement;
+// 批次 7:转换结果汇总(常驻,不依赖弹窗;打开引导 + 可折叠警告)
+const resultSummary = document.getElementById("resultSummary") as HTMLDivElement;
+const summaryIcon = document.getElementById("summaryIcon") as HTMLElement;
+const summaryText = document.getElementById("summaryText") as HTMLParagraphElement;
+const summaryPath = document.getElementById("summaryPath") as HTMLParagraphElement;
+const summaryError = document.getElementById("summaryError") as HTMLParagraphElement;
+const summaryRevealBtn = document.getElementById(
+  "summaryRevealBtn",
+) as HTMLButtonElement;
+const summaryOpenBtn = document.getElementById(
+  "summaryOpenBtn",
+) as HTMLButtonElement;
+const summaryDetailsBtn = document.getElementById(
+  "summaryDetailsBtn",
+) as HTMLButtonElement;
+const summaryWarnings = document.getElementById(
+  "summaryWarnings",
+) as HTMLDetailsElement;
+const summaryWarningsToggle = document.getElementById(
+  "summaryWarningsToggle",
+) as HTMLElement;
+const summaryWarningsList = document.getElementById(
+  "summaryWarningsList",
+) as HTMLUListElement;
+// 批次 7:字段级错误提示(边距 / 字体 / 字号 / 行距)
+const marginError = document.getElementById("marginError") as HTMLParagraphElement;
+const fontAsciiError = document.getElementById(
+  "fontAsciiError",
+) as HTMLParagraphElement;
+const fontEastAsiaError = document.getElementById(
+  "fontEastAsiaError",
+) as HTMLParagraphElement;
+const bodySizeError = document.getElementById(
+  "bodySizeError",
+) as HTMLParagraphElement;
+const lineSpacingError = document.getElementById(
+  "lineSpacingError",
+) as HTMLParagraphElement;
+// 批次 7:输出目录设置
+const outputDirValue = document.getElementById(
+  "outputDirValue",
+) as HTMLSpanElement;
+const outputDirPick = document.getElementById(
+  "outputDirPick",
+) as HTMLButtonElement;
+const outputDirReset = document.getElementById(
+  "outputDirReset",
+) as HTMLButtonElement;
+// 批次 7:完成弹窗复制路径
+const completeDialogCopy = document.getElementById(
+  "completeDialogCopy",
+) as HTMLButtonElement;
+const completeDialogTitle = document.getElementById(
+  "completeDialogTitle",
+) as HTMLHeadingElement;
+const completeDialogDesc = document.getElementById(
+  "completeDialogDesc",
+) as HTMLParagraphElement;
 
 /* ---------- 状态 ---------- */
 /** 当前选中的 Markdown 文件列表(1 个或 N 个)。 */
@@ -376,6 +461,10 @@ let settings: AppSettings = {
 let hydratingSettings = false;
 /** 弹窗对应输出文件路径(供「打开所在文件夹 / 打开文件」按钮使用) */
 let dialogOutputPath = "";
+/** 最近一次批量结果(供汇总条「失败详情」重开弹窗)。 */
+let lastBatchResult: BatchResult | null = null;
+/** 最近一次汇总条展示的输出路径(供「打开所在文件夹 / 打开文件」按钮使用)。 */
+let summaryOutputPath = "";
 
 const ERROR_MESSAGE = "仅支持 .md / .markdown 文件";
 
@@ -466,6 +555,7 @@ function renderMultiList(): void {
       actions.append(
         makeMoveButton("up", index > 0, baseName(filePath)),
         makeMoveButton("down", index < n - 1, baseName(filePath)),
+        makeRemoveButton(baseName(filePath)),
       );
 
       li.append(num, name, actions);
@@ -506,6 +596,30 @@ function makeMoveButton(
   return btn;
 }
 
+/** 移除该文件的图标按钮(批次 7 列表增删)。 */
+function makeRemoveButton(fileName: string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "multi-remove";
+  btn.dataset.dir = "remove";
+  btn.title = "移除";
+  btn.setAttribute("aria-label", `移除 ${fileName}`);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M18 6L6 18M6 6l12 12");
+  svg.appendChild(path);
+  btn.appendChild(svg);
+  return btn;
+}
+
 /** 相邻交换并重建列表(上移 / 下移按钮共用)。 */
 function moveItem(index: number, offset: -1 | 1): void {
   const target = index + offset;
@@ -541,6 +655,17 @@ function applySelection(files: string[], skipped = 0): void {
   statusEl.title = files.length === 1 ? files[0] : full;
 }
 
+/**
+ * 追加选择:与现有列表合并(去重),供「追加文件 / 点击继续添加」使用。
+ * @param skipped 本次被跳过的非 md 项数(与重复项合并提示)。
+ */
+function appendSelection(files: string[], skipped = 0): void {
+  const seen = new Set(selectedFiles);
+  const added = files.filter((filePath) => !seen.has(filePath));
+  const dupCount = files.length - added.length;
+  applySelection([...selectedFiles, ...added], skipped + dupCount);
+}
+
 /** 按当前选择与转换状态刷新操作按钮(选择入口 + 三个转换按钮)。 */
 function updateActionButtons(): void {
   const n = selectedFiles.length;
@@ -564,7 +689,8 @@ function focusActionButton(): void {
 }
 
 /* ---------- 选择文件(系统对话框) ---------- */
-async function openDialog(): Promise<void> {
+/** 打开文件对话框;append=true 时与现有列表合并(「追加文件 / 继续添加」入口)。 */
+async function openDialog(append = false): Promise<void> {
   if (converting) return;
   try {
     const paths = await window.api.openMarkdowns();
@@ -574,7 +700,11 @@ async function openDialog(): Promise<void> {
       setError(ERROR_MESSAGE);
       return;
     }
-    applySelection(files, paths.length - files.length);
+    if (append) {
+      appendSelection(files, paths.length - files.length);
+    } else {
+      applySelection(files, paths.length - files.length);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setError(`打开文件对话框失败:${message}`);
@@ -593,7 +723,7 @@ async function resolveDropped(paths: string[]): Promise<void> {
       );
       return;
     }
-    applySelection(files, skipped.length);
+    appendSelection(files, skipped.length); // 拖入始终追加到现有列表
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setError(`读取文件失败:${message}`);
@@ -612,6 +742,74 @@ function stageText(stage: string): string {
   return STAGE_TEXT[stage as keyof typeof STAGE_TEXT] ?? stage;
 }
 
+/* ---------- 批次 7:进度条与汇总条 ---------- */
+/** 阶段 → 进度百分比(主进程只发阶段键,映射近似进度:读取 15% / 渲染 70% / 完成 95%)。 */
+const STAGE_PERCENT: Record<string, number> = { read: 15, render: 70, done: 95 };
+
+/** 更新进度条宽度与百分比文本(0–100 钳制)。 */
+function setProgress(percent: number): void {
+  const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+  progressFill.style.width = `${clamped}%`;
+  progressText.textContent = `${clamped}%`;
+  progressTrack.setAttribute("aria-valuenow", String(clamped));
+}
+
+/** 显示进度区并复位进度(同时使能取消按钮)。 */
+function showProgress(): void {
+  progressArea.classList.remove("hidden");
+  cancelBtn.disabled = false;
+  setProgress(0);
+}
+
+/** 隐藏进度区(转换结束;取消按钮状态随之下次 showProgress 复位)。 */
+function hideProgress(): void {
+  progressArea.classList.add("hidden");
+}
+
+/** 转换结果汇总条(常驻,不依赖弹窗;成功/失败/取消三态 + 打开引导 + 可折叠警告)。 */
+interface SummaryOptions {
+  kind: "ok" | "fail" | "canceled";
+  title: string;
+  outputPath?: string;
+  error?: string;
+  warnings?: string[];
+  /** 批量场景:有失败详情可回看(「失败详情」按钮重开批量弹窗)。 */
+  hasDetails?: boolean;
+}
+
+function showSummary(opts: SummaryOptions): void {
+  resultSummary.classList.remove("hidden");
+  const ok = opts.kind === "ok";
+  resultSummary.classList.toggle("result-summary--ok", ok);
+  resultSummary.classList.toggle("result-summary--fail", !ok);
+  summaryIcon
+    .querySelector("path")
+    ?.setAttribute("d", ok ? "M20 6L9 17l-5-5" : "M18 6L6 18M6 6l12 12");
+  summaryText.textContent = opts.title;
+  summaryOutputPath = opts.outputPath ?? "";
+  summaryPath.classList.toggle("hidden", !opts.outputPath);
+  if (opts.outputPath) {
+    summaryPath.textContent = opts.outputPath;
+    summaryPath.title = opts.outputPath;
+  }
+  summaryError.classList.toggle("hidden", !opts.error);
+  if (opts.error) summaryError.textContent = opts.error;
+  summaryRevealBtn.classList.toggle("hidden", !opts.outputPath);
+  summaryOpenBtn.classList.toggle("hidden", !opts.outputPath);
+  summaryDetailsBtn.classList.toggle("hidden", !opts.hasDetails);
+  const warnings = opts.warnings ?? [];
+  summaryWarnings.classList.toggle("hidden", warnings.length === 0);
+  summaryWarningsToggle.textContent = `警告(${warnings.length})`;
+  summaryWarningsList.replaceChildren(
+    ...warnings.map((warning) => {
+      const li = document.createElement("li");
+      li.className = "summary-warnings-item";
+      li.textContent = warning;
+      return li;
+    }),
+  );
+}
+
 /** 单文件转换(与旧版行为一致)。 */
 async function runConvert(
   filePath: string,
@@ -621,27 +819,38 @@ async function runConvert(
   converting = true;
   updateActionButtons(); // 禁用选择入口与转换按钮,防止重复点击
   setStatus("正在转换…");
+  showProgress();
   try {
     const result = await window.api.convert(filePath, format);
-    if (result.ok) {
+    if (result.canceled) {
+      setStatus("已取消");
+      showSummary({ kind: "canceled", title: "转换已取消" });
+    } else if (result.ok) {
       const outputPath = result.outputPath ?? "";
+      setProgress(100);
       setStatus(`转换完成:${outputPath}`);
       statusEl.title = outputPath; // 长路径悬停可看完整
+      showSummary({
+        kind: "ok",
+        title: "转换完成",
+        outputPath,
+        warnings: result.warnings,
+      });
       showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
-      if (result.warnings?.length) {
-        // 缺失图片等警告:黄色覆盖状态区(悬停 title 保留完成路径 + 警告全文)
-        setStatus(`⚠ 警告:${result.warnings.join("; ")}`, false, true);
-        statusEl.title = `转换完成:${outputPath}\n警告:${result.warnings.join("; ")}`;
-      }
     } else {
-      setError(`转换失败:${result.error ?? "未知错误"}`);
+      const error = result.error ?? "未知错误";
+      setError(`转换失败:${error}`);
+      showSummary({ kind: "fail", title: "转换失败", error });
+      showCompleteDialog("", error, baseName(filePath)); // 失败弹窗:错误三要素
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setError(`转换失败:${message}`);
+    showSummary({ kind: "fail", title: "转换失败", error: message });
   } finally {
     mode = null;
     converting = false;
+    hideProgress();
     updateActionButtons();
   }
 }
@@ -653,24 +862,36 @@ async function runBatch(): Promise<void> {
   converting = true;
   updateActionButtons();
   setStatus(`正在批量转换 ${selectedFiles.length} 个文件…`);
+  showProgress();
   try {
     const result = await window.api.convertBatch(selectedFiles, selectedFormat);
     lastBatchItems = result.items;
-    setStatus(
+    lastBatchResult = result;
+    setProgress(100);
+    const canceledText =
+      result.canceledCount > 0 ? `,取消 ${result.canceledCount}` : "";
+    const title =
       result.failCount > 0
-        ? `批量转换完成:成功 ${result.okCount} / 失败 ${result.failCount}`
-        : `批量转换完成:成功 ${result.okCount} 个文件`,
-      false,
-      result.failCount > 0,
-    );
+        ? `批量完成:成功 ${result.okCount} / 失败 ${result.failCount}${canceledText}`
+        : `批量完成:成功 ${result.okCount} 个文件${canceledText}`;
+    setStatus(title, false, result.failCount > 0);
+    showSummary({
+      kind: result.failCount > 0 ? "fail" : "ok",
+      title,
+      hasDetails: result.failCount > 0,
+      warnings: result.items.flatMap((item) => item.warnings ?? []),
+    });
     showBatchDialog(result); // 成败均弹窗,逐条可见
   } catch (err) {
     lastBatchItems = null;
+    lastBatchResult = null;
     const message = err instanceof Error ? err.message : String(err);
     setError(`批量转换失败:${message}`);
+    showSummary({ kind: "fail", title: "批量转换失败", error: message });
   } finally {
     mode = null;
     converting = false;
+    hideProgress();
     updateActionButtons();
   }
 }
@@ -682,26 +903,38 @@ async function runMerge(): Promise<void> {
   converting = true;
   updateActionButtons();
   setStatus("正在合并转换…");
+  showProgress();
   try {
     const result = await window.api.convertMerge(selectedFiles, selectedFormat);
-    if (result.ok) {
+    if (result.canceled) {
+      setStatus("已取消");
+      showSummary({ kind: "canceled", title: "合并已取消" });
+    } else if (result.ok) {
       const outputPath = result.outputPath ?? "";
+      setProgress(100);
       setStatus(`合并完成:${outputPath}`);
       statusEl.title = outputPath;
+      showSummary({
+        kind: "ok",
+        title: "合并完成",
+        outputPath,
+        warnings: result.warnings,
+      });
       showCompleteDialog(outputPath);
-      if (result.warnings?.length) {
-        setStatus(`⚠ 警告:${result.warnings.join("; ")}`, false, true);
-        statusEl.title = `合并完成:${outputPath}\n警告:${result.warnings.join("; ")}`;
-      }
     } else {
-      setError(`合并失败:${result.error ?? "未知错误"}`);
+      const error = result.error ?? "未知错误";
+      setError(`合并失败:${error}`);
+      showSummary({ kind: "fail", title: "合并失败", error });
+      showCompleteDialog("", error, `${baseName(selectedFiles[0])}-合并`);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setError(`合并失败:${message}`);
+    showSummary({ kind: "fail", title: "合并失败", error: message });
   } finally {
     mode = null;
     converting = false;
+    hideProgress();
     updateActionButtons();
   }
 }
@@ -715,10 +948,11 @@ async function loadSettings(): Promise<void> {
   } catch {
     loaded = DEFAULT_SETTINGS;
   }
-  // 防御性合并:主进程 settings.ts 尚未含 typography 时(旧版本),字段按默认值兜底
+  // 防御性合并:旧版本设置缺字段时按默认值兜底(outputDir 缺省 = 源目录)
   settings = {
     ...DEFAULT_SETTINGS,
     ...loaded,
+    outputDir: loaded.outputDir ?? DEFAULT_SETTINGS.outputDir,
     pageSetup: { ...DEFAULT_SETTINGS.pageSetup, ...loaded.pageSetup },
     typography: { ...DEFAULT_SETTINGS.typography, ...loaded.typography },
   };
@@ -746,13 +980,16 @@ function applySettingsToControls(): void {
   firstLineIndentInput.checked = settings.typography.firstLineIndent;
   alignJustifyInput.checked = settings.typography.align === "justify";
   headingNumberingInput.checked = settings.typography.headingNumbering;
-  // 模板预设:与某预设完全一致时选中,否则回退「默认」;hint 同步显示
+  // 模板预设:与某预设完全一致时选中,否则回退「默认」并提示已进入自定义模式
   const matchedPreset = TEMPLATE_PRESETS.find((preset) =>
     matchesPreset(preset, settings),
   );
   templatePresetSelect.value = matchedPreset?.id ?? "default";
-  templatePresetHint.textContent =
-    (matchedPreset ?? TEMPLATE_PRESETS[0]).hint;
+  const isCustom = !matchedPreset;
+  templatePresetHint.textContent = isCustom
+    ? "已微调,与模板预设不一致"
+    : (matchedPreset ?? TEMPLATE_PRESETS[0]).hint;
+  templatePresetHint.classList.toggle("template-hint--custom", isCustom);
   breakBeforeH1Input.checked = settings.breakBeforeH1;
   afterConvertInputs.forEach(
     (input) => (input.checked = input.value === settings.afterConvert),
@@ -760,6 +997,9 @@ function applySettingsToControls(): void {
   formatInputs.forEach(
     (input) => (input.checked = input.value === settings.format),
   );
+  // 输出目录:空串显示「源文件所在目录」
+  outputDirValue.textContent = settings.outputDir || "源文件所在目录";
+  outputDirValue.title = settings.outputDir || "源文件所在目录";
 }
 
 /** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。 */
@@ -779,22 +1019,24 @@ function persistTypography(): void {
   persistSettings({ typography: { ...settings.typography } });
 }
 
-/** 边距输入:非法值回显当前设置,合法值钳制后写回。 */
+/** 边距输入:非法值回显当前设置,合法值钳制后写回;非法时字段内提示。 */
 function handleMarginChange(key: keyof typeof marginInputs): void {
   if (hydratingSettings) return;
   const input = marginInputs[key];
   const value = input.valueAsNumber;
   if (!Number.isFinite(value)) {
     input.value = String(settings.pageSetup[key]); // 空/非法输入:恢复为当前设置值
+    showFieldError(marginError, `请输入 0–${MARGIN_MAX} 之间的数字`);
     return;
   }
   const clamped = Math.min(MARGIN_MAX, Math.max(MARGIN_MIN, value));
   settings.pageSetup[key] = clamped;
   input.value = String(clamped); // 回显钳制后的值,与主进程持久化结果一致
+  hideFieldError(marginError);
   persistPageSetup();
 }
 
-/** 字号 / 行距输入:空、非数字或超出范围时回显当前设置值。 */
+/** 字号 / 行距输入:空、非数字或超出范围时回显当前设置值,并字段内提示。 */
 function handleTypographyNumberChange(
   key: "bodySizePt" | "lineSpacing",
   min: number,
@@ -802,22 +1044,53 @@ function handleTypographyNumberChange(
 ): void {
   if (hydratingSettings) return;
   const input = key === "bodySizePt" ? bodySizePtInput : lineSpacingInput;
+  const errorEl = key === "bodySizePt" ? bodySizeError : lineSpacingError;
   const value = input.valueAsNumber;
   if (!Number.isFinite(value) || value < min || value > max) {
     input.value = String(settings.typography[key]); // 空/非法/超范围:恢复为当前设置值
+    showFieldError(errorEl, `请输入 ${min}–${max} 之间的数字`);
     return;
   }
   settings.typography[key] = value;
+  hideFieldError(errorEl);
   persistTypography();
 }
 
+/** 字段内错误提示:显示消息并保持控件值可编辑(仅提示,不阻塞)。 */
+function showFieldError(el: HTMLElement, message: string): void {
+  el.textContent = message;
+  el.classList.remove("hidden");
+}
+
+function hideFieldError(el: HTMLElement): void {
+  el.classList.add("hidden");
+}
+
 /* ---------- 转换完成弹窗(单文件 / 合并) ---------- */
-function showCompleteDialog(outputPath: string): void {
+/**
+ * 打开完成弹窗;error 非空时进入失败态(标题「转换失败」、路径行红色显示原因、
+ * 隐藏复制/预览/打开按钮),满足错误三要素:文件名(desc)+ 原因(路径行)+ 操作(确定)。
+ */
+function showCompleteDialog(
+  outputPath: string,
+  error?: string,
+  fileName?: string,
+): void {
   dialogOutputPath = outputPath;
-  completeOutputPath.textContent = outputPath;
-  completeOutputPath.title = outputPath; // 路径超长滚动时悬停可看全文
+  const ok = !error;
+  completeDialogTitle.textContent = ok ? "转换完成" : "转换失败";
+  completeDialogDesc.textContent = ok
+    ? "文档已生成,输出路径如下"
+    : `${fileName ?? ""} 未能转换`;
+  completeOutputPath.textContent = ok ? outputPath : (error ?? "");
+  completeOutputPath.title = completeOutputPath.textContent;
+  completeOutputPath.classList.toggle("dialog-path--error", !ok);
+  completeDialogCopy.classList.toggle("hidden", !ok);
   completeDialogError.classList.add("hidden");
   completeDialogError.textContent = "";
+  completeDialogPreview.classList.toggle("hidden", !ok);
+  completeDialogReveal.classList.toggle("hidden", !ok);
+  completeDialogOpen.classList.toggle("hidden", !ok);
   completeDialog.classList.remove("hidden");
   completeDialogOk.focus(); // 焦点落在默认操作(确定)上
 }
@@ -835,7 +1108,9 @@ function showDialogError(message: string): void {
 
 /* ---------- 批量结果汇总弹窗 ---------- */
 function showBatchDialog(result: BatchResult): void {
-  batchSummary.textContent = `成功 ${result.okCount} / 失败 ${result.failCount}`;
+  const canceledText =
+    result.canceledCount > 0 ? ` / 取消 ${result.canceledCount}` : "";
+  batchSummary.textContent = `成功 ${result.okCount} / 失败 ${result.failCount}${canceledText}`;
   batchSummary.classList.toggle("batch-summary--fail", result.failCount > 0);
   batchResultList.replaceChildren(...result.items.map(renderBatchItem));
   batchDialogReveal.classList.toggle("hidden", result.okCount === 0);
@@ -850,10 +1125,12 @@ function hideBatchDialog(): void {
   focusActionButton();
 }
 
-/** 逐条结果:文件名 + 成功/失败图标 + 警告(黄)/错误(红)信息。 */
+/** 逐条结果:文件名 + 成功/失败/取消图标 + 警告(黄)/错误(红)/取消(灰)信息。 */
 function renderBatchItem(item: BatchItem): HTMLLIElement {
   const li = document.createElement("li");
-  li.className = `batch-item batch-item--${item.ok ? "success" : "fail"}`;
+  li.className = item.canceled
+    ? "batch-item batch-item--canceled"
+    : `batch-item batch-item--${item.ok ? "success" : "fail"}`;
 
   const head = document.createElement("div");
   head.className = "batch-item-head";
@@ -868,7 +1145,14 @@ function renderBatchItem(item: BatchItem): HTMLLIElement {
   icon.setAttribute("stroke-linejoin", "round");
   icon.setAttribute("aria-hidden", "true");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", item.ok ? "M20 6L9 17l-5-5" : "M18 6L6 18M6 6l12 12");
+  path.setAttribute(
+    "d",
+    item.canceled
+      ? "M6 12h12" // 取消:横线
+      : item.ok
+        ? "M20 6L9 17l-5-5"
+        : "M18 6L6 18M6 6l12 12",
+  );
   icon.appendChild(path);
   head.appendChild(icon);
 
@@ -879,7 +1163,7 @@ function renderBatchItem(item: BatchItem): HTMLLIElement {
   head.appendChild(name);
   li.appendChild(head);
 
-  // 信息行:警告在前(黄),错误在后(红)
+  // 信息行:警告在前(黄),错误(红)/取消(灰)在后
   const msgs = document.createElement("div");
   msgs.className = "batch-item-msgs";
   let hasMsgs = false;
@@ -890,7 +1174,13 @@ function renderBatchItem(item: BatchItem): HTMLLIElement {
     msgs.appendChild(p);
     hasMsgs = true;
   }
-  if (item.error) {
+  if (item.canceled) {
+    const p = document.createElement("p");
+    p.className = "batch-item-msg batch-item-msg--canceled";
+    p.textContent = "已取消,未转换";
+    msgs.appendChild(p);
+    hasMsgs = true;
+  } else if (item.error) {
     const p = document.createElement("p");
     p.className = "batch-item-msg batch-item-msg--error";
     p.textContent = item.error;
@@ -905,7 +1195,7 @@ function renderBatchItem(item: BatchItem): HTMLLIElement {
 /* ---------- 事件绑定 ---------- */
 selectBtn.addEventListener("click", (event) => {
   event.stopPropagation(); // 避免冒泡触发拖放区点击,重复打开对话框
-  void openDialog();
+  void openDialog(false);
 });
 
 // 点击拖放区同样打开对话框;键盘可用(Enter / 空格)
@@ -917,18 +1207,49 @@ dropZone.addEventListener("keydown", (event) => {
   }
 });
 
+// 批次 7:单文件态「移除」按钮(清空选择,回到初始态)
+removeFileBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (converting) return;
+  applySelection([]);
+});
+
+// 批次 7:多文件态「追加文件」按钮(对话框追加,与现有列表合并去重)
+appendBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  void openDialog(true);
+});
+
+// 批次 7:多文件态「清空列表」按钮
+clearListBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (converting) return;
+  applySelection([]);
+});
+
 // 多文件列表:点击列表本身不触发换文件(避免误开对话框);
-// 上移/下移按钮走事件委托,点击后重排 selectedFiles 并重建列表
+// 上移/下移/移除按钮走事件委托,点击后重排 selectedFiles 并重建列表
 multiList.addEventListener("click", (event) => {
   event.stopPropagation();
   if (converting) return;
   const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(
-    ".multi-move",
+    ".multi-move, .multi-remove",
   );
   if (!btn) return;
   const li = btn.closest<HTMLLIElement>(".multi-item");
   if (!li) return;
   const index = Number(li.dataset.index);
+  if (btn.classList.contains("multi-remove")) {
+    // 移除该文件:从数组删除并重建;清空后回到初始态
+    selectedFiles.splice(index, 1);
+    renderSelection();
+    setStatus(
+      selectedFiles.length > 0
+        ? `已移除,剩余 ${selectedFiles.length} 个文件`
+        : "",
+    );
+    return;
+  }
   const dir = btn.dataset.dir;
   moveItem(index, dir === "up" ? -1 : 1);
 });
@@ -1099,9 +1420,11 @@ fontAsciiInput.addEventListener("change", () => {
   const value = fontAsciiInput.value.trim();
   if (!value) {
     fontAsciiInput.value = settings.typography.fontAscii; // 空输入:恢复为当前设置值
+    showFieldError(fontAsciiError, "西文字体不能为空,已恢复原值");
     return;
   }
   settings.typography.fontAscii = value;
+  hideFieldError(fontAsciiError);
   persistTypography();
 });
 
@@ -1110,9 +1433,11 @@ fontEastAsiaInput.addEventListener("change", () => {
   const value = fontEastAsiaInput.value.trim();
   if (!value) {
     fontEastAsiaInput.value = settings.typography.fontEastAsia; // 空输入:恢复为当前设置值
+    showFieldError(fontEastAsiaError, "中文字体不能为空,已恢复原值");
     return;
   }
   settings.typography.fontEastAsia = value;
+  hideFieldError(fontEastAsiaError);
   persistTypography();
 });
 
@@ -1248,18 +1573,118 @@ batchDialog.addEventListener("click", (event) => {
   if (event.target === batchDialog) hideBatchDialog();
 });
 
+// 批次 7:取消当前转换(单文件 / 批量 / 合并;主进程在检查点终止并返回 canceled)
+cancelBtn.addEventListener("click", () => {
+  if (!converting) return;
+  cancelBtn.disabled = true; // 防重复点击;转换结束后 hideProgress 隐藏整块
+  setStatus("正在取消…");
+  window.api.convertCancel().catch(() => {
+    cancelBtn.disabled = false;
+    setStatus("取消失败,请重试");
+  });
+});
+
+// 批次 7:汇总条「打开所在文件夹 / 打开文件 / 失败详情」
+summaryRevealBtn.addEventListener("click", () => {
+  if (!summaryOutputPath) return;
+  window.api.revealInFolder(summaryOutputPath).catch((err) => {
+    setError(
+      `无法打开所在文件夹:${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
+});
+
+summaryOpenBtn.addEventListener("click", () => {
+  if (!summaryOutputPath) return;
+  window.api
+    .openFile(summaryOutputPath)
+    .then((result) => {
+      if (!result.ok) setError(result.error ?? "无法打开文件");
+    })
+    .catch((err) =>
+      setError(`无法打开文件:${err instanceof Error ? err.message : String(err)}`),
+    );
+});
+
+summaryDetailsBtn.addEventListener("click", () => {
+  if (lastBatchResult) showBatchDialog(lastBatchResult);
+});
+
+// 批次 7:输出目录选择 / 恢复默认(空串 = 源文件所在目录)
+outputDirPick.addEventListener("click", async () => {
+  try {
+    const dir = await window.api.selectDir();
+    if (!dir) return; // 用户取消
+    settings.outputDir = dir;
+    outputDirValue.textContent = dir;
+    outputDirValue.title = dir;
+    persistSettings({ outputDir: dir });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    setError(`选择输出目录失败:${message}`);
+  }
+});
+
+outputDirReset.addEventListener("click", () => {
+  settings.outputDir = "";
+  outputDirValue.textContent = "源文件所在目录";
+  outputDirValue.title = "源文件所在目录";
+  persistSettings({ outputDir: "" });
+});
+
+// 批次 7:完成弹窗「复制路径」(仅成功态显示;失败态隐藏该按钮)
+completeDialogCopy.addEventListener("click", async () => {
+  const text = completeOutputPath.textContent ?? "";
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    completeDialogCopy.textContent = "已复制";
+    window.setTimeout(() => {
+      completeDialogCopy.textContent = "复制路径";
+    }, 1500);
+  } catch {
+    showDialogError("复制失败,请手动选择文本复制");
+  }
+});
+
 // 进度订阅:单文件/合并走 convert:progress;批量走 batch:progress。
 // mode 标志确保只响应当前模式的进度,转换结束后的迟到事件直接忽略。
+// 单文件/合并只有阶段键(无百分比),按 STAGE_PERCENT 映射近似进度。
 unsubscribeProgress = window.api.onConvertProgress((stage) => {
   if (mode !== "single" && mode !== "merge") return;
   const text = STAGE_TEXT[stage];
   if (text) setStatus(text);
+  const percent = STAGE_PERCENT[stage];
+  if (percent !== undefined) setProgress(percent);
 });
 
 unsubscribeBatchProgress = window.api.onBatchProgress((info) => {
   if (mode !== "batch") return;
   const text = `第 ${info.index} / ${info.total} 个:${baseName(info.file)} · ${stageText(info.stage)}`;
   setStatus(text);
+  // 批量进度:已完成 (index-1)/total 个文件 + 当前文件阶段权重 /total
+  const base = ((info.index - 1) / info.total) * 100;
+  const step = (STAGE_PERCENT[info.stage] ?? 0) / info.total;
+  setProgress(base + step);
+});
+
+// 批次 7:快捷键 Ctrl+Enter 触发主转换(单文件/批量),Ctrl+O 添加文件
+document.addEventListener("keydown", (event) => {
+  const mod = event.ctrlKey || event.metaKey;
+  if (!mod) return;
+  const key = event.key.toLowerCase();
+  if (key === "enter") {
+    event.preventDefault();
+    if (converting) return;
+    if (selectedFiles.length === 1) {
+      void runConvert(selectedFiles[0], selectedFormat);
+    } else if (selectedFiles.length >= 2) {
+      void runBatch();
+    }
+  } else if (key === "o") {
+    event.preventDefault();
+    void openDialog(true);
+  }
 });
 
 // 窗口关闭时取消进度订阅
@@ -1284,8 +1709,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 /* ---------- 初始化 ---------- */
-// 按钮旁说明文案(docx / pdf 均已支持)
-if (convertHint) convertHint.textContent = "输出格式:docx / PDF";
+// 按钮旁说明文案(docx / pdf 均已支持;与 HTML 静态文案保持一致)
+if (convertHint) convertHint.textContent = "输出格式:Word / PDF";
 // 初始无选中:按钮按当前状态置灰(HTML 中 convertBtn 已写死 disabled)
 updateActionButtons();
 // 读取持久化设置并回填控件(失败静默回退默认值)
