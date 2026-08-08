@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [0.17.1] - 2026-08-08
+- 批次 7 用户实测期 bug 修复(3 个,typecheck/build/smoke 全绿,待用户复测):
+  - **合并转换进度条不动**(524cdf2):mergeConvertImpl 缺 onProgress 上报 → 增可选参数按单文件同构发 read/render/done;convert:merge handler 经 convert:progress 通道转发(renderer 的 runMerge 已订阅该事件,此前事件永远不来 → 进度条停在 0%);顺带 smoke 自清理 output 产物(批次 7 重名保护后旧产物不再被覆盖,断言 endsWith("-合并.docx") 因 (N) 序号变体失败;Windows 占用文件 EBUSY 容错跳过)
+  - **合并取消后二次转换秒失败**(fd40480):mergeConvertImpl 开头缺 `cancelRequested = false` 复位(单文件 handler / batchConvertImpl 都有)→ 上次取消残留 true,二次合并立即被 throwIfCanceled 误判取消报「转换失败:已取消」;convert:merge handler 补识别 ConvertCanceledError 返回 { ok:false, canceled:true }(与单文件一致),renderer 走「已取消」分支而非失败弹窗
+  - **PDF 转换取消不生效**(f809c57):renderPdf 内 printToPDF 为 Electron 原子调用不可中断,期间无取消检查 → renderPdf 补三处 throwIfCanceled(loadFile 前 / 字体等待后 / 打印完成落盘前),取消则中止落盘、不注入书签元数据、不报成功;单文件/合并 PDF 共用 renderPdf 均受益
+- 实测说明:PDF 取消需等当前轮 printToPDF 结束才真正中止(原子调用,大文档数秒延迟),但最终不产出文件、状态显示「已取消」
+
 ## [0.17.0] - 2026-08-08
 - 二期批次 7「体验优化 + 流程简化」(用户选定「先体验优化后功能扩展」;调研三路落盘,规划见路线图)
   - **列表增删**(exp-1 勘察 S1):单文件态「移除」按钮、多文件态「追加文件 / 清空列表」+ 每项「移除」按钮(✕ 图标);追加经对话框合并去重(appendSelection),拖入文件始终追加不替换
