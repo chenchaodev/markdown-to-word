@@ -11,3 +11,5 @@
 - 提交策略:一次提交 = 一个可独立回退的逻辑单元;message 用 prefix 风格(`feat:` / `fix:` / `docs:` / `chore:` / `refactor:`)
 - 提交前:过 typecheck / build,`git status` 只含本逻辑单元文件
 - 迭代完成时(不依赖会话结束):更新 `docs/状态速查.md` 与 `docs/CHANGELOG.md` 并提交,状态固化绑定「迭代完成并验证通过」节点(会话随时可能中断,勿等收尾)
+- pwsh 环境坑:commit message 用单引号包裹,避免内嵌 ASCII 双引号被拆包(已踩坑)
+- CHANGELOG 版本号 = 迭代序列(0.NN.M),与 package.json 发布号(0.5.x)解耦,勿混用
