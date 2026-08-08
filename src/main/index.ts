@@ -218,11 +218,13 @@ async function renderPdf(artifact: PdfArtifact, outputPath: string): Promise<voi
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   try {
+    throwIfCanceled(); // 批次 7:打印前检查(loadFile/字体等待期间用户可能已取消)
     await fs.writeFile(htmlPath, artifact.html, "utf8");
     await printWin.loadFile(htmlPath);
     // 批次 6:等待公式字体(KaTeX woff2)加载完成再打印,否则 printToPDF 缺字形
     // (did-finish-load 后字体仍在加载,printToPDF 不等待字体)
     await printWin.webContents.executeJavaScript("document.fonts.ready");
+    throwIfCanceled(); // 批次 7:打印前复查(大文档字体等待可长达数秒)
     const data = await printWin.webContents.printToPDF({
       pageSize: "A4",
       margins: { top: 0, bottom: 0, left: 0, right: 0 }, // 边距由 @page 控制(preferCSSPageSize)
@@ -232,6 +234,9 @@ async function renderPdf(artifact: PdfArtifact, outputPath: string): Promise<voi
       headerTemplate: "<span></span>",
       footerTemplate: artifact.footerTemplate,
     });
+    // 批次 7:printToPDF 不可中断(Electron 原子调用),取消需等本轮打印结束;
+    // 但落盘/书签/元数据必须中止 → 打印后立即检查,取消则不产出文件、不报成功。
+    throwIfCanceled();
     // 批次 4:从渲染后 HTML 提取标题(与目录同源,封面/目录本身非 h 标签不受影响),
     // 注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即命名目标名,无需文本定位)。
     // 无标题时原样落盘(输出为 Buffer → Uint8Array 无拷贝)。
