@@ -1,6 +1,6 @@
 # 研究结论
 
-> 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见架构决策.md。原文存档:docs/archive/。
+> 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
 ### 2026-08-08 11:50:33 docx 域 API 调研结论(@librarian,8a TOC/8b 题注实施依据)
 - **TableOfContents 组件存在且为官方推荐路径**(docx 9.x):`new TableOfContents("目录", { hyperlink, headingStyleRange: "1-3", ... })`,生成完整 w:sdt 复杂域;官方文档要求配合 `features: { updateFields: true }`(产出 w:updateFields,Word 打开弹提示并全量更新所有域——TOC/SEQ/STYLEREF/REF 均在内);现有 render.ts:289-309 已用该组件,**8a 增量 = 开关化 + updateFields 联动**
@@ -41,7 +41,7 @@
 
 ### 2026-08-08 11:19:01 功能扩展调研要点(@librarian,批次 8 规划依据,详见路线图)
 - 市场信号:**Mermaid 从加分项变标配**(2026 新工具几乎全有);WPS 用户群被单独服务,docx 输出必须过 WPS 兼容关;中文排版(eastAsia)仍是全赛道系统性短板(Pandoc 3.2.1 才加 w:hint="eastAsia" 且中英引号还有 bug)——护城河成立,也是营销话术点
-- 来源: @librarian(lib-1);关联: docs/路线图与迭代规划.md、原文存档 docs/archive/2026-08-08-1030-功能扩展调研.md
+- 来源: @librarian(lib-1);关联: docs/ROADMAP.md、原文存档 docs/archive/2026-08-08-1030-功能扩展调研.md
 
 ### 2026-08-08 11:19:01 易用性调研要点(@librarian,批次 7 已实施;未做项见路线图)
 - 中文用户特有坑:GBK/GB18030 编码检测转码(Node 原生不支持,需 iconv-lite,已实施)、Windows MAX_PATH 260 预检(已实施,>250 字符回落)、UTF-16/ANSI 乱码文件名

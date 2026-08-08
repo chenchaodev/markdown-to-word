@@ -2,7 +2,7 @@
 
 ## 当前状态
 - **批次 8「学术正式化延伸」**:调研完成、规划细化,**暂停待用户拍板后开工**(代码未动)。阻塞:D1 编号路线 + D2 题注语法,详见「打开事项」与路线图批次 8
-- **批次 7「体验优化 + 流程简化」**:完成 + 3 个 bug 修复已提交(0.17.1,typecheck/build/smoke 全绿),**待用户 GUI 实测**(清单 docs/体验优化验收记录.md)
+- **批次 7「体验优化 + 流程简化」**:完成 + 3 个 bug 修复已提交(0.17.1,typecheck/build/smoke 全绿),**待用户 GUI 实测**(清单 docs/ACCEPTANCE.md)
 - 2026-08-02~08-06:批次 1-6 与 G1-G5 均已完成(用户实测通过:批次 1/2/3 与 G5),详见 CHANGELOG;各批验收产物见 `output/批次N验收/`
 
 ## 验证基线
@@ -20,4 +20,4 @@
   - **D1 编号路线**(8a/8b 必须同路线,严禁混用):① 更新域路线(推荐,Word 打开弹一次提示全量更新,F9 同步;8a `features.updateFields:true` + 8b STYLEREF+SEQ,与 Word 原生题注同构;WPS 兼容需实测)② 免更新路线(零提示全端一致,但改标题后需重新导出;8a `beginDirty:false`+cachedEntries 纯超链接 + 8b 静态注入「图 1.1」文本)
   - **D2 题注语法**:候选为图/表段落后紧跟「图: 标题」前缀行识别(alt 已被占位文本复用,倾向前缀行;PDF 侧 `.fig-caption::before { content: counter(h1c) "." counter(figc) }`)
   - 8a 现状:docx 原生 TOC 域已存在(render.ts:289-309 TableOfContents 组件),增量=开关化 + updateFields 联动;8b 需预扫建题注上下文(仿 footnoteNextId);8c Mermaid 升回(Chromium 有 DOM);8d 公式编号(REF 用 NumberedItemReference/Bookmark)
-- [ ] 批次 7「体验优化」:完成,待用户 GUI 实测(清单见 docs/体验优化验收记录.md);3 个修复(合并进度条 524cdf2 / 取消残留 fd40480 / PDF 取消 f809c57)待复测
+- [ ] 批次 7「体验优化」:完成,待用户 GUI 实测(清单见 docs/ACCEPTANCE.md);3 个修复(合并进度条 524cdf2 / 取消残留 fd40480 / PDF 取消 f809c57)待复测

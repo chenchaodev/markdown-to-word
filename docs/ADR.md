@@ -4,7 +4,7 @@
 - 决策:docx 公式走 KaTeX MathML 输出 → 转 docx Math(OMML,超出调研范围超额交付);PDF 公式直接 KaTeX HTML+字体渲染(与已有 printToPDF 管线一致);MathML 转换失败时降级为 TeX 源码纯文本兜底
 - 理由:单一公式源(KaTeX)双格式复用;OMML 为 Word 原生公式格式,可编辑;PDF 侧无需第二套公式引擎
 - 来源: @librarian(lib 调研)+ 自查(落地验证)
-- 关联: docs/研究结论.md 2026-08-08 批次6公式链路条目、docs/archive/2026-08-06-2229-批次6公式链路调研.md、CHANGELOG 0.16.0
+- 关联: docs/RESEARCH.md 2026-08-08 批次6公式链路条目、docs/archive/2026-08-06-2229-批次6公式链路调研.md、CHANGELOG 0.16.0
 
 ### 2026-08-06 22:28:50 批次 6 模板包:预设模板(默认/学术论文/商务简报)(ADR-005)
 - 决策:新增预设模板下拉,一键套用「排版设置 + 页面设置快照」;模板微调后下拉回退「默认」并提示不一致
@@ -18,7 +18,7 @@
 - 红线:书签 H1/H2 最小版或砍;注意 /Dests key 编码(中文 slug 为 UTF-16BE hex)
 - 理由:用户实测反馈 + 前置产物结构解析(研究结论 2026-08-04 条目)
 - 来源: 自查(用户反馈 + 产物解析)
-- 关联: docs/路线图与迭代规划.md 批次 4、docs/研究结论.md 2026-08-04 条目
+- 关联: docs/ROADMAP.md 批次 4、docs/RESEARCH.md 2026-08-04 条目
 
 ### 2026-08-03 23:28:16 后续批次规划评审(批次 3 拆批 + 批次 5/6 方向,ADR-003)
 - 决策:批次 3 拆两批——3「批量+合并」(多选/拖放文件夹+队列+失败汇总;合并=渲染前 md 拼接,frontmatter 仅取首个,封面/全局 TOC 自动成立)与 4「长文档」(PDF 书签 + 脚注);批次 5「中文排版深化+保真补全」(字体/字号/行距/首行缩进/两端对齐/章节编号/docx 内部链接/raw HTML 白名单);批次 6「学术正式化」(脚注/公式 KaTeX+OMML spike/模板包)
@@ -26,14 +26,14 @@
 - 砍:自动更新/签名、i18n、目录监视/同步、Mermaid/CLI;延后:最近文件、代码高亮主题切换、分节页面设置、图片尺寸/表格列宽
 - 理由:@oracle 评审(ora-1);护城河重心从「格式正确」转向「排版可定制」
 - 来源: @oracle
-- 关联: docs/路线图与迭代规划.md、原文存档 docs/archive/2026-08-03-2325-后续批次规划评审.md
+- 关联: docs/ROADMAP.md、原文存档 docs/archive/2026-08-03-2325-后续批次规划评审.md
 
 ### 2026-08-02 19:20:18 Electron GUI + 自研 printToPDF 管线(ADR-002)
 - 决策:产品形态改为 Windows GUI(Electron 43);pdf 路线弃 md-to-pdf,改「markdown-it → HTML 模板 → `webContents.printToPDF()`」;转换在主进程执行;IPC 用 `contextIsolation` + preload 白名单(`invoke`/`send`);新增 `src/main/` 与 `src/renderer/`,core 与注册表设计不变
 - 理由:主进程即 Node,转换核心零改造复用;Electron 自带 Chromium 一份两用(GUI + PDF 打印),避免双份 ~300MB 体积;HTML 模板为二期预览铺路
 - 修订:ADR-001 中 pdf 路线(md-to-pdf)被本条目取代;docx 自研管线与格式注册表不变
 - 来源: @oracle
-- 关联: docs/路线图与迭代规划.md
+- 关联: docs/ROADMAP.md
 
 ### 2026-08-02 18:20:36 非对称转换管线 + 格式注册表(ADR-001)
 - 决策:docx 走 remark AST 自研渲染,PDF 走 md-to-pdf 现成管线;`src/core/convert.ts` 以格式注册表分发
@@ -41,4 +41,4 @@
 - 已被 2026-08-02 19:20:18 ADR-002 部分取代(pdf 路线);docx 部分与注册表设计仍然有效
 - 回退:若自研 docx 渲染工作量失控,回退到 `@mohtasham/md-to-docx`
 - 来源: @oracle
-- 关联: docs/路线图与迭代规划.md
+- 关联: docs/ROADMAP.md

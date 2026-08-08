@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [0.17.2] - 2026-08-08
+- docs 文件名统一英文化(archive/ 调研存档除外,历史事实保留原名):状态速查→STATUS、研究结论→RESEARCH、架构决策→ADR、路线图与迭代规划→ROADMAP、开发者手册→DEV-GUIDE、用户手册→USER-GUIDE、体验优化验收记录→ACCEPTANCE;全文交叉引用与全局 AGENTS.md、docs-init 模板同步,候选文档名(REQUIREMENTS/TEST-MANUAL)一并规范
+
 ## [0.17.1] - 2026-08-08 12:16:09
 - 批次 7 用户实测期 bug 修复(3 个,typecheck/build/smoke 全绿,待用户复测):
   - **合并转换进度条不动**(524cdf2):mergeConvertImpl 缺 onProgress 上报 → 增可选参数按单文件同构发 read/render/done;convert:merge handler 经 convert:progress 通道转发(renderer 的 runMerge 已订阅该事件,此前事件永远不来 → 进度条停在 0%);顺带 smoke 自清理 output 产物(批次 7 重名保护后旧产物不再被覆盖,断言 endsWith("-合并.docx") 因 (N) 序号变体失败;Windows 占用文件 EBUSY 容错跳过)
@@ -21,7 +24,7 @@
   - **快捷键 + 复制路径 + 文案统一**:Ctrl+Enter 主转换、Ctrl+O 添加文件;完成弹窗「复制路径」按钮(navigator.clipboard,失败弹窗内提示);输出格式文案统一「Word / PDF」
   - UI 层(des-2 骨架 + 编排器对接):index.html/style.css 新增 ~145/289 行(列表工具/进度区/汇总条/错误提示/输出目录/复制按钮/文案),renderer.ts 全量接线(~513 行),typecheck/build 通过
   - 验收:make-batch4-sample.mjs 第 8 段编码预检断言(UTF-8 无 BOM/带 BOM/UTF-16LE/GBK 解码标记全绿);其余 main 侧行为走 smoke + GUI 实测清单
-  - 待实测:docs/体验优化验收记录.md 清单(列表增删/输出目录/进度取消/重名序号/GBK 转码/快捷键/复制路径/失败弹窗)
+  - 待实测:docs/ACCEPTANCE.md 清单(列表增删/输出目录/进度取消/重名序号/GBK 转码/快捷键/复制路径/失败弹窗)
 
 ## [0.16.0] - 2026-08-08 10:20:16
 - 二期批次 6「学术正式化」第二项:**公式双格式支持**(PDF:KaTeX;docx:KaTeX MathML → docx Math 组件 + 降级)
@@ -141,7 +144,7 @@
 
 ## [0.5.3] - 2026-08-02 21:08:53
 - 修复打包版启动崩溃:files 排除 highlight.js es/ 导致 exports import 条件目标缺失(ERR_MODULE_NOT_FOUND)
-- 移除 es/ 排除(体积 +0.3MB),styles/ 排除保留;教训落盘研究结论.md
+- 移除 es/ 排除(体积 +0.3MB),styles/ 排除保留;教训落盘RESEARCH.md
 - 验证:asar 校验(es/common.js 在、styles 0 条)、win-unpacked 启动、静默安装/启动/卸载全通过
 
 ## [0.5.2] - 2026-08-02 21:03:06
@@ -189,7 +192,7 @@
 - 支持:标题1-6/段落/粗斜体/删除线/行内代码/链接/有序无序嵌套列表/表格(表头加粗)/代码块/引用/图片(魔数识别+resolver 注入)/分割线
 - 中文:theme.ts 集中配置 eastAsia 微软雅黑,已实测写入 XML
 - 验证基线建立:typecheck/build/g1-verify.mjs 全通过,样例含中英混排全要素
-- 实测结论落盘 docs/研究结论.md(docx 9.x Numbering/TextRun/ImageRun 用法)
+- 实测结论落盘 docs/RESEARCH.md(docx 9.x Numbering/TextRun/ImageRun 用法)
 
 ## [0.3.1] - 2026-08-02 19:22:14
 - 规划补充:语法覆盖矩阵、renderer 技术选择(vanilla TS)、G1/G4 依赖清单
@@ -206,7 +209,7 @@
 
 ## [0.2.0] - 2026-08-02 18:20:36
 - 完成选型调研与架构评审:docx 自研渲染管线(remark + docx 9.x)+ md-to-pdf 5.x
-- 新增规划文档:`docs/路线图与迭代规划.md`、`docs/研究结论.md`、`docs/架构决策.md`
+- 新增规划文档:`docs/ROADMAP.md`、`docs/RESEARCH.md`、`docs/ADR.md`
 - AGENTS.md 固化选型硬约束
 
 ## [0.1.0] - 2026-08-02 17:46:35
