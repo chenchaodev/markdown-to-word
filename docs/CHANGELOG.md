@@ -1,13 +1,13 @@
 # CHANGELOG
 
-## [0.17.1] - 2026-08-08
+## [0.17.1] - 2026-08-08 12:16:09
 - 批次 7 用户实测期 bug 修复(3 个,typecheck/build/smoke 全绿,待用户复测):
   - **合并转换进度条不动**(524cdf2):mergeConvertImpl 缺 onProgress 上报 → 增可选参数按单文件同构发 read/render/done;convert:merge handler 经 convert:progress 通道转发(renderer 的 runMerge 已订阅该事件,此前事件永远不来 → 进度条停在 0%);顺带 smoke 自清理 output 产物(批次 7 重名保护后旧产物不再被覆盖,断言 endsWith("-合并.docx") 因 (N) 序号变体失败;Windows 占用文件 EBUSY 容错跳过)
   - **合并取消后二次转换秒失败**(fd40480):mergeConvertImpl 开头缺 `cancelRequested = false` 复位(单文件 handler / batchConvertImpl 都有)→ 上次取消残留 true,二次合并立即被 throwIfCanceled 误判取消报「转换失败:已取消」;convert:merge handler 补识别 ConvertCanceledError 返回 { ok:false, canceled:true }(与单文件一致),renderer 走「已取消」分支而非失败弹窗
   - **PDF 转换取消不生效**(f809c57):renderPdf 内 printToPDF 为 Electron 原子调用不可中断,期间无取消检查 → renderPdf 补三处 throwIfCanceled(loadFile 前 / 字体等待后 / 打印完成落盘前),取消则中止落盘、不注入书签元数据、不报成功;单文件/合并 PDF 共用 renderPdf 均受益
 - 实测说明:PDF 取消需等当前轮 printToPDF 结束才真正中止(原子调用,大文档数秒延迟),但最终不产出文件、状态显示「已取消」
 
-## [0.17.0] - 2026-08-08
+## [0.17.0] - 2026-08-08 11:19:01
 - 二期批次 7「体验优化 + 流程简化」(用户选定「先体验优化后功能扩展」;调研三路落盘,规划见路线图)
   - **列表增删**(exp-1 勘察 S1):单文件态「移除」按钮、多文件态「追加文件 / 清空列表」+ 每项「移除」按钮(✕ 图标);追加经对话框合并去重(appendSelection),拖入文件始终追加不替换
   - **输出目录可配置**(S2):设置面板新增「输出目录」行(显示当前值 / 选择… / 恢复默认);`settings.ts` 增 `outputDir` 字段(空串=源目录,绝对路径校验,旧设置文件兜底 `""`);`dialog:selectDir` IPC
@@ -23,7 +23,7 @@
   - 验收:make-batch4-sample.mjs 第 8 段编码预检断言(UTF-8 无 BOM/带 BOM/UTF-16LE/GBK 解码标记全绿);其余 main 侧行为走 smoke + GUI 实测清单
   - 待实测:docs/体验优化验收记录.md 清单(列表增删/输出目录/进度取消/重名序号/GBK 转码/快捷键/复制路径/失败弹窗)
 
-## [0.16.0] - 2026-08-06
+## [0.16.0] - 2026-08-08 10:20:16
 - 二期批次 6「学术正式化」第二项:**公式双格式支持**(PDF:KaTeX;docx:KaTeX MathML → docx Math 组件 + 降级)
   - 依赖:`@mdit/plugin-katex@1.0.2`(peer markdown-it ^14.2.0,与 footnote/tasklist 同族;依赖 katex 0.18.1)+ `remark-math@6.0.0`(remark@15 兼容)
   - PDF 侧(`src/core/pdf/render.ts`):`md.use(katex)`(支持 $..$/$$..$$、\(..\)/\[..\]、```math 围栏);`loadKatexCss` 读 katex.min.css 内联进模板并把 `url(fonts/` 改写为 `file://` 绝对路径(fonts 与 css 必须同级,file:// 相对路径按 html 位置解析会失败);`body { print-color-adjust: exact }` + `.katex-display` 超宽保护;读取失败返回空串(公式仍渲染仅缺字体样式,不抛错)
@@ -35,13 +35,13 @@
   - 验收:make-batch4-sample.mjs 第 7 段 07-公式测试(行内 x²/分式/上下标 + 独立 ∑ + 开方,docx 断言 m:oMath/m:t x/m:f/m:sSubSup/m:rad,pdf 断言 class="katex" + @font-face);typecheck/build + 验收十三断言全通过
   - 待实测:Word/WPS 打开 07-公式测试.docx(公式可编辑性、缩放渲染)与 07-公式测试.pdf(字体/缩放目测)
 
-## [0.15.0] - 2026-08-06
+## [0.15.0] - 2026-08-06 22:28:50
 - 二期批次 6「学术正式化」第一项:**预设模板包**(设置面板「模板预设」下拉,一键套用排版 + 页面设置快照)
   - 3 个预设(renderer 侧定义,核心无新逻辑——渲染只认具体 typography/pageSetup 值):`default` 默认(引用 DEFAULT_SETTINGS,无第二份定义)、`paper` 学术论文(Times New Roman/宋体/12pt/1.5/缩进/两端对齐/编号;A4 上下 25.4 左右 31.7)、`business` 商务简报(Calibri/微软雅黑/11pt/1.15/无缩进/左对齐/无编号;A4 上下 19.1 左右 25.4)
   - 交互:「排版」面板顶部新增模板下拉 + hint;change → 整体替换 settings.typography/pageSetup → hydration 保护下统一回填全部控件 → 整体持久化;`matchesPreset` 逐字段精确比较,持久化值与预设一致时启动回选该模板,微调后回退「默认」;模板 id 不写入设置(套用后即具体值,可继续微调)
   - 验证:typecheck/build 通过;套用效果待用户 GUI 实测(选「学术论文」→ 转换 → docx/pdf 对照字体字号边距)
 
-## [0.14.0] - 2026-08-06
+## [0.14.0] - 2026-08-06 22:17:06
 - 二期批次 5「中文排版深化 + 保真补全」最后一项:**raw HTML 白名单**(双格式一致,安全最小集)
   - 白名单(14 个无属性内联标签):`strong/b`(粗)、`em/i`(斜)、`u`、`s/del`(删除线)、`code/kbd`(等宽 Consolas)、`sub`、`sup`、`mark`(高亮 yellow)、`br`(换行)、`span`(透传);可嵌套(栈式解析);**带属性或非白名单标签 → 整串回退安全行为**(pdf 转义 / docx 跳过,危险段含内容整体丢弃)
   - pdf 侧(`src/core/pdf/render.ts`):实证 markdown-it 14.3 `html_inline` 仅匹配单标签 → 新增解析层规则 `html_whitelist` 组合整串 token;渲染三分支:page-break → 分页 div、白名单整串 → 原样输出(Chromium 渲染)、其余 → escapeHtml;html_block 与 html_inline 同规则(行首白名单串归 html_block,须同判定保证双格式一致)
@@ -50,7 +50,7 @@
   - 验收:make-batch4-sample.mjs 第 6 段(白名单全部标签 + 嵌套 + script/div/带属性三类危险样例,docx 断言样式运行齐全且危险内容零残留、pdf 断言原样输出 + 转义形式);typecheck/build + 验收十一断言全通过
   - 待实测:06-raw-html-白名单测试.{docx,pdf} 目测双格式渲染效果
 
-## [0.13.0] - 2026-08-06
+## [0.13.0] - 2026-08-06 21:48:32
 - 二期批次 5「中文排版深化 + 保真补全」第三项:**排版参数化 + 设置面板**(5a)
   - 设置模型:`src/core/typography.ts`(新)`TypographySettings` + `DEFAULT_TYPOGRAPHY`(fontAscii Calibri / fontEastAsia 微软雅黑 / bodySizePt 12 / lineSpacing 1.5 / firstLineIndent true / align justify / headingNumbering true);renderer 侧有平行定义(进程隔离),契约字段保持一致
   - 持久化:`src/main/settings.ts` `SETTING_KEYS` 增 `typography`(此前 UI 写入会被静默忽略);`sanitizeTypography` 逐字段校验(字体非空、bodySizePt 8-24、lineSpacing 1.0-2.5、align 枚举),非法/缺失回退默认;旧 settings.json 缺字段时其余设置保留、仅 typography 落默认,不报错
@@ -62,14 +62,14 @@
   - 实证(OOXML 序列化细节):字号元素为 `w:sz`(非 `w:size`);docx 库 JUSTIFIED 序列化为 `w:jc w:val="both"`;`IIndentAttributesProperties.firstLineChars` 存在(字符单位,中文排版 2 字符=200)
   - 待实测:设置面板排版设置持久化 + docx/PDF 产物对照目测(重点:首行缩进、两端对齐、字号行距双格式一致)
 
-## [0.12.0] - 2026-08-06
+## [0.12.0] - 2026-08-06 21:38:17
 - 二期批次 5「中文排版深化 + 保真补全」第二项:**PDF 章节编号 + 元数据注入**
   - PDF 章节编号:`src/core/pdf/render.ts` `RenderPdfHtmlOptions` 增 `headingNumbering`(默认开);`buildTemplateCss` 追加 CSS counter 规则(h1/h2/h3 counter-increment/reset + `::before` 渲染 1 / 1.1 / 1.1.1,与 docx 侧 decimal 编号语义一致);编号经伪元素渲染**不进入 HTML 文本节点**,extractHeadings/书签/目录文本不受影响(与 docx 侧书签不含编号一致)
   - PDF 元数据:`src/core/pdf/metadata.ts`(新,纯逻辑可测)`setPdfMetadata` —— frontmatter title/author/date → PDF Info(title/author 仅注入非空,date 解析失败用当前时间兜底 + 设 modificationDate);`PdfArtifact` 增 `metadata?: DocMetadata`;`src/main/index.ts` renderPdf 在书签注入后追加(顺序固定:书签 → 元数据,pdf-lib 整体重存必须最后执行,否则丢书签)
   - 验收:make-batch4-sample.mjs 链路对齐主进程(补 setPdfMetadata 调用)+ 新增断言(counter CSS 存在、PDF 读回 title/author 与 frontmatter 一致);typecheck/build + 验收六断言全通过
   - 待实测:PDF 文档属性(title/author/date)与章节编号目测(对照 docx 03 样例编号层级)
 
-## [0.11.0] - 2026-08-06
+## [0.11.0] - 2026-08-06 21:27:25
 - 二期批次 5「中文排版深化 + 保真补全」第一项:**docx 标题章节自动编号 + 内部/外部链接跳转**
   - 标题编号:`src/core/docx/render.ts` 新增 `headingNumberingOptions()`(reference "md-heading",levels 0-2,text `%1`/`%1.%2`/`%1.%2.%3`,decimal,indent 360/360);`renderHeading` 对 h1-h3 挂段落级 `numbering: { reference, level: depth-1 }`(**静态渲染,打开 Word/WPS 无需 F9 即显示**;heading + numbering + Bookmark 三层不冲突,9.7.1 实证);`RenderOptions` 增 `headingNumbering`(默认开)
   - 内部链接:`[text](#slug)` → `InternalHyperlink({ anchor: docxBookmarkId(slug) })` 跳转同名标题书签(9.7.1 无 Hyperlink 类,9.x 拆分;anchor 与书签 id 字符串精确匹配);外链 http(s) → `ExternalHyperlink({ link })` 真超链接(替代假链接);相对路径保持假链接样式;pushRuns/pushRunsSync 双侧同步;`InlineChild` 类型加宽接纳超链接
@@ -77,7 +77,7 @@
   - 待实测:Word/WPS 打开 03-标题编号链接测试.docx 目测编号层级/点击跳转;PDF 侧章节编号在批次 5 后续(5a)跟进
 - 注:PDF 侧章节编号未在本提交实现(规划批次 5 剩余项,与排版参数化同批)
 
-## [0.10.0] - 2026-08-05
+## [0.10.0] - 2026-08-05 22:22:19
 - 二期批次 4「长文档」第二/三项:**脚注 + 页眉页脚页码**
   - docx 页眉页脚:`src/core/docx/render.ts` 新增 `renderHeader`(文档标题居中灰色 7pt,仅 metadata.title/title 存在时生成)与 `renderFooter`(第 X 页 / 共 X 页,PageNumber.CURRENT/TOTAL_PAGES 域,与 PDF footerTemplate 文案一致);挂载于 sections[].headers/footers(9.x 仅支持 section 级);`RenderOptions` 增 `title`(convert.ts docx 分支透传 context.title)
   - docx 脚注:Document 级 `footnotes` 配置 + `FootnoteReferenceRun(id)`(零新依赖,docx@9.7.1 内置);footnoteDefinition 预扫建索引,Ctx 带全局递增计数器(合并场景编号天然连续);重复引用各占新 id(与 markdown-it 编号语义对齐);定义内容复用现有块渲染(paragraph/list/code/blockquote/thematicBreak,table 跳过);标题等同步场景引用降级为字面 `[^label]`
@@ -86,11 +86,11 @@
 - 验收脚本:`scripts/make-batch4-sample.mjs` 重构(htmlToPdf 抽取 + 明文 zip 部件断言),新增 02-脚注测试.{docx,pdf}(docx 断言 footnotes.xml/footer1.xml/header1.xml 存在;pdf 断言 footnotes 区 + footnote-ref 结构)
 - 验证:typecheck/build 通过;验收脚本三项断言全通过(合并 PDF 18 条书签 + docx 部件 + pdf 脚注结构);待用户 Word/WPS + GUI 实测
 
-## [0.9.1] - 2026-08-05
+## [0.9.1] - 2026-08-05 22:03:15
 - 修复书签点击不跳转(用户实测):destKeyText 对 PDFName key 直接 `decodeURIComponent(asString())` 永远匹配不上(内部编码 `%`→`#25`)→ 全部书签回退首页;改为 `decodeText()` 还原百分号形式再解码
 - smoke 补断言:`Dest[0] instanceof PDFRef`(单文件 + 合并两处),防「全部回退首页」类回归
 
-## [0.9.0] - 2026-08-05
+## [0.9.0] - 2026-08-05 21:52:33
 - 二期批次 4「长文档」第一项:**PDF 书签大纲注入**(修复用户实测「PDF 侧边栏书签为空」)
   - `src/core/pdf/bookmarks.ts`(纯逻辑,可单测):`lookupNamedDest`(名称树 + 旧式直接 /Dests 字典双兼容,PDFName key 百分号编码解码,PDFDict 间接目标取 /D)+ `setOutline`(marp setOutline 样板:嵌套 First/Last/Count、F 标志、页面 PDFRef 收集)+ `buildBookmarkTree`(扁平标题 → 按 level 嵌套)+ `injectBookmarks`(主入口,解析失败回退首页不抛错)
   - `src/core/pdf/render.ts`:`extractHeadings` 抽出为公共导出(目录 HTML 与书签同源,从渲染后 HTML 提取 h1-h3 id+文本)
@@ -100,13 +100,13 @@
   - 验收样例:scripts/make-batch4-sample.mjs → output/批次4验收/01-简介-合并.pdf(18 条书签,嵌套层级正确)
 - 验证:typecheck/build/smoke 全通过;真实产物注入读回验证(Type/Count/中文标题/兄弟链/嵌套)
 
-## [0.8.1] - 2026-08-04
+## [0.8.1] - 2026-08-04 21:13:03
 - 批次 3 用户实测反馈与修复:
   - 修复拖放取路径:File.path 已被 Electron 32+ 移除 → preload 暴露 `webUtils.getPathForFile`(文件/文件夹拖入均报「无法获取文件路径」)
   - 文件列表排序:拖拽 + 上移/下移按钮,序号实时刷新,重排 selectedFiles 影响批量/合并顺序
 - 实测反馈:PDF 侧边栏书签为空(页面内目录正常)→ 批次 4 开工,书签优先
 
-## [0.8.0] - 2026-08-04
+## [0.8.0] - 2026-08-04 20:57:34
 - 二期批次 3「批量 + 合并」完成
   - 批量转换:对话框多选 + 拖放多文件/文件夹(`paths:collectMarkdown` 递归收集,跳过点开头目录,字典序);队列并发 2(评审定稿,docx/pdf 统一);失败不中断,逐条汇总 `{ file, ok, outputPath?, error?, warnings? }`;批量模式跳过 runAfterConvert(防批量后自动打开 N 个文件);进度 `batch:progress`(第 i/N 个 + 阶段)
   - 多文件合并:`src/core/merge.ts` mergeMarkdowns(首文件 frontmatter 保留、后续剥离;图片相对路径 → 绝对,保留 title;`<!-- page-break -->` 拼接;空文件跳过);输出与首文件同目录 `{首文件名}-合并.{ext}`;封面/全局 TOC 自动成立(单文档渲染)
@@ -116,7 +116,7 @@
   - smoke 扩展:批量 3 成功 1 缺失(汇总逐条正确)+ 合并 docx(frontmatter 仅首个/图片嵌入/两文件标题齐全)
 - 验证:typecheck/build/smoke 全通过;验收样例 output/批次3验收 待用户 GUI 实测
 
-## [0.7.0] - 2026-08-03
+## [0.7.0] - 2026-08-03 23:14:13
 - 二期批次 2「保真 + 正式文档化」完成
   - 外链图片下载嵌入:`src/main/image-downloader.ts` createImageResolver(本地读文件 + http(s) 下载 10s 超时/仅 2xx/同 URL 去重);docx 嵌入 + pdf 渲染后并发 3 下载转 data URL;失败保留原 URL + 警告(与缺失图片警告同构)
   - 目录 TOC:docx 内置 `TableOfContents` 类生成 Word 域(目录页 + 静态占位,Word/WPS 右键更新域 F9 生成;仅含标题时生成,封面后/文档最前);pdf 渲染后提取 h1-h3 生成无页码锚点链接目录(printToPDF 实测保留页内锚点为可点击 PDF 链接,含跨页)
@@ -125,7 +125,7 @@
   - 修复:分页符 div 后紧跟 h1 叠加 break-before 产生空白页(Chromium 相邻 break 不合并)→ 例外规则 `.page-break + h1 { break-before: auto }`
 - 验证:typecheck/build/smoke 全通过;core 断言 21 项(frontmatter/封面/外链图/回归)+ docx TOC 12 项 + pdf TOC 18 项 + 分页空白页修复 6 项 + PDF e2e 6 项(5 页无空白页/锚点可点击);验收样例 output/批次2验收.{md,docx,pdf} 待 Word/WPS 实测
 
-## [0.6.0] - 2026-08-03
+## [0.6.0] - 2026-08-03 21:46:27
 - 二期批次 1「排版控制 + 设置底座」完成
   - 设置持久化:`src/main/settings.ts` 手写 userData/settings.json(原子写/整文件形状校验/patch 白名单 sanitize);记忆输出格式/页面设置/H1 分页开关/导出后行为;IPC settings:get/set + preload 4 新 API
   - 导出后行为:完成弹窗新增「打开所在文件夹/打开文件」按钮(shell:reveal/shell:open IPC);设置项控制转换后自动执行(默认不自动,防打断)
@@ -135,27 +135,27 @@
   - 修复:docx landscape 宽高双重交换 bug(库自动交换,勿手动)
 - 验证:typecheck/build/smoke 全通过;双格式渲染断言 17 项(分页符/书签/pgSz/边距/转义/去重);分页符 PDF 页数确定性验证(/Count=2);验收样例 output/批次1验收-*.docx 待 Word/WPS 实测
 
-## [0.5.4] - 2026-08-02
+## [0.5.4] - 2026-08-02 21:20:47
 - 应用图标:build/icon.svg(「源文档 → 转换 → 输出文档」蓝渐变 Win11 风格,纯几何无字体依赖)+ scripts/svg-to-ico.mjs(SVG → 6 尺寸 ICO)
 - 打包验证:exe 图标生效(无 default icon 警告,32x32 提取成功),安装包 89.5MB
 
-## [0.5.3] - 2026-08-02
+## [0.5.3] - 2026-08-02 21:08:53
 - 修复打包版启动崩溃:files 排除 highlight.js es/ 导致 exports import 条件目标缺失(ERR_MODULE_NOT_FOUND)
 - 移除 es/ 排除(体积 +0.3MB),styles/ 排除保留;教训落盘研究结论.md
 - 验证:asar 校验(es/common.js 在、styles 0 条)、win-unpacked 启动、静默安装/启动/卸载全通过
 
-## [0.5.2] - 2026-08-02
+## [0.5.2] - 2026-08-02 21:03:06
 - G5 完成:electron-builder(26.15.3)NSIS 打包
   - build 配置:output release/、files 白名单 + highlight.js es/styles 排除、electronLanguages 裁剪(zh-CN/en-US)、NSIS 向导式安装(oneClick:false + 可改目录)
   - 实测:安装包 88.9MB;静默安装/卸载退出码 0;安装版启动 OK;asar 内容校验(dist 完整/高亮裁剪生效)
   - 已知:打包版 --smoke 不可用(asar 只读,output/ 写不进),验证走启动存活 + asar list + 静默装/卸
 
-## [0.5.1] - 2026-08-02
+## [0.5.1] - 2026-08-02 20:51:28
 - 缺失图片警告:转换前统一检查 mdast 图片节点,本地路径不存在时收集 warnings 经 IPC 返回
 - renderer 以黄色 `.status--warning` 展示(「⚠ 警告:缺少图片文件: xxx」),不打断弹窗路径展示
 - 验证:typecheck/build/smoke 全通过;core 直测(相对/绝对坏路径均警告,存在图片不误报)
 
-## [0.5.0] - 2026-08-02
+## [0.5.0] - 2026-08-02 20:46:39
 - G4 完成:PDF 自研管线(markdown-it + HTML 模板 + printToPDF)
   - `src/core/pdf/render.ts`:markdown-it 14.3 + @mdit/plugin-tasklist + highlight.js(lib/common)
   - `src/core/convert.ts`:格式注册表(docx → Buffer / pdf → HTML + footerTemplate)
@@ -164,51 +164,51 @@
   - renderer 解锁 pdf 格式选择;smoke 扩展 pdf 链路(魔数校验)
 - 验证:typecheck/build/smoke 全通过;PDF 产物经 observer 视觉验收(中文/表格/高亮/任务列表/图片/页码 7/8 正常,1 项为源 md 间距问题)
 
-## [0.4.4] - 2026-08-02
+## [0.4.4] - 2026-08-02 20:32:46
 - 修复弹窗 hidden 失效:.hidden 加 !important,避免被后定义的 .dialog-overlay{display:flex} 覆盖(启动即显示、确定关不掉)
 - smoke renderer 诊断增加弹窗启动隐藏检查(防回归)
 
-## [0.4.3] - 2026-08-02
+## [0.4.3] - 2026-08-02 20:29:51
 - 转换完成弹窗:模态提示(遮罩 + 卡片),显示结果文件完整路径(可选中复制),确定/遮罩/Esc 关闭
 - 失败路径不变(状态区红字);smoke 诊断保留(api/按钮/点击反馈)
 
-## [0.4.2] - 2026-08-02
+## [0.4.2] - 2026-08-02 20:20:58
 - G3 完成:convert IPC 端到端(读→解析→渲染→落盘,同目录换 .docx 扩展名)
 - 进度事件 read/render/done 推送 + renderer 进度文案;转换按钮启用(pdf 待 G4)
 - convertImpl 抽为纯函数(main 内),smoke 自测覆盖 convert 链路
 - 验证:typecheck/build/smoke(docx 8978 bytes)全通过
 
-## [0.4.1] - 2026-08-02
+## [0.4.1] - 2026-08-02 20:07:41
 - G2 完成:Electron 43 骨架(主进程窗口/dialog/IPC + preload contextBridge + renderer UI)
 - renderer:Win11 浅色风格,文件选择/拖放(md 扩展名校验)/格式单选/状态反馈,CSP 已配置
 - 验证:`typecheck`/`build`/`electron . --smoke` 全通过
 - .npmrc 固化 electron 双镜像(勿回退)
 
-## [0.4.0] - 2026-08-02
+## [0.4.0] - 2026-08-02 19:57:10
 - G1 完成:实现 `src/core` 转换管线(remark + remark-gfm 解析,docx 9.x 渲染)
 - 支持:标题1-6/段落/粗斜体/删除线/行内代码/链接/有序无序嵌套列表/表格(表头加粗)/代码块/引用/图片(魔数识别+resolver 注入)/分割线
 - 中文:theme.ts 集中配置 eastAsia 微软雅黑,已实测写入 XML
 - 验证基线建立:typecheck/build/g1-verify.mjs 全通过,样例含中英混排全要素
 - 实测结论落盘 docs/研究结论.md(docx 9.x Numbering/TextRun/ImageRun 用法)
 
-## [0.3.1] - 2026-08-02
+## [0.3.1] - 2026-08-02 19:22:14
 - 规划补充:语法覆盖矩阵、renderer 技术选择(vanilla TS)、G1/G4 依赖清单
 - 修复里程碑缺口:表格/代码块/引用/图片 渲染并入 G1
 
-## [0.3.0] - 2026-08-02
+## [0.3.0] - 2026-08-02 19:20:18
 - 需求变更为 Windows GUI 应用,重新规划:Eelectron 43 + docx 自研渲染 + 自研 printToPDF 管线(弃 md-to-pdf)
 - 重写路线图(功能规划 MVP、里程碑 G1-G5);新增 ADR-002,修订 ADR-001 pdf 路线
 - 研究结论新增 GUI 调研与 pdf 路线修订;AGENTS.md/状态速查/开发者手册同步
 
-## [0.2.1] - 2026-08-02
+## [0.2.1] - 2026-08-02 19:15:14
 - docs/README.md 按全局模板重构(阅读路径/文档登记/维护约定三节,登记全部文档)
 - 路线图补充进展状态与里程碑状态列;状态速查同步
 
-## [0.2.0] - 2026-08-02
+## [0.2.0] - 2026-08-02 18:20:36
 - 完成选型调研与架构评审:docx 自研渲染管线(remark + docx 9.x)+ md-to-pdf 5.x
 - 新增规划文档:`docs/路线图与迭代规划.md`、`docs/研究结论.md`、`docs/架构决策.md`
 - AGENTS.md 固化选型硬约束
 
-## [0.1.0] - 2026-08-02
+## [0.1.0] - 2026-08-02 17:46:35
 - 初始化项目脚手架:git 仓库、package.json、tsconfig、.npmrc(npmmirror)、docs 骨架
 - 技术栈确定为 Node.js/TypeScript(ESM)
