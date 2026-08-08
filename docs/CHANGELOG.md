@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [0.17.0] - 2026-08-08
+- 二期批次 7「体验优化 + 流程简化」(用户选定「先体验优化后功能扩展」;调研三路落盘,规划见路线图)
+  - **列表增删**(exp-1 勘察 S1):单文件态「移除」按钮、多文件态「追加文件 / 清空列表」+ 每项「移除」按钮(✕ 图标);追加经对话框合并去重(appendSelection),拖入文件始终追加不替换
+  - **输出目录可配置**(S2):设置面板新增「输出目录」行(显示当前值 / 选择… / 恢复默认);`settings.ts` 增 `outputDir` 字段(空串=源目录,绝对路径校验,旧设置文件兜底 `""`);`dialog:selectDir` IPC
+  - **重名自动加序号**(S2,绝不覆盖):`resolveOutputPath` —— outputDir 空串→源目录;非空→创建(失败回落源目录+警告);候选路径 >250 字符回落源目录+警告(Windows MAX_PATH);已存在则 `名 (2).ext` 递增
+  - **编码预检**(中文特有坑):`src/core/encoding.ts`(新,纯函数)decodeMarkdown —— UTF-8/UTF-16LE BOM 嗅探剥离;无 BOM 严格 UTF-8(TextDecoder fatal)失败按 GBK/GB18030 解码(iconv-lite gb18030 为 GBK 超集无损);主进程 convertImpl 接入并追加「已按 GBK 编码读取」警告;依赖 `iconv-lite@^0.7.3`
+  - **进度条 + 取消**(S3):转换中显示进度区(进度条 + 百分比 + 取消按钮);单文件/合并按阶段映射百分比(read 15%/render 70%/done 95%),批量按 index/total + 阶段权重;`convert:cancel` IPC + 主进程 cancelRequested 标志 + ConvertCanceledError,批量在文件间检查
+  - **完成汇总条常驻**(S1/S3):状态区下方新增汇总条(成功/失败/取消三态 + 图标 + 完成路径 + 「打开所在文件夹 / 打开文件 / 失败详情」+ 可折叠警告 `警告(N)`);批量失败时「失败详情」重开批量弹窗
+  - **错误三要素 + 失败弹窗**(lib-2 Top4):单文件/合并失败弹窗进入失败态(标题「转换失败」+ 文件名 + 红色原因 + 隐藏无意义的复制/预览/打开按钮),错误不丢不掩盖
+  - **模板回退/非法输入提示**(exp-1 勘察):微调后模板下拉回退「默认」并提示「已微调,与模板预设不一致」(warning 色);边距/字号/行距/字体输入非法字段内提示并恢复原值
+  - **批量导出后一致**(exp-1 勘察):batchConvertImpl 取消后按 afterConvert 仅对首个成功项执行(与单文件一致)
+  - **快捷键 + 复制路径 + 文案统一**:Ctrl+Enter 主转换、Ctrl+O 添加文件;完成弹窗「复制路径」按钮(navigator.clipboard,失败弹窗内提示);输出格式文案统一「Word / PDF」
+  - UI 层(des-2 骨架 + 编排器对接):index.html/style.css 新增 ~145/289 行(列表工具/进度区/汇总条/错误提示/输出目录/复制按钮/文案),renderer.ts 全量接线(~513 行),typecheck/build 通过
+  - 验收:make-batch4-sample.mjs 第 8 段编码预检断言(UTF-8 无 BOM/带 BOM/UTF-16LE/GBK 解码标记全绿);其余 main 侧行为走 smoke + GUI 实测清单
+  - 待实测:docs/体验优化验收记录.md 清单(列表增删/输出目录/进度取消/重名序号/GBK 转码/快捷键/复制路径/失败弹窗)
+
 ## [0.16.0] - 2026-08-06
 - 二期批次 6「学术正式化」第二项:**公式双格式支持**(PDF:KaTeX;docx:KaTeX MathML → docx Math 组件 + 降级)
   - 依赖:`@mdit/plugin-katex@1.0.2`(peer markdown-it ^14.2.0,与 footnote/tasklist 同族;依赖 katex 0.18.1)+ `remark-math@6.0.0`(remark@15 兼容)
