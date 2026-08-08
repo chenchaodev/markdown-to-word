@@ -332,12 +332,18 @@ export async function batchConvertImpl(
  * 合并转换:读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片绝对化)→ 单次 convert。
  * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;执行 runAfterConvert(单输出,与单文件一致)。
  * 任一步失败直接抛(调用方 catch 为 { ok:false, error })。
+ * 批次 7 补:进度经 onProgress 上报(与单文件同构:read/render/done 阶段键),修复合并进度条不动。
  */
-export async function mergeConvertImpl(files: string[], format: ConvertFormat): Promise<ConvertResult> {
+export async function mergeConvertImpl(
+  files: string[],
+  format: ConvertFormat,
+  onProgress?: (stage: string) => void,
+): Promise<ConvertResult> {
   if (files.length === 0) throw new Error("未选择文件");
   throwIfCanceled();
   const settings = await loadSettings();
   const warnings: string[] = [];
+  onProgress?.("read");
   const inputs = await Promise.all(
     files.map(async (file) => {
       const { text, encoding } = decodeMarkdown(await fs.readFile(file));
@@ -347,6 +353,7 @@ export async function mergeConvertImpl(files: string[], format: ConvertFormat): 
   );
   const mergedMd = mergeMarkdowns(inputs);
   const baseName = path.basename(files[0]).replace(/\.(md|markdown)$/i, "");
+  onProgress?.("render");
   const artifact = await convert(mergedMd, format, {
     baseDir: path.dirname(files[0]),
     title: baseName,
@@ -367,8 +374,10 @@ export async function mergeConvertImpl(files: string[], format: ConvertFormat): 
   warnings.push(...outWarnings);
   if (artifact.kind === "docx") {
     await fs.writeFile(outputPath, artifact.buffer);
+    onProgress?.("done");
   } else {
     await renderPdf(artifact, outputPath);
+    onProgress?.("done");
   }
   await runAfterConvert(settings.afterConvert, outputPath);
   return { ok: true, outputPath, warnings };
@@ -540,9 +549,12 @@ function registerIpc(): void {
   );
 
   // 合并转换:多文件 → mergeMarkdowns → 单次 convert,输出 {首文件名}-合并.{ext}
-  ipcMain.handle("convert:merge", async (_event, files: string[], format: ConvertFormat): Promise<ConvertResult> => {
+  // 批次 7 补:进度走 convert:progress(与单文件同通道),renderer 的 runMerge 已订阅该事件
+  ipcMain.handle("convert:merge", async (event, files: string[], format: ConvertFormat): Promise<ConvertResult> => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
     try {
-      return await mergeConvertImpl(files, format);
+      return await mergeConvertImpl(files, format, send);
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -582,6 +594,20 @@ app.whenReady().then(async () => {
       const outDir = path.join(__dirname, "..", "..", "output");
       const sampleMd = path.join(outDir, "g3-smoke.md");
       await fs.mkdir(outDir, { recursive: true });
+      // 批次 7 起重名保护:同名产物不再覆盖 → smoke 自清理本次会生成的产物(含 (2) 序号变体),
+      // 保证断言确定性;output/ 下的验收样例等其他文件不受影响。
+      // Windows 下被阅读器占用的文件删除会 EBUSY,容错跳过(残留由重名序号机制规避)。
+      const smokePrefixes = ["g3-smoke", "g4-smoke", "batch-", "merge-a", "merge-b"];
+      for (const name of await fs.readdir(outDir)) {
+        const base = name.replace(/\.(md|docx|pdf|png)$/i, "").replace(/\s\(\d+\)$/, "");
+        if (smokePrefixes.some((p) => base.startsWith(p))) {
+          try {
+            await fs.rm(path.join(outDir, name), { force: true });
+          } catch {
+            // 被外部程序占用:跳过,不阻塞 smoke
+          }
+        }
+      }
       await fs.writeFile(
         sampleMd,
         "# 冒烟测试 中文标题\n\n<!-- page-break -->\n\n| 列A | 列B |\n| --- | --- |\n| 你好 | world |\n\n- 项目一\n- 项目二\n",
