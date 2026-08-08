@@ -9,8 +9,10 @@
 import MarkdownIt from "markdown-it";
 import { footnote } from "@mdit/plugin-footnote";
 import { tasklist } from "@mdit/plugin-tasklist";
+import { katex } from "@mdit/plugin-katex";
 import hljs from "highlight.js/lib/common";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_PAGE_SETUP, type PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
@@ -42,6 +44,11 @@ export interface RenderPdfHtmlOptions {
   /** 标题章节编号(1 / 1.1 / 1.1.1,与 docx 侧 decimal 编号语义一致;
    *  显式传值优先,否则取 typography.headingNumbering;默认开) */
   headingNumbering?: boolean;
+  /** KaTeX 资源目录(绝对路径,含 katex.min.css 与 fonts/ 子目录,即
+   *  node_modules/katex/dist;传入则 katex.min.css 内联进模板并改写字体
+   *  为 file:// 绝对路径,公式字体样式生效;不传则公式渲染为 KaTeX HTML
+   *  但无字体样式,公式仍显示(缺字形美观度)) */
+  katexDir?: string;
 }
 
 /** 页码页脚模板(printToPDF footerTemplate 用;模板内必须内联样式,字体大小需显式设置)。 */
@@ -79,6 +86,9 @@ function buildMarkdownIt(): MarkdownIt {
   });
   md.use(tasklist);
   md.use(footnote);
+  // 批次 6:公式插件($..$ / $$..$$ / \(..\) / \[..\] / ```math 围栏;throwOnError=false,
+  // 渲染失败输出 katex-error 标记,不抛)
+  md.use(katex);
   overrideHtmlRules(md);
   return md;
 }
@@ -374,13 +384,33 @@ ${typography.align === "justify" ? `
 `;
 }
 
-function buildTemplate(bodyHtml: string, title: string, css: string): string {
+/** KaTeX CSS 内联:读 katex.min.css,把相对字体引用改写为 file:// 绝对路径
+ *  (katex.min.css 用 url(fonts/X.woff2),fonts 与 css 必须同级,file:// 下相对
+ *  路径按 html 文件位置解析会失败,须绝对化),并追加打印/超宽保护规则。
+ *  读取失败返回空串(公式仍渲染为 KaTeX HTML,仅缺字体样式,不抛错)。 */
+function loadKatexCss(katexDir: string): string {
+  try {
+    const fontsBase = path.join(katexDir, "fonts").replace(/\\/g, "/");
+    const css = readFileSync(path.join(katexDir, "katex.min.css"), "utf8");
+    return (
+      css.replace(/url\(fonts\//g, `url(file://${fontsBase}/`) +
+      "\n/* 批次 6:打印色彩保真 + 超宽公式保护(KaTeX 超宽溢出固有,保守处理) */\n" +
+      "body { print-color-adjust: exact; }\n" +
+      ".katex-display { max-width: 100%; overflow-x: auto; }\n"
+    );
+  } catch {
+    return "";
+  }
+}
+
+function buildTemplate(bodyHtml: string, title: string, css: string, katexCss: string): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <title>${escapeHtml(title)}</title>
 <style>${css}</style>
+${katexCss ? `<style>${katexCss}</style>` : ""}
 </head>
 <body>
 ${bodyHtml}
@@ -567,5 +597,6 @@ export async function renderPdfHtml(
       typography,
       options.headingNumbering ?? typography.headingNumbering,
     ),
+    options.katexDir ? loadKatexCss(options.katexDir) : "",
   );
 }

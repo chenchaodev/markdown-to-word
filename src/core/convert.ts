@@ -50,6 +50,8 @@ export interface ConvertContext {
   typography?: TypographySettings;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
+  /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
+  katexDir?: string;
 }
 
 /**
@@ -125,6 +127,7 @@ export async function convert(
         pageSetup: context.pageSetup,
         typography: context.typography,
         breakBeforeH1: context.breakBeforeH1,
+        katexDir: context.katexDir,
       }),
       footerTemplate: PDF_FOOTER_TEMPLATE,
       metadata,

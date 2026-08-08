@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [0.16.0] - 2026-08-06
+- 二期批次 6「学术正式化」第二项:**公式双格式支持**(PDF:KaTeX;docx:KaTeX MathML → docx Math 组件 + 降级)
+  - 依赖:`@mdit/plugin-katex@1.0.2`(peer markdown-it ^14.2.0,与 footnote/tasklist 同族;依赖 katex 0.18.1)+ `remark-math@6.0.0`(remark@15 兼容)
+  - PDF 侧(`src/core/pdf/render.ts`):`md.use(katex)`(支持 $..$/$$..$$、\(..\)/\[..\]、```math 围栏);`loadKatexCss` 读 katex.min.css 内联进模板并把 `url(fonts/` 改写为 `file://` 绝对路径(fonts 与 css 必须同级,file:// 相对路径按 html 位置解析会失败);`body { print-color-adjust: exact }` + `.katex-display` 超宽保护;读取失败返回空串(公式仍渲染仅缺字体样式,不抛错)
+  - printToPDF 时序(`src/main/index.ts`):loadFile 后 `await executeJavaScript("document.fonts.ready")` 再打印(否则公式缺字形);3 个 convert 调用点传 `katexDir: app.getAppPath()/node_modules/katex/dist`
+  - docx 侧(`src/core/docx/math.ts` 新 + `render.ts`):KaTeX `output:"mathml"` 产出 MathML → 零依赖最小标签扫描器解析 → walker 映射 docx Math 组件(mfrac→MathFraction、msqrt/mroot→MathRadical、msub/msup/msubsup→MathSub(Sup)Script、munderover(∑)→MathSum、mover/munder→MathLimitUpper/Lower、mrow/mo/mi/mn/mtext→MathRun);inlineMath → Math 组件入段与 TextRun 混排(9.7.1 实证 Math 属 ParagraphChild);math(display)→ 独立居中段落
+  - 降级红线:KaTeX 报错(katex-error)/未覆盖节点(mtable/mglyph/mstyle 等)/解析失败/空公式 → 整式降级为 TeX 源码等宽灰字(Consolas 888888)+ warnings 提示,内容不丢不崩
+  - 实证:Math 序列化 `<m:oMath>`/`<m:f>`/`<m:rad>`/`<m:sSubSup>`/`<m:nary>`(MathSum)/`<m:limUpp>`;MathIntegral accent 空串不产出 m:chr 已弃用
+  - **语法不对称**:```math 围栏仅 PDF 侧(@mdit/plugin-katex),remark-math 的 mathFlow 只认 $$..$$ / $..$(docx 侧围栏落为代码块)——验收样例用 $$ 块
+  - 验收:make-batch4-sample.mjs 第 7 段 07-公式测试(行内 x²/分式/上下标 + 独立 ∑ + 开方,docx 断言 m:oMath/m:t x/m:f/m:sSubSup/m:rad,pdf 断言 class="katex" + @font-face);typecheck/build + 验收十三断言全通过
+  - 待实测:Word/WPS 打开 07-公式测试.docx(公式可编辑性、缩放渲染)与 07-公式测试.pdf(字体/缩放目测)
+
 ## [0.15.0] - 2026-08-06
 - 二期批次 6「学术正式化」第一项:**预设模板包**(设置面板「模板预设」下拉,一键套用排版 + 页面设置快照)
   - 3 个预设(renderer 侧定义,核心无新逻辑——渲染只认具体 typography/pageSetup 值):`default` 默认(引用 DEFAULT_SETTINGS,无第二份定义)、`paper` 学术论文(Times New Roman/宋体/12pt/1.5/缩进/两端对齐/编号;A4 上下 25.4 左右 31.7)、`business` 商务简报(Calibri/微软雅黑/11pt/1.15/无缩进/左对齐/无编号;A4 上下 19.1 左右 25.4)

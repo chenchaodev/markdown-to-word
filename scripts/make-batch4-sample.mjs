@@ -7,6 +7,8 @@
  * 批次 5b 验收:03-标题编号链接测试(docx 标题章节编号 + 内部/外部链接跳转,解包断言)。
  * 批次 5a 验收:05-排版设置测试(docx styles/正文段落 + pdf 模板 CSS 参数化断言)。
  * 批次 5 收尾验收:06-raw-html-白名单测试(双格式一致的白名单渲染 + 危险样例安全兜底)。
+ * 批次 6 验收:07-公式测试(docx KaTeX MathML → Math 组件 m:oMath 序列化断言;
+ * pdf KaTeX HTML 渲染 + katex.min.css 内联 @font-face 断言)。
  * 用法: npx electron scripts/make-batch4-sample.mjs(需已 build)
  */
 import { app, BrowserWindow } from "electron";
@@ -339,6 +341,60 @@ title: 标题编号与链接测试
     console.log("[ok] docx 标题编号/内部链接:numbering md-heading + hyperlink anchor + 书签齐全");
     await fs.writeFile(path.join(outDir, "03-标题编号链接测试.docx"), linkDocx.buffer);
 
+    // ---------- 7) 公式测试(批次 6) ----------
+    // docx:KaTeX(MathML)→ docx Math 组件;OOXML 序列化名已实证(docx 9.7.1
+    // index.cjs):Math 容器 → <m:oMath>,MathRun → <m:r><m:t>,分式 → <m:f>,
+    // 上下标 → <m:sSubSup>,开方 → <m:rad>。
+    // pdf:KaTeX HTML 渲染 + katex.min.css 内联(file:// 字体绝对化 + @font-face)。
+    // 注意:remark-math(mathFlow)仅支持 $$..$$ / $..$,不支持 ```math 围栏
+    // (围栏是 @mdit/plugin-katex 侧特性,属双格式语法不对称,验收用 $$ 块)。
+    // JS 模板字符串内 TeX 反斜杠须双写(\\frac)。
+    const formulaMd = `# 公式测试
+
+行内公式 $x^2$ 与分式 $\\frac{1}{2}$、上下标 $a_i^j$。
+
+独立公式:
+$$
+\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}
+$$
+
+开方公式:
+$$
+\\sqrt{a^2 + b^2}
+$$
+`;
+    const katexDir = path.join(
+      path.dirname(fileURLToPath(import.meta.url)), "..", "node_modules", "katex", "dist",
+    );
+    const formulaDocx = await convert(formulaMd, "docx", { baseDir: root, warnings: [], katexDir });
+    const formulaDocument = unzipPart(formulaDocx.buffer, "word/document.xml");
+    if (!formulaDocument.includes("<m:oMath")) {
+      throw new Error("公式断言失败:document.xml 缺少 <m:oMath(公式未生成)");
+    }
+    for (const [needle, label] of [
+      ["<m:t>x</m:t>", "x 上标文本"],
+      ["<m:f>", "分式 m:f"],
+      ["<m:sSubSup>", "上下标 m:sSubSup"],
+      ["<m:rad>", "开方 m:rad"],
+    ]) {
+      if (!formulaDocument.includes(needle)) throw new Error(`公式断言失败:document.xml 缺少 ${label}(${needle})`);
+    }
+    console.log("[ok] docx 公式:m:oMath 与 分式/上下标/开方 序列化齐全");
+    await fs.writeFile(path.join(outDir, "07-公式测试.docx"), formulaDocx.buffer);
+
+    const formulaPdf = await convert(formulaMd, "pdf", {
+      baseDir: root, title: "公式测试", warnings: [], katexDir,
+    });
+    if (!formulaPdf.html.includes('class="katex"')) {
+      throw new Error('公式断言失败:PDF 缺少 KaTeX 渲染结构(class="katex")');
+    }
+    if (!formulaPdf.html.includes("@font-face")) {
+      throw new Error("公式断言失败:PDF 缺少 @font-face(KaTeX CSS 内联未生效)");
+    }
+    console.log("[ok] PDF 公式:KaTeX 结构 + CSS 字体内联生效");
+    const formulaPdfBin = await htmlToPdf(formulaPdf.html, formulaPdf.footerTemplate);
+    await fs.writeFile(path.join(outDir, "07-公式测试.pdf"), formulaPdfBin);
+
     // ---------- 落盘 ----------
     await fs.mkdir(outDir, { recursive: true });
     await fs.writeFile(path.join(outDir, "01-简介-合并.pdf"), bookmarked);
@@ -350,6 +406,8 @@ title: 标题编号与链接测试
     console.log(`    05-排版设置测试.docx (${typoDocx.buffer.length} bytes)`);
     console.log(`    06-raw-html-白名单测试.pdf (${htmlPdfBin.length} bytes)`);
     console.log(`    06-raw-html-白名单测试.docx (${htmlDocx.buffer.length} bytes)`);
+    console.log(`    07-公式测试.pdf (${formulaPdfBin.length} bytes)`);
+    console.log(`    07-公式测试.docx (${formulaDocx.buffer.length} bytes)`);
   } catch (err) {
     console.error("[fail]", err);
     app.exit(1);

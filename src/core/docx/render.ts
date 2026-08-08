@@ -11,6 +11,7 @@ import {
   ImageRun,
   InternalHyperlink,
   LineRuleType,
+  Math as DocxMath,
   Packer,
   PageBreak,
   PageNumber,
@@ -39,6 +40,7 @@ import type {
   Table as MdTable,
 } from "mdast";
 import { CODE_FONT, CODE_SIZE, LINK_COLOR } from "./theme.js";
+import { texToDocxMath } from "./math.js";
 import { DEFAULT_PAGE_SETUP } from "../convert.js";
 import type { PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
@@ -99,9 +101,10 @@ function mmToTwips(mm: number): number {
   return Math.round(mm * 56.6929);
 }
 
-/** G1 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理) */
+/** G1 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理;
+ *  math 为 display 公式,独立居中段落) */
 function isSupportedBlock(node: RootContent): node is BlockContent {
-  return ["heading", "paragraph", "list", "table", "code", "blockquote", "thematicBreak", "html"].includes(
+  return ["heading", "paragraph", "list", "table", "code", "blockquote", "thematicBreak", "html", "math"].includes(
     node.type,
   );
 }
@@ -357,6 +360,28 @@ async function renderBlock(node: BlockContent, ctx: Ctx): Promise<(Paragraph | T
       return [await renderTable(node, ctx)];
     case "code":
       return [renderCode(node)];
+    case "math":
+      // display 公式:独立段落强制居中;降级(解析失败/未覆盖节点)时输出
+      // TeX 源码为等宽灰字并追加警告,内容不丢失。不应用 5a 排版
+      // (无首行缩进/两端对齐,与 pdf 侧 .katex-display 居中语义对齐)。
+      {
+        const result = texToDocxMath(node.value);
+        if (result.ok) {
+          return [
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new DocxMath({ children: result.children })],
+            }),
+          ];
+        }
+        ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
+        return [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            children: [new TextRun({ text: result.text, font: CODE_FONT, color: "888888" })],
+          }),
+        ];
+      }
     case "blockquote":
       return renderBlockquote(node, ctx);
     case "thematicBreak":
@@ -509,11 +534,12 @@ interface RunStyle {
   strike?: boolean;
 }
 
-/** 段落内可出现的 docx 子元素:文本 run、行内图片、脚注引用或超链接 */
-type InlineChild = TextRun | ImageRun | FootnoteReferenceRun | InternalHyperlink | ExternalHyperlink;
+/** 段落内可出现的 docx 子元素:文本 run、行内图片、脚注引用、超链接或公式
+ *  (d.ts 实证:Math 属 ParagraphChild,可与 TextRun 同段混排) */
+type InlineChild = TextRun | ImageRun | FootnoteReferenceRun | InternalHyperlink | ExternalHyperlink | DocxMath;
 
-/** 同步场景(标题等)可产生的 docx 子元素:文本 run 或超链接(图片/脚注降级为文本) */
-type InlineSyncChild = TextRun | InternalHyperlink | ExternalHyperlink;
+/** 同步场景(标题等)可产生的 docx 子元素:文本 run、超链接或公式(图片/脚注降级为文本) */
+type InlineSyncChild = TextRun | InternalHyperlink | ExternalHyperlink | DocxMath;
 
 /** 行内节点 → 元素数组;样式沿父子链累积传递 */
 async function renderPhrasing(
@@ -554,6 +580,18 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
     case "inlineCode":
       runs.push(new TextRun({ text: node.value, font: CODE_FONT, size: CODE_SIZE, ...style }));
       break;
+    case "inlineMath": {
+      // 行内公式:KaTeX MathML → docx Math 组件,随所在段落自然继承 5a 排版;
+      // 降级(解析失败/未覆盖节点)→ TeX 源码等宽灰字 + 警告,内容不丢失
+      const result = texToDocxMath(node.value);
+      if (result.ok) {
+        runs.push(new DocxMath({ children: result.children }));
+      } else {
+        runs.push(new TextRun({ text: result.text, font: CODE_FONT, color: "888888" }));
+        ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
+      }
+      break;
+    }
     case "link": {
       const text = node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join("");
       const url = node.url;
@@ -621,6 +659,18 @@ function pushRunsSync(runs: InlineSyncChild[], node: PhrasingContent, ctx: Ctx, 
     case "inlineCode":
       runs.push(new TextRun({ text: node.value, font: CODE_FONT, size: CODE_SIZE, ...style }));
       break;
+    case "inlineMath": {
+      // 行内公式:KaTeX MathML → docx Math 组件,随所在段落自然继承 5a 排版;
+      // 降级(解析失败/未覆盖节点)→ TeX 源码等宽灰字 + 警告,内容不丢失
+      const result = texToDocxMath(node.value);
+      if (result.ok) {
+        runs.push(new DocxMath({ children: result.children }));
+      } else {
+        runs.push(new TextRun({ text: result.text, font: CODE_FONT, color: "888888" }));
+        ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
+      }
+      break;
+    }
     case "link": {
       const text = node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join("");
       const url = node.url;

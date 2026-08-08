@@ -109,6 +109,8 @@ export async function convertImpl(
     breakBeforeH1: settings.breakBeforeH1,
     // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
     imageResolver: getImageResolver(path.dirname(filePath)),
+    // 批次 6:KaTeX 资源目录(app.getAppPath() 保证 dev/打包一致;docx 走 MathML 不需要)
+    katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
   });
 
   if (artifact.kind === "docx") {
@@ -140,6 +142,9 @@ async function renderPdf(artifact: PdfArtifact, outputPath: string): Promise<voi
   try {
     await fs.writeFile(htmlPath, artifact.html, "utf8");
     await printWin.loadFile(htmlPath);
+    // 批次 6:等待公式字体(KaTeX woff2)加载完成再打印,否则 printToPDF 缺字形
+    // (did-finish-load 后字体仍在加载,printToPDF 不等待字体)
+    await printWin.webContents.executeJavaScript("document.fonts.ready");
     const data = await printWin.webContents.printToPDF({
       pageSize: "A4",
       margins: { top: 0, bottom: 0, left: 0, right: 0 }, // 边距由 @page 控制(preferCSSPageSize)
@@ -241,6 +246,7 @@ export async function mergeConvertImpl(files: string[], format: ConvertFormat): 
     typography: settings.typography,
     breakBeforeH1: settings.breakBeforeH1,
     imageResolver: getImageResolver(path.dirname(files[0])),
+    katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
   });
   const outputPath = path.join(
     path.dirname(files[0]),
@@ -317,6 +323,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
       typography: settings.typography,
       breakBeforeH1: settings.breakBeforeH1,
       imageResolver: createImageResolver(path.dirname(mdPath)),
+      katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
     });
     if (artifact.kind !== "pdf") throw new Error("预览仅支持 pdf 渲染");
     htmlPath = path.join(
