@@ -340,6 +340,9 @@ export async function mergeConvertImpl(
   onProgress?: (stage: string) => void,
 ): Promise<ConvertResult> {
   if (files.length === 0) throw new Error("未选择文件");
+  // 批次 7:每次转换复位取消标志(与单文件 handler / batchConvertImpl 一致),
+  // 否则上次取消后 cancelRequested 残留 true,二次合并立即被 throwIfCanceled 误判取消。
+  cancelRequested = false;
   throwIfCanceled();
   const settings = await loadSettings();
   const warnings: string[] = [];
@@ -549,13 +552,15 @@ function registerIpc(): void {
   );
 
   // 合并转换:多文件 → mergeMarkdowns → 单次 convert,输出 {首文件名}-合并.{ext}
-  // 批次 7 补:进度走 convert:progress(与单文件同通道),renderer 的 runMerge 已订阅该事件
+  // 批次 7 补:进度走 convert:progress(与单文件同通道),renderer 的 runMerge 已订阅该事件;
+  // 用户取消 → 返回 { ok:false, canceled:true }(与单文件 handler 一致,renderer 据此走取消分支)。
   ipcMain.handle("convert:merge", async (event, files: string[], format: ConvertFormat): Promise<ConvertResult> => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
     try {
       return await mergeConvertImpl(files, format, send);
     } catch (err) {
+      if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
