@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.19.0] - 2026-08-09
+- 批次 9「公式编号 + 交叉引用」(原 8d;typecheck/build/验收脚本 10 段/smoke 全绿,待用户实测)
+  - **display 公式自动编号**:$$ 块/`\[..\]`/```math 围栏按文档顺序全文连续编号 (1)(2)(3)…,docx/PDF 一致;行内公式不编号;降级(TeX 源码)公式同样占号
+  - **编号排版**:docx 公式段落「居中公式 + 右对齐编号」(center+right 双制表位,landscape 文本区宽取纸高语义);PDF `.eq-block` flex 定位 + `.eq-num` 右缘垂直居中
+  - **label 锚点**:公式后独立行 `{#eq:label}`(label 为 [\w-]+)→ 该行不渲染,docx 登记为书签(eq-label 命名,Word 书签命名约束经 docxBookmarkId 兜底)、PDF 生成页内锚点 id="eq:label"
+  - **交叉引用**:`[式](#eq:label)` / `[公式](#eq:label)` → 静态文本「式 (N)」/「公式 (N)」+ 超链接跳转(免更新路线,改号重新导出);其他文本的 #eq: 链接保持原文本;悬空引用 → 「式 (?)」+ warnings 提示(两者均验证)
+  - **实证修复**:markdown-it 主渲染循环对 inline token 直接 renderInline(children),不检查 inline 自身 hidden(仅 renderToken 检查)→ label 段除三 token 置 hidden 外必须清空 children(源码核查 renderer.mjs 179/244)
+  - 验收:make-batch4-sample.mjs 第 10 段 9 断言(docx 编号/制表位/书签/引用文本/label 不渲染/悬空兜底 + PDF eq-block/锚点/引用/label 不渲染);smoke 顺带修复:合并 docx/pdf 产物断言兼容重名序号变体(输出目录可配置后断言遇 (N) 后缀失败,与批次 8 batch 断言同源修复)
+  - 待实测:docs/ACCEPTANCE.md 批次 9 节(编号排版目测、引用跳转、悬空提示)
+
 ## [0.18.1] - 2026-08-09
 - 批次 8 用户实测全部通过(8a 目录打开即见无更新域提示/右键更新域可刷新 + 8b 题注编号与样式正确),验收记录 docs/ACCEPTANCE.md 批次 8 节全部勾选;批次 8 关闭,路线图批次 8 行补实测结论;批次 9(公式编号+交叉引用)开工
 

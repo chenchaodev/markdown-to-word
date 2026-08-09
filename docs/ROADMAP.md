@@ -55,13 +55,13 @@
 
 **8d 公式编号与交叉引用域(中,排 8a/8b 后)**:已有 KaTeX→OMML;对齐 tex2word 卖点;REF 域用库内置 `NumberedItemReference`(书签+`\h \w`)或 `PageReference`,Bookmark 类确认可用(docx 9.x 对象字面量构造)
 
-### 批次 9「学术正式化:公式编号 + 交叉引用」(2026-08-09 规划,承接批次 8;范围=原 8d)🔄 **进行中(2026-08-09 开工)**
+### 批次 9「学术正式化:公式编号 + 交叉引用」(2026-08-09 规划,承接批次 8;范围=原 8d)🔄 **开发完成待实测(2026-08-09)**
 - **D3=免更新路线延续**(唯一自洽解,沿用 D1):8b 题注编号已是静态文本(无书签/SEQ 域),REF 域无从引用且重新引入「打开更新域」提示 → 公式编号 = 渲染期静态注入「(N)」,交叉引用 = 静态文本「式 (N)」+ 超链接跳转;改号后重新导出(与 8a/8b 一致)
 - **D4 语法拍板**:编号对象 = display 公式($$ 块/`\[..\]`/```math 围栏)自动编号,**全文连续 (1)(2)(3)…**(与 8b 图/表全文连续对齐,不挂章节号);引用锚点 `$$...$$` 后独立行 `{#eq:label}`(标记行不渲染,登记为书签/锚点);引用语法 = markdown 链接 `[式](#eq:label)`(文本为「式」/「公式」→ 渲染为「式 (N)」可点击跳转,其他文本原样保留超链接)
 - 实现:docx 公式段落「公式居中 + 编号右对齐」(tab 制表位 CENTER+RIGHT,参照学术排版);label → Bookmark;PDF KaTeX display 后追加编号 + label 锚点 span,链接规则替换文本
-- 验证点:remark-math mathFlow 后独立行文本解析行为(需实证)、markdown-it katex 插件 token 结构(计数钩子位置)、docx tab 制表位与 Math 同段排版
+- 验证点:remark-math mathFlow 后独立行文本解析行为(实证:独立 paragraph 可识别)、markdown-it katex 插件 token 结构(实证:math_block)、docx tab 制表位与 Math 同段排版(实证:Tab 可序列化,ParagraphChild 类型需断言)
 - 不做(记后续):题注/章节交叉引用(需 8b 加 label 机制)、公式编号开关(默认开)
-- 验收:make-batch4-sample.mjs 第 10 段 + GUI 实测(见 docs/ACCEPTANCE.md 批次 9 节)
+- 验收:make-batch4-sample.mjs 第 10 段 9 断言全绿(typecheck/build/smoke 同步全绿);待 GUI 实测(见 docs/ACCEPTANCE.md 批次 9 节)
 
 - 备选:代码块语法高亮写 docx(低中)、模板导入 MVP(中高,先导出侧)、批注(低)、WPS 兼容矩阵(低,守护既有功能)
 - 暂缓:完整 CSL 参考文献、AI 改写、表格合并单元格、文档加密

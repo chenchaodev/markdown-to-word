@@ -17,14 +17,16 @@ import {
   PageNumber,
   PageOrientation,
   Paragraph,
+  Tab,
   Table,
   TableCell,
   TableOfContents,
   TableRow,
+  TabStopType,
   TextRun,
   WidthType,
 } from "docx";
-import type { INumberingOptions } from "docx";
+import type { INumberingOptions, ParagraphChild } from "docx";
 import type {
   BlockContent,
   Blockquote,
@@ -103,6 +105,8 @@ interface Ctx {
   footnotes: Record<string, { children: Paragraph[] }>;
   /** 下一个脚注 id(可变对象,嵌套引用共用计数器) */
   footnoteNextId: { value: number };
+  /** 公式 label → 编号查表(9d,renderDocx 预扫后挂入;行内交叉引用渲染用) */
+  equationLabels?: Map<string, number>;
 }
 
 /** 纸张 mm 尺寸表(宽 × 高) */
@@ -200,6 +204,10 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   // 与 Word SEQ \s 1 语义一致;headingNumbering 关闭时无章节号、全文档连续)
   const tocEntries: TocEntry[] = [];
   const captions = buildCaptionContext(ast, ctx);
+  // 预扫公式编号上下文(9d:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表)
+  const equations = buildEquationContext(ast, ctx);
+  // label 查表挂到 ctx(行内链接渲染处 pushRuns/pushRunsSync 经 ctx 访问)
+  ctx.equationLabels = equations.labelIndex;
   if (ctx.toc) {
     for (const node of ast.children) {
       if (node.type === "heading" && node.depth <= 3) {
@@ -210,6 +218,12 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
       }
     }
   }
+  const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
+  const paper = PAPER_SIZES_MM[pageSetup.paper];
+  const landscape = pageSetup.orientation === "landscape";
+  // 文本区宽(公式编号 tab 制表位基准):PAPER_SIZES_MM 给纵向值,landscape 下
+  // 视觉宽度为纸高(参照下方 size 的处理语义)— 左右边距 = 可用文本宽度
+  const textWidthTwips = mmToTwips((landscape ? paper.height : paper.width) - pageSetup.marginLeft - pageSetup.marginRight);
   const children: (Paragraph | Table | TableOfContents)[] = [];
   // 封面页:metadata.title 存在时置于文档最前(独占一页,不计入标题层级/书签)
   if (options.metadata?.title) {
@@ -221,13 +235,10 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   }
   for (const node of ast.children) {
     if (isSupportedBlock(node)) {
-      children.push(...(await renderBlock(node, ctx, captions)));
+      children.push(...(await renderBlock(node, ctx, captions, equations, textWidthTwips)));
     }
     // definition 等:跳过不渲染
   }
-  const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
-  const paper = PAPER_SIZES_MM[pageSetup.paper];
-  const landscape = pageSetup.orientation === "landscape";
   // docx 库在 orientation=landscape 时自动交换 width/height 写入 pgSz,
   // 故此处始终传原始(纵向)尺寸,勿手动交换(实测:手动交换会双重交换导致宽高反)
   const size = {
@@ -442,6 +453,61 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
   return captions;
 }
 
+/** mdast math 节点(display 公式;经 remark-math/mdast-util-math 扩充进 BlockContent) */
+type MdMath = Extract<BlockContent, { type: "math" }>;
+
+/** 公式编号信息(9d):index = 全文连续编号(1 起,与渲染成败无关,降级公式也占号);
+ *  label = 公式块后 `{#eq:label}` 段登记的标签(可选) */
+interface EquationInfo {
+  index: number;
+  label?: string;
+}
+
+/** 公式编号上下文(9d,免更新路线:编号静态注入文本,无域) */
+interface EquationContext {
+  /** math 节点 → 编号信息(全文每个 display 公式必登记) */
+  indexByNode: Map<MdMath, EquationInfo>;
+  /** label → 编号(交叉引用查表) */
+  labelIndex: Map<string, number>;
+  /** `{#eq:label}` 独立段(渲染时跳过) */
+  skipSet: Set<MdParagraph>;
+}
+
+/**
+ * 公式编号上下文预扫(9d,免更新路线):顺序遍历顶层块,display 公式(math 节点)
+ * 按文档顺序全文连续编号 1,2,3…;公式块后紧跟的独立段 `{#eq:label}`(整段仅此
+ * 一行,label 为 [\w-]+)→ label 登记给前一公式并跳过渲染;前无公式的 label 段
+ * 追加警告并同样跳过。
+ */
+function buildEquationContext(ast: Root, ctx: Ctx): EquationContext {
+  const indexByNode = new Map<MdMath, EquationInfo>();
+  const labelIndex = new Map<string, number>();
+  const skipSet = new Set<MdParagraph>();
+  let index = 0;
+  let lastInfo: EquationInfo | null = null;
+  for (const node of ast.children) {
+    if (node.type === "math") {
+      index++;
+      // 同一对象同时入 Map 与 lastInfo:后续 label 段直接改 lastInfo 即同步 Map 项
+      lastInfo = { index };
+      indexByNode.set(node, lastInfo);
+    } else if (node.type === "paragraph") {
+      const match = /^\{#eq:([\w-]+)\}$/.exec(collectPlainText(node));
+      if (!match) continue;
+      const label = match[1];
+      if (lastInfo) {
+        // 补 label 到前一公式;同公式多个 label 段时后者覆盖
+        lastInfo.label = label;
+        labelIndex.set(label, lastInfo.index);
+      } else {
+        ctx.warnings?.push(`公式 label 前无公式,已忽略: {#eq:${label}}`);
+      }
+      skipSet.add(node);
+    }
+  }
+  return { indexByNode, labelIndex, skipSet };
+}
+
 /** 题注段落:居中、比正文小一号(≥8pt)、无首行缩进;文本 = 自动编号 + 题注文本 */
 function renderCaptionParagraph(caption: CaptionInfo, ctx: Ctx): Paragraph {
   const prefix = caption.type === "figure" ? "图 " : "表 ";
@@ -471,11 +537,15 @@ async function renderBlock(
   node: BlockContent,
   ctx: Ctx,
   captions: Map<MdParagraph, CaptionInfo>,
+  equations: EquationContext,
+  textWidthTwips: number,
 ): Promise<(Paragraph | Table)[]> {
   switch (node.type) {
     case "heading":
       return [renderHeading(node, ctx)];
     case "paragraph": {
+      // 公式 label 段({#eq:label} 整段,见 buildEquationContext):登记后跳过渲染
+      if (equations.skipSet.has(node)) return [];
       // 题注段(前缀行识别,见 buildCaptionContext):渲染为居中题注段落(带自动编号),
       // 不应用正文排版(无首行缩进/两端对齐),不进目录/书签(普通段落样式)。
       const caption = captions.get(node);
@@ -492,26 +562,60 @@ async function renderBlock(
     case "code":
       return [renderCode(node)];
     case "math":
-      // display 公式:独立段落强制居中;降级(解析失败/未覆盖节点)时输出
-      // TeX 源码为等宽灰字并追加警告,内容不丢失。不应用 5a 排版
-      // (无首行缩进/两端对齐,与 pdf 侧 .katex-display 居中语义对齐)。
+      // display 公式。9d:有编号信息时按「公式居中 + 编号右对齐」排版——
+      // center tab(50% 文本区宽)+ right tab(100% 文本区宽),
+      // children = [Tab(), 公式, Tab(), "(N)"];label 存在时外包书签 eq-label
+      // 供交叉引用跳转(编号静态注入,免更新域)。无编号信息(理论不可达)走原居中逻辑;
+      // 降级(解析失败/未覆盖节点)输出 TeX 源码等宽灰字并追加警告,内容不丢失
+      // (降级公式同样占编号)。不应用 5a 排版(无首行缩进/两端对齐,与 pdf 侧
+      // .katex-display 居中语义对齐)。
       {
+        const eq = equations.indexByNode.get(node);
         const result = texToDocxMath(node.value);
-        if (result.ok) {
+        if (!eq) {
+          if (result.ok) {
+            return [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [new DocxMath({ children: result.children })],
+              }),
+            ];
+          }
+          ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
           return [
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              children: [new DocxMath({ children: result.children })],
+              children: [new TextRun({ text: result.text, font: CODE_FONT, color: "888888" })],
             }),
           ];
         }
-        ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
-        return [
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            children: [new TextRun({ text: result.text, font: CODE_FONT, color: "888888" })],
-          }),
-        ];
+        if (!result.ok) {
+          ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
+        }
+        // 公式主体:解析成功 → docx Math;失败 → TeX 源码等宽灰字
+        const mathChild: DocxMath | TextRun = result.ok
+          ? new DocxMath({ children: result.children })
+          : new TextRun({ text: result.text, font: CODE_FONT, color: "888888" });
+        // docx 9.x ParagraphChild 联合类型未含 Tab(运行时 Tab 正常输出 <w:tab/>),
+        // 故此处经断言;Bookmark 与 Paragraph 的 children 同为此类型
+        const equationRuns = [
+          new Tab(),
+          mathChild,
+          new Tab(),
+          new TextRun({ text: `(${eq.index})` }),
+        ] as unknown as ParagraphChild[];
+        const paragraph = new Paragraph({
+          // 制表位:center tab 于文本区正中(公式居中),right tab 于文本区右缘(编号右对齐)
+          tabStops: [
+            { type: TabStopType.CENTER, position: Math.floor(textWidthTwips / 2) },
+            { type: TabStopType.RIGHT, position: textWidthTwips },
+          ],
+          children:
+            eq.label !== undefined
+              ? [new Bookmark({ id: docxBookmarkId(`eq-${eq.label}`), children: equationRuns })]
+              : equationRuns,
+        });
+        return [paragraph];
       }
     case "blockquote":
       return renderBlockquote(node, ctx);
@@ -726,6 +830,35 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
     case "link": {
       const text = node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join("");
       const url = node.url;
+      // 公式交叉引用(9d):[式](#eq:label) / [公式](#eq:label) → 文本替换为
+      // 「式 (N)」/「公式 (N)」并跳转公式书签 eq-label;未知 label → 普通文本
+      // 「式 (?)」无链接 + 警告;其他文本的 #eq: 链接保持原文本跳转公式书签
+      const eqMatch = /^#eq:([\w-]+)$/.exec(url);
+      if (eqMatch) {
+        const label = eqMatch[1];
+        const n = ctx.equationLabels?.get(label);
+        if (text === "式" || text === "公式") {
+          if (n !== undefined) {
+            runs.push(
+              new InternalHyperlink({
+                anchor: docxBookmarkId(`eq-${label}`),
+                children: [new TextRun({ text: `${text} (${n})`, color: LINK_COLOR, underline: {}, ...style })],
+              }),
+            );
+          } else {
+            ctx.warnings?.push(`交叉引用未找到公式 label: ${label}`);
+            runs.push(new TextRun({ text: `${text} (?)`, ...style }));
+          }
+          break;
+        }
+        runs.push(
+          new InternalHyperlink({
+            anchor: docxBookmarkId(`eq-${label}`),
+            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
+          }),
+        );
+        break;
+      }
       if (url.startsWith("#")) {
         // 内部锚点:[text](#slug) → 跳转同名书签(标题已用 docxBookmarkId 生成)
         runs.push(
@@ -805,6 +938,34 @@ function pushRunsSync(runs: InlineSyncChild[], node: PhrasingContent, ctx: Ctx, 
     case "link": {
       const text = node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join("");
       const url = node.url;
+      // 公式交叉引用(9d):与 pushRuns 同语义——[式]/[公式](#eq:label) → 「式 (N)」/
+      // 「公式 (N)」跳转公式书签;未知 label → 「式 (?)」普通文本 + 警告
+      const eqMatch = /^#eq:([\w-]+)$/.exec(url);
+      if (eqMatch) {
+        const label = eqMatch[1];
+        const n = ctx.equationLabels?.get(label);
+        if (text === "式" || text === "公式") {
+          if (n !== undefined) {
+            runs.push(
+              new InternalHyperlink({
+                anchor: docxBookmarkId(`eq-${label}`),
+                children: [new TextRun({ text: `${text} (${n})`, color: LINK_COLOR, underline: {}, ...style })],
+              }),
+            );
+          } else {
+            ctx.warnings?.push(`交叉引用未找到公式 label: ${label}`);
+            runs.push(new TextRun({ text: `${text} (?)`, ...style }));
+          }
+          break;
+        }
+        runs.push(
+          new InternalHyperlink({
+            anchor: docxBookmarkId(`eq-${label}`),
+            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
+          }),
+        );
+        break;
+      }
       if (url.startsWith("#")) {
         // 内部锚点:[text](#slug) → 跳转同名书签(标题已用 docxBookmarkId 生成)
         runs.push(

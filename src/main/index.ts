@@ -732,7 +732,10 @@ app.whenReady().then(async () => {
       await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](g4-smoke.png)\n`);
       await fs.writeFile(mergeB, `---\ntitle: 合并第二文件\n---\n\n# 合并第二章\n\n正文\n`);
       const mergeResult = await mergeConvertImpl([mergeA, mergeB], "docx");
-      if (!mergeResult.ok || !mergeResult.outputPath?.endsWith("-合并.docx")) {
+      // 重名序号变体兼容:输出目录可配置后产物可能为「merge-a-合并 (2).docx」,
+      // 断言剥离 (N) 序号后缀后须以 -合并.docx 结尾(与 batch 断言同源修复)
+      const mergeBase = mergeResult.outputPath?.replace(/\s\(\d+\)(?=\.docx$)/, "");
+      if (!mergeResult.ok || !mergeResult.outputPath || !mergeBase?.endsWith("-合并.docx")) {
         throw new Error(`合并输出异常: ${mergeResult.error ?? mergeResult.outputPath}`);
       }
       const mergeZip = await JSZip.loadAsync(await fs.readFile(mergeResult.outputPath));
@@ -746,7 +749,9 @@ app.whenReady().then(async () => {
       console.log(`[smoke] merge ok: ${path.basename(mergeResult.outputPath)} (frontmatter/图片/标题正确)`);
       // 批次 4:合并 PDF 书签断言(用户实测「合并 PDF 侧边栏书签为空」的直接回归场景)
       const mergePdfResult = await mergeConvertImpl([mergeA, mergeB], "pdf");
-      if (!mergePdfResult.ok || !mergePdfResult.outputPath?.endsWith("-合并.pdf")) {
+      // 同 docx:重名序号变体兼容
+      const mergePdfBase = mergePdfResult.outputPath?.replace(/\s\(\d+\)(?=\.pdf$)/, "");
+      if (!mergePdfResult.ok || !mergePdfResult.outputPath || !mergePdfBase?.endsWith("-合并.pdf")) {
         throw new Error(`合并 PDF 输出异常: ${mergePdfResult.error ?? mergePdfResult.outputPath}`);
       }
       {
