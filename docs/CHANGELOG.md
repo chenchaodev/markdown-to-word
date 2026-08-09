@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [0.17.2] - 2026-08-08
+## [0.17.2] - 2026-08-08 13:27:24
 - docs 文件名统一英文化(archive/ 调研存档除外,历史事实保留原名):状态速查→STATUS、研究结论→RESEARCH、架构决策→ADR、路线图与迭代规划→ROADMAP、开发者手册→DEV-GUIDE、用户手册→USER-GUIDE、体验优化验收记录→ACCEPTANCE;全文交叉引用与全局 AGENTS.md、docs-init 模板同步,候选文档名(REQUIREMENTS/TEST-MANUAL)一并规范
 
 ## [0.17.1] - 2026-08-08 12:16:09

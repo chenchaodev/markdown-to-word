@@ -9,6 +9,7 @@ markdown-to-word:Markdown 转 Word / PDF 等格式的命令行工具。项目知
 - 追溯「为什么这么设计/这个库有什么坑」→ `RESEARCH.md` / `ADR.md`
 - 排查故障/找坑根因 → `RESEARCH.md`(坑/根因沉淀)
 - 使用产品 → `USER-GUIDE.md`
+- 交付与实测 → `ACCEPTANCE.md`
 - 看进度与计划 → `STATUS.md` / `ROADMAP.md` / `CHANGELOG.md`
 
 ## 文档登记
