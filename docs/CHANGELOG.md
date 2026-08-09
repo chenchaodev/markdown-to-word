@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [0.18.1] - 2026-08-09
+- 批次 8 用户实测全部通过(8a 目录打开即见无更新域提示/右键更新域可刷新 + 8b 题注编号与样式正确),验收记录 docs/ACCEPTANCE.md 批次 8 节全部勾选;批次 8 关闭,路线图批次 8 行补实测结论;批次 9(公式编号+交叉引用)开工
+
 ## [0.18.0] - 2026-08-09
 - 二期批次 8「免更新目录 + 题注自动编号」(typecheck/build/验收脚本 9 段/smoke 全绿,待用户实测)
   - **8a 静态目录(docx)**:`docx` 9.x `TableOfContents` 降级为转换时静态目录 —— `beginDirty:false` + `cachedEntries`(全部本地文本字面量)打开即见、零更新域;`toc` 设置项(默认开)全链路贯穿(settings.ts 兜底 true → convertImpl/renderDocx → UI 设置面板开关);目录页条目「标题 · 页码」,页码为转换时占位计算值(非域)
