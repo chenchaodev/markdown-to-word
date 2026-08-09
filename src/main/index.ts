@@ -179,6 +179,7 @@ export async function convertImpl(
     pageSetup: settings.pageSetup,
     typography: settings.typography,
     breakBeforeH1: settings.breakBeforeH1,
+    toc: settings.toc,
     // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
     imageResolver: getImageResolver(path.dirname(filePath)),
     // 批次 6:KaTeX 资源目录(app.getAppPath() 保证 dev/打包一致;docx 走 MathML 不需要)
@@ -369,6 +370,7 @@ export async function mergeConvertImpl(
     pageSetup: settings.pageSetup,
     typography: settings.typography,
     breakBeforeH1: settings.breakBeforeH1,
+    toc: settings.toc,
     imageResolver: getImageResolver(path.dirname(files[0])),
     katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
   });
@@ -452,6 +454,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
       pageSetup: settings.pageSetup,
       typography: settings.typography,
       breakBeforeH1: settings.breakBeforeH1,
+      toc: settings.toc,
       imageResolver: createImageResolver(path.dirname(mdPath)),
       katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
     });
@@ -716,8 +719,12 @@ app.whenReady().then(async () => {
       if (failItem?.file !== batchMissing || !failItem.error) {
         throw new Error("批量失败项汇总不正确");
       }
-      for (const f of batchFiles) {
-        await fs.stat(f.replace(/\.md$/, ".docx")); // 批量产物存在
+      // 产物断言用 convertImpl 实际返回路径(输出目录可配置后不再固定为 output/)
+      for (const item of batch.items) {
+        if (item.ok) {
+          if (!item.outputPath) throw new Error("批量成功项缺少 outputPath");
+          await fs.stat(item.outputPath); // 批量产物存在
+        }
       }
       console.log(`[smoke] batch ok: 3 成功 1 失败(汇总逐条正确)`);
       const mergeA = path.join(outDir, "merge-a.md");

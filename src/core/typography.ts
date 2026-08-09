@@ -19,6 +19,8 @@ export interface TypographySettings {
   align: "left" | "justify";
   /** 章节自动编号,默认 true */
   headingNumbering: boolean;
+  /** 图/表题注自动编号(8b:前缀行识别 + 静态编号),默认 true */
+  captionNumbering: boolean;
 }
 
 export const DEFAULT_TYPOGRAPHY: TypographySettings = {
@@ -29,4 +31,5 @@ export const DEFAULT_TYPOGRAPHY: TypographySettings = {
   firstLineIndent: true,
   align: "justify",
   headingNumbering: true,
+  captionNumbering: true,
 };

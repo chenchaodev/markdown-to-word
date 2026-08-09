@@ -34,6 +34,8 @@ import type {
   Image,
   List,
   ListItem,
+  Node,
+  Paragraph as MdParagraph,
   PhrasingContent,
   Root,
   RootContent,
@@ -51,6 +53,14 @@ import { docxBookmarkId } from "../slug.js";
 /** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
 export type ImageResolver = (src: string) => Promise<Buffer | null>;
 
+/** 静态目录条目(docx 库 ToCEntry 为内部类型未导出,结构兼容即可;
+ *  href 为标题书签名(无 # 前缀),hyperlink 开启时条目渲染为可点击跳转) */
+interface TocEntry {
+  title: string;
+  level: number;
+  href: string;
+}
+
 export interface RenderOptions {
   imageResolver?: ImageResolver;
   /** frontmatter 元数据(metadata.title 存在时渲染封面页) */
@@ -67,6 +77,10 @@ export interface RenderOptions {
   breakBeforeH1?: boolean;
   /** 标题章节自动编号(h1-h3 挂 numbering;显式传值优先,否则取 typography.headingNumbering) */
   headingNumbering?: boolean;
+  /** 自动生成目录页(默认开;开时 docx 插入静态目录:打开即见、可点击跳转、无页码、免更新域) */
+  toc?: boolean;
+  /** 图/表题注自动编号(默认开,取 typography.captionNumbering;显式传值优先) */
+  captionNumbering?: boolean;
 }
 
 interface Ctx {
@@ -79,6 +93,10 @@ interface Ctx {
   breakBeforeH1?: boolean;
   /** 标题章节自动编号(h1-h3 挂 numbering,默认开) */
   headingNumbering?: boolean;
+  /** 图/表题注自动编号(默认开) */
+  captionNumbering?: boolean;
+  /** 自动生成目录页(默认开) */
+  toc: boolean;
   /** 脚注定义索引:identifier → definition 节点(renderDocx 预扫) */
   footnoteDefinitions: Map<string, FootnoteDefinition>;
   /** 脚注收集器:引用渲染时写入,id 字符串从 "1" 起 */
@@ -164,6 +182,8 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     typography,
     breakBeforeH1: options.breakBeforeH1,
     headingNumbering: options.headingNumbering ?? typography.headingNumbering,
+    captionNumbering: options.captionNumbering ?? typography.captionNumbering,
+    toc: options.toc ?? true,
     footnoteDefinitions: new Map(),
     footnotes: {},
     footnoteNextId: { value: 1 },
@@ -176,18 +196,32 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
       ctx.footnoteDefinitions.set(node.identifier, node);
     }
   }
+  // 预扫目录条目 + 题注上下文(题注编号:章节号 = 最近 h1 计数,图/表序按 h1 章节重置,
+  // 与 Word SEQ \s 1 语义一致;headingNumbering 关闭时无章节号、全文档连续)
+  const tocEntries: TocEntry[] = [];
+  const captions = buildCaptionContext(ast, ctx);
+  if (ctx.toc) {
+    for (const node of ast.children) {
+      if (node.type === "heading" && node.depth <= 3) {
+        const id = node.data?.id;
+        if (typeof id === "string" && id !== "") {
+          tocEntries.push({ title: collectPlainText(node), level: node.depth, href: docxBookmarkId(id) });
+        }
+      }
+    }
+  }
   const children: (Paragraph | Table | TableOfContents)[] = [];
   // 封面页:metadata.title 存在时置于文档最前(独占一页,不计入标题层级/书签)
   if (options.metadata?.title) {
     children.push(...renderCoverPage(options.metadata));
   }
-  // 目录页:正文含标题节点时插入(封面之后/文档最前,独占一页;无标题的短文档不生成)
-  if (ast.children.some((node) => node.type === "heading")) {
-    children.push(...renderTocPage());
+  // 目录页:开关开启且正文含标题节点时插入(封面之后/文档最前,独占一页;无标题的短文档不生成)
+  if (ctx.toc && tocEntries.length > 0) {
+    children.push(...renderTocPage(tocEntries));
   }
   for (const node of ast.children) {
     if (isSupportedBlock(node)) {
-      children.push(...(await renderBlock(node, ctx)));
+      children.push(...(await renderBlock(node, ctx, captions)));
     }
     // definition 等:跳过不渲染
   }
@@ -281,12 +315,12 @@ function renderCoverPage(metadata: DocMetadata): Paragraph[] {
 }
 
 /**
- * 目录页:标题居中加粗(36 half-points = 18pt)+ TOC 域,独占一页。
- * 标题用普通 Paragraph(不用 HeadingLevel,避免被 TOC 域 \o "1-3" 收集到目录自身);
- * 域结构(begin/instrText/separate/end)由 docx 9.x TableOfContents 生成,
- * Word/WPS 打开后右键 → 更新域 生成目录;更新前显示域内占位文案。
+ * 目录页:标题居中加粗(36 half-points = 18pt)+ 静态目录,独占一页。
+ * 标题用普通 Paragraph(不用 HeadingLevel,避免被 TOC 域 \o "1-3" 收集到目录自身)。
+ * 免更新路线(beginDirty:false + cachedEntries):打开即见静态条目(纯超链接、
+ * 无页码),不弹「更新域」提示;条目引用 TOC1..TOC9 样式 + 右对齐点线制表位。
  */
-function renderTocPage(): (Paragraph | TableOfContents)[] {
+function renderTocPage(entries: TocEntry[]): (Paragraph | TableOfContents)[] {
   return [
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -298,11 +332,8 @@ function renderTocPage(): (Paragraph | TableOfContents)[] {
       headingStyleRange: "1-3", // \o "1-3"
       useAppliedParagraphOutlineLevel: true, // \u
       hideTabAndPageNumbersInWebView: true, // \z
-      contentChildren: [
-        new Paragraph({
-          children: [new TextRun("(目录:请右键 → 更新域 生成)")],
-        }),
-      ],
+      beginDirty: false, // 免更新:不标记 dirty,打开不提示
+      cachedEntries: entries,
     }),
     new Paragraph({ children: [new PageBreak()] }),
   ];
@@ -345,15 +376,115 @@ function renderBodyParagraph(children: InlineChild[], ctx: Ctx): Paragraph {
   });
 }
 
-async function renderBlock(node: BlockContent, ctx: Ctx): Promise<(Paragraph | Table)[]> {
+/** 题注信息(8b):类型/章节号/序数/题注文本;免更新路线在渲染期静态注入编号文本 */
+interface CaptionInfo {
+  type: "figure" | "table";
+  /** 章节号(最近 h1 计数,1 起;无 h1 或 headingNumbering 关闭时为 null → 纯「图 N」) */
+  chapter: number | null;
+  /** 章节内序数(1 起,按 h1 章节重置,与 Word SEQ \s 1 语义一致) */
+  index: number;
+  /** 题注文本(前缀「图: 」之后剩余) */
+  text: string;
+}
+
+/** 节点子树是否含图片(链接内嵌图片 [![alt](u)](l) 也命中,递归) */
+function containsImage(node: Node): boolean {
+  if (node.type === "image") return true;
+  if ("children" in node && Array.isArray(node.children)) {
+    return (node.children as Node[]).some(containsImage);
+  }
+  return false;
+}
+
+/** 题注识别对象:表格块,或含图片的段落(图题注插入对象) */
+function isCaptionTarget(node: Node): boolean {
+  return node.type === "table" || (node.type === "paragraph" && containsImage(node));
+}
+
+/**
+ * 题注上下文预扫(8b,免更新路线):顺序遍历顶层块,识别「图/表对象后紧跟的
+ * 「图: 标题」/「表: 标题」前缀段」为题注,分配 { 类型, 章节号, 章节内序数 }。
+ * - 前缀识别:段落整段纯文本以 `图:` / `表:`(半角/全角冒号)开头;
+ * - 序数仅在有题注时递增(无题注的图/表不占号,与 Word SEQ 行为一致);
+ * - 章节号 = 最近 h1 计数,图/表序在 h1 处重置(headingNumbering 关闭时不重置、
+ *   无章节号,全文档连续);
+ * - captionNumbering 关闭时返回空表(题注行按普通段落渲染,前缀文本原样保留)。
+ */
+function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo> {
+  const captions = new Map<MdParagraph, CaptionInfo>();
+  if (!ctx.captionNumbering) return captions;
+  let chapter = 0;
+  let figIndex = 0;
+  let tabIndex = 0;
+  const children = ast.children;
+  for (let i = 0; i < children.length; i++) {
+    const node = children[i];
+    if (node.type === "heading" && node.depth === 1) {
+      chapter++;
+      figIndex = 0;
+      tabIndex = 0;
+      continue;
+    }
+    if (node.type !== "paragraph") continue;
+    const prev = children[i - 1];
+    if (!prev || !isCaptionTarget(prev)) continue;
+    const match = /^(图|表)[:：]\s*(.*)$/s.exec(collectPlainText(node));
+    if (!match) continue;
+    const isFigure = match[1] === "图";
+    const index = isFigure ? ++figIndex : ++tabIndex;
+    captions.set(node, {
+      type: isFigure ? "figure" : "table",
+      chapter: ctx.headingNumbering && chapter > 0 ? chapter : null,
+      index,
+      text: match[2],
+    });
+  }
+  return captions;
+}
+
+/** 题注段落:居中、比正文小一号(≥8pt)、无首行缩进;文本 = 自动编号 + 题注文本 */
+function renderCaptionParagraph(caption: CaptionInfo, ctx: Ctx): Paragraph {
+  const prefix = caption.type === "figure" ? "图 " : "表 ";
+  const chapter = caption.chapter !== null ? `${caption.chapter}.` : "";
+  const label = `${prefix}${chapter}${caption.index}`;
+  const size = Math.max(8, ctx.typography.bodySizePt - 1);
+  return new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 60, after: 120 },
+    children: [
+      new TextRun({ text: caption.text === "" ? label : `${label} ${caption.text}`, size: size * 2 }),
+    ],
+  });
+}
+
+/** 节点子树纯文本拼接(目录条目标题 / 题注前缀识别共用;样式标志剥除) */
+function collectPlainText(node: Node): string {
+  let text = "";
+  if ("value" in node && typeof node.value === "string") text += node.value;
+  if ("children" in node && Array.isArray(node.children)) {
+    for (const child of node.children) text += collectPlainText(child as Node);
+  }
+  return text;
+}
+
+async function renderBlock(
+  node: BlockContent,
+  ctx: Ctx,
+  captions: Map<MdParagraph, CaptionInfo>,
+): Promise<(Paragraph | Table)[]> {
   switch (node.type) {
     case "heading":
       return [renderHeading(node, ctx)];
-    case "paragraph":
+    case "paragraph": {
+      // 题注段(前缀行识别,见 buildCaptionContext):渲染为居中题注段落(带自动编号),
+      // 不应用正文排版(无首行缩进/两端对齐),不进目录/书签(普通段落样式)。
+      const caption = captions.get(node);
+      if (caption) return [renderCaptionParagraph(caption, ctx)];
       // 普通正文段落:应用排版设置(对齐/行距/首行缩进)。
       // 作用范围仅限正文:heading/列表/代码/表格等段落保持各自样式,
       // 列表项不加首行缩进(与 PDF 侧 p { text-indent } 规则对齐语义)。
       return [renderBodyParagraph(await renderPhrasing(normalizeInlineHtml(node.children), ctx), ctx)];
+    }
     case "list":
       return renderList(node, ctx);
     case "table":

@@ -44,6 +44,10 @@ export interface RenderPdfHtmlOptions {
   /** 标题章节编号(1 / 1.1 / 1.1.1,与 docx 侧 decimal 编号语义一致;
    *  显式传值优先,否则取 typography.headingNumbering;默认开) */
   headingNumbering?: boolean;
+  /** 图/表题注自动编号(默认开,取 typography.captionNumbering;显式传值优先) */
+  captionNumbering?: boolean;
+  /** 自动生成目录页(默认开;开时正文含标题则插入静态目录) */
+  toc?: boolean;
   /** KaTeX 资源目录(绝对路径,含 katex.min.css 与 fonts/ 子目录,即
    *  node_modules/katex/dist;传入则 katex.min.css 内联进模板并改写字体
    *  为 file:// 绝对路径,公式字体样式生效;不传则公式渲染为 KaTeX HTML
@@ -90,7 +94,56 @@ function buildMarkdownIt(): MarkdownIt {
   // 渲染失败输出 katex-error 标记,不抛)
   md.use(katex);
   overrideHtmlRules(md);
+  overrideCaptionRule(md);
   return md;
+}
+
+/**
+ * 题注前缀行识别(8b,与 docx 侧 buildCaptionContext 顶层预扫契约一致):
+ * 块 token 流中,顶层「含图片段落」或「表格」之后紧跟的、以「图:」/「表:」
+ * (半角/全角冒号)开头的段落 → 标记为 fig-caption/tab-caption 并剥除前缀。
+ * 编号由 CSS counter 伪元素渲染(不进文本节点,目录/书签不受影响)。
+ * 容器深度限制(blockquote/list_item/table 单元格内不识别,与 docx 侧
+ * 只遍历 ast.children 顶层一致);文档开头(首 h1 之前)的图题注在无 h1
+ * 文档中按纯序数渲染,有 h1 文档中渲染为「图 0.N」(与 docx 侧「图 N」
+ * 的差异为 CSS counter 无法条件输出的罕见边界,验收清单已标注)。
+ */
+function overrideCaptionRule(md: MarkdownIt): void {
+  md.core.ruler.push("caption_recognize", (state) => {
+    const tokens = state.tokens;
+    const depth = { blockquote: 0, list_item: 0, table_cell: 0 };
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token.type === "blockquote_open") depth.blockquote++;
+      else if (token.type === "blockquote_close") depth.blockquote--;
+      else if (token.type === "list_item_open") depth.list_item++;
+      else if (token.type === "list_item_close") depth.list_item--;
+      else if (token.type === "table_cell_open") depth.table_cell++;
+      else if (token.type === "table_cell_close") depth.table_cell--;
+      else if (token.type === "paragraph_close" && depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0) {
+        const inline = tokens[i - 1];
+        if (!inline || inline.type !== "inline" || !inline.children || inline.children.length === 0) continue;
+        const first = inline.children[0];
+        if (first.type !== "text") continue;
+        const match = /^(图|表)[:：]\s*/.exec(first.content);
+        if (!match) continue;
+        const prev = tokens[i - 3];
+        if (!prev) continue;
+        if (prev.type === "table_close") {
+          // 表格后紧跟的题注段
+        } else if (prev.type === "paragraph_close") {
+          const prevInline = tokens[i - 4];
+          const hasImage = prevInline?.type === "inline" && prevInline.children?.some((t) => t.type === "image");
+          if (!hasImage) continue;
+        } else {
+          continue;
+        }
+        // 剥前缀(前缀完整落在首 text token:契约「图:/表:」紧贴且其后为行内内容)
+        first.content = first.content.slice(match[0].length);
+        tokens[i - 2].attrSet("class", match[1] === "图" ? "fig-caption" : "tab-caption");
+      }
+    }
+  });
 }
 
 /** 内联格式白名单标签(批次 5 契约:无属性才渲染,与 src/core/docx/render.ts
@@ -243,6 +296,8 @@ function buildTemplateCss(
   breakBeforeH1: boolean,
   typography: TypographySettings,
   headingNumbering: boolean,
+  captionNumbering: boolean,
+  hasH1: boolean,
 ): string {
   const size = pageSetup.paper + (pageSetup.orientation === "landscape" ? " landscape" : "");
   const { marginTop, marginRight, marginBottom, marginLeft } = pageSetup;
@@ -375,6 +430,20 @@ ${headingNumbering ? `
   h1::before { content: counter(h1c) " "; }
   h2::before { content: counter(h1c) "." counter(h2c) " "; }
   h3::before { content: counter(h1c) "." counter(h2c) "." counter(h3c) " "; }` : ""}
+${captionNumbering ? `
+  /* 题注编号(8b):图/表题注居中小一号,编号经 ::before 伪元素(不进文本节点,
+     书签/目录不受影响);章节号 = 最近 h1,图/表序在 h1 处重置(与 docx 侧
+     SEQ \\s 1 语义一致)。文档无 h1 时退化为纯序数(全文档连续,与 docx 对齐) */
+  .fig-caption, .tab-caption { text-align: center; font-size: 10pt; margin: 4px 0 12px; break-inside: avoid; }
+${headingNumbering && hasH1 ? `
+  body { counter-reset: h1c h2c h3c figc tabc; }
+  h1 { counter-reset: h2c h3c figc tabc; }
+  .fig-caption::before { content: "图 " counter(h1c) "." counter(figc) " "; }
+  .tab-caption::before { content: "表 " counter(h1c) "." counter(tabc) " "; }` : `
+  body { counter-reset: figc tabc; }
+  .fig-caption::before { content: "图 " counter(figc) " "; }
+  .tab-caption::before { content: "表 " counter(tabc) " "; }`}
+` : ""}
 ${typography.firstLineIndent ? `
   /* 首行缩进 2 字符(排版设置;中文排版惯例,与 docx 侧 firstLineChars=200 语义一致) */
   p { text-indent: 2em; }` : ""}
@@ -583,9 +652,12 @@ export async function renderPdfHtml(
   const title = options.metadata?.title ?? options.title ?? "文档";
   const warnings = options.warnings ?? [];
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource));
+  const captionNumbering = options.captionNumbering ?? typography.captionNumbering;
   // 封面 + 目录 + 正文:buildCoverHtml/buildTocHtml 各自以 page-break 结尾,
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
-  const fullBody = buildCoverHtml(options.metadata) + buildTocHtml(bodyHtml) + bodyHtml;
+  // toc 开关(默认开):关闭时不生成目录页(docx 侧同开关,双格式一致)
+  const tocHtml = (options.toc ?? true) ? buildTocHtml(bodyHtml) : "";
+  const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyHtml;
   const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings);
   // headingNumbering 优先级:显式选项 > typography 设置(默认 true,与 docx 侧一致)
   return buildTemplate(
@@ -596,6 +668,8 @@ export async function renderPdfHtml(
       options.breakBeforeH1 ?? false,
       typography,
       options.headingNumbering ?? typography.headingNumbering,
+      captionNumbering,
+      /<h1[\s>]/i.test(bodyHtml),
     ),
     options.katexDir ? loadKatexCss(options.katexDir) : "",
   );

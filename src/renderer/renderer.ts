@@ -98,6 +98,8 @@ interface TypographySettings {
   align: BodyAlign;
   /** 章节自动编号 */
   headingNumbering: boolean;
+  /** 图/表题注自动编号 */
+  captionNumbering: boolean;
 }
 interface AppSettings {
   version: 1;
@@ -105,6 +107,8 @@ interface AppSettings {
   pageSetup: PageSetup;
   typography: TypographySettings;
   breakBeforeH1: boolean;
+  /** 自动生成目录页 */
+  toc: boolean;
   afterConvert: AfterConvert;
   /** 输出目录;空串 = 源文件同目录(批次 7 新增)。 */
   outputDir: string;
@@ -157,8 +161,10 @@ const DEFAULT_SETTINGS: AppSettings = {
     firstLineIndent: true,
     align: "justify",
     headingNumbering: true,
+    captionNumbering: true,
   },
   breakBeforeH1: false,
+  toc: true,
   afterConvert: "none",
   outputDir: "",
 };
@@ -195,6 +201,7 @@ const TEMPLATE_PRESETS: TemplatePreset[] = [
       firstLineIndent: true,
       align: "justify",
       headingNumbering: true,
+      captionNumbering: true,
     },
     pageSetup: {
       paper: "A4",
@@ -217,6 +224,7 @@ const TEMPLATE_PRESETS: TemplatePreset[] = [
       firstLineIndent: false,
       align: "left",
       headingNumbering: false,
+      captionNumbering: false,
     },
     pageSetup: {
       paper: "A4",
@@ -241,6 +249,7 @@ function matchesPreset(preset: TemplatePreset, settings: AppSettings): boolean {
     t.firstLineIndent === st.firstLineIndent &&
     t.align === st.align &&
     t.headingNumbering === st.headingNumbering &&
+    t.captionNumbering === st.captionNumbering &&
     p.paper === sp.paper &&
     p.orientation === sp.orientation &&
     p.marginTop === sp.marginTop &&
@@ -297,6 +306,7 @@ const orientationInputs = document.querySelectorAll<HTMLInputElement>(
 const breakBeforeH1Input = document.getElementById(
   "breakBeforeH1",
 ) as HTMLInputElement;
+const tocInput = document.getElementById("toc") as HTMLInputElement;
 const afterConvertInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="afterConvert"]',
 );
@@ -325,6 +335,9 @@ const alignJustifyInput = document.getElementById(
 ) as HTMLInputElement;
 const headingNumberingInput = document.getElementById(
   "headingNumbering",
+) as HTMLInputElement;
+const captionNumberingInput = document.getElementById(
+  "captionNumbering",
 ) as HTMLInputElement;
 // 模板预设
 const templatePresetSelect = document.getElementById(
@@ -980,6 +993,7 @@ function applySettingsToControls(): void {
   firstLineIndentInput.checked = settings.typography.firstLineIndent;
   alignJustifyInput.checked = settings.typography.align === "justify";
   headingNumberingInput.checked = settings.typography.headingNumbering;
+  captionNumberingInput.checked = settings.typography.captionNumbering;
   // 模板预设:与某预设完全一致时选中,否则回退「默认」并提示已进入自定义模式
   const matchedPreset = TEMPLATE_PRESETS.find((preset) =>
     matchesPreset(preset, settings),
@@ -991,6 +1005,7 @@ function applySettingsToControls(): void {
     : (matchedPreset ?? TEMPLATE_PRESETS[0]).hint;
   templatePresetHint.classList.toggle("template-hint--custom", isCustom);
   breakBeforeH1Input.checked = settings.breakBeforeH1;
+  tocInput.checked = settings.toc;
   afterConvertInputs.forEach(
     (input) => (input.checked = input.value === settings.afterConvert),
   );
@@ -1402,6 +1417,12 @@ breakBeforeH1Input.addEventListener("change", () => {
   persistSettings({ breakBeforeH1: settings.breakBeforeH1 });
 });
 
+tocInput.addEventListener("change", () => {
+  if (hydratingSettings) return;
+  settings.toc = tocInput.checked;
+  persistSettings({ toc: settings.toc });
+});
+
 afterConvertInputs.forEach((input) => {
   input.addEventListener("change", () => {
     if (!input.checked || hydratingSettings) return;
@@ -1464,6 +1485,12 @@ alignJustifyInput.addEventListener("change", () => {
 headingNumberingInput.addEventListener("change", () => {
   if (hydratingSettings) return;
   settings.typography.headingNumbering = headingNumberingInput.checked;
+  persistTypography();
+});
+
+captionNumberingInput.addEventListener("change", () => {
+  if (hydratingSettings) return;
+  settings.typography.captionNumbering = captionNumberingInput.checked;
   persistTypography();
 });
 

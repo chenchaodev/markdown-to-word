@@ -50,6 +50,8 @@ export interface ConvertContext {
   typography?: TypographySettings;
   /** 一级标题前分页(默认关) */
   breakBeforeH1?: boolean;
+  /** 自动生成目录页(默认开;docx 静态目录 / PDF 目录同开关) */
+  toc?: boolean;
   /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
   katexDir?: string;
 }
@@ -127,6 +129,7 @@ export async function convert(
         pageSetup: context.pageSetup,
         typography: context.typography,
         breakBeforeH1: context.breakBeforeH1,
+        toc: context.toc,
         katexDir: context.katexDir,
       }),
       footerTemplate: PDF_FOOTER_TEMPLATE,
@@ -142,6 +145,7 @@ export async function convert(
       pageSetup: context.pageSetup,
       typography: context.typography,
       breakBeforeH1: context.breakBeforeH1,
+      toc: context.toc,
       title: context.title,
     }),
   };

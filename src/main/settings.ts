@@ -21,6 +21,8 @@ export interface AppSettings {
   typography: TypographySettings;
   /** H1 前分页(默认关) */
   breakBeforeH1: boolean;
+  /** 自动生成目录页(默认开;docx 静态目录 / PDF 目录同开关) */
+  toc: boolean;
   /** 导出后行为(默认不自动执行) */
   afterConvert: "none" | "show-in-folder" | "open";
   /** 输出目录:空串 = 输出到源文件同目录(默认);非空 = 固定输出目录(须绝对路径) */
@@ -33,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pageSetup: { ...DEFAULT_PAGE_SETUP },
   typography: { ...DEFAULT_TYPOGRAPHY },
   breakBeforeH1: false,
+  toc: true,
   afterConvert: "none",
   outputDir: "",
 };
@@ -51,6 +54,7 @@ const SETTING_KEYS = [
   "pageSetup",
   "typography",
   "breakBeforeH1",
+  "toc",
   "afterConvert",
   "outputDir",
 ] as const;
@@ -83,6 +87,8 @@ function isValidSettings(value: unknown): value is AppSettings {
   if (!isOneOf(s.format, FORMATS)) return false;
   if (!isOneOf(s.afterConvert, AFTER_CONVERT_ACTIONS)) return false;
   if (typeof s.breakBeforeH1 !== "boolean") return false;
+  // toc 缺失(旧 settings.json)视为合法,loadSettings 兜底为 true;存在则须合法
+  if ("toc" in s && typeof s.toc !== "boolean") return false;
   // outputDir 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "";存在则须合法
   if ("outputDir" in s && !isValidOutputDir(s.outputDir)) return false;
   const ps = s.pageSetup as Record<string, unknown> | undefined;
@@ -113,6 +119,7 @@ export function loadSettings(): AppSettings {
       loaded = {
         ...parsed,
         outputDir: isValidOutputDir(parsed.outputDir) ? parsed.outputDir : "",
+        toc: typeof parsed.toc === "boolean" ? parsed.toc : DEFAULT_SETTINGS.toc,
         typography: sanitizeTypography(parsed.typography),
       };
     }
@@ -160,6 +167,9 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
       case "breakBeforeH1":
         out.breakBeforeH1 =
           typeof src.breakBeforeH1 === "boolean" ? src.breakBeforeH1 : DEFAULT_SETTINGS.breakBeforeH1;
+        break;
+      case "toc":
+        out.toc = typeof src.toc === "boolean" ? src.toc : DEFAULT_SETTINGS.toc;
         break;
       case "outputDir":
         out.outputDir = isValidOutputDir(src.outputDir) ? src.outputDir : DEFAULT_SETTINGS.outputDir;
@@ -217,5 +227,6 @@ function sanitizeTypography(value: unknown): TypographySettings {
   if (typeof src.firstLineIndent === "boolean") out.firstLineIndent = src.firstLineIndent;
   if (isOneOf(src.align, ALIGNS)) out.align = src.align;
   if (typeof src.headingNumbering === "boolean") out.headingNumbering = src.headingNumbering;
+  if (typeof src.captionNumbering === "boolean") out.captionNumbering = src.captionNumbering;
   return out;
 }
