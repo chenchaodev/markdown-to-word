@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [0.17.3] - 2026-08-09
+- 批次 7 GUI 实测全部通过(24 项清单 + 3 个修复复测:合并进度条递进、取消后重试正常、PDF 取消不产出文件),验收记录 docs/ACCEPTANCE.md 全部勾选;批次 7 关闭,路线图批次 7 行补实测结论
+
 ## [0.17.2] - 2026-08-08 13:27:24
 - docs 文件名统一英文化(archive/ 调研存档除外,历史事实保留原名):状态速查→STATUS、研究结论→RESEARCH、架构决策→ADR、路线图与迭代规划→ROADMAP、开发者手册→DEV-GUIDE、用户手册→USER-GUIDE、体验优化验收记录→ACCEPTANCE;全文交叉引用与全局 AGENTS.md、docs-init 模板同步,候选文档名(REQUIREMENTS/TEST-MANUAL)一并规范
 
