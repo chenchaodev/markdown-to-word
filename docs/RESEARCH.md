@@ -2,6 +2,13 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-10 21:12:58 测试覆盖盘点结论(@explorer,测试缺口清单依据)
+- **方法**:能力面(src/core 全部 + src/main + src/renderer)逐一 grep 对照 test/segments 11 段 + smoke 断言,产出「能力点 × 覆盖」全量表(详见存档);缺口清单见 docs/ROADMAP.md「测试缺口」节(24 项,高/中/低三档)
+- **高优先级缺口**:封面页双格式(docx cover / pdf .cover 均无断言)、breakBeforeH1 产物分页(smoke 只测设置持久化)、取消链路回归(fd40480/f809c57 两次取消 bug 无回归测试)、重名保护主动断言、缺失图片警告文案(collectMissingImageWarnings)、公式降级分支(katex-error 灰字+警告)、外链图片下载(image-downloader 超时/去重/失败兜底全无)、任务列表(docx 普通列表 / pdf ☐☑ 替换)、h4-h6 标题、分页符产物
+- **中优先级**:settings sanitize 边界(字号 8-24/行距 1.0-2.5/边距 0-1000 钳制、损坏回退、旧文件兼容、patch 白名单)、slug 三函数单测(uniqueSlug 去重/docxBookmarkId 兜底)、frontmatter 边界、非 A4 纸张/边距值、docx 行距缩进值、代码块/引用块/列表 w:numPr 序列化、外链 rels、页脚页码文案
+- **低优先级(维持 smoke diag + GUI 实测)**:renderer 全部交互、runAfterConvert、collectMarkdownPaths、超长路径回落、IPC dialog/预览
+- 来源: @explorer exp-1(两轮);关联: 原文存档 docs/archive/20260810-211258-测试覆盖盘点.md;缺口清单 docs/ROADMAP.md「测试缺口」节
+
 ### 2026-08-08 11:50:33 docx 域 API 调研结论(@librarian,8a TOC/8b 题注实施依据)
 - **TableOfContents 组件存在且为官方推荐路径**(docx 9.x):`new TableOfContents("目录", { hyperlink, headingStyleRange: "1-3", ... })`,生成完整 w:sdt 复杂域;官方文档要求配合 `features: { updateFields: true }`(产出 w:updateFields,Word 打开弹提示并全量更新所有域——TOC/SEQ/STYLEREF/REF 均在内);现有 render.ts:289-309 已用该组件,**8a 增量 = 开关化 + updateFields 联动**
 - **无 ComplexField 类**;行内域用 `SimpleField(instruction, cachedValue?)`(无 dirty 属性,未更新时显示 cachedValue,不传则空白);库内置 SequentialIdentifier = 裸 SEQ 域(无开关无缓存值),带 `\* ARABIC \s 1` 的题注需 SimpleField 手插;域指令空格是关键(开关前必须有空格,首尾各留一个)
