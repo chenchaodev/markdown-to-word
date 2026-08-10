@@ -60,12 +60,23 @@ export const PDF_FOOTER_TEMPLATE =
   '<div style="font-size:9px;color:#888;width:100%;text-align:center;">' +
   '第 <span class="pageNumber"></span> 页 / 共 <span class="totalPages"></span> 页</div>';
 
-/** 任务列表 checkbox → 字符(markdown-it 渲染后替换,规避 Chromium 打印 checkbox bug)。 */
+/**
+ * 任务列表 checkbox → 字符(markdown-it 渲染后替换,规避 Chromium 打印 checkbox bug)。
+ * 插件(@mdit/plugin-tasklist,label 默认开)实际输出形态(实证):
+ *   <input type="checkbox" class="task-list-item-checkbox" id="task-item-N"
+ *          checked="checked" disabled="disabled"><label class="task-list-item-label"
+ *          for="task-item-N"> 文本</label>
+ * - 属性顺序 type 在前、含 id、布尔属性序列化为 ="…" → 不能用「class 在前 + 裸布尔
+ *   属性」正则,改为以 class 定位 input、\schecked 判断选中态;
+ * - input 移除后 label 的 for 悬空(指向已删除的 id),属多余结构一并解包(保留文本);
+ *   label 文本自带前导空格,故字符后不加空格,输出形如「☑ 已完成」。
+ */
 function replaceTaskCheckboxes(html: string): string {
-  return html.replace(
-    /<input class="task-list-item-checkbox" type="checkbox" disabled( checked)?>/g,
-    (_match, checked?: string) => (checked ? "☑ " : "☐ "),
-  );
+  return html
+    .replace(/<input[^>]*class="task-list-item-checkbox"[^>]*>/g, (tag) =>
+      /\schecked/.test(tag) ? "☑" : "☐",
+    )
+    .replace(/<label[^>]*class="task-list-item-label"[^>]*>([\s\S]*?)<\/label>/g, "$1");
 }
 
 function buildMarkdownIt(): MarkdownIt {

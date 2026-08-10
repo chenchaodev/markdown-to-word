@@ -1,14 +1,11 @@
 /**
- * 任务列表验收(GFM task list;此前无测试覆盖):
+ * 任务列表验收(GFM task list):
  * - docx:remark-gfm 将 [x]/[ ] 标记剥除(段落文本为「已完成」「待办」),renderList
  *   按普通项目符号列表渲染(w:numPr md-list-bullet),无 checkbox 特殊处理;
- * - pdf:markdown-it + @mdit/plugin-tasklist 渲染 checkbox 结构
- *   (ul.task-list-container > li.task-list-item > input + label)。
- * 实现疑点:renderPdfHtml 的 replaceTaskCheckboxes 本应将 checkbox 替换为 ☑/☐
- * (规避 Chromium 打印 bug),但其正则(<input class="…" type="checkbox" disabled…>)
- * 与插件实际输出不匹配——属性顺序 type 在前、多 id 属性、布尔属性序列化为
- * checked="checked" → 替换当前不生效,input 原样保留。本段按现状断言,
- * 修复后需同步更新(替换生效时 input 消失、☑/☐ 出现)。
+ * - pdf:markdown-it + @mdit/plugin-tasklist 渲染 checkbox 结构后,
+ *   renderPdfHtml 的 replaceTaskCheckboxes 将 checkbox 替换为 ☑/☐ 字符
+ *   (规避 Chromium 打印 bug):input 元素与 label 包裹一并移除(实现实证,
+ *   输出形如 <li class="task-list-item">☑ 已完成</li>,详见 src/core/pdf/render.ts)。
  */
 import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
@@ -52,14 +49,26 @@ export async function run() {
     warnings: [],
   });
   const pdfHtml = pdfArtifact.html;
-  // 任务列表结构:plugin 输出 ul.task-list-container > li.task-list-item(input + label)
+  // 任务列表结构:plugin 输出 ul.task-list-container > li.task-list-item
   if (!pdfHtml.includes('<ul class="task-list-container">') || !pdfHtml.includes('<li class="task-list-item">')) {
     throw new Error("任务列表断言失败:PDF 缺少任务列表容器/条目结构");
   }
-  // checkbox 元素保留现状(replaceTaskCheckboxes 未命中,见文件头注释;
-  // 修复生效后 input 消失、☑/☐ 出现,本断言会失败提示更新)
-  if (!pdfHtml.includes('class="task-list-item-checkbox"')) {
-    throw new Error("任务列表断言失败:PDF 缺少 task-list-item-checkbox checkbox 结构");
+  // replaceTaskCheckboxes 生效:checkbox input 与 label 包裹均已移除
+  if (pdfHtml.includes("task-list-item-checkbox")) {
+    throw new Error("任务列表断言失败:PDF 不应残留 checkbox input 元素");
+  }
+  if (pdfHtml.includes("task-list-item-label")) {
+    throw new Error("任务列表断言失败:PDF 不应残留 label 包裹(input 移除后 for 悬空)");
+  }
+  // ☑/☐ 字符替代(checked → ☑、unchecked → ☐),输出干净结构(字符后接 label 文本)
+  if (!pdfHtml.includes("☑") || !pdfHtml.includes("☐")) {
+    throw new Error("任务列表断言失败:PDF 缺少 ☑/☐ checkbox 字符替代");
+  }
+  if (!pdfHtml.includes('<li class="task-list-item">☑ 已完成</li>')) {
+    throw new Error('任务列表断言失败:已勾选项应渲染为 <li class="task-list-item">☑ 已完成</li>');
+  }
+  if (!pdfHtml.includes('<li class="task-list-item">☐ 待办</li>')) {
+    throw new Error('任务列表断言失败:未勾选项应渲染为 <li class="task-list-item">☐ 待办</li>');
   }
   // 标记剥除后的列表项文本
   if (!pdfHtml.includes("已完成") || !pdfHtml.includes("待办")) {
@@ -69,7 +78,7 @@ export async function run() {
   if (!pdfHtml.includes("<li>普通项</li>")) {
     throw new Error("任务列表断言失败:普通列表项不应带任务列表样式");
   }
-  console.log("[ok] PDF 任务列表:容器/条目/checkbox 结构、文本、普通项不受影响 断言通过");
+  console.log("[ok] PDF 任务列表:☑/☐ 字符替代生效(input/label 移除)、文本、普通项不受影响 断言通过");
 
   const pdfBin = await htmlToPdf(pdfArtifact.html, pdfArtifact.footerTemplate);
   await saveArtifact("task-list", { docx: docxArtifact.buffer, pdf: pdfBin });
