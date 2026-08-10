@@ -61,8 +61,33 @@ export interface BatchResult {
 /** 批量共享 imageResolver:按 baseDir 缓存,HTTP 去重缓存跨文件生效(转换后不清理,键为路径,无泄漏风险) */
 const resolverCache = new Map<string, ImageResolver>();
 
-/** 取消标志:renderer 经 convert:cancel IPC 置位;转换循环在检查点读取(批次 7) */
-let cancelRequested = false;
+/**
+ * 转换调用上下文:取消标志随调用携带,根治全局可变状态(历史 bug fd40480/f809c57
+ * 即全局标志跨调用残留导致误判取消)。每次新转换调用新建 context(cancelRequested
+ * 初始 false),「取消后复位」语义天然成立;IPC 层经 currentCtx 接 convert:cancel。
+ */
+export interface ConvertContext {
+  /** 已请求取消(检查点只读;取消经 cancel() 置位) */
+  cancelRequested: boolean;
+  /** 请求取消(convert:cancel 经 currentCtx 调用) */
+  cancel(): void;
+}
+
+/** 新建转换上下文:取消标志初始 false,每次调用不复用旧标志 */
+export function createConvertContext(): ConvertContext {
+  let cancelRequested = false;
+  return {
+    get cancelRequested() {
+      return cancelRequested;
+    },
+    cancel() {
+      cancelRequested = true;
+    },
+  };
+}
+
+/** IPC 层持有当前进行中转换的 context(convert:cancel 入口);无进行中转换时为 null */
+let currentCtx: ConvertContext | null = null;
 
 class ConvertCanceledError extends Error {
   constructor() {
@@ -71,8 +96,8 @@ class ConvertCanceledError extends Error {
   }
 }
 
-function throwIfCanceled(): void {
-  if (cancelRequested) throw new ConvertCanceledError();
+function throwIfCanceled(ctx: ConvertContext): void {
+  if (ctx.cancelRequested) throw new ConvertCanceledError();
 }
 
 async function pathExists(p: string): Promise<boolean> {
@@ -160,11 +185,12 @@ export async function convertImpl(
   format: ConvertFormat,
   onProgress?: (stage: string) => void,
   options?: ConvertOptions,
+  ctx: ConvertContext = createConvertContext(),
 ): Promise<{ outputPath: string; warnings: string[] }> {
   if (!/\.(md|markdown)$/i.test(filePath)) {
     throw new Error("仅支持 .md / .markdown 文件");
   }
-  throwIfCanceled();
+  throwIfCanceled(ctx);
   const settings = await loadSettings();
   onProgress?.("read");
   const warnings: string[] = [];
@@ -185,7 +211,7 @@ export async function convertImpl(
     // 批次 6:KaTeX 资源目录(app.getAppPath() 保证 dev/打包一致;docx 走 MathML 不需要)
     katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
   });
-  throwIfCanceled();
+  throwIfCanceled(ctx);
 
   const { outputPath, warnings: outWarnings } = await resolveOutputPath(
     filePath,
@@ -202,7 +228,7 @@ export async function convertImpl(
   }
 
   // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘(与合并共用 renderPdf)
-  await renderPdf(artifact, outputPath);
+  await renderPdf(artifact, outputPath, ctx);
   onProgress?.("done");
   if (!options?.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
   return { outputPath, warnings };
@@ -212,20 +238,20 @@ export async function convertImpl(
  * pdf 产物落盘:临时 HTML → 隐藏窗口 printToPDF → 写输出文件。
  * 单文件/合并共用;临时文件与窗口在 finally 中清理,失败也会销毁窗口。
  */
-async function renderPdf(artifact: PdfArtifact, outputPath: string): Promise<void> {
+async function renderPdf(artifact: PdfArtifact, outputPath: string, ctx: ConvertContext): Promise<void> {
   const htmlPath = path.join(os.tmpdir(), `m2w-${process.pid}-${Date.now()}.html`);
   const printWin = new BrowserWindow({
     show: false,
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   try {
-    throwIfCanceled(); // 批次 7:打印前检查(loadFile/字体等待期间用户可能已取消)
+    throwIfCanceled(ctx); // 批次 7:打印前检查(loadFile/字体等待期间用户可能已取消)
     await fs.writeFile(htmlPath, artifact.html, "utf8");
     await printWin.loadFile(htmlPath);
     // 批次 6:等待公式字体(KaTeX woff2)加载完成再打印,否则 printToPDF 缺字形
     // (did-finish-load 后字体仍在加载,printToPDF 不等待字体)
     await printWin.webContents.executeJavaScript("document.fonts.ready");
-    throwIfCanceled(); // 批次 7:打印前复查(大文档字体等待可长达数秒)
+    throwIfCanceled(ctx); // 批次 7:打印前复查(大文档字体等待可长达数秒)
     const data = await printWin.webContents.printToPDF({
       pageSize: "A4",
       margins: { top: 0, bottom: 0, left: 0, right: 0 }, // 边距由 @page 控制(preferCSSPageSize)
@@ -237,7 +263,7 @@ async function renderPdf(artifact: PdfArtifact, outputPath: string): Promise<voi
     });
     // 批次 7:printToPDF 不可中断(Electron 原子调用),取消需等本轮打印结束;
     // 但落盘/书签/元数据必须中止 → 打印后立即检查,取消则不产出文件、不报成功。
-    throwIfCanceled();
+    throwIfCanceled(ctx);
     // 批次 4:从渲染后 HTML 提取标题(与目录同源,封面/目录本身非 h 标签不受影响),
     // 注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即命名目标名,无需文本定位)。
     // 无标题时原样落盘(输出为 Buffer → Uint8Array 无拷贝)。
@@ -280,6 +306,7 @@ export async function batchConvertImpl(
   files: string[],
   format: ConvertFormat,
   onProgress?: (info: BatchProgressInfo) => void,
+  ctx: ConvertContext = createConvertContext(),
 ): Promise<BatchResult> {
   const total = files.length;
   const items: BatchItem[] = new Array<BatchItem>(total);
@@ -287,11 +314,10 @@ export async function batchConvertImpl(
   let failCount = 0;
   let canceledCount = 0;
   let next = 0; // 下一个待取任务的索引(worker 共享,JS 单线程自增安全)
-  cancelRequested = false;
 
   async function worker(): Promise<void> {
     for (;;) {
-      if (cancelRequested) {
+      if (ctx.cancelRequested) {
         // 未开始项(含当前索引)标记取消,不再处理
         for (let i = next; i < total; i++) {
           if (!items[i]) {
@@ -307,7 +333,7 @@ export async function batchConvertImpl(
       const send = (stage: string): void =>
         onProgress?.({ index: index + 1, total, file: path.basename(file), stage });
       try {
-        const { outputPath, warnings } = await convertImpl(file, format, send);
+        const { outputPath, warnings } = await convertImpl(file, format, send, undefined, ctx);
         items[index] = { file, ok: true, outputPath, warnings };
         okCount++;
       } catch (err) {
@@ -324,7 +350,7 @@ export async function batchConvertImpl(
 
   await Promise.all(Array.from({ length: Math.min(2, total) }, () => worker()));
   // 批量导出后行为:与单文件一致,作用于第一个成功项(避免打开 N 个文件)
-  if (!cancelRequested) {
+  if (!ctx.cancelRequested) {
     const firstOk = items.find((i) => i.ok);
     if (firstOk?.outputPath) {
       const settings = await loadSettings();
@@ -344,12 +370,12 @@ export async function mergeConvertImpl(
   files: string[],
   format: ConvertFormat,
   onProgress?: (stage: string) => void,
+  ctx: ConvertContext = createConvertContext(),
 ): Promise<ConvertResult> {
   if (files.length === 0) throw new Error("未选择文件");
-  // 批次 7:每次转换复位取消标志(与单文件 handler / batchConvertImpl 一致),
-  // 否则上次取消后 cancelRequested 残留 true,二次合并立即被 throwIfCanceled 误判取消。
-  cancelRequested = false;
-  throwIfCanceled();
+  // 每次调用使用新建 context(取消标志初始 false),上次取消不再残留:
+  // 否则二次合并立即被 throwIfCanceled 误判取消(历史 bug fd40480)。
+  throwIfCanceled(ctx);
   const settings = await loadSettings();
   const warnings: string[] = [];
   onProgress?.("read");
@@ -374,7 +400,7 @@ export async function mergeConvertImpl(
     imageResolver: getImageResolver(path.dirname(files[0])),
     katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
   });
-  throwIfCanceled();
+  throwIfCanceled(ctx);
   const { outputPath, warnings: outWarnings } = await resolveOutputPath(
     files[0],
     format,
@@ -386,7 +412,7 @@ export async function mergeConvertImpl(
     await fs.writeFile(outputPath, artifact.buffer);
     onProgress?.("done");
   } else {
-    await renderPdf(artifact, outputPath);
+    await renderPdf(artifact, outputPath, ctx);
     onProgress?.("done");
   }
   await runAfterConvert(settings.afterConvert, outputPath);
@@ -513,19 +539,22 @@ function registerIpc(): void {
   ipcMain.handle("convert", async (event, filePath: string, format: ConvertFormat): Promise<ConvertResult> => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const send = (stage: string) => win?.webContents.send("convert:progress", { stage });
-    cancelRequested = false;
+    const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
+    currentCtx = ctx;
     try {
-      const { outputPath, warnings } = await convertImpl(filePath, format, send);
+      const { outputPath, warnings } = await convertImpl(filePath, format, send, undefined, ctx);
       return { ok: true, outputPath, warnings };
     } catch (err) {
       if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      currentCtx = null; // 释放引用,避免悬挂(含异常/取消路径)
     }
   });
 
   // 取消当前转换(单文件/批量/合并通用;批量由 batchConvertImpl 内部检查)
   ipcMain.handle("convert:cancel", (): void => {
-    cancelRequested = true;
+    currentCtx?.cancel();
   });
 
   // 选择输出目录(批次 7;取消返回 null)
@@ -551,10 +580,14 @@ function registerIpc(): void {
     async (event, files: string[], format: ConvertFormat): Promise<BatchResult | { ok: false; error: string }> => {
       const win = BrowserWindow.fromWebContents(event.sender);
       const send = (info: BatchProgressInfo): void => win?.webContents.send("batch:progress", info);
+      const ctx = createConvertContext(); // 每次调用新建,取消标志不复用
+      currentCtx = ctx;
       try {
-        return await batchConvertImpl(files, format, send);
+        return await batchConvertImpl(files, format, send, ctx);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      } finally {
+        currentCtx = null; // 释放引用(含异常路径)
       }
     },
   );
@@ -565,11 +598,15 @@ function registerIpc(): void {
   ipcMain.handle("convert:merge", async (event, files: string[], format: ConvertFormat): Promise<ConvertResult> => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
+    const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
+    currentCtx = ctx;
     try {
-      return await mergeConvertImpl(files, format, send);
+      return await mergeConvertImpl(files, format, send, ctx);
     } catch (err) {
       if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      currentCtx = null; // 释放引用(含异常/取消路径)
     }
   });
   ipcMain.handle("settings:get", (): AppSettings => loadSettings());
@@ -857,9 +894,15 @@ app.whenReady().then(async () => {
       );
       await fs.writeFile(cancelFiles[1], "# 取消测试 2\n\n正文\n");
       await fs.writeFile(cancelFiles[2], "# 取消测试 3\n\n正文\n");
-      const cancelBatch = await batchConvertImpl(cancelFiles, "docx", () => {
-        cancelRequested = true; // 首个进度事件即取消
-      });
+      const cancelBatchCtx = createConvertContext(); // 每次调用新建 context,取消经 ctx.cancel() 置位
+      const cancelBatch = await batchConvertImpl(
+        cancelFiles,
+        "docx",
+        () => {
+          cancelBatchCtx.cancel(); // 首个进度事件即取消
+        },
+        cancelBatchCtx,
+      );
       if (
         cancelBatch.okCount !== 0 ||
         cancelBatch.failCount !== 1 ||
@@ -876,8 +919,8 @@ app.whenReady().then(async () => {
         );
       }
       console.log("[smoke] 批量取消 ok: 在途项检查点取消 + 未开始项标记(canceledCount=2)");
-      // 复位回归:取消后再次批量转换必须成功(batchConvertImpl 内部复位 cancelRequested;
-      // 若残留 true 会走循环顶标记路径,全部项误判取消)
+      // 复位回归:取消后再次批量转换必须成功(未传 ctx → 新建 context,取消标志不复用;
+      // 若复用旧标志会走循环顶标记路径,全部项误判取消)
       const retryBatch = await batchConvertImpl(cancelFiles, "docx");
       if (retryBatch.okCount !== 2 || retryBatch.failCount !== 1 || retryBatch.canceledCount !== 0) {
         throw new Error(`批量复位断言失败: ok=${retryBatch.okCount} fail=${retryBatch.failCount} canceled=${retryBatch.canceledCount}`);
@@ -887,10 +930,11 @@ app.whenReady().then(async () => {
       // (检查点位于落盘前;outputDir 可配置,候选输出目录一并校验)
       const cancelPdfMd = path.join(outDir, "cancel-pdf.md");
       await fs.writeFile(cancelPdfMd, "# PDF 取消\n\n正文\n");
-      cancelRequested = true;
+      const pdfCancelCtx = createConvertContext();
+      pdfCancelCtx.cancel();
       let pdfCanceled = false;
       try {
-        await convertImpl(cancelPdfMd, "pdf");
+        await convertImpl(cancelPdfMd, "pdf", undefined, undefined, pdfCancelCtx);
       } catch (err) {
         pdfCanceled = err instanceof ConvertCanceledError;
       }
@@ -902,13 +946,18 @@ app.whenReady().then(async () => {
         if (await pathExists(p)) throw new Error(`PDF 取消断言失败:取消后仍产出文件 ${p}`);
       }
       console.log("[smoke] pdf 取消 ok: ConvertCanceledError 且不产出文件");
-      // fd40480:merge 取消复位 — 取消后再次合并必须成功(mergeConvertImpl 开头复位 cancelRequested)
-      cancelRequested = false;
+      // fd40480:merge 取消复位 — 取消后再次合并必须成功(未传 ctx → 新建 context,取消标志不复用)
+      const mergeCancelCtx = createConvertContext();
       let mergeCanceled = false;
       try {
-        await mergeConvertImpl([mergeA, mergeB], "docx", () => {
-          cancelRequested = true; // "read" 阶段取消 → 渲染后检查点抛 ConvertCanceledError
-        });
+        await mergeConvertImpl(
+          [mergeA, mergeB],
+          "docx",
+          () => {
+            mergeCancelCtx.cancel(); // "read" 阶段取消 → 渲染后检查点抛 ConvertCanceledError
+          },
+          mergeCancelCtx,
+        );
       } catch (err) {
         mergeCanceled = err instanceof ConvertCanceledError;
       }
