@@ -56,6 +56,44 @@ $$
   }
   console.log("[ok] PDF 公式:KaTeX 结构 + CSS 字体内联生效");
 
+  // ---------- 降级分支:解析失败的公式 → TeX 源码等宽灰字 + 警告 ----------
+  // 依据(dist/core/docx/math.ts texToDocxMath):katex throwOnError:false 下解析失败
+  // 产物含 class="katex-error" → 返回 { ok: false, text: tex };调用方(render.ts
+  // renderBlock case "math" / pushRuns case "inlineMath")渲染为 TextRun 等宽灰字
+  // (CODE_FONT=Consolas,color 888888)并追加警告「公式解析失败,降级为 TeX 源码: …」,
+  // 不产出 m:oMath(整式降级,不混排)。失败样例:未闭合分组 \frac{1}{。
+  const degradeMd = `# 公式降级
+
+行内公式 $\\frac{1}{$ 与独立公式:
+
+$$ \\frac{1}{ $$
+`;
+  const degradeWarnings = [];
+  const degradeDocx = await convert(degradeMd, "docx", { baseDir: FIXTURES_DIR, warnings: degradeWarnings });
+  const degradeDocument = unzipPart(degradeDocx.buffer, "word/document.xml");
+  // 断言:降级 TeX 源码以等宽灰字出现在 document.xml(样式 needle 已实证:color 888888)
+  if (!degradeDocument.includes("\\frac{1}{")) {
+    throw new Error("公式断言失败:降级公式 TeX 源码未出现在 document.xml");
+  }
+  if (!degradeDocument.includes('<w:color w:val="888888"/>')) {
+    throw new Error("公式断言失败:降级公式缺少灰色(等宽灰字,w:color 888888)");
+  }
+  if (!degradeDocument.includes("Consolas")) {
+    throw new Error("公式断言失败:降级公式缺少等宽字体(CODE_FONT=Consolas)");
+  }
+  // 断言:整式降级 → 不产出 m:oMath(不混排)
+  if (degradeDocument.includes("<m:oMath")) {
+    throw new Error("公式断言失败:降级公式不应产出 m:oMath(整式降级不混排)");
+  }
+  // 断言:convert 返回 warnings 含降级警告文案(含公式源码)
+  const degradeWarnOk = degradeWarnings.some(
+    (w) => w.includes("公式解析失败,降级为 TeX 源码") && w.includes("\\frac{1}{"),
+  );
+  if (!degradeWarnOk) {
+    throw new Error("公式断言失败:warnings 缺少公式降级警告文案(公式解析失败,降级为 TeX 源码)");
+  }
+  console.log("[ok] docx 公式降级:TeX 源码等宽灰字 + 无 oMath + warnings 警告 断言通过");
+
   const formulaPdfBin = await htmlToPdf(formulaPdf.html, formulaPdf.footerTemplate);
   await saveArtifact("formula", { docx: formulaDocx.buffer, pdf: formulaPdfBin });
 }

@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parseMarkdown } from "../../dist/core/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
+import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
@@ -89,5 +90,23 @@ export async function run() {
     throw new Error("basic-render 断言失败:document.xml 缺少粗体文本(粗体内容)");
   }
   console.log("[ok] basic-render:全要素样例渲染成功,表格与粗体文本断言通过");
+
+  // 缺失图片警告(convert 层 collectMissingImageWarnings,dist/core/convert.ts):
+  // 遍历 mdast 的 image 节点,本地路径 stat 失败 → warnings 追加「缺少图片文件: <src>」
+  // (文案带源文件名;http/data: 跳过)。样例引用不存在的 missing-img.png(无 fixture,
+  // 与 toc-caption 段 missing-fig.png 同做法,fixtures 仅 g1-tiny.png 与 manual/)。
+  const missingWarnings = [];
+  await convert("![缺图](missing-img.png)", "docx", {
+    baseDir: FIXTURES_DIR,
+    warnings: missingWarnings,
+  });
+  const missingWarnOk = missingWarnings.some(
+    (w) => w.includes("缺少图片文件:") && w.includes("missing-img.png"),
+  );
+  if (!missingWarnOk) {
+    throw new Error("basic-render 断言失败:warnings 缺少「缺少图片文件: missing-img.png」");
+  }
+  console.log("[ok] basic-render:缺失图片警告(warnings 含「缺少图片文件:」与文件名)断言通过");
+
   await saveArtifact("basic-render", { docx: buffer });
 }

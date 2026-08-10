@@ -610,7 +610,7 @@ app.whenReady().then(async () => {
       // 批次 7 起重名保护:同名产物不再覆盖 → smoke 自清理本次会生成的产物(含 (2) 序号变体),
       // 保证断言确定性;output/ 下的验收样例等其他文件不受影响。
       // Windows 下被阅读器占用的文件删除会 EBUSY,容错跳过(残留由重名序号机制规避)。
-      const smokePrefixes = ["g3-smoke", "g4-smoke", "batch-", "merge-a", "merge-b"];
+      const smokePrefixes = ["g3-smoke", "g4-smoke", "cancel-", "batch-", "merge-a", "merge-b"];
       for (const name of await fs.readdir(outDir)) {
         const base = name.replace(/\.(md|docx|pdf|png)$/i, "").replace(/\s\(\d+\)$/, "");
         if (smokePrefixes.some((p) => base.startsWith(p))) {
@@ -628,6 +628,28 @@ app.whenReady().then(async () => {
       const { outputPath } = await convertImpl(sampleMd, "docx");
       const stat = await fs.stat(outputPath);
       console.log(`[smoke] convert ok: ${outputPath} (${stat.size} bytes)`);
+      // 重名保护:同一 md 连续 convertImpl 两次 → 第二次产物「名 (2).docx」且两文件共存。
+      // 临时把输出目录指回源目录(output/smoke,smoke 开头已清理),保证序号断言确定性
+      // (用户 outputDir 可能残留历史产物,如 Downloads 下已有 g3-smoke (1..N).docx)。
+      {
+        const dupOrig = loadSettings();
+        try {
+          await updateSettings({ outputDir: "" });
+          const dup1 = await convertImpl(sampleMd, "docx");
+          const dup2 = await convertImpl(sampleMd, "docx");
+          if (dup1.outputPath === dup2.outputPath) throw new Error("重名保护断言失败:两次产物路径相同");
+          if (!dup2.outputPath.endsWith(" (2).docx")) {
+            throw new Error(`重名保护断言失败:第二次产物应为「名 (2).docx」,实际为 ${dup2.outputPath}`);
+          }
+          await fs.stat(dup1.outputPath);
+          await fs.stat(dup2.outputPath);
+          console.log(
+            `[smoke] 重名保护 ok: ${path.basename(dup2.outputPath)} 与 ${path.basename(dup1.outputPath)} 共存`,
+          );
+        } finally {
+          await updateSettings(dupOrig);
+        }
+      }
       // 批次 1:设置持久化往返 + 页面设置端到端(landscape → docx pgSz orient)
       const origSettings = loadSettings();
       try {
@@ -644,6 +666,59 @@ app.whenReady().then(async () => {
         console.log("[smoke] pageSetup landscape ok");
       } finally {
         await updateSettings(origSettings);
+      }
+      // breakBeforeH1 产物效果:设置开启 → convertImpl docx → document.xml 断言 H1 前分页
+      // (照抄上方 landscape 的 try/finally 模式:改设置 → 断言 → finally 还原)
+      {
+        const h1Orig = loadSettings();
+        try {
+          await updateSettings({ breakBeforeH1: true });
+          const h1Result = await convertImpl(sampleMd, "docx");
+          const h1Zip = await JSZip.loadAsync(await fs.readFile(h1Result.outputPath));
+          const h1Xml = await h1Zip.file("word/document.xml")!.async("string");
+          if (!h1Xml.includes("<w:pageBreakBefore/>")) {
+            throw new Error("breakBeforeH1 断言失败:document.xml 缺少 <w:pageBreakBefore/>");
+          }
+          console.log("[smoke] breakBeforeH1 ok: H1 段落含 pageBreakBefore(w:pageBreakBefore)");
+        } finally {
+          await updateSettings(h1Orig);
+        }
+      }
+      // 分页符产物:样例含 <!-- page-break --> → docx 断言 PageBreak 段落(w:br w:type="page");
+      // pdf 侧中间 html 可截获(convert 返回 artifact.html,与 renderPdf 写临时文件同源) → 断言 page-break div。
+      // 关闭 toc 目录页,保证 document.xml 中 w:br w:type="page" 仅来自显式分页符(目录页自带分页符会污染计数)。
+      {
+        const pbOrig = loadSettings();
+        try {
+          await updateSettings({ toc: false });
+          const pbResult = await convertImpl(sampleMd, "docx");
+          const pbZip = await JSZip.loadAsync(await fs.readFile(pbResult.outputPath));
+          const pbXml = await pbZip.file("word/document.xml")!.async("string");
+          if (!pbXml.includes('<w:br w:type="page"/>')) {
+            throw new Error('分页符断言失败:document.xml 缺少 <w:br w:type="page"/>');
+          }
+          console.log("[smoke] 分页符 ok: docx 含显式 PageBreak(w:br w:type=page)");
+          const pbSettings = loadSettings();
+          // convert() 第一参数是 markdown 内容字符串(不读文件),须先读盘再传入
+          const pbSource = await fs.readFile(sampleMd, "utf8");
+          const pbArtifact = await convert(pbSource, "pdf", {
+            baseDir: path.dirname(sampleMd),
+            title: path.basename(sampleMd).replace(/\.(md|markdown)$/i, ""),
+            warnings: [],
+            pageSetup: pbSettings.pageSetup,
+            typography: pbSettings.typography,
+            breakBeforeH1: pbSettings.breakBeforeH1,
+            toc: pbSettings.toc,
+            imageResolver: getImageResolver(path.dirname(sampleMd)),
+            katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
+          });
+          if (pbArtifact.kind !== "pdf" || !pbArtifact.html.includes('<div class="page-break"></div>')) {
+            throw new Error("分页符断言失败:pdf 中间 html 缺少 page-break div");
+          }
+          console.log("[smoke] 分页符 ok: pdf 中间 html 含 page-break div");
+        } finally {
+          await updateSettings(pbOrig);
+        }
       }
       // G4:pdf 链路(中文/表格/代码块/任务列表/本地图片 → printToPDF)
       const pngPath = path.join(outDir, "g4-smoke.png");
@@ -774,6 +849,73 @@ app.whenReady().then(async () => {
         }
         console.log(`[smoke] merge pdf 书签 ok: 合并产物 Outlines 注入,中文标题 + Dest 页面引用正确`);
       }
+      // 取消链路回归(批次 7 + fd40480/f809c57):
+      // 批量取消:首个进度事件("read")即置取消标志;文件 1 故意缺失 → worker 快速失败回到
+      // 循环顶,触发「未开始项标记」路径(在途项则经渲染后检查点抛 ConvertCanceledError 标记)。
+      const cancelFiles = ["batch-cancel-1.md", "batch-cancel-2.md", "batch-cancel-3.md"].map((n) =>
+        path.join(outDir, n),
+      );
+      await fs.writeFile(cancelFiles[1], "# 取消测试 2\n\n正文\n");
+      await fs.writeFile(cancelFiles[2], "# 取消测试 3\n\n正文\n");
+      const cancelBatch = await batchConvertImpl(cancelFiles, "docx", () => {
+        cancelRequested = true; // 首个进度事件即取消
+      });
+      if (
+        cancelBatch.okCount !== 0 ||
+        cancelBatch.failCount !== 1 ||
+        cancelBatch.canceledCount !== 2 ||
+        !cancelBatch.items[0] ||
+        cancelBatch.items[0].ok ||
+        !cancelBatch.items[0].error ||
+        !cancelBatch.items[1]?.canceled ||
+        !cancelBatch.items[2]?.canceled
+      ) {
+        throw new Error(
+          `批量取消断言失败: ok=${cancelBatch.okCount} fail=${cancelBatch.failCount} canceled=${cancelBatch.canceledCount}` +
+            ` items=${JSON.stringify(cancelBatch.items.map((i) => i && { ok: i.ok, canceled: i.canceled, error: !!i.error }))}`,
+        );
+      }
+      console.log("[smoke] 批量取消 ok: 在途项检查点取消 + 未开始项标记(canceledCount=2)");
+      // 复位回归:取消后再次批量转换必须成功(batchConvertImpl 内部复位 cancelRequested;
+      // 若残留 true 会走循环顶标记路径,全部项误判取消)
+      const retryBatch = await batchConvertImpl(cancelFiles, "docx");
+      if (retryBatch.okCount !== 2 || retryBatch.failCount !== 1 || retryBatch.canceledCount !== 0) {
+        throw new Error(`批量复位断言失败: ok=${retryBatch.okCount} fail=${retryBatch.failCount} canceled=${retryBatch.canceledCount}`);
+      }
+      console.log("[smoke] 批量复位 ok: 取消后再次批量转换成功(2 成功 1 缺失失败,无取消残留)");
+      // f809c57:PDF 取消链路 — 取消置位后 convertImpl(pdf) 抛 ConvertCanceledError 且不产出文件
+      // (检查点位于落盘前;outputDir 可配置,候选输出目录一并校验)
+      const cancelPdfMd = path.join(outDir, "cancel-pdf.md");
+      await fs.writeFile(cancelPdfMd, "# PDF 取消\n\n正文\n");
+      cancelRequested = true;
+      let pdfCanceled = false;
+      try {
+        await convertImpl(cancelPdfMd, "pdf");
+      } catch (err) {
+        pdfCanceled = err instanceof ConvertCanceledError;
+      }
+      if (!pdfCanceled) throw new Error("PDF 取消断言失败:未抛 ConvertCanceledError");
+      const pdfCancelTargets = [path.join(outDir, "cancel-pdf.pdf")];
+      const cancelOutDir = loadSettings().outputDir.trim();
+      if (cancelOutDir) pdfCancelTargets.push(path.join(path.resolve(cancelOutDir), "cancel-pdf.pdf"));
+      for (const p of pdfCancelTargets) {
+        if (await pathExists(p)) throw new Error(`PDF 取消断言失败:取消后仍产出文件 ${p}`);
+      }
+      console.log("[smoke] pdf 取消 ok: ConvertCanceledError 且不产出文件");
+      // fd40480:merge 取消复位 — 取消后再次合并必须成功(mergeConvertImpl 开头复位 cancelRequested)
+      cancelRequested = false;
+      let mergeCanceled = false;
+      try {
+        await mergeConvertImpl([mergeA, mergeB], "docx", () => {
+          cancelRequested = true; // "read" 阶段取消 → 渲染后检查点抛 ConvertCanceledError
+        });
+      } catch (err) {
+        mergeCanceled = err instanceof ConvertCanceledError;
+      }
+      if (!mergeCanceled) throw new Error("merge 取消断言失败:未抛 ConvertCanceledError");
+      const mergeRetry = await mergeConvertImpl([mergeA, mergeB], "docx");
+      if (!mergeRetry.ok) throw new Error(`merge 复位断言失败: ${mergeRetry.error}`);
+      console.log("[smoke] merge 取消复位 ok: 取消后再次合并成功(fd40480)");
     } catch (err) {
       console.error("[smoke] convert FAILED:", err);
       app.exit(1);
