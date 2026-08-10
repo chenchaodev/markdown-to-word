@@ -32,14 +32,14 @@
 ### 批次 8「功能扩展:学术正式化延伸」(2026-08-08 11:50:33 规划,来源:lib-1 竞品调研;勘察 exp-1 + 域 API 调研 lib-1/lib-3 已完成,落盘 docs/RESEARCH.md)✅ 0.18.0~0.18.1
 - **已拍板**:D1=**免更新路线**(8a `beginDirty:false`+cachedEntries 纯超链接免页码 + 8b 渲染期静态注入「图 1.1」文本;零提示全端一致,改标题后需重新导出,定稿导出场景);D2=**前缀行识别**(图/表后紧跟「图: 标题」/「表: 标题」行;alt 已被占位文本复用故放弃)
 - 实现说明:8b 题注编号最终实现为**全文连续**(图 1/2/3、表 1/2 独立计数),未挂章节号(规划期「图 1.1」简化);8a 目录为静态标题列表(无页码)+ 右键更新域可刷新
-- 验收:scripts/test/segments/toc-caption.test.js 9 断言全绿;用户实测通过(2026-08-09,记录 docs/ACCEPTANCE.md 批次 8 节)
+- 验收:test/segments/toc-caption.test.js 9 断言全绿;用户实测通过(2026-08-09,记录 docs/ACCEPTANCE.md 批次 8 节)
 按价值/成本排序,起手 3-4 项:
 
 **8a Word 原生 TOC 域开关化(低,勘察后范围缩小)**
 - 现状:**原生 TOC 域已存在**——render.ts:289-309 用 docx 9.x `TableOfContents` 组件(`\o "1-3" \h \z \u` 配置齐全,占位「右键 → 更新域 生成」),正文含任意标题即**无条件插入**(render.ts:184-187,无开关)
 - 增量:① 开关化 `toc?: boolean`(默认开,仿 breakBeforeH1 顶层布尔;PDF 侧 buildTocHtml 同开关,规则对齐);② `features.updateFields` 联动(官方文档明确要求:Word 打开弹提示并全量更新域);③ 题注不污染目录(题注用独立 Caption 段落样式,不挂标题样式即不被 `\o "1-3"` 收集)
 - 红线(维持):静态标题列表 + F9 提示兜底
-- 验收:scripts/test/segments/toc-caption.test.js(document.xml 匹配 `w:instrText` TOC 指令 / w:sdt);Word+WPS 双实测 F9
+- 验收:test/segments/toc-caption.test.js(document.xml 匹配 `w:instrText` TOC 指令 / w:sdt);Word+WPS 双实测 F9
 
 **8b 图/表题注自动编号(中,中文「图1.1」差异化最强单点,Typora 生态做不了)**
 - 现状:mdast **无 caption 节点**(grep caption/figcaption 零命中),需自定义识别语法;标题编号已是 **w:numPr numbering 静态渲染**(render.ts:425-428,免 F9)→ STYLEREF 域可直接取章节号(**styleId 写 Heading1**,非 Word 内置 `1`)
@@ -61,7 +61,7 @@
 - 实现:docx 公式段落「公式居中 + 编号右对齐」(tab 制表位 CENTER+RIGHT,参照学术排版);label → Bookmark;PDF KaTeX display 后追加编号 + label 锚点 span,链接规则替换文本
 - 验证点:remark-math mathFlow 后独立行文本解析行为(实证:独立 paragraph 可识别)、markdown-it katex 插件 token 结构(实证:math_block)、docx tab 制表位与 Math 同段排版(实证:Tab 可序列化,ParagraphChild 类型需断言)
 - 不做(记后续):题注/章节交叉引用(需 8b 加 label 机制)、公式编号开关(默认开)
-- 验收:scripts/test/segments/eq-numbering.test.js 9 断言全绿(typecheck/build/smoke 同步全绿);待 GUI 实测(见 docs/ACCEPTANCE.md 批次 9 节)
+- 验收:test/segments/eq-numbering.test.js 9 断言全绿(typecheck/build/smoke 同步全绿);待 GUI 实测(见 docs/ACCEPTANCE.md 批次 9 节)
 
 - 备选:代码块语法高亮写 docx(低中)、模板导入 MVP(中高,先导出侧)、批注(低)、WPS 兼容矩阵(低,守护既有功能)
 - 暂缓:完整 CSL 参考文献、AI 改写、表格合并单元格、文档加密

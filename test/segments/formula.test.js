@@ -8,7 +8,7 @@
  * (围栏是 @mdit/plugin-katex 侧特性,属双格式语法不对称,验收用 $$ 块)。
  * JS 模板字符串内 TeX 反斜杠须双写(\\frac)。
  */
-import { convert } from "../../../dist/core/convert.js";
+import { convert } from "../../dist/core/convert.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";

@@ -5,8 +5,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parseMarkdown } from "../../../dist/core/parse.js";
-import { renderDocx } from "../../../dist/core/docx/render.js";
+import { parseMarkdown } from "../../dist/core/parse.js";
+import { renderDocx } from "../../dist/core/docx/render.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";

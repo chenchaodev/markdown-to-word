@@ -1,6 +1,6 @@
 /**
  * 零依赖 PNG 编码器(8-bit RGB)与内置小图,供 fixtures 样例引用。
- * 样例图片宜直接静态入仓 scripts/test/fixtures/;此处工具供重建/新增样例使用。
+ * 样例图片宜直接静态入仓 test/fixtures/;此处工具供重建/新增样例使用。
  */
 import { deflateSync } from "node:zlib";
 

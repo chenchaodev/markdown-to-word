@@ -3,7 +3,7 @@
  * 双格式共用同一 typography 契约;docx 断言字号/字体/对齐/标题编号关闭,
  * pdf 断言模板 CSS 参数化;双格式产物落盘。
  */
-import { convert } from "../../../dist/core/convert.js";
+import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";

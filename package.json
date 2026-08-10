@@ -13,7 +13,7 @@
     "build": "tsc && node scripts/copy-renderer.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
-    "test": "npm run build && electron scripts/test/acceptance.mjs",
+    "test": "npm run build && electron test/acceptance.mjs",
     "test:smoke": "electron . --smoke",
     "test:all": "npm run test && npm run test:smoke",
     "dist": "npm run build && electron-builder --win nsis --x64 --publish never"

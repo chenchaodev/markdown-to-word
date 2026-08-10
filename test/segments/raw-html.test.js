@@ -7,7 +7,7 @@
  * w:val="yellow"、strike → <w:strike/>、underline → <w:u w:val="single"/>、
  * 换行 → <w:br/>(TextRun break: 1)。
  */
-import { convert } from "../../../dist/core/convert.js";
+import { convert } from "../../dist/core/convert.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";

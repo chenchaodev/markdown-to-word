@@ -3,7 +3,7 @@
  * linkMd → docx;断言 numbering.xml 多级 text 模板、document.xml 的
  * w:hyperlink w:anchor 内部锚点与标题书签(编号不破坏 Bookmark)。
  */
-import { convert } from "../../../dist/core/convert.js";
+import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";

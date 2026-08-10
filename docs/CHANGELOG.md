@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [0.20.1] - 2026-08-10
+- 测试体系目录瘦身(承接 0.20.0;typecheck/build/验收 11 段/smoke 全绿,纯路径调整无逻辑变更):
+  - 测试代码 `scripts/test/` 上移至顶层 `test/`(acceptance/common/segments/fixtures),scripts/ 只留构建工具(copy-renderer/svg-to-ico);段文件 import 相对路径同步
+  - 产物目录扁平化:`output/test/{artifacts,smoke}` → `output/{artifacts,smoke}`(output/ 本就只承载测试产物,再套一层冗余);smoke 迁移 src/main/index.ts、package.json test 入口、docs 活文档引用全部同步
+  - 最终结构:测试代码 `test/`,样例数据 `test/fixtures/`,产物 `output/artifacts/` + `output/smoke/`
+
 ## [0.20.0] - 2026-08-10
 - 测试体系重组(技术债整理;typecheck/build/验收 11 段/smoke 全绿,无功能变更):
   - **验收脚本按内容主题拆分、去批次化**:删除 `scripts/make-batch3-sample.mjs` / `make-batch4-sample.mjs` / `g1-verify.mjs`,新建 `scripts/test/`(acceptance.mjs 入口自动发现 `segments/*.test.js`,零注册;common/ 公共工具:paths/runner/docx-utils/pdf-utils/png-utils/artifacts);原 10 段断言按主题拆为 11 段(basic-render/merge/footnotes/pdf-meta/heading-links/typography/raw-html/formula/encoding/toc-caption/eq-numbering),断言 needle 一字未改(62 项唯一 needle 比对);pdf-meta 段独立化(原段 4 复用段 2 产物 → 自建样例,消除段间依赖)

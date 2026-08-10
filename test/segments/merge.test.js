@@ -6,11 +6,11 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { convert } from "../../../dist/core/convert.js";
-import { mergeMarkdowns } from "../../../dist/core/merge.js";
-import { injectBookmarks, buildBookmarkTree } from "../../../dist/core/pdf/bookmarks.js";
-import { setPdfMetadata } from "../../../dist/core/pdf/metadata.js";
-import { extractHeadings } from "../../../dist/core/pdf/render.js";
+import { convert } from "../../dist/core/convert.js";
+import { mergeMarkdowns } from "../../dist/core/merge.js";
+import { injectBookmarks, buildBookmarkTree } from "../../dist/core/pdf/bookmarks.js";
+import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
+import { extractHeadings } from "../../dist/core/pdf/render.js";
 import { PDFDocument } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { htmlToPdf } from "../common/pdf-utils.js";

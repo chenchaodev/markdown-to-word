@@ -1,6 +1,6 @@
 /**
  * 测试段执行框架:
- * - 段文件 = scripts/test/segments/*.test.js,须导出 async function run()
+ * - 段文件 = test/segments/*.test.js,须导出 async function run()
  * - 新增测试 = 新建段文件即可,零注册(入口自动发现)
  */
 import fs from "node:fs/promises";

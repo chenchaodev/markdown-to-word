@@ -5,7 +5,7 @@
  * 失败按 GBK/GB18030 解码并标记 encoding="gbk"(调用方据此追加警告文案)。
  */
 import iconv from "iconv-lite";
-import { decodeMarkdown } from "../../../dist/core/encoding.js";
+import { decodeMarkdown } from "../../dist/core/encoding.js";
 
 export async function run() {
   const utf8NoBom = decodeMarkdown(Buffer.from("中文正文 hello", "utf8"));

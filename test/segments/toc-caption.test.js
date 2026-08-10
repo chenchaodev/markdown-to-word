@@ -8,8 +8,8 @@
  * 注意:题注行与图/表之间须空行(图:无空行会并入图所在段落;表:无空行会被
  * GFM 表格规则吞成表格行)。
  */
-import { convert } from "../../../dist/core/convert.js";
-import { DEFAULT_TYPOGRAPHY } from "../../../dist/core/typography.js";
+import { convert } from "../../dist/core/convert.js";
+import { DEFAULT_TYPOGRAPHY } from "../../dist/core/typography.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";

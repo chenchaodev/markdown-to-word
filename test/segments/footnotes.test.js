@@ -3,8 +3,8 @@
  * 脚注 md → docx/pdf;断言 footnotes/footer/header 部件与 PDF 脚注区结构;
  * PDF 侧走 printToPDF → setPdfMetadata 全链路(与主进程 renderPdf 对齐)。
  */
-import { convert } from "../../../dist/core/convert.js";
-import { setPdfMetadata } from "../../../dist/core/pdf/metadata.js";
+import { convert } from "../../dist/core/convert.js";
+import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
 import { PDFDocument } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { zipContains } from "../common/docx-utils.js";

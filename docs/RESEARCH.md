@@ -19,7 +19,7 @@
 - **无 caption 语法**:mdast 无 figure/figcaption 节点,raw HTML 白名单无 `<figure>`;题注需自定义识别(如图片段落后/表格后的特殊标记)+ 块级插入点(renderBlock "paragraph"/"table" case,render.ts:352-360),需文档级计数 ctx(仿 footnoteNextId 模式 render.ts:87、169)
 - **PDF 侧题注易实现**:标题编号是 CSS counter 伪元素(不进文本,书签不受影响,pdf/render.ts:369-377);题注可 `.fig-caption::before { content: counter(h1c) "." counter(figc) }` 实现;PDF 目录 buildTocHtml()(483-495)从渲染后正文正则提取 h1-h3,无 [TOC] 语法
 - **新增设置字段落点**:开关仿 `breakBeforeH1` 放 AppSettings 顶层(顶层布尔先例,settings.ts:16-26),或仿 `headingNumbering` 挂 TypographySettings;新增字段需同步改 SETTING_KEYS(settings.ts:45)+ sanitize(119-152)+ renderer 平行类型/默认值(renderer.ts:98-105、131-153);主进程 convertImpl 实时 loadSettings()(main/index.ts:97)
-- **验收脚本钩子**:`scripts/test/acceptance.mjs` 自动发现并顺序执行 `segments/*.test.js`(段文件导出 `async function run()`,零注册;新增测试=新建段文件);docx 断言 = zipContains(部件存在)/unzipPart + 字符串匹配 OOXML 片段(如 `w:lvlText w:val="%1.%2"`);PDF 断言 = 产物 .html 字符串匹配(CSS counter、class);公共工具(htmlToPdf/saveArtifact/路径常量)见 `scripts/test/common/`
+- **验收脚本钩子**:`test/acceptance.mjs` 自动发现并顺序执行 `segments/*.test.js`(段文件导出 `async function run()`,零注册;新增测试=新建段文件);docx 断言 = zipContains(部件存在)/unzipPart + 字符串匹配 OOXML 片段(如 `w:lvlText w:val="%1.%2"`);PDF 断言 = 产物 .html 字符串匹配(CSS counter、class);公共工具(htmlToPdf/saveArtifact/路径常量)见 `test/common/`
 - 来源: @explorer exp-1;关联: 原文存档 docs/archive/2026-08-08-1123-批次8管线勘察.md
 
 ### 2026-08-08 12:16:09 批次 7 修复期踩坑结论(已验证,勿回退)
