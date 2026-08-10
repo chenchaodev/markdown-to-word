@@ -16,3 +16,4 @@
 - 提交即固化:每个逻辑单元提交时同批更新 `docs/CHANGELOG.md`(修复另在验收记录标「待复测」),状态速查打开事项随提交同步;勿依赖「迭代完成」「会话切换」判断(见全局 AGENTS.md「提交时状态固化」)
 - pwsh 环境坑:commit message 用单引号包裹,避免内嵌 ASCII 双引号被拆包(已踩坑)
 - CHANGELOG 版本号 = 迭代序列(0.NN.M),与 package.json 发布号(0.5.x)解耦,勿混用
+- 测试体系:`test/`(segments/ 按内容主题零注册 + fixtures/ 静态样例 + common/ 工具),入口 `npm run test`(acceptance)、`test:smoke`、`test:all`;产物 `output/artifacts` + `output/smoke`;新增能力须补对应测试段,缺口清单见 ROADMAP

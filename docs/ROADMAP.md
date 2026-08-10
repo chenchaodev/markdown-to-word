@@ -94,3 +94,36 @@
 | G3 转换联调 | convert IPC + 进度事件 + 输出落盘 | ✅ |
 | G4 PDF 自研 | markdown-it + HTML 模板 + printToPDF + 高亮 | ✅ |
 | G5 收尾 | 错误处理 + electron-builder(NSIS)打包实测 | ✅ |
+
+## 测试缺口(待逐步补充)
+> 2026-08-10 能力面×覆盖盘点(test/segments 11 段 + smoke 对照 src/core、src/main、src/renderer 全部能力点)。按优先级逐批补齐,每批独立小迭代;补完即勾选。
+
+### 高优先级(用户可见行为/修过 bug 的路径/核心渲染语义)
+- [ ] 封面页双格式:docx cover(22pt 居中)+ pdf .cover(28pt)结构均无断言 → 新段 cover.test.js
+- [ ] breakBeforeH1 产物效果:smoke 只测设置持久化,产物分页(docx 分页段落 / pdf break-before CSS)未断言 → smoke 扩展 + core 段
+- [ ] 取消链路:convert:cancel、batch 取消(canceledCount/未开始项)、merge 取消复位(fd40480/f809c57 两次取消 bug 无回归测试)→ smoke 扩展
+- [ ] 重名保护:resolveOutputPath 二次转换生成 (2).ext 不覆盖(smoke 仅兼容剥离 (N),未主动断言)→ smoke 扩展
+- [ ] 缺失图片警告:collectMissingImageWarnings「缺少图片文件:」文案(toc-caption/merge 均用了缺失图但未断言 warnings)→ 现有段补断言
+- [ ] 公式降级分支:katex-error → 等宽灰字 + 警告(docx render 降级路径未测)→ formula.test.js 补
+- [ ] 外链图片下载 image-downloader:超时/仅 2xx/失败 null/同 URL 去重缓存 → 新段(纯逻辑)
+- [ ] 任务列表:docx 侧按普通列表、pdf 侧 ☐/☑ 替换 → 新段 task-list.test.js
+- [ ] h4-h6 标题(现只断言到 h3)→ heading-links.test.js 补
+- [ ] 分页符产物:docx PageBreak 段落、pdf .page-break div(smoke g3 有输入无断言)→ smoke 补
+
+### 中优先级(设置边界/渲染细节)
+- [ ] settings sanitize 边界:字号 8-24/行距 1.0-2.5/边距 0-1000 钳制、非法枚举回退、损坏文件回退默认、旧 settings.json 兼容、patch 白名单 → 新段 settings.test.js(纯函数易测)
+- [ ] slug.ts 三函数单测:slugify 中文保留 / uniqueSlug 去重 -2/-3 / docxBookmarkId 兜底(数字前缀、40 字符截断)→ 新段 slug.test.js
+- [ ] frontmatter 边界:引号剥离/注释/异常格式 → 新段 frontmatter.test.js
+- [ ] 页面设置非 A4 纸张(A3/A5/Letter/Legal)+ 边距值(docx pgMar / pdf @page)→ 新段 page-setup.test.js
+- [ ] 行距/首行缩进 docx 侧值:w:spacing、w:ind firstLineChars 未断言 → typography.test.js 补
+- [ ] 代码块序列化:docx Consolas 10pt 逐行、pdf 代码高亮类 → basic-render.test.js 补
+- [ ] 引用块 docx(缩进+灰底 F2F2F2)/列表 w:numPr 序列化/表格表头 bold → basic-render.test.js 补
+- [ ] 外链链接 docx rels(ExternalHyperlink)→ heading-links.test.js 补
+- [ ] PDF 页脚页码文案/页眉内容(部件存在已断言,文案未断言)→ footnotes.test.js 补
+
+### 低优先级(自动化成本高,维持 smoke diag + GUI 实测清单)
+- [ ] renderer 全部交互(拖放/列表排序/设置面板/进度/取消/快捷键/完成弹窗动作):维持 smoke renderer diag + ACCEPTANCE GUI 实测
+- [ ] runAfterConvert(show-in-folder/open)行为 → 可 smoke 测 none 分支
+- [ ] collectMarkdownPaths 文件夹递归/点目录跳过/skipped → smoke 扩展
+- [ ] resolveOutputPath 超长路径(>250)回落 + 输出目录 mkdir 失败回落 → smoke
+- [ ] IPC dialog / openPreviewWindow → GUI 实测,不自动化
