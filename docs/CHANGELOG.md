@@ -1,6 +1,12 @@
 # CHANGELOG
 
-## [0.19.1] - 2026-08-09
+## [0.20.0] - 2026-08-10
+- 测试体系重组(技术债整理;typecheck/build/验收 11 段/smoke 全绿,无功能变更):
+  - **验收脚本按内容主题拆分、去批次化**:删除 `scripts/make-batch3-sample.mjs` / `make-batch4-sample.mjs` / `g1-verify.mjs`,新建 `scripts/test/`(acceptance.mjs 入口自动发现 `segments/*.test.js`,零注册;common/ 公共工具:paths/runner/docx-utils/pdf-utils/png-utils/artifacts);原 10 段断言按主题拆为 11 段(basic-render/merge/footnotes/pdf-meta/heading-links/typography/raw-html/formula/encoding/toc-caption/eq-numbering),断言 needle 一字未改(62 项唯一 needle 比对);pdf-meta 段独立化(原段 4 复用段 2 产物 → 自建样例,消除段间依赖)
+  - **样例数据静态化**:原 make-batch3-sample.mjs 生成的 10 个手册 md + PNG 图片改为静态入仓 `scripts/test/fixtures/manual/`(可版本化);PNG 编码器保留为 common/png-utils.js 工具
+  - **输出目录按用途分**:验收产物 → `output/test/artifacts/`(按主题命名,无编号,新增无冲突);smoke 临时样例 → `output/test/smoke/`(src/main/index.ts 迁移);旧产物(output/批次1~4验收、根目录散落)全部清理
+  - **npm 入口**:`test`(验收)/ `test:smoke` / `test:all`;docs(STATUS/DEV-GUIDE/ROADMAP/ACCEPTANCE/RESEARCH)引用同步至新路径
+
 - 批次 9 实测修复(2 个,typecheck/build/验收脚本 10 段/smoke 全绿,用户复测通过):
   - **WPS 公式段显示异常**(实测:公式左侧出现 TeX 源码文本):公式编号段输出裸 `<w:tab/>`(OOXML 中 w:tab 属 run 内元素,必须包在 `<w:r>` 内)→ WPS 解析异常把 m:oMath 降级为纯文本;修复:Tab 包进 `TextRun({ children: [new Tab()] })`(输出 `<w:r><w:tab/></w:r>`)
   - **书签 w:id 冲突**:docx 库 Bookmark 组件每实例独立 id 计数器(源码实证 index.mjs:17027),文档内所有书签 w:id 恒为 1,违反 Word 书签 id 全局唯一要求 → 改用 BookmarkStart/BookmarkEnd + 模块级自增计数器(标题/公式书签 id 1/2/3 唯一)

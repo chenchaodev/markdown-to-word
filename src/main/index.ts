@@ -604,7 +604,7 @@ app.whenReady().then(async () => {
   if (SMOKE) {
     // 冒烟自测:构造样例 md → 走完整 convertImpl 链路 → 校验产物
     try {
-      const outDir = path.join(__dirname, "..", "..", "output");
+      const outDir = path.join(__dirname, "..", "..", "output", "test", "smoke");
       const sampleMd = path.join(outDir, "g3-smoke.md");
       await fs.mkdir(outDir, { recursive: true });
       // 批次 7 起重名保护:同名产物不再覆盖 → smoke 自清理本次会生成的产物(含 (2) 序号变体),

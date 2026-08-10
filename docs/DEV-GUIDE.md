@@ -17,8 +17,9 @@
 | `npm run dev` | 启动 Electron 开发 |
 | `npx electron . --smoke` | 冒烟自测(启动 + convert 链路,自清理产物) |
 | `npm run dist` | electron-builder 打包 NSIS 安装包(G5) |
-| `node scripts/make-batch4-sample.mjs` | 验收样例(8 段断言:编码/脚注/页眉页脚/书签/编号/白名单/公式等,需先 build) |
-| `node scripts/make-batch3-sample.mjs` | 批次 3 样例;`node scripts/g1-verify.mjs` G1 全要素样例 |
+| `npm run test` | 验收全部测试段(`electron scripts/test/acceptance.mjs`,自动发现 `segments/*.test.js`;需先 build;新增测试=新建段文件零注册) |
+| `npm run test:smoke` | 冒烟自测(`electron . --smoke`) |
+| `npm run test:all` | 验收 + 冒烟 |
 
 ## 架构(设计决策,勿随意偏离)
 - 分层:转换核心 `src/core/` 纯逻辑无 IO 可测试;GUI 主进程 `src/main/`;UI `src/renderer/`(vanilla TS + 原生 DOM,不引前端框架)
@@ -44,9 +45,9 @@
 - `src/renderer/`:GUI UI(vanilla TS + 原生 DOM)
   - `index.html` / `style.css`:Win11 浅色风格界面,含 CSP meta
   - `renderer.ts`:文件选择/拖放/格式单选/转换执行(进度文案 + 结果/错误反馈 + 设置面板)
-- `scripts/`:g1-verify.mjs(全要素样例)、make-batch3-sample.mjs / make-batch4-sample.mjs(验收脚本)、copy-renderer.mjs(静态资源拷贝)、svg-to-ico.mjs(图标)
+- `scripts/test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/ 按内容主题的测试段 + fixtures/ 静态样例数据);`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)
 
 ## 验证方式
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(全局铁律 3)
-- 验证基线(命令、断言、打包验证链)见 `docs/STATUS.md`「验证基线」;验收脚本断言明细见 `scripts/make-batch4-sample.mjs`
+- 验证基线(命令、断言、打包验证链)见 `docs/STATUS.md`「验证基线」;验收测试段明细见 `scripts/test/segments/`
 - docx/PDF 验收样例固定含中英混排,生成后人工打开检查中文渲染
