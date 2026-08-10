@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [0.19.1] - 2026-08-09
+- 批次 9 实测修复(2 个,typecheck/build/验收脚本 10 段/smoke 全绿,用户复测通过):
+  - **WPS 公式段显示异常**(实测:公式左侧出现 TeX 源码文本):公式编号段输出裸 `<w:tab/>`(OOXML 中 w:tab 属 run 内元素,必须包在 `<w:r>` 内)→ WPS 解析异常把 m:oMath 降级为纯文本;修复:Tab 包进 `TextRun({ children: [new Tab()] })`(输出 `<w:r><w:tab/></w:r>`)
+  - **书签 w:id 冲突**:docx 库 Bookmark 组件每实例独立 id 计数器(源码实证 index.mjs:17027),文档内所有书签 w:id 恒为 1,违反 Word 书签 id 全局唯一要求 → 改用 BookmarkStart/BookmarkEnd + 模块级自增计数器(标题/公式书签 id 1/2/3 唯一)
+  - 验收脚本第 10 段 PDF 转换补传 katexDir(此前缺失 → 产物无 KaTeX CSS,公式行间距/字体异常,与 07 段对齐)
+- 批次 9 用户实测通过(09-公式编号测试.docx/pdf:公式渲染、编号右对齐、引用跳转正常),验收记录 docs/ACCEPTANCE.md 批次 9 节全部勾选;批次 9 关闭,路线图批次 9 行补实测结论
+
 ## [0.19.0] - 2026-08-09
 - 批次 9「公式编号 + 交叉引用」(原 8d;typecheck/build/验收脚本 10 段/smoke 全绿,待用户实测)
   - **display 公式自动编号**:$$ 块/`\[..\]`/```math 围栏按文档顺序全文连续编号 (1)(2)(3)…,docx/PDF 一致;行内公式不编号;降级(TeX 源码)公式同样占号

@@ -1,6 +1,7 @@
 import {
   AlignmentType,
-  Bookmark,
+  BookmarkEnd,
+  BookmarkStart,
   BorderStyle,
   Document,
   ExternalHyperlink,
@@ -107,6 +108,8 @@ interface Ctx {
   footnoteNextId: { value: number };
   /** 公式 label → 编号查表(9d,renderDocx 预扫后挂入;行内交叉引用渲染用) */
   equationLabels?: Map<string, number>;
+  /** docx 书签 linkId 自增计数器(逐文档新建,保证文档内 bookmarkStart/End id 唯一) */
+  bookmarkNextId: { value: number };
 }
 
 /** 纸张 mm 尺寸表(宽 × 高) */
@@ -191,6 +194,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     footnoteDefinitions: new Map(),
     footnotes: {},
     footnoteNextId: { value: 1 },
+    bookmarkNextId: { value: 1 },
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
   const title = options.metadata?.title ?? options.title;
@@ -533,6 +537,20 @@ function collectPlainText(node: Node): string {
   return text;
 }
 
+/**
+ * 书签包裹:name → BookmarkStart/End 首尾包裹 children(输出
+ * <w:bookmarkStart w:name="…" w:id="N"/>…<w:bookmarkEnd w:id="N"/>,
+ * 内部锚点 InternalHyperlink 按 name 跳转,不受 id 影响)。
+ * 不用 docx Bookmark 组件:其实例每枚独立 linkId 计数(恒为 1)→ 文档内
+ * 标题书签与公式书签全部 w:id="1" 冲突(Word 要求文档内唯一,实测 WPS 显示异常);
+ * 改用导出组件 + ctx.bookmarkNextId 自增保证文档内唯一。
+ * BookmarkStart/End 不在 ParagraphChild 联合类型内(d.ts 实证),children 断言。
+ */
+function bookmarkChildren(ctx: Ctx, name: string, children: readonly ParagraphChild[]): ParagraphChild[] {
+  const linkId = ctx.bookmarkNextId.value++;
+  return [new BookmarkStart(name, linkId), ...children, new BookmarkEnd(linkId)] as unknown as ParagraphChild[];
+}
+
 async function renderBlock(
   node: BlockContent,
   ctx: Ctx,
@@ -596,14 +614,15 @@ async function renderBlock(
         const mathChild: DocxMath | TextRun = result.ok
           ? new DocxMath({ children: result.children })
           : new TextRun({ text: result.text, font: CODE_FONT, color: "888888" });
-        // docx 9.x ParagraphChild 联合类型未含 Tab(运行时 Tab 正常输出 <w:tab/>),
-        // 故此处经断言;Bookmark 与 Paragraph 的 children 同为此类型
-        const equationRuns = [
-          new Tab(),
+        // 制表位跳格:Tab 必须包在 TextRun 内(裸 <w:tab/> 是非法段落级元素,
+        // WPS 实测会把公式段降级显示;TextRun({ children: [Tab] }) 输出
+        // <w:r><w:tab/></w:r> 合法结构)。包后全部为 ParagraphChild,无需断言
+        const equationRuns: ParagraphChild[] = [
+          new TextRun({ children: [new Tab()] }),
           mathChild,
-          new Tab(),
+          new TextRun({ children: [new Tab()] }),
           new TextRun({ text: `(${eq.index})` }),
-        ] as unknown as ParagraphChild[];
+        ];
         const paragraph = new Paragraph({
           // 制表位:center tab 于文本区正中(公式居中),right tab 于文本区右缘(编号右对齐)
           tabStops: [
@@ -612,7 +631,7 @@ async function renderBlock(
           ],
           children:
             eq.label !== undefined
-              ? [new Bookmark({ id: docxBookmarkId(`eq-${eq.label}`), children: equationRuns })]
+              ? bookmarkChildren(ctx, docxBookmarkId(`eq-${eq.label}`), equationRuns)
               : equationRuns,
         });
         return [paragraph];
@@ -661,10 +680,11 @@ function renderHeading(node: Heading, ctx: Ctx): Paragraph {
       node.depth <= 3 && ctx.headingNumbering === true
         ? { reference: "md-heading", level: node.depth - 1 }
         : undefined,
-    // docx 9.x Paragraph 无 bookmarks 选项:书签以 Bookmark 组件包裹标题 runs 实现
+    // docx 9.x Paragraph 无 bookmarks 选项:书签以 BookmarkStart/End 包裹标题 runs
+    // 实现(linkId 由 ctx.bookmarkNextId 自增,避免组件级恒为 1 的书签 id 冲突)
     children:
       typeof id === "string" && id !== ""
-        ? [new Bookmark({ id: docxBookmarkId(id), children: runs })]
+        ? bookmarkChildren(ctx, docxBookmarkId(id), runs)
         : runs,
   });
 }

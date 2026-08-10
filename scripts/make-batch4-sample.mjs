@@ -577,7 +577,7 @@ $$
     }
     console.log("[ok] docx 公式编号 + 交叉引用:编号/制表位/书签/引用文本/label 不渲染/悬空兜底 断言通过");
 
-    const batch9Pdf = await convert(batch9Md, "pdf", { baseDir: root, title: "批次9验收", warnings: [] });
+    const batch9Pdf = await convert(batch9Md, "pdf", { baseDir: root, title: "批次9验收", warnings: [], katexDir });
     // 8d-6:PDF 公式编号结构(eq-block/eq-num + 编号文本)
     if (!batch9Pdf.html.includes('class="eq-block"') || !batch9Pdf.html.includes('class="eq-num"')) {
       throw new Error("批次9断言失败:PDF 缺少 eq-block/eq-num 结构");
