@@ -46,7 +46,18 @@ export async function run() {
   if (typoDocument.includes("w:numPr")) {
     throw new Error("排版断言失败:headingNumbering=false 但 document.xml 仍有编号引用");
   }
-  console.log("[ok] docx 排版设置:字号28/宋体/两端对齐/标题编号关闭 全部生效");
+  // 行距 1.5 → w:spacing w:line="360" w:lineRule="auto"(实现:renderBodyParagraph
+  // spacing.line = Math.round(1.5×240)=360 twips + LineRuleType.AUTO;docx 库
+  // createSpacing 序列化 w:line/w:lineRule,未设 before/after 不输出)
+  if (!typoDocument.includes('<w:spacing w:line="360" w:lineRule="auto"')) {
+    throw new Error('排版断言失败:document.xml 缺少 w:line="360" w:lineRule="auto"(行距 1.5×240 twips)');
+  }
+  // 首行缩进 2 字符 → w:ind w:firstLineChars="200"(实现:renderBodyParagraph
+  // indent.firstLineChars = 200(2 字符×100);docx 库 createIndent 序列化)
+  if (!typoDocument.includes('w:firstLineChars="200"')) {
+    throw new Error('排版断言失败:document.xml 缺少 w:firstLineChars="200"(首行缩进 2 字符)');
+  }
+  console.log("[ok] docx 排版设置:字号28/宋体/两端对齐/标题编号关闭/行距360/首行缩进200 全部生效");
 
   // pdf:模板 CSS 参数化断言(renderPdfHtml 产物字符串,不依赖 printToPDF)
   const typoPdf = await convert(typoMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [], typography });

@@ -96,7 +96,16 @@
 | G5 收尾 | 错误处理 + electron-builder(NSIS)打包实测 | ✅ |
 
 ## 待修复(测试补充迭代发现)
-- [ ] PDF 任务列表 checkbox 替换失效:pdf/render.ts replaceTaskCheckboxes 正则与 @mdit/plugin-tasklist 实际输出不匹配(属性顺序 type 在前/含 id 属性/布尔属性序列化为 checked="checked"),☐/☑ 替换从未生效,PDF 中 checkbox 以原始 input 形态保留,与「打印稳定」设计意图不符。2026-08-10 测试补充迭代 task-list.test.js 按现状断言(input 保留),修复后需同步更新该断言。docx 侧任务列表无 checkbox 视觉呈现为设计如此,非 bug。
+- [x] PDF 任务列表 checkbox 替换失效:pdf/render.ts replaceTaskCheckboxes 正则与 @mdit/plugin-tasklist 实际输出不匹配(属性顺序 type 在前/含 id 属性/布尔属性序列化为 checked="checked"),☐/☑ 替换从未生效,PDF 中 checkbox 以原始 input 形态保留,与「打印稳定」设计意图不符。**2026-08-10 已修复(289b837)**:正则改为 class 定位 input + \schecked 判选中 + label 解包,task-list.test.js 同步为 ☑/☐ 断言。docx 侧任务列表无 checkbox 视觉呈现为设计如此,非 bug。
+
+## 重构规划(2026-08-10 定稿,用户确认排期:测试迭代全部完成后启动)
+> 背景:src/main/index.ts 918 行混合五层职责(生命周期/IPC/转换编排/设置/smoke 测试),smoke 复杂化的根因是取消状态为模块级私有全局变量、转换函数未导出,外部测试无法访问。分层方向(core/main/renderer)本身正确,不推倒重来。
+> 时机:迭代 3(低优先级测试)完成后启动;行为等价重构,当前 14+ 段 + smoke 全绿为安全网,每步独立提交可回退;第一步单独成迭代(牵动 IPC 层,敏感),二、三步合并。
+
+- [ ] **步骤一(独立迭代):取消状态参数化** —— 模块级 `cancelRequested` 改为转换调用携带的 context 参数(`{ cancelRequested, cancel() }`),IPC 层持有当前调用 context 引用。转换函数自包含编排 → 可直接导出测试,取消回归不再需要「改全局再调用」串行技巧,根治全局可变状态。风险点:IPC 持有方式(context 注册/释放)需小心设计,「取消后复位」语义必须保持(迭代 1 新增的取消回归断言守护)。
+- [ ] **步骤二:抽 src/main/converter.ts** —— convertImpl/batchConvertImpl/mergeConvertImpl/resolveOutputPath + 类型 + 取消 context 移入独立模块并导出;index.ts 只留窗口生命周期 + IPC 薄层。
+- [ ] **步骤三:smoke 瘦身 + 移出 index.ts** —— SMOKE 块抽到独立文件(src/main/smoke.ts),index.ts 一行调用;重名保护/取消/分页符/breakBeforeH1 纯逻辑断言迁至 acceptance 段体系(Node 可跑);smoke 只留必须 Electron 的断言(printToPDF 产物、书签、renderer diag、设置持久化往返),预计 210 行 → ~80 行。
+- [ ] **步骤四(可选):测试目录分层** —— test/segments/(core 渲染)+ 新增 test/main/(converter 层),runner 扩展多目录零注册。
 
 ## 测试缺口(待逐步补充)
 > 2026-08-10 能力面×覆盖盘点(test/segments 11 段 + smoke 对照 src/core、src/main、src/renderer 全部能力点)。按优先级逐批补齐,每批独立小迭代;补完即勾选。
@@ -115,15 +124,15 @@
 - [x] 分页符产物:docx PageBreak 段落、pdf .page-break div(smoke g3 有输入无断言)→ smoke 补
 
 ### 中优先级(设置边界/渲染细节)
-- [ ] settings sanitize 边界:字号 8-24/行距 1.0-2.5/边距 0-1000 钳制、非法枚举回退、损坏文件回退默认、旧 settings.json 兼容、patch 白名单 → 新段 settings.test.js(纯函数易测)
-- [ ] slug.ts 三函数单测:slugify 中文保留 / uniqueSlug 去重 -2/-3 / docxBookmarkId 兜底(数字前缀、40 字符截断)→ 新段 slug.test.js
-- [ ] frontmatter 边界:引号剥离/注释/异常格式 → 新段 frontmatter.test.js
-- [ ] 页面设置非 A4 纸张(A3/A5/Letter/Legal)+ 边距值(docx pgMar / pdf @page)→ 新段 page-setup.test.js
-- [ ] 行距/首行缩进 docx 侧值:w:spacing、w:ind firstLineChars 未断言 → typography.test.js 补
-- [ ] 代码块序列化:docx Consolas 10pt 逐行、pdf 代码高亮类 → basic-render.test.js 补
-- [ ] 引用块 docx(缩进+灰底 F2F2F2)/列表 w:numPr 序列化/表格表头 bold → basic-render.test.js 补
-- [ ] 外链链接 docx rels(ExternalHyperlink)→ heading-links.test.js 补
-- [ ] PDF 页脚页码文案/页眉内容(部件存在已断言,文案未断言)→ footnotes.test.js 补
+- [x] settings sanitize 边界:字号 8-24/行距 1.0-2.5/边距 0-1000 钳制、非法枚举回退、损坏文件回退默认、旧 settings.json 兼容、patch 白名单 → 新段 settings.test.js(纯函数易测)
+- [x] slug.ts 三函数单测:slugify 中文保留 / uniqueSlug 去重 -2/-3 / docxBookmarkId 兜底(数字前缀、40 字符截断)→ 新段 slug.test.js
+- [x] frontmatter 边界:引号剥离/注释/异常格式 → 新段 frontmatter.test.js
+- [x] 页面设置非 A4 纸张(A3/A5/Letter/Legal)+ 边距值(docx pgMar / pdf @page)→ 新段 page-setup.test.js
+- [x] 行距/首行缩进 docx 侧值:w:spacing、w:ind firstLineChars 未断言 → typography.test.js 补
+- [x] 代码块序列化:docx Consolas 10pt 逐行、pdf 代码高亮类 → basic-render.test.js 补
+- [x] 引用块 docx(缩进+灰底 F2F2F2)/列表 w:numPr 序列化/表格表头 bold → basic-render.test.js 补
+- [x] 外链链接 docx rels(ExternalHyperlink)→ heading-links.test.js 补
+- [x] PDF 页脚页码文案/页眉内容(部件存在已断言,文案未断言)→ footnotes.test.js 补
 
 ### 低优先级(自动化成本高,维持 smoke diag + GUI 实测清单)
 - [ ] renderer 全部交互(拖放/列表排序/设置面板/进度/取消/快捷键/完成弹窗动作):维持 smoke renderer diag + ACCEPTANCE GUI 实测

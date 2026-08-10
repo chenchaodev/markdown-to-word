@@ -1,9 +1,11 @@
 /**
- * 标题编号 + 内部/外部链接验收(原 make-batch4-sample.mjs 段 3,补 h4-h6):
+ * 标题编号 + 内部/外部链接验收(原 make-batch4-sample.mjs 段 3,补 h4-h6/外链 rels):
  * linkMd → docx;断言 numbering.xml 多级 text 模板、document.xml 的
  * w:hyperlink w:anchor 内部锚点与标题书签(编号不破坏 Bookmark);
  * h4-h6:样式(Heading4/5/6)/书签齐全,编号仅挂 h1-h3(实现事实:
- * renderHeading 的 numbering 条件 depth <= 3,书签为全级别)。
+ * renderHeading 的 numbering 条件 depth <= 3,书签为全级别);
+ * 外链:URL 仅入 word/_rels/document.xml.rels(hyperlink 关系 + TargetMode External),
+ * document.xml 经 r:id 引用(关系 Id 随机生成,动态比对)。
  */
 import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
@@ -48,6 +50,22 @@ title: 标题编号与链接测试
   if (!documentXml.includes('w:hyperlink') || !documentXml.includes('w:anchor="二级标题"')) {
     throw new Error("内部链接断言失败:document.xml 缺少 w:hyperlink w:anchor");
   }
+  // 外链(ExternalHyperlink 实现事实):URL 只进 rels(document.xml 经 r:id 引用,
+  // 关系 Id 为 docx 库随机生成,须动态比对);关系类型 hyperlink + TargetMode External
+  const relsXml = unzipPart(linkDocx.buffer, "word/_rels/document.xml.rels");
+  if (!relsXml.includes('Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"')) {
+    throw new Error("外链断言失败:document.xml.rels 缺少 hyperlink 关系类型");
+  }
+  if (!relsXml.includes('Target="https://example.com"') || !relsXml.includes('TargetMode="External"')) {
+    throw new Error("外链断言失败:rels 缺少 Target=https://example.com 或 TargetMode=External");
+  }
+  const extLink = /<w:hyperlink[^>]*r:id="([^"]+)"/.exec(documentXml);
+  if (!extLink) {
+    throw new Error("外链断言失败:document.xml 缺少带 r:id 的外部超链接元素");
+  }
+  if (!relsXml.includes(`Id="${extLink[1]}"`)) {
+    throw new Error(`外链断言失败:document.xml 的 r:id(${extLink[1]}) 在 rels 中无对应关系`);
+  }
   // 标题书签仍在(编号不破坏 Bookmark)
   if (!documentXml.includes('w:bookmarkStart w:name="二级标题"')) {
     throw new Error("标题书签断言失败:编号后 Bookmark 丢失");
@@ -76,6 +94,7 @@ title: 标题编号与链接测试
     throw new Error("标题编号断言失败:h1 段落缺少 w:numPr(编号应生效)");
   }
   console.log("[ok] docx 标题编号/内部链接:numbering md-heading + hyperlink anchor + 书签齐全;h4-h6 样式/书签齐全且无编号");
+  console.log("[ok] docx 外链:rels hyperlink External 关系 + document.xml r:id 匹配");
   await saveArtifact("heading-links", { docx: linkDocx.buffer });
 }
 

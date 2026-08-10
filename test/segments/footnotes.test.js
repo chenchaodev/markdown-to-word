@@ -1,13 +1,14 @@
 /**
- * 脚注 + 页眉页脚验收(原 make-batch4-sample.mjs 段 2):
- * 脚注 md → docx/pdf;断言 footnotes/footer/header 部件与 PDF 脚注区结构;
- * PDF 侧走 printToPDF → setPdfMetadata 全链路(与主进程 renderPdf 对齐)。
+ * 脚注 + 页眉页脚验收(原 make-batch4-sample.mjs 段 2,补页眉/页脚内容断言):
+ * 脚注 md → docx/pdf;断言 footnotes/footer/header 部件存在 + 页眉标题
+ * (居中 7pt 灰 888888)/页脚页码域(PAGE/NUMPAGES)内容,PDF 侧断言脚注区
+ * 结构与 setPdfMetadata 回读;PDF 走 printToPDF → setPdfMetadata 全链路。
  */
 import { convert } from "../../dist/core/convert.js";
 import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
 import { PDFDocument } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { zipContains } from "../common/docx-utils.js";
+import { zipContains, unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 
@@ -48,6 +49,37 @@ date: 2026-08-05
     );
   }
   console.log("[ok] docx 脚注/页眉页脚:footnotes.xml、footer1.xml、header1.xml 均存在");
+
+  // 页眉内容断言(renderHeader 实现事实:标题文本居中 + 7pt(14 half-points)灰 888888;
+  // 标题取 metadata.title 优先,样例 frontmatter title=「脚注与页眉页脚验收」)
+  const headerXml = unzipPart(docxArtifact.buffer, "word/header1.xml");
+  if (!headerXml.includes("脚注与页眉页脚验收")) {
+    throw new Error("页眉断言失败:header1.xml 缺少标题文本");
+  }
+  if (!headerXml.includes('<w:jc w:val="center"/>')) {
+    throw new Error("页眉断言失败:header1.xml 缺少居中对齐 w:jc center");
+  }
+  if (!headerXml.includes('<w:sz w:val="14"/>') || !headerXml.includes('<w:color w:val="888888"/>')) {
+    throw new Error("页眉断言失败:header1.xml 缺少 7pt/灰 888888 字号颜色(14 half-points)");
+  }
+  console.log("[ok] 页眉:标题居中、7pt 灰(888888)渲染");
+
+  // 页脚内容断言(renderFooter 实现事实:居中 + 「第 X 页 / 共 X 页」,
+  // 页码为域结构 PAGE/NUMPAGES:fldChar begin + instrText + fldChar end)
+  const footerXml = unzipPart(docxArtifact.buffer, "word/footer1.xml");
+  if (!footerXml.includes("第 ") || !footerXml.includes(" 页 / 共 ") || !footerXml.includes(" 页")) {
+    throw new Error("页脚断言失败:footer1.xml 缺少「第 X 页 / 共 X 页」文案结构");
+  }
+  if (
+    !footerXml.includes('<w:instrText xml:space="preserve">PAGE</w:instrText>') ||
+    !footerXml.includes('<w:instrText xml:space="preserve">NUMPAGES</w:instrText>')
+  ) {
+    throw new Error("页脚断言失败:footer1.xml 缺少 PAGE/NUMPAGES 页码域指令");
+  }
+  if (!footerXml.includes('<w:jc w:val="center"/>')) {
+    throw new Error("页脚断言失败:footer1.xml 缺少居中对齐 w:jc center");
+  }
+  console.log("[ok] 页脚:第 X 页 / 共 X 页(PAGE/NUMPAGES 域)居中渲染");
 
   const pdfArtifact = await convert(footnoteMd, "pdf", {
     baseDir: FIXTURES_DIR,
