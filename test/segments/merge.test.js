@@ -49,4 +49,20 @@ export async function run() {
   const finalPdf = await setPdfMetadata(bookmarked, mergedArtifact.metadata);
   console.log(`[ok] merge:合并 ${mdFiles.length} 文件,提取标题 ${headings.length} 条,书签注入完成`);
   await saveArtifact("merged-manual", { pdf: finalPdf });
+
+  // 括号配对 URL(修复 M1):绝对 URL 含括号原样保留;相对路径含括号转绝对路径且括号保留
+  const bracketMd = mergeMarkdowns([
+    { content: "![a](https://example.com/a(b).png)\n\n![b](./my(1).png)", baseDir: FIXTURES_DIR },
+  ]);
+  if (!bracketMd.includes("https://example.com/a(b).png")) {
+    throw new Error(`merge 断言失败:含括号的绝对 URL 应原样保留,实际输出:\n${bracketMd}`);
+  }
+  const expectAbs = path.resolve(FIXTURES_DIR, "my(1).png");
+  if (!bracketMd.includes(expectAbs)) {
+    throw new Error(`merge 断言失败:含括号的相对路径应转为绝对路径(期望包含 ${expectAbs}),实际输出:\n${bracketMd}`);
+  }
+  if (!path.isAbsolute(expectAbs)) {
+    throw new Error("merge 断言失败:期望的绝对路径构造无效");
+  }
+  console.log("[ok] merge:括号配对 URL(绝对原样保留/相对转绝对)断言通过");
 }

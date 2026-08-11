@@ -221,7 +221,7 @@ export async function convertImpl(
  * 单文件/合并共用;临时文件与窗口在 finally 中清理,失败也会销毁窗口。
  */
 async function renderPdf(artifact: PdfArtifact, outputPath: string, ctx: ConvertContext): Promise<void> {
-  const htmlPath = path.join(os.tmpdir(), `m2w-${process.pid}-${Date.now()}.html`);
+  const htmlPath = path.join(os.tmpdir(), `m2w-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`);
   const printWin = new BrowserWindow({
     show: false,
     webPreferences: { contextIsolation: true, sandbox: true },

@@ -214,7 +214,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   const captions = buildCaptionContext(ast, ctx);
   // 预扫公式编号上下文(9d:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表)
   const equations = buildEquationContext(ast, ctx);
-  // label 查表挂到 ctx(行内链接渲染处 pushRuns/pushRunsSync 经 ctx 访问)
+  // label 查表挂到 ctx(行内链接渲染处 pushRuns 经 ctx 访问)
   ctx.equationLabels = equations.labelIndex;
   if (ctx.toc) {
     for (const node of ast.children) {
@@ -418,7 +418,7 @@ async function renderBlock(
 ): Promise<(Paragraph | Table)[]> {
   switch (node.type) {
     case "heading":
-      return [renderHeading(node, ctx)];
+      return [await renderHeading(node, ctx)];
     case "paragraph": {
       // 公式 label 段({#eq:label} 整段,见 buildEquationContext):登记后跳过渲染
       if (equations.skipSet.has(node)) return [];
@@ -518,7 +518,7 @@ async function renderBlock(
   }
 }
 
-function renderHeading(node: Heading, ctx: Ctx): Paragraph {
+async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph> {
   const levels: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
     1: HeadingLevel.HEADING_1,
     2: HeadingLevel.HEADING_2,
@@ -527,7 +527,7 @@ function renderHeading(node: Heading, ctx: Ctx): Paragraph {
     5: HeadingLevel.HEADING_5,
     6: HeadingLevel.HEADING_6,
   };
-  const runs = renderPhrasingSync(node.children, ctx);
+  const runs = await renderPhrasingSync(node.children, ctx);
   // parse.ts 将标题 id 挂于 data.id(mdast Data 已声明合并,见 parse.ts)
   const id = node.data?.id;
   return new Paragraph({
@@ -651,7 +651,7 @@ interface RunStyle {
  *  (d.ts 实证:Math 属 ParagraphChild,可与 TextRun 同段混排) */
 type InlineChild = TextRun | ImageRun | FootnoteReferenceRun | InternalHyperlink | ExternalHyperlink | DocxMath;
 
-/** 同步场景(标题等)可产生的 docx 子元素:文本 run、超链接或公式(图片/脚注降级为文本) */
+/** renderPhrasingSync 返回类型:标题等场景经统一 pushRuns 渲染(图片/脚注不再降级为文本) */
 type InlineSyncChild = TextRun | InternalHyperlink | ExternalHyperlink | DocxMath;
 
 /** 行内节点 → 元素数组;样式沿父子链累积传递 */
@@ -667,13 +667,11 @@ async function renderPhrasing(
   return runs;
 }
 
-/** 标题等无图片需求的场景用同步版(图片退化为占位文本) */
-function renderPhrasingSync(nodes: PhrasingContent[], ctx: Ctx): InlineSyncChild[] {
-  const runs: InlineSyncChild[] = [];
-  for (const node of nodes) {
-    pushRunsSync(runs, node, ctx, {});
-  }
-  return runs;
+/** 标题等无图片需求的场景:统一走 async pushRuns(标题内图片/脚注引用按常规渲染;占位与警告语义与正文一致) */
+async function renderPhrasingSync(nodes: PhrasingContent[], ctx: Ctx): Promise<InlineSyncChild[]> {
+  const runs: InlineChild[] = [];
+  for (const node of nodes) await pushRuns(runs, node, ctx, {});
+  return runs as InlineSyncChild[];
 }
 
 async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, style: RunStyle): Promise<void> {
@@ -778,101 +776,6 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       if (isAllowedInlineHtml(node.value)) {
         runs.push(...inlineHtmlItemsToRuns(parseInlineHtml(node.value)));
       }
-      break;
-    default:
-      break;
-  }
-}
-
-function pushRunsSync(runs: InlineSyncChild[], node: PhrasingContent, ctx: Ctx, style: RunStyle): void {
-  switch (node.type) {
-    case "text":
-      runs.push(new TextRun({ text: node.value, ...style }));
-      break;
-    case "emphasis":
-      for (const child of node.children) pushRunsSync(runs, child, ctx, { ...style, italics: true });
-      break;
-    case "strong":
-      for (const child of node.children) pushRunsSync(runs, child, ctx, { ...style, bold: true });
-      break;
-    case "delete":
-      for (const child of node.children) pushRunsSync(runs, child, ctx, { ...style, strike: true });
-      break;
-    case "inlineCode":
-      runs.push(new TextRun({ text: node.value, font: CODE_FONT, size: CODE_SIZE, ...style }));
-      break;
-    case "inlineMath": {
-      // 行内公式:KaTeX MathML → docx Math 组件,随所在段落自然继承 5a 排版;
-      // 降级(解析失败/未覆盖节点)→ TeX 源码等宽灰字 + 警告,内容不丢失
-      const result = texToDocxMath(node.value);
-      if (result.ok) {
-        runs.push(new DocxMath({ children: result.children }));
-      } else {
-        runs.push(new TextRun({ text: result.text, font: CODE_FONT, color: "888888" }));
-        ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
-      }
-      break;
-    }
-    case "link": {
-      const text = node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join("");
-      const url = node.url;
-      // 公式交叉引用(9d):与 pushRuns 同语义——[式]/[公式](#eq:label) → 「式 (N)」/
-      // 「公式 (N)」跳转公式书签;未知 label → 「式 (?)」普通文本 + 警告
-      const eqMatch = /^#eq:([\w-]+)$/.exec(url);
-      if (eqMatch) {
-        const label = eqMatch[1];
-        const n = ctx.equationLabels?.get(label);
-        if (text === "式" || text === "公式") {
-          if (n !== undefined) {
-            runs.push(
-              new InternalHyperlink({
-                anchor: docxBookmarkId(`eq-${label}`),
-                children: [new TextRun({ text: `${text} (${n})`, color: LINK_COLOR, underline: {}, ...style })],
-              }),
-            );
-          } else {
-            ctx.warnings?.push(`交叉引用未找到公式 label: ${label}`);
-            runs.push(new TextRun({ text: `${text} (?)`, ...style }));
-          }
-          break;
-        }
-        runs.push(
-          new InternalHyperlink({
-            anchor: docxBookmarkId(`eq-${label}`),
-            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
-          }),
-        );
-        break;
-      }
-      if (url.startsWith("#")) {
-        // 内部锚点:[text](#slug) → 跳转同名书签(标题已用 docxBookmarkId 生成)
-        runs.push(
-          new InternalHyperlink({
-            anchor: docxBookmarkId(url.slice(1)),
-            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
-          }),
-        );
-        break;
-      }
-      if (/^https?:/i.test(url)) {
-        runs.push(
-          new ExternalHyperlink({
-            link: url,
-            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
-          }),
-        );
-        break;
-      }
-      // 相对路径等:保持假链接样式
-      runs.push(new TextRun({ text, color: LINK_COLOR, underline: {}, ...style }));
-      break;
-    }
-    case "image":
-      runs.push(new TextRun({ text: `[图片: ${node.alt || ""}]`, color: "808080" }));
-      break;
-    case "footnoteReference":
-      // 同步场景(标题等)无脚注收集器:渲染为字面标记避免静默丢失
-      runs.push(new TextRun({ text: `[^${node.label ?? node.identifier}]`, ...style }));
       break;
     default:
       break;

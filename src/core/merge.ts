@@ -19,9 +19,12 @@ const PAGE_BREAK = "\n\n<!-- page-break -->\n\n";
 
 /**
  * markdown 图片语法:![alt](src "title") / ![alt](src 'title') / ![alt](src)。
+ * src 支持括号配对 URL(括号内无嵌套,如 https://example.com/a(b).png)。
  * 组 1=alt,组 2=src,组 3=可选 title(含前导空白,替换时原样保留)。
+ * 已知限制:引用式图片 ![alt][ref] 语法不在本正则范围内(不匹配,原样保留,不处理)。
  */
-const IMAGE_RE = /!\[([^\]]*)\]\(([^)\s]+)(\s+["'][^"']*["'])?\)/g;
+// src 组用非捕获内组 (?:...) 包住量词,避免重复捕获组只留最后一次迭代(组 2 须为完整 src)
+const IMAGE_RE = /!\[([^\]]*)\]\(((?:[^()\s]|\([^)]*\))+)(\s+["'][^"']*["'])?\)/g;
 
 export function mergeMarkdowns(files: MergeInput[]): string {
   const parts: string[] = [];
