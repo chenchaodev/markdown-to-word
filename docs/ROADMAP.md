@@ -110,6 +110,7 @@
 ## 测试缺口(待逐步补充)
 > 2026-08-10 能力面×覆盖盘点(test/segments 11 段 + smoke 对照 src/core、src/main、src/renderer 全部能力点)。按优先级逐批补齐,每批独立小迭代;补完即勾选。
 > 批次规划(2026-08-10):迭代 1 = 高优先级 10 项;迭代 2 = 中优先级 9 项;迭代 3 = 低优先级可自动化项 + IPC dialog/预览 维持 GUI 实测(勾选即完成)。测试补充迭代走豁免:不 tag、不写 CHANGELOG,每迭代收尾全量跑 `npm run test` + `npm run test:smoke` 并提交。
+> 迭代 3 规划(2026-08-11,重构完成后):低优先级 5 项。重构红利:converter.ts 已导出 collectMarkdownPaths/resolveOutputPath,原计划「smoke 扩展」升级为 test/main/ 新段 paths.test.js 直测(Node 可跑、断言精确);runAfterConvert none 分支已被 converter.test.js 隐式覆盖(afterConvert 恒置 none,全部转换场景);show-in-folder/open 分支自动化会触发真实 GUI 动作,转 GUI 实测;renderer 交互/IPC dialog/预览维持 GUI 实测。自动化 2 项本次执行,GUI 实测 3 项交用户后勾选。
 
 ### 高优先级(用户可见行为/修过 bug 的路径/核心渲染语义)
 - [x] 封面页双格式:docx cover(22pt 居中)+ pdf .cover(28pt)结构均无断言 → 新段 cover.test.js
@@ -136,7 +137,7 @@
 
 ### 低优先级(自动化成本高,维持 smoke diag + GUI 实测清单)
 - [ ] renderer 全部交互(拖放/列表排序/设置面板/进度/取消/快捷键/完成弹窗动作):维持 smoke renderer diag + ACCEPTANCE GUI 实测
-- [ ] runAfterConvert(show-in-folder/open)行为 → 可 smoke 测 none 分支
-- [ ] collectMarkdownPaths 文件夹递归/点目录跳过/skipped → smoke 扩展
-- [ ] resolveOutputPath 超长路径(>250)回落 + 输出目录 mkdir 失败回落 → smoke
+- [x] runAfterConvert(show-in-folder/open)行为 → none 分支由 converter.test.js 隐式覆盖;show-in-folder/open 转 GUI 实测
+- [x] collectMarkdownPaths 文件夹递归/点目录跳过/skipped → 已迁 test/main/paths.test.js 直测(重构后导出)
+- [x] resolveOutputPath 超长路径(>250)回落 + 输出目录 mkdir 失败回落 → 已迁 test/main/paths.test.js 直测(重构后导出)
 - [ ] IPC dialog / openPreviewWindow → GUI 实测,不自动化
