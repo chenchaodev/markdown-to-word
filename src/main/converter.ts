@@ -7,10 +7,15 @@
  * 取消语义:每次调用新建 ConvertContext(取消标志不复用,根治历史 bug fd40480/f809c57
  * 全局可变状态跨调用残留)。
  */
-import { app, BrowserWindow, shell } from "electron";
+import { BrowserWindow, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { convert, type ConvertFormat, type PdfArtifact } from "../core/convert.js";
+import {
+  convert,
+  type ConvertContext as CoreConvertContext,
+  type ConvertFormat,
+  type PdfArtifact,
+} from "../core/convert.js";
 import { decodeMarkdown } from "../core/encoding.js";
 import { mergeMarkdowns } from "../core/merge.js";
 import { buildBookmarkTree, injectBookmarks } from "../core/pdf/bookmarks.js";
@@ -158,16 +163,55 @@ export function getImageResolver(baseDir: string): ImageResolver {
 }
 
 /**
+ * settings → core convert() 上下文映射收敛(R10-1):
+ * convertImpl / mergeConvertImpl / openPreviewWindow 三处统一经此构造,防止
+ * pageSetup/typography/breakBeforeH1/toc/imageResolver 逐字重复导致漂移。
+ * katexDir 由调用方(main 入口层)传入:getKatexDir() 经 electron app.getAppPath()
+ * 计算(批次 6,保证 dev/打包一致),本 helper 不依赖 electron app,
+ * convertImpl 可脱离 Electron 直测(docx 走 MathML 本就不需要 katexDir)。
+ */
+export interface BuildConvertContextOptions {
+  /** markdown 文件所在目录(图片相对路径基准) */
+  baseDir: string;
+  /** 文档标题(docx 元数据 / pdf <title>) */
+  title: string;
+  /** 警告收集器(与调用方共享同一数组;转换中发现的问题追加至此) */
+  warnings?: string[];
+  /** 应用设置(pageSetup/typography/breakBeforeH1/toc 取用) */
+  settings: AppSettings;
+  /** 图片解析器(本地直接读 / http(s) 下载;批量场景传 getImageResolver 缓存实例) */
+  imageResolver: ImageResolver;
+  /** KaTeX 资源目录(pdf 用;docx 走 MathML 不需要;main 入口层经 getKatexDir() 计算) */
+  katexDir?: string;
+}
+
+export function buildConvertContext(options: BuildConvertContextOptions): CoreConvertContext {
+  return {
+    baseDir: options.baseDir,
+    title: options.title,
+    warnings: options.warnings,
+    pageSetup: options.settings.pageSetup,
+    typography: options.settings.typography,
+    breakBeforeH1: options.settings.breakBeforeH1,
+    toc: options.settings.toc,
+    imageResolver: options.imageResolver,
+    katexDir: options.katexDir,
+  };
+}
+
+/**
  * 转换实现:读取 md → core 注册表渲染 → 落盘(同目录同名换扩展名)。
  * 纯函数便于 smoke 自测与未来 CLI 复用;进度经 onProgress 上报。
  * pdf 链路:core 产出 HTML → 写临时文件 → 隐藏窗口 loadFile → printToPDF。
  * 取消:ctx 默认新建(「取消后复位」语义);skipAfterConvert 经 ctx 携带(见 ConvertContext)。
+ * katexDir(pdf 公式资源目录)由调用方(main 入口层)传入,本函数不依赖 electron app。
  */
 export async function convertImpl(
   filePath: string,
   format: ConvertFormat,
   onProgress?: (stage: string) => void,
   ctx: ConvertContext = createConvertContext(),
+  katexDir?: string,
 ): Promise<{ outputPath: string; warnings: string[] }> {
   if (!/\.(md|markdown)$/i.test(filePath)) {
     throw new Error("仅支持 .md / .markdown 文件");
@@ -180,19 +224,19 @@ export async function convertImpl(
   if (encoding === "gbk") warnings.push("已按 GBK 编码读取:文件编码非 UTF-8");
 
   onProgress?.("render");
-  const artifact = await convert(md, format, {
-    baseDir: path.dirname(filePath),
-    title: path.basename(filePath).replace(/\.(md|markdown)$/i, ""),
-    warnings,
-    pageSetup: settings.pageSetup,
-    typography: settings.typography,
-    breakBeforeH1: settings.breakBeforeH1,
-    toc: settings.toc,
-    // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
-    imageResolver: getImageResolver(path.dirname(filePath)),
-    // 批次 6:KaTeX 资源目录(app.getAppPath() 保证 dev/打包一致;docx 走 MathML 不需要)
-    katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
-  });
+  const artifact = await convert(
+    md,
+    format,
+    buildConvertContext({
+      baseDir: path.dirname(filePath),
+      title: path.basename(filePath).replace(/\.(md|markdown)$/i, ""),
+      warnings,
+      settings,
+      // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
+      imageResolver: getImageResolver(path.dirname(filePath)),
+      katexDir,
+    }),
+  );
   throwIfCanceled(ctx);
 
   const { outputPath, warnings: outWarnings } = await resolveOutputPath(
@@ -288,6 +332,7 @@ export async function batchConvertImpl(
   format: ConvertFormat,
   onProgress?: (info: BatchProgressInfo) => void,
   ctx: ConvertContext = createConvertContext(),
+  katexDir?: string,
 ): Promise<BatchResult> {
   const total = files.length;
   const items: BatchItem[] = new Array<BatchItem>(total);
@@ -314,7 +359,7 @@ export async function batchConvertImpl(
       const send = (stage: string): void =>
         onProgress?.({ index: index + 1, total, file: path.basename(file), stage });
       try {
-        const { outputPath, warnings } = await convertImpl(file, format, send, ctx);
+        const { outputPath, warnings } = await convertImpl(file, format, send, ctx, katexDir);
         items[index] = { file, ok: true, outputPath, warnings };
         okCount++;
       } catch (err) {
@@ -352,6 +397,7 @@ export async function mergeConvertImpl(
   format: ConvertFormat,
   onProgress?: (stage: string) => void,
   ctx: ConvertContext = createConvertContext(),
+  katexDir?: string,
 ): Promise<ConvertResult> {
   if (files.length === 0) throw new Error("未选择文件");
   // 每次调用使用新建 context(取消标志初始 false),上次取消不再残留:
@@ -370,17 +416,18 @@ export async function mergeConvertImpl(
   const mergedMd = mergeMarkdowns(inputs);
   const baseName = path.basename(files[0]).replace(/\.(md|markdown)$/i, "");
   onProgress?.("render");
-  const artifact = await convert(mergedMd, format, {
-    baseDir: path.dirname(files[0]),
-    title: baseName,
-    warnings,
-    pageSetup: settings.pageSetup,
-    typography: settings.typography,
-    breakBeforeH1: settings.breakBeforeH1,
-    toc: settings.toc,
-    imageResolver: getImageResolver(path.dirname(files[0])),
-    katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
-  });
+  const artifact = await convert(
+    mergedMd,
+    format,
+    buildConvertContext({
+      baseDir: path.dirname(files[0]),
+      title: baseName,
+      warnings,
+      settings,
+      imageResolver: getImageResolver(path.dirname(files[0])),
+      katexDir,
+    }),
+  );
   throwIfCanceled(ctx);
   const { outputPath, warnings: outWarnings } = await resolveOutputPath(
     files[0],

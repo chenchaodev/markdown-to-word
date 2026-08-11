@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
 import { convertImpl, mergeConvertImpl } from "./converter.js";
+import { getKatexDir } from "./katex-dir.js";
 import { loadSettings, updateSettings } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -107,7 +108,7 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
         "",
       ].join("\n"),
     );
-    const pdfResult = await convertImpl(pdfSampleMd, "pdf");
+    const pdfResult = await convertImpl(pdfSampleMd, "pdf", undefined, undefined, getKatexDir());
     const pdfStat = await fs.stat(pdfResult.outputPath);
     const pdfHead = (await fs.readFile(pdfResult.outputPath)).subarray(0, 5).toString("latin1");
     if (pdfHead !== "%PDF-") throw new Error(`PDF 魔数校验失败: ${pdfHead}`);
@@ -120,7 +121,7 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
     const mergeB = path.join(outDir, "smoke-merge-2.md");
     await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](smoke-pdf.png)\n`);
     await fs.writeFile(mergeB, `---\ntitle: 合并第二文件\n---\n\n# 合并第二章\n\n正文\n`);
-    const mergePdfResult = await mergeConvertImpl([mergeA, mergeB], "pdf");
+    const mergePdfResult = await mergeConvertImpl([mergeA, mergeB], "pdf", undefined, undefined, getKatexDir());
     // 重名序号变体兼容:输出目录可配置后产物可能为「smoke-merge-1-合并 (2).pdf」,
     // 断言剥离 (N) 序号后缀后须以 -合并.pdf 结尾(与 batch 断言同源修复)
     const mergePdfBase = mergePdfResult.outputPath?.replace(/\s\(\d+\)(?=\.pdf$)/, "");

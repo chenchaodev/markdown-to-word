@@ -17,6 +17,7 @@ import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
 import { writeTempHtml } from "./temp-html.js";
 import {
   batchConvertImpl,
+  buildConvertContext,
   collectMarkdownPaths,
   ConvertCanceledError,
   convertImpl,
@@ -27,6 +28,7 @@ import {
   type ConvertContext,
   type ConvertResult,
 } from "./converter.js";
+import { getKatexDir } from "./katex-dir.js";
 import { runSmoke } from "./smoke.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,16 +69,18 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
     const settings = await loadSettings();
     const { text: md } = decodeMarkdown(await fs.readFile(mdPath));
     const baseName = path.basename(mdPath).replace(/\.(md|markdown)$/i, "");
-    const artifact = await convert(md, "pdf", {
-      baseDir: path.dirname(mdPath),
-      title: baseName,
-      pageSetup: settings.pageSetup,
-      typography: settings.typography,
-      breakBeforeH1: settings.breakBeforeH1,
-      toc: settings.toc,
-      imageResolver: createImageResolver(path.dirname(mdPath)),
-      katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
-    });
+    const artifact = await convert(
+      md,
+      "pdf",
+      buildConvertContext({
+        baseDir: path.dirname(mdPath),
+        title: baseName,
+        settings,
+        // 预览不经 getImageResolver 共享缓存:允许并发打开多个预览,各自独立解析器
+        imageResolver: createImageResolver(path.dirname(mdPath)),
+        katexDir: getKatexDir(),
+      }),
+    );
     if (artifact.kind !== "pdf") throw new Error("预览仅支持 pdf 渲染");
     const tmp = await writeTempHtml(artifact.html);
     cleanup = tmp.cleanup;
@@ -117,7 +121,7 @@ function registerIpc(): void {
     const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
     ctxByWebContents.set(event.sender.id, ctx);
     try {
-      const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx);
+      const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
       return { ok: true, outputPath, warnings };
     } catch (err) {
       if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
@@ -158,7 +162,7 @@ function registerIpc(): void {
       const ctx = createConvertContext(); // 每次调用新建,取消标志不复用
       ctxByWebContents.set(event.sender.id, ctx);
       try {
-        return await batchConvertImpl(files, format, send, ctx);
+        return await batchConvertImpl(files, format, send, ctx, getKatexDir());
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       } finally {
@@ -176,7 +180,7 @@ function registerIpc(): void {
     const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
     ctxByWebContents.set(event.sender.id, ctx);
     try {
-      return await mergeConvertImpl(files, format, send, ctx);
+      return await mergeConvertImpl(files, format, send, ctx, getKatexDir());
     } catch (err) {
       if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
