@@ -1,6 +1,7 @@
 # 状态速查
 
 ## 当前状态
+- 2026-08-11:**smoke 遗留修复完成**(输出隔离:outputDir 强制 "" + afterConvert "none" 结束恢复,产物落 output/smoke 不再污染 Downloads/自动弹窗;命名描述化:g3/g4/merge-a/b → smoke-basic/smoke-pdf/smoke-merge-1/2,清理前缀收敛 smoke-;typecheck/build/smoke 全绿,设置文件恢复验证通过;小型豁免不 tag)
 - 2026-08-11:**迭代 4「预览入口迁移」用户实测通过**(预览迁移到转换前:单文件态操作行 + 多文件态每行「预览」按钮,完成弹窗移除预览按钮;build/验收 20 段/smoke 全绿,0.22.0)
 - 2026-08-11:**重构四步完成 + 测试缺口高/中补齐**(取消状态参数化、converter 抽取、smoke 独立瘦身、测试目录分层;验收 19 段 + smoke 全绿,0.21.0)
 - 2026-08-10:**测试体系重组完成**(验收脚本按内容主题拆分 segments/*.test.js 去批次化、样例静态入仓 fixtures/、产物目录 output/{artifacts,smoke}、旧产物清理;typecheck/build/验收 11 段/smoke 全绿,0.20.0)
