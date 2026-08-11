@@ -5,6 +5,8 @@
  * 补充断言(中优先级缺口):代码块 docx 序列化(Consolas/10pt/逐行 w:br/不做行内解析)、
  * 代码块 pdf hljs 高亮(language-ts 围栏 + token 类 span)、引用块(左缩进 720 + 灰底
  * F2F2F2)、列表(w:numPr + numbering.xml bullet/decimal)、表格表头加粗(w:b/w:bCs)。
+ * 图片尺寸(R4:H3 行为修复):1×1 小图不放大(9525 EMU)、800×400 大图等比缩到 400 宽
+ * (3810000×1905000 EMU)、webp 降级为占位文本 + 警告(独立转换,不污染主样例)。
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -59,6 +61,8 @@ function hello(name: string): string {
 ## 图片与分割线
 
 ![测试图片](./g1-tiny.png)
+
+![大图](./img-800x400.png)
 
 ---
 
@@ -185,6 +189,43 @@ export async function run() {
     throw new Error("basic-render 断言失败:表格数据行「标题渲染」不应加粗(仅表头行加粗)");
   }
   console.log("[ok] basic-render:表格表头加粗(w:b/w:bCs,仅首行)断言通过");
+
+  // ---------- 补充断言:图片尺寸与 webp 降级(实现 src/core/docx/render.ts imageToDocx) ----------
+  // 尺寸规则:解析出 PNG/JPEG 尺寸后,宽 ≤ 400 原尺寸(不放大),宽 > 400 等比缩到 400;
+  // 无法解析尺寸 → 400×300 兜底。docx 库按像素转 EMU(1px = 9525 EMU),
+  // 序列化为 <wp:extent cx="…" cy="…"/>。
+  // g1-tiny.png(1×1):宽 ≤ 400 不放大 → 1×1(期望 cx=9525 cy=9525)
+  if (!documentXml.includes('<wp:extent cx="9525" cy="9525"/>')) {
+    throw new Error("basic-render 断言失败:1×1 小图被放大(期望 cx=9525 cy=9525 原尺寸)");
+  }
+  // img-800x400.png(2:1):宽 > 400 等比缩到 400 → 400×200(期望 cx=3810000 cy=1905000)
+  if (!documentXml.includes('<wp:extent cx="3810000" cy="1905000"/>')) {
+    throw new Error("basic-render 断言失败:800×400 大图未等比缩放(期望 cx=3810000 cy=1905000)");
+  }
+  console.log("[ok] basic-render:图片尺寸(docx 小图不放大 + 大图等比缩放)断言通过");
+
+  // webp 降级:docx 库不支持 webp 内嵌 → 占位文本 + 警告。
+  // 独立转换(单独 markdown + resolver 返回 RIFF....WEBP 魔数),不污染主样例断言。
+  const webpWarnings = [];
+  const webpBuffer = await renderDocx(parseMarkdown("![webp](./fake.webp)"), {
+    imageResolver: async (src) =>
+      src === "./fake.webp"
+        ? Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])
+        : null,
+    warnings: webpWarnings,
+  });
+  const webpWarnOk = webpWarnings.some((w) => w.includes("webp") && w.includes("已跳过"));
+  if (!webpWarnOk) {
+    throw new Error("basic-render 断言失败:webp 图片未产生降级警告(期望含 webp 与 已跳过)");
+  }
+  const webpXml = unzipPart(webpBuffer, "word/document.xml");
+  if (!webpXml.includes("[图片: webp]")) {
+    throw new Error("basic-render 断言失败:webp 图片未降级为占位文本([图片: webp])");
+  }
+  if (webpXml.includes("<w:drawing>")) {
+    throw new Error("basic-render 断言失败:webp 图片不应生成 drawing(未降级)");
+  }
+  console.log("[ok] basic-render:webp 图片降级(warning + 占位文本,主样例不受影响)断言通过");
 
   // 缺失图片警告(convert 层 collectMissingImageWarnings,dist/core/convert.ts):
   // 遍历 mdast 的 image 节点,本地路径 stat 失败 → warnings 追加「缺少图片文件: <src>」

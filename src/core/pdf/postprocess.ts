@@ -4,6 +4,7 @@
  * 自 pdf/render.ts 拆分(R3 行为等价重构,原注释与实现原样保留)。
  */
 import { decodeEntities, escapeHtml } from "./template.js";
+import { mimeFromBuffer } from "../image-type.js";
 import type { PdfHeading } from "./bookmarks.js";
 import type { ImageResolver } from "./render.js";
 
@@ -89,25 +90,4 @@ export async function embedExternalImages(
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** 魔数判断图片 MIME(data URL 用;png/jpeg/gif/webp,未知回退 png) */
-function mimeFromBuffer(data: Buffer): string {
-  if (data.length >= 4 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
-    return "image/png";
-  }
-  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8) {
-    return "image/jpeg";
-  }
-  if (data.length >= 4 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x38) {
-    return "image/gif";
-  }
-  if (
-    data.length >= 12 &&
-    data.toString("ascii", 0, 4) === "RIFF" &&
-    data.toString("ascii", 8, 12) === "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return "image/png";
 }

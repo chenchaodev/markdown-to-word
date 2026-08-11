@@ -48,7 +48,7 @@ import { texToDocxMath } from "./math.js";
 import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo } from "./captions.js";
 import { buildEquationContext, type EquationContext } from "./equations.js";
 import { collectPlainText } from "../mdast-utils.js";
-import { sniffImageType } from "../image-type.js";
+import { sniffImageType, imageSizeFromBuffer } from "../image-type.js";
 import { DEFAULT_PAGE_SETUP } from "../convert.js";
 import type { PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
@@ -906,7 +906,9 @@ async function renderFootnoteDefinition(def: FootnoteDefinition, ctx: Ctx): Prom
   return paragraphs;
 }
 
-/** 行内图片:经 resolver 加载为 ImageRun;失败时占位文本。
+/** 行内图片:经 resolver 加载为 ImageRun;失败或 webp 时占位文本。
+ *  尺寸规则:能解析出 PNG/JPEG 尺寸时,宽 ≤ 400 原尺寸(不放大),宽 > 400 等比缩到
+ *  400 宽;无法解析尺寸(其他格式/畸形数据)→ 400×300 兜底。
  *  外链(http/s)失败额外追加警告(本地缺失已由 collectMissingImageWarnings 处理)。 */
 async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<InlineChild> {
   const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: "808080", ...style });
@@ -928,11 +930,24 @@ async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<Inli
     warnExternal();
     return fallback();
   }
-  return new ImageRun({
-    type: sniffImageType(data),
-    data,
-    transformation: { width: 400, height: 300 },
-  });
+  const type = sniffImageType(data);
+  if (type === "webp") {
+    ctx.warnings?.push(`webp 图片不支持 docx 内嵌,已跳过: ${node.url}`);
+    return fallback();
+  }
+  const size = imageSizeFromBuffer(data);
+  let width = 400;
+  let height = 300;
+  if (size) {
+    width = size.width;
+    height = size.height;
+    if (width > 400) {
+      const scale = 400 / width;
+      width = 400;
+      height = Math.round(size.height * scale);
+    }
+  }
+  return new ImageRun({ type, data, transformation: { width, height } });
 }
 
 // ---------- 工具 ----------
