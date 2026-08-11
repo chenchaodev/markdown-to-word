@@ -3,7 +3,7 @@
  * 外链图片内嵌(embedExternalImages,并发上限 EXTERNAL_IMAGE_CONCURRENCY)及辅助函数。
  * 自 pdf/render.ts 拆分(R3 行为等价重构,原注释与实现原样保留)。
  */
-import { decodeEntities, escapeHtml } from "./template.js";
+import { decodeEntities, escapeHtml, escapeRegExp } from "../utils.js";
 import { mimeFromBuffer } from "../image-type.js";
 import { imageLoadFailedWarning } from "../image-warning.js";
 import type { PdfHeading } from "./bookmarks.js";
@@ -113,8 +113,4 @@ export async function embedExternalImages(
     out = out.replace(new RegExp(`src="${escapeRegExp(url)}"`, "g"), `src="${dataUrl}"`);
   }
   return out;
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

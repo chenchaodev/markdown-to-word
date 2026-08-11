@@ -1,14 +1,17 @@
 /**
- * PDF 模板区:页码页脚模板(PDF_FOOTER_TEMPLATE)、文档模板 CSS(buildTemplateCss)、
- * KaTeX CSS 内联(loadKatexCss)、完整 HTML 模板(buildTemplate)、封面 HTML(buildCoverHtml)
- * 与 HTML 工具函数(escapeHtml/decodeEntities)。自 pdf/render.ts 拆分(R3 行为等价重构,
- * 原注释与实现原样保留)。
+ * PDF 模板集:页眉页脚模板(PDF_FOOTER_TEMPLATE)、文档模板 CSS(buildTemplateCss)、
+ * KaTeX CSS 加载(loadKatexCss)、完整 HTML 模板(buildTemplate)、封面 HTML(buildCoverHtml)。
+ * 自 pdf/render.ts 拆分(R3 行为等价重构,原注释语义与实现原样保留)。
+ * escapeHtml/decodeEntities 已集中 src/core/utils.ts(R8 批 4 L3),此处 re-export 保持外部 import 兼容。
  */
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import type { DocMetadata } from "../frontmatter.js";
 import type { TypographySettings } from "../typography.js";
 import type { PageSetup } from "../settings-defaults.js";
+import { escapeHtml, decodeEntities } from "../utils.js";
+
+export { escapeHtml, decodeEntities };
 
 /** 页码页脚模板(printToPDF footerTemplate 用;模板内必须内联样式,字体大小需显式设置)。 */
 export const PDF_FOOTER_TEMPLATE =
@@ -223,15 +226,6 @@ ${bodyHtml}
 </html>`;
 }
 
-/** HTML 转义(标题等插值内容用,避免文件名含 &/< 破坏模板)。 */
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 /**
  * 封面 HTML:metadata.title 存在时生成。居中大标题(28pt)+ 作者/日期灰色小字,
  * 末尾 <div class="page-break"></div> 复用现有分页样式,封面独占一页。
@@ -248,19 +242,3 @@ export function buildCoverHtml(metadata: DocMetadata | undefined): string {
   );
 }
 
-/** HTML 实体解码(目录标题文本用;markdown-it 输出的常见实体,零依赖手写)。
- *  命名实体先于 &amp; 解码,避免 "&amp;lt;" 二次解码为 "<"。 */
-export function decodeEntities(text: string): string {
-  const decodeNumeric = (match: string, digits: string, radix: number): string => {
-    const cp = parseInt(digits, radix);
-    return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : match;
-  };
-  return text
-    .replace(/&#x([0-9a-f]+);/gi, (m, hex: string) => decodeNumeric(m, hex, 16))
-    .replace(/&#(\d+);/g, (m, dec: string) => decodeNumeric(m, dec, 10))
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&");
-}

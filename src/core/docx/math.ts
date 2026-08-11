@@ -30,6 +30,7 @@
  *   mstyle 仅 \color / \small 等特殊构造产出。
  */
 import katex from "katex";
+import { decodeEntities } from "../utils.js";
 import {
   MathFraction,
   MathLimitLower,
@@ -133,18 +134,6 @@ function parseMathMl(xml: string): MathMlNode | null {
 function pushText(stack: MathMlNode[], text: string): void {
   if (text === "") return;
   stack[stack.length - 1].children.push(text);
-}
-
-/** KaTeX 转义集(实证仅 & < > " ' 五个)+ 通用数值实体兜底(防御) */
-function decodeEntities(text: string): string {
-  return text
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'");
 }
 
 // ---------- walker:MathML 树 → docx Math 组件 ----------

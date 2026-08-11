@@ -32,8 +32,11 @@ import { runSmoke } from "./smoke.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.argv.includes("--smoke");
 
-/** IPC 层持有当前进行中转换的 context(convert:cancel 入口);无进行中转换时为 null */
-let currentCtx: ConvertContext | null = null;
+/**
+ * IPC 层持有各窗口进行中的转换 context(convert:cancel 入口按 webContents id 取,
+ * 多窗口并发互不串扰,M3);转换完成/异常/取消后删除,避免悬挂引用。
+ */
+const ctxByWebContents = new Map<number, ConvertContext>();
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -112,7 +115,7 @@ function registerIpc(): void {
     const win = BrowserWindow.fromWebContents(event.sender);
     const send = (stage: string) => win?.webContents.send("convert:progress", { stage });
     const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
-    currentCtx = ctx;
+    ctxByWebContents.set(event.sender.id, ctx);
     try {
       const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx);
       return { ok: true, outputPath, warnings };
@@ -120,13 +123,13 @@ function registerIpc(): void {
       if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     } finally {
-      currentCtx = null; // 释放引用,避免悬挂(含异常/取消路径)
+      ctxByWebContents.delete(event.sender.id); // 释放引用,避免悬挂(含异常/取消路径)
     }
   });
 
-  // 取消当前转换(单文件/批量/合并通用;批量由 batchConvertImpl 内部检查)
-  ipcMain.handle("convert:cancel", (): void => {
-    currentCtx?.cancel();
+  // 取消当前窗口的转换(单文件/批量/合并通用;批量由 batchConvertImpl 内部检查)
+  ipcMain.handle("convert:cancel", (event): void => {
+    ctxByWebContents.get(event.sender.id)?.cancel();
   });
 
   // 选择输出目录(批次 7;取消返回 null)
@@ -153,13 +156,13 @@ function registerIpc(): void {
       const win = BrowserWindow.fromWebContents(event.sender);
       const send = (info: BatchProgressInfo): void => win?.webContents.send("batch:progress", info);
       const ctx = createConvertContext(); // 每次调用新建,取消标志不复用
-      currentCtx = ctx;
+      ctxByWebContents.set(event.sender.id, ctx);
       try {
         return await batchConvertImpl(files, format, send, ctx);
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       } finally {
-        currentCtx = null; // 释放引用(含异常路径)
+        ctxByWebContents.delete(event.sender.id); // 释放引用(含异常路径)
       }
     },
   );
@@ -171,14 +174,14 @@ function registerIpc(): void {
     const win = BrowserWindow.fromWebContents(event.sender);
     const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
     const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
-    currentCtx = ctx;
+    ctxByWebContents.set(event.sender.id, ctx);
     try {
       return await mergeConvertImpl(files, format, send, ctx);
     } catch (err) {
       if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     } finally {
-      currentCtx = null; // 释放引用(含异常/取消路径)
+      ctxByWebContents.delete(event.sender.id); // 释放引用(含异常/取消路径)
     }
   });
   ipcMain.handle("settings:get", (): AppSettings => loadSettings());
