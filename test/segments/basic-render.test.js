@@ -227,22 +227,35 @@ export async function run() {
   }
   console.log("[ok] basic-render:webp 图片降级(warning + 占位文本,主样例不受影响)断言通过");
 
-  // 缺失图片警告(convert 层 collectMissingImageWarnings,dist/core/convert.ts):
-  // 遍历 mdast 的 image 节点,本地路径 stat 失败 → warnings 追加「缺少图片文件: <src>」
-  // (文案带源文件名;http/data: 跳过)。样例引用不存在的 missing-img.png(无 fixture,
-  // 与 toc-caption 段 missing-fig.png 同做法,fixtures 仅 g1-tiny.png 与 manual/)。
+  // 缺失图片警告(M6:检查并入 imageResolver 失败路径,dist/core/convert.ts 已移除
+  // stat 预扫;docx imageToDocx resolver 返回 null → warnings 追加统一文案
+  // 「图片加载失败: <src>」,本地与外链同构)。样例引用不存在的 missing-img.png
+  // (无 fixture,与 toc-caption 段 missing-fig.png 同做法);resolver 注入 null 模拟缺失。
   const missingWarnings = [];
   await convert("![缺图](missing-img.png)", "docx", {
     baseDir: FIXTURES_DIR,
+    imageResolver: async () => null,
     warnings: missingWarnings,
   });
   const missingWarnOk = missingWarnings.some(
-    (w) => w.includes("缺少图片文件:") && w.includes("missing-img.png"),
+    (w) => w.includes("图片加载失败:") && w.includes("missing-img.png"),
   );
   if (!missingWarnOk) {
-    throw new Error("basic-render 断言失败:warnings 缺少「缺少图片文件: missing-img.png」");
+    throw new Error("basic-render 断言失败:warnings 缺少「图片加载失败: missing-img.png」");
   }
-  console.log("[ok] basic-render:缺失图片警告(warnings 含「缺少图片文件:」与文件名)断言通过");
+  console.log("[ok] basic-render:缺失图片警告(warnings 含「图片加载失败:」与文件名)断言通过");
+
+  // pdf 侧同文案:checkLocalImages 经 resolver 失败路径(M6 替代 convert 层 stat 预扫)
+  const pdfMissingWarnings = [];
+  await convert("![缺图](missing-img.png)", "pdf", {
+    baseDir: FIXTURES_DIR,
+    imageResolver: async () => null,
+    warnings: pdfMissingWarnings,
+  });
+  if (!pdfMissingWarnings.some((w) => w.includes("图片加载失败:") && w.includes("missing-img.png"))) {
+    throw new Error("basic-render 断言失败:pdf 缺失图片应产生统一「图片加载失败:」警告");
+  }
+  console.log("[ok] basic-render:pdf 缺失图片警告(统一文案经 resolver 失败路径)断言通过");
 
   // ---------- 补充断言:代码块 pdf hljs 高亮(实现 src/core/pdf/render.ts highlight) ----------
   // ```ts 围栏 → <pre class="hljs"><code class="language-ts"> + hljs.highlight(value) 的

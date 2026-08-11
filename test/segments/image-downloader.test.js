@@ -3,6 +3,9 @@
  * - 本地读取:path.resolve(baseDir, src) 相对/绝对路径均读文件,缺失与 data: 等非 http → null
  * - http 下载:200 成功返回内容一致的 Buffer;404 / 连接拒绝 → null
  * - 同 URL 缓存:实例内成功与失败均缓存去重(并发只请求一次),实例间隔离
+ * - M6 集成:缺失检查并入 resolver 失败路径(convert 层 stat 预扫已移除),resolver
+ *   返回 null → 转换 warnings 追加统一文案「图片加载失败: <src>」(本地缺失有警告,
+ *   存在的本地图片无警告;文案三处统一见 core/image-warning.ts)
  * 超时分支(10s 硬编码 AbortSignal.timeout,无注入点)与 index.ts 模块私有
  * resolverCache(跨 baseDir 共享)无法低成本自动化,未覆盖原因见验收报告。
  * http server 生命周期 try/finally 保证清理(closeAllConnections 防 keep-alive 挂起)。
@@ -125,6 +128,29 @@ export async function run() {
   const refused = await createImageResolver("")(`http://127.0.0.1:${port}/x.png`);
   if (refused !== null) {
     throw new Error("image-downloader 断言失败:连接拒绝应返回 null");
+  }
+
+  // ---- 断言 10:M6 集成——缺失检查并入 resolver 失败路径(单次 IO),统一警告文案 ----
+  // convert 层 stat 预扫已移除:docx 侧经 imageToDocx 失败路径、pdf 侧经
+  // checkLocalImages,均走本 resolver 返回 null → 警告统一为「图片加载失败: <src>」。
+  const { convert } = await import("../../dist/core/convert.js");
+  const wMissing = [];
+  await convert("![缺图](missing-xxx.png)", "docx", {
+    baseDir: FIXTURES_DIR,
+    imageResolver: createImageResolver(FIXTURES_DIR),
+    warnings: wMissing,
+  });
+  if (!wMissing.some((w) => w.includes("图片加载失败:") && w.includes("missing-xxx.png"))) {
+    throw new Error("image-downloader 断言失败:缺失本地图片应产生统一「图片加载失败:」警告");
+  }
+  const wOk = [];
+  await convert("![有图](./g1-tiny.png)", "docx", {
+    baseDir: FIXTURES_DIR,
+    imageResolver: createImageResolver(FIXTURES_DIR),
+    warnings: wOk,
+  });
+  if (wOk.length !== 0) {
+    throw new Error(`image-downloader 断言失败:存在的本地图片不应产生警告,实际 ${wOk.join(";")}`);
   }
 
   console.log("[ok] image-downloader:本地/远程读取、失败兜底、并发去重与失败缓存断言通过");

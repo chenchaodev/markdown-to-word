@@ -5,6 +5,7 @@
  */
 import { decodeEntities, escapeHtml } from "./template.js";
 import { mimeFromBuffer } from "../image-type.js";
+import { imageLoadFailedWarning } from "../image-warning.js";
 import type { PdfHeading } from "./bookmarks.js";
 import type { ImageResolver } from "./render.js";
 
@@ -46,9 +47,35 @@ export function buildTocHtml(bodyHtml: string): string {
 const EXTERNAL_IMAGE_CONCURRENCY = 3;
 
 /**
+ * 本地图片存在性检查(M6:并入 imageResolver 失败路径,替代 convert 层 stat 预扫,单次 IO):
+ * 对渲染期间收集的本地图片 src(render.ts overrideImageRule 提供,保持 markdown 原文),
+ * 经 imageResolver 判定——返回 null 或抛错 = 缺失/不可读,追加统一文案警告
+ * (imageLoadFailedWarning);成功不改变 HTML(file:// src 由 Chromium 渲染,不做二次 IO)。
+ * 仅当注入 resolver 时执行(pdf 渲染本身不依赖 resolver)。
+ */
+export async function checkLocalImages(
+  srcs: readonly string[],
+  resolver: ImageResolver | undefined,
+  warnings: string[],
+): Promise<void> {
+  if (!resolver) return;
+  await Promise.all(
+    [...new Set(srcs)].map(async (src) => {
+      let ok = false;
+      try {
+        ok = (await resolver(src)) !== null;
+      } catch {
+        ok = false;
+      }
+      if (!ok) warnings.push(imageLoadFailedWarning(src));
+    }),
+  );
+}
+
+/**
  * 渲染后处理:收集 <img src="https?://..."> 的 URL,经 imageResolver 并行下载
  * (并发限制 3),成功内嵌为 data URL(Chromium 加载 data URL 无需网络,file://
- * HTML 下可用);失败保留原 URL 并追加警告。
+ * HTML 下可用);失败保留原 URL 并追加警告(统一文案 imageLoadFailedWarning)。
  */
 export async function embedExternalImages(
   html: string,
@@ -71,10 +98,10 @@ export async function embedExternalImages(
         if (data && data.length > 0) {
           results.set(url, `data:${mimeFromBuffer(data)};base64,${data.toString("base64")}`);
         } else {
-          warnings.push(`外链图片下载失败: ${url}`);
+          warnings.push(imageLoadFailedWarning(url));
         }
       } catch {
-        warnings.push(`外链图片下载失败: ${url}`);
+        warnings.push(imageLoadFailedWarning(url));
       }
     }
   };

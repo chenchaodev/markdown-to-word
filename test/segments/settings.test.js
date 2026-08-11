@@ -16,6 +16,8 @@
  *   全新模块实例(实证:Node ESM 同文件不同 query = 独立实例,缓存按 URL 键)
  * - sanitizePageSetup/sanitizeTypography/sanitizePatch 均未导出 → 经 updateSettings 公开
  *   路径断言(patch 合并 + sanitize + 持久化 + 返回 next)
+ * - saveSettings 写队列(promise 链):并发调用串行执行,调用序 = 写盘序,链尾即最终态
+ *   (M4,防并发交错写同一 tmp 文件丢更新;失败不截断队列,错误由各自调用方处理)
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -184,7 +186,40 @@ export async function run() {
       "合法 typography 应保留",
     );
 
-    console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文件回退 断言通过");
+    // ---- 10. saveSettings 写队列串行化:并发 updateSettings 不交错、不丢更新 ----
+    // M4:saveSettings 经 promise 链串行(write tmp + rename 原子段不插入其它写);
+    // 并发调用全部成功,最终落盘 = 最后一次调用的完整状态(调用序 = 写盘序,
+    // next 在调用时同步计算合并当时缓存,语义不变),无残留 .tmp。
+    const [rA, rB, rC, rD] = await Promise.all([
+      mod.updateSettings({ format: "pdf", toc: true, breakBeforeH1: true }),
+      mod.updateSettings({ format: "docx", afterConvert: "open" }),
+      mod.updateSettings({ pageSetup: { marginTop: 12.5 } }),
+      mod.updateSettings({ typography: { bodySizePt: 13 } }),
+    ]);
+    // 每个调用返回各自合并结果(调用间互不吞并)
+    assert(rA.format === "pdf" && rA.toc === true && rA.breakBeforeH1 === true, "并发调用 1 应返回自身合并结果");
+    assert(rB.format === "docx" && rB.afterConvert === "open", "并发调用 2 应返回自身合并结果");
+    assert(rC.pageSetup.marginTop === 12.5, "并发调用 3 应返回自身合并结果");
+    assert(rD.typography.bodySizePt === 13, "并发调用 4 应返回自身合并结果");
+    // 最终落盘 = 最后一次调用返回的完整状态(完整相等,不交错/不丢字段)
+    const final = JSON.parse(await fs.readFile(settingsFile, "utf8"));
+    assert(
+      JSON.stringify(final) === JSON.stringify(rD),
+      "最终落盘应等于最后一次调用返回的完整状态(并发不交错/不丢更新)",
+    );
+    assert(
+      JSON.stringify(mod.loadSettings()) === JSON.stringify(rD),
+      "缓存应与最终落盘一致(链尾即最终态)",
+    );
+    let tmpLeft = true;
+    try {
+      await fs.access(settingsFile + ".tmp");
+    } catch {
+      tmpLeft = false;
+    }
+    assert(!tmpLeft, "写队列完成后不应残留 .tmp 临时文件");
+
+    console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文件回退/并发写队列 断言通过");
   } finally {
     // 恢复真实 settings.json(原有内容或删除),避免污染用户设置
     if (hadFile) await fs.writeFile(settingsFile, backup, "utf8");

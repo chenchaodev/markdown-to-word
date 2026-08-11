@@ -10,9 +10,6 @@ import type { TypographySettings } from "./typography.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml } from "./pdf/render.js";
 import { PDF_FOOTER_TEMPLATE } from "./pdf/template.js";
-import { stat } from "node:fs/promises";
-import path from "node:path";
-import type { Root, Node } from "mdast";
 // 页面设置契约收敛于 settings-defaults.ts(单一来源),此处 re-export 保持既有导入面
 // (docx/pdf render、main settings、测试等历史 import 源不变)
 export { DEFAULT_PAGE_SETUP, type PageSetup } from "./settings-defaults.js";
@@ -23,7 +20,7 @@ export type ConvertFormat = "docx" | "pdf";
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */
   baseDir: string;
-  /** docx:图片读取回调,返回 null 表示跳过该图 */
+  /** docx:图片读取回调,返回 null 表示跳过该图(缺失检查并入此失败路径,单次 IO) */
   imageResolver?: (src: string) => Promise<Buffer | null>;
   /** 文档标题(pdf 用 <title>) */
   title?: string;
@@ -39,38 +36,6 @@ export interface ConvertContext {
   toc?: boolean;
   /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
   katexDir?: string;
-}
-
-/**
- * 遍历 mdast 检查本地图片是否存在,缺失的追加警告文案到 warnings。
- * 跳过 http(s)/data: 开头的远程或内嵌图片;异步 stat 并行执行。
- */
-async function collectMissingImageWarnings(
-  ast: Root,
-  baseDir: string,
-  warnings: string[],
-): Promise<void> {
-  const checks: Promise<void>[] = [];
-  const walk = (node: Node): void => {
-    if (node.type === "image") {
-      const src = (node as { url?: string }).url;
-      if (!src || /^(https?:|data:)/i.test(src)) return;
-      checks.push(
-        stat(path.resolve(baseDir, src)).then(
-          () => undefined,
-          () => {
-            warnings.push(`缺少图片文件: ${src}`);
-          },
-        ),
-      );
-      return;
-    }
-    if ("children" in node && Array.isArray(node.children)) {
-      for (const child of node.children) walk(child);
-    }
-  };
-  walk(ast);
-  await Promise.all(checks);
 }
 
 export interface DocxArtifact {
@@ -97,10 +62,9 @@ export async function convert(
   context: ConvertContext,
 ): Promise<ConvertArtifact> {
   const warnings = context.warnings ?? [];
-  // 先剥离 frontmatter:解析与图片警告检查均只作用于正文(body)
+  // 先剥离 frontmatter:解析与渲染均只作用于正文(body)
   const { metadata, body } = parseFrontmatter(md);
   const ast = parseMarkdown(body);
-  await collectMissingImageWarnings(ast, context.baseDir, warnings);
 
   if (format === "pdf") {
     return {

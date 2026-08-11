@@ -3,6 +3,8 @@
  * 模块级内存缓存 + 惰性加载:首次 loadSettings 读盘,之后读缓存;
  * 因此 app.getPath("userData") 天然只在 app.whenReady 之后才被调用。
  * 文件损坏(JSON parse 失败或形状非法)→ 返回默认值,不写盘。
+ * 写入经 promise 链串行化(saveSettings 写队列):并发调用不会交错写同一
+ * tmp 文件,调用序 = 写盘序,链尾即最终态(防并发丢更新)。
  * 契约(AppSettings 类型/DEFAULT_SETTINGS/范围常量)收敛于 core/settings-defaults.ts,
  * 此处只做持久化与校验;AppSettings 类型 re-export 保持 index.ts/converter.ts 导入面。
  */
@@ -41,6 +43,9 @@ const SETTING_KEYS = [
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
 let settingsCache: AppSettings | null = null;
+
+/** 写队列:串行化 saveSettings(promise 链),防并发交错写同一 tmp 文件导致丢更新 */
+let writeChain: Promise<void> = Promise.resolve();
 
 function settingsFilePath(): string {
   return path.join(app.getPath("userData"), SETTINGS_FILE_NAME);
@@ -110,13 +115,20 @@ export function loadSettings(): AppSettings {
   return loaded;
 }
 
-/** 原子写:临时文件 + rename(Windows 下 rename 可覆盖已存在文件) */
+/** 原子写:临时文件 + rename(Windows 下 rename 可覆盖已存在文件)。
+ *  M4:经写队列串行执行——write+rename 之间不得插入其它写(同 tmp 路径),
+ *  调用序 = 写盘序,链尾即最终态;缓存更新与写盘同序,失败不截断队列。 */
 export async function saveSettings(next: AppSettings): Promise<void> {
   const filePath = settingsFilePath();
   const tmpPath = `${filePath}.tmp`;
-  await writeFile(tmpPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  await rename(tmpPath, filePath);
-  settingsCache = next;
+  const task = writeChain.then(async () => {
+    await writeFile(tmpPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    await rename(tmpPath, filePath);
+    settingsCache = next;
+  });
+  // 单次写失败(如磁盘错误)不阻断后续写入;错误由本调用方各自处理
+  writeChain = task.catch(() => undefined);
+  return task;
 }
 
 /** 合并 + 持久化 + 返回;patch 按 DEFAULT_SETTINGS 键白名单校验,非法值回退默认 */

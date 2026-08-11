@@ -20,7 +20,7 @@ import { DEFAULT_TYPOGRAPHY } from "../typography.js";
 import { uniqueSlug } from "../slug.js";
 import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../html-whitelist.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
-import { buildTocHtml, embedExternalImages } from "./postprocess.js";
+import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
 
 /** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
 export type ImageResolver = (src: string) => Promise<Buffer | null>;
@@ -30,7 +30,7 @@ export interface RenderPdfHtmlOptions {
   baseDir: string;
   /** frontmatter 元数据(metadata.title 存在时渲染封面页,标题优先级高于 options.title) */
   metadata?: DocMetadata;
-  /** 警告收集(外链图片下载失败等,与缺失图片警告同构) */
+  /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;缺失本地图/外链下载失败同构) */
   warnings?: string[];
   /** 外链图片下载注入(主进程提供;失败返回 null) */
   imageResolver?: ImageResolver;
@@ -328,14 +328,17 @@ function overrideHtmlRules(md: MarkdownIt): void {
   md.renderer.rules.html_inline = (tokens, idx) => renderHtml(tokens[idx]);
 }
 
-/** 图片规则:相对/绝对路径统一转 file:// URL,http(s) 保留原样。 */
-function overrideImageRule(md: MarkdownIt, baseDir: string): void {
+/** 图片规则:相对/绝对路径统一转 file:// URL,http(s) 保留原样。
+ *  本地 src(保持 markdown 原文)收集到 localSrcs,供 checkLocalImages
+ *  经 resolver 做存在性检查(M6:单次 IO,替代 convert 层 stat 预扫)。 */
+function overrideImageRule(md: MarkdownIt, baseDir: string, localSrcs: string[]): void {
     const defaultRule = md.renderer.rules.image;
     if (!defaultRule) return; // markdown-it 内置 image 规则,理论不可达
     md.renderer.rules.image = (tokens, idx, options, env, self) => {
       const token = tokens[idx];
       const src = token.attrGet("src") ?? "";
       if (src && !/^(https?:|data:)/i.test(src)) {
+        localSrcs.push(src);
         const abs = path.isAbsolute(src) ? src : path.resolve(baseDir, src);
         token.attrSet("src", pathToFileURL(abs).href);
       }
@@ -361,7 +364,7 @@ function overrideHeadingIdRule(md: MarkdownIt, seen: Map<string, number>): void 
 
 /**
  * markdown → 完整 HTML 文档(供 loadFile 后 printToPDF)。
- * 返回 Promise 仅为与 docx 渲染签名保持一致,当前实现为同步。
+ * 返回 Promise:本地图片存在性检查与外链内嵌经 imageResolver 异步执行。
  */
 export async function renderPdfHtml(
   mdSource: string,
@@ -370,7 +373,8 @@ export async function renderPdfHtml(
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
   const md = buildMarkdownIt();
-  overrideImageRule(md, options.baseDir);
+  const localImageSrcs: string[] = [];
+  overrideImageRule(md, options.baseDir, localImageSrcs);
   // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
   overrideHeadingIdRule(md, new Map<string, number>());
   // 标题优先级:frontmatter metadata.title > options.title
@@ -379,6 +383,8 @@ export async function renderPdfHtml(
   // warnings 经 env 注入 core 规则(eq_numbering 未知公式标签提示用;脚注插件
   // 对 env.footnotes 惰性初始化,传入额外键无副作用)
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource, { warnings }));
+  // M6:本地图片存在性检查并入 resolver 失败路径(单次 IO;HTML 保持 file:// 由 Chromium 渲染)
+  await checkLocalImages(localImageSrcs, options.imageResolver, warnings);
   const captionNumbering = options.captionNumbering ?? typography.captionNumbering;
   // 封面 + 目录 + 正文:buildCoverHtml/buildTocHtml 各自以 page-break 结尾,
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。

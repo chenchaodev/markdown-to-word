@@ -49,6 +49,7 @@ import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo } from ".
 import { buildEquationContext, type EquationContext } from "./equations.js";
 import { collectPlainText } from "../mdast-utils.js";
 import { sniffImageType, imageSizeFromBuffer } from "../image-type.js";
+import { imageLoadFailedWarning } from "../image-warning.js";
 import { DEFAULT_PAGE_SETUP } from "../convert.js";
 import type { PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
@@ -74,7 +75,7 @@ export interface RenderOptions {
   metadata?: DocMetadata;
   /** 文档标题(docx 页眉用;优先级低于 metadata.title) */
   title?: string;
-  /** 警告收集(外链图片下载失败等,与缺失图片警告同构) */
+  /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;webp 降级等) */
   warnings?: string[];
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
   pageSetup?: PageSetup;
@@ -812,15 +813,18 @@ async function renderFootnoteDefinition(def: FootnoteDefinition, ctx: Ctx): Prom
 /** 行内图片:经 resolver 加载为 ImageRun;失败或 webp 时占位文本。
  *  尺寸规则:能解析出 PNG/JPEG 尺寸时,宽 ≤ 400 原尺寸(不放大),宽 > 400 等比缩到
  *  400 宽;无法解析尺寸(其他格式/畸形数据)→ 400×300 兜底。
- *  外链(http/s)失败额外追加警告(本地缺失已由 collectMissingImageWarnings 处理)。 */
+ *  M6:本地缺失与外链下载失败统一经 resolver 失败路径告警(单次 IO),
+ *  文案 imageLoadFailedWarning(三处统一,见 core/image-warning.ts)。 */
 async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<InlineChild> {
   const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: "808080", ...style });
   const isExternal = /^https?:/i.test(node.url);
-  const warnExternal = (): void => {
-    if (isExternal) ctx.warnings?.push(`外链图片下载失败: ${node.url}`);
+  // 失败统一告警:本地(缺失/不可读)与外链(下载失败)同一文案;
+  // 无 resolver 时本地无从检查(不做 stat 预扫),仅外链可判定失败
+  const warnFail = (): void => {
+    if (ctx.imageResolver || isExternal) ctx.warnings?.push(imageLoadFailedWarning(node.url));
   };
   if (!ctx.imageResolver) {
-    warnExternal();
+    warnFail();
     return fallback();
   }
   let data: Buffer | null;
@@ -830,7 +834,7 @@ async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<Inli
     data = null;
   }
   if (!data) {
-    warnExternal();
+    warnFail();
     return fallback();
   }
   const type = sniffImageType(data);
