@@ -1,0 +1,213 @@
+/**
+ * renderer 文件选择与列表(R8 自 renderer.ts 抽出,行为等价):
+ * 拖放区三态渲染、多文件列表构建与移动/排序、按钮工厂(上移/下移/预览/移除)、
+ * 选择应用/追加、操作按钮可用性。只经 state.ts 读写状态。
+ */
+import {
+  batchBtn,
+  convertBtn,
+  dropDefault,
+  dropFile,
+  dropMulti,
+  dropZone,
+  fileNameEl,
+  filePathEl,
+  mergeBtn,
+  multiCount,
+  multiList,
+  previewBtn,
+  selectBtn,
+  statusEl,
+} from "./dom.js";
+import { state } from "./state.js";
+import { baseName, setStatus, truncateMiddle } from "./utils.js";
+
+/** 按当前选择渲染拖放区三种状态,并刷新操作按钮可用性。 */
+export function renderSelection(): void {
+  const n = state.selectedFiles.length;
+  dropZone.classList.toggle("has-file", n > 0);
+
+  if (n === 0) {
+    dropDefault.classList.remove("hidden");
+    dropFile.classList.add("hidden");
+    dropMulti.classList.add("hidden");
+  } else if (n === 1) {
+    const filePath = state.selectedFiles[0];
+    fileNameEl.textContent = baseName(filePath);
+    filePathEl.textContent = filePath;
+    filePathEl.title = filePath;
+    dropDefault.classList.add("hidden");
+    dropFile.classList.remove("hidden");
+    dropMulti.classList.add("hidden");
+  } else {
+    renderMultiList();
+    dropDefault.classList.add("hidden");
+    dropFile.classList.add("hidden");
+    dropMulti.classList.remove("hidden");
+  }
+  updateActionButtons();
+}
+
+/** 重建多文件列表:序号 + 文件名 + 上移/下移按钮,严格按 selectedFiles 顺序渲染。 */
+export function renderMultiList(): void {
+  const n = state.selectedFiles.length;
+  multiCount.textContent = `已选择 ${n} 个 Markdown 文件`;
+  multiList.replaceChildren(
+    ...state.selectedFiles.map((filePath, index) => {
+      const li = document.createElement("li");
+      li.className = "multi-item";
+      li.draggable = true; // 整行可拖拽排序
+      li.dataset.index = String(index);
+      li.title = filePath; // 截断展示,悬停看完整路径
+
+      const num = document.createElement("span");
+      num.className = "multi-index";
+      num.textContent = String(index + 1);
+
+      const name = document.createElement("span");
+      name.className = "multi-name";
+      name.textContent = baseName(filePath);
+
+      const actions = document.createElement("span");
+      actions.className = "multi-actions";
+      actions.append(
+        makeMoveButton("up", index > 0, baseName(filePath)),
+        makeMoveButton("down", index < n - 1, baseName(filePath)),
+        makePreviewButton(baseName(filePath)),
+        makeRemoveButton(baseName(filePath)),
+      );
+
+      li.append(num, name, actions);
+      return li;
+    }),
+  );
+}
+
+/** 上移 / 下移图标按钮(首项上移、末项下移禁用)。 */
+export function makeMoveButton(
+  dir: "up" | "down",
+  enabled: boolean,
+  fileName: string,
+): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "multi-move";
+  btn.dataset.dir = dir;
+  btn.disabled = !enabled;
+  btn.title = dir === "up" ? "上移" : "下移";
+  btn.setAttribute(
+    "aria-label",
+    `${dir === "up" ? "上移" : "下移"} ${fileName}`,
+  );
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", dir === "up" ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6");
+  svg.appendChild(path);
+  btn.appendChild(svg);
+  return btn;
+}
+
+/** 预览该文件的文字按钮(迭代 4:转换前预览排版,与 PDF 同排版)。 */
+export function makePreviewButton(fileName: string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "multi-preview";
+  btn.title = "预览转换排版(与 PDF 同排版)";
+  btn.setAttribute("aria-label", `预览 ${fileName}`);
+  btn.textContent = "预览";
+  return btn;
+}
+
+/** 移除该文件的图标按钮(批次 7 列表增删)。 */
+export function makeRemoveButton(fileName: string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "multi-remove";
+  btn.dataset.dir = "remove";
+  btn.title = "移除";
+  btn.setAttribute("aria-label", `移除 ${fileName}`);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M18 6L6 18M6 6l12 12");
+  svg.appendChild(path);
+  btn.appendChild(svg);
+  return btn;
+}
+
+/** 相邻交换并重建列表(上移 / 下移按钮共用)。 */
+export function moveItem(index: number, offset: -1 | 1): void {
+  const target = index + offset;
+  if (index < 0 || target < 0 || target >= state.selectedFiles.length) return;
+  const [moved] = state.selectedFiles.splice(index, 1);
+  state.selectedFiles.splice(target, 0, moved);
+  renderMultiList();
+}
+
+/** 清理拖拽排序的临时状态与视觉类。 */
+export function clearDragState(): void {
+  state.dragIndex = -1;
+  state.dragDropAfter = false;
+  multiList.querySelectorAll(".multi-item").forEach((el) => {
+    el.classList.remove("dragging", "drop-before", "drop-after");
+  });
+}
+
+/**
+ * 记录已选文件并更新界面。
+ * @param skipped 被跳过(非 md / 无法读取)的项数,>0 时状态区黄色提示。
+ */
+export function applySelection(files: string[], skipped = 0): void {
+  state.selectedFiles = files;
+  renderSelection();
+  const summary =
+    files.length === 1
+      ? truncateMiddle(files[0])
+      : `已选择 ${files.length} 个文件`;
+  const full =
+    skipped > 0 ? `${summary}(跳过 ${skipped} 个非 Markdown 项)` : summary;
+  setStatus(full, false, skipped > 0);
+  statusEl.title = files.length === 1 ? files[0] : full;
+}
+
+/**
+ * 追加选择:与现有列表合并(去重),供「追加文件 / 点击继续添加」使用。
+ * @param skipped 本次被跳过的非 md 项数(与重复项合并提示)。
+ */
+export function appendSelection(files: string[], skipped = 0): void {
+  const seen = new Set(state.selectedFiles);
+  const added = files.filter((filePath) => !seen.has(filePath));
+  const dupCount = files.length - added.length;
+  applySelection([...state.selectedFiles, ...added], skipped + dupCount);
+}
+
+/** 按当前选择与转换状态刷新操作按钮(选择入口 + 三个转换按钮 + 单文件态预览)。 */
+export function updateActionButtons(): void {
+  const n = state.selectedFiles.length;
+  const multi = n >= 2;
+  const busy = state.converting;
+  convertBtn.classList.toggle("hidden", multi);
+  batchBtn.classList.toggle("hidden", !multi);
+  mergeBtn.classList.toggle("hidden", !multi);
+  convertBtn.disabled = busy || n !== 1;
+  batchBtn.disabled = busy || !multi;
+  mergeBtn.disabled = busy || !multi;
+  // 单文件态预览:仅在选中 1 个文件时可见(dropFile 区),转换中禁用
+  previewBtn.disabled = busy || n !== 1;
+  selectBtn.disabled = busy;
+}
