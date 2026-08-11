@@ -117,6 +117,12 @@
 - [x] 预览失败(文件缺失/渲染错误)提示不崩溃,与现有错误展示一致
 - [x] 验收:smoke renderer diag 断言(previewBtn 存在/初始禁用/dialogPreviewRemoved)+ GUI 实测(2026-08-11 用户 6 项清单全通过)
 
+## 待办(排期)
+> 2026-08-11 建:bug/需求按优先级排序,完成即勾选。
+
+- [ ] **P0 bug(第一位):smoke-merge-1-合并.pdf 图片未显示**——2026-08-11 用户发现。已知线索:产物 39KB 明显小于含图单文件 smoke-pdf.pdf(71KB),md 用相对路径 `![图](smoke-pdf.png)`;怀疑 merge 链路(baseDir/图片解析)或图片显示功能本身有问题,待专项分析:先复现(单文件 pdf 图片正常?merge docx?merge pdf?)、定位 merge 后 baseDir 与 imageResolver 接线、补测试段断言
+- [ ] 批次 10 候选(功能):8c Mermaid、题注/章节交叉引用(8b 补 label 机制)、公式编号开关、代码块语法高亮写 docx、模板导入(先导出侧)、批注、WPS 兼容矩阵
+
 ## 测试缺口(待逐步补充)
 > 2026-08-10 能力面×覆盖盘点(test/segments 11 段 + smoke 对照 src/core、src/main、src/renderer 全部能力点)。按优先级逐批补齐,每批独立小迭代;补完即勾选。
 > 批次规划(2026-08-10):迭代 1 = 高优先级 10 项;迭代 2 = 中优先级 9 项;迭代 3 = 低优先级可自动化项 + IPC dialog/预览 维持 GUI 实测(勾选即完成)。测试补充迭代走豁免:不 tag、不写 CHANGELOG,每迭代收尾全量跑 `npm run test` + `npm run test:smoke` 并提交。
@@ -154,9 +160,9 @@
 
 ### R8 收尾评审提出(2026-08-11,待执行;来源:拆分后测试面盘点,优先级 A>B)
 > 背景:R7/R8 renderer 拆分后评审。书签注入在 core(bookmarks.ts setOutline,纯 pdf-lib),pdf-meta 段已有 htmlToPdf + core 函数复刻 converter 链路的先例;renderer 纯函数(isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT)被 dom.ts 顶层 document 访问挡住无法 Node 直测;smoke diag 的 statusAfterClick 恒空(convertBtn 初始 disabled,.click() 不触发),「请先选择 Markdown 文件」守卫路径零自动化覆盖。全部行为等价,收尾跑 `npm run test`(23 段)+ `npm run test:smoke`。
-- [ ] A1 分页符断言下沉:pdf 中间 html 的 page-break div 断言从 smoke 并入 page-setup.test.js(只用 core convert,零 app 依赖),smoke 删该块
-- [ ] A2 书签断言下沉:新建 segments/pdf-bookmarks.test.js(htmlToPdf + core setOutline 复刻 smoke 断言:中文标题 + Dest[0] 页面引用,单文件+合并),smoke 保留 pdf 魔数端到端一条;执行时先核实 extractHeadings 签名与 converter 接线点
-- [ ] A3 smoke diag 修盲区:diag 记录初始禁用后 `btn.disabled = false` 再 click,断言「请先选择 Markdown 文件」+ status--error
+- [x] A1 分页符断言下沉:pdf 中间 html 的 page-break div 断言从 smoke 并入 page-setup.test.js(只用 core convert,零 app 依赖),smoke 删该块(批 2 完成)
+- [x] A2 书签断言下沉:新建 segments/pdf-bookmarks.test.js(htmlToPdf + core setOutline 复刻 smoke 断言:中文标题 + Dest[0] 页面引用,单文件+合并),smoke 保留 pdf 魔数端到端一条;执行时先核实 extractHeadings 签名与 converter 接线点(批 4 完成)
+- [x] A3 smoke diag 修盲区:diag 记录初始禁用后 `btn.disabled = false` 再 click,断言「请先选择 Markdown 文件」+ status--error(批 1 完成)
 - [ ] B1 renderer 纯函数段:抽 src/renderer/pure.ts(isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT 等零 DOM 函数),utils.ts 改 re-export(renderer 内部 import 路径不变),新建 segments/renderer-pure.test.js
 - [ ] C1 image-type.test.js(R2 抽取 / R4 修复核心,高):sniffImageType 类型嗅探 + imageSizeFromBuffer 的 PNG(IHDR)/JPEG(SOF) 原始尺寸解析、webp/gif 降级、最大宽 400 等比缩放;fixtures 用最小 PNG/JPEG bytes
 - [ ] C2 presets.test.js(R1 下沉,高):matchesPreset 自匹配/微调任一字段不匹配 + TEMPLATE_PRESETS 全部值落在范围常量(MARGIN/BODY_SIZE/LINE_SPACING)内(「预设已定稿勿改」契约锚);或并入 settings 段
