@@ -185,4 +185,4 @@
 - [x] **批 2「smoke 下沉 + 提取逻辑」(零行为改动)**:A1 分页符断言并入 page-setup 段(smoke 删块)+ C3 extractHeadings 直测(多级/中文/编号 → PdfHeading)。验证 23 段 + smoke 瘦身(commit 3219a29)
 - [x] **批 3「R9 低风险清扫」(机械/基建)**:L9 取消——checkLocalImages/embedExternalImages 经 imageResolver 真异步(外链下载),renderPdfHtml 保留 async,不值得重构;L7 test/common/settings.js save/restore helper(converter.test.js 换用,smoke.ts 属应用代码不 import test/,保持自身);L6 新建 src/main/temp-html.ts(writeTempHtml),renderPdf/openPreviewWindow 换用。验证 23 段 + smoke
 - [x] **批 4「中风险」(安全网最厚时)**:A2 pdf-bookmarks.test.js 书签端到端段(htmlToPdf + injectBookmarks + assertOutline,复用批 3 helper,补 buildBookmarkTree 层级/跨级回挂直测)+ L3 escape 工具集中 core/utils.ts(escapeHtml/decodeEntities/escapeRegExp;template.ts re-export 兼容,math.ts/postprocess.ts 换用)+ M3 currentCtx 按 webContents id 建 Map(三 handler set/delete,cancel 按窗口取)。验证 24→25 段 + smoke
-- [ ] **批 5「收尾」**:全量 `npm run test:all` + 手动 GUI 冒烟(拖放/排序/弹窗/设置面板),STATUS 收尾,豁免不 tag
+- [x] **批 5「收尾」**:全量 `npm run test:all` 通过;STATUS 当前状态/验证基线更新;手动 GUI 冒烟由用户现场确认,豁免不 tag

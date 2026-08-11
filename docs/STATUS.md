@@ -1,6 +1,7 @@
 # 状态速查
 
 ## 当前状态
+- 2026-08-11:**R8 收尾测试 × R9 综合排期完成(5 批全绿)**:批1 测试锚点(C1 image-type 直测 + C2 presets 契约段 + A3 smoke diag 修盲区,21→23 段);批2 smoke 下沉(A1 分页符并入 page-setup 段,C3 extractHeadings 直测,23 段);批3 R9 低风险清扫(L9 取消——imageResolver 真异步保留 async;L7 test/common/settings.js backupSettings;L6 src/main/temp-html.ts writeTempHtml 两处换用);批4 中风险(A2 pdf-bookmarks 书签端到端段 24→25 段;L3 escape 集中 core/utils.ts 三处换用;M3 currentCtx 按 webContents id 建 Map 多窗口取消隔离);每批独立提交可回退;typecheck/build/25 段/smoke(test:all)全绿;豁免不 tag
 - 2026-08-11:**R8 renderer 阶段二完成(行为等价)**:renderer.ts 1596→~950 行拆分五模块——`state.ts`(共享可变状态单一来源 + IPC 契约类型 BatchProgressInfo/BatchItem/BatchResult)、`utils.ts`(setStatus/setError/进度/字段错误/焦点)、`file-list.ts`(选择渲染/列表/按钮工厂/拖拽清理)、`dialogs.ts`(汇总条 + 完成/批量弹窗)、`convert-flow.ts`(runConvert/runBatch/runMerge);renderer.ts 留组合根(API 契约/模板预设/设置面板/事件接线/init),状态读写全部经 `state.X`,依赖方向单向(各模块→state/utils/dom,convert-flow→dialogs/file-list);逐字段核对 mode/hydratingSettings 语义;typecheck/build/21 段/smoke(renderer diag)全绿;豁免不 tag
 - 2026-08-11:**R7 renderer 阶段一完成(零风险)**:DOM 引用块抽 `src/renderer/dom.ts`(73 处元素映射纯 getElementById/querySelector,renderer.ts 命名导入,~175 行瘦身);删 L4 死代码 dialog:openMarkdown/openMarkdownDialog(main index.ts / preload.cts / renderer 类型三处);L5 lastBatchItems 并入 lastBatchResult(单状态,items 取自 lastBatchResult?.items);typecheck/build/21 段/smoke(renderer diag)全绿;豁免不 tag
 - 2026-08-11:**R6 中优先级快修完成(M4/M6)**:settings saveSettings 写队列串行化(promise 链,调用序 = 写盘序,防并发交错写同一 tmp 丢更新;settings 段补并发断言:并发调用全部成功、最终落盘 = 最后一次调用完整状态、无 .tmp 残留);图片缺失检查并入 imageResolver 失败路径(移除 convert 层 stat 预扫,单次 IO;docx imageToDocx 失败统一告警,pdf 新增 checkLocalImages;三处文案统一为「图片加载失败: <src>」,常量收敛 src/core/image-warning.ts;image-downloader/basic-render 段更新文案断言);R2-R5 重构迭代此前已提交(R2 f7063c9 / R3 da3d4d0 / R4 82b26d0 / R5 863adb3,ROADMAP 勾选同步);typecheck/build/21 段/smoke 全绿;豁免不 tag
@@ -17,7 +18,7 @@
 
 ## 验证基线
 - 已跑通:`npm run typecheck`、`npm run build`、`npx electron . --smoke`(启动 + docx/pdf 双链路 + 设置持久化/landscape 端到端 + 批量/合并端到端 + renderer 诊断)
-- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染)与 `main/`(主进程层)下 `*.test.js`,21 段:基础渲染/封面/合并/脚注/公式/公式编号/PDF 元数据/标题编号链接/排版/白名单/编码/TOC 与题注/任务列表/设置/页面设置/frontmatter/slug/外链图片下载/转换编排/路径解析;新增测试=新建段文件零注册);main 侧行为(重名序号/输出目录/取消/批量导出)已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
+- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染)与 `main/`(主进程层)下 `*.test.js`,25 段:基础渲染/封面/合并/脚注/公式/公式编号/PDF 元数据/PDF 书签端到端/标题编号链接/标题提取/排版/白名单/编码/TOC 与题注/任务列表/设置/页面设置(含分页符)/frontmatter/slug/外链图片下载/图片类型/预设契约/转换编排/路径解析;新增测试=新建段文件零注册);main 侧行为(重名序号/输出目录/取消/批量导出)已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
 - smoke 自清理 output/smoke 临时产物(批次 7 重名保护后旧产物不再被覆盖,断言会遇 (N) 序号变体;Windows 占用文件 EBUSY 容错跳过)
 - 历史批次断言明细见 `docs/CHANGELOG.md` 对应版本条目(0.4.x~0.17.x)
 - 打包:`npm run dist`(electron-builder NSIS);验证链:--dir → asar list → win-unpacked 启动存活 → 静默安装/卸载(退出码 0);打包版 `--smoke` 不可用(asar 内只读,output/smoke 写不进);镜像环境变量见开发者手册
