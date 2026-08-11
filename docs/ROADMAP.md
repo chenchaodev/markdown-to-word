@@ -158,6 +158,10 @@
 - [ ] A2 书签断言下沉:新建 segments/pdf-bookmarks.test.js(htmlToPdf + core setOutline 复刻 smoke 断言:中文标题 + Dest[0] 页面引用,单文件+合并),smoke 保留 pdf 魔数端到端一条;执行时先核实 extractHeadings 签名与 converter 接线点
 - [ ] A3 smoke diag 修盲区:diag 记录初始禁用后 `btn.disabled = false` 再 click,断言「请先选择 Markdown 文件」+ status--error
 - [ ] B1 renderer 纯函数段:抽 src/renderer/pure.ts(isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT 等零 DOM 函数),utils.ts 改 re-export(renderer 内部 import 路径不变),新建 segments/renderer-pure.test.js
+- [ ] C1 image-type.test.js(R2 抽取 / R4 修复核心,高):sniffImageType 类型嗅探 + imageSizeFromBuffer 的 PNG(IHDR)/JPEG(SOF) 原始尺寸解析、webp/gif 降级、最大宽 400 等比缩放;fixtures 用最小 PNG/JPEG bytes
+- [ ] C2 presets.test.js(R1 下沉,高):matchesPreset 自匹配/微调任一字段不匹配 + TEMPLATE_PRESETS 全部值落在范围常量(MARGIN/BODY_SIZE/LINE_SPACING)内(「预设已定稿勿改」契约锚);或并入 settings 段
+- [ ] C3 extractHeadings 直测(R3 拆出,中):多级/中文/编号标题 → PdfHeading 结构,与 A2 书签段互补(彼测注入端到端,此测提取逻辑)
+- [ ] C4(可选,R2):isCaptionTarget/buildEquationContext/collectPlainText 直测——产物断言(toc-caption/formula/eq-numbering)已间接覆盖,边际收益低,不排期
 
 ## 重构迭代规划(2026-08-11,审计驱动;来源:docs/archive/20260811-201145-src架构审查.md,两次 @oracle 评估)
 > 背景:src 全量架构审查 + 四大文件拆分评估完成。总体:分层正确,问题集中在「契约重复」与「单体文件」两类。所有重构行为等价(除注明修复项),20 段 + smoke 全绿为安全网,每迭代独立提交可回退,收尾走豁免(不 tag 不写 CHANGELOG,并入下次发版)。
