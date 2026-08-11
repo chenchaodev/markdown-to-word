@@ -73,11 +73,12 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
     const stat = await fs.stat(outputPath);
     console.log(`[smoke] convert ok: ${outputPath} (${stat.size} bytes)`);
     // PDF 链路:中文/表格/代码块/任务列表/本地图片 → printToPDF
+    // P0 排查结论:1px 图人工不可辨认(且 printToPDF 极小图易被忽略),样例换 100x80 红底白点图
     const pngPath = path.join(outDir, "smoke-pdf.png");
     await fs.writeFile(
       pngPath,
       Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "iVBORw0KGgoAAAANSUhEUgAAAGQAAABQCAIAAABga0e4AAAA0UlEQVR4nO3ZwQ2DQAxEUSqh/6LohdxzAZLFY0tv9Auw3nF328zMhu7Yd30FCxaseLBgwYoHCxaseLBgwYoHCxaseLBgwYoHCxaseB2xzqvBusWUJWuE9Ugq4tUC6wemCFke60+pSi9Yc7CWSJV5JbEWStV4wZqAtVyqwAsWLFiwYMGCBQsWLFiwQl5vHwxrCJb3rIxXzamwRmH53SkiK76wEZYf6VfIUod1xGobLFiw4sGCBSseLFiw4sGCBSseLFiw4sGCBSseLFjFWGZmzfcBLmd3baCxCRQAAAAASUVORK5CYII=",
         "base64",
       ),
     );
