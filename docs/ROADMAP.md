@@ -152,6 +152,13 @@
 - [x] resolveOutputPath 超长路径(>250)回落 + 输出目录 mkdir 失败回落 → 已迁 test/main/paths.test.js 直测(重构后导出)
 - [x] IPC dialog / openPreviewWindow → GUI 实测,不自动化(2026-08-11 用户实测通过)
 
+### R8 收尾评审提出(2026-08-11,待执行;来源:拆分后测试面盘点,优先级 A>B)
+> 背景:R7/R8 renderer 拆分后评审。书签注入在 core(bookmarks.ts setOutline,纯 pdf-lib),pdf-meta 段已有 htmlToPdf + core 函数复刻 converter 链路的先例;renderer 纯函数(isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT)被 dom.ts 顶层 document 访问挡住无法 Node 直测;smoke diag 的 statusAfterClick 恒空(convertBtn 初始 disabled,.click() 不触发),「请先选择 Markdown 文件」守卫路径零自动化覆盖。全部行为等价,收尾跑 `npm run test`(23 段)+ `npm run test:smoke`。
+- [ ] A1 分页符断言下沉:pdf 中间 html 的 page-break div 断言从 smoke 并入 page-setup.test.js(只用 core convert,零 app 依赖),smoke 删该块
+- [ ] A2 书签断言下沉:新建 segments/pdf-bookmarks.test.js(htmlToPdf + core setOutline 复刻 smoke 断言:中文标题 + Dest[0] 页面引用,单文件+合并),smoke 保留 pdf 魔数端到端一条;执行时先核实 extractHeadings 签名与 converter 接线点
+- [ ] A3 smoke diag 修盲区:diag 记录初始禁用后 `btn.disabled = false` 再 click,断言「请先选择 Markdown 文件」+ status--error
+- [ ] B1 renderer 纯函数段:抽 src/renderer/pure.ts(isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT 等零 DOM 函数),utils.ts 改 re-export(renderer 内部 import 路径不变),新建 segments/renderer-pure.test.js
+
 ## 重构迭代规划(2026-08-11,审计驱动;来源:docs/archive/20260811-201145-src架构审查.md,两次 @oracle 评估)
 > 背景:src 全量架构审查 + 四大文件拆分评估完成。总体:分层正确,问题集中在「契约重复」与「单体文件」两类。所有重构行为等价(除注明修复项),20 段 + smoke 全绿为安全网,每迭代独立提交可回退,收尾走豁免(不 tag 不写 CHANGELOG,并入下次发版)。
 > 执行顺序原则:契约抽取(收益/风险比最高)→ 大文件拆分(机械移动)→ 行为修复(补测试)→ renderer 拆分(风险最高放中后段)→ 低优先级清扫。
