@@ -2,6 +2,15 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-11 20:11:45 src 架构审查结论(@oracle,重构规划依据)
+- **总体**:分层正确(core/main/renderer 单向依赖,core 纯净可复用),问题集中在「契约重复」与「单体文件」两类;docx/pdf 双管线平行实现(题注/公式编号/白名单)是 ROADMAP 选型代价,维持「契约常量共享 + 测试锁定」,不建议合并
+- **高优先级**:H1 内联 HTML 白名单 docx/pdf 逐字复制两份(docx/render.ts L1100-1136 vs pdf/render.ts L270-306,注释自认须同步)→ 抽 src/core/html-whitelist.ts 单一实现;H2 契约类型/默认值三处重复(renderer.ts L74-116 内联复制 core 类型,DEFAULT_SETTINGS/校验常量 renderer vs settings.ts)→ renderer 改 import type(编译期擦除,不违反 contextIsolation)+ DEFAULT_SETTINGS 下沉 core;H3 docx 图片固定 400×300 拉伸变形(docx/render.ts L1073-1077)→ Buffer 解析 PNG/JPEG 尺寸按比例缩放,webp 降级占位+警告
+- **中优先级**:M1 merge.ts 图片正则 [^)\s]+ 截断含括号 URL、引用式图片/<img> 不处理;M2 renderPdf 临时 HTML 无随机后缀(批量并发 2 同毫秒竞争,index.ts 预览已用随机后缀);M3 currentCtx 全局变量多窗口取消串台(建议按 webContents id 建 Map);M4 settings:set 并发写丢更新竞态(saveSettings 写盘后才更新 cache,建议写队列串行化);M5 pushRuns/pushRunsSync 约 100 行重复(docx/render.ts L821-1022);M6 三处图片警告收集重叠(convert.ts stat 预扫 + docx/pdf 各自,双 IO);M7 extractHeadings 正则依赖渲染细节(pdf/render.ts L660-668);M8 resolverCache/HTTP 缓存无上限(当前可接受,记录即可)
+- **低优先级**:L1 魔数嗅探重复(sniffImageType/mimeFromBuffer)、L2 collectPlainText/collectText 重复、L3 escapeHtml/decodeEntities/escapeRegExp 散落、L4 dialog:openMarkdown 死代码(renderer 只用 openMarkdowns)、L5 lastBatchItems/lastBatchResult 状态重叠、L6 openPreviewWindow/renderPdf 窗口结构相似、L7 smoke/converter.test.js save/restore 设置模式重复、L8 buildTemplateCss 150+ 行模板字符串、L9 renderPdfHtml 假 async
+- **推荐顺序**:① H1+H2 契约抽取(纯移动+类型擦除,零行为变化,收益/风险比最高)→ ② H3 图片变形修复(唯一用户可见产物缺陷,需同步测试)→ ③ renderer.ts 拆分(1764 行单体,纯重构无用户可见收益,测试保障后做)
+- **四大文件拆分补充评估**(同日追加):docx/render.ts(1295)→ 只拆独立岛(白名单→html-whitelist.ts、预扫上下文→docx/captions.ts+equations.ts、工具→mdast-utils.ts+image-type.ts),主循环保持单体;pdf/render.ts(802)→ 轻量拆 3 组(模板→pdf/template.ts、后处理→pdf/postprocess.ts,converter.ts 的 extractHeadings import 须同批改);renderer.ts(1764)→ 两阶段(阶段一:类型下沉 core+dom.ts 零风险;阶段二:先建 state.ts 再拆 convert-flow/file-list/dialogs,模块互不 import);style.css(1198)→ **不值得拆**(级联顺序风险>拆分收益,维持单体+区块注释);执行顺序:docx 白名单共享 → pdf 模板/后处理移动 → renderer 阶段一 → 阶段二,每次独立提交
+- 来源: @oracle ora-2;关联: 原文存档 docs/archive/20260811-201145-src架构审查.md
+
 ### 2026-08-10 21:12:58 测试覆盖盘点结论(@explorer,测试缺口清单依据)
 - **方法**:能力面(src/core 全部 + src/main + src/renderer)逐一 grep 对照 test/segments 11 段 + smoke 断言,产出「能力点 × 覆盖」全量表(详见存档);缺口清单见 docs/ROADMAP.md「测试缺口」节(24 项,高/中/低三档)
 - **高优先级缺口**:封面页双格式(docx cover / pdf .cover 均无断言)、breakBeforeH1 产物分页(smoke 只测设置持久化)、取消链路回归(fd40480/f809c57 两次取消 bug 无回归测试)、重名保护主动断言、缺失图片警告文案(collectMissingImageWarnings)、公式降级分支(katex-error 灰字+警告)、外链图片下载(image-downloader 超时/去重/失败兜底全无)、任务列表(docx 普通列表 / pdf ☐☑ 替换)、h4-h6 标题、分页符产物
