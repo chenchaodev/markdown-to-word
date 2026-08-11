@@ -19,6 +19,18 @@
  * 下一批次补充,因此加载设置时对缺失的 typography 按默认值兜底(防御性合并)。
  * 主进程 API 经 preload 以 window.api 暴露(contextIsolation),契约见下方类型声明。
  */
+import {
+  BODY_SIZE_MAX,
+  BODY_SIZE_MIN,
+  DEFAULT_SETTINGS,
+  LINE_SPACING_MAX,
+  LINE_SPACING_MIN,
+  MARGIN_MAX_MM as MARGIN_MAX,
+  MARGIN_MIN_MM as MARGIN_MIN,
+  type AppSettings,
+  type PageSetup,
+  type TypographySettings,
+} from "../core/settings-defaults.js";
 
 declare global {
   interface Window {
@@ -70,50 +82,11 @@ declare global {
   }
 }
 
-/* ---------- 设置类型(与主进程 settings.ts 契约一致) ---------- */
+/* ---------- 设置类型(契约收敛于 core/settings-defaults.ts) ---------- */
 type Paper = "A4" | "A3" | "A5" | "Letter" | "Legal";
 type Orientation = "portrait" | "landscape";
-interface PageSetup {
-  paper: Paper;
-  orientation: Orientation;
-  marginTop: number;
-  marginBottom: number;
-  marginLeft: number;
-  marginRight: number;
-}
 type AfterConvert = "none" | "show-in-folder" | "open";
-/** 排版设置:字体 / 字号 / 行距 / 段落样式(与主进程 settings.ts 契约一致)。 */
 type BodyAlign = "left" | "justify";
-interface TypographySettings {
-  /** 西文字体(正文拉丁字符) */
-  fontAscii: string;
-  /** 中文字体(正文汉字) */
-  fontEastAsia: string;
-  /** 正文字号 pt */
-  bodySizePt: number;
-  /** 行距倍数 */
-  lineSpacing: number;
-  /** 首行缩进 2 字符 */
-  firstLineIndent: boolean;
-  /** 正文对齐:两端对齐 / 左对齐 */
-  align: BodyAlign;
-  /** 章节自动编号 */
-  headingNumbering: boolean;
-  /** 图/表题注自动编号 */
-  captionNumbering: boolean;
-}
-interface AppSettings {
-  version: 1;
-  format: "docx" | "pdf";
-  pageSetup: PageSetup;
-  typography: TypographySettings;
-  breakBeforeH1: boolean;
-  /** 自动生成目录页 */
-  toc: boolean;
-  afterConvert: AfterConvert;
-  /** 输出目录;空串 = 源文件同目录(批次 7 新增)。 */
-  outputDir: string;
-}
 
 /* ---------- 批量 / 合并契约类型 ---------- */
 interface BatchProgressInfo {
@@ -141,34 +114,6 @@ interface BatchResult {
   /** 用户取消未执行的项数。 */
   canceledCount: number;
 }
-
-/** 与主进程 DEFAULT_SETTINGS 一致;设置读取失败时静默回退到此值。 */
-const DEFAULT_SETTINGS: AppSettings = {
-  version: 1,
-  format: "docx",
-  pageSetup: {
-    paper: "A4",
-    orientation: "portrait",
-    marginTop: 25,
-    marginBottom: 25,
-    marginLeft: 32,
-    marginRight: 32,
-  },
-  typography: {
-    fontAscii: "Calibri",
-    fontEastAsia: "微软雅黑",
-    bodySizePt: 12,
-    lineSpacing: 1.5,
-    firstLineIndent: true,
-    align: "justify",
-    headingNumbering: true,
-    captionNumbering: true,
-  },
-  breakBeforeH1: false,
-  toc: true,
-  afterConvert: "none",
-  outputDir: "",
-};
 
 /* ---------- 模板预设:排版 + 页面设置的快照(套用后仍可微调,不写死模板 id) ---------- */
 interface TemplatePreset {
@@ -259,16 +204,6 @@ function matchesPreset(preset: TemplatePreset, settings: AppSettings): boolean {
     p.marginRight === sp.marginRight
   );
 }
-
-/** 边距钳制范围,与主进程 sanitizePageSetup 一致 */
-const MARGIN_MIN = 0;
-const MARGIN_MAX = 1000;
-
-/** 字号与行距的合法范围(与控件 min/max 一致,范围外回显当前值) */
-const BODY_SIZE_MIN = 8;
-const BODY_SIZE_MAX = 24;
-const LINE_SPACING_MIN = 1.0;
-const LINE_SPACING_MAX = 2.5;
 
 export {};
 

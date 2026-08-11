@@ -12,28 +12,12 @@ import { renderPdfHtml, PDF_FOOTER_TEMPLATE } from "./pdf/render.js";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { Root, Node } from "mdast";
+// 页面设置契约收敛于 settings-defaults.ts(单一来源),此处 re-export 保持既有导入面
+// (docx/pdf render、main settings、测试等历史 import 源不变)
+export { DEFAULT_PAGE_SETUP, type PageSetup } from "./settings-defaults.js";
+import type { PageSetup } from "./settings-defaults.js";
 
 export type ConvertFormat = "docx" | "pdf";
-
-/** 页面设置(批次 1:docx section / pdf @page 参数化;单位 mm)。 */
-export interface PageSetup {
-  paper: "A4" | "A3" | "A5" | "Letter" | "Legal";
-  orientation: "portrait" | "landscape";
-  marginTop: number;
-  marginBottom: number;
-  marginLeft: number;
-  marginRight: number;
-}
-
-/** 默认页面设置:近似 Word 默认(A4 纵向,上下 25mm 左右 32mm)。 */
-export const DEFAULT_PAGE_SETUP: PageSetup = {
-  paper: "A4",
-  orientation: "portrait",
-  marginTop: 25,
-  marginBottom: 25,
-  marginLeft: 32,
-  marginRight: 32,
-};
 
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */

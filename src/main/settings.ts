@@ -3,6 +3,8 @@
  * 模块级内存缓存 + 惰性加载:首次 loadSettings 读盘,之后读缓存;
  * 因此 app.getPath("userData") 天然只在 app.whenReady 之后才被调用。
  * 文件损坏(JSON parse 失败或形状非法)→ 返回默认值,不写盘。
+ * 契约(AppSettings 类型/DEFAULT_SETTINGS/范围常量)收敛于 core/settings-defaults.ts,
+ * 此处只做持久化与校验;AppSettings 类型 re-export 保持 index.ts/converter.ts 导入面。
  */
 import { app } from "electron";
 import { readFileSync } from "node:fs";
@@ -12,33 +14,13 @@ import type { PageSetup } from "../core/convert.js";
 import { DEFAULT_PAGE_SETUP } from "../core/convert.js";
 import type { TypographySettings } from "../core/typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../core/typography.js";
-
-export interface AppSettings {
-  version: 1;
-  format: "docx" | "pdf";
-  pageSetup: PageSetup;
-  /** 排版设置(字号/字体/行距/缩进/对齐/标题编号) */
-  typography: TypographySettings;
-  /** H1 前分页(默认关) */
-  breakBeforeH1: boolean;
-  /** 自动生成目录页(默认开;docx 静态目录 / PDF 目录同开关) */
-  toc: boolean;
-  /** 导出后行为(默认不自动执行) */
-  afterConvert: "none" | "show-in-folder" | "open";
-  /** 输出目录:空串 = 输出到源文件同目录(默认);非空 = 固定输出目录(须绝对路径) */
-  outputDir: string;
-}
-
-export const DEFAULT_SETTINGS: AppSettings = {
-  version: 1,
-  format: "docx",
-  pageSetup: { ...DEFAULT_PAGE_SETUP },
-  typography: { ...DEFAULT_TYPOGRAPHY },
-  breakBeforeH1: false,
-  toc: true,
-  afterConvert: "none",
-  outputDir: "",
-};
+import {
+  DEFAULT_SETTINGS,
+  MARGIN_MIN_MM,
+  MARGIN_MAX_MM,
+  type AppSettings,
+} from "../core/settings-defaults.js";
+export { DEFAULT_SETTINGS, type AppSettings } from "../core/settings-defaults.js";
 
 const SETTINGS_FILE_NAME = "settings.json";
 const FORMATS = ["docx", "pdf"] as const;
@@ -46,8 +28,6 @@ const AFTER_CONVERT_ACTIONS = ["none", "show-in-folder", "open"] as const;
 const PAPERS = ["A4", "A3", "A5", "Letter", "Legal"] as const;
 const ORIENTATIONS = ["portrait", "landscape"] as const;
 const ALIGNS = ["left", "justify"] as const;
-const MARGIN_MIN_MM = 0;
-const MARGIN_MAX_MM = 1000;
 const SETTING_KEYS = [
   "version",
   "format",
