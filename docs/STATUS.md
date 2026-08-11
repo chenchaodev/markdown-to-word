@@ -1,8 +1,9 @@
 # 状态速查
 
 ## 当前状态
+- 2026-08-11:**R7 renderer 阶段一完成(零风险)**:DOM 引用块抽 `src/renderer/dom.ts`(73 处元素映射纯 getElementById/querySelector,renderer.ts 命名导入,~175 行瘦身);删 L4 死代码 dialog:openMarkdown/openMarkdownDialog(main index.ts / preload.cts / renderer 类型三处);L5 lastBatchItems 并入 lastBatchResult(单状态,items 取自 lastBatchResult?.items);typecheck/build/21 段/smoke(renderer diag)全绿;豁免不 tag
 - 2026-08-11:**R6 中优先级快修完成(M4/M6)**:settings saveSettings 写队列串行化(promise 链,调用序 = 写盘序,防并发交错写同一 tmp 丢更新;settings 段补并发断言:并发调用全部成功、最终落盘 = 最后一次调用完整状态、无 .tmp 残留);图片缺失检查并入 imageResolver 失败路径(移除 convert 层 stat 预扫,单次 IO;docx imageToDocx 失败统一告警,pdf 新增 checkLocalImages;三处文案统一为「图片加载失败: <src>」,常量收敛 src/core/image-warning.ts;image-downloader/basic-render 段更新文案断言);R2-R5 重构迭代此前已提交(R2 f7063c9 / R3 da3d4d0 / R4 82b26d0 / R5 863adb3,ROADMAP 勾选同步);typecheck/build/21 段/smoke 全绿;豁免不 tag
-- 2026-08-11:**审计驱动重构进行中(R7/R9)**:R1 契约共享完成(白名单/设置契约收敛 core 单一来源,21 段 + smoke 全绿,394950f);src 全量架构审查 + 四大文件拆分评估完成(存档 20260811-201145),9 个迭代重构方案落盘 ROADMAP;每迭代独立提交可回退,行为等价(除注明修复项),收尾豁免不 tag
+- 2026-08-11:**审计驱动重构进行中(R8/R9)**:R1 契约共享完成(白名单/设置契约收敛 core 单一来源,21 段 + smoke 全绿,394950f);src 全量架构审查 + 四大文件拆分评估完成(存档 20260811-201145),9 个迭代重构方案落盘 ROADMAP;每迭代独立提交可回退,行为等价(除注明修复项),收尾豁免不 tag
 - 2026-08-11:**smoke 遗留修复完成**(输出隔离:outputDir 强制 "" + afterConvert "none" 结束恢复,产物落 output/smoke 不再污染 Downloads/自动弹窗;命名描述化:g3/g4/merge-a/b → smoke-basic/smoke-pdf/smoke-merge-1/2,清理前缀收敛 smoke-;typecheck/build/smoke 全绿,设置文件恢复验证通过;小型豁免不 tag)
 - 2026-08-11:**迭代 4「预览入口迁移」用户实测通过**(预览迁移到转换前:单文件态操作行 + 多文件态每行「预览」按钮,完成弹窗移除预览按钮;build/验收 20 段/smoke 全绿,0.22.0)
 - 2026-08-11:**重构四步完成 + 测试缺口高/中补齐**(取消状态参数化、converter 抽取、smoke 独立瘦身、测试目录分层;验收 19 段 + smoke 全绿,0.21.0)

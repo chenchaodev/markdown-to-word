@@ -5,7 +5,6 @@ import type { AppSettings } from "./settings.js";
 contextBridge.exposeInMainWorld("api", {
   /** 拖放取路径:File.path 已随 Electron 32+ 移除,须经 webUtils 解析(勿回退) */
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
-  openMarkdownDialog: (): Promise<string | null> => ipcRenderer.invoke("dialog:openMarkdown"),
   openMarkdowns: (): Promise<string[]> => ipcRenderer.invoke("dialog:openMarkdowns"),
   /** 批次 7:选择输出目录(取消返回 null) */
   selectDir: (): Promise<string | null> => ipcRenderer.invoke("dialog:selectDir"),

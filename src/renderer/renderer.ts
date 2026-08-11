@@ -31,11 +31,86 @@ import {
   type PageSetup,
   type TypographySettings,
 } from "../core/settings-defaults.js";
+import {
+  alignJustifyInput,
+  afterConvertInputs,
+  appendBtn,
+  batchBtn,
+  batchDialog,
+  batchDialogError,
+  batchDialogOk,
+  batchDialogReveal,
+  batchResultList,
+  batchSummary,
+  bodySizeError,
+  bodySizePtInput,
+  breakBeforeH1Input,
+  cancelBtn,
+  captionNumberingInput,
+  clearListBtn,
+  completeDialog,
+  completeDialogCopy,
+  completeDialogDesc,
+  completeDialogError,
+  completeDialogOk,
+  completeDialogOpen,
+  completeDialogReveal,
+  completeDialogTitle,
+  completeOutputPath,
+  convertBtn,
+  convertHint,
+  dropDefault,
+  dropFile,
+  dropMulti,
+  dropZone,
+  fileNameEl,
+  filePathEl,
+  firstLineIndentInput,
+  fontAsciiError,
+  fontAsciiInput,
+  fontEastAsiaError,
+  fontEastAsiaInput,
+  formatInputs,
+  headingNumberingInput,
+  lineSpacingError,
+  lineSpacingInput,
+  marginError,
+  marginInputs,
+  mergeBtn,
+  multiCount,
+  multiList,
+  orientationInputs,
+  outputDirPick,
+  outputDirReset,
+  outputDirValue,
+  paperSelect,
+  previewBtn,
+  progressArea,
+  progressFill,
+  progressText,
+  progressTrack,
+  removeFileBtn,
+  resultSummary,
+  selectBtn,
+  statusEl,
+  summaryDetailsBtn,
+  summaryError,
+  summaryIcon,
+  summaryOpenBtn,
+  summaryPath,
+  summaryRevealBtn,
+  summaryText,
+  summaryWarnings,
+  summaryWarningsList,
+  summaryWarningsToggle,
+  templatePresetHint,
+  templatePresetSelect,
+  tocInput,
+} from "./dom.js";
 
 declare global {
   interface Window {
     api: {
-      openMarkdownDialog: () => Promise<string | null>;
       /** 拖放文件 → 真实路径(File.path 已被 Electron 32+ 移除,须经主进程 webUtils 解析)。 */
       getPathForFile: (file: File) => string;
       /** 多选文件对话框,返回所选文件路径数组;空数组 = 用户取消。 */
@@ -208,181 +283,7 @@ function matchesPreset(preset: TemplatePreset, settings: AppSettings): boolean {
 export {};
 
 /* ---------- DOM 引用 ---------- */
-const dropZone = document.getElementById("dropZone") as HTMLDivElement;
-const selectBtn = document.getElementById("selectBtn") as HTMLButtonElement;
-const dropDefault = document.getElementById("dropDefault") as HTMLDivElement;
-const dropFile = document.getElementById("dropFile") as HTMLDivElement;
-const fileNameEl = document.getElementById("fileName") as HTMLParagraphElement;
-const filePathEl = document.getElementById("filePath") as HTMLParagraphElement;
-const dropMulti = document.getElementById("dropMulti") as HTMLDivElement;
-const multiCount = document.getElementById("multiCount") as HTMLParagraphElement;
-const multiList = document.getElementById("multiList") as HTMLUListElement;
-const statusEl = document.getElementById("status") as HTMLParagraphElement;
-const convertBtn = document.getElementById("convertBtn") as HTMLButtonElement;
-const batchBtn = document.getElementById("batchBtn") as HTMLButtonElement;
-const mergeBtn = document.getElementById("mergeBtn") as HTMLButtonElement;
-const convertHint = document.querySelector<HTMLSpanElement>(".convert .hint");
-const completeDialog = document.getElementById(
-  "completeDialog",
-) as HTMLDivElement;
-const completeOutputPath = document.getElementById(
-  "completeOutputPath",
-) as HTMLParagraphElement;
-const completeDialogOk = document.getElementById(
-  "completeDialogOk",
-) as HTMLButtonElement;
-const formatInputs = document.querySelectorAll<HTMLInputElement>(
-  'input[name="format"]',
-);
-// 页面设置面板
-const paperSelect = document.getElementById("paperSelect") as HTMLSelectElement;
-const orientationInputs = document.querySelectorAll<HTMLInputElement>(
-  'input[name="orientation"]',
-);
-const breakBeforeH1Input = document.getElementById(
-  "breakBeforeH1",
-) as HTMLInputElement;
-const tocInput = document.getElementById("toc") as HTMLInputElement;
-const afterConvertInputs = document.querySelectorAll<HTMLInputElement>(
-  'input[name="afterConvert"]',
-);
-const marginInputs = {
-  marginTop: document.getElementById("marginTop") as HTMLInputElement,
-  marginBottom: document.getElementById("marginBottom") as HTMLInputElement,
-  marginLeft: document.getElementById("marginLeft") as HTMLInputElement,
-  marginRight: document.getElementById("marginRight") as HTMLInputElement,
-};
-// 排版设置面板
-const fontAsciiInput = document.getElementById("fontAscii") as HTMLInputElement;
-const fontEastAsiaInput = document.getElementById(
-  "fontEastAsia",
-) as HTMLInputElement;
-const bodySizePtInput = document.getElementById(
-  "bodySizePt",
-) as HTMLInputElement;
-const lineSpacingInput = document.getElementById(
-  "lineSpacing",
-) as HTMLInputElement;
-const firstLineIndentInput = document.getElementById(
-  "firstLineIndent",
-) as HTMLInputElement;
-const alignJustifyInput = document.getElementById(
-  "alignJustify",
-) as HTMLInputElement;
-const headingNumberingInput = document.getElementById(
-  "headingNumbering",
-) as HTMLInputElement;
-const captionNumberingInput = document.getElementById(
-  "captionNumbering",
-) as HTMLInputElement;
-// 模板预设
-const templatePresetSelect = document.getElementById(
-  "templatePreset",
-) as HTMLSelectElement;
-const templatePresetHint = document.getElementById(
-  "templatePresetHint",
-) as HTMLSpanElement;
-// 完成弹窗附加按钮与错误提示
-const completeDialogReveal = document.getElementById(
-  "completeDialogReveal",
-) as HTMLButtonElement;
-const completeDialogOpen = document.getElementById(
-  "completeDialogOpen",
-) as HTMLButtonElement;
-const completeDialogError = document.getElementById(
-  "completeDialogError",
-) as HTMLParagraphElement;
-// 批量结果汇总弹窗
-const batchDialog = document.getElementById("batchDialog") as HTMLDivElement;
-const batchSummary = document.getElementById("batchSummary") as HTMLParagraphElement;
-const batchResultList = document.getElementById(
-  "batchResultList",
-) as HTMLUListElement;
-const batchDialogOk = document.getElementById(
-  "batchDialogOk",
-) as HTMLButtonElement;
-const batchDialogReveal = document.getElementById(
-  "batchDialogReveal",
-) as HTMLButtonElement;
-const batchDialogError = document.getElementById(
-  "batchDialogError",
-) as HTMLParagraphElement;
-// 批次 7:列表工具(单文件移除 / 多文件追加与清空)
-const removeFileBtn = document.getElementById(
-  "removeFileBtn",
-) as HTMLButtonElement;
-// 迭代 4:单文件态「预览」按钮(转换前预览排版,与 PDF 同排版)
-const previewBtn = document.getElementById("previewBtn") as HTMLButtonElement;
-const appendBtn = document.getElementById("appendBtn") as HTMLButtonElement;
-const clearListBtn = document.getElementById(
-  "clearListBtn",
-) as HTMLButtonElement;
-// 批次 7:转换进度(进度条 + 百分比 + 取消)
-const progressArea = document.getElementById("progressArea") as HTMLDivElement;
-const progressTrack = document.getElementById(
-  "progressTrack",
-) as HTMLDivElement;
-const progressFill = document.getElementById("progressFill") as HTMLDivElement;
-const progressText = document.getElementById("progressText") as HTMLSpanElement;
-const cancelBtn = document.getElementById("cancelBtn") as HTMLButtonElement;
-// 批次 7:转换结果汇总(常驻,不依赖弹窗;打开引导 + 可折叠警告)
-const resultSummary = document.getElementById("resultSummary") as HTMLDivElement;
-const summaryIcon = document.getElementById("summaryIcon") as HTMLElement;
-const summaryText = document.getElementById("summaryText") as HTMLParagraphElement;
-const summaryPath = document.getElementById("summaryPath") as HTMLParagraphElement;
-const summaryError = document.getElementById("summaryError") as HTMLParagraphElement;
-const summaryRevealBtn = document.getElementById(
-  "summaryRevealBtn",
-) as HTMLButtonElement;
-const summaryOpenBtn = document.getElementById(
-  "summaryOpenBtn",
-) as HTMLButtonElement;
-const summaryDetailsBtn = document.getElementById(
-  "summaryDetailsBtn",
-) as HTMLButtonElement;
-const summaryWarnings = document.getElementById(
-  "summaryWarnings",
-) as HTMLDetailsElement;
-const summaryWarningsToggle = document.getElementById(
-  "summaryWarningsToggle",
-) as HTMLElement;
-const summaryWarningsList = document.getElementById(
-  "summaryWarningsList",
-) as HTMLUListElement;
-// 批次 7:字段级错误提示(边距 / 字体 / 字号 / 行距)
-const marginError = document.getElementById("marginError") as HTMLParagraphElement;
-const fontAsciiError = document.getElementById(
-  "fontAsciiError",
-) as HTMLParagraphElement;
-const fontEastAsiaError = document.getElementById(
-  "fontEastAsiaError",
-) as HTMLParagraphElement;
-const bodySizeError = document.getElementById(
-  "bodySizeError",
-) as HTMLParagraphElement;
-const lineSpacingError = document.getElementById(
-  "lineSpacingError",
-) as HTMLParagraphElement;
-// 批次 7:输出目录设置
-const outputDirValue = document.getElementById(
-  "outputDirValue",
-) as HTMLSpanElement;
-const outputDirPick = document.getElementById(
-  "outputDirPick",
-) as HTMLButtonElement;
-const outputDirReset = document.getElementById(
-  "outputDirReset",
-) as HTMLButtonElement;
-// 批次 7:完成弹窗复制路径
-const completeDialogCopy = document.getElementById(
-  "completeDialogCopy",
-) as HTMLButtonElement;
-const completeDialogTitle = document.getElementById(
-  "completeDialogTitle",
-) as HTMLHeadingElement;
-const completeDialogDesc = document.getElementById(
-  "completeDialogDesc",
-) as HTMLParagraphElement;
+// 元素映射收敛于 dom.ts(纯 getElementById / querySelector 映射),此处命名导入直接使用
 
 /* ---------- 状态 ---------- */
 /** 当前选中的 Markdown 文件列表(1 个或 N 个)。 */
@@ -394,8 +295,8 @@ let mode: "single" | "batch" | "merge" | null = null;
 let errorFlashTimer: number | undefined;
 let unsubscribeProgress: (() => void) | undefined;
 let unsubscribeBatchProgress: (() => void) | undefined;
-/** 最近一次批量结果(供弹窗「打开所在文件夹」定位成功项)。 */
-let lastBatchItems: BatchItem[] | null = null;
+/** 最近一次批量结果(供弹窗「打开所在文件夹」定位成功项 + 汇总条「失败详情」重开弹窗)。 */
+let lastBatchResult: BatchResult | null = null;
 /** 拖拽排序状态:源项下标 / 是否插到悬停项之后(-1 表示未在拖拽中)。 */
 let dragIndex = -1;
 let dragDropAfter = false;
@@ -409,8 +310,6 @@ let settings: AppSettings = {
 let hydratingSettings = false;
 /** 弹窗对应输出文件路径(供「打开所在文件夹 / 打开文件」按钮使用) */
 let dialogOutputPath = "";
-/** 最近一次批量结果(供汇总条「失败详情」重开弹窗)。 */
-let lastBatchResult: BatchResult | null = null;
 /** 最近一次汇总条展示的输出路径(供「打开所在文件夹 / 打开文件」按钮使用)。 */
 let summaryOutputPath = "";
 
@@ -841,7 +740,6 @@ async function runBatch(): Promise<void> {
   showProgress();
   try {
     const result = await window.api.convertBatch(selectedFiles, selectedFormat);
-    lastBatchItems = result.items;
     lastBatchResult = result;
     setProgress(100);
     const canceledText =
@@ -859,7 +757,6 @@ async function runBatch(): Promise<void> {
     });
     showBatchDialog(result); // 成败均弹窗,逐条可见
   } catch (err) {
-    lastBatchItems = null;
     lastBatchResult = null;
     const message = err instanceof Error ? err.message : String(err);
     setError(`批量转换失败:${message}`);
@@ -1538,7 +1435,7 @@ mergeBtn.addEventListener("click", () => {
 
 // 批量汇总弹窗:打开所在文件夹(定位第一个成功项)/ 确定
 batchDialogReveal.addEventListener("click", () => {
-  const target = lastBatchItems?.find((item) => item.ok && item.outputPath)
+  const target = lastBatchResult?.items.find((item) => item.ok && item.outputPath)
     ?.outputPath;
   if (!target) return;
   window.api

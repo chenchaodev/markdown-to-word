@@ -105,16 +105,6 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
 }
 
 function registerIpc(): void {
-  // 选择 markdown 文件
-  ipcMain.handle("dialog:openMarkdown", async () => {
-    const result = await dialog.showOpenDialog({
-      title: "选择 Markdown 文件",
-      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
-      properties: ["openFile"],
-    });
-    return result.canceled ? null : result.filePaths[0] ?? null;
-  });
-
   // 选择多个 markdown 文件(批量/合并入口;取消返回 [])
   ipcMain.handle("dialog:openMarkdowns", async () => {
     const result = await dialog.showOpenDialog({

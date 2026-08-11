@@ -162,7 +162,7 @@
 - [x] **R4 H3 docx 图片变形修复 + L1 类型统一**:imageToDocx 从 Buffer 解析 PNG(IHDR)/JPEG(SOF)尺寸,按原始宽高比缩放(最大宽 400,高度按比例);webp/未知类型降级占位+警告(与 pdf mimeFromBuffer 一致化)。同步更新 basic-render/merge 段图片断言
 - [x] **R5 中优先级快修(M1/M2/M5)**:merge.ts 图片正则支持括号配对 URL(引用式图片记已知限制);renderPdf 临时 HTML 加随机后缀(与 preview 一致);pushRuns/pushRunsSync 统一单一 async 版。merge 段补括号 URL 断言
 - [x] **R6 中优先级快修(M4/M6)**:settings saveSettings 写队列串行化(promise 链,防并发丢更新);图片缺失检查并入 imageResolver 失败路径(单次 IO),警告文案三处统一。settings/段补并发断言,image-downloader/basic-render 段更新文案断言
-- [ ] **R7 renderer 阶段一(零风险)**:DOM 引用块抽 `src/renderer/dom.ts`(纯 getElementById 映射);删 L4 死代码(dialog:openMarkdown main/preload/renderer 三处);L5 lastBatchItems/lastBatchResult 状态合并。验证 smoke diag
+- [x] **R7 renderer 阶段一(零风险)**:DOM 引用块抽 `src/renderer/dom.ts`(纯 getElementById 映射);删 L4 死代码(dialog:openMarkdown main/preload/renderer 三处);L5 lastBatchItems/lastBatchResult 状态合并。验证 smoke diag
 - [ ] **R8 renderer 阶段二**:先建 `src/renderer/state.ts`(selectedFiles/format/converting/mode/settings/hydratingSettings/路径缓存)+ utils.ts(setStatus/setError/baseName/truncateMiddle),再拆 convert-flow.ts(runConvert/runBatch/runMerge)/file-list.ts(列表渲染/拖拽/按钮工厂)/dialogs.ts(完成/批量弹窗);模块互不 import 只经 state.ts;renderer.ts 留组合根(~600)。逐字段核对 mode/hydratingSettings 语义,验证 smoke diag
 - [ ] **R9 低优先级清扫 + 已知限制**:L3 escape 工具集中(core/utils.ts)、L6 openPreviewWindow/renderPdf 公共 helper、L7 test/common/settings.js save/restore helper(smoke/converter.test.js 共用)、L9 renderPdfHtml 去 async;M3 currentCtx 按 webContents id 建 Map;M7/M8 记录已知限制不动
 - [ ] **收尾**:全量 `npm run test:all` + 手动冒烟,STATUS 收尾,豁免不 tag
