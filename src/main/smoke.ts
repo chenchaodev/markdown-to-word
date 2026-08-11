@@ -162,6 +162,9 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
         report.btnExists = !!btn;
         if (btn) {
           report.btnDisabledBefore = btn.disabled;
+          // disabled 按钮的 .click() 不触发监听 → 先解除禁用再点击,
+          // 断言「未选文件」守卫路径(曾因恒空而零覆盖,见 R8 收尾 A3)
+          btn.disabled = false;
           btn.click();
           await sleep(50);
           const status = document.getElementById("status");
@@ -182,6 +185,12 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
+      // 守卫断言:无文件时点击转换按钮 → 状态区错误文案 + 红字(迭代 3 交互语义)
+      if (diag.statusAfterClick !== "请先选择 Markdown 文件" || diag.statusIsError !== true) {
+        throw new Error(
+          `[smoke] renderer diag FAILED: 点击守卫断言 statusAfterClick=${JSON.stringify(diag.statusAfterClick)}, statusIsError=${diag.statusIsError}`,
+        );
+      }
     } catch (err) {
       console.error("[smoke] renderer diag FAILED:", err);
       throw err; // 由 index.ts 统一 catch → app.exit(1)

@@ -30,9 +30,12 @@ import {
   LINE_SPACING_MIN,
   MARGIN_MAX_MM as MARGIN_MAX,
   MARGIN_MIN_MM as MARGIN_MIN,
+  TEMPLATE_PRESETS,
   type AppSettings,
   type PageSetup,
+  type TemplatePreset,
   type TypographySettings,
+  matchesPreset,
 } from "../core/settings-defaults.js";
 import {
   afterConvertInputs,
@@ -174,96 +177,6 @@ type Paper = "A4" | "A3" | "A5" | "Letter" | "Legal";
 type Orientation = "portrait" | "landscape";
 type AfterConvert = "none" | "show-in-folder" | "open";
 type BodyAlign = "left" | "justify";
-
-/* ---------- 模板预设:排版 + 页面设置的快照(套用后仍可微调,不写死模板 id) ---------- */
-interface TemplatePreset {
-  id: string;
-  /** 中文名,用户可见 */
-  name: string;
-  /** 简短说明,显示在模板选择行 */
-  hint: string;
-  typography: TypographySettings;
-  pageSetup: PageSetup;
-}
-
-/** 预设值已定稿,勿改(与批次 6 规划一致)。 */
-const TEMPLATE_PRESETS: TemplatePreset[] = [
-  {
-    id: "default",
-    name: "默认",
-    hint: "常规文档:微软雅黑正文、两端对齐、行距 1.5",
-    typography: { ...DEFAULT_SETTINGS.typography },
-    pageSetup: { ...DEFAULT_SETTINGS.pageSetup },
-  },
-  {
-    id: "paper",
-    name: "学术论文",
-    hint: "论文常用:宋体正文 + Times New Roman 西文、两端对齐、标准页边距",
-    typography: {
-      fontAscii: "Times New Roman",
-      fontEastAsia: "宋体",
-      bodySizePt: 12,
-      lineSpacing: 1.5,
-      firstLineIndent: true,
-      align: "justify",
-      headingNumbering: true,
-      captionNumbering: true,
-    },
-    pageSetup: {
-      paper: "A4",
-      orientation: "portrait",
-      marginTop: 25.4,
-      marginBottom: 25.4,
-      marginLeft: 31.7,
-      marginRight: 31.7,
-    },
-  },
-  {
-    id: "business",
-    name: "商务简报",
-    hint: "简报常用:微软雅黑正文、左对齐、行距 1.15、页边距更紧凑",
-    typography: {
-      fontAscii: "Calibri",
-      fontEastAsia: "微软雅黑",
-      bodySizePt: 11,
-      lineSpacing: 1.15,
-      firstLineIndent: false,
-      align: "left",
-      headingNumbering: false,
-      captionNumbering: false,
-    },
-    pageSetup: {
-      paper: "A4",
-      orientation: "portrait",
-      marginTop: 19.1,
-      marginBottom: 19.1,
-      marginLeft: 25.4,
-      marginRight: 25.4,
-    },
-  },
-];
-
-/** 当前排版与页面设置是否与某预设完全一致(用于回填时选中对应模板)。 */
-function matchesPreset(preset: TemplatePreset, settings: AppSettings): boolean {
-  const { typography: t, pageSetup: p } = preset;
-  const { typography: st, pageSetup: sp } = settings;
-  return (
-    t.fontAscii === st.fontAscii &&
-    t.fontEastAsia === st.fontEastAsia &&
-    t.bodySizePt === st.bodySizePt &&
-    t.lineSpacing === st.lineSpacing &&
-    t.firstLineIndent === st.firstLineIndent &&
-    t.align === st.align &&
-    t.headingNumbering === st.headingNumbering &&
-    t.captionNumbering === st.captionNumbering &&
-    p.paper === sp.paper &&
-    p.orientation === sp.orientation &&
-    p.marginTop === sp.marginTop &&
-    p.marginBottom === sp.marginBottom &&
-    p.marginLeft === sp.marginLeft &&
-    p.marginRight === sp.marginRight
-  );
-}
 
 /* ---------- 预览(转换前,经主进程打开与 PDF 同排版的窗口) ---------- */
 /** 打开指定文件的预览窗口;失败时状态区提示(文件名 + 原因 + 操作)。 */
