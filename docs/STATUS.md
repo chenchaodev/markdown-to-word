@@ -10,7 +10,7 @@
 
 ## 验证基线
 - 已跑通:`npm run typecheck`、`npm run build`、`npx electron . --smoke`(启动 + docx/pdf 双链路 + 设置持久化/landscape 端到端 + 批量/合并端到端 + renderer 诊断)
-- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/*.test.js`,11 段:基础渲染/合并/脚注/PDF 元数据/标题编号链接/排版/白名单/公式/编码/TOC 与题注/公式编号与交叉引用;新增测试=新建段文件零注册);main 侧行为(重名序号/输出目录/取消/批量导出一致)走 smoke + GUI 实测清单(脚本无法触达 main IPC 层)
+- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染)与 `main/`(主进程层)下 `*.test.js`,19 段:基础渲染/封面/合并/脚注/公式/公式编号/PDF 元数据/标题编号链接/排版/白名单/编码/TOC 与题注/任务列表/设置/页面设置/frontmatter/slug/外链图片下载/转换编排;新增测试=新建段文件零注册);main 侧行为(重名序号/输出目录/取消/批量导出)已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
 - smoke 自清理 output/smoke 临时产物(批次 7 重名保护后旧产物不再被覆盖,断言会遇 (N) 序号变体;Windows 占用文件 EBUSY 容错跳过)
 - 历史批次断言明细见 `docs/CHANGELOG.md` 对应版本条目(0.4.x~0.17.x)
 - 打包:`npm run dist`(electron-builder NSIS);验证链:--dir → asar list → win-unpacked 启动存活 → 静默安装/卸载(退出码 0);打包版 `--smoke` 不可用(asar 内只读,output/smoke 写不进);镜像环境变量见开发者手册

@@ -105,7 +105,7 @@
 - [ ] **步骤一(独立迭代):取消状态参数化** —— 模块级 `cancelRequested` 改为转换调用携带的 context 参数(`{ cancelRequested, cancel() }`),IPC 层持有当前调用 context 引用。转换函数自包含编排 → 可直接导出测试,取消回归不再需要「改全局再调用」串行技巧,根治全局可变状态。风险点:IPC 持有方式(context 注册/释放)需小心设计,「取消后复位」语义必须保持(迭代 1 新增的取消回归断言守护)。
 - [ ] **步骤二:抽 src/main/converter.ts** —— convertImpl/batchConvertImpl/mergeConvertImpl/resolveOutputPath + 类型 + 取消 context 移入独立模块并导出;index.ts 只留窗口生命周期 + IPC 薄层。
 - [ ] **步骤三:smoke 瘦身 + 移出 index.ts** —— SMOKE 块抽到独立文件(src/main/smoke.ts),index.ts 一行调用;重名保护/取消/分页符/breakBeforeH1 纯逻辑断言迁至 acceptance 段体系(Node 可跑);smoke 只留必须 Electron 的断言(printToPDF 产物、书签、renderer diag、设置持久化往返),预计 210 行 → ~80 行。
-- [ ] **步骤四(可选):测试目录分层** —— test/segments/(core 渲染)+ 新增 test/main/(converter 层),runner 扩展多目录零注册。
+- [x] **步骤四(可选):测试目录分层** —— test/segments/(core 渲染)+ 新增 test/main/(converter 层),runner 扩展多目录零注册。
 
 ## 测试缺口(待逐步补充)
 > 2026-08-10 能力面×覆盖盘点(test/segments 11 段 + smoke 对照 src/core、src/main、src/renderer 全部能力点)。按优先级逐批补齐,每批独立小迭代;补完即勾选。
