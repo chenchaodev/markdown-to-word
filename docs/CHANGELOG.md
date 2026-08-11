@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [0.22.0] - 2026-08-11
+- 迭代 3 测试缺口收尾(豁免并入;build/验收 20 段/smoke 全绿):
+  - **低优先级可自动化 2 项**:新段 test/main/paths.test.js 直测 collectMarkdownPaths(目录递归/点目录跳过/非 md 静默/skipped/大小写不敏感排序/seen 去重)与 resolveOutputPath(outputDir 空串/有效目录/超长 >250 回落/mkdir 失败回落)——重构后函数已导出,原 smoke 扩展计划升级直测
+  - **GUI 实测 3 项用户通过**(2026-08-11):renderer 全部交互、IPC dialog/预览、afterConvert show-in-folder/open;runAfterConvert none 分支由 converter.test.js 隐式覆盖
+- 迭代 4「预览入口迁移」(用户实测 6 项清单全通过):
+  - **预览迁移到转换前**:单文件态拖放区操作行 + 多文件态列表每行新增「预览」按钮(点击经 window.api.openPreview 打开与 PDF 同排版的预览窗口,转换前不产生产物);完成弹窗「预览」按钮移除(保留复制路径/打开所在文件夹/打开文件/确定)
+  - 失败提示:状态区三要素(文件名 + 原因 + 操作),不崩溃;转换中禁用/拦截;stopPropagation 避免误触发文件选择对话框
+  - smoke renderer diag 补迁移守护(previewBtn 存在且初始禁用、completeDialogPreview 已移除)
+
 ## [0.21.0] - 2026-08-11
 - 测试补齐迭代 1+2(豁免并入;build/验收 19 段/smoke 全绿):
   - **高优先级 10 项**:新段 cover(封面双格式)/task-list(任务列表)/image-downloader(外链图片下载);formula 降级分支、basic-render 缺失图警告、heading-links h4-h6 补断言;smoke 扩展取消链路/重名保护/breakBeforeH1/分页符断言
