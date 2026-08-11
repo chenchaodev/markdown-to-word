@@ -9,7 +9,6 @@
  */
 import { app, BrowserWindow, shell } from "electron";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { convert, type ConvertFormat, type PdfArtifact } from "../core/convert.js";
 import { decodeMarkdown } from "../core/encoding.js";
@@ -19,6 +18,7 @@ import { setPdfMetadata } from "../core/pdf/metadata.js";
 import { extractHeadings } from "../core/pdf/postprocess.js";
 import { createImageResolver, type ImageResolver } from "./image-downloader.js";
 import { loadSettings, type AppSettings } from "./settings.js";
+import { writeTempHtml } from "./temp-html.js";
 
 export interface ConvertResult {
   ok: boolean;
@@ -221,14 +221,13 @@ export async function convertImpl(
  * 单文件/合并共用;临时文件与窗口在 finally 中清理,失败也会销毁窗口。
  */
 async function renderPdf(artifact: PdfArtifact, outputPath: string, ctx: ConvertContext): Promise<void> {
-  const htmlPath = path.join(os.tmpdir(), `m2w-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`);
+  const { htmlPath, cleanup } = await writeTempHtml(artifact.html);
   const printWin = new BrowserWindow({
     show: false,
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   try {
     throwIfCanceled(ctx); // 批次 7:打印前检查(loadFile/字体等待期间用户可能已取消)
-    await fs.writeFile(htmlPath, artifact.html, "utf8");
     await printWin.loadFile(htmlPath);
     // 批次 6:等待公式字体(KaTeX woff2)加载完成再打印,否则 printToPDF 缺字形
     // (did-finish-load 后字体仍在加载,printToPDF 不等待字体)
@@ -260,7 +259,7 @@ async function renderPdf(artifact: PdfArtifact, outputPath: string, ctx: Convert
     await fs.writeFile(outputPath, output);
   } finally {
     printWin.destroy();
-    await fs.rm(htmlPath, { force: true });
+    await cleanup();
   }
 }
 

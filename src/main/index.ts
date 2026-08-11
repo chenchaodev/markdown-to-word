@@ -8,13 +8,13 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { convert, type ConvertFormat } from "../core/convert.js";
 import { decodeMarkdown } from "../core/encoding.js";
 import { createImageResolver } from "./image-downloader.js";
 import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
+import { writeTempHtml } from "./temp-html.js";
 import {
   batchConvertImpl,
   collectMarkdownPaths,
@@ -59,7 +59,7 @@ function createWindow(): BrowserWindow {
  */
 async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?: string }> {
   let win: BrowserWindow | null = null;
-  let htmlPath = "";
+  let cleanup: (() => Promise<void>) | null = null;
   try {
     const settings = await loadSettings();
     const { text: md } = decodeMarkdown(await fs.readFile(mdPath));
@@ -75,11 +75,8 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
       katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
     });
     if (artifact.kind !== "pdf") throw new Error("预览仅支持 pdf 渲染");
-    htmlPath = path.join(
-      os.tmpdir(),
-      `m2w-preview-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`,
-    );
-    await fs.writeFile(htmlPath, artifact.html, "utf8");
+    const tmp = await writeTempHtml(artifact.html);
+    cleanup = tmp.cleanup;
     win = new BrowserWindow({
       width: 900,
       height: 1100,
@@ -88,18 +85,13 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
       webPreferences: { contextIsolation: true, sandbox: true },
     });
     win.on("closed", () => {
-      fs.rm(htmlPath, { force: true }).catch(() => {
-        // 临时文件删除失败(如仍被 Chromium 占用)仅记录,不阻断
-        console.log(`[preview] 临时文件清理失败: ${htmlPath}`);
-      });
+      void cleanup?.();
     });
-    await win.loadFile(htmlPath);
+    await win.loadFile(tmp.htmlPath);
     return { ok: true };
   } catch (err) {
     win?.destroy();
-    if (htmlPath) {
-      await fs.rm(htmlPath, { force: true }).catch(() => undefined);
-    }
+    await cleanup?.();
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

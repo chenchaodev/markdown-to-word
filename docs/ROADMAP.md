@@ -182,7 +182,7 @@
 > 原则:先建安全网(纯函数断言零风险)→ 机械清扫(行为等价)→ 中风险(安全网最厚时);M7/M8 不动;A2 依赖 C3 认知与批 3 的 renderPdf helper;每批 typecheck/build/全量段/smoke 全绿门槛。
 
 - [x] **批 1「测试锚点」(零风险)**:C1 image-type.test.js(R4 修复核心:PNG IHDR/JPEG SOF 尺寸、webp/gif 降级、最大宽 400 等比缩放)+ C2 presets 契约段(matchesPreset 自匹配/微调不匹配、预设值在范围常量内)+ A3 smoke diag 修盲区(enable 后 click 断言守卫文案)。验证 21→23 段 + smoke
-- [ ] **批 2「smoke 下沉 + 提取逻辑」(零行为改动)**:A1 分页符断言并入 page-setup 段(smoke 删块)+ C3 extractHeadings 直测(多级/中文/编号 → PdfHeading)。验证 23 段 + smoke 瘦身
-- [ ] **批 3「R9 低风险清扫」(机械/基建)**:L9 renderPdfHtml 去 async + L7 test/common/settings.js save/restore helper + L6 openPreviewWindow/renderPdf 公共 helper。验证 23 段 + smoke
+- [x] **批 2「smoke 下沉 + 提取逻辑」(零行为改动)**:A1 分页符断言并入 page-setup 段(smoke 删块)+ C3 extractHeadings 直测(多级/中文/编号 → PdfHeading)。验证 23 段 + smoke 瘦身(commit 3219a29)
+- [x] **批 3「R9 低风险清扫」(机械/基建)**:L9 取消——checkLocalImages/embedExternalImages 经 imageResolver 真异步(外链下载),renderPdfHtml 保留 async,不值得重构;L7 test/common/settings.js save/restore helper(converter.test.js 换用,smoke.ts 属应用代码不 import test/,保持自身);L6 新建 src/main/temp-html.ts(writeTempHtml),renderPdf/openPreviewWindow 换用。验证 23 段 + smoke
 - [ ] **批 4「中风险」(安全网最厚时)**:A2 pdf-bookmarks.test.js 书签端到端段(htmlToPdf + setOutline,复用批 3 helper)+ L3 escape 工具集中 core/utils.ts + M3 currentCtx 按 webContents id Map。验证 23→24 段 + smoke
 - [ ] **批 5「收尾」**:全量 `npm run test:all` + 手动 GUI 冒烟(拖放/排序/弹窗/设置面板),STATUS 收尾,豁免不 tag

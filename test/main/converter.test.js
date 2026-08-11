@@ -20,9 +20,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { app } from "electron";
 import JSZip from "jszip";
 import { loadSettings, updateSettings } from "../../dist/main/settings.js";
+import { backupSettings } from "../common/settings.js";
 import {
   batchConvertImpl,
   ConvertCanceledError,
@@ -40,18 +40,10 @@ function assert(cond, msg) {
 }
 
 export async function run() {
-  const settingsFile = path.join(app.getPath("userData"), "settings.json");
   const dir = path.join(os.tmpdir(), `m2w-converter-${process.pid}`);
   const sampleMd = path.join(dir, "sample.md");
-  const orig = loadSettings(); // 种子缓存 + 恢复基准(文件 + 缓存)
-  let hadFile = false;
-  try {
-    await fs.access(settingsFile).then(() => (hadFile = true), () => undefined);
-  } catch {
-    /* 无既有文件 */
-  }
-  try {
-    await fs.mkdir(dir, { recursive: true });
+  const restoreSettings = await backupSettings();
+  try {    await fs.mkdir(dir, { recursive: true });
     // 输出目录指回源目录(样例同目录),afterConvert 置 none 保证断言确定性
     await updateSettings({ outputDir: "", afterConvert: "none" });
     await fs.writeFile(sampleMd, SAMPLE_MD, "utf8");
@@ -177,7 +169,7 @@ export async function run() {
     // ---- 8. 设置注入端到端:持久化往返 + landscape + breakBeforeH1 + 分页符(docx) ----
     await updateSettings({ breakBeforeH1: true });
     assert(loadSettings().breakBeforeH1 === true, "设置持久化失败: breakBeforeH1 未生效");
-    await updateSettings({ pageSetup: { ...orig.pageSetup, orientation: "landscape" } });
+    await updateSettings({ pageSetup: { ...restoreSettings.orig.pageSetup, orientation: "landscape" } });
     const landResult = await convertImpl(sampleMd, "docx");
     const landZip = await JSZip.loadAsync(await fs.readFile(landResult.outputPath));
     const landEntry = landZip.file("word/document.xml");
@@ -199,8 +191,7 @@ export async function run() {
     console.log("[ok] converter:设置注入(持久化/landscape/breakBeforeH1/分页符 docx)");
   } finally {
     // 恢复设置文件 + 模块级缓存(updateSettings 双写);原本无文件则删除,不污染用户设置
-    await updateSettings(orig);
-    if (!hadFile) await fs.rm(settingsFile, { force: true });
+    await restoreSettings.restore();
     await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
