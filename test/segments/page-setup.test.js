@@ -93,6 +93,19 @@ export async function run() {
     console.log(`[ok] 页面设置:${paper} landscape docx 宽高交换 + pdf size 断言通过`);
   }
 
+  // 4. 分页符产物(pdf 侧中间 html,原 smoke 断言下沉 A1):
+  //    <!-- page-break --> → <div class="page-break"></div>
+  const pbMd = `# 分页符标题\n\n<!-- page-break -->\n\n第二页正文\n`;
+  const pbArtifact = await convert(pbMd, "pdf", {
+    baseDir: FIXTURES_DIR,
+    warnings: [],
+    pageSetup: { paper: "A4", orientation: "portrait", marginTop: 25, marginBottom: 25, marginLeft: 32, marginRight: 32 },
+  });
+  if (!pbArtifact.html.includes('<div class="page-break"></div>')) {
+    throw new Error("分页符断言失败:pdf 中间 html 缺少 page-break div");
+  }
+  console.log("[ok] 分页符:pdf 中间 html 含 page-break div 断言通过");
+
   const lastPdfBin = await htmlToPdf(lastPdf.html, lastPdf.footerTemplate);
   await saveArtifact("page-setup", { docx: lastDocx.buffer, pdf: lastPdfBin });
 }

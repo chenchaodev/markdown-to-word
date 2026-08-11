@@ -2,10 +2,9 @@
  * 冒烟自测(--smoke 模式,index.ts 一行调用):只保留必须依赖 Electron 的端到端断言。
  * - convertImpl docx 全链路落盘(基础链路 + 产物存在,端到端性质)
  * - pdf 链路:printToPDF 产物魔数 + 书签注入(Outlines 中文标题 + Dest 页面引用)+ 合并书签
- * - pdf 中间 html 分页符(core convert 直接断言,非 converter 层逻辑)
  * - renderer 诊断(executeJavaScript:window.api 注入/按钮可点/状态区反馈/弹窗隐藏)
- * 纯逻辑断言(重名保护/批量汇总/merge docx/取消链路/设置注入)已迁 test/segments/converter.test.js,
- * 本文件不再触碰设置与取消。
+ * 纯逻辑断言(重名保护/批量汇总/merge docx/取消链路/设置注入/分页符产物)已迁
+ * test/segments|main(分页符 pdf 中间 html 在 page-setup 段),本文件不再触碰设置与取消。
  * 输出隔离:smoke 不依赖用户持久化设置——outputDir 强制 ""(产物落 output/smoke 源文件旁,
  * 自清理可覆盖;否则会污染用户设置的输出目录如 Downloads,且 (N) 序号变体越积越多)、
  * afterConvert 强制 "none"(不自动打开产物弹窗);结束前恢复原设置(与 converter.test.js 同款
@@ -17,8 +16,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
-import { convert } from "../core/convert.js";
-import { convertImpl, getImageResolver, mergeConvertImpl } from "./converter.js";
+import { convertImpl, mergeConvertImpl } from "./converter.js";
 import { loadSettings, updateSettings } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,28 +72,6 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
     const { outputPath } = await convertImpl(sampleMd, "docx");
     const stat = await fs.stat(outputPath);
     console.log(`[smoke] convert ok: ${outputPath} (${stat.size} bytes)`);
-    // 分页符产物:pdf 侧中间 html 可截获(convert 返回 artifact.html,与 renderPdf 写临时文件同源)
-    // → 断言 page-break div(样例含 <!-- page-break -->;docx 侧断言已迁 converter.test.js)。
-    {
-      const pbSettings = loadSettings();
-      // convert() 第一参数是 markdown 内容字符串(不读文件),须先读盘再传入
-      const pbSource = await fs.readFile(sampleMd, "utf8");
-      const pbArtifact = await convert(pbSource, "pdf", {
-        baseDir: path.dirname(sampleMd),
-        title: path.basename(sampleMd).replace(/\.(md|markdown)$/i, ""),
-        warnings: [],
-        pageSetup: pbSettings.pageSetup,
-        typography: pbSettings.typography,
-        breakBeforeH1: pbSettings.breakBeforeH1,
-        toc: pbSettings.toc,
-        imageResolver: getImageResolver(path.dirname(sampleMd)),
-        katexDir: path.join(app.getAppPath(), "node_modules", "katex", "dist"),
-      });
-      if (pbArtifact.kind !== "pdf" || !pbArtifact.html.includes('<div class="page-break"></div>')) {
-        throw new Error("分页符断言失败:pdf 中间 html 缺少 page-break div");
-      }
-      console.log("[smoke] 分页符 ok: pdf 中间 html 含 page-break div");
-    }
     // PDF 链路:中文/表格/代码块/任务列表/本地图片 → printToPDF
     const pngPath = path.join(outDir, "smoke-pdf.png");
     await fs.writeFile(
