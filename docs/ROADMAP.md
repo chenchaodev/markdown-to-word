@@ -177,3 +177,12 @@
 - [x] **R8 renderer 阶段二(行为等价)**:renderer.ts 拆分五模块——`state.ts`(selectedFiles/format/converting/mode/settings/hydratingSettings/路径缓存/拖拽态 + IPC 契约类型)、`utils.ts`(setStatus/setError/baseName/truncateMiddle/进度/字段错误/焦点)、`convert-flow.ts`(runConvert/runBatch/runMerge)、`file-list.ts`(列表渲染/拖拽/按钮工厂)、`dialogs.ts`(完成/批量弹窗/汇总条);状态读写一律经 `state.X`(唯一来源),依赖单向(各模块→state/utils/dom;convert-flow→dialogs/file-list,无环);renderer.ts 留组合根(~950,API 契约/模板预设/设置面板/事件接线/init)。逐字段核对 mode/hydratingSettings 语义;验证 typecheck/build/21 段/smoke(renderer diag)
 - [ ] **R9 低优先级清扫 + 已知限制**:L3 escape 工具集中(core/utils.ts)、L6 openPreviewWindow/renderPdf 公共 helper、L7 test/common/settings.js save/restore helper(smoke/converter.test.js 共用)、L9 renderPdfHtml 去 async;M3 currentCtx 按 webContents id 建 Map;M7/M8 记录已知限制不动
 - [ ] **收尾**:全量 `npm run test:all` + 手动冒烟,STATUS 收尾,豁免不 tag
+
+## R8 收尾测试 × R9 综合排期(2026-08-11;测试 A/B/C 组与 R9 合并分 5 批,每批独立迭代、豁免收尾、全量验证)
+> 原则:先建安全网(纯函数断言零风险)→ 机械清扫(行为等价)→ 中风险(安全网最厚时);M7/M8 不动;A2 依赖 C3 认知与批 3 的 renderPdf helper;每批 typecheck/build/全量段/smoke 全绿门槛。
+
+- [ ] **批 1「测试锚点」(零风险)**:C1 image-type.test.js(R4 修复核心:PNG IHDR/JPEG SOF 尺寸、webp/gif 降级、最大宽 400 等比缩放)+ C2 presets 契约段(matchesPreset 自匹配/微调不匹配、预设值在范围常量内)+ A3 smoke diag 修盲区(enable 后 click 断言守卫文案)。验证 21→23 段 + smoke
+- [ ] **批 2「smoke 下沉 + 提取逻辑」(零行为改动)**:A1 分页符断言并入 page-setup 段(smoke 删块)+ C3 extractHeadings 直测(多级/中文/编号 → PdfHeading)。验证 23 段 + smoke 瘦身
+- [ ] **批 3「R9 低风险清扫」(机械/基建)**:L9 renderPdfHtml 去 async + L7 test/common/settings.js save/restore helper + L6 openPreviewWindow/renderPdf 公共 helper。验证 23 段 + smoke
+- [ ] **批 4「中风险」(安全网最厚时)**:A2 pdf-bookmarks.test.js 书签端到端段(htmlToPdf + setOutline,复用批 3 helper)+ L3 escape 工具集中 core/utils.ts + M3 currentCtx 按 webContents id Map。验证 23→24 段 + smoke
+- [ ] **批 5「收尾」**:全量 `npm run test:all` + 手动 GUI 冒烟(拖放/排序/弹窗/设置面板),STATUS 收尾,豁免不 tag
