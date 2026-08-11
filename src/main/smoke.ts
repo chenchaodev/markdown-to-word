@@ -166,6 +166,12 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
       report.dialogExists = !!dlg;
       report.dialogHiddenAtStart = dlg ? dlg.classList.contains("hidden") : null;
       report.dialogVisibleAtStart = dlg ? getComputedStyle(dlg).display !== "none" : null;
+      // 迭代 4 预览入口迁移:单文件态「预览」按钮存在且初始禁用(未选文件);
+      // 完成弹窗内「预览」按钮必须已移除
+      const previewBtn = document.getElementById("previewBtn");
+      report.previewBtnExists = !!previewBtn;
+      report.previewBtnDisabledAtStart = previewBtn ? previewBtn.disabled : null;
+      report.dialogPreviewRemoved = !document.getElementById("completeDialogPreview");
       return report;
     })()`);
     console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);

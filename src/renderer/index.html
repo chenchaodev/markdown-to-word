@@ -61,6 +61,15 @@
             <p id="filePath" class="file-path"></p>
             <div class="drop-file-actions">
               <p class="drop-change">点击或拖入可继续添加文件</p>
+              <button
+                type="button"
+                id="previewBtn"
+                class="btn btn-secondary btn-small"
+                title="预览转换排版(与 PDF 同排版)"
+                disabled
+              >
+                预览
+              </button>
               <button type="button" id="removeFileBtn" class="btn btn-ghost btn-small">
                 移除
               </button>
@@ -446,9 +455,6 @@
         <p id="completeDialogError" class="dialog-error hidden" role="alert"></p>
         <div class="dialog-actions">
           <div class="dialog-actions-secondary">
-            <button type="button" id="completeDialogPreview" class="btn btn-secondary">
-              预览
-            </button>
             <button type="button" id="completeDialogReveal" class="btn btn-secondary">
               打开所在文件夹
             </button>

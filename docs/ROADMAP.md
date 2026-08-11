@@ -107,6 +107,16 @@
 - [ ] **步骤三:smoke 瘦身 + 移出 index.ts** —— SMOKE 块抽到独立文件(src/main/smoke.ts),index.ts 一行调用;重名保护/取消/分页符/breakBeforeH1 纯逻辑断言迁至 acceptance 段体系(Node 可跑);smoke 只留必须 Electron 的断言(printToPDF 产物、书签、renderer diag、设置持久化往返),预计 210 行 → ~80 行。
 - [x] **步骤四(可选):测试目录分层** —— test/segments/(core 渲染)+ 新增 test/main/(converter 层),runner 扩展多目录零注册。
 
+## 迭代 4 规划(2026-08-11,预览入口迁移)
+> 背景:预览(openPreviewWindow,与 PDF 同排版)当前入口在转换完成弹窗(completeDialogPreview),用户实测后提出:预览应在转换前(先看排版再决定转换),入口需迁移。
+> 入口形式(用户确认):选中文件后工具栏/列表项操作区加「预览」按钮;完成弹窗「预览」按钮移除(打开文件夹/打开文件保留)。
+> 规模控制:单主题(预览入口迁移),验收清单 ≤5 项;改动面 = src/renderer/(index.html + renderer.ts + style.css 如需);main 层 openPreview IPC 已存在零改动;测试走 smoke renderer diag + GUI 实测。
+- [ ] 单文件态:文件区/操作栏新增「预览」按钮,点击打开预览窗口(转换前,不产生产物)
+- [ ] 多文件态:列表项操作区每行新增「预览」按钮,点击预览该文件
+- [ ] 完成弹窗:移除「预览」按钮(入口统一迁移到转换前)
+- [ ] 预览失败(文件缺失/渲染错误)提示不崩溃,与现有错误展示一致
+- [ ] 验收:smoke renderer diag 断言 + GUI 实测(预览排版与 PDF 一致、入口可达)
+
 ## 测试缺口(待逐步补充)
 > 2026-08-10 能力面×覆盖盘点(test/segments 11 段 + smoke 对照 src/core、src/main、src/renderer 全部能力点)。按优先级逐批补齐,每批独立小迭代;补完即勾选。
 > 批次规划(2026-08-10):迭代 1 = 高优先级 10 项;迭代 2 = 中优先级 9 项;迭代 3 = 低优先级可自动化项 + IPC dialog/预览 维持 GUI 实测(勾选即完成)。测试补充迭代走豁免:不 tag、不写 CHANGELOG,每迭代收尾全量跑 `npm run test` + `npm run test:smoke` 并提交。

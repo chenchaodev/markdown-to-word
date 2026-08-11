@@ -2,8 +2,9 @@
  * G3 阶段:renderer 接入转换逻辑(含转换完成弹窗)。
  * 二期批次 1:页面设置面板(纸张/方向/边距/H1 分页/导出后行为)与持久化,
  * 完成弹窗新增「打开所在文件夹 / 打开文件」按钮。
- * 二期批次 2:完成弹窗新增「预览」按钮,经主进程打开独立预览窗口
- * (与 PDF 同排版),预览使用源 md 路径(selectedFiles[0])。
+ * 二期批次 2:预览功能经主进程打开独立预览窗口(与 PDF 同排版),预览使用源 md 路径。
+ * 迭代 4:预览入口迁移到转换前——选中文件后即可预览(单文件态操作行「预览」按钮 +
+ * 多文件态每行「预览」按钮),完成弹窗移除「预览」按钮(打开文件夹/打开文件保留)。
  * 二期批次 3:多文件选择与「批量转换 / 合并转换」。
  *   - 选择:对话框多选(openMarkdowns)+ 拖放多文件/文件夹(collectMarkdowns 展开)。
  *   - 状态:1 个文件保持单文件态;≥2 个文件显示数量 + 可滚动名称列表。
@@ -353,9 +354,6 @@ const completeDialogReveal = document.getElementById(
 const completeDialogOpen = document.getElementById(
   "completeDialogOpen",
 ) as HTMLButtonElement;
-const completeDialogPreview = document.getElementById(
-  "completeDialogPreview",
-) as HTMLButtonElement;
 const completeDialogError = document.getElementById(
   "completeDialogError",
 ) as HTMLParagraphElement;
@@ -378,6 +376,8 @@ const batchDialogError = document.getElementById(
 const removeFileBtn = document.getElementById(
   "removeFileBtn",
 ) as HTMLButtonElement;
+// 迭代 4:单文件态「预览」按钮(转换前预览排版,与 PDF 同排版)
+const previewBtn = document.getElementById("previewBtn") as HTMLButtonElement;
 const appendBtn = document.getElementById("appendBtn") as HTMLButtonElement;
 const clearListBtn = document.getElementById(
   "clearListBtn",
@@ -516,6 +516,20 @@ function setError(message: string): void {
   );
 }
 
+/* ---------- 预览(转换前,经主进程打开与 PDF 同排版的窗口) ---------- */
+/** 打开指定文件的预览窗口;失败时状态区提示(文件名 + 原因 + 操作)。 */
+function openPreviewFor(filePath: string): void {
+  const fileName = baseName(filePath);
+  const fail = (reason: string) =>
+    setError(`无法预览「${fileName}」:${reason}。请确认文件仍可读后重试`);
+  window.api
+    .openPreview(filePath)
+    .then((result) => {
+      if (!result.ok) fail(result.error ?? "未知原因");
+    })
+    .catch((err) => fail(err instanceof Error ? err.message : String(err)));
+}
+
 /* ---------- 选择状态:单文件态 / 多文件态 ---------- */
 /** 按当前选择渲染拖放区三种状态,并刷新操作按钮可用性。 */
 function renderSelection(): void {
@@ -568,6 +582,7 @@ function renderMultiList(): void {
       actions.append(
         makeMoveButton("up", index > 0, baseName(filePath)),
         makeMoveButton("down", index < n - 1, baseName(filePath)),
+        makePreviewButton(baseName(filePath)),
         makeRemoveButton(baseName(filePath)),
       );
 
@@ -606,6 +621,17 @@ function makeMoveButton(
   path.setAttribute("d", dir === "up" ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6");
   svg.appendChild(path);
   btn.appendChild(svg);
+  return btn;
+}
+
+/** 预览该文件的文字按钮(迭代 4:转换前预览排版,与 PDF 同排版)。 */
+function makePreviewButton(fileName: string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "multi-preview";
+  btn.title = "预览转换排版(与 PDF 同排版)";
+  btn.setAttribute("aria-label", `预览 ${fileName}`);
+  btn.textContent = "预览";
   return btn;
 }
 
@@ -679,7 +705,7 @@ function appendSelection(files: string[], skipped = 0): void {
   applySelection([...selectedFiles, ...added], skipped + dupCount);
 }
 
-/** 按当前选择与转换状态刷新操作按钮(选择入口 + 三个转换按钮)。 */
+/** 按当前选择与转换状态刷新操作按钮(选择入口 + 三个转换按钮 + 单文件态预览)。 */
 function updateActionButtons(): void {
   const n = selectedFiles.length;
   const multi = n >= 2;
@@ -690,6 +716,8 @@ function updateActionButtons(): void {
   convertBtn.disabled = busy || n !== 1;
   batchBtn.disabled = busy || !multi;
   mergeBtn.disabled = busy || !multi;
+  // 单文件态预览:仅在选中 1 个文件时可见(dropFile 区),转换中禁用
+  previewBtn.disabled = busy || n !== 1;
   selectBtn.disabled = busy;
 }
 
@@ -1084,7 +1112,7 @@ function hideFieldError(el: HTMLElement): void {
 /* ---------- 转换完成弹窗(单文件 / 合并) ---------- */
 /**
  * 打开完成弹窗;error 非空时进入失败态(标题「转换失败」、路径行红色显示原因、
- * 隐藏复制/预览/打开按钮),满足错误三要素:文件名(desc)+ 原因(路径行)+ 操作(确定)。
+ * 隐藏复制/打开按钮),满足错误三要素:文件名(desc)+ 原因(路径行)+ 操作(确定)。
  */
 function showCompleteDialog(
   outputPath: string,
@@ -1103,7 +1131,6 @@ function showCompleteDialog(
   completeDialogCopy.classList.toggle("hidden", !ok);
   completeDialogError.classList.add("hidden");
   completeDialogError.textContent = "";
-  completeDialogPreview.classList.toggle("hidden", !ok);
   completeDialogReveal.classList.toggle("hidden", !ok);
   completeDialogOpen.classList.toggle("hidden", !ok);
   completeDialog.classList.remove("hidden");
@@ -1229,6 +1256,13 @@ removeFileBtn.addEventListener("click", (event) => {
   applySelection([]);
 });
 
+// 迭代 4:单文件态「预览」按钮(转换前预览排版;stopPropagation 避免触发拖放区打开对话框)
+previewBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (converting || selectedFiles.length !== 1) return;
+  openPreviewFor(selectedFiles[0]);
+});
+
 // 批次 7:多文件态「追加文件」按钮(对话框追加,与现有列表合并去重)
 appendBtn.addEventListener("click", (event) => {
   event.stopPropagation();
@@ -1243,17 +1277,22 @@ clearListBtn.addEventListener("click", (event) => {
 });
 
 // 多文件列表:点击列表本身不触发换文件(避免误开对话框);
-// 上移/下移/移除按钮走事件委托,点击后重排 selectedFiles 并重建列表
+// 上移/下移/预览/移除按钮走事件委托,点击后按行内 data-index 定位文件
 multiList.addEventListener("click", (event) => {
   event.stopPropagation();
   if (converting) return;
   const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(
-    ".multi-move, .multi-remove",
+    ".multi-move, .multi-remove, .multi-preview",
   );
   if (!btn) return;
   const li = btn.closest<HTMLLIElement>(".multi-item");
   if (!li) return;
   const index = Number(li.dataset.index);
+  if (btn.classList.contains("multi-preview")) {
+    // 迭代 4:预览该行文件(转换前,不产生产物)
+    openPreviewFor(selectedFiles[index]);
+    return;
+  }
   if (btn.classList.contains("multi-remove")) {
     // 移除该文件:从数组删除并重建;清空后回到初始态
     selectedFiles.splice(index, 1);
@@ -1514,26 +1553,7 @@ templatePresetSelect.addEventListener("change", () => {
   });
 });
 
-// 完成弹窗:预览 / 打开所在文件夹 / 打开文件(失败在弹窗内提示,不打断)
-completeDialogPreview.addEventListener("click", () => {
-  // 预览使用源 md 路径(selectedFiles[0]);转换成功必然先选了文件,此处仅做兜底
-  const mdPath = selectedFiles[0];
-  if (!mdPath) {
-    showDialogError("无法预览:源文件路径缺失");
-    return;
-  }
-  window.api
-    .openPreview(mdPath)
-    .then((result) => {
-      if (!result.ok) showDialogError(result.error ?? "无法打开预览");
-    })
-    .catch((err) =>
-      showDialogError(
-        `无法打开预览:${err instanceof Error ? err.message : String(err)}`,
-      ),
-    );
-});
-
+// 完成弹窗:打开所在文件夹 / 打开文件(失败在弹窗内提示,不打断)
 completeDialogReveal.addEventListener("click", () => {
   if (!dialogOutputPath) return;
   window.api
