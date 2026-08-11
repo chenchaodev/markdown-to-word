@@ -37,7 +37,6 @@ import type {
   Image,
   List,
   ListItem,
-  Node,
   Paragraph as MdParagraph,
   PhrasingContent,
   Root,
@@ -46,6 +45,10 @@ import type {
 } from "mdast";
 import { CODE_FONT, CODE_SIZE, LINK_COLOR } from "./theme.js";
 import { texToDocxMath } from "./math.js";
+import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo } from "./captions.js";
+import { buildEquationContext, type EquationContext } from "./equations.js";
+import { collectPlainText } from "../mdast-utils.js";
+import { sniffImageType } from "../image-type.js";
 import { DEFAULT_PAGE_SETUP } from "../convert.js";
 import type { PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
@@ -87,7 +90,7 @@ export interface RenderOptions {
   captionNumbering?: boolean;
 }
 
-interface Ctx {
+export interface Ctx {
   imageResolver?: ImageResolver;
   warnings?: string[];
   listLevel: number;
@@ -390,152 +393,6 @@ function renderBodyParagraph(children: InlineChild[], ctx: Ctx): Paragraph {
     indent: ctx.typography.firstLineIndent ? { firstLineChars: 200 } : undefined,
     children,
   });
-}
-
-/** 题注信息(8b):类型/章节号/序数/题注文本;免更新路线在渲染期静态注入编号文本 */
-interface CaptionInfo {
-  type: "figure" | "table";
-  /** 章节号(最近 h1 计数,1 起;无 h1 或 headingNumbering 关闭时为 null → 纯「图 N」) */
-  chapter: number | null;
-  /** 章节内序数(1 起,按 h1 章节重置,与 Word SEQ \s 1 语义一致) */
-  index: number;
-  /** 题注文本(前缀「图: 」之后剩余) */
-  text: string;
-}
-
-/** 节点子树是否含图片(链接内嵌图片 [![alt](u)](l) 也命中,递归) */
-function containsImage(node: Node): boolean {
-  if (node.type === "image") return true;
-  if ("children" in node && Array.isArray(node.children)) {
-    return (node.children as Node[]).some(containsImage);
-  }
-  return false;
-}
-
-/** 题注识别对象:表格块,或含图片的段落(图题注插入对象) */
-function isCaptionTarget(node: Node): boolean {
-  return node.type === "table" || (node.type === "paragraph" && containsImage(node));
-}
-
-/**
- * 题注上下文预扫(8b,免更新路线):顺序遍历顶层块,识别「图/表对象后紧跟的
- * 「图: 标题」/「表: 标题」前缀段」为题注,分配 { 类型, 章节号, 章节内序数 }。
- * - 前缀识别:段落整段纯文本以 `图:` / `表:`(半角/全角冒号)开头;
- * - 序数仅在有题注时递增(无题注的图/表不占号,与 Word SEQ 行为一致);
- * - 章节号 = 最近 h1 计数,图/表序在 h1 处重置(headingNumbering 关闭时不重置、
- *   无章节号,全文档连续);
- * - captionNumbering 关闭时返回空表(题注行按普通段落渲染,前缀文本原样保留)。
- */
-function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo> {
-  const captions = new Map<MdParagraph, CaptionInfo>();
-  if (!ctx.captionNumbering) return captions;
-  let chapter = 0;
-  let figIndex = 0;
-  let tabIndex = 0;
-  const children = ast.children;
-  for (let i = 0; i < children.length; i++) {
-    const node = children[i];
-    if (node.type === "heading" && node.depth === 1) {
-      chapter++;
-      figIndex = 0;
-      tabIndex = 0;
-      continue;
-    }
-    if (node.type !== "paragraph") continue;
-    const prev = children[i - 1];
-    if (!prev || !isCaptionTarget(prev)) continue;
-    const match = /^(图|表)[:：]\s*(.*)$/s.exec(collectPlainText(node));
-    if (!match) continue;
-    const isFigure = match[1] === "图";
-    const index = isFigure ? ++figIndex : ++tabIndex;
-    captions.set(node, {
-      type: isFigure ? "figure" : "table",
-      chapter: ctx.headingNumbering && chapter > 0 ? chapter : null,
-      index,
-      text: match[2],
-    });
-  }
-  return captions;
-}
-
-/** mdast math 节点(display 公式;经 remark-math/mdast-util-math 扩充进 BlockContent) */
-type MdMath = Extract<BlockContent, { type: "math" }>;
-
-/** 公式编号信息(9d):index = 全文连续编号(1 起,与渲染成败无关,降级公式也占号);
- *  label = 公式块后 `{#eq:label}` 段登记的标签(可选) */
-interface EquationInfo {
-  index: number;
-  label?: string;
-}
-
-/** 公式编号上下文(9d,免更新路线:编号静态注入文本,无域) */
-interface EquationContext {
-  /** math 节点 → 编号信息(全文每个 display 公式必登记) */
-  indexByNode: Map<MdMath, EquationInfo>;
-  /** label → 编号(交叉引用查表) */
-  labelIndex: Map<string, number>;
-  /** `{#eq:label}` 独立段(渲染时跳过) */
-  skipSet: Set<MdParagraph>;
-}
-
-/**
- * 公式编号上下文预扫(9d,免更新路线):顺序遍历顶层块,display 公式(math 节点)
- * 按文档顺序全文连续编号 1,2,3…;公式块后紧跟的独立段 `{#eq:label}`(整段仅此
- * 一行,label 为 [\w-]+)→ label 登记给前一公式并跳过渲染;前无公式的 label 段
- * 追加警告并同样跳过。
- */
-function buildEquationContext(ast: Root, ctx: Ctx): EquationContext {
-  const indexByNode = new Map<MdMath, EquationInfo>();
-  const labelIndex = new Map<string, number>();
-  const skipSet = new Set<MdParagraph>();
-  let index = 0;
-  let lastInfo: EquationInfo | null = null;
-  for (const node of ast.children) {
-    if (node.type === "math") {
-      index++;
-      // 同一对象同时入 Map 与 lastInfo:后续 label 段直接改 lastInfo 即同步 Map 项
-      lastInfo = { index };
-      indexByNode.set(node, lastInfo);
-    } else if (node.type === "paragraph") {
-      const match = /^\{#eq:([\w-]+)\}$/.exec(collectPlainText(node));
-      if (!match) continue;
-      const label = match[1];
-      if (lastInfo) {
-        // 补 label 到前一公式;同公式多个 label 段时后者覆盖
-        lastInfo.label = label;
-        labelIndex.set(label, lastInfo.index);
-      } else {
-        ctx.warnings?.push(`公式 label 前无公式,已忽略: {#eq:${label}}`);
-      }
-      skipSet.add(node);
-    }
-  }
-  return { indexByNode, labelIndex, skipSet };
-}
-
-/** 题注段落:居中、比正文小一号(≥8pt)、无首行缩进;文本 = 自动编号 + 题注文本 */
-function renderCaptionParagraph(caption: CaptionInfo, ctx: Ctx): Paragraph {
-  const prefix = caption.type === "figure" ? "图 " : "表 ";
-  const chapter = caption.chapter !== null ? `${caption.chapter}.` : "";
-  const label = `${prefix}${chapter}${caption.index}`;
-  const size = Math.max(8, ctx.typography.bodySizePt - 1);
-  return new Paragraph({
-    alignment: AlignmentType.CENTER,
-    spacing: { before: 60, after: 120 },
-    children: [
-      new TextRun({ text: caption.text === "" ? label : `${label} ${caption.text}`, size: size * 2 }),
-    ],
-  });
-}
-
-/** 节点子树纯文本拼接(目录条目标题 / 题注前缀识别共用;样式标志剥除) */
-function collectPlainText(node: Node): string {
-  let text = "";
-  if ("value" in node && typeof node.value === "string") text += node.value;
-  if ("children" in node && Array.isArray(node.children)) {
-    for (const child of node.children) text += collectPlainText(child as Node);
-  }
-  return text;
 }
 
 /**
@@ -1079,20 +936,6 @@ async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<Inli
 }
 
 // ---------- 工具 ----------
-
-/** 依据文件魔数判断图片类型(docx ImageRun 接受 png/jpg/gif/bmp/svg) */
-function sniffImageType(data: Buffer): "png" | "jpg" | "gif" {
-  if (data.length >= 4 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
-    return "png";
-  }
-  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8) {
-    return "jpg";
-  }
-  if (data.length >= 4 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x38) {
-    return "gif";
-  }
-  return "png";
-}
 
 /** 白名单解析项:文本段(带累积样式标志)或换行;纯 core 结构,不依赖 docx 类型 */
 interface InlineHtmlStyleFlags {

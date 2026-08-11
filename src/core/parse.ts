@@ -3,6 +3,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import type { Node, Root, Heading } from "mdast";
 import { uniqueSlug } from "./slug.js";
+import { collectPlainText as collectText } from "./mdast-utils.js";
 
 /**
  * mdast Data 为声明合并接口:扩展标题的 data.id(本模块解析时写入,
@@ -38,15 +39,4 @@ function walkHeadings(node: Node, seen: Map<string, number>): void {
   if ("children" in node && Array.isArray(node.children)) {
     for (const child of node.children) walkHeadings(child, seen);
   }
-}
-
-function collectText(node: Node): string {
-  let text = "";
-  if ("value" in node && typeof node.value === "string") {
-    text += node.value;
-  }
-  if ("children" in node && Array.isArray(node.children)) {
-    for (const child of node.children) text += collectText(child);
-  }
-  return text;
 }
