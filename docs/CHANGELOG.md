@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [0.21.0] - 2026-08-11
+- 测试补齐迭代 1+2(豁免并入;build/验收 19 段/smoke 全绿):
+  - **高优先级 10 项**:新段 cover(封面双格式)/task-list(任务列表)/image-downloader(外链图片下载);formula 降级分支、basic-render 缺失图警告、heading-links h4-h6 补断言;smoke 扩展取消链路/重名保护/breakBeforeH1/分页符断言
+  - **中优先级 9 项**:新段 settings(钳制边界)/slug(三函数)/frontmatter(边界)/page-setup(非 A4 纸张);typography 行距缩进、basic-render 代码块/引用/列表/表头、外链 rels、页眉页脚补断言
+  - 修复:PDF 任务列表 checkbox 替换正则对齐插件实际输出(289b837);frontmatter 空块剥除期望值按实现行为对齐(f4fa79a)
+- 主进程重构(行为等价,四步独立提交可回退;19 段 + smoke 全绿为安全网):
+  - **取消状态参数化**:模块级全局 cancelRequested → ConvertContext 随调用携带(每次调用新建,根治 fd40480/f809c57 残留误判)
+  - **抽取 src/main/converter.ts**:转换编排独立模块并导出,index.ts 瘦身为窗口生命周期 + IPC 薄层
+  - **smoke 独立瘦身**:SMOKE 块迁 src/main/smoke.ts,纯逻辑断言迁 test/main/converter.test.js,smoke 只留必须 Electron 断言(约 360 行 → 176 行)
+  - **测试目录分层**:test/segments/(core 渲染)+ test/main/(主进程层),runner 多目录零注册
+- 文档:测试覆盖盘点原文落盘(archive + RESEARCH 摘要);项目 AGENTS.md 提交规则对齐全局 v3.44(CHANGELOG 平时提交不写、发版时汇总)
+
 ## [0.20.1] - 2026-08-10
 - 测试体系目录瘦身(承接 0.20.0;typecheck/build/验收 11 段/smoke 全绿,纯路径调整无逻辑变更):
   - 测试代码 `scripts/test/` 上移至顶层 `test/`(acceptance/common/segments/fixtures),scripts/ 只留构建工具(copy-renderer/svg-to-ico);段文件 import 相对路径同步
