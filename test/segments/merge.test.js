@@ -57,9 +57,11 @@ export async function run() {
   if (!bracketMd.includes("https://example.com/a(b).png")) {
     throw new Error(`merge 断言失败:含括号的绝对 URL 应原样保留,实际输出:\n${bracketMd}`);
   }
-  const expectAbs = path.resolve(FIXTURES_DIR, "my(1).png");
+  // 修复(P0):win32 反斜杠绝对路径会被 markdown-it 链接规范化编码(%5C)导致图片不显示,
+  // absolutizeImages 统一输出正斜杠绝对路径 → 期望值同步转正斜杠
+  const expectAbs = path.resolve(FIXTURES_DIR, "my(1).png").replace(/\\/g, "/");
   if (!bracketMd.includes(expectAbs)) {
-    throw new Error(`merge 断言失败:含括号的相对路径应转为绝对路径(期望包含 ${expectAbs}),实际输出:\n${bracketMd}`);
+    throw new Error(`merge 断言失败:含括号的相对路径应转为正斜杠绝对路径(期望包含 ${expectAbs}),实际输出:\n${bracketMd}`);
   }
   if (!path.isAbsolute(expectAbs)) {
     throw new Error("merge 断言失败:期望的绝对路径构造无效");

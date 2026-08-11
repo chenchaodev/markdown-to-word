@@ -42,10 +42,14 @@ export function mergeMarkdowns(files: MergeInput[]): string {
   return parts.join(PAGE_BREAK);
 }
 
-/** 相对路径图片 src → 绝对路径;URL / data: / 绝对路径原样保留(替换时保留 title 部分) */
+/** 相对路径图片 src → 绝对路径;URL / data: / 绝对路径原样保留(替换时保留 title 部分)。
+ *  修复(P0):win32 的 path.resolve 输出反斜杠绝对路径,markdown-it 链接规范化会把
+ *  反斜杠 URL 编码(%5C)且盘符丢失,导致后续 file:// 解析失败图片不显示(单文件链路
+ *  不走本函数故不受影响)——统一转正斜杠,跨平台安全。 */
 function absolutizeImages(md: string, baseDir: string): string {
   return md.replace(IMAGE_RE, (match, alt: string, src: string, title: string | undefined) => {
     if (/^(https?:|data:)/i.test(src) || path.isAbsolute(src)) return match;
-    return `![${alt}](${path.resolve(baseDir, src)}${title ?? ""})`;
+    const abs = path.resolve(baseDir, src).replace(/\\/g, "/");
+    return `![${alt}](${abs}${title ?? ""})`;
   });
 }
