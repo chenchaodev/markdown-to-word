@@ -120,7 +120,7 @@
 ## 待办(排期)
 > 2026-08-11 建:bug/需求按优先级排序,完成即勾选。
 
-- [ ] **P0 bug(第一位):smoke-merge-1-合并.pdf 图片未显示**——2026-08-11 用户发现。已知线索:产物 39KB 明显小于含图单文件 smoke-pdf.pdf(71KB),md 用相对路径 `![图](smoke-pdf.png)`;怀疑 merge 链路(baseDir/图片解析)或图片显示功能本身有问题,待专项分析:先复现(单文件 pdf 图片正常?merge docx?merge pdf?)、定位 merge 后 baseDir 与 imageResolver 接线、补测试段断言
+- [x] **P0 bug(已完成,2026-08-11 用户验证通过):smoke-merge-1-合并.pdf 图片未显示**——根因三层:① merge 链路真实 bug(absolutizeImages 在 win32 输出反斜杠绝对路径,markdown-it 链接规范化编码 %5C + 二次拼接 baseDir → file:// 解析失败;已修 392fca1 统一正斜杠,merge.test.js 断言同步,含括号用例);② smoke 样例 1px 图人工不可辨认且 printToPDF 极小图易被忽略(已换 100×80 红底白点可见图);③ 用户初始观察时磁盘样例为 jpg 引用残留(文件不存在)。printToPDF 图片链路本身正常(用户手工大图/diag 产物确认;排查期「0 图片对象」为 pdf-lib 计数解析问题,非真实缺图)。**用例判断:不加端到端断言**——根源已有纯逻辑断言,printToPDF 产物图片自动化检测方法不可靠(实证),图片显示端到端由 smoke 可见图人工验证
 - [ ] 批次 10 候选(功能):8c Mermaid、题注/章节交叉引用(8b 补 label 机制)、公式编号开关、代码块语法高亮写 docx、模板导入(先导出侧)、批注、WPS 兼容矩阵
 
 ## 测试缺口(待逐步补充)
