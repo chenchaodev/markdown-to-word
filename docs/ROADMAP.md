@@ -136,8 +136,8 @@
 - [x] PDF 页脚页码文案/页眉内容(部件存在已断言,文案未断言)→ footnotes.test.js 补
 
 ### 低优先级(自动化成本高,维持 smoke diag + GUI 实测清单)
-- [ ] renderer 全部交互(拖放/列表排序/设置面板/进度/取消/快捷键/完成弹窗动作):维持 smoke renderer diag + ACCEPTANCE GUI 实测
-- [x] runAfterConvert(show-in-folder/open)行为 → none 分支由 converter.test.js 隐式覆盖;show-in-folder/open 转 GUI 实测
+- [x] renderer 全部交互(拖放/列表排序/设置面板/进度/取消/快捷键/完成弹窗动作):维持 smoke renderer diag + ACCEPTANCE GUI 实测(2026-08-11 用户实测通过)
+- [x] runAfterConvert(show-in-folder/open)行为 → none 分支由 converter.test.js 隐式覆盖;show-in-folder/open 转 GUI 实测(2026-08-11 用户实测通过)
 - [x] collectMarkdownPaths 文件夹递归/点目录跳过/skipped → 已迁 test/main/paths.test.js 直测(重构后导出)
 - [x] resolveOutputPath 超长路径(>250)回落 + 输出目录 mkdir 失败回落 → 已迁 test/main/paths.test.js 直测(重构后导出)
-- [ ] IPC dialog / openPreviewWindow → GUI 实测,不自动化
+- [x] IPC dialog / openPreviewWindow → GUI 实测,不自动化(2026-08-11 用户实测通过)
