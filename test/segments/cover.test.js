@@ -4,7 +4,7 @@
  * 置于文档最前:标题 44 half-points(=22pt,docx 库 size 单位为 half-points)居中加粗
  * (<w:sz w:val="44"/> + <w:b/> + <w:jc w:val="center"/>),author/date 居中灰字
  * (<w:sz w:val="22"/> + <w:color w:val="808080"/>),末尾 PageBreak 独占一页。
- * pdf:buildCoverHtml(dist/core/pdf/render.js)——class="cover" 容器 + cover-title
+ * pdf:buildCoverHtml(dist/core/pdf/template.js)——class="cover" 容器 + cover-title
  * (CSS 精确值 font-size: 28pt; font-weight: 700)+ cover-meta(author · date 灰字,
  * font-size: 12pt; color: #888;),末尾 page-break div 复用分页样式。
  * 触发条件:仅 frontmatter(parseFrontmatter 的 metadata.title);context.title 不触发

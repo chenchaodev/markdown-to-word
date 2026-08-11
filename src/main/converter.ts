@@ -16,7 +16,7 @@ import { decodeMarkdown } from "../core/encoding.js";
 import { mergeMarkdowns } from "../core/merge.js";
 import { buildBookmarkTree, injectBookmarks } from "../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../core/pdf/metadata.js";
-import { extractHeadings } from "../core/pdf/render.js";
+import { extractHeadings } from "../core/pdf/postprocess.js";
 import { createImageResolver, type ImageResolver } from "./image-downloader.js";
 import { loadSettings, type AppSettings } from "./settings.js";
 

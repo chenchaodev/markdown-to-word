@@ -10,7 +10,7 @@
  * - docx 9.7.1 createPageSize:landscape 时自动交换 → w:w=高度 twips、w:h=宽度
  *   twips,并写 w:orient="landscape"(纵向亦写 w:orient="portrait");
  *   w:pgMar 属性顺序 top/right/bottom/left(createPageMargin)
- * - src/core/pdf/render.ts buildTemplateCss:
+ * - src/core/pdf/template.ts buildTemplateCss:
  *   @page { size: ${paper}${" landscape"}; margin: ${top}mm ${right}mm ${bottom}mm ${left}mm; }
  */
 import { convert } from "../../dist/core/convert.js";
