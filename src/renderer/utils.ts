@@ -1,7 +1,10 @@
 /**
- * renderer 通用工具(R8 自 renderer.ts 抽出,行为等价):
- * 状态区/错误提示/字段内错误、进度条控制、阶段文案映射、文件名校验与截断、
- * 焦点回给主操作按钮。只依赖 dom.ts 元素映射与 state.ts 的 errorFlashTimer。
+ * renderer 通用工具(R8 自 renderer.ts 抽出,行为等价;B1 纯函数层拆至 pure.ts):
+ * 状态区/错误提示/字段内错误、进度条控制、焦点回给主操作按钮。
+ * 纯函数(isMarkdown/baseName/truncateMiddle/STAGE_TEXT/stageText/STAGE_PERCENT)
+ * 已拆至 src/renderer/pure.ts(零 DOM 依赖,可 Node 直测),本文件 re-export
+ * 保持 renderer 内部 import 路径不变(renderer.ts 等仍从 ./utils.js 导入)。
+ * 只依赖 dom.ts 元素映射与 state.ts 的 errorFlashTimer。
  */
 import {
   batchBtn,
@@ -16,22 +19,14 @@ import {
   statusEl,
 } from "./dom.js";
 import { state } from "./state.js";
-
-export function isMarkdown(filePath: string): boolean {
-  return /\.(md|markdown)$/i.test(filePath);
-}
-
-export function baseName(filePath: string): string {
-  return filePath.split(/[\\/]/).pop() ?? filePath;
-}
-
-/** 超长路径中间截断,保留首尾(尾部含文件名,信息价值最高)。 */
-export function truncateMiddle(text: string, max = 88): string {
-  if (text.length <= max) return text;
-  const head = Math.ceil(max * 0.62);
-  const tail = max - head - 1;
-  return `${text.slice(0, head)}…${text.slice(-tail)}`;
-}
+export {
+  isMarkdown,
+  baseName,
+  truncateMiddle,
+  STAGE_TEXT,
+  stageText,
+  STAGE_PERCENT,
+} from "./pure.js";
 
 export function setStatus(text: string, isError = false, isWarning = false): void {
   statusEl.textContent = text;
@@ -52,20 +47,6 @@ export function setError(message: string): void {
 }
 
 /* ---------- 转换进度 ---------- */
-/** 阶段文案:主进程可能发「read」等键名,也可能是现成中文文案,原样兜底。 */
-export const STAGE_TEXT: Record<"read" | "render" | "done", string> = {
-  read: "正在读取文件…",
-  render: "正在渲染文档…",
-  done: "正在完成…",
-};
-
-export function stageText(stage: string): string {
-  return STAGE_TEXT[stage as keyof typeof STAGE_TEXT] ?? stage;
-}
-
-/** 阶段 → 进度百分比(主进程只发阶段键,映射近似进度:读取 15% / 渲染 70% / 完成 95%)。 */
-export const STAGE_PERCENT: Record<string, number> = { read: 15, render: 70, done: 95 };
-
 /** 更新进度条宽度与百分比文本(0–100 钳制)。 */
 export function setProgress(percent: number): void {
   const clamped = Math.min(100, Math.max(0, Math.round(percent)));
