@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [0.24.0] - 2026-08-13
+- 批次 10 功能 2「题注/章节交叉引用」(9d;typecheck/build/30 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
+  - **语法拍板**:题注 `图: 标题 {#fig:label}` / `表: 标题 {#tab:label}`;标题 `## 标题 {#sec:label}`;引用 `[图](#fig:label)` / `[表](#tab:label)` / `[章节](#sec:label)`;label 剥离不渲染,不进标题文本/slug/TOC
+  - **docx**:题注 label 登记 + fig-/tab- 书签(bookmarkNextId 唯一);引用默认文本 → 静态编号「图 1.1」/「表 1.1」/「1.1」+ InternalHyperlink 跳转,非默认文本保持原样仍跳转;renderDocx 预扫登记(引用先于目标标题出现也命中);悬空 → 占位「图 (?)」/「(?)」+ 警告「交叉引用未找到<图/表/章节> label: <prefix>:<label>」
+  - **pdf**:xref_recognize 规则(计数/剥离/登记 + 链接替换两遍式)+ 题注/标题锚点注入;编号镜像模板 CSS(hasH1 时「图 h1c.figc」);悬空解包为纯文本(无 href 死链)+ 警告按「前缀:label」去重;无 h1 章节号「0.1」与 CSS 显示一致(与 docx「1」的差异注释声明)
+  - **修复**:pdf template.ts 补 `.fig-caption/.tab-caption { counter-increment: figc/tabc }`(8b 遗留——此前 PDF 题注序号恒 0,现有测试为 contains 断言未抓出)
+  - **测试**:新段 test/segments/cross-ref.test.js(12 条验收点:书签/锚点/静态编号/预扫/悬空/开关/编号同步/公式不回归),29→30 段
+- 测试基建:验收样例生成器(试点 2eeddfc + 全量 29e834a;30 段全绿):
+  - **机制**:测试段顶层 `export const fixtures = { main: ... }` → `npm run gen:fixtures` 按功能自动生成 `test/fixtures/acceptance/<功能>.md`(16 段 21 样例 + README 索引 + 图片复制),GUI 人工实测直接拖入,与自动化断言同源永不漂移;`npm run check:fixtures` 幂等漂移校验(exit 0/1);新增功能=段加导出,生成器零改动自动纳入
+  - **基建**:electron mock 桥接(纯 Node import 段模块);10 段评估跳过(纯逻辑/工具/契约段无 md 主样例)
+- 文档:交叉引用盘点(20260813-202816)+ 验收样例生成方案选型(20260813-211812)落盘 archive + RESEARCH 摘要
+
 ## [0.23.0] - 2026-08-13
 - 批次 10 功能 1「Mermaid 渲染导出」(8c;typecheck/build/29 段/smoke 全绿,用户实测通过):
   - **语法**:```mermaid 围栏 → docx 嵌入 PNG(2x 高清,≤400 等比缩)/ PDF 内联 SVG(矢量,Chromium 原生渲染);语法错误/超时 → 等宽代码块原文 + 警告,不中断转换;非 mermaid 围栏行为不变

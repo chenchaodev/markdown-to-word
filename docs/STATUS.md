@@ -1,7 +1,7 @@
 # 状态速查
 
 ## 当前状态
-- 2026-08-13:**批次 10 功能 2「题注/章节交叉引用」完成**:docx+pdf 双格式——题注(图/表)与章节 label 锚点(`{#fig:}`/`{#tab:}`/`{#sec:}`)、静态编号引用(`[图](#fig:a)` → 「图 1.1」+ 跳转)、悬空降级「(?)」+ 警告;renderDocx 预扫登记修复「引用先于目标出现」;pdf 侧顺带修复 8b 遗留(template.ts 补 counter-increment,此前 PDF 题注序号恒 0);自动化断言 test/segments/cross-ref.test.js(12 条验收点,30 段全绿);验收清单见 ACCEPTANCE.md 批次 10 功能 2 节(待 GUI 实测,样例 test/fixtures/acceptance/cross-ref.md)
+- 2026-08-13:**批次 10 功能 2「题注/章节交叉引用」完成 + 用户实测通过,发版 0.24.0**:docx+pdf 双格式——题注(图/表)与章节 label 锚点(`{#fig:}`/`{#tab:}`/`{#sec:}`)、静态编号引用(`[图](#fig:a)` → 「图 1.1」+ 跳转)、悬空降级「(?)」+ 警告;renderDocx 预扫登记修复「引用先于目标出现」;pdf 侧顺带修复 8b 遗留(template.ts 补 counter-increment,此前 PDF 题注序号恒 0);自动化断言 test/segments/cross-ref.test.js(12 条验收点,30 段全绿);用户 GUI 实测通过(样例 test/fixtures/acceptance/cross-ref.md),ACCEPTANCE.md 批次 10 功能 2 节全勾,验收关闭
 - 2026-08-13:**验收样例生成器完成(试点 + 全量)**:测试段导出 fixtures → test/tools/gen-fixtures.mjs 按功能自动生成 test/fixtures/acceptance/*.md(16 段 21 样例 + README 索引 + 图片复制),GUI 人工实测直接拖入;`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(幂等,exit 0/1);30 段全绿;选型见 RESEARCH.md + archive/20260813-211812
 - 2026-08-13:**批次 10 功能 1「Mermaid 渲染导出」完成发版(0.23.0)**:```mermaid 围栏 → docx 嵌入 PNG(2x 高清,≤400 等比缩)+ pdf 内联 SVG(矢量);main 层单例隐藏窗口渲染服务(mermaid.min.js IIFE 本地加载 + CSP 断网 + parse 预检 + 15s 超时降级);语法错误/超时 → 等宽代码块原文 + 警告;用户 GUI 实测通过(ACCEPTANCE.md 批次 10 节全勾);测试 29 段 + smoke 全绿;提交 a89507a,豁免并入 0.23.0 发版(R 系列重构/T 组测试/B1/P0 修复)
 - 2026-08-13:**B1 renderer 纯函数段完成**(482160e):抽 src/renderer/pure.ts(零 import 纯函数层),utils.ts re-export 保持 import 路径不变,新建 segments/renderer-pure.test.js(26→27 段);typecheck/build/27 段/smoke 全绿;豁免不 tag;测试缺口 25 项全部清零
@@ -34,5 +34,5 @@
 > 项目级硬约束(技术栈/镜像/字体/分页符/依赖钉死)已全部迁至项目 `AGENTS.md`「硬约束」节,以彼处为准。
 
 ## 打开事项
-- [ ] 功能候选(批次 10,8c Mermaid 已完成,下一项待规划)+ 暂缓/延后项见 `docs/ROADMAP.md`「当前待办」节
+- [ ] 功能候选(批次 10 两项 8c Mermaid + 交叉引用均已完成发版 0.24.0;下一项待用户确认,见 ROADMAP「当前待办」)+ 暂缓/延后项见 `docs/ROADMAP.md`「当前待办」节
 - [ ] 测试缺口(24 项)已全部补齐(2026-08-13);新增缺口按需入 ROADMAP「当前待办·测试遗留」
