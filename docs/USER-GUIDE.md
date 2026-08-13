@@ -73,6 +73,13 @@ Markdown 转换工具是一款 Windows 桌面应用,把 Markdown 文件转换成
 | GFM 删除线、任务列表(☐/☑) | ✅ |
 | 脚注 `[^1]` | ✅ |
 | 公式 `$...$` / `$$...$$` / ` ```math ` | ✅ |
+| Mermaid 图表 ` ```mermaid ` | ✅ 围栏内写 Mermaid 语法,导出为图表(docx 嵌入图片 / PDF 矢量渲染);语法错误时降级为代码块并提示 |
+| Mermaid 图表 ` ```mermaid ` | ✅ 围栏内写 Mermaid 语法,导出为图表(docx 嵌入图片 / PDF 矢量渲染);语法错误时降级为代码块并提示 |
+| Mermaid 图表 ` ```mermaid ` | ✅ 围栏内写 Mermaid 语法,导出为图表(docx 嵌入图片 / PDF 矢量渲染);语法错误时降级为代码块并提示 |
+| Mermaid 图表 ` ```mermaid ` | ✅ 围栏内写 Mermaid 语法,导出为图表(docx 嵌入图片 / PDF 矢量渲染);语法错误时降级为代码块并提示 |
+| Mermaid 图表 ` ```mermaid ` | ✅ 围栏内写 Mermaid 语法,导出为图表(docx 嵌入图片 / PDF 矢量渲染);语法错误时降级为代码块并提示 |
+| Mermaid 图表 ` ```mermaid ` | ✅ 围栏内写 Mermaid 语法,导出为图表(docx 嵌入图片 / PDF 矢量渲染);语法错误时降级为代码块并提示 |
+| Mermaid 图表 ` ```mermaid ` | ✅ 围栏内写 Mermaid 语法,导出为图表(docx 嵌入图片 / PDF 矢量渲染);语法错误时降级为代码块并提示 |
 | 目录 | 自动生成:打开即见,无需更新域(见下文「在 Word / WPS 中」) |
 | 显式分页符 `<!-- page-break -->` | ✅ 在源码中插入该注释即强制分页 |
 | 图/表题注 | `图: 说明文字` / `表: 说明文字` 前缀行自动编号(图 1、图 2…;表 1、表 2…) |

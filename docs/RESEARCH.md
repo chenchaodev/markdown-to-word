@@ -2,6 +2,17 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-13 19:35:32 mermaid 集成方案调研结论(@librarian + @explorer,8c 实施依据)
+- **依赖**:mermaid **11.16.1 钉死**(镜像安装);ESM-only 包 + dist 内 IIFE 产物 `mermaid.min.js`(3.5MB,file:// 直接可用,规避 v11 ESM 动态 import 的模块 CORS);完全自包含零 CDN;node_modules 约 120-130MB(asar 压缩 60-70%);Node 无 DOM 不能渲染(jsdom 垫片布局全毁)
+- **渲染链路(已拍板)**:main 进程单例隐藏 BrowserWindow(show:false, sandbox:true, contextIsolation:true, nodeIntegration:false, **backgroundThrottling:false**)加载本地 HTML(IIFE mermaid.min.js)→ `initialize({startOnLoad:false, securityLevel:'strict', theme:'default', fontFamily:'"Microsoft YaHei",sans-serif'})` → `await mermaid.render(id, code)`(内部串行队列,无需自建锁)→ 注入 #graphDiv → `await document.fonts.ready` → **canvas 2x 光栅化** → toDataURL PNG + getBoundingClientRect 尺寸;返回 { pngBuffer, widthPx, heightPx }
+- **docx 端**:PNG 嵌入 `ImageRun({type:'png', data, transformation:{width: widthPx/2, height: heightPx/2}})`(逻辑 1x、像素 2x 保打印清晰);**不用 SVG 嵌入**(Word 2019+/M365 才渲染 + docx issue #3227 bug);transformation width/height 必须同时给
+- **pdf 端**:SVG 字符串直接内联进 HTML(矢量、零光栅化);highlight 回调同步限制 → 占位 + 后处理替换;`<!-- page-break -->` 分页不变
+- **降级**:`mermaid.parse(code, {suppressErrors:true})` 预检失败 → docx/pdf 均输出等宽代码块原文 + 警告(不中断转换);render 超时/崩溃同上;窗口一次性预热复用
+- **安全**:securityLevel:'strict'(loose 有存储型 XSS 先例 CVSS 7.6、思源 2026-04 NTLM 窃取通报);隐藏窗口 HTML 加 CSP `default-src 'none'; img-src data:; style-src 'unsafe-inline'` 断网 → 离线隐私承诺(标签内外部资源引用发不出去)
+- **坑**:v11 breaking = ESM-only / mermaidAPI 废弃(统一 mermaid.render) / ELK 拆 @mermaid-js/layout-elk(不用 ELK 无影响);maxTextSize 默认 50000 超大图拒绝;打印主题用 default/neutral 浅色;中文靠系统字体回退(Windows 微软雅黑)
+- **不做**:@mermaid-js/mermaid-cli(puppeteer+下载 Chromium)、Kroki 在线(违反离线卖点)、resvg-js(不支持 foreignObject 需 htmlLabels:false + asarUnpack)、jsdom 垫片
+- 来源: @librarian lib-1 + @explorer exp-1;关联: 原文存档 docs/archive/20260813-193532-mermaid集成方案.md;验收 docs/ACCEPTANCE.md 批次 10
+
 ### 2026-08-11 20:11:45 src 架构审查结论(@oracle,重构规划依据)
 - **总体**:分层正确(core/main/renderer 单向依赖,core 纯净可复用),问题集中在「契约重复」与「单体文件」两类;docx/pdf 双管线平行实现(题注/公式编号/白名单)是 ROADMAP 选型代价,维持「契约常量共享 + 测试锁定」,不建议合并
 - **高优先级**:H1 内联 HTML 白名单 docx/pdf 逐字复制两份(docx/render.ts L1100-1136 vs pdf/render.ts L270-306,注释自认须同步)→ 抽 src/core/html-whitelist.ts 单一实现;H2 契约类型/默认值三处重复(renderer.ts L74-116 内联复制 core 类型,DEFAULT_SETTINGS/校验常量 renderer vs settings.ts)→ renderer 改 import type(编译期擦除,不违反 contextIsolation)+ DEFAULT_SETTINGS 下沉 core;H3 docx 图片固定 400×300 拉伸变形(docx/render.ts L1073-1077)→ Buffer 解析 PNG/JPEG 尺寸按比例缩放,webp 降级占位+警告

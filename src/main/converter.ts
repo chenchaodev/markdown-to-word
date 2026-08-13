@@ -22,6 +22,8 @@ import { buildBookmarkTree, injectBookmarks } from "../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../core/pdf/metadata.js";
 import { extractHeadings } from "../core/pdf/postprocess.js";
 import { createImageResolver, type ImageResolver } from "./image-downloader.js";
+import { renderMermaid } from "./mermaid-service.js";
+import type { MermaidResolver } from "../core/mermaid.js";
 import { loadSettings, type AppSettings } from "./settings.js";
 import { writeTempHtml } from "./temp-html.js";
 
@@ -183,6 +185,8 @@ export interface BuildConvertContextOptions {
   imageResolver: ImageResolver;
   /** KaTeX 资源目录(pdf 用;docx 走 MathML 不需要;main 入口层经 getKatexDir() 计算) */
   katexDir?: string;
+  /** Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,见 src/core/mermaid.ts) */
+  mermaidResolver?: MermaidResolver;
 }
 
 export function buildConvertContext(options: BuildConvertContextOptions): CoreConvertContext {
@@ -196,6 +200,7 @@ export function buildConvertContext(options: BuildConvertContextOptions): CoreCo
     toc: options.settings.toc,
     imageResolver: options.imageResolver,
     katexDir: options.katexDir,
+    mermaidResolver: options.mermaidResolver,
   };
 }
 
@@ -235,6 +240,8 @@ export async function convertImpl(
       // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
       imageResolver: getImageResolver(path.dirname(filePath)),
       katexDir,
+      // Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,失败返回 null 由 core 降级)
+      mermaidResolver: renderMermaid,
     }),
   );
   throwIfCanceled(ctx);
@@ -426,6 +433,7 @@ export async function mergeConvertImpl(
       settings,
       imageResolver: getImageResolver(path.dirname(files[0])),
       katexDir,
+      mermaidResolver: renderMermaid,
     }),
   );
   throwIfCanceled(ctx);

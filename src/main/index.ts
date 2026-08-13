@@ -29,6 +29,7 @@ import {
   type ConvertResult,
 } from "./converter.js";
 import { getKatexDir } from "./katex-dir.js";
+import { disposeMermaidService, renderMermaid } from "./mermaid-service.js";
 import { runSmoke } from "./smoke.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -79,6 +80,9 @@ function createWindow(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+  // mermaid 渲染窗口为常驻隐藏单例:主窗口关闭时销毁,否则 window-all-closed 永不触发
+  // (隐藏窗口未关 → 应用无法退出);服务懒重建,后续渲染不受影响
+  win.on("closed", () => disposeMermaidService());
   return win;
 }
 
@@ -104,6 +108,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
         // 预览不经 getImageResolver 共享缓存:允许并发打开多个预览,各自独立解析器
         imageResolver: createImageResolver(path.dirname(mdPath)),
         katexDir: getKatexDir(),
+        mermaidResolver: renderMermaid,
       }),
     );
     if (artifact.kind !== "pdf") throw new Error("预览仅支持 pdf 渲染");

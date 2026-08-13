@@ -19,6 +19,8 @@ import type { TypographySettings } from "../typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../typography.js";
 import { uniqueSlug } from "../slug.js";
 import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../html-whitelist.js";
+import { decodeEntities, escapeHtml } from "../utils.js";
+import type { MermaidResolver } from "../mermaid.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
 
@@ -54,6 +56,9 @@ export interface RenderPdfHtmlOptions {
    *  为 file:// 绝对路径,公式字体样式生效;不传则公式渲染为 KaTeX HTML
    *  但无字体样式,公式仍显示(缺字形美观度)) */
   katexDir?: string;
+  /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏保持
+   *  原代码块渲染,行为不变) */
+  mermaidResolver?: MermaidResolver;
 }
 
 /**
@@ -75,12 +80,20 @@ function replaceTaskCheckboxes(html: string): string {
     .replace(/<label[^>]*class="task-list-item-label"[^>]*>([\s\S]*?)<\/label>/g, "$1");
 }
 
-function buildMarkdownIt(): MarkdownIt {
+function buildMarkdownIt(hasMermaidResolver: boolean): MarkdownIt {
   const md = new MarkdownIt({
     html: true,
     linkify: true,
     typographer: false,
     highlight(str: string, lang?: string): string {
+      // Mermaid 围栏(且有 resolver 注入时):不经过 hljs,输出占位 div——
+      // 内容是 escapeHtml 后的代码文本(占位内不可能出现原生 </div>,替换正则
+      // 非贪婪匹配安全);renderPdfHtml 渲染完后经 mermaidResolver 逐个替换为
+      // 内联 SVG(mermaid-svg)/失败降级代码块(mermaid-fallback)。
+      // 无 resolver 时不产占位,走原代码块渲染(行为不变)。
+      if (lang === "mermaid" && hasMermaidResolver) {
+        return `<div class="mermaid">${md.utils.escapeHtml(str)}</div>`;
+      }
       if (lang && hljs.getLanguage(lang)) {
         try {
           return (
@@ -363,6 +376,52 @@ function overrideHeadingIdRule(md: MarkdownIt, seen: Map<string, number>): void 
 }
 
 /**
+ * Mermaid 占位替换(8c):扫描 highlight 回调产出的 <div class="mermaid">…</div>
+ * (内容为 escapeHtml 后的代码文本,占位内无原生 </div>,正则非贪婪匹配安全),
+ * decodeEntities 还原原码后逐个 await mermaidResolver 渲染 → 成功替换为内联
+ * SVG 容器;失败(null/抛错)→ 降级为 mermaid-fallback 等宽代码块 + 警告
+ * (与 docx 侧降级语义一致,内容不丢失、不中断转换)。异步串行执行保持文档
+ * 顺序;无占位(含未注入 resolver 时 highlight 不产占位)原样返回。
+ */
+async function replaceMermaidPlaceholders(
+  html: string,
+  resolver: MermaidResolver | undefined,
+  warnings: string[],
+): Promise<string> {
+  const placeholderRe = /<div class="mermaid">([\s\S]*?)<\/div>/g;
+  const matches: { index: number; full: string; body: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = placeholderRe.exec(html)) !== null) {
+    matches.push({ index: m.index, full: m[0], body: m[1] });
+  }
+  if (matches.length === 0) return html;
+  const fallback = (code: string): string =>
+    `<pre class="mermaid-fallback"><code>${escapeHtml(code)}</code></pre>`;
+  let out = "";
+  let cursor = 0;
+  for (const p of matches) {
+    out += html.slice(cursor, p.index);
+    const code = decodeEntities(p.body);
+    try {
+      const result = await resolver?.(code);
+      if (result) {
+        out += `<div class="mermaid-svg">${result.svg}</div>`;
+      } else {
+        warnings.push("Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块");
+        out += fallback(code);
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      warnings.push(`Mermaid 渲染失败: ${reason},已降级为代码块`);
+      out += fallback(code);
+    }
+    cursor = p.index + p.full.length;
+  }
+  out += html.slice(cursor);
+  return out;
+}
+
+/**
  * markdown → 完整 HTML 文档(供 loadFile 后 printToPDF)。
  * 返回 Promise:本地图片存在性检查与外链内嵌经 imageResolver 异步执行。
  */
@@ -372,7 +431,7 @@ export async function renderPdfHtml(
 ): Promise<string> {
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
-  const md = buildMarkdownIt();
+  const md = buildMarkdownIt(options.mermaidResolver !== undefined);
   const localImageSrcs: string[] = [];
   overrideImageRule(md, options.baseDir, localImageSrcs);
   // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
@@ -385,12 +444,14 @@ export async function renderPdfHtml(
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource, { warnings }));
   // M6:本地图片存在性检查并入 resolver 失败路径(单次 IO;HTML 保持 file:// 由 Chromium 渲染)
   await checkLocalImages(localImageSrcs, options.imageResolver, warnings);
+  // Mermaid 占位 → 内联 SVG / 失败降级代码块(异步串行,须在返回 html 前完成)
+  const bodyWithMermaid = await replaceMermaidPlaceholders(bodyHtml, options.mermaidResolver, warnings);
   const captionNumbering = options.captionNumbering ?? typography.captionNumbering;
   // 封面 + 目录 + 正文:buildCoverHtml/buildTocHtml 各自以 page-break 结尾,
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
   // toc 开关(默认开):关闭时不生成目录页(docx 侧同开关,双格式一致)
-  const tocHtml = (options.toc ?? true) ? buildTocHtml(bodyHtml) : "";
-  const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyHtml;
+  const tocHtml = (options.toc ?? true) ? buildTocHtml(bodyWithMermaid) : "";
+  const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyWithMermaid;
   const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings);
   // headingNumbering 优先级:显式选项 > typography 设置(默认 true,与 docx 侧一致)
   return buildTemplate(

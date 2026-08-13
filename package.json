@@ -66,6 +66,7 @@
     "highlight.js": "^11.11.1",
     "iconv-lite": "^0.7.3",
     "markdown-it": "^14.3.0",
+    "mermaid": "11.16.1",
     "pdf-lib": "^1.17.1",
     "remark": "^15.0.1",
     "remark-gfm": "^4.0.1",

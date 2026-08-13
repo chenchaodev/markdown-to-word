@@ -57,6 +57,7 @@ import { DEFAULT_TYPOGRAPHY } from "../typography.js";
 import { docxBookmarkId } from "../slug.js";
 import { isAllowedInlineHtml } from "../html-whitelist.js";
 import { normalizeInlineHtml, parseInlineHtml, inlineHtmlItemsToRuns, renderBodyParagraph, renderInlineHtmlParagraph } from "./inline-html.js";
+import type { MermaidResolver } from "../mermaid.js";
 
 /** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
 export type ImageResolver = (src: string) => Promise<Buffer | null>;
@@ -89,6 +90,8 @@ export interface RenderOptions {
   toc?: boolean;
   /** 图/表题注自动编号(默认开,取 typography.captionNumbering;显式传值优先) */
   captionNumbering?: boolean;
+  /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
+  mermaidResolver?: MermaidResolver;
 }
 
 export interface Ctx {
@@ -115,6 +118,8 @@ export interface Ctx {
   equationLabels?: Map<string, number>;
   /** docx 书签 linkId 自增计数器(逐文档新建,保证文档内 bookmarkStart/End id 唯一) */
   bookmarkNextId: { value: number };
+  /** Mermaid 渲染回调(mermaid 围栏代码块 → 内嵌 PNG 图片;缺失时按普通代码块渲染) */
+  mermaidResolver?: MermaidResolver;
 }
 
 /** 纸张 mm 尺寸表(宽 × 高) */
@@ -200,6 +205,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     footnotes: {},
     footnoteNextId: { value: 1 },
     bookmarkNextId: { value: 1 },
+    mermaidResolver: options.mermaidResolver,
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
   const title = options.metadata?.title ?? options.title;
@@ -426,7 +432,7 @@ async function renderBlock(
     case "table":
       return [await renderTable(node, ctx)];
     case "code":
-      return [renderCode(node)];
+      return [await renderCode(node, ctx)];
     case "math":
       // display 公式。9d:有编号信息时按「公式居中 + 编号右对齐」排版——
       // center tab(50% 文本区宽)+ right tab(100% 文本区宽),
@@ -555,7 +561,7 @@ async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
       }
       // 其他块(代码/引用等)在列表项内:G1 按普通段落降级渲染
       else if (child.type === "code") {
-        result.push(renderCode(child));
+        result.push(await renderCode(child, ctx));
       } else if (child.type === "blockquote") {
         result.push(...(await renderBlockquote(child, ctx)));
       }
@@ -564,7 +570,25 @@ async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
   return result;
 }
 
-function renderCode(node: Code): Paragraph {
+/** 代码块:mermaid 围栏且有 resolver 时渲染为内嵌 PNG 图片(宽 >400 等比缩,
+ *  与行内图片共用 scaleToFit);渲染失败(null/抛错)或缺失 resolver 时降级为
+ *  等宽文本代码块(行为不变,内容不丢失,与公式降级语义一致)。 */
+async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
+  if (node.lang === "mermaid" && ctx.mermaidResolver) {
+    try {
+      const result = await ctx.mermaidResolver(node.value);
+      if (result) {
+        const { width, height } = scaleToFit(result.width, result.height);
+        return new Paragraph({
+          children: [new ImageRun({ type: "png", data: result.png, transformation: { width, height } })],
+        });
+      }
+      ctx.warnings?.push("Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块");
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      ctx.warnings?.push(`Mermaid 渲染失败: ${reason},已降级为代码块`);
+    }
+  }
   const lines = node.value.split("\n");
   const children: TextRun[] = [];
   lines.forEach((line, i) => {
@@ -776,7 +800,7 @@ async function renderFootnoteDefinition(def: FootnoteDefinition, ctx: Ctx): Prom
         paragraphs.push(...(await renderList(child, ctx)));
         break;
       case "code":
-        paragraphs.push(renderCode(child));
+        paragraphs.push(await renderCode(child, ctx));
         break;
       case "blockquote":
         paragraphs.push(...(await renderBlockquote(child, ctx)));
@@ -789,6 +813,16 @@ async function renderFootnoteDefinition(def: FootnoteDefinition, ctx: Ctx): Prom
     }
   }
   return paragraphs;
+}
+
+/** 图片尺寸缩放(行内图片与 mermaid PNG 共用):宽 ≤ 400 原尺寸(不放大),
+ *  宽 > 400 等比缩到 400 宽(高度按同比例取整)。 */
+function scaleToFit(width: number, height: number): { width: number; height: number } {
+  if (width > 400) {
+    const scale = 400 / width;
+    return { width: 400, height: Math.round(height * scale) };
+  }
+  return { width, height };
 }
 
 /** 行内图片:经 resolver 加载为 ImageRun;失败或 webp 时占位文本。
@@ -824,17 +858,7 @@ async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<Inli
     return fallback();
   }
   const size = imageSizeFromBuffer(data);
-  let width = 400;
-  let height = 300;
-  if (size) {
-    width = size.width;
-    height = size.height;
-    if (width > 400) {
-      const scale = 400 / width;
-      width = 400;
-      height = Math.round(size.height * scale);
-    }
-  }
+  const { width, height } = size ? scaleToFit(size.width, size.height) : { width: 400, height: 300 };
   return new ImageRun({ type, data, transformation: { width, height } });
 }
 

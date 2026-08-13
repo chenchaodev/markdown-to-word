@@ -10,6 +10,7 @@ import type { TypographySettings } from "./typography.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml } from "./pdf/render.js";
 import { PDF_FOOTER_TEMPLATE } from "./pdf/template.js";
+import type { MermaidResolver } from "./mermaid.js";
 // 页面设置契约收敛于 settings-defaults.ts(单一来源),此处 re-export 保持既有导入面
 // (docx/pdf render、main settings、测试等历史 import 源不变)
 export { DEFAULT_PAGE_SETUP, type PageSetup } from "./settings-defaults.js";
@@ -36,6 +37,8 @@ export interface ConvertContext {
   toc?: boolean;
   /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
   katexDir?: string;
+  /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
+  mermaidResolver?: MermaidResolver;
 }
 
 export interface DocxArtifact {
@@ -80,6 +83,7 @@ export async function convert(
         breakBeforeH1: context.breakBeforeH1,
         toc: context.toc,
         katexDir: context.katexDir,
+        mermaidResolver: context.mermaidResolver,
       }),
       footerTemplate: PDF_FOOTER_TEMPLATE,
       metadata,
@@ -96,6 +100,7 @@ export async function convert(
       breakBeforeH1: context.breakBeforeH1,
       toc: context.toc,
       title: context.title,
+      mermaidResolver: context.mermaidResolver,
     }),
   };
 }
