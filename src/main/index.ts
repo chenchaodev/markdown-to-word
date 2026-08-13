@@ -40,6 +40,31 @@ const SMOKE = process.argv.includes("--smoke");
  */
 const ctxByWebContents = new Map<number, ConvertContext>();
 
+/**
+ * convert 系 handler 共用样板(R10-3):context 注册/释放 + 错误归一化集中一处。
+ * 取消语义(刚根治的历史 bug 领域)不再分散在三个 handler:
+ * - ctx 每次调用新建(「取消后复位」语义),按 webContents id 注册(多窗口隔离,M3)
+ * - finally 删除引用(含异常/取消路径,避免悬挂)
+ * - ConvertCanceledError → onCanceled()(调用方给出取消结果形态);其他错误归一 { ok:false, error }
+ */
+async function runWithCtx<T>(
+  event: Electron.IpcMainInvokeEvent,
+  fn: (ctx: ConvertContext, win: BrowserWindow | null) => Promise<T>,
+  onCanceled: () => T | { ok: false; error: string },
+): Promise<T | { ok: false; error: string }> {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
+  ctxByWebContents.set(event.sender.id, ctx);
+  try {
+    return await fn(ctx, win);
+  } catch (err) {
+    if (err instanceof ConvertCanceledError) return onCanceled();
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    ctxByWebContents.delete(event.sender.id); // 释放引用,避免悬挂(含异常/取消路径)
+  }
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 900,
@@ -116,19 +141,15 @@ function registerIpc(): void {
 
   // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示;用户取消返回 { ok:false, canceled:true }
   ipcMain.handle("convert", async (event, filePath: string, format: ConvertFormat): Promise<ConvertResult> => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const send = (stage: string) => win?.webContents.send("convert:progress", { stage });
-    const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
-    ctxByWebContents.set(event.sender.id, ctx);
-    try {
-      const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
-      return { ok: true, outputPath, warnings };
-    } catch (err) {
-      if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    } finally {
-      ctxByWebContents.delete(event.sender.id); // 释放引用,避免悬挂(含异常/取消路径)
-    }
+    return runWithCtx(
+      event,
+      async (ctx, win) => {
+        const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
+        const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
+        return { ok: true, outputPath, warnings };
+      },
+      () => ({ ok: false, canceled: true, error: "已取消" }),
+    );
   });
 
   // 取消当前窗口的转换(单文件/批量/合并通用;批量由 batchConvertImpl 内部检查)
@@ -153,21 +174,19 @@ function registerIpc(): void {
     },
   );
 
-  // 批量转换:并发 2,失败不中断,进度走 batch:progress
+  // 批量转换:并发 2,失败不中断,进度走 batch:progress;取消由 batchConvertImpl 内部收集 canceledCount,
+  // 不抛 ConvertCanceledError(onCanceled 分支为防御兜底,与 catch-all 归一一致)
   ipcMain.handle(
     "convert:batch",
     async (event, files: string[], format: ConvertFormat): Promise<BatchResult | { ok: false; error: string }> => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      const send = (info: BatchProgressInfo): void => win?.webContents.send("batch:progress", info);
-      const ctx = createConvertContext(); // 每次调用新建,取消标志不复用
-      ctxByWebContents.set(event.sender.id, ctx);
-      try {
-        return await batchConvertImpl(files, format, send, ctx, getKatexDir());
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
-      } finally {
-        ctxByWebContents.delete(event.sender.id); // 释放引用(含异常路径)
-      }
+      return runWithCtx(
+        event,
+        async (ctx, win) => {
+          const send = (info: BatchProgressInfo): void => win?.webContents.send("batch:progress", info);
+          return batchConvertImpl(files, format, send, ctx, getKatexDir());
+        },
+        () => ({ ok: false, error: "已取消" }),
+      );
     },
   );
 
@@ -175,18 +194,14 @@ function registerIpc(): void {
   // 批次 7 补:进度走 convert:progress(与单文件同通道),renderer 的 runMerge 已订阅该事件;
   // 用户取消 → 返回 { ok:false, canceled:true }(与单文件 handler 一致,renderer 据此走取消分支)。
   ipcMain.handle("convert:merge", async (event, files: string[], format: ConvertFormat): Promise<ConvertResult> => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
-    const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
-    ctxByWebContents.set(event.sender.id, ctx);
-    try {
-      return await mergeConvertImpl(files, format, send, ctx, getKatexDir());
-    } catch (err) {
-      if (err instanceof ConvertCanceledError) return { ok: false, canceled: true, error: "已取消" };
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    } finally {
-      ctxByWebContents.delete(event.sender.id); // 释放引用(含异常/取消路径)
-    }
+    return runWithCtx(
+      event,
+      async (ctx, win) => {
+        const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
+        return mergeConvertImpl(files, format, send, ctx, getKatexDir());
+      },
+      () => ({ ok: false, canceled: true, error: "已取消" }),
+    );
   });
   ipcMain.handle("settings:get", (): AppSettings => loadSettings());
 
