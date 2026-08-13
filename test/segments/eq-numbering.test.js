@@ -12,8 +12,8 @@ import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
 
-export async function run() {
-  const batch9Md = `# 公式编号测试
+/** 主样例:公式编号 + 交叉引用(含行内公式/悬空引用),gen-fixtures 落盘为 acceptance/eq-numbering.md */
+const batch9Md = `# 公式编号测试
 
 正文含行内公式 $a + b$,不参与编号。
 
@@ -31,6 +31,9 @@ $$
 
 如 [式](#eq:energy) 与 [公式](#eq:force) 所示;悬空引用 [式](#eq:unknown)。
 `;
+export const fixtures = { main: batch9Md };
+
+export async function run() {
   const b9Warnings = [];
   const batch9Docx = await convert(batch9Md, "docx", { baseDir: FIXTURES_DIR, warnings: b9Warnings });
   const b9Document = unzipPart(batch9Docx.buffer, "word/document.xml");

@@ -1,6 +1,8 @@
 # 状态速查
 
 ## 当前状态
+- 2026-08-13:**批次 10 功能 2「题注/章节交叉引用」完成**:docx+pdf 双格式——题注(图/表)与章节 label 锚点(`{#fig:}`/`{#tab:}`/`{#sec:}`)、静态编号引用(`[图](#fig:a)` → 「图 1.1」+ 跳转)、悬空降级「(?)」+ 警告;renderDocx 预扫登记修复「引用先于目标出现」;pdf 侧顺带修复 8b 遗留(template.ts 补 counter-increment,此前 PDF 题注序号恒 0);自动化断言 test/segments/cross-ref.test.js(12 条验收点,30 段全绿);验收清单见 ACCEPTANCE.md 批次 10 功能 2 节(待 GUI 实测,样例 test/fixtures/acceptance/cross-ref.md)
+- 2026-08-13:**验收样例生成器试点完成**:测试段导出 fixtures → test/tools/gen-fixtures.mjs 按功能自动生成 test/fixtures/acceptance/*.md(cross-ref/eq-numbering/toc-caption/mermaid 4 段 6 样例 + README 索引 + 图片复制),GUI 人工实测直接拖入;`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(幂等,exit 0/1);30 段全绿;选型见 RESEARCH.md + archive/20260813-211812
 - 2026-08-13:**批次 10 功能 1「Mermaid 渲染导出」完成发版(0.23.0)**:```mermaid 围栏 → docx 嵌入 PNG(2x 高清,≤400 等比缩)+ pdf 内联 SVG(矢量);main 层单例隐藏窗口渲染服务(mermaid.min.js IIFE 本地加载 + CSP 断网 + parse 预检 + 15s 超时降级);语法错误/超时 → 等宽代码块原文 + 警告;用户 GUI 实测通过(ACCEPTANCE.md 批次 10 节全勾);测试 29 段 + smoke 全绿;提交 a89507a,豁免并入 0.23.0 发版(R 系列重构/T 组测试/B1/P0 修复)
 - 2026-08-13:**B1 renderer 纯函数段完成**(482160e):抽 src/renderer/pure.ts(零 import 纯函数层),utils.ts re-export 保持 import 路径不变,新建 segments/renderer-pure.test.js(26→27 段);typecheck/build/27 段/smoke 全绿;豁免不 tag;测试缺口 25 项全部清零
 - 2026-08-13:**R10 重构 × T 组测试全部完成**(6 个独立迭代,每迭代独立提交可回退):迭代 1 T 组测试安全网(8fa48db)——T2 merge→pdf 中间 HTML file:// 断言(392fca1 反斜杠修复守卫)、T3 docx bookmark w:id 唯一性(标题+公式书签,R4 回归)、T4 renderPdf 失败路径(patch printToPDF 抛错 → 窗口销毁+tmp 清理)、T5 行内 HTML 交叉边界(行首 html_block 放行/危险交错丢弃)、T7 image-downloader timeoutMs 注入(默认 10s 不变)、T8 getImageResolver 同一性,T6 核实现有覆盖免补;迭代 2 R10-2(ec26a4b) renderPhrasingSync/renderPhrasing 合并(删「类型谎言」InlineSyncChild);迭代 3 R10-3(16c3d3f) 三 handler 收敛 runWithCtx(取消语义集中);迭代 4 R10-4(5abe4fe) HTTP 失败不缓存(网络抖动不永久失败,断言 7 反转);迭代 5 R10-6(ffa5e7c) 行内 HTML 抽 core/docx/inline-html.ts(render.ts 1010→840);迭代 6 R10-5(5454426) renderer 设置面板抽 settings-panel.ts(renderer.ts 889→576,init 时序保持);R10-7 决定不做(收益 ~20 行, token 流敏感);typecheck/build/26 段/smoke(含 renderer diag)全绿;豁免不 tag
@@ -22,7 +24,8 @@
 
 ## 验证基线
 - 已跑通:`npm run typecheck`、`npm run build`、`npx electron . --smoke`(启动 + docx/pdf 双链路 + 设置持久化/landscape 端到端 + 批量/合并端到端 + renderer 诊断)
-- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染)与 `main/`(主进程层)下 `*.test.js`,29 段:基础渲染/封面/合并/脚注/公式/公式编号/PDF 元数据/PDF 书签端到端/标题编号链接/标题提取/排版/白名单/编码/TOC 与题注/任务列表/设置/页面设置(含分页符)/frontmatter/slug/外链图片下载/图片类型/预设契约/转换编排/路径解析/GBK 端到端/renderer 纯函数/Mermaid(core 契约 + main 真实渲染);新增测试=新建段文件零注册);main 侧行为(重名序号/输出目录/取消/批量导出)已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
+- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染)与 `main/`(主进程层)下 `*.test.js`,30 段:基础渲染/封面/合并/脚注/公式/公式编号/PDF 元数据/PDF 书签端到端/标题编号链接/标题提取/排版/白名单/编码/TOC 与题注/任务列表/设置/页面设置(含分页符)/frontmatter/slug/外链图片下载/图片类型/预设契约/转换编排/路径解析/GBK 端到端/renderer 纯函数/Mermaid(core 契约 + main 真实渲染)/题注章节交叉引用;新增测试=新建段文件零注册);main 侧行为(重名序号/输出目录/取消/批量导出)已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
+- 验收样例:`npm run gen:fixtures`(需先 build)按功能自动生成 `test/fixtures/acceptance/*.md`(GUI 人工实测直接拖入);`npm run check:fixtures` 漂移校验(幂等,exit 0/1);新增功能=测试段顶层加 `export const fixtures = { main: ... }`,生成器零改动自动纳入
 - smoke 自清理 output/smoke 临时产物(批次 7 重名保护后旧产物不再被覆盖,断言会遇 (N) 序号变体;Windows 占用文件 EBUSY 容错跳过)
 - 历史批次断言明细见 `docs/CHANGELOG.md` 对应版本条目(0.4.x~0.17.x)
 - 打包:`npm run dist`(electron-builder NSIS);验证链:--dir → asar list → win-unpacked 启动存活 → 静默安装/卸载(退出码 0);打包版 `--smoke` 不可用(asar 内只读,output/smoke 写不进);镜像环境变量见开发者手册

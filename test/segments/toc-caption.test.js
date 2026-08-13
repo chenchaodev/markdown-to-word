@@ -15,8 +15,8 @@ import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 
-export async function run() {
-  const batch8Md = `# 第一章
+/** 主样例:TOC + 题注(含孤立题注/缺失图片),gen-fixtures 落盘为 acceptance/toc-caption.md */
+const batch8Md = `# 第一章
 
 图: 第一章的图(孤立题注,前无图 → 普通段落)
 
@@ -48,6 +48,9 @@ export async function run() {
 
 图: 第二章开头无图的孤立题注(普通段落)
 `;
+export const fixtures = { main: batch8Md };
+
+export async function run() {
   const batch8Docx = await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const b8Document = unzipPart(batch8Docx.buffer, "word/document.xml");
   // 8a-1:TOC 域指令仍在(w:sdt > w:instrText TOC \o "1-3" \h)

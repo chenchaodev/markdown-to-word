@@ -14,6 +14,8 @@
     "dev": "npm run build && electron .",
     "start": "electron .",
     "test": "npm run build && electron test/acceptance.mjs",
+    "gen:fixtures": "node test/tools/gen-fixtures.mjs",
+    "check:fixtures": "node test/tools/gen-fixtures.mjs --check",
     "test:smoke": "electron . --smoke",
     "test:all": "npm run test && npm run test:smoke",
     "dist": "npm run build && electron-builder --win nsis --x64 --publish never"

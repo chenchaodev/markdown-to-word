@@ -2,6 +2,13 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-13 21:18:12 验收样例生成方案选型(@用户拍板,测试基建)
+- **问题**:test/fixtures/ 仅图片+陈旧 manual/,测试段 md 全内联,用户 GUI 人工实测无最新功能 md 可用(需自己找/写)
+- **选型(拍板)**:测试段导出 `export const fixtures = { main: ... }` → 生成器落盘 test/fixtures/acceptance/<段名>[-key].md——md 唯一事实来源=测试段,零重复/永不漂移/自动跟功能走;不选「独立手写验收样例集」(手工维护 + 与断言漂移);另拍板:试点 4 段先行、触发=手动 npm script + 提交前 --check
+- **机制**:gen-fixtures.mjs(纯 Node)扫描 segments/main 动态 import → 落盘 md + 复制图片(存在才复制,缺失静默跳过)+ 生成 README 索引(JSDoc 首行);--check 内存重生成逐字节比对(差异 exit 1);幂等;命令 `npm run gen:fixtures`(需先 build)/`npm run check:fixtures`
+- **坑**:test/common/pdf-utils.js 顶层 `import { BrowserWindow } from "electron"` 纯 Node 下必 SyntaxError → electron mock 桥接(node:module.register 最小 mock);含 fixtures 段 import 失败一律 exit 1(防不完整索引覆盖旧产物,Windows 反斜杠 dist\ 路径坑已修)
+- 来源: 用户决策(2026-08-13,方案对比见存档);关联: 原文存档 docs/archive/20260813-211812-验收样例生成方案.md
+
 ### 2026-08-13 19:35:32 mermaid 集成方案调研结论(@librarian + @explorer,8c 实施依据)
 - **依赖**:mermaid **11.16.1 钉死**(镜像安装);ESM-only 包 + dist 内 IIFE 产物 `mermaid.min.js`(3.5MB,file:// 直接可用,规避 v11 ESM 动态 import 的模块 CORS);完全自包含零 CDN;node_modules 约 120-130MB(asar 压缩 60-70%);Node 无 DOM 不能渲染(jsdom 垫片布局全毁)
 - **渲染链路(已拍板)**:main 进程单例隐藏 BrowserWindow(show:false, sandbox:true, contextIsolation:true, nodeIntegration:false, **backgroundThrottling:false**)加载本地 HTML(IIFE mermaid.min.js)→ `initialize({startOnLoad:false, securityLevel:'strict', theme:'default', fontFamily:'"Microsoft YaHei",sans-serif'})` → `await mermaid.render(id, code)`(内部串行队列,无需自建锁)→ 注入 #graphDiv → `await document.fonts.ready` → **canvas 2x 光栅化** → toDataURL PNG + getBoundingClientRect 尺寸;返回 { pngBuffer, widthPx, heightPx }
