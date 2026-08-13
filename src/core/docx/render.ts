@@ -528,7 +528,7 @@ async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph> {
     5: HeadingLevel.HEADING_5,
     6: HeadingLevel.HEADING_6,
   };
-  const runs = await renderPhrasingSync(node.children, ctx);
+  const runs = await renderPhrasing(node.children, ctx);
   // parse.ts 将标题 id 挂于 data.id(mdast Data 已声明合并,见 parse.ts)
   const id = node.data?.id;
   return new Paragraph({
@@ -652,10 +652,8 @@ interface RunStyle {
  *  (d.ts 实证:Math 属 ParagraphChild,可与 TextRun 同段混排) */
 type InlineChild = TextRun | ImageRun | FootnoteReferenceRun | InternalHyperlink | ExternalHyperlink | DocxMath;
 
-/** renderPhrasingSync 返回类型:标题等场景经统一 pushRuns 渲染(图片/脚注不再降级为文本) */
-type InlineSyncChild = TextRun | InternalHyperlink | ExternalHyperlink | DocxMath;
-
-/** 行内节点 → 元素数组;样式沿父子链累积传递 */
+/** 行内节点 → 元素数组;样式沿父子链累积传递。
+ * 标题等场景同样经 pushRuns 渲染(标题内图片/脚注引用按常规渲染,占位与警告语义与正文一致)。 */
 async function renderPhrasing(
   nodes: PhrasingContent[],
   ctx: Ctx,
@@ -666,13 +664,6 @@ async function renderPhrasing(
     await pushRuns(runs, node, ctx, style);
   }
   return runs;
-}
-
-/** 标题等无图片需求的场景:统一走 async pushRuns(标题内图片/脚注引用按常规渲染;占位与警告语义与正文一致) */
-async function renderPhrasingSync(nodes: PhrasingContent[], ctx: Ctx): Promise<InlineSyncChild[]> {
-  const runs: InlineChild[] = [];
-  for (const node of nodes) await pushRuns(runs, node, ctx, {});
-  return runs as InlineSyncChild[];
 }
 
 async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, style: RunStyle): Promise<void> {
