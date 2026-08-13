@@ -2,7 +2,8 @@
  * 图片解析器段(src/main/image-downloader.ts 纯逻辑层,不起 Electron 窗口):
  * - 本地读取:path.resolve(baseDir, src) 相对/绝对路径均读文件,缺失与 data: 等非 http → null
  * - http 下载:200 成功返回内容一致的 Buffer;404 / 连接拒绝 → null
- * - 同 URL 缓存:实例内成功与失败均缓存去重(并发只请求一次),实例间隔离
+ * - 同 URL 缓存:并发去重(在途 Promise 共享,仅成功结果缓存);失败(404/超时)不缓存,
+ *   下次调用重新下载(R10-4),实例间隔离
  * - M6 集成:缺失检查并入 resolver 失败路径(convert 层 stat 预扫已移除),resolver
  *   返回 null → 转换 warnings 追加统一文案「图片加载失败: <src>」(本地缺失有警告,
  *   存在的本地图片无警告;文案三处统一见 core/image-warning.ts)
@@ -107,16 +108,17 @@ export async function run() {
       throw new Error(`image-downloader 断言失败:并发去重后应仍只请求 1 次,实际 ${srv200.getCount()}`);
     }
 
-    // ---- 断言 7:非 2xx(404)→ null,且失败结果也缓存(第二次不重试) ----
+    // ---- 断言 7:非 2xx(404)→ null,且失败结果不缓存(第二次重新请求,计数 2,仍 null) ----
+    // R10-4 行为修复:仅成功缓存——失败不缓存,一次网络抖动不导致批量期间该 URL 永久失败。
     const url404 = `http://127.0.0.1:${srv404.port}/missing.png`;
     if ((await resolver(url404)) !== null) {
       throw new Error("image-downloader 断言失败:404 应返回 null");
     }
     if ((await resolver(url404)) !== null) {
-      throw new Error("image-downloader 断言失败:404 缓存后再次调用仍应返回 null");
+      throw new Error("image-downloader 断言失败:失败不缓存后再次调用仍应返回 null");
     }
-    if (srv404.getCount() !== 1) {
-      throw new Error(`image-downloader 断言失败:404 缓存后应仍只请求 1 次,实际 ${srv404.getCount()}`);
+    if (srv404.getCount() !== 2) {
+      throw new Error(`image-downloader 断言失败:失败不缓存,第二次调用应重新请求(计数 2),实际 ${srv404.getCount()}`);
     }
 
     // ---- 断言 7b:超时注入点——慢响应(200ms) + timeoutMs=50 → null(AbortSignal.timeout 生效) ----
@@ -175,6 +177,6 @@ export async function run() {
     throw new Error(`image-downloader 断言失败:存在的本地图片不应产生警告,实际 ${wOk.join(";")}`);
   }
 
-  console.log("[ok] image-downloader:本地/远程读取、失败兜底、并发去重、失败缓存与超时注入断言通过");
+  console.log("[ok] image-downloader:本地/远程读取、失败兜底、并发去重、失败不缓存(重试)与超时注入断言通过");
   await saveArtifact("image-downloader", { png: fixtureBytes });
 }
