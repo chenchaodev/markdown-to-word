@@ -11,7 +11,6 @@ import {
   HeadingLevel,
   ImageRun,
   InternalHyperlink,
-  LineRuleType,
   Math as DocxMath,
   Packer,
   PageBreak,
@@ -57,6 +56,7 @@ import type { TypographySettings } from "../typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../typography.js";
 import { docxBookmarkId } from "../slug.js";
 import { isAllowedInlineHtml } from "../html-whitelist.js";
+import { normalizeInlineHtml, parseInlineHtml, inlineHtmlItemsToRuns, renderBodyParagraph, renderInlineHtmlParagraph } from "./inline-html.js";
 
 /** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
 export type ImageResolver = (src: string) => Promise<Buffer | null>;
@@ -385,17 +385,6 @@ function renderFooter(): Footer {
   });
 }
 
-/** 正文段落(排版设置:两端对齐/行距/首行缩进)。
- *  普通正文段落与白名单 html 段落共用,保证白名单段落排版与正文一致。 */
-function renderBodyParagraph(children: InlineChild[], ctx: Ctx): Paragraph {
-  return new Paragraph({
-    alignment: ctx.typography.align === "justify" ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
-    spacing: { line: Math.round(ctx.typography.lineSpacing * 240), lineRule: LineRuleType.AUTO },
-    indent: ctx.typography.firstLineIndent ? { firstLineChars: 200 } : undefined,
-    children,
-  });
-}
-
 /**
  * 书签包裹:name → BookmarkStart/End 首尾包裹 children(输出
  * <w:bookmarkStart w:name="…" w:id="N"/>…<w:bookmarkEnd w:id="N"/>,
@@ -649,8 +638,9 @@ interface RunStyle {
 }
 
 /** 段落内可出现的 docx 子元素:文本 run、行内图片、脚注引用、超链接或公式
- *  (d.ts 实证:Math 属 ParagraphChild,可与 TextRun 同段混排) */
-type InlineChild = TextRun | ImageRun | FootnoteReferenceRun | InternalHyperlink | ExternalHyperlink | DocxMath;
+ *  (d.ts 实证:Math 属 ParagraphChild,可与 TextRun 同段混排)。
+ *  export:inline-html.ts 的 renderBodyParagraph 参数类型引用(R10-6 拆分)。 */
+export type InlineChild = TextRun | ImageRun | FootnoteReferenceRun | InternalHyperlink | ExternalHyperlink | DocxMath;
 
 /** 行内节点 → 元素数组;样式沿父子链累积传递。
  * 标题等场景同样经 pushRuns 渲染(标题内图片/脚注引用按常规渲染,占位与警告语义与正文一致)。 */
@@ -848,163 +838,3 @@ async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<Inli
   return new ImageRun({ type, data, transformation: { width, height } });
 }
 
-// ---------- 工具 ----------
-
-/** 白名单解析项:文本段(带累积样式标志)或换行;纯 core 结构,不依赖 docx 类型 */
-interface InlineHtmlStyleFlags {
-  bold?: boolean;
-  italic?: boolean;
-  underline?: boolean;
-  strike?: boolean;
-  mono?: boolean;
-  sub?: boolean;
-  sup?: boolean;
-  highlight?: boolean;
-}
-interface InlineHtmlText extends InlineHtmlStyleFlags {
-  text: string;
-}
-type InlineHtmlItem = InlineHtmlText | { break: true };
-
-/** 标签 → 样式增量(与白名单契约表一一对应;span 为透传空样式) */
-const INLINE_TAG_STYLES: Record<string, InlineHtmlStyleFlags> = {
-  strong: { bold: true },
-  b: { bold: true },
-  em: { italic: true },
-  i: { italic: true },
-  u: { underline: true },
-  s: { strike: true },
-  del: { strike: true },
-  code: { mono: true },
-  kbd: { mono: true },
-  sub: { sub: true },
-  sup: { sup: true },
-  mark: { highlight: true },
-  span: {},
-};
-
-/**
- * 白名单表达式 → 解析项序列(调用方须先经 isAllowedInlineHtml 校验)。
- * 栈式扫描:开标签压入样式增量,闭标签弹出,文本段合并当前栈样式;<br> 产出 break 项。
- */
-function parseInlineHtml(value: string): InlineHtmlItem[] {
-  const items: InlineHtmlItem[] = [];
-  const stack: InlineHtmlStyleFlags[] = [];
-  let i = 0;
-  let segStart = 0;
-  const pushText = (text: string): void => {
-    if (text === "") return;
-    const merged = stack.reduce((acc, s) => Object.assign(acc, s), {} as InlineHtmlStyleFlags);
-    items.push({ text, ...merged });
-  };
-  while (i < value.length) {
-    const open = value.indexOf("<", i);
-    if (open === -1) {
-      pushText(value.slice(segStart));
-      break;
-    }
-    pushText(value.slice(segStart, open));
-    const close = value.indexOf(">", open + 1);
-    if (close === -1) break; // 校验层保证可达,防御终止
-    const inner = value.slice(open + 1, close);
-    if (inner.startsWith("/")) {
-      stack.pop();
-    } else {
-      const name = inner.trim().toLowerCase();
-      if (name === "br") items.push({ break: true });
-      else stack.push(INLINE_TAG_STYLES[name] ?? {});
-    }
-    i = close + 1;
-    segStart = i;
-  }
-  return items;
-}
-
-/**
- * 段落行内 html 归一化。micromark 将 `<em>斜</em>` 拆为 html("<em>") + text("斜") +
- * html("</em>") 三个节点,白名单表达式须合并回整串才能通过 isAllowedInlineHtml 校验:
- * 1. 白名单合并:从 html 节点起累积后续 html/text 节点,累积串一旦构成完整白名单
- *    表达式即合并为单个 html 节点(渲染为样式运行);
- * 2. 危险段丢弃:无法构成白名单表达式的开标签(带属性/非白名单),连同其内容直到
- *    第一个闭标签 html 节点整体丢弃(与"白名单外 html 跳过"安全语义一致,内容文本
- *    不残留);找不到闭标签则丢弃到段落尾;
- * 3. 孤立闭标签丢弃。
- * 纯结构变换,不依赖 docx 类型,与 PDF 侧 html_whitelist 组合语义对齐。
- */
-function normalizeInlineHtml(nodes: PhrasingContent[]): PhrasingContent[] {
-  const result: PhrasingContent[] = [];
-  let i = 0;
-  while (i < nodes.length) {
-    const node = nodes[i];
-    if (node.type !== "html") {
-      result.push(node);
-      i++;
-      continue;
-    }
-    if (/^<\//.test(node.value.trim())) {
-      i++; // 孤立闭标签(前无白名单开标签):丢弃
-      continue;
-    }
-    // 白名单合并:累积后续 html/text 节点直到构成完整表达式
-    let buf = node.value;
-    let j = i + 1;
-    let merged = false;
-    while (j < nodes.length) {
-      const next = nodes[j];
-      if (next.type === "html" || next.type === "text") buf += next.value;
-      else break;
-      if (isAllowedInlineHtml(buf)) {
-        merged = true;
-        break;
-      }
-      j++;
-    }
-    if (merged) {
-      result.push({ type: "html", value: buf });
-      i = j + 1;
-      continue;
-    }
-    // 危险段丢弃:开标签起,丢弃直到并包括第一个闭标签 html 节点
-    i++;
-    while (i < nodes.length) {
-      const cur = nodes[i];
-      if (cur.type === "html" && /^<\//.test(cur.value.trim())) {
-        i++;
-        break;
-      }
-      i++;
-    }
-  }
-  return result;
-}
-
-/** 白名单解析项 → TextRun 序列(break 项 → 换行 run;选项名经 d.ts 实证:
- *  italics/strike/subScript/superScript/highlight,underline 传空对象) */
-function inlineHtmlItemsToRuns(items: InlineHtmlItem[]): TextRun[] {
-  const runs: TextRun[] = [];
-  for (const item of items) {
-    if ("break" in item) {
-      runs.push(new TextRun({ text: "", break: 1 }));
-    } else {
-      runs.push(
-        new TextRun({
-          text: item.text,
-          bold: item.bold,
-          italics: item.italic,
-          underline: item.underline ? {} : undefined,
-          strike: item.strike,
-          font: item.mono ? CODE_FONT : undefined,
-          subScript: item.sub,
-          superScript: item.sup,
-          highlight: item.highlight ? "yellow" : undefined,
-        }),
-      );
-    }
-  }
-  return runs;
-}
-
-/** 白名单 html 块节点 → 正文段落(复用 renderBodyParagraph,排版设置生效) */
-function renderInlineHtmlParagraph(value: string, ctx: Ctx): Paragraph {
-  return renderBodyParagraph(inlineHtmlItemsToRuns(parseInlineHtml(value)), ctx);
-}
