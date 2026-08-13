@@ -32,9 +32,8 @@ async function assertOutline(pdfBytes, expectedTitle, label) {
   }
 }
 
-/** PDF 书签端到端验收 */
-export async function run() {
-  const md = `# 书签一级标题
+/** 主样例:多级标题 + 显式分页(书签层级/跨级回挂,gen-fixtures 落盘为 acceptance/pdf-bookmarks.md) */
+const md = `# 书签一级标题
 
 正文一。
 
@@ -52,6 +51,10 @@ export async function run() {
 
 跨页小节。
 `;
+export const fixtures = { main: md };
+
+/** PDF 书签端到端验收 */
+export async function run() {
   const artifact = await convert(md, "pdf", {
     baseDir: FIXTURES_DIR,
     title: "书签验收",

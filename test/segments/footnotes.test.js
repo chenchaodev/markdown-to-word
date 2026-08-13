@@ -12,10 +12,9 @@ import { zipContains, unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 
-/** 脚注 + 页眉页脚验收(批次 4 第二/三项) */
-export async function run() {
-  // 重复引用 [^1] 两次:docx 侧应生成两个独立脚注 id(与 markdown-it 编号语义对齐)
-  const footnoteMd = `---
+/** 主样例:脚注 + 页眉页脚(frontmatter 触发页眉;重复引用 [^1] 两次 → 独立脚注 id;
+ *  多段脚注定义),gen-fixtures 落盘为 acceptance/footnotes.md */
+const footnoteMd = `---
 title: 脚注与页眉页脚验收
 author: 测试
 date: 2026-08-05
@@ -35,6 +34,10 @@ date: 2026-08-05
 
 [^2]: 第二个脚注,中文内容。
 `;
+export const fixtures = { main: footnoteMd };
+
+/** 脚注 + 页眉页脚验收(批次 4 第二/三项) */
+export async function run() {
   const docxArtifact = await convert(footnoteMd, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],

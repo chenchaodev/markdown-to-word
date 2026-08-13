@@ -21,6 +21,15 @@ import { saveArtifact } from "../common/artifacts.js";
 
 const md = `页面设置验收:纸张与边距参数化。\n`;
 
+/** 分页符样例(<!-- page-break --> 显式分页,落盘为 acceptance/page-setup-pagebreak.md) */
+const pbMd = `# 分页符标题\n\n<!-- page-break -->\n\n第二页正文\n`;
+
+// 场景导出:main = 页面设置验收正文;pagebreak = 显式分页符语法
+export const fixtures = {
+  main: md,
+  pagebreak: pbMd,
+};
+
 // 纸张 → 纵向 twips(宽, 高)= round(mm × 56.6929),来源 PAPER_SIZES_MM
 const PAPERS_TWIPS = {
   A4: [11906, 16838], // 210×297
@@ -95,7 +104,6 @@ export async function run() {
 
   // 4. 分页符产物(pdf 侧中间 html,原 smoke 断言下沉 A1):
   //    <!-- page-break --> → <div class="page-break"></div>
-  const pbMd = `# 分页符标题\n\n<!-- page-break -->\n\n第二页正文\n`;
   const pbArtifact = await convert(pbMd, "pdf", {
     baseDir: FIXTURES_DIR,
     warnings: [],

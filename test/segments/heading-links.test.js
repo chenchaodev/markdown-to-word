@@ -12,10 +12,8 @@ import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 
-/** 标题编号 + 内部/外部链接验收(批次 5b) */
-export async function run() {
-  // 内部锚点 [x](#二级标题) → InternalHyperlink(anchor=docxBookmarkId);外链 → ExternalHyperlink
-  const linkMd = `---
+/** 主样例:标题编号 + 内部锚点/外部链接 + h1-h6(gen-fixtures 落盘为 acceptance/heading-links.md) */
+const linkMd = `---
 title: 标题编号与链接测试
 ---
 
@@ -38,6 +36,10 @@ title: 标题编号与链接测试
 
 ###### 六级标题
 `;
+export const fixtures = { main: linkMd };
+
+/** 标题编号 + 内部/外部链接验收(批次 5b) */
+export async function run() {
   const linkDocx = await convert(linkMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const numberingXml = unzipPart(linkDocx.buffer, "word/numbering.xml");
   const documentXml = unzipPart(linkDocx.buffer, "word/document.xml");

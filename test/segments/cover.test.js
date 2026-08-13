@@ -16,8 +16,8 @@ import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 
-export async function run() {
-  const coverMd = `---
+/** 主样例:frontmatter 封面验收(gen-fixtures 落盘为 acceptance/cover.md) */
+const coverMd = `---
 title: 封面验收文档
 author: 测试作者
 date: 2026-08-10
@@ -27,7 +27,9 @@ date: 2026-08-10
 
 这是封面验收文档的正文内容。
 `;
+export const fixtures = { main: coverMd };
 
+export async function run() {
   const coverDocx = await convert(coverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const coverDocument = unzipPart(coverDocx.buffer, "word/document.xml");
   // 断言 1:封面标题居中加粗 22pt(44 half-points,docx 库 size = pt × 2)

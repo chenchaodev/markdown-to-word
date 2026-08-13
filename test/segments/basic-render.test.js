@@ -69,6 +69,10 @@ function hello(name: string): string {
 文档结尾 End of document。
 `;
 
+// 主样例导出(gen-fixtures 落盘为 acceptance/basic-render.md;样例内 ./g1-tiny.png
+// 与 ./img-800x400.png 由生成器复制到 acceptance/ 下,引用路径不改写)
+export const fixtures = { main: markdown };
+
 /**
  * 定位文本所在段落属性:取该文本 w:t 之前最近一个 <w:pPr> 到其 </w:pPr> 的片段
  * (列表/引用/代码块的序列化事实:段属性在文本 run 之前,前一段属性已闭合)。

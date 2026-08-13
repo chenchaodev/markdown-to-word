@@ -14,8 +14,8 @@ import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
 
-export async function run() {
-  const formulaMd = `# 公式测试
+/** 主样例:行内/分式/上下标/开方公式(gen-fixtures 落盘为 acceptance/formula.md) */
+const formulaMd = `# 公式测试
 
 行内公式 $x^2$ 与分式 $\\frac{1}{2}$、上下标 $a_i^j$。
 
@@ -29,6 +29,16 @@ $$
 \\sqrt{a^2 + b^2}
 $$
 `;
+/** 降级场景:解析失败的公式 → TeX 源码等宽灰字 + 警告(落盘为 acceptance/formula-degrade.md) */
+const degradeMd = `# 公式降级
+
+行内公式 $\\frac{1}{$ 与独立公式:
+
+$$ \\frac{1}{ $$
+`;
+export const fixtures = { main: formulaMd, degrade: degradeMd };
+
+export async function run() {
   const katexDir = KATEX_DIR;
   const formulaDocx = await convert(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], katexDir });
   const formulaDocument = unzipPart(formulaDocx.buffer, "word/document.xml");
@@ -62,12 +72,6 @@ $$
   // renderBlock case "math" / pushRuns case "inlineMath")渲染为 TextRun 等宽灰字
   // (CODE_FONT=Consolas,color 888888)并追加警告「公式解析失败,降级为 TeX 源码: …」,
   // 不产出 m:oMath(整式降级,不混排)。失败样例:未闭合分组 \frac{1}{。
-  const degradeMd = `# 公式降级
-
-行内公式 $\\frac{1}{$ 与独立公式:
-
-$$ \\frac{1}{ $$
-`;
   const degradeWarnings = [];
   const degradeDocx = await convert(degradeMd, "docx", { baseDir: FIXTURES_DIR, warnings: degradeWarnings });
   const degradeDocument = unzipPart(degradeDocx.buffer, "word/document.xml");

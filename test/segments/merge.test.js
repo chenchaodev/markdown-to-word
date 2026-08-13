@@ -27,6 +27,13 @@ async function collectMarkdown(dir) {
   return files;
 }
 
+/** 主样例:括号 URL 合并输出(mergeMarkdowns 运行值;真实合并验收样例为 manual/ 目录
+ *  多文件,见段头注释),gen-fixtures 落盘为 acceptance/merge.md */
+const bracketMd = mergeMarkdowns([
+  { content: "![a](https://example.com/a(b).png)\n\n![b](./my(1).png)", baseDir: FIXTURES_DIR },
+]);
+export const fixtures = { main: bracketMd };
+
 export async function run() {
   const manualDir = path.join(FIXTURES_DIR, "manual");
   const mdFiles = (await collectMarkdown(manualDir)).sort((a, b) => a.localeCompare(b));
@@ -70,9 +77,6 @@ export async function run() {
   await saveArtifact("merged-manual", { pdf: finalPdf });
 
   // 括号配对 URL(修复 M1):绝对 URL 含括号原样保留;相对路径含括号转绝对路径且括号保留
-  const bracketMd = mergeMarkdowns([
-    { content: "![a](https://example.com/a(b).png)\n\n![b](./my(1).png)", baseDir: FIXTURES_DIR },
-  ]);
   if (!bracketMd.includes("https://example.com/a(b).png")) {
     throw new Error(`merge 断言失败:含括号的绝对 URL 应原样保留,实际输出:\n${bracketMd}`);
   }

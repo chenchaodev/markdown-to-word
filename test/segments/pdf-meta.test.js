@@ -10,9 +10,8 @@ import { PDFDocument } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 
-/** PDF 章节编号 + 元数据验收(批次 5c) */
-export async function run() {
-  const pdfMetaMd = `---
+/** 主样例:frontmatter 元数据 + 章节编号 + 分页(gen-fixtures 落盘为 acceptance/pdf-meta.md) */
+const pdfMetaMd = `---
 title: 脚注与页眉页脚验收
 author: 测试
 date: 2026-08-05
@@ -26,6 +25,10 @@ date: 2026-08-05
 
 ## 第二页小节
 `;
+export const fixtures = { main: pdfMetaMd };
+
+/** PDF 章节编号 + 元数据验收(批次 5c) */
+export async function run() {
   const pdfArtifact = await convert(pdfMetaMd, "pdf", {
     baseDir: FIXTURES_DIR,
     title: "脚注与页眉页脚验收",

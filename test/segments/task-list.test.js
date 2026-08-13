@@ -13,15 +13,17 @@ import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 
-/** 任务列表验收 */
-export async function run() {
-  const taskMd = `# 任务列表测试
+/** 主样例:GFM 任务列表(已完成/待办/普通项,gen-fixtures 落盘为 acceptance/task-list.md) */
+const taskMd = `# 任务列表测试
 
 - [x] 已完成
 - [ ] 待办
 - 普通项
 `;
+export const fixtures = { main: taskMd };
 
+/** 任务列表验收 */
+export async function run() {
   // ---------- docx ----------
   const docxArtifact = await convert(taskMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const documentXml = unzipPart(docxArtifact.buffer, "word/document.xml");

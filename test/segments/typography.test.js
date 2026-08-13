@@ -9,16 +9,19 @@ import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 
-/** 排版设置验收(批次 5a) */
-export async function run() {
-  // 双格式共用同一 typography 契约(renderer 侧平行定义,字段名/默认值须同步):
-  // 字号 14pt、行距 1.5、首行缩进 2 字符、两端对齐、宋体、标题编号关闭
-  const typoMd = `# 排版设置测试
+/** 主样例:排版设置正文(字号/行距/缩进/对齐,gen-fixtures 落盘为 acceptance/typography.md) */
+const typoMd = `# 排版设置测试
 
 第一段正文,验证字号/行距/缩进/对齐等排版设置生效。
 
 第二段正文,继续验证排版参数化。
 `;
+export const fixtures = { main: typoMd };
+
+/** 排版设置验收(批次 5a) */
+export async function run() {
+  // 双格式共用同一 typography 契约(renderer 侧平行定义,字段名/默认值须同步):
+  // 字号 14pt、行距 1.5、首行缩进 2 字符、两端对齐、宋体、标题编号关闭
   const typography = {
     fontAscii: "Calibri",
     fontEastAsia: "宋体",
