@@ -1,7 +1,7 @@
 # 状态速查
 
 ## 当前状态
-- 2026-08-13:**批次 10 功能 1「Mermaid 渲染导出」实现完成,待 GUI 实测**(8c):```mermaid 围栏 → docx 嵌入 PNG(2x 高清,≤400 等比缩)+ pdf 内联 SVG(矢量);main 层单例隐藏窗口渲染服务(mermaid.min.js IIFE 本地加载 + CSP 断网 + parse 预检 + 15s 超时降级);语法错误/超时 → 等宽代码块原文 + 警告;验收清单见 ACCEPTANCE.md 批次 10 节(M1-M3,待实测)
+- 2026-08-13:**批次 10 功能 1「Mermaid 渲染导出」完成发版(0.23.0)**:```mermaid 围栏 → docx 嵌入 PNG(2x 高清,≤400 等比缩)+ pdf 内联 SVG(矢量);main 层单例隐藏窗口渲染服务(mermaid.min.js IIFE 本地加载 + CSP 断网 + parse 预检 + 15s 超时降级);语法错误/超时 → 等宽代码块原文 + 警告;用户 GUI 实测通过(ACCEPTANCE.md 批次 10 节全勾);测试 29 段 + smoke 全绿;提交 a89507a,豁免并入 0.23.0 发版(R 系列重构/T 组测试/B1/P0 修复)
 - 2026-08-13:**B1 renderer 纯函数段完成**(482160e):抽 src/renderer/pure.ts(零 import 纯函数层),utils.ts re-export 保持 import 路径不变,新建 segments/renderer-pure.test.js(26→27 段);typecheck/build/27 段/smoke 全绿;豁免不 tag;测试缺口 25 项全部清零
 - 2026-08-13:**R10 重构 × T 组测试全部完成**(6 个独立迭代,每迭代独立提交可回退):迭代 1 T 组测试安全网(8fa48db)——T2 merge→pdf 中间 HTML file:// 断言(392fca1 反斜杠修复守卫)、T3 docx bookmark w:id 唯一性(标题+公式书签,R4 回归)、T4 renderPdf 失败路径(patch printToPDF 抛错 → 窗口销毁+tmp 清理)、T5 行内 HTML 交叉边界(行首 html_block 放行/危险交错丢弃)、T7 image-downloader timeoutMs 注入(默认 10s 不变)、T8 getImageResolver 同一性,T6 核实现有覆盖免补;迭代 2 R10-2(ec26a4b) renderPhrasingSync/renderPhrasing 合并(删「类型谎言」InlineSyncChild);迭代 3 R10-3(16c3d3f) 三 handler 收敛 runWithCtx(取消语义集中);迭代 4 R10-4(5abe4fe) HTTP 失败不缓存(网络抖动不永久失败,断言 7 反转);迭代 5 R10-6(ffa5e7c) 行内 HTML 抽 core/docx/inline-html.ts(render.ts 1010→840);迭代 6 R10-5(5454426) renderer 设置面板抽 settings-panel.ts(renderer.ts 889→576,init 时序保持);R10-7 决定不做(收益 ~20 行, token 流敏感);typecheck/build/26 段/smoke(含 renderer diag)全绿;豁免不 tag
 - 2026-08-12:**评审候选 R10-1 + T1 完成**(来源 20260812-000224 重构评审,用户确认执行此两条,其余候选待排期):R10-1 convert context 构造收敛——`buildConvertContext` 统一 convertImpl/mergeConvertImpl/openPreviewWindow 三处 settings→context 映射(消除字段逐字重复漂移),`app.getAppPath()` 依赖收敛至新模块 src/main/katex-dir.ts `getKatexDir()`(全仓库唯一 electron 依赖点,入口层传入),convertImpl/batchConvertImpl/mergeConvertImpl 尾部新增可选 `katexDir?` 参数(既有调用行为不变);T1 GBK 端到端——新段 test/main/gbk-encoding.test.js(iconv-lite 写 GBK 中文 → convertImpl("docx") → 断言「已按 GBK 编码读取」警告 + document.xml 中文正确);typecheck/build/26 段/smoke 全绿;提交 e015fae(refactor)+ 002a313(test);豁免不 tag
@@ -31,5 +31,5 @@
 > 项目级硬约束(技术栈/镜像/字体/分页符/依赖钉死)已全部迁至项目 `AGENTS.md`「硬约束」节,以彼处为准。
 
 ## 打开事项
-- [ ] 功能候选(批次 10,待用户定优先级)+ 测试遗留 B1 + 暂缓/延后项见 `docs/ROADMAP.md`「当前待办」节
+- [ ] 功能候选(批次 10,8c Mermaid 已完成,下一项待规划)+ 暂缓/延后项见 `docs/ROADMAP.md`「当前待办」节
 - [ ] 测试缺口(24 项)已全部补齐(2026-08-13);新增缺口按需入 ROADMAP「当前待办·测试遗留」

@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [0.23.0] - 2026-08-13
+- 批次 10 功能 1「Mermaid 渲染导出」(8c;typecheck/build/29 段/smoke 全绿,用户实测通过):
+  - **语法**:```mermaid 围栏 → docx 嵌入 PNG(2x 高清,≤400 等比缩)/ PDF 内联 SVG(矢量,Chromium 原生渲染);语法错误/超时 → 等宽代码块原文 + 警告,不中断转换;非 mermaid 围栏行为不变
+  - **core**:新增 src/core/mermaid.ts 契约(MermaidResult/MermaidResolver),ConvertContext 注入;docx renderCode async 化(三调用点:mermaid 围栏 → ImageRun PNG/失败降级),scaleToFit 抽取复用 imageToDocx;pdf highlight 拦截产占位 → 返回前串行替换(内联 SVG/mermaid-fallback 降级),无 resolver 时输出字节级不变
+  - **main**:src/main/mermaid-service.ts 单例隐藏窗口(sandbox + CSP 断网 + parse 预检 + 2x canvas 光栅化 + 15s 超时 + 串行队列),mermaid-dir.ts 按 import.meta 定位(dev/test/打包一致),converter/index/smoke 注入 renderMermaid;离线零 CDN 隐私承诺不变
+  - **依赖**:mermaid 11.16.1 钉死(镜像安装,IIFE dist/mermaid.min.js 本地加载)
+  - **测试**:新段 test/segments/mermaid.test.js(fake resolver 9 断言点)+ test/main/mermaid-service.test.js(真实渲染:PNG 魔数/尺寸/svg 结构/语法错误降级),27→29 段
+- R 系列重构 × T 组测试(B1 前积累,逐迭代独立提交可回退;26 段/smoke 全绿):
+  - **R1 契约收敛**(394950f):白名单/设置默认值下沉 core 单一来源;R2 docx/render.ts 拆分(f7063c9,题注/公式/图片类型独立模块);R3 pdf/render.ts 拆分(da3d4d0,template/postprocess);R4 图片变形修复 + webp 降级 + L1 mime 统一(82b26d0)
+  - **R5/R6 中优先级快修**(863adb3/95ea259):M1 括号 URL 截断/M2 随机后缀/M5 pushRuns 统一;M4 settings 写队列串行化/M6 图片缺失检查并入 resolver(单次 IO)
+  - **R7/R8 renderer 拆分**(8e7673e/6860504):阶段一 dom.ts 抽取 + L4 死代码 + L5 状态合并;阶段二五模块(state/utils/file-list/dialogs/convert-flow),renderer.ts 1596→~950 留组合根
+  - **R10 系列**(e015fae~5454426):convert context 构造收敛(buildConvertContext)/renderPhrasingSync 合并/runWithCtx 收敛/HTTP 失败不缓存/行内 HTML 抽 inline-html.ts/设置面板抽 settings-panel.ts;R10-7 不做(收益 ~20 行)
+  - **T 组测试安全网**(8fa48db,26 段):T2 merge→pdf 中间 HTML 断言/T3 docx 书签 w:id 唯一性/T4 renderPdf 失败路径/T5 行内 HTML 边界/T7 image-downloader 超时注入/T8 resolver 同一性;T1 GBK 端到端(002a313);R8 收尾测试 5 批(测试锚点/smoke 下沉/清扫/中风险)
+  - **B1 renderer 纯函数段**(482160e):抽 src/renderer/pure.ts 零 import 层,utils.ts re-export,测试缺口 25 项清零
+- P0 修复:merge 图片相对路径反斜杠致 pdf 缺图(392fca1,smoke 样例图 100x80 可见化 a3a7a07,用户验证通过);smoke 输出隔离 + 命名描述化(f78d93b)
+- 文档:src 架构审查落盘(20260811-201145)+ 重构规划;ROADMAP 整理为「当前待办」唯一入口;Mermaid 集成方案落盘(archive 20260813-193532)
+
 ## [0.22.0] - 2026-08-11
 - 迭代 3 测试缺口收尾(豁免并入;build/验收 20 段/smoke 全绿):
   - **低优先级可自动化 2 项**:新段 test/main/paths.test.js 直测 collectMarkdownPaths(目录递归/点目录跳过/非 md 静默/skipped/大小写不敏感排序/seen 去重)与 resolveOutputPath(outputDir 空串/有效目录/超长 >250 回落/mkdir 失败回落)——重构后函数已导出,原 smoke 扩展计划升级直测
