@@ -41,6 +41,18 @@ title: 标题编号与链接测试
   const linkDocx = await convert(linkMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const numberingXml = unzipPart(linkDocx.buffer, "word/numbering.xml");
   const documentXml = unzipPart(linkDocx.buffer, "word/document.xml");
+  // R4 回归守卫:书签 w:id 文档内唯一。docx Bookmark 组件每枚独立计数恒为 1 →
+  // 全文档标题/公式书签 w:id 全部冲突(Word 要求文档内唯一,实测 WPS 显示异常);
+  // bookmarkChildren 改用 ctx.bookmarkNextId 自增,每枚 bookmarkStart/End 对独占 id。
+  // 此处收集全部 w:bookmarkStart 的 w:id,去重后数量须等于总数。
+  const bookmarkIds = [...documentXml.matchAll(/w:bookmarkStart[^>]*w:id="(\d+)"/g)].map((m) => m[1]);
+  if (bookmarkIds.length === 0) {
+    throw new Error("书签断言失败:document.xml 无 w:bookmarkStart w:id");
+  }
+  if (new Set(bookmarkIds).size !== bookmarkIds.length) {
+    throw new Error(`书签断言失败:w:id 文档内不唯一(共 ${bookmarkIds.length} 枚,去重后 ${new Set(bookmarkIds).size} 枚)`);
+  }
+  console.log(`[ok] docx 书签 w:id 文档内唯一(${bookmarkIds.length} 枚)`);
   // 标题编号:numbering.xml 含多级 text 模板 %1 / %1.%2 / %1.%2.%3
   // (reference 名 "md-heading" 是库内部标识,不写进 XML,断言 text 模板即可)
   if (!numberingXml.includes('w:lvlText w:val="%1"/>') || !numberingXml.includes('w:lvlText w:val="%1.%2"/>')) {

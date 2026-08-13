@@ -40,6 +40,25 @@ export async function run() {
     warnings: [],
     pageSetup: { paper: "A4", orientation: "portrait", marginTop: 25, marginBottom: 25, marginLeft: 32, marginRight: 32 },
   });
+  // 图片 file:// 改写守卫(P0 反斜杠修复 392fca1 的纯逻辑层防线):
+  // overrideImageRule(pdf/render.ts)渲染期将本地图片统一改写为 file:// 绝对路径
+  // (pathToFileURL 输出正斜杠;http(s)/data: 保留原样;改写发生在渲染期、与文件
+  // 存在性无关,故 missing.png 故意缺失不影响 src 形态)。win32 下反斜杠路径若被
+  // markdown-it 链接规范化编码为 %5C,Chromium 无法加载 → 断言 file:// src 无 %5C
+  // 且均以 file:/// 开头。
+  const fileImageSrcs = [...mergedArtifact.html.matchAll(/src="file:\/\/\/[^"]*"/g)].map((m) => m[0]);
+  if (fileImageSrcs.length === 0) {
+    throw new Error("merge 断言失败:合并 PDF 中间 HTML 无 file:// 图片 src");
+  }
+  for (const src of fileImageSrcs) {
+    if (!src.startsWith('src="file:///')) {
+      throw new Error(`merge 断言失败:file:// 图片 src 应以 file:/// 开头:${src}`);
+    }
+    if (src.includes("%5C")) {
+      throw new Error(`merge 断言失败:file:// 图片 src 含 %5C(反斜杠编码 bug 形态):${src}`);
+    }
+  }
+  console.log(`[ok] merge:file:// 图片 src 全部 file:/// 开头且无 %5C(共 ${fileImageSrcs.length} 处)`);
   const mergedPdf = await htmlToPdf(mergedArtifact.html, mergedArtifact.footerTemplate);
   const headings = extractHeadings(mergedArtifact.html);
   if (headings.length === 0) {

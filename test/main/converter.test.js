@@ -8,6 +8,9 @@
  *   pdf 预取消(ConvertCanceledError + 不产出文件)
  * - 设置注入端到端:持久化往返、landscape → w:orient、breakBeforeH1 → pageBreakBefore、
  *   分页符 → w:br page(toc:false 下仅显式分页符)
+ * - getImageResolver 缓存同一性:同 baseDir 两次调用返回同一实例(批量跨文件共享语义)
+ * - pdf 渲染失败:printToPDF/loadFile 抛错 → convertImpl 抛非 ConvertCanceledError,
+ *   finally 销毁窗口并清理临时文件(临时目录无 m2w-*.html 残留)
  * 实现事实(读源码确认):
  * - settings.ts 模块级 settingsCache:本段经 dist/main/settings.js 直连同一实例
  *   (converter.js 内部同 URL import → 同一模块实例),全部场景共享缓存
@@ -21,6 +24,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
+import { BrowserWindow } from "electron";
 import { loadSettings, updateSettings } from "../../dist/main/settings.js";
 import { backupSettings } from "../common/settings.js";
 import {
@@ -28,6 +32,7 @@ import {
   ConvertCanceledError,
   convertImpl,
   createConvertContext,
+  getImageResolver,
   mergeConvertImpl,
 } from "../../dist/main/converter.js";
 
@@ -47,6 +52,10 @@ export async function run() {
     // 输出目录指回源目录(样例同目录),afterConvert 置 none 保证断言确定性
     await updateSettings({ outputDir: "", afterConvert: "none" });
     await fs.writeFile(sampleMd, SAMPLE_MD, "utf8");
+
+    // ---- 0. getImageResolver 缓存同一性:同 baseDir 两次调用返回同一实例(批量跨文件共享语义) ----
+    assert(getImageResolver(dir) === getImageResolver(dir), "getImageResolver:同 baseDir 应返回同一缓存实例");
+    console.log("[ok] converter:getImageResolver 同 baseDir 返回同一实例(跨文件共享)");
 
     // ---- 1. 重名保护:同 md 连续转换两次 → (2) 序号变体且两产物共存 ----
     const dup1 = await convertImpl(sampleMd, "docx");
@@ -189,6 +198,58 @@ export async function run() {
       .file("word/document.xml").async("string");
     assert(pbXml.includes('<w:br w:type="page"/>'), '分页符:document.xml 缺少 <w:br w:type="page"/>');
     console.log("[ok] converter:设置注入(持久化/landscape/breakBeforeH1/分页符 docx)");
+
+    // ---- 9. pdf 渲染失败:printToPDF 抛错 → convertImpl 抛非 ConvertCanceledError + finally 清理 ----
+    // 方案:webContents 是 BrowserWindow.prototype 上的 getter → 临时替换为「取原实例后把实例的
+    // printToPDF 换成必抛 mock」;若该 getter 不存在(版本差异),回退 patch loadFile 抛错,同样覆盖
+    // 「渲染/打印阶段失败 → finally 销毁窗口 + cleanup 删临时文件」路径。descriptor 一律 try/finally
+    // 恢复(本段与其他段同进程串行,不能污染原型)。
+    const pdfFailMd = path.join(dir, "pdf-fail.md");
+    await fs.writeFile(pdfFailMd, "# PDF 渲染失败\n\n正文\n");
+    const wcDescriptor = Object.getOwnPropertyDescriptor(BrowserWindow.prototype, "webContents");
+    const origLoadFile = BrowserWindow.prototype.loadFile;
+    let patched = false;
+    try {
+      if (wcDescriptor?.get) {
+        Object.defineProperty(BrowserWindow.prototype, "webContents", {
+          configurable: true,
+          get() {
+            const wc = wcDescriptor.get.call(this);
+            wc.printToPDF = async () => {
+              throw new Error("mock printToPDF 失败");
+            };
+            return wc;
+          },
+        });
+      } else {
+        BrowserWindow.prototype.loadFile = async () => {
+          throw new Error("mock loadFile 失败");
+        };
+      }
+      patched = true;
+      let pdfFailError = null;
+      try {
+        await convertImpl(pdfFailMd, "pdf");
+      } catch (err) {
+        pdfFailError = err;
+      }
+      assert(
+        !!pdfFailError && !(pdfFailError instanceof ConvertCanceledError),
+        `PDF 渲染失败:应抛非 ConvertCanceledError 错误,实际 ${pdfFailError}`,
+      );
+      // 临时文件命名 m2w-{pid}-{time}-{rand}.html(writeTempHtml);finally cleanup 应已删净
+      const tmpHtmlLeft = (await fs.readdir(os.tmpdir())).filter((n) => n.startsWith(`m2w-${process.pid}-`));
+      assert(tmpHtmlLeft.length === 0, `PDF 渲染失败:临时目录残留 ${tmpHtmlLeft.join(", ")}`);
+      console.log("[ok] converter:pdf 渲染失败(抛非取消错误 + 窗口销毁/临时文件清理)");
+    } finally {
+      if (patched) {
+        if (wcDescriptor?.get) {
+          Object.defineProperty(BrowserWindow.prototype, "webContents", wcDescriptor);
+        } else {
+          BrowserWindow.prototype.loadFile = origLoadFile;
+        }
+      }
+    }
   } finally {
     // 恢复设置文件 + 模块级缓存(updateSettings 双写);原本无文件则删除,不污染用户设置
     await restoreSettings.restore();

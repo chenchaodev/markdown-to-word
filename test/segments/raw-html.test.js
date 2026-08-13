@@ -76,6 +76,50 @@ export async function run() {
   }
   console.log("[ok] PDF 白名单:白名单原样输出 + 危险样例转义 全部通过");
 
+  // 交叉边界(注释级契约点):
+  // 场景 A(pdf 侧):行首白名单整串会被 markdown-it 归为 html_block 而非 html_inline
+  // (pdf/render.ts 304 行注释),overrideHtmlRules 对 html_block 同样走白名单放行 →
+  // 原样输出,而非转义;docx 侧同一输入为 html 块节点,isAllowedInlineHtml 放行渲染。
+  // 场景 B(docx 侧):行内白名单开标签 + 危险闭标签交错(normalizeInlineHtml 危险段
+  // 丢弃语义):「<strong>险</div>」无法构成白名单表达式 → 危险段(开标签起至首个
+  // 闭标签 html 节点)整体丢弃、内容文本(险)不残留;而「<strong>乙</strong></div>」
+  // 白名单整串合并先行 → 乙 保留为粗体运行,孤立危险闭标签丢弃。
+  const crossMd = `# 交叉边界测试
+
+<strong>行首粗体</strong>
+
+前缀 <strong>险</div> 结尾
+
+前缀 <strong>乙</strong></div> 结尾
+`;
+  const crossDocx = await convert(crossMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
+  const crossDocument = unzipPart(crossDocx.buffer, "word/document.xml");
+  if (crossDocument.includes("</div>")) {
+    throw new Error("交叉边界断言失败:docx 不应残留危险闭标签 </div>");
+  }
+  if (crossDocument.includes("险")) {
+    throw new Error("交叉边界断言失败:docx 危险段文本(险)不应残留(危险段整体丢弃)");
+  }
+  if (!/<w:b\/><w:bCs\/><\/w:rPr><w:t[^>]*>乙<\/w:t>/.test(crossDocument)) {
+    throw new Error("交叉边界断言失败:docx 白名单整串应保留且 乙 渲染为粗体运行");
+  }
+  if (!crossDocument.includes("前缀") || !crossDocument.includes("行首粗体")) {
+    throw new Error("交叉边界断言失败:docx 危险段周边文本/行首 html 块内容不应丢失");
+  }
+  console.log("[ok] docx 交叉边界:危险段整体丢弃(无 </div> 残留/文本不残留)+ 白名单整串保留 + 行首 html 块渲染");
+
+  const crossPdf = await convert(crossMd, "pdf", { baseDir: FIXTURES_DIR, title: "交叉边界测试", warnings: [] });
+  if (!crossPdf.html.includes("<strong>行首粗体</strong>")) {
+    throw new Error("交叉边界断言失败:PDF 行首白名单 html_block 应原样输出");
+  }
+  if (crossPdf.html.includes("&lt;strong&gt;行首粗体")) {
+    throw new Error("交叉边界断言失败:PDF 行首白名单不应被转义");
+  }
+  if (!crossPdf.html.includes("&lt;strong&gt;险&lt;/div&gt;")) {
+    throw new Error("交叉边界断言失败:PDF 危险交错应整体转义");
+  }
+  console.log("[ok] PDF 交叉边界:行首 html_block 白名单原样输出 + 危险交错转义");
+
   const htmlPdfBin = await htmlToPdf(htmlPdf.html, htmlPdf.footerTemplate);
   await saveArtifact("raw-html", { docx: htmlDocx.buffer, pdf: htmlPdfBin });
 }

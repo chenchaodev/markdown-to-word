@@ -6,8 +6,9 @@
  * - M6 集成:缺失检查并入 resolver 失败路径(convert 层 stat 预扫已移除),resolver
  *   返回 null → 转换 warnings 追加统一文案「图片加载失败: <src>」(本地缺失有警告,
  *   存在的本地图片无警告;文案三处统一见 core/image-warning.ts)
- * 超时分支(10s 硬编码 AbortSignal.timeout,无注入点)与 index.ts 模块私有
- * resolverCache(跨 baseDir 共享)无法低成本自动化,未覆盖原因见验收报告。
+ * 超时分支:createImageResolver 第二参 timeoutMs 注入(默认 10s 不变),慢响应 server +
+ * timeoutMs=50 断言超时 → null;index.ts 模块私有 resolverCache(跨 baseDir 共享)
+ * 无法低成本自动化,未覆盖原因见验收报告。
  * http server 生命周期 try/finally 保证清理(closeAllConnections 防 keep-alive 挂起)。
  */
 import fs from "node:fs/promises";
@@ -19,13 +20,21 @@ import { saveArtifact } from "../common/artifacts.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
 
-/** 启动本地 http server:固定 status + body 响应,getCount() 返回请求次数 */
-function startServer(status, body) {
+/** 启动本地 http server:固定 status + body 响应(delayMs 可选,响应前延迟),getCount() 返回请求次数 */
+function startServer(status, body, delayMs = 0) {
   let count = 0;
   const server = http.createServer((req, res) => {
     count += 1;
-    res.writeHead(status, { "Content-Type": "application/octet-stream", "Content-Length": body.length });
-    res.end(body);
+    setTimeout(() => {
+      try {
+        // 客户端可能已中止(如超时断开),此时不再写响应,避免写已销毁 socket
+        if (res.destroyed || res.writableEnded) return;
+        res.writeHead(status, { "Content-Type": "application/octet-stream", "Content-Length": body.length });
+        res.end(body);
+      } catch {
+        // 连接已中止,忽略写响应错误
+      }
+    }, delayMs);
   });
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
@@ -71,6 +80,7 @@ export async function run() {
   // ---- http server 生命周期:try/finally 保证清理 ----
   let srv200 = null;
   let srv404 = null;
+  let srvSlow = null;
   let port = 0;
   try {
     srv200 = await startServer(200, fixtureBytes);
@@ -109,6 +119,17 @@ export async function run() {
       throw new Error(`image-downloader 断言失败:404 缓存后应仍只请求 1 次,实际 ${srv404.getCount()}`);
     }
 
+    // ---- 断言 7b:超时注入点——慢响应(200ms) + timeoutMs=50 → null(AbortSignal.timeout 生效) ----
+    // 默认参数行为(10s)由断言 5/6 覆盖,此处只验证注入的短超时确实中止慢响应。
+    srvSlow = await startServer(200, fixtureBytes, 200);
+    const slowUrl = `http://127.0.0.1:${srvSlow.port}/slow.png`;
+    if ((await createImageResolver("", 50)(slowUrl)) !== null) {
+      throw new Error("image-downloader 断言失败:慢响应应被 50ms 超时中止并返回 null");
+    }
+    if (srvSlow.getCount() !== 1) {
+      throw new Error(`image-downloader 断言失败:超时场景应请求 1 次,实际 ${srvSlow.getCount()}`);
+    }
+
     // ---- 断言 8:缓存随实例隔离(每文档新建实例 → 同 URL 重新下载) ----
     const other = createImageResolver("");
     const o = await other(url);
@@ -122,6 +143,7 @@ export async function run() {
   } finally {
     if (srv200) await closeServer(srv200.server);
     if (srv404) await closeServer(srv404.server);
+    if (srvSlow) await closeServer(srvSlow.server);
   }
 
   // ---- 断言 9:连接拒绝(server 已关闭)→ null ----
@@ -153,6 +175,6 @@ export async function run() {
     throw new Error(`image-downloader 断言失败:存在的本地图片不应产生警告,实际 ${wOk.join(";")}`);
   }
 
-  console.log("[ok] image-downloader:本地/远程读取、失败兜底、并发去重与失败缓存断言通过");
+  console.log("[ok] image-downloader:本地/远程读取、失败兜底、并发去重、失败缓存与超时注入断言通过");
   await saveArtifact("image-downloader", { png: fixtureBytes });
 }

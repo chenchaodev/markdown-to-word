@@ -34,6 +34,16 @@ $$
   const b9Warnings = [];
   const batch9Docx = await convert(batch9Md, "docx", { baseDir: FIXTURES_DIR, warnings: b9Warnings });
   const b9Document = unzipPart(batch9Docx.buffer, "word/document.xml");
+  // R4 回归守卫:书签 w:id 文档内唯一(公式 label 书签 eq-energy/eq-force 与标题书签
+  // 共用 ctx.bookmarkNextId 自增计数,全文档不重复;曾为组件级恒为 1 导致 WPS 异常)
+  const b9BookmarkIds = [...b9Document.matchAll(/w:bookmarkStart[^>]*w:id="(\d+)"/g)].map((m) => m[1]);
+  if (b9BookmarkIds.length === 0) {
+    throw new Error("批次9断言失败:document.xml 无 w:bookmarkStart w:id");
+  }
+  if (new Set(b9BookmarkIds).size !== b9BookmarkIds.length) {
+    throw new Error(`批次9断言失败:书签 w:id 应文档内唯一(共 ${b9BookmarkIds.length} 枚,去重后 ${new Set(b9BookmarkIds).size} 枚)`);
+  }
+  console.log(`[ok] docx 书签 w:id 文档内唯一(${b9BookmarkIds.length} 枚,含 eq-* 公式书签)`);
   // 8d-1:公式编号静态文本 (1)(2) 存在(免更新,无域)
   for (const needle of ["(1)", "(2)"]) {
     if (!b9Document.includes(needle)) throw new Error(`批次9断言失败:公式编号缺失(${needle})`);

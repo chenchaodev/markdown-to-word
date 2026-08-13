@@ -1,7 +1,7 @@
 /**
  * 图片解析器(convert context.imageResolver 的 main 侧实现):
  * - 本地相对路径:path.resolve(baseDir, src) 读文件(与批次 1 行为一致)
- * - http(s):下载 Buffer(10s 超时,仅接受 2xx),失败返回 null
+ * - http(s):下载 Buffer(默认 10s 超时,timeoutMs 可注入;仅接受 2xx),失败返回 null
  * - 其余(data: 等):返回 null
  * 同 URL 并发去重缓存:一个文档内同 URL 只下载一次(含失败结果,避免重复超时)。
  * 纯 Node API(全局 fetch + AbortSignal.timeout),无新增依赖。
@@ -14,14 +14,15 @@ const HTTP_TIMEOUT_MS = 10_000;
 
 export type ImageResolver = (src: string) => Promise<Buffer | null>;
 
-/** 创建绑定 baseDir 的 imageResolver;每次文档转换新建一个实例(缓存随文档生命周期)。 */
-export function createImageResolver(baseDir: string): ImageResolver {
+/** 创建绑定 baseDir 的 imageResolver;每次文档转换新建一个实例(缓存随文档生命周期)。
+ * timeoutMs:http(s) 下载超时(默认 HTTP_TIMEOUT_MS = 10s,测试可注入缩短)。 */
+export function createImageResolver(baseDir: string, timeoutMs: number = HTTP_TIMEOUT_MS): ImageResolver {
   const cache = new Map<string, Promise<Buffer | null>>();
   return (src: string): Promise<Buffer | null> => {
     if (/^https?:\/\//i.test(src)) {
       let pending = cache.get(src);
       if (!pending) {
-        pending = downloadHttp(src);
+        pending = downloadHttp(src, timeoutMs);
         cache.set(src, pending);
       }
       return pending;
@@ -30,10 +31,11 @@ export function createImageResolver(baseDir: string): ImageResolver {
   };
 }
 
-/** 下载 http(s) 资源:10s 超时,仅接受 2xx;任何失败(超时/非 2xx/网络错误)→ null,不抛。 */
-async function downloadHttp(url: string): Promise<Buffer | null> {
+/** 下载 http(s) 资源:默认 10s 超时(timeoutMs 由 createImageResolver 注入),仅接受 2xx;
+ * 任何失败(超时/非 2xx/网络错误)→ null,不抛。 */
+async function downloadHttp(url: string, timeoutMs: number): Promise<Buffer | null> {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());
   } catch {
