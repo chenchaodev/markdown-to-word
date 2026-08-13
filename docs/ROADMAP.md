@@ -193,25 +193,25 @@
 - [x] **批 4「中风险」(安全网最厚时)**:A2 pdf-bookmarks.test.js 书签端到端段(htmlToPdf + injectBookmarks + assertOutline,复用批 3 helper,补 buildBookmarkTree 层级/跨级回挂直测)+ L3 escape 工具集中 core/utils.ts(escapeHtml/decodeEntities/escapeRegExp;template.ts re-export 兼容,math.ts/postprocess.ts 换用)+ M3 currentCtx 按 webContents id 建 Map(三 handler set/delete,cancel 按窗口取)。验证 24→25 段 + smoke
 - [x] **批 5「收尾」**:全量 `npm run test:all` 通过;STATUS 当前状态/验证基线更新;手动 GUI 冒烟由用户现场确认,豁免不 tag
 
-## 评审候选:重构 R10 × 测试 T 组(2026-08-12,部分已执行;来源:docs/archive/20260812-000224-重构评审与测试缺口规划.md(@oracle 精读评审 + @explorer 结构盘点)。总体判断:架构健康度高,最大风险 = 双渲染管线语义平行契约(新特性 ≈ 2 倍实现 + 2 倍测试)。用户 2026-08-12 确认执行 R10-1 + T1(已完成);其余待排期,原则:先补测试安全网(T2 零成本)再动重构;重构全部行为等价,每迭代独立提交可回退,收尾走豁免。
+## 评审候选:重构 R10 × 测试 T 组(2026-08-12 排期,2026-08-13 全部完成;来源:docs/archive/20260812-000224-重构评审与测试缺口规划.md(@oracle 精读评审 + @explorer 结构盘点)。总体判断:架构健康度高,最大风险 = 双渲染管线语义平行契约(新特性 ≈ 2 倍实现 + 2 倍测试)。执行顺序:先补测试安全网再动重构;重构全部行为等价,每迭代独立提交可回退,收尾走豁免。
 
 ### 重构空间(按价值排序)
 - [x] **R10-1 [高] convert context 构造收敛**(已完成 2026-08-12,e015fae):三处平行构造(converter.ts:183-195/373-383 + index.ts:70-79)→ `buildConvertContext`;katexDir 参数化收敛至 src/main/katex-dir.ts `getKatexDir()`(全仓库唯一 electron app 依赖点);convertImpl/batchConvertImpl/mergeConvertImpl 尾部新增可选 katexDir 参数,既有调用行为不变。当时最大 DRY 违反点,新增设置字段需同步三处
-- [ ] **R10-2 [中高] renderPhrasingSync/renderPhrasing 合并**(docx/render.ts:659-676):Sync 实为 async,`InlineSyncChild` 类型断言是「类型谎言」,合并后删类型
-- [ ] **R10-3 [中] index.ts 三 handler ctx 样板 → `runWithCtx` helper**:取消语义(刚根治的历史 bug 领域)分散三处,集中化
-- [ ] **R10-4 [中] HTTP 图片失败不缓存**(image-downloader.ts:18-31):失败缓存导致批量内同 URL 永久失败(10s 超时抖动),仅成功缓存
-- [ ] **R10-5 [中] renderer.ts 设置面板 ~300 行 → settings-panel.ts**:R8 后剩余最大内聚块(加载/回填/校验/预设/persist),注意 init 时序
-- [ ] **R10-6 [中低] docx/render.ts 行内 HTML ~160 行 → core/docx/inline-html.ts**:纯移动拆分,保持导出面
-- [ ] **R10-7 [低] pdf/render.ts 两处容器深度跟踪重复 → helper**:收益 ~20 行且 token 流语义敏感,可不做
+- [x] **R10-2 [中高] renderPhrasingSync/renderPhrasing 合并**(已完成 2026-08-13,ec26a4b):Sync 实为 async,`InlineSyncChild` 类型断言是「类型谎言」,合并为单一 renderPhrasing(nodes, ctx, style?),删类型与 Sync 版;renderHeading 调用点换用,行为等价
+- [x] **R10-3 [中] index.ts 三 handler ctx 样板 → `runWithCtx` helper**(已完成 2026-08-13,16c3d3f):context 注册/释放(取消复位语义 + M3 多窗口隔离)+ 错误归一化(ConvertCanceledError → onCanceled)集中一处;批量不抛 ConvertCanceledError(内部收集 canceledCount),onCanceled 为防御兜底
+- [x] **R10-4 [中] HTTP 图片失败不缓存**(已完成 2026-08-13,5abe4fe):失败结算(null:404/超时/网络错误)后删除缓存条目,下次调用重新下载——一次网络抖动不再导致批量期间同 URL 永久失败;fetch 前 cache.set 保留(并发去重语义不变);断言 7 反转(404 后第二次重新请求,计数 2)
+- [x] **R10-5 [中] renderer.ts 设置面板 ~300 行 → settings-panel.ts**(已完成 2026-08-13,5454426):设置加载/回填/校验/钳制/persist 三件套 + 格式/页面设置/排版/模板预设/输出目录事件绑定纯移动拆分;边界含格式选择与输出目录(persistSettings 内聚块),移出后 renderer.ts 不再读写 state.settings/hydratingSettings;init 时序保持(bindSettingsEvents 先于 loadSettings 回填);renderer.ts 889→576 行
+- [x] **R10-6 [中低] docx/render.ts 行内 HTML ~160 行 → core/docx/inline-html.ts**(已完成 2026-08-13,ffa5e7c):normalizeInlineHtml/parseInlineHtml/INLINE_TAG_STYLES/inlineHtmlItemsToRuns/renderInlineHtmlParagraph + 依赖的 renderBodyParagraph 纯移动拆分,契约级注释逐字保留;依赖方向单向(render.ts → inline-html.ts 运行时边,反向仅 type-only);render.ts 1010→840 行
+- [ ] **R10-7 [低] pdf/render.ts 两处容器深度跟踪重复 → helper**:收益 ~20 行且 token 流语义敏感(两处检查点不完全同型——caption 只查 paragraph_close、equation 同时查 math_block),评审结论「可不做」,决定不做,留档
 - 不值得做(YAGNI,理由见存档):MarkdownIt 实例缓存、IPC 契约代码生成、convert-flow 抽象、目录并行化、zip 解包统一、双管线统一 parse(推翻选型)、settings 枚举下沉
 
 ### 测试缺口(按优先级)
 - [x] **T1 [中高] GBK 端到端**(已完成 2026-08-12,002a313):test/main/gbk-encoding.test.js——iconv 写 GBK 文件 → convertImpl("docx") → warnings 含「已按 GBK 编码读取」+ document.xml 中文正确(用户可见,零 Electron 打印)
-- [ ] **T2 [中高] merge→pdf 中间 HTML file:// 断言**:P0 反斜杠修复(392fca1)的纯逻辑层守卫,`src="file:///...` 无 `%5C`(绕开 printToPDF 图片检测坑)
-- [ ] **T3 [中] docx bookmark w:id 文档内唯一性**:回归 R4 修复点(组件级恒 1 → WPS 异常),含公式标签混合文档
-- [ ] **T4 [中] renderPdf 失败路径**:printToPDF 抛错后 destroy + tmp 无残留(m2w-*.html),需 Electron
-- [ ] **T5 [中] 行内 HTML 交叉边界**:行首 html_block 白名单放行 / 白名单开标签+危险闭标签交错丢弃(注释级契约点)
-- [ ] **T6 [低] settings 写队列并发最终态**:先核实现有覆盖,未覆盖则补 `Promise.all` 后磁盘 = 最后一次调用
-- [ ] **T7 [低] image-downloader 超时分支**:加 `timeoutMs` 可选参数(默认 10s 不变),50ms + 慢响应断言超时 null
-- [ ] **T8 [低] getImageResolver 缓存同一性**:同 baseDir 两次调用返回同一实例(1 行)
+- [x] **T2 [中高] merge→pdf 中间 HTML file:// 断言**(已完成 2026-08-13,8fa48db):merge.test.js 正则收集 src="file:///..." 断言全部正斜杠且无 %5C(P0 反斜杠修复 392fca1 的纯逻辑层守卫,绕开 printToPDF 图片检测坑)
+- [x] **T3 [中] docx bookmark w:id 文档内唯一性**(已完成 2026-08-13,8fa48db):heading-links.test.js(6 枚标题书签)+ eq-numbering.test.js(3 枚,含 eq-* 公式书签共用自增计数),Set 大小 = 总数(R4 修复点回归)
+- [x] **T4 [中] renderPdf 失败路径**(已完成 2026-08-13,8fa48db):converter.test.js patch webContents getter → printToPDF 必抛 mock,断言非 ConvertCanceledError 抛错 + 无 m2w-*.html 残留(窗口销毁 + cleanup);descriptor try/finally 恢复
+- [x] **T5 [中] 行内 HTML 交叉边界**(已完成 2026-08-13,8fa48db):raw-html.test.js——PDF 行首 html_block 白名单原样输出不转义;docx 危险交错丢弃(实证:非白名单开标签丢弃到首个闭标签含交错文本)+ 白名单整串保留变体
+- [x] **T6 [低] settings 写队列并发最终态**:核实现有覆盖(settings.test.js 第 189-208 行已有 Promise.all 并发断言:全部成功 + 最终落盘 = 最后一次调用 + 无 .tmp 残留,M4 回归),免补
+- [x] **T7 [低] image-downloader 超时分支**(已完成 2026-08-13,8fa48db):createImageResolver 加可选 timeoutMs(默认 10s 不变),慢响应 server(delayMs=200)+ 50ms 超时断言返回 null 且仅请求 1 次
+- [x] **T8 [低] getImageResolver 缓存同一性**(已完成 2026-08-13,8fa48db):converter.test.js 断言同 baseDir 两次调用返回同一实例(1 行)
 - 维持人工不自动化:printToPDF 产物图片显示、renderer 交互、preview:open 生命周期
