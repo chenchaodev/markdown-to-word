@@ -169,6 +169,10 @@ ${captionNumbering ? `
      书签/目录不受影响);章节号 = 最近 h1,图/表序在 h1 处重置(与 docx 侧
      SEQ \\s 1 语义一致)。文档无 h1 时退化为纯序数(全文档连续,与 docx 对齐) */
   .fig-caption, .tab-caption { text-align: center; font-size: 10pt; margin: 4px 0 12px; break-inside: avoid; }
+  /* 图/表序自增(8b 遗留修复:此前缺 counter-increment,序数恒为 0,
+     所有题注显示「图 N.0」;编号文本与 xref_recognize 登记同源,勿漂移) */
+  .fig-caption { counter-increment: figc; }
+  .tab-caption { counter-increment: tabc; }
 ${headingNumbering && hasH1 ? `
   body { counter-reset: h1c h2c h3c figc tabc; }
   h1 { counter-reset: h2c h3c figc tabc; }

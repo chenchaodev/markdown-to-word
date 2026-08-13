@@ -80,7 +80,11 @@ function replaceTaskCheckboxes(html: string): string {
     .replace(/<label[^>]*class="task-list-item-label"[^>]*>([\s\S]*?)<\/label>/g, "$1");
 }
 
-function buildMarkdownIt(hasMermaidResolver: boolean): MarkdownIt {
+function buildMarkdownIt(
+  hasMermaidResolver: boolean,
+  headingNumbering: boolean,
+  captionNumbering: boolean,
+): MarkdownIt {
   const md = new MarkdownIt({
     html: true,
     linkify: true,
@@ -116,6 +120,7 @@ function buildMarkdownIt(hasMermaidResolver: boolean): MarkdownIt {
   overrideHtmlRules(md);
   overrideCaptionRule(md);
   overrideEquationRule(md);
+  overrideXrefRule(md, { headingNumbering, captionNumbering });
   return md;
 }
 
@@ -275,6 +280,240 @@ function overrideEquationRule(md: MarkdownIt): void {
 }
 
 /**
+ * 交叉引用类型常量(批次 10 功能 2):fig/tab/sec 三类引用集中定义。
+ * 与 docx 侧 CROSS_REF_KINDS(src/core/docx/render.ts)同一契约,同步
+ * 维护勿单侧改文案;语义见 docx 侧注释:
+ * - label 前缀:行内链接 #<prefix>:<label> 匹配([\w-]+);
+ * - defaultText:引用文本恰为此文本时替换为编号(其他文本保持原样仍跳转);
+ * - danglingText:查表未命中时默认文本的占位;
+ * - kindName:悬空警告文案用(「交叉引用未找到<kindName> label: <prefix>:<label>」)。
+ */
+const CROSS_REF_KINDS = {
+  fig: { defaultText: "图", danglingText: "图 (?)", kindName: "图" },
+  tab: { defaultText: "表", danglingText: "表 (?)", kindName: "表" },
+  sec: { defaultText: "章节", danglingText: "(?)", kindName: "章节" },
+} as const;
+type CrossRefKind = keyof typeof CROSS_REF_KINDS;
+
+/**
+ * 从 inline children 尾部剥离 {#<kind>:<label>}(批次 10 功能 2):从最后一个
+ * 文本叶子节点匹配(从尾向前跳过 close/html 等非文本节点,兼容 **格式** {#label}
+ * 与 强调整串内带 label 的嵌套;与 docx 侧 stripTrailingSecLabel 语义一致);
+ * 命中则改写该 text 节点内容并返回 label,无匹配返回 undefined 且不改动。
+ */
+function stripTrailingLabel(
+  children: readonly { type: string; content: string }[],
+  kind: "fig" | "tab" | "sec",
+): string | undefined {
+  const re = new RegExp(`\\s*\\{#${kind}:([\\w-]+)\\}$`);
+  for (let i = children.length - 1; i >= 0; i--) {
+    const child = children[i];
+    if (child.type !== "text") continue;
+    const match = re.exec(child.content);
+    if (!match) return undefined;
+    child.content = child.content.slice(0, match.index);
+    return match[1];
+  }
+  return undefined;
+}
+
+/** 删除 token 属性(markdown-it Token 无 attrDel,attrIndex + splice 实现;
+ *  结构类型签名避免深导入 markdown-it/lib/token) */
+function attrDel(
+  token: { attrIndex(name: string): number; attrs: Array<[string, string]> | null },
+  name: string,
+): void {
+  const idx = token.attrIndex(name);
+  if (idx >= 0 && token.attrs) token.attrs.splice(idx, 1);
+}
+
+/**
+ * 题注/章节交叉引用(批次 10 功能 2,与 docx 侧契约一致;文案/占位见
+ * CROSS_REF_KINDS,勿散落硬编码):
+ * - 引用语法:[图](#fig:label) / [表](#tab:label) / [章节](#sec:label),label 为
+ *   [\w-]+;命中时文本(恰为默认文本)→ 静态编号(「图 3.1」「表 1」「3.2」),
+ *   保留跳转;其他文本保持原样仍跳转;悬空 → 默认文本占位「图 (?)」/「(?)」,
+ *   不带链接(目标锚点不存在,不生成死链;同 docx 侧),警告经 env.warnings
+ *   提示(按「前缀:label」去重,仿 eq_numbering);
+ * - 编号对象与登记(免更新路线,静态注入):
+ *   - 图/表题注(caption_recognize 已设 fig-caption/tab-caption class):尾部
+ *     {#fig:label}/{#tab:label} 剥离并登记;编号文本镜像模板 CSS ::before 显示
+ *     (headingNumbering && hasH1 → 「图 <h1c>.<figc>」,否则纯序数「图 <figc>」,
+ *     序数按 class 计数、h1 处重置仅当 hasH1,与 template.ts 两分支一一对应);
+ *     锚点 <span id="fig:label"> 注入题注段落开头(经 paragraph_open 渲染包装);
+ *   - 标题(顶层,与 docx 只遍历 ast.children 一致):尾部 {#sec:label} 无条件
+ *     剥离(语法;不进标题文本/目录/slug),headingNumbering 开启且深度 ≤3 时
+ *     登记章节号(深度 1..d 计数器拼接,镜像 CSS 显示、不做 docx 侧前导零跳过
+ *     ——无 h1 文档「0.1」与 CSS 显示一致,差异在报告注明);锚点
+ *     <span id="sec:label"> 注入标题开头(经 heading_open 渲染包装);
+ * - 计数器语义镜像模板 CSS:headingNumbering 开时 h1 增 → h2/h3 清零,
+ *   hasH1 时 fig/tab 清零(与 template.ts hasH1 分支一致);h2 增 → h3 清零;
+ *   headingNumbering 关时不计数 → sec 引用按悬空处理(同 docx)。
+ */
+function overrideXrefRule(
+  md: MarkdownIt,
+  opts: { headingNumbering: boolean; captionNumbering: boolean },
+): void {
+  md.core.ruler.push("xref_recognize", (state) => {
+    const tokens = state.tokens;
+    // hasH1 = 文档任意位置存在 h1(与模板 /<h1[\s>]/i 检查等价,决定 CSS 分支)
+    const hasH1 = tokens.some((t) => t.type === "heading_open" && t.tag === "h1");
+    const counters = { h1: 0, h2: 0, h3: 0, fig: 0, tab: 0 };
+    const captionLabels = new Map<string, { kind: "fig" | "tab"; numberText: string }>();
+    const headingLabels = new Map<string, string>(); // label → 章节号文本
+    // 第一遍:顶层遍历(容器深度跟踪同 caption_recognize/eq_numbering),计数 + 剥离 + 登记
+    const depth = { blockquote: 0, list_item: 0, table_cell: 0 };
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token.type === "blockquote_open") depth.blockquote++;
+      else if (token.type === "blockquote_close") depth.blockquote--;
+      else if (token.type === "list_item_open") depth.list_item++;
+      else if (token.type === "list_item_close") depth.list_item--;
+      else if (token.type === "table_cell_open") depth.table_cell++;
+      else if (token.type === "table_cell_close") depth.table_cell--;
+      else if (
+        token.type === "heading_open" &&
+        depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0
+      ) {
+        const isNumbered = opts.headingNumbering && (token.tag === "h1" || token.tag === "h2" || token.tag === "h3");
+        if (isNumbered) {
+          if (token.tag === "h1") {
+            counters.h1++;
+            counters.h2 = 0;
+            counters.h3 = 0;
+            // 图/表序在 h1 处重置仅当 hasH1(镜像 template.ts 两分支)
+            if (hasH1) {
+              counters.fig = 0;
+              counters.tab = 0;
+            }
+          } else if (token.tag === "h2") {
+            counters.h2++;
+            counters.h3 = 0;
+          } else {
+            counters.h3++;
+          }
+        }
+        const inline = tokens[i + 1];
+        if (!inline || inline.type !== "inline" || !inline.children) continue;
+        const label = stripTrailingLabel(inline.children, "sec");
+        if (label === undefined) continue;
+        // label 同步剥离 inline.content(标题 id slug 的来源,避免 label 进 slug)
+        inline.content = inline.content.replace(/\s*\{#sec:[\w-]+\}$/, "");
+        if (isNumbered) {
+          // 章节号镜像 CSS 显示:深度 1..d 计数器拼接(前导零不跳过;
+          // 无 h1 文档为「0.1」,与 CSS counter 显示一致,与 docx「1」的差异在报告注明)
+          const depthNum = Number(token.tag[1]);
+          const parts: number[] = [];
+          for (let d = 1; d <= depthNum; d++) {
+            parts.push(counters[(`h${d}`) as "h1" | "h2" | "h3"]);
+          }
+          headingLabels.set(label, parts.join("."));
+          token.attrSet("data-xref-anchor", `sec:${label}`);
+        }
+      } else if (
+        token.type === "paragraph_close" &&
+        depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0
+      ) {
+        const inline = tokens[i - 1];
+        if (!inline || inline.type !== "inline" || !inline.children || inline.children.length === 0) continue;
+        const pOpen = tokens[i - 2];
+        const cls = pOpen?.attrGet("class");
+        if (cls !== "fig-caption" && cls !== "tab-caption") continue;
+        // captionNumbering 关:label 原样保留不剥离不登记(docx 契约;
+        // 前缀剥除为 caption_recognize 的 8b 既有行为,不在此改)
+        if (!opts.captionNumbering) continue;
+        const kind = cls === "fig-caption" ? "fig" : "tab";
+        if (kind === "fig") counters.fig++;
+        else counters.tab++;
+        const label = stripTrailingLabel(inline.children, kind);
+        if (label === undefined) continue;
+        // 编号文本镜像 CSS ::before 显示(两分支:章节号+序数 / 纯序数)
+        const seq = kind === "fig" ? counters.fig : counters.tab;
+        const numberText =
+          opts.headingNumbering && hasH1
+            ? `${kind === "fig" ? "图" : "表"} ${counters.h1}.${seq}`
+            : `${kind === "fig" ? "图" : "表"} ${seq}`;
+        captionLabels.set(label, { kind, numberText });
+        pOpen.attrSet("data-xref-anchor", `${kind}:${label}`);
+      }
+    }
+    // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内)
+    const unknownLabels = new Set<string>();
+    for (const token of tokens) {
+      if (token.type !== "inline" || !token.children) continue;
+      const children = token.children;
+      for (let i = 0; i < children.length; i++) {
+        const linkOpen = children[i];
+        if (linkOpen.type !== "link_open") continue;
+        const href = linkOpen.attrGet("href");
+        if (!href) continue;
+        const match = /^#(fig|tab|sec):([\w-]+)$/.exec(href);
+        if (!match) continue;
+        const kind = match[1] as CrossRefKind;
+        const label = match[2];
+        const def = CROSS_REF_KINDS[kind];
+        let numberText: string | undefined;
+        if (kind === "sec") {
+          numberText = headingLabels.get(label);
+        } else {
+          const info = captionLabels.get(label);
+          // 登记时已限定 kind 与前缀一致(见上),此处防御性校验
+          if (info && info.kind === kind) numberText = info.numberText;
+        }
+        // 链接内第一个 text token(可能嵌套格式如 **图**,取首个文本节点替换;
+        // 与 eq_numbering 同构)
+        let textToken: (typeof children)[number] | undefined;
+        for (let j = i + 1; j < children.length; j++) {
+          const child = children[j];
+          if (child.type === "link_close") break;
+          if (child.type === "text") {
+            textToken = child;
+            break;
+          }
+        }
+        if (numberText !== undefined) {
+          if (textToken && textToken.content === def.defaultText) textToken.content = numberText;
+          // 命中:保留 href 跳转(目标锚点由第一遍注入)
+        } else {
+          if (!unknownLabels.has(`${kind}:${label}`)) {
+            unknownLabels.add(`${kind}:${label}`); // 同引用只提示一次
+            state.env.warnings?.push(`交叉引用未找到${def.kindName} label: ${kind}:${label}`);
+          }
+          if (textToken && textToken.content === def.defaultText) textToken.content = def.danglingText;
+          // 悬空不带链接(docx 契约:目标锚点不存在,不生成死链)——解包链接
+          // 结构(仅移除 link_open/link_close,保留内部文本与嵌套格式,按普通
+          // 文本渲染;模板 a 色样式不作用于无链接文本)
+          let closeIdx = -1;
+          for (let j = i + 1; j < children.length; j++) {
+            if (children[j].type === "link_close") {
+              closeIdx = j;
+              break;
+            }
+          }
+          if (closeIdx > 0) {
+            children.splice(closeIdx, 1);
+            children.splice(i, 1);
+            i--; // 回退,i++ 后从解包位置续扫
+          }
+        }
+      }
+    }
+  });
+  // 包装 paragraph_open 渲染规则:带 data-xref-anchor 的题注段落开头注入锚点
+  const defaultParaRule = md.renderer.rules.paragraph_open;
+  md.renderer.rules.paragraph_open = (tokens, idx, options, env, self) => {
+    const token = tokens[idx];
+    const anchor = token.attrGet("data-xref-anchor");
+    if (anchor) attrDel(token, "data-xref-anchor");
+    const html = defaultParaRule
+      ? defaultParaRule(tokens, idx, options, env, self)
+      : self.renderToken(tokens, idx, options);
+    if (!anchor) return html;
+    return html.replace(">", `><span id="${anchor}"></span>`);
+  };
+}
+
+/**
  * 从 src 的 pos(`<` 处)起匹配一个完整白名单表达式(标签对可嵌套,br 可单独,
  * 文本段不含 `<`);返回表达式长度;无法匹配(非白名单/带属性/未闭合)→ -1。
  * 供 html_inline 解析层组合 token 使用:markdown-it 14.3 的默认 html_inline
@@ -362,16 +601,23 @@ function overrideImageRule(md: MarkdownIt, baseDir: string, localSrcs: string[])
 /** 标题 id(批次 2 锚点目录/内部跳转底座):seen 在渲染闭包内维护,按文档顺序去重。
  *  注意:markdown-it 14.3 的 heading_open token 不带 content(初始为 "" 且不填充,
  *  标题纯文本落在下一个 inline token 上),故用 || 兜底取 tokens[idx + 1].content;
- *  若契约声明的 token.content 非空则优先使用。 */
+ *  若契约声明的 token.content 非空则优先使用。
+ *  批次 10 功能 2:heading_open 带 data-xref-anchor(sec:<label>)时,开标签后注入
+ *  <span id="sec:<label>"> 锚点(引用 [章节](#sec:label) 跳转目标;label 已在
+ *  xref_recognize 从 inline.content 剥离,slug 不含 label)。 */
 function overrideHeadingIdRule(md: MarkdownIt, seen: Map<string, number>): void {
   const defaultRule = md.renderer.rules.heading_open;
   md.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
     const text = token.content || tokens[idx + 1]?.content || "";
     token.attrSet("id", uniqueSlug(text, seen));
-    return defaultRule
+    const anchor = token.attrGet("data-xref-anchor");
+    if (anchor) attrDel(token, "data-xref-anchor");
+    const html = defaultRule
       ? defaultRule(tokens, idx, options, env, self)
       : self.renderToken(tokens, idx, options);
+    if (!anchor) return html;
+    return html.replace(">", `><span id="${anchor}"></span>`);
   };
 }
 
@@ -431,7 +677,10 @@ export async function renderPdfHtml(
 ): Promise<string> {
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
-  const md = buildMarkdownIt(options.mermaidResolver !== undefined);
+  // 两个编号开关提前计算:core 规则(xref_recognize)与模板 CSS 共用同一取值
+  const headingNumbering = options.headingNumbering ?? typography.headingNumbering;
+  const captionNumbering = options.captionNumbering ?? typography.captionNumbering;
+  const md = buildMarkdownIt(options.mermaidResolver !== undefined, headingNumbering, captionNumbering);
   const localImageSrcs: string[] = [];
   overrideImageRule(md, options.baseDir, localImageSrcs);
   // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
@@ -446,14 +695,12 @@ export async function renderPdfHtml(
   await checkLocalImages(localImageSrcs, options.imageResolver, warnings);
   // Mermaid 占位 → 内联 SVG / 失败降级代码块(异步串行,须在返回 html 前完成)
   const bodyWithMermaid = await replaceMermaidPlaceholders(bodyHtml, options.mermaidResolver, warnings);
-  const captionNumbering = options.captionNumbering ?? typography.captionNumbering;
   // 封面 + 目录 + 正文:buildCoverHtml/buildTocHtml 各自以 page-break 结尾,
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
   // toc 开关(默认开):关闭时不生成目录页(docx 侧同开关,双格式一致)
   const tocHtml = (options.toc ?? true) ? buildTocHtml(bodyWithMermaid) : "";
   const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyWithMermaid;
   const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings);
-  // headingNumbering 优先级:显式选项 > typography 设置(默认 true,与 docx 侧一致)
   return buildTemplate(
     processedBody,
     title,
@@ -461,7 +708,7 @@ export async function renderPdfHtml(
       pageSetup,
       options.breakBeforeH1 ?? false,
       typography,
-      options.headingNumbering ?? typography.headingNumbering,
+      headingNumbering,
       captionNumbering,
       /<h1[\s>]/i.test(bodyHtml),
     ),

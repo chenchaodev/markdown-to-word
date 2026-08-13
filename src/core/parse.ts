@@ -7,13 +7,20 @@ import { collectPlainText as collectText } from "./mdast-utils.js";
 
 /**
  * mdast Data 为声明合并接口:扩展标题的 data.id(本模块解析时写入,
- * docx 书签 / 内部锚点等消费端读取)。属公共契约,勿移除。
+ * docx 书签 / 内部锚点等消费端读取)与 data.secLabel(批次 10 功能 2)。
+ * 属公共契约,勿移除。
  */
 declare module "mdast" {
   interface Data {
     id?: string;
+    /** 标题行内 label(批次 10 功能 2:{#sec:label} 尾部后缀;label 不进 slug/标题文本) */
+    secLabel?: string;
   }
 }
+
+/** 标题行内 label 后缀(批次 10 功能 2:{#sec:label};与 docx/render.ts
+ *  renderHeading 渲染文本剥离正则一致,勿单侧改动) */
+const SEC_LABEL_RE = /\s*\{#sec:([\w-]+)\}$/;
 
 /**
  * 用 remark + remark-gfm + remark-math 将 markdown 解析为 mdast AST。
@@ -29,12 +36,20 @@ export function parseMarkdown(md: string): Root {
   return ast;
 }
 
-/** 递归为所有 heading 生成唯一 id(标题文本拼接所有 text 子节点)。 */
+/** 递归为所有 heading 生成唯一 id(标题文本拼接所有 text 子节点;
+ *  尾部 {#sec:label} 后缀剥离,label 不进 slug——渲染文本的剥离在
+ *  docx/render.ts renderHeading,两处正则与 SEC_LABEL_RE 一致)。 */
 function walkHeadings(node: Node, seen: Map<string, number>): void {
   if (node.type === "heading") {
     const heading = node as Heading;
     const text = collectText(heading);
-    heading.data = { ...heading.data, id: uniqueSlug(text, seen) };
+    const labelMatch = SEC_LABEL_RE.exec(text);
+    const plain = labelMatch ? text.slice(0, labelMatch.index) : text;
+    heading.data = {
+      ...heading.data,
+      id: uniqueSlug(plain, seen),
+      ...(labelMatch ? { secLabel: labelMatch[1] } : {}),
+    };
   }
   if ("children" in node && Array.isArray(node.children)) {
     for (const child of node.children) walkHeadings(child, seen);

@@ -1,6 +1,8 @@
 import type { Node, Root, Paragraph as MdParagraph } from "mdast";
-import { AlignmentType, Paragraph, TextRun } from "docx";
+import { AlignmentType, BookmarkEnd, BookmarkStart, Paragraph, TextRun } from "docx";
+import type { ParagraphChild } from "docx";
 import { collectPlainText } from "../mdast-utils.js";
+import { docxBookmarkId } from "../slug.js";
 import type { Ctx } from "./render.js";
 
 /** 题注信息(8b):类型/章节号/序数/题注文本;免更新路线在渲染期静态注入编号文本 */
@@ -10,8 +12,19 @@ interface CaptionInfo {
   chapter: number | null;
   /** 章节内序数(1 起,按 h1 章节重置,与 Word SEQ \s 1 语义一致) */
   index: number;
-  /** 题注文本(前缀「图: 」之后剩余) */
+  /** 题注文本(前缀「图: 」之后剩余,已剥离行内 label) */
   text: string;
+  /** 行内 label(批次 10 功能 2:{#fig:label}/{#tab:label} 尾部后缀;label 不渲染,
+   *  仅登记供交叉引用跳转;无 label 时 undefined) */
+  label?: string;
+}
+
+/** 题注 label 登记信息(批次 10 功能 2:交叉引用查表) */
+export interface CaptionLabelInfo {
+  /** 题注类型(fig/tab,与引用前缀一致) */
+  kind: "fig" | "tab";
+  /** 与题注显示一致的编号文本(「图 3.1」/「表 1」) */
+  numberText: string;
 }
 
 /** 节点子树是否含图片(链接内嵌图片 [![alt](u)](l) 也命中,递归) */
@@ -59,28 +72,59 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
     if (!match) continue;
     const isFigure = match[1] === "图";
     const index = isFigure ? ++figIndex : ++tabIndex;
-    captions.set(node, {
+    // 行内 label(批次 10 功能 2):题注文本尾部 {#fig:label}/{#tab:label} 剥离,
+    // label 不渲染(不进题注文本);仅当前缀与题注类型一致时剥离并登记
+    // (类型不一致视为普通文本原样保留,避免错误登记导致引用语义错乱)
+    let text = match[2];
+    let label: string | undefined;
+    const labelMatch = /\s*\{#(fig|tab):([\w-]+)\}$/.exec(text);
+    if (labelMatch && labelMatch[1] === (isFigure ? "fig" : "tab")) {
+      text = text.slice(0, labelMatch.index);
+      label = labelMatch[2];
+    }
+    const info: CaptionInfo = {
       type: isFigure ? "figure" : "table",
       chapter: ctx.headingNumbering && chapter > 0 ? chapter : null,
       index,
-      text: match[2],
-    });
+      text,
+      label,
+    };
+    captions.set(node, info);
+    // label 登记(交叉引用查表,仿 equations labelIndex 模式):label → 类型 + 编号显示文本
+    if (label !== undefined) {
+      ctx.captionLabels.set(label, { kind: isFigure ? "fig" : "tab", numberText: captionNumberText(info) });
+    }
   }
   return captions;
 }
 
-/** 题注段落:居中、比正文小一号(≥8pt)、无首行缩进;文本 = 自动编号 + 题注文本 */
-function renderCaptionParagraph(caption: CaptionInfo, ctx: Ctx): Paragraph {
+/** 题注编号显示文本(「图 3.1」/「表 1」):renderCaptionParagraph 与交叉引用
+ *  登记共用同一函数,避免显示与引用编号漂移 */
+function captionNumberText(caption: CaptionInfo): string {
   const prefix = caption.type === "figure" ? "图 " : "表 ";
   const chapter = caption.chapter !== null ? `${caption.chapter}.` : "";
-  const label = `${prefix}${chapter}${caption.index}`;
+  return `${prefix}${chapter}${caption.index}`;
+}
+
+/** 题注段落:居中、比正文小一号(≥8pt)、无首行缩进;文本 = 自动编号 + 题注文本 */
+function renderCaptionParagraph(caption: CaptionInfo, ctx: Ctx): Paragraph {
+  const label = captionNumberText(caption);
   const size = Math.max(8, ctx.typography.bodySizePt - 1);
+  const textRun = new TextRun({ text: caption.text === "" ? label : `${label} ${caption.text}`, size: size * 2 });
+  let children: ParagraphChild[] = [textRun];
+  // label 书签(批次 10 功能 2):题注带 {#fig:label}/{#tab:label} 时包
+  // fig-<label>/tab-<label> 书签,供交叉引用 InternalHyperlink 跳转;
+  // id 由 ctx.bookmarkNextId 自增保证文档内唯一(与 render.ts bookmarkChildren
+  // 同构;captions.ts 对 render.ts 仅 type-only 依赖,此处内联避免运行时循环)
+  if (caption.label !== undefined) {
+    const name = docxBookmarkId(`${caption.type === "figure" ? "fig" : "tab"}-${caption.label}`);
+    const linkId = ctx.bookmarkNextId.value++;
+    children = [new BookmarkStart(name, linkId), ...children, new BookmarkEnd(linkId)] as unknown as ParagraphChild[];
+  }
   return new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { before: 60, after: 120 },
-    children: [
-      new TextRun({ text: caption.text === "" ? label : `${label} ${caption.text}`, size: size * 2 }),
-    ],
+    children,
   });
 }
 

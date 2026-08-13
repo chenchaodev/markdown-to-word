@@ -44,7 +44,7 @@ import type {
 } from "mdast";
 import { CODE_FONT, CODE_SIZE, LINK_COLOR } from "./theme.js";
 import { texToDocxMath } from "./math.js";
-import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo } from "./captions.js";
+import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo, type CaptionLabelInfo } from "./captions.js";
 import { buildEquationContext, type EquationContext } from "./equations.js";
 import { collectPlainText } from "../mdast-utils.js";
 import { sniffImageType, imageSizeFromBuffer } from "../image-type.js";
@@ -116,11 +116,38 @@ export interface Ctx {
   footnoteNextId: { value: number };
   /** 公式 label → 编号查表(9d,renderDocx 预扫后挂入;行内交叉引用渲染用) */
   equationLabels?: Map<string, number>;
+  /** 题注 label → 编号文本(批次 10 功能 2:图/表交叉引用查表;buildCaptionContext 预扫时登记) */
+  captionLabels: Map<string, CaptionLabelInfo>;
+  /** 章节 label → 章节号文本 + 标题书签 slug(批次 10 功能 2:章节交叉引用查表;renderDocx 预扫登记) */
+  headingLabels: Map<string, HeadingLabelInfo>;
   /** docx 书签 linkId 自增计数器(逐文档新建,保证文档内 bookmarkStart/End id 唯一) */
   bookmarkNextId: { value: number };
   /** Mermaid 渲染回调(mermaid 围栏代码块 → 内嵌 PNG 图片;缺失时按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
 }
+
+/** 章节 label 登记信息(批次 10 功能 2:交叉引用查表) */
+interface HeadingLabelInfo {
+  /** 静态章节号文本(「1」「3.2」「3.2.1」;无 h1 时从「1」起,见 chapterNumberFromCounters) */
+  chapterText: string;
+  /** 标题书签 slug(引用跳转 anchor = docxBookmarkId(slug)) */
+  slug: string;
+}
+
+/**
+ * 交叉引用类型常量(批次 10 功能 2):fig/tab/sec 三类引用集中定义,
+ * pdf 侧渲染实现与此表同步(同一契约,勿单侧改文案)。
+ * - label 前缀:行内链接 #<prefix>:<label> 匹配([\w-]+);
+ * - defaultText:引用文本恰为此文本时替换为编号(其他文本保持原样仍跳转);
+ * - danglingText:查表未命中时默认文本的占位(无链接);
+ * - kindName:悬空警告文案用(「交叉引用未找到<kindName> label: <prefix>:<label>」)。
+ */
+export const CROSS_REF_KINDS = {
+  fig: { defaultText: "图", danglingText: "图 (?)", kindName: "图" },
+  tab: { defaultText: "表", danglingText: "表 (?)", kindName: "表" },
+  sec: { defaultText: "章节", danglingText: "(?)", kindName: "章节" },
+} as const;
+type CrossRefKind = keyof typeof CROSS_REF_KINDS;
 
 /** 纸张 mm 尺寸表(宽 × 高) */
 const PAPER_SIZES_MM: Record<PageSetup["paper"], { width: number; height: number }> = {
@@ -205,6 +232,8 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     footnotes: {},
     footnoteNextId: { value: 1 },
     bookmarkNextId: { value: 1 },
+    captionLabels: new Map(),
+    headingLabels: new Map(),
     mermaidResolver: options.mermaidResolver,
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
@@ -219,6 +248,31 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   // 与 Word SEQ \s 1 语义一致;headingNumbering 关闭时无章节号、全文档连续)
   const tocEntries: TocEntry[] = [];
   const captions = buildCaptionContext(ast, ctx);
+  // 预扫章节 label(批次 10 功能 2):渲染前按文档顺序遍历标题,静态章节号计数 +
+  // {#sec:label} 登记(引用可能出现在目标标题之前,渲染期登记会漏;与
+  // captions/equations 预扫模式一致)。计数镜像 Word numbering 引擎逐段计数
+  // (h1 增 → h2/h3 清零,h2 增 → h3 清零;depth 4-6 不计数,与 numbering
+  // 只挂 h1-h3 一致);headingNumbering 关闭时不计数 → 引用侧按悬空处理
+  const headingCounters = { h1: 0, h2: 0, h3: 0 };
+  for (const node of ast.children) {
+    if (node.type !== "heading" || ctx.headingNumbering !== true || node.depth > 3) continue;
+    if (node.depth === 1) {
+      headingCounters.h1 += 1;
+      headingCounters.h2 = 0;
+      headingCounters.h3 = 0;
+    } else if (node.depth === 2) {
+      headingCounters.h2 += 1;
+      headingCounters.h3 = 0;
+    } else {
+      headingCounters.h3 += 1;
+    }
+    const chapterText = chapterNumberFromCounters(headingCounters, node.depth);
+    const secLabel = node.data?.secLabel;
+    const id = node.data?.id;
+    if (chapterText !== null && secLabel !== undefined && typeof id === "string" && id !== "") {
+      ctx.headingLabels.set(secLabel, { chapterText, slug: id });
+    }
+  }
   // 预扫公式编号上下文(9d:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表)
   const equations = buildEquationContext(ast, ctx);
   // label 查表挂到 ctx(行内链接渲染处 pushRuns 经 ctx 访问)
@@ -228,7 +282,12 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
       if (node.type === "heading" && node.depth <= 3) {
         const id = node.data?.id;
         if (typeof id === "string" && id !== "") {
-          tocEntries.push({ title: collectPlainText(node), level: node.depth, href: docxBookmarkId(id) });
+          // 目录条目文本同标题渲染:尾部 {#sec:label} 不显示(与 renderHeading 一致)
+          tocEntries.push({
+            title: stripSecLabelSuffix(collectPlainText(node)),
+            level: node.depth,
+            href: docxBookmarkId(id),
+          });
         }
       }
     }
@@ -523,7 +582,12 @@ async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph> {
     5: HeadingLevel.HEADING_5,
     6: HeadingLevel.HEADING_6,
   };
-  const runs = await renderPhrasing(node.children, ctx);
+  // 行内 label(批次 10 功能 2):{#sec:label} 尾部后缀不渲染——渲染前从最后一个
+  // 叶子文本节点剥离(递归副本,不改 AST;parse.ts 已从 slug 剥离,此处剥离
+  // 渲染文本,label 不进标题文本;label 的章节号登记在 renderDocx 预扫完成)
+  const secLabel = node.data?.secLabel;
+  const children = secLabel !== undefined ? stripTrailingSecLabel(node.children) : node.children;
+  const runs = await renderPhrasing(children, ctx);
   // parse.ts 将标题 id 挂于 data.id(mdast Data 已声明合并,见 parse.ts)
   const id = node.data?.id;
   return new Paragraph({
@@ -541,6 +605,52 @@ async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph> {
         ? bookmarkChildren(ctx, docxBookmarkId(id), runs)
         : runs,
   });
+}
+
+/**
+ * 静态章节号(批次 10 功能 2,镜像 Word numbering 引擎逐级计数):
+ * 编号文本 = 深度 1..depth 当前计数拼接;前导未出现的级(计数 0)跳过
+ * (无 h1 时 h2 从「1」起,与题注章节语义一致),中间未出现的级保留 0
+ * (h1 后直接 h3 →「1.0.1」,与 Word 引擎显示一致)。
+ * 仅镜像:headingNumberingOptions 模板或 numbering 配置变更会漂移(免更新路线已声明)。
+ */
+function chapterNumberFromCounters(
+  counters: { h1: number; h2: number; h3: number },
+  depth: number,
+): string | null {
+  const parts: number[] = [];
+  let started = false;
+  for (let i = 1; i <= depth; i++) {
+    const v = counters[(`h${i}`) as keyof typeof counters];
+    if (!started && v === 0) continue;
+    started = true;
+    parts.push(v);
+  }
+  return parts.length > 0 ? parts.join(".") : null;
+}
+
+/** 递归剥离最后一个叶子文本节点尾部的 {#sec:label}(渲染文本不含 label;
+ *  返回副本,不改 AST;label 位于强调/加粗等嵌套节点内也命中) */
+function stripTrailingSecLabel(children: PhrasingContent[]): PhrasingContent[] {
+  if (children.length === 0) return children;
+  const result = children.slice();
+  const last = result[result.length - 1];
+  if (last.type === "text") {
+    result[result.length - 1] = { ...last, value: last.value.replace(/\s*\{#sec:[\w-]+\}$/, "") };
+  } else if ("children" in last && Array.isArray(last.children) && last.children.length > 0) {
+    // mdast children 联合类型收窄不完全,渲染场景恒为数组,显式断言后递归
+    result[result.length - 1] = {
+      ...last,
+      children: stripTrailingSecLabel(last.children as PhrasingContent[]),
+    } as PhrasingContent;
+  }
+  return result;
+}
+
+/** 纯文本尾部 {#sec:label} 剥离(目录条目标题等纯文本场景;与
+ *  stripTrailingSecLabel / parse.ts SEC_LABEL_RE 同一正则,勿单侧改动) */
+function stripSecLabelSuffix(text: string): string {
+  return text.replace(/\s*\{#sec:[\w-]+\}$/, "");
 }
 
 /** 列表:listItem 内第一个块挂编号,嵌套列表递归加深 level */
@@ -739,6 +849,47 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
             children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
           }),
         );
+        break;
+      }
+      // 图/表/章节交叉引用(批次 10 功能 2,文案与占位见 CROSS_REF_KINDS,勿散落硬编码):
+      // [图](#fig:label) → 静态编号文本「图 3.1」+ 跳题注书签 fig-<label>;
+      // [表](#tab:label) → 「表 1」+ 跳 tab-<label>;[章节](#sec:label) →
+      // 静态章节号「3.2」+ 跳标题书签;引用文本非约定文本 → 保持原文本仍跳转
+      // (与 #eq: 非「式/公式」行为一致);悬空 → 默认文本占位 + 警告,非约定
+      // 文本保持原样不带链接(目标书签不存在,不生成死链;公式悬空非默认文本
+      // 无警告的死链行为不复制,此处更安全)
+      const crossMatch = /^#(fig|tab|sec):([\w-]+)$/.exec(url);
+      if (crossMatch) {
+        const kind = crossMatch[1] as CrossRefKind;
+        const label = crossMatch[2];
+        const def = CROSS_REF_KINDS[kind];
+        let numberText: string | undefined;
+        let anchor: string | undefined;
+        if (kind === "sec") {
+          const info = ctx.headingLabels.get(label);
+          if (info) {
+            numberText = info.chapterText;
+            anchor = docxBookmarkId(info.slug);
+          }
+        } else {
+          const info = ctx.captionLabels.get(label);
+          // captionLabels 登记时已限定 kind 与前缀一致(见 captions.ts),此处防御性校验
+          if (info && info.kind === kind) {
+            numberText = info.numberText;
+            anchor = docxBookmarkId(`${kind}-${label}`);
+          }
+        }
+        if (numberText !== undefined && anchor !== undefined) {
+          runs.push(
+            new InternalHyperlink({
+              anchor,
+              children: [new TextRun({ text: text === def.defaultText ? numberText : text, color: LINK_COLOR, underline: {}, ...style })],
+            }),
+          );
+        } else {
+          ctx.warnings?.push(`交叉引用未找到${def.kindName} label: ${kind}:${label}`);
+          runs.push(new TextRun({ text: text === def.defaultText ? def.danglingText : text, ...style }));
+        }
         break;
       }
       if (url.startsWith("#")) {
