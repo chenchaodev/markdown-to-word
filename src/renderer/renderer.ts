@@ -146,6 +146,19 @@ declare global {
       openPreview: (mdPath: string) => Promise<{ ok: boolean; error?: string }>;
       /** 批次 11 迭代 3:刷新所有预览窗口(设置变更后调用;无预览窗口时为空操作)。 */
       previewRefresh: () => Promise<void>;
+      /** 批次 13:从 JSON 文件导入自定义预设(main 内选文件,与现有合并:同名覆盖,上限 10);
+       *  canceled=true 为用户取消。 */
+      importPresets: () => Promise<
+        | { ok: true; canceled: true }
+        | { ok: true; canceled: false; imported: number; overridden: number }
+        | { ok: false; error: string }
+      >;
+      /** 批次 13:导出全部自定义预设为 JSON 文件;canceled=true 为用户取消。 */
+      exportPresets: () => Promise<
+        | { ok: true; canceled: true }
+        | { ok: true; canceled: false; count: number }
+        | { ok: false; error: string }
+      >;
       /** 批次 11 迭代 4:应用菜单「文件 → 打开文件…」触发,复用现有选择对话框链路。 */
       onMenuOpen: (cb: () => void) => () => void;
     };

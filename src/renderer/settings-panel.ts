@@ -55,6 +55,8 @@ import {
   outputDirValue,
   paperSelect,
   presetDeleteBtn,
+  presetExportBtn,
+  presetImportBtn,
   presetNameInput,
   presetSaveBtn,
   presetSaveCancel,
@@ -66,7 +68,7 @@ import {
   tocInput,
 } from "./dom.js";
 import { state } from "./state.js";
-import { hideFieldError, setError, showFieldError, trapFocus } from "./utils.js";
+import { hideFieldError, setError, setStatus, showFieldError, trapFocus } from "./utils.js";
 
 /* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let presetSaveTrap: (() => void) | null = null;
@@ -251,6 +253,53 @@ function deleteCustomPreset(): void {
       });
     })
     .catch(() => setError("删除预设失败,请重试"));
+}
+
+/* ---------- 模板预设导入/导出(批次 13;main 内选文件 + 合并/导出 + 持久化全包) ---------- */
+/** 导入自定义预设 JSON:main 打开对话框 → 读文件 → 与现有合并(同名覆盖,上限 10)→ 持久化。
+ *  成功后同步最新列表并重刷下拉;取消无动作;失败状态区提示。 */
+async function importCustomPresets(): Promise<void> {
+  try {
+    const r = await window.api.importPresets();
+    if (!r.ok) {
+      setError(`导入预设失败:${r.error}`);
+      return;
+    }
+    if (r.canceled) return; // 用户取消:无动作
+    // 合并结果已在 main 持久化,这里只同步内存列表供下拉重刷(失败静默,反馈不受影响)
+    try {
+      const fresh = await window.api.settingsGet();
+      state.settings.customPresets = fresh.customPresets;
+    } catch {
+      /* 忽略:列表刷新失败时下拉保持旧数据 */
+    }
+    rebuildPresetOptions();
+    applySettingsToControls(); // 重刷后按 matchesPreset 重算 select/hint,不强制切换选中项
+    setStatus(
+      r.overridden > 0
+        ? `已导入 ${r.imported} 个预设(覆盖 ${r.overridden} 个同名)`
+        : `已导入 ${r.imported} 个预设`,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    setError(`导入预设失败:${message}`);
+  }
+}
+
+/** 导出全部自定义预设为 JSON 文件;成功时反馈数量,取消无动作。 */
+async function exportCustomPresets(): Promise<void> {
+  try {
+    const r = await window.api.exportPresets();
+    if (!r.ok) {
+      setError(`导出预设失败:${r.error}`);
+      return;
+    }
+    if (r.canceled) return; // 用户取消:无动作
+    setStatus(`已导出 ${r.count} 个预设`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    setError(`导出预设失败:${message}`);
+  }
 }
 
 /* ---------- 转换完成弹窗提示(批次 11 迭代 2;ui-state 字段,非 settings.json) ---------- */
@@ -468,6 +517,9 @@ export function bindSettingsEvents(): void {
   });
   // 仅自定义预设可删;删除后回退「默认」
   presetDeleteBtn.addEventListener("click", deleteCustomPreset);
+  // 批次 13:预设 JSON 导入 / 导出(IIFE + void,规避 no-misused-promises)
+  presetImportBtn.addEventListener("click", () => void importCustomPresets());
+  presetExportBtn.addEventListener("click", () => void exportCustomPresets());
 
   // 批次 7:输出目录选择 / 恢复默认(空串 = 与源文件相同目录)
   outputDirPick.addEventListener("click", () => {

@@ -13,7 +13,15 @@ import { fileURLToPath } from "node:url";
 import { convert, type ConvertFormat } from "../core/convert.js";
 import { decodeMarkdown } from "../core/encoding.js";
 import { createImageResolver } from "./image-downloader.js";
-import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
+import {
+  loadSettings,
+  mergePresets,
+  parsePresetsFile,
+  updateSettings,
+  type AppSettings,
+  type ExportPresetsResult,
+  type ImportPresetsResult,
+} from "./settings.js";
 import {
   loadUiState,
   pickWindowBounds,
@@ -383,6 +391,58 @@ function registerIpc(): void {
 
   ipcMain.handle("settings:set", (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
     return updateSettings(patch);
+  });
+
+  // 批次 13:导入模板预设 JSON(选文件 → 解析校验 → 同名覆盖合并 → 上限 10 → 持久化)。
+  // 取消 → { ok:true, canceled:true };解析/读取异常 → { ok:false, error }(可读文案)
+  ipcMain.handle("presets:import", async (): Promise<ImportPresetsResult> => {
+    const result = await dialog.showOpenDialog({
+      title: "导入模板预设",
+      defaultPath: await lastOpenDirIfValid(),
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: true, canceled: true };
+    }
+    try {
+      const text = await fs.readFile(result.filePaths[0], "utf8");
+      const parsed = parsePresetsFile(text);
+      if (!parsed.ok) return { ok: false, error: parsed.error };
+      const existing = loadSettings().customPresets;
+      const merged = mergePresets(existing, parsed.presets);
+      await updateSettings({ customPresets: merged.presets });
+      // 与其它打开对话框一致:成功后记忆所选目录(下次默认打开位置)
+      await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]) }).catch(() => undefined);
+      return {
+        ok: true,
+        canceled: false,
+        imported: merged.imported,
+        overridden: merged.overridden,
+      };
+    } catch (err) {
+      return { ok: false, error: `读取文件失败:${err instanceof Error ? err.message : String(err)}` };
+    }
+  });
+
+  // 批次 13:导出全部自定义预设为 JSON(保存对话框;schemaVersion:1 包装,2 空格缩进)。
+  // 空预设 main 侧前置拦截(renderer 侧可同样提示,两处一致);取消 → { ok:true, canceled:true }
+  ipcMain.handle("presets:export", async (): Promise<ExportPresetsResult> => {
+    const presets = loadSettings().customPresets;
+    if (presets.length === 0) return { ok: false, error: "暂无自定义预设可导出" };
+    const result = await dialog.showSaveDialog({
+      title: "导出模板预设",
+      defaultPath: path.join(app.getPath("documents"), "presets.json"),
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: true, canceled: true };
+    try {
+      const payload = `${JSON.stringify({ schemaVersion: 1, presets }, null, 2)}\n`;
+      await fs.writeFile(result.filePath, payload, "utf8");
+      return { ok: true, canceled: false, count: presets.length };
+    } catch (err) {
+      return { ok: false, error: `写入文件失败:${err instanceof Error ? err.message : String(err)}` };
+    }
   });
 
   // 批次 11:UI 状态读写(最近文件/会话文件/记忆目录/窗口位置/面板展开态;独立于 settings)

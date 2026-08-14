@@ -213,6 +213,79 @@ function sanitizeCustomPresets(value: unknown): CustomPreset[] {
   return out;
 }
 
+/* ---------- 批次 13:模板预设导入/导出(纯逻辑;对话框/文件 IO 在 index.ts IPC 层) ---------- */
+export type ParsePresetsResult =
+  | { ok: true; presets: CustomPreset[] }
+  | { ok: false; error: string };
+export type MergePresetsResult = {
+  presets: CustomPreset[];
+  /** 合并后保留的 incoming 条数(含覆盖项;受上限截断影响) */
+  imported: number;
+  /** incoming 与 existing 同名的条数(被覆盖数) */
+  overridden: number;
+};
+export type ImportPresetsResult =
+  | { ok: true; canceled: true }
+  | { ok: true; canceled: false; imported: number; overridden: number }
+  | { ok: false; error: string };
+export type ExportPresetsResult =
+  | { ok: true; canceled: true }
+  | { ok: true; canceled: false; count: number }
+  | { ok: false; error: string };
+
+/** 导出文件的 schemaVersion(导入侧仅接受 === 1 或裸数组)。 */
+export const PRESETS_SCHEMA_VERSION = 1;
+
+/**
+ * 解析导入的预设 JSON(批次 13):
+ * - JSON.parse 失败 → 「文件不是有效的 JSON」
+ * - 裸数组兼容(归一化);对象须 schemaVersion === 1,其余 → 「不支持的模板文件版本」
+ * - 逐条过 sanitizeCustomPresets:空名/非法 pageSetup 丢弃、数值钳制、同名去重保留先出现、截断 10
+ * - 无有效预设(空数组/全非法/对象缺 presets 字段)→ 「文件不含有效预设」
+ */
+export function parsePresetsFile(text: string): ParsePresetsResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, error: "文件不是有效的 JSON" };
+  }
+  let rawPresets: unknown;
+  if (Array.isArray(parsed)) {
+    rawPresets = parsed; // 裸数组兼容
+  } else if (typeof parsed === "object" && parsed !== null) {
+    const obj = parsed as { schemaVersion?: unknown; presets?: unknown };
+    if (obj.schemaVersion !== PRESETS_SCHEMA_VERSION) {
+      return { ok: false, error: "不支持的模板文件版本" };
+    }
+    rawPresets = obj.presets; // 缺 presets 字段 → undefined → 空 → 下方报「文件不含有效预设」
+  } else {
+    return { ok: false, error: "不支持的模板文件版本" };
+  }
+  const presets = sanitizeCustomPresets(rawPresets);
+  if (presets.length === 0) return { ok: false, error: "文件不含有效预设" };
+  return { ok: true, presets };
+}
+
+/**
+ * 导入合并(批次 13):incoming 覆盖 existing 的同名项——合并序 incoming 在前,
+ * 复用 sanitizeCustomPresets 去重「保留先出现」的语义;其余追加,截断 10。
+ * 入参不被修改(结果为新对象数组)。
+ */
+export function mergePresets(
+  existing: readonly CustomPreset[],
+  incoming: readonly CustomPreset[],
+): MergePresetsResult {
+  const presets = sanitizeCustomPresets([...incoming, ...existing]);
+  const overridden = incoming.filter((item) =>
+    existing.some((e) => e.name === item.name),
+  ).length;
+  const imported = presets.filter((item) =>
+    incoming.some((i) => i.name === item.name),
+  ).length;
+  return { presets, imported, overridden };
+}
+
 /** pageSetup 逐字段校验:paper/orientation 枚举,数值钳制 0-1000mm,非法字段回退默认 */
 function sanitizePageSetup(value: unknown): PageSetup | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;

@@ -2,6 +2,12 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-14 20:16:22 模板导入方案选型(@lib-1 + @exp-1,批次 13 规划依据)
+- **决策**:批次 13「模板导入」= **预设 JSON 导入/导出**(首选;复用 sanitizeCustomPresets 校验,零新依赖,低风险高价值);CSS 模板覆盖(pdf 路线追加用户 CSS,类名固定可覆盖)次选;docx 模板导入暂缓记 ROADMAP(docx 9.x 仅 patchDocument 占位符替换不提取样式;docx4js 3.3.0 单人维护 2024-09 停更 + OOXML 样式→参数模型逆映射工程量大,与自研渲染管线架构相悖;pandoc reference.docx 机制仅作设计参照)
+- **关键事实**:预设=纯数值快照(typography+pageSetup),渲染管线只认最终字段值,无资源字段承载位;pdf CSS 全在 template.ts 模板字符串(无变量机制,追加 <style> 后加载可覆盖,但需防用户 CSS 破坏 .page-break/breakBeforeH1 分页强制规则);docx 路线不消费 CSS(OOXML)
+- **JSON 格式**:{schemaVersion:1, presets:[{name,typography,pageSetup}]}(兼容裸数组);导入=读文件→sanitize→追加合并(同名覆盖)→上限 10 截断
+- 来源: @librarian lib-1 + @explorer exp-1;关联: 原文存档 docs/archive/20260814-201622-模板导入方案.md
+
 ### 2026-08-14 18:51:13 双方向探索方案(@des-1/@ora-1/@lib-1/@exp-1/@exp-2,批次 12 规划依据)
 - **方向 A 界面体验优化(用户已选,批次 12)**:20 项问题(P1-P20)+ 12 项候选(C1-C12)三阶段;关键缺陷 **P9 点击拖放区=替换整表但文案声称追加**(误触丢全部选择,无确认,renderer.ts:175/222 vs index.html:63/98)、**P1 设置面板展开后转换按钮/进度被推出 640px 视口**、**P3 模板预设埋在第二折叠面板**;本批实施 Phase 0 速赢(C1/C3/C4/C5/C6/C7/C11);C1 语义=多文件态点击追加、单文件态点击更换
 - **方向 B 代码质量与测试(未选,存档备查)**:速赢=tsconfig 4 开关(noUnusedLocals/noImplicitOverride/noFallthroughCasesInSwitch)+ depcheck 一次性 + mermaid-service 超时/崩溃降级测试(199 行 vs 34 行,最高回归风险)+ settings-panel 纯逻辑抽取(470 行零直接测试);低风险=eslint 9 flat(仅 correctness,先验证 TS 7 兼容)+ c8(门槛=Electron 主进程 NODE_V8_COVERAGE 实测,需 sourceMap 且排除出 asar);暂缓=prettier/knip/CI;不做=vitest 迁移/再拆 render.ts 主循环

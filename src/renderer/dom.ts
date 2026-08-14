@@ -84,6 +84,13 @@ export const presetSaveBtn = document.getElementById(
 export const presetDeleteBtn = document.getElementById(
   "presetDeleteBtn",
 ) as HTMLButtonElement;
+// 批次 13:预设 JSON 导入 / 导出
+export const presetImportBtn = document.getElementById(
+  "presetImportBtn",
+) as HTMLButtonElement;
+export const presetExportBtn = document.getElementById(
+  "presetExportBtn",
+) as HTMLButtonElement;
 export const presetSaveDialog = document.getElementById(
   "presetSaveDialog",
 ) as HTMLDivElement;
