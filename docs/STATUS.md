@@ -1,6 +1,7 @@
 # 状态速查
 
 ## 当前状态
+- 2026-08-14:**方向 B「代码质量与测试」全项完成(迭代 1-3)**:迭代 1 维护顺手项(7eb82af smoke 隔离 ui-state 会话残留 + USER-GUIDE/ROADMAP 核对去重);迭代 2 速赢批(abed9b7/1ebd756 settings-logic 抽取 + 22 断言直测,e526060 tsconfig 4 严格开关 + 依赖声明补齐 jszip/@types/mdast/katex(depcheck 修复),e6e48a9 mermaid-service 超时/崩溃/加载失败降级路径测试);迭代 3 工具链(eslint 10 flat + typescript-eslint 8.67 side-by-side TS6 API——TS 7 无 JS API,官方推荐方案,首跑修 5 处真实 floating/misused promise;c8 12 覆盖率:main 97% / core-docx 93% / core-pdf 95% / renderer 100%,sourceMap 映射,NODE_V8_COVERAGE 实测可行;engines 升 >=20.19);typecheck/lint/32 段/smoke 全绿;待批次 12 GUI 实测 + 发版 0.26.0
 - 2026-08-14:**方向 B 首项完成(settings-logic 抽取,abed9b7)**:自 settings-panel.ts 抽零 DOM 纯函数层 `src/renderer/settings-logic.ts`(validatePresetName/customPresetToTemplate/allPresets/customPresetNameFromId/clampMargin,allPresets 参数化),新建 segments/settings-logic.test.js 直测(22 断言),31→32 段全绿;typecheck/build/smoke 全绿;豁免不 tag
 - 2026-08-13:**批次 11「体验打磨」完成 + 用户实测通过,发版 0.25.0**:11 项候选全选拆 4 迭代单元独立提交——I1 状态记忆(e0262e1:ui-state.ts 原子写+宽松校验,最近文件一键重转/会话恢复/对话框目录记忆/窗口面板记忆)、I2 结果增强(dd16075:批量失败重试/复制全部路径/完成弹窗不再提示)、I3 预览与模板(7d87bed:预览设置变更即时刷新+focus mtime 刷新/customPresets 另存为预设)、I4 顺手项(ebc5d88:列表行双击预览/应用菜单+关于);31 段 + smoke 全绿;用户 GUI 实测通过(ACCEPTANCE.md 批次 11 节全勾),验收关闭
 - 2026-08-14:**批次 12「界面体验优化」Phase 0+1+2 实现完成,待用户 GUI 实测**(方案存档 archive/20260814-185113):Phase 0 速赢 7 项拆 4 提交(af572e4 U1 点击行为对齐/740dd5d U2 窗口最小尺寸+密度上限/22cd5ab U3 快捷键提示+文案统一/dfd9a40 U4 预设上限提示);Phase 1 一次提交(a6d16ea C2 底部操作区 sticky 常驻/C10 双击预览可见提示+删 selected 死代码/C9 弹窗焦点陷阱);Phase 2+追加按钮一次提交(C8 模板预设上移全局常显/C12 最近条目仅加载/单文件态追加文件按钮,用户反馈);typecheck/build/31 段/smoke 全绿;待实测见 ACCEPTANCE.md 批次 12 U1-U7;方向 B(质量与测试)方案存档备查
@@ -26,8 +27,13 @@
 - 2026-08-02~08-06:批次 1-6 与 G1-G5 均已完成(用户实测通过:批次 1/2/3 与 G5),详见 CHANGELOG;验收产物见 `output/artifacts/`(按内容主题命名,无批次概念)
 
 ## 验证基线
-- 已跑通:`npm run typecheck`、`npm run build`、`npx electron . --smoke`(启动 + docx/pdf 双链路 + 设置持久化/landscape 端到端 + 批量/合并端到端 + renderer 诊断)
-- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染)与 `main/`(主进程层)下 `*.test.js`,30 段:基础渲染/封面/合并/脚注/公式/公式编号/PDF 元数据/PDF 书签端到端/标题编号链接/标题提取/排版/白名单/编码/TOC 与题注/任务列表/设置/页面设置(含分页符)/frontmatter/slug/外链图片下载/图片类型/预设契约/转换编排/路径解析/GBK 端到端/renderer 纯函数/Mermaid(core 契约 + main 真实渲染)/题注章节交叉引用;新增测试=新建段文件零注册);main 侧行为(重名序号/输出目录/取消/批量导出)已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
+- 已跑通:
+pm run typecheck、
+pm run lint、
+pm run build、
+px electron . --smoke(启动 + docx/pdf 双链路 + 设置持久化/landscape 端到端 + 批量/合并端到端 + renderer 诊断)、
+pm run test:coverage(c8,2026-08-14 实测 main 97% / core-docx 93% / core-pdf 95% / renderer 100%)
+- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染)与 `main/`(主进程层)下 `*.test.js`,32 段:基础渲染/封面/合并/脚注/公式/公式编号/PDF 元数据/PDF 书签端到端/标题编号链接/标题提取/排版/白名单/编码/TOC 与题注/任务列表/设置/页面设置(含分页符)/frontmatter/slug/外链图片下载/图片类型/预设契约/转换编排/路径解析/GBK 端到端/renderer 纯函数/Mermaid(core 契约 + main 真实渲染)/题注章节交叉引用/settings-logic 直测;新增测试=新建段文件零注册);main 侧行为(重名序号/输出目录/取消/批量导出)已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
 - 验收样例:`npm run gen:fixtures`(需先 build)按功能自动生成 `test/fixtures/acceptance/*.md`(GUI 人工实测直接拖入);`npm run check:fixtures` 漂移校验(幂等,exit 0/1);新增功能=测试段顶层加 `export const fixtures = { main: ... }`,生成器零改动自动纳入
 - smoke 自清理 output/smoke 临时产物(批次 7 重名保护后旧产物不再被覆盖,断言会遇 (N) 序号变体;Windows 占用文件 EBUSY 容错跳过)
 - 历史批次断言明细见 `docs/CHANGELOG.md` 对应版本条目(0.4.x~0.17.x)

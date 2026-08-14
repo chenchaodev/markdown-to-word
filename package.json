@@ -6,10 +6,11 @@
   "type": "module",
   "main": "dist/main/index.js",
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
     "build": "tsc && node scripts/copy-renderer.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
@@ -17,6 +18,7 @@
     "gen:fixtures": "node test/tools/gen-fixtures.mjs",
     "check:fixtures": "node test/tools/gen-fixtures.mjs --check",
     "test:smoke": "electron . --smoke",
+    "test:coverage": "npm run build && c8 --reporter=text --include=\"dist/**\" electron test/acceptance.mjs",
     "test:all": "npm run test && npm run test:smoke",
     "dist": "npm run build && electron-builder --win nsis --x64 --publish never"
   },
@@ -55,12 +57,16 @@
     "@types/markdown-it": "^14.1.2",
     "@types/mdast": "^4.0.4",
     "@types/node": "^26.1.2",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "c8": "^12.0.0",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
+    "eslint": "^10.8.1",
     "jszip": "^3.10.1",
     "png-to-ico": "^3.0.2",
     "sharp": "^0.35.3",
-    "typescript": "^7.0.2"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.67.0"
   },
   "dependencies": {
     "@mdit/plugin-footnote": "^1.0.2",

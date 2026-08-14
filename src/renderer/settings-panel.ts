@@ -470,7 +470,8 @@ export function bindSettingsEvents(): void {
   presetDeleteBtn.addEventListener("click", deleteCustomPreset);
 
   // 批次 7:输出目录选择 / 恢复默认(空串 = 与源文件相同目录)
-  outputDirPick.addEventListener("click", async () => {
+  outputDirPick.addEventListener("click", () => {
+    void (async () => {
     try {
       const dir = await window.api.selectDir();
       if (!dir) return; // 用户取消
@@ -482,6 +483,7 @@ export function bindSettingsEvents(): void {
       const message = err instanceof Error ? err.message : String(err);
       setError(`选择输出目录失败:${message}`);
     }
+    })();
   });
 
   outputDirReset.addEventListener("click", () => {

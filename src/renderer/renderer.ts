@@ -506,7 +506,8 @@ batchDialogRetry.addEventListener("click", () => {
 });
 
 // 批次 11 迭代 2:批量弹窗「复制全部路径」——成功项输出路径换行拼接复制到剪贴板
-batchDialogCopyAll.addEventListener("click", async () => {
+batchDialogCopyAll.addEventListener("click", () => {
+  void (async () => {
   if (!state.lastBatchResult) return;
   const paths = batchSuccessPaths(state.lastBatchResult.items);
   if (paths.length === 0) return;
@@ -520,6 +521,7 @@ batchDialogCopyAll.addEventListener("click", async () => {
     batchDialogError.textContent = "复制失败,请手动选择文本复制";
     batchDialogError.classList.remove("hidden");
   }
+  })();
 });
 
 // 批次 11 迭代 2:完成弹窗「不再提示」——与设置面板「转换完成弹窗提示」同字段双向同步
@@ -565,7 +567,8 @@ summaryDetailsBtn.addEventListener("click", () => {
 });
 
 // 批次 7:完成弹窗「复制路径」(仅成功态显示;失败态隐藏该按钮)
-completeDialogCopy.addEventListener("click", async () => {
+completeDialogCopy.addEventListener("click", () => {
+  void (async () => {
   const text = completeOutputPath.textContent ?? "";
   if (!text) return;
   try {
@@ -577,6 +580,7 @@ completeDialogCopy.addEventListener("click", async () => {
   } catch {
     showDialogError("复制失败,请手动选择文本复制");
   }
+  })();
 });
 
 // 进度订阅:单文件/合并走 convert:progress;批量走 batch:progress。

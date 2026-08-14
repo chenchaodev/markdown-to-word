@@ -1,7 +1,7 @@
 # markdown-to-word 项目约束
 
 ## 硬约束(勿回退)
-- 技术栈:Node.js + TypeScript,ESM(`"type": "module"`),Node >= 18
+- 技术栈:Node.js + TypeScript,ESM(`"type": "module"`),Node >= 20.19(勿回退;typescript-eslint 经 side-by-side 用 TS 6 API(`typescript` 别名 `@typescript/typescript6`),`tsc` 二进制仍为 TS 7(`@typescript/native` 别名))
 - npm 走国内镜像:项目 `.npmrc` 已配置 npmmirror,勿移除;install 失败先怀疑网络
 - 转换核心(docx 路线):`docx` 9.x + remark 自研渲染管线;pdf 路线:markdown-it + HTML 模板 + Electron `printToPDF`(勿回退到 md-to-pdf);选型结论见 `docs/ROADMAP.md`,实际验证事实记录于 `docs/RESEARCH.md`
 - GUI:Electron 43;安装/打包走镜像,`ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR` 写死勿回退

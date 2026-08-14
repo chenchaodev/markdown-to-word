@@ -1,7 +1,7 @@
 # 开发者手册
 
 ## 环境
-- Node >= 18(ESM)
+- Node >= 20.19(ESM;typescript-eslint 经 side-by-side 用 TS 6 API,`tsc` 二进制仍为 TS 7——package.json 中 `typescript` 别名 `@typescript/typescript6`,`@typescript/native` 别名真实 TS 7;勿回退)
 - npm 源:npmmirror(见根 `.npmrc`,勿回退)
 - Electron 二进制镜像(勿回退,装 electron/打包前设置):
   - `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`
@@ -12,13 +12,15 @@
 | 命令 | 用途 |
 | ---- | ---- |
 | `npm install` | 安装依赖(首次先 `npm install -D typescript @types/node`,Electron 单独装并设镜像) |
-| `npm run typecheck` | TS 类型检查(`tsc --noEmit`) |
+| `npm run typecheck` | TS 类型检查(`tsc --noEmit`,TS 7) |
+| `npm run lint` | ESLint 10 flat 检查 `src/`(typescript-eslint 类型感知规则,side-by-side TS 6 API) |
 | `npm run build` | 构建 core 到 `dist/`(`tsc` + copy-renderer) |
 | `npm run dev` | 启动 Electron 开发 |
 | `npx electron . --smoke` | 冒烟自测(启动 + convert 链路,自清理产物) |
 | `npm run dist` | electron-builder 打包 NSIS 安装包(G5) |
 | `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`,自动发现 `segments/` 与 `main/` 下 `*.test.js`;需先 build;新增测试=新建段文件零注册) |
 | `npm run test:smoke` | 冒烟自测(`electron . --smoke`) |
+| `npm run test:coverage` | c8 覆盖率报告(主进程 V8 coverage + sourceMap 映射;全量测试后输出,2026-08-14 实测 main 97% / core/docx 93% / core/pdf 95% / renderer 100%) |
 | `npm run test:all` | 验收 + 冒烟 |
 
 ## 架构(设计决策,勿随意偏离)

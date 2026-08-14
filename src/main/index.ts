@@ -100,7 +100,7 @@ function createWindow(): BrowserWindow {
     },
   });
   mainWindow = win;
-  win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+  void win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
   // mermaid 渲染窗口为常驻隐藏单例:主窗口关闭时销毁,否则 window-all-closed 永不触发
   // (隐藏窗口未关 → 应用无法退出);服务懒重建,后续渲染不受影响
   win.on("closed", () => {
@@ -468,7 +468,7 @@ function buildAppMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-app.whenReady().then(async () => {
+void app.whenReady().then(async () => {
   buildAppMenu(); // 菜单先于窗口创建,窗口创建即带应用菜单(autoHideMenuBar 下 Alt 唤出)
   registerIpc();
   const win = createWindow();
