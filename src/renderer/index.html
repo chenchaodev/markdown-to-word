@@ -63,6 +63,14 @@
               <p class="drop-change">点击更换文件，或拖入添加</p>
               <button
                 type="button"
+                id="appendFileBtn"
+                class="btn btn-secondary btn-small"
+                title="添加更多文件(Ctrl+O)"
+              >
+                追加文件
+              </button>
+              <button
+                type="button"
                 id="previewBtn"
                 class="btn btn-secondary btn-small"
                 title="预览转换排版(与 PDF 同排版)"
@@ -158,6 +166,29 @@
         </div>
         <ul id="recentList" class="recent-list"></ul>
       </section>
+
+      <!-- 模板预设:全局常显行(批次 12:C8),位于两个设置面板之上,不随面板折叠;
+           控件 id 与事件绑定不变(settings-panel.ts 仅 getElementById 引用) -->
+      <div class="settings preset-global">
+        <div class="settings-row">
+          <label class="setting-label" for="templatePreset">模板预设</label>
+          <select id="templatePreset" class="setting-select">
+            <option value="default">默认</option>
+            <option value="paper">学术论文</option>
+            <option value="business">商务简报</option>
+          </select>
+          <!-- 批次 11 迭代 3:自定义预设(另存为当前排版+页面设置;仅自定义预设可删) -->
+          <button type="button" id="presetSaveBtn" class="btn btn-secondary btn-small">
+            另存为预设…
+          </button>
+          <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-small hidden">
+            删除预设
+          </button>
+          <span id="templatePresetHint" class="settings-note">
+            选择模板将覆盖排版与页面设置
+          </span>
+        </div>
+      </div>
 
       <!-- 页面设置:可折叠面板,改动即时生效并自动保存 -->
       <details id="settingsPanel" class="settings">
@@ -275,24 +306,6 @@
           <span class="settings-summary-hint">字体、字号、行距与段落样式</span>
         </summary>
         <div class="settings-body">
-          <div class="settings-row">
-            <label class="setting-label" for="templatePreset">模板预设</label>
-            <select id="templatePreset" class="setting-select">
-              <option value="default">默认</option>
-              <option value="paper">学术论文</option>
-              <option value="business">商务简报</option>
-            </select>
-            <!-- 批次 11 迭代 3:自定义预设(另存为当前排版+页面设置;仅自定义预设可删) -->
-            <button type="button" id="presetSaveBtn" class="btn btn-secondary btn-small">
-              另存为预设…
-            </button>
-            <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-small hidden">
-              删除预设
-            </button>
-            <span id="templatePresetHint" class="settings-note">
-              选择模板将覆盖排版与页面设置
-            </span>
-          </div>
           <div class="settings-grid">
             <div class="setting-field">
               <label class="setting-label" for="fontAscii">

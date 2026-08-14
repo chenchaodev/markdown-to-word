@@ -130,6 +130,10 @@ export const removeFileBtn = document.getElementById(
 ) as HTMLButtonElement;
 // 迭代 4:单文件态「预览」按钮(转换前预览排版,与 PDF 同排版)
 export const previewBtn = document.getElementById("previewBtn") as HTMLButtonElement;
+// 批次 12(A):单文件态「追加文件」按钮(对话框追加,与多文件态 appendBtn 同语义)
+export const appendFileBtn = document.getElementById(
+  "appendFileBtn",
+) as HTMLButtonElement;
 export const appendBtn = document.getElementById("appendBtn") as HTMLButtonElement;
 export const clearListBtn = document.getElementById(
   "clearListBtn",

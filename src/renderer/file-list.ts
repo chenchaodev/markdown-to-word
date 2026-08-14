@@ -4,6 +4,7 @@
  * 选择应用/追加、操作按钮可用性。只经 state.ts 读写状态。
  */
 import {
+  appendFileBtn,
   batchBtn,
   convertBtn,
   convertHint,
@@ -229,6 +230,8 @@ export function updateActionButtons(): void {
   mergeBtn.disabled = busy || !multi;
   // 单文件态预览:仅在选中 1 个文件时可见(dropFile 区),转换中禁用
   previewBtn.disabled = busy || n !== 1;
+  // 批次 12(A):单文件态「追加文件」按钮,转换中禁用(openDialog 另有 converting 守卫)
+  appendFileBtn.disabled = busy || n !== 1;
   selectBtn.disabled = busy;
   // 批次 12(C4):footer 快捷键提示随模式切换(多文件态提示批量语义)
   if (convertHint) {

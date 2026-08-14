@@ -29,6 +29,7 @@ import { type AppSettings } from "../core/settings-defaults.js";
 import type { UiState } from "../main/ui-state.js";
 import {
   appendBtn,
+  appendFileBtn,
   batchBtn,
   batchDialog,
   batchDialogCopyAll,
@@ -245,6 +246,14 @@ previewBtn.addEventListener("click", (event) => {
 
 // 批次 7:多文件态「追加文件」按钮(对话框追加,与现有列表合并去重)
 appendBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  void openDialog(true);
+});
+
+// 批次 12(A):单文件态「追加文件」按钮(用户反馈:1 个文件时无增加入口)。
+// 与多文件态 appendBtn 同语义:对话框追加合并;stopPropagation 防冒泡触发
+// 拖放区点击=更换文件(C1 语义);追加后 n≥2 由 renderSelection 自动切多文件态
+appendFileBtn.addEventListener("click", (event) => {
   event.stopPropagation();
   void openDialog(true);
 });

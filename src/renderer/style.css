@@ -617,6 +617,14 @@ body {
   flex: none;
 }
 
+/* 批次 12(C8):模板预设全局常显行——复用 .settings 卡片外观(背景/边框/圆角/间距),
+   行内布局复用 .settings-row(覆盖其原面板内分隔样式:去掉底部边框,改为自身内边距) */
+.preset-global .settings-row {
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 0;
+}
+
 /* 批次 11 迭代 3:另存为预设弹窗的名称输入(占满弹窗宽度) */
 .preset-name-input {
   width: 100%;
@@ -1277,6 +1285,34 @@ body {
 
 .recent-item-wrap {
   display: flex;
+}
+
+/* 批次 12(C12):「仅加载」次级入口——文字小按钮,与条目主区域并列不破坏布局 */
+.recent-load {
+  flex: none;
+  align-self: center;
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.recent-load:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: #c8dff3;
+}
+
+.recent-load:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .recent-item {

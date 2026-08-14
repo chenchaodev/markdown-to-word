@@ -17,12 +17,14 @@ import {
   recentList,
   recentSection,
   settingsPanel,
+  statusEl,
   typographyPanel,
 } from "./dom.js";
 import type { RecentFile, UiState } from "../main/ui-state.js";
 import { applySelection } from "./file-list.js";
 import { runConvert } from "./convert-flow.js";
 import { baseName, formatRecentTime } from "./pure.js";
+import { setStatus } from "./utils.js";
 import { state } from "./state.js";
 import { syncSuppressCompleteDialog } from "./settings-panel.js";
 
@@ -67,6 +69,17 @@ export function renderRecentList(recent: RecentFile[]): void {
 
       btn.append(name, format, time);
       li.appendChild(btn);
+
+      // 批次 12(C12):「仅加载」次级入口——载入列表(替换选择,不转换),
+      // 用户可调整设置后再转换;点击条目主区域仍是一键重转
+      const loadBtn = document.createElement("button");
+      loadBtn.type = "button";
+      loadBtn.className = "recent-load";
+      loadBtn.textContent = "仅加载";
+      loadBtn.title = `仅加载到文件列表(不转换) ${item.path}`;
+      loadBtn.dataset.path = item.path;
+      loadBtn.setAttribute("aria-label", `仅加载 ${item.name}`);
+      li.appendChild(loadBtn);
       return li;
     }),
   );
@@ -129,6 +142,18 @@ recentList.addEventListener("click", (event) => {
   const format = (btn.dataset.format ?? state.selectedFormat) as "docx" | "pdf";
   applySelection([filePath]);
   void runConvert(filePath, format);
+});
+
+// 批次 12(C12):「仅加载」→ 替换选择载入列表(不转换),状态区提示文件名;
+// 与主区域点击互斥(loadBtn 不是 .recent-item 的后代,上方委托天然跳过)
+recentList.addEventListener("click", (event) => {
+  if (state.converting) return;
+  const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-load");
+  if (!btn?.dataset.path) return;
+  const filePath = btn.dataset.path;
+  applySelection([filePath]);
+  setStatus(`已加载:${baseName(filePath)}`);
+  statusEl.title = filePath; // 悬浮可看完整路径(applySelection 的 title 被覆盖后补回)
 });
 
 // 「清空最近」:清空并隐藏区块(以主进程合并结果为准)
