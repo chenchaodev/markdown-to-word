@@ -186,6 +186,11 @@ body {
   color: var(--text-tertiary);
 }
 
+/* 批次 12(C10):多文件态第二行提示(「双击行可预览」可见化,紧贴首行) */
+.drop-change--second {
+  margin-top: 4px;
+}
+
 /* 批次 12(C7):单文件态拖放区压缩——高度 120px、内容左对齐,消除 240px+ 大片空白;
    多文件态(≥2)不挂 drop-zone--single 标记,仍走 .file-area max-height + 列表内部滚动;
    拖放高亮(dragover)仅改边框/底色,不受高度压缩影响 */
@@ -366,11 +371,6 @@ body {
 .multi-remove:disabled {
   color: #c8c8c8;
   cursor: default;
-}
-
-/* 列表行选中态(Del 键移除的前置动作) */
-.multi-item.selected {
-  background: var(--accent-soft);
 }
 
 /* 拖拽排序视觉:源项半透明,目标项上下沿显示插入位置 */
@@ -655,16 +655,26 @@ body {
   color: var(--text-tertiary);
 }
 
-/* 底部操作栏 */
+/* 底部操作栏:sticky 视口常驻(批次 12:C2)——设置面板展开时转换按钮/进度条不被推出视口;
+   背景与卡片一致(--surface),滚动内容从其后经过时被遮住,细边框分隔 */
 .actions {
+  position: sticky;
+  bottom: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-top: 16px;
-  padding-top: 16px;
+  padding: 16px 0 0;
+  background: var(--surface);
   border-top: 1px solid var(--border);
+}
+
+/* 进度区在 sticky footer 内独占一行(footer 为 wrap 布局) */
+.actions .progress-area {
+  flex-basis: 100%;
+  margin-top: 0;
 }
 
 .formats {

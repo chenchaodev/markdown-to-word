@@ -51,7 +51,6 @@ import {
   multiList,
   previewBtn,
   presetDeleteBtn,
-  presetSaveBtn,
   presetSaveDialog,
   removeFileBtn,
   selectBtn,
@@ -90,7 +89,7 @@ import {
   showDialogError,
 } from "./dialogs.js";
 import { runBatch, runConvert, runMerge } from "./convert-flow.js";
-import { bindSettingsEvents, loadSettings, setSuppressCompleteDialog } from "./settings-panel.js";
+import { bindSettingsEvents, closePresetSaveDialog, loadSettings, setSuppressCompleteDialog } from "./settings-panel.js";
 import { initUiStateRestore } from "./recent-files.js";
 import { batchRetryPaths, batchSuccessPaths } from "./pure.js";
 
@@ -630,9 +629,9 @@ completeDialog.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!presetSaveDialog.classList.contains("hidden")) {
-    // 批次 11 迭代 3:另存为预设弹窗(焦点还给触发按钮)
-    presetSaveDialog.classList.add("hidden");
-    presetSaveBtn.focus();
+    // 批次 11 迭代 3:另存为预设弹窗(焦点还给触发按钮;批次 12 C9:统一走
+    // closePresetSaveDialog 以解除焦点陷阱,不再直接操作 DOM)
+    closePresetSaveDialog();
   } else if (!completeDialog.classList.contains("hidden")) {
     hideCompleteDialog();
   } else if (!batchDialog.classList.contains("hidden")) {

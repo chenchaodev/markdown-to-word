@@ -96,31 +96,13 @@
             </div>
             <ul id="multiList" class="multi-list"></ul>
             <p class="drop-change">拖拽或按钮可调整顺序；点击或拖入可继续添加</p>
+            <p class="drop-change drop-change--second">双击列表行可预览排版</p>
           </div>
         </div>
       </section>
 
       <!-- 状态区:路径 / 错误提示 -->
       <p id="status" class="status" role="status" aria-live="polite"></p>
-
-      <!-- 转换进度:进度条 + 百分比 + 取消按钮(转换中显示) -->
-      <div id="progressArea" class="progress-area hidden">
-        <div
-          id="progressTrack"
-          class="progress-track"
-          role="progressbar"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-valuenow="0"
-          aria-label="转换进度"
-        >
-          <div id="progressFill" class="progress-fill"></div>
-        </div>
-        <div class="progress-row">
-          <span id="progressText" class="progress-text">0%</span>
-          <button type="button" id="cancelBtn" class="btn btn-ghost btn-small">取消</button>
-        </div>
-      </div>
 
       <!-- 转换结果汇总:常驻(不依赖弹窗),完成路径 + 打开引导 + 可折叠警告 -->
       <div id="resultSummary" class="result-summary hidden">
@@ -410,8 +392,26 @@
         </div>
       </details>
 
-      <!-- 底部操作栏:格式选择 + 转换按钮(单文件 / 批量 / 合并) -->
+      <!-- 底部操作栏:格式选择 + 转换按钮(单文件 / 批量 / 合并) + 转换进度(批次 12 C2:sticky 视口常驻) -->
       <footer class="actions">
+        <!-- 转换进度:进度条 + 百分比 + 取消按钮(转换中显示;位于 sticky footer 内,设置面板展开时仍可见) -->
+        <div id="progressArea" class="progress-area hidden">
+          <div
+            id="progressTrack"
+            class="progress-track"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            aria-label="转换进度"
+          >
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+          <div class="progress-row">
+            <span id="progressText" class="progress-text">0%</span>
+            <button type="button" id="cancelBtn" class="btn btn-ghost btn-small">取消</button>
+          </div>
+        </div>
         <fieldset class="formats">
           <legend>输出格式</legend>
           <label class="format-option">

@@ -34,8 +34,12 @@ import {
   summaryWarningsToggle,
 } from "./dom.js";
 import { state, type BatchItem, type BatchResult } from "./state.js";
-import { baseName, focusActionButton } from "./utils.js";
+import { baseName, focusActionButton, trapFocus } from "./utils.js";
 import { batchSuccessPaths } from "./pure.js";
+
+/* 弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
+let completeDialogTrap: (() => void) | null = null;
+let batchDialogTrap: (() => void) | null = null;
 
 /* ---------- 转换结果汇总条(常驻,不依赖弹窗;成功/失败/取消三态 + 打开引导 + 可折叠警告) ---------- */
 export interface SummaryOptions {
@@ -107,9 +111,12 @@ export function showCompleteDialog(
   completeDialogOpen.classList.toggle("hidden", !ok);
   completeDialog.classList.remove("hidden");
   completeDialogOk.focus(); // 焦点落在默认操作(确定)上
+  completeDialogTrap = trapFocus(completeDialog); // 批次 12(C9):Tab 循环不逃逸到背景页
 }
 
 export function hideCompleteDialog(): void {
+  completeDialogTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
+  completeDialogTrap = null;
   completeDialog.classList.add("hidden");
   focusActionButton(); // 焦点还给触发按钮,便于键盘继续操作
 }
@@ -135,9 +142,12 @@ export function showBatchDialog(result: BatchResult): void {
   batchDialogError.textContent = "";
   batchDialog.classList.remove("hidden");
   batchDialogOk.focus(); // 焦点落在默认操作(确定)上
+  batchDialogTrap = trapFocus(batchDialog); // 批次 12(C9):Tab 循环不逃逸到背景页
 }
 
 export function hideBatchDialog(): void {
+  batchDialogTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
+  batchDialogTrap = null;
   batchDialog.classList.add("hidden");
   focusActionButton();
 }

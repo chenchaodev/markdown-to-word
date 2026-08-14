@@ -78,6 +78,42 @@ export function hideFieldError(el: HTMLElement): void {
   el.classList.add("hidden");
 }
 
+/* ---------- 弹窗焦点陷阱(批次 12:C9) ---------- */
+/** 弹窗内可聚焦元素(button/input/select 等;disabled 与隐藏元素排除)。 */
+const FOCUSABLE_SELECTOR =
+  'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * 启用弹窗焦点陷阱:Tab/Shift+Tab 在弹窗内循环(首 ⇄ 尾),
+ * 焦点逃逸到弹窗外(程序性失焦)时强制拉回第一个可聚焦元素。
+ * 返回解除函数(弹窗关闭时调用);弹窗内无可聚焦元素时为空操作。
+ */
+export function trapFocus(dialog: HTMLElement): () => void {
+  const handleKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== "Tab") return;
+    const focusables = Array.from(
+      dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+    ).filter((el) => !el.hasAttribute("disabled") && el.offsetParent !== null);
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey) {
+      // Shift+Tab:焦点在第一个或已逃逸 → 回到最后一个
+      if (active === first || !dialog.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else if (active === last || !dialog.contains(active)) {
+      // Tab:焦点在最后一个或已逃逸 → 回到第一个
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  document.addEventListener("keydown", handleKeydown, true); // capture:先于弹窗内/全局监听
+  return () => document.removeEventListener("keydown", handleKeydown, true);
+}
+
 /* ---------- 焦点管理 ---------- */
 /** 焦点还给当前可见的主操作按钮(弹窗关闭后)。 */
 export function focusActionButton(): void {

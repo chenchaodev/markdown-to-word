@@ -62,7 +62,10 @@ import {
   tocInput,
 } from "./dom.js";
 import { state } from "./state.js";
-import { hideFieldError, setError, showFieldError } from "./utils.js";
+import { hideFieldError, setError, showFieldError, trapFocus } from "./utils.js";
+
+/* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
+let presetSaveTrap: (() => void) | null = null;
 
 /* ---------- 设置类型(契约收敛于 core/settings-defaults.ts) ---------- */
 type Paper = "A4" | "A3" | "A5" | "Letter" | "Legal";
@@ -195,9 +198,13 @@ function openPresetSaveDialog(): void {
   presetSaveError.textContent = "";
   presetSaveDialog.classList.remove("hidden");
   presetNameInput.focus();
+  presetSaveTrap = trapFocus(presetSaveDialog); // 批次 12(C9):Tab 循环不逃逸到背景页
 }
 
-function closePresetSaveDialog(): void {
+/** 关闭另存为预设弹窗(导出:renderer Esc 分支与弹窗内按钮共用,统一解除焦点陷阱)。 */
+export function closePresetSaveDialog(): void {
+  presetSaveTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
+  presetSaveTrap = null;
   presetSaveDialog.classList.add("hidden");
   presetSaveBtn.focus(); // 焦点还给触发按钮,便于键盘继续操作
 }
