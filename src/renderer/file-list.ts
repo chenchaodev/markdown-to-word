@@ -27,6 +27,8 @@ import { baseName, setStatus, truncateMiddle } from "./utils.js";
 export function renderSelection(): void {
   const n = state.selectedFiles.length;
   dropZone.classList.toggle("has-file", n > 0);
+  // 批次 12(C7):单文件态压缩标记(样式见 style.css .drop-zone--single,压缩高度消除大片空白)
+  dropZone.classList.toggle("drop-zone--single", n === 1);
   // 最近转换区块:默认态(无文件)与单文件态显示;多文件态(≥2)隐藏,聚焦当前列表
   recentSection.classList.toggle("hidden", n >= 2 || state.recentFiles.length === 0);
 

@@ -46,7 +46,8 @@ body {
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - 32px);
-  margin: 16px;
+  margin: 16px auto; /* 批次 12(C3):大屏密度上限,水平居中 */
+  max-width: 1080px;
   padding: 28px 32px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -77,6 +78,7 @@ body {
   flex: 1;
   display: flex;
   min-height: 240px;
+  max-height: 420px; /* 批次 12(C3):密度上限,多文件列表在内部滚动,不随窗口无限拉高 */
 }
 
 .drop-zone {
@@ -182,6 +184,27 @@ body {
   margin: 10px 0 0;
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+/* 批次 12(C7):单文件态拖放区压缩——高度 120px、内容左对齐,消除 240px+ 大片空白;
+   多文件态(≥2)不挂 drop-zone--single 标记,仍走 .file-area max-height + 列表内部滚动;
+   拖放高亮(dragover)仅改边框/底色,不受高度压缩影响 */
+.file-area:has(.drop-zone--single) {
+  flex: none;
+  min-height: 0;
+}
+
+.drop-zone--single {
+  height: 120px;
+}
+
+.drop-zone--single .drop-file {
+  padding: 0 24px;
+  text-align: left;
+}
+
+.drop-zone--single .drop-file-actions {
+  justify-content: flex-start;
 }
 
 /* 拖放区多文件态:数量 + 可滚动名称列表 */

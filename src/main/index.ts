@@ -86,6 +86,9 @@ function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 900,
     height: 640,
+    // 批次 12(C3):最小尺寸,防止窗口过小导致布局挤压不可用
+    minWidth: 720,
+    minHeight: 560,
     ...(savedBounds ?? {}),
     title: "Markdown 转换工具",
     autoHideMenuBar: true,
