@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.27.0] - 2026-08-14
+- 批次 13「模板导入(预设 JSON 导入/导出)」(cf2f630;typecheck/lint/33 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md 批次 13 节):
+  - **方案**(archive/20260814-201622):lib-1 五方案对比拍板首选「预设 JSON 导入/导出」(复用 sanitize 校验,零新依赖);CSS 覆盖 pdf 路线次选、docx 模板导入暂缓(docx4js 停维护 + OOXML 样式逆映射工程量大)记 ROADMAP
+  - **导入**:main IPC presets:import(dialog 选文件 → parsePresetsFile 校验:schemaVersion:1 / 裸数组兼容 / 逐条 sanitize → mergePresets 同名覆盖合并 → 上限 10 截断 → 持久化,记忆目录);错误二分类可读文案(「文件不是有效的 JSON」/「不支持的模板文件版本」/「文件不含有效预设」)
+  - **导出**:presets:export(全部 customPresets → {schemaVersion:1, presets} 保存对话框,documents/presets.json);空预设前置拦截;尾部换行与 settings.json 风格一致
+  - **UI**:模板预设行「导入预设…」「导出预设…」按钮(settings-panel + window.api 类型同步),导入后下拉重刷不强制切换选中项,状态区反馈「已导入 N 个预设(覆盖 M 个同名)」
+  - **测试**:新段 presets-import.test.js(14 组断言:解析 7 + 合并 7,32→33 段)
+- **修复**(f6e3304):预设下拉选中自定义预设被弹回——matchesPreset 值全等 + find 硬编码优先回填 select,自定义预设值与硬编码相同时选中被弹回(实测复现);resolvePresetSelection 纯函数优先保持当前选中 + saveCustomPreset 显式选中新预设(settings-logic.test.js 补 5 组断言)
+- 文档:模板导入方案选型 RESEARCH 条目 + ROADMAP 拆解;ACCEPTANCE 批次 13 T1-T3 全勾;STATUS 登记
+
 ## [0.26.0] - 2026-08-14
 - 批次 12「界面体验优化」(方向 A;typecheck/build/31 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md 批次 12 节):
   - **Phase 0 速赢 7 项**(拆 4 提交):U1 点击行为对齐(af572e4,多文件态点击=追加/单文件态点击=更换,文案同步)/U2 窗口最小尺寸 720×560 + 密度上限(740dd5d)/U3 快捷键提示 + 文案统一(22cd5ab)/U4 预设上限提示(dfd9a40);C5 核实已满足零改动
