@@ -62,7 +62,8 @@ export function renderMultiList(): void {
       li.className = "multi-item";
       li.draggable = true; // 整行可拖拽排序
       li.dataset.index = String(index);
-      li.title = filePath; // 截断展示,悬停看完整路径
+      // 批次 11 迭代 4:悬停提示双击预览(行双击 = 预览该行)
+      li.title = `${filePath}\n双击预览该行`;
 
       const num = document.createElement("span");
       num.className = "multi-index";

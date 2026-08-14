@@ -6,7 +6,7 @@
  * - IPC 注册(handler 委托给 converter 函数 / settings / shell)
  * - SMOKE 入口(--smoke 分支一行委托 ./smoke.ts 的 runSmoke)
  */
-import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,9 @@ const SMOKE = process.argv.includes("--smoke");
  * 多窗口并发互不串扰,M3);转换完成/异常/取消后删除,避免悬挂引用。
  */
 const ctxByWebContents = new Map<number, ConvertContext>();
+
+/** 主窗口引用:菜单「打开文件…」/「关于」需定位主窗口(预览窗口无 preload,不响应菜单)。 */
+let mainWindow: BrowserWindow | null = null;
 
 /**
  * convert 系 handler 共用样板(R10-3):context 注册/释放 + 错误归一化集中一处。
@@ -93,10 +96,14 @@ function createWindow(): BrowserWindow {
       sandbox: true,
     },
   });
+  mainWindow = win;
   win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
   // mermaid 渲染窗口为常驻隐藏单例:主窗口关闭时销毁,否则 window-all-closed 永不触发
   // (隐藏窗口未关 → 应用无法退出);服务懒重建,后续渲染不受影响
-  win.on("closed", () => disposeMermaidService());
+  win.on("closed", () => {
+    mainWindow = null;
+    disposeMermaidService();
+  });
   // 批次 11:关闭时保存窗口位置(最大化/全屏不记录,恢复默认尺寸);
   // preventDefault + 写盘完成后 destroy,保证退出前写入落盘(不丢状态)
   win.on("close", (event) => {
@@ -408,7 +415,58 @@ function registerIpc(): void {
   });
 }
 
+/* ---------- 批次 11 迭代 4:应用菜单(文件:打开文件…/退出;帮助:关于) ---------- */
+/**
+ * 菜单「打开文件…」:只做转发——聚焦主窗口后经 webContents.send 通知 renderer,
+ * renderer 复用现有 openDialog(false) 链路(对话框/过滤/目录记忆/选择应用全在既有代码,
+ * 不重复实现);预览窗口无 preload 不订阅,消息自然丢弃。
+ */
+function openFromAppMenu(): void {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send("menu:open");
+}
+
+/** 菜单「关于」:应用名 + 版本(app.getVersion())+ 简短说明。 */
+function showAboutDialog(): void {
+  const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+  const options: Electron.MessageBoxOptions = {
+    type: "info",
+    title: "关于",
+    message: "Markdown 转换工具",
+    detail: `版本 ${app.getVersion()}\n\n将 Markdown 文件转换为 Word 或 PDF 文档`,
+    buttons: ["确定"],
+  };
+  if (win && !win.isDestroyed()) void dialog.showMessageBox(win, options);
+  else void dialog.showMessageBox(options);
+}
+
+/**
+ * 最小应用菜单:autoHideMenuBar 保持(Alt 唤出,不常显)。
+ * 菜单项只做转发/胶水,不复刻业务逻辑;退出用 role(平台默认行为)。
+ */
+function buildAppMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: "文件",
+      submenu: [
+        { label: "打开文件…", click: openFromAppMenu },
+        { type: "separator" },
+        { label: "退出", role: "quit" },
+      ],
+    },
+    {
+      label: "帮助",
+      submenu: [{ label: "关于", click: showAboutDialog }],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(async () => {
+  buildAppMenu(); // 菜单先于窗口创建,窗口创建即带应用菜单(autoHideMenuBar 下 Alt 唤出)
   registerIpc();
   const win = createWindow();
   // 渲染进程 console 错误转发到主进程输出(诊断用)

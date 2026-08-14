@@ -148,6 +148,8 @@ declare global {
       openPreview: (mdPath: string) => Promise<{ ok: boolean; error?: string }>;
       /** 批次 11 迭代 3:刷新所有预览窗口(设置变更后调用;无预览窗口时为空操作)。 */
       previewRefresh: () => Promise<void>;
+      /** 批次 11 迭代 4:应用菜单「文件 → 打开文件…」触发,复用现有选择对话框链路。 */
+      onMenuOpen: (cb: () => void) => () => void;
     };
   }
 }
@@ -282,6 +284,19 @@ multiList.addEventListener("click", (event) => {
   }
   const dir = btn.dataset.dir;
   moveItem(index, dir === "up" ? -1 : 1);
+});
+
+// 批次 11 迭代 4:多文件列表行双击 = 预览该行(复用 openPreviewFor 现有链路,不重复实现)。
+// 双击落在行内按钮上不触发(按钮单击已有各自语义,避免双击「预览」连开多个窗口);
+// 双击行的序号/文件名/空白处才预览;dblclick 由两次 click 组成,click 已在上面
+// stopPropagation,不会误触拖放区打开对话框。
+multiList.addEventListener("dblclick", (event) => {
+  event.stopPropagation();
+  if (state.converting) return;
+  if ((event.target as HTMLElement).closest("button")) return;
+  const li = (event.target as HTMLElement).closest<HTMLLIElement>(".multi-item");
+  if (!li) return;
+  openPreviewFor(state.selectedFiles[Number(li.dataset.index)]);
 });
 
 // 拖拽排序(HTML5 drag events):列表位于可滚动容器内,悬停边缘时自动滚动。
@@ -593,6 +608,9 @@ document.addEventListener("keydown", (event) => {
     void openDialog(true);
   }
 });
+
+// 批次 11 迭代 4:应用菜单「文件 → 打开文件…」→ 复用现有选择链路(替换选择,与「选择文件」按钮一致)
+window.api.onMenuOpen(() => void openDialog(false));
 
 // 窗口关闭时取消进度订阅
 window.addEventListener("unload", () => {

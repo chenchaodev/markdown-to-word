@@ -11,7 +11,7 @@
  * save/restore,崩溃残留风险一致)。
  * 失败:抛错由 index.ts 统一 catch → app.exit(1);renderer diag 失败打印专属消息后重抛。
  */
-import { app, type BrowserWindow } from "electron";
+import { app, Menu, type BrowserWindow } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,6 +46,12 @@ async function assertOutline(filePath: string, expectedTitle: string, label: str
 
 /** 运行冒烟断言;任何失败抛错,由 index.ts 捕获后 app.exit(1) */
 export async function runSmoke(win: BrowserWindow): Promise<void> {
+  // 批次 11 迭代 4:应用菜单守卫(文件/帮助;autoHideMenuBar 下 Alt 唤出,缺失即回归)
+  const appMenu = Menu.getApplicationMenu();
+  const menuLabels = appMenu?.items.map((item) => item.label) ?? [];
+  if (!appMenu || !menuLabels.includes("文件") || !menuLabels.includes("帮助")) {
+    throw new Error(`[smoke] 应用菜单缺失: ${JSON.stringify(menuLabels)}`);
+  }
   const outDir = SMOKE_DIR;
   const sampleMd = path.join(outDir, "smoke-basic.md");
   await fs.mkdir(outDir, { recursive: true });
