@@ -9,6 +9,10 @@
  * 自清理可覆盖;否则会污染用户设置的输出目录如 Downloads,且 (N) 序号变体越积越多)、
  * afterConvert 强制 "none"(不自动打开产物弹窗);结束前恢复原设置(与 converter.test.js 同款
  * save/restore,崩溃残留风险一致)。
+ * 批次 12:ui-state 同样隔离——备份内存态并清空 lastSessionFiles(必须经 saveUiState 同步
+ * 磁盘与模块缓存,直改文件不生效:createWindow 已把真实状态读入缓存,renderer 走缓存);
+ * 否则用户残留会话让 convertBtn 非禁用,「未选文件点击守卫」误报。结束恢复(含失败路径),
+ * 原文件不存在则删除临时写入的文件。
  * 失败:抛错由 index.ts 统一 catch → app.exit(1);renderer diag 失败打印专属消息后重抛。
  */
 import { app, Menu, type BrowserWindow } from "electron";
@@ -19,9 +23,32 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "p
 import { convertImpl, mergeConvertImpl } from "./converter.js";
 import { getKatexDir } from "./katex-dir.js";
 import { loadSettings, updateSettings } from "./settings.js";
+import { loadUiState, saveUiState } from "./ui-state.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE_DIR = path.join(__dirname, "..", "..", "output", "smoke");
+/** ui-state.json 绝对路径(与 ui-state.ts 同源;隔离/恢复用,内容读写一律经 saveUiState)。 */
+const UI_STATE_PATH = path.join(app.getPath("userData"), "ui-state.json");
+
+/**
+ * 带重试的一次性写(Windows 文件占用 EBUSY 多为瞬时,重试 3 次×150ms 再放弃)。
+ * @param label 失败报错文案(区分「隔离写入」与「恢复」)。
+ */
+async function writeWithRetry(task: () => Promise<unknown>, label: string): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await task();
+      return;
+    } catch (err) {
+      lastErr = err;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+  throw new Error(
+    `[smoke] ${label}失败(可能应用正在运行): ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+  );
+}
 
 /** 断言 PDF 大纲:首条目 Title(中文)与 Dest[0] 页面 PDFRef(单文件/合并书签共用) */
 async function assertOutline(filePath: string, expectedTitle: string, label: string): Promise<void> {
@@ -46,6 +73,15 @@ async function assertOutline(filePath: string, expectedTitle: string, label: str
 
 /** 运行冒烟断言;任何失败抛错,由 index.ts 捕获后 app.exit(1) */
 export async function runSmoke(win: BrowserWindow): Promise<void> {
+  // 批次 12:ui-state 隔离(先于一切,尽早完成,缩小与 renderer 启动恢复的竞态窗口)。
+  // 备份内存态(createWindow 已把用户真实状态读入模块缓存)→ 清空 lastSessionFiles;
+  // 结束时恢复,原文件不存在则删除临时写入的文件。
+  const hadUiStateFile = await fs.access(UI_STATE_PATH).then(
+    () => true,
+    () => false,
+  );
+  const origUi = loadUiState();
+  await writeWithRetry(() => saveUiState({ lastSessionFiles: [] }), "ui-state 隔离写入");
   // 批次 11 迭代 4:应用菜单守卫(文件/帮助;autoHideMenuBar 下 Alt 唤出,缺失即回归)
   const appMenu = Menu.getApplicationMenu();
   const menuLabels = appMenu?.items.map((item) => item.label) ?? [];
@@ -179,10 +215,16 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
-      // 守卫断言:无文件时点击转换按钮 → 状态区错误文案 + 红字(迭代 3 交互语义)
-      if (diag.statusAfterClick !== "请先选择 Markdown 文件" || diag.statusIsError !== true) {
+      // 守卫断言:无文件时点击转换按钮 → 状态区错误文案 + 红字(迭代 3 交互语义)。
+      // 批次 12:btnDisabledBefore 必须为 true——lastSessionFiles 未隔离(用户残留会话恢复)
+      // 时按钮非禁用,该断言即失败,隔离失效可被立即发现
+      if (
+        diag.btnDisabledBefore !== true ||
+        diag.statusAfterClick !== "请先选择 Markdown 文件" ||
+        diag.statusIsError !== true
+      ) {
         throw new Error(
-          `[smoke] renderer diag FAILED: 点击守卫断言 statusAfterClick=${JSON.stringify(diag.statusAfterClick)}, statusIsError=${diag.statusIsError}`,
+          `[smoke] renderer diag FAILED: 点击守卫断言 btnDisabledBefore=${diag.btnDisabledBefore}, statusAfterClick=${JSON.stringify(diag.statusAfterClick)}, statusIsError=${diag.statusIsError}(lastSessionFiles 未隔离或回归)`,
         );
       }
       // 批次 11 迭代 2:新增控件存在性守卫(缺失即回归)
@@ -224,5 +266,15 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
   } finally {
     // 恢复用户设置(文件 + 模块级缓存);崩溃时残留风险与 converter.test.js 一致
     await updateSettings(orig);
+    // 批次 12:恢复 ui-state(含失败路径)——原文件存在则整体还原(磁盘 + 缓存),
+    // 不存在则删除临时写入的文件;失败仅告警不阻塞(EBUSY 容错,与产物清理同先例)
+    try {
+      await writeWithRetry(
+        () => (hadUiStateFile ? saveUiState(origUi) : fs.rm(UI_STATE_PATH, { force: true })),
+        "ui-state 恢复",
+      );
+    } catch (err) {
+      console.error("[smoke] ui-state 恢复失败(用户会话记忆可能丢失):", err);
+    }
   }
 }
