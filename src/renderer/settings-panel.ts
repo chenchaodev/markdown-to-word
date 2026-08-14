@@ -75,7 +75,6 @@ let presetSaveTrap: (() => void) | null = null;
 type Paper = "A4" | "A3" | "A5" | "Letter" | "Legal";
 type Orientation = "portrait" | "landscape";
 type AfterConvert = "none" | "show-in-folder" | "open";
-type BodyAlign = "left" | "justify";
 
 /* ---------- 设置:加载 / 回填 / 写回 ---------- */
 /** 启动时读取持久化设置,失败静默回退默认值;回填后解除 hydration 标记。 */

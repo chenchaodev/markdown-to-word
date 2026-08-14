@@ -51,7 +51,6 @@ import {
   mergeBtn,
   multiList,
   previewBtn,
-  presetDeleteBtn,
   presetSaveDialog,
   removeFileBtn,
   selectBtn,
