@@ -218,12 +218,16 @@ selectBtn.addEventListener("click", (event) => {
   void openDialog(false);
 });
 
-// 点击拖放区同样打开对话框;键盘可用(Enter / 空格)
-dropZone.addEventListener("click", () => void openDialog());
+// 点击拖放区打开对话框;键盘可用(Enter / 空格)。
+// 批次 12(C1):行为与文案对齐——多文件态(≥2)点击=追加(与「可继续添加」一致),
+// 单文件/默认态点击=更换/选择;列表内按钮已 stopPropagation,行为不变
+dropZone.addEventListener("click", () => {
+  void openDialog(state.selectedFiles.length >= 2);
+});
 dropZone.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    void openDialog();
+    void openDialog(state.selectedFiles.length >= 2);
   }
 });
 
