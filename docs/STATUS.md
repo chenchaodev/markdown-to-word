@@ -1,6 +1,7 @@
 # 状态速查
 
 ## 当前状态
+- 2026-08-14:**方向 B 首项完成(settings-logic 抽取,abed9b7)**:自 settings-panel.ts 抽零 DOM 纯函数层 `src/renderer/settings-logic.ts`(validatePresetName/customPresetToTemplate/allPresets/customPresetNameFromId/clampMargin,allPresets 参数化),新建 segments/settings-logic.test.js 直测(22 断言),31→32 段全绿;typecheck/build/smoke 全绿;豁免不 tag
 - 2026-08-13:**批次 11「体验打磨」完成 + 用户实测通过,发版 0.25.0**:11 项候选全选拆 4 迭代单元独立提交——I1 状态记忆(e0262e1:ui-state.ts 原子写+宽松校验,最近文件一键重转/会话恢复/对话框目录记忆/窗口面板记忆)、I2 结果增强(dd16075:批量失败重试/复制全部路径/完成弹窗不再提示)、I3 预览与模板(7d87bed:预览设置变更即时刷新+focus mtime 刷新/customPresets 另存为预设)、I4 顺手项(ebc5d88:列表行双击预览/应用菜单+关于);31 段 + smoke 全绿;用户 GUI 实测通过(ACCEPTANCE.md 批次 11 节全勾),验收关闭
 - 2026-08-14:**批次 12「界面体验优化」Phase 0+1+2 实现完成,待用户 GUI 实测**(方案存档 archive/20260814-185113):Phase 0 速赢 7 项拆 4 提交(af572e4 U1 点击行为对齐/740dd5d U2 窗口最小尺寸+密度上限/22cd5ab U3 快捷键提示+文案统一/dfd9a40 U4 预设上限提示);Phase 1 一次提交(a6d16ea C2 底部操作区 sticky 常驻/C10 双击预览可见提示+删 selected 死代码/C9 弹窗焦点陷阱);Phase 2+追加按钮一次提交(C8 模板预设上移全局常显/C12 最近条目仅加载/单文件态追加文件按钮,用户反馈);typecheck/build/31 段/smoke 全绿;待实测见 ACCEPTANCE.md 批次 12 U1-U7;方向 B(质量与测试)方案存档备查
 - 2026-08-13:**批次 10 功能 2「题注/章节交叉引用」完成 + 用户实测通过,发版 0.24.0**:docx+pdf 双格式——题注(图/表)与章节 label 锚点(`{#fig:}`/`{#tab:}`/`{#sec:}`)、静态编号引用(`[图](#fig:a)` → 「图 1.1」+ 跳转)、悬空降级「(?)」+ 警告;renderDocx 预扫登记修复「引用先于目标出现」;pdf 侧顺带修复 8b 遗留(template.ts 补 counter-increment,此前 PDF 题注序号恒 0);自动化断言 test/segments/cross-ref.test.js(12 条验收点,30 段全绿);用户 GUI 实测通过(样例 test/fixtures/acceptance/cross-ref.md),ACCEPTANCE.md 批次 10 功能 2 节全勾,验收关闭
