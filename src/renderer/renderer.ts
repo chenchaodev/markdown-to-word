@@ -26,6 +26,7 @@
  * bindSettingsEvents() 后再 loadSettings()(时序与拆分前一致)。
  */
 import { type AppSettings } from "../core/settings-defaults.js";
+import type { UiState } from "../main/ui-state.js";
 import {
   appendBtn,
   batchBtn,
@@ -85,6 +86,7 @@ import {
 } from "./dialogs.js";
 import { runBatch, runConvert, runMerge } from "./convert-flow.js";
 import { bindSettingsEvents, loadSettings } from "./settings-panel.js";
+import { initUiStateRestore } from "./recent-files.js";
 
 declare global {
   interface Window {
@@ -125,6 +127,12 @@ declare global {
       settingsGet: () => Promise<AppSettings>;
       /** 局部更新设置并持久化,返回合并后的完整设置。 */
       settingsSet: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+      /** 读取 UI 状态(最近文件/会话文件/记忆目录/窗口位置/面板展开态)。 */
+      uiStateGet: () => Promise<UiState>;
+      /** 局部更新 UI 状态并持久化,返回合并后的完整状态。 */
+      uiStateSet: (patch: Partial<UiState>) => Promise<UiState>;
+      /** 保序过滤仍存在的路径(会话文件逐项校验,缺失剔除)。 */
+      filterExistingPaths: (paths: string[]) => Promise<string[]>;
       /** 在资源管理器中显示目标文件。 */
       revealInFolder: (filePath: string) => Promise<void>;
       /** 用系统默认程序打开目标文件;失败返回 { ok: false, error }。 */
@@ -574,3 +582,5 @@ updateActionButtons();
 bindSettingsEvents();
 // 读取持久化设置并回填控件(失败静默回退默认值)
 void loadSettings();
+// 批次 11:UI 状态恢复(面板展开态 / 会话文件 / 最近转换区块;失败静默保持默认)
+void initUiStateRestore();

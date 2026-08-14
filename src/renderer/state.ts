@@ -10,6 +10,7 @@
  *   convert-flow/组合根引用,一并收敛于此
  */
 import { DEFAULT_SETTINGS, type AppSettings } from "../core/settings-defaults.js";
+import type { RecentFile } from "../main/ui-state.js";
 
 /* ---------- 批量 / 合并契约类型 ---------- */
 export interface BatchProgressInfo {
@@ -66,4 +67,6 @@ export const state = {
   dialogOutputPath: "",
   /** 最近一次汇总条展示的输出路径(供「打开所在文件夹 / 打开文件」按钮使用)。 */
   summaryOutputPath: "",
+  /** 最近成功转换的文件列表(批次 11;供最近区块显隐判断,渲染在 recent-files.ts)。 */
+  recentFiles: [] as RecentFile[],
 };

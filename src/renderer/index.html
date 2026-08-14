@@ -166,6 +166,17 @@
         </details>
       </div>
 
+      <!-- 最近转换:默认态(无文件)与单文件态显示;点击条目加载并立即转换(一键重转) -->
+      <section id="recentSection" class="recent hidden" aria-label="最近转换">
+        <div class="recent-head">
+          <span class="recent-title">最近转换</span>
+          <button type="button" id="recentClearBtn" class="btn btn-ghost btn-small">
+            清空最近
+          </button>
+        </div>
+        <ul id="recentList" class="recent-list"></ul>
+      </section>
+
       <!-- 页面设置:可折叠面板,改动即时生效并自动保存 -->
       <details id="settingsPanel" class="settings">
         <summary class="settings-summary">

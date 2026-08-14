@@ -13,6 +13,7 @@ import {
   STAGE_TEXT,
   stageText,
   STAGE_PERCENT,
+  formatRecentTime,
 } from "../../dist/renderer/pure.js";
 
 /** renderer 纯函数单测(纯 Node 段,零 Electron API) */
@@ -148,4 +149,39 @@ export async function run() {
     }
   }
   console.log("[ok] STAGE_PERCENT:read=15/render=70/done=95 + 与 STAGE_TEXT 键集一致 断言通过");
+
+  // ---------- formatRecentTime(批次 11:最近转换相对时间) ----------
+  // 固定 now = 2026-08-13 15:00(本地时间构造,避免时区波动;全部断言注入 now)
+  const NOW = new Date(2026, 7, 13, 15, 0).getTime();
+  const cases = [
+    // [ts, now, 期望]
+    [new Date(2026, 7, 13, 9, 5).getTime(), NOW, "今天 09:05"], // 当天:补零
+    [new Date(2026, 7, 13, 0, 0).getTime(), NOW, "今天 00:00"], // 当天零点
+    [new Date(2026, 7, 12, 23, 59).getTime(), NOW, "昨天 23:59"], // 昨天
+    [new Date(2026, 0, 5, 8, 0).getTime(), NOW, "1月5日"], // 今年内(跨月):仅日期
+    [new Date(2025, 11, 31, 10, 30).getTime(), NOW, "2025年12月31日"], // 跨年:带年份
+  ];
+  for (const [ts, now, expected] of cases) {
+    const actual = formatRecentTime(ts, now);
+    if (actual !== expected) {
+      throw new Error(`formatRecentTime 断言失败:ts=${ts} → ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
+    }
+  }
+  // 跨月边界:now = 2026-03-02,ts = 2026-02-28 → 昨天是 03-01,28 日应为「2月28日」
+  const NOW_MAR = new Date(2026, 2, 2, 0, 0).getTime();
+  const feb28 = new Date(2026, 1, 28, 12, 0).getTime();
+  if (formatRecentTime(feb28, NOW_MAR) !== "2月28日") {
+    throw new Error(`formatRecentTime 断言失败:跨月边界应为「2月28日」,实际 ${JSON.stringify(formatRecentTime(feb28, NOW_MAR))}`);
+  }
+  // 昨天边界:ts = now 前一天同一时刻 → 昨天
+  const prevSame = new Date(2026, 7, 12, 15, 0).getTime();
+  if (formatRecentTime(prevSame, NOW) !== "昨天 15:00") {
+    throw new Error(`formatRecentTime 断言失败:前一天同一时刻应为「昨天 15:00」,实际 ${JSON.stringify(formatRecentTime(prevSame, NOW))}`);
+  }
+  // 默认 now 参数:不注入时不应抛错(实际值随运行时刻,仅断言格式骨架)
+  const auto = formatRecentTime(new Date().getTime());
+  if (!/^(今天|昨天|\d{1,2}月\d{1,2}日|\d{4}年\d{1,2}月\d{1,2}日)/.test(auto)) {
+    throw new Error(`formatRecentTime 断言失败:默认 now 输出格式异常,实际 ${JSON.stringify(auto)}`);
+  }
+  console.log("[ok] formatRecentTime:今天/昨天/今年日期/跨年日期/跨月边界/前一天同一时刻/补零/默认 now 断言通过");
 }

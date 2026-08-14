@@ -497,3 +497,21 @@ export async function collectMarkdownPaths(paths: string[]): Promise<{ files: st
   files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   return { files, skipped };
 }
+
+/**
+ * 保序过滤仍存在的路径(批次 11 会话恢复用):逐个 fs.stat,存在即保留,缺失剔除,
+ * 不改变传入顺序(会话列表顺序 = 用户排列的合并顺序,不可被打乱)。
+ * 与 collectMarkdownPaths 不同:不排序、不展开目录、不做扩展名过滤。
+ */
+export async function filterExistingPaths(paths: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const p of paths) {
+    try {
+      await fs.stat(p);
+      out.push(p);
+    } catch {
+      /* 缺失/不可访问:剔除 */
+    }
+  }
+  return out;
+}

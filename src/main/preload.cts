@@ -1,6 +1,7 @@
 // preload:CJS 输出(preload.cjs),沙箱兼容;contextBridge 白名单暴露 API
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppSettings } from "./settings.js";
+import type { UiState } from "./ui-state.js";
 
 contextBridge.exposeInMainWorld("api", {
   /** 拖放取路径:File.path 已随 Electron 32+ 移除,须经 webUtils 解析(勿回退) */
@@ -34,6 +35,12 @@ contextBridge.exposeInMainWorld("api", {
   },
   settingsGet: (): Promise<AppSettings> => ipcRenderer.invoke("settings:get"),
   settingsSet: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke("settings:set", patch),
+  /** 批次 11:读取 UI 状态(最近文件/会话文件/记忆目录/窗口位置/面板展开态)。 */
+  uiStateGet: (): Promise<UiState> => ipcRenderer.invoke("ui-state:get"),
+  /** 批次 11:局部更新 UI 状态并持久化,返回合并后的完整状态。 */
+  uiStateSet: (patch: Partial<UiState>): Promise<UiState> => ipcRenderer.invoke("ui-state:set", patch),
+  /** 批次 11:保序过滤仍存在的路径(会话文件逐项校验,缺失剔除)。 */
+  filterExistingPaths: (paths: string[]): Promise<string[]> => ipcRenderer.invoke("paths:filterExisting", paths),
   revealInFolder: (filePath: string): Promise<void> => ipcRenderer.invoke("shell:reveal", filePath),
   openFile: (filePath: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke("shell:open", filePath),
   openPreview: (mdPath: string): Promise<{ ok: boolean; error?: string }> =>

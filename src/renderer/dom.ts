@@ -178,3 +178,16 @@ export const completeDialogTitle = document.getElementById(
 export const completeDialogDesc = document.getElementById(
   "completeDialogDesc",
 ) as HTMLParagraphElement;
+// 批次 11:最近转换区块(默认态/单文件态显示;点击条目一键重转)
+export const recentSection = document.getElementById("recentSection") as HTMLElement;
+export const recentList = document.getElementById("recentList") as HTMLUListElement;
+export const recentClearBtn = document.getElementById(
+  "recentClearBtn",
+) as HTMLButtonElement;
+// 批次 11:设置面板 details(panelOpen 展开态记忆)
+export const settingsPanel = document.getElementById(
+  "settingsPanel",
+) as HTMLDetailsElement;
+export const typographyPanel = document.getElementById(
+  "typographyPanel",
+) as HTMLDetailsElement;

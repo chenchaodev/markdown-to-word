@@ -16,6 +16,7 @@ import {
   multiCount,
   multiList,
   previewBtn,
+  recentSection,
   selectBtn,
   statusEl,
 } from "./dom.js";
@@ -26,6 +27,8 @@ import { baseName, setStatus, truncateMiddle } from "./utils.js";
 export function renderSelection(): void {
   const n = state.selectedFiles.length;
   dropZone.classList.toggle("has-file", n > 0);
+  // 最近转换区块:默认态(无文件)与单文件态显示;多文件态(≥2)隐藏,聚焦当前列表
+  recentSection.classList.toggle("hidden", n >= 2 || state.recentFiles.length === 0);
 
   if (n === 0) {
     dropDefault.classList.remove("hidden");
@@ -46,6 +49,7 @@ export function renderSelection(): void {
     dropMulti.classList.remove("hidden");
   }
   updateActionButtons();
+  persistSessionFiles();
 }
 
 /** 重建多文件列表:序号 + 文件名 + 上移/下移按钮,严格按 selectedFiles 顺序渲染。 */
@@ -81,6 +85,18 @@ export function renderMultiList(): void {
       return li;
     }),
   );
+  persistSessionFiles();
+}
+
+/**
+ * 会话记忆(批次 11):文件列表变化(增/删/清空/排序)后同步 lastSessionFiles,
+ * 下次启动恢复。经 renderSelection / renderMultiList 兜底所有变更路径;
+ * 写入失败静默(下次交互仍以磁盘为准)。
+ */
+export function persistSessionFiles(): void {
+  void window.api.uiStateSet({ lastSessionFiles: [...state.selectedFiles] }).catch(() => {
+    /* 忽略:UI 状态写入失败不阻塞主流程 */
+  });
 }
 
 /** 上移 / 下移图标按钮(首项上移、末项下移禁用)。 */

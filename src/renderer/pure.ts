@@ -38,3 +38,30 @@ export function stageText(stage: string): string {
 
 /** 阶段 → 进度百分比(主进程只发阶段键,映射近似进度:读取 15% / 渲染 70% / 完成 95%)。 */
 export const STAGE_PERCENT: Record<string, number> = { read: 15, render: 70, done: 95 };
+
+/* ---------- 最近转换相对时间 ---------- */
+/** 两位补零(时/分),如 9:05 → "09:05"。 */
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+/**
+ * 最近转换相对时间(批次 11):当天「今天 HH:mm」/ 昨天「昨天 HH:mm」/
+ * 今年内「M月D日」/ 更早「YYYY年M月D日」。now 可注入(测试),默认取当前时间;
+ * 全部按本地时间判定(与用户感知一致)。
+ */
+export function formatRecentTime(ts: number, now?: number): string {
+  const t = new Date(ts);
+  const n = new Date(now ?? Date.now());
+  const time = `${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
+  const sameDay = (a: Date, b: Date): boolean =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  if (sameDay(t, n)) return `今天 ${time}`;
+  const yesterday = new Date(n);
+  yesterday.setDate(n.getDate() - 1);
+  if (sameDay(t, yesterday)) return `昨天 ${time}`;
+  if (t.getFullYear() === n.getFullYear()) return `${t.getMonth() + 1}月${t.getDate()}日`;
+  return `${t.getFullYear()}年${t.getMonth() + 1}月${t.getDate()}日`;
+}

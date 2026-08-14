@@ -15,6 +15,7 @@ import {
 } from "./utils.js";
 import { showBatchDialog, showCompleteDialog, showSummary } from "./dialogs.js";
 import { updateActionButtons } from "./file-list.js";
+import { refreshRecentFiles } from "./recent-files.js";
 
 /** 单文件转换(与旧版行为一致)。 */
 export async function runConvert(
@@ -43,6 +44,7 @@ export async function runConvert(
         warnings: result.warnings,
       });
       showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
+      void refreshRecentFiles(); // 批次 11:成功后刷新最近转换区块
     } else {
       const error = result.error ?? "未知错误";
       setError(`转换失败:${error}`);
@@ -90,6 +92,7 @@ export async function runBatch(): Promise<void> {
       warnings: result.items.flatMap((item) => item.warnings ?? []),
     });
     showBatchDialog(result); // 成败均弹窗,逐条可见
+    void refreshRecentFiles(); // 批次 11:批量结束刷新(主进程已记录成功项)
   } catch (err) {
     state.lastBatchResult = null;
     const message = err instanceof Error ? err.message : String(err);
@@ -131,6 +134,7 @@ export async function runMerge(): Promise<void> {
         warnings: result.warnings,
       });
       showCompleteDialog(outputPath);
+      void refreshRecentFiles(); // 批次 11:成功后刷新最近转换区块
     } else {
       const error = result.error ?? "未知错误";
       setError(`合并失败:${error}`);

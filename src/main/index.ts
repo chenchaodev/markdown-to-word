@@ -6,7 +6,7 @@
  * - IPC 注册(handler 委托给 converter 函数 / settings / shell)
  * - SMOKE 入口(--smoke 分支一行委托 ./smoke.ts 的 runSmoke)
  */
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,12 @@ import { convert, type ConvertFormat } from "../core/convert.js";
 import { decodeMarkdown } from "../core/encoding.js";
 import { createImageResolver } from "./image-downloader.js";
 import { loadSettings, updateSettings, type AppSettings } from "./settings.js";
+import {
+  loadUiState,
+  pickWindowBounds,
+  saveUiState,
+  type UiState,
+} from "./ui-state.js";
 import { writeTempHtml } from "./temp-html.js";
 import {
   batchConvertImpl,
@@ -22,6 +28,7 @@ import {
   ConvertCanceledError,
   convertImpl,
   createConvertContext,
+  filterExistingPaths,
   mergeConvertImpl,
   type BatchProgressInfo,
   type BatchResult,
@@ -67,9 +74,15 @@ async function runWithCtx<T>(
 }
 
 function createWindow(): BrowserWindow {
+  // 批次 11:恢复上次窗口位置(x/y 须在某显示器工作区内,否则丢弃用默认尺寸)
+  const savedBounds = pickWindowBounds(
+    loadUiState().windowBounds,
+    screen.getAllDisplays().map((display) => display.workArea),
+  );
   const win = new BrowserWindow({
     width: 900,
     height: 640,
+    ...(savedBounds ?? {}),
     title: "Markdown 转换工具",
     autoHideMenuBar: true,
     webPreferences: {
@@ -83,6 +96,18 @@ function createWindow(): BrowserWindow {
   // mermaid 渲染窗口为常驻隐藏单例:主窗口关闭时销毁,否则 window-all-closed 永不触发
   // (隐藏窗口未关 → 应用无法退出);服务懒重建,后续渲染不受影响
   win.on("closed", () => disposeMermaidService());
+  // 批次 11:关闭时保存窗口位置(最大化/全屏不记录,恢复默认尺寸);
+  // preventDefault + 写盘完成后 destroy,保证退出前写入落盘(不丢状态)
+  win.on("close", (event) => {
+    if (win.isMaximized() || win.isFullScreen()) return;
+    const bounds = win.getBounds();
+    event.preventDefault();
+    void saveUiState({ windowBounds: bounds })
+      .catch(() => {
+        /* 静默:UI 状态写失败不影响关闭 */
+      })
+      .finally(() => win.destroy());
+  });
   return win;
 }
 
@@ -133,14 +158,49 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
   }
 }
 
+/**
+ * 转换成功钩子(批次 11):记录最近文件条目 {path,name,format,ts}。
+ * saveUiState 内部按 path 去重(保留 ts 最大)+ 截断 10,重复转换自然置顶;
+ * 写入失败静默,不影响转换结果。
+ */
+async function recordRecentFiles(filePaths: string[], format: ConvertFormat): Promise<void> {
+  const ts = Date.now();
+  const entries = filePaths
+    .filter((p) => typeof p === "string" && p !== "")
+    .map((p) => ({ path: p, name: path.basename(p), format, ts }));
+  if (entries.length === 0) return;
+  try {
+    await saveUiState({ recentFiles: entries });
+  } catch {
+    /* 静默:UI 状态写入失败不影响转换 */
+  }
+}
+
+/** 上次对话框目录:仅当仍存在且为目录时使用(记忆失效自动回落默认)。 */
+async function lastOpenDirIfValid(): Promise<string | undefined> {
+  const dir = loadUiState().lastOpenDir;
+  if (!dir) return undefined;
+  try {
+    const st = await fs.stat(dir);
+    return st.isDirectory() ? dir : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function registerIpc(): void {
-  // 选择多个 markdown 文件(批量/合并入口;取消返回 [])
+  // 选择多个 markdown 文件(批量/合并入口;取消返回 []);
+  // 批次 11:defaultPath 记忆上次目录,成功后回写所选文件所在目录
   ipcMain.handle("dialog:openMarkdowns", async () => {
     const result = await dialog.showOpenDialog({
       title: "选择 Markdown 文件",
+      defaultPath: await lastOpenDirIfValid(),
       filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
       properties: ["openFile", "multiSelections"],
     });
+    if (!result.canceled && result.filePaths.length > 0) {
+      await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]) }).catch(() => undefined);
+    }
     return result.canceled ? [] : result.filePaths;
   });
 
@@ -151,6 +211,7 @@ function registerIpc(): void {
       async (ctx, win) => {
         const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
         const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
+        await recordRecentFiles([filePath], format); // 批次 11:成功后记最近文件
         return { ok: true, outputPath, warnings };
       },
       () => ({ ok: false, canceled: true, error: "已取消" }),
@@ -162,12 +223,16 @@ function registerIpc(): void {
     ctxByWebContents.get(event.sender.id)?.cancel();
   });
 
-  // 选择输出目录(批次 7;取消返回 null)
+  // 选择输出目录(批次 7;取消返回 null);批次 11:defaultPath 记忆 + 成功后回写所选目录
   ipcMain.handle("dialog:selectDir", async (): Promise<string | null> => {
     const result = await dialog.showOpenDialog({
       title: "选择输出目录",
+      defaultPath: await lastOpenDirIfValid(),
       properties: ["openDirectory", "createDirectory"],
     });
+    if (!result.canceled && result.filePaths[0]) {
+      await saveUiState({ lastOpenDir: result.filePaths[0] }).catch(() => undefined);
+    }
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
@@ -188,7 +253,13 @@ function registerIpc(): void {
         event,
         async (ctx, win) => {
           const send = (info: BatchProgressInfo): void => win?.webContents.send("batch:progress", info);
-          return batchConvertImpl(files, format, send, ctx, getKatexDir());
+          const result = await batchConvertImpl(files, format, send, ctx, getKatexDir());
+          // 批次 11:成功后记录每个成功项的最近文件条目
+          await recordRecentFiles(
+            result.items.filter((item) => item.ok && item.file).map((item) => item.file),
+            format,
+          );
+          return result;
         },
         () => ({ ok: false, error: "已取消" }),
       );
@@ -203,7 +274,10 @@ function registerIpc(): void {
       event,
       async (ctx, win) => {
         const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
-        return mergeConvertImpl(files, format, send, ctx, getKatexDir());
+        const result = await mergeConvertImpl(files, format, send, ctx, getKatexDir());
+        // 批次 11:合并成功 → 全部源文件均成功转换,逐个记最近文件
+        if (result.ok) await recordRecentFiles(files, format);
+        return result;
       },
       () => ({ ok: false, canceled: true, error: "已取消" }),
     );
@@ -212,6 +286,17 @@ function registerIpc(): void {
 
   ipcMain.handle("settings:set", (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
     return updateSettings(patch);
+  });
+
+  // 批次 11:UI 状态读写(最近文件/会话文件/记忆目录/窗口位置/面板展开态;独立于 settings)
+  ipcMain.handle("ui-state:get", (): UiState => loadUiState());
+  ipcMain.handle("ui-state:set", (_event, patch: Partial<UiState>): Promise<UiState> => {
+    return saveUiState(patch);
+  });
+
+  // 批次 11:会话恢复用——保序过滤仍存在的路径(缺失剔除,不打乱用户排列顺序)
+  ipcMain.handle("paths:filterExisting", (_event, paths: string[]): Promise<string[]> => {
+    return filterExistingPaths(Array.isArray(paths) ? paths : []);
   });
 
   // 导出后行为:资源管理器中显示 / 默认程序打开
