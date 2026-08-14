@@ -5,17 +5,41 @@
  * - png 为 PNG 魔数(89 50 4E 47),width/height > 0(逻辑 1x 尺寸)
  * - svg 为完整 SVG 字符串(含 <svg 标签)
  * - 语法错误 → null(降级路径:页面内 parse 预检失败)
+ * - 渲染超时 → null(executeJavaScript 挂起 + 注入短超时;串行队列/窗口不被卡死)
+ * - 畸形返回值防御校验 → null(svg 形状非法/PNG 空/尺寸非法)
+ * - 渲染进程崩溃 → null 且下次调用自动重建窗口(forcefullyCrashRenderer 实测)
+ * - 脚本加载失败(loadFile 抛错)→ null 且临时 HTML 清理、下次调用重建
+ * 模拟手段:BrowserWindow.prototype.webContents getter 临时替换(converter.test.js 同款
+ * 模式,descriptor 一律 try/finally 恢复;本段与其他段同进程串行,不能污染原型)。
  * 说明:窗口懒创建、单例复用;本段结束后窗口仍在,由 acceptance 末尾 app.quit()
  * 触发清理(closed → 临时 HTML 删除)。
  */
-import { renderMermaid } from "../../dist/main/mermaid-service.js";
+import { BrowserWindow } from "electron";
+import fs from "node:fs/promises";
+import os from "node:os";
+import { disposeMermaidService, renderMermaid } from "../../dist/main/mermaid-service.js";
+
+const GOOD_CODE = "graph TD; A-->B";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`mermaid-service 断言失败:${msg}`);
 }
 
+/** 临时替换 BrowserWindow.prototype.webContents getter(返回 fakeFactory(真实 wc));返回恢复函数 */
+function patchWebContents(fakeFactory) {
+  const descriptor = Object.getOwnPropertyDescriptor(BrowserWindow.prototype, "webContents");
+  Object.defineProperty(BrowserWindow.prototype, "webContents", {
+    configurable: true,
+    get() {
+      return fakeFactory(descriptor.get.call(this));
+    },
+  });
+  return () => Object.defineProperty(BrowserWindow.prototype, "webContents", descriptor);
+}
+
 export async function run() {
-  const result = await renderMermaid("graph TD; A-->B");
+  // ---- 1. 真实渲染成功:PNG 魔数/逻辑尺寸/SVG 完整 ----
+  const result = await renderMermaid(GOOD_CODE);
   assert(result, "renderMermaid 返回 null(渲染失败)");
   assert(
     result.png.length > 8 &&
@@ -28,11 +52,82 @@ export async function run() {
   assert(result.width > 0 && result.height > 0, `尺寸异常: ${result.width}x${result.height}`);
   assert(result.svg.includes("<svg"), "svg 缺少 <svg 标签");
 
-  // 降级路径:语法错误 → parse 预检失败 → null
+  // ---- 2. 降级路径:语法错误 → 页面内 parse 预检失败 → null ----
   const bad = await renderMermaid("graph TD;\nA[unclosed");
   assert(bad === null, "语法错误应返回 null(降级)");
 
+  // ---- 3. 渲染超时 + 畸形返回值防御校验(挂起/垃圾返回值,均 → null) ----
+  let restoreWc = null;
+  try {
+    restoreWc = patchWebContents(() => ({
+      executeJavaScript: async (script) => {
+        if (script.includes("TIMEOUT_SENTINEL")) return new Promise(() => {}); // 永不 settle → 超时
+        if (script.includes("BADSHAPE_SENTINEL")) return { svg: 123 }; // 形状非法
+        if (script.includes("EMPTYPNG_SENTINEL"))
+          return { svg: "<svg>", pngDataUrl: "data:image/png;base64,", width: 10, height: 10 }; // PNG 空
+        if (script.includes("ZEROSIZE_SENTINEL"))
+          return { svg: "<svg>", pngDataUrl: "data:image/png;base64,AAAA", width: 0, height: 10 }; // 尺寸非法
+        throw new Error("unexpected script");
+      },
+    }));
+    const t0 = Date.now();
+    const timeoutResult = await renderMermaid("TIMEOUT_SENTINEL", 200);
+    assert(timeoutResult === null, "超时应返回 null(降级)");
+    assert(Date.now() - t0 < 5000, "注入超时未生效(耗时接近默认 15s)");
+    assert((await renderMermaid("BADSHAPE_SENTINEL")) === null, "畸形 svg 形状应返回 null");
+    assert((await renderMermaid("EMPTYPNG_SENTINEL")) === null, "空 PNG 应返回 null");
+    assert((await renderMermaid("ZEROSIZE_SENTINEL")) === null, "非法尺寸应返回 null");
+  } finally {
+    if (restoreWc) restoreWc();
+  }
+  // 超时/畸形路径后:串行队列未卡死、真实窗口仍可用
+  const afterTimeout = await renderMermaid(GOOD_CODE);
+  assert(afterTimeout, "超时后队列/窗口应仍可用(恢复渲染)");
+
+  // ---- 4. 渲染进程崩溃:forcefullyCrashRenderer → render-process-gone → 窗口销毁 → null;下次调用重建 ----
+  const mermaidWin = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  assert(
+    mermaidWin && typeof mermaidWin.webContents.forcefullyCrashRenderer === "function",
+    "forcefullyCrashRenderer 不可用(崩溃路径无法实测)",
+  );
+  restoreWc = null;
+  try {
+    restoreWc = patchWebContents((realWc) => {
+      const origExecute = realWc.executeJavaScript;
+      realWc.executeJavaScript = async (...args) => {
+        realWc.forcefullyCrashRenderer(); // 真实崩溃:原 promise reject 或挂起,由注入超时兜底
+        return origExecute.apply(realWc, args);
+      };
+      return realWc;
+    });
+    const crashResult = await renderMermaid("CRASH_SENTINEL", 3000);
+    assert(crashResult === null, "渲染进程崩溃应返回 null(降级)");
+  } finally {
+    if (restoreWc) restoreWc();
+  }
+  const afterCrash = await renderMermaid(GOOD_CODE);
+  assert(afterCrash, "崩溃后窗口应自动重建并恢复渲染");
+
+  // ---- 5. 脚本加载失败(loadFile 抛错)→ null + 临时 HTML 清理 + 下次调用重建 ----
+  disposeMermaidService(); // 销毁复用窗口,让 ensureWindow 走新建路径
+  const origLoadFile = BrowserWindow.prototype.loadFile;
+  BrowserWindow.prototype.loadFile = async () => {
+    throw new Error("mock loadFile 失败");
+  };
+  try {
+    const loadFailResult = await renderMermaid(GOOD_CODE);
+    assert(loadFailResult === null, "loadFile 失败应返回 null(降级)");
+  } finally {
+    BrowserWindow.prototype.loadFile = origLoadFile;
+  }
+  await new Promise((r) => setTimeout(r, 100)); // 等 closed → cleanup 删除临时 HTML
+  const tmpHtmlLeft = (await fs.readdir(os.tmpdir())).filter((n) => n.startsWith(`m2w-${process.pid}-`));
+  assert(tmpHtmlLeft.length === 0, `loadFile 失败:临时 HTML 残留 ${tmpHtmlLeft.join(", ")}`);
+  const afterLoadFail = await renderMermaid(GOOD_CODE);
+  assert(afterLoadFail, "loadFile 失败后窗口应重建并恢复渲染");
+
   console.log(
-    `[ok] mermaid-service:真实渲染 ${result.width}x${result.height}(2x PNG ${result.png.length} bytes,svg ${result.svg.length} chars);语法错误降级 null`,
+    `[ok] mermaid-service:真实渲染 ${result.width}x${result.height}(2x PNG ${result.png.length} bytes,svg ${result.svg.length} chars);` +
+      "语法错误/超时/畸形返回值/崩溃/loadFile 失败均降级 null,崩溃与加载失败后自动重建",
   );
 }

@@ -5,6 +5,7 @@
  * initialize → parse 预检 → mermaid.render 拿 SVG → 注入 #graphDiv → fonts.ready →
  * canvas 2x 光栅化 PNG。类型契约见 src/core/mermaid.ts(单一来源)。
  * 降级:任何异常(语法错误/15s 超时/窗口崩溃)→ 返回 null,core 层负责降级渲染。
+ * 超时经 renderMermaid 第二参数可注入(默认 15s,测试用短超时,对外契约不变)。
  * CSP(实测 2026-08-13):file:// 页面 CSP 生效,纯 `default-src 'none'` 会连 file://
  * 脚本与内联脚本一并拦截 → 必须显式 `script-src 'unsafe-inline' file:`;其余保持
  * default-src 'none'(断 connect/fetch/object)+ img-src data:(外部图片发不出去),
@@ -150,12 +151,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-async function doRender(code: string): Promise<MermaidResult | null> {
+async function doRender(code: string, timeoutMs: number): Promise<MermaidResult | null> {
   try {
     const w = await ensureWindow();
     const result = await withTimeout(
       w.webContents.executeJavaScript(`window.renderMermaid(${JSON.stringify(code)})`),
-      RENDER_TIMEOUT_MS,
+      timeoutMs,
     );
     if (!result || typeof result.svg !== "string" || typeof result.pngDataUrl !== "string") return null;
     const width = Number(result.width);
@@ -174,9 +175,10 @@ async function doRender(code: string): Promise<MermaidResult | null> {
 /**
  * 渲染 mermaid 代码块,失败返回 null(core 层负责降级)。
  * 调用方并发安全:内部 promise 链串行,无需外部加锁。
+ * @param timeoutMs 单次渲染超时(默认 RENDER_TIMEOUT_MS;测试可注入短超时,对外契约不变)
  */
-export function renderMermaid(code: string): Promise<MermaidResult | null> {
-  const task = queue.then(() => doRender(code));
+export function renderMermaid(code: string, timeoutMs: number = RENDER_TIMEOUT_MS): Promise<MermaidResult | null> {
+  const task = queue.then(() => doRender(code, timeoutMs));
   queue = task.then(
     () => undefined,
     () => undefined,
