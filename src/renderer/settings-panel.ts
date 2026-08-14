@@ -16,15 +16,19 @@ import {
   LINE_SPACING_MAX,
   LINE_SPACING_MIN,
   MARGIN_MAX_MM as MARGIN_MAX,
-  MARGIN_MIN_MM as MARGIN_MIN,
-  MAX_CUSTOM_PRESETS,
   TEMPLATE_PRESETS,
   type AppSettings,
   type CustomPreset,
   type PageSetup,
-  type TemplatePreset,
   matchesPreset,
 } from "../core/settings-defaults.js";
+import {
+  allPresets,
+  clampMargin,
+  customPresetNameFromId,
+  customPresetToTemplate,
+  validatePresetName,
+} from "./settings-logic.js";
 import {
   afterConvertInputs,
   alignJustifyInput,
@@ -119,7 +123,7 @@ function applySettingsToControls(): void {
   headingNumberingInput.checked = state.settings.typography.headingNumbering;
   captionNumberingInput.checked = state.settings.typography.captionNumbering;
   // 模板预设:与某预设(硬编码 + 自定义)完全一致时选中,否则回退「默认」并提示已进入自定义模式
-  const matchedPreset = allPresets().find((preset) =>
+  const matchedPreset = allPresets(state.settings.customPresets).find((preset) =>
     matchesPreset(preset, state.settings),
   );
   templatePresetSelect.value = matchedPreset?.id ?? "default";
@@ -158,24 +162,8 @@ function persistSettings(patch: Partial<AppSettings>): void {
 }
 
 /* ---------- 自定义模板预设(批次 11 迭代 3;F 模板另存为预设) ---------- */
-/** 自定义预设 → 下拉选项形态(与硬编码预设同构,matchesPreset/套用逻辑直接复用)。 */
-function customPresetToTemplate(preset: CustomPreset): TemplatePreset {
-  return {
-    id: `custom:${preset.name}`,
-    name: preset.name,
-    hint: "自定义预设",
-    typography: preset.typography,
-    pageSetup: preset.pageSetup,
-  };
-}
-
-/** 全部可选预设:硬编码 3 项 + 自定义项(自定义项追加在末尾)。 */
-function allPresets(): TemplatePreset[] {
-  return [
-    ...TEMPLATE_PRESETS,
-    ...state.settings.customPresets.map(customPresetToTemplate),
-  ];
-}
+/* 纯逻辑(预设映射/名校验/上限判断/名称解析/边距钳制)收敛于 settings-logic.ts,
+ * 本模块只保留 DOM 交互(弹窗显隐/焦点陷阱/错误提示/持久化调用)。 */
 
 /** 重建下拉选项:硬编码 3 项保留(HTML 静态),仅重刷自定义项(按 data-custom 标记)。 */
 function rebuildPresetOptions(): void {
@@ -217,17 +205,10 @@ function showPresetSaveError(message: string): void {
 /** 保存当前排版+页面设置为自定义预设(名称非空、同名拒绝;成功后下拉选中新预设)。 */
 async function saveCustomPreset(): Promise<void> {
   const name = presetNameInput.value.trim();
-  if (!name) {
-    showPresetSaveError("请输入预设名称");
-    return;
-  }
-  if (state.settings.customPresets.some((preset) => preset.name === name)) {
-    showPresetSaveError("已存在同名预设,请换一个名称");
-    return;
-  }
-  // 批次 12(C6):达上限不再静默截断,弹窗内明确提示先删除
-  if (state.settings.customPresets.length >= MAX_CUSTOM_PRESETS) {
-    showPresetSaveError(`已达 ${MAX_CUSTOM_PRESETS} 个上限，请先删除`);
+  // 批次 12(C6):达上限不再静默截断,弹窗内明确提示先删除(校验逻辑在 settings-logic)
+  const error = validatePresetName(name, state.settings.customPresets);
+  if (error) {
+    showPresetSaveError(error);
     return;
   }
   const entry: CustomPreset = {
@@ -249,9 +230,8 @@ async function saveCustomPreset(): Promise<void> {
 
 /** 删除当前选中的自定义预设;删除后回退「默认」预设(整体套用并持久化)。 */
 function deleteCustomPreset(): void {
-  const value = templatePresetSelect.value;
-  if (!value.startsWith("custom:")) return;
-  const name = value.slice("custom:".length);
+  const name = customPresetNameFromId(templatePresetSelect.value);
+  if (!name) return;
   const next = state.settings.customPresets.filter((preset) => preset.name !== name);
   void window.api
     .settingsSet({ customPresets: next })
@@ -313,7 +293,7 @@ function handleMarginChange(key: keyof typeof marginInputs): void {
     showFieldError(marginError, `请输入 0–${MARGIN_MAX} 之间的数字`);
     return;
   }
-  const clamped = Math.min(MARGIN_MAX, Math.max(MARGIN_MIN, value));
+  const clamped = clampMargin(value);
   state.settings.pageSetup[key] = clamped;
   input.value = String(clamped); // 回显钳制后的值,与主进程持久化结果一致
   hideFieldError(marginError);
@@ -456,7 +436,7 @@ export function bindSettingsEvents(): void {
   // (批次 11 迭代 3:硬编码 + 自定义预设统一走此路径)
   templatePresetSelect.addEventListener("change", () => {
     if (state.hydratingSettings) return;
-    const preset = allPresets().find(
+    const preset = allPresets(state.settings.customPresets).find(
       (p) => p.id === templatePresetSelect.value,
     );
     if (!preset) return;
