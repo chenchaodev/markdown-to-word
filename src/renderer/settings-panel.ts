@@ -218,12 +218,17 @@ async function saveCustomPreset(): Promise<void> {
     showPresetSaveError("已存在同名预设,请换一个名称");
     return;
   }
+  // 批次 12(C6):达上限不再静默截断,弹窗内明确提示先删除
+  if (state.settings.customPresets.length >= MAX_CUSTOM_PRESETS) {
+    showPresetSaveError(`已达 ${MAX_CUSTOM_PRESETS} 个上限，请先删除`);
+    return;
+  }
   const entry: CustomPreset = {
     name,
     typography: { ...state.settings.typography },
     pageSetup: { ...state.settings.pageSetup },
   };
-  const next = [...state.settings.customPresets, entry].slice(0, MAX_CUSTOM_PRESETS);
+  const next = [...state.settings.customPresets, entry];
   try {
     const saved = await window.api.settingsSet({ customPresets: next });
     state.settings.customPresets = saved.customPresets;
