@@ -2,6 +2,12 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-14 18:51:13 双方向探索方案(@des-1/@ora-1/@lib-1/@exp-1/@exp-2,批次 12 规划依据)
+- **方向 A 界面体验优化(用户已选,批次 12)**:20 项问题(P1-P20)+ 12 项候选(C1-C12)三阶段;关键缺陷 **P9 点击拖放区=替换整表但文案声称追加**(误触丢全部选择,无确认,renderer.ts:175/222 vs index.html:63/98)、**P1 设置面板展开后转换按钮/进度被推出 640px 视口**、**P3 模板预设埋在第二折叠面板**;本批实施 Phase 0 速赢(C1/C3/C4/C5/C6/C7/C11);C1 语义=多文件态点击追加、单文件态点击更换
+- **方向 B 代码质量与测试(未选,存档备查)**:速赢=tsconfig 4 开关(noUnusedLocals/noImplicitOverride/noFallthroughCasesInSwitch)+ depcheck 一次性 + mermaid-service 超时/崩溃降级测试(199 行 vs 34 行,最高回归风险)+ settings-panel 纯逻辑抽取(470 行零直接测试);低风险=eslint 9 flat(仅 correctness,先验证 TS 7 兼容)+ c8(门槛=Electron 主进程 NODE_V8_COVERAGE 实测,需 sourceMap 且排除出 asar);暂缓=prettier/knip/CI;不做=vitest 迁移/再拆 render.ts 主循环
+- **工具链硬事实**:c8 12.x/nyc 18/eslint 10/knip 6 全要求 Node 20.19+(Node 18 需锁 c8 10.1.3/eslint 9.39.x;Node 18 已 2025-04 EOL);eslint 10 起 flat config 唯一(eslintrc 全移除);depcheck 停维护(官方推荐 knip);全部纯 JS npmmirror 无坑(分钟级同步延迟);Electron 快捷键(Menu accelerator)/深色模式(prefers-color-scheme + nativeTheme,官方示例已 v43.4.0)均原生能力,UI 侧零新依赖
+- 来源: @designer des-1 + @oracle ora-1 + @librarian lib-1 + @explorer exp-1/exp-2;关联: 原文存档 docs/archive/20260814-185113-双方向探索方案.md
+
 ### 2026-08-13 21:18:12 验收样例生成方案选型(@用户拍板,测试基建)
 - **问题**:test/fixtures/ 仅图片+陈旧 manual/,测试段 md 全内联,用户 GUI 人工实测无最新功能 md 可用(需自己找/写)
 - **选型(拍板)**:测试段导出 `export const fixtures = { main: ... }` → 生成器落盘 test/fixtures/acceptance/<段名>[-key].md——md 唯一事实来源=测试段,零重复/永不漂移/自动跟功能走;不选「独立手写验收样例集」(手工维护 + 与断言漂移);另拍板:试点 4 段先行、触发=手动 npm script + 提交前 --check
