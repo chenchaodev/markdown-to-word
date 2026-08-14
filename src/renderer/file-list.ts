@@ -6,6 +6,7 @@
 import {
   batchBtn,
   convertBtn,
+  convertHint,
   dropDefault,
   dropFile,
   dropMulti,
@@ -229,4 +230,10 @@ export function updateActionButtons(): void {
   // 单文件态预览:仅在选中 1 个文件时可见(dropFile 区),转换中禁用
   previewBtn.disabled = busy || n !== 1;
   selectBtn.disabled = busy;
+  // 批次 12(C4):footer 快捷键提示随模式切换(多文件态提示批量语义)
+  if (convertHint) {
+    convertHint.textContent = multi
+      ? "Ctrl+Enter 批量转换 · Ctrl+O 添加文件"
+      : "Ctrl+Enter 转换 · Ctrl+O 添加文件";
+  }
 }

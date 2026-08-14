@@ -46,7 +46,6 @@ import {
   completeDialogSuppressInput,
   completeOutputPath,
   convertBtn,
-  convertHint,
   dropZone,
   mergeBtn,
   multiList,
@@ -642,9 +641,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 /* ---------- 初始化 ---------- */
-// 按钮旁说明文案(docx / pdf 均已支持;与 HTML 静态文案保持一致)
-if (convertHint) convertHint.textContent = "输出格式:Word / PDF";
-// 初始无选中:按钮按当前状态置灰(HTML 中 convertBtn 已写死 disabled)
+// 初始无选中:按钮按当前状态置灰(HTML 中 convertBtn 已写死 disabled);
+// footer 快捷键 hint 由 updateActionButtons 按模式维护(批次 12:C4)
 updateActionButtons();
 // 设置面板:事件绑定先于回填(时序与拆分前一致:绑定在模块加载期,回填在 await 之后)
 bindSettingsEvents();

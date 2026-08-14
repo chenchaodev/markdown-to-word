@@ -138,9 +138,9 @@ function applySettingsToControls(): void {
   formatInputs.forEach(
     (input) => (input.checked = input.value === state.settings.format),
   );
-  // 输出目录:空串显示「源文件所在目录」
-  outputDirValue.textContent = state.settings.outputDir || "源文件所在目录";
-  outputDirValue.title = state.settings.outputDir || "源文件所在目录";
+  // 输出目录:空串显示「与源文件相同目录」
+  outputDirValue.textContent = state.settings.outputDir || "与源文件相同目录";
+  outputDirValue.title = state.settings.outputDir || "与源文件相同目录";
 }
 
 /** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。
@@ -478,7 +478,7 @@ export function bindSettingsEvents(): void {
   // 仅自定义预设可删;删除后回退「默认」
   presetDeleteBtn.addEventListener("click", deleteCustomPreset);
 
-  // 批次 7:输出目录选择 / 恢复默认(空串 = 源文件所在目录)
+  // 批次 7:输出目录选择 / 恢复默认(空串 = 与源文件相同目录)
   outputDirPick.addEventListener("click", async () => {
     try {
       const dir = await window.api.selectDir();
@@ -495,8 +495,8 @@ export function bindSettingsEvents(): void {
 
   outputDirReset.addEventListener("click", () => {
     state.settings.outputDir = "";
-    outputDirValue.textContent = "源文件所在目录";
-    outputDirValue.title = "源文件所在目录";
+    outputDirValue.textContent = "与源文件相同目录";
+    outputDirValue.title = "与源文件相同目录";
     persistSettings({ outputDir: "" });
   });
 
