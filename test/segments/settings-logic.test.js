@@ -10,6 +10,8 @@
  * - allPresets:硬编码 3 项在前 + 自定义项追加末尾,自定义项转 custom: id
  * - customPresetNameFromId:custom: 前缀 → 名称;非自定义 → null;空名 → ""
  * - clampMargin:0/1000 边界保留、负数钳 0、超限钳 1000、小数保留
+ * - resolvePresetSelection(批次 13 bug 回归):当前选中自定义预设且值=硬编码预设值时
+ *   不被弹回;选中项不匹配/已删除 → 回退全局匹配;无匹配 → default;硬编码选中保持
  */
 import {
   MAX_CUSTOM_PRESETS,
@@ -21,6 +23,7 @@ import {
   clampMargin,
   customPresetNameFromId,
   customPresetToTemplate,
+  resolvePresetSelection,
   validatePresetName,
 } from "../../dist/renderer/settings-logic.js";
 
@@ -105,4 +108,44 @@ export async function run() {
   assert(clampMargin(1001) === 1000, "1001 应钳到 1000");
   assert(clampMargin(12.5) === 12.5, "区间内小数应保留");
   console.log("[ok] clampMargin:0/1000 边界保留、负数/超限钳制、小数保留 断言通过");
+
+  // ---------- resolvePresetSelection(批次 13 bug 回归:自定义预设不被弹回硬编码项) ----------
+  const paperTpl = TEMPLATE_PRESETS.find((p) => p.id === "paper");
+  const paperLike = () => ({
+    typography: { ...paperTpl.typography },
+    pageSetup: { ...paperTpl.pageSetup },
+  });
+  const custom = { name: "同名", ...paperLike() }; // 值恰与「学术论文」预设全等
+
+  // 1. 回归场景:自定义预设值=paper 预设值、当前选中该自定义 → 保持选中,不弹回 paper
+  assert(
+    resolvePresetSelection([custom], paperLike(), `${CUSTOM_PRESET_ID_PREFIX}同名`) ===
+      `${CUSTOM_PRESET_ID_PREFIX}同名`,
+    "值=paper 的自定义预设被选中时不应弹回硬编码 paper",
+  );
+  // 2. 当前选中与设置不匹配(设置=paper 值、选中 default)→ 回退全局匹配 → paper
+  assert(
+    resolvePresetSelection([custom], paperLike(), "default") === "paper",
+    "选中项与设置不一致 → 回退全局匹配(paper)",
+  );
+  // 3. 当前选中对应预设不存在(已删除)→ 回退全局匹配
+  assert(
+    resolvePresetSelection([], paperLike(), `${CUSTOM_PRESET_ID_PREFIX}已删`) === "paper",
+    "选中项已不存在 → 回退全局匹配",
+  );
+  // 4. 无任何匹配 → default
+  const off = {
+    typography: { ...paperTpl.typography, bodySizePt: 99 },
+    pageSetup: { ...paperTpl.pageSetup },
+  };
+  assert(
+    resolvePresetSelection([], off, "default") === "default",
+    "无任何匹配 → 回退 default",
+  );
+  // 5. 硬编码预设正常选中(设置=paper 值、选中 paper → 保持 paper)
+  assert(
+    resolvePresetSelection([], paperLike(), "paper") === "paper",
+    "硬编码选中且与设置一致 → 保持",
+  );
+  console.log("[ok] resolvePresetSelection:选中保持(不弹回)/回退全局匹配/已删回退/无匹配 default/硬编码保持 断言通过");
 }

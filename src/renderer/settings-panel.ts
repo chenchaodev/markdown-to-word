@@ -20,13 +20,13 @@ import {
   type AppSettings,
   type CustomPreset,
   type PageSetup,
-  matchesPreset,
 } from "../core/settings-defaults.js";
 import {
   allPresets,
   clampMargin,
   customPresetNameFromId,
   customPresetToTemplate,
+  resolvePresetSelection,
   validatePresetName,
 } from "./settings-logic.js";
 import {
@@ -123,11 +123,17 @@ function applySettingsToControls(): void {
   alignJustifyInput.checked = state.settings.typography.align === "justify";
   headingNumberingInput.checked = state.settings.typography.headingNumbering;
   captionNumberingInput.checked = state.settings.typography.captionNumbering;
-  // 模板预设:与某预设(硬编码 + 自定义)完全一致时选中,否则回退「默认」并提示已进入自定义模式
-  const matchedPreset = allPresets(state.settings.customPresets).find((preset) =>
-    matchesPreset(preset, state.settings),
+  // 模板预设:优先保持当前选中(值与设置一致时不弹回——自定义预设与硬编码预设
+  // 值全等时不被 find 抢走),否则回退全局匹配;无匹配回退「默认」并提示已进入自定义模式
+  const matchedPresetId = resolvePresetSelection(
+    state.settings.customPresets,
+    state.settings,
+    templatePresetSelect.value,
   );
-  templatePresetSelect.value = matchedPreset?.id ?? "default";
+  templatePresetSelect.value = matchedPresetId;
+  const matchedPreset = allPresets(state.settings.customPresets).find(
+    (p) => p.id === matchedPresetId,
+  );
   const isCustom = !matchedPreset;
   templatePresetHint.textContent = isCustom
     ? "已微调,与模板预设不一致"
@@ -223,6 +229,8 @@ async function saveCustomPreset(): Promise<void> {
     state.settings.customPresets = saved.customPresets;
     closePresetSaveDialog();
     rebuildPresetOptions();
+    // 显式选中新预设(值=当前设置,resolvePresetSelection 保持选中,不被硬编码项弹回)
+    templatePresetSelect.value = customPresetToTemplate(entry).id;
     applySettingsToControls(); // 当前设置即新预设 → 自动选中并显示其 hint
   } catch {
     showPresetSaveError("保存失败,请重试");

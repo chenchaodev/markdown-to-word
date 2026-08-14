@@ -10,6 +10,8 @@ import {
   MARGIN_MIN_MM,
   MAX_CUSTOM_PRESETS,
   TEMPLATE_PRESETS,
+  matchesPreset,
+  type AppSettings,
   type CustomPreset,
   type TemplatePreset,
 } from "../core/settings-defaults.js";
@@ -64,4 +66,22 @@ export function customPresetNameFromId(value: string): string | null {
 /** 边距钳制到 [MARGIN_MIN_MM, MARGIN_MAX_MM](调用方已过滤非有限数)。 */
 export function clampMargin(value: number): number {
   return Math.min(MARGIN_MAX_MM, Math.max(MARGIN_MIN_MM, value));
+}
+
+/**
+ * 计算模板预设下拉应显示的值:优先保持当前选中(其值与设置一致时不被弹回),
+ * 否则回退 matchesPreset 全局匹配(loadSettings/导入/删除后自动选中)。
+ * 修复场景(批次 13 bug):自定义预设值与某硬编码预设全等时,find 命中硬编码项
+ * 导致选中自定义预设后被弹回——先按 currentValue 精确命中,再走全局匹配。
+ */
+export function resolvePresetSelection(
+  customPresets: readonly CustomPreset[],
+  settings: AppSettings,
+  currentValue: string,
+): string {
+  const all = allPresets(customPresets);
+  const current = all.find((p) => p.id === currentValue);
+  if (current && matchesPreset(current, settings)) return current.id;
+  const matched = all.find((preset) => matchesPreset(preset, settings));
+  return matched?.id ?? "default";
 }
