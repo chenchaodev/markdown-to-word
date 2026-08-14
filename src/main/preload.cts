@@ -45,4 +45,6 @@ contextBridge.exposeInMainWorld("api", {
   openFile: (filePath: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke("shell:open", filePath),
   openPreview: (mdPath: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke("preview:open", mdPath),
+  /** 批次 11 迭代 3:刷新所有预览窗口(设置变更后调用;无预览窗口时为空操作)。 */
+  previewRefresh: (): Promise<void> => ipcRenderer.invoke("preview:refresh"),
 });

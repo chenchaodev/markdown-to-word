@@ -589,6 +589,18 @@ body {
   min-width: 0;
 }
 
+/* 批次 11 迭代 3:模板行按钮(另存为/删除)与 select 同排,不挤压 hint */
+.settings-row .btn-small {
+  flex: none;
+}
+
+/* 批次 11 迭代 3:另存为预设弹窗的名称输入(占满弹窗宽度) */
+.preset-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+}
+
 /* 排版设置:文本 / 数字输入与标签内说明 */
 .setting-input,
 .setting-number {

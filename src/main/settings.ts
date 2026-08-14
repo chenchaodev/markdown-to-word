@@ -20,7 +20,9 @@ import {
   DEFAULT_SETTINGS,
   MARGIN_MIN_MM,
   MARGIN_MAX_MM,
+  MAX_CUSTOM_PRESETS,
   type AppSettings,
+  type CustomPreset,
 } from "../core/settings-defaults.js";
 export { DEFAULT_SETTINGS, type AppSettings } from "../core/settings-defaults.js";
 
@@ -39,6 +41,7 @@ const SETTING_KEYS = [
   "toc",
   "afterConvert",
   "outputDir",
+  "customPresets",
 ] as const;
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
@@ -106,6 +109,8 @@ export function loadSettings(): AppSettings {
         outputDir: isValidOutputDir(parsed.outputDir) ? parsed.outputDir : "",
         toc: typeof parsed.toc === "boolean" ? parsed.toc : DEFAULT_SETTINGS.toc,
         typography: sanitizeTypography(parsed.typography),
+        // 批次 11 迭代 3:customPresets 缺失(旧文件)→ [];存在 → 逐条校验
+        customPresets: sanitizeCustomPresets(parsed.customPresets),
       };
     }
   } catch {
@@ -174,7 +179,36 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
       case "typography":
         out.typography = sanitizeTypography(src.typography);
         break;
+      case "customPresets":
+        out.customPresets = sanitizeCustomPresets(src.customPresets);
+        break;
     }
+  }
+  return out;
+}
+
+/**
+ * customPresets 逐条校验(批次 11 迭代 3):
+ * - 非数组 → []
+ * - 条目须为对象且 name 非空字符串(trim 后);typography 经 sanitizeTypography
+ *   逐字段钳制(始终合法),pageSetup 经 sanitizePageSetup(非法对象 → 整条丢弃)
+ * - 按名称去重(保留先出现的条目);截断到 MAX_CUSTOM_PRESETS
+ */
+function sanitizeCustomPresets(value: unknown): CustomPreset[] {
+  if (!Array.isArray(value)) return [];
+  const out: CustomPreset[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const src = item as Record<string, unknown>;
+    if (typeof src.name !== "string" || src.name.trim() === "") continue;
+    const name = src.name.trim();
+    if (seen.has(name)) continue; // 同名去重,保留先出现的条目
+    const pageSetup = sanitizePageSetup(src.pageSetup);
+    if (!pageSetup) continue; // pageSetup 非法 → 整条丢弃
+    out.push({ name, typography: sanitizeTypography(src.typography), pageSetup });
+    seen.add(name);
+    if (out.length >= MAX_CUSTOM_PRESETS) break;
   }
   return out;
 }

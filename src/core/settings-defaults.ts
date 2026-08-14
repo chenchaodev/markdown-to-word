@@ -55,7 +55,19 @@ export interface AppSettings {
   afterConvert: AfterConvertAction;
   /** 输出目录:空串 = 输出到源文件同目录(默认);非空 = 固定输出目录(须绝对路径) */
   outputDir: string;
+  /** 自定义模板预设(批次 11 迭代 3;上限 MAX_CUSTOM_PRESETS,名称非空去重) */
+  customPresets: CustomPreset[];
 }
+
+/** 自定义模板预设:名称 + 排版/页面设置快照(套用逻辑与硬编码预设一致)。 */
+export interface CustomPreset {
+  name: string;
+  typography: TypographySettings;
+  pageSetup: PageSetup;
+}
+
+/** 自定义预设数量上限(超出截断,保留先保存的条目)。 */
+export const MAX_CUSTOM_PRESETS = 10;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   version: 1,
@@ -66,6 +78,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   toc: true,
   afterConvert: "none",
   outputDir: "",
+  customPresets: [],
 };
 
 /** 页面边距钳制范围(mm,与主进程 sanitizePageSetup 一致) */

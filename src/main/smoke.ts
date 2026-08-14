@@ -165,6 +165,11 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
         report.completeDialogPromptExists = !!document.getElementById("completeDialogPrompt");
         report.retryBtnExists = !!document.getElementById("batchDialogRetry");
         report.copyAllBtnExists = !!document.getElementById("batchDialogCopyAll");
+        // 批次 11 迭代 3:自定义预设控件存在性 + previewRefresh API 注入
+        report.presetSaveBtnExists = !!document.getElementById("presetSaveBtn");
+        report.presetDeleteBtnExists = !!document.getElementById("presetDeleteBtn");
+        report.presetSaveDialogExists = !!document.getElementById("presetSaveDialog");
+        report.previewRefreshApi = typeof window.api.previewRefresh === "function";
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
@@ -187,6 +192,22 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
             completeDialogPromptExists: diag.completeDialogPromptExists,
             retryBtnExists: diag.retryBtnExists,
             copyAllBtnExists: diag.copyAllBtnExists,
+          })}`,
+        );
+      }
+      // 批次 11 迭代 3:自定义预设控件 + previewRefresh API 守卫(缺失即回归)
+      if (
+        !diag.presetSaveBtnExists ||
+        !diag.presetDeleteBtnExists ||
+        !diag.presetSaveDialogExists ||
+        !diag.previewRefreshApi
+      ) {
+        throw new Error(
+          `[smoke] renderer diag FAILED: 批次 11 迭代 3 控件/API 缺失 ${JSON.stringify({
+            presetSaveBtnExists: diag.presetSaveBtnExists,
+            presetDeleteBtnExists: diag.presetDeleteBtnExists,
+            presetSaveDialogExists: diag.presetSaveDialogExists,
+            previewRefreshApi: diag.previewRefreshApi,
           })}`,
         );
       }

@@ -7,8 +7,11 @@
  * - sanitizeTypography:bodySizePt 8-24、lineSpacing 1.0-2.5 范围校验,越界 → DEFAULT_TYPOGRAPHY
  *   值;字体须非空字符串、布尔字段须 boolean、align 枚举(left/justify);整块兜底,
  *   始终返回合法完整对象
- * - sanitizePatch:仅 SETTING_KEYS 8 键(version/format/pageSetup/typography/breakBeforeH1/
- *   toc/afterConvert/outputDir)白名单,未知键过滤;非法值回退默认
+ * - sanitizePatch:仅 SETTING_KEYS 9 键(version/format/pageSetup/typography/breakBeforeH1/
+ *   toc/afterConvert/outputDir/customPresets)白名单,未知键过滤;非法值回退默认
+ * - sanitizeCustomPresets(批次 11 迭代 3):非数组 → [];条目须对象且 name 非空;
+ *   typography 逐字段钳制、pageSetup 非法对象整条丢弃;同名去重(保留先出现);
+ *   截断 MAX_CUSTOM_PRESETS=10
  * - loadSettings:JSON parse 失败 / 形状非法(isValidSettings)→ 返回 DEFAULT_SETTINGS 引用
  *   (静默不写盘);旧文件(缺 toc/outputDir/typography)→ 其余字段保留 + 兜底默认,不崩溃
  * - settingsFilePath = app.getPath("userData")/settings.json(无注入点)→ 测试备份真实文件、
@@ -107,12 +110,12 @@ export async function run() {
     assert(r8.format === "pdf" && r8.afterConvert === "open", "合法枚举应保留");
     assert(r8.breakBeforeH1 === true && r8.toc === false, "合法布尔应保留");
 
-    // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 8 键核对 ----
+    // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 9 键核对 ----
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
-    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "afterConvert", "outputDir"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 8 键");
+    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "afterConvert", "outputDir", "customPresets"];
+    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 9 键");
     for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));
@@ -161,6 +164,10 @@ export async function run() {
     assert(s3.toc === true, "旧文件缺 toc → 兜底 true");
     assert(s3.outputDir === "", "旧文件缺 outputDir → 兜底空串");
     assert(
+      JSON.stringify(s3.customPresets) === "[]",
+      "旧文件缺 customPresets → 兜底空数组",
+    );
+    assert(
       s3.typography.bodySizePt === DEFAULT_TYPOGRAPHY.bodySizePt &&
       s3.typography.lineSpacing === DEFAULT_TYPOGRAPHY.lineSpacing,
       "旧文件缺 typography → 整块默认",
@@ -173,6 +180,9 @@ export async function run() {
         version: 1, format: "pdf", afterConvert: "open", breakBeforeH1: true, toc: false, outputDir: "C:\\tmp\\out",
         pageSetup: { paper: "Letter", orientation: "landscape", marginTop: 0, marginBottom: 1000, marginLeft: 100, marginRight: 200 },
         typography: { fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 14, lineSpacing: 2.0, firstLineIndent: false, align: "left", headingNumbering: false, captionNumbering: false },
+        customPresets: [
+          { name: "存档模板", typography: { fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 14, lineSpacing: 2.0, firstLineIndent: false, align: "left", headingNumbering: false, captionNumbering: false }, pageSetup: { paper: "Letter", orientation: "landscape", marginTop: 0, marginBottom: 1000, marginLeft: 100, marginRight: 200 } },
+        ],
       }),
       "utf8",
     );
@@ -184,6 +194,11 @@ export async function run() {
     assert(
       s4.typography.bodySizePt === 14 && s4.typography.align === "left" && s4.typography.fontEastAsia === "宋体",
       "合法 typography 应保留",
+    );
+    assert(
+      s4.customPresets.length === 1 && s4.customPresets[0].name === "存档模板" &&
+      s4.customPresets[0].typography.bodySizePt === 14 && s4.customPresets[0].pageSetup.marginBottom === 1000,
+      "合法 customPresets 应原样读取(名称/typography/pageSetup 保留)",
     );
 
     // ---- 10. saveSettings 写队列串行化:并发 updateSettings 不交错、不丢更新 ----
@@ -219,7 +234,37 @@ export async function run() {
     }
     assert(!tmpLeft, "写队列完成后不应残留 .tmp 临时文件");
 
-    console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文件回退/并发写队列 断言通过");
+console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文件回退/并发写队列 断言通过");
+
+    // ---- 11. customPresets(批次 11 迭代 3):合法保留/非法丢弃/同名去重/上限截断/非数组回退 ----
+    const r11 = await mod.updateSettings({
+      customPresets: [
+        { name: "我的模板", typography: { bodySizePt: 13, fontEastAsia: "宋体" }, pageSetup: { marginTop: -5, paper: "A4", orientation: "portrait", marginBottom: 20, marginLeft: 30, marginRight: 40 } },
+        { name: "", typography: {}, pageSetup: {} }, // 空名称 → 丢弃
+        { name: "坏数据", typography: { bodySizePt: 99 }, pageSetup: "nope" }, // pageSetup 非法 → 整条丢弃
+        "not-an-object", // 非对象 → 丢弃
+        { name: "我的模板", typography: { bodySizePt: 20 }, pageSetup: {} }, // 同名 → 丢弃(保留先出现)
+      ],
+    });
+    assert(r11.customPresets.length === 1, `customPresets 应只保留 1 条合法条目,实际 ${JSON.stringify(r11.customPresets)}`);
+    assert(r11.customPresets[0].name === "我的模板", "合法条目名称应保留");
+    assert(r11.customPresets[0].typography.bodySizePt === 13, "合法 typography 字段应保留");
+    assert(r11.customPresets[0].typography.fontEastAsia === "宋体", "部分 typography 字段应保留(缺失字段回退默认)");
+    assert(r11.customPresets[0].pageSetup.marginTop === 0, "pageSetup 应经钳制(-5 → 0)");
+    assert(r11.customPresets[0].pageSetup.paper === "A4", "pageSetup 枚举应保留");
+
+    const many = [];
+    for (let i = 0; i < 12; i++) many.push({ name: `p${i}`, typography: {}, pageSetup: {} });
+    const r12 = await mod.updateSettings({ customPresets: many });
+    assert(r12.customPresets.length === 10, `customPresets 应截断到 10,实际 ${r12.customPresets.length}`);
+    assert(
+      r12.customPresets[0].name === "p0" && r12.customPresets[9].name === "p9",
+      "截断应保留先保存的 10 条",
+    );
+
+    const r13 = await mod.updateSettings({ customPresets: "nope" });
+    assert(Array.isArray(r13.customPresets) && r13.customPresets.length === 0, "customPresets 非数组应回退 []");
+    console.log("[ok] settings:customPresets 校验(合法保留/非法丢弃/同名去重/上限 10/非数组回退)断言通过");
   } finally {
     // 恢复真实 settings.json(原有内容或删除),避免污染用户设置
     if (hadFile) await fs.writeFile(settingsFile, backup, "utf8");

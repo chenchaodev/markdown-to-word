@@ -51,6 +51,9 @@ import {
   mergeBtn,
   multiList,
   previewBtn,
+  presetDeleteBtn,
+  presetSaveBtn,
+  presetSaveDialog,
   removeFileBtn,
   selectBtn,
   summaryDetailsBtn,
@@ -143,6 +146,8 @@ declare global {
       openFile: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
       /** 在主进程独立窗口预览转换排版(与 PDF 同排版);失败返回 { ok: false, error }。 */
       openPreview: (mdPath: string) => Promise<{ ok: boolean; error?: string }>;
+      /** 批次 11 迭代 3:刷新所有预览窗口(设置变更后调用;无预览窗口时为空操作)。 */
+      previewRefresh: () => Promise<void>;
     };
   }
 }
@@ -603,7 +608,11 @@ completeDialog.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
-  if (!completeDialog.classList.contains("hidden")) {
+  if (!presetSaveDialog.classList.contains("hidden")) {
+    // 批次 11 迭代 3:另存为预设弹窗(焦点还给触发按钮)
+    presetSaveDialog.classList.add("hidden");
+    presetSaveBtn.focus();
+  } else if (!completeDialog.classList.contains("hidden")) {
     hideCompleteDialog();
   } else if (!batchDialog.classList.contains("hidden")) {
     hideBatchDialog();

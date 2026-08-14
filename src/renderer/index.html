@@ -300,6 +300,13 @@
               <option value="paper">学术论文</option>
               <option value="business">商务简报</option>
             </select>
+            <!-- 批次 11 迭代 3:自定义预设(另存为当前排版+页面设置;仅自定义预设可删) -->
+            <button type="button" id="presetSaveBtn" class="btn btn-secondary btn-small">
+              另存为预设…
+            </button>
+            <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-small hidden">
+              删除预设
+            </button>
             <span id="templatePresetHint" class="settings-note">
               选择模板将覆盖排版与页面设置
             </span>
@@ -518,6 +525,39 @@
           </div>
           <button type="button" id="batchDialogOk" class="btn btn-primary">
             确定
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 批次 11 迭代 3:另存为预设弹窗(输入名称,保存当前排版+页面设置为自定义预设) -->
+    <div
+      id="presetSaveDialog"
+      class="dialog-overlay hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="presetSaveTitle"
+    >
+      <div class="dialog dialog--preset-save">
+        <h2 id="presetSaveTitle" class="dialog-title">另存为预设</h2>
+        <p class="dialog-desc">将当前排版与页面设置保存为自定义预设</p>
+        <label class="setting-label" for="presetNameInput">预设名称</label>
+        <input
+          type="text"
+          id="presetNameInput"
+          class="setting-input preset-name-input"
+          maxlength="30"
+          placeholder="例如:我的报告模板"
+        />
+        <p id="presetSaveError" class="dialog-error hidden" role="alert"></p>
+        <div class="dialog-actions">
+          <div class="dialog-actions-secondary">
+            <button type="button" id="presetSaveCancel" class="btn btn-secondary">
+              取消
+            </button>
+          </div>
+          <button type="button" id="presetSaveOk" class="btn btn-primary">
+            保存
           </button>
         </div>
       </div>

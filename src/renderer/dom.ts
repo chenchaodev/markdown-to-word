@@ -77,6 +77,28 @@ export const templatePresetSelect = document.getElementById(
 export const templatePresetHint = document.getElementById(
   "templatePresetHint",
 ) as HTMLSpanElement;
+// 批次 11 迭代 3:自定义预设(另存为 / 删除 / 命名弹窗)
+export const presetSaveBtn = document.getElementById(
+  "presetSaveBtn",
+) as HTMLButtonElement;
+export const presetDeleteBtn = document.getElementById(
+  "presetDeleteBtn",
+) as HTMLButtonElement;
+export const presetSaveDialog = document.getElementById(
+  "presetSaveDialog",
+) as HTMLDivElement;
+export const presetNameInput = document.getElementById(
+  "presetNameInput",
+) as HTMLInputElement;
+export const presetSaveError = document.getElementById(
+  "presetSaveError",
+) as HTMLParagraphElement;
+export const presetSaveOk = document.getElementById(
+  "presetSaveOk",
+) as HTMLButtonElement;
+export const presetSaveCancel = document.getElementById(
+  "presetSaveCancel",
+) as HTMLButtonElement;
 // 完成弹窗附加按钮与错误提示
 export const completeDialogReveal = document.getElementById(
   "completeDialogReveal",

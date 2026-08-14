@@ -17,9 +17,12 @@ import {
   LINE_SPACING_MIN,
   MARGIN_MAX_MM as MARGIN_MAX,
   MARGIN_MIN_MM as MARGIN_MIN,
+  MAX_CUSTOM_PRESETS,
   TEMPLATE_PRESETS,
   type AppSettings,
+  type CustomPreset,
   type PageSetup,
+  type TemplatePreset,
   matchesPreset,
 } from "../core/settings-defaults.js";
 import {
@@ -47,6 +50,13 @@ import {
   outputDirReset,
   outputDirValue,
   paperSelect,
+  presetDeleteBtn,
+  presetNameInput,
+  presetSaveBtn,
+  presetSaveCancel,
+  presetSaveDialog,
+  presetSaveError,
+  presetSaveOk,
   templatePresetHint,
   templatePresetSelect,
   tocInput,
@@ -76,8 +86,10 @@ export async function loadSettings(): Promise<void> {
     outputDir: loaded.outputDir ?? DEFAULT_SETTINGS.outputDir,
     pageSetup: { ...DEFAULT_SETTINGS.pageSetup, ...loaded.pageSetup },
     typography: { ...DEFAULT_SETTINGS.typography, ...loaded.typography },
+    customPresets: loaded.customPresets ?? DEFAULT_SETTINGS.customPresets,
   };
   state.hydratingSettings = true;
+  rebuildPresetOptions(); // 自定义预设选项先就位,再回填 select 值
   applySettingsToControls();
   state.hydratingSettings = false;
   state.selectedFormat = state.settings.format; // 转换格式与设置保持一致
@@ -103,8 +115,8 @@ function applySettingsToControls(): void {
   alignJustifyInput.checked = state.settings.typography.align === "justify";
   headingNumberingInput.checked = state.settings.typography.headingNumbering;
   captionNumberingInput.checked = state.settings.typography.captionNumbering;
-  // 模板预设:与某预设完全一致时选中,否则回退「默认」并提示已进入自定义模式
-  const matchedPreset = TEMPLATE_PRESETS.find((preset) =>
+  // 模板预设:与某预设(硬编码 + 自定义)完全一致时选中,否则回退「默认」并提示已进入自定义模式
+  const matchedPreset = allPresets().find((preset) =>
     matchesPreset(preset, state.settings),
   );
   templatePresetSelect.value = matchedPreset?.id ?? "default";
@@ -113,6 +125,11 @@ function applySettingsToControls(): void {
     ? "已微调,与模板预设不一致"
     : (matchedPreset ?? TEMPLATE_PRESETS[0]).hint;
   templatePresetHint.classList.toggle("template-hint--custom", isCustom);
+  // 批次 11 迭代 3:仅自定义预设可删(选中项以 custom: 前缀标识)
+  presetDeleteBtn.classList.toggle(
+    "hidden",
+    !templatePresetSelect.value.startsWith("custom:"),
+  );
   breakBeforeH1Input.checked = state.settings.breakBeforeH1;
   tocInput.checked = state.settings.toc;
   afterConvertInputs.forEach(
@@ -126,11 +143,123 @@ function applySettingsToControls(): void {
   outputDirValue.title = state.settings.outputDir || "源文件所在目录";
 }
 
-/** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。 */
+/** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。
+ *  批次 11 迭代 3:写盘成功后刷新所有预览窗口(设置变更即时反映到预览)。 */
 function persistSettings(patch: Partial<AppSettings>): void {
-  void window.api.settingsSet(patch).catch(() => {
-    /* 忽略:设置写入失败不阻塞主流程 */
-  });
+  void window.api
+    .settingsSet(patch)
+    .then(() => window.api.previewRefresh())
+    .catch(() => {
+      /* 忽略:设置写入失败不阻塞主流程 */
+    });
+}
+
+/* ---------- 自定义模板预设(批次 11 迭代 3;F 模板另存为预设) ---------- */
+/** 自定义预设 → 下拉选项形态(与硬编码预设同构,matchesPreset/套用逻辑直接复用)。 */
+function customPresetToTemplate(preset: CustomPreset): TemplatePreset {
+  return {
+    id: `custom:${preset.name}`,
+    name: preset.name,
+    hint: "自定义预设",
+    typography: preset.typography,
+    pageSetup: preset.pageSetup,
+  };
+}
+
+/** 全部可选预设:硬编码 3 项 + 自定义项(自定义项追加在末尾)。 */
+function allPresets(): TemplatePreset[] {
+  return [
+    ...TEMPLATE_PRESETS,
+    ...state.settings.customPresets.map(customPresetToTemplate),
+  ];
+}
+
+/** 重建下拉选项:硬编码 3 项保留(HTML 静态),仅重刷自定义项(按 data-custom 标记)。 */
+function rebuildPresetOptions(): void {
+  templatePresetSelect
+    .querySelectorAll("option[data-custom]")
+    .forEach((option) => option.remove());
+  for (const preset of state.settings.customPresets.map(customPresetToTemplate)) {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.name;
+    option.dataset.custom = "1";
+    templatePresetSelect.appendChild(option);
+  }
+}
+
+/** 另存为预设弹窗:打开(清空输入与错误,焦点进输入框)。 */
+function openPresetSaveDialog(): void {
+  presetNameInput.value = "";
+  presetSaveError.classList.add("hidden");
+  presetSaveError.textContent = "";
+  presetSaveDialog.classList.remove("hidden");
+  presetNameInput.focus();
+}
+
+function closePresetSaveDialog(): void {
+  presetSaveDialog.classList.add("hidden");
+  presetSaveBtn.focus(); // 焦点还给触发按钮,便于键盘继续操作
+}
+
+function showPresetSaveError(message: string): void {
+  presetSaveError.textContent = message;
+  presetSaveError.classList.remove("hidden");
+}
+
+/** 保存当前排版+页面设置为自定义预设(名称非空、同名拒绝;成功后下拉选中新预设)。 */
+async function saveCustomPreset(): Promise<void> {
+  const name = presetNameInput.value.trim();
+  if (!name) {
+    showPresetSaveError("请输入预设名称");
+    return;
+  }
+  if (state.settings.customPresets.some((preset) => preset.name === name)) {
+    showPresetSaveError("已存在同名预设,请换一个名称");
+    return;
+  }
+  const entry: CustomPreset = {
+    name,
+    typography: { ...state.settings.typography },
+    pageSetup: { ...state.settings.pageSetup },
+  };
+  const next = [...state.settings.customPresets, entry].slice(0, MAX_CUSTOM_PRESETS);
+  try {
+    const saved = await window.api.settingsSet({ customPresets: next });
+    state.settings.customPresets = saved.customPresets;
+    closePresetSaveDialog();
+    rebuildPresetOptions();
+    applySettingsToControls(); // 当前设置即新预设 → 自动选中并显示其 hint
+  } catch {
+    showPresetSaveError("保存失败,请重试");
+  }
+}
+
+/** 删除当前选中的自定义预设;删除后回退「默认」预设(整体套用并持久化)。 */
+function deleteCustomPreset(): void {
+  const value = templatePresetSelect.value;
+  if (!value.startsWith("custom:")) return;
+  const name = value.slice("custom:".length);
+  const next = state.settings.customPresets.filter((preset) => preset.name !== name);
+  void window.api
+    .settingsSet({ customPresets: next })
+    .then((saved) => {
+      state.settings.customPresets = saved.customPresets;
+      rebuildPresetOptions();
+      // 回退「默认」:与下拉选中 default 行为一致(整体套用 + 回填 + 持久化)
+      const preset = TEMPLATE_PRESETS.find((p) => p.id === "default");
+      if (!preset) return;
+      state.settings.typography = { ...preset.typography };
+      state.settings.pageSetup = { ...preset.pageSetup };
+      state.hydratingSettings = true;
+      applySettingsToControls();
+      state.hydratingSettings = false;
+      persistSettings({
+        typography: { ...state.settings.typography },
+        pageSetup: { ...state.settings.pageSetup },
+      });
+    })
+    .catch(() => setError("删除预设失败,请重试"));
 }
 
 /* ---------- 转换完成弹窗提示(批次 11 迭代 2;ui-state 字段,非 settings.json) ---------- */
@@ -312,9 +441,10 @@ export function bindSettingsEvents(): void {
   });
 
   // 模板预设:整体套用排版与页面设置,一次性回填所有相关控件并持久化
+  // (批次 11 迭代 3:硬编码 + 自定义预设统一走此路径)
   templatePresetSelect.addEventListener("change", () => {
     if (state.hydratingSettings) return;
-    const preset = TEMPLATE_PRESETS.find(
+    const preset = allPresets().find(
       (p) => p.id === templatePresetSelect.value,
     );
     if (!preset) return;
@@ -330,6 +460,23 @@ export function bindSettingsEvents(): void {
       pageSetup: { ...state.settings.pageSetup },
     });
   });
+
+  // 批次 11 迭代 3:另存为预设(弹窗输入名称 → 保存当前排版+页面设置)
+  presetSaveBtn.addEventListener("click", openPresetSaveDialog);
+  presetSaveCancel.addEventListener("click", closePresetSaveDialog);
+  presetSaveOk.addEventListener("click", () => void saveCustomPreset());
+  presetNameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void saveCustomPreset();
+    }
+  });
+  presetSaveDialog.addEventListener("click", (event) => {
+    // 只响应遮罩本身,点卡片内部不关闭
+    if (event.target === presetSaveDialog) closePresetSaveDialog();
+  });
+  // 仅自定义预设可删;删除后回退「默认」
+  presetDeleteBtn.addEventListener("click", deleteCustomPreset);
 
   // 批次 7:输出目录选择 / 恢复默认(空串 = 源文件所在目录)
   outputDirPick.addEventListener("click", async () => {
