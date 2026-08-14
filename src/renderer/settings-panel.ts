@@ -29,6 +29,8 @@ import {
   bodySizePtInput,
   breakBeforeH1Input,
   captionNumberingInput,
+  completeDialogPromptInput,
+  completeDialogSuppressInput,
   firstLineIndentInput,
   fontAsciiError,
   fontAsciiInput,
@@ -128,6 +130,25 @@ function applySettingsToControls(): void {
 function persistSettings(patch: Partial<AppSettings>): void {
   void window.api.settingsSet(patch).catch(() => {
     /* 忽略:设置写入失败不阻塞主流程 */
+  });
+}
+
+/* ---------- 转换完成弹窗提示(批次 11 迭代 2;ui-state 字段,非 settings.json) ---------- */
+/**
+ * 同步「转换完成弹窗提示」两处 checkbox 与内存态(设置面板 + 弹窗内;不持久化)。
+ * 供启动恢复(initUiStateRestore)与 setSuppressCompleteDialog 共用。
+ */
+export function syncSuppressCompleteDialog(checked: boolean): void {
+  state.suppressCompleteDialog = checked;
+  completeDialogSuppressInput.checked = checked;
+  completeDialogPromptInput.checked = checked;
+}
+
+/** 更新并持久化「转换完成弹窗提示」(两处 checkbox 双向同步同一字段;写入失败静默)。 */
+export function setSuppressCompleteDialog(checked: boolean): void {
+  syncSuppressCompleteDialog(checked);
+  void window.api.uiStateSet({ suppressCompleteDialog: checked }).catch(() => {
+    /* 忽略:UI 状态写入失败不阻塞主流程 */
   });
 }
 
@@ -330,5 +351,11 @@ export function bindSettingsEvents(): void {
     outputDirValue.textContent = "源文件所在目录";
     outputDirValue.title = "源文件所在目录";
     persistSettings({ outputDir: "" });
+  });
+
+  // 批次 11 迭代 2:转换完成弹窗提示(ui-state 字段;与弹窗内「不再提示」双向同步)
+  completeDialogPromptInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    setSuppressCompleteDialog(completeDialogPromptInput.checked);
   });
 }

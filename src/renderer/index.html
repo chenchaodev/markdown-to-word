@@ -263,6 +263,12 @@
               </div>
             </fieldset>
 
+            <!-- 批次 11 迭代 2:完成弹窗提示(ui-state 字段,与弹窗内「不再提示」双向同步) -->
+            <label class="setting-check">
+              <input type="checkbox" id="completeDialogPrompt" checked />
+              <span>转换完成弹窗提示</span>
+            </label>
+
             <div class="setting-field setting-outputdir">
               <span class="setting-label" id="outputDirLabel">输出目录</span>
               <div class="outputdir-row">
@@ -463,6 +469,10 @@
             复制路径
           </button>
         </div>
+        <label class="dialog-suppress">
+          <input type="checkbox" id="completeDialogSuppress" />
+          <span>不再提示</span>
+        </label>
         <p id="completeDialogError" class="dialog-error hidden" role="alert"></p>
         <div class="dialog-actions">
           <div class="dialog-actions-secondary">
@@ -498,6 +508,12 @@
           <div class="dialog-actions-secondary">
             <button type="button" id="batchDialogReveal" class="btn btn-secondary">
               打开所在文件夹
+            </button>
+            <button type="button" id="batchDialogRetry" class="btn btn-secondary">
+              重试失败项
+            </button>
+            <button type="button" id="batchDialogCopyAll" class="btn btn-secondary">
+              复制全部路径
             </button>
           </div>
           <button type="button" id="batchDialogOk" class="btn btn-primary">

@@ -5,8 +5,10 @@
  */
 import {
   batchDialog,
+  batchDialogCopyAll,
   batchDialogError,
   batchDialogOk,
+  batchDialogRetry,
   batchDialogReveal,
   batchResultList,
   batchSummary,
@@ -33,6 +35,7 @@ import {
 } from "./dom.js";
 import { state, type BatchItem, type BatchResult } from "./state.js";
 import { baseName, focusActionButton } from "./utils.js";
+import { batchSuccessPaths } from "./pure.js";
 
 /* ---------- 转换结果汇总条(常驻,不依赖弹窗;成功/失败/取消三态 + 打开引导 + 可折叠警告) ---------- */
 export interface SummaryOptions {
@@ -125,6 +128,9 @@ export function showBatchDialog(result: BatchResult): void {
   batchSummary.classList.toggle("batch-summary--fail", result.failCount > 0);
   batchResultList.replaceChildren(...result.items.map(renderBatchItem));
   batchDialogReveal.classList.toggle("hidden", result.okCount === 0);
+  // 批次 11 迭代 2:有失败项才显示「重试失败项」;无成功项禁用「复制全部路径」
+  batchDialogRetry.classList.toggle("hidden", result.failCount === 0);
+  batchDialogCopyAll.disabled = batchSuccessPaths(result.items).length === 0;
   batchDialogError.classList.add("hidden");
   batchDialogError.textContent = "";
   batchDialog.classList.remove("hidden");

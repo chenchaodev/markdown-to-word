@@ -14,6 +14,8 @@ import {
   stageText,
   STAGE_PERCENT,
   formatRecentTime,
+  batchRetryPaths,
+  batchSuccessPaths,
 } from "../../dist/renderer/pure.js";
 
 /** renderer 纯函数单测(纯 Node 段,零 Electron API) */
@@ -184,4 +186,28 @@ export async function run() {
     throw new Error(`formatRecentTime 断言失败:默认 now 输出格式异常,实际 ${JSON.stringify(auto)}`);
   }
   console.log("[ok] formatRecentTime:今天/昨天/今年日期/跨年日期/跨月边界/前一天同一时刻/补零/默认 now 断言通过");
+
+  // ---------- batchRetryPaths / batchSuccessPaths(批次 11 迭代 2:重试失败项 / 复制全部路径) ----------
+  const items = [
+    { ok: true, file: "C:\\ok1.md", outputPath: "C:\\out1.docx" },
+    { ok: false, file: "C:\\bad.md", error: "boom" }, // 失败 → 重试目标
+    { ok: false, canceled: true, file: "C:\\canceled.md" }, // 取消 → 不重试
+    { ok: true, file: "C:\\ok2.md" }, // 成功但无输出路径 → 不复制
+    { ok: false, file: "C:\\bad2.md" }, // 失败(无 canceled)→ 重试目标
+  ];
+  const retry = batchRetryPaths(items);
+  if (JSON.stringify(retry) !== JSON.stringify(["C:\\bad.md", "C:\\bad2.md"])) {
+    throw new Error(`batchRetryPaths 断言失败:应取失败非取消项且保序,实际 ${JSON.stringify(retry)}`);
+  }
+  if (batchRetryPaths([]).length !== 0) {
+    throw new Error("batchRetryPaths 断言失败:空列表应返回空数组");
+  }
+  const copied = batchSuccessPaths(items);
+  if (JSON.stringify(copied) !== JSON.stringify(["C:\\out1.docx"])) {
+    throw new Error(`batchSuccessPaths 断言失败:应取成功且有输出路径项且保序,实际 ${JSON.stringify(copied)}`);
+  }
+  if (batchSuccessPaths([]).length !== 0) {
+    throw new Error("batchSuccessPaths 断言失败:空列表应返回空数组");
+  }
+  console.log("[ok] batchRetryPaths/batchSuccessPaths:失败非取消项与成功输出路径提取(保序/取消排除/缺路径排除/空列表)断言通过");
 }

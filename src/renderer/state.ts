@@ -69,4 +69,8 @@ export const state = {
   summaryOutputPath: "",
   /** 最近成功转换的文件列表(批次 11;供最近区块显隐判断,渲染在 recent-files.ts)。 */
   recentFiles: [] as RecentFile[],
+  /** 最近一次批量使用的格式(批次 11 迭代 2:重试失败项按原格式重转)。 */
+  lastBatchFormat: undefined as "docx" | "pdf" | undefined,
+  /** 转换完成弹窗「不再提示」(ui-state 字段的内存镜像;批次 11 迭代 2)。 */
+  suppressCompleteDialog: false,
 };

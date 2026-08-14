@@ -160,6 +160,11 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
         report.previewBtnExists = !!previewBtn;
         report.previewBtnDisabledAtStart = previewBtn ? previewBtn.disabled : null;
         report.dialogPreviewRemoved = !document.getElementById("completeDialogPreview");
+        // 批次 11 迭代 2:完成弹窗「不再提示」/ 批量弹窗「重试失败项 / 复制全部路径」存在性
+        report.suppressInputExists = !!document.getElementById("completeDialogSuppress");
+        report.completeDialogPromptExists = !!document.getElementById("completeDialogPrompt");
+        report.retryBtnExists = !!document.getElementById("batchDialogRetry");
+        report.copyAllBtnExists = !!document.getElementById("batchDialogCopyAll");
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
@@ -167,6 +172,22 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
       if (diag.statusAfterClick !== "请先选择 Markdown 文件" || diag.statusIsError !== true) {
         throw new Error(
           `[smoke] renderer diag FAILED: 点击守卫断言 statusAfterClick=${JSON.stringify(diag.statusAfterClick)}, statusIsError=${diag.statusIsError}`,
+        );
+      }
+      // 批次 11 迭代 2:新增控件存在性守卫(缺失即回归)
+      if (
+        !diag.suppressInputExists ||
+        !diag.completeDialogPromptExists ||
+        !diag.retryBtnExists ||
+        !diag.copyAllBtnExists
+      ) {
+        throw new Error(
+          `[smoke] renderer diag FAILED: 批次 11 迭代 2 控件缺失 ${JSON.stringify({
+            suppressInputExists: diag.suppressInputExists,
+            completeDialogPromptExists: diag.completeDialogPromptExists,
+            retryBtnExists: diag.retryBtnExists,
+            copyAllBtnExists: diag.copyAllBtnExists,
+          })}`,
         );
       }
     } catch (err) {

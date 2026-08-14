@@ -65,3 +65,23 @@ export function formatRecentTime(ts: number, now?: number): string {
   if (t.getFullYear() === n.getFullYear()) return `${t.getMonth() + 1}月${t.getDate()}日`;
   return `${t.getFullYear()}年${t.getMonth() + 1}月${t.getDate()}日`;
 }
+
+/* ---------- 批量结果路径提取(批次 11 迭代 2:重试失败项 / 复制全部路径) ---------- */
+/**
+ * 重试目标:失败(非取消)项路径,保持原始列表顺序。
+ * 取消项不算失败(用户主动中止,不自动重试);结构类型匹配 BatchItem。
+ */
+export function batchRetryPaths(
+  items: readonly { ok: boolean; canceled?: boolean; file: string }[],
+): string[] {
+  return items.filter((item) => !item.ok && !item.canceled).map((item) => item.file);
+}
+
+/** 复制目标:成功项的输出路径(换行分隔),按原始列表顺序。 */
+export function batchSuccessPaths(
+  items: readonly { ok: boolean; outputPath?: string }[],
+): string[] {
+  return items
+    .filter((item): item is { ok: true; outputPath: string } => item.ok === true && !!item.outputPath)
+    .map((item) => item.outputPath);
+}

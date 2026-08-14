@@ -31,8 +31,10 @@ import {
   appendBtn,
   batchBtn,
   batchDialog,
+  batchDialogCopyAll,
   batchDialogError,
   batchDialogOk,
+  batchDialogRetry,
   batchDialogReveal,
   cancelBtn,
   clearListBtn,
@@ -41,6 +43,7 @@ import {
   completeDialogOk,
   completeDialogOpen,
   completeDialogReveal,
+  completeDialogSuppressInput,
   completeOutputPath,
   convertBtn,
   convertHint,
@@ -85,8 +88,9 @@ import {
   showDialogError,
 } from "./dialogs.js";
 import { runBatch, runConvert, runMerge } from "./convert-flow.js";
-import { bindSettingsEvents, loadSettings } from "./settings-panel.js";
+import { bindSettingsEvents, loadSettings, setSuppressCompleteDialog } from "./settings-panel.js";
 import { initUiStateRestore } from "./recent-files.js";
+import { batchRetryPaths, batchSuccessPaths } from "./pure.js";
 
 declare global {
   interface Window {
@@ -458,6 +462,39 @@ batchDialogOk.addEventListener("click", hideBatchDialog);
 batchDialog.addEventListener("click", (event) => {
   // 只响应遮罩本身,点卡片内部不关闭
   if (event.target === batchDialog) hideBatchDialog();
+});
+
+// 批次 11 迭代 2:批量弹窗「重试失败项」——失败(非取消)项替换当前列表并立即重转,
+// 按原格式(lastBatchFormat)执行;允许单个失败文件单独重转
+batchDialogRetry.addEventListener("click", () => {
+  if (state.converting || !state.lastBatchResult) return;
+  const failed = batchRetryPaths(state.lastBatchResult.items);
+  if (failed.length === 0) return;
+  hideBatchDialog();
+  applySelection(failed);
+  void runBatch(failed, state.lastBatchFormat);
+});
+
+// 批次 11 迭代 2:批量弹窗「复制全部路径」——成功项输出路径换行拼接复制到剪贴板
+batchDialogCopyAll.addEventListener("click", async () => {
+  if (!state.lastBatchResult) return;
+  const paths = batchSuccessPaths(state.lastBatchResult.items);
+  if (paths.length === 0) return;
+  try {
+    await navigator.clipboard.writeText(paths.join("\n"));
+    batchDialogCopyAll.textContent = "已复制";
+    window.setTimeout(() => {
+      batchDialogCopyAll.textContent = "复制全部路径";
+    }, 1500);
+  } catch {
+    batchDialogError.textContent = "复制失败,请手动选择文本复制";
+    batchDialogError.classList.remove("hidden");
+  }
+});
+
+// 批次 11 迭代 2:完成弹窗「不再提示」——与设置面板「转换完成弹窗提示」同字段双向同步
+completeDialogSuppressInput.addEventListener("change", () => {
+  setSuppressCompleteDialog(completeDialogSuppressInput.checked);
 });
 
 // 批次 7:取消当前转换(单文件 / 批量 / 合并;主进程在检查点终止并返回 canceled)

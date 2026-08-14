@@ -8,6 +8,7 @@
  * - lastOpenDir: 对话框记忆目录(目录存在才作为 defaultPath 使用)
  * - windowBounds: 窗口位置 {x,y,width,height} | null(恢复时钳制到显示器工作区)
  * - panelOpen: 设置面板 details 展开态 {page, typography}
+ * - suppressCompleteDialog: 转换完成弹窗「不再提示」(默认 false = 提示;批次 11 迭代 2)
  * 读时逐字段校验类型,非法/缺失 → 该字段默认值(不复用 settings 的整文件回退);
  * saveUiState 以 patch 合并当前状态,recentFiles 为「追加合并」语义
  * (同 path 保留 ts 最大者 → 重复转换自然置顶)。
@@ -43,6 +44,8 @@ export interface UiState {
   lastOpenDir: string;
   windowBounds: WindowBounds | null;
   panelOpen: PanelOpen;
+  /** 转换完成弹窗「不再提示」(true = 跳过弹窗,汇总条照常;默认 false = 提示)。 */
+  suppressCompleteDialog: boolean;
 }
 
 export const DEFAULT_UI_STATE: UiState = {
@@ -51,6 +54,7 @@ export const DEFAULT_UI_STATE: UiState = {
   lastOpenDir: "",
   windowBounds: null,
   panelOpen: { page: true, typography: true },
+  suppressCompleteDialog: false,
 };
 
 /** 最近文件上限(与 renderer 的 recent-files.ts 展示截断一致)。 */
@@ -82,6 +86,11 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isFormat(value: unknown): value is "docx" | "pdf" {
   return value === "docx" || value === "pdf";
+}
+
+/** 布尔字段:仅接受 boolean,非法/缺失 → fallback(宽松校验统一入口)。 */
+function sanitizeBool(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 /* ---------- 逐字段清洗(宽松:非法/缺失 → 该字段默认值) ---------- */
@@ -164,6 +173,7 @@ function sanitizeUiState(value: unknown): UiState {
     lastOpenDir: sanitizeOpenDir(s.lastOpenDir),
     windowBounds: sanitizeWindowBounds(s.windowBounds),
     panelOpen: sanitizePanelOpen(s.panelOpen),
+    suppressCompleteDialog: sanitizeBool(s.suppressCompleteDialog, DEFAULT_UI_STATE.suppressCompleteDialog),
   };
 }
 
@@ -213,6 +223,12 @@ export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
     if (patch.lastOpenDir !== undefined) next.lastOpenDir = sanitizeOpenDir(patch.lastOpenDir);
     if (patch.windowBounds !== undefined) next.windowBounds = sanitizeWindowBounds(patch.windowBounds);
     if (patch.panelOpen !== undefined) next.panelOpen = sanitizePanelOpen(patch.panelOpen);
+    if (patch.suppressCompleteDialog !== undefined) {
+      next.suppressCompleteDialog = sanitizeBool(
+        patch.suppressCompleteDialog,
+        DEFAULT_UI_STATE.suppressCompleteDialog,
+      );
+    }
   }
   const filePath = uiStateFilePath();
   const tmpPath = `${filePath}.tmp`;

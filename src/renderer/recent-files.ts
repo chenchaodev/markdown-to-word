@@ -24,6 +24,7 @@ import { applySelection } from "./file-list.js";
 import { runConvert } from "./convert-flow.js";
 import { baseName, formatRecentTime } from "./pure.js";
 import { state } from "./state.js";
+import { syncSuppressCompleteDialog } from "./settings-panel.js";
 
 /** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。 */
 const MAX_RECENT_FILES = 10;
@@ -87,6 +88,8 @@ export async function initUiStateRestore(): Promise<void> {
   // panelOpen → 两个设置面板展开态(程序化赋值会触发 toggle,写回相同值,无害)
   settingsPanel.open = ui.panelOpen.page;
   typographyPanel.open = ui.panelOpen.typography;
+  // 批次 11 迭代 2:完成弹窗「不再提示」→ 同步两处 checkbox 与内存态(不写回,避免启动写盘)
+  syncSuppressCompleteDialog(ui.suppressCompleteDialog);
   renderRecentList(ui.recentFiles);
   // 会话文件恢复:逐项校验存在性(主进程 filterExistingPaths 保序过滤,缺失剔除)
   try {

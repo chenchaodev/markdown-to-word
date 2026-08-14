@@ -43,13 +43,19 @@ export async function runConvert(
         outputPath,
         warnings: result.warnings,
       });
-      showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
+      // 批次 11 迭代 2:用户勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
+      if (!state.suppressCompleteDialog) {
+        showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
+      }
       void refreshRecentFiles(); // 批次 11:成功后刷新最近转换区块
     } else {
       const error = result.error ?? "未知错误";
       setError(`转换失败:${error}`);
       showSummary({ kind: "fail", title: "转换失败", error });
-      showCompleteDialog("", error, baseName(filePath)); // 失败弹窗:错误三要素
+      // 批次 11 迭代 2:用户勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
+      if (!state.suppressCompleteDialog) {
+        showCompleteDialog("", error, baseName(filePath)); // 失败弹窗:错误三要素
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -63,19 +69,27 @@ export async function runConvert(
   }
 }
 
-/** 批量转换:每文件独立输出,完成弹汇总弹窗逐条展示。 */
-export async function runBatch(): Promise<void> {
-  if (state.selectedFiles.length < 2) return;
+/**
+ * 批量转换:每文件独立输出,完成弹汇总弹窗逐条展示。
+ * @param files 显式目标列表(批次 11 迭代 2「重试失败项」入口);缺省用当前选中列表。
+ * @param format 显式格式(重试按原格式);缺省用当前格式选择。
+ */
+export async function runBatch(
+  files?: string[],
+  format?: "docx" | "pdf",
+): Promise<void> {
+  const targets = files ?? state.selectedFiles;
+  // 主入口(不传文件)沿用「≥2 个文件」规则;重试失败项入口允许单个失败文件单独重转
+  if (targets.length < (files === undefined ? 2 : 1)) return;
+  const fmt = format ?? state.selectedFormat;
+  state.lastBatchFormat = fmt; // 重试失败项按原格式重转
   state.mode = "batch";
   state.converting = true;
   updateActionButtons();
-  setStatus(`正在批量转换 ${state.selectedFiles.length} 个文件…`);
+  setStatus(`正在批量转换 ${targets.length} 个文件…`);
   showProgress();
   try {
-    const result = await window.api.convertBatch(
-      state.selectedFiles,
-      state.selectedFormat,
-    );
+    const result = await window.api.convertBatch(targets, fmt);
     state.lastBatchResult = result;
     setProgress(100);
     const canceledText =
@@ -133,13 +147,19 @@ export async function runMerge(): Promise<void> {
         outputPath,
         warnings: result.warnings,
       });
-      showCompleteDialog(outputPath);
+      // 批次 11 迭代 2:勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
+      if (!state.suppressCompleteDialog) {
+        showCompleteDialog(outputPath);
+      }
       void refreshRecentFiles(); // 批次 11:成功后刷新最近转换区块
     } else {
       const error = result.error ?? "未知错误";
       setError(`合并失败:${error}`);
       showSummary({ kind: "fail", title: "合并失败", error });
-      showCompleteDialog("", error, `${baseName(state.selectedFiles[0])}-合并`);
+      // 批次 11 迭代 2:勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
+      if (!state.suppressCompleteDialog) {
+        showCompleteDialog("", error, `${baseName(state.selectedFiles[0])}-合并`);
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

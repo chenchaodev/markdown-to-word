@@ -191,3 +191,17 @@ export const settingsPanel = document.getElementById(
 export const typographyPanel = document.getElementById(
   "typographyPanel",
 ) as HTMLDetailsElement;
+// 批次 11 迭代 2:完成弹窗「不再提示」/ 设置面板「转换完成弹窗提示」(同字段双向同步)
+export const completeDialogSuppressInput = document.getElementById(
+  "completeDialogSuppress",
+) as HTMLInputElement;
+export const completeDialogPromptInput = document.getElementById(
+  "completeDialogPrompt",
+) as HTMLInputElement;
+// 批次 11 迭代 2:批量弹窗「重试失败项 / 复制全部路径」
+export const batchDialogRetry = document.getElementById(
+  "batchDialogRetry",
+) as HTMLButtonElement;
+export const batchDialogCopyAll = document.getElementById(
+  "batchDialogCopyAll",
+) as HTMLButtonElement;
