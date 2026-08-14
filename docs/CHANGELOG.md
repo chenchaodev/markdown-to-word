@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [0.26.0] - 2026-08-14
+- 批次 12「界面体验优化」(方向 A;typecheck/build/31 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md 批次 12 节):
+  - **Phase 0 速赢 7 项**(拆 4 提交):U1 点击行为对齐(af572e4,多文件态点击=追加/单文件态点击=更换,文案同步)/U2 窗口最小尺寸 720×560 + 密度上限(740dd5d)/U3 快捷键提示 + 文案统一(22cd5ab)/U4 预设上限提示(dfd9a40);C5 核实已满足零改动
+  - **Phase 1**(a6d16ea):C2 底部操作区 sticky 常驻/C10 双击预览可见提示 + 删 selected 死代码/C9 弹窗焦点陷阱(trapFocus)
+  - **Phase 2 + 用户反馈**(fde3b1c):C8 模板预设上移全局常显(两面板之上,控件 id 不变)/C12 最近条目「仅加载」(载入不转换)/单文件态「追加文件」按钮(拖入=追加已核实为现状)
+- 方向 B「代码质量与测试」(迭代 1-3;typecheck/lint/32 段/smoke 全绿):
+  - **迭代 1 维护顺手项**(7eb82af):smoke 隔离 ui-state 会话残留(经 saveUiState 同步磁盘+缓存,回归锁断言);USER-GUIDE/ROADMAP 核对去重(Mermaid 行 7 份重复)
+  - **迭代 2 速赢批**:settings-logic 抽取(abed9b7,零 DOM 纯函数层 + 22 断言直测,31→32 段);tsconfig 4 严格开关 + 依赖声明补齐(e526060,depcheck 修复 jszip/@types/mdast/katex);mermaid-service 降级路径测试(e6e48a9,超时/畸形返回值/崩溃/加载失败 4 组)
+  - **迭代 3 工具链**(18d4e0b):eslint 10 flat + typescript-eslint 8.67 side-by-side TS6 API(TS 7 无 JS API,官方推荐;tsc 二进制仍 TS 7),首跑修 5 处真实 floating/misused promise;c8 12 覆盖率(main 97%/core-docx 93%/core-pdf 95%/renderer 100%,sourceMap + NODE_V8_COVERAGE);engines >=20.19
+- 文档:USER-GUIDE 批次 12 交互同步;AGENTS/DEV-GUIDE/STATUS 工具链基线同步
+
 ## [0.25.0] - 2026-08-14
 - 批次 11「体验打磨」(11 项候选全选拆 4 迭代单元独立提交可回退;typecheck/build/31 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md 批次 11 节):
   - **I1 状态记忆**(e0262e1):新增 src/main/ui-state.ts(原子写 + 宽松校验,损坏回退不碰 settings)+ src/renderer/recent-files.ts;最近转换区块(≤10 条 ts 降序 path 去重,点击一键重转沿用条目格式,清空);会话恢复(重启恢复上次文件列表,缺失文件剔除);文件/输出对话框记忆上次目录;窗口 bounds 记忆(工作区钳制,最大化跳过);设置面板展开态记忆;filterExistingPaths IPC
