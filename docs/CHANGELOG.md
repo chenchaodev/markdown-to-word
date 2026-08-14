@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [0.25.0] - 2026-08-14
+- 批次 11「体验打磨」(11 项候选全选拆 4 迭代单元独立提交可回退;typecheck/build/31 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md 批次 11 节):
+  - **I1 状态记忆**(e0262e1):新增 src/main/ui-state.ts(原子写 + 宽松校验,损坏回退不碰 settings)+ src/renderer/recent-files.ts;最近转换区块(≤10 条 ts 降序 path 去重,点击一键重转沿用条目格式,清空);会话恢复(重启恢复上次文件列表,缺失文件剔除);文件/输出对话框记忆上次目录;窗口 bounds 记忆(工作区钳制,最大化跳过);设置面板展开态记忆;filterExistingPaths IPC
+  - **I2 结果增强**(dd16075):批量失败详情弹窗「重试失败项」(非取消项替换列表按原格式立即重转,单文件放宽 ≥2 守卫)/「复制全部路径」(成功项输出路径,禁用态 + 已复制反馈);完成弹窗「不再提示」checkbox + 设置面板「转换完成弹窗提示」双向同步(suppressCompleteDialog,失败弹窗一并抑制)
+  - **I3 预览与模板**(7d87bed):预览注册表 previews Set + refreshPreviewWindow(设置写盘成功后 preview:refresh 即时刷新)+ focus 时源文件 mtime 对比刷新 + 源文件缺失显示窗口内错误页;settings.json 契约扩展 customPresets(上限 10,sanitize 逐条校验/同名保留先出现/截断/非法丢弃,3 硬编码预设不动)+ 另存为预设弹窗(空名/同名拒绝)+ 删除预设回退默认
+  - **I4 顺手项**(ebc5d88):多文件列表行双击预览(复用 openPreviewFor,按钮目标/converting 跳过;单文件态未做——dropZone 双击会误触);应用菜单 buildAppMenu(文件:打开文件…/退出,帮助:关于 showAboutDialog 显示 app.getVersion())+ onMenuOpen 订阅
+  - **测试**:新段 test/main/ui-state.test.js(8 场景:默认值/原子写/宽松校验/损坏回退/钳制/去重/截断/suppressCompleteDialog);renderer-pure.test.js 补 batchRetryPaths/batchSuccessPaths/formatRecentTime;settings.test.js 场景 11 customPresets;smoke diag 守卫(控件存在性 + 菜单),30→31 段
+- 文档:批次 11 验收清单 + STATUS 登记(f319363);修复 ACCEPTANCE/STATUS 批次 11 节重复内容(上一轮编辑误追加多份,去重后 590→122 行)
+
 ## [0.24.0] - 2026-08-13
 - 批次 10 功能 2「题注/章节交叉引用」(9d;typecheck/build/30 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
   - **语法拍板**:题注 `图: 标题 {#fig:label}` / `表: 标题 {#tab:label}`;标题 `## 标题 {#sec:label}`;引用 `[图](#fig:label)` / `[表](#tab:label)` / `[章节](#sec:label)`;label 剥离不渲染,不进标题文本/slug/TOC
