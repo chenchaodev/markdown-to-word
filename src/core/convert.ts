@@ -2,6 +2,19 @@
  * 格式注册表:md → 各格式渲染产物(无 IO、无 Electron,便于测试与 CLI 复用)。
  * docx → Buffer;pdf → HTML 文档 + 页码页脚模板(printToPDF 由主进程执行)。
  * 图片等外部资源经 context 注入,保持 core 纯逻辑。
+ *
+ * 双管线差异(选型结论,勿合并;与 docx 侧差异是有意的,各差异点均有对应测试段):
+ * - 解析:docx 走 remark 自研渲染管线(mdast AST → docx 组件,parse.ts);
+ *   pdf 走 markdown-it → HTML 模板(renderPdfHtml)。两套解析器输出语义对齐,
+ *   差异点由双格式断言段覆盖(basic-render/cross-ref 等)。
+ * - 公式:docx 渲染为 Office MathML(docx/math.ts);pdf 渲染为 KaTeX HTML
+ *   (katexDir 注入,缺资源降级)。→ formula.test.js
+ * - 代码高亮:docx 等宽字体无高亮;pdf 用 hljs 高亮(抛错回退转义)。
+ *   → basic-render.test.js
+ * - mermaid:docx 内嵌 PNG(2x);pdf 内联 SVG(矢量)。→ mermaid.test.js
+ * - 目录:docx 静态目录(打开即见、可点击跳转、无页码);pdf 目录同开关。
+ *   → toc-caption.test.js
+ * - 脚注:docx 写 footnotes.xml 部件;pdf 渲染为 HTML 脚注。→ footnotes.test.js
  */
 import { parseMarkdown } from "./parse.js";
 import { parseFrontmatter } from "./frontmatter.js";
