@@ -17,7 +17,7 @@ const mainDir = path.join(testRoot, "main");
 // 后续写盘代码会中断);显式挂空监听保持进程存活,由末尾 app.quit() 收尾。
 app.on("window-all-closed", () => {});
 
-app.whenReady().then(async () => {
+void app.whenReady().then(async () => {
   const results = await runAll([segmentsDir, mainDir]);
   for (const r of results) {
     if (r.ok) {

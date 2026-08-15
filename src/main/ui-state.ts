@@ -18,8 +18,8 @@
  */
 import { app } from "electron";
 import { readFileSync } from "node:fs";
-import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createJsonWriter } from "./atomic-json.js";
 
 export interface RecentFile {
   path: string;
@@ -75,8 +75,8 @@ const UI_STATE_FILE_NAME = "ui-state.json";
 /** 模块级内存缓存:惰性加载(首次 loadUiState 读盘,之后读缓存)。 */
 let uiCache: UiState | null = null;
 
-/** 写队列:串行化 saveUiState(promise 链),防并发交错写同一 tmp 文件(仿 settings.ts)。 */
-let writeChain: Promise<void> = Promise.resolve();
+/** 原子写 + 写队列(共享工具,见 atomic-json.ts;独立队列,与 settings 互不串扰) */
+const writeUiStateJson = createJsonWriter();
 
 function uiStateFilePath(): string {
   return path.join(app.getPath("userData"), UI_STATE_FILE_NAME);
@@ -232,16 +232,9 @@ export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
       );
     }
   }
-  const filePath = uiStateFilePath();
-  const tmpPath = `${filePath}.tmp`;
-  const task = writeChain.then(async () => {
-    await writeFile(tmpPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-    await rename(tmpPath, filePath);
+  await writeUiStateJson(uiStateFilePath(), next, () => {
     uiCache = next;
   });
-  // 单次写失败(如磁盘错误)不阻断后续写入;错误由本调用方各自处理
-  writeChain = task.catch(() => undefined);
-  await task;
   return next;
 }
 

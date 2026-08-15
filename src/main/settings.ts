@@ -13,8 +13,8 @@
  */
 import { app } from "electron";
 import { readFileSync } from "node:fs";
-import { rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createJsonWriter } from "./atomic-json.js";
 import type { PageSetup } from "../core/convert.js";
 import { DEFAULT_PAGE_SETUP } from "../core/convert.js";
 import type { TypographySettings } from "../core/typography.js";
@@ -50,8 +50,8 @@ const SETTING_KEYS = [
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
 let settingsCache: AppSettings | null = null;
 
-/** 写队列:串行化 saveSettings(promise 链),防并发交错写同一 tmp 文件导致丢更新 */
-let writeChain: Promise<void> = Promise.resolve();
+/** 原子写 + 写队列(共享工具,见 atomic-json.ts;独立队列,与 ui-state 互不串扰) */
+const writeSettingsJson = createJsonWriter();
 
 function settingsFilePath(): string {
   return path.join(app.getPath("userData"), SETTINGS_FILE_NAME);
@@ -131,16 +131,9 @@ export function loadSettings(): AppSettings {
  *  M4:经写队列串行执行——write+rename 之间不得插入其它写(同 tmp 路径),
  *  调用序 = 写盘序,链尾即最终态;缓存更新与写盘同序,失败不截断队列。 */
 export async function saveSettings(next: AppSettings): Promise<void> {
-  const filePath = settingsFilePath();
-  const tmpPath = `${filePath}.tmp`;
-  const task = writeChain.then(async () => {
-    await writeFile(tmpPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-    await rename(tmpPath, filePath);
+  await writeSettingsJson(settingsFilePath(), next, () => {
     settingsCache = next;
   });
-  // 单次写失败(如磁盘错误)不阻断后续写入;错误由本调用方各自处理
-  writeChain = task.catch(() => undefined);
-  return task;
 }
 
 /** 合并 + 持久化 + 返回;patch 按 DEFAULT_SETTINGS 键白名单校验,非法值回退默认 */

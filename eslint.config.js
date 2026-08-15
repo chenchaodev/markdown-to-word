@@ -11,7 +11,22 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        // 批次 15 第 5 项:lint 范围扩到 test/scripts。tsconfig.json 无 allowJs,
+        // .js/.mjs 不进 TS program(projectService 报「not found by the project service」),
+        // 经 allowDefaultProject 放行(typescript-eslint 官方方案,不改 tsconfig 结构)。
+        // 注:allowDefaultProject 禁止 ** 通配(性能护栏),故按目录显式枚举;
+        // 默认 8 文件上限不足(test/scripts 共 47 个 .js/.mjs),按官方逃生口上调。
+        projectService: {
+          allowDefaultProject: [
+            "test/*.mjs",
+            "test/common/*.js",
+            "test/main/*.js",
+            "test/segments/*.js",
+            "test/tools/*.mjs",
+            "scripts/*.mjs",
+          ],
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 100,
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },

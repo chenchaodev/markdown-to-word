@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/",
+    "lint": "eslint src/ test/ scripts/",
     "build": "tsc && node scripts/copy-renderer.mjs",
     "dev": "npm run build && electron .",
     "start": "electron .",
