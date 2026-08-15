@@ -3,6 +3,9 @@
  * 模块级内存缓存 + 惰性加载:首次 loadSettings 读盘,之后读缓存;
  * 因此 app.getPath("userData") 天然只在 app.whenReady 之后才被调用。
  * 文件损坏(JSON parse 失败或形状非法)→ 返回默认值,不写盘。
+ * 回退策略(与 ui-state.ts 的差异是有意的,勿对齐):settings 为「整文件回退」——
+ * 任一字段非法即整体回退 DEFAULT_SETTINGS(核心配置契约,宁可全默认也不半保留);
+ * ui-state.ts 为「字段级宽松回退」——UI 状态损坏只丢对应字段(见 ui-state.ts 头注释)。
  * 写入经 promise 链串行化(saveSettings 写队列):并发调用不会交错写同一
  * tmp 文件,调用序 = 写盘序,链尾即最终态(防并发丢更新)。
  * 契约(AppSettings 类型/DEFAULT_SETTINGS/范围常量)收敛于 core/settings-defaults.ts,
@@ -67,8 +70,12 @@ function isValidOutputDir(value: unknown): value is string {
   return typeof value === "string" && (value === "" || path.isAbsolute(value));
 }
 
-/** 整文件形状校验:任一字段非法即视为损坏,整体回退默认 */
-function isValidSettings(value: unknown): value is AppSettings {
+/**
+ * 整文件形状校验:任一字段非法即视为损坏,整体回退默认。
+ * 导出供直测(R3,presets-import 同模式):loadSettings 的「整文件回退」语义
+ * 由本函数判定,测试直接断言合法/非法输入,不依赖磁盘 IO。
+ */
+export function isValidSettings(value: unknown): value is AppSettings {
   if (typeof value !== "object" || value === null) return false;
   const s = value as Record<string, unknown>;
   if (s.version !== 1) return false;

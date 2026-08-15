@@ -18,15 +18,21 @@ import {
   MARGIN_MAX_MM as MARGIN_MAX,
   TEMPLATE_PRESETS,
   type AppSettings,
-  type CustomPreset,
   type PageSetup,
 } from "../core/settings-defaults.js";
 import {
   allPresets,
-  clampMargin,
+  buildCustomPresetEntry,
   customPresetNameFromId,
   customPresetToTemplate,
+  mergeSettingsWithDefaults,
+  outputDirDisplayText,
+  parseMarginValue,
+  removeCustomPresetByName,
+  resolvePresetHint,
   resolvePresetSelection,
+  settingsToControlValues,
+  validateNumberRange,
   validatePresetName,
 } from "./settings-logic.js";
 import {
@@ -88,14 +94,7 @@ export async function loadSettings(): Promise<void> {
     loaded = DEFAULT_SETTINGS;
   }
   // 防御性合并:旧版本设置缺字段时按默认值兜底(outputDir 缺省 = 源目录)
-  state.settings = {
-    ...DEFAULT_SETTINGS,
-    ...loaded,
-    outputDir: loaded.outputDir ?? DEFAULT_SETTINGS.outputDir,
-    pageSetup: { ...DEFAULT_SETTINGS.pageSetup, ...loaded.pageSetup },
-    typography: { ...DEFAULT_SETTINGS.typography, ...loaded.typography },
-    customPresets: loaded.customPresets ?? DEFAULT_SETTINGS.customPresets,
-  };
+  state.settings = mergeSettingsWithDefaults(loaded);
   state.hydratingSettings = true;
   rebuildPresetOptions(); // 自定义预设选项先就位,再回填 select 值
   applySettingsToControls();
@@ -103,26 +102,27 @@ export async function loadSettings(): Promise<void> {
   state.selectedFormat = state.settings.format; // 转换格式与设置保持一致
 }
 
-/** 将内存设置回填到所有控件(仅赋值,不触发 change 事件)。 */
+/** 将内存设置回填到所有控件(仅赋值,不触发 change 事件)。
+ *  值计算(设置 → 控件值映射/预设匹配/hint)在 settings-logic,本函数只做 DOM 赋值。 */
 function applySettingsToControls(): void {
-  paperSelect.value = state.settings.pageSetup.paper;
+  const v = settingsToControlValues(state.settings);
+  paperSelect.value = v.paper;
   orientationInputs.forEach(
-    (input) =>
-      (input.checked = input.value === state.settings.pageSetup.orientation),
+    (input) => (input.checked = input.value === v.orientation),
   );
   (
     Object.keys(marginInputs) as (keyof PageSetup & keyof typeof marginInputs)[]
   ).forEach((key) => {
-    marginInputs[key].value = String(state.settings.pageSetup[key]);
+    marginInputs[key].value = v.margins[key];
   });
-  fontAsciiInput.value = state.settings.typography.fontAscii;
-  fontEastAsiaInput.value = state.settings.typography.fontEastAsia;
-  bodySizePtInput.value = String(state.settings.typography.bodySizePt);
-  lineSpacingInput.value = String(state.settings.typography.lineSpacing);
-  firstLineIndentInput.checked = state.settings.typography.firstLineIndent;
-  alignJustifyInput.checked = state.settings.typography.align === "justify";
-  headingNumberingInput.checked = state.settings.typography.headingNumbering;
-  captionNumberingInput.checked = state.settings.typography.captionNumbering;
+  fontAsciiInput.value = v.fontAscii;
+  fontEastAsiaInput.value = v.fontEastAsia;
+  bodySizePtInput.value = v.bodySizePt;
+  lineSpacingInput.value = v.lineSpacing;
+  firstLineIndentInput.checked = v.firstLineIndent;
+  alignJustifyInput.checked = v.alignJustify;
+  headingNumberingInput.checked = v.headingNumbering;
+  captionNumberingInput.checked = v.captionNumbering;
   // 模板预设:优先保持当前选中(值与设置一致时不弹回——自定义预设与硬编码预设
   // 值全等时不被 find 抢走),否则回退全局匹配;无匹配回退「默认」并提示已进入自定义模式
   const matchedPresetId = resolvePresetSelection(
@@ -131,30 +131,28 @@ function applySettingsToControls(): void {
     templatePresetSelect.value,
   );
   templatePresetSelect.value = matchedPresetId;
-  const matchedPreset = allPresets(state.settings.customPresets).find(
-    (p) => p.id === matchedPresetId,
+  const { hint, isCustom } = resolvePresetHint(
+    state.settings.customPresets,
+    matchedPresetId,
   );
-  const isCustom = !matchedPreset;
-  templatePresetHint.textContent = isCustom
-    ? "已微调,与模板预设不一致"
-    : (matchedPreset ?? TEMPLATE_PRESETS[0]).hint;
+  templatePresetHint.textContent = hint;
   templatePresetHint.classList.toggle("template-hint--custom", isCustom);
   // 批次 11 迭代 3:仅自定义预设可删(选中项以 custom: 前缀标识)
   presetDeleteBtn.classList.toggle(
     "hidden",
     !templatePresetSelect.value.startsWith("custom:"),
   );
-  breakBeforeH1Input.checked = state.settings.breakBeforeH1;
-  tocInput.checked = state.settings.toc;
+  breakBeforeH1Input.checked = v.breakBeforeH1;
+  tocInput.checked = v.toc;
   afterConvertInputs.forEach(
-    (input) => (input.checked = input.value === state.settings.afterConvert),
+    (input) => (input.checked = input.value === v.afterConvert),
   );
   formatInputs.forEach(
-    (input) => (input.checked = input.value === state.settings.format),
+    (input) => (input.checked = input.value === v.format),
   );
   // 输出目录:空串显示「与源文件相同目录」
-  outputDirValue.textContent = state.settings.outputDir || "与源文件相同目录";
-  outputDirValue.title = state.settings.outputDir || "与源文件相同目录";
+  outputDirValue.textContent = v.outputDirText;
+  outputDirValue.title = v.outputDirText;
 }
 
 /** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。
@@ -218,11 +216,7 @@ async function saveCustomPreset(): Promise<void> {
     showPresetSaveError(error);
     return;
   }
-  const entry: CustomPreset = {
-    name,
-    typography: { ...state.settings.typography },
-    pageSetup: { ...state.settings.pageSetup },
-  };
+  const entry = buildCustomPresetEntry(name, state.settings);
   const next = [...state.settings.customPresets, entry];
   try {
     const saved = await window.api.settingsSet({ customPresets: next });
@@ -241,7 +235,7 @@ async function saveCustomPreset(): Promise<void> {
 function deleteCustomPreset(): void {
   const name = customPresetNameFromId(templatePresetSelect.value);
   if (!name) return;
-  const next = state.settings.customPresets.filter((preset) => preset.name !== name);
+  const next = removeCustomPresetByName(state.settings.customPresets, name);
   void window.api
     .settingsSet({ customPresets: next })
     .then((saved) => {
@@ -343,13 +337,12 @@ function persistTypography(): void {
 function handleMarginChange(key: keyof typeof marginInputs): void {
   if (state.hydratingSettings) return;
   const input = marginInputs[key];
-  const value = input.valueAsNumber;
-  if (!Number.isFinite(value)) {
+  const clamped = parseMarginValue(input.valueAsNumber);
+  if (clamped === null) {
     input.value = String(state.settings.pageSetup[key]); // 空/非法输入:恢复为当前设置值
     showFieldError(marginError, `请输入 0–${MARGIN_MAX} 之间的数字`);
     return;
   }
-  const clamped = clampMargin(value);
   state.settings.pageSetup[key] = clamped;
   input.value = String(clamped); // 回显钳制后的值,与主进程持久化结果一致
   hideFieldError(marginError);
@@ -366,7 +359,7 @@ function handleTypographyNumberChange(
   const input = key === "bodySizePt" ? bodySizePtInput : lineSpacingInput;
   const errorEl = key === "bodySizePt" ? bodySizeError : lineSpacingError;
   const value = input.valueAsNumber;
-  if (!Number.isFinite(value) || value < min || value > max) {
+  if (!validateNumberRange(value, min, max)) {
     input.value = String(state.settings.typography[key]); // 空/非法/超范围:恢复为当前设置值
     showFieldError(errorEl, `请输入 ${min}–${max} 之间的数字`);
     return;
@@ -548,8 +541,8 @@ export function bindSettingsEvents(): void {
 
   outputDirReset.addEventListener("click", () => {
     state.settings.outputDir = "";
-    outputDirValue.textContent = "与源文件相同目录";
-    outputDirValue.title = "与源文件相同目录";
+    outputDirValue.textContent = outputDirDisplayText("");
+    outputDirValue.title = outputDirDisplayText("");
     persistSettings({ outputDir: "" });
   });
 

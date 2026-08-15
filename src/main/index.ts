@@ -14,9 +14,14 @@ import { convert, type ConvertFormat } from "../core/convert.js";
 import { decodeMarkdown } from "../core/encoding.js";
 import { createImageResolver } from "./image-downloader.js";
 import {
+  baseNameFromMdPath,
+  buildPresetsExportPayload,
+  buildRecentFileEntries,
+  errorMessage,
+  importPresetsFromText,
+} from "./ipc-logic.js";
+import {
   loadSettings,
-  mergePresets,
-  parsePresetsFile,
   updateSettings,
   type AppSettings,
   type ExportPresetsResult,
@@ -79,7 +84,7 @@ async function runWithCtx<T>(
     return await fn(ctx, win);
   } catch (err) {
     if (err instanceof ConvertCanceledError) return onCanceled();
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   } finally {
     ctxByWebContents.delete(event.sender.id); // 释放引用,避免悬挂(含异常/取消路径)
   }
@@ -150,7 +155,7 @@ const previews = new Set<PreviewEntry>();
 async function renderPreviewHtml(mdPath: string): Promise<string> {
   const settings = await loadSettings();
   const { text: md } = decodeMarkdown(await fs.readFile(mdPath));
-  const baseName = path.basename(mdPath).replace(/\.(md|markdown)$/i, "");
+  const baseName = baseNameFromMdPath(mdPath);
   const artifact = await convert(
     md,
     "pdf",
@@ -202,7 +207,7 @@ async function refreshPreviewWindow(entry: PreviewEntry): Promise<void> {
     await entry.win.loadFile(tmp.htmlPath);
     await oldCleanup(); // 旧临时文件已不再被引用
   } catch (err) {
-    showPreviewError(entry.win, err instanceof Error ? err.message : String(err));
+    showPreviewError(entry.win, errorMessage(err));
   }
 }
 
@@ -233,7 +238,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
     const html = await renderPreviewHtml(mdPath);
     const tmp = await writeTempHtml(html);
     cleanup = tmp.cleanup;
-    const baseName = path.basename(mdPath).replace(/\.(md|markdown)$/i, "");
+    const baseName = baseNameFromMdPath(mdPath);
     win = new BrowserWindow({
       width: 900,
       height: 1100,
@@ -259,7 +264,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
   } catch (err) {
     win?.destroy();
     await cleanup?.();
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 
@@ -269,10 +274,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
  * 写入失败静默,不影响转换结果。
  */
 async function recordRecentFiles(filePaths: string[], format: ConvertFormat): Promise<void> {
-  const ts = Date.now();
-  const entries = filePaths
-    .filter((p) => typeof p === "string" && p !== "")
-    .map((p) => ({ path: p, name: path.basename(p), format, ts }));
+  const entries = buildRecentFileEntries(filePaths, format, Date.now());
   if (entries.length === 0) return;
   try {
     await saveUiState({ recentFiles: entries });
@@ -407,10 +409,8 @@ function registerIpc(): void {
     }
     try {
       const text = await fs.readFile(result.filePaths[0], "utf8");
-      const parsed = parsePresetsFile(text);
-      if (!parsed.ok) return { ok: false, error: parsed.error };
-      const existing = loadSettings().customPresets;
-      const merged = mergePresets(existing, parsed.presets);
+      const merged = importPresetsFromText(text, loadSettings().customPresets);
+      if (!merged.ok) return { ok: false, error: merged.error };
       await updateSettings({ customPresets: merged.presets });
       // 与其它打开对话框一致:成功后记忆所选目录(下次默认打开位置)
       await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]) }).catch(() => undefined);
@@ -421,7 +421,7 @@ function registerIpc(): void {
         overridden: merged.overridden,
       };
     } catch (err) {
-      return { ok: false, error: `读取文件失败:${err instanceof Error ? err.message : String(err)}` };
+      return { ok: false, error: `读取文件失败:${errorMessage(err)}` };
     }
   });
 
@@ -437,11 +437,11 @@ function registerIpc(): void {
     });
     if (result.canceled || !result.filePath) return { ok: true, canceled: true };
     try {
-      const payload = `${JSON.stringify({ schemaVersion: 1, presets }, null, 2)}\n`;
+      const payload = buildPresetsExportPayload(presets);
       await fs.writeFile(result.filePath, payload, "utf8");
       return { ok: true, canceled: false, count: presets.length };
     } catch (err) {
-      return { ok: false, error: `写入文件失败:${err instanceof Error ? err.message : String(err)}` };
+      return { ok: false, error: `写入文件失败:${errorMessage(err)}` };
     }
   });
 

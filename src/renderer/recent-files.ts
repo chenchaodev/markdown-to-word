@@ -8,9 +8,9 @@
  * - 启动恢复(initUiStateRestore):panelOpen 回填两个设置面板 details 展开态、
  *   lastSessionFiles 逐项校验存在性(主进程保序过滤,缺失剔除,不提示)、最近区块首次渲染
  * - 设置面板 details toggle → 记忆 panelOpen(ui-state 独立文件,不碰 settings.json)
- * 依赖方向:recent-files → file-list(applySelection)/convert-flow(runConvert),
- * 与 convert-flow 的 refreshRecentFiles 形成 ESM 环——两处均在运行时调用
- * (模块加载期不触碰对方绑定),ESM 实时绑定可安全解析。
+ * 依赖方向:recent-files → file-list(applySelection)/convert-flow(runConvert);
+ * 转换成功后刷新最近区块由 convert-flow 经 state.recentRefreshHandler 回调触发
+ * (批次 15 R5:组合根 renderer.ts 接线,打破原 recent-files ↔ convert-flow ESM 环)。
  */
 import {
   recentClearBtn,

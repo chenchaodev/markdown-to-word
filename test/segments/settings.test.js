@@ -19,6 +19,9 @@
  *   全新模块实例(实证:Node ESM 同文件不同 query = 独立实例,缓存按 URL 键)
  * - sanitizePageSetup/sanitizeTypography/sanitizePatch 均未导出 → 经 updateSettings 公开
  *   路径断言(patch 合并 + sanitize + 持久化 + 返回 next)
+ * - isValidSettings(批次 15 R3 起导出):整文件形状校验纯函数直测——任一字段非法
+ *   (如 marginTop:"abc")→ false(loadSettings 据此整体回退 DEFAULT_SETTINGS 引用);
+ *   合法完整对象 → true(合法值保留)
  * - saveSettings 写队列(promise 链):并发调用串行执行,调用序 = 写盘序,链尾即最终态
  *   (M4,防并发交错写同一 tmp 文件丢更新;失败不截断队列,错误由各自调用方处理)
  */
@@ -161,6 +164,36 @@ export async function run() {
       "回退后边距应为默认值",
     );
     console.log("[ok] settings:非法边距(非有限数)整文件回退默认");
+
+    // ---- 7c. isValidSettings 直测(批次 15 R3:导出纯函数,不依赖磁盘 IO) ----
+    // 依据(dist/main/settings.ts isValidSettings):整文件形状校验——任一字段非法
+    // → false(loadSettings 据此整体回退 DEFAULT_SETTINGS 引用);合法完整对象 → true。
+    // typography/customPresets 不参与形状校验(loadSettings 单独 sanitize)。
+    const validSettings = {
+      version: 1, format: "pdf", afterConvert: "open", breakBeforeH1: true, toc: false,
+      outputDir: "C:\\tmp\\out",
+      pageSetup: { paper: "Letter", orientation: "landscape", marginTop: 12.5, marginBottom: 20, marginLeft: 30, marginRight: 40 },
+    };
+    assert(mod.isValidSettings(validSettings) === true, "合法完整对象应通过形状校验(合法值保留)");
+    // 旧文件兼容:缺 toc/outputDir 视为合法(loadSettings 兜底)
+    const legacySettings = { ...validSettings };
+    delete legacySettings.toc;
+    delete legacySettings.outputDir;
+    assert(mod.isValidSettings(legacySettings) === true, "缺 toc/outputDir 的旧文件应通过形状校验");
+    // 任一字段非法 → false(整文件回退语义)
+    const invalidCases = [
+      [{ ...validSettings, pageSetup: { ...validSettings.pageSetup, marginTop: "abc" } }, "marginTop 非有限数"],
+      [{ ...validSettings, pageSetup: { ...validSettings.pageSetup, marginBottom: NaN } }, "marginBottom NaN"],
+      [{ ...validSettings, format: "html" }, "format 枚举外值"],
+      [{ ...validSettings, version: 2 }, "version 非 1"],
+      [{ ...validSettings, breakBeforeH1: "yes" }, "breakBeforeH1 非布尔"],
+      [{ ...validSettings, pageSetup: null }, "pageSetup 缺失"],
+      [{ ...validSettings, afterConvert: "email" }, "afterConvert 枚举外值"],
+    ];
+    for (const [bad, label] of invalidCases) {
+      assert(mod.isValidSettings(bad) === false, `${label} 应判定形状非法(整文件回退)`);
+    }
+    console.log("[ok] settings:isValidSettings 直测(合法保留/旧文件兼容/任一非法整文件回退)断言通过");
 
     // ---- 8. 旧 settings.json 兼容(缺 toc/outputDir/typography)→ 其余保留 + 兜底默认 ----
     await fs.writeFile(

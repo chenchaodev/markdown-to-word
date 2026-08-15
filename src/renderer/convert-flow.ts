@@ -2,6 +2,8 @@
  * renderer 转换编排(R8 自 renderer.ts 抽出,行为等价):
  * 单文件 / 批量 / 合并三种转换流程——状态守卫与 mode 置位、进度条启停、
  * 结果经 dialogs 展示(汇总条 + 弹窗)。只经 state.ts 读写状态。
+ * 批次 15(R5):转换成功后刷新最近区块改经 state.recentRefreshHandler 回调
+ * (组合根 renderer.ts 接线),不再 import recent-files,打破 ESM 环。
  */
 import { statusEl } from "./dom.js";
 import { state } from "./state.js";
@@ -15,7 +17,6 @@ import {
 } from "./utils.js";
 import { showBatchDialog, showCompleteDialog, showSummary } from "./dialogs.js";
 import { updateActionButtons } from "./file-list.js";
-import { refreshRecentFiles } from "./recent-files.js";
 
 /** 单文件转换(与旧版行为一致)。 */
 export async function runConvert(
@@ -47,7 +48,7 @@ export async function runConvert(
       if (!state.suppressCompleteDialog) {
         showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
       }
-      void refreshRecentFiles(); // 批次 11:成功后刷新最近转换区块
+      void state.recentRefreshHandler?.(); // 批次 11:成功后刷新最近转换区块(批次 15 R5:经 state 回调,不再 import recent-files)
     } else {
       const error = result.error ?? "未知错误";
       setError(`转换失败:${error}`);
@@ -106,7 +107,7 @@ export async function runBatch(
       warnings: result.items.flatMap((item) => item.warnings ?? []),
     });
     showBatchDialog(result); // 成败均弹窗,逐条可见
-    void refreshRecentFiles(); // 批次 11:批量结束刷新(主进程已记录成功项)
+    void state.recentRefreshHandler?.(); // 批次 11:批量结束刷新(主进程已记录成功项;批次 15 R5:经 state 回调)
   } catch (err) {
     state.lastBatchResult = null;
     const message = err instanceof Error ? err.message : String(err);
@@ -151,7 +152,7 @@ export async function runMerge(): Promise<void> {
       if (!state.suppressCompleteDialog) {
         showCompleteDialog(outputPath);
       }
-      void refreshRecentFiles(); // 批次 11:成功后刷新最近转换区块
+      void state.recentRefreshHandler?.(); // 批次 11:成功后刷新最近转换区块(批次 15 R5:经 state 回调,不再 import recent-files)
     } else {
       const error = result.error ?? "未知错误";
       setError(`合并失败:${error}`);

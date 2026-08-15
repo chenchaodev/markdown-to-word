@@ -2,6 +2,8 @@
  * UI 状态持久化:userData/ui-state.json(批次 11 迭代 1「状态记忆」)。
  * 与 settings.ts 同款原子写(tmp + rename)与写队列串行化,但校验宽松:
  * UI 状态损坏只丢弃对应字段回默认值,不抛错、不影响 settings.json 契约。
+ * 取舍:UI 状态是辅助记忆(窗口位置/最近文件),损坏不应影响主配置;
+ * settings 是核心契约,非法宁可整体回退默认(见 settings.ts 头注释)。
  * 形状(UiState):
  * - recentFiles: 最近成功转换的文件 {path,name,format,ts}[] ≤10,按 ts 降序,path 去重
  * - lastSessionFiles: 上次会话的文件列表(renderer 恢复时逐项校验存在性)

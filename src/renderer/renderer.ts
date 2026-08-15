@@ -90,7 +90,7 @@ import {
 } from "./dialogs.js";
 import { runBatch, runConvert, runMerge } from "./convert-flow.js";
 import { bindSettingsEvents, closePresetSaveDialog, loadSettings, setSuppressCompleteDialog } from "./settings-panel.js";
-import { initUiStateRestore } from "./recent-files.js";
+import { initUiStateRestore, refreshRecentFiles } from "./recent-files.js";
 import { batchRetryPaths, batchSuccessPaths } from "./pure.js";
 
 declare global {
@@ -674,3 +674,6 @@ bindSettingsEvents();
 void loadSettings();
 // 批次 11:UI 状态恢复(面板展开态 / 会话文件 / 最近转换区块;失败静默保持默认)
 void initUiStateRestore();
+// 批次 15(R5):转换成功后刷新最近区块的回调接线(convert-flow 经 state 调用,
+// 不再 import recent-files,打破 recent-files ↔ convert-flow 的 ESM 环)
+state.recentRefreshHandler = refreshRecentFiles;
