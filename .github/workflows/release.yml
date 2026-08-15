@@ -1,0 +1,45 @@
+name: Release
+
+# 打 tag(v*) 时自动构建并发布 GitHub Release(安装包 + 更新元数据)。
+# 用法:git tag v0.28.0 && git push origin v0.28.0
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # CI 环境走官方源(GitHub 服务器访问官方源最快;本地 .npmrc 镜像配置不动)
+      - name: Install dependencies
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Typecheck & lint
+        run: npm run typecheck && npm run lint
+
+      - name: Acceptance tests
+        run: npm run test
+
+      # electron-builder 打包 NSIS 安装包(产物 release/MarkdownToWord-Setup-<版本>.exe + latest.yml)
+      - name: Package (NSIS)
+        run: npm run dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 自动生成 Release(notes 取自 tag 提交)并上传安装包与更新元数据
+      - name: Create GitHub Release
+        run: |
+          gh release create "${{ github.ref_name }}" release/*.exe release/*.yml --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
