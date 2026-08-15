@@ -238,18 +238,18 @@
 ## 待实测清单(≤5 项)
 
 ### T1 立即批(G5/G8/G4)
-- [ ] utils.ts decodeNumeric 非法码点 + escapeRegExp 直测
-- [ ] 单分支小缺口 10 处各补 1 组断言(convert/merge/captions/equations/docx render/pdf render/template/settings/ui-state)
-- [ ] metadata.ts 无元数据 passthrough 断言
+- [x] utils.ts decodeNumeric 非法码点 + escapeRegExp 直测
+- [x] 单分支小缺口 10 处各补 1 组断言(convert/merge/captions/equations/docx render/pdf render/template/settings/ui-state)
+- [x] metadata.ts 无元数据 passthrough 断言
 
 ### T2 近期批(G1/G2/G3)
-- [ ] math.ts 非 ∑ munderover 回落 + moText 文本化断言
-- [ ] postprocess.ts worker 错误/空结果降级 + checkLocalImages catch 断言
-- [ ] bookmarks.ts 旧式 Dests/decodeURIComponent catch/间接目标断言
+- [x] math.ts 非 ∑ munderover 回落 + moText 文本化断言
+- [x] postprocess.ts worker 错误/空结果降级 + checkLocalImages catch 断言
+- [x] bookmarks.ts 旧式 Dests/decodeURIComponent catch/间接目标断言
 
 ### T3 main 错误路径(G6/G7)
-- [ ] converter.ts open 失败降级/pdf 分支/collectMarkdownPaths stat 失败与直接文件路径断言
-- [ ] mermaid-service.ts png 空/catch/退出兜底降级断言
+- [x] converter.ts open 失败降级/pdf 分支/collectMarkdownPaths stat 失败与直接文件路径断言
+- [x] mermaid-service.ts png 空/catch/退出兜底降级断言
 
 ## 实测结果记录
-- (待填)
+- 2026-08-15 自动化验收通过:typecheck/lint/build/35 段(33→35,新增 utils/pdf-postprocess)/smoke 全绿;纯测试补齐不改源码,无 GUI 实测项(9dd272e)
