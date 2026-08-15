@@ -7,6 +7,9 @@ release2/
 # 转换产物(样例输出)
 output/
 
+# 测试覆盖率产物(c8)
+coverage/
+
 # 日志
 *.log
 npm-debug.log*

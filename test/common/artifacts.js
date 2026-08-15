@@ -1,5 +1,5 @@
 /**
- * 验收产物落盘:统一写入 output/test/artifacts/,按主题命名(无编号,新增无冲突)。
+ * 验收产物落盘:统一写入 output/artifacts/,按主题命名(无编号,新增无冲突)。
  */
 import fs from "node:fs/promises";
 import path from "node:path";

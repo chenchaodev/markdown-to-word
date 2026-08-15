@@ -47,12 +47,6 @@ markdown-to-word:Markdown 转 Word / PDF 等格式的命令行工具。项目知
 | `2026-08-08-1123-批次8管线勘察.md` | 批次 8 管线勘察(TOC/编号/图表) |
 | `2026-08-08-1142-docx域API调研.md` | docx 域 API(TOC/SEQ/REF) |
 | `20260813-193532-mermaid集成方案.md` | Mermaid 渲染导出方案(隐藏窗口 + PNG/SVG 双端) |
-| `20260813-193532-mermaid集成方案.md` | Mermaid 渲染导出方案(隐藏窗口 + PNG/SVG 双端) |
-| `20260813-193532-mermaid集成方案.md` | Mermaid 渲染导出方案(隐藏窗口 + PNG/SVG 双端) |
-| `20260813-193532-mermaid集成方案.md` | Mermaid 渲染导出方案(隐藏窗口 + PNG/SVG 双端) |
-| `20260813-193532-mermaid集成方案.md` | Mermaid 渲染导出方案(隐藏窗口 + PNG/SVG 双端) |
-| `20260813-193532-mermaid集成方案.md` | Mermaid 渲染导出方案(隐藏窗口 + PNG/SVG 双端) |
-| `20260813-193532-mermaid集成方案.md` | Mermaid 渲染导出方案(隐藏窗口 + PNG/SVG 双端) |
 
 ## 维护约定
 

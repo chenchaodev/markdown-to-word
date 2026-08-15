@@ -1,7 +1,9 @@
+# 状态速查
+
+- 2026-08-15:**批次 14「测试补齐」完成**(43452ca + 9dd272e):G1-G8 缺口全补(33→35 段,新增 utils/pdf-postprocess),typecheck/lint/build/smoke 全绿;小型豁免不 tag;批次 15「重构」待排期
 - 2026-08-15:**批次 14「测试补齐」进行中**(审计依据 archive/20260815-144057):G5/G8/G4 立即批 + G1/G2/G3 近期批 + G6/G7 main 错误路径;待实测见 ACCEPTANCE.md 批次 14
 - 2026-08-14:**批次 13「模板导入(预设 JSON 导入/导出)」完成并发版 0.27.0**(cf2f630 + f6e3304):用户实测通过(T1-T3 全勾 + 修复复测);CHANGELOG [0.27.0] + tag v0.27.0
 - 2026-08-14:**批次 12「界面体验优化」完成 + 用户实测通过,发版 0.26.0**(验收见 ACCEPTANCE.md 批次 12 节 U1-U7 全勾;含方向 B「代码质量与测试」迭代 1-3,CHANGELOG 0.26.0 条目汇总)
-# 状态速查
 
 ## 当前状态
 - 2026-08-14:**方向 B「代码质量与测试」全项完成(迭代 1-3)**:迭代 1 维护顺手项(7eb82af smoke 隔离 ui-state 会话残留 + USER-GUIDE/ROADMAP 核对去重);迭代 2 速赢批(abed9b7/1ebd756 settings-logic 抽取 + 22 断言直测,e526060 tsconfig 4 严格开关 + 依赖声明补齐 jszip/@types/mdast/katex(depcheck 修复),e6e48a9 mermaid-service 超时/崩溃/加载失败降级路径测试);迭代 3 工具链(eslint 10 flat + typescript-eslint 8.67 side-by-side TS6 API——TS 7 无 JS API,官方推荐方案,首跑修 5 处真实 floating/misused promise;c8 12 覆盖率:main 97% / core-docx 93% / core-pdf 95% / renderer 100%,sourceMap 映射,NODE_V8_COVERAGE 实测可行;engines 升 >=20.19);typecheck/lint/32 段/smoke 全绿;批次 12 已实测通过,0.26.0 已发版
