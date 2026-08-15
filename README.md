@@ -74,4 +74,4 @@ npm run test:all    # 验收 + smoke
 
 ## 许可证
 
-未指定（待定）。
+[GPL-3.0](LICENSE)（GNU General Public License v3）：自由软件，允许使用、修改与再分发，但衍生作品必须以相同许可证开源。
