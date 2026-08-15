@@ -1,3 +1,4 @@
+- 2026-08-15:**审计剩余项全部完成**(193feb4 + 89b5860 + 24650c2):第 8 项 settings/ui-state 原子写+写队列抽共享工具 atomic-json.ts(createJsonWriter 工厂,行为零变化)/第 5 项 lint 范围扩 eslint src/ test/ scripts/(allowDefaultProject,首跑修 2 处真实错误)/第 11 项 build.files 排除 highlight.js/styles 确认安全(主题 CSS 手写内联)/第 12 项 archive 清理(删 3 条结论固化存档,24→21 条)/第 6 项备选 DEV-GUIDE 注明 gen-fixtures;第 7/9/10 项实证保留或确认合理;36 段 + smoke 全绿;豁免不 tag
 # 状态速查
 
 - 2026-08-15:**批次 15「重构」完成**(1d91d9e + 29c078c):R1 删 theme.ts 死代码/R3 导出 isValidSettings 直测/R4 回退策略注释/R6 IPC 纯逻辑抽 ipc-logic.ts(5 纯函数)/R2 settings-panel 抽 8 纯函数/R5 recent-files↔convert-flow ESM 环经 state 回调打破/R7 双管线差异注释;36 段 + smoke 全绿;重构豁免不 tag
