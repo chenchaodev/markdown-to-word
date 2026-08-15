@@ -47,7 +47,7 @@
 - `src/renderer/`:GUI UI(vanilla TS + 原生 DOM)
   - `index.html` / `style.css`:Win11 浅色风格界面,含 CSP meta
   - `renderer.ts`:文件选择/拖放/格式单选/转换执行(进度文案 + 结果/错误反馈 + 设置面板)
-- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染)+ main/(主进程层)按内容主题的测试段 + fixtures/ 静态样例数据);`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)
+- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染)+ main/(主进程层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/gen-fixtures.mjs(fixtures 生成器,属测试体系故在 test/tools/ 而非 scripts/));`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)
 
 ## 验证方式
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(全局铁律 3)

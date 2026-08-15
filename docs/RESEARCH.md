@@ -157,7 +157,7 @@
 - **Electron 43 ESM 主入口坑**:顶层 `await app.whenReady()` 挂起(ready 永不 resolve,进程不退出);必须 `app.whenReady().then(async()=>{})` 链;electron 直调用 `node_modules/.bin/electron.cmd`(npx 会触发网络检查)
 - pdf 外链图:渲染后收集 http(s) img src → 并发 3 下载 → data URL 内嵌(mimeFromBuffer 魔数 png/jpeg/gif/webp);失败保留原 URL + 警告;main 侧 `createImageResolver`(fetch + 10s AbortSignal + 同 URL 去重缓存)
 - 来源: fix-5/fix-9/fix-10/fix-7/fix-8(终态结论)+ 自查实测
-- 关联: src/core/{frontmatter,convert}.ts、src/core/docx/render.ts、src/core/pdf/render.ts、src/main/{index,image-downloader}.ts、原文存档 docs/archive/2026-08-03-2311-批次2-spike与实现结论.md
+- 关联: src/core/{frontmatter,convert}.ts、src/core/docx/render.ts、src/core/pdf/render.ts、src/main/{index,image-downloader}.ts、原文存档 docs/archive/2026-08-03-2311-批次2-spike与实现结论.md(2026-08-15 archive 清理已删,结论见本条)
 
 ### 2026-08-03 21:46:27 批次 1 实测事实(docx/pdf 排版控制,已验证,勿回退)
 - docx 9.x section `page.size`:orientation=landscape 时**库自动交换 width/height 写入 pgSz**,应传原始(纵向)尺寸 + orientation 枚举;手动交换会双重交换导致宽高反(实测 bug 已修复)

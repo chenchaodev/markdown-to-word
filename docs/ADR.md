@@ -26,7 +26,7 @@
 - 砍:自动更新/签名、i18n、目录监视/同步、Mermaid/CLI;延后:最近文件、代码高亮主题切换、分节页面设置、图片尺寸/表格列宽
 - 理由:@oracle 评审(ora-1);护城河重心从「格式正确」转向「排版可定制」
 - 来源: @oracle
-- 关联: docs/ROADMAP.md、原文存档 docs/archive/2026-08-03-2325-后续批次规划评审.md
+- 关联: docs/ROADMAP.md、原文存档 docs/archive/2026-08-03-2325-后续批次规划评审.md(2026-08-15 archive 清理已删,决策见本条)
 
 ### 2026-08-02 19:20:18 Electron GUI + 自研 printToPDF 管线(ADR-002)
 - 决策:产品形态改为 Windows GUI(Electron 43);pdf 路线弃 md-to-pdf,改「markdown-it → HTML 模板 → `webContents.printToPDF()`」;转换在主进程执行;IPC 用 `contextIsolation` + preload 白名单(`invoke`/`send`);新增 `src/main/` 与 `src/renderer/`,core 与注册表设计不变
