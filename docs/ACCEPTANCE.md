@@ -229,3 +229,27 @@
 ## 实测结果记录
 - 2026-08-14 用户 GUI 实测通过(T1-T3 全勾;导出文件可回导、导入合并/覆盖/上限、非法文件报错、导入预设可套用删除均验证)
 - 2026-08-14 实测发现并修复「预设下拉弹回」(自定义预设值与硬编码相同时选中被弹回,fix f6e3304),用户复测通过
+
+# 批次 14「测试补齐」验收记录
+
+> 规划:2026-08-15 开工(审计依据 docs/archive/20260815-144057-代码测试文档审计.md);ora-1 测试缺口清单 G1-G8,按优先级分立即批(G5/G8/G4)+ 近期批(G1/G2/G3)+ main 错误路径(G6/G7);G9 核实不补。
+> 自动化:typecheck/lint/build/33 段(含新增断言)/smoke 全绿;纯测试补齐不改源码,无 GUI 实测项。
+
+## 待实测清单(≤5 项)
+
+### T1 立即批(G5/G8/G4)
+- [ ] utils.ts decodeNumeric 非法码点 + escapeRegExp 直测
+- [ ] 单分支小缺口 10 处各补 1 组断言(convert/merge/captions/equations/docx render/pdf render/template/settings/ui-state)
+- [ ] metadata.ts 无元数据 passthrough 断言
+
+### T2 近期批(G1/G2/G3)
+- [ ] math.ts 非 ∑ munderover 回落 + moText 文本化断言
+- [ ] postprocess.ts worker 错误/空结果降级 + checkLocalImages catch 断言
+- [ ] bookmarks.ts 旧式 Dests/decodeURIComponent catch/间接目标断言
+
+### T3 main 错误路径(G6/G7)
+- [ ] converter.ts open 失败降级/pdf 分支/collectMarkdownPaths stat 失败与直接文件路径断言
+- [ ] mermaid-service.ts png 空/catch/退出兜底降级断言
+
+## 实测结果记录
+- (待填)

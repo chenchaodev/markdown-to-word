@@ -2,6 +2,13 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-15 14:40:57 代码/测试/文档组织形式审计(@exp-1 + @ora-1,批次 14+ 规划依据)
+- **组织形式(exp-1)**:12 项可调整点——高收益低成本 4 项(README mermaid 条目重复 7 次 / .gitignore 缺 coverage/ / artifacts.js 注释漂移 / STATUS 标题外悬挂 3 行);中收益(lint 只跑 src/ 未覆盖 test/scripts / gen-fixtures.mjs 在 test/tools/ 非 scripts/ / test/fixtures/manual/ 陈旧 / settings.ts+ui-state.ts 双份原子写+写队列 / smoke 备份逻辑重复有意);低收益(preload.cts 混用合理 / build.files 排除 highlight.js/styles 需确认 / archive 24 条接近清理线);已确认合理:docx/render.ts 1015 行单体、style.css 1391 行、33 段零注册体系
+- **重构候选(ora-1)**:R1 theme.ts createDefaultStyles 死代码(0% funcs,删);R2 renderer DOM 层零覆盖→纯函数抽取(settings-logic 模式);R3 settings.ts sanitize 未导出不可直测→导出直测;R4 ui-state 宽松回退 vs settings 整文件回退策略并存需注明;R5 recent-files↔convert-flow ESM 循环依赖;R6 index.ts IPC 面 0% 覆盖→handler 纯逻辑抽可测模块(不做 Electron 集成测试);R7 双管线差异加注释标注;R8 硬约束提醒
+- **测试缺口(ora-1)**:G1 math.ts 60.65% branch 最大缺口(munderoverToNary 非 ∑ 回落/moText);G2 pdf postprocess.ts 75% stmts(embedExternalImages worker 错误/checkLocalImages catch);G3 bookmarks.ts 旧式 Dests/decodeURIComponent catch/间接目标;G4 metadata.ts 25% branch(无元数据 passthrough);G5 utils.ts decodeNumeric 非法码点/escapeRegExp;G6 converter.ts open 失败/pdf 分支/stat 失败;G7 mermaid-service png 空/catch/退出兜底;G8 单分支小缺口 10 处;G9 已核实不补(encoding/html-whitelist/slug)
+- **优先级建议**:立即=G5/G8/G4(~10 组断言);近期=G1/G2/G3;重构驱动=R1→R3/R4→R6→R2/R5;不做=renderer DOM 集成测试/index.ts Electron 集成测试
+- 来源: @explorer exp-1 + @oracle ora-1;关联: 原文存档 docs/archive/20260815-144057-代码测试文档审计.md
+
 ### 2026-08-14 20:16:22 模板导入方案选型(@lib-1 + @exp-1,批次 13 规划依据)
 - **决策**:批次 13「模板导入」= **预设 JSON 导入/导出**(首选;复用 sanitizeCustomPresets 校验,零新依赖,低风险高价值);CSS 模板覆盖(pdf 路线追加用户 CSS,类名固定可覆盖)次选;docx 模板导入暂缓记 ROADMAP(docx 9.x 仅 patchDocument 占位符替换不提取样式;docx4js 3.3.0 单人维护 2024-09 停更 + OOXML 样式→参数模型逆映射工程量大,与自研渲染管线架构相悖;pandoc reference.docx 机制仅作设计参照)
 - **关键事实**:预设=纯数值快照(typography+pageSetup),渲染管线只认最终字段值,无资源字段承载位;pdf CSS 全在 template.ts 模板字符串(无变量机制,追加 <style> 后加载可覆盖,但需防用户 CSS 破坏 .page-break/breakBeforeH1 分页强制规则);docx 路线不消费 CSS(OOXML)
