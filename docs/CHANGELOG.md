@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## [0.28.0] - 2026-08-15
+- 批次 14「测试补齐」(43452ca + 9dd272e;typecheck/lint/build/36 段/smoke 全绿,纯测试补齐无 GUI 实测项,验收见 ACCEPTANCE.md 批次 14 节):
+  - **core**:formula 非 ∑ munderover 回落 + moText 文本化(G1)/utils 新建段 decodeNumeric 越界码点 + escapeRegExp(G5)/merge 空文件跳过/cross-ref chapter null + 空题注文本/eq-numbering 孤立 label 警告/basic-render warnings ?? [] 兜底 + 脚注定义内 blockquote/thematicBreak(G8)
+  - **pdf**:pdf-postprocess 新建段 worker 抛错/空结果降级 + URL 替换循环 + checkLocalImages catch(G2)/pdf-bookmarks 旧式 Dests/decodeURIComponent catch/间接目标(G3)/pdf-meta 无元数据 passthrough(G4)/hljs 抛错兜底/mermaid resolver 抛错/loadKatexCss catch(G8)
+  - **main**:converter open 失败降级 + merge pdf 分支 + filterExistingPaths(G6)/mermaid-service catch 文案 + 无逗号空 PNG + will-quit 兜底(G7)/settings 非法边距/ui-state 非对象回退(G8)
+  - 33→36 段(新增 utils/pdf-postprocess)
+- 批次 15「重构」(1d91d9e + 29c078c;typecheck/lint/36 段/smoke 全绿):
+  - R1 theme.ts 删 createDefaultStyles 死代码/R3 导出 isValidSettings 直测(合法保留/旧文件兼容/7 非法用例)/R4 settings/ui-state 回退策略差异注释(整文件 vs 字段级,有意勿对齐)
+  - R6 index.ts IPC 纯逻辑抽 ipc-logic.ts(5 纯函数:errorMessage/buildRecentFileEntries/baseNameFromMdPath/importPresetsFromText/buildPresetsExportPayload)+ 新段 ipc-logic.test.js,行为零变化
+  - R2 settings-panel 抽 8 纯函数到 settings-logic.ts(mergeSettingsWithDefaults/resolvePresetHint/outputDirDisplayText/buildCustomPresetEntry/removeCustomPresetByName/parseMarginValue/validateNumberRange/settingsToControlValues)+ 8 组断言
+  - R5 recent-files↔convert-flow ESM 环经 state.recentRefreshHandler 回调打破(renderer.ts 组合根接线)
+  - R7 convert.ts 头部双管线差异注释(解析/公式/代码高亮/mermaid/目录/脚注 + 测试段映射)
+- 顺手项(025f651):README archive 登记表 mermaid 条目 7 次重复删至 1 行/.gitignore 加 coverage//artifacts.js 注释修正/STATUS 悬挂行移入
+- 审计剩余项(193feb4 + 89b5860):
+  - settings/ui-state 双份「原子写 tmp+rename + 写队列」抽共享工具 src/main/atomic-json.ts(createJsonWriter 工厂,独立队列实例,行为零变化)
+  - lint 范围扩 `eslint src/ test/ scripts/`(projectService allowDefaultProject,不改 tsconfig 结构;首跑修 2 处真实错误:acceptance.mjs 浮空 promise/merge.test.js 死导入)
+  - build.files 排除 highlight.js/styles 确认安全(主题 CSS 为 template.ts 手写内联,运行时不加载 styles/)
+  - archive 清理(删 3 条结论固化存档,24→21 条)+ DEV-GUIDE 注明 gen-fixtures 位置
+- 文档:审计落盘(archive/20260815-144057 + RESEARCH 条目)/ACCEPTANCE 批次 14 勾选/STATUS 登记
+
 ## [0.27.0] - 2026-08-14
 - 批次 13「模板导入(预设 JSON 导入/导出)」(cf2f630;typecheck/lint/33 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md 批次 13 节):
   - **方案**(archive/20260814-201622):lib-1 五方案对比拍板首选「预设 JSON 导入/导出」(复用 sanitize 校验,零新依赖);CSS 覆盖 pdf 路线次选、docx 模板导入暂缓(docx4js 停维护 + OOXML 样式逆映射工程量大)记 ROADMAP
