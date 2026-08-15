@@ -5,7 +5,7 @@
  * Outlines 存在、中文标题(PDFHexString 解码)、Dest[0] 为页面 PDFRef(防「全部回退首页」回归)。
  */
 import { convert } from "../../dist/core/convert.js";
-import { buildBookmarkTree, injectBookmarks } from "../../dist/core/pdf/bookmarks.js";
+import { buildBookmarkTree, injectBookmarks, lookupNamedDest } from "../../dist/core/pdf/bookmarks.js";
 import { extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
@@ -78,4 +78,59 @@ export async function run() {
   const withBookmarks = await injectBookmarks(new Uint8Array(pdf), tree);
   await assertOutline(withBookmarks, "书签一级标题", "书签端到端");
   console.log("[ok] 书签端到端:Outlines 注入,中文标题 + Dest 页面引用正确");
+
+  // ---------- G3 补齐:lookupNamedDest 解析路径直测(bookmarks.ts) ----------
+  // 依据(dist/core/pdf/bookmarks.ts):旧式 /Dests 字典(82-84)、decodeURIComponent
+  // catch(100-101,非法百分号编码名原样返回)、PDFDict 间接目标(109-115,/D 解引用)。
+  // 构造:PDFDocument.create + catalog 挂 /Dests(经 register 为间接对象,与真实 PDF
+  // 一致),save → load 回读后 lookupNamedDest 断言(与 printToPDF 产物同构)。
+
+  // 3. 旧式 Dests 字典:key 为 PDFName 百分号编码 UTF-8(#25 转义 %),decodeText +
+  // decodeURIComponent 还原中文后命中
+  {
+    const doc = await PDFDocument.create();
+    doc.addPage();
+    const dests = doc.context.obj({});
+    dests.set(PDFName.of("%E7%9B%AE%E6%A0%87"), doc.context.obj([doc.getPage(0).ref, "Fit"]));
+    doc.catalog.set(PDFName.of("Dests"), doc.context.register(dests));
+    const reloaded = await PDFDocument.load(await doc.save());
+    const dest = lookupNamedDest(reloaded, "目标");
+    if (!(dest instanceof PDFArray) || !(dest.asArray()[0] instanceof PDFRef)) {
+      throw new Error(`书签断言失败:旧式 Dests 字典未解析出命名目标「目标」,dest=${dest?.toString()}`);
+    }
+    console.log("[ok] 书签:旧式 /Dests 字典(百分号编码 UTF-8 key)解析命中");
+  }
+
+  // 4. decodeURIComponent catch:非法百分号编码名(%zz 非十六进制)原样返回并命中
+  {
+    const doc = await PDFDocument.create();
+    doc.addPage();
+    const dests = doc.context.obj({});
+    dests.set(PDFName.of("a%zz"), doc.context.obj([doc.getPage(0).ref, "Fit"]));
+    doc.catalog.set(PDFName.of("Dests"), doc.context.register(dests));
+    const reloaded = await PDFDocument.load(await doc.save());
+    const dest = lookupNamedDest(reloaded, "a%zz");
+    if (!(dest instanceof PDFArray)) {
+      throw new Error(`书签断言失败:非法百分号编码名应原样匹配(destKeyText catch),dest=${dest?.toString()}`);
+    }
+    console.log("[ok] 书签:decodeURIComponent catch(非法 % 编码)原样返回并命中");
+  }
+
+  // 5. PDFDict 间接目标:dest 值为字典,取 /D 键(经 PDFRef 解引用)得到 dest 数组
+  {
+    const doc = await PDFDocument.create();
+    doc.addPage();
+    const destArr = doc.context.obj([doc.getPage(0).ref, "Fit"]);
+    const destRef = doc.context.register(destArr);
+    const destDict = doc.context.obj({ D: destRef });
+    const dests = doc.context.obj({});
+    dests.set(PDFName.of("indirect"), destDict);
+    doc.catalog.set(PDFName.of("Dests"), doc.context.register(dests));
+    const reloaded = await PDFDocument.load(await doc.save());
+    const dest = lookupNamedDest(reloaded, "indirect");
+    if (!(dest instanceof PDFArray) || !(dest.asArray()[0] instanceof PDFRef)) {
+      throw new Error(`书签断言失败:PDFDict 间接目标(/D 解引用)未解析,dest=${dest?.toString()}`);
+    }
+    console.log("[ok] 书签:PDFDict 间接目标(/D → PDFRef → PDFArray)解析命中");
+  }
 }

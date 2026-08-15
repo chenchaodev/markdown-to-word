@@ -71,6 +71,20 @@ export async function run() {
   }
   console.log("[ok] docx 公式编号 + 交叉引用:编号/制表位/书签/引用文本/label 不渲染/悬空兜底 断言通过");
 
+  // ---------- G8 补齐:孤立 label 警告(equations.ts:52-53) ----------
+  // 依据(dist/core/docx/equations.ts):`{#eq:label}` 独立段前无公式 → 追加警告
+  // 「公式 label 前无公式,已忽略: {#eq:label}」并同样跳过渲染。
+  const orphanWarnings = [];
+  const orphanDocx = await convert("{#eq:orphan}\n\n正文", "docx", { baseDir: FIXTURES_DIR, warnings: orphanWarnings });
+  if (!orphanWarnings.includes("公式 label 前无公式,已忽略: {#eq:orphan}")) {
+    throw new Error("批次9断言失败:孤立 label 应追加「公式 label 前无公式」警告");
+  }
+  const orphanXml = unzipPart(orphanDocx.buffer, "word/document.xml");
+  if (orphanXml.includes("{#eq:orphan}")) {
+    throw new Error("批次9断言失败:孤立 label 标记行不应渲染");
+  }
+  console.log("[ok] docx 孤立公式 label:警告 + 标记行不渲染 断言通过");
+
   const katexDir = KATEX_DIR;
   const batch9Pdf = await convert(batch9Md, "pdf", { baseDir: FIXTURES_DIR, title: "批次9验收", warnings: [], katexDir });
   // 8d-6:PDF 公式编号结构(eq-block/eq-num + 编号文本)

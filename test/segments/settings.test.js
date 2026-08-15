@@ -143,6 +143,25 @@ export async function run() {
     assert(s2 === m2.DEFAULT_SETTINGS, "形状非法应返回 DEFAULT_SETTINGS 引用");
     assert(s2.version === 1 && s2.pageSetup.paper === "A4", "形状非法应回退默认值");
 
+    // ---- 7b. 边距非有限数(92-93 行)→ 整文件回退默认(与 7 同路径,补分支) ----
+    await fs.writeFile(
+      settingsFile,
+      JSON.stringify({
+        version: 1, format: "docx", afterConvert: "none", breakBeforeH1: false,
+        pageSetup: { paper: "A4", orientation: "portrait", marginTop: "abc", marginBottom: 20, marginLeft: 30, marginRight: 40 },
+      }),
+      "utf8",
+    );
+    const m2b = await freshModule();
+    const s2b = m2b.loadSettings();
+    assert(s2b === m2b.DEFAULT_SETTINGS, "边距非有限数应整文件回退 DEFAULT_SETTINGS 引用");
+    assert(
+      s2b.pageSetup.marginTop === DEFAULT_PAGE_SETUP.marginTop &&
+        s2b.pageSetup.marginBottom === DEFAULT_PAGE_SETUP.marginBottom,
+      "回退后边距应为默认值",
+    );
+    console.log("[ok] settings:非法边距(非有限数)整文件回退默认");
+
     // ---- 8. 旧 settings.json 兼容(缺 toc/outputDir/typography)→ 其余保留 + 兜底默认 ----
     await fs.writeFile(
       settingsFile,

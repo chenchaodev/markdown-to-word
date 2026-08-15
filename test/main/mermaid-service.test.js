@@ -14,7 +14,7 @@
  * 说明:窗口懒创建、单例复用;本段结束后窗口仍在,由 acceptance 末尾 app.quit()
  * 触发清理(closed → 临时 HTML 删除)。
  */
-import { BrowserWindow } from "electron";
+import { app, BrowserWindow } from "electron";
 import fs from "node:fs/promises";
 import os from "node:os";
 import { disposeMermaidService, renderMermaid } from "../../dist/main/mermaid-service.js";
@@ -52,9 +52,23 @@ export async function run() {
   assert(result.width > 0 && result.height > 0, `尺寸异常: ${result.width}x${result.height}`);
   assert(result.svg.includes("<svg"), "svg 缺少 <svg 标签");
 
-  // ---- 2. 降级路径:语法错误 → 页面内 parse 预检失败 → null ----
-  const bad = await renderMermaid("graph TD;\nA[unclosed");
+  // ---- 2. 降级路径:语法错误 → 页面内 parse 预检失败 → null;catch 日志留痕(170 行) ----
+  const origLog = console.log;
+  const logs = [];
+  console.log = (...args) => {
+    logs.push(args.join(" "));
+  };
+  let bad;
+  try {
+    bad = await renderMermaid("graph TD;\nA[unclosed");
+  } finally {
+    console.log = origLog;
+  }
   assert(bad === null, "语法错误应返回 null(降级)");
+  assert(
+    logs.some((l) => l.includes("[mermaid-service] render failed") && l.includes("mermaid parse failed")),
+    `catch 日志应含「[mermaid-service] render failed: mermaid parse failed」,实际 ${JSON.stringify(logs)}`,
+  );
 
   // ---- 3. 渲染超时 + 畸形返回值防御校验(挂起/垃圾返回值,均 → null) ----
   let restoreWc = null;
@@ -65,6 +79,8 @@ export async function run() {
         if (script.includes("BADSHAPE_SENTINEL")) return { svg: 123 }; // 形状非法
         if (script.includes("EMPTYPNG_SENTINEL"))
           return { svg: "<svg>", pngDataUrl: "data:image/png;base64,", width: 10, height: 10 }; // PNG 空
+        if (script.includes("NOCOMMA_PNG_SENTINEL"))
+          return { svg: "<svg>", pngDataUrl: "data:image/png;base64", width: 10, height: 10 }; // 无逗号 → split[1] undefined → ?? "" → 空 PNG
         if (script.includes("ZEROSIZE_SENTINEL"))
           return { svg: "<svg>", pngDataUrl: "data:image/png;base64,AAAA", width: 0, height: 10 }; // 尺寸非法
         throw new Error("unexpected script");
@@ -76,6 +92,7 @@ export async function run() {
     assert(Date.now() - t0 < 5000, "注入超时未生效(耗时接近默认 15s)");
     assert((await renderMermaid("BADSHAPE_SENTINEL")) === null, "畸形 svg 形状应返回 null");
     assert((await renderMermaid("EMPTYPNG_SENTINEL")) === null, "空 PNG 应返回 null");
+    assert((await renderMermaid("NOCOMMA_PNG_SENTINEL")) === null, "无逗号空 PNG 应返回 null(?? 兜底)");
     assert((await renderMermaid("ZEROSIZE_SENTINEL")) === null, "非法尺寸应返回 null");
   } finally {
     if (restoreWc) restoreWc();
@@ -126,8 +143,17 @@ export async function run() {
   const afterLoadFail = await renderMermaid(GOOD_CODE);
   assert(afterLoadFail, "loadFile 失败后窗口应重建并恢复渲染");
 
+  // ---- 6. 退出兜底(will-quit 监听,200 行):销毁常驻窗口;再次渲染自动重建 ----
+  const quitWin = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  assert(quitWin, "will-quit 测试前置:未找到 mermaid 常驻窗口");
+  app.emit("will-quit"); // 手动触发事件仅运行监听器,不真正退出应用
+  assert(quitWin.isDestroyed(), "will-quit 应销毁常驻窗口(退出兜底)");
+  const afterQuit = await renderMermaid(GOOD_CODE);
+  assert(afterQuit, "will-quit 销毁后应自动重建窗口并恢复渲染");
+
   console.log(
     `[ok] mermaid-service:真实渲染 ${result.width}x${result.height}(2x PNG ${result.png.length} bytes,svg ${result.svg.length} chars);` +
-      "语法错误/超时/畸形返回值/崩溃/loadFile 失败均降级 null,崩溃与加载失败后自动重建",
+      "语法错误(含 catch 日志文案)/超时/畸形返回值(含无逗号空 PNG)/崩溃/loadFile 失败均降级 null," +
+      "崩溃与加载失败后自动重建;will-quit 退出兜底销毁窗口且可重建",
   );
 }

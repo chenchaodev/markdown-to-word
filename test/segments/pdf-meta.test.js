@@ -49,4 +49,17 @@ export async function run() {
     throw new Error(`PDF 元数据断言失败: title=${pdfTitle} author=${pdfAuthor}`);
   }
   console.log(`[ok] PDF 元数据:title="${pdfTitle}" author="${pdfAuthor}" 读回一致`);
+
+  // ---------- G4 补齐:无元数据原样返回(metadata.ts:20,31-32) ----------
+  // 依据(dist/core/pdf/metadata.ts):metadata 缺省(20 行)或空对象无 title/author/date
+  // (31-32 行)均直接返回原 bytes(引用不变,不重存)。
+  const passthroughUndef = await setPdfMetadata(pdf, undefined);
+  if (passthroughUndef !== pdf) {
+    throw new Error("PDF 元数据断言失败:metadata 缺省时应原样返回原 bytes(引用不变)");
+  }
+  const passthroughEmpty = await setPdfMetadata(pdf, {});
+  if (passthroughEmpty !== pdf) {
+    throw new Error("PDF 元数据断言失败:空 metadata(无 title/author/date)时应原样返回原 bytes");
+  }
+  console.log("[ok] PDF 元数据:无元数据(缺省/空对象)原样返回,断言通过");
 }

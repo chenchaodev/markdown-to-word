@@ -266,5 +266,34 @@ export async function run() {
   });
   if (!hnOffP.html.includes("(?)")) throw new Error("pdf headingNumbering 关:[章节] 引用应显示「(?)」");
 
+  // ============ 场景 G(G8 补齐):chapter null(captions.ts:87)与题注空文本(captions.ts:113) ============
+  // 依据(src/core/docx/captions.ts):chapter = headingNumbering && chapter>0 ? chapter : null;
+  // 无 h1 时 chapter 恒 0 → null → 编号无章节前缀「图 1」;题注文本剥离 label 后为空 →
+  // renderCaptionParagraph 仅渲染编号文本(无尾随空格)。
+  const mdNoH1Cap = `![图一](g1-tiny.png)
+
+图: 图甲
+`;
+  const gNoH1 = await convert(mdNoH1Cap, "docx", { baseDir: B, warnings: [] });
+  const gNoH1X = unzipPart(gNoH1.buffer, "word/document.xml");
+  if (!gNoH1X.includes('<w:t xml:space="preserve">图 1 图甲</w:t>')) {
+    throw new Error('docx 无 h1 题注应无章节前缀「图 1 图甲」(chapter null)');
+  }
+  const mdEmptyCap = `# 章
+
+![图一](g1-tiny.png)
+
+图: {#fig:a}
+`;
+  const gEmpty = await convert(mdEmptyCap, "docx", { baseDir: B, warnings: [] });
+  const gEmptyX = unzipPart(gEmpty.buffer, "word/document.xml");
+  if (!gEmptyX.includes('<w:t xml:space="preserve">图 1.1</w:t>')) {
+    throw new Error('docx 空题注文本应仅渲染编号「图 1.1」(无尾随空格)');
+  }
+  if (gEmptyX.includes("{#fig:a}")) {
+    throw new Error("docx 空题注场景 label 不应泄漏到文档文本");
+  }
+  console.log("[ok] cross-ref:题注 chapter null(无 h1 → 图 1)与空题注文本(仅编号)断言通过");
+
   console.log("[ok] cross-ref:docx+pdf 题注/章节/公式交叉引用、悬空降级、开关与 8b 修复断言通过(12 条验收点)");
 }

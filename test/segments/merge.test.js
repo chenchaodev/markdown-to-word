@@ -90,4 +90,20 @@ export async function run() {
     throw new Error("merge 断言失败:期望的绝对路径构造无效");
   }
   console.log("[ok] merge:括号配对 URL(绝对原样保留/相对转绝对)断言通过");
+
+  // ---------- G8 补齐:空文件跳过(merge.ts:39) ----------
+  // 依据(dist/core/merge.ts):text.trim() 后为空 → return 跳过,不产生空段;
+  // 空文件夹在中间不产生多余分页符;全空输入 → 空串。
+  const mergedWithEmpty = mergeMarkdowns([
+    { content: "# 甲", baseDir: FIXTURES_DIR },
+    { content: "   \n\n  ", baseDir: FIXTURES_DIR },
+    { content: "# 乙", baseDir: FIXTURES_DIR },
+  ]);
+  if (mergedWithEmpty !== "# 甲\n\n<!-- page-break -->\n\n# 乙") {
+    throw new Error(`merge 断言失败:空文件应跳过不产生空段,实际输出:\n${JSON.stringify(mergedWithEmpty)}`);
+  }
+  if (mergeMarkdowns([{ content: "  \n", baseDir: FIXTURES_DIR }, { content: "", baseDir: FIXTURES_DIR }]) !== "") {
+    throw new Error("merge 断言失败:全空输入应返回空串");
+  }
+  console.log("[ok] merge:空文件跳过(不产生空段/多余分页符,全空 → 空串)断言通过");
 }

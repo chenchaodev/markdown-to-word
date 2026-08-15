@@ -12,6 +12,7 @@ import { convert } from "../../dist/core/convert.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import path from "node:path";
 import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
 
 /** 主样例:行内/分式/上下标/开方公式(gen-fixtures 落盘为 acceptance/formula.md) */
@@ -66,6 +67,23 @@ export async function run() {
   }
   console.log("[ok] PDF 公式:KaTeX 结构 + CSS 字体内联生效");
 
+  // ---------- G8 补齐:loadKatexCss 读取失败返回空串(template.ts:214-215) ----------
+  // 依据(dist/core/pdf/template.ts):katexDir 无效时 readFileSync 抛错 → catch 返回 ""。
+  // renderPdfHtml 不抛错;公式仍渲染为 KaTeX HTML(仅缺字体样式)。
+  const badKatexPdf = await convert(formulaMd, "pdf", {
+    baseDir: FIXTURES_DIR,
+    title: "公式测试",
+    warnings: [],
+    katexDir: path.join(FIXTURES_DIR, "no-such-katex"),
+  });
+  if (badKatexPdf.html.includes("@font-face")) {
+    throw new Error("公式断言失败:无效 katexDir 不应内联 @font-face(loadKatexCss 应返回空串)");
+  }
+  if (!badKatexPdf.html.includes('class="katex"')) {
+    throw new Error("公式断言失败:无效 katexDir 时公式仍应渲染为 KaTeX HTML");
+  }
+  console.log("[ok] PDF 公式:loadKatexCss 读取失败(无效 katexDir)返回空串,公式仍渲染,断言通过");
+
   // ---------- 降级分支:解析失败的公式 → TeX 源码等宽灰字 + 警告 ----------
   // 依据(dist/core/docx/math.ts texToDocxMath):katex throwOnError:false 下解析失败
   // 产物含 class="katex-error" → 返回 { ok: false, text: tex };调用方(render.ts
@@ -97,6 +115,41 @@ export async function run() {
     throw new Error("公式断言失败:warnings 缺少公式降级警告文案(公式解析失败,降级为 TeX 源码)");
   }
   console.log("[ok] docx 公式降级:TeX 源码等宽灰字 + 无 oMath + warnings 警告 断言通过");
+
+  // ---------- G1 补齐:munderover 非 ∑ 回落(munderoverToNary 252-264 / moText 267-274) ----------
+  // 依据(dist/core/docx/math.ts):display 模式 \prod / \bigcup 的 KaTeX MathML 产物为
+  // <munderover><mo>∏/⋃</mo>…</munderover>(仅 ∑ 走 MathSum);首子 mo 文本非 ∑ →
+  // MathSubSuperScript 回落(base = mo 文本 run,sub/sup 为兄弟节点),不产出 <m:nary>。
+  // 实证序列化(2026-08-15):<m:sSubSup><m:e><m:r><m:t>∏</m:t></m:r></m:e><m:sub>…</m:sub><m:sup>…</m:sup>。
+  const fallbackMd = `# 非求和上下限
+
+$$
+\\prod_{i=1}^{n} i
+$$
+
+$$
+\\bigcup_{i=1}^{n} A_i
+$$
+`;
+  const fallbackDocx = await convert(fallbackMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
+  const fallbackDocument = unzipPart(fallbackDocx.buffer, "word/document.xml");
+  // 回落结构:MathSubSuperScript 而非 MathSum(无 m:nary)
+  if (!fallbackDocument.includes("<m:sSubSup>")) {
+    throw new Error("公式断言失败:非 ∑ munderover 未回落 MathSubSuperScript(<m:sSubSup>)");
+  }
+  if (fallbackDocument.includes("<m:nary")) {
+    throw new Error("公式断言失败:非 ∑ munderover 不应产出 MathSum(<m:nary)");
+  }
+  // mo 文本化(moText):∏ / ⋃ 以 MathRun 文本进 base,sub/sup 兄弟节点文本齐全
+  for (const [needle, label] of [
+    ["<m:t>∏</m:t>", "∏ 基文本"],
+    ["<m:t>⋃</m:t>", "⋃ 基文本"],
+    ["<m:t>i</m:t>", "下标 i"],
+    ["<m:t>n</m:t>", "上标 n"],
+  ]) {
+    if (!fallbackDocument.includes(needle)) throw new Error(`公式断言失败:非 ∑ 回落缺少 ${label}(${needle})`);
+  }
+  console.log("[ok] docx 公式:munderover 非 ∑ 回落(MathSubSuperScript + mo 文本,无 m:nary)断言通过");
 
   const formulaPdfBin = await htmlToPdf(formulaPdf.html, formulaPdf.footerTemplate);
   await saveArtifact("formula", { docx: formulaDocx.buffer, pdf: formulaPdfBin });

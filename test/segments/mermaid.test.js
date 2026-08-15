@@ -186,6 +186,32 @@ export async function run() {
     console.log("[ok] mermaid:pdf 降级路径(null)mermaid-fallback 转义原文 + 警告,断言通过");
   }
 
+  // ---- 5b. pdf 降级路径(抛错):警告带 reason + fallback 代码块(render.ts:659-663) ----
+  {
+    const warnings = [];
+    const pdf = await convert(MD_SPECIAL, "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings,
+      mermaidResolver: async () => {
+        throw new Error("boom");
+      },
+    });
+    if (!pdf.html.includes('<pre class="mermaid-fallback"><code>')) {
+      throw new Error('pdf 降级路径(抛错):缺少 <pre class="mermaid-fallback">');
+    }
+    if (pdf.html.includes('<div class="mermaid-svg">')) {
+      throw new Error("pdf 降级路径(抛错):抛错不应内联 SVG");
+    }
+    // 原文保留(转义形态,与 null 降级一致)
+    if (!pdf.html.includes("&quot;&lt;x&gt; &amp; 'q'&quot;")) {
+      throw new Error("pdf 降级路径(抛错):fallback 代码块缺少转义原文");
+    }
+    if (!warnings.includes("Mermaid 渲染失败: boom,已降级为代码块")) {
+      throw new Error(`pdf 降级路径(抛错):缺少带 reason 的警告,warnings=${JSON.stringify(warnings)}`);
+    }
+    console.log("[ok] mermaid:pdf 降级路径(抛错 boom)警告带 reason + fallback,断言通过");
+  }
+
   // ---- 6/9. pdf 无 resolver:原 hljs 兜底(不产占位、无 mermaid class) ----
   {
     const pdf = await convert(MD_OK, "pdf", { baseDir: FIXTURES_DIR, warnings: [] });

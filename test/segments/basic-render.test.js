@@ -13,6 +13,7 @@ import path from "node:path";
 import { parseMarkdown } from "../../dist/core/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
 import { convert } from "../../dist/core/convert.js";
+import hljs from "highlight.js/lib/common";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
@@ -261,6 +262,19 @@ export async function run() {
   }
   console.log("[ok] basic-render:pdf 缺失图片警告(统一文案经 resolver 失败路径)断言通过");
 
+  // ---------- G8 补齐:convert warnings ?? [] 兜底(convert.ts:67) ----------
+  // 依据(dist/core/convert.ts):context.warnings 缺省时内部兜底为空数组,转换不抛错;
+  // 缺失图片等警告路径在无 warnings 收集器时静默(不崩溃)。
+  const noWarnDocx = await convert("![缺图](missing.png)", "docx", { baseDir: FIXTURES_DIR });
+  if (noWarnDocx.buffer.length === 0) {
+    throw new Error("basic-render 断言失败:convert 无 warnings 参数时应正常产出 docx buffer");
+  }
+  const noWarnPdf = await convert("![缺图](missing.png)", "pdf", { baseDir: FIXTURES_DIR });
+  if (noWarnPdf.html.length === 0) {
+    throw new Error("basic-render 断言失败:convert 无 warnings 参数时应正常产出 pdf html");
+  }
+  console.log("[ok] basic-render:convert 无 warnings 参数(warnings ?? [] 兜底)docx/pdf 均正常产出");
+
   // ---------- 补充断言:代码块 pdf hljs 高亮(实现 src/core/pdf/render.ts highlight) ----------
   // ```ts 围栏 → <pre class="hljs"><code class="language-ts"> + hljs.highlight(value) 的
   // token 类 span(hljs 11.x:keyword/title function_/params/attr/built_in/string/subst)
@@ -279,6 +293,49 @@ export async function run() {
     }
   }
   console.log("[ok] basic-render:代码块 pdf 高亮(language-ts 围栏 + hljs token 类 span)断言通过");
+
+  // ---------- G8 补齐:hljs.highlight 抛错 → 转义兜底(render.ts:109-110) ----------
+  // 依据(dist/core/pdf/render.ts highlight):hljs.getLanguage 命中后 highlight 抛错
+  // (语言包异常)→ catch 回退转义输出 <pre class="hljs"><code>escapeHtml(str)</code></pre>。
+  // 触发:注册编译期即抛错的坏语言(match 与 begin 并存,hljs compileMatch 抛
+  // "begin & end are not supported with match"),经 highlight.js/lib/common 共享实例
+  // 注入(与 render.ts 同一模块单例);用后 unregister 清理,不影响其他断言。
+  hljs.registerLanguage("broken", () => ({ match: "x", begin: /y/ }));
+  try {
+    const brokenPdf = await convert("```broken\nif (a < b && c > d) {}\n```\n", "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+    });
+    if (!brokenPdf.html.includes('<pre class="hljs"><code>if (a &lt; b &amp;&amp; c &gt; d) {}\n</code></pre>')) {
+      throw new Error("basic-render 断言失败:hljs 抛错未回退转义输出(期望 escapeHtml 兜底)");
+    }
+    if (brokenPdf.html.includes('<span class="hljs-keyword">')) {
+      throw new Error("basic-render 断言失败:hljs 抛错回退不应含 token 类 span(未走 highlight)");
+    }
+    console.log("[ok] basic-render:hljs.highlight 抛错回退转义输出(render.ts:109-110)断言通过");
+  } finally {
+    hljs.unregisterLanguage("broken");
+  }
+
+  // ---------- G8 补齐:脚注定义内 blockquote/thematicBreak(render.ts:955-961) ----------
+  // 依据(src/core/docx/render.ts renderFootnoteDefinition):脚注定义子块复用块渲染,
+  // blockquote → renderBlockquote(左缩进 720 + 灰底 F2F2F2),thematicBreak →
+  // renderThematicBreak(下边框 single 999999);产物在 footnotes.xml 部件。
+  const fnDocx = await convert("正文[^1]\n\n[^1]: 脚注内容\n\n    > 引用内容\n\n    ---\n", "docx", {
+    baseDir: FIXTURES_DIR,
+    warnings: [],
+  });
+  const fnXml = unzipPart(fnDocx.buffer, "word/footnotes.xml");
+  if (!fnXml.includes("引用内容")) {
+    throw new Error("basic-render 断言失败:脚注定义内 blockquote 文本未渲染");
+  }
+  if (!fnXml.includes('<w:shd w:fill="F2F2F2" w:val="clear"/>') || !fnXml.includes('<w:ind w:left="720"/>')) {
+    throw new Error("basic-render 断言失败:脚注内 blockquote 缺少灰底/左缩进(renderBlockquote)");
+  }
+  if (!fnXml.includes('<w:pBdr><w:bottom w:val="single" w:color="999999" w:sz="6"/>')) {
+    throw new Error("basic-render 断言失败:脚注内 thematicBreak 缺少下边框(renderThematicBreak)");
+  }
+  console.log("[ok] basic-render:脚注定义内 blockquote/thematicBreak 渲染断言通过");
 
   await saveArtifact("basic-render", { docx: buffer });
 }

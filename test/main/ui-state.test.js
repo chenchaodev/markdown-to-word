@@ -83,6 +83,21 @@ export async function run() {
     );
     console.log("[ok] ui-state:损坏 JSON 回退全默认(静默不写盘)");
 
+    // ---- 2b. 合法 JSON 但非对象(167-168 行)→ 全字段默认 ----
+    await fs.writeFile(uiFile, JSON.stringify("hello"), "utf8");
+    const m3b = await freshModule();
+    assert(
+      JSON.stringify(m3b.loadUiState()) === JSON.stringify(m3b.DEFAULT_UI_STATE),
+      `非对象 JSON(字符串)应回退全默认,实际 ${JSON.stringify(m3b.loadUiState())}`,
+    );
+    await fs.writeFile(uiFile, JSON.stringify(null), "utf8");
+    const m3c = await freshModule();
+    assert(
+      JSON.stringify(m3c.loadUiState()) === JSON.stringify(m3c.DEFAULT_UI_STATE),
+      `非对象 JSON(null)应回退全默认,实际 ${JSON.stringify(m3c.loadUiState())}`,
+    );
+    console.log("[ok] ui-state:非对象 JSON(字符串/null)回退全默认");
+
     // ---- 3. 字段类型非法 → 该字段默认(其它字段不受影响) ----
     await fs.writeFile(
       uiFile,

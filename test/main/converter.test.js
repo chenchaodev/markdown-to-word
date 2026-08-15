@@ -24,7 +24,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
-import { BrowserWindow } from "electron";
+import { BrowserWindow, shell } from "electron";
 import { loadSettings, updateSettings } from "../../dist/main/settings.js";
 import { backupSettings } from "../common/settings.js";
 import {
@@ -32,6 +32,7 @@ import {
   ConvertCanceledError,
   convertImpl,
   createConvertContext,
+  filterExistingPaths,
   getImageResolver,
   mergeConvertImpl,
 } from "../../dist/main/converter.js";
@@ -250,6 +251,75 @@ export async function run() {
         }
       }
     }
+
+    // ---- 10. runAfterConvert open 失败(326-329 行):openPath 返回错误 → 降级不抛,日志留痕 ----
+    // 模拟:shell.openPath 临时替换为必失败 mock(直接赋值,不可写则 defineProperty 兜底);
+    // console.log 临时捕获断言「[afterConvert] 打开失败」文案;afterConvert 恢复 none
+    const origOpenPath = shell.openPath;
+    let openPathViaDefine = false;
+    try {
+      shell.openPath = async () => "mock open error";
+    } catch {
+      openPathViaDefine = true;
+      Object.defineProperty(shell, "openPath", {
+        configurable: true,
+        writable: true,
+        value: async () => "mock open error",
+      });
+    }
+    const openLogs = [];
+    const origLog = console.log;
+    console.log = (...args) => {
+      openLogs.push(args.join(" "));
+    };
+    try {
+      await updateSettings({ afterConvert: "open" });
+      const openFail = await convertImpl(sampleMd, "docx");
+      assert(!!openFail.outputPath, "open 失败不应影响转换成功");
+      await fs.stat(openFail.outputPath);
+    } finally {
+      console.log = origLog;
+      if (openPathViaDefine) {
+        Object.defineProperty(shell, "openPath", { configurable: true, writable: true, value: origOpenPath });
+      } else {
+        shell.openPath = origOpenPath;
+      }
+      await updateSettings({ afterConvert: "none" });
+    }
+    assert(
+      openLogs.some((l) => l.includes("[afterConvert] 打开失败") && l.includes("mock open error")),
+      `open 失败应记录「[afterConvert] 打开失败」日志,实际 ${JSON.stringify(openLogs)}`,
+    );
+    console.log("[ok] converter:runAfterConvert open 失败(降级不抛 + 日志留痕)");
+
+    // ---- 11. merge pdf 分支(451-453 行):合并 → renderPdf → 落盘 %PDF + 进度 read/render/done ----
+    const mergeStages = [];
+    const mergePdf = await mergeConvertImpl([mergeA, mergeB], "pdf", (stage) => mergeStages.push(stage));
+    assert(mergePdf.ok && !!mergePdf.outputPath, `merge pdf 失败: ${mergePdf.error}`);
+    const mergePdfBase = mergePdf.outputPath.replace(/\s\(\d+\)(?=\.pdf$)/, "");
+    assert(mergePdfBase.endsWith("-合并.pdf"), `merge pdf 输出命名异常: ${mergePdf.outputPath}`);
+    const pdfHead = Buffer.from(await fs.readFile(mergePdf.outputPath)).subarray(0, 4).toString("ascii");
+    assert(pdfHead === "%PDF", `merge pdf 产物非 PDF 魔数: ${pdfHead}`);
+    assert(
+      JSON.stringify(mergeStages) === JSON.stringify(["read", "render", "done"]),
+      `merge pdf 进度阶段异常: ${JSON.stringify(mergeStages)}`,
+    );
+    console.log("[ok] converter:merge pdf 分支(renderPdf 落盘 %PDF + 进度 read/render/done)");
+
+    // ---- 12. filterExistingPaths(506-517 行,审计 507-517):存在保留/缺失剔除/保序 ----
+    // (collectMarkdownPaths 的 stat 失败/非 md 直接路径已由 paths.test.js 104-112 行覆盖)
+    const existA = path.join(dir, "exist-a.md");
+    const existB = path.join(dir, "exist-b.md");
+    await fs.writeFile(existA, "# a\n", "utf8");
+    await fs.writeFile(existB, "# b\n", "utf8");
+    const ghost1 = path.join(dir, "ghost-1.md");
+    const ghost2 = path.join(dir, "ghost-2.md");
+    const filtered = await filterExistingPaths([existA, ghost1, existB, ghost2, existA]);
+    assert(
+      JSON.stringify(filtered) === JSON.stringify([existA, existB, existA]),
+      `filterExistingPaths 应保序保留存在项并剔除缺失,实际 ${JSON.stringify(filtered)}`,
+    );
+    console.log("[ok] converter:filterExistingPaths(存在保留/缺失剔除/保序)");
   } finally {
     // 恢复设置文件 + 模块级缓存(updateSettings 双写);原本无文件则删除,不污染用户设置
     await restoreSettings.restore();
