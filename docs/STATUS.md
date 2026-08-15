@@ -1,5 +1,7 @@
 # 状态速查
 
+- 2026-08-15:**批次 15「重构」完成**(1d91d9e + 29c078c):R1 删 theme.ts 死代码/R3 导出 isValidSettings 直测/R4 回退策略注释/R6 IPC 纯逻辑抽 ipc-logic.ts(5 纯函数)/R2 settings-panel 抽 8 纯函数/R5 recent-files↔convert-flow ESM 环经 state 回调打破/R7 双管线差异注释;36 段 + smoke 全绿;重构豁免不 tag
+- 2026-08-15:**顺手项完成**(025f651):README mermaid 条目 7 次重复删至 1 行/.gitignore 加 coverage//artifacts.js 注释修正/STATUS 悬挂行移入;评估保留:lint 范围扩 test/scripts(tsconfig 无 allowJs 需改结构)、gen-fixtures 位置(移动劈开测试工具链)、manual/(merge.test.js 活跃消费者,审计「陈旧」判定实证推翻)
 - 2026-08-15:**批次 14「测试补齐」完成**(43452ca + 9dd272e):G1-G8 缺口全补(33→35 段,新增 utils/pdf-postprocess),typecheck/lint/build/smoke 全绿;小型豁免不 tag;批次 15「重构」待排期
 - 2026-08-15:**批次 14「测试补齐」进行中**(审计依据 archive/20260815-144057):G5/G8/G4 立即批 + G1/G2/G3 近期批 + G6/G7 main 错误路径;待实测见 ACCEPTANCE.md 批次 14
 - 2026-08-14:**批次 13「模板导入(预设 JSON 导入/导出)」完成并发版 0.27.0**(cf2f630 + f6e3304):用户实测通过(T1-T3 全勾 + 修复复测);CHANGELOG [0.27.0] + tag v0.27.0
