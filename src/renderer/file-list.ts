@@ -24,6 +24,7 @@ import {
 } from "./dom.js";
 import { state } from "./state.js";
 import { baseName, setStatus, truncateMiddle } from "./utils.js";
+import { t } from "../core/i18n.js";
 
 /** 按当前选择渲染拖放区三种状态,并刷新操作按钮可用性。 */
 export function renderSelection(): void {
@@ -59,7 +60,7 @@ export function renderSelection(): void {
 /** 重建多文件列表:序号 + 文件名 + 上移/下移按钮,严格按 selectedFiles 顺序渲染。 */
 export function renderMultiList(): void {
   const n = state.selectedFiles.length;
-  multiCount.textContent = `已选择 ${n} 个 Markdown 文件`;
+  multiCount.textContent = t("file.selectedCount", { count: n });
   multiList.replaceChildren(
     ...state.selectedFiles.map((filePath, index) => {
       const li = document.createElement("li");
@@ -67,7 +68,7 @@ export function renderMultiList(): void {
       li.draggable = true; // 整行可拖拽排序
       li.dataset.index = String(index);
       // 批次 11 迭代 4:悬停提示双击预览(行双击 = 预览该行)
-      li.title = `${filePath}\n双击预览该行`;
+      li.title = `${filePath}\n${t("file.dblclickPreview")}`;
 
       const num = document.createElement("span");
       num.className = "multi-index";
@@ -115,10 +116,10 @@ export function makeMoveButton(
   btn.className = "multi-move";
   btn.dataset.dir = dir;
   btn.disabled = !enabled;
-  btn.title = dir === "up" ? "上移" : "下移";
+  btn.title = dir === "up" ? t("common.moveUp") : t("common.moveDown");
   btn.setAttribute(
     "aria-label",
-    `${dir === "up" ? "上移" : "下移"} ${fileName}`,
+    `${dir === "up" ? t("common.moveUp") : t("common.moveDown")} ${fileName}`,
   );
 
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -141,9 +142,9 @@ export function makePreviewButton(fileName: string): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "multi-preview";
-  btn.title = "预览转换排版(与 PDF 同排版)";
-  btn.setAttribute("aria-label", `预览 ${fileName}`);
-  btn.textContent = "预览";
+  btn.title = t("preview.title");
+  btn.setAttribute("aria-label", t("preview.aria", { name: fileName }));
+  btn.textContent = t("common.preview");
   return btn;
 }
 
@@ -153,8 +154,8 @@ export function makeRemoveButton(fileName: string): HTMLButtonElement {
   btn.type = "button";
   btn.className = "multi-remove";
   btn.dataset.dir = "remove";
-  btn.title = "移除";
-  btn.setAttribute("aria-label", `移除 ${fileName}`);
+  btn.title = t("common.remove");
+  btn.setAttribute("aria-label", t("file.removeAria", { name: fileName }));
 
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -199,9 +200,11 @@ export function applySelection(files: string[], skipped = 0): void {
   const summary =
     files.length === 1
       ? truncateMiddle(files[0])
-      : `已选择 ${files.length} 个文件`;
+      : t("file.selectedSummary", { count: files.length });
   const full =
-    skipped > 0 ? `${summary}(跳过 ${skipped} 个非 Markdown 项)` : summary;
+    skipped > 0
+      ? t("file.skippedSuffix", { summary, count: skipped })
+      : summary;
   setStatus(full, false, skipped > 0);
   statusEl.title = files.length === 1 ? files[0] : full;
 }
@@ -235,8 +238,6 @@ export function updateActionButtons(): void {
   selectBtn.disabled = busy;
   // 批次 12(C4):footer 快捷键提示随模式切换(多文件态提示批量语义)
   if (convertHint) {
-    convertHint.textContent = multi
-      ? "Ctrl+Enter 批量转换 · Ctrl+O 添加文件"
-      : "Ctrl+Enter 转换 · Ctrl+O 添加文件";
+    convertHint.textContent = multi ? t("hint.batch") : t("hint.single");
   }
 }

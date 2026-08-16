@@ -17,6 +17,7 @@ import {
 } from "./utils.js";
 import { showBatchDialog, showCompleteDialog, showSummary } from "./dialogs.js";
 import { updateActionButtons } from "./file-list.js";
+import { t } from "../core/i18n.js";
 
 /** 单文件转换(与旧版行为一致)。 */
 export async function runConvert(
@@ -26,21 +27,21 @@ export async function runConvert(
   state.mode = "single";
   state.converting = true;
   updateActionButtons(); // 禁用选择入口与转换按钮,防止重复点击
-  setStatus("正在转换…");
+  setStatus(t("convert.stage.converting"));
   showProgress();
   try {
     const result = await window.api.convert(filePath, format);
     if (result.canceled) {
-      setStatus("已取消");
-      showSummary({ kind: "canceled", title: "转换已取消" });
+      setStatus(t("common.canceled"));
+      showSummary({ kind: "canceled", title: t("convert.canceled.title") });
     } else if (result.ok) {
       const outputPath = result.outputPath ?? "";
       setProgress(100);
-      setStatus(`转换完成:${outputPath}`);
+      setStatus(t("convert.done.status", { outputPath }));
       statusEl.title = outputPath; // 长路径悬停可看完整
       showSummary({
         kind: "ok",
-        title: "转换完成",
+        title: t("convert.done.title"),
         outputPath,
         warnings: result.warnings,
       });
@@ -50,9 +51,9 @@ export async function runConvert(
       }
       void state.recentRefreshHandler?.(); // 批次 11:成功后刷新最近转换区块(批次 15 R5:经 state 回调,不再 import recent-files)
     } else {
-      const error = result.error ?? "未知错误";
-      setError(`转换失败:${error}`);
-      showSummary({ kind: "fail", title: "转换失败", error });
+      const error = result.error ?? t("common.unknownError");
+      setError(t("convert.failed.status", { error }));
+      showSummary({ kind: "fail", title: t("convert.failed.title"), error });
       // 批次 11 迭代 2:用户勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
       if (!state.suppressCompleteDialog) {
         showCompleteDialog("", error, baseName(filePath)); // 失败弹窗:错误三要素
@@ -60,8 +61,8 @@ export async function runConvert(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setError(`转换失败:${message}`);
-    showSummary({ kind: "fail", title: "转换失败", error: message });
+    setError(t("convert.failed.status", { error: message }));
+    showSummary({ kind: "fail", title: t("convert.failed.title"), error: message });
   } finally {
     state.mode = null;
     state.converting = false;
@@ -87,18 +88,24 @@ export async function runBatch(
   state.mode = "batch";
   state.converting = true;
   updateActionButtons();
-  setStatus(`正在批量转换 ${targets.length} 个文件…`);
+  setStatus(t("convert.batch.stage", { count: targets.length }));
   showProgress();
   try {
     const result = await window.api.convertBatch(targets, fmt);
     state.lastBatchResult = result;
     setProgress(100);
     const canceledText =
-      result.canceledCount > 0 ? `,取消 ${result.canceledCount}` : "";
+      result.canceledCount > 0
+        ? t("convert.batch.canceledSuffix", { count: result.canceledCount })
+        : "";
     const title =
       result.failCount > 0
-        ? `批量完成:成功 ${result.okCount} / 失败 ${result.failCount}${canceledText}`
-        : `批量完成:成功 ${result.okCount} 个文件${canceledText}`;
+        ? t("convert.batch.doneMixed", {
+            ok: result.okCount,
+            fail: result.failCount,
+            canceled: canceledText,
+          })
+        : t("convert.batch.doneAll", { count: result.okCount, canceled: canceledText });
     setStatus(title, false, result.failCount > 0);
     showSummary({
       kind: result.failCount > 0 ? "fail" : "ok",
@@ -111,8 +118,8 @@ export async function runBatch(
   } catch (err) {
     state.lastBatchResult = null;
     const message = err instanceof Error ? err.message : String(err);
-    setError(`批量转换失败:${message}`);
-    showSummary({ kind: "fail", title: "批量转换失败", error: message });
+    setError(t("convert.batch.failed", { error: message }));
+    showSummary({ kind: "fail", title: t("convert.batch.failedTitle"), error: message });
   } finally {
     state.mode = null;
     state.converting = false;
@@ -127,7 +134,7 @@ export async function runMerge(): Promise<void> {
   state.mode = "merge";
   state.converting = true;
   updateActionButtons();
-  setStatus("正在合并转换…");
+  setStatus(t("convert.merge.stage"));
   showProgress();
   try {
     const result = await window.api.convertMerge(
@@ -135,16 +142,16 @@ export async function runMerge(): Promise<void> {
       state.selectedFormat,
     );
     if (result.canceled) {
-      setStatus("已取消");
-      showSummary({ kind: "canceled", title: "合并已取消" });
+      setStatus(t("common.canceled"));
+      showSummary({ kind: "canceled", title: t("convert.merge.canceledTitle") });
     } else if (result.ok) {
       const outputPath = result.outputPath ?? "";
       setProgress(100);
-      setStatus(`合并完成:${outputPath}`);
+      setStatus(t("convert.merge.done", { outputPath }));
       statusEl.title = outputPath;
       showSummary({
         kind: "ok",
-        title: "合并完成",
+        title: t("convert.merge.doneTitle"),
         outputPath,
         warnings: result.warnings,
       });
@@ -154,18 +161,22 @@ export async function runMerge(): Promise<void> {
       }
       void state.recentRefreshHandler?.(); // 批次 11:成功后刷新最近转换区块(批次 15 R5:经 state 回调,不再 import recent-files)
     } else {
-      const error = result.error ?? "未知错误";
-      setError(`合并失败:${error}`);
-      showSummary({ kind: "fail", title: "合并失败", error });
+      const error = result.error ?? t("common.unknownError");
+      setError(t("convert.merge.failed", { error }));
+      showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error });
       // 批次 11 迭代 2:勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
       if (!state.suppressCompleteDialog) {
-        showCompleteDialog("", error, `${baseName(state.selectedFiles[0])}-合并`);
+        showCompleteDialog(
+          "",
+          error,
+          t("convert.merge.nameSuffix", { name: baseName(state.selectedFiles[0]) }),
+        );
       }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setError(`合并失败:${message}`);
-    showSummary({ kind: "fail", title: "合并失败", error: message });
+    setError(t("convert.merge.failed", { error: message }));
+    showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error: message });
   } finally {
     state.mode = null;
     state.converting = false;

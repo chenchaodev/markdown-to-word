@@ -36,6 +36,7 @@ import {
 import { state, type BatchItem, type BatchResult } from "./state.js";
 import { baseName, focusActionButton, trapFocus } from "./utils.js";
 import { batchSuccessPaths } from "./pure.js";
+import { t } from "../core/i18n.js";
 
 /* 弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let completeDialogTrap: (() => void) | null = null;
@@ -74,7 +75,7 @@ export function showSummary(opts: SummaryOptions): void {
   summaryDetailsBtn.classList.toggle("hidden", !opts.hasDetails);
   const warnings = opts.warnings ?? [];
   summaryWarnings.classList.toggle("hidden", warnings.length === 0);
-  summaryWarningsToggle.textContent = `警告(${warnings.length})`;
+  summaryWarningsToggle.textContent = t("summary.warnings", { count: warnings.length });
   summaryWarningsList.replaceChildren(
     ...warnings.map((warning) => {
       const li = document.createElement("li");
@@ -97,10 +98,10 @@ export function showCompleteDialog(
 ): void {
   state.dialogOutputPath = outputPath;
   const ok = !error;
-  completeDialogTitle.textContent = ok ? "转换完成" : "转换失败";
+  completeDialogTitle.textContent = ok ? t("dialog.complete.title") : t("dialog.failed.title");
   completeDialogDesc.textContent = ok
-    ? "文档已生成,输出路径如下"
-    : `${fileName ?? ""} 未能转换`;
+    ? t("dialog.complete.desc")
+    : t("dialog.failed.desc", { name: fileName ?? "" });
   completeOutputPath.textContent = ok ? outputPath : (error ?? "");
   completeOutputPath.title = completeOutputPath.textContent;
   completeOutputPath.classList.toggle("dialog-path--error", !ok);
@@ -130,8 +131,14 @@ export function showDialogError(message: string): void {
 /* ---------- 批量结果汇总弹窗 ---------- */
 export function showBatchDialog(result: BatchResult): void {
   const canceledText =
-    result.canceledCount > 0 ? ` / 取消 ${result.canceledCount}` : "";
-  batchSummary.textContent = `成功 ${result.okCount} / 失败 ${result.failCount}${canceledText}`;
+    result.canceledCount > 0
+      ? t("batch.canceledSuffix", { count: result.canceledCount })
+      : "";
+  batchSummary.textContent = t("batch.summary", {
+    ok: result.okCount,
+    fail: result.failCount,
+    canceled: canceledText,
+  });
   batchSummary.classList.toggle("batch-summary--fail", result.failCount > 0);
   batchResultList.replaceChildren(...result.items.map(renderBatchItem));
   batchDialogReveal.classList.toggle("hidden", result.okCount === 0);
@@ -197,14 +204,14 @@ export function renderBatchItem(item: BatchItem): HTMLLIElement {
   for (const warning of item.warnings ?? []) {
     const p = document.createElement("p");
     p.className = "batch-item-msg batch-item-msg--warning";
-    p.textContent = `警告:${warning}`;
+    p.textContent = t("batch.warningPrefix", { warning });
     msgs.appendChild(p);
     hasMsgs = true;
   }
   if (item.canceled) {
     const p = document.createElement("p");
     p.className = "batch-item-msg batch-item-msg--canceled";
-    p.textContent = "已取消,未转换";
+    p.textContent = t("batch.canceledMsg");
     msgs.appendChild(p);
     hasMsgs = true;
   } else if (item.error) {

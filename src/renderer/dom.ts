@@ -29,6 +29,10 @@ export const completeDialogOk = document.getElementById(
 export const formatInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="format"]',
 );
+// i18n:界面语言选择(zh / en radio)
+export const languageInputs = document.querySelectorAll<HTMLInputElement>(
+  'input[name="language"]',
+);
 // 页面设置面板
 export const paperSelect = document.getElementById("paperSelect") as HTMLSelectElement;
 export const orientationInputs = document.querySelectorAll<HTMLInputElement>(

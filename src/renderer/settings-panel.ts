@@ -52,6 +52,7 @@ import {
   fontEastAsiaInput,
   formatInputs,
   headingNumberingInput,
+  languageInputs,
   lineSpacingError,
   lineSpacingInput,
   marginError,
@@ -79,6 +80,8 @@ import {
 } from "./dom.js";
 import { state } from "./state.js";
 import { hideFieldError, setError, setStatus, showFieldError, trapFocus } from "./utils.js";
+import { renderSelection } from "./file-list.js";
+import { applyStaticTexts, setLanguage, t, type Language } from "../core/i18n.js";
 
 /* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let presetSaveTrap: (() => void) | null = null;
@@ -99,6 +102,9 @@ export async function loadSettings(): Promise<void> {
   }
   // 防御性合并:旧版本设置缺字段时按默认值兜底(outputDir 缺省 = 源目录)
   state.settings = mergeSettingsWithDefaults(loaded);
+  // i18n:主进程语言来源 = 持久化设置;启动即应用(静态文案 + 动态文案经 t() 自动跟随)
+  setLanguage(state.settings.language);
+  applyStaticTexts();
   state.hydratingSettings = true;
   rebuildPresetOptions(); // 自定义预设选项先就位,再回填 select 值
   applySettingsToControls();
@@ -157,12 +163,18 @@ function applySettingsToControls(): void {
   formatInputs.forEach(
     (input) => (input.checked = input.value === v.format),
   );
+  // i18n:界面语言 radio 回填(zh/en)
+  languageInputs.forEach(
+    (input) => (input.checked = input.value === v.language),
+  );
   // 输出目录:空串显示「与源文件相同目录」
   outputDirValue.textContent = v.outputDirText;
   outputDirValue.title = v.outputDirText;
   // 批次 16:PDF 样式 CSS 回显(settings.json 只存内容不存文件名,显示通用文案;
   // 非空 → 「已导入自定义 CSS」+ 清除按钮可用)
-  pdfCssStatus.textContent = state.settings.pdfCss ? "已导入自定义 CSS" : "未导入";
+  pdfCssStatus.textContent = state.settings.pdfCss
+    ? t("settings.pdfCssImported")
+    : t("settings.pdfCssNone");
   pdfCssClearBtn.classList.toggle("hidden", !state.settings.pdfCss);
 }
 
@@ -238,7 +250,7 @@ async function saveCustomPreset(): Promise<void> {
     templatePresetSelect.value = customPresetToTemplate(entry).id;
     applySettingsToControls(); // 当前设置即新预设 → 自动选中并显示其 hint
   } catch {
-    showPresetSaveError("保存失败,请重试");
+    showPresetSaveError(t("preset.saveFailed"));
   }
 }
 
@@ -265,7 +277,7 @@ function deleteCustomPreset(): void {
         pageSetup: { ...state.settings.pageSetup },
       });
     })
-    .catch(() => setError("删除预设失败,请重试"));
+    .catch(() => setError(t("preset.deleteFailed")));
 }
 
 /* ---------- 模板预设导入/导出(批次 13;main 内选文件 + 合并/导出 + 持久化全包) ---------- */
@@ -275,7 +287,7 @@ async function importCustomPresets(): Promise<void> {
   try {
     const r = await window.api.importPresets();
     if (!r.ok) {
-      setError(`导入预设失败:${r.error}`);
+      setError(t("preset.importFailed", { error: r.error }));
       return;
     }
     if (r.canceled) return; // 用户取消:无动作
@@ -290,12 +302,15 @@ async function importCustomPresets(): Promise<void> {
     applySettingsToControls(); // 重刷后按 matchesPreset 重算 select/hint,不强制切换选中项
     setStatus(
       r.overridden > 0
-        ? `已导入 ${r.imported} 个预设(覆盖 ${r.overridden} 个同名)`
-        : `已导入 ${r.imported} 个预设`,
+        ? t("preset.importedOverridden", {
+            imported: r.imported,
+            overridden: r.overridden,
+          })
+        : t("preset.imported", { count: r.imported }),
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setError(`导入预设失败:${message}`);
+    setError(t("preset.importFailed", { error: message }));
   }
 }
 
@@ -304,14 +319,14 @@ async function exportCustomPresets(): Promise<void> {
   try {
     const r = await window.api.exportPresets();
     if (!r.ok) {
-      setError(`导出预设失败:${r.error}`);
+      setError(t("preset.exportFailed", { error: r.error }));
       return;
     }
     if (r.canceled) return; // 用户取消:无动作
-    setStatus(`已导出 ${r.count} 个预设`);
+    setStatus(t("preset.exported", { count: r.count }));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setError(`导出预设失败:${message}`);
+    setError(t("preset.exportFailed", { error: message }));
   }
 }
 
@@ -322,18 +337,18 @@ async function importPdfCss(): Promise<void> {
   try {
     const r = await window.api.importPdfCss();
     if (!r.ok) {
-      setError(`导入 CSS 失败:${r.error}`);
+      setError(t("settings.cssImportFailed", { error: r.error }));
       return;
     }
     if (r.canceled) return; // 用户取消:无动作
     state.settings.pdfCss = r.css;
     persistSettings({ pdfCss: r.css });
-    pdfCssStatus.textContent = `已导入: ${r.name}`;
+    pdfCssStatus.textContent = t("settings.cssImported", { name: r.name });
     pdfCssClearBtn.classList.remove("hidden");
-    setStatus(`已导入 PDF 样式:${r.name}`);
+    setStatus(t("settings.cssImportedStatus", { name: r.name }));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setError(`导入 CSS 失败:${message}`);
+    setError(t("settings.cssImportFailed", { error: message }));
   }
 }
 
@@ -341,7 +356,7 @@ async function importPdfCss(): Promise<void> {
 function clearPdfCss(): void {
   state.settings.pdfCss = "";
   persistSettings({ pdfCss: "" });
-  pdfCssStatus.textContent = "未导入";
+  pdfCssStatus.textContent = t("settings.pdfCssNone");
   pdfCssClearBtn.classList.add("hidden");
 }
 
@@ -382,7 +397,7 @@ function handleMarginChange(key: keyof typeof marginInputs): void {
   const clamped = parseMarginValue(input.valueAsNumber);
   if (clamped === null) {
     input.value = String(state.settings.pageSetup[key]); // 空/非法输入:恢复为当前设置值
-    showFieldError(marginError, `请输入 0–${MARGIN_MAX} 之间的数字`);
+    showFieldError(marginError, t("settings.marginRange", { max: MARGIN_MAX }));
     return;
   }
   state.settings.pageSetup[key] = clamped;
@@ -403,7 +418,7 @@ function handleTypographyNumberChange(
   const value = input.valueAsNumber;
   if (!validateNumberRange(value, min, max)) {
     input.value = String(state.settings.typography[key]); // 空/非法/超范围:恢复为当前设置值
-    showFieldError(errorEl, `请输入 ${min}–${max} 之间的数字`);
+    showFieldError(errorEl, t("settings.numberRange", { min, max }));
     return;
   }
   state.settings.typography[key] = value;
@@ -474,7 +489,7 @@ export function bindSettingsEvents(): void {
     const value = fontAsciiInput.value.trim();
     if (!value) {
       fontAsciiInput.value = state.settings.typography.fontAscii; // 空输入:恢复为当前设置值
-      showFieldError(fontAsciiError, "西文字体不能为空,已恢复原值");
+      showFieldError(fontAsciiError, t("settings.fontAsciiEmpty"));
       return;
     }
     state.settings.typography.fontAscii = value;
@@ -487,7 +502,7 @@ export function bindSettingsEvents(): void {
     const value = fontEastAsiaInput.value.trim();
     if (!value) {
       fontEastAsiaInput.value = state.settings.typography.fontEastAsia; // 空输入:恢复为当前设置值
-      showFieldError(fontEastAsiaError, "中文字体不能为空,已恢复原值");
+      showFieldError(fontEastAsiaError, t("settings.fontEastAsiaEmpty"));
       return;
     }
     state.settings.typography.fontEastAsia = value;
@@ -585,7 +600,7 @@ export function bindSettingsEvents(): void {
       persistSettings({ outputDir: dir });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(`选择输出目录失败:${message}`);
+      setError(t("settings.selectDirFailed", { error: message }));
     }
     })();
   });
@@ -602,5 +617,21 @@ export function bindSettingsEvents(): void {
   completeDialogPromptInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;
     setSuppressCompleteDialog(!completeDialogPromptInput.checked);
+  });
+
+  // i18n:界面语言切换(radio;即时生效:静态文案重刷 + 动态文案经 t() 自动跟随,
+  // 状态栏/文件列表/最近区块等动态区域显式重渲染)
+  languageInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked || state.hydratingSettings) return;
+      const lang = input.value as Language;
+      state.settings.language = lang;
+      setLanguage(lang);
+      applyStaticTexts();
+      persistSettings({ language: lang });
+      setStatus("");
+      renderSelection();
+      void state.recentRefreshHandler?.();
+    });
   });
 }

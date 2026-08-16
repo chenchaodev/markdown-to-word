@@ -27,6 +27,7 @@ import { baseName, formatRecentTime } from "./pure.js";
 import { setStatus } from "./utils.js";
 import { state } from "./state.js";
 import { syncSuppressCompleteDialog } from "./settings-panel.js";
+import { t } from "../core/i18n.js";
 
 /** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。 */
 const MAX_RECENT_FILES = 10;
@@ -49,10 +50,10 @@ export function renderRecentList(recent: RecentFile[]): void {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "recent-item";
-      btn.title = `重新转换 ${item.path}`;
+      btn.title = t("recent.reconvert", { path: item.path });
       btn.dataset.path = item.path;
       btn.dataset.format = item.format;
-      btn.setAttribute("aria-label", `重新转换 ${item.name}`);
+      btn.setAttribute("aria-label", t("recent.reconvertAria", { name: item.name }));
 
       const name = document.createElement("span");
       name.className = "recent-name";
@@ -65,7 +66,7 @@ export function renderRecentList(recent: RecentFile[]): void {
 
       const time = document.createElement("span");
       time.className = "recent-time";
-      time.textContent = formatRecentTime(item.ts);
+      time.textContent = formatRecentTime(item.ts, undefined, t);
 
       btn.append(name, format, time);
       li.appendChild(btn);
@@ -75,10 +76,10 @@ export function renderRecentList(recent: RecentFile[]): void {
       const loadBtn = document.createElement("button");
       loadBtn.type = "button";
       loadBtn.className = "recent-load";
-      loadBtn.textContent = "仅加载";
-      loadBtn.title = `仅加载到文件列表(不转换) ${item.path}`;
+      loadBtn.textContent = t("recent.loadOnly");
+      loadBtn.title = t("recent.loadOnlyTitle", { path: item.path });
       loadBtn.dataset.path = item.path;
-      loadBtn.setAttribute("aria-label", `仅加载 ${item.name}`);
+      loadBtn.setAttribute("aria-label", t("recent.loadOnlyAria", { name: item.name }));
       li.appendChild(loadBtn);
       return li;
     }),
@@ -154,7 +155,7 @@ recentList.addEventListener("click", (event) => {
   if (!btn?.dataset.path) return;
   const filePath = btn.dataset.path;
   applySelection([filePath]);
-  setStatus(`已加载:${baseName(filePath)}`);
+  setStatus(t("recent.loaded", { name: baseName(filePath) }));
   statusEl.title = filePath; // 悬浮可看完整路径(applySelection 的 title 被覆盖后补回)
 });
 

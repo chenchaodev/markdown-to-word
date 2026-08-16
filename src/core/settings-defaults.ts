@@ -9,6 +9,9 @@
  */
 import { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
 export { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
+// 仅类型导入(编译期擦除,不引入运行时依赖):Language 契约定义于 i18n.ts
+import type { Language } from "./i18n.js";
+export type { Language } from "./i18n.js";
 
 /** 转换格式 */
 export type ConvertFormat = "docx" | "pdf";
@@ -61,6 +64,8 @@ export interface AppSettings {
   customPresets: CustomPreset[];
   /** PDF 自定义样式 CSS(用户导入,追加到默认样式后覆盖;默认空) */
   pdfCss: string;
+  /** 界面语言(默认 zh;renderer 启动与切换时经 i18n.setLanguage 生效) */
+  language: Language;
 }
 
 /** 自定义模板预设:名称 + 排版/页面设置快照(套用逻辑与硬编码预设一致)。 */
@@ -85,6 +90,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   outputDir: "",
   customPresets: [],
   pdfCss: "",
+  language: "zh",
 };
 
 /** 页面边距钳制范围(mm,与主进程 sanitizePageSetup 一致) */

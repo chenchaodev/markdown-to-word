@@ -18,6 +18,7 @@ import {
   type CustomPreset,
   type TemplatePreset,
 } from "../core/settings-defaults.js";
+import { t } from "../core/i18n.js";
 
 /** 自定义预设下拉 id 前缀(选中/删除判定与 id 解析共用)。 */
 export const CUSTOM_PRESET_ID_PREFIX = "custom:";
@@ -31,12 +32,12 @@ export function validatePresetName(
   existing: readonly CustomPreset[],
 ): string | null {
   const trimmed = name.trim();
-  if (!trimmed) return "请输入预设名称";
+  if (!trimmed) return t("preset.nameRequired");
   if (existing.some((preset) => preset.name === trimmed)) {
-    return "已存在同名预设,请换一个名称";
+    return t("preset.nameDuplicate");
   }
   if (existing.length >= MAX_CUSTOM_PRESETS) {
-    return `已达 ${MAX_CUSTOM_PRESETS} 个上限，请先删除`;
+    return t("preset.nameLimit", { max: MAX_CUSTOM_PRESETS });
   }
   return null;
 }
@@ -46,7 +47,7 @@ export function customPresetToTemplate(preset: CustomPreset): TemplatePreset {
   return {
     id: `${CUSTOM_PRESET_ID_PREFIX}${preset.name}`,
     name: preset.name,
-    hint: "自定义预设",
+    hint: t("preset.customHint"),
     typography: preset.typography,
     pageSetup: preset.pageSetup,
   };
@@ -117,7 +118,7 @@ export function resolvePresetHint(
   const isCustom = !matchedPreset;
   return {
     hint: isCustom
-      ? "已微调,与模板预设不一致"
+      ? t("preset.modifiedHint")
       : (matchedPreset ?? TEMPLATE_PRESETS[0]).hint,
     isCustom,
   };
@@ -125,7 +126,7 @@ export function resolvePresetHint(
 
 /** 输出目录显示文案:空串 = 「与源文件相同目录」(回填与恢复默认共用)。 */
 export function outputDirDisplayText(outputDir: string): string {
-  return outputDir || "与源文件相同目录";
+  return outputDir || t("settings.outputDirDefault");
 }
 
 /** 另存为预设条目构造:名称 + 当前排版/页面设置快照(深拷贝,后续修改不影响源)。 */
@@ -178,6 +179,7 @@ export interface SettingsControlValues {
   afterConvert: string;
   format: string;
   outputDirText: string;
+  language: string;
 }
 
 /** 设置对象 → 控件回填值(数值字段转字符串,与 DOM value 赋值一致)。 */
@@ -205,5 +207,6 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     afterConvert: settings.afterConvert,
     format: settings.format,
     outputDirText: outputDirDisplayText(settings.outputDir),
+    language: settings.language,
   };
 }

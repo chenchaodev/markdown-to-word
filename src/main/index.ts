@@ -54,6 +54,7 @@ import { getKatexDir } from "./katex-dir.js";
 import { disposeMermaidService, renderMermaid } from "./mermaid-service.js";
 import { runSmoke } from "./smoke.js";
 import { escapeHtml } from "../core/utils.js";
+import { setLanguage, t } from "../core/i18n.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.argv.includes("--smoke");
@@ -105,7 +106,7 @@ function createWindow(): BrowserWindow {
     minWidth: 720,
     minHeight: 560,
     ...(savedBounds ?? {}),
-    title: "Markdown 转换工具",
+    title: t("app.title"),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -180,14 +181,14 @@ function showPreviewError(win: BrowserWindow, message: string): void {
   if (win.isDestroyed()) return;
   const html = `<!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><title>预览不可用</title>
+<head><meta charset="utf-8"><title>${t("preview.errorTitle")}</title>
 <style>
   body { font-family: "Microsoft YaHei", sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fafafa; }
   .box { max-width: 480px; padding: 24px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; color: #333; }
   h1 { font-size: 16px; margin: 0 0 8px; }
   p { font-size: 13px; color: #666; margin: 0; word-break: break-all; }
 </style></head>
-<body><div class="box"><h1>预览不可用</h1><p>${escapeHtml(message)}</p></div></body></html>`;
+<body><div class="box"><h1>${t("preview.errorTitle")}</h1><p>${escapeHtml(message)}</p></div></body></html>`;
   void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
 }
 
@@ -220,7 +221,7 @@ async function checkPreviewSource(entry: PreviewEntry): Promise<void> {
   try {
     st = await fs.stat(entry.mdPath);
   } catch {
-    showPreviewError(entry.win, `源文件已不存在:${entry.mdPath}`);
+    showPreviewError(entry.win, t("preview.sourceMissing", { path: entry.mdPath }));
     return;
   }
   if (st.mtimeMs !== entry.mtimeMs) await refreshPreviewWindow(entry);
@@ -244,7 +245,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
     win = new BrowserWindow({
       width: 900,
       height: 1100,
-      title: `预览 - ${baseName}`,
+      title: t("preview.windowTitle", { name: baseName }),
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, sandbox: true },
     });
@@ -302,7 +303,7 @@ function registerIpc(): void {
   // 批次 11:defaultPath 记忆上次目录,成功后回写所选文件所在目录
   ipcMain.handle("dialog:openMarkdowns", async () => {
     const result = await dialog.showOpenDialog({
-      title: "选择 Markdown 文件",
+      title: t("dialog.openMarkdowns"),
       defaultPath: await lastOpenDirIfValid(),
       filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
       properties: ["openFile", "multiSelections"],
@@ -323,7 +324,7 @@ function registerIpc(): void {
         await recordRecentFiles([filePath], format); // 批次 11:成功后记最近文件
         return { ok: true, outputPath, warnings };
       },
-      () => ({ ok: false, canceled: true, error: "已取消" }),
+      () => ({ ok: false, canceled: true, error: t("common.canceled") }),
     );
   });
 
@@ -335,7 +336,7 @@ function registerIpc(): void {
   // 选择输出目录(批次 7;取消返回 null);批次 11:defaultPath 记忆 + 成功后回写所选目录
   ipcMain.handle("dialog:selectDir", async (): Promise<string | null> => {
     const result = await dialog.showOpenDialog({
-      title: "选择输出目录",
+      title: t("dialog.selectDir"),
       defaultPath: await lastOpenDirIfValid(),
       properties: ["openDirectory", "createDirectory"],
     });
@@ -370,7 +371,7 @@ function registerIpc(): void {
           );
           return result;
         },
-        () => ({ ok: false, error: "已取消" }),
+        () => ({ ok: false, error: t("common.canceled") }),
       );
     },
   );
@@ -388,7 +389,7 @@ function registerIpc(): void {
         if (result.ok) await recordRecentFiles(files, format);
         return result;
       },
-      () => ({ ok: false, canceled: true, error: "已取消" }),
+      () => ({ ok: false, canceled: true, error: t("common.canceled") }),
     );
   });
   ipcMain.handle("settings:get", (): AppSettings => loadSettings());
@@ -401,7 +402,7 @@ function registerIpc(): void {
   // 取消 → { ok:true, canceled:true };解析/读取异常 → { ok:false, error }(可读文案)
   ipcMain.handle("presets:import", async (): Promise<ImportPresetsResult> => {
     const result = await dialog.showOpenDialog({
-      title: "导入模板预设",
+      title: t("dialog.importPresets"),
       defaultPath: await lastOpenDirIfValid(),
       filters: [{ name: "JSON", extensions: ["json"] }],
       properties: ["openFile"],
@@ -423,7 +424,7 @@ function registerIpc(): void {
         overridden: merged.overridden,
       };
     } catch (err) {
-      return { ok: false, error: `读取文件失败:${errorMessage(err)}` };
+      return { ok: false, error: t("preset.readFailed", { error: errorMessage(err) }) };
     }
   });
 
@@ -431,9 +432,9 @@ function registerIpc(): void {
   // 空预设 main 侧前置拦截(renderer 侧可同样提示,两处一致);取消 → { ok:true, canceled:true }
   ipcMain.handle("presets:export", async (): Promise<ExportPresetsResult> => {
     const presets = loadSettings().customPresets;
-    if (presets.length === 0) return { ok: false, error: "暂无自定义预设可导出" };
+    if (presets.length === 0) return { ok: false, error: t("preset.noneToExport") };
     const result = await dialog.showSaveDialog({
-      title: "导出模板预设",
+      title: t("dialog.exportPresets"),
       defaultPath: path.join(app.getPath("documents"), "presets.json"),
       filters: [{ name: "JSON", extensions: ["json"] }],
     });
@@ -443,7 +444,7 @@ function registerIpc(): void {
       await fs.writeFile(result.filePath, payload, "utf8");
       return { ok: true, canceled: false, count: presets.length };
     } catch (err) {
-      return { ok: false, error: `写入文件失败:${errorMessage(err)}` };
+      return { ok: false, error: t("preset.writeFailed", { error: errorMessage(err) }) };
     }
   });
 
@@ -452,7 +453,7 @@ function registerIpc(): void {
   // 取消 → { ok:true, canceled:true };读取异常/超限 → { ok:false, error }(可读文案)
   ipcMain.handle("import:pdf-css", async (): Promise<ImportPdfCssResult> => {
     const result = await dialog.showOpenDialog({
-      title: "导入 PDF 样式 CSS",
+      title: t("dialog.importPdfCss"),
       defaultPath: await lastOpenDirIfValid(),
       filters: [{ name: "CSS", extensions: ["css"] }],
       properties: ["openFile"],
@@ -463,13 +464,13 @@ function registerIpc(): void {
     try {
       const css = await fs.readFile(result.filePaths[0], "utf8");
       if (Buffer.byteLength(css, "utf8") > MAX_PDF_CSS_BYTES) {
-        return { ok: false, error: `CSS 文件过大(超过 ${MAX_PDF_CSS_BYTES / 1024}KB 上限)` };
+        return { ok: false, error: t("settings.cssTooLarge", { kb: MAX_PDF_CSS_BYTES / 1024 }) };
       }
       // 与其它打开对话框一致:成功后记忆所选目录(下次默认打开位置)
       await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]) }).catch(() => undefined);
       return { ok: true, canceled: false, css, name: path.basename(result.filePaths[0]) };
     } catch (err) {
-      return { ok: false, error: `读取文件失败:${errorMessage(err)}` };
+      return { ok: false, error: t("preset.readFailed", { error: errorMessage(err) }) };
     }
   });
 
@@ -525,10 +526,10 @@ function showAboutDialog(): void {
   const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
   const options: Electron.MessageBoxOptions = {
     type: "info",
-    title: "关于",
-    message: "Markdown 转换工具",
-    detail: `版本 ${app.getVersion()}\n\n将 Markdown 文件转换为 Word 或 PDF 文档`,
-    buttons: ["确定"],
+    title: t("dialog.about.title"),
+    message: t("dialog.about.message"),
+    detail: t("dialog.about.detail", { version: app.getVersion() }),
+    buttons: [t("common.ok")],
   };
   if (win && !win.isDestroyed()) void dialog.showMessageBox(win, options);
   else void dialog.showMessageBox(options);
@@ -541,22 +542,24 @@ function showAboutDialog(): void {
 function buildAppMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: "文件",
+      label: t("menu.file"),
       submenu: [
-        { label: "打开文件…", click: openFromAppMenu },
+        { label: t("menu.openFile"), click: openFromAppMenu },
         { type: "separator" },
-        { label: "退出", role: "quit" },
+        { label: t("menu.quit"), role: "quit" },
       ],
     },
     {
-      label: "帮助",
-      submenu: [{ label: "关于", click: showAboutDialog }],
+      label: t("menu.help"),
+      submenu: [{ label: t("menu.about"), click: showAboutDialog }],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 void app.whenReady().then(async () => {
+  // i18n:主进程语言来源 = 持久化设置(菜单/对话框标题/预览错误页按此语言)
+  setLanguage(loadSettings().language);
   buildAppMenu(); // 菜单先于窗口创建,窗口创建即带应用菜单(autoHideMenuBar 下 Alt 唤出)
   registerIpc();
   const win = createWindow();

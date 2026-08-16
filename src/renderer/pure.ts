@@ -25,15 +25,25 @@ export function truncateMiddle(text: string, max = 88): string {
 }
 
 /* ---------- 转换进度 ---------- */
-/** 阶段文案:主进程可能发「read」等键名,也可能是现成中文文案,原样兜底。 */
+/**
+ * 阶段文案(默认语言 zh 原文;i18n 注入翻译):
+ * 主进程可能发「read」等键名,也可能是现成中文文案,原样兜底。
+ * 本文件零 import 约束:zh 文案作为默认输出保留于此(与 i18n 字典 convert.stage.*
+ * 的 zh 值逐字一致),translate 注入时按阶段键名翻译(调用处传 t)。
+ */
 export const STAGE_TEXT: Record<"read" | "render" | "done", string> = {
   read: "正在读取文件…",
   render: "正在渲染文档…",
   done: "正在完成…",
 };
 
-export function stageText(stage: string): string {
-  return STAGE_TEXT[stage as keyof typeof STAGE_TEXT] ?? stage;
+export function stageText(
+  stage: string,
+  translate?: (key: string) => string,
+): string {
+  const text = STAGE_TEXT[stage as keyof typeof STAGE_TEXT];
+  if (text === undefined) return stage;
+  return translate ? translate(`convert.stage.${stage}`) : text;
 }
 
 /** 阶段 → 进度百分比(主进程只发阶段键,映射近似进度:读取 15% / 渲染 70% / 完成 95%)。 */
@@ -49,8 +59,14 @@ function pad2(n: number): string {
  * 最近转换相对时间(批次 11):当天「今天 HH:mm」/ 昨天「昨天 HH:mm」/
  * 今年内「M月D日」/ 更早「YYYY年M月D日」。now 可注入(测试),默认取当前时间;
  * 全部按本地时间判定(与用户感知一致)。
+ * i18n:默认输出 zh 原文(零 import 约束,与 i18n 字典 recent.time.* 的 zh 值逐字一致);
+ * translate 注入时按 key 翻译(调用处传 t)。
  */
-export function formatRecentTime(ts: number, now?: number): string {
+export function formatRecentTime(
+  ts: number,
+  now?: number,
+  translate?: (key: string, params?: Record<string, string | number>) => string,
+): string {
   const t = new Date(ts);
   const n = new Date(now ?? Date.now());
   const time = `${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
@@ -58,12 +74,24 @@ export function formatRecentTime(ts: number, now?: number): string {
     a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
-  if (sameDay(t, n)) return `今天 ${time}`;
+  if (sameDay(t, n)) {
+    return translate ? translate("recent.time.today", { time }) : `今天 ${time}`;
+  }
   const yesterday = new Date(n);
   yesterday.setDate(n.getDate() - 1);
-  if (sameDay(t, yesterday)) return `昨天 ${time}`;
-  if (t.getFullYear() === n.getFullYear()) return `${t.getMonth() + 1}月${t.getDate()}日`;
-  return `${t.getFullYear()}年${t.getMonth() + 1}月${t.getDate()}日`;
+  if (sameDay(t, yesterday)) {
+    return translate ? translate("recent.time.yesterday", { time }) : `昨天 ${time}`;
+  }
+  if (t.getFullYear() === n.getFullYear()) {
+    const params = { month: t.getMonth() + 1, day: t.getDate() };
+    return translate
+      ? translate("recent.time.monthDay", params)
+      : `${t.getMonth() + 1}月${t.getDate()}日`;
+  }
+  const params = { year: t.getFullYear(), month: t.getMonth() + 1, day: t.getDate() };
+  return translate
+    ? translate("recent.time.fullDate", params)
+    : `${t.getFullYear()}年${t.getMonth() + 1}月${t.getDate()}日`;
 }
 
 /* ---------- 批量结果路径提取(批次 11 迭代 2:重试失败项 / 复制全部路径) ---------- */

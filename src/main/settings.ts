@@ -27,6 +27,7 @@ import {
   type AppSettings,
   type CustomPreset,
 } from "../core/settings-defaults.js";
+import { t } from "../core/i18n.js";
 export { DEFAULT_SETTINGS, type AppSettings } from "../core/settings-defaults.js";
 
 const SETTINGS_FILE_NAME = "settings.json";
@@ -47,6 +48,7 @@ const SETTING_KEYS = [
   "outputDir",
   "customPresets",
   "pdfCss",
+  "language",
 ] as const;
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
@@ -92,6 +94,8 @@ export function isValidSettings(value: unknown): value is AppSettings {
   if ("outputDir" in s && !isValidOutputDir(s.outputDir)) return false;
   // pdfCss 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "";存在则须 string
   if ("pdfCss" in s && typeof s.pdfCss !== "string") return false;
+  // language 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "zh";存在则须 zh/en
+  if ("language" in s && s.language !== "zh" && s.language !== "en") return false;
   const ps = s.pageSetup as Record<string, unknown> | undefined;
   if (typeof ps !== "object" || ps === null) return false;
   if (!isOneOf(ps.paper, PAPERS)) return false;
@@ -127,6 +131,8 @@ export function loadSettings(): AppSettings {
             : DEFAULT_SETTINGS.equationNumbering,
         // 批次 16:pdfCss 缺失(旧文件)→ "";存在 → 原样保留
         pdfCss: typeof parsed.pdfCss === "string" ? parsed.pdfCss : DEFAULT_SETTINGS.pdfCss,
+        // i18n:language 缺失(旧文件)→ "zh";存在 → 原样保留(zh/en 已过形状校验)
+        language: parsed.language === "en" ? "en" : "zh",
         typography: sanitizeTypography(parsed.typography),
         // 批次 11 迭代 3:customPresets 缺失(旧文件)→ [];存在 → 逐条校验
         customPresets: sanitizeCustomPresets(parsed.customPresets),
@@ -203,6 +209,9 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
       case "pdfCss":
         out.pdfCss = typeof src.pdfCss === "string" ? src.pdfCss : DEFAULT_SETTINGS.pdfCss;
         break;
+      case "language":
+        out.language = src.language === "en" || src.language === "zh" ? src.language : DEFAULT_SETTINGS.language;
+        break;
     }
   }
   return out;
@@ -278,7 +287,7 @@ export function parsePresetsFile(text: string): ParsePresetsResult {
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { ok: false, error: "文件不是有效的 JSON" };
+    return { ok: false, error: t("preset.invalidJson") };
   }
   let rawPresets: unknown;
   if (Array.isArray(parsed)) {
@@ -286,14 +295,14 @@ export function parsePresetsFile(text: string): ParsePresetsResult {
   } else if (typeof parsed === "object" && parsed !== null) {
     const obj = parsed as { schemaVersion?: unknown; presets?: unknown };
     if (obj.schemaVersion !== PRESETS_SCHEMA_VERSION) {
-      return { ok: false, error: "不支持的模板文件版本" };
+      return { ok: false, error: t("preset.unsupportedVersion") };
     }
     rawPresets = obj.presets; // 缺 presets 字段 → undefined → 空 → 下方报「文件不含有效预设」
   } else {
-    return { ok: false, error: "不支持的模板文件版本" };
+    return { ok: false, error: t("preset.unsupportedVersion") };
   }
   const presets = sanitizeCustomPresets(rawPresets);
-  if (presets.length === 0) return { ok: false, error: "文件不含有效预设" };
+  if (presets.length === 0) return { ok: false, error: t("preset.noValidPresets") };
   return { ok: true, presets };
 }
 

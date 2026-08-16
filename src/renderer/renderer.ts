@@ -65,7 +65,6 @@ import {
 } from "./state.js";
 import {
   STAGE_PERCENT,
-  STAGE_TEXT,
   baseName,
   isMarkdown,
   setError,
@@ -92,6 +91,7 @@ import { runBatch, runConvert, runMerge } from "./convert-flow.js";
 import { bindSettingsEvents, closePresetSaveDialog, loadSettings, setSuppressCompleteDialog } from "./settings-panel.js";
 import { initUiStateRestore, refreshRecentFiles } from "./recent-files.js";
 import { batchRetryPaths, batchSuccessPaths } from "./pure.js";
+import { t } from "../core/i18n.js";
 
 declare global {
   interface Window {
@@ -177,17 +177,17 @@ declare global {
 function openPreviewFor(filePath: string): void {
   const fileName = baseName(filePath);
   const fail = (reason: string) =>
-    setError(`无法预览「${fileName}」:${reason}。请确认文件仍可读后重试`);
+    setError(t("preview.failed", { name: fileName, reason }));
   window.api
     .openPreview(filePath)
     .then((result) => {
-      if (!result.ok) fail(result.error ?? "未知原因");
+      if (!result.ok) fail(result.error ?? t("common.unknownReason"));
     })
     .catch((err) => fail(err instanceof Error ? err.message : String(err)));
 }
 
 /* ---------- 选择文件(系统对话框) ---------- */
-const ERROR_MESSAGE = "仅支持 .md / .markdown 文件";
+const ERROR_MESSAGE = t("file.onlyMarkdown");
 
 /** 打开文件对话框;append=true 时与现有列表合并(「追加文件 / 继续添加」入口)。 */
 async function openDialog(append = false): Promise<void> {
@@ -207,7 +207,7 @@ async function openDialog(append = false): Promise<void> {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setError(`打开文件对话框失败:${message}`);
+    setError(t("dialog.openFailed", { error: message }));
   }
 }
 
@@ -218,15 +218,15 @@ async function resolveDropped(paths: string[]): Promise<void> {
     if (files.length === 0) {
       setError(
         skipped.length > 0
-          ? `未找到 Markdown 文件(跳过 ${skipped.length} 个非 Markdown 项)`
-          : "未找到 Markdown 文件",
+          ? t("file.noMarkdownSkipped", { count: skipped.length })
+          : t("file.noMarkdown"),
       );
       return;
     }
     appendSelection(files, skipped.length); // 拖入始终追加到现有列表
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setError(`读取文件失败:${message}`);
+    setError(t("file.readFailed", { error: message }));
   }
 }
 
@@ -307,7 +307,7 @@ multiList.addEventListener("click", (event) => {
     renderSelection();
     setStatus(
       state.selectedFiles.length > 0
-        ? `已移除,剩余 ${state.selectedFiles.length} 个文件`
+        ? t("file.removedRemaining", { count: state.selectedFiles.length })
         : "",
     );
     return;
@@ -436,7 +436,7 @@ dropZone.addEventListener("drop", (event) => {
     if (filePath) paths.push(filePath);
   }
   if (paths.length === 0) {
-    setError("无法获取文件路径,请改用「选择文件」按钮");
+    setError(t("file.pathUnavailable"));
     return;
   }
   void resolveDropped(paths);
@@ -453,7 +453,7 @@ completeDialogReveal.addEventListener("click", () => {
     .revealInFolder(state.dialogOutputPath)
     .catch((err) =>
       showDialogError(
-        `无法打开所在文件夹:${err instanceof Error ? err.message : String(err)}`,
+        t("common.revealFailed", { error: err instanceof Error ? err.message : String(err) }),
       ),
     );
 });
@@ -463,11 +463,11 @@ completeDialogOpen.addEventListener("click", () => {
   window.api
     .openFile(state.dialogOutputPath)
     .then((result) => {
-      if (!result.ok) showDialogError(result.error ?? "无法打开文件");
+      if (!result.ok) showDialogError(result.error ?? t("common.openFailedPlain"));
     })
     .catch((err) =>
       showDialogError(
-        `无法打开文件:${err instanceof Error ? err.message : String(err)}`,
+        t("common.openFailed", { error: err instanceof Error ? err.message : String(err) }),
       ),
     );
 });
@@ -476,7 +476,7 @@ completeDialogOpen.addEventListener("click", () => {
 convertBtn.addEventListener("click", () => {
   const filePath = state.selectedFiles[0];
   if (!filePath) {
-    setError("请先选择 Markdown 文件");
+    setError(t("file.selectFirst"));
     return;
   }
   void runConvert(filePath, state.selectedFormat);
@@ -503,7 +503,9 @@ batchDialogReveal.addEventListener("click", () => {
   window.api
     .revealInFolder(target)
     .catch((err) => {
-      batchDialogError.textContent = `无法打开所在文件夹:${err instanceof Error ? err.message : String(err)}`;
+      batchDialogError.textContent = t("common.revealFailed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
       batchDialogError.classList.remove("hidden");
     });
 });
@@ -533,12 +535,12 @@ batchDialogCopyAll.addEventListener("click", () => {
   if (paths.length === 0) return;
   try {
     await navigator.clipboard.writeText(paths.join("\n"));
-    batchDialogCopyAll.textContent = "已复制";
+    batchDialogCopyAll.textContent = t("common.copied");
     window.setTimeout(() => {
-      batchDialogCopyAll.textContent = "复制全部路径";
+      batchDialogCopyAll.textContent = t("batch.copyAll");
     }, 1500);
   } catch {
-    batchDialogError.textContent = "复制失败,请手动选择文本复制";
+    batchDialogError.textContent = t("common.copyFailed");
     batchDialogError.classList.remove("hidden");
   }
   })();
@@ -553,10 +555,10 @@ completeDialogSuppressInput.addEventListener("change", () => {
 cancelBtn.addEventListener("click", () => {
   if (!state.converting) return;
   cancelBtn.disabled = true; // 防重复点击;转换结束后 hideProgress 隐藏整块
-  setStatus("正在取消…");
+  setStatus(t("convert.canceling"));
   window.api.convertCancel().catch(() => {
     cancelBtn.disabled = false;
-    setStatus("取消失败,请重试");
+    setStatus(t("convert.cancelFailed"));
   });
 });
 
@@ -565,7 +567,7 @@ summaryRevealBtn.addEventListener("click", () => {
   if (!state.summaryOutputPath) return;
   window.api.revealInFolder(state.summaryOutputPath).catch((err) => {
     setError(
-      `无法打开所在文件夹:${err instanceof Error ? err.message : String(err)}`,
+      t("common.revealFailed", { error: err instanceof Error ? err.message : String(err) }),
     );
   });
 });
@@ -575,10 +577,10 @@ summaryOpenBtn.addEventListener("click", () => {
   window.api
     .openFile(state.summaryOutputPath)
     .then((result) => {
-      if (!result.ok) setError(result.error ?? "无法打开文件");
+      if (!result.ok) setError(result.error ?? t("common.openFailedPlain"));
     })
     .catch((err) =>
-      setError(`无法打开文件:${err instanceof Error ? err.message : String(err)}`),
+      setError(t("common.openFailed", { error: err instanceof Error ? err.message : String(err) })),
     );
 });
 
@@ -593,12 +595,12 @@ completeDialogCopy.addEventListener("click", () => {
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
-    completeDialogCopy.textContent = "已复制";
+    completeDialogCopy.textContent = t("common.copied");
     window.setTimeout(() => {
-      completeDialogCopy.textContent = "复制路径";
+      completeDialogCopy.textContent = t("common.copyPath");
     }, 1500);
   } catch {
-    showDialogError("复制失败,请手动选择文本复制");
+    showDialogError(t("common.copyFailed"));
   }
   })();
 });
@@ -608,15 +610,20 @@ completeDialogCopy.addEventListener("click", () => {
 // 单文件/合并只有阶段键(无百分比),按 STAGE_PERCENT 映射近似进度。
 state.unsubscribeProgress = window.api.onConvertProgress((stage) => {
   if (state.mode !== "single" && state.mode !== "merge") return;
-  const text = STAGE_TEXT[stage];
-  if (text) setStatus(text);
+  const text = stageText(stage, t);
+  if (text !== stage) setStatus(text); // 未知阶段原样兜底,不覆盖状态栏
   const percent = STAGE_PERCENT[stage];
   if (percent !== undefined) setProgress(percent);
 });
 
 state.unsubscribeBatchProgress = window.api.onBatchProgress((info) => {
   if (state.mode !== "batch") return;
-  const text = `第 ${info.index} / ${info.total} 个:${baseName(info.file)} · ${stageText(info.stage)}`;
+  const text = t("convert.batch.progress", {
+    index: info.index,
+    total: info.total,
+    file: baseName(info.file),
+    stage: stageText(info.stage, t),
+  });
   setStatus(text);
   // 批量进度:已完成 (index-1)/total 个文件 + 当前文件阶段权重 /total
   const base = ((info.index - 1) / info.total) * 100;
