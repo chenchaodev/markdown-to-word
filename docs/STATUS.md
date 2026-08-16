@@ -1,4 +1,5 @@
-- 2026-08-15:**发版 0.28.0**(78098cf + tag v0.28.0):CHANGELOG 汇总批次 14/15 + 顺手项 + 审计剩余项(豁免迭代并入);项目根 README.md 新建(GitHub 门面,17 项功能特性,内容与 USER-GUIDE/CHANGELOG 核对一致);发布 GitHub 待用户建仓 + push
+- 2026-08-16:**GitHub 发布完成**:建仓 chenchaodev/markdown-to-word(Public)+ push master + 8 tags(v0.21.0~v0.28.0);Release v0.28.0 由 Actions 自动生成(安装包 119.5MB + latest.yml,workflow 见 .github/workflows/release.yml,打 tag 即触发);v0.28.0 tag 曾指向不含 workflow 的 commit 重打一次(教训:tag 必须指向最新 commit);remote 切 SSH(ssh.github.com:443,ed25519 key);全局 AGENTS.md v3.45 补「推送时」规则 + NETWORK-GUIDE v1.4 网络经验
+- 2026-08-15:**发版 0.28.0**(78098cf + tag v0.28.0):CHANGELOG 汇总批次 14/15 + 顺手项 + 审计剩余项(豁免迭代并入);项目根 README.md 新建(GitHub 门面,17 项功能特性,内容与 USER-GUIDE/CHANGELOG 核对一致);GitHub 发布已完成(2026-08-16,见顶部新行)
 - 2026-08-15:**审计剩余项全部完成**(193feb4 + 89b5860 + 24650c2):第 8 项 settings/ui-state 原子写+写队列抽共享工具 atomic-json.ts(createJsonWriter 工厂,行为零变化)/第 5 项 lint 范围扩 eslint src/ test/ scripts/(allowDefaultProject,首跑修 2 处真实错误)/第 11 项 build.files 排除 highlight.js/styles 确认安全(主题 CSS 手写内联)/第 12 项 archive 清理(删 3 条结论固化存档,24→21 条)/第 6 项备选 DEV-GUIDE 注明 gen-fixtures;第 7/9/10 项实证保留或确认合理;36 段 + smoke 全绿;豁免不 tag
 # 状态速查
 
