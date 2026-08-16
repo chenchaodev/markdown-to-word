@@ -1,3 +1,4 @@
+- 2026-08-16:**发版 v0.32.0 完成**(6653713 登记;Release run success;tag v0.32.0 指向 6653713;本地打包验证通过——release\MarkdownToWord-Setup-0.5.1.exe,asar 关键文件确认(code-highlight/render/main/comment/pdf-render/renderer html+css),win-unpacked 启动存活 4 进程)
 - 2026-08-16:**代码块语法高亮写 docx 实测通过**(用户确认;ACCEPTANCE 5 项已勾选,排期功能 1/3 关闭)
 - 2026-08-16:**代码块语法高亮写 docx 完成**(3eb22c7,7 文件 316+/21-):新模块 core/docx/code-highlight.ts(hljs token → TextRun 序列,GitHub Light 色板与 pdf 侧一致,comment 斜体/strong 加粗);renderCode 接入——已知语言走高亮,无语言/未知语言/解析失败(含文本完整性校验)降级等宽文本;嵌套 span 类栈处理 + 实体单遍解码;测试新增 code-highlight 段 5 组断言,basic-render/mermaid 断言更新为高亮拆分形态;39 段 + typecheck/build/smoke 全绿;待实测见 ACCEPTANCE.md
 - 2026-08-16:**待办排期决策**(用户确认):排期 3 项——代码块语法高亮写 docx / i18n / 文档加密;其余候选转「砍」(CSL 参考文献/AI 改写/表格合并单元格/代码高亮主题切换);最近文件延后项作废(批次 11 I1 已实现);ROADMAP「当前待办」同步
