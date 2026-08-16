@@ -104,6 +104,57 @@ export async function run() {
   // 8d-9:行内公式不编号(无 eq-num 包裹在行内公式上)
   console.log("[ok] PDF 公式编号 + 交叉引用:eq-block/锚点/引用文本/label 不渲染/悬空兜底 断言通过");
 
+  // ---------- 公式编号开关关闭(equationNumbering: false,docx/pdf 双格式一致) ----------
+  // 关开关语义:display 公式不编号(原样渲染,无 (N) 文本)、{#eq:label} 独立段原样渲染
+  // (作为普通段落文本,不跳过)、[式]/[公式] 引用保持原文本(不降级「(?)」、不追加警告)。
+  const offWarnings = [];
+  const offDocx = await convert(batch9Md, "docx", {
+    baseDir: FIXTURES_DIR,
+    warnings: offWarnings,
+    equationNumbering: false,
+  });
+  const offDocument = unzipPart(offDocx.buffer, "word/document.xml");
+  // 关开关-1:公式不编号(无 (1)/(2) 静态文本)
+  for (const needle of ["(1)", "(2)"]) {
+    if (offDocument.includes(needle)) throw new Error(`批次9断言失败:关开关后不应出现公式编号(${needle})`);
+  }
+  // 关开关-2:{#eq:label} 段原样渲染(作为普通段落文本,不跳过)
+  if (!offDocument.includes("{#eq:energy}") || !offDocument.includes("{#eq:force}")) {
+    throw new Error("批次9断言失败:关开关后 {#eq:label} 段应原样渲染");
+  }
+  // 关开关-3:引用保持原文本(不编号替换、不降级「(?)」、不追加警告)
+  if (offDocument.includes("式 (1)") || offDocument.includes("式 (?)")) {
+    throw new Error("批次9断言失败:关开关后引用应保持原文本(不编号/不降级)");
+  }
+  if (offWarnings.some((w) => w.includes("label: unknown"))) {
+    throw new Error("批次9断言失败:关开关后不应追加交叉引用警告");
+  }
+  console.log("[ok] docx 公式编号开关关闭:公式不编号/label 段原样/引用保持原文本 断言通过");
+
+  const offPdf = await convert(batch9Md, "pdf", {
+    baseDir: FIXTURES_DIR,
+    title: "批次9验收",
+    warnings: [],
+    katexDir,
+    equationNumbering: false,
+  });
+  // 关开关-4:PDF 无 eq-block/eq-num 结构、无编号文本
+  if (offPdf.html.includes('class="eq-block"') || offPdf.html.includes('class="eq-num"')) {
+    throw new Error("批次9断言失败:关开关后 PDF 不应有 eq-block/eq-num 结构");
+  }
+  if (offPdf.html.includes(">(1)<") || offPdf.html.includes(">(2)<")) {
+    throw new Error("批次9断言失败:关开关后 PDF 不应有公式编号 (1)/(2)");
+  }
+  // 关开关-5:{#eq:label} 段原样渲染(普通段落)
+  if (!offPdf.html.includes("{#eq:energy}") || !offPdf.html.includes("{#eq:force}")) {
+    throw new Error("批次9断言失败:关开关后 PDF 的 {#eq:label} 段应原样渲染");
+  }
+  // 关开关-6:引用保持原文本(不编号替换、不降级「(?)」)
+  if (offPdf.html.includes("式 (1)") || offPdf.html.includes("式 (?)")) {
+    throw new Error("批次9断言失败:关开关后 PDF 引用应保持原文本");
+  }
+  console.log("[ok] PDF 公式编号开关关闭:公式不编号/label 段原样/引用保持原文本 断言通过");
+
   const batch9PdfBin = await htmlToPdf(batch9Pdf.html, batch9Pdf.footerTemplate);
   await saveArtifact("eq-numbering", { docx: batch9Docx.buffer, pdf: batch9PdfBin });
 }

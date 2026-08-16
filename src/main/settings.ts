@@ -42,6 +42,7 @@ const SETTING_KEYS = [
   "typography",
   "breakBeforeH1",
   "toc",
+  "equationNumbering",
   "afterConvert",
   "outputDir",
   "customPresets",
@@ -84,6 +85,8 @@ export function isValidSettings(value: unknown): value is AppSettings {
   if (typeof s.breakBeforeH1 !== "boolean") return false;
   // toc 缺失(旧 settings.json)视为合法,loadSettings 兜底为 true;存在则须合法
   if ("toc" in s && typeof s.toc !== "boolean") return false;
+  // equationNumbering 缺失(旧 settings.json)视为合法,loadSettings 兜底为 true;存在则须合法
+  if ("equationNumbering" in s && typeof s.equationNumbering !== "boolean") return false;
   // outputDir 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "";存在则须合法
   if ("outputDir" in s && !isValidOutputDir(s.outputDir)) return false;
   const ps = s.pageSetup as Record<string, unknown> | undefined;
@@ -115,6 +118,10 @@ export function loadSettings(): AppSettings {
         ...parsed,
         outputDir: isValidOutputDir(parsed.outputDir) ? parsed.outputDir : "",
         toc: typeof parsed.toc === "boolean" ? parsed.toc : DEFAULT_SETTINGS.toc,
+        equationNumbering:
+          typeof parsed.equationNumbering === "boolean"
+            ? parsed.equationNumbering
+            : DEFAULT_SETTINGS.equationNumbering,
         typography: sanitizeTypography(parsed.typography),
         // 批次 11 迭代 3:customPresets 缺失(旧文件)→ [];存在 → 逐条校验
         customPresets: sanitizeCustomPresets(parsed.customPresets),
@@ -167,6 +174,12 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
         break;
       case "toc":
         out.toc = typeof src.toc === "boolean" ? src.toc : DEFAULT_SETTINGS.toc;
+        break;
+      case "equationNumbering":
+        out.equationNumbering =
+          typeof src.equationNumbering === "boolean"
+            ? src.equationNumbering
+            : DEFAULT_SETTINGS.equationNumbering;
         break;
       case "outputDir":
         out.outputDir = isValidOutputDir(src.outputDir) ? src.outputDir : DEFAULT_SETTINGS.outputDir;

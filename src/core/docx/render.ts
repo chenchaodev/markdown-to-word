@@ -88,6 +88,8 @@ export interface RenderOptions {
   headingNumbering?: boolean;
   /** 自动生成目录页(默认开;开时 docx 插入静态目录:打开即见、可点击跳转、无页码、免更新域) */
   toc?: boolean;
+  /** 公式编号开关(默认开;关时 display 公式不编号、{#eq:label} 段原样渲染、引用保持原文本) */
+  equationNumbering?: boolean;
   /** 图/表题注自动编号(默认开,取 typography.captionNumbering;显式传值优先) */
   captionNumbering?: boolean;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
@@ -108,6 +110,8 @@ export interface Ctx {
   captionNumbering?: boolean;
   /** 自动生成目录页(默认开) */
   toc: boolean;
+  /** 公式编号开关(默认开;关时公式原样渲染、label 段原样渲染、引用保持原文本) */
+  equationNumbering: boolean;
   /** 脚注定义索引:identifier → definition 节点(renderDocx 预扫) */
   footnoteDefinitions: Map<string, FootnoteDefinition>;
   /** 脚注收集器:引用渲染时写入,id 字符串从 "1" 起 */
@@ -228,6 +232,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     headingNumbering: options.headingNumbering ?? typography.headingNumbering,
     captionNumbering: options.captionNumbering ?? typography.captionNumbering,
     toc: options.toc ?? true,
+    equationNumbering: options.equationNumbering ?? true,
     footnoteDefinitions: new Map(),
     footnotes: {},
     footnoteNextId: { value: 1 },
@@ -273,8 +278,13 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
       ctx.headingLabels.set(secLabel, { chapterText, slug: id });
     }
   }
-  // 预扫公式编号上下文(9d:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表)
-  const equations = buildEquationContext(ast, ctx);
+  // 预扫公式编号上下文(9d:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表)。
+  // 公式编号开关关闭时跳过预扫,使用空 context:公式原样渲染(无编号)、label 段按普通
+  // 段落原样渲染、引用查表为空(行内引用保持原文本,见 pushRuns 的 equationNumbering 门控)
+  const equations: EquationContext =
+    ctx.equationNumbering === false
+      ? { indexByNode: new Map(), labelIndex: new Map(), skipSet: new Set() }
+      : buildEquationContext(ast, ctx);
   // label 查表挂到 ctx(行内链接渲染处 pushRuns 经 ctx 访问)
   ctx.equationLabels = equations.labelIndex;
   if (ctx.toc) {
@@ -824,8 +834,10 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       const url = node.url;
       // 公式交叉引用(9d):[式](#eq:label) / [公式](#eq:label) → 文本替换为
       // 「式 (N)」/「公式 (N)」并跳转公式书签 eq-label;未知 label → 普通文本
-      // 「式 (?)」无链接 + 警告;其他文本的 #eq: 链接保持原文本跳转公式书签
-      const eqMatch = /^#eq:([\w-]+)$/.exec(url);
+      // 「式 (?)」无链接 + 警告;其他文本的 #eq: 链接保持原文本跳转公式书签。
+      // 公式编号开关关闭时整个分支不生效:按普通 # 锚点链接渲染(保持原文本,
+      // 不降级「(?)」、不追加警告,与 pdf 侧不注册 eq_numbering 规则行为一致)
+      const eqMatch = ctx.equationNumbering === false ? null : /^#eq:([\w-]+)$/.exec(url);
       if (eqMatch) {
         const label = eqMatch[1];
         const n = ctx.equationLabels?.get(label);

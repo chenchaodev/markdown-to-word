@@ -51,6 +51,8 @@ export interface AppSettings {
   breakBeforeH1: boolean;
   /** 自动生成目录页(默认开;docx 静态目录 / PDF 目录同开关) */
   toc: boolean;
+  /** 公式编号开关(默认开;关时公式不编号、label 段原样渲染、引用保持原文本,docx/pdf 一致) */
+  equationNumbering: boolean;
   /** 导出后行为(默认不自动执行) */
   afterConvert: AfterConvertAction;
   /** 输出目录:空串 = 输出到源文件同目录(默认);非空 = 固定输出目录(须绝对路径) */
@@ -76,6 +78,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   typography: { ...DEFAULT_TYPOGRAPHY },
   breakBeforeH1: false,
   toc: true,
+  equationNumbering: true,
   afterConvert: "none",
   outputDir: "",
   customPresets: [],

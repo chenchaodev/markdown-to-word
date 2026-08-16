@@ -48,6 +48,8 @@ export interface ConvertContext {
   breakBeforeH1?: boolean;
   /** 自动生成目录页(默认开;docx 静态目录 / PDF 目录同开关) */
   toc?: boolean;
+  /** 公式编号开关(默认开;docx/pdf 双格式同开关,关时公式不编号、label 段原样渲染、引用保持原文本) */
+  equationNumbering?: boolean;
   /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
   katexDir?: string;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
@@ -95,6 +97,7 @@ export async function convert(
         typography: context.typography,
         breakBeforeH1: context.breakBeforeH1,
         toc: context.toc,
+        equationNumbering: context.equationNumbering,
         katexDir: context.katexDir,
         mermaidResolver: context.mermaidResolver,
       }),
@@ -112,6 +115,7 @@ export async function convert(
       typography: context.typography,
       breakBeforeH1: context.breakBeforeH1,
       toc: context.toc,
+      equationNumbering: context.equationNumbering,
       title: context.title,
       mermaidResolver: context.mermaidResolver,
     }),

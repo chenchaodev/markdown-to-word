@@ -44,6 +44,7 @@ import {
   captionNumberingInput,
   completeDialogPromptInput,
   completeDialogSuppressInput,
+  equationNumberingInput,
   firstLineIndentInput,
   fontAsciiError,
   fontAsciiInput,
@@ -144,6 +145,7 @@ function applySettingsToControls(): void {
   );
   breakBeforeH1Input.checked = v.breakBeforeH1;
   tocInput.checked = v.toc;
+  equationNumberingInput.checked = v.equationNumbering;
   afterConvertInputs.forEach(
     (input) => (input.checked = input.value === v.afterConvert),
   );
@@ -406,6 +408,12 @@ export function bindSettingsEvents(): void {
     if (state.hydratingSettings) return;
     state.settings.toc = tocInput.checked;
     persistSettings({ toc: state.settings.toc });
+  });
+
+  equationNumberingInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.equationNumbering = equationNumberingInput.checked;
+    persistSettings({ equationNumbering: state.settings.equationNumbering });
   });
 
   afterConvertInputs.forEach((input) => {

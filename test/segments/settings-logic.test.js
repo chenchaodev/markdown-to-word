@@ -294,7 +294,13 @@ export async function run() {
   assert(cv.bodySizePt === "14" && cv.lineSpacing === "1.25", "字号/行距转字符串");
   assert(cv.alignJustify === true, "align=justify → checked=true");
   assert(cv.afterConvert === "open" && cv.format === "pdf", "afterConvert/format 映射");
+  assert(cv.equationNumbering === true, "equationNumbering 映射(默认 true)");
   assert(cv.outputDirText === "C:\\out", "非空输出目录原样");
+  const eqOffCv = settingsToControlValues({
+    ...DEFAULT_SETTINGS,
+    equationNumbering: false,
+  });
+  assert(eqOffCv.equationNumbering === false, "equationNumbering=false 应映射为 false");
   const leftCv = settingsToControlValues({
     ...DEFAULT_SETTINGS,
     typography: { ...DEFAULT_SETTINGS.typography, align: "left" },

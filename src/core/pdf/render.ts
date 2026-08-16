@@ -51,6 +51,8 @@ export interface RenderPdfHtmlOptions {
   captionNumbering?: boolean;
   /** 自动生成目录页(默认开;开时正文含标题则插入静态目录) */
   toc?: boolean;
+  /** 公式编号开关(默认开;关时不注册 eq_numbering 规则——公式/label 段/引用全部原样) */
+  equationNumbering?: boolean;
   /** KaTeX 资源目录(绝对路径,含 katex.min.css 与 fonts/ 子目录,即
    *  node_modules/katex/dist;传入则 katex.min.css 内联进模板并改写字体
    *  为 file:// 绝对路径,公式字体样式生效;不传则公式渲染为 KaTeX HTML
@@ -84,6 +86,7 @@ function buildMarkdownIt(
   hasMermaidResolver: boolean,
   headingNumbering: boolean,
   captionNumbering: boolean,
+  equationNumbering: boolean,
 ): MarkdownIt {
   const md = new MarkdownIt({
     html: true,
@@ -119,7 +122,10 @@ function buildMarkdownIt(
   md.use(katex);
   overrideHtmlRules(md);
   overrideCaptionRule(md);
-  overrideEquationRule(md);
+  // 公式编号开关关闭时不注册 eq_numbering 规则:display 公式原样渲染(无 eq-block/
+  // eq-num 包裹)、{#eq:label} 段按普通段落渲染、[式](#eq:label) 引用保持原文本
+  // (markdown-it 默认行为,与 docx 侧空 context 语义一致)
+  if (equationNumbering) overrideEquationRule(md);
   overrideXrefRule(md, { headingNumbering, captionNumbering });
   return md;
 }
@@ -680,7 +686,13 @@ export async function renderPdfHtml(
   // 两个编号开关提前计算:core 规则(xref_recognize)与模板 CSS 共用同一取值
   const headingNumbering = options.headingNumbering ?? typography.headingNumbering;
   const captionNumbering = options.captionNumbering ?? typography.captionNumbering;
-  const md = buildMarkdownIt(options.mermaidResolver !== undefined, headingNumbering, captionNumbering);
+  const equationNumbering = options.equationNumbering ?? true;
+  const md = buildMarkdownIt(
+    options.mermaidResolver !== undefined,
+    headingNumbering,
+    captionNumbering,
+    equationNumbering,
+  );
   const localImageSrcs: string[] = [];
   overrideImageRule(md, options.baseDir, localImageSrcs);
   // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一

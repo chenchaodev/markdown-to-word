@@ -198,6 +198,7 @@ export function buildConvertContext(options: BuildConvertContextOptions): CoreCo
     typography: options.settings.typography,
     breakBeforeH1: options.settings.breakBeforeH1,
     toc: options.settings.toc,
+    equationNumbering: options.settings.equationNumbering,
     imageResolver: options.imageResolver,
     katexDir: options.katexDir,
     mermaidResolver: options.mermaidResolver,

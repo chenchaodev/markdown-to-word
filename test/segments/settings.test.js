@@ -7,8 +7,8 @@
  * - sanitizeTypography:bodySizePt 8-24、lineSpacing 1.0-2.5 范围校验,越界 → DEFAULT_TYPOGRAPHY
  *   值;字体须非空字符串、布尔字段须 boolean、align 枚举(left/justify);整块兜底,
  *   始终返回合法完整对象
- * - sanitizePatch:仅 SETTING_KEYS 9 键(version/format/pageSetup/typography/breakBeforeH1/
- *   toc/afterConvert/outputDir/customPresets)白名单,未知键过滤;非法值回退默认
+ * - sanitizePatch:仅 SETTING_KEYS 10 键(version/format/pageSetup/typography/breakBeforeH1/
+ *   toc/equationNumbering/afterConvert/outputDir/customPresets)白名单,未知键过滤;非法值回退默认
  * - sanitizeCustomPresets(批次 11 迭代 3):非数组 → [];条目须对象且 name 非空;
  *   typography 逐字段钳制、pageSetup 非法对象整条丢弃;同名去重(保留先出现);
  *   截断 MAX_CUSTOM_PRESETS=10
@@ -109,16 +109,17 @@ export async function run() {
     assert(r7.afterConvert === "none", "afterConvert 枚举外值应回退默认 none");
     assert(r7.version === 1, "version 非 1 应回退 1");
     assert(r7.breakBeforeH1 === false, "breakBeforeH1 非布尔应回退默认");
-    const r8 = await mod.updateSettings({ format: "pdf", afterConvert: "open", breakBeforeH1: true, toc: false });
+    const r8 = await mod.updateSettings({ format: "pdf", afterConvert: "open", breakBeforeH1: true, toc: false, equationNumbering: false });
     assert(r8.format === "pdf" && r8.afterConvert === "open", "合法枚举应保留");
     assert(r8.breakBeforeH1 === true && r8.toc === false, "合法布尔应保留");
+    assert(r8.equationNumbering === false, "合法布尔(equationNumbering)应保留");
 
     // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 9 键核对 ----
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
-    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "afterConvert", "outputDir", "customPresets"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 9 键");
+    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "equationNumbering", "afterConvert", "outputDir", "customPresets"];
+    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 10 键");
     for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));
@@ -180,6 +181,10 @@ export async function run() {
     delete legacySettings.toc;
     delete legacySettings.outputDir;
     assert(mod.isValidSettings(legacySettings) === true, "缺 toc/outputDir 的旧文件应通过形状校验");
+    // equationNumbering 缺失(旧文件)视为合法,存在则须为布尔
+    const legacyNoEq = { ...validSettings };
+    delete legacyNoEq.equationNumbering;
+    assert(mod.isValidSettings(legacyNoEq) === true, "缺 equationNumbering 的旧文件应通过形状校验");
     // 任一字段非法 → false(整文件回退语义)
     const invalidCases = [
       [{ ...validSettings, pageSetup: { ...validSettings.pageSetup, marginTop: "abc" } }, "marginTop 非有限数"],
@@ -187,6 +192,7 @@ export async function run() {
       [{ ...validSettings, format: "html" }, "format 枚举外值"],
       [{ ...validSettings, version: 2 }, "version 非 1"],
       [{ ...validSettings, breakBeforeH1: "yes" }, "breakBeforeH1 非布尔"],
+      [{ ...validSettings, equationNumbering: "yes" }, "equationNumbering 非布尔"],
       [{ ...validSettings, pageSetup: null }, "pageSetup 缺失"],
       [{ ...validSettings, afterConvert: "email" }, "afterConvert 枚举外值"],
     ];
@@ -214,6 +220,7 @@ export async function run() {
       "旧文件边距应保留",
     );
     assert(s3.toc === true, "旧文件缺 toc → 兜底 true");
+    assert(s3.equationNumbering === true, "旧文件缺 equationNumbering → 兜底 true");
     assert(s3.outputDir === "", "旧文件缺 outputDir → 兜底空串");
     assert(
       JSON.stringify(s3.customPresets) === "[]",
@@ -229,7 +236,7 @@ export async function run() {
     await fs.writeFile(
       settingsFile,
       JSON.stringify({
-        version: 1, format: "pdf", afterConvert: "open", breakBeforeH1: true, toc: false, outputDir: "C:\\tmp\\out",
+        version: 1, format: "pdf", afterConvert: "open", breakBeforeH1: true, toc: false, equationNumbering: false, outputDir: "C:\\tmp\\out",
         pageSetup: { paper: "Letter", orientation: "landscape", marginTop: 0, marginBottom: 1000, marginLeft: 100, marginRight: 200 },
         typography: { fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 14, lineSpacing: 2.0, firstLineIndent: false, align: "left", headingNumbering: false, captionNumbering: false },
         customPresets: [
@@ -241,6 +248,7 @@ export async function run() {
     const m4 = await freshModule();
     const s4 = m4.loadSettings();
     assert(s4.format === "pdf" && s4.toc === false, "合法文件字段应原样读取");
+    assert(s4.equationNumbering === false, "合法文件 equationNumbering 应原样读取");
     assert(s4.outputDir === "C:\\tmp\\out", "绝对路径 outputDir 应保留");
     assert(s4.pageSetup.marginTop === 0 && s4.pageSetup.marginBottom === 1000, "合法文件 0/1000 边界边距应保留");
     assert(
