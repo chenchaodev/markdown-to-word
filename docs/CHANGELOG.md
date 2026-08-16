@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.30.0] - 2026-08-16
+- 界面配置区重构(d225a76;typecheck/lint/build/37 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
+  - 配置收敛为 1 个折叠面板「设置」+ 内部 4 子组(模板/页面/排版/导出,组头 + 分隔线,不嵌套折叠)——界面只突出主流程(文件区 → 结果 → 最近转换 → 底部操作栏)
+  - 模板预设从常显卡片收进「模板」子组(一次配置后不再动,不常驻占位);两行结构保留(主行选择+另存为/删除,辅助行导入/导出预设、导入/清除 CSS + hint,ghost 弱化)
+  - 最近转换限高 240px + 滚动条(历史再多不撑高界面)
+  - 语义归位:公式编号移入排版(与章节/题注编号聚合为自动编号组);导出后/完成弹窗提示/输出目录独立成「导出」组(页面设置回归纯页面语义)
+  - 标题区去副标题;panelOpen 默认折叠(已记忆展开态优先恢复,存量用户不受影响)
+  - typographyPanel 合并删除(dom/recent-files 引用清理;panelOpen.typography 兼容保留镜像同值)
+- 文档:STATUS/ACCEPTANCE 登记
+
 ## [0.29.0] - 2026-08-16
 - 公式编号开关(66681a9;typecheck/lint/build/36 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
   - AppSettings 加 equationNumbering(默认 true);关闭时 docx/pdf 一致:公式不编号、{#eq:label} 段隐藏(语法标记)、[式](#eq:label) 引用保持原文本(不降级不警告)
