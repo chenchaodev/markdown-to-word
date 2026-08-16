@@ -1,3 +1,5 @@
+- 2026-08-16:**模板行布局重构实测通过**(d2147be;窄窗口辅助行换行/主行宽松/ghost 弱化/hint 悬浮均正常)
+- 2026-08-16:**模板行 hint 修复实测通过**(5466f83;单行省略 + 悬浮全文正常)
 - 2026-08-16:**模板行 hint 排版修复完成**(5466f83,3 文件 8 行):hint 单行省略 + title 悬浮全文(信息保留 + 行高固定);待实测
 - 2026-08-16:**模板导入·CSS 覆盖 pdf 路线实测通过**(用户确认功能全部正常;ACCEPTANCE 4 项已勾选)
 - 2026-08-16:**模板导入·CSS 覆盖 pdf 路线完成**(32235a7,15 文件 223+/7-):AppSettings 加 pdfCss(默认空);pdf 渲染追加到默认 CSS 之后(同一 style 内后声明覆盖);main 侧 import:pdf-css IPC(dialog + fs + 100KB 上限 + 取消 canceled);renderer 模板预设行加「导入 CSS…/清除」+ 状态显示;docx 路线不消费 CSS;37 段(新增 pdf-css.test.js)+ smoke 全绿;待实测见 ACCEPTANCE.md

@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [0.29.0] - 2026-08-16
+- 公式编号开关(66681a9;typecheck/lint/build/36 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
+  - AppSettings 加 equationNumbering(默认 true);关闭时 docx/pdf 一致:公式不编号、{#eq:label} 段隐藏(语法标记)、[式](#eq:label) 引用保持原文本(不降级不警告)
+  - 设置面板「公式编号」checkbox + 全链路透传(settings → convert context → docx/pdf 渲染)
+  - 实测修复(f9b7d09):关编号时 label 段原样显示 → 隐藏;「清空最近」不生效 → saveUiState 空数组=清空语义(新增 test/main/ui-state.test.js)
+  - 实测修复(308ebc4):转换完成弹窗提示 checkbox 语义反转(勾选=提示=suppress=false,回显与事件取反)
+- PDF 自定义 CSS 模板导入(32235a7;37 段新增 pdf-css.test.js + smoke 全绿,用户 GUI 实测通过):
+  - AppSettings 加 pdfCss(默认空);pdf 渲染追加到默认样式之后(同一 style 内后声明覆盖);docx 路线不消费 CSS
+  - main 侧 import:pdf-css IPC(dialog 选文件 + fs 读 + 100KB 上限 + 取消 canceled);renderer 模板行「导入 CSS…/清除」+ 状态显示
+  - 测试样例 test/fixtures/pdf-css-sample.css(ccf5385)
+- 模板行 UI 优化(5466f83 + d2147be;用户 GUI 实测通过):
+  - hint 单行省略 + title 悬浮全文(信息保留 + 行高固定)
+  - 两行布局:主行(模板选择 + 另存为/删除)+ 辅助行(导入/导出预设、导入/清除 CSS + hint,ghost 弱化 + 窄窗口 wrap)
+- 文档:STATUS/ACCEPTANCE 登记
+
 ## [0.28.0] - 2026-08-15
 - 批次 14「测试补齐」(43452ca + 9dd272e;typecheck/lint/build/36 段/smoke 全绿,纯测试补齐无 GUI 实测项,验收见 ACCEPTANCE.md 批次 14 节):
   - **core**:formula 非 ∑ munderover 回落 + moText 文本化(G1)/utils 新建段 decodeNumeric 越界码点 + escapeRegExp(G5)/merge 空文件跳过/cross-ref chapter null + 空题注文本/eq-numbering 孤立 label 警告/basic-render warnings ?? [] 兜底 + 脚注定义内 blockquote/thematicBreak(G8)
