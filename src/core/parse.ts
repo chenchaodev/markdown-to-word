@@ -1,6 +1,7 @@
 import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { remarkComment } from "./comment.js";
 import type { Node, Root, Heading } from "mdast";
 import { uniqueSlug } from "./slug.js";
 import { collectPlainText as collectText } from "./mdast-utils.js";
@@ -23,14 +24,15 @@ declare module "mdast" {
 const SEC_LABEL_RE = /\s*\{#sec:([\w-]+)\}$/;
 
 /**
- * 用 remark + remark-gfm + remark-math 将 markdown 解析为 mdast AST。
+ * 用 remark + remark-gfm + remark-math + remark-comment 将 markdown 解析为 mdast AST。
  * GFM 提供:表格 / 删除线 / 任务列表(按普通列表处理)。
  * remark-math(批次 6)提供:inlineMath($..$)与 math(display,$$..$$ / ```math)节点。
+ * remark-comment(批次 11)提供:comment 节点([锚定文本]{批注=内容},见 comment.ts)。
  * 解析后为所有标题生成唯一 id(挂 node.data.id):
  * 二期公共底座,TOC / docx 书签 / 内部锚点链接共用。
  */
 export function parseMarkdown(md: string): Root {
-  const ast = remark().use(remarkGfm).use(remarkMath).parse(md);
+  const ast = remark().use(remarkGfm).use(remarkMath).use(remarkComment).parse(md);
   const seen = new Map<string, number>();
   walkHeadings(ast, seen);
   return ast;

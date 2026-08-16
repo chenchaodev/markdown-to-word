@@ -3,6 +3,9 @@ import {
   BookmarkEnd,
   BookmarkStart,
   BorderStyle,
+  CommentRangeEnd,
+  CommentRangeStart,
+  CommentReference,
   Document,
   ExternalHyperlink,
   Footer,
@@ -126,6 +129,10 @@ export interface Ctx {
   headingLabels: Map<string, HeadingLabelInfo>;
   /** docx 书签 linkId 自增计数器(逐文档新建,保证文档内 bookmarkStart/End id 唯一) */
   bookmarkNextId: { value: number };
+  /** 批注 id 自增计数器(逐文档新建,保证文档内 commentRangeStart/End/Reference id 唯一) */
+  commentNextId: { value: number };
+  /** 批注收集器:引用渲染时写入,id 字符串从 "1" 起(与脚注同模式) */
+  comments: Record<string, { children: Paragraph[] }>;
   /** Mermaid 渲染回调(mermaid 围栏代码块 → 内嵌 PNG 图片;缺失时按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
 }
@@ -237,6 +244,8 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     footnotes: {},
     footnoteNextId: { value: 1 },
     bookmarkNextId: { value: 1 },
+    commentNextId: { value: 1 },
+    comments: {},
     captionLabels: new Map(),
     headingLabels: new Map(),
     mermaidResolver: options.mermaidResolver,
@@ -354,6 +363,20 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     numbering: { config: [...numberingOptions().config, ...headingNumberingOptions().config] },
     // 空脚注表不生成 footnotes part(避免空 part 导致打开异常)
     footnotes: Object.keys(ctx.footnotes).length > 0 ? ctx.footnotes : undefined,
+    // 批注容器(批次 11):渲染期收集的批注按 id 组装;author 固定
+    // "markdown-to-word",date 缺省由库取当前时间(库对空容器同样生成
+    // comments.xml,传 undefined 与空容器等价,此处仅非空时显式传入;
+    // comments 选项收 ICommentOptions 普通对象,非 Comment 实例)
+    comments:
+      Object.keys(ctx.comments).length > 0
+        ? {
+            children: Object.entries(ctx.comments).map(([id, c]) => ({
+              id: Number(id),
+              author: "markdown-to-word",
+              children: c.children,
+            })),
+          }
+        : undefined,
     sections: [
       {
         properties: { page: { size, margin } },
@@ -779,10 +802,20 @@ interface RunStyle {
   strike?: boolean;
 }
 
-/** 段落内可出现的 docx 子元素:文本 run、行内图片、脚注引用、超链接或公式
- *  (d.ts 实证:Math 属 ParagraphChild,可与 TextRun 同段混排)。
+/** 段落内可出现的 docx 子元素:文本 run、行内图片、脚注引用、超链接、公式或
+ *  批注范围标记(d.ts 实证:Math 与 CommentRangeStart/End/Reference 均属
+ *  ParagraphChild,可与 TextRun 同段混排)。
  *  export:inline-html.ts 的 renderBodyParagraph 参数类型引用(R10-6 拆分)。 */
-export type InlineChild = TextRun | ImageRun | FootnoteReferenceRun | InternalHyperlink | ExternalHyperlink | DocxMath;
+export type InlineChild =
+  | TextRun
+  | ImageRun
+  | FootnoteReferenceRun
+  | InternalHyperlink
+  | ExternalHyperlink
+  | DocxMath
+  | CommentRangeStart
+  | CommentRangeEnd
+  | CommentReference;
 
 /** 行内节点 → 元素数组;样式沿父子链累积传递。
  * 标题等场景同样经 pushRuns 渲染(标题内图片/脚注引用按常规渲染,占位与警告语义与正文一致)。 */
@@ -935,6 +968,22 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
         ctx.footnotes[String(id)] = { children: await renderFootnoteDefinition(def, ctx) };
         runs.push(new FootnoteReferenceRun(id));
       }
+      break;
+    }
+    case "comment": {
+      // 批注(批次 11):[锚定文本]{批注=内容} → commentRangeStart + 锚定文本
+      // runs(递归渲染 anchor 行内,继承当前样式)+ commentRangeEnd +
+      // commentReference(必须包在 TextRun 内);批注内容收集为独立段落
+      // (author 固定 "markdown-to-word",date 缺省由库取当前时间;内容不继承
+      // 锚定处样式,批注气泡独立排版)
+      const id = ctx.commentNextId.value++;
+      runs.push(new CommentRangeStart(id));
+      for (const child of node.anchor) await pushRuns(runs, child, ctx, style);
+      runs.push(new CommentRangeEnd(id));
+      runs.push(new TextRun({ children: [new CommentReference(id)] }));
+      ctx.comments[String(id)] = {
+        children: [new Paragraph({ children: await renderPhrasing(node.content, ctx) })],
+      };
       break;
     }
     case "html":

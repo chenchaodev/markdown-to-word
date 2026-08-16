@@ -6,6 +6,7 @@
 | 文件 | 功能/场景 | 对应测试段 |
 | --- | --- | --- |
 | basic-render.md | 基础渲染段:全要素中英混排样例 → docx + pdf。 | test/segments/basic-render.test.js |
+| comments.md | 批注验收(批次 11):行内 `[锚定文本]{批注=内容}` → docx 批注。 | test/segments/comments.test.js |
 | cover.md | 封面页测试(双格式,新段): | test/segments/cover.test.js |
 | cross-ref.md | 题注/章节交叉引用测试(批次 10 功能 2,docx + pdf 双格式): | test/segments/cross-ref.test.js |
 | eq-numbering.md | 公式编号 + 交叉引用测试(原 make-batch4-sample.mjs 段 10): | test/segments/eq-numbering.test.js |
