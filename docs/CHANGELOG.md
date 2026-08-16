@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [1.0.0] - 2026-08-16
+- **首个正式版;版本号三统一**(package.json / git tag v1.0.0 / CHANGELOG 同号,AGENTS.md 规则同步;0.32.0 及以前为迭代序列与发布号解耦的历史)
+- i18n 界面多语言(218b183;typecheck/lint/build/40 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
+  - 新模块 core/i18n.ts:zh/en 字典 + t() 参数插值 + applyStaticTexts(data-i18n 系列属性),main/renderer 共享,缺失 key 回退 key 本身
+  - AppSettings 加 language(默认 zh):白名单/形状校验/兜底/sanitize 全链路透传,旧 settings.json 兼容
+  - 设置面板「界面语言」radio 即时切换(静态文案重刷 + 动态区域显式重渲染);main 菜单/对话框标题/预览错误页/关于弹窗按语言输出
+  - 测试:新增 i18n 段 + settings 段更新(12 键白名单)
+- 界面版本信息(71eda87):标题区显示版本号(main IPC app:version,与「关于」对话框同源;失败静默)
+- 文档加密决策不做(adad6b8 调研 + db7459c 决策):docx 库不支持加密(非 OOXML 标准),替代需引入 officecrypto-tool 新依赖;pdf 侧需 qpdf 原生二进制分发;ROADMAP 转「砍」
+- 发布文档更新(15ee2d2):README 功能特性补 7 条 + 测试段数 36→40;USER-GUIDE 设置面板结构/批注语法/公式编号开关;docs/README archive 登记表补齐
+
 ## [0.32.0] - 2026-08-16
 - 代码块语法高亮写 docx(3eb22c7;typecheck/lint/build/39 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
   - 新模块 core/docx/code-highlight.ts:hljs token → TextRun 序列,GitHub Light 色板与 pdf 侧 template.ts 一致(comment 斜体/strong 加粗)
