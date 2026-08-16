@@ -67,6 +67,16 @@ body {
   letter-spacing: 0.2px;
 }
 
+/* 版本号(发版 1.0.0:标题右侧小字,悬停显示完整版本) */
+.version {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary, #888);
+  vertical-align: 2px;
+  user-select: text;
+}
+
 /* 文件选择区 */
 .file-area {
   flex: 1;

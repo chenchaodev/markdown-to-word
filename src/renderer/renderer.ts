@@ -132,6 +132,8 @@ declare global {
       settingsGet: () => Promise<AppSettings>;
       /** 局部更新设置并持久化,返回合并后的完整设置。 */
       settingsSet: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+      /** 应用版本号(标题区显示,与「关于」对话框同源)。 */
+      getVersion: () => Promise<string>;
       /** 读取 UI 状态(最近文件/会话文件/记忆目录/窗口位置/面板展开态)。 */
       uiStateGet: () => Promise<UiState>;
       /** 局部更新 UI 状态并持久化,返回合并后的完整状态。 */
@@ -691,3 +693,10 @@ void initUiStateRestore();
 // 批次 15(R5):转换成功后刷新最近区块的回调接线(convert-flow 经 state 调用,
 // 不再 import recent-files,打破 recent-files ↔ convert-flow 的 ESM 环)
 state.recentRefreshHandler = refreshRecentFiles;
+// 发版 1.0.0:标题区版本号(失败静默,不阻塞界面)
+void window.api.getVersion().then((version) => {
+  const el = document.getElementById("appVersion");
+  if (!el) return;
+  el.textContent = `v${version}`;
+  el.title = `Markdown 转换工具 v${version}`;
+});

@@ -393,6 +393,8 @@ function registerIpc(): void {
     );
   });
   ipcMain.handle("settings:get", (): AppSettings => loadSettings());
+  // 发版 1.0.0:界面版本信息(renderer header 显示;与「关于」对话框同源 app.getVersion)
+  ipcMain.handle("app:version", (): string => app.getVersion());
 
   ipcMain.handle("settings:set", (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
     return updateSettings(patch);

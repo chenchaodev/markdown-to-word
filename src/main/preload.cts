@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld("api", {
   },
   settingsGet: (): Promise<AppSettings> => ipcRenderer.invoke("settings:get"),
   settingsSet: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke("settings:set", patch),
+  /** 发版 1.0.0:应用版本号(header 显示,与「关于」对话框同源)。 */
+  getVersion: (): Promise<string> => ipcRenderer.invoke("app:version"),
   /** 批次 13:导入模板预设 JSON(选文件 → 校验合并 → 持久化);取消 → { ok:true, canceled:true } */
   importPresets: (): Promise<ImportPresetsResult> => ipcRenderer.invoke("presets:import"),
   /** 批次 13:导出全部自定义预设为 JSON(保存对话框);无预设 → { ok:false, error } */
