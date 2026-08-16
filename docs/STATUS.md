@@ -1,3 +1,4 @@
+- 2026-08-16:**模板导入·CSS 覆盖 pdf 路线完成**(32235a7,15 文件 223+/7-):AppSettings 加 pdfCss(默认空);pdf 渲染追加到默认 CSS 之后(同一 style 内后声明覆盖);main 侧 import:pdf-css IPC(dialog + fs + 100KB 上限 + 取消 canceled);renderer 模板预设行加「导入 CSS…/清除」+ 状态显示;docx 路线不消费 CSS;37 段(新增 pdf-css.test.js)+ smoke 全绿;待实测见 ACCEPTANCE.md
 - 2026-08-16:**模板导入·CSS 覆盖 pdf 路线进行中**(方案见 archive/20260814-201622:buildTemplate 的 style 后追加用户 CSS 后加载覆盖;防破坏:用户样式限定配色/字体类,分页规则风险文档说明)
 - 2026-08-16:**弹窗提示修复复测通过**(308ebc4):勾选=提示/不勾选=不提示/弹窗内「不再提示」联动一致,验收关闭
 - 2026-08-16:**弹窗提示 bug 修复**(308ebc4,1 文件 4+/2-):根因——设置面板「转换完成弹窗提示」checkbox 语义为「勾选=提示=suppress=false」,但代码直接传 checked 值(勾选→suppress=true→不提示,行为反);修复 syncSuppressCompleteDialog 回显取反 + change 事件取反;弹窗内「不再提示」checkbox 语义一致无需改;36 段 + smoke 全绿;待复测
