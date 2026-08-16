@@ -1,4 +1,4 @@
-- 2026-08-16:**代码块语法高亮写 docx 迭代进行中**(排期功能 1/3):docx 侧 renderCode 纯文本 → hljs token 着色(GitHub Light 色板与 pdf 侧一致);新模块 core/docx/code-highlight.ts + 测试段;basic-render 代码块断言同步更新;验收见 ACCEPTANCE.md
+- 2026-08-16:**代码块语法高亮写 docx 完成**(3eb22c7,7 文件 316+/21-):新模块 core/docx/code-highlight.ts(hljs token → TextRun 序列,GitHub Light 色板与 pdf 侧一致,comment 斜体/strong 加粗);renderCode 接入——已知语言走高亮,无语言/未知语言/解析失败(含文本完整性校验)降级等宽文本;嵌套 span 类栈处理 + 实体单遍解码;测试新增 code-highlight 段 5 组断言,basic-render/mermaid 断言更新为高亮拆分形态;39 段 + typecheck/build/smoke 全绿;待实测见 ACCEPTANCE.md
 - 2026-08-16:**待办排期决策**(用户确认):排期 3 项——代码块语法高亮写 docx / i18n / 文档加密;其余候选转「砍」(CSL 参考文献/AI 改写/表格合并单元格/代码高亮主题切换);最近文件延后项作废(批次 11 I1 已实现);ROADMAP「当前待办」同步
 - 2026-08-16:**发版 v0.31.0 完成**(63c550b 登记 + 2478744 workflow 修复;Release run success,release notes 从 CHANGELOG 提取验证通过——c346c88 修复生效;tag v0.31.0 指向 2478744)
 - 2026-08-16:**WPS 兼容矩阵实测通过**(用户确认 Word/WPS 双实测全部通过;ACCEPTANCE 4 项已勾选;矩阵状态列待用户回填或按通过处理)
