@@ -140,6 +140,8 @@ function applySettingsToControls(): void {
     matchedPresetId,
   );
   templatePresetHint.textContent = hint;
+  // 单行省略时完整文案经 title 悬浮可见(与 textContent 同步)
+  templatePresetHint.title = hint;
   templatePresetHint.classList.toggle("template-hint--custom", isCustom);
   // 批次 11 迭代 3:仅自定义预设可删(选中项以 custom: 前缀标识)
   presetDeleteBtn.classList.toggle(

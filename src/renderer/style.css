@@ -605,11 +605,15 @@ body {
   flex: none;
 }
 
-/* hint 复用 settings-note 文字样式,但行内布局不保留默认外边距 */
+/* hint 复用 settings-note 文字样式,但行内布局不保留默认外边距;
+   单行省略:长文案(如模板说明)不换行撑高整行,完整文字经 title 悬浮可见 */
 .settings-row .settings-note {
   margin: 0;
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 批次 11 迭代 3:模板行按钮(另存为/删除)与 select 同排,不挤压 hint */
