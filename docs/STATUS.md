@@ -1,3 +1,4 @@
+- 2026-08-16:**弹窗提示修复复测通过**(308ebc4):勾选=提示/不勾选=不提示/弹窗内「不再提示」联动一致,验收关闭
 - 2026-08-16:**弹窗提示 bug 修复**(308ebc4,1 文件 4+/2-):根因——设置面板「转换完成弹窗提示」checkbox 语义为「勾选=提示=suppress=false」,但代码直接传 checked 值(勾选→suppress=true→不提示,行为反);修复 syncSuppressCompleteDialog 回显取反 + change 事件取反;弹窗内「不再提示」checkbox 语义一致无需改;36 段 + smoke 全绿;待复测
 - 2026-08-16:**实测修复 2 项**(f9b7d09,6 文件 75+/40-):①关公式编号时 {#eq:label} 段仍隐藏(语法标记不显示,docx skipSet/pdf hidden,不编号不登记不警告);②「清空最近」不生效——根因 saveUiState recentFiles 追加合并语义吞掉空数组,改空数组=清空(替换)、非空=追加合并;新增 test/main/ui-state.test.js 清空断言;36 段 + smoke 全绿;待复测
 - 2026-08-16:**公式编号开关完成**(66681a9,13 文件 140+/12-):AppSettings 加 equationNumbering(默认 true);关时 docx/pdf 双格式一致——公式不编号、{#eq:label} 段原样渲染、引用保持原文本(不降级不警告);全链路透传(settings 白名单/校验/兜底/sanitize → buildConvertContext → renderDocx/renderPdfHtml)+ 设置面板 checkbox;36 段 + smoke 全绿;待实测见 ACCEPTANCE.md
