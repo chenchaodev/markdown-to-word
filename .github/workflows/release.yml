@@ -37,9 +37,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 自动生成 Release(notes 取自 tag 提交)并上传安装包与更新元数据
+      # 自动生成 Release 并上传安装包与更新元数据。
+      # notes 取自 docs/CHANGELOG.md 最新版本条目(发版时人工整理的功能汇总,准确反映本次变更);
+      # 提取为空(未写 CHANGELOG)时回退 --generate-notes(commit 列表)。
       - name: Create GitHub Release
         run: |
-          gh release create "${{ github.ref_name }}" release/*.exe release/*.yml --generate-notes
+          NOTES=$(node -e "
+            const fs = require('fs');
+            const md = fs.readFileSync('docs/CHANGELOG.md', 'utf8');
+            const m = md.match(/## \[[^\]]+\] - [^\n]+\n([\s\S]*?)(?=\n## \[|\$)/);
+            process.stdout.write(m ? m[1].trim() : '');
+          ")
+          if [ -n "$NOTES" ]; then
+            gh release create "${{ github.ref_name }}" release/*.exe release/*.yml --notes "$NOTES"
+          else
+            gh release create "${{ github.ref_name }}" release/*.exe release/*.yml --generate-notes
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
