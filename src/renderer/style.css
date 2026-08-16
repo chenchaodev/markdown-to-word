@@ -621,12 +621,35 @@ body {
   flex: none;
 }
 
-/* 批次 12(C8):模板预设全局常显行——复用 .settings 卡片外观(背景/边框/圆角/间距),
-   行内布局复用 .settings-row(覆盖其原面板内分隔样式:去掉底部边框,改为自身内边距) */
+/* 批次 12(C8):模板预设全局常显卡片——复用 .settings 卡片外观(背景/边框/圆角/间距),
+   行内布局复用 .settings-row(覆盖其原面板内分隔样式:去掉底部边框,改为自身内边距)。
+   两行信息架构:主行(模板选择+另存为/删除)与辅助行(导入/导出预设、导入/清除 CSS + hint),
+   辅助行视觉弱化(细分隔线 + ghost 按钮),低频功能收敛不抢占注意力 */
 .preset-global .settings-row {
   margin: 0;
   padding: 10px 14px;
   border-bottom: 0;
+}
+
+/* 主行:模板选择与核心操作(另存为/删除预设),保持关键位置 */
+.preset-global .preset-main-row {
+  padding-bottom: 4px;
+}
+
+/* 辅助行:低频操作(预设导入/导出、CSS 导入/清除)与 hint,弱化呈现
+   ——细分隔线与主行分隔;按钮为 ghost 样式(无边框、次级色,悬停才显形);
+   flex-wrap 保证窄窗口自动换行不挤压 */
+.preset-global .preset-aux-row {
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* 辅助行状态文案(pdfCssStatus):固定宽度,不参与剩余空间分配,
+   剩余空间留给 hint(单行省略,完整文案经 title 悬浮) */
+.preset-global .preset-status {
+  flex: none;
 }
 
 /* 批次 11 迭代 3:另存为预设弹窗的名称输入(占满弹窗宽度) */

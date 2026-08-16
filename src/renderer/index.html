@@ -167,10 +167,12 @@
         <ul id="recentList" class="recent-list"></ul>
       </section>
 
-      <!-- 模板预设:全局常显行(批次 12:C8),位于两个设置面板之上,不随面板折叠;
-           控件 id 与事件绑定不变(settings-panel.ts 仅 getElementById 引用) -->
+      <!-- 模板预设:全局常显卡片(批次 12:C8),位于两个设置面板之上,不随面板折叠;
+           控件 id 与事件绑定不变(settings-panel.ts 仅 getElementById 引用)。
+           两行信息架构:主行(模板选择+另存为/删除预设,核心高频保持关键位置)与
+           辅助行(导入/导出预设、导入/清除 CSS + hint,低频操作视觉弱化收敛) -->
       <div class="settings preset-global">
-        <div class="settings-row">
+        <div class="settings-row preset-main-row">
           <label class="setting-label" for="templatePreset">模板预设</label>
           <select id="templatePreset" class="setting-select">
             <option value="default">默认</option>
@@ -184,18 +186,20 @@
           <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-small hidden">
             删除预设
           </button>
+        </div>
+        <div class="settings-row preset-aux-row">
           <!-- 批次 13:预设 JSON 导入/导出(main 内选文件,与现有自定义预设合并/全量导出) -->
-          <button type="button" id="presetImportBtn" class="btn btn-secondary btn-small"
+          <button type="button" id="presetImportBtn" class="btn btn-ghost btn-small"
             title="从 JSON 文件导入自定义预设">
             导入预设…
           </button>
-          <button type="button" id="presetExportBtn" class="btn btn-secondary btn-small"
+          <button type="button" id="presetExportBtn" class="btn btn-ghost btn-small"
             title="导出全部自定义预设为 JSON 文件">
             导出预设…
           </button>
           <!-- 批次 16:PDF 样式 CSS 导入(仅 pdf 路线生效;内容持久化到 settings.pdfCss,
                渲染时追加到默认样式之后覆盖;docx 路线不消费 CSS) -->
-          <button type="button" id="pdfCssImportBtn" class="btn btn-secondary btn-small"
+          <button type="button" id="pdfCssImportBtn" class="btn btn-ghost btn-small"
             title="导入 CSS 文件作为 PDF 样式模板(追加到默认样式之后覆盖)">
             导入 CSS…
           </button>
@@ -203,7 +207,7 @@
             title="清除已导入的 PDF 样式 CSS">
             清除
           </button>
-          <span id="pdfCssStatus" class="settings-note">未导入</span>
+          <span id="pdfCssStatus" class="settings-note preset-status">未导入</span>
           <span id="templatePresetHint" class="settings-note" title="选择模板将覆盖排版与页面设置">
             选择模板将覆盖排版与页面设置
           </span>
