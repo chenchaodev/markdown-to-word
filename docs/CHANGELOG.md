@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [0.31.0] - 2026-08-16
+- 批注(308769e;typecheck/lint/build/38 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
+  - 语法 `[锚定文本]{批注=内容}`(行内,单段落锚定 + 内容行内 rich;与链接 `[..](..)`、`{#eq:label}` 不冲突)
+  - remark 插件(src/core/comment.ts:micromark text 扩展 + from-markdown 扩展,anchor/content 经同一扩展集重新解析支持 rich)
+  - docx 渲染:CommentRangeStart/End/Reference + comments 容器(id 渲染期计数器唯一,author 固定 markdown-to-word);表格单元格内生效
+  - mdast-utils 仅锚定文本入纯文本(批注内容不进标题 slug/目录/题注识别);pdf 路线原样输出(仅 docx 生效)
+  - 测试:新段 comments.test.js(部件/内容 rich/结构/id 唯一/回归/pdf 原样)
+- WPS 兼容矩阵(4be7012;用户 Word/WPS 双实测全部通过):
+  - docs/WPS-COMPAT.md 建立:28 项功能 4 组(基础排版/学术功能/页面与样式/流程与兼容)+ 实测指引 + 问题记录 + 历史修复(公式 w:tab/书签 w:id/PDF 书签跳转)
+- release notes 从 CHANGELOG 提取(c346c88):gh release create 用 CHANGELOG 最新版本条目作为 notes(人工整理的功能汇总;提取为空回退 --generate-notes)
+- 文档:STATUS/ACCEPTANCE/ROADMAP 登记(批注 + WPS 矩阵勾选)
+
 ## [0.30.0] - 2026-08-16
 - 界面配置区重构(d225a76;typecheck/lint/build/37 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
   - 配置收敛为 1 个折叠面板「设置」+ 内部 4 子组(模板/页面/排版/导出,组头 + 分隔线,不嵌套折叠)——界面只突出主流程(文件区 → 结果 → 最近转换 → 底部操作栏)

@@ -35,8 +35,8 @@
 - [x] **模板导入**(中高)——批次 13「预设 JSON 导入/导出」+ 批次 16「CSS 覆盖 pdf 路线」已完成(0.27.0/0.29.0,用户实测通过);docx 模板导入暂缓(docx4js 停维护 + OOXML 样式逆映射工程量大,方案对比见 archive/20260814-201622)
 - [ ] **代码块语法高亮写 docx**(低中;无依赖)——逐 token 着色;pdf 侧已有高亮,docx 侧成本中高
 - [x] **公式编号开关**(低)——已完成(2026-08-16,66681a9,0.29.0,用户实测通过)
-- [ ] **批注**(低;无依赖)——**2026-08-16 实施中**(语法 [锚定文本]{批注=内容} 已确认;docx 库 API 调研完成)
-- [ ] **WPS 兼容矩阵**(低;无依赖)——守护既有功能,Word/WPS 双实测清单化
+- [x] **批注**(低)——已完成(2026-08-16,308769e,0.31.0,用户实测通过;语法 [锚定文本]{批注=内容})
+- [x] **WPS 兼容矩阵**(低)——已完成(2026-08-16,4be7012,0.31.0,用户 Word/WPS 双实测通过;矩阵见 docs/WPS-COMPAT.md)
 
 ### 测试遗留
 - [x] **B1 renderer 纯函数段**(2026-08-11 R8 收尾评审提出,未执行;低风险纯测试)——抽 `src/renderer/pure.ts`(isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT 等零 DOM 函数,现居 utils.ts),utils.ts 改 re-export(renderer 内部 import 路径不变),新建 segments/renderer-pure.test.js;建议作为下一个小迭代(零行为改动);**已完成(2026-08-13,482160e,renderer-pure.test.js 已建,缺口清零)**

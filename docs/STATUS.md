@@ -1,3 +1,4 @@
+- 2026-08-16:**WPS 兼容矩阵实测通过**(用户确认 Word/WPS 双实测全部通过;ACCEPTANCE 4 项已勾选;矩阵状态列待用户回填或按通过处理)
 - 2026-08-16:**WPS 兼容矩阵进行中**(Word/WPS 双实测清单化,守护既有功能;产出 docs/WPS-COMPAT.md 矩阵 + 实测指引)
 - 2026-08-16:**批注迭代实测通过**(用户确认;ACCEPTANCE 4 项已勾选)
 - 2026-08-16:**批注迭代完成**(308769e,7 文件 363+/5-):语法 [锚定文本]{批注=内容}(行内,单段落锚定 + 内容行内 rich);remark 插件(comment.ts:micromark text 扩展 + from-markdown 扩展,anchor/content 重新解析支持 rich);docx 渲染(CommentRangeStart/End/Reference + comments 容器,id 渲染期计数器唯一,author 固定 markdown-to-word);mdast-utils 仅锚定文本入纯文本(不进标题 slug/目录/题注);pdf 路线原样输出;38 段(新增 comments.test.js)+ smoke 全绿;待实测见 ACCEPTANCE.md
