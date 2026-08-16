@@ -11,14 +11,21 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 - **页眉页脚页码**：原生 Word 域，可正常编辑
 - **封面**：Markdown 开头 `---` 区域的 `title` / `author` / `date` 自动生成封面页与页眉
 - **脚注**：`[^1]` 语法，docx 原生脚注 / PDF 脚注区
+- **批注**：`[锚定文本]{批注=内容}` 语法，docx 原生批注（PDF 原样输出）
 - **公式**：`$...$` / `$$...$$` / ` ```math `，docx 输出可编辑的 OMML 公式，PDF 用 KaTeX 渲染；公式自动编号与交叉引用
+- **公式编号开关**：可关闭；关闭后公式不编号，引用保持原文本
 - **Mermaid 图表**：` ```mermaid ` 围栏导出为图表（docx 嵌入图片 / PDF 矢量渲染），语法错误时降级为代码块并提示
 - **代码高亮**：highlight.js 高亮，等宽字体
+- **代码块语法高亮**：docx 已知语言逐 token 着色，未知/无语言降级等宽
 - **交叉引用**：图/表/章节/公式引用（`[图](#fig:label)` 等）渲染为静态编号 + 可点击跳转
 - **任务列表**：GFM 任务列表（☐/☑）
 - **编码兼容**：自动识别 UTF-8 / UTF-16 / GBK（含 GB18030），无需手动处理
 - **批量转换与合并**：多文件批量转换（每个文件一个文档）或合并转换（合成一个文档）
 - **模板预设**：默认 / 学术论文 / 商务简报一键套用，可另存自定义预设（上限 10 个），支持预设 JSON 导入/导出
+- **PDF 自定义 CSS**：导入 CSS 追加到默认样式后覆盖（仅 PDF 路线生效）
+- **界面配置区**：设置面板（模板/页面/排版/导出 4 子组），改动即时生效并自动保存
+- **界面多语言**：中文 / English 切换，即时生效并记忆
+- **WPS 兼容**：Word / WPS 双实测（见 docs/WPS-COMPAT.md）
 - **实时预览**：转换前预览窗口，与 PDF 同排版
 - **离线零网络**：转换全程本地完成，文件不上传；Mermaid 等资源本地加载，无 CDN 依赖
 
@@ -54,13 +61,13 @@ npm run dist
 npm run typecheck   # TypeScript 类型检查
 npm run lint        # ESLint
 npm run build       # 构建
-npm run test        # 验收测试（36 段零注册测试，按内容主题自动发现）
+npm run test        # 验收测试（40 段零注册测试，按内容主题自动发现）
 npm run test:smoke  # Electron smoke 测试
 npm run test:coverage  # 覆盖率
 npm run test:all    # 验收 + smoke
 ```
 
-测试体系：`test/` 下按内容主题组织的 36 段零注册验收测试（segments 渲染层 + main 主进程层），静态样例在 `test/fixtures/`，产物输出到 `output/`。
+测试体系：`test/` 下按内容主题组织的 40 段零注册验收测试（segments 渲染层 + main 主进程层），静态样例在 `test/fixtures/`，产物输出到 `output/`。
 
 ## 文档
 
