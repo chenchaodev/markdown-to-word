@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [0.32.0] - 2026-08-16
+- 代码块语法高亮写 docx(3eb22c7;typecheck/lint/build/39 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
+  - 新模块 core/docx/code-highlight.ts:hljs token → TextRun 序列,GitHub Light 色板与 pdf 侧 template.ts 一致(comment 斜体/strong 加粗)
+  - renderCode 接入:已知语言走高亮;无语言/未知语言/解析失败(含文本完整性校验)降级等宽文本,行为不变
+  - 嵌套 span 类栈处理(hljs-params 包 attr/built_in),实体单遍解码防二次转义
+  - 测试:新增 code-highlight 段 5 组断言;basic-render/mermaid 断言更新为高亮拆分形态
+- 文档:待办排期决策(acf072f:排期 3 项——代码块高亮/i18n/文档加密,其余候选转砍)+ 待办状态同步(eb9e858)+ STATUS/ACCEPTANCE 登记
+
 ## [0.31.0] - 2026-08-16
 - 批注(308769e;typecheck/lint/build/38 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
   - 语法 `[锚定文本]{批注=内容}`(行内,单段落锚定 + 内容行内 rich;与链接 `[..](..)`、`{#eq:label}` 不冲突)
