@@ -1,3 +1,6 @@
+- 2026-08-16:**i18n 界面多语言实测通过**(用户确认「界面验证无问题」;ACCEPTANCE 5 项已勾选,排期功能 2/3 关闭)
+- 2026-08-16:**文档加密决策不做**(用户确认):docx 库不支持加密(非 OOXML 标准),替代需引入 officecrypto-tool 新依赖;pdf 侧需 qpdf 原生二进制分发;调研依据 archive/20260816-114520,ROADMAP 转「砍」;排期功能 3/3 关闭
+- 2026-08-16:**发版 1.0.0 准备中**(用户指令):README/USER-GUIDE 按实际功能更新、软件界面加版本信息;待用户确认后发版(打 tag v1.0.0 + CHANGELOG 汇总 + push)
 - 2026-08-16:**文档加密调研完成**(adad6b8,纯文档):docx 库 9.7.1 不支持加密(maintainer 确认,非 OOXML 标准);pdf-lib 不支持写入加密;替代方案 officecrypto-tool(docx,Agile AES-256)/qpdf(pdf,最后一步后处理);实现待用户决策(需引入新依赖 + qpdf 原生二进制分发),依据见 RESEARCH.md + archive/20260816-114520
 - 2026-08-16:**i18n 界面多语言完成**(218b183,17 文件 1078+/248-):新增 core/i18n.ts 纯模块(zh/en 字典 + t() 插值 + applyStaticTexts);AppSettings 加 language(默认 zh,全链路透传 + 旧文件兼容);renderer 设置面板「界面语言」radio 即时切换;main 菜单/对话框/预览错误页按语言输出;新增 i18n 测试段 + settings 段更新;40 段 + typecheck/lint/build/smoke 全绿;待实测见 ACCEPTANCE.md
 - 2026-08-16:**发版 v0.32.0 完成**(6653713 登记;Release run success;tag v0.32.0 指向 6653713;本地打包验证通过——release\MarkdownToWord-Setup-0.5.1.exe,asar 关键文件确认(code-highlight/render/main/comment/pdf-render/renderer html+css),win-unpacked 启动存活 4 进程)
