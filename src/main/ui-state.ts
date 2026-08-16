@@ -9,7 +9,8 @@
  * - lastSessionFiles: 上次会话的文件列表(renderer 恢复时逐项校验存在性)
  * - lastOpenDir: 对话框记忆目录(目录存在才作为 defaultPath 使用)
  * - windowBounds: 窗口位置 {x,y,width,height} | null(恢复时钳制到显示器工作区)
- * - panelOpen: 设置面板 details 展开态 {page, typography}
+ * - panelOpen: 设置面板 details 展开态 {page, typography}(批次 N:单一设置面板,
+ *   默认折叠以突出主流程;typography 为兼容保留字段,renderer 写镜像同值)
  * - suppressCompleteDialog: 转换完成弹窗「不再提示」(默认 false = 提示;批次 11 迭代 2)
  * 读时逐字段校验类型,非法/缺失 → 该字段默认值(不复用 settings 的整文件回退);
  * saveUiState 以 patch 合并当前状态,recentFiles 为「追加合并」语义
@@ -56,7 +57,8 @@ export const DEFAULT_UI_STATE: UiState = {
   lastSessionFiles: [],
   lastOpenDir: "",
   windowBounds: null,
-  panelOpen: { page: true, typography: true },
+  // 批次 N:设置收敛为单一面板,默认折叠(已记忆的展开态仍优先恢复)
+  panelOpen: { page: false, typography: false },
   suppressCompleteDialog: false,
 };
 

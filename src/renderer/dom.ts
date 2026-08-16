@@ -230,12 +230,9 @@ export const recentList = document.getElementById("recentList") as HTMLUListElem
 export const recentClearBtn = document.getElementById(
   "recentClearBtn",
 ) as HTMLButtonElement;
-// 批次 11:设置面板 details(panelOpen 展开态记忆)
+// 批次 11:设置面板 details(panelOpen 展开态记忆;批次 N:单一设置面板,原 typographyPanel 已合并删除)
 export const settingsPanel = document.getElementById(
   "settingsPanel",
-) as HTMLDetailsElement;
-export const typographyPanel = document.getElementById(
-  "typographyPanel",
 ) as HTMLDetailsElement;
 // 批次 11 迭代 2:完成弹窗「不再提示」/ 设置面板「转换完成弹窗提示」(同字段双向同步)
 export const completeDialogSuppressInput = document.getElementById(

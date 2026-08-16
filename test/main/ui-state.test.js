@@ -8,7 +8,8 @@
  * - 损坏 JSON(parse 失败)→ 全字段默认,不写盘
  * - 字段类型非法:recentFiles 非数组/条目缺字段/format 非法/ts 非数 → 过滤;
  *   lastSessionFiles 混入非字符串/空串 → 过滤;lastOpenDir 非字符串 → "";
- *   windowBounds 缺字段/非数/宽高 ≤0 → null;panelOpen 非布尔 → 默认 true
+ *   windowBounds 缺字段/非数/宽高 ≤0 → null;panelOpen 非布尔 → 默认 false
+ *   (批次 N:单一设置面板,默认折叠以突出主流程)
  * - recentFiles 去重 + 上限 10:同 path 保留 ts 最大;按 ts 降序;截断 10;追加合并语义;
  *   空数组 = 清空(renderer「清空最近」)
  * - lastOpenDir 缺失/空串 → ""
@@ -131,8 +132,8 @@ export async function run() {
     assert(s4.lastOpenDir === "", `lastOpenDir 非字符串应回退空串,实际 ${JSON.stringify(s4.lastOpenDir)}`);
     assert(s4.windowBounds === null, `windowBounds 字段非法应回退 null,实际 ${JSON.stringify(s4.windowBounds)}`);
     assert(
-      s4.panelOpen.page === true && s4.panelOpen.typography === false,
-      `panelOpen 非布尔应回退默认 true(另一字段保留),实际 ${JSON.stringify(s4.panelOpen)}`,
+      s4.panelOpen.page === false && s4.panelOpen.typography === false,
+      `panelOpen 非布尔应回退默认 false(另一字段保留),实际 ${JSON.stringify(s4.panelOpen)}`,
     );
     console.log("[ok] ui-state:字段类型非法逐字段回退(recentFiles 过滤/lastSessionFiles 过滤/lastOpenDir/windowBounds/panelOpen)");
 

@@ -15,7 +15,6 @@
       <!-- 标题区 -->
       <header class="header">
         <h1 class="title">Markdown 转换工具</h1>
-        <p class="subtitle">将 Markdown 文件转换为 Word 或 PDF 文档</p>
       </header>
 
       <!-- 文件选择区:拖放区 + 选择文件按钮 -->
@@ -167,270 +166,276 @@
         <ul id="recentList" class="recent-list"></ul>
       </section>
 
-      <!-- 模板预设:全局常显卡片(批次 12:C8),位于两个设置面板之上,不随面板折叠;
-           控件 id 与事件绑定不变(settings-panel.ts 仅 getElementById 引用)。
-           两行信息架构:主行(模板选择+另存为/删除预设,核心高频保持关键位置)与
-           辅助行(导入/导出预设、导入/清除 CSS + hint,低频操作视觉弱化收敛) -->
-      <div class="settings preset-global">
-        <div class="settings-row preset-main-row">
-          <label class="setting-label" for="templatePreset">模板预设</label>
-          <select id="templatePreset" class="setting-select">
-            <option value="default">默认</option>
-            <option value="paper">学术论文</option>
-            <option value="business">商务简报</option>
-          </select>
-          <!-- 批次 11 迭代 3:自定义预设(另存为当前排版+页面设置;仅自定义预设可删) -->
-          <button type="button" id="presetSaveBtn" class="btn btn-secondary btn-small">
-            另存为预设…
-          </button>
-          <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-small hidden">
-            删除预设
-          </button>
-        </div>
-        <div class="settings-row preset-aux-row">
-          <!-- 批次 13:预设 JSON 导入/导出(main 内选文件,与现有自定义预设合并/全量导出) -->
-          <button type="button" id="presetImportBtn" class="btn btn-ghost btn-small"
-            title="从 JSON 文件导入自定义预设">
-            导入预设…
-          </button>
-          <button type="button" id="presetExportBtn" class="btn btn-ghost btn-small"
-            title="导出全部自定义预设为 JSON 文件">
-            导出预设…
-          </button>
-          <!-- 批次 16:PDF 样式 CSS 导入(仅 pdf 路线生效;内容持久化到 settings.pdfCss,
-               渲染时追加到默认样式之后覆盖;docx 路线不消费 CSS) -->
-          <button type="button" id="pdfCssImportBtn" class="btn btn-ghost btn-small"
-            title="导入 CSS 文件作为 PDF 样式模板(追加到默认样式之后覆盖)">
-            导入 CSS…
-          </button>
-          <button type="button" id="pdfCssClearBtn" class="btn btn-ghost btn-small hidden"
-            title="清除已导入的 PDF 样式 CSS">
-            清除
-          </button>
-          <span id="pdfCssStatus" class="settings-note preset-status">未导入</span>
-          <span id="templatePresetHint" class="settings-note" title="选择模板将覆盖排版与页面设置">
-            选择模板将覆盖排版与页面设置
-          </span>
-        </div>
-      </div>
-
-      <!-- 页面设置:可折叠面板,改动即时生效并自动保存 -->
+      <!-- 设置:单一折叠面板(模板/页面/排版/导出 4 个子分组),配置全部收敛于此,
+           界面只突出主流程(文件区 → 结果 → 最近转换 → 底部操作栏);
+           控件 id 与事件绑定不变(settings-panel.ts 仅 getElementById 引用) -->
       <details id="settingsPanel" class="settings">
         <summary class="settings-summary">
-          <span class="settings-summary-title">页面设置</span>
-          <span class="settings-summary-hint">纸张、边距、分页、输出目录与导出行为</span>
+          <span class="settings-summary-title">设置</span>
+          <span class="settings-summary-hint">模板、页面、排版与导出</span>
         </summary>
         <div class="settings-body">
-          <div class="settings-grid">
-            <div class="setting-field">
-              <label class="setting-label" for="paperSelect">纸张</label>
-              <select id="paperSelect" class="setting-select">
-                <option value="A4">A4</option>
-                <option value="A3">A3</option>
-                <option value="A5">A5</option>
-                <option value="Letter">Letter</option>
-                <option value="Legal">Legal</option>
+          <!-- ── 模板:预设选择 + 另存为/删除(主行);导入/导出预设、导入/清除 CSS(辅助行,ghost 弱化) ── -->
+          <div class="settings-group">
+            <h3 class="settings-group-title">模板</h3>
+            <div class="settings-row preset-main-row">
+              <label class="setting-label" for="templatePreset">模板预设</label>
+              <select id="templatePreset" class="setting-select">
+                <option value="default">默认</option>
+                <option value="paper">学术论文</option>
+                <option value="business">商务简报</option>
               </select>
+              <!-- 批次 11 迭代 3:自定义预设(另存为当前排版+页面设置;仅自定义预设可删) -->
+              <button type="button" id="presetSaveBtn" class="btn btn-secondary btn-small">
+                另存为预设…
+              </button>
+              <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-small hidden">
+                删除预设
+              </button>
             </div>
-
-            <fieldset class="setting-field setting-fieldset">
-              <legend class="setting-label">方向</legend>
-              <div class="setting-options">
-                <label class="setting-option">
-                  <input type="radio" name="orientation" value="portrait" />
-                  <span>纵向</span>
-                </label>
-                <label class="setting-option">
-                  <input type="radio" name="orientation" value="landscape" />
-                  <span>横向</span>
-                </label>
-              </div>
-            </fieldset>
-
-            <fieldset class="setting-field setting-fieldset setting-margins">
-              <legend class="setting-label">边距 (mm)</legend>
-              <div class="margin-grid">
-                <label class="margin-field">
-                  <span class="margin-name">上</span>
-                  <input type="number" id="marginTop" class="margin-input" min="0" step="0.5" />
-                </label>
-                <label class="margin-field">
-                  <span class="margin-name">下</span>
-                  <input type="number" id="marginBottom" class="margin-input" min="0" step="0.5" />
-                </label>
-                <label class="margin-field">
-                  <span class="margin-name">左</span>
-                  <input type="number" id="marginLeft" class="margin-input" min="0" step="0.5" />
-                </label>
-                <label class="margin-field">
-                  <span class="margin-name">右</span>
-                  <input type="number" id="marginRight" class="margin-input" min="0" step="0.5" />
-                </label>
-              </div>
-              <p id="marginError" class="field-error hidden"></p>
-            </fieldset>
-
-            <label class="setting-check">
-              <input type="checkbox" id="breakBeforeH1" />
-              <span>每个一级标题前分页</span>
-            </label>
-
-            <label class="setting-check">
-              <input type="checkbox" id="toc" />
-              <span>
-                自动生成目录<span class="setting-label-hint">(Word 打开即见,免更新域)</span>
+            <div class="settings-row preset-aux-row">
+              <!-- 批次 13:预设 JSON 导入/导出(main 内选文件,与现有自定义预设合并/全量导出) -->
+              <button type="button" id="presetImportBtn" class="btn btn-ghost btn-small"
+                title="从 JSON 文件导入自定义预设">
+                导入预设…
+              </button>
+              <button type="button" id="presetExportBtn" class="btn btn-ghost btn-small"
+                title="导出全部自定义预设为 JSON 文件">
+                导出预设…
+              </button>
+              <!-- 批次 16:PDF 样式 CSS 导入(仅 pdf 路线生效;内容持久化到 settings.pdfCss,
+                   渲染时追加到默认样式之后覆盖;docx 路线不消费 CSS) -->
+              <button type="button" id="pdfCssImportBtn" class="btn btn-ghost btn-small"
+                title="导入 CSS 文件作为 PDF 样式模板(追加到默认样式之后覆盖)">
+                导入 CSS…
+              </button>
+              <button type="button" id="pdfCssClearBtn" class="btn btn-ghost btn-small hidden"
+                title="清除已导入的 PDF 样式 CSS">
+                清除
+              </button>
+              <span id="pdfCssStatus" class="settings-note preset-status">未导入</span>
+              <span id="templatePresetHint" class="settings-note" title="选择模板将覆盖排版与页面设置">
+                选择模板将覆盖排版与页面设置
               </span>
-            </label>
-
-            <label class="setting-check">
-              <input type="checkbox" id="equationNumbering" />
-              <span>公式编号</span>
-            </label>
-
-            <fieldset class="setting-field setting-fieldset setting-after">
-              <legend class="setting-label">导出后</legend>
-              <div class="setting-options">
-                <label class="setting-option">
-                  <input type="radio" name="afterConvert" value="none" />
-                  <span>不自动执行</span>
-                </label>
-                <label class="setting-option">
-                  <input type="radio" name="afterConvert" value="show-in-folder" />
-                  <span>打开所在文件夹</span>
-                </label>
-                <label class="setting-option">
-                  <input type="radio" name="afterConvert" value="open" />
-                  <span>打开文件</span>
-                </label>
-              </div>
-            </fieldset>
-
-            <!-- 批次 11 迭代 2:完成弹窗提示(ui-state 字段,与弹窗内「不再提示」双向同步) -->
-            <label class="setting-check">
-              <input type="checkbox" id="completeDialogPrompt" checked />
-              <span>转换完成弹窗提示</span>
-            </label>
-
-            <div class="setting-field setting-outputdir">
-              <span class="setting-label" id="outputDirLabel">输出目录</span>
-              <div class="outputdir-row">
-                <span id="outputDirValue" class="outputdir-value" title="">与源文件相同目录</span>
-                <button type="button" id="outputDirPick" class="btn btn-secondary btn-small">
-                  选择…
-                </button>
-                <button type="button" id="outputDirReset" class="btn btn-ghost btn-small">
-                  恢复默认
-                </button>
-              </div>
             </div>
           </div>
+
+          <!-- ── 页面:纸张、方向、边距、分页与目录 ── -->
+          <div class="settings-group">
+            <h3 class="settings-group-title">页面</h3>
+            <div class="settings-grid">
+              <div class="setting-field">
+                <label class="setting-label" for="paperSelect">纸张</label>
+                <select id="paperSelect" class="setting-select">
+                  <option value="A4">A4</option>
+                  <option value="A3">A3</option>
+                  <option value="A5">A5</option>
+                  <option value="Letter">Letter</option>
+                  <option value="Legal">Legal</option>
+                </select>
+              </div>
+
+              <fieldset class="setting-field setting-fieldset">
+                <legend class="setting-label">方向</legend>
+                <div class="setting-options">
+                  <label class="setting-option">
+                    <input type="radio" name="orientation" value="portrait" />
+                    <span>纵向</span>
+                  </label>
+                  <label class="setting-option">
+                    <input type="radio" name="orientation" value="landscape" />
+                    <span>横向</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset class="setting-field setting-fieldset setting-margins">
+                <legend class="setting-label">边距 (mm)</legend>
+                <div class="margin-grid">
+                  <label class="margin-field">
+                    <span class="margin-name">上</span>
+                    <input type="number" id="marginTop" class="margin-input" min="0" step="0.5" />
+                  </label>
+                  <label class="margin-field">
+                    <span class="margin-name">下</span>
+                    <input type="number" id="marginBottom" class="margin-input" min="0" step="0.5" />
+                  </label>
+                  <label class="margin-field">
+                    <span class="margin-name">左</span>
+                    <input type="number" id="marginLeft" class="margin-input" min="0" step="0.5" />
+                  </label>
+                  <label class="margin-field">
+                    <span class="margin-name">右</span>
+                    <input type="number" id="marginRight" class="margin-input" min="0" step="0.5" />
+                  </label>
+                </div>
+                <p id="marginError" class="field-error hidden"></p>
+              </fieldset>
+
+              <label class="setting-check">
+                <input type="checkbox" id="breakBeforeH1" />
+                <span>每个一级标题前分页</span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="toc" />
+                <span>
+                  自动生成目录<span class="setting-label-hint">(Word 打开即见,免更新域)</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <!-- ── 排版:字体、字号、行距与编号 ── -->
+          <div class="settings-group">
+            <h3 class="settings-group-title">排版</h3>
+            <div class="settings-grid">
+              <div class="setting-field">
+                <label class="setting-label" for="fontAscii">
+                  西文字体<span class="setting-label-hint">(正文中的字母与数字)</span>
+                </label>
+                <input
+                  type="text"
+                  id="fontAscii"
+                  class="setting-input"
+                  list="fontAsciiSuggestions"
+                />
+                <datalist id="fontAsciiSuggestions">
+                  <option value="Calibri"></option>
+                  <option value="Arial"></option>
+                  <option value="Times New Roman"></option>
+                  <option value="Consolas"></option>
+                  <option value="Segoe UI"></option>
+                </datalist>
+                <p id="fontAsciiError" class="field-error hidden"></p>
+              </div>
+
+              <div class="setting-field">
+                <label class="setting-label" for="fontEastAsia">
+                  中文字体<span class="setting-label-hint">(正文中的汉字)</span>
+                </label>
+                <input
+                  type="text"
+                  id="fontEastAsia"
+                  class="setting-input"
+                  list="fontEastAsiaSuggestions"
+                />
+                <datalist id="fontEastAsiaSuggestions">
+                  <option value="微软雅黑"></option>
+                  <option value="宋体"></option>
+                  <option value="黑体"></option>
+                  <option value="楷体"></option>
+                  <option value="仿宋"></option>
+                  <option value="等线"></option>
+                </datalist>
+                <p id="fontEastAsiaError" class="field-error hidden"></p>
+              </div>
+
+              <div class="setting-field">
+                <label class="setting-label" for="bodySizePt">
+                  正文字号<span class="setting-label-hint">(pt)</span>
+                </label>
+                <input
+                  type="number"
+                  id="bodySizePt"
+                  class="setting-number"
+                  min="8"
+                  max="24"
+                  step="1"
+                />
+                <p id="bodySizeError" class="field-error hidden"></p>
+              </div>
+
+              <div class="setting-field">
+                <label class="setting-label" for="lineSpacing">
+                  行距<span class="setting-label-hint">(倍数)</span>
+                </label>
+                <input
+                  type="number"
+                  id="lineSpacing"
+                  class="setting-number"
+                  min="1.0"
+                  max="2.5"
+                  step="0.1"
+                />
+                <p id="lineSpacingError" class="field-error hidden"></p>
+              </div>
+
+              <label class="setting-check">
+                <input type="checkbox" id="firstLineIndent" />
+                <span>首行缩进 2 字符</span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="alignJustify" />
+                <span>
+                  两端对齐<span class="setting-label-hint">(取消后为左对齐)</span>
+                </span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="headingNumbering" />
+                <span>章节自动编号</span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="captionNumbering" />
+                <span>
+                  图/表题注自动编号<span class="setting-label-hint">(「图: 标题」前缀行识别)</span>
+                </span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="equationNumbering" />
+                <span>公式编号</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- ── 导出:输出目录与导出行为(输出目录高频前置) ── -->
+          <div class="settings-group">
+            <h3 class="settings-group-title">导出</h3>
+            <div class="settings-grid">
+              <div class="setting-field setting-outputdir">
+                <span class="setting-label" id="outputDirLabel">输出目录</span>
+                <div class="outputdir-row">
+                  <span id="outputDirValue" class="outputdir-value" title="">与源文件相同目录</span>
+                  <button type="button" id="outputDirPick" class="btn btn-secondary btn-small">
+                    选择…
+                  </button>
+                  <button type="button" id="outputDirReset" class="btn btn-ghost btn-small">
+                    恢复默认
+                  </button>
+                </div>
+              </div>
+
+              <fieldset class="setting-field setting-fieldset setting-after">
+                <legend class="setting-label">导出后</legend>
+                <div class="setting-options">
+                  <label class="setting-option">
+                    <input type="radio" name="afterConvert" value="none" />
+                    <span>不自动执行</span>
+                  </label>
+                  <label class="setting-option">
+                    <input type="radio" name="afterConvert" value="show-in-folder" />
+                    <span>打开所在文件夹</span>
+                  </label>
+                  <label class="setting-option">
+                    <input type="radio" name="afterConvert" value="open" />
+                    <span>打开文件</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <!-- 批次 11 迭代 2:完成弹窗提示(ui-state 字段,与弹窗内「不再提示」双向同步) -->
+              <label class="setting-check">
+                <input type="checkbox" id="completeDialogPrompt" checked />
+                <span>转换完成弹窗提示</span>
+              </label>
+            </div>
+          </div>
+
           <p class="settings-note">设置即时生效并自动保存</p>
-        </div>
-      </details>
-
-      <!-- 排版设置:可折叠面板,改动即时生效并自动保存 -->
-      <details id="typographyPanel" class="settings">
-        <summary class="settings-summary">
-          <span class="settings-summary-title">排版</span>
-          <span class="settings-summary-hint">字体、字号、行距与段落样式</span>
-        </summary>
-        <div class="settings-body">
-          <div class="settings-grid">
-            <div class="setting-field">
-              <label class="setting-label" for="fontAscii">
-                西文字体<span class="setting-label-hint">(正文中的字母与数字)</span>
-              </label>
-              <input
-                type="text"
-                id="fontAscii"
-                class="setting-input"
-                list="fontAsciiSuggestions"
-              />
-              <datalist id="fontAsciiSuggestions">
-                <option value="Calibri"></option>
-                <option value="Arial"></option>
-                <option value="Times New Roman"></option>
-                <option value="Consolas"></option>
-                <option value="Segoe UI"></option>
-              </datalist>
-              <p id="fontAsciiError" class="field-error hidden"></p>
-            </div>
-
-            <div class="setting-field">
-              <label class="setting-label" for="fontEastAsia">
-                中文字体<span class="setting-label-hint">(正文中的汉字)</span>
-              </label>
-              <input
-                type="text"
-                id="fontEastAsia"
-                class="setting-input"
-                list="fontEastAsiaSuggestions"
-              />
-              <datalist id="fontEastAsiaSuggestions">
-                <option value="微软雅黑"></option>
-                <option value="宋体"></option>
-                <option value="黑体"></option>
-                <option value="楷体"></option>
-                <option value="仿宋"></option>
-                <option value="等线"></option>
-              </datalist>
-              <p id="fontEastAsiaError" class="field-error hidden"></p>
-            </div>
-
-            <div class="setting-field">
-              <label class="setting-label" for="bodySizePt">
-                正文字号<span class="setting-label-hint">(pt)</span>
-              </label>
-              <input
-                type="number"
-                id="bodySizePt"
-                class="setting-number"
-                min="8"
-                max="24"
-                step="1"
-              />
-              <p id="bodySizeError" class="field-error hidden"></p>
-            </div>
-
-            <div class="setting-field">
-              <label class="setting-label" for="lineSpacing">
-                行距<span class="setting-label-hint">(倍数)</span>
-              </label>
-              <input
-                type="number"
-                id="lineSpacing"
-                class="setting-number"
-                min="1.0"
-                max="2.5"
-                step="0.1"
-              />
-              <p id="lineSpacingError" class="field-error hidden"></p>
-            </div>
-
-            <label class="setting-check">
-              <input type="checkbox" id="firstLineIndent" />
-              <span>首行缩进 2 字符</span>
-            </label>
-
-            <label class="setting-check">
-              <input type="checkbox" id="alignJustify" />
-              <span>
-                两端对齐<span class="setting-label-hint">(取消后为左对齐)</span>
-              </span>
-            </label>
-
-            <label class="setting-check">
-              <input type="checkbox" id="headingNumbering" />
-              <span>章节自动编号</span>
-            </label>
-
-            <label class="setting-check">
-              <input type="checkbox" id="captionNumbering" />
-              <span>
-                图/表题注自动编号<span class="setting-label-hint">(「图: 标题」前缀行识别)</span>
-              </span>
-            </label>
-          </div>
         </div>
       </details>
 
