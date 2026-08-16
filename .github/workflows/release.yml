@@ -40,7 +40,9 @@ jobs:
       # 自动生成 Release 并上传安装包与更新元数据。
       # notes 取自 docs/CHANGELOG.md 最新版本条目(发版时人工整理的功能汇总,准确反映本次变更);
       # 提取为空(未写 CHANGELOG)时回退 --generate-notes(commit 列表)。
+      # 注意:windows-latest 默认 shell 是 pwsh,本步骤为 bash 语法,必须显式 shell: bash
       - name: Create GitHub Release
+        shell: bash
         run: |
           NOTES=$(node -e "
             const fs = require('fs');
