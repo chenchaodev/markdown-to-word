@@ -2,6 +2,13 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-16 11:45:20 文档加密调研(@lib-1,排期功能 3/3 依据)
+- **docx 库 9.7.1 不支持加密**(maintainer 确认:密码保护 Word 文档非 OOXML 标准,是 Microsoft 专有 Agile/Standard Encryption;dist 全量搜 encrypt/password 零匹配;isEncrypted 是 JSZip 解压检查)
+- **docx 替代**:officecrypto-tool 0.0.19(ECMA-376 Agile AES-256/SHA-512,Word 2007+ 兼容;API `officeCrypto.encrypt(buffer, { password })`;CJS 老库依赖 cfb/xml2js/crypto-js,ESM 默认导入需验证);office-crypto 0.1.0 加密未完成;ooxml-encryption 仅 xlsx
+- **pdf-lib 1.17.1 不支持写入加密**(README 官方声明;仅 isEncrypted 检测 + ignoreEncryption 加载);printToPDF 无加密选项
+- **pdf 加密**:qpdf(node-qpdf2 Promise+TS,`encrypt({ input, output, password, keyLength: 256 })`;或命令行 `qpdf --encrypt user owner 256`);顺序固定:printToPDF → 书签 → 元数据 → 加密最后一步(pdf-lib 无法 load 加密文档);qpdf 原生二进制需 electron-builder extraResources 分发 + 镜像下载
+- 来源: @librarian lib-1;关联: 原文存档 docs/archive/20260816-114520-文档加密调研.md
+
 ### 2026-08-15 14:40:57 代码/测试/文档组织形式审计(@exp-1 + @ora-1,批次 14+ 规划依据)
 - **组织形式(exp-1)**:12 项可调整点——高收益低成本 4 项(README mermaid 条目重复 7 次 / .gitignore 缺 coverage/ / artifacts.js 注释漂移 / STATUS 标题外悬挂 3 行);中收益(lint 只跑 src/ 未覆盖 test/scripts / gen-fixtures.mjs 在 test/tools/ 非 scripts/ / test/fixtures/manual/ 陈旧 / settings.ts+ui-state.ts 双份原子写+写队列 / smoke 备份逻辑重复有意);低收益(preload.cts 混用合理 / build.files 排除 highlight.js/styles 需确认 / archive 24 条接近清理线);已确认合理:docx/render.ts 1015 行单体、style.css 1391 行、33 段零注册体系
 - **重构候选(ora-1)**:R1 theme.ts createDefaultStyles 死代码(0% funcs,删);R2 renderer DOM 层零覆盖→纯函数抽取(settings-logic 模式);R3 settings.ts sanitize 未导出不可直测→导出直测;R4 ui-state 宽松回退 vs settings 整文件回退策略并存需注明;R5 recent-files↔convert-flow ESM 循环依赖;R6 index.ts IPC 面 0% 覆盖→handler 纯逻辑抽可测模块(不做 Electron 集成测试);R7 双管线差异加注释标注;R8 硬约束提醒
