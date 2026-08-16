@@ -236,8 +236,12 @@ export async function run() {
     if (xml.includes("a:blip")) {
       throw new Error("非 mermaid 围栏:js 围栏不应走 mermaid 图片分支");
     }
-    if (!xml.includes("const a = 1;")) {
-      throw new Error("非 mermaid 围栏:docx 应保留 js 代码文本");
+    // js 为已知语言 → docx 走 hljs 高亮拆分(code-highlight.ts),文本逐片段保留
+    // (const → keyword 着色,1 → number 着色;仍不走 mermaid 图片分支)
+    for (const frag of ["const", " a = ", "1", ";"]) {
+      if (!xml.includes(`<w:t xml:space="preserve">${frag}</w:t>`)) {
+        throw new Error(`非 mermaid 围栏:docx 应保留 js 代码文本片段「${frag}」`);
+      }
     }
     const pdf = await convert(MD_JS, "pdf", {
       baseDir: FIXTURES_DIR,

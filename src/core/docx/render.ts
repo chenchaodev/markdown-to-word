@@ -47,6 +47,7 @@ import type {
 } from "mdast";
 import { CODE_FONT, CODE_SIZE, LINK_COLOR } from "./theme.js";
 import { texToDocxMath } from "./math.js";
+import { highlightCodeRuns } from "./code-highlight.js";
 import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo, type CaptionLabelInfo } from "./captions.js";
 import { buildEquationContext, type EquationContext } from "./equations.js";
 import { collectPlainText } from "../mdast-utils.js";
@@ -713,7 +714,9 @@ async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
 
 /** 代码块:mermaid 围栏且有 resolver 时渲染为内嵌 PNG 图片(宽 >400 等比缩,
  *  与行内图片共用 scaleToFit);渲染失败(null/抛错)或缺失 resolver 时降级为
- *  等宽文本代码块(行为不变,内容不丢失,与公式降级语义一致)。 */
+ *  等宽文本代码块(行为不变,内容不丢失,与公式降级语义一致)。
+ *  已知语言(hljs.getLanguage 命中)走语法高亮(code-highlight.ts,GitHub Light
+ *  色板);无语言/未知语言/高亮解析失败 → 等宽文本代码块。 */
 async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
   if (node.lang === "mermaid" && ctx.mermaidResolver) {
     try {
@@ -729,6 +732,14 @@ async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
       const reason = err instanceof Error ? err.message : String(err);
       ctx.warnings?.push(`Mermaid 渲染失败: ${reason},已降级为代码块`);
     }
+  }
+  const highlighted = highlightCodeRuns(node.value, node.lang ?? undefined);
+  if (highlighted) {
+    return new Paragraph({
+      spacing: { before: 120, after: 120 },
+      indent: { left: 360 },
+      children: highlighted,
+    });
   }
   const lines = node.value.split("\n");
   const children: TextRun[] = [];

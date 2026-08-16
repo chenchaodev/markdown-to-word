@@ -2,7 +2,7 @@
  * 基础渲染段:全要素中英混排样例 → docx + pdf。
  * 来源:scripts/g1-verify.mjs 全文(样例 md 原样保留;图片引用改为 FIXTURES_DIR 下
  * g1-tiny.png,imageResolver 基准目录用 FIXTURES_DIR;原无断言,补 buffer/表格/粗体断言)。
- * 补充断言(中优先级缺口):代码块 docx 序列化(Consolas/10pt/逐行 w:br/不做行内解析)、
+ * 补充断言(中优先级缺口):代码块 docx 序列化(hljs 高亮/Consolas/10pt/逐行 w:br)、
  * 代码块 pdf hljs 高亮(language-ts 围栏 + token 类 span)、引用块(左缩进 720 + 灰底
  * F2F2F2)、列表(w:numPr + numbering.xml bullet/decimal)、表格表头加粗(w:b/w:bCs)。
  * 图片尺寸(R4:H3 行为修复):1×1 小图不放大(9525 EMU)、800×400 大图等比缩到 400 宽
@@ -119,31 +119,48 @@ export async function run() {
   console.log("[ok] basic-render:全要素样例渲染成功,表格与粗体文本断言通过");
 
   // ---------- 补充断言:代码块 / 引用块 / 列表 / 表格表头(实现 src/core/docx/render.ts) ----------
-  // 代码块(renderCode):单段落,每行一个 TextRun(字体 CODE_FONT=Consolas、字号 CODE_SIZE=20
-  // half-points=10pt → w:sz/w:szCs val="20"),行间 <w:br/> run;内容原样(不做行内解析)。
-  const codeRun =
-    '<w:rPr><w:rFonts w:ascii="Consolas" w:cs="Consolas" w:eastAsia="Consolas" w:hAnsi="Consolas"/>' +
-    '<w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>' +
-    '<w:t xml:space="preserve">function hello(name: string): string {</w:t>';
-  if (!documentXml.includes(codeRun)) {
-    throw new Error("basic-render 断言失败:代码块首行 run 缺少 Consolas + w:sz val=20(10pt)");
+  // 代码块(renderCode):```ts 已知语言 → hljs 语法高亮(code-highlight.ts,GitHub Light
+  // 色板),每个 token 一个 TextRun(字体 CODE_FONT=Consolas、字号 CODE_SIZE=20
+  // half-points=10pt → w:sz/w:szCs val="20"),行间 <w:br/> run;无语言/未知语言
+  // 降级为等宽文本原样输出。function 关键字 → keyword 类 → CF222E。
+  if (!documentXml.includes('<w:color w:val="CF222E"/>')) {
+    throw new Error('basic-render 断言失败:代码块 function 关键字未着色(<w:color w:val="CF222E"/>)');
   }
-  // 不做行内解析:模板字符串 `Hello, ${name}` 逐字出现在单个 w:t 内(无行内样式拆分)
-  if (!documentXml.includes('<w:t xml:space="preserve">  return `Hello, ${name}`;</w:t>')) {
-    throw new Error("basic-render 断言失败:代码块未原样输出模板字符串(疑似做了行内解析)");
+  // 高亮 run 结构:Consolas + w:sz val=20(10pt)的 rPr 片段(每个代码 run 均带)
+  if (
+    !documentXml.includes(
+      '<w:rFonts w:ascii="Consolas" w:cs="Consolas" w:eastAsia="Consolas" w:hAnsi="Consolas"/>' +
+        '<w:sz w:val="20"/><w:szCs w:val="20"/>',
+    )
+  ) {
+    throw new Error("basic-render 断言失败:代码块 run 缺少 Consolas + w:sz val=20(10pt)");
   }
-  if (!documentXml.includes('<w:t xml:space="preserve">}</w:t>')) {
-    throw new Error("basic-render 断言失败:代码块缺少末行(})");
+  // 高亮拆分后文本片段仍完整(模板字符串被拆为 string 段 `Hello, / subst 段 ${name} /
+  // 默认段,不再整行单 run):逐片段断言,保证文本内容不丢失
+  const codeFragments = [
+    '<w:t xml:space="preserve">function</w:t>',
+    '<w:t xml:space="preserve">hello</w:t>',
+    '<w:t xml:space="preserve">name</w:t>',
+    '<w:t xml:space="preserve">string</w:t>',
+    '<w:t xml:space="preserve">return</w:t>',
+    '<w:t xml:space="preserve">`Hello, </w:t>',
+    '<w:t xml:space="preserve">${name}</w:t>',
+    '<w:t xml:space="preserve">}</w:t>',
+  ];
+  for (const frag of codeFragments) {
+    if (!documentXml.includes(frag)) {
+      throw new Error(`basic-render 断言失败:代码块高亮拆分后缺少片段 ${frag}`);
+    }
   }
-  // 3 行代码 → 2 个行间换行 run(renderCode lines.forEach 每非末行追加 break run)
+  // 3 行代码 → 2 个行间换行 run(renderCode 每非末行追加 break run)
   if ((documentXml.match(/<w:br\/>/g) || []).length !== 2) {
     throw new Error("basic-render 断言失败:代码块换行 run(<w:br/>)数量 != 2(3 行 2 断)");
   }
-  // 代码块段落左缩进 360 twips(renderCode indent: { left: 360 })
-  if (!paragraphProps(documentXml, "function hello(name: string): string {").includes('<w:ind w:left="360"/>')) {
+  // 代码块段落左缩进 360 twips(renderCode indent: { left: 360 };末行 } 为默认色单 run)
+  if (!paragraphProps(documentXml, "}").includes('<w:ind w:left="360"/>')) {
     throw new Error('basic-render 断言失败:代码块段落缺少 w:ind w:left="360"');
   }
-  console.log("[ok] basic-render:代码块 docx 序列化(Consolas/10pt/逐行 w:br/原样输出)断言通过");
+  console.log("[ok] basic-render:代码块 docx 序列化(hljs 高亮/Consolas/10pt/逐行 w:br)断言通过");
 
   // 引用块(renderBlockquote):indent left 720 + shading fill F2F2F2(type clear)
   const quotePPr = paragraphProps(documentXml, "这是引用块内容,Quote with mixed 中文。");
