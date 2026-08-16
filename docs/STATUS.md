@@ -1,3 +1,4 @@
+- 2026-08-16:**批注迭代完成**(308769e,7 文件 363+/5-):语法 [锚定文本]{批注=内容}(行内,单段落锚定 + 内容行内 rich);remark 插件(comment.ts:micromark text 扩展 + from-markdown 扩展,anchor/content 重新解析支持 rich);docx 渲染(CommentRangeStart/End/Reference + comments 容器,id 渲染期计数器唯一,author 固定 markdown-to-word);mdast-utils 仅锚定文本入纯文本(不进标题 slug/目录/题注);pdf 路线原样输出;38 段(新增 comments.test.js)+ smoke 全绿;待实测见 ACCEPTANCE.md
 - 2026-08-16:**批注迭代进行中**(docx 批注支持;语法 [锚定文本]{批注=内容} 已确认;docx 库 API 调研完成(archive 落盘);v1 范围:单段落锚定 + 内容行内 rich,不做回复线程/跨段落;pdf 路线原样显示)
 - 2026-08-16:**界面配置区重构实测通过**(用户确认;ACCEPTANCE 5 项已勾选)
 - 2026-08-16:**界面配置区重构完成**(d225a76,6 文件 287+/273-):1 个折叠面板「设置」+ 内部 4 子组(模板/页面/排版/导出);模板预设从常显卡片收进设置面板;最近转换限高 240px 滚动;标题区去副标题;公式编号归排版;导出行为独立成组;panelOpen 默认折叠(已记忆展开态优先恢复);37 段 + smoke 全绿;待实测见 ACCEPTANCE.md
