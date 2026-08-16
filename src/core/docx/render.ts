@@ -279,12 +279,10 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     }
   }
   // 预扫公式编号上下文(9d:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表)。
-  // 公式编号开关关闭时跳过预扫,使用空 context:公式原样渲染(无编号)、label 段按普通
-  // 段落原样渲染、引用查表为空(行内引用保持原文本,见 pushRuns 的 equationNumbering 门控)
-  const equations: EquationContext =
-    ctx.equationNumbering === false
-      ? { indexByNode: new Map(), labelIndex: new Map(), skipSet: new Set() }
-      : buildEquationContext(ast, ctx);
+  // 公式编号开关关闭时仍调用 buildEquationContext(numbering=false):label 段照常识别并
+  // 跳过渲染(语法标记不显示),但公式不编号、label 不登记、无孤立 label 警告;引用查表
+  // 为空 → 行内引用保持原文本(见 pushRuns 的 equationNumbering 门控)
+  const equations: EquationContext = buildEquationContext(ast, ctx, ctx.equationNumbering !== false);
   // label 查表挂到 ctx(行内链接渲染处 pushRuns 经 ctx 访问)
   ctx.equationLabels = equations.labelIndex;
   if (ctx.toc) {

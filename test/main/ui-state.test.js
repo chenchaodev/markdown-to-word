@@ -9,7 +9,8 @@
  * - 字段类型非法:recentFiles 非数组/条目缺字段/format 非法/ts 非数 → 过滤;
  *   lastSessionFiles 混入非字符串/空串 → 过滤;lastOpenDir 非字符串 → "";
  *   windowBounds 缺字段/非数/宽高 ≤0 → null;panelOpen 非布尔 → 默认 true
- * - recentFiles 去重 + 上限 10:同 path 保留 ts 最大;按 ts 降序;截断 10;追加合并语义
+ * - recentFiles 去重 + 上限 10:同 path 保留 ts 最大;按 ts 降序;截断 10;追加合并语义;
+ *   空数组 = 清空(renderer「清空最近」)
  * - lastOpenDir 缺失/空串 → ""
  * - pickWindowBounds:x/y 落在某工作区内保留;全工作区外/尺寸非法 → null
  * - suppressCompleteDialog(批次 11 迭代 2):true 往返持久化;缺失/非 boolean → false
@@ -175,6 +176,21 @@ export async function run() {
     assert(x && x.ts === 2 && x.format === "pdf", "追加合并:x 应只留 ts 最大条目且置顶");
     assert(s7.recentFiles[0].path === "C:\\x.md", "追加合并:ts 最大应排最前");
     console.log("[ok] ui-state:saveUiState 追加合并(重复 path 去重置顶)");
+
+    // ---- 5b. saveUiState({ recentFiles: [] }) = 清空(renderer「清空最近」传空数组) ----
+    await m7.saveUiState({ recentFiles: [] });
+    const m7b = await freshModule();
+    const s7b = m7b.loadUiState();
+    assert(s7b.recentFiles.length === 0, `空数组应清空 recentFiles,实际 ${JSON.stringify(s7b.recentFiles)}`);
+    // 清空后追加合并语义不变(转换成功后追加新条目,index.ts:280 调用不受影响)
+    await m7b.saveUiState({ recentFiles: [{ path: "C:\\z.md", name: "z.md", format: "docx", ts: 5 }] });
+    const m7c = await freshModule();
+    const s7c = m7c.loadUiState();
+    assert(
+      s7c.recentFiles.length === 1 && s7c.recentFiles[0].path === "C:\\z.md",
+      `清空后追加合并应正常,实际 ${JSON.stringify(s7c.recentFiles)}`,
+    );
+    console.log("[ok] ui-state:saveUiState 空数组清空(清空最近)+ 清空后追加合并不变");
 
     // ---- 6. lastOpenDir 缺失 / 空串 → 默认空串 ----
     await fs.writeFile(uiFile, JSON.stringify({ lastOpenDir: "" }), "utf8");

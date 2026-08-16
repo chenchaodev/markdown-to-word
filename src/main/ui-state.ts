@@ -13,7 +13,8 @@
  * - suppressCompleteDialog: 转换完成弹窗「不再提示」(默认 false = 提示;批次 11 迭代 2)
  * 读时逐字段校验类型,非法/缺失 → 该字段默认值(不复用 settings 的整文件回退);
  * saveUiState 以 patch 合并当前状态,recentFiles 为「追加合并」语义
- * (同 path 保留 ts 最大者 → 重复转换自然置顶)。
+ * (同 path 保留 ts 最大者 → 重复转换自然置顶);空数组 = 清空(替换语义,
+ * renderer「清空最近」传 { recentFiles: [] })。
  * 纯函数 pickWindowBounds 单独导出,供窗口创建(index.ts)与测试复用。
  */
 import { app } from "electron";
@@ -199,7 +200,7 @@ export function loadUiState(): UiState {
 /**
  * 原子写(tmp + rename)+ 写队列串行化(仿 settings.ts):
  * patch 与当前状态合并后整体落盘,recentFiles 为追加合并语义
- * (去重保留 ts 最大 → 重复转换置顶;上限 10)。
+ * (去重保留 ts 最大 → 重复转换置顶;上限 10);空数组 = 清空(替换语义)。
  * 写失败(如磁盘错误)向上抛出,由调用方决定是否静默。
  */
 export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
@@ -214,10 +215,15 @@ export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
   };
   if (patch && typeof patch === "object" && !Array.isArray(patch)) {
     if (Array.isArray(patch.recentFiles)) {
-      next.recentFiles = dedupeRecentFiles([
-        ...current.recentFiles,
-        ...sanitizeRecentFiles(patch.recentFiles),
-      ]);
+      // 空数组 = 清空(替换语义,renderer「清空最近」传 { recentFiles: [] });
+      // 非空 = 追加合并(转换成功后追加新条目,index.ts:280 调用不受影响)
+      next.recentFiles =
+        patch.recentFiles.length === 0
+          ? []
+          : dedupeRecentFiles([
+              ...current.recentFiles,
+              ...sanitizeRecentFiles(patch.recentFiles),
+            ]);
     }
     if (Array.isArray(patch.lastSessionFiles)) {
       next.lastSessionFiles = sanitizeSessionFiles(patch.lastSessionFiles);

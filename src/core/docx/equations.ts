@@ -27,8 +27,11 @@ interface EquationContext {
  * 按文档顺序全文连续编号 1,2,3…;公式块后紧跟的独立段 `{#eq:label}`(整段仅此
  * 一行,label 为 [\w-]+)→ label 登记给前一公式并跳过渲染;前无公式的 label 段
  * 追加警告并同样跳过。
+ * numbering=false(公式编号开关关闭):公式不编号(index 不递增、indexByNode 不
+ * 登记);label 段仍识别并加入 skipSet(语法标记不显示),但不登记 labelIndex、
+ * 不追加「公式 label 前无公式」警告。
  */
-function buildEquationContext(ast: Root, ctx: Ctx): EquationContext {
+function buildEquationContext(ast: Root, ctx: Ctx, numbering: boolean = true): EquationContext {
   const indexByNode = new Map<MdMath, EquationInfo>();
   const labelIndex = new Map<string, number>();
   const skipSet = new Set<MdParagraph>();
@@ -36,6 +39,7 @@ function buildEquationContext(ast: Root, ctx: Ctx): EquationContext {
   let lastInfo: EquationInfo | null = null;
   for (const node of ast.children) {
     if (node.type === "math") {
+      if (!numbering) continue; // 关开关:不编号、不登记
       index++;
       // 同一对象同时入 Map 与 lastInfo:后续 label 段直接改 lastInfo 即同步 Map 项
       lastInfo = { index };
@@ -44,13 +48,16 @@ function buildEquationContext(ast: Root, ctx: Ctx): EquationContext {
       const match = /^\{#eq:([\w-]+)\}$/.exec(collectPlainText(node));
       if (!match) continue;
       const label = match[1];
-      if (lastInfo) {
-        // 补 label 到前一公式;同公式多个 label 段时后者覆盖
-        lastInfo.label = label;
-        labelIndex.set(label, lastInfo.index);
-      } else {
-        ctx.warnings?.push(`公式 label 前无公式,已忽略: {#eq:${label}}`);
+      if (numbering) {
+        if (lastInfo) {
+          // 补 label 到前一公式;同公式多个 label 段时后者覆盖
+          lastInfo.label = label;
+          labelIndex.set(label, lastInfo.index);
+        } else {
+          ctx.warnings?.push(`公式 label 前无公式,已忽略: {#eq:${label}}`);
+        }
       }
+      // 关开关时 lastInfo 恒为 null,label 段仍跳过渲染(语法标记不显示)
       skipSet.add(node);
     }
   }

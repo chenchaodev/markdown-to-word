@@ -51,7 +51,8 @@ export interface RenderPdfHtmlOptions {
   captionNumbering?: boolean;
   /** 自动生成目录页(默认开;开时正文含标题则插入静态目录) */
   toc?: boolean;
-  /** 公式编号开关(默认开;关时不注册 eq_numbering 规则——公式/label 段/引用全部原样) */
+  /** 公式编号开关(默认开;关时 eq_numbering 规则仍注册但只隐藏 label 段——
+   *  公式不编号、label 不登记、引用保持原文本) */
   equationNumbering?: boolean;
   /** KaTeX 资源目录(绝对路径,含 katex.min.css 与 fonts/ 子目录,即
    *  node_modules/katex/dist;传入则 katex.min.css 内联进模板并改写字体
@@ -122,10 +123,10 @@ function buildMarkdownIt(
   md.use(katex);
   overrideHtmlRules(md);
   overrideCaptionRule(md);
-  // 公式编号开关关闭时不注册 eq_numbering 规则:display 公式原样渲染(无 eq-block/
-  // eq-num 包裹)、{#eq:label} 段按普通段落渲染、[式](#eq:label) 引用保持原文本
-  // (markdown-it 默认行为,与 docx 侧空 context 语义一致)
-  if (equationNumbering) overrideEquationRule(md);
+  // 公式编号开关关闭时 eq_numbering 规则仍注册(numbering=false):label 段照常
+  // 隐藏(语法标记不显示),但公式不编号(无 eq-block/eq-num 包裹)、label 不登记、
+  // [式](#eq:label) 引用保持原文本(与 docx 侧 numbering=false 语义一致)
+  overrideEquationRule(md, equationNumbering);
   overrideXrefRule(md, { headingNumbering, captionNumbering });
   return md;
 }
@@ -189,8 +190,11 @@ function overrideCaptionRule(md: MarkdownIt): void {
  *   (warnings 通道存在时追加提示,经 render 的 env.warnings 注入,见 renderPdfHtml)
  * - 编号渲染:math_block 包 <div class="eq-block">(内可选 <span id="eq:label"> 锚点 +
  *   KaTeX 输出 + <span class="eq-num">(N)</span>),CSS 使公式居中、编号右缘垂直居中
+ * - numbering=false(公式编号开关关闭):规则仍注册,但只做 label 段隐藏(三 token
+ *   hidden + children 清空,语法标记不显示);不做 math_block 编号(data-eq-index
+ *   不设置)、labelIndex 登记、第二遍引用替换(引用保持原文本)
  */
-function overrideEquationRule(md: MarkdownIt): void {
+function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
   md.core.ruler.push("eq_numbering", (state) => {
     const tokens = state.tokens;
     // 第一遍:顶层遍历(容器深度跟踪同 caption_recognize),编号 + label 段识别
@@ -211,6 +215,7 @@ function overrideEquationRule(md: MarkdownIt): void {
         depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0
       ) {
         // 仅顶层公式编号(容器内公式与 docx 侧一致:不计数不编号,原样渲染)
+        if (!numbering) continue; // 关开关:不编号(不设 data-eq-index)
         eqIndex++;
         token.attrSet("data-eq-index", String(eqIndex));
         lastMathToken = token;
@@ -225,10 +230,12 @@ function overrideEquationRule(md: MarkdownIt): void {
         if (first.type !== "text") continue;
         const match = /^\{#eq:([\w-]+)\}$/.exec(first.content);
         if (!match) continue;
-        if (!lastMathToken) continue; // 无前置公式 → 保持原样(按普通段落渲染)
-        const label = match[1];
-        lastMathToken.attrSet("data-eq-label", label);
-        labelIndex.set(label, eqIndex);
+        if (numbering) {
+          if (!lastMathToken) continue; // 无前置公式 → 保持原样(按普通段落渲染)
+          const label = match[1];
+          lastMathToken.attrSet("data-eq-label", label);
+          labelIndex.set(label, eqIndex);
+        }
         // 三 token 置 hidden 不渲染。注意:markdown-it 主渲染循环对 inline token
         // 直接 renderInline(children),不检查 inline 自身 hidden(仅 renderToken 检查,
         // text 等走独立规则的 children 亦然)→ 必须同时清空 children 才能彻底不输出
@@ -238,6 +245,7 @@ function overrideEquationRule(md: MarkdownIt): void {
         token.hidden = true;
       }
     }
+    if (!numbering) return; // 关开关:不做引用替换(引用保持原文本)
     // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内)
     const unknownLabels = new Set<string>();
     for (const token of tokens) {
