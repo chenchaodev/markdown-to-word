@@ -54,6 +54,9 @@ export interface RenderPdfHtmlOptions {
   /** 公式编号开关(默认开;关时 eq_numbering 规则仍注册但只隐藏 label 段——
    *  公式不编号、label 不登记、引用保持原文本) */
   equationNumbering?: boolean;
+  /** 用户自定义样式 CSS(批次 16:模板导入·CSS 覆盖 pdf 路线;追加到默认模板
+   *  CSS 之后,同一 <style> 内后声明覆盖默认样式;缺省/空串不注入) */
+  pdfCss?: string;
   /** KaTeX 资源目录(绝对路径,含 katex.min.css 与 fonts/ 子目录,即
    *  node_modules/katex/dist;传入则 katex.min.css 内联进模板并改写字体
    *  为 file:// 绝对路径,公式字体样式生效;不传则公式渲染为 KaTeX HTML
@@ -724,6 +727,7 @@ export async function renderPdfHtml(
   return buildTemplate(
     processedBody,
     title,
+    // 批次 16:用户 CSS 追加到默认 CSS 末尾(同一 <style> 内后声明覆盖默认样式)
     buildTemplateCss(
       pageSetup,
       options.breakBeforeH1 ?? false,
@@ -731,7 +735,7 @@ export async function renderPdfHtml(
       headingNumbering,
       captionNumbering,
       /<h1[\s>]/i.test(bodyHtml),
-    ),
+    ) + (options.pdfCss ? `\n${options.pdfCss}` : ""),
     options.katexDir ? loadKatexCss(options.katexDir) : "",
   );
 }

@@ -23,8 +23,10 @@ import {
 import {
   loadSettings,
   updateSettings,
+  MAX_PDF_CSS_BYTES,
   type AppSettings,
   type ExportPresetsResult,
+  type ImportPdfCssResult,
   type ImportPresetsResult,
 } from "./settings.js";
 import {
@@ -442,6 +444,32 @@ function registerIpc(): void {
       return { ok: true, canceled: false, count: presets.length };
     } catch (err) {
       return { ok: false, error: `写入文件失败:${errorMessage(err)}` };
+    }
+  });
+
+  // 批次 16:导入 CSS 文件作为 PDF 样式模板(选文件 → 读内容 → 大小上限校验 → 返回内容+文件名)。
+  // 内容由 renderer 经 settings:set 持久化到 settings.pdfCss(pdf 渲染时追加到默认样式后覆盖)。
+  // 取消 → { ok:true, canceled:true };读取异常/超限 → { ok:false, error }(可读文案)
+  ipcMain.handle("import:pdf-css", async (): Promise<ImportPdfCssResult> => {
+    const result = await dialog.showOpenDialog({
+      title: "导入 PDF 样式 CSS",
+      defaultPath: await lastOpenDirIfValid(),
+      filters: [{ name: "CSS", extensions: ["css"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: true, canceled: true };
+    }
+    try {
+      const css = await fs.readFile(result.filePaths[0], "utf8");
+      if (Buffer.byteLength(css, "utf8") > MAX_PDF_CSS_BYTES) {
+        return { ok: false, error: `CSS 文件过大(超过 ${MAX_PDF_CSS_BYTES / 1024}KB 上限)` };
+      }
+      // 与其它打开对话框一致:成功后记忆所选目录(下次默认打开位置)
+      await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]) }).catch(() => undefined);
+      return { ok: true, canceled: false, css, name: path.basename(result.filePaths[0]) };
+    } catch (err) {
+      return { ok: false, error: `读取文件失败:${errorMessage(err)}` };
     }
   });
 

@@ -46,6 +46,7 @@ const SETTING_KEYS = [
   "afterConvert",
   "outputDir",
   "customPresets",
+  "pdfCss",
 ] as const;
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
@@ -89,6 +90,8 @@ export function isValidSettings(value: unknown): value is AppSettings {
   if ("equationNumbering" in s && typeof s.equationNumbering !== "boolean") return false;
   // outputDir 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "";存在则须合法
   if ("outputDir" in s && !isValidOutputDir(s.outputDir)) return false;
+  // pdfCss 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "";存在则须 string
+  if ("pdfCss" in s && typeof s.pdfCss !== "string") return false;
   const ps = s.pageSetup as Record<string, unknown> | undefined;
   if (typeof ps !== "object" || ps === null) return false;
   if (!isOneOf(ps.paper, PAPERS)) return false;
@@ -122,6 +125,8 @@ export function loadSettings(): AppSettings {
           typeof parsed.equationNumbering === "boolean"
             ? parsed.equationNumbering
             : DEFAULT_SETTINGS.equationNumbering,
+        // 批次 16:pdfCss 缺失(旧文件)→ "";存在 → 原样保留
+        pdfCss: typeof parsed.pdfCss === "string" ? parsed.pdfCss : DEFAULT_SETTINGS.pdfCss,
         typography: sanitizeTypography(parsed.typography),
         // 批次 11 迭代 3:customPresets 缺失(旧文件)→ [];存在 → 逐条校验
         customPresets: sanitizeCustomPresets(parsed.customPresets),
@@ -195,6 +200,9 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
       case "customPresets":
         out.customPresets = sanitizeCustomPresets(src.customPresets);
         break;
+      case "pdfCss":
+        out.pdfCss = typeof src.pdfCss === "string" ? src.pdfCss : DEFAULT_SETTINGS.pdfCss;
+        break;
     }
   }
   return out;
@@ -244,6 +252,15 @@ export type ImportPresetsResult =
 export type ExportPresetsResult =
   | { ok: true; canceled: true }
   | { ok: true; canceled: false; count: number }
+  | { ok: false; error: string };
+
+/* ---------- 批次 16:PDF 样式 CSS 导入(对话框/文件 IO 在 index.ts IPC 层) ---------- */
+/** PDF 自定义 CSS 导入大小上限(字节;超出拒绝导入,防误选大文件拖垮 settings.json)。 */
+export const MAX_PDF_CSS_BYTES = 100 * 1024;
+
+export type ImportPdfCssResult =
+  | { ok: true; canceled: true }
+  | { ok: true; canceled: false; css: string; name: string }
   | { ok: false; error: string };
 
 /** 导出文件的 schemaVersion(导入侧仅接受 === 1 或裸数组)。 */

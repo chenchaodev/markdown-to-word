@@ -61,6 +61,9 @@ import {
   outputDirReset,
   outputDirValue,
   paperSelect,
+  pdfCssClearBtn,
+  pdfCssImportBtn,
+  pdfCssStatus,
   presetDeleteBtn,
   presetExportBtn,
   presetImportBtn,
@@ -155,6 +158,10 @@ function applySettingsToControls(): void {
   // 输出目录:空串显示「与源文件相同目录」
   outputDirValue.textContent = v.outputDirText;
   outputDirValue.title = v.outputDirText;
+  // 批次 16:PDF 样式 CSS 回显(settings.json 只存内容不存文件名,显示通用文案;
+  // 非空 → 「已导入自定义 CSS」+ 清除按钮可用)
+  pdfCssStatus.textContent = state.settings.pdfCss ? "已导入自定义 CSS" : "未导入";
+  pdfCssClearBtn.classList.toggle("hidden", !state.settings.pdfCss);
 }
 
 /** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。
@@ -304,6 +311,36 @@ async function exportCustomPresets(): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     setError(`导出预设失败:${message}`);
   }
+}
+
+/* ---------- PDF 样式 CSS 导入(批次 16;main 内选文件 + 读内容,内容持久化到 settings.pdfCss) ---------- */
+/** 导入 CSS 文件作为 PDF 样式模板:main 打开对话框 → 读文件(≤100KB)→ 持久化 pdfCss。
+ *  成功后更新状态显示(文件名)并启用清除;取消无动作;失败状态区提示。 */
+async function importPdfCss(): Promise<void> {
+  try {
+    const r = await window.api.importPdfCss();
+    if (!r.ok) {
+      setError(`导入 CSS 失败:${r.error}`);
+      return;
+    }
+    if (r.canceled) return; // 用户取消:无动作
+    state.settings.pdfCss = r.css;
+    persistSettings({ pdfCss: r.css });
+    pdfCssStatus.textContent = `已导入: ${r.name}`;
+    pdfCssClearBtn.classList.remove("hidden");
+    setStatus(`已导入 PDF 样式:${r.name}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    setError(`导入 CSS 失败:${message}`);
+  }
+}
+
+/** 清除已导入的 PDF 样式 CSS:持久化空串 + 状态复位「未导入」+ 清除按钮禁用。 */
+function clearPdfCss(): void {
+  state.settings.pdfCss = "";
+  persistSettings({ pdfCss: "" });
+  pdfCssStatus.textContent = "未导入";
+  pdfCssClearBtn.classList.add("hidden");
 }
 
 /* ---------- 转换完成弹窗提示(批次 11 迭代 2;ui-state 字段,非 settings.json) ---------- */
@@ -530,6 +567,9 @@ export function bindSettingsEvents(): void {
   // 批次 13:预设 JSON 导入 / 导出(IIFE + void,规避 no-misused-promises)
   presetImportBtn.addEventListener("click", () => void importCustomPresets());
   presetExportBtn.addEventListener("click", () => void exportCustomPresets());
+  // 批次 16:PDF 样式 CSS 导入 / 清除(IIFE + void,规避 no-misused-promises)
+  pdfCssImportBtn.addEventListener("click", () => void importPdfCss());
+  pdfCssClearBtn.addEventListener("click", clearPdfCss);
 
   // 批次 7:输出目录选择 / 恢复默认(空串 = 与源文件相同目录)
   outputDirPick.addEventListener("click", () => {

@@ -94,6 +94,16 @@ export const presetImportBtn = document.getElementById(
 export const presetExportBtn = document.getElementById(
   "presetExportBtn",
 ) as HTMLButtonElement;
+// 批次 16:PDF 样式 CSS 导入(导入 / 清除 / 状态显示)
+export const pdfCssImportBtn = document.getElementById(
+  "pdfCssImportBtn",
+) as HTMLButtonElement;
+export const pdfCssClearBtn = document.getElementById(
+  "pdfCssClearBtn",
+) as HTMLButtonElement;
+export const pdfCssStatus = document.getElementById(
+  "pdfCssStatus",
+) as HTMLSpanElement;
 export const presetSaveDialog = document.getElementById(
   "presetSaveDialog",
 ) as HTMLDivElement;

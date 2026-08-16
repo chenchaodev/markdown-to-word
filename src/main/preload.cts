@@ -1,6 +1,6 @@
 // preload:CJS 输出(preload.cjs),沙箱兼容;contextBridge 白名单暴露 API
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { AppSettings, ExportPresetsResult, ImportPresetsResult } from "./settings.js";
+import type { AppSettings, ExportPresetsResult, ImportPdfCssResult, ImportPresetsResult } from "./settings.js";
 import type { UiState } from "./ui-state.js";
 
 contextBridge.exposeInMainWorld("api", {
@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld("api", {
   importPresets: (): Promise<ImportPresetsResult> => ipcRenderer.invoke("presets:import"),
   /** 批次 13:导出全部自定义预设为 JSON(保存对话框);无预设 → { ok:false, error } */
   exportPresets: (): Promise<ExportPresetsResult> => ipcRenderer.invoke("presets:export"),
+  /** 批次 16:导入 CSS 文件作为 PDF 样式模板(选文件 → 读内容 → 返回 css+文件名);
+   *  取消 → { ok:true, canceled:true };超限/读取失败 → { ok:false, error } */
+  importPdfCss: (): Promise<ImportPdfCssResult> => ipcRenderer.invoke("import:pdf-css"),
   /** 批次 11:读取 UI 状态(最近文件/会话文件/记忆目录/窗口位置/面板展开态)。 */
   uiStateGet: (): Promise<UiState> => ipcRenderer.invoke("ui-state:get"),
   /** 批次 11:局部更新 UI 状态并持久化,返回合并后的完整状态。 */

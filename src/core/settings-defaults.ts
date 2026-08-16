@@ -59,6 +59,8 @@ export interface AppSettings {
   outputDir: string;
   /** 自定义模板预设(批次 11 迭代 3;上限 MAX_CUSTOM_PRESETS,名称非空去重) */
   customPresets: CustomPreset[];
+  /** PDF 自定义样式 CSS(用户导入,追加到默认样式后覆盖;默认空) */
+  pdfCss: string;
 }
 
 /** 自定义模板预设:名称 + 排版/页面设置快照(套用逻辑与硬编码预设一致)。 */
@@ -82,6 +84,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   afterConvert: "none",
   outputDir: "",
   customPresets: [],
+  pdfCss: "",
 };
 
 /** 页面边距钳制范围(mm,与主进程 sanitizePageSetup 一致) */

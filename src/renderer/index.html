@@ -193,6 +193,17 @@
             title="导出全部自定义预设为 JSON 文件">
             导出预设…
           </button>
+          <!-- 批次 16:PDF 样式 CSS 导入(仅 pdf 路线生效;内容持久化到 settings.pdfCss,
+               渲染时追加到默认样式之后覆盖;docx 路线不消费 CSS) -->
+          <button type="button" id="pdfCssImportBtn" class="btn btn-secondary btn-small"
+            title="导入 CSS 文件作为 PDF 样式模板(追加到默认样式之后覆盖)">
+            导入 CSS…
+          </button>
+          <button type="button" id="pdfCssClearBtn" class="btn btn-ghost btn-small hidden"
+            title="清除已导入的 PDF 样式 CSS">
+            清除
+          </button>
+          <span id="pdfCssStatus" class="settings-note">未导入</span>
           <span id="templatePresetHint" class="settings-note">
             选择模板将覆盖排版与页面设置
           </span>

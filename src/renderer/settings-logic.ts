@@ -100,6 +100,7 @@ export function mergeSettingsWithDefaults(loaded: Partial<AppSettings>): AppSett
     pageSetup: { ...DEFAULT_SETTINGS.pageSetup, ...loaded.pageSetup },
     typography: { ...DEFAULT_SETTINGS.typography, ...loaded.typography },
     customPresets: loaded.customPresets ?? DEFAULT_SETTINGS.customPresets,
+    pdfCss: loaded.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
   };
 }
 

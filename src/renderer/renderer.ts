@@ -159,6 +159,13 @@ declare global {
         | { ok: true; canceled: false; count: number }
         | { ok: false; error: string }
       >;
+      /** 批次 16:导入 CSS 文件作为 PDF 样式模板(main 内选文件 + 读内容 + 大小上限校验);
+       *  canceled=true 为用户取消;成功返回 css 内容与文件名。 */
+      importPdfCss: () => Promise<
+        | { ok: true; canceled: true }
+        | { ok: true; canceled: false; css: string; name: string }
+        | { ok: false; error: string }
+      >;
       /** 批次 11 迭代 4:应用菜单「文件 → 打开文件…」触发,复用现有选择对话框链路。 */
       onMenuOpen: (cb: () => void) => () => void;
     };

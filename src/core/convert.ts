@@ -52,6 +52,8 @@ export interface ConvertContext {
   equationNumbering?: boolean;
   /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
   katexDir?: string;
+  /** 用户自定义样式 CSS(pdf 用,见 renderPdfHtml pdfCss;docx 路线不消费 CSS) */
+  pdfCss?: string;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
 }
@@ -99,6 +101,7 @@ export async function convert(
         toc: context.toc,
         equationNumbering: context.equationNumbering,
         katexDir: context.katexDir,
+        pdfCss: context.pdfCss,
         mermaidResolver: context.mermaidResolver,
       }),
       footerTemplate: PDF_FOOTER_TEMPLATE,

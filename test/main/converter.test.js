@@ -29,6 +29,7 @@ import { loadSettings, updateSettings } from "../../dist/main/settings.js";
 import { backupSettings } from "../common/settings.js";
 import {
   batchConvertImpl,
+  buildConvertContext,
   ConvertCanceledError,
   convertImpl,
   createConvertContext,
@@ -199,6 +200,24 @@ export async function run() {
       .file("word/document.xml").async("string");
     assert(pbXml.includes('<w:br w:type="page"/>'), '分页符:document.xml 缺少 <w:br w:type="page"/>');
     console.log("[ok] converter:设置注入(持久化/landscape/breakBeforeH1/分页符 docx)");
+
+    // ---- 8b. pdfCss 透传(批次 16):buildConvertContext 应把 settings.pdfCss 映射到 core 上下文 ----
+    // (IPC 导入对话框无法自动化,标注 GUI 实测;此处断言 main 侧设置 → 上下文映射链路)
+    const pdfCssCtx = buildConvertContext({
+      baseDir: dir,
+      title: "t",
+      settings: { ...loadSettings(), pdfCss: "body { color: red; }" },
+      imageResolver: getImageResolver(dir),
+    });
+    assert(pdfCssCtx.pdfCss === "body { color: red; }", "buildConvertContext 应透传 settings.pdfCss");
+    const pdfCssEmptyCtx = buildConvertContext({
+      baseDir: dir,
+      title: "t",
+      settings: { ...loadSettings(), pdfCss: "" },
+      imageResolver: getImageResolver(dir),
+    });
+    assert(pdfCssEmptyCtx.pdfCss === "", "buildConvertContext 空串 pdfCss 应原样透传");
+    console.log("[ok] converter:buildConvertContext pdfCss 透传(设置 → core 上下文)");
 
     // ---- 9. pdf 渲染失败:printToPDF 抛错 → convertImpl 抛非 ConvertCanceledError + finally 清理 ----
     // 方案:webContents 是 BrowserWindow.prototype 上的 getter → 临时替换为「取原实例后把实例的
