@@ -24,6 +24,7 @@ markdown-to-word:Markdown 转 Word / PDF 等格式的命令行工具。项目知
 | `DEV-GUIDE.md` | 环境/命令/代码地图/验证方式 | 环境或代码结构变化时 |
 | `USER-GUIDE.md` | 终端用户使用说明(安装/操作/设置/FAQ) | 功能或设置变化时 |
 | `ACCEPTANCE.md` | 批次验收清单与实测结果记录 | 验收变更/实测完成时 |
+| `WPS-COMPAT.md` | Word/WPS 双实测兼容矩阵(守护既有功能) | 实测完成/发现问题时 |
 
 按需新建的文档(`REQUIREMENTS.md` / `TEST-MANUAL.md`):建文件同批在本表追加一行;用不到的不建。故障排查不单独建文档——坑/根因沉淀在 RESEARCH.md。
 
