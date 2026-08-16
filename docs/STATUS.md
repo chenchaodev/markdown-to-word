@@ -1,3 +1,4 @@
+- 2026-08-16:**发版 v0.31.0 完成**(63c550b 登记 + 2478744 workflow 修复;Release run success,release notes 从 CHANGELOG 提取验证通过——c346c88 修复生效;tag v0.31.0 指向 2478744)
 - 2026-08-16:**WPS 兼容矩阵实测通过**(用户确认 Word/WPS 双实测全部通过;ACCEPTANCE 4 项已勾选;矩阵状态列待用户回填或按通过处理)
 - 2026-08-16:**WPS 兼容矩阵进行中**(Word/WPS 双实测清单化,守护既有功能;产出 docs/WPS-COMPAT.md 矩阵 + 实测指引)
 - 2026-08-16:**批注迭代实测通过**(用户确认;ACCEPTANCE 4 项已勾选)
