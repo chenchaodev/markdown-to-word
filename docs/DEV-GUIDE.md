@@ -49,6 +49,13 @@
   - `renderer.ts`:文件选择/拖放/格式单选/转换执行(进度文案 + 结果/错误反馈 + 设置面板)
 - `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染)+ main/(主进程层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/gen-fixtures.mjs(fixtures 生成器,属测试体系故在 test/tools/ 而非 scripts/));`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)
 
+## 测试体系(按内容主题零注册,新增=新建段文件)
+- 目录分层:`test/segments/`(core 渲染)+ `test/main/`(主进程层),按内容主题命名,零注册自动发现(`test/acceptance.mjs`)
+- 静态样例入 `test/fixtures/`(acceptance/ 生成 + manual/ 手工);产物 `output/artifacts` + `output/smoke`(可清理重建,smoke 自清理)
+- 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志
+- 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(幂等,exit 0/1)
+- 新增能力须补对应测试段;缺口清单见 ROADMAP「测试遗留」
+
 ## 验证方式
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(全局铁律 3)
 - 验证基线(命令、断言、打包验证链)见 `docs/STATUS.md`「验证基线」;验收测试段明细见 `test/segments/` 与 `test/main/`
