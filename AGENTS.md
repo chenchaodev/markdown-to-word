@@ -24,5 +24,6 @@
 - ACCEPTANCE 只列人工 GUI 实测项,可自动断言项写「自动断言见 test/segments/X.test.js」指针,不重复描述
 - 同轮实测反馈的多个小修复合并为一个修复批次提交(仍保持逻辑单元独立),减少收尾往返
 - 回归守护:核心路径(转换/渲染/格式输出)改动跑对应测试段 + smoke;外围(设置/UI)按影响面跑受影响段
+- Windows 坑:跨项目通用坑(pwsh 引号/MAX_PATH/EBUSY/编码)见全局配置目录 `WINDOWS-GUIDE.md`;本仓库具体坑见 `docs/RESEARCH.md`
 
 - 版本:v1.1(改本文件时递增版本号,超限先瘦身)
