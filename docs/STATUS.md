@@ -1,6 +1,7 @@
+- 2026-08-16:**发版 1.0.0 完成**(30661fe 登记;版本号三统一——package.json 1.0.0 / tag v1.0.0 / CHANGELOG [1.0.0],AGENTS.md 规则同步「1.0.0 起三统一」;Release run success,安装包 MarkdownToWord-Setup-1.0.0.exe 119.6MB + latest.yml;远端 tag 指向 30661fe 验证通过)
 - 2026-08-16:**i18n 界面多语言实测通过**(用户确认「界面验证无问题」;ACCEPTANCE 5 项已勾选,排期功能 2/3 关闭)
 - 2026-08-16:**文档加密决策不做**(用户确认):docx 库不支持加密(非 OOXML 标准),替代需引入 officecrypto-tool 新依赖;pdf 侧需 qpdf 原生二进制分发;调研依据 archive/20260816-114520,ROADMAP 转「砍」;排期功能 3/3 关闭
-- 2026-08-16:**发版 1.0.0 准备中**(用户指令):README/USER-GUIDE 按实际功能更新、软件界面加版本信息;待用户确认后发版(打 tag v1.0.0 + CHANGELOG 汇总 + push)
+- 2026-08-16:**界面版本信息完成**(71eda87):标题区显示版本号(main IPC app:version + preload getVersion + renderer 显示,与「关于」对话框同源,失败静默);发布文档同步更新(15ee2d2:README/USER-GUIDE/docs-README)
 - 2026-08-16:**文档加密调研完成**(adad6b8,纯文档):docx 库 9.7.1 不支持加密(maintainer 确认,非 OOXML 标准);pdf-lib 不支持写入加密;替代方案 officecrypto-tool(docx,Agile AES-256)/qpdf(pdf,最后一步后处理);实现待用户决策(需引入新依赖 + qpdf 原生二进制分发),依据见 RESEARCH.md + archive/20260816-114520
 - 2026-08-16:**i18n 界面多语言完成**(218b183,17 文件 1078+/248-):新增 core/i18n.ts 纯模块(zh/en 字典 + t() 插值 + applyStaticTexts);AppSettings 加 language(默认 zh,全链路透传 + 旧文件兼容);renderer 设置面板「界面语言」radio 即时切换;main 菜单/对话框/预览错误页按语言输出;新增 i18n 测试段 + settings 段更新;40 段 + typecheck/lint/build/smoke 全绿;待实测见 ACCEPTANCE.md
 - 2026-08-16:**发版 v0.32.0 完成**(6653713 登记;Release run success;tag v0.32.0 指向 6653713;本地打包验证通过——release\MarkdownToWord-Setup-0.5.1.exe,asar 关键文件确认(code-highlight/render/main/comment/pdf-render/renderer html+css),win-unpacked 启动存活 4 进程)
@@ -39,6 +40,7 @@
 - 2026-08-14:**批次 12「界面体验优化」完成 + 用户实测通过,发版 0.26.0**(验收见 ACCEPTANCE.md 批次 12 节 U1-U7 全勾;含方向 B「代码质量与测试」迭代 1-3,CHANGELOG 0.26.0 条目汇总)
 
 ## 当前状态
+- 2026-08-16:**发版 1.0.0 完成**(30661fe):首个正式版,版本号三统一(package.json 1.0.0 / tag v1.0.0 / CHANGELOG [1.0.0]);Release 安装包 MarkdownToWord-Setup-1.0.0.exe 已发布;排期 3 项(代码块高亮/i18n/文档加密)全部收口(前两项实测通过、加密决策不做)
 - 2026-08-14:**方向 B「代码质量与测试」全项完成(迭代 1-3)**:迭代 1 维护顺手项(7eb82af smoke 隔离 ui-state 会话残留 + USER-GUIDE/ROADMAP 核对去重);迭代 2 速赢批(abed9b7/1ebd756 settings-logic 抽取 + 22 断言直测,e526060 tsconfig 4 严格开关 + 依赖声明补齐 jszip/@types/mdast/katex(depcheck 修复),e6e48a9 mermaid-service 超时/崩溃/加载失败降级路径测试);迭代 3 工具链(eslint 10 flat + typescript-eslint 8.67 side-by-side TS6 API——TS 7 无 JS API,官方推荐方案,首跑修 5 处真实 floating/misused promise;c8 12 覆盖率:main 97% / core-docx 93% / core-pdf 95% / renderer 100%,sourceMap 映射,NODE_V8_COVERAGE 实测可行;engines 升 >=20.19);typecheck/lint/32 段/smoke 全绿;批次 12 已实测通过,0.26.0 已发版
 - 2026-08-14:**方向 B 首项完成(settings-logic 抽取,abed9b7)**:自 settings-panel.ts 抽零 DOM 纯函数层 `src/renderer/settings-logic.ts`(validatePresetName/customPresetToTemplate/allPresets/customPresetNameFromId/clampMargin,allPresets 参数化),新建 segments/settings-logic.test.js 直测(22 断言),31→32 段全绿;typecheck/build/smoke 全绿;豁免不 tag
 - 2026-08-13:**批次 11「体验打磨」完成 + 用户实测通过,发版 0.25.0**:11 项候选全选拆 4 迭代单元独立提交——I1 状态记忆(e0262e1:ui-state.ts 原子写+宽松校验,最近文件一键重转/会话恢复/对话框目录记忆/窗口面板记忆)、I2 结果增强(dd16075:批量失败重试/复制全部路径/完成弹窗不再提示)、I3 预览与模板(7d87bed:预览设置变更即时刷新+focus mtime 刷新/customPresets 另存为预设)、I4 顺手项(ebc5d88:列表行双击预览/应用菜单+关于);31 段 + smoke 全绿;用户 GUI 实测通过(ACCEPTANCE.md 批次 11 节全勾),验收关闭
@@ -81,5 +83,5 @@ pm run test:coverage(c8,2026-08-14 实测 main 97% / core-docx 93% / core-pdf 95
 > 项目级硬约束(技术栈/镜像/字体/分页符/依赖钉死)已全部迁至项目 `AGENTS.md`「硬约束」节,以彼处为准。
 
 ## 打开事项
-- [x] 功能候选(批次 10 全部完成:8c Mermaid 0.23.0 / 交叉引用 0.24.0 / 模板导入 0.27.0+0.29.0 / 公式编号开关 0.29.0 / 批注 0.31.0 / WPS 兼容矩阵 0.31.0);排期 3 项(代码块高亮写 docx / i18n / 文档加密)见 ROADMAP「当前待办」;其余候选已决策不做(砍)
+- [x] 功能候选全部收口(批次 10:8c Mermaid / 交叉引用 / 模板导入 / 公式编号开关 / 批注 / WPS 兼容矩阵;排期 3 项:代码块高亮写 docx 0.32.0 实测通过 / i18n 1.0.0 实测通过 / 文档加密决策不做(砍));ROADMAP「当前待办」仅剩已完成/砍标记,无排期功能
 - [x] 测试缺口(24 项)已全部补齐(2026-08-13);新增缺口按需入 ROADMAP「当前待办·测试遗留」
