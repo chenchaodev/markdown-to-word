@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [1.0.1] - 2026-08-23
+- **全库质量审计改进第一批落地**(3 子代理深审全库,B1-B14 排期;本版含 B1-B3+B10+B14,约 40 项;typecheck/lint/build/40 段/smoke 全绿):
+- 安全加固(cb40e04):预览/打印窗口 open-navigate 全拦截 + 外链仅 http(s) 经系统浏览器;模板 CSS 剥离 `</style>` 注入序列 + TEMPLATE_CSP;IPC convert/batch/merge/shell/preview/paths 参数类型守卫;权限请求显式全拒
+- 主进程健壮性(ac1b357):单实例锁(双开聚焦既有实例);unhandledRejection/uncaughtException 兜底;转换中关窗拦截确认(30s 超时强杀);mermaid 超时后销毁重建窗口防僵尸;resolver 缓存上限
+- core 数据正确性(7d85fad/c9e16b6/8ea2e28):frontmatter 已知 key 守卫防吞正文;UTF-16 BE 识别;slug 截断加短哈希防书签碰撞;题注编号开关双格式对齐;脚注重复引用共享 id 与警告去重;GFM 表格列对齐 docx 补齐;eq label 粗斜体包裹 pdf 口径放宽;自闭合 `<br/>` 白名单放行;merge 代码块内示例图片不改写+分页符防叠加空白页;未知魔数图片跳过嵌入+警告(不再伪装 png);metadata date 解析失败不兜底当前时间
+- 工程基建(62b4d5c/9f12d61/5d742f2):新增 CI 流水线(push master/PR:typecheck+lint+验收)与 release.yml 加固(concurrency/超时/失败产物留存);acceptance 测试 userData 临时目录隔离(不再读写真实 %APPDATA%);runner 逐段超时看门狗+耗时统计;tsconfig incremental+noUncheckedIndexedAccess(存量适配约 145 处行为等价);test:smoke 构建新鲜度守卫;docx 解包统一 jszip(删 tar,验收提速 ~19%)
+- 文档修正(3ca85df):docs/README 自述、convert.ts 注释、WPS-COMPAT 矩阵回填说明等审计文档项
+
 ## [1.0.0] - 2026-08-16
 - **首个正式版;版本号三统一**(package.json / git tag v1.0.0 / CHANGELOG 同号,AGENTS.md 规则同步;0.32.0 及以前为迭代序列与发布号解耦的历史)
 - i18n 界面多语言(218b183;typecheck/lint/build/40 段/smoke 全绿,用户 GUI 实测通过,验收见 ACCEPTANCE.md):
