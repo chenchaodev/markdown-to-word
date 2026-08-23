@@ -62,4 +62,29 @@ export async function run() {
     throw new Error("PDF 元数据断言失败:空 metadata(无 title/author/date)时应原样返回原 bytes");
   }
   console.log("[ok] PDF 元数据:无元数据(缺省/空对象)原样返回,断言通过");
+
+  // ---------- B3:date 解析失败不再静默兜底当前时间 ----------
+  // 仅不可解析 date(无 title/author)→ 不注入任何字段,原样返回(此前会以当前时间
+  // 兜底创建/修改时间,误导归档检索);title + 坏 date → title 注入、日期保持原值。
+  const badDateOnly = await setPdfMetadata(pdf, { date: "不是日期" });
+  if (badDateOnly !== pdf) {
+    throw new Error("PDF 元数据断言失败:仅坏 date 应原样返回(不得以当前时间兜底)");
+  }
+  const badDateWithTitle = await setPdfMetadata(pdf, { title: "坏日期文档", date: "2026/13/99" });
+  const badDateDoc = await PDFDocument.load(badDateWithTitle);
+  if (badDateDoc.getTitle() !== "坏日期文档") {
+    throw new Error("PDF 元数据断言失败:title + 坏 date 时 title 应正常注入");
+  }
+  // 创建时间应与原始产物一致(Chromium 自带的 CreationDate 不被覆盖为新时间)
+  const origCreated = (await PDFDocument.load(pdf)).getCreationDate();
+  const afterCreated = badDateDoc.getCreationDate();
+  const same =
+    (origCreated === undefined && afterCreated === undefined) ||
+    (origCreated !== undefined &&
+      afterCreated !== undefined &&
+      origCreated.getTime() === afterCreated.getTime());
+  if (!same) {
+    throw new Error("PDF 元数据断言失败:坏 date 不应改变创建时间(B3)");
+  }
+  console.log("[ok] PDF 元数据:date 解析失败不兜底当前时间(B3),title 照常注入");
 }

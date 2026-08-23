@@ -1,8 +1,10 @@
 /**
  * frontmatter 解析测试(src/core/frontmatter.ts 纯逻辑;测试经 dist/core/frontmatter.js):
- * 实现事实(读源码确认,未改动):
+ * 实现事实(B3 守卫后):
  * - 仅当 md 首行(可带前后空格)为 `---` 才解析,到下一个 `---` 行(可带尾随空格/行尾)结束;
  *   `---` 不闭合 / 首行非 --- → 空 metadata + 原 md 为 body(不抛错、不丢内容)
+ * - **B3 守卫**:块内未命中任何已知 key(title/author/date)→ 不视为 frontmatter,
+ *   原 md 原样为 body——防「以 --- 分隔线开头的普通文档」中间内容被误吞
  * - 块内逐行:trim 后空行与 `#` 注释跳过;无冒号行忽略;key 转小写,仅 title/author/date 生效
  * - value:取首个冒号后内容 trim;首尾成对单/双引号则剥离(未闭合引号原样保留);
  *   空值(含 `""` 剥离后)→ 不写入
@@ -59,6 +61,11 @@ author: 作者
   // ---- 6. 非白名单 key / 无冒号行忽略 ----
   const r7 = parseFrontmatter("---\ntags: a,b\nplain line\nkeywords: [x]\n---\n");
   assert(Object.keys(r7.metadata).length === 0, "非白名单 key 与无冒号行应忽略");
+  // B3 守卫:块内未命中已知 key → 不视为 frontmatter,原样保留为正文(不吞内容)
+  assert(
+    r7.body === "---\ntags: a,b\nplain line\nkeywords: [x]\n---\n",
+    "未知 key 块应整体保留为 body(B3 守卫)",
+  );
 
   // ---- 7. 空值跳过(title: / author: "") ----
   const r8 = parseFrontmatter('---\ntitle:\nauthor: ""\n---\n');
@@ -76,23 +83,21 @@ author: 作者
     "首行非 --- 应整体视为正文(不解析)",
   );
 
-  // ---- 10. 空 frontmatter 块(按实现实际行为断言) ----
+  // ---- 10. 空 frontmatter 块(B3 守卫后:块内无已知 key 一律不剥除) ----
   // 正则 ^[ \t]*---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$):关闭定界后仅剥除
   // 一个换行;定界相邻时内容组后缺 \r?\n → 整体不匹配(整块当 body,不抛错)。
   // 定界行相邻(---\n---,无空行)→ 不识别为 frontmatter(整块原样为 body)
   const r11a = parseFrontmatter("---\n---\n正文");
   assert(Object.keys(r11a.metadata).length === 0, "相邻 --- 不应产生 metadata");
   assert(r11a.body === "---\n---\n正文", "相邻 ---(无空行)不识别为 frontmatter,整块为 body");
-  // 空行分隔(---\n\n---)→ 识别为空 frontmatter 块并剥除
+  // 空行分隔(---\n\n---)→ B3 守卫:无已知 key 不视为 frontmatter,body 原样保留
+  // (此前会静默剥除;保留后按普通主题分隔线渲染,行为可预期)
   const r11b = parseFrontmatter("---\n\n---\n正文");
   assert(Object.keys(r11b.metadata).length === 0, "空行分隔的空 frontmatter 不应产生 metadata");
-  assert(r11b.body === "正文", "空 frontmatter 块应剥除");
-  // 关闭定界后再空行(---\n\n---\n\n正文)→ 仅剥除一个换行,body 保留前导 \n
-  // (与普通 frontmatter 一致:---\ntitle: x\n---\n\n正文 → body="\n正文";前导换行
-  // 对 markdown 解析惰性,属既有实现行为)
+  assert(r11b.body === "---\n\n---\n正文", "空 frontmatter 块应整体保留为 body(B3 守卫)");
   const r11c = parseFrontmatter("---\n\n---\n\n正文");
   assert(Object.keys(r11c.metadata).length === 0, "关闭定界后空行仍为空 frontmatter(无 metadata)");
-  assert(r11c.body === "\n正文", "关闭定界后仅剥除一个换行,body 保留前导换行");
+  assert(r11c.body === "---\n\n---\n\n正文", "空块整体保留为 body(B3 守卫)");
 
   // ---- 11. 仅元数据无正文 ----
   const r12 = parseFrontmatter("---\ntitle: 只有元数据\n---\n");
@@ -119,5 +124,11 @@ author: 作者
   const r16 = parseFrontmatter("---\ntitle:    带前导空格值   \n---\n");
   assert(r16.metadata.title === "带前导空格值", "value 应 trim 后取值");
 
-  console.log("[ok] frontmatter:引号剥离/注释跳过/大小写/异常格式兜底 断言通过");
+  // ---- 16. B3 守卫核心场景:以 --- 分隔线开头的普通文档,夹层文字不得丢失 ----
+  const prose = "---\n这是一段被分隔线包裹的普通文字。\n---\n\n# 正文标题\n";
+  const r17 = parseFrontmatter(prose);
+  assert(Object.keys(r17.metadata).length === 0, "纯文字夹层不产生 metadata");
+  assert(r17.body === prose, "纯文字夹层必须原样保留为 body(防误吞)");
+
+  console.log("[ok] frontmatter:引号剥离/注释跳过/大小写/异常格式兜底/B3 已知 key 守卫 断言通过");
 }

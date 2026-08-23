@@ -10,8 +10,11 @@ import iconv from "iconv-lite";
 
 export interface DecodeResult {
   text: string;
-  /** "utf-8" = 标准 UTF-8(含 BOM 剥离);"gbk" = 按 GBK/GB18030 解码 */
-  encoding: "utf-8" | "gbk";
+  /**
+   * "utf-8" = 标准 UTF-8;"utf-16" = UTF-16(BOM 嗅探剥离后解码);
+   * "gbk" = 按 GBK/GB18030 解码。调用方只特判 gbk 追加警告,其余值不影响行为。
+   */
+  encoding: "utf-8" | "utf-16" | "gbk";
 }
 
 const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true });
@@ -21,9 +24,13 @@ export function decodeMarkdown(buf: Buffer): DecodeResult {
   if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
     return { text: buf.subarray(3).toString("utf8"), encoding: "utf-8" };
   }
-  // UTF-16 LE BOM(FF FE)
+  // UTF-16 LE BOM(FF FE);B3:encoding 字段如实返回(此前失真为 "utf-8")
   if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
-    return { text: buf.subarray(2).toString("utf16le"), encoding: "utf-8" };
+    return { text: buf.subarray(2).toString("utf16le"), encoding: "utf-16" };
+  }
+  // B3:UTF-16 BE BOM(FE FF)——此前不识别,BE 文件落 gb18030 分支产生乱码
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    return { text: iconv.decode(buf.subarray(2), "utf16-be"), encoding: "utf-16" };
   }
   try {
     return { text: STRICT_UTF8.decode(buf), encoding: "utf-8" };

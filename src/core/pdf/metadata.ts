@@ -13,20 +13,30 @@ function parseDate(text: string): Date | undefined {
 
 /**
  * PDF Info 元数据注入(frontmatter → PDF 文档属性)。
- * 仅注入非空字段;date 解析失败用当前时间兜底;title 缺失不注入。
- * 返回新 Buffer(Uint8Array),不修改入参。
+ * 仅注入非空字段;title 缺失不注入。
+ * B3:date 解析失败不再静默兜底当前时间(错误日期会误导归档/检索),
+ * 保持不注入创建时间。无任何字段实际注入时原样返回,不做无谓重存。
  */
 export async function setPdfMetadata(pdf: Uint8Array, metadata: DocMetadata | undefined): Promise<Uint8Array> {
   if (!metadata) return pdf;
   const doc = await PDFDocument.load(pdf);
-  if (metadata.title) doc.setTitle(metadata.title);
-  if (metadata.author) doc.setAuthor(metadata.author);
+  let touched = false;
+  if (metadata.title) {
+    doc.setTitle(metadata.title);
+    touched = true;
+  }
+  if (metadata.author) {
+    doc.setAuthor(metadata.author);
+    touched = true;
+  }
   if (metadata.date) {
-    doc.setCreationDate(parseDate(metadata.date) ?? new Date());
-    doc.setModificationDate(new Date());
+    const created = parseDate(metadata.date);
+    if (created) {
+      doc.setCreationDate(created);
+      doc.setModificationDate(new Date());
+      touched = true;
+    }
   }
-  if (metadata.title || metadata.author || metadata.date) {
-    return new Uint8Array(await doc.save());
-  }
+  if (touched) return new Uint8Array(await doc.save());
   return pdf;
 }
