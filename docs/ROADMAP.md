@@ -167,7 +167,7 @@
 - [x] convert:progress 事件带 mode 标识,去 renderer 侧推断耦合(payload {stage,mode},renderer 直接消费)
 - [x] preload/renderer/smoke/测试全量同步(smoke 新增 IPC 端到端 diag+ipc-channels 测试段)
 
-#### 目录结构重组(L,P2 重构;2026-08-23 探定稿;已完成 5 批提交 6f3d72a/b1e50e9/061e8dd/d31cb21/2819a2a,待 GUI 回归实测)
+#### 目录结构重组(L,P2 重构;2026-08-23 探定稿;已完成 6 批提交 6f3d72a/b1e50e9/061e8dd/d31cb21/2819a2a/9909d74,GUI 回归实测已通过 2026-08-24)
 > 方案全文见 archive/20260823-230554-目录结构优化方案.md(目标结构树/拆分明细/纯移动清单/划分原则/明确不做清单);RESEARCH 同日条目有摘要。
 - [x] **前置:实施前对代码做再次探查**(exp-1 结论:欠账①②③④⑤仍成立且 events/index 因 B9/B12 略加重;⑥已被 B8 大部分消化降级纯移动;i18n 引用面实测 35 处 import 远低于原估 ~90)
 - [x] 批① core/i18n.ts 拆 dict/index(i18n-dict.ts 同文件保键集编译期锁定+facade re-export 引用面零改动)+ core 根级 16 文件归组 pipeline/settings/markdown/image/util(~107 处 import 改写;contract-single-source.test.js 路径断言同步)
@@ -175,6 +175,7 @@
 - [x] 批③ renderer 功能域归组 dom/state/settings/convert/ui 六域+events.ts 按域拆 4+1 文件+style.css 拆 base/drop/settings/dialogs 四文件多 link 引入(copy-renderer 改递归拷贝;openPreviewFor 归 selection 防环为方案偏差已注释)
 - [x] 批④ main/index.ts 抽 windows/main-window+windows/preview+ipc/register+menu(ctxByWebContents 前置收敛 ipc/register 防循环;708→74 行)
 - [x] 批⑤ main/converter.ts 拆 context/single/batch/merge/paths 五子模块(原文件桶导出 import 面零变化)+ smoke.ts 迁 test/tools/smoke/(纯 .mjs 直连 dist,dist 递归扫描 0 个 smoke 文件=打包天然排除)+ mermaid-dir/katex-dir 合并 resource-dirs.ts
+- [x] 批⑥ main 根级文件归组补遗(2026-08-24,方案漏排经用户指出补齐;9909d74):ipc/(channels+logic)/persist/(settings/ui-state/atomic-json)/services/(image-downloader/mermaid-service/resource-dirs/web-hardening/temp-html);menu.ts 留根级单文件锚点;resolveMermaidDir 相对定位深度随产物层级同步调整
 > 每批独立提交,typecheck/build/test 全绿验证;批③④⑤ 有 GUI 面列入人工实测。
 
 #### 排期顺序与理由
