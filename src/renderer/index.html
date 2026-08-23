@@ -8,6 +8,9 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'"
     />
     <title data-i18n="app.title">Markdown 转换工具</title>
+    <!-- B6 FOUC 缓解:尽早按 localStorage 语言镜像设置 <html lang>(外部脚本,CSP 'self' 放行;
+         决策记录见 lang-bootstrap.js 头注释) -->
+    <script src="./lang-bootstrap.js"></script>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>

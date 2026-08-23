@@ -20,6 +20,8 @@ import { DEFAULT_TYPOGRAPHY } from "../typography.js";
 import { uniqueSlug } from "../slug.js";
 import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../html-whitelist.js";
 import { decodeEntities, escapeHtml } from "../utils.js";
+import type { ConvertWarning } from "../i18n.js";
+import { crossRefNotFoundWarning } from "../i18n.js";
 import type { MermaidResolver } from "../mermaid.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
@@ -32,8 +34,9 @@ export interface RenderPdfHtmlOptions {
   baseDir: string;
   /** frontmatter 元数据(metadata.title 存在时渲染封面页,标题优先级高于 options.title) */
   metadata?: DocMetadata;
-  /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;缺失本地图/外链下载失败同构) */
-  warnings?: string[];
+  /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;缺失本地图/外链下载失败同构;
+   *  B6 起元素为 ConvertWarning,keyed 警告经显示层 formatWarning 按语言格式化) */
+  warnings?: ConvertWarning[];
   /** 外链图片下载注入(主进程提供;失败返回 null) */
   imageResolver?: ImageResolver;
   /** 页面 <title>,缺省取文件名(不含扩展名) */
@@ -270,7 +273,13 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
         const num = labelIndex.get(label);
         if (num === undefined && !unknownLabels.has(label)) {
           unknownLabels.add(label); // 同标签只提示一次,避免重复刷屏
-          state.env.warnings?.push(`引用未定义的公式标签: eq:${label}`);
+          // 与 docx 侧同场景文案不同(历史差异,勿单侧改):docx 为
+          // 「交叉引用未找到公式 label: <label>」(warn.crossRefNotFound)
+          state.env.warnings?.push({
+            key: "warn.eqLabelUndefined",
+            params: { label },
+            fallback: `引用未定义的公式标签: eq:${label}`,
+          });
         }
         // 链接内第一个 text token(可能嵌套格式如 **式**,取首个文本节点替换)
         for (let j = i + 1; j < children.length; j++) {
@@ -499,7 +508,7 @@ function overrideXrefRule(
         } else {
           if (!unknownLabels.has(`${kind}:${label}`)) {
             unknownLabels.add(`${kind}:${label}`); // 同引用只提示一次
-            state.env.warnings?.push(`交叉引用未找到${def.kindName} label: ${kind}:${label}`);
+            state.env.warnings?.push(crossRefNotFoundWarning(def.kindName, `${kind}:${label}`));
           }
           if (textToken && textToken.content === def.defaultText) textToken.content = def.danglingText;
           // 悬空不带链接(docx 契约:目标锚点不存在,不生成死链)——解包链接
@@ -659,7 +668,7 @@ function overrideHeadingIdRule(md: MarkdownIt, seen: Map<string, number>): void 
 async function replaceMermaidPlaceholders(
   html: string,
   resolver: MermaidResolver | undefined,
-  warnings: string[],
+  warnings: ConvertWarning[],
 ): Promise<string> {
   const placeholderRe = /<div class="mermaid">([\s\S]*?)<\/div>/g;
   const matches: { index: number; full: string; body: string }[] = [];
@@ -680,12 +689,19 @@ async function replaceMermaidPlaceholders(
       if (result) {
         out += `<div class="mermaid-svg">${result.svg}</div>`;
       } else {
-        warnings.push("Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块");
+        warnings.push({
+          key: "warn.mermaidEmpty",
+          fallback: "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块",
+        });
         out += fallback(code);
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      warnings.push(`Mermaid 渲染失败: ${reason},已降级为代码块`);
+      warnings.push({
+        key: "warn.mermaidFailed",
+        params: { reason },
+        fallback: `Mermaid 渲染失败: ${reason},已降级为代码块`,
+      });
       out += fallback(code);
     }
     cursor = p.index + p.full.length;
@@ -720,7 +736,7 @@ export async function renderPdfHtml(
   overrideHeadingIdRule(md, new Map<string, number>());
   // 标题优先级:frontmatter metadata.title > options.title
   const title = options.metadata?.title ?? options.title ?? "文档";
-  const warnings = options.warnings ?? [];
+  const warnings: ConvertWarning[] = options.warnings ?? [];
   // warnings 经 env 注入 core 规则(eq_numbering 未知公式标签提示用;脚注插件
   // 对 env.footnotes 惰性初始化,传入额外键无副作用)
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource, { warnings }));

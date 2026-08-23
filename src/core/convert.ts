@@ -21,6 +21,7 @@ import { parseMarkdown } from "./parse.js";
 import { parseFrontmatter } from "./frontmatter.js";
 import type { DocMetadata } from "./frontmatter.js";
 import type { TypographySettings } from "./typography.js";
+import type { ConvertWarning } from "./i18n.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml } from "./pdf/render.js";
 import { PDF_FOOTER_TEMPLATE } from "./pdf/template.js";
@@ -39,8 +40,9 @@ export interface ConvertContext {
   imageResolver?: (src: string) => Promise<Buffer | null>;
   /** 文档标题(pdf 用 <title>) */
   title?: string;
-  /** 警告收集器(可选):转换中发现的非致命问题(如缺失图片)追加至此 */
-  warnings?: string[];
+  /** 警告收集器(可选):转换中发现的非致命问题(如缺失图片)追加至此;
+   *  B6 起元素为 ConvertWarning(keyed 警告经显示层 formatWarning 按语言格式化) */
+  warnings?: ConvertWarning[];
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
   pageSetup?: PageSetup;
   /** 排版设置(缺省 DEFAULT_TYPOGRAPHY;docx 与 pdf 双格式共用) */

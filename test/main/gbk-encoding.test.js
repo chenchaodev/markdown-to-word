@@ -14,6 +14,7 @@ import path from "node:path";
 import iconv from "iconv-lite";
 import JSZip from "jszip";
 import { updateSettings } from "../../dist/main/settings.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 import { backupSettings } from "../common/settings.js";
 import { convertImpl } from "../../dist/main/converter.js";
 
@@ -34,8 +35,9 @@ export async function run() {
     await fs.writeFile(gbkMd, iconv.encode(GBK_MD, "gbk"));
 
     const result = await convertImpl(gbkMd, "docx");
+    // B6:警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
     assert(
-      result.warnings.some((w) => w.includes("已按 GBK 编码读取")),
+      result.warnings.some((w) => formatWarning(w).includes("已按 GBK 编码读取")),
       `warnings 缺少 GBK 警告: ${JSON.stringify(result.warnings)}`,
     );
     const zip = await JSZip.loadAsync(await fs.readFile(result.outputPath));

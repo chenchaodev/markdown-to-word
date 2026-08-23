@@ -92,6 +92,7 @@ import { bindSettingsEvents, closePresetSaveDialog, loadSettings, setSuppressCom
 import { initUiStateRestore, refreshRecentFiles } from "./recent-files.js";
 import { batchRetryPaths, batchSuccessPaths } from "./pure.js";
 import { t } from "../core/i18n.js";
+import type { ConvertWarning } from "../core/i18n.js";
 
 declare global {
   interface Window {
@@ -107,7 +108,7 @@ declare global {
       convert: (
         filePath: string,
         format: "docx" | "pdf",
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: string[]; canceled?: boolean }>;
+      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: ConvertWarning[]; canceled?: boolean }>;
       /** 批量转换:每文件独立输出;始终 ok:true,成败看 items 逐条。 */
       convertBatch: (
         files: string[],
@@ -117,7 +118,7 @@ declare global {
       convertMerge: (
         files: string[],
         format: "docx" | "pdf",
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: string[]; canceled?: boolean }>;
+      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: ConvertWarning[]; canceled?: boolean }>;
       /** 请求取消当前转换(单文件 / 批量 / 合并通用;批量在文件间检查)。 */
       convertCancel: () => Promise<void>;
       /** 选择输出目录对话框(批次 7);用户取消返回 null。 */
@@ -189,7 +190,8 @@ function openPreviewFor(filePath: string): void {
 }
 
 /* ---------- 选择文件(系统对话框) ---------- */
-const ERROR_MESSAGE = t("file.onlyMarkdown");
+// B6:原模块级 `const ERROR_MESSAGE = t("file.onlyMarkdown")` 在模块加载期求值,
+// 语言切换后不更新 → 移到使用点直接 t()(openDialog 内)。
 
 /** 打开文件对话框;append=true 时与现有列表合并(「追加文件 / 继续添加」入口)。 */
 async function openDialog(append = false): Promise<void> {
@@ -199,7 +201,7 @@ async function openDialog(append = false): Promise<void> {
     if (paths.length === 0) return; // 用户取消,保持现状
     const files = paths.filter(isMarkdown);
     if (files.length === 0) {
-      setError(ERROR_MESSAGE);
+      setError(t("file.onlyMarkdown"));
       return;
     }
     if (append) {
@@ -693,10 +695,11 @@ void initUiStateRestore();
 // 批次 15(R5):转换成功后刷新最近区块的回调接线(convert-flow 经 state 调用,
 // 不再 import recent-files,打破 recent-files ↔ convert-flow 的 ESM 环)
 state.recentRefreshHandler = refreshRecentFiles;
-// 发版 1.0.0:标题区版本号(失败静默,不阻塞界面)
+// 发版 1.0.0:标题区版本号(失败静默,不阻塞界面);B6:title 走字典(语言切换后
+// 下次 getVersion 调用时更新;此处为启动一次性调用,与原行为一致)
 void window.api.getVersion().then((version) => {
   const el = document.getElementById("appVersion");
   if (!el) return;
   el.textContent = `v${version}`;
-  el.title = `Markdown 转换工具 v${version}`;
+  el.title = t("app.versionTitle", { version });
 });

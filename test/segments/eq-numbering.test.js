@@ -7,6 +7,7 @@
  * 未知 label → 「式 (?)」+ 警告;行内公式不编号。
  */
 import { convert } from "../../dist/core/convert.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
@@ -66,7 +67,7 @@ export async function run() {
   // 8d-5:label 标记行不渲染;悬空引用 → 「式 (?)」+ 警告
   if (b9Document.includes("{#eq:")) throw new Error("批次9断言失败:label 标记行不应渲染");
   if (!b9Document.includes("式 (?)")) throw new Error("批次9断言失败:悬空引用应渲染为「式 (?)」");
-  if (!b9Warnings.some((w) => w.includes("label: unknown"))) {
+  if (!b9Warnings.some((w) => formatWarning(w).includes("label: unknown"))) {
     throw new Error("批次9断言失败:悬空引用应追加警告");
   }
   console.log("[ok] docx 公式编号 + 交叉引用:编号/制表位/书签/引用文本/label 不渲染/悬空兜底 断言通过");
@@ -76,7 +77,7 @@ export async function run() {
   // 「公式 label 前无公式,已忽略: {#eq:label}」并同样跳过渲染。
   const orphanWarnings = [];
   const orphanDocx = await convert("{#eq:orphan}\n\n正文", "docx", { baseDir: FIXTURES_DIR, warnings: orphanWarnings });
-  if (!orphanWarnings.includes("公式 label 前无公式,已忽略: {#eq:orphan}")) {
+  if (!orphanWarnings.some((w) => formatWarning(w) === "公式 label 前无公式,已忽略: {#eq:orphan}")) {
     throw new Error("批次9断言失败:孤立 label 应追加「公式 label 前无公式」警告");
   }
   const orphanXml = await unzipPart(orphanDocx.buffer, "word/document.xml");

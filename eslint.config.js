@@ -18,6 +18,7 @@ export default tseslint.config(
         // 默认 8 文件上限不足(test/scripts 共 47 个 .js/.mjs),按官方逃生口上调。
         projectService: {
           allowDefaultProject: [
+            "src/renderer/lang-bootstrap.js",
             "test/*.mjs",
             "test/common/*.js",
             "test/main/*.js",

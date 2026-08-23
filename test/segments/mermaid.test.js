@@ -25,6 +25,7 @@
  * - 非 mermaid 围栏(如 js)不被 mermaid 分支劫持,docx 文本 / pdf hljs 高亮。
  */
 import { convert } from "../../dist/core/convert.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart, zipContains } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
@@ -70,7 +71,7 @@ export async function run() {
     if (!zipContains(docx.buffer, "word/media")) {
       throw new Error("docx 成功路径:zip 缺少 media 部件");
     }
-    if (warnings.some((x) => x.includes("Mermaid"))) {
+    if (warnings.some((x) => formatWarning(x).includes("Mermaid"))) {
       throw new Error(`docx 成功路径:不应产生 Mermaid 警告,warnings=${JSON.stringify(warnings)}`);
     }
     await saveArtifact("mermaid", { docx: docx.buffer });
@@ -92,7 +93,7 @@ export async function run() {
     if (!xml.includes("graph TD")) {
       throw new Error("docx 降级路径:代码原文未保留");
     }
-    if (!warnings.includes("Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块")) {
+    if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块")) {
       throw new Error(`docx 降级路径:缺少空结果降级警告,warnings=${JSON.stringify(warnings)}`);
     }
     console.log("[ok] mermaid:docx 降级路径(null)代码原文保留 + 警告,断言通过");
@@ -112,7 +113,7 @@ export async function run() {
     if (xml.includes("a:blip") || !xml.includes("graph TD")) {
       throw new Error("docx 降级路径(抛错):应降级为代码块原文且无图片");
     }
-    if (!warnings.includes("Mermaid 渲染失败: boom,已降级为代码块")) {
+    if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: boom,已降级为代码块")) {
       throw new Error(`docx 降级路径(抛错):缺少带 reason 的警告,warnings=${JSON.stringify(warnings)}`);
     }
     console.log("[ok] mermaid:docx 降级路径(抛错 boom)警告带 reason,断言通过");
@@ -129,7 +130,7 @@ export async function run() {
     if (!xml.includes("graph TD")) {
       throw new Error("docx 无 resolver:代码文本应保留");
     }
-    if (warnings.some((x) => x.includes("Mermaid"))) {
+    if (warnings.some((x) => formatWarning(x).includes("Mermaid"))) {
       throw new Error(`docx 无 resolver:不应产生 Mermaid 警告,warnings=${JSON.stringify(warnings)}`);
     }
     console.log("[ok] mermaid:docx 无 resolver 原行为不变,断言通过");
@@ -180,7 +181,7 @@ export async function run() {
     if (pdf.html.includes("<x>")) {
       throw new Error("pdf 降级路径:fallback 泄漏明文 <x>(未转义)");
     }
-    if (!warnings.includes("Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块")) {
+    if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块")) {
       throw new Error(`pdf 降级路径:缺少降级警告,warnings=${JSON.stringify(warnings)}`);
     }
     console.log("[ok] mermaid:pdf 降级路径(null)mermaid-fallback 转义原文 + 警告,断言通过");
@@ -206,7 +207,7 @@ export async function run() {
     if (!pdf.html.includes("&quot;&lt;x&gt; &amp; 'q'&quot;")) {
       throw new Error("pdf 降级路径(抛错):fallback 代码块缺少转义原文");
     }
-    if (!warnings.includes("Mermaid 渲染失败: boom,已降级为代码块")) {
+    if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: boom,已降级为代码块")) {
       throw new Error(`pdf 降级路径(抛错):缺少带 reason 的警告,warnings=${JSON.stringify(warnings)}`);
     }
     console.log("[ok] mermaid:pdf 降级路径(抛错 boom)警告带 reason + fallback,断言通过");

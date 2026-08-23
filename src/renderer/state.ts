@@ -10,6 +10,7 @@
  *   convert-flow/组合根引用,一并收敛于此
  */
 import { DEFAULT_SETTINGS, type AppSettings } from "../core/settings-defaults.js";
+import type { ConvertWarning } from "../core/i18n.js";
 import type { RecentFile } from "../main/ui-state.js";
 
 /* ---------- 批量 / 合并契约类型 ---------- */
@@ -25,7 +26,8 @@ export interface BatchItem {
   ok: boolean;
   outputPath?: string;
   error?: string;
-  warnings?: string[];
+  /** B6:keyed 警告,显示层经 formatWarning 按当前语言格式化。 */
+  warnings?: ConvertWarning[];
   /** 用户取消导致未执行转换的项。 */
   canceled?: boolean;
 }

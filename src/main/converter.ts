@@ -17,6 +17,8 @@ import {
   type PdfArtifact,
 } from "../core/convert.js";
 import { decodeMarkdown } from "../core/encoding.js";
+import type { ConvertWarning } from "../core/i18n.js";
+import { t } from "../core/i18n.js";
 import { mergeMarkdowns } from "../core/merge.js";
 import { buildBookmarkTree, injectBookmarks } from "../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../core/pdf/metadata.js";
@@ -32,8 +34,8 @@ export interface ConvertResult {
   ok: boolean;
   outputPath?: string;
   error?: string;
-  /** 非致命警告(如缺失本地图片),成功时可能携带 */
-  warnings?: string[];
+  /** 非致命警告(如缺失本地图片),成功时可能携带;B6 起元素为 ConvertWarning(keyed) */
+  warnings?: ConvertWarning[];
   /** 用户主动取消(非错误) */
   canceled?: boolean;
 }
@@ -50,7 +52,7 @@ export interface BatchItem {
   ok: boolean;
   outputPath?: string;
   error?: string;
-  warnings?: string[];
+  warnings?: ConvertWarning[];
   /** 用户主动取消(未开始即跳过) */
   canceled?: boolean;
 }
@@ -130,8 +132,8 @@ export async function resolveOutputPath(
   format: ConvertFormat,
   outputDir: string,
   baseName?: string,
-): Promise<{ outputPath: string; warnings: string[] }> {
-  const warnings: string[] = [];
+): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
+  const warnings: ConvertWarning[] = [];
   const name = baseName ?? path.basename(filePath).replace(MARKDOWN_EXT_RE, "");
   const ext = format === "docx" ? ".docx" : ".pdf";
   const srcDir = path.dirname(filePath);
@@ -140,13 +142,20 @@ export async function resolveOutputPath(
     try {
       await fs.mkdir(dir, { recursive: true });
     } catch {
-      warnings.push(`输出目录不可用(${dir}),已输出到源文件目录`);
+      warnings.push({
+        key: "warn.outputDirUnavailable",
+        params: { dir },
+        fallback: `输出目录不可用(${dir}),已输出到源文件目录`,
+      });
       dir = srcDir;
     }
   }
   let candidate = path.join(dir, `${name}${ext}`);
   if (candidate.length > 250) {
-    warnings.push("输出路径过长,已输出到源文件目录");
+    warnings.push({
+      key: "warn.outputPathTooLong",
+      fallback: "输出路径过长,已输出到源文件目录",
+    });
     dir = srcDir;
     candidate = path.join(dir, `${name}${ext}`);
   }
@@ -184,8 +193,8 @@ export interface BuildConvertContextOptions {
   baseDir: string;
   /** 文档标题(docx 元数据 / pdf <title>) */
   title: string;
-  /** 警告收集器(与调用方共享同一数组;转换中发现的问题追加至此) */
-  warnings?: string[];
+  /** 警告收集器(与调用方共享同一数组;转换中发现的问题追加至此;B6 起元素为 ConvertWarning) */
+  warnings?: ConvertWarning[];
   /** 应用设置(pageSetup/typography/breakBeforeH1/toc 取用) */
   settings: AppSettings;
   /** 图片解析器(本地直接读 / http(s) 下载;批量场景传 getImageResolver 缓存实例) */
@@ -226,16 +235,23 @@ export async function convertImpl(
   onProgress?: (stage: string) => void,
   ctx: ConvertContext = createConvertContext(),
   katexDir?: string,
-): Promise<{ outputPath: string; warnings: string[] }> {
+): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
   if (!/\.(md|markdown)$/i.test(filePath)) {
-    throw new Error("仅支持 .md / .markdown 文件");
+    // 生成期本地化(B6 决策):throw 文案经 error.message 单次字符串通道到 GUI,
+    // 显示层无法重映射,只能在抛出点用 t()(main 进程启动时已 setLanguage)。
+    throw new Error(t("file.onlyMarkdown"));
   }
   throwIfCanceled(ctx);
   const settings = await loadSettings();
   onProgress?.("read");
-  const warnings: string[] = [];
+  const warnings: ConvertWarning[] = [];
   const { text: md, encoding } = decodeMarkdown(await fs.readFile(filePath));
-  if (encoding === "gbk") warnings.push("已按 GBK 编码读取:文件编码非 UTF-8");
+  if (encoding === "gbk") {
+    warnings.push({
+      key: "warn.gbkEncoding",
+      fallback: "已按 GBK 编码读取:文件编码非 UTF-8",
+    });
+  }
 
   onProgress?.("render");
   const artifact = await convert(
@@ -416,18 +432,27 @@ export async function mergeConvertImpl(
   ctx: ConvertContext = createConvertContext(),
   katexDir?: string,
 ): Promise<ConvertResult> {
-  if (files.length === 0) throw new Error("未选择文件");
+  if (files.length === 0) {
+    // 生成期本地化(B6 决策):同 convertImpl,throw 文案无法显示层重映射,抛出点用 t()。
+    throw new Error(t("convert.noFilesSelected"));
+  }
   const firstFile = files[0]!; // 上方长度守卫保证非空数组,首文件必存在
   // 每次调用使用新建 context(取消标志初始 false),上次取消不再残留:
   // 否则二次合并立即被 throwIfCanceled 误判取消(历史 bug fd40480)。
   throwIfCanceled(ctx);
   const settings = await loadSettings();
-  const warnings: string[] = [];
+  const warnings: ConvertWarning[] = [];
   onProgress?.("read");
   const inputs = await Promise.all(
     files.map(async (file) => {
       const { text, encoding } = decodeMarkdown(await fs.readFile(file));
-      if (encoding === "gbk") warnings.push(`已按 GBK 编码读取:${path.basename(file)}`);
+      if (encoding === "gbk") {
+        warnings.push({
+          key: "warn.gbkEncodingFile",
+          params: { file: path.basename(file) },
+          fallback: `已按 GBK 编码读取:${path.basename(file)}`,
+        });
+      }
       return { content: text, baseDir: path.dirname(file) };
     }),
   );

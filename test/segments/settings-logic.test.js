@@ -68,8 +68,8 @@ export async function run() {
   );
   const full = Array.from({ length: MAX_CUSTOM_PRESETS }, (_, i) => preset(`p${i}`));
   assert(
-    validatePresetName("新模板", full) === `已达 ${MAX_CUSTOM_PRESETS} 个上限，请先删除`,
-    `达上限应返回「已达 ${MAX_CUSTOM_PRESETS} 个上限,请先删除」(全角逗号)`,
+    validatePresetName("新模板", full) === `已达 ${MAX_CUSTOM_PRESETS} 个上限,请先删除`,
+    `达上限应返回「已达 ${MAX_CUSTOM_PRESETS} 个上限,请先删除」(B6:全角逗号统一为半角)`,
   );
   assert(
     validatePresetName(" 新模板 ", full.slice(0, MAX_CUSTOM_PRESETS - 1)) === null,

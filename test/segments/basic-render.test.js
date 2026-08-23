@@ -13,6 +13,7 @@ import path from "node:path";
 import { parseMarkdown } from "../../dist/core/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
 import { convert } from "../../dist/core/convert.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 import hljs from "highlight.js/lib/common";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
@@ -236,7 +237,11 @@ export async function run() {
         : null,
     warnings: webpWarnings,
   });
-  const webpWarnOk = webpWarnings.some((w) => w.includes("webp") && w.includes("已跳过"));
+  // B6:警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
+  const webpWarnOk = webpWarnings.some((w) => {
+    const text = typeof w === "string" ? w : formatWarning(w);
+    return text.includes("webp") && text.includes("已跳过");
+  });
   if (!webpWarnOk) {
     throw new Error("basic-render 断言失败:webp 图片未产生降级警告(期望含 webp 与 已跳过)");
   }
@@ -257,7 +262,7 @@ export async function run() {
     imageResolver: async () => Buffer.from("not-an-image"),
     warnings: unknownWarnings,
   });
-  if (!unknownWarnings.some((w) => w.includes("图片格式无法识别") && w.includes("junk.bin"))) {
+  if (!unknownWarnings.some((w) => formatWarning(w).includes("图片格式无法识别") && formatWarning(w).includes("junk.bin"))) {
     throw new Error(`basic-render 断言失败:未知魔数图片未产生跳过警告,warnings=${JSON.stringify(unknownWarnings)}`);
   }
   const unknownXml = await unzipPart(unknownBuffer, "word/document.xml");
@@ -324,7 +329,7 @@ export async function run() {
     warnings: missingWarnings,
   });
   const missingWarnOk = missingWarnings.some(
-    (w) => w.includes("图片加载失败:") && w.includes("missing-img.png"),
+    (w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-img.png"),
   );
   if (!missingWarnOk) {
     throw new Error("basic-render 断言失败:warnings 缺少「图片加载失败: missing-img.png」");
@@ -338,7 +343,7 @@ export async function run() {
     imageResolver: async () => null,
     warnings: pdfMissingWarnings,
   });
-  if (!pdfMissingWarnings.some((w) => w.includes("图片加载失败:") && w.includes("missing-img.png"))) {
+  if (!pdfMissingWarnings.some((w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-img.png"))) {
     throw new Error("basic-render 断言失败:pdf 缺失图片应产生统一「图片加载失败:」警告");
   }
   console.log("[ok] basic-render:pdf 缺失图片警告(统一文案经 resolver 失败路径)断言通过");

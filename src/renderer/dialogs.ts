@@ -36,7 +36,8 @@ import {
 import { state, type BatchItem, type BatchResult } from "./state.js";
 import { baseName, focusActionButton, trapFocus } from "./utils.js";
 import { batchSuccessPaths } from "./pure.js";
-import { t } from "../core/i18n.js";
+import { formatWarning, t } from "../core/i18n.js";
+import type { ConvertWarning } from "../core/i18n.js";
 
 /* 弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let completeDialogTrap: (() => void) | null = null;
@@ -48,7 +49,8 @@ export interface SummaryOptions {
   title: string;
   outputPath?: string;
   error?: string;
-  warnings?: string[];
+  /** B6:keyed 警告,展示前经 formatWarning 按当前语言格式化。 */
+  warnings?: ConvertWarning[];
   /** 批量场景:有失败详情可回看(「失败详情」按钮重开批量弹窗)。 */
   hasDetails?: boolean;
 }
@@ -80,7 +82,7 @@ export function showSummary(opts: SummaryOptions): void {
     ...warnings.map((warning) => {
       const li = document.createElement("li");
       li.className = "summary-warnings-item";
-      li.textContent = warning;
+      li.textContent = formatWarning(warning); // B6:keyed 警告按当前语言格式化
       return li;
     }),
   );
@@ -204,7 +206,7 @@ export function renderBatchItem(item: BatchItem): HTMLLIElement {
   for (const warning of item.warnings ?? []) {
     const p = document.createElement("p");
     p.className = "batch-item-msg batch-item-msg--warning";
-    p.textContent = t("batch.warningPrefix", { warning });
+    p.textContent = t("batch.warningPrefix", { warning: formatWarning(warning) });
     msgs.appendChild(p);
     hasMsgs = true;
   }

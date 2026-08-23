@@ -31,6 +31,7 @@
  *   sec label 剥离但引用悬空「(?)」;eq 公式引用行为不变。
  */
 import { convert } from "../../dist/core/convert.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/typography.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
@@ -103,9 +104,10 @@ export async function run() {
   // A4(B3) docx 悬空:占位文本 + 警告去重(fig:x 出现 2 次 → 警告仅 1 条,对齐 pdf 侧)
   if (!has('<w:t xml:space="preserve">图 (?)</w:t>')) throw new Error('docx 悬空图引用无占位「图 (?)」');
   if (!has('<w:t xml:space="preserve">(?)</w:t>')) throw new Error('docx 悬空章节引用无占位「(?)」');
-  const figXCount = warnings.filter((w) => w === "交叉引用未找到图 label: fig:x").length;
+  // B6:警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
+  const figXCount = warnings.filter((w) => formatWarning(w) === "交叉引用未找到图 label: fig:x").length;
   if (figXCount !== 1) throw new Error(`docx 悬空图警告应去重为 1 条(实际 ${figXCount},B3 契约)`);
-  if (!warnings.includes("交叉引用未找到章节 label: sec:s1")) {
+  if (!warnings.some((w) => formatWarning(w) === "交叉引用未找到章节 label: sec:s1")) {
     throw new Error("docx 缺少悬空章节警告 sec:s1");
   }
 
@@ -138,9 +140,9 @@ export async function run() {
   // B3(R8) pdf 悬空:解包为纯文本占位,无 href 死链;警告去重(每前缀:label 一次)
   if (!html.includes("图 (?)")) throw new Error('pdf 悬空图引用无占位「图 (?)」');
   if (html.includes('href="#fig:x"')) throw new Error('pdf 悬空引用不应保留 href 死链');
-  const pdfFigX = warningsP.filter((w) => w === "交叉引用未找到图 label: fig:x").length;
+  const pdfFigX = warningsP.filter((w) => formatWarning(w) === "交叉引用未找到图 label: fig:x").length;
   if (pdfFigX !== 1) throw new Error(`pdf 悬空图警告应按「前缀:label」去重(实际 ${pdfFigX} 次)`);
-  if (!warningsP.includes("交叉引用未找到章节 label: sec:s1")) {
+  if (!warningsP.some((w) => formatWarning(w) === "交叉引用未找到章节 label: sec:s1")) {
     throw new Error("pdf 缺少悬空章节警告 sec:s1");
   }
 
@@ -255,7 +257,7 @@ export async function run() {
   if (!hnOffX.includes('<w:t xml:space="preserve">(?)</w:t>')) {
     throw new Error("docx headingNumbering 关:[章节] 引用应显示「(?)」");
   }
-  if (!hnOffW.includes("交叉引用未找到章节 label: sec:s1")) {
+  if (!hnOffW.some((w) => formatWarning(w) === "交叉引用未找到章节 label: sec:s1")) {
     throw new Error("docx headingNumbering 关:缺少悬空章节警告");
   }
   const hnOffP = await convert(mdHnOff, "pdf", {

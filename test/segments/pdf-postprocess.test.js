@@ -9,6 +9,7 @@
  * 断言依据 src/core/pdf/postprocess.ts(降级行为:失败保留原 URL/追加警告,不抛错)。
  */
 import { checkLocalImages, embedExternalImages } from "../../dist/core/pdf/postprocess.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 
 // 1x1 PNG 魔数头(mimeFromBuffer → image/png;data URL 前缀 data:image/png;base64,)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -29,8 +30,8 @@ export async function run() {
       throw new Error("postprocess 断言失败:worker 抛错/空结果时应原样保留 HTML(引用不变)");
     }
     if (
-      !warnings.includes("图片加载失败: https://a.example/x.png") ||
-      !warnings.includes("图片加载失败: https://b.example/y.png")
+      !warnings.some((w) => formatWarning(w) === "图片加载失败: https://a.example/x.png") ||
+      !warnings.some((w) => formatWarning(w) === "图片加载失败: https://b.example/y.png")
     ) {
       throw new Error(`postprocess 断言失败:缺少统一降级警告,warnings=${JSON.stringify(warnings)}`);
     }
@@ -83,8 +84,8 @@ export async function run() {
     await checkLocalImages(srcs, resolver, warnings);
     if (
       warnings.length !== 2 ||
-      !warnings.includes("图片加载失败: a.png") ||
-      !warnings.includes("图片加载失败: b.png")
+      !warnings.some((w) => formatWarning(w) === "图片加载失败: a.png") ||
+      !warnings.some((w) => formatWarning(w) === "图片加载失败: b.png")
     ) {
       throw new Error(`postprocess 断言失败:checkLocalImages 警告异常(期望去重后 2 条),warnings=${JSON.stringify(warnings)}`);
     }

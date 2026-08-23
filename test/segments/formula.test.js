@@ -9,6 +9,7 @@
  * JS 模板字符串内 TeX 反斜杠须双写(\\frac)。
  */
 import { convert } from "../../dist/core/convert.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
@@ -107,10 +108,12 @@ export async function run() {
   if (degradeDocument.includes("<m:oMath")) {
     throw new Error("公式断言失败:降级公式不应产出 m:oMath(整式降级不混排)");
   }
-  // 断言:convert 返回 warnings 含降级警告文案(含公式源码)
-  const degradeWarnOk = degradeWarnings.some(
-    (w) => w.includes("公式解析失败,降级为 TeX 源码") && w.includes("\\frac{1}{"),
-  );
+  // 断言:convert 返回 warnings 含降级警告文案(含公式源码)。
+  // B6:警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案。
+  const degradeWarnOk = degradeWarnings.some((w) => {
+    const text = typeof w === "string" ? w : formatWarning(w);
+    return text.includes("公式解析失败,降级为 TeX 源码") && text.includes("\\frac{1}{");
+  });
   if (!degradeWarnOk) {
     throw new Error("公式断言失败:warnings 缺少公式降级警告文案(公式解析失败,降级为 TeX 源码)");
   }

@@ -86,6 +86,22 @@ import { applyStaticTexts, setLanguage, t, type Language } from "../core/i18n.js
 /* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let presetSaveTrap: (() => void) | null = null;
 
+/**
+ * 语言镜像写 localStorage(B6 FOUC 缓解,最小方案):
+ * 语言真源在 settings.json(经主进程),renderer 在语言设置/切换落定时镜像写入
+ * localStorage("m2w.language");index.html <head> 的 lang-bootstrap.js 尽早读取该
+ * 镜像设置 <html lang>(只消 lang/字体方向性闪烁,不做文案替换)。
+ * 选型记录:未采用「body 初始 visibility:hidden」方案——CSP 为 script-src 'self'
+ * 内联脚本被拦,且隐藏 body 若初始化失败会白屏;外部 bootstrap 脚本改动最小。
+ */
+function mirrorLanguage(lang: Language): void {
+  try {
+    localStorage.setItem("m2w.language", lang);
+  } catch {
+    /* localStorage 不可用(隐私模式等)时静默:仅失去 FOUC 缓解,不影响功能 */
+  }
+}
+
 /* ---------- 设置类型(契约收敛于 core/settings-defaults.ts) ---------- */
 type Paper = "A4" | "A3" | "A5" | "Letter" | "Legal";
 type Orientation = "portrait" | "landscape";
@@ -104,6 +120,7 @@ export async function loadSettings(): Promise<void> {
   state.settings = mergeSettingsWithDefaults(loaded);
   // i18n:主进程语言来源 = 持久化设置;启动即应用(静态文案 + 动态文案经 t() 自动跟随)
   setLanguage(state.settings.language);
+  mirrorLanguage(state.settings.language); // B6:镜像写 localStorage 供 lang-bootstrap.js 尽早读
   applyStaticTexts();
   state.hydratingSettings = true;
   rebuildPresetOptions(); // 自定义预设选项先就位,再回填 select 值
@@ -627,6 +644,7 @@ export function bindSettingsEvents(): void {
       const lang = input.value as Language;
       state.settings.language = lang;
       setLanguage(lang);
+      mirrorLanguage(lang); // B6:切换落定即镜像,下次启动 lang-bootstrap.js 尽早生效
       applyStaticTexts();
       persistSettings({ language: lang });
       setStatus("");

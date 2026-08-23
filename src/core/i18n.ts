@@ -13,12 +13,49 @@
  */
 export type Language = "zh" | "en";
 
-const DICT: Record<Language, Record<string, string>> = {
-  zh: {
-    /* ---------- 应用 / 窗口 ---------- */
-    "app.title": "Markdown 转换工具",
+/**
+ * keyed 警告(B6 i18n 收口):core 生成的警告不再硬编码中文文案,
+ * 携带字典 key + 插值参数 + 缺失 key 时的兜底文案(fallback = 改造前中文原文逐字保留,
+ * 保证 zh 界面行为等价)。经 IPC 原样传到 renderer,显示层 formatWarning 按当前语言格式化。
+ */
+export interface KeyedWarning {
+  key: string;
+  params?: Record<string, string | number>;
+  /** 缺失 key 时的兜底文案(= 现有中文原文逐字保留) */
+  fallback: string;
+}
 
-    /* ---------- 通用 ---------- */
+/** warnings 通道元素:历史纯字符串(直通)或 keyed 警告(走字典) */
+export type ConvertWarning = string | KeyedWarning;
+
+/** 显示层格式化:string 原样返回;KeyedWarning 走 t(key, params),t 返回值 === key(缺失)时回退 fallback */
+export function formatWarning(w: ConvertWarning): string {
+  if (typeof w === "string") return w;
+  const text = t(w.key, w.params);
+  return text === w.key ? w.fallback : text;
+}
+
+/**
+ * 交叉引用未找到警告构造(docx/pdf 渲染共用单一来源):
+ * kind 为中文类别词(图/表/章节,来自两侧 CROSS_REF_KINDS.kindName),
+ * ref 为「前缀:label」串;en 文案省略 kind 参数避免中英混排(见 EN 字典注释)。
+ */
+export function crossRefNotFoundWarning(kind: string, ref: string): KeyedWarning {
+  return {
+    key: "warn.crossRefNotFound",
+    params: { kind, ref },
+    fallback: `交叉引用未找到${kind} label: ${ref}`,
+  };
+}
+
+// en 键集编译期锁定:EN 的类型为「ZH 键集的全函数映射」,en 缺键/多键均编译报错。
+// DICT 导出仅供测试段做运行期键集一致性抽查(zh/en 键集合相等)。
+const ZH = {
+  /* ---------- 应用 / 窗口 ---------- */
+  "app.title": "Markdown 转换工具",
+  "app.versionTitle": "Markdown 转换工具 v${version}",
+
+  /* ---------- 通用 ---------- */
     "common.canceled": "已取消",
     "common.unknownError": "未知错误",
     "common.invalidParams": "无效的操作参数",
@@ -216,7 +253,7 @@ const DICT: Record<Language, Record<string, string>> = {
     "preset.namePlaceholder": "例如:我的报告模板",
     "preset.nameRequired": "请输入预设名称",
     "preset.nameDuplicate": "已存在同名预设,请换一个名称",
-    "preset.nameLimit": "已达 ${max} 个上限，请先删除",
+    "preset.nameLimit": "已达 ${max} 个上限,请先删除",
     "preset.customHint": "自定义预设",
     "preset.modifiedHint": "已微调,与模板预设不一致",
     "preset.hintTitle": "选择模板将覆盖排版与页面设置",
@@ -268,10 +305,30 @@ const DICT: Record<Language, Record<string, string>> = {
     "menu.quit": "退出",
     "menu.help": "帮助",
     "menu.about": "关于",
-  },
-  en: {
+
+    /* ---------- 转换警告(core keyed 警告,fallback = 中文原文;B6 i18n 收口) ---------- */
+    "warn.formulaParseFailed": "公式解析失败,降级为 TeX 源码: ${tex}",
+    "warn.mermaidEmpty": "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块",
+    "warn.mermaidFailed": "Mermaid 渲染失败: ${reason},已降级为代码块",
+    "warn.imageLoadFailed": "图片加载失败: ${src}",
+    "warn.webpSkipped": "webp 图片不支持 docx 内嵌,已跳过: ${src}",
+    "warn.imageUnrecognized": "图片格式无法识别,已跳过: ${src}",
+    "warn.eqLabelOrphan": "公式 label 前无公式,已忽略: {#eq:${label}}",
+    "warn.eqLabelUndefined": "引用未定义的公式标签: eq:${label}",
+    "warn.crossRefNotFound": "交叉引用未找到${kind} label: ${ref}",
+    "warn.outputDirUnavailable": "输出目录不可用(${dir}),已输出到源文件目录",
+    "warn.outputPathTooLong": "输出路径过长,已输出到源文件目录",
+    "warn.gbkEncoding": "已按 GBK 编码读取:文件编码非 UTF-8",
+    "warn.gbkEncodingFile": "已按 GBK 编码读取:${file}",
+
+    /* ---------- 错误(生成期本地化:throw 文案经 error.message 单次字符串通道到 GUI) ---------- */
+    "convert.noFilesSelected": "未选择文件",
+  } as const;
+
+const EN: Record<keyof typeof ZH, string> = {
     /* ---------- App / window ---------- */
     "app.title": "Markdown Converter",
+    "app.versionTitle": "Markdown Converter v${version}",
 
     /* ---------- Common ---------- */
     "common.canceled": "Canceled",
@@ -523,8 +580,30 @@ const DICT: Record<Language, Record<string, string>> = {
     "menu.quit": "Quit",
     "menu.help": "Help",
     "menu.about": "About",
-  },
+
+    /* ---------- Convert warnings (core keyed warnings; fallback = Chinese source text) ---------- */
+    "warn.formulaParseFailed": "Formula parse failed, falling back to TeX source: ${tex}",
+    "warn.mermaidEmpty": "Mermaid rendering failed: renderer returned an empty result, fell back to code block",
+    "warn.mermaidFailed": "Mermaid rendering failed: ${reason}, fell back to code block",
+    "warn.imageLoadFailed": "Failed to load image: ${src}",
+    "warn.webpSkipped": "webp images are not supported for docx embedding, skipped: ${src}",
+    "warn.imageUnrecognized": "Unrecognized image format, skipped: ${src}",
+    "warn.eqLabelOrphan": "Equation label has no preceding equation, ignored: {#eq:${label}}",
+    "warn.eqLabelUndefined": "Reference to undefined equation label: eq:${label}",
+    // kind 参数为中文类别词(图/表/章节,来自 CROSS_REF_KINDS.kindName,推送期无法按显示语言翻译),
+    // en 文案省略该参数避免中英混排
+    "warn.crossRefNotFound": "Cross-reference target not found: ${ref}",
+    "warn.outputDirUnavailable": "Output directory unavailable (${dir}), output written next to the source file",
+    "warn.outputPathTooLong": "Output path too long, output written next to the source file",
+    "warn.gbkEncoding": "File read as GBK encoding: file is not UTF-8",
+    "warn.gbkEncodingFile": "File read as GBK encoding: ${file}",
+
+    /* ---------- Errors (localized at throw time: message reaches GUI via a one-shot string channel) ---------- */
+    "convert.noFilesSelected": "No files selected",
 };
+
+const DICT: Record<Language, Record<string, string>> = { zh: ZH, en: EN };
+export { DICT };
 
 /** 当前语言(模块级状态;默认 zh,setLanguage 更新)。 */
 let current: Language = "zh";

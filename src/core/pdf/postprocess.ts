@@ -6,6 +6,7 @@
 import { decodeEntities, escapeHtml, escapeRegExp } from "../utils.js";
 import { mimeFromBuffer } from "../image-type.js";
 import { imageLoadFailedWarning, unrecognizedImageWarning } from "../image-warning.js";
+import type { ConvertWarning } from "../i18n.js";
 import type { PdfHeading } from "./bookmarks.js";
 import type { ImageResolver } from "./render.js";
 
@@ -56,7 +57,7 @@ const EXTERNAL_IMAGE_CONCURRENCY = 3;
 export async function checkLocalImages(
   srcs: readonly string[],
   resolver: ImageResolver | undefined,
-  warnings: string[],
+  warnings: ConvertWarning[],
 ): Promise<void> {
   if (!resolver) return;
   await Promise.all(
@@ -80,7 +81,7 @@ export async function checkLocalImages(
 export async function embedExternalImages(
   html: string,
   resolver: ImageResolver | undefined,
-  warnings: string[],
+  warnings: ConvertWarning[],
 ): Promise<string> {
   if (!resolver) return html;
   const urls = Array.from(

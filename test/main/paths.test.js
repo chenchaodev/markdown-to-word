@@ -25,6 +25,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/converter.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`paths 断言失败:${msg}`);
@@ -140,7 +141,7 @@ export async function run() {
     const longName = "x".repeat(260);
     const longOut = await resolveOutputPath(srcMd, "docx", targetDir, longName);
     assert(
-      longOut.warnings.length === 1 && longOut.warnings[0].includes("输出路径过长"),
+      longOut.warnings.length === 1 && formatWarning(longOut.warnings[0]).includes("输出路径过长"),
       `超长路径:应恰一条「输出路径过长」警告,实际 ${JSON.stringify(longOut.warnings)}`,
     );
     assert(path.dirname(longOut.outputPath) === srcDir, "超长路径:未回落源目录");
@@ -154,7 +155,7 @@ export async function run() {
     await fs.writeFile(blocker, "blocker", "utf8");
     const badOut = await resolveOutputPath(srcMd, "docx", blocker);
     assert(
-      badOut.warnings.length === 1 && badOut.warnings[0].includes("输出目录不可用"),
+      badOut.warnings.length === 1 && formatWarning(badOut.warnings[0]).includes("输出目录不可用"),
       `mkdir 失败:应恰一条「输出目录不可用」警告,实际 ${JSON.stringify(badOut.warnings)}`,
     );
     assert(path.dirname(badOut.outputPath) === srcDir, "mkdir 失败:未回落源目录");

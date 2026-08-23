@@ -13,6 +13,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
+import { convert } from "../../dist/core/convert.js";
+import { FIXTURES_DIR } from "../common/paths.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`i18n 断言失败:${msg}`);
@@ -89,7 +91,45 @@ export async function run() {
     const m2 = await freshModule();
     assert(m2.loadSettings().language === "en", "合法文件 language en 应原样读取");
 
-    console.log("[ok] i18n:t() 默认/切换/插值/缺 key 回退 + settings.language 校验/兜底 断言通过");
+    // ---- 9. formatWarning 三分支(B6 keyed 警告)----
+    // 9a. string 直通
+    assert(i18n.formatWarning("纯文本警告") === "纯文本警告", "formatWarning:string 应原样返回");
+    // 9b. KeyedWarning key 命中 + 插值(zh)
+    const keyed = { key: "warn.imageLoadFailed", params: { src: "a.png" }, fallback: "图片加载失败: a.png" };
+    assert(i18n.formatWarning(keyed) === "图片加载失败: a.png", "formatWarning:key 命中应走字典插值(zh)");
+    // 9c. KeyedWarning key 缺失 → 回退 fallback
+    assert(
+      i18n.formatWarning({ key: "warn.no.such.key", params: { x: 1 }, fallback: "兜底文案" }) === "兜底文案",
+      "formatWarning:key 缺失应回退 fallback",
+    );
+    // 9d. en 下 keyed 警告走英文字典(语言切换后警告跟随)
+    i18n.setLanguage("en");
+    assert(i18n.formatWarning(keyed) === "Failed to load image: a.png", "formatWarning:en 应输出英文文案");
+    i18n.setLanguage("zh");
+
+    // ---- 10. en 键集运行期一致性抽查(编译期已由 EN 类型锁定,此处冒烟) ----
+    const zhKeys = Object.keys(i18n.DICT.zh).sort();
+    const enKeys = Object.keys(i18n.DICT.en).sort();
+    assert(
+      zhKeys.length === enKeys.length && zhKeys.every((k, idx) => k === enKeys[idx]),
+      `zh/en 键集应一致,zh 独有=${JSON.stringify(zhKeys.filter((k) => !enKeys.includes(k)))},en 独有=${JSON.stringify(enKeys.filter((k) => !zhKeys.includes(k)))}`,
+    );
+
+    // ---- 11. warnOnce 对象去重(B6:去重键 = key + JSON(params))----
+    // 悬空交叉引用重复出现 N 次 → 仅 1 条 KeyedWarning(docx render.ts warnDedup)
+    const dedupWarnings = [];
+    await convert("[图](#fig:x)\n\n[图](#fig:x)\n\n[图](#fig:x)\n\n正文", "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: dedupWarnings,
+    });
+    assert(dedupWarnings.length === 1, `悬空引用 ×3 应去重为 1 条警告,实际 ${dedupWarnings.length}`);
+    const [dw] = dedupWarnings;
+    assert(typeof dw === "object" && dw.key === "warn.crossRefNotFound", `去重后应为 warn.crossRefNotFound 对象,实际 ${JSON.stringify(dw)}`);
+    assert(dw.params && dw.params.ref === "fig:x", `params.ref 应为 fig:x,实际 ${JSON.stringify(dw.params)}`);
+    assert(dw.fallback === "交叉引用未找到图 label: fig:x", `fallback 应逐字保留中文原文,实际 ${dw.fallback}`);
+    assert(i18n.formatWarning(dw) === "交叉引用未找到图 label: fig:x", "zh 下格式化结果应与 fallback 一致");
+
+    console.log("[ok] i18n:t() 默认/切换/插值/缺 key 回退 + formatWarning 三分支 + en 键集一致性 + warnOnce 对象去重 + settings.language 校验/兜底 断言通过");
   } finally {
     // 恢复真实 settings.json(原有内容或删除),避免污染用户设置
     if (hadFile) await fs.writeFile(settingsFile, backup, "utf8");

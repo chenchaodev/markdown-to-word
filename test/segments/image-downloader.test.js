@@ -16,6 +16,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import http from "node:http";
 import { createImageResolver } from "../../dist/main/image-downloader.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { saveArtifact } from "../common/artifacts.js";
 
@@ -164,7 +165,7 @@ export async function run() {
     imageResolver: createImageResolver(FIXTURES_DIR),
     warnings: wMissing,
   });
-  if (!wMissing.some((w) => w.includes("图片加载失败:") && w.includes("missing-xxx.png"))) {
+  if (!wMissing.some((w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-xxx.png"))) {
     throw new Error("image-downloader 断言失败:缺失本地图片应产生统一「图片加载失败:」警告");
   }
   const wOk = [];

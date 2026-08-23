@@ -53,6 +53,8 @@ import { buildEquationContext, type EquationContext } from "./equations.js";
 import { collectPlainText } from "../mdast-utils.js";
 import { sniffImageType, imageSizeFromBuffer } from "../image-type.js";
 import { imageLoadFailedWarning, unrecognizedImageWarning } from "../image-warning.js";
+import type { ConvertWarning, KeyedWarning } from "../i18n.js";
+import { crossRefNotFoundWarning } from "../i18n.js";
 import { DEFAULT_PAGE_SETUP } from "../convert.js";
 import type { PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
@@ -80,8 +82,9 @@ export interface RenderOptions {
   metadata?: DocMetadata;
   /** 文档标题(docx 页眉用;优先级低于 metadata.title) */
   title?: string;
-  /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;webp 降级等) */
-  warnings?: string[];
+  /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;webp 降级等;
+   *  B6 起元素为 ConvertWarning,keyed 警告经显示层 formatWarning 按语言格式化) */
+  warnings?: ConvertWarning[];
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
   pageSetup?: PageSetup;
   /** 排版设置(缺省 DEFAULT_TYPOGRAPHY):字号/字体/行距/缩进/对齐/标题编号 */
@@ -102,7 +105,7 @@ export interface RenderOptions {
 
 export interface Ctx {
   imageResolver?: ImageResolver;
-  warnings?: string[];
+  warnings?: ConvertWarning[];
   listLevel: number;
   /** 排版设置(已解析默认,渲染时以 typography 为准) */
   typography: TypographySettings;
@@ -550,7 +553,7 @@ async function renderBlock(
               }),
             ];
           }
-          ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
+          ctx.warnings?.push(formulaParseFailedWarning(node.value));
           return [
             new Paragraph({
               alignment: AlignmentType.CENTER,
@@ -559,7 +562,7 @@ async function renderBlock(
           ];
         }
         if (!result.ok) {
-          ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
+          ctx.warnings?.push(formulaParseFailedWarning(node.value));
         }
         // 公式主体:解析成功 → docx Math;失败 → TeX 源码等宽灰字
         const mathChild: DocxMath | TextRun = result.ok
@@ -733,10 +736,17 @@ async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
           children: [new ImageRun({ type: "png", data: result.png, transformation: { width, height } })],
         });
       }
-      ctx.warnings?.push("Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块");
+      ctx.warnings?.push({
+        key: "warn.mermaidEmpty",
+        fallback: "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块",
+      });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      ctx.warnings?.push(`Mermaid 渲染失败: ${reason},已降级为代码块`);
+      ctx.warnings?.push({
+        key: "warn.mermaidFailed",
+        params: { reason },
+        fallback: `Mermaid 渲染失败: ${reason},已降级为代码块`,
+      });
     }
   }
   const highlighted = highlightCodeRuns(node.value, node.lang ?? undefined);
@@ -864,11 +874,23 @@ async function renderPhrasing(
 /**
  * 去重警告(B3):同一文案只入 warnings 一次。悬空交叉引用被引 N 次此前产生
  * N 条重复警告,GUI 警告列表刷屏;pdf 侧 unknownLabels Set 早已去重,此处对齐。
+ * B6:元素改为 KeyedWarning 对象后,去重键 = key + JSON(params)
+ * (params 相同才视为同一警告;不同 TeX 源码/label 的公式降级各自保留一条)。
  */
-function warnDedup(ctx: Ctx, message: string): void {
-  if (ctx.warnedKeys.has(message)) return;
-  ctx.warnedKeys.add(message);
-  ctx.warnings?.push(message);
+function warnDedup(ctx: Ctx, warning: KeyedWarning): void {
+  const dedupKey = `${warning.key}:${JSON.stringify(warning.params ?? null)}`;
+  if (ctx.warnedKeys.has(dedupKey)) return;
+  ctx.warnedKeys.add(dedupKey);
+  ctx.warnings?.push(warning);
+}
+
+/** 公式解析失败降级警告(display/inline 共用同一 key,params 带 TeX 源码) */
+function formulaParseFailedWarning(tex: string): KeyedWarning {
+  return {
+    key: "warn.formulaParseFailed",
+    params: { tex },
+    fallback: `公式解析失败,降级为 TeX 源码: ${tex}`,
+  };
 }
 
 async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, style: RunStyle): Promise<void> {
@@ -896,7 +918,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
         runs.push(new DocxMath({ children: result.children }));
       } else {
         runs.push(new TextRun({ text: result.text, font: CODE_FONT, color: "888888" }));
-        ctx.warnings?.push(`公式解析失败,降级为 TeX 源码: ${node.value}`);
+        ctx.warnings?.push(formulaParseFailedWarning(node.value));
       }
       break;
     }
@@ -921,7 +943,9 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
               }),
             );
           } else {
-            warnDedup(ctx, `交叉引用未找到公式 label: ${label}`);
+            // 与图/表/章节悬空同一文案族(「交叉引用未找到<类别> label: <ref>」);
+            // pdf 侧同场景文案不同(「引用未定义的公式标签: eq:<label>」),用独立 key
+            warnDedup(ctx, crossRefNotFoundWarning("公式", label));
             runs.push(new TextRun({ text: `${text} (?)`, ...style }));
           }
           break;
@@ -970,7 +994,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
             }),
           );
         } else {
-          warnDedup(ctx, `交叉引用未找到${def.kindName} label: ${kind}:${label}`);
+          warnDedup(ctx, crossRefNotFoundWarning(def.kindName, `${kind}:${label}`));
           runs.push(new TextRun({ text: text === def.defaultText ? def.danglingText : text, ...style }));
         }
         break;
@@ -1110,7 +1134,11 @@ async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<Inli
   }
   const type = sniffImageType(data);
   if (type === "webp") {
-    ctx.warnings?.push(`webp 图片不支持 docx 内嵌,已跳过: ${node.url}`);
+    ctx.warnings?.push({
+      key: "warn.webpSkipped",
+      params: { src: node.url },
+      fallback: `webp 图片不支持 docx 内嵌,已跳过: ${node.url}`,
+    });
     return fallback();
   }
   // B3:未知魔数不再伪装 png(错误标签靠 Word 自行嗅探兜底,行为不可预期)→ 跳过+警告

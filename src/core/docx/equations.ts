@@ -54,7 +54,11 @@ function buildEquationContext(ast: Root, ctx: Ctx, numbering: boolean = true): E
           lastInfo.label = label;
           labelIndex.set(label, lastInfo.index);
         } else {
-          ctx.warnings?.push(`公式 label 前无公式,已忽略: {#eq:${label}}`);
+          ctx.warnings?.push({
+            key: "warn.eqLabelOrphan",
+            params: { label },
+            fallback: `公式 label 前无公式,已忽略: {#eq:${label}}`,
+          });
         }
       }
       // 关开关时 lastInfo 恒为 null,label 段仍跳过渲染(语法标记不显示)
