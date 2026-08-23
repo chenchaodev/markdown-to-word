@@ -67,10 +67,11 @@ jobs:
             const m = md.match(/## \[[^\]]+\] - [^\n]+\n([\s\S]*?)(?=\n## \[|\$)/);
             process.stdout.write(m ? m[1].trim() : '');
           ")
+          # 只上传安装包与更新元数据(builder-debug.yml 为 electron-builder 调试文件,1.0.1 起不再上传)
           if [ -n "$NOTES" ]; then
-            gh release create "${{ github.ref_name }}" release/*.exe release/*.yml --notes "$NOTES"
+            gh release create "${{ github.ref_name }}" release/*.exe release/latest.yml --notes "$NOTES"
           else
-            gh release create "${{ github.ref_name }}" release/*.exe release/*.yml --generate-notes
+            gh release create "${{ github.ref_name }}" release/*.exe release/latest.yml --generate-notes
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
