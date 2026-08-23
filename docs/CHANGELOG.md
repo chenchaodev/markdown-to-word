@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [1.2.0] - 2026-08-24
+- **审计改进第三批(B9/B12/B13)+目录结构重组落地**(GUI 实测通过;typecheck/lint/build/45 段/smoke 全绿;重组全程行为零变化):
+- B9 UX 体验批(8780c14 视觉/46c0d4d 交互):PDF 链路进度五阶段细分(parse/inline/katex/mermaid/print,onStage 回调协议只增不改)+print 阶段取消置灰;错误码可操作文案映射(EBUSY/ENOENT/EACCES/ENOSPC/长路径);转换中拖入文件状态提示;重复文件单独计数+skipped 具体文件名可折叠;最近条目单击=加载/双击=重转;窗口最大化状态记忆;边距输入 max 属性;弹窗动画尊重 prefers-reduced-motion;设置栅格 ≤720px 单列断点
+- B13 暗色模式(5a91a4a):style.css 颜色收敛 33 个语义化 CSS 变量,data-theme 与 prefers-color-scheme 双作用域同套深色值;设置「跟随系统/浅色/深色」三态即时生效(AppSettings.theme 全链路);浅色路径零视觉变化;color-scheme 跟随原生控件
+- B12 IPC 面整理(2df5e35):23 个 channel 统一「域:动作」命名并收敛单源(main/ipc/channels.ts,preload 沙箱侧镜像+dist 恒等断言);convert:progress payload 加 mode 标识去 renderer 推断耦合;smoke 新增 IPC 端到端 diag
+- 目录结构重组(前置再探查核对欠账成立性;6 批独立提交 6f3d72a/b1e50e9/061e8dd/d31cb21/2819a2a/9909d74,方案见 archive/20260823-230554):
+  - 批① core:i18n.ts 拆 dict/index(ZH/EN 同文件保键集编译期锁定,facade 引用面零改动)+根级 16 文件归组 pipeline/settings/markdown/image/util
+  - 批② docx:11 个节点处理器归拢 handlers/(theme/render/ctx/prescan/chrome 留顶层)
+  - 批③ renderer:11 文件归组六功能域+events.ts 按域拆 4+1 文件+style.css 拆 base/drop/settings/dialogs 四文件(copy-renderer 改递归拷贝)
+  - 批④ main:index.ts 708→74 行,抽 windows/main-window+windows/preview+ipc/register+menu(ctxByWebContents 前置收敛防循环)
+  - 批⑤ converter 拆 context/single/batch/merge/paths 五子模块桶导出+smoke 迁出生产路径(test/tools/smoke/,打包天然排除)+resource-dirs 合并
+  - 批⑥ main 根级归组补遗(ipc/persist/services 域;menu.ts 留单文件锚点)
+- 文档:目录结构优化方案入册(8994c7e);测试 44→45 段(新增 ipc-channels)
+
 ## [1.1.0] - 2026-08-23
 - **全库质量审计改进第二批落地**(B6/B4/B5/B7/B8/B11 共约 30 项;typecheck/lint/build/44 段/smoke 全绿;重构批全程行为零变化,功能项 zh 界面文案逐字等价):
 - B6 i18n 收口(9d6a2d5):core 警告通道改 ConvertWarning(string|KeyedWarning)+显示层 formatWarning 按当前语言格式化(缺失 key 回退中文 fallback,zh 行为逐字等价);公式/Mermaid/图片/GBK/路径回落等全部 push 点 keyed 化;throw 文案生成期 t() 本地化(error.message 单次通道无法显示层重映射);修 renderer 模块级 t() 求值致语言切换后仍中文的 bug;DICT en 键集编译期锁定(ZH as const+EN Record 缺键/多键编译报错);zh FOUC 缓解(localStorage 语言镜像+lang-bootstrap.js 引导设 html lang);preset.nameLimit 全角逗号统一
