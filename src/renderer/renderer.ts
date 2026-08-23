@@ -31,7 +31,7 @@
 import { type AppSettings } from "../core/settings-defaults.js";
 import type { UiState } from "../main/ui-state.js";
 import { state } from "./state.js";
-import type { BatchProgressInfo, BatchResult } from "./state.js";
+import type { BatchProgressInfo, BatchResult, ConvertProgressPayload } from "./state.js";
 import { updateActionButtons } from "./file-list.js";
 import { bindEvents } from "./events.js";
 import { bindSettingsEvents } from "./settings-bindings.js";
@@ -70,8 +70,9 @@ declare global {
       /** 选择输出目录对话框(批次 7);用户取消返回 null。 */
       selectDir: () => Promise<string | null>;
       /** 订阅转换进度(B9 起阶段键:read/render/done + pdf 细分 parse/inline/
-       *  mermaid/katex/print;未知键 renderer 原样兜底,向后兼容),返回取消订阅函数。 */
-      onConvertProgress: (cb: (stage: string) => void) => () => void;
+       *  mermaid/katex/print;B12 起 payload 带 mode 标识,未知阶段键 renderer
+       *  原样兜底),返回取消订阅函数。 */
+      onConvertProgress: (cb: (info: ConvertProgressPayload) => void) => () => void;
       /** 订阅批量转换进度(第 i 个文件 / 阶段文案),返回取消订阅函数。 */
       onBatchProgress: (cb: (info: BatchProgressInfo) => void) => () => void;
       /** 读取持久化设置(启动时回填控件)。 */

@@ -3,6 +3,8 @@
  * - convertImpl docx 全链路落盘(基础链路 + 产物存在,端到端性质)
  * - pdf 链路:printToPDF 产物魔数 + 书签注入(Outlines 中文标题 + Dest 页面引用)+ 合并书签
  * - renderer 诊断(executeJavaScript:window.api 注入/按钮可点/状态区反馈/弹窗隐藏)
+ * - IPC 接线端到端(B12):经 window.api 真实 invoke convert:single/convert:merge/
+ *   app:version 全链路(channel 改名后接线正确性;成功项会写最近文件,结束前还原)
  * 纯逻辑断言(重名保护/批量汇总/merge docx/取消链路/设置注入/分页符产物)已迁
  * test/segments|main(分页符 pdf 中间 html 在 page-setup 段),本文件不再触碰设置与取消。
  * 输出隔离:smoke 不依赖用户持久化设置——outputDir 强制 ""(产物落 output/smoke 源文件旁,
@@ -289,6 +291,29 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
           })}`,
         );
       }
+      // B12:IPC 接线端到端证据——经 preload(window.api)真实走 invoke → main
+      // handler → convertImpl 全链路(channel 改名后接线正确性;直接调 convertImpl
+      // 的上方断言不经过 IPC,覆盖不到 handle 注册)。路径经 JSON.stringify 注入,
+      // 防 Windows 反斜杠转义破坏脚本字面量。
+      const ipcDiag = await win.webContents.executeJavaScript(`(async () => {
+        const single = await window.api.convert(${JSON.stringify(sampleMd)}, "docx");
+        const merge = await window.api.convertMerge(${JSON.stringify([mergeA, mergeB])}, "docx");
+        const version = await window.api.getVersion();
+        return {
+          singleOk: single.ok === true && typeof single.outputPath === "string",
+          mergeOk: merge.ok === true && typeof merge.outputPath === "string",
+          versionIsString: typeof version === "string" && version.length > 0,
+        };
+      })()`);
+      console.log(`[smoke] ipc diag: ${JSON.stringify(ipcDiag)}`);
+      if (!ipcDiag.singleOk || !ipcDiag.mergeOk || !ipcDiag.versionIsString) {
+        throw new Error(
+          `[smoke] ipc diag FAILED: IPC 链路异常 ${JSON.stringify(ipcDiag)}(convert:single/convert:merge/app:version 接线回归)`,
+        );
+      }
+      // IPC 转换成功会经 recordRecentFiles 写入 ui-state.recentFiles(合并写语义,
+      // finally 的整体还原冲不掉新增项)→ 此处显式还原为隔离前快照
+      await writeWithRetry(() => saveUiState({ recentFiles: origUi.recentFiles }), "recentFiles 还原");
     } catch (err) {
       console.error("[smoke] renderer diag FAILED:", err);
       throw err; // 由 index.ts 统一 catch → app.exit(1)

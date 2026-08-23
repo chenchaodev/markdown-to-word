@@ -526,18 +526,19 @@ export function bindEvents(): void {
     })();
   });
 
-  // 进度订阅:单文件/合并走 convert:progress;批量走 batch:progress。
-  // mode 标志确保只响应当前模式的进度,转换结束后的迟到事件直接忽略。
+  // 进度订阅:单文件/合并走 convert:progress;批量走 convert:batchProgress。
+  // B12:payload 带 mode 标识,直接与 state.mode 比对做归属判定(不再按调用
+  // 上下文硬编码模式清单),转换结束后的迟到事件(mode 已复位为 null)直接忽略。
   // 单文件/合并只有阶段键(无百分比),按 STAGE_PERCENT 映射近似进度。
   // B9:pdf 链路细分 parse/inline/mermaid/katex/print 阶段键;print(printToPDF)
   // 不可中断 → 取消按钮置灰,防无效点击。
-  state.unsubscribeProgress = window.api.onConvertProgress((stage) => {
-    if (state.mode !== "single" && state.mode !== "merge") return;
-    const text = stageText(stage, t);
-    if (text !== stage) setStatus(text); // 未知阶段原样兜底,不覆盖状态栏
-    const percent = STAGE_PERCENT[stage];
+  state.unsubscribeProgress = window.api.onConvertProgress((info) => {
+    if (info.mode !== state.mode) return;
+    const text = stageText(info.stage, t);
+    if (text !== info.stage) setStatus(text); // 未知阶段原样兜底,不覆盖状态栏
+    const percent = STAGE_PERCENT[info.stage];
     if (percent !== undefined) setProgress(percent);
-    if (stage === "print") cancelBtn.disabled = true;
+    if (info.stage === "print") cancelBtn.disabled = true;
   });
 
   state.unsubscribeBatchProgress = window.api.onBatchProgress((info) => {

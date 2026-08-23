@@ -13,9 +13,13 @@
  */
 import { DEFAULT_SETTINGS, type AppSettings } from "../core/settings-defaults.js";
 import type { ConvertWarning } from "../core/i18n.js";
+import type { ConvertProgressPayload } from "../main/ipc-channels.js";
 import type { RecentFile } from "../main/ui-state.js";
 
 /* ---------- 批量 / 合并契约类型 ---------- */
+/** convert:progress 事件 payload(B12 起带 mode 标识;类型单源 main/ipc-channels.ts)。 */
+export type { ConvertProgressPayload };
+
 export interface BatchProgressInfo {
   index: number;
   total: number;

@@ -162,10 +162,10 @@
 #### B13 暗色模式(M,P2 功能新增;已拍板做)
 - [ ] nativeTheme + prefers-color-scheme,CSS 变量双主题;设置「跟随系统/浅色/深色」
 
-#### B12 IPC 面整理(M,P3;面广靠后;已拍板做)
-- [ ] channel 命名统一「域:动作」(convert→convert:single;import:pdf-css/presets:import 序统一)
-- [ ] convert:progress 事件带 mode 标识,去 renderer 侧推断耦合(renderer.ts:613-619)
-- [ ] preload/renderer/smoke/测试全量同步
+#### B12 IPC 面整理(M,P3;2026-08-24 完成,待提交)
+- [x] channel 命名统一「域:动作」(convert→convert:single;import:pdf-css→css:import 等;单源 src/main/ipc-channels.ts,preload 沙箱隔离侧镜像+ipc-channels.test.js 恒等断言)
+- [x] convert:progress 事件带 mode 标识(single/batch/merge),renderer 直接消费 payload.mode 归属(events.ts 不再硬编码模式清单)
+- [x] preload/renderer/smoke/测试全量同步(smoke 增 IPC 端到端 diag:window.api 真实 invoke convert:single/convert:merge/app:version)
 
 #### 目录结构重组(L,P2 重构;2026-08-23 探查定稿,暂缓排期,排在现有待办之后)
 > 方案全文见 archive/20260823-230554-目录结构优化方案.md(目标结构树/拆分明细/纯移动清单/划分原则/明确不做清单);RESEARCH 同日条目有摘要。

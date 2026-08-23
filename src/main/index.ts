@@ -60,6 +60,7 @@ import { runSmoke } from "./smoke.js";
 import { hardenWebContents } from "./web-hardening.js";
 import { escapeHtml } from "../core/utils.js";
 import { setLanguage, t } from "../core/i18n.js";
+import { IPC_CHANNELS as CH, type ConvertMode } from "./ipc-channels.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.argv.includes("--smoke");
@@ -368,7 +369,7 @@ async function lastOpenDirIfValid(): Promise<string | undefined> {
 function registerIpc(): void {
   // 选择多个 markdown 文件(批量/合并入口;取消返回 []);
   // 批次 11:defaultPath 记忆上次目录,成功后回写所选文件所在目录
-  ipcMain.handle("dialog:openMarkdowns", async () => {
+  ipcMain.handle(CH.fileOpenDialog, async () => {
     const result = await dialog.showOpenDialog({
       title: t("dialog.openMarkdowns"),
       defaultPath: await lastOpenDirIfValid(),
@@ -383,14 +384,16 @@ function registerIpc(): void {
 
   // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示;用户取消返回 { ok:false, canceled:true }
   // B1:入参类型守卫(format 非 docx/pdf 时此前静默落 pdf 分支,现显式失败)
-  ipcMain.handle("convert", async (event, filePath: unknown, format: unknown): Promise<ConvertResult> => {
+  ipcMain.handle(CH.convertSingle, async (event, filePath: unknown, format: unknown): Promise<ConvertResult> => {
     if (!isString(filePath) || !isConvertFormat(format)) {
       return { ok: false, error: t("common.invalidParams") };
     }
     return runWithCtx(
       event,
       async (ctx, win) => {
-        const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
+        // B12:progress payload 带 mode 标识,renderer 直接消费归属(不再按调用上下文推断)
+        const send = (stage: string): void =>
+          win?.webContents.send(CH.convertProgress, { stage, mode: "single" satisfies ConvertMode });
         const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
         await recordRecentFiles([filePath], format); // 批次 11:成功后记最近文件
         return { ok: true, outputPath, warnings };
@@ -400,12 +403,12 @@ function registerIpc(): void {
   });
 
   // 取消当前窗口的转换(单文件/批量/合并通用;批量由 batchConvertImpl 内部检查)
-  ipcMain.handle("convert:cancel", (event): void => {
+  ipcMain.handle(CH.convertCancel, (event): void => {
     ctxByWebContents.get(event.sender.id)?.cancel();
   });
 
   // 选择输出目录(批次 7;取消返回 null);批次 11:defaultPath 记忆 + 成功后回写所选目录
-  ipcMain.handle("dialog:selectDir", async (): Promise<string | null> => {
+  ipcMain.handle(CH.dirSelect, async (): Promise<string | null> => {
     const result = await dialog.showOpenDialog({
       title: t("dialog.selectDir"),
       defaultPath: await lastOpenDirIfValid(),
@@ -420,16 +423,16 @@ function registerIpc(): void {
   // 拖放路径收集:目录递归取 md,非 md 的传入路径进 skipped
   // B1:元素级校验(此前只 guard Array.isArray,非字符串元素会让 path.resolve 抛 TypeError)
   ipcMain.handle(
-    "paths:collectMarkdown",
+    CH.fileCollectMarkdown,
     (_event, paths: unknown): Promise<{ files: string[]; skipped: string[] }> => {
       return collectMarkdownPaths(isStringArray(paths) ? paths : []);
     },
   );
 
-  // 批量转换:并发 2,失败不中断,进度走 batch:progress;取消由 batchConvertImpl 内部收集 canceledCount,
+  // 批量转换:并发 2,失败不中断,进度走 convert:batchProgress;取消由 batchConvertImpl 内部收集 canceledCount,
   // 不抛 ConvertCanceledError(onCanceled 分支为防御兜底,与 catch-all 归一一致)
   ipcMain.handle(
-    "convert:batch",
+    CH.convertBatch,
     async (event, files: unknown, format: unknown): Promise<BatchResult | { ok: false; error: string }> => {
       if (!isStringArray(files) || !isConvertFormat(format)) {
         return { ok: false, error: t("common.invalidParams") };
@@ -437,7 +440,8 @@ function registerIpc(): void {
       return runWithCtx(
         event,
         async (ctx, win) => {
-          const send = (info: BatchProgressInfo): void => win?.webContents.send("batch:progress", info);
+          const send = (info: BatchProgressInfo): void =>
+            win?.webContents.send(CH.convertBatchProgress, info);
           const result = await batchConvertImpl(files, format, send, ctx, getKatexDir());
           // 批次 11:成功后记录每个成功项的最近文件条目
           await recordRecentFiles(
@@ -454,14 +458,16 @@ function registerIpc(): void {
   // 合并转换:多文件 → mergeMarkdowns → 单次 convert,输出 {首文件名}-合并.{ext}
   // 批次 7 补:进度走 convert:progress(与单文件同通道),renderer 的 runMerge 已订阅该事件;
   // 用户取消 → 返回 { ok:false, canceled:true }(与单文件 handler 一致,renderer 据此走取消分支)。
-  ipcMain.handle("convert:merge", async (event, files: unknown, format: unknown): Promise<ConvertResult> => {
+  ipcMain.handle(CH.convertMerge, async (event, files: unknown, format: unknown): Promise<ConvertResult> => {
     if (!isStringArray(files) || !isConvertFormat(format)) {
       return { ok: false, error: t("common.invalidParams") };
     }
     return runWithCtx(
       event,
       async (ctx, win) => {
-        const send = (stage: string): void => win?.webContents.send("convert:progress", { stage });
+        // B12:与单文件同通道,payload.mode = "merge" 区分归属
+        const send = (stage: string): void =>
+          win?.webContents.send(CH.convertProgress, { stage, mode: "merge" satisfies ConvertMode });
         const result = await mergeConvertImpl(files, format, send, ctx, getKatexDir());
         // 批次 11:合并成功 → 全部源文件均成功转换,逐个记最近文件
         if (result.ok) await recordRecentFiles(files, format);
@@ -470,17 +476,17 @@ function registerIpc(): void {
       () => ({ ok: false, canceled: true, error: t("common.canceled") }),
     );
   });
-  ipcMain.handle("settings:get", (): AppSettings => loadSettings());
+  ipcMain.handle(CH.settingsGet, (): AppSettings => loadSettings());
   // 发版 1.0.0:界面版本信息(renderer header 显示;与「关于」对话框同源 app.getVersion)
-  ipcMain.handle("app:version", (): string => app.getVersion());
+  ipcMain.handle(CH.appVersion, (): string => app.getVersion());
 
-  ipcMain.handle("settings:set", (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
+  ipcMain.handle(CH.settingsSet, (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
     return updateSettings(patch);
   });
 
   // 批次 13:导入模板预设 JSON(选文件 → 解析校验 → 同名覆盖合并 → 上限 10 → 持久化)。
   // 取消 → { ok:true, canceled:true };解析/读取异常 → { ok:false, error }(可读文案)
-  ipcMain.handle("presets:import", async (): Promise<ImportPresetsResult> => {
+  ipcMain.handle(CH.presetsImport, async (): Promise<ImportPresetsResult> => {
     const result = await dialog.showOpenDialog({
       title: t("dialog.importPresets"),
       defaultPath: await lastOpenDirIfValid(),
@@ -511,7 +517,7 @@ function registerIpc(): void {
 
   // 批次 13:导出全部自定义预设为 JSON(保存对话框;schemaVersion:1 包装,2 空格缩进)。
   // 空预设 main 侧前置拦截(renderer 侧可同样提示,两处一致);取消 → { ok:true, canceled:true }
-  ipcMain.handle("presets:export", async (): Promise<ExportPresetsResult> => {
+  ipcMain.handle(CH.presetsExport, async (): Promise<ExportPresetsResult> => {
     const presets = loadSettings().customPresets;
     if (presets.length === 0) return { ok: false, error: t("preset.noneToExport") };
     const result = await dialog.showSaveDialog({
@@ -532,7 +538,7 @@ function registerIpc(): void {
   // 批次 16:导入 CSS 文件作为 PDF 样式模板(选文件 → 读内容 → 大小上限校验 → 返回内容+文件名)。
   // 内容由 renderer 经 settings:set 持久化到 settings.pdfCss(pdf 渲染时追加到默认样式后覆盖)。
   // 取消 → { ok:true, canceled:true };读取异常/超限 → { ok:false, error }(可读文案)
-  ipcMain.handle("import:pdf-css", async (): Promise<ImportPdfCssResult> => {
+  ipcMain.handle(CH.cssImport, async (): Promise<ImportPdfCssResult> => {
     const result = await dialog.showOpenDialog({
       title: t("dialog.importPdfCss"),
       defaultPath: await lastOpenDirIfValid(),
@@ -557,36 +563,36 @@ function registerIpc(): void {
   });
 
   // 批次 11:UI 状态读写(最近文件/会话文件/记忆目录/窗口位置/面板展开态;独立于 settings)
-  ipcMain.handle("ui-state:get", (): UiState => loadUiState());
-  ipcMain.handle("ui-state:set", (_event, patch: Partial<UiState>): Promise<UiState> => {
+  ipcMain.handle(CH.uiStateGet, (): UiState => loadUiState());
+  ipcMain.handle(CH.uiStateSet, (_event, patch: Partial<UiState>): Promise<UiState> => {
     return saveUiState(patch);
   });
 
   // 批次 11:会话恢复用——保序过滤仍存在的路径(缺失剔除,不打乱用户排列顺序)
-  ipcMain.handle("paths:filterExisting", (_event, paths: unknown): Promise<string[]> => {
+  ipcMain.handle(CH.fileFilterExisting, (_event, paths: unknown): Promise<string[]> => {
     return filterExistingPaths(isStringArray(paths) ? paths : []);
   });
 
   // 导出后行为:资源管理器中显示 / 默认程序打开(B1:入参类型守卫)
-  ipcMain.handle("shell:reveal", (_event, filePath: unknown): void => {
+  ipcMain.handle(CH.shellRevealInFolder, (_event, filePath: unknown): void => {
     if (isString(filePath)) shell.showItemInFolder(filePath);
   });
 
-  ipcMain.handle("shell:open", async (_event, filePath: unknown): Promise<{ ok: boolean; error?: string }> => {
+  ipcMain.handle(CH.shellOpenPath, async (_event, filePath: unknown): Promise<{ ok: boolean; error?: string }> => {
     if (!isString(filePath)) return { ok: false, error: t("common.invalidParams") };
     const error = await shell.openPath(filePath);
     return error ? { ok: false, error } : { ok: true };
   });
 
   // 预览:独立可见窗口展示与 PDF 同排版的 HTML(复用 renderPdfHtml),多窗口并发安全
-  ipcMain.handle("preview:open", (_event, mdPath: unknown): Promise<{ ok: boolean; error?: string }> => {
+  ipcMain.handle(CH.previewOpen, (_event, mdPath: unknown): Promise<{ ok: boolean; error?: string }> => {
     if (!isString(mdPath)) return Promise.resolve({ ok: false, error: t("common.invalidParams") });
     return openPreviewWindow(mdPath);
   });
 
   // 批次 11 迭代 3:设置变更后刷新所有预览窗口(renderer 在 settingsSet 成功后调用;
   // 无预览窗口时为空操作;刷新失败在窗口内显示错误页,不影响主窗口)
-  ipcMain.handle("preview:refresh", (): void => {
+  ipcMain.handle(CH.previewRefresh, (): void => {
     for (const entry of previews) void refreshPreviewWindow(entry);
   });
 }
@@ -602,7 +608,7 @@ function openFromAppMenu(): void {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
-  mainWindow.webContents.send("menu:open");
+  mainWindow.webContents.send(CH.menuOpen);
 }
 
 /** 菜单「关于」:应用名 + 版本(app.getVersion())+ 简短说明。 */
