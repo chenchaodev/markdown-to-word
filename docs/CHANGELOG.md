@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [1.1.0] - 2026-08-23
+- **全库质量审计改进第二批落地**(B6/B4/B5/B7/B8/B11 共约 30 项;typecheck/lint/build/44 段/smoke 全绿;重构批全程行为零变化,功能项 zh 界面文案逐字等价):
+- B6 i18n 收口(9d6a2d5):core 警告通道改 ConvertWarning(string|KeyedWarning)+显示层 formatWarning 按当前语言格式化(缺失 key 回退中文 fallback,zh 行为逐字等价);公式/Mermaid/图片/GBK/路径回落等全部 push 点 keyed 化;throw 文案生成期 t() 本地化(error.message 单次通道无法显示层重映射);修 renderer 模块级 t() 求值致语言切换后仍中文的 bug;DICT en 键集编译期锁定(ZH as const+EN Record 缺键/多键编译报错);zh FOUC 缓解(localStorage 语言镜像+lang-bootstrap.js 引导设 html lang);preset.nameLimit 全角逗号统一
+- B4 降级与失败可见性(d6dd721):docx 列表/引用块内不支持的块级内容(公式/表格/html/代码块)由静默丢弃改降级渲染+去重警告;hljs 高亮降级补警告(onFallback 回调保持纯模块,pdf 同 key 同口径);loadKatexCss 失败经 warnings 上报;图片读取失败按 fs 错误码细分 ENOENT/EACCES/EPERM/兜底(docx/pdf 双侧对齐)
+- B5 性能(3ebec63):docx 图片 resolver 加 ctx 级 Promise memo(并发同 URL 共享在途请求,失败不缓存可重试);pdf embedExternalImages 改 cursor 分段单遍遍历(只处理 img 标签内 src,比旧全局 replace 更精确,产物等价);ImageResolver 契约加 optional exists 轻量存在性通道(main 侧 fs.access 实现);buildMarkdownIt 实例复用评估后不做(highlight 回调闭包捕获 warnings 会丢警告)
+- B7 契约单源与解环(089eac3/e471d2d/0694814,行为零变化):循环依赖解除(DEFAULT_PAGE_SETUP 改从 settings-defaults 导入);新增 core/cross-ref.ts(CROSS_REF_KINDS+章节 label 正则族)与 core/image-resolver.ts 类型单源;decodeEntities 双实现统一;typography 平行 type 改派生;matchesPreset 字段数组驱动;theme.ts 死导出删除;魔法数字收敛常量(颜色入 theme);白名单标签集恒等断言;mermaid SVG 信任边界注释;pdf createDepthTracker/forEachRefLink 提取;新增 core/docx/bookmark.ts wrapBookmark 收敛书签块与 as unknown 断言
+- B8 大文件拆分(20ed1c8/0a6c9ce,行为零变化):docx/render.ts 1262→467 行(抽 ctx/chrome/prescan/link-xref/image-run/code-block/fallback/content 8 模块,依赖单向无环);pdf/render.ts 790→209 行(渲染规则按 rule 拆 rules/* 六文件+shared 契约,overrideXrefRule 三段拆分);renderer.ts 705→147 行(events.ts 集中事件绑定);settings-panel.ts 656→374 行(settings-bindings.ts);renderer 卫生(state 删 converting 改 mode!==null 单源/trapFocus 二次调用防御/unload 生命周期注明)
+- B11 测试盲区补齐(dd9dfbd):atomic-json 直测段(原子写/20 并发串行序/失败不破坏旧文件);katex-dir/mermaid-dir 抽纯函数+三态参数化直测;theme-fonts 段锁「eastAsia 集中配置」硬约束(16 文件零 CJK 硬编码扫描+styles.xml 产物一致);converter.test.js 内联样例迁 test/fixtures/main/;runWithCtx 抽 runConvertTask 纯逻辑入 ipc-logic.ts 直测(preview 生命周期维持人工不自动化)
+- 存量修复(083de0d):code-highlight 验收 fixtures 补生成(check:fixtures 恢复通过)
+
 ## [1.0.1] - 2026-08-23
 - **全库质量审计改进第一批落地**(3 子代理深审全库,B1-B14 排期;本版含 B1-B3+B10+B14,约 40 项;typecheck/lint/build/40 段/smoke 全绿):
 - 安全加固(cb40e04):预览/打印窗口 open-navigate 全拦截 + 外链仅 http(s) 经系统浏览器;模板 CSS 剥离 `</style>` 注入序列 + TEMPLATE_CSP;IPC convert/batch/merge/shell/preview/paths 参数类型守卫;权限请求显式全拒

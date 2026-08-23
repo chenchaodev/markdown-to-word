@@ -91,61 +91,61 @@
 - [x] scripts/svg-to-ico.mjs 登记 icons npm script(B10a 批次)
 - [x] docx 解包机制统一 jszip(common/docx-utils.js 删系统 tar 路径)(B10b 批次:unzipPart 转 async,71 处调用点适配,验收总耗时 23.5s→19.1s)
 
-#### B6 i18n 收口(M,P1;为 B4 提供 key 机制)
-- [ ] core 警告文案 key 化机制:ctx.warnings 携带稳定 key+插值参数,GUI 显示层 t() 映射,缺失回退存量中文
-- [ ] converter.ts warnings/throw 文案接字典(converter.ts:140,146,224,231,411,421)
-- [ ] index.ts throw 文案接字典(:175)
-- [ ] Mermaid 降级警告 key 化(core/docx/render.ts:730;core/pdf/render.ts:673,678)
-- [ ] renderer.ts:192 ERROR_MESSAGE 模块级求值改使用点 t()(语言切换后仍中文的 bug)
-- [ ] renderer.ts:701 版本 title 走字典
-- [ ] i18n DICT en 键集 satisfies 编译期锁定(zh/en 对齐;i18n.ts:16)
-- [ ] preset.nameLimit 全角逗号统一(i18n.ts:214)
-- [ ] index.html zh FOUC 缓解:内联尽早读 localStorage 语言(评估最小方案)
+#### B6 i18n 收口(M,P1;为 B4 提供 key 机制;2026-08-23 完成,commit 9d6a2d5)
+- [x] core 警告文案 key 化机制:ctx.warnings 携带稳定 key+插值参数,GUI 显示层 t() 映射,缺失回退存量中文(ConvertWarning=string|KeyedWarning+formatWarning,zh 行为逐字等价)
+- [x] converter.ts warnings/throw 文案接字典(throw 经 error.message 单次字符串通道无法显示层重映射,改生成期 t() 本地化并注释决策)
+- [x] index.ts throw 文案接字典(实际落点 main/converter.ts,审计行号漂移)
+- [x] Mermaid 降级警告 key 化(warn.mermaidEmpty/warn.mermaidFailed 双侧共用)
+- [x] renderer.ts ERROR_MESSAGE 模块级求值改使用点 t()(语言切换后仍中文的 bug 已修)
+- [x] renderer.ts 版本 title 走字典(app.versionTitle)
+- [x] i18n DICT en 键集编译期锁定(ZH as const + EN: Record<keyof typeof ZH,string>,缺键/多键编译报错)
+- [x] preset.nameLimit 全角逗号统一为半角
+- [x] index.html zh FOUC 缓解(CSP 禁内联,改 localStorage 语言镜像+lang-bootstrap.js 外部引导脚本设 html lang)
 
-#### B4 降级与失败可见性(M,P1;依赖 B6 key 机制)
-- [ ] renderList/renderBlockquote 不支持的块级内容(display 公式/表格/html/代码块)降级渲染+警告(docx/render.ts:692-712,757-773)
-- [ ] hljs 高亮降级加警告(docx code-highlight.ts:97,136;pdf/render.ts:115-117)
-- [ ] loadKatexCss 失败经 warnings 上报(pdf/template.ts:213-215)
-- [ ] 图片读取失败原因细分(EACCES/ENOENT 等文案区分;docx warnFail 与 pdf checkLocalImages 同步;render.ts:1069/postprocess.ts:66)
+#### B4 降级与失败可见性(M,P1;依赖 B6 key 机制;2026-08-23 完成,commit d6dd721)
+- [x] renderList/renderBlockquote 不支持的块级内容(display 公式/表格/html/代码块)降级渲染+警告(renderContainerFallback+warnDedup)
+- [x] hljs 高亮降级加警告(code-highlight onFallback 回调保持纯模块,pdf 同 key 同口径 warn.highlightFallback)
+- [x] loadKatexCss 失败经 warnings 上报(warn.katexCssLoadFailed,返回空串行为不变)
+- [x] 图片读取失败原因细分(imageLoadFailureWarning 分类器 ENOENT/EACCES/EPERM/兜底,docx/pdf 双侧对齐)
 
-#### B5 性能(S-M,P1)
-- [ ] docx 图片 resolver memo 缓存(ctx 挂 Map;render.ts:1054-1084)
-- [ ] embedExternalImages cursor 分段一次遍历(仿 replaceMermaidPlaceholders;postprocess.ts:110-115)
-- [ ] (评估)checkLocalImages 轻量存在性通道(resolver 契约加 optional exists)
-- [ ] (可选)buildMarkdownIt 实例复用(pdf/render.ts:701;低收益)
+#### B5 性能(S-M,P1;2026-08-23 完成,commit 3ebec63)
+- [x] docx 图片 resolver memo 缓存(ctx 挂 Promise Map,并发同 URL 共享在途请求,失败不缓存可重试)
+- [x] embedExternalImages cursor 分段一次遍历(只处理 img 标签内 src,比旧全局 replace 更精确,产物等价)
+- [x] (评估)checkLocalImages 轻量存在性通道(resolver 契约加 optional exists,main 侧 fs.access 实现,http 防御性退回)
+- [x] (可选)buildMarkdownIt 实例复用——评估后不做(highlight 回调闭包捕获本次 warnings 数组,复用会丢警告)
 
-#### B7 契约单源与解环(M-L,P1 重构;行为零变化,逐项独立提交)
-- [ ] 循环依赖解除:docx/render.ts:56、pdf/render.ts:16、main/settings.ts:19 改从 settings-defaults.js 导入 DEFAULT_PAGE_SETUP
-- [ ] CROSS_REF_KINDS 抽 core 单源(docx:157/pdf:308)
-- [ ] {#sec:} 正则族单源(parse.ts:24/docx:671,685/pdf:325)
-- [ ] ImageResolver 类型单源(docx:67/pdf:28/convert.ts:38)
-- [ ] pdf 容器深度跟踪器提取 createDepthTracker(caption/eq/xref 三处同构)
-- [ ] pdf eq/xref 第二遍链接替换循环合并(render.ts:254-282/459-517)
-- [ ] bookmarkChildren 共享 helper + as unknown 断言收敛一处(render.ts:494/captions.ts:119)
-- [ ] decodeEntities 双实现统一(utils/code-highlight)
+#### B7 契约单源与解环(M-L,P1 重构;行为零变化;2026-08-23 完成,三波提交 089eac3/e471d2d/0694814)
+- [x] 循环依赖解除:docx/pdf render 与 main/settings 的 DEFAULT_PAGE_SETUP 改从 settings-defaults 导入
+- [x] CROSS_REF_KINDS 抽 core 单源(新增 core/cross-ref.ts)
+- [x] {#sec:} 正则族单源(core/cross-ref.ts SEC_LABEL_RE/kindLabelRegex/stripSecLabelSuffix)
+- [x] ImageResolver 类型单源(新增 core/image-resolver.ts,含 optional exists;第三处定义实际在 main/image-downloader.ts)
+- [x] pdf 容器深度跟踪器提取 createDepthTracker(caption/eq/xref 三处逐字同构核实后抽象,现居 pdf/rules/shared.ts)
+- [x] pdf eq/xref 第二遍链接替换循环合并(forEachRefLink 共享 helper,解包策略经回调)
+- [x] bookmarkChildren 共享 helper + as unknown 断言收敛一处(新增 core/docx/bookmark.ts wrapBookmark;冗余断言实际落点 pdf/bookmarks.ts:193)
+- [x] decodeEntities 双实现统一(utils 单源;hljs 实体域等价性已核实并记注释)
 - [x] 白名单标签集恒等断言(ALLOWED_INLINE_TAGS ↔ INLINE_TAG_STYLES)
-- [ ] typography 平行定义 type-only 共享(renderer↔core;typography.ts:2-3)
-- [x] matchesPreset 字段数组驱动(settings-defaults.ts:175-193)
-- [x] theme.ts 死导出处置(DEFAULT_FONT/DEFAULT_SIZE/QUOTE_COLOR:删或定为兜底单源)
-- [x] 链接文本提取复用 collectPlainText 消断言(docx/render.ts:875);bookmarks.ts:193 冗余断言清理
+- [x] typography 平行定义 type-only 共享(renderer 侧改 PageSetup/AppSettings 派生)
+- [x] matchesPreset 字段数组驱动(PRESET_COMPARE_FIELDS,keyof 约束)
+- [x] theme.ts 死导出处置(DEFAULT_FONT/DEFAULT_SIZE/QUOTE_COLOR 零消费点删除,「兜底」角色经核实不成立)
+- [x] 链接文本提取复用 collectPlainText 消断言(docx link case;嵌套标记链接文本由空变实为修正方向,41 段全绿佐证无回归)
 - [x] mermaid.ts 契约注释声明 SVG 信任边界假设
-- [x] docx 颜色/字号魔法数字收敛常量(888888×8/808080×3/F2F2F2/999999/封面目录字号/400×300)
+- [x] docx 颜色/字号魔法数字收敛常量(颜色入 theme.ts MUTED/SECONDARY/QUOTE_BG/RULE_GRAY,版面字号与图片上限入常量区)
 
-#### B8 大文件拆分(L,P2 重构;依赖 B7;每步独立提交可回退)
-- [ ] docx/render.ts pushRuns link case(~97 行)抽 link-xref 模块(:845-1010)
-- [ ] docx/render.ts renderDocx 五轮预扫提取(:232-391)
-- [ ] docx/render.ts 封面/目录/页眉页脚 chrome 模块拆出(1085→目标 <600)
-- [ ] pdf/render.ts overrideXrefRule 三段拆分 + 按 rule 拆文件(741→目标 <400)
-- [ ] renderer.ts(702) 抽 events.ts(事件绑定约占半)
-- [ ] settings-panel.ts(637) 绑定函数抽离
-- [ ] renderer 卫生:unload 监听清理(renderer.ts:659)/state converting-mode 合一(state.ts:47)/dialogs trapFocus 二次调用防御(dialogs.ts:42,113)
+#### B8 大文件拆分(L,P2 重构;依赖 B7;2026-08-23 完成,两波提交 20ed1c8/0a6c9ce)
+- [x] docx/render.ts pushRuns link case 抽 link-xref 模块
+- [x] docx/render.ts renderDocx 五轮预扫提取(prescanDocument)
+- [x] docx/render.ts 封面/目录/页眉页脚 chrome 模块拆出(1262→467 行,抽 ctx/chrome/prescan/link-xref/image-run/code-block/fallback/content 8 模块,依赖单向无环)
+- [x] pdf/render.ts overrideXrefRule 三段拆分 + 按 rule 拆文件(790→209 行,rules/caption|equation|xref|html|image|heading-id+shared)
+- [x] renderer.ts 抽 events.ts(705→147 行,bindEvents 集中全部事件绑定)
+- [x] settings-panel.ts 绑定函数抽离(656→374 行,settings-bindings.ts)
+- [x] renderer 卫生:unload 监听生命周期等价注明/state 删 converting 改 mode!==null 单源/dialogs trapFocus 二次调用先解旧句柄
 
-#### B11 测试盲区补齐(S-M,P2;依赖 B10 userData 隔离)
-- [ ] atomic-json 直测段(原子写/队列串行)
-- [ ] katex-dir/mermaid-dir 三态路径直测(dev/test/打包)
-- [ ] theme.ts eastAsia 字体规则专断言(锁「集中字体配置」硬约束)
-- [ ] converter.test.js 内联 SAMPLE_MD/PNG 迁 fixtures 体系
-- [ ] main/index.ts runWithCtx 错误归一化/preview 生命周期:能抽纯逻辑则抽,不可抽部分记维持人工
+#### B11 测试盲区补齐(S-M,P2;依赖 B10 userData 隔离;2026-08-23 完成,commit dd9dfbd)
+- [x] atomic-json 直测段(test/main/atomic-json.test.js:原子写读回/20 并发串行序/实例队列隔离/失败不破坏旧文件)
+- [x] katex-dir/mermaid-dir 三态路径直测(抽 resolveKatexDir/resolveMermaidDir 纯函数,test/main/resource-dirs.test.js 参数化)
+- [x] theme.ts eastAsia 字体规则专断言(theme-fonts 段:集中配置单源+16 文件零 CJK 硬编码扫描+styles.xml 产物一致;架构适配: eastAsia 单源已迁 typography 设置)
+- [x] converter.test.js 内联 SAMPLE_MD/PNG 迁 fixtures 体系(test/fixtures/main/)
+- [x] main/index.ts runWithCtx 错误归一化抽 runConvertTask 纯逻辑入 ipc-logic.ts 直测;preview 生命周期维持人工不自动化
 
 #### B9 UX 体验批(M,P1-P2)
 - [ ] 进度分阶段:PDF parse/inline/katex/mermaid/print 上报(pure.ts/converter.ts/preload/renderer 协议扩展);print 阶段取消置灰+「正在写入」文案
