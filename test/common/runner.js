@@ -33,17 +33,58 @@ export async function runSegment(fileUrl) {
   await mod.run();
 }
 
-/** 顺序执行全部测试段(目录顺序 + 目录内文件名排序),返回逐段结果 */
-export async function runAll(dirs) {
+/**
+ * 单段执行 + 看门狗竞速(仅在看门狗启用时调用):
+ * - 看门狗只把超时段标记为失败以放行下一段,不终止悬挂段
+ *   (段 promise 继续在后台运行,迟到的 rejection 由空 catch 吸收)
+ * 返回 { ok, ms, error? },不含 file(由 runAll 补齐)
+ */
+async function runSegmentWithWatchdog(s, timeout) {
+  const start = Date.now();
+  const segmentPromise = runSegment(pathToFileURL(path.join(s.dir, s.file)).href);
+  let timer;
+  const watchdog = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`测试段超时(${timeout}ms): ${s.name}`)),
+      timeout,
+    );
+  });
+  try {
+    await Promise.race([segmentPromise, watchdog]);
+    return { ok: true, ms: Date.now() - start };
+  } catch (err) {
+    return { ok: false, ms: Date.now() - start, error: err };
+  } finally {
+    clearTimeout(timer);
+    // 输家 promise 挂空 catch,防迟到的 unhandledRejection
+    segmentPromise.catch(() => {});
+    watchdog.catch(() => {});
+  }
+}
+
+/**
+ * 顺序执行全部测试段(目录顺序 + 目录内文件名排序),返回逐段结果。
+ * options.segmentTimeoutMs:单段看门狗超时(ms),缺省回退环境变量
+ * M2W_SEGMENT_TIMEOUT_MS;0 或 NaN 等无效值 = 不启用(默认行为不变)。
+ */
+export async function runAll(dirs, options = {}) {
+  const timeout = Number(
+    options.segmentTimeoutMs ?? process.env.M2W_SEGMENT_TIMEOUT_MS ?? 0,
+  );
+  const watchdogEnabled = timeout > 0 && Number.isFinite(timeout);
   const segments = await discoverSegments(dirs);
   const results = [];
   for (const s of segments) {
-    const start = Date.now();
-    try {
-      await runSegment(pathToFileURL(path.join(s.dir, s.file)).href);
-      results.push({ file: s.name, ok: true, ms: Date.now() - start });
-    } catch (err) {
-      results.push({ file: s.name, ok: false, ms: Date.now() - start, error: err });
+    if (!watchdogEnabled) {
+      const start = Date.now();
+      try {
+        await runSegment(pathToFileURL(path.join(s.dir, s.file)).href);
+        results.push({ file: s.name, ok: true, ms: Date.now() - start });
+      } catch (err) {
+        results.push({ file: s.name, ok: false, ms: Date.now() - start, error: err });
+      }
+    } else {
+      results.push({ file: s.name, ...(await runSegmentWithWatchdog(s, timeout)) });
     }
   }
   return results;

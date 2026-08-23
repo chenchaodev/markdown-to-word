@@ -13,7 +13,9 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist",
     "rootDir": "src",
-    "sourceMap": true
+    "sourceMap": true,
+    // 增量编译:生成 .tsbuildinfo 缓存上次编译状态,只重编译受影响文件,提速重复 typecheck/build
+    "incremental": true
   },
   "include": ["src"]
 }

@@ -1,0 +1,40 @@
+name: CI
+
+# 门禁流水线:push 到 master 或任意分支开 PR 时跑 typecheck/lint/验收测试。
+# 触发条件与并发组见下方配置;测试需 Electron 图形环境,windows-latest 可直接跑。
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+# 同引用新推送取消在途旧构建(PR 场景避免过时构建排队浪费资源)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: windows-latest
+    # 全流程(install/typecheck/lint/build+40 段验收)正常约 10-15 分钟;
+    # 30 分钟为正常耗时的约 2 倍余量,超时即视为挂死快速失败,不占用 runner
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # node 22 为当前 LTS(CI 门禁可用较新 LTS;release.yml 用 20 保持发版环境稳定)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # 与 release.yml 同决策:CI 环境走官方源(GitHub 服务器访问官方源最快;本地 .npmrc 镜像配置不动)
+      - name: Install dependencies
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Typecheck & lint
+        run: npm run typecheck && npm run lint
+
+      # test 自带 build(tsc + copy-renderer)
+      - name: Acceptance tests
+        run: npm run test

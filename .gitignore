@@ -24,3 +24,7 @@ temp/
 Thumbs.db
 .idea/
 *.swp
+
+# TypeScript 增量编译缓存(incremental)
+tsconfig.tsbuildinfo
+*.tsbuildinfo

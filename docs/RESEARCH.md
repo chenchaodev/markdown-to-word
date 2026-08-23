@@ -2,6 +2,11 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-23 B10a 工程基建两坑(copy-renderer 混合目录 / incremental 不重建被删产物)
+- **dist/renderer 是混合目录**:tsc 编译产物(pure.js/settings-logic.js 等)与 copy-renderer 拷贝的静态资源(index.html/style.css)同居;copy-renderer 加 clean 步骤时**不可整目录 rmSync**(会删掉编译产物致 acceptance 2 段 ERR_MODULE_NOT_FOUND),只能按扩展名清理 `.html/.css`(脚本自身管辖范围)
+- **tsc incremental 不检查产物存在性**:tsbuildinfo 记录输入版本,输出文件被外部删除后 `tsc` 仍跳过重编译(幽灵缺模块);恢复须 `npx tsc --build --force`(`--force` 单独用报 TS5093,必须配 --build)。CI 每次全新检出不受影响;本地手动清 dist 后需 force 全量
+- 关联: ROADMAP B10;踩坑现场: acceptance 2/40 失败 → build 后复现 → force 恢复
+
 ### 2026-08-23 13:30:05 全库质量审计(代码/文档/可用性,改进迭代规划依据)
 - **core(28 文件 ~4440 行)**:top 改进——①convert⇄render 运行时循环依赖(docx/render.ts:56、pdf/render.ts:16 仍从 ../convert.js 导入 DEFAULT_PAGE_SETUP,改 settings-defaults.js 即解);②headingNumbering=false 题注编号双格式分歧(captions.ts:60-66 与自身注释 49-51 及 pdf 行为三方矛盾);③frontmatter 误吞以 `---` 开头文档正文(frontmatter.ts:24 无已知 key 守卫);④docx 图片 resolver 无 memo(pdf 侧已有去重);⑤四组人肉同步契约(CROSS_REF_KINDS/sec-label 正则×4/ImageResolver×3/白名单双扫描器已漂移);⑥docx 悬空引用警告不去重;⑦列表项/引用块内不支持的块级内容静默丢弃无警告;⑧slug 40 字符截断在去重后致书签碰撞跳转错位;⑨pdfCss/KaTeX CSS 注入未净化 `</style>`(配合预览窗口无 CSP 成真实注入面);⑩两大 render 文件继续拆分。次要:theme.ts 死导出、表格对齐 docx 丢失、警告文案硬编码中文、hljs 降级无警告、UTF-16 BE 不识别。
 - **main/renderer**:进程健壮性三缺口——①无单实例锁(双开静默互踩设置/最近文件);②关窗时转换进行中无拦截(destroyed window + 半成品文件);③无 unhandledRejection 兜底。预览/打印 HTML 模板完全无 CSP+外链导航未收口(mermaid 窗口反而配了)。IPC 参数校验标准不一(settings 有 sanitize,convert/shell 无类型守卫)。可用性 top5:关窗丢转换/进度 3 档钉死 70% 且 print 阶段不可取消/错误提示直出异常原文不可操作/拖放反馈缺陷组合(转换中静默忽略+重复项冒充非 Markdown 跳过+只报数量)/最近条目单击即重转误触成本高。i18n 残留:converter warnings/throw 文案、Mermaid 降级警告、smoke 断言冻结中文(en 下必炸)、index.html zh 默认文案 FOUC、renderer.ts:192 模块级 t() 冻结。无暗色模式(nativeTheme 未引用)。

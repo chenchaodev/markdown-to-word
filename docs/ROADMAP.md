@@ -79,17 +79,17 @@
 - [x] image-type 未知字节兜底策略(已拍板:跳过嵌入+警告,不再伪装 png;image-type.ts:27,92)(B3c 批次:sniffImageType/mimeFromBuffer 未知返回 null,docx imageToDocx 与 pdf embedExternalImages 调用方跳过+unrecognizedImageWarning 统一文案)
 
 #### B10 工程门禁与测试基建(M,P1,建议在功能批前建立护栏)
-- [ ] 新增 ci.yml(PR/push:windows-latest,typecheck+lint+build+test;concurrency 组;timeout-minutes)
-- [ ] release.yml 加固:concurrency / timeout-minutes / 失败 artifact 上传
-- [ ] acceptance.mjs 最早期 app.setPath("userData", tmpdir) 隔离(settings/i18n/ui-state/converter 段适配;消除真实 %APPDATA% 读写;原型 patch 限制并行为已知不专项)
-- [ ] runner 逐段超时看门狗(可配置)+ 总时长/最慢段排行输出(+可选 expect 式 diff 增强)
-- [ ] tsconfig incremental:true(build/test 提速)
-- [ ] tsconfig 启用 noUncheckedIndexedAccess(存量适配)
-- [ ] 删除死配置 tsconfig.eslint.json
-- [ ] test:smoke 构建新鲜度守卫(src mtime vs dist mtime,过期报错或自动 build)
-- [ ] copy-renderer.mjs 加 dist/renderer 清空步骤(防陈旧资源进安装包)
-- [ ] scripts/svg-to-ico.mjs 登记 icons npm script
-- [ ] docx 解包机制统一 jszip(common/docx-utils.js 删系统 tar 路径)
+- [x] 新增 ci.yml(PR/push:windows-latest,typecheck+lint+build+test;concurrency 组;timeout-minutes)(B10a 批次)
+- [x] release.yml 加固:concurrency / timeout-minutes / 失败 artifact 上传(B10a 批次)
+- [x] acceptance.mjs 最早期 app.setPath("userData", tmpdir) 隔离(settings/i18n/ui-state/converter 段适配;消除真实 %APPDATA% 读写;原型 patch 限制并行为已知不专项)(B10a 批次;40 段全绿验证通过,无需段内适配)
+- [x] runner 逐段超时看门狗(可配置)+ 总时长/最慢段排行输出(+可选 expect 式 diff 增强)(B10a 批次:M2W_SEGMENT_TIMEOUT_MS/acceptance 默认 180s;排行输出已做,diff 增强未做)
+- [x] tsconfig incremental:true(build/test 提速)(B10a 批次;坑:产物被外部删除后 tsc 不重建,恢复须 tsc --build --force,见 RESEARCH 同日条目)
+- [ ] tsconfig 启用 noUncheckedIndexedAccess(存量适配)(B10c 待办:约 200 错误,pdf/render.ts 78 处最多)
+- [x] 删除死配置 tsconfig.eslint.json(B10a 批次;eslint.config.js 用 projectService 无引用,已核实)
+- [x] test:smoke 构建新鲜度守卫(src mtime vs dist mtime,过期报错或自动 build)(B10a 批次:scripts/check-build-fresh.mjs 前置拦截)
+- [x] copy-renderer.mjs 加 dist/renderer 清空步骤(防陈旧资源进安装包)(B10a 批次;坑:混合目录不可整删,按 .html/.css 扩展名清理,见 RESEARCH 同日条目)
+- [x] scripts/svg-to-ico.mjs 登记 icons npm script(B10a 批次)
+- [ ] docx 解包机制统一 jszip(common/docx-utils.js 删系统 tar 路径)(B10b 待办:unzipPart 转 async,71 处调用点适配)
 
 #### B6 i18n 收口(M,P1;为 B4 提供 key 机制)
 - [ ] core 警告文案 key 化机制:ctx.warnings 携带稳定 key+插值参数,GUI 显示层 t() 映射,缺失回退存量中文

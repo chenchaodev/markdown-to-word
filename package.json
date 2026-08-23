@@ -18,7 +18,8 @@
     "test": "npm run build && electron test/acceptance.mjs",
     "gen:fixtures": "node test/tools/gen-fixtures.mjs",
     "check:fixtures": "node test/tools/gen-fixtures.mjs --check",
-    "test:smoke": "electron . --smoke",
+    "test:smoke": "node scripts/check-build-fresh.mjs && electron . --smoke",
+    "icons": "node scripts/svg-to-ico.mjs",
     "test:coverage": "npm run build && c8 --reporter=text --include=\"dist/**\" electron test/acceptance.mjs",
     "test:all": "npm run test && npm run test:smoke",
     "dist": "npm run build && electron-builder --win nsis --x64 --publish never"

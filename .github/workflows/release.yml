@@ -10,9 +10,16 @@ on:
 permissions:
   contents: write
 
+# 发版不可取消在途:同 tag 名重复推送时排队等待,不打断进行中的发版
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: windows-latest
+    # 含 NSIS 打包比 CI 长(打包约 5-10 分钟),40 分钟为正常耗时约 2 倍余量,防挂死占用 runner
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +43,16 @@ jobs:
         run: npm run dist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 失败兜底:打包半途失败时留存 release/ 已产出物(如部分安装包/日志)供排查,成功时不触发
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-artifacts
+          path: release/
+          if-no-files-found: ignore
+          retention-days: 7
 
       # 自动生成 Release 并上传安装包与更新元数据。
       # notes 取自 docs/CHANGELOG.md 最新版本条目(发版时人工整理的功能汇总,准确反映本次变更);
