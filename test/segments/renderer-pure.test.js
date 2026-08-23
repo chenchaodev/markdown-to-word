@@ -16,6 +16,9 @@ import {
   formatRecentTime,
   batchRetryPaths,
   batchSuccessPaths,
+  actionableError,
+  partitionDuplicates,
+  selectionStatus,
 } from "../../dist/renderer/pure.js";
 
 /** renderer 纯函数单测(纯 Node 段,零 Electron API) */
@@ -117,6 +120,12 @@ export async function run() {
     ["read", "正在读取文件…"],
     ["render", "正在渲染文档…"],
     ["done", "正在完成…"],
+    // B9:pdf 链路细分阶段
+    ["parse", "正在解析 Markdown…"],
+    ["inline", "正在处理图片…"],
+    ["mermaid", "正在渲染 Mermaid 图表…"],
+    ["katex", "正在准备公式样式…"],
+    ["print", "正在写入 PDF…"],
   ];
   for (const [input, expected] of stageCases) {
     const actual = stageText(input);
@@ -138,6 +147,12 @@ export async function run() {
     ["read", 15],
     ["render", 70],
     ["done", 95],
+    // B9:pdf 链路细分阶段(单调递增,不回退)
+    ["parse", 30],
+    ["inline", 45],
+    ["mermaid", 55],
+    ["katex", 65],
+    ["print", 85],
   ];
   for (const [key, expected] of percentCases) {
     if (STAGE_PERCENT[key] !== expected) {
@@ -150,7 +165,66 @@ export async function run() {
       throw new Error(`STAGE_PERCENT 断言失败:缺 ${key} 键(STAGE_TEXT 与 STAGE_PERCENT 键集应一致)`);
     }
   }
-  console.log("[ok] STAGE_PERCENT:read=15/render=70/done=95 + 与 STAGE_TEXT 键集一致 断言通过");
+  console.log("[ok] STAGE_PERCENT:read=15/render=70/done=95 + B9 pdf 细分(parse/inline/mermaid/katex/print)+ 与 STAGE_TEXT 键集一致 断言通过");
+
+  // ---------- actionableError(B9:错误码 → 可操作文案,未识别透传) ----------
+  const fakeT = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
+  const errCases = [
+    ["EBUSY: resource busy or locked, open 'C:\\a.docx'", "error.fileBusy"],
+    ["ENOENT: no such file or directory, open 'C:\\gone.md'", "error.fileNotFound"],
+    ["EACCES: permission denied, open 'C:\\locked.pdf'", "error.accessDenied"],
+    ["ENOSPC: no space left on device, write", "error.diskFull"],
+    ["ENAMETOOLONG: name too long, open 'C:\\...'", "error.pathTooLong"],
+    ["error: MAX_PATH exceeded while writing output", "error.pathTooLong"],
+    ["Output path too long: path too long for target filesystem", "error.pathTooLong"],
+  ];
+  for (const [input, expectedKey] of errCases) {
+    const actual = actionableError(input, fakeT);
+    if (!actual.startsWith(expectedKey + ":")) {
+      throw new Error(`actionableError 断言失败: ${JSON.stringify(input)} → ${JSON.stringify(actual)}(期望映射到 ${expectedKey})`);
+    }
+  }
+  // 未识别错误原样透传(不破坏既有展示)
+  const passthrough = ["boom", "", "EPERM: operation not permitted", "自定义错误文本"];
+  for (const input of passthrough) {
+    if (actionableError(input, fakeT) !== input) {
+      throw new Error(`actionableError 断言失败:未识别错误 ${JSON.stringify(input)} 应原样透传`);
+    }
+  }
+  console.log(`[ok] actionableError:${errCases.length} 组错误码映射(EBUSY/ENOENT/EACCES/ENOSPC/长路径)+ ${passthrough.length} 组未识别透传 断言通过`);
+
+  // ---------- partitionDuplicates(B9:拖放反馈细化,重复文件单独拆分) ----------
+  const existing = ["C:\\a.md", "C:\\b.md"];
+  const dup1 = partitionDuplicates(existing, ["C:\\c.md", "C:\\a.md", "C:\\d.md"]);
+  if (JSON.stringify(dup1.added) !== JSON.stringify(["C:\\c.md", "C:\\d.md"]) || JSON.stringify(dup1.duplicates) !== JSON.stringify(["C:\\a.md"])) {
+    throw new Error(`partitionDuplicates 断言失败:与既有列表去重异常,实际 ${JSON.stringify(dup1)}`);
+  }
+  // incoming 内部互相重复同样计入 duplicates
+  const dup2 = partitionDuplicates([], ["C:\\x.md", "C:\\x.md", "C:\\y.md"]);
+  if (JSON.stringify(dup2.added) !== JSON.stringify(["C:\\x.md", "C:\\y.md"]) || dup2.duplicates.length !== 1) {
+    throw new Error(`partitionDuplicates 断言失败:incoming 内部重复应计入 duplicates,实际 ${JSON.stringify(dup2)}`);
+  }
+  const dup3 = partitionDuplicates(existing, []);
+  if (dup3.added.length !== 0 || dup3.duplicates.length !== 0) {
+    throw new Error(`partitionDuplicates 断言失败:空 incoming 应返回空,实际 ${JSON.stringify(dup3)}`);
+  }
+  console.log("[ok] partitionDuplicates:与既有列表去重/incoming 内部重复/空列表 断言通过");
+
+  // ---------- selectionStatus(B9:摘要 + 非 Markdown 跳过 + 重复文件 三段组合句式) ----------
+  const selCases = [
+    // [summary, skipped, duplicates, 期望 key 或原文]
+    ["已选择 2 个文件", 0, 0, "已选择 2 个文件"], // 无跳过无重复 → 摘要原样
+    ["已选择 2 个文件", 3, 0, "file.skippedSuffix"], // 仅非 Markdown 跳过
+    ["已选择 2 个文件", 0, 2, "file.duplicatesSuffix"], // 仅重复
+    ["已选择 2 个文件", 3, 2, "file.skippedBothSuffix"], // 并存 → 合并句式
+  ];
+  for (const [summary, skipped, duplicates, expected] of selCases) {
+    const actual = selectionStatus(summary, skipped, duplicates, fakeT);
+    if (actual !== expected && !(expected.endsWith("Suffix") && actual.startsWith(expected + ":"))) {
+      throw new Error(`selectionStatus 断言失败:(${skipped}, ${duplicates}) → ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
+    }
+  }
+  console.log(`[ok] selectionStatus:${selCases.length} 组句式组合(原样/仅跳过/仅重复/并存合并)断言通过`);
 
   // ---------- formatRecentTime(批次 11:最近转换相对时间) ----------
   // 固定 now = 2026-08-13 15:00(本地时间构造,避免时区波动;全部断言注入 now)

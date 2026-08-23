@@ -28,13 +28,24 @@ export function truncateMiddle(text: string, max = 88): string {
 /**
  * 阶段文案(默认语言 zh 原文;i18n 注入翻译):
  * 主进程可能发「read」等键名,也可能是现成中文文案,原样兜底。
+ * B9 进度分阶段:pdf 链路细分 parse/inline/mermaid/katex(print 由 main/converter.ts
+ * 在 printToPDF 前上报);docx 保持 read/render/done。未知键原样兜底(向后兼容:
+ * 旧/新阶段混发均不破)。
  * 本文件零 import 约束:zh 文案作为默认输出保留于此(与 i18n 字典 convert.stage.*
  * 的 zh 值逐字一致),translate 注入时按阶段键名翻译(调用处传 t)。
  */
-export const STAGE_TEXT: Record<"read" | "render" | "done", string> = {
+export const STAGE_TEXT: Record<
+  "read" | "render" | "done" | "parse" | "inline" | "mermaid" | "katex" | "print",
+  string
+> = {
   read: "正在读取文件…",
   render: "正在渲染文档…",
   done: "正在完成…",
+  parse: "正在解析 Markdown…",
+  inline: "正在处理图片…",
+  mermaid: "正在渲染 Mermaid 图表…",
+  katex: "正在准备公式样式…",
+  print: "正在写入 PDF…",
 };
 
 export function stageText(
@@ -46,8 +57,22 @@ export function stageText(
   return translate ? translate(`convert.stage.${stage}`) : text;
 }
 
-/** 阶段 → 进度百分比(主进程只发阶段键,映射近似进度:读取 15% / 渲染 70% / 完成 95%)。 */
-export const STAGE_PERCENT: Record<string, number> = { read: 15, render: 70, done: 95 };
+/**
+ * 阶段 → 进度百分比(主进程只发阶段键,映射近似进度)。
+ * B9:pdf 链路 read(15) → parse(30) → inline(45) → mermaid(55) → katex(65)
+ * → print(85) → done(95);docx 沿用 read/render/done(render=70 兼容保留,
+ * 仅 docx 链路发射)。单调递增,不回退。
+ */
+export const STAGE_PERCENT: Record<string, number> = {
+  read: 15,
+  parse: 30,
+  inline: 45,
+  mermaid: 55,
+  katex: 65,
+  render: 70,
+  print: 85,
+  done: 95,
+};
 
 /* ---------- 最近转换相对时间 ---------- */
 /** 两位补零(时/分),如 9:05 → "09:05"。 */
@@ -112,4 +137,63 @@ export function batchSuccessPaths(
   return items
     .filter((item): item is { ok: true; outputPath: string } => item.ok === true && !!item.outputPath)
     .map((item) => item.outputPath);
+}
+
+/* ---------- B9:错误码 → 可操作文案映射 ---------- */
+/**
+ * 常见文件系统错误码 → 「原因 + 建议」可操作提示(对齐 preview.failed 形态):
+ * EBUSY(占用)/ ENOENT(不存在)/ EACCES(无权限)/ ENOSPC(磁盘满)/
+ * 长路径(ENAMETOOLONG 或 MAX_PATH 字样)。未识别错误原样透传,不破坏既有展示。
+ * translate 注入保持零 import 约束(调用处传 t)。
+ */
+export function actionableError(
+  message: string,
+  translate: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  if (/\bEBUSY\b/.test(message)) return translate("error.fileBusy");
+  if (/\bENOENT\b/.test(message)) return translate("error.fileNotFound");
+  if (/\bEACCES\b/.test(message)) return translate("error.accessDenied");
+  if (/\bENOSPC\b/.test(message)) return translate("error.diskFull");
+  if (/\bENAMETOOLONG\b/.test(message) || /MAX_PATH|path too long/i.test(message)) {
+    return translate("error.pathTooLong");
+  }
+  return message;
+}
+
+/* ---------- B9:拖放反馈细化(重复文件单独文案) ---------- */
+/** 追加合并拆分:incoming 与 existing 去重 → added(新增)/ duplicates(重复)。 */
+export function partitionDuplicates(
+  existing: readonly string[],
+  incoming: readonly string[],
+): { added: string[]; duplicates: string[] } {
+  const seen = new Set(existing);
+  const added: string[] = [];
+  const duplicates: string[] = [];
+  for (const filePath of incoming) {
+    if (seen.has(filePath)) duplicates.push(filePath);
+    else {
+      added.push(filePath);
+      seen.add(filePath); // incoming 内部互相重复同样计入 duplicates
+    }
+  }
+  return { added, duplicates };
+}
+
+/**
+ * 选择状态文案组装:摘要 + 非 Markdown 跳过数 + 重复文件数三段组合,
+ * 单独/并存各有句式(与 i18n file.skippedSuffix / file.duplicatesSuffix /
+ * file.skippedBothSuffix 一一对应)。translate 必传(零 import 约束,测试注入假 t)。
+ */
+export function selectionStatus(
+  summary: string,
+  skipped: number,
+  duplicates: number,
+  translate: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  if (skipped > 0 && duplicates > 0) {
+    return translate("file.skippedBothSuffix", { summary, skipped, duplicates });
+  }
+  if (skipped > 0) return translate("file.skippedSuffix", { summary, count: skipped });
+  if (duplicates > 0) return translate("file.duplicatesSuffix", { summary, count: duplicates });
+  return summary;
 }

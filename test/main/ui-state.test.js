@@ -15,6 +15,7 @@
  * - lastOpenDir 缺失/空串 → ""
  * - pickWindowBounds:x/y 落在某工作区内保留;全工作区外/尺寸非法 → null
  * - suppressCompleteDialog(批次 11 迭代 2):true 往返持久化;缺失/非 boolean → false
+ * - isMaximized(B9 窗口最大化记忆):true 往返持久化;缺失/非 boolean → false;patch 合并保留
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -239,6 +240,32 @@ export async function run() {
     assert(m13.loadUiState().suppressCompleteDialog === false, "suppressCompleteDialog:缺失应回退默认 false");
     assert(m13.DEFAULT_UI_STATE.suppressCompleteDialog === false, "DEFAULT_UI_STATE.suppressCompleteDialog 应为 false");
     console.log("[ok] ui-state:suppressCompleteDialog 往返/宽松校验(true 持久化,缺失与非 boolean 回退 false)");
+
+    // ---- 9. isMaximized(B9 窗口最大化状态记忆):true 往返持久化;缺失/非 boolean → false ----
+    await fs.writeFile(uiFile, JSON.stringify({ isMaximized: true }), "utf8");
+    const m14 = await freshModule();
+    assert(m14.loadUiState().isMaximized === true, "isMaximized:true 应原样读回");
+    await m14.saveUiState({ isMaximized: true, windowBounds: { x: 0, y: 0, width: 800, height: 600 } });
+    const m15 = await freshModule();
+    const s15 = m15.loadUiState();
+    assert(s15.isMaximized === true, "isMaximized:saveUiState(true) 应持久化");
+    assert(
+      s15.windowBounds && s15.windowBounds.width === 800,
+      "isMaximized 同批写入的 windowBounds(还原态尺寸)应一并持久化",
+    );
+    await fs.writeFile(uiFile, JSON.stringify({ isMaximized: "yes" }), "utf8");
+    const m16 = await freshModule();
+    assert(m16.loadUiState().isMaximized === false, "isMaximized:非 boolean 应回退 false");
+    await fs.writeFile(uiFile, JSON.stringify({}), "utf8");
+    const m17 = await freshModule();
+    assert(m17.loadUiState().isMaximized === false, "isMaximized:缺失应回退默认 false");
+    assert(m17.DEFAULT_UI_STATE.isMaximized === false, "DEFAULT_UI_STATE.isMaximized 应为 false");
+    // patch 未携带时保留现值(saveUiState 合并语义)
+    await m17.saveUiState({ isMaximized: true });
+    await m17.saveUiState({ lastOpenDir: "C:\\tmp" });
+    const m18 = await freshModule();
+    assert(m18.loadUiState().isMaximized === true, "patch 未携带 isMaximized 时应保留现值");
+    console.log("[ok] ui-state:isMaximized 往返/宽松校验(true 持久化,缺失与非 boolean 回退 false,patch 合并保留)");
   } finally {
     // 恢复真实 ui-state.json(原有内容或删除),避免污染用户状态
     if (hadFile) await fs.writeFile(uiFile, backup, "utf8");

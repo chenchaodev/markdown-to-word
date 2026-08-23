@@ -106,6 +106,8 @@ function createWindow(): BrowserWindow {
     loadUiState().windowBounds,
     screen.getAllDisplays().map((display) => display.workArea),
   );
+  // B9:窗口最大化状态记忆(关闭时最大化 → 启动恢复 maximize())
+  const restoreMaximized = loadUiState().isMaximized;
   const win = new BrowserWindow({
     width: 900,
     height: 640,
@@ -124,6 +126,8 @@ function createWindow(): BrowserWindow {
   });
   mainWindow = win;
   hardenWebContents(win); // B1:导航收口(拒绝新窗口/页内跨文档导航,http(s) 外开系统浏览器)
+  // B9:恢复最大化状态(先于 loadFile,避免可见的尺寸跳变)
+  if (restoreMaximized) win.maximize();
   win.loadFile(path.join(__dirname, "..", "renderer", "index.html")).catch((err) => {
     // B2:加载失败不再静默(此前 void 无 catch,失败进 unhandledRejection 黑洞)
     console.error("[main] renderer index.html 加载失败:", err);
@@ -134,7 +138,9 @@ function createWindow(): BrowserWindow {
     mainWindow = null;
     disposeMermaidService();
   });
-  // 批次 11:关闭时保存窗口位置(最大化/全屏不记录,恢复默认尺寸);
+  // 批次 11:关闭时保存窗口位置;B9:最大化状态一并记忆(isMaximized + 还原态
+  // 尺寸 getNormalBounds(),恢复时 maximize() 后还原态尺寸仍正确);
+  // 全屏不记录(保持原行为,恢复默认尺寸);
   // preventDefault + 写盘完成后 destroy,保证退出前写入落盘(不丢状态)。
   // B2:转换进行中先拦截确认(直接销毁会令 send 抛 "Object has been destroyed",
   // 且 fs.writeFile 后中断可能留下半成品输出文件)
@@ -144,10 +150,11 @@ function createWindow(): BrowserWindow {
       void confirmCloseDuringConvert(win);
       return;
     }
-    if (win.isMaximized() || win.isFullScreen()) return;
-    const bounds = win.getBounds();
+    if (win.isFullScreen()) return;
+    const maximized = win.isMaximized();
+    const bounds = maximized ? win.getNormalBounds() : win.getBounds();
     event.preventDefault();
-    void saveUiState({ windowBounds: bounds })
+    void saveUiState({ windowBounds: bounds, isMaximized: maximized })
       .catch(() => {
         /* 静默:UI 状态写失败不影响关闭 */
       })

@@ -316,7 +316,8 @@ export async function run() {
     );
     console.log("[ok] converter:runAfterConvert open 失败(降级不抛 + 日志留痕)");
 
-    // ---- 11. merge pdf 分支(451-453 行):合并 → renderPdf → 落盘 %PDF + 进度 read/render/done ----
+    // ---- 11. merge pdf 分支(451-453 行):合并 → renderPdf → 落盘 %PDF + 进度分阶段上报 ----
+    // B9 起 pdf 链路细分:read → parse → inline → mermaid → katex → print(printToPDF 前)→ done
     const mergeStages = [];
     const mergePdf = await mergeConvertImpl([mergeA, mergeB], "pdf", (stage) => mergeStages.push(stage));
     assert(mergePdf.ok && !!mergePdf.outputPath, `merge pdf 失败: ${mergePdf.error}`);
@@ -325,10 +326,11 @@ export async function run() {
     const pdfHead = Buffer.from(await fs.readFile(mergePdf.outputPath)).subarray(0, 4).toString("ascii");
     assert(pdfHead === "%PDF", `merge pdf 产物非 PDF 魔数: ${pdfHead}`);
     assert(
-      JSON.stringify(mergeStages) === JSON.stringify(["read", "render", "done"]),
+      JSON.stringify(mergeStages) ===
+        JSON.stringify(["read", "parse", "inline", "mermaid", "katex", "print", "done"]),
       `merge pdf 进度阶段异常: ${JSON.stringify(mergeStages)}`,
     );
-    console.log("[ok] converter:merge pdf 分支(renderPdf 落盘 %PDF + 进度 read/render/done)");
+    console.log("[ok] converter:merge pdf 分支(renderPdf 落盘 %PDF + 进度 read/parse/inline/mermaid/katex/print/done)");
 
     // ---- 12. filterExistingPaths(506-517 行,审计 507-517):存在保留/缺失剔除/保序 ----
     // (collectMarkdownPaths 的 stat 失败/非 md 直接路径已由 paths.test.js 104-112 行覆盖)

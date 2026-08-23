@@ -27,6 +27,9 @@ import {
   completeDialogSuppressInput,
   completeOutputPath,
   convertBtn,
+  dropSkipped,
+  dropSkippedList,
+  dropSkippedToggle,
   dropZone,
   mergeBtn,
   multiList,
@@ -108,9 +111,26 @@ async function openDialog(append = false): Promise<void> {
 }
 
 /* ---------- 拖放(多文件 / 文件夹) ---------- */
+/** 展示被跳过的非 Markdown 文件名(可折叠;空列表隐藏整块)。 */
+function showSkippedList(skipped: string[]): void {
+  dropSkipped.classList.toggle("hidden", skipped.length === 0);
+  if (skipped.length === 0) return;
+  dropSkippedToggle.textContent = t("file.skippedListToggle", { count: skipped.length });
+  dropSkippedList.replaceChildren(
+    ...skipped.map((filePath) => {
+      const li = document.createElement("li");
+      li.className = "summary-warnings-item";
+      li.textContent = baseName(filePath);
+      li.title = filePath; // 截断展示,悬停看完整路径
+      return li;
+    }),
+  );
+}
+
 async function resolveDropped(paths: string[]): Promise<void> {
   try {
     const { files, skipped } = await window.api.collectMarkdowns(paths);
+    showSkippedList(skipped); // B9:跳过项列具体文件名(可折叠);无跳过时隐藏
     if (files.length === 0) {
       setError(
         skipped.length > 0
@@ -119,7 +139,7 @@ async function resolveDropped(paths: string[]): Promise<void> {
       );
       return;
     }
-    appendSelection(files, skipped.length); // 拖入始终追加到现有列表
+    appendSelection(files, skipped.length); // 拖入始终追加到现有列表(重复文件单独提示)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setError(t("file.readFailed", { error: message }));
@@ -319,7 +339,11 @@ export function bindEvents(): void {
       clearDragState(); // 内部排序拖拽落到列表外:放弃排序
       return;
     }
-    if (state.mode !== null) return;
+    if (state.mode !== null) {
+      // B9:转换中拖入不再静默忽略,状态区给出提示
+      setStatus(t("drop.busy"), false, true);
+      return;
+    }
 
     const files = event.dataTransfer?.files;
     if (!files || files.length === 0) return;
@@ -505,12 +529,15 @@ export function bindEvents(): void {
   // 进度订阅:单文件/合并走 convert:progress;批量走 batch:progress。
   // mode 标志确保只响应当前模式的进度,转换结束后的迟到事件直接忽略。
   // 单文件/合并只有阶段键(无百分比),按 STAGE_PERCENT 映射近似进度。
+  // B9:pdf 链路细分 parse/inline/mermaid/katex/print 阶段键;print(printToPDF)
+  // 不可中断 → 取消按钮置灰,防无效点击。
   state.unsubscribeProgress = window.api.onConvertProgress((stage) => {
     if (state.mode !== "single" && state.mode !== "merge") return;
     const text = stageText(stage, t);
     if (text !== stage) setStatus(text); // 未知阶段原样兜底,不覆盖状态栏
     const percent = STAGE_PERCENT[stage];
     if (percent !== undefined) setProgress(percent);
+    if (stage === "print") cancelBtn.disabled = true;
   });
 
   state.unsubscribeBatchProgress = window.api.onBatchProgress((info) => {

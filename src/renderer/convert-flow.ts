@@ -17,7 +17,13 @@ import {
 } from "./utils.js";
 import { showBatchDialog, showCompleteDialog, showSummary } from "./dialogs.js";
 import { updateActionButtons } from "./file-list.js";
+import { actionableError } from "./pure.js";
 import { t } from "../core/i18n.js";
+
+/** B9:错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
+function displayError(message: string): string {
+  return actionableError(message, t);
+}
 
 /** 单文件转换(与旧版行为一致)。 */
 export async function runConvert(
@@ -50,7 +56,7 @@ export async function runConvert(
       }
       void state.recentRefreshHandler?.(); // 批次 11:成功后刷新最近转换区块(批次 15 R5:经 state 回调,不再 import recent-files)
     } else {
-      const error = result.error ?? t("common.unknownError");
+      const error = displayError(result.error ?? t("common.unknownError"));
       setError(t("convert.failed.status", { error }));
       showSummary({ kind: "fail", title: t("convert.failed.title"), error });
       // 批次 11 迭代 2:用户勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
@@ -60,8 +66,9 @@ export async function runConvert(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setError(t("convert.failed.status", { error: message }));
-    showSummary({ kind: "fail", title: t("convert.failed.title"), error: message });
+    const error = displayError(message);
+    setError(t("convert.failed.status", { error }));
+    showSummary({ kind: "fail", title: t("convert.failed.title"), error });
   } finally {
     state.mode = null;
     hideProgress();
@@ -156,7 +163,7 @@ export async function runMerge(): Promise<void> {
       }
       void state.recentRefreshHandler?.(); // 批次 11:成功后刷新最近转换区块(批次 15 R5:经 state 回调,不再 import recent-files)
     } else {
-      const error = result.error ?? t("common.unknownError");
+      const error = displayError(result.error ?? t("common.unknownError"));
       setError(t("convert.merge.failed", { error }));
       showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error });
       // 批次 11 迭代 2:勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
@@ -171,8 +178,9 @@ export async function runMerge(): Promise<void> {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setError(t("convert.merge.failed", { error: message }));
-    showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error: message });
+    const error = displayError(message);
+    setError(t("convert.merge.failed", { error }));
+    showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error });
   } finally {
     state.mode = null;
     hideProgress();

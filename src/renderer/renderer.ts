@@ -69,10 +69,9 @@ declare global {
       convertCancel: () => Promise<void>;
       /** 选择输出目录对话框(批次 7);用户取消返回 null。 */
       selectDir: () => Promise<string | null>;
-      /** 订阅转换进度(read / render / done),返回取消订阅函数。 */
-      onConvertProgress: (
-        cb: (stage: "read" | "render" | "done") => void,
-      ) => () => void;
+      /** 订阅转换进度(B9 起阶段键:read/render/done + pdf 细分 parse/inline/
+       *  mermaid/katex/print;未知键 renderer 原样兜底,向后兼容),返回取消订阅函数。 */
+      onConvertProgress: (cb: (stage: string) => void) => () => void;
       /** 订阅批量转换进度(第 i 个文件 / 阶段文案),返回取消订阅函数。 */
       onBatchProgress: (cb: (info: BatchProgressInfo) => void) => () => void;
       /** 读取持久化设置(启动时回填控件)。 */

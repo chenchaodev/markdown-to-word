@@ -204,6 +204,8 @@ export interface BuildConvertContextOptions {
   katexDir?: string;
   /** Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,见 src/core/mermaid.ts) */
   mermaidResolver?: MermaidResolver;
+  /** PDF 渲染子阶段回调(B9:parse/inline/mermaid/katex,透传 core ConvertContext) */
+  onStage?: (stage: string) => void;
 }
 
 export function buildConvertContext(options: BuildConvertContextOptions): CoreConvertContext {
@@ -220,6 +222,7 @@ export function buildConvertContext(options: BuildConvertContextOptions): CoreCo
     imageResolver: options.imageResolver,
     katexDir: options.katexDir,
     mermaidResolver: options.mermaidResolver,
+    onStage: options.onStage,
   };
 }
 
@@ -254,7 +257,9 @@ export async function convertImpl(
     });
   }
 
-  onProgress?.("render");
+  // B9 进度分阶段:docx 沿用粗粒度 render;pdf 由 core 经 onStage 细分
+  // parse/inline/mermaid/katex,print 在 renderPdf 内 printToPDF 前上报
+  if (format === "docx") onProgress?.("render");
   const artifact = await convert(
     md,
     format,
@@ -268,6 +273,7 @@ export async function convertImpl(
       katexDir,
       // Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,失败返回 null 由 core 降级)
       mermaidResolver: renderMermaid,
+      ...(format === "pdf" ? { onStage: (stage: string) => onProgress?.(stage) } : {}),
     }),
   );
   throwIfCanceled(ctx);
@@ -286,8 +292,8 @@ export async function convertImpl(
     return { outputPath, warnings };
   }
 
-  // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘(与合并共用 renderPdf)
-  await renderPdf(artifact, outputPath, ctx);
+  // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘(与合并共用 renderPdf;print 阶段在内部上报)
+  await renderPdf(artifact, outputPath, ctx, onProgress);
   onProgress?.("done");
   if (!ctx.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
   return { outputPath, warnings };
@@ -296,8 +302,15 @@ export async function convertImpl(
 /**
  * pdf 产物落盘:临时 HTML → 隐藏窗口 printToPDF → 写输出文件。
  * 单文件/合并共用;临时文件与窗口在 finally 中清理,失败也会销毁窗口。
+ * B9:onStage(可选)在 printToPDF 前上报 "print" 阶段(printToPDF 不可中断,
+ * renderer 据此置灰取消按钮 + 显示「正在写入 PDF…」)。
  */
-async function renderPdf(artifact: PdfArtifact, outputPath: string, ctx: ConvertContext): Promise<void> {
+async function renderPdf(
+  artifact: PdfArtifact,
+  outputPath: string,
+  ctx: ConvertContext,
+  onStage?: (stage: string) => void,
+): Promise<void> {
   const { htmlPath, cleanup } = await writeTempHtml(artifact.html);
   const printWin = new BrowserWindow({
     show: false,
@@ -306,6 +319,7 @@ async function renderPdf(artifact: PdfArtifact, outputPath: string, ctx: Convert
   hardenWebContents(printWin); // B1:打印窗口与预览同源加固(内容含用户 markdown 渲染的链接)
   try {
     throwIfCanceled(ctx); // 批次 7:打印前检查(loadFile/字体等待期间用户可能已取消)
+    onStage?.("print"); // B9:进入不可中断的打印/写盘阶段
     await printWin.loadFile(htmlPath);
     // 批次 6:等待公式字体(KaTeX woff2)加载完成再打印,否则 printToPDF 缺字形
     // (did-finish-load 后字体仍在加载,printToPDF 不等待字体)
@@ -424,7 +438,8 @@ export async function batchConvertImpl(
  * 合并转换:读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片绝对化)→ 单次 convert。
  * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;执行 runAfterConvert(单输出,与单文件一致)。
  * 任一步失败直接抛(调用方 catch 为 { ok:false, error })。
- * 批次 7 补:进度经 onProgress 上报(与单文件同构:read/render/done 阶段键),修复合并进度条不动。
+ * 批次 7 补:进度经 onProgress 上报(与单文件同构;B9 起 pdf 细分
+ * parse/inline/mermaid/katex/print,docx 保持 read/render/done),修复合并进度条不动。
  */
 export async function mergeConvertImpl(
   files: string[],
@@ -459,7 +474,8 @@ export async function mergeConvertImpl(
   );
   const mergedMd = mergeMarkdowns(inputs);
   const baseName = path.basename(firstFile).replace(/\.(md|markdown)$/i, "");
-  onProgress?.("render");
+  // B9 进度分阶段:与 convertImpl 同构——docx 粗粒度 render,pdf 由 onStage 细分
+  if (format === "docx") onProgress?.("render");
   const artifact = await convert(
     mergedMd,
     format,
@@ -471,6 +487,7 @@ export async function mergeConvertImpl(
       imageResolver: getImageResolver(path.dirname(firstFile)),
       katexDir,
       mermaidResolver: renderMermaid,
+      ...(format === "pdf" ? { onStage: (stage: string) => onProgress?.(stage) } : {}),
     }),
   );
   throwIfCanceled(ctx);
@@ -485,7 +502,7 @@ export async function mergeConvertImpl(
     await fs.writeFile(outputPath, artifact.buffer);
     onProgress?.("done");
   } else {
-    await renderPdf(artifact, outputPath, ctx);
+    await renderPdf(artifact, outputPath, ctx, onProgress);
     onProgress?.("done");
   }
   // B2:与 convertImpl 对齐尊重 skipAfterConvert(同抽象层行为一致)

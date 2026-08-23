@@ -24,6 +24,7 @@ import {
 } from "./dom.js";
 import { state } from "./state.js";
 import { baseName, setStatus, truncateMiddle } from "./utils.js";
+import { partitionDuplicates, selectionStatus } from "./pure.js";
 import { t } from "../core/i18n.js";
 
 /** 按当前选择渲染拖放区三种状态,并刷新操作按钮可用性。 */
@@ -193,31 +194,28 @@ export function clearDragState(): void {
 /**
  * 记录已选文件并更新界面。
  * @param skipped 被跳过(非 md / 无法读取)的项数,>0 时状态区黄色提示。
+ * @param duplicates 重复文件数(B9 拖放反馈细化:与非 Markdown 跳过分开提示)。
  */
-export function applySelection(files: string[], skipped = 0): void {
+export function applySelection(files: string[], skipped = 0, duplicates = 0): void {
   state.selectedFiles = files;
   renderSelection();
   const summary =
     files.length === 1
       ? truncateMiddle(files[0]!) // length === 1 分支下标 0 必存在
       : t("file.selectedSummary", { count: files.length });
-  const full =
-    skipped > 0
-      ? t("file.skippedSuffix", { summary, count: skipped })
-      : summary;
-  setStatus(full, false, skipped > 0);
+  const full = selectionStatus(summary, skipped, duplicates, t);
+  setStatus(full, false, skipped > 0 || duplicates > 0);
   statusEl.title = files.length === 1 ? files[0]! : full; // 同上,length === 1 分支
 }
 
 /**
  * 追加选择:与现有列表合并(去重),供「追加文件 / 点击继续添加」使用。
- * @param skipped 本次被跳过的非 md 项数(与重复项合并提示)。
+ * @param skipped 本次被跳过的非 md 项数。
+ * B9:重复文件不再并入 skipped 计数,单独文案提示(N 个重复已跳过)。
  */
 export function appendSelection(files: string[], skipped = 0): void {
-  const seen = new Set(state.selectedFiles);
-  const added = files.filter((filePath) => !seen.has(filePath));
-  const dupCount = files.length - added.length;
-  applySelection([...state.selectedFiles, ...added], skipped + dupCount);
+  const { added, duplicates } = partitionDuplicates(state.selectedFiles, files);
+  applySelection([...state.selectedFiles, ...added], skipped, duplicates.length);
 }
 
 /** 按当前选择与转换状态刷新操作按钮(选择入口 + 三个转换按钮 + 单文件态预览)。 */

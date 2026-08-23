@@ -214,6 +214,10 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
         report.presetDeleteBtnExists = !!document.getElementById("presetDeleteBtn");
         report.presetSaveDialogExists = !!document.getElementById("presetSaveDialog");
         report.previewRefreshApi = typeof window.api.previewRefresh === "function";
+        // B9 拖放反馈细化:被跳过文件名折叠列表存在且初始隐藏
+        const dropSkipped = document.getElementById("dropSkipped");
+        report.dropSkippedExists = !!dropSkipped;
+        report.dropSkippedHiddenAtStart = dropSkipped ? dropSkipped.classList.contains("hidden") : null;
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
@@ -258,6 +262,15 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
             presetDeleteBtnExists: diag.presetDeleteBtnExists,
             presetSaveDialogExists: diag.presetSaveDialogExists,
             previewRefreshApi: diag.previewRefreshApi,
+          })}`,
+        );
+      }
+      // B9:拖放跳过列表控件守卫(存在且初始隐藏,缺失即回归)
+      if (diag.dropSkippedExists !== true || diag.dropSkippedHiddenAtStart !== true) {
+        throw new Error(
+          `[smoke] renderer diag FAILED: B9 dropSkipped 控件异常 ${JSON.stringify({
+            dropSkippedExists: diag.dropSkippedExists,
+            dropSkippedHiddenAtStart: diag.dropSkippedHiddenAtStart,
           })}`,
         );
       }

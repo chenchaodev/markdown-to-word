@@ -121,6 +121,13 @@
       <!-- 状态区:路径 / 错误提示 -->
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
+      <!-- B9 拖放反馈细化:被跳过的非 Markdown 文件名列表(可折叠;
+           复用汇总条 details 折叠样式类,不改 style.css) -->
+      <details id="dropSkipped" class="summary-warnings hidden">
+        <summary id="dropSkippedToggle" class="summary-warnings-summary"></summary>
+        <ul id="dropSkippedList" class="summary-warnings-list"></ul>
+      </details>
+
       <!-- 转换结果汇总:常驻(不依赖弹窗),完成路径 + 打开引导 + 可折叠警告 -->
       <div id="resultSummary" class="result-summary hidden">
         <div class="result-summary-main">
@@ -166,7 +173,7 @@
         </details>
       </div>
 
-      <!-- 最近转换:默认态(无文件)与单文件态显示;点击条目加载并立即转换(一键重转) -->
+      <!-- 最近转换:默认态(无文件)与单文件态显示;单击条目加载到列表,双击直接重转 -->
       <section id="recentSection" class="recent hidden" data-i18n-aria-label="recent.sectionLabel" aria-label="最近转换">
         <div class="recent-head">
           <span class="recent-title" data-i18n="recent.title">最近转换</span>
@@ -270,21 +277,22 @@
               <fieldset class="setting-field setting-fieldset setting-margins">
                 <legend class="setting-label" data-i18n="settings.margins">边距 (mm)</legend>
                 <div class="margin-grid">
+                  <!-- max 与 settings-logic 校验上限对称(MARGIN_MAX_MM = 1000,core/settings-defaults.ts 单源) -->
                   <label class="margin-field">
                     <span class="margin-name" data-i18n="settings.marginTop">上</span>
-                    <input type="number" id="marginTop" class="margin-input" min="0" step="0.5" />
+                    <input type="number" id="marginTop" class="margin-input" min="0" max="1000" step="0.5" />
                   </label>
                   <label class="margin-field">
                     <span class="margin-name" data-i18n="settings.marginBottom">下</span>
-                    <input type="number" id="marginBottom" class="margin-input" min="0" step="0.5" />
+                    <input type="number" id="marginBottom" class="margin-input" min="0" max="1000" step="0.5" />
                   </label>
                   <label class="margin-field">
                     <span class="margin-name" data-i18n="settings.marginLeft">左</span>
-                    <input type="number" id="marginLeft" class="margin-input" min="0" step="0.5" />
+                    <input type="number" id="marginLeft" class="margin-input" min="0" max="1000" step="0.5" />
                   </label>
                   <label class="margin-field">
                     <span class="margin-name" data-i18n="settings.marginRight">右</span>
-                    <input type="number" id="marginRight" class="margin-input" min="0" step="0.5" />
+                    <input type="number" id="marginRight" class="margin-input" min="0" max="1000" step="0.5" />
                   </label>
                 </div>
                 <p id="marginError" class="field-error hidden"></p>

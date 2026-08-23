@@ -79,6 +79,11 @@ export interface RenderPdfHtmlOptions {
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏保持
    *  原代码块渲染,行为不变) */
   mermaidResolver?: MermaidResolver;
+  /** 渲染子阶段上报(B9 进度分阶段):parse(markdown-it 渲染)/ inline(图片检查
+   *  与外链内嵌)/ mermaid(占位替换)/ katex(KaTeX 样式装载)四个阶段键,
+   *  经 main/converter.ts 的 onProgress 通道转发为 convert:progress;
+   *  缺省不上报,行为不变。 */
+  onStage?: (stage: string) => void;
 }
 
 /**
@@ -181,10 +186,13 @@ export async function renderPdfHtml(
   const title = options.metadata?.title ?? options.title ?? "文档";
   // warnings 经 env 注入 core 规则(eq_numbering 未知公式标签提示用;脚注插件
   // 对 env.footnotes 惰性初始化,传入额外键无副作用)
+  options.onStage?.("parse"); // B9:markdown-it 解析渲染阶段
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource, { warnings }));
   // M6:本地图片存在性检查并入 resolver 失败路径(单次 IO;HTML 保持 file:// 由 Chromium 渲染)
+  options.onStage?.("inline"); // B9:图片检查 + 外链内嵌阶段(两处共用一个阶段键)
   await checkLocalImages(localImageSrcs, options.imageResolver, warnings);
   // Mermaid 占位 → 内联 SVG / 失败降级代码块(异步串行,须在返回 html 前完成)
+  options.onStage?.("mermaid"); // B9:Mermaid 占位替换阶段
   const bodyWithMermaid = await replaceMermaidPlaceholders(bodyHtml, options.mermaidResolver, warnings);
   // 封面 + 目录 + 正文:buildCoverHtml/buildTocHtml 各自以 page-break 结尾,
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
@@ -192,6 +200,7 @@ export async function renderPdfHtml(
   const tocHtml = (options.toc ?? true) ? buildTocHtml(bodyWithMermaid) : "";
   const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyWithMermaid;
   const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings);
+  options.onStage?.("katex"); // B9:KaTeX 样式装载阶段(loadKatexCss 在 buildTemplate 内执行)
   return buildTemplate(
     processedBody,
     title,

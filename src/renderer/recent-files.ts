@@ -1,7 +1,8 @@
 /**
  * renderer 最近转换区块与会话恢复(批次 11 迭代 1「状态记忆」):
  * - 最近文件 UI:默认态(无文件)与单文件态显示;条目 = 文件名 + 格式 + 相对时间;
- *   点击条目 → 加载该文件到列表(单文件态)并立即开始转换(一键重转,沿用条目记录的格式);
+ *   B9 交互语义:单击条目 → 加载该文件到列表(不转换),双击条目 → 直接重转
+ *   (沿用条目记录的格式);「仅加载」次级入口保留同效;
  *   「清空最近」→ 清空并隐藏;空列表不显示区块
  * - 转换成功后由 convert-flow 调用 refreshRecentFiles()(uiStateGet 重新拉取;
  *   主进程在返回转换结果前已完成 recentFiles 写入,读回必为最新)
@@ -50,10 +51,11 @@ export function renderRecentList(recent: RecentFile[]): void {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "recent-item";
-      btn.title = t("recent.reconvert", { path: item.path });
+      // B9 交互语义:单击 = 加载到列表,双击 = 直接重转(title/aria 同步提示)
+      btn.title = t("recent.itemTitle", { path: item.path });
       btn.dataset.path = item.path;
       btn.dataset.format = item.format;
-      btn.setAttribute("aria-label", t("recent.reconvertAria", { name: item.name }));
+      btn.setAttribute("aria-label", t("recent.itemAria", { name: item.name }));
 
       const name = document.createElement("span");
       name.className = "recent-name";
@@ -72,7 +74,7 @@ export function renderRecentList(recent: RecentFile[]): void {
       li.appendChild(btn);
 
       // 批次 12(C12):「仅加载」次级入口——载入列表(替换选择,不转换),
-      // 用户可调整设置后再转换;点击条目主区域仍是一键重转
+      // 用户可调整设置后再转换;B9 起单击条目主区域同为仅加载,双击才重转
       const loadBtn = document.createElement("button");
       loadBtn.type = "button";
       loadBtn.className = "recent-load";
@@ -136,16 +138,33 @@ function persistPanelOpen(): void {
     });
 }
 
-// 最近条目点击:加载到列表(单文件态)并立即开始转换(一键重转,沿用该条目记录的格式)
+// B9 交互语义(审计拍板):单击条目 = 仅加载到列表(不转换,与「仅加载」按钮同效);
+// 双击条目 = 直接重转(沿用该条目记录的格式)。原「单击一键重转」拆分为两档,
+// 降低误触即转的成本;双击由两次 click 组成,首次 click 已完成加载,二次落 dblclick 重转。
 recentList.addEventListener("click", (event) => {
   if (state.mode !== null) return; // 转换中守卫(B8:原 converting 字段合一为 mode 单源)
   const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-item");
   if (!btn?.dataset.path) return;
+  loadRecentItem(btn.dataset.path);
+});
+
+// 双击条目 = 直接重转;落在「仅加载」按钮上的双击不触发(按钮单击已有各自语义)
+recentList.addEventListener("dblclick", (event) => {
+  if (state.mode !== null) return;
+  if ((event.target as HTMLElement).closest(".recent-load")) return;
+  const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-item");
+  if (!btn?.dataset.path) return;
   const filePath = btn.dataset.path;
   const format = (btn.dataset.format ?? state.selectedFormat) as "docx" | "pdf";
-  applySelection([filePath]);
   void runConvert(filePath, format);
 });
+
+/** 单击加载:替换选择载入列表(不转换),状态区提示文件名。 */
+function loadRecentItem(filePath: string): void {
+  applySelection([filePath]);
+  setStatus(t("recent.loaded", { name: baseName(filePath) }));
+  statusEl.title = filePath; // 悬浮可看完整路径(applySelection 的 title 被覆盖后补回)
+}
 
 // 批次 12(C12):「仅加载」→ 替换选择载入列表(不转换),状态区提示文件名;
 // 与主区域点击互斥(loadBtn 不是 .recent-item 的后代,上方委托天然跳过)

@@ -9,6 +9,8 @@
  * - lastSessionFiles: 上次会话的文件列表(renderer 恢复时逐项校验存在性)
  * - lastOpenDir: 对话框记忆目录(目录存在才作为 defaultPath 使用)
  * - windowBounds: 窗口位置 {x,y,width,height} | null(恢复时钳制到显示器工作区)
+ * - isMaximized: 关闭时是否最大化(B9 窗口最大化状态记忆;恢复时 maximize(),
+ *   windowBounds 此时存的是 getNormalBounds() 的还原态尺寸)
  * - panelOpen: 设置面板 details 展开态 {page, typography}(批次 N:单一设置面板,
  *   默认折叠以突出主流程;typography 为兼容保留字段,renderer 写镜像同值)
  * - suppressCompleteDialog: 转换完成弹窗「不再提示」(默认 false = 提示;批次 11 迭代 2)
@@ -47,6 +49,8 @@ export interface UiState {
   lastSessionFiles: string[];
   lastOpenDir: string;
   windowBounds: WindowBounds | null;
+  /** 关闭时窗口是否最大化(B9;true 时启动恢复 maximize(),windowBounds 为还原态尺寸)。 */
+  isMaximized: boolean;
   panelOpen: PanelOpen;
   /** 转换完成弹窗「不再提示」(true = 跳过弹窗,汇总条照常;默认 false = 提示)。 */
   suppressCompleteDialog: boolean;
@@ -57,6 +61,7 @@ export const DEFAULT_UI_STATE: UiState = {
   lastSessionFiles: [],
   lastOpenDir: "",
   windowBounds: null,
+  isMaximized: false,
   // 批次 N:设置收敛为单一面板,默认折叠(已记忆的展开态仍优先恢复)
   panelOpen: { page: false, typography: false },
   suppressCompleteDialog: false,
@@ -177,6 +182,7 @@ function sanitizeUiState(value: unknown): UiState {
     lastSessionFiles: sanitizeSessionFiles(s.lastSessionFiles),
     lastOpenDir: sanitizeOpenDir(s.lastOpenDir),
     windowBounds: sanitizeWindowBounds(s.windowBounds),
+    isMaximized: sanitizeBool(s.isMaximized, DEFAULT_UI_STATE.isMaximized),
     panelOpen: sanitizePanelOpen(s.panelOpen),
     suppressCompleteDialog: sanitizeBool(s.suppressCompleteDialog, DEFAULT_UI_STATE.suppressCompleteDialog),
   };
@@ -213,6 +219,7 @@ export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
     lastSessionFiles: current.lastSessionFiles,
     lastOpenDir: current.lastOpenDir,
     windowBounds: current.windowBounds,
+    isMaximized: current.isMaximized,
     panelOpen: { ...current.panelOpen },
   };
   if (patch && typeof patch === "object" && !Array.isArray(patch)) {
@@ -232,6 +239,9 @@ export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
     }
     if (patch.lastOpenDir !== undefined) next.lastOpenDir = sanitizeOpenDir(patch.lastOpenDir);
     if (patch.windowBounds !== undefined) next.windowBounds = sanitizeWindowBounds(patch.windowBounds);
+    if (patch.isMaximized !== undefined) {
+      next.isMaximized = sanitizeBool(patch.isMaximized, DEFAULT_UI_STATE.isMaximized);
+    }
     if (patch.panelOpen !== undefined) next.panelOpen = sanitizePanelOpen(patch.panelOpen);
     if (patch.suppressCompleteDialog !== undefined) {
       next.suppressCompleteDialog = sanitizeBool(

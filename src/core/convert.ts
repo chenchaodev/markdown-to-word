@@ -62,6 +62,11 @@ export interface ConvertContext {
   pdfCss?: string;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
+  /** PDF 渲染子阶段回调(B9 进度分阶段上报):pdf 链路经此上报 parse/inline/
+   *  mermaid/katex 四个子阶段(print 由 main/converter.ts 在 printToPDF 前上报);
+   *  缺省不上报(core 层零依赖,行为不变)。向后兼容:旧消费方对未知 stage 键
+   *  原样兜底(renderer stageText 未知键透传),协议只增不改。 */
+  onStage?: (stage: string) => void;
 }
 
 export interface DocxArtifact {
@@ -109,6 +114,7 @@ export async function convert(
         katexDir: context.katexDir,
         pdfCss: context.pdfCss,
         mermaidResolver: context.mermaidResolver,
+        onStage: context.onStage,
       }),
       footerTemplate: PDF_FOOTER_TEMPLATE,
       metadata,

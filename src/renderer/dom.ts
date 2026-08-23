@@ -196,6 +196,14 @@ export const summaryWarningsList = document.getElementById(
 ) as HTMLUListElement;
 // 批次 7:字段级错误提示(边距 / 字体 / 字号 / 行距)
 export const marginError = document.getElementById("marginError") as HTMLParagraphElement;
+// B9 拖放反馈细化:被跳过的非 Markdown 文件名列表(可折叠;复用汇总条 details 样式类)
+export const dropSkipped = document.getElementById("dropSkipped") as HTMLDetailsElement;
+export const dropSkippedToggle = document.getElementById(
+  "dropSkippedToggle",
+) as HTMLElement;
+export const dropSkippedList = document.getElementById(
+  "dropSkippedList",
+) as HTMLUListElement;
 export const fontAsciiError = document.getElementById(
   "fontAsciiError",
 ) as HTMLParagraphElement;

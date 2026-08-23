@@ -96,6 +96,12 @@ const ZH = {
     "convert.stage.converting": "正在转换…",
     "convert.stage.read": "正在读取文件…",
     "convert.stage.render": "正在渲染文档…",
+    // B9 进度分阶段(pdf 链路细分;print 由 main/converter.ts 在 printToPDF 前上报)
+    "convert.stage.parse": "正在解析 Markdown…",
+    "convert.stage.inline": "正在处理图片…",
+    "convert.stage.mermaid": "正在渲染 Mermaid 图表…",
+    "convert.stage.katex": "正在准备公式样式…",
+    "convert.stage.print": "正在写入 PDF…",
     "convert.stage.done": "正在完成…",
     "convert.canceled.title": "转换已取消",
     "convert.done.status": "转换完成:${outputPath}",
@@ -136,6 +142,10 @@ const ZH = {
     "file.selectedCount": "已选择 ${count} 个 Markdown 文件",
     "file.selectedSummary": "已选择 ${count} 个文件",
     "file.skippedSuffix": "${summary}(跳过 ${count} 个非 Markdown 项)",
+    // B9 拖放反馈细化:重复文件单独文案;两者并存时用合并句式
+    "file.duplicatesSuffix": "${summary}(${count} 个重复文件已跳过)",
+    "file.skippedBothSuffix": "${summary}(跳过 ${skipped} 个非 Markdown 项、${duplicates} 个重复文件)",
+    "file.skippedListToggle": "已跳过的 ${count} 个非 Markdown 文件",
     "file.dblclickPreview": "${path}\n双击预览该行",
     "file.removeAria": "移除 ${name}",
     "file.clearList": "清空列表",
@@ -175,8 +185,9 @@ const ZH = {
     "recent.title": "最近转换",
     "recent.sectionLabel": "最近转换",
     "recent.clear": "清空最近",
-    "recent.reconvert": "重新转换 ${path}",
-    "recent.reconvertAria": "重新转换 ${name}",
+    // B9 交互语义:单击 = 加载到列表,双击 = 直接重转(原「一键重转」拆分)
+    "recent.itemTitle": "单击加载到列表,双击重新转换 ${path}",
+    "recent.itemAria": "${name}(单击加载,双击重新转换)",
     "recent.loadOnly": "仅加载",
     "recent.loadOnlyTitle": "仅加载到文件列表(不转换) ${path}",
     "recent.loadOnlyAria": "仅加载 ${name}",
@@ -299,6 +310,8 @@ const ZH = {
     "drop.change": "点击更换文件，或拖入添加",
     "drop.multiHint": "拖拽或按钮可调整顺序；点击或拖入可继续添加",
     "drop.dblclickHint": "双击列表行可预览排版",
+    // B9:转换中拖入文件的状态提示(不静默忽略)
+    "drop.busy": "转换进行中,请稍后再添加文件",
     "select.label": "选择文件",
     "select.title": "选择 Markdown 文件(Ctrl+O)",
     "append.label": "追加文件",
@@ -340,6 +353,13 @@ const ZH = {
 
     /* ---------- 错误(生成期本地化:throw 文案经 error.message 单次字符串通道到 GUI) ---------- */
     "convert.noFilesSelected": "未选择文件",
+
+    /* ---------- 错误码 → 可操作文案(B9:renderer 显示层按错误码重映射,未识别透传) ---------- */
+    "error.fileBusy": "文件被占用,请关闭正在使用该文件的程序后重试",
+    "error.fileNotFound": "文件不存在,请确认文件未被移动或删除",
+    "error.accessDenied": "没有访问权限,请检查文件或目录权限后重试",
+    "error.diskFull": "磁盘空间不足,请清理磁盘空间后重试",
+    "error.pathTooLong": "文件路径过长(超过 Windows 路径长度限制),请将文件移动到更浅的目录后重试",
   } as const;
 
 const EN: Record<keyof typeof ZH, string> = {
@@ -376,6 +396,12 @@ const EN: Record<keyof typeof ZH, string> = {
     "convert.stage.converting": "Converting…",
     "convert.stage.read": "Reading file…",
     "convert.stage.render": "Rendering document…",
+    // B9 staged progress (PDF pipeline sub-stages; "print" reported before printToPDF)
+    "convert.stage.parse": "Parsing Markdown…",
+    "convert.stage.inline": "Processing images…",
+    "convert.stage.mermaid": "Rendering Mermaid diagrams…",
+    "convert.stage.katex": "Preparing equation styles…",
+    "convert.stage.print": "Writing PDF…",
     "convert.stage.done": "Finishing…",
     "convert.canceled.title": "Conversion canceled",
     "convert.done.status": "Conversion complete: ${outputPath}",
@@ -416,6 +442,10 @@ const EN: Record<keyof typeof ZH, string> = {
     "file.selectedCount": "${count} Markdown files selected",
     "file.selectedSummary": "${count} files selected",
     "file.skippedSuffix": "${summary} (skipped ${count} non-Markdown items)",
+    // B9 drop feedback: duplicates reported separately; combined form when both present
+    "file.duplicatesSuffix": "${summary} (${count} duplicate files skipped)",
+    "file.skippedBothSuffix": "${summary} (skipped ${skipped} non-Markdown items and ${duplicates} duplicates)",
+    "file.skippedListToggle": "${count} skipped non-Markdown files",
     "file.dblclickPreview": "${path}\nDouble-click to preview this row",
     "file.removeAria": "Remove ${name}",
     "file.clearList": "Clear list",
@@ -455,8 +485,9 @@ const EN: Record<keyof typeof ZH, string> = {
     "recent.title": "Recent conversions",
     "recent.sectionLabel": "Recent conversions",
     "recent.clear": "Clear recent",
-    "recent.reconvert": "Re-convert ${path}",
-    "recent.reconvertAria": "Re-convert ${name}",
+    // B9 interaction: single-click loads into the list, double-click re-converts
+    "recent.itemTitle": "Click to load into the list, double-click to re-convert ${path}",
+    "recent.itemAria": "${name} (click to load, double-click to re-convert)",
     "recent.loadOnly": "Load only",
     "recent.loadOnlyTitle": "Load into file list only (no conversion) ${path}",
     "recent.loadOnlyAria": "Load only ${name}",
@@ -579,6 +610,8 @@ const EN: Record<keyof typeof ZH, string> = {
     "drop.change": "Click to change the file, or drop to add",
     "drop.multiHint": "Drag or use buttons to reorder; click or drop to add more",
     "drop.dblclickHint": "Double-click a row to preview the layout",
+    // B9: status hint when files are dropped while a conversion is running
+    "drop.busy": "Conversion in progress, please wait before adding files",
     "select.label": "Select Files",
     "select.title": "Select Markdown files (Ctrl+O)",
     "append.label": "Add Files",
@@ -624,6 +657,13 @@ const EN: Record<keyof typeof ZH, string> = {
 
     /* ---------- Errors (localized at throw time: message reaches GUI via a one-shot string channel) ---------- */
     "convert.noFilesSelected": "No files selected",
+
+    /* ---------- Error code → actionable message (B9: remapped at display time, unknown codes pass through) ---------- */
+    "error.fileBusy": "The file is in use. Close the program using it and retry",
+    "error.fileNotFound": "File not found. Please verify the file has not been moved or deleted",
+    "error.accessDenied": "Access denied. Check file or folder permissions and retry",
+    "error.diskFull": "Not enough disk space. Free up space and retry",
+    "error.pathTooLong": "File path too long (exceeds the Windows path limit). Move the file to a shallower folder and retry",
 };
 
 const DICT: Record<Language, Record<string, string>> = { zh: ZH, en: EN };
