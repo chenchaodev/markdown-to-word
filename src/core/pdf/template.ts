@@ -215,14 +215,33 @@ export function loadKatexCss(katexDir: string): string {
   }
 }
 
+/**
+ * 预览/打印 HTML 的 CSP(B1 安全审计):该 HTML 由用户 markdown 渲染而来,
+ * 经 loadFile(file://) 加载进预览/打印窗口,须收紧资源来源——
+ * 样式全部内联(<style>),图片为 file://(本地)与 data:(外链内嵌),
+ * KaTeX 字体为 CSS 内 file:// 引用;脚本零需求 → default-src 'none' 兜底拦截。
+ */
+export const TEMPLATE_CSP =
+  "default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file:";
+
+/**
+ * CSS 注入防护:剥离可提前闭合 <style> 元素的序列。用户 pdfCss 与 KaTeX CSS
+ * 均内联进 <style>,若内容含 `</style>` 可闭合标签注入任意标记(配合窗口
+ * CSP 收紧前是真实注入面);正常 CSS 不含该序列,替换为空不影响合法样式。
+ */
+export function sanitizeStyleCss(css: string): string {
+  return css.replace(/<\/style/gi, "");
+}
+
 export function buildTemplate(bodyHtml: string, title: string, css: string, katexCss: string): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${TEMPLATE_CSP}">
 <title>${escapeHtml(title)}</title>
-<style>${css}</style>
-${katexCss ? `<style>${katexCss}</style>` : ""}
+<style>${sanitizeStyleCss(css)}</style>
+${katexCss ? `<style>${sanitizeStyleCss(katexCss)}</style>` : ""}
 </head>
 <body>
 ${bodyHtml}

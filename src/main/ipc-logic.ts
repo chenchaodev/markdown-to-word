@@ -14,6 +14,23 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/* ---------- IPC 入参类型守卫(B1 安全审计):renderer 传参异常时快速失败,
+   不让脏值流入业务层(此前 convert/shell/preview 无校验,format 非法静默落 pdf 分支)。 ---------- */
+
+export function isString(v: unknown): v is string {
+  return typeof v === "string";
+}
+
+/** 字符串数组严格校验(元素逐一检查;拒绝含非字符串元素的数组,不做静默过滤——
+ *  元素缺失会让用户看到「少转了文件」却无解释,宁可显式失败)。 */
+export function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+export function isConvertFormat(v: unknown): v is ConvertFormat {
+  return v === "docx" || v === "pdf";
+}
+
 /** 最近文件条目构建(recordRecentFiles 的数据变换):过滤非字符串/空串,name 取 basename。 */
 export function buildRecentFileEntries(
   filePaths: string[],

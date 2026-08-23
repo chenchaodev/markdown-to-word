@@ -21,6 +21,7 @@ const DICT: Record<Language, Record<string, string>> = {
     /* ---------- 通用 ---------- */
     "common.canceled": "已取消",
     "common.unknownError": "未知错误",
+    "common.invalidParams": "无效的操作参数",
     "common.unknownReason": "未知原因",
     "common.reveal": "打开所在文件夹",
     "common.open": "打开文件",
@@ -271,6 +272,7 @@ const DICT: Record<Language, Record<string, string>> = {
     /* ---------- Common ---------- */
     "common.canceled": "Canceled",
     "common.unknownError": "Unknown error",
+    "common.invalidParams": "Invalid operation parameters",
     "common.unknownReason": "Unknown reason",
     "common.reveal": "Open containing folder",
     "common.open": "Open file",

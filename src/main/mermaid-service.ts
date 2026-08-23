@@ -18,6 +18,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { MermaidResult } from "../core/mermaid.js";
 import { getMermaidDir } from "./mermaid-dir.js";
+import { hardenWebContents } from "./web-hardening.js";
 import { writeTempHtml } from "./temp-html.js";
 
 /** 单次渲染超时(含首次预热外的脚本解析;超时按渲染失败降级) */
@@ -111,6 +112,8 @@ async function ensureWindow(): Promise<BrowserWindow> {
         },
       });
       w.on("closed", reset);
+      // B1:四类窗口统一导航收口(页面无链接,纯防御性;executeJavaScript 不受影响)
+      hardenWebContents(w);
       // 渲染进程崩溃:销毁窗口并复位,下次调用重建(本次渲染经 executeJavaScript reject 降级 null)
       w.webContents.on("render-process-gone", () => {
         if (!w.isDestroyed()) w.destroy();

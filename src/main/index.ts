@@ -6,7 +6,7 @@
  * - IPC 注册(handler 委托给 converter 函数 / settings / shell)
  * - SMOKE 入口(--smoke 分支一行委托 ./smoke.ts 的 runSmoke)
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, screen, session, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,9 @@ import {
   buildRecentFileEntries,
   errorMessage,
   importPresetsFromText,
+  isConvertFormat,
+  isString,
+  isStringArray,
 } from "./ipc-logic.js";
 import {
   loadSettings,
@@ -53,6 +56,7 @@ import {
 import { getKatexDir } from "./katex-dir.js";
 import { disposeMermaidService, renderMermaid } from "./mermaid-service.js";
 import { runSmoke } from "./smoke.js";
+import { hardenWebContents } from "./web-hardening.js";
 import { escapeHtml } from "../core/utils.js";
 import { setLanguage, t } from "../core/i18n.js";
 
@@ -116,6 +120,7 @@ function createWindow(): BrowserWindow {
     },
   });
   mainWindow = win;
+  hardenWebContents(win); // B1:导航收口(拒绝新窗口/页内跨文档导航,http(s) 外开系统浏览器)
   void win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
   // mermaid 渲染窗口为常驻隐藏单例:主窗口关闭时销毁,否则 window-all-closed 永不触发
   // (隐藏窗口未关 → 应用无法退出);服务懒重建,后续渲染不受影响
@@ -249,6 +254,7 @@ async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; error?:
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, sandbox: true },
     });
+    hardenWebContents(win); // B1:预览 HTML 含用户 markdown 渲染的链接,导航收口
     const entry: PreviewEntry = {
       win,
       mdPath,
@@ -315,7 +321,11 @@ function registerIpc(): void {
   });
 
   // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示;用户取消返回 { ok:false, canceled:true }
-  ipcMain.handle("convert", async (event, filePath: string, format: ConvertFormat): Promise<ConvertResult> => {
+  // B1:入参类型守卫(format 非 docx/pdf 时此前静默落 pdf 分支,现显式失败)
+  ipcMain.handle("convert", async (event, filePath: unknown, format: unknown): Promise<ConvertResult> => {
+    if (!isString(filePath) || !isConvertFormat(format)) {
+      return { ok: false, error: t("common.invalidParams") };
+    }
     return runWithCtx(
       event,
       async (ctx, win) => {
@@ -347,10 +357,11 @@ function registerIpc(): void {
   });
 
   // 拖放路径收集:目录递归取 md,非 md 的传入路径进 skipped
+  // B1:元素级校验(此前只 guard Array.isArray,非字符串元素会让 path.resolve 抛 TypeError)
   ipcMain.handle(
     "paths:collectMarkdown",
-    (_event, paths: string[]): Promise<{ files: string[]; skipped: string[] }> => {
-      return collectMarkdownPaths(Array.isArray(paths) ? paths : []);
+    (_event, paths: unknown): Promise<{ files: string[]; skipped: string[] }> => {
+      return collectMarkdownPaths(isStringArray(paths) ? paths : []);
     },
   );
 
@@ -358,7 +369,10 @@ function registerIpc(): void {
   // 不抛 ConvertCanceledError(onCanceled 分支为防御兜底,与 catch-all 归一一致)
   ipcMain.handle(
     "convert:batch",
-    async (event, files: string[], format: ConvertFormat): Promise<BatchResult | { ok: false; error: string }> => {
+    async (event, files: unknown, format: unknown): Promise<BatchResult | { ok: false; error: string }> => {
+      if (!isStringArray(files) || !isConvertFormat(format)) {
+        return { ok: false, error: t("common.invalidParams") };
+      }
       return runWithCtx(
         event,
         async (ctx, win) => {
@@ -379,7 +393,10 @@ function registerIpc(): void {
   // 合并转换:多文件 → mergeMarkdowns → 单次 convert,输出 {首文件名}-合并.{ext}
   // 批次 7 补:进度走 convert:progress(与单文件同通道),renderer 的 runMerge 已订阅该事件;
   // 用户取消 → 返回 { ok:false, canceled:true }(与单文件 handler 一致,renderer 据此走取消分支)。
-  ipcMain.handle("convert:merge", async (event, files: string[], format: ConvertFormat): Promise<ConvertResult> => {
+  ipcMain.handle("convert:merge", async (event, files: unknown, format: unknown): Promise<ConvertResult> => {
+    if (!isStringArray(files) || !isConvertFormat(format)) {
+      return { ok: false, error: t("common.invalidParams") };
+    }
     return runWithCtx(
       event,
       async (ctx, win) => {
@@ -483,22 +500,24 @@ function registerIpc(): void {
   });
 
   // 批次 11:会话恢复用——保序过滤仍存在的路径(缺失剔除,不打乱用户排列顺序)
-  ipcMain.handle("paths:filterExisting", (_event, paths: string[]): Promise<string[]> => {
-    return filterExistingPaths(Array.isArray(paths) ? paths : []);
+  ipcMain.handle("paths:filterExisting", (_event, paths: unknown): Promise<string[]> => {
+    return filterExistingPaths(isStringArray(paths) ? paths : []);
   });
 
-  // 导出后行为:资源管理器中显示 / 默认程序打开
-  ipcMain.handle("shell:reveal", (_event, filePath: string): void => {
-    shell.showItemInFolder(filePath);
+  // 导出后行为:资源管理器中显示 / 默认程序打开(B1:入参类型守卫)
+  ipcMain.handle("shell:reveal", (_event, filePath: unknown): void => {
+    if (isString(filePath)) shell.showItemInFolder(filePath);
   });
 
-  ipcMain.handle("shell:open", async (_event, filePath: string): Promise<{ ok: boolean; error?: string }> => {
+  ipcMain.handle("shell:open", async (_event, filePath: unknown): Promise<{ ok: boolean; error?: string }> => {
+    if (!isString(filePath)) return { ok: false, error: t("common.invalidParams") };
     const error = await shell.openPath(filePath);
     return error ? { ok: false, error } : { ok: true };
   });
 
   // 预览:独立可见窗口展示与 PDF 同排版的 HTML(复用 renderPdfHtml),多窗口并发安全
-  ipcMain.handle("preview:open", (_event, mdPath: string): Promise<{ ok: boolean; error?: string }> => {
+  ipcMain.handle("preview:open", (_event, mdPath: unknown): Promise<{ ok: boolean; error?: string }> => {
+    if (!isString(mdPath)) return Promise.resolve({ ok: false, error: t("common.invalidParams") });
     return openPreviewWindow(mdPath);
   });
 
@@ -562,6 +581,9 @@ function buildAppMenu(): void {
 void app.whenReady().then(async () => {
   // i18n:主进程语言来源 = 持久化设置(菜单/对话框标题/预览错误页按此语言)
   setLanguage(loadSettings().language);
+  // B1:权限请求显式全拒(应用无相机/定位/通知等需求;默认拒绝之上显式声明,
+  // 防未来新增窗口/webview 类型时遗漏收口)
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   buildAppMenu(); // 菜单先于窗口创建,窗口创建即带应用菜单(autoHideMenuBar 下 Alt 唤出)
   registerIpc();
   const win = createWindow();

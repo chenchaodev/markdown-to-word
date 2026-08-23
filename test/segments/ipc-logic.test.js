@@ -8,6 +8,7 @@
  * - importPresetsFromText:坏 JSON/版本非 1/空 presets → 原错误文案透传;
  *   合法 → 合并序(incoming 在前)/同名取 incoming 值/imported-overridden 计数
  * - buildPresetsExportPayload:schemaVersion:1 包装 + 2 空格缩进 + 末尾换行(序列化字符串精确断言)
+ * - isString/isStringArray/isConvertFormat:IPC 入参类型守卫(B1,元素逐一校验/格式白名单)
  */
 import {
   baseNameFromMdPath,
@@ -15,6 +16,9 @@ import {
   buildRecentFileEntries,
   errorMessage,
   importPresetsFromText,
+  isConvertFormat,
+  isString,
+  isStringArray,
 } from "../../dist/main/ipc-logic.js";
 
 function assert(cond, msg) {
@@ -105,4 +109,15 @@ export async function run() {
     "空预设导出载荷应精确匹配",
   );
   console.log("[ok] buildPresetsExportPayload:序列化字符串精确断言(单条/空列表)通过");
+
+  // ---------- IPC 入参类型守卫(B1) ----------
+  assert(isString("x") === true && isString(42) === false, "isString:string/非字符串");
+  assert(isStringArray(["a", "b"]) === true, "isStringArray:纯字符串数组通过");
+  assert(isStringArray([]) === true, "isStringArray:空数组通过");
+  assert(isStringArray(["a", 42]) === false, "isStringArray:混入非字符串元素拒绝");
+  assert(isStringArray("a,b") === false, "isStringArray:非数组拒绝");
+  assert(isStringArray(null) === false, "isStringArray:null 拒绝");
+  assert(isConvertFormat("docx") && isConvertFormat("pdf"), "isConvertFormat:docx/pdf 白名单");
+  assert(!isConvertFormat("DOCX") && !isConvertFormat("html"), "isConvertFormat:大小写敏感/未知格式拒绝");
+  console.log("[ok] IPC 入参守卫:isString/isStringArray/isConvertFormat 断言通过");
 }

@@ -25,6 +25,7 @@ import { createImageResolver, type ImageResolver } from "./image-downloader.js";
 import { renderMermaid } from "./mermaid-service.js";
 import type { MermaidResolver } from "../core/mermaid.js";
 import { loadSettings, type AppSettings } from "./settings.js";
+import { hardenWebContents } from "./web-hardening.js";
 import { writeTempHtml } from "./temp-html.js";
 
 export interface ConvertResult {
@@ -279,6 +280,7 @@ async function renderPdf(artifact: PdfArtifact, outputPath: string, ctx: Convert
     show: false,
     webPreferences: { contextIsolation: true, sandbox: true },
   });
+  hardenWebContents(printWin); // B1:打印窗口与预览同源加固(内容含用户 markdown 渲染的链接)
   try {
     throwIfCanceled(ctx); // 批次 7:打印前检查(loadFile/字体等待期间用户可能已取消)
     await printWin.loadFile(htmlPath);
