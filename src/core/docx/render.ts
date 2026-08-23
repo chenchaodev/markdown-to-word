@@ -1,28 +1,24 @@
+/**
+ * docx 渲染主入口(B8 拆分后):renderDocx 编排(预扫 → 正文块渲染 → Document 组装),
+ * 文档 chrome 见 chrome.ts、预扫见 prescan.ts、行内/嵌套内容见 content.ts、
+ * 链接交叉引用见 link-xref.ts、图片见 image-run.ts、代码块见 code-block.ts、
+ * 容器降级见 fallback.ts、共享契约见 ctx.ts。
+ */
 import {
   AlignmentType,
   BorderStyle,
-  CommentRangeEnd,
-  CommentRangeStart,
-  CommentReference,
   Document,
-  ExternalHyperlink,
-  Footer,
-  FootnoteReferenceRun,
-  Header,
   HeadingLevel,
-  ImageRun,
-  InternalHyperlink,
   Math as DocxMath,
   Packer,
   PageBreak,
-  PageNumber,
   PageOrientation,
   Paragraph,
-  Tab,
   Table,
-  TableCell,
   TableOfContents,
+  TableCell,
   TableRow,
+  Tab,
   TabStopType,
   TextRun,
   WidthType,
@@ -30,39 +26,24 @@ import {
 import type { INumberingOptions, ParagraphChild } from "docx";
 import type {
   BlockContent,
-  Blockquote,
-  Code,
-  FootnoteDefinition,
   Heading,
-  Html as MdHtml,
-  Image,
-  List,
-  ListItem,
   Paragraph as MdParagraph,
   PhrasingContent,
   Root,
   RootContent,
   Table as MdTable,
 } from "mdast";
-import {
-  CODE_FONT,
-  CODE_SIZE,
-  LINK_COLOR,
-  MUTED_TEXT_GRAY,
-  QUOTE_BG_GRAY,
-  RULE_GRAY,
-  SECONDARY_TEXT_GRAY,
-} from "./theme.js";
+import { CODE_FONT, MUTED_TEXT_GRAY } from "./theme.js";
 import { wrapBookmark } from "./bookmark.js";
 import { texToDocxMath } from "./math.js";
-import { highlightCodeRuns } from "./code-highlight.js";
-import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo, type CaptionLabelInfo } from "./captions.js";
-import { buildEquationContext, type EquationContext } from "./equations.js";
-import { collectPlainText } from "../mdast-utils.js";
-import { sniffImageType, imageSizeFromBuffer } from "../image-type.js";
-import { imageLoadFailureWarning, unrecognizedImageWarning } from "../image-warning.js";
-import type { ConvertWarning, KeyedWarning } from "../i18n.js";
-import { crossRefNotFoundWarning, highlightFallbackWarning } from "../i18n.js";
+import { renderCaptionParagraph, type CaptionInfo } from "./captions.js";
+import type { EquationContext } from "./equations.js";
+import { formulaParseFailedWarning, type Ctx } from "./ctx.js";
+import { prescanDocument } from "./prescan.js";
+import { renderCoverPage, renderTocPage, renderHeader, renderFooter } from "./chrome.js";
+import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./content.js";
+import { renderCode } from "./code-block.js";
+import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./inline-html.js";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
 import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings-defaults.js";
 import type { DocMetadata } from "../frontmatter.js";
@@ -70,28 +51,13 @@ import type { TypographySettings } from "../typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../typography.js";
 import { docxBookmarkId } from "../slug.js";
 import { isAllowedInlineHtml } from "../html-whitelist.js";
-import { normalizeInlineHtml, parseInlineHtml, inlineHtmlItemsToRuns, renderBodyParagraph, renderInlineHtmlParagraph } from "./inline-html.js";
+import { stripSecLabelSuffix, CROSS_REF_KINDS } from "../cross-ref.js";
+export { CROSS_REF_KINDS };
+import type { ConvertWarning } from "../i18n.js";
 import type { MermaidResolver } from "../mermaid.js";
-// 契约单源(B7):ImageResolver 类型与交叉引用常量/正则族收敛 core 共享模块
+// 契约单源(B7):ImageResolver 类型收敛 core 共享模块(render.js 保持 re-export 兼容)
 import type { ImageResolver } from "../image-resolver.js";
 export type { ImageResolver };
-import { CROSS_REF_KINDS, stripSecLabelSuffix, type CrossRefKind } from "../cross-ref.js";
-export { CROSS_REF_KINDS };
-
-/** 单次图片解析结果(B5 memo 缓存载体):data 为 null 表示失败,error 保留原始抛错
- *  (供 B4 失败原因细分文案使用;成功时 error 不存在) */
-interface ImageLoadResult {
-  data: Buffer | null;
-  error?: unknown;
-}
-
-/** 静态目录条目(docx 库 ToCEntry 为内部类型未导出,结构兼容即可;
- *  href 为标题书签名(无 # 前缀),hyperlink 开启时条目渲染为可点击跳转) */
-interface TocEntry {
-  title: string;
-  level: number;
-  href: string;
-}
 
 export interface RenderOptions {
   imageResolver?: ImageResolver;
@@ -120,60 +86,6 @@ export interface RenderOptions {
   mermaidResolver?: MermaidResolver;
 }
 
-export interface Ctx {
-  imageResolver?: ImageResolver;
-  warnings?: ConvertWarning[];
-  listLevel: number;
-  /** 排版设置(已解析默认,渲染时以 typography 为准) */
-  typography: TypographySettings;
-  /** 一级标题前分页(默认关) */
-  breakBeforeH1?: boolean;
-  /** 标题章节自动编号(h1-h3 挂 numbering,默认开) */
-  headingNumbering?: boolean;
-  /** 图/表题注自动编号(默认开) */
-  captionNumbering?: boolean;
-  /** 自动生成目录页(默认开) */
-  toc: boolean;
-  /** 公式编号开关(默认开;关时公式原样渲染、label 段原样渲染、引用保持原文本) */
-  equationNumbering: boolean;
-  /** 脚注定义索引:identifier → definition 节点(renderDocx 预扫) */
-  footnoteDefinitions: Map<string, FootnoteDefinition>;
-  /** 脚注收集器:引用渲染时写入,id 字符串从 "1" 起 */
-  footnotes: Record<string, { children: Paragraph[] }>;
-  /** 下一个脚注 id(可变对象,嵌套引用共用计数器) */
-  footnoteNextId: { value: number };
-  /** B3:identifier → 已分配脚注 id(重复引用共享同一脚注,与 Word 语义一致) */
-  footnoteIdByLabel: Map<string, number>;
-  /** B3:已发出过的警告集合(悬空交叉引用等逐引用去重,防 GUI 警告列表刷屏;pdf 侧同模式) */
-  warnedKeys: Set<string>;
-  /** 公式 label → 编号查表(9d,renderDocx 预扫后挂入;行内交叉引用渲染用) */
-  equationLabels?: Map<string, number>;
-  /** 题注 label → 编号文本(批次 10 功能 2:图/表交叉引用查表;buildCaptionContext 预扫时登记) */
-  captionLabels: Map<string, CaptionLabelInfo>;
-  /** 章节 label → 章节号文本 + 标题书签 slug(批次 10 功能 2:章节交叉引用查表;renderDocx 预扫登记) */
-  headingLabels: Map<string, HeadingLabelInfo>;
-  /** docx 书签 linkId 自增计数器(逐文档新建,保证文档内 bookmarkStart/End id 唯一) */
-  bookmarkNextId: { value: number };
-  /** 批注 id 自增计数器(逐文档新建,保证文档内 commentRangeStart/End/Reference id 唯一) */
-  commentNextId: { value: number };
-  /** 批注收集器:引用渲染时写入,id 字符串从 "1" 起(与脚注同模式) */
-  comments: Record<string, { children: Paragraph[] }>;
-  /** Mermaid 渲染回调(mermaid 围栏代码块 → 内嵌 PNG 图片;缺失时按普通代码块渲染) */
-  mermaidResolver?: MermaidResolver;
-  /** B5:图片解析 memo(url → 在途/已成功结果 Promise)。ctx 生命周期 = 单次转换,
-   *  不跨转换泄漏;以 Promise 缓存保证并发同 URL 共享同一请求。成功缓存、失败
-   *  (null/抛错)不缓存——失败条目结算后删除,同一 URL 后续出现重试。 */
-  imageMemo: Map<string, Promise<ImageLoadResult>>;
-}
-
-/** 章节 label 登记信息(批次 10 功能 2:交叉引用查表) */
-interface HeadingLabelInfo {
-  /** 静态章节号文本(「1」「3.2」「3.2.1」;无 h1 时从「1」起,见 chapterNumberFromCounters) */
-  chapterText: string;
-  /** 标题书签 slug(引用跳转 anchor = docxBookmarkId(slug)) */
-  slug: string;
-}
-
 /** 纸张 mm 尺寸表(宽 × 高) */
 const PAPER_SIZES_MM: Record<PageSetup["paper"], { width: number; height: number }> = {
   A4: { width: 210, height: 297 },
@@ -187,22 +99,6 @@ const PAPER_SIZES_MM: Record<PageSetup["paper"], { width: number; height: number
 function mmToTwips(mm: number): number {
   return Math.round(mm * 56.6929);
 }
-
-/* ---------- 固定版面常量(B7 魔法数字收敛;字号单位 half-points = pt × 2) ---------- */
-
-/** 封面标题字号:44 = 22pt(与 pdf 封面标题一致) */
-const COVER_TITLE_SIZE = 44;
-/** 封面 author/date 小字号:22 = 11pt */
-const COVER_META_SIZE = 22;
-/** 目录页标题字号:36 = 18pt */
-const TOC_TITLE_SIZE = 36;
-/** 页眉/页脚小字号:14 = 7pt */
-const HEADER_FOOTER_SIZE = 14;
-/** 图片显示宽度上限(px):宽超过则等比缩到该宽度(不放大),行内图片与 mermaid PNG 共用 */
-const IMAGE_MAX_WIDTH = 400;
-/** 图片尺寸不可解析时的兜底尺寸(px) */
-const IMAGE_FALLBACK_WIDTH = 400;
-const IMAGE_FALLBACK_HEIGHT = 300;
 
 /** G1 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理;
  *  math 为 display 公式,独立居中段落) */
@@ -285,63 +181,9 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
   const title = options.metadata?.title ?? options.title;
-  // 预扫脚注定义:identifier → definition 节点(正文循环跳过,引用渲染时取内容)
-  for (const node of ast.children) {
-    if (node.type === "footnoteDefinition") {
-      ctx.footnoteDefinitions.set(node.identifier, node);
-    }
-  }
-  // 预扫目录条目 + 题注上下文(题注编号:章节号 = 最近 h1 计数,图/表序按 h1 章节重置,
-  // 与 Word SEQ \s 1 语义一致;headingNumbering 关闭时无章节号、全文档连续)
-  const tocEntries: TocEntry[] = [];
-  const captions = buildCaptionContext(ast, ctx);
-  // 预扫章节 label(批次 10 功能 2):渲染前按文档顺序遍历标题,静态章节号计数 +
-  // {#sec:label} 登记(引用可能出现在目标标题之前,渲染期登记会漏;与
-  // captions/equations 预扫模式一致)。计数镜像 Word numbering 引擎逐段计数
-  // (h1 增 → h2/h3 清零,h2 增 → h3 清零;depth 4-6 不计数,与 numbering
-  // 只挂 h1-h3 一致);headingNumbering 关闭时不计数 → 引用侧按悬空处理
-  const headingCounters = { h1: 0, h2: 0, h3: 0 };
-  for (const node of ast.children) {
-    if (node.type !== "heading" || ctx.headingNumbering !== true || node.depth > 3) continue;
-    if (node.depth === 1) {
-      headingCounters.h1 += 1;
-      headingCounters.h2 = 0;
-      headingCounters.h3 = 0;
-    } else if (node.depth === 2) {
-      headingCounters.h2 += 1;
-      headingCounters.h3 = 0;
-    } else {
-      headingCounters.h3 += 1;
-    }
-    const chapterText = chapterNumberFromCounters(headingCounters, node.depth);
-    const secLabel = node.data?.secLabel;
-    const id = node.data?.id;
-    if (chapterText !== null && secLabel !== undefined && typeof id === "string" && id !== "") {
-      ctx.headingLabels.set(secLabel, { chapterText, slug: id });
-    }
-  }
-  // 预扫公式编号上下文(9d:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表)。
-  // 公式编号开关关闭时仍调用 buildEquationContext(numbering=false):label 段照常识别并
-  // 跳过渲染(语法标记不显示),但公式不编号、label 不登记、无孤立 label 警告;引用查表
-  // 为空 → 行内引用保持原文本(见 pushRuns 的 equationNumbering 门控)
-  const equations: EquationContext = buildEquationContext(ast, ctx, ctx.equationNumbering !== false);
-  // label 查表挂到 ctx(行内链接渲染处 pushRuns 经 ctx 访问)
-  ctx.equationLabels = equations.labelIndex;
-  if (ctx.toc) {
-    for (const node of ast.children) {
-      if (node.type === "heading" && node.depth <= 3) {
-        const id = node.data?.id;
-        if (typeof id === "string" && id !== "") {
-          // 目录条目文本同标题渲染:尾部 {#sec:label} 不显示(与 renderHeading 一致)
-          tocEntries.push({
-            title: stripSecLabelSuffix(collectPlainText(node)),
-            level: node.depth,
-            href: docxBookmarkId(id),
-          });
-        }
-      }
-    }
-  }
+  // 五轮预扫(脚注定义/题注上下文/章节 label/公式编号/目录条目,详见 prescan.ts);
+  // 预扫就地写入 ctx(footnoteDefinitions/headingLabels/equationLabels)
+  const { tocEntries, captions, equations } = prescanDocument(ast, ctx);
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
   const paper = PAPER_SIZES_MM[pageSetup.paper];
   const landscape = pageSetup.orientation === "landscape";
@@ -423,96 +265,6 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
 }
 
 // ---------- 块级节点 ----------
-
-/**
- * 封面页:标题居中加粗(44 half-points = 22pt,与 pdf 封面标题字号一致)+
- * 下方 author/date 居中灰色小字;末尾 PageBreak 独占一页。
- * 用普通 Paragraph(不用 HeadingLevel),不进导航窗格/标题层级/书签。
- */
-function renderCoverPage(metadata: DocMetadata): Paragraph[] {
-  const paragraphs: Paragraph[] = [];
-  // 顶部留白:Word 忽略页首段落的 before 间距,故用空段落撑开(视觉居中)
-  paragraphs.push(new Paragraph({ spacing: { after: 2400 }, children: [] }));
-  paragraphs.push(new Paragraph({ spacing: { after: 2400 }, children: [] }));
-  paragraphs.push(
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 0, after: 600 },
-      children: [new TextRun({ text: metadata.title ?? "", bold: true, size: COVER_TITLE_SIZE })],
-    }),
-  );
-  if (metadata.author) {
-    paragraphs.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { before: 0, after: 120 },
-        children: [new TextRun({ text: metadata.author, color: SECONDARY_TEXT_GRAY, size: COVER_META_SIZE })],
-      }),
-    );
-  }
-  if (metadata.date) {
-    paragraphs.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { before: 0, after: 0 },
-        children: [new TextRun({ text: metadata.date, color: SECONDARY_TEXT_GRAY, size: COVER_META_SIZE })],
-      }),
-    );
-  }
-  paragraphs.push(new Paragraph({ children: [new PageBreak()] }));
-  return paragraphs;
-}
-
-/**
- * 目录页:标题居中加粗(36 half-points = 18pt)+ 静态目录,独占一页。
- * 标题用普通 Paragraph(不用 HeadingLevel,避免被 TOC 域 \o "1-3" 收集到目录自身)。
- * 免更新路线(beginDirty:false + cachedEntries):打开即见静态条目(纯超链接、
- * 无页码),不弹「更新域」提示;条目引用 TOC1..TOC9 样式 + 右对齐点线制表位。
- */
-function renderTocPage(entries: TocEntry[]): (Paragraph | TableOfContents)[] {
-  return [
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 240, after: 480 },
-      children: [new TextRun({ text: "目录", bold: true, size: TOC_TITLE_SIZE })],
-    }),
-    new TableOfContents("目录", {
-      hyperlink: true, // \h
-      headingStyleRange: "1-3", // \o "1-3"
-      useAppliedParagraphOutlineLevel: true, // \u
-      hideTabAndPageNumbersInWebView: true, // \z
-      beginDirty: false, // 免更新:不标记 dirty,打开不提示
-      cachedEntries: entries,
-    }),
-    new Paragraph({ children: [new PageBreak()] }),
-  ];
-}
-
-/** 页眉:文档标题居中灰色小字(HEADER_FOOTER_SIZE = 7pt,颜色 MUTED_TEXT_GRAY);无标题时不调用 */
-function renderHeader(title: string): Header {
-  return new Header({
-    children: [new Paragraph({
-      alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: title, size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY })],
-    })],
-  });
-}
-
-/** 页脚:第 X 页 / 共 X 页 居中(与 PDF footerTemplate 文案一致;PageNumber 域) */
-function renderFooter(): Footer {
-  return new Footer({
-    children: [new Paragraph({
-      alignment: AlignmentType.CENTER,
-      children: [
-        new TextRun({ text: "第 ", size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY }),
-        new TextRun({ size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY, children: [PageNumber.CURRENT] }),
-        new TextRun({ text: " 页 / 共 ", size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY }),
-        new TextRun({ size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY, children: [PageNumber.TOTAL_PAGES] }),
-        new TextRun({ text: " 页", size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY }),
-      ],
-    })],
-  });
-}
 
 async function renderBlock(
   node: BlockContent,
@@ -657,28 +409,6 @@ async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph> {
   });
 }
 
-/**
- * 静态章节号(批次 10 功能 2,镜像 Word numbering 引擎逐级计数):
- * 编号文本 = 深度 1..depth 当前计数拼接;前导未出现的级(计数 0)跳过
- * (无 h1 时 h2 从「1」起,与题注章节语义一致),中间未出现的级保留 0
- * (h1 后直接 h3 →「1.0.1」,与 Word 引擎显示一致)。
- * 仅镜像:headingNumberingOptions 模板或 numbering 配置变更会漂移(免更新路线已声明)。
- */
-function chapterNumberFromCounters(
-  counters: { h1: number; h2: number; h3: number },
-  depth: number,
-): string | null {
-  const parts: number[] = [];
-  let started = false;
-  for (let i = 1; i <= depth; i++) {
-    const v = counters[(`h${i}`) as keyof typeof counters];
-    if (!started && v === 0) continue;
-    started = true;
-    parts.push(v);
-  }
-  return parts.length > 0 ? parts.join(".") : null;
-}
-
 /** 递归剥离最后一个叶子文本节点尾部的 {#sec:label}(渲染文本不含 label;
  *  返回副本,不改 AST;label 位于强调/加粗等嵌套节点内也命中) */
 function stripTrailingSecLabel(children: PhrasingContent[]): PhrasingContent[] {
@@ -695,117 +425,6 @@ function stripTrailingSecLabel(children: PhrasingContent[]): PhrasingContent[] {
     } as PhrasingContent;
   }
   return result;
-}
-
-/** 列表:listItem 内第一个块挂编号,嵌套列表递归加深 level */
-async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
-  const reference = node.ordered ? "md-list-number" : "md-list-bullet";
-  const result: Paragraph[] = [];
-  for (const item of node.children as ListItem[]) {
-    for (const child of item.children) {
-      if (child.type === "list") {
-        result.push(...(await renderList(child, { ...ctx, listLevel: ctx.listLevel + 1 })));
-      } else if (child.type === "paragraph") {
-        result.push(
-          new Paragraph({
-            numbering: { reference, level: Math.min(ctx.listLevel, 3) },
-            children: await renderPhrasing(normalizeInlineHtml(child.children), ctx),
-          }),
-        );
-      }
-      // 其他块(代码/引用等)在列表项内:G1 按普通段落降级渲染
-      else if (child.type === "code") {
-        result.push(await renderCode(child, ctx));
-      } else if (child.type === "blockquote") {
-        result.push(...(await renderBlockquote(child, ctx)));
-      }
-      // B4:列表项内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
-      else if (child.type === "math" || child.type === "html" || child.type === "table") {
-        result.push(...(await renderContainerFallback(child, ctx, "列表")));
-      }
-    }
-  }
-  return result;
-}
-
-/** 代码块:mermaid 围栏且有 resolver 时渲染为内嵌 PNG 图片(宽超 IMAGE_MAX_WIDTH 等比缩,
- *  与行内图片共用 scaleToFit);渲染失败(null/抛错)或缺失 resolver 时降级为
- *  等宽文本代码块(行为不变,内容不丢失,与公式降级语义一致)。
- *  已知语言(hljs.getLanguage 命中)走语法高亮(code-highlight.ts,GitHub Light
- *  色板);无语言/未知语言/高亮解析失败 → 等宽文本代码块。 */
-async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
-  if (node.lang === "mermaid" && ctx.mermaidResolver) {
-    try {
-      const result = await ctx.mermaidResolver(node.value);
-      if (result) {
-        const { width, height } = scaleToFit(result.width, result.height);
-        return new Paragraph({
-          children: [new ImageRun({ type: "png", data: result.png, transformation: { width, height } })],
-        });
-      }
-      ctx.warnings?.push({
-        key: "warn.mermaidEmpty",
-        fallback: "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块",
-      });
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      ctx.warnings?.push({
-        key: "warn.mermaidFailed",
-        params: { reason },
-        fallback: `Mermaid 渲染失败: ${reason},已降级为代码块`,
-      });
-    }
-  }
-  // B4:语言已知但高亮失败(hljs 抛错/解析校验失败)→ 上报降级警告
-  // (无语言/未知语言的正常降级不警告);warnDedup 按语言去重
-  const highlighted = highlightCodeRuns(node.value, node.lang ?? undefined, (lang) => {
-    warnDedup(ctx, highlightFallbackWarning(lang));
-  });
-  if (highlighted) {
-    return new Paragraph({
-      spacing: { before: 120, after: 120 },
-      indent: { left: 360 },
-      children: highlighted,
-    });
-  }
-  const lines = node.value.split("\n");
-  const children: TextRun[] = [];
-  lines.forEach((line, i) => {
-    children.push(new TextRun({ text: line, font: CODE_FONT, size: CODE_SIZE }));
-    if (i < lines.length - 1) children.push(new TextRun({ text: "", break: 1 }));
-  });
-  return new Paragraph({
-    spacing: { before: 120, after: 120 },
-    indent: { left: 360 },
-    children,
-  });
-}
-
-async function renderBlockquote(node: Blockquote, ctx: Ctx): Promise<Paragraph[]> {
-  const paragraphs: Paragraph[] = [];
-  for (const child of node.children) {
-    if (child.type === "paragraph") {
-      paragraphs.push(
-        new Paragraph({
-          indent: { left: 720 },
-          children: await renderPhrasing(normalizeInlineHtml(child.children), ctx),
-          shading: { type: "clear", fill: QUOTE_BG_GRAY },
-        }),
-      );
-    } else if (child.type === "blockquote") {
-      paragraphs.push(...(await renderBlockquote(child, ctx)));
-    }
-    // B4:引用块内代码块此前静默丢弃 → 按代码块渲染(renderCode 既有路径)+ 警告
-    else if (child.type === "code") {
-      warnDedup(ctx, unsupportedBlockWarning("代码块", "引用块"));
-      paragraphs.push(await renderCode(child, ctx));
-    }
-    // B4:引用块内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
-    else if (child.type === "math" || child.type === "html" || child.type === "table") {
-      paragraphs.push(...(await renderContainerFallback(child, ctx, "引用块")));
-    }
-  }
-  return paragraphs;
 }
 
 async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
@@ -846,417 +465,3 @@ async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
     rows,
   });
 }
-
-function renderThematicBreak(): Paragraph {
-  return new Paragraph({
-    spacing: { before: 120, after: 120 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: RULE_GRAY } },
-  });
-}
-
-// ---------- 行内节点 ----------
-
-interface RunStyle {
-  italics?: boolean;
-  bold?: boolean;
-  strike?: boolean;
-}
-
-/** 段落内可出现的 docx 子元素:文本 run、行内图片、脚注引用、超链接、公式或
- *  批注范围标记(d.ts 实证:Math 与 CommentRangeStart/End/Reference 均属
- *  ParagraphChild,可与 TextRun 同段混排)。
- *  export:inline-html.ts 的 renderBodyParagraph 参数类型引用(R10-6 拆分)。 */
-export type InlineChild =
-  | TextRun
-  | ImageRun
-  | FootnoteReferenceRun
-  | InternalHyperlink
-  | ExternalHyperlink
-  | DocxMath
-  | CommentRangeStart
-  | CommentRangeEnd
-  | CommentReference;
-
-/** 行内节点 → 元素数组;样式沿父子链累积传递。
- * 标题等场景同样经 pushRuns 渲染(标题内图片/脚注引用按常规渲染,占位与警告语义与正文一致)。 */
-async function renderPhrasing(
-  nodes: PhrasingContent[],
-  ctx: Ctx,
-  style: RunStyle = {},
-): Promise<InlineChild[]> {
-  const runs: InlineChild[] = [];
-  for (const node of nodes) {
-    await pushRuns(runs, node, ctx, style);
-  }
-  return runs;
-}
-
-/**
- * 去重警告(B3):同一文案只入 warnings 一次。悬空交叉引用被引 N 次此前产生
- * N 条重复警告,GUI 警告列表刷屏;pdf 侧 unknownLabels Set 早已去重,此处对齐。
- * B6:元素改为 KeyedWarning 对象后,去重键 = key + JSON(params)
- * (params 相同才视为同一警告;不同 TeX 源码/label 的公式降级各自保留一条)。
- */
-function warnDedup(ctx: Ctx, warning: KeyedWarning): void {
-  const dedupKey = `${warning.key}:${JSON.stringify(warning.params ?? null)}`;
-  if (ctx.warnedKeys.has(dedupKey)) return;
-  ctx.warnedKeys.add(dedupKey);
-  ctx.warnings?.push(warning);
-}
-
-/** 公式解析失败降级警告(display/inline 共用同一 key,params 带 TeX 源码) */
-function formulaParseFailedWarning(tex: string): KeyedWarning {
-  return {
-    key: "warn.formulaParseFailed",
-    params: { tex },
-    fallback: `公式解析失败,降级为 TeX 源码: ${tex}`,
-  };
-}
-
-/**
- * 容器内不支持块级的降级警告(B4 失败可见性):blockType/container 为中文类别词
- * (推送期无法按显示语言翻译,en 文案保留插值定位,同 warn.crossRefNotFound 口径);
- * 经 warnDedup 去重(同类型同容器只报一次)。
- */
-function unsupportedBlockWarning(blockType: string, container: string): KeyedWarning {
-  return {
-    key: "warn.unsupportedBlockInContainer",
-    params: { blockType, container },
-    fallback: `${blockType} 在${container}内暂不支持,已降级为文本`,
-  };
-}
-
-/** 容器内降级文本段落:等宽灰字(与顶层公式解析失败降级同款样式) */
-function fallbackTextParagraph(text: string): Paragraph {
-  return new Paragraph({
-    children: [new TextRun({ text, font: CODE_FONT, color: MUTED_TEXT_GRAY })],
-  });
-}
-
-/** mdast math 节点(display 公式;经 remark-math/mdast-util-math 扩充进 BlockContent,
- *  与 equations.ts 同一取型方式) */
-type MdMath = Extract<BlockContent, { type: "math" }>;
-
-/**
- * B4:列表项/引用块内不完整支持的块级内容降级渲染(此前静默丢弃,内容丢失):
- * - 公式(math)→ TeX 源码等宽灰字 + 警告;
- * - html → 分页注释照常分页、白名单行内标签照常渲染,其余原样等宽文本 + 警告;
- * - 表格 → 逐行文本段落(单元格纯文本以「 | 」连接)+ 警告。
- * 代码块由调用方处理(列表内既有 renderCode 路径;引用块内补齐为同款)。
- */
-async function renderContainerFallback(
-  node: MdMath | MdHtml | MdTable,
-  ctx: Ctx,
-  container: string,
-): Promise<Paragraph[]> {
-  switch (node.type) {
-    case "math":
-      warnDedup(ctx, unsupportedBlockWarning("公式", container));
-      return [fallbackTextParagraph(node.value)];
-    case "html": {
-      const value = node.value.trim();
-      if (value === "<!-- page-break -->") {
-        return [new Paragraph({ children: [new PageBreak()] })];
-      }
-      if (isAllowedInlineHtml(value)) {
-        return [renderInlineHtmlParagraph(node.value, ctx)];
-      }
-      warnDedup(ctx, unsupportedBlockWarning("HTML", container));
-      return [fallbackTextParagraph(node.value)];
-    }
-    case "table": {
-      warnDedup(ctx, unsupportedBlockWarning("表格", container));
-      return node.children.map((row) =>
-        new Paragraph({
-          children: [
-            new TextRun({ text: row.children.map((cell) => collectPlainText(cell)).join(" | ") }),
-          ],
-        }),
-      );
-    }
-  }
-}
-
-async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, style: RunStyle): Promise<void> {
-  switch (node.type) {
-    case "text":
-      runs.push(new TextRun({ text: node.value, ...style }));
-      break;
-    case "emphasis":
-      for (const child of node.children) await pushRuns(runs, child, ctx, { ...style, italics: true });
-      break;
-    case "strong":
-      for (const child of node.children) await pushRuns(runs, child, ctx, { ...style, bold: true });
-      break;
-    case "delete":
-      for (const child of node.children) await pushRuns(runs, child, ctx, { ...style, strike: true });
-      break;
-    case "inlineCode":
-      runs.push(new TextRun({ text: node.value, font: CODE_FONT, size: CODE_SIZE, ...style }));
-      break;
-    case "inlineMath": {
-      // 行内公式:KaTeX MathML → docx Math 组件,随所在段落自然继承 5a 排版;
-      // 降级(解析失败/未覆盖节点)→ TeX 源码等宽灰字 + 警告,内容不丢失
-      const result = texToDocxMath(node.value);
-      if (result.ok) {
-        runs.push(new DocxMath({ children: result.children }));
-      } else {
-        runs.push(new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY }));
-        ctx.warnings?.push(formulaParseFailedWarning(node.value));
-      }
-      break;
-    }
-    case "link": {
-      // 链接文本 = 子树纯文本(复用 collectPlainText 单源,替代逐子节点 value 拼接 +
-      // 类型断言;与目录条目/题注识别同一取文本路径)
-      const text = collectPlainText(node);
-      const url = node.url;
-      // 公式交叉引用(9d):[式](#eq:label) / [公式](#eq:label) → 文本替换为
-      // 「式 (N)」/「公式 (N)」并跳转公式书签 eq-label;未知 label → 普通文本
-      // 「式 (?)」无链接 + 警告;其他文本的 #eq: 链接保持原文本跳转公式书签。
-      // 公式编号开关关闭时整个分支不生效:按普通 # 锚点链接渲染(保持原文本,
-      // 不降级「(?)」、不追加警告,与 pdf 侧不注册 eq_numbering 规则行为一致)
-      const eqMatch = ctx.equationNumbering === false ? null : /^#eq:([\w-]+)$/.exec(url);
-      if (eqMatch) {
-        const label = eqMatch[1]!; // 正则含捕获组且已匹配,组必存在
-        const n = ctx.equationLabels?.get(label);
-        if (text === "式" || text === "公式") {
-          if (n !== undefined) {
-            runs.push(
-              new InternalHyperlink({
-                anchor: docxBookmarkId(`eq-${label}`),
-                children: [new TextRun({ text: `${text} (${n})`, color: LINK_COLOR, underline: {}, ...style })],
-              }),
-            );
-          } else {
-            // 与图/表/章节悬空同一文案族(「交叉引用未找到<类别> label: <ref>」);
-            // pdf 侧同场景文案不同(「引用未定义的公式标签: eq:<label>」),用独立 key
-            warnDedup(ctx, crossRefNotFoundWarning("公式", label));
-            runs.push(new TextRun({ text: `${text} (?)`, ...style }));
-          }
-          break;
-        }
-        runs.push(
-          new InternalHyperlink({
-            anchor: docxBookmarkId(`eq-${label}`),
-            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
-          }),
-        );
-        break;
-      }
-      // 图/表/章节交叉引用(批次 10 功能 2,文案与占位见 CROSS_REF_KINDS,勿散落硬编码):
-      // [图](#fig:label) → 静态编号文本「图 3.1」+ 跳题注书签 fig-<label>;
-      // [表](#tab:label) → 「表 1」+ 跳 tab-<label>;[章节](#sec:label) →
-      // 静态章节号「3.2」+ 跳标题书签;引用文本非约定文本 → 保持原文本仍跳转
-      // (与 #eq: 非「式/公式」行为一致);悬空 → 默认文本占位 + 警告,非约定
-      // 文本保持原样不带链接(目标书签不存在,不生成死链;公式悬空非默认文本
-      // 无警告的死链行为不复制,此处更安全)
-      const crossMatch = /^#(fig|tab|sec):([\w-]+)$/.exec(url);
-      if (crossMatch) {
-        const kind = crossMatch[1] as CrossRefKind;
-        const label = crossMatch[2]!; // 正则第二捕获组已匹配,组必存在
-        const def = CROSS_REF_KINDS[kind];
-        let numberText: string | undefined;
-        let anchor: string | undefined;
-        if (kind === "sec") {
-          const info = ctx.headingLabels.get(label);
-          if (info) {
-            numberText = info.chapterText;
-            anchor = docxBookmarkId(info.slug);
-          }
-        } else {
-          const info = ctx.captionLabels.get(label);
-          // captionLabels 登记时已限定 kind 与前缀一致(见 captions.ts),此处防御性校验
-          if (info && info.kind === kind) {
-            numberText = info.numberText;
-            anchor = docxBookmarkId(`${kind}-${label}`);
-          }
-        }
-        if (numberText !== undefined && anchor !== undefined) {
-          runs.push(
-            new InternalHyperlink({
-              anchor,
-              children: [new TextRun({ text: text === def.defaultText ? numberText : text, color: LINK_COLOR, underline: {}, ...style })],
-            }),
-          );
-        } else {
-          warnDedup(ctx, crossRefNotFoundWarning(def.kindName, `${kind}:${label}`));
-          runs.push(new TextRun({ text: text === def.defaultText ? def.danglingText : text, ...style }));
-        }
-        break;
-      }
-      if (url.startsWith("#")) {
-        // 内部锚点:[text](#slug) → 跳转同名书签(标题已用 docxBookmarkId 生成)
-        runs.push(
-          new InternalHyperlink({
-            anchor: docxBookmarkId(url.slice(1)),
-            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
-          }),
-        );
-        break;
-      }
-      if (/^https?:/i.test(url)) {
-        runs.push(
-          new ExternalHyperlink({
-            link: url,
-            children: [new TextRun({ text, color: LINK_COLOR, underline: {}, ...style })],
-          }),
-        );
-        break;
-      }
-      // 相对路径等:保持假链接样式
-      runs.push(new TextRun({ text, color: LINK_COLOR, underline: {}, ...style }));
-      break;
-    }
-    case "image":
-      runs.push(await imageToDocx(node, ctx, style));
-      break;
-    case "footnoteReference": {
-      const def = ctx.footnoteDefinitions.get(node.identifier);
-      if (def) {
-        // B3:同一脚注多次引用共享同一 id(此前每次出现分配新 id + 重渲染定义,
-        // 产生两条独立脚注,与 Word 共享编号语义不符)
-        let id = ctx.footnoteIdByLabel.get(node.identifier);
-        if (id === undefined) {
-          id = ctx.footnoteNextId.value++;
-          ctx.footnotes[String(id)] = { children: await renderFootnoteDefinition(def, ctx) };
-          ctx.footnoteIdByLabel.set(node.identifier, id);
-        }
-        runs.push(new FootnoteReferenceRun(id));
-      }
-      break;
-    }
-    case "comment": {
-      // 批注(批次 11):[锚定文本]{批注=内容} → commentRangeStart + 锚定文本
-      // runs(递归渲染 anchor 行内,继承当前样式)+ commentRangeEnd +
-      // commentReference(必须包在 TextRun 内);批注内容收集为独立段落
-      // (author 固定 "markdown-to-word",date 缺省由库取当前时间;内容不继承
-      // 锚定处样式,批注气泡独立排版)
-      const id = ctx.commentNextId.value++;
-      runs.push(new CommentRangeStart(id));
-      for (const child of node.anchor) await pushRuns(runs, child, ctx, style);
-      runs.push(new CommentRangeEnd(id));
-      runs.push(new TextRun({ children: [new CommentReference(id)] }));
-      ctx.comments[String(id)] = {
-        children: [new Paragraph({ children: await renderPhrasing(node.content, ctx) })],
-      };
-      break;
-    }
-    case "html":
-      // 白名单行内 html(经 normalizeInlineHtml 已合并为整串):渲染为样式运行;
-      // 非白名单(理论不可达,防御):跳过
-      if (isAllowedInlineHtml(node.value)) {
-        runs.push(...inlineHtmlItemsToRuns(parseInlineHtml(node.value)));
-      }
-      break;
-    default:
-      break;
-  }
-}
-
-/** 脚注定义内容 → Paragraph[](复用现有块渲染;table 等罕见块跳过) */
-async function renderFootnoteDefinition(def: FootnoteDefinition, ctx: Ctx): Promise<Paragraph[]> {
-  const paragraphs: Paragraph[] = [];
-  for (const child of def.children) {
-    switch (child.type) {
-      case "paragraph":
-        paragraphs.push(new Paragraph({ children: await renderPhrasing(normalizeInlineHtml(child.children), ctx) }));
-        break;
-      case "list":
-        paragraphs.push(...(await renderList(child, ctx)));
-        break;
-      case "code":
-        paragraphs.push(await renderCode(child, ctx));
-        break;
-      case "blockquote":
-        paragraphs.push(...(await renderBlockquote(child, ctx)));
-        break;
-      case "thematicBreak":
-        paragraphs.push(renderThematicBreak());
-        break;
-      default:
-        break; // table 等:跳过
-    }
-  }
-  return paragraphs;
-}
-
-/** 图片尺寸缩放(行内图片与 mermaid PNG 共用):宽 ≤ IMAGE_MAX_WIDTH 原尺寸(不放大),
- *  宽超过则等比缩到上限宽度(高度按同比例取整)。 */
-function scaleToFit(width: number, height: number): { width: number; height: number } {
-  if (width > IMAGE_MAX_WIDTH) {
-    const scale = IMAGE_MAX_WIDTH / width;
-    return { width: IMAGE_MAX_WIDTH, height: Math.round(height * scale) };
-  }
-  return { width, height };
-}
-
-/**
- * B5:经 ctx.imageMemo 缓存的图片解析。同一 URL 在文档多处出现时只走一次
- * resolver(下载/读盘),后续命中复用同一 Promise(并发同 URL 也共享在途请求)。
- * 失败(null/抛错)不缓存:结算后删除条目,该 URL 后续出现重新解析
- * (已持有旧 Promise 的并发等待者仍共享本次结果,不受删除影响)。
- * 前置条件:ctx.imageResolver 已注入(imageToDocx 调用前已判空)。
- */
-async function resolveImageCached(ctx: Ctx, url: string): Promise<ImageLoadResult> {
-  const memo = ctx.imageMemo;
-  let pending = memo.get(url);
-  if (!pending) {
-    const resolver = ctx.imageResolver!;
-    pending = (async (): Promise<ImageLoadResult> => {
-      try {
-        return { data: await resolver(url) };
-      } catch (err) {
-        return { data: null, error: err };
-      }
-    })();
-    memo.set(url, pending);
-    void pending.then((r) => {
-      if (!r.data) memo.delete(url);
-    });
-  }
-  return pending;
-}
-
-/** 行内图片:经 resolver 加载为 ImageRun;失败或 webp 时占位文本。
- *  尺寸规则:能解析出 PNG/JPEG 尺寸时按 scaleToFit(上限 IMAGE_MAX_WIDTH,不放大);
- *  无法解析尺寸(其他格式/畸形数据)→ IMAGE_FALLBACK_WIDTH×IMAGE_FALLBACK_HEIGHT 兜底。
- *  M6:本地缺失与外链下载失败统一经 resolver 失败路径告警(单次 IO);
- *  B4:按 fs 错误码细分文案(imageLoadFailureWarning,见 core/image-warning.ts)。
- *  B5:解析经 resolveImageCached memo 化——同 URL 多处出现只解析一次。 */
-async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<InlineChild> {
-  const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: SECONDARY_TEXT_GRAY, ...style });
-  // B4:失败原因细分——resolver 抛出的 fs 错误按错误码分类(ENOENT → 不存在 /
-  // EACCES|EPERM → 无权限 / 其他或返回 null → 统一「图片加载失败」兜底);
-  // 无 resolver 时本地无从检查(不做 stat 预扫),仅外链可判定失败(统一文案)
-  if (!ctx.imageResolver) {
-    ctx.warnings?.push(imageLoadFailureWarning(node.url));
-    return fallback();
-  }
-  const { data, error } = await resolveImageCached(ctx, node.url);
-  if (!data) {
-    // 此处 imageResolver 必已注入(上方判空返回),失败一律告警
-    ctx.warnings?.push(imageLoadFailureWarning(node.url, error));
-    return fallback();
-  }
-  const type = sniffImageType(data);
-  if (type === "webp") {
-    ctx.warnings?.push({
-      key: "warn.webpSkipped",
-      params: { src: node.url },
-      fallback: `webp 图片不支持 docx 内嵌,已跳过: ${node.url}`,
-    });
-    return fallback();
-  }
-  // B3:未知魔数不再伪装 png(错误标签靠 Word 自行嗅探兜底,行为不可预期)→ 跳过+警告
-  if (type === null) {
-    ctx.warnings?.push(unrecognizedImageWarning(node.url));
-    return fallback();
-  }
-  const size = imageSizeFromBuffer(data);
-  const { width, height } = size
-    ? scaleToFit(size.width, size.height)
-    : { width: IMAGE_FALLBACK_WIDTH, height: IMAGE_FALLBACK_HEIGHT };
-  return new ImageRun({ type, data, transformation: { width, height } });
-}
-
