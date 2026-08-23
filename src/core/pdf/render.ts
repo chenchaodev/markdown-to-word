@@ -26,8 +26,12 @@ import type { MermaidResolver } from "../mermaid.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
 
-/** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
-export type ImageResolver = (src: string) => Promise<Buffer | null>;
+/** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败。
+ *  B5 可选轻量存在性通道 exists:本地图片存在性判定免整读/下载(false = 不存在;
+ *  非缺失类失败如权限问题应抛出,保留 B4 错误码细分文案)。缺省时调用方回退完整解析。 */
+export type ImageResolver = ((src: string) => Promise<Buffer | null>) & {
+  exists?: (src: string) => Promise<boolean>;
+};
 
 export interface RenderPdfHtmlOptions {
   /** markdown 文件所在目录,相对路径图片以此为基准 */

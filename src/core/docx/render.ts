@@ -66,8 +66,19 @@ import { isAllowedInlineHtml } from "../html-whitelist.js";
 import { normalizeInlineHtml, parseInlineHtml, inlineHtmlItemsToRuns, renderBodyParagraph, renderInlineHtmlParagraph } from "./inline-html.js";
 import type { MermaidResolver } from "../mermaid.js";
 
-/** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败 */
-export type ImageResolver = (src: string) => Promise<Buffer | null>;
+/** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败。
+ *  B5 可选轻量存在性通道 exists:本地图片存在性判定免整读/下载(false = 不存在;
+ *  非缺失类失败如权限问题应抛出,保留 B4 错误码细分文案)。缺省时调用方回退完整解析。 */
+export type ImageResolver = ((src: string) => Promise<Buffer | null>) & {
+  exists?: (src: string) => Promise<boolean>;
+};
+
+/** 单次图片解析结果(B5 memo 缓存载体):data 为 null 表示失败,error 保留原始抛错
+ *  (供 B4 失败原因细分文案使用;成功时 error 不存在) */
+interface ImageLoadResult {
+  data: Buffer | null;
+  error?: unknown;
+}
 
 /** 静态目录条目(docx 库 ToCEntry 为内部类型未导出,结构兼容即可;
  *  href 为标题书签名(无 # 前缀),hyperlink 开启时条目渲染为可点击跳转) */
@@ -144,6 +155,10 @@ export interface Ctx {
   comments: Record<string, { children: Paragraph[] }>;
   /** Mermaid 渲染回调(mermaid 围栏代码块 → 内嵌 PNG 图片;缺失时按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
+  /** B5:图片解析 memo(url → 在途/已成功结果 Promise)。ctx 生命周期 = 单次转换,
+   *  不跨转换泄漏;以 Promise 缓存保证并发同 URL 共享同一请求。成功缓存、失败
+   *  (null/抛错)不缓存——失败条目结算后删除,同一 URL 后续出现重试。 */
+  imageMemo: Map<string, Promise<ImageLoadResult>>;
 }
 
 /** 章节 label 登记信息(批次 10 功能 2:交叉引用查表) */
@@ -260,6 +275,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     captionLabels: new Map(),
     headingLabels: new Map(),
     mermaidResolver: options.mermaidResolver,
+    imageMemo: new Map(),
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
   const title = options.metadata?.title ?? options.title;
@@ -1187,34 +1203,52 @@ function scaleToFit(width: number, height: number): { width: number; height: num
   return { width, height };
 }
 
+/**
+ * B5:经 ctx.imageMemo 缓存的图片解析。同一 URL 在文档多处出现时只走一次
+ * resolver(下载/读盘),后续命中复用同一 Promise(并发同 URL 也共享在途请求)。
+ * 失败(null/抛错)不缓存:结算后删除条目,该 URL 后续出现重新解析
+ * (已持有旧 Promise 的并发等待者仍共享本次结果,不受删除影响)。
+ * 前置条件:ctx.imageResolver 已注入(imageToDocx 调用前已判空)。
+ */
+async function resolveImageCached(ctx: Ctx, url: string): Promise<ImageLoadResult> {
+  const memo = ctx.imageMemo;
+  let pending = memo.get(url);
+  if (!pending) {
+    const resolver = ctx.imageResolver!;
+    pending = (async (): Promise<ImageLoadResult> => {
+      try {
+        return { data: await resolver(url) };
+      } catch (err) {
+        return { data: null, error: err };
+      }
+    })();
+    memo.set(url, pending);
+    void pending.then((r) => {
+      if (!r.data) memo.delete(url);
+    });
+  }
+  return pending;
+}
+
 /** 行内图片:经 resolver 加载为 ImageRun;失败或 webp 时占位文本。
  *  尺寸规则:能解析出 PNG/JPEG 尺寸时,宽 ≤ 400 原尺寸(不放大),宽 > 400 等比缩到
  *  400 宽;无法解析尺寸(其他格式/畸形数据)→ 400×300 兜底。
  *  M6:本地缺失与外链下载失败统一经 resolver 失败路径告警(单次 IO);
- *  B4:按 fs 错误码细分文案(imageLoadFailureWarning,见 core/image-warning.ts)。 */
+ *  B4:按 fs 错误码细分文案(imageLoadFailureWarning,见 core/image-warning.ts)。
+ *  B5:解析经 resolveImageCached memo 化——同 URL 多处出现只解析一次。 */
 async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<InlineChild> {
   const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: "808080", ...style });
-  const isExternal = /^https?:/i.test(node.url);
   // B4:失败原因细分——resolver 抛出的 fs 错误按错误码分类(ENOENT → 不存在 /
   // EACCES|EPERM → 无权限 / 其他或返回 null → 统一「图片加载失败」兜底);
   // 无 resolver 时本地无从检查(不做 stat 预扫),仅外链可判定失败(统一文案)
-  let lastError: unknown;
-  const warnFail = (): void => {
-    if (ctx.imageResolver || isExternal) ctx.warnings?.push(imageLoadFailureWarning(node.url, lastError));
-  };
   if (!ctx.imageResolver) {
-    warnFail();
+    ctx.warnings?.push(imageLoadFailureWarning(node.url));
     return fallback();
   }
-  let data: Buffer | null;
-  try {
-    data = await ctx.imageResolver(node.url);
-  } catch (err) {
-    data = null;
-    lastError = err;
-  }
+  const { data, error } = await resolveImageCached(ctx, node.url);
   if (!data) {
-    warnFail();
+    // 此处 imageResolver 必已注入(上方判空返回),失败一律告警
+    ctx.warnings?.push(imageLoadFailureWarning(node.url, error));
     return fallback();
   }
   const type = sniffImageType(data);

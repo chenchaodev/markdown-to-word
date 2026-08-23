@@ -7,6 +7,7 @@
  * - M6 集成:缺失检查并入 resolver 失败路径(convert 层 stat 预扫已移除),resolver
  *   返回 null → 转换 warnings 追加统一文案「图片加载失败: <src>」(本地缺失有警告,
  *   存在的本地图片无警告;文案三处统一见 core/image-warning.ts)
+ * - B5 exists 轻量存在性通道:本地存在 → true / 缺失 → false / data: 退回完整解析
  * 超时分支:createImageResolver 第二参 timeoutMs 注入(默认 10s 不变),慢响应 server +
  * timeoutMs=50 断言超时 → null;index.ts 模块私有 resolverCache(跨 baseDir 共享)
  * 无法低成本自动化,未覆盖原因见验收报告。
@@ -77,6 +78,21 @@ export async function run() {
   // ---- 断言 4:data: 等非 http 前缀 → 走 readLocal 失败分支 → null ----
   if ((await local("data:image/png;base64,AAAA")) !== null) {
     throw new Error("image-downloader 断言失败:data: URI 应返回 null");
+  }
+
+  // ---- 断言 4b:B5 exists 轻量存在性通道(本地 fs.access,免整读) ----
+  // 存在 → true;缺失(ENOENT)→ false;data: 等非本地路径退回完整解析(null → false)。
+  if ((await local.exists("./g1-tiny.png")) !== true) {
+    throw new Error("image-downloader 断言失败:exists 对存在的本地图片应返回 true");
+  }
+  if ((await local.exists(PNG_PATH)) !== true) {
+    throw new Error("image-downloader 断言失败:exists 对存在的绝对路径应返回 true");
+  }
+  if ((await local.exists("./missing-xxx.png")) !== false) {
+    throw new Error("image-downloader 断言失败:exists 对缺失本地文件应返回 false");
+  }
+  if ((await local.exists("data:image/png;base64,AAAA")) !== false) {
+    throw new Error("image-downloader 断言失败:exists 对 data: URI 应退回完整解析得 false");
   }
 
   // ---- http server 生命周期:try/finally 保证清理 ----

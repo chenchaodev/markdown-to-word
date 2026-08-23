@@ -527,5 +527,35 @@ export async function run() {
   }
   console.log("[ok] basic-render:B4 容器内不支持块级降级渲染(公式/表格/代码块/html)+ 警告 断言通过");
 
+  // ---------- B5:imageToDocx resolver memo 缓存(render.ts resolveImageCached) ----------
+  // 同一图片 URL 在文档多处出现时只走一次 resolver(成功缓存);失败(null)不缓存,
+  // 同一缺失 URL 第二次出现重新解析(重试语义,与 main 侧 image-downloader 缓存口径一致)。
+  {
+    const png = await fs.readFile(path.join(FIXTURES_DIR, "g1-tiny.png"));
+    const memoMd = ["# memo", "", "![图A](./memo-a.png)", "", "![图B](./memo-a.png)", "", "![缺1](./memo-miss.png)", "", "![缺2](./memo-miss.png)", ""].join("\n");
+    const calls = [];
+    const memoBuffer = await renderDocx(parseMarkdown(memoMd), {
+      imageResolver: async (src) => {
+        calls.push(src);
+        if (src.includes("memo-miss")) return null; // 失败
+        return png;
+      },
+    });
+    const memoXml = await unzipPart(memoBuffer, "word/document.xml");
+    const countOf = (src) => calls.filter((c) => c === src).length;
+    if (countOf("./memo-a.png") !== 1) {
+      throw new Error(`basic-render 断言失败:同 URL 两处出现应只调 resolver 一次,实际 ${countOf("./memo-a.png")} 次,calls=${JSON.stringify(calls)}`);
+    }
+    if (countOf("./memo-miss.png") !== 2) {
+      throw new Error(`basic-render 断言失败:失败结果不应缓存(缺失 URL 两处出现应各解析一次),实际 ${countOf("./memo-miss.png")} 次,calls=${JSON.stringify(calls)}`);
+    }
+    // 成功图片两处均内嵌(两份 ImageRun,数据来自同一缓存)
+    const embedCount = (memoXml.match(/<w:drawing>/g) || []).length;
+    if (embedCount !== 2) {
+      throw new Error(`basic-render 断言失败:同 URL 图片应渲染两处 <w:drawing>,实际 ${embedCount}`);
+    }
+    console.log("[ok] basic-render:B5 图片 resolver memo 缓存(同 URL 单次解析 + 失败不缓存)断言通过");
+  }
+
   await saveArtifact("basic-render", { docx: buffer });
 }

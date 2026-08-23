@@ -5,7 +5,7 @@
  */
 import { decodeEntities, escapeHtml, escapeRegExp } from "../utils.js";
 import { mimeFromBuffer } from "../image-type.js";
-import { imageLoadFailedWarning, imageLoadFailureWarning, unrecognizedImageWarning } from "../image-warning.js";
+import { imageLoadFailedWarning, imageLoadFailureWarning, imageNotFoundWarning, unrecognizedImageWarning } from "../image-warning.js";
 import type { ConvertWarning } from "../i18n.js";
 import type { PdfHeading } from "./bookmarks.js";
 import type { ImageResolver } from "./render.js";
@@ -54,6 +54,8 @@ const EXTERNAL_IMAGE_CONCURRENCY = 3;
  * (B4:抛错按 fs 错误码细分 ENOENT/EACCES|EPERM,其余与 null 走统一兜底文案,
  * 见 core/image-warning.ts imageLoadFailureWarning);成功不改变 HTML
  * (file:// src 由 Chromium 渲染,不做二次 IO)。仅当注入 resolver 时执行。
+ * B5:resolver 附带 exists 轻量通道时优先走它(本地路径免整读/下载;
+ * false = 不存在 → 「图片文件不存在」文案,非缺失错误由实现抛出保留细分)。
  */
 export async function checkLocalImages(
   srcs: readonly string[],
@@ -65,13 +67,22 @@ export async function checkLocalImages(
     [...new Set(srcs)].map(async (src) => {
       let ok = false;
       let lastError: unknown;
+      let notFound = false; // B5:exists 通道返回 false → 直接按「文件不存在」文案
       try {
-        ok = (await resolver(src)) !== null;
+        if (resolver.exists) {
+          // B5:轻量存在性通道(本地路径免整读/下载)。契约:false = 不存在;
+          // 非缺失类失败(权限等)由实现抛出,走下方 catch 保留 B4 错误码细分。
+          // 缺省 exists 时回退完整解析(行为不变)。
+          ok = await resolver.exists(src);
+          notFound = !ok;
+        } else {
+          ok = (await resolver(src)) !== null;
+        }
       } catch (err) {
         ok = false;
         lastError = err;
       }
-      if (!ok) warnings.push(imageLoadFailureWarning(src, lastError));
+      if (!ok) warnings.push(notFound ? imageNotFoundWarning(src) : imageLoadFailureWarning(src, lastError));
     }),
   );
 }
@@ -80,6 +91,8 @@ export async function checkLocalImages(
  * 渲染后处理:收集 <img src="https?://..."> 的 URL,经 imageResolver 并行下载
  * (并发限制 3),成功内嵌为 data URL(Chromium 加载 data URL 无需网络,file://
  * HTML 下可用);失败保留原 URL 并追加警告(统一文案 imageLoadFailedWarning)。
+ * B5:替换改单遍 cursor 分段(仿 replaceMermaidPlaceholders)——一次遍历按出现
+ * 顺序处理全部外链 img 标签后拼接,不再逐 URL 全文扫描替换。
  */
 export async function embedExternalImages(
   html: string,
@@ -87,11 +100,16 @@ export async function embedExternalImages(
   warnings: ConvertWarning[],
 ): Promise<string> {
   if (!resolver) return html;
-  const urls = Array.from(
-    new Set([...html.matchAll(/<img[^>]*\ssrc="(https?:\/\/[^"]+)"/gi)].map((m) => m[1])),
-  );
-  if (urls.length === 0) return html;
+  // 单遍收集全部外链 img(按出现顺序;同一 URL 多处出现各记一条 match)
+  const imgRe = /<img[^>]*\ssrc="(https?:\/\/[^"]+)"/gi;
+  const matches: { index: number; full: string; url: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = imgRe.exec(html)) !== null) {
+    matches.push({ index: m.index, full: m[0], url: m[1]! }); // 捕获组结构保证
+  }
+  if (matches.length === 0) return html;
 
+  const urls = Array.from(new Set(matches.map((x) => x.url)));
   const results = new Map<string, string>();
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -115,10 +133,17 @@ export async function embedExternalImages(
   };
   await Promise.all(Array.from({ length: Math.min(EXTERNAL_IMAGE_CONCURRENCY, urls.length) }, worker));
 
-  let out = html;
-  for (const [url, dataUrl] of results) {
-    // 精确替换 src 属性,避免 URL 互为子串时误替换
-    out = out.replace(new RegExp(`src="${escapeRegExp(url)}"`, "g"), `src="${dataUrl}"`);
+  // cursor 单遍拼接:命中的 match 精确替换其 src 属性(escapeRegExp 防子串误替换),
+  // 失败/未命中原样保留(cursor 不动);末尾补齐剩余原文
+  let out = "";
+  let cursor = 0;
+  for (const mt of matches) {
+    const dataUrl = results.get(mt.url);
+    if (!dataUrl) continue;
+    out += html.slice(cursor, mt.index);
+    out += mt.full.replace(new RegExp(`src="${escapeRegExp(mt.url)}"`), `src="${dataUrl}"`);
+    cursor = mt.index + mt.full.length;
   }
+  out += html.slice(cursor);
   return out;
 }

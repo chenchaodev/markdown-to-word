@@ -13,15 +13,24 @@ import path from "node:path";
 
 const HTTP_TIMEOUT_MS = 10_000;
 
-export type ImageResolver = (src: string) => Promise<Buffer | null>;
+/** 图片解析回调契约(与 core 侧 docx/pdf render.ts 同构,勿单侧漂移):
+ * 给定 src 返回图片 Buffer,null 表示解析失败。
+ * B5 可选轻量存在性通道 exists:本地图片存在性判定免整读(false = 不存在;
+ * 非缺失类失败如权限问题抛出,保留 B4 错误码细分文案);缺省时调用方回退完整解析。 */
+export type ImageResolver = ((src: string) => Promise<Buffer | null>) & {
+  exists?: (src: string) => Promise<boolean>;
+};
 
 /** 创建绑定 baseDir 的 imageResolver;每次文档转换新建一个实例(缓存随文档生命周期)。
  * timeoutMs:http(s) 下载超时(默认 HTTP_TIMEOUT_MS = 10s,测试可注入缩短)。
  * 缓存语义:fetch 前 cache.set 保证并发去重(在途 Promise 共享);结算后失败(null)条目
- * 异步删除,成功结果保留——失败下次调用重新下载,成功不重复请求。 */
+ * 异步删除,成功结果保留——失败下次调用重新下载,成功不重复请求。
+ * B5:附带 exists 轻量存在性通道——本地路径 fs.access 判定(免整读),ENOENT → false,
+ * 其他错误(权限等)抛出保留错误码;非本地路径退回完整解析(pdf 侧 checkLocalImages
+ * 仅收本地 src,此为防御兜底)。 */
 export function createImageResolver(baseDir: string, timeoutMs: number = HTTP_TIMEOUT_MS): ImageResolver {
   const cache = new Map<string, Promise<Buffer | null>>();
-  return (src: string): Promise<Buffer | null> => {
+  const resolve = (src: string): Promise<Buffer | null> => {
     if (/^https?:\/\//i.test(src)) {
       let pending = cache.get(src);
       if (!pending) {
@@ -37,6 +46,17 @@ export function createImageResolver(baseDir: string, timeoutMs: number = HTTP_TI
     }
     return readLocal(path.resolve(baseDir, src));
   };
+  const exists = async (src: string): Promise<boolean> => {
+    if (/^https?:\/\//i.test(src)) return (await resolve(src)) !== null;
+    try {
+      await fs.access(path.resolve(baseDir, src));
+      return true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return false;
+      throw err; // 权限等其他错误抛出,checkLocalImages 按 B4 错误码细分文案
+    }
+  };
+  return Object.assign(resolve, { exists });
 }
 
 /** 下载 http(s) 资源:默认 10s 超时(timeoutMs 由 createImageResolver 注入),仅接受 2xx;

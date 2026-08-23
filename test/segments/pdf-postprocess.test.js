@@ -6,6 +6,8 @@
  *   同 URL 去重(resolver 只调一次,替换仍覆盖全部出现)。
  * - checkLocalImages:resolver 抛错(catch 路径)与返回 null → 统一警告;src 去重;
  *   成功不警告;无 resolver 直接返回。
+ * - B5:embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败,产物逐字断言);
+ *   checkLocalImages exists 轻量通道(true/false/抛错细分,不回调完整 resolver)。
  * 断言依据 src/core/pdf/postprocess.ts(降级行为:失败保留原 URL/追加警告,不抛错)。
  */
 import { checkLocalImages, embedExternalImages } from "../../dist/core/pdf/postprocess.js";
@@ -127,5 +129,69 @@ export async function run() {
       }
     }
     console.log("[ok] postprocess:B4 checkLocalImages 失败原因细分(ENOENT/EACCES/兜底)断言通过");
+  }
+
+  // ---- 5. B5:embedExternalImages cursor 单遍遍历——多图乱序 + 相邻 + 中间失败 ----
+  // 单遍按出现顺序处理全部外链 img:成功替换、失败原样保留(cursor 不动),
+  // 相邻标签无遗漏、首尾分段拼接完整。
+  {
+    const html =
+      '<img src="https://x.example/1.png"><img src="https://x.example/bad.png">' +
+      '<p>正文</p><img src="https://x.example/1.png"><img src="https://x.example/3.png">';
+    const warnings = [];
+    const calls = [];
+    const resolver = async (url) => {
+      calls.push(url);
+      if (url.includes("bad")) throw new Error("boom");
+      return Buffer.concat([PNG_MAGIC, Buffer.from(url)]);
+    };
+    const out = await embedExternalImages(html, resolver, warnings);
+    const dataOf = (url) => `data:image/png;base64,${Buffer.concat([PNG_MAGIC, Buffer.from(url)]).toString("base64")}`;
+    const expected =
+      `<img src="${dataOf("https://x.example/1.png")}"><img src="https://x.example/bad.png">` +
+      `<p>正文</p><img src="${dataOf("https://x.example/1.png")}"><img src="${dataOf("https://x.example/3.png")}">`;
+    if (out !== expected) {
+      throw new Error(`postprocess 断言失败:B5 多图乱序/相邻场景产物不符,out=${out}`);
+    }
+    // 去重:URL1 两处出现只下载一次
+    if (calls.filter((c) => c === "https://x.example/1.png").length !== 1) {
+      throw new Error(`postprocess 断言失败:同 URL 应只下载一次,calls=${JSON.stringify(calls)}`);
+    }
+    if (warnings.length !== 1 || formatWarning(warnings[0]) !== "图片加载失败: https://x.example/bad.png") {
+      throw new Error(`postprocess 断言失败:失败 URL 应恰一条统一警告,warnings=${JSON.stringify(warnings)}`);
+    }
+    console.log("[ok] postprocess:B5 embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败)断言通过");
+  }
+
+  // ---- 6. B5:checkLocalImages 轻量存在性通道(exists)----
+  // resolver 附带 exists 时优先走它(免整读):true/false 分支 + 抛错保留错误码细分;
+  // 全程不回调完整 resolver。
+  {
+    const calls = [];
+    let resolveCalls = 0;
+    const resolver = () => {
+      resolveCalls += 1;
+      return Promise.resolve(null);
+    };
+    resolver.exists = async (src) => {
+      calls.push(src);
+      if (src === "ok.png") return true;
+      if (src === "gone.png") return false;
+      throw Object.assign(new Error("denied"), { code: "EACCES" });
+    };
+    const warnings = [];
+    await checkLocalImages(["ok.png", "gone.png", "locked.png"], resolver, warnings);
+    if (resolveCalls !== 0) {
+      throw new Error(`postprocess 断言失败:exists 通道存在时不应回调完整 resolver,实际 ${resolveCalls} 次`);
+    }
+    const texts = warnings.map((w) => formatWarning(w)).sort();
+    if (
+      texts.length !== 2 ||
+      texts[0] !== "图片文件不存在: gone.png" ||
+      texts[1] !== "图片文件无访问权限: locked.png"
+    ) {
+      throw new Error(`postprocess 断言失败:exists 通道警告异常,texts=${JSON.stringify(texts)}`);
+    }
+    console.log("[ok] postprocess:B5 checkLocalImages exists 轻量通道(true/false/抛错细分)断言通过");
   }
 }
