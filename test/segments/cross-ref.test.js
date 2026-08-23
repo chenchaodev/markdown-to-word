@@ -14,8 +14,8 @@
  *   InternalHyperlink 跳书签(docx 库输出 <w:hyperlink w:history="1"
  *   w:anchor="...">、文本 <w:t xml:space="preserve">);非默认文本保持原样仍跳转;
  *   悬空 → 默认文本占位「图 (?)」/「(?)」+ 警告「交叉引用未找到<图/表/章节>
- *   label: <prefix>:<label>」(每次出现都推);headingNumbering 关 → sec 引用悬空;
- *   captionNumbering 关 → 题注行原样保留 label、无书签。
+ *   label: <prefix>:<label>」(B3 起按文案去重,pdf 侧本就如此);headingNumbering 关
+ *   → sec 引用悬空;captionNumbering 关 → 题注行原样保留 label、无书签。
  *
  * pdf 侧(与 docx 同一契约,2026-08-13 实测):
  * - xref_recognize 一遍计数/剥离/登记,锚点 <span id="fig:label"> 注入题注段落
@@ -39,7 +39,7 @@ import { saveArtifact } from "../common/artifacts.js";
 const B = FIXTURES_DIR;
 
 /** 主样例:h1 章节 + 图/表题注 + 章节引用(引用先于目标标题出现,验证预扫)+
- *  公式混排(验证 #eq: 不回归)+ 悬空引用(图引用两次,验证警告每次出现都推) */
+ *  公式混排(验证 #eq: 不回归)+ 悬空引用(图引用两次,验证 B3 警告按文案去重) */
 export const fixtures = { main: `# 第一章 {#sec:c1}
 
 见 [图](#fig:a)、[表](#tab:t)、[章节](#sec:c2)、[见图甲](#fig:a) 与 [式](#eq:e)。
@@ -100,11 +100,11 @@ export async function run() {
   if (!has('<w:bookmarkStart w:name="第-2-节"')) throw new Error("docx 标题书签 slug 异常(含 label)");
   if (xml.includes("第 2 节 {#sec:c2}")) throw new Error("docx 标题文本泄漏 label");
 
-  // A4(R4) docx 悬空:占位文本 + 警告(每次出现都推,fig:x 出现 2 次)
+  // A4(B3) docx 悬空:占位文本 + 警告去重(fig:x 出现 2 次 → 警告仅 1 条,对齐 pdf 侧)
   if (!has('<w:t xml:space="preserve">图 (?)</w:t>')) throw new Error('docx 悬空图引用无占位「图 (?)」');
   if (!has('<w:t xml:space="preserve">(?)</w:t>')) throw new Error('docx 悬空章节引用无占位「(?)」');
   const figXCount = warnings.filter((w) => w === "交叉引用未找到图 label: fig:x").length;
-  if (figXCount !== 2) throw new Error(`docx 悬空图警告次数非 2(实际 ${figXCount},应每次出现都推)`);
+  if (figXCount !== 1) throw new Error(`docx 悬空图警告应去重为 1 条(实际 ${figXCount},B3 契约)`);
   if (!warnings.includes("交叉引用未找到章节 label: sec:s1")) {
     throw new Error("docx 缺少悬空章节警告 sec:s1");
   }
@@ -294,6 +294,48 @@ export async function run() {
     throw new Error("docx 空题注场景 label 不应泄漏到文档文本");
   }
   console.log("[ok] cross-ref:题注 chapter null(无 h1 → 图 1)与空题注文本(仅编号)断言通过");
+
+  // ============ 场景 H(B3):headingNumbering 关 → 图/表编号全文档连续(双格式一致) ============
+  // 已拍板契约:headingNumbering=false 时 docx 不再在 h1 处重置 figIndex/tabIndex,
+  // 与 pdf 侧(仅 isNumbered 时重置)及 captions.ts 注释本意对齐。
+  const mdCapContinuous = `# 第一章
+
+![图一](g1-tiny.png)
+
+图: 甲图
+
+# 第二章
+
+![图二](g1-tiny.png)
+
+图: 乙图
+`;
+  const hnOffCapD = await convert(mdCapContinuous, "docx", {
+    baseDir: B,
+    warnings: [],
+    typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
+  });
+  const hnOffCapX = unzipPart(hnOffCapD.buffer, "word/document.xml");
+  if (!hnOffCapX.includes('<w:t xml:space="preserve">图 1 甲图</w:t>')) {
+    throw new Error("B3 断言失败:headingNumbering 关时首图应为「图 1」");
+  }
+  if (!hnOffCapX.includes('<w:t xml:space="preserve">图 2 乙图</w:t>')) {
+    throw new Error("B3 断言失败:headingNumbering 关时次章图应连续编号「图 2」(不得按章重置为「图 1」)");
+  }
+  const hnOffCapP = await convert(mdCapContinuous, "pdf", {
+    baseDir: B,
+    warnings: [],
+    title: "t",
+    typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
+  });
+  // pdf 编号经 CSS counter 在打印期生成,HTML 源码无「图 N」字面文本;
+  // 断言连续性语义:走全局重置分支(body 重置一次),且无 h1 级重置规则
+  if (!hnOffCapP.html.includes("body { counter-reset: figc tabc; }")) {
+    throw new Error("B3 断言失败:pdf headingNumbering 关时应使用全局题注计数器(连续编号)");
+  }
+  if (/h1 \{ counter-reset:[^}]*figc/.test(hnOffCapP.html)) {
+    throw new Error("B3 断言失败:pdf headingNumbering 关时不得存在 h1 级题注重置规则");
+  }
 
   console.log("[ok] cross-ref:docx+pdf 题注/章节/公式交叉引用、悬空降级、开关与 8b 修复断言通过(12 条验收点)");
 }

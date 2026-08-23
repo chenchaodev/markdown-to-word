@@ -122,6 +122,10 @@ export interface Ctx {
   footnotes: Record<string, { children: Paragraph[] }>;
   /** 下一个脚注 id(可变对象,嵌套引用共用计数器) */
   footnoteNextId: { value: number };
+  /** B3:identifier → 已分配脚注 id(重复引用共享同一脚注,与 Word 语义一致) */
+  footnoteIdByLabel: Map<string, number>;
+  /** B3:已发出过的警告集合(悬空交叉引用等逐引用去重,防 GUI 警告列表刷屏;pdf 侧同模式) */
+  warnedKeys: Set<string>;
   /** 公式 label → 编号查表(9d,renderDocx 预扫后挂入;行内交叉引用渲染用) */
   equationLabels?: Map<string, number>;
   /** 题注 label → 编号文本(批次 10 功能 2:图/表交叉引用查表;buildCaptionContext 预扫时登记) */
@@ -244,6 +248,8 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     footnoteDefinitions: new Map(),
     footnotes: {},
     footnoteNextId: { value: 1 },
+    footnoteIdByLabel: new Map(),
+    warnedKeys: new Set(),
     bookmarkNextId: { value: 1 },
     commentNextId: { value: 1 },
     comments: {},
@@ -842,6 +848,16 @@ async function renderPhrasing(
   return runs;
 }
 
+/**
+ * 去重警告(B3):同一文案只入 warnings 一次。悬空交叉引用被引 N 次此前产生
+ * N 条重复警告,GUI 警告列表刷屏;pdf 侧 unknownLabels Set 早已去重,此处对齐。
+ */
+function warnDedup(ctx: Ctx, message: string): void {
+  if (ctx.warnedKeys.has(message)) return;
+  ctx.warnedKeys.add(message);
+  ctx.warnings?.push(message);
+}
+
 async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, style: RunStyle): Promise<void> {
   switch (node.type) {
     case "text":
@@ -892,7 +908,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
               }),
             );
           } else {
-            ctx.warnings?.push(`交叉引用未找到公式 label: ${label}`);
+            warnDedup(ctx, `交叉引用未找到公式 label: ${label}`);
             runs.push(new TextRun({ text: `${text} (?)`, ...style }));
           }
           break;
@@ -941,7 +957,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
             }),
           );
         } else {
-          ctx.warnings?.push(`交叉引用未找到${def.kindName} label: ${kind}:${label}`);
+          warnDedup(ctx, `交叉引用未找到${def.kindName} label: ${kind}:${label}`);
           runs.push(new TextRun({ text: text === def.defaultText ? def.danglingText : text, ...style }));
         }
         break;
@@ -975,8 +991,14 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
     case "footnoteReference": {
       const def = ctx.footnoteDefinitions.get(node.identifier);
       if (def) {
-        const id = ctx.footnoteNextId.value++;
-        ctx.footnotes[String(id)] = { children: await renderFootnoteDefinition(def, ctx) };
+        // B3:同一脚注多次引用共享同一 id(此前每次出现分配新 id + 重渲染定义,
+        // 产生两条独立脚注,与 Word 共享编号语义不符)
+        let id = ctx.footnoteIdByLabel.get(node.identifier);
+        if (id === undefined) {
+          id = ctx.footnoteNextId.value++;
+          ctx.footnotes[String(id)] = { children: await renderFootnoteDefinition(def, ctx) };
+          ctx.footnoteIdByLabel.set(node.identifier, id);
+        }
         runs.push(new FootnoteReferenceRun(id));
       }
       break;

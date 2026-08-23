@@ -3,8 +3,9 @@
  * - slugify:中文保留、空白转连字符、仅保留 字母/数字/_/-、连续连字符合并、
  *   首尾连字符剥除、空结果回退 "section";大小写不转换(实现无 toLowerCase);
  * - uniqueSlug:同 slug 基数重复 → -2/-3 递增(不同基数不递增);
- * - docxBookmarkId:数字开头前缀 h-、空白兜底转连字符、slice(0, 40) 截断
- *   (无后缀标记,纯长度截断)。
+ * - docxBookmarkId:数字开头前缀 h-、空白兜底转连字符;B3:超 40 字符截断时
+ *   追加 4 位 FNV 短哈希(35+1+4=40),防共享前缀的长标题书签碰撞跳转错位,
+ *   且确定性(同输入同输出,交叉引用可对上)。
  */
 import { slugify, uniqueSlug, docxBookmarkId } from "../../dist/core/slug.js";
 
@@ -67,18 +68,40 @@ export async function run() {
     // 非数字开头不加前缀
     ["abc-def", "abc-def"],
     ["冒烟测试-中文标题", "冒烟测试-中文标题"],
-    // 40 字符截断(无后缀标记,纯 slice(0, 40))
-    ["a".repeat(50), "a".repeat(40)],
-    // 前缀占用字符后再截断:h-1 + 37 个 a = 40
-    [`1${"a".repeat(50)}`, `h-1${"a".repeat(37)}`],
+    // B3:超长截断 → 前 35 字符 + "-" + 4 位哈希(共 40);哈希确定性可先算期望:
+    // 用同长度不同后缀的两个输入验证格式与唯一性,精确值由实现自洽
+    ["a".repeat(50), null],
+    [`1${"a".repeat(50)}`, null],
     // 中文截断(BMP 单码元)
-    ["中".repeat(50), "中".repeat(40)],
+    ["中".repeat(50), null],
   ];
+  const truncated = [];
   for (const [input, expected] of bookmarkCases) {
     const actual = docxBookmarkId(input);
-    if (actual !== expected) {
+    if (expected !== null && actual !== expected) {
       throw new Error(`docxBookmarkId 断言失败: ${JSON.stringify(input)} → ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
     }
+    if (expected === null) truncated.push([input, actual]);
   }
-  console.log(`[ok] docxBookmarkId:${bookmarkCases.length} 组断言通过(数字前缀 h-/40 字符截断)`);
+  for (const [input, actual] of truncated) {
+    if (actual.length !== 40) {
+      throw new Error(`docxBookmarkId 断言失败:截断后应恰为 40 字符,实际 ${actual.length}`);
+    }
+    if (!/^.{35}-[0-9a-f]{4}$/u.test(actual)) {
+      throw new Error(`docxBookmarkId 断言失败:截断格式应为 35 字符 + - + 4 位十六进制哈希,实际 ${JSON.stringify(actual)}`);
+    }
+    if (docxBookmarkId(input) !== actual) {
+      throw new Error("docxBookmarkId 断言失败:截断哈希应确定性(同输入同输出)");
+    }
+  }
+  // B3 核心场景:两个共享前 40 字符的不同长标题 → 书签名必须不同(此前碰撞)
+  const long1 = `${"共享前缀".repeat(13)}甲`; // 超 40 字符,前 40 与下者相同
+  const long2 = `${"共享前缀".repeat(13)}乙`;
+  if (long1.slice(0, 40) !== long2.slice(0, 40)) {
+    throw new Error("docxBookmarkId 测试前置失败:构造的两标题应共享前 40 字符");
+  }
+  if (docxBookmarkId(long1) === docxBookmarkId(long2)) {
+    throw new Error("docxBookmarkId 断言失败:共享前 40 字符的不同标题不得产出同名书签(B3)");
+  }
+  console.log("[ok] docxBookmarkId:数字前缀/短输入原样/B3 截断加哈希(40 字符·确定性·防碰撞)断言通过");
 }

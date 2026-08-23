@@ -61,8 +61,12 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
     const node = children[i];
     if (node.type === "heading" && node.depth === 1) {
       chapter++;
-      figIndex = 0;
-      tabIndex = 0;
+      // B3:仅章节编号开启时图/表序在 h1 处重置;关闭时全文档连续(与 pdf 侧
+      // 行为本文件头注释本就如此宣称,实现曾无条件重置导致双格式分歧)
+      if (ctx.headingNumbering) {
+        figIndex = 0;
+        tabIndex = 0;
+      }
       continue;
     }
     if (node.type !== "paragraph") continue;
