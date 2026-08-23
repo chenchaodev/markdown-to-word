@@ -1,6 +1,6 @@
 /**
- * 排版设置契约(core 侧定义;主进程 settings.ts 持久化,renderer 侧有平行定义
- * ——进程隔离不共享,字段名/默认值任一侧改动必须同步另一侧,勿单独修改)。
+ * 排版设置契约(core 侧定义;主进程 settings.ts 持久化,renderer 经
+ * core/settings-defaults.ts 消费同一类型——B7 起无平行定义,单源即此处)。
  * 应用范围:docx styles.default 与普通正文段落、PDF 模板 CSS(body/正文段落)。
  */
 

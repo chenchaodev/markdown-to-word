@@ -5,6 +5,8 @@ import { remarkComment } from "./comment.js";
 import type { Node, Root, Heading } from "mdast";
 import { uniqueSlug } from "./slug.js";
 import { collectPlainText as collectText } from "./mdast-utils.js";
+// 章节 label 正则族单源(B7):SEC_LABEL_RE 定义于 core/cross-ref.ts
+import { SEC_LABEL_RE } from "./cross-ref.js";
 
 /**
  * mdast Data 为声明合并接口:扩展标题的 data.id(本模块解析时写入,
@@ -18,10 +20,6 @@ declare module "mdast" {
     secLabel?: string;
   }
 }
-
-/** 标题行内 label 后缀(批次 10 功能 2:{#sec:label};与 docx/render.ts
- *  renderHeading 渲染文本剥离正则一致,勿单侧改动) */
-const SEC_LABEL_RE = /\s*\{#sec:([\w-]+)\}$/;
 
 /**
  * 用 remark + remark-gfm + remark-math + remark-comment 将 markdown 解析为 mdast AST。

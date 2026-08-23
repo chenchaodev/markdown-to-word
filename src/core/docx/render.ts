@@ -56,8 +56,8 @@ import { sniffImageType, imageSizeFromBuffer } from "../image-type.js";
 import { imageLoadFailureWarning, unrecognizedImageWarning } from "../image-warning.js";
 import type { ConvertWarning, KeyedWarning } from "../i18n.js";
 import { crossRefNotFoundWarning, highlightFallbackWarning } from "../i18n.js";
-import { DEFAULT_PAGE_SETUP } from "../convert.js";
-import type { PageSetup } from "../convert.js";
+// 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
+import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings-defaults.js";
 import type { DocMetadata } from "../frontmatter.js";
 import type { TypographySettings } from "../typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../typography.js";
@@ -65,13 +65,11 @@ import { docxBookmarkId } from "../slug.js";
 import { isAllowedInlineHtml } from "../html-whitelist.js";
 import { normalizeInlineHtml, parseInlineHtml, inlineHtmlItemsToRuns, renderBodyParagraph, renderInlineHtmlParagraph } from "./inline-html.js";
 import type { MermaidResolver } from "../mermaid.js";
-
-/** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败。
- *  B5 可选轻量存在性通道 exists:本地图片存在性判定免整读/下载(false = 不存在;
- *  非缺失类失败如权限问题应抛出,保留 B4 错误码细分文案)。缺省时调用方回退完整解析。 */
-export type ImageResolver = ((src: string) => Promise<Buffer | null>) & {
-  exists?: (src: string) => Promise<boolean>;
-};
+// 契约单源(B7):ImageResolver 类型与交叉引用常量/正则族收敛 core 共享模块
+import type { ImageResolver } from "../image-resolver.js";
+export type { ImageResolver };
+import { CROSS_REF_KINDS, stripSecLabelSuffix, type CrossRefKind } from "../cross-ref.js";
+export { CROSS_REF_KINDS };
 
 /** 单次图片解析结果(B5 memo 缓存载体):data 为 null 表示失败,error 保留原始抛错
  *  (供 B4 失败原因细分文案使用;成功时 error 不存在) */
@@ -168,21 +166,6 @@ interface HeadingLabelInfo {
   /** 标题书签 slug(引用跳转 anchor = docxBookmarkId(slug)) */
   slug: string;
 }
-
-/**
- * 交叉引用类型常量(批次 10 功能 2):fig/tab/sec 三类引用集中定义,
- * pdf 侧渲染实现与此表同步(同一契约,勿单侧改文案)。
- * - label 前缀:行内链接 #<prefix>:<label> 匹配([\w-]+);
- * - defaultText:引用文本恰为此文本时替换为编号(其他文本保持原样仍跳转);
- * - danglingText:查表未命中时默认文本的占位(无链接);
- * - kindName:悬空警告文案用(「交叉引用未找到<kindName> label: <prefix>:<label>」)。
- */
-export const CROSS_REF_KINDS = {
-  fig: { defaultText: "图", danglingText: "图 (?)", kindName: "图" },
-  tab: { defaultText: "表", danglingText: "表 (?)", kindName: "表" },
-  sec: { defaultText: "章节", danglingText: "(?)", kindName: "章节" },
-} as const;
-type CrossRefKind = keyof typeof CROSS_REF_KINDS;
 
 /** 纸张 mm 尺寸表(宽 × 高) */
 const PAPER_SIZES_MM: Record<PageSetup["paper"], { width: number; height: number }> = {
@@ -694,7 +677,7 @@ function stripTrailingSecLabel(children: PhrasingContent[]): PhrasingContent[] {
   const result = children.slice();
   const last = result[result.length - 1]!; // 函数首行已守卫 children.length > 0
   if (last.type === "text") {
-    result[result.length - 1] = { ...last, value: last.value.replace(/\s*\{#sec:[\w-]+\}$/, "") };
+    result[result.length - 1] = { ...last, value: stripSecLabelSuffix(last.value) };
   } else if ("children" in last && Array.isArray(last.children) && last.children.length > 0) {
     // mdast children 联合类型收窄不完全,渲染场景恒为数组,显式断言后递归
     result[result.length - 1] = {
@@ -703,12 +686,6 @@ function stripTrailingSecLabel(children: PhrasingContent[]): PhrasingContent[] {
     } as PhrasingContent;
   }
   return result;
-}
-
-/** 纯文本尾部 {#sec:label} 剥离(目录条目标题等纯文本场景;与
- *  stripTrailingSecLabel / parse.ts SEC_LABEL_RE 同一正则,勿单侧改动) */
-function stripSecLabelSuffix(text: string): string {
-  return text.replace(/\s*\{#sec:[\w-]+\}$/, "");
 }
 
 /** 列表:listItem 内第一个块挂编号,嵌套列表递归加深 level */

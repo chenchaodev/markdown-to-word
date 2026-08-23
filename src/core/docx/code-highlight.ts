@@ -8,6 +8,12 @@
 import hljs from "highlight.js/lib/common";
 import { TextRun } from "docx";
 import { CODE_FONT, CODE_SIZE } from "./theme.js";
+// 实体解码单源(B7):统一用 core/utils.ts decodeEntities,删除本模块私有实现。
+// 语义差异核实结论:hljs 输出实体域仅为 &lt;/&gt;/&quot;/&#x27;/&amp;(转义 & < > " '),
+// utils 版对该域逐形态与原实现结果逐一等价(含 "&amp;lt;" 等二次解码防护场景:
+// utils 命名实体先于 &amp; 解码 + 单遍语义一致);utils 版额外覆盖任意数值实体与
+// &nbsp;,为覆盖广者,完整性校验(解码拼接 === 原文)行为不变。
+import { decodeEntities } from "../utils.js";
 
 /** GitHub Light 色板(docx 颜色大写无 #;与 pdf template.ts .hljs-* 一致) */
 const PALETTE: Record<string, { color?: string; italics?: boolean; bold?: boolean }> = {
@@ -43,27 +49,6 @@ const PALETTE: Record<string, { color?: string; italics?: boolean; bold?: boolea
   emphasis: { italics: true },
   strong: { bold: true },
 };
-
-/** hljs 输出实体解码(hljs 转义形态;单遍替换,避免 &amp; 被二次解码) */
-const ENTITY_RE = /&(lt|gt|quot|#x27|amp);/g;
-function decodeEntities(html: string): string {
-  return html.replace(ENTITY_RE, (m, name: string) => {
-    switch (name) {
-      case "lt":
-        return "<";
-      case "gt":
-        return ">";
-      case "quot":
-        return '"';
-      case "#x27":
-        return "'";
-      case "amp":
-        return "&";
-      default:
-        return m;
-    }
-  });
-}
 
 /**
  * 扫描 hljs 高亮 HTML:span 开 / span 闭 / 文本 三态,类栈处理嵌套

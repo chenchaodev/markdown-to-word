@@ -8,7 +8,7 @@ import { mimeFromBuffer } from "../image-type.js";
 import { imageLoadFailedWarning, imageLoadFailureWarning, imageNotFoundWarning, unrecognizedImageWarning } from "../image-warning.js";
 import type { ConvertWarning } from "../i18n.js";
 import type { PdfHeading } from "./bookmarks.js";
-import type { ImageResolver } from "./render.js";
+import type { ImageResolver } from "../image-resolver.js";
 
 /**
  * 从渲染后正文提取 h1-h3 标题(id 由 overrideHeadingIdRule 生成,与正文锚点

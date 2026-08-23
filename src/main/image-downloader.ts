@@ -10,16 +10,10 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+// 契约单源(B7):ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
+import type { ImageResolver } from "../core/image-resolver.js";
 
 const HTTP_TIMEOUT_MS = 10_000;
-
-/** 图片解析回调契约(与 core 侧 docx/pdf render.ts 同构,勿单侧漂移):
- * 给定 src 返回图片 Buffer,null 表示解析失败。
- * B5 可选轻量存在性通道 exists:本地图片存在性判定免整读(false = 不存在;
- * 非缺失类失败如权限问题抛出,保留 B4 错误码细分文案);缺省时调用方回退完整解析。 */
-export type ImageResolver = ((src: string) => Promise<Buffer | null>) & {
-  exists?: (src: string) => Promise<boolean>;
-};
 
 /** 创建绑定 baseDir 的 imageResolver;每次文档转换新建一个实例(缓存随文档生命周期)。
  * timeoutMs:http(s) 下载超时(默认 HTTP_TIMEOUT_MS = 10s,测试可注入缩短)。

@@ -13,7 +13,8 @@ import { katex } from "@mdit/plugin-katex";
 import hljs from "highlight.js/lib/common";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { DEFAULT_PAGE_SETUP, type PageSetup } from "../convert.js";
+// 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
+import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings-defaults.js";
 import type { DocMetadata } from "../frontmatter.js";
 import type { TypographySettings } from "../typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../typography.js";
@@ -25,13 +26,11 @@ import { crossRefNotFoundWarning, highlightFallbackWarning } from "../i18n.js";
 import type { MermaidResolver } from "../mermaid.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
-
-/** 图片解析回调:给定 src(URL/相对路径),返回图片 Buffer;返回 null 表示解析失败。
- *  B5 可选轻量存在性通道 exists:本地图片存在性判定免整读/下载(false = 不存在;
- *  非缺失类失败如权限问题应抛出,保留 B4 错误码细分文案)。缺省时调用方回退完整解析。 */
-export type ImageResolver = ((src: string) => Promise<Buffer | null>) & {
-  exists?: (src: string) => Promise<boolean>;
-};
+// 契约单源(B7):ImageResolver 类型与交叉引用常量/正则族收敛 core 共享模块
+import type { ImageResolver } from "../image-resolver.js";
+export type { ImageResolver };
+import { CROSS_REF_KINDS, kindLabelRegex, stripSecLabelSuffix, type CrossRefKind } from "../cross-ref.js";
+export { CROSS_REF_KINDS };
 
 export interface RenderPdfHtmlOptions {
   /** markdown 文件所在目录,相对路径图片以此为基准 */
@@ -316,21 +315,8 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
   };
 }
 
-/**
- * 交叉引用类型常量(批次 10 功能 2):fig/tab/sec 三类引用集中定义。
- * 与 docx 侧 CROSS_REF_KINDS(src/core/docx/render.ts)同一契约,同步
- * 维护勿单侧改文案;语义见 docx 侧注释:
- * - label 前缀:行内链接 #<prefix>:<label> 匹配([\w-]+);
- * - defaultText:引用文本恰为此文本时替换为编号(其他文本保持原样仍跳转);
- * - danglingText:查表未命中时默认文本的占位;
- * - kindName:悬空警告文案用(「交叉引用未找到<kindName> label: <prefix>:<label>」)。
- */
-const CROSS_REF_KINDS = {
-  fig: { defaultText: "图", danglingText: "图 (?)", kindName: "图" },
-  tab: { defaultText: "表", danglingText: "表 (?)", kindName: "表" },
-  sec: { defaultText: "章节", danglingText: "(?)", kindName: "章节" },
-} as const;
-type CrossRefKind = keyof typeof CROSS_REF_KINDS;
+// 交叉引用类型常量(CROSS_REF_KINDS)与章节 label 正则族:契约单源于
+// core/cross-ref.ts(B7),docx/pdf 两侧共用,语义注释见该模块。
 
 /**
  * 从 inline children 尾部剥离 {#<kind>:<label>}(批次 10 功能 2):从最后一个
@@ -342,7 +328,7 @@ function stripTrailingLabel(
   children: readonly { type: string; content: string }[],
   kind: "fig" | "tab" | "sec",
 ): string | undefined {
-  const re = new RegExp(`\\s*\\{#${kind}:([\\w-]+)\\}$`);
+  const re = kindLabelRegex(kind);
   for (let i = children.length - 1; i >= 0; i--) {
     const child = children[i]!; // 循环边界刚检查
     if (child.type !== "text") continue;
@@ -435,7 +421,7 @@ function overrideXrefRule(
         const label = stripTrailingLabel(inline.children, "sec");
         if (label === undefined) continue;
         // label 同步剥离 inline.content(标题 id slug 的来源,避免 label 进 slug)
-        inline.content = inline.content.replace(/\s*\{#sec:[\w-]+\}$/, "");
+        inline.content = stripSecLabelSuffix(inline.content);
         if (isNumbered) {
           // 章节号镜像 CSS 显示:深度 1..d 计数器拼接(前导零不跳过;
           // 无 h1 文档为「0.1」,与 CSS counter 显示一致,与 docx「1」的差异在报告注明)

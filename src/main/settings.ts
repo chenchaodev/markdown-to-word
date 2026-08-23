@@ -15,8 +15,9 @@ import { app } from "electron";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createJsonWriter } from "./atomic-json.js";
-import type { PageSetup } from "../core/convert.js";
-import { DEFAULT_PAGE_SETUP } from "../core/convert.js";
+// 页面设置契约单源(settings-defaults;原经 core/convert.js 导入形成环,B7 解环)
+import type { PageSetup } from "../core/settings-defaults.js";
+import { DEFAULT_PAGE_SETUP } from "../core/settings-defaults.js";
 import type { TypographySettings } from "../core/typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../core/typography.js";
 import {

@@ -102,10 +102,11 @@ function mirrorLanguage(lang: Language): void {
   }
 }
 
-/* ---------- 设置类型(契约收敛于 core/settings-defaults.ts) ---------- */
-type Paper = "A4" | "A3" | "A5" | "Letter" | "Legal";
-type Orientation = "portrait" | "landscape";
-type AfterConvert = "none" | "show-in-folder" | "open";
+/* ---------- 设置类型(契约单源 core/settings-defaults.ts,B7:type-only 派生,
+   编译期擦除,不新增运行时依赖) ---------- */
+type Paper = PageSetup["paper"];
+type Orientation = PageSetup["orientation"];
+type AfterConvert = AppSettings["afterConvert"];
 
 /* ---------- 设置:加载 / 回填 / 写回 ---------- */
 /** 启动时读取持久化设置,失败静默回退默认值;回填后解除 hydration 标记。 */

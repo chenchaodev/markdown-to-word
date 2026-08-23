@@ -26,6 +26,8 @@ import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml } from "./pdf/render.js";
 import { PDF_FOOTER_TEMPLATE } from "./pdf/template.js";
 import type { MermaidResolver } from "./mermaid.js";
+// 契约单源(B7):ImageResolver 类型收敛 core/image-resolver.ts(仅类型导入)
+import type { ImageResolver } from "./image-resolver.js";
 // 页面设置契约收敛于 settings-defaults.ts(单一来源),此处 re-export 保持既有导入面
 // (docx/pdf render、main settings、测试等历史 import 源不变)
 export { DEFAULT_PAGE_SETUP, type PageSetup } from "./settings-defaults.js";
@@ -36,8 +38,9 @@ export type ConvertFormat = "docx" | "pdf";
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */
   baseDir: string;
-  /** docx:图片读取回调,返回 null 表示跳过该图(缺失检查并入此失败路径,单次 IO) */
-  imageResolver?: (src: string) => Promise<Buffer | null>;
+  /** 图片解析回调(契约单源 core/image-resolver.ts):返回 null 表示跳过该图
+   *  (缺失检查并入此失败路径,单次 IO);exists 轻量存在性通道可选 */
+  imageResolver?: ImageResolver;
   /** 文档标题(pdf 用 <title>) */
   title?: string;
   /** 警告收集器(可选):转换中发现的非致命问题(如缺失图片)追加至此;
