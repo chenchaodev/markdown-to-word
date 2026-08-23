@@ -17,6 +17,7 @@ import {
   type AppSettings,
   type CustomPreset,
   type TemplatePreset,
+  type ThemePreference,
 } from "../core/settings-defaults.js";
 import { t } from "../core/i18n.js";
 
@@ -102,6 +103,8 @@ export function mergeSettingsWithDefaults(loaded: Partial<AppSettings>): AppSett
     typography: { ...DEFAULT_SETTINGS.typography, ...loaded.typography },
     customPresets: loaded.customPresets ?? DEFAULT_SETTINGS.customPresets,
     pdfCss: loaded.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
+    // B13:theme 缺失(旧 settings.json)→ "system"(显式 null/undefined 同样兜底)
+    theme: loaded.theme ?? DEFAULT_SETTINGS.theme,
   };
 }
 
@@ -180,6 +183,7 @@ export interface SettingsControlValues {
   format: string;
   outputDirText: string;
   language: string;
+  theme: string;
 }
 
 /** 设置对象 → 控件回填值(数值字段转字符串,与 DOM value 赋值一致)。 */
@@ -208,5 +212,24 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     format: settings.format,
     outputDirText: outputDirDisplayText(settings.outputDir),
     language: settings.language,
+    theme: settings.theme,
   };
+}
+
+/* ---------- B13 外观主题:data-theme 属性应用(纯函数,DOM 无关可直测) ---------- */
+/** data-theme 属性应用目标最小接口(测试注入假对象,不依赖真实 DOM)。 */
+export interface ThemeAttributeTarget {
+  setAttribute(qualifiedName: string, value: string): void;
+  removeAttribute(qualifiedName: string): void;
+}
+
+/**
+ * 外观主题 → data-theme 属性(B13 与视觉代理的契约单源):
+ * - 显式 light/dark → 设 data-theme="light"|"dark"
+ * - system → 移除 data-theme 属性(CSS @media prefers-color-scheme 接管)
+ * DOM 无关纯函数:settings-panel.applyTheme 注入 document.documentElement 调用。
+ */
+export function applyThemeOn(target: ThemeAttributeTarget, theme: ThemePreference): void {
+  if (theme === "light" || theme === "dark") target.setAttribute("data-theme", theme);
+  else target.removeAttribute("data-theme");
 }

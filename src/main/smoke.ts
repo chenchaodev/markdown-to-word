@@ -106,9 +106,10 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
       }
     }
   }
-  // 输出隔离:强制 outputDir "" + afterConvert "none"(见文件头注释),结束前恢复原设置
+  // 输出隔离:强制 outputDir "" + afterConvert "none"(见文件头注释),结束前恢复原设置;
+  // B13:theme 强制 "system"——renderer diag 的 data-theme 初始态守卫依赖默认主题
   const orig = loadSettings();
-  await updateSettings({ outputDir: "", afterConvert: "none" });
+  await updateSettings({ outputDir: "", afterConvert: "none", theme: "system" });
   try {
     await fs.writeFile(
       sampleMd,
@@ -218,6 +219,10 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
         const dropSkipped = document.getElementById("dropSkipped");
         report.dropSkippedExists = !!dropSkipped;
         report.dropSkippedHiddenAtStart = dropSkipped ? dropSkipped.classList.contains("hidden") : null;
+        // B13 外观主题:默认 system 时 data-theme 属性必须不存在(CSS @media 接管)+
+        // 设置面板三个 theme radio 就位
+        report.noDataThemeAtStart = !document.documentElement.hasAttribute("data-theme");
+        report.themeRadioCount = document.querySelectorAll('input[name="theme"]').length;
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
@@ -271,6 +276,16 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
           `[smoke] renderer diag FAILED: B9 dropSkipped 控件异常 ${JSON.stringify({
             dropSkippedExists: diag.dropSkippedExists,
             dropSkippedHiddenAtStart: diag.dropSkippedHiddenAtStart,
+          })}`,
+        );
+      }
+      // B13:外观主题守卫——默认 system 时 data-theme 属性不存在 + 三个 theme radio 就位
+      // (theme 已在隔离段强制 "system",用户残留设置不会误报)
+      if (diag.noDataThemeAtStart !== true || diag.themeRadioCount !== 3) {
+        throw new Error(
+          `[smoke] renderer diag FAILED: B13 外观主题异常 ${JSON.stringify({
+            noDataThemeAtStart: diag.noDataThemeAtStart,
+            themeRadioCount: diag.themeRadioCount,
           })}`,
         );
       }

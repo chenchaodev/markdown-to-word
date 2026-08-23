@@ -19,6 +19,14 @@ export type ConvertFormat = "docx" | "pdf";
 /** 导出后行为 */
 export type AfterConvertAction = "none" | "show-in-folder" | "open";
 
+/**
+ * 外观主题偏好(B13):
+ * - system(默认)= 跟随系统:renderer 移除 data-theme 属性,CSS @media
+ *   prefers-color-scheme 接管(视觉层契约,勿在 JS 侧解析系统主题)
+ * - light / dark = 显式主题:renderer 设 document.documentElement.dataset.theme
+ */
+export type ThemePreference = "system" | "light" | "dark";
+
 /** 页面设置(批次 1:docx section / pdf @page 参数化;单位 mm)。 */
 export interface PageSetup {
   paper: "A4" | "A3" | "A5" | "Letter" | "Legal";
@@ -66,6 +74,8 @@ export interface AppSettings {
   pdfCss: string;
   /** 界面语言(默认 zh;renderer 启动与切换时经 i18n.setLanguage 生效) */
   language: Language;
+  /** 外观主题(默认 system;renderer 经 data-theme 属性应用,见 ThemePreference) */
+  theme: ThemePreference;
 }
 
 /** 自定义模板预设:名称 + 排版/页面设置快照(套用逻辑与硬编码预设一致)。 */
@@ -91,6 +101,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customPresets: [],
   pdfCss: "",
   language: "zh",
+  theme: "system",
 };
 
 /** 页面边距钳制范围(mm,与主进程 sanitizePageSetup 一致) */

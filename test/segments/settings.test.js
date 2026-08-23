@@ -7,8 +7,8 @@
  * - sanitizeTypography:bodySizePt 8-24、lineSpacing 1.0-2.5 范围校验,越界 → DEFAULT_TYPOGRAPHY
  *   值;字体须非空字符串、布尔字段须 boolean、align 枚举(left/justify);整块兜底,
  *   始终返回合法完整对象
- * - sanitizePatch:仅 SETTING_KEYS 12 键(version/format/pageSetup/typography/breakBeforeH1/
- *   toc/equationNumbering/afterConvert/outputDir/customPresets/pdfCss/language)白名单,未知键过滤;非法值回退默认
+ * - sanitizePatch:仅 SETTING_KEYS 13 键(version/format/pageSetup/typography/breakBeforeH1/
+ *   toc/equationNumbering/afterConvert/outputDir/customPresets/pdfCss/language/theme)白名单,未知键过滤;非法值回退默认
  * - sanitizeCustomPresets(批次 11 迭代 3):非数组 → [];条目须对象且 name 非空;
  *   typography 逐字段钳制、pageSetup 非法对象整条丢弃;同名去重(保留先出现);
  *   截断 MAX_CUSTOM_PRESETS=10
@@ -114,12 +114,12 @@ export async function run() {
     assert(r8.breakBeforeH1 === true && r8.toc === false, "合法布尔应保留");
     assert(r8.equationNumbering === false, "合法布尔(equationNumbering)应保留");
 
-    // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 12 键核对 ----
+    // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 13 键核对 ----
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
-    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 12 键");
+    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme"];
+    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 13 键");
     for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));
@@ -132,6 +132,16 @@ export async function run() {
     assert(r9c.pdfCss === "", "pdfCss 非 string 应回退默认空串");
     const r9d = await mod.updateSettings({ pdfCss: "" });
     assert(r9d.pdfCss === "", "pdfCss 空串应保留(清除语义)");
+
+    // ---- 5c. theme(B13):合法枚举保留 / 枚举外回退默认 system ----
+    const r9e = await mod.updateSettings({ theme: "dark" });
+    assert(r9e.theme === "dark", "theme 合法值(dark)应保留");
+    const r9f = await mod.updateSettings({ theme: "light" });
+    assert(r9f.theme === "light", "theme 合法值(light)应保留");
+    const r9g = await mod.updateSettings({ theme: "blue" });
+    assert(r9g.theme === "system", "theme 枚举外值(blue)应回退默认 system");
+    const r9h = await mod.updateSettings({ theme: 123 });
+    assert(r9h.theme === "system", "theme 非字符串应回退默认 system");
 
     // ---- 6. 损坏 settings.json(JSON parse 失败)→ DEFAULT_SETTINGS,静默不写盘 ----
     await fs.writeFile(settingsFile, "{broken json!!", "utf8");
@@ -201,6 +211,12 @@ export async function run() {
     const legacyNoLang = { ...validSettings };
     delete legacyNoLang.language;
     assert(mod.isValidSettings(legacyNoLang) === true, "缺 language 的旧文件应通过形状校验");
+    // theme 缺失(B13,旧文件)视为合法,存在则须为 system/light/dark
+    const legacyNoTheme = { ...validSettings };
+    delete legacyNoTheme.theme;
+    assert(mod.isValidSettings(legacyNoTheme) === true, "缺 theme 的旧文件应通过形状校验");
+    assert(mod.isValidSettings({ ...validSettings, theme: "dark" }) === true, "theme dark 应通过形状校验");
+    assert(mod.isValidSettings({ ...validSettings, theme: "system" }) === true, "theme system 应通过形状校验");
     assert(mod.isValidSettings({ ...validSettings, language: "zh" }) === true, "language zh 应通过形状校验");
     assert(mod.isValidSettings({ ...validSettings, language: "en" }) === true, "language en 应通过形状校验");
     // 任一字段非法 → false(整文件回退语义)
@@ -213,6 +229,7 @@ export async function run() {
       [{ ...validSettings, equationNumbering: "yes" }, "equationNumbering 非布尔"],
       [{ ...validSettings, pdfCss: 123 }, "pdfCss 非 string"],
       [{ ...validSettings, language: "fr" }, "language 枚举外值"],
+      [{ ...validSettings, theme: "blue" }, "theme 枚举外值"],
       [{ ...validSettings, pageSetup: null }, "pageSetup 缺失"],
       [{ ...validSettings, afterConvert: "email" }, "afterConvert 枚举外值"],
     ];
@@ -244,6 +261,7 @@ export async function run() {
     assert(s3.outputDir === "", "旧文件缺 outputDir → 兜底空串");
     assert(s3.pdfCss === "", "旧文件缺 pdfCss → 兜底空串");
     assert(s3.language === "zh", "旧文件缺 language → 兜底 zh");
+    assert(s3.theme === "system", "旧文件缺 theme → 兜底 system(B13)");
     assert(
       JSON.stringify(s3.customPresets) === "[]",
       "旧文件缺 customPresets → 兜底空数组",
@@ -263,6 +281,7 @@ export async function run() {
         typography: { fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 14, lineSpacing: 2.0, firstLineIndent: false, align: "left", headingNumbering: false, captionNumbering: false },
         pdfCss: "body { color: red; }",
         language: "en",
+        theme: "dark",
         customPresets: [
           { name: "存档模板", typography: { fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 14, lineSpacing: 2.0, firstLineIndent: false, align: "left", headingNumbering: false, captionNumbering: false }, pageSetup: { paper: "Letter", orientation: "landscape", marginTop: 0, marginBottom: 1000, marginLeft: 100, marginRight: 200 } },
         ],
@@ -276,6 +295,7 @@ export async function run() {
     assert(s4.outputDir === "C:\\tmp\\out", "绝对路径 outputDir 应保留");
     assert(s4.pdfCss === "body { color: red; }", "合法文件 pdfCss 应原样读取");
     assert(s4.language === "en", "合法文件 language 应原样读取");
+    assert(s4.theme === "dark", "合法文件 theme 应原样读取(B13)");
     assert(s4.pageSetup.marginTop === 0 && s4.pageSetup.marginBottom === 1000, "合法文件 0/1000 边界边距应保留");
     assert(
       s4.typography.bodySizePt === 14 && s4.typography.align === "left" && s4.typography.fontEastAsia === "宋体",

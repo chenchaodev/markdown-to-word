@@ -208,6 +208,11 @@ const ZH = {
     "settings.groupLanguage": "界面语言",
     "settings.langZh": "中文",
     "settings.langEn": "English",
+    // B13:外观主题
+    "settings.groupAppearance": "外观主题",
+    "settings.themeSystem": "跟随系统",
+    "settings.themeLight": "浅色",
+    "settings.themeDark": "深色",
     "settings.presetLabel": "模板预设",
     "settings.paper": "纸张",
     "settings.orientation": "方向",
@@ -508,6 +513,11 @@ const EN: Record<keyof typeof ZH, string> = {
     "settings.groupLanguage": "Interface language",
     "settings.langZh": "中文",
     "settings.langEn": "English",
+    // B13: appearance theme
+    "settings.groupAppearance": "Appearance",
+    "settings.themeSystem": "Follow system",
+    "settings.themeLight": "Light",
+    "settings.themeDark": "Dark",
     "settings.presetLabel": "Template preset",
     "settings.paper": "Paper",
     "settings.orientation": "Orientation",

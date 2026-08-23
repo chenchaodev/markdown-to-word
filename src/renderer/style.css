@@ -1,22 +1,145 @@
-/* Markdown 转换工具 — G2 渲染层样式(Windows 11 浅色风格) */
+/* Markdown 转换工具 — G2 渲染层样式(Windows 11 风格;浅色默认,深色见下方双作用域主题) */
 
+/*
+ * 颜色体系(双主题):
+ * 所有颜色一律经 :root 语义变量引用,组件规则不写死色值。浅色为默认值;
+ * 深色在两个作用域提供同一套覆盖:
+ *   ① html[data-theme="dark"] —— 用户显式选择深色;
+ *   ② @media (prefers-color-scheme: dark) 内 html:not([data-theme="light"])
+ *      —— 跟随系统(未显式选择时无 data-theme 属性;显式选 light 时被排除)。
+ * 两个深色块的声明内容必须逐行一致,修改时同步更新。
+ */
 :root {
+  color-scheme: light;
+  /* 底色 */
   --bg: #f3f3f3;
-  --surface: #ffffff;
-  --border: #e5e5e5;
-  --border-strong: #c9c9c9;
+  --bg-card: #ffffff;
+  --bg-subtle: #fafafa;
+  --bg-code: #f7f7f7;
+  /* 文字与图标 */
   --text: #1b1b1b;
   --text-secondary: #616161;
   --text-tertiary: #8f8f8f;
+  --text-disabled: #c8c8c8;
+  --icon-muted: #bfbfbf;
+  --text-on-accent: #ffffff;
+  /* 边框 */
+  --border: #e5e5e5;
+  --border-strong: #c9c9c9;
+  /* 强调色 */
   --accent: #0078d4;
   --accent-hover: #006cbd;
   --accent-soft: #e6f1fb;
+  --accent-border: #c8dff3;
+  /* 语义色:本色 + 柔和底 + 描边 */
   --error: #c42b1c;
+  --error-soft: #fdf1f0;
+  --error-border: #f0c8c3;
+  --error-badge-bg: #fde7e7;
   --warning: #9a6700;
+  --warning-soft: #fdf9ec;
+  --warning-border: #ecd9a8;
   --success: #107c10;
+  --success-soft: #f4faf4;
+  --success-border: #c9e6c9;
+  /* 交互态 */
+  --row-hover: #f6f6f6;
+  --panel-hover: #f2f2f2;
+  --hover: #f0f0f0;
+  --active: #eaeaea;
+  --disabled-bg: #e6e6e6;
+  --disabled-fg: #a0a0a0;
+  --overlay: rgba(0, 0, 0, 0.4);
+  --progress-track: #e8e8e8;
+  /* 圆角与阴影 */
   --radius: 12px;
   --radius-sm: 6px;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-dialog: 0 8px 28px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* 深色主题 · 作用域一:用户显式选择(内容与下方系统作用域逐行一致,同步维护) */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #212121;
+  --bg-card: #2c2c2c;
+  --bg-subtle: #262626;
+  --bg-code: #242424;
+  --text: #e8e8e8;
+  --text-secondary: #aaaaaa;
+  --text-tertiary: #8c8c8c;
+  --text-disabled: #5e5e5e;
+  --icon-muted: #636363;
+  --text-on-accent: #001b29;
+  --border: #3e3e3e;
+  --border-strong: #5a5a5a;
+  --accent: #4cc2ff;
+  --accent-hover: #6fd0ff;
+  --accent-soft: #183650;
+  --accent-border: #396881;
+  --error: #ff6a5f;
+  --error-soft: #432a28;
+  --error-border: #6b3a34;
+  --error-badge-bg: #4e2f2c;
+  --warning: #d9a640;
+  --warning-soft: #463e2f;
+  --warning-border: #6a6132;
+  --success: #58bf58;
+  --success-soft: #34462f;
+  --success-border: #4d6b44;
+  --row-hover: #333333;
+  --panel-hover: #373737;
+  --hover: #3a3a3a;
+  --active: #414141;
+  --disabled-bg: #383838;
+  --disabled-fg: #676767;
+  --overlay: rgba(0, 0, 0, 0.55);
+  --progress-track: #404040;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-dialog: 0 8px 28px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* 深色主题 · 作用域二:跟随系统(未显式选择时;内容与上一块逐行一致,同步维护) */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #212121;
+    --bg-card: #2c2c2c;
+    --bg-subtle: #262626;
+    --bg-code: #242424;
+    --text: #e8e8e8;
+    --text-secondary: #aaaaaa;
+    --text-tertiary: #8c8c8c;
+    --text-disabled: #5e5e5e;
+    --icon-muted: #636363;
+    --text-on-accent: #001b29;
+    --border: #3e3e3e;
+    --border-strong: #5a5a5a;
+    --accent: #4cc2ff;
+    --accent-hover: #6fd0ff;
+    --accent-soft: #183650;
+    --accent-border: #396881;
+    --error: #ff6a5f;
+    --error-soft: #432a28;
+    --error-border: #6b3a34;
+    --error-badge-bg: #4e2f2c;
+    --warning: #d9a640;
+    --warning-soft: #463e2f;
+    --warning-border: #6a6132;
+    --success: #58bf58;
+    --success-soft: #34462f;
+    --success-border: #4d6b44;
+    --row-hover: #333333;
+    --panel-hover: #373737;
+    --hover: #3a3a3a;
+    --active: #414141;
+    --disabled-bg: #383838;
+    --disabled-fg: #676767;
+    --overlay: rgba(0, 0, 0, 0.55);
+    --progress-track: #404040;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+    --shadow-dialog: 0 8px 28px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
 }
 
 * {
@@ -49,7 +172,7 @@ body {
   margin: 16px auto; /* 批次 12(C3):大屏密度上限,水平居中 */
   max-width: 1080px;
   padding: 28px 32px;
-  background: var(--surface);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
@@ -72,7 +195,7 @@ body {
   margin-left: 8px;
   font-size: 12px;
   font-weight: 400;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary);
   vertical-align: 2px;
   user-select: text;
 }
@@ -93,7 +216,7 @@ body {
   overflow: hidden; /* 多文件列表在内部滚动,不撑破卡片 */
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius);
-  background: #fafafa;
+  background: var(--bg-subtle);
   cursor: pointer;
   transition: border-color 0.15s ease, background-color 0.15s ease,
     border-style 0.15s ease;
@@ -125,7 +248,7 @@ body {
 /* 错误反馈:短暂红色描边(JS 控制移除时机) */
 .drop-zone--error {
   border-color: var(--error) !important;
-  background: #fdf1f0 !important;
+  background: var(--error-soft) !important;
 }
 
 .drop-zone:focus-visible {
@@ -144,7 +267,7 @@ body {
   width: 44px;
   height: 44px;
   margin: 0 auto 10px;
-  color: #bfbfbf;
+  color: var(--icon-muted);
 }
 
 .drop-title {
@@ -244,7 +367,7 @@ body {
   padding: 2px;
   list-style: none;
   overflow-y: auto;
-  background: var(--surface);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   user-select: text;
@@ -267,7 +390,7 @@ body {
 }
 
 .multi-item:hover {
-  background: #f6f6f6;
+  background: var(--row-hover);
 }
 
 /* 排序序号:固定宽度右对齐,等宽数字对齐 */
@@ -339,7 +462,7 @@ body {
 .multi-preview:hover:not(:disabled) {
   color: var(--accent);
   background: var(--accent-soft);
-  border-color: #c8dff3;
+  border-color: var(--accent-border);
 }
 
 .multi-preview:focus-visible {
@@ -348,21 +471,21 @@ body {
 }
 
 .multi-preview:disabled {
-  color: #c8c8c8;
+  color: var(--text-disabled);
   cursor: default;
 }
 
 .multi-move:hover:not(:disabled) {
   color: var(--text);
-  background: #f0f0f0;
+  background: var(--hover);
   border-color: var(--border-strong);
 }
 
 /* 移除按钮悬停:红色语义,提示破坏性操作 */
 .multi-remove:hover:not(:disabled) {
   color: var(--error);
-  background: #fdf1f0;
-  border-color: #f0c8c3;
+  background: var(--error-soft);
+  border-color: var(--error-border);
 }
 
 .multi-move:focus-visible,
@@ -373,7 +496,7 @@ body {
 
 .multi-move:disabled,
 .multi-remove:disabled {
-  color: #c8c8c8;
+  color: var(--text-disabled);
   cursor: default;
 }
 
@@ -413,7 +536,7 @@ body {
 /* 页面设置面板(可折叠,改动即时生效) */
 .settings {
   margin-top: 14px;
-  background: #fafafa;
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -435,7 +558,7 @@ body {
 }
 
 .settings-summary:hover {
-  background: #f2f2f2;
+  background: var(--panel-hover);
 }
 
 .settings-summary:focus-visible {
@@ -540,7 +663,7 @@ body {
   font-size: 13px;
   padding: 5px 8px;
   color: var(--text);
-  background: var(--surface);
+  background: var(--bg-card);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -576,7 +699,7 @@ body {
   font-family: inherit;
   font-size: 13px;
   color: var(--text);
-  background: var(--surface);
+  background: var(--bg-card);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   text-align: right;
@@ -688,7 +811,7 @@ body {
   font-size: 13px;
   padding: 5px 8px;
   color: var(--text);
-  background: var(--surface);
+  background: var(--bg-card);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   user-select: text;
@@ -713,7 +836,7 @@ body {
 }
 
 /* 底部操作栏:sticky 视口常驻(批次 12:C2)——设置面板展开时转换按钮/进度条不被推出视口;
-   背景与卡片一致(--surface),滚动内容从其后经过时被遮住,细边框分隔 */
+   背景与卡片一致(--bg-card),滚动内容从其后经过时被遮住,细边框分隔 */
 .actions {
   position: sticky;
   bottom: 0;
@@ -724,7 +847,7 @@ body {
   gap: 16px;
   margin-top: 16px;
   padding: 16px 0 0;
-  background: var(--surface);
+  background: var(--bg-card);
   border-top: 1px solid var(--border);
 }
 
@@ -794,23 +917,23 @@ body {
 }
 
 .btn-secondary {
-  background: var(--surface);
+  background: var(--bg-card);
   border-color: var(--border-strong);
   color: var(--text);
 }
 
 .btn-secondary:hover {
-  background: #f3f3f3;
+  background: var(--bg); /* 同页面底色 */
 }
 
 .btn-secondary:active {
-  background: #eaeaea;
+  background: var(--active);
 }
 
 .btn-primary {
   min-width: 132px;
   background: var(--accent);
-  color: #ffffff;
+  color: var(--text-on-accent);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -818,8 +941,8 @@ body {
 }
 
 .btn-primary:disabled {
-  background: #e6e6e6;
-  color: #a0a0a0;
+  background: var(--disabled-bg);
+  color: var(--disabled-fg);
   cursor: default;
 }
 
@@ -845,17 +968,17 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.4); /* 半透明遮罩 */
+  background: var(--overlay); /* 半透明遮罩 */
   animation: dialog-overlay-in 0.15s ease-out;
 }
 
 .dialog {
   width: min(560px, 100%);
   padding: 24px 28px 20px;
-  background: var(--surface);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-dialog);
   animation: dialog-in 0.15s ease-out;
 }
 
@@ -882,7 +1005,7 @@ body {
   max-height: 132px;
   overflow-y: auto;
   color: var(--text);
-  background: #f7f7f7;
+  background: var(--bg-code);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   user-select: text;
@@ -910,8 +1033,8 @@ body {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--error);
-  background: #fdf1f0;
-  border: 1px solid #f0c8c3;
+  background: var(--error-soft);
+  border: 1px solid var(--error-border);
   border-radius: var(--radius-sm);
   word-break: break-all;
 }
@@ -971,7 +1094,7 @@ body {
   padding: 0;
   list-style: none;
   overflow-y: auto;
-  background: #fafafa;
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -1059,12 +1182,12 @@ body {
 }
 
 .btn-ghost:hover:not(:disabled) {
-  background: #f0f0f0;
+  background: var(--hover);
   color: var(--text);
 }
 
 .btn-ghost:disabled {
-  color: #c8c8c8;
+  color: var(--text-disabled);
   cursor: default;
 }
 
@@ -1107,7 +1230,7 @@ body {
 .progress-area {
   margin-top: 12px;
   padding: 10px 12px;
-  background: #fafafa;
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -1115,7 +1238,7 @@ body {
 .progress-track {
   height: 6px;
   overflow: hidden;
-  background: #e8e8e8;
+  background: var(--progress-track);
   border-radius: 3px;
 }
 
@@ -1148,19 +1271,19 @@ body {
   gap: 8px;
   margin-top: 12px;
   padding: 10px 12px;
-  background: #fafafa;
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
 
 .result-summary--ok {
-  background: #f4faf4;
-  border-color: #c9e6c9;
+  background: var(--success-soft);
+  border-color: var(--success-border);
 }
 
 .result-summary--fail {
-  background: #fdf1f0;
-  border-color: #f0c8c3;
+  background: var(--error-soft);
+  border-color: var(--error-border);
 }
 
 .result-summary-main {
@@ -1233,8 +1356,8 @@ body {
   margin: 6px 0 0;
   padding: 6px 10px;
   list-style: none;
-  background: #fdf9ec;
-  border: 1px solid #ecd9a8;
+  background: var(--warning-soft);
+  border: 1px solid var(--warning-border);
   border-radius: var(--radius-sm);
 }
 
@@ -1310,7 +1433,7 @@ body {
 /* 最近转换区块(批次 11 迭代 1:状态记忆;样式跟随 settings 面板风格追加,不重构) */
 .recent {
   margin-top: 14px;
-  background: #fafafa;
+  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -1367,7 +1490,7 @@ body {
 .recent-load:hover {
   color: var(--accent);
   background: var(--accent-soft);
-  border-color: #c8dff3;
+  border-color: var(--accent-border);
 }
 
 .recent-load:focus-visible {
@@ -1392,7 +1515,7 @@ body {
 }
 
 .recent-item:hover {
-  background: #f0f0f0;
+  background: var(--hover);
 }
 
 .recent-item:focus-visible {
@@ -1423,7 +1546,7 @@ body {
 }
 
 .recent-format--pdf {
-  background: #fde7e7;
+  background: var(--error-badge-bg);
   color: var(--error);
 }
 

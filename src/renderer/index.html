@@ -476,6 +476,25 @@
             </div>
           </div>
 
+          <!-- ── 外观主题(B13;切换即时生效并持久化;system = 移除 data-theme,CSS @media 接管) ── -->
+          <div class="settings-group settings-group--appearance">
+            <h3 class="settings-group-title" data-i18n="settings.groupAppearance">外观主题</h3>
+            <div class="setting-options">
+              <label class="setting-option">
+                <input type="radio" name="theme" value="system" checked />
+                <span data-i18n="settings.themeSystem">跟随系统</span>
+              </label>
+              <label class="setting-option">
+                <input type="radio" name="theme" value="light" />
+                <span data-i18n="settings.themeLight">浅色</span>
+              </label>
+              <label class="setting-option">
+                <input type="radio" name="theme" value="dark" />
+                <span data-i18n="settings.themeDark">深色</span>
+              </label>
+            </div>
+          </div>
+
           <p class="settings-note" data-i18n="settings.autoSaveNote">设置即时生效并自动保存</p>
         </div>
       </details>

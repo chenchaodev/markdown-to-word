@@ -58,6 +58,7 @@ import {
   presetSaveDialog,
   presetSaveOk,
   templatePresetSelect,
+  themeInputs,
   tocInput,
 } from "./dom.js";
 import { state } from "./state.js";
@@ -67,6 +68,7 @@ import { applyStaticTexts, setLanguage, t, type Language } from "../core/i18n.js
 // 单源 settings-panel(依赖方向单向:bindings → panel,不反向)
 import {
   applySettingsToControls,
+  applyTheme,
   clearPdfCss,
   closePresetSaveDialog,
   deleteCustomPreset,
@@ -339,6 +341,18 @@ export function bindSettingsEvents(): void {
       setStatus("");
       renderSelection();
       void state.recentRefreshHandler?.();
+    });
+  });
+
+  // B13:外观主题切换(radio;即时生效:data-theme 属性设/移除 + 持久化;
+  // system = 移除属性,CSS @media prefers-color-scheme 接管)
+  themeInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked || state.hydratingSettings) return;
+      const theme = input.value as AppSettings["theme"];
+      state.settings.theme = theme;
+      applyTheme(theme);
+      persistSettings({ theme });
     });
   });
 }

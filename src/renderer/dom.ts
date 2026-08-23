@@ -33,6 +33,10 @@ export const formatInputs = document.querySelectorAll<HTMLInputElement>(
 export const languageInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="language"]',
 );
+// B13:外观主题选择(system / light / dark radio)
+export const themeInputs = document.querySelectorAll<HTMLInputElement>(
+  'input[name="theme"]',
+);
 // 页面设置面板
 export const paperSelect = document.getElementById("paperSelect") as HTMLSelectElement;
 export const orientationInputs = document.querySelectorAll<HTMLInputElement>(

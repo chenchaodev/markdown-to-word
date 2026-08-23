@@ -23,6 +23,7 @@ import {
   removeCustomPresetByName,
   resolvePresetHint,
   resolvePresetSelection,
+  applyThemeOn,
   settingsToControlValues,
   validatePresetName,
 } from "./settings-logic.js";
@@ -55,6 +56,7 @@ import {
   presetSaveError,
   templatePresetHint,
   templatePresetSelect,
+  themeInputs,
   tocInput,
 } from "./dom.js";
 import { state } from "./state.js";
@@ -63,6 +65,16 @@ import { applyStaticTexts, setLanguage, t, type Language } from "../core/i18n.js
 
 /* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let presetSaveTrap: (() => void) | null = null;
+
+/**
+ * 外观主题应用到文档根元素(B13):显式 light/dark 设 data-theme,
+ * system 移除属性(CSS @media prefers-color-scheme 接管)。
+ * 契约计算在 settings-logic.applyThemeOn(纯函数,直测见 settings-logic 段),
+ * 本包装只注入 document.documentElement。
+ */
+export function applyTheme(theme: AppSettings["theme"]): void {
+  applyThemeOn(document.documentElement, theme);
+}
 
 /**
  * 语言镜像写 localStorage(B6 FOUC 缓解,最小方案):
@@ -95,6 +107,7 @@ export async function loadSettings(): Promise<void> {
   setLanguage(state.settings.language);
   mirrorLanguage(state.settings.language); // B6:镜像写 localStorage 供 lang-bootstrap.js 尽早读
   applyStaticTexts();
+  applyTheme(state.settings.theme); // B13:外观主题启动即应用(设/移除 data-theme)
   state.hydratingSettings = true;
   rebuildPresetOptions(); // 自定义预设选项先就位,再回填 select 值
   applySettingsToControls();
@@ -156,6 +169,10 @@ export function applySettingsToControls(): void {
   // i18n:界面语言 radio 回填(zh/en)
   languageInputs.forEach(
     (input) => (input.checked = input.value === v.language),
+  );
+  // B13:外观主题 radio 回填(system/light/dark)
+  themeInputs.forEach(
+    (input) => (input.checked = input.value === v.theme),
   );
   // 输出目录:空串显示「与源文件相同目录」
   outputDirValue.textContent = v.outputDirText;

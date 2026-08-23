@@ -17,6 +17,8 @@
  *   buildCustomPresetEntry(另存为预设快照)、removeCustomPresetByName(按名删除保序)、
  *   parseMarginValue(边距输入解析+钳制)、validateNumberRange(字号/行距范围校验)、
  *   settingsToControlValues(设置对象 → 控件回填值映射)
+ * - B13 新增:mergeSettingsWithDefaults/settingsToControlValues 的 theme 字段、
+ *   applyThemeOn(data-theme 属性应用纯函数:light/dark 设属性,system 移除属性)
  */
 import {
   DEFAULT_SETTINGS,
@@ -26,6 +28,7 @@ import {
 import {
   CUSTOM_PRESET_ID_PREFIX,
   allPresets,
+  applyThemeOn,
   buildCustomPresetEntry,
   clampMargin,
   customPresetNameFromId,
@@ -194,7 +197,16 @@ export async function run() {
     "typography 部分字段合并(显式覆盖 + 默认兜底)",
   );
   assert(mergeSettingsWithDefaults({}).outputDir === "", "空对象 → 全默认(outputDir 空串)");
-  console.log("[ok] mergeSettingsWithDefaults:完整透传/显式字段保留/缺字段默认兜底/部分字段合并 断言通过");
+  // B13:theme 缺失 → 默认 system;显式值保留
+  assert(
+    mergeSettingsWithDefaults({}).theme === "system",
+    "缺 theme → 默认 system(B13)",
+  );
+  assert(
+    mergeSettingsWithDefaults({ theme: "dark" }).theme === "dark",
+    "显式 theme=dark 应保留",
+  );
+  console.log("[ok] mergeSettingsWithDefaults:完整透传/显式字段保留/缺字段默认兜底/部分字段合并/theme 兜底 断言通过");
 
   // ---------- resolvePresetHint(批次 15 R2:回填 hint 计算) ----------
   const paperTplHint = TEMPLATE_PRESETS.find((p) => p.id === "paper").hint;
@@ -308,5 +320,41 @@ export async function run() {
   assert(leftCv.alignJustify === false, "align=left → checked=false");
   const emptyDirCv = settingsToControlValues(DEFAULT_SETTINGS);
   assert(emptyDirCv.outputDirText === "与源文件相同目录", "空输出目录 → 占位文案");
-  console.log("[ok] settingsToControlValues:全字段映射/数值转字符串/align 判定/输出目录文案 断言通过");
+  // B13:theme 映射(默认 system / 显式 dark)
+  assert(emptyDirCv.theme === "system", "theme 默认映射为 system");
+  const darkCv = settingsToControlValues({ ...DEFAULT_SETTINGS, theme: "dark" });
+  assert(darkCv.theme === "dark", "theme=dark 应原样映射");
+  console.log("[ok] settingsToControlValues:全字段映射/数值转字符串/align 判定/输出目录文案/theme 映射 断言通过");
+
+  // ---------- applyThemeOn(B13:data-theme 属性应用,DOM 无关直测) ----------
+  const makeTarget = () => {
+    const calls = [];
+    return {
+      calls,
+      setAttribute(name, value) { calls.push(["set", name, value]); },
+      removeAttribute(name) { calls.push(["remove", name]); },
+    };
+  };
+  // 显式 light/dark → 设 data-theme 属性
+  for (const theme of ["light", "dark"]) {
+    const target = makeTarget();
+    applyThemeOn(target, theme);
+    assert(
+      target.calls.length === 1 &&
+        target.calls[0][0] === "set" &&
+        target.calls[0][1] === "data-theme" &&
+        target.calls[0][2] === theme,
+      `theme=${theme} 应设 data-theme="${theme}"`,
+    );
+  }
+  // system → 移除 data-theme 属性(CSS @media prefers-color-scheme 接管)
+  const sysTarget = makeTarget();
+  applyThemeOn(sysTarget, "system");
+  assert(
+    sysTarget.calls.length === 1 &&
+      sysTarget.calls[0][0] === "remove" &&
+      sysTarget.calls[0][1] === "data-theme",
+    "theme=system 应移除 data-theme 属性",
+  );
+  console.log("[ok] applyThemeOn:light/dark 设属性/system 移除属性 断言通过");
 }

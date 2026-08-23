@@ -37,6 +37,7 @@ const AFTER_CONVERT_ACTIONS = ["none", "show-in-folder", "open"] as const;
 const PAPERS = ["A4", "A3", "A5", "Letter", "Legal"] as const;
 const ORIENTATIONS = ["portrait", "landscape"] as const;
 const ALIGNS = ["left", "justify"] as const;
+const THEMES = ["system", "light", "dark"] as const;
 const SETTING_KEYS = [
   "version",
   "format",
@@ -50,6 +51,7 @@ const SETTING_KEYS = [
   "customPresets",
   "pdfCss",
   "language",
+  "theme",
 ] as const;
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
@@ -97,6 +99,8 @@ export function isValidSettings(value: unknown): value is AppSettings {
   if ("pdfCss" in s && typeof s.pdfCss !== "string") return false;
   // language 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "zh";存在则须 zh/en
   if ("language" in s && s.language !== "zh" && s.language !== "en") return false;
+  // theme 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "system";存在则须枚举内值
+  if ("theme" in s && !isOneOf(s.theme, THEMES)) return false;
   const ps = s.pageSetup as Record<string, unknown> | undefined;
   if (typeof ps !== "object" || ps === null) return false;
   if (!isOneOf(ps.paper, PAPERS)) return false;
@@ -134,6 +138,8 @@ export function loadSettings(): AppSettings {
         pdfCss: typeof parsed.pdfCss === "string" ? parsed.pdfCss : DEFAULT_SETTINGS.pdfCss,
         // i18n:language 缺失(旧文件)→ "zh";存在 → 原样保留(zh/en 已过形状校验)
         language: parsed.language === "en" ? "en" : "zh",
+        // B13:theme 缺失(旧文件)→ "system";存在 → 原样保留(枚举已过形状校验)
+        theme: isOneOf(parsed.theme, THEMES) ? parsed.theme : DEFAULT_SETTINGS.theme,
         typography: sanitizeTypography(parsed.typography),
         // 批次 11 迭代 3:customPresets 缺失(旧文件)→ [];存在 → 逐条校验
         customPresets: sanitizeCustomPresets(parsed.customPresets),
@@ -212,6 +218,9 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
         break;
       case "language":
         out.language = src.language === "en" || src.language === "zh" ? src.language : DEFAULT_SETTINGS.language;
+        break;
+      case "theme":
+        out.theme = isOneOf(src.theme, THEMES) ? src.theme : DEFAULT_SETTINGS.theme;
         break;
     }
   }
