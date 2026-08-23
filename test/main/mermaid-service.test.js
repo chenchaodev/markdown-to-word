@@ -25,13 +25,27 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`mermaid-service 断言失败:${msg}`);
 }
 
-/** 临时替换 BrowserWindow.prototype.webContents getter(返回 fakeFactory(真实 wc));返回恢复函数 */
+/**
+ * 临时替换 BrowserWindow.prototype.webContents getter(返回 fakeFactory(真实 wc));返回恢复函数。
+ * B2 起窗口可能在补丁激活期间被重建(超时后销毁→下次渲染重建):fake 用 Proxy 把
+ * 未覆盖成员转发到真实 webContents——否则构造器内部与 hardenWebContents 访问
+ * setWindowOpenHandler/on 等方法会抛错,产生半初始化僵尸窗口。
+ * descriptor 一律 try/finally 恢复;本段与其他段同进程串行,不能污染原型。
+ */
 function patchWebContents(fakeFactory) {
   const descriptor = Object.getOwnPropertyDescriptor(BrowserWindow.prototype, "webContents");
   Object.defineProperty(BrowserWindow.prototype, "webContents", {
     configurable: true,
     get() {
-      return fakeFactory(descriptor.get.call(this));
+      const real = descriptor.get.call(this);
+      const fake = fakeFactory(real);
+      return new Proxy(fake, {
+        get(target, prop) {
+          if (prop in target) return target[prop];
+          const value = Reflect.get(real, prop);
+          return typeof value === "function" ? value.bind(real) : value;
+        },
+      });
     },
   });
   return () => Object.defineProperty(BrowserWindow.prototype, "webContents", descriptor);

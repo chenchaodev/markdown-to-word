@@ -121,7 +121,10 @@ function createWindow(): BrowserWindow {
   });
   mainWindow = win;
   hardenWebContents(win); // B1:导航收口(拒绝新窗口/页内跨文档导航,http(s) 外开系统浏览器)
-  void win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+  win.loadFile(path.join(__dirname, "..", "renderer", "index.html")).catch((err) => {
+    // B2:加载失败不再静默(此前 void 无 catch,失败进 unhandledRejection 黑洞)
+    console.error("[main] renderer index.html 加载失败:", err);
+  });
   // mermaid 渲染窗口为常驻隐藏单例:主窗口关闭时销毁,否则 window-all-closed 永不触发
   // (隐藏窗口未关 → 应用无法退出);服务懒重建,后续渲染不受影响
   win.on("closed", () => {
@@ -129,8 +132,15 @@ function createWindow(): BrowserWindow {
     disposeMermaidService();
   });
   // 批次 11:关闭时保存窗口位置(最大化/全屏不记录,恢复默认尺寸);
-  // preventDefault + 写盘完成后 destroy,保证退出前写入落盘(不丢状态)
+  // preventDefault + 写盘完成后 destroy,保证退出前写入落盘(不丢状态)。
+  // B2:转换进行中先拦截确认(直接销毁会令 send 抛 "Object has been destroyed",
+  // 且 fs.writeFile 后中断可能留下半成品输出文件)
   win.on("close", (event) => {
+    if (ctxByWebContents.has(win.webContents.id) && !closeAborts.has(win)) {
+      event.preventDefault();
+      void confirmCloseDuringConvert(win);
+      return;
+    }
     if (win.isMaximized() || win.isFullScreen()) return;
     const bounds = win.getBounds();
     event.preventDefault();
@@ -141,6 +151,40 @@ function createWindow(): BrowserWindow {
       .finally(() => win.destroy());
   });
   return win;
+}
+
+/** 已进入「放弃转换并关闭」流程的窗口(close 事件放行标记;防轮询期间重复弹确认)。 */
+const closeAborts = new WeakSet<BrowserWindow>();
+
+/** 放弃转换后等待 ctx 释放(finally 删除)再关窗;超时强杀防卡死。 */
+const CLOSE_ABORT_TIMEOUT_MS = 30_000;
+
+/**
+ * B2:关窗时转换进行中的确认弹窗。
+ * 「继续转换」→ 不动作(窗口保留);「放弃并关闭」→ cancel 转换并等 finally
+ * 释放 ctx(取消检查点在打印/写盘前后均有),正常路径重新 close;超时兜底 destroy。
+ */
+async function confirmCloseDuringConvert(win: BrowserWindow): Promise<void> {
+  if (win.isDestroyed()) return;
+  const choice = await dialog.showMessageBox(win, {
+    type: "warning",
+    title: t("close.confirmTitle"),
+    message: t("close.confirmMessage"),
+    buttons: [t("close.keepConverting"), t("close.abortAndClose")],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  if (choice.response !== 1 || win.isDestroyed()) return;
+  closeAborts.add(win);
+  const id = win.webContents.id;
+  ctxByWebContents.get(id)?.cancel();
+  const deadline = Date.now() + CLOSE_ABORT_TIMEOUT_MS;
+  while (ctxByWebContents.has(id) && Date.now() < deadline && !win.isDestroyed()) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (win.isDestroyed()) return;
+  if (ctxByWebContents.has(id)) win.destroy();
+  else win.close();
 }
 
 /**
@@ -194,7 +238,9 @@ function showPreviewError(win: BrowserWindow, message: string): void {
   p { font-size: 13px; color: #666; margin: 0; word-break: break-all; }
 </style></head>
 <body><div class="box"><h1>${t("preview.errorTitle")}</h1><p>${escapeHtml(message)}</p></div></body></html>`;
-  void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {
+    /* B2:错误页加载失败(窗口恰被关闭等),静默即可,无进一步动作可做 */
+  });
 }
 
 /**
@@ -204,9 +250,13 @@ function showPreviewError(win: BrowserWindow, message: string): void {
  */
 async function refreshPreviewWindow(entry: PreviewEntry): Promise<void> {
   if (entry.win.isDestroyed()) return;
+  // B2:新临时文件清理函数提升到 try 外——失败路径(stat/loadFile 中断)也能回收,
+  // 此前失败时新 tmp 引用丢失,临时 HTML 残留至进程退出
+  let newCleanup: (() => Promise<void>) | null = null;
   try {
     const html = await renderPreviewHtml(entry.mdPath);
     const tmp = await writeTempHtml(html);
+    newCleanup = tmp.cleanup;
     const oldCleanup = entry.cleanup;
     entry.cleanup = tmp.cleanup;
     // 渲染完成后再 stat:捕获渲染期间的最新 mtime,下次 focus 以新值对比
@@ -215,6 +265,7 @@ async function refreshPreviewWindow(entry: PreviewEntry): Promise<void> {
     await entry.win.loadFile(tmp.htmlPath);
     await oldCleanup(); // 旧临时文件已不再被引用
   } catch (err) {
+    await newCleanup?.().catch(() => undefined);
     showPreviewError(entry.win, errorMessage(err));
   }
 }
@@ -578,33 +629,61 @@ function buildAppMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-void app.whenReady().then(async () => {
-  // i18n:主进程语言来源 = 持久化设置(菜单/对话框标题/预览错误页按此语言)
-  setLanguage(loadSettings().language);
-  // B1:权限请求显式全拒(应用无相机/定位/通知等需求;默认拒绝之上显式声明,
-  // 防未来新增窗口/webview 类型时遗漏收口)
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-  buildAppMenu(); // 菜单先于窗口创建,窗口创建即带应用菜单(autoHideMenuBar 下 Alt 唤出)
-  registerIpc();
-  const win = createWindow();
-  // 渲染进程 console 错误转发到主进程输出(诊断用)
-  win.webContents.on("console-message", (_event, level, message) => {
-    console.log(`[renderer:${level}] ${message}`);
-  });
-  if (SMOKE) {
-    try {
-      await runSmoke(win);
-    } catch (err) {
-      console.error("[smoke] convert FAILED:", err);
-      app.exit(1);
+/* ---------- B2:进程级兜底(此前 rejection/异常静默进黑洞,排障无据) ---------- */
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+process.on("uncaughtException", (err) => {
+  // 桌面工具韧性优先:记录留痕不主动退出(状态不可续时用户可手动重启)
+  console.error("[uncaughtException]", err);
+});
+
+// B2:单实例锁——双开实例各自持有 settings/uiState 内存缓存与独立写队列,后写覆盖
+// 前写,用户感知为「预设和最近文件莫名其妙丢失」且无法归因。SMOKE 豁免:冒烟需与
+// 开发实例并存运行。
+if (!SMOKE && !app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    // 已有实例时再次启动 → 聚焦既有主窗口(无则重建,darwin 关窗驻留场景)
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createWindow();
       return;
     }
-    setTimeout(() => app.quit(), 500);
-  }
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
   });
-});
+
+  void app.whenReady().then(async () => {
+    // i18n:主进程语言来源 = 持久化设置(菜单/对话框标题/预览错误页按此语言)
+    setLanguage(loadSettings().language);
+    // B1:权限请求显式全拒(应用无相机/定位/通知等需求;默认拒绝之上显式声明,
+    // 防未来新增窗口/webview 类型时遗漏收口)
+    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+    buildAppMenu(); // 菜单先于窗口创建,窗口创建即带应用菜单(autoHideMenuBar 下 Alt 唤出)
+    registerIpc();
+    // B2:activate 先于首次 createWindow 注册(macOS 极早期 dock 点击不丢失)
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+    const win = createWindow();
+    // 渲染进程 console 错误转发到主进程输出(诊断用)
+    win.webContents.on("console-message", (_event, level, message) => {
+      console.log(`[renderer:${level}] ${message}`);
+    });
+    if (SMOKE) {
+      try {
+        await runSmoke(win);
+      } catch (err) {
+        console.error("[smoke] convert FAILED:", err);
+        app.exit(1);
+        return;
+      }
+      setTimeout(() => app.quit(), 500);
+    }
+  });
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

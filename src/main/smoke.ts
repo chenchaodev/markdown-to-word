@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
 import { convertImpl, mergeConvertImpl } from "./converter.js";
 import { getKatexDir } from "./katex-dir.js";
+import { t } from "../core/i18n.js";
 import { loadSettings, updateSettings } from "./settings.js";
 import { loadUiState, saveUiState } from "./ui-state.js";
 
@@ -82,11 +83,12 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
   );
   const origUi = loadUiState();
   await writeWithRetry(() => saveUiState({ lastSessionFiles: [] }), "ui-state 隔离写入");
-  // 批次 11 迭代 4:应用菜单守卫(文件/帮助;autoHideMenuBar 下 Alt 唤出,缺失即回归)
+  // 批次 11 迭代 4:应用菜单守卫(autoHideMenuBar 下 Alt 唤出,缺失即回归)。
+  // B2:文案经 t() 取值(与 buildAppMenu 同源),语言设置为 en 时不再误报
   const appMenu = Menu.getApplicationMenu();
   const menuLabels = appMenu?.items.map((item) => item.label) ?? [];
-  if (!appMenu || !menuLabels.includes("文件") || !menuLabels.includes("帮助")) {
-    throw new Error(`[smoke] 应用菜单缺失: ${JSON.stringify(menuLabels)}`);
+  if (!appMenu || !menuLabels.includes(t("menu.file")) || !menuLabels.includes(t("menu.help"))) {
+    throw new Error(`[smoke] 应用菜单缺失: ${JSON.stringify(menuLabels)}(期望 ${t("menu.file")}/${t("menu.help")})`);
   }
   const outDir = SMOKE_DIR;
   const sampleMd = path.join(outDir, "smoke-basic.md");
@@ -220,11 +222,11 @@ export async function runSmoke(win: BrowserWindow): Promise<void> {
       // 时按钮非禁用,该断言即失败,隔离失效可被立即发现
       if (
         diag.btnDisabledBefore !== true ||
-        diag.statusAfterClick !== "请先选择 Markdown 文件" ||
+        diag.statusAfterClick !== t("file.selectFirst") ||
         diag.statusIsError !== true
       ) {
         throw new Error(
-          `[smoke] renderer diag FAILED: 点击守卫断言 btnDisabledBefore=${diag.btnDisabledBefore}, statusAfterClick=${JSON.stringify(diag.statusAfterClick)}, statusIsError=${diag.statusIsError}(lastSessionFiles 未隔离或回归)`,
+          `[smoke] renderer diag FAILED: 点击守卫断言 btnDisabledBefore=${diag.btnDisabledBefore}, statusAfterClick=${JSON.stringify(diag.statusAfterClick)}(期望 ${t("file.selectFirst")}), statusIsError=${diag.statusIsError}(lastSessionFiles 未隔离或回归)`,
         );
       }
       // 批次 11 迭代 2:新增控件存在性守卫(缺失即回归)

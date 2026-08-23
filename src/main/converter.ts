@@ -64,7 +64,9 @@ export interface BatchResult {
   canceledCount: number;
 }
 
-/** 批量共享 imageResolver:按 baseDir 缓存,HTTP 去重缓存跨文件生效(转换后不清理,键为路径,无泄漏风险) */
+/** 批量共享 imageResolver:按 baseDir 缓存,HTTP 去重缓存跨文件生效。
+ *  B2:容量上限(超限淘汰最早条目)——长会话跨多目录使用时不再单调增长。 */
+const RESOLVER_CACHE_MAX = 16;
 const resolverCache = new Map<string, ImageResolver>();
 
 /**
@@ -159,6 +161,10 @@ export async function resolveOutputPath(
 export function getImageResolver(baseDir: string): ImageResolver {
   let resolver = resolverCache.get(baseDir);
   if (!resolver) {
+    if (resolverCache.size >= RESOLVER_CACHE_MAX) {
+      const oldest = resolverCache.keys().next().value;
+      if (oldest !== undefined) resolverCache.delete(oldest);
+    }
     resolver = createImageResolver(baseDir);
     resolverCache.set(baseDir, resolver);
   }
@@ -455,13 +461,12 @@ export async function mergeConvertImpl(
     await renderPdf(artifact, outputPath, ctx);
     onProgress?.("done");
   }
-  await runAfterConvert(settings.afterConvert, outputPath);
+  // B2:与 convertImpl 对齐尊重 skipAfterConvert(同抽象层行为一致)
+  if (!ctx.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
   return { ok: true, outputPath, warnings };
 }
 
-const MARKDOWN_EXT_RE = /\.(md|markdown)$/i;
-
-/**
+const MARKDOWN_EXT_RE = /\.(md|markdown)$/i;/**
  * 收集 markdown 路径:目录递归收集其下所有 .md/.markdown 文件(跳过点开头的目录,如 .git),
  * 文件直接保留;非 md 的传入路径进 skipped(目录内非 md 文件静默忽略,目录不列入 skipped)。
  * 结果按字典序排序(大小写不敏感);seen 集合防符号链接循环。
