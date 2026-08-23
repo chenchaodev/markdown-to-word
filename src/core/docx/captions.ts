@@ -1,8 +1,8 @@
 import type { Node, Root, Paragraph as MdParagraph } from "mdast";
 import { AlignmentType, Paragraph, TextRun } from "docx";
 import type { ParagraphChild } from "docx";
-import { collectPlainText } from "../mdast-utils.js";
-import { docxBookmarkId } from "../slug.js";
+import { collectPlainText } from "../util/mdast-utils.js";
+import { docxBookmarkId } from "../markdown/slug.js";
 import { wrapBookmark } from "./bookmark.js";
 import type { Ctx } from "./ctx.js";
 

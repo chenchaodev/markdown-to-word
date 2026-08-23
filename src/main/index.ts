@@ -11,7 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { convert, type ConvertFormat } from "../core/convert.js";
-import { decodeMarkdown } from "../core/encoding.js";
+import { decodeMarkdown } from "../core/util/encoding.js";
 import { createImageResolver } from "./image-downloader.js";
 import {
   baseNameFromMdPath,
@@ -58,7 +58,7 @@ import { getKatexDir } from "./katex-dir.js";
 import { disposeMermaidService, renderMermaid } from "./mermaid-service.js";
 import { runSmoke } from "./smoke.js";
 import { hardenWebContents } from "./web-hardening.js";
-import { escapeHtml } from "../core/utils.js";
+import { escapeHtml } from "../core/util/utils.js";
 import { setLanguage, t } from "../core/i18n.js";
 import { IPC_CHANNELS as CH, type ConvertMode } from "./ipc-channels.js";
 

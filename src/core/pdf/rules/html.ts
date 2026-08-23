@@ -4,7 +4,7 @@
  * 语义注释随代码搬移不精简。
  */
 import type MarkdownIt from "markdown-it";
-import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../html-whitelist.js";
+import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
 
 /**
  * 从 src 的 pos(`<` 处)起匹配一个完整白名单表达式(标签对可嵌套,br 可单独,

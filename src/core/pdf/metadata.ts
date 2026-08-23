@@ -3,7 +3,7 @@
  * 纯逻辑、零 Electron 依赖,便于单元测试;pdf-lib 负责解析/重存。
  */
 import { PDFDocument } from "pdf-lib";
-import type { DocMetadata } from "../frontmatter.js";
+import type { DocMetadata } from "../pipeline/frontmatter.js";
 
 /** 解析 frontmatter 日期字符串为 Date("YYYY-MM-DD" 或 ISO);失败返回 undefined */
 function parseDate(text: string): Date | undefined {

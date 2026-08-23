@@ -7,9 +7,9 @@
 import type { Root, Paragraph as MdParagraph } from "mdast";
 import { buildCaptionContext, type CaptionInfo } from "./captions.js";
 import { buildEquationContext, type EquationContext } from "./equations.js";
-import { collectPlainText } from "../mdast-utils.js";
-import { stripSecLabelSuffix } from "../cross-ref.js";
-import { docxBookmarkId } from "../slug.js";
+import { collectPlainText } from "../util/mdast-utils.js";
+import { stripSecLabelSuffix } from "../markdown/cross-ref.js";
+import { docxBookmarkId } from "../markdown/slug.js";
 import type { Ctx } from "./ctx.js";
 import type { TocEntry } from "./chrome.js";
 

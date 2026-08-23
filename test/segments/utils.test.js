@@ -1,11 +1,11 @@
 /**
- * 通用文本工具直测(批次 14 G5):src/core/utils.ts 单分支补齐。
+ * 通用文本工具直测(批次 14 G5):src/core/util/utils.ts 单分支补齐。
  * - decodeNumeric 非法码点(20-21 行):数值实体码点越界(> 0x10FFFF)返回原样不抛;
  *   合法码点正常解码(含增补平面代理对)。
  * - escapeRegExp(35-36 行):正则特殊字符全部转义,结果可安全字面匹配。
  * 纯函数段,无产物输出。
  */
-import { decodeEntities, escapeRegExp } from "../../dist/core/utils.js";
+import { decodeEntities, escapeRegExp } from "../../dist/core/util/utils.js";
 
 export async function run() {
   // decodeNumeric 非法码点:越界(0x110000 / 1114112)返回原样(不抛、不解码)

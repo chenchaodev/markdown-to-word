@@ -2,9 +2,9 @@
  * pdf Mermaid 占位替换(B8 拆分自 render.ts,行为零变化):
  * highlight 占位 → 内联 SVG / 降级代码块单源。语义注释随代码搬移不精简。
  */
-import { decodeEntities, escapeHtml } from "../utils.js";
+import { decodeEntities, escapeHtml } from "../util/utils.js";
 import type { ConvertWarning } from "../i18n.js";
-import type { MermaidResolver } from "../mermaid.js";
+import type { MermaidResolver } from "../markdown/mermaid.js";
 
 /**
  * Mermaid 占位替换(8c):扫描 highlight 回调产出的 <div class="mermaid">…</div>

@@ -11,7 +11,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 // 契约单源(B7):ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
-import type { ImageResolver } from "../core/image-resolver.js";
+import type { ImageResolver } from "../core/image/image-resolver.js";
 
 const HTTP_TIMEOUT_MS = 10_000;
 

@@ -11,7 +11,7 @@
  * - IPC 契约类型(BatchProgressInfo/BatchItem/BatchResult)同时被 dialogs/
  *   convert-flow/组合根引用,一并收敛于此
  */
-import { DEFAULT_SETTINGS, type AppSettings } from "../core/settings-defaults.js";
+import { DEFAULT_SETTINGS, type AppSettings } from "../core/settings/settings-defaults.js";
 import type { ConvertWarning } from "../core/i18n.js";
 import type { ConvertProgressPayload } from "../main/ipc-channels.js";
 import type { RecentFile } from "../main/ui-state.js";

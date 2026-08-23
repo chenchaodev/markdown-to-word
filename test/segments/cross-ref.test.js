@@ -32,7 +32,7 @@
  */
 import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n.js";
-import { DEFAULT_TYPOGRAPHY } from "../../dist/core/typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";

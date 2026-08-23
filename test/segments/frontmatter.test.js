@@ -1,5 +1,5 @@
 /**
- * frontmatter 解析测试(src/core/frontmatter.ts 纯逻辑;测试经 dist/core/frontmatter.js):
+ * frontmatter 解析测试(src/core/pipeline/frontmatter.ts 纯逻辑;测试经 dist/core/pipeline/frontmatter.js):
  * 实现事实(B3 守卫后):
  * - 仅当 md 首行(可带前后空格)为 `---` 才解析,到下一个 `---` 行(可带尾随空格/行尾)结束;
  *   `---` 不闭合 / 首行非 --- → 空 metadata + 原 md 为 body(不抛错、不丢内容)
@@ -10,7 +10,7 @@
  *   空值(含 `""` 剥离后)→ 不写入
  * - body = md.slice(match[0].length)(frontmatter 块整体剥除,含其后的换行)
  */
-import { parseFrontmatter } from "../../dist/core/frontmatter.js";
+import { parseFrontmatter } from "../../dist/core/pipeline/frontmatter.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`frontmatter 断言失败:${msg}`);

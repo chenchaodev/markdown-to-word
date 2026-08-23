@@ -6,7 +6,7 @@
  * BE 此前不识别,落 gb18030 分支产生乱码。
  */
 import iconv from "iconv-lite";
-import { decodeMarkdown } from "../../dist/core/encoding.js";
+import { decodeMarkdown } from "../../dist/core/util/encoding.js";
 
 export async function run() {
   const utf8NoBom = decodeMarkdown(Buffer.from("中文正文 hello", "utf8"));

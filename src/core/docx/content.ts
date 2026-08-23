@@ -17,7 +17,7 @@ import {
 import type { Blockquote, FootnoteDefinition, List, ListItem, PhrasingContent } from "mdast";
 import { CODE_FONT, CODE_SIZE, MUTED_TEXT_GRAY, QUOTE_BG_GRAY, RULE_GRAY } from "./theme.js";
 import { texToDocxMath } from "./math.js";
-import { isAllowedInlineHtml } from "../html-whitelist.js";
+import { isAllowedInlineHtml } from "../markdown/html-whitelist.js";
 import { inlineHtmlItemsToRuns, normalizeInlineHtml, parseInlineHtml } from "./inline-html.js";
 import { pushLinkRuns } from "./link-xref.js";
 import { imageToDocx } from "./image-run.js";

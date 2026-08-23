@@ -1,5 +1,5 @@
 import type { Node } from "mdast";
-import type { CommentNode } from "./comment.js";
+import type { CommentNode } from "../markdown/comment.js";
 
 /** 节点子树纯文本拼接(目录条目标题 / 题注前缀识别共用;样式标志剥除) */
 export function collectPlainText(node: Node): string {

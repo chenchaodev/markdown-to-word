@@ -18,7 +18,7 @@ import {
   type CustomPreset,
   type TemplatePreset,
   type ThemePreference,
-} from "../core/settings-defaults.js";
+} from "../core/settings/settings-defaults.js";
 import { t } from "../core/i18n.js";
 
 /** 自定义预设下拉 id 前缀(选中/删除判定与 id 解析共用)。 */

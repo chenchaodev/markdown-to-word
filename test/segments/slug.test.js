@@ -7,7 +7,7 @@
  *   追加 4 位 FNV 短哈希(35+1+4=40),防共享前缀的长标题书签碰撞跳转错位,
  *   且确定性(同输入同输出,交叉引用可对上)。
  */
-import { slugify, uniqueSlug, docxBookmarkId } from "../../dist/core/slug.js";
+import { slugify, uniqueSlug, docxBookmarkId } from "../../dist/core/markdown/slug.js";
 
 /** slug.ts 三函数单测 */
 export async function run() {

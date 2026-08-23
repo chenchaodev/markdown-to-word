@@ -14,7 +14,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { convert } from "../../dist/core/convert.js";
-import { DEFAULT_TYPOGRAPHY } from "../../dist/core/typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import {
   CODE_FONT,
   CODE_SIZE,

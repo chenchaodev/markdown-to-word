@@ -9,7 +9,7 @@
  * GFM 表格规则吞成表格行)。
  */
 import { convert } from "../../dist/core/convert.js";
-import { DEFAULT_TYPOGRAPHY } from "../../dist/core/typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";

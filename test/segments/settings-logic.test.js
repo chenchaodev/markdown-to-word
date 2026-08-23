@@ -24,7 +24,7 @@ import {
   DEFAULT_SETTINGS,
   MAX_CUSTOM_PRESETS,
   TEMPLATE_PRESETS,
-} from "../../dist/core/settings-defaults.js";
+} from "../../dist/core/settings/settings-defaults.js";
 import {
   CUSTOM_PRESET_ID_PREFIX,
   allPresets,

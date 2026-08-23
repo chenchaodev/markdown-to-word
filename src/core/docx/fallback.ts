@@ -7,8 +7,8 @@ import type { Html as MdHtml, Table as MdTable } from "mdast";
 import type { BlockContent } from "mdast";
 import type { KeyedWarning } from "../i18n.js";
 import { CODE_FONT, MUTED_TEXT_GRAY } from "./theme.js";
-import { collectPlainText } from "../mdast-utils.js";
-import { isAllowedInlineHtml } from "../html-whitelist.js";
+import { collectPlainText } from "../util/mdast-utils.js";
+import { isAllowedInlineHtml } from "../markdown/html-whitelist.js";
 import { renderInlineHtmlParagraph } from "./inline-html.js";
 import { warnDedup, type Ctx } from "./ctx.js";
 

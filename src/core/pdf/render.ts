@@ -17,19 +17,19 @@ import { tasklist } from "@mdit/plugin-tasklist";
 import { katex } from "@mdit/plugin-katex";
 import hljs from "highlight.js/lib/common";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
-import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings-defaults.js";
-import type { DocMetadata } from "../frontmatter.js";
-import type { TypographySettings } from "../typography.js";
-import { DEFAULT_TYPOGRAPHY } from "../typography.js";
+import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings/settings-defaults.js";
+import type { DocMetadata } from "../pipeline/frontmatter.js";
+import type { TypographySettings } from "../settings/typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../settings/typography.js";
 import type { ConvertWarning } from "../i18n.js";
 import { highlightFallbackWarning } from "../i18n.js";
-import type { MermaidResolver } from "../mermaid.js";
+import type { MermaidResolver } from "../markdown/mermaid.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
 // 契约单源(B7):ImageResolver 类型与交叉引用常量/正则族收敛 core 共享模块
-import type { ImageResolver } from "../image-resolver.js";
+import type { ImageResolver } from "../image/image-resolver.js";
 export type { ImageResolver };
-import { CROSS_REF_KINDS } from "../cross-ref.js";
+import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
 // 渲染规则(B8 拆分):按 rule 类别分文件,共享工具单源 rules/shared.ts
 import { overrideCaptionRule } from "./rules/caption.js";

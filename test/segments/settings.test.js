@@ -29,7 +29,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import { DEFAULT_PAGE_SETUP } from "../../dist/core/convert.js";
-import { DEFAULT_TYPOGRAPHY } from "../../dist/core/typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`settings 断言失败:${msg}`);

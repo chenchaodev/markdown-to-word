@@ -4,7 +4,7 @@
  * 渲染器包装(heading_open / paragraph_open 锚点注入)共用的底层工具单源。
  * 依赖方向单向:各规则模块 → 本模块 → core 共享模块(cross-ref),不反向。
  */
-import { kindLabelRegex } from "../../cross-ref.js";
+import { kindLabelRegex } from "../../markdown/cross-ref.js";
 
 /**
  * 容器深度跟踪器(B7 收敛 caption_recognize / eq_numbering / xref_recognize 三处

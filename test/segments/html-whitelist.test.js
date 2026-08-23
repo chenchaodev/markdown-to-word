@@ -4,7 +4,7 @@
  * - ALLOWED_INLINE_TAGS 集合完整性快照。
  * 双格式端到端一致性由 raw-html.test.js 覆盖,此段只验证共享实现本身。
  */
-import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../dist/core/html-whitelist.js";
+import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../dist/core/markdown/html-whitelist.js";
 
 export async function run() {
   const valid = [

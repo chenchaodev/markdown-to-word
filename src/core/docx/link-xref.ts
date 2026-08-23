@@ -6,9 +6,9 @@
 import { ExternalHyperlink, InternalHyperlink, TextRun } from "docx";
 import type { Link } from "mdast";
 import { LINK_COLOR } from "./theme.js";
-import { docxBookmarkId } from "../slug.js";
-import { collectPlainText } from "../mdast-utils.js";
-import { CROSS_REF_KINDS, type CrossRefKind } from "../cross-ref.js";
+import { docxBookmarkId } from "../markdown/slug.js";
+import { collectPlainText } from "../util/mdast-utils.js";
+import { CROSS_REF_KINDS, type CrossRefKind } from "../markdown/cross-ref.js";
 import { crossRefNotFoundWarning } from "../i18n.js";
 import { warnDedup, type Ctx, type InlineChild, type RunStyle } from "./ctx.js";
 

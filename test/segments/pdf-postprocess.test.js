@@ -107,7 +107,7 @@ export async function run() {
   }
 
   // ---- 4. B4:checkLocalImages 失败原因细分(ENOENT/EACCES → 独立文案,其他 → 兜底) ----
-  // 依据(src/core/image-warning.ts imageLoadFailureWarning):fs 错误码分类——
+  // 依据(src/core/image/image-warning.ts imageLoadFailureWarning):fs 错误码分类——
   // ENOENT → 「图片文件不存在」/ EACCES|EPERM → 「图片文件无访问权限」/ 其他 → 统一兜底;
   // 与 docx 侧 imageToDocx 同一构造器,行为对齐。
   {

@@ -17,7 +17,7 @@ import {
   MARGIN_MIN_MM,
   TEMPLATE_PRESETS,
   matchesPreset,
-} from "../../dist/core/settings-defaults.js";
+} from "../../dist/core/settings/settings-defaults.js";
 
 /** 由预设排版 + 页面设置构成一份完整设置(其余字段取默认值) */
 function settingsFromPreset(id, extra) {

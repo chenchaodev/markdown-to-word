@@ -1,12 +1,12 @@
 import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { remarkComment } from "./comment.js";
+import { remarkComment } from "../markdown/comment.js";
 import type { Node, Root, Heading } from "mdast";
-import { uniqueSlug } from "./slug.js";
-import { collectPlainText as collectText } from "./mdast-utils.js";
+import { uniqueSlug } from "../markdown/slug.js";
+import { collectPlainText as collectText } from "../util/mdast-utils.js";
 // 章节 label 正则族单源(B7):SEC_LABEL_RE 定义于 core/cross-ref.ts
-import { SEC_LABEL_RE } from "./cross-ref.js";
+import { SEC_LABEL_RE } from "../markdown/cross-ref.js";
 
 /**
  * mdast Data 为声明合并接口:扩展标题的 data.id(本模块解析时写入,

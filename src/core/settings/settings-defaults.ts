@@ -10,8 +10,8 @@
 import { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
 export { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
 // 仅类型导入(编译期擦除,不引入运行时依赖):Language 契约定义于 i18n.ts
-import type { Language } from "./i18n.js";
-export type { Language } from "./i18n.js";
+import type { Language } from "../i18n.js";
+export type { Language } from "../i18n.js";
 
 /** 转换格式 */
 export type ConvertFormat = "docx" | "pdf";

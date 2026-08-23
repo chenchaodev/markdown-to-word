@@ -11,7 +11,7 @@
  */
 import { AlignmentType, LineRuleType, Paragraph, TextRun } from "docx";
 import type { PhrasingContent } from "mdast";
-import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../html-whitelist.js";
+import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../markdown/html-whitelist.js";
 import { CODE_FONT } from "./theme.js";
 import type { Ctx, InlineChild } from "./ctx.js";
 

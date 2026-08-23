@@ -3,7 +3,7 @@
  * 单例隐藏 BrowserWindow 加载 mermaid.min.js(IIFE 产物 3.5MB,file:// 直用,规避 v11
  * ESM 动态 import 的模块 CORS),executeJavaScript 调页面内 renderMermaid:
  * initialize → parse 预检 → mermaid.render 拿 SVG → 注入 #graphDiv → fonts.ready →
- * canvas 2x 光栅化 PNG。类型契约见 src/core/mermaid.ts(单一来源)。
+ * canvas 2x 光栅化 PNG。类型契约见 src/core/markdown/mermaid.ts(单一来源)。
  * 降级:任何异常(语法错误/15s 超时/窗口崩溃)→ 返回 null,core 层负责降级渲染。
  * 超时经 renderMermaid 第二参数可注入(默认 15s,测试用短超时,对外契约不变)。
  * CSP(实测 2026-08-13):file:// 页面 CSP 生效,纯 `default-src 'none'` 会连 file://
@@ -16,7 +16,7 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { MermaidResult } from "../core/mermaid.js";
+import type { MermaidResult } from "../core/markdown/mermaid.js";
 import { getMermaidDir } from "./mermaid-dir.js";
 import { hardenWebContents } from "./web-hardening.js";
 import { writeTempHtml } from "./temp-html.js";

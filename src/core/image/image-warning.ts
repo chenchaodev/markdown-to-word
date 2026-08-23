@@ -6,7 +6,7 @@
  * src 取 markdown 原文(相对路径 / URL / 绝对路径),与用户输入一致,便于定位。
  * B6:返回 KeyedWarning(keyed 警告),fallback = 中文原文逐字保留(zh 行为等价)。
  */
-import type { KeyedWarning } from "./i18n.js";
+import type { KeyedWarning } from "../i18n.js";
 
 /** 生成统一警告:src 为图片在 markdown 中的原始引用 */
 export function imageLoadFailedWarning(src: string): KeyedWarning {

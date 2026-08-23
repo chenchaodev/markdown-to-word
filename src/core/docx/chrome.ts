@@ -13,7 +13,7 @@ import {
   TextRun,
 } from "docx";
 import { MUTED_TEXT_GRAY, SECONDARY_TEXT_GRAY } from "./theme.js";
-import type { DocMetadata } from "../frontmatter.js";
+import type { DocMetadata } from "../pipeline/frontmatter.js";
 
 /* ---------- chrome 版面常量(字号单位 half-points = pt × 2) ---------- */
 

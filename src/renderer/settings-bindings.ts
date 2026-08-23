@@ -14,7 +14,7 @@ import {
   MARGIN_MAX_MM as MARGIN_MAX,
   type AppSettings,
   type PageSetup,
-} from "../core/settings-defaults.js";
+} from "../core/settings/settings-defaults.js";
 import {
   allPresets,
   outputDirDisplayText,

@@ -14,7 +14,7 @@ import {
   TEMPLATE_PRESETS,
   type AppSettings,
   type PageSetup,
-} from "../core/settings-defaults.js";
+} from "../core/settings/settings-defaults.js";
 import {
   buildCustomPresetEntry,
   customPresetNameFromId,

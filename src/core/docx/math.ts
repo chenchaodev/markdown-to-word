@@ -30,7 +30,7 @@
  *   mstyle 仅 \color / \small 等特殊构造产出。
  */
 import katex from "katex";
-import { decodeEntities } from "../utils.js";
+import { decodeEntities } from "../util/utils.js";
 import {
   MathFraction,
   MathLimitLower,

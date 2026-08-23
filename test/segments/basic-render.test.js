@@ -10,7 +10,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parseMarkdown } from "../../dist/core/parse.js";
+import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
 import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n.js";
@@ -255,7 +255,7 @@ export async function run() {
   console.log("[ok] basic-render:webp 图片降级(warning + 占位文本,主样例不受影响)断言通过");
 
   // ---------- B3c:未知魔数图片跳过嵌入(sniffImageType null 化,imageToDocx 调用方处理) ----------
-  // 依据(src/core/image-type.ts):B3 起未知字节头返回 null(不再伪装 png),
+  // 依据(src/core/image/image-type.ts):B3 起未知字节头返回 null(不再伪装 png),
   // docx imageToDocx 收到 null → 追加「图片格式无法识别,已跳过」警告 + 占位文本。
   const unknownWarnings = [];
   const unknownBuffer = await renderDocx(parseMarkdown("![坏图](./junk.bin)"), {
@@ -349,7 +349,7 @@ export async function run() {
   console.log("[ok] basic-render:pdf 缺失图片警告(统一文案经 resolver 失败路径)断言通过");
 
   // ---------- B4:图片读取失败原因细分(imageLoadFailureWarning,docx/pdf 双侧) ----------
-  // 依据(src/core/image-warning.ts):resolver 抛出的 fs 错误按错误码分类——
+  // 依据(src/core/image/image-warning.ts):resolver 抛出的 fs 错误按错误码分类——
   // ENOENT → 「图片文件不存在」/ EACCES|EPERM → 「图片文件无访问权限」/
   // 其他或返回 null → 统一「图片加载失败」兜底。docx 与 pdf 行为对齐。
   const fsErr = (code, msg) => Object.assign(new Error(msg), { code });

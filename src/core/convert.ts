@@ -17,21 +17,21 @@
  *   → toc-caption.test.js
  * - 脚注:docx 写 footnotes.xml 部件;pdf 渲染为 HTML 脚注。→ footnotes.test.js
  */
-import { parseMarkdown } from "./parse.js";
-import { parseFrontmatter } from "./frontmatter.js";
-import type { DocMetadata } from "./frontmatter.js";
-import type { TypographySettings } from "./typography.js";
+import { parseMarkdown } from "./pipeline/parse.js";
+import { parseFrontmatter } from "./pipeline/frontmatter.js";
+import type { DocMetadata } from "./pipeline/frontmatter.js";
+import type { TypographySettings } from "./settings/typography.js";
 import type { ConvertWarning } from "./i18n.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml } from "./pdf/render.js";
 import { PDF_FOOTER_TEMPLATE } from "./pdf/template.js";
-import type { MermaidResolver } from "./mermaid.js";
+import type { MermaidResolver } from "./markdown/mermaid.js";
 // 契约单源(B7):ImageResolver 类型收敛 core/image-resolver.ts(仅类型导入)
-import type { ImageResolver } from "./image-resolver.js";
+import type { ImageResolver } from "./image/image-resolver.js";
 // 页面设置契约收敛于 settings-defaults.ts(单一来源),此处 re-export 保持既有导入面
 // (docx/pdf render、main settings、测试等历史 import 源不变)
-export { DEFAULT_PAGE_SETUP, type PageSetup } from "./settings-defaults.js";
-import type { PageSetup } from "./settings-defaults.js";
+export { DEFAULT_PAGE_SETUP, type PageSetup } from "./settings/settings-defaults.js";
+import type { PageSetup } from "./settings/settings-defaults.js";
 
 export type ConvertFormat = "docx" | "pdf";
 

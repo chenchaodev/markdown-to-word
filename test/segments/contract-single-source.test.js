@@ -13,7 +13,7 @@ import {
   SEC_LABEL_RE,
   kindLabelRegex,
   stripSecLabelSuffix,
-} from "../../dist/core/cross-ref.js";
+} from "../../dist/core/markdown/cross-ref.js";
 
 export async function run() {
   // ---- 恒等性:docx/pdf 两侧导入同源(同一对象引用) ----

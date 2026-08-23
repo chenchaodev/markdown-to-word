@@ -5,7 +5,7 @@
  */
 import path from "node:path";
 import type { ConvertFormat } from "../core/convert.js";
-import type { CustomPreset } from "../core/settings-defaults.js";
+import type { CustomPreset } from "../core/settings/settings-defaults.js";
 import { mergePresets, parsePresetsFile } from "./settings.js";
 import type { RecentFile } from "./ui-state.js";
 import type { ConvertContext } from "./converter.js";

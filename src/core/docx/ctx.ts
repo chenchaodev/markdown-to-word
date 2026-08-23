@@ -17,9 +17,9 @@ import type {
 } from "docx";
 import type { FootnoteDefinition } from "mdast";
 import type { ConvertWarning, KeyedWarning } from "../i18n.js";
-import type { TypographySettings } from "../typography.js";
-import type { MermaidResolver } from "../mermaid.js";
-import type { ImageResolver } from "../image-resolver.js";
+import type { TypographySettings } from "../settings/typography.js";
+import type { MermaidResolver } from "../markdown/mermaid.js";
+import type { ImageResolver } from "../image/image-resolver.js";
 import type { CaptionLabelInfo } from "./captions.js";
 
 /** 单次图片解析结果(B5 memo 缓存载体):data 为 null 表示失败,error 保留原始抛错

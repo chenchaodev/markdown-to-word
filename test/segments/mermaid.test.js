@@ -1,7 +1,7 @@
 /**
  * Mermaid 渲染 core 层契约测试(批次 10 功能 1,8c):
  * 注入 fake resolver 断言 core 层行为(真实渲染由 test/main/mermaid-service.test.js 覆盖),
- * 零依赖真实渲染。断言依据 src/core/mermaid.ts 契约与实现事实(勿臆测):
+ * 零依赖真实渲染。断言依据 src/core/markdown/mermaid.ts 契约与实现事实(勿臆测):
  *
  * 实现事实(2026-08-13 实测):
  * - docx 成功路径(docx/render.ts renderCode):mermaid 围栏 + resolver →

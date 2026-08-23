@@ -3,12 +3,12 @@
  * 外链图片内嵌(embedExternalImages,并发上限 EXTERNAL_IMAGE_CONCURRENCY)及辅助函数。
  * 自 pdf/render.ts 拆分(R3 行为等价重构,原注释与实现原样保留)。
  */
-import { decodeEntities, escapeHtml, escapeRegExp } from "../utils.js";
-import { mimeFromBuffer } from "../image-type.js";
-import { imageLoadFailedWarning, imageLoadFailureWarning, imageNotFoundWarning, unrecognizedImageWarning } from "../image-warning.js";
+import { decodeEntities, escapeHtml, escapeRegExp } from "../util/utils.js";
+import { mimeFromBuffer } from "../image/image-type.js";
+import { imageLoadFailedWarning, imageLoadFailureWarning, imageNotFoundWarning, unrecognizedImageWarning } from "../image/image-warning.js";
 import type { ConvertWarning } from "../i18n.js";
 import type { PdfHeading } from "./bookmarks.js";
-import type { ImageResolver } from "../image-resolver.js";
+import type { ImageResolver } from "../image/image-resolver.js";
 
 /**
  * 从渲染后正文提取 h1-h3 标题(id 由 overrideHeadingIdRule 生成,与正文锚点

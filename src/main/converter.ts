@@ -16,17 +16,17 @@ import {
   type ConvertFormat,
   type PdfArtifact,
 } from "../core/convert.js";
-import { decodeMarkdown } from "../core/encoding.js";
+import { decodeMarkdown } from "../core/util/encoding.js";
 import type { ConvertWarning } from "../core/i18n.js";
 import { t } from "../core/i18n.js";
-import { mergeMarkdowns } from "../core/merge.js";
+import { mergeMarkdowns } from "../core/pipeline/merge.js";
 import { buildBookmarkTree, injectBookmarks } from "../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../core/pdf/metadata.js";
 import { extractHeadings } from "../core/pdf/postprocess.js";
 import { createImageResolver } from "./image-downloader.js";
-import type { ImageResolver } from "../core/image-resolver.js";
+import type { ImageResolver } from "../core/image/image-resolver.js";
 import { renderMermaid } from "./mermaid-service.js";
-import type { MermaidResolver } from "../core/mermaid.js";
+import type { MermaidResolver } from "../core/markdown/mermaid.js";
 import { loadSettings, type AppSettings } from "./settings.js";
 import { hardenWebContents } from "./web-hardening.js";
 import { writeTempHtml } from "./temp-html.js";
@@ -202,7 +202,7 @@ export interface BuildConvertContextOptions {
   imageResolver: ImageResolver;
   /** KaTeX 资源目录(pdf 用;docx 走 MathML 不需要;main 入口层经 getKatexDir() 计算) */
   katexDir?: string;
-  /** Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,见 src/core/mermaid.ts) */
+  /** Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,见 src/core/markdown/mermaid.ts) */
   mermaidResolver?: MermaidResolver;
   /** PDF 渲染子阶段回调(B9:parse/inline/mermaid/katex,透传 core ConvertContext) */
   onStage?: (stage: string) => void;

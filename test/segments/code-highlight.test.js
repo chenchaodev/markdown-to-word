@@ -13,7 +13,7 @@
  *   3 行代码 → 2 个 <w:br/>。
  * - 解析失败/文本完整性校验失败 → null 降级(原等宽文本路径,行为不变)。
  */
-import { parseMarkdown } from "../../dist/core/parse.js";
+import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import hljs from "highlight.js/lib/common";

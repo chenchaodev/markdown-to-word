@@ -28,7 +28,7 @@
  * window.api 契约声明与初始化编排;设置控件绑定抽 settings-bindings.ts
  * (settings-panel 留加载/回填/持久化/预设弹窗交互)。
  */
-import { type AppSettings } from "../core/settings-defaults.js";
+import { type AppSettings } from "../core/settings/settings-defaults.js";
 import type { UiState } from "../main/ui-state.js";
 import { state } from "./state.js";
 import type { BatchProgressInfo, BatchResult, ConvertProgressPayload } from "./state.js";

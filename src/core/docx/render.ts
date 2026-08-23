@@ -45,18 +45,18 @@ import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } fro
 import { renderCode } from "./code-block.js";
 import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./inline-html.js";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
-import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings-defaults.js";
-import type { DocMetadata } from "../frontmatter.js";
-import type { TypographySettings } from "../typography.js";
-import { DEFAULT_TYPOGRAPHY } from "../typography.js";
-import { docxBookmarkId } from "../slug.js";
-import { isAllowedInlineHtml } from "../html-whitelist.js";
-import { stripSecLabelSuffix, CROSS_REF_KINDS } from "../cross-ref.js";
+import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings/settings-defaults.js";
+import type { DocMetadata } from "../pipeline/frontmatter.js";
+import type { TypographySettings } from "../settings/typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../settings/typography.js";
+import { docxBookmarkId } from "../markdown/slug.js";
+import { isAllowedInlineHtml } from "../markdown/html-whitelist.js";
+import { stripSecLabelSuffix, CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
 import type { ConvertWarning } from "../i18n.js";
-import type { MermaidResolver } from "../mermaid.js";
+import type { MermaidResolver } from "../markdown/mermaid.js";
 // 契约单源(B7):ImageResolver 类型收敛 core 共享模块(render.js 保持 re-export 兼容)
-import type { ImageResolver } from "../image-resolver.js";
+import type { ImageResolver } from "../image/image-resolver.js";
 export type { ImageResolver };
 
 export interface RenderOptions {

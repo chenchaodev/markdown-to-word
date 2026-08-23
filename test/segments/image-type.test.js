@@ -11,7 +11,7 @@ import {
   imageSizeFromBuffer,
   mimeFromBuffer,
   sniffImageType,
-} from "../../dist/core/image-type.js";
+} from "../../dist/core/image/image-type.js";
 
 /** 构造最小 PNG 文件头(签名 + 长度 + IHDR 块;仅前 24 字节,尺寸位于 offset 16/20) */
 function pngHeader(width, height) {

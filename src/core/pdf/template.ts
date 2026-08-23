@@ -2,15 +2,15 @@
  * PDF 模板集:页眉页脚模板(PDF_FOOTER_TEMPLATE)、文档模板 CSS(buildTemplateCss)、
  * KaTeX CSS 加载(loadKatexCss)、完整 HTML 模板(buildTemplate)、封面 HTML(buildCoverHtml)。
  * 自 pdf/render.ts 拆分(R3 行为等价重构,原注释语义与实现原样保留)。
- * escapeHtml/decodeEntities 已集中 src/core/utils.ts(R8 批 4 L3),此处 re-export 保持外部 import 兼容。
+ * escapeHtml/decodeEntities 已集中 src/core/util/utils.ts(R8 批 4 L3),此处 re-export 保持外部 import 兼容。
  */
 import path from "node:path";
 import { readFileSync } from "node:fs";
-import type { DocMetadata } from "../frontmatter.js";
-import type { TypographySettings } from "../typography.js";
-import type { PageSetup } from "../settings-defaults.js";
+import type { DocMetadata } from "../pipeline/frontmatter.js";
+import type { TypographySettings } from "../settings/typography.js";
+import type { PageSetup } from "../settings/settings-defaults.js";
 import type { ConvertWarning } from "../i18n.js";
-import { escapeHtml, decodeEntities } from "../utils.js";
+import { escapeHtml, decodeEntities } from "../util/utils.js";
 
 export { escapeHtml, decodeEntities };
 

@@ -8,7 +8,7 @@
  * 语义注释随代码搬移不精简;文案/占位见 CROSS_REF_KINDS,勿散落硬编码。
  */
 import type MarkdownIt from "markdown-it";
-import { CROSS_REF_KINDS, stripSecLabelSuffix, type CrossRefKind } from "../../cross-ref.js";
+import { CROSS_REF_KINDS, stripSecLabelSuffix, type CrossRefKind } from "../../markdown/cross-ref.js";
 import type { ConvertWarning } from "../../i18n.js";
 import { crossRefNotFoundWarning } from "../../i18n.js";
 import { attrDel, createDepthTracker, forEachRefLink, stripTrailingLabel, type LinkScanToken } from "./shared.js";

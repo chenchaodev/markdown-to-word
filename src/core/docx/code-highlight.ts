@@ -13,7 +13,7 @@ import { CODE_FONT, CODE_SIZE } from "./theme.js";
 // utils 版对该域逐形态与原实现结果逐一等价(含 "&amp;lt;" 等二次解码防护场景:
 // utils 命名实体先于 &amp; 解码 + 单遍语义一致);utils 版额外覆盖任意数值实体与
 // &nbsp;,为覆盖广者,完整性校验(解码拼接 === 原文)行为不变。
-import { decodeEntities } from "../utils.js";
+import { decodeEntities } from "../util/utils.js";
 
 /** GitHub Light 色板(docx 颜色大写无 #;与 pdf template.ts .hljs-* 一致) */
 const PALETTE: Record<string, { color?: string; italics?: boolean; bold?: boolean }> = {

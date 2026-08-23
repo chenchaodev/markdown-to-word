@@ -4,7 +4,7 @@
  * 语义注释随代码搬移不精简。
  */
 import type MarkdownIt from "markdown-it";
-import { uniqueSlug } from "../../slug.js";
+import { uniqueSlug } from "../../markdown/slug.js";
 import { attrDel } from "./shared.js";
 
 /** 标题 id(批次 2 锚点目录/内部跳转底座):seen 在渲染闭包内维护,按文档顺序去重。

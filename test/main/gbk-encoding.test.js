@@ -2,7 +2,7 @@
  * GBK 编码端到端(main 进程层;经 dist/main/converter.js,electron 环境):
  * 用 iconv-lite 写 GBK 编码的中文 markdown 文件 → convertImpl("docx") → 断言:
  * - warnings 含「已按 GBK 编码读取:文件编码非 UTF-8」(文案见 src/main/converter.ts
- *   convertImpl;触发链:src/core/encoding.ts decodeMarkdown 严格 UTF-8 校验失败 →
+ *   convertImpl;触发链:src/core/util/encoding.ts decodeMarkdown 严格 UTF-8 校验失败 →
  *   按 gb18030 解码标记 encoding="gbk")
  * - 产物 JSZip 解包 word/document.xml 含正确中文文本(GBK → gb18030 解码无损,无乱码)
  * 与 converter.test.js 同款卫生:tmpdir 独立目录,finally 整体删除;
