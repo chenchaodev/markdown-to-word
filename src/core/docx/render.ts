@@ -36,6 +36,7 @@ import type {
   Code,
   FootnoteDefinition,
   Heading,
+  Html as MdHtml,
   Image,
   List,
   ListItem,
@@ -52,9 +53,9 @@ import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo, type Cap
 import { buildEquationContext, type EquationContext } from "./equations.js";
 import { collectPlainText } from "../mdast-utils.js";
 import { sniffImageType, imageSizeFromBuffer } from "../image-type.js";
-import { imageLoadFailedWarning, unrecognizedImageWarning } from "../image-warning.js";
+import { imageLoadFailureWarning, unrecognizedImageWarning } from "../image-warning.js";
 import type { ConvertWarning, KeyedWarning } from "../i18n.js";
-import { crossRefNotFoundWarning } from "../i18n.js";
+import { crossRefNotFoundWarning, highlightFallbackWarning } from "../i18n.js";
 import { DEFAULT_PAGE_SETUP } from "../convert.js";
 import type { PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
@@ -716,6 +717,10 @@ async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
       } else if (child.type === "blockquote") {
         result.push(...(await renderBlockquote(child, ctx)));
       }
+      // B4:列表项内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
+      else if (child.type === "math" || child.type === "html" || child.type === "table") {
+        result.push(...(await renderContainerFallback(child, ctx, "列表")));
+      }
     }
   }
   return result;
@@ -749,7 +754,11 @@ async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
       });
     }
   }
-  const highlighted = highlightCodeRuns(node.value, node.lang ?? undefined);
+  // B4:语言已知但高亮失败(hljs 抛错/解析校验失败)→ 上报降级警告
+  // (无语言/未知语言的正常降级不警告);warnDedup 按语言去重
+  const highlighted = highlightCodeRuns(node.value, node.lang ?? undefined, (lang) => {
+    warnDedup(ctx, highlightFallbackWarning(lang));
+  });
   if (highlighted) {
     return new Paragraph({
       spacing: { before: 120, after: 120 },
@@ -783,6 +792,15 @@ async function renderBlockquote(node: Blockquote, ctx: Ctx): Promise<Paragraph[]
       );
     } else if (child.type === "blockquote") {
       paragraphs.push(...(await renderBlockquote(child, ctx)));
+    }
+    // B4:引用块内代码块此前静默丢弃 → 按代码块渲染(renderCode 既有路径)+ 警告
+    else if (child.type === "code") {
+      warnDedup(ctx, unsupportedBlockWarning("代码块", "引用块"));
+      paragraphs.push(await renderCode(child, ctx));
+    }
+    // B4:引用块内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
+    else if (child.type === "math" || child.type === "html" || child.type === "table") {
+      paragraphs.push(...(await renderContainerFallback(child, ctx, "引用块")));
     }
   }
   return paragraphs;
@@ -891,6 +909,70 @@ function formulaParseFailedWarning(tex: string): KeyedWarning {
     params: { tex },
     fallback: `公式解析失败,降级为 TeX 源码: ${tex}`,
   };
+}
+
+/**
+ * 容器内不支持块级的降级警告(B4 失败可见性):blockType/container 为中文类别词
+ * (推送期无法按显示语言翻译,en 文案保留插值定位,同 warn.crossRefNotFound 口径);
+ * 经 warnDedup 去重(同类型同容器只报一次)。
+ */
+function unsupportedBlockWarning(blockType: string, container: string): KeyedWarning {
+  return {
+    key: "warn.unsupportedBlockInContainer",
+    params: { blockType, container },
+    fallback: `${blockType} 在${container}内暂不支持,已降级为文本`,
+  };
+}
+
+/** 容器内降级文本段落:等宽灰字(与顶层公式解析失败降级同款样式) */
+function fallbackTextParagraph(text: string): Paragraph {
+  return new Paragraph({
+    children: [new TextRun({ text, font: CODE_FONT, color: "888888" })],
+  });
+}
+
+/** mdast math 节点(display 公式;经 remark-math/mdast-util-math 扩充进 BlockContent,
+ *  与 equations.ts 同一取型方式) */
+type MdMath = Extract<BlockContent, { type: "math" }>;
+
+/**
+ * B4:列表项/引用块内不完整支持的块级内容降级渲染(此前静默丢弃,内容丢失):
+ * - 公式(math)→ TeX 源码等宽灰字 + 警告;
+ * - html → 分页注释照常分页、白名单行内标签照常渲染,其余原样等宽文本 + 警告;
+ * - 表格 → 逐行文本段落(单元格纯文本以「 | 」连接)+ 警告。
+ * 代码块由调用方处理(列表内既有 renderCode 路径;引用块内补齐为同款)。
+ */
+async function renderContainerFallback(
+  node: MdMath | MdHtml | MdTable,
+  ctx: Ctx,
+  container: string,
+): Promise<Paragraph[]> {
+  switch (node.type) {
+    case "math":
+      warnDedup(ctx, unsupportedBlockWarning("公式", container));
+      return [fallbackTextParagraph(node.value)];
+    case "html": {
+      const value = node.value.trim();
+      if (value === "<!-- page-break -->") {
+        return [new Paragraph({ children: [new PageBreak()] })];
+      }
+      if (isAllowedInlineHtml(value)) {
+        return [renderInlineHtmlParagraph(node.value, ctx)];
+      }
+      warnDedup(ctx, unsupportedBlockWarning("HTML", container));
+      return [fallbackTextParagraph(node.value)];
+    }
+    case "table": {
+      warnDedup(ctx, unsupportedBlockWarning("表格", container));
+      return node.children.map((row) =>
+        new Paragraph({
+          children: [
+            new TextRun({ text: row.children.map((cell) => collectPlainText(cell)).join(" | ") }),
+          ],
+        }),
+      );
+    }
+  }
 }
 
 async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, style: RunStyle): Promise<void> {
@@ -1108,15 +1190,17 @@ function scaleToFit(width: number, height: number): { width: number; height: num
 /** 行内图片:经 resolver 加载为 ImageRun;失败或 webp 时占位文本。
  *  尺寸规则:能解析出 PNG/JPEG 尺寸时,宽 ≤ 400 原尺寸(不放大),宽 > 400 等比缩到
  *  400 宽;无法解析尺寸(其他格式/畸形数据)→ 400×300 兜底。
- *  M6:本地缺失与外链下载失败统一经 resolver 失败路径告警(单次 IO),
- *  文案 imageLoadFailedWarning(三处统一,见 core/image-warning.ts)。 */
+ *  M6:本地缺失与外链下载失败统一经 resolver 失败路径告警(单次 IO);
+ *  B4:按 fs 错误码细分文案(imageLoadFailureWarning,见 core/image-warning.ts)。 */
 async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<InlineChild> {
   const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: "808080", ...style });
   const isExternal = /^https?:/i.test(node.url);
-  // 失败统一告警:本地(缺失/不可读)与外链(下载失败)同一文案;
-  // 无 resolver 时本地无从检查(不做 stat 预扫),仅外链可判定失败
+  // B4:失败原因细分——resolver 抛出的 fs 错误按错误码分类(ENOENT → 不存在 /
+  // EACCES|EPERM → 无权限 / 其他或返回 null → 统一「图片加载失败」兜底);
+  // 无 resolver 时本地无从检查(不做 stat 预扫),仅外链可判定失败(统一文案)
+  let lastError: unknown;
   const warnFail = (): void => {
-    if (ctx.imageResolver || isExternal) ctx.warnings?.push(imageLoadFailedWarning(node.url));
+    if (ctx.imageResolver || isExternal) ctx.warnings?.push(imageLoadFailureWarning(node.url, lastError));
   };
   if (!ctx.imageResolver) {
     warnFail();
@@ -1125,8 +1209,9 @@ async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<Inli
   let data: Buffer | null;
   try {
     data = await ctx.imageResolver(node.url);
-  } catch {
+  } catch (err) {
     data = null;
+    lastError = err;
   }
   if (!data) {
     warnFail();

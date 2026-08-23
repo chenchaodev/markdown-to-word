@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import type { DocMetadata } from "../frontmatter.js";
 import type { TypographySettings } from "../typography.js";
 import type { PageSetup } from "../settings-defaults.js";
+import type { ConvertWarning } from "../i18n.js";
 import { escapeHtml, decodeEntities } from "../utils.js";
 
 export { escapeHtml, decodeEntities };
@@ -199,8 +200,9 @@ ${typography.align === "justify" ? `
 /** KaTeX CSS 内联:读 katex.min.css,把相对字体引用改写为 file:// 绝对路径
  *  (katex.min.css 用 url(fonts/X.woff2),fonts 与 css 必须同级,file:// 下相对
  *  路径按 html 文件位置解析会失败,须绝对化),并追加打印/超宽保护规则。
- *  读取失败返回空串(公式仍渲染为 KaTeX HTML,仅缺字体样式,不抛错)。 */
-export function loadKatexCss(katexDir: string): string {
+ *  读取失败返回空串(公式仍渲染为 KaTeX HTML,仅缺字体样式,不抛错);
+ *  B4:传入 warnings 时经 keyed 警告通道上报失败原因(warn.katexCssLoadFailed)。 */
+export function loadKatexCss(katexDir: string, warnings?: ConvertWarning[]): string {
   try {
     const fontsBase = path.join(katexDir, "fonts").replace(/\\/g, "/");
     const css = readFileSync(path.join(katexDir, "katex.min.css"), "utf8");
@@ -210,7 +212,13 @@ export function loadKatexCss(katexDir: string): string {
       "body { print-color-adjust: exact; }\n" +
       ".katex-display { max-width: 100%; overflow-x: auto; }\n"
     );
-  } catch {
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    warnings?.push({
+      key: "warn.katexCssLoadFailed",
+      params: { error: reason },
+      fallback: `KaTeX 样式加载失败,公式字体样式缺失: ${reason}`,
+    });
     return "";
   }
 }

@@ -103,4 +103,29 @@ export async function run() {
     }
     console.log("[ok] postprocess:checkLocalImages catch(抛错)/null 统一警告 + 成功/无 resolver 不警告");
   }
+
+  // ---- 4. B4:checkLocalImages 失败原因细分(ENOENT/EACCES → 独立文案,其他 → 兜底) ----
+  // 依据(src/core/image-warning.ts imageLoadFailureWarning):fs 错误码分类——
+  // ENOENT → 「图片文件不存在」/ EACCES|EPERM → 「图片文件无访问权限」/ 其他 → 统一兜底;
+  // 与 docx 侧 imageToDocx 同一构造器,行为对齐。
+  {
+    const warnings = [];
+    const resolver = async (src) => {
+      if (src === "gone.png") throw Object.assign(new Error("enoent"), { code: "ENOENT" });
+      if (src === "locked.png") throw Object.assign(new Error("eacces"), { code: "EACCES" });
+      throw new Error("boom"); // 无错误码 → 统一「图片加载失败」兜底
+    };
+    await checkLocalImages(["gone.png", "locked.png", "other.png"], resolver, warnings);
+    const texts = warnings.map((w) => formatWarning(w));
+    for (const expected of [
+      "图片文件不存在: gone.png",
+      "图片文件无访问权限: locked.png",
+      "图片加载失败: other.png",
+    ]) {
+      if (!texts.includes(expected)) {
+        throw new Error(`postprocess 断言失败:checkLocalImages 缺少细分警告「${expected}」,warnings=${JSON.stringify(warnings)}`);
+      }
+    }
+    console.log("[ok] postprocess:B4 checkLocalImages 失败原因细分(ENOENT/EACCES/兜底)断言通过");
+  }
 }

@@ -21,7 +21,7 @@ import { uniqueSlug } from "../slug.js";
 import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../html-whitelist.js";
 import { decodeEntities, escapeHtml } from "../utils.js";
 import type { ConvertWarning } from "../i18n.js";
-import { crossRefNotFoundWarning } from "../i18n.js";
+import { crossRefNotFoundWarning, highlightFallbackWarning } from "../i18n.js";
 import type { MermaidResolver } from "../mermaid.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
@@ -94,6 +94,7 @@ function buildMarkdownIt(
   headingNumbering: boolean,
   captionNumbering: boolean,
   equationNumbering: boolean,
+  warnings: ConvertWarning[],
 ): MarkdownIt {
   const md = new MarkdownIt({
     html: true,
@@ -116,7 +117,8 @@ function buildMarkdownIt(
             "</code></pre>"
           );
         } catch {
-          /* 语言包异常时回退转义输出 */
+          // B4:语言包异常时回退转义输出 + 上报降级警告(与 docx 侧同 key 同文案口径)
+          warnings.push(highlightFallbackWarning(lang));
         }
       }
       return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code></pre>`;
@@ -724,11 +726,14 @@ export async function renderPdfHtml(
   const headingNumbering = options.headingNumbering ?? typography.headingNumbering;
   const captionNumbering = options.captionNumbering ?? typography.captionNumbering;
   const equationNumbering = options.equationNumbering ?? true;
+  // B4:warnings 提前创建——buildMarkdownIt 的 highlight 回调需经此上报高亮降级警告
+  const warnings: ConvertWarning[] = options.warnings ?? [];
   const md = buildMarkdownIt(
     options.mermaidResolver !== undefined,
     headingNumbering,
     captionNumbering,
     equationNumbering,
+    warnings,
   );
   const localImageSrcs: string[] = [];
   overrideImageRule(md, options.baseDir, localImageSrcs);
@@ -736,7 +741,6 @@ export async function renderPdfHtml(
   overrideHeadingIdRule(md, new Map<string, number>());
   // 标题优先级:frontmatter metadata.title > options.title
   const title = options.metadata?.title ?? options.title ?? "文档";
-  const warnings: ConvertWarning[] = options.warnings ?? [];
   // warnings 经 env 注入 core 规则(eq_numbering 未知公式标签提示用;脚注插件
   // 对 env.footnotes 惰性初始化,传入额外键无副作用)
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource, { warnings }));
@@ -762,6 +766,6 @@ export async function renderPdfHtml(
       captionNumbering,
       /<h1[\s>]/i.test(bodyHtml),
     ) + (options.pdfCss ? `\n${options.pdfCss}` : ""),
-    options.katexDir ? loadKatexCss(options.katexDir) : "",
+    options.katexDir ? loadKatexCss(options.katexDir, warnings) : "",
   );
 }

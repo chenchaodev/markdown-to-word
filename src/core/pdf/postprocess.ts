@@ -5,7 +5,7 @@
  */
 import { decodeEntities, escapeHtml, escapeRegExp } from "../utils.js";
 import { mimeFromBuffer } from "../image-type.js";
-import { imageLoadFailedWarning, unrecognizedImageWarning } from "../image-warning.js";
+import { imageLoadFailedWarning, imageLoadFailureWarning, unrecognizedImageWarning } from "../image-warning.js";
 import type { ConvertWarning } from "../i18n.js";
 import type { PdfHeading } from "./bookmarks.js";
 import type { ImageResolver } from "./render.js";
@@ -50,9 +50,10 @@ const EXTERNAL_IMAGE_CONCURRENCY = 3;
 /**
  * 本地图片存在性检查(M6:并入 imageResolver 失败路径,替代 convert 层 stat 预扫,单次 IO):
  * 对渲染期间收集的本地图片 src(render.ts overrideImageRule 提供,保持 markdown 原文),
- * 经 imageResolver 判定——返回 null 或抛错 = 缺失/不可读,追加统一文案警告
- * (imageLoadFailedWarning);成功不改变 HTML(file:// src 由 Chromium 渲染,不做二次 IO)。
- * 仅当注入 resolver 时执行(pdf 渲染本身不依赖 resolver)。
+ * 经 imageResolver 判定——返回 null 或抛错 = 缺失/不可读,追加警告
+ * (B4:抛错按 fs 错误码细分 ENOENT/EACCES|EPERM,其余与 null 走统一兜底文案,
+ * 见 core/image-warning.ts imageLoadFailureWarning);成功不改变 HTML
+ * (file:// src 由 Chromium 渲染,不做二次 IO)。仅当注入 resolver 时执行。
  */
 export async function checkLocalImages(
   srcs: readonly string[],
@@ -63,12 +64,14 @@ export async function checkLocalImages(
   await Promise.all(
     [...new Set(srcs)].map(async (src) => {
       let ok = false;
+      let lastError: unknown;
       try {
         ok = (await resolver(src)) !== null;
-      } catch {
+      } catch (err) {
         ok = false;
+        lastError = err;
       }
-      if (!ok) warnings.push(imageLoadFailedWarning(src));
+      if (!ok) warnings.push(imageLoadFailureWarning(src, lastError));
     }),
   );
 }

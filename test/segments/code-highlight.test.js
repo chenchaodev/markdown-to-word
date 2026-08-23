@@ -15,6 +15,8 @@
  */
 import { parseMarkdown } from "../../dist/core/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
+import { formatWarning } from "../../dist/core/i18n.js";
+import hljs from "highlight.js/lib/common";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 
@@ -108,6 +110,31 @@ export async function run() {
     }
   }
   console.log("[ok] code-highlight:文本完整(高亮拆分后原文各片段均在)断言通过");
+
+  // ---- 6. B4:语言已知但 hljs 高亮抛错 → 降级等宽 + warn.highlightFallback 警告 ----
+  // 依据(src/core/docx/code-highlight.ts):getLanguage 命中后 highlight 抛错(语言包
+  // 异常)→ onFallback(lang) 回调 + null;renderCode 经回调上报 keyed 警告并降级等宽文本。
+  // 触发方式与 basic-render pdf 侧一致(注册编译期即抛错的坏语言,用后注销)。
+  hljs.registerLanguage("broken", () => ({ match: "x", begin: /y/ }));
+  try {
+    const brokenWarnings = [];
+    const brokenBuffer = await renderDocx(parseMarkdown("```broken\nif (a < b) {}\n```\n"), {
+      warnings: brokenWarnings,
+    });
+    const brokenXml = await unzipPart(brokenBuffer, "word/document.xml");
+    if (!brokenWarnings.some((w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken")) {
+      throw new Error(`code-highlight 断言失败:hljs 抛错未产生高亮降级警告,warnings=${JSON.stringify(brokenWarnings)}`);
+    }
+    if (!brokenXml.includes("if (a &lt; b) {}")) {
+      throw new Error("code-highlight 断言失败:hljs 抛错降级后代码文本缺失");
+    }
+    if (brokenXml.includes("<w:color")) {
+      throw new Error("code-highlight 断言失败:hljs 抛错降级不应有高亮色(<w:color)");
+    }
+    console.log("[ok] code-highlight:B4 hljs 抛错降级等宽 + 高亮降级警告 断言通过");
+  } finally {
+    hljs.unregisterLanguage("broken");
+  }
 
   await saveArtifact("code-highlight", { docx: buffer });
 }

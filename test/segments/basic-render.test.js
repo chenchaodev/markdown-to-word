@@ -348,6 +348,37 @@ export async function run() {
   }
   console.log("[ok] basic-render:pdf 缺失图片警告(统一文案经 resolver 失败路径)断言通过");
 
+  // ---------- B4:图片读取失败原因细分(imageLoadFailureWarning,docx/pdf 双侧) ----------
+  // 依据(src/core/image-warning.ts):resolver 抛出的 fs 错误按错误码分类——
+  // ENOENT → 「图片文件不存在」/ EACCES|EPERM → 「图片文件无访问权限」/
+  // 其他或返回 null → 统一「图片加载失败」兜底。docx 与 pdf 行为对齐。
+  const fsErr = (code, msg) => Object.assign(new Error(msg), { code });
+  for (const fmt of ["docx", "pdf"]) {
+    const enoentWarnings = [];
+    await convert("![缺图](missing-img.png)", fmt, {
+      baseDir: FIXTURES_DIR,
+      imageResolver: async () => {
+        throw fsErr("ENOENT", "ENOENT: no such file or directory");
+      },
+      warnings: enoentWarnings,
+    });
+    if (!enoentWarnings.some((w) => formatWarning(w) === "图片文件不存在: missing-img.png")) {
+      throw new Error(`basic-render 断言失败:${fmt} ENOENT 未细分为「图片文件不存在」,warnings=${JSON.stringify(enoentWarnings)}`);
+    }
+    const eaccesWarnings = [];
+    await convert("![缺图](missing-img.png)", fmt, {
+      baseDir: FIXTURES_DIR,
+      imageResolver: async () => {
+        throw fsErr("EACCES", "EACCES: permission denied");
+      },
+      warnings: eaccesWarnings,
+    });
+    if (!eaccesWarnings.some((w) => formatWarning(w) === "图片文件无访问权限: missing-img.png")) {
+      throw new Error(`basic-render 断言失败:${fmt} EACCES 未细分为「图片文件无访问权限」,warnings=${JSON.stringify(eaccesWarnings)}`);
+    }
+  }
+  console.log("[ok] basic-render:B4 图片失败原因细分(ENOENT/EACCES 独立文案,docx/pdf 对齐)断言通过");
+
   // ---------- G8 补齐:convert warnings ?? [] 兜底(convert.ts:67) ----------
   // 依据(dist/core/convert.ts):context.warnings 缺省时内部兜底为空数组,转换不抛错;
   // 缺失图片等警告路径在无 warnings 收集器时静默(不崩溃)。
@@ -388,9 +419,11 @@ export async function run() {
   // 注入(与 render.ts 同一模块单例);用后 unregister 清理,不影响其他断言。
   hljs.registerLanguage("broken", () => ({ match: "x", begin: /y/ }));
   try {
+    // B4:高亮降级警告(warn.highlightFallback,与 docx 侧同 key 同文案口径)
+    const brokenPdfWarnings = [];
     const brokenPdf = await convert("```broken\nif (a < b && c > d) {}\n```\n", "pdf", {
       baseDir: FIXTURES_DIR,
-      warnings: [],
+      warnings: brokenPdfWarnings,
     });
     if (!brokenPdf.html.includes('<pre class="hljs"><code>if (a &lt; b &amp;&amp; c &gt; d) {}\n</code></pre>')) {
       throw new Error("basic-render 断言失败:hljs 抛错未回退转义输出(期望 escapeHtml 兜底)");
@@ -398,7 +431,10 @@ export async function run() {
     if (brokenPdf.html.includes('<span class="hljs-keyword">')) {
       throw new Error("basic-render 断言失败:hljs 抛错回退不应含 token 类 span(未走 highlight)");
     }
-    console.log("[ok] basic-render:hljs.highlight 抛错回退转义输出(render.ts:109-110)断言通过");
+    if (!brokenPdfWarnings.some((w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken")) {
+      throw new Error(`basic-render 断言失败:pdf hljs 抛错未产生高亮降级警告,warnings=${JSON.stringify(brokenPdfWarnings)}`);
+    }
+    console.log("[ok] basic-render:hljs.highlight 抛错回退转义输出 + 高亮降级警告(render.ts)断言通过");
   } finally {
     hljs.unregisterLanguage("broken");
   }
@@ -422,6 +458,74 @@ export async function run() {
     throw new Error("basic-render 断言失败:脚注内 thematicBreak 缺少下边框(renderThematicBreak)");
   }
   console.log("[ok] basic-render:脚注定义内 blockquote/thematicBreak 渲染断言通过");
+
+  // ---------- B4:列表项/引用块内不支持的块级内容降级渲染 + 警告(render.ts) ----------
+  // 依据(src/core/docx/render.ts):列表项内 display 公式/html/表格、引用块内代码块/
+  // display 公式/html/表格此前静默丢弃(内容丢失);B4 起按既有降级线转文本
+  // (公式 → TeX 源码等宽灰字 / 表格 → 逐行文本段落 / 代码块 → 等宽文本代码块 /
+  // 白名单外 html → 原样文本)+ keyed 警告(warn.unsupportedBlockInContainer,
+  // 经 warnDedup 按 类型+容器 去重)。
+  const containerWarnings = [];
+  const containerMd = [
+    "# 容器降级",
+    "",
+    "- 列表项含公式",
+    "",
+    "  $$",
+    "  E = mc^2",
+    "  $$",
+    "",
+    "- 列表项含表格",
+    "",
+    "  | a | b |",
+    "  | --- | --- |",
+    "  | 1 | 2 |",
+    "",
+    "> 引用含代码",
+    ">",
+    "> ```",
+    "> code-in-quote",
+    "> ```",
+    "",
+    "> 引用含 HTML",
+    ">",
+    "> <div>bad-html</div>",
+    "",
+  ].join("\n");
+  const containerBuffer = await renderDocx(parseMarkdown(containerMd), { warnings: containerWarnings });
+  const containerXml = await unzipPart(containerBuffer, "word/document.xml");
+  // 降级产物断言:内容不丢失
+  if (!containerXml.includes("E = mc^2")) {
+    throw new Error("basic-render 断言失败:列表内 display 公式未降级为 TeX 源码文本(E = mc^2 缺失)");
+  }
+  if (!containerXml.includes('<w:color w:val="888888"/>')) {
+    throw new Error("basic-render 断言失败:容器内公式/html 降级文本缺少等宽灰字(w:color 888888)");
+  }
+  for (const row of ["a | b", "1 | 2"]) {
+    if (!containerXml.includes(row)) {
+      throw new Error(`basic-render 断言失败:列表内表格未降级为逐行文本段落(缺少「${row}」)`);
+    }
+  }
+  if (!containerXml.includes("code-in-quote")) {
+    throw new Error("basic-render 断言失败:引用块内代码块未渲染(code-in-quote 缺失)");
+  }
+  if (!containerXml.includes("&lt;div&gt;bad-html&lt;/div&gt;")) {
+    throw new Error("basic-render 断言失败:引用块内白名单外 html 未降级为原样文本");
+  }
+  // 警告文案断言(formatWarning 格式化后逐字匹配)
+  const expectContainerWarn = (text) =>
+    containerWarnings.some((w) => formatWarning(w) === text);
+  for (const text of [
+    "公式 在列表内暂不支持,已降级为文本",
+    "表格 在列表内暂不支持,已降级为文本",
+    "代码块 在引用块内暂不支持,已降级为文本",
+    "HTML 在引用块内暂不支持,已降级为文本",
+  ]) {
+    if (!expectContainerWarn(text)) {
+      throw new Error(`basic-render 断言失败:warnings 缺少容器降级警告「${text}」,warnings=${JSON.stringify(containerWarnings)}`);
+    }
+  }
+  console.log("[ok] basic-render:B4 容器内不支持块级降级渲染(公式/表格/代码块/html)+ 警告 断言通过");
 
   await saveArtifact("basic-render", { docx: buffer });
 }

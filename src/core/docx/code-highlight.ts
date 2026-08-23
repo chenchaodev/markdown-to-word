@@ -88,13 +88,21 @@ function makeRun(text: string, cls: string | undefined): TextRun {
  * 将代码块渲染为带语法高亮的 TextRun 序列;不可高亮时返回 null。
  * 换行 \n 拆行:每行一个 TextRun,行间 TextRun({ text: "", break: 1 }),
  * 与 renderCode 原等宽文本路径的换行结构一致。
+ * B4:onFallback 为可选回调,仅在「语言已知但高亮失败」(hljs.highlight 抛错 /
+ * 解析异常 / 完整性校验失败)时以语言名调用——无语言/未知语言的正常降级不回调;
+ * 调用方(renderCode)经此上报 warn.highlightFallback 警告。纯模块不持有 warnings。
  */
-export function highlightCodeRuns(code: string, lang: string | undefined): TextRun[] | null {
+export function highlightCodeRuns(
+  code: string,
+  lang: string | undefined,
+  onFallback?: (lang: string) => void,
+): TextRun[] | null {
   if (!lang || !hljs.getLanguage(lang)) return null;
   let html: string;
   try {
     html = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
   } catch {
+    onFallback?.(lang);
     return null;
   }
   try {
@@ -112,7 +120,10 @@ export function highlightCodeRuns(code: string, lang: string | undefined): TextR
       }
     }
     // 完整性校验:解码后拼接文本必须等于原文(hljs 保留文本内容),否则降级
-    if (segments.map((s) => decodeEntities(s.text)).join("") !== code) return null;
+    if (segments.map((s) => decodeEntities(s.text)).join("") !== code) {
+      onFallback?.(lang);
+      return null;
+    }
     // 按 \n 拆行:每行一个或多个(文本,类)片段;行间 TextRun({ text: "", break: 1 }),
     // 与 renderCode 原等宽文本路径的换行结构一致(空行保留空 run 占位)
     const linePieces: { text: string; cls: string | undefined }[][] = [[]];
@@ -135,6 +146,7 @@ export function highlightCodeRuns(code: string, lang: string | undefined): TextR
     });
     return runs;
   } catch {
+    onFallback?.(lang);
     return null;
   }
 }

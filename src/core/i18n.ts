@@ -48,6 +48,18 @@ export function crossRefNotFoundWarning(kind: string, ref: string): KeyedWarning
   };
 }
 
+/**
+ * 代码高亮降级警告(B4,docx/pdf 共用单一来源):
+ * hljs 语言包命中但 highlight 抛错 / 解析校验失败时,两侧均降级为纯文本并上报本警告。
+ */
+export function highlightFallbackWarning(lang: string): KeyedWarning {
+  return {
+    key: "warn.highlightFallback",
+    params: { lang },
+    fallback: `代码高亮失败,已降级为纯文本: ${lang}`,
+  };
+}
+
 // en 键集编译期锁定:EN 的类型为「ZH 键集的全函数映射」,en 缺键/多键均编译报错。
 // DICT 导出仅供测试段做运行期键集一致性抽查(zh/en 键集合相等)。
 const ZH = {
@@ -320,6 +332,11 @@ const ZH = {
     "warn.outputPathTooLong": "输出路径过长,已输出到源文件目录",
     "warn.gbkEncoding": "已按 GBK 编码读取:文件编码非 UTF-8",
     "warn.gbkEncodingFile": "已按 GBK 编码读取:${file}",
+    "warn.unsupportedBlockInContainer": "${blockType} 在${container}内暂不支持,已降级为文本",
+    "warn.highlightFallback": "代码高亮失败,已降级为纯文本: ${lang}",
+    "warn.katexCssLoadFailed": "KaTeX 样式加载失败,公式字体样式缺失: ${error}",
+    "warn.imageNotFound": "图片文件不存在: ${src}",
+    "warn.imageAccessDenied": "图片文件无访问权限: ${src}",
 
     /* ---------- 错误(生成期本地化:throw 文案经 error.message 单次字符串通道到 GUI) ---------- */
     "convert.noFilesSelected": "未选择文件",
@@ -597,6 +614,13 @@ const EN: Record<keyof typeof ZH, string> = {
     "warn.outputPathTooLong": "Output path too long, output written next to the source file",
     "warn.gbkEncoding": "File read as GBK encoding: file is not UTF-8",
     "warn.gbkEncodingFile": "File read as GBK encoding: ${file}",
+    // blockType/container 为中文类别词(推送期无法按显示语言翻译,同 warn.crossRefNotFound 口径),
+    // en 文案保留插值以便定位具体块类型与容器
+    "warn.unsupportedBlockInContainer": "${blockType} inside ${container} is not supported yet, degraded to plain text",
+    "warn.highlightFallback": "Syntax highlighting failed, fell back to plain text: ${lang}",
+    "warn.katexCssLoadFailed": "Failed to load KaTeX styles, equation font styling missing: ${error}",
+    "warn.imageNotFound": "Image file not found: ${src}",
+    "warn.imageAccessDenied": "Access to image file denied: ${src}",
 
     /* ---------- Errors (localized at throw time: message reaches GUI via a one-shot string channel) ---------- */
     "convert.noFilesSelected": "No files selected",

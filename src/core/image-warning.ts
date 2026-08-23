@@ -28,3 +28,34 @@ export function unrecognizedImageWarning(src: string): KeyedWarning {
     fallback: `图片格式无法识别,已跳过: ${src}`,
   };
 }
+
+/** 图片文件不存在(ENOENT)细分警告(B4 失败可见性) */
+export function imageNotFoundWarning(src: string): KeyedWarning {
+  return {
+    key: "warn.imageNotFound",
+    params: { src },
+    fallback: `图片文件不存在: ${src}`,
+  };
+}
+
+/** 图片文件无访问权限(EACCES/EPERM)细分警告(B4 失败可见性) */
+export function imageAccessDeniedWarning(src: string): KeyedWarning {
+  return {
+    key: "warn.imageAccessDenied",
+    params: { src },
+    fallback: `图片文件无访问权限: ${src}`,
+  };
+}
+
+/**
+ * 图片读取失败原因细分(B4,docx/pdf 共用单一来源):
+ * 按 fs 错误码分类——ENOENT → 文件不存在;EACCES/EPERM → 无权限
+ * (EPERM 为 Windows 常见拒绝码,与 EACCES 同口径);其他错误/无错误对象
+ * (resolver 返回 null)→ 统一「图片加载失败」兜底。
+ */
+export function imageLoadFailureWarning(src: string, err?: unknown): KeyedWarning {
+  const code = typeof err === "object" && err !== null ? (err as NodeJS.ErrnoException).code : undefined;
+  if (code === "ENOENT") return imageNotFoundWarning(src);
+  if (code === "EACCES" || code === "EPERM") return imageAccessDeniedWarning(src);
+  return imageLoadFailedWarning(src);
+}

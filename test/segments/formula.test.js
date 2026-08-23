@@ -68,13 +68,15 @@ export async function run() {
   }
   console.log("[ok] PDF 公式:KaTeX 结构 + CSS 字体内联生效");
 
-  // ---------- G8 补齐:loadKatexCss 读取失败返回空串(template.ts:214-215) ----------
-  // 依据(dist/core/pdf/template.ts):katexDir 无效时 readFileSync 抛错 → catch 返回 ""。
+  // ---------- G8 补齐 + B4:loadKatexCss 读取失败返回空串 + warnings 上报 ----------
+  // 依据(dist/core/pdf/template.ts):katexDir 无效时 readFileSync 抛错 → catch 返回 ""
+  // 并经 warnings 通道上报 warn.katexCssLoadFailed(B4 失败可见性,此前静默)。
   // renderPdfHtml 不抛错;公式仍渲染为 KaTeX HTML(仅缺字体样式)。
+  const badKatexWarnings = [];
   const badKatexPdf = await convert(formulaMd, "pdf", {
     baseDir: FIXTURES_DIR,
     title: "公式测试",
-    warnings: [],
+    warnings: badKatexWarnings,
     katexDir: path.join(FIXTURES_DIR, "no-such-katex"),
   });
   if (badKatexPdf.html.includes("@font-face")) {
@@ -83,7 +85,10 @@ export async function run() {
   if (!badKatexPdf.html.includes('class="katex"')) {
     throw new Error("公式断言失败:无效 katexDir 时公式仍应渲染为 KaTeX HTML");
   }
-  console.log("[ok] PDF 公式:loadKatexCss 读取失败(无效 katexDir)返回空串,公式仍渲染,断言通过");
+  if (!badKatexWarnings.some((w) => formatWarning(w).includes("KaTeX 样式加载失败"))) {
+    throw new Error(`公式断言失败:无效 katexDir 未产生 KaTeX CSS 加载失败警告,warnings=${JSON.stringify(badKatexWarnings)}`);
+  }
+  console.log("[ok] PDF 公式:loadKatexCss 读取失败返回空串 + warnings 上报(KaTeX 样式加载失败),断言通过");
 
   // ---------- 降级分支:解析失败的公式 → TeX 源码等宽灰字 + 警告 ----------
   // 依据(dist/core/docx/math.ts texToDocxMath):katex throwOnError:false 下解析失败
