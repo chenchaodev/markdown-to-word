@@ -3,7 +3,9 @@
  * - 全部模块级可变状态收敛于此,feature 模块(utils/file-list/dialogs/convert-flow)
  *   与组合根 renderer.ts 只经本模块读写状态,不各自持有副本
  * - 字段语义保持与拆分前逐一对应(逐字段核对):
- *   mode:当前转换模式,进度事件归属判定(忽略迟到事件);run* 开头置位,finally 复位
+ *   mode:当前转换模式(转换中标志 + 进度事件归属判定合一,B8 卫生项——原
+ *   converting 布尔与 mode 恒同置同清,属平行状态字段,收敛为 mode 单源;
+ *   「是否转换中」= mode !== null);run* 开头置位,finally 复位
  *   hydratingSettings:回填控件期间置位,change 处理器据此跳过写回
  *   dialogOutputPath / summaryOutputPath:弹窗与汇总条的输出路径缓存
  * - IPC 契约类型(BatchProgressInfo/BatchItem/BatchResult)同时被 dialogs/
@@ -46,8 +48,11 @@ export const state = {
   /** 当前选中的 Markdown 文件列表(1 个或 N 个)。 */
   selectedFiles: [] as string[],
   selectedFormat: "docx" as "docx" | "pdf",
-  converting: false,
-  /** 当前转换模式:控制进度事件归属(忽略迟到事件)。 */
+  /**
+   * 当前转换模式 = 转换中标志 + 模式合一(B8 卫生项:原 converting 布尔字段与
+   * 本字段恒同置同清,收敛为单源;「是否转换中」即 mode !== null):
+   * 控制进度事件归属(忽略迟到事件)+ 各入口的转换中守卫。
+   */
   mode: null as "single" | "batch" | "merge" | null,
   errorFlashTimer: undefined as number | undefined,
   unsubscribeProgress: undefined as (() => void) | undefined,

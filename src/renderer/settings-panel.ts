@@ -1,44 +1,34 @@
 /**
  * renderer 设置面板(R10-5 自 renderer.ts 抽出,行为等价):
- * - 设置加载/回填/校验/钳制/预设套用/persist 三件套,以及全部设置控件的事件绑定
- *   (格式 / 页面设置 / 排版 / 模板预设 / 输出目录),契约与语义注释随代码搬移不精简
+ * - 设置加载/回填/校验/钳制/预设套用/persist 三件套,以及预设弹窗与导入导出交互;
+ *   全部设置控件的事件绑定见 settings-bindings.ts(B8 抽出,单向依赖本模块),
+ *   契约与语义注释随代码搬移不精简
  * - 依赖方向遵循 R8 既定单向依赖:本模块 → core/settings-defaults(契约/常量/预设)、
- *   dom.ts(元素映射)、state.ts(共享状态单一来源)、utils.ts(字段错误提示);
- *   不反向引用 renderer.ts 的私有符号(所需类型 Paper/Orientation/AfterConvert/BodyAlign
- *   随拆分移入本模块)
- * - 组合根 renderer.ts 只调用:init 处 bindSettingsEvents() 后再 loadSettings()
- *   (时序与拆分前一致:事件绑定先于回填;loadSettings 的 await 回填不受绑定顺序影响)
+ *   dom.ts(元素映射)、state.ts(共享状态单一来源);不反向引用 renderer.ts 的私有符号
+ * - 组合根 renderer.ts 调用:init 处 bindSettingsEvents()(settings-bindings)后再
+ *   loadSettings()(时序与拆分前一致:事件绑定先于回填;loadSettings 的 await 回填
+ *   不受绑定顺序影响)
  */
 import {
-  BODY_SIZE_MAX,
-  BODY_SIZE_MIN,
   DEFAULT_SETTINGS,
-  LINE_SPACING_MAX,
-  LINE_SPACING_MIN,
-  MARGIN_MAX_MM as MARGIN_MAX,
   TEMPLATE_PRESETS,
   type AppSettings,
   type PageSetup,
 } from "../core/settings-defaults.js";
 import {
-  allPresets,
   buildCustomPresetEntry,
   customPresetNameFromId,
   customPresetToTemplate,
   mergeSettingsWithDefaults,
-  outputDirDisplayText,
-  parseMarginValue,
   removeCustomPresetByName,
   resolvePresetHint,
   resolvePresetSelection,
   settingsToControlValues,
-  validateNumberRange,
   validatePresetName,
 } from "./settings-logic.js";
 import {
   afterConvertInputs,
   alignJustifyInput,
-  bodySizeError,
   bodySizePtInput,
   breakBeforeH1Input,
   captionNumberingInput,
@@ -46,41 +36,29 @@ import {
   completeDialogSuppressInput,
   equationNumberingInput,
   firstLineIndentInput,
-  fontAsciiError,
   fontAsciiInput,
-  fontEastAsiaError,
   fontEastAsiaInput,
   formatInputs,
   headingNumberingInput,
   languageInputs,
-  lineSpacingError,
   lineSpacingInput,
-  marginError,
   marginInputs,
   orientationInputs,
-  outputDirPick,
-  outputDirReset,
   outputDirValue,
   paperSelect,
   pdfCssClearBtn,
-  pdfCssImportBtn,
   pdfCssStatus,
   presetDeleteBtn,
-  presetExportBtn,
-  presetImportBtn,
   presetNameInput,
   presetSaveBtn,
-  presetSaveCancel,
   presetSaveDialog,
   presetSaveError,
-  presetSaveOk,
   templatePresetHint,
   templatePresetSelect,
   tocInput,
 } from "./dom.js";
 import { state } from "./state.js";
-import { hideFieldError, setError, setStatus, showFieldError, trapFocus } from "./utils.js";
-import { renderSelection } from "./file-list.js";
+import { setError, setStatus, trapFocus } from "./utils.js";
 import { applyStaticTexts, setLanguage, t, type Language } from "../core/i18n.js";
 
 /* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
@@ -94,19 +72,13 @@ let presetSaveTrap: (() => void) | null = null;
  * 选型记录:未采用「body 初始 visibility:hidden」方案——CSP 为 script-src 'self'
  * 内联脚本被拦,且隐藏 body 若初始化失败会白屏;外部 bootstrap 脚本改动最小。
  */
-function mirrorLanguage(lang: Language): void {
+export function mirrorLanguage(lang: Language): void {
   try {
     localStorage.setItem("m2w.language", lang);
   } catch {
     /* localStorage 不可用(隐私模式等)时静默:仅失去 FOUC 缓解,不影响功能 */
   }
 }
-
-/* ---------- 设置类型(契约单源 core/settings-defaults.ts,B7:type-only 派生,
-   编译期擦除,不新增运行时依赖) ---------- */
-type Paper = PageSetup["paper"];
-type Orientation = PageSetup["orientation"];
-type AfterConvert = AppSettings["afterConvert"];
 
 /* ---------- 设置:加载 / 回填 / 写回 ---------- */
 /** 启动时读取持久化设置,失败静默回退默认值;回填后解除 hydration 标记。 */
@@ -132,7 +104,7 @@ export async function loadSettings(): Promise<void> {
 
 /** 将内存设置回填到所有控件(仅赋值,不触发 change 事件)。
  *  值计算(设置 → 控件值映射/预设匹配/hint)在 settings-logic,本函数只做 DOM 赋值。 */
-function applySettingsToControls(): void {
+export function applySettingsToControls(): void {
   const v = settingsToControlValues(state.settings);
   paperSelect.value = v.paper;
   orientationInputs.forEach(
@@ -198,7 +170,7 @@ function applySettingsToControls(): void {
 
 /** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。
  *  批次 11 迭代 3:写盘成功后刷新所有预览窗口(设置变更即时反映到预览)。 */
-function persistSettings(patch: Partial<AppSettings>): void {
+export function persistSettings(patch: Partial<AppSettings>): void {
   void window.api
     .settingsSet(patch)
     .then(() => window.api.previewRefresh())
@@ -226,13 +198,16 @@ function rebuildPresetOptions(): void {
 }
 
 /** 另存为预设弹窗:打开(清空输入与错误,焦点进输入框)。 */
-function openPresetSaveDialog(): void {
+export function openPresetSaveDialog(): void {
   presetNameInput.value = "";
   presetSaveError.classList.add("hidden");
   presetSaveError.textContent = "";
   presetSaveDialog.classList.remove("hidden");
   presetNameInput.focus();
-  presetSaveTrap = trapFocus(presetSaveDialog); // 批次 12(C9):Tab 循环不逃逸到背景页
+  // 批次 12(C9):Tab 循环不逃逸到背景页。B8 卫生项:二次调用防御——先解除
+  // 旧陷阱再启用新陷阱,避免重复 open 时旧 keydown 监听句柄被覆盖而泄漏。
+  presetSaveTrap?.();
+  presetSaveTrap = trapFocus(presetSaveDialog);
 }
 
 /** 关闭另存为预设弹窗(导出:renderer Esc 分支与弹窗内按钮共用,统一解除焦点陷阱)。 */
@@ -249,7 +224,7 @@ function showPresetSaveError(message: string): void {
 }
 
 /** 保存当前排版+页面设置为自定义预设(名称非空、同名拒绝;成功后下拉选中新预设)。 */
-async function saveCustomPreset(): Promise<void> {
+export async function saveCustomPreset(): Promise<void> {
   const name = presetNameInput.value.trim();
   // 批次 12(C6):达上限不再静默截断,弹窗内明确提示先删除(校验逻辑在 settings-logic)
   const error = validatePresetName(name, state.settings.customPresets);
@@ -273,7 +248,7 @@ async function saveCustomPreset(): Promise<void> {
 }
 
 /** 删除当前选中的自定义预设;删除后回退「默认」预设(整体套用并持久化)。 */
-function deleteCustomPreset(): void {
+export function deleteCustomPreset(): void {
   const name = customPresetNameFromId(templatePresetSelect.value);
   if (!name) return;
   const next = removeCustomPresetByName(state.settings.customPresets, name);
@@ -301,7 +276,7 @@ function deleteCustomPreset(): void {
 /* ---------- 模板预设导入/导出(批次 13;main 内选文件 + 合并/导出 + 持久化全包) ---------- */
 /** 导入自定义预设 JSON:main 打开对话框 → 读文件 → 与现有合并(同名覆盖,上限 10)→ 持久化。
  *  成功后同步最新列表并重刷下拉;取消无动作;失败状态区提示。 */
-async function importCustomPresets(): Promise<void> {
+export async function importCustomPresets(): Promise<void> {
   try {
     const r = await window.api.importPresets();
     if (!r.ok) {
@@ -333,7 +308,7 @@ async function importCustomPresets(): Promise<void> {
 }
 
 /** 导出全部自定义预设为 JSON 文件;成功时反馈数量,取消无动作。 */
-async function exportCustomPresets(): Promise<void> {
+export async function exportCustomPresets(): Promise<void> {
   try {
     const r = await window.api.exportPresets();
     if (!r.ok) {
@@ -351,7 +326,7 @@ async function exportCustomPresets(): Promise<void> {
 /* ---------- PDF 样式 CSS 导入(批次 16;main 内选文件 + 读内容,内容持久化到 settings.pdfCss) ---------- */
 /** 导入 CSS 文件作为 PDF 样式模板:main 打开对话框 → 读文件(≤100KB)→ 持久化 pdfCss。
  *  成功后更新状态显示(文件名)并启用清除;取消无动作;失败状态区提示。 */
-async function importPdfCss(): Promise<void> {
+export async function importPdfCss(): Promise<void> {
   try {
     const r = await window.api.importPdfCss();
     if (!r.ok) {
@@ -371,7 +346,7 @@ async function importPdfCss(): Promise<void> {
 }
 
 /** 清除已导入的 PDF 样式 CSS:持久化空串 + 状态复位「未导入」+ 清除按钮禁用。 */
-function clearPdfCss(): void {
+export function clearPdfCss(): void {
   state.settings.pdfCss = "";
   persistSettings({ pdfCss: "" });
   pdfCssStatus.textContent = t("settings.pdfCssNone");
@@ -395,262 +370,5 @@ export function setSuppressCompleteDialog(checked: boolean): void {
   syncSuppressCompleteDialog(checked);
   void window.api.uiStateSet({ suppressCompleteDialog: checked }).catch(() => {
     /* 忽略:UI 状态写入失败不阻塞主流程 */
-  });
-}
-
-/** 页面尺寸相关字段(纸张/方向/边距)整体写回。 */
-function persistPageSetup(): void {
-  persistSettings({ pageSetup: { ...state.settings.pageSetup } });
-}
-
-/** 排版相关字段(字体/字号/行距/段落样式)整体写回。 */
-function persistTypography(): void {
-  persistSettings({ typography: { ...state.settings.typography } });
-}
-
-/** 边距输入:非法值回显当前设置,合法值钳制后写回;非法时字段内提示。 */
-function handleMarginChange(key: keyof typeof marginInputs): void {
-  if (state.hydratingSettings) return;
-  const input = marginInputs[key];
-  const clamped = parseMarginValue(input.valueAsNumber);
-  if (clamped === null) {
-    input.value = String(state.settings.pageSetup[key]); // 空/非法输入:恢复为当前设置值
-    showFieldError(marginError, t("settings.marginRange", { max: MARGIN_MAX }));
-    return;
-  }
-  state.settings.pageSetup[key] = clamped;
-  input.value = String(clamped); // 回显钳制后的值,与主进程持久化结果一致
-  hideFieldError(marginError);
-  persistPageSetup();
-}
-
-/** 字号 / 行距输入:空、非数字或超出范围时回显当前设置值,并字段内提示。 */
-function handleTypographyNumberChange(
-  key: "bodySizePt" | "lineSpacing",
-  min: number,
-  max: number,
-): void {
-  if (state.hydratingSettings) return;
-  const input = key === "bodySizePt" ? bodySizePtInput : lineSpacingInput;
-  const errorEl = key === "bodySizePt" ? bodySizeError : lineSpacingError;
-  const value = input.valueAsNumber;
-  if (!validateNumberRange(value, min, max)) {
-    input.value = String(state.settings.typography[key]); // 空/非法/超范围:恢复为当前设置值
-    showFieldError(errorEl, t("settings.numberRange", { min, max }));
-    return;
-  }
-  state.settings.typography[key] = value;
-  hideFieldError(errorEl);
-  persistTypography();
-}
-
-/* ---------- 设置事件绑定(组合根 init 处调用;任一控件变更即时生效并持久化) ---------- */
-export function bindSettingsEvents(): void {
-  // 格式选择:记录当前选中格式(转换时使用),并持久化到设置
-  formatInputs.forEach((input) => {
-    input.addEventListener("change", () => {
-      if (!input.checked || state.hydratingSettings) return;
-      state.selectedFormat = input.value as "docx" | "pdf";
-      state.settings.format = state.selectedFormat;
-      persistSettings({ format: state.selectedFormat });
-    });
-  });
-
-  /* ---------- 页面设置面板:任一控件变更即时生效并持久化 ---------- */
-  paperSelect.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.pageSetup.paper = paperSelect.value as Paper;
-    persistPageSetup();
-  });
-
-  orientationInputs.forEach((input) => {
-    input.addEventListener("change", () => {
-      if (!input.checked || state.hydratingSettings) return;
-      state.settings.pageSetup.orientation = input.value as Orientation;
-      persistPageSetup();
-    });
-  });
-
-  breakBeforeH1Input.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.breakBeforeH1 = breakBeforeH1Input.checked;
-    persistSettings({ breakBeforeH1: state.settings.breakBeforeH1 });
-  });
-
-  tocInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.toc = tocInput.checked;
-    persistSettings({ toc: state.settings.toc });
-  });
-
-  equationNumberingInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.equationNumbering = equationNumberingInput.checked;
-    persistSettings({ equationNumbering: state.settings.equationNumbering });
-  });
-
-  afterConvertInputs.forEach((input) => {
-    input.addEventListener("change", () => {
-      if (!input.checked || state.hydratingSettings) return;
-      state.settings.afterConvert = input.value as AfterConvert;
-      persistSettings({ afterConvert: state.settings.afterConvert });
-    });
-  });
-
-  (Object.keys(marginInputs) as (keyof typeof marginInputs)[]).forEach((key) => {
-    marginInputs[key].addEventListener("change", () => handleMarginChange(key));
-  });
-
-  /* ---------- 排版设置面板:任一控件变更即时生效并持久化 ---------- */
-  fontAsciiInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    const value = fontAsciiInput.value.trim();
-    if (!value) {
-      fontAsciiInput.value = state.settings.typography.fontAscii; // 空输入:恢复为当前设置值
-      showFieldError(fontAsciiError, t("settings.fontAsciiEmpty"));
-      return;
-    }
-    state.settings.typography.fontAscii = value;
-    hideFieldError(fontAsciiError);
-    persistTypography();
-  });
-
-  fontEastAsiaInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    const value = fontEastAsiaInput.value.trim();
-    if (!value) {
-      fontEastAsiaInput.value = state.settings.typography.fontEastAsia; // 空输入:恢复为当前设置值
-      showFieldError(fontEastAsiaError, t("settings.fontEastAsiaEmpty"));
-      return;
-    }
-    state.settings.typography.fontEastAsia = value;
-    hideFieldError(fontEastAsiaError);
-    persistTypography();
-  });
-
-  bodySizePtInput.addEventListener("change", () =>
-    handleTypographyNumberChange("bodySizePt", BODY_SIZE_MIN, BODY_SIZE_MAX),
-  );
-
-  lineSpacingInput.addEventListener("change", () =>
-    handleTypographyNumberChange("lineSpacing", LINE_SPACING_MIN, LINE_SPACING_MAX),
-  );
-
-  firstLineIndentInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.typography.firstLineIndent = firstLineIndentInput.checked;
-    persistTypography();
-  });
-
-  alignJustifyInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.typography.align = alignJustifyInput.checked
-      ? "justify"
-      : "left";
-    persistTypography();
-  });
-
-  headingNumberingInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.typography.headingNumbering = headingNumberingInput.checked;
-    persistTypography();
-  });
-
-  captionNumberingInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.typography.captionNumbering = captionNumberingInput.checked;
-    persistTypography();
-  });
-
-  // 模板预设:整体套用排版与页面设置,一次性回填所有相关控件并持久化
-  // (批次 11 迭代 3:硬编码 + 自定义预设统一走此路径)
-  templatePresetSelect.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    const preset = allPresets(state.settings.customPresets).find(
-      (p) => p.id === templatePresetSelect.value,
-    );
-    if (!preset) return;
-    state.settings.typography = { ...preset.typography };
-    state.settings.pageSetup = { ...preset.pageSetup };
-    // hydration 保护下统一回填,避免逐个控件触发 change 写回;
-    // 回填同时按匹配结果同步 select 与 hint(当前即所选预设)
-    state.hydratingSettings = true;
-    applySettingsToControls();
-    state.hydratingSettings = false;
-    persistSettings({
-      typography: { ...state.settings.typography },
-      pageSetup: { ...state.settings.pageSetup },
-    });
-  });
-
-  // 批次 11 迭代 3:另存为预设(弹窗输入名称 → 保存当前排版+页面设置)
-  presetSaveBtn.addEventListener("click", openPresetSaveDialog);
-  presetSaveCancel.addEventListener("click", closePresetSaveDialog);
-  presetSaveOk.addEventListener("click", () => void saveCustomPreset());
-  presetNameInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void saveCustomPreset();
-    }
-  });
-  presetSaveDialog.addEventListener("click", (event) => {
-    // 只响应遮罩本身,点卡片内部不关闭
-    if (event.target === presetSaveDialog) closePresetSaveDialog();
-  });
-  // 仅自定义预设可删;删除后回退「默认」
-  presetDeleteBtn.addEventListener("click", deleteCustomPreset);
-  // 批次 13:预设 JSON 导入 / 导出(IIFE + void,规避 no-misused-promises)
-  presetImportBtn.addEventListener("click", () => void importCustomPresets());
-  presetExportBtn.addEventListener("click", () => void exportCustomPresets());
-  // 批次 16:PDF 样式 CSS 导入 / 清除(IIFE + void,规避 no-misused-promises)
-  pdfCssImportBtn.addEventListener("click", () => void importPdfCss());
-  pdfCssClearBtn.addEventListener("click", clearPdfCss);
-
-  // 批次 7:输出目录选择 / 恢复默认(空串 = 与源文件相同目录)
-  outputDirPick.addEventListener("click", () => {
-    void (async () => {
-    try {
-      const dir = await window.api.selectDir();
-      if (!dir) return; // 用户取消
-      state.settings.outputDir = dir;
-      outputDirValue.textContent = dir;
-      outputDirValue.title = dir;
-      persistSettings({ outputDir: dir });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(t("settings.selectDirFailed", { error: message }));
-    }
-    })();
-  });
-
-  outputDirReset.addEventListener("click", () => {
-    state.settings.outputDir = "";
-    outputDirValue.textContent = outputDirDisplayText("");
-    outputDirValue.title = outputDirDisplayText("");
-    persistSettings({ outputDir: "" });
-  });
-
-  // 批次 11 迭代 2:转换完成弹窗提示(ui-state 字段;与弹窗内「不再提示」双向同步)
-  // 勾选 = 提示弹窗 = suppress=false,故取反后写入
-  completeDialogPromptInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    setSuppressCompleteDialog(!completeDialogPromptInput.checked);
-  });
-
-  // i18n:界面语言切换(radio;即时生效:静态文案重刷 + 动态文案经 t() 自动跟随,
-  // 状态栏/文件列表/最近区块等动态区域显式重渲染)
-  languageInputs.forEach((input) => {
-    input.addEventListener("change", () => {
-      if (!input.checked || state.hydratingSettings) return;
-      const lang = input.value as Language;
-      state.settings.language = lang;
-      setLanguage(lang);
-      mirrorLanguage(lang); // B6:切换落定即镜像,下次启动 lang-bootstrap.js 尽早生效
-      applyStaticTexts();
-      persistSettings({ language: lang });
-      setStatus("");
-      renderSelection();
-      void state.recentRefreshHandler?.();
-    });
   });
 }

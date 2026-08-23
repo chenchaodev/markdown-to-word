@@ -138,7 +138,7 @@ function persistPanelOpen(): void {
 
 // 最近条目点击:加载到列表(单文件态)并立即开始转换(一键重转,沿用该条目记录的格式)
 recentList.addEventListener("click", (event) => {
-  if (state.converting) return;
+  if (state.mode !== null) return; // 转换中守卫(B8:原 converting 字段合一为 mode 单源)
   const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-item");
   if (!btn?.dataset.path) return;
   const filePath = btn.dataset.path;
@@ -150,7 +150,7 @@ recentList.addEventListener("click", (event) => {
 // 批次 12(C12):「仅加载」→ 替换选择载入列表(不转换),状态区提示文件名;
 // 与主区域点击互斥(loadBtn 不是 .recent-item 的后代,上方委托天然跳过)
 recentList.addEventListener("click", (event) => {
-  if (state.converting) return;
+  if (state.mode !== null) return; // 转换中守卫(B8:原 converting 字段合一为 mode 单源)
   const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-load");
   if (!btn?.dataset.path) return;
   const filePath = btn.dataset.path;

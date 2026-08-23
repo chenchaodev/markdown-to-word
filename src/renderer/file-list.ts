@@ -224,7 +224,7 @@ export function appendSelection(files: string[], skipped = 0): void {
 export function updateActionButtons(): void {
   const n = state.selectedFiles.length;
   const multi = n >= 2;
-  const busy = state.converting;
+  const busy = state.mode !== null; // 转换中 = mode 单源(B8:原 converting 字段合一)
   convertBtn.classList.toggle("hidden", multi);
   batchBtn.classList.toggle("hidden", !multi);
   mergeBtn.classList.toggle("hidden", !multi);

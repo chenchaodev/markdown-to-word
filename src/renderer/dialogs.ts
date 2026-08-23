@@ -39,7 +39,10 @@ import { batchSuccessPaths } from "./pure.js";
 import { formatWarning, t } from "../core/i18n.js";
 import type { ConvertWarning } from "../core/i18n.js";
 
-/* 弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
+/* 弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除。
+ * B8 卫生项:show* 均先解除旧句柄再启用新陷阱(二次调用防御)——弹窗未 hide
+ * 就被再次 show 时,旧 keydown 监听句柄若被直接覆盖会泄漏(当前流程互斥不会
+ * 触发,防御性兜底)。 */
 let completeDialogTrap: (() => void) | null = null;
 let batchDialogTrap: (() => void) | null = null;
 
@@ -114,6 +117,7 @@ export function showCompleteDialog(
   completeDialogOpen.classList.toggle("hidden", !ok);
   completeDialog.classList.remove("hidden");
   completeDialogOk.focus(); // 焦点落在默认操作(确定)上
+  completeDialogTrap?.(); // 二次调用防御:先解除旧陷阱(B8 卫生项)
   completeDialogTrap = trapFocus(completeDialog); // 批次 12(C9):Tab 循环不逃逸到背景页
 }
 
@@ -151,6 +155,7 @@ export function showBatchDialog(result: BatchResult): void {
   batchDialogError.textContent = "";
   batchDialog.classList.remove("hidden");
   batchDialogOk.focus(); // 焦点落在默认操作(确定)上
+  batchDialogTrap?.(); // 二次调用防御:先解除旧陷阱(B8 卫生项)
   batchDialogTrap = trapFocus(batchDialog); // 批次 12(C9):Tab 循环不逃逸到背景页
 }
 

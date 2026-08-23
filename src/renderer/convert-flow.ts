@@ -25,7 +25,6 @@ export async function runConvert(
   format: "docx" | "pdf",
 ): Promise<void> {
   state.mode = "single";
-  state.converting = true;
   updateActionButtons(); // 禁用选择入口与转换按钮,防止重复点击
   setStatus(t("convert.stage.converting"));
   showProgress();
@@ -65,7 +64,6 @@ export async function runConvert(
     showSummary({ kind: "fail", title: t("convert.failed.title"), error: message });
   } finally {
     state.mode = null;
-    state.converting = false;
     hideProgress();
     updateActionButtons();
   }
@@ -86,7 +84,6 @@ export async function runBatch(
   const fmt = format ?? state.selectedFormat;
   state.lastBatchFormat = fmt; // 重试失败项按原格式重转
   state.mode = "batch";
-  state.converting = true;
   updateActionButtons();
   setStatus(t("convert.batch.stage", { count: targets.length }));
   showProgress();
@@ -122,7 +119,6 @@ export async function runBatch(
     showSummary({ kind: "fail", title: t("convert.batch.failedTitle"), error: message });
   } finally {
     state.mode = null;
-    state.converting = false;
     hideProgress();
     updateActionButtons();
   }
@@ -132,7 +128,6 @@ export async function runBatch(
 export async function runMerge(): Promise<void> {
   if (state.selectedFiles.length < 2) return;
   state.mode = "merge";
-  state.converting = true;
   updateActionButtons();
   setStatus(t("convert.merge.stage"));
   showProgress();
@@ -180,8 +175,8 @@ export async function runMerge(): Promise<void> {
     showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error: message });
   } finally {
     state.mode = null;
-    state.converting = false;
     hideProgress();
     updateActionButtons();
   }
 }
+
