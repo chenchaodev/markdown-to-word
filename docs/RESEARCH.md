@@ -2,6 +2,14 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-24 02:26:55 目录结构评审(重组后复核,只读)
+- **总体判断**:三层分离(core 纯逻辑/main 编排+IO/renderer DOM)与 core 分域(docx/pdf 输出域+markdown/image/pipeline 共享语法域+settings/i18n/util 横切契约)执行一致,handlers↔rules 粒度对称;真正问题仅两类——跨进程契约类型寄居 main 层、test/ segments 与 main 边界不符自述口径
+- **P1 契约类型归位**:`main/ipc/channels.ts` 的 ConvertProgressPayload/ConvertMode 类型与 `main/persist/ui-state.ts` 的 UiState/RecentFile 类型均被 renderer type-only import(1+3 处),构成 renderer→main 反向依赖;建议迁 core(如 core/ipc-contract.ts),channel 常量/IO 实现留 main;可与 BatchResult/BatchItem 收敛合并为同一「契约归位」迭代
+- **P2 test 归位**:segments/ 里 ipc-channels/ipc-logic/image-downloader/presets-import 四段实为直测 dist/main → 应入 test/main/;settings-logic/renderer-pure 两段直测 dist/renderer → 新建 test/renderer/(需同步扩展 acceptance.mjs 自动发现根);pdf-css-sample.css 零引用应入 fixtures/manual/
+- **口径冲突**:本评审「test 部分镜像 src」与 0823 方案裁定「segments 主题式命名不镜像 src」相抵,实施前需用户裁定,采纳则同步改 acceptance.mjs 头注释与 AGENTS.md 测试体系描述
+- **确认合理不动**:mermaid 三同名各归其位(可改名澄清如 pdf/mermaid-placeholder.ts);pipeline/merge vs converter/merge 同名但纯函数 vs IO 分层正确;i18n/settings 三处/image-downloader(IO 属 main)/lang-bootstrap.js/preload.cts/dom 单文件/fixtures 双份 png 均有技术理由
+- 来源: @oracle ora-1(全量结构+约 20 文件头部核实);关联: 原文存档 docs/archive/20260824-022655-目录结构评审.md;前序: docs/archive/20260823-230554-目录结构优化方案.md
+
 ### 2026-08-23 23:05:54 目录结构优化方案(四轮探查定稿,暂不进迭代)
 - **总体判断**:现状约 70% 接近理想;结构性欠账 6 项——①core 根级 20 文件平铺(转换入口/设置/i18n/md 特性/图片/工具混一层,P1);②core/i18n.ts 702 行(字典 ~585 行与逻辑混放,引用面全项目最大 ~20 src 文件+测试 31 处,P1);③renderer/events.ts 607 行单函数闭包混 6 个事件域(P1);④main/index.ts 695 行五块混放(P2);⑤main/converter.ts 524 行三实现混放(P2);⑥core/docx 缺 handlers 层(9 节点处理器与横切关注点平铺,P2)
 - **关键事实**:i18n EN 字典 `Record<keyof typeof ZH,...>` 编译期锁定键集→ZH/EN 必须同文件;pdf/rules/ 存在因 markdown-it 有规则可覆盖,docx 走 mdast 无规则层,对应物是 handlers/(节点处理器),theme/ctx/prescan/chrome 属横切留顶层——不对称有技术原因非遗留错误;core 根级 17 文件均为纯 ESM 模块,移动=只改相对 import(无动态路径/__dirname);唯一测试联动 contract-single-source.test.js 路径断言
