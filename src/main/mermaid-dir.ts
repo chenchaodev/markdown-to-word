@@ -16,13 +16,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** 纯路径解析(moduleDir 注入,三态可参数化直测):编译产物恒在 <项目>/dist/main/
+ * 下,../../node_modules 三场景一致(dev/test/打包,见头注)。 */
+export function resolveMermaidDir(moduleDir: string): string {
+  return path.resolve(moduleDir, "..", "..", "node_modules", "mermaid", "dist");
+}
+
 export function getMermaidDir(): string {
-  return path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "..",
-    "node_modules",
-    "mermaid",
-    "dist",
-  );
+  return resolveMermaidDir(path.dirname(fileURLToPath(import.meta.url)));
 }

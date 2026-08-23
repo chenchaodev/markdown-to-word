@@ -9,6 +9,9 @@
  *   合法 → 合并序(incoming 在前)/同名取 incoming 值/imported-overridden 计数
  * - buildPresetsExportPayload:schemaVersion:1 包装 + 2 空格缩进 + 末尾换行(序列化字符串精确断言)
  * - isString/isStringArray/isConvertFormat:IPC 入参类型守卫(B1,元素逐一校验/格式白名单)
+ * - runConvertTask(B11 自 index.ts runWithCtx 抽出的纯核心,deps 注入):
+ *   成功透传任务值 / 取消错误 → onCanceled() 形态 / 其他错误归一 { ok:false,error } /
+ *   register-finally 注销序(含异常与取消路径)/ ctx 每次新建不复用
  */
 import {
   baseNameFromMdPath,
@@ -19,6 +22,7 @@ import {
   isConvertFormat,
   isString,
   isStringArray,
+  runConvertTask,
 } from "../../dist/main/ipc-logic.js";
 
 function assert(cond, msg) {
@@ -120,4 +124,78 @@ export async function run() {
   assert(isConvertFormat("docx") && isConvertFormat("pdf"), "isConvertFormat:docx/pdf 白名单");
   assert(!isConvertFormat("DOCX") && !isConvertFormat("html"), "isConvertFormat:大小写敏感/未知格式拒绝");
   console.log("[ok] IPC 入参守卫:isString/isStringArray/isConvertFormat 断言通过");
+
+  // ---------- runConvertTask(B11 自 index.ts runWithCtx 抽出,deps 注入直测) ----------
+  /** 构造带事件记录的 mock deps(镜像 index.ts 真实注入:ctx 新建/注册/注销 + 取消判定) */
+  function makeDeps({ canceledErrors = [] } = {}) {
+    const log = [];
+    let seq = 0;
+    return {
+      log,
+      deps: {
+        createContext: () => ({ id: ++seq }),
+        registerCtx: (ctx) => log.push(["register", ctx.id]),
+        unregisterCtx: () => log.push(["unregister"]),
+        isCanceledError: (err) => canceledErrors.includes(err),
+      },
+    };
+  }
+
+  // 1. 成功路径:任务值透传;register → task → finally unregister
+  {
+    const { deps, log } = makeDeps();
+    const result = await runConvertTask(deps, async (ctx) => `ok:${ctx.id}`, () => "canceled");
+    assert(result === "ok:1", `成功路径应透传任务值,实际 ${JSON.stringify(result)}`);
+    assert(
+      JSON.stringify(log) === JSON.stringify([["register", 1], ["unregister"]]),
+      `成功路径生命周期应为 register→unregister,实际 ${JSON.stringify(log)}`,
+    );
+  }
+  // 2. 取消路径:取消错误 → onCanceled() 形态原样返回(含 canceled:true 扩展字段);finally 注销
+  {
+    const cancelErr = new Error("canceled");
+    const { deps, log } = makeDeps({ canceledErrors: [cancelErr] });
+    const onCanceledResult = { ok: false, canceled: true, error: "已取消" };
+    const result = await runConvertTask(
+      deps,
+      async () => {
+        throw cancelErr;
+      },
+      () => onCanceledResult,
+    );
+    assert(result === onCanceledResult, "取消路径应原样返回 onCanceled() 结果");
+    assert(log[log.length - 1][0] === "unregister", "取消路径 finally 也应注销引用(避免悬挂)");
+  }
+  // 3. 非取消错误归一:{ ok:false, error } 且 error 经 errorMessage(Error→message/非 Error→String)
+  {
+    const { deps } = makeDeps();
+    const r1 = await runConvertTask(deps, async () => {
+      throw new Error("磁盘错误");
+    }, () => "canceled");
+    assert(r1.ok === false && r1.error === "磁盘错误", `Error 应归一为 { ok:false, error:message },实际 ${JSON.stringify(r1)}`);
+    const r2 = await runConvertTask(deps, async () => {
+      throw "裸字符串错误";
+    }, () => "canceled");
+    assert(r2.ok === false && r2.error === "裸字符串错误", "非 Error 抛出值应 String 归一");
+  }
+  // 4. ctx 每次调用新建不复用(「取消后复位」语义)+ 失败不残留注册
+  {
+    const { deps, log } = makeDeps();
+    await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled"); // 第一次
+    await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled"); // 第二次
+    const ctxIds = log.filter((e) => e[0] === "register").map((e) => e[1]);
+    assert(ctxIds.length === 2 && ctxIds[0] !== ctxIds[1], `每次调用应新建 ctx,实际 ${JSON.stringify(ctxIds)}`);
+    assert(log.filter((e) => e[0] === "unregister").length === 2, "每次调用结束都应注销");
+  }
+  // 5. 任务抛错时后续仍可正常执行(finally 先于返回值落地,无悬挂注册)
+  {
+    const { deps, log } = makeDeps();
+    await runConvertTask(deps, async () => {
+      throw new Error("x");
+    }, () => "canceled").catch(() => undefined);
+    const ok = await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled");
+    assert(ok === 2, `失败后再次调用应拿到新 ctx(id=2)正常完成,实际 ${JSON.stringify(ok)}`);
+    assert(log.filter((e) => e[0] === "unregister").length === 2, "失败+成功两次调用各注销一次");
+  }
+  console.log("[ok] runConvertTask:成功透传/取消形态/错误归一/ctx 新建不复用/finally 注序 断言通过");
 }

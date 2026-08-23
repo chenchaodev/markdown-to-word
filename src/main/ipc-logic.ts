@@ -8,10 +8,48 @@ import type { ConvertFormat } from "../core/convert.js";
 import type { CustomPreset } from "../core/settings-defaults.js";
 import { mergePresets, parsePresetsFile } from "./settings.js";
 import type { RecentFile } from "./ui-state.js";
+import type { ConvertContext } from "./converter.js";
 
 /** 错误归一:Error → message,其余 → String(err)(与 index.ts 原内联一致)。 */
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/* ---------- convert 系 handler 共用样板(B11 自 index.ts runWithCtx 抽出,行为等价):
+ * context 注册/释放 + 错误归一化集中一处。Electron 触点(event.sender/BrowserWindow/
+ * ConvertCanceledError 实例判定)经 deps 注入,本模块保持零 electron 运行时依赖可直测。
+ * 取消语义(刚根治的历史 bug 领域)不再分散在三个 handler:
+ * - ctx 每次调用新建(「取消后复位」语义),由 registerCtx 按调用方键注册(多窗口隔离,M3)
+ * - finally 注销引用(含异常/取消路径,避免悬挂)
+ * - 取消错误 → onCanceled()(调用方给出取消结果形态);其他错误归一 { ok:false, error } ---------- */
+
+/** runConvertTask 的环境依赖(由 index.ts 注入真实实现,测试注入 mock)。 */
+export interface ConvertTaskDeps {
+  /** 新建转换 context(每次调用新建,取消标志不复用)。 */
+  createContext: () => ConvertContext;
+  /** 按 key 注册 context(index.ts:ctxByWebContents.set(senderId, ctx))。 */
+  registerCtx: (ctx: ConvertContext) => void;
+  /** 注销 context(finally 路径;index.ts:ctxByWebContents.delete(senderId))。 */
+  unregisterCtx: () => void;
+  /** 取消错误判定(index.ts:err instanceof ConvertCanceledError)。 */
+  isCanceledError: (err: unknown) => boolean;
+}
+
+export async function runConvertTask<T>(
+  deps: ConvertTaskDeps,
+  task: (ctx: ConvertContext) => Promise<T>,
+  onCanceled: () => T | { ok: false; error: string },
+): Promise<T | { ok: false; error: string }> {
+  const ctx = deps.createContext();
+  deps.registerCtx(ctx);
+  try {
+    return await task(ctx);
+  } catch (err) {
+    if (deps.isCanceledError(err)) return onCanceled();
+    return { ok: false, error: errorMessage(err) };
+  } finally {
+    deps.unregisterCtx();
+  }
 }
 
 /* ---------- IPC 入参类型守卫(B1 安全审计):renderer 传参异常时快速失败,

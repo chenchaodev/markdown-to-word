@@ -22,6 +22,7 @@ import {
   isConvertFormat,
   isString,
   isStringArray,
+  runConvertTask,
 } from "./ipc-logic.js";
 import {
   loadSettings,
@@ -73,7 +74,8 @@ const ctxByWebContents = new Map<number, ConvertContext>();
 let mainWindow: BrowserWindow | null = null;
 
 /**
- * convert 系 handler 共用样板(R10-3):context 注册/释放 + 错误归一化集中一处。
+ * convert 系 handler 共用样板(R10-3;B11 抽纯逻辑至 ipc-logic.runConvertTask,
+ * 本函数只保留 Electron 触点:win 解析 + 按 webContents id 注册/注销 + 取消错误判定)。
  * 取消语义(刚根治的历史 bug 领域)不再分散在三个 handler:
  * - ctx 每次调用新建(「取消后复位」语义),按 webContents id 注册(多窗口隔离,M3)
  * - finally 删除引用(含异常/取消路径,避免悬挂)
@@ -85,16 +87,17 @@ async function runWithCtx<T>(
   onCanceled: () => T | { ok: false; error: string },
 ): Promise<T | { ok: false; error: string }> {
   const win = BrowserWindow.fromWebContents(event.sender);
-  const ctx = createConvertContext(); // 每次调用新建,取消标志不复用(「取消后复位」语义)
-  ctxByWebContents.set(event.sender.id, ctx);
-  try {
-    return await fn(ctx, win);
-  } catch (err) {
-    if (err instanceof ConvertCanceledError) return onCanceled();
-    return { ok: false, error: errorMessage(err) };
-  } finally {
-    ctxByWebContents.delete(event.sender.id); // 释放引用,避免悬挂(含异常/取消路径)
-  }
+  const senderId = event.sender.id;
+  return runConvertTask(
+    {
+      createContext: createConvertContext,
+      registerCtx: (ctx) => ctxByWebContents.set(senderId, ctx),
+      unregisterCtx: () => ctxByWebContents.delete(senderId),
+      isCanceledError: (err) => err instanceof ConvertCanceledError,
+    },
+    (ctx) => fn(ctx, win),
+    onCanceled,
+  );
 }
 
 function createWindow(): BrowserWindow {

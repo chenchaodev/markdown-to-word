@@ -18,7 +18,8 @@
  *   原本无 settings.json 时恢复后删除文件,不污染用户设置(settings.test.js 同款卫生)
  * - convertImpl 输出目录 = settings.outputDir(空串 → 源文件同目录):本段统一置 ""
  *   + afterConvert "none"(测试环境不触发打开文件),保证断言确定性
- * - 样例/产物全部放 os.tmpdir() 独立目录,finally 整体删除,不污染 output/smoke
+ * - 样例源文件入 fixtures 体系(test/fixtures/main/,B11 自内联常量迁出);
+ *   运行时副本/产物放 os.tmpdir() 独立目录,finally 整体删除,不污染 output/smoke
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -27,6 +28,7 @@ import JSZip from "jszip";
 import { BrowserWindow, shell } from "electron";
 import { loadSettings, updateSettings } from "../../dist/main/settings.js";
 import { backupSettings } from "../common/settings.js";
+import { FIXTURES_DIR } from "../common/paths.js";
 import {
   batchConvertImpl,
   buildConvertContext,
@@ -38,9 +40,10 @@ import {
   mergeConvertImpl,
 } from "../../dist/main/converter.js";
 
-const SAMPLE_MD = "# 冒烟测试 中文标题\n\n<!-- page-break -->\n\n| 列A | 列B |\n| --- | --- |\n| 你好 | world |\n\n- 项目一\n- 项目二\n";
-const PNG_1PX =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+// 样例迁 fixtures 体系(B11;静态文件直接放 test/fixtures/main/,不接 gen-fixtures
+// 生成器——check:fixtures 只覆盖 segments 段导出的 acceptance fixtures 对象)
+const SAMPLE_MD_PATH = path.join(FIXTURES_DIR, "main", "converter-sample.md");
+const PNG_1PX_PATH = path.join(FIXTURES_DIR, "main", "g4-smoke.png");
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`converter 断言失败:${msg}`);
@@ -49,11 +52,13 @@ function assert(cond, msg) {
 export async function run() {
   const dir = path.join(os.tmpdir(), `m2w-converter-${process.pid}`);
   const sampleMd = path.join(dir, "sample.md");
+  const sampleMdContent = await fs.readFile(SAMPLE_MD_PATH, "utf8");
+  const png1px = await fs.readFile(PNG_1PX_PATH);
   const restoreSettings = await backupSettings();
   try {    await fs.mkdir(dir, { recursive: true });
     // 输出目录指回源目录(样例同目录),afterConvert 置 none 保证断言确定性
     await updateSettings({ outputDir: "", afterConvert: "none" });
-    await fs.writeFile(sampleMd, SAMPLE_MD, "utf8");
+    await fs.writeFile(sampleMd, sampleMdContent, "utf8");
 
     // ---- 0. getImageResolver 缓存同一性:同 baseDir 两次调用返回同一实例(批量跨文件共享语义) ----
     assert(getImageResolver(dir) === getImageResolver(dir), "getImageResolver:同 baseDir 应返回同一缓存实例");
@@ -88,7 +93,7 @@ export async function run() {
 
     // ---- 3. merge docx:frontmatter 仅首文件保留/标题齐全/图片嵌入 ----
     const pngPath = path.join(dir, "g4-smoke.png");
-    await fs.writeFile(pngPath, Buffer.from(PNG_1PX, "base64"));
+    await fs.writeFile(pngPath, png1px);
     const mergeA = path.join(dir, "merge-a.md");
     const mergeB = path.join(dir, "merge-b.md");
     await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](g4-smoke.png)\n`);
