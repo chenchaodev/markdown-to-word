@@ -91,7 +91,7 @@ export async function run() {
   console.log("[ok] PDF 公式:loadKatexCss 读取失败返回空串 + warnings 上报(KaTeX 样式加载失败),断言通过");
 
   // ---------- 降级分支:解析失败的公式 → TeX 源码等宽灰字 + 警告 ----------
-  // 依据(dist/core/docx/math.ts texToDocxMath):katex throwOnError:false 下解析失败
+  // 依据(dist/core/docx/handlers/math.ts texToDocxMath):katex throwOnError:false 下解析失败
   // 产物含 class="katex-error" → 返回 { ok: false, text: tex };调用方(render.ts
   // renderBlock case "math" / pushRuns case "inlineMath")渲染为 TextRun 等宽灰字
   // (CODE_FONT=Consolas,color 888888)并追加警告「公式解析失败,降级为 TeX 源码: …」,
@@ -125,7 +125,7 @@ export async function run() {
   console.log("[ok] docx 公式降级:TeX 源码等宽灰字 + 无 oMath + warnings 警告 断言通过");
 
   // ---------- G1 补齐:munderover 非 ∑ 回落(munderoverToNary 252-264 / moText 267-274) ----------
-  // 依据(dist/core/docx/math.ts):display 模式 \prod / \bigcup 的 KaTeX MathML 产物为
+  // 依据(dist/core/docx/handlers/math.ts):display 模式 \prod / \bigcup 的 KaTeX MathML 产物为
   // <munderover><mo>∏/⋃</mo>…</munderover>(仅 ∑ 走 MathSum);首子 mo 文本非 ∑ →
   // MathSubSuperScript 回落(base = mo 文本 run,sub/sup 为兄弟节点),不产出 <m:nary>。
   // 实证序列化(2026-08-15):<m:sSubSup><m:e><m:r><m:t>∏</m:t></m:r></m:e><m:sub>…</m:sub><m:sup>…</m:sup>。

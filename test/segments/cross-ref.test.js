@@ -269,7 +269,7 @@ export async function run() {
   if (!hnOffP.html.includes("(?)")) throw new Error("pdf headingNumbering 关:[章节] 引用应显示「(?)」");
 
   // ============ 场景 G(G8 补齐):chapter null(captions.ts:87)与题注空文本(captions.ts:113) ============
-  // 依据(src/core/docx/captions.ts):chapter = headingNumbering && chapter>0 ? chapter : null;
+  // 依据(src/core/docx/handlers/captions.ts):chapter = headingNumbering && chapter>0 ? chapter : null;
   // 无 h1 时 chapter 恒 0 → null → 编号无章节前缀「图 1」;题注文本剥离 label 后为空 →
   // renderCaptionParagraph 仅渲染编号文本(无尾随空格)。
   const mdNoH1Cap = `![图一](g1-tiny.png)

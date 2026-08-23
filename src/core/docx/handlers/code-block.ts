@@ -4,11 +4,11 @@
  */
 import { ImageRun, Paragraph, TextRun } from "docx";
 import type { Code } from "mdast";
-import { CODE_FONT, CODE_SIZE } from "./theme.js";
+import { CODE_FONT, CODE_SIZE } from "../theme.js";
 import { highlightCodeRuns } from "./code-highlight.js";
-import { highlightFallbackWarning } from "../i18n.js";
+import { highlightFallbackWarning } from "../../i18n.js";
 import { scaleToFit } from "./image-run.js";
-import { warnDedup, type Ctx } from "./ctx.js";
+import { warnDedup, type Ctx } from "../ctx.js";
 
 /** 代码块:mermaid 围栏且有 resolver 时渲染为内嵌 PNG 图片(宽超 IMAGE_MAX_WIDTH 等比缩,
  *  与行内图片共用 scaleToFit);渲染失败(null/抛错)或缺失 resolver 时降级为

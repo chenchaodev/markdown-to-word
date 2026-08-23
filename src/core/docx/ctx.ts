@@ -20,7 +20,7 @@ import type { ConvertWarning, KeyedWarning } from "../i18n.js";
 import type { TypographySettings } from "../settings/typography.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import type { ImageResolver } from "../image/image-resolver.js";
-import type { CaptionLabelInfo } from "./captions.js";
+import type { CaptionLabelInfo } from "./handlers/captions.js";
 
 /** 单次图片解析结果(B5 memo 缓存载体):data 为 null 表示失败,error 保留原始抛错
  *  (供 B4 失败原因细分文案使用;成功时 error 不存在) */

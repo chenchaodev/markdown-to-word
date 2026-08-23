@@ -4,10 +4,10 @@
  */
 import { ImageRun, TextRun } from "docx";
 import type { Image } from "mdast";
-import { SECONDARY_TEXT_GRAY } from "./theme.js";
-import { sniffImageType, imageSizeFromBuffer } from "../image/image-type.js";
-import { imageLoadFailureWarning, unrecognizedImageWarning } from "../image/image-warning.js";
-import type { Ctx, ImageLoadResult, InlineChild, RunStyle } from "./ctx.js";
+import { SECONDARY_TEXT_GRAY } from "../theme.js";
+import { sniffImageType, imageSizeFromBuffer } from "../../image/image-type.js";
+import { imageLoadFailureWarning, unrecognizedImageWarning } from "../../image/image-warning.js";
+import type { Ctx, ImageLoadResult, InlineChild, RunStyle } from "../ctx.js";
 
 /** 图片显示宽度上限(px):宽超过则等比缩到该宽度(不放大),行内图片与 mermaid PNG 共用 */
 export const IMAGE_MAX_WIDTH = 400;

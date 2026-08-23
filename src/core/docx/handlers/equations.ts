@@ -1,6 +1,6 @@
 import type { BlockContent, Root, Paragraph as MdParagraph } from "mdast";
-import { collectPlainText } from "../util/mdast-utils.js";
-import type { Ctx } from "./ctx.js";
+import { collectPlainText } from "../../util/mdast-utils.js";
+import type { Ctx } from "../ctx.js";
 
 /** mdast math 节点(display 公式;经 remark-math/mdast-util-math 扩充进 BlockContent) */
 type MdMath = Extract<BlockContent, { type: "math" }>;

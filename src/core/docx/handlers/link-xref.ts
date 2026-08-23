@@ -5,12 +5,12 @@
  */
 import { ExternalHyperlink, InternalHyperlink, TextRun } from "docx";
 import type { Link } from "mdast";
-import { LINK_COLOR } from "./theme.js";
-import { docxBookmarkId } from "../markdown/slug.js";
-import { collectPlainText } from "../util/mdast-utils.js";
-import { CROSS_REF_KINDS, type CrossRefKind } from "../markdown/cross-ref.js";
-import { crossRefNotFoundWarning } from "../i18n.js";
-import { warnDedup, type Ctx, type InlineChild, type RunStyle } from "./ctx.js";
+import { LINK_COLOR } from "../theme.js";
+import { docxBookmarkId } from "../../markdown/slug.js";
+import { collectPlainText } from "../../util/mdast-utils.js";
+import { CROSS_REF_KINDS, type CrossRefKind } from "../../markdown/cross-ref.js";
+import { crossRefNotFoundWarning } from "../../i18n.js";
+import { warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js";
 
 /**
  * link 节点 → runs(同步;无 await 点,pushRuns 调用处无需等待)。

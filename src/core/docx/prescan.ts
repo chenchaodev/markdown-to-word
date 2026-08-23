@@ -5,8 +5,8 @@
  * 各轮顺序保持与拆分前一致(题注上下文 → 章节 label → 公式上下文 → 目录条目)。
  */
 import type { Root, Paragraph as MdParagraph } from "mdast";
-import { buildCaptionContext, type CaptionInfo } from "./captions.js";
-import { buildEquationContext, type EquationContext } from "./equations.js";
+import { buildCaptionContext, type CaptionInfo } from "./handlers/captions.js";
+import { buildEquationContext, type EquationContext } from "./handlers/equations.js";
 import { collectPlainText } from "../util/mdast-utils.js";
 import { stripSecLabelSuffix } from "../markdown/cross-ref.js";
 import { docxBookmarkId } from "../markdown/slug.js";

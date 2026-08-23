@@ -1,8 +1,8 @@
 /**
  * docx 渲染主入口(B8 拆分后):renderDocx 编排(预扫 → 正文块渲染 → Document 组装),
- * 文档 chrome 见 chrome.ts、预扫见 prescan.ts、行内/嵌套内容见 content.ts、
- * 链接交叉引用见 link-xref.ts、图片见 image-run.ts、代码块见 code-block.ts、
- * 容器降级见 fallback.ts、共享契约见 ctx.ts。
+ * 文档 chrome 见 chrome.ts、预扫见 prescan.ts、行内/嵌套内容见 handlers/content.ts、
+ * 链接交叉引用见 handlers/link-xref.ts、图片见 handlers/image-run.ts、代码块见 handlers/code-block.ts、
+ * 容器降级见 handlers/fallback.ts、共享契约见 ctx.ts。
  */
 import {
   AlignmentType,
@@ -34,16 +34,16 @@ import type {
   Table as MdTable,
 } from "mdast";
 import { CODE_FONT, MUTED_TEXT_GRAY } from "./theme.js";
-import { wrapBookmark } from "./bookmark.js";
-import { texToDocxMath } from "./math.js";
-import { renderCaptionParagraph, type CaptionInfo } from "./captions.js";
-import type { EquationContext } from "./equations.js";
+import { wrapBookmark } from "./handlers/bookmark.js";
+import { texToDocxMath } from "./handlers/math.js";
+import { renderCaptionParagraph, type CaptionInfo } from "./handlers/captions.js";
+import type { EquationContext } from "./handlers/equations.js";
 import { formulaParseFailedWarning, type Ctx } from "./ctx.js";
 import { prescanDocument } from "./prescan.js";
 import { renderCoverPage, renderTocPage, renderHeader, renderFooter } from "./chrome.js";
-import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./content.js";
-import { renderCode } from "./code-block.js";
-import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./inline-html.js";
+import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./handlers/content.js";
+import { renderCode } from "./handlers/code-block.js";
+import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./handlers/inline-html.js";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
 import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings/settings-defaults.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";

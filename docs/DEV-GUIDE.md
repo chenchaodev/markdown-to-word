@@ -39,7 +39,7 @@
   - `slug.ts`:标题 slug/id 生成;`typography.ts`:排版参数;`merge.ts`:多文件合并
   - `docx/theme.ts`:字体/样式集中配置(eastAsia 中文,勿散落硬编码)
   - `docx/render.ts`:AST → docx(标题/段落/列表/表格/代码块/引用/图片/行内样式/编号/TOC/脚注/公式)
-  - `docx/math.ts`:MathML → docx Math 组件树(walker)
+  - `docx/handlers/math.ts`:MathML → docx Math 组件树(walker)
   - `pdf/render.ts`:markdown-it → HTML 模板 → printToPDF;`pdf/metadata.ts`:元数据注入;`pdf/bookmarks.ts`:书签大纲注入(pdf-lib)
 - `src/main/`:Electron 主进程
   - `index.ts`:窗口创建、dialog 选择文件、`convert` IPC(convertImpl 纯函数 + 进度推送 + 取消检查点)、`--smoke` 冒烟自测

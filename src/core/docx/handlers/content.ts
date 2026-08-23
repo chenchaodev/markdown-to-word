@@ -15,15 +15,15 @@ import {
   TextRun,
 } from "docx";
 import type { Blockquote, FootnoteDefinition, List, ListItem, PhrasingContent } from "mdast";
-import { CODE_FONT, CODE_SIZE, MUTED_TEXT_GRAY, QUOTE_BG_GRAY, RULE_GRAY } from "./theme.js";
+import { CODE_FONT, CODE_SIZE, MUTED_TEXT_GRAY, QUOTE_BG_GRAY, RULE_GRAY } from "../theme.js";
 import { texToDocxMath } from "./math.js";
-import { isAllowedInlineHtml } from "../markdown/html-whitelist.js";
+import { isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
 import { inlineHtmlItemsToRuns, normalizeInlineHtml, parseInlineHtml } from "./inline-html.js";
 import { pushLinkRuns } from "./link-xref.js";
 import { imageToDocx } from "./image-run.js";
 import { renderCode } from "./code-block.js";
 import { renderContainerFallback, unsupportedBlockWarning } from "./fallback.js";
-import { formulaParseFailedWarning, warnDedup, type Ctx, type InlineChild, type RunStyle } from "./ctx.js";
+import { formulaParseFailedWarning, warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js";
 
 /** 行内节点 → 元素数组;样式沿父子链累积传递。
  * 标题等场景同样经 pushRuns 渲染(标题内图片/脚注引用按常规渲染,占位与警告语义与正文一致)。 */

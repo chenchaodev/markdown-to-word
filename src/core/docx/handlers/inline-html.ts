@@ -11,9 +11,9 @@
  */
 import { AlignmentType, LineRuleType, Paragraph, TextRun } from "docx";
 import type { PhrasingContent } from "mdast";
-import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../markdown/html-whitelist.js";
-import { CODE_FONT } from "./theme.js";
-import type { Ctx, InlineChild } from "./ctx.js";
+import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
+import { CODE_FONT } from "../theme.js";
+import type { Ctx, InlineChild } from "../ctx.js";
 
 /** 正文段落(排版设置:两端对齐/行距/首行缩进)。
  *  普通正文段落与白名单 html 段落共用,保证白名单段落排版与正文一致。 */

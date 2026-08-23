@@ -69,7 +69,7 @@ export async function run() {
   console.log("[ok] contract:kindLabelRegex 按 kind 构造与隔离 断言通过");
 
   // ---- 白名单标签集恒等:ALLOWED_INLINE_TAGS ↔ INLINE_TAG_STYLES(+br) ----
-  const { assertInlineTagStylesMatchWhitelist } = await import("../../dist/core/docx/inline-html.js");
+  const { assertInlineTagStylesMatchWhitelist } = await import("../../dist/core/docx/handlers/inline-html.js");
   assertInlineTagStylesMatchWhitelist();
   console.log("[ok] contract:白名单标签集恒等(ALLOWED_INLINE_TAGS ↔ INLINE_TAG_STYLES+br) 断言通过");
 }

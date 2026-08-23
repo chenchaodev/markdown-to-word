@@ -73,7 +73,7 @@ export async function run() {
   console.log("[ok] docx 公式编号 + 交叉引用:编号/制表位/书签/引用文本/label 不渲染/悬空兜底 断言通过");
 
   // ---------- G8 补齐:孤立 label 警告(equations.ts:52-53) ----------
-  // 依据(dist/core/docx/equations.ts):`{#eq:label}` 独立段前无公式 → 追加警告
+  // 依据(dist/core/docx/handlers/equations.ts):`{#eq:label}` 独立段前无公式 → 追加警告
   // 「公式 label 前无公式,已忽略: {#eq:label}」并同样跳过渲染。
   const orphanWarnings = [];
   const orphanDocx = await convert("{#eq:orphan}\n\n正文", "docx", { baseDir: FIXTURES_DIR, warnings: orphanWarnings });

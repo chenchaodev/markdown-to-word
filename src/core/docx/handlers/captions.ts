@@ -1,10 +1,10 @@
 import type { Node, Root, Paragraph as MdParagraph } from "mdast";
 import { AlignmentType, Paragraph, TextRun } from "docx";
 import type { ParagraphChild } from "docx";
-import { collectPlainText } from "../util/mdast-utils.js";
-import { docxBookmarkId } from "../markdown/slug.js";
+import { collectPlainText } from "../../util/mdast-utils.js";
+import { docxBookmarkId } from "../../markdown/slug.js";
 import { wrapBookmark } from "./bookmark.js";
-import type { Ctx } from "./ctx.js";
+import type { Ctx } from "../ctx.js";
 
 /** 题注信息(8b):类型/章节号/序数/题注文本;免更新路线在渲染期静态注入编号文本 */
 interface CaptionInfo {
