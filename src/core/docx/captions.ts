@@ -1,8 +1,9 @@
 import type { Node, Root, Paragraph as MdParagraph } from "mdast";
-import { AlignmentType, BookmarkEnd, BookmarkStart, Paragraph, TextRun } from "docx";
+import { AlignmentType, Paragraph, TextRun } from "docx";
 import type { ParagraphChild } from "docx";
 import { collectPlainText } from "../mdast-utils.js";
 import { docxBookmarkId } from "../slug.js";
+import { wrapBookmark } from "./bookmark.js";
 import type { Ctx } from "./render.js";
 
 /** 题注信息(8b):类型/章节号/序数/题注文本;免更新路线在渲染期静态注入编号文本 */
@@ -117,12 +118,11 @@ function renderCaptionParagraph(caption: CaptionInfo, ctx: Ctx): Paragraph {
   let children: ParagraphChild[] = [textRun];
   // label 书签(批次 10 功能 2):题注带 {#fig:label}/{#tab:label} 时包
   // fig-<label>/tab-<label> 书签,供交叉引用 InternalHyperlink 跳转;
-  // id 由 ctx.bookmarkNextId 自增保证文档内唯一(与 render.ts bookmarkChildren
-  // 同构;captions.ts 对 render.ts 仅 type-only 依赖,此处内联避免运行时循环)
+  // id 由 ctx.bookmarkNextId 自增保证文档内唯一(B7 起与 render.ts 共用
+  // bookmark.ts wrapBookmark,原内联实现为避免运行时循环已收敛至该无环模块)
   if (caption.label !== undefined) {
     const name = docxBookmarkId(`${caption.type === "figure" ? "fig" : "tab"}-${caption.label}`);
-    const linkId = ctx.bookmarkNextId.value++;
-    children = [new BookmarkStart(name, linkId), ...children, new BookmarkEnd(linkId)] as unknown as ParagraphChild[];
+    children = wrapBookmark(ctx.bookmarkNextId, name, children);
   }
   return new Paragraph({
     alignment: AlignmentType.CENTER,

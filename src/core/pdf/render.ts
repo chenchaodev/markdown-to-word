@@ -143,6 +143,96 @@ function buildMarkdownIt(
 }
 
 /**
+ * 容器深度跟踪器(B7 收敛 caption_recognize / eq_numbering / xref_recognize 三处
+ * 同构的嵌套层级判断):跟踪 blockquote/list_item/table_cell 开闭 token 维护深度,
+ * isTopLevel() 判定当前是否处于文档顶层(三处规则均只对顶层内容生效,与 docx 侧
+ * 只遍历 ast.children 顶层的契约一致)。feed 对非容器 token 无操作;调用方先 feed
+ * 再判定——容器开闭 token 与内容 token(paragraph_close/math_block/heading_open)
+ * 类型互斥,与原「else-if 链内联深度更新」行为等价。
+ */
+function createDepthTracker(): {
+  /** 按 token 类型更新容器深度(open ++ / close --) */
+  feed(tokenType: string): void;
+  /** 当前是否处于全部三类容器的顶层(深度均为 0) */
+  isTopLevel(): boolean;
+} {
+  const depth = { blockquote: 0, list_item: 0, table_cell: 0 };
+  return {
+    feed(tokenType) {
+      if (tokenType === "blockquote_open") depth.blockquote++;
+      else if (tokenType === "blockquote_close") depth.blockquote--;
+      else if (tokenType === "list_item_open") depth.list_item++;
+      else if (tokenType === "list_item_close") depth.list_item--;
+      else if (tokenType === "table_cell_open") depth.table_cell++;
+      else if (tokenType === "table_cell_close") depth.table_cell--;
+    },
+    isTopLevel() {
+      return depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0;
+    },
+  };
+}
+
+/** 第二遍链接扫描的结构化 token 签名(避免深导入 markdown-it/lib/token,与
+ *  attrDel 同一口径):真实 Token 结构兼容(type/content/attrGet/children)。 */
+interface LinkScanToken {
+  type: string;
+  content: string;
+  attrGet(name: string): string | null;
+  children: LinkScanToken[] | null;
+}
+
+/**
+ * eq_numbering / xref_recognize 第二遍「链接引用替换」共享骨架(B7 收敛两处同构
+ * 循环,消除重复扫描):遍历所有 inline token 的 children(含容器/脚注内),对每个
+ * href 匹配 hrefRe 的 link_open 定位「链接内(link_close 前)首个 text token」后回调
+ * visit;labels 为 href 正则捕获组序列(eq 单组 label;xref 两组 kind+label)。
+ * visit 返回 true → 解包该链接(悬空契约:目标锚点不存在不生成死链,仅移除
+ * link_open/link_close、保留内部文本与嵌套格式),由本函数统一 splice 并回退外层
+ * 下标续扫;返回 false 保持链接结构不变。
+ */
+function forEachRefLink(
+  tokens: readonly LinkScanToken[],
+  hrefRe: RegExp,
+  visit: (link: { labels: string[]; textToken: LinkScanToken | undefined }) => boolean,
+): void {
+  for (const token of tokens) {
+    if (token.type !== "inline" || !token.children) continue;
+    const children = token.children;
+    for (let i = 0; i < children.length; i++) {
+      const linkOpen = children[i]!; // 循环边界刚检查
+      if (linkOpen.type !== "link_open") continue;
+      const href = linkOpen.attrGet("href");
+      if (!href) continue;
+      const match = hrefRe.exec(href);
+      if (!match) continue;
+      // 链接内第一个 text token(可能嵌套格式如 **式**,取首个文本节点替换)
+      let textToken: LinkScanToken | undefined;
+      for (let j = i + 1; j < children.length; j++) {
+        const child = children[j]!; // 循环边界刚检查
+        if (child.type === "link_close") break;
+        if (child.type === "text") {
+          textToken = child;
+          break;
+        }
+      }
+      if (!visit({ labels: match.slice(1), textToken })) continue;
+      let closeIdx = -1;
+      for (let j = i + 1; j < children.length; j++) {
+        if (children[j]!.type === "link_close") { // 循环边界刚检查
+          closeIdx = j;
+          break;
+        }
+      }
+      if (closeIdx > 0) {
+        children.splice(closeIdx, 1);
+        children.splice(i, 1);
+        i--; // 回退,i++ 后从解包位置续扫
+      }
+    }
+  }
+}
+
+/**
  * 题注前缀行识别(8b,与 docx 侧 buildCaptionContext 顶层预扫契约一致):
  * 块 token 流中,顶层「含图片段落」或「表格」之后紧跟的、以「图:」/「表:」
  * (半角/全角冒号)开头的段落 → 标记为 fig-caption/tab-caption 并剥除前缀。
@@ -155,16 +245,11 @@ function buildMarkdownIt(
 function overrideCaptionRule(md: MarkdownIt): void {
   md.core.ruler.push("caption_recognize", (state) => {
     const tokens = state.tokens;
-    const depth = { blockquote: 0, list_item: 0, table_cell: 0 };
+    const depth = createDepthTracker();
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i]!; // 循环边界刚检查
-      if (token.type === "blockquote_open") depth.blockquote++;
-      else if (token.type === "blockquote_close") depth.blockquote--;
-      else if (token.type === "list_item_open") depth.list_item++;
-      else if (token.type === "list_item_close") depth.list_item--;
-      else if (token.type === "table_cell_open") depth.table_cell++;
-      else if (token.type === "table_cell_close") depth.table_cell--;
-      else if (token.type === "paragraph_close" && depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0) {
+      depth.feed(token.type);
+      if (token.type === "paragraph_close" && depth.isTopLevel()) {
         const inline = tokens[i - 1];
         if (!inline || inline.type !== "inline" || !inline.children || inline.children.length === 0) continue;
         const first = inline.children[0]!; // 上方刚排除 children 为空
@@ -210,21 +295,16 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
   md.core.ruler.push("eq_numbering", (state) => {
     const tokens = state.tokens;
     // 第一遍:顶层遍历(容器深度跟踪同 caption_recognize),编号 + label 段识别
-    const depth = { blockquote: 0, list_item: 0, table_cell: 0 };
+    const depth = createDepthTracker();
     let eqIndex = 0;
     let lastMathToken: (typeof tokens)[number] | null = null;
     const labelIndex = new Map<string, number>();
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i]!; // 循环边界刚检查
-      if (token.type === "blockquote_open") depth.blockquote++;
-      else if (token.type === "blockquote_close") depth.blockquote--;
-      else if (token.type === "list_item_open") depth.list_item++;
-      else if (token.type === "list_item_close") depth.list_item--;
-      else if (token.type === "table_cell_open") depth.table_cell++;
-      else if (token.type === "table_cell_close") depth.table_cell--;
-      else if (
+      depth.feed(token.type);
+      if (
         token.type === "math_block" &&
-        depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0
+        depth.isTopLevel()
       ) {
         // 仅顶层公式编号(容器内公式与 docx 侧一致:不计数不编号,原样渲染)
         if (!numbering) continue; // 关开关:不编号(不设 data-eq-index)
@@ -233,7 +313,7 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
         lastMathToken = token;
       } else if (
         token.type === "paragraph_close" &&
-        depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0
+        depth.isTopLevel()
       ) {
         // label 段:paragraph_open + inline + paragraph_close。
         // B3 口径对齐 docx:整段「纯文本串接」恰为 {#eq:label} 即命中——此前要求
@@ -262,43 +342,29 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
       }
     }
     if (!numbering) return; // 关开关:不做引用替换(引用保持原文本)
-    // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内)
+    // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内;
+    // 骨架见 forEachRefLink)
     const unknownLabels = new Set<string>();
-    for (const token of tokens) {
-      if (token.type !== "inline" || !token.children) continue;
-      const children = token.children;
-      for (let i = 0; i < children.length; i++) {
-        const linkOpen = children[i]!; // 循环边界刚检查
-        if (linkOpen.type !== "link_open") continue;
-        const href = linkOpen.attrGet("href");
-        if (!href) continue;
-        const match = /^#eq:([\w-]+)$/.exec(href);
-        if (!match) continue;
-        const label = match[1]!; // 捕获组结构保证
-        const num = labelIndex.get(label);
-        if (num === undefined && !unknownLabels.has(label)) {
-          unknownLabels.add(label); // 同标签只提示一次,避免重复刷屏
-          // 与 docx 侧同场景文案不同(历史差异,勿单侧改):docx 为
-          // 「交叉引用未找到公式 label: <label>」(warn.crossRefNotFound)
-          state.env.warnings?.push({
-            key: "warn.eqLabelUndefined",
-            params: { label },
-            fallback: `引用未定义的公式标签: eq:${label}`,
-          });
-        }
-        // 链接内第一个 text token(可能嵌套格式如 **式**,取首个文本节点替换)
-        for (let j = i + 1; j < children.length; j++) {
-          const child = children[j]!; // 循环边界刚检查
-          if (child.type === "link_close") break;
-          if (child.type === "text") {
-            if (child.content === "式" || child.content === "公式") {
-              child.content = `${child.content} (${num ?? "?"})`;
-            }
-            break;
-          }
-        }
+    forEachRefLink(tokens, /^#eq:([\w-]+)$/, ({ labels, textToken }) => {
+      const label = labels[0]!; // 捕获组结构保证
+      const num = labelIndex.get(label);
+      if (num === undefined && !unknownLabels.has(label)) {
+        unknownLabels.add(label); // 同标签只提示一次,避免重复刷屏
+        // 与 docx 侧同场景文案不同(历史差异,勿单侧改):docx 为
+        // 「交叉引用未找到公式 label: <label>」(warn.crossRefNotFound)
+        state.env.warnings?.push({
+          key: "warn.eqLabelUndefined",
+          params: { label },
+          fallback: `引用未定义的公式标签: eq:${label}`,
+        });
       }
-    }
+      // 仅默认文本「式」/「公式」替换为「式 (N)」(未知 label 占位 ?);
+      // eq 引用恒保留链接结构(与 xref 悬空解包不同)
+      if (textToken && (textToken.content === "式" || textToken.content === "公式")) {
+        textToken.content = `${textToken.content} (${num ?? "?"})`;
+      }
+      return false;
+    });
   });
   // 包装 math_block 渲染规则(原规则由 @mdit/plugin-katex 提供,保存后包装)
   const defaultRule = md.renderer.rules.math_block;
@@ -385,18 +451,13 @@ function overrideXrefRule(
     const captionLabels = new Map<string, { kind: "fig" | "tab"; numberText: string }>();
     const headingLabels = new Map<string, string>(); // label → 章节号文本
     // 第一遍:顶层遍历(容器深度跟踪同 caption_recognize/eq_numbering),计数 + 剥离 + 登记
-    const depth = { blockquote: 0, list_item: 0, table_cell: 0 };
+    const depth = createDepthTracker();
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i]!; // 循环边界刚检查
-      if (token.type === "blockquote_open") depth.blockquote++;
-      else if (token.type === "blockquote_close") depth.blockquote--;
-      else if (token.type === "list_item_open") depth.list_item++;
-      else if (token.type === "list_item_close") depth.list_item--;
-      else if (token.type === "table_cell_open") depth.table_cell++;
-      else if (token.type === "table_cell_close") depth.table_cell--;
-      else if (
+      depth.feed(token.type);
+      if (
         token.type === "heading_open" &&
-        depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0
+        depth.isTopLevel()
       ) {
         const isNumbered = opts.headingNumbering && (token.tag === "h1" || token.tag === "h2" || token.tag === "h3");
         if (isNumbered) {
@@ -435,7 +496,7 @@ function overrideXrefRule(
         }
       } else if (
         token.type === "paragraph_close" &&
-        depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0
+        depth.isTopLevel()
       ) {
         const inline = tokens[i - 1];
         if (!inline || inline.type !== "inline" || !inline.children || inline.children.length === 0) continue;
@@ -460,67 +521,35 @@ function overrideXrefRule(
         pOpen!.attrSet("data-xref-anchor", `${kind}:${label}`); // 契约:i-2 必为 paragraph_open(cls 命中亦证明其存在)
       }
     }
-    // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内)
+    // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内;
+    // 骨架见 forEachRefLink)
     const unknownLabels = new Set<string>();
-    for (const token of tokens) {
-      if (token.type !== "inline" || !token.children) continue;
-      const children = token.children;
-      for (let i = 0; i < children.length; i++) {
-        const linkOpen = children[i]!; // 循环边界刚检查
-        if (linkOpen.type !== "link_open") continue;
-        const href = linkOpen.attrGet("href");
-        if (!href) continue;
-        const match = /^#(fig|tab|sec):([\w-]+)$/.exec(href);
-        if (!match) continue;
-        const kind = match[1] as CrossRefKind;
-        const label = match[2]!; // 捕获组结构保证
-        const def = CROSS_REF_KINDS[kind];
-        let numberText: string | undefined;
-        if (kind === "sec") {
-          numberText = headingLabels.get(label);
-        } else {
-          const info = captionLabels.get(label);
-          // 登记时已限定 kind 与前缀一致(见上),此处防御性校验
-          if (info && info.kind === kind) numberText = info.numberText;
-        }
-        // 链接内第一个 text token(可能嵌套格式如 **图**,取首个文本节点替换;
-        // 与 eq_numbering 同构)
-        let textToken: (typeof children)[number] | undefined;
-        for (let j = i + 1; j < children.length; j++) {
-          const child = children[j]!; // 循环边界刚检查
-          if (child.type === "link_close") break;
-          if (child.type === "text") {
-            textToken = child;
-            break;
-          }
-        }
-        if (numberText !== undefined) {
-          if (textToken && textToken.content === def.defaultText) textToken.content = numberText;
-          // 命中:保留 href 跳转(目标锚点由第一遍注入)
-        } else {
-          if (!unknownLabels.has(`${kind}:${label}`)) {
-            unknownLabels.add(`${kind}:${label}`); // 同引用只提示一次
-            state.env.warnings?.push(crossRefNotFoundWarning(def.kindName, `${kind}:${label}`));
-          }
-          if (textToken && textToken.content === def.defaultText) textToken.content = def.danglingText;
-          // 悬空不带链接(docx 契约:目标锚点不存在,不生成死链)——解包链接
-          // 结构(仅移除 link_open/link_close,保留内部文本与嵌套格式,按普通
-          // 文本渲染;模板 a 色样式不作用于无链接文本)
-          let closeIdx = -1;
-          for (let j = i + 1; j < children.length; j++) {
-            if (children[j]!.type === "link_close") { // 循环边界刚检查
-              closeIdx = j;
-              break;
-            }
-          }
-          if (closeIdx > 0) {
-            children.splice(closeIdx, 1);
-            children.splice(i, 1);
-            i--; // 回退,i++ 后从解包位置续扫
-          }
-        }
+    forEachRefLink(tokens, /^#(fig|tab|sec):([\w-]+)$/, ({ labels, textToken }) => {
+      const kind = labels[0] as CrossRefKind;
+      const label = labels[1]!; // 捕获组结构保证
+      const def = CROSS_REF_KINDS[kind];
+      let numberText: string | undefined;
+      if (kind === "sec") {
+        numberText = headingLabels.get(label);
+      } else {
+        const info = captionLabels.get(label);
+        // 登记时已限定 kind 与前缀一致(见上),此处防御性校验
+        if (info && info.kind === kind) numberText = info.numberText;
       }
-    }
+      if (numberText !== undefined) {
+        if (textToken && textToken.content === def.defaultText) textToken.content = numberText;
+        return false; // 命中:保留 href 跳转(目标锚点由第一遍注入)
+      }
+      if (!unknownLabels.has(`${kind}:${label}`)) {
+        unknownLabels.add(`${kind}:${label}`); // 同引用只提示一次
+        state.env.warnings?.push(crossRefNotFoundWarning(def.kindName, `${kind}:${label}`));
+      }
+      if (textToken && textToken.content === def.defaultText) textToken.content = def.danglingText;
+      // 悬空不带链接(docx 契约:目标锚点不存在,不生成死链)——解包链接
+      // 结构(仅移除 link_open/link_close,保留内部文本与嵌套格式,按普通
+      // 文本渲染;模板 a 色样式不作用于无链接文本)
+      return true;
+    });
   });
   // 包装 paragraph_open 渲染规则:带 data-xref-anchor 的题注段落开头注入锚点
   const defaultParaRule = md.renderer.rules.paragraph_open;

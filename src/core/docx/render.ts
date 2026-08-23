@@ -1,7 +1,5 @@
 import {
   AlignmentType,
-  BookmarkEnd,
-  BookmarkStart,
   BorderStyle,
   CommentRangeEnd,
   CommentRangeStart,
@@ -47,6 +45,7 @@ import type {
   Table as MdTable,
 } from "mdast";
 import { CODE_FONT, CODE_SIZE, LINK_COLOR } from "./theme.js";
+import { wrapBookmark } from "./bookmark.js";
 import { texToDocxMath } from "./math.js";
 import { highlightCodeRuns } from "./code-highlight.js";
 import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo, type CaptionLabelInfo } from "./captions.js";
@@ -491,20 +490,6 @@ function renderFooter(): Footer {
   });
 }
 
-/**
- * 书签包裹:name → BookmarkStart/End 首尾包裹 children(输出
- * <w:bookmarkStart w:name="…" w:id="N"/>…<w:bookmarkEnd w:id="N"/>,
- * 内部锚点 InternalHyperlink 按 name 跳转,不受 id 影响)。
- * 不用 docx Bookmark 组件:其实例每枚独立 linkId 计数(恒为 1)→ 文档内
- * 标题书签与公式书签全部 w:id="1" 冲突(Word 要求文档内唯一,实测 WPS 显示异常);
- * 改用导出组件 + ctx.bookmarkNextId 自增保证文档内唯一。
- * BookmarkStart/End 不在 ParagraphChild 联合类型内(d.ts 实证),children 断言。
- */
-function bookmarkChildren(ctx: Ctx, name: string, children: readonly ParagraphChild[]): ParagraphChild[] {
-  const linkId = ctx.bookmarkNextId.value++;
-  return [new BookmarkStart(name, linkId), ...children, new BookmarkEnd(linkId)] as unknown as ParagraphChild[];
-}
-
 async function renderBlock(
   node: BlockContent,
   ctx: Ctx,
@@ -585,7 +570,7 @@ async function renderBlock(
           ],
           children:
             eq.label !== undefined
-              ? bookmarkChildren(ctx, docxBookmarkId(`eq-${eq.label}`), equationRuns)
+              ? wrapBookmark(ctx.bookmarkNextId, docxBookmarkId(`eq-${eq.label}`), equationRuns)
               : equationRuns,
         });
         return [paragraph];
@@ -643,7 +628,7 @@ async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph> {
     // 实现(linkId 由 ctx.bookmarkNextId 自增,避免组件级恒为 1 的书签 id 冲突)
     children:
       typeof id === "string" && id !== ""
-        ? bookmarkChildren(ctx, docxBookmarkId(id), runs)
+        ? wrapBookmark(ctx.bookmarkNextId, docxBookmarkId(id), runs)
         : runs,
   });
 }
