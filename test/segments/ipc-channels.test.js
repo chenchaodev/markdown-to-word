@@ -65,8 +65,11 @@ export async function run() {
     throw new Error(`ipc-channels 断言失败:preload 出现裸字符串 channel "${m[2]}"(应经 CH.* 引用)`);
   }
 
-  // ---- main 侧接线抽查:index.js 不应残留旧字面量(handle 全部经 CH.* 引用) ----
-  const indexSrc = fs.readFileSync(path.join(distMain, "index.js"), "utf8");
+  // ---- main 侧接线抽查:dist/main 全部产物不应残留旧字面量(handle 全部经 CH.* 引用) ----
+  // 目录重组批④后 handle 注册分散在 dist/main(含 ipc/、windows/ 子目录),递归全扫
+  const mainFiles = fs.readdirSync(distMain, { recursive: true, encoding: "utf8" })
+    .filter((rel) => rel.endsWith(".js"))
+    .map((rel) => path.join(distMain, rel));
   const legacy = [
     "dialog:openMarkdowns",
     "dialog:selectDir",
@@ -77,10 +80,13 @@ export async function run() {
     "shell:open",
     "batch:progress",
   ];
-  for (const old of legacy) {
-    if (indexSrc.includes(`"${old}"`)) {
-      throw new Error(`ipc-channels 断言失败:index.js 残留旧 channel 字面量 "${old}"`);
+  for (const file of mainFiles) {
+    const src = fs.readFileSync(file, "utf8");
+    for (const old of legacy) {
+      if (src.includes(`"${old}"`)) {
+        throw new Error(`ipc-channels 断言失败:${path.basename(file)} 残留旧 channel 字面量 "${old}"`);
+      }
     }
   }
-  console.log("[ok] ipc-channels:index.js 无旧 channel 字面量残留 断言通过");
+  console.log("[ok] ipc-channels:dist/main 全部产物无旧 channel 字面量残留 断言通过");
 }
