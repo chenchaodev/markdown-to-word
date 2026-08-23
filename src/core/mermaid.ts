@@ -8,6 +8,11 @@
  *   (宽 > 400 由 docx 侧等比缩放,与行内图片共用缩放逻辑)
  * resolver 返回 null = 渲染失败,调用方按各自降级策略处理
  * (docx:等宽代码块原文 + 警告;pdf:mermaid-fallback 代码块 + 警告)。
+ *
+ * 信任边界假设(B7 第 3 波声明):svg/png 均来自本地 Mermaid 渲染服务
+ * (main 进程隐藏 BrowserWindow,输入为用户自己的 markdown 围栏代码),
+ * 属受信输入——core 层不做消毒/校验,svg 直接内联进 pdf 正文 HTML、
+ * png 直接内嵌 docx;若未来渲染服务改为接收不可信来源,须先在服务侧补消毒。
  */
 export interface MermaidResult {
   svg: string;

@@ -190,7 +190,9 @@ export function setOutline(doc: PDFDocument, outlines: PdfOutline[]): void {
  */
 function toOutline(doc: PDFDocument, node: PdfBookmarkNode): PdfOutline {
   const dest = lookupNamedDest(doc, node.name);
-  const pageRef = dest ? (dest.asArray()[0] as PDFRef) : doc.getPage(0).ref;
+  // dest 数组第 0 元素运行时为页面 PDFRef(命名目标解析产物);畸形数据(含
+  // noUncheckedIndexedAccess 的 undefined)由下方 instanceof 收窄回退首页,无需断言
+  const pageRef = dest ? dest.asArray()[0] : undefined;
   return {
     title: node.title,
     to: pageRef instanceof PDFRef ? pageRef : doc.getPage(0).ref,

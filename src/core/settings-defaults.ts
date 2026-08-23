@@ -171,24 +171,33 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   },
 ];
 
+/**
+ * matchesPreset 参与比较的字段清单(单一来源):排版 + 页面设置全字段。
+ * 新增 TypographySettings / PageSetup 字段时在此补一行,漏补会导致
+ * 预设回填静默失准(新增字段不参与匹配);字段名受 keyof 约束,拼错编译期报错。
+ */
+const PRESET_COMPARE_FIELDS = {
+  typography: [
+    "fontAscii",
+    "fontEastAsia",
+    "bodySizePt",
+    "lineSpacing",
+    "firstLineIndent",
+    "align",
+    "headingNumbering",
+    "captionNumbering",
+  ],
+  pageSetup: ["paper", "orientation", "marginTop", "marginBottom", "marginLeft", "marginRight"],
+} as const;
+
 /** 当前排版与页面设置是否与某预设完全一致(renderer 回填时选中对应模板)。 */
 export function matchesPreset(preset: TemplatePreset, settings: AppSettings): boolean {
-  const { typography: t, pageSetup: p } = preset;
-  const { typography: st, pageSetup: sp } = settings;
   return (
-    t.fontAscii === st.fontAscii &&
-    t.fontEastAsia === st.fontEastAsia &&
-    t.bodySizePt === st.bodySizePt &&
-    t.lineSpacing === st.lineSpacing &&
-    t.firstLineIndent === st.firstLineIndent &&
-    t.align === st.align &&
-    t.headingNumbering === st.headingNumbering &&
-    t.captionNumbering === st.captionNumbering &&
-    p.paper === sp.paper &&
-    p.orientation === sp.orientation &&
-    p.marginTop === sp.marginTop &&
-    p.marginBottom === sp.marginBottom &&
-    p.marginLeft === sp.marginLeft &&
-    p.marginRight === sp.marginRight
+    PRESET_COMPARE_FIELDS.typography.every(
+      (field) => preset.typography[field] === settings.typography[field],
+    ) &&
+    PRESET_COMPARE_FIELDS.pageSetup.every(
+      (field) => preset.pageSetup[field] === settings.pageSetup[field],
+    )
   );
 }

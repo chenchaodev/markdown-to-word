@@ -44,7 +44,15 @@ import type {
   RootContent,
   Table as MdTable,
 } from "mdast";
-import { CODE_FONT, CODE_SIZE, LINK_COLOR } from "./theme.js";
+import {
+  CODE_FONT,
+  CODE_SIZE,
+  LINK_COLOR,
+  MUTED_TEXT_GRAY,
+  QUOTE_BG_GRAY,
+  RULE_GRAY,
+  SECONDARY_TEXT_GRAY,
+} from "./theme.js";
 import { wrapBookmark } from "./bookmark.js";
 import { texToDocxMath } from "./math.js";
 import { highlightCodeRuns } from "./code-highlight.js";
@@ -179,6 +187,22 @@ const PAPER_SIZES_MM: Record<PageSetup["paper"], { width: number; height: number
 function mmToTwips(mm: number): number {
   return Math.round(mm * 56.6929);
 }
+
+/* ---------- 固定版面常量(B7 魔法数字收敛;字号单位 half-points = pt × 2) ---------- */
+
+/** 封面标题字号:44 = 22pt(与 pdf 封面标题一致) */
+const COVER_TITLE_SIZE = 44;
+/** 封面 author/date 小字号:22 = 11pt */
+const COVER_META_SIZE = 22;
+/** 目录页标题字号:36 = 18pt */
+const TOC_TITLE_SIZE = 36;
+/** 页眉/页脚小字号:14 = 7pt */
+const HEADER_FOOTER_SIZE = 14;
+/** 图片显示宽度上限(px):宽超过则等比缩到该宽度(不放大),行内图片与 mermaid PNG 共用 */
+const IMAGE_MAX_WIDTH = 400;
+/** 图片尺寸不可解析时的兜底尺寸(px) */
+const IMAGE_FALLBACK_WIDTH = 400;
+const IMAGE_FALLBACK_HEIGHT = 300;
 
 /** G1 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理;
  *  math 为 display 公式,独立居中段落) */
@@ -356,7 +380,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     styles: {
       default: {
         document: {
-          // 排版设置:字体以 typography 为准(theme.ts 保留作兜底);
+          // 排版设置:字体/字号唯一来源是 typography 设置(theme.ts 只收固定样式常量);
           // 字号 half-points = pt × 2(如 14pt → 28)
           run: {
             font: {
@@ -414,7 +438,7 @@ function renderCoverPage(metadata: DocMetadata): Paragraph[] {
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 0, after: 600 },
-      children: [new TextRun({ text: metadata.title ?? "", bold: true, size: 44 })],
+      children: [new TextRun({ text: metadata.title ?? "", bold: true, size: COVER_TITLE_SIZE })],
     }),
   );
   if (metadata.author) {
@@ -422,7 +446,7 @@ function renderCoverPage(metadata: DocMetadata): Paragraph[] {
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { before: 0, after: 120 },
-        children: [new TextRun({ text: metadata.author, color: "808080", size: 22 })],
+        children: [new TextRun({ text: metadata.author, color: SECONDARY_TEXT_GRAY, size: COVER_META_SIZE })],
       }),
     );
   }
@@ -431,7 +455,7 @@ function renderCoverPage(metadata: DocMetadata): Paragraph[] {
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { before: 0, after: 0 },
-        children: [new TextRun({ text: metadata.date, color: "808080", size: 22 })],
+        children: [new TextRun({ text: metadata.date, color: SECONDARY_TEXT_GRAY, size: COVER_META_SIZE })],
       }),
     );
   }
@@ -450,7 +474,7 @@ function renderTocPage(entries: TocEntry[]): (Paragraph | TableOfContents)[] {
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 240, after: 480 },
-      children: [new TextRun({ text: "目录", bold: true, size: 36 })],
+      children: [new TextRun({ text: "目录", bold: true, size: TOC_TITLE_SIZE })],
     }),
     new TableOfContents("目录", {
       hyperlink: true, // \h
@@ -464,12 +488,12 @@ function renderTocPage(entries: TocEntry[]): (Paragraph | TableOfContents)[] {
   ];
 }
 
-/** 页眉:文档标题居中灰色小字(size 14 = 7pt,颜色 888888);无标题时不调用 */
+/** 页眉:文档标题居中灰色小字(HEADER_FOOTER_SIZE = 7pt,颜色 MUTED_TEXT_GRAY);无标题时不调用 */
 function renderHeader(title: string): Header {
   return new Header({
     children: [new Paragraph({
       alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: title, size: 14, color: "888888" })],
+      children: [new TextRun({ text: title, size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY })],
     })],
   });
 }
@@ -480,11 +504,11 @@ function renderFooter(): Footer {
     children: [new Paragraph({
       alignment: AlignmentType.CENTER,
       children: [
-        new TextRun({ text: "第 ", size: 14, color: "888888" }),
-        new TextRun({ size: 14, color: "888888", children: [PageNumber.CURRENT] }),
-        new TextRun({ text: " 页 / 共 ", size: 14, color: "888888" }),
-        new TextRun({ size: 14, color: "888888", children: [PageNumber.TOTAL_PAGES] }),
-        new TextRun({ text: " 页", size: 14, color: "888888" }),
+        new TextRun({ text: "第 ", size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY }),
+        new TextRun({ size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY, children: [PageNumber.CURRENT] }),
+        new TextRun({ text: " 页 / 共 ", size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY }),
+        new TextRun({ size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY, children: [PageNumber.TOTAL_PAGES] }),
+        new TextRun({ text: " 页", size: HEADER_FOOTER_SIZE, color: MUTED_TEXT_GRAY }),
       ],
     })],
   });
@@ -542,7 +566,7 @@ async function renderBlock(
           return [
             new Paragraph({
               alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: result.text, font: CODE_FONT, color: "888888" })],
+              children: [new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY })],
             }),
           ];
         }
@@ -552,7 +576,7 @@ async function renderBlock(
         // 公式主体:解析成功 → docx Math;失败 → TeX 源码等宽灰字
         const mathChild: DocxMath | TextRun = result.ok
           ? new DocxMath({ children: result.children })
-          : new TextRun({ text: result.text, font: CODE_FONT, color: "888888" });
+          : new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY });
         // 制表位跳格:Tab 必须包在 TextRun 内(裸 <w:tab/> 是非法段落级元素,
         // WPS 实测会把公式段降级显示;TextRun({ children: [Tab] }) 输出
         // <w:r><w:tab/></w:r> 合法结构)。包后全部为 ParagraphChild,无需断言
@@ -704,7 +728,7 @@ async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
   return result;
 }
 
-/** 代码块:mermaid 围栏且有 resolver 时渲染为内嵌 PNG 图片(宽 >400 等比缩,
+/** 代码块:mermaid 围栏且有 resolver 时渲染为内嵌 PNG 图片(宽超 IMAGE_MAX_WIDTH 等比缩,
  *  与行内图片共用 scaleToFit);渲染失败(null/抛错)或缺失 resolver 时降级为
  *  等宽文本代码块(行为不变,内容不丢失,与公式降级语义一致)。
  *  已知语言(hljs.getLanguage 命中)走语法高亮(code-highlight.ts,GitHub Light
@@ -765,7 +789,7 @@ async function renderBlockquote(node: Blockquote, ctx: Ctx): Promise<Paragraph[]
         new Paragraph({
           indent: { left: 720 },
           children: await renderPhrasing(normalizeInlineHtml(child.children), ctx),
-          shading: { type: "clear", fill: "F2F2F2" },
+          shading: { type: "clear", fill: QUOTE_BG_GRAY },
         }),
       );
     } else if (child.type === "blockquote") {
@@ -826,7 +850,7 @@ async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
 function renderThematicBreak(): Paragraph {
   return new Paragraph({
     spacing: { before: 120, after: 120 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "999999" } },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: RULE_GRAY } },
   });
 }
 
@@ -905,7 +929,7 @@ function unsupportedBlockWarning(blockType: string, container: string): KeyedWar
 /** 容器内降级文本段落:等宽灰字(与顶层公式解析失败降级同款样式) */
 function fallbackTextParagraph(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, font: CODE_FONT, color: "888888" })],
+    children: [new TextRun({ text, font: CODE_FONT, color: MUTED_TEXT_GRAY })],
   });
 }
 
@@ -977,13 +1001,15 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       if (result.ok) {
         runs.push(new DocxMath({ children: result.children }));
       } else {
-        runs.push(new TextRun({ text: result.text, font: CODE_FONT, color: "888888" }));
+        runs.push(new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY }));
         ctx.warnings?.push(formulaParseFailedWarning(node.value));
       }
       break;
     }
     case "link": {
-      const text = node.children.map((c) => ("value" in c ? (c as { value: string }).value : "")).join("");
+      // 链接文本 = 子树纯文本(复用 collectPlainText 单源,替代逐子节点 value 拼接 +
+      // 类型断言;与目录条目/题注识别同一取文本路径)
+      const text = collectPlainText(node);
       const url = node.url;
       // 公式交叉引用(9d):[式](#eq:label) / [公式](#eq:label) → 文本替换为
       // 「式 (N)」/「公式 (N)」并跳转公式书签 eq-label;未知 label → 普通文本
@@ -1155,12 +1181,12 @@ async function renderFootnoteDefinition(def: FootnoteDefinition, ctx: Ctx): Prom
   return paragraphs;
 }
 
-/** 图片尺寸缩放(行内图片与 mermaid PNG 共用):宽 ≤ 400 原尺寸(不放大),
- *  宽 > 400 等比缩到 400 宽(高度按同比例取整)。 */
+/** 图片尺寸缩放(行内图片与 mermaid PNG 共用):宽 ≤ IMAGE_MAX_WIDTH 原尺寸(不放大),
+ *  宽超过则等比缩到上限宽度(高度按同比例取整)。 */
 function scaleToFit(width: number, height: number): { width: number; height: number } {
-  if (width > 400) {
-    const scale = 400 / width;
-    return { width: 400, height: Math.round(height * scale) };
+  if (width > IMAGE_MAX_WIDTH) {
+    const scale = IMAGE_MAX_WIDTH / width;
+    return { width: IMAGE_MAX_WIDTH, height: Math.round(height * scale) };
   }
   return { width, height };
 }
@@ -1193,13 +1219,13 @@ async function resolveImageCached(ctx: Ctx, url: string): Promise<ImageLoadResul
 }
 
 /** 行内图片:经 resolver 加载为 ImageRun;失败或 webp 时占位文本。
- *  尺寸规则:能解析出 PNG/JPEG 尺寸时,宽 ≤ 400 原尺寸(不放大),宽 > 400 等比缩到
- *  400 宽;无法解析尺寸(其他格式/畸形数据)→ 400×300 兜底。
+ *  尺寸规则:能解析出 PNG/JPEG 尺寸时按 scaleToFit(上限 IMAGE_MAX_WIDTH,不放大);
+ *  无法解析尺寸(其他格式/畸形数据)→ IMAGE_FALLBACK_WIDTH×IMAGE_FALLBACK_HEIGHT 兜底。
  *  M6:本地缺失与外链下载失败统一经 resolver 失败路径告警(单次 IO);
  *  B4:按 fs 错误码细分文案(imageLoadFailureWarning,见 core/image-warning.ts)。
  *  B5:解析经 resolveImageCached memo 化——同 URL 多处出现只解析一次。 */
 async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<InlineChild> {
-  const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: "808080", ...style });
+  const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: SECONDARY_TEXT_GRAY, ...style });
   // B4:失败原因细分——resolver 抛出的 fs 错误按错误码分类(ENOENT → 不存在 /
   // EACCES|EPERM → 无权限 / 其他或返回 null → 统一「图片加载失败」兜底);
   // 无 resolver 时本地无从检查(不做 stat 预扫),仅外链可判定失败(统一文案)
@@ -1228,7 +1254,9 @@ async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<Inli
     return fallback();
   }
   const size = imageSizeFromBuffer(data);
-  const { width, height } = size ? scaleToFit(size.width, size.height) : { width: 400, height: 300 };
+  const { width, height } = size
+    ? scaleToFit(size.width, size.height)
+    : { width: IMAGE_FALLBACK_WIDTH, height: IMAGE_FALLBACK_HEIGHT };
   return new ImageRun({ type, data, transformation: { width, height } });
 }
 

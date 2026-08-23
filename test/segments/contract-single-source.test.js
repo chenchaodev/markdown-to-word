@@ -3,7 +3,9 @@
  * - CROSS_REF_KINDS:docx/pdf 两侧渲染模块 re-export 的常量与 core/cross-ref.ts
  *   单源为同一对象引用(ESM live binding,两侧 import 同源即恒等);
  * - 章节 label 正则族(SEC_LABEL_RE / kindLabelRegex / stripSecLabelSuffix):
- *   行为断言(label 提取、剥离、fig/tab/sec 构造)。
+ *   行为断言(label 提取、剥离、fig/tab/sec 构造);
+ * - 白名单标签集恒等(B7 第 3 波):INLINE_TAG_STYLES + br ↔ ALLOWED_INLINE_TAGS
+ *   键集一致,防两处平行表漂移。
  * 纯断言段,无产物输出。
  */
 import {
@@ -65,4 +67,9 @@ export async function run() {
     }
   }
   console.log("[ok] contract:kindLabelRegex 按 kind 构造与隔离 断言通过");
+
+  // ---- 白名单标签集恒等:ALLOWED_INLINE_TAGS ↔ INLINE_TAG_STYLES(+br) ----
+  const { assertInlineTagStylesMatchWhitelist } = await import("../../dist/core/docx/inline-html.js");
+  assertInlineTagStylesMatchWhitelist();
+  console.log("[ok] contract:白名单标签集恒等(ALLOWED_INLINE_TAGS ↔ INLINE_TAG_STYLES+br) 断言通过");
 }

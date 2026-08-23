@@ -123,13 +123,13 @@
 - [ ] pdf eq/xref 第二遍链接替换循环合并(render.ts:254-282/459-517)
 - [ ] bookmarkChildren 共享 helper + as unknown 断言收敛一处(render.ts:494/captions.ts:119)
 - [ ] decodeEntities 双实现统一(utils/code-highlight)
-- [ ] 白名单标签集恒等断言(ALLOWED_INLINE_TAGS ↔ INLINE_TAG_STYLES)
+- [x] 白名单标签集恒等断言(ALLOWED_INLINE_TAGS ↔ INLINE_TAG_STYLES)
 - [ ] typography 平行定义 type-only 共享(renderer↔core;typography.ts:2-3)
-- [ ] matchesPreset 字段数组驱动(settings-defaults.ts:175-193)
-- [ ] theme.ts 死导出处置(DEFAULT_FONT/DEFAULT_SIZE/QUOTE_COLOR:删或定为兜底单源)
-- [ ] 链接文本提取复用 collectPlainText 消断言(docx/render.ts:875);bookmarks.ts:193 冗余断言清理
-- [ ] mermaid.ts 契约注释声明 SVG 信任边界假设
-- [ ] docx 颜色/字号魔法数字收敛常量(888888×8/808080×3/F2F2F2/999999/封面目录字号/400×300)
+- [x] matchesPreset 字段数组驱动(settings-defaults.ts:175-193)
+- [x] theme.ts 死导出处置(DEFAULT_FONT/DEFAULT_SIZE/QUOTE_COLOR:删或定为兜底单源)
+- [x] 链接文本提取复用 collectPlainText 消断言(docx/render.ts:875);bookmarks.ts:193 冗余断言清理
+- [x] mermaid.ts 契约注释声明 SVG 信任边界假设
+- [x] docx 颜色/字号魔法数字收敛常量(888888×8/808080×3/F2F2F2/999999/封面目录字号/400×300)
 
 #### B8 大文件拆分(L,P2 重构;依赖 B7;每步独立提交可回退)
 - [ ] docx/render.ts pushRuns link case(~97 行)抽 link-xref 模块(:845-1010)

@@ -11,7 +11,7 @@
  */
 import { AlignmentType, LineRuleType, Paragraph, TextRun } from "docx";
 import type { PhrasingContent } from "mdast";
-import { isAllowedInlineHtml } from "../html-whitelist.js";
+import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../html-whitelist.js";
 import { CODE_FONT } from "./theme.js";
 import type { Ctx, InlineChild } from "./render.js";
 
@@ -58,6 +58,24 @@ const INLINE_TAG_STYLES: Record<string, InlineHtmlStyleFlags> = {
   mark: { highlight: true },
   span: {},
 };
+
+/**
+ * 白名单契约恒等断言(B7 第 3 波):INLINE_TAG_STYLES 键集 + br(br 为空标签,
+ * parseInlineHtml 特殊处理产出 break 项,不入样式表)必须与 ALLOWED_INLINE_TAGS
+ * 完全一致。两处平行表(html-whitelist.ts 判定集 / 本模块样式表)任一侧增删标签
+ * 而另一侧未同步时立即报错,防漂移(测试段 contract-single-source 运行期守护)。
+ */
+export function assertInlineTagStylesMatchWhitelist(): void {
+  const styleTags = new Set(Object.keys(INLINE_TAG_STYLES));
+  styleTags.add("br");
+  const missing = [...ALLOWED_INLINE_TAGS].filter((tag) => !styleTags.has(tag));
+  const extra = [...styleTags].filter((tag) => !ALLOWED_INLINE_TAGS.has(tag));
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `白名单标签集漂移:相对 ALLOWED_INLINE_TAGS,INLINE_TAG_STYLES 缺 [${missing.join(", ")}] 多 [${extra.join(", ")}]`,
+    );
+  }
+}
 
 /**
  * 白名单表达式 → 解析项序列(调用方须先经 isAllowedInlineHtml 校验)。
