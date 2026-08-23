@@ -31,7 +31,7 @@ export const fixtures = { main: coverMd };
 
 export async function run() {
   const coverDocx = await convert(coverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const coverDocument = unzipPart(coverDocx.buffer, "word/document.xml");
+  const coverDocument = await unzipPart(coverDocx.buffer, "word/document.xml");
   // 断言 1:封面标题居中加粗 22pt(44 half-points,docx 库 size = pt × 2)
   for (const [needle, label] of [
     ['<w:sz w:val="44"/>', "标题字号 44(22pt)"],
@@ -80,7 +80,7 @@ export async function run() {
   // 断言 6(反例):无 frontmatter 时双格式均不产出封面(context.title 不触发封面)
   const noCoverMd = "# 无封面标题\n\n正文内容。";
   const noCoverDocx = await convert(noCoverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const noCoverDocument = unzipPart(noCoverDocx.buffer, "word/document.xml");
+  const noCoverDocument = await unzipPart(noCoverDocx.buffer, "word/document.xml");
   if (noCoverDocument.includes('<w:sz w:val="44"/>') || noCoverDocument.includes("测试作者")) {
     throw new Error("封面断言失败:无 frontmatter 时 docx 不应产出封面(标题 44/作者灰字)");
   }

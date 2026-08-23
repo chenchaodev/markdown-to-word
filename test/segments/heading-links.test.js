@@ -41,8 +41,8 @@ export const fixtures = { main: linkMd };
 /** 标题编号 + 内部/外部链接验收(批次 5b) */
 export async function run() {
   const linkDocx = await convert(linkMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const numberingXml = unzipPart(linkDocx.buffer, "word/numbering.xml");
-  const documentXml = unzipPart(linkDocx.buffer, "word/document.xml");
+  const numberingXml = await unzipPart(linkDocx.buffer, "word/numbering.xml");
+  const documentXml = await unzipPart(linkDocx.buffer, "word/document.xml");
   // R4 回归守卫:书签 w:id 文档内唯一。docx Bookmark 组件每枚独立计数恒为 1 →
   // 全文档标题/公式书签 w:id 全部冲突(Word 要求文档内唯一,实测 WPS 显示异常);
   // bookmarkChildren 改用 ctx.bookmarkNextId 自增,每枚 bookmarkStart/End 对独占 id。
@@ -66,7 +66,7 @@ export async function run() {
   }
   // 外链(ExternalHyperlink 实现事实):URL 只进 rels(document.xml 经 r:id 引用,
   // 关系 Id 为 docx 库随机生成,须动态比对);关系类型 hyperlink + TargetMode External
-  const relsXml = unzipPart(linkDocx.buffer, "word/_rels/document.xml.rels");
+  const relsXml = await unzipPart(linkDocx.buffer, "word/_rels/document.xml.rels");
   if (!relsXml.includes('Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"')) {
     throw new Error("外链断言失败:document.xml.rels 缺少 hyperlink 关系类型");
   }

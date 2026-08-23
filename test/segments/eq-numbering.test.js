@@ -36,7 +36,7 @@ export const fixtures = { main: batch9Md };
 export async function run() {
   const b9Warnings = [];
   const batch9Docx = await convert(batch9Md, "docx", { baseDir: FIXTURES_DIR, warnings: b9Warnings });
-  const b9Document = unzipPart(batch9Docx.buffer, "word/document.xml");
+  const b9Document = await unzipPart(batch9Docx.buffer, "word/document.xml");
   // R4 回归守卫:书签 w:id 文档内唯一(公式 label 书签 eq-energy/eq-force 与标题书签
   // 共用 ctx.bookmarkNextId 自增计数,全文档不重复;曾为组件级恒为 1 导致 WPS 异常)
   const b9BookmarkIds = [...b9Document.matchAll(/w:bookmarkStart[^>]*w:id="(\d+)"/g)].map((m) => m[1]);
@@ -79,7 +79,7 @@ export async function run() {
   if (!orphanWarnings.includes("公式 label 前无公式,已忽略: {#eq:orphan}")) {
     throw new Error("批次9断言失败:孤立 label 应追加「公式 label 前无公式」警告");
   }
-  const orphanXml = unzipPart(orphanDocx.buffer, "word/document.xml");
+  const orphanXml = await unzipPart(orphanDocx.buffer, "word/document.xml");
   if (orphanXml.includes("{#eq:orphan}")) {
     throw new Error("批次9断言失败:孤立 label 标记行不应渲染");
   }
@@ -123,7 +123,7 @@ export async function run() {
     throw new Error("批次9断言失败:B3 粗斜体包裹 label 的交叉引用未替换为「式 (1)」");
   }
   const boldLabelDocx = await convert(boldLabelMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const boldLabelXml = unzipPart(boldLabelDocx.buffer, "word/document.xml");
+  const boldLabelXml = await unzipPart(boldLabelDocx.buffer, "word/document.xml");
   if (!boldLabelXml.includes('w:name="eq-bold-lab"')) {
     throw new Error("批次9断言失败:B3 粗斜体包裹 label 未登记书签(docx)");
   }
@@ -141,7 +141,7 @@ export async function run() {
     warnings: offWarnings,
     equationNumbering: false,
   });
-  const offDocument = unzipPart(offDocx.buffer, "word/document.xml");
+  const offDocument = await unzipPart(offDocx.buffer, "word/document.xml");
   // 关开关-1:公式不编号(无 (1)/(2) 静态文本)
   for (const needle of ["(1)", "(2)"]) {
     if (offDocument.includes(needle)) throw new Error(`批次9断言失败:关开关后不应出现公式编号(${needle})`);

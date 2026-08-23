@@ -39,7 +39,7 @@ export async function run() {
   if (buffer.length === 0) {
     throw new Error("code-highlight 断言失败:docx buffer 为空");
   }
-  const xml = unzipPart(buffer, "word/document.xml");
+  const xml = await unzipPart(buffer, "word/document.xml");
   // keyword(const/function/return)→ CF222E
   if (!xml.includes('<w:color w:val="CF222E"/>')) {
     throw new Error('code-highlight 断言失败:keyword 未着色(期望 <w:color w:val="CF222E"/>)');
@@ -62,7 +62,7 @@ export async function run() {
   console.log("[ok] code-highlight:```ts 高亮(keyword/string/comment 着色 + 特殊字符还原)断言通过");
 
   // ---- 2. 无语言围栏 → 无高亮(无 <w:color) ----
-  const plainXml = unzipPart(await renderDocx(parseMarkdown(MD_PLAIN)), "word/document.xml");
+  const plainXml = await unzipPart(await renderDocx(parseMarkdown(MD_PLAIN)), "word/document.xml");
   if (!plainXml.includes("const plain = 1;")) {
     throw new Error("code-highlight 断言失败:无语言代码块文本缺失");
   }
@@ -72,7 +72,7 @@ export async function run() {
   console.log("[ok] code-highlight:无语言代码块降级等宽文本(无 <w:color)断言通过");
 
   // ---- 3. 未知语言围栏 → 无高亮 ----
-  const unknownXml = unzipPart(await renderDocx(parseMarkdown(MD_UNKNOWN)), "word/document.xml");
+  const unknownXml = await unzipPart(await renderDocx(parseMarkdown(MD_UNKNOWN)), "word/document.xml");
   if (!unknownXml.includes("const unknown = 1;")) {
     throw new Error("code-highlight 断言失败:未知语言代码块文本缺失");
   }

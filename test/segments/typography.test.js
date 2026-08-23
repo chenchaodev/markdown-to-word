@@ -35,8 +35,8 @@ export async function run() {
   // 正文段落两端对齐;headingNumbering=false → 全文无编号引用
   // (md 无列表,故 w:numPr 全缺即可稳定断言标题编号已关闭)
   const typoDocx = await convert(typoMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], typography });
-  const typoStyles = unzipPart(typoDocx.buffer, "word/styles.xml");
-  const typoDocument = unzipPart(typoDocx.buffer, "word/document.xml");
+  const typoStyles = await unzipPart(typoDocx.buffer, "word/styles.xml");
+  const typoDocument = await unzipPart(typoDocx.buffer, "word/document.xml");
   if (!typoStyles.includes('<w:sz w:val="28"/>')) {
     throw new Error('排版断言失败:styles.xml 缺少 w:sz w:val="28"(14pt×2 half-points)');
   }

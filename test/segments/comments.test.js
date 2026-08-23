@@ -38,7 +38,7 @@ export async function run() {
   console.log("[ok] docx 批注:comments.xml 部件存在");
 
   // 批注内容断言(comments.xml):文本 / rich 加粗 / 链接 / author 固定
-  const commentsXml = unzipPart(docxArtifact.buffer, "word/comments.xml");
+  const commentsXml = await unzipPart(docxArtifact.buffer, "word/comments.xml");
   if (!commentsXml.includes("这是批注内容")) {
     throw new Error("批注内容断言失败: comments.xml 缺少批注内容文本");
   }
@@ -52,7 +52,7 @@ export async function run() {
   if (!commentsXml.includes("<w:hyperlink")) {
     throw new Error("批注 rich 断言失败: comments.xml 缺少超链接 run");
   }
-  const commentsRels = unzipPart(docxArtifact.buffer, "word/_rels/comments.xml.rels");
+  const commentsRels = await unzipPart(docxArtifact.buffer, "word/_rels/comments.xml.rels");
   if (!commentsRels.includes('Target="https://example.com"')) {
     throw new Error("批注 rich 断言失败: comments.xml.rels 缺少链接目标");
   }
@@ -62,7 +62,7 @@ export async function run() {
   console.log("[ok] 批注内容:文本/加粗/链接/固定 author 存在");
 
   // 批注结构断言(document.xml):commentRangeStart/End/Reference + 锚定文本保留
-  const documentXml = unzipPart(docxArtifact.buffer, "word/document.xml");
+  const documentXml = await unzipPart(docxArtifact.buffer, "word/document.xml");
   if (!documentXml.includes("<w:commentRangeStart")) {
     throw new Error("批注结构断言失败: document.xml 缺少 commentRangeStart");
   }

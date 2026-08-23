@@ -26,7 +26,7 @@ export const fixtures = { main: taskMd };
 export async function run() {
   // ---------- docx ----------
   const docxArtifact = await convert(taskMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const documentXml = unzipPart(docxArtifact.buffer, "word/document.xml");
+  const documentXml = await unzipPart(docxArtifact.buffer, "word/document.xml");
   // 列表项文本:[x]/[ ] 标记已被 remark-gfm 剥除(断言「已完成」「待办」渲染)
   for (const text of ["已完成", "待办", "普通项"]) {
     const idx = documentXml.indexOf(text);

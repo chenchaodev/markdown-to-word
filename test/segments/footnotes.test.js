@@ -55,8 +55,8 @@ export async function run() {
 
   // B3:重复引用共享同一脚注(样例 [^1] 引用两次 + [^2] 一次 = 3 个引用):
   // 正文恰 3 个 footnoteReference;footnotes.xml 恰 2 条内容脚注(id 1/2,无 id 3)
-  const footnotesXml = unzipPart(docxArtifact.buffer, "word/footnotes.xml");
-  const refCount = (unzipPart(docxArtifact.buffer, "word/document.xml").match(/<w:footnoteReference /g) || []).length;
+  const footnotesXml = await unzipPart(docxArtifact.buffer, "word/footnotes.xml");
+  const refCount = ((await unzipPart(docxArtifact.buffer, "word/document.xml")).match(/<w:footnoteReference /g) || []).length;
   if (refCount !== 3) {
     throw new Error(`B3 脚注共享断言失败:正文应有 3 个脚注引用(1+1+1),实际 ${refCount}`);
   }
@@ -70,7 +70,7 @@ export async function run() {
 
   // 页眉内容断言(renderHeader 实现事实:标题文本居中 + 7pt(14 half-points)灰 888888;
   // 标题取 metadata.title 优先,样例 frontmatter title=「脚注与页眉页脚验收」)
-  const headerXml = unzipPart(docxArtifact.buffer, "word/header1.xml");
+  const headerXml = await unzipPart(docxArtifact.buffer, "word/header1.xml");
   if (!headerXml.includes("脚注与页眉页脚验收")) {
     throw new Error("页眉断言失败:header1.xml 缺少标题文本");
   }
@@ -84,7 +84,7 @@ export async function run() {
 
   // 页脚内容断言(renderFooter 实现事实:居中 + 「第 X 页 / 共 X 页」,
   // 页码为域结构 PAGE/NUMPAGES:fldChar begin + instrText + fldChar end)
-  const footerXml = unzipPart(docxArtifact.buffer, "word/footer1.xml");
+  const footerXml = await unzipPart(docxArtifact.buffer, "word/footer1.xml");
   if (!footerXml.includes("第 ") || !footerXml.includes(" 页 / 共 ") || !footerXml.includes(" 页")) {
     throw new Error("页脚断言失败:footer1.xml 缺少「第 X 页 / 共 X 页」文案结构");
   }

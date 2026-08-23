@@ -33,7 +33,7 @@ export const fixtures = { main: htmlMd, cross: crossMd };
 
 export async function run() {
   const htmlDocx = await convert(htmlMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const htmlDocument = unzipPart(htmlDocx.buffer, "word/document.xml");
+  const htmlDocument = await unzipPart(htmlDocx.buffer, "word/document.xml");
   const htmlDocxChecks = [
     ["粗体", "strong 文本"],
     ["斜体", "em 文本"],
@@ -97,7 +97,7 @@ export async function run() {
   // 闭标签 html 节点)整体丢弃、内容文本(险)不残留;而「<strong>乙</strong></div>」
   // 白名单整串合并先行 → 乙 保留为粗体运行,孤立危险闭标签丢弃。
   const crossDocx = await convert(crossMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const crossDocument = unzipPart(crossDocx.buffer, "word/document.xml");
+  const crossDocument = await unzipPart(crossDocx.buffer, "word/document.xml");
   if (crossDocument.includes("</div>")) {
     throw new Error("交叉边界断言失败:docx 不应残留危险闭标签 </div>");
   }

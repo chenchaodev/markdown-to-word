@@ -107,7 +107,7 @@ export async function run() {
   if (buffer.length === 0) {
     throw new Error("basic-render 断言失败:docx buffer 为空");
   }
-  const documentXml = unzipPart(buffer, "word/document.xml");
+  const documentXml = await unzipPart(buffer, "word/document.xml");
   // 断言 2:document.xml 含表格
   if (!documentXml.includes("<w:tbl")) {
     throw new Error("basic-render 断言失败:document.xml 缺少表格(<w:tbl)");
@@ -189,7 +189,7 @@ export async function run() {
       throw new Error(`basic-render 断言失败:列表项「${text}」期望 w:ilvl val="${level}"`);
     }
   }
-  const numberingXml = unzipPart(buffer, "word/numbering.xml");
+  const numberingXml = await unzipPart(buffer, "word/numbering.xml");
   // 无序列表:bullet 项目符号 •(numberingOptions bulletText[0],序列化 w:lvlText w:val="•")
   if (!numberingXml.includes('<w:numFmt w:val="bullet"/>') || !numberingXml.includes('<w:lvlText w:val="•"/>')) {
     throw new Error('basic-render 断言失败:numbering.xml 缺少无序列表(bullet + lvlText "•")');
@@ -240,7 +240,7 @@ export async function run() {
   if (!webpWarnOk) {
     throw new Error("basic-render 断言失败:webp 图片未产生降级警告(期望含 webp 与 已跳过)");
   }
-  const webpXml = unzipPart(webpBuffer, "word/document.xml");
+  const webpXml = await unzipPart(webpBuffer, "word/document.xml");
   if (!webpXml.includes("[图片: webp]")) {
     throw new Error("basic-render 断言失败:webp 图片未降级为占位文本([图片: webp])");
   }
@@ -260,7 +260,7 @@ export async function run() {
   if (!unknownWarnings.some((w) => w.includes("图片格式无法识别") && w.includes("junk.bin"))) {
     throw new Error(`basic-render 断言失败:未知魔数图片未产生跳过警告,warnings=${JSON.stringify(unknownWarnings)}`);
   }
-  const unknownXml = unzipPart(unknownBuffer, "word/document.xml");
+  const unknownXml = await unzipPart(unknownBuffer, "word/document.xml");
   if (!unknownXml.includes("[图片: 坏图]")) {
     throw new Error("basic-render 断言失败:未知魔数图片未降级为占位文本");
   }
@@ -277,7 +277,7 @@ export async function run() {
     "docx",
     { baseDir: FIXTURES_DIR, warnings: [] },
   );
-  const alignXml = unzipPart(alignDocx.buffer, "word/document.xml");
+  const alignXml = await unzipPart(alignDocx.buffer, "word/document.xml");
   if (!alignXml.includes('<w:jc w:val="center"/>')) {
     throw new Error("basic-render 断言失败:表格居中列缺少 w:jc center");
   }
@@ -300,7 +300,7 @@ export async function run() {
   // ---------- B3c:自闭合 <br/> 白名单放行(html-whitelist 三处扫描器同步) ----------
   // 此前 <br/> 整串判非法:docx 危险段丢弃 / pdf 整段转义。B3 起仅空标签 br 放行自闭合。
   const brDocx = await convert("<strong>粗</strong><br/>换行后", "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const brXml = unzipPart(brDocx.buffer, "word/document.xml");
+  const brXml = await unzipPart(brDocx.buffer, "word/document.xml");
   if (!brXml.includes("<w:br/>")) throw new Error("basic-render 断言失败:<br/> 未产出换行 run(<w:br/>)");
   if (!brXml.includes("换行后")) throw new Error("basic-render 断言失败:<br/> 后文本被危险段丢弃");
   if (!brXml.includes(">粗<")) throw new Error("basic-render 断言失败:<strong> 内容丢失");
@@ -406,7 +406,7 @@ export async function run() {
     baseDir: FIXTURES_DIR,
     warnings: [],
   });
-  const fnXml = unzipPart(fnDocx.buffer, "word/footnotes.xml");
+  const fnXml = await unzipPart(fnDocx.buffer, "word/footnotes.xml");
   if (!fnXml.includes("引用内容")) {
     throw new Error("basic-render 断言失败:脚注定义内 blockquote 文本未渲染");
   }

@@ -52,7 +52,7 @@ export async function run() {
   for (const [paper, [w, h]] of Object.entries(PAPERS_TWIPS)) {
     const pageSetup = { paper, orientation: "portrait", ...M1 };
     lastDocx = await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup });
-    const xml = unzipPart(lastDocx.buffer, "word/document.xml");
+    const xml = await unzipPart(lastDocx.buffer, "word/document.xml");
     const pgSz = `<w:pgSz w:w="${w}" w:h="${h}" w:orient="portrait"`;
     if (!xml.includes(pgSz)) {
       throw new Error(`页面设置断言失败:${paper} 纵向缺少 ${pgSz}(PAPER_SIZES_MM × 56.6929 取整)`);
@@ -71,7 +71,7 @@ export async function run() {
   // 2. 边距参数化(第二组 = Word 默认 25/25/32/32 mm → 1417/1814 twips,输出须不同)
   const pageSetup2 = { paper: "A4", orientation: "portrait", marginTop: 25, marginBottom: 25, marginLeft: 32, marginRight: 32 };
   const docx2 = await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup: pageSetup2 });
-  const xml2 = unzipPart(docx2.buffer, "word/document.xml");
+  const xml2 = await unzipPart(docx2.buffer, "word/document.xml");
   const pgMar2 = '<w:pgMar w:top="1417" w:right="1814" w:bottom="1417" w:left="1814"';
   if (!xml2.includes(pgMar2)) {
     throw new Error(`页面设置断言失败:边距 25/32 mm 缺少 ${pgMar2}`);
@@ -86,7 +86,7 @@ export async function run() {
   for (const [paper, [w, h]] of Object.entries({ Legal: PAPERS_TWIPS.Legal, A5: PAPERS_TWIPS.A5 })) {
     const pageSetup = { paper, orientation: "landscape", ...M1 };
     lastDocx = await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup });
-    const xml = unzipPart(lastDocx.buffer, "word/document.xml");
+    const xml = await unzipPart(lastDocx.buffer, "word/document.xml");
     const pgSz = `<w:pgSz w:w="${h}" w:h="${w}" w:orient="landscape"`;
     if (!xml.includes(pgSz)) {
       throw new Error(`页面设置断言失败:${paper} landscape 缺少 ${pgSz}(docx 库自动交换宽高)`);

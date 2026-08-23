@@ -42,7 +42,7 @@ export const fixtures = { main: formulaMd, degrade: degradeMd };
 export async function run() {
   const katexDir = KATEX_DIR;
   const formulaDocx = await convert(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], katexDir });
-  const formulaDocument = unzipPart(formulaDocx.buffer, "word/document.xml");
+  const formulaDocument = await unzipPart(formulaDocx.buffer, "word/document.xml");
   if (!formulaDocument.includes("<m:oMath")) {
     throw new Error("公式断言失败:document.xml 缺少 <m:oMath(公式未生成)");
   }
@@ -92,7 +92,7 @@ export async function run() {
   // 不产出 m:oMath(整式降级,不混排)。失败样例:未闭合分组 \frac{1}{。
   const degradeWarnings = [];
   const degradeDocx = await convert(degradeMd, "docx", { baseDir: FIXTURES_DIR, warnings: degradeWarnings });
-  const degradeDocument = unzipPart(degradeDocx.buffer, "word/document.xml");
+  const degradeDocument = await unzipPart(degradeDocx.buffer, "word/document.xml");
   // 断言:降级 TeX 源码以等宽灰字出现在 document.xml(样式 needle 已实证:color 888888)
   if (!degradeDocument.includes("\\frac{1}{")) {
     throw new Error("公式断言失败:降级公式 TeX 源码未出现在 document.xml");
@@ -132,7 +132,7 @@ $$
 $$
 `;
   const fallbackDocx = await convert(fallbackMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const fallbackDocument = unzipPart(fallbackDocx.buffer, "word/document.xml");
+  const fallbackDocument = await unzipPart(fallbackDocx.buffer, "word/document.xml");
   // 回落结构:MathSubSuperScript 而非 MathSum(无 m:nary)
   if (!fallbackDocument.includes("<m:sSubSup>")) {
     throw new Error("公式断言失败:非 ∑ munderover 未回落 MathSubSuperScript(<m:sSubSup>)");

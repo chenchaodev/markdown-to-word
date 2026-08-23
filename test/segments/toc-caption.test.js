@@ -52,7 +52,7 @@ export const fixtures = { main: batch8Md };
 
 export async function run() {
   const batch8Docx = await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const b8Document = unzipPart(batch8Docx.buffer, "word/document.xml");
+  const b8Document = await unzipPart(batch8Docx.buffer, "word/document.xml");
   // 8a-1:TOC 域指令仍在(w:sdt > w:instrText TOC \o "1-3" \h)
   if (!b8Document.includes("TOC")) throw new Error("批次8断言失败:document.xml 缺少 TOC 域指令");
   // 8a-2:beginDirty:false → w:dirty="false"(显式关,Word 打开不提示更新域)
@@ -73,7 +73,7 @@ export async function run() {
   }
   // 8a-4:toc 关闭 → docx 无 TOC 指令
   const batch8NoToc = await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: false });
-  if (unzipPart(batch8NoToc.buffer, "word/document.xml").includes("TOC")) {
+  if ((await unzipPart(batch8NoToc.buffer, "word/document.xml")).includes("TOC")) {
     throw new Error("批次8断言失败:toc:false 时 document.xml 不应含 TOC 指令");
   }
   // 8b-3:captionNumbering 关闭 → 题注行按普通段落(原文保留)
@@ -81,7 +81,7 @@ export async function run() {
     baseDir: FIXTURES_DIR, warnings: [],
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: false },
   });
-  if (!unzipPart(batch8NoCaption.buffer, "word/document.xml").includes("图: 总体架构示意图")) {
+  if (!(await unzipPart(batch8NoCaption.buffer, "word/document.xml")).includes("图: 总体架构示意图")) {
     throw new Error("批次8断言失败:captionNumbering:false 时题注行应保留前缀原文");
   }
   console.log("[ok] docx 静态目录 + 题注编号:TOC 免更新/条目超链接/编号注入/孤立行/开关 断言通过");

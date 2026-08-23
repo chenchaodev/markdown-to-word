@@ -57,7 +57,7 @@ export async function run() {
     };
     const warnings = [];
     const docx = await convert(MD_OK, "docx", { baseDir: FIXTURES_DIR, warnings, mermaidResolver: okResolver });
-    const xml = unzipPart(docx.buffer, "word/document.xml");
+    const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (received.length !== 1 || received[0] !== "graph TD\n  A-->B") {
       throw new Error(`docx 成功路径:resolver 未收到围栏原文,received=${JSON.stringify(received)}(remark fence 去尾换行)`);
     }
@@ -85,7 +85,7 @@ export async function run() {
       warnings,
       mermaidResolver: async () => null,
     });
-    const xml = unzipPart(docx.buffer, "word/document.xml");
+    const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (xml.includes("a:blip")) {
       throw new Error("docx 降级路径:null 结果不应内嵌图片");
     }
@@ -108,7 +108,7 @@ export async function run() {
         throw new Error("boom");
       },
     });
-    const xml = unzipPart(docx.buffer, "word/document.xml");
+    const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (xml.includes("a:blip") || !xml.includes("graph TD")) {
       throw new Error("docx 降级路径(抛错):应降级为代码块原文且无图片");
     }
@@ -122,7 +122,7 @@ export async function run() {
   {
     const warnings = [];
     const docx = await convert(MD_OK, "docx", { baseDir: FIXTURES_DIR, warnings });
-    const xml = unzipPart(docx.buffer, "word/document.xml");
+    const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (xml.includes("a:blip")) {
       throw new Error("docx 无 resolver:mermaid 围栏不应内嵌图片(原行为)");
     }
@@ -232,7 +232,7 @@ export async function run() {
       warnings: [],
       mermaidResolver: async () => ({ svg: FAKE_SVG, png: PNG_MAGIC, width: 100, height: 50 }),
     });
-    const xml = unzipPart(docx.buffer, "word/document.xml");
+    const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (xml.includes("a:blip")) {
       throw new Error("非 mermaid 围栏:js 围栏不应走 mermaid 图片分支");
     }

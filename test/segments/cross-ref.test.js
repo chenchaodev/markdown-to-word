@@ -75,7 +75,7 @@ export async function run() {
   // ============ 场景 A:主样例(h1 + 图/表/章节/公式 + 悬空) ============
   const warnings = [];
   const docx = await convert(MD, "docx", { baseDir: B, warnings });
-  const xml = unzipPart(docx.buffer, "word/document.xml");
+  const xml = await unzipPart(docx.buffer, "word/document.xml");
   const has = (s) => xml.includes(s);
 
   // A1(R1/R2) docx 题注:书签 + 静态编号文本;图/表独立计数;label 不渲染
@@ -183,8 +183,8 @@ export async function run() {
 `;
   const o1 = await convert(mdOrder1, "docx", { baseDir: B, warnings: [] });
   const o2 = await convert(mdOrder2, "docx", { baseDir: B, warnings: [] });
-  const x1 = unzipPart(o1.buffer, "word/document.xml");
-  const x2 = unzipPart(o2.buffer, "word/document.xml");
+  const x1 = await unzipPart(o1.buffer, "word/document.xml");
+  const x2 = await unzipPart(o2.buffer, "word/document.xml");
   if (!x1.includes('<w:t xml:space="preserve">图 1.1</w:t>') || !x1.includes('<w:t xml:space="preserve">图 1.2</w:t>')) {
     throw new Error("docx 顺序 1:引用编号非图 1.1/图 1.2");
   }
@@ -205,7 +205,7 @@ export async function run() {
 `;
   const dW = [];
   const dD = await convert(mdNoH1, "docx", { baseDir: B, warnings: dW });
-  const dX = unzipPart(dD.buffer, "word/document.xml");
+  const dX = await unzipPart(dD.buffer, "word/document.xml");
   if (!dX.includes('<w:t xml:space="preserve">3</w:t>')) throw new Error('docx 无 h1 场景 [章节](#sec:s3) 非「3」(前导未出现级跳过)');
   const dP = await convert(mdNoH1, "pdf", { baseDir: B, warnings: [], title: "t" });
   if (!dP.html.includes(">0.3</a>")) {
@@ -223,7 +223,7 @@ export async function run() {
     warnings: capOffW,
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: false },
   });
-  const capOffX = unzipPart(capOffD.buffer, "word/document.xml");
+  const capOffX = await unzipPart(capOffD.buffer, "word/document.xml");
   if (!capOffX.includes('<w:t xml:space="preserve">图: 图一 {#fig:a}</w:t>')) {
     throw new Error("docx captionNumbering 关:题注行应原样保留 label");
   }
@@ -251,7 +251,7 @@ export async function run() {
     warnings: hnOffW,
     typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
   });
-  const hnOffX = unzipPart(hnOffD.buffer, "word/document.xml");
+  const hnOffX = await unzipPart(hnOffD.buffer, "word/document.xml");
   if (!hnOffX.includes('<w:t xml:space="preserve">(?)</w:t>')) {
     throw new Error("docx headingNumbering 关:[章节] 引用应显示「(?)」");
   }
@@ -275,7 +275,7 @@ export async function run() {
 图: 图甲
 `;
   const gNoH1 = await convert(mdNoH1Cap, "docx", { baseDir: B, warnings: [] });
-  const gNoH1X = unzipPart(gNoH1.buffer, "word/document.xml");
+  const gNoH1X = await unzipPart(gNoH1.buffer, "word/document.xml");
   if (!gNoH1X.includes('<w:t xml:space="preserve">图 1 图甲</w:t>')) {
     throw new Error('docx 无 h1 题注应无章节前缀「图 1 图甲」(chapter null)');
   }
@@ -286,7 +286,7 @@ export async function run() {
 图: {#fig:a}
 `;
   const gEmpty = await convert(mdEmptyCap, "docx", { baseDir: B, warnings: [] });
-  const gEmptyX = unzipPart(gEmpty.buffer, "word/document.xml");
+  const gEmptyX = await unzipPart(gEmpty.buffer, "word/document.xml");
   if (!gEmptyX.includes('<w:t xml:space="preserve">图 1.1</w:t>')) {
     throw new Error('docx 空题注文本应仅渲染编号「图 1.1」(无尾随空格)');
   }
@@ -315,7 +315,7 @@ export async function run() {
     warnings: [],
     typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
   });
-  const hnOffCapX = unzipPart(hnOffCapD.buffer, "word/document.xml");
+  const hnOffCapX = await unzipPart(hnOffCapD.buffer, "word/document.xml");
   if (!hnOffCapX.includes('<w:t xml:space="preserve">图 1 甲图</w:t>')) {
     throw new Error("B3 断言失败:headingNumbering 关时首图应为「图 1」");
   }

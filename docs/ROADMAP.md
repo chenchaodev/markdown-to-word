@@ -89,7 +89,7 @@
 - [x] test:smoke 构建新鲜度守卫(src mtime vs dist mtime,过期报错或自动 build)(B10a 批次:scripts/check-build-fresh.mjs 前置拦截)
 - [x] copy-renderer.mjs 加 dist/renderer 清空步骤(防陈旧资源进安装包)(B10a 批次;坑:混合目录不可整删,按 .html/.css 扩展名清理,见 RESEARCH 同日条目)
 - [x] scripts/svg-to-ico.mjs 登记 icons npm script(B10a 批次)
-- [ ] docx 解包机制统一 jszip(common/docx-utils.js 删系统 tar 路径)(B10b 待办:unzipPart 转 async,71 处调用点适配)
+- [x] docx 解包机制统一 jszip(common/docx-utils.js 删系统 tar 路径)(B10b 批次:unzipPart 转 async,71 处调用点适配,验收总耗时 23.5s→19.1s)
 
 #### B6 i18n 收口(M,P1;为 B4 提供 key 机制)
 - [ ] core 警告文案 key 化机制:ctx.warnings 携带稳定 key+插值参数,GUI 显示层 t() 映射,缺失回退存量中文
