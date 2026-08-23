@@ -9,9 +9,9 @@ import { BrowserWindow, dialog, screen } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { t } from "../../core/i18n.js";
-import { disposeMermaidService } from "../mermaid-service.js";
-import { loadUiState, pickWindowBounds, saveUiState } from "../ui-state.js";
-import { hardenWebContents } from "../web-hardening.js";
+import { disposeMermaidService } from "../services/mermaid-service.js";
+import { loadUiState, pickWindowBounds, saveUiState } from "../persist/ui-state.js";
+import { hardenWebContents } from "../services/web-hardening.js";
 import { ctxByWebContents } from "../ipc/register.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

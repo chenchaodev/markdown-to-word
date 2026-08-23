@@ -9,8 +9,8 @@ import { decodeMarkdown } from "../../core/util/encoding.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
 import { mergeMarkdowns } from "../../core/pipeline/merge.js";
-import { renderMermaid } from "../mermaid-service.js";
-import { loadSettings } from "../settings.js";
+import { renderMermaid } from "../services/mermaid-service.js";
+import { loadSettings } from "../persist/settings.js";
 import {
   buildConvertContext,
   createConvertContext,

@@ -16,10 +16,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createJsonWriter } from "./atomic-json.js";
 // 页面设置契约单源(settings-defaults;原经 core/convert.js 导入形成环,B7 解环)
-import type { PageSetup } from "../core/settings/settings-defaults.js";
-import { DEFAULT_PAGE_SETUP } from "../core/settings/settings-defaults.js";
-import type { TypographySettings } from "../core/settings/typography.js";
-import { DEFAULT_TYPOGRAPHY } from "../core/settings/typography.js";
+import type { PageSetup } from "../../core/settings/settings-defaults.js";
+import { DEFAULT_PAGE_SETUP } from "../../core/settings/settings-defaults.js";
+import type { TypographySettings } from "../../core/settings/typography.js";
+import { DEFAULT_TYPOGRAPHY } from "../../core/settings/typography.js";
 import {
   DEFAULT_SETTINGS,
   MARGIN_MIN_MM,
@@ -27,9 +27,9 @@ import {
   MAX_CUSTOM_PRESETS,
   type AppSettings,
   type CustomPreset,
-} from "../core/settings/settings-defaults.js";
-import { t } from "../core/i18n.js";
-export { DEFAULT_SETTINGS, type AppSettings } from "../core/settings/settings-defaults.js";
+} from "../../core/settings/settings-defaults.js";
+import { t } from "../../core/i18n.js";
+export { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
 
 const SETTINGS_FILE_NAME = "settings.json";
 const FORMATS = ["docx", "pdf"] as const;

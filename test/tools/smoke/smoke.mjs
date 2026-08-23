@@ -13,7 +13,7 @@
  * 同区,纯 .mjs 直连 dist 编译产物,与全部测试段同构);不进 src 编译面 → 不进 dist →
  * electron-builder files(dist/**)天然排除,不再进安装包。经 index.ts 在 --smoke 分支
  * 以 URL 动态 import(打包产物无此文件,--smoke 仅 dev 使用)。
- * 注意:import 的是 dist 运行实例(dist/main/settings.js 等),与运行中应用共享同一
+ * 注意:import 的是 dist 运行实例(dist/main/persist/settings.js 等),与运行中应用共享同一
  * 模块缓存(settings/ui-state 隔离语义依赖此点),不可改为 import src 源码。
  *
  * 输出隔离:smoke 不依赖用户持久化设置——outputDir 强制 ""(产物落 output/smoke 源文件旁,
@@ -31,11 +31,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
-import { convertImpl, mergeConvertImpl } from "../../../dist/main/converter.js";
-import { getKatexDir } from "../../../dist/main/resource-dirs.js";
+import { convertImpl, mergeConvertImpl } from "../../../dist/main/converter/index.js";
+import { getKatexDir } from "../../../dist/main/services/resource-dirs.js";
 import { t } from "../../../dist/core/i18n.js";
-import { loadSettings, updateSettings } from "../../../dist/main/settings.js";
-import { loadUiState, saveUiState } from "../../../dist/main/ui-state.js";
+import { loadSettings, updateSettings } from "../../../dist/main/persist/settings.js";
+import { loadUiState, saveUiState } from "../../../dist/main/persist/ui-state.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // test/tools/smoke → 项目根/output/smoke(三级上跳;产物落仓库 output/,gitignore 覆盖)

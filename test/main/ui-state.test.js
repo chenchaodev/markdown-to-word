@@ -1,5 +1,5 @@
 /**
- * UI 状态持久化测试(src/main/ui-state.ts 纯逻辑层;测试经 dist/main/ui-state.js):
+ * UI 状态持久化测试(src/main/persist/ui-state.ts 纯逻辑层;测试经 dist/main/persist/ui-state.js):
  * 与 settings.test.js 同款策略——备份真实 ui-state.json,finally 恢复;
  * 每场景用 query-string 动态 import 取全新模块实例(模块级缓存按 URL 键隔离)。
  * 校验宽松(与 settings 整文件回退不同):字段非法/缺失 → 该字段默认值,不影响其它字段。
@@ -37,7 +37,7 @@ export async function run() {
     /* 无既有文件 */
   }
   let seq = 0;
-  const freshModule = () => import(`../../dist/main/ui-state.js?case=${seq++}`);
+  const freshModule = () => import(`../../dist/main/persist/ui-state.js?case=${seq++}`);
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const mod = await freshModule();

@@ -11,14 +11,14 @@ import { convert } from "../../core/convert.js";
 import { decodeMarkdown } from "../../core/util/encoding.js";
 import { escapeHtml } from "../../core/util/utils.js";
 import { t } from "../../core/i18n.js";
-import { createImageResolver } from "../image-downloader.js";
-import { baseNameFromMdPath, errorMessage } from "../ipc-logic.js";
-import { loadSettings } from "../settings.js";
-import { writeTempHtml } from "../temp-html.js";
-import { buildConvertContext } from "../converter.js";
-import { getKatexDir } from "../resource-dirs.js";
-import { renderMermaid } from "../mermaid-service.js";
-import { hardenWebContents } from "../web-hardening.js";
+import { createImageResolver } from "../services/image-downloader.js";
+import { baseNameFromMdPath, errorMessage } from "../ipc/logic.js";
+import { loadSettings } from "../persist/settings.js";
+import { writeTempHtml } from "../services/temp-html.js";
+import { buildConvertContext } from "../converter/index.js";
+import { getKatexDir } from "../services/resource-dirs.js";
+import { renderMermaid } from "../services/mermaid-service.js";
+import { hardenWebContents } from "../services/web-hardening.js";
 
 /**
  * 预览窗口注册表(批次 11 迭代 3「E 预览跟随刷新」)。

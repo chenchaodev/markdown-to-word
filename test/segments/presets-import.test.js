@@ -1,6 +1,6 @@
 /**
- * 预设 JSON 导入/导出纯函数直测(src/main/settings.ts parsePresetsFile/mergePresets;批次 13):
- * 纯 Node 段(经 dist/main/settings.js 导入,不触对话框/文件 IO——那部分走 GUI 实测)。
+ * 预设 JSON 导入/导出纯函数直测(src/main/persist/settings.ts parsePresetsFile/mergePresets;批次 13):
+ * 纯 Node 段(经 dist/main/persist/settings.js 导入,不触对话框/文件 IO——那部分走 GUI 实测)。
  * 断言面(与实现逐条对应):
  * - parsePresetsFile:schemaVersion:1 包装解析 / 裸数组兼容 / 坏 JSON → 「文件不是有效的 JSON」/
  *   schemaVersion 非 1(2/缺失/字符串)→ 「不支持的模板文件版本」/ 非法条目丢弃(空名/坏 pageSetup/
@@ -12,7 +12,7 @@
 import {
   mergePresets,
   parsePresetsFile,
-} from "../../dist/main/settings.js";
+} from "../../dist/main/persist/settings.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`presets-import 断言失败:${msg}`);

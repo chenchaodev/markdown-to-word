@@ -5,7 +5,7 @@
  */
 import { app, BrowserWindow, dialog, Menu } from "electron";
 import { t } from "../core/i18n.js";
-import { IPC_CHANNELS as CH } from "./ipc-channels.js";
+import { IPC_CHANNELS as CH } from "./ipc/channels.js";
 import { getMainWindow } from "./windows/main-window.js";
 
 /**

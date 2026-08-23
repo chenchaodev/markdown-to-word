@@ -4,11 +4,11 @@
  * 约定:只放不依赖 electron API 的纯逻辑;对话框/文件 IO/窗口/持久化留在 index.ts 薄壳。
  */
 import path from "node:path";
-import type { ConvertFormat } from "../core/convert.js";
-import type { CustomPreset } from "../core/settings/settings-defaults.js";
-import { mergePresets, parsePresetsFile } from "./settings.js";
-import type { RecentFile } from "./ui-state.js";
-import type { ConvertContext } from "./converter.js";
+import type { ConvertFormat } from "../../core/convert.js";
+import type { CustomPreset } from "../../core/settings/settings-defaults.js";
+import { mergePresets, parsePresetsFile } from "../persist/settings.js";
+import type { RecentFile } from "../persist/ui-state.js";
+import type { ConvertContext } from "../converter/index.js";
 
 /** 错误归一:Error → message,其余 → String(err)(与 index.ts 原内联一致)。 */
 export function errorMessage(err: unknown): string {

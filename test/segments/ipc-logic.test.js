@@ -1,6 +1,6 @@
 /**
- * 主进程 IPC 纯逻辑层直测(src/main/ipc-logic.ts;批次 15 R6 自 index.ts IPC handler 抽出):
- * 零 Electron API 纯函数,经 dist/main/ipc-logic.js 直接断言(Node 段)。
+ * 主进程 IPC 纯逻辑层直测(src/main/ipc/logic.ts;批次 15 R6 自 index.ts IPC handler 抽出):
+ * 零 Electron API 纯函数,经 dist/main/ipc/logic.js 直接断言(Node 段)。
  * 断言面(可验证事实,与抽取前行为逐一对应):
  * - errorMessage:Error → message;字符串 → 原样;null/对象 → String(err)
  * - buildRecentFileEntries:过滤非字符串/空串;name 取 basename;format/ts 透传
@@ -23,7 +23,7 @@ import {
   isString,
   isStringArray,
   runConvertTask,
-} from "../../dist/main/ipc-logic.js";
+} from "../../dist/main/ipc/logic.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`ipc-logic 断言失败:${msg}`);

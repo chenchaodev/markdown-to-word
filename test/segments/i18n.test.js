@@ -1,5 +1,5 @@
 /**
- * i18n 测试(src/core/i18n.ts 纯逻辑 + src/main/settings.ts language 字段):
+ * i18n 测试(src/core/i18n.ts 纯逻辑 + src/main/persist/settings.ts language 字段):
  * 实现事实(读源码确认):
  * - t():zh 默认输出(与既有文案逐字一致);setLanguage("en") 后输出英文;
  *   参数插值 ${name} 占位(缺失参数保留占位符原样);缺失 key 回退返回 key 本身(不抛错)
@@ -32,7 +32,7 @@ export async function run() {
     /* 无既有文件 */
   }
   let seq = 0;
-  const freshModule = () => import(`../../dist/main/settings.js?i18n=${seq++}`);
+  const freshModule = () => import(`../../dist/main/persist/settings.js?i18n=${seq++}`);
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const i18n = await import("../../dist/core/i18n.js");

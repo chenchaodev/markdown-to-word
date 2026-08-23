@@ -1,6 +1,6 @@
 /**
  * IPC channel 单源恒等性断言(B12「IPC 面整理」):
- * - main 侧单源:dist/main/ipc-channels.js 的 IPC_CHANNELS(命名统一「域:动作」);
+ * - main 侧单源:dist/main/ipc/channels.js 的 IPC_CHANNELS(命名统一「域:动作」);
  * - preload 侧镜像:preload.cts 因沙箱隔离(sandbox:true 下 preload.cjs 运行时
  *   只能 require electron)无法 import ESM 常量模块,侧内镜像同名常量;
  * - 本段对 dist/main/preload.cjs 文本提取全部 ipcRenderer.invoke/on/removeListener
@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { IPC_CHANNELS } from "../../dist/main/ipc-channels.js";
+import { IPC_CHANNELS } from "../../dist/main/ipc/channels.js";
 
 const distMain = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

@@ -13,10 +13,10 @@ import { t } from "../../core/i18n.js";
 import { buildBookmarkTree, injectBookmarks } from "../../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../../core/pdf/metadata.js";
 import { extractHeadings } from "../../core/pdf/postprocess.js";
-import { renderMermaid } from "../mermaid-service.js";
-import { loadSettings, type AppSettings } from "../settings.js";
-import { hardenWebContents } from "../web-hardening.js";
-import { writeTempHtml } from "../temp-html.js";
+import { renderMermaid } from "../services/mermaid-service.js";
+import { loadSettings, type AppSettings } from "../persist/settings.js";
+import { hardenWebContents } from "../services/web-hardening.js";
+import { writeTempHtml } from "../services/temp-html.js";
 import {
   buildConvertContext,
   createConvertContext,

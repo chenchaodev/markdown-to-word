@@ -21,7 +21,7 @@ import {
   settingsPanel,
   statusEl,
 } from "../dom/refs.js";
-import type { RecentFile, UiState } from "../../main/ui-state.js";
+import type { RecentFile, UiState } from "../../main/persist/ui-state.js";
 import { applySelection } from "../convert/file-list.js";
 import { runConvert } from "../convert/convert-flow.js";
 import { baseName, formatRecentTime } from "../state/pure.js";

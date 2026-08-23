@@ -1,6 +1,6 @@
 /**
- * 原子 JSON 写入器直测(位于 test/main/ = 主进程层;src/main/atomic-json.ts,
- * 测试经 dist/main/atomic-json.js,electron 环境):
+ * 原子 JSON 写入器直测(位于 test/main/ = 主进程层;src/main/persist/atomic-json.ts,
+ * 测试经 dist/main/persist/atomic-json.js,electron 环境):
  * settings.ts / ui-state.ts 共享的原子写工具(B15 自双份实现抽出),断言面:
  * - 原子写落盘读回:内容 = JSON.stringify(value,null,2)+"\n",tmp 文件写后不残留
  * - 写队列串行顺序:同实例并发多次写,完成序 = 调用序(onCommitted 回调序),
@@ -13,7 +13,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createJsonWriter } from "../../dist/main/atomic-json.js";
+import { createJsonWriter } from "../../dist/main/persist/atomic-json.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`atomic-json 断言失败:${msg}`);

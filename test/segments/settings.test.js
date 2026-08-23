@@ -1,5 +1,5 @@
 /**
- * 设置持久化测试(src/main/settings.ts 纯逻辑层;测试经 dist/main/settings.js,未改动实现):
+ * 设置持久化测试(src/main/persist/settings.ts 纯逻辑层;测试经 dist/main/persist/settings.js,未改动实现):
  * 实现事实(读源码确认):
  * - sanitizePageSetup:边距钳制 Math.min(1000, Math.max(0, v))(MARGIN_MIN_MM=0 / MAX=1000),
  *   非有限数(NaN/Infinity/非 number)→ DEFAULT_PAGE_SETUP 对应值;paper/orientation
@@ -47,7 +47,7 @@ export async function run() {
     /* 无既有文件 */
   }
   let seq = 0;
-  const freshModule = () => import(`../../dist/main/settings.js?case=${seq++}`);
+  const freshModule = () => import(`../../dist/main/persist/settings.js?case=${seq++}`);
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const mod = await freshModule();
@@ -185,7 +185,7 @@ export async function run() {
     console.log("[ok] settings:非法边距(非有限数)整文件回退默认");
 
     // ---- 7c. isValidSettings 直测(批次 15 R3:导出纯函数,不依赖磁盘 IO) ----
-    // 依据(dist/main/settings.ts isValidSettings):整文件形状校验——任一字段非法
+    // 依据(dist/main/persist/settings.ts isValidSettings):整文件形状校验——任一字段非法
     // → false(loadSettings 据此整体回退 DEFAULT_SETTINGS 引用);合法完整对象 → true。
     // typography/customPresets 不参与形状校验(loadSettings 单独 sanitize)。
     const validSettings = {

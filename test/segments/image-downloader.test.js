@@ -1,5 +1,5 @@
 /**
- * 图片解析器段(src/main/image-downloader.ts 纯逻辑层,不起 Electron 窗口):
+ * 图片解析器段(src/main/services/image-downloader.ts 纯逻辑层,不起 Electron 窗口):
  * - 本地读取:path.resolve(baseDir, src) 相对/绝对路径均读文件,缺失与 data: 等非 http → null
  * - http 下载:200 成功返回内容一致的 Buffer;404 / 连接拒绝 → null
  * - 同 URL 缓存:并发去重(在途 Promise 共享,仅成功结果缓存);失败(404/超时)不缓存,
@@ -16,7 +16,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import http from "node:http";
-import { createImageResolver } from "../../dist/main/image-downloader.js";
+import { createImageResolver } from "../../dist/main/services/image-downloader.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { saveArtifact } from "../common/artifacts.js";

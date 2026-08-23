@@ -9,8 +9,8 @@ import type { ConvertContext as CoreConvertContext } from "../../core/convert.js
 import type { ConvertWarning } from "../../core/i18n.js";
 import type { ImageResolver } from "../../core/image/image-resolver.js";
 import type { MermaidResolver } from "../../core/markdown/mermaid.js";
-import { createImageResolver } from "../image-downloader.js";
-import type { AppSettings } from "../settings.js";
+import { createImageResolver } from "../services/image-downloader.js";
+import type { AppSettings } from "../persist/settings.js";
 
 /** 批量共享 imageResolver:按 baseDir 缓存,HTTP 去重缓存跨文件生效。
  *  B2:容量上限(超限淘汰最早条目)——长会话跨多目录使用时不再单调增长。 */

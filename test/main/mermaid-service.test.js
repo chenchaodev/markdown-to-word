@@ -1,5 +1,5 @@
 /**
- * Mermaid 渲染服务验收(main 进程层;经 dist/main/mermaid-service.js,electron 环境):
+ * Mermaid 渲染服务验收(main 进程层;经 dist/main/services/mermaid-service.js,electron 环境):
  * 本迭代 mermaid 链路 main 侧真实断言兜底(渲染在隐藏 BrowserWindow + mermaid 11.16.1):
  * - renderMermaid("graph TD; A-->B") → 非 null(渲染成功)
  * - png 为 PNG 魔数(89 50 4E 47),width/height > 0(逻辑 1x 尺寸)
@@ -17,7 +17,7 @@
 import { app, BrowserWindow } from "electron";
 import fs from "node:fs/promises";
 import os from "node:os";
-import { disposeMermaidService, renderMermaid } from "../../dist/main/mermaid-service.js";
+import { disposeMermaidService, renderMermaid } from "../../dist/main/services/mermaid-service.js";
 
 const GOOD_CODE = "graph TD; A-->B";
 

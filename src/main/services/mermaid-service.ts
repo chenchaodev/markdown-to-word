@@ -16,7 +16,7 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { MermaidResult } from "../core/markdown/mermaid.js";
+import type { MermaidResult } from "../../core/markdown/mermaid.js";
 import { getMermaidDir } from "./resource-dirs.js";
 import { hardenWebContents } from "./web-hardening.js";
 import { writeTempHtml } from "./temp-html.js";

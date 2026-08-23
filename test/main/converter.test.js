@@ -1,6 +1,6 @@
 /**
  * 转换编排验收(位于 test/main/ = 主进程层测试;src/main/converter/(批⑤拆分,
- * converter.ts 为桶导出),测试经 dist/main/converter.js,electron 环境):
+ * converter.ts 为桶导出),测试经 dist/main/converter/index.js,electron 环境):
  * 覆盖从 smoke 迁出的纯逻辑断言(不依赖 Electron 打印/窗口,断言与 smoke 原版一字未改):
  * - 重名保护:convertImpl 两次 → 「名 (2).docx」且两产物共存
  * - 批量汇总(3 成功 + 1 缺失)与 merge docx(frontmatter 仅首文件/图片嵌入/标题齐全)
@@ -12,7 +12,7 @@
  * - pdf 渲染失败:printToPDF/loadFile 抛错 → convertImpl 抛非 ConvertCanceledError,
  *   finally 销毁窗口并清理临时文件(临时目录无 m2w-*.html 残留)
  * 实现事实(读源码确认):
- * - settings.ts 模块级 settingsCache:本段经 dist/main/settings.js 直连同一实例
+ * - settings.ts 模块级 settingsCache:本段经 dist/main/persist/settings.js 直连同一实例
  *   (converter.js 内部同 URL import → 同一模块实例),全部场景共享缓存
  *   → 结束前 updateSettings(orig) 恢复文件与缓存(与 smoke 原 restore 行为一致);
  *   原本无 settings.json 时恢复后删除文件,不污染用户设置(settings.test.js 同款卫生)
@@ -26,7 +26,7 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import { BrowserWindow, shell } from "electron";
-import { loadSettings, updateSettings } from "../../dist/main/settings.js";
+import { loadSettings, updateSettings } from "../../dist/main/persist/settings.js";
 import { backupSettings } from "../common/settings.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import {
@@ -38,7 +38,7 @@ import {
   filterExistingPaths,
   getImageResolver,
   mergeConvertImpl,
-} from "../../dist/main/converter.js";
+} from "../../dist/main/converter/index.js";
 
 // 样例迁 fixtures 体系(B11;静态文件直接放 test/fixtures/main/,不接 gen-fixtures
 // 生成器——check:fixtures 只覆盖 segments 段导出的 acceptance fixtures 对象)

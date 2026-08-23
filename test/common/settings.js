@@ -6,7 +6,7 @@
 import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadSettings, updateSettings } from "../../dist/main/settings.js";
+import { loadSettings, updateSettings } from "../../dist/main/persist/settings.js";
 
 /**
  * 备份用户设置,返回 { orig, restore }:

@@ -5,7 +5,7 @@
 import path from "node:path";
 import type { ConvertFormat } from "../../core/convert.js";
 import type { ConvertWarning } from "../../core/i18n.js";
-import { loadSettings } from "../settings.js";
+import { loadSettings } from "../persist/settings.js";
 import { ConvertCanceledError, createConvertContext, type ConvertContext } from "./context.js";
 import { convertImpl, runAfterConvert } from "./single.js";
 

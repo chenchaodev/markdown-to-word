@@ -1,13 +1,13 @@
 // preload:CJS 输出(preload.cjs),沙箱兼容;contextBridge 白名单暴露 API
-// B12:channel 名单源在 ./ipc-channels.ts;本文件因沙箱隔离(sandbox:true 下
+// B12:channel 名单源在 ./ipc/channels.ts;本文件因沙箱隔离(sandbox:true 下
 // preload.cjs 运行时只能 require electron,不能加载本项目 ESM 模块)无法直接
 // import,侧内镜像同名常量,漂移由 test/segments/ipc-channels.test.js 恒等断言兜底。
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { AppSettings, ExportPresetsResult, ImportPdfCssResult, ImportPresetsResult } from "./settings.js";
-import type { ConvertProgressPayload } from "./ipc-channels.js";
-import type { UiState } from "./ui-state.js";
+import type { AppSettings, ExportPresetsResult, ImportPdfCssResult, ImportPresetsResult } from "./persist/settings.js";
+import type { ConvertProgressPayload } from "./ipc/channels.js";
+import type { UiState } from "./persist/ui-state.js";
 
-/** IPC channel 名镜像(与 src/main/ipc-channels.ts IPC_CHANNELS 逐键同值,勿单侧改动)。 */
+/** IPC channel 名镜像(与 src/main/ipc/channels.ts IPC_CHANNELS 逐键同值,勿单侧改动)。 */
 const CH = {
   fileOpenDialog: "file:openDialog",
   fileCollectMarkdown: "file:collectMarkdown",

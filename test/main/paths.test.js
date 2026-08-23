@@ -1,6 +1,6 @@
 /**
  * 路径收集/输出路径解析验收(位于 test/main/ = 主进程层;src/main/converter/paths.ts
- * (批⑤拆分,经桶导出 converter.ts),测试经 dist/main/converter.js,electron 环境):
+ * (批⑤拆分,经桶导出 converter.ts),测试经 dist/main/converter/index.js,electron 环境):
  * 迭代 3 低优先级缺口(ROADMAP 141/142 行),重构后两函数已导出 → 升级为直测:
  * - collectMarkdownPaths:目录递归(.md/.markdown 含嵌套)、点开头目录(.git/.hidden)
  *   与点开头文件跳过、目录内非 md 静默忽略、直接传非 md/不存在 → skipped、
@@ -24,7 +24,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/converter.js";
+import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/converter/index.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 
 function assert(cond, msg) {

@@ -12,10 +12,10 @@
  * Mermaid:定位 node_modules/mermaid/dist,供隐藏渲染窗口的 <script src="file://..."> 使用
  * (IIFE 产物 mermaid.min.js,file:// 直用,规避 v11 ESM 动态 import 的模块 CORS)。
  * 不依赖 electron app.getAppPath():按模块自身位置定位(import.meta.url)——
- * 编译产物恒在 <项目>/dist/main/ 下,../../node_modules 三场景一致:
+ * 编译产物恒在 <项目>/dist/main/services/ 下,../../../node_modules 三场景一致:
  * - dev:`electron .` → <项目>/node_modules
  * - test:`electron test/acceptance.mjs` → 同样 <项目>/node_modules
- * - 打包:模块在 app.asar/dist/main/ 下 → app.asar/node_modules(Electron file
+ * - 打包:模块在 app.asar/dist/main/services/ 下 → app.asar/node_modules(Electron file
  *   协议对 asar 内 file:// 加载透明支持,与 katex 字体 file:// 化先例一致)
  * 为何偏离 getKatexDir 的 app.getAppPath() 模式:实测(2026-08-13)
  * `electron test/acceptance.mjs` 启动时 app.getAppPath() 返回入口脚本所在目录
@@ -43,10 +43,10 @@ export function getKatexDir(): string {
 
 /* ---------- Mermaid(import.meta.url 相对定位) ---------- */
 
-/** 纯路径解析(moduleDir 注入,三态可参数化直测):编译产物恒在 <项目>/dist/main/
- * 下,../../node_modules 三场景一致(dev/test/打包,见头注)。 */
+/** 纯路径解析(moduleDir 注入,三态可参数化直测):编译产物恒在 <项目>/dist/main/services/
+ * 下,../../../node_modules 三场景一致(dev/test/打包,见头注)。 */
 export function resolveMermaidDir(moduleDir: string): string {
-  return path.resolve(moduleDir, "..", "..", "node_modules", "mermaid", "dist");
+  return path.resolve(moduleDir, "..", "..", "..", "node_modules", "mermaid", "dist");
 }
 
 export function getMermaidDir(): string {

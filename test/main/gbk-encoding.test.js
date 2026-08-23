@@ -1,5 +1,5 @@
 /**
- * GBK 编码端到端(main 进程层;经 dist/main/converter.js,electron 环境):
+ * GBK 编码端到端(main 进程层;经 dist/main/converter/index.js,electron 环境):
  * 用 iconv-lite 写 GBK 编码的中文 markdown 文件 → convertImpl("docx") → 断言:
  * - warnings 含「已按 GBK 编码读取:文件编码非 UTF-8」(文案见 src/main/converter/single.ts
  *   convertImpl;触发链:src/core/util/encoding.ts decodeMarkdown 严格 UTF-8 校验失败 →
@@ -13,10 +13,10 @@ import os from "node:os";
 import path from "node:path";
 import iconv from "iconv-lite";
 import JSZip from "jszip";
-import { updateSettings } from "../../dist/main/settings.js";
+import { updateSettings } from "../../dist/main/persist/settings.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { backupSettings } from "../common/settings.js";
-import { convertImpl } from "../../dist/main/converter.js";
+import { convertImpl } from "../../dist/main/converter/index.js";
 
 const GBK_MD = "# GBK 中文标题\n\n正文内容 你好世界\n";
 

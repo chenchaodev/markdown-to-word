@@ -9,7 +9,7 @@
  */
 import { app, BrowserWindow, session } from "electron";
 import { setLanguage } from "../core/i18n.js";
-import { loadSettings } from "./settings.js";
+import { loadSettings } from "./persist/settings.js";
 import { createWindow, getMainWindow } from "./windows/main-window.js";
 import { registerIpc } from "./ipc/register.js";
 import { buildAppMenu } from "./menu.js";

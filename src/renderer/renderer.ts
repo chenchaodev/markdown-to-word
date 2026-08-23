@@ -33,7 +33,7 @@
  * 本文件仍为组合根,import 路径随目录更新,行为零变化。
  */
 import { type AppSettings } from "../core/settings/settings-defaults.js";
-import type { UiState } from "../main/ui-state.js";
+import type { UiState } from "../main/persist/ui-state.js";
 import { state } from "./state/state.js";
 import type { BatchProgressInfo, BatchResult, ConvertProgressPayload } from "./state/state.js";
 import { updateActionButtons } from "./convert/file-list.js";

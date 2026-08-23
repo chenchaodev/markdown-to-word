@@ -1,8 +1,8 @@
 /**
  * IPC 注册体(自 main/index.ts 抽取,行为零变化):全部 ipcMain.handle 注册 +
  * convert 系 handler 共用的 ctx 注册表与样板。
- * 依赖方向(单向,防循环):本模块 → windows/preview / converter / settings /
- * ui-state / ipc-logic;windows/main-window 反向 import 本模块的 ctxByWebContents
+ * 依赖方向(单向,防循环):本模块 → windows/preview / converter / persist /
+ * services / logic;windows/main-window 反向 import 本模块的 ctxByWebContents
  * (关窗确认需查询转换进行中状态),故共享状态必须收敛于此而非窗口模块。
  */
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
@@ -19,7 +19,7 @@ import {
   isString,
   isStringArray,
   runConvertTask,
-} from "../ipc-logic.js";
+} from "./logic.js";
 import {
   loadSettings,
   updateSettings,
@@ -28,12 +28,12 @@ import {
   type ExportPresetsResult,
   type ImportPdfCssResult,
   type ImportPresetsResult,
-} from "../settings.js";
+} from "../persist/settings.js";
 import {
   loadUiState,
   saveUiState,
   type UiState,
-} from "../ui-state.js";
+} from "../persist/ui-state.js";
 import {
   batchConvertImpl,
   collectMarkdownPaths,
@@ -46,9 +46,9 @@ import {
   type BatchResult,
   type ConvertContext,
   type ConvertResult,
-} from "../converter.js";
-import { getKatexDir } from "../resource-dirs.js";
-import { IPC_CHANNELS as CH, type ConvertMode } from "../ipc-channels.js";
+} from "../converter/index.js";
+import { getKatexDir } from "../services/resource-dirs.js";
+import { IPC_CHANNELS as CH, type ConvertMode } from "./channels.js";
 import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";
 
 /**
