@@ -2,6 +2,14 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-23 13:30:05 全库质量审计(代码/文档/可用性,改进迭代规划依据)
+- **core(28 文件 ~4440 行)**:top 改进——①convert⇄render 运行时循环依赖(docx/render.ts:56、pdf/render.ts:16 仍从 ../convert.js 导入 DEFAULT_PAGE_SETUP,改 settings-defaults.js 即解);②headingNumbering=false 题注编号双格式分歧(captions.ts:60-66 与自身注释 49-51 及 pdf 行为三方矛盾);③frontmatter 误吞以 `---` 开头文档正文(frontmatter.ts:24 无已知 key 守卫);④docx 图片 resolver 无 memo(pdf 侧已有去重);⑤四组人肉同步契约(CROSS_REF_KINDS/sec-label 正则×4/ImageResolver×3/白名单双扫描器已漂移);⑥docx 悬空引用警告不去重;⑦列表项/引用块内不支持的块级内容静默丢弃无警告;⑧slug 40 字符截断在去重后致书签碰撞跳转错位;⑨pdfCss/KaTeX CSS 注入未净化 `</style>`(配合预览窗口无 CSP 成真实注入面);⑩两大 render 文件继续拆分。次要:theme.ts 死导出、表格对齐 docx 丢失、警告文案硬编码中文、hljs 降级无警告、UTF-16 BE 不识别。
+- **main/renderer**:进程健壮性三缺口——①无单实例锁(双开静默互踩设置/最近文件);②关窗时转换进行中无拦截(destroyed window + 半成品文件);③无 unhandledRejection 兜底。预览/打印 HTML 模板完全无 CSP+外链导航未收口(mermaid 窗口反而配了)。IPC 参数校验标准不一(settings 有 sanitize,convert/shell 无类型守卫)。可用性 top5:关窗丢转换/进度 3 档钉死 70% 且 print 阶段不可取消/错误提示直出异常原文不可操作/拖放反馈缺陷组合(转换中静默忽略+重复项冒充非 Markdown 跳过+只报数量)/最近条目单击即重转误触成本高。i18n 残留:converter warnings/throw 文案、Mermaid 降级警告、smoke 断言冻结中文(en 下必炸)、index.html zh 默认文案 FOUC、renderer.ts:192 模块级 t() 冻结。无暗色模式(nativeTheme 未引用)。
+- **测试/工程**:最大短板是门禁位置——只有 tag 触发 Release 流水线,无 PR/push CI,typecheck/lint/test 仅发版时跑;test:smoke 不含 build 可测到陈旧 dist;settings/i18n/ui-state 三段直接读写真实 %APPDATA%(污染开发者状态,也是并行化障碍);runner 无逐段超时看门狗;tsconfig.eslint.json 是死文件;缺 noUncheckedIndexedAccess;copy-renderer 无 clean 可留脏产物进安装包;docx 解包 tar/jszip 双轨。盲区:main/index.ts(589 行 IPC/取消语义/预览生命周期)、打包态 katex-dir/mermaid-dir 路径定位、theme.ts eastAsia 规则无专门断言。
+- **文档**:docs/README.md:3 自述「命令行工具」失实(GUI 后未更新);convert.ts:12 头注释仍称 docx 无高亮(0.32.0 已有 code-highlight);ui-state.ts panelOpen 注释腐化;USER-GUIDE FAQ 偏薄(公式不编号/图片不显示/SmartScreen 未签名提示缺失);根 README 未提 ELECTRON_MIRROR 前置要求。
+- **正面确认**(保持不动):安全基线(isolation/sandbox/preload 白名单/零 XSS 面)、原子写+写队列、per-call 取消上下文、aria/焦点管理、fixtures 单一来源(gen-fixtures --check)、负面断言与清理纪律、断言消息嵌入实际值。
+- 来源: @explorer×3 并行深审 + 主会话抽查复核;关联: 原文存档 docs/archive/2026-08-23-133005-全库质量审计.md
+
 ### 2026-08-16 11:45:20 文档加密调研(@lib-1,排期功能 3/3 依据)
 - **docx 库 9.7.1 不支持加密**(maintainer 确认:密码保护 Word 文档非 OOXML 标准,是 Microsoft 专有 Agile/Standard Encryption;dist 全量搜 encrypt/password 零匹配;isEncrypted 是 JSZip 解压检查)
 - **docx 替代**:officecrypto-tool 0.0.19(ECMA-376 Agile AES-256/SHA-512,Word 2007+ 兼容;API `officeCrypto.encrypt(buffer, { password })`;CJS 老库依赖 cfb/xml2js/crypto-js,ESM 默认导入需验证);office-crypto 0.1.0 加密未完成;ooxml-encryption 仅 xlsx

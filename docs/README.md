@@ -1,6 +1,6 @@
 # docs/ 文档索引
 
-markdown-to-word:Markdown 转 Word / PDF 等格式的命令行工具。项目知识库:跨会话需要保留的结论、决策、手册都在本目录;本文件是索引与维护约定。
+markdown-to-word:Markdown 转 Word / PDF 的 Windows 桌面应用。项目知识库:跨会话需要保留的结论、决策、手册都在本目录;本文件是索引与维护约定。
 
 ## 阅读路径(按场景)
 
@@ -46,6 +46,7 @@ markdown-to-word:Markdown 转 Word / PDF 等格式的命令行工具。项目知
 | `2026-08-08-1142-docx域API调研.md` | docx 域 API(TOC/SEQ/REF) |
 | `20260813-193532-mermaid集成方案.md` | Mermaid 渲染导出方案(隐藏窗口 + PNG/SVG 双端) |
 | `20260816-114520-文档加密调研.md` | 文档加密调研(docx 库不支持加密,替代方案) |
+| `2026-08-23-133005-全库质量审计.md` | 1.0.0 后全库审计(core/main/renderer/测试/工程/文档改进点证据链) |
 
 ## 维护约定
 

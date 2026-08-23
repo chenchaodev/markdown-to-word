@@ -31,7 +31,7 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 
 ## 安装与使用
 
-环境要求：Node.js >= 20.19
+环境要求：Node.js >= 20.19（国内网络请先设置 Electron 镜像，详见 [开发者手册](docs/DEV-GUIDE.md#环境)：`ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`）
 
 ```bash
 # 安装依赖

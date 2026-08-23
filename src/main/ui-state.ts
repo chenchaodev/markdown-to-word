@@ -153,7 +153,7 @@ function sanitizeWindowBounds(value: unknown): WindowBounds | null {
   return { x: b.x, y: b.y, width: b.width, height: b.height };
 }
 
-/** panelOpen:page/typography 逐字段布尔校验,非法/缺失 → 默认 true。 */
+/** panelOpen:page/typography 逐字段布尔校验,非法/缺失 → 回落 DEFAULT_UI_STATE.panelOpen(缺省折叠=false)。 */
 function sanitizePanelOpen(value: unknown): PanelOpen {
   const src =
     typeof value === "object" && value !== null && !Array.isArray(value)

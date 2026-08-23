@@ -9,7 +9,8 @@
  *   差异点由双格式断言段覆盖(basic-render/cross-ref 等)。
  * - 公式:docx 渲染为 Office MathML(docx/math.ts);pdf 渲染为 KaTeX HTML
  *   (katexDir 注入,缺资源降级)。→ formula.test.js
- * - 代码高亮:docx 等宽字体无高亮;pdf 用 hljs 高亮(抛错回退转义)。
+ * - 代码高亮:双格式均走 hljs——docx 已知语言逐 token 着色(code-highlight.ts,
+ *   无语言/未知语言/解析失败降级等宽);pdf 高亮进 HTML(抛错回退转义)。
  *   → basic-render.test.js
  * - mermaid:docx 内嵌 PNG(2x);pdf 内联 SVG(矢量)。→ mermaid.test.js
  * - 目录:docx 静态目录(打开即见、可点击跳转、无页码);pdf 目录同开关。
