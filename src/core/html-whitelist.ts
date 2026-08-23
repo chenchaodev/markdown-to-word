@@ -14,7 +14,8 @@ export const ALLOWED_INLINE_TAGS = new Set([
  * 内联 HTML 白名单判定:整串须完全由「白名单无属性标签 + 文本」构成才合法。
  * 开标签仅允许纯标签名(可带尾随空白,`<strong>` / `<strong >` 无属性合法,
  * 带属性如 `<strong class="x">` 一律非法);闭标签须与栈顶匹配;br 为空标签
- * 不入栈;文本段不允许出现 `<`;扫描结束栈须为空。未闭合/错配/带属性/
+ * 不入栈,B3 起自闭合 `<br/>` / `<br />` 同样合法(非空标签的自闭合形式仍非法);
+ * 文本段不允许出现 `<`;扫描结束栈须为空。未闭合/错配/带属性/
  * 非白名单 → false(调用方按安全兜底处理:pdf 转义 / docx 跳过)。
  */
 export function isAllowedInlineHtml(content: string): boolean {
@@ -34,10 +35,17 @@ export function isAllowedInlineHtml(content: string): boolean {
       if (stack.length === 0 || stack[stack.length - 1] !== name) return false; // 无对应/错配
       stack.pop();
     } else {
-      if (!/^[a-z][a-z0-9]*\s*$/i.test(inner)) return false; // 带属性/非法开标签
-      const name = inner.trim().toLowerCase();
+      const raw = inner.trim();
+      const selfClosed = raw.endsWith("/");
+      const name = (selfClosed ? raw.slice(0, -1) : raw).trim().toLowerCase();
+      if (!/^[a-z][a-z0-9]*$/.test(name)) return false; // 带属性/非法开标签
       if (!ALLOWED_INLINE_TAGS.has(name)) return false;
-      if (name !== "br") stack.push(name); // br 空标签不入栈
+      if (name === "br") {
+        // br 空标签不入栈(B3:自闭合 <br/> 走同一分支)
+      } else {
+        if (selfClosed) return false; // 非空标签自闭合不放行(保守)
+        stack.push(name);
+      }
     }
     i = close + 1;
   }

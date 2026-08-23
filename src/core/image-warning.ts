@@ -10,3 +10,11 @@
 export function imageLoadFailedWarning(src: string): string {
   return `图片加载失败: ${src}`;
 }
+
+/**
+ * 图片格式无法识别警告(B3):魔数判定失败的图片跳过嵌入(不再伪装 png),
+ * docx/pdf 共用文案。src 为 markdown 原始引用。
+ */
+export function unrecognizedImageWarning(src: string): string {
+  return `图片格式无法识别,已跳过: ${src}`;
+}

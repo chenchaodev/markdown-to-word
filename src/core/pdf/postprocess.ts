@@ -5,7 +5,7 @@
  */
 import { decodeEntities, escapeHtml, escapeRegExp } from "../utils.js";
 import { mimeFromBuffer } from "../image-type.js";
-import { imageLoadFailedWarning } from "../image-warning.js";
+import { imageLoadFailedWarning, unrecognizedImageWarning } from "../image-warning.js";
 import type { PdfHeading } from "./bookmarks.js";
 import type { ImageResolver } from "./render.js";
 
@@ -96,7 +96,11 @@ export async function embedExternalImages(
       try {
         const data = await resolver(url);
         if (data && data.length > 0) {
-          results.set(url, `data:${mimeFromBuffer(data)};base64,${data.toString("base64")}`);
+          const mime = mimeFromBuffer(data);
+          // B3:未知魔数不再伪装 image/png(Chromium 渲染错误 MIME 行为不可预期),
+          // 按失败降级——保留原 URL + 统一警告
+          if (!mime) warnings.push(unrecognizedImageWarning(url));
+          else results.set(url, `data:${mime};base64,${data.toString("base64")}`);
         } else {
           warnings.push(imageLoadFailedWarning(url));
         }

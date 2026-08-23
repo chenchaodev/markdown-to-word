@@ -86,7 +86,9 @@ export function parseInlineHtml(value: string): InlineHtmlItem[] {
     if (inner.startsWith("/")) {
       stack.pop();
     } else {
-      const name = inner.trim().toLowerCase();
+      // B3:自闭合 <br/>(校验层已放行)归一为 br,不得误判为空样式标签
+      const raw = inner.trim();
+      const name = (raw.endsWith("/") ? raw.slice(0, -1) : raw).trim().toLowerCase();
       if (name === "br") items.push({ break: true });
       else stack.push(INLINE_TAG_STYLES[name] ?? {});
     }

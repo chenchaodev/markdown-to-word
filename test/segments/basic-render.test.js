@@ -249,6 +249,70 @@ export async function run() {
   }
   console.log("[ok] basic-render:webp 图片降级(warning + 占位文本,主样例不受影响)断言通过");
 
+  // ---------- B3c:未知魔数图片跳过嵌入(sniffImageType null 化,imageToDocx 调用方处理) ----------
+  // 依据(src/core/image-type.ts):B3 起未知字节头返回 null(不再伪装 png),
+  // docx imageToDocx 收到 null → 追加「图片格式无法识别,已跳过」警告 + 占位文本。
+  const unknownWarnings = [];
+  const unknownBuffer = await renderDocx(parseMarkdown("![坏图](./junk.bin)"), {
+    imageResolver: async () => Buffer.from("not-an-image"),
+    warnings: unknownWarnings,
+  });
+  if (!unknownWarnings.some((w) => w.includes("图片格式无法识别") && w.includes("junk.bin"))) {
+    throw new Error(`basic-render 断言失败:未知魔数图片未产生跳过警告,warnings=${JSON.stringify(unknownWarnings)}`);
+  }
+  const unknownXml = unzipPart(unknownBuffer, "word/document.xml");
+  if (!unknownXml.includes("[图片: 坏图]")) {
+    throw new Error("basic-render 断言失败:未知魔数图片未降级为占位文本");
+  }
+  if (unknownXml.includes("<w:drawing>")) {
+    throw new Error("basic-render 断言失败:未知魔数图片不应生成 drawing");
+  }
+  console.log("[ok] basic-render:B3 未知魔数图片跳过嵌入(警告 + 占位文本)断言通过");
+
+  // ---------- B3c:GFM 表格对齐(renderTable node.align → 段落 w:jc center/right) ----------
+  // 依据(src/core/docx/render.ts):mdast 表格 align 数组逐列映射 AlignmentType,
+  // 未声明列保持缺省(左对齐,无 w:jc)。docx 库序列化:<w:jc w:val="center"/>。
+  const alignDocx = await convert(
+    "| 左 | 中 | 右 |\n| :-- | :-: | --: |\n| a | b | c |",
+    "docx",
+    { baseDir: FIXTURES_DIR, warnings: [] },
+  );
+  const alignXml = unzipPart(alignDocx.buffer, "word/document.xml");
+  if (!alignXml.includes('<w:jc w:val="center"/>')) {
+    throw new Error("basic-render 断言失败:表格居中列缺少 w:jc center");
+  }
+  if (!alignXml.includes('<w:jc w:val="right"/>')) {
+    throw new Error("basic-render 断言失败:表格右对齐列缺少 w:jc right");
+  }
+  // 居中列单元格文本 b 的段落属性含 center(列对齐落到单元格内段落)
+  const bProps = (() => {
+    const idx = alignXml.indexOf(`<w:t xml:space="preserve">b</w:t>`);
+    if (idx === -1) throw new Error("basic-render 断言失败:表格居中列文本 b 未找到");
+    const start = alignXml.lastIndexOf("<w:pPr>", idx);
+    const end = alignXml.indexOf("</w:pPr>", start);
+    return start === -1 || end === -1 ? "" : alignXml.slice(start, end);
+  })();
+  if (!bProps.includes('w:val="center"')) {
+    throw new Error(`basic-render 断言失败:居中列单元格段落属性缺 center:${bProps}`);
+  }
+  console.log("[ok] basic-render:B3 表格列对齐(:--/:-:/--: → 缺省/center/right)断言通过");
+
+  // ---------- B3c:自闭合 <br/> 白名单放行(html-whitelist 三处扫描器同步) ----------
+  // 此前 <br/> 整串判非法:docx 危险段丢弃 / pdf 整段转义。B3 起仅空标签 br 放行自闭合。
+  const brDocx = await convert("<strong>粗</strong><br/>换行后", "docx", { baseDir: FIXTURES_DIR, warnings: [] });
+  const brXml = unzipPart(brDocx.buffer, "word/document.xml");
+  if (!brXml.includes("<w:br/>")) throw new Error("basic-render 断言失败:<br/> 未产出换行 run(<w:br/>)");
+  if (!brXml.includes("换行后")) throw new Error("basic-render 断言失败:<br/> 后文本被危险段丢弃");
+  if (!brXml.includes(">粗<")) throw new Error("basic-render 断言失败:<strong> 内容丢失");
+  const brPdf = await convert("<strong>粗</strong><br/>换行后", "pdf", { baseDir: FIXTURES_DIR, warnings: [] });
+  if (brPdf.html.includes("&lt;strong&gt;")) {
+    throw new Error(`basic-render 断言失败:pdf 侧合法表达式仍被转义:\n${brPdf.html}`);
+  }
+  if (!brPdf.html.includes("<br/>") || !brPdf.html.includes("<strong>粗</strong>")) {
+    throw new Error(`basic-render 断言失败:pdf 侧 <br/>/<strong> 未按白名单原样输出:\n${brPdf.html}`);
+  }
+  console.log("[ok] basic-render:B3 自闭合 <br/> 白名单放行(docx 渲染 + pdf 不转义)断言通过");
+
   // 缺失图片警告(M6:检查并入 imageResolver 失败路径,dist/core/convert.ts 已移除
   // stat 预扫;docx imageToDocx resolver 返回 null → warnings 追加统一文案
   // 「图片加载失败: <src>」,本地与外链同构)。样例引用不存在的 missing-img.png

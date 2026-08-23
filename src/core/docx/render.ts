@@ -52,7 +52,7 @@ import { buildCaptionContext, renderCaptionParagraph, type CaptionInfo, type Cap
 import { buildEquationContext, type EquationContext } from "./equations.js";
 import { collectPlainText } from "../mdast-utils.js";
 import { sniffImageType, imageSizeFromBuffer } from "../image-type.js";
-import { imageLoadFailedWarning } from "../image-warning.js";
+import { imageLoadFailedWarning, unrecognizedImageWarning } from "../image-warning.js";
 import { DEFAULT_PAGE_SETUP } from "../convert.js";
 import type { PageSetup } from "../convert.js";
 import type { DocMetadata } from "../frontmatter.js";
@@ -783,9 +783,24 @@ async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
   for (let rowIndex = 0; rowIndex < node.children.length; rowIndex++) {
     const row = node.children[rowIndex];
     const cells: TableCell[] = [];
-    for (const cell of row.children) {
+    for (let colIndex = 0; colIndex < row.children.length; colIndex++) {
+      const cell = row.children[colIndex];
       const runs = await renderPhrasing(normalizeInlineHtml(cell.children), ctx, rowIndex === 0 ? { bold: true } : {});
-      cells.push(new TableCell({ children: [new Paragraph({ children: runs })] }));
+      // B3:GFM 列对齐(:--- / :---: / ---:)映射为段落对齐;未声明列(null)保持缺省左对齐
+      // (此前 mdast table.align 被忽略,双格式保真不一致:pdf 侧 markdown-it 原生支持)
+      const align = node.align?.[colIndex];
+      const alignment =
+        align === "center" ? AlignmentType.CENTER : align === "right" ? AlignmentType.RIGHT : undefined;
+      cells.push(
+        new TableCell({
+          children: [
+            new Paragraph({
+              children: runs,
+              ...(alignment ? { alignment } : {}),
+            }),
+          ],
+        }),
+      );
     }
     rows.push(new TableRow({ children: cells }));
   }
@@ -1098,6 +1113,11 @@ async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<Inli
   const type = sniffImageType(data);
   if (type === "webp") {
     ctx.warnings?.push(`webp 图片不支持 docx 内嵌,已跳过: ${node.url}`);
+    return fallback();
+  }
+  // B3:未知魔数不再伪装 png(错误标签靠 Word 自行嗅探兜底,行为不可预期)→ 跳过+警告
+  if (type === null) {
+    ctx.warnings?.push(unrecognizedImageWarning(node.url));
     return fallback();
   }
   const size = imageSizeFromBuffer(data);

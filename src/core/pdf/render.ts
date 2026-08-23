@@ -186,7 +186,8 @@ function overrideCaptionRule(md: MarkdownIt): void {
  * 公式编号 + 交叉引用(8d,与 docx 侧契约一致;免更新路线,编号静态注入文本):
  * - 编号对象:顶层(blockquote/list_item/table 单元格外)display 公式(math_block,
  *   由 @mdit/plugin-katex 产生),按文档顺序全文连续编号 1,2,3…
- * - label 语法:公式块之后紧跟独立段落 {#eq:label}(整段仅此一行,label 为 [\w-]+),
+ * - label 语法:公式块之后紧跟独立段落 {#eq:label}(整段纯文本串接恰为该标记,
+ *   B3 起粗斜体包裹亦命中以对齐 docx 口径,label 为 [\w-]+),
  *   该段标记 hidden 不渲染,label 登记给前一个 math_block(生成页内锚点)
  * - 引用语法:链接 [式](#eq:label) / [公式](#eq:label) 文本替换为「式 (N)」/「公式 (N)」
  *   并保留跳转;其他文本的 #eq:label 链接保持原文本;未知 label → 「式 (?)」
@@ -226,12 +227,16 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
         token.type === "paragraph_close" &&
         depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0
       ) {
-        // label 段:paragraph_open + inline(唯一 text child)+ paragraph_close
+        // label 段:paragraph_open + inline + paragraph_close。
+        // B3 口径对齐 docx:整段「纯文本串接」恰为 {#eq:label} 即命中——此前要求
+        // 唯一 text child,粗斜体包裹的 label(如 **{#eq:a}**)双格式登记结果不同
         const inline = tokens[i - 1];
-        if (!inline || inline.type !== "inline" || !inline.children || inline.children.length !== 1) continue;
-        const first = inline.children[0];
-        if (first.type !== "text") continue;
-        const match = /^\{#eq:([\w-]+)\}$/.exec(first.content);
+        if (!inline || inline.type !== "inline" || !inline.children) continue;
+        let plain = "";
+        for (const child of inline.children) {
+          if (child.type === "text") plain += child.content;
+        }
+        const match = /^\{#eq:([\w-]+)\}$/.exec(plain);
         if (!match) continue;
         if (numbering) {
           if (!lastMathToken) continue; // 无前置公式 → 保持原样(按普通段落渲染)
@@ -553,13 +558,17 @@ function matchAllowedHtmlExpression(src: string, pos: number): number {
       stack.pop();
       if (stack.length === 0) return close + 1 - pos; // 完整表达式
     } else {
-      if (!/^[a-z][a-z0-9]*\s*$/i.test(inner)) return -1;
-      const name = inner.trim().toLowerCase();
+      // B3:自闭合 <br/> / <br /> 此前整串判非法转义;仅空标签 br 放行自闭合
+      const raw = inner.trim();
+      const selfClosed = raw.endsWith("/");
+      const name = (selfClosed ? raw.slice(0, -1) : raw).trim().toLowerCase();
+      if (!/^[a-z][a-z0-9]*$/.test(name)) return -1;
       if (!ALLOWED_INLINE_TAGS.has(name)) return -1;
       if (name === "br") {
-        if (stack.length === 0) return close + 1 - pos; // 独立 <br>
+        if (stack.length === 0) return close + 1 - pos; // 独立 <br>(含自闭合)
         // 嵌套内的 br:继续扫描
       } else {
+        if (selfClosed) return -1; // 非空标签自闭合不放行(与 isAllowedInlineHtml 一致)
         stack.push(name);
       }
     }

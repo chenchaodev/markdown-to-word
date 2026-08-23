@@ -104,6 +104,34 @@ export async function run() {
   // 8d-9:行内公式不编号(无 eq-num 包裹在行内公式上)
   console.log("[ok] PDF 公式编号 + 交叉引用:eq-block/锚点/引用文本/label 不渲染/悬空兜底 断言通过");
 
+  // ---------- B3c:label 口径对齐 docx(pdf 侧放宽为「整段纯文本串接」) ----------
+  // 此前 pdf 要求 label 段为唯一纯 text child,粗斜体包裹的 **{#eq:x}** 不命中 →
+  // 登记失败且标记行按普通段落显示;docx collectPlainText 本就宽松。B3 起双格式一致。
+  const boldLabelMd = "$$\nG = h\n$$\n\n**{#eq:bold-lab}**\n\n如 [式](#eq:bold-lab) 所示。";
+  const boldLabelPdf = await convert(boldLabelMd, "pdf", {
+    baseDir: FIXTURES_DIR,
+    warnings: [],
+    katexDir,
+  });
+  if (!boldLabelPdf.html.includes('id="eq:bold-lab"')) {
+    throw new Error(`批次9断言失败:B3 粗斜体包裹 label 未登记锚点(pdf):\n${boldLabelPdf.html}`);
+  }
+  if (boldLabelPdf.html.includes("{#eq:bold-lab}")) {
+    throw new Error("批次9断言失败:B3 粗斜体包裹 label 标记行不应渲染字面文本");
+  }
+  if (!boldLabelPdf.html.includes('href="#eq:bold-lab">式 (1)<')) {
+    throw new Error("批次9断言失败:B3 粗斜体包裹 label 的交叉引用未替换为「式 (1)」");
+  }
+  const boldLabelDocx = await convert(boldLabelMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
+  const boldLabelXml = unzipPart(boldLabelDocx.buffer, "word/document.xml");
+  if (!boldLabelXml.includes('w:name="eq-bold-lab"')) {
+    throw new Error("批次9断言失败:B3 粗斜体包裹 label 未登记书签(docx)");
+  }
+  if (!boldLabelXml.includes("式 (1)")) {
+    throw new Error("批次9断言失败:B3 粗斜体包裹 label 的交叉引用未替换(docx)");
+  }
+  console.log("[ok] B3 粗斜体包裹 {#eq:label}:pdf 放宽命中 + docx 契约锁定(双格式一致)断言通过");
+
   // ---------- 公式编号开关关闭(equationNumbering: false,docx/pdf 双格式一致) ----------
   // 关开关语义:display 公式不编号(原样渲染,无 (N) 文本)、{#eq:label} 独立段仍隐藏
   // (语法标记不显示,不渲染)、[式]/[公式] 引用保持原文本(不降级「(?)」、不追加警告)。

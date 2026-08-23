@@ -105,4 +105,48 @@ export async function run() {
     throw new Error("merge 断言失败:全空输入应返回空串");
   }
   console.log("[ok] merge:空文件跳过(不产生空段/多余分页符,全空 → 空串)断言通过");
+
+  // ---------- B3:分页符防叠加(merge.ts mergeMarkdowns) ----------
+  // 上一文件尾部已有显式 page-break 注释 → 普通空行拼接(相邻两个分页符会产生空白页)
+  const noDoubleBreak = mergeMarkdowns([
+    { content: "# 甲\n\n<!-- page-break -->", baseDir: FIXTURES_DIR },
+    { content: "# 乙", baseDir: FIXTURES_DIR },
+    { content: "# 丙", baseDir: FIXTURES_DIR },
+  ]);
+  if (noDoubleBreak !== "# 甲\n\n<!-- page-break -->\n\n# 乙\n\n<!-- page-break -->\n\n# 丙") {
+    throw new Error(`merge 断言失败:尾部分页符不应叠加,实际输出:\n${JSON.stringify(noDoubleBreak)}`);
+  }
+  console.log("[ok] merge:B3 分页符防叠加断言通过");
+
+  // ---------- B3:代码块内示例图片语法不参与路径改写(absolutizeImages) ----------
+  const codeAware = mergeMarkdowns([
+    {
+      content: [
+        "正文 ![真实](real.png)",
+        "",
+        "```markdown",
+        "示例 ![示例图](demo.png)",
+        "```",
+        "",
+        "~~~text",
+        "波浪线围栏 ![w](w.png)",
+        "~~~",
+        "",
+        "行内 `![内联](inline.png)` 之后 ![尾部](tail.png)",
+      ].join("\n"),
+      baseDir: FIXTURES_DIR,
+    },
+  ]);
+  for (const sample of ["![示例图](demo.png)", "![w](w.png)", "`![内联](inline.png)`"]) {
+    if (!codeAware.includes(sample)) {
+      throw new Error(`merge 断言失败:代码块内示例图片语法被改写:${sample},实际输出:\n${codeAware}`);
+    }
+  }
+  if (codeAware.includes("](real.png)") || codeAware.includes("](tail.png)")) {
+    throw new Error(`merge 断言失败:代码块外图片应转为绝对路径,实际输出:\n${codeAware}`);
+  }
+  if (!codeAware.includes(`${path.resolve(FIXTURES_DIR, "real.png").replace(/\\/g, "/")}`)) {
+    throw new Error(`merge 断言失败:代码块外真实图片应为绝对路径,实际输出:\n${codeAware}`);
+  }
+  console.log("[ok] merge:B3 代码块感知(围栏/行内不改写,块外照常转绝对路径)断言通过");
 }
