@@ -2,6 +2,14 @@
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 
+### 2026-08-23 23:05:54 目录结构优化方案(四轮探查定稿,暂不进迭代)
+- **总体判断**:现状约 70% 接近理想;结构性欠账 6 项——①core 根级 20 文件平铺(转换入口/设置/i18n/md 特性/图片/工具混一层,P1);②core/i18n.ts 702 行(字典 ~585 行与逻辑混放,引用面全项目最大 ~20 src 文件+测试 31 处,P1);③renderer/events.ts 607 行单函数闭包混 6 个事件域(P1);④main/index.ts 695 行五块混放(P2);⑤main/converter.ts 524 行三实现混放(P2);⑥core/docx 缺 handlers 层(9 节点处理器与横切关注点平铺,P2)
+- **关键事实**:i18n EN 字典 `Record<keyof typeof ZH,...>` 编译期锁定键集→ZH/EN 必须同文件;pdf/rules/ 存在因 markdown-it 有规则可覆盖,docx 走 mdast 无规则层,对应物是 handlers/(节点处理器),theme/ctx/prescan/chrome 属横切留顶层——不对称有技术原因非遗留错误;core 根级 17 文件均为纯 ESM 模块,移动=只改相对 import(无动态路径/__dirname);唯一测试联动 contract-single-source.test.js 路径断言
+- **明确不拆**:docx/render.ts(467 编排器)/dom.ts(254 纯映射)/math.ts(265 管线顺序阶段)/ui-state.ts(sanitize 防御性冗余)/settings-panel.ts(零直测系有意分层,缺口走 smoke 扩展)/test 大段(长因覆盖面大)
+- **用户裁定边界项**:style.css(1248)随 renderer 重组一并拆 style/ 四文件;smoke.ts 移出生产路径首选 test/tools/smoke/(退一步:留原地但确认打包排除)
+- **实施批次**:①i18n+core 归组(~90 处 import)→②docx handlers 归拢→③renderer 功能域重组+events 拆分+style 拆分→④main/index.ts 抽取(ctxByWebContents 先收敛防循环)→⑤converter 拆分+smoke 迁移+resource-dirs 合并;每批独立提交 typecheck/build/test 全绿
+- 来源: @explorer exp-1 四轮递进探查 + 用户裁定;关联: 原文存档 docs/archive/20260823-230554-目录结构优化方案.md
+
 ### 2026-08-23 B10a 工程基建两坑(copy-renderer 混合目录 / incremental 不重建被删产物)
 - **dist/renderer 是混合目录**:tsc 编译产物(pure.js/settings-logic.js 等)与 copy-renderer 拷贝的静态资源(index.html/style.css)同居;copy-renderer 加 clean 步骤时**不可整目录 rmSync**(会删掉编译产物致 acceptance 2 段 ERR_MODULE_NOT_FOUND),只能按扩展名清理 `.html/.css`(脚本自身管辖范围)
 - **tsc incremental 不检查产物存在性**:tsbuildinfo 记录输入版本,输出文件被外部删除后 `tsc` 仍跳过重编译(幽灵缺模块);恢复须 `npx tsc --build --force`(`--force` 单独用报 TS5093,必须配 --build)。CI 每次全新检出不受影响;本地手动清 dist 后需 force 全量

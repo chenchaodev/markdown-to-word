@@ -30,6 +30,7 @@
 ## 当前待办(唯一入口)
 > 2026-08-13 整理:合并原「待办(排期)」「延后(不排批)」与批次 8/9「备选/暂缓/不做(记后续)」并去重,历史规划压缩至「已完成」节,详情见 archive 存档。
 > 2026-08-23 全库质量审计后新增「审计改进排期 B1-B14」(全部待办唯一明细在此;证据链见 archive/2026-08-23-133005)。
+> 2026-08-23 目录结构优化方案探查定稿入待办(暂缓排期,排在现有待办之后;实施前须重新探查;证据链见 archive/20260823-230554)。
 
 ### 审计改进排期 B1-B14(2026-08-23,完成即勾选)
 > 原则:每项独立提交可回退;core 行为改动须补测试段断言;重构行为等价。规模:S≤3 文件 / M 中 / L 大。决策点已于 2026-08-23 全部拍板(见各条「已拍板」)。
@@ -147,16 +148,16 @@
 - [x] converter.test.js 内联 SAMPLE_MD/PNG 迁 fixtures 体系(test/fixtures/main/)
 - [x] main/index.ts runWithCtx 错误归一化抽 runConvertTask 纯逻辑入 ipc-logic.ts 直测;preview 生命周期维持人工不自动化
 
-#### B9 UX 体验批(M,P1-P2)
-- [ ] 进度分阶段:PDF parse/inline/katex/mermaid/print 上报(pure.ts/converter.ts/preload/renderer 协议扩展);print 阶段取消置灰+「正在写入」文案
-- [ ] 错误码→可操作文案映射(EBUSY/ENOENT/EACCES/ENOSPC/长路径;convert-flow.ts:54-65,对齐 preview.failed 形态)
-- [ ] 转换中拖入文件 setStatus 提示(renderer.ts:427)
-- [ ] 拖放反馈:重复文件单独文案;skipped 列具体文件名(可折叠)(file-list.ts:216-221/renderer.ts:220-228)
-- [ ] 最近条目交互:单击=加载/双击=重转(已拍板;recent-files.ts:140-148)
-- [ ] 窗口最大化状态记忆 isMaximized(index.ts:128-129)
-- [ ] 边距输入 HTML max 属性 + marginError 文案对称(index.html:272-284/settings-logic.ts:400)
-- [ ] 弹窗动画尊重 prefers-reduced-motion(style.css:842,852,912-930)
-- [ ] .settings-grid 窄窗响应式断点(style.css:477-482)
+#### B9 UX 体验批(M,P1-P2;2026-08-23 完成,提交 8780c14 视觉批+46c0d4d 交互逻辑批;待 GUI 实测后随下版发版)
+- [x] 进度分阶段:PDF parse/inline/katex/mermaid/print 上报(core onStage 回调协议只增不改向后兼容);print 阶段取消置灰+「正在写入」文案
+- [x] 错误码→可操作文案映射(EBUSY/ENOENT/EACCES/ENOSPC/长路径;actionableError 纯函数直测,未识别透传)
+- [x] 转换中拖入文件 setStatus 提示(drop.busy 提示不再静默)
+- [x] 拖放反馈:重复文件单独计数;skipped 列具体文件名(可折叠 details+smoke diag 守卫)
+- [x] 最近条目交互:单击=加载到列表/双击=直接重转(title/aria 同步字典)
+- [x] 窗口最大化状态记忆 isMaximized(ui-state 持久化+恢复时 maximize)
+- [x] 边距输入 HTML max 属性 + marginError 文案对称(max=1000 与 MARGIN_MAX_MM 对称)
+- [x] 弹窗动画尊重 prefers-reduced-motion(降瞬时出现,keyframes 终态=自然态无跳变)
+- [x] .settings-grid 窄窗响应式断点(≤720px 降单列)
 
 #### B13 暗色模式(M,P2 功能新增;已拍板做)
 - [ ] nativeTheme + prefers-color-scheme,CSS 变量双主题;设置「跟随系统/浅色/深色」
@@ -166,8 +167,18 @@
 - [ ] convert:progress 事件带 mode 标识,去 renderer 侧推断耦合(renderer.ts:613-619)
 - [ ] preload/renderer/smoke/测试全量同步
 
+#### 目录结构重组(L,P2 重构;2026-08-23 探查定稿,暂缓排期,排在现有待办之后)
+> 方案全文见 archive/20260823-230554-目录结构优化方案.md(目标结构树/拆分明细/纯移动清单/划分原则/明确不做清单);RESEARCH 同日条目有摘要。
+- [ ] **前置:实施前对代码做再次探查**——方案基于 2026-08-23 快照,B9/B12/B13 等待办实施后行号/文件会漂移,须核对欠账 6 项是否仍成立再动工
+- [ ] 批① core/i18n.ts 拆 dict/index(ZH/EN 必须同文件保键集编译期锁定)+ core 根级 17 文件归组 pipeline/settings/markdown/image/util(~90 处 import;contract-single-source.test.js 路径断言同步)
+- [ ] 批② core/docx handlers/ 归拢 11 个节点处理器(theme.ts 锚点留 docx/ 直属顶层不动)
+- [ ] 批③ renderer 功能域重组(dom/state/settings/convert/ui/style)+ events.ts 按域拆四文件 + style.css 拆四文件多 `<link>` 引入(一批做完避免两次折腾;GUI 人工实测回归)
+- [ ] 批④ main/index.ts 抽 windows/ipc/menu(ctxByWebContents 先收敛到 ipc/register 防循环 import)
+- [ ] 批⑤ main/converter.ts 拆 context/single/batch/merge/paths(原文件改桶导出)+ smoke.ts 迁出生产路径(首选 test/tools/smoke/,核实 build.files 打包排除)+ mermaid-dir/katex-dir 合并 resource-dirs
+> 每批独立提交,typecheck/build/test 全绿验证;批③④⑤ 有 GUI 面列入人工实测。
+
 #### 排期顺序与理由
-1. **B14**(零风险速修)→ 2. **B1+B2**(P0 安全/健壮性)→ 3. **B3**(P0 数据正确性)→ 4. **B10**(护栏先行,后续大批次受益;ci.yml 前 userData 隔离)→ 5. **B6**→ 6. **B4**(消费 B6 key)→ 7. **B5**→ 8. **B7**(bug 清完后重构少冲突)→ 9. **B8**(依赖 B7)→ 10. **B11**(依赖 B10)→ 11. **B9** → 12. **B13** → 13. **B12**
+1. **B14**(零风险速修)→ 2. **B1+B2**(P0 安全/健壮性)→ 3. **B3**(P0 数据正确性)→ 4. **B10**(护栏先行,后续大批次受益;ci.yml 前 userData 隔离)→ 5. **B6**→ 6. **B4**(消费 B6 key)→ 7. **B5**→ 8. **B7**(bug 清完后重构少冲突)→ 9. **B8**(依赖 B7)→ 10. **B11**(依赖 B10)→ 11. **B9** → 12. **B13** → 13. **B12** → 14. **目录结构重组**(排在全部待办之后;开工前先重新探查核对方案)
 > B9/B11 无硬依赖可按价值提前;每批完成后跑验证基线(typecheck/lint/build/test/smoke),GUI 可见变更走 ACCEPTANCE 实测。
 
 
