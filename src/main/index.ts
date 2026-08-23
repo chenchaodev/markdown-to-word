@@ -5,12 +5,11 @@
  * - ipc/register.ts:全部 IPC handle 注册 + ctxByWebContents 共享状态
  * - menu.ts:应用菜单
  * 本文件只留:app 生命周期(whenReady / activate / window-all-closed)、
- * 单实例锁、进程级兜底、SMOKE 入口(--smoke 分支一行委托 ./smoke.ts)。
+ * 单实例锁、进程级兜底、SMOKE 入口(--smoke 分支动态 import test/tools/smoke/smoke.mjs)。
  */
 import { app, BrowserWindow, session } from "electron";
 import { setLanguage } from "../core/i18n.js";
 import { loadSettings } from "./settings.js";
-import { runSmoke } from "./smoke.js";
 import { createWindow, getMainWindow } from "./windows/main-window.js";
 import { registerIpc } from "./ipc/register.js";
 import { buildAppMenu } from "./menu.js";
@@ -63,6 +62,12 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
     });
     if (SMOKE) {
       try {
+        // 冒烟入口(目录重组批⑤迁出生产路径):源码 test/tools/smoke/smoke.mjs(dev-only
+        // 诊断设施,不进 src 编译面 → 不进 dist → 打包天然排除)。经 URL 动态 import,
+        // 说明符保持非字面量以避免对 dev-only 路径做编译期解析;打包产物无此文件,
+        // --smoke 仅 dev 使用,缺失时走 catch 退出。
+        const smokeUrl = new URL("../../test/tools/smoke/smoke.mjs", import.meta.url).href;
+        const { runSmoke } = await import(smokeUrl);
         await runSmoke(win);
       } catch (err) {
         console.error("[smoke] convert FAILED:", err);

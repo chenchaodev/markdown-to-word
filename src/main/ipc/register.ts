@@ -47,7 +47,7 @@ import {
   type ConvertContext,
   type ConvertResult,
 } from "../converter.js";
-import { getKatexDir } from "../katex-dir.js";
+import { getKatexDir } from "../resource-dirs.js";
 import { IPC_CHANNELS as CH, type ConvertMode } from "../ipc-channels.js";
 import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";
 

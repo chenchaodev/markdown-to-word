@@ -1,6 +1,6 @@
 /**
- * 转换编排验收(位于 test/main/ = 主进程层测试;src/main/converter.ts 主进程编排层,
- * 测试经 dist/main/converter.js,electron 环境):
+ * 转换编排验收(位于 test/main/ = 主进程层测试;src/main/converter/(批⑤拆分,
+ * converter.ts 为桶导出),测试经 dist/main/converter.js,electron 环境):
  * 覆盖从 smoke 迁出的纯逻辑断言(不依赖 Electron 打印/窗口,断言与 smoke 原版一字未改):
  * - 重名保护:convertImpl 两次 → 「名 (2).docx」且两产物共存
  * - 批量汇总(3 成功 + 1 缺失)与 merge docx(frontmatter 仅首文件/图片嵌入/标题齐全)

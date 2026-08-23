@@ -24,6 +24,7 @@ export default tseslint.config(
             "test/main/*.js",
             "test/segments/*.js",
             "test/tools/*.mjs",
+            "test/tools/smoke/*.mjs",
             "scripts/*.mjs",
           ],
           maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 100,

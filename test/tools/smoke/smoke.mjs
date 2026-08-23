@@ -1,5 +1,6 @@
 /**
- * 冒烟自测(--smoke 模式,index.ts 一行调用):只保留必须依赖 Electron 的端到端断言。
+ * 冒烟自测(--smoke 模式,index.ts 经动态 import 一行调用):
+ * 只保留必须依赖 Electron 的端到端断言。
  * - convertImpl docx 全链路落盘(基础链路 + 产物存在,端到端性质)
  * - pdf 链路:printToPDF 产物魔数 + 书签注入(Outlines 中文标题 + Dest 页面引用)+ 合并书签
  * - renderer 诊断(executeJavaScript:window.api 注入/按钮可点/状态区反馈/弹窗隐藏)
@@ -7,6 +8,14 @@
  *   app:version 全链路(channel 改名后接线正确性;成功项会写最近文件,结束前还原)
  * 纯逻辑断言(重名保护/批量汇总/merge docx/取消链路/设置注入/分页符产物)已迁
  * test/segments|main(分页符 pdf 中间 html 在 page-setup 段),本文件不再触碰设置与取消。
+ *
+ * 定位(目录重组批⑤迁出生产路径):开发诊断设施,源码居 test/tools/(与 gen-fixtures
+ * 同区,纯 .mjs 直连 dist 编译产物,与全部测试段同构);不进 src 编译面 → 不进 dist →
+ * electron-builder files(dist/**)天然排除,不再进安装包。经 index.ts 在 --smoke 分支
+ * 以 URL 动态 import(打包产物无此文件,--smoke 仅 dev 使用)。
+ * 注意:import 的是 dist 运行实例(dist/main/settings.js 等),与运行中应用共享同一
+ * 模块缓存(settings/ui-state 隔离语义依赖此点),不可改为 import src 源码。
+ *
  * 输出隔离:smoke 不依赖用户持久化设置——outputDir 强制 ""(产物落 output/smoke 源文件旁,
  * 自清理可覆盖;否则会污染用户设置的输出目录如 Downloads,且 (N) 序号变体越积越多)、
  * afterConvert 强制 "none"(不自动打开产物弹窗);结束前恢复原设置(与 converter.test.js 同款
@@ -17,19 +26,20 @@
  * 原文件不存在则删除临时写入的文件。
  * 失败:抛错由 index.ts 统一 catch → app.exit(1);renderer diag 失败打印专属消息后重抛。
  */
-import { app, Menu, type BrowserWindow } from "electron";
+import { app, Menu } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
-import { convertImpl, mergeConvertImpl } from "./converter.js";
-import { getKatexDir } from "./katex-dir.js";
-import { t } from "../core/i18n.js";
-import { loadSettings, updateSettings } from "./settings.js";
-import { loadUiState, saveUiState } from "./ui-state.js";
+import { convertImpl, mergeConvertImpl } from "../../../dist/main/converter.js";
+import { getKatexDir } from "../../../dist/main/resource-dirs.js";
+import { t } from "../../../dist/core/i18n.js";
+import { loadSettings, updateSettings } from "../../../dist/main/settings.js";
+import { loadUiState, saveUiState } from "../../../dist/main/ui-state.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SMOKE_DIR = path.join(__dirname, "..", "..", "output", "smoke");
+// test/tools/smoke → 项目根/output/smoke(三级上跳;产物落仓库 output/,gitignore 覆盖)
+const SMOKE_DIR = path.join(__dirname, "..", "..", "..", "output", "smoke");
 /** ui-state.json 绝对路径(与 ui-state.ts 同源;隔离/恢复用,内容读写一律经 saveUiState)。 */
 const UI_STATE_PATH = path.join(app.getPath("userData"), "ui-state.json");
 
@@ -37,8 +47,8 @@ const UI_STATE_PATH = path.join(app.getPath("userData"), "ui-state.json");
  * 带重试的一次性写(Windows 文件占用 EBUSY 多为瞬时,重试 3 次×150ms 再放弃)。
  * @param label 失败报错文案(区分「隔离写入」与「恢复」)。
  */
-async function writeWithRetry(task: () => Promise<unknown>, label: string): Promise<void> {
-  let lastErr: unknown;
+async function writeWithRetry(task, label) {
+  let lastErr;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await task();
@@ -54,7 +64,7 @@ async function writeWithRetry(task: () => Promise<unknown>, label: string): Prom
 }
 
 /** 断言 PDF 大纲:首条目 Title(中文)与 Dest[0] 页面 PDFRef(单文件/合并书签共用) */
-async function assertOutline(filePath: string, expectedTitle: string, label: string): Promise<void> {
+async function assertOutline(filePath, expectedTitle, label) {
   const doc = await PDFDocument.load(await fs.readFile(filePath));
   const outlinesRef = doc.catalog.get(PDFName.of("Outlines"));
   if (!outlinesRef) throw new Error(`${label} 缺少 Outlines 大纲`);
@@ -75,7 +85,7 @@ async function assertOutline(filePath: string, expectedTitle: string, label: str
 }
 
 /** 运行冒烟断言;任何失败抛错,由 index.ts 捕获后 app.exit(1) */
-export async function runSmoke(win: BrowserWindow): Promise<void> {
+export async function runSmoke(win) {
   // 批次 12:ui-state 隔离(先于一切,尽早完成,缩小与 renderer 启动恢复的竞态窗口)。
   // 备份内存态(createWindow 已把用户真实状态读入模块缓存)→ 清空 lastSessionFiles;
   // 结束时恢复,原文件不存在则删除临时写入的文件。

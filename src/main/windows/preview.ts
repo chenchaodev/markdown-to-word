@@ -16,7 +16,7 @@ import { baseNameFromMdPath, errorMessage } from "../ipc-logic.js";
 import { loadSettings } from "../settings.js";
 import { writeTempHtml } from "../temp-html.js";
 import { buildConvertContext } from "../converter.js";
-import { getKatexDir } from "../katex-dir.js";
+import { getKatexDir } from "../resource-dirs.js";
 import { renderMermaid } from "../mermaid-service.js";
 import { hardenWebContents } from "../web-hardening.js";
 
