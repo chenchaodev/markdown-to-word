@@ -481,6 +481,13 @@ body {
   align-items: start;
 }
 
+/* 窄窗口降为单列:两列下标签与控件挤压,可用性优先 */
+@media (max-width: 720px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .setting-field {
   display: flex;
   flex-direction: column;
@@ -926,6 +933,14 @@ body {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+/* 减少动态效果:弹窗动画降为瞬时出现,终态即自然态,无可见性跳变 */
+@media (prefers-reduced-motion: reduce) {
+  .dialog-overlay,
+  .dialog {
+    animation-duration: 0.01ms;
   }
 }
 
