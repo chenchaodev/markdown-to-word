@@ -159,22 +159,22 @@
 - [x] 弹窗动画尊重 prefers-reduced-motion(降瞬时出现,keyframes 终态=自然态无跳变)
 - [x] .settings-grid 窄窗响应式断点(≤720px 降单列)
 
-#### B13 暗色模式(M,P2 功能新增;已拍板做)
-- [ ] nativeTheme + prefers-color-scheme,CSS 变量双主题;设置「跟随系统/浅色/深色」
+#### B13 暗色模式(M,P2 功能新增;已拍板做;2026-08-23 完成,commit 5a91a4a,待 GUI 实测)
+- [x] CSS 变量双主题(33 个语义化变量,data-theme=dark 与 prefers-color-scheme 双作用域同套深色值)+设置「跟随系统/浅色/深色」三态(AppSettings.theme 全链路,applyThemeOn 纯函数直测)
 
-#### B12 IPC 面整理(M,P3;2026-08-24 完成,待提交)
-- [x] channel 命名统一「域:动作」(convert→convert:single;import:pdf-css→css:import 等;单源 src/main/ipc-channels.ts,preload 沙箱隔离侧镜像+ipc-channels.test.js 恒等断言)
-- [x] convert:progress 事件带 mode 标识(single/batch/merge),renderer 直接消费 payload.mode 归属(events.ts 不再硬编码模式清单)
-- [x] preload/renderer/smoke/测试全量同步(smoke 增 IPC 端到端 diag:window.api 真实 invoke convert:single/convert:merge/app:version)
+#### B12 IPC 面整理(M,P3;面广靠后;已拍板做;2026-08-23 完成,commit 2df5e35)
+- [x] channel 命名统一「域:动作」(23 channel 单源 main/ipc-channels.ts,8 个改名;preload 沙箱侧镜像+dist 恒等断言)
+- [x] convert:progress 事件带 mode 标识,去 renderer 侧推断耦合(payload {stage,mode},renderer 直接消费)
+- [x] preload/renderer/smoke/测试全量同步(smoke 新增 IPC 端到端 diag+ipc-channels 测试段)
 
-#### 目录结构重组(L,P2 重构;2026-08-23 探查定稿,暂缓排期,排在现有待办之后)
+#### 目录结构重组(L,P2 重构;2026-08-23 探定稿;已完成 5 批提交 6f3d72a/b1e50e9/061e8dd/d31cb21/2819a2a,待 GUI 回归实测)
 > 方案全文见 archive/20260823-230554-目录结构优化方案.md(目标结构树/拆分明细/纯移动清单/划分原则/明确不做清单);RESEARCH 同日条目有摘要。
-- [ ] **前置:实施前对代码做再次探查**——方案基于 2026-08-23 快照,B9/B12/B13 等待办实施后行号/文件会漂移,须核对欠账 6 项是否仍成立再动工
-- [ ] 批① core/i18n.ts 拆 dict/index(ZH/EN 必须同文件保键集编译期锁定)+ core 根级 17 文件归组 pipeline/settings/markdown/image/util(~90 处 import;contract-single-source.test.js 路径断言同步)
-- [ ] 批② core/docx handlers/ 归拢 11 个节点处理器(theme.ts 锚点留 docx/ 直属顶层不动)
-- [ ] 批③ renderer 功能域重组(dom/state/settings/convert/ui/style)+ events.ts 按域拆四文件 + style.css 拆四文件多 `<link>` 引入(一批做完避免两次折腾;GUI 人工实测回归)
-- [ ] 批④ main/index.ts 抽 windows/ipc/menu(ctxByWebContents 先收敛到 ipc/register 防循环 import)
-- [ ] 批⑤ main/converter.ts 拆 context/single/batch/merge/paths(原文件改桶导出)+ smoke.ts 迁出生产路径(首选 test/tools/smoke/,核实 build.files 打包排除)+ mermaid-dir/katex-dir 合并 resource-dirs
+- [x] **前置:实施前对代码做再次探查**(exp-1 结论:欠账①②③④⑤仍成立且 events/index 因 B9/B12 略加重;⑥已被 B8 大部分消化降级纯移动;i18n 引用面实测 35 处 import 远低于原估 ~90)
+- [x] 批① core/i18n.ts 拆 dict/index(i18n-dict.ts 同文件保键集编译期锁定+facade re-export 引用面零改动)+ core 根级 16 文件归组 pipeline/settings/markdown/image/util(~107 处 import 改写;contract-single-source.test.js 路径断言同步)
+- [x] 批② core/docx handlers/ 归拢 11 个节点处理器(theme/render/ctx/prescan/chrome 留顶层不动)
+- [x] 批③ renderer 功能域归组 dom/state/settings/convert/ui 六域+events.ts 按域拆 4+1 文件+style.css 拆 base/drop/settings/dialogs 四文件多 link 引入(copy-renderer 改递归拷贝;openPreviewFor 归 selection 防环为方案偏差已注释)
+- [x] 批④ main/index.ts 抽 windows/main-window+windows/preview+ipc/register+menu(ctxByWebContents 前置收敛 ipc/register 防循环;708→74 行)
+- [x] 批⑤ main/converter.ts 拆 context/single/batch/merge/paths 五子模块(原文件桶导出 import 面零变化)+ smoke.ts 迁 test/tools/smoke/(纯 .mjs 直连 dist,dist 递归扫描 0 个 smoke 文件=打包天然排除)+ mermaid-dir/katex-dir 合并 resource-dirs.ts
 > 每批独立提交,typecheck/build/test 全绿验证;批③④⑤ 有 GUI 面列入人工实测。
 
 #### 排期顺序与理由
