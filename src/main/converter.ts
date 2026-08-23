@@ -364,7 +364,7 @@ export async function batchConvertImpl(
         // 未开始项(含当前索引)标记取消,不再处理
         for (let i = next; i < total; i++) {
           if (!items[i]) {
-            items[i] = { file: files[i], ok: false, canceled: true };
+            items[i] = { file: files[i]!, ok: false, canceled: true }; // 循环上界 i<total 保证下标有效
             canceledCount++;
           }
         }
@@ -372,7 +372,7 @@ export async function batchConvertImpl(
       }
       const index = next++;
       if (index >= total) return;
-      const file = files[index];
+      const file = files[index]!; // index < total 已守卫,必然存在
       const send = (stage: string): void =>
         onProgress?.({ index: index + 1, total, file: path.basename(file), stage });
       try {
@@ -417,6 +417,7 @@ export async function mergeConvertImpl(
   katexDir?: string,
 ): Promise<ConvertResult> {
   if (files.length === 0) throw new Error("未选择文件");
+  const firstFile = files[0]!; // 上方长度守卫保证非空数组,首文件必存在
   // 每次调用使用新建 context(取消标志初始 false),上次取消不再残留:
   // 否则二次合并立即被 throwIfCanceled 误判取消(历史 bug fd40480)。
   throwIfCanceled(ctx);
@@ -431,24 +432,24 @@ export async function mergeConvertImpl(
     }),
   );
   const mergedMd = mergeMarkdowns(inputs);
-  const baseName = path.basename(files[0]).replace(/\.(md|markdown)$/i, "");
+  const baseName = path.basename(firstFile).replace(/\.(md|markdown)$/i, "");
   onProgress?.("render");
   const artifact = await convert(
     mergedMd,
     format,
     buildConvertContext({
-      baseDir: path.dirname(files[0]),
+      baseDir: path.dirname(firstFile),
       title: baseName,
       warnings,
       settings,
-      imageResolver: getImageResolver(path.dirname(files[0])),
+      imageResolver: getImageResolver(path.dirname(firstFile)),
       katexDir,
       mermaidResolver: renderMermaid,
     }),
   );
   throwIfCanceled(ctx);
   const { outputPath, warnings: outWarnings } = await resolveOutputPath(
-    files[0],
+    firstFile,
     format,
     settings.outputDir,
     `${baseName}-合并`,

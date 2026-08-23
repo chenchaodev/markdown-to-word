@@ -672,7 +672,7 @@ function chapterNumberFromCounters(
 function stripTrailingSecLabel(children: PhrasingContent[]): PhrasingContent[] {
   if (children.length === 0) return children;
   const result = children.slice();
-  const last = result[result.length - 1];
+  const last = result[result.length - 1]!; // 函数首行已守卫 children.length > 0
   if (last.type === "text") {
     result[result.length - 1] = { ...last, value: last.value.replace(/\s*\{#sec:[\w-]+\}$/, "") };
   } else if ("children" in last && Array.isArray(last.children) && last.children.length > 0) {
@@ -780,11 +780,9 @@ async function renderBlockquote(node: Blockquote, ctx: Ctx): Promise<Paragraph[]
 
 async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
   const rows: TableRow[] = [];
-  for (let rowIndex = 0; rowIndex < node.children.length; rowIndex++) {
-    const row = node.children[rowIndex];
+  for (const [rowIndex, row] of node.children.entries()) {
     const cells: TableCell[] = [];
-    for (let colIndex = 0; colIndex < row.children.length; colIndex++) {
-      const cell = row.children[colIndex];
+    for (const [colIndex, cell] of row.children.entries()) {
       const runs = await renderPhrasing(normalizeInlineHtml(cell.children), ctx, rowIndex === 0 ? { bold: true } : {});
       // B3:GFM 列对齐(:--- / :---: / ---:)映射为段落对齐;未声明列(null)保持缺省左对齐
       // (此前 mdast table.align 被忽略,双格式保真不一致:pdf 侧 markdown-it 原生支持)
@@ -912,7 +910,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       // 不降级「(?)」、不追加警告,与 pdf 侧不注册 eq_numbering 规则行为一致)
       const eqMatch = ctx.equationNumbering === false ? null : /^#eq:([\w-]+)$/.exec(url);
       if (eqMatch) {
-        const label = eqMatch[1];
+        const label = eqMatch[1]!; // 正则含捕获组且已匹配,组必存在
         const n = ctx.equationLabels?.get(label);
         if (text === "式" || text === "公式") {
           if (n !== undefined) {
@@ -946,7 +944,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       const crossMatch = /^#(fig|tab|sec):([\w-]+)$/.exec(url);
       if (crossMatch) {
         const kind = crossMatch[1] as CrossRefKind;
-        const label = crossMatch[2];
+        const label = crossMatch[2]!; // 正则第二捕获组已匹配,组必存在
         const def = CROSS_REF_KINDS[kind];
         let numberText: string | undefined;
         let anchor: string | undefined;

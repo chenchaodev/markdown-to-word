@@ -40,7 +40,7 @@ export function renderSelection(): void {
     dropFile.classList.add("hidden");
     dropMulti.classList.add("hidden");
   } else if (n === 1) {
-    const filePath = state.selectedFiles[0];
+    const filePath = state.selectedFiles[0]!; // 本分支 n === 1,首项必存在
     fileNameEl.textContent = baseName(filePath);
     filePathEl.textContent = filePath;
     filePathEl.title = filePath;
@@ -177,7 +177,7 @@ export function moveItem(index: number, offset: -1 | 1): void {
   const target = index + offset;
   if (index < 0 || target < 0 || target >= state.selectedFiles.length) return;
   const [moved] = state.selectedFiles.splice(index, 1);
-  state.selectedFiles.splice(target, 0, moved);
+  state.selectedFiles.splice(target, 0, moved!); // 上方边界守卫保证 index 合法,splice 必移除一项
   renderMultiList();
 }
 
@@ -199,14 +199,14 @@ export function applySelection(files: string[], skipped = 0): void {
   renderSelection();
   const summary =
     files.length === 1
-      ? truncateMiddle(files[0])
+      ? truncateMiddle(files[0]!) // length === 1 分支下标 0 必存在
       : t("file.selectedSummary", { count: files.length });
   const full =
     skipped > 0
       ? t("file.skippedSuffix", { summary, count: skipped })
       : summary;
   setStatus(full, false, skipped > 0);
-  statusEl.title = files.length === 1 ? files[0] : full;
+  statusEl.title = files.length === 1 ? files[0]! : full; // 同上,length === 1 分支
 }
 
 /**

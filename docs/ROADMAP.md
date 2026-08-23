@@ -84,7 +84,7 @@
 - [x] acceptance.mjs 最早期 app.setPath("userData", tmpdir) 隔离(settings/i18n/ui-state/converter 段适配;消除真实 %APPDATA% 读写;原型 patch 限制并行为已知不专项)(B10a 批次;40 段全绿验证通过,无需段内适配)
 - [x] runner 逐段超时看门狗(可配置)+ 总时长/最慢段排行输出(+可选 expect 式 diff 增强)(B10a 批次:M2W_SEGMENT_TIMEOUT_MS/acceptance 默认 180s;排行输出已做,diff 增强未做)
 - [x] tsconfig incremental:true(build/test 提速)(B10a 批次;坑:产物被外部删除后 tsc 不重建,恢复须 tsc --build --force,见 RESEARCH 同日条目)
-- [ ] tsconfig 启用 noUncheckedIndexedAccess(存量适配)(B10c 待办:约 200 错误,pdf/render.ts 78 处最多)
+- [x] tsconfig 启用 noUncheckedIndexedAccess(存量适配)(B10c 批次:3 子代理按域并行,约 145 错清零;修复全部行为等价——循环边界后 `!`+不可达依据注释为主,bookmarks 跟随既有 null 守卫风格)
 - [x] 删除死配置 tsconfig.eslint.json(B10a 批次;eslint.config.js 用 projectService 无引用,已核实)
 - [x] test:smoke 构建新鲜度守卫(src mtime vs dist mtime,过期报错或自动 build)(B10a 批次:scripts/check-build-fresh.mjs 前置拦截)
 - [x] copy-renderer.mjs 加 dist/renderer 清空步骤(防陈旧资源进安装包)(B10a 批次;坑:混合目录不可整删,按 .html/.css 扩展名清理,见 RESEARCH 同日条目)

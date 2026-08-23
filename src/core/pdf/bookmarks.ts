@@ -139,7 +139,7 @@ export function setOutline(doc: PDFDocument, outlines: PdfOutline[]): void {
 
   const build = (list: PdfOutline[], parentRef: PDFRef): void => {
     for (let i = 0; i < list.length; i++) {
-      const o = list[i];
+      const o = list[i]!; // 循环边界刚检查(i < list.length)
       const ref = refMap.get(o)!;
       const dest =
         typeof o.to === "number"
@@ -149,8 +149,8 @@ export function setOutline(doc: PDFDocument, outlines: PdfOutline[]): void {
             : { Dest: [pageRefs[o.to[0]], "XYZ", o.to[1], o.to[2], null] };
       const childrenDict = o.children?.length
         ? {
-            First: refMap.get(o.children[0])!,
-            Last: refMap.get(o.children[o.children.length - 1])!,
+            First: refMap.get(o.children[0]!)!, // 三元条件已保证 children 非空
+            Last: refMap.get(o.children[o.children.length - 1]!)!,
             // 折叠为负值(实测 -1 正确)
             Count: o.children.length * (o.open === false ? -1 : 1),
           }
@@ -160,8 +160,8 @@ export function setOutline(doc: PDFDocument, outlines: PdfOutline[]): void {
         doc.context.obj({
           Title: PDFHexString.fromText(o.title), // ← 中文书签关键(勿回退 PDFString)
           Parent: parentRef,
-          ...(i > 0 ? { Prev: refMap.get(list[i - 1])! } : {}),
-          ...(i < list.length - 1 ? { Next: refMap.get(list[i + 1])! } : {}),
+          ...(i > 0 ? { Prev: refMap.get(list[i - 1]!)! } : {}), // 条件已保证下标有效
+          ...(i < list.length - 1 ? { Next: refMap.get(list[i + 1]!)! } : {}),
           ...childrenDict,
           ...dest,
           F: (o.italic ? 1 : 0) | (o.bold ? 2 : 0),
@@ -176,8 +176,8 @@ export function setOutline(doc: PDFDocument, outlines: PdfOutline[]): void {
     rootRef,
     doc.context.obj({
       Type: "Outlines",
-      First: refMap.get(outlines[0])!,
-      Last: refMap.get(outlines[outlines.length - 1])!,
+      First: refMap.get(outlines[0]!)!, // outlines 为空时运行时仍为 undefined,保持既有行为不加守卫
+      Last: refMap.get(outlines[outlines.length - 1]!)!,
       Count: flatten.length, // 全部展开时的计数
     }),
   );
@@ -222,9 +222,9 @@ export function buildBookmarkTree(headings: PdfHeading[]): PdfBookmarkNode[] {
   for (const h of headings) {
     const node: PdfBookmarkNode = { name: h.id, title: h.text };
     // 弹出不低于当前级别的祖先(同级别=兄弟,h1 出现则清空)
-    while (stack.length > 0 && stack[stack.length - 1].level >= h.level) stack.pop();
+    while (stack.length > 0 && stack[stack.length - 1]!.level >= h.level) stack.pop(); // 长度刚检查
     if (stack.length > 0) {
-      const parent = stack[stack.length - 1].node;
+      const parent = stack[stack.length - 1]!.node; // 上方刚检查 length > 0
       parent.children ??= [];
       parent.children.push(node);
     } else {

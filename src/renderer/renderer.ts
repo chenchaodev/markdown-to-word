@@ -262,7 +262,7 @@ removeFileBtn.addEventListener("click", (event) => {
 previewBtn.addEventListener("click", (event) => {
   event.stopPropagation();
   if (state.converting || state.selectedFiles.length !== 1) return;
-  openPreviewFor(state.selectedFiles[0]);
+  openPreviewFor(state.selectedFiles[0]!); // 上行已守卫 length === 1
 });
 
 // 批次 7:多文件态「追加文件」按钮(对话框追加,与现有列表合并去重)
@@ -300,7 +300,7 @@ multiList.addEventListener("click", (event) => {
   const index = Number(li.dataset.index);
   if (btn.classList.contains("multi-preview")) {
     // 迭代 4:预览该行文件(转换前,不产生产物)
-    openPreviewFor(state.selectedFiles[index]);
+    openPreviewFor(state.selectedFiles[index]!); // 列表行由 renderMultiList 按序生成,data-index 必有效
     return;
   }
   if (btn.classList.contains("multi-remove")) {
@@ -328,7 +328,7 @@ multiList.addEventListener("dblclick", (event) => {
   if ((event.target as HTMLElement).closest("button")) return;
   const li = (event.target as HTMLElement).closest<HTMLLIElement>(".multi-item");
   if (!li) return;
-  openPreviewFor(state.selectedFiles[Number(li.dataset.index)]);
+  openPreviewFor(state.selectedFiles[Number(li.dataset.index)]!); // 同上,行与列表一一同步
 });
 
 // 拖拽排序(HTML5 drag events):列表位于可滚动容器内,悬停边缘时自动滚动。
@@ -395,7 +395,7 @@ multiList.addEventListener("drop", (event) => {
   let insertAt = state.dragDropAfter ? targetIndex + 1 : targetIndex;
   if (insertAt > state.dragIndex) insertAt -= 1; // 移除源项后目标下标前移
   const [moved] = state.selectedFiles.splice(state.dragIndex, 1);
-  state.selectedFiles.splice(insertAt, 0, moved);
+  state.selectedFiles.splice(insertAt, 0, moved!); // dragstart 仅对已渲染行记录 dragIndex,splice 必移除一项
   renderMultiList();
   clearDragState();
 });
@@ -642,7 +642,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (state.converting) return;
     if (state.selectedFiles.length === 1) {
-      void runConvert(state.selectedFiles[0], state.selectedFormat);
+      void runConvert(state.selectedFiles[0]!, state.selectedFormat); // 上行已守卫 length === 1
     } else if (state.selectedFiles.length >= 2) {
       void runBatch();
     }

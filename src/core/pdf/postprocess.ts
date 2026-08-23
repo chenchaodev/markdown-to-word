@@ -16,9 +16,9 @@ import type { ImageResolver } from "./render.js";
 export function extractHeadings(bodyHtml: string): PdfHeading[] {
   const headings: PdfHeading[] = [];
   for (const match of bodyHtml.matchAll(/<h([1-3])[^>]*id="([^"]+)"[^>]*>(.*?)<\/h\1>/g)) {
-    const [, level, id, raw] = match;
-    const text = decodeEntities(raw.replace(/<[^>]+>/g, ""));
-    headings.push({ level: Number(level), id, text });
+    const [, level, id, raw] = match; // 正则捕获组结构保证各分组存在
+    const text = decodeEntities(raw!.replace(/<[^>]+>/g, ""));
+    headings.push({ level: Number(level), id: id!, text });
   }
   return headings;
 }
@@ -92,7 +92,7 @@ export async function embedExternalImages(
   let next = 0;
   const worker = async (): Promise<void> => {
     while (next < urls.length) {
-      const url = urls[next++];
+      const url = urls[next++]!; // while 条件刚检查 next < urls.length
       try {
         const data = await resolver(url);
         if (data && data.length > 0) {

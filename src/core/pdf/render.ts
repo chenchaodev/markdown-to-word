@@ -149,7 +149,7 @@ function overrideCaptionRule(md: MarkdownIt): void {
     const tokens = state.tokens;
     const depth = { blockquote: 0, list_item: 0, table_cell: 0 };
     for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
+      const token = tokens[i]!; // 循环边界刚检查
       if (token.type === "blockquote_open") depth.blockquote++;
       else if (token.type === "blockquote_close") depth.blockquote--;
       else if (token.type === "list_item_open") depth.list_item++;
@@ -159,7 +159,7 @@ function overrideCaptionRule(md: MarkdownIt): void {
       else if (token.type === "paragraph_close" && depth.blockquote === 0 && depth.list_item === 0 && depth.table_cell === 0) {
         const inline = tokens[i - 1];
         if (!inline || inline.type !== "inline" || !inline.children || inline.children.length === 0) continue;
-        const first = inline.children[0];
+        const first = inline.children[0]!; // 上方刚排除 children 为空
         if (first.type !== "text") continue;
         const match = /^(图|表)[:：]\s*/.exec(first.content);
         if (!match) continue;
@@ -176,7 +176,7 @@ function overrideCaptionRule(md: MarkdownIt): void {
         }
         // 剥前缀(前缀完整落在首 text token:契约「图:/表:」紧贴且其后为行内内容)
         first.content = first.content.slice(match[0].length);
-        tokens[i - 2].attrSet("class", match[1] === "图" ? "fig-caption" : "tab-caption");
+        tokens[i - 2]!.attrSet("class", match[1] === "图" ? "fig-caption" : "tab-caption"); // 契约:paragraph_close 前必有 paragraph_open
       }
     }
   });
@@ -207,7 +207,7 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
     let lastMathToken: (typeof tokens)[number] | null = null;
     const labelIndex = new Map<string, number>();
     for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
+      const token = tokens[i]!; // 循环边界刚检查
       if (token.type === "blockquote_open") depth.blockquote++;
       else if (token.type === "blockquote_close") depth.blockquote--;
       else if (token.type === "list_item_open") depth.list_item++;
@@ -240,14 +240,14 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
         if (!match) continue;
         if (numbering) {
           if (!lastMathToken) continue; // 无前置公式 → 保持原样(按普通段落渲染)
-          const label = match[1];
+          const label = match[1]!; // 捕获组结构保证
           lastMathToken.attrSet("data-eq-label", label);
           labelIndex.set(label, eqIndex);
         }
         // 三 token 置 hidden 不渲染。注意:markdown-it 主渲染循环对 inline token
         // 直接 renderInline(children),不检查 inline 自身 hidden(仅 renderToken 检查,
         // text 等走独立规则的 children 亦然)→ 必须同时清空 children 才能彻底不输出
-        tokens[i - 2].hidden = true;
+        tokens[i - 2]!.hidden = true; // 契约:paragraph_close 前必有 paragraph_open
         inline.hidden = true;
         inline.children = [];
         token.hidden = true;
@@ -260,13 +260,13 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
       if (token.type !== "inline" || !token.children) continue;
       const children = token.children;
       for (let i = 0; i < children.length; i++) {
-        const linkOpen = children[i];
+        const linkOpen = children[i]!; // 循环边界刚检查
         if (linkOpen.type !== "link_open") continue;
         const href = linkOpen.attrGet("href");
         if (!href) continue;
         const match = /^#eq:([\w-]+)$/.exec(href);
         if (!match) continue;
-        const label = match[1];
+        const label = match[1]!; // 捕获组结构保证
         const num = labelIndex.get(label);
         if (num === undefined && !unknownLabels.has(label)) {
           unknownLabels.add(label); // 同标签只提示一次,避免重复刷屏
@@ -274,7 +274,7 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
         }
         // 链接内第一个 text token(可能嵌套格式如 **式**,取首个文本节点替换)
         for (let j = i + 1; j < children.length; j++) {
-          const child = children[j];
+          const child = children[j]!; // 循环边界刚检查
           if (child.type === "link_close") break;
           if (child.type === "text") {
             if (child.content === "式" || child.content === "公式") {
@@ -289,7 +289,7 @@ function overrideEquationRule(md: MarkdownIt, numbering: boolean = true): void {
   // 包装 math_block 渲染规则(原规则由 @mdit/plugin-katex 提供,保存后包装)
   const defaultRule = md.renderer.rules.math_block;
   md.renderer.rules.math_block = (tokens, idx, options, env, self) => {
-    const token = tokens[idx];
+    const token = tokens[idx]!; // 渲染器契约:idx 必为有效下标
     const html = defaultRule
       ? defaultRule(tokens, idx, options, env, self)
       : md.utils.escapeHtml(token.content);
@@ -329,7 +329,7 @@ function stripTrailingLabel(
 ): string | undefined {
   const re = new RegExp(`\\s*\\{#${kind}:([\\w-]+)\\}$`);
   for (let i = children.length - 1; i >= 0; i--) {
-    const child = children[i];
+    const child = children[i]!; // 循环边界刚检查
     if (child.type !== "text") continue;
     const match = re.exec(child.content);
     if (!match) return undefined;
@@ -386,7 +386,7 @@ function overrideXrefRule(
     // 第一遍:顶层遍历(容器深度跟踪同 caption_recognize/eq_numbering),计数 + 剥离 + 登记
     const depth = { blockquote: 0, list_item: 0, table_cell: 0 };
     for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
+      const token = tokens[i]!; // 循环边界刚检查
       if (token.type === "blockquote_open") depth.blockquote++;
       else if (token.type === "blockquote_close") depth.blockquote--;
       else if (token.type === "list_item_open") depth.list_item++;
@@ -456,7 +456,7 @@ function overrideXrefRule(
             ? `${kind === "fig" ? "图" : "表"} ${counters.h1}.${seq}`
             : `${kind === "fig" ? "图" : "表"} ${seq}`;
         captionLabels.set(label, { kind, numberText });
-        pOpen.attrSet("data-xref-anchor", `${kind}:${label}`);
+        pOpen!.attrSet("data-xref-anchor", `${kind}:${label}`); // 契约:i-2 必为 paragraph_open(cls 命中亦证明其存在)
       }
     }
     // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内)
@@ -465,14 +465,14 @@ function overrideXrefRule(
       if (token.type !== "inline" || !token.children) continue;
       const children = token.children;
       for (let i = 0; i < children.length; i++) {
-        const linkOpen = children[i];
+        const linkOpen = children[i]!; // 循环边界刚检查
         if (linkOpen.type !== "link_open") continue;
         const href = linkOpen.attrGet("href");
         if (!href) continue;
         const match = /^#(fig|tab|sec):([\w-]+)$/.exec(href);
         if (!match) continue;
         const kind = match[1] as CrossRefKind;
-        const label = match[2];
+        const label = match[2]!; // 捕获组结构保证
         const def = CROSS_REF_KINDS[kind];
         let numberText: string | undefined;
         if (kind === "sec") {
@@ -486,7 +486,7 @@ function overrideXrefRule(
         // 与 eq_numbering 同构)
         let textToken: (typeof children)[number] | undefined;
         for (let j = i + 1; j < children.length; j++) {
-          const child = children[j];
+          const child = children[j]!; // 循环边界刚检查
           if (child.type === "link_close") break;
           if (child.type === "text") {
             textToken = child;
@@ -507,7 +507,7 @@ function overrideXrefRule(
           // 文本渲染;模板 a 色样式不作用于无链接文本)
           let closeIdx = -1;
           for (let j = i + 1; j < children.length; j++) {
-            if (children[j].type === "link_close") {
+            if (children[j]!.type === "link_close") { // 循环边界刚检查
               closeIdx = j;
               break;
             }
@@ -524,7 +524,7 @@ function overrideXrefRule(
   // 包装 paragraph_open 渲染规则:带 data-xref-anchor 的题注段落开头注入锚点
   const defaultParaRule = md.renderer.rules.paragraph_open;
   md.renderer.rules.paragraph_open = (tokens, idx, options, env, self) => {
-    const token = tokens[idx];
+    const token = tokens[idx]!; // 渲染器契约:idx 必为有效下标
     const anchor = token.attrGet("data-xref-anchor");
     if (anchor) attrDel(token, "data-xref-anchor");
     const html = defaultParaRule
@@ -602,8 +602,9 @@ function overrideHtmlRules(md: MarkdownIt): void {
     if (isAllowedInlineHtml(content)) return token.content;
     return escapeHtml(token.content);
   };
-  md.renderer.rules.html_block = (tokens, idx) => renderHtml(tokens[idx]);
-  md.renderer.rules.html_inline = (tokens, idx) => renderHtml(tokens[idx]);
+  // 渲染器契约:idx 必为有效下标
+  md.renderer.rules.html_block = (tokens, idx) => renderHtml(tokens[idx]!);
+  md.renderer.rules.html_inline = (tokens, idx) => renderHtml(tokens[idx]!);
 }
 
 /** 图片规则:相对/绝对路径统一转 file:// URL,http(s) 保留原样。
@@ -613,7 +614,7 @@ function overrideImageRule(md: MarkdownIt, baseDir: string, localSrcs: string[])
     const defaultRule = md.renderer.rules.image;
     if (!defaultRule) return; // markdown-it 内置 image 规则,理论不可达
     md.renderer.rules.image = (tokens, idx, options, env, self) => {
-      const token = tokens[idx];
+      const token = tokens[idx]!; // 渲染器契约:idx 必为有效下标
       const src = token.attrGet("src") ?? "";
       if (src && !/^(https?:|data:)/i.test(src)) {
         localSrcs.push(src);
@@ -634,7 +635,7 @@ function overrideImageRule(md: MarkdownIt, baseDir: string, localSrcs: string[])
 function overrideHeadingIdRule(md: MarkdownIt, seen: Map<string, number>): void {
   const defaultRule = md.renderer.rules.heading_open;
   md.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
-    const token = tokens[idx];
+    const token = tokens[idx]!; // 渲染器契约:idx 必为有效下标
     const text = token.content || tokens[idx + 1]?.content || "";
     token.attrSet("id", uniqueSlug(text, seen));
     const anchor = token.attrGet("data-xref-anchor");
@@ -664,7 +665,7 @@ async function replaceMermaidPlaceholders(
   const matches: { index: number; full: string; body: string }[] = [];
   let m: RegExpExecArray | null;
   while ((m = placeholderRe.exec(html)) !== null) {
-    matches.push({ index: m.index, full: m[0], body: m[1] });
+    matches.push({ index: m.index, full: m[0], body: m[1]! }); // 捕获组结构保证
   }
   if (matches.length === 0) return html;
   const fallback = (code: string): string =>

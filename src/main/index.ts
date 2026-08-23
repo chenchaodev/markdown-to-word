@@ -366,7 +366,7 @@ function registerIpc(): void {
       properties: ["openFile", "multiSelections"],
     });
     if (!result.canceled && result.filePaths.length > 0) {
-      await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]) }).catch(() => undefined);
+      await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]!) }).catch(() => undefined); // length>0 已守卫
     }
     return result.canceled ? [] : result.filePaths;
   });
@@ -481,12 +481,13 @@ function registerIpc(): void {
       return { ok: true, canceled: true };
     }
     try {
-      const text = await fs.readFile(result.filePaths[0], "utf8");
+      const presetPath = result.filePaths[0]!; // 上方已拦截取消与空列表,首项必存在
+      const text = await fs.readFile(presetPath, "utf8");
       const merged = importPresetsFromText(text, loadSettings().customPresets);
       if (!merged.ok) return { ok: false, error: merged.error };
       await updateSettings({ customPresets: merged.presets });
       // 与其它打开对话框一致:成功后记忆所选目录(下次默认打开位置)
-      await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]) }).catch(() => undefined);
+      await saveUiState({ lastOpenDir: path.dirname(presetPath) }).catch(() => undefined);
       return {
         ok: true,
         canceled: false,
@@ -532,13 +533,14 @@ function registerIpc(): void {
       return { ok: true, canceled: true };
     }
     try {
-      const css = await fs.readFile(result.filePaths[0], "utf8");
+      const cssPath = result.filePaths[0]!; // 上方已拦截取消与空列表,首项必存在
+      const css = await fs.readFile(cssPath, "utf8");
       if (Buffer.byteLength(css, "utf8") > MAX_PDF_CSS_BYTES) {
         return { ok: false, error: t("settings.cssTooLarge", { kb: MAX_PDF_CSS_BYTES / 1024 }) };
       }
       // 与其它打开对话框一致:成功后记忆所选目录(下次默认打开位置)
-      await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]) }).catch(() => undefined);
-      return { ok: true, canceled: false, css, name: path.basename(result.filePaths[0]) };
+      await saveUiState({ lastOpenDir: path.dirname(cssPath) }).catch(() => undefined);
+      return { ok: true, canceled: false, css, name: path.basename(cssPath) };
     } catch (err) {
       return { ok: false, error: t("preset.readFailed", { error: errorMessage(err) }) };
     }

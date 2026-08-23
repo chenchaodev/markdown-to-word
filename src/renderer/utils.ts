@@ -95,8 +95,9 @@ export function trapFocus(dialog: HTMLElement): () => void {
       dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
     ).filter((el) => !el.hasAttribute("disabled") && el.offsetParent !== null);
     if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
+    // 上方已守卫 length > 0,首末项必存在
+    const first = focusables[0]!;
+    const last = focusables[focusables.length - 1]!;
     const active = document.activeElement;
     if (event.shiftKey) {
       // Shift+Tab:焦点在第一个或已逃逸 → 回到最后一个

@@ -113,7 +113,7 @@ export function normalizeInlineHtml(nodes: PhrasingContent[]): PhrasingContent[]
   const result: PhrasingContent[] = [];
   let i = 0;
   while (i < nodes.length) {
-    const node = nodes[i];
+    const node = nodes[i]!; // while 条件已保证 i < nodes.length
     if (node.type !== "html") {
       result.push(node);
       i++;
@@ -128,7 +128,7 @@ export function normalizeInlineHtml(nodes: PhrasingContent[]): PhrasingContent[]
     let j = i + 1;
     let merged = false;
     while (j < nodes.length) {
-      const next = nodes[j];
+      const next = nodes[j]!; // while 条件已保证 j < nodes.length
       if (next.type === "html" || next.type === "text") buf += next.value;
       else break;
       if (isAllowedInlineHtml(buf)) {
@@ -145,7 +145,7 @@ export function normalizeInlineHtml(nodes: PhrasingContent[]): PhrasingContent[]
     // 危险段丢弃:开标签起,丢弃直到并包括第一个闭标签 html 节点
     i++;
     while (i < nodes.length) {
-      const cur = nodes[i];
+      const cur = nodes[i]!; // while 条件已保证 i < nodes.length
       if (cur.type === "html" && /^<\//.test(cur.value.trim())) {
         i++;
         break;

@@ -57,8 +57,7 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
   let figIndex = 0;
   let tabIndex = 0;
   const children = ast.children;
-  for (let i = 0; i < children.length; i++) {
-    const node = children[i];
+  for (const [i, node] of children.entries()) {
     if (node.type === "heading" && node.depth === 1) {
       chapter++;
       // B3:仅章节编号开启时图/表序在 h1 处重置;关闭时全文档连续(与 pdf 侧
@@ -79,7 +78,7 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
     // 行内 label(批次 10 功能 2):题注文本尾部 {#fig:label}/{#tab:label} 剥离,
     // label 不渲染(不进题注文本);仅当前缀与题注类型一致时剥离并登记
     // (类型不一致视为普通文本原样保留,避免错误登记导致引用语义错乱)
-    let text = match[2];
+    let text = match[2]!; // 正则第二捕获组(.*)恒参与匹配,组必存在
     let label: string | undefined;
     const labelMatch = /\s*\{#(fig|tab):([\w-]+)\}$/.exec(text);
     if (labelMatch && labelMatch[1] === (isFigure ? "fig" : "tab")) {

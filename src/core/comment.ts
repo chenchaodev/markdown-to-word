@@ -162,7 +162,7 @@ function enterComment(this: CompileContext, token: Token): void {
 
 function exitComment(this: CompileContext, token: Token): void {
   const raw = this.sliceSerialize(token);
-  const node = this.stack[this.stack.length - 1];
+  const node = this.stack[this.stack.length - 1]!; // enter 已压栈,from-markdown 契约保证 exit 时栈顶为本节点
   this.exit(token);
   if (node.type !== "comment") return; // 防御:tokenizer 保证可达
   const sep = raw.indexOf(`]{${COMMENT_KEYWORD}`);

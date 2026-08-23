@@ -123,7 +123,7 @@ function parseMathMl(xml: string): MathMlNode | null {
         attrs: tag.slice(nameEnd === -1 ? tag.length : nameEnd).trim(),
         children: [],
       };
-      stack[stack.length - 1].children.push(node);
+      stack[stack.length - 1]!.children.push(node); // 栈底 root 恒在(出栈受 length>1 守卫),末元素必存在
       stack.push(node);
     }
     i = gt + 1;
@@ -133,7 +133,7 @@ function parseMathMl(xml: string): MathMlNode | null {
 
 function pushText(stack: MathMlNode[], text: string): void {
   if (text === "") return;
-  stack[stack.length - 1].children.push(text);
+  stack[stack.length - 1]!.children.push(text); // 栈底 root 恒在,末元素必存在
 }
 
 // ---------- walker:MathML 树 → docx Math 组件 ----------
@@ -168,25 +168,25 @@ function walk(node: MathMlNode): MathComponent[] | null {
     case "annotation":
       return []; // TeX 源注解(semantics 内必有):元数据,跳过而非降级
     case "mfrac":
-      return structured(node, (parts) => new MathFraction({ numerator: parts[0], denominator: parts[1] }));
+      return structured(node, (parts) => new MathFraction({ numerator: parts[0]!, denominator: parts[1]! })); // mfrac 恒两子(见 structured 注)
     case "msqrt":
-      return structured(node, (parts) => new MathRadical({ children: parts[0] }));
+      return structured(node, (parts) => new MathRadical({ children: parts[0]! })); // msqrt 恒一子
     case "mroot":
-      return structured(node, (parts) => new MathRadical({ children: parts[0], degree: parts[1] }));
+      return structured(node, (parts) => new MathRadical({ children: parts[0]!, degree: parts[1]! })); // mroot 恒两子
     case "msub":
-      return structured(node, (parts) => new MathSubScript({ children: parts[0], subScript: parts[1] }));
+      return structured(node, (parts) => new MathSubScript({ children: parts[0]!, subScript: parts[1]! })); // msub 恒两子
     case "msup":
-      return structured(node, (parts) => new MathSuperScript({ children: parts[0], superScript: parts[1] }));
+      return structured(node, (parts) => new MathSuperScript({ children: parts[0]!, superScript: parts[1]! })); // msup 恒两子
     case "msubsup":
       return structured(node, (parts) =>
-        new MathSubSuperScript({ children: parts[0], subScript: parts[1], superScript: parts[2] }),
+        new MathSubSuperScript({ children: parts[0]!, subScript: parts[1]!, superScript: parts[2]! }), // msubsup 恒三子
       );
     case "munderover":
       return munderoverToNary(node);
     case "mover":
-      return structured(node, (parts) => new MathLimitUpper({ children: parts[0], limit: parts[1] }));
+      return structured(node, (parts) => new MathLimitUpper({ children: parts[0]!, limit: parts[1]! })); // mover 恒两子
     case "munder":
-      return structured(node, (parts) => new MathLimitLower({ children: parts[0], limit: parts[1] }));
+      return structured(node, (parts) => new MathLimitLower({ children: parts[0]!, limit: parts[1]! })); // munder 恒两子
     default:
       // mtable / mglyph / mstyle / menclose / 未知元素 → 整式降级
       return null;
@@ -229,6 +229,9 @@ function textToRuns(node: MathMlNode): MathComponent[] {
 /**
  * 结构节点(子元素位置有语义:分子/分母/底/上下标等):
  * 每个子元素独立 walk,裸文本出现视为非预期 → 降级。
+ * 调用方对 parts 下标的非空断言依据:输入唯一来源为 katex.renderToString 的规整
+ * MathML 产物,各标签子元素个数/位置由结构保证;断言仅类型层,缺子时运行时行为
+ * 与改前完全一致(不新增守卫分支)。
  */
 function structured(
   node: MathMlNode,
@@ -256,7 +259,8 @@ function munderoverToNary(node: MathMlNode): MathComponent[] | null {
     typeof child === "string" ? null : walk(child),
   );
   if (parts.some((part) => part === null)) return null;
-  const [base, sub, sup] = parts as MathComponent[][];
+  // children.length === 3 已前置校验且 null 已过滤,三元组断言精确
+  const [base, sub, sup] = parts as [MathComponent[], MathComponent[], MathComponent[]];
   if (moText(children[0] as MathMlNode) === "∑") {
     return [new MathSum({ children: [], subScript: sub, superScript: sup })];
   }

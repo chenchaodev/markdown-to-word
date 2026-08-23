@@ -73,7 +73,7 @@ function decodeEntities(html: string): string {
 const SPAN_RE = /<span class="hljs-([a-z0-9_ -]+)">|<\/span>|([^<]+)/g;
 
 function makeRun(text: string, cls: string | undefined): TextRun {
-  const style = cls ? PALETTE[cls.split(/\s+/)[0]] : undefined;
+  const style = cls ? PALETTE[cls.split(/\s+/)[0]!] : undefined; // split 恒返回至少一个元素,[0] 必存在
   return new TextRun({
     text,
     font: CODE_FONT,
@@ -108,7 +108,7 @@ export function highlightCodeRuns(code: string, lang: string | undefined): TextR
       } else if (m[0] === "</span>") {
         stack.pop();
       } else {
-        segments.push({ text: m[2], cls: stack.length > 0 ? stack[stack.length - 1] : undefined });
+        segments.push({ text: m[2]!, cls: stack.length > 0 ? stack[stack.length - 1] : undefined }); // 文本分支由第三替代([^<]+)命中,组 2 必存在
       }
     }
     // 完整性校验:解码后拼接文本必须等于原文(hljs 保留文本内容),否则降级
@@ -118,9 +118,10 @@ export function highlightCodeRuns(code: string, lang: string | undefined): TextR
     const linePieces: { text: string; cls: string | undefined }[][] = [[]];
     for (const seg of segments) {
       const parts = decodeEntities(seg.text).split("\n");
-      for (let i = 0; i < parts.length; i++) {
+      for (const [i, part] of parts.entries()) {
         if (i > 0) linePieces.push([]);
-        if (parts[i] !== "") linePieces[linePieces.length - 1].push({ text: parts[i], cls: seg.cls });
+        // 末元素:初始 [[]] 或上一步刚 push 保证存在
+        if (part !== "") linePieces[linePieces.length - 1]!.push({ text: part, cls: seg.cls });
       }
     }
     const runs: TextRun[] = [];

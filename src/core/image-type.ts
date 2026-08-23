@@ -50,7 +50,7 @@ export function imageSizeFromBuffer(data: Buffer): { width: number; height: numb
       if (data[pos] !== 0xff) return null; // 非标记起始(畸形数据)
       while (pos < data.length && data[pos] === 0xff) pos++; // 跳过连续 FF 填充
       if (pos >= data.length) return null;
-      const marker = data[pos++];
+      const marker = data[pos++]!; // 上行 pos >= data.length 守卫保证取值在界内
       if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue; // TEM/RST 无长度字段
       if (pos + 2 > data.length) return null;
       const segLen = data.readUInt16BE(pos);

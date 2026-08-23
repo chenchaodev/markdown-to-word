@@ -47,7 +47,7 @@ function buildEquationContext(ast: Root, ctx: Ctx, numbering: boolean = true): E
     } else if (node.type === "paragraph") {
       const match = /^\{#eq:([\w-]+)\}$/.exec(collectPlainText(node));
       if (!match) continue;
-      const label = match[1];
+      const label = match[1]!; // 正则 ^$ 锚定且捕获组必参与匹配,exec 成功则组 1 必存在
       if (numbering) {
         if (lastInfo) {
           // 补 label 到前一公式;同公式多个 label 段时后者覆盖

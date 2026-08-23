@@ -165,11 +165,12 @@ export async function runMerge(): Promise<void> {
       setError(t("convert.merge.failed", { error }));
       showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error });
       // 批次 11 迭代 2:勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
+      // 入口已守卫 selectedFiles.length ≥ 2,首项必存在
       if (!state.suppressCompleteDialog) {
         showCompleteDialog(
           "",
           error,
-          t("convert.merge.nameSuffix", { name: baseName(state.selectedFiles[0]) }),
+          t("convert.merge.nameSuffix", { name: baseName(state.selectedFiles[0]!) }),
         );
       }
     }

@@ -25,7 +25,7 @@ export function parseFrontmatter(md: string): { metadata: DocMetadata; body: str
   if (!match) return { metadata: {}, body: md };
 
   const metadata: DocMetadata = {};
-  for (const line of match[1].split(/\r?\n/)) {
+  for (const line of match[1]!.split(/\r?\n/)) { // 捕获组结构保证匹配成功则 [1] 必存在
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue; // 空行 / 注释跳过
     const colon = trimmed.indexOf(":");
