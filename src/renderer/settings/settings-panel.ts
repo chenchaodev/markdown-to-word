@@ -14,7 +14,7 @@ import {
   TEMPLATE_PRESETS,
   type AppSettings,
   type PageSetup,
-} from "../core/settings/settings-defaults.js";
+} from "../../core/settings/settings-defaults.js";
 import {
   buildCustomPresetEntry,
   customPresetNameFromId,
@@ -58,10 +58,10 @@ import {
   templatePresetSelect,
   themeInputs,
   tocInput,
-} from "./dom.js";
-import { state } from "./state.js";
-import { setError, setStatus, trapFocus } from "./utils.js";
-import { applyStaticTexts, setLanguage, t, type Language } from "../core/i18n.js";
+} from "../dom/refs.js";
+import { state } from "../state/state.js";
+import { setError, setStatus, trapFocus } from "../state/utils.js";
+import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n.js";
 
 /* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let presetSaveTrap: (() => void) | null = null;

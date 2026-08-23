@@ -2,7 +2,7 @@
  * renderer 纯函数层直测(B1,R8 收尾评审缺口):
  * - isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT 原在 utils.ts,
  *   被 dom.ts 顶层 import 挡住无法 Node 直测;R8 收尾评审定为缺口,
- *   B1 拆出 src/renderer/pure.ts(零 import)后经 dist/renderer/pure.js 直接断言
+ *   B1 拆出 pure.ts(零 import;批③移至 src/renderer/state/)后经 dist/renderer/state/pure.js 直接断言
  * - 契约:utils.ts re-export 保持 renderer 内部 import 路径不变
  *   (renderer.ts 等仍从 ./utils.js 导入),本段直测 pure.js 即测同一实现
  */
@@ -19,7 +19,7 @@ import {
   actionableError,
   partitionDuplicates,
   selectionStatus,
-} from "../../dist/renderer/pure.js";
+} from "../../dist/renderer/state/pure.js";
 
 /** renderer 纯函数单测(纯 Node 段,零 Electron API) */
 export async function run() {

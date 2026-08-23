@@ -24,19 +24,23 @@
  * R10-5:设置面板(加载/回填/校验/钳制/预设套用/persist 三件套 + 全部设置控件
  * 事件绑定)抽 src/renderer/settings-panel.ts;组合根 init 处
  * bindSettingsEvents() 后再 loadSettings()(时序与拆分前一致)。
- * B8:事件绑定抽 src/renderer/events.ts(bindEvents 集中),本文件只留
+ * B8:事件绑定抽 events.ts(bindEvents 集中),本文件只留
  * window.api 契约声明与初始化编排;设置控件绑定抽 settings-bindings.ts
  * (settings-panel 留加载/回填/持久化/预设弹窗交互)。
+ * 批③目录重组:renderer 按功能域归组——dom/(refs)、state/(state/pure/utils)、
+ * settings/(panel/logic/bindings)、convert/(flow/file-list/events 四域拆分)、
+ * ui/(dialogs/recent-files)、style/(base/drop/settings/dialogs 四 css);
+ * 本文件仍为组合根,import 路径随目录更新,行为零变化。
  */
 import { type AppSettings } from "../core/settings/settings-defaults.js";
 import type { UiState } from "../main/ui-state.js";
-import { state } from "./state.js";
-import type { BatchProgressInfo, BatchResult, ConvertProgressPayload } from "./state.js";
-import { updateActionButtons } from "./file-list.js";
-import { bindEvents } from "./events.js";
-import { bindSettingsEvents } from "./settings-bindings.js";
-import { loadSettings } from "./settings-panel.js";
-import { initUiStateRestore, refreshRecentFiles } from "./recent-files.js";
+import { state } from "./state/state.js";
+import type { BatchProgressInfo, BatchResult, ConvertProgressPayload } from "./state/state.js";
+import { updateActionButtons } from "./convert/file-list.js";
+import { bindEvents } from "./convert/events/index.js";
+import { bindSettingsEvents } from "./settings/settings-bindings.js";
+import { loadSettings } from "./settings/settings-panel.js";
+import { initUiStateRestore, refreshRecentFiles } from "./ui/recent-files.js";
 import { t } from "../core/i18n.js";
 import type { ConvertWarning } from "../core/i18n.js";
 

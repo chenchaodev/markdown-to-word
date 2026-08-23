@@ -20,15 +20,15 @@ import {
   recentSection,
   settingsPanel,
   statusEl,
-} from "./dom.js";
-import type { RecentFile, UiState } from "../main/ui-state.js";
-import { applySelection } from "./file-list.js";
-import { runConvert } from "./convert-flow.js";
-import { baseName, formatRecentTime } from "./pure.js";
-import { setStatus } from "./utils.js";
-import { state } from "./state.js";
-import { syncSuppressCompleteDialog } from "./settings-panel.js";
-import { t } from "../core/i18n.js";
+} from "../dom/refs.js";
+import type { RecentFile, UiState } from "../../main/ui-state.js";
+import { applySelection } from "../convert/file-list.js";
+import { runConvert } from "../convert/convert-flow.js";
+import { baseName, formatRecentTime } from "../state/pure.js";
+import { setStatus } from "../state/utils.js";
+import { state } from "../state/state.js";
+import { syncSuppressCompleteDialog } from "../settings/settings-panel.js";
+import { t } from "../../core/i18n.js";
 
 /** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。 */
 const MAX_RECENT_FILES = 10;

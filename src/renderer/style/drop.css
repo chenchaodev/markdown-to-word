@@ -1,0 +1,351 @@
+/* Markdown 转换工具 — 文件选择域样式(批③自 style.css 拆出):
+ * 拖放区三态(默认/单文件压缩态/多文件列表)、列表行与拖拽排序视觉、
+ * 多文件工具条(追加/清空)、单文件操作行。 */
+
+/* 文件选择区 */
+.file-area {
+  flex: 1;
+  display: flex;
+  min-height: 240px;
+  max-height: 420px; /* 批次 12(C3):密度上限,多文件列表在内部滚动,不随窗口无限拉高 */
+}
+
+.drop-zone {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden; /* 多文件列表在内部滚动,不撑破卡片 */
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease,
+    border-style 0.15s ease;
+}
+
+.drop-zone:hover {
+  border-color: var(--accent);
+}
+
+.drop-zone.has-file {
+  border-style: solid;
+  border-color: var(--border-strong);
+}
+
+.drop-zone.has-file:hover {
+  border-color: var(--accent);
+}
+
+.drop-zone.dragover {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.drop-zone.dragover .drop-title {
+  color: var(--accent);
+}
+
+/* 错误反馈:短暂红色描边(JS 控制移除时机) */
+.drop-zone--error {
+  border-color: var(--error) !important;
+  background: var(--error-soft) !important;
+}
+
+.drop-zone:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 拖放区默认提示态 */
+.drop-default {
+  padding: 0 32px;
+  text-align: center;
+}
+
+.drop-icon {
+  display: block;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 10px;
+  color: var(--icon-muted);
+}
+
+.drop-title {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.drop-or {
+  margin: 6px 0 12px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* 拖放区已选文件态 */
+.drop-file {
+  width: 100%;
+  padding: 0 40px;
+  text-align: center;
+}
+
+.file-name {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-path {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drop-change {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 批次 12(C10):多文件态第二行提示(「双击行可预览」可见化,紧贴首行) */
+.drop-change--second {
+  margin-top: 4px;
+}
+
+/* 批次 12(C7):单文件态拖放区压缩——高度 120px、内容左对齐,消除 240px+ 大片空白;
+   多文件态(≥2)不挂 drop-zone--single 标记,仍走 .file-area max-height + 列表内部滚动;
+   拖放高亮(dragover)仅改边框/底色,不受高度压缩影响 */
+.file-area:has(.drop-zone--single) {
+  flex: none;
+  min-height: 0;
+}
+
+.drop-zone--single {
+  height: 120px;
+}
+
+.drop-zone--single .drop-file {
+  padding: 0 24px;
+  text-align: left;
+}
+
+.drop-zone--single .drop-file-actions {
+  justify-content: flex-start;
+}
+
+/* 拖放区多文件态:数量 + 可滚动名称列表 */
+.drop-multi {
+  align-self: stretch;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 28px 14px;
+  text-align: left;
+  min-height: 0;
+}
+
+.multi-count {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multi-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  user-select: text;
+}
+
+.multi-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  font-size: 13px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none; /* 拖拽排序时避免误选文本 */
+}
+
+.multi-item:last-child {
+  border-bottom: 0;
+}
+
+.multi-item:hover {
+  background: var(--row-hover);
+}
+
+/* 排序序号:固定宽度右对齐,等宽数字对齐 */
+.multi-index {
+  flex: none;
+  width: 22px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 文件名:超长截断 */
+.multi-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 上移 / 下移图标按钮 */
+.multi-actions {
+  flex: none;
+  display: flex;
+  gap: 2px;
+}
+
+.multi-move,
+.multi-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.multi-move svg,
+.multi-remove svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 预览文字按钮:行高与图标按钮一致;悬停蓝色提示「可查看」 */
+.multi-preview {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.multi-preview:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.multi-preview:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.multi-preview:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+.multi-move:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+
+/* 移除按钮悬停:红色语义,提示破坏性操作 */
+.multi-remove:hover:not(:disabled) {
+  color: var(--error);
+  background: var(--error-soft);
+  border-color: var(--error-border);
+}
+
+.multi-move:focus-visible,
+.multi-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.multi-move:disabled,
+.multi-remove:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+/* 拖拽排序视觉:源项半透明,目标项上下沿显示插入位置 */
+.multi-item.dragging {
+  opacity: 0.45;
+}
+
+.multi-item.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.multi-item.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* 单文件态:说明 + 移除按钮同行 */
+.drop-file-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.drop-file-actions .drop-change {
+  margin: 0;
+}
+
+/* 多文件态工具条:数量 + 追加 / 清空 */
+.multi-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.multi-head .multi-count {
+  flex: 1;
+  min-width: 0;
+}
+
+.multi-tools {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+.multi-tools .btn-small {
+  padding: 3px 10px;
+}

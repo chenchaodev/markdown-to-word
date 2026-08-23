@@ -1,0 +1,470 @@
+/* Markdown 转换工具 — 设置面板域样式(批③自 style.css 拆出):
+ * 可折叠设置面板、字段/边距/排版输入、模板预设行与分组、模板自定义提示、
+ * 字段级错误提示、输出目录行、最近转换区块(样式跟随面板风格追加)。 */
+
+/* 页面设置面板(可折叠,改动即时生效) */
+.settings {
+  margin-top: 14px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.settings-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  list-style: none; /* Firefox 隐藏默认三角 */
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.settings-summary::-webkit-details-marker {
+  display: none; /* Chromium 隐藏默认三角 */
+}
+
+.settings-summary:hover {
+  background: var(--panel-hover);
+}
+
+.settings-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.settings-summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
+  transform: rotate(-45deg); /* 收起态:朝右的箭头 */
+  transition: transform 0.15s ease;
+}
+
+.settings[open] .settings-summary::before {
+  transform: rotate(45deg); /* 展开态:朝下 */
+}
+
+.settings-summary-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-summary-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.settings-body {
+  padding: 14px 14px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  align-items: start;
+}
+
+/* 窄窗口降为单列:两列下标签与控件挤压,可用性优先 */
+@media (max-width: 720px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.setting-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.setting-fieldset legend {
+  margin: 0;
+  padding: 0;
+}
+
+.setting-label {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.setting-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+
+.setting-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.setting-option input,
+.setting-check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.setting-select {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.setting-select:focus-visible,
+.margin-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.setting-margins {
+  grid-column: 1 / -1;
+}
+
+.margin-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.margin-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.margin-input {
+  width: 64px;
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  text-align: right;
+  user-select: text;
+}
+
+.setting-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  grid-column: 1 / -1;
+}
+
+.setting-after {
+  grid-column: 1 / -1;
+}
+
+.settings-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 模板预设:设置面板顶部的套用行(label + select + hint) */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border); /* 与下方设置栅格分隔 */
+}
+
+.settings-row .setting-select {
+  flex: none;
+}
+
+/* hint 复用 settings-note 文字样式,但行内布局不保留默认外边距;
+   单行省略:长文案(如模板说明)不换行撑高整行,完整文字经 title 悬浮可见 */
+.settings-row .settings-note {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 批次 11 迭代 3:模板行按钮(另存为/删除)与 select 同排,不挤压 hint */
+.settings-row .btn-small {
+  flex: none;
+}
+
+/* 设置面板子分组:组头小标题 + 分隔线(配置收敛为单一面板内的 4 组) */
+.settings-group {
+  margin-bottom: 18px;
+}
+
+.settings-group:last-of-type {
+  margin-bottom: 0;
+}
+
+.settings-group-title {
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+/* 模板组:预设两行结构(主行:选择+另存为/删除;辅助行:导入/导出预设、导入/清除 CSS + hint)。
+   行内布局复用 .settings-row(覆盖其原面板内分隔样式:去掉底部边框与内边距,
+   改为主/辅两行之间的细分隔线) */
+.settings-group .settings-row {
+  margin: 0 0 10px;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.settings-group .preset-aux-row {
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-bottom: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* 辅助行状态文案(pdfCssStatus):固定宽度,不参与剩余空间分配,
+   剩余空间留给 hint(单行省略,完整文案经 title 悬浮) */
+.preset-status {
+  flex: none;
+}
+
+/* 批次 11 迭代 3:另存为预设弹窗的名称输入(占满弹窗宽度) */
+.preset-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+}
+
+/* 排版设置:文本 / 数字输入与标签内说明 */
+.setting-input,
+.setting-number {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  user-select: text;
+}
+
+.setting-input:focus-visible,
+.setting-number:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.setting-number {
+  width: 64px;
+  text-align: right;
+}
+
+/* 标签内说明:紧跟 label 文字,弱化处理 */
+.setting-label-hint {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 模板自定义模式提示:黄色,与普通 hint 区分 */
+.template-hint--custom {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* 字段级错误提示:控件旁红字,不再静默还原 */
+.field-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--error);
+}
+
+.setting-margins .field-error {
+  margin-top: 6px;
+}
+
+/* 输出目录行 */
+.setting-outputdir {
+  grid-column: 1 / -1;
+}
+
+.outputdir-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.outputdir-value {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+/* 最近转换区块(批次 11 迭代 1:状态记忆;样式跟随 settings 面板风格追加,不重构) */
+.recent {
+  margin-top: 14px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.recent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 6px;
+}
+
+.recent-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.recent-head .btn-small {
+  margin-left: auto;
+}
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0 8px 8px;
+  list-style: none;
+  /* 批次 N:限高 + 内部滚动(滚动条跟随默认 webkit 风格),长列表不撑高页面 */
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.recent-item-wrap {
+  display: flex;
+}
+
+/* 批次 12(C12):「仅加载」次级入口——文字小按钮,与条目主区域并列不破坏布局 */
+.recent-load {
+  flex: none;
+  align-self: center;
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.recent-load:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.recent-load:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.recent-item:hover {
+  background: var(--hover);
+}
+
+.recent-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.recent-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-format {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.recent-format--docx {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.recent-format--pdf {
+  background: var(--error-badge-bg);
+  color: var(--error);
+}
+
+.recent-time {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}

@@ -1,7 +1,7 @@
 /**
  * 设置面板纯逻辑层(方向 B「代码质量与测试」速赢项;批次 12 抽取):
  * 自 settings-panel.ts 抽出的零 DOM 依赖纯函数——不触碰 document/window/dom.ts
- * 导出、不依赖模块级 DOM 状态,可直接 Node 单测(经 dist/renderer/settings-logic.js)。
+ * 导出、不依赖模块级 DOM 状态,可直接 Node 单测(经 dist/renderer/settings/settings-logic.js)。
  * 依赖仅 core/settings-defaults(契约/常量/硬编码预设,纯模块)。
  * 行为与抽取前逐一对应(settings-panel.ts 仅改 import 路径,零行为改动)。
  * 批次 15(R2):再抽 applySettingsToControls 的匹配/回填计算、预设保存/删除数据变换、
@@ -18,8 +18,8 @@ import {
   type CustomPreset,
   type TemplatePreset,
   type ThemePreference,
-} from "../core/settings/settings-defaults.js";
-import { t } from "../core/i18n.js";
+} from "../../core/settings/settings-defaults.js";
+import { t } from "../../core/i18n.js";
 
 /** 自定义预设下拉 id 前缀(选中/删除判定与 id 解析共用)。 */
 export const CUSTOM_PRESET_ID_PREFIX = "custom:";

@@ -14,7 +14,7 @@ import {
   MARGIN_MAX_MM as MARGIN_MAX,
   type AppSettings,
   type PageSetup,
-} from "../core/settings/settings-defaults.js";
+} from "../../core/settings/settings-defaults.js";
 import {
   allPresets,
   outputDirDisplayText,
@@ -60,11 +60,11 @@ import {
   templatePresetSelect,
   themeInputs,
   tocInput,
-} from "./dom.js";
-import { state } from "./state.js";
-import { hideFieldError, setError, setStatus, showFieldError } from "./utils.js";
-import { renderSelection } from "./file-list.js";
-import { applyStaticTexts, setLanguage, t, type Language } from "../core/i18n.js";
+} from "../dom/refs.js";
+import { state } from "../state/state.js";
+import { hideFieldError, setError, setStatus, showFieldError } from "../state/utils.js";
+import { renderSelection } from "../convert/file-list.js";
+import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n.js";
 // 单源 settings-panel(依赖方向单向:bindings → panel,不反向)
 import {
   applySettingsToControls,

@@ -5,8 +5,8 @@
  * 批次 15(R5):转换成功后刷新最近区块改经 state.recentRefreshHandler 回调
  * (组合根 renderer.ts 接线),不再 import recent-files,打破 ESM 环。
  */
-import { statusEl } from "./dom.js";
-import { state } from "./state.js";
+import { statusEl } from "../dom/refs.js";
+import { state } from "../state/state.js";
 import {
   baseName,
   hideProgress,
@@ -14,11 +14,11 @@ import {
   setProgress,
   setStatus,
   showProgress,
-} from "./utils.js";
-import { showBatchDialog, showCompleteDialog, showSummary } from "./dialogs.js";
+} from "../state/utils.js";
+import { showBatchDialog, showCompleteDialog, showSummary } from "../ui/dialogs.js";
 import { updateActionButtons } from "./file-list.js";
-import { actionableError } from "./pure.js";
-import { t } from "../core/i18n.js";
+import { actionableError } from "../state/pure.js";
+import { t } from "../../core/i18n.js";
 
 /** B9:错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
 function displayError(message: string): string {

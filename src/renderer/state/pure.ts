@@ -3,7 +3,7 @@
  * - 来源:R8 自 renderer.ts 抽出(utils.ts);B1 再拆纯函数层——isMarkdown /
  *   baseName / truncateMiddle / STAGE_TEXT / stageText / STAGE_PERCENT 均不触碰
  *   DOM 与 state,原被 utils.ts 的 dom.ts 顶层 import 挡住无法 Node 直测,
- *   现可经 dist/renderer/pure.js 直接导入断言
+ *   现可经 dist/renderer/state/pure.js 直接导入断言(批③目录重组)
  * - 本文件零 import(纯函数,契约语义与注释随代码搬移不精简);
  *   utils.ts re-export 保持 renderer 内部 import 路径不变
  *   (renderer.ts 等仍从 ./utils.js 导入)

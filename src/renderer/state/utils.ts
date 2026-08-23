@@ -2,8 +2,8 @@
  * renderer 通用工具(R8 自 renderer.ts 抽出,行为等价;B1 纯函数层拆至 pure.ts):
  * 状态区/错误提示/字段内错误、进度条控制、焦点回给主操作按钮。
  * 纯函数(isMarkdown/baseName/truncateMiddle/STAGE_TEXT/stageText/STAGE_PERCENT)
- * 已拆至 src/renderer/pure.ts(零 DOM 依赖,可 Node 直测),本文件 re-export
- * 保持 renderer 内部 import 路径不变(renderer.ts 等仍从 ./utils.js 导入)。
+ * 已拆至 state/pure.ts(零 DOM 依赖,可 Node 直测;批③目录重组前为 src/renderer/pure.ts),本文件 re-export
+ * 保持导入符号不变(各模块经 ../state/utils.js 导入)。
  * 只依赖 dom.ts 元素映射与 state.ts 的 errorFlashTimer。
  */
 import {
@@ -17,7 +17,7 @@ import {
   progressText,
   progressTrack,
   statusEl,
-} from "./dom.js";
+} from "../dom/refs.js";
 import { state } from "./state.js";
 export {
   isMarkdown,

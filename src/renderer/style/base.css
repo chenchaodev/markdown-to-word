@@ -1,0 +1,413 @@
+/* Markdown 转换工具 — 基础样式(批③自 style.css 拆出):
+ * 主题变量与双作用域深色主题、reset、应用卡片/标题/版本号、状态区、
+ * 底部操作栏(格式选择/转换按钮/进度条)、通用工具类(.hidden / .btn 族)。
+ * 引入顺序固定:base → drop → settings → dialogs(index.html 多 <link> 同源引入,
+ * CSP 无需改动);后加载文件的更高特异性规则覆盖先加载者,拆分保持原级联顺序。 */
+
+/* Markdown 转换工具 — G2 渲染层样式(Windows 11 风格;浅色默认,深色见下方双作用域主题) */
+
+/*
+ * 颜色体系(双主题):
+ * 所有颜色一律经 :root 语义变量引用,组件规则不写死色值。浅色为默认值;
+ * 深色在两个作用域提供同一套覆盖:
+ *   ① html[data-theme="dark"] —— 用户显式选择深色;
+ *   ② @media (prefers-color-scheme: dark) 内 html:not([data-theme="light"])
+ *      —— 跟随系统(未显式选择时无 data-theme 属性;显式选 light 时被排除)。
+ * 两个深色块的声明内容必须逐行一致,修改时同步更新。
+ */
+:root {
+  color-scheme: light;
+  /* 底色 */
+  --bg: #f3f3f3;
+  --bg-card: #ffffff;
+  --bg-subtle: #fafafa;
+  --bg-code: #f7f7f7;
+  /* 文字与图标 */
+  --text: #1b1b1b;
+  --text-secondary: #616161;
+  --text-tertiary: #8f8f8f;
+  --text-disabled: #c8c8c8;
+  --icon-muted: #bfbfbf;
+  --text-on-accent: #ffffff;
+  /* 边框 */
+  --border: #e5e5e5;
+  --border-strong: #c9c9c9;
+  /* 强调色 */
+  --accent: #0078d4;
+  --accent-hover: #006cbd;
+  --accent-soft: #e6f1fb;
+  --accent-border: #c8dff3;
+  /* 语义色:本色 + 柔和底 + 描边 */
+  --error: #c42b1c;
+  --error-soft: #fdf1f0;
+  --error-border: #f0c8c3;
+  --error-badge-bg: #fde7e7;
+  --warning: #9a6700;
+  --warning-soft: #fdf9ec;
+  --warning-border: #ecd9a8;
+  --success: #107c10;
+  --success-soft: #f4faf4;
+  --success-border: #c9e6c9;
+  /* 交互态 */
+  --row-hover: #f6f6f6;
+  --panel-hover: #f2f2f2;
+  --hover: #f0f0f0;
+  --active: #eaeaea;
+  --disabled-bg: #e6e6e6;
+  --disabled-fg: #a0a0a0;
+  --overlay: rgba(0, 0, 0, 0.4);
+  --progress-track: #e8e8e8;
+  /* 圆角与阴影 */
+  --radius: 12px;
+  --radius-sm: 6px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-dialog: 0 8px 28px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* 深色主题 · 作用域一:用户显式选择(内容与下方系统作用域逐行一致,同步维护) */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #212121;
+  --bg-card: #2c2c2c;
+  --bg-subtle: #262626;
+  --bg-code: #242424;
+  --text: #e8e8e8;
+  --text-secondary: #aaaaaa;
+  --text-tertiary: #8c8c8c;
+  --text-disabled: #5e5e5e;
+  --icon-muted: #636363;
+  --text-on-accent: #001b29;
+  --border: #3e3e3e;
+  --border-strong: #5a5a5a;
+  --accent: #4cc2ff;
+  --accent-hover: #6fd0ff;
+  --accent-soft: #183650;
+  --accent-border: #396881;
+  --error: #ff6a5f;
+  --error-soft: #432a28;
+  --error-border: #6b3a34;
+  --error-badge-bg: #4e2f2c;
+  --warning: #d9a640;
+  --warning-soft: #463e2f;
+  --warning-border: #6a6132;
+  --success: #58bf58;
+  --success-soft: #34462f;
+  --success-border: #4d6b44;
+  --row-hover: #333333;
+  --panel-hover: #373737;
+  --hover: #3a3a3a;
+  --active: #414141;
+  --disabled-bg: #383838;
+  --disabled-fg: #676767;
+  --overlay: rgba(0, 0, 0, 0.55);
+  --progress-track: #404040;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-dialog: 0 8px 28px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* 深色主题 · 作用域二:跟随系统(未显式选择时;内容与上一块逐行一致,同步维护) */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #212121;
+    --bg-card: #2c2c2c;
+    --bg-subtle: #262626;
+    --bg-code: #242424;
+    --text: #e8e8e8;
+    --text-secondary: #aaaaaa;
+    --text-tertiary: #8c8c8c;
+    --text-disabled: #5e5e5e;
+    --icon-muted: #636363;
+    --text-on-accent: #001b29;
+    --border: #3e3e3e;
+    --border-strong: #5a5a5a;
+    --accent: #4cc2ff;
+    --accent-hover: #6fd0ff;
+    --accent-soft: #183650;
+    --accent-border: #396881;
+    --error: #ff6a5f;
+    --error-soft: #432a28;
+    --error-border: #6b3a34;
+    --error-badge-bg: #4e2f2c;
+    --warning: #d9a640;
+    --warning-soft: #463e2f;
+    --warning-border: #6a6132;
+    --success: #58bf58;
+    --success-soft: #34462f;
+    --success-border: #4d6b44;
+    --row-hover: #333333;
+    --panel-hover: #373737;
+    --hover: #3a3a3a;
+    --active: #414141;
+    --disabled-bg: #383838;
+    --disabled-fg: #676767;
+    --overlay: rgba(0, 0, 0, 0.55);
+    --progress-track: #404040;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+    --shadow-dialog: 0 8px 28px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow-y: auto;
+}
+
+/* 应用卡片 */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 32px);
+  margin: 16px auto; /* 批次 12(C3):大屏密度上限,水平居中 */
+  max-width: 1080px;
+  padding: 28px 32px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+/* 标题区 */
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/* 版本号(发版 1.0.0:标题右侧小字,悬停显示完整版本) */
+.version {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  vertical-align: 2px;
+  user-select: text;
+}
+
+/* 状态区 */
+.status {
+  min-height: 20px;
+  margin: 14px 0 0;
+  padding: 0 2px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status--error {
+  color: var(--error);
+}
+
+.status--warning {
+  color: var(--warning);
+}
+
+/* 底部操作栏:sticky 视口常驻(批次 12:C2)——设置面板展开时转换按钮/进度条不被推出视口;
+   背景与卡片一致(--bg-card),滚动内容从其后经过时被遮住,细边框分隔 */
+.actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 16px 0 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+}
+
+/* 进度区在 sticky footer 内独占一行(footer 为 wrap 布局) */
+.actions .progress-area {
+  flex-basis: 100%;
+  margin-top: 0;
+}
+
+.formats {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.formats legend {
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.format-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.format-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.convert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 按钮 */
+.btn {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 7px 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-secondary {
+  background: var(--bg-card);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  background: var(--bg); /* 同页面底色 */
+}
+
+.btn-secondary:active {
+  background: var(--active);
+}
+
+.btn-primary {
+  min-width: 132px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+  background: var(--disabled-bg);
+  color: var(--disabled-fg);
+  cursor: default;
+}
+
+/* 隐藏工具类:必须带 !important,否则会被文件中更靠后的单类 display 规则
+   (如 .dialog-overlay 的 display: flex)覆盖,导致 hidden 失效 */
+.hidden {
+  display: none !important;
+}
+
+/* 路径等文本允许选中复制 */
+.status,
+.file-path,
+.file-name {
+  user-select: text;
+}
+
+/* 小按钮:用于工具条 / 弹窗内次级操作 */
+.btn-small {
+  padding: 4px 10px;
+  font-size: 12.5px;
+  border-radius: 4px;
+}
+
+/* 幽灵按钮:次级中的次级,仅文字 + 悬停底色 */
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.btn-ghost:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+/* 转换进度条:与现有圆角 / 配色体系一致 */
+.progress-area {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.progress-track {
+  height: 6px;
+  overflow: hidden;
+  background: var(--progress-track);
+  border-radius: 3px;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}

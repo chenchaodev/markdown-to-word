@@ -32,12 +32,12 @@ import {
   summaryWarnings,
   summaryWarningsList,
   summaryWarningsToggle,
-} from "./dom.js";
-import { state, type BatchItem, type BatchResult } from "./state.js";
-import { baseName, focusActionButton, trapFocus } from "./utils.js";
-import { batchSuccessPaths } from "./pure.js";
-import { formatWarning, t } from "../core/i18n.js";
-import type { ConvertWarning } from "../core/i18n.js";
+} from "../dom/refs.js";
+import { state, type BatchItem, type BatchResult } from "../state/state.js";
+import { baseName, focusActionButton, trapFocus } from "../state/utils.js";
+import { batchSuccessPaths } from "../state/pure.js";
+import { formatWarning, t } from "../../core/i18n.js";
+import type { ConvertWarning } from "../../core/i18n.js";
 
 /* 弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除。
  * B8 卫生项:show* 均先解除旧句柄再启用新陷阱(二次调用防御)——弹窗未 hide

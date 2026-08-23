@@ -21,17 +21,17 @@ import {
   recentSection,
   selectBtn,
   statusEl,
-} from "./dom.js";
-import { state } from "./state.js";
-import { baseName, setStatus, truncateMiddle } from "./utils.js";
-import { partitionDuplicates, selectionStatus } from "./pure.js";
-import { t } from "../core/i18n.js";
+} from "../dom/refs.js";
+import { state } from "../state/state.js";
+import { baseName, setStatus, truncateMiddle } from "../state/utils.js";
+import { partitionDuplicates, selectionStatus } from "../state/pure.js";
+import { t } from "../../core/i18n.js";
 
 /** 按当前选择渲染拖放区三种状态,并刷新操作按钮可用性。 */
 export function renderSelection(): void {
   const n = state.selectedFiles.length;
   dropZone.classList.toggle("has-file", n > 0);
-  // 批次 12(C7):单文件态压缩标记(样式见 style.css .drop-zone--single,压缩高度消除大片空白)
+  // 批次 12(C7):单文件态压缩标记(样式见 style/drop.css .drop-zone--single,压缩高度消除大片空白)
   dropZone.classList.toggle("drop-zone--single", n === 1);
   // 最近转换区块:默认态(无文件)与单文件态显示;多文件态(≥2)隐藏,聚焦当前列表
   recentSection.classList.toggle("hidden", n >= 2 || state.recentFiles.length === 0);

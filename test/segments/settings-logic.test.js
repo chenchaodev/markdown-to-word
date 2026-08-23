@@ -1,6 +1,6 @@
 /**
- * 设置面板纯逻辑层直测(src/renderer/settings-logic.ts;批次 12 自 settings-panel.ts 抽出):
- * 零 DOM 依赖纯函数,经 dist/renderer/settings-logic.js 直接断言(Node 段,零 Electron API)。
+ * 设置面板纯逻辑层直测(src/renderer/settings/settings-logic.ts;批次 12 自 settings-panel.ts 抽出):
+ * 零 DOM 依赖纯函数,经 dist/renderer/settings/settings-logic.js 直接断言(Node 段,零 Electron API)。
  * 断言面(可验证事实,与抽取前行为逐一对应):
  * - validatePresetName:空名/纯空白 → 「请输入预设名称」;同名(trim 后比较)→
  *   「已存在同名预设,请换一个名称」;达上限(≥10 条)→ 「已达 10 个上限,请先删除」
@@ -42,7 +42,7 @@ import {
   settingsToControlValues,
   validateNumberRange,
   validatePresetName,
-} from "../../dist/renderer/settings-logic.js";
+} from "../../dist/renderer/settings/settings-logic.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`settings-logic 断言失败:${msg}`);

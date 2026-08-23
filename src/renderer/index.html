@@ -11,7 +11,12 @@
     <!-- B6 FOUC 缓解:尽早按 localStorage 语言镜像设置 <html lang>(外部脚本,CSP 'self' 放行;
          决策记录见 lang-bootstrap.js 头注释) -->
     <script src="./lang-bootstrap.js"></script>
-    <link rel="stylesheet" href="./style.css" />
+    <!-- 批③样式拆分:四文件按域引入(顺序固定 base → drop → settings → dialogs,
+         级联顺序与拆分前单文件一致;同源 link,CSP 无需改动) -->
+    <link rel="stylesheet" href="./style/base.css" />
+    <link rel="stylesheet" href="./style/drop.css" />
+    <link rel="stylesheet" href="./style/settings.css" />
+    <link rel="stylesheet" href="./style/dialogs.css" />
   </head>
   <body>
     <main class="app">
@@ -122,7 +127,7 @@
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
       <!-- B9 拖放反馈细化:被跳过的非 Markdown 文件名列表(可折叠;
-           复用汇总条 details 折叠样式类,不改 style.css) -->
+           复用汇总条 details 折叠样式类,不改样式文件) -->
       <details id="dropSkipped" class="summary-warnings hidden">
         <summary id="dropSkippedToggle" class="summary-warnings-summary"></summary>
         <ul id="dropSkippedList" class="summary-warnings-list"></ul>
