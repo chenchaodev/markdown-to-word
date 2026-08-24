@@ -1,3 +1,8 @@
+# 仓库级 EOL 策略(2026-08-24 全库规范化,用户确认):文本文件入库统一 LF,
+# 检出 EOL 交由各端 autocrlf/core.eol 决定;不再依赖各机器默认行为,
+# 消除「整文件显示变更」类换行符噪声。二进制与 fixtures 规则见下方。
+* text=auto
+
 # EOL 策略(审计 TEST-1):gen-fixtures 生成器落盘 LF,Windows autocrlf 下 checkout
 # 会把文本产物转成 CRLF,导致 check:fixtures 逐字节比对全部误报。
 # 将 test/fixtures/ 下文件固定 EOL,checkout 后保持与生成器输出一致:
