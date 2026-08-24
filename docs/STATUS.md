@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-08-24:**界面改进批次一「布局稳定性」完成,待 GUI 实测**(P0-1 主舞台固定高度 clamp(280px,40vh,400px)+Grid 六轨道钉死 footer;P0-2 status/dropSkipped/resultSummary 合并常驻消息槽;根治导入跳动;typecheck/build/smoke 全绿;后续批次二=设置抽屉化、批次三=反馈统一与视觉打磨)
 - 2026-08-24:**发版 1.3.0 完成**(审计整改 P0~P5+i18n 字典拆分:61 项审计待办约 54 项实施、7 项不做/仅记录见 archive/2026-08-24-193838;GUI 实测通过;版本号四源统一 package.json=lockfile=tag v1.3.0=CHANGELOG [1.3.0];测试 45→51 段全绿;DECIDE-1 统一 Word 口径「1」)
 - 2026-08-24:**全库审计整改 P0~P5 + i18n 字典拆分完成,GUI 实测通过**(五车道并行实施:工程化CI/core 单源化重构/main+renderer 重构加固/测试体系/文档同步债;新增能力:image-downloader 私网拦截+大小上限/shell 白名单/M2W_ONLY 单段筛选/i18n 注册表化+ja/ko/fr/ru 四语)
 

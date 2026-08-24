@@ -31,7 +31,9 @@ import { t } from "../../core/i18n.js";
 export function renderSelection(): void {
   const n = state.selectedFiles.length;
   dropZone.classList.toggle("has-file", n > 0);
-  // 批次 12(C7):单文件态压缩标记(样式见 style/drop.css .drop-zone--single,压缩高度消除大片空白)
+  // P0-1:单文件态标记。主舞台高度已固定(clamp(280px,40vh,400px),样式见
+  // style/drop.css .file-area),本 class 不再影响容器几何,仅保留供单文件态
+  // 内部布局分支与测试诊断使用
   dropZone.classList.toggle("drop-zone--single", n === 1);
   // 最近转换区块:默认态(无文件)与单文件态显示;多文件态(≥2)隐藏,聚焦当前列表
   recentSection.classList.toggle("hidden", n >= 2 || state.recentFiles.length === 0);

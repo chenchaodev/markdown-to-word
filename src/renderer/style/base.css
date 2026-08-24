@@ -1,6 +1,7 @@
 /* Markdown 转换工具 — 基础样式(批③自 style.css 拆出):
- * 主题变量与双作用域深色主题、reset、应用卡片/标题/版本号、状态区、
- * 底部操作栏(格式选择/转换按钮/进度条)、通用工具类(.hidden / .btn 族)。
+ * 主题变量与双作用域深色主题、reset、应用卡片(Grid 轨道布局,P0-1)、标题/版本号、
+ * 消息槽(P0-2 常驻固定槽)与状态区、底部操作栏(格式选择/转换按钮/进度条)、
+ * 通用工具类(.hidden / .btn 族)。
  * 引入顺序固定:base → drop → settings → dialogs(index.html 多 <link> 同源引入,
  * CSP 无需改动);后加载文件的更高特异性规则覆盖先加载者,拆分保持原级联顺序。 */
 
@@ -170,23 +171,46 @@ body {
   overflow-y: auto;
 }
 
-/* 应用卡片 */
+/* 应用卡片:P0-1 Grid 布局,高度恒等于视口(减上下外边距),页面不再随内容伸缩。
+ * 六条轨道与 index.html 的 .app 直接子元素一一对应:
+ *   ① header        标题区(auto)
+ *   ② .file-area    主舞台(auto;高度由 drop.css 固定为 clamp(280px,40vh,400px),
+ *                    不随文件选择数量变化——布局跳动的根治点)
+ *   ③ #messageSlot  消息槽(auto;min-height 预留空态占位)
+ *   ④ #recentSection 最近转换(minmax(0,1fr) 弹性吸收带:显隐/内容增减只改变
+ *                    本轨道,主舞台/消息槽/footer 几何恒定;隐藏时吸收空白)
+ *   ⑤ settingsPanel 设置面板(auto;展开时面板体内部滚动,见 settings.css)
+ *   ⑥ .actions      底部操作栏(auto;最后一条轨道钉底)
+ */
 .app {
-  display: flex;
-  flex-direction: column;
-  min-height: calc(100vh - 32px);
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows:
+    auto
+    auto
+    auto
+    minmax(0, 1fr)
+    auto
+    auto;
+  height: calc(100vh - 32px);
   margin: 16px auto; /* 批次 12(C3):大屏密度上限,水平居中 */
   max-width: 1080px;
-  padding: 28px 32px;
+  padding: 16px 32px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
+  /* 兜底阀:极端内容(超长警告/极小窗口)超出轨道预算时不裁切,降级为卡片内滚动 */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-/* 标题区 */
+/* 标题区:版本号与标题同行(baseline 对齐;修复此前块级 h1 导致版本号折行) */
 .header {
-  margin-bottom: 20px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .title {
@@ -196,20 +220,30 @@ body {
   letter-spacing: 0.2px;
 }
 
-/* 版本号(发版 1.0.0:标题右侧小字,悬停显示完整版本) */
+/* 版本号(发版 1.0.0:标题右侧小字,悬停显示完整版本;间距由 .header gap 管理) */
 .version {
-  margin-left: 8px;
   font-size: 12px;
   font-weight: 400;
   color: var(--text-secondary);
-  vertical-align: 2px;
   user-select: text;
 }
 
-/* 状态区 */
+/* 消息槽(P0-2):状态行 / 拖放跳过列表 / 结果汇总条的常驻固定容器。
+ * min-height 预留空态占位(约两行),内容出现/消失不推挤其他区块;
+ * 偶发超高(展开警告/长错误)由 .app 的最近转换弹性轨道吸收,不外溢。
+ * 子元素间距归槽体管理(gap),status/汇总条自身不再带外边距。 */
+.message-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 12px;
+}
+
+/* 状态区(消息槽子元素;外边距归 .message-slot 管理) */
 .status {
   min-height: 20px;
-  margin: 14px 0 0;
+  margin: 0;
   padding: 0 2px;
   font-size: 13px;
   color: var(--text-secondary);
@@ -226,8 +260,10 @@ body {
   color: var(--warning);
 }
 
-/* 底部操作栏:sticky 视口常驻(批次 12:C2)——设置面板展开时转换按钮/进度条不被推出视口;
-   背景与卡片一致(--bg-card),滚动内容从其后经过时被遮住,细边框分隔 */
+/* 底部操作栏:常规态由 .app Grid 最后一条轨道钉底(不依赖 sticky 定位);
+ * sticky 保留为溢出兜底——设置面板展开等内容超出视口、.app 进入内部滚动时,
+ * 转换按钮/进度条仍吸附在卡片可视区底部(批次 12 C2 语义延续)。
+ * 背景与卡片一致(--bg-card),滚动内容从其后经过时被遮住,细边框分隔 */
 .actions {
   position: sticky;
   bottom: 0;
@@ -236,8 +272,8 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-top: 16px;
-  padding: 16px 0 0;
+  margin-top: 12px;
+  padding: 12px 0 0;
   background: var(--bg-card);
   border-top: 1px solid var(--border);
 }

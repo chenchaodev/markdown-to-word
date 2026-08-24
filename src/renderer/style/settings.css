@@ -61,9 +61,14 @@
   color: var(--text-tertiary);
 }
 
+/* 面板体:P0-1 布局稳定性配套——.app 高度恒定后,展开的面板体不再把
+ * footer 推出视口,而是自身限高内部滚动(设置面板将在后续迭代改为抽屉,
+ * 此为过渡形态);收起态不受影响 */
 .settings-body {
+  max-height: 42vh;
   padding: 14px 14px 12px;
   border-top: 1px solid var(--border);
+  overflow-y: auto;
 }
 
 .settings-grid {
@@ -343,15 +348,25 @@
   user-select: text;
 }
 
-/* 最近转换区块(批次 11 迭代 1:状态记忆;样式跟随 settings 面板风格追加,不重构) */
+/* 最近转换区块(批次 11 迭代 1:状态记忆;样式跟随 settings 面板风格追加,不重构)
+ * P0-1:.app Grid 中本区块所在轨道为 minmax(0,1fr) 弹性吸收带——区块显隐与
+ * 内容增减只改变本轨道,主舞台/消息槽/footer 几何恒定;
+ * min-height:0 + max-height:100% 让区块在轨道内自限高,列表内部滚动不外溢 */
 .recent {
-  margin-top: 14px;
+  /* 贴合内容不随轨道拉伸:轨道富余时留白留在轨道内(不可见),而非撑出空面板 */
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  margin-top: 12px;
   background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
 
 .recent-head {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -369,13 +384,15 @@
 }
 
 .recent-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 轨道富余时列表限高,避免出现大片空面板;超出轨道预算时由 flex 收缩接管 */
+  max-height: 240px;
   display: flex;
   flex-direction: column;
   margin: 0;
   padding: 0 8px 8px;
   list-style: none;
-  /* 批次 N:限高 + 内部滚动(滚动条跟随默认 webkit 风格),长列表不撑高页面 */
-  max-height: 240px;
   overflow-y: auto;
 }
 

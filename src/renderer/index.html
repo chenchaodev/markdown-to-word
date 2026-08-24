@@ -66,12 +66,28 @@
             </button>
           </div>
 
-          <!-- 已选单文件态 -->
+          <!-- 已选单文件态:P0-1 横向紧凑卡(图标 + 名称/路径/提示 + 操作一行),
+               在固定高度主舞台内居中;容器几何不随选择数量变化 -->
           <div id="dropFile" class="drop-file hidden">
-            <p id="fileName" class="file-name"></p>
-            <p id="filePath" class="file-path"></p>
-            <div class="drop-file-actions">
+            <svg
+              class="drop-file-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <path d="M14 2v6h6" />
+            </svg>
+            <div class="drop-file-info">
+              <p id="fileName" class="file-name"></p>
+              <p id="filePath" class="file-path"></p>
               <p class="drop-change" data-i18n="drop.change">点击更换文件，或拖入添加</p>
+            </div>
+            <div class="drop-file-actions">
               <button
                 type="button"
                 id="appendFileBtn"
@@ -123,59 +139,66 @@
         </div>
       </section>
 
-      <!-- 状态区:路径 / 错误提示 -->
-      <p id="status" class="status" role="status" aria-live="polite"></p>
+      <!-- P0-2 消息槽:状态行 / 拖放跳过列表 / 结果汇总条统一收纳的常驻固定槽。
+           槽体 min-height 预留空态占位,内容出现/消失不推挤其他区块;
+           内容偶发超高(展开警告/长错误)时由最近转换的弹性轨道吸收
+           (轨道模型见 base.css .app 注释)。三个子元素 id 不变,
+           setStatus / showSkippedList / showSummary 渲染调用零改动 -->
+      <div id="messageSlot" class="message-slot">
+        <!-- 状态区:路径 / 错误提示 -->
+        <p id="status" class="status" role="status" aria-live="polite"></p>
 
-      <!-- B9 拖放反馈细化:被跳过的非 Markdown 文件名列表(可折叠;
-           复用汇总条 details 折叠样式类,不改样式文件) -->
-      <details id="dropSkipped" class="summary-warnings hidden">
-        <summary id="dropSkippedToggle" class="summary-warnings-summary"></summary>
-        <ul id="dropSkippedList" class="summary-warnings-list"></ul>
-      </details>
-
-      <!-- 转换结果汇总:常驻(不依赖弹窗),完成路径 + 打开引导 + 可折叠警告 -->
-      <div id="resultSummary" class="result-summary hidden">
-        <div class="result-summary-main">
-          <svg
-            id="summaryIcon"
-            class="result-summary-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M20 6L9 17l-5-5" />
-          </svg>
-          <div class="result-summary-texts">
-            <p id="summaryText" class="result-summary-text"></p>
-            <p id="summaryPath" class="result-summary-path hidden"></p>
-            <p id="summaryError" class="result-summary-error hidden"></p>
-          </div>
-          <div class="result-summary-actions">
-            <button
-              type="button"
-              id="summaryRevealBtn"
-              class="btn btn-secondary btn-small hidden"
-              data-i18n-title="summary.revealTitle"
-              title="在资源管理器中显示输出文件"
-            >
-              <span data-i18n="common.reveal">打开所在文件夹</span>
-            </button>
-            <button type="button" id="summaryOpenBtn" class="btn btn-secondary btn-small hidden">
-              <span data-i18n="common.open">打开文件</span>
-            </button>
-            <button type="button" id="summaryDetailsBtn" class="btn btn-secondary btn-small hidden">
-              <span data-i18n="summary.details">失败详情</span>
-            </button>
-          </div>
-        </div>
-        <details id="summaryWarnings" class="summary-warnings hidden">
-          <summary id="summaryWarningsToggle" class="summary-warnings-summary"></summary>
-          <ul id="summaryWarningsList" class="summary-warnings-list"></ul>
+        <!-- B9 拖放反馈细化:被跳过的非 Markdown 文件名列表(可折叠;
+             复用汇总条 details 折叠样式类,不改样式文件) -->
+        <details id="dropSkipped" class="summary-warnings hidden">
+          <summary id="dropSkippedToggle" class="summary-warnings-summary"></summary>
+          <ul id="dropSkippedList" class="summary-warnings-list"></ul>
         </details>
+
+        <!-- 转换结果汇总:常驻(不依赖弹窗),完成路径 + 打开引导 + 可折叠警告 -->
+        <div id="resultSummary" class="result-summary hidden">
+          <div class="result-summary-main">
+            <svg
+              id="summaryIcon"
+              class="result-summary-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+            <div class="result-summary-texts">
+              <p id="summaryText" class="result-summary-text"></p>
+              <p id="summaryPath" class="result-summary-path hidden"></p>
+              <p id="summaryError" class="result-summary-error hidden"></p>
+            </div>
+            <div class="result-summary-actions">
+              <button
+                type="button"
+                id="summaryRevealBtn"
+                class="btn btn-secondary btn-small hidden"
+                data-i18n-title="summary.revealTitle"
+                title="在资源管理器中显示输出文件"
+              >
+                <span data-i18n="common.reveal">打开所在文件夹</span>
+              </button>
+              <button type="button" id="summaryOpenBtn" class="btn btn-secondary btn-small hidden">
+                <span data-i18n="common.open">打开文件</span>
+              </button>
+              <button type="button" id="summaryDetailsBtn" class="btn btn-secondary btn-small hidden">
+                <span data-i18n="summary.details">失败详情</span>
+              </button>
+            </div>
+          </div>
+          <details id="summaryWarnings" class="summary-warnings hidden">
+            <summary id="summaryWarningsToggle" class="summary-warnings-summary"></summary>
+            <ul id="summaryWarningsList" class="summary-warnings-list"></ul>
+          </details>
+        </div>
       </div>
 
       <!-- 最近转换:默认态(无文件)与单文件态显示;单击条目加载到列表,双击直接重转 -->
@@ -497,9 +520,12 @@
         </div>
       </details>
 
-      <!-- 底部操作栏:格式选择 + 转换按钮(单文件 / 批量 / 合并) + 转换进度(批次 12 C2:sticky 视口常驻) -->
+      <!-- 底部操作栏:格式选择 + 转换按钮(单文件 / 批量 / 合并) + 转换进度。
+           P0-1:.app 改 Grid 后 footer 由最后一条轨道钉底(常规态不依赖 sticky);
+           sticky 仅作兜底保留——设置面板展开使内容超出视口时(.app 内部滚动),
+           转换按钮/进度条仍吸附可见(批次 12 C2 语义延续) -->
       <footer class="actions">
-        <!-- 转换进度:进度条 + 百分比 + 取消按钮(转换中显示;位于 sticky footer 内,设置面板展开时仍可见) -->
+        <!-- 转换进度:进度条 + 百分比 + 取消按钮(转换中显示;位于 footer 内,设置面板展开时仍可见) -->
         <div id="progressArea" class="progress-area hidden">
           <div
             id="progressTrack"
