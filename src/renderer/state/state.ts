@@ -9,10 +9,12 @@
  *   hydratingSettings:回填控件期间置位,change 处理器据此跳过写回
  *   dialogOutputPath / summaryOutputPath:弹窗与汇总条的输出路径缓存
  * - IPC 契约类型(BatchProgressInfo/BatchItem/BatchResult)同时被 dialogs/
- *   convert-flow/组合根引用,一并收敛于此
+ *   convert-flow/组合根引用,经本模块 re-export(MR-4:类型单源 main/converter/batch.ts)
  */
 import { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
-import type { ConvertWarning } from "../../core/i18n.js";
+// MR-4:批量契约类型单源 main/converter/batch.ts(本模块 import 后 re-export,
+// 保持 renderer 各模块经 state.js 取用的既有导入路径)
+import type { BatchItem, BatchProgressInfo, BatchResult } from "../../main/converter/batch.js";
 import type { ConvertProgressPayload } from "../../main/ipc/channels.js";
 import type { RecentFile } from "../../main/persist/ui-state.js";
 
@@ -20,32 +22,13 @@ import type { RecentFile } from "../../main/persist/ui-state.js";
 /** convert:progress 事件 payload(B12 起带 mode 标识;类型单源 main/ipc-channels.ts)。 */
 export type { ConvertProgressPayload };
 
-export interface BatchProgressInfo {
-  index: number;
-  total: number;
-  file: string;
-  stage: string;
-}
-
-export interface BatchItem {
-  file: string;
-  ok: boolean;
-  outputPath?: string;
-  error?: string;
-  /** B6:keyed 警告,显示层经 formatWarning 按当前语言格式化。 */
-  warnings?: ConvertWarning[];
-  /** 用户取消导致未执行转换的项。 */
-  canceled?: boolean;
-}
-
-export interface BatchResult {
-  ok: true;
-  items: BatchItem[];
-  okCount: number;
-  failCount: number;
-  /** 用户取消未执行的项数。 */
-  canceledCount: number;
-}
+/**
+ * 批量契约类型单源(MR-4):BatchProgressInfo/BatchItem/BatchResult 收敛
+ * main/converter/batch.ts(主进程实现侧),本模块 re-export 保持既有导入路径
+ * (renderer 各模块仍从 state.js 取用,编译期擦除无运行时依赖);
+ * preload.cts 同样从 batch.ts import type——三份内联镜像清零。
+ */
+export type { BatchItem, BatchProgressInfo, BatchResult };
 
 /* ---------- 共享可变状态(单一来源,各模块经 state.xxx 读写) ---------- */
 export const state = {

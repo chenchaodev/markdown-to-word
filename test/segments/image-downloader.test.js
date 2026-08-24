@@ -8,6 +8,8 @@
  *   返回 null → 转换 warnings 追加统一文案「图片加载失败: <src>」(本地缺失有警告,
  *   存在的本地图片无警告;文案三处统一见 core/image-warning.ts)
  * - B5 exists 轻量存在性通道:本地存在 → true / 缺失 → false / data: 退回完整解析
+ * - MR-3 SSRF 加固:默认拦截私网/回环(127.0.0.1 目标在 fetch 前被拦,server 计数 0);
+ *   本地 server 测试场景经第三参 opt-in({ allowPrivateAddresses: true })放行
  * 超时分支:createImageResolver 第二参 timeoutMs 注入(默认 10s 不变),慢响应 server +
  * timeoutMs=50 断言超时 → null;index.ts 模块私有 resolverCache(跨 baseDir 共享)
  * 无法低成本自动化,未覆盖原因见验收报告。
@@ -22,6 +24,11 @@ import { FIXTURES_DIR } from "../common/paths.js";
 import { saveArtifact } from "../common/artifacts.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
+
+/** 测试用 http resolver:本地 server 场景显式放行私网(MR-3 默认拦截 127.0.0.1)。 */
+function localResolver(timeoutMs) {
+  return createImageResolver("", timeoutMs, { allowPrivateAddresses: true });
+}
 
 /** 启动本地 http server:固定 status + body 响应(delayMs 可选,响应前延迟),getCount() 返回请求次数 */
 function startServer(status, body, delayMs = 0) {
@@ -104,10 +111,23 @@ export async function run() {
     srv200 = await startServer(200, fixtureBytes);
     port = srv200.port;
     srv404 = await startServer(404, Buffer.from("NOPE"));
-    const resolver = createImageResolver("");
+    const resolver = localResolver();
     const url = `http://127.0.0.1:${port}/img.png`;
 
-    // ---- 断言 5:http 200 下载成功,内容一致 ----
+    // ---- 断言 5a:MR-3 默认拦截私网——未 opt-in 时 127.0.0.1 目标在 fetch 前被拦 ----
+    // 字面量回环 IP 直接判定私网 → 返回 null 且请求不发出(server 计数保持 0);
+    // 显式 allowPrivateAddresses:false 与默认行为一致(策略缺省收紧)。
+    if ((await createImageResolver("")(url)) !== null) {
+      throw new Error("image-downloader 断言失败:默认配置应拦截私网/回环地址(127.0.0.1)返回 null");
+    }
+    if (srv200.getCount() !== 0) {
+      throw new Error(`image-downloader 断言失败:私网拦截应发生在请求前(计数 0),实际 ${srv200.getCount()}`);
+    }
+    if ((await createImageResolver("", undefined, { allowPrivateAddresses: false })(url)) !== null) {
+      throw new Error("image-downloader 断言失败:显式 allowPrivateAddresses:false 应同样拦截");
+    }
+
+    // ---- 断言 5:http 200 下载成功,内容一致(opt-in 后本地 server 可达) ----
     const buf = await resolver(url);
     if (!buf || !buf.equals(fixtureBytes)) {
       throw new Error("image-downloader 断言失败:200 下载内容与 fixture 不一致");
@@ -142,7 +162,7 @@ export async function run() {
     // 默认参数行为(10s)由断言 5/6 覆盖,此处只验证注入的短超时确实中止慢响应。
     srvSlow = await startServer(200, fixtureBytes, 200);
     const slowUrl = `http://127.0.0.1:${srvSlow.port}/slow.png`;
-    if ((await createImageResolver("", 50)(slowUrl)) !== null) {
+    if ((await localResolver(50)(slowUrl)) !== null) {
       throw new Error("image-downloader 断言失败:慢响应应被 50ms 超时中止并返回 null");
     }
     if (srvSlow.getCount() !== 1) {
@@ -150,7 +170,7 @@ export async function run() {
     }
 
     // ---- 断言 8:缓存随实例隔离(每文档新建实例 → 同 URL 重新下载) ----
-    const other = createImageResolver("");
+    const other = localResolver();
     const o = await other(url);
     if (!o || !o.equals(fixtureBytes)) {
       throw new Error("image-downloader 断言失败:新实例同 URL 应重新下载成功");
@@ -165,8 +185,9 @@ export async function run() {
     if (srvSlow) await closeServer(srvSlow.server);
   }
 
-  // ---- 断言 9:连接拒绝(server 已关闭)→ null ----
-  const refused = await createImageResolver("")(`http://127.0.0.1:${port}/x.png`);
+  // ---- 断言 9:连接拒绝(server 已关闭)→ null(opt-in 放行私网,排除拦截干扰,
+  //   确保失败原因确为连接拒绝而非 MR-3 私网过滤) ----
+  const refused = await localResolver()(`http://127.0.0.1:${port}/x.png`);
   if (refused !== null) {
     throw new Error("image-downloader 断言失败:连接拒绝应返回 null");
   }
@@ -194,6 +215,6 @@ export async function run() {
     throw new Error(`image-downloader 断言失败:存在的本地图片不应产生警告,实际 ${wOk.join(";")}`);
   }
 
-  console.log("[ok] image-downloader:本地/远程读取、失败兜底、并发去重、失败不缓存(重试)与超时注入断言通过");
+  console.log("[ok] image-downloader:本地/远程读取、失败兜底、并发去重、失败不缓存(重试)、超时注入与 MR-3 私网默认拦截断言通过");
   await saveArtifact("image-downloader", { png: fixtureBytes });
 }

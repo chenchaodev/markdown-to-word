@@ -12,6 +12,14 @@ export function isMarkdown(filePath: string): boolean {
   return /\.(md|markdown)$/i.test(filePath);
 }
 
+/**
+ * 错误归一(MR-2 单源,对照 main 侧 ipc/logic.ts 同名实现):
+ * Error → message,其余 → String(err)。原 renderer 六域 15 处内联拼写收敛于此。
+ */
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function baseName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
 }
@@ -28,9 +36,9 @@ export function truncateMiddle(text: string, max = 88): string {
 /**
  * 阶段文案(默认语言 zh 原文;i18n 注入翻译):
  * 主进程可能发「read」等键名,也可能是现成中文文案,原样兜底。
- * B9 进度分阶段:pdf 链路细分 parse/inline/mermaid/katex(print 由 main/converter.ts
- * 在 printToPDF 前上报);docx 保持 read/render/done。未知键原样兜底(向后兼容:
- * 旧/新阶段混发均不破)。
+ * B9 进度分阶段:pdf 链路细分 parse/inline/mermaid/katex(print 由
+ * main/converter/single.ts renderPdf 在 printToPDF 前上报);docx 保持 read/render/done。
+ * 未知键原样兜底(向后兼容:旧/新阶段混发均不破)。
  * 本文件零 import 约束:zh 文案作为默认输出保留于此(与 i18n 字典 convert.stage.*
  * 的 zh 值逐字一致),translate 注入时按阶段键名翻译(调用处传 t)。
  */

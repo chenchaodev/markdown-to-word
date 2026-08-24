@@ -93,7 +93,13 @@ export function resolvePresetSelection(
 
 /* ---------- 批次 15(R2):loadSettings / applySettingsToControls / 预设保存删除 / 输入校验 ---------- */
 
-/** 设置对象与默认值防御性合并(loadSettings:旧版本设置缺字段时按默认值兜底)。 */
+/**
+ * 设置对象与默认值防御性合并(loadSettings:旧版本设置缺字段时按默认值兜底)。
+ * MR-11 双源显式化:main 侧 persist/settings.ts loadSettings 已保证返回完整合法
+ * AppSettings,本函数是 renderer 侧的第二道防御(跨进程边界各自兜底,不信任 IPC
+ * 对端)——两套实现语义必须一致(theme/outputDir/pdfCss 等缺失兜底两边各写一遍,
+ * 改动须双侧同步);恒等断言由 test 侧守护段落地(车道 D)。
+ */
 export function mergeSettingsWithDefaults(loaded: Partial<AppSettings>): AppSettings {
   return {
     ...DEFAULT_SETTINGS,

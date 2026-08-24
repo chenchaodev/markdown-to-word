@@ -11,7 +11,8 @@
  */
 import { dropSkipped, dropSkippedList, dropSkippedToggle, dropZone } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
-import { baseName, setError, setStatus } from "../../state/utils.js";
+import { baseName, errorMessage } from "../../state/pure.js";
+import { setError, setStatus } from "../../state/utils.js";
 import { appendSelection, clearDragState } from "../file-list.js";
 import { t } from "../../../core/i18n.js";
 
@@ -45,7 +46,7 @@ async function resolveDropped(paths: string[]): Promise<void> {
     }
     appendSelection(files, skipped.length); // 拖入始终追加到现有列表(重复文件单独提示)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     setError(t("file.readFailed", { error: message }));
   }
 }

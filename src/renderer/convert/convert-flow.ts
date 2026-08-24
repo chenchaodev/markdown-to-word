@@ -8,21 +8,21 @@
 import { statusEl } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import {
-  baseName,
   hideProgress,
   setError,
   setProgress,
   setStatus,
   showProgress,
+  translate,
 } from "../state/utils.js";
+import { actionableError, baseName, errorMessage } from "../state/pure.js";
 import { showBatchDialog, showCompleteDialog, showSummary } from "../ui/dialogs.js";
 import { updateActionButtons } from "./file-list.js";
-import { actionableError } from "../state/pure.js";
 import { t } from "../../core/i18n.js";
 
 /** B9:错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
 function displayError(message: string): string {
-  return actionableError(message, t);
+  return actionableError(message, translate);
 }
 
 /** 单文件转换(与旧版行为一致)。 */
@@ -65,7 +65,7 @@ export async function runConvert(
       }
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     const error = displayError(message);
     setError(t("convert.failed.status", { error }));
     showSummary({ kind: "fail", title: t("convert.failed.title"), error });
@@ -121,7 +121,7 @@ export async function runBatch(
     void state.recentRefreshHandler?.(); // 批次 11:批量结束刷新(主进程已记录成功项;批次 15 R5:经 state 回调)
   } catch (err) {
     state.lastBatchResult = null;
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     setError(t("convert.batch.failed", { error: message }));
     showSummary({ kind: "fail", title: t("convert.batch.failedTitle"), error: message });
   } finally {
@@ -177,7 +177,7 @@ export async function runMerge(): Promise<void> {
       }
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     const error = displayError(message);
     setError(t("convert.merge.failed", { error }));
     showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error });

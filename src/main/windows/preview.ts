@@ -4,7 +4,7 @@
  * 允许并发多开;closed 清理注册与临时文件;focus 时按 mtime 对比源文件,
  * 变更则重渲染;设置变更经 preview:refresh 全量刷新。转换中不触碰预览。
  */
-import { BrowserWindow } from "electron";
+import { BrowserWindow, screen } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { convert } from "../../core/convert.js";
@@ -14,11 +14,16 @@ import { t } from "../../core/i18n.js";
 import { createImageResolver } from "../services/image-downloader.js";
 import { baseNameFromMdPath, errorMessage } from "../ipc/logic.js";
 import { loadSettings } from "../persist/settings.js";
+import { loadUiState, pickWindowBounds, saveUiState, type WindowBounds } from "../persist/ui-state.js";
 import { writeTempHtml } from "../services/temp-html.js";
 import { buildConvertContext } from "../converter/index.js";
 import { getKatexDir } from "../services/resource-dirs.js";
 import { renderMermaid } from "../services/mermaid-service.js";
 import { hardenWebContents } from "../services/web-hardening.js";
+
+/** 预览窗默认尺寸(无有效记忆时使用;MR-16 前为唯一尺寸)。 */
+const PREVIEW_DEFAULT_WIDTH = 900;
+const PREVIEW_DEFAULT_HEIGHT = 1100;
 
 /**
  * 预览窗口注册表(批次 11 迭代 3「E 预览跟随刷新」)。
@@ -55,17 +60,26 @@ async function renderPreviewHtml(mdPath: string): Promise<string> {
   return artifact.html;
 }
 
-/** 预览窗口内显示错误页(源文件缺失/渲染失败;保留窗口,恢复后 focus 会重新检查)。 */
+/** 预览窗口内显示错误页(源文件缺失/渲染失败;保留窗口,恢复后 focus 会重新检查)。
+ *  MR-16:配色随设置主题(theme=dark 深色 / light 浅色 / system 跟随系统深色偏好),
+ *  与主界面 base.css 的双作用域策略一致(显式 data-theme 优先,system 用媒体查询)。 */
 function showPreviewError(win: BrowserWindow, message: string): void {
   if (win.isDestroyed()) return;
+  const theme = loadSettings().theme;
+  const themeAttr = theme === "system" ? "" : ` data-theme="${theme}"`;
   const html = `<!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN"${themeAttr}>
 <head><meta charset="utf-8"><title>${t("preview.errorTitle")}</title>
 <style>
-  body { font-family: "Microsoft YaHei", sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fafafa; }
-  .box { max-width: 480px; padding: 24px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; color: #333; }
+  :root { --bg: #fafafa; --box-bg: #fff; --border: #e0e0e0; --fg: #333; --muted: #666; }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) { --bg: #212121; --box-bg: #2c2c2c; --border: #444; --fg: #e0e0e0; --muted: #a0a0a0; }
+  }
+  html[data-theme="dark"] { --bg: #212121; --box-bg: #2c2c2c; --border: #444; --fg: #e0e0e0; --muted: #a0a0a0; }
+  body { font-family: "Microsoft YaHei", sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: var(--bg); }
+  .box { max-width: 480px; padding: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--box-bg); color: var(--fg); }
   h1 { font-size: 16px; margin: 0 0 8px; }
-  p { font-size: 13px; color: #666; margin: 0; word-break: break-all; }
+  p { font-size: 13px; color: var(--muted); margin: 0; word-break: break-all; }
 </style></head>
 <body><div class="box"><h1>${t("preview.errorTitle")}</h1><p>${escapeHtml(message)}</p></div></body></html>`;
   void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {
@@ -128,14 +142,34 @@ export async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; 
     const tmp = await writeTempHtml(html);
     cleanup = tmp.cleanup;
     const baseName = baseNameFromMdPath(mdPath);
+    // MR-16:预览窗尺寸记忆(与主窗同机制:pickWindowBounds 钳制 + ui-state 独立 key;
+    // 无有效记忆回落默认尺寸)
+    const savedBounds = pickWindowBounds(
+      loadUiState().previewWindowBounds,
+      screen.getAllDisplays().map((display) => display.workArea),
+    );
     win = new BrowserWindow({
-      width: 900,
-      height: 1100,
+      width: PREVIEW_DEFAULT_WIDTH,
+      height: PREVIEW_DEFAULT_HEIGHT,
+      ...(savedBounds ?? {}),
       title: t("preview.windowTitle", { name: baseName }),
       autoHideMenuBar: true,
-      webPreferences: { contextIsolation: true, sandbox: true },
+      // MR-13:webPreferences 全显式(与 mermaid-service 对齐;默认值虽安全,显式防漂移)
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
     hardenWebContents(win); // B1:预览 HTML 含用户 markdown 渲染的链接,导航收口
+    // MR-16:关闭时记忆尺寸(独立 key previewWindowBounds;全屏不记录,与主窗一致;
+    // 多预览并发时以最后关闭者为准)。写盘失败静默,不影响窗口关闭。
+    win.on("close", (event) => {
+      if (win!.isFullScreen()) return;
+      event.preventDefault();
+      const bounds: WindowBounds = win!.getBounds();
+      void saveUiState({ previewWindowBounds: bounds })
+        .catch(() => {
+          /* 静默:UI 状态写失败不影响关闭 */
+        })
+        .finally(() => win!.destroy());
+    });
     const entry: PreviewEntry = {
       win,
       mdPath,

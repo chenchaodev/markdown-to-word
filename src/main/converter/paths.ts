@@ -8,7 +8,14 @@ import path from "node:path";
 import type { ConvertFormat } from "../../core/convert.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 
-const MARKDOWN_EXT_RE = /\.(md|markdown)$/i;
+/** markdown 扩展名判定单源(MR-6:原 single/merge/logic 各持一套正则拼写):
+ *  .md / .markdown,大小写不敏感。 */
+export const MARKDOWN_EXT_RE = /\.(md|markdown)$/i;
+
+/** 路径(或文件名)去掉 markdown 扩展名;非 md 后缀原样返回。 */
+export function stripMarkdownExt(name: string): string {
+  return name.replace(MARKDOWN_EXT_RE, "");
+}
 
 export async function pathExists(p: string): Promise<boolean> {
   try {

@@ -14,7 +14,6 @@
 import {
   batchDialog,
   batchDialogCopyAll,
-  batchDialogError,
   batchDialogOk,
   batchDialogReveal,
   batchDialogRetry,
@@ -32,11 +31,12 @@ import {
 } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
 import { setError } from "../../state/utils.js";
-import { batchRetryPaths, batchSuccessPaths } from "../../state/pure.js";
+import { batchRetryPaths, batchSuccessPaths, errorMessage } from "../../state/pure.js";
 import {
   hideBatchDialog,
   hideCompleteDialog,
   showBatchDialog,
+  showBatchDialogError,
   showDialogError,
 } from "../../ui/dialogs.js";
 import { applySelection } from "../file-list.js";
@@ -45,6 +45,9 @@ import { closePresetSaveDialog, setSuppressCompleteDialog } from "../../settings
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";
 
+/** 复制成功反馈文案恢复时长(MR-15 具名;「已复制」→ 原文案)。 */
+const COPY_FEEDBACK_MS = 1500;
+
 /* ---------- 本域事件绑定(index 组合入口逐域调用) ---------- */
 export function bindDialogEvents(): void {
   // 完成弹窗:打开所在文件夹 / 打开文件(失败在弹窗内提示,不打断)
@@ -52,10 +55,12 @@ export function bindDialogEvents(): void {
     if (!state.dialogOutputPath) return;
     window.api
       .revealInFolder(state.dialogOutputPath)
+      .then((result) => {
+        // MR-12:白名单外路径主进程返回 { ok:false, error },走同一错误提示通道
+        if (!result.ok) showDialogError(t("common.revealFailed", { error: result.error ?? "" }));
+      })
       .catch((err) =>
-        showDialogError(
-          t("common.revealFailed", { error: err instanceof Error ? err.message : String(err) }),
-        ),
+        showDialogError(t("common.revealFailed", { error: errorMessage(err) })),
       );
   });
 
@@ -67,9 +72,7 @@ export function bindDialogEvents(): void {
         if (!result.ok) showDialogError(result.error ?? t("common.openFailedPlain"));
       })
       .catch((err) =>
-        showDialogError(
-          t("common.openFailed", { error: err instanceof Error ? err.message : String(err) }),
-        ),
+        showDialogError(t("common.openFailed", { error: errorMessage(err) })),
       );
   });
 
@@ -81,11 +84,12 @@ export function bindDialogEvents(): void {
     if (!target) return;
     window.api
       .revealInFolder(target)
+      .then((result) => {
+        // MR-12:白名单外路径主进程返回 { ok:false, error };MR-10:走 showBatchDialogError 封装
+        if (!result.ok) showBatchDialogError(t("common.revealFailed", { error: result.error ?? "" }));
+      })
       .catch((err) => {
-        batchDialogError.textContent = t("common.revealFailed", {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        batchDialogError.classList.remove("hidden");
+        showBatchDialogError(t("common.revealFailed", { error: errorMessage(err) }));
       });
   });
 
@@ -109,19 +113,18 @@ export function bindDialogEvents(): void {
   // 批次 11 迭代 2:批量弹窗「复制全部路径」——成功项输出路径换行拼接复制到剪贴板
   batchDialogCopyAll.addEventListener("click", () => {
     void (async () => {
-    if (!state.lastBatchResult) return;
-    const paths = batchSuccessPaths(state.lastBatchResult.items);
-    if (paths.length === 0) return;
-    try {
-      await navigator.clipboard.writeText(paths.join("\n"));
-      batchDialogCopyAll.textContent = t("common.copied");
-      window.setTimeout(() => {
-        batchDialogCopyAll.textContent = t("batch.copyAll");
-      }, 1500);
-    } catch {
-      batchDialogError.textContent = t("common.copyFailed");
-      batchDialogError.classList.remove("hidden");
-    }
+      if (!state.lastBatchResult) return;
+      const paths = batchSuccessPaths(state.lastBatchResult.items);
+      if (paths.length === 0) return;
+      try {
+        await navigator.clipboard.writeText(paths.join("\n"));
+        batchDialogCopyAll.textContent = t("common.copied");
+        window.setTimeout(() => {
+          batchDialogCopyAll.textContent = t("batch.copyAll");
+        }, COPY_FEEDBACK_MS);
+      } catch {
+        showBatchDialogError(t("common.copyFailed"));
+      }
     })();
   });
 
@@ -133,10 +136,11 @@ export function bindDialogEvents(): void {
   // 批次 7:汇总条「打开所在文件夹 / 打开文件 / 失败详情」
   summaryRevealBtn.addEventListener("click", () => {
     if (!state.summaryOutputPath) return;
-    window.api.revealInFolder(state.summaryOutputPath).catch((err) => {
-      setError(
-        t("common.revealFailed", { error: err instanceof Error ? err.message : String(err) }),
-      );
+    window.api.revealInFolder(state.summaryOutputPath).then((result) => {
+      // MR-12:白名单外路径主进程返回 { ok:false, error },走同一错误提示通道
+      if (!result.ok) setError(t("common.revealFailed", { error: result.error ?? "" }));
+    }).catch((err) => {
+      setError(t("common.revealFailed", { error: errorMessage(err) }));
     });
   });
 
@@ -148,7 +152,7 @@ export function bindDialogEvents(): void {
         if (!result.ok) setError(result.error ?? t("common.openFailedPlain"));
       })
       .catch((err) =>
-        setError(t("common.openFailed", { error: err instanceof Error ? err.message : String(err) })),
+        setError(t("common.openFailed", { error: errorMessage(err) })),
       );
   });
 
@@ -159,17 +163,17 @@ export function bindDialogEvents(): void {
   // 批次 7:完成弹窗「复制路径」(仅成功态显示;失败态隐藏该按钮)
   completeDialogCopy.addEventListener("click", () => {
     void (async () => {
-    const text = completeOutputPath.textContent ?? "";
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      completeDialogCopy.textContent = t("common.copied");
-      window.setTimeout(() => {
-        completeDialogCopy.textContent = t("common.copyPath");
-      }, 1500);
-    } catch {
-      showDialogError(t("common.copyFailed"));
-    }
+      const text = completeOutputPath.textContent ?? "";
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        completeDialogCopy.textContent = t("common.copied");
+        window.setTimeout(() => {
+          completeDialogCopy.textContent = t("common.copyPath");
+        }, COPY_FEEDBACK_MS);
+      } catch {
+        showDialogError(t("common.copyFailed"));
+      }
     })();
   });
 

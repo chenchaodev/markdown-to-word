@@ -2,7 +2,8 @@
  * 主窗口创建与关闭确认族(自 main/index.ts 抽取,行为零变化):
  * createWindow(位置/最大化记忆 + web 加固 + 关闭确认拦截)与
  * confirmCloseDuringConvert(转换进行中关窗确认)。
- * 依赖方向:本模块 → ipc/register(共享 ctxByWebContents,查询转换进行中状态);
+ * 依赖方向:本模块 → windows/web-contents-registry(共享 ctxByWebContents,查询
+ * 转换进行中状态;MR-9 注册表下沉后不再依赖 ipc 层);
  * menu.ts 反向 import 本模块的 getMainWindow(菜单定位主窗口),不构成循环。
  */
 import { BrowserWindow, dialog, screen } from "electron";
@@ -12,7 +13,7 @@ import { t } from "../../core/i18n.js";
 import { disposeMermaidService } from "../services/mermaid-service.js";
 import { loadUiState, pickWindowBounds, saveUiState } from "../persist/ui-state.js";
 import { hardenWebContents } from "../services/web-hardening.js";
-import { ctxByWebContents } from "../ipc/register.js";
+import { ctxByWebContents } from "./web-contents-registry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -91,6 +92,8 @@ const closeAborts = new WeakSet<BrowserWindow>();
 
 /** 放弃转换后等待 ctx 释放(finally 删除)再关窗;超时强杀防卡死。 */
 const CLOSE_ABORT_TIMEOUT_MS = 30_000;
+/** 等待 ctx 释放的轮询间隔(MR-15 具名;粒度权衡:过密空转、过疏延迟关窗)。 */
+const CLOSE_ABORT_POLL_MS = 100;
 
 /**
  * B2:关窗时转换进行中的确认弹窗。
@@ -113,7 +116,7 @@ async function confirmCloseDuringConvert(win: BrowserWindow): Promise<void> {
   ctxByWebContents.get(id)?.cancel();
   const deadline = Date.now() + CLOSE_ABORT_TIMEOUT_MS;
   while (ctxByWebContents.has(id) && Date.now() < deadline && !win.isDestroyed()) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, CLOSE_ABORT_POLL_MS));
   }
   if (win.isDestroyed()) return;
   if (ctxByWebContents.has(id)) win.destroy();

@@ -23,8 +23,8 @@ import {
   statusEl,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { baseName, setStatus, truncateMiddle } from "../state/utils.js";
-import { partitionDuplicates, selectionStatus } from "../state/pure.js";
+import { setStatus, translate } from "../state/utils.js";
+import { baseName, partitionDuplicates, selectionStatus, truncateMiddle } from "../state/pure.js";
 import { t } from "../../core/i18n.js";
 
 /** 按当前选择渲染拖放区三种状态,并刷新操作按钮可用性。 */
@@ -203,7 +203,7 @@ export function applySelection(files: string[], skipped = 0, duplicates = 0): vo
     files.length === 1
       ? truncateMiddle(files[0]!) // length === 1 分支下标 0 必存在
       : t("file.selectedSummary", { count: files.length });
-  const full = selectionStatus(summary, skipped, duplicates, t);
+  const full = selectionStatus(summary, skipped, duplicates, translate);
   setStatus(full, false, skipped > 0 || duplicates > 0);
   statusEl.title = files.length === 1 ? files[0]! : full; // 同上,length === 1 分支
 }

@@ -25,12 +25,14 @@ import type { RecentFile, UiState } from "../../main/persist/ui-state.js";
 import { applySelection } from "../convert/file-list.js";
 import { runConvert } from "../convert/convert-flow.js";
 import { baseName, formatRecentTime } from "../state/pure.js";
-import { setStatus } from "../state/utils.js";
+import { setStatus, translate } from "../state/utils.js";
 import { state } from "../state/state.js";
 import { syncSuppressCompleteDialog } from "../settings/settings-panel.js";
 import { t } from "../../core/i18n.js";
 
-/** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。 */
+/** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。
+ *  MR-4 双源显式化:本值必须与 main 侧 ui-state.ts MAX_RECENT_FILES 恒等(恒等断言
+ *  由 test 侧守护段落地,车道 D);改此值须双侧同步。 */
 const MAX_RECENT_FILES = 10;
 
 /* ---------- 最近转换区块渲染 ---------- */
@@ -68,7 +70,7 @@ export function renderRecentList(recent: RecentFile[]): void {
 
       const time = document.createElement("span");
       time.className = "recent-time";
-      time.textContent = formatRecentTime(item.ts, undefined, t);
+      time.textContent = formatRecentTime(item.ts, undefined, translate);
 
       btn.append(name, format, time);
       li.appendChild(btn);
@@ -125,7 +127,8 @@ export async function refreshRecentFiles(): Promise<void> {
   }
 }
 
-/* ---------- 事件绑定 ---------- */
+/* ---------- 事件绑定(MR-10:顶层监听迁入 bind*Events 范式,组合根 renderer.ts
+ *  在 bindEvents() 后调用;原 recentList 上两个独立 click 委托合并为一个) ---------- */
 /** 设置面板 details 展开态记忆(批次 11;ui-state 独立于 settings)。
  *  批次 N:单一设置面板;typography 字段为兼容主进程形状保留(镜像同值,不再被读取)。 */
 function persistPanelOpen(): void {
@@ -138,26 +141,46 @@ function persistPanelOpen(): void {
     });
 }
 
-// B9 交互语义(审计拍板):单击条目 = 仅加载到列表(不转换,与「仅加载」按钮同效);
-// 双击条目 = 直接重转(沿用该条目记录的格式)。原「单击一键重转」拆分为两档,
-// 降低误触即转的成本;双击由两次 click 组成,首次 click 已完成加载,二次落 dblclick 重转。
-recentList.addEventListener("click", (event) => {
-  if (state.mode !== null) return; // 转换中守卫(B8:原 converting 字段合一为 mode 单源)
-  const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-item");
-  if (!btn?.dataset.path) return;
-  loadRecentItem(btn.dataset.path);
-});
+/**
+ * B9 交互语义(审计拍板):单击条目 = 仅加载到列表(不转换,与「仅加载」按钮同效);
+ * 双击条目 = 直接重转(沿用该条目记录的格式)。原「单击一键重转」拆分为两档,
+ * 降低误触即转的成本;双击由两次 click 组成,首次 click 已完成加载,二次落 dblclick 重转。
+ * MR-10:recentList 的两个 click 监听合并为单个委托——「仅加载」按钮与条目主区域
+ * 动作相同(loadRecentItem),按 closest 命中顺序判定,行为与拆分前一致。
+ */
+export function bindRecentFilesEvents(): void {
+  // 单击委托:「仅加载」按钮优先命中(不是 .recent-item 后代,互斥天然成立),否则条目主区域
+  recentList.addEventListener("click", (event) => {
+    if (state.mode !== null) return; // 转换中守卫(B8:原 converting 字段合一为 mode 单源)
+    const target = event.target as HTMLElement;
+    const btn =
+      target.closest<HTMLButtonElement>(".recent-load") ??
+      target.closest<HTMLButtonElement>(".recent-item");
+    if (!btn?.dataset.path) return;
+    loadRecentItem(btn.dataset.path);
+  });
 
-// 双击条目 = 直接重转;落在「仅加载」按钮上的双击不触发(按钮单击已有各自语义)
-recentList.addEventListener("dblclick", (event) => {
-  if (state.mode !== null) return;
-  if ((event.target as HTMLElement).closest(".recent-load")) return;
-  const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-item");
-  if (!btn?.dataset.path) return;
-  const filePath = btn.dataset.path;
-  const format = (btn.dataset.format ?? state.selectedFormat) as "docx" | "pdf";
-  void runConvert(filePath, format);
-});
+  // 双击条目 = 直接重转;落在「仅加载」按钮上的双击不触发(按钮单击已有各自语义)
+  recentList.addEventListener("dblclick", (event) => {
+    if (state.mode !== null) return;
+    if ((event.target as HTMLElement).closest(".recent-load")) return;
+    const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-item");
+    if (!btn?.dataset.path) return;
+    const filePath = btn.dataset.path;
+    const format = (btn.dataset.format ?? state.selectedFormat) as "docx" | "pdf";
+    void runConvert(filePath, format);
+  });
+
+  // 「清空最近」:清空并隐藏区块(以主进程合并结果为准)
+  recentClearBtn.addEventListener("click", () => {
+    void window.api
+      .uiStateSet({ recentFiles: [] })
+      .then((ui) => renderRecentList(ui.recentFiles))
+      .catch(() => renderRecentList([]));
+  });
+
+  settingsPanel.addEventListener("toggle", persistPanelOpen);
+}
 
 /** 单击加载:替换选择载入列表(不转换),状态区提示文件名。 */
 function loadRecentItem(filePath: string): void {
@@ -165,25 +188,3 @@ function loadRecentItem(filePath: string): void {
   setStatus(t("recent.loaded", { name: baseName(filePath) }));
   statusEl.title = filePath; // 悬浮可看完整路径(applySelection 的 title 被覆盖后补回)
 }
-
-// 批次 12(C12):「仅加载」→ 替换选择载入列表(不转换),状态区提示文件名;
-// 与主区域点击互斥(loadBtn 不是 .recent-item 的后代,上方委托天然跳过)
-recentList.addEventListener("click", (event) => {
-  if (state.mode !== null) return; // 转换中守卫(B8:原 converting 字段合一为 mode 单源)
-  const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-load");
-  if (!btn?.dataset.path) return;
-  const filePath = btn.dataset.path;
-  applySelection([filePath]);
-  setStatus(t("recent.loaded", { name: baseName(filePath) }));
-  statusEl.title = filePath; // 悬浮可看完整路径(applySelection 的 title 被覆盖后补回)
-});
-
-// 「清空最近」:清空并隐藏区块(以主进程合并结果为准)
-recentClearBtn.addEventListener("click", () => {
-  void window.api
-    .uiStateSet({ recentFiles: [] })
-    .then((ui) => renderRecentList(ui.recentFiles))
-    .catch(() => renderRecentList([]));
-});
-
-settingsPanel.addEventListener("toggle", persistPanelOpen);

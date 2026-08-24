@@ -1,7 +1,7 @@
 /**
- * 主进程 IPC 纯逻辑层(批次 15 R6):自 index.ts IPC handler 抽出的无 Electron 依赖
- * 纯函数(解析/合并/校验/路径处理/数据变换),供直测。
- * 约定:只放不依赖 electron API 的纯逻辑;对话框/文件 IO/窗口/持久化留在 index.ts 薄壳。
+ * 主进程 IPC 纯逻辑层(批次 15 R6):自 register.ts IPC handler 抽出的无 Electron
+ * 依赖纯函数(解析/合并/校验/路径处理/数据变换),供直测。
+ * 约定:只放不依赖 electron API 的纯逻辑;对话框/文件 IO/窗口/持久化留在 register.ts 薄壳。
  */
 import path from "node:path";
 import type { ConvertFormat } from "../../core/convert.js";
@@ -9,13 +9,14 @@ import type { CustomPreset } from "../../core/settings/settings-defaults.js";
 import { mergePresets, parsePresetsFile } from "../persist/settings.js";
 import type { RecentFile } from "../persist/ui-state.js";
 import type { ConvertContext } from "../converter/index.js";
+import { stripMarkdownExt } from "../converter/paths.js";
 
 /** 错误归一:Error → message,其余 → String(err)(与 index.ts 原内联一致)。 */
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/* ---------- convert 系 handler 共用样板(B11 自 index.ts runWithCtx 抽出,行为等价):
+/* ---------- convert 系 handler 共用样板(B11 自 register.ts runWithCtx 抽出,行为等价):
  * context 注册/释放 + 错误归一化集中一处。Electron 触点(event.sender/BrowserWindow/
  * ConvertCanceledError 实例判定)经 deps 注入,本模块保持零 electron 运行时依赖可直测。
  * 取消语义(刚根治的历史 bug 领域)不再分散在三个 handler:
@@ -23,15 +24,15 @@ export function errorMessage(err: unknown): string {
  * - finally 注销引用(含异常/取消路径,避免悬挂)
  * - 取消错误 → onCanceled()(调用方给出取消结果形态);其他错误归一 { ok:false, error } ---------- */
 
-/** runConvertTask 的环境依赖(由 index.ts 注入真实实现,测试注入 mock)。 */
+/** runConvertTask 的环境依赖(由 register.ts 注入真实实现,测试注入 mock)。 */
 export interface ConvertTaskDeps {
   /** 新建转换 context(每次调用新建,取消标志不复用)。 */
   createContext: () => ConvertContext;
-  /** 按 key 注册 context(index.ts:ctxByWebContents.set(senderId, ctx))。 */
+  /** 按 key 注册 context(register.ts:ctxByWebContents.set(senderId, ctx))。 */
   registerCtx: (ctx: ConvertContext) => void;
-  /** 注销 context(finally 路径;index.ts:ctxByWebContents.delete(senderId))。 */
+  /** 注销 context(finally 路径;register.ts:ctxByWebContents.delete(senderId))。 */
   unregisterCtx: () => void;
-  /** 取消错误判定(index.ts:err instanceof ConvertCanceledError)。 */
+  /** 取消错误判定(register.ts:err instanceof ConvertCanceledError)。 */
   isCanceledError: (err: unknown) => boolean;
 }
 
@@ -80,9 +81,10 @@ export function buildRecentFileEntries(
     .map((p) => ({ path: p, name: path.basename(p), format, ts }));
 }
 
-/** 预览标题/基础名:去 .md/.markdown 扩展(大小写不敏感),其余原样。 */
+/** 预览标题/基础名:去 .md/.markdown 扩展(大小写不敏感),其余原样。
+ *  MR-6:扩展名判定单源 converter/paths.ts(stripMarkdownExt)。 */
 export function baseNameFromMdPath(mdPath: string): string {
-  return path.basename(mdPath).replace(/\.(md|markdown)$/i, "");
+  return stripMarkdownExt(path.basename(mdPath));
 }
 
 /** 预设导入纯逻辑结果:解析失败 → 原错误文案;成功 → 合并结果(含 presets 供持久化)。 */
@@ -90,7 +92,7 @@ export type ImportPresetsMergeResult =
   | { ok: false; error: string }
   | { ok: true; presets: CustomPreset[]; imported: number; overridden: number };
 
-/** 预设导入纯逻辑(批次 13 流程的解析+合并+整形;对话框/读文件/持久化在 index.ts)。 */
+/** 预设导入纯逻辑(批次 13 流程的解析+合并+整形;对话框/读文件/持久化在 register.ts)。 */
 export function importPresetsFromText(
   text: string,
   existing: readonly CustomPreset[],

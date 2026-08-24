@@ -1,9 +1,9 @@
 /**
  * IPC 注册体(自 main/index.ts 抽取,行为零变化):全部 ipcMain.handle 注册 +
  * convert 系 handler 共用的 ctx 注册表与样板。
- * 依赖方向(单向,防循环):本模块 → windows/preview / converter / persist /
- * services / logic;windows/main-window 反向 import 本模块的 ctxByWebContents
- * (关窗确认需查询转换进行中状态),故共享状态必须收敛于此而非窗口模块。
+ * 依赖方向(单向,防循环):本模块 → windows/preview、windows/web-contents-registry
+ * (ctxByWebContents 注册表,MR-9 自本模块下沉)/ converter / persist /
+ * services / logic;窗口层不再反向依赖本模块。
  */
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
@@ -50,12 +50,7 @@ import {
 import { getKatexDir } from "../services/resource-dirs.js";
 import { IPC_CHANNELS as CH, type ConvertMode } from "./channels.js";
 import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";
-
-/**
- * IPC 层持有各窗口进行中的转换 context(convert:cancel 入口按 webContents id 取,
- * 多窗口并发互不串扰,M3);转换完成/异常/取消后删除,避免悬挂引用。
- */
-export const ctxByWebContents = new Map<number, ConvertContext>();
+import { ctxByWebContents } from "../windows/web-contents-registry.js";
 
 /**
  * convert 系 handler 共用样板(R10-3;B11 抽纯逻辑至 ipc-logic.runConvertTask,
@@ -111,6 +106,55 @@ async function lastOpenDirIfValid(): Promise<string | undefined> {
   }
 }
 
+/**
+ * 导入类 handler 共用模板(MR-7 自 presetsImport/cssImport 同构流程抽出):
+ * 打开对话框(取消 → { ok:true, canceled:true })→ readFile → process 校验/持久化
+ * → 成功后记忆所选目录 → catch 归一为可读文案。process 返回 ok:false 时跳过目录记忆。
+ */
+async function importFileViaDialog<T extends ImportPresetsResult | ImportPdfCssResult>(options: {
+  title: string;
+  filters: { name: string; extensions: string[] }[];
+  process: (text: string, filePath: string) => Promise<T>;
+}): Promise<T> {
+  const result = await dialog.showOpenDialog({
+    title: options.title,
+    defaultPath: await lastOpenDirIfValid(),
+    filters: options.filters,
+    properties: ["openFile"],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    // 两个结果联合类型均含 { ok:true, canceled:true } 分支,此处收窄安全
+    return { ok: true, canceled: true } as T;
+  }
+  try {
+    const filePath = result.filePaths[0]!; // 上方已拦截取消与空列表,首项必存在
+    const text = await fs.readFile(filePath, "utf8");
+    const out = await options.process(text, filePath);
+    if (out.ok) {
+      // 与其它打开对话框一致:成功后记忆所选目录(下次默认打开位置)
+      await saveUiState({ lastOpenDir: path.dirname(filePath) }).catch(() => undefined);
+    }
+    return out;
+  } catch (err) {
+    return { ok: false, error: t("preset.readFailed", { error: errorMessage(err) }) } as T;
+  }
+}
+
+/* ---------- MR-12 加固:shell.openPath/showItemInFolder 白名单 ----------
+ * 仅允许本会话成功转换产物的输出路径(各转换 handler 成功时登记)。被攻破的
+ * renderer 原本可借主进程打开任意文件;白名单外路径拒绝并返回错误,renderer
+ * 走既有错误提示通道展示。会话级集合即可覆盖全部合法入口(弹窗/汇总条的
+ * 路径均来自当次转换结果);应用重启后 renderer 侧缓存同样清零,无合法场景受损。 */
+const allowedOutputPaths = new Set<string>();
+
+function allowOutputPath(outputPath: string): void {
+  allowedOutputPaths.add(outputPath);
+}
+
+function isAllowedOutputPath(p: string): boolean {
+  return allowedOutputPaths.has(p);
+}
+
 export function registerIpc(): void {
   // 选择多个 markdown 文件(批量/合并入口;取消返回 []);
   // 批次 11:defaultPath 记忆上次目录,成功后回写所选文件所在目录
@@ -140,6 +184,7 @@ export function registerIpc(): void {
         const send = (stage: string): void =>
           win?.webContents.send(CH.convertProgress, { stage, mode: "single" satisfies ConvertMode });
         const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
+        allowOutputPath(outputPath); // MR-12:产物路径入 shell 白名单
         await recordRecentFiles([filePath], format); // 批次 11:成功后记最近文件
         return { ok: true, outputPath, warnings };
       },
@@ -188,6 +233,10 @@ export function registerIpc(): void {
           const send = (info: BatchProgressInfo): void =>
             win?.webContents.send(CH.convertBatchProgress, info);
           const result = await batchConvertImpl(files, format, send, ctx, getKatexDir());
+          // MR-12:成功项产物路径入 shell 白名单
+          for (const item of result.items) {
+            if (item.ok && item.outputPath) allowOutputPath(item.outputPath);
+          }
           // 批次 11:成功后记录每个成功项的最近文件条目
           await recordRecentFiles(
             result.items.filter((item) => item.ok && item.file).map((item) => item.file),
@@ -215,7 +264,10 @@ export function registerIpc(): void {
           win?.webContents.send(CH.convertProgress, { stage, mode: "merge" satisfies ConvertMode });
         const result = await mergeConvertImpl(files, format, send, ctx, getKatexDir());
         // 批次 11:合并成功 → 全部源文件均成功转换,逐个记最近文件
-        if (result.ok) await recordRecentFiles(files, format);
+        if (result.ok) {
+          if (result.outputPath) allowOutputPath(result.outputPath); // MR-12:产物路径入 shell 白名单
+          await recordRecentFiles(files, format);
+        }
         return result;
       },
       () => ({ ok: false, canceled: true, error: t("common.canceled") }),
@@ -231,34 +283,24 @@ export function registerIpc(): void {
 
   // 批次 13:导入模板预设 JSON(选文件 → 解析校验 → 同名覆盖合并 → 上限 10 → 持久化)。
   // 取消 → { ok:true, canceled:true };解析/读取异常 → { ok:false, error }(可读文案)
-  ipcMain.handle(CH.presetsImport, async (): Promise<ImportPresetsResult> => {
-    const result = await dialog.showOpenDialog({
+  // MR-7:对话框/读文件/记目录/catch 样板收敛 importFileViaDialog
+  ipcMain.handle(CH.presetsImport, (): Promise<ImportPresetsResult> =>
+    importFileViaDialog({
       title: t("dialog.importPresets"),
-      defaultPath: await lastOpenDirIfValid(),
       filters: [{ name: "JSON", extensions: ["json"] }],
-      properties: ["openFile"],
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      return { ok: true, canceled: true };
-    }
-    try {
-      const presetPath = result.filePaths[0]!; // 上方已拦截取消与空列表,首项必存在
-      const text = await fs.readFile(presetPath, "utf8");
-      const merged = importPresetsFromText(text, loadSettings().customPresets);
-      if (!merged.ok) return { ok: false, error: merged.error };
-      await updateSettings({ customPresets: merged.presets });
-      // 与其它打开对话框一致:成功后记忆所选目录(下次默认打开位置)
-      await saveUiState({ lastOpenDir: path.dirname(presetPath) }).catch(() => undefined);
-      return {
-        ok: true,
-        canceled: false,
-        imported: merged.imported,
-        overridden: merged.overridden,
-      };
-    } catch (err) {
-      return { ok: false, error: t("preset.readFailed", { error: errorMessage(err) }) };
-    }
-  });
+      process: async (text) => {
+        const merged = importPresetsFromText(text, loadSettings().customPresets);
+        if (!merged.ok) return { ok: false, error: merged.error };
+        await updateSettings({ customPresets: merged.presets });
+        return {
+          ok: true,
+          canceled: false,
+          imported: merged.imported,
+          overridden: merged.overridden,
+        };
+      },
+    }),
+  );
 
   // 批次 13:导出全部自定义预设为 JSON(保存对话框;schemaVersion:1 包装,2 空格缩进)。
   // 空预设 main 侧前置拦截(renderer 侧可同样提示,两处一致);取消 → { ok:true, canceled:true }
@@ -283,29 +325,19 @@ export function registerIpc(): void {
   // 批次 16:导入 CSS 文件作为 PDF 样式模板(选文件 → 读内容 → 大小上限校验 → 返回内容+文件名)。
   // 内容由 renderer 经 settings:set 持久化到 settings.pdfCss(pdf 渲染时追加到默认样式后覆盖)。
   // 取消 → { ok:true, canceled:true };读取异常/超限 → { ok:false, error }(可读文案)
-  ipcMain.handle(CH.cssImport, async (): Promise<ImportPdfCssResult> => {
-    const result = await dialog.showOpenDialog({
+  // MR-7:对话框/读文件/记目录/catch 样板收敛 importFileViaDialog
+  ipcMain.handle(CH.cssImport, (): Promise<ImportPdfCssResult> =>
+    importFileViaDialog({
       title: t("dialog.importPdfCss"),
-      defaultPath: await lastOpenDirIfValid(),
       filters: [{ name: "CSS", extensions: ["css"] }],
-      properties: ["openFile"],
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      return { ok: true, canceled: true };
-    }
-    try {
-      const cssPath = result.filePaths[0]!; // 上方已拦截取消与空列表,首项必存在
-      const css = await fs.readFile(cssPath, "utf8");
-      if (Buffer.byteLength(css, "utf8") > MAX_PDF_CSS_BYTES) {
-        return { ok: false, error: t("settings.cssTooLarge", { kb: MAX_PDF_CSS_BYTES / 1024 }) };
-      }
-      // 与其它打开对话框一致:成功后记忆所选目录(下次默认打开位置)
-      await saveUiState({ lastOpenDir: path.dirname(cssPath) }).catch(() => undefined);
-      return { ok: true, canceled: false, css, name: path.basename(cssPath) };
-    } catch (err) {
-      return { ok: false, error: t("preset.readFailed", { error: errorMessage(err) }) };
-    }
-  });
+      process: async (css, cssPath) => {
+        if (Buffer.byteLength(css, "utf8") > MAX_PDF_CSS_BYTES) {
+          return { ok: false, error: t("settings.cssTooLarge", { kb: MAX_PDF_CSS_BYTES / 1024 }) };
+        }
+        return { ok: true, canceled: false, css, name: path.basename(cssPath) };
+      },
+    }),
+  );
 
   // 批次 11:UI 状态读写(最近文件/会话文件/记忆目录/窗口位置/面板展开态;独立于 settings)
   ipcMain.handle(CH.uiStateGet, (): UiState => loadUiState());
@@ -318,13 +350,19 @@ export function registerIpc(): void {
     return filterExistingPaths(isStringArray(paths) ? paths : []);
   });
 
-  // 导出后行为:资源管理器中显示 / 默认程序打开(B1:入参类型守卫)
-  ipcMain.handle(CH.shellRevealInFolder, (_event, filePath: unknown): void => {
-    if (isString(filePath)) shell.showItemInFolder(filePath);
+  // 导出后行为:资源管理器中显示 / 默认程序打开(B1:入参类型守卫)。
+  // MR-12:仅允许本会话转换产物白名单内的路径;拒绝时返回 { ok:false, error }
+  // (revealInFolder 签名由 void 改为结果对象,renderer 据此走既有错误提示通道)。
+  ipcMain.handle(CH.shellRevealInFolder, (_event, filePath: unknown): { ok: boolean; error?: string } => {
+    if (!isString(filePath)) return { ok: false, error: t("common.invalidParams") };
+    if (!isAllowedOutputPath(filePath)) return { ok: false, error: t("shell.notAllowed") };
+    shell.showItemInFolder(filePath);
+    return { ok: true };
   });
 
   ipcMain.handle(CH.shellOpenPath, async (_event, filePath: unknown): Promise<{ ok: boolean; error?: string }> => {
     if (!isString(filePath)) return { ok: false, error: t("common.invalidParams") };
+    if (!isAllowedOutputPath(filePath)) return { ok: false, error: t("shell.notAllowed") }; // MR-12 白名单
     const error = await shell.openPath(filePath);
     return error ? { ok: false, error } : { ok: true };
   });

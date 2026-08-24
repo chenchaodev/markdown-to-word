@@ -32,96 +32,29 @@
  * ui/(dialogs/recent-files)、style/(base/drop/settings/dialogs 四 css);
  * 本文件仍为组合根,import 路径随目录更新,行为零变化。
  */
-import { type AppSettings } from "../core/settings/settings-defaults.js";
-import type { UiState } from "../main/persist/ui-state.js";
 import { state } from "./state/state.js";
-import type { BatchProgressInfo, BatchResult, ConvertProgressPayload } from "./state/state.js";
 import { updateActionButtons } from "./convert/file-list.js";
 import { bindEvents } from "./convert/events/index.js";
 import { bindSettingsEvents } from "./settings/settings-bindings.js";
 import { loadSettings } from "./settings/settings-panel.js";
-import { initUiStateRestore, refreshRecentFiles } from "./ui/recent-files.js";
+import {
+  bindRecentFilesEvents,
+  initUiStateRestore,
+  refreshRecentFiles,
+} from "./ui/recent-files.js";
 import { t } from "../core/i18n.js";
-import type { ConvertWarning } from "../core/i18n.js";
+
+/**
+ * MR-5:window.api 类型由 preload 实现推导(PreloadApi = typeof api,单源
+ * src/main/preload.cts),不再手工镜像约 80 行 declare global——preload 改签名时
+ * renderer 调用点编译期暴露;channel 名恒等测试(ipc-channels.test.js)保留。
+ * NodeNext 下 .cjs 说明符解析到 .cts 源文件;import type 编译期擦除。
+ */
+import type { PreloadApi } from "../main/preload.cjs";
 
 declare global {
   interface Window {
-    api: {
-      /** 拖放文件 → 真实路径(File.path 已被 Electron 32+ 移除,须经主进程 webUtils 解析)。 */
-      getPathForFile: (file: File) => string;
-      /** 多选文件对话框,返回所选文件路径数组;空数组 = 用户取消。 */
-      openMarkdowns: () => Promise<string[]>;
-      /** 展开拖入路径(文件 + 文件夹递归),过滤出 Markdown 文件;skipped 为被跳过的项。 */
-      collectMarkdowns: (
-        paths: string[],
-      ) => Promise<{ files: string[]; skipped: string[] }>;
-      convert: (
-        filePath: string,
-        format: "docx" | "pdf",
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: ConvertWarning[]; canceled?: boolean }>;
-      /** 批量转换:每文件独立输出;始终 ok:true,成败看 items 逐条。 */
-      convertBatch: (
-        files: string[],
-        format: "docx" | "pdf",
-      ) => Promise<BatchResult>;
-      /** 合并转换:所有文件合成一个文档。 */
-      convertMerge: (
-        files: string[],
-        format: "docx" | "pdf",
-      ) => Promise<{ ok: boolean; outputPath?: string; error?: string; warnings?: ConvertWarning[]; canceled?: boolean }>;
-      /** 请求取消当前转换(单文件 / 批量 / 合并通用;批量在文件间检查)。 */
-      convertCancel: () => Promise<void>;
-      /** 选择输出目录对话框(批次 7);用户取消返回 null。 */
-      selectDir: () => Promise<string | null>;
-      /** 订阅转换进度(B9 起阶段键:read/render/done + pdf 细分 parse/inline/
-       *  mermaid/katex/print;B12 起 payload 带 mode 标识,未知阶段键 renderer
-       *  原样兜底),返回取消订阅函数。 */
-      onConvertProgress: (cb: (info: ConvertProgressPayload) => void) => () => void;
-      /** 订阅批量转换进度(第 i 个文件 / 阶段文案),返回取消订阅函数。 */
-      onBatchProgress: (cb: (info: BatchProgressInfo) => void) => () => void;
-      /** 读取持久化设置(启动时回填控件)。 */
-      settingsGet: () => Promise<AppSettings>;
-      /** 局部更新设置并持久化,返回合并后的完整设置。 */
-      settingsSet: (patch: Partial<AppSettings>) => Promise<AppSettings>;
-      /** 应用版本号(标题区显示,与「关于」对话框同源)。 */
-      getVersion: () => Promise<string>;
-      /** 读取 UI 状态(最近文件/会话文件/记忆目录/窗口位置/面板展开态)。 */
-      uiStateGet: () => Promise<UiState>;
-      /** 局部更新 UI 状态并持久化,返回合并后的完整状态。 */
-      uiStateSet: (patch: Partial<UiState>) => Promise<UiState>;
-      /** 保序过滤仍存在的路径(会话文件逐项校验,缺失剔除)。 */
-      filterExistingPaths: (paths: string[]) => Promise<string[]>;
-      /** 在资源管理器中显示目标文件。 */
-      revealInFolder: (filePath: string) => Promise<void>;
-      /** 用系统默认程序打开目标文件;失败返回 { ok: false, error }。 */
-      openFile: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
-      /** 在主进程独立窗口预览转换排版(与 PDF 同排版);失败返回 { ok: false, error }。 */
-      openPreview: (mdPath: string) => Promise<{ ok: boolean; error?: string }>;
-      /** 批次 11 迭代 3:刷新所有预览窗口(设置变更后调用;无预览窗口时为空操作)。 */
-      previewRefresh: () => Promise<void>;
-      /** 批次 13:从 JSON 文件导入自定义预设(main 内选文件,与现有合并:同名覆盖,上限 10);
-       *  canceled=true 为用户取消。 */
-      importPresets: () => Promise<
-        | { ok: true; canceled: true }
-        | { ok: true; canceled: false; imported: number; overridden: number }
-        | { ok: false; error: string }
-      >;
-      /** 批次 13:导出全部自定义预设为 JSON 文件;canceled=true 为用户取消。 */
-      exportPresets: () => Promise<
-        | { ok: true; canceled: true }
-        | { ok: true; canceled: false; count: number }
-        | { ok: false; error: string }
-      >;
-      /** 批次 16:导入 CSS 文件作为 PDF 样式模板(main 内选文件 + 读内容 + 大小上限校验);
-       *  canceled=true 为用户取消;成功返回 css 内容与文件名。 */
-      importPdfCss: () => Promise<
-        | { ok: true; canceled: true }
-        | { ok: true; canceled: false; css: string; name: string }
-        | { ok: false; error: string }
-      >;
-      /** 批次 11 迭代 4:应用菜单「文件 → 打开文件…」触发,复用现有选择对话框链路。 */
-      onMenuOpen: (cb: () => void) => () => void;
-    };
+    api: PreloadApi;
   }
 }
 
@@ -129,6 +62,8 @@ declare global {
 // 事件绑定先于其余初始化(时序与拆分前一致:原绑定在模块加载期执行,
 // 先于 updateActionButtons / 设置回填;bindEvents 内含进度订阅与菜单订阅)
 bindEvents();
+// 最近转换区块事件绑定迁入 bind*Events 范式(MR-10;原为模块顶层监听)
+bindRecentFilesEvents();
 // 初始无选中:按钮按当前状态置灰(HTML 中 convertBtn 已写死 disabled);
 // footer 快捷键 hint 由 updateActionButtons 按模式维护(批次 12:C4)
 updateActionButtons();

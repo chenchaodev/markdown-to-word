@@ -34,7 +34,8 @@ import {
   summaryWarningsToggle,
 } from "../dom/refs.js";
 import { state, type BatchItem, type BatchResult } from "../state/state.js";
-import { baseName, focusActionButton, trapFocus } from "../state/utils.js";
+import { baseName } from "../state/pure.js";
+import { focusActionButton, trapFocus } from "../state/utils.js";
 import { batchSuccessPaths } from "../state/pure.js";
 import { formatWarning, t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";
@@ -132,6 +133,13 @@ export function hideCompleteDialog(): void {
 export function showDialogError(message: string): void {
   completeDialogError.textContent = message;
   completeDialogError.classList.remove("hidden");
+}
+
+/** 批量弹窗内错误提示(MR-10:与 showDialogError 对称;reveal/复制失败等非致命
+ *  错误统一走封装,不再直接操作 textContent——原两套写法归一)。 */
+export function showBatchDialogError(message: string): void {
+  batchDialogError.textContent = message;
+  batchDialogError.classList.remove("hidden");
 }
 
 /* ---------- 批量结果汇总弹窗 ---------- */

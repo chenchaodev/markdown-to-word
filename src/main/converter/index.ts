@@ -18,14 +18,15 @@
 export type { BatchItem, BatchProgressInfo, BatchResult } from "./batch.js";
 export { batchConvertImpl } from "./batch.js";
 export type { BuildConvertContextOptions, ConvertContext } from "./context.js";
+// MR-17:throwIfCanceled 桶导出已删(消费方均直连 ./context.js,桶出口无外部消费者);
+// pathExists 同(paths.ts 内部使用,无外部消费者)。
 export {
   buildConvertContext,
   ConvertCanceledError,
   createConvertContext,
   getImageResolver,
-  throwIfCanceled,
 } from "./context.js";
 export type { ConvertResult } from "./merge.js";
 export { mergeConvertImpl } from "./merge.js";
 export { convertImpl } from "./single.js";
-export { collectMarkdownPaths, filterExistingPaths, pathExists, resolveOutputPath } from "./paths.js";
+export { collectMarkdownPaths, filterExistingPaths, resolveOutputPath } from "./paths.js";

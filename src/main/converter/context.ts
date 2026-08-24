@@ -20,14 +20,15 @@ const resolverCache = new Map<string, ImageResolver>();
 /**
  * 转换调用上下文:取消标志随调用携带,根治全局可变状态(历史 bug fd40480/f809c57
  * 即全局标志跨调用残留导致误判取消)。每次新转换调用新建 context(cancelRequested
- * 初始 false),「取消后复位」语义天然成立;IPC 层经 currentCtx 接 convert:cancel。
+ * 初始 false),「取消后复位」语义天然成立;IPC 层经 ctxByWebContents 注册表
+ * (windows/web-contents-registry.ts,MR-9 下沉)接 convert:cancel。
  * fix-10 遗留归并:原独立 ConvertOptions(仅 skipAfterConvert 一字段、批量调用处
  * undefined 占位)并入 ctx,签名 5 参 → 4 参,行为不变。
  */
 export interface ConvertContext {
   /** 已请求取消(检查点只读;取消经 cancel() 置位) */
   cancelRequested: boolean;
-  /** 请求取消(convert:cancel 经 currentCtx 调用) */
+  /** 请求取消(convert:cancel 经 ctxByWebContents 注册表定位 ctx 后调用) */
   cancel(): void;
   /** 跳过 runAfterConvert(批量模式避免逐个打开 N 个文件;当前批量调用未置位) */
   skipAfterConvert?: boolean;

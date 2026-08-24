@@ -24,7 +24,58 @@ import {
   throwIfCanceled,
   type ConvertContext,
 } from "./context.js";
-import { resolveOutputPath } from "./paths.js";
+import { MARKDOWN_EXT_RE, resolveOutputPath, stripMarkdownExt } from "./paths.js";
+
+/**
+ * GBK 解码 + 警告收集(MR-6 自 convertImpl/mergeConvertImpl 同构样板抽出):
+ * 读文件 → decodeMarkdown;GBK 编码时向共享 warnings 追加警告(gbkKey 由调用方
+ * 给定:单文件 warn.gbkEncoding / 合并逐文件 warn.gbkEncodingFile+文件名参数)。
+ */
+export async function readMarkdownDecoded(
+  filePath: string,
+  warnings: ConvertWarning[],
+  gbkKey: "warn.gbkEncoding" | "warn.gbkEncodingFile",
+): Promise<string> {
+  const { text, encoding } = decodeMarkdown(await fs.readFile(filePath));
+  if (encoding === "gbk") {
+    warnings.push(
+      gbkKey === "warn.gbkEncodingFile"
+        ? {
+            key: gbkKey,
+            params: { file: path.basename(filePath) },
+            fallback: `已按 GBK 编码读取:${path.basename(filePath)}`,
+          }
+        : { key: gbkKey, fallback: "已按 GBK 编码读取:文件编码非 UTF-8" },
+    );
+  }
+  return text;
+}
+
+/**
+ * 渲染产物落盘收尾(MR-6 自 convertImpl/mergeConvertImpl 同构尾部抽出):
+ * 解析输出路径(重名序号/超长回落)→ docx 直接写盘 / pdf 经隐藏窗口 printToPDF
+ * → onProgress("done")。导出后行为(runAfterConvert)仍由调用方按各自语义执行。
+ */
+export async function persistArtifact(
+  artifact: PdfArtifact | { kind: "docx"; buffer: Uint8Array },
+  sourcePath: string,
+  format: ConvertFormat,
+  outputDir: string,
+  ctx: ConvertContext,
+  onProgress?: (stage: string) => void,
+  baseName?: string,
+): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
+  const { outputPath, warnings } = await resolveOutputPath(sourcePath, format, outputDir, baseName);
+  if (artifact.kind === "docx") {
+    await fs.writeFile(outputPath, artifact.buffer);
+    onProgress?.("done");
+  } else {
+    // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘(与合并共用 renderPdf;print 阶段在内部上报)
+    await renderPdf(artifact, outputPath, ctx, onProgress);
+    onProgress?.("done");
+  }
+  return { outputPath, warnings };
+}
 
 /**
  * 转换实现:读取 md → core 注册表渲染 → 落盘(同目录同名换扩展名)。
@@ -40,7 +91,7 @@ export async function convertImpl(
   ctx: ConvertContext = createConvertContext(),
   katexDir?: string,
 ): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
-  if (!/\.(md|markdown)$/i.test(filePath)) {
+  if (!MARKDOWN_EXT_RE.test(filePath)) {
     // 生成期本地化(B6 决策):throw 文案经 error.message 单次字符串通道到 GUI,
     // 显示层无法重映射,只能在抛出点用 t()(main 进程启动时已 setLanguage)。
     throw new Error(t("file.onlyMarkdown"));
@@ -49,13 +100,7 @@ export async function convertImpl(
   const settings = await loadSettings();
   onProgress?.("read");
   const warnings: ConvertWarning[] = [];
-  const { text: md, encoding } = decodeMarkdown(await fs.readFile(filePath));
-  if (encoding === "gbk") {
-    warnings.push({
-      key: "warn.gbkEncoding",
-      fallback: "已按 GBK 编码读取:文件编码非 UTF-8",
-    });
-  }
+  const md = await readMarkdownDecoded(filePath, warnings, "warn.gbkEncoding");
 
   // B9 进度分阶段:docx 沿用粗粒度 render;pdf 由 core 经 onStage 细分
   // parse/inline/mermaid/katex,print 在 renderPdf 内 printToPDF 前上报
@@ -65,7 +110,7 @@ export async function convertImpl(
     format,
     buildConvertContext({
       baseDir: path.dirname(filePath),
-      title: path.basename(filePath).replace(/\.(md|markdown)$/i, ""),
+      title: stripMarkdownExt(path.basename(filePath)),
       warnings,
       settings,
       // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
@@ -78,23 +123,16 @@ export async function convertImpl(
   );
   throwIfCanceled(ctx);
 
-  const { outputPath, warnings: outWarnings } = await resolveOutputPath(
+  const { outputPath, warnings: outWarnings } = await persistArtifact(
+    artifact,
     filePath,
     format,
     settings.outputDir,
+    ctx,
+    onProgress,
   );
   warnings.push(...outWarnings);
 
-  if (artifact.kind === "docx") {
-    await fs.writeFile(outputPath, artifact.buffer);
-    onProgress?.("done");
-    if (!ctx.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
-    return { outputPath, warnings };
-  }
-
-  // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘(与合并共用 renderPdf;print 阶段在内部上报)
-  await renderPdf(artifact, outputPath, ctx, onProgress);
-  onProgress?.("done");
   if (!ctx.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
   return { outputPath, warnings };
 }
@@ -114,7 +152,8 @@ export async function renderPdf(
   const { htmlPath, cleanup } = await writeTempHtml(artifact.html);
   const printWin = new BrowserWindow({
     show: false,
-    webPreferences: { contextIsolation: true, sandbox: true },
+    // MR-13:webPreferences 全显式(与 mermaid-service 对齐;默认值虽安全,显式防漂移)
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   hardenWebContents(printWin); // B1:打印窗口与预览同源加固(内容含用户 markdown 渲染的链接)
   try {

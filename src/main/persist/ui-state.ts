@@ -9,6 +9,8 @@
  * - lastSessionFiles: 上次会话的文件列表(renderer 恢复时逐项校验存在性)
  * - lastOpenDir: 对话框记忆目录(目录存在才作为 defaultPath 使用)
  * - windowBounds: 窗口位置 {x,y,width,height} | null(恢复时钳制到显示器工作区)
+ * - previewWindowBounds: 预览窗口位置(MR-16 体验对称;独立 key 与主窗互不覆盖,
+ *   多预览并发时以最后关闭者为准;恢复时同样经 pickWindowBounds 钳制)
  * - isMaximized: 关闭时是否最大化(B9 窗口最大化状态记忆;恢复时 maximize(),
  *   windowBounds 此时存的是 getNormalBounds() 的还原态尺寸)
  * - panelOpen: 设置面板 details 展开态 {page, typography}(批次 N:单一设置面板,
@@ -18,7 +20,7 @@
  * saveUiState 以 patch 合并当前状态,recentFiles 为「追加合并」语义
  * (同 path 保留 ts 最大者 → 重复转换自然置顶);空数组 = 清空(替换语义,
  * renderer「清空最近」传 { recentFiles: [] })。
- * 纯函数 pickWindowBounds 单独导出,供窗口创建(index.ts)与测试复用。
+ * 纯函数 pickWindowBounds 单独导出,供窗口创建(windows/main-window、windows/preview)与测试复用。
  */
 import { app } from "electron";
 import { readFileSync } from "node:fs";
@@ -49,6 +51,8 @@ export interface UiState {
   lastSessionFiles: string[];
   lastOpenDir: string;
   windowBounds: WindowBounds | null;
+  /** 预览窗口位置(MR-16;独立 key,恢复时经 pickWindowBounds 钳制)。 */
+  previewWindowBounds: WindowBounds | null;
   /** 关闭时窗口是否最大化(B9;true 时启动恢复 maximize(),windowBounds 为还原态尺寸)。 */
   isMaximized: boolean;
   panelOpen: PanelOpen;
@@ -61,13 +65,16 @@ export const DEFAULT_UI_STATE: UiState = {
   lastSessionFiles: [],
   lastOpenDir: "",
   windowBounds: null,
+  previewWindowBounds: null,
   isMaximized: false,
   // 批次 N:设置收敛为单一面板,默认折叠(已记忆的展开态仍优先恢复)
   panelOpen: { page: false, typography: false },
   suppressCompleteDialog: false,
 };
 
-/** 最近文件上限(与 renderer 的 recent-files.ts 展示截断一致)。 */
+/** 最近文件上限(与 renderer 的 recent-files.ts 展示截断一致)。
+ *  MR-4 双源显式化:renderer 侧同名常量必须与本值恒等(恒等断言由 test 侧守护段
+ *  落地,车道 D);改此值须双侧同步。 */
 export const MAX_RECENT_FILES = 10;
 
 /** 显示器工作区(与 Electron Display.workArea 同形状,便于无 Electron 直测)。 */
@@ -182,6 +189,7 @@ function sanitizeUiState(value: unknown): UiState {
     lastSessionFiles: sanitizeSessionFiles(s.lastSessionFiles),
     lastOpenDir: sanitizeOpenDir(s.lastOpenDir),
     windowBounds: sanitizeWindowBounds(s.windowBounds),
+    previewWindowBounds: sanitizeWindowBounds(s.previewWindowBounds),
     isMaximized: sanitizeBool(s.isMaximized, DEFAULT_UI_STATE.isMaximized),
     panelOpen: sanitizePanelOpen(s.panelOpen),
     suppressCompleteDialog: sanitizeBool(s.suppressCompleteDialog, DEFAULT_UI_STATE.suppressCompleteDialog),
@@ -219,13 +227,14 @@ export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
     lastSessionFiles: current.lastSessionFiles,
     lastOpenDir: current.lastOpenDir,
     windowBounds: current.windowBounds,
+    previewWindowBounds: current.previewWindowBounds,
     isMaximized: current.isMaximized,
     panelOpen: { ...current.panelOpen },
   };
   if (patch && typeof patch === "object" && !Array.isArray(patch)) {
     if (Array.isArray(patch.recentFiles)) {
       // 空数组 = 清空(替换语义,renderer「清空最近」传 { recentFiles: [] });
-      // 非空 = 追加合并(转换成功后追加新条目,index.ts:280 调用不受影响)
+      // 非空 = 追加合并(转换成功后追加新条目,ipc/register.ts recordRecentFiles 调用)
       next.recentFiles =
         patch.recentFiles.length === 0
           ? []
@@ -239,6 +248,9 @@ export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
     }
     if (patch.lastOpenDir !== undefined) next.lastOpenDir = sanitizeOpenDir(patch.lastOpenDir);
     if (patch.windowBounds !== undefined) next.windowBounds = sanitizeWindowBounds(patch.windowBounds);
+    if (patch.previewWindowBounds !== undefined) {
+      next.previewWindowBounds = sanitizeWindowBounds(patch.previewWindowBounds);
+    }
     if (patch.isMaximized !== undefined) {
       next.isMaximized = sanitizeBool(patch.isMaximized, DEFAULT_UI_STATE.isMaximized);
     }

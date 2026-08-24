@@ -20,12 +20,8 @@ import {
   selectBtn,
 } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
-import {
-  baseName,
-  isMarkdown,
-  setError,
-  setStatus,
-} from "../../state/utils.js";
+import { baseName, errorMessage, isMarkdown } from "../../state/pure.js";
+import { setError, setStatus } from "../../state/utils.js";
 import {
   applySelection,
   appendSelection,
@@ -35,6 +31,9 @@ import {
   renderSelection,
 } from "../file-list.js";
 import { t } from "../../../core/i18n.js";
+
+/** 列表边缘自动滚动步长(MR-15 具名;px/次,dragover 事件粒度)。 */
+const EDGE_SCROLL_STEP_PX = 14;
 
 /* ---------- 预览(转换前,经主进程打开与 PDF 同排版的窗口) ---------- */
 /** 打开指定文件的预览窗口;失败时状态区提示(文件名 + 原因 + 操作)。
@@ -50,7 +49,7 @@ export function openPreviewFor(filePath: string): void {
     .then((result) => {
       if (!result.ok) fail(result.error ?? t("common.unknownReason"));
     })
-    .catch((err) => fail(err instanceof Error ? err.message : String(err)));
+    .catch((err) => fail(errorMessage(err)));
 }
 
 /* ---------- 选择文件(系统对话框) ---------- */
@@ -74,7 +73,7 @@ export async function openDialog(append = false): Promise<void> {
       applySelection(files, paths.length - files.length);
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     setError(t("dialog.openFailed", { error: message }));
   }
 }
@@ -224,8 +223,8 @@ export function bindSelectionEvents(): void {
     // 列表边缘自动滚动(拖到可视区上下沿时)
     const listRect = multiList.getBoundingClientRect();
     const threshold = 36;
-    if (event.clientY < listRect.top + threshold) multiList.scrollTop -= 14;
-    else if (event.clientY > listRect.bottom - threshold) multiList.scrollTop += 14;
+    if (event.clientY < listRect.top + threshold) multiList.scrollTop -= EDGE_SCROLL_STEP_PX;
+    else if (event.clientY > listRect.bottom - threshold) multiList.scrollTop += EDGE_SCROLL_STEP_PX;
   });
 
   multiList.addEventListener("drop", (event) => {

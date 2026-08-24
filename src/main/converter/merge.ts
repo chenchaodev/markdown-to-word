@@ -2,10 +2,8 @@
  * 合并转换实现(目录重组批⑤自 converter.ts 拆出):
  * 读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片绝对化)→ 单次 convert。
  */
-import fs from "node:fs/promises";
 import path from "node:path";
 import { convert, type ConvertFormat } from "../../core/convert.js";
-import { decodeMarkdown } from "../../core/util/encoding.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
 import { mergeMarkdowns } from "../../core/pipeline/merge.js";
@@ -18,8 +16,8 @@ import {
   throwIfCanceled,
   type ConvertContext,
 } from "./context.js";
-import { resolveOutputPath } from "./paths.js";
-import { renderPdf, runAfterConvert } from "./single.js";
+import { stripMarkdownExt } from "./paths.js";
+import { persistArtifact, readMarkdownDecoded, runAfterConvert } from "./single.js";
 
 export interface ConvertResult {
   ok: boolean;
@@ -56,21 +54,15 @@ export async function mergeConvertImpl(
   const settings = await loadSettings();
   const warnings: ConvertWarning[] = [];
   onProgress?.("read");
+  // MR-6:GBK 解码+警告与渲染产物落盘收尾样板单源 single.ts(readMarkdownDecoded/persistArtifact)
   const inputs = await Promise.all(
-    files.map(async (file) => {
-      const { text, encoding } = decodeMarkdown(await fs.readFile(file));
-      if (encoding === "gbk") {
-        warnings.push({
-          key: "warn.gbkEncodingFile",
-          params: { file: path.basename(file) },
-          fallback: `已按 GBK 编码读取:${path.basename(file)}`,
-        });
-      }
-      return { content: text, baseDir: path.dirname(file) };
-    }),
+    files.map(async (file) => ({
+      content: await readMarkdownDecoded(file, warnings, "warn.gbkEncodingFile"),
+      baseDir: path.dirname(file),
+    })),
   );
   const mergedMd = mergeMarkdowns(inputs);
-  const baseName = path.basename(firstFile).replace(/\.(md|markdown)$/i, "");
+  const baseName = stripMarkdownExt(path.basename(firstFile));
   // B9 进度分阶段:与 convertImpl 同构——docx 粗粒度 render,pdf 由 onStage 细分
   if (format === "docx") onProgress?.("render");
   const artifact = await convert(
@@ -88,20 +80,16 @@ export async function mergeConvertImpl(
     }),
   );
   throwIfCanceled(ctx);
-  const { outputPath, warnings: outWarnings } = await resolveOutputPath(
+  const { outputPath, warnings: outWarnings } = await persistArtifact(
+    artifact,
     firstFile,
     format,
     settings.outputDir,
+    ctx,
+    onProgress,
     `${baseName}-合并`,
   );
   warnings.push(...outWarnings);
-  if (artifact.kind === "docx") {
-    await fs.writeFile(outputPath, artifact.buffer);
-    onProgress?.("done");
-  } else {
-    await renderPdf(artifact, outputPath, ctx, onProgress);
-    onProgress?.("done");
-  }
   // B2:与 convertImpl 对齐尊重 skipAfterConvert(同抽象层行为一致)
   if (!ctx.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
   return { ok: true, outputPath, warnings };
