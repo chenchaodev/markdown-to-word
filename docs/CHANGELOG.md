@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [1.3.0] - 2026-08-24
+- **全库审计整改 P0~P5 + i18n 多语言架构改造**(61 项审计待办约 54 项实施、7 项不做/仅记录见 archive/2026-08-24-193838;typecheck/lint/build/51 段/smoke 全绿;GUI 实测通过):
+- P0 流程洞(eb5f912):release.yml 增加 tag↔package.json 版本校验;CI 补 fixtures 漂移校验+smoke+node20-floor 地板守卫 job;npm start 构建新鲜度守卫;.gitattributes fixtures EOL 策略
+- 测试基建(b6556fd):runner M2W_ONLY 单段筛选;看门狗超时改「标记失败→中止→硬退出」;gen-fixtures --check EOL 归一修复 Windows autocrlf 全量误报;g4-smoke.png 更名 g4-preview.png;删死资产 png-utils.js/pdf-css-sample.css
+- core 单源化(6a8be81,行为等价,DECIDE-1 除外):标题编号计数共享纯函数 markdown/heading-numbering.ts(docx prescan/pdf xref/CSS counter 三镜像收编);无 h1 文档章节引用统一 Word 口径「1」;契约正则族并入 cross-ref.ts;mermaid/webp 警告工厂;docx/render.ts 467→256 行拆分(numbering/heading/table);Ctx 可选性统一构造时解析默认;ConvertFormat 收敛;死导出清理;pdf 分支跳过冗余 remark 解析
+- i18n 字典拆分(e2d6375):src/core/i18n/ 注册表(zh 键集唯一事实源/en 全量 satisfies/ja ko fr ru Partial 263 键近全量);t() 回退链 当前语言→en→key;Language 类型注册表派生收拢 4 处硬编码(htmlLang 映射/settings 校验×3/设置面板语言选项动态生成);新增 i18n-registry 守护段(ru 缺 1 键为回退夹具)
+- main/renderer 重构与安全加固(7af6a61):image-downloader 私网拦截+20MB 上限+重定向逐跳校验(allowPrivateAddresses 可放宽);shell.openPath/showItemInFolder 会话产物白名单;temp-html randomUUID+'wx';webPreferences 显式化;ctxByWebContents 下沉 web-contents-registry 解除反向依赖;register 导入 handler 模板收缩;renderer errorMessage() 单源替换 15 处;批量契约类型收敛+PreloadApi 类型推导;recent-files 迁 bindRecentFilesEvents 范式;预览窗尺寸记忆+错误页主题适配;magic number 具名
+- 测试补强(b6556fd/7af6a61/e2d6375/692ff56):恒等守护段 identity-guards(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描)+temp-html/web-hardening/mdast-utils/ipc-register 四新段,45→51 段;web-hardening 段桩替换 openExternal 隔离真实外开副作用(修复验收机唤起浏览器踩坑)
+- 文档同步债(8329aef):DEV-GUIDE 代码地图重写+lint 范围修正;README 功能清单收敛(USER-GUIDE 为权威)+暗色模式;USER-GUIDE 交互描述修正+外观主题节;ROADMAP B14 勾验+B1-B11 完成批压缩+审计整改登记;STATUS 整形(顶部登记/日志瘦身/基线 51 段);ACCEPTANCE 整形(H1 压平/批次14 改指针);RESEARCH 依赖钉死清单+highlight.js styles 副作用+路径迁移注记;AGENTS.md 前缀补 perf:/test:
+- 工程卫生(094d6c9):仓库级 .gitattributes(* text=auto)全库 EOL 规范化
+- 已知限制:lang-bootstrap.js htmlLang 映射仍硬编码 zh/en(FOUC 缓解部分失效,功能无损,记 ROADMAP)
+
 ## [1.2.0] - 2026-08-24
 - **审计改进第三批(B9/B12/B13)+目录结构重组落地**(GUI 实测通过;typecheck/lint/build/45 段/smoke 全绿;重组全程行为零变化):
 - B9 UX 体验批(8780c14 视觉/46c0d4d 交互):PDF 链路进度五阶段细分(parse/inline/katex/mermaid/print,onStage 回调协议只增不改)+print 阶段取消置灰;错误码可操作文案映射(EBUSY/ENOENT/EACCES/ENOSPC/长路径);转换中拖入文件状态提示;重复文件单独计数+skipped 具体文件名可折叠;最近条目单击=加载/双击=重转;窗口最大化状态记忆;边距输入 max 属性;弹窗动画尊重 prefers-reduced-motion;设置栅格 ≤720px 单列断点
