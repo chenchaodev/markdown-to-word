@@ -16,7 +16,7 @@ concurrency:
 jobs:
   ci:
     runs-on: windows-latest
-    # 全流程(install/typecheck/lint/build+40 段验收)正常约 10-15 分钟;
+    # 全流程(install/typecheck/lint/build+51 段验收+fixtures 校验+smoke)正常约 10-15 分钟;
     # 30 分钟为正常耗时的约 2 倍余量,超时即视为挂死快速失败,不占用 runner
     timeout-minutes: 30
     steps:
@@ -38,3 +38,32 @@ jobs:
       # test 自带 build(tsc + copy-renderer)
       - name: Acceptance tests
         run: npm run test
+
+      # fixtures 漂移校验(审计 TEST-1):依赖 dist/ 编译产物,须在 test(build)之后跑;
+      # EOL 归一化见 gen-fixtures.mjs --check 与 .gitattributes
+      - name: Check fixtures drift
+        run: npm run check:fixtures
+
+      # smoke 端到端主链路(windows runner 可跑;自带 build 新鲜度守卫)
+      - name: Smoke test
+        run: npm run test:smoke
+
+  # Node 地板守卫(审计 ENG-5):engines 声明 >=20.19,但主 job 用 22,
+  # 地板版本从未被验证。此 job 只验证「地板可安装依赖 + typecheck + 构建」,
+  # 不重复全量测试(控制 CI 时长);发版环境(release.yml)本身用 node 20。
+  node20-floor:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --registry=https://registry.npmjs.org
+
+      - name: Typecheck & build on Node 20 floor
+        run: npm run typecheck && npm run build

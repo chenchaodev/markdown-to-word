@@ -5,7 +5,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "output/**", "release/**", "node_modules/**"],
+    ignores: ["dist/**", "output/**", "release/**", "coverage/**", "node_modules/**"],
   },
   tseslint.configs.recommended,
   {
@@ -17,6 +17,8 @@ export default tseslint.config(
         // 注:allowDefaultProject 禁止 ** 通配(性能护栏),故按目录显式枚举;
         // 默认 8 文件上限不足(test/scripts 共 47 个 .js/.mjs),按官方逃生口上调。
         projectService: {
+          // 注意(审计 ENG-10):此清单为手工枚举,新增 test 子目录(或 scripts 子目录)
+          // 时必须同步在此追加对应 glob,否则该目录 .js/.mjs 会因不在 TS program 而 lint 报错。
           allowDefaultProject: [
             "src/renderer/lang-bootstrap.js",
             "test/*.mjs",

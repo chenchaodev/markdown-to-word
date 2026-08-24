@@ -3,8 +3,8 @@
 // 显式按文件名拷贝而非扩展名通配——dist/renderer 是混合目录(tsc 编译的 pure.js 等
 // 也在其中),按 .js 通配清理/拷贝会误伤编译产物。
 // 批③目录重组:css 拆入 src/renderer/style/ 子目录,html/css 拷贝与清理改为
-// 递归遍历(保持相对路径);tsc 只产出 .js/.d.ts/.js.map,递归清理 .html/.css
-// 不会误删编译产物。
+// 递归遍历(保持相对路径);tsc 未开 declaration,只产出 .js/.js.map,
+// 递归清理 .html/.css 不会误删编译产物。
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,9 +39,15 @@ for (const rel of walkRel(srcDir)) {
   console.log(`copied ${rel}`);
 }
 
-// B6:<head> 语言引导脚本(显式单文件,见上;批③后仍留 renderer 根级)
+// B6:<head> 语言引导脚本(显式单文件,见上;批③后仍留 renderer 根级)。
+// 清理对称(审计 ENG-7):src 已删除该文件时同步移除 dist 旧副本,
+// 防陈旧脚本残留进安装包——与上方 html/css 的「先清后拷」语义一致。
 const bootstrap = "lang-bootstrap.js";
+const bootstrapTarget = path.join(outDir, bootstrap);
 if (fs.existsSync(path.join(srcDir, bootstrap))) {
-  fs.copyFileSync(path.join(srcDir, bootstrap), path.join(outDir, bootstrap));
+  fs.copyFileSync(path.join(srcDir, bootstrap), bootstrapTarget);
   console.log(`copied ${bootstrap}`);
+} else if (fs.existsSync(bootstrapTarget)) {
+  fs.rmSync(bootstrapTarget, { force: true });
+  console.log(`removed stale ${bootstrap}`);
 }

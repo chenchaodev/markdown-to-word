@@ -14,7 +14,7 @@
     "lint": "eslint src/ test/ scripts/",
     "build": "tsc && node scripts/copy-renderer.mjs",
     "dev": "npm run build && electron .",
-    "start": "electron .",
+    "start": "node scripts/check-build-fresh.mjs && electron .",
     "test": "npm run build && electron test/acceptance.mjs",
     "gen:fixtures": "node test/tools/gen-fixtures.mjs",
     "check:fixtures": "node test/tools/gen-fixtures.mjs --check",

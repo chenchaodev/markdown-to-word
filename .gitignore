@@ -23,6 +23,7 @@ temp/
 .DS_Store
 Thumbs.db
 .idea/
+.vscode/
 *.swp
 
 # TypeScript 增量编译缓存(incremental)

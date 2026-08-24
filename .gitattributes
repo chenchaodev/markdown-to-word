@@ -1,0 +1,8 @@
+# EOL 策略(审计 TEST-1):gen-fixtures 生成器落盘 LF,Windows autocrlf 下 checkout
+# 会把文本产物转成 CRLF,导致 check:fixtures 逐字节比对全部误报。
+# 将 test/fixtures/ 下文件固定 EOL,checkout 后保持与生成器输出一致:
+#   文本类(.md/.css/.json)→ eol=lf;二进制(.png)→ binary(不入 EOL 归一)。
+test/fixtures/**/*.md text eol=lf
+test/fixtures/**/*.css text eol=lf
+test/fixtures/**/*.json text eol=lf
+test/fixtures/**/*.png binary
