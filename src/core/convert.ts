@@ -26,14 +26,15 @@ import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml } from "./pdf/render.js";
 import { PDF_FOOTER_TEMPLATE } from "./pdf/template.js";
 import type { MermaidResolver } from "./markdown/mermaid.js";
-// 契约单源(B7):ImageResolver 类型收敛 core/image-resolver.ts(仅类型导入)
+// 契约单源(B7):ImageResolver 类型收敛 core/image/image-resolver.ts(仅类型导入)
 import type { ImageResolver } from "./image/image-resolver.js";
 // 页面设置契约收敛于 settings-defaults.ts(单一来源),此处 re-export 保持既有导入面
 // (docx/pdf render、main settings、测试等历史 import 源不变)
 export { DEFAULT_PAGE_SETUP, type PageSetup } from "./settings/settings-defaults.js";
-import type { PageSetup } from "./settings/settings-defaults.js";
-
-export type ConvertFormat = "docx" | "pdf";
+// ConvertFormat 单源 settings-defaults(CORE-8 收敛 B7 平行类型残留);
+// re-export 保持 main 侧既有 import 路径(core/convert.js)不变
+export type { ConvertFormat } from "./settings/settings-defaults.js";
+import type { ConvertFormat, PageSetup } from "./settings/settings-defaults.js";
 
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */
@@ -92,12 +93,16 @@ export async function convert(
   format: ConvertFormat,
   context: ConvertContext,
 ): Promise<ConvertArtifact> {
+  // footgun(CORE-11):context.warnings 缺省时本函数内部以临时数组兜底,
+  // 收集到的警告随调用结束静默丢弃——需要警告的调用方必须显式传入数组。
   const warnings = context.warnings ?? [];
   // 先剥离 frontmatter:解析与渲染均只作用于正文(body)
   const { metadata, body } = parseFrontmatter(md);
-  const ast = parseMarkdown(body);
 
   if (format === "pdf") {
+    // pdf 分支只消费 body 字符串(markdown-it 在 renderPdfHtml 内另行解析),
+    // 不做 remark 解析(CORE-1:原无条件 parseMarkdown 使每次 PDF 转换
+    // 白做一次 AST 构建 + 全标题 slug 遍历)
     return {
       kind: "pdf",
       html: await renderPdfHtml(body, {
@@ -120,6 +125,9 @@ export async function convert(
       metadata,
     };
   }
+  // docx 分支才需要 remark AST(解析责任在 convert 层,与 pdf 层「传原文」不对称
+  // 是双管线有意差异,见头注释)
+  const ast = parseMarkdown(body);
   return {
     kind: "docx",
     buffer: await renderDocx(ast, {

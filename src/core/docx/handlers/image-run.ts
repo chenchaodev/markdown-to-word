@@ -6,7 +6,7 @@ import { ImageRun, TextRun } from "docx";
 import type { Image } from "mdast";
 import { SECONDARY_TEXT_GRAY } from "../theme.js";
 import { sniffImageType, imageSizeFromBuffer } from "../../image/image-type.js";
-import { imageLoadFailureWarning, unrecognizedImageWarning } from "../../image/image-warning.js";
+import { imageLoadFailureWarning, unrecognizedImageWarning, webpSkippedWarning } from "../../image/image-warning.js";
 import type { Ctx, ImageLoadResult, InlineChild, RunStyle } from "../ctx.js";
 
 /** 图片显示宽度上限(px):宽超过则等比缩到该宽度(不放大),行内图片与 mermaid PNG 共用 */
@@ -75,11 +75,7 @@ export async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promi
   }
   const type = sniffImageType(data);
   if (type === "webp") {
-    ctx.warnings?.push({
-      key: "warn.webpSkipped",
-      params: { src: node.url },
-      fallback: `webp 图片不支持 docx 内嵌,已跳过: ${node.url}`,
-    });
+    ctx.warnings?.push(webpSkippedWarning(node.url));
     return fallback();
   }
   // B3:未知魔数不再伪装 png(错误标签靠 Word 自行嗅探兜底,行为不可预期)→ 跳过+警告

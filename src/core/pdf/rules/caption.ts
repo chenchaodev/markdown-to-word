@@ -3,6 +3,7 @@
  * caption_recognize core 规则单源。语义注释随代码搬移不精简。
  */
 import type MarkdownIt from "markdown-it";
+import { CAPTION_PREFIX_RE } from "../../markdown/cross-ref.js";
 import { createDepthTracker } from "./shared.js";
 
 /**
@@ -27,7 +28,7 @@ export function overrideCaptionRule(md: MarkdownIt): void {
         if (!inline || inline.type !== "inline" || !inline.children || inline.children.length === 0) continue;
         const first = inline.children[0]!; // 上方刚排除 children 为空
         if (first.type !== "text") continue;
-        const match = /^(图|表)[:：]\s*/.exec(first.content);
+        const match = CAPTION_PREFIX_RE.exec(first.content);
         if (!match) continue;
         const prev = tokens[i - 3];
         if (!prev) continue;

@@ -16,6 +16,7 @@ import type {
   TextRun,
 } from "docx";
 import type { FootnoteDefinition } from "mdast";
+import type { BlockContent } from "mdast";
 import type { ConvertWarning, KeyedWarning } from "../i18n.js";
 import type { TypographySettings } from "../settings/typography.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
@@ -29,21 +30,25 @@ export interface ImageLoadResult {
   error?: unknown;
 }
 
+/** mdast math 节点(display 公式;经 remark-math/mdast-util-math 扩充进 BlockContent)。
+ *  单源别名(CORE-11 上收):equations.ts 与 fallback.ts 原各持一份,统一取型于此。 */
+export type MdMath = Extract<BlockContent, { type: "math" }>;
+
 export interface Ctx {
   imageResolver?: ImageResolver;
   warnings?: ConvertWarning[];
   listLevel: number;
   /** 排版设置(已解析默认,渲染时以 typography 为准) */
   typography: TypographySettings;
-  /** 一级标题前分页(默认关) */
-  breakBeforeH1?: boolean;
-  /** 标题章节自动编号(h1-h3 挂 numbering,默认开) */
-  headingNumbering?: boolean;
-  /** 图/表题注自动编号(默认开) */
-  captionNumbering?: boolean;
-  /** 自动生成目录页(默认开) */
+  /** 一级标题前分页(已解析默认:关) */
+  breakBeforeH1: boolean;
+  /** 标题章节自动编号(h1-h3 挂 numbering;已解析默认:取 typography.headingNumbering) */
+  headingNumbering: boolean;
+  /** 图/表题注自动编号(已解析默认:取 typography.captionNumbering) */
+  captionNumbering: boolean;
+  /** 自动生成目录页(已解析默认:开) */
   toc: boolean;
-  /** 公式编号开关(默认开;关时公式原样渲染、label 段原样渲染、引用保持原文本) */
+  /** 公式编号开关(已解析默认:开;关时公式原样渲染、label 段原样渲染、引用保持原文本) */
   equationNumbering: boolean;
   /** 脚注定义索引:identifier → definition 节点(renderDocx 预扫) */
   footnoteDefinitions: Map<string, FootnoteDefinition>;
@@ -53,7 +58,9 @@ export interface Ctx {
   footnoteNextId: { value: number };
   /** B3:identifier → 已分配脚注 id(重复引用共享同一脚注,与 Word 语义一致) */
   footnoteIdByLabel: Map<string, number>;
-  /** B3:已发出过的警告集合(悬空交叉引用等逐引用去重,防 GUI 警告列表刷屏;pdf 侧同模式) */
+  /** B3:已发出过的警告集合(悬空交叉引用等逐引用去重,防 GUI 警告列表刷屏)。
+   *  注意:pdf 侧并非同模式——pdf 各规则自建 unknownLabels Set(equation.ts/xref.ts)
+   *  按引用键去重,与本处「key + JSON(params)」机制并行,两套互不感知(审计 CORE-11)。 */
   warnedKeys: Set<string>;
   /** 公式 label → 编号查表(9d,renderDocx 预扫后挂入;行内交叉引用渲染用) */
   equationLabels?: Map<string, number>;
@@ -107,8 +114,9 @@ export type InlineChild =
 
 /**
  * 去重警告(B3):同一文案只入 warnings 一次。悬空交叉引用被引 N 次此前产生
- * N 条重复警告,GUI 警告列表刷屏;pdf 侧 unknownLabels Set 早已去重,此处对齐。
- * B6:元素改为 KeyedWarning 对象后,去重键 = key + JSON(params)
+ * N 条重复警告,GUI 警告列表刷屏;pdf 侧 unknownLabels Set 早已去重,此处对齐
+ * (机制两套并行:本函数按 key + JSON(params),pdf 按「前缀:label」引用键,见
+ * ctx.warnedKeys 注释)。B6:元素改为 KeyedWarning 对象后,去重键 = key + JSON(params)
  * (params 相同才视为同一警告;不同 TeX 源码/label 的公式降级各自保留一条)。
  */
 export function warnDedup(ctx: Ctx, warning: KeyedWarning): void {

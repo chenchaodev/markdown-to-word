@@ -2,6 +2,7 @@ import type { Node, Root, Paragraph as MdParagraph } from "mdast";
 import { AlignmentType, Paragraph, TextRun } from "docx";
 import type { ParagraphChild } from "docx";
 import { collectPlainText } from "../../util/mdast-utils.js";
+import { CAPTION_PREFIX_RE, kindLabelRegex } from "../../markdown/cross-ref.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
 import { wrapBookmark } from "./bookmark.js";
 import type { Ctx } from "../ctx.js";
@@ -72,19 +73,20 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
     if (node.type !== "paragraph") continue;
     const prev = children[i - 1];
     if (!prev || !isCaptionTarget(prev)) continue;
-    const match = /^(图|表)[:：]\s*(.*)$/s.exec(collectPlainText(node));
+    const match = CAPTION_PREFIX_RE.exec(collectPlainText(node));
     if (!match) continue;
     const isFigure = match[1] === "图";
     const index = isFigure ? ++figIndex : ++tabIndex;
     // 行内 label(批次 10 功能 2):题注文本尾部 {#fig:label}/{#tab:label} 剥离,
     // label 不渲染(不进题注文本);仅当前缀与题注类型一致时剥离并登记
-    // (类型不一致视为普通文本原样保留,避免错误登记导致引用语义错乱)
-    let text = match[2]!; // 正则第二捕获组(.*)恒参与匹配,组必存在
+    // (类型不一致视为普通文本原样保留,避免错误登记导致引用语义错乱——
+    // kindLabelRegex 按当前类型构造,不匹配即无剥离,与原合并版正则行为等价)
+    let text = collectPlainText(node).slice(match[0].length);
     let label: string | undefined;
-    const labelMatch = /\s*\{#(fig|tab):([\w-]+)\}$/.exec(text);
-    if (labelMatch && labelMatch[1] === (isFigure ? "fig" : "tab")) {
+    const labelMatch = kindLabelRegex(isFigure ? "fig" : "tab").exec(text);
+    if (labelMatch) {
       text = text.slice(0, labelMatch.index);
-      label = labelMatch[2];
+      label = labelMatch[1];
     }
     const info: CaptionInfo = {
       type: isFigure ? "figure" : "table",

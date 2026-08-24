@@ -3,6 +3,7 @@
  * eq_numbering core 规则 + math_block 渲染包装单源。语义注释随代码搬移不精简。
  */
 import type MarkdownIt from "markdown-it";
+import { EQ_LABEL_RE, EQ_REF_HREF_RE } from "../../markdown/cross-ref.js";
 import { createDepthTracker, forEachRefLink } from "./shared.js";
 
 /**
@@ -54,7 +55,7 @@ export function overrideEquationRule(md: MarkdownIt, numbering: boolean = true):
         for (const child of inline.children) {
           if (child.type === "text") plain += child.content;
         }
-        const match = /^\{#eq:([\w-]+)\}$/.exec(plain);
+        const match = EQ_LABEL_RE.exec(plain);
         if (!match) continue;
         if (numbering) {
           if (!lastMathToken) continue; // 无前置公式 → 保持原样(按普通段落渲染)
@@ -75,7 +76,7 @@ export function overrideEquationRule(md: MarkdownIt, numbering: boolean = true):
     // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内;
     // 骨架见 forEachRefLink)
     const unknownLabels = new Set<string>();
-    forEachRefLink(tokens, /^#eq:([\w-]+)$/, ({ labels, textToken }) => {
+    forEachRefLink(tokens, EQ_REF_HREF_RE, ({ labels, textToken }) => {
       const label = labels[0]!; // 捕获组结构保证
       const num = labelIndex.get(label);
       if (num === undefined && !unknownLabels.has(label)) {

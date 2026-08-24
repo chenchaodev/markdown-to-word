@@ -2,12 +2,14 @@
  * docx 行内 HTML 白名单子系统(R10-6 自 render.ts 纯移动抽出,零行为改动)。
  * 契约注释随代码整体搬移,未精简:
  * - 白名单判定(isAllowedInlineHtml)与 PDF 侧共享单一实现(../html-whitelist.ts),
- *   渲染差异(normalizeInlineHtml 节点流合并 vs PDF 侧 matchAllowedHtmlExpression
- *   源码扫描)保留在各侧(html-whitelist.ts 注释互指「双格式契约,须同步修改」);
+ *   渲染差异(本模块 normalizeInlineHtml 节点流合并 vs PDF 侧 pdf/rules/html.ts
+ *   matchAllowedHtmlExpression 源码扫描)保留在各侧——两份扫描算法逐条对齐,
+ *   修改任一侧须同步另一侧(html-whitelist.ts 与本处注释互为双向指针);
  * - 危险段丢弃/孤立闭标签丢弃为安全兜底契约(与"白名单外 html 跳过"语义一致,
  *   内容文本不残留)。
- * 依赖方向:render.ts 对本模块为运行时依赖;本模块对 render.ts 仅 type-only
- * 引用(Ctx/InlineChild,编译期擦除,无运行时环;与 captions/equations 先例一致)。
+ * 依赖方向:render.ts 对本模块为运行时依赖;本模块对 render.ts 无依赖
+ * (Ctx/InlineChild 类型取自 ctx.ts,编译期擦除,无运行时环;与 captions/
+ * equations 先例一致)。
  */
 import { AlignmentType, LineRuleType, Paragraph, TextRun } from "docx";
 import type { PhrasingContent } from "mdast";

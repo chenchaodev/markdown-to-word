@@ -1,13 +1,24 @@
-import type { BlockContent, Root, Paragraph as MdParagraph } from "mdast";
+import type { Root, Paragraph as MdParagraph } from "mdast";
+import {
+  AlignmentType,
+  Math as DocxMath,
+  Paragraph,
+  Tab,
+  TabStopType,
+  TextRun,
+} from "docx";
+import type { ParagraphChild } from "docx";
 import { collectPlainText } from "../../util/mdast-utils.js";
-import type { Ctx } from "../ctx.js";
-
-/** mdast math 节点(display 公式;经 remark-math/mdast-util-math 扩充进 BlockContent) */
-type MdMath = Extract<BlockContent, { type: "math" }>;
+import { EQ_LABEL_RE } from "../../markdown/cross-ref.js";
+import { docxBookmarkId } from "../../markdown/slug.js";
+import { CODE_FONT, MUTED_TEXT_GRAY } from "../theme.js";
+import { texToDocxMath } from "./math.js";
+import { wrapBookmark } from "./bookmark.js";
+import { formulaParseFailedWarning, type Ctx, type MdMath } from "../ctx.js";
 
 /** 公式编号信息(9d):index = 全文连续编号(1 起,与渲染成败无关,降级公式也占号);
  *  label = 公式块后 `{#eq:label}` 段登记的标签(可选) */
-interface EquationInfo {
+export interface EquationInfo {
   index: number;
   label?: string;
 }
@@ -45,7 +56,7 @@ function buildEquationContext(ast: Root, ctx: Ctx, numbering: boolean = true): E
       lastInfo = { index };
       indexByNode.set(node, lastInfo);
     } else if (node.type === "paragraph") {
-      const match = /^\{#eq:([\w-]+)\}$/.exec(collectPlainText(node));
+      const match = EQ_LABEL_RE.exec(collectPlainText(node));
       if (!match) continue;
       const label = match[1]!; // 正则 ^$ 锚定且捕获组必参与匹配,exec 成功则组 1 必存在
       if (numbering) {
@@ -66,6 +77,72 @@ function buildEquationContext(ast: Root, ctx: Ctx, numbering: boolean = true): E
     }
   }
   return { indexByNode, labelIndex, skipSet };
+}
+
+/**
+ * display 公式渲染(CORE-5 自 render.ts math case 拆出;eq 为 undefined 表示
+ * 无编号信息——equationNumbering=false 时 buildEquationContext 不登记任何节点,
+ * 每个公式都走此路径,并非不可达):
+ * - 有编号:按「公式居中 + 编号右对齐」排版——center tab(50% 文本区宽)+
+ *   right tab(100% 文本区宽),children = [Tab(), 公式, Tab(), "(N)"];label 存在时
+ *   外包书签 eq-label 供交叉引用跳转(编号静态注入,免更新域);
+ * - 无编号:原居中逻辑;
+ * - 降级(解析失败/未覆盖节点):TeX 源码等宽灰字 + 警告,内容不丢失
+ *   (降级公式同样占编号)。不应用 5a 排版(无首行缩进/两端对齐,与 pdf 侧
+ *   .katex-display 居中语义对齐)。
+ */
+export function renderDisplayMath(
+  node: MdMath,
+  ctx: Ctx,
+  eq: EquationInfo | undefined,
+  textWidthTwips: number,
+): Paragraph[] {
+  const result = texToDocxMath(node.value);
+  if (!eq) {
+    if (result.ok) {
+      return [
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new DocxMath({ children: result.children })],
+        }),
+      ];
+    }
+    ctx.warnings?.push(formulaParseFailedWarning(node.value));
+    return [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY })],
+      }),
+    ];
+  }
+  if (!result.ok) {
+    ctx.warnings?.push(formulaParseFailedWarning(node.value));
+  }
+  // 公式主体:解析成功 → docx Math;失败 → TeX 源码等宽灰字
+  const mathChild: DocxMath | TextRun = result.ok
+    ? new DocxMath({ children: result.children })
+    : new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY });
+  // 制表位跳格:Tab 必须包在 TextRun 内(裸 <w:tab/> 是非法段落级元素,
+  // WPS 实测会把公式段降级显示;TextRun({ children: [Tab] }) 输出
+  // <w:r><w:tab/></w:r> 合法结构)。包后全部为 ParagraphChild,无需断言
+  const equationRuns: ParagraphChild[] = [
+    new TextRun({ children: [new Tab()] }),
+    mathChild,
+    new TextRun({ children: [new Tab()] }),
+    new TextRun({ text: `(${eq.index})` }),
+  ];
+  const paragraph = new Paragraph({
+    // 制表位:center tab 于文本区正中(公式居中),right tab 于文本区右缘(编号右对齐)
+    tabStops: [
+      { type: TabStopType.CENTER, position: Math.floor(textWidthTwips / 2) },
+      { type: TabStopType.RIGHT, position: textWidthTwips },
+    ],
+    children:
+      eq.label !== undefined
+        ? wrapBookmark(ctx.bookmarkNextId, docxBookmarkId(`eq-${eq.label}`), equationRuns)
+        : equationRuns,
+  });
+  return [paragraph];
 }
 
 export { buildEquationContext };

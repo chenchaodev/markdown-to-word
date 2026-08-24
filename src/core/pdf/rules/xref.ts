@@ -8,7 +8,17 @@
  * 语义注释随代码搬移不精简;文案/占位见 CROSS_REF_KINDS,勿散落硬编码。
  */
 import type MarkdownIt from "markdown-it";
-import { CROSS_REF_KINDS, stripSecLabelSuffix, type CrossRefKind } from "../../markdown/cross-ref.js";
+import {
+  CROSS_REF_KINDS,
+  CROSS_REF_HREF_RE,
+  stripSecLabelSuffix,
+  type CrossRefKind,
+} from "../../markdown/cross-ref.js";
+import {
+  bumpHeadingCounter,
+  chapterNumberFromCounters,
+  createHeadingCounters,
+} from "../../markdown/heading-numbering.js";
 import type { ConvertWarning } from "../../i18n.js";
 import { crossRefNotFoundWarning } from "../../i18n.js";
 import { attrDel, createDepthTracker, forEachRefLink, stripTrailingLabel, type LinkScanToken } from "./shared.js";
@@ -45,8 +55,9 @@ interface XrefLabelTables {
  *     锚点 <span id="fig:label"> 注入题注段落开头(经 paragraph_open 渲染包装);
  *   - 标题(顶层,与 docx 只遍历 ast.children 一致):尾部 {#sec:label} 无条件
  *     剥离(语法;不进标题文本/目录/slug),headingNumbering 开启且深度 ≤3 时
- *     登记章节号(深度 1..d 计数器拼接,镜像 CSS 显示、不做 docx 侧前导零跳过
- *     ——无 h1 文档「0.1」与 CSS 显示一致,差异在报告注明);锚点
+ *     登记章节号(计数与章节号文本走 heading-numbering.ts 共享纯函数,与 docx
+ *     预扫同源;DECIDE-1 裁决统一 Word 口径——无 h1 文档跳过前导零级,h2 引用
+ *     显示「1」,CSS counter 分支同步,见 template.ts);锚点
  *     <span id="sec:label"> 注入标题开头(经 heading_open 渲染包装);
  * - 计数器语义镜像模板 CSS:headingNumbering 开时 h1 增 → h2/h3 清零,
  *   hasH1 时 fig/tab 清零(与 template.ts hasH1 分支一致);h2 增 → h3 清零;
@@ -77,7 +88,8 @@ function scanXrefDefinitions(
   opts: { headingNumbering: boolean; captionNumbering: boolean },
   hasH1: boolean,
 ): XrefLabelTables {
-  const counters = { h1: 0, h2: 0, h3: 0, fig: 0, tab: 0 };
+  const headingCounters = createHeadingCounters();
+  const captionCounters = { fig: 0, tab: 0 };
   const captionLabels = new Map<string, { kind: "fig" | "tab"; numberText: string }>();
   const headingLabels = new Map<string, string>(); // label → 章节号文本
   const depth = createDepthTracker();
@@ -90,20 +102,11 @@ function scanXrefDefinitions(
     ) {
       const isNumbered = opts.headingNumbering && (token.tag === "h1" || token.tag === "h2" || token.tag === "h3");
       if (isNumbered) {
-        if (token.tag === "h1") {
-          counters.h1++;
-          counters.h2 = 0;
-          counters.h3 = 0;
-          // 图/表序在 h1 处重置仅当 hasH1(镜像 template.ts 两分支)
-          if (hasH1) {
-            counters.fig = 0;
-            counters.tab = 0;
-          }
-        } else if (token.tag === "h2") {
-          counters.h2++;
-          counters.h3 = 0;
-        } else {
-          counters.h3++;
+        bumpHeadingCounter(headingCounters, Number(token.tag[1]));
+        // 图/表序在 h1 处重置仅当 hasH1(镜像 template.ts 两分支)
+        if (token.tag === "h1" && hasH1) {
+          captionCounters.fig = 0;
+          captionCounters.tab = 0;
         }
       }
       const inline = tokens[i + 1];
@@ -113,15 +116,13 @@ function scanXrefDefinitions(
       // label 同步剥离 inline.content(标题 id slug 的来源,避免 label 进 slug)
       inline.content = stripSecLabelSuffix(inline.content);
       if (isNumbered) {
-        // 章节号镜像 CSS 显示:深度 1..d 计数器拼接(前导零不跳过;
-        // 无 h1 文档为「0.1」,与 CSS counter 显示一致,与 docx「1」的差异在报告注明)
-        const depthNum = Number(token.tag[1]);
-        const parts: number[] = [];
-        for (let d = 1; d <= depthNum; d++) {
-          parts.push(counters[(`h${d}`) as "h1" | "h2" | "h3"]);
+        // 章节号文本走共享纯函数(与 docx 预扫同源;DECIDE-1 裁决 Word 口径:
+        // 无 h1 跳过前导零级,h2 引用显示「1」,CSS counter 分支同步见 template.ts)
+        const chapterText = chapterNumberFromCounters(headingCounters, Number(token.tag[1]));
+        if (chapterText !== null) {
+          headingLabels.set(label, chapterText);
+          token.attrSet("data-xref-anchor", `sec:${label}`);
         }
-        headingLabels.set(label, parts.join("."));
-        token.attrSet("data-xref-anchor", `sec:${label}`);
       }
     } else if (
       token.type === "paragraph_close" &&
@@ -136,15 +137,15 @@ function scanXrefDefinitions(
       // 前缀剥除为 caption_recognize 的 8b 既有行为,不在此改)
       if (!opts.captionNumbering) continue;
       const kind = cls === "fig-caption" ? "fig" : "tab";
-      if (kind === "fig") counters.fig++;
-      else counters.tab++;
+      if (kind === "fig") captionCounters.fig++;
+      else captionCounters.tab++;
       const label = stripTrailingLabel(inline.children, kind);
       if (label === undefined) continue;
       // 编号文本镜像 CSS ::before 显示(两分支:章节号+序数 / 纯序数)
-      const seq = kind === "fig" ? counters.fig : counters.tab;
+      const seq = kind === "fig" ? captionCounters.fig : captionCounters.tab;
       const numberText =
         opts.headingNumbering && hasH1
-          ? `${kind === "fig" ? "图" : "表"} ${counters.h1}.${seq}`
+          ? `${kind === "fig" ? "图" : "表"} ${headingCounters.h1}.${seq}`
           : `${kind === "fig" ? "图" : "表"} ${seq}`;
       captionLabels.set(label, { kind, numberText });
       pOpen!.attrSet("data-xref-anchor", `${kind}:${label}`); // 契约:i-2 必为 paragraph_open(cls 命中亦证明其存在)
@@ -171,7 +172,7 @@ function replaceXrefLinks(
   headingLabels: XrefLabelTables["headingLabels"],
 ): void {
   const unknownLabels = new Set<string>();
-  forEachRefLink(tokens, /^#(fig|tab|sec):([\w-]+)$/, ({ labels, textToken }) => {
+  forEachRefLink(tokens, CROSS_REF_HREF_RE, ({ labels, textToken }) => {
     const kind = labels[0] as CrossRefKind;
     const label = labels[1]!; // 捕获组结构保证
     const def = CROSS_REF_KINDS[kind];

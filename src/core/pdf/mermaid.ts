@@ -3,7 +3,7 @@
  * highlight 占位 → 内联 SVG / 降级代码块单源。语义注释随代码搬移不精简。
  */
 import { decodeEntities, escapeHtml } from "../util/utils.js";
-import type { ConvertWarning } from "../i18n.js";
+import { mermaidEmptyWarning, mermaidFailedWarning, type ConvertWarning } from "../i18n.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 
 /**
@@ -38,19 +38,12 @@ export async function replaceMermaidPlaceholders(
       if (result) {
         out += `<div class="mermaid-svg">${result.svg}</div>`;
       } else {
-        warnings.push({
-          key: "warn.mermaidEmpty",
-          fallback: "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块",
-        });
+        warnings.push(mermaidEmptyWarning());
         out += fallback(code);
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      warnings.push({
-        key: "warn.mermaidFailed",
-        params: { reason },
-        fallback: `Mermaid 渲染失败: ${reason},已降级为代码块`,
-      });
+      warnings.push(mermaidFailedWarning(reason));
       out += fallback(code);
     }
     cursor = p.index + p.full.length;

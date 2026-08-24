@@ -36,3 +36,22 @@ export function kindLabelRegex(kind: string): RegExp {
 export function stripSecLabelSuffix(text: string): string {
   return text.replace(SEC_LABEL_RE, "");
 }
+
+/* ---------- 正则族单源(CORE-3):docx/pdf 两侧渲染共用,勿散落硬编码 ---------- */
+
+/** 公式 label 段正则(9d):整段纯文本串接恰为 {#eq:label} 即命中(B3 起粗斜体
+ *  包裹亦命中),捕获组 1 = label。docx equations.ts 与 pdf equation.ts 共用。 */
+export const EQ_LABEL_RE = /^\{#eq:([\w-]+)\}$/;
+
+/** 公式引用 href 正则:[式](#eq:label) 链接 url 匹配,捕获组 1 = label。
+ *  docx link-xref.ts 与 pdf equation.ts 引用替换共用。 */
+export const EQ_REF_HREF_RE = /^#eq:([\w-]+)$/;
+
+/** 图/表/章节引用 href 正则:[图](#fig:label) 等,捕获组 1 = kind、2 = label。
+ *  docx link-xref.ts 与 pdf xref.ts 引用替换共用。 */
+export const CROSS_REF_HREF_RE = /^#(fig|tab|sec):([\w-]+)$/;
+
+/** 题注前缀正则(8b):「图:」/「表:」(半角/全角冒号)+ 紧随空白,锚定段首;
+ *  捕获组 1 = 类别字(图/表)。docx captions.ts 与 pdf caption.ts 共用;
+ *  前缀之后剩余文本由调用方 slice(match[0].length) 取得。 */
+export const CAPTION_PREFIX_RE = /^(图|表)[:：]\s*/;

@@ -3,7 +3,7 @@
  * 方案(规划/ADR-004 定稿,勿改):printToPDF 产物含 /Dests 命名目标但无大纲树
  * (Chromium 上游限制,electron #32288);本模块读命名目标 → pdf-lib 注入 Outlines。
  * 样板来源:pdf-lib 无高层大纲 API,按 marp-cli setOutline(issue #1151)+
- * obsidian-pdf-plus 命名目标解析改造;调研结论见 docs/研究结论.md 2026-08-04 条目。
+ * obsidian-pdf-plus 命名目标解析改造;调研结论见 docs/RESEARCH.md 2026-08-04 条目。
  * 关键点:
  * - 中文标题必须 PDFHexString.fromText(UTF-16BE);PDFString 会被按 PDFDocEncoding
  *   解成乱码(issue #516,勿回退)
@@ -117,6 +117,10 @@ function resolveDest(target: unknown, doc: PDFDocument): PDFArray | null {
 /**
  * 注入多级大纲(marp setOutline 样板):向 doc 写入 Outlines 树并挂到 catalog。
  * 若 PDF 已存在大纲会被覆盖(printToPDF 产物无大纲,无影响)。
+ *
+ * 前置条件(隐式契约,CORE-11 显式化):outlines 必须非空——空数组时下方
+ * refMap.get(outlines[0]) 为 undefined,产物大纲树损坏。调用方(main/converter
+ * single.ts)以 extractHeadings().length > 0 前置把关;本函数不加守卫保持既有行为。
  */
 export function setOutline(doc: PDFDocument, outlines: PdfOutline[]): void {
   const rootRef = doc.context.nextRef();

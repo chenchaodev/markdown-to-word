@@ -2,7 +2,8 @@
  * PDF 模板集:页眉页脚模板(PDF_FOOTER_TEMPLATE)、文档模板 CSS(buildTemplateCss)、
  * KaTeX CSS 加载(loadKatexCss)、完整 HTML 模板(buildTemplate)、封面 HTML(buildCoverHtml)。
  * 自 pdf/render.ts 拆分(R3 行为等价重构,原注释语义与实现原样保留)。
- * escapeHtml/decodeEntities 已集中 src/core/util/utils.ts(R8 批 4 L3),此处 re-export 保持外部 import 兼容。
+ * escapeHtml/decodeEntities 已集中 src/core/util/utils.ts(R8 批 4 L3),消费者直连该模块
+ * (原 re-export 无外部消费者,CORE-9 清理移除)。
  */
 import path from "node:path";
 import { readFileSync } from "node:fs";
@@ -10,9 +11,7 @@ import type { DocMetadata } from "../pipeline/frontmatter.js";
 import type { TypographySettings } from "../settings/typography.js";
 import type { PageSetup } from "../settings/settings-defaults.js";
 import type { ConvertWarning } from "../i18n.js";
-import { escapeHtml, decodeEntities } from "../util/utils.js";
-
-export { escapeHtml, decodeEntities };
+import { escapeHtml } from "../util/utils.js";
 
 /** 页码页脚模板(printToPDF footerTemplate 用;模板内必须内联样式,字体大小需显式设置)。 */
 export const PDF_FOOTER_TEMPLATE =
@@ -156,7 +155,8 @@ ${breakBeforeH1 ? `
   /* 一级标题前分页(breakBeforeH1);文档首元素为 h1 时避免空白首页 */
   h1 { break-before: page; }
   body > h1:first-child { break-before: auto; }` : ""}
-${headingNumbering ? `
+${headingNumbering ? (
+  hasH1 ? `
   /* 章节编号:与 docx 标题编号语义一致(1 / 1.1 / 1.1.1) */
   body { counter-reset: h1c h2c h3c; }
   h1 { counter-increment: h1c; counter-reset: h2c h3c; }
@@ -164,7 +164,17 @@ ${headingNumbering ? `
   h3 { counter-increment: h3c; }
   h1::before { content: counter(h1c) " "; }
   h2::before { content: counter(h1c) "." counter(h2c) " "; }
-  h3::before { content: counter(h1c) "." counter(h2c) "." counter(h3c) " "; }` : ""}
+  h3::before { content: counter(h1c) "." counter(h2c) "." counter(h3c) " "; }` : `
+  /* 章节编号(无 h1 文档,DECIDE-1 裁决统一 Word 口径):跳过前导零级,
+     h2 从「1」起(::before 省略 h1c 前缀),与 xref_recognize 登记的引用
+     编号文本(heading-numbering.ts 共享纯函数)一致。已知罕见边界:无 h1 且
+     首个标题前无 h2 的 h3,CSS 显示「0.1」而引用文本为「1」——CSS counter
+     无法按计数器取值条件省略中间零级,验收已声明接受。 */
+  body { counter-reset: h2c h3c; }
+  h2 { counter-increment: h2c; counter-reset: h3c; }
+  h3 { counter-increment: h3c; }
+  h2::before { content: counter(h2c) " "; }
+  h3::before { content: counter(h2c) "." counter(h3c) " "; }`) : ""}
 ${captionNumbering ? `
   /* 题注编号(8b):图/表题注居中小一号,编号经 ::before 伪元素(不进文本节点,
      书签/目录不受影响);章节号 = 最近 h1,图/表序在 h1 处重置(与 docx 侧

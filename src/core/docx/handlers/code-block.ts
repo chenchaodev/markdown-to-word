@@ -6,7 +6,7 @@ import { ImageRun, Paragraph, TextRun } from "docx";
 import type { Code } from "mdast";
 import { CODE_FONT, CODE_SIZE } from "../theme.js";
 import { highlightCodeRuns } from "./code-highlight.js";
-import { highlightFallbackWarning } from "../../i18n.js";
+import { highlightFallbackWarning, mermaidEmptyWarning, mermaidFailedWarning } from "../../i18n.js";
 import { scaleToFit } from "./image-run.js";
 import { warnDedup, type Ctx } from "../ctx.js";
 
@@ -25,17 +25,10 @@ export async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
           children: [new ImageRun({ type: "png", data: result.png, transformation: { width, height } })],
         });
       }
-      ctx.warnings?.push({
-        key: "warn.mermaidEmpty",
-        fallback: "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块",
-      });
+      ctx.warnings?.push(mermaidEmptyWarning());
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      ctx.warnings?.push({
-        key: "warn.mermaidFailed",
-        params: { reason },
-        fallback: `Mermaid 渲染失败: ${reason},已降级为代码块`,
-      });
+      ctx.warnings?.push(mermaidFailedWarning(reason));
     }
   }
   // B4:语言已知但高亮失败(hljs 抛错/解析校验失败)→ 上报降级警告

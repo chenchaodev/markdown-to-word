@@ -9,9 +9,9 @@
  */
 import { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
 export { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
-// 仅类型导入(编译期擦除,不引入运行时依赖):Language 契约定义于 i18n.ts
+// 仅类型导入(编译期擦除,不引入运行时依赖):Language 契约定义于 i18n.ts,
+// 消费方从 i18n 导入(原 re-export 无消费者,CORE-9 清理移除)
 import type { Language } from "../i18n.js";
-export type { Language } from "../i18n.js";
 
 /** 转换格式 */
 export type ConvertFormat = "docx" | "pdf";
@@ -46,6 +46,22 @@ export const DEFAULT_PAGE_SETUP: PageSetup = {
   marginLeft: 32,
   marginRight: 32,
 };
+
+/* ---------- 页面几何换算(CORE-5 自 docx/render.ts 上移,PageSetup 领域单点化) ---------- */
+
+/** 纸张 mm 尺寸表(宽 × 高,纵向值;landscape 由消费方/docx 库处理交换,勿在此交换) */
+export const PAPER_SIZES_MM: Record<PageSetup["paper"], { width: number; height: number }> = {
+  A4: { width: 210, height: 297 },
+  A3: { width: 297, height: 420 },
+  A5: { width: 148, height: 210 },
+  Letter: { width: 215.9, height: 279.4 },
+  Legal: { width: 215.9, height: 355.6 },
+};
+
+/** mm → twips(docx 长度单位;1mm = 56.6929 twips,四舍五入) */
+export function mmToTwips(mm: number): number {
+  return Math.round(mm * 56.6929);
+}
 
 /**
  * 应用设置(AppSettings 全字段契约):

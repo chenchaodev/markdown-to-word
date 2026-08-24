@@ -23,8 +23,8 @@
  *   替换为编号并保留 href,悬空 → 解包链接为纯文本占位(无 href 死链)+ 警告
  *   (按「前缀:label」去重);
  * - 编号镜像模板 CSS:headingNumbering && hasH1 → 「图 h1c.figc」;无 h1 时
- *   章节号「0.1」(前导零不跳过,与 CSS counter 显示一致,与 docx「1」的差异
- *   属实现声明,此处按 pdf 实际断言);
+ *   章节号跳过前导零级从「1」起(DECIDE-1 裁决统一 Word 口径,xref 登记与
+ *   CSS counter 分支同源同步,原 pdf「0.1」口径已废弃);
  * - template.ts 已补 .fig-caption/.tab-caption { counter-increment: figc/tabc; }
  *   (8b 修复:此前 PDF 题注序号恒 0);
  * - captionNumbering 关 → label 原样保留不剥离不登记;headingNumbering 关 →
@@ -198,7 +198,7 @@ export async function run() {
     throw new Error("pdf 顺序 2:交换题注顺序后引用编号未跟随(应图 1.2)");
   }
 
-  // ============ 场景 D(R3):无 h1 → 章节号从「1」起(docx)/「0.1」(pdf 镜像 CSS) ============
+  // ============ 场景 D(R3):无 h1 → 章节号从「1」起(DECIDE-1 统一 Word 口径,双格式一致) ============
   const mdNoH1 = `## 甲 {#sec:s1}
 ## 乙 {#sec:s2}
 ## 第 3 节 {#sec:s3}
@@ -210,8 +210,12 @@ export async function run() {
   const dX = await unzipPart(dD.buffer, "word/document.xml");
   if (!dX.includes('<w:t xml:space="preserve">3</w:t>')) throw new Error('docx 无 h1 场景 [章节](#sec:s3) 非「3」(前导未出现级跳过)');
   const dP = await convert(mdNoH1, "pdf", { baseDir: B, warnings: [], title: "t" });
-  if (!dP.html.includes(">0.3</a>")) {
-    throw new Error('pdf 无 h1 场景 [章节](#sec:s3) 非「0.3」(镜像 CSS counter,前导零保留)');
+  if (!dP.html.includes(">3</a>")) {
+    throw new Error('pdf 无 h1 场景 [章节](#sec:s3) 非「3」(DECIDE-1 统一 Word 口径,跳过前导零级)');
+  }
+  // CSS counter 分支同步:无 h1 时 ::before 省略 h1c 前缀(h2 从「1」起)
+  if (!dP.html.includes('h2::before { content: counter(h2c) " "; }')) {
+    throw new Error("pdf 无 h1 场景 CSS 编号应省略 h1c 前缀(DECIDE-1 口径同步)");
   }
 
   // ============ 场景 E(R6/R9):captionNumbering 关 → label 原样保留不登记 ============

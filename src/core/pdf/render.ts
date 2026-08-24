@@ -1,6 +1,6 @@
 /**
  * G4:markdown → PDF 渲染管线(markdown-it → HTML 模板 → 主进程 printToPDF)。
- * 调研结论见 docs/研究结论.md(G4 调研条目):
+ * 调研结论见 docs/RESEARCH.md(G4 调研条目):
  * - markdown-it 核心内置表格/删除线;任务列表用 @mdit/plugin-tasklist
  * - highlight.js 走 lib/common ESM 子集;printToPDF 需 printBackground: true 才有代码底色
  * - 图片统一转 file:// URL(markdown-it 原样输出绝对路径会解析失败)
@@ -8,8 +8,8 @@
  * B8 拆分:本文件为编排层(选项契约 + markdown-it 组装 + 主流程),渲染规则按
  * 类别拆至 rules/(shared/caption/equation/xref/html/image/heading-id),
  * Mermaid 占位替换拆至 mermaid.ts;依赖方向单向(rules/* → core 共享模块,
- * 本文件 → rules/*,不反向)。契约 re-export(ImageResolver/CROSS_REF_KINDS)
- * 保留在此,外部 import 路径不变(contract 断言段依赖 dist/core/pdf/render.js)。
+ * 本文件 → rules/*,不反向)。CROSS_REF_KINDS 契约 re-export 保留在此,
+ * 外部 import 路径不变(contract 断言段依赖 dist/core/pdf/render.js)。
  */
 import MarkdownIt from "markdown-it";
 import { footnote } from "@mdit/plugin-footnote";
@@ -26,9 +26,9 @@ import { highlightFallbackWarning } from "../i18n.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
-// 契约单源(B7):ImageResolver 类型与交叉引用常量/正则族收敛 core 共享模块
+// 契约单源(B7):ImageResolver 类型收敛 core 共享模块(仅类型导入;
+// 原 re-export 无外部消费者,CORE-9 清理移除)
 import type { ImageResolver } from "../image/image-resolver.js";
-export type { ImageResolver };
 import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
 // 渲染规则(B8 拆分):按 rule 类别分文件,共享工具单源 rules/shared.ts

@@ -1,6 +1,6 @@
 /**
  * 图片加载失败统一警告(docx 与 pdf 共用,单一来源):
- * - src/core/docx/render.ts imageToDocx:本地缺失 / 外链下载失败(resolver 返回 null 或抛错)
+ * - src/core/docx/handlers/image-run.ts imageToDocx:本地缺失 / 外链下载失败(resolver 返回 null 或抛错)
  * - src/core/pdf/postprocess.ts checkLocalImages:本地图片存在性检查(resolver 失败路径)
  * - src/core/pdf/postprocess.ts embedExternalImages:外链下载失败
  * src 取 markdown 原文(相对路径 / URL / 绝对路径),与用户输入一致,便于定位。
@@ -58,4 +58,16 @@ export function imageLoadFailureWarning(src: string, err?: unknown): KeyedWarnin
   if (code === "ENOENT") return imageNotFoundWarning(src);
   if (code === "EACCES" || code === "EPERM") return imageAccessDeniedWarning(src);
   return imageLoadFailedWarning(src);
+}
+
+/**
+ * webp 不支持 docx 内嵌警告(CORE-4 工厂化;docx 路线专属——pdf 走 Chromium
+ * 渲染原生支持 webp,无此降级路径):webp 图片跳过嵌入,占位文本替代。
+ */
+export function webpSkippedWarning(src: string): KeyedWarning {
+  return {
+    key: "warn.webpSkipped",
+    params: { src },
+    fallback: `webp 图片不支持 docx 内嵌,已跳过: ${src}`,
+  };
 }

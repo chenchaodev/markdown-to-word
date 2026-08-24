@@ -9,6 +9,11 @@ import { buildCaptionContext, type CaptionInfo } from "./handlers/captions.js";
 import { buildEquationContext, type EquationContext } from "./handlers/equations.js";
 import { collectPlainText } from "../util/mdast-utils.js";
 import { stripSecLabelSuffix } from "../markdown/cross-ref.js";
+import {
+  bumpHeadingCounter,
+  chapterNumberFromCounters,
+  createHeadingCounters,
+} from "../markdown/heading-numbering.js";
 import { docxBookmarkId } from "../markdown/slug.js";
 import type { Ctx } from "./ctx.js";
 import type { TocEntry } from "./chrome.js";
@@ -28,8 +33,8 @@ export interface DocumentPrescan {
  * 1. 脚注定义索引(identifier → definition 节点,写入 ctx.footnoteDefinitions);
  * 2. 题注上下文(buildCaptionContext:图/表识别 + captionLabels 登记);
  * 3. 章节 label(headingLabels 登记,引用可能出现在目标标题之前,渲染期登记会漏;
- *    与 captions/equations 预扫模式一致。计数镜像 Word numbering 引擎逐段计数,
- *    headingNumbering 关闭时不计数 → 引用侧按悬空处理);
+ *    与 captions/equations 预扫模式一致。计数走 heading-numbering.ts 共享纯函数
+ *    (pdf xref 同源),headingNumbering 关闭时不计数 → 引用侧按悬空处理);
  * 4. 公式编号上下文(buildEquationContext,labelIndex 写入 ctx.equationLabels);
  * 5. 目录条目(ctx.toc 开启时,h1-h3 且有 id 的标题)。
  */
@@ -46,19 +51,12 @@ export function prescanDocument(ast: Root, ctx: Ctx): DocumentPrescan {
   const captions = buildCaptionContext(ast, ctx);
   // 预扫章节 label(批次 10 功能 2):渲染前按文档顺序遍历标题,静态章节号计数 +
   // {#sec:label} 登记。(depth 4-6 不计数,与 numbering 只挂 h1-h3 一致)
-  const headingCounters = { h1: 0, h2: 0, h3: 0 };
+  // 计数与章节号文本取自共享纯函数(heading-numbering.ts 单源,pdf xref 同源;
+  // 口径见该模块头注释:DECIDE-1 裁决无 h1 跳过前导零级)
+  const headingCounters = createHeadingCounters();
   for (const node of ast.children) {
-    if (node.type !== "heading" || ctx.headingNumbering !== true || node.depth > 3) continue;
-    if (node.depth === 1) {
-      headingCounters.h1 += 1;
-      headingCounters.h2 = 0;
-      headingCounters.h3 = 0;
-    } else if (node.depth === 2) {
-      headingCounters.h2 += 1;
-      headingCounters.h3 = 0;
-    } else {
-      headingCounters.h3 += 1;
-    }
+    if (node.type !== "heading" || !ctx.headingNumbering || node.depth > 3) continue;
+    bumpHeadingCounter(headingCounters, node.depth);
     const chapterText = chapterNumberFromCounters(headingCounters, node.depth);
     const secLabel = node.data?.secLabel;
     const id = node.data?.id;
@@ -70,7 +68,7 @@ export function prescanDocument(ast: Root, ctx: Ctx): DocumentPrescan {
   // 公式编号开关关闭时仍调用 buildEquationContext(numbering=false):label 段照常识别并
   // 跳过渲染(语法标记不显示),但公式不编号、label 不登记、无孤立 label 警告;引用查表
   // 为空 → 行内引用保持原文本(见 pushRuns 的 equationNumbering 门控)
-  const equations: EquationContext = buildEquationContext(ast, ctx, ctx.equationNumbering !== false);
+  const equations: EquationContext = buildEquationContext(ast, ctx, ctx.equationNumbering);
   // label 查表挂到 ctx(行内链接渲染处 pushRuns 经 ctx 访问)
   ctx.equationLabels = equations.labelIndex;
   if (ctx.toc) {
@@ -89,26 +87,4 @@ export function prescanDocument(ast: Root, ctx: Ctx): DocumentPrescan {
     }
   }
   return { tocEntries, captions, equations };
-}
-
-/**
- * 静态章节号(批次 10 功能 2,镜像 Word numbering 引擎逐级计数):
- * 编号文本 = 深度 1..depth 当前计数拼接;前导未出现的级(计数 0)跳过
- * (无 h1 时 h2 从「1」起,与题注章节语义一致),中间未出现的级保留 0
- * (h1 后直接 h3 →「1.0.1」,与 Word 引擎显示一致)。
- * 仅镜像:headingNumberingOptions 模板或 numbering 配置变更会漂移(免更新路线已声明)。
- */
-function chapterNumberFromCounters(
-  counters: { h1: number; h2: number; h3: number },
-  depth: number,
-): string | null {
-  const parts: number[] = [];
-  let started = false;
-  for (let i = 1; i <= depth; i++) {
-    const v = counters[(`h${i}`) as keyof typeof counters];
-    if (!started && v === 0) continue;
-    started = true;
-    parts.push(v);
-  }
-  return parts.length > 0 ? parts.join(".") : null;
 }

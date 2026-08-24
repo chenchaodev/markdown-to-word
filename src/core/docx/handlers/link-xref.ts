@@ -8,7 +8,7 @@ import type { Link } from "mdast";
 import { LINK_COLOR } from "../theme.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
 import { collectPlainText } from "../../util/mdast-utils.js";
-import { CROSS_REF_KINDS, type CrossRefKind } from "../../markdown/cross-ref.js";
+import { CROSS_REF_KINDS, CROSS_REF_HREF_RE, EQ_REF_HREF_RE, type CrossRefKind } from "../../markdown/cross-ref.js";
 import { crossRefNotFoundWarning } from "../../i18n.js";
 import { warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js";
 
@@ -25,7 +25,7 @@ export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: R
   // 「式 (?)」无链接 + 警告;其他文本的 #eq: 链接保持原文本跳转公式书签。
   // 公式编号开关关闭时整个分支不生效:按普通 # 锚点链接渲染(保持原文本,
   // 不降级「(?)」、不追加警告,与 pdf 侧不注册 eq_numbering 规则行为一致)
-  const eqMatch = ctx.equationNumbering === false ? null : /^#eq:([\w-]+)$/.exec(url);
+  const eqMatch = ctx.equationNumbering === false ? null : EQ_REF_HREF_RE.exec(url);
   if (eqMatch) {
     const label = eqMatch[1]!; // 正则含捕获组且已匹配,组必存在
     const n = ctx.equationLabels?.get(label);
@@ -60,7 +60,7 @@ export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: R
   // (与 #eq: 非「式/公式」行为一致);悬空 → 默认文本占位 + 警告,非约定
   // 文本保持原样不带链接(目标书签不存在,不生成死链;公式悬空非默认文本
   // 无警告的死链行为不复制,此处更安全)
-  const crossMatch = /^#(fig|tab|sec):([\w-]+)$/.exec(url);
+  const crossMatch = CROSS_REF_HREF_RE.exec(url);
   if (crossMatch) {
     const kind = crossMatch[1] as CrossRefKind;
     const label = crossMatch[2]!; // 正则第二捕获组已匹配,组必存在

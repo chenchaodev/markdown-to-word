@@ -160,6 +160,9 @@ export async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
   for (const item of node.children as ListItem[]) {
     for (const child of item.children) {
       if (child.type === "list") {
+        // ctx 浅拷贝前提(CORE-11 显式化):Ctx 全部可变状态均为引用类型
+        // (Map/Set/对象计数器),浅拷贝共享同一实例即共享可变状态;
+        // 未来若新增标量可变字段,此处逐层克隆会静默失效,须改显式传递。
         result.push(...(await renderList(child, { ...ctx, listLevel: ctx.listLevel + 1 })));
       } else if (child.type === "paragraph") {
         result.push(

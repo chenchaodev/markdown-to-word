@@ -2,7 +2,10 @@
  * 内联格式白名单(批次 5 契约):docx/pdf 双格式共享的单一实现。
  * 原 docx/render.ts 与 pdf/render.ts 各持一份逐字副本(注释互指「双格式契约,须同步修改」),
  * 抽取后任何标签集/判定规则变更只改此处,双格式自动一致。
- * 渲染差异(normalizeInlineHtml 节点流合并 vs matchAllowedHtmlExpression 源码扫描)保留在各侧。
+ * 渲染差异保留在各侧扫描器(双向同步指针,CORE-11 补全):
+ * - docx:src/core/docx/handlers/inline-html.ts normalizeInlineHtml(节点流合并)
+ * - pdf:src/core/pdf/rules/html.ts matchAllowedHtmlExpression(源码栈扫描)
+ * 两份扫描算法对 br/自闭合/嵌套的处理规则逐条对齐,修改任一侧须同步另一侧。
  */
 
 /** 内联格式白名单标签(无属性才渲染;docx/pdf 双格式契约) */

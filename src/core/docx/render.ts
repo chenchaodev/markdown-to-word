@@ -1,63 +1,50 @@
 /**
- * docx 渲染主入口(B8 拆分后):renderDocx 编排(预扫 → 正文块渲染 → Document 组装),
+ * docx 渲染主入口(B8 拆分后):renderDocx 编排(预扫 → 正文块渲染 → Document 组装)。
+ * 职责拆分(CORE-5):页面几何见 settings-defaults(PAPER_SIZES_MM/mmToTwips)、
+ * numbering 配置见 numbering.ts、标题渲染见 handlers/heading.ts、表格渲染见
+ * handlers/table.ts、display 公式渲染见 handlers/equations.ts(renderDisplayMath)、
  * 文档 chrome 见 chrome.ts、预扫见 prescan.ts、行内/嵌套内容见 handlers/content.ts、
- * 链接交叉引用见 handlers/link-xref.ts、图片见 handlers/image-run.ts、代码块见 handlers/code-block.ts、
- * 容器降级见 handlers/fallback.ts、共享契约见 ctx.ts。
+ * 链接交叉引用见 handlers/link-xref.ts、图片见 handlers/image-run.ts、
+ * 代码块见 handlers/code-block.ts、容器降级见 handlers/fallback.ts、共享契约见 ctx.ts。
  */
 import {
-  AlignmentType,
-  BorderStyle,
   Document,
-  HeadingLevel,
-  Math as DocxMath,
   Packer,
   PageBreak,
   PageOrientation,
   Paragraph,
   Table,
   TableOfContents,
-  TableCell,
-  TableRow,
-  Tab,
-  TabStopType,
-  TextRun,
-  WidthType,
 } from "docx";
-import type { INumberingOptions, ParagraphChild } from "docx";
-import type {
-  BlockContent,
-  Heading,
-  Paragraph as MdParagraph,
-  PhrasingContent,
-  Root,
-  RootContent,
-  Table as MdTable,
-} from "mdast";
-import { CODE_FONT, MUTED_TEXT_GRAY } from "./theme.js";
-import { wrapBookmark } from "./handlers/bookmark.js";
-import { texToDocxMath } from "./handlers/math.js";
-import { renderCaptionParagraph, type CaptionInfo } from "./handlers/captions.js";
-import type { EquationContext } from "./handlers/equations.js";
-import { formulaParseFailedWarning, type Ctx } from "./ctx.js";
+import type { BlockContent, Paragraph as MdParagraph, Root, RootContent } from "mdast";
+import type { CaptionInfo } from "./handlers/captions.js";
+import { renderCaptionParagraph } from "./handlers/captions.js";
+import { renderDisplayMath, type EquationContext } from "./handlers/equations.js";
+import { type Ctx } from "./ctx.js";
 import { prescanDocument } from "./prescan.js";
 import { renderCoverPage, renderTocPage, renderHeader, renderFooter } from "./chrome.js";
 import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./handlers/content.js";
 import { renderCode } from "./handlers/code-block.js";
 import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./handlers/inline-html.js";
+import { renderHeading } from "./handlers/heading.js";
+import { renderTable } from "./handlers/table.js";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
-import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings/settings-defaults.js";
+import {
+  DEFAULT_PAGE_SETUP,
+  mmToTwips,
+  PAPER_SIZES_MM,
+  type PageSetup,
+} from "../settings/settings-defaults.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import type { TypographySettings } from "../settings/typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../settings/typography.js";
-import { docxBookmarkId } from "../markdown/slug.js";
 import { isAllowedInlineHtml } from "../markdown/html-whitelist.js";
-import { stripSecLabelSuffix, CROSS_REF_KINDS } from "../markdown/cross-ref.js";
+import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
+import { headingNumberingOptions, numberingOptions } from "./numbering.js";
 import type { ConvertWarning } from "../i18n.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
-// 契约单源(B7):ImageResolver 类型收敛 core 共享模块(render.js 保持 re-export 兼容)
 import type { ImageResolver } from "../image/image-resolver.js";
-export type { ImageResolver };
 
 export interface RenderOptions {
   imageResolver?: ImageResolver;
@@ -86,20 +73,6 @@ export interface RenderOptions {
   mermaidResolver?: MermaidResolver;
 }
 
-/** 纸张 mm 尺寸表(宽 × 高) */
-const PAPER_SIZES_MM: Record<PageSetup["paper"], { width: number; height: number }> = {
-  A4: { width: 210, height: 297 },
-  A3: { width: 297, height: 420 },
-  A5: { width: 148, height: 210 },
-  Letter: { width: 215.9, height: 279.4 },
-  Legal: { width: 215.9, height: 355.6 },
-};
-
-/** mm → twips(docx 长度单位;1mm = 56.6929 twips,四舍五入) */
-function mmToTwips(mm: number): number {
-  return Math.round(mm * 56.6929);
-}
-
 /** G1 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理;
  *  math 为 display 公式,独立居中段落) */
 function isSupportedBlock(node: RootContent): node is BlockContent {
@@ -108,60 +81,19 @@ function isSupportedBlock(node: RootContent): node is BlockContent {
   );
 }
 
-/** 列表编号配置:bullet 与 decimal 各一套,0-3 级缩进(docx 9.x:Document 直接收 INumberingOptions) */
-function numberingOptions(): INumberingOptions {
-  const bulletText = ["•", "◦", "▪"];
-  const levels = (ordered: boolean) =>
-    [0, 1, 2, 3].map((level) => ({
-      level,
-      format: ordered ? ("decimal" as const) : ("bullet" as const),
-      text: ordered ? `%${level + 1}.` : bulletText[level % bulletText.length],
-      alignment: AlignmentType.LEFT,
-      style: {
-        paragraph: {
-          indent: { left: 720 * (level + 1), hanging: 360 },
-        },
-      },
-    }));
-  return {
-    config: [
-      { reference: "md-list-bullet", levels: levels(false) },
-      { reference: "md-list-number", levels: levels(true) },
-    ],
-  };
-}
-
-/** 标题章节编号:h1-h3 挂段落级 numbering(静态渲染,打开 Word/WPS 无需 F9 即显示) */
-function headingNumberingOptions(): INumberingOptions {
-  const textFor = (level: number): string =>
-    Array.from({ length: level + 1 }, (_, i) => `%${i + 1}`).join(".");
-  const levels = [0, 1, 2].map((level) => ({
-    level,
-    format: "decimal" as const,
-    text: textFor(level),
-    alignment: AlignmentType.LEFT,
-    start: 1,
-    style: {
-      paragraph: {
-        indent: { left: 360, hanging: 360 },
-      },
-    },
-  }));
-  return { config: [{ reference: "md-heading", levels }] };
-}
-
 /**
  * 将 mdast AST 渲染为 docx Buffer。
  * core 层保持无 IO:图片一律经 imageResolver 注入(由调用方负责读文件)。
  */
 export async function renderDocx(ast: Root, options: RenderOptions = {}): Promise<Buffer> {
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
+  // 开关统一「构造时解析默认」(CORE-7:Ctx 全字段必填,下游无需判空)
   const ctx: Ctx = {
     imageResolver: options.imageResolver,
     warnings: options.warnings,
     listLevel: 0,
     typography,
-    breakBeforeH1: options.breakBeforeH1,
+    breakBeforeH1: options.breakBeforeH1 ?? false,
     headingNumbering: options.headingNumbering ?? typography.headingNumbering,
     captionNumbering: options.captionNumbering ?? typography.captionNumbering,
     toc: options.toc ?? true,
@@ -295,62 +227,10 @@ async function renderBlock(
     case "code":
       return [await renderCode(node, ctx)];
     case "math":
-      // display 公式。9d:有编号信息时按「公式居中 + 编号右对齐」排版——
-      // center tab(50% 文本区宽)+ right tab(100% 文本区宽),
-      // children = [Tab(), 公式, Tab(), "(N)"];label 存在时外包书签 eq-label
-      // 供交叉引用跳转(编号静态注入,免更新域)。无编号信息(理论不可达)走原居中逻辑;
-      // 降级(解析失败/未覆盖节点)输出 TeX 源码等宽灰字并追加警告,内容不丢失
-      // (降级公式同样占编号)。不应用 5a 排版(无首行缩进/两端对齐,与 pdf 侧
-      // .katex-display 居中语义对齐)。
-      {
-        const eq = equations.indexByNode.get(node);
-        const result = texToDocxMath(node.value);
-        if (!eq) {
-          if (result.ok) {
-            return [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [new DocxMath({ children: result.children })],
-              }),
-            ];
-          }
-          ctx.warnings?.push(formulaParseFailedWarning(node.value));
-          return [
-            new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY })],
-            }),
-          ];
-        }
-        if (!result.ok) {
-          ctx.warnings?.push(formulaParseFailedWarning(node.value));
-        }
-        // 公式主体:解析成功 → docx Math;失败 → TeX 源码等宽灰字
-        const mathChild: DocxMath | TextRun = result.ok
-          ? new DocxMath({ children: result.children })
-          : new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY });
-        // 制表位跳格:Tab 必须包在 TextRun 内(裸 <w:tab/> 是非法段落级元素,
-        // WPS 实测会把公式段降级显示;TextRun({ children: [Tab] }) 输出
-        // <w:r><w:tab/></w:r> 合法结构)。包后全部为 ParagraphChild,无需断言
-        const equationRuns: ParagraphChild[] = [
-          new TextRun({ children: [new Tab()] }),
-          mathChild,
-          new TextRun({ children: [new Tab()] }),
-          new TextRun({ text: `(${eq.index})` }),
-        ];
-        const paragraph = new Paragraph({
-          // 制表位:center tab 于文本区正中(公式居中),right tab 于文本区右缘(编号右对齐)
-          tabStops: [
-            { type: TabStopType.CENTER, position: Math.floor(textWidthTwips / 2) },
-            { type: TabStopType.RIGHT, position: textWidthTwips },
-          ],
-          children:
-            eq.label !== undefined
-              ? wrapBookmark(ctx.bookmarkNextId, docxBookmarkId(`eq-${eq.label}`), equationRuns)
-              : equationRuns,
-        });
-        return [paragraph];
-      }
+      // display 公式:有编号信息走「居中 + 编号右对齐」,无编号信息(equationNumbering
+      // 关闭时的主路径)走原居中逻辑;降级输出 TeX 源码等宽灰字并追加警告。
+      // 详见 handlers/equations.ts renderDisplayMath。
+      return renderDisplayMath(node, ctx, equations.indexByNode.get(node), textWidthTwips);
     case "blockquote":
       return renderBlockquote(node, ctx);
     case "thematicBreak":
@@ -373,95 +253,4 @@ async function renderBlock(
     default:
       return [];
   }
-}
-
-async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph> {
-  const levels: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
-    1: HeadingLevel.HEADING_1,
-    2: HeadingLevel.HEADING_2,
-    3: HeadingLevel.HEADING_3,
-    4: HeadingLevel.HEADING_4,
-    5: HeadingLevel.HEADING_5,
-    6: HeadingLevel.HEADING_6,
-  };
-  // 行内 label(批次 10 功能 2):{#sec:label} 尾部后缀不渲染——渲染前从最后一个
-  // 叶子文本节点剥离(递归副本,不改 AST;parse.ts 已从 slug 剥离,此处剥离
-  // 渲染文本,label 不进标题文本;label 的章节号登记在 renderDocx 预扫完成)
-  const secLabel = node.data?.secLabel;
-  const children = secLabel !== undefined ? stripTrailingSecLabel(node.children) : node.children;
-  const runs = await renderPhrasing(children, ctx);
-  // parse.ts 将标题 id 挂于 data.id(mdast Data 已声明合并,见 parse.ts)
-  const id = node.data?.id;
-  return new Paragraph({
-    heading: levels[node.depth] ?? HeadingLevel.HEADING_6,
-    spacing: { before: 240, after: 120 },
-    pageBreakBefore: node.depth === 1 && ctx.breakBeforeH1 === true,
-    numbering:
-      node.depth <= 3 && ctx.headingNumbering === true
-        ? { reference: "md-heading", level: node.depth - 1 }
-        : undefined,
-    // docx 9.x Paragraph 无 bookmarks 选项:书签以 BookmarkStart/End 包裹标题 runs
-    // 实现(linkId 由 ctx.bookmarkNextId 自增,避免组件级恒为 1 的书签 id 冲突)
-    children:
-      typeof id === "string" && id !== ""
-        ? wrapBookmark(ctx.bookmarkNextId, docxBookmarkId(id), runs)
-        : runs,
-  });
-}
-
-/** 递归剥离最后一个叶子文本节点尾部的 {#sec:label}(渲染文本不含 label;
- *  返回副本,不改 AST;label 位于强调/加粗等嵌套节点内也命中) */
-function stripTrailingSecLabel(children: PhrasingContent[]): PhrasingContent[] {
-  if (children.length === 0) return children;
-  const result = children.slice();
-  const last = result[result.length - 1]!; // 函数首行已守卫 children.length > 0
-  if (last.type === "text") {
-    result[result.length - 1] = { ...last, value: stripSecLabelSuffix(last.value) };
-  } else if ("children" in last && Array.isArray(last.children) && last.children.length > 0) {
-    // mdast children 联合类型收窄不完全,渲染场景恒为数组,显式断言后递归
-    result[result.length - 1] = {
-      ...last,
-      children: stripTrailingSecLabel(last.children as PhrasingContent[]),
-    } as PhrasingContent;
-  }
-  return result;
-}
-
-async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
-  const rows: TableRow[] = [];
-  for (const [rowIndex, row] of node.children.entries()) {
-    const cells: TableCell[] = [];
-    for (const [colIndex, cell] of row.children.entries()) {
-      const runs = await renderPhrasing(normalizeInlineHtml(cell.children), ctx, rowIndex === 0 ? { bold: true } : {});
-      // B3:GFM 列对齐(:--- / :---: / ---:)映射为段落对齐;未声明列(null)保持缺省左对齐
-      // (此前 mdast table.align 被忽略,双格式保真不一致:pdf 侧 markdown-it 原生支持)
-      const align = node.align?.[colIndex];
-      const alignment =
-        align === "center" ? AlignmentType.CENTER : align === "right" ? AlignmentType.RIGHT : undefined;
-      cells.push(
-        new TableCell({
-          children: [
-            new Paragraph({
-              children: runs,
-              ...(alignment ? { alignment } : {}),
-            }),
-          ],
-        }),
-      );
-    }
-    rows.push(new TableRow({ children: cells }));
-  }
-  const border = { style: BorderStyle.SINGLE, size: 4, color: "000000" };
-  return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: {
-      top: border,
-      bottom: border,
-      left: border,
-      right: border,
-      insideHorizontal: border,
-      insideVertical: border,
-    },
-    rows,
-  });
 }
