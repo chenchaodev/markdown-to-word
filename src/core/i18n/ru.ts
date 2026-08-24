@@ -144,14 +144,16 @@ const dict: Partial<Record<Dict, string>> = {
     "recent.time.monthDay": "${day}.${month}",
     "recent.time.fullDate": "${day}.${month}.${year}",
 
-    /* ---------- Панель настроек ---------- */
+    /* ---------- Панель настроек (выдвижная) ---------- */
     "settings.title": "Настройки",
-    "settings.summaryHint": "Шаблоны, страница, типографика и экспорт",
     "settings.autoSaveNote": "Настройки применяются сразу и сохраняются автоматически",
-    "settings.groupTemplate": "Шаблоны",
-    "settings.groupPage": "Страница",
+    "settings.drawerOpenAria": "Открыть настройки",
+    "settings.drawerCloseAria": "Закрыть настройки",
+    "settings.groupCommon": "Общие",
     "settings.groupTypography": "Типографика",
-    "settings.groupExport": "Экспорт",
+    "settings.groupAdvanced": "Дополнительно",
+    "settings.groupManage": "Управление шаблонами",
+    "settings.groupApp": "Настройки приложения",
     "settings.groupLanguage": "Язык интерфейса",
     "settings.groupAppearance": "Тема оформления",
     "settings.themeSystem": "Как в системе",

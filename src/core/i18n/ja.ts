@@ -138,14 +138,16 @@ const dict: Partial<Record<Dict, string>> = {
     "recent.time.monthDay": "${month}月${day}日",
     "recent.time.fullDate": "${year}年${month}月${day}日",
 
-    /* ---------- 設定パネル ---------- */
+    /* ---------- 設定ドロワー ---------- */
     "settings.title": "設定",
-    "settings.summaryHint": "テンプレート・ページ・組版・エクスポート",
     "settings.autoSaveNote": "設定は即時反映され、自動保存されます",
-    "settings.groupTemplate": "テンプレート",
-    "settings.groupPage": "ページ",
+    "settings.drawerOpenAria": "設定を開く",
+    "settings.drawerCloseAria": "設定を閉じる",
+    "settings.groupCommon": "共通",
     "settings.groupTypography": "組版",
-    "settings.groupExport": "エクスポート",
+    "settings.groupAdvanced": "詳細",
+    "settings.groupManage": "テンプレート管理",
+    "settings.groupApp": "アプリ設定",
     "settings.groupLanguage": "表示言語",
     "settings.groupAppearance": "外観テーマ",
     "settings.themeSystem": "システムに従う",

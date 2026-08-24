@@ -172,15 +172,14 @@ body {
 }
 
 /* 应用卡片:P0-1 Grid 布局,高度恒等于视口(减上下外边距),页面不再随内容伸缩。
- * 六条轨道与 index.html 的 .app 直接子元素一一对应:
+ * 五条轨道与 index.html 的 .app 直接子元素一一对应(P0-3 起设置面板迁出主页面):
  *   ① header        标题区(auto)
  *   ② .file-area    主舞台(auto;高度由 drop.css 固定为 clamp(280px,40vh,400px),
  *                    不随文件选择数量变化——布局跳动的根治点)
  *   ③ #messageSlot  消息槽(auto;min-height 预留空态占位)
  *   ④ #recentSection 最近转换(minmax(0,1fr) 弹性吸收带:显隐/内容增减只改变
  *                    本轨道,主舞台/消息槽/footer 几何恒定;隐藏时吸收空白)
- *   ⑤ settingsPanel 设置面板(auto;展开时面板体内部滚动,见 settings.css)
- *   ⑥ .actions      底部操作栏(auto;最后一条轨道钉底)
+ *   ⑤ .actions      底部操作栏(auto;最后一条轨道钉底)
  */
 .app {
   box-sizing: border-box;
@@ -190,7 +189,6 @@ body {
     auto
     auto
     minmax(0, 1fr)
-    auto
     auto;
   height: calc(100vh - 32px);
   margin: 16px auto; /* 批次 12(C3):大屏密度上限,水平居中 */
@@ -208,9 +206,17 @@ body {
 /* 标题区:版本号与标题同行(baseline 对齐;修复此前块级 h1 导致版本号折行) */
 .header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+/* 顶栏右侧操作区(P1-1 格式分段 + P0-3 摘要 chip 与设置齿轮) */
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .title {
@@ -226,6 +232,116 @@ body {
   font-weight: 400;
   color: var(--text-secondary);
   user-select: text;
+}
+
+/* 摘要 chip(P0-3):「当前预设 · 纸张」,点击直达抽屉常用组;
+ * 文案由 updateSettingsChip 填充,空串时 :empty 隐藏(避免空胶囊占位) */
+.chip {
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.chip:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chip:empty {
+  display: none;
+}
+
+/* 图标按钮(设置齿轮 / 抽屉关闭):仅图标 + 悬停底色 */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.icon-btn:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 分段控件(P1-1 输出格式 / P0-4 外观主题):
+ * radio 语义完整保留(同 name 分组,方向键切换、表单可访问性不变),
+ * 视觉呈现为分段按钮——透明 input 覆盖整个分段承接点击与焦点,
+ * 选中态 accent-soft 底 + accent 字 */
+.segmented {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.segment {
+  position: relative;
+  display: inline-flex;
+}
+
+.segment input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.segment span {
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.segment input:checked + span {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.segment input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 /* 消息槽(P0-2):状态行 / 拖放跳过列表 / 结果汇总条的常驻固定容器。
@@ -261,8 +377,9 @@ body {
 }
 
 /* 底部操作栏:常规态由 .app Grid 最后一条轨道钉底(不依赖 sticky 定位);
- * sticky 保留为溢出兜底——设置面板展开等内容超出视口、.app 进入内部滚动时,
+ * sticky 保留为溢出兜底——内容超出视口、.app 进入内部滚动时,
  * 转换按钮/进度条仍吸附在卡片可视区底部(批次 12 C2 语义延续)。
+ * P1-1:格式选择上移顶栏后,footer 只剩主行动线,靠右排布与原视觉位置一致。
  * 背景与卡片一致(--bg-card),滚动内容从其后经过时被遮住,细边框分隔 */
 .actions {
   position: sticky;
@@ -270,7 +387,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
   margin-top: 12px;
   padding: 12px 0 0;
@@ -282,37 +399,6 @@ body {
 .actions .progress-area {
   flex-basis: 100%;
   margin-top: 0;
-}
-
-.formats {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.formats legend {
-  padding: 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.format-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.format-option input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
 }
 
 .convert {

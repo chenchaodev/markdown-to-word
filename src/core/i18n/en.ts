@@ -141,16 +141,18 @@ const dict = {
     "recent.time.monthDay": "${month}/${day}",
     "recent.time.fullDate": "${year}/${month}/${day}",
 
-    /* ---------- Settings panel ---------- */
+    /* ---------- Settings drawer ---------- */
     "settings.title": "Settings",
-    "settings.summaryHint": "Templates, page, typography and export",
     "settings.autoSaveNote": "Settings take effect immediately and are saved automatically",
-    "settings.groupTemplate": "Templates",
-    "settings.groupPage": "Page",
+    "settings.drawerOpenAria": "Open settings",
+    "settings.drawerCloseAria": "Close settings",
+    "settings.groupCommon": "Common",
     "settings.groupTypography": "Typography",
-    "settings.groupExport": "Export",
+    "settings.groupAdvanced": "Advanced",
+    "settings.groupManage": "Template management",
+    "settings.groupApp": "Preferences",
     "settings.groupLanguage": "Interface language",
-    // B13: appearance theme
+    // B13: appearance theme (P0-4: key reused as the L4 field label)
     "settings.groupAppearance": "Appearance",
     "settings.themeSystem": "Follow system",
     "settings.themeLight": "Light",

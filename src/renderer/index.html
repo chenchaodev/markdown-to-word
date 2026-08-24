@@ -21,9 +21,44 @@
   <body>
     <main class="app">
       <!-- 标题区 -->
+      <!-- 标题区:P1-1 格式分段控件自 footer 上移(radio 语义保留,方向键可切换);
+           P0-3 设置入口 = 当前预设·纸张摘要 chip(点击直达抽屉「常用」组)+ 齿轮按钮 -->
       <header class="header">
         <h1 class="title" data-i18n="app.title">Markdown 转换工具</h1>
         <span id="appVersion" class="version" title=""></span>
+        <div class="header-actions">
+          <div
+            class="segmented"
+            role="radiogroup"
+            data-i18n-aria-label="settings.outputFormat"
+            aria-label="输出格式"
+          >
+            <label class="segment">
+              <input type="radio" name="format" value="docx" checked />
+              <span data-i18n="format.docx">Word (.docx)</span>
+            </label>
+            <label class="segment">
+              <input type="radio" name="format" value="pdf" />
+              <span data-i18n="format.pdf">PDF (.pdf)</span>
+            </label>
+          </div>
+          <!-- 摘要 chip:文案由 settings-drawer.updateSettingsChip 填充(空串时 CSS :empty 隐藏) -->
+          <button type="button" id="settingsSummaryChip" class="chip"></button>
+          <button
+            type="button"
+            id="settingsOpenBtn"
+            class="icon-btn"
+            data-i18n-aria-label="settings.drawerOpenAria"
+            aria-label="打开设置"
+            data-i18n-title="settings.drawerOpenAria"
+            title="打开设置"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       <!-- 文件选择区:拖放区 + 选择文件按钮 -->
@@ -212,320 +247,12 @@
         <ul id="recentList" class="recent-list"></ul>
       </section>
 
-      <!-- 设置:单一折叠面板(模板/页面/排版/导出 4 个子分组),配置全部收敛于此,
-           界面只突出主流程(文件区 → 结果 → 最近转换 → 底部操作栏);
-           控件 id 与事件绑定不变(settings-panel.ts 仅 getElementById 引用) -->
-      <details id="settingsPanel" class="settings">
-        <summary class="settings-summary">
-          <span class="settings-summary-title" data-i18n="settings.title">设置</span>
-          <span class="settings-summary-hint" data-i18n="settings.summaryHint">模板、页面、排版与导出</span>
-        </summary>
-        <div class="settings-body">
-          <!-- ── 模板:预设选择 + 另存为/删除(主行);导入/导出预设、导入/清除 CSS(辅助行,ghost 弱化) ── -->
-          <div class="settings-group">
-            <h3 class="settings-group-title" data-i18n="settings.groupTemplate">模板</h3>
-            <div class="settings-row preset-main-row">
-              <label class="setting-label" for="templatePreset" data-i18n="settings.presetLabel">模板预设</label>
-              <select id="templatePreset" class="setting-select">
-                <option value="default" data-i18n="preset.default">默认</option>
-                <option value="paper" data-i18n="preset.paper">学术论文</option>
-                <option value="business" data-i18n="preset.business">商务简报</option>
-              </select>
-              <!-- 批次 11 迭代 3:自定义预设(另存为当前排版+页面设置;仅自定义预设可删) -->
-              <button type="button" id="presetSaveBtn" class="btn btn-secondary btn-small">
-                <span data-i18n="preset.saveAs">另存为预设…</span>
-              </button>
-              <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-small hidden">
-                <span data-i18n="preset.delete">删除预设</span>
-              </button>
-            </div>
-            <div class="settings-row preset-aux-row">
-              <!-- 批次 13:预设 JSON 导入/导出(main 内选文件,与现有自定义预设合并/全量导出) -->
-              <button type="button" id="presetImportBtn" class="btn btn-ghost btn-small"
-                data-i18n-title="preset.importTitle"
-                title="从 JSON 文件导入自定义预设">
-                <span data-i18n="preset.import">导入预设…</span>
-              </button>
-              <button type="button" id="presetExportBtn" class="btn btn-ghost btn-small"
-                data-i18n-title="preset.exportTitle"
-                title="导出全部自定义预设为 JSON 文件">
-                <span data-i18n="preset.export">导出预设…</span>
-              </button>
-              <!-- 批次 16:PDF 样式 CSS 导入(仅 pdf 路线生效;内容持久化到 settings.pdfCss,
-                   渲染时追加到默认样式之后覆盖;docx 路线不消费 CSS) -->
-              <button type="button" id="pdfCssImportBtn" class="btn btn-ghost btn-small"
-                data-i18n-title="settings.cssImportTitle"
-                title="导入 CSS 文件作为 PDF 样式模板(追加到默认样式之后覆盖)">
-                <span data-i18n="settings.cssImport">导入 CSS…</span>
-              </button>
-              <button type="button" id="pdfCssClearBtn" class="btn btn-ghost btn-small hidden"
-                data-i18n-title="settings.cssClearTitle"
-                title="清除已导入的 PDF 样式 CSS">
-                <span data-i18n="settings.cssClear">清除</span>
-              </button>
-              <span id="pdfCssStatus" class="settings-note preset-status" data-i18n="settings.pdfCssNone">未导入</span>
-              <span id="templatePresetHint" class="settings-note"
-                data-i18n="preset.hintTitle"
-                data-i18n-title="preset.hintTitle"
-                title="选择模板将覆盖排版与页面设置">
-                选择模板将覆盖排版与页面设置
-              </span>
-            </div>
-          </div>
-
-          <!-- ── 页面:纸张、方向、边距、分页与目录 ── -->
-          <div class="settings-group">
-            <h3 class="settings-group-title" data-i18n="settings.groupPage">页面</h3>
-            <div class="settings-grid">
-              <div class="setting-field">
-                <label class="setting-label" for="paperSelect" data-i18n="settings.paper">纸张</label>
-                <select id="paperSelect" class="setting-select">
-                  <option value="A4">A4</option>
-                  <option value="A3">A3</option>
-                  <option value="A5">A5</option>
-                  <option value="Letter">Letter</option>
-                  <option value="Legal">Legal</option>
-                </select>
-              </div>
-
-              <fieldset class="setting-field setting-fieldset">
-                <legend class="setting-label" data-i18n="settings.orientation">方向</legend>
-                <div class="setting-options">
-                  <label class="setting-option">
-                    <input type="radio" name="orientation" value="portrait" />
-                    <span data-i18n="settings.portrait">纵向</span>
-                  </label>
-                  <label class="setting-option">
-                    <input type="radio" name="orientation" value="landscape" />
-                    <span data-i18n="settings.landscape">横向</span>
-                  </label>
-                </div>
-              </fieldset>
-
-              <fieldset class="setting-field setting-fieldset setting-margins">
-                <legend class="setting-label" data-i18n="settings.margins">边距 (mm)</legend>
-                <div class="margin-grid">
-                  <!-- max 与 settings-logic 校验上限对称(MARGIN_MAX_MM = 1000,core/settings-defaults.ts 单源) -->
-                  <label class="margin-field">
-                    <span class="margin-name" data-i18n="settings.marginTop">上</span>
-                    <input type="number" id="marginTop" class="margin-input" min="0" max="1000" step="0.5" />
-                  </label>
-                  <label class="margin-field">
-                    <span class="margin-name" data-i18n="settings.marginBottom">下</span>
-                    <input type="number" id="marginBottom" class="margin-input" min="0" max="1000" step="0.5" />
-                  </label>
-                  <label class="margin-field">
-                    <span class="margin-name" data-i18n="settings.marginLeft">左</span>
-                    <input type="number" id="marginLeft" class="margin-input" min="0" max="1000" step="0.5" />
-                  </label>
-                  <label class="margin-field">
-                    <span class="margin-name" data-i18n="settings.marginRight">右</span>
-                    <input type="number" id="marginRight" class="margin-input" min="0" max="1000" step="0.5" />
-                  </label>
-                </div>
-                <p id="marginError" class="field-error hidden"></p>
-              </fieldset>
-
-              <label class="setting-check">
-                <input type="checkbox" id="breakBeforeH1" />
-                <span data-i18n="settings.breakBeforeH1">每个一级标题前分页</span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="toc" />
-                <span>
-                  <span data-i18n="settings.toc">自动生成目录</span><span class="setting-label-hint" data-i18n="settings.tocHint">(Word 打开即见,免更新域)</span>
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <!-- ── 排版:字体、字号、行距与编号 ── -->
-          <div class="settings-group">
-            <h3 class="settings-group-title" data-i18n="settings.groupTypography">排版</h3>
-            <div class="settings-grid">
-              <div class="setting-field">
-                <label class="setting-label" for="fontAscii">
-                  <span data-i18n="settings.fontAscii">西文字体</span><span class="setting-label-hint" data-i18n="settings.fontAsciiHint">(正文中的字母与数字)</span>
-                </label>
-                <input
-                  type="text"
-                  id="fontAscii"
-                  class="setting-input"
-                  list="fontAsciiSuggestions"
-                />
-                <datalist id="fontAsciiSuggestions">
-                  <option value="Calibri"></option>
-                  <option value="Arial"></option>
-                  <option value="Times New Roman"></option>
-                  <option value="Consolas"></option>
-                  <option value="Segoe UI"></option>
-                </datalist>
-                <p id="fontAsciiError" class="field-error hidden"></p>
-              </div>
-
-              <div class="setting-field">
-                <label class="setting-label" for="fontEastAsia">
-                  <span data-i18n="settings.fontEastAsia">中文字体</span><span class="setting-label-hint" data-i18n="settings.fontEastAsiaHint">(正文中的汉字)</span>
-                </label>
-                <input
-                  type="text"
-                  id="fontEastAsia"
-                  class="setting-input"
-                  list="fontEastAsiaSuggestions"
-                />
-                <datalist id="fontEastAsiaSuggestions">
-                  <option value="微软雅黑"></option>
-                  <option value="宋体"></option>
-                  <option value="黑体"></option>
-                  <option value="楷体"></option>
-                  <option value="仿宋"></option>
-                  <option value="等线"></option>
-                </datalist>
-                <p id="fontEastAsiaError" class="field-error hidden"></p>
-              </div>
-
-              <div class="setting-field">
-                <label class="setting-label" for="bodySizePt">
-                  <span data-i18n="settings.bodySize">正文字号</span><span class="setting-label-hint" data-i18n="settings.bodySizeHint">(pt)</span>
-                </label>
-                <input
-                  type="number"
-                  id="bodySizePt"
-                  class="setting-number"
-                  min="8"
-                  max="24"
-                  step="1"
-                />
-                <p id="bodySizeError" class="field-error hidden"></p>
-              </div>
-
-              <div class="setting-field">
-                <label class="setting-label" for="lineSpacing">
-                  <span data-i18n="settings.lineSpacing">行距</span><span class="setting-label-hint" data-i18n="settings.lineSpacingHint">(倍数)</span>
-                </label>
-                <input
-                  type="number"
-                  id="lineSpacing"
-                  class="setting-number"
-                  min="1.0"
-                  max="2.5"
-                  step="0.1"
-                />
-                <p id="lineSpacingError" class="field-error hidden"></p>
-              </div>
-
-              <label class="setting-check">
-                <input type="checkbox" id="firstLineIndent" />
-                <span data-i18n="settings.firstLineIndent">首行缩进 2 字符</span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="alignJustify" />
-                <span>
-                  <span data-i18n="settings.alignJustify">两端对齐</span><span class="setting-label-hint" data-i18n="settings.alignJustifyHint">(取消后为左对齐)</span>
-                </span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="headingNumbering" />
-                <span data-i18n="settings.headingNumbering">章节自动编号</span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="captionNumbering" />
-                <span>
-                  <span data-i18n="settings.captionNumbering">图/表题注自动编号</span><span class="setting-label-hint" data-i18n="settings.captionNumberingHint">(「图: 标题」前缀行识别)</span>
-                </span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="equationNumbering" />
-                <span data-i18n="settings.equationNumbering">公式编号</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- ── 导出:输出目录与导出行为(输出目录高频前置) ── -->
-          <div class="settings-group">
-            <h3 class="settings-group-title" data-i18n="settings.groupExport">导出</h3>
-            <div class="settings-grid">
-              <div class="setting-field setting-outputdir">
-                <span class="setting-label" id="outputDirLabel" data-i18n="settings.outputDir">输出目录</span>
-                <div class="outputdir-row">
-                  <span id="outputDirValue" class="outputdir-value" data-i18n="settings.outputDirDefault" title="">与源文件相同目录</span>
-                  <button type="button" id="outputDirPick" class="btn btn-secondary btn-small">
-                    <span data-i18n="settings.outputDirPick">选择…</span>
-                  </button>
-                  <button type="button" id="outputDirReset" class="btn btn-ghost btn-small">
-                    <span data-i18n="settings.outputDirReset">恢复默认</span>
-                  </button>
-                </div>
-              </div>
-
-              <fieldset class="setting-field setting-fieldset setting-after">
-                <legend class="setting-label" data-i18n="settings.afterConvert">导出后</legend>
-                <div class="setting-options">
-                  <label class="setting-option">
-                    <input type="radio" name="afterConvert" value="none" />
-                    <span data-i18n="settings.afterNone">不自动执行</span>
-                  </label>
-                  <label class="setting-option">
-                    <input type="radio" name="afterConvert" value="show-in-folder" />
-                    <span data-i18n="common.reveal">打开所在文件夹</span>
-                  </label>
-                  <label class="setting-option">
-                    <input type="radio" name="afterConvert" value="open" />
-                    <span data-i18n="common.open">打开文件</span>
-                  </label>
-                </div>
-              </fieldset>
-
-              <!-- 批次 11 迭代 2:完成弹窗提示(ui-state 字段,与弹窗内「不再提示」双向同步) -->
-              <label class="setting-check">
-                <input type="checkbox" id="completeDialogPrompt" checked />
-                <span data-i18n="settings.completeDialogPrompt">转换完成弹窗提示</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- ── 界面语言(i18n;切换即时生效并持久化) ──
-               选项由 settings-panel.rebuildLanguageOptions 按 core/i18n LANGUAGES
-               注册表动态生成(label = 本地化自称),此处只留容器 -->
-          <div class="settings-group settings-group--language">
-            <h3 class="settings-group-title" data-i18n="settings.groupLanguage">界面语言</h3>
-            <div class="setting-options" id="languageOptions"></div>
-          </div>
-
-          <!-- ── 外观主题(B13;切换即时生效并持久化;system = 移除 data-theme,CSS @media 接管) ── -->
-          <div class="settings-group settings-group--appearance">
-            <h3 class="settings-group-title" data-i18n="settings.groupAppearance">外观主题</h3>
-            <div class="setting-options">
-              <label class="setting-option">
-                <input type="radio" name="theme" value="system" checked />
-                <span data-i18n="settings.themeSystem">跟随系统</span>
-              </label>
-              <label class="setting-option">
-                <input type="radio" name="theme" value="light" />
-                <span data-i18n="settings.themeLight">浅色</span>
-              </label>
-              <label class="setting-option">
-                <input type="radio" name="theme" value="dark" />
-                <span data-i18n="settings.themeDark">深色</span>
-              </label>
-            </div>
-          </div>
-
-          <p class="settings-note" data-i18n="settings.autoSaveNote">设置即时生效并自动保存</p>
-        </div>
-      </details>
-
-      <!-- 底部操作栏:格式选择 + 转换按钮(单文件 / 批量 / 合并) + 转换进度。
+      <!-- 底部操作栏:转换按钮(单文件 / 批量 / 合并) + 转换进度。
            P0-1:.app 改 Grid 后 footer 由最后一条轨道钉底(常规态不依赖 sticky);
-           sticky 仅作兜底保留——设置面板展开使内容超出视口时(.app 内部滚动),
-           转换按钮/进度条仍吸附可见(批次 12 C2 语义延续) -->
+           sticky 仅作兜底保留——内容超出视口时(.app 内部滚动)转换按钮/进度条仍吸附可见。
+           P1-1:格式选择已上移顶栏分段控件,footer 只留主行动线 -->
       <footer class="actions">
-        <!-- 转换进度:进度条 + 百分比 + 取消按钮(转换中显示;位于 footer 内,设置面板展开时仍可见) -->
+        <!-- 转换进度:进度条 + 百分比 + 取消按钮(转换中显示;位于 footer 内,设置抽屉打开时仍可见) -->
         <div id="progressArea" class="progress-area hidden">
           <div
             id="progressTrack"
@@ -546,17 +273,6 @@
             </button>
           </div>
         </div>
-        <fieldset class="formats">
-          <legend data-i18n="settings.outputFormat">输出格式</legend>
-          <label class="format-option">
-            <input type="radio" name="format" value="docx" checked />
-            <span data-i18n="format.docx">Word (.docx)</span>
-          </label>
-          <label class="format-option">
-            <input type="radio" name="format" value="pdf" />
-            <span data-i18n="format.pdf">PDF (.pdf)</span>
-          </label>
-        </fieldset>
         <div class="convert">
           <!-- 单文件:开始转换;多文件:批量转换(主) + 合并转换(次),按选择数量切换 -->
           <button
@@ -593,6 +309,331 @@
         </div>
       </footer>
     </main>
+
+    <!-- P0-3 设置抽屉:overlay 遮罩 + 右侧滑出面板,主页面配置清零。
+         开合记忆沿用 ui-state.panelOpen.page(语义自「details 展开」迁移为「抽屉可见」);
+         转换中可打开(设置即时生效+自动保存链路不经过抽屉模块)。
+         P0-4 信息架构:L1 常用(默认展开)→ L2 排版(默认展开)→ L3 高级(默认折叠,
+         含模板管理二级折叠)→ L4 应用偏好(置底分隔段)。
+         控件 id 与 settings-bindings/settings-panel 的绑定、回填逻辑一一对应,勿改 id -->
+    <div id="settingsDrawer" class="drawer-overlay hidden">
+      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+        <header class="drawer-head">
+          <h2 id="drawerTitle" class="drawer-title" data-i18n="settings.title">设置</h2>
+          <button
+            type="button"
+            id="drawerCloseBtn"
+            class="icon-btn"
+            data-i18n-aria-label="settings.drawerCloseAria"
+            aria-label="关闭设置"
+            data-i18n-title="settings.drawerCloseAria"
+            title="关闭设置"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </header>
+        <div class="drawer-body">
+          <!-- ── L1 常用:模板预设 / 纸张方向 / 输出目录 / 导出后 ── -->
+          <section id="drawerGroupCommon" class="drawer-group">
+            <h3 class="drawer-group-title" data-i18n="settings.groupCommon">常用</h3>
+            <div class="setting-field">
+              <label class="setting-label" for="templatePreset" data-i18n="settings.presetLabel">模板预设</label>
+              <select id="templatePreset" class="setting-select">
+                <option value="default" data-i18n="preset.default">默认</option>
+                <option value="paper" data-i18n="preset.paper">学术论文</option>
+                <option value="business" data-i18n="preset.business">商务简报</option>
+              </select>
+              <span id="templatePresetHint" class="settings-note"
+                data-i18n="preset.hintTitle"
+                data-i18n-title="preset.hintTitle"
+                title="选择模板将覆盖排版与页面设置">
+                选择模板将覆盖排版与页面设置
+              </span>
+            </div>
+
+            <div class="drawer-cols">
+              <div class="setting-field">
+                <label class="setting-label" for="paperSelect" data-i18n="settings.paper">纸张</label>
+                <select id="paperSelect" class="setting-select">
+                  <option value="A4">A4</option>
+                  <option value="A3">A3</option>
+                  <option value="A5">A5</option>
+                  <option value="Letter">Letter</option>
+                  <option value="Legal">Legal</option>
+                </select>
+              </div>
+              <!-- P0-4:方向由双 radio 改单 select(省高度;value 与原 radio 一致) -->
+              <div class="setting-field">
+                <label class="setting-label" for="orientationSelect" data-i18n="settings.orientation">方向</label>
+                <select id="orientationSelect" class="setting-select">
+                  <option value="portrait" data-i18n="settings.portrait">纵向</option>
+                  <option value="landscape" data-i18n="settings.landscape">横向</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-field setting-outputdir">
+              <span class="setting-label" id="outputDirLabel" data-i18n="settings.outputDir">输出目录</span>
+              <div class="outputdir-row">
+                <span id="outputDirValue" class="outputdir-value" data-i18n="settings.outputDirDefault" title="">与源文件相同目录</span>
+                <button type="button" id="outputDirPick" class="btn btn-secondary btn-small">
+                  <span data-i18n="settings.outputDirPick">选择…</span>
+                </button>
+                <button type="button" id="outputDirReset" class="btn btn-ghost btn-small">
+                  <span data-i18n="settings.outputDirReset">恢复默认</span>
+                </button>
+              </div>
+            </div>
+
+            <fieldset class="setting-field setting-fieldset setting-after">
+              <legend class="setting-label" data-i18n="settings.afterConvert">导出后</legend>
+              <div class="setting-options">
+                <label class="setting-option">
+                  <input type="radio" name="afterConvert" value="none" />
+                  <span data-i18n="settings.afterNone">不自动执行</span>
+                </label>
+                <label class="setting-option">
+                  <input type="radio" name="afterConvert" value="show-in-folder" />
+                  <span data-i18n="common.reveal">打开所在文件夹</span>
+                </label>
+                <label class="setting-option">
+                  <input type="radio" name="afterConvert" value="open" />
+                  <span data-i18n="common.open">打开文件</span>
+                </label>
+              </div>
+            </fieldset>
+          </section>
+
+          <!-- ── L2 排版:字体 / 字号 / 行距(编号类开关移入 L3 高级) ── -->
+          <section class="drawer-group">
+            <h3 class="drawer-group-title" data-i18n="settings.groupTypography">排版</h3>
+            <div class="setting-field">
+              <label class="setting-label" for="fontAscii">
+                <span data-i18n="settings.fontAscii">西文字体</span><span class="setting-label-hint" data-i18n="settings.fontAsciiHint">(正文中的字母与数字)</span>
+              </label>
+              <input
+                type="text"
+                id="fontAscii"
+                class="setting-input"
+                list="fontAsciiSuggestions"
+              />
+              <datalist id="fontAsciiSuggestions">
+                <option value="Calibri"></option>
+                <option value="Arial"></option>
+                <option value="Times New Roman"></option>
+                <option value="Consolas"></option>
+                <option value="Segoe UI"></option>
+              </datalist>
+              <p id="fontAsciiError" class="field-error hidden"></p>
+            </div>
+
+            <div class="setting-field">
+              <label class="setting-label" for="fontEastAsia">
+                <span data-i18n="settings.fontEastAsia">中文字体</span><span class="setting-label-hint" data-i18n="settings.fontEastAsiaHint">(正文中的汉字)</span>
+              </label>
+              <input
+                type="text"
+                id="fontEastAsia"
+                class="setting-input"
+                list="fontEastAsiaSuggestions"
+              />
+              <datalist id="fontEastAsiaSuggestions">
+                <option value="微软雅黑"></option>
+                <option value="宋体"></option>
+                <option value="黑体"></option>
+                <option value="楷体"></option>
+                <option value="仿宋"></option>
+                <option value="等线"></option>
+              </datalist>
+              <p id="fontEastAsiaError" class="field-error hidden"></p>
+            </div>
+
+            <div class="drawer-cols">
+              <div class="setting-field">
+                <label class="setting-label" for="bodySizePt">
+                  <span data-i18n="settings.bodySize">正文字号</span><span class="setting-label-hint" data-i18n="settings.bodySizeHint">(pt)</span>
+                </label>
+                <input
+                  type="number"
+                  id="bodySizePt"
+                  class="setting-number"
+                  min="8"
+                  max="24"
+                  step="1"
+                />
+                <p id="bodySizeError" class="field-error hidden"></p>
+              </div>
+              <div class="setting-field">
+                <label class="setting-label" for="lineSpacing">
+                  <span data-i18n="settings.lineSpacing">行距</span><span class="setting-label-hint" data-i18n="settings.lineSpacingHint">(倍数)</span>
+                </label>
+                <input
+                  type="number"
+                  id="lineSpacing"
+                  class="setting-number"
+                  min="1.0"
+                  max="2.5"
+                  step="0.1"
+                />
+                <p id="lineSpacingError" class="field-error hidden"></p>
+              </div>
+            </div>
+          </section>
+
+          <!-- ── L3 高级(默认折叠):边距 / 分页目录 / 段落与编号开关 / 模板管理 ── -->
+          <details class="drawer-fold">
+            <summary class="drawer-fold-summary" data-i18n="settings.groupAdvanced">高级</summary>
+            <div class="drawer-fold-body">
+              <fieldset class="setting-field setting-fieldset">
+                <legend class="setting-label" data-i18n="settings.margins">边距 (mm)</legend>
+                <div class="margin-grid">
+                  <!-- max 与 settings-logic 校验上限对称(MARGIN_MAX_MM = 1000,core/settings-defaults.ts 单源) -->
+                  <label class="margin-field">
+                    <span class="margin-name" data-i18n="settings.marginTop">上</span>
+                    <input type="number" id="marginTop" class="margin-input" min="0" max="1000" step="0.5" />
+                  </label>
+                  <label class="margin-field">
+                    <span class="margin-name" data-i18n="settings.marginBottom">下</span>
+                    <input type="number" id="marginBottom" class="margin-input" min="0" max="1000" step="0.5" />
+                  </label>
+                  <label class="margin-field">
+                    <span class="margin-name" data-i18n="settings.marginLeft">左</span>
+                    <input type="number" id="marginLeft" class="margin-input" min="0" max="1000" step="0.5" />
+                  </label>
+                  <label class="margin-field">
+                    <span class="margin-name" data-i18n="settings.marginRight">右</span>
+                    <input type="number" id="marginRight" class="margin-input" min="0" max="1000" step="0.5" />
+                  </label>
+                </div>
+                <p id="marginError" class="field-error hidden"></p>
+              </fieldset>
+
+              <label class="setting-check">
+                <input type="checkbox" id="breakBeforeH1" />
+                <span data-i18n="settings.breakBeforeH1">每个一级标题前分页</span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="toc" />
+                <span>
+                  <span data-i18n="settings.toc">自动生成目录</span><span class="setting-label-hint" data-i18n="settings.tocHint">(Word 打开即见,免更新域)</span>
+                </span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="firstLineIndent" />
+                <span data-i18n="settings.firstLineIndent">首行缩进 2 字符</span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="alignJustify" />
+                <span>
+                  <span data-i18n="settings.alignJustify">两端对齐</span><span class="setting-label-hint" data-i18n="settings.alignJustifyHint">(取消后为左对齐)</span>
+                </span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="headingNumbering" />
+                <span data-i18n="settings.headingNumbering">章节自动编号</span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="captionNumbering" />
+                <span>
+                  <span data-i18n="settings.captionNumbering">图/表题注自动编号</span><span class="setting-label-hint" data-i18n="settings.captionNumberingHint">(「图: 标题」前缀行识别)</span>
+                </span>
+              </label>
+
+              <label class="setting-check">
+                <input type="checkbox" id="equationNumbering" />
+                <span data-i18n="settings.equationNumbering">公式编号</span>
+              </label>
+
+              <!-- 模板管理(二级折叠):另存为/删除/JSON 导入导出/PDF CSS 导入清除 -->
+              <details class="drawer-fold drawer-fold--sub">
+                <summary class="drawer-fold-summary" data-i18n="settings.groupManage">模板管理</summary>
+                <div class="drawer-fold-body">
+                  <!-- 批次 11 迭代 3:自定义预设(另存为当前排版+页面设置;仅自定义预设可删) -->
+                  <div class="drawer-btn-row">
+                    <button type="button" id="presetSaveBtn" class="btn btn-secondary btn-small">
+                      <span data-i18n="preset.saveAs">另存为预设…</span>
+                    </button>
+                    <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-small hidden">
+                      <span data-i18n="preset.delete">删除预设</span>
+                    </button>
+                  </div>
+                  <!-- 批次 13:预设 JSON 导入/导出;批次 16:PDF 样式 CSS 导入(仅 pdf 路线生效) -->
+                  <div class="drawer-btn-row">
+                    <button type="button" id="presetImportBtn" class="btn btn-ghost btn-small"
+                      data-i18n-title="preset.importTitle"
+                      title="从 JSON 文件导入自定义预设">
+                      <span data-i18n="preset.import">导入预设…</span>
+                    </button>
+                    <button type="button" id="presetExportBtn" class="btn btn-ghost btn-small"
+                      data-i18n-title="preset.exportTitle"
+                      title="导出全部自定义预设为 JSON 文件">
+                      <span data-i18n="preset.export">导出预设…</span>
+                    </button>
+                    <button type="button" id="pdfCssImportBtn" class="btn btn-ghost btn-small"
+                      data-i18n-title="settings.cssImportTitle"
+                      title="导入 CSS 文件作为 PDF 样式模板(追加到默认样式之后覆盖)">
+                      <span data-i18n="settings.cssImport">导入 CSS…</span>
+                    </button>
+                    <button type="button" id="pdfCssClearBtn" class="btn btn-ghost btn-small hidden"
+                      data-i18n-title="settings.cssClearTitle"
+                      title="清除已导入的 PDF 样式 CSS">
+                      <span data-i18n="settings.cssClear">清除</span>
+                    </button>
+                    <span id="pdfCssStatus" class="settings-note preset-status" data-i18n="settings.pdfCssNone">未导入</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </details>
+
+          <!-- ── L4 应用偏好(置底分隔段):外观主题分段 / 界面语言下拉 / 完成提示 ── -->
+          <section class="drawer-group drawer-group--prefs">
+            <h3 class="drawer-group-title" data-i18n="settings.groupApp">应用偏好</h3>
+            <!-- B13 外观主题:radio 改分段控件呈现(radio 语义保留;system = 移除
+                 data-theme,CSS @media prefers-color-scheme 接管) -->
+            <div class="setting-field">
+              <span class="setting-label" data-i18n="settings.groupAppearance">外观主题</span>
+              <div class="segmented" role="radiogroup" data-i18n-aria-label="settings.groupAppearance" aria-label="外观主题">
+                <label class="segment">
+                  <input type="radio" name="theme" value="system" checked />
+                  <span data-i18n="settings.themeSystem">跟随系统</span>
+                </label>
+                <label class="segment">
+                  <input type="radio" name="theme" value="light" />
+                  <span data-i18n="settings.themeLight">浅色</span>
+                </label>
+                <label class="segment">
+                  <input type="radio" name="theme" value="dark" />
+                  <span data-i18n="settings.themeDark">深色</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- i18n:界面语言由 radio 组改 select;选项由 settings-panel.rebuildLanguageOptions
+                 按 core/i18n LANGUAGES 注册表动态生成(label = 本地化自称) -->
+            <div class="setting-field">
+              <label class="setting-label" for="languageSelect" data-i18n="settings.groupLanguage">界面语言</label>
+              <select id="languageSelect" class="setting-select"></select>
+            </div>
+
+            <!-- 批次 11 迭代 2:完成弹窗提示(ui-state 字段,与弹窗内「不再提示」双向同步) -->
+            <label class="setting-check">
+              <input type="checkbox" id="completeDialogPrompt" checked />
+              <span data-i18n="settings.completeDialogPrompt">转换完成弹窗提示</span>
+            </label>
+          </section>
+
+          <p class="settings-note" data-i18n="settings.autoSaveNote">设置即时生效并自动保存</p>
+        </div>
+      </aside>
+    </div>
 
     <!-- 转换完成弹窗(单文件 / 合并;成功与失败均弹出,失败态展示错误原因) -->
     <div

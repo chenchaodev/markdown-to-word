@@ -13,6 +13,7 @@ export const dropMulti = document.getElementById("dropMulti") as HTMLDivElement;
 export const multiCount = document.getElementById("multiCount") as HTMLParagraphElement;
 export const multiList = document.getElementById("multiList") as HTMLUListElement;
 export const statusEl = document.getElementById("status") as HTMLParagraphElement;
+// P1-1:格式分段控件(顶栏;radio 语义保留,name="format" 与绑定不变)
 export const convertBtn = document.getElementById("convertBtn") as HTMLButtonElement;
 export const batchBtn = document.getElementById("batchBtn") as HTMLButtonElement;
 export const mergeBtn = document.getElementById("mergeBtn") as HTMLButtonElement;
@@ -29,23 +30,21 @@ export const completeDialogOk = document.getElementById(
 export const formatInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="format"]',
 );
-// i18n:界面语言选项容器 + radio 惰性查询(选项由 settings-panel.rebuildLanguageOptions
-// 按 LANGUAGES 注册表动态生成,模块加载期尚不存在,故不能静态捕获 NodeList)
-export const languageOptionsEl = document.getElementById(
-  "languageOptions",
-) as HTMLDivElement;
-export function getLanguageInputs(): NodeListOf<HTMLInputElement> {
-  return document.querySelectorAll<HTMLInputElement>('input[name="language"]');
-}
-// B13:外观主题选择(system / light / dark radio)
+// i18n:界面语言 select(P0-4 自 radio 组迁移;选项由 settings-panel.rebuildLanguageOptions
+// 按 LANGUAGES 注册表动态生成,模块加载期尚为空,回填在 rebuild 之后)
+export const languageSelect = document.getElementById(
+  "languageSelect",
+) as HTMLSelectElement;
+// B13:外观主题选择(P0-4 起为分段控件呈现;radio 语义保留,name="theme")
 export const themeInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="theme"]',
 );
 // 页面设置面板
 export const paperSelect = document.getElementById("paperSelect") as HTMLSelectElement;
-export const orientationInputs = document.querySelectorAll<HTMLInputElement>(
-  'input[name="orientation"]',
-);
+// P0-4:方向由双 radio 改单 select(value 与原 radio 一致,绑定/回填同步迁移)
+export const orientationSelect = document.getElementById(
+  "orientationSelect",
+) as HTMLSelectElement;
 export const breakBeforeH1Input = document.getElementById(
   "breakBeforeH1",
 ) as HTMLInputElement;
@@ -250,10 +249,24 @@ export const recentList = document.getElementById("recentList") as HTMLUListElem
 export const recentClearBtn = document.getElementById(
   "recentClearBtn",
 ) as HTMLButtonElement;
-// 批次 11:设置面板 details(panelOpen 展开态记忆;批次 N:单一设置面板,原 typographyPanel 已合并删除)
-export const settingsPanel = document.getElementById(
-  "settingsPanel",
-) as HTMLDetailsElement;
+// P0-3 设置抽屉:overlay 根容器(开合记忆 ui-state.panelOpen.page)+ 顶栏入口
+export const settingsDrawer = document.getElementById(
+  "settingsDrawer",
+) as HTMLDivElement;
+export const drawerCloseBtn = document.getElementById(
+  "drawerCloseBtn",
+) as HTMLButtonElement;
+export const settingsOpenBtn = document.getElementById(
+  "settingsOpenBtn",
+) as HTMLButtonElement;
+// 摘要 chip:「当前预设 · 纸张」(文案由 settings-drawer.updateSettingsChip 填充)
+export const settingsSummaryChip = document.getElementById(
+  "settingsSummaryChip",
+) as HTMLButtonElement;
+// 抽屉「常用」分组(chip 点击直达的滚动锚点)
+export const drawerGroupCommon = document.getElementById(
+  "drawerGroupCommon",
+) as HTMLElement;
 // 批次 11 迭代 2:完成弹窗「不再提示」/ 设置面板「转换完成弹窗提示」(同字段双向同步)
 export const completeDialogSuppressInput = document.getElementById(
   "completeDialogSuppress",

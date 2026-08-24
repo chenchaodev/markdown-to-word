@@ -141,14 +141,16 @@ const dict: Partial<Record<Dict, string>> = {
     "recent.time.monthDay": "${day}/${month}",
     "recent.time.fullDate": "${day}/${month}/${year}",
 
-    /* ---------- Panneau des paramètres ---------- */
+    /* ---------- Tiroir des paramètres ---------- */
     "settings.title": "Paramètres",
-    "settings.summaryHint": "Modèles, page, typographie et export",
     "settings.autoSaveNote": "Les paramètres s'appliquent immédiatement et sont enregistrés automatiquement",
-    "settings.groupTemplate": "Modèles",
-    "settings.groupPage": "Page",
+    "settings.drawerOpenAria": "Ouvrir les paramètres",
+    "settings.drawerCloseAria": "Fermer les paramètres",
+    "settings.groupCommon": "Général",
     "settings.groupTypography": "Typographie",
-    "settings.groupExport": "Export",
+    "settings.groupAdvanced": "Avancé",
+    "settings.groupManage": "Gestion des modèles",
+    "settings.groupApp": "Préférences",
     "settings.groupLanguage": "Langue de l'interface",
     "settings.groupAppearance": "Thème",
     "settings.themeSystem": "Suivre le système",

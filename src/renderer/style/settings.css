@@ -1,88 +1,188 @@
-/* Markdown 转换工具 — 设置面板域样式(批③自 style.css 拆出):
- * 可折叠设置面板、字段/边距/排版输入、模板预设行与分组、模板自定义提示、
- * 字段级错误提示、输出目录行、最近转换区块(样式跟随面板风格追加)。 */
+/* Markdown 转换工具 — 设置域样式(批③自 style.css 拆出;P0-3 起容器为设置抽屉):
+ * 抽屉(overlay + 右侧滑出面板)与分组/折叠、字段/边距/排版输入、模板管理行、
+ * 模板自定义提示、字段级错误提示、输出目录行、最近转换区块。 */
 
-/* 页面设置面板(可折叠,改动即时生效) */
-.settings {
-  margin-top: 14px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+/* ---------- 设置抽屉(P0-3):overlay 遮罩 + 右侧滑出面板 ---------- */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90; /* 低于弹窗(100):抽屉内「另存为预设」等弹窗叠于其上 */
+  background: var(--overlay);
+  animation: drawer-overlay-in 0.15s ease-out;
 }
 
-.settings-summary {
+.drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  /* 最小窗口 720 下 overlay 形态自适应,不产生横向溢出 */
+  width: min(400px, calc(100vw - 48px));
+  height: 100%;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-dialog);
+  animation: drawer-in 0.18s ease-out;
+}
+
+@keyframes drawer-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(32px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* 减少动态效果:滑出动画降为瞬时出现,终态即自然态(与弹窗动画同策略) */
+@media (prefers-reduced-motion: reduce) {
+  .drawer-overlay,
+  .drawer {
+    animation-duration: 0.01ms;
+  }
+}
+
+.drawer-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.drawer-body {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+
+/* 抽屉分组(P0-4 四层:L1 常用 / L2 排版 / L3 高级折叠 / L4 应用偏好):
+ * 纵向弹性布局统一字段间距,组间以组标题分隔 */
+.drawer-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.drawer-group-title {
+  margin: 0;
+  padding-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+/* L4 应用偏好置底分隔:与上方配置段拉开间距并加顶部分隔线 */
+.drawer-group--prefs {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* 双列字段行(纸张|方向 / 字号|行距):窄抽屉内两列仍可呼吸 */
+.drawer-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* 折叠层(L3 高级 / 模板管理二级):summary 行 + 展开体 */
+.drawer-fold-summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 9px 12px;
   font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
   cursor: pointer;
   list-style: none; /* Firefox 隐藏默认三角 */
   user-select: none;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   transition: background-color 0.15s ease;
 }
 
-.settings-summary::-webkit-details-marker {
+.drawer-fold-summary::-webkit-details-marker {
   display: none; /* Chromium 隐藏默认三角 */
 }
 
-.settings-summary:hover {
+.drawer-fold-summary:hover {
   background: var(--panel-hover);
 }
 
-.settings-summary:focus-visible {
+.drawer-fold-summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-.settings-summary::before {
+.drawer-fold-summary::before {
   content: "";
   width: 7px;
   height: 7px;
-  margin-right: 2px;
+  flex: none;
   border-right: 1.5px solid var(--text-secondary);
   border-bottom: 1.5px solid var(--text-secondary);
   transform: rotate(-45deg); /* 收起态:朝右的箭头 */
   transition: transform 0.15s ease;
 }
 
-.settings[open] .settings-summary::before {
+.drawer-fold[open] > .drawer-fold-summary::before {
   transform: rotate(45deg); /* 展开态:朝下 */
 }
 
-.settings-summary-title {
-  font-weight: 600;
-  color: var(--text);
+.drawer-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 2px 0;
 }
 
-.settings-summary-hint {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--text-tertiary);
+/* 模板管理按钮行(另存为/删除 与 导入导出/CSS 行):小按钮横向排布 */
+.drawer-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
-/* 面板体:P0-1 布局稳定性配套——.app 高度恒定后,展开的面板体不再把
- * footer 推出视口,而是自身限高内部滚动(设置面板将在后续迭代改为抽屉,
- * 此为过渡形态);收起态不受影响 */
-.settings-body {
-  max-height: 42vh;
-  padding: 14px 14px 12px;
-  border-top: 1px solid var(--border);
-  overflow-y: auto;
+/* 状态文案(pdfCssStatus)在按钮行内不参与换行拉伸 */
+.drawer-btn-row .settings-note {
+  margin: 0;
 }
 
-.settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 20px;
-  align-items: start;
+/* 抽屉内控件宽度:select / 文本输入占满列宽(表单化布局),数字输入同宽左对齐 */
+.drawer .setting-select,
+.drawer .setting-input {
+  width: 100%;
 }
 
-/* 窄窗口降为单列:两列下标签与控件挤压,可用性优先 */
-@media (max-width: 720px) {
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
+.drawer .setting-number {
+  width: 100%;
 }
 
 .setting-field {
@@ -149,10 +249,6 @@
   outline-offset: 1px;
 }
 
-.setting-margins {
-  grid-column: 1 / -1;
-}
-
 .margin-grid {
   display: flex;
   flex-wrap: wrap;
@@ -186,11 +282,6 @@
   gap: 6px;
   font-size: 13px;
   cursor: pointer;
-  grid-column: 1 / -1;
-}
-
-.setting-after {
-  grid-column: 1 / -1;
 }
 
 .settings-note {
@@ -199,74 +290,7 @@
   color: var(--text-tertiary);
 }
 
-/* 模板预设:设置面板顶部的套用行(label + select + hint) */
-.settings-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border); /* 与下方设置栅格分隔 */
-}
-
-.settings-row .setting-select {
-  flex: none;
-}
-
-/* hint 复用 settings-note 文字样式,但行内布局不保留默认外边距;
-   单行省略:长文案(如模板说明)不换行撑高整行,完整文字经 title 悬浮可见 */
-.settings-row .settings-note {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 批次 11 迭代 3:模板行按钮(另存为/删除)与 select 同排,不挤压 hint */
-.settings-row .btn-small {
-  flex: none;
-}
-
-/* 设置面板子分组:组头小标题 + 分隔线(配置收敛为单一面板内的 4 组) */
-.settings-group {
-  margin-bottom: 18px;
-}
-
-.settings-group:last-of-type {
-  margin-bottom: 0;
-}
-
-.settings-group-title {
-  margin: 0 0 12px;
-  padding-bottom: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: var(--text-tertiary);
-  border-bottom: 1px solid var(--border);
-}
-
-/* 模板组:预设两行结构(主行:选择+另存为/删除;辅助行:导入/导出预设、导入/清除 CSS + hint)。
-   行内布局复用 .settings-row(覆盖其原面板内分隔样式:去掉底部边框与内边距,
-   改为主/辅两行之间的细分隔线) */
-.settings-group .settings-row {
-  margin: 0 0 10px;
-  padding: 0;
-  border-bottom: 0;
-}
-
-.settings-group .preset-aux-row {
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  margin-bottom: 0;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-
-/* 辅助行状态文案(pdfCssStatus):固定宽度,不参与剩余空间分配,
-   剩余空间留给 hint(单行省略,完整文案经 title 悬浮) */
+/* 辅助行状态文案(pdfCssStatus):不参与剩余空间分配 */
 .preset-status {
   flex: none;
 }
@@ -322,15 +346,7 @@
   color: var(--error);
 }
 
-.setting-margins .field-error {
-  margin-top: 6px;
-}
-
 /* 输出目录行 */
-.setting-outputdir {
-  grid-column: 1 / -1;
-}
-
 .outputdir-row {
   display: flex;
   align-items: center;

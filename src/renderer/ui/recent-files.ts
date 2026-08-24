@@ -6,11 +6,11 @@
  *   「清空最近」→ 清空并隐藏;空列表不显示区块
  * - 转换成功后由 convert-flow 调用 refreshRecentFiles()(uiStateGet 重新拉取;
  *   主进程在返回转换结果前已完成 recentFiles 写入,读回必为最新)
- * - 启动恢复(initUiStateRestore):panelOpen 回填设置面板 details 展开态、
+ * - 启动恢复(initUiStateRestore):panelOpen 回填设置抽屉可见态(P0-3:语义自
+ *   「details 展开」迁移为「抽屉开合」,开合写回迁至 settings-drawer)、
  *   lastSessionFiles 逐项校验存在性(主进程保序过滤,缺失剔除,不提示)、最近区块首次渲染
- * - 设置面板 details toggle → 记忆 panelOpen(ui-state 独立文件,不碰 settings.json;
- *   批次 N:单一设置面板,原 typographyPanel 已合并,panelOpen.typography 为兼容保留镜像同值)
- * 依赖方向:recent-files → file-list(applySelection)/convert-flow(runConvert);
+ * 依赖方向:recent-files → file-list(applySelection)/convert-flow(runConvert)/
+ * settings-drawer(applyDrawerOpenState);
  * 转换成功后刷新最近区块由 convert-flow 经 state.recentRefreshHandler 回调触发
  * (批次 15 R5:组合根 renderer.ts 接线,打破原 recent-files ↔ convert-flow ESM 环)。
  */
@@ -18,7 +18,6 @@ import {
   recentClearBtn,
   recentList,
   recentSection,
-  settingsPanel,
   statusEl,
 } from "../dom/refs.js";
 import type { RecentFile, UiState } from "../../main/persist/ui-state.js";
@@ -28,6 +27,7 @@ import { baseName, formatRecentTime } from "../state/pure.js";
 import { setStatus, translate } from "../state/utils.js";
 import { state } from "../state/state.js";
 import { syncSuppressCompleteDialog } from "../settings/settings-panel.js";
+import { applyDrawerOpenState } from "../settings/settings-drawer.js";
 import { t } from "../../core/i18n.js";
 
 /** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。
@@ -103,8 +103,8 @@ export async function initUiStateRestore(): Promise<void> {
   } catch {
     return; // 读取失败:保持默认(不恢复会话/面板/最近列表)
   }
-  // panelOpen → 设置面板展开态(程序化赋值会触发 toggle,写回相同值,无害)
-  settingsPanel.open = ui.panelOpen.page;
+  // panelOpen → 设置抽屉可见态(P0-3:开合写回已迁至 settings-drawer,此处只恢复)
+  applyDrawerOpenState(ui.panelOpen.page);
   // 批次 11 迭代 2:完成弹窗「不再提示」→ 同步两处 checkbox 与内存态(不写回,避免启动写盘)
   syncSuppressCompleteDialog(ui.suppressCompleteDialog);
   renderRecentList(ui.recentFiles);
@@ -129,18 +129,6 @@ export async function refreshRecentFiles(): Promise<void> {
 
 /* ---------- 事件绑定(MR-10:顶层监听迁入 bind*Events 范式,组合根 renderer.ts
  *  在 bindEvents() 后调用;原 recentList 上两个独立 click 委托合并为一个) ---------- */
-/** 设置面板 details 展开态记忆(批次 11;ui-state 独立于 settings)。
- *  批次 N:单一设置面板;typography 字段为兼容主进程形状保留(镜像同值,不再被读取)。 */
-function persistPanelOpen(): void {
-  void window.api
-    .uiStateSet({
-      panelOpen: { page: settingsPanel.open, typography: settingsPanel.open },
-    })
-    .catch(() => {
-      /* 忽略:UI 状态写入失败不阻塞主流程 */
-    });
-}
-
 /**
  * B9 交互语义(审计拍板):单击条目 = 仅加载到列表(不转换,与「仅加载」按钮同效);
  * 双击条目 = 直接重转(沿用该条目记录的格式)。原「单击一键重转」拆分为两档,
@@ -178,8 +166,6 @@ export function bindRecentFilesEvents(): void {
       .then((ui) => renderRecentList(ui.recentFiles))
       .catch(() => renderRecentList([]));
   });
-
-  settingsPanel.addEventListener("toggle", persistPanelOpen);
 }
 
 /** 单击加载:替换选择载入列表(不转换),状态区提示文件名。 */

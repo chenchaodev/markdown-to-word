@@ -84,10 +84,17 @@ export function hideFieldError(el: HTMLElement): void {
   el.classList.add("hidden");
 }
 
-/* ---------- 弹窗焦点陷阱(批次 12:C9) ---------- */
+/* ---------- 弹窗焦点陷阱(批次 12:C9;P0-3 扩展为栈式多弹窗协调) ---------- */
 /** 弹窗内可聚焦元素(button/input/select 等;disabled 与隐藏元素排除)。 */
 const FOCUSABLE_SELECTOR =
   'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * 当前活跃陷阱栈(注册序 = 打开序;释放即出栈)。
+ * P0-3 起设置抽屉常驻陷阱,其上可能再叠完成弹窗/另存预设弹窗——多个陷阱并存时,
+ * 仅栈顶(最后打开且未关闭者)处理 Tab,避免双重焦点劫持(Tab 永远跳首项)。
+ */
+const trapStack: HTMLElement[] = [];
 
 /**
  * 启用弹窗焦点陷阱:Tab/Shift+Tab 在弹窗内循环(首 ⇄ 尾),
@@ -97,6 +104,8 @@ const FOCUSABLE_SELECTOR =
 export function trapFocus(dialog: HTMLElement): () => void {
   const handleKeydown = (event: KeyboardEvent): void => {
     if (event.key !== "Tab") return;
+    // 非栈顶陷阱不处理(更上层的弹窗正在持有键盘流)
+    if (trapStack[trapStack.length - 1] !== dialog) return;
     const focusables = Array.from(
       dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
     ).filter((el) => !el.hasAttribute("disabled") && el.offsetParent !== null);
@@ -118,7 +127,13 @@ export function trapFocus(dialog: HTMLElement): () => void {
     }
   };
   document.addEventListener("keydown", handleKeydown, true); // capture:先于弹窗内/全局监听
-  return () => document.removeEventListener("keydown", handleKeydown, true);
+  const release = (): void => {
+    const index = trapStack.indexOf(dialog);
+    if (index >= 0) trapStack.splice(index, 1);
+    document.removeEventListener("keydown", handleKeydown, true);
+  };
+  trapStack.push(dialog);
+  return release;
 }
 
 /* ---------- 焦点管理 ---------- */

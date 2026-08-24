@@ -36,13 +36,13 @@ import {
   fontEastAsiaError,
   fontEastAsiaInput,
    formatInputs,
-   getLanguageInputs,
    headingNumberingInput,
+  languageSelect,
   lineSpacingError,
   lineSpacingInput,
   marginError,
   marginInputs,
-  orientationInputs,
+  orientationSelect,
   outputDirPick,
   outputDirReset,
   outputDirValue,
@@ -155,12 +155,11 @@ export function bindSettingsEvents(): void {
     persistPageSetup();
   });
 
-  orientationInputs.forEach((input) => {
-    input.addEventListener("change", () => {
-      if (!input.checked || state.hydratingSettings) return;
-      state.settings.pageSetup.orientation = input.value as Orientation;
-      persistPageSetup();
-    });
+  // P0-4:方向由双 radio 改单 select(value 与原 radio 一致,写回语义不变)
+  orientationSelect.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.pageSetup.orientation = orientationSelect.value as Orientation;
+    persistPageSetup();
   });
 
   breakBeforeH1Input.addEventListener("change", () => {
@@ -329,23 +328,21 @@ export function bindSettingsEvents(): void {
     setSuppressCompleteDialog(!completeDialogPromptInput.checked);
   });
 
-  // i18n:界面语言切换(radio;选项由 LANGUAGES 注册表动态生成,须先于事件绑定重建;
-  // 即时生效:静态文案重刷 + 动态文案经 t() 自动跟随,状态栏/文件列表/最近区块等
-  // 动态区域显式重渲染)
+  // i18n:界面语言切换(P0-4 自 radio 组改 select;选项由 LANGUAGES 注册表动态生成,
+  // 须先于事件绑定重建;即时生效:静态文案重刷 + 动态文案经 t() 自动跟随,
+  // 状态栏/文件列表/最近区块等动态区域显式重渲染)
   rebuildLanguageOptions();
-  getLanguageInputs().forEach((input) => {
-    input.addEventListener("change", () => {
-      if (!input.checked || state.hydratingSettings) return;
-      const lang = input.value as Language;
-      state.settings.language = lang;
-      setLanguage(lang);
-      mirrorLanguage(lang); // B6:切换落定即镜像,下次启动 lang-bootstrap.js 尽早生效
-      applyStaticTexts();
-      persistSettings({ language: lang });
-      setStatus("");
-      renderSelection();
-      void state.recentRefreshHandler?.();
-    });
+  languageSelect.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    const lang = languageSelect.value as Language;
+    state.settings.language = lang;
+    setLanguage(lang);
+    mirrorLanguage(lang); // B6:切换落定即镜像,下次启动 lang-bootstrap.js 尽早生效
+    applyStaticTexts();
+    persistSettings({ language: lang });
+    setStatus("");
+    renderSelection();
+    void state.recentRefreshHandler?.();
   });
 
   // B13:外观主题切换(radio;即时生效:data-theme 属性设/移除 + 持久化;

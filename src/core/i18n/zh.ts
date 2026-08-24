@@ -143,16 +143,18 @@ const dict = {
     "recent.time.monthDay": "${month}月${day}日",
     "recent.time.fullDate": "${year}年${month}月${day}日",
 
-    /* ---------- 设置面板 ---------- */
+    /* ---------- 设置抽屉 ---------- */
     "settings.title": "设置",
-    "settings.summaryHint": "模板、页面、排版与导出",
     "settings.autoSaveNote": "设置即时生效并自动保存",
-    "settings.groupTemplate": "模板",
-    "settings.groupPage": "页面",
+    "settings.drawerOpenAria": "打开设置",
+    "settings.drawerCloseAria": "关闭设置",
+    "settings.groupCommon": "常用",
     "settings.groupTypography": "排版",
-    "settings.groupExport": "导出",
+    "settings.groupAdvanced": "高级",
+    "settings.groupManage": "模板管理",
+    "settings.groupApp": "应用偏好",
     "settings.groupLanguage": "界面语言",
-    // B13:外观主题
+    // B13:外观主题(P0-4 起键复用为 L4 字段标签)
     "settings.groupAppearance": "外观主题",
     "settings.themeSystem": "跟随系统",
     "settings.themeLight": "浅色",

@@ -36,6 +36,7 @@ import { state } from "./state/state.js";
 import { updateActionButtons } from "./convert/file-list.js";
 import { bindEvents } from "./convert/events/index.js";
 import { bindSettingsEvents } from "./settings/settings-bindings.js";
+import { bindSettingsDrawerEvents } from "./settings/settings-drawer.js";
 import { loadSettings } from "./settings/settings-panel.js";
 import {
   bindRecentFilesEvents,
@@ -69,6 +70,8 @@ bindRecentFilesEvents();
 updateActionButtons();
 // 设置面板:事件绑定先于回填(时序与拆分前一致:绑定在模块加载期,回填在 await 之后)
 bindSettingsEvents();
+// P0-3:设置抽屉开合事件(⚙/chip/遮罩/关闭按钮;Esc 走 dialogs-events 链末位)
+bindSettingsDrawerEvents();
 // 读取持久化设置并回填控件(失败静默回退默认值)
 void loadSettings();
 // 批次 11:UI 状态恢复(面板展开态 / 会话文件 / 最近转换区块;失败静默保持默认)

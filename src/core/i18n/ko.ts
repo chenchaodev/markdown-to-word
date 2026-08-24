@@ -139,14 +139,16 @@ const dict: Partial<Record<Dict, string>> = {
     "recent.time.monthDay": "${month}월 ${day}일",
     "recent.time.fullDate": "${year}년 ${month}월 ${day}일",
 
-    /* ---------- 설정 패널 ---------- */
+    /* ---------- 설정 드로어 ---------- */
     "settings.title": "설정",
-    "settings.summaryHint": "템플릿, 페이지, 타이포그래피 및 내보내기",
     "settings.autoSaveNote": "설정은 즉시 적용되며 자동 저장됩니다",
-    "settings.groupTemplate": "템플릿",
-    "settings.groupPage": "페이지",
+    "settings.drawerOpenAria": "설정 열기",
+    "settings.drawerCloseAria": "설정 닫기",
+    "settings.groupCommon": "일반",
     "settings.groupTypography": "타이포그래피",
-    "settings.groupExport": "내보내기",
+    "settings.groupAdvanced": "고급",
+    "settings.groupManage": "템플릿 관리",
+    "settings.groupApp": "앱 환경설정",
     "settings.groupLanguage": "인터페이스 언어",
     "settings.groupAppearance": "테마",
     "settings.themeSystem": "시스템 따르기",

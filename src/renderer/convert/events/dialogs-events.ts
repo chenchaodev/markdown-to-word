@@ -41,6 +41,7 @@ import {
 } from "../../ui/dialogs.js";
 import { applySelection } from "../file-list.js";
 import { runBatch } from "../convert-flow.js";
+import { closeSettingsDrawer, isSettingsDrawerOpen } from "../../settings/settings-drawer.js";
 import { closePresetSaveDialog, setSuppressCompleteDialog } from "../../settings/settings-panel.js";
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";
@@ -196,6 +197,9 @@ export function bindDialogEvents(): void {
       hideCompleteDialog();
     } else if (!batchDialog.classList.contains("hidden")) {
       hideBatchDialog();
+    } else if (isSettingsDrawerOpen()) {
+      // P0-3:抽屉在 Esc 链末位(弹窗优先);关闭后焦点由 drawer 模块归还 ⚙ 按钮
+      closeSettingsDrawer();
     }
   });
 }

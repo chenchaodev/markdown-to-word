@@ -1,10 +1,12 @@
 /**
- * renderer 设置面板(R10-5 自 renderer.ts 抽出,行为等价):
+ * renderer 设置面板(R10-5 自 renderer.ts 抽出,行为等价;P0-3 起容器为设置抽屉):
  * - 设置加载/回填/校验/钳制/预设套用/persist 三件套,以及预设弹窗与导入导出交互;
  *   全部设置控件的事件绑定见 settings-bindings.ts(B8 抽出,单向依赖本模块),
- *   契约与语义注释随代码搬移不精简
+ *   契约与语义注释随代码搬移不精简;
+ *   抽屉开合/焦点/摘要 chip 见 settings-drawer.ts(本模块单向依赖之)
  * - 依赖方向遵循 R8 既定单向依赖:本模块 → core/settings-defaults(契约/常量/预设)、
- *   dom.ts(元素映射)、state.ts(共享状态单一来源);不反向引用 renderer.ts 的私有符号
+ *   dom.ts(元素映射)、state.ts(共享状态单一来源)、settings-drawer(chip 写入);
+ *   不反向引用 renderer.ts 的私有符号
  * - 组合根 renderer.ts 调用:init 处 bindSettingsEvents()(settings-bindings)后再
  *   loadSettings()(时序与拆分前一致:事件绑定先于回填;loadSettings 的 await 回填
  *   不受绑定顺序影响)
@@ -41,12 +43,11 @@ import {
    fontAsciiInput,
    fontEastAsiaInput,
    formatInputs,
-   getLanguageInputs,
    headingNumberingInput,
-   languageOptionsEl,
+  languageSelect,
   lineSpacingInput,
   marginInputs,
-  orientationInputs,
+  orientationSelect,
   outputDirValue,
   paperSelect,
   pdfCssClearBtn,
@@ -59,12 +60,14 @@ import {
    templatePresetHint,
    templatePresetSelect,
    themeInputs,
-   tocInput,
- } from "../dom/refs.js";
+    tocInput,
+  } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError, setStatus, trapFocus } from "../state/utils.js";
 import { errorMessage } from "../state/pure.js";
 import { applyStaticTexts, setLanguage, t, LANGUAGES, type Language } from "../../core/i18n.js";
+// P0-3:摘要 chip 文案写入归抽屉模块(本模块只负责由设置值合成文案)
+import { updateSettingsChip } from "./settings-drawer.js";
 
 /* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let presetSaveTrap: (() => void) | null = null;
@@ -101,26 +104,22 @@ export function mirrorLanguage(lang: Language): void {
 }
 
 /**
- * 重建界面语言选项(i18n 多语言改造):按 core/i18n LANGUAGES 注册表动态生成
- * radio 选项(label = 本地化自称,不再经字典 data-i18n),新增语言注册后自动出现。
- * 须在 bindSettingsEvents 绑定语言事件之前调用(输入为运行期生成,refs 走惰性查询)。
+ * 重建界面语言选项(i18n 多语言改造;P0-4 自 radio 组迁移为 select):
+ * 按 core/i18n LANGUAGES 注册表动态生成 option(label = 本地化自称,不再经字典
+ * data-i18n),新增语言注册后自动出现。
+ * 须在 bindSettingsEvents 绑定语言事件之前调用(输入为运行期生成);
+ * 生成期即按当前设置选中(hydration 前的空窗期也有选中项;回填以
+ * applySettingsToControls 为准)。
  */
 export function rebuildLanguageOptions(): void {
-  languageOptionsEl.replaceChildren();
+  languageSelect.replaceChildren();
   for (const { code, label } of LANGUAGES) {
-    const labelEl = document.createElement("label");
-    labelEl.className = "setting-option";
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = "language";
-    input.value = code;
-    // 生成期即按当前设置选中(hydration 前的空窗期也有选中项;回填以 applySettingsToControls 为准)
-    input.checked = code === state.settings.language;
-    const span = document.createElement("span");
-    span.textContent = label;
-    labelEl.append(input, span);
-    languageOptionsEl.appendChild(labelEl);
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = label;
+    languageSelect.appendChild(option);
   }
+  languageSelect.value = state.settings.language;
 }
 
 /* ---------- 设置:加载 / 回填 / 写回 ---------- */
@@ -147,13 +146,12 @@ export async function loadSettings(): Promise<void> {
 }
 
 /** 将内存设置回填到所有控件(仅赋值,不触发 change 事件)。
- *  值计算(设置 → 控件值映射/预设匹配/hint)在 settings-logic,本函数只做 DOM 赋值。 */
+ *  值计算(设置 → 控件值映射/预设匹配/hint)在 settings-logic,本函数只做 DOM 赋值;
+ *  末尾刷新顶栏摘要 chip(P0-3:「预设名 · 纸张」随回填实时更新)。 */
 export function applySettingsToControls(): void {
   const v = settingsToControlValues(state.settings);
   paperSelect.value = v.paper;
-  orientationInputs.forEach(
-    (input) => (input.checked = input.value === v.orientation),
-  );
+  orientationSelect.value = v.orientation;
   (
     Object.keys(marginInputs) as (keyof PageSetup & keyof typeof marginInputs)[]
   ).forEach((key) => {
@@ -197,10 +195,8 @@ export function applySettingsToControls(): void {
   formatInputs.forEach(
     (input) => (input.checked = input.value === v.format),
   );
-  // i18n:界面语言 radio 回填(选项由 LANGUAGES 动态生成,经惰性查询获取)
-  getLanguageInputs().forEach(
-    (input) => (input.checked = input.value === v.language),
-  );
+  // i18n:界面语言 select 回填(选项由 LANGUAGES 动态生成于 rebuildLanguageOptions)
+  languageSelect.value = v.language;
   // B13:外观主题 radio 回填(system/light/dark)
   themeInputs.forEach(
     (input) => (input.checked = input.value === v.theme),
@@ -214,11 +210,21 @@ export function applySettingsToControls(): void {
     ? t("settings.pdfCssImported")
     : t("settings.pdfCssNone");
   pdfCssClearBtn.classList.toggle("hidden", !state.settings.pdfCss);
+  // P0-3:顶栏摘要 chip 随回填刷新(「预设名 · 纸张」)
+  updateSettingsChip(composeSettingsChipText());
+}
+
+/** 摘要 chip 文案合成(DOM 单源:模板 select 选中项 + 纸张 select 值)。 */
+function composeSettingsChipText(): string {
+  const presetName = templatePresetSelect.selectedOptions[0]?.textContent ?? "";
+  return `${presetName} · ${paperSelect.value}`;
 }
 
 /** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。
- *  批次 11 迭代 3:写盘成功后刷新所有预览窗口(设置变更即时反映到预览)。 */
+ *  批次 11 迭代 3:写盘成功后刷新所有预览窗口(设置变更即时反映到预览)。
+ *  P0-3:写回同时刷新摘要 chip——纸张等直接改控件的路径不经过回填,在此统一兜住。 */
 export function persistSettings(patch: Partial<AppSettings>): void {
+  updateSettingsChip(composeSettingsChipText());
   void window.api
     .settingsSet(patch)
     .then(() => window.api.previewRefresh())

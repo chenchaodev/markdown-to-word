@@ -235,6 +235,17 @@ export async function runSmoke(win) {
         // 设置面板三个 theme radio 就位
         report.noDataThemeAtStart = !document.documentElement.hasAttribute("data-theme");
         report.themeRadioCount = document.querySelectorAll('input[name="theme"]').length;
+        // P0-3 设置抽屉:容器存在且启动时隐藏(旧主页面 details 面板已移除);
+        // 顶栏入口(齿轮/摘要 chip)与方向/语言 select 就位
+        const settingsDrawer = document.getElementById("settingsDrawer");
+        report.settingsDrawerExists = !!settingsDrawer;
+        report.settingsDrawerHiddenAtStart = settingsDrawer ? settingsDrawer.classList.contains("hidden") : null;
+        report.drawerOpenBtnExists = !!document.getElementById("settingsOpenBtn");
+        report.drawerCloseBtnExists = !!document.getElementById("drawerCloseBtn");
+        report.chipExists = !!document.getElementById("settingsSummaryChip");
+        report.orientationSelectExists = !!document.getElementById("orientationSelect");
+        report.languageSelectExists = !!document.getElementById("languageSelect");
+        report.formatSegmentCount = document.querySelectorAll(".header-actions input[name='format']").length;
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
@@ -298,6 +309,31 @@ export async function runSmoke(win) {
           `[smoke] renderer diag FAILED: B13 外观主题异常 ${JSON.stringify({
             noDataThemeAtStart: diag.noDataThemeAtStart,
             themeRadioCount: diag.themeRadioCount,
+          })}`,
+        );
+      }
+      // P0-3/P1-1:设置抽屉守卫——容器存在且启动隐藏,顶栏入口与迁移后的
+      // 方向/语言 select、格式分段(2 项)就位;缺失即回归
+      if (
+        diag.settingsDrawerExists !== true ||
+        diag.settingsDrawerHiddenAtStart !== true ||
+        !diag.drawerOpenBtnExists ||
+        !diag.drawerCloseBtnExists ||
+        !diag.chipExists ||
+        !diag.orientationSelectExists ||
+        !diag.languageSelectExists ||
+        diag.formatSegmentCount !== 2
+      ) {
+        throw new Error(
+          `[smoke] renderer diag FAILED: 设置抽屉/顶栏控件异常 ${JSON.stringify({
+            settingsDrawerExists: diag.settingsDrawerExists,
+            settingsDrawerHiddenAtStart: diag.settingsDrawerHiddenAtStart,
+            drawerOpenBtnExists: diag.drawerOpenBtnExists,
+            drawerCloseBtnExists: diag.drawerCloseBtnExists,
+            chipExists: diag.chipExists,
+            orientationSelectExists: diag.orientationSelectExists,
+            languageSelectExists: diag.languageSelectExists,
+            formatSegmentCount: diag.formatSegmentCount,
           })}`,
         );
       }
