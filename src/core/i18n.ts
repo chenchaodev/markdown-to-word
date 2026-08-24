@@ -1,7 +1,7 @@
 /**
  * 界面多语言(i18n)逻辑层:main + renderer 共享的纯模块。
  * 字典与语言注册表在 ./i18n/(zh.ts 键集唯一事实源,en.ts satisfies 全量,
- * ja/ko/fr/ru Partial;index.ts 为 LANGUAGES/DICT 注册表单一事实源),
+ * ja Partial;index.ts 为 LANGUAGES/DICT 注册表单一事实源),
  * 本模块 re-export DICT/I18nKey/Language 保持既有 import 面不变。
  * - 参数插值:t("key", { error }) 模板用 ${error} 占位(与既有模板字符串一致)
  * - 回退链:当前语言 → en → key(zh 为源语言永不全缺;en 全量约束由编译期锁定;

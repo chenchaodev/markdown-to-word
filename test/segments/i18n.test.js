@@ -63,8 +63,10 @@ export async function run() {
     };
     assert(mod.isValidSettings({ ...base, language: "zh" }) === true, "language zh 应通过形状校验");
     assert(mod.isValidSettings({ ...base, language: "en" }) === true, "language en 应通过形状校验");
-    assert(mod.isValidSettings({ ...base, language: "xx" }) === false, "language 枚举外值(xx 未注册)应判定形状非法");
-    assert(mod.isValidSettings({ ...base, language: 1 }) === false, "language 非字符串应判定形状非法");
+    // 语言裁撤迁移(仅保留 zh/en/ja):未注册/非法语言码不再整文件拒绝,
+    // 由 loadSettings 字段级兜底 zh(否则已存 ko/fr/ru 用户全部偏好被覆盖)
+    assert(mod.isValidSettings({ ...base, language: "xx" }) === true, "language 枚举外值不整文件拒绝(字段级兜底)");
+    assert(mod.isValidSettings({ ...base, language: 1 }) === true, "language 非字符串不整文件拒绝(字段级兜底)");
     assert(mod.isValidSettings(base) === true, "缺 language 的旧文件应通过形状校验(loadSettings 兜底 zh)");
 
     // ---- 7. sanitizePatch:非法值回退 zh、合法值保留(经 updateSettings 公开路径) ----

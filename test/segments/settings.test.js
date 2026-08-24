@@ -200,7 +200,8 @@ export async function run() {
     const legacyNoPdfCss = { ...validSettings };
     delete legacyNoPdfCss.pdfCss;
     assert(mod.isValidSettings(legacyNoPdfCss) === true, "缺 pdfCss 的旧文件应通过形状校验");
-    // language 缺失(旧文件)视为合法,存在则须为 zh/en
+    // language 缺失(旧文件)视为合法;非法/未注册值亦不整文件拒绝
+    // (语言裁撤迁移:ko/fr/ru 用户字段级兜底 zh,其余偏好保留),见 loadSettings
     const legacyNoLang = { ...validSettings };
     delete legacyNoLang.language;
     assert(mod.isValidSettings(legacyNoLang) === true, "缺 language 的旧文件应通过形状校验");
@@ -221,7 +222,6 @@ export async function run() {
       [{ ...validSettings, breakBeforeH1: "yes" }, "breakBeforeH1 非布尔"],
       [{ ...validSettings, equationNumbering: "yes" }, "equationNumbering 非布尔"],
       [{ ...validSettings, pdfCss: 123 }, "pdfCss 非 string"],
-      [{ ...validSettings, language: "xx" }, "language 枚举外值(未注册)"],
       [{ ...validSettings, theme: "blue" }, "theme 枚举外值"],
       [{ ...validSettings, pageSetup: null }, "pageSetup 缺失"],
       [{ ...validSettings, afterConvert: "email" }, "afterConvert 枚举外值"],

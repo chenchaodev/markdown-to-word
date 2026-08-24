@@ -247,6 +247,8 @@ export async function runSmoke(win) {
         report.drawerSubtitleExists = !!document.getElementById("drawerSubtitle");
         report.orientationSelectExists = !!document.getElementById("orientationSelect");
         report.languageSelectExists = !!document.getElementById("languageSelect");
+        // 语言裁撤回归守卫:下拉选项由 LANGUAGES 注册表动态生成,应恰为 zh/en/ja 三项
+        report.languageOptionCount = document.querySelectorAll("#languageSelect option").length;
         report.formatSegmentCount = document.querySelectorAll(".header-actions input[name='format']").length;
         // P1-3 最近转换 chips:容器存在且启动隐藏(隔离环境无最近记录);
         // 旧主页面独立区块(recentSection/recentList)必须已移除
@@ -336,6 +338,7 @@ export async function runSmoke(win) {
         !diag.drawerSubtitleExists ||
         !diag.orientationSelectExists ||
         !diag.languageSelectExists ||
+        diag.languageOptionCount !== 3 ||
         diag.formatSegmentCount !== 2
       ) {
         throw new Error(
@@ -347,6 +350,7 @@ export async function runSmoke(win) {
             drawerSubtitleExists: diag.drawerSubtitleExists,
             orientationSelectExists: diag.orientationSelectExists,
             languageSelectExists: diag.languageSelectExists,
+            languageOptionCount: diag.languageOptionCount,
             formatSegmentCount: diag.formatSegmentCount,
           })}`,
         );

@@ -98,9 +98,9 @@ export function isValidSettings(value: unknown): value is AppSettings {
   if ("outputDir" in s && !isValidOutputDir(s.outputDir)) return false;
   // pdfCss 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "";存在则须 string
   if ("pdfCss" in s && typeof s.pdfCss !== "string") return false;
-  // language 缺失(旧 settings.json)视为合法,loadSettings 兜底 "zh";
-  // 存在则须为 LANGUAGES 注册表内的语言码(i18n/index.ts 单源派生)
-  if ("language" in s && !isLanguage(s.language)) return false;
+  // language 不参与整文件形状校验(缺失与非法值均放行):语言裁撤迁移场景
+  // (已存 ko/fr/ru)若在此整文件拒绝,用户全部偏好将被默认值覆盖——
+  // 改由 loadSettings 对 language 字段级兜底 DEFAULT_SETTINGS.language(zh)
   // theme 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "system";存在则须枚举内值
   if ("theme" in s && !isOneOf(s.theme, THEMES)) return false;
   const ps = s.pageSetup as Record<string, unknown> | undefined;
@@ -143,7 +143,8 @@ export function loadSettings(): AppSettings {
             : DEFAULT_SETTINGS.equationNumbering,
         // 批次 16:pdfCss 缺失(旧文件)→ "";存在 → 原样保留
         pdfCss: typeof parsed.pdfCss === "string" ? parsed.pdfCss : DEFAULT_SETTINGS.pdfCss,
-        // i18n:language 缺失(旧文件)→ 默认 zh;存在 → 原样保留(已过 isLanguage 形状校验)
+        // i18n:language 缺失(旧文件)→ 默认 zh;存在但已不在注册表(语言裁撤,
+        // 如 ko/fr/ru)→ 字段级兜底 zh,其余偏好原样保留
         language: isLanguage(parsed.language) ? parsed.language : DEFAULT_SETTINGS.language,
         // B13:theme 缺失(旧文件)→ "system";存在 → 原样保留(枚举已过形状校验)
         theme: isOneOf(parsed.theme, THEMES) ? parsed.theme : DEFAULT_SETTINGS.theme,
