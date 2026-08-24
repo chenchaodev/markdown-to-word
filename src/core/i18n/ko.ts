@@ -246,7 +246,6 @@ const dict: Partial<Record<Dict, string>> = {
 
     /* ---------- 드롭 영역 / 선택 ---------- */
     "drop.ariaLabel": "클릭 또는 Markdown 파일 드롭(여러 개 지원)",
-    "drop.title": "클릭 또는 Markdown 파일 드롭",
     "drop.hint": "Markdown 파일이나 폴더를 여기에 끌어다 놓으세요",
     "drop.or": "또는",
     // P1-6 빈 상태 기능 설명: 확장자 + 구문 기능을 한 줄로 표기

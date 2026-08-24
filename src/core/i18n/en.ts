@@ -248,7 +248,6 @@ const dict = {
 
     /* ---------- Drop zone / selection entry ---------- */
     "drop.ariaLabel": "Click or drop Markdown files (multiple supported)",
-    "drop.title": "Click or drop Markdown files",
     "drop.hint": "Drop Markdown files or folders here",
     "drop.or": "or",
     // P1-6 empty-state capability note: extensions + syntax features in one line

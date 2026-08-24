@@ -20,9 +20,8 @@
   </head>
   <body>
     <main class="app">
-      <!-- 标题区 -->
-      <!-- 标题区:P1-1 格式分段控件自 footer 上移(radio 语义保留,方向键可切换);
-           P0-3 设置入口 = 当前预设·纸张摘要 chip(点击直达抽屉「常用」组)+ 齿轮按钮 -->
+      <!-- 标题区:P1-1 格式分段控件(radio 语义保留,方向键可切换)+ 设置齿轮;
+           问题 3:摘要 chip 已移除,「当前预设 · 纸张」改在抽屉头部副标题展示 -->
       <header class="header">
         <h1 class="title" data-i18n="app.title">Markdown 转换工具</h1>
         <span id="appVersion" class="version" title=""></span>
@@ -42,8 +41,6 @@
               <span data-i18n="format.pdf">PDF (.pdf)</span>
             </label>
           </div>
-          <!-- 摘要 chip:文案由 settings-drawer.updateSettingsChip 填充(空串时 CSS :empty 隐藏) -->
-          <button type="button" id="settingsSummaryChip" class="chip"></button>
           <button
             type="button"
             id="settingsOpenBtn"
@@ -70,9 +67,9 @@
           tabindex="0"
           data-i18n-aria-label="drop.ariaLabel"
           aria-label="点击或拖入 Markdown 文件（支持多个）"
-          data-i18n-title="drop.title"
-          title="点击或拖入 Markdown 文件"
         >
+          <!-- 原 title 悬浮提示已移除:原生 tooltip 无法约束定位,窗口右缘被裁切
+               (实测反馈);操作说明由区内可见 hint 文案与 aria-label 承载 -->
           <!-- 默认提示态:P1-6 能力说明;P1-3 最近转换以快捷 chips 并入空态
                (有文件后随空态一起消失,发生在固定高度主舞台内,不引起跳动) -->
           <div id="dropDefault" class="drop-default">
@@ -317,7 +314,12 @@
     <div id="settingsDrawer" class="drawer-overlay hidden">
       <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
         <header class="drawer-head">
-          <h2 id="drawerTitle" class="drawer-title" data-i18n="settings.title">设置</h2>
+          <div class="drawer-head-texts">
+            <h2 id="drawerTitle" class="drawer-title" data-i18n="settings.title">设置</h2>
+            <!-- 问题 3:「当前预设 · 纸张」自顶栏 chip 迁此(文案由 settings-panel 合成、
+                 settings-drawer.updateDrawerMeta 写入;空串时 CSS :empty 隐藏) -->
+            <p id="drawerSubtitle" class="drawer-subtitle"></p>
+          </div>
           <button
             type="button"
             id="drawerCloseBtn"

@@ -153,13 +153,20 @@ html[data-theme="dark"] {
   box-sizing: border-box;
 }
 
+/* 文档级零滚动(问题 2a 根治):
+ * - overflow:hidden 显式声明于 html/body——原 body{overflow-y:auto} 按 CSS 规范
+ *   传播给视口后自身 computed 回 visible,body 不建 BFC,.app 的上下 16px 外边距
+ *   塌陷逃逸到 body 盒外,文档高 = 100vh+32px → 视口永久滚动条(实测截图问题);
+ * - hidden 使 body 建立 BFC(边距不再逃逸)+ 视口禁用文档级滚动,
+ *   滚动只允许发生在消息槽等设计好的内部容器 */
 html,
 body {
   height: 100%;
+  margin: 0;
+  overflow: hidden;
 }
 
 body {
-  margin: 0;
   font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
     "Microsoft YaHei", sans-serif;
   font-size: 14px;
@@ -168,29 +175,45 @@ body {
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   user-select: none;
-  overflow-y: auto;
+  /* P4 主题切换过渡:仅颜色属性;减少动态效果偏好下瞬时切换 */
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* 应用卡片:P0-1 Grid 布局,高度恒等于视口(减上下外边距),页面不再随内容伸缩。
- * 四条轨道与 index.html 的 .app 直接子元素一一对应(P0-3 设置迁抽屉、P1-3 最近
- * 转换并入主舞台空态后,主页面只剩四个区块):
+@media (prefers-reduced-motion: reduce) {
+  body,
+  .app,
+  .drawer,
+  .dialog {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* 应用卡片:P0-1 Grid 布局,高度恒等于视口(减上下外边距),页面不随内容伸缩。
+ * 四条轨道与 index.html 的 .app 直接子元素一一对应(设置迁抽屉、最近转换并入
+ * 主舞台空态后,主页面只剩四个区块):
  *   ① header        标题区(auto)
- *   ② .file-area    主舞台(auto;高度由 drop.css 固定为 clamp(280px,40vh,400px),
- *                    不随文件选择数量变化——布局跳动的根治点)
- *   ③ #messageSlot  消息槽(minmax(44px,1fr) 弹性吸收带:常驻最小高度预留空态,
- *                    富余空间被它吸收,footer 始终钉在视口底部;内容偶发超高时
- *                    槽体内部滚动,不推挤任何区块)
+ *   ② .file-area    主舞台(minmax(min(300px,40vh),1fr) 唯一弹性吸收带:
+ *                    吸收全部富余高度——大窗口撑满不留白,矮窗口下限随 40vh
+ *                    缩小保证整体不溢出;尺寸只随窗口变化,不随文件选择数量
+ *                    变化——布局跳动根治点保持)
+ *   ③ #messageSlot  消息槽(auto;min-height 常驻预留,超高时内部滚动,
+ *                    不推挤 footer)
  *   ④ .actions      底部操作栏(auto;最后一条轨道钉底)
+ * 列约束 minmax(0,1fr):防止 nowrap 长路径等 min-content 把隐式列撑宽、
+ * 内容右侧被 overflow-x 裁掉(实测反馈「文件框体右侧显示不全」的根因)。
  */
 .app {
   box-sizing: border-box;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows:
     auto
+    minmax(min(300px, 40vh), 1fr)
     auto
-    minmax(44px, 1fr)
     auto;
-  height: calc(100vh - 32px);
+  /* 高度算术闭合(问题 2a):100% 相对 body(=视口高),16+H+16=100%,
+   * 不再依赖 100vh 与外边距的隐式抵消;overflow-y 保留为内部极端内容兜底阀 */
+  height: calc(100% - 32px);
   margin: 16px auto; /* 批次 12(C3):大屏密度上限,水平居中 */
   max-width: 1080px;
   padding: 16px 32px;
@@ -201,7 +224,13 @@ body {
   /* 兜底阀:极端内容超出轨道预算时不裁切,降级为卡片内滚动 */
   overflow-y: auto;
   overflow-x: hidden;
+  /* P4 主题切换过渡:仅颜色属性(背景/文字/边框),不含几何属性防布局抖动 */
+  transition: background-color 0.2s ease, color 0.2s ease,
+    border-color 0.2s ease;
 }
+
+/* 响应式调整(矮窗口/窄窗口)见本文件末尾媒体查询——须置于组件规则之后,
+ * 同特异性下靠源序覆盖生效 */
 
 /* 标题区:版本号与标题同行(baseline 对齐;修复此前块级 h1 导致版本号折行) */
 .header {
@@ -211,7 +240,8 @@ body {
   margin-bottom: 8px;
 }
 
-/* 顶栏右侧操作区(P1-1 格式分段 + P0-3 摘要 chip 与设置齿轮) */
+/* 顶栏右侧操作区(P1-1 格式分段 + 设置齿轮;问题 3 起摘要 chip 已移除,
+ * 「当前预设 · 纸张」信息改在抽屉头部展示) */
 .header-actions {
   margin-left: auto;
   display: flex;
@@ -226,43 +256,13 @@ body {
   letter-spacing: 0.2px;
 }
 
-/* 版本号(发版 1.0.0:标题右侧小字,悬停显示完整版本;间距由 .header gap 管理) */
+/* 版本号(发版 1.0.0:标题右侧小字,悬停显示完整版本;间距由 .header gap 管理;
+ * 窄窗口 ≤860px 隐藏,见上方媒体查询) */
 .version {
   font-size: 12px;
   font-weight: 400;
   color: var(--text-secondary);
   user-select: text;
-}
-
-/* 摘要 chip(P0-3):「当前预设 · 纸张」,点击直达抽屉常用组;
- * 文案由 updateSettingsChip 填充,空串时 :empty 隐藏(避免空胶囊占位) */
-.chip {
-  padding: 4px 10px;
-  font-family: inherit;
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 0.15s ease, color 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.chip:hover {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent-border);
-}
-
-.chip:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.chip:empty {
-  display: none;
 }
 
 /* 图标按钮(设置齿轮 / 抽屉关闭):仅图标 + 悬停底色 */
@@ -345,15 +345,16 @@ body {
 }
 
 /* 消息槽(P0-2):状态行 / 拖放跳过列表 / 结果汇总条的常驻固定容器。
- * P1-3 起兼任 .app 的弹性吸收带(minmax(44px,1fr)):富余空间留在槽体内不可见,
- * footer 钉底;内容偶发超高(展开警告/长错误)时槽体内部滚动,不推挤任何区块。
+ * 问题 1/2c 起弹性吸收带职责移交主舞台轨道,本槽回归紧凑常驻:
+ * min-height 预留空态占位;max-height 用 vh 上限(警告展开等超高内容
+ * 槽体内部滚动),不推挤 footer、不与主舞台争抢富余高度。
  * 子元素间距归槽体管理(gap),status/汇总条自身不再带外边距。 */
 .message-slot {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 44px;
-  max-height: 100%;
+  max-height: 38vh;
   margin-top: 12px;
   overflow-y: auto;
 }
@@ -537,4 +538,42 @@ body {
   font-size: 12px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 响应式调整(问题 1/2;置于组件规则之后,靠源序覆盖生效) ---------- */
+/* 矮窗口(接近最小 720×560):压缩纵向装饰间距,配合主舞台轨道下限随 40vh
+ * 缩小(min(300px,40vh)),保证任何 ≥720×560 窗口主页面无滚动条 */
+@media (max-height: 620px) {
+  .header {
+    margin-bottom: 4px;
+  }
+
+  .message-slot {
+    margin-top: 8px;
+    min-height: 36px;
+  }
+
+  .actions {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+}
+
+/* 窄窗口:收紧水平内边距与顶栏间距;版本号隐藏避免顶栏挤压换行 */
+@media (max-width: 860px) {
+  .app {
+    padding: 14px 20px;
+  }
+
+  .header {
+    gap: 6px;
+  }
+
+  .version {
+    display: none;
+  }
+
+  .segment span {
+    padding: 4px 8px;
+  }
 }

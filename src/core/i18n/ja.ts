@@ -245,7 +245,6 @@ const dict: Partial<Record<Dict, string>> = {
 
     /* ---------- ドロップゾーン / 選択 ---------- */
     "drop.ariaLabel": "クリックまたは Markdown ファイルをドロップ(複数可)",
-    "drop.title": "クリックまたは Markdown ファイルをドロップ",
     "drop.hint": "Markdown ファイルまたはフォルダーをここにドロップ",
     "drop.or": "または",
     // P1-6 空状態の機能説明:拡張子 + 構文能力を一行で表記

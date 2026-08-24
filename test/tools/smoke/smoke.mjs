@@ -238,13 +238,13 @@ export async function runSmoke(win) {
         report.noDataThemeAtStart = !document.documentElement.hasAttribute("data-theme");
         report.themeRadioCount = document.querySelectorAll('input[name="theme"]').length;
         // P0-3 设置抽屉:容器存在且启动时隐藏(旧主页面 details 面板已移除);
-        // 顶栏入口(齿轮/摘要 chip)与方向/语言 select 就位
+        // 顶栏入口(齿轮)与方向/语言 select、抽屉副标题就位
         const settingsDrawer = document.getElementById("settingsDrawer");
         report.settingsDrawerExists = !!settingsDrawer;
         report.settingsDrawerHiddenAtStart = settingsDrawer ? settingsDrawer.classList.contains("hidden") : null;
         report.drawerOpenBtnExists = !!document.getElementById("settingsOpenBtn");
         report.drawerCloseBtnExists = !!document.getElementById("drawerCloseBtn");
-        report.chipExists = !!document.getElementById("settingsSummaryChip");
+        report.drawerSubtitleExists = !!document.getElementById("drawerSubtitle");
         report.orientationSelectExists = !!document.getElementById("orientationSelect");
         report.languageSelectExists = !!document.getElementById("languageSelect");
         report.formatSegmentCount = document.querySelectorAll(".header-actions input[name='format']").length;
@@ -254,6 +254,12 @@ export async function runSmoke(win) {
         report.recentChipsExists = !!recentChips;
         report.recentChipsHiddenAtStart = recentChips ? recentChips.classList.contains("hidden") : null;
         report.recentSectionRemoved = !document.getElementById("recentSection");
+        // 问题 2a 回归守卫:文档级零滚动(html/body overflow:hidden + .app 外边距
+        // 算术闭合;scrollHeight 超出视口即说明边距塌陷/内容溢出回归)
+        report.docScrollOk =
+          document.documentElement.scrollHeight <= window.innerHeight &&
+          document.body.scrollHeight <= window.innerHeight;
+        report.scrollHeight = document.documentElement.scrollHeight;
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
@@ -327,7 +333,7 @@ export async function runSmoke(win) {
         diag.settingsDrawerHiddenAtStart !== true ||
         !diag.drawerOpenBtnExists ||
         !diag.drawerCloseBtnExists ||
-        !diag.chipExists ||
+        !diag.drawerSubtitleExists ||
         !diag.orientationSelectExists ||
         !diag.languageSelectExists ||
         diag.formatSegmentCount !== 2
@@ -338,7 +344,7 @@ export async function runSmoke(win) {
             settingsDrawerHiddenAtStart: diag.settingsDrawerHiddenAtStart,
             drawerOpenBtnExists: diag.drawerOpenBtnExists,
             drawerCloseBtnExists: diag.drawerCloseBtnExists,
-            chipExists: diag.chipExists,
+            drawerSubtitleExists: diag.drawerSubtitleExists,
             orientationSelectExists: diag.orientationSelectExists,
             languageSelectExists: diag.languageSelectExists,
             formatSegmentCount: diag.formatSegmentCount,
@@ -357,6 +363,15 @@ export async function runSmoke(win) {
             recentChipsExists: diag.recentChipsExists,
             recentChipsHiddenAtStart: diag.recentChipsHiddenAtStart,
             recentSectionRemoved: diag.recentSectionRemoved,
+          })}`,
+        );
+      }
+      // 问题 2a:文档级零滚动守卫(scrollHeight 超出视口即边距塌陷/内容溢出回归)
+      if (diag.docScrollOk !== true) {
+        throw new Error(
+          `[smoke] renderer diag FAILED: 文档级出现滚动(scrollHeight 超出视口) ${JSON.stringify({
+            docScrollOk: diag.docScrollOk,
+            scrollHeight: diag.scrollHeight,
           })}`,
         );
       }

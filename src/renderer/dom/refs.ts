@@ -263,14 +263,11 @@ export const drawerCloseBtn = document.getElementById(
 export const settingsOpenBtn = document.getElementById(
   "settingsOpenBtn",
 ) as HTMLButtonElement;
-// 摘要 chip:「当前预设 · 纸张」(文案由 settings-drawer.updateSettingsChip 填充)
-export const settingsSummaryChip = document.getElementById(
-  "settingsSummaryChip",
-) as HTMLButtonElement;
-// 抽屉「常用」分组(chip 点击直达的滚动锚点)
-export const drawerGroupCommon = document.getElementById(
-  "drawerGroupCommon",
-) as HTMLElement;
+// 抽屉副标题(问题 3):「当前预设 · 纸张」(文案由 settings-panel 合成、
+// settings-drawer.updateDrawerMeta 写入;空串时 CSS :empty 隐藏)
+export const drawerSubtitle = document.getElementById(
+  "drawerSubtitle",
+) as HTMLParagraphElement;
 // 批次 11 迭代 2:完成弹窗「不再提示」/ 设置面板「转换完成弹窗提示」(同字段双向同步)
 export const completeDialogSuppressInput = document.getElementById(
   "completeDialogSuppress",

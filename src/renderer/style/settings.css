@@ -24,6 +24,9 @@
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow-dialog);
   animation: drawer-in 0.18s ease-out;
+  /* P4 主题切换过渡(仅颜色属性) */
+  transition: background-color 0.2s ease, color 0.2s ease,
+    border-color 0.2s ease;
 }
 
 @keyframes drawer-overlay-in {
@@ -67,6 +70,25 @@
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+}
+
+/* 标题 + 副标题纵向块:min-width:0 防长副标题把关闭按钮挤出面板 */
+.drawer-head-texts {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 抽屉副标题(问题 3):「当前预设 · 纸张」自顶栏 chip 迁此,打开抽屉即可见;
+ * 文案由 settings-panel 合成、settings-drawer.updateDrawerMeta 写入,:empty 隐藏 */
+.drawer-subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.drawer-subtitle:empty {
+  display: none;
 }
 
 .drawer-body {

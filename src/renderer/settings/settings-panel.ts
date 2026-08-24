@@ -3,9 +3,9 @@
  * - 设置加载/回填/校验/钳制/预设套用/persist 三件套,以及预设弹窗与导入导出交互;
  *   全部设置控件的事件绑定见 settings-bindings.ts(B8 抽出,单向依赖本模块),
  *   契约与语义注释随代码搬移不精简;
- *   抽屉开合/焦点/摘要 chip 见 settings-drawer.ts(本模块单向依赖之)
+ *   抽屉开合/焦点/副标题写入见 settings-drawer.ts(本模块单向依赖之)
  * - 依赖方向遵循 R8 既定单向依赖:本模块 → core/settings-defaults(契约/常量/预设)、
- *   dom.ts(元素映射)、state.ts(共享状态单一来源)、settings-drawer(chip 写入);
+ *   dom.ts(元素映射)、state.ts(共享状态单一来源)、settings-drawer(副标题写入);
  *   不反向引用 renderer.ts 的私有符号
  * - 组合根 renderer.ts 调用:init 处 bindSettingsEvents()(settings-bindings)后再
  *   loadSettings()(时序与拆分前一致:事件绑定先于回填;loadSettings 的 await 回填
@@ -66,8 +66,8 @@ import { state } from "../state/state.js";
 import { setError, setStatus, trapFocus } from "../state/utils.js";
 import { errorMessage } from "../state/pure.js";
 import { applyStaticTexts, setLanguage, t, LANGUAGES, type Language } from "../../core/i18n.js";
-// P0-3:摘要 chip 文案写入归抽屉模块(本模块只负责由设置值合成文案)
-import { updateSettingsChip } from "./settings-drawer.js";
+// 问题 3:抽屉副标题文案写入归抽屉模块(本模块只负责由设置值合成文案)
+import { updateDrawerMeta } from "./settings-drawer.js";
 
 /* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let presetSaveTrap: (() => void) | null = null;
@@ -147,7 +147,7 @@ export async function loadSettings(): Promise<void> {
 
 /** 将内存设置回填到所有控件(仅赋值,不触发 change 事件)。
  *  值计算(设置 → 控件值映射/预设匹配/hint)在 settings-logic,本函数只做 DOM 赋值;
- *  末尾刷新顶栏摘要 chip(P0-3:「预设名 · 纸张」随回填实时更新)。 */
+ *  末尾刷新抽屉副标题(问题 3:「预设名 · 纸张」随回填实时更新)。 */
 export function applySettingsToControls(): void {
   const v = settingsToControlValues(state.settings);
   paperSelect.value = v.paper;
@@ -210,21 +210,21 @@ export function applySettingsToControls(): void {
     ? t("settings.pdfCssImported")
     : t("settings.pdfCssNone");
   pdfCssClearBtn.classList.toggle("hidden", !state.settings.pdfCss);
-  // P0-3:顶栏摘要 chip 随回填刷新(「预设名 · 纸张」)
-  updateSettingsChip(composeSettingsChipText());
+  // 问题 3:抽屉副标题随回填刷新(「预设名 · 纸张」)
+  updateDrawerMeta(composeDrawerMetaText());
 }
 
-/** 摘要 chip 文案合成(DOM 单源:模板 select 选中项 + 纸张 select 值)。 */
-function composeSettingsChipText(): string {
+/** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 select 值)。 */
+function composeDrawerMetaText(): string {
   const presetName = templatePresetSelect.selectedOptions[0]?.textContent ?? "";
   return `${presetName} · ${paperSelect.value}`;
 }
 
 /** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。
  *  批次 11 迭代 3:写盘成功后刷新所有预览窗口(设置变更即时反映到预览)。
- *  P0-3:写回同时刷新摘要 chip——纸张等直接改控件的路径不经过回填,在此统一兜住。 */
+ *  问题 3:写回同时刷新副标题——纸张等直接改控件的路径不经过回填,在此统一兜住。 */
 export function persistSettings(patch: Partial<AppSettings>): void {
-  updateSettingsChip(composeSettingsChipText());
+  updateDrawerMeta(composeDrawerMetaText());
   void window.api
     .settingsSet(patch)
     .then(() => window.api.previewRefresh())

@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-08-24:**实测反馈修复批次「响应式+滚动条+chip+主题过渡」完成,待 GUI 复测**(主舞台改 minmax(min(300px,40vh),1fr) 弹性撑满;根治页面级滚动条:html/body overflow 传播+BFC 边距塌陷致文档高 592>560,.app 高度算术闭合+overflow hidden;文件框体右侧裁切=Grid 隐式列 min-content 撑宽,显式 minmax(0,1fr);移除顶栏 chip 信息并入抽屉头副标题;主题切换 200ms 过渡;tooltip 裁切修复;smoke 新增 docScrollOk 守卫)
 - 2026-08-24:**界面改进批次三「反馈统一+空态导航+行降噪+视觉打磨」完成,待 GUI 实测**(P1-2 完成弹窗默认不弹走汇总条;P1-3 最近转换改空态 chips+↻ 重转,删双击与仅加载按钮;P1-4 多文件行减至手柄+移除,Alt+↑/↓ 键盘排序;P1-5 错误警告可换行底色条;P1-6 空态能力说明;P2 type scale+微动效+进度行精简;typecheck/lint/build/smoke/51 段全绿)
 - 2026-08-24:**界面改进批次二「设置抽屉化」完成,待 GUI 实测**(P0-3 主页面设置面板→右侧滑出抽屉,主页配置清零;P0-4 抽屉内 L1 常用/L2 排版/L3 高级/L4 应用偏好四层频率分层;P1-1 格式选择上移顶栏分段控件;焦点陷阱栈式协调支持弹窗叠加;typecheck/lint/build/smoke/51 段全绿)
 - 2026-08-24:**界面改进批次一「布局稳定性」完成,待 GUI 实测**(P0-1 主舞台固定高度 clamp(280px,40vh,400px)+Grid 六轨道钉死 footer;P0-2 status/dropSkipped/resultSummary 合并常驻消息槽;根治导入跳动;typecheck/build/smoke 全绿)

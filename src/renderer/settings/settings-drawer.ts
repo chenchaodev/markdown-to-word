@@ -1,21 +1,20 @@
 /**
  * renderer 设置抽屉(P0-3 自主页面 details 面板迁移):
- * - 开合管理:⚙ 按钮 / 摘要 chip 打开,关闭按钮 / 遮罩 / Esc(经 dialogs-events
- *   Esc 链末位)关闭;焦点陷阱开启期间 Tab 不逃逸,关闭后焦点还给 ⚙ 按钮;
+ * - 开合管理:⚙ 按钮打开,关闭按钮 / 遮罩 / Esc(经 dialogs-events Esc 链末位)
+ *   关闭;焦点陷阱开启期间 Tab 不逃逸,关闭后焦点还给 ⚙ 按钮;
  * - 开合记忆:ui-state.panelOpen.page(语义自「details 展开」迁移为「抽屉可见」;
  *   typography 字段为 main 侧形状兼容保留镜像同值,sanitize 契约不变);
  * - 转换中可打开:设置「即时生效+自动保存」链路(persistSettings → previewRefresh)
  *   不经过本模块,开合不影响转换流程;
- * - 摘要 chip:「当前预设名 · 纸张」,由 settings-panel 在回填/写回后调用
- *   updateSettingsChip 刷新;空文案时 CSS :empty 隐藏。
+ * - 抽屉副标题:「当前预设名 · 纸张」(问题 3 自顶栏 chip 迁入),由 settings-panel
+ *   在回填/写回后调用 updateDrawerMeta 刷新;空文案时 CSS :empty 隐藏。
  * 依赖方向:本模块 → dom/state/utils 与 core/i18n;不反向引用消费方。
  */
 import {
   drawerCloseBtn,
-  drawerGroupCommon,
+  drawerSubtitle,
   settingsDrawer,
   settingsOpenBtn,
-  settingsSummaryChip,
 } from "../dom/refs.js";
 import { trapFocus } from "../state/utils.js";
 
@@ -71,23 +70,19 @@ function persistDrawerOpen(): void {
 }
 
 /**
- * 摘要 chip 文案:「预设名 · 纸张」(DOM 单源:模板 select 选中项 + 纸张 select 值)。
+ * 抽屉副标题写入:「预设名 · 纸张」(问题 3 自顶栏 chip 迁此)。
  * 由 settings-panel 在 applySettingsToControls(回填)与 persistSettings(任一写回)
  * 后调用;空串时按钮经 CSS :empty 隐藏。
  */
-export function updateSettingsChip(chipText: string): void {
-  settingsSummaryChip.textContent = chipText;
-  settingsSummaryChip.title = chipText; // 截断时悬浮可看全文
+export function updateDrawerMeta(metaText: string): void {
+  drawerSubtitle.textContent = metaText;
+  drawerSubtitle.title = metaText; // 截断时悬浮可看全文
 }
 
 /* ---------- 本模块事件绑定(renderer.ts 组合入口调用) ---------- */
 export function bindSettingsDrawerEvents(): void {
-  // ⚙ 打开;摘要 chip 直达「常用」分组(模板预设所在组顶)
+  // ⚙ 打开
   settingsOpenBtn.addEventListener("click", openSettingsDrawer);
-  settingsSummaryChip.addEventListener("click", () => {
-    openSettingsDrawer();
-    drawerGroupCommon.scrollIntoView({ block: "start" });
-  });
 
   drawerCloseBtn.addEventListener("click", closeSettingsDrawer);
 

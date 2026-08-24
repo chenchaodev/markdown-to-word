@@ -248,7 +248,6 @@ const dict: Partial<Record<Dict, string>> = {
 
     /* ---------- Zone de dépôt / sélection ---------- */
     "drop.ariaLabel": "Cliquez ou déposez des fichiers Markdown (plusieurs acceptés)",
-    "drop.title": "Cliquez ou déposez des fichiers Markdown",
     "drop.hint": "Déposez ici des fichiers ou dossiers Markdown",
     "drop.or": "ou",
     // P1-6 note de capacités à l'état vide : extensions + fonctionnalités sur une ligne

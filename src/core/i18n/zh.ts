@@ -250,7 +250,6 @@ const dict = {
 
     /* ---------- 拖放区 / 选择入口 ---------- */
     "drop.ariaLabel": "点击或拖入 Markdown 文件（支持多个）",
-    "drop.title": "点击或拖入 Markdown 文件",
     "drop.hint": "将 Markdown 文件或文件夹拖到此处",
     "drop.or": "或",
     // P1-6 空态能力说明:扩展名 + 语法能力一行标注

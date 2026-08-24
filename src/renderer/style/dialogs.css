@@ -23,6 +23,9 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow-dialog);
   animation: dialog-in 0.15s ease-out;
+  /* P4 主题切换过渡(仅颜色属性) */
+  transition: background-color 0.2s ease, color 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .dialog-title {
