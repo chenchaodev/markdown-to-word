@@ -1,6 +1,18 @@
 # 研究结论
 
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
+> **路径迁移注记(2026-08-24)**:目录结构重组(2026-08-23,提交 6f3d72a~9909d74)前历史条目「关联」字段中的扁平路径已失效——对照关系:`src/settings.ts`→`src/main/persist/settings.ts`、`src/index.ts`→`src/main/`(拆 windows/ipc/menu/converter/persist/services)、`src/renderer.ts`→`src/renderer/renderer.ts`+六功能域、`src/core/{i18n-dict}.ts`→`src/core/i18n/`、core 根级散文件→`pipeline/markdown/image/settings/util/` 子域。时间戳记录按规约不改写原文。
+
+### 2026-08-24 审计整改记录(依赖钉死策略清单 / highlight.js styles 潜伏副作用)
+- **依赖钉死策略显式清单**(收敛自 RESEARCH 散落记载与 CHANGELOG):
+  - `markdown-it 14.3`:15.0 与 @mdit/plugin-tasklist@1.0.2 peer(^14.2.0)冲突,升级须连带评估 tasklist/footnote 两插件
+  - `@mdit/plugin-footnote 1.0.2`:peer 显式 markdown-it ^14.2.0,随 markdown-it 联动
+  - `mermaid 11.16.1`:ESM-only 包,依赖 dist 内 IIFE 产物 file:// 直用规避模块 CORS;升级须重验 IIFE 产物存在性与 securityLevel 行为
+  - `electron-builder 26.15.3`:27 alpha 不用;26.x 实测 ESM 入口打包成功,升级须重验 NSIS 链路
+  - `docx 9.x`:渲染核心,API 面大(Bookmark/InternalHyperlink/SimpleField 等),major 升级须全量回归
+  - `highlight.js`:`lib/common` 经 exports map import 条件解析到 es/,**es/ 不可从打包排除**(ERR_MODULE_NOT_FOUND);styles/ 已排除(模板自带 .hljs 颜色)
+- **highlight.js styles 排除的潜伏副作用**:package.json build.files 排除 hljs styles/(主题 CSS 手写内联)。若未来任何代码 `import 'highlight.js/styles/xxx.css'`,dev/smoke 正常(node_modules 完整)但打包后静默 404——**dev 全绿 ≠ 打包可用**的又一实例;引入 styles 导入前必须先移除该排除规则并实测打包
+- 来源: 全库审计整改批(2026-08-24);关联: docs/archive/2026-08-24-134811-审计待办清单.md(ENG-8/ENG-9)、下方 G5 打包坑条目
 
 ### 2026-08-24 02:26:55 目录结构评审(重组后复核,只读)
 - **总体判断**:三层分离(core 纯逻辑/main 编排+IO/renderer DOM)与 core 分域(docx/pdf 输出域+markdown/image/pipeline 共享语法域+settings/i18n/util 横切契约)执行一致,handlers↔rules 粒度对称;真正问题仅两类——跨进程契约类型寄居 main 层、test/ segments 与 main 边界不符自述口径

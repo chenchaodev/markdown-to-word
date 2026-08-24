@@ -35,120 +35,45 @@
 ### 审计改进排期 B1-B14(2026-08-23,完成即勾选)
 > 原则:每项独立提交可回退;core 行为改动须补测试段断言;重构行为等价。规模:S≤3 文件 / M 中 / L 大。决策点已于 2026-08-23 全部拍板(见各条「已拍板」)。
 
-#### B14 文档修正(S,零风险,建议最先做)
-- [ ] docs/README.md:3 自述「命令行工具」→「Windows 桌面应用」
-- [ ] convert.ts 头注释「docx 无代码高亮」差异行更新(0.32.0 已实现 code-highlight.ts)
-- [ ] WPS-COMPAT.md 目录条目修正:「页码占位」失实 + 「非域却称更新域可刷新」自相矛盾(实为无页码静态列表)
-- [ ] WPS-COMPAT 矩阵状态回填(0.31.0 双实测整体通过:矩阵标 ✅ 或表头注明「整体按通过处理」)
-- [ ] ui-state.ts:156 panelOpen 默认值注释修正(缺省 false 非 true)
-- [ ] 根 README 安装节补 ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR 前置说明(指向 DEV-GUIDE)
-- [ ] USER-GUIDE FAQ 扩充:公式未编号排查 / 图片不显示排查 / SmartScreen 未签名安装提示
+#### B14 文档修正(S,零风险;2026-08-23 完成,7 项逐项勾验于 2026-08-24)
+- [x] docs/README.md:3 自述改「Windows 桌面应用」
+- [x] convert.ts 头注释代码高亮差异行更新(双格式均走 hljs)
+- [x] WPS-COMPAT.md 目录条目矛盾修正(非域、无需更新域)+ 矩阵状态回填
+- [x] ui-state.ts panelOpen 默认值注释修正(缺省折叠=false)
+- [x] 根 README 安装节补 ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR 前置说明
+- [x] USER-GUIDE FAQ 扩充(公式未编号 / 图片不显示 / SmartScreen 未签名)
 
-#### B1 安全加固·预览链路(M,P0)
-- [ ] buildTemplate 加 CSP meta(template.ts:218-231;对齐 mermaid 窗口既有实践)
-- [ ] pdfCss/katexCss 注入前净化 `</style` 序列(template.ts:208,224)
-- [ ] 外链导航收口:四类窗口 setWindowOpenHandler deny + will-navigate preventDefault;外链改 shell.openExternal 仅 https/http(index.ts + template.ts)
-- [ ] IPC 参数类型守卫统一:convert filePath/format、shell:reveal/open、preview:open、paths:* 数组元素校验,非法返回 {ok:false}(index.ts:318,350-355,486-501)
-- [ ] session.setPermissionRequestHandler 显式全拒(低优先加固)
-- [ ] mermaid-service CSP unsafe-inline 已知接受项注释固化(mermaid-service.ts:46)
+#### B1 安全加固·预览链路(M,P0;2026-08-23 完成,commit cb40e04)
+> 6 项全部完成:模板 CSP meta/CSS 注入净化 `</style`/四窗口外链导航收口(setWindowOpenHandler deny+will-navigate preventDefault)/IPC 参数类型守卫统一/permission 全拒/mermaid CSP 接受项注释固化。
 
-#### B2 主进程健壮性(M,P0)
-- [ ] requestSingleInstanceLock + second-instance 聚焦已有窗口(index.ts)
-- [ ] unhandledRejection/uncaughtException 兜底日志;index.ts:119/192 void loadFile/loadURL 补 catch
-- [ ] 关窗时活动转换拦截确认(close 检查 ctxByWebContents;index.ts:128-137)
-- [ ] refreshPreviewWindow loadFile reject 补 oldCleanup 防 tmp 残留(index.ts:200-215)
-- [ ] activate 监听移到 createWindow 前(index.ts:562-585)
-- [ ] mergeConvertImpl 尊重 skipAfterConvert(与 convertImpl 对齐;converter.ts:456 vs 261)
-- [ ] resolverCache 容量上限/LRU(converter.ts:67)
-- [ ] mermaid-service 超时后 destroy 重建窗口再放行队列(mermaid-service.ts:138-152,180-187)
-- [ ] smoke 断言去中文冻结:菜单/守卫文案按 t() 取值或强制 zh 运行(smoke.ts:88,222-227)
+#### B2 主进程健壮性(M,P0;2026-08-23 完成,commit ac1b357)
+> 9 项全部完成:单实例锁/unhandledRejection 兜底/关窗转换拦截/preview loadFile cleanup/activate 时序/mergeConvertImpl 尊重 skipAfterConvert/resolverCache 上限/mermaid 超时重建/smoke 断言去中文冻结。
 
-#### B3 core 数据与渲染正确性(L,P0;每项独立小修+断言)
-- [x] frontmatter 守卫:块内至少命中一个已知 key 才认定,防误吞 `---` 开头正文(frontmatter.ts:24)(7d85fad)
-- [x] slug 截断碰撞:id.slice(0,40) 场景追加短哈希保书签唯一(slug.ts:32)(c9e16b6)
-- [x] headingNumbering=false 题注编号双格式对齐(captions.ts:60-66 vs 注释 49-51 vs pdf 连续;已拍板:全文档连续,docx 向 pdf 对齐并修正注释)(c9e16b6)
-- [x] docx 表格列对齐:消费 mdast table.align(docx/render.ts renderTable)(B3c 批次)
-- [ ] 列表项/引用块内不支持块级内容的处理见 B4(此处仅登记关联)
-- [x] eq label 登记口径双格式对齐(docx equations.ts:48 vs pdf/render.ts:230-234;已拍板:pdf 放宽对齐 docx,粗斜体包裹的 label 也生效)(B3c 批次:pdf label 识别改为整段纯文本串接匹配)
-- [x] encoding:UTF-16 BE BOM(FE FF)识别 + UTF-16 LE encoding 字段如实返回(encoding.ts)(7d85fad)
-- [x] 白名单扫描大小写对称(闭标签加 i)+ 自闭合 `<br/>` 分支(pdf/render.ts:550,556;html-whitelist.ts:32)(B3c 批次;复核修正:两处闭标签均先 toLowerCase 再严格匹配,本无大小写缺陷——真实缺口仅自闭合 `<br/>`,三处扫描器 html-whitelist/pdf matchAllowedHtmlExpression/docx parseInlineHtml 同步放行,非空标签自闭合仍非法)
-- [x] merge absolutizeImages 感知代码块(fenced/inline 内不改写)+ index=0 frontmatter 剥离(merge.ts)(B3c 批次;复核修正:index=0 frontmatter 保留为设计决策(merge.ts 头注释「首文件保留原样」),不改;代码块感知经占位符摘除围栏+行内代码后替换再还原)
-- [x] merge 分页符叠加防空白页(join 前检查尾部已有 page-break;merge.ts:18,42)(B3c 批次:尾部已有显式分页符改普通空行拼接)
-- [x] 脚注重复引用共享同一脚注 id(docx/render.ts:975-982)(c9e16b6)
-- [x] docx 悬空交叉引用/公式 label 警告去重(对齐 pdf unknownLabels 模式;render.ts:895,944)(c9e16b6)
-- [x] pdf metadata date 解析失败不静默兜底当前时间(metadata.ts:25)(7d85fad)
-- [x] image-type 未知字节兜底策略(已拍板:跳过嵌入+警告,不再伪装 png;image-type.ts:27,92)(B3c 批次:sniffImageType/mimeFromBuffer 未知返回 null,docx imageToDocx 与 pdf embedExternalImages 调用方跳过+unrecognizedImageWarning 统一文案)
+#### B3 core 数据与渲染正确性(L,P0;2026-08-23 完成,提交 7d85fad/c9e16b6/B3c 批次)
+> 16 项全部完成:frontmatter 守卫/slug 截断碰撞/题注编号全文档连续/表格列对齐/eq label pdf 放宽/UTF-16 BE/白名单大小写+自闭合 br/merge 代码块感知+分页符防叠加/脚注共享 id/悬空引用去重/metadata date/未知图片跳过。明细与证据链见 git log 对应提交。
 
-#### B10 工程门禁与测试基建(M,P1,建议在功能批前建立护栏)
-- [x] 新增 ci.yml(PR/push:windows-latest,typecheck+lint+build+test;concurrency 组;timeout-minutes)(B10a 批次)
-- [x] release.yml 加固:concurrency / timeout-minutes / 失败 artifact 上传(B10a 批次)
-- [x] acceptance.mjs 最早期 app.setPath("userData", tmpdir) 隔离(settings/i18n/ui-state/converter 段适配;消除真实 %APPDATA% 读写;原型 patch 限制并行为已知不专项)(B10a 批次;40 段全绿验证通过,无需段内适配)
-- [x] runner 逐段超时看门狗(可配置)+ 总时长/最慢段排行输出(+可选 expect 式 diff 增强)(B10a 批次:M2W_SEGMENT_TIMEOUT_MS/acceptance 默认 180s;排行输出已做,diff 增强未做)
-- [x] tsconfig incremental:true(build/test 提速)(B10a 批次;坑:产物被外部删除后 tsc 不重建,恢复须 tsc --build --force,见 RESEARCH 同日条目)
-- [x] tsconfig 启用 noUncheckedIndexedAccess(存量适配)(B10c 批次:3 子代理按域并行,约 145 错清零;修复全部行为等价——循环边界后 `!`+不可达依据注释为主,bookmarks 跟随既有 null 守卫风格)
-- [x] 删除死配置 tsconfig.eslint.json(B10a 批次;eslint.config.js 用 projectService 无引用,已核实)
-- [x] test:smoke 构建新鲜度守卫(src mtime vs dist mtime,过期报错或自动 build)(B10a 批次:scripts/check-build-fresh.mjs 前置拦截)
-- [x] copy-renderer.mjs 加 dist/renderer 清空步骤(防陈旧资源进安装包)(B10a 批次;坑:混合目录不可整删,按 .html/.css 扩展名清理,见 RESEARCH 同日条目)
-- [x] scripts/svg-to-ico.mjs 登记 icons npm script(B10a 批次)
-- [x] docx 解包机制统一 jszip(common/docx-utils.js 删系统 tar 路径)(B10b 批次:unzipPart 转 async,71 处调用点适配,验收总耗时 23.5s→19.1s)
+#### B10 工程门禁与测试基建(M,P1;2026-08-23 完成,B10a/b/c 三波)
+> 10 项全部完成:ci.yml 新建/release.yml 加固/userData 隔离/逐段看门狗/incremental/noUncheckedIndexedAccess(约 145 错清零)/删死配置/smoke 守卫/copy-renderer 清理/jszip 统一。两枚踩坑记 RESEARCH(混合目录不可整删/incremental 不重建被删产物)。
 
-#### B6 i18n 收口(M,P1;为 B4 提供 key 机制;2026-08-23 完成,commit 9d6a2d5)
-- [x] core 警告文案 key 化机制:ctx.warnings 携带稳定 key+插值参数,GUI 显示层 t() 映射,缺失回退存量中文(ConvertWarning=string|KeyedWarning+formatWarning,zh 行为逐字等价)
-- [x] converter.ts warnings/throw 文案接字典(throw 经 error.message 单次字符串通道无法显示层重映射,改生成期 t() 本地化并注释决策)
-- [x] index.ts throw 文案接字典(实际落点 main/converter.ts,审计行号漂移)
-- [x] Mermaid 降级警告 key 化(warn.mermaidEmpty/warn.mermaidFailed 双侧共用)
-- [x] renderer.ts ERROR_MESSAGE 模块级求值改使用点 t()(语言切换后仍中文的 bug 已修)
-- [x] renderer.ts 版本 title 走字典(app.versionTitle)
-- [x] i18n DICT en 键集编译期锁定(ZH as const + EN: Record<keyof typeof ZH,string>,缺键/多键编译报错)
-- [x] preset.nameLimit 全角逗号统一为半角
-- [x] index.html zh FOUC 缓解(CSP 禁内联,改 localStorage 语言镜像+lang-bootstrap.js 外部引导脚本设 html lang)
+#### B6 i18n 收口(M,P1;2026-08-23 完成,commit 9d6a2d5)
+> 9 项全部完成:警告文案 key 化(ConvertWarning/KeyedWarning+formatWarning)/converter 与 main throw 文案接字典/Mermaid 降级 key 化/renderer ERROR_MESSAGE 使用点求值/版本 title 字典化/EN 键集编译期锁定/preset.nameLimit 标点/lang-bootstrap FOUC 缓解。
 
-#### B4 降级与失败可见性(M,P1;依赖 B6 key 机制;2026-08-23 完成,commit d6dd721)
-- [x] renderList/renderBlockquote 不支持的块级内容(display 公式/表格/html/代码块)降级渲染+警告(renderContainerFallback+warnDedup)
-- [x] hljs 高亮降级加警告(code-highlight onFallback 回调保持纯模块,pdf 同 key 同口径 warn.highlightFallback)
-- [x] loadKatexCss 失败经 warnings 上报(warn.katexCssLoadFailed,返回空串行为不变)
-- [x] 图片读取失败原因细分(imageLoadFailureWarning 分类器 ENOENT/EACCES/EPERM/兜底,docx/pdf 双侧对齐)
+#### B4 降级与失败可见性(M,P1;2026-08-23 完成,commit d6dd721)
+> 4 项全部完成:容器块级内容降级渲染+警告/hljs 降级警告/katexCss 加载失败上报/图片读取失败原因细分(双格式对齐)。
 
 #### B5 性能(S-M,P1;2026-08-23 完成,commit 3ebec63)
-- [x] docx 图片 resolver memo 缓存(ctx 挂 Promise Map,并发同 URL 共享在途请求,失败不缓存可重试)
-- [x] embedExternalImages cursor 分段一次遍历(只处理 img 标签内 src,比旧全局 replace 更精确,产物等价)
-- [x] (评估)checkLocalImages 轻量存在性通道(resolver 契约加 optional exists,main 侧 fs.access 实现,http 防御性退回)
-- [x] (可选)buildMarkdownIt 实例复用——评估后不做(highlight 回调闭包捕获本次 warnings 数组,复用会丢警告)
+> 完成:docx 图片 resolver memo/embedExternalImages cursor 分段/checkLocalImages exists 通道;(可选)buildMarkdownIt 复用评估后不做(闭包捕获 warnings)。
 
 #### B7 契约单源与解环(M-L,P1 重构;行为零变化;2026-08-23 完成,三波提交 089eac3/e471d2d/0694814)
-- [x] 循环依赖解除:docx/pdf render 与 main/settings 的 DEFAULT_PAGE_SETUP 改从 settings-defaults 导入
-- [x] CROSS_REF_KINDS 抽 core 单源(新增 core/cross-ref.ts)
-- [x] {#sec:} 正则族单源(core/cross-ref.ts SEC_LABEL_RE/kindLabelRegex/stripSecLabelSuffix)
-- [x] ImageResolver 类型单源(新增 core/image-resolver.ts,含 optional exists;第三处定义实际在 main/image-downloader.ts)
-- [x] pdf 容器深度跟踪器提取 createDepthTracker(caption/eq/xref 三处逐字同构核实后抽象,现居 pdf/rules/shared.ts)
-- [x] pdf eq/xref 第二遍链接替换循环合并(forEachRefLink 共享 helper,解包策略经回调)
-- [x] bookmarkChildren 共享 helper + as unknown 断言收敛一处(新增 core/docx/bookmark.ts wrapBookmark;冗余断言实际落点 pdf/bookmarks.ts:193)
-- [x] decodeEntities 双实现统一(utils 单源;hljs 实体域等价性已核实并记注释)
-- [x] 白名单标签集恒等断言(ALLOWED_INLINE_TAGS ↔ INLINE_TAG_STYLES)
-- [x] typography 平行定义 type-only 共享(renderer 侧改 PageSetup/AppSettings 派生)
-- [x] matchesPreset 字段数组驱动(PRESET_COMPARE_FIELDS,keyof 约束)
-- [x] theme.ts 死导出处置(DEFAULT_FONT/DEFAULT_SIZE/QUOTE_COLOR 零消费点删除,「兜底」角色经核实不成立)
-- [x] 链接文本提取复用 collectPlainText 消断言(docx link case;嵌套标记链接文本由空变实为修正方向,41 段全绿佐证无回归)
-- [x] mermaid.ts 契约注释声明 SVG 信任边界假设
-- [x] docx 颜色/字号魔法数字收敛常量(颜色入 theme.ts MUTED/SECONDARY/QUOTE_BG/RULE_GRAY,版面字号与图片上限入常量区)
+> 14 项全部完成:循环依赖解除/CROSS_REF_KINDS 单源/sec-label 正则族单源/ImageResolver 单源/pdf 深度跟踪器/eq-xref 二遍合并/bookmarkChildren 共享/decodeEntities 统一/白名单恒等断言/typography type-only 共享/matchesPreset 数组驱动/theme 死导出处置/链接文本提取复用/mermaid 信任边界注释/颜色字号魔法数字收敛。
 
 #### B8 大文件拆分(L,P2 重构;依赖 B7;2026-08-23 完成,两波提交 20ed1c8/0a6c9ce)
-- [x] docx/render.ts pushRuns link case 抽 link-xref 模块
-- [x] docx/render.ts renderDocx 五轮预扫提取(prescanDocument)
-- [x] docx/render.ts 封面/目录/页眉页脚 chrome 模块拆出(1262→467 行,抽 ctx/chrome/prescan/link-xref/image-run/code-block/fallback/content 8 模块,依赖单向无环)
-- [x] pdf/render.ts overrideXrefRule 三段拆分 + 按 rule 拆文件(790→209 行,rules/caption|equation|xref|html|image|heading-id+shared)
-- [x] renderer.ts 抽 events.ts(705→147 行,bindEvents 集中全部事件绑定)
-- [x] settings-panel.ts 绑定函数抽离(656→374 行,settings-bindings.ts)
-- [x] renderer 卫生:unload 监听生命周期等价注明/state 删 converting 改 mode!==null 单源/dialogs trapFocus 二次调用先解旧句柄
+> 7 项全部完成:docx/render.ts 1262→467(8 模块)/pdf/render.ts 790→209(rules 化)/renderer.ts 705→147(events 抽取)/settings-bindings 抽离/renderer 卫生三项。(后续审计整改批已进一步拆至 ~256 行并新增 heading/table/numbering 模块。)
 
 #### B11 测试盲区补齐(S-M,P2;依赖 B10 userData 隔离;2026-08-23 完成,commit dd9dfbd)
-- [x] atomic-json 直测段(test/main/atomic-json.test.js:原子写读回/20 并发串行序/实例队列隔离/失败不破坏旧文件)
-- [x] katex-dir/mermaid-dir 三态路径直测(抽 resolveKatexDir/resolveMermaidDir 纯函数,test/main/resource-dirs.test.js 参数化)
-- [x] theme.ts eastAsia 字体规则专断言(theme-fonts 段:集中配置单源+16 文件零 CJK 硬编码扫描+styles.xml 产物一致;架构适配: eastAsia 单源已迁 typography 设置)
-- [x] converter.test.js 内联 SAMPLE_MD/PNG 迁 fixtures 体系(test/fixtures/main/)
-- [x] main/index.ts runWithCtx 错误归一化抽 runConvertTask 纯逻辑入 ipc-logic.ts 直测;preview 生命周期维持人工不自动化
+> 5 项全部完成:atomic-json 直测/resource-dirs 直测/theme-fonts 专断言/converter fixtures 迁移/runConvertTask 纯逻辑直测。
 
-#### B9 UX 体验批(M,P1-P2;2026-08-23 完成,提交 8780c14 视觉批+46c0d4d 交互逻辑批;待 GUI 实测后随下版发版)
+#### B9 UX 体验批(M,P1-P2;2026-08-23 完成,提交 8780c14 视觉批+46c0d4d 交互逻辑批;GUI 实测已通过 2026-08-24,随 1.2.0 发版)
 - [x] 进度分阶段:PDF parse/inline/katex/mermaid/print 上报(core onStage 回调协议只增不改向后兼容);print 阶段取消置灰+「正在写入」文案
 - [x] 错误码→可操作文案映射(EBUSY/ENOENT/EACCES/ENOSPC/长路径;actionableError 纯函数直测,未识别透传)
 - [x] 转换中拖入文件 setStatus 提示(drop.busy 提示不再静默)
@@ -159,7 +84,7 @@
 - [x] 弹窗动画尊重 prefers-reduced-motion(降瞬时出现,keyframes 终态=自然态无跳变)
 - [x] .settings-grid 窄窗响应式断点(≤720px 降单列)
 
-#### B13 暗色模式(M,P2 功能新增;已拍板做;2026-08-23 完成,commit 5a91a4a,待 GUI 实测)
+#### B13 暗色模式(M,P2 功能新增;已拍板做;2026-08-23 完成,commit 5a91a4a,GUI 实测已通过 2026-08-24,随 1.2.0 发版)
 - [x] CSS 变量双主题(33 个语义化变量,data-theme=dark 与 prefers-color-scheme 双作用域同套深色值)+设置「跟随系统/浅色/深色」三态(AppSettings.theme 全链路,applyThemeOn 纯函数直测)
 
 #### B12 IPC 面整理(M,P3;面广靠后;已拍板做;2026-08-23 完成,commit 2df5e35)
@@ -178,9 +103,18 @@
 - [x] 批⑥ main 根级文件归组补遗(2026-08-24,方案漏排经用户指出补齐;9909d74):ipc/(channels+logic)/persist/(settings/ui-state/atomic-json)/services/(image-downloader/mermaid-service/resource-dirs/web-hardening/temp-html);menu.ts 留根级单文件锚点;resolveMermaidDir 相对定位深度随产物层级同步调整
 > 每批独立提交,typecheck/build/test 全绿验证;批③④⑤ 有 GUI 面列入人工实测。
 
-#### 排期顺序与理由
-1. **B14**(零风险速修)→ 2. **B1+B2**(P0 安全/健壮性)→ 3. **B3**(P0 数据正确性)→ 4. **B10**(护栏先行,后续大批次受益;ci.yml 前 userData 隔离)→ 5. **B6**→ 6. **B4**(消费 B6 key)→ 7. **B5**→ 8. **B7**(bug 清完后重构少冲突)→ 9. **B8**(依赖 B7)→ 10. **B11**(依赖 B10)→ 11. **B9** → 12. **B13** → 13. **B12** → 14. **目录结构重组**(排在全部待办之后;开工前先重新探查核对方案)
-> B9/B11 无硬依赖可按价值提前;每批完成后跑验证基线(typecheck/lint/build/test/smoke),GUI 可见变更走 ACCEPTANCE 实测。
+#### 审计整改 P0~P5(2026-08-24,五车道并行实施,依据 archive/2026-08-24-134811-审计待办清单.md)
+> 61 项待办中约 54 项实施、7 项不做/仅记录(裁决见 archive/2026-08-24-193838-审计整改裁决与不做项.md);DECIDE-1 已拍板统一 Word 口径「1」。明细落点见各提交。
+- [x] P0 流程洞:lockfile 同步(ac8a685)+ 发版 checklist 四源统一 + release.yml tag↔version 校验;.gitattributes + check:fixtures EOL 归一进 CI
+- [x] P1 文档同步债:DEV-GUIDE 代码地图重写/README+USER-GUIDE 补暗色模式与交互修正/段数单一出处/ROADMAP 回填压缩/STATUS 整形/ACCEPTANCE 整形/注释勘误批(CORE-6+MR-8)
+- [x] P2 单源化重构:标题编号共享纯函数(heading-numbering.ts)/正则族并入 cross-ref.ts/mermaid 警告工厂/renderer errorMessage/md 扩展名单源/ConvertFormat 收敛/Ctx 可选性统一/docx render.ts 拆分(467→256)
+- [x] P3 守护补测:恒等守护段(identity-guards)/temp-html/web-hardening/mdast-utils/ipc-register 补测/runner M2W_ONLY 单段筛选+死旋钮清理+看门狗硬退出
+- [x] P4 安全加固:image-downloader 私网拦截+20MB 上限/shell.openPath 会话产物白名单/webPreferences 显式化
+- [x] P5 卫生杂项:死导出死键清理/sourcemap 与打包卫生/magic number 具名/t() I18nKey 编译期检查
+- [x] i18n 多语言架构改造(方案A 分文件+注册表):src/core/i18n/(zh.ts 键集唯一事实源+en 全量 satisfies+ja/ko/fr/ru Partial),回退链 当前语言→en→key,Language 类型从注册表派生收拢 4 处硬编码(i18n.ts 类型/html lang 映射/settings 校验/settings 面板选项)
+
+#### 排期结论
+> B1-B14 与目录结构重组已全部完成(2026-08-24 发版 1.2.0);审计整改 P0~P5 与 i18n 字典拆分已完成(2026-08-24)。当前无未关闭排期项;新需求按全局流程先价值确认再入本节。
 
 
 ### 功能候选(排期)
@@ -207,6 +141,7 @@
 - 最近文件:批次 11 I1 已实现(一键重转/会话恢复),原延后项作废
 
 ### 已知限制(技术债/不做,记录不遗忘)
+- **lang-bootstrap.js htmlLang 映射硬编码 zh/en**(i18n 注册表化遗留):非 zh/en 语言启动瞬间 `<html lang>` 保持默认 zh-CN 直到 applyStaticTexts 纠正(仅 FOUC 缓解部分失效,功能无损);后续可由该脚本内联 code→htmlLang 映射或构建期注入(2026-08-24 i18n 拆分批记录)
 - **M7 extractHeadings 正则依赖渲染细节**(pdf/render.ts):标题提取正则与渲染结构耦合,重构需谨慎(2026-08-11 审计记录)
 - **M8 resolverCache/HTTP 缓存无上限**:当前可接受,记录即可(2026-08-11 审计记录)
 - **printToPDF 产物图片显示无法自动化断言**:smoke 可见图人工验证(维持人工不自动化)
