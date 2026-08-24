@@ -141,7 +141,6 @@
 - 最近文件:批次 11 I1 已实现(一键重转/会话恢复),原延后项作废
 
 ### 已知限制(技术债/不做,记录不遗忘)
-- **lang-bootstrap.js htmlLang 映射硬编码 zh/en**(i18n 注册表化遗留):非 zh/en 语言启动瞬间 `<html lang>` 保持默认 zh-CN 直到 applyStaticTexts 纠正(仅 FOUC 缓解部分失效,功能无损);后续可由该脚本内联 code→htmlLang 映射或构建期注入(2026-08-24 i18n 拆分批记录)
 - **M7 extractHeadings 正则依赖渲染细节**(pdf/render.ts):标题提取正则与渲染结构耦合,重构需谨慎(2026-08-11 审计记录)
 - **M8 resolverCache/HTTP 缓存无上限**:当前可接受,记录即可(2026-08-11 审计记录)
 - **printToPDF 产物图片显示无法自动化断言**:smoke 可见图人工验证(维持人工不自动化)

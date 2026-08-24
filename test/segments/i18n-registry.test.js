@@ -138,4 +138,18 @@ export async function run() {
     await restore();
     setLanguage("zh"); // 语言为模块级状态,复位避免污染后续段
   }
+
+  // ---- (e) FOUC 引导脚本镜像路径守护 ----
+  // 注册表化后 lang-bootstrap.js 不自带 code→htmlLang 映射(单一事实源 =
+  // htmlLangOf 经 mirrorLanguage 持久化为 m2w.htmlLang);此断言防回退到
+  // 硬编码映射的旧实现(zh/en 之外的语言会失效)。
+  const bootstrapSrc = await fs.readFile(
+    new URL("../../src/renderer/lang-bootstrap.js", import.meta.url),
+    "utf8",
+  );
+  assert(
+    bootstrapSrc.includes("m2w.htmlLang"),
+    "lang-bootstrap.js 应读取 m2w.htmlLang 镜像(不得回退为内置 code→htmlLang 硬编码映射)",
+  );
+  console.log("[ok] i18n-registry:(e) lang-bootstrap 读 htmlLang 镜像(无硬编码映射回归) 断言通过");
 }

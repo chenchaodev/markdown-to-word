@@ -15,6 +15,7 @@ import {
   type AppSettings,
   type PageSetup,
 } from "../../core/settings/settings-defaults.js";
+import { htmlLangOf } from "../../core/i18n.js";
 import {
   buildCustomPresetEntry,
   customPresetNameFromId,
@@ -81,14 +82,19 @@ export function applyTheme(theme: AppSettings["theme"]): void {
 /**
  * 语言镜像写 localStorage(B6 FOUC 缓解,最小方案):
  * 语言真源在 settings.json(经主进程),renderer 在语言设置/切换落定时镜像写入
- * localStorage("m2w.language");index.html <head> 的 lang-bootstrap.js 尽早读取该
- * 镜像设置 <html lang>(只消 lang/字体方向性闪烁,不做文案替换)。
+ * localStorage("m2w.language") 与 "m2w.htmlLang"(值来自注册表 htmlLangOf 单源);
+ * index.html <head> 的 lang-bootstrap.js 尽早读取该镜像设置 <html lang>
+ * (只消 lang/字体方向性闪烁,不做文案替换)。
  * 选型记录:未采用「body 初始 visibility:hidden」方案——CSP 为 script-src 'self'
  * 内联脚本被拦,且隐藏 body 若初始化失败会白屏;外部 bootstrap 脚本改动最小。
+ * htmlLang 镜像(2026-08-24):bootstrap 不再自带 code→htmlLang 映射(原 zh/en
+ * 硬编码在多语言注册表化后失效),改为读本镜像;旧镜像无 htmlLang 时 bootstrap
+ * 走遗留 zh/en 回退,首次启动 applyStaticTexts 纠正后即被本函数补齐。
  */
 export function mirrorLanguage(lang: Language): void {
   try {
     localStorage.setItem("m2w.language", lang);
+    localStorage.setItem("m2w.htmlLang", htmlLangOf(lang));
   } catch {
     /* localStorage 不可用(隐私模式等)时静默:仅失去 FOUC 缓解,不影响功能 */
   }
