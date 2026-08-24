@@ -1,30 +1,29 @@
 /**
- * renderer 最近转换区块与会话恢复(批次 11 迭代 1「状态记忆」):
- * - 最近文件 UI:默认态(无文件)与单文件态显示;条目 = 文件名 + 格式 + 相对时间;
- *   B9 交互语义:单击条目 → 加载该文件到列表(不转换),双击条目 → 直接重转
- *   (沿用条目记录的格式);「仅加载」次级入口保留同效;
- *   「清空最近」→ 清空并隐藏;空列表不显示区块
- * - 转换成功后由 convert-flow 调用 refreshRecentFiles()(uiStateGet 重新拉取;
- *   主进程在返回转换结果前已完成 recentFiles 写入,读回必为最新)
- * - 启动恢复(initUiStateRestore):panelOpen 回填设置抽屉可见态(P0-3:语义自
- *   「details 展开」迁移为「抽屉开合」,开合写回迁至 settings-drawer)、
- *   lastSessionFiles 逐项校验存在性(主进程保序过滤,缺失剔除,不提示)、最近区块首次渲染
+ * renderer 最近转换(P1-3 自「主页面独立区块」改造为「主舞台空态快捷 chips」):
+ * - 空态(未选文件)时在拖放区内渲染最近 ≤5 条 chips(文件名 + 格式徽标);
+ *   有文件后随空态一起隐藏——发生在固定高度主舞台内部,不引起布局跳动,
+ *   同时消除原「≥2 文件时区块整体显隐」的推移问题;
+ * - 交互收敛为两个可见入口:单击 chip = 加载到文件列表(不转换),
+ *   行尾 hover/focus 出现的 ↻ 按钮 = 按该条目记录的格式直接重转
+ *   (取代不可发现的双击语义);「清空最近」为 chips 行尾轻量入口;
+ * - 转换成功后由 convert-flow 经 state.recentRefreshHandler 回调刷新
+ *   (批次 15 R5 接线,打破 recent-files ↔ convert-flow ESM 环);
+ * - 启动恢复(initUiStateRestore):panelOpen 回填抽屉可见态、lastSessionFiles
+ *   逐项校验存在性(主进程保序过滤)、chips 首次渲染。
  * 依赖方向:recent-files → file-list(applySelection)/convert-flow(runConvert)/
- * settings-drawer(applyDrawerOpenState);
- * 转换成功后刷新最近区块由 convert-flow 经 state.recentRefreshHandler 回调触发
- * (批次 15 R5:组合根 renderer.ts 接线,打破原 recent-files ↔ convert-flow ESM 环)。
+ * settings-drawer(applyDrawerOpenState)。
  */
 import {
+  recentChips,
+  recentChipList,
   recentClearBtn,
-  recentList,
-  recentSection,
   statusEl,
 } from "../dom/refs.js";
 import type { RecentFile, UiState } from "../../main/persist/ui-state.js";
 import { applySelection } from "../convert/file-list.js";
 import { runConvert } from "../convert/convert-flow.js";
-import { baseName, formatRecentTime } from "../state/pure.js";
-import { setStatus, translate } from "../state/utils.js";
+import { baseName } from "../state/pure.js";
+import { setStatus } from "../state/utils.js";
 import { state } from "../state/state.js";
 import { syncSuppressCompleteDialog } from "../settings/settings-panel.js";
 import { applyDrawerOpenState } from "../settings/settings-drawer.js";
@@ -35,73 +34,71 @@ import { t } from "../../core/i18n.js";
  *  由 test 侧守护段落地,车道 D);改此值须双侧同步。 */
 const MAX_RECENT_FILES = 10;
 
-/* ---------- 最近转换区块渲染 ---------- */
-/** 重建最近文件列表;空列表隐藏整个区块。 */
+/** 空态 chips 展示条数上限(P1-3:3~5 条取上限,快捷入口保持轻量)。 */
+const RECENT_CHIPS_MAX = 5;
+
+/* ---------- 最近转换 chips 渲染 ---------- */
+/** 重建快捷 chips;空列表隐藏整个容器(含「清空最近」)。 */
 export function renderRecentList(recent: RecentFile[]): void {
-  const items = recent.slice(0, MAX_RECENT_FILES);
-  state.recentFiles = items;
-  // 显隐双条件:列表非空 且 当前为默认态/单文件态(多文件态由 renderSelection 管理同条件)
-  recentSection.classList.toggle(
-    "hidden",
-    items.length === 0 || state.selectedFiles.length >= 2,
-  );
-  recentList.replaceChildren(
-    ...items.map((item) => {
-      const li = document.createElement("li");
-      li.className = "recent-item-wrap";
-
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "recent-item";
-      // B9 交互语义:单击 = 加载到列表,双击 = 直接重转(title/aria 同步提示)
-      btn.title = t("recent.itemTitle", { path: item.path });
-      btn.dataset.path = item.path;
-      btn.dataset.format = item.format;
-      btn.setAttribute("aria-label", t("recent.itemAria", { name: item.name }));
-
-      const name = document.createElement("span");
-      name.className = "recent-name";
-      name.textContent = item.name || baseName(item.path);
-      name.title = item.path;
-
-      const format = document.createElement("span");
-      format.className = `recent-format recent-format--${item.format}`;
-      format.textContent = item.format.toUpperCase();
-
-      const time = document.createElement("span");
-      time.className = "recent-time";
-      time.textContent = formatRecentTime(item.ts, undefined, translate);
-
-      btn.append(name, format, time);
-      li.appendChild(btn);
-
-      // 批次 12(C12):「仅加载」次级入口——载入列表(替换选择,不转换),
-      // 用户可调整设置后再转换;B9 起单击条目主区域同为仅加载,双击才重转
-      const loadBtn = document.createElement("button");
-      loadBtn.type = "button";
-      loadBtn.className = "recent-load";
-      loadBtn.textContent = t("recent.loadOnly");
-      loadBtn.title = t("recent.loadOnlyTitle", { path: item.path });
-      loadBtn.dataset.path = item.path;
-      loadBtn.setAttribute("aria-label", t("recent.loadOnlyAria", { name: item.name }));
-      li.appendChild(loadBtn);
-      return li;
-    }),
-  );
+  const items = recent.slice(0, MAX_RECENT_FILES).slice(0, RECENT_CHIPS_MAX);
+  recentChips.classList.toggle("hidden", items.length === 0);
+  recentChipList.replaceChildren(...items.map(renderRecentChip));
 }
 
-/* ---------- 会话恢复 / 面板展开态 ---------- */
+/** 单条 chip:wrapper(定位上下文)= 主按钮(文件名+格式徽标,单击加载)+ 行尾 ↻ 重转按钮。
+ *  不用 button 嵌套(HTML 不允许交互元素嵌套);↻ 经 CSS hover/:focus-within 显现。 */
+function renderRecentChip(item: RecentFile): HTMLDivElement {
+  const wrap = document.createElement("div");
+  wrap.className = "recent-chip";
+
+  const main = document.createElement("button");
+  main.type = "button";
+  main.className = "recent-chip-main";
+  // 单击 = 仅加载到列表(不转换);↻ 按钮 = 直接重转(title/aria 同步提示)
+  main.title = t("recent.itemTitle", { path: item.path });
+  main.dataset.path = item.path;
+  main.dataset.format = item.format;
+  main.setAttribute("aria-label", t("recent.itemAria", { name: item.name }));
+
+  const name = document.createElement("span");
+  name.className = "recent-chip-name";
+  name.textContent = item.name || baseName(item.path);
+
+  const format = document.createElement("span");
+  format.className = `recent-format recent-format--${item.format}`;
+  format.textContent = item.format.toUpperCase();
+
+  main.append(name, format);
+
+  // ↻ 重转按钮:hover/:focus-within 时显现(键盘可达),单击按记录格式直接重转
+  const reload = document.createElement("button");
+  reload.type = "button";
+  reload.className = "recent-reload";
+  reload.title = t("recent.reloadTitle", { path: item.path });
+  reload.dataset.path = item.path;
+  reload.dataset.format = item.format;
+  reload.setAttribute("aria-label", t("recent.reloadAria", { name: item.name }));
+  reload.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>';
+
+  wrap.append(main, reload);
+  return wrap;
+}
+
+/* ---------- 会话恢复 / 抽屉开合恢复 ---------- */
 /**
- * 启动恢复(组合根 init 处调用):面板展开态 → 两个 details;
+ * 启动恢复(组合根 init 处调用):panelOpen → 抽屉可见态(settings-drawer);
  * lastSessionFiles → 主进程保序过滤存在性(缺失剔除,不提示)→ 单文件态/多文件态恢复;
- * 最近文件区块首次渲染。
+ * 最近 chips 首次渲染。
  */
 export async function initUiStateRestore(): Promise<void> {
   let ui: UiState;
   try {
     ui = await window.api.uiStateGet();
   } catch {
-    return; // 读取失败:保持默认(不恢复会话/面板/最近列表)
+    return; // 读取失败:保持默认(不恢复会话/面板/chips)
   }
   // panelOpen → 设置抽屉可见态(P0-3:开合写回已迁至 settings-drawer,此处只恢复)
   applyDrawerOpenState(ui.panelOpen.page);
@@ -117,7 +114,7 @@ export async function initUiStateRestore(): Promise<void> {
   }
 }
 
-/** 转换成功后刷新最近区块(uiStateGet 重新拉取;失败保持当前展示)。 */
+/** 转换成功后刷新 chips(uiStateGet 重新拉取;失败保持当前展示)。 */
 export async function refreshRecentFiles(): Promise<void> {
   try {
     const ui = await window.api.uiStateGet();
@@ -128,39 +125,39 @@ export async function refreshRecentFiles(): Promise<void> {
 }
 
 /* ---------- 事件绑定(MR-10:顶层监听迁入 bind*Events 范式,组合根 renderer.ts
- *  在 bindEvents() 后调用;原 recentList 上两个独立 click 委托合并为一个) ---------- */
+ *  在 bindEvents() 后调用) ---------- */
 /**
- * B9 交互语义(审计拍板):单击条目 = 仅加载到列表(不转换,与「仅加载」按钮同效);
- * 双击条目 = 直接重转(沿用该条目记录的格式)。原「单击一键重转」拆分为两档,
- * 降低误触即转的成本;双击由两次 click 组成,首次 click 已完成加载,二次落 dblclick 重转。
- * MR-10:recentList 的两个 click 监听合并为单个委托——「仅加载」按钮与条目主区域
- * 动作相同(loadRecentItem),按 closest 命中顺序判定,行为与拆分前一致。
+ * P1-3 交互语义:单击 chip = 仅加载到列表(不转换);单击 ↻ = 直接重转
+ * (沿用该条目记录的格式)。chips 位于拖放区内部,容器级 stopPropagation
+ * 阻止冒泡触发拖放区的「点击打开对话框」(click 与 Enter/Space keydown 两路都拦)。
  */
 export function bindRecentFilesEvents(): void {
-  // 单击委托:「仅加载」按钮优先命中(不是 .recent-item 后代,互斥天然成立),否则条目主区域
-  recentList.addEventListener("click", (event) => {
-    if (state.mode !== null) return; // 转换中守卫(B8:原 converting 字段合一为 mode 单源)
+  recentChips.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (state.mode !== null) return; // 转换中守卫(mode 单源)
     const target = event.target as HTMLElement;
-    const btn =
-      target.closest<HTMLButtonElement>(".recent-load") ??
-      target.closest<HTMLButtonElement>(".recent-item");
-    if (!btn?.dataset.path) return;
-    loadRecentItem(btn.dataset.path);
+    const reloadBtn = target.closest<HTMLButtonElement>(".recent-reload");
+    if (reloadBtn?.dataset.path) {
+      const filePath = reloadBtn.dataset.path;
+      const format = (reloadBtn.dataset.format ?? state.selectedFormat) as "docx" | "pdf";
+      void runConvert(filePath, format);
+      return;
+    }
+    const chipMain = target.closest<HTMLButtonElement>(".recent-chip-main");
+    if (chipMain?.dataset.path) loadRecentItem(chipMain.dataset.path);
   });
 
-  // 双击条目 = 直接重转;落在「仅加载」按钮上的双击不触发(按钮单击已有各自语义)
-  recentList.addEventListener("dblclick", (event) => {
-    if (state.mode !== null) return;
-    if ((event.target as HTMLElement).closest(".recent-load")) return;
-    const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".recent-item");
-    if (!btn?.dataset.path) return;
-    const filePath = btn.dataset.path;
-    const format = (btn.dataset.format ?? state.selectedFormat) as "docx" | "pdf";
-    void runConvert(filePath, format);
-  });
+  // 键盘激活(Enter/Space)同样拦截,防冒泡触发拖放区「打开对话框」
+  recentChips.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+    },
+  );
 
-  // 「清空最近」:清空并隐藏区块(以主进程合并结果为准)
-  recentClearBtn.addEventListener("click", () => {
+  // 「清空最近」:清空并隐藏 chips(以主进程合并结果为准)
+  recentClearBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
     void window.api
       .uiStateSet({ recentFiles: [] })
       .then((ui) => renderRecentList(ui.recentFiles))

@@ -35,8 +35,6 @@ const dict = {
     "common.save": "保存",
     "common.preview": "预览",
     "common.remove": "移除",
-    "common.moveUp": "上移",
-    "common.moveDown": "下移",
 
     /* ---------- 转换(convert-flow / renderer / 底部操作栏) ---------- */
     "convert.stage.converting": "正在转换…",
@@ -127,16 +125,13 @@ const dict = {
     "summary.details": "失败详情",
     "summary.revealTitle": "在资源管理器中显示输出文件",
 
-    /* ---------- 最近转换 ---------- */
-    "recent.title": "最近转换",
-    "recent.sectionLabel": "最近转换",
+    /* ---------- 最近转换(P1-3:主舞台空态快捷 chips) ---------- */
     "recent.clear": "清空最近",
-    // B9 交互语义:单击 = 加载到列表,双击 = 直接重转(原「一键重转」拆分)
-    "recent.itemTitle": "单击加载到列表,双击重新转换 ${path}",
-    "recent.itemAria": "${name}(单击加载,双击重新转换)",
-    "recent.loadOnly": "仅加载",
-    "recent.loadOnlyTitle": "仅加载到文件列表(不转换) ${path}",
-    "recent.loadOnlyAria": "仅加载 ${name}",
+    // 交互语义:单击 chip = 加载到列表;行尾 ↻ 按钮 = 按原格式直接重转
+    "recent.itemTitle": "加载到文件列表:${path}",
+    "recent.itemAria": "加载 ${name}",
+    "recent.reloadTitle": "按原格式重新转换:${path}",
+    "recent.reloadAria": "重新转换 ${name}",
     "recent.loaded": "已加载:${name}",
     "recent.time.today": "今天 ${time}",
     "recent.time.yesterday": "昨天 ${time}",
@@ -258,6 +253,8 @@ const dict = {
     "drop.title": "点击或拖入 Markdown 文件",
     "drop.hint": "将 Markdown 文件或文件夹拖到此处",
     "drop.or": "或",
+    // P1-6 空态能力说明:扩展名 + 语法能力一行标注
+    "drop.capabilities": "支持 .md / .markdown · 表格 · 公式 · 代码高亮 · Mermaid",
     "drop.change": "点击更换文件，或拖入添加",
     "drop.multiHint": "拖拽或按钮可调整顺序；点击或拖入可继续添加",
     "drop.dblclickHint": "双击列表行可预览排版",

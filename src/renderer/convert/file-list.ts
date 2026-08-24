@@ -18,7 +18,6 @@ import {
   multiCount,
   multiList,
   previewBtn,
-  recentSection,
   selectBtn,
   statusEl,
 } from "../dom/refs.js";
@@ -35,8 +34,6 @@ export function renderSelection(): void {
   // style/drop.css .file-area),本 class 不再影响容器几何,仅保留供单文件态
   // 内部布局分支与测试诊断使用
   dropZone.classList.toggle("drop-zone--single", n === 1);
-  // 最近转换区块:默认态(无文件)与单文件态显示;多文件态(≥2)隐藏,聚焦当前列表
-  recentSection.classList.toggle("hidden", n >= 2 || state.recentFiles.length === 0);
 
   if (n === 0) {
     dropDefault.classList.remove("hidden");
@@ -60,7 +57,9 @@ export function renderSelection(): void {
   persistSessionFiles();
 }
 
-/** 重建多文件列表:序号 + 文件名 + 上移/下移按钮,严格按 selectedFiles 顺序渲染。 */
+/** 重建多文件列表(P1-4 降噪行):手柄 + 序号 + 文件名 + 移除,严格按 selectedFiles
+ *  顺序渲染。排序 = 整行拖拽(手柄为视觉锚点)+ 键盘补偿(行聚焦后 Alt+↑/↓,
+ *  监听在 events/selection.ts);预览 = 行双击(列表下方常驻提示可见化)。 */
 export function renderMultiList(): void {
   const n = state.selectedFiles.length;
   multiCount.textContent = t("file.selectedCount", { count: n });
@@ -70,8 +69,15 @@ export function renderMultiList(): void {
       li.className = "multi-item";
       li.draggable = true; // 整行可拖拽排序
       li.dataset.index = String(index);
-      // 批次 11 迭代 4:悬停提示双击预览(行双击 = 预览该行)
+      li.tabIndex = 0; // 可聚焦:键盘 Alt+↑/↓ 排序的落点
       li.title = `${filePath}\n${t("file.dblclickPreview")}`;
+
+      const grip = document.createElement("span");
+      grip.className = "multi-grip";
+      grip.setAttribute("aria-hidden", "true");
+      grip.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+        'stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>';
 
       const num = document.createElement("span");
       num.className = "multi-index";
@@ -83,14 +89,9 @@ export function renderMultiList(): void {
 
       const actions = document.createElement("span");
       actions.className = "multi-actions";
-      actions.append(
-        makeMoveButton("up", index > 0, baseName(filePath)),
-        makeMoveButton("down", index < n - 1, baseName(filePath)),
-        makePreviewButton(baseName(filePath)),
-        makeRemoveButton(baseName(filePath)),
-      );
+      actions.append(makeRemoveButton(baseName(filePath)));
 
-      li.append(num, name, actions);
+      li.append(grip, num, name, actions);
       return li;
     }),
   );
@@ -108,50 +109,7 @@ export function persistSessionFiles(): void {
   });
 }
 
-/** 上移 / 下移图标按钮(首项上移、末项下移禁用)。 */
-export function makeMoveButton(
-  dir: "up" | "down",
-  enabled: boolean,
-  fileName: string,
-): HTMLButtonElement {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "multi-move";
-  btn.dataset.dir = dir;
-  btn.disabled = !enabled;
-  btn.title = dir === "up" ? t("common.moveUp") : t("common.moveDown");
-  btn.setAttribute(
-    "aria-label",
-    `${dir === "up" ? t("common.moveUp") : t("common.moveDown")} ${fileName}`,
-  );
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", dir === "up" ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6");
-  svg.appendChild(path);
-  btn.appendChild(svg);
-  return btn;
-}
-
-/** 预览该文件的文字按钮(迭代 4:转换前预览排版,与 PDF 同排版)。 */
-export function makePreviewButton(fileName: string): HTMLButtonElement {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "multi-preview";
-  btn.title = t("preview.title");
-  btn.setAttribute("aria-label", t("preview.aria", { name: fileName }));
-  btn.textContent = t("common.preview");
-  return btn;
-}
-
-/** 移除该文件的图标按钮(批次 7 列表增删)。 */
+/** 移除该文件的图标按钮(批次 7 列表增删;P1-4 起为行内唯一常驻控件)。 */
 export function makeRemoveButton(fileName: string): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";

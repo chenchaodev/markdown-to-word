@@ -172,14 +172,15 @@ body {
 }
 
 /* 应用卡片:P0-1 Grid 布局,高度恒等于视口(减上下外边距),页面不再随内容伸缩。
- * 五条轨道与 index.html 的 .app 直接子元素一一对应(P0-3 起设置面板迁出主页面):
+ * 四条轨道与 index.html 的 .app 直接子元素一一对应(P0-3 设置迁抽屉、P1-3 最近
+ * 转换并入主舞台空态后,主页面只剩四个区块):
  *   ① header        标题区(auto)
  *   ② .file-area    主舞台(auto;高度由 drop.css 固定为 clamp(280px,40vh,400px),
  *                    不随文件选择数量变化——布局跳动的根治点)
- *   ③ #messageSlot  消息槽(auto;min-height 预留空态占位)
- *   ④ #recentSection 最近转换(minmax(0,1fr) 弹性吸收带:显隐/内容增减只改变
- *                    本轨道,主舞台/消息槽/footer 几何恒定;隐藏时吸收空白)
- *   ⑤ .actions      底部操作栏(auto;最后一条轨道钉底)
+ *   ③ #messageSlot  消息槽(minmax(44px,1fr) 弹性吸收带:常驻最小高度预留空态,
+ *                    富余空间被它吸收,footer 始终钉在视口底部;内容偶发超高时
+ *                    槽体内部滚动,不推挤任何区块)
+ *   ④ .actions      底部操作栏(auto;最后一条轨道钉底)
  */
 .app {
   box-sizing: border-box;
@@ -187,8 +188,7 @@ body {
   grid-template-rows:
     auto
     auto
-    auto
-    minmax(0, 1fr)
+    minmax(44px, 1fr)
     auto;
   height: calc(100vh - 32px);
   margin: 16px auto; /* 批次 12(C3):大屏密度上限,水平居中 */
@@ -198,7 +198,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
-  /* 兜底阀:极端内容(超长警告/极小窗口)超出轨道预算时不裁切,降级为卡片内滚动 */
+  /* 兜底阀:极端内容超出轨道预算时不裁切,降级为卡片内滚动 */
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -221,7 +221,7 @@ body {
 
 .title {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px; /* P2-1 type scale:20/15/13/12,与正文层级拉开 */
   font-weight: 600;
   letter-spacing: 0.2px;
 }
@@ -345,18 +345,22 @@ body {
 }
 
 /* 消息槽(P0-2):状态行 / 拖放跳过列表 / 结果汇总条的常驻固定容器。
- * min-height 预留空态占位(约两行),内容出现/消失不推挤其他区块;
- * 偶发超高(展开警告/长错误)由 .app 的最近转换弹性轨道吸收,不外溢。
+ * P1-3 起兼任 .app 的弹性吸收带(minmax(44px,1fr)):富余空间留在槽体内不可见,
+ * footer 钉底;内容偶发超高(展开警告/长错误)时槽体内部滚动,不推挤任何区块。
  * 子元素间距归槽体管理(gap),status/汇总条自身不再带外边距。 */
 .message-slot {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 44px;
+  max-height: 100%;
   margin-top: 12px;
+  overflow-y: auto;
 }
 
-/* 状态区(消息槽子元素;外边距归 .message-slot 管理) */
+/* 状态区(消息槽子元素;外边距归 .message-slot 管理):
+ * 常规消息单行省略;error/warning 级别升级为可换行的语义底色条(P1-5),
+ * 完整展示不截断、不依赖 title 悬浮 */
 .status {
   min-height: 20px;
   margin: 0;
@@ -368,12 +372,25 @@ body {
   text-overflow: ellipsis;
 }
 
+.status--error,
+.status--warning {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
 .status--error {
   color: var(--error);
+  background: var(--error-soft);
+  border-color: var(--error-border);
 }
 
 .status--warning {
   color: var(--warning);
+  background: var(--warning-soft);
+  border-color: var(--warning-border);
 }
 
 /* 底部操作栏:常规态由 .app Grid 最后一条轨道钉底(不依赖 sticky 定位);
@@ -393,12 +410,6 @@ body {
   padding: 12px 0 0;
   background: var(--bg-card);
   border-top: 1px solid var(--border);
-}
-
-/* 进度区在 sticky footer 内独占一行(footer 为 wrap 布局) */
-.actions .progress-area {
-  flex-basis: 100%;
-  margin-top: 0;
 }
 
 .convert {
@@ -496,16 +507,17 @@ body {
   cursor: default;
 }
 
-/* 转换进度条:与现有圆角 / 配色体系一致 */
+/* 转换进度(P2-2 精简行):去盒化,细进度条 + 百分比 + 取消按钮单行排布,
+ * 与主行动线融为一体;取消为独立交互故保留按钮 */
 .progress-area {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .progress-track {
+  flex: 1;
   height: 6px;
   overflow: hidden;
   background: var(--progress-track);
@@ -520,15 +532,8 @@ body {
   transition: width 0.2s ease;
 }
 
-.progress-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 6px;
-}
-
 .progress-text {
+  flex: none;
   font-size: 12px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;

@@ -34,8 +34,6 @@ const dict: Partial<Record<Dict, string>> = {
     "common.save": "저장",
     "common.preview": "미리보기",
     "common.remove": "제거",
-    "common.moveUp": "위로 이동",
-    "common.moveDown": "아래로 이동",
 
     /* ---------- 변환 ---------- */
     "convert.stage.converting": "변환 중…",
@@ -124,15 +122,13 @@ const dict: Partial<Record<Dict, string>> = {
     "summary.details": "실패 상세",
     "summary.revealTitle": "탐색기에서 출력 파일 표시",
 
-    /* ---------- 최근 변환 ---------- */
-    "recent.title": "최근 변환",
-    "recent.sectionLabel": "최근 변환",
+    /* ---------- 최근 변환(P1-3: 빈 상태 빠른 칩) ---------- */
     "recent.clear": "최근 기록 지우기",
-    "recent.itemTitle": "클릭하여 목록에 불러오고, 두 번 클릭하여 다시 변환 ${path}",
-    "recent.itemAria": "${name} (클릭하여 불러오기, 두 번 클릭하여 재변환)",
-    "recent.loadOnly": "불러오기만",
-    "recent.loadOnlyTitle": "파일 목록에만 불러오기(변환 없음) ${path}",
-    "recent.loadOnlyAria": "${name} 불러오기만",
+    // 칩 조작: 클릭 = 목록에 불러오기, 행 끝 ↻ = 원본 형식으로 다시 변환
+    "recent.itemTitle": "파일 목록에 불러오기:${path}",
+    "recent.itemAria": "${name} 불러오기",
+    "recent.reloadTitle": "원본 형식으로 다시 변환:${path}",
+    "recent.reloadAria": "${name} 다시 변환",
     "recent.loaded": "불러옴:${name}",
     "recent.time.today": "오늘 ${time}",
     "recent.time.yesterday": "어제 ${time}",
@@ -253,6 +249,8 @@ const dict: Partial<Record<Dict, string>> = {
     "drop.title": "클릭 또는 Markdown 파일 드롭",
     "drop.hint": "Markdown 파일이나 폴더를 여기에 끌어다 놓으세요",
     "drop.or": "또는",
+    // P1-6 빈 상태 기능 설명: 확장자 + 구문 기능을 한 줄로 표기
+    "drop.capabilities": ".md / .markdown 지원 · 표 · 수식 · 코드 하이라이트 · Mermaid",
     "drop.change": "클릭하여 변경하거나 드롭하여 추가",
     "drop.multiHint": "드래그나 버튼으로 순서를 조정하고, 클릭/드롭으로 계속 추가할 수 있습니다",
     "drop.dblclickHint": "행을 두 번 클릭하면 조판을 미리볼 수 있습니다",

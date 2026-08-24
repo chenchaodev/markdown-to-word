@@ -243,9 +243,13 @@ export const completeDialogTitle = document.getElementById(
 export const completeDialogDesc = document.getElementById(
   "completeDialogDesc",
 ) as HTMLParagraphElement;
-// 批次 11:最近转换区块(默认态/单文件态显示;点击条目一键重转)
-export const recentSection = document.getElementById("recentSection") as HTMLElement;
-export const recentList = document.getElementById("recentList") as HTMLUListElement;
+// 批次 11:最近转换(P1-3 起为主舞台空态快捷 chips:容器 + chips 列表 + 清空入口)
+export const recentChips = document.getElementById(
+  "recentChips",
+) as HTMLDivElement;
+export const recentChipList = document.getElementById(
+  "recentChipList",
+) as HTMLDivElement;
 export const recentClearBtn = document.getElementById(
   "recentClearBtn",
 ) as HTMLButtonElement;

@@ -33,8 +33,6 @@ const dict = {
     "common.save": "Save",
     "common.preview": "Preview",
     "common.remove": "Remove",
-    "common.moveUp": "Move up",
-    "common.moveDown": "Move down",
 
     /* ---------- Convert ---------- */
     "convert.stage.converting": "Converting…",
@@ -125,16 +123,13 @@ const dict = {
     "summary.details": "Failure details",
     "summary.revealTitle": "Show output file in Explorer",
 
-    /* ---------- Recent conversions ---------- */
-    "recent.title": "Recent conversions",
-    "recent.sectionLabel": "Recent conversions",
+    /* ---------- Recent conversions (P1-3: empty-state quick chips) ---------- */
     "recent.clear": "Clear recent",
-    // B9 interaction: single-click loads into the list, double-click re-converts
-    "recent.itemTitle": "Click to load into the list, double-click to re-convert ${path}",
-    "recent.itemAria": "${name} (click to load, double-click to re-convert)",
-    "recent.loadOnly": "Load only",
-    "recent.loadOnlyTitle": "Load into file list only (no conversion) ${path}",
-    "recent.loadOnlyAria": "Load only ${name}",
+    // Interaction: click chip = load into list; trailing ↻ button = re-convert in original format
+    "recent.itemTitle": "Load into file list: ${path}",
+    "recent.itemAria": "Load ${name}",
+    "recent.reloadTitle": "Re-convert with original format: ${path}",
+    "recent.reloadAria": "Re-convert ${name}",
     "recent.loaded": "Loaded: ${name}",
     "recent.time.today": "Today ${time}",
     "recent.time.yesterday": "Yesterday ${time}",
@@ -256,6 +251,8 @@ const dict = {
     "drop.title": "Click or drop Markdown files",
     "drop.hint": "Drop Markdown files or folders here",
     "drop.or": "or",
+    // P1-6 empty-state capability note: extensions + syntax features in one line
+    "drop.capabilities": "Supports .md / .markdown · tables · formulas · code highlight · Mermaid",
     "drop.change": "Click to change the file, or drop to add",
     "drop.multiHint": "Drag or use buttons to reorder; click or drop to add more",
     "drop.dblclickHint": "Double-click a row to preview the layout",

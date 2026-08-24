@@ -33,8 +33,6 @@ const dict: Partial<Record<Dict, string>> = {
     "common.save": "保存",
     "common.preview": "プレビュー",
     "common.remove": "削除",
-    "common.moveUp": "上へ移動",
-    "common.moveDown": "下へ移動",
 
     /* ---------- 変換 ---------- */
     "convert.stage.converting": "変換中…",
@@ -123,15 +121,13 @@ const dict: Partial<Record<Dict, string>> = {
     "summary.details": "失敗の詳細",
     "summary.revealTitle": "エクスプローラーで出力ファイルを表示",
 
-    /* ---------- 最近の変換 ---------- */
-    "recent.title": "最近の変換",
-    "recent.sectionLabel": "最近の変換",
+    /* ---------- 最近の変換(P1-3:空状態クイックチップ) ---------- */
     "recent.clear": "履歴をクリア",
-    "recent.itemTitle": "クリックでリストに読み込み、ダブルクリックで再変換 ${path}",
-    "recent.itemAria": "${name}(クリックで読み込み、ダブルクリックで再変換)",
-    "recent.loadOnly": "読み込みのみ",
-    "recent.loadOnlyTitle": "ファイルリストへの読み込みのみ(変換なし) ${path}",
-    "recent.loadOnlyAria": "${name} を読み込みのみ",
+    // 操作チップ:クリック = リストへ読み込み、行末 ↻ = 元の形式で再変換
+    "recent.itemTitle": "ファイルリストへ読み込み:${path}",
+    "recent.itemAria": "${name} を読み込み",
+    "recent.reloadTitle": "元の形式で再変換:${path}",
+    "recent.reloadAria": "${name} を再変換",
     "recent.loaded": "読み込み済み:${name}",
     "recent.time.today": "今日 ${time}",
     "recent.time.yesterday": "昨日 ${time}",
@@ -252,6 +248,8 @@ const dict: Partial<Record<Dict, string>> = {
     "drop.title": "クリックまたは Markdown ファイルをドロップ",
     "drop.hint": "Markdown ファイルまたはフォルダーをここにドロップ",
     "drop.or": "または",
+    // P1-6 空状態の機能説明:拡張子 + 構文能力を一行で表記
+    "drop.capabilities": ".md / .markdown 対応 · 表 · 数式 · コードハイライト · Mermaid",
     "drop.change": "クリックで変更、ドロップで追加",
     "drop.multiHint": "ドラッグまたはボタンで並べ替え、クリック/ドロップで追加できます",
     "drop.dblclickHint": "行をダブルクリックするとレイアウトをプレビューできます",

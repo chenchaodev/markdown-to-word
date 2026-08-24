@@ -15,7 +15,7 @@
  *   windowBounds 此时存的是 getNormalBounds() 的还原态尺寸)
  * - panelOpen: 设置面板 details 展开态 {page, typography}(批次 N:单一设置面板,
  *   默认折叠以突出主流程;typography 为兼容保留字段,renderer 写镜像同值)
- * - suppressCompleteDialog: 转换完成弹窗「不再提示」(默认 false = 提示;批次 11 迭代 2)
+  * - suppressCompleteDialog: 转换完成弹窗「不再提示」(P1-2 起默认 true = 不弹,内联反馈承接)
  * 读时逐字段校验类型,非法/缺失 → 该字段默认值(不复用 settings 的整文件回退);
  * saveUiState 以 patch 合并当前状态,recentFiles 为「追加合并」语义
  * (同 path 保留 ts 最大者 → 重复转换自然置顶);空数组 = 清空(替换语义,
@@ -56,7 +56,9 @@ export interface UiState {
   /** 关闭时窗口是否最大化(B9;true 时启动恢复 maximize(),windowBounds 为还原态尺寸)。 */
   isMaximized: boolean;
   panelOpen: PanelOpen;
-  /** 转换完成弹窗「不再提示」(true = 跳过弹窗,汇总条照常;默认 false = 提示)。 */
+  /** 转换完成弹窗「不再提示」(true = 跳过弹窗,汇总条照常)。
+   *  P1-2:默认翻转为 true(不弹)——内联反馈已完备,模态打断流;
+   *  已持久化的布尔值(用户显式选过弹窗=false)原样尊重,仅缺省/非法时落默认。 */
   suppressCompleteDialog: boolean;
 }
 
@@ -69,7 +71,7 @@ export const DEFAULT_UI_STATE: UiState = {
   isMaximized: false,
   // 批次 N:设置收敛为单一面板,默认折叠(已记忆的展开态仍优先恢复)
   panelOpen: { page: false, typography: false },
-  suppressCompleteDialog: false,
+  suppressCompleteDialog: true,
 };
 
 /** 最近文件上限(与 renderer 的 recent-files.ts 展示截断一致)。

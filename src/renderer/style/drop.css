@@ -48,6 +48,37 @@
   color: var(--accent);
 }
 
+.drop-zone.dragover .drop-icon {
+  color: var(--accent);
+}
+
+/* 主舞台状态切换微动效(P2-2):150ms 淡入 + 4px 上移;
+ * 三态容器 display 切换时动画自动重放;尊重减少动态效果偏好 */
+.drop-default,
+.drop-file,
+.drop-multi {
+  animation: stage-in 0.15s ease-out;
+}
+
+@keyframes stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-default,
+  .drop-file,
+  .drop-multi {
+    animation-duration: 0.01ms;
+  }
+}
+
 /* 错误反馈:短暂红色描边(JS 控制移除时机) */
 .drop-zone--error {
   border-color: var(--error) !important;
@@ -83,6 +114,111 @@
   margin: 6px 0 12px;
   font-size: 13px;
   color: var(--text-tertiary);
+}
+
+/* 能力说明(P1-6):支持的扩展名与语法能力,一行轻量标注 */
+.drop-capabilities {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* ---------- 最近转换快捷 chips(P1-3,主舞台空态内) ---------- */
+.recent-chips {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 560px;
+  margin: 16px auto 0;
+}
+
+.recent-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* chip = wrapper(定位上下文):主按钮(名称+格式徽标)+ 行尾 ↻ 重转按钮 */
+.recent-chip {
+  position: relative;
+  display: inline-flex;
+}
+
+.recent-chip-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.recent-chip-main:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.recent-chip-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.recent-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ↻ 重转按钮:hover / 键盘聚焦(chip 内任意点)时显现,取代不可发现的双击 */
+.recent-reload {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--accent);
+  background: var(--bg-card);
+  border: 1px solid var(--accent-border);
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.recent-chip:hover .recent-reload,
+.recent-chip:focus-within .recent-reload,
+.recent-reload:focus-visible {
+  opacity: 1;
+}
+
+.recent-reload svg {
+  width: 11px;
+  height: 11px;
+}
+
+.recent-reload:hover {
+  background: var(--accent-soft);
+}
+
+.recent-reload:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* 拖放区已选单文件态:P0-1 横向紧凑卡(图标 + 名称/路径/提示 + 操作一行),
@@ -197,8 +333,27 @@
   border-bottom: 0;
 }
 
-.multi-item:hover {
+.multi-item:hover,
+.multi-item:focus-visible {
   background: var(--row-hover);
+}
+
+.multi-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 拖拽手柄(P1-4):视觉锚点,排序仍为整行拖拽 */
+.multi-grip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-tertiary);
+}
+
+.multi-grip svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* 排序序号:固定宽度右对齐,等宽数字对齐 */
@@ -220,14 +375,12 @@
   text-overflow: ellipsis;
 }
 
-/* 上移 / 下移图标按钮 */
 .multi-actions {
   flex: none;
   display: flex;
   gap: 2px;
 }
 
-.multi-move,
 .multi-remove {
   display: inline-flex;
   align-items: center;
@@ -244,49 +397,9 @@
     border-color 0.15s ease;
 }
 
-.multi-move svg,
 .multi-remove svg {
   width: 14px;
   height: 14px;
-}
-
-/* 预览文字按钮:行高与图标按钮一致;悬停蓝色提示「可查看」 */
-.multi-preview {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  font-family: inherit;
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.multi-preview:hover:not(:disabled) {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent-border);
-}
-
-.multi-preview:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.multi-preview:disabled {
-  color: var(--text-disabled);
-  cursor: default;
-}
-
-.multi-move:hover:not(:disabled) {
-  color: var(--text);
-  background: var(--hover);
-  border-color: var(--border-strong);
 }
 
 /* 移除按钮悬停:红色语义,提示破坏性操作 */
@@ -296,13 +409,11 @@
   border-color: var(--error-border);
 }
 
-.multi-move:focus-visible,
 .multi-remove:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.multi-move:disabled,
 .multi-remove:disabled {
   color: var(--text-disabled);
   cursor: default;

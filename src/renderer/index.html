@@ -73,7 +73,8 @@
           data-i18n-title="drop.title"
           title="点击或拖入 Markdown 文件"
         >
-          <!-- 默认提示态 -->
+          <!-- 默认提示态:P1-6 能力说明;P1-3 最近转换以快捷 chips 并入空态
+               (有文件后随空态一起消失,发生在固定高度主舞台内,不引起跳动) -->
           <div id="dropDefault" class="drop-default">
             <svg
               class="drop-icon"
@@ -99,6 +100,15 @@
             >
               <span data-i18n="select.label">选择文件</span>
             </button>
+            <p class="drop-capabilities" data-i18n="drop.capabilities">支持 .md / .markdown · 表格 · 公式 · 代码高亮 · Mermaid</p>
+            <!-- 最近转换快捷 chips(渲染见 ui/recent-files.ts):单击=加载,行尾 ↻=重转;
+                 chips 为拖放区后代,点击经容器 stopPropagation 防误触「打开对话框」 -->
+            <div id="recentChips" class="recent-chips hidden">
+              <div id="recentChipList" class="recent-chip-list"></div>
+              <button type="button" id="recentClearBtn" class="btn btn-ghost btn-small">
+                <span data-i18n="recent.clear">清空最近</span>
+              </button>
+            </div>
           </div>
 
           <!-- 已选单文件态:P0-1 横向紧凑卡(图标 + 名称/路径/提示 + 操作一行),
@@ -236,23 +246,13 @@
         </div>
       </div>
 
-      <!-- 最近转换:默认态(无文件)与单文件态显示;单击条目加载到列表,双击直接重转 -->
-      <section id="recentSection" class="recent hidden" data-i18n-aria-label="recent.sectionLabel" aria-label="最近转换">
-        <div class="recent-head">
-          <span class="recent-title" data-i18n="recent.title">最近转换</span>
-          <button type="button" id="recentClearBtn" class="btn btn-ghost btn-small">
-            <span data-i18n="recent.clear">清空最近</span>
-          </button>
-        </div>
-        <ul id="recentList" class="recent-list"></ul>
-      </section>
-
       <!-- 底部操作栏:转换按钮(单文件 / 批量 / 合并) + 转换进度。
            P0-1:.app 改 Grid 后 footer 由最后一条轨道钉底(常规态不依赖 sticky);
            sticky 仅作兜底保留——内容超出视口时(.app 内部滚动)转换按钮/进度条仍吸附可见。
            P1-1:格式选择已上移顶栏分段控件,footer 只留主行动线 -->
       <footer class="actions">
-        <!-- 转换进度:进度条 + 百分比 + 取消按钮(转换中显示;位于 footer 内,设置抽屉打开时仍可见) -->
+        <!-- 转换进度(P2-2 精简行):细进度条 + 百分比 + 取消按钮,转换中显示。
+             取消为独立交互故保留按钮;去盒化与主行动线融为一体 -->
         <div id="progressArea" class="progress-area hidden">
           <div
             id="progressTrack"
@@ -266,12 +266,10 @@
           >
             <div id="progressFill" class="progress-fill"></div>
           </div>
-          <div class="progress-row">
-            <span id="progressText" class="progress-text">0%</span>
-            <button type="button" id="cancelBtn" class="btn btn-ghost btn-small">
-              <span data-i18n="common.cancel">取消</span>
-            </button>
-          </div>
+          <span id="progressText" class="progress-text">0%</span>
+          <button type="button" id="cancelBtn" class="btn btn-ghost btn-small">
+            <span data-i18n="common.cancel">取消</span>
+          </button>
         </div>
         <div class="convert">
           <!-- 单文件:开始转换;多文件:批量转换(主) + 合并转换(次),按选择数量切换 -->
@@ -623,9 +621,10 @@
               <select id="languageSelect" class="setting-select"></select>
             </div>
 
-            <!-- 批次 11 迭代 2:完成弹窗提示(ui-state 字段,与弹窗内「不再提示」双向同步) -->
+            <!-- 批次 11 迭代 2:完成弹窗提示(ui-state 字段,与弹窗内「不再提示」双向同步)。
+                 P1-2:默认不弹(勾选态由启动恢复按持久化值回填,此处静态默认仅 hydration 前瞬态) -->
             <label class="setting-check">
-              <input type="checkbox" id="completeDialogPrompt" checked />
+              <input type="checkbox" id="completeDialogPrompt" />
               <span data-i18n="settings.completeDialogPrompt">转换完成弹窗提示</span>
             </label>
           </section>

@@ -1,9 +1,9 @@
 /**
- * 事件域·选择与列表(批③自 events.ts 按域拆出,行为零变化):
+ * 事件域·选择与列表(批③自 events.ts 按域拆出;P1-4 行降噪):
  * - 系统对话框选择(openDialog:替换 / 追加两语义)与拖放区点击/键盘入口;
  * - 单文件态操作行(移除 / 预览 / 追加)与多文件态工具条(追加 / 清空);
- * - 多文件列表交互:点击委托(上移/下移/预览/移除)、双击预览、拖拽排序
- *   (dragstart/dragover/drop/dragend,含插入指示与边缘自动滚动)。
+ * - 多文件列表交互:点击委托(移除)、双击预览、键盘 Alt+↑↓ 排序、
+ *   拖拽排序(dragstart/dragover/drop/dragend,含插入指示与边缘自动滚动)。
  * 与原单文件 bindEvents 的差异仅为本域监听集中注册;各监听的元素/事件类型
  * 组合互不重复,注册顺序变化无可观察行为影响。
  * 依赖方向:本模块 → dom/state/utils/file-list/pure/core/i18n 与同目录
@@ -134,35 +134,44 @@ export function bindSelectionEvents(): void {
   });
 
   // 多文件列表:点击列表本身不触发换文件(避免误开对话框);
-  // 上移/下移/预览/移除按钮走事件委托,点击后按行内 data-index 定位文件
+  // P1-4 降噪后行内唯一常驻控件为「移除」,走事件委托按行内 data-index 定位。
+  // (排序 = 整行拖拽 / 行聚焦后 Alt+↑↓,见下方 keydown;预览 = 行双击)
   multiList.addEventListener("click", (event) => {
     event.stopPropagation();
     if (state.mode !== null) return;
-    const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(
-      ".multi-move, .multi-remove, .multi-preview",
-    );
+    const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".multi-remove");
     if (!btn) return;
     const li = btn.closest<HTMLLIElement>(".multi-item");
     if (!li) return;
     const index = Number(li.dataset.index);
-    if (btn.classList.contains("multi-preview")) {
-      // 迭代 4:预览该行文件(转换前,不产生产物)
-      openPreviewFor(state.selectedFiles[index]!); // 列表行由 renderMultiList 按序生成,data-index 必有效
-      return;
-    }
-    if (btn.classList.contains("multi-remove")) {
-      // 移除该文件:从数组删除并重建;清空后回到初始态
-      state.selectedFiles.splice(index, 1);
-      renderSelection();
-      setStatus(
-        state.selectedFiles.length > 0
-          ? t("file.removedRemaining", { count: state.selectedFiles.length })
-          : "",
-      );
-      return;
-    }
-    const dir = btn.dataset.dir;
-    moveItem(index, dir === "up" ? -1 : 1);
+    // 移除该文件:从数组删除并重建;清空后回到初始态
+    state.selectedFiles.splice(index, 1);
+    renderSelection();
+    setStatus(
+      state.selectedFiles.length > 0
+        ? t("file.removedRemaining", { count: state.selectedFiles.length })
+        : "",
+    );
+  });
+
+  // 键盘排序补偿(P1-4):行聚焦后 Alt+↑/↓ 移动(替代已删除的上移/下移按钮);
+  // 转换中与拖拽中守卫同拖拽路径;移动后焦点跟随被移动的行
+  multiList.addEventListener("keydown", (event) => {
+    if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+    if (state.mode !== null) return;
+    const li = (event.target as HTMLElement).closest<HTMLLIElement>(".multi-item");
+    if (!li) return;
+    event.preventDefault(); // 阻止滚动等默认行为
+    const index = Number(li.dataset.index);
+    const offset = event.key === "ArrowUp" ? -1 : 1;
+    const target = index + offset;
+    if (target < 0 || target >= state.selectedFiles.length) return;
+    moveItem(index, offset === -1 ? -1 : 1);
+    // moveItem 重建列表后原 DOM 已替换,焦点跟到新列表的同名行(移动后的位置)
+    const moved = multiList.querySelector<HTMLLIElement>(
+      `.multi-item[data-index="${target}"]`,
+    );
+    moved?.focus();
   });
 
   // 批次 11 迭代 4:多文件列表行双击 = 预览该行(复用 openPreviewFor 现有链路,不重复实现)。

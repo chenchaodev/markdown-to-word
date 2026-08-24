@@ -16,7 +16,6 @@ import { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings
 // 保持 renderer 各模块经 state.js 取用的既有导入路径)
 import type { BatchItem, BatchProgressInfo, BatchResult } from "../../main/converter/batch.js";
 import type { ConvertProgressPayload } from "../../main/ipc/channels.js";
-import type { RecentFile } from "../../main/persist/ui-state.js";
 
 /* ---------- 批量 / 合并契约类型 ---------- */
 /** convert:progress 事件 payload(B12 起带 mode 标识;类型单源 main/ipc-channels.ts)。 */
@@ -61,8 +60,6 @@ export const state = {
   dialogOutputPath: "",
   /** 最近一次汇总条展示的输出路径(供「打开所在文件夹 / 打开文件」按钮使用)。 */
   summaryOutputPath: "",
-  /** 最近成功转换的文件列表(批次 11;供最近区块显隐判断,渲染在 recent-files.ts)。 */
-  recentFiles: [] as RecentFile[],
   /** 最近一次批量使用的格式(批次 11 迭代 2:重试失败项按原格式重转)。 */
   lastBatchFormat: undefined as "docx" | "pdf" | undefined,
   /** 转换完成弹窗「不再提示」(ui-state 字段的内存镜像;批次 11 迭代 2)。 */

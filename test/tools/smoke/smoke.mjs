@@ -94,7 +94,9 @@ export async function runSmoke(win) {
     () => false,
   );
   const origUi = loadUiState();
-  await writeWithRetry(() => saveUiState({ lastSessionFiles: [] }), "ui-state 隔离写入");
+  // P1-3:recentFiles 一并清空——下方主进程转换会经 recordRecentFiles 写入最近记录,
+  // 渲染进程启动时 chips 将据此渲染;先清空保证「启动隐藏」断言确定(结束前恢复原值)
+  await writeWithRetry(() => saveUiState({ lastSessionFiles: [], recentFiles: [] }), "ui-state 隔离写入");
   // 批次 11 迭代 4:应用菜单守卫(autoHideMenuBar 下 Alt 唤出,缺失即回归)。
   // B2:文案经 t() 取值(与 buildAppMenu 同源),语言设置为 en 时不再误报
   const appMenu = Menu.getApplicationMenu();
@@ -246,6 +248,12 @@ export async function runSmoke(win) {
         report.orientationSelectExists = !!document.getElementById("orientationSelect");
         report.languageSelectExists = !!document.getElementById("languageSelect");
         report.formatSegmentCount = document.querySelectorAll(".header-actions input[name='format']").length;
+        // P1-3 最近转换 chips:容器存在且启动隐藏(隔离环境无最近记录);
+        // 旧主页面独立区块(recentSection/recentList)必须已移除
+        const recentChips = document.getElementById("recentChips");
+        report.recentChipsExists = !!recentChips;
+        report.recentChipsHiddenAtStart = recentChips ? recentChips.classList.contains("hidden") : null;
+        report.recentSectionRemoved = !document.getElementById("recentSection");
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
@@ -334,6 +342,21 @@ export async function runSmoke(win) {
             orientationSelectExists: diag.orientationSelectExists,
             languageSelectExists: diag.languageSelectExists,
             formatSegmentCount: diag.formatSegmentCount,
+          })}`,
+        );
+      }
+      // P1-3:最近转换 chips 守卫——容器存在且启动隐藏(隔离环境无记录),
+      // 旧主页面独立区块已移除;缺失/残留即回归
+      if (
+        diag.recentChipsExists !== true ||
+        diag.recentChipsHiddenAtStart !== true ||
+        diag.recentSectionRemoved !== true
+      ) {
+        throw new Error(
+          `[smoke] renderer diag FAILED: 最近转换 chips 异常 ${JSON.stringify({
+            recentChipsExists: diag.recentChipsExists,
+            recentChipsHiddenAtStart: diag.recentChipsHiddenAtStart,
+            recentSectionRemoved: diag.recentSectionRemoved,
           })}`,
         );
       }

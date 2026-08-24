@@ -39,8 +39,6 @@ const dict: Partial<Record<Dict, string>> = {
     "common.save": "Сохранить",
     "common.preview": "Предпросмотр",
     "common.remove": "Убрать",
-    "common.moveUp": "Вверх",
-    "common.moveDown": "Вниз",
 
     /* ---------- Преобразование ---------- */
     "convert.stage.converting": "Преобразование…",
@@ -129,15 +127,13 @@ const dict: Partial<Record<Dict, string>> = {
     "summary.details": "Подробности ошибок",
     "summary.revealTitle": "Показать файл вывода в проводнике",
 
-    /* ---------- Недавние преобразования ---------- */
-    "recent.title": "Недавние преобразования",
-    "recent.sectionLabel": "Недавние преобразования",
+    /* ---------- Недавние преобразования (P1-3: быстрые чипы пустого состояния) ---------- */
     "recent.clear": "Очистить историю",
-    "recent.itemTitle": "Щелчок — загрузить в список, двойной щелчок — преобразовать снова ${path}",
-    "recent.itemAria": "${name} (щелчок — загрузить, двойной щелчок — преобразовать снова)",
-    "recent.loadOnly": "Только загрузить",
-    "recent.loadOnlyTitle": "Только загрузить в список (без преобразования) ${path}",
-    "recent.loadOnlyAria": "Только загрузить ${name}",
+    // Взаимодействие: клик по чипу = загрузить в список; кнопка ↻ = преобразовать снова в исходном формате
+    "recent.itemTitle": "Загрузить в список файлов: ${path}",
+    "recent.itemAria": "Загрузить ${name}",
+    "recent.reloadTitle": "Повторить конвертацию в исходном формате: ${path}",
+    "recent.reloadAria": "Повторить конвертацию ${name}",
     "recent.loaded": "Загружено:${name}",
     "recent.time.today": "Сегодня в ${time}",
     "recent.time.yesterday": "Вчера в ${time}",
@@ -258,6 +254,8 @@ const dict: Partial<Record<Dict, string>> = {
     "drop.title": "Нажмите или перетащите файлы Markdown",
     "drop.hint": "Перетащите сюда файлы или папки Markdown",
     "drop.or": "или",
+    // P1-6 заметка о возможностях в пустом состоянии: расширения + синтаксис в одну строку
+    "drop.capabilities": "Поддержка .md / .markdown · таблицы · формулы · подсветка кода · Mermaid",
     "drop.change": "Нажмите, чтобы заменить файл, или перетащите, чтобы добавить",
     "drop.multiHint": "Меняйте порядок перетаскиванием или кнопками; добавляйте кликом или перетаскиванием",
     "drop.dblclickHint": "Двойной щелчок по строке — предпросмотр вёрстки",

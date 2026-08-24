@@ -36,8 +36,6 @@ const dict: Partial<Record<Dict, string>> = {
     "common.save": "Enregistrer",
     "common.preview": "Aperçu",
     "common.remove": "Retirer",
-    "common.moveUp": "Monter",
-    "common.moveDown": "Descendre",
 
     /* ---------- Conversion ---------- */
     "convert.stage.converting": "Conversion…",
@@ -126,15 +124,13 @@ const dict: Partial<Record<Dict, string>> = {
     "summary.details": "Détails des échecs",
     "summary.revealTitle": "Afficher le fichier de sortie dans l'Explorateur",
 
-    /* ---------- Conversions récentes ---------- */
-    "recent.title": "Conversions récentes",
-    "recent.sectionLabel": "Conversions récentes",
+    /* ---------- Conversions récentes (P1-3 : puces rapides à l'état vide) ---------- */
     "recent.clear": "Effacer l'historique",
-    "recent.itemTitle": "Clic pour charger dans la liste, double-clic pour reconvertir ${path}",
-    "recent.itemAria": "${name} (clic pour charger, double-clic pour reconvertir)",
-    "recent.loadOnly": "Charger seulement",
-    "recent.loadOnlyTitle": "Charger dans la liste seulement (sans conversion) ${path}",
-    "recent.loadOnlyAria": "Charger seulement ${name}",
+    // Interaction : clic sur la puce = charger dans la liste ; bouton ↻ = reconvertir au format d'origine
+    "recent.itemTitle": "Charger dans la liste de fichiers : ${path}",
+    "recent.itemAria": "Charger ${name}",
+    "recent.reloadTitle": "Reconvertir avec le format d'origine : ${path}",
+    "recent.reloadAria": "Reconvertir ${name}",
     "recent.loaded": "Chargé : ${name}",
     "recent.time.today": "Aujourd'hui ${time}",
     "recent.time.yesterday": "Hier ${time}",
@@ -255,6 +251,8 @@ const dict: Partial<Record<Dict, string>> = {
     "drop.title": "Cliquez ou déposez des fichiers Markdown",
     "drop.hint": "Déposez ici des fichiers ou dossiers Markdown",
     "drop.or": "ou",
+    // P1-6 note de capacités à l'état vide : extensions + fonctionnalités sur une ligne
+    "drop.capabilities": "Prend en charge .md / .markdown · tableaux · formules · coloration · Mermaid",
     "drop.change": "Cliquez pour changer de fichier, ou déposez pour ajouter",
     "drop.multiHint": "Glissez ou utilisez les boutons pour réordonner ; cliquez ou déposez pour ajouter",
     "drop.dblclickHint": "Double-cliquez sur une ligne pour prévisualiser la mise en page",
