@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [2.0.0] - 2026-08-24
+- **界面整体重构(大版本:界面布局与交互变化显著)**(五批次提交 87edaf1/367d1f8/3eabfe1/635aaa8/af77703;每批 typecheck/lint/build/51 段/smoke 全绿;GUI 实测全部通过):
+- 批次一 布局稳定性(87edaf1):主舞台固定高度+Grid 轨道钉死 footer;status/dropSkipped/resultSummary 合并常驻消息槽——根治导入文件后布局跳动;顺带修复版本号折行缺陷
+- 批次二 设置抽屉化(367d1f8):主页面设置面板墙(40+ 控件)迁出为右侧滑出抽屉,主页配置清零;抽屉内 L1 常用/L2 排版/L3 高级/L4 应用偏好四层频率分层;格式选择上移顶栏分段控件;trapFocus 升级栈式协调支持弹窗叠加(Esc 关闭链弹窗优先)
+- 批次三 反馈统一+视觉打磨(3eabfe1):转换完成弹窗默认不弹,汇总条/消息槽承接(已存偏好尊重);最近转换改主舞台空态 chips(单击加载/hover ↻ 重转,删除不可发现的双击与冗余按钮);多文件行 4 控件减至手柄+移除(Alt+↑/↓ 键盘排序补偿);错误/警告升级可换行语义底色条完整展示;空态补能力说明行;type scale(20/15/13/12)+三态切换 150ms 微动效(respect prefers-reduced-motion)
+- 实测反馈修复批(635aaa8):响应式布局——主舞台改 minmax(min(300px,40vh),1fr) 弹性撑满视口;根治页面级滚动条(body overflow 传播致 BFC 失效+.app 边距塌陷,文档高超出视口 32px);修复窄窗下文件框体右侧裁切(Grid 隐式列 min-content 撑宽);移除顶栏摘要 chip(与设置按钮功能重叠),「当前预设·纸张」信息并入抽屉头副标题;深色主题切换加 200ms 颜色过渡;smoke 新增 docScrollOk 文档级滚动守卫断言
+- 多语言精简(af77703):界面语言保留 中文/English/日本語,删除 ko/fr/ru;isValidSettings 由 language 整文件拒绝改为字段级回退——已存被删语言的 settings.json 启动后回退中文且其余偏好(输出目录/主题/排版/自定义预设)原样保留(迁移测试固化);smoke 新增 languageOptionCount===3 守卫
+- 附带修复(412919e/35b9eba):htmlLang 镜像化消除 lang-bootstrap 硬编码映射(1.3.0 已知限制关闭);fixtures 禁绝路径入库修复 CI 漂移误报
+
 ## [1.3.0] - 2026-08-24
 - **全库审计整改 P0~P5 + i18n 多语言架构改造**(61 项审计待办约 54 项实施、7 项不做/仅记录见 archive/2026-08-24-193838;typecheck/lint/build/51 段/smoke 全绿;GUI 实测通过):
 - P0 流程洞(eb5f912):release.yml 增加 tag↔package.json 版本校验;CI 补 fixtures 漂移校验+smoke+node20-floor 地板守卫 job;npm start 构建新鲜度守卫;.gitattributes fixtures EOL 策略

@@ -462,11 +462,11 @@
 
 > 删除 ko/fr/ru 三语言(字典文件+注册表收敛,Language 类型/isLanguage/htmlLangOf 由注册表派生自动收敛)。isValidSettings 放宽 language 整文件校验为字段级回退:已存 ko/fr/ru 的 settings.json 启动后语言回退 zh,**其余偏好(输出目录/主题/排版/自定义预设)原样保留**(迁移测试已固化)。代码+自动化验证已完成(typecheck/lint/build/smoke/51 段全绿;smoke 新增 languageOptionCount===3 守卫)。以下为人工 GUI 实测项。
 
-- [ ] 抽屉 L4 界面语言下拉恰为 中文/English/日本語 三项,默认中文
-- [ ] 迁移场景:settings.json 的 language 手改 "ko" 后启动 → 界面中文、其余设置不变、下拉选中中文
-- [ ] 切 en/ja 重启保持;<html lang> 随语言正确变化
-- [ ] ja 界面抽查:分组标题/错误条/chips 提示无裸键名
-- [ ] 回归:主舞台弹性布局、文档级零滚动、footer 钉底、chips、抽屉、主题过渡不回退
+- [x] 抽屉 L4 界面语言下拉恰为 中文/English/日本語 三项,默认中文
+- [x] 迁移场景:settings.json 的 language 手改 "ko" 后启动 → 界面中文、其余设置不变、下拉选中中文
+- [x] 切 en/ja 重启保持;<html lang> 随语言正确变化
+- [x] ja 界面抽查:分组标题/错误条/chips 提示无裸键名
+- [x] 回归:主舞台弹性布局、文档级零滚动、footer 钉底、chips、抽屉、主题过渡不回退
 
 ## 实测结果记录
-- (待用户 GUI 实测)
+- 2026-08-24:用户 GUI 实测通过;多语言精简批次关闭。

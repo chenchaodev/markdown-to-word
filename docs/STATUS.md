@@ -2,7 +2,8 @@
 
 ## 当前状态
 
-- 2026-08-24:**多语言精简批次「保留 zh/en/ja」完成,待 GUI 实测**(删除 ko/fr/ru 字典+注册表收敛;isValidSettings 放宽 language 校验为字段级回退——已存 ko/fr/ru 启动回退 zh 且其余偏好保留,迁移测试固化;smoke 新增 languageOptionCount===3 守卫)
+- 2026-08-24:**发版 2.0.0 完成**(界面整体重构大版本:布局稳定性/设置抽屉化/反馈统一打磨/响应式修复/多语言精简 zh-en-ja 五批次;GUI 实测全部通过;版本号四源统一 package.json=lockfile=tag v2.0.0=CHANGELOG [2.0.0];测试 51 段全绿)
+- 2026-08-24:**多语言精简批次「保留 zh/en/ja」完成,GUI 实测通过**(删除 ko/fr/ru 字典+注册表收敛;isValidSettings 放宽 language 校验为字段级回退——已存 ko/fr/ru 启动回退 zh 且其余偏好保留,迁移测试固化;smoke 新增 languageOptionCount===3 守卫)
 - 2026-08-24:**界面改进三批 + 实测反馈修复批次 GUI 实测全部通过**(批次一布局稳定性/批次二设置抽屉化/批次三反馈统一打磨/修复批响应式+滚动条根治+chip移除+主题过渡;ACCEPTANCE 全部关闭)
 - 2026-08-24:**实测反馈修复批次「响应式+滚动条+chip+主题过渡」完成**(主舞台改 minmax(min(300px,40vh),1fr) 弹性撑满;根治页面级滚动条:html/body overflow 传播+BFC 边距塌陷致文档高 592>560,.app 高度算术闭合+overflow hidden;文件框体右侧裁切=Grid 隐式列 min-content 撑宽,显式 minmax(0,1fr);移除顶栏 chip 信息并入抽屉头副标题;主题切换 200ms 过渡;tooltip 裁切修复;smoke 新增 docScrollOk 守卫)
 - 2026-08-24:**界面改进批次三「反馈统一+空态导航+行降噪+视觉打磨」完成,待 GUI 实测**(P1-2 完成弹窗默认不弹走汇总条;P1-3 最近转换改空态 chips+↻ 重转,删双击与仅加载按钮;P1-4 多文件行减至手柄+移除,Alt+↑/↓ 键盘排序;P1-5 错误警告可换行底色条;P1-6 空态能力说明;P2 type scale+微动效+进度行精简;typecheck/lint/build/smoke/51 段全绿)
