@@ -43,7 +43,7 @@ import {
 // 样例迁 fixtures 体系(B11;静态文件直接放 test/fixtures/main/,不接 gen-fixtures
 // 生成器——check:fixtures 只覆盖 segments 段导出的 acceptance fixtures 对象)
 const SAMPLE_MD_PATH = path.join(FIXTURES_DIR, "main", "converter-sample.md");
-const PNG_1PX_PATH = path.join(FIXTURES_DIR, "main", "g4-smoke.png");
+const PNG_1PX_PATH = path.join(FIXTURES_DIR, "main", "g4-preview.png");
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`converter 断言失败:${msg}`);
@@ -92,11 +92,11 @@ export async function run() {
     console.log("[ok] converter:批量 3 成功 1 失败(汇总逐条正确)");
 
     // ---- 3. merge docx:frontmatter 仅首文件保留/标题齐全/图片嵌入 ----
-    const pngPath = path.join(dir, "g4-smoke.png");
+    const pngPath = path.join(dir, "g4-preview.png");
     await fs.writeFile(pngPath, png1px);
     const mergeA = path.join(dir, "merge-a.md");
     const mergeB = path.join(dir, "merge-b.md");
-    await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](g4-smoke.png)\n`);
+    await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](g4-preview.png)\n`);
     await fs.writeFile(mergeB, `---\ntitle: 合并第二文件\n---\n\n# 合并第二章\n\n正文\n`);
     const mergeResult = await mergeConvertImpl([mergeA, mergeB], "docx");
     // 重名序号变体兼容:输出目录可配置后产物可能为「merge-a-合并 (2).docx」,

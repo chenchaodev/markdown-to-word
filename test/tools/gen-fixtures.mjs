@@ -55,19 +55,29 @@ function jsdocFirstLine(source) {
 }
 
 /** 动态 import 段模块;含 fixtures 导出的段必须可解析(否则产物不完整 → exit 1),
- *  dist/ 未构建时给明确提示;无 fixtures 的段失败仅告警跳过 */
+ *  dist/ 未构建时给明确提示;无 fixtures 的段失败仅告警跳过。
+ *  electron-mock 缺命名导出时(SyntaxError: ... does not provide an export named 'X')
+ *  报错信息显式指出缺失的 specifier,免排障猜测 */
 async function importModule(file, hasFixtures) {
   try {
     return await import(pathToFileURL(file).href);
   } catch (err) {
     const msg = String(err?.message ?? err);
     const isDistMissing = /dist[\\/]/.test(msg);
+    const missingExport = msg.match(/does not provide an export named ['"]([^'"]+)['"]/i);
     if (hasFixtures) {
-      console.error(
-        isDistMissing
-          ? "[gen-fixtures] 段模块 import 失败,请先 npm run build(段模块依赖 dist/ 编译产物)"
-          : "[gen-fixtures] 段模块 import 失败,无法生成完整验收样例"
-      );
+      if (missingExport) {
+        console.error(
+          `[gen-fixtures] 段模块 import 失败:electron-mock 缺少导出「${missingExport[1]}」` +
+            `(请在 test/tools/electron-mock.mjs 补充该命名导出)`,
+        );
+      } else {
+        console.error(
+          isDistMissing
+            ? "[gen-fixtures] 段模块 import 失败,请先 npm run build(段模块依赖 dist/ 编译产物)"
+            : "[gen-fixtures] 段模块 import 失败,无法生成完整验收样例"
+        );
+      }
       console.error(`  ${path.relative(ROOT, file)}: ${msg.split("\n")[0]}`);
       process.exit(1);
     }
@@ -100,6 +110,11 @@ function firstDiffLine(a, b) {
   return -1;
 }
 
+// --check 比对前做 EOL 归一化(CRLF→LF):生成器落盘 LF,但 Windows autocrlf 下
+// checkout 会把工作区文本产物转成 CRLF(审计 TEST-1)。.gitattributes 已固定
+// fixtures 的 eol=lf,此处归一化是双保险——即使属性未生效/旧 checkout 也不误报。
+const normalizeEol = (s) => s.replace(/\r\n/g, "\n");
+
 async function main() {
   const files = listTestFiles();
   const entries = []; // { relDir, baseName, desc, outputs: [{ name, content }] }
@@ -121,6 +136,7 @@ async function main() {
     const outputs = keys.map((key) => ({
       name: key === "main" ? `${baseName}.md` : `${baseName}-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}.md`,
       content: mod.fixtures[key],
+      key,
     }));
     entries.push({ relDir, baseName, desc: jsdocFirstLine(source), outputs });
   }
@@ -154,7 +170,10 @@ async function main() {
   ];
   for (const e of entries) {
     for (const o of e.outputs) {
-      const desc = (e.desc || "-").replace(/\|/g, "\\|");
+      // 多场景段共用同一 JSDoc 首行(常以冒号截断),人工实测者难区分场景 →
+      // 追加 fixtures 键名(即文件名后缀)消歧;单场景段保持原描述不变
+      const multi = e.outputs.length > 1;
+      const desc = ((multi ? `${e.desc || "-"}(场景:${o.key})` : e.desc) || "-").replace(/\|/g, "\\|");
       readmeLines.push(`| ${o.name} | ${desc} | test/${e.relDir}/${e.baseName}.test.js |`);
     }
   }
@@ -174,7 +193,7 @@ async function main() {
           report(o.name, " 缺失(应生成)");
           continue;
         }
-        const existing = fs.readFileSync(file, "utf8");
+        const existing = normalizeEol(fs.readFileSync(file, "utf8"));
         if (existing !== o.content) {
           const line = firstDiffLine(existing, o.content);
           const ex = existing.split("\n")[line - 1] ?? "<无此行>";
@@ -187,7 +206,7 @@ async function main() {
     if (!fs.existsSync(readmeFile)) {
       report("README.md", " 缺失(应生成)");
     } else {
-      const existing = fs.readFileSync(readmeFile, "utf8");
+      const existing = normalizeEol(fs.readFileSync(readmeFile, "utf8"));
       if (existing !== readme) {
         const line = firstDiffLine(existing, readme);
         report("README.md", ` 内容不一致(首处差异第 ${line} 行)`);

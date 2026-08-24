@@ -2,6 +2,17 @@
  * 验收测试入口:自动发现并顺序执行 segments/(core 渲染)与 main/(主进程层)
  * 下的 *.test.js。段 = 一个内容主题的断言;新增测试 = 在 segments/ 或 main/
  * 新建 xxx.test.js 并导出 async function run(),零注册(入口自动发现)。
+ *
+ * 目录组织标准(三种并存,按序判断新测试归属):
+ * 1. segments/ = 按内容主题命名(core 渲染能力的一个主题一段);
+ * 2. main/ = 按层命名(主进程层,需要 Electron 环境/直测 dist/main);
+ * 3. 例外约定:零 Electron API 的纯逻辑段即使测的是 main/renderer 代码,
+ *    也住 segments/(如 ipc-channels/ipc-logic/presets-import/settings-logic 等)。
+ *
+ * 单段筛选(开发迭代提速):设环境变量 M2W_ONLY=子串[,子串...] 只跑段名
+ * 含任一子串的段(大小写不敏感,如 M2W_ONLY=basic-render 或 M2W_ONLY=mermaid,pdf-meta);
+ * 不设 = 全量运行,行为不变。
+ *
  * 用法: npm run test(需已 build;等价 npx electron test/acceptance.mjs)
  */
 import { app } from "electron";
@@ -46,7 +57,7 @@ app.on("window-all-closed", () => {});
 
 void app.whenReady().then(async () => {
   const totalStart = Date.now();
-  const results = await runAll([segmentsDir, mainDir], {
+  const { results, aborted } = await runAll([segmentsDir, mainDir], {
     segmentTimeoutMs: Number(
       process.env.M2W_ACCEPTANCE_SEGMENT_TIMEOUT_MS ?? 180000,
     ),
@@ -59,6 +70,13 @@ void app.whenReady().then(async () => {
     }
   }
   printStats(results, totalStart);
+  // 看门狗超时 → 悬挂段无法在同进程内终止(runner 注释),此处硬退出确定性释放资源
+  if (aborted) {
+    console.error("[fail] 存在超时段,已中止后续段;进程硬退出以释放悬挂资源");
+    cleanupTempUserData();
+    app.exit(1);
+    return;
+  }
   const failed = results.filter((r) => !r.ok);
   if (failed.length > 0) {
     console.error(`[fail] ${failed.length}/${results.length} 段失败`);
