@@ -27,10 +27,17 @@ async function collectMarkdown(dir) {
 }
 
 /** 主样例:括号 URL 合并输出(mergeMarkdowns 运行值;真实合并验收样例为 manual/ 目录
- *  多文件,见段头注释),gen-fixtures 落盘为 acceptance/merge.md */
-const bracketMd = mergeMarkdowns([
+ *  多文件,见段头注释),gen-fixtures 落盘为 acceptance/merge.md。
+ *  注意:mergeMarkdowns 会把相对图片引用按 baseDir 绝对化(管线特性),直接导出会把
+ *  本机绝对路径写进 fixture(CI 检出路径不同必漂移,2026-08-24 实证);且 my(1).png
+ *  本不存在(样例演示缺失图片警告),绝对路径无意义——导出前还原为相对引用,
+ *  与生成器「仓库绝对路径禁入」守卫配套(gen-fixtures.mjs)。 */
+const bracketPngAbs = path.resolve(FIXTURES_DIR, "my(1).png").replace(/\\/g, "/");
+const bracketInput = [
   { content: "![a](https://example.com/a(b).png)\n\n![b](./my(1).png)", baseDir: FIXTURES_DIR },
-]);
+];
+const bracketMerged = mergeMarkdowns(bracketInput); // 运行值(相对引用已绝对化):行为断言用
+const bracketMd = bracketMerged.replace(bracketPngAbs, "./my(1).png"); // 导出值:还原相对引用防机器路径入库
 export const fixtures = { main: bracketMd };
 
 export async function run() {
@@ -76,14 +83,15 @@ export async function run() {
   await saveArtifact("merged-manual", { pdf: finalPdf });
 
   // 括号配对 URL(修复 M1):绝对 URL 含括号原样保留;相对路径含括号转绝对路径且括号保留
-  if (!bracketMd.includes("https://example.com/a(b).png")) {
-    throw new Error(`merge 断言失败:含括号的绝对 URL 应原样保留,实际输出:\n${bracketMd}`);
+  // (断言用运行值 bracketMerged;导出值 bracketMd 已还原相对引用供 fixture 落盘)
+  if (!bracketMerged.includes("https://example.com/a(b).png")) {
+    throw new Error(`merge 断言失败:含括号的绝对 URL 应原样保留,实际输出:\n${bracketMerged}`);
   }
   // 修复(P0):win32 反斜杠绝对路径会被 markdown-it 链接规范化编码(%5C)导致图片不显示,
   // absolutizeImages 统一输出正斜杠绝对路径 → 期望值同步转正斜杠
   const expectAbs = path.resolve(FIXTURES_DIR, "my(1).png").replace(/\\/g, "/");
-  if (!bracketMd.includes(expectAbs)) {
-    throw new Error(`merge 断言失败:含括号的相对路径应转为正斜杠绝对路径(期望包含 ${expectAbs}),实际输出:\n${bracketMd}`);
+  if (!bracketMerged.includes(expectAbs)) {
+    throw new Error(`merge 断言失败:含括号的相对路径应转为正斜杠绝对路径(期望包含 ${expectAbs}),实际输出:\n${bracketMerged}`);
   }
   if (!path.isAbsolute(expectAbs)) {
     throw new Error("merge 断言失败:期望的绝对路径构造无效");

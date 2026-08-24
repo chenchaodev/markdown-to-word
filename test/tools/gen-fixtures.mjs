@@ -233,6 +233,13 @@ async function main() {
   fs.mkdirSync(ACCEPTANCE_DIR, { recursive: true });
   for (const e of entries) {
     for (const o of e.outputs) {
+      // 守卫(2026-08-24 CI 踩坑):fixture 含本机绝对路径 → 其他检出路径重新生成必漂移
+      //(merge.md 曾把 C:/Users/... 写入入库内容,CI 上 --check 全量误报)。宁可本地
+      // 生成期响亮失败,也不让机器相关路径进库;测试段应导出相对引用或脱敏内容。
+      if (o.content.includes(ROOT)) {
+        console.error(`[gen-fixtures] 拒绝落盘:${o.name} 含仓库绝对路径(${ROOT})——请在测试段导出前还原为相对引用`);
+        process.exit(1);
+      }
       fs.writeFileSync(path.join(ACCEPTANCE_DIR, o.name), o.content, "utf8");
     }
   }
