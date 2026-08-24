@@ -466,19 +466,12 @@
             </div>
           </div>
 
-          <!-- ── 界面语言(i18n;切换即时生效并持久化) ── -->
+          <!-- ── 界面语言(i18n;切换即时生效并持久化) ──
+               选项由 settings-panel.rebuildLanguageOptions 按 core/i18n LANGUAGES
+               注册表动态生成(label = 本地化自称),此处只留容器 -->
           <div class="settings-group settings-group--language">
             <h3 class="settings-group-title" data-i18n="settings.groupLanguage">界面语言</h3>
-            <div class="setting-options">
-              <label class="setting-option">
-                <input type="radio" name="language" value="zh" checked />
-                <span data-i18n="settings.langZh">中文</span>
-              </label>
-              <label class="setting-option">
-                <input type="radio" name="language" value="en" />
-                <span data-i18n="settings.langEn">English</span>
-              </label>
-            </div>
+            <div class="setting-options" id="languageOptions"></div>
           </div>
 
           <!-- ── 外观主题(B13;切换即时生效并持久化;system = 移除 data-theme,CSS @media 接管) ── -->

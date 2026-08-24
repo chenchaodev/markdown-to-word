@@ -35,9 +35,9 @@ import {
   fontAsciiInput,
   fontEastAsiaError,
   fontEastAsiaInput,
-  formatInputs,
-  headingNumberingInput,
-  languageInputs,
+   formatInputs,
+   getLanguageInputs,
+   headingNumberingInput,
   lineSpacingError,
   lineSpacingInput,
   marginError,
@@ -63,6 +63,7 @@ import {
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { hideFieldError, setError, setStatus, showFieldError } from "../state/utils.js";
+import { errorMessage } from "../state/pure.js";
 import { renderSelection } from "../convert/file-list.js";
 import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n.js";
 // 单源 settings-panel(依赖方向单向:bindings → panel,不反向)
@@ -75,12 +76,13 @@ import {
   exportCustomPresets,
   importCustomPresets,
   importPdfCss,
-  mirrorLanguage,
-  openPresetSaveDialog,
-  persistSettings,
-  saveCustomPreset,
-  setSuppressCompleteDialog,
-} from "./settings-panel.js";
+   mirrorLanguage,
+   openPresetSaveDialog,
+   persistSettings,
+   rebuildLanguageOptions,
+   saveCustomPreset,
+   setSuppressCompleteDialog,
+ } from "./settings-panel.js";
 
 /* ---------- 设置类型(契约单源 core/settings-defaults.ts,B7:type-only 派生,
    编译期擦除,不新增运行时依赖) ---------- */
@@ -307,7 +309,7 @@ export function bindSettingsEvents(): void {
       outputDirValue.title = dir;
       persistSettings({ outputDir: dir });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       setError(t("settings.selectDirFailed", { error: message }));
     }
     })();
@@ -327,9 +329,11 @@ export function bindSettingsEvents(): void {
     setSuppressCompleteDialog(!completeDialogPromptInput.checked);
   });
 
-  // i18n:界面语言切换(radio;即时生效:静态文案重刷 + 动态文案经 t() 自动跟随,
-  // 状态栏/文件列表/最近区块等动态区域显式重渲染)
-  languageInputs.forEach((input) => {
+  // i18n:界面语言切换(radio;选项由 LANGUAGES 注册表动态生成,须先于事件绑定重建;
+  // 即时生效:静态文案重刷 + 动态文案经 t() 自动跟随,状态栏/文件列表/最近区块等
+  // 动态区域显式重渲染)
+  rebuildLanguageOptions();
+  getLanguageInputs().forEach((input) => {
     input.addEventListener("change", () => {
       if (!input.checked || state.hydratingSettings) return;
       const lang = input.value as Language;

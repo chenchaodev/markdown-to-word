@@ -29,10 +29,14 @@ export const completeDialogOk = document.getElementById(
 export const formatInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="format"]',
 );
-// i18n:界面语言选择(zh / en radio)
-export const languageInputs = document.querySelectorAll<HTMLInputElement>(
-  'input[name="language"]',
-);
+// i18n:界面语言选项容器 + radio 惰性查询(选项由 settings-panel.rebuildLanguageOptions
+// 按 LANGUAGES 注册表动态生成,模块加载期尚不存在,故不能静态捕获 NodeList)
+export const languageOptionsEl = document.getElementById(
+  "languageOptions",
+) as HTMLDivElement;
+export function getLanguageInputs(): NodeListOf<HTMLInputElement> {
+  return document.querySelectorAll<HTMLInputElement>('input[name="language"]');
+}
 // B13:外观主题选择(system / light / dark radio)
 export const themeInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="theme"]',

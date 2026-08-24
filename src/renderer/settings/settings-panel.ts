@@ -34,14 +34,15 @@ import {
   breakBeforeH1Input,
   captionNumberingInput,
   completeDialogPromptInput,
-  completeDialogSuppressInput,
-  equationNumberingInput,
-  firstLineIndentInput,
-  fontAsciiInput,
-  fontEastAsiaInput,
-  formatInputs,
-  headingNumberingInput,
-  languageInputs,
+   completeDialogSuppressInput,
+   equationNumberingInput,
+   firstLineIndentInput,
+   fontAsciiInput,
+   fontEastAsiaInput,
+   formatInputs,
+   getLanguageInputs,
+   headingNumberingInput,
+   languageOptionsEl,
   lineSpacingInput,
   marginInputs,
   orientationInputs,
@@ -53,15 +54,16 @@ import {
   presetNameInput,
   presetSaveBtn,
   presetSaveDialog,
-  presetSaveError,
-  templatePresetHint,
-  templatePresetSelect,
-  themeInputs,
-  tocInput,
-} from "../dom/refs.js";
+   presetSaveError,
+   templatePresetHint,
+   templatePresetSelect,
+   themeInputs,
+   tocInput,
+ } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError, setStatus, trapFocus } from "../state/utils.js";
-import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n.js";
+import { errorMessage } from "../state/pure.js";
+import { applyStaticTexts, setLanguage, t, LANGUAGES, type Language } from "../../core/i18n.js";
 
 /* 另存为预设弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除 */
 let presetSaveTrap: (() => void) | null = null;
@@ -89,6 +91,29 @@ export function mirrorLanguage(lang: Language): void {
     localStorage.setItem("m2w.language", lang);
   } catch {
     /* localStorage 不可用(隐私模式等)时静默:仅失去 FOUC 缓解,不影响功能 */
+  }
+}
+
+/**
+ * 重建界面语言选项(i18n 多语言改造):按 core/i18n LANGUAGES 注册表动态生成
+ * radio 选项(label = 本地化自称,不再经字典 data-i18n),新增语言注册后自动出现。
+ * 须在 bindSettingsEvents 绑定语言事件之前调用(输入为运行期生成,refs 走惰性查询)。
+ */
+export function rebuildLanguageOptions(): void {
+  languageOptionsEl.replaceChildren();
+  for (const { code, label } of LANGUAGES) {
+    const labelEl = document.createElement("label");
+    labelEl.className = "setting-option";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "language";
+    input.value = code;
+    // 生成期即按当前设置选中(hydration 前的空窗期也有选中项;回填以 applySettingsToControls 为准)
+    input.checked = code === state.settings.language;
+    const span = document.createElement("span");
+    span.textContent = label;
+    labelEl.append(input, span);
+    languageOptionsEl.appendChild(labelEl);
   }
 }
 
@@ -166,8 +191,8 @@ export function applySettingsToControls(): void {
   formatInputs.forEach(
     (input) => (input.checked = input.value === v.format),
   );
-  // i18n:界面语言 radio 回填(zh/en)
-  languageInputs.forEach(
+  // i18n:界面语言 radio 回填(选项由 LANGUAGES 动态生成,经惰性查询获取)
+  getLanguageInputs().forEach(
     (input) => (input.checked = input.value === v.language),
   );
   // B13:外观主题 radio 回填(system/light/dark)
@@ -319,7 +344,7 @@ export async function importCustomPresets(): Promise<void> {
         : t("preset.imported", { count: r.imported }),
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     setError(t("preset.importFailed", { error: message }));
   }
 }
@@ -335,7 +360,7 @@ export async function exportCustomPresets(): Promise<void> {
     if (r.canceled) return; // 用户取消:无动作
     setStatus(t("preset.exported", { count: r.count }));
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     setError(t("preset.exportFailed", { error: message }));
   }
 }
@@ -357,7 +382,7 @@ export async function importPdfCss(): Promise<void> {
     pdfCssClearBtn.classList.remove("hidden");
     setStatus(t("settings.cssImportedStatus", { name: r.name }));
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     setError(t("settings.cssImportFailed", { error: message }));
   }
 }

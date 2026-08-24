@@ -16,7 +16,8 @@
  *   (静默不写盘);旧文件(缺 toc/outputDir/typography)→ 其余字段保留 + 兜底默认,不崩溃
  * - settingsFilePath = app.getPath("userData")/settings.json(无注入点)→ 测试备份真实文件、
  *   finally 恢复;模块级 settingsCache 惰性缓存 → 每场景用 query-string 动态 import 取
- *   全新模块实例(实证:Node ESM 同文件不同 query = 独立实例,缓存按 URL 键)
+ *   全新模块实例(实证:Node ESM 同文件不同 query = 独立实例,缓存按 URL 键;
+ *   备份/全新实例样板已迁移 test/common/settings.js 公共助手,TEST-9)
  * - sanitizePageSetup/sanitizeTypography/sanitizePatch 均未导出 → 经 updateSettings 公开
  *   路径断言(patch 合并 + sanitize + 持久化 + 返回 next)
  * - isValidSettings(批次 15 R3 起导出):整文件形状校验纯函数直测——任一字段非法
@@ -26,28 +27,20 @@
  *   (M4,防并发交错写同一 tmp 文件丢更新;失败不截断队列,错误由各自调用方处理)
  */
 import fs from "node:fs/promises";
-import path from "node:path";
 import { app } from "electron";
 import { DEFAULT_PAGE_SETUP } from "../../dist/core/convert.js";
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
+import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`settings 断言失败:${msg}`);
 }
 
 export async function run() {
-  const settingsFile = path.join(app.getPath("userData"), "settings.json");
-  // 备份真实 settings.json(如有),finally 恢复(settings.ts 无注入点,只能读写真实路径)
-  let backup = null;
-  let hadFile = false;
-  try {
-    backup = await fs.readFile(settingsFile, "utf8");
-    hadFile = true;
-  } catch {
-    /* 无既有文件 */
-  }
-  let seq = 0;
-  const freshModule = () => import(`../../dist/main/persist/settings.js?case=${seq++}`);
+  const settingsFile = settingsJsonPath();
+  // 备份真实 settings.json(如有),finally 恢复(settings.ts 无注入点,只能读写真实路径;公共助手)
+  const { restore } = await backupSettingsFile();
+  const freshModule = () => freshSettingsModule("settings");
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const mod = await freshModule();
@@ -228,7 +221,7 @@ export async function run() {
       [{ ...validSettings, breakBeforeH1: "yes" }, "breakBeforeH1 非布尔"],
       [{ ...validSettings, equationNumbering: "yes" }, "equationNumbering 非布尔"],
       [{ ...validSettings, pdfCss: 123 }, "pdfCss 非 string"],
-      [{ ...validSettings, language: "fr" }, "language 枚举外值"],
+      [{ ...validSettings, language: "xx" }, "language 枚举外值(未注册)"],
       [{ ...validSettings, theme: "blue" }, "theme 枚举外值"],
       [{ ...validSettings, pageSetup: null }, "pageSetup 缺失"],
       [{ ...validSettings, afterConvert: "email" }, "afterConvert 枚举外值"],
@@ -372,8 +365,7 @@ console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文�
     assert(Array.isArray(r13.customPresets) && r13.customPresets.length === 0, "customPresets 非数组应回退 []");
     console.log("[ok] settings:customPresets 校验(合法保留/非法丢弃/同名去重/上限 10/非数组回退)断言通过");
   } finally {
-    // 恢复真实 settings.json(原有内容或删除),避免污染用户设置
-    if (hadFile) await fs.writeFile(settingsFile, backup, "utf8");
-    else await fs.rm(settingsFile, { force: true });
+    // 恢复真实 settings.json(原有内容或删除),避免污染用户设置(公共助手)
+    await restore();
   }
 }

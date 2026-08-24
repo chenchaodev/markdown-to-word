@@ -9,7 +9,8 @@
  * 写入经 promise 链串行化(saveSettings 写队列):并发调用不会交错写同一
  * tmp 文件,调用序 = 写盘序,链尾即最终态(防并发丢更新)。
  * 契约(AppSettings 类型/DEFAULT_SETTINGS/范围常量)收敛于 core/settings-defaults.ts,
- * 此处只做持久化与校验;AppSettings 类型 re-export 保持 index.ts/converter.ts 导入面。
+ * 此处只做持久化与校验;AppSettings/DEFAULT_SETTINGS re-export 保持既有导入面
+ * (converter/ipc 各模块经 persist/settings 导入)。
  */
 import { app } from "electron";
 import { readFileSync } from "node:fs";
@@ -28,7 +29,7 @@ import {
   type AppSettings,
   type CustomPreset,
 } from "../../core/settings/settings-defaults.js";
-import { t } from "../../core/i18n.js";
+import { t, isLanguage } from "../../core/i18n.js";
 export { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
 
 const SETTINGS_FILE_NAME = "settings.json";
@@ -97,8 +98,9 @@ export function isValidSettings(value: unknown): value is AppSettings {
   if ("outputDir" in s && !isValidOutputDir(s.outputDir)) return false;
   // pdfCss 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "";存在则须 string
   if ("pdfCss" in s && typeof s.pdfCss !== "string") return false;
-  // language 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "zh";存在则须 zh/en
-  if ("language" in s && s.language !== "zh" && s.language !== "en") return false;
+  // language 缺失(旧 settings.json)视为合法,loadSettings 兜底 "zh";
+  // 存在则须为 LANGUAGES 注册表内的语言码(i18n/index.ts 单源派生)
+  if ("language" in s && !isLanguage(s.language)) return false;
   // theme 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "system";存在则须枚举内值
   if ("theme" in s && !isOneOf(s.theme, THEMES)) return false;
   const ps = s.pageSetup as Record<string, unknown> | undefined;
@@ -117,6 +119,11 @@ export function isValidSettings(value: unknown): value is AppSettings {
 }
 
 export function loadSettings(): AppSettings {
+  // MR-11 双源显式化:本函数(main 侧 sanitize/兜底)与 renderer 侧
+  // settings-logic.ts mergeSettingsWithDefaults 是有意的双侧防御——跨进程边界
+  // (settingsGet IPC)两侧各自保证「返回完整合法 AppSettings」,任一侧兜底逻辑
+  // 改动(尤其 theme/outputDir/pdfCss 缺失兜底)必须保持语义一致;恒等断言由
+  // test 侧守护段落地(车道 D),改此处前先核对另一侧。
   if (settingsCache) return settingsCache;
   let loaded: AppSettings = DEFAULT_SETTINGS;
   try {
@@ -136,8 +143,8 @@ export function loadSettings(): AppSettings {
             : DEFAULT_SETTINGS.equationNumbering,
         // 批次 16:pdfCss 缺失(旧文件)→ "";存在 → 原样保留
         pdfCss: typeof parsed.pdfCss === "string" ? parsed.pdfCss : DEFAULT_SETTINGS.pdfCss,
-        // i18n:language 缺失(旧文件)→ "zh";存在 → 原样保留(zh/en 已过形状校验)
-        language: parsed.language === "en" ? "en" : "zh",
+        // i18n:language 缺失(旧文件)→ 默认 zh;存在 → 原样保留(已过 isLanguage 形状校验)
+        language: isLanguage(parsed.language) ? parsed.language : DEFAULT_SETTINGS.language,
         // B13:theme 缺失(旧文件)→ "system";存在 → 原样保留(枚举已过形状校验)
         theme: isOneOf(parsed.theme, THEMES) ? parsed.theme : DEFAULT_SETTINGS.theme,
         typography: sanitizeTypography(parsed.typography),
@@ -217,7 +224,7 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
         out.pdfCss = typeof src.pdfCss === "string" ? src.pdfCss : DEFAULT_SETTINGS.pdfCss;
         break;
       case "language":
-        out.language = src.language === "en" || src.language === "zh" ? src.language : DEFAULT_SETTINGS.language;
+        out.language = isLanguage(src.language) ? src.language : DEFAULT_SETTINGS.language;
         break;
       case "theme":
         out.theme = isOneOf(src.theme, THEMES) ? src.theme : DEFAULT_SETTINGS.theme;
@@ -253,7 +260,7 @@ function sanitizeCustomPresets(value: unknown): CustomPreset[] {
   return out;
 }
 
-/* ---------- 批次 13:模板预设导入/导出(纯逻辑;对话框/文件 IO 在 index.ts IPC 层) ---------- */
+/* ---------- 批次 13:模板预设导入/导出(纯逻辑;对话框/文件 IO 在 ipc/register.ts) ---------- */
 export type ParsePresetsResult =
   | { ok: true; presets: CustomPreset[] }
   | { ok: false; error: string };
@@ -273,7 +280,7 @@ export type ExportPresetsResult =
   | { ok: true; canceled: false; count: number }
   | { ok: false; error: string };
 
-/* ---------- 批次 16:PDF 样式 CSS 导入(对话框/文件 IO 在 index.ts IPC 层) ---------- */
+/* ---------- 批次 16:PDF 样式 CSS 导入(对话框/文件 IO 在 ipc/register.ts) ---------- */
 /** PDF 自定义 CSS 导入大小上限(字节;超出拒绝导入,防误选大文件拖垮 settings.json)。 */
 export const MAX_PDF_CSS_BYTES = 100 * 1024;
 

@@ -1,9 +1,10 @@
 /**
  * renderer 通用工具(R8 自 renderer.ts 抽出,行为等价;B1 纯函数层拆至 pure.ts):
  * 状态区/错误提示/字段内错误、进度条控制、焦点回给主操作按钮。
- * 纯函数(isMarkdown/baseName/truncateMiddle/STAGE_TEXT/stageText/STAGE_PERCENT)
- * 已拆至 state/pure.ts(零 DOM 依赖,可 Node 直测;批③目录重组前为 src/renderer/pure.ts),本文件 re-export
- * 保持导入符号不变(各模块经 ../state/utils.js 导入)。
+ * 纯函数(isMarkdown/errorMessage/baseName/truncateMiddle/STAGE_TEXT/stageText/
+ * STAGE_PERCENT 等)单源 state/pure.ts(零 DOM 依赖,可 Node 直测)。
+ * MR-10:原「保持旧导入路径」的 re-export 过渡层已退役——消费方直接从
+ * ./pure.js 导入纯函数,同一符号不再有两条活跃导入路径。
  * 只依赖 dom.ts 元素映射与 state.ts 的 errorFlashTimer。
  */
 import {
@@ -19,14 +20,19 @@ import {
   statusEl,
 } from "../dom/refs.js";
 import { state } from "./state.js";
-export {
-  isMarkdown,
-  baseName,
-  truncateMiddle,
-  STAGE_TEXT,
-  stageText,
-  STAGE_PERCENT,
-} from "./pure.js";
+import { t, type I18nKey } from "../../core/i18n.js";
+
+/** 错误提示红色描边自动消退时长(MR-15 具名)。 */
+const ERROR_FLASH_MS = 1400;
+
+/**
+ * translate 注入适配(CORE-10 衔接):t 的 key 参数已收紧为 I18nKey(编译期防拼错),
+ * 而 pure 层零 import 约束只能声明 string 键的 translate 契约;经此包装放宽注入
+ * (运行时同一 t;键均来自 pure 层内部契约,不存在拼错面)。
+ */
+export function translate(key: string, params?: Record<string, string | number>): string {
+  return t(key as I18nKey, params);
+}
 
 export function setStatus(text: string, isError = false, isWarning = false): void {
   statusEl.textContent = text;
@@ -42,7 +48,7 @@ export function setError(message: string): void {
   window.clearTimeout(state.errorFlashTimer);
   state.errorFlashTimer = window.setTimeout(
     () => dropZone.classList.remove("drop-zone--error"),
-    1400,
+    ERROR_FLASH_MS,
   );
 }
 
