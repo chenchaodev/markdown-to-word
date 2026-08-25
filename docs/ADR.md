@@ -1,5 +1,13 @@
 # 架构决策
 
+### 2026-08-25 功能开发技术路线拍板:F7 目录带页码混合路线(ADR-007,推翻 D1)/F9 模板导入浅导入 v1(ADR-008)
+- **F7 决策**:PDF 用两遍法静态页码(第一遍标题锚点+占位等高目录保证布局一致→PDF.js 文本匹配定位页码→第二遍注入);docx 默认维持 D1 免更新静态目录不变,新增 opt-in「Word 域目录」开关(TOC 域+updateFields+cachedEntries 预填条目;Word 打开弹一次更新提示不可关闭,WPS 可能需手动刷新——纳入 WPS-COMPAT 双实测)。**部分推翻批次 8 的 D1 免更新路线**:域目录作为用户自选 opt-in 而非默认
+- 理由:docx 静态页码不可行(OOXML 无 page 实体,分页由渲染引擎决定);pdf 两遍法是 Typora 因单遍打印流做不到的独占差异化;弹窗权衡交用户自选而非强加
+- **F9 决策**:模板导入做浅导入 v1——jszip 解包用户 .docx 模板,提取 Heading 1-6/Normal 样式 rPr(字体 ascii/eastAsia/字号/颜色/basedOn 一层继承)映射到现有 settings/theme 字段(含 sectPr 页面尺寸边距);不做部件级深导入(Pandoc 式 styles 替换+numbering 合并+settings 白名单,2-4 周+长期维护负担),列后续独立候选
+- 理由:npm 无现成库;浅导入覆盖约 80% 诉求且契合 theme.ts 集中字体配置硬约束;解析层是深导入真子集可演进不锁死
+- 来源: @librarian 技术路线调研 + 用户拍板(2026-08-25)
+- 关联: docs/archive/2026-08-25-182036-功能候选调研与迭代排期.md 第六节、docs/RESEARCH.md 同日条目、ROADMAP F7/F9
+
 ### 2026-08-08 10:20:16 批次 6 公式路线:KaTeX → docx Math(OMML),PDF 复用 KaTeX 渲染(ADR-006)
 - 决策:docx 公式走 KaTeX MathML 输出 → 转 docx Math(OMML,超出调研范围超额交付);PDF 公式直接 KaTeX HTML+字体渲染(与已有 printToPDF 管线一致);MathML 转换失败时降级为 TeX 源码纯文本兜底
 - 理由:单一公式源(KaTeX)双格式复用;OMML 为 Word 原生公式格式,可编辑;PDF 侧无需第二套公式引擎

@@ -125,9 +125,9 @@
 - [ ] **F4 页眉页脚自定义**(A1):页眉文字/logo 图片/左右分栏模板(docx header/footer 扩展 + pdf printToPDF headerFooter);补齐「交付全家桶」最后缺口
 - [ ] **F5 文字水印**(A2):内容/角度/透明度/灰度(docx 水印 + pdf 打印水印);GUI 竞品空白项
 - [ ] **F6 转换预检报告**(C1):转换前体检(缺失图片/悬空引用/未标语言代码块等汇总);warnings 通道现成;零竞品差异化项
-- [ ] **F7 目录带页码**:依赖调研拍板方案(docx TOC 域+updateFields vs 二遍渲染 vs pdf 两遍);**推翻 D1**,拍板后更新 ADR 并回填本条
+- [ ] **F7 目录带页码**:已拍板混合路线(ADR-007,部分推翻 D1)——pdf 两遍法静态页码(占位等高目录保布局一致+PDF.js 文本匹配);docx 默认维持静态目录,opt-in「Word 域目录」开关(TOC 域+updateFields+cachedEntries 预填;WPS 行为纳入双实测)
 - [ ] **F8 合并转换增强**(C2):合并时统一重编标题编号/题注号 + 总目录;建议在 F7 后(总目录复用 TOC 机制)
-- [ ] **F9 docx 模板导入**:依赖调研拍板技术路线(候选:jszip 直改 styles.xml / reference-doc 式映射 / 其他维护中库);拍板后回填本条
+- [ ] **F9 docx 模板导入**:已拍板浅导入 v1(ADR-008)——jszip 解包模板提取 Heading/Normal 样式 rPr 映射现有 settings/theme 字段(含页面尺寸边距);深导入列后续独立候选
 
 #### 记录不排期(2026-08-25 用户裁定)
 - B2 HTML 白名单扩展(块级标签+受控属性)、HTML 导出第三格式、frontmatter 元数据扩展——有价值但未入选本轮,后续可重新提案
