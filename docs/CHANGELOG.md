@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [2.2.0] - 2026-08-26
+- **界面重构 v3「印刷付梓」**(设计三件套落盘 docs/design/(样稿/信息架构/规范);typecheck/lint/build/57 段/smoke 全绿;实测反馈修复含设置按钮归位):
+- 应用图标(80cdbdd):朱砂钤印母题重做(渐变圆角方块+内描白环+衬线「梓」path 轮廓),ico 六尺寸重生成;BrowserWindow icon 接线补齐 dev 窗口/任务栏图标缺口
+- 主进程窗口改造(1ed73a0):win32 无边框自绘标题栏(titleBarStyle:hidden+titleBarOverlay 保留原生控制钮与 Snap 布局);overlay 配色单源 title-bar-overlay.ts,启动按持久化主题同步+跟随系统深浅色切换;theme:syncOverlay IPC 三侧镜像;新增 main 测试段
+- renderer 重构(a610899):设计令牌 CSS 变量双主题+纸张颗粒氛围层+响应式四档;抽屉七组编号 01-07,控件形态按规范映射(seg 分段×6/字号 stepper/行距 range+mono 回显/PDF CSS 文本域/恢复默认);最近转换改常驻折叠历史条(rrow 行内重转);toast 单实例轻提示;align 布尔升级枚举分段(存储契约不变旧档归一化);i18n 三语各 +51 键;smoke 断言同步
+- 设计稿对齐批(并入 a610899):标题栏设置按钮归位右上角窗口控制区左侧;状态行圆点/进度区旋转指示/多文件队列行/完成弹窗钤印等缺失样式补齐;分段选择器误伤嵌套与窄窗死选择器修复
+- 遗留项(docs dcac423):预设卡化/单文件卡能力 chips/Ctrl+Enter 脉冲动画/状态行呼吸色记 ROADMAP 不排期
+
 ## [2.1.0] - 2026-08-25
 - **功能开发阶段第一批:F1-F4 四批**(GUI 实测全部通过;每批独立提交,typecheck/lint/build/smoke 全绿;测试 51→56 段):
 - 功能立项(docs 1bd8b41):双路调研(@explorer 能力盘点+@librarian 竞品对标)拍板 9 项做、3 项记录不排期;批次表 F1-F9 依次实施

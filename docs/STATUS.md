@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-08-26:**发版 2.2.0 完成**(界面重构 v3「印刷付梓」:主进程无边框标题栏+titleBarOverlay 主题同步/renderer 设计令牌+七组抽屉+历史折叠条+toast+align 枚举迁移/设计稿对齐批——seg·stepper·range 控件形态+恢复默认+PDF CSS 文本域+队列行样式/应用图标钤印重做+dev 窗口图标接线/i18n 三语补齐;测试 56→57 段全绿;实测反馈修复:设置按钮归位右上角;遗留 4 项记 ROADMAP 不排期)
+- 2026-08-25:**界面重构 v3「印刷付梓」实施完成**(设计已确认:样稿 docs/design/ui-mockup.html + 信息架构 settings-ia.md + 规范 ui-guidelines.md;范围=主进程无边框标题栏+titleBarOverlay 主题同步/renderer 设计令牌与七组抽屉/历史常驻折叠区/空态签名元素/toast/align 枚举迁移)
 - 2026-08-25:**发版 2.1.0 完成**(功能开发阶段 F1-F4 四批 GUI 实测全部通过;版本号四源统一 package.json=lockfile=tag v2.1.0=CHANGELOG [2.1.0];测试 54→56 段全绿;**剩余 F5 水印/F6 转换预检/F7 目录带页码/F8 合并增强/F9 模板导入暂停开发**,排期与已拍板路线见 ROADMAP/ADR-007/008)
 - 2026-08-25:**F4 页眉页脚自定义完成,待 GUI 实测**(settings 新增 headerFooter 契约单源不入预设体系;docx chrome 页眉三模式 default/custom/none+左右分栏制表位+logo ImageRun 内嵌,pdf printToPDF headerTemplate(base64 data URI,7pt/#888888 与 docx 对齐);logo 读失败 keyed 警告降级;抽屉 L2 新区块+header-logo:select IPC;buildConvertContext async 化;56 段全绿)
 - 2026-08-25:**F7/F9 技术路线已拍板(ADR-007/008),规划定稿待执行指令**(F7=混合路线:pdf 两遍法静态页码+docx opt-in 域目录开关;F9=浅导入 v1:jszip 提取模板样式映射现有设置;F4 页眉页脚/F5 水印/F6 转换预检/F8 合并增强按批次表依次实施)
@@ -34,7 +36,7 @@
 ## 验证基线
 
 - 已跑通:`npm run typecheck`、`npm run lint`、`npm run build`、`npx electron . --smoke`(启动 + docx/pdf 双链路 + 设置持久化/landscape 端到端 + 批量/合并端到端 + renderer 诊断)、`npm run test:coverage`(c8)
-- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染与纯逻辑)与 `main/`(主进程层)下 `*.test.js`,当前 **51 段**;单段筛选 `M2W_ONLY='段名子串'`;新增测试=新建段文件零注册);main 侧行为已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
+- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染与纯逻辑)与 `main/`(主进程层)下 `*.test.js`,当前 **57 段**;单段筛选 `M2W_ONLY='段名子串'`;新增测试=新建段文件零注册);main 侧行为已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
 - 恒等守护:`test/segments/identity-guards.test.js` 锁已知双源(zh 文案↔字典/MAX_RECENT_FILES/设置合并双侧/白名单扫描一致性)
 - 验收样例:`npm run gen:fixtures`(需先 build)按功能自动生成 `test/fixtures/acceptance/*.md`(GUI 人工实测直接拖入);`npm run check:fixtures` 漂移校验(EOL 归一化,.gitattributes 双保险;CI 门禁步骤);新增功能=测试段顶层加 `export const fixtures = { main: ... }`
 - smoke 自清理 output/smoke 临时产物(Windows 占用文件 EBUSY 容错跳过)
