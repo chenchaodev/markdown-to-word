@@ -28,6 +28,7 @@ const CH = {
   cssImport: "css:import",
   settingsGet: "settings:get",
   settingsSet: "settings:set",
+  themeSyncOverlay: "theme:syncOverlay",
   uiStateGet: "ui-state:get",
   uiStateSet: "ui-state:set",
   appVersion: "app:version",
@@ -80,6 +81,10 @@ const api = {
   },
   settingsGet: (): Promise<AppSettings> => ipcRenderer.invoke(CH.settingsGet),
   settingsSet: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(CH.settingsSet, patch),
+  /** 界面重构 v3:主题变更后通知 main 同步 Windows 标题栏 overlay 配色
+   *  (传主题偏好;system 由 main 经 nativeTheme 解析实际生效主题)。 */
+  syncTitleBarOverlay: (theme: "system" | "light" | "dark"): Promise<void> =>
+    ipcRenderer.invoke(CH.themeSyncOverlay, theme),
   /** 发版 1.0.0:应用版本号(header 显示,与「关于」对话框同源)。 */
   getVersion: (): Promise<string> => ipcRenderer.invoke(CH.appVersion),
   /** 批次 13:导入模板预设 JSON(选文件 → 校验合并 → 持久化);取消 → { ok:true, canceled:true } */

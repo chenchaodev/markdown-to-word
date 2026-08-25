@@ -56,6 +56,10 @@ export const IPC_CHANNELS = {
   /* ---- 设置域 ---- */
   settingsGet: "settings:get",
   settingsSet: "settings:set",
+  /* ---- 主题域 ---- */
+  /** 界面重构 v3:标题栏 overlay 配色同步(renderer 主题变更后调用,传主题偏好
+   *  system/light/dark;system 由 main 经 nativeTheme 解析实际生效主题) */
+  themeSyncOverlay: "theme:syncOverlay",
   /* ---- UI 状态域 ---- */
   uiStateGet: "ui-state:get",
   uiStateSet: "ui-state:set",

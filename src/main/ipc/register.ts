@@ -48,6 +48,8 @@ import {
   type ConvertResult,
 } from "../converter/index.js";
 import { getKatexDir } from "../services/resource-dirs.js";
+import { getMainWindow } from "../windows/main-window.js";
+import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
 import { IPC_CHANNELS as CH, type ConvertMode } from "./channels.js";
 import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";
 import { ctxByWebContents } from "../windows/web-contents-registry.js";
@@ -296,6 +298,17 @@ export function registerIpc(): void {
 
   ipcMain.handle(CH.settingsSet, (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
     return updateSettings(patch);
+  });
+
+  // 界面重构 v3:标题栏 overlay 配色同步(renderer 主题变更后调用;主题主动方是
+  // renderer,main 只负责原生 overlay 绘制)。入参守卫:非法值警告留痕不静默
+  // (配色失同步可感知但不致命,不值得走错误弹窗打断主题切换)。
+  ipcMain.handle(CH.themeSyncOverlay, (_event, theme: unknown): void => {
+    if (!isThemePreference(theme)) {
+      console.warn("[main] theme:syncOverlay 收到非法主题值:", theme);
+      return;
+    }
+    syncTitleBarOverlay(getMainWindow(), theme);
   });
 
   // 批次 13:导入模板预设 JSON(选文件 → 解析校验 → 同名覆盖合并 → 上限 10 → 持久化)。
