@@ -3,6 +3,19 @@
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 > **路径迁移注记(2026-08-24)**:目录结构重组(2026-08-23,提交 6f3d72a~9909d74)前历史条目「关联」字段中的扁平路径已失效——对照关系:`src/settings.ts`→`src/main/persist/settings.ts`、`src/index.ts`→`src/main/`(拆 windows/ipc/menu/converter/persist/services)、`src/renderer.ts`→`src/renderer/renderer.ts`+六功能域、`src/core/{i18n-dict}.ts`→`src/core/i18n/`、core 根级散文件→`pipeline/markdown/image/settings/util/` 子域。时间戳记录按规约不改写原文。
 
+### 2026-08-25 功能开发技术路线调研(F7 目录带页码 / F9 docx 模板导入)
+- **F9 模板导入**:npm 无现成库做「读任意 .docx 模板套用样式」;Pandoc reference-doc=部件级选择性搬运(styles 替换/numbering 合并魔数隔离/settings 白名单/rels 自建),坑多(#1305 numId 断链/#9522 settings 整搬损坏)。**推荐浅导入 v1**(jszip 读 styles.xml 关键 rPr→映射 theme.ts/settings 字段,3-5 天,契合集中字体配置硬约束),深导入列后续独立候选
+- **F7 目录带页码**:Word TOC 域+updateFields 打开必弹更新提示(不可关闭,docx#1212),WPS 可能不响应自动更新;docx 静态页码不可行(OOXML 无 page 实体)。**推荐混合路线**:pdf 两遍法静态页码(占位等高目录保布局一致+PDF.js 文本匹配定位,Typora 因单遍打印流做不到=独占差异化)+docx 默认维持静态目录、新增 opt-in 域目录开关(cachedEntries 预填防空白);WPS 行为纳入双实测
+- 待用户拍板后更新 ADR(涉 D1 推翻)
+- 来源: @librarian 技术路线调研;关联: 原文存档 docs/archive/2026-08-25-182036-功能候选调研与迭代排期.md 第六节
+
+### 2026-08-25 18:20:36 功能候选调研与迭代排期(2.0.0 后新阶段)
+- **竞品对标核心结论**:格式错乱/公式/Mermaid/代码高亮/批量五大高频痛点本产品均已解决;剩余真实缺口=页眉页脚自定义(Logo 页眉,V2EX #1098305「交付全家桶」最后缺口;Typora 页码 issue 118+ 赞多年未解的反面印证)、水印(GUI 竞品空白)、转换预检报告(零竞品,AI 生成不规范 md 是新时代格式错乱最大来源)、合并+总目录(手册场景真空)。差异化定位:「易用性×正式交付能力」兼得是竞品格局裂缝
+- **架构扩展点**:docx handlers/ switch 分发、pdf rules/ 数组挂载、CROSS_REF_KINDS 表驱动、ConvertContext 只增不改——新语法功能落点现成;但**双管线有意不合并**(docx=remark/mdast,pdf=markdown-it),新语法双侧各实现一次成本双倍
+- **用户拍板做 9 项**:A1 页眉页脚自定义/A2 水印/A3 标题排版粒度/B1 图片控制增强/B3 表格列宽/C1 转换预检/C2 合并增强/docx 模板导入(解除暂缓)/目录带页码(**推翻 D1 免更新路线**);B2 HTML 白名单扩展/D1 HTML 导出/D2 frontmatter 扩展记录不排期
+- **两项推翻既有决策待调研拍板**:docx 模板导入技术路线(原否 docx4js+OOXML 逆映射)、目录带页码方案(D1 静态注入与页码冲突);调研结论出来后更新 ADR
+- 来源: @explorer 能力盘点 + @librarian 竞品对标 + 用户选型;关联: 原文存档 docs/archive/2026-08-25-182036-功能候选调研与迭代排期.md;前序: archive/20260814-201622(docx 模板导入原调研)、批次 8 D1 决策
+
 ### 2026-08-24 审计整改记录(依赖钉死策略清单 / highlight.js styles 潜伏副作用)
 - **依赖钉死策略显式清单**(收敛自 RESEARCH 散落记载与 CHANGELOG):
   - `markdown-it 14.3`:15.0 与 @mdit/plugin-tasklist@1.0.2 peer(^14.2.0)冲突,升级须连带评估 tasklist/footnote 两插件
