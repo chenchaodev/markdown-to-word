@@ -132,6 +132,12 @@
 #### 记录不排期(2026-08-25 用户裁定)
 - B2 HTML 白名单扩展(块级标签+受控属性)、HTML 导出第三格式、frontmatter 元数据扩展——有价值但未入选本轮,后续可重新提案
 
+### 界面重构 v3「印刷付梓」遗留项(2026-08-26 实测对齐设计稿后记录,不排期)
+- [ ] **模板预设卡化**:mockup 01 组为三张预设卡,实现保留 select(自定义预设可达 10 项,sel 形态合规);卡片化需重构 rebuildPresetOptions/resolvePresetSelection/删除/导入导出整条链路
+- [ ] **单文件卡能力 chips**:mockup 展示「表格 ×6」等统计;需文件解析统计管线(TS 新功能),非纯样式项
+- [ ] **主按钮 Ctrl+Enter 脉冲动画**:mockup `.btn.main.pulse`;需在快捷键处理处挂 class(动效 CSS 可现做)
+- [ ] **状态行 busy/ok 呼吸色**:圆点样式已就位;需 utils.setStatus 增加 tone 类后由现成 CSS 承接
+
 
 ### 功能候选(排期)
 - [x] **8c Mermaid 渲染导出**(中;无依赖)——PDF 近白送(Chromium 有 DOM,隐藏窗口渲染),docx 嵌入 SVG/PNG;原「砍」理由「无 DOM 环境」在 Electron 内不成立(批次 8 已重新评估升回);差异化亮点,建议起手;**已完成(2026-08-13 提交 a89507a,0.23.0,用户实测通过)**

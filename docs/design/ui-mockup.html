@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<!-- ============================================================
+  MarkdownToWord v2.0.0 · GUI 视觉提案（静态高保真样稿）
+  ------------------------------------------------------------
+  设计方向：印刷付梓（冷纸白 × 油墨黑 × 朱砂钤印红）
+  签名元素：空态投放区 = 一张带四角裁切线的「待印文稿」，
+            直排「落笔 · 排版 · 成书」+ 朱砂小钤印（全站唯一大胆笔触）
+  ------------------------------------------------------------
+  演示方式：双击本文件即可打开。
+  布局为桌面级流体：窗框宽度 min(1240px, 可用宽)、高度随视口自适应，
+  直接拖拽浏览器窗口即可预览不同窗口尺寸；断点跟随窗框宽度（container query）。
+  页面底部有「样稿演示」控制条：
+    · 空态 / 单文件 / 多文件 三种舞台状态
+    · 进行中 / 已完成 / 完成弹窗 / 设置抽屉 / 无记录（隐藏历史区）
+    · 窄窗预览（把窗框临时压到 900px，快速查看窄窗断点）
+    · 浅色 / 深色主题切换
+  零外部依赖：系统字体栈 + 内联 SVG，可离线直接打开。
+============================================================ -->
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MarkdownToWord · 界面高保真样稿</title>
+<style>
+/* ========== 1. 设计令牌 ========== */
+:root{
+  --font-ui:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Segoe UI",system-ui,sans-serif;
+  --font-display:"Source Han Serif SC","Noto Serif SC","Songti SC","SimSun",Georgia,"Times New Roman",serif;
+  --font-mono:"Cascadia Code","JetBrains Mono",Consolas,"Courier New",monospace;
+
+  --desk:#14161a;
+  --canvas:#f1f1ee;          /* 应用画布（冷灰纸） */
+  --card:#fbfbf9;            /* 卡片纸面 */
+  --card-2:#f3f3ef;
+  --inset:#ebebe6;
+  --tb:#f7f7f4;              /* 标题栏 */
+  --line:#e2e2dc;
+  --line-2:#cccdc5;
+  --ink:#1e2126;
+  --ink-2:#494e58;
+  --mut:#71767f;
+  --acc:#b5301c;             /* 朱砂 / 印泥红 */
+  --acc-h:#982512;
+  --acc-soft:rgba(181,48,28,.09);
+  --acc-ring:rgba(181,48,28,.30);
+  --ok:#2f7d4f;
+  --ok-soft:rgba(47,125,79,.12);
+  --solid-bg:#22252b;        /* 墨色实心按钮 */
+  --solid-bg-h:#3a3e46;
+  --solid-fg:#fbfbf9;
+  --scrim:rgba(13,14,17,.42);
+  --shadow-card:0 1px 2px rgba(24,25,28,.05),0 2px 6px rgba(24,25,28,.04);
+  --shadow-pop:0 18px 50px rgba(15,16,20,.22);
+  --grain-op:.05;
+}
+html[data-theme="dark"]{
+  --desk:#0c0e11;
+  --canvas:#15181d;
+  --card:#1c2027;
+  --card-2:#232830;
+  --inset:#111419;
+  --tb:#191d23;
+  --line:#2a2f38;
+  --line-2:#3b424e;
+  --ink:#e9e7e1;
+  --ink-2:#b8bcc4;
+  --mut:#878e99;
+  --acc:#c23d1e;
+  --acc-h:#d5542f;
+  --acc-soft:rgba(205,69,38,.16);
+  --acc-ring:rgba(213,84,47,.38);
+  --ok:#4c9e6d;
+  --ok-soft:rgba(76,158,109,.16);
+  --solid-bg:#e9e7e1;
+  --solid-bg-h:#f6f4ef;
+  --solid-fg:#16181d;
+  --scrim:rgba(5,6,8,.58);
+  --shadow-card:0 1px 2px rgba(0,0,0,.25);
+  --shadow-pop:0 18px 50px rgba(0,0,0,.5);
+  --grain-op:.07;
+}
+:root{--tbh:44px} /* 标题栏高度：矮窗档降为 40px，抽屉/遮罩 top 联动 */
+
+/* ========== 2. 基础 ========== */
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:var(--font-ui);
+  font-size:13px;line-height:1.55;color:var(--ink);
+  background:var(--desk);
+}
+body::after{ /* 纸张颗粒 */
+  content:"";position:fixed;inset:0;z-index:1;pointer-events:none;
+  opacity:var(--grain-op);mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+::selection{background:var(--acc-soft)}
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:inherit;color:var(--ink)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:4px}
+svg.ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ========== 3. 桌面背景 与 窗口框 ========== */
+.desk{
+  min-height:100vh;padding:46px 24px 124px;
+  display:flex;justify-content:center;align-items:flex-start;
+  background:radial-gradient(120% 90% at 50% 0%,#1b1e24 0%,var(--desk) 62%);
+}
+.frame{
+  /* 尺寸容器：所有断点以「窗框宽度」为准，而非浏览器视口，
+     拖拽浏览器窗口即可真实预览 Electron 窗口缩放表现 */
+  width:min(1240px,100%);flex:none;
+  container-type:inline-size;container-name:appwin;
+}
+.win{
+  position:relative;width:100%;height:clamp(620px,calc(100vh - 170px),960px);
+  background:var(--canvas);border-radius:12px;overflow:hidden;
+  border:1px solid rgba(255,255,255,.09);
+  box-shadow:0 2px 8px rgba(0,0,0,.4),0 34px 90px rgba(0,0,0,.55);
+  display:flex;flex-direction:column;
+}
+
+/* ---- 3.1 标题栏 ---- */
+.titlebar{
+  height:var(--tbh);flex:none;display:flex;align-items:center;
+  background:var(--tb);border-bottom:1px solid var(--line);
+  -webkit-user-select:none;user-select:none;
+}
+.tb-brand{display:flex;align-items:center;gap:10px;padding-left:14px}
+.tb-seal{
+  width:22px;height:22px;border-radius:5px;background:var(--acc);color:#fff;
+  display:grid;place-items:center;font-family:var(--font-display);font-size:13px;line-height:1;
+  box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.28);
+}
+.tb-name{font-size:13px;font-weight:600;letter-spacing:.01em}
+.tb-ver{
+  font-family:var(--font-mono);font-size:10.5px;color:var(--mut);
+  border:1px solid var(--line-2);border-radius:99px;padding:1px 7px;
+}
+.seg-format{margin-left:24px}
+.wc-group{margin-left:auto;display:flex;height:100%}
+.wc{
+  width:46px;height:100%;display:grid;place-items:center;color:var(--ink-2);
+  transition:background .12s,color .12s;
+}
+.wc:hover{background:rgba(127,127,127,.14);color:var(--ink)}
+.wc.close:hover{background:#e81123;color:#fff}
+.wc svg{width:11px;height:11px;stroke-width:1.3}
+
+/* ========== 4. 通用控件 ========== */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  height:34px;padding:0 14px;border-radius:8px;
+  font-size:13px;font-weight:500;white-space:nowrap;
+  transition:background .15s,border-color .15s,color .15s,transform .15s,box-shadow .15s;
+}
+.btn.sm{height:29px;padding:0 11px;font-size:12.5px;border-radius:7px}
+.btn.lg{height:40px;padding:0 24px;font-size:14px;font-weight:600;border-radius:9px}
+.btn.primary{
+  background:var(--acc);color:#fff;
+  box-shadow:0 5px 14px var(--acc-ring);
+}
+.btn.primary:hover{background:var(--acc-h);transform:translateY(-1px);box-shadow:0 8px 18px var(--acc-ring)}
+.btn.primary:active{transform:translateY(0)}
+.btn.primary:disabled{opacity:.42;cursor:not-allowed;box-shadow:none;transform:none}
+.btn.solid{background:var(--solid-bg);color:var(--solid-fg)}
+.btn.solid:hover{background:var(--solid-bg-h);transform:translateY(-1px)}
+.btn.solid:active{transform:translateY(0)}
+.btn.ghost{border:1px solid var(--line-2);color:var(--ink-2)}
+.btn.ghost:hover{background:var(--card-2);border-color:var(--line-2);color:var(--ink)}
+.btn.txt{color:var(--mut);padding:0 8px}
+.btn.txt:hover{color:var(--ink)}
+.btn.txt.acc{color:var(--acc)}
+.btn.txt.acc:hover{color:var(--acc-h)}
+.icon-btn{
+  width:30px;height:30px;border-radius:7px;display:grid;place-items:center;
+  color:var(--mut);transition:background .13s,color .13s;flex:none;
+}
+.icon-btn:hover{background:var(--card-2);color:var(--ink)}
+.icon-btn.danger:hover{color:var(--acc);background:var(--acc-soft)}
+
+/* 分段选择器 */
+.seg{
+  display:inline-flex;gap:2px;padding:3px;border-radius:8px;
+  background:var(--inset);border:1px solid var(--line);
+}
+.seg>button{
+  height:26px;padding:0 12px;border-radius:6px;font-size:12.5px;color:var(--mut);
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  transition:background .13s,color .13s;
+}
+.seg>button:hover{color:var(--ink-2)}
+.seg>button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.09)}
+.seg.sm>button{height:22px;padding:0 9px;font-size:11.5px}
+
+/* 开关 */
+.switch{
+  width:36px;height:20px;border-radius:99px;background:var(--line-2);
+  position:relative;flex:none;transition:background .16s;
+}
+.switch::after{
+  content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .16s;
+}
+html[data-theme="dark"] .switch::after{background:#eef0f2}
+.switch[aria-checked="true"]{background:var(--acc)}
+.switch[aria-checked="true"]::after{transform:translateX(16px)}
+
+/* 输入件 */
+.tin{
+  height:32px;border:1px solid var(--line-2);border-radius:7px;background:var(--card);
+  padding:0 10px;font-size:13px;transition:border-color .13s,box-shadow .13s;
+}
+.tin:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+input[type=range]{appearance:none;-webkit-appearance:none;height:4px;border-radius:99px;background:var(--line-2);width:150px;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{
+  appearance:none;-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+  background:var(--acc);border:2.5px solid var(--card);box-shadow:0 1px 4px rgba(0,0,0,.3);
+}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--line-2);border-radius:7px;background:var(--card);overflow:hidden}
+.stepper button{width:28px;height:30px;display:grid;place-items:center;color:var(--mut);font-size:15px}
+.stepper button:hover{background:var(--card-2);color:var(--ink)}
+.stepper output{width:54px;text-align:center;font-family:var(--font-mono);font-size:12.5px;border-left:1px solid var(--line);border-right:1px solid var(--line);align-self:stretch;display:grid;place-items:center}
+.kbd{
+  font-family:var(--font-mono);font-size:11px;color:var(--ink-2);
+  border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;
+  padding:1px 6px;background:var(--card);
+}
+
+/* ========== 5. 内容区布局 ========== */
+.content{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+.stage-wrap{flex:1;min-height:0;overflow-y:auto;padding:20px 26px 12px}
+.pane{display:none}
+.win[data-stage="empty"]  .pane-empty,
+.win[data-stage="single"] .pane-single,
+.win[data-stage="multi"]  .pane-multi{display:block}
+
+.ph{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.ph-title{font-family:var(--font-display);font-size:15px;letter-spacing:.14em;font-weight:600}
+.ph-sub{font-size:12px;color:var(--mut)}
+.ph-side{margin-left:auto;font-size:12px;color:var(--mut);display:flex;align-items:center;gap:8px}
+
+/* ========== 6. 空态 —— 待印文稿台（签名元素） ========== */
+.sheet{
+  position:relative;max-width:700px;margin:10px auto 0;
+  background:var(--card);border:1px solid var(--line-2);border-radius:3px;
+  box-shadow:var(--shadow-card),0 14px 36px rgba(20,21,26,.08);
+  transition:border-color .18s,box-shadow .18s,transform .18s;
+}
+.sheet:hover{border-color:var(--mut);transform:translateY(-2px);box-shadow:var(--shadow-card),0 20px 44px rgba(20,21,26,.12)}
+.cm{position:absolute;width:18px;height:18px;color:var(--line-2);pointer-events:none}
+.cm::before,.cm::after{content:"";position:absolute;background:currentColor}
+.cm::before{width:18px;height:1px;top:0;left:0}
+.cm::after{width:1px;height:18px;top:0;left:0}
+.cm.tl{top:-10px;left:-10px}
+.cm.tr{top:-10px;right:-10px;transform:scaleX(-1)}
+.cm.bl{bottom:-10px;left:-10px;transform:scaleY(-1)}
+.cm.br{bottom:-10px;right:-10px;transform:scale(-1)}
+.rules{
+  position:absolute;inset:60px 54px;pointer-events:none;opacity:.5;
+  background:repeating-linear-gradient(to bottom,transparent 0 27px,var(--line) 27px 28px);
+  -webkit-mask-image:radial-gradient(85% 75% at 50% 46%,#000 26%,transparent 98%);
+          mask-image:radial-gradient(85% 75% at 50% 46%,#000 26%,transparent 98%);
+}
+.vwrap{
+  position:absolute;left:30px;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:18px;pointer-events:none;
+}
+.vtext{
+  writing-mode:vertical-rl;font-family:var(--font-display);
+  font-size:15px;letter-spacing:.44em;color:var(--mut);
+}
+.vseal{
+  width:27px;height:27px;border-radius:6px;background:var(--acc);color:#fff;
+  display:grid;place-items:center;font-family:var(--font-display);font-size:15px;line-height:1;
+  transform:rotate(-5deg);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.3),0 3px 8px var(--acc-ring);
+}
+.drop-core{position:relative;text-align:center;padding:42px 56px 36px;display:flex;flex-direction:column;align-items:center;gap:11px}
+.drop-kicker{font-family:var(--font-mono);font-size:11px;letter-spacing:.32em;color:var(--mut)}
+.drop-core h1{font-family:var(--font-display);font-size:33px;font-weight:600;letter-spacing:.08em;line-height:1.25}
+.drop-sub{font-size:13px;color:var(--mut)}
+.caps{
+  margin-top:18px;padding-top:16px;border-top:1px solid var(--line);
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
+}
+.cap{
+  display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;
+  border:1px solid var(--line-2);border-radius:99px;background:var(--card);
+  font-size:12px;color:var(--ink-2);
+}
+.cap .ic{width:14px;height:14px;color:var(--mut)}
+.cap b{font-family:var(--font-mono);font-weight:600;font-size:13px}
+
+/* 最近转换 */
+/* 历史记录 · 常驻可折叠区（主舞台与消息区之间） */
+.history{flex:none;border-top:1px solid var(--line);padding:0 26px}
+.h-head{display:flex;align-items:center;height:40px}
+.h-toggle{
+  display:flex;align-items:center;gap:9px;height:100%;padding:0 8px;
+  font-size:13px;color:var(--ink);border-radius:6px;
+}
+.h-toggle:hover{background:var(--card-2)}
+.h-toggle .chev{width:14px;height:14px;color:var(--mut);transition:transform .2s}
+.history[data-open="false"] .h-toggle .chev{transform:rotate(-90deg)}
+.h-count{font-family:var(--font-mono);font-size:11px;color:var(--mut)}
+.h-head>.btn{margin-left:auto}
+.h-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .24s ease}
+.h-body>div{overflow:hidden}
+.history[data-open="true"] .h-body{grid-template-rows:1fr}
+.rlist{max-height:176px;overflow-y:auto;overflow-x:hidden;margin-bottom:12px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-card)}
+.rrow{
+  display:grid;grid-template-columns:34px 1fr auto auto;gap:12px;align-items:center;
+  padding:10px 14px;border-bottom:1px solid var(--line);transition:background .12s;
+}
+.rrow:last-child{border-bottom:none}
+.rrow:hover{background:var(--card-2)}
+.rico{
+  width:34px;height:34px;border-radius:8px;background:var(--inset);color:var(--ink-2);
+  display:grid;place-items:center;
+}
+.rmain{min-width:0}
+.rname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rmeta{display:flex;align-items:center;gap:8px;margin-top:2px}
+.rtime{font-family:var(--font-mono);font-size:11px;color:var(--mut)}
+.tag{font-family:var(--font-mono);font-size:10px;letter-spacing:.05em;padding:1.5px 7px;border-radius:5px}
+.tag.docx{background:var(--acc-soft);color:var(--acc)}
+.tag.pdf{background:rgba(127,127,127,.13);color:var(--ink-2)}
+.rops{display:flex;align-items:center;gap:2px;opacity:0;transition:opacity .13s}
+.rrow:hover .rops,.rrow:focus-within .rops{opacity:1}
+.rempty{padding:22px;text-align:center;color:var(--mut);font-size:12.5px}
+
+/* ========== 7. 单文件态 ========== */
+.filecard{
+  max-width:760px;background:var(--card);border:1px solid var(--line);border-radius:12px;
+  box-shadow:var(--shadow-card);padding:18px 20px;display:flex;align-items:center;gap:16px;
+}
+.fico{
+  width:48px;height:48px;border-radius:11px;background:var(--acc-soft);color:var(--acc);
+  display:grid;place-items:center;flex:none;
+}
+.fico .ic{width:22px;height:22px}
+.fmain{flex:1;min-width:0}
+.fname{font-size:15px;font-weight:600}
+.fmeta{font-family:var(--font-mono);font-size:12px;color:var(--mut);margin-top:3px}
+.fchips{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.fchip{
+  font-size:11.5px;color:var(--ink-2);border:1px solid var(--line);border-radius:6px;
+  padding:2.5px 9px;background:var(--card-2);
+}
+.facts{display:flex;gap:8px;flex:none}
+.fhint{max-width:760px;margin:12px auto 0;font-size:12px;color:var(--mut);text-align:left;padding-left:2px}
+.pane-single>.filecard,.pane-single>.fhint{margin-left:auto;margin-right:auto}
+
+/* ========== 8. 多文件态 ========== */
+.listcard{max-width:760px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-card);overflow:hidden}
+.mlist{list-style:none}
+.mlist li{
+  display:grid;grid-template-columns:22px 34px 1fr 74px 32px;gap:10px;align-items:center;
+  padding:9px 14px;border-bottom:1px solid var(--line);transition:background .12s,opacity .12s;
+}
+.mlist li:last-child{border-bottom:none}
+.mlist li:hover{background:var(--card-2)}
+.mlist li.dragging{opacity:.35}
+.grip{color:var(--line-2);cursor:grab;display:grid;place-items:center}
+.grip:hover{color:var(--mut)}
+.mlist li:hover .grip{color:var(--mut)}
+.idx{font-family:var(--font-mono);font-size:12px;color:var(--mut)}
+.mname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msize{font-family:var(--font-mono);font-size:12px;color:var(--mut);text-align:right}
+.list-foot{
+  padding:10px 16px;background:var(--card-2);border-top:1px solid var(--line);
+  font-size:12px;color:var(--mut);display:flex;gap:18px;flex-wrap:wrap;
+}
+.list-foot b{color:var(--ink-2);font-weight:600}
+
+/* ========== 9. 消息 / 结果区 ========== */
+.feed{flex:none;border-top:1px solid var(--line);padding:11px 26px 13px;min-height:96px;display:flex;flex-direction:column;justify-content:center;gap:8px}
+.status{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink-2)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--line-2);flex:none}
+.status.busy .dot{background:var(--acc);animation:blink 1.1s ease-in-out infinite}
+.status.ok .dot{background:var(--ok)}
+@keyframes blink{50%{opacity:.3}}
+.progress{display:none}
+.feed.has-progress .progress{display:block}
+.p-row{display:flex;align-items:center;gap:10px}
+.spin{
+  width:14px;height:14px;border-radius:50%;flex:none;
+  border:2px solid var(--line-2);border-top-color:var(--acc);
+  animation:rot .85s linear infinite;
+}
+@keyframes rot{to{transform:rotate(360deg)}}
+.p-label{font-size:13px;color:var(--ink-2)}
+.p-pct{margin-left:auto;font-family:var(--font-mono);font-size:13px;font-weight:600}
+.track{height:5px;border-radius:99px;background:var(--inset);margin-top:9px;overflow:hidden}
+.pfill{height:100%;width:64%;border-radius:99px;background:var(--acc)}
+.feed.has-progress .pfill{animation:pfill .9s cubic-bezier(.25,.8,.3,1) both}
+@keyframes pfill{from{width:3%}}
+.result{display:none}
+.feed.has-result .result{display:block}
+.res-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.okbadge{
+  width:22px;height:22px;border-radius:50%;background:var(--ok-soft);color:var(--ok);
+  display:grid;place-items:center;flex:none;
+}
+.okbadge .ic{width:13px;height:13px;stroke-width:2.4}
+.res-title{font-size:13.5px;font-weight:600}
+.res-path{
+  flex:1;min-width:160px;font-family:var(--font-mono);font-size:12px;color:var(--mut);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr;
+}
+.res-acts{display:flex;gap:8px;margin-left:auto}
+
+/* ========== 10. 底部操作栏 ========== */
+.actionbar{
+  flex:none;height:62px;border-top:1px solid var(--line);background:var(--tb);
+  display:flex;align-items:center;padding:0 22px;gap:12px;
+}
+.hint{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--mut)}
+.ab-side{margin-left:auto;display:flex;align-items:center;gap:10px}
+.multi-only{display:none}
+.win[data-stage="multi"] .multi-only{display:inline-flex}
+.lbl-batch{display:none}
+.win[data-stage="multi"] .lbl-batch{display:inline}
+.win[data-stage="multi"] .lbl-single{display:none}
+.btn.main.pulse{animation:pulse .5s ease}
+@keyframes pulse{35%{transform:scale(.96)}70%{transform:scale(1.03)}}
+
+/* ========== 11. 设置抽屉 ========== */
+.dscr{
+  position:absolute;top:var(--tbh);left:0;right:0;bottom:0;z-index:44;
+  background:var(--scrim);backdrop-filter:blur(2px);
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+.dscr.open{opacity:1;pointer-events:auto}
+.drawer{
+  position:absolute;top:var(--tbh);right:0;bottom:0;width:402px;z-index:45;
+  background:var(--canvas);border-left:1px solid var(--line);
+  box-shadow:-20px 0 50px rgba(10,11,14,.2);
+  transform:translateX(103%);transition:transform .26s cubic-bezier(.32,.72,.24,1);
+  display:flex;flex-direction:column;
+}
+.drawer.open{transform:none}
+.dw-head{
+  flex:none;height:52px;padding:0 18px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--line);
+}
+.dw-title{font-family:var(--font-display);font-size:16px;letter-spacing:.2em;font-weight:600}
+.dw-head .icon-btn{margin-left:auto}
+.dw-scroll{flex:1;overflow-y:auto;padding:2px 18px 20px}
+.dw-foot{
+  flex:none;height:56px;padding:0 18px;display:flex;align-items:center;gap:10px;
+  border-top:1px solid var(--line);background:var(--tb);
+}
+.sec{margin-top:24px}
+.sec:first-child{margin-top:10px}
+.sec-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.sec-num{font-family:var(--font-mono);font-size:11px;color:var(--acc)}
+.sec-title{font-family:var(--font-display);font-size:14px;letter-spacing:.24em;font-weight:600}
+.sec-rule{flex:1;height:1px;background:var(--line)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 0}
+.row-l{font-size:13px;color:var(--ink)}
+.row-sub{font-size:11.5px;color:var(--mut);margin-top:2px;max-width:240px;line-height:1.5}
+.row-r{display:flex;align-items:center;gap:8px;flex:none}
+.path-chip{
+  font-family:var(--font-mono);font-size:11.5px;color:var(--ink-2);
+  background:var(--inset);border:1px solid var(--line);border-radius:6px;
+  padding:4px 9px;max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr;
+}
+/* 模板预设卡 */
+.tpl-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:4px 0 6px}
+.tpl{
+  border:1px solid var(--line-2);border-radius:9px;background:var(--card);
+  padding:9px;text-align:left;transition:border-color .14s,box-shadow .14s;
+}
+.tpl:hover{border-color:var(--mut)}
+.tpl.on{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+.tpl-thumb{height:52px;border-radius:6px;border:1px solid var(--line);background:var(--card-2);overflow:hidden;display:block;width:100%}
+.tpl-name{display:block;font-size:12.5px;font-weight:600;margin-top:8px}
+.tpl-desc{display:block;font-size:11px;color:var(--mut);margin-top:1px}
+/* 模式 + 条件字段容器（抽屉唯一折叠形态） */
+.cond{
+  display:grid;grid-template-rows:0fr;margin:4px 0 8px;
+  background:var(--inset);border-radius:8px;border-left:2px solid var(--line-2);
+  transition:grid-template-rows .22s ease;
+}
+.cond>div{overflow:hidden}
+.cond.show{grid-template-rows:1fr}
+.cond-in{padding:8px 12px 4px}
+/* 小节标签 / 作用域标注 / 说明行 */
+.sub-label{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.2em;color:var(--mut);margin:12px 0 0}
+.scope-tag{
+  font-family:var(--font-mono);font-size:10px;letter-spacing:.05em;color:var(--mut);
+  border:1px solid var(--line-2);border-radius:99px;padding:1px 8px;white-space:nowrap;
+}
+.sec-h .scope-tag{margin-left:2px}
+.scope-note{font-size:11.5px;line-height:1.6;color:var(--mut);margin:8px 0 2px}
+/* 边距网格 */
+.mm-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:2px 0 8px}
+.mm-cell label{display:block;font-size:11px;color:var(--mut);margin-bottom:4px}
+.mm-in{position:relative}
+.mm-in input{width:100%;padding-right:32px}
+.mm-in span{position:absolute;right:9px;top:50%;transform:translateY(-50%);font-family:var(--font-mono);font-size:11px;color:var(--mut)}
+/* 开关行 */
+.sw-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 0}
+/* 模板管理按钮组 */
+.mgmt{display:flex;gap:8px;flex-wrap:wrap;padding:4px 0 8px}
+/* CSS 文本域 */
+.ta{
+  width:100%;min-height:86px;resize:vertical;
+  font-family:var(--font-mono);font-size:11.5px;line-height:1.65;color:var(--ink-2);
+  background:var(--inset);border:1px solid var(--line);border-radius:8px;padding:9px 11px;
+}
+.ta:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+
+/* ========== 12. 完成弹窗 ========== */
+.mlayer{
+  position:absolute;inset:0;z-index:70;display:grid;place-items:center;
+  opacity:0;pointer-events:none;transition:opacity .18s;
+}
+.mlayer.open{opacity:1;pointer-events:auto}
+.mscrim{position:absolute;inset:0;background:var(--scrim);backdrop-filter:blur(3px)}
+.modal{
+  position:relative;width:482px;max-width:calc(100% - 48px);
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow-pop);padding:22px 22px 18px;
+  transform:translateY(10px) scale(.96);transition:transform .2s cubic-bezier(.2,.9,.3,1.1);
+}
+.mlayer.open .modal{transform:none}
+.m-x{position:absolute;top:12px;right:12px}
+.m-head{display:flex;align-items:center;gap:15px;margin-bottom:15px;padding-right:30px}
+.stamp{
+  width:54px;height:54px;border-radius:11px;background:var(--acc);color:#fff;flex:none;
+  display:grid;place-items:center;font-family:var(--font-display);font-size:28px;line-height:1;
+  transform:rotate(-6deg);
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.28),0 8px 20px var(--acc-ring);
+}
+.mlayer.open .stamp{animation:stamp .5s cubic-bezier(.18,.89,.32,1.18) both}
+@keyframes stamp{
+  from{transform:scale(1.7) rotate(-16deg);opacity:0}
+  62%{transform:scale(.94) rotate(-5deg);opacity:1}
+  to{transform:scale(1) rotate(-6deg)}
+}
+.m-head h3{font-family:var(--font-display);font-size:19px;letter-spacing:.06em}
+.m-head p{font-size:12.5px;color:var(--mut);margin-top:3px}
+.m-path{
+  display:flex;align-items:center;gap:8px;
+  background:var(--inset);border:1px solid var(--line);border-radius:8px;
+  padding:8px 8px 8px 11px;margin-bottom:15px;
+}
+.m-path .ptxt{
+  flex:1;font-family:var(--font-mono);font-size:12px;color:var(--ink-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr;text-align:left;
+}
+.m-foot{display:flex;justify-content:flex-end;gap:10px}
+#copyPath .i-check{display:none}
+#copyPath.copied .i-copy{display:none}
+#copyPath.copied .i-check{display:block;color:var(--ok)}
+
+/* ========== 13. 样稿演示控制条（非应用本体） ========== */
+.demo-bar{
+  position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:90;
+  display:flex;align-items:center;gap:14px;
+  padding:9px 16px;border-radius:999px;
+  background:rgba(17,19,23,.88);border:1px solid rgba(255,255,255,.13);
+  backdrop-filter:blur(12px);box-shadow:0 14px 36px rgba(0,0,0,.45);
+  color:#cfd3da;font-size:12px;white-space:nowrap;
+  max-width:calc(100vw - 20px);overflow-x:auto;
+}
+.db-cap{font-family:var(--font-display);letter-spacing:.22em;color:#8b93a0;padding-right:12px;border-right:1px solid rgba(255,255,255,.14)}
+.db-group{display:flex;gap:3px}
+.db-group button{
+  height:26px;padding:0 11px;border-radius:999px;color:#a9afba;font-size:12px;
+  transition:background .13s,color .13s;
+}
+.db-group button:hover{color:#fff}
+.db-group button.on{background:rgba(255,255,255,.17);color:#fff}
+#dbTheme{height:26px;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,.22);color:#e6e8ec}
+#dbTheme:hover{background:rgba(255,255,255,.1)}
+
+/* ========== 15. 桌面级流体断点 ========== */
+/* 两档窗框断点（container query）+ 一档视口矮窗（media query）。
+   BrowserWindow 建议钳制 minWidth 880 / minHeight 560；
+   CSS 在 ~820px 以下仍保持可用，低于此不承诺。 */
+
+/* —— 紧凑档：窗框 ≤1080 —— */
+@container appwin (max-width:1080px){
+  .stage-wrap{padding:18px 18px 10px}
+  .feed{padding:12px 18px 13px}
+  .actionbar{padding:0 16px}
+  .btn.lg{padding:0 18px}
+  .seg-format{margin-left:14px}
+  .drawer{width:372px}
+}
+
+/* —— 窄窗档：窗框 ≤900 —— */
+@container appwin (max-width:900px){
+  .hint{display:none}                       /* 快捷键提示让位给按钮 */
+  .tb-brand{gap:8px;padding-left:10px}
+  .tb-name{max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seg-format{margin-left:10px}
+  .wc{width:40px}
+  .sheet{max-width:640px}
+  .drop-core{padding:42px 56px 36px}        /* 左侧给直排钤印留位 */
+  .drop-core h1{font-size:27px}
+  .rules{inset:46px 44px}
+  .vwrap{left:18px}
+  .filecard{flex-wrap:wrap}
+  .fmain{flex:1 1 240px}
+  .facts{width:100%;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);justify-content:flex-end}
+  .mlist li{grid-template-columns:18px 30px 1fr 64px 28px;padding:8px 12px;gap:8px}
+  .list-foot{gap:10px}
+  .res-path{flex-basis:100%;order:5;margin-left:32px}  /* 路径独占一行 */
+  .res-acts{margin-left:0}
+  .actionbar{height:58px}
+  .btn.lg{height:38px;padding:0 16px}
+  #btnMerge{padding:0 10px;font-size:12.5px}
+  .drawer{width:min(402px,100%)}
+  .modal{width:min(482px,calc(100% - 28px));padding:18px 18px 15px}
+  .history{padding:0 18px}
+}
+
+/* —— 矮窗档：视口高 ≤640（预览浏览器高度 ≈ 应用窗口高度） —— */
+@media (max-height:640px){
+  html{--tbh:40px}
+  .desk{padding:14px 16px 96px}
+  .win{height:calc(100vh - 110px);min-height:470px}
+  .drop-core{padding:32px 40px 26px}
+  .drop-core h1{font-size:26px}
+  .caps{margin-top:14px;padding-top:12px}
+  .rules{inset:40px 40px}
+  .recent{margin-top:16px}
+  .feed{min-height:86px;padding:10px 18px 11px}
+  .actionbar{height:52px}
+  .h-head{height:36px}
+  .rlist{max-height:118px}
+  .demo-bar{bottom:10px;padding:7px 12px}
+}
+
+/* —— 演示用窄窗预览：压容器宽度 → 触发上面两档 container query —— */
+.np .frame{width:min(900px,100%)}
+
+/* ========== 16. 动效克制条款 ========== */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+<div class="desk">
+  <div class="frame">
+  <!-- ==================== 应用窗口 ==================== -->
+  <div class="win" id="win" data-stage="empty">
+
+    <!-- 顶栏 -->
+    <div class="titlebar">
+      <div class="tb-brand">
+        <span class="tb-seal">梓</span>
+        <span class="tb-name">MarkdownToWord</span>
+        <span class="tb-ver">v2.0.0</span>
+      </div>
+      <div class="seg seg-format" role="group" aria-label="输出格式">
+        <button class="on"><b style="font-family:var(--font-display)">W</b>Word</button>
+        <button><b style="font-family:var(--font-display)">P</b>PDF</button>
+      </div>
+      <div class="wc-group">
+        <button class="icon-btn" id="btnGear" title="设置" style="margin-right:10px">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 6h8.6M17.4 6H20M4 12h1.6M10.4 12H20M4 18h10.6M19.2 18H20"/><circle cx="15" cy="6" r="2.2"/><circle cx="8" cy="12" r="2.2"/><circle cx="17" cy="18" r="2.2"/></svg>
+        </button>
+        <button class="wc" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14"/></svg></button>
+        <button class="wc" title="最大化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
+        <button class="wc close" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+
+    <!-- 内容区 -->
+    <div class="content">
+
+      <div class="stage-wrap">
+        <!-- ▩ 空态 -->
+        <section class="pane pane-empty" aria-label="空状态">
+          <div class="sheet" id="dropSheet">
+            <span class="cm tl"></span><span class="cm tr"></span><span class="cm bl"></span><span class="cm br"></span>
+            <div class="rules"></div>
+            <div class="vwrap" aria-hidden="true">
+              <span class="vtext">落笔 · 排版 · 成书</span>
+              <span class="vseal">梓</span>
+            </div>
+            <div class="drop-core">
+              <span class="drop-kicker">.MD&nbsp;/&nbsp;.MARKDOWN</span>
+              <h1>拖入 Markdown 文件</h1>
+              <p class="drop-sub">松手即加入队列，也可以一次选择多个文件</p>
+              <button class="btn solid" id="btnPick" style="margin-top:6px">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/><path d="M12 10.6v4.6M9.7 12.9h4.6"/></svg>
+                选择文件
+              </button>
+              <div class="caps">
+                <span class="cap"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 12h16M12 5v14"/></svg>表格</span>
+                <span class="cap"><b>&Sigma;</b>数学公式</span>
+                <span class="cap"><svg class="ic" viewBox="0 0 24 24"><path d="m9 8.5-4 3.5 4 3.5M15 8.5l4 3.5-4 3.5"/></svg>代码高亮</span>
+                <span class="cap"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="5" rx="1"/><rect x="14" y="15" width="6" height="5" rx="1"/><path d="M7 9v4a2 2 0 0 0 2 2h5"/></svg>Mermaid 图表</span>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ▩ 历史记录 · 常驻可折叠区（空态默认展开 / 有文件默认收起 / 无记录不渲染） -->
+        <section class="history" id="history" data-open="true" aria-label="最近转换">
+          <header class="h-head">
+            <button class="h-toggle" id="histToggle" aria-expanded="true">
+              <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></svg>
+              <span class="ph-title">最近转换</span>
+              <span class="h-count" id="histCount">5 条</span>
+            </button>
+            <button class="btn txt sm" id="btnClearRecent">清空记录</button>
+          </header>
+          <div class="h-body"><div>
+            <ul class="rlist" id="recentList">
+              <li class="rrow" data-name="毕业论文_终稿.md">
+                <span class="rico"><svg class="ic" viewBox="0 0 24 24"><path d="M7 3.5h6.8L18.5 8v11.2a1.3 1.3 0 0 1-1.3 1.3H7a1.3 1.3 0 0 1-1.3-1.3V4.8A1.3 1.3 0 0 1 7 3.5Z"/><path d="M13.5 3.8V8.3H18"/></svg></span>
+                <div class="rmain">
+                  <div class="rname">毕业论文_终稿.md</div>
+                  <div class="rmeta"><span class="tag docx">DOCX</span><span class="rtime">今天 14:32</span></div>
+                </div>
+                <div class="rops">
+                  <button class="btn txt acc sm rere">重新转换</button>
+                  <button class="icon-btn" title="打开所在文件夹"><svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/></svg></button>
+                </div>
+              </li>
+              <li class="rrow" data-name="产品需求文档-v2.md">
+                <span class="rico"><svg class="ic" viewBox="0 0 24 24"><path d="M7 3.5h6.8L18.5 8v11.2a1.3 1.3 0 0 1-1.3 1.3H7a1.3 1.3 0 0 1-1.3-1.3V4.8A1.3 1.3 0 0 1 7 3.5Z"/><path d="M13.5 3.8V8.3H18"/></svg></span>
+                <div class="rmain">
+                  <div class="rname">产品需求文档-v2.md</div>
+                  <div class="rmeta"><span class="tag docx">DOCX</span><span class="rtime">昨天 09:15</span></div>
+                </div>
+                <div class="rops">
+                  <button class="btn txt acc sm rere">重新转换</button>
+                  <button class="icon-btn" title="打开所在文件夹"><svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/></svg></button>
+                </div>
+              </li>
+              <li class="rrow" data-name="实验报告_热力学.md">
+                <span class="rico"><svg class="ic" viewBox="0 0 24 24"><path d="M7 3.5h6.8L18.5 8v11.2a1.3 1.3 0 0 1-1.3 1.3H7a1.3 1.3 0 0 1-1.3-1.3V4.8A1.3 1.3 0 0 1 7 3.5Z"/><path d="M13.5 3.8V8.3H18"/></svg></span>
+                <div class="rmain">
+                  <div class="rname">实验报告_热力学.md</div>
+                  <div class="rmeta"><span class="tag pdf">PDF</span><span class="rtime">周六 20:47</span></div>
+                </div>
+                <div class="rops">
+                  <button class="btn txt acc sm rere">重新转换</button>
+                  <button class="icon-btn" title="打开所在文件夹"><svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/></svg></button>
+                </div>
+              </li>
+              <li class="rrow" data-name="团队周会纪要.md">
+                <span class="rico"><svg class="ic" viewBox="0 0 24 24"><path d="M7 3.5h6.8L18.5 8v11.2a1.3 1.3 0 0 1-1.3 1.3H7a1.3 1.3 0 0 1-1.3-1.3V4.8A1.3 1.3 0 0 1 7 3.5Z"/><path d="M13.5 3.8V8.3H18"/></svg></span>
+                <div class="rmain">
+                  <div class="rname">团队周会纪要.md</div>
+                  <div class="rmeta"><span class="tag docx">DOCX</span><span class="rtime">08-21 16:03</span></div>
+                </div>
+                <div class="rops">
+                  <button class="btn txt acc sm rere">重新转换</button>
+                  <button class="icon-btn" title="打开所在文件夹"><svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/></svg></button>
+                </div>
+              </li>
+              <li class="rrow" data-name="读书笔记_《置身事内》.md">
+                <span class="rico"><svg class="ic" viewBox="0 0 24 24"><path d="M7 3.5h6.8L18.5 8v11.2a1.3 1.3 0 0 1-1.3 1.3H7a1.3 1.3 0 0 1-1.3-1.3V4.8A1.3 1.3 0 0 1 7 3.5Z"/><path d="M13.5 3.8V8.3H18"/></svg></span>
+                <div class="rmain">
+                  <div class="rname">读书笔记_《置身事内》.md</div>
+                  <div class="rmeta"><span class="tag docx">DOCX</span><span class="rtime">08-19 11:26</span></div>
+                </div>
+                <div class="rops">
+                  <button class="btn txt acc sm rere">重新转换</button>
+                  <button class="icon-btn" title="打开所在文件夹"><svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/></svg></button>
+                </div>
+              </li>
+            </ul>
+          </div></div>
+        </section>
+
+        <!-- ▩ 单文件态 -->
+        <section class="pane pane-single" aria-label="单文件">
+          <div class="ph">
+            <span class="ph-title">文 稿</span>
+            <span class="ph-sub">已选择 1 个文件</span>
+          </div>
+          <div class="filecard">
+            <span class="fico"><svg class="ic" viewBox="0 0 24 24"><path d="M7 3.5h6.8L18.5 8v11.2a1.3 1.3 0 0 1-1.3 1.3H7a1.3 1.3 0 0 1-1.3-1.3V4.8A1.3 1.3 0 0 1 7 3.5Z"/><path d="M13.5 3.8V8.3H18"/></svg></span>
+            <div class="fmain">
+              <div class="fname">毕业论文_终稿.md</div>
+              <div class="fmeta">86 KB · 1,284 行 · 42 个标题</div>
+              <div class="fchips">
+                <span class="fchip">表格 ×6</span>
+                <span class="fchip">公式 ×9</span>
+                <span class="fchip">Mermaid ×3</span>
+                <span class="fchip">脚注 ×12</span>
+              </div>
+            </div>
+            <div class="facts">
+              <button class="btn ghost sm" id="btnAppend">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/><path d="M12 10.6v4.6M9.7 12.9h4.6"/></svg>
+                追加文件
+              </button>
+              <button class="btn ghost sm">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                预览
+              </button>
+              <button class="btn ghost sm" id="btnRemoveSingle">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M4.5 6.5h15M9.5 6.5V4.8a1.3 1.3 0 0 1 1.3-1.3h2.4a1.3 1.3 0 0 1 1.3 1.3v1.7M6.5 6.5l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12"/><path d="M10 10.5v6M14 10.5v6"/></svg>
+                移除
+              </button>
+            </div>
+          </div>
+          <p class="fhint">将按当前模板与排版设置输出 .docx 文件；输出重名时自动加序号，不覆盖已有文件。</p>
+        </section>
+
+        <!-- ▩ 多文件态 -->
+        <section class="pane pane-multi" aria-label="多文件">
+          <div class="ph">
+            <span class="ph-title">文 稿</span>
+            <span class="ph-sub" id="mCount">已选择 5 个文件 · 共 214 KB</span>
+            <span class="ph-side">
+              <svg class="ic" style="width:13px;height:13px" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg>
+              上下拖动可调整合并顺序
+            </span>
+          </div>
+          <div class="listcard">
+            <ul class="mlist" id="multiList">
+              <li data-kb="48">
+                <span class="grip" title="拖动排序"><svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+                <span class="idx">01</span><span class="mname">第一章_绪论.md</span><span class="msize">48 KB</span>
+                <button class="icon-btn danger mdel" title="移除"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+              </li>
+              <li data-kb="36">
+                <span class="grip" title="拖动排序"><svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+                <span class="idx">02</span><span class="mname">第二章_文献综述.md</span><span class="msize">36 KB</span>
+                <button class="icon-btn danger mdel" title="移除"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+              </li>
+              <li data-kb="52">
+                <span class="grip" title="拖动排序"><svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+                <span class="idx">03</span><span class="mname">第三章_研究方法.md</span><span class="msize">52 KB</span>
+                <button class="icon-btn danger mdel" title="移除"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+              </li>
+              <li data-kb="61">
+                <span class="grip" title="拖动排序"><svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+                <span class="idx">04</span><span class="mname">第四章_实验与分析.md</span><span class="msize">61 KB</span>
+                <button class="icon-btn danger mdel" title="移除"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+              </li>
+              <li data-kb="17">
+                <span class="grip" title="拖动排序"><svg class="ic" style="width:14px;height:14px" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+                <span class="idx">05</span><span class="mname">第五章_结论.md</span><span class="msize">17 KB</span>
+                <button class="icon-btn danger mdel" title="移除"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+              </li>
+            </ul>
+            <div class="list-foot">
+              <span><b>批量转换</b>：每个文件各自输出一份</span>
+              <span><b>合并转换</b>：按当前顺序合成一个文档</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 消息 / 结果区 -->
+      <section class="feed" id="feed" aria-live="polite">
+        <div class="status" id="statusLine"><span class="dot"></span><span id="statusText">就绪 · 等待添加文件</span></div>
+
+        <div class="progress">
+          <div class="p-row">
+            <span class="spin"></span>
+            <span class="p-label">正在转换 第 3 个，共 6 个</span>
+            <span class="p-pct">64%</span>
+            <button class="btn txt sm" id="btnCancel">取消</button>
+          </div>
+          <div class="track"><div class="pfill"></div></div>
+        </div>
+
+        <div class="result">
+          <div class="res-row">
+            <span class="okbadge"><svg class="ic" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5L19.5 7"/></svg></span>
+            <span class="res-title">转换完成 · 成功 6 个，失败 0 个</span>
+            <span class="res-path">D:\Workspace\论文\output\（含 6 个文件）</span>
+            <div class="res-acts">
+              <button class="btn ghost sm">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/></svg>
+                打开所在文件夹
+              </button>
+              <button class="btn solid sm">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M14 4.5h5.5V10M19 5l-7.5 7.5"/><path d="M19.5 13.5V18A1.5 1.5 0 0 1 18 19.5H6A1.5 1.5 0 0 1 4.5 18V6A1.5 1.5 0 0 1 6 4.5h4.5"/></svg>
+                打开文件
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部操作栏 -->
+    <footer class="actionbar">
+      <span class="hint"><span class="kbd">Ctrl</span><span class="kbd">Enter</span>开始转换</span>
+      <div class="ab-side">
+        <button class="btn ghost multi-only" id="btnMerge">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 6h4.2L13 12h6.5M4 18h4.2L13 12"/><path d="M16.5 9.5 19 12l-2.5 2.5"/></svg>
+          合并转换
+        </button>
+        <button class="btn primary lg main" id="btnMain" title="先添加文件">
+          <span class="lbl-single">开始转换</span>
+          <span class="lbl-batch">批量转换</span>
+          <svg class="ic" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M4 12h15M13.5 6.5 19 12l-5.5 5.5"/></svg>
+        </button>
+      </div>
+    </footer>
+
+    <!-- 设置抽屉遮罩 + 抽屉 -->
+    <div class="dscr" id="dscr"></div>
+    <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="设置">
+      <div class="dw-head">
+        <span class="dw-title">设 置</span>
+        <button class="icon-btn" id="dwClose" title="关闭设置">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="dw-scroll">
+
+        <!-- 01 预设 -->
+        <div class="sec">
+          <div class="sec-h"><span class="sec-num">01</span><span class="sec-title">预 设</span><span class="sec-rule"></span></div>
+
+          <div class="row" style="display:block">
+            <div class="row-l" style="margin-bottom:2px">模板预设</div>
+            <div class="tpl-row">
+              <button class="tpl">
+                <svg class="tpl-thumb" viewBox="0 0 60 40" preserveAspectRatio="none">
+                  <rect x="18" y="6" width="24" height="4" rx="1" fill="var(--ink-2)"/>
+                  <rect x="10" y="16" width="40" height="2.5" rx="1" fill="var(--line-2)"/>
+                  <rect x="10" y="22" width="40" height="2.5" rx="1" fill="var(--line-2)"/>
+                  <rect x="10" y="28" width="28" height="2.5" rx="1" fill="var(--line-2)"/>
+                </svg>
+                <span class="tpl-name">默认</span><span class="tpl-desc">通用文档排版</span>
+              </button>
+              <button class="tpl on">
+                <svg class="tpl-thumb" viewBox="0 0 60 40" preserveAspectRatio="none">
+                  <rect x="14" y="5" width="32" height="3.5" rx="1" fill="var(--ink-2)"/>
+                  <rect x="10" y="13" width="18" height="2.2" rx="1" fill="var(--line-2)"/>
+                  <rect x="10" y="18" width="18" height="2.2" rx="1" fill="var(--line-2)"/>
+                  <rect x="10" y="23" width="18" height="2.2" rx="1" fill="var(--line-2)"/>
+                  <rect x="32" y="13" width="18" height="2.2" rx="1" fill="var(--line-2)"/>
+                  <rect x="32" y="18" width="18" height="2.2" rx="1" fill="var(--line-2)"/>
+                  <rect x="32" y="23" width="18" height="2.2" rx="1" fill="var(--line-2)"/>
+                  <rect x="10" y="31" width="40" height="2.2" rx="1" fill="var(--line-2)"/>
+                </svg>
+                <span class="tpl-name">学术论文</span><span class="tpl-desc">宋体 · 目录 · 编号</span>
+              </button>
+              <button class="tpl">
+                <svg class="tpl-thumb" viewBox="0 0 60 40" preserveAspectRatio="none">
+                  <rect x="6" y="5" width="48" height="8" rx="1.5" fill="var(--acc)" opacity=".88"/>
+                  <rect x="10" y="8" width="20" height="2.5" rx="1" fill="#fff" opacity=".92"/>
+                  <rect x="10" y="19" width="3" height="3" fill="var(--acc)" opacity=".7"/>
+                  <rect x="16" y="19.5" width="30" height="2.2" rx="1" fill="var(--line-2)"/>
+                  <rect x="10" y="26" width="3" height="3" fill="var(--acc)" opacity=".7"/>
+                  <rect x="16" y="26.5" width="24" height="2.2" rx="1" fill="var(--line-2)"/>
+                </svg>
+                <span class="tpl-name">商务简报</span><span class="tpl-desc">黑体 · 强调色块</span>
+              </button>
+            </div>
+          </div>
+          <p class="scope-note">预设包含「页面 · 文字 · 编号与目录」三组；不含页眉页脚与输出。</p>
+          <div class="mgmt">
+            <button class="btn ghost sm">另存为预设</button>
+            <button class="btn ghost sm">导入预设</button>
+            <button class="btn ghost sm">导出预设</button>
+          </div>
+        </div>
+
+        <!-- 02 页面 -->
+        <div class="sec">
+          <div class="sec-h"><span class="sec-num">02</span><span class="sec-title">页 面</span><span class="sec-rule"></span></div>
+          <div class="row">
+            <span class="row-l">纸张</span>
+            <span class="seg sm" role="group" aria-label="纸张">
+              <button class="on">A4</button><button>A3</button><button>A5</button><button>Letter</button><button>Legal</button>
+            </span>
+          </div>
+          <div class="row">
+            <span class="row-l">方向</span>
+            <span class="seg sm" role="group" aria-label="方向">
+              <button class="on">
+                <svg class="ic" style="width:12px;height:12px" viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="16" rx="1.5"/></svg>纵向
+              </button>
+              <button>
+                <svg class="ic" style="width:12px;height:12px" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="10" rx="1.5"/></svg>横向
+              </button>
+            </span>
+          </div>
+          <div class="row" style="display:block;padding-bottom:2px">
+            <div class="row-l" style="margin-bottom:8px">四边边距（mm）</div>
+            <div class="mm-grid">
+              <div class="mm-cell"><label>上</label><div class="mm-in"><input class="tin" type="number" value="25"><span>mm</span></div></div>
+              <div class="mm-cell"><label>下</label><div class="mm-in"><input class="tin" type="number" value="25"><span>mm</span></div></div>
+              <div class="mm-cell"><label>左</label><div class="mm-in"><input class="tin" type="number" value="32"><span>mm</span></div></div>
+              <div class="mm-cell"><label>右</label><div class="mm-in"><input class="tin" type="number" value="32"><span>mm</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 03 文字 -->
+        <div class="sec">
+          <div class="sec-h"><span class="sec-num">03</span><span class="sec-title">文 字</span><span class="sec-rule"></span></div>
+          <div class="row">
+            <span class="row-l">中文字体</span>
+            <input class="tin" list="dl-font-ea" value="微软雅黑" style="width:150px" aria-label="中文字体">
+            <datalist id="dl-font-ea">
+              <option>微软雅黑</option><option>宋体</option><option>楷体</option><option>仿宋</option><option>黑体</option><option>思源宋体</option>
+            </datalist>
+          </div>
+          <div class="row">
+            <span class="row-l">西文字体</span>
+            <input class="tin" list="dl-font-ascii" value="Calibri" style="width:150px" aria-label="西文字体">
+            <datalist id="dl-font-ascii">
+              <option>Calibri</option><option>Times New Roman</option><option>Cambria</option><option>Georgia</option><option>Arial</option>
+            </datalist>
+          </div>
+          <div class="row">
+            <span class="row-l">正文字号</span>
+            <span class="stepper" data-step="pt">
+              <button data-d="-1" aria-label="减小字号">−</button>
+              <output id="ptVal">12 pt</output>
+              <button data-d="1" aria-label="增大字号">+</button>
+            </span>
+          </div>
+          <div class="row">
+            <span class="row-l">行距倍数</span>
+            <span class="row-r">
+              <input type="range" id="lhRange" min="1" max="2" step="0.05" value="1.5" aria-label="行距倍数">
+              <output id="lhVal" style="font-family:var(--font-mono);font-size:12.5px;width:34px;text-align:right">1.5</output>
+            </span>
+          </div>
+          <div class="row">
+            <span class="row-l">标题字号档位</span>
+            <span class="seg sm" role="group" aria-label="标题字号档位">
+              <button>紧凑</button><button class="on">标准</button><button>舒展</button>
+            </span>
+          </div>
+          <div class="row">
+            <span class="row-l">标题间距档位</span>
+            <span class="seg sm" role="group" aria-label="标题间距档位">
+              <button>紧凑</button><button class="on">标准</button><button>舒展</button>
+            </span>
+          </div>
+          <div class="sub-label">段 落</div>
+          <div class="sw-row"><span><div class="row-l">首行缩进</div><div class="row-sub">正文段落首行缩进 2 字符</div></span><button class="switch" role="switch" aria-checked="true" aria-label="首行缩进"></button></div>
+          <div class="row">
+            <span class="row-l">对齐方式</span>
+            <span class="seg sm" role="group" aria-label="对齐方式">
+              <button>左对齐</button><button class="on">两端对齐</button>
+            </span>
+          </div>
+        </div>
+
+        <!-- 04 页眉 · 页脚（不入预设） -->
+        <div class="sec">
+          <div class="sec-h"><span class="sec-num">04</span><span class="sec-title">页眉 · 页脚</span><span class="scope-tag">不入预设</span><span class="sec-rule"></span></div>
+          <div class="row">
+            <span class="row-l">页眉模式</span>
+            <span class="seg sm" role="group" aria-label="页眉模式" data-cond="#hfCond">
+              <button data-val="default">默认</button><button class="on" data-val="custom">自定义</button><button data-val="none">无</button>
+            </span>
+          </div>
+          <div class="cond show" id="hfCond"><div><div class="cond-in">
+            <div class="row" style="display:block;padding-top:2px">
+              <div class="row-l" style="margin-bottom:6px">页眉文字</div>
+              <input class="tin" style="width:100%" value="青崖大学文学院" placeholder="显示在页眉的文字">
+            </div>
+            <div class="row">
+              <span class="row-l">页眉图片</span>
+              <span class="row-r">
+                <span class="path-chip">D:\assets\logo.png</span>
+                <button class="btn ghost sm">选择图片…</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="row-l">页眉布局</span>
+              <span class="seg sm" role="group" aria-label="页眉布局">
+                <button class="on">居中</button><button>左右分栏</button>
+              </span>
+            </div>
+            <div class="sw-row" style="padding-bottom:2px"><span><div class="row-l">自定义页脚</div><div class="row-sub">显示「第 X 页 / 共 Y 页」；仅自定义模式生效</div></span><button class="switch" role="switch" aria-checked="true" aria-label="自定义页脚"></button></div>
+          </div></div></div>
+          <p class="scope-note">默认模式：页眉居中显示文档标题，页脚固定显示页码，不受开关控制。</p>
+        </div>
+
+        <!-- 05 编号与目录 -->
+        <div class="sec">
+          <div class="sec-h"><span class="sec-num">05</span><span class="sec-title">编号与目录</span><span class="sec-rule"></span></div>
+          <div class="sw-row"><span><div class="row-l">章节编号</div><div class="row-sub">「第 1 章 / 1.1」自动编号</div></span><button class="switch" role="switch" aria-checked="true" aria-label="章节编号"></button></div>
+          <div class="sw-row"><span><div class="row-l">题注编号</div><div class="row-sub">图表下方「图 1-1」样式编号</div></span><button class="switch" role="switch" aria-checked="false" aria-label="题注编号"></button></div>
+          <div class="sw-row"><span><div class="row-l">公式编号</div><div class="row-sub">公式右侧「(1)」式编号</div></span><button class="switch" role="switch" aria-checked="false" aria-label="公式编号"></button></div>
+          <div class="sw-row"><span><div class="row-l">自动目录</div><div class="row-sub">在文首生成目录页</div></span><button class="switch" role="switch" aria-checked="true" aria-label="自动目录"></button></div>
+          <div class="sw-row"><span><div class="row-l">H1 前分页</div><div class="row-sub">每个一级标题另起一页</div></span><button class="switch" role="switch" aria-checked="false" aria-label="H1 前分页"></button></div>
+        </div>
+
+        <!-- 06 输出 -->
+        <div class="sec">
+          <div class="sec-h"><span class="sec-num">06</span><span class="sec-title">输 出</span><span class="sec-rule"></span></div>
+          <div class="row">
+            <span><div class="row-l">输出目录</div><div class="row-sub">留空则保存到源文件所在目录</div></span>
+            <span class="row-r">
+              <span class="path-chip">D:\Workspace\论文\output</span>
+              <button class="btn ghost sm">更改…</button>
+            </span>
+          </div>
+          <div class="row">
+            <span class="row-l">导出后行为</span>
+            <span class="seg sm" role="group" aria-label="导出后行为">
+              <button>无操作</button><button class="on">打开所在文件夹</button><button>打开文件</button>
+            </span>
+          </div>
+          <div class="row" style="display:block">
+            <div class="row-l" style="margin-bottom:8px">PDF 自定义 CSS <span class="scope-tag">仅 PDF</span></div>
+            <textarea class="ta" spellcheck="false">/* 仅作用于 PDF 输出 */
+body { line-height: 1.7; }
+h1 { page-break-before: auto; }</textarea>
+          </div>
+        </div>
+
+        <!-- 07 应用 -->
+        <div class="sec">
+          <div class="sec-h"><span class="sec-num">07</span><span class="sec-title">应 用</span><span class="sec-rule"></span></div>
+          <div class="row">
+            <span class="row-l">主题</span>
+            <span class="seg sm" data-bind="theme" role="group" aria-label="主题">
+              <button class="on">跟随系统</button>
+              <button data-theme-val="light">浅色</button>
+              <button data-theme-val="dark">深色</button>
+            </span>
+          </div>
+          <div class="row">
+            <span class="row-l">界面语言</span>
+            <span class="seg sm" role="group" aria-label="语言">
+              <button class="on">中文</button><button>EN</button><button>日</button>
+            </span>
+          </div>
+        </div>
+
+      </div>
+      <div class="dw-foot">
+        <button class="btn txt sm">恢复默认</button>
+        <span style="flex:1"></span>
+        <button class="btn solid sm" id="dwDone">完成</button>
+      </div>
+    </aside>
+
+    <!-- 完成弹窗 -->
+    <div class="mlayer" id="mlayer">
+      <div class="mscrim" id="mscrim"></div>
+      <div class="modal" role="alertdialog" aria-label="转换完成">
+        <button class="icon-btn m-x" id="mClose" title="关闭">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+        <div class="m-head">
+          <span class="stamp">梓</span>
+          <div>
+            <h3>转换完成</h3>
+            <p>毕业论文_终稿.docx 已生成</p>
+          </div>
+        </div>
+        <div class="m-path">
+          <span class="ptxt" id="mPath">D:\Workspace\论文\output\毕业论文_终稿.docx</span>
+          <button class="icon-btn" id="copyPath" title="复制路径">
+            <svg class="ic i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="10.5" height="10.5" rx="1.5"/><path d="M5.5 14.5A1.5 1.5 0 0 1 4 13V5.5A1.5 1.5 0 0 1 5.5 4H13a1.5 1.5 0 0 1 1.5 1.5"/></svg>
+            <svg class="ic i-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5L19.5 7"/></svg>
+          </button>
+        </div>
+        <div class="m-foot">
+          <button class="btn ghost sm">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/></svg>
+            打开所在文件夹
+          </button>
+          <button class="btn primary sm">打开文件</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.win -->
+  </div><!-- /.frame -->
+</div><!-- /.desk -->
+
+<!-- ==================== 样稿演示控制条（非应用本体） ==================== -->
+<div class="demo-bar">
+  <span class="db-cap">样稿演示</span>
+  <div class="db-group" id="dbStage">
+    <button data-set="empty" class="on">空态</button>
+    <button data-set="single">单文件</button>
+    <button data-set="multi">多文件</button>
+  </div>
+  <div class="db-group" id="dbScene">
+    <button data-scene="prog">进行中</button>
+    <button data-scene="done">已完成</button>
+    <button data-act="modal">完成弹窗</button>
+    <button data-act="drawer">设置抽屉</button>
+    <button data-act="nohist">无记录</button>
+  </div>
+  <div class="db-group"><button id="dbNarrow">窄窗预览</button></div>
+  <button id="dbTheme">深色</button>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var $=function(s){return document.querySelector(s)};
+  var $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s))};
+  var win=$('#win'), feed=$('#feed'), statusLine=$('#statusLine'), statusText=$('#statusText');
+  var btnMain=$('#btnMain'), drawer=$('#drawer'), dscr=$('#dscr'), mlayer=$('#mlayer');
+
+  /* ---------- 状态行 ---------- */
+  function setStatus(text,tone){
+    statusText.textContent=text;
+    statusLine.className='status'+(tone?' '+tone:'');
+  }
+
+  /* ---------- 舞台三态 ---------- */
+  function setStage(s){
+    win.dataset.stage=s;
+    btnMain.disabled=(s==='empty');
+    btnMain.title=(s==='empty')?'先添加文件':'';
+    $$('#dbStage button').forEach(function(b){b.classList.toggle('on',b.dataset.set===s)});
+    /* 历史折叠条默认态：空态展开，有文件收起 */
+    var open=(s==='empty');
+    $('#history').dataset.open=open?'true':'false';
+    $('#histToggle').setAttribute('aria-expanded',open?'true':'false');
+  }
+  $$('#dbStage button').forEach(function(b){
+    b.addEventListener('click',function(){setStage(b.dataset.set)});
+  });
+
+  /* ---------- 演示场景 ---------- */
+  function showScene(name){
+    feed.classList.toggle('has-progress',name==='prog');
+    feed.classList.toggle('has-result',name==='done');
+    if(name==='prog'){setStatus('正在转换 第 3 个，共 6 个','busy')}
+    else if(name==='done'){setStatus('全部完成','ok')}
+    else{setStatus('就绪 · 等待添加文件','')}
+    $$('#dbScene button[data-scene]').forEach(function(b){
+      b.classList.toggle('on',b.dataset.scene===name);
+    });
+  }
+  $$('#dbScene button[data-scene]').forEach(function(b){
+    b.addEventListener('click',function(){showScene(b.dataset.scene)});
+  });
+  $('#dbScene [data-act="modal"]').addEventListener('click',openModal);
+  $('#dbScene [data-act="drawer"]').addEventListener('click',toggleDrawer);
+  $('#btnCancel').addEventListener('click',function(){
+    showScene('idle');setStatus('已取消转换','');
+  });
+
+  /* ---------- 抽屉 ---------- */
+  function openDrawer(){drawer.classList.add('open');dscr.classList.add('open')}
+  function closeDrawer(){drawer.classList.remove('open');dscr.classList.remove('open')}
+  $('#btnGear').addEventListener('click',openDrawer);
+  $('#dwClose').addEventListener('click',closeDrawer);
+  $('#dwDone').addEventListener('click',closeDrawer);
+  dscr.addEventListener('click',closeDrawer);
+  function toggleDrawer(){drawer.classList.contains('open')?closeDrawer():openDrawer()}
+
+  /* ---------- 弹窗 ---------- */
+  function openModal(){mlayer.classList.add('open')}
+  function closeModal(){mlayer.classList.remove('open')}
+  $('#mClose').addEventListener('click',closeModal);
+  $('#mscrim').addEventListener('click',closeModal);
+
+  /* 复制路径 */
+  $('#copyPath').addEventListener('click',function(){
+    var btn=this, txt=$('#mPath').textContent.trim();
+    try{
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt)}
+    }catch(e){/* 样稿环境忽略 */}
+    btn.classList.add('copied');btn.title='已复制';
+    setTimeout(function(){btn.classList.remove('copied');btn.title='复制路径'},1400);
+  });
+
+  /* ---------- Esc 关闭 ---------- */
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+      if(mlayer.classList.contains('open')){closeModal()}
+      else if(drawer.classList.contains('open')){closeDrawer()}
+    }
+    /* Ctrl+Enter 快捷键：主按钮脉冲并进入进行中场景 */
+    if((e.ctrlKey||e.metaKey)&&e.key==='Enter'&&!btnMain.disabled){
+      btnMain.classList.remove('pulse');void btnMain.offsetWidth;btnMain.classList.add('pulse');
+      showScene('prog');
+    }
+  });
+
+  /* ---------- 主题 ---------- */
+  function applyTheme(t){
+    document.documentElement.dataset.theme=t;
+    $('#dbTheme').textContent=(t==='dark')?'浅色':'深色';
+  }
+  $('#dbTheme').addEventListener('click',function(){
+    applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+  });
+  /* 窄窗预览：压窗框到 900px，触发 container query 断点 */
+  $('#dbNarrow').addEventListener('click',function(){
+    var on=document.body.classList.toggle('np');
+    this.classList.toggle('on',on);
+  });
+
+  /* ---------- 分段选择器（通用） ---------- */
+  document.addEventListener('click',function(e){
+    var b=e.target.closest('.seg>button');
+    if(!b)return;
+    var seg=b.parentElement;
+    Array.prototype.forEach.call(seg.children,function(c){c.classList.remove('on')});
+    b.classList.add('on');
+    if(seg.dataset.bind==='theme'&&b.dataset.themeVal&&b.dataset.themeVal!=='system'){
+      applyTheme(b.dataset.themeVal);
+    }
+    /* 模式 + 条件字段：data-cond 指向条件容器，仅 data-val="custom" 时展开 */
+    if(seg.dataset.cond){
+      $(seg.dataset.cond).classList.toggle('show',b.dataset.val==='custom');
+    }
+  });
+
+  /* ---------- 开关 ---------- */
+  $$('.switch').forEach(function(sw){
+    sw.addEventListener('click',function(){
+      sw.setAttribute('aria-checked',sw.getAttribute('aria-checked')==='true'?'false':'true');
+    });
+  });
+
+  /* ---------- 字号步进器 ---------- */
+  $$('.stepper').forEach(function(st){
+    var out=st.querySelector('output'), v=12;
+    st.querySelectorAll('button').forEach(function(b){
+      b.addEventListener('click',function(){
+        v=Math.min(24,Math.max(9,v+parseFloat(b.dataset.d)*0.5));
+        out.textContent=(v%1?v.toFixed(1):v)+' pt';
+      });
+    });
+  });
+  var lh=$('#lhRange');
+  lh.addEventListener('input',function(){
+    $('#lhVal').textContent=(Math.round(parseFloat(lh.value)*100)/100).toString();
+  });
+
+  /* ---------- 历史记录 · 常驻可折叠区 ---------- */
+  var histDefault=$('#recentList').innerHTML;
+  $('#histToggle').addEventListener('click',function(){
+    var open=$('#history').dataset.open==='true';
+    $('#history').dataset.open=open?'false':'true';
+    this.setAttribute('aria-expanded',open?'false':'true');
+  });
+  $('#recentList').addEventListener('click',function(e){
+    var re=e.target.closest('.rere');
+    if(re){
+      setStage('single');
+      setStatus('已加入队列：'+re.closest('.rrow').dataset.name);
+    }
+  });
+  $('#btnClearRecent').addEventListener('click',function(){
+    $('#recentList').innerHTML='';
+    $('#history').hidden=true;
+  });
+  $('#dbScene [data-act="nohist"]').addEventListener('click',function(){
+    var hidden=$('#history').hidden;
+    if(hidden){
+      $('#recentList').innerHTML=histDefault;
+      $('#history').hidden=false;this.classList.remove('on');
+    }else{
+      $('#recentList').innerHTML='';
+      $('#history').hidden=true;this.classList.add('on');
+    }
+  });
+
+  /* ---------- 单文件态动作 ---------- */
+  $('#btnRemoveSingle').addEventListener('click',function(){setStage('empty')});
+  $('#btnAppend').addEventListener('click',function(){
+    setStage('multi');setStatus('已添加 1 个文件');
+  });
+
+  /* ---------- 多文件态：移除 + 计数 ---------- */
+  var mlist=$('#multiList');
+  function refreshMulti(){
+    var lis=Array.prototype.slice.call(mlist.querySelectorAll('li'));
+    var kb=0;
+    lis.forEach(function(li,i){
+      li.querySelector('.idx').textContent=String(i+1).padStart(2,'0');
+      kb+=parseInt(li.dataset.kb,10)||0;
+    });
+    $('#mCount').textContent='已选择 '+lis.length+' 个文件 · 共 '+kb+' KB';
+    if(lis.length===0)setStage('empty');
+  }
+  mlist.addEventListener('click',function(e){
+    var del=e.target.closest('.mdel');
+    if(del){del.closest('li').remove();refreshMulti()}
+  });
+
+  /* ---------- 多文件态：拖拽排序 ---------- */
+  var dragLi=null;
+  Array.prototype.forEach.call(mlist.querySelectorAll('li'),function(li){
+    li.setAttribute('draggable','true');
+    li.addEventListener('dragstart',function(){
+      dragLi=li;
+      requestAnimationFrame(function(){li.classList.add('dragging')});
+    });
+    li.addEventListener('dragend',function(){
+      li.classList.remove('dragging');dragLi=null;refreshMulti();
+    });
+  });
+  mlist.addEventListener('dragover',function(e){
+    e.preventDefault();
+    if(!dragLi)return;
+    var others=Array.prototype.filter.call(mlist.querySelectorAll('li'),function(li){return li!==dragLi});
+    var next=null;
+    for(var i=0;i<others.length;i++){
+      var r=others[i].getBoundingClientRect();
+      if(e.clientY<r.top+r.height/2){next=others[i];break}
+    }
+    if(next){mlist.insertBefore(dragLi,next)}else{mlist.appendChild(dragLi)}
+  });
+
+  /* ---------- 初始化 ---------- */
+  setStage('empty');
+  showScene('idle');
+})();
+</script>
+</body>
+</html>
