@@ -143,7 +143,10 @@ export async function run() {
     // 注意 customPresets 条目须字段齐全:main 侧逐条 sanitize 会补默认值,而
     // renderer mergeSettingsWithDefaults 对 customPresets 整体透传不做条目级兜底
     // (语义差异记录:renderer 只防「缺顶层字段」,不重校验条目内容)。
-    const fullTypography = { fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 14, lineSpacing: 2.0, firstLineIndent: false, align: "left", headingNumbering: false, captionNumbering: false };
+    // F3:typography 须含 headingScale/headingSpacing——customPresets 条目 main 侧
+    // 逐字段 sanitize 会补默认值,renderer 整体透传不补(见下方语义差异注释),
+    // 条目缺新字段时双侧产出即失一致,故「完整合法文件」夹具必须字段齐全
+    const fullTypography = { fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 14, lineSpacing: 2.0, firstLineIndent: false, align: "left", headingNumbering: false, captionNumbering: false, headingScale: "standard", headingSpacing: "standard" };
     const fullPageSetup = { paper: "Letter", orientation: "landscape", marginTop: 10, marginBottom: 20, marginLeft: 30, marginRight: 40 };
     const fullRaw = {
       ...legacyRaw,

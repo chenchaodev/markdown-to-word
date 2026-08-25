@@ -480,6 +480,30 @@
                 <p id="lineSpacingError" class="field-error hidden"></p>
               </div>
             </div>
+
+            <!-- F3 标题排版粒度:标题字号/间距档位(三档;映射表单源 core/settings/typography.ts) -->
+            <div class="drawer-cols">
+              <div class="setting-field">
+                <label class="setting-label" for="headingScaleSelect">
+                  <span data-i18n="settings.headingScale">标题字号</span><span class="setting-label-hint" data-i18n="settings.headingScaleHint">(相对正文)</span>
+                </label>
+                <select id="headingScaleSelect" class="setting-select">
+                  <option value="compact" data-i18n="settings.tierCompact">紧凑</option>
+                  <option value="standard" data-i18n="settings.tierStandard">标准</option>
+                  <option value="spacious" data-i18n="settings.tierSpacious">舒展</option>
+                </select>
+              </div>
+              <div class="setting-field">
+                <label class="setting-label" for="headingSpacingSelect">
+                  <span data-i18n="settings.headingSpacing">标题间距</span><span class="setting-label-hint" data-i18n="settings.headingSpacingHint">(段前/段后)</span>
+                </label>
+                <select id="headingSpacingSelect" class="setting-select">
+                  <option value="compact" data-i18n="settings.tierCompact">紧凑</option>
+                  <option value="standard" data-i18n="settings.tierStandard">标准</option>
+                  <option value="spacious" data-i18n="settings.tierSpacious">舒展</option>
+                </select>
+              </div>
+            </div>
           </section>
 
           <!-- ── L3 高级(默认折叠):边距 / 分页目录 / 段落与编号开关 / 模板管理 ── -->

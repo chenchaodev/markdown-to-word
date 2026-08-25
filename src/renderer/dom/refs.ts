@@ -72,6 +72,13 @@ export const bodySizePtInput = document.getElementById(
 export const lineSpacingInput = document.getElementById(
   "lineSpacing",
 ) as HTMLInputElement;
+// F3 标题排版粒度:标题字号/间距档位 select(三档,选项静态于 index.html)
+export const headingScaleSelect = document.getElementById(
+  "headingScaleSelect",
+) as HTMLSelectElement;
+export const headingSpacingSelect = document.getElementById(
+  "headingSpacingSelect",
+) as HTMLSelectElement;
 export const firstLineIndentInput = document.getElementById(
   "firstLineIndent",
 ) as HTMLInputElement;

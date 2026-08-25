@@ -8,7 +8,11 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
-import type { TypographySettings } from "../settings/typography.js";
+import {
+  headingFontSizePt,
+  headingSpacingPt,
+  type TypographySettings,
+} from "../settings/typography.js";
 import type { PageSetup } from "../settings/settings-defaults.js";
 import type { ConvertWarning } from "../i18n.js";
 import { escapeHtml } from "../util/utils.js";
@@ -17,6 +21,30 @@ import { escapeHtml } from "../util/utils.js";
 export const PDF_FOOTER_TEMPLATE =
   '<div style="font-size:9px;color:#888;width:100%;text-align:center;">' +
   '第 <span class="pageNumber"></span> 页 / 共 <span class="totalPages"></span> 页</div>';
+
+/**
+ * h1-h6 规则生成(F3):字号/段前段后间距由 headingScale/headingSpacing 档位经
+ * core/settings/typography.ts 纯函数换算(与 docx 侧同源,双格式观感对齐);
+ * 装饰性样式固定:h1/h2 下边线 + padding-bottom,h5/h6 弱化灰。
+ */
+function buildHeadingRules(typography: TypographySettings): string {
+  const rules: string[] = [];
+  for (let level = 1; level <= 6; level++) {
+    const size = headingFontSizePt(typography.bodySizePt, typography.headingScale, level);
+    const spacing = headingSpacingPt(typography.headingSpacing, level);
+    const border =
+      level === 1
+        ? " border-bottom: 2px solid #d0d7de; padding-bottom: 8px;"
+        : level === 2
+          ? " border-bottom: 1px solid #d0d7de; padding-bottom: 6px;"
+          : "";
+    const color = level >= 5 ? " color: #57606a;" : "";
+    rules.push(
+      `  h${level} { font-size: ${size}pt; margin: ${spacing.before}pt 0 ${spacing.after}pt;${border}${color} }`,
+    );
+  }
+  return rules.join("\n");
+}
 
 /** 转换矩阵与 docx 路线对齐的文档模板样式(分页、中文字体、代码高亮、表格、跨页避让)。
  *  @page 尺寸/边距由 pageSetup 生成(margin 顺序 top right bottom left);
@@ -52,9 +80,12 @@ export function buildTemplateCss(
     orphans: 2; widows: 2;
   }
 
-  /* 标题节奏:h1/h2 带下边线锚定章节,3-6 级靠字号与间距区分;
+  /* 标题节奏(F3 标题排版粒度):字号/段前段后间距由 headingScale/headingSpacing
+     档位参数化,与 docx 侧同源换算(core/settings/typography.ts 纯函数,standard 档
+     = 升级前固定值);h1/h2 下边线锚定章节,3-6 级靠字号与间距区分;
      标题行高收紧,且不与后续内容分离(break-after: avoid,避免孤立标题) */
   h1, h2, h3, h4, h5, h6 { line-height: 1.3; break-after: avoid; }
+${buildHeadingRules(typography)}
   body > :first-child { margin-top: 0; } /* 文档首元素不产生多余顶距 */
 
   /* 封面页:居中大标题 + 灰色作者/日期,顶部留白视觉居中 */
@@ -70,11 +101,6 @@ export function buildTemplateCss(
   .toc-l2 { margin-left: 1.5em; }
   .toc-l3 { margin-left: 3em; }
   .toc a { color: inherit; text-decoration: none; }
-  h1 { font-size: 22pt; border-bottom: 2px solid #d0d7de; padding-bottom: 8px; margin: 0 0 16px; }
-  h2 { font-size: 17pt; border-bottom: 1px solid #d0d7de; padding-bottom: 6px; margin: 24px 0 12px; }
-  h3 { font-size: 14pt; margin: 20px 0 10px; }
-  h4 { font-size: 12pt; margin: 16px 0 8px; }
-  h5, h6 { font-size: 11pt; margin: 14px 0 8px; color: #57606a; }
 
   p { margin: 0 0 10px; }
   a { color: #0969da; text-decoration: none; }

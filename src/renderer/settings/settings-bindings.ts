@@ -37,6 +37,8 @@ import {
   fontEastAsiaInput,
    formatInputs,
    headingNumberingInput,
+   headingScaleSelect,
+   headingSpacingSelect,
   languageSelect,
   lineSpacingError,
   lineSpacingInput,
@@ -226,6 +228,19 @@ export function bindSettingsEvents(): void {
   lineSpacingInput.addEventListener("change", () =>
     handleTypographyNumberChange("lineSpacing", LINE_SPACING_MIN, LINE_SPACING_MAX),
   );
+
+  // F3 标题排版粒度:标题字号/间距档位(三档 select,变更即时生效并持久化)
+  headingScaleSelect.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.typography.headingScale = headingScaleSelect.value as AppSettings["typography"]["headingScale"];
+    persistTypography();
+  });
+
+  headingSpacingSelect.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.typography.headingSpacing = headingSpacingSelect.value as AppSettings["typography"]["headingSpacing"];
+    persistTypography();
+  });
 
   firstLineIndentInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;

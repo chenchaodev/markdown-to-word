@@ -20,7 +20,11 @@ import { createJsonWriter } from "./atomic-json.js";
 import type { PageSetup } from "../../core/settings/settings-defaults.js";
 import { DEFAULT_PAGE_SETUP } from "../../core/settings/settings-defaults.js";
 import type { TypographySettings } from "../../core/settings/typography.js";
-import { DEFAULT_TYPOGRAPHY } from "../../core/settings/typography.js";
+import {
+  DEFAULT_TYPOGRAPHY,
+  HEADING_SCALE_TIERS,
+  HEADING_SPACING_TIERS,
+} from "../../core/settings/typography.js";
 import {
   DEFAULT_SETTINGS,
   MARGIN_MIN_MM,
@@ -384,5 +388,8 @@ function sanitizeTypography(value: unknown): TypographySettings {
   if (isOneOf(src.align, ALIGNS)) out.align = src.align;
   if (typeof src.headingNumbering === "boolean") out.headingNumbering = src.headingNumbering;
   if (typeof src.captionNumbering === "boolean") out.captionNumbering = src.captionNumbering;
+  // F3 标题排版粒度:档位枚举,非法(或缺失,旧 settings.json)→ 默认 standard 档
+  if (isOneOf(src.headingScale, HEADING_SCALE_TIERS)) out.headingScale = src.headingScale;
+  if (isOneOf(src.headingSpacing, HEADING_SPACING_TIERS)) out.headingSpacing = src.headingSpacing;
   return out;
 }

@@ -93,11 +93,12 @@ export interface HeadingLabelInfo {
   slug: string;
 }
 
-/** 行内 run 样式(沿父子链累积传递) */
+/** 行内 run 样式(沿父子链累积传递;size 为 half-points,F3 标题字号经此下发) */
 export interface RunStyle {
   italics?: boolean;
   bold?: boolean;
   strike?: boolean;
+  size?: number;
 }
 
 /** 段落内可出现的 docx 子元素:文本 run、行内图片、脚注引用、超链接、公式或

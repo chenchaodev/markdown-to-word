@@ -247,6 +247,9 @@ export async function runSmoke(win) {
         report.drawerSubtitleExists = !!document.getElementById("drawerSubtitle");
         report.orientationSelectExists = !!document.getElementById("orientationSelect");
         report.languageSelectExists = !!document.getElementById("languageSelect");
+        // F3 标题排版粒度:标题字号/间距档位 select 就位(缺失即回归)
+        report.headingScaleSelectExists = !!document.getElementById("headingScaleSelect");
+        report.headingSpacingSelectExists = !!document.getElementById("headingSpacingSelect");
         // 语言裁撤回归守卫:下拉选项由 LANGUAGES 注册表动态生成,应恰为 zh/en/ja 三项
         report.languageOptionCount = document.querySelectorAll("#languageSelect option").length;
         report.formatSegmentCount = document.querySelectorAll(".header-actions input[name='format']").length;
@@ -338,6 +341,8 @@ export async function runSmoke(win) {
         !diag.drawerSubtitleExists ||
         !diag.orientationSelectExists ||
         !diag.languageSelectExists ||
+        !diag.headingScaleSelectExists ||
+        !diag.headingSpacingSelectExists ||
         diag.languageOptionCount !== 3 ||
         diag.formatSegmentCount !== 2
       ) {
@@ -350,6 +355,8 @@ export async function runSmoke(win) {
             drawerSubtitleExists: diag.drawerSubtitleExists,
             orientationSelectExists: diag.orientationSelectExists,
             languageSelectExists: diag.languageSelectExists,
+            headingScaleSelectExists: diag.headingScaleSelectExists,
+            headingSpacingSelectExists: diag.headingSpacingSelectExists,
             languageOptionCount: diag.languageOptionCount,
             formatSegmentCount: diag.formatSegmentCount,
           })}`,

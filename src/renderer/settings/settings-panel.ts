@@ -44,7 +44,9 @@ import {
    fontEastAsiaInput,
    formatInputs,
    headingNumberingInput,
-  languageSelect,
+   headingScaleSelect,
+   headingSpacingSelect,
+   languageSelect,
   lineSpacingInput,
   marginInputs,
   orientationSelect,
@@ -161,6 +163,8 @@ export function applySettingsToControls(): void {
   fontEastAsiaInput.value = v.fontEastAsia;
   bodySizePtInput.value = v.bodySizePt;
   lineSpacingInput.value = v.lineSpacing;
+  headingScaleSelect.value = v.headingScale;
+  headingSpacingSelect.value = v.headingSpacing;
   firstLineIndentInput.checked = v.firstLineIndent;
   alignJustifyInput.checked = v.alignJustify;
   headingNumberingInput.checked = v.headingNumbering;

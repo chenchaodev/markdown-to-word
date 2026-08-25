@@ -7,6 +7,7 @@ import { HeadingLevel, Paragraph } from "docx";
 import type { Heading, PhrasingContent } from "mdast";
 import { stripSecLabelSuffix } from "../../markdown/cross-ref.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
+import { headingFontSizePt, headingSpacingTwips } from "../../settings/typography.js";
 import { renderPhrasing } from "./content.js";
 import { wrapBookmark } from "./bookmark.js";
 import type { Ctx } from "../ctx.js";
@@ -20,17 +21,23 @@ export async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph>
     5: HeadingLevel.HEADING_5,
     6: HeadingLevel.HEADING_6,
   };
+  // F3 标题排版粒度:字号/段前段后由 headingScale/headingSpacing 档位参数化
+  // (纯函数单源 core/settings/typography.ts,pdf CSS 同源换算,双格式观感对齐);
+  // 字号 half-points = pt × 2,经 RunStyle 下发到标题内文本 runs
+  const sizeHalfPoints =
+    headingFontSizePt(ctx.typography.bodySizePt, ctx.typography.headingScale, node.depth) * 2;
+  const spacing = headingSpacingTwips(ctx.typography.headingSpacing, node.depth);
   // 行内 label(批次 10 功能 2):{#sec:label} 尾部后缀不渲染——渲染前从最后一个
   // 叶子文本节点剥离(递归副本,不改 AST;parse.ts 已从 slug 剥离,此处剥离
   // 渲染文本,label 不进标题文本;label 的章节号登记在 renderDocx 预扫完成)
   const secLabel = node.data?.secLabel;
   const children = secLabel !== undefined ? stripTrailingSecLabel(node.children) : node.children;
-  const runs = await renderPhrasing(children, ctx);
+  const runs = await renderPhrasing(children, ctx, { size: sizeHalfPoints });
   // parse.ts 将标题 id 挂于 data.id(mdast Data 已声明合并,见 parse.ts)
   const id = node.data?.id;
   return new Paragraph({
     heading: levels[node.depth] ?? HeadingLevel.HEADING_6,
-    spacing: { before: 240, after: 120 },
+    spacing: { before: spacing.before, after: spacing.after },
     pageBreakBefore: node.depth === 1 && ctx.breakBeforeH1,
     numbering:
       node.depth <= 3 && ctx.headingNumbering

@@ -68,7 +68,9 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       for (const child of node.children) await pushRuns(runs, child, ctx, { ...style, strike: true });
       break;
     case "inlineCode":
-      runs.push(new TextRun({ text: node.value, font: CODE_FONT, size: CODE_SIZE, ...style }));
+      // F3:code 默认值写在 style 展开之后——标题场景 style.size 为标题字号,
+      // 行内代码保持自身小号等宽(CODE_SIZE 权威),不随所在标题放大
+      runs.push(new TextRun({ ...style, text: node.value, font: CODE_FONT, size: CODE_SIZE }));
       break;
     case "inlineMath": {
       // 行内公式:KaTeX MathML → docx Math 组件,随所在段落自然继承 5a 排版;

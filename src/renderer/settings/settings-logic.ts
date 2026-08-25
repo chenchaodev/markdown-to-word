@@ -178,6 +178,8 @@ export interface SettingsControlValues {
   fontEastAsia: string;
   bodySizePt: string;
   lineSpacing: string;
+  headingScale: string;
+  headingSpacing: string;
   firstLineIndent: boolean;
   alignJustify: boolean;
   headingNumbering: boolean;
@@ -207,6 +209,8 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     fontEastAsia: settings.typography.fontEastAsia,
     bodySizePt: String(settings.typography.bodySizePt),
     lineSpacing: String(settings.typography.lineSpacing),
+    headingScale: settings.typography.headingScale,
+    headingSpacing: settings.typography.headingSpacing,
     firstLineIndent: settings.typography.firstLineIndent,
     alignJustify: settings.typography.align === "justify",
     headingNumbering: settings.typography.headingNumbering,

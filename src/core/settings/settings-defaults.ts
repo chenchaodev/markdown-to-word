@@ -173,6 +173,8 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       align: "justify",
       headingNumbering: true,
       captionNumbering: true,
+      headingScale: "standard",
+      headingSpacing: "standard",
     },
     pageSetup: {
       paper: "A4",
@@ -196,6 +198,8 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       align: "left",
       headingNumbering: false,
       captionNumbering: false,
+      headingScale: "standard",
+      headingSpacing: "standard",
     },
     pageSetup: {
       paper: "A4",
@@ -223,6 +227,8 @@ const PRESET_COMPARE_FIELDS = {
     "align",
     "headingNumbering",
     "captionNumbering",
+    "headingScale",
+    "headingSpacing",
   ],
   pageSetup: ["paper", "orientation", "marginTop", "marginBottom", "marginLeft", "marginRight"],
 } as const;
