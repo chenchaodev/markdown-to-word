@@ -107,6 +107,9 @@ export function mergeSettingsWithDefaults(loaded: Partial<AppSettings>): AppSett
     outputDir: loaded.outputDir ?? DEFAULT_SETTINGS.outputDir,
     pageSetup: { ...DEFAULT_SETTINGS.pageSetup, ...loaded.pageSetup },
     typography: { ...DEFAULT_SETTINGS.typography, ...loaded.typography },
+    // F4:headerFooter 逐字段深合并——旧档缺整块或缺单字段均按默认兜底,
+    // 与 main 侧 sanitizeHeaderFooter 语义一致(MR-11 双侧防御)
+    headerFooter: { ...DEFAULT_SETTINGS.headerFooter, ...loaded.headerFooter },
     customPresets: loaded.customPresets ?? DEFAULT_SETTINGS.customPresets,
     pdfCss: loaded.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
     // B13:theme 缺失(旧 settings.json)→ "system"(显式 null/undefined 同样兜底)
@@ -192,6 +195,12 @@ export interface SettingsControlValues {
   outputDirText: string;
   language: string;
   theme: string;
+  /** F4 页眉页脚 */
+  headerMode: AppSettings["headerFooter"]["headerMode"];
+  headerText: string;
+  headerLayout: AppSettings["headerFooter"]["headerLayout"];
+  footerEnabled: boolean;
+  headerLogoPath: string;
 }
 
 /** 设置对象 → 控件回填值(数值字段转字符串,与 DOM value 赋值一致)。 */
@@ -223,7 +232,21 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     outputDirText: outputDirDisplayText(settings.outputDir),
     language: settings.language,
     theme: settings.theme,
+    headerMode: settings.headerFooter.headerMode,
+    headerText: settings.headerFooter.headerText,
+    headerLayout: settings.headerFooter.headerLayout,
+    footerEnabled: settings.headerFooter.footerEnabled,
+    headerLogoPath: settings.headerFooter.headerLogoPath,
   };
+}
+
+/**
+ * 页眉 logo 路径 → 回显文件名(F4):取末段路径段(兼容 / 与 \ 分隔),
+ * 空路径返回空串(调用方显示「未选择」文案)。renderer 无 node:path,自实现。
+ */
+export function headerLogoDisplayName(headerLogoPath: string): string {
+  const segments = headerLogoPath.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? "";
 }
 
 /* ---------- B13 外观主题:data-theme 属性应用(纯函数,DOM 无关可直测) ---------- */

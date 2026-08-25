@@ -17,6 +17,7 @@ import {
 } from "../../core/settings/settings-defaults.js";
 import {
   allPresets,
+  headerLogoDisplayName,
   outputDirDisplayText,
   parseMarginValue,
   validateNumberRange,
@@ -36,6 +37,13 @@ import {
   fontEastAsiaError,
   fontEastAsiaInput,
    formatInputs,
+   footerEnabledInput,
+   headerLayoutSelect,
+   headerLogoClearBtn,
+   headerLogoPickBtn,
+   headerLogoStatus,
+   headerModeSelect,
+   headerTextInput,
    headingNumberingInput,
    headingScaleSelect,
    headingSpacingSelect,
@@ -84,6 +92,7 @@ import {
    rebuildLanguageOptions,
    saveCustomPreset,
    setSuppressCompleteDialog,
+   syncHeaderCustomVisibility,
  } from "./settings-panel.js";
 
 /* ---------- 设置类型(契约单源 core/settings-defaults.ts,B7:type-only 派生,
@@ -100,6 +109,11 @@ function persistPageSetup(): void {
 /** 排版相关字段(字体/字号/行距/段落样式)整体写回。 */
 function persistTypography(): void {
   persistSettings({ typography: { ...state.settings.typography } });
+}
+
+/** 页眉页脚字段(F4)整体写回。 */
+function persistHeaderFooter(): void {
+  persistSettings({ headerFooter: { ...state.settings.headerFooter } });
 }
 
 /** 边距输入:非法值回显当前设置,合法值钳制后写回;非法时字段内提示。 */
@@ -266,6 +280,59 @@ export function bindSettingsEvents(): void {
     if (state.hydratingSettings) return;
     state.settings.typography.captionNumbering = captionNumberingInput.checked;
     persistTypography();
+  });
+
+  /* ---------- 页眉页脚(F4):任一控件变更即时生效并持久化 ---------- */
+  headerModeSelect.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.headerFooter.headerMode = headerModeSelect.value as AppSettings["headerFooter"]["headerMode"];
+    // 自定义控件块(文字/logo/布局)仅 custom 模式可见
+    syncHeaderCustomVisibility();
+    persistHeaderFooter();
+  });
+
+  headerTextInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.headerFooter.headerText = headerTextInput.value.trim();
+    persistHeaderFooter();
+  });
+
+  headerLayoutSelect.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.headerFooter.headerLayout = headerLayoutSelect.value as AppSettings["headerFooter"]["headerLayout"];
+    persistHeaderFooter();
+  });
+
+  footerEnabledInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.headerFooter.footerEnabled = footerEnabledInput.checked;
+    persistHeaderFooter();
+  });
+
+  // logo 选择:main 打开文件对话框(限图片扩展名),返回绝对路径或 null(取消)
+  headerLogoPickBtn.addEventListener("click", () => {
+    void (async () => {
+      try {
+        const logoPath = await window.api.selectHeaderLogo();
+        if (!logoPath) return; // 用户取消
+        state.settings.headerFooter.headerLogoPath = logoPath;
+        const name = headerLogoDisplayName(logoPath);
+        headerLogoStatus.textContent = name;
+        headerLogoStatus.title = name;
+        headerLogoClearBtn.classList.remove("hidden");
+        persistHeaderFooter();
+      } catch (err) {
+        setError(t("settings.selectDirFailed", { error: errorMessage(err) }));
+      }
+    })();
+  });
+
+  headerLogoClearBtn.addEventListener("click", () => {
+    state.settings.headerFooter.headerLogoPath = "";
+    headerLogoStatus.textContent = t("settings.headerLogoNone");
+    headerLogoStatus.title = "";
+    headerLogoClearBtn.classList.add("hidden");
+    persistHeaderFooter();
   });
 
   // 模板预设:整体套用排版与页面设置,一次性回填所有相关控件并持久化

@@ -24,17 +24,28 @@ import type { TypographySettings } from "./settings/typography.js";
 import type { ConvertWarning } from "./i18n.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfHtml } from "./pdf/render.js";
-import { PDF_FOOTER_TEMPLATE } from "./pdf/template.js";
+import {
+  buildPdfHeaderTemplate,
+  PDF_EMPTY_CHROME_TEMPLATE,
+  PDF_FOOTER_TEMPLATE,
+} from "./pdf/template.js";
+import type { HeaderLogoData } from "./docx/chrome.js";
 import type { MermaidResolver } from "./markdown/mermaid.js";
 // 契约单源(B7):ImageResolver 类型收敛 core/image/image-resolver.ts(仅类型导入)
 import type { ImageResolver } from "./image/image-resolver.js";
 // 页面设置契约收敛于 settings-defaults.ts(单一来源),此处 re-export 保持既有导入面
 // (docx/pdf render、main settings、测试等历史 import 源不变)
-export { DEFAULT_PAGE_SETUP, type PageSetup } from "./settings/settings-defaults.js";
+export {
+  DEFAULT_PAGE_SETUP,
+  DEFAULT_HEADER_FOOTER,
+  type PageSetup,
+  type HeaderFooterSettings,
+} from "./settings/settings-defaults.js";
 // ConvertFormat 单源 settings-defaults(CORE-8 收敛 B7 平行类型残留);
 // re-export 保持 main 侧既有 import 路径(core/convert.js)不变
 export type { ConvertFormat } from "./settings/settings-defaults.js";
 import type { ConvertFormat, PageSetup } from "./settings/settings-defaults.js";
+import { DEFAULT_HEADER_FOOTER, type HeaderFooterSettings } from "./settings/settings-defaults.js";
 
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */
@@ -63,6 +74,10 @@ export interface ConvertContext {
   pdfCss?: string;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
+  /** 页眉页脚配置(F4;缺省 DEFAULT_HEADER_FOOTER = 现状行为) */
+  headerFooter?: HeaderFooterSettings;
+  /** 页眉 logo 已读数据(main 层读文件后注入,core 零 IO;仅 headerMode=custom 消费) */
+  headerLogo?: HeaderLogoData;
   /** PDF 渲染子阶段回调(B9 进度分阶段上报):pdf 链路经此上报 parse/inline/
    *  mermaid/katex 四个子阶段(print 由 main/converter.ts 在 printToPDF 前上报);
    *  缺省不上报(core 层零依赖,行为不变)。向后兼容:旧消费方对未知 stage 键
@@ -80,7 +95,9 @@ export interface PdfArtifact {
   kind: "pdf";
   /** 完整 HTML 文档,落盘临时文件后 loadFile + printToPDF */
   html: string;
-  /** printToPDF 的 footerTemplate(页码) */
+  /** printToPDF 的 headerTemplate(F4:default/none = 空模板,custom = 文字+logo) */
+  headerTemplate: string;
+  /** printToPDF 的 footerTemplate(页码;footerEnabled=false 时为空模板) */
   footerTemplate: string;
   /** frontmatter 元数据(PDF Info 注入用) */
   metadata?: DocMetadata;
@@ -98,6 +115,8 @@ export async function convert(
   const warnings = context.warnings ?? [];
   // 先剥离 frontmatter:解析与渲染均只作用于正文(body)
   const { metadata, body } = parseFrontmatter(md);
+  // 页眉页脚配置归一化(F4):缺省字段补默认(= 现状行为),双管线共用同一取值
+  const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...context.headerFooter };
 
   if (format === "pdf") {
     // pdf 分支只消费 body 字符串(markdown-it 在 renderPdfHtml 内另行解析),
@@ -121,7 +140,10 @@ export async function convert(
         mermaidResolver: context.mermaidResolver,
         onStage: context.onStage,
       }),
-      footerTemplate: PDF_FOOTER_TEMPLATE,
+      // F4:页眉模板按配置构造(logo data URI 内嵌);页脚开关关闭时空模板占位
+      // (displayHeaderFooter 常开,机制不变,见 PDF_EMPTY_CHROME_TEMPLATE 注释)
+      headerTemplate: buildPdfHeaderTemplate(headerFooter, context.headerLogo),
+      footerTemplate: headerFooter.footerEnabled ? PDF_FOOTER_TEMPLATE : PDF_EMPTY_CHROME_TEMPLATE,
       metadata,
     };
   }
@@ -141,6 +163,8 @@ export async function convert(
       equationNumbering: context.equationNumbering,
       title: context.title,
       mermaidResolver: context.mermaidResolver,
+      headerFooter,
+      headerLogo: context.headerLogo,
     }),
   };
 }

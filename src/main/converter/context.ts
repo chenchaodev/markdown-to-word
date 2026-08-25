@@ -5,9 +5,14 @@
  * - buildConvertContext:settings → core convert() 上下文映射收敛(R10-1)
  * 依赖方向:single/batch/merge 反向 import 本模块,本模块不依赖三者(无环)。
  */
+import fs from "node:fs/promises";
 import type { ConvertContext as CoreConvertContext } from "../../core/convert.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import type { ImageResolver } from "../../core/image/image-resolver.js";
+import { sniffImageType } from "../../core/image/image-type.js";
+import { headerLogoLoadFailedWarning } from "../../core/image/image-warning.js";
+import type { HeaderLogoData } from "../../core/docx/chrome.js";
+import { DEFAULT_HEADER_FOOTER, type HeaderFooterSettings } from "../../core/settings/settings-defaults.js";
 import type { MermaidResolver } from "../../core/markdown/mermaid.js";
 import { createImageResolver } from "../services/image-downloader.js";
 import type { AppSettings } from "../persist/settings.js";
@@ -72,12 +77,34 @@ export function getImageResolver(baseDir: string): ImageResolver {
 }
 
 /**
+ * 页眉 logo 文件读取(F4;main 层唯一 IO 点,core 零 IO):
+ * 仅 headerMode=custom 且配置了路径时读取;魔数嗅探结果原样传递
+ * (webp/null 的逐管线降级与告警在 core 侧 render.ts 统一处理);
+ * 读取失败 → keyed 警告 + undefined(降级为无 logo,不中断转换)。
+ */
+export async function resolveHeaderLogo(
+  headerFooter: HeaderFooterSettings,
+  warnings?: ConvertWarning[],
+): Promise<HeaderLogoData | undefined> {
+  if (headerFooter.headerMode !== "custom" || !headerFooter.headerLogoPath) return undefined;
+  try {
+    const data = await fs.readFile(headerFooter.headerLogoPath);
+    return { data, extension: sniffImageType(data) };
+  } catch {
+    warnings?.push(headerLogoLoadFailedWarning(headerFooter.headerLogoPath));
+    return undefined;
+  }
+}
+
+/**
  * settings → core convert() 上下文映射收敛(R10-1):
  * convertImpl / mergeConvertImpl / openPreviewWindow 三处统一经此构造,防止
  * pageSetup/typography/breakBeforeH1/toc/imageResolver 逐字重复导致漂移。
- * katexDir 由调用方(main 入口层)传入:getKatexDir()(现居 resource-dirs.ts)
- * 经 electron app.getAppPath() 计算(批次 6,保证 dev/打包一致),本 helper 不依赖
- * electron app,convertImpl 可脱离 Electron 直测(docx 走 MathML 本就不需要 katexDir)。
+ * F4:改为 async——页眉 logo 需读文件(main 层 IO),三处调用方均为 async 上下文,
+ * await 透传即可。katexDir 由调用方(main 入口层)传入:getKatexDir()(现居
+ * resource-dirs.ts)经 electron app.getAppPath() 计算(批次 6,保证 dev/打包一致),
+ * 本 helper 不依赖 electron app,convertImpl 可脱离 Electron 直测(docx 走 MathML
+ * 本就不需要 katexDir)。
  */
 export interface BuildConvertContextOptions {
   /** markdown 文件所在目录(图片相对路径基准) */
@@ -98,7 +125,10 @@ export interface BuildConvertContextOptions {
   onStage?: (stage: string) => void;
 }
 
-export function buildConvertContext(options: BuildConvertContextOptions): CoreConvertContext {
+export async function buildConvertContext(options: BuildConvertContextOptions): Promise<CoreConvertContext> {
+  // F4:页眉页脚配置归一化(缺字段补默认 = 现状行为)+ logo 文件读取(失败降级)
+  const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...options.settings.headerFooter };
+  const headerLogo = await resolveHeaderLogo(headerFooter, options.warnings);
   return {
     baseDir: options.baseDir,
     title: options.title,
@@ -113,5 +143,7 @@ export function buildConvertContext(options: BuildConvertContextOptions): CoreCo
     katexDir: options.katexDir,
     mermaidResolver: options.mermaidResolver,
     onStage: options.onStage,
+    headerFooter,
+    headerLogo,
   };
 }

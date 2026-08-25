@@ -16,6 +16,7 @@
 | footnotes.md | 脚注 + 页眉页脚验收(原 make-batch4-sample.mjs 段 2,补页眉/页脚内容断言): | test/segments/footnotes.test.js |
 | formula-degrade.md | 公式测试(原 make-batch4-sample.mjs 段 7):(场景:degrade) | test/segments/formula.test.js |
 | formula.md | 公式测试(原 make-batch4-sample.mjs 段 7):(场景:main) | test/segments/formula.test.js |
+| header-footer.md | 页眉页脚自定义验收(F4): | test/segments/header-footer.test.js |
 | heading-links.md | 标题编号 + 内部/外部链接验收(原 make-batch4-sample.mjs 段 3,补 h4-h6/外链 rels): | test/segments/heading-links.test.js |
 | merge.md | 合并段:FIXTURES_DIR/manual 全部 .md(含 chapters/ 子目录)→ 合并 → PDF → 书签注入 + 元数据。 | test/segments/merge.test.js |
 | mermaid-js.md | Mermaid 渲染 core 层契约测试(批次 10 功能 1,8c):(场景:js) | test/segments/mermaid.test.js |

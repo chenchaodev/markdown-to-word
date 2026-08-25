@@ -7,8 +7,8 @@
  * - sanitizeTypography:bodySizePt 8-24、lineSpacing 1.0-2.5 范围校验,越界 → DEFAULT_TYPOGRAPHY
  *   值;字体须非空字符串、布尔字段须 boolean、align 枚举(left/justify);整块兜底,
  *   始终返回合法完整对象
- * - sanitizePatch:仅 SETTING_KEYS 13 键(version/format/pageSetup/typography/breakBeforeH1/
- *   toc/equationNumbering/afterConvert/outputDir/customPresets/pdfCss/language/theme)白名单,未知键过滤;非法值回退默认
+ * - sanitizePatch:仅 SETTING_KEYS 14 键(version/format/pageSetup/typography/breakBeforeH1/
+ *   toc/equationNumbering/afterConvert/outputDir/customPresets/pdfCss/language/theme/headerFooter)白名单,未知键过滤;非法值回退默认
  * - sanitizeCustomPresets(批次 11 迭代 3):非数组 → [];条目须对象且 name 非空;
  *   typography 逐字段钳制、pageSetup 非法对象整条丢弃;同名去重(保留先出现);
  *   截断 MAX_CUSTOM_PRESETS=10
@@ -111,8 +111,8 @@ export async function run() {
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
-    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 13 键");
+    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter"];
+    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 14 键(F4 起 + headerFooter)");
     for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));

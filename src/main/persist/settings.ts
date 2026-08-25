@@ -27,11 +27,13 @@ import {
 } from "../../core/settings/typography.js";
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_HEADER_FOOTER,
   MARGIN_MIN_MM,
   MARGIN_MAX_MM,
   MAX_CUSTOM_PRESETS,
   type AppSettings,
   type CustomPreset,
+  type HeaderFooterSettings,
 } from "../../core/settings/settings-defaults.js";
 import { t, isLanguage } from "../../core/i18n.js";
 export { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
@@ -43,6 +45,8 @@ const PAPERS = ["A4", "A3", "A5", "Letter", "Legal"] as const;
 const ORIENTATIONS = ["portrait", "landscape"] as const;
 const ALIGNS = ["left", "justify"] as const;
 const THEMES = ["system", "light", "dark"] as const;
+const HEADER_MODES = ["default", "custom", "none"] as const;
+const HEADER_LAYOUTS = ["center", "leftRight"] as const;
 const SETTING_KEYS = [
   "version",
   "format",
@@ -57,6 +61,7 @@ const SETTING_KEYS = [
   "pdfCss",
   "language",
   "theme",
+  "headerFooter",
 ] as const;
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
@@ -155,6 +160,9 @@ export function loadSettings(): AppSettings {
         typography: sanitizeTypography(parsed.typography),
         // 批次 11 迭代 3:customPresets 缺失(旧文件)→ [];存在 → 逐条校验
         customPresets: sanitizeCustomPresets(parsed.customPresets),
+        // F4:headerFooter 不参与 isValidSettings 整文件形状校验(同 typography
+        // 先例——旧文件缺字段走字段级兜底,不因部分字段缺失整体回退默认)
+        headerFooter: sanitizeHeaderFooter(parsed.headerFooter),
       };
     }
   } catch {
@@ -234,8 +242,30 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
       case "theme":
         out.theme = isOneOf(src.theme, THEMES) ? src.theme : DEFAULT_SETTINGS.theme;
         break;
+      case "headerFooter":
+        out.headerFooter = sanitizeHeaderFooter(src.headerFooter);
+        break;
     }
   }
+  return out;
+}
+
+/**
+ * headerFooter 逐字段校验(F4,仿 sanitizeTypography 整块兜底):
+ * 枚举字段(headerMode/headerLayout)非法或缺失 → 默认;字符串字段钳制为 string
+ * (非 string 丢弃);布尔钳制。始终返回合法完整对象。
+ */
+function sanitizeHeaderFooter(value: unknown): HeaderFooterSettings {
+  const src =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const out: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER };
+  if (isOneOf(src.headerMode, HEADER_MODES)) out.headerMode = src.headerMode;
+  if (typeof src.headerText === "string") out.headerText = src.headerText;
+  if (typeof src.headerLogoPath === "string") out.headerLogoPath = src.headerLogoPath;
+  if (isOneOf(src.headerLayout, HEADER_LAYOUTS)) out.headerLayout = src.headerLayout;
+  if (typeof src.footerEnabled === "boolean") out.footerEnabled = src.footerEnabled;
   return out;
 }
 

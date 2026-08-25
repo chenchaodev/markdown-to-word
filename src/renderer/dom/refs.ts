@@ -91,6 +91,31 @@ export const headingNumberingInput = document.getElementById(
 export const captionNumberingInput = document.getElementById(
   "captionNumbering",
 ) as HTMLInputElement;
+// F4 页眉页脚:模式/文字/logo 选择清除与回显/布局/页脚开关
+export const headerModeSelect = document.getElementById(
+  "headerModeSelect",
+) as HTMLSelectElement;
+export const headerCustomFields = document.getElementById(
+  "headerCustomFields",
+) as HTMLDivElement;
+export const headerTextInput = document.getElementById(
+  "headerText",
+) as HTMLInputElement;
+export const headerLogoStatus = document.getElementById(
+  "headerLogoStatus",
+) as HTMLSpanElement;
+export const headerLogoPickBtn = document.getElementById(
+  "headerLogoPick",
+) as HTMLButtonElement;
+export const headerLogoClearBtn = document.getElementById(
+  "headerLogoClear",
+) as HTMLButtonElement;
+export const headerLayoutSelect = document.getElementById(
+  "headerLayoutSelect",
+) as HTMLSelectElement;
+export const footerEnabledInput = document.getElementById(
+  "footerEnabled",
+) as HTMLInputElement;
 // 模板预设
 export const templatePresetSelect = document.getElementById(
   "templatePreset",

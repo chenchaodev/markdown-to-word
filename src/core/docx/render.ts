@@ -23,7 +23,7 @@ import { renderCaptionParagraph } from "./handlers/captions.js";
 import { renderDisplayMath, type EquationContext } from "./handlers/equations.js";
 import { type Ctx } from "./ctx.js";
 import { prescanDocument } from "./prescan.js";
-import { renderCoverPage, renderTocPage, renderHeader, renderFooter } from "./chrome.js";
+import { renderCoverPage, renderTocPage, renderHeader, renderFooter, type HeaderLogoData } from "./chrome.js";
 import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./handlers/content.js";
 import { renderCode } from "./handlers/code-block.js";
 import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./handlers/inline-html.js";
@@ -31,10 +31,12 @@ import { renderHeading } from "./handlers/heading.js";
 import { renderTable } from "./handlers/table.js";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
 import {
+  DEFAULT_HEADER_FOOTER,
   DEFAULT_PAGE_SETUP,
   mmToTwips,
   PAPER_SIZES_MM,
   twipsToPx,
+  type HeaderFooterSettings,
   type PageSetup,
 } from "../settings/settings-defaults.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
@@ -46,6 +48,10 @@ import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
 import { headingNumberingOptions, numberingOptions } from "./numbering.js";
 import type { ConvertWarning } from "../i18n.js";
+import {
+  unrecognizedImageWarning,
+  webpSkippedWarning,
+} from "../image/image-warning.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import type { ImageResolver } from "../image/image-resolver.js";
 
@@ -74,6 +80,11 @@ export interface RenderOptions {
   captionNumbering?: boolean;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
+  /** 页眉页脚配置(F4;缺省 DEFAULT_HEADER_FOOTER = 现状行为:标题页眉+页码页脚) */
+  headerFooter?: HeaderFooterSettings;
+  /** 页眉 logo 已读数据(main 层读文件后注入,core 零 IO;仅 headerMode=custom 消费;
+   *  webp/null 魔数降级为无 logo + keyed 警告) */
+  headerLogo?: HeaderLogoData;
 }
 
 /** G1 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理;
@@ -124,6 +135,21 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
   const title = options.metadata?.title ?? options.title;
+  // 页眉页脚配置归一化(F4):缺省字段补 DEFAULT_HEADER_FOOTER(= 现状行为)
+  const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...options.headerFooter };
+  // custom 模式 logo 魔数降级:webp 不支持 docx 内嵌、未知魔数不伪装——均降级为
+  // 无 logo + keyed 警告(复用正文图片同款文案,src = 设置的 logo 路径)
+  let headerLogo = options.headerLogo;
+  if (headerLogo && headerFooter.headerMode === "custom") {
+    const src = headerFooter.headerLogoPath;
+    if (headerLogo.extension === "webp") {
+      ctx.warnings?.push(webpSkippedWarning(src));
+      headerLogo = undefined;
+    } else if (headerLogo.extension === null) {
+      ctx.warnings?.push(unrecognizedImageWarning(src));
+      headerLogo = undefined;
+    }
+  }
   // 五轮预扫(脚注定义/题注上下文/章节 label/公式编号/目录条目,详见 prescan.ts);
   // 预扫就地写入 ctx(footnoteDefinitions/headingLabels/equationLabels)
   const { tocEntries, captions, equations } = prescanDocument(ast, ctx);
@@ -192,8 +218,11 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     sections: [
       {
         properties: { page: { size, margin } },
-        headers: title ? { default: renderHeader(title) } : undefined,
-        footers: { default: renderFooter() },
+        // 页眉分流(F4):default=标题居中(现状行为)/custom=文字+logo(两者皆空不装配)/
+        // none=无页眉;左右分栏右对齐制表位位置 = 正文可用宽度(textWidthTwips)
+        headers: buildHeaderForSection(headerFooter, title, headerLogo, textWidthTwips),
+        // 页脚开关(F4):false 时不装配 footers(docx 不生成 footer part)
+        footers: headerFooter.footerEnabled ? { default: renderFooter() } : undefined,
         children,
       },
     ],
@@ -202,6 +231,29 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
 }
 
 // ---------- 块级节点 ----------
+
+/**
+ * section 页眉装配分流(F4):按 headerMode 产出 headers 配置或 undefined。
+ * - default:现状行为——有标题才装配(标题居中)
+ * - custom:文字(trim 后)与 logo 至少一项存在才装配(全空无内容可显示)
+ * - none:不装配
+ */
+function buildHeaderForSection(
+  headerFooter: HeaderFooterSettings,
+  title: string | undefined,
+  headerLogo: HeaderLogoData | undefined,
+  contentWidthTwips: number,
+): { default: ReturnType<typeof renderHeader> } | undefined {
+  if (headerFooter.headerMode === "none") return undefined;
+  if (headerFooter.headerMode === "custom") {
+    const text = headerFooter.headerText.trim();
+    if (!text && !headerLogo) return undefined;
+    return {
+      default: renderHeader({ kind: "custom", text, logo: headerLogo, layout: headerFooter.headerLayout }, contentWidthTwips),
+    };
+  }
+  return title ? { default: renderHeader({ kind: "title", title }, contentWidthTwips) } : undefined;
+}
 
 async function renderBlock(
   node: BlockContent,

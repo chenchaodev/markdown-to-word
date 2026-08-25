@@ -46,7 +46,7 @@ async function renderPreviewHtml(mdPath: string): Promise<string> {
   const artifact = await convert(
     md,
     "pdf",
-    buildConvertContext({
+    await buildConvertContext({
       baseDir: path.dirname(mdPath),
       title: baseName,
       settings,

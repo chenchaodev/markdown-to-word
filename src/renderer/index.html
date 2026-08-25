@@ -506,6 +506,49 @@
             </div>
           </section>
 
+          <!-- ── L2 页眉页脚(F4):页眉模式 / 自定义文字与 logo / 布局 / 页脚开关 ── -->
+          <section class="drawer-group">
+            <h3 class="drawer-group-title" data-i18n="settings.groupHeaderFooter">页眉页脚</h3>
+            <div class="setting-field">
+              <label class="setting-label" for="headerModeSelect" data-i18n="settings.headerMode">页眉</label>
+              <select id="headerModeSelect" class="setting-select">
+                <option value="default" data-i18n="settings.headerModeDefault">默认(文档标题)</option>
+                <option value="custom" data-i18n="settings.headerModeCustom">自定义</option>
+                <option value="none" data-i18n="settings.headerModeNone">无</option>
+              </select>
+            </div>
+            <!-- 自定义模式专属控件:非 custom 模式整块隐藏(visibility 由 settings-panel 同步) -->
+            <div id="headerCustomFields" class="hidden">
+              <div class="setting-field">
+                <label class="setting-label" for="headerText" data-i18n="settings.headerText">页眉文字</label>
+                <input type="text" id="headerText" class="setting-input" />
+              </div>
+              <div class="setting-field setting-outputdir">
+                <span class="setting-label" data-i18n="settings.headerLogo">页眉 Logo</span>
+                <div class="outputdir-row">
+                  <span id="headerLogoStatus" class="outputdir-value" data-i18n="settings.headerLogoNone" title="">未选择 Logo</span>
+                  <button type="button" id="headerLogoPick" class="btn btn-secondary btn-small">
+                    <span data-i18n="settings.headerLogoPick">选择图片…</span>
+                  </button>
+                  <button type="button" id="headerLogoClear" class="btn btn-ghost btn-small hidden">
+                    <span data-i18n="settings.cssClear">清除</span>
+                  </button>
+                </div>
+              </div>
+              <div class="setting-field">
+                <label class="setting-label" for="headerLayoutSelect" data-i18n="settings.headerLayout">布局</label>
+                <select id="headerLayoutSelect" class="setting-select">
+                  <option value="center" data-i18n="settings.headerLayoutCenter">居中</option>
+                  <option value="leftRight" data-i18n="settings.headerLayoutLeftRight">左右分栏</option>
+                </select>
+              </div>
+            </div>
+            <label class="setting-check">
+              <input type="checkbox" id="footerEnabled" />
+              <span data-i18n="settings.footerEnabled">显示页脚(第 X 页 / 共 X 页)</span>
+            </label>
+          </section>
+
           <!-- ── L3 高级(默认折叠):边距 / 分页目录 / 段落与编号开关 / 模板管理 ── -->
           <details class="drawer-fold">
             <summary class="drawer-fold-summary" data-i18n="settings.groupAdvanced">高级</summary>

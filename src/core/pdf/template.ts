@@ -13,14 +13,69 @@ import {
   headingSpacingPt,
   type TypographySettings,
 } from "../settings/typography.js";
-import type { PageSetup } from "../settings/settings-defaults.js";
+import type { PageSetup, HeaderFooterSettings } from "../settings/settings-defaults.js";
 import type { ConvertWarning } from "../i18n.js";
 import { escapeHtml } from "../util/utils.js";
+import { mimeFromBuffer } from "../image/image-type.js";
+import type { HeaderLogoData } from "../docx/chrome.js";
 
 /** 页码页脚模板(printToPDF footerTemplate 用;模板内必须内联样式,字体大小需显式设置)。 */
 export const PDF_FOOTER_TEMPLATE =
   '<div style="font-size:9px;color:#888;width:100%;text-align:center;">' +
   '第 <span class="pageNumber"></span> 页 / 共 <span class="totalPages"></span> 页</div>';
+
+/**
+ * 空 chrome 模板(F4):displayHeaderFooter 常开(页脚机制依赖),无页眉/无页脚时
+ * 以空 span 占位——与既有 headerTemplate:"<span></span>" 同构,不破坏现有
+ * margins=0 + @page 边距机制(RESEARCH.md G4 实测口径)。
+ */
+export const PDF_EMPTY_CHROME_TEMPLATE = "<span></span>";
+
+/** 页眉 logo 显示高度(px,与 docx 侧 HEADER_LOGO_MAX_HEIGHT_PX 视觉对齐) */
+const PDF_HEADER_LOGO_HEIGHT_PX = 20;
+
+/**
+ * 自定义页眉模板(F4;printToPDF headerTemplate 用):
+ * - 仅 headerMode=custom 产出内容;default 维持现状(无页眉)、none 空模板
+ * - Chromium header/footer 模板限制:内联样式 + 显式 font-size,禁止外部资源——
+ *   logo 经 base64 data URI 内嵌(mimeFromBuffer 魔数判定,不可识别则省略 logo)
+ * - 字号/灰度与 docx 侧对齐(7pt / #888888 = theme.MUTED_TEXT_GRAY)
+ * - leftRight 布局用 float(模板渲染上下文对 flex 支持不稳,float 为保守选择):
+ *   logo 左 + 文字右;无 logo 时文字靠左
+ */
+export function buildPdfHeaderTemplate(
+  headerFooter: HeaderFooterSettings,
+  headerLogo?: HeaderLogoData,
+): string {
+  if (headerFooter.headerMode !== "custom") return PDF_EMPTY_CHROME_TEMPLATE;
+  const text = headerFooter.headerText.trim();
+  const mime = headerLogo ? mimeFromBuffer(Buffer.from(headerLogo.data)) : null;
+  const logoHtml =
+    headerLogo && mime
+      ? `<img src="data:${mime};base64,${Buffer.from(headerLogo.data).toString("base64")}" ` +
+        `style="height:${PDF_HEADER_LOGO_HEIGHT_PX}px;vertical-align:middle;border:none;" />`
+      : "";
+  const base =
+    "font-size:7pt;color:#888888;font-family:sans-serif;width:100%;overflow:hidden;";
+  if (headerFooter.headerLayout === "leftRight") {
+    // 无 logo 时文字靠左(契约);logo 与文字并存才左右分栏
+    if (!logoHtml) {
+      return `<div style="${base}text-align:left;">${escapeHtml(text)}</div>`;
+    }
+    return (
+      `<div style="${base}">` +
+      `<span style="float:left;">${logoHtml}</span>` +
+      (text ? `<span style="float:right;">${escapeHtml(text)}</span>` : "") +
+      "</div>"
+    );
+  }
+  return (
+    `<div style="${base}text-align:center;">` +
+    logoHtml +
+    (text ? `${logoHtml ? " " : ""}${escapeHtml(text)}` : "") +
+    "</div>"
+  );
+}
 
 /**
  * h1-h6 规则生成(F3):字号/段前段后间距由 headingScale/headingSpacing 档位经

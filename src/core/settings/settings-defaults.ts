@@ -37,6 +37,35 @@ export interface PageSetup {
   marginRight: number;
 }
 
+/**
+ * 页眉页脚设置(F4 文档外壳,不入排版预设——预设只管排版/页面,
+ * matchesPreset/PRESET_COMPARE_FIELDS 不消费本对象):
+ * - headerMode=default 为现状行为(文档标题居中 + 页码页脚),存量 settings.json
+ *   缺本字段时双侧(main sanitize / renderer merge)兜底到默认即行为不变
+ * - headerLogoPath 只存路径;文件读取在 main 层(core 零 IO),
+ *   core 渲染层收已读好的图片数据(docx/chrome.ts HeaderLogoData)
+ */
+export interface HeaderFooterSettings {
+  /** 页眉模式:default=文档标题居中(现状行为)/custom=自定义文字+logo/none=无页眉 */
+  headerMode: "default" | "custom" | "none";
+  /** 自定义页眉文字(headerMode=custom 且非空时生效) */
+  headerText: string;
+  /** 页眉 logo 图片绝对路径(空串=无 logo;仅 headerMode=custom 生效) */
+  headerLogoPath: string;
+  /** 页眉布局:center=居中 / leftRight=左右分栏(logo 左+文字右;无 logo 时文字靠左) */
+  headerLayout: "center" | "leftRight";
+  /** 页脚开关(默认 true=第 X/共 X 页;false=无页脚) */
+  footerEnabled: boolean;
+}
+
+export const DEFAULT_HEADER_FOOTER: HeaderFooterSettings = {
+  headerMode: "default",
+  headerText: "",
+  headerLogoPath: "",
+  headerLayout: "center",
+  footerEnabled: true,
+};
+
 /** 默认页面设置:近似 Word 默认(A4 纵向,上下 25mm 左右 32mm)。 */
 export const DEFAULT_PAGE_SETUP: PageSetup = {
   paper: "A4",
@@ -102,6 +131,8 @@ export interface AppSettings {
   language: Language;
   /** 外观主题(默认 system;renderer 经 data-theme 属性应用,见 ThemePreference) */
   theme: ThemePreference;
+  /** 页眉页脚(默认 = 现状行为:标题页眉 + 页码页脚;见 HeaderFooterSettings) */
+  headerFooter: HeaderFooterSettings;
 }
 
 /** 自定义模板预设:名称 + 排版/页面设置快照(套用逻辑与硬编码预设一致)。 */
@@ -128,6 +159,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pdfCss: "",
   language: "zh",
   theme: "system",
+  headerFooter: { ...DEFAULT_HEADER_FOOTER },
 };
 
 /** 页面边距钳制范围(mm,与主进程 sanitizePageSetup 一致) */

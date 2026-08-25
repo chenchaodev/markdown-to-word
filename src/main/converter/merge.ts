@@ -68,7 +68,7 @@ export async function mergeConvertImpl(
   const artifact = await convert(
     mergedMd,
     format,
-    buildConvertContext({
+    await buildConvertContext({
       baseDir: path.dirname(firstFile),
       title: baseName,
       warnings,

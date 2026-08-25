@@ -210,6 +210,23 @@ export function registerIpc(): void {
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
+  // F4:选择页眉 logo 图片(限图片扩展名;取消返回 null)。
+  // 与 dirSelect 同样板记忆 lastOpenDir,便于连续选择同目录资源
+  ipcMain.handle(CH.headerLogoSelect, async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: t("dialog.selectHeaderLogo"),
+      defaultPath: await lastOpenDirIfValid(),
+      properties: ["openFile"],
+      filters: [
+        { name: t("dialog.imageFiles"), extensions: ["png", "jpg", "jpeg", "gif", "webp"] },
+      ],
+    });
+    if (!result.canceled && result.filePaths[0]) {
+      await saveUiState({ lastOpenDir: result.filePaths[0] }).catch(() => undefined);
+    }
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
   // 拖放路径收集:目录递归取 md,非 md 的传入路径进 skipped
   // B1:元素级校验(此前只 guard Array.isArray,非字符串元素会让 path.resolve 抛 TypeError)
   ipcMain.handle(

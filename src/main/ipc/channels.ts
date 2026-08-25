@@ -30,6 +30,8 @@ export const IPC_CHANNELS = {
   /* ---- 目录域 ---- */
   /** 选择输出目录(取消返回 null) */
   dirSelect: "dir:select",
+  /** F4:选择页眉 logo 图片(取消返回 null) */
+  headerLogoSelect: "header-logo:select",
   /* ---- 转换域 ---- */
   /** 单文件转换 */
   convertSingle: "convert:single",

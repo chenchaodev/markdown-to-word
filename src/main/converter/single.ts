@@ -108,7 +108,7 @@ export async function convertImpl(
   const artifact = await convert(
     md,
     format,
-    buildConvertContext({
+    await buildConvertContext({
       baseDir: path.dirname(filePath),
       title: stripMarkdownExt(path.basename(filePath)),
       warnings,
@@ -170,7 +170,9 @@ export async function renderPdf(
       printBackground: true,
       preferCSSPageSize: true,
       displayHeaderFooter: true,
-      headerTemplate: "<span></span>",
+      // F4:页眉模板随设置注入(default/none = 空 span 占位,维持现状无页眉);
+      // ?? 兜底旧调用方手工构造的 PdfArtifact(无 headerTemplate 字段)
+      headerTemplate: artifact.headerTemplate ?? "<span></span>",
       footerTemplate: artifact.footerTemplate,
     });
     // 批次 7:printToPDF 不可中断(Electron 原子调用),取消需等本轮打印结束;

@@ -22,6 +22,7 @@ import {
   buildCustomPresetEntry,
   customPresetNameFromId,
   customPresetToTemplate,
+  headerLogoDisplayName,
   mergeSettingsWithDefaults,
   removeCustomPresetByName,
   resolvePresetHint,
@@ -43,6 +44,13 @@ import {
    fontAsciiInput,
    fontEastAsiaInput,
    formatInputs,
+   footerEnabledInput,
+   headerCustomFields,
+   headerLayoutSelect,
+   headerLogoClearBtn,
+   headerLogoStatus,
+   headerModeSelect,
+   headerTextInput,
    headingNumberingInput,
    headingScaleSelect,
    headingSpacingSelect,
@@ -214,8 +222,29 @@ export function applySettingsToControls(): void {
     ? t("settings.pdfCssImported")
     : t("settings.pdfCssNone");
   pdfCssClearBtn.classList.toggle("hidden", !state.settings.pdfCss);
+  // F4 页眉页脚回填:模式/文字/布局/页脚开关 + logo 文件名回显与清除按钮可见性
+  headerModeSelect.value = v.headerMode;
+  headerTextInput.value = v.headerText;
+  headerLayoutSelect.value = v.headerLayout;
+  footerEnabledInput.checked = v.footerEnabled;
+  const logoName = headerLogoDisplayName(v.headerLogoPath);
+  headerLogoStatus.textContent = logoName || t("settings.headerLogoNone");
+  headerLogoStatus.title = logoName;
+  headerLogoClearBtn.classList.toggle("hidden", !v.headerLogoPath);
+  syncHeaderCustomVisibility();
   // 问题 3:抽屉副标题随回填刷新(「预设名 · 纸张」)
   updateDrawerMeta(composeDrawerMetaText());
+}
+
+/**
+ * 自定义页眉控件块显隐(F4):仅 headerMode=custom 时显示文字/logo/布局,
+ * 与 default(标题页眉)/none(无页眉)无关。回填与模式下拉切换共用。
+ */
+export function syncHeaderCustomVisibility(): void {
+  headerCustomFields.classList.toggle(
+    "hidden",
+    headerModeSelect.value !== "custom",
+  );
 }
 
 /** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 select 值)。 */

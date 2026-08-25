@@ -511,3 +511,18 @@
 
 ## 实测结果记录
 - (待用户 GUI 实测)
+
+## 功能批次 F4「页眉页脚自定义」验收记录(2026-08-25)
+
+> settings 新增 headerFooter 对象(契约单源 settings-defaults.ts,不入预设体系):页眉三模式(default=标题居中现状/custom=自定义文字+logo/none)+ 居中/左右分栏布局 + logo 图片内嵌 + 页脚开关。docx 走 chrome.ts Header/Footer 扩展(leftRight 用右对齐制表位),pdf 走 printToPDF headerTemplate(logo base64 data URI,字号灰度与 docx 对齐);logo 读失败降级无 logo+keyed 警告三语言。代码+自动化验证已完成(typecheck/lint/build/56 段/smoke/gen:fixtures 全绿;新测试段 segments/header-footer + main/header-footer-settings)。以下为人工 GUI 实测项。
+
+- [ ] 抽屉 L2「页眉页脚」区块:模式下拉/自定义文字 input/logo 选择+清除+文件名回显/布局下拉/页脚开关,回填与持久化(重启保留)
+- [ ] custom 模式双格式导出:docx 打开见页眉文字+logo,pdf 页眉同款(字号/灰度观感一致)
+- [ ] 左右分栏:logo 左+文字右(docx 与 pdf 视觉一致);无 logo 时文字靠左
+- [ ] none 模式双格式均无页眉;页脚开关关闭后双格式均无「第 X/共 X 页」
+- [ ] logo 选择异常文件(webp 等):警告提示、转换不中断、产物降级为无 logo
+- [ ] default 模式回归:标题居中页眉+页码页脚与升级前一致;旧 settings.json 无 headerFooter 字段启动正常
+- [ ] 语言切换后区块文案 zh/en/ja 跟随
+
+## 实测结果记录
+- (待用户 GUI 实测)

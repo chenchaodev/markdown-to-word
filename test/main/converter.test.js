@@ -208,14 +208,15 @@ export async function run() {
 
     // ---- 8b. pdfCss 透传(批次 16):buildConvertContext 应把 settings.pdfCss 映射到 core 上下文 ----
     // (IPC 导入对话框无法自动化,标注 GUI 实测;此处断言 main 侧设置 → 上下文映射链路)
-    const pdfCssCtx = buildConvertContext({
+    // F4:buildConvertContext 改 async(页眉 logo 读文件),调用点 await
+    const pdfCssCtx = await buildConvertContext({
       baseDir: dir,
       title: "t",
       settings: { ...loadSettings(), pdfCss: "body { color: red; }" },
       imageResolver: getImageResolver(dir),
     });
     assert(pdfCssCtx.pdfCss === "body { color: red; }", "buildConvertContext 应透传 settings.pdfCss");
-    const pdfCssEmptyCtx = buildConvertContext({
+    const pdfCssEmptyCtx = await buildConvertContext({
       baseDir: dir,
       title: "t",
       settings: { ...loadSettings(), pdfCss: "" },

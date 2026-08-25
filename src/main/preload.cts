@@ -16,6 +16,7 @@ const CH = {
   fileCollectMarkdown: "file:collectMarkdown",
   fileFilterExisting: "file:filterExisting",
   dirSelect: "dir:select",
+  headerLogoSelect: "header-logo:select",
   convertSingle: "convert:single",
   convertBatch: "convert:batch",
   convertMerge: "convert:merge",
@@ -47,6 +48,8 @@ const api = {
   openMarkdowns: (): Promise<string[]> => ipcRenderer.invoke(CH.fileOpenDialog),
   /** 批次 7:选择输出目录(取消返回 null) */
   selectDir: (): Promise<string | null> => ipcRenderer.invoke(CH.dirSelect),
+  /** F4:选择页眉 logo 图片(限图片扩展名;取消返回 null) */
+  selectHeaderLogo: (): Promise<string | null> => ipcRenderer.invoke(CH.headerLogoSelect),
   /** 批次 7:取消当前转换(单文件/批量/合并通用) */
   convertCancel: (): Promise<void> => ipcRenderer.invoke(CH.convertCancel),
   /** 展开拖入路径(文件 + 文件夹递归),过滤出 Markdown 文件;skipped 为被跳过的项。 */
