@@ -1,25 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- 背景:Win11 风格蓝色渐变圆角方块 -->
+  <!-- 印刷付梓 · 朱砂钤印母题(tokens 见 docs/design/ui-guidelines.md 的 acc 色 #B5301C 系) -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2b88d8"/>
-      <stop offset="1" stop-color="#0078d4"/>
+    <!-- 钤印红:上亮下沉的朱砂层次(#C23D1E 深色态 acc → #B5301C 主色 → #97240F acc-h 加深) -->
+    <linearGradient id="seal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c23d1e"/>
+      <stop offset=".52" stop-color="#b5301c"/>
+      <stop offset="1" stop-color="#97240f"/>
     </linearGradient>
+    <!-- 左上柔光:印石受光的微妙体积感 -->
+    <radialGradient id="sheen" cx=".28" cy=".18" r="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".14"/>
+      <stop offset=".45" stop-color="#ffffff" stop-opacity=".04"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#bg)"/>
 
-  <!-- 源文档(左):三条白色文本线 -->
-  <rect x="280" y="380" width="340" height="56" rx="28" fill="#ffffff"/>
-  <rect x="280" y="492" width="420" height="56" rx="28" fill="#ffffff"/>
-  <rect x="280" y="604" width="300" height="56" rx="28" fill="#ffffff"/>
+  <!-- 钤印底:Win11 圆角方形铺满画布(沿用原图标足迹 64..960 / rx 210) -->
+  <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#seal)"/>
+  <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#sheen)"/>
 
-  <!-- 转换箭头(中):右向实心三角 -->
-  <path d="M 700 468 L 756 520 L 700 572 Z" fill="#ffffff"/>
+  <!-- 内描白环:mockup .tb-seal/.vseal 的 inset 白环(inset 48px ≈ 1.5px@22px 等比,rgba(255,255,255,.3)) -->
+  <rect x="112" y="112" width="800" height="800" rx="162" fill="none" stroke="#ffffff" stroke-opacity=".3" stroke-width="18"/>
 
-  <!-- 输出文档(右):白色文档页 + 蓝色内容线 -->
-  <rect x="776" y="368" width="176" height="288" rx="24" fill="#ffffff"/>
-  <rect x="800" y="412" width="128" height="22" rx="11" fill="#0078d4"/>
-  <rect x="800" y="454" width="128" height="22" rx="11" fill="#0078d4"/>
-  <rect x="800" y="496" width="128" height="22" rx="11" fill="#0078d4"/>
-  <rect x="800" y="538" width="96" height="22" rx="11" fill="#0078d4"/>
+  <!-- 「梓」:Source Han Serif SC Heavy 字形轮廓(离线提取转 path,不依赖运行时字体);
+       视觉高 566px(≈钤印面 63%,对齐 mockup 52~59% 比例),墨迹盒中心对齐画布中心 -->
+  <path transform="matrix(0.5933,0,0,-0.5933,212.98,737.45)" fill="#ffffff" d="M559 848L565 853Q640 850 681 832.5Q722 815 736.5 790.5Q751 766 744.5 742Q738 718 717.5 702.5Q697 687 668 687Q639 687 608 710Q602 792 559 848ZM965 390L740 390L740 213L785 213L852 306Q852 306 973 201Q967 185 944 185L740 185L740 -48Q740 -53 726 -65Q712 -77 686 -87Q660 -97 622 -97L595 -97L595 185L407 185L399 213L595 213L595 390L418 390Q422 343 389 322.5Q356 302 315 337Q316 405 291 468L291 -53Q291 -63 257 -79Q223 -95 185 -95L159 -95L159 290Q104 207 27 139L15 149Q65 238 95 350Q125 462 140 577L37 577L29 605L159 605L159 857L328 841Q329 818 291 812L291 616L339 690Q339 690 373.5 657Q408 624 437 593Q431 577 410 577L291 577L291 507Q388 467 409 418L707 418Q738 538 760 651L411 651L403 679L798 679L861 763Q861 763 900 731Q939 699 974 667Q968 651 947 651L763 651L936 598Q930 577 897 579Q829 506 735 418L805 418L872 509Q872 509 914 474.5Q956 440 993 406Q986 390 965 390ZM474 639L483 643Q583 609 617 562.5Q651 516 639.5 477.5Q628 439 592 428Q556 417 515 453Q511 555 474 639Z"/>
 </svg>
