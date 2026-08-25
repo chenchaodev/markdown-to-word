@@ -33,45 +33,47 @@ import {
 } from "./settings-logic.js";
 import {
   afterConvertInputs,
-  alignJustifyInput,
+  alignInputs,
   bodySizePtInput,
   breakBeforeH1Input,
   captionNumberingInput,
-  completeDialogPromptInput,
-   completeDialogSuppressInput,
-   equationNumberingInput,
-   firstLineIndentInput,
-   fontAsciiInput,
-   fontEastAsiaInput,
-   formatInputs,
-   footerEnabledInput,
-   headerCustomFields,
-   headerLayoutSelect,
-   headerLogoClearBtn,
-   headerLogoStatus,
-   headerModeSelect,
-   headerTextInput,
-   headingNumberingInput,
-   headingScaleSelect,
-   headingSpacingSelect,
-   languageSelect,
+  checkedRadioValue,
+  completeDialogSuppressInput,
+  equationNumberingInput,
+  firstLineIndentInput,
+  fontAsciiInput,
+  fontEastAsiaInput,
+  formatInputs,
+  footerEnabledInput,
+  headerCustomFields,
+  headerLayoutInputs,
+  headerLogoClearBtn,
+  headerLogoStatus,
+  headerModeInputs,
+  headerTextInput,
+  headingNumberingInput,
+  headingScaleInputs,
+  headingSpacingInputs,
+  languageSelect,
   lineSpacingInput,
+  lineSpacingValue,
   marginInputs,
-  orientationSelect,
+  orientationInputs,
   outputDirValue,
-  paperSelect,
+  paperInputs,
   pdfCssClearBtn,
   pdfCssStatus,
+  pdfCssTextInput,
   presetDeleteBtn,
   presetNameInput,
   presetSaveBtn,
   presetSaveDialog,
-   presetSaveError,
-   templatePresetHint,
-   templatePresetSelect,
-   themeInputs,
-    tocInput,
-  } from "../dom/refs.js";
+  presetSaveError,
+  templatePresetHint,
+  templatePresetSelect,
+  themeInputs,
+  tocInput,
+} from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError, setStatus, trapFocus } from "../state/utils.js";
 import { errorMessage } from "../state/pure.js";
@@ -160,8 +162,12 @@ export async function loadSettings(): Promise<void> {
  *  末尾刷新抽屉副标题(问题 3:「预设名 · 纸张」随回填实时更新)。 */
 export function applySettingsToControls(): void {
   const v = settingsToControlValues(state.settings);
-  paperSelect.value = v.paper;
-  orientationSelect.value = v.orientation;
+  // 界面重构 v3:纸张/方向/标题档位/页眉模式与布局为 seg 分段(radio 组),
+  // 回填按值勾选对应档(与 alignInputs/themeInputs 同款)
+  paperInputs.forEach((input) => (input.checked = input.value === v.paper));
+  orientationInputs.forEach(
+    (input) => (input.checked = input.value === v.orientation),
+  );
   (
     Object.keys(marginInputs) as (keyof PageSetup & keyof typeof marginInputs)[]
   ).forEach((key) => {
@@ -171,10 +177,16 @@ export function applySettingsToControls(): void {
   fontEastAsiaInput.value = v.fontEastAsia;
   bodySizePtInput.value = v.bodySizePt;
   lineSpacingInput.value = v.lineSpacing;
-  headingScaleSelect.value = v.headingScale;
-  headingSpacingSelect.value = v.headingSpacing;
+  if (lineSpacingValue) lineSpacingValue.textContent = v.lineSpacing; // 滑杆 mono 回显同步
+  headingScaleInputs.forEach(
+    (input) => (input.checked = input.value === v.headingScale),
+  );
+  headingSpacingInputs.forEach(
+    (input) => (input.checked = input.value === v.headingSpacing),
+  );
   firstLineIndentInput.checked = v.firstLineIndent;
-  alignJustifyInput.checked = v.alignJustify;
+  // 界面重构 v3:对齐方式 radio 组回填(按值勾选对应档)
+  alignInputs.forEach((input) => (input.checked = input.value === v.align));
   headingNumberingInput.checked = v.headingNumbering;
   captionNumberingInput.checked = v.captionNumbering;
   // 模板预设:优先保持当前选中(值与设置一致时不弹回——自定义预设与硬编码预设
@@ -217,15 +229,20 @@ export function applySettingsToControls(): void {
   outputDirValue.textContent = v.outputDirText;
   outputDirValue.title = v.outputDirText;
   // 批次 16:PDF 样式 CSS 回显(settings.json 只存内容不存文件名,显示通用文案;
-  // 非空 → 「已导入自定义 CSS」+ 清除按钮可用)
+  // 非空 → 「已导入自定义 CSS」+ 清除按钮可用)。界面重构 v3:内容同步进文本域
+  pdfCssTextInput.value = state.settings.pdfCss;
   pdfCssStatus.textContent = state.settings.pdfCss
     ? t("settings.pdfCssImported")
     : t("settings.pdfCssNone");
   pdfCssClearBtn.classList.toggle("hidden", !state.settings.pdfCss);
   // F4 页眉页脚回填:模式/文字/布局/页脚开关 + logo 文件名回显与清除按钮可见性
-  headerModeSelect.value = v.headerMode;
+  headerModeInputs.forEach(
+    (input) => (input.checked = input.value === v.headerMode),
+  );
   headerTextInput.value = v.headerText;
-  headerLayoutSelect.value = v.headerLayout;
+  headerLayoutInputs.forEach(
+    (input) => (input.checked = input.value === v.headerLayout),
+  );
   footerEnabledInput.checked = v.footerEnabled;
   const logoName = headerLogoDisplayName(v.headerLogoPath);
   headerLogoStatus.textContent = logoName || t("settings.headerLogoNone");
@@ -237,20 +254,22 @@ export function applySettingsToControls(): void {
 }
 
 /**
- * 自定义页眉控件块显隐(F4):仅 headerMode=custom 时显示文字/logo/布局,
- * 与 default(标题页眉)/none(无页眉)无关。回填与模式下拉切换共用。
+ * 自定义页眉控件块显隐(F4;界面重构 v3 改 .cond 折叠容器形态):
+ * 仅 headerMode=custom 时展开文字/logo/布局(IA §3.1 模式 + 条件字段:
+ * 整块收起而非灰禁;.cond:not(.show) 内 visibility:hidden 保证折叠时不可聚焦),
+ * 与 default(标题页眉)/none(无页眉)无关。回填与模式 seg 切换共用。
  */
 export function syncHeaderCustomVisibility(): void {
-  headerCustomFields.classList.toggle(
-    "hidden",
-    headerModeSelect.value !== "custom",
-  );
+  const custom = checkedRadioValue(headerModeInputs) === "custom";
+  headerCustomFields.classList.toggle("show", custom);
+  // inert 随折叠同步:收起态字段不可聚焦(键盘/焦点陷阱不落入不可见区)
+  headerCustomFields.inert = !custom;
 }
 
-/** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 select 值)。 */
+/** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 seg 选中值)。 */
 function composeDrawerMetaText(): string {
   const presetName = templatePresetSelect.selectedOptions[0]?.textContent ?? "";
-  return `${presetName} · ${paperSelect.value}`;
+  return `${presetName} · ${checkedRadioValue(paperInputs)}`;
 }
 
 /** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。
@@ -422,6 +441,7 @@ export async function importPdfCss(): Promise<void> {
     }
     if (r.canceled) return; // 用户取消:无动作
     state.settings.pdfCss = r.css;
+    pdfCssTextInput.value = r.css; // 界面重构 v3:导入内容同步进文本域
     persistSettings({ pdfCss: r.css });
     pdfCssStatus.textContent = t("settings.cssImported", { name: r.name });
     pdfCssClearBtn.classList.remove("hidden");
@@ -432,9 +452,10 @@ export async function importPdfCss(): Promise<void> {
   }
 }
 
-/** 清除已导入的 PDF 样式 CSS:持久化空串 + 状态复位「未导入」+ 清除按钮禁用。 */
+/** 清除已导入的 PDF 样式 CSS:持久化空串 + 文本域/状态复位「未导入」+ 清除按钮禁用。 */
 export function clearPdfCss(): void {
   state.settings.pdfCss = "";
+  pdfCssTextInput.value = ""; // 界面重构 v3:文本域同步清空
   persistSettings({ pdfCss: "" });
   pdfCssStatus.textContent = t("settings.pdfCssNone");
   pdfCssClearBtn.classList.add("hidden");
@@ -442,17 +463,16 @@ export function clearPdfCss(): void {
 
 /* ---------- 转换完成弹窗提示(批次 11 迭代 2;ui-state 字段,非 settings.json) ---------- */
 /**
- * 同步「转换完成弹窗提示」两处 checkbox 与内存态(设置面板 + 弹窗内;不持久化)。
+ * 同步「不再提示」checkbox 与内存态(控件仅存于完成弹窗内;设置面板侧控件已按
+ * settings-ia.md 迁移映射表移除——场景被 afterConvert 覆盖;不持久化)。
  * 供启动恢复(initUiStateRestore)与 setSuppressCompleteDialog 共用。
  */
 export function syncSuppressCompleteDialog(checked: boolean): void {
   state.suppressCompleteDialog = checked;
   completeDialogSuppressInput.checked = checked;
-  // 设置面板 checkbox 语义为「提示弹窗」(勾选 = 提示 = suppress=false),与 suppress 相反
-  completeDialogPromptInput.checked = !checked;
 }
 
-/** 更新并持久化「转换完成弹窗提示」(两处 checkbox 双向同步同一字段;写入失败静默)。 */
+/** 更新并持久化「不再提示」(弹窗内 checkbox;写入失败静默)。 */
 export function setSuppressCompleteDialog(checked: boolean): void {
   syncSuppressCompleteDialog(checked);
   void window.api.uiStateSet({ suppressCompleteDialog: checked }).catch(() => {

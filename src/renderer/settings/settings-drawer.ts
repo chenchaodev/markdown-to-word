@@ -12,6 +12,7 @@
  */
 import {
   drawerCloseBtn,
+  drawerDoneBtn,
   drawerSubtitle,
   settingsDrawer,
   settingsOpenBtn,
@@ -85,6 +86,9 @@ export function bindSettingsDrawerEvents(): void {
   settingsOpenBtn.addEventListener("click", openSettingsDrawer);
 
   drawerCloseBtn.addEventListener("click", closeSettingsDrawer);
+
+  // 界面重构 v3:抽屉底部「完成」按钮 = 与关闭按钮同一关闭路径(焦点归还链一致)
+  drawerDoneBtn.addEventListener("click", closeSettingsDrawer);
 
   // 遮罩点击关闭(只响应遮罩本身,点面板内部不关闭——与弹窗遮罩同语义)
   settingsDrawer.addEventListener("click", (event) => {

@@ -1,63 +1,48 @@
-/* Markdown 转换工具 — 文件选择域样式(批③自 style.css 拆出):
- * 主舞台固定高度(P0-1:三态共用同一容器几何,内部布局变化不影响外部)、
- * 拖放区三态(默认/单文件横向紧凑卡/多文件列表)、列表行与拖拽排序视觉、
- * 多文件工具条(追加/清空)、单文件操作行。 */
+/* Markdown 转换工具 — 主舞台域样式(界面重构 v3):
+ * 三态 pane(空态待印文稿台 = 全站唯一签名元素 / 单文件卡 / 多文件队列卡)、
+ * 舞台切换(data-stage 驱动)、拖入高亮与错误反馈。
+ * 令牌纪律:颜色一律经 base.css 语义变量引用,本文件不写 hex。 */
 
-/* 文件选择区(主舞台):P0-1 固定容器策略 + 问题 1/2c 响应式修正——
- * 高度改由 .app 的弹性轨道(minmax(min(300px,40vh),1fr))拉伸决定:
- * 大窗口撑满不留白,矮窗口下限随 40vh 缩小保证整体不溢出;
- * 尺寸只随窗口变化、不随文件选择数量变化(空/单/多三态只切换容器内部内容,
- * 外部布局零跳动),多文件列表超高时在本区内滚动(.drop-multi 链路) */
-.file-area {
-  min-height: 0;
-}
-
-.drop-zone {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden; /* 多文件列表在内部滚动,不撑破卡片 */
-  border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--bg-subtle);
+/* 主舞台(#dropZone 兼任):三态容器几何恒定,内部布局变化不影响外部 */
+.stage-wrap {
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease,
-    border-style 0.15s ease;
 }
 
-.drop-zone:hover {
-  border-color: var(--accent);
+.stage-wrap:focus-visible {
+  outline: none;
 }
 
-.drop-zone.has-file {
-  border-style: solid;
-  border-color: var(--border-strong);
+/* 舞台三态切换:data-stage 由 renderSelection 写入 */
+.pane {
+  display: none;
 }
 
-.drop-zone.has-file:hover {
-  border-color: var(--accent);
+.stage-wrap[data-stage="empty"] .pane-empty,
+.stage-wrap[data-stage="single"] .pane-single,
+.stage-wrap[data-stage="multi"] .pane-multi {
+  display: block;
 }
 
-.drop-zone.dragover {
-  border-style: solid;
-  border-color: var(--accent);
-  background: var(--accent-soft);
+/* 拖入高亮:文稿台描边转朱砂(进行中语义一线) */
+.stage-wrap.dragover .sheet,
+.stage-wrap.dragover .filecard,
+.stage-wrap.dragover .listcard {
+  border-color: var(--acc);
 }
 
-.drop-zone.dragover .drop-title {
-  color: var(--accent);
+.stage-wrap.dragover .drop-core h1 {
+  color: var(--acc);
 }
 
-.drop-zone.dragover .drop-icon {
-  color: var(--accent);
+/* 错误反馈(JS 控制移除时机):短暂朱砂描边 */
+.stage-wrap.drop-zone--error .sheet,
+.stage-wrap.drop-zone--error .filecard,
+.stage-wrap.drop-zone--error .listcard {
+  border-color: var(--acc) !important;
 }
 
-/* 主舞台状态切换微动效(P2-2):150ms 淡入 + 4px 上移;
- * 三态容器 display 切换时动画自动重放;尊重减少动态效果偏好 */
-.drop-default,
-.drop-file,
-.drop-multi {
+/* 舞台状态切换微动效(≤150ms;reduced-motion 全局兜底) */
+.pane {
   animation: stage-in 0.15s ease-out;
 }
 
@@ -72,284 +57,350 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .drop-default,
-  .drop-file,
-  .drop-multi {
-    animation-duration: 0.01ms;
-  }
+/* ========== 空态 · 待印文稿台(签名元素:裁切线 + 直排题字 + 钤印) ========== */
+.sheet {
+  position: relative;
+  max-width: 700px;
+  margin: 10px auto 0;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: 3px; /* 文稿台特例圆角(guidelines §1.3) */
+  box-shadow: var(--shadow-card), 0 14px 36px rgba(20, 21, 26, 0.08);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-/* 错误反馈:短暂红色描边(JS 控制移除时机) */
-.drop-zone--error {
-  border-color: var(--error) !important;
-  background: var(--error-soft) !important;
+.sheet:hover {
+  border-color: var(--mut);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card), 0 20px 44px rgba(20, 21, 26, 0.12);
 }
 
-.drop-zone:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* 四角裁切线 */
+.cm {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  color: var(--line-2);
+  pointer-events: none;
 }
 
-/* 拖放区默认提示态 */
-.drop-default {
-  padding: 0 32px;
-  text-align: center;
+.cm::before,
+.cm::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
 }
 
-.drop-icon {
-  display: block;
-  width: 44px;
-  height: 44px;
-  margin: 0 auto 10px;
-  color: var(--icon-muted);
+.cm::before {
+  width: 18px;
+  height: 1px;
+  top: 0;
+  left: 0;
 }
 
-.drop-title {
-  margin: 0;
-  font-size: 15px;
-  color: var(--text);
+.cm::after {
+  width: 1px;
+  height: 18px;
+  top: 0;
+  left: 0;
 }
 
-.drop-or {
-  margin: 6px 0 12px;
-  font-size: 13px;
-  color: var(--text-tertiary);
+.cm.tl {
+  top: -10px;
+  left: -10px;
 }
 
-/* 能力说明(P1-6):支持的扩展名与语法能力,一行轻量标注 */
-.drop-capabilities {
-  margin: 14px 0 0;
-  font-size: 12px;
-  color: var(--text-tertiary);
+.cm.tr {
+  top: -10px;
+  right: -10px;
+  transform: scaleX(-1);
 }
 
-/* ---------- 最近转换快捷 chips(P1-3,主舞台空态内) ---------- */
-.recent-chips {
+.cm.bl {
+  bottom: -10px;
+  left: -10px;
+  transform: scaleY(-1);
+}
+
+.cm.br {
+  bottom: -10px;
+  right: -10px;
+  transform: scale(-1);
+}
+
+/* 暗纹稿纸线(径向蒙版淡出) */
+.rules {
+  position: absolute;
+  inset: 60px 54px;
+  pointer-events: none;
+  opacity: 0.5;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 27px,
+    var(--line) 27px 28px
+  );
+  -webkit-mask-image: radial-gradient(85% 75% at 50% 46%, #000 26%, transparent 98%);
+  mask-image: radial-gradient(85% 75% at 50% 46%, #000 26%, transparent 98%);
+}
+
+/* 直排题字 + 旋转钤印(装饰预算集中制:仅此一处) */
+.vwrap {
+  position: absolute;
+  left: 30px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  max-width: 560px;
-  margin: 16px auto 0;
+  gap: 18px;
+  pointer-events: none;
 }
 
-.recent-chip-list {
+.vtext {
+  writing-mode: vertical-rl;
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 0.44em;
+  color: var(--mut);
+}
+
+.vseal {
+  width: 27px;
+  height: 27px;
+  border-radius: 6px;
+  background: var(--acc);
+  color: var(--on-acc);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1;
+  transform: rotate(-5deg);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.3), 0 3px 8px var(--acc-ring);
+}
+
+.drop-core {
+  position: relative;
+  text-align: center;
+  padding: 42px 56px 36px; /* 左侧给直排钤印留位 */
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 11px;
+}
+
+.drop-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  color: var(--mut);
+}
+
+.drop-core h1 {
+  font-family: var(--font-display);
+  font-size: 33px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+}
+
+.drop-sub {
+  font-size: 13px;
+  color: var(--mut);
+}
+
+/* 能力胶囊行 */
+.caps {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
 }
 
-/* chip = wrapper(定位上下文):主按钮(名称+格式徽标)+ 行尾 ↻ 重转按钮 */
-.recent-chip {
-  position: relative;
-  display: inline-flex;
-}
-
-.recent-chip-main {
+.cap {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 220px;
-  padding: 4px 10px;
-  font-family: inherit;
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  background: var(--bg-card);
-  border: 1px solid var(--border-strong);
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
   border-radius: 999px;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease,
-    border-color 0.15s ease;
+  background: var(--card);
+  font-size: 12px;
+  color: var(--ink-2);
 }
 
-.recent-chip-main:hover {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent-border);
+.cap .ic {
+  width: 14px;
+  height: 14px;
+  color: var(--mut);
 }
 
-.recent-chip-main:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.recent-chip-name {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* ↻ 重转按钮:hover / 键盘聚焦(chip 内任意点)时显现,取代不可发现的双击 */
-.recent-reload {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  color: var(--accent);
-  background: var(--bg-card);
-  border: 1px solid var(--accent-border);
-  border-radius: 50%;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
-}
-
-.recent-chip:hover .recent-reload,
-.recent-chip:focus-within .recent-reload,
-.recent-reload:focus-visible {
-  opacity: 1;
-}
-
-.recent-reload svg {
-  width: 11px;
-  height: 11px;
-}
-
-.recent-reload:hover {
-  background: var(--accent-soft);
-}
-
-.recent-reload:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-/* 拖放区已选单文件态:P0-1 横向紧凑卡(图标 + 名称/路径/提示 + 操作一行),
- * 在固定高度主舞台内垂直居中;原「压缩到 120px」方案已移除——容器几何恒定,
- * drop-zone--single class 仅作为 JS 侧单文件态标记保留,不再有任何容器几何规则 */
-.drop-file {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  min-width: 0;
-  padding: 0 32px;
-  text-align: left;
-}
-
-/* 单文件态文档图标(与默认态 drop-icon 同形,尺寸收敛) */
-.drop-file-icon {
-  flex: none;
-  width: 36px;
-  height: 36px;
-  color: var(--icon-muted);
-}
-
-/* 名称 / 路径 / 提示纵向块:占据剩余空间,长路径省略 */
-.drop-file-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.file-name {
-  margin: 0;
-  font-size: 15px;
+.cap b {
+  font-family: var(--font-mono);
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 13px;
 }
 
-.file-path {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.drop-change {
-  margin: 10px 0 0;
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
-/* 紧凑卡内提示行距收紧(多文件态的 .drop-change 保持原行距不受影响) */
-.drop-file-info .drop-change {
-  margin: 4px 0 0;
-}
-
-/* 批次 12(C10):多文件态第二行提示(「双击行可预览」可见化,紧贴首行) */
-.drop-change--second {
-  margin-top: 4px;
-}
-
-/* 拖放区多文件态:数量 + 可滚动名称列表(P0-1:撑满固定高度主舞台,
- * 列表超高在内部滚动,容器几何不变) */
-.drop-multi {
-  align-self: stretch;
-  width: 100%;
+/* ========== 单文件态 · 文件卡 ========== */
+.ph {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
   gap: 10px;
-  padding: 16px 28px 14px;
-  text-align: left;
-  min-height: 0;
+  max-width: 760px;
+  margin: 0 auto 12px;
 }
 
-.multi-count {
-  margin: 0;
+.ph-title {
+  font-family: var(--font-display);
   font-size: 15px;
+  letter-spacing: 0.14em;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.multi-list {
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-  padding: 2px;
-  list-style: none;
-  overflow-y: auto;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  user-select: text;
+.ph-sub {
+  font-size: 12px;
+  color: var(--mut);
 }
 
-.multi-item {
+.ph-side {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--mut);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 6px 4px 10px;
-  font-size: 13px;
-  color: var(--text);
-  border-bottom: 1px solid var(--border);
-  cursor: grab;
-  user-select: none; /* 拖拽排序时避免误选文本 */
+}
+
+.filecard {
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-win);
+  box-shadow: var(--shadow-card);
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.fico {
+  width: 48px;
+  height: 48px;
+  border-radius: 11px;
+  background: var(--acc-soft);
+  color: var(--acc);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.fico .ic {
+  width: 22px;
+  height: 22px;
+}
+
+.fmain {
+  flex: 1;
+  min-width: 0;
+}
+
+.fname {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+.fmeta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--mut);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: ltr;
+  user-select: text;
+}
+
+.fhint {
+  max-width: 760px;
+  margin: 12px auto 0;
+  font-size: 12px;
+  color: var(--mut);
+  text-align: left;
+  padding-left: 2px;
+}
+
+.facts {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+/* ========== 多文件态 · 队列卡 ========== */
+.listcard {
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-win);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.mlist {
+  list-style: none;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+/* 队列行(file-list.renderMultiList 渲染契约:multi-item/-grip/-index/-name/
+ * -actions/-remove;mockup §8 行设计:grip 拖拽锚点 + mono 序号 + 名称 + 行内移除) */
+.multi-item {
+  display: grid;
+  grid-template-columns: 22px 26px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  transition: background-color 0.12s ease, opacity 0.12s ease;
 }
 
 .multi-item:last-child {
-  border-bottom: 0;
+  border-bottom: none;
 }
 
-.multi-item:hover,
-.multi-item:focus-visible {
-  background: var(--row-hover);
+.multi-item:hover {
+  background: var(--card-2);
 }
 
-.multi-item:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+.multi-item.dragging {
+  opacity: 0.35;
 }
 
-/* 拖拽手柄(P1-4):视觉锚点,排序仍为整行拖拽 */
+/* 拖拽落点指示(进行中语义一线,与拖入高亮同色):细朱砂导轨 */
+.multi-item.drop-before {
+  box-shadow: inset 0 2px 0 var(--acc);
+}
+
+.multi-item.drop-after {
+  box-shadow: inset 0 -2px 0 var(--acc);
+}
+
 .multi-grip {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  color: var(--text-tertiary);
+  color: var(--line-2);
+  cursor: grab;
+  display: grid;
+  place-items: center;
 }
 
 .multi-grip svg {
@@ -357,45 +408,41 @@
   height: 14px;
 }
 
-/* 排序序号:固定宽度右对齐,等宽数字对齐 */
-.multi-index {
-  flex: none;
-  width: 22px;
-  font-size: 12px;
-  color: var(--text-tertiary);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.multi-item:hover .multi-grip {
+  color: var(--mut);
 }
 
-/* 文件名:超长截断 */
+.multi-index {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--mut);
+}
+
 .multi-name {
-  flex: 1;
-  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  user-select: text;
 }
 
 .multi-actions {
-  flex: none;
   display: flex;
-  gap: 2px;
+  align-items: center;
+  justify-content: flex-end;
 }
 
+/* 行内移除(破坏性操作红线:墨色描边系,不用红) */
 .multi-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease,
-    border-color 0.15s ease;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-btn-sm);
+  display: grid;
+  place-items: center;
+  color: var(--mut);
+  transition: background-color 0.13s ease, color 0.13s ease;
+  flex: none;
 }
 
 .multi-remove svg {
@@ -403,66 +450,28 @@
   height: 14px;
 }
 
-/* 移除按钮悬停:红色语义,提示破坏性操作 */
-.multi-remove:hover:not(:disabled) {
-  color: var(--error);
-  background: var(--error-soft);
-  border-color: var(--error-border);
+.multi-remove:hover {
+  background: var(--card-2);
+  color: var(--ink);
 }
 
 .multi-remove:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
 }
 
-.multi-remove:disabled {
-  color: var(--text-disabled);
-  cursor: default;
-}
-
-/* 拖拽排序视觉:源项半透明,目标项上下沿显示插入位置 */
-.multi-item.dragging {
-  opacity: 0.45;
-}
-
-.multi-item.drop-before {
-  box-shadow: inset 0 2px 0 var(--accent);
-}
-
-.multi-item.drop-after {
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-
-/* 单文件态操作行:紧凑卡右侧按钮组(追加 / 预览 / 移除) */
-.drop-file-actions {
-  flex: none;
+.list-foot {
+  padding: 10px 16px;
+  background: var(--card-2);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--mut);
   display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 18px;
+  flex-wrap: wrap;
 }
 
-.drop-file-actions .drop-change {
-  margin: 0;
-}
-
-/* 多文件态工具条:数量 + 追加 / 清空 */
-.multi-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.multi-head .multi-count {
-  flex: 1;
-  min-width: 0;
-}
-
-.multi-tools {
-  flex: none;
-  display: flex;
-  gap: 8px;
-}
-
-.multi-tools .btn-small {
-  padding: 3px 10px;
+.list-foot b {
+  color: var(--ink-2);
+  font-weight: 600;
 }

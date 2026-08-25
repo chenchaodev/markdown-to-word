@@ -1,312 +1,844 @@
-/* Markdown 转换工具 — 基础样式(批③自 style.css 拆出):
- * 主题变量与双作用域深色主题、reset、应用卡片(Grid 轨道布局,P0-1)、标题/版本号、
- * 消息槽(P0-2 常驻固定槽)与状态区、底部操作栏(格式选择/转换按钮/进度条)、
- * 通用工具类(.hidden / .btn 族)。
+/* Markdown 转换工具 — 基础样式(界面重构 v3「印刷付梓」渲染层批次):
+ * 设计令牌单源(docs/design/ui-guidelines.md §1 落地)、reset、应用骨架
+ * (标题栏 44px 拖拽区 / 主舞台 / 常驻历史折叠条 / 消息区 / 底部动作栏)、
+ * 通用控件(btn 族 / 分段 / 开关 / 输入件)、响应式四档与动效纪律。
  * 引入顺序固定:base → drop → settings → dialogs(index.html 多 <link> 同源引入,
- * CSP 无需改动);后加载文件的更高特异性规则覆盖先加载者,拆分保持原级联顺序。 */
+ * CSP 无需改动);后加载文件的更高特异性规则覆盖先加载者。
+ *
+ * 令牌纪律(红线):任何组件规则不得硬编码 hex——一律经本文件语义变量引用;
+ * 「跟随系统」主题当前仍由 CSS @media prefers-color-scheme 兜底(过渡态:
+ * 主进程 titleBarOverlay 通道落地宿主解析 data-theme 后移除,见 docs/design/
+ * ui-guidelines.md §1.1 注记),显式 light/dark 走 html[data-theme]。 */
 
-/* Markdown 转换工具 — G2 渲染层样式(Windows 11 风格;浅色默认,深色见下方双作用域主题) */
-
-/*
- * 颜色体系(双主题):
- * 所有颜色一律经 :root 语义变量引用,组件规则不写死色值。浅色为默认值;
- * 深色在两个作用域提供同一套覆盖:
- *   ① html[data-theme="dark"] —— 用户显式选择深色;
- *   ② @media (prefers-color-scheme: dark) 内 html:not([data-theme="light"])
- *      —— 跟随系统(未显式选择时无 data-theme 属性;显式选 light 时被排除)。
- * 两个深色块的声明内容必须逐行一致,修改时同步更新。
- */
+/* ========== 1. 设计令牌(ui-guidelines §1 单源落地) ========== */
 :root {
   color-scheme: light;
-  /* 底色 */
-  --bg: #f3f3f3;
-  --bg-card: #ffffff;
-  --bg-subtle: #fafafa;
-  --bg-code: #f7f7f7;
-  /* 文字与图标 */
-  --text: #1b1b1b;
-  --text-secondary: #616161;
-  --text-tertiary: #8f8f8f;
-  --text-disabled: #c8c8c8;
-  --icon-muted: #bfbfbf;
-  --text-on-accent: #ffffff;
-  /* 边框 */
-  --border: #e5e5e5;
-  --border-strong: #c9c9c9;
-  /* 强调色 */
-  --accent: #0078d4;
-  --accent-hover: #006cbd;
-  --accent-soft: #e6f1fb;
-  --accent-border: #c8dff3;
-  /* 语义色:本色 + 柔和底 + 描边 */
-  --error: #c42b1c;
-  --error-soft: #fdf1f0;
-  --error-border: #f0c8c3;
-  --error-badge-bg: #fde7e7;
-  --warning: #9a6700;
-  --warning-soft: #fdf9ec;
-  --warning-border: #ecd9a8;
-  --success: #107c10;
-  --success-soft: #f4faf4;
-  --success-border: #c9e6c9;
-  /* 交互态 */
-  --row-hover: #f6f6f6;
-  --panel-hover: #f2f2f2;
-  --hover: #f0f0f0;
-  --active: #eaeaea;
-  --disabled-bg: #e6e6e6;
-  --disabled-fg: #a0a0a0;
-  --overlay: rgba(0, 0, 0, 0.4);
-  --progress-track: #e8e8e8;
-  /* 圆角与阴影 */
-  --radius: 12px;
-  --radius-sm: 6px;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
-  --shadow-dialog: 0 8px 28px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.12);
+  /* 字体栈三套(角色固定不混用:serif 只做声音不做正文) */
+  --font-ui: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI",
+    system-ui, sans-serif;
+  --font-display: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun",
+    Georgia, "Times New Roman", serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Courier New",
+    monospace;
+
+  /* 色板(浅色) */
+  --canvas: #f1f1ee; /* 应用画布(冷灰纸) */
+  --card: #fbfbf9; /* 卡片纸面 */
+  --card-2: #f3f3ef; /* 卡片 hover / 次级面 */
+  --inset: #ebebe6; /* 凹陷面(分段槽、路径框、代码块底) */
+  --tb: #f7f7f4; /* 标题栏 / 底部动作栏 */
+  --line: #e2e2dc; /* 分区发丝线 */
+  --line-2: #cccdc5; /* 控件描边 */
+  --ink: #1e2126; /* 主文 */
+  --ink-2: #494e58; /* 次文 */
+  --mut: #71767f; /* 弱化 */
+  --acc: #b5301c; /* 朱砂强调(语义红线:仅限付印动作/选中态/钤印/进行中) */
+  --acc-h: #982512;
+  --acc-soft: rgba(181, 48, 28, 0.09);
+  --acc-ring: rgba(181, 48, 28, 0.3);
+  --ok: #2f7d4f; /* 成功(仅限结果勾选与完成态) */
+  --ok-soft: rgba(47, 125, 79, 0.12);
+  --warn: #9a6700; /* 警告(汇总条黄字沿用) */
+  --warn-soft: #fdf9ec;
+  --warn-border: #ecd9a8;
+  --solid-bg: #22252b; /* 墨色实心按钮(次主动作) */
+  --solid-bg-h: #3a3e46;
+  --solid-fg: #fbfbf9;
+  --scrim: rgba(13, 14, 17, 0.42);
+  --on-acc: #ffffff; /* 朱砂/墨色实心上的文字 */
+  --grain-op: 0.05; /* 纸张颗粒不透明度(mockup §2 body::after) */
+
+  /* 阴影两档 */
+  --shadow-card: 0 1px 2px rgba(24, 25, 28, 0.05), 0 2px 6px rgba(24, 25, 28, 0.04);
+  --shadow-pop: 0 18px 50px rgba(15, 16, 20, 0.22);
+
+  /* 形状:窗口 12 / 卡片·抽屉 10 / 按钮 8(sm 7)/ 输入件 7 / 胶囊 999 / 文稿台 3 */
+  --radius-win: 12px;
+  --radius-card: 10px;
+  --radius-btn: 8px;
+  --radius-btn-sm: 7px;
+  --radius-in: 7px;
+
+  /* 标题栏高度(矮窗档降为 40px,抽屉/遮罩 top 联动) */
+  --tbh: 44px;
+
+  /* 原生窗口控制按钮区宽度(titleBarOverlay 绘制于窗体右缘,最小化/最大化/关闭
+   * 三钮各约 46px @100% DPI,随 DPI 等比缩放):标题栏右侧自绘内容以此为避让基准 */
+  --wco-w: 138px;
 }
 
-/* 深色主题 · 作用域一:用户显式选择(内容与下方系统作用域逐行一致,同步维护) */
+/* 深色令牌 · 作用域一:用户显式选择(html[data-theme="dark"]) */
 html[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #212121;
-  --bg-card: #2c2c2c;
-  --bg-subtle: #262626;
-  --bg-code: #242424;
-  --text: #e8e8e8;
-  --text-secondary: #aaaaaa;
-  --text-tertiary: #8c8c8c;
-  --text-disabled: #5e5e5e;
-  --icon-muted: #636363;
-  --text-on-accent: #001b29;
-  --border: #3e3e3e;
-  --border-strong: #5a5a5a;
-  --accent: #4cc2ff;
-  --accent-hover: #6fd0ff;
-  --accent-soft: #183650;
-  --accent-border: #396881;
-  --error: #ff6a5f;
-  --error-soft: #432a28;
-  --error-border: #6b3a34;
-  --error-badge-bg: #4e2f2c;
-  --warning: #d9a640;
-  --warning-soft: #463e2f;
-  --warning-border: #6a6132;
-  --success: #58bf58;
-  --success-soft: #34462f;
-  --success-border: #4d6b44;
-  --row-hover: #333333;
-  --panel-hover: #373737;
-  --hover: #3a3a3a;
-  --active: #414141;
-  --disabled-bg: #383838;
-  --disabled-fg: #676767;
-  --overlay: rgba(0, 0, 0, 0.55);
-  --progress-track: #404040;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-dialog: 0 8px 28px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --canvas: #15181d;
+  --card: #1c2027;
+  --card-2: #232830;
+  --inset: #111419;
+  --tb: #191d23;
+  --line: #2a2f38;
+  --line-2: #3b424e;
+  --ink: #e9e7e1;
+  --ink-2: #b8bcc4;
+  --mut: #878e99;
+  --acc: #c23d1e;
+  --acc-h: #d5542f;
+  --acc-soft: rgba(205, 69, 38, 0.16);
+  --acc-ring: rgba(213, 84, 47, 0.38);
+  --ok: #4c9e6d;
+  --ok-soft: rgba(76, 158, 109, 0.16);
+  --warn: #d9a640;
+  --warn-soft: #463e2f;
+  --warn-border: #6a6132;
+  --solid-bg: #e9e7e1;
+  --solid-bg-h: #f6f4ef;
+  --solid-fg: #16181d;
+  --scrim: rgba(5, 6, 8, 0.58);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.5);
+  --grain-op: 0.07;
 }
 
-/* 深色主题 · 作用域二:跟随系统(未显式选择时;内容与上一块逐行一致,同步维护) */
+/* 深色令牌 · 作用域二:跟随系统兜底(过渡态,内容与上一块逐行一致,同步维护;
+ * 主进程通道落地宿主解析后此块与上方注记一并移除) */
 @media (prefers-color-scheme: dark) {
   html:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #212121;
-    --bg-card: #2c2c2c;
-    --bg-subtle: #262626;
-    --bg-code: #242424;
-    --text: #e8e8e8;
-    --text-secondary: #aaaaaa;
-    --text-tertiary: #8c8c8c;
-    --text-disabled: #5e5e5e;
-    --icon-muted: #636363;
-    --text-on-accent: #001b29;
-    --border: #3e3e3e;
-    --border-strong: #5a5a5a;
-    --accent: #4cc2ff;
-    --accent-hover: #6fd0ff;
-    --accent-soft: #183650;
-    --accent-border: #396881;
-    --error: #ff6a5f;
-    --error-soft: #432a28;
-    --error-border: #6b3a34;
-    --error-badge-bg: #4e2f2c;
-    --warning: #d9a640;
-    --warning-soft: #463e2f;
-    --warning-border: #6a6132;
-    --success: #58bf58;
-    --success-soft: #34462f;
-    --success-border: #4d6b44;
-    --row-hover: #333333;
-    --panel-hover: #373737;
-    --hover: #3a3a3a;
-    --active: #414141;
-    --disabled-bg: #383838;
-    --disabled-fg: #676767;
-    --overlay: rgba(0, 0, 0, 0.55);
-    --progress-track: #404040;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
-    --shadow-dialog: 0 8px 28px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --canvas: #15181d;
+    --card: #1c2027;
+    --card-2: #232830;
+    --inset: #111419;
+    --tb: #191d23;
+    --line: #2a2f38;
+    --line-2: #3b424e;
+    --ink: #e9e7e1;
+    --ink-2: #b8bcc4;
+    --mut: #878e99;
+    --acc: #c23d1e;
+    --acc-h: #d5542f;
+    --acc-soft: rgba(205, 69, 38, 0.16);
+    --acc-ring: rgba(213, 84, 47, 0.38);
+    --ok: #4c9e6d;
+    --ok-soft: rgba(76, 158, 109, 0.16);
+    --warn: #d9a640;
+    --warn-soft: #463e2f;
+    --warn-border: #6a6132;
+    --solid-bg: #e9e7e1;
+    --solid-bg-h: #f6f4ef;
+    --solid-fg: #16181d;
+    --scrim: rgba(5, 6, 8, 0.58);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.5);
+    --grain-op: 0.07;
   }
 }
 
+/* ========== 2. 基础 / reset ========== */
 * {
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
 }
 
-/* 文档级零滚动(问题 2a 根治):
- * - overflow:hidden 显式声明于 html/body——原 body{overflow-y:auto} 按 CSS 规范
- *   传播给视口后自身 computed 回 visible,body 不建 BFC,.app 的上下 16px 外边距
- *   塌陷逃逸到 body 盒外,文档高 = 100vh+32px → 视口永久滚动条(实测截图问题);
- * - hidden 使 body 建立 BFC(边距不再逃逸)+ 视口禁用文档级滚动,
- *   滚动只允许发生在消息槽等设计好的内部容器 */
 html,
 body {
   height: 100%;
-  margin: 0;
-  overflow: hidden;
+  overflow: hidden; /* 文档级零滚动:滚动只发生在主舞台/消息区/抽屉列表等内部容器 */
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
-    "Microsoft YaHei", sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text);
-  background: var(--bg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--canvas);
   -webkit-font-smoothing: antialiased;
   user-select: none;
-  /* P4 主题切换过渡:仅颜色属性;减少动态效果偏好下瞬时切换 */
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  body,
-  .app,
-  .drawer,
-  .dialog {
-    transition-duration: 0.01ms;
-  }
+/* 纸张颗粒(mockup §2 签名氛围):全窗固定覆盖,overlay 混合,z-index 1
+ * 位于内容之上、抽屉(90)/弹窗(100)/toast(80)之下;pointer-events 放行 */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: var(--grain-op);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* 应用卡片:P0-1 Grid 布局,高度恒等于视口(减上下外边距),页面不随内容伸缩。
- * 四条轨道与 index.html 的 .app 直接子元素一一对应(设置迁抽屉、最近转换并入
- * 主舞台空态后,主页面只剩四个区块):
- *   ① header        标题区(auto)
- *   ② .file-area    主舞台(minmax(min(300px,40vh),1fr) 唯一弹性吸收带:
- *                    吸收全部富余高度——大窗口撑满不留白,矮窗口下限随 40vh
- *                    缩小保证整体不溢出;尺寸只随窗口变化,不随文件选择数量
- *                    变化——布局跳动根治点保持)
- *   ③ #messageSlot  消息槽(auto;min-height 常驻预留,超高时内部滚动,
- *                    不推挤 footer)
- *   ④ .actions      底部操作栏(auto;最后一条轨道钉底)
- * 列约束 minmax(0,1fr):防止 nowrap 长路径等 min-content 把隐式列撑宽、
- * 内容右侧被 overflow-x 裁掉(实测反馈「文件框体右侧显示不全」的根因)。
- */
+::selection {
+  background: var(--acc-soft);
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+svg.ic {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 隐藏工具类:必须带 !important(防被后加载 display 规则覆盖) */
+.hidden {
+  display: none !important;
+}
+
+/* ========== 3. 应用骨架(全窗 flex 列:标题栏/内容/动作栏) ========== */
 .app {
-  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--canvas);
+}
+
+/* ---- 3.1 标题栏(44px;窗口拖拽区,交互元素 no-drag;窗口控制按钮由
+ *     主进程 titleBarOverlay 原生绘制,此处不画) ---- */
+.titlebar {
+  flex: none;
+  height: var(--tbh);
+  display: flex;
+  align-items: center;
+  background: var(--tb);
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.titlebar button,
+.titlebar input,
+.titlebar label {
+  -webkit-app-region: no-drag;
+}
+
+.tb-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 14px;
+}
+
+/* 品牌钤印:朱砂小方印(全站唯二的钤印笔触之一,另一在空态文稿台) */
+.tb-seal {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--acc);
+  color: var(--on-acc);
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows:
-    auto
-    minmax(min(300px, 40vh), 1fr)
-    auto
-    auto;
-  /* 高度算术闭合(问题 2a):100% 相对 body(=视口高),16+H+16=100%,
-   * 不再依赖 100vh 与外边距的隐式抵消;overflow-y 保留为内部极端内容兜底阀 */
-  height: calc(100% - 32px);
-  margin: 16px auto; /* 批次 12(C3):大屏密度上限,水平居中 */
-  max-width: 1080px;
-  padding: 16px 32px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
-  /* 兜底阀:极端内容超出轨道预算时不裁切,降级为卡片内滚动 */
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28);
+}
+
+.tb-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.tb-ver {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--mut);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 1px 7px;
+  user-select: text;
+}
+
+/* 顶栏格式分段(brand 之后的固定间距,对齐 mockup .seg-format) */
+.header-actions {
+  margin-left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 标题栏右侧自绘区(mockup §3.1:.wc-group 内 #btnGear):margin-left:auto 推至右缘,
+ * padding-right 预留原生窗口控制钮宽度(--wco-w)+ 10px 呼吸位,
+ * 使设置齿轮恰好落在最小化按钮左侧 */
+.tb-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-right: calc(var(--wco-w) + 10px);
+}
+
+/* ---- 3.2 内容区(主舞台 / 历史折叠条 / 消息区) ---- */
+.content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* 主舞台(#dropZone 兼任):唯一弹性吸收带,内部滚动 */
+.stage-wrap {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  /* P4 主题切换过渡:仅颜色属性(背景/文字/边框),不含几何属性防布局抖动 */
-  transition: background-color 0.2s ease, color 0.2s ease,
-    border-color 0.2s ease;
+  padding: 20px 26px 12px;
 }
 
-/* 响应式调整(矮窗口/窄窗口)见本文件末尾媒体查询——须置于组件规则之后,
- * 同特异性下靠源序覆盖生效 */
+/* ---- 3.3 历史记录常驻折叠条(主舞台与消息区之间;无记录整块不渲染) ---- */
+.history {
+  flex: none;
+  border-top: 1px solid var(--line);
+  padding: 0 26px;
+}
 
-/* 标题区:版本号与标题同行(baseline 对齐;修复此前块级 h1 导致版本号折行) */
-.header {
+.h-head {
+  display: flex;
+  align-items: center;
+  height: 40px;
+}
+
+.h-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 100%;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--ink);
+  border-radius: 6px;
+}
+
+.h-toggle:hover {
+  background: var(--card-2);
+}
+
+.h-toggle .chev {
+  width: 14px;
+  height: 14px;
+  color: var(--mut);
+  transition: transform 0.15s ease;
+}
+
+.history[data-open="false"] .h-toggle .chev {
+  transform: rotate(-90deg);
+}
+
+.h-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--mut);
+}
+
+.h-head > .btn {
+  margin-left: auto;
+}
+
+/* 折叠体:grid-rows 0fr→1fr 过渡(≤260ms 纪律内) */
+.h-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.24s ease;
+}
+
+.h-body > div {
+  overflow: hidden;
+}
+
+.history[data-open="true"] .h-body {
+  grid-template-rows: 1fr;
+}
+
+/* 最近列表:内部滚动约 3 行(矮窗档 2 行),不撑高窗口 */
+.rlist {
+  max-height: 176px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-bottom: 12px;
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.rrow {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  transition: background-color 0.12s ease;
+}
+
+.rrow:last-child {
+  border-bottom: none;
+}
+
+.rrow:hover {
+  background: var(--card-2);
+}
+
+.rico {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--inset);
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+}
+
+.rmain {
+  min-width: 0;
+}
+
+.rname {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+.rmeta {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-top: 2px;
 }
 
-/* 顶栏右侧操作区(P1-1 格式分段 + 设置齿轮;问题 3 起摘要 chip 已移除,
- * 「当前预设 · 纸张」信息改在抽屉头部展示) */
-.header-actions {
+.rtime {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--mut);
+}
+
+/* 格式徽标(mono 小方角;docx 朱砂浅底 / pdf 中性灰底) */
+.tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 1.5px 7px;
+  border-radius: 5px;
+}
+
+.tag.docx {
+  background: var(--acc-soft);
+  color: var(--acc);
+}
+
+.tag.pdf {
+  background: rgba(127, 127, 127, 0.13);
+  color: var(--ink-2);
+}
+
+/* 行内操作:hover / focus-within 浮现(rrow 默认安静) */
+.rops {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.13s ease;
+}
+
+.rrow:hover .rops,
+.rrow:focus-within .rops {
+  opacity: 1;
+}
+
+/* ---- 3.4 消息区(feed):状态行 / 拖放跳过列表 / 结果汇总条统一收纳 ---- */
+.feed {
+  flex: none;
+  border-top: 1px solid var(--line);
+  padding: 11px 26px 13px;
+  min-height: 96px;
+  max-height: 38vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 20px;
+  font-size: 13px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+/* 状态行圆点(mockup §9):CSS 伪元素实现——setStatus 以 textContent 写入,
+ * 子元素会被清空,圆点必须不进 DOM;默认中性灰,错误/警告随语义色 */
+.status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line-2);
+  flex: none;
+}
+
+.status--error::before {
+  background: var(--acc);
+}
+
+.status--warning::before {
+  background: var(--warn);
+}
+
+.status--error,
+.status--warning {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-in);
+}
+
+.status--warning {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: var(--warn-border);
+}
+
+/* 错误态:朱砂语义(进行中/失败同属付印红一线;破坏性操作不用红) */
+.status--error {
+  color: var(--acc);
+  background: var(--acc-soft);
+  border-color: var(--acc-ring);
+}
+
+/* ---- 3.5 底部动作栏 ---- */
+.actionbar {
+  flex: none;
+  min-height: 62px;
+  border-top: 1px solid var(--line);
+  background: var(--tb);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 22px;
+  gap: 12px;
+}
+
+/* 转换进度行(mockup §9 progress 模式):旋转指示 + 5px 细轨 + mono 百分比;
+ * 占满一整行(flex-wrap 下 100% 基准),转换中显示、结束隐藏(HTML hidden) */
+.progress-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.progress-track {
+  flex: 1;
+  min-width: 0;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--inset);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--acc);
+}
+
+.progress-text {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  flex: none;
+}
+
+/* 旋转指示(进行中语义,朱砂一线):纯装饰,reduced-motion 全局兜底 */
+.spin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: none;
+  border: 2px solid var(--line-2);
+  border-top-color: var(--acc);
+  animation: rot 0.85s linear infinite;
+}
+
+@keyframes rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ab-side {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.title {
-  margin: 0;
-  font-size: 20px; /* P2-1 type scale:20/15/13/12,与正文层级拉开 */
-  font-weight: 600;
-  letter-spacing: 0.2px;
-}
-
-/* 版本号(发版 1.0.0:标题右侧小字,悬停显示完整版本;间距由 .header gap 管理;
- * 窄窗口 ≤860px 隐藏,见上方媒体查询) */
-.version {
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-size: 12px;
-  font-weight: 400;
-  color: var(--text-secondary);
-  user-select: text;
+  color: var(--mut);
 }
 
-/* 图标按钮(设置齿轮 / 抽屉关闭):仅图标 + 悬停底色 */
-.icon-btn {
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  background: var(--card);
+}
+
+/* toast 轻提示(settings-ia §3.7:即时操作反馈,动作栏上方居中浮入,
+ * 2.4s 自动消失可被顶替;只陈述事实) */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 76px;
+  transform: translate(-50%, 8px);
+  z-index: 80;
+  max-width: calc(100% - 48px);
+  padding: 8px 16px;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--solid-bg);
+  color: var(--solid-fg);
+  border-radius: 999px;
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ========== 4. 通用控件 ========== */
+/* ---- 4.1 按钮 ---- */
+.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-btn);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn.sm,
+.btn-small {
+  height: 29px;
+  padding: 0 11px;
+  font-size: 12.5px;
+  border-radius: var(--radius-btn-sm);
+}
+
+.btn.lg {
+  height: 40px;
+  padding: 0 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 9px;
+}
+
+/* 朱砂主按钮(付印动作专属) */
+.btn-primary,
+.btn.primary {
+  background: var(--acc);
+  color: var(--on-acc);
+  box-shadow: 0 5px 14px var(--acc-ring);
+}
+
+.btn-primary:hover:not(:disabled),
+.btn.primary:hover:not(:disabled) {
+  background: var(--acc-h);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px var(--acc-ring);
+}
+
+.btn-primary:active:not(:disabled),
+.btn.primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  background: var(--line-2);
+  color: var(--card);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* 墨色实心(次主动作:选择文件 / 完成) */
+.btn-solid,
+.solid {
+  background: var(--solid-bg);
+  color: var(--solid-fg);
+}
+
+.btn-solid:hover:not(:disabled) {
+  background: var(--solid-bg-h);
+  transform: translateY(-1px);
+}
+
+.btn-solid:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* 幽灵(描边)与次级:同一形态,破坏性操作也走描边(红色语义纪律) */
+.btn-ghost,
+.btn-secondary {
+  border-color: var(--line-2);
+  color: var(--ink-2);
+  background: transparent;
+}
+
+.btn-ghost:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled) {
+  background: var(--card-2);
+  border-color: var(--line-2);
+  color: var(--ink);
+}
+
+.btn-ghost:disabled,
+.btn-secondary:disabled {
+  color: var(--mut);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 文字按钮 */
+.btn-text,
+.txt {
+  color: var(--mut);
+  padding: 0 8px;
+}
+
+.btn-text:hover:not(:disabled),
+.txt:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.btn-text.acc,
+.txt.acc {
+  color: var(--acc);
+}
+
+.btn-text.acc:hover:not(:disabled),
+.txt.acc:hover:not(:disabled) {
+  color: var(--acc-h);
+}
+
+.icon-btn {
   width: 30px;
   height: 30px;
-  padding: 0;
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  border-radius: var(--radius-btn-sm);
+  display: grid;
+  place-items: center;
+  color: var(--mut);
+  transition: background-color 0.13s ease, color 0.13s ease;
+  flex: none;
 }
 
 .icon-btn:hover {
-  color: var(--text);
-  background: var(--hover);
+  background: var(--card-2);
+  color: var(--ink);
 }
 
 .icon-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--acc);
   outline-offset: 2px;
 }
 
 .icon-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
 }
 
-/* 分段控件(P1-1 输出格式 / P0-4 外观主题):
- * radio 语义完整保留(同 name 分组,方向键切换、表单可访问性不变),
- * 视觉呈现为分段按钮——透明 input 覆盖整个分段承接点击与焦点,
- * 选中态 accent-soft 底 + accent 字 */
+/* ---- 4.2 分段控件(radio 语义保留:透明 input 覆盖承接点击与焦点) ---- */
 .segmented {
   display: inline-flex;
   flex: none;
-  padding: 2px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  gap: 2px;
+  padding: 3px;
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-btn);
 }
 
 .segment {
@@ -324,256 +856,423 @@ body {
   cursor: pointer;
 }
 
-.segment span {
-  padding: 4px 12px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  border-radius: 4px;
+.segment > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  color: var(--mut);
+  border-radius: 6px;
   white-space: nowrap;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.13s ease, color 0.13s ease;
 }
 
-.segment input:checked + span {
-  background: var(--accent-soft);
-  color: var(--accent);
+.segment > span .seg-letter {
+  font-family: var(--font-display);
   font-weight: 600;
 }
 
+.segment input:checked + span {
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.09);
+}
+
 .segment input:focus-visible + span {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--acc);
   outline-offset: -1px;
 }
 
-/* 消息槽(P0-2):状态行 / 拖放跳过列表 / 结果汇总条的常驻固定容器。
- * 问题 1/2c 起弹性吸收带职责移交主舞台轨道,本槽回归紧凑常驻:
- * min-height 预留空态占位;max-height 用 vh 上限(警告展开等超高内容
- * 槽体内部滚动),不推挤 footer、不与主舞台争抢富余高度。
- * 子元素间距归槽体管理(gap),status/汇总条自身不再带外边距。 */
-.message-slot {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 44px;
-  max-height: 38vh;
-  margin-top: 12px;
-  overflow-y: auto;
+/* 抽屉内小号分段 */
+.seg-sm.segmented,
+.segmented.seg-sm {
+  padding: 2px;
 }
 
-/* 状态区(消息槽子元素;外边距归 .message-slot 管理):
- * 常规消息单行省略;error/warning 级别升级为可换行的语义底色条(P1-5),
- * 完整展示不截断、不依赖 title 悬浮 */
-.status {
-  min-height: 20px;
-  margin: 0;
-  padding: 0 2px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.seg-sm .segment > span {
+  height: 22px;
+  padding: 0 9px;
+  font-size: 11.5px;
 }
 
-.status--error,
-.status--warning {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-}
-
-.status--error {
-  color: var(--error);
-  background: var(--error-soft);
-  border-color: var(--error-border);
-}
-
-.status--warning {
-  color: var(--warning);
-  background: var(--warning-soft);
-  border-color: var(--warning-border);
-}
-
-/* 底部操作栏:常规态由 .app Grid 最后一条轨道钉底(不依赖 sticky 定位);
- * sticky 保留为溢出兜底——内容超出视口、.app 进入内部滚动时,
- * 转换按钮/进度条仍吸附在卡片可视区底部(批次 12 C2 语义延续)。
- * P1-1:格式选择上移顶栏后,footer 只剩主行动线,靠右排布与原视觉位置一致。
- * 背景与卡片一致(--bg-card),滚动内容从其后经过时被遮住,细边框分隔 */
-.actions {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 16px;
-  margin-top: 12px;
-  padding: 12px 0 0;
-  background: var(--bg-card);
-  border-top: 1px solid var(--border);
-}
-
-.convert {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
-/* 按钮 */
-.btn {
-  font-family: inherit;
-  font-size: 14px;
-  padding: 7px 18px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+/* ---- 4.3 开关(checkbox 外观重绘为 switch;id/name 不变,绑定零改动) ---- */
+.switch-input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 36px;
+  height: 20px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--line-2);
+  position: relative;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease,
-    color 0.15s ease;
+  transition: background-color 0.16s ease;
 }
 
-.btn:focus-visible {
-  outline: 2px solid var(--accent);
+.switch-input::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.16s ease;
+}
+
+html[data-theme="dark"] .switch-input::after {
+  background: #eef0f2;
+}
+
+.switch-input:checked {
+  background: var(--acc);
+}
+
+.switch-input:checked::after {
+  transform: translateX(16px);
+}
+
+.switch-input:focus-visible {
+  outline: 2px solid var(--acc);
   outline-offset: 2px;
 }
 
-.btn-secondary {
-  background: var(--bg-card);
-  border-color: var(--border-strong);
-  color: var(--text);
-}
-
-.btn-secondary:hover {
-  background: var(--bg); /* 同页面底色 */
-}
-
-.btn-secondary:active {
-  background: var(--active);
-}
-
-.btn-primary {
-  min-width: 132px;
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.btn-primary:disabled {
-  background: var(--disabled-bg);
-  color: var(--disabled-fg);
-  cursor: default;
-}
-
-/* 隐藏工具类:必须带 !important,否则会被文件中更靠后的单类 display 规则
-   (如 .dialog-overlay 的 display: flex)覆盖,导致 hidden 失效 */
-.hidden {
-  display: none !important;
-}
-
-/* 路径等文本允许选中复制 */
-.status,
-.file-path,
-.file-name {
+/* ---- 4.4 输入件 ---- */
+.setting-input,
+.setting-number,
+.setting-select,
+.margin-input,
+.tin {
+  height: 32px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-in);
+  background: var(--card);
+  padding: 0 10px;
+  font-size: 13px;
+  transition: border-color 0.13s ease, box-shadow 0.13s ease;
   user-select: text;
 }
 
-/* 小按钮:用于工具条 / 弹窗内次级操作 */
-.btn-small {
-  padding: 4px 10px;
+textarea.tin,
+.ta {
+  height: auto;
+  min-height: 86px;
+  padding: 9px 11px;
+}
+
+.setting-input:focus,
+.setting-number:focus,
+.setting-select:focus,
+.margin-input:focus,
+.tin:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-soft);
+}
+
+.setting-select {
+  cursor: pointer;
+  padding-right: 26px;
+}
+
+/* 自绘下拉箭头(guidelines §2 sel 模式):wrapper 伪元素以边框绘制,
+ * 颜色走语义变量(令牌纪律:不硬编码 hex);select 原生箭头由 appearance 抹平 */
+.sel-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.sel-wrap::after {
+  content: "";
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--mut);
+  border-bottom: 1.5px solid var(--mut);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+.sel-wrap .setting-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--line-2);
+  width: 150px;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--acc);
+  border: 2.5px solid var(--card);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* 滑杆右侧 mono 实时回显(行距倍数;guidelines §2 range 模式:不弹气泡) */
+.row-r output {
+  font-family: var(--font-mono);
   font-size: 12.5px;
-  border-radius: 4px;
+  min-width: 34px;
+  text-align: right;
+  color: var(--ink);
 }
 
-/* 幽灵按钮:次级中的次级,仅文字 + 悬停底色 */
-.btn-ghost {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-secondary);
-}
-
-.btn-ghost:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
-
-.btn-ghost:disabled {
-  color: var(--text-disabled);
-  cursor: default;
-}
-
-/* 转换进度(P2-2 精简行):去盒化,细进度条 + 百分比 + 取消按钮单行排布,
- * 与主行动线融为一体;取消为独立交互故保留按钮 */
-.progress-area {
-  flex-basis: 100%;
-  display: flex;
+/* 步进器(正文字号 pt) */
+.stepper {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-}
-
-.progress-track {
-  flex: 1;
-  height: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-in);
+  background: var(--card);
   overflow: hidden;
-  background: var(--progress-track);
-  border-radius: 3px;
 }
 
-.progress-fill {
-  height: 100%;
-  width: 0%;
-  background: var(--accent);
-  border-radius: 3px;
-  transition: width 0.2s ease;
+.stepper button {
+  width: 28px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--mut);
+  font-size: 15px;
 }
 
-.progress-text {
-  flex: none;
-  font-size: 12px;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
+.stepper button:hover {
+  background: var(--card-2);
+  color: var(--ink);
 }
 
-/* ---------- 响应式调整(问题 1/2;置于组件规则之后,靠源序覆盖生效) ---------- */
-/* 矮窗口(接近最小 720×560):压缩纵向装饰间距,配合主舞台轨道下限随 40vh
- * 缩小(min(300px,40vh)),保证任何 ≥720×560 窗口主页面无滚动条 */
-@media (max-height: 620px) {
-  .header {
-    margin-bottom: 4px;
-  }
+/* 步进器中位数值件(正文字号 pt):mono 居中,发丝线与 ± 按钮分界 */
+.stepper-value {
+  width: 54px;
+  height: 30px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  outline: none;
+}
 
-  .message-slot {
-    margin-top: 8px;
-    min-height: 36px;
-  }
+.stepper-value:focus {
+  background: var(--card-2);
+}
 
-  .actions {
-    margin-top: 8px;
-    padding-top: 8px;
+.stepper output {
+  width: 54px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+}
+
+/* 路径 chip(mono、截断、ltr;outputDir / headerLogo 共用形态) */
+.path-chip {
+  display: inline-block;
+  max-width: 190px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: ltr;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 9px;
+  user-select: text;
+}
+
+/* ========== 5. 动效纪律(hover ≤150ms / transition ≤260ms / reduced-motion) ========== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
-/* 窄窗口:收紧水平内边距与顶栏间距;版本号隐藏避免顶栏挤压换行 */
-@media (max-width: 860px) {
-  .app {
-    padding: 14px 20px;
+/* ========== 6. 响应式四档(guidelines §5;真实窗口即 viewport) ========== */
+/* —— 紧凑档:≤1080 —— */
+@media (max-width: 1080px) {
+  .stage-wrap {
+    padding: 18px 18px 10px;
   }
 
-  .header {
-    gap: 6px;
+  .feed {
+    padding: 12px 18px 13px;
   }
 
-  .version {
-    display: none;
+  .history {
+    padding: 0 18px;
   }
 
-  .segment span {
-    padding: 4px 8px;
+  .actionbar {
+    padding: 8px 16px;
+  }
+
+  .btn.lg {
+    padding: 0 18px;
+  }
+
+  .header-actions {
+    margin-left: 14px;
+  }
+}
+
+/* —— 窄窗档:≤900 —— */
+@media (max-width: 900px) {
+  .hint {
+    display: none; /* 快捷键提示让位给按钮 */
+  }
+
+  .tb-brand {
+    gap: 8px;
+    padding-left: 10px;
+  }
+
+  .tb-name {
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-actions {
+    margin-left: 10px;
+  }
+
+  .sheet {
+    max-width: 640px;
+  }
+
+  .filecard {
+    flex-wrap: wrap;
+  }
+
+  .fmain {
+    flex: 1 1 240px;
+  }
+
+  .facts {
+    width: 100%;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    justify-content: flex-end;
+  }
+
+  .multi-item {
+    grid-template-columns: 18px 24px 1fr auto;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  /* 结果路径独占一行(mockup 窄窗档):图标/动作先行,文本块(含 mono 路径)换行 */
+  .result-summary-icon {
+    order: 1;
+  }
+
+  .result-summary-actions {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .result-summary-texts {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .actionbar {
+    min-height: 58px;
+  }
+
+  .btn.lg {
+    height: 38px;
+    padding: 0 16px;
+  }
+
+  .merge-btn {
+    padding: 0 10px;
+    font-size: 12.5px;
+  }
+}
+
+/* —— 矮窗档:视口高 ≤640 —— */
+@media (max-height: 640px) {
+  :root {
+    --tbh: 40px;
+  }
+
+  .stage-wrap {
+    padding: 14px 18px 8px;
+  }
+
+  .drop-core {
+    padding: 32px 40px 26px;
+  }
+
+  .drop-core h1 {
+    font-size: 26px;
+  }
+
+  .caps {
+    margin-top: 14px;
+    padding-top: 12px;
+  }
+
+  .rules {
+    inset: 40px 40px;
+  }
+
+  .feed {
+    min-height: 86px;
+    padding: 10px 18px 11px;
+  }
+
+  .actionbar {
+    min-height: 52px;
+  }
+
+  .h-head {
+    height: 36px;
+  }
+
+  .rlist {
+    max-height: 118px; /* 约 2 行 */
   }
 }

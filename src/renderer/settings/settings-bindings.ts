@@ -9,11 +9,13 @@
 import {
   BODY_SIZE_MAX,
   BODY_SIZE_MIN,
+  DEFAULT_SETTINGS,
   LINE_SPACING_MAX,
   LINE_SPACING_MIN,
   MARGIN_MAX_MM as MARGIN_MAX,
   type AppSettings,
   type PageSetup,
+  type TemplatePreset,
 } from "../../core/settings/settings-defaults.js";
 import {
   allPresets,
@@ -24,12 +26,14 @@ import {
 } from "./settings-logic.js";
 import {
   afterConvertInputs,
-  alignJustifyInput,
+  alignInputs,
+  bodySizeDecBtn,
   bodySizeError,
+  bodySizeIncBtn,
   bodySizePtInput,
   breakBeforeH1Input,
   captionNumberingInput,
-  completeDialogPromptInput,
+  drawerResetBtn,
   equationNumberingInput,
   firstLineIndentInput,
   fontAsciiError,
@@ -38,27 +42,30 @@ import {
   fontEastAsiaInput,
    formatInputs,
    footerEnabledInput,
-   headerLayoutSelect,
+   headerLayoutInputs,
    headerLogoClearBtn,
    headerLogoPickBtn,
    headerLogoStatus,
-   headerModeSelect,
+   headerModeInputs,
    headerTextInput,
    headingNumberingInput,
-   headingScaleSelect,
-   headingSpacingSelect,
+   headingScaleInputs,
+   headingSpacingInputs,
   languageSelect,
   lineSpacingError,
   lineSpacingInput,
+  lineSpacingValue,
   marginError,
   marginInputs,
-  orientationSelect,
+  orientationInputs,
   outputDirPick,
   outputDirReset,
   outputDirValue,
-  paperSelect,
+  paperInputs,
   pdfCssClearBtn,
   pdfCssImportBtn,
+  pdfCssStatus,
+  pdfCssTextInput,
   presetDeleteBtn,
   presetExportBtn,
   presetImportBtn,
@@ -91,9 +98,10 @@ import {
    persistSettings,
    rebuildLanguageOptions,
    saveCustomPreset,
-   setSuppressCompleteDialog,
    syncHeaderCustomVisibility,
  } from "./settings-panel.js";
+// 界面重构 v3:预设切换即时反馈(toast 单实例,ui/toast)
+import { showToast } from "../ui/toast.js";
 
 /* ---------- 设置类型(契约单源 core/settings-defaults.ts,B7:type-only 派生,
    编译期擦除,不新增运行时依赖) ---------- */
@@ -114,6 +122,38 @@ function persistTypography(): void {
 /** 页眉页脚字段(F4)整体写回。 */
 function persistHeaderFooter(): void {
   persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+}
+
+/**
+ * 预设切换 toast 的被覆盖组标签(界面重构 v3;与模板预设应用逻辑同步):
+ * 预设整体写入 pageSetup(「页面」组)与 typography——其中字体/字号/行距/缩进/
+ * 对齐/标题档位属「文字」组,headingNumbering/captionNumbering 属「编号与目录」组。
+ * TemplatePreset 契约两组均为必填,正常全部列出;字段级判断仅为契约演进留余地。
+ */
+function presetCoveredGroupLabels(preset: TemplatePreset): string {
+  const groups: string[] = [];
+  if (preset.pageSetup) groups.push(t("settings.groupPage"));
+  if (preset.typography) {
+    const typo = preset.typography;
+    const hasTextGroup = [
+      typo.fontAscii,
+      typo.fontEastAsia,
+      typo.bodySizePt,
+      typo.lineSpacing,
+      typo.firstLineIndent,
+      typo.align,
+      typo.headingScale,
+      typo.headingSpacing,
+    ].some((value) => value !== undefined);
+    if (hasTextGroup) groups.push(t("settings.groupText"));
+    if (
+      typo.headingNumbering !== undefined ||
+      typo.captionNumbering !== undefined
+    ) {
+      groups.push(t("settings.groupNumbering"));
+    }
+  }
+  return groups.join(" · ");
 }
 
 /** 边距输入:非法值回显当前设置,合法值钳制后写回;非法时字段内提示。 */
@@ -165,17 +205,22 @@ export function bindSettingsEvents(): void {
   });
 
   /* ---------- 页面设置面板:任一控件变更即时生效并持久化 ---------- */
-  paperSelect.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.pageSetup.paper = paperSelect.value as Paper;
-    persistPageSetup();
+  // 界面重构 v3:纸张/方向改 seg 分段(radio 组;枚举 ≤5 → seg,guidelines §3.1),
+  // 组绑定模式与 alignInputs/themeInputs 一致
+  paperInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked || state.hydratingSettings) return;
+      state.settings.pageSetup.paper = input.value as Paper;
+      persistPageSetup();
+    });
   });
 
-  // P0-4:方向由双 radio 改单 select(value 与原 radio 一致,写回语义不变)
-  orientationSelect.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.pageSetup.orientation = orientationSelect.value as Orientation;
-    persistPageSetup();
+  orientationInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked || state.hydratingSettings) return;
+      state.settings.pageSetup.orientation = input.value as Orientation;
+      persistPageSetup();
+    });
   });
 
   breakBeforeH1Input.addEventListener("change", () => {
@@ -239,21 +284,46 @@ export function bindSettingsEvents(): void {
     handleTypographyNumberChange("bodySizePt", BODY_SIZE_MIN, BODY_SIZE_MAX),
   );
 
+  // 界面重构 v3:正文字号 stepper ± 按钮(±0.5,上下限钳制后经既有 change 链路
+  // 校验/持久化;非法输入以当前设置值为基准,不放大脏值)
+  const stepBodySize = (delta: number): void => {
+    if (state.hydratingSettings) return;
+    const base = Number.isFinite(bodySizePtInput.valueAsNumber)
+      ? bodySizePtInput.valueAsNumber
+      : state.settings.typography.bodySizePt;
+    const next = Math.min(BODY_SIZE_MAX, Math.max(BODY_SIZE_MIN, base + delta));
+    bodySizePtInput.value = String(next);
+    bodySizePtInput.dispatchEvent(new Event("change"));
+  };
+  bodySizeDecBtn.addEventListener("click", () => stepBodySize(-0.5));
+  bodySizeIncBtn.addEventListener("click", () => stepBodySize(0.5));
+
   lineSpacingInput.addEventListener("change", () =>
     handleTypographyNumberChange("lineSpacing", LINE_SPACING_MIN, LINE_SPACING_MAX),
   );
 
-  // F3 标题排版粒度:标题字号/间距档位(三档 select,变更即时生效并持久化)
-  headingScaleSelect.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.typography.headingScale = headingScaleSelect.value as AppSettings["typography"]["headingScale"];
-    persistTypography();
+  // 界面重构 v3:行距 range 滑杆 mono 实时回显(input 拖动期跟随;
+  // change 落定走上方既有校验/持久化链路)
+  lineSpacingInput.addEventListener("input", () => {
+    lineSpacingValue.textContent = lineSpacingInput.value;
   });
 
-  headingSpacingSelect.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.typography.headingSpacing = headingSpacingSelect.value as AppSettings["typography"]["headingSpacing"];
-    persistTypography();
+  // F3 标题排版粒度:标题字号/间距档位(界面重构 v3 自 select 改 seg 分段,
+  // 三档;变更即时生效并持久化)
+  headingScaleInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked || state.hydratingSettings) return;
+      state.settings.typography.headingScale = input.value as AppSettings["typography"]["headingScale"];
+      persistTypography();
+    });
+  });
+
+  headingSpacingInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked || state.hydratingSettings) return;
+      state.settings.typography.headingSpacing = input.value as AppSettings["typography"]["headingSpacing"];
+      persistTypography();
+    });
   });
 
   firstLineIndentInput.addEventListener("change", () => {
@@ -262,12 +332,14 @@ export function bindSettingsEvents(): void {
     persistTypography();
   });
 
-  alignJustifyInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.typography.align = alignJustifyInput.checked
-      ? "justify"
-      : "left";
-    persistTypography();
+  // 界面重构 v3:对齐方式由布尔 checkbox 升级为枚举 radio 组(left/justify),
+  // 存储契约不变(typography.align);选中值即写入
+  alignInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked || state.hydratingSettings) return;
+      state.settings.typography.align = input.value as AppSettings["typography"]["align"];
+      persistTypography();
+    });
   });
 
   headingNumberingInput.addEventListener("change", () => {
@@ -283,12 +355,16 @@ export function bindSettingsEvents(): void {
   });
 
   /* ---------- 页眉页脚(F4):任一控件变更即时生效并持久化 ---------- */
-  headerModeSelect.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.headerFooter.headerMode = headerModeSelect.value as AppSettings["headerFooter"]["headerMode"];
-    // 自定义控件块(文字/logo/布局)仅 custom 模式可见
-    syncHeaderCustomVisibility();
-    persistHeaderFooter();
+  // 界面重构 v3:页眉模式改 seg 分段(模式 + 条件字段容器,IA §3.1);
+  // 自定义控件块仅 custom 模式展开(.cond.show)
+  headerModeInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked || state.hydratingSettings) return;
+      state.settings.headerFooter.headerMode = input.value as AppSettings["headerFooter"]["headerMode"];
+      // 自定义控件块(文字/logo/布局)仅 custom 模式可见
+      syncHeaderCustomVisibility();
+      persistHeaderFooter();
+    });
   });
 
   headerTextInput.addEventListener("change", () => {
@@ -297,10 +373,12 @@ export function bindSettingsEvents(): void {
     persistHeaderFooter();
   });
 
-  headerLayoutSelect.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.headerFooter.headerLayout = headerLayoutSelect.value as AppSettings["headerFooter"]["headerLayout"];
-    persistHeaderFooter();
+  headerLayoutInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked || state.hydratingSettings) return;
+      state.settings.headerFooter.headerLayout = input.value as AppSettings["headerFooter"]["headerLayout"];
+      persistHeaderFooter();
+    });
   });
 
   footerEnabledInput.addEventListener("change", () => {
@@ -354,6 +432,13 @@ export function bindSettingsEvents(): void {
       typography: { ...state.settings.typography },
       pageSetup: { ...state.settings.pageSetup },
     });
+    // 界面重构 v3:预设切换即时反馈——toast 列出被覆盖的设置组(只陈述事实)
+    showToast(
+      t("toast.presetSwitched", {
+        name: preset.name,
+        groups: presetCoveredGroupLabels(preset),
+      }),
+    );
   });
 
   // 批次 11 迭代 3:另存为预设(弹窗输入名称 → 保存当前排版+页面设置)
@@ -379,6 +464,49 @@ export function bindSettingsEvents(): void {
   pdfCssImportBtn.addEventListener("click", () => void importPdfCss());
   pdfCssClearBtn.addEventListener("click", clearPdfCss);
 
+  // 界面重构 v3:PDF 自定义 CSS 文本域(IA 06 textarea 形态;与导入/清除同写
+  // settings.pdfCss,状态行与清除按钮可见性同步回填逻辑)
+  pdfCssTextInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.pdfCss = pdfCssTextInput.value;
+    persistSettings({ pdfCss: pdfCssTextInput.value });
+    pdfCssStatus.textContent = pdfCssTextInput.value
+      ? t("settings.pdfCssImported")
+      : t("settings.pdfCssNone");
+    pdfCssClearBtn.classList.toggle("hidden", !pdfCssTextInput.value);
+  });
+
+  // 界面重构 v3:抽屉底部「恢复默认」——转换相关各组复位为默认值并整体持久化
+  //(07 应用偏好 theme/language 与自定义预设保留,不随此键重置;toast 只陈述事实)
+  drawerResetBtn.addEventListener("click", () => {
+    if (state.hydratingSettings) return;
+    const d = DEFAULT_SETTINGS;
+    state.settings.pageSetup = { ...d.pageSetup };
+    state.settings.typography = { ...d.typography };
+    state.settings.breakBeforeH1 = d.breakBeforeH1;
+    state.settings.toc = d.toc;
+    state.settings.equationNumbering = d.equationNumbering;
+    state.settings.afterConvert = d.afterConvert;
+    state.settings.outputDir = d.outputDir;
+    state.settings.pdfCss = d.pdfCss;
+    state.settings.headerFooter = { ...d.headerFooter };
+    state.hydratingSettings = true;
+    applySettingsToControls();
+    state.hydratingSettings = false;
+    persistSettings({
+      pageSetup: { ...state.settings.pageSetup },
+      typography: { ...state.settings.typography },
+      breakBeforeH1: state.settings.breakBeforeH1,
+      toc: state.settings.toc,
+      equationNumbering: state.settings.equationNumbering,
+      afterConvert: state.settings.afterConvert,
+      outputDir: state.settings.outputDir,
+      pdfCss: state.settings.pdfCss,
+      headerFooter: { ...state.settings.headerFooter },
+    });
+    showToast(t("toast.settingsReset"));
+  });
+
   // 批次 7:输出目录选择 / 恢复默认(空串 = 与源文件相同目录)
   outputDirPick.addEventListener("click", () => {
     void (async () => {
@@ -401,13 +529,6 @@ export function bindSettingsEvents(): void {
     outputDirValue.textContent = outputDirDisplayText("");
     outputDirValue.title = outputDirDisplayText("");
     persistSettings({ outputDir: "" });
-  });
-
-  // 批次 11 迭代 2:转换完成弹窗提示(ui-state 字段;与弹窗内「不再提示」双向同步)
-  // 勾选 = 提示弹窗 = suppress=false,故取反后写入
-  completeDialogPromptInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    setSuppressCompleteDialog(!completeDialogPromptInput.checked);
   });
 
   // i18n:界面语言切换(P0-4 自 radio 组改 select;选项由 LANGUAGES 注册表动态生成,

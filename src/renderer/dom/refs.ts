@@ -17,7 +17,8 @@ export const statusEl = document.getElementById("status") as HTMLParagraphElemen
 export const convertBtn = document.getElementById("convertBtn") as HTMLButtonElement;
 export const batchBtn = document.getElementById("batchBtn") as HTMLButtonElement;
 export const mergeBtn = document.getElementById("mergeBtn") as HTMLButtonElement;
-export const convertHint = document.querySelector<HTMLSpanElement>(".convert .hint");
+// 界面重构 v3:快捷键提示随模式切换(单文件/批量语义),span 固定 id 于动作栏内
+export const convertHint = document.getElementById("convertHint");
 export const completeDialog = document.getElementById(
   "completeDialog",
 ) as HTMLDivElement;
@@ -40,11 +41,15 @@ export const themeInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="theme"]',
 );
 // 页面设置面板
-export const paperSelect = document.getElementById("paperSelect") as HTMLSelectElement;
-// P0-4:方向由双 radio 改单 select(value 与原 radio 一致,绑定/回填同步迁移)
-export const orientationSelect = document.getElementById(
-  "orientationSelect",
-) as HTMLSelectElement;
+// 界面重构 v3:纸张/方向自 select 改 seg 分段(radio 组;guidelines §3.1 枚举 ≤5 → seg,
+// 与 alignInputs/themeInputs 同款组绑定模式;原 paperSelect/orientationSelect 单元素
+// id 随形态转换退役,读写链路在 settings-bindings/settings-panel 同步迁移)
+export const paperInputs = document.querySelectorAll<HTMLInputElement>(
+  'input[name="paper"]',
+);
+export const orientationInputs = document.querySelectorAll<HTMLInputElement>(
+  'input[name="orientation"]',
+);
 export const breakBeforeH1Input = document.getElementById(
   "breakBeforeH1",
 ) as HTMLInputElement;
@@ -66,25 +71,39 @@ export const fontAsciiInput = document.getElementById("fontAscii") as HTMLInputE
 export const fontEastAsiaInput = document.getElementById(
   "fontEastAsia",
 ) as HTMLInputElement;
+// 界面重构 v3:正文字号改 stepper 形态(input id 不变,± 步进按钮为新增元素)
 export const bodySizePtInput = document.getElementById(
   "bodySizePt",
 ) as HTMLInputElement;
+export const bodySizeDecBtn = document.getElementById(
+  "bodySizeDecBtn",
+) as HTMLButtonElement;
+export const bodySizeIncBtn = document.getElementById(
+  "bodySizeIncBtn",
+) as HTMLButtonElement;
+// 界面重构 v3:行距改 range 滑杆(input id 不变)+ mono 实时回显
 export const lineSpacingInput = document.getElementById(
   "lineSpacing",
 ) as HTMLInputElement;
-// F3 标题排版粒度:标题字号/间距档位 select(三档,选项静态于 index.html)
-export const headingScaleSelect = document.getElementById(
-  "headingScaleSelect",
-) as HTMLSelectElement;
-export const headingSpacingSelect = document.getElementById(
-  "headingSpacingSelect",
-) as HTMLSelectElement;
+export const lineSpacingValue = document.getElementById(
+  "lineSpacingValue",
+) as HTMLOutputElement;
+// F3 标题排版粒度:标题字号/间距档位(界面重构 v3 自 select 改 seg 分段,三档;
+// 组绑定模式同上)
+export const headingScaleInputs = document.querySelectorAll<HTMLInputElement>(
+  'input[name="headingScale"]',
+);
+export const headingSpacingInputs = document.querySelectorAll<HTMLInputElement>(
+  'input[name="headingSpacing"]',
+);
 export const firstLineIndentInput = document.getElementById(
   "firstLineIndent",
 ) as HTMLInputElement;
-export const alignJustifyInput = document.getElementById(
-  "alignJustify",
-) as HTMLInputElement;
+// 界面重构 v3:对齐方式由布尔 checkbox 升级为枚举分段(radio 组,left/justify);
+// 存储契约不变(typography.align),旧布尔档由 mergeSettingsWithDefaults 归一化
+export const alignInputs = document.querySelectorAll<HTMLInputElement>(
+  'input[name="align"]',
+);
 export const headingNumberingInput = document.getElementById(
   "headingNumbering",
 ) as HTMLInputElement;
@@ -92,9 +111,11 @@ export const captionNumberingInput = document.getElementById(
   "captionNumbering",
 ) as HTMLInputElement;
 // F4 页眉页脚:模式/文字/logo 选择清除与回显/布局/页脚开关
-export const headerModeSelect = document.getElementById(
-  "headerModeSelect",
-) as HTMLSelectElement;
+// 界面重构 v3:页眉模式与页眉布局自 select 改 seg 分段(模式 + 条件字段容器,
+// IA §3.1 抽屉唯一折叠形态;主控 seg 置首)
+export const headerModeInputs = document.querySelectorAll<HTMLInputElement>(
+  'input[name="headerMode"]',
+);
 export const headerCustomFields = document.getElementById(
   "headerCustomFields",
 ) as HTMLDivElement;
@@ -110,9 +131,9 @@ export const headerLogoPickBtn = document.getElementById(
 export const headerLogoClearBtn = document.getElementById(
   "headerLogoClear",
 ) as HTMLButtonElement;
-export const headerLayoutSelect = document.getElementById(
-  "headerLayoutSelect",
-) as HTMLSelectElement;
+export const headerLayoutInputs = document.querySelectorAll<HTMLInputElement>(
+  'input[name="headerLayout"]',
+);
 export const footerEnabledInput = document.getElementById(
   "footerEnabled",
 ) as HTMLInputElement;
@@ -138,6 +159,10 @@ export const presetExportBtn = document.getElementById(
   "presetExportBtn",
 ) as HTMLButtonElement;
 // 批次 16:PDF 样式 CSS 导入(导入 / 清除 / 状态显示)
+// 界面重构 v3:补 IA 06 规定的 textarea 形态(与导入/清除同写 settings.pdfCss)
+export const pdfCssTextInput = document.getElementById(
+  "pdfCssText",
+) as HTMLTextAreaElement;
 export const pdfCssImportBtn = document.getElementById(
   "pdfCssImportBtn",
 ) as HTMLButtonElement;
@@ -275,16 +300,18 @@ export const completeDialogTitle = document.getElementById(
 export const completeDialogDesc = document.getElementById(
   "completeDialogDesc",
 ) as HTMLParagraphElement;
-// 批次 11:最近转换(P1-3 起为主舞台空态快捷 chips:容器 + chips 列表 + 清空入口)
-export const recentChips = document.getElementById(
-  "recentChips",
-) as HTMLDivElement;
-export const recentChipList = document.getElementById(
-  "recentChipList",
-) as HTMLDivElement;
+// 界面重构 v3:最近转换自「空态 chips」改造为「主舞台与消息区之间的常驻折叠条」:
+// 折叠条容器(data-open 驱动展开/收起;无记录整块 hidden)+ 标题条切换钮 +
+// 条数徽标 + 列表本体(内部滚动);「清空记录」入口 id 沿用 recentClearBtn
+export const historyBar = document.getElementById("historyBar") as HTMLElement;
+export const histToggle = document.getElementById("histToggle") as HTMLButtonElement;
+export const histCount = document.getElementById("histCount") as HTMLSpanElement;
+export const recentList = document.getElementById("recentList") as HTMLUListElement;
 export const recentClearBtn = document.getElementById(
   "recentClearBtn",
 ) as HTMLButtonElement;
+// toast 轻提示(预设切换等即时反馈;单实例,showToast 写入)
+export const toastEl = document.getElementById("toast") as HTMLDivElement;
 // P0-3 设置抽屉:overlay 根容器(开合记忆 ui-state.panelOpen.page)+ 顶栏入口
 export const settingsDrawer = document.getElementById(
   "settingsDrawer",
@@ -300,12 +327,19 @@ export const settingsOpenBtn = document.getElementById(
 export const drawerSubtitle = document.getElementById(
   "drawerSubtitle",
 ) as HTMLParagraphElement;
-// 批次 11 迭代 2:完成弹窗「不再提示」/ 设置面板「转换完成弹窗提示」(同字段双向同步)
+// 界面重构 v3:抽屉底部「完成」按钮(关闭抽屉;焦点归还链与关闭按钮一致)
+export const drawerDoneBtn = document.getElementById(
+  "drawerDoneBtn",
+) as HTMLButtonElement;
+// 界面重构 v3:抽屉底部「恢复默认」(mockup 抽屉底栏左位;转换相关各组复位,
+// 接线见 settings-bindings.bindSettingsEvents)
+export const drawerResetBtn = document.getElementById(
+  "drawerResetBtn",
+) as HTMLButtonElement;
+// 批次 11 迭代 2:完成弹窗「不再提示」(设置面板侧「转换完成弹窗提示」控件已按
+// settings-ia.md 迁移映射表移除——场景被 afterConvert 覆盖;仅保留弹窗内入口)
 export const completeDialogSuppressInput = document.getElementById(
   "completeDialogSuppress",
-) as HTMLInputElement;
-export const completeDialogPromptInput = document.getElementById(
-  "completeDialogPrompt",
 ) as HTMLInputElement;
 // 批次 11 迭代 2:批量弹窗「重试失败项 / 复制全部路径」
 export const batchDialogRetry = document.getElementById(
@@ -314,3 +348,15 @@ export const batchDialogRetry = document.getElementById(
 export const batchDialogCopyAll = document.getElementById(
   "batchDialogCopyAll",
 ) as HTMLButtonElement;
+
+/**
+ * seg 分段(radio 组)当前选中值读取(无选中返回空串):
+ * 界面重构 v3 随枚举控件 select → seg 形态转换新增的唯读助手,
+ * 供 settings-panel 回填合成(抽屉副标题/条件块显隐)使用;事件写入侧
+ * 在 change 监听内直接读 input.value,不经此函数。
+ */
+export function checkedRadioValue(
+  inputs: NodeListOf<HTMLInputElement>,
+): string {
+  return Array.from(inputs).find((input) => input.checked)?.value ?? "";
+}

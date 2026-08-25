@@ -304,7 +304,7 @@ export async function run() {
     "边距转字符串",
   );
   assert(cv.bodySizePt === "14" && cv.lineSpacing === "1.25", "字号/行距转字符串");
-  assert(cv.alignJustify === true, "align=justify → checked=true");
+  assert(cv.align === "justify", "align=justify → 枚举原样映射");
   assert(cv.afterConvert === "open" && cv.format === "pdf", "afterConvert/format 映射");
   assert(cv.equationNumbering === true, "equationNumbering 映射(默认 true)");
   assert(cv.outputDirText === "C:\\out", "非空输出目录原样");
@@ -317,7 +317,7 @@ export async function run() {
     ...DEFAULT_SETTINGS,
     typography: { ...DEFAULT_SETTINGS.typography, align: "left" },
   });
-  assert(leftCv.alignJustify === false, "align=left → checked=false");
+  assert(leftCv.align === "left", "align=left → 枚举原样映射");
   const emptyDirCv = settingsToControlValues(DEFAULT_SETTINGS);
   assert(emptyDirCv.outputDirText === "与源文件相同目录", "空输出目录 → 占位文案");
   // B13:theme 映射(默认 system / 显式 dark)

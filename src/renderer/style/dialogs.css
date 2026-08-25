@@ -1,6 +1,8 @@
-/* Markdown 转换工具 — 结果展示域样式(批③自 style.css 拆出):
+/* Markdown 转换工具 — 结果展示域样式(界面重构 v3 令牌适配):
  * 弹窗骨架(遮罩/卡片/动画/reduced-motion)、完成弹窗(含路径行/不再提示)、
- * 批量汇总弹窗与逐条结果、常驻结果汇总条与可折叠警告。 */
+ * 批量汇总弹窗与逐条结果、常驻结果汇总条与可折叠警告。
+ * 结构与类名保持既有契约(dialogs.ts / smoke 断言依赖 id),仅令牌与视觉刷新;
+ * 颜色一律经 base.css 语义变量引用,本文件不写 hex。 */
 
 /* 转换完成弹窗 */
 .dialog-overlay {
@@ -11,51 +13,111 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: var(--overlay); /* 半透明遮罩 */
-  animation: dialog-overlay-in 0.15s ease-out;
+  background: var(--scrim);
+  backdrop-filter: blur(3px);
+  animation: dialog-overlay-in 0.18s ease-out;
 }
 
 .dialog {
   width: min(560px, 100%);
-  padding: 24px 28px 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-dialog);
-  animation: dialog-in 0.15s ease-out;
-  /* P4 主题切换过渡(仅颜色属性) */
-  transition: background-color 0.2s ease, color 0.2s ease,
-    border-color 0.2s ease;
+  padding: 22px 22px 18px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-pop);
+  animation: dialog-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.1);
 }
 
 .dialog-title {
   margin: 0;
-  font-size: 18px;
+  font-family: var(--font-display);
+  font-size: 19px;
+  letter-spacing: 0.06em;
   font-weight: 600;
 }
 
 .dialog-desc {
   margin: 8px 0 12px;
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: 12.5px;
+  color: var(--mut);
+}
+
+/* 完成弹窗(mockup §12):482px 档宽 + 钤印落款(全站唯二钤印笔触之一);
+ * 钤印动画仅播一次(dialog-overlay 每次打开重挂动画,reduced-motion 全局兜底) */
+.dialog--complete {
+  width: min(482px, 100%);
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin: 0 0 15px;
+}
+
+.dialog-head-texts {
+  min-width: 0;
+}
+
+.dialog-head .dialog-title {
+  margin: 0;
+}
+
+.dialog-head .dialog-desc {
+  margin: 3px 0 0;
+}
+
+.stamp {
+  width: 54px;
+  height: 54px;
+  border-radius: 11px;
+  background: var(--acc);
+  color: var(--on-acc);
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1;
+  transform: rotate(-6deg);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28), 0 8px 20px var(--acc-ring);
+  animation: stamp-in 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.18) both;
+}
+
+@keyframes stamp-in {
+  from {
+    transform: scale(1.7) rotate(-16deg);
+    opacity: 0;
+  }
+
+  62% {
+    transform: scale(0.94) rotate(-5deg);
+    opacity: 1;
+  }
+
+  to {
+    transform: scale(1) rotate(-6deg);
+  }
 }
 
 /* 结果路径:等宽字体、可选中复制、长路径自动换行 */
 .dialog-path {
   margin: 0;
   padding: 10px 12px;
-  font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   line-height: 1.6;
   word-break: break-all;
   max-height: 132px;
   overflow-y: auto;
-  color: var(--text);
-  background: var(--bg-code);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: 8px;
   user-select: text;
   cursor: text;
+  text-align: left;
+  direction: ltr;
 }
 
 .dialog-actions {
@@ -78,10 +140,10 @@
   padding: 8px 10px;
   font-size: 12.5px;
   line-height: 1.5;
-  color: var(--error);
-  background: var(--error-soft);
-  border: 1px solid var(--error-border);
-  border-radius: var(--radius-sm);
+  color: var(--acc);
+  background: var(--acc-soft);
+  border: 1px solid var(--acc-ring);
+  border-radius: var(--radius-in);
   word-break: break-all;
 }
 
@@ -97,19 +159,11 @@
 @keyframes dialog-in {
   from {
     opacity: 0;
-    transform: scale(0.96);
+    transform: translateY(10px) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* 减少动态效果:弹窗动画降为瞬时出现,终态即自然态,无可见性跳变 */
-@media (prefers-reduced-motion: reduce) {
-  .dialog-overlay,
-  .dialog {
-    animation-duration: 0.01ms;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -124,11 +178,11 @@
 .batch-summary {
   margin: 8px 0 12px;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 
 .batch-summary--fail {
-  color: var(--error);
+  color: var(--acc);
   font-weight: 600;
 }
 
@@ -140,19 +194,19 @@
   padding: 0;
   list-style: none;
   overflow-y: auto;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-in);
 }
 
 .batch-result-list:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--acc);
   outline-offset: 1px;
 }
 
 .batch-item {
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--line);
 }
 
 .batch-item:last-child {
@@ -172,11 +226,11 @@
 }
 
 .batch-item--success .batch-item-icon {
-  color: var(--success);
+  color: var(--ok);
 }
 
 .batch-item--fail .batch-item-icon {
-  color: var(--error);
+  color: var(--acc);
 }
 
 .batch-item-name {
@@ -204,34 +258,31 @@
 }
 
 .batch-item-msg--error {
-  color: var(--error);
+  color: var(--acc);
 }
 
 .batch-item-msg--warning {
-  color: var(--warning);
+  color: var(--warn);
 }
 
-/* 常驻结果汇总条:成功绿 / 失败红,打开引导按钮 + 可折叠警告
- * (P0-2 起为消息槽子元素,外边距归 .message-slot 的 gap 管理) */
+/* 常驻结果汇总条:成功绿勾 / 失败朱砂,打开引导按钮 + 可折叠警告 */
 .result-summary {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 0;
   padding: 10px 12px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
 
 .result-summary--ok {
-  background: var(--success-soft);
-  border-color: var(--success-border);
+  border-color: var(--ok-soft);
 }
 
 .result-summary--fail {
-  background: var(--error-soft);
-  border-color: var(--error-border);
+  border-color: var(--acc-ring);
 }
 
 .result-summary-main {
@@ -245,15 +296,15 @@
   flex: none;
   width: 16px;
   height: 16px;
-  color: var(--text-tertiary);
+  color: var(--mut);
 }
 
 .result-summary--ok .result-summary-icon {
-  color: var(--success);
+  color: var(--ok);
 }
 
 .result-summary--fail .result-summary-icon {
-  color: var(--error);
+  color: var(--acc);
 }
 
 .result-summary-texts {
@@ -263,24 +314,26 @@
 
 .result-summary-text {
   margin: 0;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
 }
 
 .result-summary-path {
   margin: 2px 0 0;
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--mut);
   user-select: text;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  direction: ltr;
 }
 
 .result-summary-error {
   margin: 2px 0 0;
   font-size: 12px;
-  color: var(--error);
+  color: var(--acc);
   user-select: text;
   word-break: break-all;
 }
@@ -289,13 +342,14 @@
   flex: none;
   display: flex;
   gap: 8px;
+  margin-left: auto;
 }
 
-/* 警告折叠区:黄色警示行,不顶掉完成路径 */
+/* 警告折叠区:黄警示行,不顶掉完成路径 */
 .summary-warnings-summary {
   padding: 2px 0;
   font-size: 12.5px;
-  color: var(--warning);
+  color: var(--warn);
   cursor: pointer;
   user-select: none;
 }
@@ -304,16 +358,16 @@
   margin: 6px 0 0;
   padding: 6px 10px;
   list-style: none;
-  background: var(--warning-soft);
-  border: 1px solid var(--warning-border);
-  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-in);
 }
 
 .summary-warnings-item {
   padding: 2px 0;
   font-size: 12.5px;
   line-height: 1.5;
-  color: var(--warning);
+  color: var(--warn);
   word-break: break-all;
   user-select: text;
 }
@@ -336,22 +390,22 @@
 }
 
 .dialog-path--error {
-  color: var(--error);
+  color: var(--acc);
 }
 
-/* 完成弹窗「不再提示」(批次 11 迭代 2:与设置面板「转换完成弹窗提示」同字段) */
+/* 完成弹窗「不再提示」(与设置面板同字段的弹窗侧入口) */
 .dialog-suppress {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-top: 10px;
   font-size: 12.5px;
-  color: var(--text-secondary);
+  color: var(--ink-2);
   cursor: pointer;
   user-select: none;
 }
 
 .dialog-suppress input {
   margin: 0;
-  accent-color: var(--accent);
+  accent-color: var(--acc);
 }

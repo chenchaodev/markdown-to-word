@@ -11,8 +11,7 @@
     <!-- B6 FOUC 缓解:尽早按 localStorage 语言镜像设置 <html lang>(外部脚本,CSP 'self' 放行;
          决策记录见 lang-bootstrap.js 头注释) -->
     <script src="./lang-bootstrap.js"></script>
-    <!-- 批③样式拆分:四文件按域引入(顺序固定 base → drop → settings → dialogs,
-         级联顺序与拆分前单文件一致;同源 link,CSP 无需改动) -->
+    <!-- 四域样式按序引入(base → drop → settings → dialogs),级联顺序与拆分前一致 -->
     <link rel="stylesheet" href="./style/base.css" />
     <link rel="stylesheet" href="./style/drop.css" />
     <link rel="stylesheet" href="./style/settings.css" />
@@ -20,11 +19,15 @@
   </head>
   <body>
     <main class="app">
-      <!-- 标题区:P1-1 格式分段控件(radio 语义保留,方向键可切换)+ 设置齿轮;
-           问题 3:摘要 chip 已移除,「当前预设 · 纸张」改在抽屉头部副标题展示 -->
-      <header class="header">
-        <h1 class="title" data-i18n="app.title">Markdown 转换工具</h1>
-        <span id="appVersion" class="version" title=""></span>
+      <!-- ══ 标题栏(44px 拖拽区):品牌钤印 + 应用名 + 版本徽章 / Word·PDF 分段 / 设置齿轮。
+           窗口控制按钮不在此绘制——主进程走 titleBarOverlay 原生按钮(另一通道);
+           交互元素经 CSS -webkit-app-region: no-drag 排除出拖拽区 -->
+      <header class="titlebar">
+        <div class="tb-brand">
+          <span class="tb-seal" aria-hidden="true">梓</span>
+          <span class="tb-name">MarkdownToWord</span>
+          <span id="appVersion" class="tb-ver" title=""></span>
+        </div>
         <div class="header-actions">
           <div
             class="segmented"
@@ -34,13 +37,18 @@
           >
             <label class="segment">
               <input type="radio" name="format" value="docx" checked />
-              <span data-i18n="format.docx">Word (.docx)</span>
+              <span><span class="seg-letter">W</span><span data-i18n="format.docx">Word (.docx)</span></span>
             </label>
             <label class="segment">
               <input type="radio" name="format" value="pdf" />
-              <span data-i18n="format.pdf">PDF (.pdf)</span>
+              <span><span class="seg-letter">P</span><span data-i18n="format.pdf">PDF (.pdf)</span></span>
             </label>
           </div>
+        </div>
+        <!-- 右上角设置入口(mockup §3.1:.wc-group 内 #btnGear 位于窗口控制钮组左侧;
+             原生最小化/最大化/关闭由主进程 titleBarOverlay 绘制于窗体右缘,
+             CSS 以 --wco-w 预留其宽度做避让,id/aria/i18n 契约不变) -->
+        <div class="tb-right">
           <button
             type="button"
             id="settingsOpenBtn"
@@ -50,207 +58,213 @@
             data-i18n-title="settings.drawerOpenAria"
             title="打开设置"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 6h8.6M17.4 6H20M4 12h1.6M10.4 12H20M4 18h10.6M19.2 18H20" />
+              <circle cx="15" cy="6" r="2.2" />
+              <circle cx="8" cy="12" r="2.2" />
+              <circle cx="17" cy="18" r="2.2" />
             </svg>
           </button>
         </div>
       </header>
 
-      <!-- 文件选择区:拖放区 + 选择文件按钮 -->
-      <section class="file-area" data-i18n-aria-label="drop.areaLabel" aria-label="文件选择">
+      <!-- ══ 内容区:主舞台(三态)/ 历史折叠条(常驻)/ 消息区(feed) -->
+      <div class="content">
+        <!-- 主舞台(#dropZone 兼任拖放与点击入口,data-stage 驱动三态切换) -->
         <div
           id="dropZone"
-          class="drop-zone"
+          class="stage-wrap"
+          data-stage="empty"
           role="button"
           tabindex="0"
           data-i18n-aria-label="drop.ariaLabel"
           aria-label="点击或拖入 Markdown 文件（支持多个）"
         >
-          <!-- 原 title 悬浮提示已移除:原生 tooltip 无法约束定位,窗口右缘被裁切
-               (实测反馈);操作说明由区内可见 hint 文案与 aria-label 承载 -->
-          <!-- 默认提示态:P1-6 能力说明;P1-3 最近转换以快捷 chips 并入空态
-               (有文件后随空态一起消失,发生在固定高度主舞台内,不引起跳动) -->
-          <div id="dropDefault" class="drop-default">
-            <svg
-              class="drop-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <path d="M14 2v6h6" />
-            </svg>
-            <p class="drop-title" data-i18n="drop.hint">将 Markdown 文件或文件夹拖到此处</p>
-            <p class="drop-or" data-i18n="drop.or">或</p>
-            <button
-              type="button"
-              id="selectBtn"
-              class="btn btn-secondary"
-              data-i18n-title="select.title"
-              title="选择 Markdown 文件(Ctrl+O)"
-            >
-              <span data-i18n="select.label">选择文件</span>
-            </button>
-            <p class="drop-capabilities" data-i18n="drop.capabilities">支持 .md / .markdown · 表格 · 公式 · 代码高亮 · Mermaid</p>
-            <!-- 最近转换快捷 chips(渲染见 ui/recent-files.ts):单击=加载,行尾 ↻=重转;
-                 chips 为拖放区后代,点击经容器 stopPropagation 防误触「打开对话框」 -->
-            <div id="recentChips" class="recent-chips hidden">
-              <div id="recentChipList" class="recent-chip-list"></div>
-              <button type="button" id="recentClearBtn" class="btn btn-ghost btn-small">
-                <span data-i18n="recent.clear">清空最近</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 已选单文件态:P0-1 横向紧凑卡(图标 + 名称/路径/提示 + 操作一行),
-               在固定高度主舞台内居中;容器几何不随选择数量变化 -->
-          <div id="dropFile" class="drop-file hidden">
-            <svg
-              class="drop-file-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <path d="M14 2v6h6" />
-            </svg>
-            <div class="drop-file-info">
-              <p id="fileName" class="file-name"></p>
-              <p id="filePath" class="file-path"></p>
-              <p class="drop-change" data-i18n="drop.change">点击更换文件，或拖入添加</p>
-            </div>
-            <div class="drop-file-actions">
-              <button
-                type="button"
-                id="appendFileBtn"
-                class="btn btn-secondary btn-small"
-                data-i18n-title="append.title"
-                title="添加更多文件(Ctrl+O)"
-              >
-                <span data-i18n="append.label">追加文件</span>
-              </button>
-              <button
-                type="button"
-                id="previewBtn"
-                class="btn btn-secondary btn-small"
-                data-i18n-title="preview.title"
-                title="预览转换排版(与 PDF 同排版)"
-                disabled
-              >
-                <span data-i18n="common.preview">预览</span>
-              </button>
-              <button type="button" id="removeFileBtn" class="btn btn-ghost btn-small">
-                <span data-i18n="common.remove">移除</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 已选多文件态:数量 + 工具条 + 可滚动文件列表(可排序、可移除) -->
-          <div id="dropMulti" class="drop-multi hidden">
-            <div class="multi-head">
-              <p id="multiCount" class="multi-count"></p>
-              <div class="multi-tools">
+          <!-- ▩ 空态:待印文稿台(全站唯一签名元素:四角裁切线 + 直排题字 + 旋转钤印) -->
+          <section class="pane pane-empty" data-i18n-aria-label="drop.areaLabel" aria-label="文件选择">
+            <div class="sheet" id="dropSheet">
+              <span class="cm tl"></span><span class="cm tr"></span><span class="cm bl"></span><span class="cm br"></span>
+              <div class="rules" aria-hidden="true"></div>
+              <div class="vwrap" aria-hidden="true">
+                <span class="vtext" data-i18n="drop.motto">落笔 · 排版 · 成书</span>
+                <span class="vseal">梓</span>
+              </div>
+              <div class="drop-core">
+                <span class="drop-kicker">.MD&ensp;/&ensp;.MARKDOWN</span>
+                <h1 data-i18n="drop.title">拖入 Markdown 文件</h1>
+                <p class="drop-sub" data-i18n="drop.sub">松手即加入队列，也可以一次选择多个文件</p>
                 <button
                   type="button"
-                  id="appendBtn"
-                  class="btn btn-secondary btn-small"
+                  id="selectBtn"
+                  class="btn btn-solid"
+                  style="margin-top: 6px"
+                  data-i18n-title="select.title"
+                  title="选择 Markdown 文件(Ctrl+O)"
+                >
+                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/><path d="M12 10.6v4.6M9.7 12.9h4.6"/></svg>
+                  <span data-i18n="select.label">选择文件</span>
+                </button>
+                <div class="caps">
+                  <span class="cap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 12h16M12 5v14"/></svg><span data-i18n="drop.capTable">表格</span></span>
+                  <span class="cap"><b>Σ</b><span data-i18n="drop.capFormula">数学公式</span></span>
+                  <span class="cap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 8.5-4 3.5 4 3.5M15 8.5l4 3.5-4 3.5"/></svg><span data-i18n="drop.capCode">代码高亮</span></span>
+                  <span class="cap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="5" rx="1"/><rect x="14" y="15" width="6" height="5" rx="1"/><path d="M7 9v4a2 2 0 0 0 2 2h5"/></svg><span data-i18n="drop.capMermaid">Mermaid 图表</span></span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ▩ 单文件态:文件卡(图标块 + 名称 + mono 元信息 + 动作组) -->
+          <section class="pane pane-single" aria-label="单文件">
+            <div class="ph">
+              <span class="ph-title" data-i18n="stage.manuscript">文 稿</span>
+              <span class="ph-sub" data-i18n="file.selectedOne">已选择 1 个文件</span>
+            </div>
+            <div class="filecard">
+              <span class="fico">
+                <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h6.8L18.5 8v11.2a1.3 1.3 0 0 1-1.3 1.3H7a1.3 1.3 0 0 1-1.3-1.3V4.8A1.3 1.3 0 0 1 7 3.5Z"/><path d="M13.5 3.8V8.3H18"/></svg>
+              </span>
+              <div class="fmain">
+                <p id="fileName" class="fname"></p>
+                <p id="filePath" class="fmeta"></p>
+              </div>
+              <div class="facts">
+                <button
+                  type="button"
+                  id="appendFileBtn"
+                  class="btn btn-ghost sm"
                   data-i18n-title="append.title"
                   title="添加更多文件(Ctrl+O)"
                 >
+                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/><path d="M12 10.6v4.6M9.7 12.9h4.6"/></svg>
                   <span data-i18n="append.label">追加文件</span>
                 </button>
-                <button type="button" id="clearListBtn" class="btn btn-ghost btn-small">
-                  <span data-i18n="file.clearList">清空列表</span>
+                <button
+                  type="button"
+                  id="previewBtn"
+                  class="btn btn-ghost sm"
+                  data-i18n-title="preview.title"
+                  title="预览转换排版(与 PDF 同排版)"
+                  disabled
+                >
+                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                  <span data-i18n="common.preview">预览</span>
+                </button>
+                <button type="button" id="removeFileBtn" class="btn btn-ghost sm">
+                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1.3 1.3 0 0 1 1.3-1.3h2.4a1.3 1.3 0 0 1 1.3 1.3v1.7M6.5 6.5l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12"/><path d="M10 10.5v6M14 10.5v6"/></svg>
+                  <span data-i18n="common.remove">移除</span>
                 </button>
               </div>
             </div>
-            <ul id="multiList" class="multi-list"></ul>
-            <p class="drop-change" data-i18n="drop.multiHint">拖拽或按钮可调整顺序；点击或拖入可继续添加</p>
-            <p class="drop-change drop-change--second" data-i18n="drop.dblclickHint">双击列表行可预览排版</p>
-          </div>
+            <p class="fhint" data-i18n="drop.outputHint">将按当前模板与排版设置输出文档；输出重名时自动加序号，不覆盖已有文件。</p>
+          </section>
+
+          <!-- ▩ 多文件态:队列卡(grip 拖拽排序 + 序号自动重排 + 行内移除) -->
+          <section class="pane pane-multi" aria-label="多文件">
+            <div class="ph">
+              <span class="ph-title" data-i18n="stage.manuscript">文 稿</span>
+              <span id="multiCount" class="ph-sub"></span>
+              <span class="ph-side">
+                <button type="button" id="appendBtn" class="btn btn-ghost sm" data-i18n-title="append.title" title="添加更多文件(Ctrl+O)">
+                  <span data-i18n="append.label">追加文件</span>
+                </button>
+                <button type="button" id="clearListBtn" class="btn btn-text sm">
+                  <span data-i18n="file.clearList">清空列表</span>
+                </button>
+              </span>
+            </div>
+            <div class="listcard">
+              <ul id="multiList" class="mlist"></ul>
+              <div class="list-foot">
+                <span><b data-i18n="convert.batch">批量转换</b><span data-i18n="file.batchFoot">：每个文件各自输出一份</span></span>
+                <span><b data-i18n="convert.merge">合并转换</b><span data-i18n="file.mergeFoot">：按当前顺序合成一个文档</span></span>
+              </div>
+            </div>
+          </section>
         </div>
-      </section>
 
-      <!-- P0-2 消息槽:状态行 / 拖放跳过列表 / 结果汇总条统一收纳的常驻固定槽。
-           槽体 min-height 预留空态占位,内容出现/消失不推挤其他区块;
-           内容偶发超高(展开警告/长错误)时由最近转换的弹性轨道吸收
-           (轨道模型见 base.css .app 注释)。三个子元素 id 不变,
-           setStatus / showSkippedList / showSummary 渲染调用零改动 -->
-      <div id="messageSlot" class="message-slot">
-        <!-- 状态区:路径 / 错误提示 -->
-        <p id="status" class="status" role="status" aria-live="polite"></p>
+        <!-- ▩ 历史记录常驻折叠条(主舞台与消息区之间):无记录整块不渲染(hidden);
+             空态默认展开、有文件自动收起、手动可切换(data-open);列表内部滚动约 3 行 -->
+        <section id="historyBar" class="history hidden" data-open="true" data-i18n-aria-label="history.title" aria-label="最近转换">
+          <header class="h-head">
+            <button type="button" id="histToggle" class="h-toggle" aria-expanded="true">
+              <svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6"/></svg>
+              <span class="ph-title" data-i18n="history.title">最近转换</span>
+              <span id="histCount" class="h-count"></span>
+            </button>
+            <button type="button" id="recentClearBtn" class="btn btn-text sm">
+              <span data-i18n="history.clear">清空记录</span>
+            </button>
+          </header>
+          <div class="h-body"><div>
+            <ul id="recentList" class="rlist"></ul>
+          </div></div>
+        </section>
 
-        <!-- B9 拖放反馈细化:被跳过的非 Markdown 文件名列表(可折叠;
-             复用汇总条 details 折叠样式类,不改样式文件) -->
-        <details id="dropSkipped" class="summary-warnings hidden">
-          <summary id="dropSkippedToggle" class="summary-warnings-summary"></summary>
-          <ul id="dropSkippedList" class="summary-warnings-list"></ul>
-        </details>
+        <!-- ▩ 消息区(feed):状态行 / 拖放跳过列表 / 结果汇总条统一收纳的常驻固定槽。
+             子元素 id 不变,setStatus / showSkippedList / showSummary 渲染调用零改动 -->
+        <div id="messageSlot" class="feed">
+          <p id="status" class="status" role="status" aria-live="polite"></p>
 
-        <!-- 转换结果汇总:常驻(不依赖弹窗),完成路径 + 打开引导 + 可折叠警告 -->
-        <div id="resultSummary" class="result-summary hidden">
-          <div class="result-summary-main">
-            <svg
-              id="summaryIcon"
-              class="result-summary-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M20 6L9 17l-5-5" />
-            </svg>
-            <div class="result-summary-texts">
-              <p id="summaryText" class="result-summary-text"></p>
-              <p id="summaryPath" class="result-summary-path hidden"></p>
-              <p id="summaryError" class="result-summary-error hidden"></p>
-            </div>
-            <div class="result-summary-actions">
-              <button
-                type="button"
-                id="summaryRevealBtn"
-                class="btn btn-secondary btn-small hidden"
-                data-i18n-title="summary.revealTitle"
-                title="在资源管理器中显示输出文件"
-              >
-                <span data-i18n="common.reveal">打开所在文件夹</span>
-              </button>
-              <button type="button" id="summaryOpenBtn" class="btn btn-secondary btn-small hidden">
-                <span data-i18n="common.open">打开文件</span>
-              </button>
-              <button type="button" id="summaryDetailsBtn" class="btn btn-secondary btn-small hidden">
-                <span data-i18n="summary.details">失败详情</span>
-              </button>
-            </div>
-          </div>
-          <details id="summaryWarnings" class="summary-warnings hidden">
-            <summary id="summaryWarningsToggle" class="summary-warnings-summary"></summary>
-            <ul id="summaryWarningsList" class="summary-warnings-list"></ul>
+          <!-- B9 拖放反馈细化:被跳过的非 Markdown 文件名列表(可折叠) -->
+          <details id="dropSkipped" class="summary-warnings hidden">
+            <summary id="dropSkippedToggle" class="summary-warnings-summary"></summary>
+            <ul id="dropSkippedList" class="summary-warnings-list"></ul>
           </details>
+
+          <!-- 转换结果汇总:常驻(不依赖弹窗),完成路径 + 打开引导 + 可折叠警告 -->
+          <div id="resultSummary" class="result-summary hidden">
+            <div class="result-summary-main">
+              <svg
+                id="summaryIcon"
+                class="result-summary-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              <div class="result-summary-texts">
+                <p id="summaryText" class="result-summary-text"></p>
+                <p id="summaryPath" class="result-summary-path hidden"></p>
+                <p id="summaryError" class="result-summary-error hidden"></p>
+              </div>
+              <div class="result-summary-actions">
+                <button
+                  type="button"
+                  id="summaryRevealBtn"
+                  class="btn btn-ghost sm hidden"
+                  data-i18n-title="summary.revealTitle"
+                  title="在资源管理器中显示输出文件"
+                >
+                  <span data-i18n="common.reveal">打开所在文件夹</span>
+                </button>
+                <button type="button" id="summaryOpenBtn" class="btn btn-solid sm hidden">
+                  <span data-i18n="common.open">打开文件</span>
+                </button>
+                <button type="button" id="summaryDetailsBtn" class="btn btn-ghost sm hidden">
+                  <span data-i18n="summary.details">失败详情</span>
+                </button>
+              </div>
+            </div>
+            <details id="summaryWarnings" class="summary-warnings hidden">
+              <summary id="summaryWarningsToggle" class="summary-warnings-summary"></summary>
+              <ul id="summaryWarningsList" class="summary-warnings-list"></ul>
+            </details>
+          </div>
         </div>
       </div>
 
-      <!-- 底部操作栏:转换按钮(单文件 / 批量 / 合并) + 转换进度。
-           P0-1:.app 改 Grid 后 footer 由最后一条轨道钉底(常规态不依赖 sticky);
-           sticky 仅作兜底保留——内容超出视口时(.app 内部滚动)转换按钮/进度条仍吸附可见。
-           P1-1:格式选择已上移顶栏分段控件,footer 只留主行动线 -->
-      <footer class="actions">
-        <!-- 转换进度(P2-2 精简行):细进度条 + 百分比 + 取消按钮,转换中显示。
-             取消为独立交互故保留按钮;去盒化与主行动线融为一体 -->
+      <!-- ══ 底部动作栏:快捷键提示 + 合并转换(多文件态)+ 主按钮(开始/批量)+ 进度行 -->
+      <footer class="actionbar">
+        <!-- 转换进度(P2-2 精简行):旋转指示 + 细进度条 + mono 百分比 + 取消按钮,
+             转换中显示;布局样式见 base.css §3.5(mockup §9 progress 模式) -->
         <div id="progressArea" class="progress-area hidden">
+          <span class="spin" aria-hidden="true"></span>
           <div
             id="progressTrack"
             class="progress-track"
@@ -264,60 +278,67 @@
             <div id="progressFill" class="progress-fill"></div>
           </div>
           <span id="progressText" class="progress-text">0%</span>
-          <button type="button" id="cancelBtn" class="btn btn-ghost btn-small">
+          <button type="button" id="cancelBtn" class="btn btn-text sm">
             <span data-i18n="common.cancel">取消</span>
           </button>
         </div>
-        <div class="convert">
-          <!-- 单文件:开始转换;多文件:批量转换(主) + 合并转换(次),按选择数量切换 -->
+        <span class="hint">
+          <span class="kbd">Ctrl</span><span class="kbd">Enter</span>
+          <!-- convertHint:refs.ts 单源绑定(file-list.updateActionButtons 按单文件/批量
+               语义切换文案);此前 id 缺失致绑定落空,现恢复 -->
+          <span id="convertHint" data-i18n="hint.single">Ctrl+Enter 转换 · Ctrl+O 添加文件</span>
+        </span>
+        <div class="ab-side">
+          <button
+            type="button"
+            id="mergeBtn"
+            class="btn btn-ghost lg merge-btn hidden"
+            data-i18n-title="convert.mergeTitle"
+            title="合并转换:将所有文件合成一个文档,输出文件名含「-合并」"
+            disabled
+          >
+            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h4.2L13 12h6.5M4 18h4.2L13 12"/><path d="M16.5 9.5 19 12l-2.5 2.5"/></svg>
+            <span data-i18n="convert.merge">合并转换</span>
+          </button>
           <button
             type="button"
             id="convertBtn"
-            class="btn btn-primary"
+            class="btn btn-primary lg"
             data-i18n-title="convert.startTitle"
             title="开始转换(Ctrl+Enter)"
             disabled
           >
             <span data-i18n="convert.start">开始转换</span>
+            <svg class="ic" style="width: 15px; height: 15px" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13.5 6.5 19 12l-5.5 5.5"/></svg>
           </button>
           <button
             type="button"
             id="batchBtn"
-            class="btn btn-primary hidden"
+            class="btn btn-primary lg hidden"
             data-i18n-title="convert.batchTitle"
             title="批量转换:每个文件单独生成一个文档(Ctrl+Enter)"
             disabled
           >
             <span data-i18n="convert.batch">批量转换</span>
+            <svg class="ic" style="width: 15px; height: 15px" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13.5 6.5 19 12l-5.5 5.5"/></svg>
           </button>
-          <button
-            type="button"
-            id="mergeBtn"
-            class="btn btn-secondary hidden"
-            data-i18n-title="convert.mergeTitle"
-            title="合并转换:将所有文件合成一个文档,输出文件名含「-合并」"
-            disabled
-          >
-            <span data-i18n="convert.merge">合并转换</span>
-          </button>
-          <span class="hint" data-i18n="hint.single">Ctrl+Enter 转换 · Ctrl+O 添加文件</span>
         </div>
       </footer>
     </main>
 
-    <!-- P0-3 设置抽屉:overlay 遮罩 + 右侧滑出面板,主页面配置清零。
-         开合记忆沿用 ui-state.panelOpen.page(语义自「details 展开」迁移为「抽屉可见」);
-         转换中可打开(设置即时生效+自动保存链路不经过抽屉模块)。
-         P0-4 信息架构:L1 常用(默认展开)→ L2 排版(默认展开)→ L3 高级(默认折叠,
-         含模板管理二级折叠)→ L4 应用偏好(置底分隔段)。
+    <!-- toast 轻提示(settings-ia §3.7:预设切换等即时反馈;单实例,2.4s 自动消失) -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <!-- ══ 设置抽屉:遮罩盖内容区(top 联动 --tbh),右滑面板七组编号(01–07),
+         信息架构严格按 docs/design/settings-ia.md 迁移映射表。
          控件 id 与 settings-bindings/settings-panel 的绑定、回填逻辑一一对应,勿改 id -->
     <div id="settingsDrawer" class="drawer-overlay hidden">
       <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
         <header class="drawer-head">
           <div class="drawer-head-texts">
             <h2 id="drawerTitle" class="drawer-title" data-i18n="settings.title">设置</h2>
-            <!-- 问题 3:「当前预设 · 纸张」自顶栏 chip 迁此(文案由 settings-panel 合成、
-                 settings-drawer.updateDrawerMeta 写入;空串时 CSS :empty 隐藏) -->
+            <!-- 「当前预设 · 纸张」(文案由 settings-panel 合成、settings-drawer.updateDrawerMeta
+                 写入;空串时 CSS :empty 隐藏) -->
             <p id="drawerSubtitle" class="drawer-subtitle"></p>
           </div>
           <button
@@ -335,16 +356,20 @@
           </button>
         </header>
         <div class="drawer-body">
-          <!-- ── L1 常用:模板预设 / 纸张方向 / 输出目录 / 导出后 ── -->
-          <section id="drawerGroupCommon" class="drawer-group">
-            <h3 class="drawer-group-title" data-i18n="settings.groupCommon">常用</h3>
+          <!-- ── 01 预设:风格起点与其管理(本体入预设) ── -->
+          <section class="sec">
+            <div class="sec-h"><span class="sec-num">01</span><span class="sec-title" data-i18n="settings.groupPreset">预 设</span><span class="sec-rule"></span></div>
             <div class="setting-field">
               <label class="setting-label" for="templatePreset" data-i18n="settings.presetLabel">模板预设</label>
-              <select id="templatePreset" class="setting-select">
-                <option value="default" data-i18n="preset.default">默认</option>
-                <option value="paper" data-i18n="preset.paper">学术论文</option>
-                <option value="business" data-i18n="preset.business">商务简报</option>
-              </select>
+              <!-- sel-wrap:原生 select + 自绘箭头(guidelines §2 sel 模式;自定义预设可达
+                   10 项,枚举 >5 → sel 形态合规)。选项由 rebuildPresetOptions 动态维护 -->
+              <span class="sel-wrap">
+                <select id="templatePreset" class="setting-select">
+                  <option value="default" data-i18n="preset.default">默认</option>
+                  <option value="paper" data-i18n="preset.paper">学术论文</option>
+                  <option value="business" data-i18n="preset.business">商务简报</option>
+                </select>
+              </span>
               <span id="templatePresetHint" class="settings-note"
                 data-i18n="preset.hintTitle"
                 data-i18n-title="preset.hintTitle"
@@ -352,93 +377,74 @@
                 选择模板将覆盖排版与页面设置
               </span>
             </div>
-
-            <div class="drawer-cols">
-              <div class="setting-field">
-                <label class="setting-label" for="paperSelect" data-i18n="settings.paper">纸张</label>
-                <select id="paperSelect" class="setting-select">
-                  <option value="A4">A4</option>
-                  <option value="A3">A3</option>
-                  <option value="A5">A5</option>
-                  <option value="Letter">Letter</option>
-                  <option value="Legal">Legal</option>
-                </select>
-              </div>
-              <!-- P0-4:方向由双 radio 改单 select(省高度;value 与原 radio 一致) -->
-              <div class="setting-field">
-                <label class="setting-label" for="orientationSelect" data-i18n="settings.orientation">方向</label>
-                <select id="orientationSelect" class="setting-select">
-                  <option value="portrait" data-i18n="settings.portrait">纵向</option>
-                  <option value="landscape" data-i18n="settings.landscape">横向</option>
-                </select>
-              </div>
+            <p class="scope-note" data-i18n="settings.presetScopeNote">预设包含「页面 · 文字 · 编号与目录」三组；不含页眉页脚与输出。</p>
+            <div class="mgmt">
+              <button type="button" id="presetSaveBtn" class="btn btn-ghost sm">
+                <span data-i18n="preset.saveAs">另存为预设…</span>
+              </button>
+              <button type="button" id="presetDeleteBtn" class="btn btn-ghost sm hidden">
+                <span data-i18n="preset.delete">删除预设</span>
+              </button>
+              <button type="button" id="presetImportBtn" class="btn btn-ghost sm"
+                data-i18n-title="preset.importTitle"
+                title="从 JSON 文件导入自定义预设">
+                <span data-i18n="preset.import">导入预设…</span>
+              </button>
+              <button type="button" id="presetExportBtn" class="btn btn-ghost sm"
+                data-i18n-title="preset.exportTitle"
+                title="导出全部自定义预设为 JSON 文件">
+                <span data-i18n="preset.export">导出预设…</span>
+              </button>
             </div>
-
-            <div class="setting-field setting-outputdir">
-              <span class="setting-label" id="outputDirLabel" data-i18n="settings.outputDir">输出目录</span>
-              <div class="outputdir-row">
-                <span id="outputDirValue" class="outputdir-value" data-i18n="settings.outputDirDefault" title="">与源文件相同目录</span>
-                <button type="button" id="outputDirPick" class="btn btn-secondary btn-small">
-                  <span data-i18n="settings.outputDirPick">选择…</span>
-                </button>
-                <button type="button" id="outputDirReset" class="btn btn-ghost btn-small">
-                  <span data-i18n="settings.outputDirReset">恢复默认</span>
-                </button>
-              </div>
-            </div>
-
-            <fieldset class="setting-field setting-fieldset setting-after">
-              <legend class="setting-label" data-i18n="settings.afterConvert">导出后</legend>
-              <div class="setting-options">
-                <label class="setting-option">
-                  <input type="radio" name="afterConvert" value="none" />
-                  <span data-i18n="settings.afterNone">不自动执行</span>
-                </label>
-                <label class="setting-option">
-                  <input type="radio" name="afterConvert" value="show-in-folder" />
-                  <span data-i18n="common.reveal">打开所在文件夹</span>
-                </label>
-                <label class="setting-option">
-                  <input type="radio" name="afterConvert" value="open" />
-                  <span data-i18n="common.open">打开文件</span>
-                </label>
-              </div>
-            </fieldset>
           </section>
 
-          <!-- ── L2 排版:字体 / 字号 / 行距(编号类开关移入 L3 高级) ── -->
-          <section class="drawer-group">
-            <h3 class="drawer-group-title" data-i18n="settings.groupTypography">排版</h3>
-            <div class="setting-field">
-              <label class="setting-label" for="fontAscii">
-                <span data-i18n="settings.fontAscii">西文字体</span><span class="setting-label-hint" data-i18n="settings.fontAsciiHint">(正文中的字母与数字)</span>
-              </label>
-              <input
-                type="text"
-                id="fontAscii"
-                class="setting-input"
-                list="fontAsciiSuggestions"
-              />
-              <datalist id="fontAsciiSuggestions">
-                <option value="Calibri"></option>
-                <option value="Arial"></option>
-                <option value="Times New Roman"></option>
-                <option value="Consolas"></option>
-                <option value="Segoe UI"></option>
-              </datalist>
-              <p id="fontAsciiError" class="field-error hidden"></p>
+          <!-- ── 02 页面:物理版面(纸 → 向 → 边距,决策序) ── -->
+          <section class="sec">
+            <div class="sec-h"><span class="sec-num">02</span><span class="sec-title" data-i18n="settings.groupPage">页 面</span><span class="sec-rule"></span></div>
+            <!-- 界面重构 v3:枚举 ≤5 → seg 分段(guidelines §3.1 映射表);radio 语义保留,
+                 name="paper"/name="orientation" 与 settings-bindings 的组绑定对应 -->
+            <div class="row">
+              <span class="row-l" data-i18n="settings.paper">纸张</span>
+              <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.paper" aria-label="纸张">
+                <label class="segment"><input type="radio" name="paper" value="A4" checked /><span>A4</span></label>
+                <label class="segment"><input type="radio" name="paper" value="A3" /><span>A3</span></label>
+                <label class="segment"><input type="radio" name="paper" value="A5" /><span>A5</span></label>
+                <label class="segment"><input type="radio" name="paper" value="Letter" /><span>Letter</span></label>
+                <label class="segment"><input type="radio" name="paper" value="Legal" /><span>Legal</span></label>
+              </span>
             </div>
+            <div class="row">
+              <span class="row-l" data-i18n="settings.orientation">方向</span>
+              <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.orientation" aria-label="方向">
+                <label class="segment">
+                  <input type="radio" name="orientation" value="portrait" checked />
+                  <span><svg class="ic" style="width: 12px; height: 12px" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="1.5"/></svg><span data-i18n="settings.portrait">纵向</span></span>
+                </label>
+                <label class="segment">
+                  <input type="radio" name="orientation" value="landscape" />
+                  <span><svg class="ic" style="width: 12px; height: 12px" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="7" width="16" height="10" rx="1.5"/></svg><span data-i18n="settings.landscape">横向</span></span>
+                </label>
+              </span>
+            </div>
+            <div class="row block">
+              <div class="row-l" data-i18n="settings.margins" style="margin-bottom: 8px">四边边距（mm）</div>
+              <div class="mm-grid">
+                <!-- max 与 settings-logic 校验上限对称(MARGIN_MAX_MM = 1000,core/settings-defaults.ts 单源) -->
+                <div class="mm-cell"><label for="marginTop" data-i18n="settings.marginTop">上</label><div class="mm-in"><input type="number" id="marginTop" class="tin" min="0" max="1000" step="0.5" /><span>mm</span></div></div>
+                <div class="mm-cell"><label for="marginBottom" data-i18n="settings.marginBottom">下</label><div class="mm-in"><input type="number" id="marginBottom" class="tin" min="0" max="1000" step="0.5" /><span>mm</span></div></div>
+                <div class="mm-cell"><label for="marginLeft" data-i18n="settings.marginLeft">左</label><div class="mm-in"><input type="number" id="marginLeft" class="tin" min="0" max="1000" step="0.5" /><span>mm</span></div></div>
+                <div class="mm-cell"><label for="marginRight" data-i18n="settings.marginRight">右</label><div class="mm-in"><input type="number" id="marginRight" class="tin" min="0" max="1000" step="0.5" /><span>mm</span></div></div>
+              </div>
+              <p id="marginError" class="field-error hidden"></p>
+            </div>
+          </section>
 
-            <div class="setting-field">
-              <label class="setting-label" for="fontEastAsia">
-                <span data-i18n="settings.fontEastAsia">中文字体</span><span class="setting-label-hint" data-i18n="settings.fontEastAsiaHint">(正文中的汉字)</span>
-              </label>
-              <input
-                type="text"
-                id="fontEastAsia"
-                class="setting-input"
-                list="fontEastAsiaSuggestions"
-              />
+          <!-- ── 03 文字:字符与段落观感 ── -->
+          <section class="sec">
+            <div class="sec-h"><span class="sec-num">03</span><span class="sec-title" data-i18n="settings.groupText">文 字</span><span class="sec-rule"></span></div>
+            <div class="row">
+              <label class="row-l" for="fontEastAsia" data-i18n="settings.fontEastAsia">中文字体</label>
+              <input type="text" id="fontEastAsia" class="tin" style="width: 170px" list="fontEastAsiaSuggestions" />
               <datalist id="fontEastAsiaSuggestions">
                 <option value="微软雅黑"></option>
                 <option value="宋体"></option>
@@ -447,227 +453,241 @@
                 <option value="仿宋"></option>
                 <option value="等线"></option>
               </datalist>
-              <p id="fontEastAsiaError" class="field-error hidden"></p>
             </div>
-
-            <div class="drawer-cols">
-              <div class="setting-field">
-                <label class="setting-label" for="bodySizePt">
-                  <span data-i18n="settings.bodySize">正文字号</span><span class="setting-label-hint" data-i18n="settings.bodySizeHint">(pt)</span>
-                </label>
-                <input
-                  type="number"
-                  id="bodySizePt"
-                  class="setting-number"
-                  min="8"
-                  max="24"
-                  step="1"
-                />
-                <p id="bodySizeError" class="field-error hidden"></p>
-              </div>
-              <div class="setting-field">
-                <label class="setting-label" for="lineSpacing">
-                  <span data-i18n="settings.lineSpacing">行距</span><span class="setting-label-hint" data-i18n="settings.lineSpacingHint">(倍数)</span>
-                </label>
-                <input
-                  type="number"
-                  id="lineSpacing"
-                  class="setting-number"
-                  min="1.0"
-                  max="2.5"
-                  step="0.1"
-                />
-                <p id="lineSpacingError" class="field-error hidden"></p>
-              </div>
+            <p id="fontEastAsiaError" class="field-error hidden"></p>
+            <div class="row">
+              <label class="row-l" for="fontAscii" data-i18n="settings.fontAscii">西文字体</label>
+              <input type="text" id="fontAscii" class="tin" style="width: 170px" list="fontAsciiSuggestions" />
+              <datalist id="fontAsciiSuggestions">
+                <option value="Calibri"></option>
+                <option value="Arial"></option>
+                <option value="Times New Roman"></option>
+                <option value="Consolas"></option>
+                <option value="Segoe UI"></option>
+              </datalist>
             </div>
-
-            <!-- F3 标题排版粒度:标题字号/间距档位(三档;映射表单源 core/settings/typography.ts) -->
-            <div class="drawer-cols">
-              <div class="setting-field">
-                <label class="setting-label" for="headingScaleSelect">
-                  <span data-i18n="settings.headingScale">标题字号</span><span class="setting-label-hint" data-i18n="settings.headingScaleHint">(相对正文)</span>
+            <p id="fontAsciiError" class="field-error hidden"></p>
+            <!-- 界面重构 v3:有界离散数值 → stepper(guidelines §3.1);input id 不变,
+                 ± 按钮经 settings-bindings 步进并走既有 change 校验/持久化链路 -->
+            <div class="row">
+              <label class="row-l" for="bodySizePt"><span data-i18n="settings.bodySize">正文字号</span><span class="setting-label-hint" data-i18n="settings.bodySizeHint">(pt)</span></label>
+              <span class="stepper">
+                <button type="button" id="bodySizeDecBtn" data-i18n-aria-label="settings.stepDecreaseAria" aria-label="减小字号">&minus;</button>
+                <input type="number" id="bodySizePt" class="stepper-value" value="12" min="8" max="24" step="0.5" />
+                <button type="button" id="bodySizeIncBtn" data-i18n-aria-label="settings.stepIncreaseAria" aria-label="增大字号">+</button>
+              </span>
+            </div>
+            <p id="bodySizeError" class="field-error hidden"></p>
+            <!-- 界面重构 v3:有界连续数值 → range 滑杆 + mono 实时回显(guidelines §3.1) -->
+            <div class="row">
+              <label class="row-l" for="lineSpacing"><span data-i18n="settings.lineSpacing">行距倍数</span><span class="setting-label-hint" data-i18n="settings.lineSpacingHint">(倍数)</span></label>
+              <span class="row-r">
+                <input type="range" id="lineSpacing" min="1" max="2.5" step="0.05" data-i18n-aria-label="settings.lineSpacing" aria-label="行距倍数" />
+                <output id="lineSpacingValue">1.5</output>
+              </span>
+            </div>
+            <p id="lineSpacingError" class="field-error hidden"></p>
+            <div class="row">
+              <span class="row-l" data-i18n="settings.headingScaleTier">标题字号档位</span>
+              <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.headingScaleTier" aria-label="标题字号档位">
+                <label class="segment"><input type="radio" name="headingScale" value="compact" /><span data-i18n="settings.tierCompact">紧凑</span></label>
+                <label class="segment"><input type="radio" name="headingScale" value="standard" checked /><span data-i18n="settings.tierStandard">标准</span></label>
+                <label class="segment"><input type="radio" name="headingScale" value="spacious" /><span data-i18n="settings.tierSpacious">舒展</span></label>
+              </span>
+            </div>
+            <div class="row">
+              <span class="row-l" data-i18n="settings.headingSpacingTier">标题间距档位</span>
+              <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.headingSpacingTier" aria-label="标题间距档位">
+                <label class="segment"><input type="radio" name="headingSpacing" value="compact" /><span data-i18n="settings.tierCompact">紧凑</span></label>
+                <label class="segment"><input type="radio" name="headingSpacing" value="standard" checked /><span data-i18n="settings.tierStandard">标准</span></label>
+                <label class="segment"><input type="radio" name="headingSpacing" value="spacious" /><span data-i18n="settings.tierSpacious">舒展</span></label>
+              </span>
+            </div>
+            <div class="sub-label" data-i18n="settings.sectionParagraph">段 落</div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.firstLineIndent">首行缩进</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.firstLineIndentDesc">正文段落首行缩进 2 字符</span>
+              </span>
+              <input type="checkbox" id="firstLineIndent" class="switch-input" />
+            </div>
+            <div class="row">
+              <span class="row-l" data-i18n="settings.align">对齐方式</span>
+              <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.align" aria-label="对齐方式">
+                <label class="segment">
+                  <input type="radio" name="align" value="left" />
+                  <span data-i18n="settings.alignLeft">左对齐</span>
                 </label>
-                <select id="headingScaleSelect" class="setting-select">
-                  <option value="compact" data-i18n="settings.tierCompact">紧凑</option>
-                  <option value="standard" data-i18n="settings.tierStandard">标准</option>
-                  <option value="spacious" data-i18n="settings.tierSpacious">舒展</option>
-                </select>
-              </div>
-              <div class="setting-field">
-                <label class="setting-label" for="headingSpacingSelect">
-                  <span data-i18n="settings.headingSpacing">标题间距</span><span class="setting-label-hint" data-i18n="settings.headingSpacingHint">(段前/段后)</span>
+                <label class="segment">
+                  <input type="radio" name="align" value="justify" />
+                  <span data-i18n="settings.alignJustify">两端对齐</span>
                 </label>
-                <select id="headingSpacingSelect" class="setting-select">
-                  <option value="compact" data-i18n="settings.tierCompact">紧凑</option>
-                  <option value="standard" data-i18n="settings.tierStandard">标准</option>
-                  <option value="spacious" data-i18n="settings.tierSpacious">舒展</option>
-                </select>
-              </div>
+              </span>
             </div>
           </section>
 
-          <!-- ── L2 页眉页脚(F4):页眉模式 / 自定义文字与 logo / 布局 / 页脚开关 ── -->
-          <section class="drawer-group">
-            <h3 class="drawer-group-title" data-i18n="settings.groupHeaderFooter">页眉页脚</h3>
-            <div class="setting-field">
-              <label class="setting-label" for="headerModeSelect" data-i18n="settings.headerMode">页眉</label>
-              <select id="headerModeSelect" class="setting-select">
-                <option value="default" data-i18n="settings.headerModeDefault">默认(文档标题)</option>
-                <option value="custom" data-i18n="settings.headerModeCustom">自定义</option>
-                <option value="none" data-i18n="settings.headerModeNone">无</option>
-              </select>
+          <!-- ── 04 页眉 · 页脚(组头挂「不入预设」徽标):模式 + 条件字段容器 ── -->
+          <section class="sec">
+            <div class="sec-h"><span class="sec-num">04</span><span class="sec-title" data-i18n="settings.groupHeaderFooter">页眉 · 页脚</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
+            <!-- 模式 + 条件字段(IA §3.1 抽屉唯一折叠形态):主控 seg 置首,
+                 条件字段收入 .cond 凹陷容器,仅 custom 展开(settings-bindings 同步) -->
+            <div class="row">
+              <span class="row-l" data-i18n="settings.headerModeLabel">页眉模式</span>
+              <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.headerModeLabel" aria-label="页眉模式">
+                <label class="segment"><input type="radio" name="headerMode" value="default" checked /><span data-i18n="settings.modeDefault">默认</span></label>
+                <label class="segment"><input type="radio" name="headerMode" value="custom" /><span data-i18n="settings.headerModeCustom">自定义</span></label>
+                <label class="segment"><input type="radio" name="headerMode" value="none" /><span data-i18n="settings.headerModeNone">无</span></label>
+              </span>
             </div>
-            <!-- 自定义模式专属控件:非 custom 模式整块隐藏(visibility 由 settings-panel 同步) -->
-            <div id="headerCustomFields" class="hidden">
-              <div class="setting-field">
-                <label class="setting-label" for="headerText" data-i18n="settings.headerText">页眉文字</label>
-                <input type="text" id="headerText" class="setting-input" />
+            <!-- 条件字段容器:仅 custom 模式展开(cond.show;整块移除而非灰禁)。
+                 footerEnabled 在条件块内仅 custom 可见——隐藏不重置值,
+                 后端存取链路(bindings/panel)不受显隐影响 -->
+            <div id="headerCustomFields" class="cond" inert><div><div class="cond-in">
+              <div class="row block" style="padding-top: 2px">
+                <label class="row-l" for="headerText" data-i18n="settings.headerText" style="margin-bottom: 6px; display: block">页眉文字</label>
+                <input type="text" id="headerText" class="tin" style="width: 100%" />
               </div>
-              <div class="setting-field setting-outputdir">
-                <span class="setting-label" data-i18n="settings.headerLogo">页眉 Logo</span>
-                <div class="outputdir-row">
-                  <span id="headerLogoStatus" class="outputdir-value" data-i18n="settings.headerLogoNone" title="">未选择 Logo</span>
-                  <button type="button" id="headerLogoPick" class="btn btn-secondary btn-small">
+              <div class="row">
+                <span class="row-l" data-i18n="settings.headerLogo">页眉图片</span>
+                <span class="row-r">
+                  <span id="headerLogoStatus" class="path-chip" data-i18n="settings.headerLogoNone" title="">未选择 Logo</span>
+                  <button type="button" id="headerLogoPick" class="btn btn-ghost sm">
                     <span data-i18n="settings.headerLogoPick">选择图片…</span>
                   </button>
-                  <button type="button" id="headerLogoClear" class="btn btn-ghost btn-small hidden">
+                  <button type="button" id="headerLogoClear" class="btn btn-text sm hidden">
                     <span data-i18n="settings.cssClear">清除</span>
                   </button>
-                </div>
+                </span>
               </div>
-              <div class="setting-field">
-                <label class="setting-label" for="headerLayoutSelect" data-i18n="settings.headerLayout">布局</label>
-                <select id="headerLayoutSelect" class="setting-select">
-                  <option value="center" data-i18n="settings.headerLayoutCenter">居中</option>
-                  <option value="leftRight" data-i18n="settings.headerLayoutLeftRight">左右分栏</option>
-                </select>
+              <div class="row">
+                <span class="row-l" data-i18n="settings.headerLayout">页眉布局</span>
+                <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.headerLayout" aria-label="页眉布局">
+                  <label class="segment"><input type="radio" name="headerLayout" value="center" checked /><span data-i18n="settings.headerLayoutCenter">居中</span></label>
+                  <label class="segment"><input type="radio" name="headerLayout" value="leftRight" /><span data-i18n="settings.headerLayoutLeftRight">左右分栏</span></label>
+                </span>
               </div>
-            </div>
-            <label class="setting-check">
-              <input type="checkbox" id="footerEnabled" />
-              <span data-i18n="settings.footerEnabled">显示页脚(第 X 页 / 共 X 页)</span>
-            </label>
+              <div class="sw-row" style="padding-bottom: 2px">
+                <span>
+                  <span class="row-l" data-i18n="settings.footerEnabledLabel">自定义页脚</span>
+                  <span class="row-sub" style="display: block" data-i18n="settings.footerEnabledDesc">显示「第 X 页 / 共 Y 页」；仅自定义模式生效</span>
+                </span>
+                <input type="checkbox" id="footerEnabled" class="switch-input" />
+              </div>
+            </div></div></div>
+            <p class="scope-note" data-i18n="settings.headerFooterDefaultNote">默认模式：页眉居中显示文档标题，页脚固定显示页码，不受开关控制。</p>
           </section>
 
-          <!-- ── L3 高级(默认折叠):边距 / 分页目录 / 段落与编号开关 / 模板管理 ── -->
-          <details class="drawer-fold">
-            <summary class="drawer-fold-summary" data-i18n="settings.groupAdvanced">高级</summary>
-            <div class="drawer-fold-body">
-              <fieldset class="setting-field setting-fieldset">
-                <legend class="setting-label" data-i18n="settings.margins">边距 (mm)</legend>
-                <div class="margin-grid">
-                  <!-- max 与 settings-logic 校验上限对称(MARGIN_MAX_MM = 1000,core/settings-defaults.ts 单源) -->
-                  <label class="margin-field">
-                    <span class="margin-name" data-i18n="settings.marginTop">上</span>
-                    <input type="number" id="marginTop" class="margin-input" min="0" max="1000" step="0.5" />
-                  </label>
-                  <label class="margin-field">
-                    <span class="margin-name" data-i18n="settings.marginBottom">下</span>
-                    <input type="number" id="marginBottom" class="margin-input" min="0" max="1000" step="0.5" />
-                  </label>
-                  <label class="margin-field">
-                    <span class="margin-name" data-i18n="settings.marginLeft">左</span>
-                    <input type="number" id="marginLeft" class="margin-input" min="0" max="1000" step="0.5" />
-                  </label>
-                  <label class="margin-field">
-                    <span class="margin-name" data-i18n="settings.marginRight">右</span>
-                    <input type="number" id="marginRight" class="margin-input" min="0" max="1000" step="0.5" />
-                  </label>
-                </div>
-                <p id="marginError" class="field-error hidden"></p>
-              </fieldset>
-
-              <label class="setting-check">
-                <input type="checkbox" id="breakBeforeH1" />
-                <span data-i18n="settings.breakBeforeH1">每个一级标题前分页</span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="toc" />
-                <span>
-                  <span data-i18n="settings.toc">自动生成目录</span><span class="setting-label-hint" data-i18n="settings.tocHint">(Word 打开即见,免更新域)</span>
-                </span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="firstLineIndent" />
-                <span data-i18n="settings.firstLineIndent">首行缩进 2 字符</span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="alignJustify" />
-                <span>
-                  <span data-i18n="settings.alignJustify">两端对齐</span><span class="setting-label-hint" data-i18n="settings.alignJustifyHint">(取消后为左对齐)</span>
-                </span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="headingNumbering" />
-                <span data-i18n="settings.headingNumbering">章节自动编号</span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="captionNumbering" />
-                <span>
-                  <span data-i18n="settings.captionNumbering">图/表题注自动编号</span><span class="setting-label-hint" data-i18n="settings.captionNumberingHint">(「图: 标题」前缀行识别)</span>
-                </span>
-              </label>
-
-              <label class="setting-check">
-                <input type="checkbox" id="equationNumbering" />
-                <span data-i18n="settings.equationNumbering">公式编号</span>
-              </label>
-
-              <!-- 模板管理(二级折叠):另存为/删除/JSON 导入导出/PDF CSS 导入清除 -->
-              <details class="drawer-fold drawer-fold--sub">
-                <summary class="drawer-fold-summary" data-i18n="settings.groupManage">模板管理</summary>
-                <div class="drawer-fold-body">
-                  <!-- 批次 11 迭代 3:自定义预设(另存为当前排版+页面设置;仅自定义预设可删) -->
-                  <div class="drawer-btn-row">
-                    <button type="button" id="presetSaveBtn" class="btn btn-secondary btn-small">
-                      <span data-i18n="preset.saveAs">另存为预设…</span>
-                    </button>
-                    <button type="button" id="presetDeleteBtn" class="btn btn-ghost btn-small hidden">
-                      <span data-i18n="preset.delete">删除预设</span>
-                    </button>
-                  </div>
-                  <!-- 批次 13:预设 JSON 导入/导出;批次 16:PDF 样式 CSS 导入(仅 pdf 路线生效) -->
-                  <div class="drawer-btn-row">
-                    <button type="button" id="presetImportBtn" class="btn btn-ghost btn-small"
-                      data-i18n-title="preset.importTitle"
-                      title="从 JSON 文件导入自定义预设">
-                      <span data-i18n="preset.import">导入预设…</span>
-                    </button>
-                    <button type="button" id="presetExportBtn" class="btn btn-ghost btn-small"
-                      data-i18n-title="preset.exportTitle"
-                      title="导出全部自定义预设为 JSON 文件">
-                      <span data-i18n="preset.export">导出预设…</span>
-                    </button>
-                    <button type="button" id="pdfCssImportBtn" class="btn btn-ghost btn-small"
-                      data-i18n-title="settings.cssImportTitle"
-                      title="导入 CSS 文件作为 PDF 样式模板(追加到默认样式之后覆盖)">
-                      <span data-i18n="settings.cssImport">导入 CSS…</span>
-                    </button>
-                    <button type="button" id="pdfCssClearBtn" class="btn btn-ghost btn-small hidden"
-                      data-i18n-title="settings.cssClearTitle"
-                      title="清除已导入的 PDF 样式 CSS">
-                      <span data-i18n="settings.cssClear">清除</span>
-                    </button>
-                    <span id="pdfCssStatus" class="settings-note preset-status" data-i18n="settings.pdfCssNone">未导入</span>
-                  </div>
-                </div>
-              </details>
+          <!-- ── 05 编号与目录:结构惯例(大 → 小元素层级,H1 分页收尾) ── -->
+          <section class="sec">
+            <div class="sec-h"><span class="sec-num">05</span><span class="sec-title" data-i18n="settings.groupNumbering">编号与目录</span><span class="sec-rule"></span></div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.headingNumbering">章节编号</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.headingNumberingDesc">「第 1 章 / 1.1」自动编号</span>
+              </span>
+              <input type="checkbox" id="headingNumbering" class="switch-input" />
             </div>
-          </details>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.captionNumbering">题注编号</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.captionNumberingDesc">图表下方「图 1-1」样式编号</span>
+              </span>
+              <input type="checkbox" id="captionNumbering" class="switch-input" />
+            </div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.equationNumbering">公式编号</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.equationNumberingDesc">公式右侧「(1)」式编号</span>
+              </span>
+              <input type="checkbox" id="equationNumbering" class="switch-input" />
+            </div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.toc">自动目录</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.tocDesc">在文首生成目录页</span>
+              </span>
+              <input type="checkbox" id="toc" class="switch-input" />
+            </div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.breakBeforeH1Short">H1 前分页</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.breakBeforeH1Desc">每个一级标题另起一页</span>
+              </span>
+              <input type="checkbox" id="breakBeforeH1" class="switch-input" />
+            </div>
+          </section>
 
-          <!-- ── L4 应用偏好(置底分隔段):外观主题分段 / 界面语言下拉 / 完成提示 ── -->
-          <section class="drawer-group drawer-group--prefs">
-            <h3 class="drawer-group-title" data-i18n="settings.groupApp">应用偏好</h3>
-            <!-- B13 外观主题:radio 改分段控件呈现(radio 语义保留;system = 移除
-                 data-theme,CSS @media prefers-color-scheme 接管) -->
-            <div class="setting-field">
-              <span class="setting-label" data-i18n="settings.groupAppearance">外观主题</span>
-              <div class="segmented" role="radiogroup" data-i18n-aria-label="settings.groupAppearance" aria-label="外观主题">
+          <!-- ── 06 输出:产物去向与处置(不入预设) ── -->
+          <section class="sec">
+            <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupOutput">输 出</span><span class="sec-rule"></span></div>
+            <div class="row">
+              <span>
+                <span class="row-l" data-i18n="settings.outputDir">输出目录</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.outputDirHint">留空则保存到源文件所在目录</span>
+              </span>
+              <span class="row-r">
+                <span id="outputDirValue" class="path-chip outputdir-value" data-i18n="settings.outputDirDefault" title="">与源文件相同目录</span>
+                <button type="button" id="outputDirPick" class="btn btn-ghost sm">
+                  <span data-i18n="settings.outputDirPick">更改…</span>
+                </button>
+                <button type="button" id="outputDirReset" class="btn btn-text sm">
+                  <span data-i18n="settings.outputDirReset">恢复默认</span>
+                </button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="row-l" data-i18n="settings.afterConvert">导出后行为</span>
+              <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.afterConvert" aria-label="导出后行为">
+                <label class="segment">
+                  <input type="radio" name="afterConvert" value="none" />
+                  <span data-i18n="settings.afterNone">无操作</span>
+                </label>
+                <label class="segment">
+                  <input type="radio" name="afterConvert" value="show-in-folder" />
+                  <span data-i18n="common.reveal">打开所在文件夹</span>
+                </label>
+                <label class="segment">
+                  <input type="radio" name="afterConvert" value="open" />
+                  <span data-i18n="common.open">打开文件</span>
+                </label>
+              </span>
+            </div>
+            <div class="row block">
+              <div class="row-l" style="margin-bottom: 8px">
+                <span data-i18n="settings.pdfCssLabel">PDF 自定义 CSS</span>
+                <span class="scope-tag" style="margin-left: 6px" data-i18n="settings.tagPdfOnly">仅 PDF</span>
+              </div>
+              <!-- 界面重构 v3:IA 06 规定 textarea 形态(settings-ia §2/§3.1 路径类同构之外
+                   的原始样式编辑位);与导入/清除按钮同写 settings.pdfCss -->
+              <textarea
+                id="pdfCssText"
+                class="ta"
+                spellcheck="false"
+                data-i18n-placeholder="settings.pdfCssPlaceholder"
+                placeholder="/* 仅作用于 PDF 输出 */"
+              ></textarea>
+              <div class="mgmt" style="padding-top: 8px">
+                <button type="button" id="pdfCssImportBtn" class="btn btn-ghost sm"
+                  data-i18n-title="settings.cssImportTitle"
+                  title="导入 CSS 文件作为 PDF 样式模板(追加到默认样式之后覆盖)">
+                  <span data-i18n="settings.cssImport">导入 CSS…</span>
+                </button>
+                <button type="button" id="pdfCssClearBtn" class="btn btn-text sm hidden"
+                  data-i18n-title="settings.cssClearTitle"
+                  title="清除已导入的 PDF 样式 CSS">
+                  <span data-i18n="settings.cssClear">清除</span>
+                </button>
+                <span id="pdfCssStatus" class="settings-note preset-status" data-i18n="settings.pdfCssNone">未导入</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- ── 07 应用:软件自身偏好(不入预设) ── -->
+          <section class="sec">
+            <div class="sec-h"><span class="sec-num">07</span><span class="sec-title" data-i18n="settings.groupApp">应 用</span><span class="sec-rule"></span></div>
+            <div class="row">
+              <span class="row-l" data-i18n="settings.groupAppearance">主题</span>
+              <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.groupAppearance" aria-label="主题">
                 <label class="segment">
                   <input type="radio" name="theme" value="system" checked />
                   <span data-i18n="settings.themeSystem">跟随系统</span>
@@ -680,26 +700,36 @@
                   <input type="radio" name="theme" value="dark" />
                   <span data-i18n="settings.themeDark">深色</span>
                 </label>
-              </div>
+              </span>
             </div>
-
-            <!-- i18n:界面语言由 radio 组改 select;选项由 settings-panel.rebuildLanguageOptions
-                 按 core/i18n LANGUAGES 注册表动态生成(label = 本地化自称) -->
-            <div class="setting-field">
-              <label class="setting-label" for="languageSelect" data-i18n="settings.groupLanguage">界面语言</label>
-              <select id="languageSelect" class="setting-select"></select>
+            <div class="row">
+              <label class="row-l" for="languageSelect" data-i18n="settings.groupLanguage">界面语言</label>
+              <!-- 选项由 settings-panel.rebuildLanguageOptions 按 LANGUAGES 注册表动态生成 -->
+              <span class="sel-wrap">
+                <select id="languageSelect" class="setting-select"></select>
+              </span>
             </div>
-
-            <!-- 批次 11 迭代 2:完成弹窗提示(ui-state 字段,与弹窗内「不再提示」双向同步)。
-                 P1-2:默认不弹(勾选态由启动恢复按持久化值回填,此处静态默认仅 hydration 前瞬态) -->
-            <label class="setting-check">
-              <input type="checkbox" id="completeDialogPrompt" />
-              <span data-i18n="settings.completeDialogPrompt">转换完成弹窗提示</span>
-            </label>
           </section>
 
           <p class="settings-note" data-i18n="settings.autoSaveNote">设置即时生效并自动保存</p>
         </div>
+        <footer class="drawer-foot">
+          <!-- 界面重构 v3:mockup 抽屉底栏左位「恢复默认」(转换相关各组复位;
+               07 应用偏好与自定义预设保留,语义见 settings-bindings 接线) -->
+          <button
+            type="button"
+            id="drawerResetBtn"
+            class="btn btn-text sm"
+            data-i18n-title="settings.resetDefaultsTitle"
+            title="恢复默认设置（应用偏好与自定义预设保留）"
+          >
+            <span data-i18n="settings.resetDefaults">恢复默认</span>
+          </button>
+          <span class="spacer"></span>
+          <button type="button" id="drawerDoneBtn" class="btn btn-solid sm">
+            <span data-i18n="common.done">完成</span>
+          </button>
+        </footer>
       </aside>
     </div>
 
@@ -712,12 +742,19 @@
       aria-labelledby="completeDialogTitle"
       aria-describedby="completeDialogDesc"
     >
-      <div class="dialog">
-        <h2 id="completeDialogTitle" class="dialog-title" data-i18n="dialog.complete.title">转换完成</h2>
-        <p id="completeDialogDesc" class="dialog-desc" data-i18n="dialog.complete.desc">文档已生成,输出路径如下</p>
+      <!-- 界面重构 v3:dialog--complete 对齐 mockup 完成弹窗(482px 档宽 + 钤印落款,
+           钤印动画仅播一次,reduced-motion 全局兜底);既有 id 全部保留 -->
+      <div class="dialog dialog--complete">
+        <div class="dialog-head">
+          <span class="stamp" aria-hidden="true">梓</span>
+          <div class="dialog-head-texts">
+            <h2 id="completeDialogTitle" class="dialog-title" data-i18n="dialog.complete.title">转换完成</h2>
+            <p id="completeDialogDesc" class="dialog-desc" data-i18n="dialog.complete.desc">文档已生成,输出路径如下</p>
+          </div>
+        </div>
         <div class="dialog-path-row">
           <p id="completeOutputPath" class="dialog-path" tabindex="0"></p>
-          <button type="button" id="completeDialogCopy" class="btn btn-ghost btn-small">
+          <button type="button" id="completeDialogCopy" class="btn btn-ghost sm">
             <span data-i18n="common.copyPath">复制路径</span>
           </button>
         </div>
@@ -728,14 +765,14 @@
         <p id="completeDialogError" class="dialog-error hidden" role="alert"></p>
         <div class="dialog-actions">
           <div class="dialog-actions-secondary">
-            <button type="button" id="completeDialogReveal" class="btn btn-secondary">
+            <button type="button" id="completeDialogReveal" class="btn btn-ghost sm">
               <span data-i18n="common.reveal">打开所在文件夹</span>
             </button>
-            <button type="button" id="completeDialogOpen" class="btn btn-secondary">
+            <button type="button" id="completeDialogOpen" class="btn btn-ghost sm">
               <span data-i18n="common.open">打开文件</span>
             </button>
           </div>
-          <button type="button" id="completeDialogOk" class="btn btn-primary">
+          <button type="button" id="completeDialogOk" class="btn btn-primary sm">
             <span data-i18n="common.ok">确定</span>
           </button>
         </div>
@@ -758,24 +795,24 @@
         <p id="batchDialogError" class="dialog-error hidden" role="alert"></p>
         <div class="dialog-actions">
           <div class="dialog-actions-secondary">
-            <button type="button" id="batchDialogReveal" class="btn btn-secondary">
+            <button type="button" id="batchDialogReveal" class="btn btn-ghost sm">
               <span data-i18n="common.reveal">打开所在文件夹</span>
             </button>
-            <button type="button" id="batchDialogRetry" class="btn btn-secondary">
+            <button type="button" id="batchDialogRetry" class="btn btn-ghost sm hidden">
               <span data-i18n="batch.retry">重试失败项</span>
             </button>
-            <button type="button" id="batchDialogCopyAll" class="btn btn-secondary">
+            <button type="button" id="batchDialogCopyAll" class="btn btn-ghost sm">
               <span data-i18n="batch.copyAll">复制全部路径</span>
             </button>
           </div>
-          <button type="button" id="batchDialogOk" class="btn btn-primary">
+          <button type="button" id="batchDialogOk" class="btn btn-primary sm">
             <span data-i18n="common.ok">确定</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- 批次 11 迭代 3:另存为预设弹窗(输入名称,保存当前排版+页面设置为自定义预设) -->
+    <!-- 另存为预设弹窗(输入名称,保存当前排版+页面设置为自定义预设) -->
     <div
       id="presetSaveDialog"
       class="dialog-overlay hidden"
@@ -790,7 +827,7 @@
         <input
           type="text"
           id="presetNameInput"
-          class="setting-input preset-name-input"
+          class="tin preset-name-input"
           maxlength="30"
           data-i18n-placeholder="preset.namePlaceholder"
           placeholder="例如:我的报告模板"
@@ -798,11 +835,11 @@
         <p id="presetSaveError" class="dialog-error hidden" role="alert"></p>
         <div class="dialog-actions">
           <div class="dialog-actions-secondary">
-            <button type="button" id="presetSaveCancel" class="btn btn-secondary">
+            <button type="button" id="presetSaveCancel" class="btn btn-ghost sm">
               <span data-i18n="common.cancel">取消</span>
             </button>
           </div>
-          <button type="button" id="presetSaveOk" class="btn btn-primary">
+          <button type="button" id="presetSaveOk" class="btn btn-primary sm">
             <span data-i18n="common.save">保存</span>
           </button>
         </div>

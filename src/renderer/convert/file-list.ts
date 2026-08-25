@@ -8,9 +8,6 @@ import {
   batchBtn,
   convertBtn,
   convertHint,
-  dropDefault,
-  dropFile,
-  dropMulti,
   dropZone,
   fileNameEl,
   filePathEl,
@@ -26,32 +23,23 @@ import { setStatus, translate } from "../state/utils.js";
 import { baseName, partitionDuplicates, selectionStatus, truncateMiddle } from "../state/pure.js";
 import { t } from "../../core/i18n.js";
 
-/** 按当前选择渲染拖放区三种状态,并刷新操作按钮可用性。 */
+/** 按当前选择渲染主舞台三态(界面重构 v3:data-stage 驱动 pane 切换),
+ *  并刷新操作按钮可用性。 */
 export function renderSelection(): void {
   const n = state.selectedFiles.length;
+  // 三态切换:empty / single / multi(CSS 按 [data-stage] 显示对应 pane;
+  // 容器几何恒定,外部布局零跳动语义与拆分前一致)
+  dropZone.dataset.stage = n === 0 ? "empty" : n === 1 ? "single" : "multi";
+  // has-file 标记保留供拖入高亮分支与测试诊断使用
   dropZone.classList.toggle("has-file", n > 0);
-  // P0-1:单文件态标记。主舞台高度已固定(clamp(280px,40vh,400px),样式见
-  // style/drop.css .file-area),本 class 不再影响容器几何,仅保留供单文件态
-  // 内部布局分支与测试诊断使用
-  dropZone.classList.toggle("drop-zone--single", n === 1);
 
-  if (n === 0) {
-    dropDefault.classList.remove("hidden");
-    dropFile.classList.add("hidden");
-    dropMulti.classList.add("hidden");
-  } else if (n === 1) {
+  if (n === 1) {
     const filePath = state.selectedFiles[0]!; // 本分支 n === 1,首项必存在
     fileNameEl.textContent = baseName(filePath);
     filePathEl.textContent = filePath;
     filePathEl.title = filePath;
-    dropDefault.classList.add("hidden");
-    dropFile.classList.remove("hidden");
-    dropMulti.classList.add("hidden");
-  } else {
+  } else if (n >= 2) {
     renderMultiList();
-    dropDefault.classList.add("hidden");
-    dropFile.classList.add("hidden");
-    dropMulti.classList.remove("hidden");
   }
   updateActionButtons();
   persistSessionFiles();

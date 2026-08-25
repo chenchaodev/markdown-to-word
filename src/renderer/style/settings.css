@@ -1,14 +1,20 @@
-/* Markdown 转换工具 — 设置域样式(批③自 style.css 拆出;P0-3 起容器为设置抽屉):
- * 抽屉(overlay + 右侧滑出面板)与分组/折叠、字段/边距/排版输入、模板管理行、
- * 模板自定义提示、字段级错误提示、输出目录行、最近转换区块。 */
+/* Markdown 转换工具 — 设置域样式(界面重构 v3「七组信息架构」):
+ * 抽屉(遮罩 + 右滑面板)、01–07 编号分组(settings-ia.md 迁移映射表落地)、
+ * 模式+条件字段容器(抽屉唯一折叠形态)、行/开关行/边距网格/路径 chip/
+ * CSS 文本域、生效范围角标、字段级错误提示。
+ * 令牌纪律:颜色一律经 base.css 语义变量引用,本文件不写 hex。 */
 
-/* ---------- 设置抽屉(P0-3):overlay 遮罩 + 右侧滑出面板 ---------- */
+/* ---------- 抽屉骨架 ---------- */
 .drawer-overlay {
   position: fixed;
-  inset: 0;
+  top: var(--tbh); /* 遮罩盖内容区,不盖标题栏(guidelines §4.5 浮层不出窗) */
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 90; /* 低于弹窗(100):抽屉内「另存为预设」等弹窗叠于其上 */
-  background: var(--overlay);
-  animation: drawer-overlay-in 0.15s ease-out;
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  animation: drawer-overlay-in 0.2s ease-out;
 }
 
 .drawer {
@@ -17,16 +23,12 @@
   right: 0;
   display: flex;
   flex-direction: column;
-  /* 最小窗口 720 下 overlay 形态自适应,不产生横向溢出 */
-  width: min(400px, calc(100vw - 48px));
+  width: min(402px, calc(100vw - 48px));
   height: 100%;
-  background: var(--bg-card);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-dialog);
-  animation: drawer-in 0.18s ease-out;
-  /* P4 主题切换过渡(仅颜色属性) */
-  transition: background-color 0.2s ease, color 0.2s ease,
-    border-color 0.2s ease;
+  background: var(--canvas);
+  border-left: 1px solid var(--line);
+  box-shadow: -20px 0 50px rgba(10, 11, 14, 0.2);
+  animation: drawer-in 0.26s cubic-bezier(0.32, 0.72, 0.24, 1);
 }
 
 @keyframes drawer-overlay-in {
@@ -40,35 +42,28 @@
 
 @keyframes drawer-in {
   from {
-    transform: translateX(32px);
-    opacity: 0;
+    transform: translateX(103%);
   }
   to {
     transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-/* 减少动态效果:滑出动画降为瞬时出现,终态即自然态(与弹窗动画同策略) */
-@media (prefers-reduced-motion: reduce) {
-  .drawer-overlay,
-  .drawer {
-    animation-duration: 0.01ms;
   }
 }
 
 .drawer-head {
   flex: none;
+  height: 52px;
+  padding: 0 18px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
 }
 
 .drawer-title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: 16px;
+  letter-spacing: 0.2em;
   font-weight: 600;
 }
 
@@ -78,135 +73,265 @@
   min-width: 0;
 }
 
-/* 抽屉副标题(问题 3):「当前预设 · 纸张」自顶栏 chip 迁此,打开抽屉即可见;
- * 文案由 settings-panel 合成、settings-drawer.updateDrawerMeta 写入,:empty 隐藏 */
+/* 抽屉副标题:「当前预设 · 纸张」,文案由 settings-panel 合成、
+ * settings-drawer.updateDrawerMeta 写入,:empty 隐藏 */
 .drawer-subtitle {
   margin: 2px 0 0;
   font-size: 12px;
   font-weight: 400;
-  color: var(--text-tertiary);
+  color: var(--mut);
 }
 
 .drawer-subtitle:empty {
   display: none;
 }
 
+.drawer-head .icon-btn {
+  margin-left: auto;
+}
+
 .drawer-body {
   flex: 1;
   min-height: 0;
-  padding: 14px 16px;
+  padding: 2px 18px 20px;
   overflow-y: auto;
 }
 
-/* 抽屉分组(P0-4 四层:L1 常用 / L2 排版 / L3 高级折叠 / L4 应用偏好):
- * 纵向弹性布局统一字段间距,组间以组标题分隔 */
-.drawer-group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.drawer-group-title {
-  margin: 0;
-  padding-bottom: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: var(--text-tertiary);
-  border-bottom: 1px solid var(--border);
-}
-
-/* L4 应用偏好置底分隔:与上方配置段拉开间距并加顶部分隔线 */
-.drawer-group--prefs {
-  margin-top: 4px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
-
-/* 双列字段行(纸张|方向 / 字号|行距):窄抽屉内两列仍可呼吸 */
-.drawer-cols {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-/* 折叠层(L3 高级 / 模板管理二级):summary 行 + 展开体 */
-.drawer-fold-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  cursor: pointer;
-  list-style: none; /* Firefox 隐藏默认三角 */
-  user-select: none;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: background-color 0.15s ease;
-}
-
-.drawer-fold-summary::-webkit-details-marker {
-  display: none; /* Chromium 隐藏默认三角 */
-}
-
-.drawer-fold-summary:hover {
-  background: var(--panel-hover);
-}
-
-.drawer-fold-summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.drawer-fold-summary::before {
-  content: "";
-  width: 7px;
-  height: 7px;
+.drawer-foot {
   flex: none;
-  border-right: 1.5px solid var(--text-secondary);
-  border-bottom: 1.5px solid var(--text-secondary);
-  transform: rotate(-45deg); /* 收起态:朝右的箭头 */
-  transition: transform 0.15s ease;
-}
-
-.drawer-fold[open] > .drawer-fold-summary::before {
-  transform: rotate(45deg); /* 展开态:朝下 */
-}
-
-.drawer-fold-body {
+  height: 56px;
+  padding: 0 18px;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px 2px 0;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--tb);
 }
 
-/* 模板管理按钮行(另存为/删除 与 导入导出/CSS 行):小按钮横向排布 */
-.drawer-btn-row {
+.drawer-foot .spacer {
+  flex: 1;
+}
+
+/* ---------- 七组编号分组(01–07) ---------- */
+.sec {
+  margin-top: 24px;
+}
+
+.sec:first-child {
+  margin-top: 10px;
+}
+
+.sec-h {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.sec-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--acc);
+}
+
+.sec-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.24em;
+  font-weight: 600;
+}
+
+.sec-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* 生效范围角标(mono;「不入预设」「仅 PDF」复用最近列表 .tag 形态) */
+.scope-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--mut);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.sec-h .scope-tag {
+  margin-left: 2px;
+}
+
+/* 说明行(预设作用域声明 / 页眉默认模式说明等) */
+.scope-note {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--mut);
+  margin: 8px 0 2px;
+}
+
+/* 小节标签(03 文字 · 段落) */
+.sub-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  color: var(--mut);
+  margin: 12px 0 0;
+}
+
+/* ---------- 行 ---------- */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0;
+}
+
+.row.block {
+  display: block;
+}
+
+.row-l {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.row-sub {
+  font-size: 11.5px;
+  color: var(--mut);
+  margin-top: 2px;
+  max-width: 240px;
+  line-height: 1.5;
+}
+
+.row-r {
+  display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
 }
 
-/* 状态文案(pdfCssStatus)在按钮行内不参与换行拉伸 */
-.drawer-btn-row .settings-note {
+/* 开关行(13px 主标签 + 11.5px 灰色说明;说明写具体效果) */
+.sw-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0;
+}
+
+.sw-row .switch-input {
+  flex: none;
+}
+
+/* ---------- 模式 + 条件字段容器(抽屉唯一折叠形态):
+ * 主控 seg 置首,条件字段收入凹陷容器(--inset 底 + 左侧轨),
+ * 模式不满足整块移除(grid-rows 0fr)而非灰禁 ---------- */
+.cond {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin: 4px 0 8px;
+  background: var(--inset);
+  border-radius: 8px;
+  border-left: 2px solid var(--line-2);
+  transition: grid-template-rows 0.22s ease;
+}
+
+.cond > div {
+  overflow: hidden;
+}
+
+.cond.show {
+  grid-template-rows: 1fr;
+}
+
+/* 折叠态焦点安全:0fr 收起后内容仍占布局树,visibility 延迟翻转
+ * (收起动画播完再隐藏,展开即时可见),保证 Tab 不会落进不可见字段 */
+.cond.show > div {
+  visibility: visible;
+  transition: none;
+}
+
+.cond:not(.show) > div {
+  visibility: hidden;
+  transition: visibility 0s linear 0.22s;
+}
+
+.cond-in {
+  padding: 8px 12px 4px;
+}
+
+/* ---------- 边距网格(四格输入 + mm 后缀) ---------- */
+.mm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 2px 0 8px;
+}
+
+.mm-cell label {
+  display: block;
+  font-size: 11px;
+  color: var(--mut);
+  margin-bottom: 4px;
+}
+
+.mm-in {
+  position: relative;
+}
+
+.mm-in input {
+  width: 100%;
+  padding-right: 32px;
+}
+
+.mm-in span {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--mut);
+}
+
+/* ---------- 管理动作行(01 预设) ---------- */
+.mgmt {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0 8px;
+}
+
+.mgmt .settings-note {
   margin: 0;
+  align-self: center;
 }
 
-/* 抽屉内控件宽度:select / 文本输入占满列宽(表单化布局),数字输入同宽左对齐 */
-.drawer .setting-select,
-.drawer .setting-input {
+/* ---------- CSS 文本域(06 输出 · PDF 自定义 CSS) ---------- */
+.ta {
   width: 100%;
+  min-height: 86px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  background: var(--inset);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
 }
 
-.drawer .setting-number {
-  width: 100%;
+.ta:focus {
+  outline: none;
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-soft);
 }
 
+/* ---------- 通用字段残留形态(弹窗内 setting-field / 错误提示等仍复用) ---------- */
 .setting-field {
   display: flex;
   flex-direction: column;
@@ -214,161 +339,45 @@
   min-width: 0;
 }
 
-.setting-fieldset {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.setting-fieldset legend {
-  margin: 0;
-  padding: 0;
-}
-
 .setting-label {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-}
-
-.setting-options {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 16px;
-}
-
-.setting-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   font-size: 13px;
-  cursor: pointer;
+  color: var(--ink);
 }
 
-.setting-option input,
-.setting-check input {
-  width: 15px;
-  height: 15px;
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.setting-select {
-  font-family: inherit;
-  font-size: 13px;
-  padding: 5px 8px;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.setting-select:focus-visible,
-.margin-input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.margin-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-}
-
-.margin-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.margin-input {
-  width: 64px;
-  padding: 5px 8px;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  text-align: right;
-  user-select: text;
-}
-
-.setting-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  cursor: pointer;
+.setting-label-hint {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--mut);
 }
 
 .settings-note {
   margin: 12px 0 0;
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--mut);
 }
 
-/* 辅助行状态文案(pdfCssStatus):不参与剩余空间分配 */
 .preset-status {
   flex: none;
+  align-self: center;
 }
 
-/* 批次 11 迭代 3:另存为预设弹窗的名称输入(占满弹窗宽度) */
-.preset-name-input {
-  width: 100%;
-  box-sizing: border-box;
-  margin-top: 6px;
-}
-
-/* 排版设置:文本 / 数字输入与标签内说明 */
-.setting-input,
-.setting-number {
-  font-family: inherit;
-  font-size: 13px;
-  padding: 5px 8px;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  user-select: text;
-}
-
-.setting-input:focus-visible,
-.setting-number:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.setting-number {
-  width: 64px;
-  text-align: right;
-}
-
-/* 标签内说明:紧跟 label 文字,弱化处理 */
-.setting-label-hint {
-  margin-left: 4px;
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
-/* 模板自定义模式提示:黄色,与普通 hint 区分 */
-.template-hint--custom {
-  color: var(--warning);
-  font-weight: 600;
-}
-
-/* 字段级错误提示:控件旁红字,不再静默还原 */
 .field-error {
   margin: 0;
   font-size: 12px;
-  color: var(--error);
+  color: var(--acc);
 }
 
-/* 输出目录行 */
+.template-hint--custom {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* 另存为预设弹窗的名称输入 */
+.preset-name-input {
+  width: 100%;
+}
+
+/* 输出目录行(path-chip + 动作按钮同构形态) */
 .outputdir-row {
   display: flex;
   align-items: center;
@@ -376,37 +385,20 @@
   gap: 8px;
 }
 
+/* 输出目录值复用 .path-chip 形态(HTML 同挂两类,此处仅布局微调) */
 .outputdir-value {
   min-width: 0;
-  font-size: 13px;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  user-select: text;
 }
 
-/* 最近转换格式徽标(P1-3 起由主舞台空态 chips 复用;样式本体见 style/drop.css) */
-.recent-format {
-  flex: none;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
+/* 响应式:紧凑档抽屉收窄(guidelines §5) */
+@media (max-width: 1080px) {
+  .drawer {
+    width: 372px;
+  }
 }
 
-.recent-format--docx {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.recent-format--pdf {
-  background: var(--error-badge-bg);
-  color: var(--error);
-}
-
-.recent-time {
-  flex: none;
-  font-size: 12px;
-  color: var(--text-tertiary);
+@media (max-width: 900px) {
+  .drawer {
+    width: min(402px, 100%);
+  }
 }

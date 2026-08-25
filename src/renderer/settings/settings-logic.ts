@@ -184,7 +184,8 @@ export interface SettingsControlValues {
   headingScale: string;
   headingSpacing: string;
   firstLineIndent: boolean;
-  alignJustify: boolean;
+  /** 界面重构 v3:对齐方式枚举(radio 组 name="align",left/justify) */
+  align: AppSettings["typography"]["align"];
   headingNumbering: boolean;
   captionNumbering: boolean;
   breakBeforeH1: boolean;
@@ -221,7 +222,7 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     headingScale: settings.typography.headingScale,
     headingSpacing: settings.typography.headingSpacing,
     firstLineIndent: settings.typography.firstLineIndent,
-    alignJustify: settings.typography.align === "justify",
+    align: settings.typography.align,
     headingNumbering: settings.typography.headingNumbering,
     captionNumbering: settings.typography.captionNumbering,
     breakBeforeH1: settings.breakBeforeH1,

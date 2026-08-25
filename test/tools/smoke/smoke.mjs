@@ -219,9 +219,11 @@ export async function runSmoke(win) {
         report.previewBtnExists = !!previewBtn;
         report.previewBtnDisabledAtStart = previewBtn ? previewBtn.disabled : null;
         report.dialogPreviewRemoved = !document.getElementById("completeDialogPreview");
-        // 批次 11 迭代 2:完成弹窗「不再提示」/ 批量弹窗「重试失败项 / 复制全部路径」存在性
+        // 批次 11 迭代 2:完成弹窗「不再提示」/ 批量弹窗「重试失败项 / 复制全部路径」存在性。
+        // 界面重构 v3:设置面板侧「转换完成弹窗提示」控件已按 settings-ia.md 迁移映射表
+        // 移除(场景被 afterConvert 覆盖,仅保留弹窗内入口)——此处改为断言其确已移除
         report.suppressInputExists = !!document.getElementById("completeDialogSuppress");
-        report.completeDialogPromptExists = !!document.getElementById("completeDialogPrompt");
+        report.completeDialogPromptRemoved = !document.getElementById("completeDialogPrompt");
         report.retryBtnExists = !!document.getElementById("batchDialogRetry");
         report.copyAllBtnExists = !!document.getElementById("batchDialogCopyAll");
         // 批次 11 迭代 3:自定义预设控件存在性 + previewRefresh API 注入
@@ -245,19 +247,25 @@ export async function runSmoke(win) {
         report.drawerOpenBtnExists = !!document.getElementById("settingsOpenBtn");
         report.drawerCloseBtnExists = !!document.getElementById("drawerCloseBtn");
         report.drawerSubtitleExists = !!document.getElementById("drawerSubtitle");
-        report.orientationSelectExists = !!document.getElementById("orientationSelect");
+        // 界面重构 v3:枚举 ≤5 → seg 分段(guidelines §3.1);六组 radio 计数就位
+        // (纸张 5 / 方向 2 / 标题字号档位 3 / 标题间距档位 3 / 页眉模式 3 / 页眉布局 2)
+        report.paperSegCount = document.querySelectorAll('input[name="paper"]').length;
+        report.orientationSegCount = document.querySelectorAll('input[name="orientation"]').length;
+        report.headingScaleSegCount = document.querySelectorAll('input[name="headingScale"]').length;
+        report.headingSpacingSegCount = document.querySelectorAll('input[name="headingSpacing"]').length;
+        report.headerModeSegCount = document.querySelectorAll('input[name="headerMode"]').length;
+        report.headerLayoutSegCount = document.querySelectorAll('input[name="headerLayout"]').length;
         report.languageSelectExists = !!document.getElementById("languageSelect");
-        // F3 标题排版粒度:标题字号/间距档位 select 就位(缺失即回归)
-        report.headingScaleSelectExists = !!document.getElementById("headingScaleSelect");
-        report.headingSpacingSelectExists = !!document.getElementById("headingSpacingSelect");
         // 语言裁撤回归守卫:下拉选项由 LANGUAGES 注册表动态生成,应恰为 zh/en/ja 三项
         report.languageOptionCount = document.querySelectorAll("#languageSelect option").length;
         report.formatSegmentCount = document.querySelectorAll(".header-actions input[name='format']").length;
-        // P1-3 最近转换 chips:容器存在且启动隐藏(隔离环境无最近记录);
-        // 旧主页面独立区块(recentSection/recentList)必须已移除
-        const recentChips = document.getElementById("recentChips");
-        report.recentChipsExists = !!recentChips;
-        report.recentChipsHiddenAtStart = recentChips ? recentChips.classList.contains("hidden") : null;
+        // 界面重构 v3(settings-ia 决策 6):最近转换自「空态 chips」改造为
+        // 「主舞台与消息区之间的常驻折叠条」——historyBar 存在且启动隐藏
+        // (隔离环境无最近记录,无记录整块不渲染);旧 recentChips/recentSection 必须已移除
+        const historyBar = document.getElementById("historyBar");
+        report.historyBarExists = !!historyBar;
+        report.historyBarHiddenAtStart = historyBar ? historyBar.classList.contains("hidden") : null;
+        report.recentChipsRemoved = !document.getElementById("recentChips");
         report.recentSectionRemoved = !document.getElementById("recentSection");
         // 问题 2a 回归守卫:文档级零滚动(html/body overflow:hidden + .app 外边距
         // 算术闭合;scrollHeight 超出视口即说明边距塌陷/内容溢出回归)
@@ -280,17 +288,18 @@ export async function runSmoke(win) {
           `[smoke] renderer diag FAILED: 点击守卫断言 btnDisabledBefore=${diag.btnDisabledBefore}, statusAfterClick=${JSON.stringify(diag.statusAfterClick)}(期望 ${t("file.selectFirst")}), statusIsError=${diag.statusIsError}(lastSessionFiles 未隔离或回归)`,
         );
       }
-      // 批次 11 迭代 2:新增控件存在性守卫(缺失即回归)
+      // 批次 11 迭代 2:新增控件存在性守卫(缺失即回归;设置面板侧弹窗提示控件
+      // 已按 IA 迁移映射表移除,残留即回归)
       if (
         !diag.suppressInputExists ||
-        !diag.completeDialogPromptExists ||
+        diag.completeDialogPromptRemoved !== true ||
         !diag.retryBtnExists ||
         !diag.copyAllBtnExists
       ) {
         throw new Error(
           `[smoke] renderer diag FAILED: 批次 11 迭代 2 控件缺失 ${JSON.stringify({
             suppressInputExists: diag.suppressInputExists,
-            completeDialogPromptExists: diag.completeDialogPromptExists,
+            completeDialogPromptRemoved: diag.completeDialogPromptRemoved,
             retryBtnExists: diag.retryBtnExists,
             copyAllBtnExists: diag.copyAllBtnExists,
           })}`,
@@ -331,18 +340,22 @@ export async function runSmoke(win) {
           })}`,
         );
       }
-      // P0-3/P1-1:设置抽屉守卫——容器存在且启动隐藏,顶栏入口与迁移后的
-      // 方向/语言 select、格式分段(2 项)就位;缺失即回归
+      // P0-3/P1-1/界面重构 v3:设置抽屉守卫——容器存在且启动隐藏,顶栏入口、
+      // 语言 select、格式分段(2 项)与六组 seg 分段(纸 5/向 2/字号档 3/间距档 3/
+      // 页眉模式 3/页眉布局 2)就位;缺失即回归
       if (
         diag.settingsDrawerExists !== true ||
         diag.settingsDrawerHiddenAtStart !== true ||
         !diag.drawerOpenBtnExists ||
         !diag.drawerCloseBtnExists ||
         !diag.drawerSubtitleExists ||
-        !diag.orientationSelectExists ||
+        diag.paperSegCount !== 5 ||
+        diag.orientationSegCount !== 2 ||
+        diag.headingScaleSegCount !== 3 ||
+        diag.headingSpacingSegCount !== 3 ||
+        diag.headerModeSegCount !== 3 ||
+        diag.headerLayoutSegCount !== 2 ||
         !diag.languageSelectExists ||
-        !diag.headingScaleSelectExists ||
-        !diag.headingSpacingSelectExists ||
         diag.languageOptionCount !== 3 ||
         diag.formatSegmentCount !== 2
       ) {
@@ -353,26 +366,31 @@ export async function runSmoke(win) {
             drawerOpenBtnExists: diag.drawerOpenBtnExists,
             drawerCloseBtnExists: diag.drawerCloseBtnExists,
             drawerSubtitleExists: diag.drawerSubtitleExists,
-            orientationSelectExists: diag.orientationSelectExists,
+            paperSegCount: diag.paperSegCount,
+            orientationSegCount: diag.orientationSegCount,
+            headingScaleSegCount: diag.headingScaleSegCount,
+            headingSpacingSegCount: diag.headingSpacingSegCount,
+            headerModeSegCount: diag.headerModeSegCount,
+            headerLayoutSegCount: diag.headerLayoutSegCount,
             languageSelectExists: diag.languageSelectExists,
-            headingScaleSelectExists: diag.headingScaleSelectExists,
-            headingSpacingSelectExists: diag.headingSpacingSelectExists,
             languageOptionCount: diag.languageOptionCount,
             formatSegmentCount: diag.formatSegmentCount,
           })}`,
         );
       }
-      // P1-3:最近转换 chips 守卫——容器存在且启动隐藏(隔离环境无记录),
-      // 旧主页面独立区块已移除;缺失/残留即回归
+      // 界面重构 v3:最近转换常驻折叠条守卫——historyBar 存在且启动隐藏
+      // (隔离环境无记录,无记录整块不渲染),旧 chips/独立区块已移除;缺失/残留即回归
       if (
-        diag.recentChipsExists !== true ||
-        diag.recentChipsHiddenAtStart !== true ||
+        diag.historyBarExists !== true ||
+        diag.historyBarHiddenAtStart !== true ||
+        diag.recentChipsRemoved !== true ||
         diag.recentSectionRemoved !== true
       ) {
         throw new Error(
-          `[smoke] renderer diag FAILED: 最近转换 chips 异常 ${JSON.stringify({
-            recentChipsExists: diag.recentChipsExists,
-            recentChipsHiddenAtStart: diag.recentChipsHiddenAtStart,
+          `[smoke] renderer diag FAILED: 最近转换折叠条异常 ${JSON.stringify({
+            historyBarExists: diag.historyBarExists,
+            historyBarHiddenAtStart: diag.historyBarHiddenAtStart,
+            recentChipsRemoved: diag.recentChipsRemoved,
             recentSectionRemoved: diag.recentSectionRemoved,
           })}`,
         );
