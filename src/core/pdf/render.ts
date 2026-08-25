@@ -42,6 +42,7 @@ import { overrideEquationRule } from "./rules/equation.js";
 import { overrideXrefRule } from "./rules/xref.js";
 import { overrideHtmlRules } from "./rules/html.js";
 import { overrideFigureRule, overrideImageRule } from "./rules/image.js";
+import { overrideTableWidthRule } from "./rules/table.js";
 import { overrideHeadingIdRule } from "./rules/heading-id.js";
 import { replaceMermaidPlaceholders } from "./mermaid.js";
 
@@ -195,6 +196,9 @@ export async function renderPdfHtml(
   overrideImageRule(md, options.baseDir, localImageSrcs, contentWidthPx);
   // F1:独立成段图片段落挂 fig-image 类(模板 CSS 居中),与 docx 侧同契约
   overrideFigureRule(md);
+  // F2:表格列宽(分隔行 dash 比例)——源码行与 token.map 同源行号,
+  // 与 docx 侧 parse.ts 共用 markdown/table-width.ts 纯函数
+  overrideTableWidthRule(md, mdSource.split(/\r\n|\n|\r/));
   // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
   overrideHeadingIdRule(md, new Map<string, number>());
   // 标题优先级:frontmatter metadata.title > options.title
