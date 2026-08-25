@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-08-25:**发版 2.1.0 完成**(功能开发阶段 F1-F4 四批 GUI 实测全部通过;版本号四源统一 package.json=lockfile=tag v2.1.0=CHANGELOG [2.1.0];测试 54→56 段全绿;**剩余 F5 水印/F6 转换预检/F7 目录带页码/F8 合并增强/F9 模板导入暂停开发**,排期与已拍板路线见 ROADMAP/ADR-007/008)
 - 2026-08-25:**F4 页眉页脚自定义完成,待 GUI 实测**(settings 新增 headerFooter 契约单源不入预设体系;docx chrome 页眉三模式 default/custom/none+左右分栏制表位+logo ImageRun 内嵌,pdf printToPDF headerTemplate(base64 data URI,7pt/#888888 与 docx 对齐);logo 读失败 keyed 警告降级;抽屉 L2 新区块+header-logo:select IPC;buildConvertContext async 化;56 段全绿)
 - 2026-08-25:**F7/F9 技术路线已拍板(ADR-007/008),规划定稿待执行指令**(F7=混合路线:pdf 两遍法静态页码+docx opt-in 域目录开关;F9=浅导入 v1:jszip 提取模板样式映射现有设置;F4 页眉页脚/F5 水印/F6 转换预检/F8 合并增强按批次表依次实施)
 - 2026-08-25:**F3 标题排版粒度完成,待 GUI 实测**(typography 新增 headingScale/headingSpacing 三档枚举,双管线同源纯函数消费,抽屉 L2 两下拉,预设字段同步;54 段全绿)

@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [2.1.0] - 2026-08-25
+- **功能开发阶段第一批:F1-F4 四批**(GUI 实测全部通过;每批独立提交,typecheck/lint/build/smoke 全绿;测试 51→56 段):
+- 功能立项(docs 1bd8b41):双路调研(@explorer 能力盘点+@librarian 竞品对标)拍板 9 项做、3 项记录不排期;批次表 F1-F9 依次实施
+- F1 图片控制增强(ede4c4a):Pandoc 风格 `{width=..}`/`{height=..}` 图片属性语法(百分比相对正文内容宽,一维等比/两维定形)+ 独立成段图片 figure 居中;解析纯函数单源 core/markdown/image-size.ts 双管线共用;非法值 keyed 警告三语言
+- F2 表格列宽控制(09b248e):GFM 分隔行 dash 计数比例作为列宽信号(max(dash)≥5 且 max/min≥3);docx tblGrid+固定布局,pdf table-layout:fixed+首行百分比;解析单源 core/markdown/table-width.ts
+- F3 标题排版粒度(7b35089):typography 新增 headingScale/headingSpacing 三档枚举(紧凑/标准/舒展),docx 与 pdf 双管线同源纯函数消费;抽屉 L2 两下拉;预设字段自动纳入
+- 技术路线拍板(docs 1a3d0a4):ADR-007 目录带页码混合路线(pdf 两遍法静态页码+docx opt-in 域目录,部分推翻 D1)/ADR-008 模板导入浅导入 v1(jszip 提取样式映射现有设置)
+- F4 页眉页脚自定义(cc4b65f):settings 新增 headerFooter 对象(页眉三模式 default/custom/none+自定义文字+logo+居中/左右分栏+页脚开关);docx chrome Header 扩展(分栏制表位+logo ImageRun),pdf printToPDF headerTemplate(base64 logo);logo 读失败 keyed 警告降级;抽屉 L2 新区块+header-logo:select IPC
+
 ## [2.0.0] - 2026-08-24
 - **界面整体重构(大版本:界面布局与交互变化显著)**(五批次提交 87edaf1/367d1f8/3eabfe1/635aaa8/af77703;每批 typecheck/lint/build/51 段/smoke 全绿;GUI 实测全部通过):
 - 批次一 布局稳定性(87edaf1):主舞台固定高度+Grid 轨道钉死 footer;status/dropSkipped/resultSummary 合并常驻消息槽——根治导入文件后布局跳动;顺带修复版本号折行缺陷
