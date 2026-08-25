@@ -1,12 +1,21 @@
 /**
  * 行内图片渲染(B8 拆分):resolver 加载、memo 缓存、尺寸缩放与占位降级。
  * 原内联于 render.ts;scaleToFit 同时供 mermaid PNG(renderCode)复用。
+ * F1 图片控制增强:尾随 {width=…}/{height=…} 属性解析结果经 sizeAttrs 注入,
+ * 显式尺寸绕过 scaleToFit 上限(用户意图优先);独立成段图片(figure)由
+ * render.ts 判定后走 renderFigureParagraph 居中渲染。
  */
 import { ImageRun, TextRun } from "docx";
 import type { Image } from "mdast";
 import { SECONDARY_TEXT_GRAY } from "../theme.js";
 import { sniffImageType, imageSizeFromBuffer } from "../../image/image-type.js";
-import { imageLoadFailureWarning, unrecognizedImageWarning, webpSkippedWarning } from "../../image/image-warning.js";
+import {
+  imageLoadFailureWarning,
+  unrecognizedImageWarning,
+  webpSkippedWarning,
+} from "../../image/image-warning.js";
+import type { ImageSizeAttrs } from "../../markdown/image-size.js";
+import { resolveImageDisplaySize } from "../../markdown/image-size.js";
 import type { Ctx, ImageLoadResult, InlineChild, RunStyle } from "../ctx.js";
 
 /** 图片显示宽度上限(px):宽超过则等比缩到该宽度(不放大),行内图片与 mermaid PNG 共用 */
@@ -55,10 +64,19 @@ async function resolveImageCached(ctx: Ctx, url: string): Promise<ImageLoadResul
 /** 行内图片:经 resolver 加载为 ImageRun;失败或 webp 时占位文本。
  *  尺寸规则:能解析出 PNG/JPEG 尺寸时按 scaleToFit(上限 IMAGE_MAX_WIDTH,不放大);
  *  无法解析尺寸(其他格式/畸形数据)→ IMAGE_FALLBACK_WIDTH×IMAGE_FALLBACK_HEIGHT 兜底。
+ *  F1:sizeAttrs(尾随 {width=…}/{height=…} 解析结果,见 core/markdown/image-size.ts)
+ *  存在且非空时改走 resolveImageDisplaySize——百分比相对 ctx.contentWidthPx、
+ *  只给一维按原图宽高等比缩放、两维都给按给定值;显式尺寸绕过 scaleToFit 上限
+ *  (用户意图优先)。原图尺寸不可解析时以兜底尺寸作为等比基准。
  *  M6:本地缺失与外链下载失败统一经 resolver 失败路径告警(单次 IO);
  *  B4:按 fs 错误码细分文案(imageLoadFailureWarning,见 core/image-warning.ts)。
  *  B5:解析经 resolveImageCached memo 化——同 URL 多处出现只解析一次。 */
-export async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promise<InlineChild> {
+export async function imageToDocx(
+  node: Image,
+  ctx: Ctx,
+  style: RunStyle,
+  sizeAttrs?: ImageSizeAttrs,
+): Promise<InlineChild> {
   const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: SECONDARY_TEXT_GRAY, ...style });
   // B4:失败原因细分——resolver 抛出的 fs 错误按错误码分类(ENOENT → 不存在 /
   // EACCES|EPERM → 无权限 / 其他或返回 null → 统一「图片加载失败」兜底);
@@ -84,8 +102,12 @@ export async function imageToDocx(node: Image, ctx: Ctx, style: RunStyle): Promi
     return fallback();
   }
   const size = imageSizeFromBuffer(data);
-  const { width, height } = size
-    ? scaleToFit(size.width, size.height)
-    : { width: IMAGE_FALLBACK_WIDTH, height: IMAGE_FALLBACK_HEIGHT };
+  // F1:显式尺寸属性优先(绕过 scaleToFit 上限);无属性走原 scaleToFit 行为(回归保障)
+  const hasExplicitSize =
+    sizeAttrs !== undefined && (sizeAttrs.width !== undefined || sizeAttrs.height !== undefined);
+  const natural = size ?? { width: IMAGE_FALLBACK_WIDTH, height: IMAGE_FALLBACK_HEIGHT };
+  const { width, height } = hasExplicitSize
+    ? resolveImageDisplaySize(natural, sizeAttrs, ctx.contentWidthPx)
+    : scaleToFit(natural.width, natural.height);
   return new ImageRun({ type, data, transformation: { width, height } });
 }

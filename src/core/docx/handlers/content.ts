@@ -21,19 +21,33 @@ import { isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
 import { inlineHtmlItemsToRuns, normalizeInlineHtml, parseInlineHtml } from "./inline-html.js";
 import { pushLinkRuns } from "./link-xref.js";
 import { imageToDocx } from "./image-run.js";
+import { imageAttrInvalidWarning } from "../../image/image-warning.js";
+import { takeImageSizeAttrs } from "../../markdown/image-size.js";
 import { renderCode } from "./code-block.js";
 import { renderContainerFallback, unsupportedBlockWarning } from "./fallback.js";
 import { formulaParseFailedWarning, warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js";
 
 /** 行内节点 → 元素数组;样式沿父子链累积传递。
- * 标题等场景同样经 pushRuns 渲染(标题内图片/脚注引用按常规渲染,占位与警告语义与正文一致)。 */
+ * 标题等场景同样经 pushRuns 渲染(标题内图片/脚注引用按常规渲染,占位与警告语义与正文一致)。
+ * F1:图片后紧跟的完整 {width=…}/{height=…} 属性块文本经 takeImageSizeAttrs 消费
+ * (解析结果注入 imageToDocx,属性文本不再作为可见文本渲染;非法值走 keyed 警告)。 */
 export async function renderPhrasing(
   nodes: PhrasingContent[],
   ctx: Ctx,
   style: RunStyle = {},
 ): Promise<InlineChild[]> {
   const runs: InlineChild[] = [];
-  for (const node of nodes) {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]!;
+    if (node.type === "image") {
+      const taken = takeImageSizeAttrs(nodes, i);
+      for (const raw of taken.invalid) {
+        warnDedup(ctx, imageAttrInvalidWarning(node.url, raw));
+      }
+      runs.push(await imageToDocx(node, ctx, style, taken.attrs));
+      if (taken.consumed) i++; // 跳过已消费的属性文本节点
+      continue;
+    }
     await pushRuns(runs, node, ctx, style);
   }
   return runs;

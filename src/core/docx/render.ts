@@ -8,6 +8,7 @@
  * 代码块见 handlers/code-block.ts、容器降级见 handlers/fallback.ts、共享契约见 ctx.ts。
  */
 import {
+  AlignmentType,
   Document,
   Packer,
   PageBreak,
@@ -33,12 +34,14 @@ import {
   DEFAULT_PAGE_SETUP,
   mmToTwips,
   PAPER_SIZES_MM,
+  twipsToPx,
   type PageSetup,
 } from "../settings/settings-defaults.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import type { TypographySettings } from "../settings/typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../settings/typography.js";
 import { isAllowedInlineHtml } from "../markdown/html-whitelist.js";
+import { isFigureParagraph } from "../markdown/image-size.js";
 import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
 import { headingNumberingOptions, numberingOptions } from "./numbering.js";
@@ -87,6 +90,13 @@ function isSupportedBlock(node: RootContent): node is BlockContent {
  */
 export async function renderDocx(ast: Root, options: RenderOptions = {}): Promise<Buffer> {
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
+  // 页面几何提前计算(F1:contentWidthPx 注入 Ctx,图片尺寸属性百分比换算用)
+  const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
+  const paper = PAPER_SIZES_MM[pageSetup.paper];
+  const landscape = pageSetup.orientation === "landscape";
+  // 文本区宽(公式编号 tab 制表位基准):PAPER_SIZES_MM 给纵向值,landscape 下
+  // 视觉宽度为纸高(参照下方 size 的处理语义)— 左右边距 = 可用文本宽度
+  const textWidthTwips = mmToTwips((landscape ? paper.height : paper.width) - pageSetup.marginLeft - pageSetup.marginRight);
   // 开关统一「构造时解析默认」(CORE-7:Ctx 全字段必填,下游无需判空)
   const ctx: Ctx = {
     imageResolver: options.imageResolver,
@@ -110,18 +120,13 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     headingLabels: new Map(),
     mermaidResolver: options.mermaidResolver,
     imageMemo: new Map(),
+    contentWidthPx: twipsToPx(textWidthTwips),
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
   const title = options.metadata?.title ?? options.title;
   // 五轮预扫(脚注定义/题注上下文/章节 label/公式编号/目录条目,详见 prescan.ts);
   // 预扫就地写入 ctx(footnoteDefinitions/headingLabels/equationLabels)
   const { tocEntries, captions, equations } = prescanDocument(ast, ctx);
-  const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
-  const paper = PAPER_SIZES_MM[pageSetup.paper];
-  const landscape = pageSetup.orientation === "landscape";
-  // 文本区宽(公式编号 tab 制表位基准):PAPER_SIZES_MM 给纵向值,landscape 下
-  // 视觉宽度为纸高(参照下方 size 的处理语义)— 左右边距 = 可用文本宽度
-  const textWidthTwips = mmToTwips((landscape ? paper.height : paper.width) - pageSetup.marginLeft - pageSetup.marginRight);
   const children: (Paragraph | Table | TableOfContents)[] = [];
   // 封面页:metadata.title 存在时置于文档最前(独占一页,不计入标题层级/书签)
   if (options.metadata?.title) {
@@ -215,6 +220,19 @@ async function renderBlock(
       // 不应用正文排版(无首行缩进/两端对齐),不进目录/书签(普通段落样式)。
       const caption = captions.get(node);
       if (caption) return [renderCaptionParagraph(caption, ctx)];
+      // F1:独立成段的图片(段落唯一内容是图片[+尾随尺寸属性块])视为 figure →
+      // 居中渲染;紧随其后的「图: xxx」题注行仍由 captions 预扫识别,保持在图
+      // 下方(captionNumbering 编号机制不变)。行内内容渲染复用 renderPhrasing
+      // (尾随属性块消费与非法值警告在其中统一处理)。
+      if (isFigureParagraph(node.children)) {
+        return [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 120, after: 120 },
+            children: await renderPhrasing(node.children, ctx),
+          }),
+        ];
+      }
       // 普通正文段落:应用排版设置(对齐/行距/首行缩进)。
       // 作用范围仅限正文:heading/列表/代码/表格等段落保持各自样式,
       // 列表项不加首行缩进(与 PDF 侧 p { text-indent } 规则对齐语义)。

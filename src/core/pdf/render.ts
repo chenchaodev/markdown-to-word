@@ -17,7 +17,12 @@ import { tasklist } from "@mdit/plugin-tasklist";
 import { katex } from "@mdit/plugin-katex";
 import hljs from "highlight.js/lib/common";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
-import { DEFAULT_PAGE_SETUP, type PageSetup } from "../settings/settings-defaults.js";
+import {
+  DEFAULT_PAGE_SETUP,
+  mmToPx,
+  PAPER_SIZES_MM,
+  type PageSetup,
+} from "../settings/settings-defaults.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import type { TypographySettings } from "../settings/typography.js";
 import { DEFAULT_TYPOGRAPHY } from "../settings/typography.js";
@@ -36,7 +41,7 @@ import { overrideCaptionRule } from "./rules/caption.js";
 import { overrideEquationRule } from "./rules/equation.js";
 import { overrideXrefRule } from "./rules/xref.js";
 import { overrideHtmlRules } from "./rules/html.js";
-import { overrideImageRule } from "./rules/image.js";
+import { overrideFigureRule, overrideImageRule } from "./rules/image.js";
 import { overrideHeadingIdRule } from "./rules/heading-id.js";
 import { replaceMermaidPlaceholders } from "./mermaid.js";
 
@@ -179,7 +184,17 @@ export async function renderPdfHtml(
     warnings,
   );
   const localImageSrcs: string[] = [];
-  overrideImageRule(md, options.baseDir, localImageSrcs);
+  // F1:正文内容区宽(px,96dpi)= 内容区 mm ÷ 25.4 × 96(landscape 视觉宽度为
+  // 纸高,与 docx 侧 textWidthTwips 同口径);height 百分比属性换算基准
+  const paper = PAPER_SIZES_MM[pageSetup.paper];
+  const contentWidthPx = mmToPx(
+    (pageSetup.orientation === "landscape" ? paper.height : paper.width) -
+      pageSetup.marginLeft -
+      pageSetup.marginRight,
+  );
+  overrideImageRule(md, options.baseDir, localImageSrcs, contentWidthPx);
+  // F1:独立成段图片段落挂 fig-image 类(模板 CSS 居中),与 docx 侧同契约
+  overrideFigureRule(md);
   // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
   overrideHeadingIdRule(md, new Map<string, number>());
   // 标题优先级:frontmatter metadata.title > options.title

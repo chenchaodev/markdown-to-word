@@ -299,6 +299,7 @@ const dict = {
     "warn.katexCssLoadFailed": "Failed to load KaTeX styles, equation font styling missing: ${error}",
     "warn.imageNotFound": "Image file not found: ${src}",
     "warn.imageAccessDenied": "Access to image file denied: ${src}",
+    "warn.imageAttrInvalid": "Invalid image size attribute, ignored: ${attr} (${src})",
 
     /* ---------- Errors (localized at throw time: message reaches GUI via a one-shot string channel) ---------- */
     "convert.noFilesSelected": "No files selected",

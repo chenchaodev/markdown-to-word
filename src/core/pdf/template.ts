@@ -113,6 +113,9 @@ export function buildTemplateCss(
   tr { break-inside: avoid; }
 
   img { max-width: 100%; break-inside: avoid; }
+  /* 独立成段图片(F1 figure 语义):居中渲染,首行缩进/两端对齐不适用;
+     紧随的 .fig-caption 题注保持在图下方(编号机制不变) */
+  p.fig-image { text-align: center; text-indent: 0; }
   ul, ol { margin: 0 0 10px; padding-left: 26px; }
   li { margin: 2px 0; }
   li > p { margin: 0 0 4px; } /* 宽松列表项内的段落收紧,避免空洞 */

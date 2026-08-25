@@ -71,3 +71,17 @@ export function webpSkippedWarning(src: string): KeyedWarning {
     fallback: `webp 图片不支持 docx 内嵌,已跳过: ${src}`,
   };
 }
+
+/**
+ * 图片尺寸属性非法警告(F1 图片控制增强,docx/pdf 共用单一来源):
+ * {width=…}/{height=…} 值为负数/非数值/超范围时忽略该属性并告警
+ * (图片回退默认尺寸行为,不中断转换)。src 为图片在 markdown 中的原始引用,
+ * attr 为原始键值对(如 "width=-3"),便于定位。
+ */
+export function imageAttrInvalidWarning(src: string, attr: string): KeyedWarning {
+  return {
+    key: "warn.imageAttrInvalid",
+    params: { src, attr },
+    fallback: `图片尺寸属性无效,已忽略: ${attr}(${src})`,
+  };
+}

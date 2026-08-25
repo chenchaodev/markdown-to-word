@@ -74,8 +74,11 @@ export interface Ctx {
   commentNextId: { value: number };
   /** 批注收集器:引用渲染时写入,id 字符串从 "1" 起(与脚注同模式) */
   comments: Record<string, { children: Paragraph[] }>;
-  /** Mermaid 渲染回调(mermaid 围栏代码块 → 内嵌 PNG 图片;缺失时按普通代码块渲染) */
-  mermaidResolver?: MermaidResolver;
+   /** Mermaid 渲染回调(mermaid 围栏代码块 → 内嵌 PNG 图片;缺失时按普通代码块渲染) */
+   mermaidResolver?: MermaidResolver;
+   /** 正文内容区宽(px,96dpi;= 文本区 twips ÷ 15,renderDocx 构造时注入)。
+    *  F1:图片尺寸属性百分比(width/height=%)相对该宽度换算。 */
+   contentWidthPx: number;
   /** B5:图片解析 memo(url → 在途/已成功结果 Promise)。ctx 生命周期 = 单次转换,
    *  不跨转换泄漏;以 Promise 缓存保证并发同 URL 共享同一请求。成功缓存、失败
    *  (null/抛错)不缓存——失败条目结算后删除,同一 URL 后续出现重试。 */

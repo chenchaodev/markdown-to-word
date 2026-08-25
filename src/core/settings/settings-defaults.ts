@@ -63,6 +63,16 @@ export function mmToTwips(mm: number): number {
   return Math.round(mm * 56.6929);
 }
 
+/** twips → px(96dpi 基准;1px = 1440/96 = 15 twips)。图片尺寸属性百分比换算用(F1)。 */
+export function twipsToPx(twips: number): number {
+  return twips / 15;
+}
+
+/** mm → px(96dpi 基准;1in = 25.4mm = 96px)。pdf 侧图片尺寸属性百分比换算用(F1)。 */
+export function mmToPx(mm: number): number {
+  return (mm / 25.4) * 96;
+}
+
 /**
  * 应用设置(AppSettings 全字段契约):
  * - 持久化:main/settings.ts(userData/settings.json,手写校验 + 原子写)

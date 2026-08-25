@@ -297,6 +297,7 @@ const dict = {
     "warn.katexCssLoadFailed": "KaTeX 样式加载失败,公式字体样式缺失: ${error}",
     "warn.imageNotFound": "图片文件不存在: ${src}",
     "warn.imageAccessDenied": "图片文件无访问权限: ${src}",
+    "warn.imageAttrInvalid": "图片尺寸属性无效,已忽略: ${attr}(${src})",
 
     /* ---------- 错误(生成期本地化:throw 文案经 error.message 单次字符串通道到 GUI) ---------- */
     "convert.noFilesSelected": "未选择文件",

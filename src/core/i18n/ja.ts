@@ -293,6 +293,7 @@ const dict: Partial<Record<Dict, string>> = {
     "warn.katexCssLoadFailed": "KaTeX スタイルの読み込みに失敗し、数式フォントのスタイルが欠落しています: ${error}",
     "warn.imageNotFound": "画像ファイルが存在しません: ${src}",
     "warn.imageAccessDenied": "画像ファイルへのアクセスが拒否されました: ${src}",
+    "warn.imageAttrInvalid": "画像サイズ属性が無効のため無視しました: ${attr}(${src})",
 
     /* ---------- エラー(生成時にローカライズ) ---------- */
     "convert.noFilesSelected": "ファイルが選択されていません",
