@@ -342,15 +342,17 @@ export async function runSmoke(win) {
       }
       // P0-3/P1-1/界面重构 v3:设置抽屉守卫——容器存在且启动隐藏,顶栏入口、
       // 语言 select、格式分段(2 项)与六组 seg 分段(纸 5/向 2/字号档 3/间距档 3/
-      // 页眉模式 3/页眉布局 2)就位;缺失即回归
+      // 页眉模式 3/页眉布局 2)就位;缺失即回归。
+      // UI 改版 v4:paper/orientation 为全文档同名 radio 组——快速参数条镜像一份
+      // (纸 5+5=10 / 向 2+2=4),其余四组仍仅抽屉一处
       if (
         diag.settingsDrawerExists !== true ||
         diag.settingsDrawerHiddenAtStart !== true ||
         !diag.drawerOpenBtnExists ||
         !diag.drawerCloseBtnExists ||
         !diag.drawerSubtitleExists ||
-        diag.paperSegCount !== 5 ||
-        diag.orientationSegCount !== 2 ||
+        diag.paperSegCount !== 10 ||
+        diag.orientationSegCount !== 4 ||
         diag.headingScaleSegCount !== 3 ||
         diag.headingSpacingSegCount !== 3 ||
         diag.headerModeSegCount !== 3 ||

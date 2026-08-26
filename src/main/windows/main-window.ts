@@ -62,8 +62,9 @@ export function createWindow(): BrowserWindow {
     width: 960,
     height: 680,
     // 批次 12(C3):最小尺寸,防止窗口过小导致布局挤压不可用;
-    // 界面重构 v3:720 → 880(自绘标题栏 + 新布局的最小可用宽度)
-    minWidth: 880,
+    // 界面重构 v3:720 → 880;UI 改版 v4r2:880 → 640(统一内容列自适应收缩 +
+    // ≤720 档参数条折两行,支持 1280/1366 屏半屏操作)
+    minWidth: 640,
     minHeight: 560,
     ...(savedBounds ?? {}),
     title: t("app.title"),

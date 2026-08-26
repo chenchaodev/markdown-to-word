@@ -272,6 +272,9 @@ const dict = {
     "settings.selectDirFailed": "Failed to select output directory: ${error}",
     "settings.cssTooLarge": "CSS file too large (exceeds ${kb}KB limit)",
 
+    /* ---------- v4: quick settings bar ---------- */
+    "quick.title": "Quick conversion settings",
+
     /* ---------- Template presets ---------- */
     "preset.default": "Default",
     "preset.paper": "Academic paper",

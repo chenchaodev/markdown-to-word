@@ -263,6 +263,9 @@ const dict: Partial<Record<Dict, string>> = {
     "settings.fontEastAsiaEmpty": "日本語フォントは空にできません。元の値に戻しました",
     "settings.selectDirFailed": "出力ディレクトリの選択に失敗しました:${error}",
     "settings.cssTooLarge": "CSS ファイルが大きすぎます(${kb}KB 上限超過)",
+
+    /* ---------- v4: クイック設定バー ---------- */
+    "quick.title": "クイック変換パラメータ",
     "settings.resetDefaults": "デフォルト設定に戻す",
     "settings.resetDefaultsTitle": "デフォルト設定に戻します(アプリ設定とカスタムプリセットは保持)",
 

@@ -1,16 +1,23 @@
 /**
- * renderer 文件选择与列表(R8 自 renderer.ts 抽出,行为等价):
- * 拖放区三态渲染、多文件列表构建与移动/排序、按钮工厂(上移/下移/预览/移除)、
- * 选择应用/追加、操作按钮可用性。只经 state.ts 读写状态。
+ * renderer 文件选择与列表(R8 自 renderer.ts 抽出;UI 改版 v4 三态统一):
+ * 拖放区三态渲染、统一队列卡构建(单文件 = 一行队列,无 grip/序号)与移动/排序、
+ * 移除按钮工厂、选择应用/追加、操作按钮可用性。只经 state.ts 读写状态。
+ *
+ * UI 改版 v4 语义变化:
+ * - data-stage 仍为 empty / single / multi 三值(CSS 按 [data-stage] 显示同一
+ *   .pane-files;single 额外隐藏批量/合并语义脚注),容器几何恒定契约见 drop.css;
+ * - renderMultiList 覆盖 n≥1 全部情形:n=1 时省略 grip/序号节点且行不可拖拽,
+ *   n≥2 时完整队列行(拖拽排序 + 键盘补偿不变);
+ * - 「预览」按钮仅单文件可见(hidden 切换);「追加文件」两态共用;
+ * - 清空入口统一为 clearListBtn(清空列表,含单文件态移除唯一文件语义)。
  */
 import {
   appendFileBtn,
   batchBtn,
+  clearListBtn,
   convertBtn,
   convertHint,
   dropZone,
-  fileNameEl,
-  filePathEl,
   mergeBtn,
   multiCount,
   multiList,
@@ -23,31 +30,31 @@ import { setStatus, translate } from "../state/utils.js";
 import { baseName, partitionDuplicates, selectionStatus, truncateMiddle } from "../state/pure.js";
 import { t } from "../../core/i18n.js";
 
-/** 按当前选择渲染主舞台三态(界面重构 v3:data-stage 驱动 pane 切换),
+/** 按当前选择渲染主舞台三态(UI 改版 v4:data-stage 驱动 pane 切换),
  *  并刷新操作按钮可用性。 */
 export function renderSelection(): void {
   const n = state.selectedFiles.length;
   // 三态切换:empty / single / multi(CSS 按 [data-stage] 显示对应 pane;
-  // 容器几何恒定,外部布局零跳动语义与拆分前一致)
+  // .stage 几何恒定,历史开合等外部变化不影响本区块尺寸)
   dropZone.dataset.stage = n === 0 ? "empty" : n === 1 ? "single" : "multi";
   // has-file 标记保留供拖入高亮分支与测试诊断使用
   dropZone.classList.toggle("has-file", n > 0);
+  // 舞台状态变化通知(UI 改版 v4:历史浮出面板据此自动收起,handler 由
+  // recent-files 注册,反向注册模式同 recentRefreshHandler,不引入 ESM 环)
+  state.stageChangedHandler?.();
 
-  if (n === 1) {
-    const filePath = state.selectedFiles[0]!; // 本分支 n === 1,首项必存在
-    fileNameEl.textContent = baseName(filePath);
-    filePathEl.textContent = filePath;
-    filePathEl.title = filePath;
-  } else if (n >= 2) {
+  if (n >= 1) {
     renderMultiList();
   }
   updateActionButtons();
   persistSessionFiles();
 }
 
-/** 重建多文件列表(P1-4 降噪行):手柄 + 序号 + 文件名 + 移除,严格按 selectedFiles
- *  顺序渲染。排序 = 整行拖拽(手柄为视觉锚点)+ 键盘补偿(行聚焦后 Alt+↑/↓,
- *  监听在 events/selection.ts);预览 = 行双击(列表下方常驻提示可见化)。 */
+/** 重建队列列表(P1-4 降噪行;UI 改版 v4 统一单/多文件):
+ *  n=1 → 单行(无 grip/序号,draggable=false,双击仍可预览);
+ *  n≥2 → 完整队列行:手柄 + 序号 + 文件名 + 移除,严格按 selectedFiles 顺序渲染。
+ *  排序 = 整行拖拽(手柄为视觉锚点)+ 键盘补偿(行聚焦后 Alt+↑/↓,
+ *  监听在 events/selection.ts);预览 = 行双击(两态一致)。 */
 export function renderMultiList(): void {
   const n = state.selectedFiles.length;
   multiCount.textContent = t("file.selectedCount", { count: n });
@@ -55,21 +62,26 @@ export function renderMultiList(): void {
     ...state.selectedFiles.map((filePath, index) => {
       const li = document.createElement("li");
       li.className = "multi-item";
-      li.draggable = true; // 整行可拖拽排序
+      const sortable = n >= 2;
+      li.draggable = sortable; // 整行可拖拽排序(仅多文件态)
       li.dataset.index = String(index);
       li.tabIndex = 0; // 可聚焦:键盘 Alt+↑/↓ 排序的落点
       li.title = `${filePath}\n${t("file.dblclickPreview")}`;
 
-      const grip = document.createElement("span");
-      grip.className = "multi-grip";
-      grip.setAttribute("aria-hidden", "true");
-      grip.innerHTML =
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-        'stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>';
+      if (sortable) {
+        const grip = document.createElement("span");
+        grip.className = "multi-grip";
+        grip.setAttribute("aria-hidden", "true");
+        grip.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+          'stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>';
 
-      const num = document.createElement("span");
-      num.className = "multi-index";
-      num.textContent = String(index + 1);
+        const num = document.createElement("span");
+        num.className = "multi-index";
+        num.textContent = String(index + 1);
+
+        li.append(grip, num);
+      }
 
       const name = document.createElement("span");
       name.className = "multi-name";
@@ -79,7 +91,7 @@ export function renderMultiList(): void {
       actions.className = "multi-actions";
       actions.append(makeRemoveButton(baseName(filePath)));
 
-      li.append(grip, num, name, actions);
+      li.append(name, actions);
       return li;
     }),
   );
@@ -166,10 +178,11 @@ export function appendSelection(files: string[], skipped = 0): void {
   applySelection([...state.selectedFiles, ...added], skipped, duplicates.length);
 }
 
-/** 按当前选择与转换状态刷新操作按钮(选择入口 + 三个转换按钮 + 单文件态预览)。 */
+/** 按当前选择与转换状态刷新操作按钮(选择入口 + 三个转换按钮 + 队列卡头部动作)。 */
 export function updateActionButtons(): void {
   const n = state.selectedFiles.length;
   const multi = n >= 2;
+  const single = n === 1;
   const busy = state.mode !== null; // 转换中 = mode 单源(B8:原 converting 字段合一)
   convertBtn.classList.toggle("hidden", multi);
   batchBtn.classList.toggle("hidden", !multi);
@@ -177,10 +190,13 @@ export function updateActionButtons(): void {
   convertBtn.disabled = busy || n !== 1;
   batchBtn.disabled = busy || !multi;
   mergeBtn.disabled = busy || !multi;
-  // 单文件态预览:仅在选中 1 个文件时可见(dropFile 区),转换中禁用
-  previewBtn.disabled = busy || n !== 1;
-  // 批次 12(A):单文件态「追加文件」按钮,转换中禁用(openDialog 另有 converting 守卫)
-  appendFileBtn.disabled = busy || n !== 1;
+  // 单文件态预览:仅选中 1 个文件时可见(队列卡头侧),转换中禁用
+  previewBtn.classList.toggle("hidden", !single);
+  previewBtn.disabled = busy || !single;
+  // 追加文件:两态共用(empty 态随 pane 隐藏不可达),转换中禁用(openDialog 另有守卫)
+  appendFileBtn.disabled = busy;
+  // 清空列表:empty 态随 pane 隐藏;转换中禁用防误清(监听内另有 mode 守卫)
+  clearListBtn.disabled = busy;
   selectBtn.disabled = busy;
   // 批次 12(C4):footer 快捷键提示随模式切换(多文件态提示批量语义)
   if (convertHint) {

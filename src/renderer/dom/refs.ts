@@ -2,14 +2,11 @@
  * renderer DOM 元素引用(纯 getElementById / querySelector 映射,无逻辑):
  * R7 自 renderer.ts 抽出,常量名与语义原样保留,renderer.ts 经命名导入使用。
  * 模块加载时机与 renderer.ts 相同(script type=module),元素必然已就绪。
+ * UI 改版 v4:单文件卡退役(统一队列卡),fileName/filePath/removeFileBtn/
+ * appendBtn 等旧单文件态元素随之移除;新增快速参数条三引用(qb 前缀语义)。
  */
 export const dropZone = document.getElementById("dropZone") as HTMLDivElement;
 export const selectBtn = document.getElementById("selectBtn") as HTMLButtonElement;
-export const dropDefault = document.getElementById("dropDefault") as HTMLDivElement;
-export const dropFile = document.getElementById("dropFile") as HTMLDivElement;
-export const fileNameEl = document.getElementById("fileName") as HTMLParagraphElement;
-export const filePathEl = document.getElementById("filePath") as HTMLParagraphElement;
-export const dropMulti = document.getElementById("dropMulti") as HTMLDivElement;
 export const multiCount = document.getElementById("multiCount") as HTMLParagraphElement;
 export const multiList = document.getElementById("multiList") as HTMLUListElement;
 export const statusEl = document.getElementById("status") as HTMLParagraphElement;
@@ -43,7 +40,9 @@ export const themeInputs = document.querySelectorAll<HTMLInputElement>(
 // 页面设置面板
 // 界面重构 v3:纸张/方向自 select 改 seg 分段(radio 组;guidelines §3.1 枚举 ≤5 → seg,
 // 与 alignInputs/themeInputs 同款组绑定模式;原 paperSelect/orientationSelect 单元素
-// id 随形态转换退役,读写链路在 settings-bindings/settings-panel 同步迁移)
+// id 随形态转换退役,读写链路在 settings-bindings/settings-panel 同步迁移)。
+// UI 改版 v4:name 全文档成组——快速参数条的镜像分段(同名 radio)自动并入本组,
+// 绑定与回填零改动覆盖两处控件
 export const paperInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="paper"]',
 );
@@ -212,17 +211,12 @@ export const batchDialogReveal = document.getElementById(
 export const batchDialogError = document.getElementById(
   "batchDialogError",
 ) as HTMLParagraphElement;
-// 批次 7:列表工具(单文件移除 / 多文件追加与清空)
-export const removeFileBtn = document.getElementById(
-  "removeFileBtn",
-) as HTMLButtonElement;
-// 迭代 4:单文件态「预览」按钮(转换前预览排版,与 PDF 同排版)
+// UI 改版 v4:统一队列卡头部动作。previewBtn 仅单文件可见(updateActionButtons
+// 切换 hidden);appendFileBtn 两态共用(追加合并语义);clearListBtn 清空选择
 export const previewBtn = document.getElementById("previewBtn") as HTMLButtonElement;
-// 批次 12(A):单文件态「追加文件」按钮(对话框追加,与多文件态 appendBtn 同语义)
 export const appendFileBtn = document.getElementById(
   "appendFileBtn",
 ) as HTMLButtonElement;
-export const appendBtn = document.getElementById("appendBtn") as HTMLButtonElement;
 export const clearListBtn = document.getElementById(
   "clearListBtn",
 ) as HTMLButtonElement;
@@ -300,7 +294,8 @@ export const completeDialogTitle = document.getElementById(
 export const completeDialogDesc = document.getElementById(
   "completeDialogDesc",
 ) as HTMLParagraphElement;
-// 界面重构 v3:最近转换自「空态 chips」改造为「主舞台与消息区之间的常驻折叠条」:
+// 界面重构 v3 → UI 改版 v4:最近转换「常驻折叠条」改「浮出面板」——标题条常驻占位,
+// 展开体为浮层(.h-body absolute);折叠语义 data-open 不变,refs 契约原样保留:
 // 折叠条容器(data-open 驱动展开/收起;无记录整块 hidden)+ 标题条切换钮 +
 // 条数徽标 + 列表本体(内部滚动);「清空记录」入口 id 沿用 recentClearBtn
 export const historyBar = document.getElementById("historyBar") as HTMLElement;
@@ -347,6 +342,20 @@ export const batchDialogRetry = document.getElementById(
 ) as HTMLButtonElement;
 export const batchDialogCopyAll = document.getElementById(
   "batchDialogCopyAll",
+) as HTMLButtonElement;
+// ── UI 改版 v4:快速参数条(舞台内底部;预设/纸张/方向/输出目录四项高频直达)──
+// 容器(位于 #dropZone 内部,click/keydown 需阻断冒泡防触发拖放区打开对话框);
+// 预设镜像 select(选项由 rebuildPresetOptions 同步维护);输出目录镜像 chip 与
+// 更改按钮(paper/orientation 镜像分段为同名 radio,自动并入上方组引用,无需单列)
+export const quickBar = document.getElementById("quickBar") as HTMLDivElement;
+export const quickPresetSelect = document.getElementById(
+  "quickPreset",
+) as HTMLSelectElement;
+export const quickOutputDirChip = document.getElementById(
+  "quickOutputDir",
+) as HTMLSpanElement;
+export const quickOutputPickBtn = document.getElementById(
+  "quickOutputPick",
 ) as HTMLButtonElement;
 
 /**

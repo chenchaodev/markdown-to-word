@@ -1,7 +1,7 @@
-/* Markdown 转换工具 — 基础样式(界面重构 v3「印刷付梓」渲染层批次):
+/* Markdown 转换工具 — 基础样式(UI 改版 v4r1 渲染层批次):
  * 设计令牌单源(docs/design/ui-guidelines.md §1 落地)、reset、应用骨架
- * (标题栏 44px 拖拽区 / 主舞台 / 常驻历史折叠条 / 消息区 / 底部动作栏)、
- * 通用控件(btn 族 / 分段 / 开关 / 输入件)、响应式四档与动效纪律。
+ * (标题栏 44px 拖拽区 / 几何恒定主舞台 + 统一内容列 / 历史浮出面板 / 消息区 /
+ * 底部动作栏)、通用控件(btn 族 / 分段 / 开关 / 输入件)、响应式四档与动效纪律。
  * 引入顺序固定:base → drop → settings → dialogs(index.html 多 <link> 同源引入,
  * CSP 无需改动);后加载文件的更高特异性规则覆盖先加载者。
  *
@@ -61,6 +61,15 @@
 
   /* 标题栏高度(矮窗档降为 40px,抽屉/遮罩 top 联动) */
   --tbh: 44px;
+
+  /* UI 改版 v4:舞台几何恒定令牌。--col-w = 统一内容列宽(.stage 即居中列,
+   * 文稿台/队列卡/快速参数条同宽同轴);--panes-h = 三态 pane 区高度
+   * (基准 = 空态文稿台自然高度,v4r1 微调后 ≈291 含顶距,裁切线外扩仍有净空);
+   * --quickbar-h = 快速参数条高度;.stage 总高 = panes + quickbar,
+   * 三种舞台状态同高,历史开合/消息增减不改写(矮窗档在 §6 覆盖) */
+  --col-w: 760px;
+  --panes-h: 320px;
+  --quickbar-h: 42px;
 
   /* 原生窗口控制按钮区宽度(titleBarOverlay 绘制于窗体右缘,最小化/最大化/关闭
    * 三钮各约 46px @100% DPI,随 DPI 等比缩放):标题栏右侧自绘内容以此为避让基准 */
@@ -158,7 +167,7 @@ body {
 }
 
 /* 纸张颗粒(mockup §2 签名氛围):全窗固定覆盖,overlay 混合,z-index 1
- * 位于内容之上、抽屉(90)/弹窗(100)/toast(80)之下;pointer-events 放行 */
+ * 位于内容之上、浮出面板(5)/toast(80)/抽屉(90)/弹窗(100)之下;pointer-events 放行 */
 body::after {
   content: "";
   position: fixed;
@@ -313,7 +322,7 @@ svg.ic {
   padding-right: calc(var(--wco-w) + 10px);
 }
 
-/* ---- 3.2 内容区(主舞台 / 历史折叠条 / 消息区) ---- */
+/* ---- 3.2 内容区(主舞台 / 历史浮出面板标题条 / 消息区) ---- */
 .content {
   flex: 1;
   min-height: 0;
@@ -322,20 +331,27 @@ svg.ic {
   position: relative;
 }
 
-/* 主舞台(#dropZone 兼任):唯一弹性吸收带,内部滚动 */
+/* 主舞台(#dropZone 兼任):唯一弹性吸收带,内部滚动。
+ * 几何恒定契约见 drop.css(.stage 高度锁定 + 统一内容列);
+ * 本层只提供弹性外包与留白 */
 .stage-wrap {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 20px 26px 12px;
+  padding: 18px 26px 12px;
 }
 
-/* ---- 3.3 历史记录常驻折叠条(主舞台与消息区之间;无记录整块不渲染) ---- */
+/* ---- 3.3 历史记录浮出面板(UI 改版 v4 ④):
+ *     标题条 40px 常驻占位(安静、一眼可见);展开体为 absolute 浮层,
+ *     向上盖住舞台下部——不挤压任何元素,舞台/消息区零位移。
+ *     无记录整块不渲染(hidden,由 recent-files 控制) ---- */
 .history {
   flex: none;
+  position: relative;
   border-top: 1px solid var(--line);
-  padding: 0 26px;
+  /* v4r2:内容对齐统一内容列(背景/发丝线仍全宽),消除各段宽度突变 */
+  padding: 0 max(18px, calc((100% - var(--col-w)) / 2));
 }
 
 .h-head {
@@ -380,32 +396,46 @@ svg.ic {
   margin-left: auto;
 }
 
-/* 折叠体:grid-rows 0fr→1fr 过渡(≤260ms 纪律内) */
+/* 浮层本体:锚定标题条上方,z-index 5(颗粒 1 之上、toast 80 之下);
+ * 显隐走 opacity+transform 微动效(≤150ms),visibility 延迟切换保证收起后不可聚焦;
+ * 左缘对齐统一内容列(max() 保证窄窗回退到内边距),与舞台卡缘上下连贯 */
 .h-body {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.24s ease;
+  position: absolute;
+  left: max(18px, calc((100vw - var(--col-w)) / 2));
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  width: min(560px, calc(100vw - 36px));
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  transform: translateY(6px);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease,
+    visibility 0s linear 0.15s;
+}
+
+.history[data-open="true"] .h-body {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
 .h-body > div {
   overflow: hidden;
+  border-radius: inherit;
 }
 
-.history[data-open="true"] .h-body {
-  grid-template-rows: 1fr;
-}
-
-/* 最近列表:内部滚动约 3 行(矮窗档 2 行),不撑高窗口 */
+/* 最近列表:内部滚动约 3 行(矮窗档 2 行);卡片外观由 .h-body 浮层承担 */
 .rlist {
   max-height: 176px;
   overflow-y: auto;
   overflow-x: hidden;
-  margin-bottom: 12px;
   list-style: none;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
 }
 
 .rrow {
@@ -499,12 +529,13 @@ svg.ic {
 .feed {
   flex: none;
   border-top: 1px solid var(--line);
-  padding: 11px 26px 13px;
-  min-height: 96px;
-  max-height: 38vh;
+  /* v4r2r2:固定槽高(不再 min-height 随内容长高)——转换开始/完成时状态行与
+   * 汇总条不再挤压舞台;超长内容内部滚动,safe center 防居中溢出裁顶 */
+  height: 96px;
+  padding: 11px max(18px, calc((100% - var(--col-w)) / 2)) 13px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: safe center;
   gap: 8px;
   overflow-y: auto;
 }
@@ -572,23 +603,26 @@ svg.ic {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  padding: 8px 22px;
+  /* v4r2:内容对齐统一内容列(工具带背景仍全宽) */
+  padding: 8px max(22px, calc((100% - var(--col-w)) / 2));
   gap: 12px;
 }
 
-/* 转换进度行(mockup §9 progress 模式):旋转指示 + 5px 细轨 + mono 百分比;
- * 占满一整行(flex-wrap 下 100% 基准),转换中显示、结束隐藏(HTML hidden) */
+/* 转换进度行(mockup §9 progress 模式):旋转指示 + 5px 细轨 + mono 百分比 + 取消。
+ * v4r2r2:与动作按钮同行(flex 1 1 auto,不再 1 1 100% 独占整行)——独占行会让
+ * 动作栏增高 ~52px,挤压舞台致转换开始时大小跳动;转换中隐藏快捷键提示腾位
+ * (下方 :has 规则),动作栏全程恒高。 */
 .progress-area {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1 1 100%;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .progress-track {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 96px;
   height: 5px;
   border-radius: 999px;
   background: var(--inset);
@@ -640,6 +674,11 @@ svg.ic {
   gap: 7px;
   font-size: 12px;
   color: var(--mut);
+}
+
+/* 转换中隐藏快捷键提示:为同行动度条腾位,动作栏高度恒定(v4r2r2 防跳动) */
+.actionbar:has(#progressArea:not(.hidden)) .hint {
+  display: none;
 }
 
 .kbd {
@@ -1130,19 +1169,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* —— 紧凑档:≤1080 —— */
 @media (max-width: 1080px) {
   .stage-wrap {
-    padding: 18px 18px 10px;
-  }
-
-  .feed {
-    padding: 12px 18px 13px;
-  }
-
-  .history {
-    padding: 0 18px;
-  }
-
-  .actionbar {
-    padding: 8px 16px;
+    padding: 16px 18px 10px;
   }
 
   .btn.lg {
@@ -1176,32 +1203,6 @@ input[type="range"]::-webkit-slider-thumb {
     margin-left: 10px;
   }
 
-  .sheet {
-    max-width: 640px;
-  }
-
-  .filecard {
-    flex-wrap: wrap;
-  }
-
-  .fmain {
-    flex: 1 1 240px;
-  }
-
-  .facts {
-    width: 100%;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--line);
-    justify-content: flex-end;
-  }
-
-  .multi-item {
-    grid-template-columns: 18px 24px 1fr auto;
-    padding: 8px 12px;
-    gap: 8px;
-  }
-
   /* 结果路径独占一行(mockup 窄窗档):图标/动作先行,文本块(含 mono 路径)换行 */
   .result-summary-icon {
     order: 1;
@@ -1232,36 +1233,29 @@ input[type="range"]::-webkit-slider-thumb {
   }
 }
 
+/* —— 半屏档:≤720 的舞台域规则(参数条折两行等)在 drop.css §7 —— */
+
 /* —— 矮窗档:视口高 ≤640 —— */
 @media (max-height: 640px) {
   :root {
     --tbh: 40px;
+    /* 舞台几何恒定令牌随空态文稿台压缩同步降档(空态压缩约 27px) */
+    --panes-h: 284px;
+    --quickbar-h: 36px;
   }
 
   .stage-wrap {
-    padding: 14px 18px 8px;
+    padding: 12px 18px 8px;
   }
 
-  .drop-core {
-    padding: 32px 40px 26px;
-  }
-
-  .drop-core h1 {
-    font-size: 26px;
-  }
-
-  .caps {
-    margin-top: 14px;
-    padding-top: 12px;
-  }
-
-  .rules {
-    inset: 40px 40px;
-  }
+  /* 矮窗档舞台域规则(.drop-core/.caps/.rules)在 drop.css §7 ——
+   * 级联纪律:base 先于 drop 加载,舞台域覆盖若留在本文件会被 drop.css 同名
+   * 规则按序压掉(v4r2 踩坑:矮窗压缩与半屏折行曾整段失效) */
 
   .feed {
-    min-height: 86px;
-    padding: 10px 18px 11px;
+    height: 86px;
+    /* 仅调垂直:水平保持 max() 列对齐公式(覆盖成固定 18px 会破坏统一内容列) */
+    padding: 10px max(18px, calc((100% - var(--col-w)) / 2)) 11px;
   }
 
   .actionbar {

@@ -1,9 +1,14 @@
-/* Markdown 转换工具 — 主舞台域样式(界面重构 v3):
- * 三态 pane(空态待印文稿台 = 全站唯一签名元素 / 单文件卡 / 多文件队列卡)、
- * 舞台切换(data-stage 驱动)、拖入高亮与错误反馈。
- * 令牌纪律:颜色一律经 base.css 语义变量引用,本文件不写 hex。 */
+/* Markdown 转换工具 — 主舞台域样式(UI 改版 v4r2):
+ * 常驻文稿台纸面(.stage 即纸面容器:空态/文件态/参数条共用同一张"纸",
+ * 切换只换内容不换容器,消除导入文件时的突变)/ 统一内容列(--col-w 居中)/
+ * 几何恒定(高度锁定)/ 统一队列卡(单文件 = 一行队列)/ 快速参数条 = 纸面脚注。
+ * 令牌纪律:颜色一律经 base.css 语义变量引用,本文件不写 hex;
+ * 令牌 --panes-h / --quickbar-h / --col-w 单源 base.css(矮窗档在该处覆盖)。 */
 
-/* 主舞台(#dropZone 兼任):三态容器几何恒定,内部布局变化不影响外部 */
+/* 主舞台(#dropZone 兼任):唯一弹性吸收带。
+ * v4r2r1:移除 scrollbar-gutter: stable —— 舞台高度 min(100%, 设计高) 后本层
+ * 永不滚动,沟槽只会在右侧单侧留白把居中列顶偏 5px(用户反馈「不严格居中」根因);
+ * 队列超长走 mlist 内部滚动,页面级滚动不存在。 */
 .stage-wrap {
   cursor: pointer;
 }
@@ -12,21 +17,58 @@
   outline: none;
 }
 
-/* 舞台三态切换:data-stage 由 renderSelection 写入 */
+/* ═══ 常驻文稿台纸面(v4r2 核心) ═══
+ * .stage 本身就是那张"纸":纸面底/边线/3px 印刷圆角/阴影恒在,
+ * 空态呈现签名装饰与投放内容,文件态呈现队列,底部为参数脚注区——
+ * 三态同纸,导入文件只是"换内容",容器永不消失。
+ * 高度锁定 = 几何恒定契约(三态同高,历史/消息变化不改写);
+ * 宽度 = 统一内容列居中。hover 仅边线加深(纸面不再整体抬升)。 */
+.stage {
+  position: relative;
+  /* 高度 = min(可用高, 设计高):大窗取设计高(--panes-h + --quickbar-h,基准空态),
+   * 小窗填满弹性区 —— 任何窗口尺寸下参数脚注区都在视野内、页面零滚动;
+   * 高度只随窗口尺寸变化,三种舞台状态恒同(几何恒定契约) */
+  height: min(100%, calc(var(--panes-h) + var(--quickbar-h)));
+  width: min(100%, var(--col-w));
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: 3px; /* 文稿台特例圆角(guidelines §1.3) */
+  box-shadow: var(--shadow-card), 0 14px 36px rgba(20, 21, 26, 0.08);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.stage-wrap:hover .stage {
+  border-color: var(--mut);
+}
+
+.stage-panes {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* 舞台三态切换:data-stage 由 renderSelection 写入。
+ * height:100% 必须显式——pane 的子层(drop-layer/listcard 弹性收缩)依赖
+ * 父级有确定高度,否则装饰层 absolute 脱流后容器塌陷、题字被顶裁(v4r2 教训) */
 .pane {
   display: none;
+  position: relative;
+  height: 100%;
+  min-height: 0;
 }
 
 .stage-wrap[data-stage="empty"] .pane-empty,
-.stage-wrap[data-stage="single"] .pane-single,
-.stage-wrap[data-stage="multi"] .pane-multi {
-  display: block;
+.stage-wrap[data-stage="single"] .pane-files,
+.stage-wrap[data-stage="multi"] .pane-files {
+  display: flex;
 }
 
-/* 拖入高亮:文稿台描边转朱砂(进行中语义一线) */
-.stage-wrap.dragover .sheet,
-.stage-wrap.dragover .filecard,
-.stage-wrap.dragover .listcard {
+/* 拖入高亮:纸面边线转朱砂(进行中语义一线) */
+.stage-wrap.dragover .stage {
   border-color: var(--acc);
 }
 
@@ -35,14 +77,13 @@
 }
 
 /* 错误反馈(JS 控制移除时机):短暂朱砂描边 */
-.stage-wrap.drop-zone--error .sheet,
-.stage-wrap.drop-zone--error .filecard,
-.stage-wrap.drop-zone--error .listcard {
+.stage-wrap.drop-zone--error .stage {
   border-color: var(--acc) !important;
 }
 
 /* 舞台状态切换微动效(≤150ms;reduced-motion 全局兜底) */
 .pane {
+  position: relative;
   animation: stage-in 0.15s ease-out;
 }
 
@@ -57,31 +98,32 @@
   }
 }
 
-/* ========== 空态 · 待印文稿台(签名元素:裁切线 + 直排题字 + 钤印) ========== */
-.sheet {
-  position: relative;
-  max-width: 700px;
-  margin: 10px auto 0;
-  background: var(--card);
-  border: 1px solid var(--line-2);
-  border-radius: 3px; /* 文稿台特例圆角(guidelines §1.3) */
-  box-shadow: var(--shadow-card), 0 14px 36px rgba(20, 21, 26, 0.08);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+/* ========== 空态 · 待印文稿台(签名元素:裁切线 + 直排题字 + 钤印) ==========
+ * 装饰与投放内容直接呈现在纸面上(.stage 即纸壳,本层不再有卡片壳);
+ * 四角裁切线已上移挂 .stage 容器角(见下方裁切线节),本层只余稿纸线与直排钤印。 */
+.pane-empty {
+  flex-direction: column;
 }
 
-.sheet:hover {
-  border-color: var(--mut);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-card), 0 20px 44px rgba(20, 21, 26, 0.12);
+.drop-layer {
+  position: absolute;
+  inset: 0;
 }
 
-/* 四角裁切线 */
+/* 裁切线:四枚挂在 .stage 容器角(index.html 中为 .stage 直接子元素),
+ * 随容器角定位、与脚注区实际高度解耦(挂在内容层用令牌反推,参数条折两行时
+ * 会错位到纸面上——v4r2r1 教训);仅空态显示。 */
 .cm {
   position: absolute;
   width: 18px;
   height: 18px;
   color: var(--line-2);
   pointer-events: none;
+  display: none;
+}
+
+.stage-wrap[data-stage="empty"] .cm {
+  display: block;
 }
 
 .cm::before,
@@ -152,15 +194,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   pointer-events: none;
 }
 
 .vtext {
   writing-mode: vertical-rl;
   font-family: var(--font-display);
-  font-size: 15px;
-  letter-spacing: 0.44em;
+  font-size: 14px;
+  letter-spacing: 0.34em;
   color: var(--mut);
 }
 
@@ -182,11 +224,11 @@
 .drop-core {
   position: relative;
   text-align: center;
-  padding: 42px 56px 36px; /* 左侧给直排钤印留位 */
+  padding: 38px 56px 16px; /* 左侧给直排钤印留位;垂直预算按实测校准(v4r1) */
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 11px;
+  gap: 8px;
 }
 
 .drop-kicker {
@@ -209,10 +251,10 @@
   color: var(--mut);
 }
 
-/* 能力胶囊行 */
+/* 能力胶囊行(注意:margin-top 与 flex gap 叠加,间距 = 8gap + 4margin) */
 .caps {
-  margin-top: 18px;
-  padding-top: 16px;
+  margin-top: 4px;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
   display: flex;
   align-items: center;
@@ -246,13 +288,21 @@
   font-size: 13px;
 }
 
-/* ========== 单文件态 · 文件卡 ========== */
+/* ========== 文件态 · 统一队列卡(v4r2:队列行直接排在纸面上) ==========
+ * 头部/队列/提示同为纸面内容;队列行以发丝线分行,不再嵌套卡片壳;
+ * 超长走列表内部滚动(listcard 弹性收缩,几何恒定不破)。 */
+.pane-files {
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  padding: 10px 14px 12px;
+}
+
 .ph {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  max-width: 760px;
-  margin: 0 auto 12px;
+  margin: 0 0 10px;
 }
 
 .ph-title {
@@ -276,95 +326,27 @@
   gap: 8px;
 }
 
-.filecard {
-  max-width: 760px;
-  margin: 0 auto;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-win);
-  box-shadow: var(--shadow-card);
-  padding: 18px 20px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.fico {
-  width: 48px;
-  height: 48px;
-  border-radius: 11px;
-  background: var(--acc-soft);
-  color: var(--acc);
-  display: grid;
-  place-items: center;
-  flex: none;
-}
-
-.fico .ic {
-  width: 22px;
-  height: 22px;
-}
-
-.fmain {
-  flex: 1;
-  min-width: 0;
-}
-
-.fname {
-  font-size: 15px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  user-select: text;
-}
-
-.fmeta {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--mut);
-  margin-top: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: ltr;
-  user-select: text;
-}
-
-.fhint {
-  max-width: 760px;
-  margin: 12px auto 0;
-  font-size: 12px;
-  color: var(--mut);
-  text-align: left;
-  padding-left: 2px;
-}
-
-.facts {
-  display: flex;
-  gap: 8px;
-  flex: none;
-}
-
-/* ========== 多文件态 · 队列卡 ========== */
 .listcard {
-  max-width: 760px;
-  margin: 0 auto;
-  background: var(--card);
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--line);
-  border-radius: var(--radius-win);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-in);
   overflow: hidden;
 }
 
+/* 队列列表:弹性填充 + 内部滚动(行数多时卡片收缩,纸面高度不变) */
 .mlist {
   list-style: none;
-  max-height: 46vh;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 
 /* 队列行(file-list.renderMultiList 渲染契约:multi-item/-grip/-index/-name/
- * -actions/-remove;mockup §8 行设计:grip 拖拽锚点 + mono 序号 + 名称 + 行内移除) */
+ * -actions/-remove;mockup §8 行设计:grip 拖拽锚点 + mono 序号 + 名称 + 行内移除。
+ * UI 改版 v4:单文件态渲染时省略 grip/序号节点,列形由 data-stage 规则收敛) */
 .multi-item {
   display: grid;
   grid-template-columns: 22px 26px 1fr auto;
@@ -460,9 +442,10 @@
   outline-offset: 2px;
 }
 
+/* 批量/合并语义脚注:纸面上的凹陷条(--inset),仅 n≥2 显示 */
 .list-foot {
-  padding: 10px 16px;
-  background: var(--card-2);
+  padding: 9px 14px;
+  background: var(--inset);
   border-top: 1px solid var(--line);
   font-size: 12px;
   color: var(--mut);
@@ -474,4 +457,163 @@
 .list-foot b {
   color: var(--ink-2);
   font-weight: 600;
+}
+
+.stage-wrap[data-stage="single"] .multi-item {
+  grid-template-columns: 1fr auto;
+}
+
+/* 单文件态无批量/合并语义(n<2),脚注整行隐藏 */
+.stage-wrap[data-stage="single"] .list-foot {
+  display: none;
+}
+
+.fhint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--mut);
+  text-align: left;
+  padding-left: 2px;
+}
+
+/* ========== 快速参数条 = 纸面脚注区(v4r2) ==========
+ * 位于常驻纸面内部、发丝线与内容区分隔;无自绘背景(纸面即底);
+ * 输出目录组靠右收尾,chip 弹性吸收窄窗挤压。 */
+.quick-bar {
+  flex: none;
+  height: var(--quickbar-h);
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  z-index: 1;
+}
+
+.qb-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.qb-label {
+  font-size: 12px;
+  color: var(--mut);
+}
+
+.qb-select {
+  height: 28px;
+  width: 118px;
+  font-size: 12.5px;
+}
+
+.qb-seg {
+  flex: none;
+}
+
+/* 方向分段:纯图标档位(悬浮 title 提供文案) */
+.qb-orient .segment > span {
+  padding: 0 8px;
+}
+
+.qb-output {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.qb-output > .ic {
+  width: 15px;
+  height: 15px;
+  color: var(--mut);
+  flex: none;
+}
+
+.qb-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 240px;
+}
+
+/* ========== 7. 响应式(舞台域) ==========
+ * 级联纪律:本文件后于 base.css 加载,舞台域(.stage/.pane/.drop-core/.caps/
+ * .quick-bar/.qb-*)的档位覆盖必须住在本文——放 base.css 会被此处同名规则
+ * 按加载序压掉(v4r2 踩坑:矮窗压缩与半屏折行曾整段失效)。
+ * 档位顺序即覆盖顺序:矮窗(高)在前,半屏(宽)在后,双命中时半屏优先。 */
+
+/* —— 紧凑档:≤1080 —— */
+@media (max-width: 1080px) {
+  .qb-chip {
+    max-width: 200px;
+  }
+}
+
+/* —— 窄窗档:≤900 —— */
+@media (max-width: 900px) {
+  .quick-bar {
+    gap: 8px;
+  }
+
+  .qb-chip {
+    max-width: 170px;
+  }
+}
+
+/* —— 矮窗档:视口高 ≤640 —— */
+@media (max-height: 640px) {
+  .drop-core {
+    padding: 30px 40px 16px;
+  }
+
+  .drop-core h1 {
+    font-size: 24px;
+  }
+
+  .caps {
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+
+  .rules {
+    inset: 40px 40px;
+  }
+}
+
+/* —— 半屏档:≤720(minWidth 640):参数条折两行,空态能力胶囊让位 —— */
+@media (max-width: 720px) {
+  .caps {
+    display: none; /* 装饰性能力说明,半屏让位给垂直预算 */
+  }
+
+  .drop-core {
+    padding: 24px 24px 14px;
+  }
+
+  .drop-core h1 {
+    font-size: 26px;
+  }
+
+  /* 行1 = 预设+纸张+方向,行2 = 输出目录整行;脚注区长高由内容区(flex)吸收,
+   * .stage 高度 min(100%, 设计高) 随窗口给足,同宽度下三态仍同高 */
+  .quick-bar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--quickbar-h);
+    padding-top: 8px;
+    padding-bottom: 8px;
+    row-gap: 8px;
+  }
+
+  /* 0 0 100% 禁收缩强制独占一行(1 1 100% 会被压缩回单行) */
+  .qb-output {
+    flex: 0 0 100%;
+  }
+
+  .qb-chip {
+    flex: 1 1 auto;
+    max-width: none;
+  }
 }

@@ -274,6 +274,9 @@ const dict = {
     "settings.selectDirFailed": "选择输出目录失败:${error}",
     "settings.cssTooLarge": "CSS 文件过大(超过 ${kb}KB 上限)",
 
+    /* ---------- UI 改版 v4:快速参数条 ---------- */
+    "quick.title": "快速转换参数",
+
     /* ---------- 模板预设 ---------- */
     "preset.default": "默认",
     "preset.paper": "学术论文",

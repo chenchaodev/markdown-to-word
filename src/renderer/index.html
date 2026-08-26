@@ -68,9 +68,13 @@
         </div>
       </header>
 
-      <!-- ══ 内容区:主舞台(三态)/ 历史折叠条(常驻)/ 消息区(feed) -->
+      <!-- ══ 内容区:主舞台(三态)/ 历史浮出面板(常驻标题条)/ 消息区(feed) -->
       <div class="content">
-        <!-- 主舞台(#dropZone 兼任拖放与点击入口,data-stage 驱动三态切换) -->
+        <!-- 主舞台(#dropZone 兼任拖放与点击入口,data-stage 驱动三态切换)。
+             几何恒定契约(UI 改版 v4 ①):内部 .stage 高度锁定(--panes-h + --quickbar-h,
+             三种舞台状态同高,基准 = 空态文稿台自然高度);历史开合 / 消息增减 /
+             进度条出现均不改写本区块一个像素;.stage-wrap 加 scrollbar-gutter: stable
+             杜绝滚动条出现引起的水平位移(历史开合左右跳动根因) -->
         <div
           id="dropZone"
           class="stage-wrap"
@@ -80,112 +84,129 @@
           data-i18n-aria-label="drop.ariaLabel"
           aria-label="点击或拖入 Markdown 文件（支持多个）"
         >
-          <!-- ▩ 空态:待印文稿台(全站唯一签名元素:四角裁切线 + 直排题字 + 旋转钤印) -->
-          <section class="pane pane-empty" data-i18n-aria-label="drop.areaLabel" aria-label="文件选择">
-            <div class="sheet" id="dropSheet">
-              <span class="cm tl"></span><span class="cm tr"></span><span class="cm bl"></span><span class="cm br"></span>
-              <div class="rules" aria-hidden="true"></div>
-              <div class="vwrap" aria-hidden="true">
-                <span class="vtext" data-i18n="drop.motto">落笔 · 排版 · 成书</span>
-                <span class="vseal">梓</span>
-              </div>
-              <div class="drop-core">
-                <span class="drop-kicker">.MD&ensp;/&ensp;.MARKDOWN</span>
-                <h1 data-i18n="drop.title">拖入 Markdown 文件</h1>
-                <p class="drop-sub" data-i18n="drop.sub">松手即加入队列，也可以一次选择多个文件</p>
-                <button
-                  type="button"
-                  id="selectBtn"
-                  class="btn btn-solid"
-                  style="margin-top: 6px"
-                  data-i18n-title="select.title"
-                  title="选择 Markdown 文件(Ctrl+O)"
-                >
-                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/><path d="M12 10.6v4.6M9.7 12.9h4.6"/></svg>
-                  <span data-i18n="select.label">选择文件</span>
-                </button>
-                <div class="caps">
-                  <span class="cap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 12h16M12 5v14"/></svg><span data-i18n="drop.capTable">表格</span></span>
-                  <span class="cap"><b>Σ</b><span data-i18n="drop.capFormula">数学公式</span></span>
-                  <span class="cap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 8.5-4 3.5 4 3.5M15 8.5l4 3.5-4 3.5"/></svg><span data-i18n="drop.capCode">代码高亮</span></span>
-                  <span class="cap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="5" rx="1"/><rect x="14" y="15" width="6" height="5" rx="1"/><path d="M7 9v4a2 2 0 0 0 2 2h5"/></svg><span data-i18n="drop.capMermaid">Mermaid 图表</span></span>
+          <div class="stage">
+            <div class="stage-panes">
+              <!-- ▩ 空态:待印文稿台(全站唯一签名元素:四角裁切线 + 直排题字 + 钤印)。
+                   UI 改版 v4r2:文稿台纸面壳上移为 .stage 常驻容器(空/文件态共用,
+                   消除导入文件时的容器突变),本层只保留签名装饰与投放内容 -->
+              <section class="pane pane-empty" data-i18n-aria-label="drop.areaLabel" aria-label="文件选择">
+                <div class="drop-layer">
+                  <div class="rules" aria-hidden="true"></div>
+                  <div class="vwrap" aria-hidden="true">
+                    <span class="vtext" data-i18n="drop.motto">落笔 · 排版 · 成书</span>
+                    <span class="vseal">梓</span>
+                  </div>
+                  <div class="drop-core">
+                    <span class="drop-kicker">.MD&ensp;/&ensp;.MARKDOWN</span>
+                    <h1 data-i18n="drop.title">拖入 Markdown 文件</h1>
+                    <p class="drop-sub" data-i18n="drop.sub">松手即加入队列，也可以一次选择多个文件</p>
+                    <button
+                      type="button"
+                      id="selectBtn"
+                      class="btn btn-solid"
+                      style="margin-top: 6px"
+                      data-i18n-title="select.title"
+                      title="选择 Markdown 文件(Ctrl+O)"
+                    >
+                      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/><path d="M12 10.6v4.6M9.7 12.9h4.6"/></svg>
+                      <span data-i18n="select.label">选择文件</span>
+                    </button>
+                    <div class="caps">
+                      <span class="cap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 12h16M12 5v14"/></svg><span data-i18n="drop.capTable">表格</span></span>
+                      <span class="cap"><b>Σ</b><span data-i18n="drop.capFormula">数学公式</span></span>
+                      <span class="cap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 8.5-4 3.5 4 3.5M15 8.5l4 3.5-4 3.5"/></svg><span data-i18n="drop.capCode">代码高亮</span></span>
+                      <span class="cap"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="5" rx="1"/><rect x="14" y="15" width="6" height="5" rx="1"/><path d="M7 9v4a2 2 0 0 0 2 2h5"/></svg><span data-i18n="drop.capMermaid">Mermaid 图表</span></span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </section>
+              </section>
 
-          <!-- ▩ 单文件态:文件卡(图标块 + 名称 + mono 元信息 + 动作组) -->
-          <section class="pane pane-single" aria-label="单文件">
-            <div class="ph">
-              <span class="ph-title" data-i18n="stage.manuscript">文 稿</span>
-              <span class="ph-sub" data-i18n="file.selectedOne">已选择 1 个文件</span>
+              <!-- ▩ 文件队列(UI 改版 v4 三态统一②):单文件 = 只有一行的队列,
+                   grip 与序号仅在多文件渲染(n≥2);预览仅单文件可见;
+                   底部批量/合并语义说明仅 n≥2 显示。id 契约保留:
+                   multiCount/multiList/previewBtn/appendFileBtn/clearListBtn -->
+              <section class="pane pane-files" aria-label="文件队列">
+                <div class="ph">
+                  <span class="ph-title" data-i18n="stage.manuscript">文 稿</span>
+                  <span id="multiCount" class="ph-sub"></span>
+                  <span class="ph-side">
+                    <button type="button" id="previewBtn" class="btn btn-ghost sm hidden" data-i18n-title="preview.title" title="预览转换排版(与 PDF 同排版)" disabled>
+                      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                      <span data-i18n="common.preview">预览</span>
+                    </button>
+                    <button type="button" id="appendFileBtn" class="btn btn-ghost sm" data-i18n-title="append.title" title="添加更多文件(Ctrl+O)" disabled>
+                      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/><path d="M12 10.6v4.6M9.7 12.9h4.6"/></svg>
+                      <span data-i18n="append.label">追加文件</span>
+                    </button>
+                    <button type="button" id="clearListBtn" class="btn btn-text sm" data-i18n-title="file.clearList" title="清空列表">
+                      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></svg>
+                      <span data-i18n="file.clearList">清空列表</span>
+                    </button>
+                  </span>
+                </div>
+                <div class="listcard">
+                  <ul id="multiList" class="mlist"></ul>
+                  <div class="list-foot">
+                    <span><b data-i18n="convert.batch">批量转换</b><span data-i18n="file.batchFoot">：每个文件各自输出一份</span></span>
+                    <span><b data-i18n="convert.merge">合并转换</b><span data-i18n="file.mergeFoot">：按当前顺序合成一个文档</span></span>
+                  </div>
+                </div>
+                <p class="fhint" data-i18n="drop.outputHint">将按当前模板与排版设置输出文档；输出重名时自动加序号，不覆盖已有文件。</p>
+              </section>
             </div>
-            <div class="filecard">
-              <span class="fico">
-                <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h6.8L18.5 8v11.2a1.3 1.3 0 0 1-1.3 1.3H7a1.3 1.3 0 0 1-1.3-1.3V4.8A1.3 1.3 0 0 1 7 3.5Z"/><path d="M13.5 3.8V8.3H18"/></svg>
-              </span>
-              <div class="fmain">
-                <p id="fileName" class="fname"></p>
-                <p id="filePath" class="fmeta"></p>
-              </div>
-              <div class="facts">
-                <button
-                  type="button"
-                  id="appendFileBtn"
-                  class="btn btn-ghost sm"
-                  data-i18n-title="append.title"
-                  title="添加更多文件(Ctrl+O)"
-                >
-                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4.2a1.5 1.5 0 0 1 1.2.6l1 1.4H19A1.5 1.5 0 0 1 20.5 9v8A1.5 1.5 0 0 1 19 18.5H5A1.5 1.5 0 0 1 3.5 17Z"/><path d="M12 10.6v4.6M9.7 12.9h4.6"/></svg>
-                  <span data-i18n="append.label">追加文件</span>
-                </button>
-                <button
-                  type="button"
-                  id="previewBtn"
-                  class="btn btn-ghost sm"
-                  data-i18n-title="preview.title"
-                  title="预览转换排版(与 PDF 同排版)"
-                  disabled
-                >
-                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>
-                  <span data-i18n="common.preview">预览</span>
-                </button>
-                <button type="button" id="removeFileBtn" class="btn btn-ghost sm">
-                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 6.5h15M9.5 6.5V4.8a1.3 1.3 0 0 1 1.3-1.3h2.4a1.3 1.3 0 0 1 1.3 1.3v1.7M6.5 6.5l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12"/><path d="M10 10.5v6M14 10.5v6"/></svg>
-                  <span data-i18n="common.remove">移除</span>
-                </button>
-              </div>
-            </div>
-            <p class="fhint" data-i18n="drop.outputHint">将按当前模板与排版设置输出文档；输出重名时自动加序号，不覆盖已有文件。</p>
-          </section>
 
-          <!-- ▩ 多文件态:队列卡(grip 拖拽排序 + 序号自动重排 + 行内移除) -->
-          <section class="pane pane-multi" aria-label="多文件">
-            <div class="ph">
-              <span class="ph-title" data-i18n="stage.manuscript">文 稿</span>
-              <span id="multiCount" class="ph-sub"></span>
-              <span class="ph-side">
-                <button type="button" id="appendBtn" class="btn btn-ghost sm" data-i18n-title="append.title" title="添加更多文件(Ctrl+O)">
-                  <span data-i18n="append.label">追加文件</span>
-                </button>
-                <button type="button" id="clearListBtn" class="btn btn-text sm">
-                  <span data-i18n="file.clearList">清空列表</span>
+            <!-- ▩ 快速参数条(UI 改版 v4 落位③):舞台内底部常驻,预设/纸张/方向/输出目录
+                 四项高频转换参数主界面直达;与抽屉同源双向同步(paper/orientation radio
+                 同 name 自动成组,select/chip 经 settings-bindings 显式镜像),
+                 抽屉仍为完整真相源(七组 IA 不缺项) -->
+            <div class="quick-bar" id="quickBar" role="group" data-i18n-aria-label="quick.title" aria-label="快速转换参数">
+              <label class="qb-field">
+                <span class="qb-label" data-i18n="settings.presetLabel">模板预设</span>
+                <span class="sel-wrap">
+                  <select id="quickPreset" class="setting-select qb-select" data-i18n-aria-label="settings.presetLabel" aria-label="模板预设">
+                    <option value="default" data-i18n="preset.default">默认</option>
+                    <option value="paper" data-i18n="preset.paper">学术论文</option>
+                    <option value="business" data-i18n="preset.business">商务简报</option>
+                  </select>
+                </span>
+              </label>
+              <span class="segmented seg-sm qb-seg" role="radiogroup" data-i18n-aria-label="settings.paper" aria-label="纸张">
+                <label class="segment"><input type="radio" name="paper" value="A4" checked /><span>A4</span></label>
+                <label class="segment"><input type="radio" name="paper" value="A3" /><span>A3</span></label>
+                <label class="segment"><input type="radio" name="paper" value="A5" /><span>A5</span></label>
+                <label class="segment"><input type="radio" name="paper" value="Letter" /><span>Letter</span></label>
+                <label class="segment"><input type="radio" name="paper" value="Legal" /><span>Legal</span></label>
+              </span>
+              <span class="segmented seg-sm qb-seg qb-orient" role="radiogroup" data-i18n-aria-label="settings.orientation" aria-label="方向">
+                <label class="segment" data-i18n-title="settings.portrait" title="纵向">
+                  <input type="radio" name="orientation" value="portrait" checked />
+                  <span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="1.5"/></svg></span>
+                </label>
+                <label class="segment" data-i18n-title="settings.landscape" title="横向">
+                  <input type="radio" name="orientation" value="landscape" />
+                  <span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="7" width="16" height="10" rx="1.5"/></svg></span>
+                </label>
+              </span>
+              <span class="qb-output">
+                <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 6.5A1.5 1.5 0 0 1 4 5h5l2 2.5h9A1.5 1.5 0 0 1 21.5 9v9a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 18Z"/></svg>
+                <span id="quickOutputDir" class="path-chip qb-chip" data-i18n="settings.outputDirDefault">与源文件相同目录</span>
+                <button type="button" id="quickOutputPick" class="btn btn-ghost sm">
+                  <span data-i18n="settings.outputDirPick">更改…</span>
                 </button>
               </span>
             </div>
-            <div class="listcard">
-              <ul id="multiList" class="mlist"></ul>
-              <div class="list-foot">
-                <span><b data-i18n="convert.batch">批量转换</b><span data-i18n="file.batchFoot">：每个文件各自输出一份</span></span>
-                <span><b data-i18n="convert.merge">合并转换</b><span data-i18n="file.mergeFoot">：按当前顺序合成一个文档</span></span>
-              </div>
-            </div>
-          </section>
+
+            <!-- 四角裁切线:挂在 .stage 容器角(与脚注区实际高度解耦,折行也不错位);
+                 仅空态显示(data-stage 驱动),样式见 drop.css 裁切线节 -->
+            <span class="cm tl"></span><span class="cm tr"></span><span class="cm bl"></span><span class="cm br"></span>
+          </div>
         </div>
 
-        <!-- ▩ 历史记录常驻折叠条(主舞台与消息区之间):无记录整块不渲染(hidden);
-             空态默认展开、有文件自动收起、手动可切换(data-open);列表内部滚动约 3 行 -->
-        <section id="historyBar" class="history hidden" data-open="true" data-i18n-aria-label="history.title" aria-label="最近转换">
+        <!-- ▩ 历史记录常驻折叠条(UI 改版 v4 ④改浮出面板):标题条 40px 常驻占位,
+             无记录整块不渲染(hidden);展开体改为 absolute 浮层向上盖住舞台下部——
+             不挤压任何元素,舞台/消息区零位移。空态默认展开、有文件自动收起、
+             手动可切换(data-open);列表内部滚动约 3 行 -->
+        <section id="historyBar" class="history hidden" data-open="false" data-i18n-aria-label="history.title" aria-label="最近转换">
           <header class="h-head">
             <button type="button" id="histToggle" class="h-toggle" aria-expanded="true">
               <svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6"/></svg>
@@ -402,7 +423,9 @@
           <section class="sec">
             <div class="sec-h"><span class="sec-num">02</span><span class="sec-title" data-i18n="settings.groupPage">页 面</span><span class="sec-rule"></span></div>
             <!-- 界面重构 v3:枚举 ≤5 → seg 分段(guidelines §3.1 映射表);radio 语义保留,
-                 name="paper"/name="orientation" 与 settings-bindings 的组绑定对应 -->
+                 name="paper"/name="orientation" 与 settings-bindings 的组绑定对应。
+                 UI 改版 v4:同名 radio 组在快速参数条中镜像一份(document 级同组成组),
+                 点击任一侧即互斥同步,绑定与回填零改动 -->
             <div class="row">
               <span class="row-l" data-i18n="settings.paper">纸张</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.paper" aria-label="纸张">
@@ -617,7 +640,8 @@
             </div>
           </section>
 
-          <!-- ── 06 输出:产物去向与处置(不入预设) ── -->
+          <!-- ── 06 输出:产物去向与处置(不入预设)。UI 改版 v4:输出目录同时镜像到
+               主界面快速参数条(#quickOutputDir),两处 chips 由 bindings 同写同回填 ── -->
           <section class="sec">
             <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupOutput">输 出</span><span class="sec-rule"></span></div>
             <div class="row">
@@ -715,7 +739,7 @@
         </div>
         <footer class="drawer-foot">
           <!-- 界面重构 v3:mockup 抽屉底栏左位「恢复默认」(转换相关各组复位;
-               07 应用偏好与自定义预设保留,语义见 settings-bindings 接线) -->
+                07 应用偏好与自定义预设保留,语义见 settings-bindings 接线) -->
           <button
             type="button"
             id="drawerResetBtn"

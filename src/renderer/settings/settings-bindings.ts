@@ -5,6 +5,14 @@
  * 校验)与页面/排版整体写回。加载/回填/持久化/预设弹窗交互仍单源 settings-panel.ts,
  * 本模块单向依赖之(不反向),组合根 renderer.ts 直接 import 本模块的
  * bindSettingsEvents(避免 panel⇄bindings 环)。
+ *
+ * UI 改版 v4:快速参数条(主界面)镜像接线——
+ * - 预设 select 两处(#templatePreset / #quickPreset)共用 applyTemplatePreset;
+ * - 输出目录两处 chips 由 setOutputDirDisplay 同写,「更改…」两钮共用 pickOutputDir;
+ * - paper/orientation 镜像分段为同名 radio 组,change 绑定经 paperInputs/
+ *   orientationInputs 全文档查询自动覆盖,无需额外代码;
+ * - #quickBar 位于拖放区内部,click/keydown 整体阻断冒泡,
+ *   防止操作参数时误触发拖放区「点击=选择文件」语义。
  */
 import {
   BODY_SIZE_MAX,
@@ -74,6 +82,10 @@ import {
   presetSaveCancel,
   presetSaveDialog,
   presetSaveOk,
+  quickBar,
+  quickOutputDirChip,
+  quickOutputPickBtn,
+  quickPresetSelect,
   templatePresetSelect,
   themeInputs,
   tocInput,
@@ -99,7 +111,7 @@ import {
    rebuildLanguageOptions,
    saveCustomPreset,
    syncHeaderCustomVisibility,
- } from "./settings-panel.js";
+} from "./settings-panel.js";
 // 界面重构 v3:预设切换即时反馈(toast 单实例,ui/toast)
 import { showToast } from "../ui/toast.js";
 
@@ -192,6 +204,59 @@ function handleTypographyNumberChange(
   persistTypography();
 }
 
+/* ---------- UI 改版 v4:快速参数条镜像的共享写入路径 ---------- */
+/**
+ * 套用模板预设(抽屉 select 与快速参数条 select 共用):
+ * 整体套用排版与页面设置,hydration 保护下统一回填所有相关控件并持久化;
+ * 回填同时按匹配结果同步两侧 select 与 hint(当前即所选预设)。
+ */
+function applyTemplatePreset(presetId: string): void {
+  if (state.hydratingSettings) return;
+  const preset = allPresets(state.settings.customPresets).find(
+    (p) => p.id === presetId,
+  );
+  if (!preset) return;
+  state.settings.typography = { ...preset.typography };
+  state.settings.pageSetup = { ...preset.pageSetup };
+  state.hydratingSettings = true;
+  applySettingsToControls();
+  state.hydratingSettings = false;
+  persistSettings({
+    typography: { ...state.settings.typography },
+    pageSetup: { ...state.settings.pageSetup },
+  });
+  // 界面重构 v3:预设切换即时反馈——toast 列出被覆盖的设置组(只陈述事实)
+  showToast(
+    t("toast.presetSwitched", {
+      name: preset.name,
+      groups: presetCoveredGroupLabels(preset),
+    }),
+  );
+}
+
+/** 输出目录显示文本双写(UI 改版 v4):抽屉 chip 与快速参数条 chip 同值同 title。 */
+function setOutputDirDisplay(dir: string): void {
+  const text = outputDirDisplayText(dir);
+  outputDirValue.textContent = text;
+  outputDirValue.title = text;
+  quickOutputDirChip.textContent = text;
+  quickOutputDirChip.title = text;
+}
+
+/** 打开目录选择对话框(抽屉「更改…」与快速参数条「更改…」共用);取消无动作。 */
+async function pickOutputDir(): Promise<void> {
+  try {
+    const dir = await window.api.selectDir();
+    if (!dir) return; // 用户取消
+    state.settings.outputDir = dir;
+    setOutputDirDisplay(dir);
+    persistSettings({ outputDir: dir });
+  } catch (err) {
+    const message = errorMessage(err);
+    setError(t("settings.selectDirFailed", { error: message }));
+  }
+}
+
 /* ---------- 设置事件绑定(组合根 init 处调用;任一控件变更即时生效并持久化) ---------- */
 export function bindSettingsEvents(): void {
   // 格式选择:记录当前选中格式(转换时使用),并持久化到设置
@@ -206,7 +271,9 @@ export function bindSettingsEvents(): void {
 
   /* ---------- 页面设置面板:任一控件变更即时生效并持久化 ---------- */
   // 界面重构 v3:纸张/方向改 seg 分段(radio 组;枚举 ≤5 → seg,guidelines §3.1),
-  // 组绑定模式与 alignInputs/themeInputs 一致
+  // 组绑定模式与 alignInputs/themeInputs 一致。
+  // UI 改版 v4:paperInputs/orientationInputs 为全文档同名组查询——快速参数条的
+  // 镜像分段自动纳入绑定与回填,此处零改动
   paperInputs.forEach((input) => {
     input.addEventListener("change", () => {
       if (!input.checked || state.hydratingSettings) return;
@@ -413,32 +480,14 @@ export function bindSettingsEvents(): void {
     persistHeaderFooter();
   });
 
-  // 模板预设:整体套用排版与页面设置,一次性回填所有相关控件并持久化
-  // (批次 11 迭代 3:硬编码 + 自定义预设统一走此路径)
+  // 模板预设:整体套用排版与页面设置(UI 改版 v4:抽屉与快速参数条两处 select
+  // 共用 applyTemplatePreset,批次 11 迭代 3 起硬编码 + 自定义预设统一走此路径)
   templatePresetSelect.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    const preset = allPresets(state.settings.customPresets).find(
-      (p) => p.id === templatePresetSelect.value,
-    );
-    if (!preset) return;
-    state.settings.typography = { ...preset.typography };
-    state.settings.pageSetup = { ...preset.pageSetup };
-    // hydration 保护下统一回填,避免逐个控件触发 change 写回;
-    // 回填同时按匹配结果同步 select 与 hint(当前即所选预设)
-    state.hydratingSettings = true;
-    applySettingsToControls();
-    state.hydratingSettings = false;
-    persistSettings({
-      typography: { ...state.settings.typography },
-      pageSetup: { ...state.settings.pageSetup },
-    });
-    // 界面重构 v3:预设切换即时反馈——toast 列出被覆盖的设置组(只陈述事实)
-    showToast(
-      t("toast.presetSwitched", {
-        name: preset.name,
-        groups: presetCoveredGroupLabels(preset),
-      }),
-    );
+    applyTemplatePreset(templatePresetSelect.value);
+  });
+
+  quickPresetSelect.addEventListener("change", () => {
+    applyTemplatePreset(quickPresetSelect.value);
   });
 
   // 批次 11 迭代 3:另存为预设(弹窗输入名称 → 保存当前排版+页面设置)
@@ -507,28 +556,27 @@ export function bindSettingsEvents(): void {
     showToast(t("toast.settingsReset"));
   });
 
-  // 批次 7:输出目录选择 / 恢复默认(空串 = 与源文件相同目录)
-  outputDirPick.addEventListener("click", () => {
-    void (async () => {
-    try {
-      const dir = await window.api.selectDir();
-      if (!dir) return; // 用户取消
-      state.settings.outputDir = dir;
-      outputDirValue.textContent = dir;
-      outputDirValue.title = dir;
-      persistSettings({ outputDir: dir });
-    } catch (err) {
-      const message = errorMessage(err);
-      setError(t("settings.selectDirFailed", { error: message }));
-    }
-    })();
-  });
+  // 批次 7 → UI 改版 v4:输出目录选择 / 恢复默认(空串 = 与源文件相同目录);
+  // 抽屉与快速参数条两处入口共享 pickOutputDir / setOutputDirDisplay
+  outputDirPick.addEventListener("click", () => void pickOutputDir());
+
+  quickOutputPickBtn.addEventListener("click", () => void pickOutputDir());
 
   outputDirReset.addEventListener("click", () => {
     state.settings.outputDir = "";
-    outputDirValue.textContent = outputDirDisplayText("");
-    outputDirValue.title = outputDirDisplayText("");
+    setOutputDirDisplay("");
     persistSettings({ outputDir: "" });
+  });
+
+  /* ---------- 快速参数条冒泡守卫(UI 改版 v4) ----------
+   * #quickBar 位于拖放区(#dropZone 点击/键盘 = 选择文件)内部:
+   * click 与键盘事件整体阻断冒泡,防止调参动作误触「打开文件对话框」;
+   * 阻断不影响各控件的自身交互(select 展开/radio 切换/button click 正常触发)。 */
+  quickBar.addEventListener("click", (event) => event.stopPropagation());
+  // 仅阻断 Enter/Space(拖放区以此打开文件对话框);Esc / Ctrl+Enter 等全局快捷键
+  // 监听在 document 上,须放行冒泡,否则聚焦参数条内时抽屉无法 Esc 关闭
+  quickBar.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") event.stopPropagation();
   });
 
   // i18n:界面语言切换(P0-4 自 radio 组改 select;选项由 LANGUAGES 注册表动态生成,

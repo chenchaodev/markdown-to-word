@@ -10,6 +10,9 @@
  * - 组合根 renderer.ts 调用:init 处 bindSettingsEvents()(settings-bindings)后再
  *   loadSettings()(时序与拆分前一致:事件绑定先于回填;loadSettings 的 await 回填
  *   不受绑定顺序影响)
+ * - UI 改版 v4:快速参数条(主界面)为抽屉的高频镜像——模板预设 select 与输出目录
+ *   chip 在回填/选项重建处双写(事件写入侧镜像在 settings-bindings);
+ *   paper/orientation 分段为同名 radio 组自动成组,无需显式镜像
  */
 import {
   DEFAULT_SETTINGS,
@@ -69,6 +72,8 @@ import {
   presetSaveBtn,
   presetSaveDialog,
   presetSaveError,
+  quickOutputDirChip,
+  quickPresetSelect,
   templatePresetHint,
   templatePresetSelect,
   themeInputs,
@@ -163,7 +168,8 @@ export async function loadSettings(): Promise<void> {
 export function applySettingsToControls(): void {
   const v = settingsToControlValues(state.settings);
   // 界面重构 v3:纸张/方向/标题档位/页眉模式与布局为 seg 分段(radio 组),
-  // 回填按值勾选对应档(与 alignInputs/themeInputs 同款)
+  // 回填按值勾选对应档(与 alignInputs/themeInputs 同款);
+  // UI 改版 v4:name 全文档成组——快速参数条同名镜像分段一并勾选,零额外代码
   paperInputs.forEach((input) => (input.checked = input.value === v.paper));
   orientationInputs.forEach(
     (input) => (input.checked = input.value === v.orientation),
@@ -190,13 +196,15 @@ export function applySettingsToControls(): void {
   headingNumberingInput.checked = v.headingNumbering;
   captionNumberingInput.checked = v.captionNumbering;
   // 模板预设:优先保持当前选中(值与设置一致时不弹回——自定义预设与硬编码预设
-  // 值全等时不被 find 抢走),否则回退全局匹配;无匹配回退「默认」并提示已进入自定义模式
+  // 值全等时不被 find 抢走),否则回退全局匹配;无匹配回退「默认」并提示已进入自定义模式。
+  // UI 改版 v4:抽屉 select 与快速参数条镜像 select 同步同值
   const matchedPresetId = resolvePresetSelection(
     state.settings.customPresets,
     state.settings,
     templatePresetSelect.value,
   );
   templatePresetSelect.value = matchedPresetId;
+  quickPresetSelect.value = matchedPresetId;
   const { hint, isCustom } = resolvePresetHint(
     state.settings.customPresets,
     matchedPresetId,
@@ -225,9 +233,12 @@ export function applySettingsToControls(): void {
   themeInputs.forEach(
     (input) => (input.checked = input.value === v.theme),
   );
-  // 输出目录:空串显示「与源文件相同目录」
+  // 输出目录:空串显示「与源文件相同目录」。
+  // UI 改版 v4:抽屉 chip 与快速参数条镜像 chip 同步同值同 title
   outputDirValue.textContent = v.outputDirText;
   outputDirValue.title = v.outputDirText;
+  quickOutputDirChip.textContent = v.outputDirText;
+  quickOutputDirChip.title = v.outputDirText;
   // 批次 16:PDF 样式 CSS 回显(settings.json 只存内容不存文件名,显示通用文案;
   // 非空 → 「已导入自定义 CSS」+ 清除按钮可用)。界面重构 v3:内容同步进文本域
   pdfCssTextInput.value = state.settings.pdfCss;
@@ -289,17 +300,23 @@ export function persistSettings(patch: Partial<AppSettings>): void {
 /* 纯逻辑(预设映射/名校验/上限判断/名称解析/边距钳制)收敛于 settings-logic.ts,
  * 本模块只保留 DOM 交互(弹窗显隐/焦点陷阱/错误提示/持久化调用)。 */
 
-/** 重建下拉选项:硬编码 3 项保留(HTML 静态),仅重刷自定义项(按 data-custom 标记)。 */
+/** 构建一个自定义预设 option(UI 改版 v4:两处 select 各需独立节点,不能复用)。 */
+function buildCustomOption(presetId: string, name: string): HTMLOptionElement {
+  const option = document.createElement("option");
+  option.value = presetId;
+  option.textContent = name;
+  option.dataset.custom = "1";
+  return option;
+}
+
+/** 重建下拉选项(UI 改版 v4 双写):硬编码 3 项保留(HTML 静态),仅重刷自定义项
+ *  (按 data-custom 标记);抽屉 #templatePreset 与快速参数条 #quickPreset 同步。 */
 function rebuildPresetOptions(): void {
-  templatePresetSelect
-    .querySelectorAll("option[data-custom]")
-    .forEach((option) => option.remove());
-  for (const preset of state.settings.customPresets.map(customPresetToTemplate)) {
-    const option = document.createElement("option");
-    option.value = preset.id;
-    option.textContent = preset.name;
-    option.dataset.custom = "1";
-    templatePresetSelect.appendChild(option);
+  for (const select of [templatePresetSelect, quickPresetSelect]) {
+    select.querySelectorAll("option[data-custom]").forEach((option) => option.remove());
+    for (const preset of state.settings.customPresets.map(customPresetToTemplate)) {
+      select.appendChild(buildCustomOption(preset.id, preset.name));
+    }
   }
 }
 
@@ -347,6 +364,7 @@ export async function saveCustomPreset(): Promise<void> {
     rebuildPresetOptions();
     // 显式选中新预设(值=当前设置,resolvePresetSelection 保持选中,不被硬编码项弹回)
     templatePresetSelect.value = customPresetToTemplate(entry).id;
+    quickPresetSelect.value = templatePresetSelect.value; // UI 改版 v4 镜像同步
     applySettingsToControls(); // 当前设置即新预设 → 自动选中并显示其 hint
   } catch {
     showPresetSaveError(t("preset.saveFailed"));

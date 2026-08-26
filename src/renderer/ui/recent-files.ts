@@ -1,11 +1,14 @@
 /**
- * renderer 最近转换(界面重构 v3 自「空态快捷 chips」改造为「常驻折叠历史条」):
- * - 历史条位于主舞台与消息区之间(不在拖放区内部),无记录整块 hidden 不占位;
+ * renderer 最近转换(UI 改版 v4 自「常驻折叠条」改造为「浮出面板」):
+ * - 标题条 40px 常驻占位(主舞台与消息区之间,安静、一眼可见),无记录整块 hidden
+ *   不占位;展开体为 absolute 浮层(.h-body,样式见 base.css §3.3),向上盖住舞台
+ *   下部——不挤压任何元素,舞台/消息区零位移;
  * - 行渲染走 rrow 模式(ui-guidelines §2):图标 + 文件名 + 格式徽标 + mono 时间,
  *   行内动作(重新转换 / 打开所在文件夹)默认安静,hover / focus-within 浮现;
- * - 折叠语义:data-open 驱动 CSS 展开/收起(histToggle 切换 + aria-expanded 同步);
- *   「空态默认展开、有文件默认收起」仅在舞台有无文件的状态发生变化时自动设定,
- *   用户手动切换后尊重其选择,直到该条件再次变化才自动干预;
+ * - 折叠语义:data-open 驱动 CSS 浮层显隐(histToggle 切换 + aria-expanded 同步);
+ *   初始一律收起(浮层语义下默认展开即默认遮挡);仅在 空→有文件 的状态跃迁时
+ *   自动收起一次(见 evaluateAutoCollapse),其余场景尊重手动切换;点击面板外自动
+ *   收起(浮层覆盖内容,外点关闭是浮层的标准退出路径);
  * - 交互语义沿用:单击行 = 加载到文件列表(不转换);「重新转换」= 按该条目记录的
  *   格式直接重转;「清空记录」清空并隐藏整条;
  * - 转换成功后由 convert-flow 经 state.recentRefreshHandler 回调刷新
@@ -40,28 +43,41 @@ import { t, type I18nKey } from "../../core/i18n.js";
 const MAX_RECENT_FILES = 10;
 
 /* ---------- 折叠状态 ---------- */
-/** 上一次自动干预时的「舞台有无文件」状态(null = 尚未初始化,首次渲染必设定)。 */
+/**
+ * 上一次「舞台有无文件」状态(null = 尚未初始化,首次渲染必设定)。
+ * UI 改版 v4 浮层语义:展开体覆盖舞台下部,「默认展开」=「默认遮挡」,故初始一律
+ * 收起;仅在 空→有文件 的状态跃迁时自动收起一次(用户此时正聚焦新内容,浮层
+ * 不该压在其上),其余场景尊重手动切换。v3 的「空态默认展开」随浮层方案废弃。
+ */
 let lastStageHasFiles: boolean | null = null;
 
-/** 写入折叠态:data-open 驱动 CSS(grid-rows 过渡),aria-expanded 同步给读屏。 */
+/** 写入折叠态:data-open 驱动 CSS 浮层显隐,aria-expanded 同步给读屏。 */
 function setHistoryOpen(open: boolean): void {
   historyBar.dataset.open = open ? "true" : "false";
   histToggle.setAttribute("aria-expanded", String(open));
 }
 
+/** 舞台状态变化时的自动收起判定(state.stageChangedHandler 注册体,见文件尾绑定)。 */
+function evaluateAutoCollapse(): void {
+  const stageHasFiles = state.selectedFiles.length > 0;
+  if (lastStageHasFiles !== null && stageHasFiles && !lastStageHasFiles) {
+    setHistoryOpen(false); // 空 → 有文件:收起浮层,让位新内容
+  }
+  lastStageHasFiles = stageHasFiles;
+}
+
 /* ---------- 历史条渲染 ---------- */
-/** 重建历史行;空列表隐藏整个历史条(含标题条与「清空记录」)。 */
+/** 重建历史行;空列表隐藏整个历史条(含标题条与「清空记录」);首次渲染收起。 */
 export function renderRecentList(recent: RecentFile[]): void {
   const items = recent.slice(0, MAX_RECENT_FILES);
   historyBar.classList.toggle("hidden", items.length === 0);
   if (items.length === 0) return; // 整块隐藏时无需渲染行与折叠态
   histCount.textContent = String(items.length);
   recentList.replaceChildren(...items.map(renderRecentRow));
-  // 空态默认展开、有文件默认收起:仅当舞台状态变化时自动设定(尊重手动切换)
-  const stageHasFiles = state.selectedFiles.length > 0;
-  if (stageHasFiles !== lastStageHasFiles) {
-    lastStageHasFiles = stageHasFiles;
-    setHistoryOpen(!stageHasFiles);
+  // 首次渲染:浮层一律收起(v4 浮层语义,默认展开即默认遮挡)
+  if (lastStageHasFiles === null) {
+    lastStageHasFiles = state.selectedFiles.length > 0;
+    setHistoryOpen(false);
   }
 }
 
@@ -183,13 +199,24 @@ export async function refreshRecentFiles(): Promise<void> {
 /* ---------- 事件绑定(MR-10:顶层监听迁入 bind*Events 范式,组合根 renderer.ts
  *  在 bindEvents() 后调用) ---------- */
 /**
- * 交互接线:histToggle 切换折叠(data-open + aria-expanded,CSS 按 data-open 展开);
- * recentList 事件委托——动作按钮按 data-action 分派(重新转换 / 打开所在文件夹),
- * 其余点击落在行上 = 仅加载到列表(不转换)。历史条不在拖放区内部,无需拦截冒泡。
+ * 交互接线:histToggle 切换浮层显隐(data-open + aria-expanded,CSS 按 data-open
+ * 过渡);document 外点关闭(浮层盖内容,外点收起是标准退出路径;toggle 与面板内
+ * 点击均落在 historyBar 内部,不会误触);recentList 事件委托——动作按钮按
+ * data-action 分派(重新转换 / 打开所在文件夹),其余点击落在行上 = 仅加载到列表
+ * (不转换)。历史条不在拖放区内部,无需拦截冒泡。
  */
 export function bindRecentFilesEvents(): void {
+  // 舞台状态变化 → 自动收起判定(反向注册,file-list.renderSelection 调用)
+  state.stageChangedHandler = evaluateAutoCollapse;
+
   histToggle.addEventListener("click", () => {
     setHistoryOpen(historyBar.dataset.open !== "true");
+  });
+
+  document.addEventListener("click", (event) => {
+    if (historyBar.dataset.open !== "true") return;
+    if (!(event.target instanceof Node)) return;
+    if (!historyBar.contains(event.target)) setHistoryOpen(false);
   });
 
   recentList.addEventListener("click", (event) => {

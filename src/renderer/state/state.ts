@@ -68,4 +68,8 @@ export const state = {
    *  打破 recent-files ↔ convert-flow 的 ESM 循环依赖;组合根 renderer.ts 接线)。
    *  允许返回 Promise(注册方 refreshRecentFiles 为 async,内部已自吞错误)。 */
   recentRefreshHandler: null as (() => void | Promise<void>) | null,
+  /** 舞台状态(有无文件)变化回调(UI 改版 v4:recent-files 注册、file-list.
+   *  renderSelection 调用;历史浮出面板据此自动收起,避免浮层持续覆盖新内容)。
+   *  与 recentRefreshHandler 同款反向注册模式,不引入 ESM 环。 */
+  stageChangedHandler: null as (() => void) | null,
 };

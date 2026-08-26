@@ -19,6 +19,7 @@
     "gen:fixtures": "node test/tools/gen-fixtures.mjs",
     "check:fixtures": "node test/tools/gen-fixtures.mjs --check",
     "test:smoke": "node scripts/check-build-fresh.mjs && electron . --smoke",
+    "ui:shots": "electron test/tools/visual-check.mjs",
     "icons": "node scripts/svg-to-ico.mjs",
     "test:coverage": "npm run build && c8 --reporter=text --include=\"dist/**\" electron test/acceptance.mjs",
     "test:all": "npm run test && npm run test:smoke",
