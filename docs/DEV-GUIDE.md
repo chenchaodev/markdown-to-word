@@ -26,6 +26,22 @@
 | `npm run check:fixtures` | fixtures 漂移校验(幂等,exit 0/1;CI 门禁步骤) |
 | `npm run icons` | SVG 图标转 ICO(`scripts/svg-to-ico.mjs`) |
 
+## 本地打包注意事项
+
+`npm run dist`(electron-builder NSIS)在本机实测踩到三类坑,根因与完整解法见 `docs/RESEARCH.md`「Windows 本地打包踩坑」:
+
+- **Defender 重命名 EPERM**:electron 解压到 `win-unpacked.tmp` 后被 Windows Defender 实时扫描锁文件句柄,`rename .tmp → win-unpacked` 失败。绕过:用 `--config.electronDist=<node_modules/electron/dist>` 直接喂 npm install 已解压的 electron 发行目录,electron-builder 改为 copy(非解压后 rename)。
+- **长路径 / OneDrive 锁**:项目在 `Documents\opencode\...`(OneDrive 同步)时,即便建 junction 也仍解析真实路径写入,重命名同样失败且路径过长。绕过:用 `--config.directories.output=<非 OneDrive 短路径>` 重定向输出(如 `C:\m2w-out`,路径依环境而定)。
+- **镜像 env 未转发**:`.npmrc` 的 `electron_builder_binaries_mirror` 仅是 npm 配置键,electron-builder 读不到,须显式 `ELECTRON_BUILDER_BINARIES_MIRROR`(及 `ELECTRON_MIRROR`)环境变量再构建,否则回退 GitHub 下载超时。
+
+完整命令示例:
+
+```bash
+$env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
+$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=node_modules\electron\dist
+```
+
 **单段筛选**:设 `M2W_ONLY` 环境变量只跑命中的段(逗号分隔子串、大小写不敏感,如 `M2W_ONLY='slug,image-type'`),改一个 handler 不必全量重跑。
 
 > ⚠️ **测试对象是 dist 非 src**:验收/smoke 跑的是 `dist/` 编译产物。绕过 npm 直接 `electron test/acceptance.mjs` 会静默测旧产物无任何提示——改动后务必经 `npm run build` 或 `npm run test`(自带 build)。
