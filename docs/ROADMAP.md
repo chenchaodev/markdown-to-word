@@ -128,7 +128,7 @@
 - [ ] **F7 目录带页码**(ADR-007 混合路线,部分推翻 D1;批①已完成 2026-08-28,批②开发):
   - [x] **F7-① docx opt-in Word 域目录**:settings 新增 `tocMode: 'static' | 'field'`(默认 static=现状免更新静态目录);field=真实 TOC 域(beginDirty 触发 Word/WPS 打开更新、注入真实页码);双格式一致开关;`toc-caption.test.js` 补断言;UI 抽屉 L2 目录模式下拉 + i18n 三语
   - [x] **F7-② PDF 两遍法静态页码**:field 模式触发——第一遍打印经既有 /Dests 命名目标解析定位标题页码(pageNumbersForNames,与书签大纲同源,免 pdfjs 文本匹配)→ 第二遍注入目录页码 span(.toc-page 点线引导)重印;TOC 后硬分页符保正文布局一致;自动断言见 test/segments/toc-pagenum.test.js(/Dests 解析页码 + 注入一致、随文档顺序单调);WPS 行为纳入双实测
-- [ ] **F8 合并转换增强**(C2):合并时统一重编标题编号/题注号 + 总目录;建议在 F7 后(总目录复用 TOC 机制)
+- [x] **F8 合并总目录增强**(C2):合并已是单 convert 通路(mergeMarkdowns → convert 一次),标题/题注编号本就跨文件连续、TOC 本就覆盖全文;本项固化「合并总目录覆盖全部源文件标题 + 跨文件页码准确」(field 模式两遍法,经文件间 page-break 起新页,B 页码严格大于 A);自动断言见 test/segments/merge-toc.test.js(docx+pdf 双格式总目录覆盖 A+B 共 8 标题、PDF 跨文件页码单调且 B>A、.toc-page 注入);typecheck/lint/build/61 段/smoke 全绿;状态:完成(未发布)
 - [ ] **F9 docx 模板导入**:已拍板浅导入 v1(ADR-008)——jszip 解包模板提取 Heading/Normal 样式 rPr 映射现有 settings/theme 字段(含页面尺寸边距);深导入列后续独立候选
 
 #### 记录不排期(2026-08-25 用户裁定)
