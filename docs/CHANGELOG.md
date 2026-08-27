@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [3.3.0] - 2026-08-28
+- **F7 目录带页码(混合路线,部分推翻 ADR-007 D1 免更新路线;typecheck/lint/build/60 段/smoke 全绿)**:新增「目录模式」设置 `tocMode: static | field`(单源 + 双格式一致开关 + 设置抽屉 L2 下拉 + i18n zh/en/ja),GUI 实测通过(ACCEPTANCE D1/D2 全勾);docx field 模式 `beginDirty:true` 触发 Word/WPS 打开更新域、注入真实页码(toc-caption.test.js 断言);PDF field 模式触发两遍法静态页码——复用既有 `/Dests` 命名目标解析定位标题页码(与书签大纲同源,免 pdfjs 文本匹配)→ 第二遍注入 `.toc-page` 点线引导页码重印,TOC 后硬分页符保正文布局一致(toc-pagenum.test.js 断言);默认 static 维持升级前免更新行为
+
 ## [3.2.0] - 2026-08-28
 - **转换预检报告(F6)实现 + GUI 实测通过**(版本号四源统一 package.json=lockfile=tag v3.2.0=CHANGELOG [3.2.0];typecheck/lint/build/59 段/smoke 全绿):转换前静态体检三类问题——缺失本地图片、悬空交叉引用(#sec:x 无对应 {#sec:x})、未标注语言代码块;核心 src/core/markdown/precheck.ts 纯函数 + DI(exists 默认 fs.existsSync),复用 imageNotFoundWarning/crossRefNotFoundWarning + 新增 unlabeledCodeBlockWarning;i18n zh/en/ja 补齐 warn.unlabeledCodeBlock/precheck.*;IPC convert:precheck 单源通道 + preload 镜像 + 报告弹窗(「校」校勘印章,复用既有朱砂警示语汇);单文件/批量/合并转换前统一触发,无问题静默继续、有问题弹报告(继续/取消);自动断言见 test/segments/precheck.test.js
 - **F5 文字水印 GUI 实测通过**(随本版关闭:W1 四项全勾——docx/PDF 水印旋转置底、空文字零渲染、浅灰开关、恢复默认不入预设);详见 3.1.0 条目
