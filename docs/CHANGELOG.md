@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [3.0.1] - 2026-08-27
+- **界面打磨遗留项③+④**(v3「印刷付梓」设计稿还原收尾;typecheck/lint/build 全绿):③主按钮就绪态脉冲引导(convert/batch/merge 加 `pulse` class,CSS `.btn.pulse:not(:disabled)` 呼吸光环,转换中禁用自动停脉冲);④状态行 busy/ok 呼吸色(`utils.setStatus` 增 `setStatusTone` tone 类,CSS `.status--busy/--ok::before` 圆点呼吸,错误/警告自动清 tone,尊重 prefers-reduced-motion);①模板预设卡化 / ②单文件卡能力 chips 用户裁定暂不执行,记 ROADMAP 待后续
+
 ## [3.0.0] - 2026-08-27
 - **界面重大重构:合并发布 v3「印刷付梓」与 v4「常驻文稿台」**(主版本号跃迁 2→3;GUI 实测全部通过;typecheck/lint/build/57 段/smoke 全绿;版本号四源统一 package.json=lockfile=tag v3.0.0=CHANGELOG [3.0.0]):
 - **v3「印刷付梓」**(界面重构主体,原 2.2.0 并入本主版本统一发布;设计三件套 docs/design/(样稿/信息架构/规范)落盘):应用图标朱砂钤印母题重做(渐变圆角方块+内描白环+衬线「梓」path 轮廓),ico 六尺寸重生成 + dev/任务栏图标接线;主进程 win32 无边框自绘标题栏(titleBarStyle:hidden+titleBarOverlay 保留原生控制钮与 Snap 布局),overlay 配色单源 + 启动按持久化主题同步 + 跟随系统深浅色;renderer 设计令牌 CSS 变量双主题 + 纸张颗粒氛围层 + 响应式四档;抽屉七组编号 01-07 控件形态按规范映射(seg 分段×6/字号 stepper/行距 range+mono 回显/PDF CSS 文本域/恢复默认);最近转换改常驻折叠历史条(rrow 行内重转);toast 单实例轻提示;align 布尔升级枚举分段(存储契约不变旧档归一化);i18n 三语各 +51 键;实测反馈修复设置按钮归位右上角窗口控制区左侧
