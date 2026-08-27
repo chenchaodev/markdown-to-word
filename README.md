@@ -45,13 +45,13 @@ npm run dist
 npm run typecheck   # TypeScript 类型检查
 npm run lint        # ESLint
 npm run build       # 构建
-npm run test        # 验收测试（51 段零注册测试，按内容主题自动发现）
+npm run test        # 验收测试（62 段零注册测试，按内容主题自动发现）
 npm run test:smoke  # Electron smoke 测试
 npm run test:coverage  # 覆盖率
 npm run test:all    # 验收 + smoke
 ```
 
-测试体系：`test/` 下按内容主题组织的零注册验收测试（segments 渲染层与纯逻辑 + main 主进程层，当前 51 段），静态样例在 `test/fixtures/`，产物输出到 `output/`。
+测试体系：`test/` 下按内容主题组织的零注册验收测试（segments 渲染层与纯逻辑 + main 主进程层，当前 62 段），静态样例在 `test/fixtures/`，产物输出到 `output/`。
 
 ## 文档
 
