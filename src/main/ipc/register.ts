@@ -28,6 +28,7 @@ import {
   MAX_PDF_CSS_BYTES,
   type AppSettings,
   type ExportPresetsResult,
+  type ImportDocxTemplateResult,
   type ImportPdfCssResult,
   type ImportPresetsResult,
 } from "../persist/settings.js";
@@ -50,6 +51,7 @@ import {
   type ConvertResult,
 } from "../converter/index.js";
 import { getKatexDir } from "../services/resource-dirs.js";
+import { importDocxTemplate } from "../../core/docx/template-import.js";
 import { getMainWindow } from "../windows/main-window.js";
 import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
 import { IPC_CHANNELS as CH, type ConvertMode } from "./channels.js";
@@ -386,6 +388,36 @@ export function registerIpc(): void {
       },
     }),
   );
+
+  // F9:导入 Word 模板(.docx,浅导入 v1,ADR-008):选文件 → 读字节 → 解包提取样式/页面
+  // → 与现有设置合并(typography/pageSetup 各自深合并)→ 持久化 → 返回合并后完整对象。
+  // 取消 → { ok:true, canceled:true };读取/解析异常 → { ok:false, error }(可读文案)
+  ipcMain.handle(CH.templateImportDocx, async (): Promise<ImportDocxTemplateResult> => {
+    const result = await dialog.showOpenDialog({
+      title: t("dialog.importDocxTemplate"),
+      defaultPath: await lastOpenDirIfValid(),
+      filters: [{ name: "Word 文档", extensions: ["docx"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: true, canceled: true };
+    }
+    try {
+      const filePath = result.filePaths[0]!; // 上方已拦截取消与空列表,首项必存在
+      const buf = await fs.readFile(filePath);
+      const partial = await importDocxTemplate(new Uint8Array(buf));
+      const settings = loadSettings();
+      const merged = {
+        typography: { ...settings.typography, ...partial.typography },
+        pageSetup: { ...settings.pageSetup, ...partial.pageSetup },
+      };
+      await updateSettings({ typography: merged.typography, pageSetup: merged.pageSetup });
+      await saveUiState({ lastOpenDir: path.dirname(filePath) }).catch(() => undefined);
+      return { ok: true, canceled: false, typography: merged.typography, pageSetup: merged.pageSetup };
+    } catch (err) {
+      return { ok: false, error: t("template.readFailed", { error: errorMessage(err) }) };
+    }
+  });
 
   // 批次 11:UI 状态读写(最近文件/会话文件/记忆目录/窗口位置/面板展开态;独立于 settings)
   ipcMain.handle(CH.uiStateGet, (): UiState => loadUiState());

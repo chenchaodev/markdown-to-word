@@ -129,7 +129,7 @@
   - [x] **F7-① docx opt-in Word 域目录**:settings 新增 `tocMode: 'static' | 'field'`(默认 static=现状免更新静态目录);field=真实 TOC 域(beginDirty 触发 Word/WPS 打开更新、注入真实页码);双格式一致开关;`toc-caption.test.js` 补断言;UI 抽屉 L2 目录模式下拉 + i18n 三语
   - [x] **F7-② PDF 两遍法静态页码**:field 模式触发——第一遍打印经既有 /Dests 命名目标解析定位标题页码(pageNumbersForNames,与书签大纲同源,免 pdfjs 文本匹配)→ 第二遍注入目录页码 span(.toc-page 点线引导)重印;TOC 后硬分页符保正文布局一致;自动断言见 test/segments/toc-pagenum.test.js(/Dests 解析页码 + 注入一致、随文档顺序单调);WPS 行为纳入双实测
 - [x] **F8 合并总目录增强**(C2):合并已是单 convert 通路(mergeMarkdowns → convert 一次),标题/题注编号本就跨文件连续、TOC 本就覆盖全文;本项固化「合并总目录覆盖全部源文件标题 + 跨文件页码准确」(field 模式两遍法,经文件间 page-break 起新页,B 页码严格大于 A);自动断言见 test/segments/merge-toc.test.js(docx+pdf 双格式总目录覆盖 A+B 共 8 标题、PDF 跨文件页码单调且 B>A、.toc-page 注入);typecheck/lint/build/61 段/smoke 全绿;状态:完成(未发布)
-- [ ] **F9 docx 模板导入**:已拍板浅导入 v1(ADR-008)——jszip 解包模板提取 Heading/Normal 样式 rPr 映射现有 settings/theme 字段(含页面尺寸边距);深导入列后续独立候选
+  - [x] **F9 docx 模板导入**:浅导入 v1(ADR-008)已完成——jszip 解包 .docx 提取 Normal/Heading1 样式 rPr(字体 ascii/eastAsia)+ 字号 + 文档 sectPr(页面尺寸/边距),映射回 typography/pageSetup 设置(标题样式字体优先、页面尺寸匹配纸张+朝向判定);UI 设置抽屉 01 预设·管理动作行新增「导入 Word 模板」按钮(F4 同 IA 落位),main 打开对话框→解包合并持久化→回填;颜色等深导入留后续独立候选;自动断言见 test/segments/template-import.test.js(纵向 A4+横向 Letter 两案例);typecheck/lint/build/62 段/smoke 全绿;状态:完成(未发布)
 
 #### 记录不排期(2026-08-25 用户裁定)
 - B2 HTML 白名单扩展(块级标签+受控属性)、HTML 导出第三格式、frontmatter 元数据扩展——有价值但未入选本轮,后续可重新提案

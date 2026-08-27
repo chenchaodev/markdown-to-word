@@ -3,7 +3,7 @@
 // preload.cjs 运行时只能 require electron,不能加载本项目 ESM 模块)无法直接
 // import,侧内镜像同名常量,漂移由 test/segments/ipc-channels.test.js 恒等断言兜底。
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { AppSettings, ExportPresetsResult, ImportPdfCssResult, ImportPresetsResult } from "./persist/settings.js";
+import type { AppSettings, ExportPresetsResult, ImportDocxTemplateResult, ImportPdfCssResult, ImportPresetsResult } from "./persist/settings.js";
 import type { ConvertWarning } from "../core/i18n.js";
 import type { ConvertProgressPayload } from "./ipc/channels.js";
 import type { UiState } from "./persist/ui-state.js";
@@ -28,6 +28,7 @@ const CH = {
   presetsImport: "presets:import",
   presetsExport: "presets:export",
   cssImport: "css:import",
+  templateImportDocx: "template:importDocx",
   settingsGet: "settings:get",
   settingsSet: "settings:set",
   themeSyncOverlay: "theme:syncOverlay",
@@ -98,6 +99,9 @@ const api = {
   /** 批次 16:导入 CSS 文件作为 PDF 样式模板(选文件 → 读内容 → 返回 css+文件名);
    *  取消 → { ok:true, canceled:true };超限/读取失败 → { ok:false, error } */
   importPdfCss: (): Promise<ImportPdfCssResult> => ipcRenderer.invoke(CH.cssImport),
+  /** F9:导入 Word 模板(.docx,浅导入 v1):选文件 → 解包提取样式/页面 → 合并持久化;
+   *  取消 → { ok:true, canceled:true };解析/读取失败 → { ok:false, error } */
+  importDocxTemplate: (): Promise<ImportDocxTemplateResult> => ipcRenderer.invoke(CH.templateImportDocx),
   /** 批次 11:读取 UI 状态(最近文件/会话文件/记忆目录/窗口位置/面板展开态)。 */
   uiStateGet: (): Promise<UiState> => ipcRenderer.invoke(CH.uiStateGet),
   /** 批次 11:局部更新 UI 状态并持久化,返回合并后的完整状态。 */

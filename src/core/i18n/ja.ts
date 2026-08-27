@@ -320,6 +320,12 @@ const dict: Partial<Record<Dict, string>> = {
     "preset.noneToExport": "エクスポート可能なカスタムプリセットがありません",
     "preset.readFailed": "ファイルの読み込みに失敗しました:${error}",
     "preset.writeFailed": "ファイルの書き込みに失敗しました:${error}",
+    // F9:docx テンプレート导入(浅い导入 v1)
+    "dialog.importDocxTemplate": "Word テンプレートをインポート",
+    "settings.importDocxTemplate": "Word テンプレートをインポート…",
+    "settings.importDocxTemplateTitle": "Word 文書からフォントと用紙サイズをインポート",
+    "template.readFailed": "Word テンプレートのインポートに失敗しました:${error}",
+    "template.imported": "Word テンプレートを適用しました(フォントと用紙サイズを更新)",
     "preset.invalidJson": "有効な JSON ファイルではありません",
     "preset.unsupportedVersion": "対応していないテンプレートファイルのバージョンです",
     "preset.noValidPresets": "有効なプリセットがファイルに含まれていません",

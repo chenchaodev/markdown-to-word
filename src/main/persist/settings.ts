@@ -359,6 +359,16 @@ export type ImportPdfCssResult =
   | { ok: true; canceled: false; css: string; name: string }
   | { ok: false; error: string };
 
+/* ---------- F9:docx 模板导入(浅导入 v1,对话框/文件 IO 在 ipc/register.ts) ---------- */
+/**
+ * docx 模板导入结果:成功返回合并后的完整 typography/pageSetup(供 renderer 回填);
+ * 取消 → { ok:true, canceled:true };解析/读取异常 → { ok:false, error }。
+ */
+export type ImportDocxTemplateResult =
+  | { ok: true; canceled: true }
+  | { ok: true; canceled: false; typography: TypographySettings; pageSetup: PageSetup }
+  | { ok: false; error: string };
+
 /** 导出文件的 schemaVersion(导入侧仅接受 === 1 或裸数组)。 */
 export const PRESETS_SCHEMA_VERSION = 1;
 

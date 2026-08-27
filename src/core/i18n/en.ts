@@ -327,6 +327,12 @@ const dict = {
     "preset.noneToExport": "No custom presets to export",
     "preset.readFailed": "Failed to read file: ${error}",
     "preset.writeFailed": "Failed to write file: ${error}",
+    // F9: docx template import (shallow v1)
+    "dialog.importDocxTemplate": "Import Word template",
+    "settings.importDocxTemplate": "Import Word template…",
+    "settings.importDocxTemplateTitle": "Import fonts and page size from a Word document",
+    "template.readFailed": "Failed to import Word template: ${error}",
+    "template.imported": "Word template applied (fonts and page size updated)",
     "preset.invalidJson": "File is not valid JSON",
     "preset.unsupportedVersion": "Unsupported template file version",
     "preset.noValidPresets": "File contains no valid presets",

@@ -182,6 +182,10 @@ export const pdfCssImportBtn = document.getElementById(
 export const pdfCssClearBtn = document.getElementById(
   "pdfCssClearBtn",
 ) as HTMLButtonElement;
+// F9:docx 模板导入(浅导入 v1)按钮(01 预设·管理动作行第四个钮)
+export const docxTemplateImportBtn = document.getElementById(
+  "docxTemplateImportBtn",
+) as HTMLButtonElement;
 export const pdfCssStatus = document.getElementById(
   "pdfCssStatus",
 ) as HTMLSpanElement;

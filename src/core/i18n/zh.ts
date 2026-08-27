@@ -329,6 +329,12 @@ const dict = {
     "preset.noneToExport": "暂无自定义预设可导出",
     "preset.readFailed": "读取文件失败:${error}",
     "preset.writeFailed": "写入文件失败:${error}",
+    // F9:docx 模板导入(浅导入 v1)
+    "dialog.importDocxTemplate": "导入 Word 模板",
+    "settings.importDocxTemplate": "导入 Word 模板…",
+    "settings.importDocxTemplateTitle": "从 Word 文档导入字体与页面尺寸",
+    "template.readFailed": "导入 Word 模板失败:${error}",
+    "template.imported": "已应用 Word 模板(字体与页面尺寸已更新)",
     "preset.invalidJson": "文件不是有效的 JSON",
     "preset.unsupportedVersion": "不支持的模板文件版本",
     "preset.noValidPresets": "文件不含有效预设",

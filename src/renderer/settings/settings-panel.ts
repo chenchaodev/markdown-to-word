@@ -490,6 +490,33 @@ export function clearPdfCss(): void {
   pdfCssClearBtn.classList.add("hidden");
 }
 
+/* ---------- docx 模板导入(F9 浅导入 v1;main 内选文件 + 解包提取 + 合并持久化全包) ---------- */
+/** 导入 Word 模板:main 打开对话框 → 解包提取 Normal/Heading1 样式与 sectPr →
+ *  合并进 typography/pageSetup 并持久化。成功后刷新内存设置并回填控件;取消无动作;
+ *  失败状态区提示。v1 浅导入:仅字体/字号/页面尺寸边距,颜色等深导入留后续。 */
+export async function importDocxTemplate(): Promise<void> {
+  try {
+    const r = await window.api.importDocxTemplate();
+    if (!r.ok) {
+      setError(t("template.readFailed", { error: r.error }));
+      return;
+    }
+    if (r.canceled) return; // 用户取消:无动作
+    try {
+      const fresh = await window.api.settingsGet();
+      state.settings.typography = fresh.typography;
+      state.settings.pageSetup = fresh.pageSetup;
+    } catch {
+      /* 忽略:刷新失败时控件保持旧值,但设置已持久化 */
+    }
+    applySettingsToControls();
+    setStatus(t("template.imported"));
+  } catch (err) {
+    const message = errorMessage(err);
+    setError(t("template.readFailed", { error: message }));
+  }
+}
+
 /* ---------- 转换完成弹窗提示(批次 11 迭代 2;ui-state 字段,非 settings.json) ---------- */
 /**
  * 同步「不再提示」checkbox 与内存态(控件仅存于完成弹窗内;设置面板侧控件已按

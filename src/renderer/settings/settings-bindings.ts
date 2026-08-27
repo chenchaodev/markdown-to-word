@@ -76,6 +76,7 @@ import {
   paperInputs,
   pdfCssClearBtn,
   pdfCssImportBtn,
+  docxTemplateImportBtn,
   pdfCssStatus,
   pdfCssTextInput,
   presetDeleteBtn,
@@ -109,6 +110,7 @@ import {
   deleteCustomPreset,
   exportCustomPresets,
   importCustomPresets,
+  importDocxTemplate,
   importPdfCss,
    mirrorLanguage,
    openPresetSaveDialog,
@@ -564,6 +566,7 @@ export function bindSettingsEvents(): void {
   presetExportBtn.addEventListener("click", () => void exportCustomPresets());
   // 批次 16:PDF 样式 CSS 导入 / 清除(IIFE + void,规避 no-misused-promises)
   pdfCssImportBtn.addEventListener("click", () => void importPdfCss());
+  docxTemplateImportBtn.addEventListener("click", () => void importDocxTemplate());
   pdfCssClearBtn.addEventListener("click", clearPdfCss);
 
   // 界面重构 v3:PDF 自定义 CSS 文本域(IA 06 textarea 形态;与导入/清除同写

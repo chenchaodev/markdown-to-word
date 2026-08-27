@@ -55,6 +55,9 @@ export const IPC_CHANNELS = {
   /* ---- CSS 域 ---- */
   /** 导入 CSS 文件作为 PDF 样式模板 */
   cssImport: "css:import",
+  /* ---- docx 模板导入(F9 浅导入 v1) ---- */
+  /** 导入 Word 模板(.docx):解包提取样式/页面映射到当前设置 */
+  templateImportDocx: "template:importDocx",
   /* ---- 设置域 ---- */
   settingsGet: "settings:get",
   settingsSet: "settings:set",
