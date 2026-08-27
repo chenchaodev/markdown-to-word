@@ -107,12 +107,12 @@ export async function run() {
     assert(r8.breakBeforeH1 === true && r8.toc === false, "合法布尔应保留");
     assert(r8.equationNumbering === false, "合法布尔(equationNumbering)应保留");
 
-    // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 13 键核对 ----
+    // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 15 键核对 ----
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
-    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 14 键(F4 起 + headerFooter)");
+    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter", "watermark"];
+    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 15 键(F4 起 + headerFooter + F5 watermark)");
     for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));
