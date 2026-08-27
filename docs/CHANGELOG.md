@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [3.4.0] - 2026-08-28
+- **F8 合并总目录增强(固化,无核心代码新增;typecheck/lint/build/61 段/smoke 全绿)**:合并本就走单 convert 通路(mergeMarkdowns → convert 一次),标题/题注编号本就跨文件连续、TOC 本就覆盖全文;本版补测试固化「合并总目录覆盖全部源文件标题 + 跨文件页码准确」(field 模式两遍法,经文件间 page-break 起新页,B 页码严格大于 A);自动断言见 test/segments/merge-toc.test.js(docx+pdf 双格式总目录覆盖 A+B 共 8 标题、PDF 跨文件页码单调且 B>A、.toc-page 注入);GUI 实测待用户复核(ACCEPTANCE F8 D1)
+
 ## [3.3.0] - 2026-08-28
 - **F7 目录带页码(混合路线,部分推翻 ADR-007 D1 免更新路线;typecheck/lint/build/60 段/smoke 全绿)**:新增「目录模式」设置 `tocMode: static | field`(单源 + 双格式一致开关 + 设置抽屉 L2 下拉 + i18n zh/en/ja),GUI 实测通过(ACCEPTANCE D1/D2 全勾);docx field 模式 `beginDirty:true` 触发 Word/WPS 打开更新域、注入真实页码(toc-caption.test.js 断言);PDF field 模式触发两遍法静态页码——复用既有 `/Dests` 命名目标解析定位标题页码(与书签大纲同源,免 pdfjs 文本匹配)→ 第二遍注入 `.toc-page` 点线引导页码重印,TOC 后硬分页符保正文布局一致(toc-pagenum.test.js 断言);默认 static 维持升级前免更新行为
 
