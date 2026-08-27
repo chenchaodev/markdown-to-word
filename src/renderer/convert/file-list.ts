@@ -190,6 +190,11 @@ export function updateActionButtons(): void {
   convertBtn.disabled = busy || n !== 1;
   batchBtn.disabled = busy || !multi;
   mergeBtn.disabled = busy || !multi;
+  // 3.0 打磨遗留项③:就绪态主按钮脉冲引导(Ctrl+Enter/Ctrl+O 可触发时)
+  // CSS 以 .pulse:not(:disabled) 守卫,转换中禁用即自动停脉冲
+  convertBtn.classList.toggle("pulse", !busy && single);
+  batchBtn.classList.toggle("pulse", !busy && multi);
+  mergeBtn.classList.toggle("pulse", !busy && multi);
   // 单文件态预览:仅选中 1 个文件时可见(队列卡头侧),转换中禁用
   previewBtn.classList.toggle("hidden", !single);
   previewBtn.disabled = busy || !single;

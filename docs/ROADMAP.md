@@ -119,10 +119,10 @@
 ### 功能开发排期 F1-F9(2026-08-25 立项,2.0.0 后新阶段)
 > 依据:@explorer 能力盘点 + @librarian 竞品对标双路调研(存档 archive/2026-08-25-182036-功能候选调研与迭代排期.md);用户拍板 9 项做、3 项记录不排期。**两项推翻既有决策**:目录带页码推翻批次 8 的 D1 免更新路线决策(拍板后须更新 ADR);docx 模板导入解除 2026-08-14 暂缓裁决(原否 docx4js+OOXML 逆映射,须重新探技术路线)。每批独立提交可回退,GUI 面改动走 ACCEPTANCE 人工实测。
 
-- [ ] **F1 图片控制增强**(B1):`{width=..}`/`{height=..}` 图片属性语法(Pandoc 风格)+ figure 题注语义绑定(图片独立成段且后跟「图：」行时绑定居中);落点 image-run handler + CROSS_REF_KINDS 表驱动;双格式对齐
-- [ ] **F2 表格列宽控制**(B3):列宽语法支持与自适应策略;双格式对齐
-- [ ] **F3 标题排版粒度**(A3):各级标题字号/间距独立设置(settings typography 扩展 + 抽屉 L2)
-- [ ] **F4 页眉页脚自定义**(A1):页眉文字/logo 图片/左右分栏模板(docx header/footer 扩展 + pdf printToPDF headerFooter);补齐「交付全家桶」最后缺口
+- [x] **F1 图片控制增强**(B1):`{width=..}`/`{height=..}` 图片属性语法(Pandoc 风格)+ figure 题注语义绑定(图片独立成段且后跟「图：」行时绑定居中);落点 image-run handler + CROSS_REF_KINDS 表驱动;双格式对齐——**已完成(2.1.0,GUI 实测通过)**
+- [x] **F2 表格列宽控制**(B3):列宽语法支持与自适应策略;双格式对齐——**已完成(2.1.0,GUI 实测通过)**
+- [x] **F3 标题排版粒度**(A3):各级标题字号/间距独立设置(settings typography 扩展 + 抽屉 L2)——**已完成(2.1.0,GUI 实测通过)**
+- [x] **F4 页眉页脚自定义**(A1):页眉文字/logo 图片/左右分栏模板(docx header/footer 扩展 + pdf printToPDF headerFooter);补齐「交付全家桶」最后缺口——**已完成(2.1.0,GUI 实测通过)**
 - [ ] **F5 文字水印**(A2):内容/角度/透明度/灰度(docx 水印 + pdf 打印水印);GUI 竞品空白项
 - [ ] **F6 转换预检报告**(C1):转换前体检(缺失图片/悬空引用/未标语言代码块等汇总);warnings 通道现成;零竞品差异化项
 - [ ] **F7 目录带页码**:已拍板混合路线(ADR-007,部分推翻 D1)——pdf 两遍法静态页码(占位等高目录保布局一致+PDF.js 文本匹配);docx 默认维持静态目录,opt-in「Word 域目录」开关(TOC 域+updateFields+cachedEntries 预填;WPS 行为纳入双实测)
@@ -133,10 +133,10 @@
 - B2 HTML 白名单扩展(块级标签+受控属性)、HTML 导出第三格式、frontmatter 元数据扩展——有价值但未入选本轮,后续可重新提案
 
 ### 界面重构 v3「印刷付梓」遗留项(2026-08-26 实测对齐设计稿后记录,不排期)
-- [ ] **模板预设卡化**:mockup 01 组为三张预设卡,实现保留 select(自定义预设可达 10 项,sel 形态合规);卡片化需重构 rebuildPresetOptions/resolvePresetSelection/删除/导入导出整条链路
-- [ ] **单文件卡能力 chips**:mockup 展示「表格 ×6」等统计;需文件解析统计管线(TS 新功能),非纯样式项
-- [ ] **主按钮 Ctrl+Enter 脉冲动画**:mockup `.btn.main.pulse`;需在快捷键处理处挂 class(动效 CSS 可现做)
-- [ ] **状态行 busy/ok 呼吸色**:圆点样式已就位;需 utils.setStatus 增加 tone 类后由现成 CSS 承接
+- [ ] **模板预设卡化**:mockup 01 组为三张预设卡,实现保留 select(自定义预设可达 10 项,sel 形态合规);卡片化需重构 rebuildPresetOptions/resolvePresetSelection/删除/导入导出整条链路——**用户裁定暂不执行,待后续提出**
+- [ ] **单文件卡能力 chips**:mockup 展示「表格 ×6」等统计;需文件解析统计管线(TS 新功能),非纯样式项——**用户裁定暂不执行,待后续提出**
+- [x] **主按钮 Ctrl+Enter 脉冲动画**:mockup `.btn.main.pulse`;就绪态主按钮(convert/batch/merge)加 `pulse` class,CSS `.btn.pulse:not(:disabled)` 呼吸引导,转换中禁用自动停脉冲——**已完成(2026-08-27)**
+- [x] **状态行 busy/ok 呼吸色**:`utils.setStatus` 增 `setStatusTone('busy'|'ok')` tone 类,CSS `.status--busy/--ok::before` 呼吸色,错误/警告自动清 tone,尊重 prefers-reduced-motion——**已完成(2026-08-27)**
 
 
 ### 功能候选(排期)

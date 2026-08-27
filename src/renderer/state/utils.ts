@@ -39,11 +39,22 @@ export function setStatus(text: string, isError = false, isWarning = false): voi
   statusEl.classList.toggle("status--error", isError);
   statusEl.classList.toggle("status--warning", isWarning);
   statusEl.title = text;
+  // 错误/警告为确定性终态:清除 busy/ok 呼吸色,避免与语义色叠加
+  if (isError || isWarning) setStatusTone("");
+}
+
+/** 状态行圆点 tone(busy/ok 呼吸色;见 base.css)。空串复位为中性灰。 */
+let statusTone = "";
+export function setStatusTone(tone: "" | "busy" | "ok"): void {
+  if (statusTone) statusEl.classList.remove(`status--${statusTone}`);
+  statusTone = tone;
+  if (tone) statusEl.classList.add(`status--${tone}`);
 }
 
 /** 错误提示:状态区红色文字 + 拖放区短暂红色描边。 */
 export function setError(message: string): void {
   setStatus(message, true);
+  setStatusTone("");
   dropZone.classList.add("drop-zone--error");
   window.clearTimeout(state.errorFlashTimer);
   state.errorFlashTimer = window.setTimeout(

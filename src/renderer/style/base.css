@@ -594,6 +594,41 @@ svg.ic {
   border-color: var(--acc-ring);
 }
 
+/* 3.0 打磨遗留项④:状态行 busy/ok 呼吸色(圆点明暗 + 微缩放呼吸) */
+.status--busy::before {
+  background: var(--acc);
+  animation: status-breathe 1.5s ease-in-out infinite;
+}
+
+.status--ok::before {
+  background: var(--ok);
+  animation: status-breathe 1.5s ease-in-out infinite;
+}
+
+@keyframes status-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.78); }
+}
+
+/* 3.0 打磨遗留项③:就绪态主按钮脉冲引导(Ctrl+Enter/Ctrl+O 可触发时) */
+.btn.pulse:not(:disabled) {
+  animation: btn-pulse 1.9s ease-in-out infinite;
+}
+
+@keyframes btn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--acc-ring); }
+  50% { box-shadow: 0 0 0 5px var(--acc-ring); }
+}
+
+/* 降低动态效果:关闭上述呼吸/脉冲(尊重系统设置) */
+@media (prefers-reduced-motion: reduce) {
+  .status--busy::before,
+  .status--ok::before,
+  .btn.pulse:not(:disabled) {
+    animation: none;
+  }
+}
+
 /* ---- 3.5 底部动作栏 ---- */
 .actionbar {
   flex: none;

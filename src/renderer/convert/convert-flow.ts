@@ -12,6 +12,7 @@ import {
   setError,
   setProgress,
   setStatus,
+  setStatusTone,
   showProgress,
   translate,
 } from "../state/utils.js";
@@ -33,16 +34,19 @@ export async function runConvert(
   state.mode = "single";
   updateActionButtons(); // 禁用选择入口与转换按钮,防止重复点击
   setStatus(t("convert.stage.converting"));
+  setStatusTone("busy");
   showProgress();
   try {
     const result = await window.api.convert(filePath, format);
     if (result.canceled) {
       setStatus(t("common.canceled"));
+      setStatusTone("");
       showSummary({ kind: "canceled", title: t("convert.canceled.title") });
     } else if (result.ok) {
       const outputPath = result.outputPath ?? "";
       setProgress(100);
       setStatus(t("convert.done.status", { outputPath }));
+      setStatusTone("ok");
       statusEl.title = outputPath; // 长路径悬停可看完整
       showSummary({
         kind: "ok",
@@ -93,6 +97,7 @@ export async function runBatch(
   state.mode = "batch";
   updateActionButtons();
   setStatus(t("convert.batch.stage", { count: targets.length }));
+  setStatusTone("busy");
   showProgress();
   try {
     const result = await window.api.convertBatch(targets, fmt);
@@ -111,6 +116,7 @@ export async function runBatch(
           })
         : t("convert.batch.doneAll", { count: result.okCount, canceled: canceledText });
     setStatus(title, false, result.failCount > 0);
+    setStatusTone(result.failCount > 0 ? "" : "ok");
     showSummary({
       kind: result.failCount > 0 ? "fail" : "ok",
       title,
@@ -137,6 +143,7 @@ export async function runMerge(): Promise<void> {
   state.mode = "merge";
   updateActionButtons();
   setStatus(t("convert.merge.stage"));
+  setStatusTone("busy");
   showProgress();
   try {
     const result = await window.api.convertMerge(
@@ -145,11 +152,13 @@ export async function runMerge(): Promise<void> {
     );
     if (result.canceled) {
       setStatus(t("common.canceled"));
+      setStatusTone("");
       showSummary({ kind: "canceled", title: t("convert.merge.canceledTitle") });
     } else if (result.ok) {
       const outputPath = result.outputPath ?? "";
       setProgress(100);
       setStatus(t("convert.merge.done", { outputPath }));
+      setStatusTone("ok");
       statusEl.title = outputPath;
       showSummary({
         kind: "ok",
