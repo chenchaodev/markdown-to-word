@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [3.1.0] - 2026-08-27
+- **文字水印(F5)全链路实现**(版本号四源统一 package.json=lockfile=tag v3.1.0=CHANGELOG [3.1.0];typecheck/lint/build/58 段/smoke 全绿):控制项=文字/旋转角度/不透明度/浅灰经典观感;双管线——docx 走 DrawingML 旋转置底(header 内 `Drawing` `behindDoc` + `wps:wsp`/`a:xfrm rot`,经典对角 zIndex:-1),pdf 走 body 固定覆盖层 `.wm`(rotate/opacity);UI 抽屉 05 组「文字水印」挂「不入预设」徽标(与页眉页脚同组概念,不随预设保存);设置契约单源 settings-defaults WatermarkSettings/DEFAULT_WATERMARK,main persist 双侧防御 sanitizeWatermark,context 构建透传,renderer settings-logic/bindings/panel/refs 接线;i18n zh/en/ja 补齐;自动断言见 test/segments/watermark.test.js(docx 文字/配色/空 text 零渲染 + pdf 覆盖层/旋转/不透明度)
+- **设置抽屉收窄打磨**:宽度 402→340px(桌面)/372→320px(≤1080)/402→300px(≤900),响应式三档产生可见差异,修正此前 356 档近似无变化的偏差;贴合「印刷付梓」仪器面板比例
+- **修复**:settings 契约守卫补 watermark 为第 15 键(DEFAULT_SETTINGS 计数 14→15,F5 漏更,CI 门禁拦截)
+
 ## [3.0.1] - 2026-08-27
 - **界面打磨遗留项③+④**(v3「印刷付梓」设计稿还原收尾;typecheck/lint/build 全绿):③主按钮就绪态脉冲引导(convert/batch/merge 加 `pulse` class,CSS `.btn.pulse:not(:disabled)` 呼吸光环,转换中禁用自动停脉冲);④状态行 busy/ok 呼吸色(`utils.setStatus` 增 `setStatusTone` tone 类,CSS `.status--busy/--ok::before` 圆点呼吸,错误/警告自动清 tone,尊重 prefers-reduced-motion);①模板预设卡化 / ②单文件卡能力 chips 用户裁定暂不执行,记 ROADMAP 待后续
 
