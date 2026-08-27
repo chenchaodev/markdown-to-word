@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [3.5.0] - 2026-08-28
+- **F9 docx 模板导入浅导入 v1(ADR-008;typecheck/lint/build/62 段/smoke 全绿)**:jszip 解包 .docx 提取 Normal/Heading1 样式 rPr(西文/中文字体)+ 字号 + 文档 sectPr(页面尺寸/边距),映射回现有 typography/pageSetup 设置(标题样式字体优先、页面尺寸匹配纸张+朝向判定);UI 设置抽屉 01 预设·管理动作行新增「导入 Word 模板…」按钮(main 打开对话框→解包合并持久化→回填控件),i18n zh/en/ja 补齐;颜色等深导入列后续独立候选;自动断言见 test/segments/template-import.test.js(纵向 A4+横向 Letter 两案例);GUI 实测待用户复核(ACCEPTANCE F9 D1)
+
 ## [3.4.0] - 2026-08-28
 - **F8 合并总目录增强(固化,无核心代码新增;typecheck/lint/build/61 段/smoke 全绿)**:合并本就走单 convert 通路(mergeMarkdowns → convert 一次),标题/题注编号本就跨文件连续、TOC 本就覆盖全文;本版补测试固化「合并总目录覆盖全部源文件标题 + 跨文件页码准确」(field 模式两遍法,经文件间 page-break 起新页,B 页码严格大于 A);自动断言见 test/segments/merge-toc.test.js(docx+pdf 双格式总目录覆盖 A+B 共 8 标题、PDF 跨文件页码单调且 B>A、.toc-page 注入);GUI 实测待用户复核(ACCEPTANCE F8 D1)
 
