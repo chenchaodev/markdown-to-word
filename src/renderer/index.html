@@ -670,12 +670,10 @@
                主界面快速参数条(#quickOutputDir),两处 chips 由 bindings 同写同回填 ── -->
           <section class="sec">
             <div class="sec-h"><span class="sec-num">07</span><span class="sec-title" data-i18n="settings.groupOutput">输 出</span><span class="sec-rule"></span></div>
-            <div class="row">
-              <span style="flex:1;min-width:0">
-                <span class="row-l" data-i18n="settings.outputDir">输出目录</span>
-                <span class="row-sub" style="display: block" data-i18n="settings.outputDirHint">留空则保存到源文件所在目录</span>
-              </span>
-              <span class="row-r">
+            <div class="row block">
+              <div class="row-l" data-i18n="settings.outputDir">输出目录</div>
+              <div class="row-sub" data-i18n="settings.outputDirHint">留空则保存到源文件所在目录</div>
+              <div class="outputdir-row">
                 <span id="outputDirValue" class="path-chip outputdir-value" data-i18n="settings.outputDirDefault" title="">与源文件相同目录</span>
                 <button type="button" id="outputDirPick" class="btn btn-ghost sm">
                   <span data-i18n="settings.outputDirPick">更改…</span>
@@ -683,7 +681,7 @@
                 <button type="button" id="outputDirReset" class="btn btn-text sm">
                   <span data-i18n="settings.outputDirReset">恢复默认</span>
                 </button>
-              </span>
+              </div>
             </div>
             <div class="row">
               <span class="row-l" data-i18n="settings.afterConvert">导出后行为</span>
