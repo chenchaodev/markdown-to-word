@@ -20,6 +20,13 @@ export type ConvertFormat = "docx" | "pdf";
 export type AfterConvertAction = "none" | "show-in-folder" | "open";
 
 /**
+ * 目录模式(F7-①):docx 目录页生成方式。
+ * - static(默认)= 免更新静态目录:打开即见、可点击跳转、无页码、不弹更新域提示(现状行为)
+ * - field = Word 域目录:TOC 域 + 打开触发更新、注入真实页码(Word/WPS 打开弹一次更新提示)
+ */
+export type TocMode = "static" | "field";
+
+/**
  * 外观主题偏好(B13):
  * - system(默认)= 跟随系统:renderer 移除 data-theme 属性,CSS @media
  *   prefers-color-scheme 接管(视觉层契约,勿在 JS 侧解析系统主题)
@@ -143,6 +150,8 @@ export interface AppSettings {
   breakBeforeH1: boolean;
   /** 自动生成目录页(默认开;docx 静态目录 / PDF 目录同开关) */
   toc: boolean;
+  /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;docx 生效,PDF 见 F7-②) */
+  tocMode: TocMode;
   /** 公式编号开关(默认开;关时公式不编号、label 段原样渲染、引用保持原文本,docx/pdf 一致) */
   equationNumbering: boolean;
   /** 导出后行为(默认不自动执行) */
@@ -180,6 +189,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   typography: { ...DEFAULT_TYPOGRAPHY },
   breakBeforeH1: false,
   toc: true,
+  tocMode: "static",
   equationNumbering: true,
   afterConvert: "none",
   outputDir: "",

@@ -46,7 +46,7 @@ export {
 // ConvertFormat 单源 settings-defaults(CORE-8 收敛 B7 平行类型残留);
 // re-export 保持 main 侧既有 import 路径(core/convert.js)不变
 export type { ConvertFormat } from "./settings/settings-defaults.js";
-import type { ConvertFormat, PageSetup } from "./settings/settings-defaults.js";
+import type { ConvertFormat, PageSetup, TocMode } from "./settings/settings-defaults.js";
 import {
   DEFAULT_HEADER_FOOTER,
   DEFAULT_WATERMARK,
@@ -73,6 +73,8 @@ export interface ConvertContext {
   breakBeforeH1?: boolean;
   /** 自动生成目录页(默认开;docx 静态目录 / PDF 目录同开关) */
   toc?: boolean;
+  /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;docx 生效) */
+  tocMode?: TocMode;
   /** 公式编号开关(默认开;docx/pdf 双格式同开关,关时公式不编号、label 段原样渲染、引用保持原文本) */
   equationNumbering?: boolean;
   /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
@@ -172,6 +174,7 @@ export async function convert(
       typography: context.typography,
       breakBeforeH1: context.breakBeforeH1,
       toc: context.toc,
+      tocMode: context.tocMode,
       equationNumbering: context.equationNumbering,
       title: context.title,
       mermaidResolver: context.mermaidResolver,

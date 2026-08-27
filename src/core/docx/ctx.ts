@@ -21,6 +21,7 @@ import type { ConvertWarning, KeyedWarning } from "../i18n.js";
 import type { TypographySettings } from "../settings/typography.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import type { ImageResolver } from "../image/image-resolver.js";
+import type { TocMode } from "../settings/settings-defaults.js";
 import type { CaptionLabelInfo } from "./handlers/captions.js";
 
 /** 单次图片解析结果(B5 memo 缓存载体):data 为 null 表示失败,error 保留原始抛错
@@ -48,6 +49,8 @@ export interface Ctx {
   captionNumbering: boolean;
   /** 自动生成目录页(已解析默认:开) */
   toc: boolean;
+  /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;已解析默认 static) */
+  tocMode: TocMode;
   /** 公式编号开关(已解析默认:开;关时公式原样渲染、label 段原样渲染、引用保持原文本) */
   equationNumbering: boolean;
   /** 脚注定义索引:identifier → definition 节点(renderDocx 预扫) */

@@ -47,6 +47,7 @@ const PAPERS = ["A4", "A3", "A5", "Letter", "Legal"] as const;
 const ORIENTATIONS = ["portrait", "landscape"] as const;
 const ALIGNS = ["left", "justify"] as const;
 const THEMES = ["system", "light", "dark"] as const;
+const TOC_MODES = ["static", "field"] as const;
 const HEADER_MODES = ["default", "custom", "none"] as const;
 const HEADER_LAYOUTS = ["center", "leftRight"] as const;
 const SETTING_KEYS = [
@@ -56,6 +57,7 @@ const SETTING_KEYS = [
   "typography",
   "breakBeforeH1",
   "toc",
+  "tocMode",
   "equationNumbering",
   "afterConvert",
   "outputDir",
@@ -104,6 +106,8 @@ export function isValidSettings(value: unknown): value is AppSettings {
   if (typeof s.breakBeforeH1 !== "boolean") return false;
   // toc 缺失(旧 settings.json)视为合法,loadSettings 兜底为 true;存在则须合法
   if ("toc" in s && typeof s.toc !== "boolean") return false;
+  // tocMode 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "static";存在则须枚举内值
+  if ("tocMode" in s && !isOneOf(s.tocMode, TOC_MODES)) return false;
   // equationNumbering 缺失(旧 settings.json)视为合法,loadSettings 兜底为 true;存在则须合法
   if ("equationNumbering" in s && typeof s.equationNumbering !== "boolean") return false;
   // outputDir 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "";存在则须合法
@@ -149,6 +153,8 @@ export function loadSettings(): AppSettings {
         ...parsed,
         outputDir: isValidOutputDir(parsed.outputDir) ? parsed.outputDir : "",
         toc: typeof parsed.toc === "boolean" ? parsed.toc : DEFAULT_SETTINGS.toc,
+        // F7:tocMode 缺失(旧文件)→ "static";存在 → 原样保留(枚举已过形状校验)
+        tocMode: isOneOf(parsed.tocMode, TOC_MODES) ? parsed.tocMode : DEFAULT_SETTINGS.tocMode,
         equationNumbering:
           typeof parsed.equationNumbering === "boolean"
             ? parsed.equationNumbering
@@ -217,6 +223,9 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
         break;
       case "toc":
         out.toc = typeof src.toc === "boolean" ? src.toc : DEFAULT_SETTINGS.toc;
+        break;
+      case "tocMode":
+        out.tocMode = isOneOf(src.tocMode, TOC_MODES) ? src.tocMode : DEFAULT_SETTINGS.tocMode;
         break;
       case "equationNumbering":
         out.equationNumbering =

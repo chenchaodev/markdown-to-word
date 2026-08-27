@@ -63,6 +63,15 @@ export async function run() {
   if (!b8Document.includes('w:anchor="第一章"')) {
     throw new Error("批次8断言失败:静态目录条目缺少指向标题书签的超链接");
   }
+  // F7-①:field 模式 → beginDirty:true(Word/WPS 打开弹更新提示并注入真实页码),条目仍指向书签
+  const batch8FieldToc = await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [], tocMode: "field" });
+  const fieldDoc = await unzipPart(batch8FieldToc.buffer, "word/document.xml");
+  if (!fieldDoc.includes('w:dirty="true"')) {
+    throw new Error("F7-①断言失败:field 模式目录 dirty 属性应为 true(触发 Word 更新域)");
+  }
+  if (!fieldDoc.includes('w:anchor="第一章"')) {
+    throw new Error("F7-①断言失败:field 模式目录条目仍应指向标题书签");
+  }
   // 8b-1:静态编号注入(章节号 + 章节内序数,图/表独立、h1 重置)
   for (const needle of ["图 1.1 总体架构示意图", "表 1.1 参数说明表", "图 1.2 小节内的图", "表 2.1 第二章的表"]) {
     if (!b8Document.includes(needle)) throw new Error(`批次8断言失败:题注编号缺失(${needle})`);

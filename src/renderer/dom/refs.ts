@@ -53,6 +53,7 @@ export const breakBeforeH1Input = document.getElementById(
   "breakBeforeH1",
 ) as HTMLInputElement;
 export const tocInput = document.getElementById("toc") as HTMLInputElement;
+export const tocModeSelect = document.getElementById("tocMode") as HTMLSelectElement;
 export const equationNumberingInput = document.getElementById(
   "equationNumbering",
 ) as HTMLInputElement;

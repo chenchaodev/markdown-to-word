@@ -21,7 +21,7 @@ import {
 import { MUTED_TEXT_GRAY, SECONDARY_TEXT_GRAY } from "./theme.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import { imageSizeFromBuffer } from "../image/image-type.js";
-import type { WatermarkSettings } from "../settings/settings-defaults.js";
+import type { TocMode, WatermarkSettings } from "../settings/settings-defaults.js";
 
 /* ---------- chrome 版面常量(字号单位 half-points = pt × 2) ---------- */
 
@@ -82,12 +82,19 @@ export function renderCoverPage(metadata: DocMetadata): Paragraph[] {
 }
 
 /**
- * 目录页:标题居中加粗(36 half-points = 18pt)+ 静态目录,独占一页。
+ * 目录页:标题居中加粗(36 half-points = 18pt)+ 目录,独占一页。
  * 标题用普通 Paragraph(不用 HeadingLevel,避免被 TOC 域 \o "1-3" 收集到目录自身)。
- * 免更新路线(beginDirty:false + cachedEntries):打开即见静态条目(纯超链接、
- * 无页码),不弹「更新域」提示;条目引用 TOC1..TOC9 样式 + 右对齐点线制表位。
+ * 两种模式(F7-①):
+ * - static(默认,免更新路线):beginDirty:false + 隐藏页码(tab+\z),打开即见静态条目
+ *   (纯超链接、无页码),不弹「更新域」提示;条目引用 TOC1..TOC9 样式 + 右对齐点线制表位。
+ * - field(Word 域目录):保留 cachedEntries 作初始显示,beginDirty:true 触发 Word/WPS
+ *   打开时更新域提示,更新后注入真实页码;不隐藏页码(\z=false)。
  */
-export function renderTocPage(entries: TocEntry[]): (Paragraph | TableOfContents)[] {
+export function renderTocPage(
+  entries: TocEntry[],
+  tocMode: TocMode,
+): (Paragraph | TableOfContents)[] {
+  const field = tocMode === "field";
   return [
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -98,8 +105,8 @@ export function renderTocPage(entries: TocEntry[]): (Paragraph | TableOfContents
       hyperlink: true, // \h
       headingStyleRange: "1-3", // \o "1-3"
       useAppliedParagraphOutlineLevel: true, // \u
-      hideTabAndPageNumbersInWebView: true, // \z
-      beginDirty: false, // 免更新:不标记 dirty,打开不提示
+      hideTabAndPageNumbersInWebView: !field, // \z:静态模式隐藏页码占用(web 视图),域目录模式下显示
+      beginDirty: field, // 域目录:标记 dirty,Word/WPS 打开弹更新提示并注入真实页码
       cachedEntries: entries,
     }),
     new Paragraph({ children: [new PageBreak()] }),

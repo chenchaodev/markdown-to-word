@@ -192,6 +192,7 @@ export interface SettingsControlValues {
   captionNumbering: boolean;
   breakBeforeH1: boolean;
   toc: boolean;
+  tocMode: string;
   equationNumbering: boolean;
   afterConvert: string;
   format: string;
@@ -234,6 +235,7 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     captionNumbering: settings.typography.captionNumbering,
     breakBeforeH1: settings.breakBeforeH1,
     toc: settings.toc,
+    tocMode: settings.tocMode,
     equationNumbering: settings.equationNumbering,
     afterConvert: settings.afterConvert,
     format: settings.format,

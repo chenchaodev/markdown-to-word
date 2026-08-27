@@ -93,6 +93,7 @@ import {
   templatePresetSelect,
   themeInputs,
   tocInput,
+  tocModeSelect,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { hideFieldError, setError, setStatus, showFieldError } from "../state/utils.js";
@@ -309,6 +310,12 @@ export function bindSettingsEvents(): void {
     if (state.hydratingSettings) return;
     state.settings.toc = tocInput.checked;
     persistSettings({ toc: state.settings.toc });
+  });
+
+  tocModeSelect.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.tocMode = tocModeSelect.value as AppSettings["tocMode"];
+    persistSettings({ tocMode: state.settings.tocMode });
   });
 
   equationNumberingInput.addEventListener("change", () => {
@@ -580,6 +587,7 @@ export function bindSettingsEvents(): void {
     state.settings.typography = { ...d.typography };
     state.settings.breakBeforeH1 = d.breakBeforeH1;
     state.settings.toc = d.toc;
+    state.settings.tocMode = d.tocMode;
     state.settings.equationNumbering = d.equationNumbering;
     state.settings.afterConvert = d.afterConvert;
     state.settings.outputDir = d.outputDir;
@@ -594,6 +602,7 @@ export function bindSettingsEvents(): void {
       typography: { ...state.settings.typography },
       breakBeforeH1: state.settings.breakBeforeH1,
       toc: state.settings.toc,
+      tocMode: state.settings.tocMode,
       equationNumbering: state.settings.equationNumbering,
       afterConvert: state.settings.afterConvert,
       outputDir: state.settings.outputDir,

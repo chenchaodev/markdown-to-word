@@ -139,6 +139,7 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
     typography: options.settings.typography,
     breakBeforeH1: options.settings.breakBeforeH1,
     toc: options.settings.toc,
+    tocMode: options.settings.tocMode,
     equationNumbering: options.settings.equationNumbering,
     pdfCss: options.settings.pdfCss,
     imageResolver: options.imageResolver,

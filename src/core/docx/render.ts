@@ -56,6 +56,7 @@ import {
   webpSkippedWarning,
 } from "../image/image-warning.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
+import type { TocMode } from "../settings/settings-defaults.js";
 import type { ImageResolver } from "../image/image-resolver.js";
 
 export interface RenderOptions {
@@ -77,6 +78,8 @@ export interface RenderOptions {
   headingNumbering?: boolean;
   /** 自动生成目录页(默认开;开时 docx 插入静态目录:打开即见、可点击跳转、无页码、免更新域) */
   toc?: boolean;
+  /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码) */
+  tocMode?: TocMode;
   /** 公式编号开关(默认开;关时 display 公式不编号、{#eq:label} 段原样渲染、引用保持原文本) */
   equationNumbering?: boolean;
   /** 图/表题注自动编号(默认开,取 typography.captionNumbering;显式传值优先) */
@@ -123,6 +126,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     headingNumbering: options.headingNumbering ?? typography.headingNumbering,
     captionNumbering: options.captionNumbering ?? typography.captionNumbering,
     toc: options.toc ?? true,
+    tocMode: options.tocMode ?? "static",
     equationNumbering: options.equationNumbering ?? true,
     footnoteDefinitions: new Map(),
     footnotes: {},
@@ -167,7 +171,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   }
   // 目录页:开关开启且正文含标题节点时插入(封面之后/文档最前,独占一页;无标题的短文档不生成)
   if (ctx.toc && tocEntries.length > 0) {
-    children.push(...renderTocPage(tocEntries));
+    children.push(...renderTocPage(tocEntries, ctx.tocMode));
   }
   for (const node of ast.children) {
     if (isSupportedBlock(node)) {

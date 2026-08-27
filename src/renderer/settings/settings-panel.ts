@@ -82,6 +82,7 @@ import {
   templatePresetSelect,
   themeInputs,
   tocInput,
+  tocModeSelect,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError, setStatus, trapFocus } from "../state/utils.js";
@@ -224,6 +225,7 @@ export function applySettingsToControls(): void {
   );
   breakBeforeH1Input.checked = v.breakBeforeH1;
   tocInput.checked = v.toc;
+  tocModeSelect.value = v.tocMode;
   equationNumberingInput.checked = v.equationNumbering;
   afterConvertInputs.forEach(
     (input) => (input.checked = input.value === v.afterConvert),
