@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [3.2.0] - 2026-08-28
+- **转换预检报告(F6)实现 + GUI 实测通过**(版本号四源统一 package.json=lockfile=tag v3.2.0=CHANGELOG [3.2.0];typecheck/lint/build/59 段/smoke 全绿):转换前静态体检三类问题——缺失本地图片、悬空交叉引用(#sec:x 无对应 {#sec:x})、未标注语言代码块;核心 src/core/markdown/precheck.ts 纯函数 + DI(exists 默认 fs.existsSync),复用 imageNotFoundWarning/crossRefNotFoundWarning + 新增 unlabeledCodeBlockWarning;i18n zh/en/ja 补齐 warn.unlabeledCodeBlock/precheck.*;IPC convert:precheck 单源通道 + preload 镜像 + 报告弹窗(「校」校勘印章,复用既有朱砂警示语汇);单文件/批量/合并转换前统一触发,无问题静默继续、有问题弹报告(继续/取消);自动断言见 test/segments/precheck.test.js
+- **F5 文字水印 GUI 实测通过**(随本版关闭:W1 四项全勾——docx/PDF 水印旋转置底、空文字零渲染、浅灰开关、恢复默认不入预设);详见 3.1.0 条目
+
 ## [3.1.0] - 2026-08-27
 - **文字水印(F5)全链路实现**(版本号四源统一 package.json=lockfile=tag v3.1.0=CHANGELOG [3.1.0];typecheck/lint/build/58 段/smoke 全绿):控制项=文字/旋转角度/不透明度/浅灰经典观感;双管线——docx 走 DrawingML 旋转置底(header 内 `Drawing` `behindDoc` + `wps:wsp`/`a:xfrm rot`,经典对角 zIndex:-1),pdf 走 body 固定覆盖层 `.wm`(rotate/opacity);UI 抽屉 05 组「文字水印」挂「不入预设」徽标(与页眉页脚同组概念,不随预设保存);设置契约单源 settings-defaults WatermarkSettings/DEFAULT_WATERMARK,main persist 双侧防御 sanitizeWatermark,context 构建透传,renderer settings-logic/bindings/panel/refs 接线;i18n zh/en/ja 补齐;自动断言见 test/segments/watermark.test.js(docx 文字/配色/空 text 零渲染 + pdf 覆盖层/旋转/不透明度)
 - **设置抽屉收窄打磨**:宽度 402→340px(桌面)/372→320px(≤1080)/402→300px(≤900),响应式三档产生可见差异,修正此前 356 档近似无变化的偏差;贴合「印刷付梓」仪器面板比例

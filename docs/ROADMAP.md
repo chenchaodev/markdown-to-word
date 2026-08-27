@@ -123,7 +123,7 @@
 - [x] **F2 表格列宽控制**(B3):列宽语法支持与自适应策略;双格式对齐——**已完成(2.1.0,GUI 实测通过)**
 - [x] **F3 标题排版粒度**(A3):各级标题字号/间距独立设置(settings typography 扩展 + 抽屉 L2)——**已完成(2.1.0,GUI 实测通过)**
 - [x] **F4 页眉页脚自定义**(A1):页眉文字/logo 图片/左右分栏模板(docx header/footer 扩展 + pdf printToPDF headerFooter);补齐「交付全家桶」最后缺口——**已完成(2.1.0,GUI 实测通过)**
-- [x] **F5 文字水印**(A2):内容/角度/透明度/灰度(docx 置底 VML Textbox 旋转 + pdf 打印覆盖层);不入预设;自动断言 test/segments/watermark.test.js——**已完成(3.1.0,自动断言全绿;GUI 实测待用户复核)**
+- [x] **F5 文字水印**(A2):内容/角度/透明度/灰度(docx 置底 VML Textbox 旋转 + pdf 打印覆盖层);不入预设;自动断言 test/segments/watermark.test.js——**已完成(3.1.0,自动断言全绿;GUI 实测通过 2026-08-28 随 3.2.0 关闭)**
 - [x] **F6 转换预检报告**(C1):转换前体检(缺失图片/悬空引用/未标语言代码块等汇总);warnings 通道现成;零竞品差异化项——**已完成(自动断言 test/segments/precheck.test.js 全绿;报告弹窗 GUI 待用户实测)**
 - [ ] **F7 目录带页码**:已拍板混合路线(ADR-007,部分推翻 D1)——pdf 两遍法静态页码(占位等高目录保布局一致+PDF.js 文本匹配);docx 默认维持静态目录,opt-in「Word 域目录」开关(TOC 域+updateFields+cachedEntries 预填;WPS 行为纳入双实测)
 - [ ] **F8 合并转换增强**(C2):合并时统一重编标题编号/题注号 + 总目录;建议在 F7 后(总目录复用 TOC 机制)
