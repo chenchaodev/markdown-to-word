@@ -824,10 +824,39 @@
             <span data-i18n="common.ok">确定</span>
           </button>
         </div>
+    </div>
+  </div>
+
+  <!-- 转换预检报告(F6):仅当发现问题弹出,列出警告 + 继续/取消 -->
+  <div
+    id="precheckDialog"
+    class="dialog-overlay hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="precheckTitle"
+    aria-describedby="precheckDesc"
+  >
+    <div class="dialog dialog--precheck">
+      <div class="dialog-head">
+        <span class="stamp" aria-hidden="true">校</span>
+        <div class="dialog-head-texts">
+          <h2 id="precheckTitle" class="dialog-title" data-i18n="precheck.title">转换预检</h2>
+          <p id="precheckDesc" class="dialog-desc" data-i18n="precheck.desc">转换前发现以下问题,确认是否继续?</p>
+        </div>
+      </div>
+      <ul id="precheckList" class="precheck-list"></ul>
+      <div class="dialog-actions">
+        <button type="button" id="precheckCancel" class="btn btn-ghost sm">
+          <span data-i18n="precheck.cancel">取消</span>
+        </button>
+        <button type="button" id="precheckContinue" class="btn btn-primary sm">
+          <span data-i18n="precheck.continue">继续转换</span>
+        </button>
       </div>
     </div>
+  </div>
 
-    <!-- 批量转换结果汇总弹窗(成功失败均弹出,逐条展示) -->
+  <!-- 批量转换结果汇总弹窗(成功失败均弹出,逐条展示) -->
     <div
       id="batchDialog"
       class="dialog-overlay hidden"

@@ -17,13 +17,39 @@ import {
   translate,
 } from "../state/utils.js";
 import { actionableError, baseName, errorMessage } from "../state/pure.js";
-import { showBatchDialog, showCompleteDialog, showSummary } from "../ui/dialogs.js";
+import { showBatchDialog, showCompleteDialog, showPrecheckDialog, showSummary } from "../ui/dialogs.js";
 import { updateActionButtons } from "./file-list.js";
 import { t } from "../../core/i18n.js";
+import type { ConvertWarning } from "../../core/i18n.js";
 
 /** B9:错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
 function displayError(message: string): string {
   return actionableError(message, translate);
+}
+
+/**
+ * F6:转换前预检。聚合各文件警告,无问题静默继续;有问题弹报告对话,
+ * 用户「继续转换」才执行 action,「取消」中止。预检自身异常不阻断转换。
+ */
+export async function withPrecheck(
+  filePaths: string[],
+  action: () => void | Promise<void>,
+): Promise<void> {
+  const warnings: ConvertWarning[] = [];
+  for (const filePath of filePaths) {
+    try {
+      const ws = await window.api.precheck(filePath);
+      if (ws?.length) warnings.push(...ws);
+    } catch {
+      // 预检失败不阻断主流程
+    }
+  }
+  if (warnings.length === 0) {
+    await action();
+    return;
+  }
+  const ok = await showPrecheckDialog(warnings);
+  if (ok) await action();
 }
 
 /** 单文件转换(与旧版行为一致)。 */

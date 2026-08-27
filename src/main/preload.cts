@@ -4,6 +4,7 @@
 // import,侧内镜像同名常量,漂移由 test/segments/ipc-channels.test.js 恒等断言兜底。
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppSettings, ExportPresetsResult, ImportPdfCssResult, ImportPresetsResult } from "./persist/settings.js";
+import type { ConvertWarning } from "../core/i18n.js";
 import type { ConvertProgressPayload } from "./ipc/channels.js";
 import type { UiState } from "./persist/ui-state.js";
 // MR-4:批量进度 payload 类型单源 converter/batch.ts(原内联 shape 三份镜像清零)
@@ -23,6 +24,7 @@ const CH = {
   convertCancel: "convert:cancel",
   convertProgress: "convert:progress",
   convertBatchProgress: "convert:batchProgress",
+  convertPrecheck: "convert:precheck",
   presetsImport: "presets:import",
   presetsExport: "presets:export",
   cssImport: "css:import",
@@ -63,6 +65,8 @@ const api = {
     ipcRenderer.invoke(CH.convertBatch, files, format),
   convertMerge: (files: string[], format: "docx" | "pdf"): Promise<ConvertResult> =>
     ipcRenderer.invoke(CH.convertMerge, files, format),
+  // F6:转换前静态预检;main 读文件 + 解析 + 扫描,返回 ConvertWarning[]
+  precheck: (filePath: string): Promise<ConvertWarning[]> => ipcRenderer.invoke(CH.convertPrecheck, filePath),
   // B12:payload 带 mode 标识(single/batch/merge),renderer 直接消费归属
   onConvertProgress: (cb: (info: ConvertProgressPayload) => void): (() => void) => {
     const listener = (_event: unknown, data: ConvertProgressPayload): void => cb(data);

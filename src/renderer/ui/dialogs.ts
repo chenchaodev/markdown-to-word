@@ -21,6 +21,11 @@ import {
   completeDialogReveal,
   completeDialogTitle,
   completeOutputPath,
+  precheckDialog,
+  precheckDialogDesc,
+  precheckList,
+  precheckContinue,
+  precheckCancel,
   resultSummary,
   summaryDetailsBtn,
   summaryError,
@@ -240,3 +245,47 @@ export function renderBatchItem(item: BatchItem): HTMLLIElement {
 
   return li;
 }
+
+/* ---------- F6:转换预检报告弹窗 ---------- */
+let precheckTrap: (() => void) | null = null;
+let precheckResolve: ((ok: boolean) => void) | null = null;
+
+/** 展示预检报告;返回 Promise<boolean>:用户点「继续转换」= true,「取消」= false。 */
+export function showPrecheckDialog(warnings: ConvertWarning[]): Promise<boolean> {
+  precheckList.replaceChildren(
+    ...warnings.map((warning) => {
+      const li = document.createElement("li");
+      li.className = "precheck-item";
+      const icon = document.createElement("span");
+      icon.className = "precheck-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = "!";
+      const text = document.createElement("span");
+      text.className = "precheck-text";
+      text.textContent = formatWarning(warning);
+      li.append(icon, text);
+      return li;
+    }),
+  );
+  precheckDialogDesc.textContent = t("precheck.desc", { count: warnings.length });
+  precheckDialog.classList.remove("hidden");
+  precheckContinue.focus();
+  precheckTrap?.(); // 二次调用防御:先解除旧陷阱(B8 卫生项)
+  precheckTrap = trapFocus(precheckDialog);
+  return new Promise<boolean>((resolve) => {
+    precheckResolve = resolve;
+  });
+}
+
+function closePrecheckDialog(ok: boolean): void {
+  precheckTrap?.();
+  precheckTrap = null;
+  precheckDialog.classList.add("hidden");
+  focusActionButton();
+  precheckResolve?.(ok);
+  precheckResolve = null;
+}
+
+// 预检弹窗按钮(模块加载期绑定一次)
+precheckContinue.addEventListener("click", () => closePrecheckDialog(true));
+precheckCancel.addEventListener("click", () => closePrecheckDialog(false));

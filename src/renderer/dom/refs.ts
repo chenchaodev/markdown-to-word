@@ -224,6 +224,22 @@ export const batchDialogReveal = document.getElementById(
 export const batchDialogError = document.getElementById(
   "batchDialogError",
 ) as HTMLParagraphElement;
+// F6:转换预检报告弹窗
+export const precheckDialog = document.getElementById(
+  "precheckDialog",
+) as HTMLDivElement;
+export const precheckDialogDesc = document.getElementById(
+  "precheckDesc",
+) as HTMLParagraphElement;
+export const precheckList = document.getElementById(
+  "precheckList",
+) as HTMLUListElement;
+export const precheckContinue = document.getElementById(
+  "precheckContinue",
+) as HTMLButtonElement;
+export const precheckCancel = document.getElementById(
+  "precheckCancel",
+) as HTMLButtonElement;
 // UI 改版 v4:统一队列卡头部动作。previewBtn 仅单文件可见(updateActionButtons
 // 切换 hidden);appendFileBtn 两态共用(追加合并语义);clearListBtn 清空选择
 export const previewBtn = document.getElementById("previewBtn") as HTMLButtonElement;

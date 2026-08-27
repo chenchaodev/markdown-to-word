@@ -94,6 +94,16 @@ export function mermaidFailedWarning(reason: string): KeyedWarning {
   };
 }
 
+/**
+ * 代码块未标注语言警告(F6 转换预检):``` 后缺语言标识,高亮/排版可能降级。
+ */
+export function unlabeledCodeBlockWarning(): KeyedWarning {
+  return {
+    key: "warn.unlabeledCodeBlock",
+    fallback: "代码块未标注语言,可能无法正确高亮排版",
+  };
+}
+
 /** 当前语言(模块级状态;默认 zh,setLanguage 更新)。 */
 let current: Language = "zh";
 

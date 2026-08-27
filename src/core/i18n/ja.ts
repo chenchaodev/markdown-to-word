@@ -100,6 +100,12 @@ const dict: Partial<Record<Dict, string>> = {
     "dialog.complete.title": "変換完了",
     "dialog.failed.title": "変換失敗",
     "dialog.complete.desc": "ドキュメントを生成しました。出力先は下記の通りです",
+
+    /* ---------- 変換前チェック(F6) ---------- */
+    "precheck.title": "変換前チェック",
+    "precheck.desc": "変換前に ${count} 件の問題が見つかりました。続行しますか?",
+    "precheck.continue": "続行して変換",
+    "precheck.cancel": "キャンセル",
     "dialog.failed.desc": "${name} を変換できませんでした",
     "dialog.suppress": "次回から表示しない",
     "dialog.batch.title": "一括変換完了",
@@ -386,6 +392,7 @@ const dict: Partial<Record<Dict, string>> = {
     "warn.imageAccessDenied": "画像ファイルへのアクセスが拒否されました: ${src}",
     "warn.imageAttrInvalid": "画像サイズ属性が無効のため無視しました: ${attr}(${src})",
     "warn.headerLogoLoadFailed": "ヘッダーロゴの読み込みに失敗したため無視しました: ${src}",
+    "warn.unlabeledCodeBlock": "コードブロックに言語指定がありません。強調が正しくない可能性があります",
 
     /* ---------- エラー(生成時にローカライズ) ---------- */
     "convert.noFilesSelected": "ファイルが選択されていません",

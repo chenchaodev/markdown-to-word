@@ -13,7 +13,7 @@ import { batchBtn, cancelBtn, convertBtn, mergeBtn } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
 import { baseName, STAGE_PERCENT, stageText } from "../../state/pure.js";
 import { setError, setProgress, setStatus, translate } from "../../state/utils.js";
-import { runBatch, runConvert, runMerge } from "../convert-flow.js";
+import { runBatch, runConvert, runMerge, withPrecheck } from "../convert-flow.js";
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";
 
@@ -26,19 +26,19 @@ export function bindConvertActionsEvents(): void {
       setError(t("file.selectFirst"));
       return;
     }
-    void runConvert(filePath, state.selectedFormat);
+    void withPrecheck([filePath], () => runConvert(filePath, state.selectedFormat));
   });
 
   // 批量转换按钮(≥2 个文件时可见)
   batchBtn.addEventListener("click", () => {
     if (state.selectedFiles.length < 2) return;
-    void runBatch();
+    void withPrecheck(state.selectedFiles, () => runBatch());
   });
 
   // 合并转换按钮(≥2 个文件时可见)
   mergeBtn.addEventListener("click", () => {
     if (state.selectedFiles.length < 2) return;
-    void runMerge();
+    void withPrecheck(state.selectedFiles, () => runMerge());
   });
 
   // 批次 7:取消当前转换(单文件 / 批量 / 合并;主进程在检查点终止并返回 canceled)
@@ -91,9 +91,9 @@ export function bindConvertActionsEvents(): void {
       event.preventDefault();
       if (state.mode !== null) return;
       if (state.selectedFiles.length === 1) {
-        void runConvert(state.selectedFiles[0]!, state.selectedFormat); // 上行已守卫 length === 1
+        void withPrecheck([state.selectedFiles[0]!], () => runConvert(state.selectedFiles[0]!, state.selectedFormat)); // 上行已守卫 length === 1
       } else if (state.selectedFiles.length >= 2) {
-        void runBatch();
+        void withPrecheck(state.selectedFiles, () => runBatch());
       }
     } else if (key === "o") {
       event.preventDefault();

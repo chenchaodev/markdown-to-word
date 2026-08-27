@@ -45,6 +45,8 @@ export const IPC_CHANNELS = {
   convertProgress: "convert:progress",
   /** 批量转换进度推送({index,total,file,stage}) */
   convertBatchProgress: "convert:batchProgress",
+  /** F6:转换前静态预检(读文件 + 解析 + 扫描,返回 ConvertWarning[]) */
+  convertPrecheck: "convert:precheck",
   /* ---- 预设域 ---- */
   /** 导入模板预设 JSON */
   presetsImport: "presets:import",

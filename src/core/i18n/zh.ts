@@ -119,6 +119,12 @@ const dict = {
     "dialog.about.detail": "版本 ${version}\n\n将 Markdown 文件转换为 Word 或 PDF 文档",
     "dialog.openFailed": "打开文件对话框失败:${error}",
 
+    /* ---------- 转换预检(F6) ---------- */
+    "precheck.title": "转换预检",
+    "precheck.desc": "转换前发现 ${count} 处可能影响排版的问题,确认是否继续?",
+    "precheck.continue": "继续转换",
+    "precheck.cancel": "取消",
+
     /* ---------- 批量结果 ---------- */
     "batch.summary": "成功 ${ok} / 失败 ${fail}${canceled}",
     "batch.canceledSuffix": " / 取消 ${count}",
@@ -394,6 +400,7 @@ const dict = {
     "warn.imageAccessDenied": "图片文件无访问权限: ${src}",
     "warn.imageAttrInvalid": "图片尺寸属性无效,已忽略: ${attr}(${src})",
     "warn.headerLogoLoadFailed": "页眉 logo 加载失败,已忽略: ${src}",
+    "warn.unlabeledCodeBlock": "代码块未标注语言,可能无法正确高亮排版",
 
     /* ---------- 错误(生成期本地化:throw 文案经 error.message 单次字符串通道到 GUI) ---------- */
     "convert.noFilesSelected": "未选择文件",

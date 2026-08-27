@@ -10,6 +10,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertFormat } from "../../core/convert.js";
 import { t } from "../../core/i18n.js";
+import { precheckMarkdown } from "../../core/markdown/precheck.js";
+import type { ConvertWarning } from "../../core/i18n.js";
 import {
   buildPresetsExportPayload,
   buildRecentFileEntries,
@@ -198,6 +200,22 @@ export function registerIpc(): void {
   ipcMain.handle(CH.convertCancel, (event): void => {
     ctxByWebContents.get(event.sender.id)?.cancel();
   });
+
+  // F6:转换前静态预检(读取 → 解析 → 扫描;返回 ConvertWarning[])。
+  // 仅读取与解析,不触发实际渲染;文件不可读时返回 [] 交由转换自身报错,不阻断流程。
+  ipcMain.handle(
+    CH.convertPrecheck,
+    async (_event, filePath: unknown): Promise<ConvertWarning[]> => {
+      if (!isString(filePath)) return [];
+      let content: string;
+      try {
+        content = await fs.readFile(filePath, "utf8");
+      } catch {
+        return [];
+      }
+      return precheckMarkdown(content, path.dirname(filePath));
+    },
+  );
 
   // 选择输出目录(批次 7;取消返回 null);批次 11:defaultPath 记忆 + 成功后回写所选目录
   ipcMain.handle(CH.dirSelect, async (): Promise<string | null> => {

@@ -117,6 +117,12 @@ const dict = {
     "dialog.about.detail": "Version ${version}\n\nConvert Markdown files to Word or PDF documents",
     "dialog.openFailed": "Failed to open file dialog: ${error}",
 
+    /* ---------- Conversion pre-check (F6) ---------- */
+    "precheck.title": "Pre-check",
+    "precheck.desc": "Found ${count} issue(s) that may affect the layout. Continue anyway?",
+    "precheck.continue": "Convert anyway",
+    "precheck.cancel": "Cancel",
+
     /* ---------- Batch results ---------- */
     "batch.summary": "${ok} succeeded / ${fail} failed${canceled}",
     "batch.canceledSuffix": " / ${count} canceled",
@@ -396,6 +402,7 @@ const dict = {
     "warn.imageAccessDenied": "Access to image file denied: ${src}",
     "warn.imageAttrInvalid": "Invalid image size attribute, ignored: ${attr} (${src})",
     "warn.headerLogoLoadFailed": "Failed to load header logo, ignored: ${src}",
+    "warn.unlabeledCodeBlock": "Code block has no language tag; highlighting may be incorrect",
 
     /* ---------- Errors (localized at throw time: message reaches GUI via a one-shot string channel) ---------- */
     "convert.noFilesSelected": "No files selected",
