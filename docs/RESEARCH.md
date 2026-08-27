@@ -248,4 +248,12 @@
 - `docx` 9.x 的 `Document` 直接收 `numbering: INumberingOptions` 对象,不需要 `new Numbering()` 实例;`TextRun` 无公开可变 `options` 字段,行内样式用构造参数累积传递
 - mdast 中 `image` 是 **PhrasingContent 行内节点**(嵌在 paragraph 内),不是块级节点;行内渲染需支持 `ImageRun`;`ImageRun` 的 type 枚举是 `png/jpg/gif`,魔数判断要返回 `"jpg"` 而非 `"jpeg"`
 - Windows 下生成 docx:设置 `font: { ascii, eastAsia, hAnsi }` 后 document.xml 正确写入 eastAsia,中文字体生效
-- 来源: 自查(typecheck + 生成 docx + 解包检查 XML);关联: src/core/docx/render.ts
+ - 来源: 自查(typecheck + 生成 docx + 解包检查 XML);关联: src/core/docx/render.ts
+
+### 2026-08-28 Windows 本地打包踩坑(长路径 + Defender 重命名 EPERM + 镜像 env 未转发)
+- **现象**:`npm run dist`(electron-builder --win nsis)在 `packaging` 阶段报 `EPERM: operation not permitted, rename '...\win-unpacked.tmp' -> '...\win-unpacked'`。根因非权限,而是 **Windows Defender 实时扫描在 electron 解压到 `.tmp` 后立即锁定其中 electron.exe 等文件句柄**,父目录重命名失败(经典 electron-builder/杀软冲突);与 G5 的 EBUSY unlink 同源但触发点不同(此处是 extractArchive 之后的 rename)。
+- **长路径叠加**:项目位于 `Documents\opencode\...`(OneDrive 同步),即便建目录 junction `C:\m2w` 指向它,electron-builder 仍解析真实路径写入,OneDrive 同步锁同样会触发重命名失败;且真实路径过长无法重命名中转。
+- **中转处理(可行解法)**:① 输出目录重定向到非 OneDrive 短路径 `C:\m2w-out`(`--config.directories.output=C:\m2w-out`),避开 OneDrive 锁与 MAX_PATH;② **绕过 extract+rename**:用 `--config.electronDist=C:\m2w\node_modules\electron\dist` 直接喂 npm install 已解压的 electron 发行目录,electron-builder 改为 copy(非解压后 rename),彻底规避 Defender 重命名锁。两步叠加本地打包成功,产物 `C:\m2w-out\MarkdownToWord-Setup-3.5.0.exe`。
+- **镜像 env 未转发坑**:`.npmrc` 的 `electron_builder_binaries_mirror` 仅是 npm 配置键,npm 不会转成 `ELECTRON_BUILDER_BINARIES_MIRROR` 环境变量,electron-builder 读不到 → 回退 GitHub 下载 `connect ETIMEDOUT 20.205.243.166:443`(nsis 等工具链)。须显式 `$env:ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"`(及 `ELECTRON_MIRROR`)再构建。
+- **Defender 排除需管理员**:`Add-MpPreference -ExclusionPath` 本机无管理员权限失败,故未走排除路线,改采上述 electronDist 中转。
+- 关联: package.json `build` 配置、`npm run dist`、前序 G5 打包坑(EBUSY unlink 同类)、本地构建产物 `C:\m2w-out\MarkdownToWord-Setup-3.5.0.exe`。

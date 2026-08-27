@@ -124,8 +124,8 @@
 - [x] **F3 标题排版粒度**(A3):各级标题字号/间距独立设置(settings typography 扩展 + 抽屉 L2)——**已完成(2.1.0,GUI 实测通过)**
 - [x] **F4 页眉页脚自定义**(A1):页眉文字/logo 图片/左右分栏模板(docx header/footer 扩展 + pdf printToPDF headerFooter);补齐「交付全家桶」最后缺口——**已完成(2.1.0,GUI 实测通过)**
 - [x] **F5 文字水印**(A2):内容/角度/透明度/灰度(docx 置底 VML Textbox 旋转 + pdf 打印覆盖层);不入预设;自动断言 test/segments/watermark.test.js——**已完成(3.1.0,自动断言全绿;GUI 实测通过 2026-08-28 随 3.2.0 关闭)**
-- [x] **F6 转换预检报告**(C1):转换前体检(缺失图片/悬空引用/未标语言代码块等汇总);warnings 通道现成;零竞品差异化项——**已完成(自动断言 test/segments/precheck.test.js 全绿;报告弹窗 GUI 待用户实测)**
-- [ ] **F7 目录带页码**(ADR-007 混合路线,部分推翻 D1;批①已完成 2026-08-28,批②开发):
+- [x] **F6 转换预检报告**(C1):转换前体检(缺失图片/悬空引用/未标语言代码块等汇总);warnings 通道现成;零竞品差异化项——**已完成(自动断言 test/segments/precheck.test.js 全绿;报告弹窗 GUI 实测通过 2026-08-28 随 3.2.0 关闭)**
+- [x] **F7 目录带页码**(ADR-007 混合路线,部分推翻 D1;批①/批②均已完成 2026-08-28):**已完成(3.3.0,GUI 实测通过 2026-08-28 随 3.3.0 关闭)**
   - [x] **F7-① docx opt-in Word 域目录**:settings 新增 `tocMode: 'static' | 'field'`(默认 static=现状免更新静态目录);field=真实 TOC 域(beginDirty 触发 Word/WPS 打开更新、注入真实页码);双格式一致开关;`toc-caption.test.js` 补断言;UI 抽屉 L2 目录模式下拉 + i18n 三语
   - [x] **F7-② PDF 两遍法静态页码**:field 模式触发——第一遍打印经既有 /Dests 命名目标解析定位标题页码(pageNumbersForNames,与书签大纲同源,免 pdfjs 文本匹配)→ 第二遍注入目录页码 span(.toc-page 点线引导)重印;TOC 后硬分页符保正文布局一致;自动断言见 test/segments/toc-pagenum.test.js(/Dests 解析页码 + 注入一致、随文档顺序单调);WPS 行为纳入双实测
 - [x] **F8 合并总目录增强**(C2):合并已是单 convert 通路(mergeMarkdowns → convert 一次),标题/题注编号本就跨文件连续、TOC 本就覆盖全文;本项固化「合并总目录覆盖全部源文件标题 + 跨文件页码准确」(field 模式两遍法,经文件间 page-break 起新页,B 页码严格大于 A);自动断言见 test/segments/merge-toc.test.js(docx+pdf 双格式总目录覆盖 A+B 共 8 标题、PDF 跨文件页码单调且 B>A、.toc-page 注入);typecheck/lint/build/61 段/smoke 全绿;状态:完成(未发布)
