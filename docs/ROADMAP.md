@@ -127,7 +127,7 @@
 - [x] **F6 转换预检报告**(C1):转换前体检(缺失图片/悬空引用/未标语言代码块等汇总);warnings 通道现成;零竞品差异化项——**已完成(自动断言 test/segments/precheck.test.js 全绿;报告弹窗 GUI 待用户实测)**
 - [ ] **F7 目录带页码**(ADR-007 混合路线,部分推翻 D1;批①已完成 2026-08-28,批②开发):
   - [x] **F7-① docx opt-in Word 域目录**:settings 新增 `tocMode: 'static' | 'field'`(默认 static=现状免更新静态目录);field=真实 TOC 域(beginDirty 触发 Word/WPS 打开更新、注入真实页码);双格式一致开关;`toc-caption.test.js` 补断言;UI 抽屉 L2 目录模式下拉 + i18n 三语
-  - [ ] **F7-② PDF 两遍法静态页码**:pdfjs-dist 文本匹配定位标题页码 → 第二遍注入目录页页码;占位等高目录保布局一致;自动断言见 test/segments/toc-pagenum.test.js(产物页码与标题页一致);WPS 行为纳入双实测
+  - [x] **F7-② PDF 两遍法静态页码**:field 模式触发——第一遍打印经既有 /Dests 命名目标解析定位标题页码(pageNumbersForNames,与书签大纲同源,免 pdfjs 文本匹配)→ 第二遍注入目录页码 span(.toc-page 点线引导)重印;TOC 后硬分页符保正文布局一致;自动断言见 test/segments/toc-pagenum.test.js(/Dests 解析页码 + 注入一致、随文档顺序单调);WPS 行为纳入双实测
 - [ ] **F8 合并转换增强**(C2):合并时统一重编标题编号/题注号 + 总目录;建议在 F7 后(总目录复用 TOC 机制)
 - [ ] **F9 docx 模板导入**:已拍板浅导入 v1(ADR-008)——jszip 解包模板提取 Heading/Normal 样式 rPr 映射现有 settings/theme 字段(含页面尺寸边距);深导入列后续独立候选
 

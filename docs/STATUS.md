@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 2026-08-28:**F7 目录带页码开发中**(ADR-007 混合路线,部分推翻 D1):批① docx opt-in「Word 域目录」已完成(tocMode:'static'|'field' 设置单源 + 双格式一致开关 + UI 抽屉 L2 目录模式下拉 + i18n 三语 + toc-caption.test.js 补断言;typecheck/lint/build/59 段全绿);批② PDF 两遍法静态页码(pdfjs-dist 文本匹配定位标题页码 → 第二遍注入)开发中;报告弹窗 GUI 见上条
+- 2026-08-28:**F7 目录带页码完成**(ADR-007 混合路线,部分推翻 D1;typecheck/lint/build/60 段/smoke 全绿):批① docx opt-in「Word 域目录」(tocMode:'static'|'field' 设置单源 + 双格式一致开关 + UI 抽屉 L2 目录模式下拉 + i18n 三语 + toc-caption.test.js 补断言);批② PDF 两遍法静态页码(field 模式触发——第一遍打印经既有 /Dests 命名目标解析定位标题页码,免 pdfjs 文本匹配 → 第二遍注入 .toc-page 点线引导页码重印,正文布局一致;自动断言见 test/segments/toc-pagenum.test.js);GUI 实测待用户复核(ACCEPTANCE F7 D1/D2)
 - 2026-08-28:**F5 文字水印 + F6 转换预检 GUI 实测全部通过**(随 3.2.0 发版关闭);F6 核心 src/core/markdown/precheck.ts 纯函数+DI(exists 默认 fs.existsSync),复用 imageNotFoundWarning/crossRefNotFoundWarning + 新增 unlabeledCodeBlockWarning;i18n 三语补齐 warn.unlabeledCodeBlock/precheck.*;IPC convert:precheck 单源通道 + preload 镜像 + 报告弹窗(「校」校勘印章,复用既有朱砂警示语汇);单文件/批量/合并转换前统一触发,无问题静默继续、有问题弹报告(继续/取消);typecheck/lint/build/59 段/smoke 全绿;自动断言见 test/segments/precheck.test.js;F5 水印 W1 四项 + F6 预检 P1 四项用户 GUI 实测全勾;版本号四源统一 package.json=lockfile=tag v3.2.0=CHANGELOG [3.2.0]
 - 2026-08-27:**发版 3.1.0 完成**(F5 文字水印全链路 + 设置抽屉收窄打磨;版本号四源统一 package.json=lockfile=tag v3.1.0=CHANGELOG [3.1.0];typecheck/lint/build/58 段/smoke 全绿;F5:docx DML 旋转置底(zIndex:-1,经典对角)+pdf CSS 覆盖(.wm rotate/opacity),双格式通用,UI 抽屉 05 组挂「不入预设」,自动断言见 test/segments/watermark.test.js;抽屉 340/320/300 响应式档位修正此前近似无变化的 356 档;fix:settings 契约守卫补 watermark 第 15 键)
 - 2026-08-27:**发版 3.0.1 完成**(界面打磨遗留③主按钮脉冲 ④状态行呼吸色;最小变更补丁号;版本号四源统一 package.json=lockfile=tag v3.0.1=CHANGELOG [3.0.1];typecheck/lint/build 全绿;①模板预设卡化/②单文件卡能力 chips 暂缓记 ROADMAP)

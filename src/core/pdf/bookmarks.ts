@@ -115,6 +115,38 @@ function resolveDest(target: unknown, doc: PDFDocument): PDFArray | null {
 }
 
 /**
+ * 命名目标 → 页码(1-based,与 /Dests 同解析路径,F7-② 目录页码两遍法用)。
+ * 给定标题 slug 列表,解析其在已打印 PDF 中的页码:lookupNamedDest 取命名目标,
+ * 目标数组第 0 元素为页面 PDFRef,遍历页面树建立「objNum:gen → 序号」映射定位页码
+ * (与 setOutline 收集 pageRefs 同源;复用 /Dests,免 pdfjs 文本匹配)。
+ * 解析失败的 slug 不出现在返回表中(调用方尽力而为)。
+ */
+export function pageNumbersForNames(doc: PDFDocument, names: string[]): Record<string, number> {
+  const pageRefs: PDFRef[] = [];
+  doc.catalog.Pages().traverse((kid, ref) => {
+    if (kid.get(kid.context.obj("Type"))?.toString() === "/Page") pageRefs.push(ref);
+  });
+  const indexOfRef = (ref: PDFRef): number => {
+    const key = `${ref.objectNumber}:${ref.generationNumber}`;
+    for (let i = 0; i < pageRefs.length; i++) {
+      const r = pageRefs[i]!; // 循环边界刚检查
+      if (`${r.objectNumber}:${r.generationNumber}` === key) return i;
+    }
+    return -1;
+  };
+  const out: Record<string, number> = {};
+  for (const name of names) {
+    const dest = lookupNamedDest(doc, name);
+    if (!dest) continue;
+    const ref = dest.asArray()[0];
+    if (!(ref instanceof PDFRef)) continue;
+    const idx = indexOfRef(ref);
+    if (idx >= 0) out[name] = idx + 1;
+  }
+  return out;
+}
+
+/**
  * 注入多级大纲(marp setOutline 样板):向 doc 写入 Outlines 树并挂到 catalog。
  * 若 PDF 已存在大纲会被覆盖(printToPDF 产物无大纲,无影响)。
  *

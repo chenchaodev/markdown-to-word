@@ -10,9 +10,10 @@ import { convert, type ConvertFormat, type PdfArtifact } from "../../core/conver
 import { decodeMarkdown } from "../../core/util/encoding.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
-import { buildBookmarkTree, injectBookmarks } from "../../core/pdf/bookmarks.js";
+import { buildBookmarkTree, injectBookmarks, pageNumbersForNames } from "../../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../../core/pdf/metadata.js";
-import { extractHeadings } from "../../core/pdf/postprocess.js";
+import { extractHeadings, injectTocPageNumbers } from "../../core/pdf/postprocess.js";
+import { PDFDocument } from "pdf-lib";
 import { renderMermaid } from "../services/mermaid-service.js";
 import { loadSettings, type AppSettings } from "../persist/settings.js";
 import { hardenWebContents } from "../services/web-hardening.js";
@@ -149,51 +150,60 @@ export async function renderPdf(
   ctx: ConvertContext,
   onStage?: (stage: string) => void,
 ): Promise<void> {
-  const { htmlPath, cleanup } = await writeTempHtml(artifact.html);
-  const printWin = new BrowserWindow({
-    show: false,
-    // MR-13:webPreferences 全显式(与 mermaid-service 对齐;默认值虽安全,显式防漂移)
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
-  hardenWebContents(printWin); // B1:打印窗口与预览同源加固(内容含用户 markdown 渲染的链接)
-  try {
-    throwIfCanceled(ctx); // 批次 7:打印前检查(loadFile/字体等待期间用户可能已取消)
-    onStage?.("print"); // B9:进入不可中断的打印/写盘阶段
-    await printWin.loadFile(htmlPath);
-    // 批次 6:等待公式字体(KaTeX woff2)加载完成再打印,否则 printToPDF 缺字形
-    // (did-finish-load 后字体仍在加载,printToPDF 不等待字体)
-    await printWin.webContents.executeJavaScript("document.fonts.ready");
-    throwIfCanceled(ctx); // 批次 7:打印前复查(大文档字体等待可长达数秒)
-    const data = await printWin.webContents.printToPDF({
-      pageSize: "A4",
-      margins: { top: 0, bottom: 0, left: 0, right: 0 }, // 边距由 @page 控制(preferCSSPageSize)
-      printBackground: true,
-      preferCSSPageSize: true,
-      displayHeaderFooter: true,
-      // F4:页眉模板随设置注入(default/none = 空 span 占位,维持现状无页眉);
-      // ?? 兜底旧调用方手工构造的 PdfArtifact(无 headerTemplate 字段)
-      headerTemplate: artifact.headerTemplate ?? "<span></span>",
-      footerTemplate: artifact.footerTemplate,
+  // 单遍打印:写临时 HTML → 隐藏窗口加载 → printToPDF → 返回 bytes(窗口/临时文件 finally 清理)
+  const printOnce = async (html: string): Promise<Uint8Array> => {
+    const { htmlPath, cleanup } = await writeTempHtml(html);
+    const printWin = new BrowserWindow({
+      show: false,
+      // MR-13:webPreferences 全显式(与 mermaid-service 对齐;默认值虽安全,显式防漂移)
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
-    // 批次 7:printToPDF 不可中断(Electron 原子调用),取消需等本轮打印结束;
-    // 但落盘/书签/元数据必须中止 → 打印后立即检查,取消则不产出文件、不报成功。
-    throwIfCanceled(ctx);
-    // 批次 4:从渲染后 HTML 提取标题(与目录同源,封面/目录本身非 h 标签不受影响),
-    // 注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即命名目标名,无需文本定位)。
-    // 无标题时原样落盘(输出为 Buffer → Uint8Array 无拷贝)。
-    const headings = extractHeadings(artifact.html);
-    const bookmarked =
-      headings.length > 0
-        ? await injectBookmarks(new Uint8Array(data), buildBookmarkTree(headings))
-        : new Uint8Array(data);
-    // 批次 5c:书签注入之后追加 PDF Info 元数据注入(frontmatter title/author/date → 文档属性)。
-    // 顺序固定:书签 → 元数据(后者经 pdf-lib 整体重存,必须最后执行,否则会丢弃书签)。
-    const output = await setPdfMetadata(bookmarked, artifact.metadata);
-    await fs.writeFile(outputPath, output);
-  } finally {
-    printWin.destroy();
-    await cleanup();
+    hardenWebContents(printWin); // B1:打印窗口与预览同源加固(内容含用户 markdown 渲染的链接)
+    try {
+      throwIfCanceled(ctx); // 批次 7:打印前检查(loadFile/字体等待期间用户可能已取消)
+      onStage?.("print"); // B9:进入不可中断的打印/写盘阶段
+      await printWin.loadFile(htmlPath);
+      // 批次 6:等待公式字体(KaTeX woff2)加载完成再打印,否则 printToPDF 缺字形
+      await printWin.webContents.executeJavaScript("document.fonts.ready");
+      throwIfCanceled(ctx); // 批次 7:打印前复查(大文档字体等待可长达数秒)
+      return await printWin.webContents.printToPDF({
+        pageSize: "A4",
+        margins: { top: 0, bottom: 0, left: 0, right: 0 }, // 边距由 @page 控制(preferCSSPageSize)
+        printBackground: true,
+        preferCSSPageSize: true,
+        displayHeaderFooter: true,
+        // F4:页眉模板随设置注入(default/none = 空 span 占位,维持现状无页眉);
+        // ?? 兜底旧调用方手工构造的 PdfArtifact(无 headerTemplate 字段)
+        headerTemplate: artifact.headerTemplate ?? "<span></span>",
+        footerTemplate: artifact.footerTemplate,
+      });
+    } finally {
+      printWin.destroy();
+      await cleanup();
+    }
+  };
+  // 批次 4:从渲染后 HTML 提取标题(与目录同源,封面/目录本身非 h 标签不受影响),
+  // 注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即命名目标名,无需文本定位)。
+  const headings = extractHeadings(artifact.html);
+  // F7-②:field 模式 → 两遍法注入目录页码(第一遍打印解析 /Dests 定位标题页码,
+  // 第二遍注入页码重印;TOC 后硬分页符保证正文分页一致、页码准确)
+  let data = await printOnce(artifact.html);
+  if (artifact.tocMode === "field" && headings.length > 0) {
+    const doc = await PDFDocument.load(new Uint8Array(data));
+    const pageNumbers = pageNumbersForNames(doc, headings.map((h) => h.id));
+    data = await printOnce(injectTocPageNumbers(artifact.html, pageNumbers));
   }
+  // 批次 7:printToPDF 不可中断(Electron 原子调用),取消需等本轮打印结束;
+  // 但落盘/书签/元数据必须中止 → 打印后立即检查,取消则不产出文件、不报成功。
+  throwIfCanceled(ctx);
+  const bookmarked =
+    headings.length > 0
+      ? await injectBookmarks(new Uint8Array(data), buildBookmarkTree(headings))
+      : new Uint8Array(data);
+  // 批次 5c:书签注入之后追加 PDF Info 元数据注入(frontmatter title/author/date → 文档属性)。
+  // 顺序固定:书签 → 元数据(后者经 pdf-lib 整体重存,必须最后执行,否则会丢弃书签)。
+  const output = await setPdfMetadata(bookmarked, artifact.metadata);
+  await fs.writeFile(outputPath, output);
 }
 
 /**

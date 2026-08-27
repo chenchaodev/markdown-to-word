@@ -110,6 +110,8 @@ export interface PdfArtifact {
   headerTemplate: string;
   /** printToPDF 的 footerTemplate(页码;footerEnabled=false 时为空模板) */
   footerTemplate: string;
+  /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;F7 两遍法页码用) */
+  tocMode: TocMode;
   /** frontmatter 元数据(PDF Info 注入用) */
   metadata?: DocMetadata;
 }
@@ -158,6 +160,7 @@ export async function convert(
       // (displayHeaderFooter 常开,机制不变,见 PDF_EMPTY_CHROME_TEMPLATE 注释)
       headerTemplate: buildPdfHeaderTemplate(headerFooter, context.headerLogo),
       footerTemplate: headerFooter.footerEnabled ? PDF_FOOTER_TEMPLATE : PDF_EMPTY_CHROME_TEMPLATE,
+      tocMode: context.tocMode ?? "static",
       metadata,
     };
   }

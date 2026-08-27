@@ -44,6 +44,24 @@ export function buildTocHtml(bodyHtml: string): string {
   );
 }
 
+/**
+ * 目录页码注入(F7-②):将 slug→页码(1-based)映射注入已渲染 HTML 的目录条目。
+ * 仅替换 .toc 块内 `<li class="toc-lN"><a href="#id">text</a></li>`,
+ * 追加 `<span class="toc-page">页码</span>`;正文普通 <li> 不受影响。
+ * 两遍法第二遍调用:第一遍打印后经 /Dests 解析出页码(pageNumbersForNames),
+ * 再注入 HTML 并重印,正文分页因 TOC 后硬分页符不变、页码一致。
+ */
+export function injectTocPageNumbers(html: string, pageNumbers: Record<string, number>): string {
+  return html.replace(
+    /<li class="toc-l(\d)"><a href="#([^"]+)">([\s\S]*?)<\/a><\/li>/g,
+    (_m, level, id, text) => {
+      const page = pageNumbers[id];
+      const pageSpan = page != null ? `<span class="toc-page">${page}</span>` : "";
+      return `<li class="toc-l${level}"><a href="#${id}">${text}</a>${pageSpan}</li>`;
+    },
+  );
+}
+
 /** 外链图片并发下载上限 */
 const EXTERNAL_IMAGE_CONCURRENCY = 3;
 

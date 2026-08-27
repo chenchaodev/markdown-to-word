@@ -156,6 +156,11 @@ ${buildHeadingRules(typography)}
   .toc-l2 { margin-left: 1.5em; }
   .toc-l3 { margin-left: 3em; }
   .toc a { color: inherit; text-decoration: none; }
+  /* F7-② 目录页码:条目与页码两端对齐 + 点线引导,页码右置灰色 */
+  .toc li { display: flex; align-items: baseline; }
+  .toc li a { flex: 1 1 auto; display: flex; align-items: baseline; color: inherit; text-decoration: none; }
+  .toc li a::after { content: ""; flex: 1 1 auto; border-bottom: 1px dotted #c8c8c8; margin: 0 .4em .35em; min-width: 1.5em; }
+  .toc-page { flex: 0 0 auto; color: #888; margin-left: .3em; }
 
   p { margin: 0 0 10px; }
   a { color: #0969da; text-decoration: none; }
