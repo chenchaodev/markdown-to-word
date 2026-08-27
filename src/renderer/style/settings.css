@@ -23,7 +23,7 @@
   right: 0;
   display: flex;
   flex-direction: column;
-  width: min(356px, calc(100vw - 48px));
+  width: min(340px, calc(100vw - 48px));
   height: 100%;
   background: var(--canvas);
   border-left: 1px solid var(--line);
@@ -393,12 +393,12 @@
 /* 响应式:紧凑档抽屉收窄(guidelines §5) */
 @media (max-width: 1080px) {
   .drawer {
-    width: 336px;
+    width: 320px;
   }
 }
 
 @media (max-width: 900px) {
   .drawer {
-    width: min(356px, 100%);
+    width: 300px;
   }
 }
