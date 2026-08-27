@@ -13,7 +13,7 @@ import {
   headingSpacingPt,
   type TypographySettings,
 } from "../settings/typography.js";
-import type { PageSetup, HeaderFooterSettings } from "../settings/settings-defaults.js";
+import type { PageSetup, HeaderFooterSettings, WatermarkSettings } from "../settings/settings-defaults.js";
 import type { ConvertWarning } from "../i18n.js";
 import { escapeHtml } from "../util/utils.js";
 import { mimeFromBuffer } from "../image/image-type.js";
@@ -335,17 +335,55 @@ export function sanitizeStyleCss(css: string): string {
   return css.replace(/<\/style/gi, "");
 }
 
-export function buildTemplate(bodyHtml: string, title: string, css: string, katexCss: string): string {
+/**
+ * 文字水印 CSS + 覆盖层(F5):固定定位居中、旋转、半透明,置于正文之下
+ * (z-index:-1,正文无背景故水印隐于文字之后);printToPDF 下 fixed 元素在每页
+ * 重复渲染,实现整本文档水印。text 空串 → 返回空串(零渲染)。
+ */
+function buildWatermarkCss(watermark: WatermarkSettings | undefined): string {
+  if (!watermark || !watermark.text.trim()) return "";
+  const color = watermark.gray ? "#999999" : "#1f2328";
+  const angle = watermark.angle;
+  const opacity = watermark.opacity;
+  return `
+  /* 文字水印(F5):固定居中 + 旋转 + 半透明,置于正文之下 */
+  .wm {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(${angle}deg);
+    font-size: 72pt;
+    font-weight: 700;
+    color: ${color};
+    opacity: ${opacity};
+    z-index: -1;
+    pointer-events: none;
+    white-space: nowrap;
+    user-select: none;
+  }`;
+}
+
+export function buildTemplate(
+  bodyHtml: string,
+  title: string,
+  css: string,
+  katexCss: string,
+  watermark?: WatermarkSettings,
+): string {
+  const watermarkCss = buildWatermarkCss(watermark);
+  const watermarkEl = watermark && watermark.text.trim()
+    ? `<div class="wm" aria-hidden="true">${escapeHtml(watermark.text)}</div>`
+    : "";
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${TEMPLATE_CSP}">
 <title>${escapeHtml(title)}</title>
-<style>${sanitizeStyleCss(css)}</style>
+<style>${sanitizeStyleCss(css)}${watermarkCss}</style>
 ${katexCss ? `<style>${sanitizeStyleCss(katexCss)}</style>` : ""}
 </head>
 <body>
+${watermarkEl}
 ${bodyHtml}
 </body>
 </html>`;

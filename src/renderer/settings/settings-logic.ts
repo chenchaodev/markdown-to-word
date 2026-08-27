@@ -110,6 +110,8 @@ export function mergeSettingsWithDefaults(loaded: Partial<AppSettings>): AppSett
     // F4:headerFooter 逐字段深合并——旧档缺整块或缺单字段均按默认兜底,
     // 与 main 侧 sanitizeHeaderFooter 语义一致(MR-11 双侧防御)
     headerFooter: { ...DEFAULT_SETTINGS.headerFooter, ...loaded.headerFooter },
+    // F5:watermark 逐字段深合并(同 headerFooter 先例)
+    watermark: { ...DEFAULT_SETTINGS.watermark, ...loaded.watermark },
     customPresets: loaded.customPresets ?? DEFAULT_SETTINGS.customPresets,
     pdfCss: loaded.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
     // B13:theme 缺失(旧 settings.json)→ "system"(显式 null/undefined 同样兜底)
@@ -202,6 +204,11 @@ export interface SettingsControlValues {
   headerLayout: AppSettings["headerFooter"]["headerLayout"];
   footerEnabled: boolean;
   headerLogoPath: string;
+  /** F5 文字水印 */
+  watermarkText: string;
+  watermarkAngle: string;
+  watermarkOpacity: string;
+  watermarkGray: boolean;
 }
 
 /** 设置对象 → 控件回填值(数值字段转字符串,与 DOM value 赋值一致)。 */
@@ -238,6 +245,10 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     headerLayout: settings.headerFooter.headerLayout,
     footerEnabled: settings.headerFooter.footerEnabled,
     headerLogoPath: settings.headerFooter.headerLogoPath,
+    watermarkText: settings.watermark.text,
+    watermarkAngle: String(settings.watermark.angle),
+    watermarkOpacity: String(settings.watermark.opacity),
+    watermarkGray: settings.watermark.gray,
   };
 }
 

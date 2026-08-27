@@ -136,6 +136,19 @@ export const headerLayoutInputs = document.querySelectorAll<HTMLInputElement>(
 export const footerEnabledInput = document.getElementById(
   "footerEnabled",
 ) as HTMLInputElement;
+// 文字水印(F5)
+export const watermarkTextInput = document.getElementById(
+  "watermarkText",
+) as HTMLInputElement;
+export const watermarkAngleInput = document.getElementById(
+  "watermarkAngle",
+) as HTMLInputElement;
+export const watermarkOpacityInput = document.getElementById(
+  "watermarkOpacity",
+) as HTMLInputElement;
+export const watermarkGrayInput = document.getElementById(
+  "watermarkGray",
+) as HTMLInputElement;
 // 模板预设
 export const templatePresetSelect = document.getElementById(
   "templatePreset",

@@ -10,6 +10,7 @@
 import {
   AlignmentType,
   Document,
+  Header,
   Packer,
   PageBreak,
   PageOrientation,
@@ -23,7 +24,7 @@ import { renderCaptionParagraph } from "./handlers/captions.js";
 import { renderDisplayMath, type EquationContext } from "./handlers/equations.js";
 import { type Ctx } from "./ctx.js";
 import { prescanDocument } from "./prescan.js";
-import { renderCoverPage, renderTocPage, renderHeader, renderFooter, type HeaderLogoData } from "./chrome.js";
+import { renderCoverPage, renderTocPage, renderHeader, renderFooter, renderWatermarkParagraph, type HeaderLogoData } from "./chrome.js";
 import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./handlers/content.js";
 import { renderCode } from "./handlers/code-block.js";
 import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./handlers/inline-html.js";
@@ -33,11 +34,13 @@ import { renderTable } from "./handlers/table.js";
 import {
   DEFAULT_HEADER_FOOTER,
   DEFAULT_PAGE_SETUP,
+  DEFAULT_WATERMARK,
   mmToTwips,
   PAPER_SIZES_MM,
   twipsToPx,
   type HeaderFooterSettings,
   type PageSetup,
+  type WatermarkSettings,
 } from "../settings/settings-defaults.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import type { TypographySettings } from "../settings/typography.js";
@@ -83,8 +86,10 @@ export interface RenderOptions {
   /** 页眉页脚配置(F4;缺省 DEFAULT_HEADER_FOOTER = 现状行为:标题页眉+页码页脚) */
   headerFooter?: HeaderFooterSettings;
   /** 页眉 logo 已读数据(main 层读文件后注入,core 零 IO;仅 headerMode=custom 消费;
-   *  webp/null 魔数降级为无 logo + keyed 警告) */
+ *  webp/null 魔数降级为无 logo + keyed 警告) */
   headerLogo?: HeaderLogoData;
+  /** 文字水印(F5;缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
+  watermark?: WatermarkSettings;
 }
 
 /** G1 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理;
@@ -137,6 +142,8 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   const title = options.metadata?.title ?? options.title;
   // 页眉页脚配置归一化(F4):缺省字段补 DEFAULT_HEADER_FOOTER(= 现状行为)
   const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...options.headerFooter };
+  // F5:水印配置归一化(缺省字段补 DEFAULT_WATERMARK;text 空串视为关闭)
+  const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...options.watermark };
   // custom 模式 logo 魔数降级:webp 不支持 docx 内嵌、未知魔数不伪装——均降级为
   // 无 logo + keyed 警告(复用正文图片同款文案,src = 设置的 logo 路径)
   let headerLogo = options.headerLogo;
@@ -218,9 +225,9 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     sections: [
       {
         properties: { page: { size, margin } },
-        // 页眉分流(F4):default=标题居中(现状行为)/custom=文字+logo(两者皆空不装配)/
-        // none=无页眉;左右分栏右对齐制表位位置 = 正文可用宽度(textWidthTwips)
-        headers: buildHeaderForSection(headerFooter, title, headerLogo, textWidthTwips),
+        // 页眉分流(F4)+ F5 水印合并:default=标题居中/custom=文字+logo/none=无页眉;
+        // 水印(text 非空)与页眉共存于同一 default 头(置底),互不覆盖
+        headers: buildHeaders(headerFooter, title, headerLogo, textWidthTwips, watermark),
         // 页脚开关(F4):false 时不装配 footers(docx 不生成 footer part)
         footers: headerFooter.footerEnabled ? { default: renderFooter() } : undefined,
         children,
@@ -253,6 +260,29 @@ function buildHeaderForSection(
     };
   }
   return title ? { default: renderHeader({ kind: "title", title }, contentWidthTwips) } : undefined;
+}
+
+/**
+ * 页眉 + 水印合并装配(F4 + F5):headerFooter 经 buildHeaderForSection 产出 title/
+ * custom 页眉(可能无);水印(text 非空)作为置底段落并入同一 default 头——
+ * docx 头类型仅 default/first/even,标题头与水印须共存于同一 default 头,
+ * 故以「标题头段落 + 水印段落」重构一个 Header(标题头段落经其 options.children 取回)。
+ * 水印关闭(text 空)或标题头无(default none 且无标题)时,仅水印自成 default 头。
+ */
+function buildHeaders(
+  headerFooter: HeaderFooterSettings,
+  title: string | undefined,
+  headerLogo: HeaderLogoData | undefined,
+  contentWidthTwips: number,
+  watermark: WatermarkSettings,
+): { default: Header } | undefined {
+  const base = buildHeaderForSection(headerFooter, title, headerLogo, contentWidthTwips);
+  if (!watermark.text.trim()) return base;
+  const wmPara = renderWatermarkParagraph(watermark);
+  if (!base) return { default: new Header({ children: [wmPara] }) };
+  return {
+    default: new Header({ children: [...(base.default.options.children as readonly Paragraph[]), wmPara] }),
+  };
 }
 
 async function renderBlock(

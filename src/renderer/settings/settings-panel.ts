@@ -54,6 +54,10 @@ import {
   headerLogoStatus,
   headerModeInputs,
   headerTextInput,
+  watermarkTextInput,
+  watermarkAngleInput,
+  watermarkOpacityInput,
+  watermarkGrayInput,
   headingNumberingInput,
   headingScaleInputs,
   headingSpacingInputs,
@@ -260,6 +264,11 @@ export function applySettingsToControls(): void {
   headerLogoStatus.title = logoName;
   headerLogoClearBtn.classList.toggle("hidden", !v.headerLogoPath);
   syncHeaderCustomVisibility();
+  // F5 文字水印回填:文字/角度/不透明度/浅灰
+  watermarkTextInput.value = v.watermarkText;
+  watermarkAngleInput.value = v.watermarkAngle;
+  watermarkOpacityInput.value = v.watermarkOpacity;
+  watermarkGrayInput.checked = v.watermarkGray;
   // 问题 3:抽屉副标题随回填刷新(「预设名 · 纸张」)
   updateDrawerMeta(composeDrawerMetaText());
 }

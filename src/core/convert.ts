@@ -38,14 +38,21 @@ import type { ImageResolver } from "./image/image-resolver.js";
 export {
   DEFAULT_PAGE_SETUP,
   DEFAULT_HEADER_FOOTER,
+  DEFAULT_WATERMARK,
   type PageSetup,
   type HeaderFooterSettings,
+  type WatermarkSettings,
 } from "./settings/settings-defaults.js";
 // ConvertFormat 单源 settings-defaults(CORE-8 收敛 B7 平行类型残留);
 // re-export 保持 main 侧既有 import 路径(core/convert.js)不变
 export type { ConvertFormat } from "./settings/settings-defaults.js";
 import type { ConvertFormat, PageSetup } from "./settings/settings-defaults.js";
-import { DEFAULT_HEADER_FOOTER, type HeaderFooterSettings } from "./settings/settings-defaults.js";
+import {
+  DEFAULT_HEADER_FOOTER,
+  DEFAULT_WATERMARK,
+  type HeaderFooterSettings,
+  type WatermarkSettings,
+} from "./settings/settings-defaults.js";
 
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */
@@ -78,6 +85,8 @@ export interface ConvertContext {
   headerFooter?: HeaderFooterSettings;
   /** 页眉 logo 已读数据(main 层读文件后注入,core 零 IO;仅 headerMode=custom 消费) */
   headerLogo?: HeaderLogoData;
+  /** 文字水印(F5;缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
+  watermark?: WatermarkSettings;
   /** PDF 渲染子阶段回调(B9 进度分阶段上报):pdf 链路经此上报 parse/inline/
    *  mermaid/katex 四个子阶段(print 由 main/converter.ts 在 printToPDF 前上报);
    *  缺省不上报(core 层零依赖,行为不变)。向后兼容:旧消费方对未知 stage 键
@@ -117,6 +126,8 @@ export async function convert(
   const { metadata, body } = parseFrontmatter(md);
   // 页眉页脚配置归一化(F4):缺省字段补默认(= 现状行为),双管线共用同一取值
   const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...context.headerFooter };
+  // F5:水印配置归一化(缺省字段补默认;text 空串视为关闭,由渲染层判定零渲染)
+  const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...context.watermark };
 
   if (format === "pdf") {
     // pdf 分支只消费 body 字符串(markdown-it 在 renderPdfHtml 内另行解析),
@@ -139,6 +150,7 @@ export async function convert(
         pdfCss: context.pdfCss,
         mermaidResolver: context.mermaidResolver,
         onStage: context.onStage,
+        watermark,
       }),
       // F4:页眉模板按配置构造(logo data URI 内嵌);页脚开关关闭时空模板占位
       // (displayHeaderFooter 常开,机制不变,见 PDF_EMPTY_CHROME_TEMPLATE 注释)
@@ -165,6 +177,7 @@ export async function convert(
       mermaidResolver: context.mermaidResolver,
       headerFooter,
       headerLogo: context.headerLogo,
+      watermark,
     }),
   };
 }

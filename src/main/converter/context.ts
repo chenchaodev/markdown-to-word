@@ -12,7 +12,7 @@ import type { ImageResolver } from "../../core/image/image-resolver.js";
 import { sniffImageType } from "../../core/image/image-type.js";
 import { headerLogoLoadFailedWarning } from "../../core/image/image-warning.js";
 import type { HeaderLogoData } from "../../core/docx/chrome.js";
-import { DEFAULT_HEADER_FOOTER, type HeaderFooterSettings } from "../../core/settings/settings-defaults.js";
+import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK, type HeaderFooterSettings, type WatermarkSettings } from "../../core/settings/settings-defaults.js";
 import type { MermaidResolver } from "../../core/markdown/mermaid.js";
 import { createImageResolver } from "../services/image-downloader.js";
 import type { AppSettings } from "../persist/settings.js";
@@ -129,6 +129,8 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
   // F4:页眉页脚配置归一化(缺字段补默认 = 现状行为)+ logo 文件读取(失败降级)
   const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...options.settings.headerFooter };
   const headerLogo = await resolveHeaderLogo(headerFooter, options.warnings);
+  // F5:水印配置归一化(缺字段补默认 = 不启用)
+  const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...options.settings.watermark };
   return {
     baseDir: options.baseDir,
     title: options.title,
@@ -145,5 +147,6 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
     onStage: options.onStage,
     headerFooter,
     headerLogo,
+    watermark,
   };
 }

@@ -1032,6 +1032,19 @@ html[data-theme="dark"] .switch-input::after {
   user-select: text;
 }
 
+/* 数字输入(角度/不透明度等):定宽,与相邻单位符同行对齐 */
+.tin-num {
+  width: 96px;
+  text-align: right;
+}
+
+/* 行内单位后缀(如旋转角度 °) */
+.row-unit {
+  margin-left: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
 textarea.tin,
 .ta {
   height: auto;

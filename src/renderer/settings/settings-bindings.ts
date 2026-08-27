@@ -57,6 +57,10 @@ import {
    headerModeInputs,
    headerTextInput,
    headingNumberingInput,
+   watermarkAngleInput,
+   watermarkGrayInput,
+   watermarkOpacityInput,
+   watermarkTextInput,
    headingScaleInputs,
    headingSpacingInputs,
   languageSelect,
@@ -134,6 +138,11 @@ function persistTypography(): void {
 /** 页眉页脚字段(F4)整体写回。 */
 function persistHeaderFooter(): void {
   persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+}
+
+/** 文字水印字段(F5)整体写回。 */
+function persistWatermark(): void {
+  persistSettings({ watermark: { ...state.settings.watermark } });
 }
 
 /**
@@ -480,6 +489,43 @@ export function bindSettingsEvents(): void {
     persistHeaderFooter();
   });
 
+  /* ---------- 文字水印(F5):任一控件变更即时生效并持久化 ---------- */
+  watermarkTextInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.watermark.text = watermarkTextInput.value;
+    persistWatermark();
+  });
+
+  watermarkAngleInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    const clamped = Math.min(360, Math.max(0, watermarkAngleInput.valueAsNumber));
+    if (!Number.isFinite(clamped)) {
+      watermarkAngleInput.value = String(state.settings.watermark.angle);
+      return;
+    }
+    state.settings.watermark.angle = clamped;
+    watermarkAngleInput.value = String(clamped);
+    persistWatermark();
+  });
+
+  watermarkOpacityInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    const clamped = Math.min(1, Math.max(0, watermarkOpacityInput.valueAsNumber));
+    if (!Number.isFinite(clamped)) {
+      watermarkOpacityInput.value = String(state.settings.watermark.opacity);
+      return;
+    }
+    state.settings.watermark.opacity = clamped;
+    watermarkOpacityInput.value = String(clamped);
+    persistWatermark();
+  });
+
+  watermarkGrayInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.watermark.gray = watermarkGrayInput.checked;
+    persistWatermark();
+  });
+
   // 模板预设:整体套用排版与页面设置(UI 改版 v4:抽屉与快速参数条两处 select
   // 共用 applyTemplatePreset,批次 11 迭代 3 起硬编码 + 自定义预设统一走此路径)
   templatePresetSelect.addEventListener("change", () => {
@@ -539,6 +585,7 @@ export function bindSettingsEvents(): void {
     state.settings.outputDir = d.outputDir;
     state.settings.pdfCss = d.pdfCss;
     state.settings.headerFooter = { ...d.headerFooter };
+    state.settings.watermark = { ...d.watermark };
     state.hydratingSettings = true;
     applySettingsToControls();
     state.hydratingSettings = false;
@@ -552,6 +599,7 @@ export function bindSettingsEvents(): void {
       outputDir: state.settings.outputDir,
       pdfCss: state.settings.pdfCss,
       headerFooter: { ...state.settings.headerFooter },
+      watermark: { ...state.settings.watermark },
     });
     showToast(t("toast.settingsReset"));
   });

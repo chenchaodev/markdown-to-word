@@ -28,12 +28,14 @@ import {
 import {
   DEFAULT_SETTINGS,
   DEFAULT_HEADER_FOOTER,
+  DEFAULT_WATERMARK,
   MARGIN_MIN_MM,
   MARGIN_MAX_MM,
   MAX_CUSTOM_PRESETS,
   type AppSettings,
   type CustomPreset,
   type HeaderFooterSettings,
+  type WatermarkSettings,
 } from "../../core/settings/settings-defaults.js";
 import { t, isLanguage } from "../../core/i18n.js";
 export { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
@@ -62,6 +64,7 @@ const SETTING_KEYS = [
   "language",
   "theme",
   "headerFooter",
+  "watermark",
 ] as const;
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
@@ -163,6 +166,8 @@ export function loadSettings(): AppSettings {
         // F4:headerFooter 不参与 isValidSettings 整文件形状校验(同 typography
         // 先例——旧文件缺字段走字段级兜底,不因部分字段缺失整体回退默认)
         headerFooter: sanitizeHeaderFooter(parsed.headerFooter),
+        // F5:watermark 同 headerFooter 先例(整文件形状校验不查;字段级兜底)
+        watermark: sanitizeWatermark(parsed.watermark),
       };
     }
   } catch {
@@ -245,6 +250,9 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
       case "headerFooter":
         out.headerFooter = sanitizeHeaderFooter(src.headerFooter);
         break;
+      case "watermark":
+        out.watermark = sanitizeWatermark(src.watermark);
+        break;
     }
   }
   return out;
@@ -266,6 +274,24 @@ function sanitizeHeaderFooter(value: unknown): HeaderFooterSettings {
   if (typeof src.headerLogoPath === "string") out.headerLogoPath = src.headerLogoPath;
   if (isOneOf(src.headerLayout, HEADER_LAYOUTS)) out.headerLayout = src.headerLayout;
   if (typeof src.footerEnabled === "boolean") out.footerEnabled = src.footerEnabled;
+  return out;
+}
+
+/**
+ * watermark 逐字段校验(F5,仿 sanitizeHeaderFooter):
+ * text 钳制为 string(空串 = 关闭);angle 钳制到 [0,360];opacity 钳制到 [0,1];
+ * gray 钳制为 boolean。始终返回合法完整对象。
+ */
+function sanitizeWatermark(value: unknown): WatermarkSettings {
+  const src =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const out: WatermarkSettings = { ...DEFAULT_WATERMARK };
+  if (typeof src.text === "string") out.text = src.text;
+  if (isFiniteNumber(src.angle)) out.angle = Math.min(360, Math.max(0, src.angle));
+  if (isFiniteNumber(src.opacity)) out.opacity = Math.min(1, Math.max(0, src.opacity));
+  if (typeof src.gray === "boolean") out.gray = src.gray;
   return out;
 }
 

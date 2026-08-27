@@ -66,6 +66,32 @@ export const DEFAULT_HEADER_FOOTER: HeaderFooterSettings = {
   footerEnabled: true,
 };
 
+/* ---------- 文字水印(F5) ---------- */
+/**
+ * 文字水印设置:与页眉页脚同组(「不入预设」),文档外壳层装饰。
+ * - text 空串 = 不启用(零渲染)
+ * - angle 旋转角度(度,0–360),经典观感默认 45
+ * - opacity 不透明度(0–1),浅色不干扰正文
+ * - gray 浅灰经典观感(否则沿用正文字色)
+ */
+export interface WatermarkSettings {
+  /** 水印文字(空串 = 不启用) */
+  text: string;
+  /** 旋转角度(度,0–360) */
+  angle: number;
+  /** 不透明度(0–1) */
+  opacity: number;
+  /** 浅灰经典观感(true)/正文同色(false) */
+  gray: boolean;
+}
+
+export const DEFAULT_WATERMARK: WatermarkSettings = {
+  text: "",
+  angle: 45,
+  opacity: 0.15,
+  gray: true,
+};
+
 /** 默认页面设置:近似 Word 默认(A4 纵向,上下 25mm 左右 32mm)。 */
 export const DEFAULT_PAGE_SETUP: PageSetup = {
   paper: "A4",
@@ -133,6 +159,8 @@ export interface AppSettings {
   theme: ThemePreference;
   /** 页眉页脚(默认 = 现状行为:标题页眉 + 页码页脚;见 HeaderFooterSettings) */
   headerFooter: HeaderFooterSettings;
+  /** 文字水印(F5;与页眉页脚同组「不入预设」;空 text = 不启用) */
+  watermark: WatermarkSettings;
 }
 
 /** 自定义模板预设:名称 + 排版/页面设置快照(套用逻辑与硬编码预设一致)。 */
@@ -160,6 +188,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   language: "zh",
   theme: "system",
   headerFooter: { ...DEFAULT_HEADER_FOOTER },
+  watermark: { ...DEFAULT_WATERMARK },
 };
 
 /** 页面边距钳制范围(mm,与主进程 sanitizePageSetup 一致) */

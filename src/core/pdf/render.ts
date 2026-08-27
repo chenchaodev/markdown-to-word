@@ -30,6 +30,7 @@ import type { ConvertWarning } from "../i18n.js";
 import { highlightFallbackWarning } from "../i18n.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
+import type { WatermarkSettings } from "../settings/settings-defaults.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
 // 契约单源(B7):ImageResolver 类型收敛 core 共享模块(仅类型导入;
 // 原 re-export 无外部消费者,CORE-9 清理移除)
@@ -85,6 +86,8 @@ export interface RenderPdfHtmlOptions {
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏保持
    *  原代码块渲染,行为不变) */
   mermaidResolver?: MermaidResolver;
+  /** 文字水印(F5;缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
+  watermark?: WatermarkSettings;
   /** 渲染子阶段上报(B9 进度分阶段):parse(markdown-it 渲染)/ inline(图片检查
    *  与外链内嵌)/ mermaid(占位替换)/ katex(KaTeX 样式装载)四个阶段键,
    *  经 main/converter.ts 的 onProgress 通道转发为 convert:progress;
@@ -233,5 +236,6 @@ export async function renderPdfHtml(
       /<h1[\s>]/i.test(bodyHtml),
     ) + (options.pdfCss ? `\n${options.pdfCss}` : ""),
     options.katexDir ? loadKatexCss(options.katexDir, warnings) : "",
+    options.watermark,
   );
 }

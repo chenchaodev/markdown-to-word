@@ -4,20 +4,24 @@
  */
 import {
   AlignmentType,
+  Drawing,
   Footer,
   Header,
   ImageRun,
   PageBreak,
   PageNumber,
   Paragraph,
+  Run,
   TableOfContents,
   TextRun,
   Tab,
   TabStopType,
+  VerticalAnchor,
 } from "docx";
 import { MUTED_TEXT_GRAY, SECONDARY_TEXT_GRAY } from "./theme.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import { imageSizeFromBuffer } from "../image/image-type.js";
+import type { WatermarkSettings } from "../settings/settings-defaults.js";
 
 /* ---------- chrome 版面常量(字号单位 half-points = pt × 2) ---------- */
 
@@ -217,4 +221,60 @@ export function renderFooter(): Footer {
       ],
     })],
   });
+}
+
+/**
+ * 文字水印段落(F5):使用 DrawingML(DML) 文本框(wps:wsp)实现旋转水印。
+ * VML v:shape 的 rotation 属性在多数 Word 版本中对 v:textbox 内容无效——
+ * 文字始终水平;DML 的 a:xfrm rot 属性是 Word 原生水印使用的标准机制,
+ * 文字随形状一起旋转,可靠支持任意角度。
+ *
+ * 结构:Paragraph > Run > Drawing > wp:anchor(behindDoc) > a:graphic >
+ *   a:graphicData(wps) > wps:wsp > wps:txbx > w:txbxContent > content
+ *   + wps:bodyPr(anchor=ctr) + wps:spPr > a:xfrm(rot)
+ *
+ * - 无边框:不设置 outline/solidFill → DML 默认无描边
+ * - 页面居中:wp:positionH/positionV relativeFrom="page" align="center"
+ * - 置底:behindDocument=true
+ * - 不透明度:由浅灰配色近似(Run 无 opacity 字段)
+ */
+let watermarkShapeSeq = 0;
+export function renderWatermarkParagraph(watermark: WatermarkSettings): Paragraph {
+  const color = watermark.gray ? "999999" : "1F2328";
+  const run = new TextRun({ text: watermark.text, size: 144, color, bold: true });
+  const contentPara = new Paragraph({ alignment: AlignmentType.CENTER, children: [run] });
+  // 600pt × 200pt → EMU (1pt = 12700 EMU)
+  const widthEmu = 7_620_000;
+  const heightEmu = 2_540_000;
+  // DML rotation: 60000ths of a degree; 正值 = 逆时针; 经典对角水印(左下→右上) = +angle
+  const rotEmu = watermark.angle * 60_000;
+  const seq = watermarkShapeSeq++;
+  const drawing = new Drawing(
+    {
+      type: "wps",
+      transformation: {
+        pixels: { x: 800, y: 267 },
+        emus: { x: widthEmu, y: heightEmu },
+        rotation: rotEmu,
+      },
+      data: {
+        children: [contentPara],
+        bodyProperties: {
+          margins: { top: 0, bottom: 0, left: 0, right: 0 },
+          verticalAnchor: VerticalAnchor.CENTER,
+        },
+      },
+    },
+    {
+      floating: {
+        horizontalPosition: { relative: "page", align: "center" },
+        verticalPosition: { relative: "page", align: "center" },
+        behindDocument: true,
+        zIndex: 0,
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+      },
+      docProperties: { title: `watermark-${seq}`, name: `Watermark${seq}` },
+    },
+  );
+  return new Paragraph({ children: [new Run({ children: [drawing] })] });
 }

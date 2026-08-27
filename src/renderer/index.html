@@ -600,9 +600,35 @@
             <p class="scope-note" data-i18n="settings.headerFooterDefaultNote">默认模式：页眉居中显示文档标题，页脚固定显示页码，不受开关控制。</p>
           </section>
 
-          <!-- ── 05 编号与目录:结构惯例(大 → 小元素层级,H1 分页收尾) ── -->
+          <!-- ── 05 文字水印(组头挂「不入预设」徽标;与页眉页脚同组概念,置文档外壳层) ── -->
           <section class="sec">
-            <div class="sec-h"><span class="sec-num">05</span><span class="sec-title" data-i18n="settings.groupNumbering">编号与目录</span><span class="sec-rule"></span></div>
+            <div class="sec-h"><span class="sec-num">05</span><span class="sec-title" data-i18n="settings.groupWatermark">文字水印</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
+            <div class="row block">
+              <label class="row-l" for="watermarkText" data-i18n="settings.watermarkText">水印文字</label>
+              <input type="text" id="watermarkText" class="tin" style="width: 100%" placeholder="" />
+            </div>
+            <div class="row">
+              <span class="row-l" data-i18n="settings.watermarkAngle">旋转角度</span>
+              <input type="number" id="watermarkAngle" class="tin tin-num" min="0" max="360" step="1" style="width: 96px" />
+              <span class="row-unit" data-i18n="settings.degree">°</span>
+            </div>
+            <div class="row">
+              <span class="row-l" data-i18n="settings.watermarkOpacity">不透明度</span>
+              <input type="number" id="watermarkOpacity" class="tin tin-num" min="0" max="1" step="0.05" style="width: 96px" />
+            </div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.watermarkGray">浅灰经典观感</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.watermarkGrayDesc">关闭则沿用正文字色</span>
+              </span>
+              <input type="checkbox" id="watermarkGray" class="switch-input" />
+            </div>
+            <p class="scope-note" data-i18n="settings.watermarkNote">文字水印叠加于每页(旋转置底);PDF 与 Word 双格式通用,不随预设保存。</p>
+          </section>
+
+          <!-- ── 06 编号与目录:结构惯例(大 → 小元素层级,H1 分页收尾) ── -->
+          <section class="sec">
+            <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupNumbering">编号与目录</span><span class="sec-rule"></span></div>
             <div class="sw-row">
               <span>
                 <span class="row-l" data-i18n="settings.headingNumbering">章节编号</span>
@@ -643,7 +669,7 @@
           <!-- ── 06 输出:产物去向与处置(不入预设)。UI 改版 v4:输出目录同时镜像到
                主界面快速参数条(#quickOutputDir),两处 chips 由 bindings 同写同回填 ── -->
           <section class="sec">
-            <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupOutput">输 出</span><span class="sec-rule"></span></div>
+            <div class="sec-h"><span class="sec-num">07</span><span class="sec-title" data-i18n="settings.groupOutput">输 出</span><span class="sec-rule"></span></div>
             <div class="row">
               <span>
                 <span class="row-l" data-i18n="settings.outputDir">输出目录</span>
@@ -708,7 +734,7 @@
 
           <!-- ── 07 应用:软件自身偏好(不入预设) ── -->
           <section class="sec">
-            <div class="sec-h"><span class="sec-num">07</span><span class="sec-title" data-i18n="settings.groupApp">应 用</span><span class="sec-rule"></span></div>
+            <div class="sec-h"><span class="sec-num">08</span><span class="sec-title" data-i18n="settings.groupApp">应 用</span><span class="sec-rule"></span></div>
             <div class="row">
               <span class="row-l" data-i18n="settings.groupAppearance">主题</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.groupAppearance" aria-label="主题">
