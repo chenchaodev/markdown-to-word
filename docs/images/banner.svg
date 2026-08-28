@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#15181d"/>
+      <stop offset="1" stop-color="#1c2027"/>
+    </linearGradient>
+    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#c23d1e"/>
+      <stop offset="1" stop-color="#d5542f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect x="0" y="0" width="14" height="640" fill="url(#acc)"/>
+  <text x="96" y="250" fill="#f3f3ef" font-size="86" font-weight="700" letter-spacing="1">Markdown<tspan fill="#d5542f">ToWord</tspan></text>
+  <text x="98" y="320" fill="#b8bcc4" font-size="34">Markdown → Word / PDF · 本地离线 · 真 docx 中文排版</text>
+  <text x="98" y="372" fill="#878e99" font-size="30">Local-first Markdown to real .docx / .pdf converter</text>
+  <g font-size="24" font-family="'Cascadia Code', monospace">
+    <rect x="98" y="430" rx="8" width="150" height="52" fill="#232830" stroke="#3b424e"/>
+    <text x="173" y="463" fill="#e9e7e1" text-anchor="middle">GPL-3.0</text>
+    <rect x="266" y="430" rx="8" width="150" height="52" fill="#232830" stroke="#3b424e"/>
+    <text x="341" y="463" fill="#e9e7e1" text-anchor="middle">Electron</text>
+    <rect x="434" y="430" rx="8" width="200" height="52" fill="#232830" stroke="#3b424e"/>
+    <text x="534" y="463" fill="#e9e7e1" text-anchor="middle">Offline</text>
+    <rect x="652" y="430" rx="8" width="210" height="52" fill="#232830" stroke="#3b424e"/>
+    <text x="757" y="463" fill="#e9e7e1" text-anchor="middle">Windows</text>
+  </g>
+  <text x="98" y="560" fill="#71767f" font-size="24">文件不上传 · 离线可用 · 中文排版可控 · WPS 兼容</text>
+</svg>
