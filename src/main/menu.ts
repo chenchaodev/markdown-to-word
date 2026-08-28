@@ -41,9 +41,11 @@ function showAboutDialog(): void {
   const aboutUrl = path.join(here, "..", "renderer", "about.html");
   const preload = path.join(here, "..", "renderer", "about-preload.cjs");
   const parent = getMainWindow() ?? undefined;
+  const W = 500;
+  const H = 560;
   const win = new BrowserWindow({
-    width: 500,
-    height: 560,
+    width: W,
+    height: H,
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -60,7 +62,16 @@ function showAboutDialog(): void {
     },
   });
   void win.loadFile(aboutUrl, { query: { v: app.getVersion() } });
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    if (parent) {
+      const b = parent.getBounds();
+      win.setPosition(
+        Math.round(b.x + (b.width - W) / 2),
+        Math.round(b.y + (b.height - H) / 2),
+      );
+    }
+    win.show();
+  });
 }
 
 /**
