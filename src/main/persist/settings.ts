@@ -67,6 +67,9 @@ const SETTING_KEYS = [
   "theme",
   "headerFooter",
   "watermark",
+  "aiCleanup",
+  "obsidianCompat",
+  "obsidianAttachmentFolder",
 ] as const;
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
@@ -119,6 +122,10 @@ export function isValidSettings(value: unknown): value is AppSettings {
   // 改由 loadSettings 对 language 字段级兜底 DEFAULT_SETTINGS.language(zh)
   // theme 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "system";存在则须枚举内值
   if ("theme" in s && !isOneOf(s.theme, THEMES)) return false;
+  // B1/C1:新增开关为可选字段(旧 settings.json 缺省视为合法,loadSettings 兜底默认)
+  if ("aiCleanup" in s && typeof s.aiCleanup !== "boolean") return false;
+  if ("obsidianCompat" in s && typeof s.obsidianCompat !== "boolean") return false;
+  if ("obsidianAttachmentFolder" in s && typeof s.obsidianAttachmentFolder !== "string") return false;
   const ps = s.pageSetup as Record<string, unknown> | undefined;
   if (typeof ps !== "object" || ps === null) return false;
   if (!isOneOf(ps.paper, PAPERS)) return false;
@@ -174,6 +181,16 @@ export function loadSettings(): AppSettings {
         headerFooter: sanitizeHeaderFooter(parsed.headerFooter),
         // F5:watermark 同 headerFooter 先例(整文件形状校验不查;字段级兜底)
         watermark: sanitizeWatermark(parsed.watermark),
+        // B1/C1:旧 settings.json 缺字段 → 兜底默认(与 toc/theme 同先例)
+        aiCleanup: typeof parsed.aiCleanup === "boolean" ? parsed.aiCleanup : DEFAULT_SETTINGS.aiCleanup,
+        obsidianCompat:
+          typeof parsed.obsidianCompat === "boolean"
+            ? parsed.obsidianCompat
+            : DEFAULT_SETTINGS.obsidianCompat,
+        obsidianAttachmentFolder:
+          typeof parsed.obsidianAttachmentFolder === "string"
+            ? parsed.obsidianAttachmentFolder
+            : DEFAULT_SETTINGS.obsidianAttachmentFolder,
       };
     }
   } catch {
@@ -261,6 +278,22 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
         break;
       case "watermark":
         out.watermark = sanitizeWatermark(src.watermark);
+        break;
+      case "aiCleanup":
+        out.aiCleanup =
+          typeof src.aiCleanup === "boolean" ? src.aiCleanup : DEFAULT_SETTINGS.aiCleanup;
+        break;
+      case "obsidianCompat":
+        out.obsidianCompat =
+          typeof src.obsidianCompat === "boolean"
+            ? src.obsidianCompat
+            : DEFAULT_SETTINGS.obsidianCompat;
+        break;
+      case "obsidianAttachmentFolder":
+        out.obsidianAttachmentFolder =
+          typeof src.obsidianAttachmentFolder === "string"
+            ? src.obsidianAttachmentFolder
+            : DEFAULT_SETTINGS.obsidianAttachmentFolder;
         break;
     }
   }

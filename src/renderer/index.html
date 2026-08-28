@@ -179,9 +179,6 @@
                 <span class="qb-label" data-i18n="settings.presetLabel">模板预设</span>
                 <span class="sel-wrap">
                   <select id="quickPreset" class="setting-select qb-select" data-i18n-aria-label="settings.presetLabel" aria-label="模板预设">
-                    <option value="default" data-i18n="preset.default">默认</option>
-                    <option value="paper" data-i18n="preset.paper">学术论文</option>
-                    <option value="business" data-i18n="preset.business">商务简报</option>
                   </select>
                 </span>
               </label>
@@ -401,9 +398,6 @@
                    10 项,枚举 >5 → sel 形态合规)。选项由 rebuildPresetOptions 动态维护 -->
               <span class="sel-wrap">
                 <select id="templatePreset" class="setting-select">
-                  <option value="default" data-i18n="preset.default">默认</option>
-                  <option value="paper" data-i18n="preset.paper">学术论文</option>
-                  <option value="business" data-i18n="preset.business">商务简报</option>
                 </select>
               </span>
               <span id="templatePresetHint" class="settings-note"
@@ -780,6 +774,29 @@
               <span class="sel-wrap">
                 <select id="languageSelect" class="setting-select"></select>
               </span>
+            </div>
+          </section>
+
+          <!-- ── 09 AI 清理与 Obsidian 兼容(不入预设) ── -->
+          <section class="sec">
+            <div class="sec-h"><span class="sec-num">09</span><span class="sec-title" data-i18n="settings.groupAiObsidian">AI 与 Obsidian</span><span class="sec-rule"></span></div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.aiCleanup">AI 清理</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.aiCleanupDesc">转换前自动规整 AI 生成的 Markdown（智能引号、破折号、列表、空行）</span>
+              </span>
+              <input type="checkbox" id="aiCleanup" class="switch-input" />
+            </div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.obsidianCompat">Obsidian 兼容</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.obsidianCompatDesc">将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接</span>
+              </span>
+              <input type="checkbox" id="obsidianCompat" class="switch-input" />
+            </div>
+            <div class="row block">
+              <label class="row-l" for="obsidianAttachmentFolder" data-i18n="settings.obsidianAttachmentFolder">Obsidian 附件子文件夹</label>
+              <input type="text" id="obsidianAttachmentFolder" class="tin" style="width: 100%" />
             </div>
           </section>
 

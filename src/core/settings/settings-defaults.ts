@@ -170,6 +170,12 @@ export interface AppSettings {
   headerFooter: HeaderFooterSettings;
   /** 文字水印(F5;与页眉页脚同组「不入预设」;空 text = 不启用) */
   watermark: WatermarkSettings;
+  /** AI 清理(B1):转换前自动规整 AI 生成的 Markdown(智能引号/破折号/列表格式/空行) */
+  aiCleanup: boolean;
+  /** Obsidian 兼容(C1):将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接 */
+  obsidianCompat: boolean;
+  /** Obsidian 附件子文件夹名(C1;用于解析 ![[图片]] 路径前缀) */
+  obsidianAttachmentFolder: string;
 }
 
 /** 自定义模板预设:名称 + 排版/页面设置快照(套用逻辑与硬编码预设一致)。 */
@@ -199,6 +205,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
   headerFooter: { ...DEFAULT_HEADER_FOOTER },
   watermark: { ...DEFAULT_WATERMARK },
+  aiCleanup: false,
+  obsidianCompat: false,
+  obsidianAttachmentFolder: "Attachments",
 };
 
 /** 页面边距钳制范围(mm,与主进程 sanitizePageSetup 一致) */
@@ -218,6 +227,8 @@ export interface TemplatePreset {
   name: string;
   /** 简短说明,显示在模板选择行 */
   hint: string;
+  /** i18n 键(硬编码预设本地化用;自定义预设留空,回退 name) */
+  i18nKey?: string;
   typography: TypographySettings;
   pageSetup: PageSetup;
 }
@@ -226,6 +237,7 @@ export interface TemplatePreset {
 export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: "default",
+    i18nKey: "preset.default",
     name: "默认",
     hint: "常规文档:微软雅黑正文、两端对齐、行距 1.5",
     typography: { ...DEFAULT_TYPOGRAPHY },
@@ -233,6 +245,7 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   },
   {
     id: "paper",
+    i18nKey: "preset.paper",
     name: "学术论文",
     hint: "论文常用:宋体正文 + Times New Roman 西文、两端对齐、标准页边距",
     typography: {
@@ -258,8 +271,80 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   },
   {
     id: "business",
+    i18nKey: "preset.business",
     name: "商务简报",
     hint: "简报常用:微软雅黑正文、左对齐、行距 1.15、页边距更紧凑",
+    typography: {
+      fontAscii: "Calibri",
+      fontEastAsia: "微软雅黑",
+      bodySizePt: 11,
+      lineSpacing: 1.15,
+      firstLineIndent: false,
+      align: "left",
+      headingNumbering: false,
+      captionNumbering: false,
+      headingScale: "standard",
+      headingSpacing: "standard",
+    },
+    pageSetup: {
+      paper: "A4",
+      orientation: "portrait",
+      marginTop: 19.1,
+      marginBottom: 19.1,
+      marginLeft: 25.4,
+      marginRight: 25.4,
+    },
+  },
+  {
+    id: "official-cn",
+    i18nKey: "preset.officialCn",
+    name: "中文公文",
+    hint: "仿宋正文 + Times New Roman 西文、两端对齐、GB 标准页边距",
+    typography: {
+      fontAscii: "Times New Roman",
+      fontEastAsia: "仿宋_GB2312",
+      bodySizePt: 16,
+      lineSpacing: 1.5,
+      firstLineIndent: true,
+      align: "justify",
+      headingNumbering: true,
+      captionNumbering: true,
+      headingScale: "standard",
+      headingSpacing: "standard",
+    },
+    pageSetup: {
+      paper: "A4",
+      orientation: "portrait",
+      marginTop: 37,
+      marginBottom: 35,
+      marginLeft: 28,
+      marginRight: 26,
+    },
+  },
+  {
+    id: "cn-reader",
+    i18nKey: "preset.cnReader",
+    name: "中文长文",
+    hint: "宋体正文、1.75 倍行距、首行缩进，适合阅读型长文档",
+    typography: {
+      fontAscii: "Times New Roman",
+      fontEastAsia: "宋体",
+      bodySizePt: 12,
+      lineSpacing: 1.75,
+      firstLineIndent: true,
+      align: "justify",
+      headingNumbering: true,
+      captionNumbering: true,
+      headingScale: "standard",
+      headingSpacing: "standard",
+    },
+    pageSetup: { ...DEFAULT_PAGE_SETUP },
+  },
+  {
+    id: "cn-minimal",
+    i18nKey: "preset.cnMinimal",
+    name: "中文极简",
+    hint: "微软雅黑正文、左对齐、无首行缩进、紧凑行距，适合随手笔记",
     typography: {
       fontAscii: "Calibri",
       fontEastAsia: "微软雅黑",

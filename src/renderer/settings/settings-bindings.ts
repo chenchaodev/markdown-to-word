@@ -43,6 +43,9 @@ import {
   captionNumberingInput,
   drawerResetBtn,
   equationNumberingInput,
+  aiCleanupInput,
+  obsidianCompatInput,
+  obsidianAttachmentFolderInput,
   firstLineIndentInput,
   fontAsciiError,
   fontAsciiInput,
@@ -326,6 +329,22 @@ export function bindSettingsEvents(): void {
     persistSettings({ equationNumbering: state.settings.equationNumbering });
   });
 
+  aiCleanupInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.aiCleanup = aiCleanupInput.checked;
+    persistSettings({ aiCleanup: state.settings.aiCleanup });
+  });
+  obsidianCompatInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.obsidianCompat = obsidianCompatInput.checked;
+    persistSettings({ obsidianCompat: state.settings.obsidianCompat });
+  });
+  obsidianAttachmentFolderInput.addEventListener("change", () => {
+    if (state.hydratingSettings) return;
+    state.settings.obsidianAttachmentFolder = obsidianAttachmentFolderInput.value.trim();
+    persistSettings({ obsidianAttachmentFolder: state.settings.obsidianAttachmentFolder });
+  });
+
   afterConvertInputs.forEach((input) => {
     input.addEventListener("change", () => {
       if (!input.checked || state.hydratingSettings) return;
@@ -592,6 +611,9 @@ export function bindSettingsEvents(): void {
     state.settings.toc = d.toc;
     state.settings.tocMode = d.tocMode;
     state.settings.equationNumbering = d.equationNumbering;
+    state.settings.aiCleanup = d.aiCleanup;
+    state.settings.obsidianCompat = d.obsidianCompat;
+    state.settings.obsidianAttachmentFolder = d.obsidianAttachmentFolder;
     state.settings.afterConvert = d.afterConvert;
     state.settings.outputDir = d.outputDir;
     state.settings.pdfCss = d.pdfCss;
@@ -607,6 +629,9 @@ export function bindSettingsEvents(): void {
       toc: state.settings.toc,
       tocMode: state.settings.tocMode,
       equationNumbering: state.settings.equationNumbering,
+      aiCleanup: state.settings.aiCleanup,
+      obsidianCompat: state.settings.obsidianCompat,
+      obsidianAttachmentFolder: state.settings.obsidianAttachmentFolder,
       afterConvert: state.settings.afterConvert,
       outputDir: state.settings.outputDir,
       pdfCss: state.settings.pdfCss,

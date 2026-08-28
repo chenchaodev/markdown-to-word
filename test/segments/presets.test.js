@@ -41,7 +41,7 @@ function assertEq(actual, expected, label) {
 /** TEMPLATE_PRESETS / matchesPreset 契约单测 */
 export async function run() {
   // ---------- 预设数量与 id 唯一性(模板下拉按 id 定位) ----------
-  assertEq(TEMPLATE_PRESETS.length, 3, "预设数量");
+  assertEq(TEMPLATE_PRESETS.length, 6, "预设数量");
   const ids = new Set(TEMPLATE_PRESETS.map((p) => p.id));
   assertEq(ids.size, TEMPLATE_PRESETS.length, "预设 id 唯一");
   assertEq(

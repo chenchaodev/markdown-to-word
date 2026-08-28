@@ -115,8 +115,8 @@ export async function run() {
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
-    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter", "watermark"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 16 键(F4 headerFooter + F5 watermark + F7 tocMode)");
+    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter", "watermark", "aiCleanup", "obsidianCompat", "obsidianAttachmentFolder"];
+    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 19 键(F4 headerFooter + F5 watermark + F7 tocMode + B1 aiCleanup + C1 obsidianCompat/obsidianAttachmentFolder)");
     for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));

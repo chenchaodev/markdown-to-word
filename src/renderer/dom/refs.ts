@@ -57,6 +57,9 @@ export const tocModeSelect = document.getElementById("tocMode") as HTMLSelectEle
 export const equationNumberingInput = document.getElementById(
   "equationNumbering",
 ) as HTMLInputElement;
+export const aiCleanupInput = document.getElementById("aiCleanup") as HTMLInputElement;
+export const obsidianCompatInput = document.getElementById("obsidianCompat") as HTMLInputElement;
+export const obsidianAttachmentFolderInput = document.getElementById("obsidianAttachmentFolder") as HTMLInputElement;
 export const afterConvertInputs = document.querySelectorAll<HTMLInputElement>(
   'input[name="afterConvert"]',
 );

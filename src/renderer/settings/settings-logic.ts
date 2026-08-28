@@ -194,6 +194,9 @@ export interface SettingsControlValues {
   toc: boolean;
   tocMode: string;
   equationNumbering: boolean;
+  aiCleanup: boolean;
+  obsidianCompat: boolean;
+  obsidianAttachmentFolder: string;
   afterConvert: string;
   format: string;
   outputDirText: string;
@@ -237,6 +240,9 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     toc: settings.toc,
     tocMode: settings.tocMode,
     equationNumbering: settings.equationNumbering,
+    aiCleanup: settings.aiCleanup,
+    obsidianCompat: settings.obsidianCompat,
+    obsidianAttachmentFolder: settings.obsidianAttachmentFolder,
     afterConvert: settings.afterConvert,
     format: settings.format,
     outputDirText: outputDirDisplayText(settings.outputDir),

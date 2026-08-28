@@ -30,6 +30,7 @@ import {
   removeCustomPresetByName,
   resolvePresetHint,
   resolvePresetSelection,
+  allPresets,
   applyThemeOn,
   settingsToControlValues,
   validatePresetName,
@@ -43,6 +44,9 @@ import {
   checkedRadioValue,
   completeDialogSuppressInput,
   equationNumberingInput,
+  aiCleanupInput,
+  obsidianCompatInput,
+  obsidianAttachmentFolderInput,
   firstLineIndentInput,
   fontAsciiInput,
   fontEastAsiaInput,
@@ -87,7 +91,7 @@ import {
 import { state } from "../state/state.js";
 import { setError, setStatus, trapFocus } from "../state/utils.js";
 import { errorMessage } from "../state/pure.js";
-import { applyStaticTexts, setLanguage, t, LANGUAGES, type Language } from "../../core/i18n.js";
+import { applyStaticTexts, setLanguage, t, LANGUAGES, type I18nKey, type Language } from "../../core/i18n.js";
 // 问题 3:抽屉副标题文案写入归抽屉模块(本模块只负责由设置值合成文案)
 import { updateDrawerMeta } from "./settings-drawer.js";
 
@@ -227,6 +231,9 @@ export function applySettingsToControls(): void {
   tocInput.checked = v.toc;
   tocModeSelect.value = v.tocMode;
   equationNumberingInput.checked = v.equationNumbering;
+  aiCleanupInput.checked = v.aiCleanup;
+  obsidianCompatInput.checked = v.obsidianCompat;
+  obsidianAttachmentFolderInput.value = v.obsidianAttachmentFolder;
   afterConvertInputs.forEach(
     (input) => (input.checked = input.value === v.afterConvert),
   );
@@ -311,23 +318,27 @@ export function persistSettings(patch: Partial<AppSettings>): void {
 /* 纯逻辑(预设映射/名校验/上限判断/名称解析/边距钳制)收敛于 settings-logic.ts,
  * 本模块只保留 DOM 交互(弹窗显隐/焦点陷阱/错误提示/持久化调用)。 */
 
-/** 构建一个自定义预设 option(UI 改版 v4:两处 select 各需独立节点,不能复用)。 */
-function buildCustomOption(presetId: string, name: string): HTMLOptionElement {
-  const option = document.createElement("option");
-  option.value = presetId;
-  option.textContent = name;
-  option.dataset.custom = "1";
-  return option;
-}
-
-/** 重建下拉选项(UI 改版 v4 双写):硬编码 3 项保留(HTML 静态),仅重刷自定义项
- *  (按 data-custom 标记);抽屉 #templatePreset 与快速参数条 #quickPreset 同步。 */
+/** 重建下拉选项(UI 改版 v4 双写):全部预设(硬编码 TEMPLATE_PRESETS + 自定义)统一由
+ *  allPresets() 动态生成,HTML 不再写死;硬编码预设经 i18nKey + data-i18n 随语言本地化,
+ *  自定义预设用 name。抽屉 #templatePreset 与快速参数条 #quickPreset 同步。 */
 function rebuildPresetOptions(): void {
+  const presets = allPresets(state.settings.customPresets);
   for (const select of [templatePresetSelect, quickPresetSelect]) {
-    select.querySelectorAll("option[data-custom]").forEach((option) => option.remove());
-    for (const preset of state.settings.customPresets.map(customPresetToTemplate)) {
-      select.appendChild(buildCustomOption(preset.id, preset.name));
+    const prev = select.value;
+    select.innerHTML = "";
+    for (const preset of presets) {
+      const option = document.createElement("option");
+      option.value = preset.id;
+      if (preset.i18nKey) {
+        option.setAttribute("data-i18n", preset.i18nKey);
+        option.textContent = t(preset.i18nKey as I18nKey);
+      } else {
+        option.textContent = preset.name;
+      }
+      if (preset.id.startsWith("custom:")) option.dataset.custom = "1";
+      select.appendChild(option);
     }
+    if (presets.some((p) => p.id === prev)) select.value = prev;
   }
 }
 
