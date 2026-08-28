@@ -9,9 +9,10 @@ declare global {
 }
 
 const REPO_URL = "https://github.com/chenchaodev/markdown-to-word";
+const AUTHOR_URL = "https://github.com/chenchaodev";
 const LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html";
 const MANUAL_URL =
-  "https://github.com/chenchaodev/markdown-to-word/blob/main/docs/USER-GUIDE.md";
+  "https://github.com/chenchaodev/markdown-to-word/blob/master/docs/USER-GUIDE.md";
 
 document.addEventListener("DOMContentLoaded", () => {
   // i18n: read persisted language, set, and apply static texts
@@ -57,6 +58,15 @@ document.addEventListener("DOMContentLoaded", () => {
     licenseLink.addEventListener("click", (e) => {
       e.preventDefault();
       window.aboutApi.openExternal(LICENSE_URL);
+    });
+  }
+
+  // Author link → open GitHub profile in external browser
+  const authorLink = document.getElementById("authorLink");
+  if (authorLink) {
+    authorLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      window.aboutApi.openExternal(AUTHOR_URL);
     });
   }
 });
