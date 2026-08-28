@@ -10,6 +10,10 @@
 - 显式分页符语法固定 `<!-- page-break -->`(不占 `---` 的 hr 语义);docx landscape 尺寸传原始(纵向)值,勿手动交换(docx 库自动交换)
 - 依赖钉死:markdown-it 14.3(勿升 15,@mdit/plugin-tasklist peer 冲突)、@mdit/plugin-tasklist、@mdit/plugin-footnote(1.0.2,peer 显式 markdown-it ^14.2.0)、highlight.js、electron-builder 26.15.3(勿用 27 alpha)
 
+## UI 设计规范(指针,勿回退)
+- 网页与软件内界面(含「关于」窗口、renderer、GitHub Pages)须遵循既有设计文档:`docs/design/ui-guidelines.md`(renderer 权威规范)+ `docs/design/settings-ia.md`;新增/修改任何界面元素先读这两份,本文件不另写指引
+- 视觉身份:冷灰纸 + 朱砂红「排版付梓」隐喻;字体三角色固定(展示衬线只做标题/题字、UI 栈做正文、mono 做数据);签名元素(裁切线+钤印+直排)集中一处;朱砂仅用于「付印」语义;禁绕开 token 硬编码、禁大色块/装饰 emoji
+
 ## 规则
 - 提交策略:一次提交 = 一个可独立回退的逻辑单元;message 用 prefix 风格(`feat:` / `fix:` / `docs:` / `chore:` / `refactor:` / `perf:` / `test:`)
 - 提交前:过 typecheck / build,`git status` 只含本逻辑单元文件

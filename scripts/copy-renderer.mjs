@@ -51,3 +51,14 @@ if (fs.existsSync(path.join(srcDir, bootstrap))) {
   fs.rmSync(bootstrapTarget, { force: true });
   console.log(`removed stale ${bootstrap}`);
 }
+
+// 关于窗口 preload(纯 CJS,不经 tsc 编译;显式单文件拷贝,与 lang-bootstrap 对称)。
+const aboutPreload = "about-preload.cjs";
+const aboutPreloadTarget = path.join(outDir, aboutPreload);
+if (fs.existsSync(path.join(srcDir, aboutPreload))) {
+  fs.copyFileSync(path.join(srcDir, aboutPreload), aboutPreloadTarget);
+  console.log(`copied ${aboutPreload}`);
+} else if (fs.existsSync(aboutPreloadTarget)) {
+  fs.rmSync(aboutPreloadTarget, { force: true });
+  console.log(`removed stale ${aboutPreload}`);
+}

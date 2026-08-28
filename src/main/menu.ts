@@ -3,10 +3,17 @@
  * 文件(打开文件…/退出)+ 帮助(关于)。菜单项只做转发/胶水,
  * 不复刻业务逻辑;退出用 role(平台默认行为)。
  */
-import { app, BrowserWindow, dialog, Menu } from "electron";
+import { app, BrowserWindow, Menu, ipcMain } from "electron";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { t } from "../core/i18n.js";
 import { IPC_CHANNELS as CH } from "./ipc/channels.js";
+import { openExternalIfHttp } from "./services/web-hardening.js";
 import { getMainWindow } from "./windows/main-window.js";
+
+ipcMain.handle("about:open-external", (_e, url: string) => {
+  openExternalIfHttp(url);
+});
 
 /**
  * 菜单「打开文件…」:只做转发——聚焦主窗口后经 webContents.send 通知 renderer,
@@ -24,16 +31,30 @@ function openFromAppMenu(): void {
 
 /** 菜单「关于」:应用名 + 版本(app.getVersion())+ 简短说明。 */
 function showAboutDialog(): void {
-  const win = BrowserWindow.getFocusedWindow() ?? getMainWindow();
-  const options: Electron.MessageBoxOptions = {
-    type: "info",
-    title: t("dialog.about.title"),
-    message: t("dialog.about.message"),
-    detail: t("dialog.about.detail", { version: app.getVersion() }),
-    buttons: [t("common.ok")],
-  };
-  if (win && !win.isDestroyed()) void dialog.showMessageBox(win, options);
-  else void dialog.showMessageBox(options);
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const aboutUrl = path.join(here, "..", "renderer", "about.html");
+  const preload = path.join(here, "..", "renderer", "about-preload.cjs");
+  const parent = getMainWindow() ?? undefined;
+  const win = new BrowserWindow({
+    width: 520,
+    height: 600,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    parent,
+    modal: true,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: "#F1F1EE",
+    webPreferences: {
+      preload,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  void win.loadFile(aboutUrl, { query: { v: app.getVersion() } });
+  win.once("ready-to-show", () => win.show());
 }
 
 /**

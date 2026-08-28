@@ -21,6 +21,7 @@ export default tseslint.config(
           // 时必须同步在此追加对应 glob,否则该目录 .js/.mjs 会因不在 TS program 而 lint 报错。
           allowDefaultProject: [
             "src/renderer/lang-bootstrap.js",
+            "src/renderer/about-preload.cjs",
             "test/*.mjs",
             "test/common/*.js",
             "test/main/*.js",
@@ -43,6 +44,13 @@ export default tseslint.config(
       "eqeqeq": ["error", "smart"],
       "no-constant-condition": "error",
       "no-empty": "error",
+    },
+  },
+  {
+    // Electron 预加载脚本为 CJS,必须 require("electron"),放行 require 导入(与 lang-bootstrap.js 同属非 tsc 编入的 renderer 脚本)
+    files: ["src/renderer/about-preload.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
     },
   },
 );

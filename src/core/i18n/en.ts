@@ -115,6 +115,13 @@ const dict = {
     "dialog.about.title": "About",
     "dialog.about.message": "Markdown Converter",
     "dialog.about.detail": "Version ${version}\n\nConvert Markdown files to Word or PDF documents",
+    "about.aboutTitle": "About MarkdownToWord",
+    "about.subtitle": "Local · Real .docx · Controllable Chinese typesetting",
+    "about.author": "Author",
+    "about.repo": "GitHub Repository",
+    "about.license": "License",
+    "about.viewRepo": "View on GitHub",
+    "about.version": "Version",
     "dialog.openFailed": "Failed to open file dialog: ${error}",
 
     /* ---------- Conversion pre-check (F6) ---------- */

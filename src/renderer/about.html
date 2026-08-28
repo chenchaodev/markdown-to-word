@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=520, initial-scale=1.0">
+  <title data-i18n="about.aboutTitle"></title>
+  <script src="lang-bootstrap.js"></script>
+  <style>
+    /* ===== Reset ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ===== Tokens (scoped under .about-root) ===== */
+    .about-root {
+      --canvas: #F1F1EE;
+      --card: #FBFBF9;
+      --ink: #1E2126;
+      --ink-2: #494E58;
+      --mut: #71767F;
+      --line: #E2E2DC;
+      --acc: #B5301C;
+      --acc-h: #982512;
+      --acc-soft: rgba(181,48,28,.09);
+      --acc-ring: rgba(181,48,28,.30);
+      --radius: 10px;
+
+      --ff-display: "Source Han Serif SC", "Noto Serif SC", "Songti SC", SimSun, serif;
+      --ff-ui: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+      --ff-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+      --card-w: 460px;
+      --card-h: 544px;
+      --seal-size: 76px;
+    }
+
+    /* ===== Dark mode remap ===== */
+    @media (prefers-color-scheme: dark) {
+      .about-root {
+        --canvas: #15181D;
+        --card: #1C2027;
+        --ink: #E9E7E1;
+        --ink-2: #B8BCC4;
+        --mut: #878E99;
+        --line: #2A2F38;
+        --acc: #C23D1E;
+        --acc-h: #D5542F;
+        --acc-soft: rgba(205,69,38,.16);
+        --acc-ring: rgba(205,69,38,.38);
+      }
+    }
+
+    /* ===== Full-window layout ===== */
+    .about-root {
+      width: 520px;
+      height: 600px;
+      overflow: hidden;
+      background: var(--canvas);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      font-family: var(--ff-ui);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== Card ===== */
+    .about-card {
+      position: relative;
+      width: var(--card-w);
+      height: var(--card-h);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 40px 40px 36px 54px;
+      display: flex;
+      flex-direction: column;
+      z-index: 1;
+    }
+
+    /* ===== Crop marks (四角裁切线) ===== */
+    .crop-mark {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .crop-mark::before,
+    .crop-mark::after {
+      content: '';
+      position: absolute;
+      background: var(--mut);
+      opacity: 0.35;
+    }
+    .crop-mark::before { width: 1px; height: 100%; }
+    .crop-mark::after { width: 100%; height: 1px; }
+
+    /* Top-left */
+    .crop-tl { top: -1px; left: -1px; }
+    .crop-tl::before { top: 0; left: 0; }
+    .crop-tl::after { top: 0; left: 0; }
+
+    /* Top-right */
+    .crop-tr { top: -1px; right: -1px; }
+    .crop-tr::before { top: 0; right: 0; }
+    .crop-tr::after { top: 0; right: 0; }
+
+    /* Bottom-left */
+    .crop-bl { bottom: -1px; left: -1px; }
+    .crop-bl::before { bottom: 0; left: 0; }
+    .crop-bl::after { bottom: 0; left: 0; }
+
+    /* Bottom-right */
+    .crop-br { bottom: -1px; right: -1px; }
+    .crop-br::before { bottom: 0; right: 0; }
+    .crop-br::after { bottom: 0; right: 0; }
+
+    /* ===== Vermilion seal (钤印) ===== */
+    .seal {
+      position: absolute;
+      bottom: 22px;
+      right: -14px;
+      width: var(--seal-size);
+      height: var(--seal-size);
+      background: var(--acc);
+      border-radius: 6px;
+      transform: rotate(-7deg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+      /* stamp-in animation */
+      animation: stampIn 420ms cubic-bezier(0.16, 1, 0.3, 1) 280ms both;
+    }
+
+    .seal-text {
+      font-family: var(--ff-display);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--card);
+      letter-spacing: 0.12em;
+      line-height: 1.3;
+      transform: rotate(7deg);
+      text-align: center;
+      user-select: none;
+    }
+
+    @keyframes stampIn {
+      0% {
+        opacity: 0;
+        transform: rotate(-7deg) scale(1.18);
+      }
+      100% {
+        opacity: 1;
+        transform: rotate(-7deg) scale(1);
+      }
+    }
+
+    /* Respect reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      .seal {
+        animation: none;
+        opacity: 1;
+      }
+    }
+
+    /* ===== Vertical label (直排) ===== */
+    .vertical-label {
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      writing-mode: vertical-rl;
+      font-family: var(--ff-ui);
+      font-size: 11px;
+      color: var(--mut);
+      letter-spacing: 0.18em;
+      user-select: none;
+      z-index: 2;
+      white-space: nowrap;
+    }
+
+    /* ===== Card content ===== */
+    .about-wordmark {
+      font-family: var(--ff-display);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+      margin-bottom: 2px;
+    }
+
+    .about-version {
+      font-family: var(--ff-mono);
+      font-size: 12.5px;
+      color: var(--mut);
+      letter-spacing: 0.01em;
+      margin-bottom: 10px;
+    }
+
+    .about-subtitle {
+      font-family: var(--ff-ui);
+      font-size: 13px;
+      color: var(--ink-2);
+      line-height: 1.55;
+      margin-bottom: 18px;
+    }
+
+    .about-divider {
+      border: none;
+      border-top: 1px solid var(--line);
+      margin-bottom: 18px;
+    }
+
+    /* ===== Meta rows ===== */
+    .about-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      margin-bottom: auto;
+    }
+
+    .meta-row {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+
+    .meta-label {
+      color: var(--mut);
+      flex-shrink: 0;
+      min-width: 48px;
+    }
+
+    .meta-value {
+      font-family: var(--ff-mono);
+      color: var(--ink-2);
+    }
+
+    .meta-value a {
+      color: var(--ink-2);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: color 120ms ease, border-color 120ms ease;
+    }
+
+    .meta-value a:hover {
+      color: var(--acc);
+      border-bottom-color: var(--acc);
+    }
+
+    /* Focus visible for links and buttons */
+    .about-root :focus-visible {
+      outline: 2px solid var(--acc);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+
+    /* ===== Repo link ===== */
+    .about-repo {
+      display: block;
+      margin-bottom: 16px;
+    }
+
+    .about-repo a {
+      font-family: var(--ff-mono);
+      font-size: 12px;
+      color: var(--mut);
+      text-decoration: none;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 1px;
+      transition: color 120ms ease, border-color 120ms ease;
+    }
+
+    .about-repo a:hover {
+      color: var(--acc);
+      border-bottom-color: var(--acc);
+    }
+
+    /* ===== Primary button (付印语义) ===== */
+    .about-actions {
+      margin-top: 4px;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      height: 40px;
+      background: var(--acc);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-family: var(--ff-ui);
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 120ms ease, box-shadow 200ms ease;
+      box-shadow: 0 2px 12px var(--acc-ring);
+    }
+
+    .btn-primary:hover {
+      background: var(--acc-h);
+      box-shadow: 0 4px 20px var(--acc-ring);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary svg {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+<div class="about-root">
+
+  <!-- Crop marks -->
+  <div class="about-card">
+    <div class="crop-mark crop-tl" aria-hidden="true"></div>
+    <div class="crop-mark crop-tr" aria-hidden="true"></div>
+    <div class="crop-mark crop-bl" aria-hidden="true"></div>
+    <div class="crop-mark crop-br" aria-hidden="true"></div>
+
+    <!-- Vertical label -->
+    <span class="vertical-label" aria-hidden="true">本地离线 · 真 docx</span>
+
+    <!-- Wordmark + version -->
+    <div class="about-wordmark">MarkdownToWord</div>
+    <div class="about-version" id="version"></div>
+
+    <!-- Subtitle -->
+    <div class="about-subtitle" data-i18n="about.subtitle"></div>
+
+    <!-- Hairline divider -->
+    <hr class="about-divider">
+
+    <!-- Meta rows -->
+    <div class="about-meta">
+      <div class="meta-row">
+        <span class="meta-label" data-i18n="about.version"></span>
+        <span class="meta-value" id="meta-version"></span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label" data-i18n="about.license"></span>
+        <span class="meta-value">
+          <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener noreferrer">GPL-3.0</a>
+        </span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label" data-i18n="about.author"></span>
+        <span class="meta-value">chenchaodev</span>
+      </div>
+    </div>
+
+    <!-- GitHub repo link -->
+    <div class="about-repo">
+      <a href="https://github.com/chenchaodev/markdown-to-word" target="_blank" rel="noopener noreferrer" data-i18n="about.repo"></a>
+    </div>
+
+    <!-- Primary button -->
+    <div class="about-actions">
+      <button class="btn-primary" type="button">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0012 2z"/></svg>
+        <span data-i18n="about.viewRepo"></span>
+      </button>
+    </div>
+
+    <!-- Vermilion seal -->
+    <div class="seal" aria-hidden="true">
+      <span class="seal-text">排版<br>付梓</span>
+    </div>
+  </div>
+
+</div>
+
+<script type="module" src="about.js"></script>
+</body>
+</html>

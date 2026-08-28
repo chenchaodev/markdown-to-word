@@ -117,6 +117,13 @@ const dict = {
     "dialog.about.title": "关于",
     "dialog.about.message": "Markdown 转换工具",
     "dialog.about.detail": "版本 ${version}\n\n将 Markdown 文件转换为 Word 或 PDF 文档",
+    "about.aboutTitle": "关于 MarkdownToWord",
+    "about.subtitle": "本地离线 · 真 docx · 中文排版可控",
+    "about.author": "作者",
+    "about.repo": "GitHub 仓库",
+    "about.license": "许可证",
+    "about.viewRepo": "在 GitHub 查看",
+    "about.version": "版本",
     "dialog.openFailed": "打开文件对话框失败:${error}",
 
     /* ---------- 转换预检(F6) ---------- */

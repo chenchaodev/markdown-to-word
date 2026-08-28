@@ -119,6 +119,13 @@ const dict: Partial<Record<Dict, string>> = {
     "dialog.about.title": "このアプリについて",
     "dialog.about.message": "Markdown 変換ツール",
     "dialog.about.detail": "バージョン ${version}\n\nMarkdown ファイルを Word / PDF ドキュメントに変換します",
+    "about.aboutTitle": "MarkdownToWord について",
+    "about.subtitle": "ローカル · 本物の .docx · 中国語組版",
+    "about.author": "作者",
+    "about.repo": "GitHub リポジトリ",
+    "about.license": "ライセンス",
+    "about.viewRepo": "GitHub で見る",
+    "about.version": "バージョン",
     "dialog.openFailed": "ファイルダイアログを開けませんでした:${error}",
 
     /* ---------- 一括結果 ---------- */
