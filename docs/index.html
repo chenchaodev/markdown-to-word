@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MarkdownToWord — Markdown to Word / PDF</title>
+<style>
+/* ===== Reset & Base ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  font-family:'Segoe UI','PingFang SC','Microsoft YaHei','Noto Sans SC',system-ui,sans-serif;
+  line-height:1.7;
+  color:#1e2126;
+  background:#f1f1ee;
+  overflow-x:hidden;
+}
+img{display:block;max-width:100%;height:auto}
+a{color:inherit;text-decoration:none}
+
+/* ===== Color Tokens ===== */
+:root{
+  /* Light palette */
+  --canvas:#f1f1ee;
+  --card:#fbfbf9;
+  --ink:#1e2126;
+  --secondary:#494e58;
+  --muted:#71767f;
+  --hairline:#e2e2dc;
+  /* Accent */
+  --accent:#b5301c;
+  --accent-hover:#c23d1e;
+  --accent-active:#d5542f;
+  /* Surfaces */
+  --hero-bg:#15181d;
+  --hero-card:#1c2027;
+  --hero-ink:#e9e7e1;
+  --hero-muted:#878e99;
+  --hero-hairline:#2a2f38;
+  /* Spacing scale */
+  --space-xs:0.375rem;
+  --space-sm:0.75rem;
+  --space-md:1.25rem;
+  --space-lg:2rem;
+  --space-xl:3.5rem;
+  --space-2xl:5.5rem;
+  /* Layout */
+  --max-w:1120px;
+  --radius:10px;
+  --radius-lg:16px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --canvas:#15181d;
+    --card:#1c2027;
+    --ink:#e9e7e1;
+    --secondary:#b8bcc4;
+    --muted:#878e99;
+    --hairline:#2a2f38;
+    --accent:#c23d1e;
+    --accent-hover:#d5542f;
+    --accent-active:#e06840;
+    --hero-bg:#111419;
+    --hero-card:#15181d;
+  }
+}
+
+/* ===== Typography ===== */
+h1{font-size:clamp(2rem,5vw,3.2rem);font-weight:700;letter-spacing:-0.02em;line-height:1.15}
+h2{font-size:clamp(1.35rem,3vw,1.85rem);font-weight:700;letter-spacing:-0.01em;line-height:1.25}
+h3{font-size:1.05rem;font-weight:600;line-height:1.35}
+
+/* ===== Utility ===== */
+.container{width:100%;max-width:var(--max-w);margin:0 auto;padding:0 var(--space-lg)}
+@media(max-width:640px){.container{padding:0 var(--space-md)}}
+
+/* ===== Language Toggle ===== */
+.lang-toggle{
+  position:fixed;top:var(--space-md);right:var(--space-md);z-index:100;
+  display:flex;align-items:center;gap:0;
+  background:var(--card);border:1px solid var(--hairline);
+  border-radius:999px;overflow:hidden;
+  box-shadow:0 2px 12px rgba(0,0,0,.08);
+  transition:box-shadow .2s;
+}
+.lang-toggle:hover{box-shadow:0 4px 20px rgba(0,0,0,.12)}
+.lang-btn{
+  border:none;background:transparent;cursor:pointer;
+  padding:0.45rem 0.7rem;font-size:0.95rem;line-height:1;
+  color:var(--muted);transition:background .15s,color .15s;
+  position:relative;
+}
+.lang-btn[aria-pressed="true"]{
+  background:var(--accent);color:#fff;font-weight:600;
+}
+.lang-sep{width:1px;height:1.1rem;background:var(--hairline);flex-shrink:0}
+
+/* ===== Bilingual Block ===== */
+[data-lang="zh"]{display:none}
+html[data-active-lang="zh"] [data-lang="zh"]{display:block}
+html[data-active-lang="zh"] [data-lang="en"]{display:none}
+html[data-active-lang="en"] [data-lang="zh"]{display:none}
+html[data-active-lang="en"] [data-lang="en"]{display:block}
+/* Inline elements */
+[data-lang="zh"].inline{display:none}
+[data-lang="en"].inline{display:none}
+html[data-active-lang="zh"] [data-lang="zh"].inline{display:inline}
+html[data-active-lang="en"] [data-lang="en"].inline{display:inline}
+/* Flex blocks */
+[data-lang="zh"].flex{display:none}
+[data-lang="en"].flex{display:none}
+html[data-active-lang="zh"] [data-lang="zh"].flex{display:flex}
+html[data-active-lang="en"] [data-lang="en"].flex{display:flex}
+/* Grid blocks */
+[data-lang="zh"].grid{display:none}
+[data-lang="en"].grid{display:none}
+html[data-active-lang="zh"] [data-lang="zh"].grid{display:grid}
+html[data-active-lang="en"] [data-lang="en"].grid{display:grid}
+/* Table rows */
+[data-lang="zh"].table-row{display:none}
+[data-lang="en"].table-row{display:none}
+html[data-active-lang="zh"] [data-lang="zh"].table-row{display:table-row}
+html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
+
+/* ===== Hero ===== */
+.hero{
+  background:var(--hero-bg);
+  color:var(--hero-ink);
+  padding:var(--space-2xl) 0 calc(var(--space-2xl) - 1rem);
+  position:relative;
+  overflow:hidden;
+}
+.hero::before{
+  content:'';position:absolute;top:0;left:0;width:10px;height:100%;
+  background:linear-gradient(180deg,var(--accent),var(--accent-active));
+}
+.hero::after{
+  content:'';position:absolute;top:-40%;right:-10%;width:500px;height:500px;
+  background:radial-gradient(circle,rgba(181,48,28,.12) 0%,transparent 70%);
+  pointer-events:none;
+}
+.hero-inner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-lg)}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:var(--space-xs);
+  padding:0.3rem 0.85rem;border-radius:999px;
+  background:rgba(255,255,255,.06);border:1px solid var(--hero-hairline);
+  font-size:0.8rem;color:var(--hero-muted);letter-spacing:0.03em;
+}
+.hero-badge svg{width:14px;height:14px;fill:var(--accent)}
+.hero h1 span{color:var(--accent-active)}
+.hero-tagline{
+  font-size:clamp(1rem,2.2vw,1.2rem);
+  color:var(--hero-muted);line-height:1.65;
+  max-width:640px;
+}
+.hero-actions{display:flex;flex-wrap:wrap;gap:var(--space-sm);margin-top:var(--space-xs)}
+.btn{
+  display:inline-flex;align-items:center;gap:0.5rem;
+  padding:0.75rem 1.6rem;border-radius:var(--radius);
+  font-size:0.95rem;font-weight:600;
+  transition:all .2s;cursor:pointer;border:none;
+}
+.btn-primary{
+  background:var(--accent);color:#fff;
+  box-shadow:0 2px 12px rgba(181,48,28,.3);
+}
+.btn-primary:hover{background:var(--accent-hover);box-shadow:0 4px 20px rgba(181,48,28,.4);transform:translateY(-1px)}
+.btn-primary:active{transform:translateY(0)}
+.btn-primary svg{width:16px;height:16px;fill:currentColor}
+.btn-ghost{
+  background:rgba(255,255,255,.06);
+  border:1px solid var(--hero-hairline);
+  color:var(--hero-ink);
+}
+.btn-ghost:hover{background:rgba(255,255,255,.1);border-color:#444}
+.btn-ghost svg{width:16px;height:16px;fill:currentColor;opacity:.7}
+
+/* ===== Section Base ===== */
+.section{padding:var(--space-2xl) 0}
+.section-label{
+  display:inline-block;font-size:0.78rem;font-weight:600;
+  letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:var(--space-sm);
+}
+.section-title{margin-bottom:var(--space-lg)}
+.section-desc{color:var(--secondary);max-width:600px;margin-bottom:var(--space-xl)}
+
+/* ===== Feature Cards ===== */
+.features-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:var(--space-md);
+}
+@media(max-width:640px){.features-grid{grid-template-columns:1fr}}
+.feature-card{
+  background:var(--card);
+  border:1px solid var(--hairline);
+  border-radius:var(--radius-lg);
+  padding:var(--space-lg);
+  transition:border-color .2s,box-shadow .2s;
+  position:relative;
+}
+.feature-card:hover{
+  border-color:var(--accent);
+  box-shadow:0 4px 24px rgba(181,48,28,.08);
+}
+.feature-icon{
+  width:44px;height:44px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(181,48,28,.07);margin-bottom:var(--space-md);
+}
+.feature-icon svg{width:22px;height:22px;fill:var(--accent)}
+.feature-card h3{margin-bottom:var(--space-xs);color:var(--ink)}
+.feature-card p{color:var(--secondary);font-size:0.92rem;line-height:1.65}
+
+/* ===== Screenshots ===== */
+.screenshots{background:var(--card);border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline)}
+.ss-main{
+  border-radius:var(--radius-lg);overflow:hidden;
+  border:1px solid var(--hairline);
+  box-shadow:0 8px 40px rgba(0,0,0,.08);
+  margin-bottom:var(--space-lg);
+}
+.ss-row{
+  display:grid;grid-template-columns:1fr 1fr;gap:var(--space-md);
+}
+@media(max-width:640px){.ss-row{grid-template-columns:1fr}}
+.ss-item{
+  border-radius:var(--radius);overflow:hidden;
+  border:1px solid var(--hairline);
+  box-shadow:0 4px 20px rgba(0,0,0,.06);
+}
+.ss-caption{
+  text-align:center;padding:var(--space-sm) 0;
+  font-size:0.82rem;color:var(--muted);font-style:italic;
+}
+
+/* ===== Tech Stack ===== */
+.tech-bar{
+  display:flex;flex-wrap:wrap;gap:var(--space-sm);
+  margin-top:var(--space-md);
+}
+.tech-tag{
+  display:inline-flex;align-items:center;gap:0.35rem;
+  padding:0.4rem 0.9rem;border-radius:999px;
+  background:var(--card);border:1px solid var(--hairline);
+  font-size:0.82rem;color:var(--secondary);
+  font-family:'Cascadia Code','Fira Code',monospace;
+  letter-spacing:0.01em;
+}
+.tech-tag::before{
+  content:'';width:6px;height:6px;border-radius:50%;
+  background:var(--accent);flex-shrink:0;
+}
+
+/* ===== Footer ===== */
+.footer{
+  padding:var(--space-xl) 0 var(--space-lg);
+  border-top:1px solid var(--hairline);
+  color:var(--muted);font-size:0.85rem;
+}
+.footer-inner{
+  display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:var(--space-md);
+}
+.footer-links{display:flex;gap:var(--space-lg)}
+.footer-links a{color:var(--secondary);transition:color .15s}
+.footer-links a:hover{color:var(--accent)}
+.footer-copy{color:var(--muted)}
+
+/* ===== Subtle Animations ===== */
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(20px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.hero-badge{animation:fadeUp .6s ease-out both}
+.hero h1{animation:fadeUp .6s .1s ease-out both}
+.hero-tagline{animation:fadeUp .6s .2s ease-out both}
+.hero-actions{animation:fadeUp .6s .3s ease-out both}
+.feature-card{animation:fadeUp .5s ease-out both}
+.feature-card:nth-child(1){animation-delay:.05s}
+.feature-card:nth-child(2){animation-delay:.1s}
+.feature-card:nth-child(3){animation-delay:.15s}
+.feature-card:nth-child(4){animation-delay:.2s}
+.feature-card:nth-child(5){animation-delay:.25s}
+.feature-card:nth-child(6){animation-delay:.3s}
+
+/* ===== Scroll reveal via IntersectionObserver ===== */
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .55s ease-out,transform .55s ease-out}
+.reveal.visible{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- Language Toggle -->
+<nav class="lang-toggle" aria-label="Language">
+  <button class="lang-btn" data-set-lang="zh" aria-pressed="true" title="中文">CN</button>
+  <span class="lang-sep" aria-hidden="true"></span>
+  <button class="lang-btn" data-set-lang="en" aria-pressed="false" title="English">EN</button>
+</nav>
+
+<!-- ===== Hero ===== -->
+<header class="hero">
+  <div class="container hero-inner">
+    <span class="hero-badge">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      <span class="inline" data-lang="zh">Windows 桌面应用</span>
+      <span class="inline" data-lang="en">Windows Desktop App</span>
+    </span>
+    <h1>Markdown<span>ToWord</span></h1>
+    <p class="hero-tagline">
+      <span class="inline" data-lang="zh">Markdown 转 Word / PDF 的本地桌面工具。文件不上传，离线可用；输出真正的 .docx 文档，中文排版可控。</span>
+      <span class="inline" data-lang="en">A local desktop tool that converts Markdown to Word / PDF. No uploads, fully offline. Produces real .docx files with controllable Chinese typesetting.</span>
+    </p>
+    <div class="hero-actions">
+      <a href="https://github.com/chenchaodev/markdown-to-word/releases/latest" class="btn btn-primary">
+        <svg viewBox="0 0 24 24"><path d="M12 16l-6-6h4V4h4v6h4l-6 6z"/><path d="M4 20h16v-2H4v2z"/></svg>
+        <span class="inline" data-lang="zh">下载安装包</span>
+        <span class="inline" data-lang="en">Download Installer</span>
+      </a>
+      <a href="https://github.com/chenchaodev/markdown-to-word" class="btn btn-ghost">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0012 2z"/></svg>
+        <span class="inline" data-lang="zh">在 GitHub 查看</span>
+        <span class="inline" data-lang="en">View on GitHub</span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<!-- ===== Features ===== -->
+<section class="section" id="features">
+  <div class="container">
+    <span class="section-label reveal">
+      <span class="inline" data-lang="zh">功能特性</span>
+      <span class="inline" data-lang="en">Features</span>
+    </span>
+    <h2 class="section-title reveal">
+      <span class="inline" data-lang="zh">本地转换，排版可控</span>
+      <span class="inline" data-lang="en">Local Conversion, Controllable Layout</span>
+    </h2>
+    <div class="features-grid">
+
+      <!-- Card 1: Offline -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+        </div>
+        <h3>
+          <span class="inline" data-lang="zh">本地离线</span>
+          <span class="inline" data-lang="en">Local &amp; Offline</span>
+        </h3>
+        <p>
+          <span class="inline" data-lang="zh">文件始终在本机处理，无需联网，无需上传。断网也能正常转换。</span>
+          <span class="inline" data-lang="en">Files are processed locally — no internet required, no uploads. Works fully offline.</span>
+        </p>
+      </div>
+
+      <!-- Card 2: Real docx -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15.01V17h2v-2h2v-2h-2v-2H8v2H6v2h2z"/></svg>
+        </div>
+        <h3>
+          <span class="inline" data-lang="zh">真 docx 输出</span>
+          <span class="inline" data-lang="en">Real .docx Output</span>
+        </h3>
+        <p>
+          <span class="inline" data-lang="zh">输出标准 Word 文档，不是改后缀的网页。WPS 与 Microsoft Word 均可正常打开。</span>
+          <span class="inline" data-lang="en">Produces standard Word documents, not renamed HTML. Opens in WPS and Microsoft Word without issues.</span>
+        </p>
+      </div>
+
+      <!-- Card 3: Chinese typesetting -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24"><path d="M3 5h2v14H3V5zm4 0h1v14H7V5zm3 0h3v14h-3V5zm5 0h1v14h-1V5zm3 0h4v14h-4V5z"/></svg>
+        </div>
+        <h3>
+          <span class="inline" data-lang="zh">中文排版</span>
+          <span class="inline" data-lang="en">Chinese Typesetting</span>
+        </h3>
+        <p>
+          <span class="inline" data-lang="zh">字体字号行距缩进、章节/题注/公式自动编号、目录、封面、页眉页脚页码，排版参数可逐项调节。</span>
+          <span class="inline" data-lang="en">Fonts, sizes, line spacing, indentation, auto-numbered headings/captions/equations, TOC, cover page, headers, footers, and page numbers — all adjustable.</span>
+        </p>
+      </div>
+
+      <!-- Card 4: Batch & Merge -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
+        </div>
+        <h3>
+          <span class="inline" data-lang="zh">批量与合并</span>
+          <span class="inline" data-lang="en">Batch &amp; Merge</span>
+        </h3>
+        <p>
+          <span class="inline" data-lang="zh">单文件、批量、合并三种模式。多个 Markdown 可一次转出或合并为一个文档，重名文件自动加序号。</span>
+          <span class="inline" data-lang="en">Single-file, batch, and merge modes. Convert multiple Markdown files at once or combine them into one document. Existing outputs are auto-renamed.</span>
+        </p>
+      </div>
+
+      <!-- Card 5: Academic -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24"><path d="M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3L1 9l11 6 9-4.91V17h2V9L12 3z"/></svg>
+        </div>
+        <h3>
+          <span class="inline" data-lang="zh">学术排版</span>
+          <span class="inline" data-lang="en">Academic Formatting</span>
+        </h3>
+        <p>
+          <span class="inline" data-lang="zh">公式（OMML / KaTeX）编号与交叉引用、图/表/章节引用跳转，适合论文与技术文档。</span>
+          <span class="inline" data-lang="en">Numbered equations (OMML/KaTeX) with cross-references, figure/table/section reference jumps — built for papers and technical docs.</span>
+        </p>
+      </div>
+
+      <!-- Card 6: Dark mode & i18n -->
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>
+        </div>
+        <h3>
+          <span class="inline" data-lang="zh">暗色模式与多语言</span>
+          <span class="inline" data-lang="en">Dark Mode &amp; Multi-language</span>
+        </h3>
+        <p>
+          <span class="inline" data-lang="zh">三态暗色模式、界面多语言（中/英）、模板预设导入导出、自定义 PDF CSS、实时预览、最近转换记录。</span>
+          <span class="inline" data-lang="en">Three-state dark mode, multi-language UI (CN/EN), template presets with JSON import/export, custom PDF CSS, live preview, and recent conversions.</span>
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ===== Screenshots ===== -->
+<section class="section screenshots" id="screenshots">
+  <div class="container">
+    <span class="section-label reveal">
+      <span class="inline" data-lang="zh">界面预览</span>
+      <span class="inline" data-lang="en">Screenshots</span>
+    </span>
+    <h2 class="section-title reveal">
+      <span class="inline" data-lang="zh">简洁直观的操作流程</span>
+      <span class="inline" data-lang="en">Clean and Straightforward Workflow</span>
+    </h2>
+    <div class="ss-main reveal">
+      <img src="images/ui-main.png" alt="Main window">
+      <p class="ss-caption">
+        <span class="inline" data-lang="zh">主界面：选择文件 → 选择格式 → 开始转换</span>
+        <span class="inline" data-lang="en">Main window: pick files → choose format → convert</span>
+      </p>
+    </div>
+    <div class="ss-row">
+      <div class="ss-item reveal">
+        <img src="images/ui-empty.png" alt="Empty state">
+        <p class="ss-caption">
+          <span class="inline" data-lang="zh">空态界面</span>
+          <span class="inline" data-lang="en">Empty state</span>
+        </p>
+      </div>
+      <div class="ss-item reveal">
+        <img src="images/ui-history.png" alt="Recent conversions">
+        <p class="ss-caption">
+          <span class="inline" data-lang="zh">最近转换面板</span>
+          <span class="inline" data-lang="en">Recent conversions panel</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Tech Stack ===== -->
+<section class="section" id="tech">
+  <div class="container">
+    <span class="section-label reveal">
+      <span class="inline" data-lang="zh">技术栈</span>
+      <span class="inline" data-lang="en">Tech Stack</span>
+    </span>
+    <div class="tech-bar reveal">
+      <span class="tech-tag">Electron 43</span>
+      <span class="tech-tag">Node.js ≥ 20.19</span>
+      <span class="tech-tag">TypeScript</span>
+      <span class="tech-tag">docx 9.x</span>
+      <span class="tech-tag">remark</span>
+      <span class="tech-tag">markdown-it 14.3</span>
+      <span class="tech-tag">KaTeX</span>
+      <span class="tech-tag">Mermaid 11</span>
+      <span class="tech-tag">highlight.js</span>
+      <span class="tech-tag">pdf-lib</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Footer ===== -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <span class="footer-copy">MarkdownToWord · GPL-3.0</span>
+    <nav class="footer-links">
+      <a href="https://github.com/chenchaodev/markdown-to-word">GitHub</a>
+      <a href="https://github.com/chenchaodev/markdown-to-word/releases/latest">
+        <span class="inline" data-lang="zh">下载</span>
+        <span class="inline" data-lang="en">Download</span>
+      </a>
+      <a href="https://github.com/chenchaodev/markdown-to-word/blob/main/LICENSE">
+        <span class="inline" data-lang="zh">许可证</span>
+        <span class="inline" data-lang="en">License</span>
+      </a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function(){
+  /* --- Language Toggle --- */
+  var html = document.documentElement;
+  // Default to Chinese on first load
+  html.setAttribute('data-active-lang', 'zh');
+
+  var btns = document.querySelectorAll('.lang-btn');
+  btns.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var lang = btn.getAttribute('data-set-lang');
+      html.setAttribute('data-active-lang', lang);
+      btns.forEach(function(b){ b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+    });
+  });
+
+  /* --- Scroll Reveal --- */
+  if('IntersectionObserver' in window){
+    var reveals = document.querySelectorAll('.reveal');
+    var obs = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          e.target.classList.add('visible');
+          obs.unobserve(e.target);
+        }
+      });
+    }, {threshold:0.12, rootMargin:'0px 0px -40px 0px'});
+    reveals.forEach(function(el){ obs.observe(el); });
+  } else {
+    // Fallback: show everything
+    document.querySelectorAll('.reveal').forEach(function(el){ el.classList.add('visible'); });
+  }
+})();
+</script>
+</body>
+</html>
