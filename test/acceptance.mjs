@@ -31,7 +31,6 @@ const mainDir = path.join(testRoot, "main");
 const tempUserData = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-acceptance-"));
 app.setPath("userData", tempUserData);
 
-/** 打印总耗时与按耗时降序的最慢 5 段排行 */
 function printStats(results, totalStart) {
   const totalSeconds = ((Date.now() - totalStart) / 1000).toFixed(1);
   const slowest = [...results]
@@ -42,12 +41,11 @@ function printStats(results, totalStart) {
   console.log(`[stats] 总耗时 ${totalSeconds}s | 最慢段: ${slowest}`);
 }
 
-/** 收尾清理临时 userData 目录;清理失败静默忽略,不影响退出流程 */
+/** 清理失败静默忽略,不影响退出流程 */
 function cleanupTempUserData() {
   try {
     fs.rmSync(tempUserData, { recursive: true, force: true });
   } catch {
-    /* 清理失败静默忽略 */
   }
 }
 
