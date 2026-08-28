@@ -1,10 +1,6 @@
 /**
- * renderer 通用工具(R8 自 renderer.ts 抽出,行为等价;B1 纯函数层拆至 pure.ts):
- * 状态区/错误提示/字段内错误、进度条控制、焦点回给主操作按钮。
- * 纯函数(isMarkdown/errorMessage/baseName/truncateMiddle/STAGE_TEXT/stageText/
- * STAGE_PERCENT 等)单源 state/pure.ts(零 DOM 依赖,可 Node 直测)。
- * MR-10:原「保持旧导入路径」的 re-export 过渡层已退役——消费方直接从
- * ./pure.js 导入纯函数,同一符号不再有两条活跃导入路径。
+ * renderer 通用工具:状态区/错误提示/字段内错误、进度条控制、焦点回给主操作按钮。
+ * 纯函数(isMarkdown/errorMessage 等)单源 state/pure.ts(零 DOM 依赖,可 Node 直测)。
  * 只依赖 dom.ts 元素映射与 state.ts 的 errorFlashTimer。
  */
 import {
@@ -22,11 +18,11 @@ import {
 import { state } from "./state.js";
 import { t, type I18nKey } from "../../core/i18n.js";
 
-/** 错误提示红色描边自动消退时长(MR-15 具名)。 */
+/** 错误提示红色描边自动消退时长。 */
 const ERROR_FLASH_MS = 1400;
 
 /**
- * translate 注入适配(CORE-10 衔接):t 的 key 参数已收紧为 I18nKey(编译期防拼错),
+ * translate 注入适配:t 的 key 参数已收紧为 I18nKey(编译期防拼错),
  * 而 pure 层零 import 约束只能声明 string 键的 translate 契约;经此包装放宽注入
  * (运行时同一 t;键均来自 pure 层内部契约,不存在拼错面)。
  */
@@ -95,14 +91,14 @@ export function hideFieldError(el: HTMLElement): void {
   el.classList.add("hidden");
 }
 
-/* ---------- 弹窗焦点陷阱(批次 12:C9;P0-3 扩展为栈式多弹窗协调) ---------- */
+/* ---------- 弹窗焦点陷阱(栈式多弹窗协调) ---------- */
 /** 弹窗内可聚焦元素(button/input/select 等;disabled 与隐藏元素排除)。 */
 const FOCUSABLE_SELECTOR =
   'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])';
 
 /**
  * 当前活跃陷阱栈(注册序 = 打开序;释放即出栈)。
- * P0-3 起设置抽屉常驻陷阱,其上可能再叠完成弹窗/另存预设弹窗——多个陷阱并存时,
+ * 设置抽屉常驻陷阱,其上可能再叠完成弹窗/另存预设弹窗——多个陷阱并存时,
  * 仅栈顶(最后打开且未关闭者)处理 Tab,避免双重焦点劫持(Tab 永远跳首项)。
  */
 const trapStack: HTMLElement[] = [];

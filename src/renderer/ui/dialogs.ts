@@ -1,7 +1,6 @@
 /**
- * renderer 结果展示(R8 自 renderer.ts 抽出,行为等价):
- * 常驻汇总条(成功/失败/取消三态 + 打开引导 + 可折叠警告)、转换完成弹窗(单文件/合并)、
- * 批量结果汇总弹窗与逐条渲染。只经 state.ts 读写状态。
+ * renderer 结果展示:常驻汇总条(成功/失败/取消三态 + 打开引导 + 可折叠警告)、
+ * 转换完成弹窗(单文件/合并)、批量结果汇总弹窗与逐条渲染。只经 state.ts 读写状态。
  */
 import {
   batchDialog,
@@ -45,8 +44,8 @@ import { batchSuccessPaths } from "../state/pure.js";
 import { formatWarning, t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 
-/* 弹窗焦点陷阱句柄(批次 12:C9):打开时启用,关闭时解除。
- * B8 卫生项:show* 均先解除旧句柄再启用新陷阱(二次调用防御)——弹窗未 hide
+/* 弹窗焦点陷阱句柄:打开时启用,关闭时解除。
+ * 防御:show* 均先解除旧句柄再启用新陷阱(二次调用防御)——弹窗未 hide
  * 就被再次 show 时,旧 keydown 监听句柄若被直接覆盖会泄漏(当前流程互斥不会
  * 触发,防御性兜底)。 */
 let completeDialogTrap: (() => void) | null = null;
@@ -58,7 +57,7 @@ export interface SummaryOptions {
   title: string;
   outputPath?: string;
   error?: string;
-  /** B6:keyed 警告,展示前经 formatWarning 按当前语言格式化。 */
+  /** keyed 警告,展示前经 formatWarning 按当前语言格式化。 */
   warnings?: ConvertWarning[];
   /** 批量场景:有失败详情可回看(「失败详情」按钮重开批量弹窗)。 */
   hasDetails?: boolean;
@@ -91,7 +90,7 @@ export function showSummary(opts: SummaryOptions): void {
     ...warnings.map((warning) => {
       const li = document.createElement("li");
       li.className = "summary-warnings-item";
-      li.textContent = formatWarning(warning); // B6:keyed 警告按当前语言格式化
+       li.textContent = formatWarning(warning); // keyed 警告按当前语言格式化
       return li;
     }),
   );
@@ -123,8 +122,8 @@ export function showCompleteDialog(
   completeDialogOpen.classList.toggle("hidden", !ok);
   completeDialog.classList.remove("hidden");
   completeDialogOk.focus(); // 焦点落在默认操作(确定)上
-  completeDialogTrap?.(); // 二次调用防御:先解除旧陷阱(B8 卫生项)
-  completeDialogTrap = trapFocus(completeDialog); // 批次 12(C9):Tab 循环不逃逸到背景页
+  completeDialogTrap?.(); // 二次调用防御:先解除旧陷阱
+  completeDialogTrap = trapFocus(completeDialog); // Tab 循环不逃逸到背景页
 }
 
 export function hideCompleteDialog(): void {
@@ -140,7 +139,7 @@ export function showDialogError(message: string): void {
   completeDialogError.classList.remove("hidden");
 }
 
-/** 批量弹窗内错误提示(MR-10:与 showDialogError 对称;reveal/复制失败等非致命
+/** 批量弹窗内错误提示(与 showDialogError 对称;reveal/复制失败等非致命
  *  错误统一走封装,不再直接操作 textContent——原两套写法归一)。 */
 export function showBatchDialogError(message: string): void {
   batchDialogError.textContent = message;
@@ -161,15 +160,15 @@ export function showBatchDialog(result: BatchResult): void {
   batchSummary.classList.toggle("batch-summary--fail", result.failCount > 0);
   batchResultList.replaceChildren(...result.items.map(renderBatchItem));
   batchDialogReveal.classList.toggle("hidden", result.okCount === 0);
-  // 批次 11 迭代 2:有失败项才显示「重试失败项」;无成功项禁用「复制全部路径」
+  // 有失败项才显示「重试失败项」;无成功项禁用「复制全部路径」
   batchDialogRetry.classList.toggle("hidden", result.failCount === 0);
   batchDialogCopyAll.disabled = batchSuccessPaths(result.items).length === 0;
   batchDialogError.classList.add("hidden");
   batchDialogError.textContent = "";
   batchDialog.classList.remove("hidden");
   batchDialogOk.focus(); // 焦点落在默认操作(确定)上
-  batchDialogTrap?.(); // 二次调用防御:先解除旧陷阱(B8 卫生项)
-  batchDialogTrap = trapFocus(batchDialog); // 批次 12(C9):Tab 循环不逃逸到背景页
+  batchDialogTrap?.(); // 二次调用防御:先解除旧陷阱
+  batchDialogTrap = trapFocus(batchDialog); // Tab 循环不逃逸到背景页
 }
 
 export function hideBatchDialog(): void {
@@ -246,7 +245,7 @@ export function renderBatchItem(item: BatchItem): HTMLLIElement {
   return li;
 }
 
-/* ---------- F6:转换预检报告弹窗 ---------- */
+/* ---------- 转换预检报告弹窗 ---------- */
 let precheckTrap: (() => void) | null = null;
 let precheckResolve: ((ok: boolean) => void) | null = null;
 
@@ -270,7 +269,7 @@ export function showPrecheckDialog(warnings: ConvertWarning[]): Promise<boolean>
   precheckDialogDesc.textContent = t("precheck.desc", { count: warnings.length });
   precheckDialog.classList.remove("hidden");
   precheckContinue.focus();
-  precheckTrap?.(); // 二次调用防御:先解除旧陷阱(B8 卫生项)
+  precheckTrap?.(); // 二次调用防御:先解除旧陷阱
   precheckTrap = trapFocus(precheckDialog);
   return new Promise<boolean>((resolve) => {
     precheckResolve = resolve;

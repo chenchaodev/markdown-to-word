@@ -1,23 +1,9 @@
 /**
- * renderer 最近转换(UI 改版 v4 自「常驻折叠条」改造为「浮出面板」):
- * - 标题条 40px 常驻占位(主舞台与消息区之间,安静、一眼可见),无记录整块 hidden
- *   不占位;展开体为 absolute 浮层(.h-body,样式见 base.css §3.3),向上盖住舞台
- *   下部——不挤压任何元素,舞台/消息区零位移;
- * - 行渲染走 rrow 模式(ui-guidelines §2):图标 + 文件名 + 格式徽标 + mono 时间,
- *   行内动作(重新转换 / 打开所在文件夹)默认安静,hover / focus-within 浮现;
- * - 折叠语义:data-open 驱动 CSS 浮层显隐(histToggle 切换 + aria-expanded 同步);
- *   初始一律收起(浮层语义下默认展开即默认遮挡);仅在 空→有文件 的状态跃迁时
- *   自动收起一次(见 evaluateAutoCollapse),其余场景尊重手动切换;点击面板外自动
- *   收起(浮层覆盖内容,外点关闭是浮层的标准退出路径);
- * - 交互语义沿用:单击行 = 加载到文件列表(不转换);「重新转换」= 按该条目记录的
- *   格式直接重转;「清空记录」清空并隐藏整条;
- * - 转换成功后由 convert-flow 经 state.recentRefreshHandler 回调刷新
- *   (批次 15 R5 接线,打破 recent-files ↔ convert-flow ESM 环);
- * - 启动恢复(initUiStateRestore):panelOpen 回填抽屉可见态、lastSessionFiles
- *   逐项校验存在性(主进程保序过滤)、历史条首次渲染(置于会话恢复之后,
- *   使折叠自动判定一次到位)。
- * 依赖方向:recent-files → file-list(applySelection)/convert-flow(runConvert)/
- * settings-drawer(applyDrawerOpenState)。
+ * renderer 最近转换(浮出面板):标题条常驻占位,展开体为 absolute 浮层盖住舞台下部,
+ * 不挤压任何元素;行渲染走 rrow 模式(图标 + 文件名 + 格式徽标 + mono 时间)。
+ * 不变量:初始一律收起(浮层语义下默认展开即默认遮挡),仅在 空→有文件 跃迁时自动收起一次;
+ * 转换成功后由 convert-flow 经 state.recentRefreshHandler 回调刷新(打破 recent-files
+ * ↔ convert-flow ESM 环)。依赖方向:recent-files → file-list/convert-flow/settings-drawer。
  */
 import {
   histCount,
@@ -38,16 +24,16 @@ import { applyDrawerOpenState } from "../settings/settings-drawer.js";
 import { t, type I18nKey } from "../../core/i18n.js";
 
 /** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。
- *  MR-4 双源显式化:本值必须与 main 侧 ui-state.ts MAX_RECENT_FILES 恒等(恒等断言
- *  由 test 侧守护段落地,车道 D);改此值须双侧同步。列表内部滚动由 CSS 负责。 */
+ *  本值必须与 main 侧 ui-state.ts MAX_RECENT_FILES 恒等(恒等断言由 test 守护);
+ *  改此值须双侧同步。列表内部滚动由 CSS 负责。 */
 const MAX_RECENT_FILES = 10;
 
 /* ---------- 折叠状态 ---------- */
 /**
  * 上一次「舞台有无文件」状态(null = 尚未初始化,首次渲染必设定)。
- * UI 改版 v4 浮层语义:展开体覆盖舞台下部,「默认展开」=「默认遮挡」,故初始一律
- * 收起;仅在 空→有文件 的状态跃迁时自动收起一次(用户此时正聚焦新内容,浮层
- * 不该压在其上),其余场景尊重手动切换。v3 的「空态默认展开」随浮层方案废弃。
+ * 浮层语义:展开体覆盖舞台下部,「默认展开」=「默认遮挡」,故初始一律收起;
+ * 仅在 空→有文件 的状态跃迁时自动收起一次(用户此时正聚焦新内容,浮层不该压在其上),
+ * 其余场景尊重手动切换。
  */
 let lastStageHasFiles: boolean | null = null;
 
@@ -74,7 +60,7 @@ export function renderRecentList(recent: RecentFile[]): void {
   if (items.length === 0) return; // 整块隐藏时无需渲染行与折叠态
   histCount.textContent = String(items.length);
   recentList.replaceChildren(...items.map(renderRecentRow));
-  // 首次渲染:浮层一律收起(v4 浮层语义,默认展开即默认遮挡)
+  // 首次渲染:浮层一律收起(浮层语义,默认展开即默认遮挡)
   if (lastStageHasFiles === null) {
     lastStageHasFiles = state.selectedFiles.length > 0;
     setHistoryOpen(false);
@@ -172,9 +158,9 @@ export async function initUiStateRestore(): Promise<void> {
   } catch {
     return; // 读取失败:保持默认(不恢复会话/面板/历史条)
   }
-  // panelOpen → 设置抽屉可见态(P0-3:开合写回已迁至 settings-drawer,此处只恢复)
+  // panelOpen → 设置抽屉可见态(开合写回已迁至 settings-drawer,此处只恢复)
   applyDrawerOpenState(ui.panelOpen.page);
-  // 批次 11 迭代 2:完成弹窗「不再提示」→ 同步弹窗内 checkbox 与内存态(不写回,避免启动写盘)
+  // 完成弹窗「不再提示」→ 同步弹窗内 checkbox 与内存态(不写回,避免启动写盘)
   syncSuppressCompleteDialog(ui.suppressCompleteDialog);
   // 会话文件恢复:逐项校验存在性(主进程 filterExistingPaths 保序过滤,缺失剔除)
   try {
@@ -196,7 +182,7 @@ export async function refreshRecentFiles(): Promise<void> {
   }
 }
 
-/* ---------- 事件绑定(MR-10:顶层监听迁入 bind*Events 范式,组合根 renderer.ts
+/* ---------- 事件绑定(顶层监听迁入 bind*Events 范式,组合根 renderer.ts
  *  在 bindEvents() 后调用) ---------- */
 /**
  * 交互接线:histToggle 切换浮层显隐(data-open + aria-expanded,CSS 按 data-open
@@ -230,7 +216,7 @@ export function bindRecentFilesEvents(): void {
         const format = (actionBtn.dataset.format ?? state.selectedFormat) as "docx" | "pdf";
         void runConvert(filePath, format);
       } else if (actionBtn.dataset.action === "reveal") {
-        // 打开源文件所在文件夹(MR-12:白名单外路径主进程返回 { ok:false, error })
+        // 打开源文件所在文件夹(白名单外路径主进程返回 { ok:false, error })
         void window.api
           .revealInFolder(filePath)
           .then((result) => {
