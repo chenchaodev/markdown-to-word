@@ -8,6 +8,8 @@
   <style>
     /* ===== Reset ===== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body { overflow: hidden; }
 
     /* ===== Tokens (scoped under .about-root) ===== */
     .about-root {
@@ -27,8 +29,7 @@
       --ff-ui: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
       --ff-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
 
-      --card-w: 460px;
-      --card-h: 544px;
+      --card-w: 420px;
       --seal-size: 76px;
     }
 
@@ -50,8 +51,8 @@
 
     /* ===== Full-window layout ===== */
     .about-root {
-      width: 520px;
-      height: 600px;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       background: var(--canvas);
       display: flex;
@@ -67,13 +68,15 @@
     .about-card {
       position: relative;
       width: var(--card-w);
-      height: var(--card-h);
+      min-height: calc(100% - 64px);
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      padding: 40px 40px 36px 54px;
+      padding: 34px 38px 30px 48px;
       display: flex;
       flex-direction: column;
+      justify-content: center;
+      gap: 14px;
       z-index: 1;
     }
 
@@ -183,12 +186,11 @@
     /* ===== Card content ===== */
     .about-wordmark {
       font-family: var(--ff-display);
-      font-size: 26px;
+      font-size: 28px;
       font-weight: 700;
       color: var(--ink);
       letter-spacing: -0.01em;
       line-height: 1.2;
-      margin-bottom: 2px;
     }
 
     .about-version {
@@ -196,7 +198,6 @@
       font-size: 12.5px;
       color: var(--mut);
       letter-spacing: 0.01em;
-      margin-bottom: 10px;
     }
 
     .about-subtitle {
@@ -204,13 +205,11 @@
       font-size: 13px;
       color: var(--ink-2);
       line-height: 1.55;
-      margin-bottom: 18px;
     }
 
     .about-divider {
       border: none;
       border-top: 1px solid var(--line);
-      margin-bottom: 18px;
     }
 
     /* ===== Meta rows ===== */
@@ -218,7 +217,7 @@
       display: flex;
       flex-direction: column;
       gap: 9px;
-      margin-bottom: auto;
+      margin-bottom: 0;
     }
 
     .meta-row {
@@ -262,7 +261,6 @@
     /* ===== Repo link ===== */
     .about-repo {
       display: block;
-      margin-bottom: 16px;
     }
 
     .about-repo a {
@@ -282,7 +280,7 @@
 
     /* ===== Primary button (付印语义) ===== */
     .about-actions {
-      margin-top: 4px;
+      margin-top: 0;
     }
 
     .btn-primary {

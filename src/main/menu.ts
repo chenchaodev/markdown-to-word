@@ -42,8 +42,8 @@ function showAboutDialog(): void {
   const preload = path.join(here, "..", "renderer", "about-preload.cjs");
   const parent = getMainWindow() ?? undefined;
   const win = new BrowserWindow({
-    width: 520,
-    height: 600,
+    width: 500,
+    height: 560,
     resizable: false,
     minimizable: false,
     maximizable: false,
