@@ -92,6 +92,7 @@ npm run test:all    # 验收 + smoke
 ### 文档
 
 - [用户手册](docs/USER-GUIDE.md)：安装、操作、设置项、支持的 Markdown 语法、FAQ
+- [用户手册 · 常见问题](docs/USER-GUIDE.md#常见问题)：升级、语言切换、设置重置等
 - [开发者手册](docs/DEV-GUIDE.md)：环境、命令、代码地图、验证基线
 - [变更日志](docs/CHANGELOG.md)：版本演进历史
 - [路线图](docs/ROADMAP.md)：需求范围、选型、里程碑
@@ -99,6 +100,20 @@ npm run test:all    # 验收 + smoke
 - [状态速查](docs/STATUS.md)：当前状态与打开事项
 - [研究结论](docs/RESEARCH.md) / [架构决策](docs/ADR.md)：技术事实与决策记录
 
+### 反馈与支持
+
+问题反馈、功能建议与漏洞报告请走 [GitHub Issues](https://github.com/chenchaodev/markdown-to-word/issues)；源码、发布与更新见 [GitHub 仓库](https://github.com/chenchaodev/markdown-to-word)。
+
+### 关于作者
+
+本软件由 [chenchaodev](https://github.com/chenchaodev) 独立开发与维护，定位是「本地离线、中文排版可控」的 Markdown 转换工具。
+
 ### 许可证
 
 [GPL-3.0](LICENSE)（GNU General Public License v3）：自由软件，允许使用、修改与再分发，但衍生作品必须以相同许可证开源。
+
+---
+
+<p align="center">
+  由 <a href="https://github.com/chenchaodev">chenchaodev</a> 维护 · 基于 <a href="https://www.gnu.org/licenses/gpl-3.0.html">GPL-3.0</a> 开源
+</p>

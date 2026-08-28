@@ -175,3 +175,31 @@ A:转换完成后的警告列表会列出原因——本地图片请确认相对
 
 **Q:安装时 Windows 提示「已保护你的电脑」(SmartScreen)?**
 A:本应用未做代码签名(离线本地工具,不采集任何数据)。点击「更多信息」→「仍要运行」即可继续安装;也可只从 GitHub Releases 官方页面下载安装包。
+
+**Q:如何升级到新版本?**
+A:本软件暂未内置自动更新。前往 [GitHub Releases](https://github.com/chenchaodev/markdown-to-word/releases) 下载最新的 `MarkdownToWord-Setup-<版本>.exe`,运行安装向导覆盖安装即可;设置文件位于本机用户数据目录,重新安装不会清除,你的偏好会保留。
+
+**Q:如何切换界面语言?**
+A:打开「设置」抽屉,在「应用」分组中找到「界面语言」,可选 中文 / English / 日本語;切换即时生效并自动记忆,下次启动保持上次选择。个别缺失文案会自动回退英文,不会显示乱码键名。
+
+**Q:设置保存在哪里?如何重置?**
+A:所有设置保存在本机用户数据目录的 `settings.json`(Windows 上通常位于 `%APPDATA%\markdown-to-word\settings.json`),不会上传。多数分组内有「恢复默认」可单项重置;若要彻底重置,关闭软件后删除该 `settings.json`,下次启动会以默认设置重新生成(不影响安装目录)。
+
+**Q:如何反馈问题或建议?**
+A:见下方「[反馈与联系](#反馈与联系)」:在 [GitHub Issues](https://github.com/chenchaodev/markdown-to-word/issues) 提交,并尽量附上相关 Markdown 片段与期望输出,便于复现与定位。
+
+## 反馈与联系
+
+本软件完全离线、本地运行,不采集任何数据。若遇到问题、有功能建议或想参与贡献,请通过以下渠道:
+
+- **提交问题 / 功能建议**:[GitHub Issues](https://github.com/chenchaodev/markdown-to-word/issues)
+- **作者主页**:[chenchaodev on GitHub](https://github.com/chenchaodev)
+
+欢迎在 Issues 中反馈;提交时请尽量附上相关 Markdown 片段与期望输出,便于复现与定位。
+
+## 已知限制
+
+- **仅支持 Windows**:当前只发布 Windows 桌面版,无 macOS / Linux 构建。
+- **未做代码签名**:作为离线本地工具,安装包未做代码签名,Windows SmartScreen 可能提示「已保护你的电脑」(见上方常见问题);只从 GitHub Releases 官方页面下载安装包即可放心安装。
+- **内联 HTML 仅白名单**:Markdown 中的内联 HTML 仅允许白名单内的无属性标签(`strong` `b` `em` `i` `u` `s` `del` `code` `kbd` `sub` `sup` `mark` `br` `span`),带属性的标签或白名单外的标签会被忽略。复杂排版请改用原生 Markdown 语法。
+- **网络图片依赖可达性**:网络图片在转换时下载嵌入,需可访问;下载失败时保留原链接并提示。
