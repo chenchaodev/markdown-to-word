@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [3.7.0] - 2026-08-28
+- **B1 AI 清理 + A1 中文排版预设 + C1 Obsidian 兼容 三功能齐发(版本号三统一 package.json=lockfile=tag v3.7.0=CHANGELOG [3.7.0];typecheck/lint/build/65 段全绿;smoke 本沙箱环境受限未跑,GUI 实测待补)**:
+  - **B1 AI 清理前置**:新增 `core/markdown/ai-cleanup.ts`(围栏/frontmatter 感知,split/join 实现智能引号→直引号、en/em dash→破折号、列表项补空格、空行折叠),`preprocessMarkdown` 编排,单文件/合并转换入口注入;`aiCleanup` 设置开关(09 分区)+ i18n zh/en/ja;自动断言见 test/segments/ai-cleanup.test.js
+  - **A1 中文排版预设**:`TEMPLATE_PRESETS` 增 official-cn(公文/仿宋_GB2312+Times)、cn-reader(长文/宋体/1.75 行距/首行缩进)、cn-minimal(极简/微软雅黑/左对齐/1.15 行距);预设下拉重构为从 `allPresets()` 动态生成(移除 HTML 静态选项,`TemplatePreset.i18nKey` 挂 data-i18n 随语言本地化);自动断言见 test/segments/chinese-presets.test.js / presets.test.js
+  - **C1 Obsidian 兼容**:新增 `core/markdown/obsidian.ts`(`normalizeObsidian`:`[[双链]]`/`![[嵌入]]`→标准 MD,图片加附件前缀),`preprocessMarkdown` 编排,转换入口注入;`obsidianCompat`+`obsidianAttachmentFolder` 设置(09 分区)+ i18n;自动断言见 test/segments/obsidian.test.js
+
 ## [3.6.0] - 2026-08-28
 - **自定义关于窗口(品牌纸感卡片 + 朱砂钤印 + 三语,随 3.6.0 发布;版本号三统一 package.json=lockfile=tag v3.6.0=CHANGELOG [3.6.0];typecheck/lint/build/62 段全绿)**:从原生对话框替换为自研 About 页面,展示软件名称 / 版本 / 卖点 / 作者 / 许可证 / GitHub 仓库,新增「快速上手」三步与特性标签;去除重复项(版本号双显、仓库链接三连);主按钮改中性墨色(非付印语义)跳转 GitHub 用户手册(master 分支),作者 chenchaodev 链接至 GitHub 主页;入口置于标题栏设置按钮右侧(中性墨色信息图标),弹窗居中于主窗口;i18n zh/en/ja 补齐
 
