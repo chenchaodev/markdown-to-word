@@ -1,5 +1,5 @@
 /**
- * F9 docx 模板导入(浅导入 v1,ADR-008):
+ * docx 模板导入(浅导入 v1):
  * 用 jszip 解包用户 .docx,提取 Normal / Heading1 样式的 rPr(字体 ascii/eastAsia + 字号)
  * 与文档 sectPr(页面尺寸/边距),映射回现有 typography / pageSetup 设置字段。
  * 不做部件级深导入(Pandoc 式 styles 替换 + numbering 合并 + settings 白名单)。

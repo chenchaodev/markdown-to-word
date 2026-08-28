@@ -2,7 +2,7 @@ import { BookmarkEnd, BookmarkStart } from "docx";
 import type { ParagraphChild } from "docx";
 
 /**
- * 书签包裹共享 helper(B7 自 docx/render.ts bookmarkChildren 与 docx/handlers/captions.ts
+ * 书签包裹共享 helper(自 docx/render.ts bookmarkChildren 与 docx/handlers/captions.ts
  * 内联同构逻辑收敛;放独立模块避免 captions→render 运行时依赖环——captions.ts
  * 对 render.ts 仅 type-only 依赖):
  * name → BookmarkStart/End 首尾包裹 children(输出

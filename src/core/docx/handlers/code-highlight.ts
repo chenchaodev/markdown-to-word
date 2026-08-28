@@ -8,7 +8,7 @@
 import hljs from "highlight.js/lib/common";
 import { TextRun } from "docx";
 import { CODE_FONT, CODE_SIZE } from "../theme.js";
-// 实体解码单源(B7):统一用 core/utils.ts decodeEntities,删除本模块私有实现。
+// 实体解码单源:统一用 core/utils.ts decodeEntities,删除本模块私有实现。
 // 语义差异核实结论:hljs 输出实体域仅为 &lt;/&gt;/&quot;/&#x27;/&amp;(转义 & < > " '),
 // utils 版对该域逐形态与原实现结果逐一等价(含 "&amp;lt;" 等二次解码防护场景:
 // utils 命名实体先于 &amp; 解码 + 单遍语义一致);utils 版额外覆盖任意数值实体与
@@ -73,7 +73,7 @@ function makeRun(text: string, cls: string | undefined): TextRun {
  * 将代码块渲染为带语法高亮的 TextRun 序列;不可高亮时返回 null。
  * 换行 \n 拆行:每行一个 TextRun,行间 TextRun({ text: "", break: 1 }),
  * 与 renderCode 原等宽文本路径的换行结构一致。
- * B4:onFallback 为可选回调,仅在「语言已知但高亮失败」(hljs.highlight 抛错 /
+ * onFallback 为可选回调,仅在「语言已知但高亮失败」(hljs.highlight 抛错 /
  * 解析异常 / 完整性校验失败)时以语言名调用——无语言/未知语言的正常降级不回调;
  * 调用方(renderCode)经此上报 warn.highlightFallback 警告。纯模块不持有 warnings。
  */

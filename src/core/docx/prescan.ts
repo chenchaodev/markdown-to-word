@@ -1,8 +1,7 @@
 /**
- * renderDocx 预扫(B8 拆分):正文渲染前的五轮全文扫描,收敛为单次
- * prescanDocument 调用。原内联于 renderDocx 开头;预扫会就地写入 ctx
- * (footnoteDefinitions / headingLabels / equationLabels),并返回结构化结果。
- * 各轮顺序保持与拆分前一致(题注上下文 → 章节 label → 公式上下文 → 目录条目)。
+ * renderDocx 预扫:正文渲染前的五轮全文扫描,收敛为单次 prescanDocument 调用。
+ * 预扫会就地写入 ctx(footnoteDefinitions / headingLabels / equationLabels),并返回结构化结果。
+ * 各轮顺序:题注上下文 → 章节 label → 公式上下文 → 目录条目。
  */
 import type { Root, Paragraph as MdParagraph } from "mdast";
 import { buildCaptionContext, type CaptionInfo } from "./handlers/captions.js";
@@ -49,10 +48,10 @@ export function prescanDocument(ast: Root, ctx: Ctx): DocumentPrescan {
   // 与 Word SEQ \s 1 语义一致;headingNumbering 关闭时无章节号、全文档连续)
   const tocEntries: TocEntry[] = [];
   const captions = buildCaptionContext(ast, ctx);
-  // 预扫章节 label(批次 10 功能 2):渲染前按文档顺序遍历标题,静态章节号计数 +
+  // 预扫章节 label:渲染前按文档顺序遍历标题,静态章节号计数 +
   // {#sec:label} 登记。(depth 4-6 不计数,与 numbering 只挂 h1-h3 一致)
   // 计数与章节号文本取自共享纯函数(heading-numbering.ts 单源,pdf xref 同源;
-  // 口径见该模块头注释:DECIDE-1 裁决无 h1 跳过前导零级)
+  // 口径:无 h1 跳过前导零级)
   const headingCounters = createHeadingCounters();
   for (const node of ast.children) {
     if (node.type !== "heading" || !ctx.headingNumbering || node.depth > 3) continue;
@@ -64,7 +63,7 @@ export function prescanDocument(ast: Root, ctx: Ctx): DocumentPrescan {
       ctx.headingLabels.set(secLabel, { chapterText, slug: id });
     }
   }
-  // 预扫公式编号上下文(9d:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表)。
+  // 预扫公式编号上下文:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表。
   // 公式编号开关关闭时仍调用 buildEquationContext(numbering=false):label 段照常识别并
   // 跳过渲染(语法标记不显示),但公式不编号、label 不登记、无孤立 label 警告;引用查表
   // 为空 → 行内引用保持原文本(见 pushRuns 的 equationNumbering 门控)

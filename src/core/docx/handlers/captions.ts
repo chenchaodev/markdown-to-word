@@ -16,12 +16,12 @@ interface CaptionInfo {
   index: number;
   /** 题注文本(前缀「图: 」之后剩余,已剥离行内 label) */
   text: string;
-  /** 行内 label(批次 10 功能 2:{#fig:label}/{#tab:label} 尾部后缀;label 不渲染,
+  /** 行内 label:{#fig:label}/{#tab:label} 尾部后缀;label 不渲染,
    *  仅登记供交叉引用跳转;无 label 时 undefined) */
   label?: string;
 }
 
-/** 题注 label 登记信息(批次 10 功能 2:交叉引用查表) */
+/** 题注 label 登记信息(交叉引用查表) */
 export interface CaptionLabelInfo {
   /** 题注类型(fig/tab,与引用前缀一致) */
   kind: "fig" | "tab";
@@ -62,8 +62,8 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
   for (const [i, node] of children.entries()) {
     if (node.type === "heading" && node.depth === 1) {
       chapter++;
-      // B3:仅章节编号开启时图/表序在 h1 处重置;关闭时全文档连续(与 pdf 侧
-      // 行为本文件头注释本就如此宣称,实现曾无条件重置导致双格式分歧)
+      // 仅章节编号开启时图/表序在 h1 处重置;关闭时全文档连续(实现曾无条件重置
+      // 导致双格式分歧)
       if (ctx.headingNumbering) {
         figIndex = 0;
         tabIndex = 0;
@@ -77,7 +77,7 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
     if (!match) continue;
     const isFigure = match[1] === "图";
     const index = isFigure ? ++figIndex : ++tabIndex;
-    // 行内 label(批次 10 功能 2):题注文本尾部 {#fig:label}/{#tab:label} 剥离,
+    // 行内 label:题注文本尾部 {#fig:label}/{#tab:label} 剥离,
     // label 不渲染(不进题注文本);仅当前缀与题注类型一致时剥离并登记
     // (类型不一致视为普通文本原样保留,避免错误登记导致引用语义错乱——
     // kindLabelRegex 按当前类型构造,不匹配即无剥离,与原合并版正则行为等价)
@@ -118,10 +118,10 @@ function renderCaptionParagraph(caption: CaptionInfo, ctx: Ctx): Paragraph {
   const size = Math.max(8, ctx.typography.bodySizePt - 1);
   const textRun = new TextRun({ text: caption.text === "" ? label : `${label} ${caption.text}`, size: size * 2 });
   let children: ParagraphChild[] = [textRun];
-  // label 书签(批次 10 功能 2):题注带 {#fig:label}/{#tab:label} 时包
-  // fig-<label>/tab-<label> 书签,供交叉引用 InternalHyperlink 跳转;
-  // id 由 ctx.bookmarkNextId 自增保证文档内唯一(B7 起与 render.ts 共用
-  // bookmark.ts wrapBookmark,原内联实现为避免运行时循环已收敛至该无环模块)
+  // label 书签:题注带 {#fig:label}/{#tab:label} 时包
+  // fig-<label>/tab-<label> 书签,供交叉引用 InternalHyperlink 跳转;id 由
+  // ctx.bookmarkNextId 自增保证文档内唯一(与 render.ts 共用
+  // bookmark.ts wrapBookmark,避免运行时循环)
   if (caption.label !== undefined) {
     const name = docxBookmarkId(`${caption.type === "figure" ? "fig" : "tab"}-${caption.label}`);
     children = wrapBookmark(ctx.bookmarkNextId, name, children);

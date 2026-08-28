@@ -1,5 +1,5 @@
 /**
- * 标题块渲染(CORE-5 自 render.ts 拆分):renderHeading + 行内 sec label 剥离。
+ * 标题块渲染:renderHeading + 行内 sec label 剥离。
  * {#sec:label} 的章节号登记在 prescan(headingLabels),本模块只负责渲染期剥离
  * 与标题段落构造(书签包裹/编号挂载/h1 前分页)。
  */
@@ -21,13 +21,13 @@ export async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph>
     5: HeadingLevel.HEADING_5,
     6: HeadingLevel.HEADING_6,
   };
-  // F3 标题排版粒度:字号/段前段后由 headingScale/headingSpacing 档位参数化
+  // 标题排版粒度:字号/段前段后由 headingScale/headingSpacing 档位参数化
   // (纯函数单源 core/settings/typography.ts,pdf CSS 同源换算,双格式观感对齐);
   // 字号 half-points = pt × 2,经 RunStyle 下发到标题内文本 runs
   const sizeHalfPoints =
     headingFontSizePt(ctx.typography.bodySizePt, ctx.typography.headingScale, node.depth) * 2;
   const spacing = headingSpacingTwips(ctx.typography.headingSpacing, node.depth);
-  // 行内 label(批次 10 功能 2):{#sec:label} 尾部后缀不渲染——渲染前从最后一个
+  // 行内 label:{#sec:label} 尾部后缀不渲染——渲染前从最后一个
   // 叶子文本节点剥离(递归副本,不改 AST;parse.ts 已从 slug 剥离,此处剥离
   // 渲染文本,label 不进标题文本;label 的章节号登记在 renderDocx 预扫完成)
   const secLabel = node.data?.secLabel;

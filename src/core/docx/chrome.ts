@@ -1,6 +1,6 @@
 /**
- * 文档 chrome(B8 拆分):封面页、目录页、页眉页脚——文档「外壳」构建逻辑,
- * 与正文渲染(render.ts)分离。纯 docx 组件构造,无 AST 依赖。
+ * 文档 chrome 组合根:封面页、目录页、页眉页脚——文档外壳构建逻辑,与正文渲染分离。
+ * 不变量:纯 docx 组件构造,无 AST 依赖。
  */
 import {
   AlignmentType,
@@ -84,7 +84,7 @@ export function renderCoverPage(metadata: DocMetadata): Paragraph[] {
 /**
  * 目录页:标题居中加粗(36 half-points = 18pt)+ 目录,独占一页。
  * 标题用普通 Paragraph(不用 HeadingLevel,避免被 TOC 域 \o "1-3" 收集到目录自身)。
- * 两种模式(F7-①):
+ * 两种模式:
  * - static(默认,免更新路线):beginDirty:false + 隐藏页码(tab+\z),打开即见静态条目
  *   (纯超链接、无页码),不弹「更新域」提示;条目引用 TOC1..TOC9 样式 + 右对齐点线制表位。
  * - field(Word 域目录):保留 cachedEntries 作初始显示,beginDirty:true 触发 Word/WPS
@@ -116,7 +116,7 @@ export function renderTocPage(
 /** 页眉:文档标题居中灰色小字(HEADER_FOOTER_SIZE = 7pt,颜色 MUTED_TEXT_GRAY);无标题时不调用 */
 
 /**
- * 页眉 logo 已读数据(F4;core 层零 IO——文件读取在 main 层,此处只收字节+类型)。
+ * 页眉 logo 已读数据:core 层零 IO——文件读取在 main 层,此处只收字节+类型。
  * extension 为魔数嗅探结果(sniffImageType);webp/null 由消费方(render.ts)降级告警。
  */
 export interface HeaderLogoData {
@@ -124,7 +124,7 @@ export interface HeaderLogoData {
   extension: "png" | "jpg" | "gif" | "webp" | null;
 }
 
-/** 页眉内容(F4 分流契约):title=现状行为(标题居中)/custom=自定义文字+logo */
+/** 页眉内容:title=现状行为(标题居中)/custom=自定义文字+logo */
 export type HeaderContent =
   | { kind: "title"; title: string }
   | {
@@ -162,7 +162,7 @@ function headerLogoRun(logo: HeaderLogoData): ImageRun {
 }
 
 /**
- * 页眉构建(F4 自 renderHeader(title) 扩展):
+ * 页眉构建:
  * - title:现状行为回归——标题居中灰色小字
  * - custom + center:logo 与文字同行居中(logo 在前,与文字间留一个空格)
  * - custom + leftRight:右对齐制表位实现左右分栏(不用表格)——logo 靠左、
@@ -231,7 +231,7 @@ export function renderFooter(): Footer {
 }
 
 /**
- * 文字水印段落(F5):使用 DrawingML(DML) 文本框(wps:wsp)实现旋转水印。
+ * 文字水印段落:使用 DrawingML(DML) 文本框(wps:wsp)实现旋转水印。
  * VML v:shape 的 rotation 属性在多数 Word 版本中对 v:textbox 内容无效——
  * 文字始终水平;DML 的 a:xfrm rot 属性是 Word 原生水印使用的标准机制,
  * 文字随形状一起旋转,可靠支持任意角度。

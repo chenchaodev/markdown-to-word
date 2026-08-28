@@ -2,8 +2,7 @@
  * docx 样式常量集中配置(硬约束:中文 eastAsia 字体统一在此,不散落硬编码)。
  * 正文默认字体/字号不在此处:以 typography 设置为准(settings-defaults →
  * renderDocx 逐文档注入),theme 只收与用户设置无关的固定样式常量。
- * (B7 第 3 波:原 DEFAULT_FONT/DEFAULT_SIZE/QUOTE_COLOR 全仓库零消费,已删;
- *  「theme 兜底」角色不成立——正文样式唯一来源是 typography 设置。)
+ * 不变量:正文样式唯一来源是 typography 设置。
  */
 
 /** 代码块 / 行内代码的等宽字体 */

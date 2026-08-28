@@ -16,14 +16,14 @@ import { texToDocxMath } from "./math.js";
 import { wrapBookmark } from "./bookmark.js";
 import { formulaParseFailedWarning, type Ctx, type MdMath } from "../ctx.js";
 
-/** 公式编号信息(9d):index = 全文连续编号(1 起,与渲染成败无关,降级公式也占号);
+/** 公式编号信息:index = 全文连续编号(1 起,与渲染成败无关,降级公式也占号);
  *  label = 公式块后 `{#eq:label}` 段登记的标签(可选) */
 export interface EquationInfo {
   index: number;
   label?: string;
 }
 
-/** 公式编号上下文(9d,免更新路线:编号静态注入文本,无域) */
+/** 公式编号上下文(免更新路线:编号静态注入文本,无域) */
 interface EquationContext {
   /** math 节点 → 编号信息(全文每个 display 公式必登记) */
   indexByNode: Map<MdMath, EquationInfo>;
@@ -34,8 +34,8 @@ interface EquationContext {
 }
 
 /**
- * 公式编号上下文预扫(9d,免更新路线):顺序遍历顶层块,display 公式(math 节点)
- * 按文档顺序全文连续编号 1,2,3…;公式块后紧跟的独立段 `{#eq:label}`(整段仅此
+ * 公式编号上下文预扫(免更新路线):顺序遍历顶层块,display 公式(math 节点)
+ * 按文档顺序全文连续编号 1,2,3…;公式块后紧跟的独立段 {#eq:label}(整段仅此
  * 一行,label 为 [\w-]+)→ label 登记给前一公式并跳过渲染;前无公式的 label 段
  * 追加警告并同样跳过。
  * numbering=false(公式编号开关关闭):公式不编号(index 不递增、indexByNode 不
@@ -80,9 +80,8 @@ function buildEquationContext(ast: Root, ctx: Ctx, numbering: boolean = true): E
 }
 
 /**
- * display 公式渲染(CORE-5 自 render.ts math case 拆出;eq 为 undefined 表示
- * 无编号信息——equationNumbering=false 时 buildEquationContext 不登记任何节点,
- * 每个公式都走此路径,并非不可达):
+ * display 公式渲染(eq 为 undefined 表示无编号信息——equationNumbering=false 时
+ * buildEquationContext 不登记任何节点,每个公式都走此路径,并非不可达):
  * - 有编号:按「公式居中 + 编号右对齐」排版——center tab(50% 文本区宽)+
  *   right tab(100% 文本区宽),children = [Tab(), 公式, Tab(), "(N)"];label 存在时
  *   外包书签 eq-label 供交叉引用跳转(编号静态注入,免更新域);

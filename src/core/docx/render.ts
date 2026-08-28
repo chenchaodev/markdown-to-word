@@ -1,11 +1,7 @@
 /**
- * docx 渲染主入口(B8 拆分后):renderDocx 编排(预扫 → 正文块渲染 → Document 组装)。
- * 职责拆分(CORE-5):页面几何见 settings-defaults(PAPER_SIZES_MM/mmToTwips)、
- * numbering 配置见 numbering.ts、标题渲染见 handlers/heading.ts、表格渲染见
- * handlers/table.ts、display 公式渲染见 handlers/equations.ts(renderDisplayMath)、
- * 文档 chrome 见 chrome.ts、预扫见 prescan.ts、行内/嵌套内容见 handlers/content.ts、
- * 链接交叉引用见 handlers/link-xref.ts、图片见 handlers/image-run.ts、
- * 代码块见 handlers/code-block.ts、容器降级见 handlers/fallback.ts、共享契约见 ctx.ts。
+ * docx 渲染主入口:renderDocx 编排(预扫 → 正文块渲染 → Document 组装)。
+ * 不变量:各渲染职责拆分到独立模块(编号/标题/表格/公式/chrome/预扫/行内/
+ * 链接/图片/代码块/容器降级),本模块仅做编排,core 层保持无 IO。
  */
 import {
   AlignmentType,
@@ -30,7 +26,7 @@ import { renderCode } from "./handlers/code-block.js";
 import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./handlers/inline-html.js";
 import { renderHeading } from "./handlers/heading.js";
 import { renderTable } from "./handlers/table.js";
-// 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
+// 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,此处解环)
 import {
   DEFAULT_HEADER_FOOTER,
   DEFAULT_PAGE_SETUP,
@@ -66,7 +62,7 @@ export interface RenderOptions {
   /** 文档标题(docx 页眉用;优先级低于 metadata.title) */
   title?: string;
   /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;webp 降级等;
-   *  B6 起元素为 ConvertWarning,keyed 警告经显示层 formatWarning 按语言格式化) */
+   *  元素为 ConvertWarning,keyed 警告经显示层 formatWarning 按语言格式化) */
   warnings?: ConvertWarning[];
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
   pageSetup?: PageSetup;
@@ -86,16 +82,16 @@ export interface RenderOptions {
   captionNumbering?: boolean;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
-  /** 页眉页脚配置(F4;缺省 DEFAULT_HEADER_FOOTER = 现状行为:标题页眉+页码页脚) */
+  /** 页眉页脚配置(缺省 DEFAULT_HEADER_FOOTER = 现状行为:标题页眉+页码页脚) */
   headerFooter?: HeaderFooterSettings;
   /** 页眉 logo 已读数据(main 层读文件后注入,core 零 IO;仅 headerMode=custom 消费;
  *  webp/null 魔数降级为无 logo + keyed 警告) */
   headerLogo?: HeaderLogoData;
-  /** 文字水印(F5;缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
+  /** 文字水印(缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
   watermark?: WatermarkSettings;
 }
 
-/** G1 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理;
+/** 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理;
  *  math 为 display 公式,独立居中段落) */
 function isSupportedBlock(node: RootContent): node is BlockContent {
   return ["heading", "paragraph", "list", "table", "code", "blockquote", "thematicBreak", "html", "math"].includes(
@@ -109,14 +105,14 @@ function isSupportedBlock(node: RootContent): node is BlockContent {
  */
 export async function renderDocx(ast: Root, options: RenderOptions = {}): Promise<Buffer> {
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
-  // 页面几何提前计算(F1:contentWidthPx 注入 Ctx,图片尺寸属性百分比换算用)
+  // 页面几何提前计算:contentWidthPx 注入 Ctx,图片尺寸属性百分比换算用
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
   const paper = PAPER_SIZES_MM[pageSetup.paper];
   const landscape = pageSetup.orientation === "landscape";
   // 文本区宽(公式编号 tab 制表位基准):PAPER_SIZES_MM 给纵向值,landscape 下
   // 视觉宽度为纸高(参照下方 size 的处理语义)— 左右边距 = 可用文本宽度
   const textWidthTwips = mmToTwips((landscape ? paper.height : paper.width) - pageSetup.marginLeft - pageSetup.marginRight);
-  // 开关统一「构造时解析默认」(CORE-7:Ctx 全字段必填,下游无需判空)
+  // 开关统一「构造时解析默认」:Ctx 全字段必填,下游无需判空
   const ctx: Ctx = {
     imageResolver: options.imageResolver,
     warnings: options.warnings,
@@ -144,9 +140,9 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
   const title = options.metadata?.title ?? options.title;
-  // 页眉页脚配置归一化(F4):缺省字段补 DEFAULT_HEADER_FOOTER(= 现状行为)
+  // 页眉页脚配置归一化:缺省字段补 DEFAULT_HEADER_FOOTER(= 现状行为)
   const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...options.headerFooter };
-  // F5:水印配置归一化(缺省字段补 DEFAULT_WATERMARK;text 空串视为关闭)
+  // 水印配置归一化(缺省字段补 DEFAULT_WATERMARK;text 空串视为关闭)
   const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...options.watermark };
   // custom 模式 logo 魔数降级:webp 不支持 docx 内嵌、未知魔数不伪装——均降级为
   // 无 logo + keyed 警告(复用正文图片同款文案,src = 设置的 logo 路径)
@@ -212,7 +208,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     numbering: { config: [...numberingOptions().config, ...headingNumberingOptions().config] },
     // 空脚注表不生成 footnotes part(避免空 part 导致打开异常)
     footnotes: Object.keys(ctx.footnotes).length > 0 ? ctx.footnotes : undefined,
-    // 批注容器(批次 11):渲染期收集的批注按 id 组装;author 固定
+    // 批注容器:渲染期收集的批注按 id 组装;author 固定
     // "markdown-to-word",date 缺省由库取当前时间(库对空容器同样生成
     // comments.xml,传 undefined 与空容器等价,此处仅非空时显式传入;
     // comments 选项收 ICommentOptions 普通对象,非 Comment 实例)
@@ -229,10 +225,10 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     sections: [
       {
         properties: { page: { size, margin } },
-        // 页眉分流(F4)+ F5 水印合并:default=标题居中/custom=文字+logo/none=无页眉;
+        // 页眉分流 + 水印合并:default=标题居中/custom=文字+logo/none=无页眉;
         // 水印(text 非空)与页眉共存于同一 default 头(置底),互不覆盖
         headers: buildHeaders(headerFooter, title, headerLogo, textWidthTwips, watermark),
-        // 页脚开关(F4):false 时不装配 footers(docx 不生成 footer part)
+        // 页脚开关:false 时不装配 footers(docx 不生成 footer part)
         footers: headerFooter.footerEnabled ? { default: renderFooter() } : undefined,
         children,
       },
@@ -244,7 +240,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
 // ---------- 块级节点 ----------
 
 /**
- * section 页眉装配分流(F4):按 headerMode 产出 headers 配置或 undefined。
+ * section 页眉装配分流:按 headerMode 产出 headers 配置或 undefined。
  * - default:现状行为——有标题才装配(标题居中)
  * - custom:文字(trim 后)与 logo 至少一项存在才装配(全空无内容可显示)
  * - none:不装配
@@ -267,7 +263,7 @@ function buildHeaderForSection(
 }
 
 /**
- * 页眉 + 水印合并装配(F4 + F5):headerFooter 经 buildHeaderForSection 产出 title/
+ * 页眉 + 水印合并装配:headerFooter 经 buildHeaderForSection 产出 title/
  * custom 页眉(可能无);水印(text 非空)作为置底段落并入同一 default 头——
  * docx 头类型仅 default/first/even,标题头与水印须共存于同一 default 头,
  * 故以「标题头段落 + 水印段落」重构一个 Header(标题头段落经其 options.children 取回)。
@@ -306,7 +302,7 @@ async function renderBlock(
       // 不应用正文排版(无首行缩进/两端对齐),不进目录/书签(普通段落样式)。
       const caption = captions.get(node);
       if (caption) return [renderCaptionParagraph(caption, ctx)];
-      // F1:独立成段的图片(段落唯一内容是图片[+尾随尺寸属性块])视为 figure →
+      // 独立成段的图片(段落唯一内容是图片[+尾随尺寸属性块])视为 figure →
       // 居中渲染;紧随其后的「图: xxx」题注行仍由 captions 预扫识别,保持在图
       // 下方(captionNumbering 编号机制不变)。行内内容渲染复用 renderPhrasing
       // (尾随属性块消费与非法值警告在其中统一处理)。

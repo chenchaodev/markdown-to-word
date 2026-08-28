@@ -1,6 +1,6 @@
 /**
- * docx 行内 HTML 白名单子系统(R10-6 自 render.ts 纯移动抽出,零行为改动)。
- * 契约注释随代码整体搬移,未精简:
+ * docx 行内 HTML 白名单子系统(自 render.ts 纯移动抽出,零行为改动)。
+ * 契约:
  * - 白名单判定(isAllowedInlineHtml)与 PDF 侧共享单一实现(../html-whitelist.ts),
  *   渲染差异(本模块 normalizeInlineHtml 节点流合并 vs PDF 侧 pdf/rules/html.ts
  *   matchAllowedHtmlExpression 源码扫描)保留在各侧——两份扫描算法逐条对齐,
@@ -62,7 +62,7 @@ const INLINE_TAG_STYLES: Record<string, InlineHtmlStyleFlags> = {
 };
 
 /**
- * 白名单契约恒等断言(B7 第 3 波):INLINE_TAG_STYLES 键集 + br(br 为空标签,
+ * 白名单契约恒等断言:INLINE_TAG_STYLES 键集 + br(br 为空标签,
  * parseInlineHtml 特殊处理产出 break 项,不入样式表)必须与 ALLOWED_INLINE_TAGS
  * 完全一致。两处平行表(html-whitelist.ts 判定集 / 本模块样式表)任一侧增删标签
  * 而另一侧未同步时立即报错,防漂移(测试段 contract-single-source 运行期守护)。
@@ -106,7 +106,7 @@ export function parseInlineHtml(value: string): InlineHtmlItem[] {
     if (inner.startsWith("/")) {
       stack.pop();
     } else {
-      // B3:自闭合 <br/>(校验层已放行)归一为 br,不得误判为空样式标签
+      // 自闭合 <br/>(校验层已放行)归一为 br,不得误判为空样式标签
       const raw = inner.trim();
       const name = (raw.endsWith("/") ? raw.slice(0, -1) : raw).trim().toLowerCase();
       if (name === "br") items.push({ break: true });

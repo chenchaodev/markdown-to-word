@@ -1,5 +1,5 @@
 /**
- * 链接/交叉引用行内渲染(B8 拆分):pushRuns 的 link case 原样抽出。
+ * 链接/交叉引用行内渲染:pushRuns 的 link case 抽出。
  * 覆盖四类目标:#eq: 公式引用、#fig/#tab/sec 交叉引用、#slug 内部锚点、
  * http(s) 外链;其余(相对路径等)保持假链接样式。行为与拆分前逐字一致。
  */
@@ -20,7 +20,7 @@ import { warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js"
 export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: RunStyle): void {
   const text = collectPlainText(node);
   const url = node.url;
-  // 公式交叉引用(9d):[式](#eq:label) / [公式](#eq:label) → 文本替换为
+  // 公式交叉引用:[式](#eq:label) / [公式](#eq:label) → 文本替换为
   // 「式 (N)」/「公式 (N)」并跳转公式书签 eq-label;未知 label → 普通文本
   // 「式 (?)」无链接 + 警告;其他文本的 #eq: 链接保持原文本跳转公式书签。
   // 公式编号开关关闭时整个分支不生效:按普通 # 锚点链接渲染(保持原文本,
@@ -53,7 +53,7 @@ export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: R
     );
     return;
   }
-  // 图/表/章节交叉引用(批次 10 功能 2,文案与占位见 CROSS_REF_KINDS,勿散落硬编码):
+  // 图/表/章节交叉引用(文案与占位见 CROSS_REF_KINDS,勿散落硬编码):
   // [图](#fig:label) → 静态编号文本「图 3.1」+ 跳题注书签 fig-<label>;
   // [表](#tab:label) → 「表 1」+ 跳 tab-<label>;[章节](#sec:label) →
   // 静态章节号「3.2」+ 跳标题书签;引用文本非约定文本 → 保持原文本仍跳转

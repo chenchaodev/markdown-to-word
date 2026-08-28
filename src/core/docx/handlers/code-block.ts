@@ -1,5 +1,5 @@
 /**
- * 代码块渲染(B8 拆分):mermaid 围栏降级、语法高亮与等宽文本兜底。
+ * 代码块渲染:mermaid 围栏降级、语法高亮与等宽文本兜底。
  * 纯叶子模块(不依赖行内渲染簇),供正文/列表/引用块/脚注定义共用。
  */
 import { ImageRun, Paragraph, TextRun } from "docx";
@@ -31,7 +31,7 @@ export async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
       ctx.warnings?.push(mermaidFailedWarning(reason));
     }
   }
-  // B4:语言已知但高亮失败(hljs 抛错/解析校验失败)→ 上报降级警告
+  // 语言已知但高亮失败(hljs 抛错/解析校验失败)→ 上报降级警告
   // (无语言/未知语言的正常降级不警告);warnDedup 按语言去重
   const highlighted = highlightCodeRuns(node.value, node.lang ?? undefined, (lang) => {
     warnDedup(ctx, highlightFallbackWarning(lang));

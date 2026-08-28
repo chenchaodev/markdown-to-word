@@ -1,5 +1,5 @@
 /**
- * 行内/嵌套内容渲染簇(B8 拆分):renderPhrasing / pushRuns 与脚注定义、列表、
+ * 行内/嵌套内容渲染簇:renderPhrasing / pushRuns 与脚注定义、列表、
  * 引用块渲染同模块——五者相互递归(段落行内 → 脚注定义 → 列表/引用块 → 段落行内),
  * 必须同处一模块才能保持依赖单向(render.ts → content.ts,不反向)。
  * 链接与图片分支分别委托 link-xref.ts / image-run.ts。
@@ -29,7 +29,7 @@ import { formulaParseFailedWarning, warnDedup, type Ctx, type InlineChild, type 
 
 /** 行内节点 → 元素数组;样式沿父子链累积传递。
  * 标题等场景同样经 pushRuns 渲染(标题内图片/脚注引用按常规渲染,占位与警告语义与正文一致)。
- * F1:图片后紧跟的完整 {width=…}/{height=…} 属性块文本经 takeImageSizeAttrs 消费
+ * 图片后紧跟的完整 {width=…}/{height=…} 属性块文本经 takeImageSizeAttrs 消费
  * (解析结果注入 imageToDocx,属性文本不再作为可见文本渲染;非法值走 keyed 警告)。 */
 export async function renderPhrasing(
   nodes: PhrasingContent[],
@@ -68,7 +68,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       for (const child of node.children) await pushRuns(runs, child, ctx, { ...style, strike: true });
       break;
     case "inlineCode":
-      // F3:code 默认值写在 style 展开之后——标题场景 style.size 为标题字号,
+      // code 默认值写在 style 展开之后——标题场景 style.size 为标题字号,
       // 行内代码保持自身小号等宽(CODE_SIZE 权威),不随所在标题放大
       runs.push(new TextRun({ ...style, text: node.value, font: CODE_FONT, size: CODE_SIZE }));
       break;
@@ -94,7 +94,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
     case "footnoteReference": {
       const def = ctx.footnoteDefinitions.get(node.identifier);
       if (def) {
-        // B3:同一脚注多次引用共享同一 id(此前每次出现分配新 id + 重渲染定义,
+        // 同一脚注多次引用共享同一 id(此前每次出现分配新 id + 重渲染定义,
         // 产生两条独立脚注,与 Word 共享编号语义不符)
         let id = ctx.footnoteIdByLabel.get(node.identifier);
         if (id === undefined) {
@@ -107,7 +107,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       break;
     }
     case "comment": {
-      // 批注(批次 11):[锚定文本]{批注=内容} → commentRangeStart + 锚定文本
+      // 批注:[锚定文本]{批注=内容} → commentRangeStart + 锚定文本
       // runs(递归渲染 anchor 行内,继承当前样式)+ commentRangeEnd +
       // commentReference(必须包在 TextRun 内);批注内容收集为独立段落
       // (author 固定 "markdown-to-word",date 缺省由库取当前时间;内容不继承
@@ -176,7 +176,7 @@ export async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
   for (const item of node.children as ListItem[]) {
     for (const child of item.children) {
       if (child.type === "list") {
-        // ctx 浅拷贝前提(CORE-11 显式化):Ctx 全部可变状态均为引用类型
+        // ctx 浅拷贝前提:Ctx 全部可变状态均为引用类型
         // (Map/Set/对象计数器),浅拷贝共享同一实例即共享可变状态;
         // 未来若新增标量可变字段,此处逐层克隆会静默失效,须改显式传递。
         result.push(...(await renderList(child, { ...ctx, listLevel: ctx.listLevel + 1 })));
@@ -188,13 +188,13 @@ export async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
           }),
         );
       }
-      // 其他块(代码/引用等)在列表项内:G1 按普通段落降级渲染
+      // 其他块(代码/引用等)在列表项内:按普通段落降级渲染
       else if (child.type === "code") {
         result.push(await renderCode(child, ctx));
       } else if (child.type === "blockquote") {
         result.push(...(await renderBlockquote(child, ctx)));
       }
-      // B4:列表项内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
+      // 列表项内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
       else if (child.type === "math" || child.type === "html" || child.type === "table") {
         result.push(...(await renderContainerFallback(child, ctx, "列表")));
       }
@@ -217,12 +217,12 @@ export async function renderBlockquote(node: Blockquote, ctx: Ctx): Promise<Para
     } else if (child.type === "blockquote") {
       paragraphs.push(...(await renderBlockquote(child, ctx)));
     }
-    // B4:引用块内代码块此前静默丢弃 → 按代码块渲染(renderCode 既有路径)+ 警告
+      // 引用块内代码块此前静默丢弃 → 按代码块渲染(renderCode 既有路径)+ 警告
     else if (child.type === "code") {
       warnDedup(ctx, unsupportedBlockWarning("代码块", "引用块"));
       paragraphs.push(await renderCode(child, ctx));
     }
-    // B4:引用块内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
+      // 引用块内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
     else if (child.type === "math" || child.type === "html" || child.type === "table") {
       paragraphs.push(...(await renderContainerFallback(child, ctx, "引用块")));
     }

@@ -1,7 +1,7 @@
 /**
- * docx numbering 配置(CORE-5 自 render.ts 拆分):列表编号与标题章节编号的
- * INumberingOptions 构造。纯配置工厂,无 AST/ctx 依赖。
- * 注意:标题编号模板(%1.%2.%3)与 prescan 的静态章节号计数(heading-numbering.ts)
+ * docx numbering 配置:列表编号与标题章节编号的 INumberingOptions 构造。
+ * 纯配置工厂,无 AST/ctx 依赖。
+ * 不变量:标题编号模板(%1.%2.%3)与 prescan 的静态章节号计数(heading-numbering.ts)
  * 语义对齐——变更编号格式须同步该模块口径。
  */
 import { AlignmentType } from "docx";
@@ -30,7 +30,7 @@ export function numberingOptions(): INumberingOptions {
   };
 }
 
-/** 标题章节编号:h1-h3 挂段落级 numbering(静态渲染,打开 Word/WPS 无需 F9 即显示) */
+/** 标题章节编号:h1-h3 挂段落级 numbering(静态渲染,打开 Word/WPS 无需更新域即显示) */
 export function headingNumberingOptions(): INumberingOptions {
   const textFor = (level: number): string =>
     Array.from({ length: level + 1 }, (_, i) => `%${i + 1}`).join(".");

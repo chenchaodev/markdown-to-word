@@ -1,5 +1,5 @@
 /**
- * 批次 6:TeX 公式 → docx Math 组件(Office MathML)。
+ * TeX 公式 → docx Math 组件(Office MathML)。
  * 链路:KaTeX(output:"mathml") → MathML 字符串 → 最小标签扫描器解析为树 →
  * walker 映射为 docx Math 组件(MathRun / MathFraction / MathRadical / 脚本 / 求和等)。
  *
