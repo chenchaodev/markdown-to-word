@@ -1,5 +1,5 @@
 /**
- * 事件域·弹窗交互与菜单转发(批③自 events.ts 按域拆出,行为零变化):
+ * 事件域·弹窗交互与菜单转发:
  * - 完成弹窗:打开所在文件夹 / 打开文件 / 复制路径 / 确定 / 遮罩点击 /
  *   「不再提示」与设置面板同字段双向同步;
  * - 批量汇总弹窗:打开所在文件夹(定位第一个成功项)/ 重试失败项 /
@@ -7,9 +7,8 @@
  * - 常驻汇总条:打开所在文件夹 / 打开文件 / 失败详情(重开批量弹窗);
  * - Esc 关闭:另存为预设 → 完成 → 批量,按可见性互斥处理;
  * - 菜单转发:「文件 → 打开文件…」复用 selection.openDialog(false) 链路。
- * 与原单文件 bindEvents 的差异仅为本域监听集中注册;依赖方向单向:
- * 本模块 → dom/state/utils/dialogs/file-list/convert-flow/settings-panel/
- * 同目录 selection(仅 openDialog),无环。
+ * 依赖方向单向:本模块 → dom/state/utils/dialogs/file-list/convert-flow/
+ * settings-panel/同目录 selection(仅 openDialog),无环。
  */
 import {
   batchDialog,
@@ -46,7 +45,7 @@ import { closePresetSaveDialog, setSuppressCompleteDialog } from "../../settings
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";
 
-/** 复制成功反馈文案恢复时长(MR-15 具名;「已复制」→ 原文案)。 */
+/** 复制成功反馈文案恢复时长(「已复制」→ 原文案)。 */
 const COPY_FEEDBACK_MS = 1500;
 
 /* ---------- 本域事件绑定(index 组合入口逐域调用) ---------- */
@@ -57,7 +56,7 @@ export function bindDialogEvents(): void {
     window.api
       .revealInFolder(state.dialogOutputPath)
       .then((result) => {
-        // MR-12:白名单外路径主进程返回 { ok:false, error },走同一错误提示通道
+        // 白名单外路径主进程返回 { ok:false, error },走同一错误提示通道
         if (!result.ok) showDialogError(t("common.revealFailed", { error: result.error ?? "" }));
       })
       .catch((err) =>
@@ -86,7 +85,7 @@ export function bindDialogEvents(): void {
     window.api
       .revealInFolder(target)
       .then((result) => {
-        // MR-12:白名单外路径主进程返回 { ok:false, error };MR-10:走 showBatchDialogError 封装
+        // 白名单外路径主进程返回 { ok:false, error },走 showBatchDialogError 封装
         if (!result.ok) showBatchDialogError(t("common.revealFailed", { error: result.error ?? "" }));
       })
       .catch((err) => {
@@ -100,7 +99,7 @@ export function bindDialogEvents(): void {
     if (event.target === batchDialog) hideBatchDialog();
   });
 
-  // 批次 11 迭代 2:批量弹窗「重试失败项」——失败(非取消)项替换当前列表并立即重转,
+  // 批量弹窗「重试失败项」:失败(非取消)项替换当前列表并立即重转,
   // 按原格式(lastBatchFormat)执行;允许单个失败文件单独重转
   batchDialogRetry.addEventListener("click", () => {
     if (state.mode !== null || !state.lastBatchResult) return;
@@ -111,7 +110,7 @@ export function bindDialogEvents(): void {
     void runBatch(failed, state.lastBatchFormat);
   });
 
-  // 批次 11 迭代 2:批量弹窗「复制全部路径」——成功项输出路径换行拼接复制到剪贴板
+  // 批量弹窗「复制全部路径」:成功项输出路径换行拼接复制到剪贴板
   batchDialogCopyAll.addEventListener("click", () => {
     void (async () => {
       if (!state.lastBatchResult) return;
@@ -129,17 +128,17 @@ export function bindDialogEvents(): void {
     })();
   });
 
-  // 批次 11 迭代 2:完成弹窗「不再提示」——与设置面板「转换完成弹窗提示」同字段双向同步
+  // 完成弹窗「不再提示」:与设置面板「转换完成弹窗提示」同字段双向同步
   completeDialogSuppressInput.addEventListener("change", () => {
     setSuppressCompleteDialog(completeDialogSuppressInput.checked);
   });
 
-  // 批次 7:汇总条「打开所在文件夹 / 打开文件 / 失败详情」
+  // 汇总条「打开所在文件夹 / 打开文件 / 失败详情」
   summaryRevealBtn.addEventListener("click", () => {
     if (!state.summaryOutputPath) return;
     window.api.revealInFolder(state.summaryOutputPath).then((result) => {
-      // MR-12:白名单外路径主进程返回 { ok:false, error },走同一错误提示通道
-      if (!result.ok) setError(t("common.revealFailed", { error: result.error ?? "" }));
+        // 白名单外路径主进程返回 { ok:false, error },走同一错误提示通道
+        if (!result.ok) setError(t("common.revealFailed", { error: result.error ?? "" }));
     }).catch((err) => {
       setError(t("common.revealFailed", { error: errorMessage(err) }));
     });
@@ -161,7 +160,7 @@ export function bindDialogEvents(): void {
     if (state.lastBatchResult) showBatchDialog(state.lastBatchResult);
   });
 
-  // 批次 7:完成弹窗「复制路径」(仅成功态显示;失败态隐藏该按钮)
+  // 完成弹窗「复制路径」(仅成功态显示;失败态隐藏该按钮)
   completeDialogCopy.addEventListener("click", () => {
     void (async () => {
       const text = completeOutputPath.textContent ?? "";
@@ -178,7 +177,7 @@ export function bindDialogEvents(): void {
     })();
   });
 
-  // 批次 11 迭代 4:应用菜单「文件 → 打开文件…」→ 复用现有选择链路(替换选择,与「选择文件」按钮一致)
+  // 应用菜单「文件 → 打开文件…」→ 复用现有选择链路(替换选择,与「选择文件」按钮一致)
   window.api.onMenuOpen(() => void openDialog(false));
 
   // 弹窗关闭:确定按钮 / 点击遮罩 / Esc 三种方式
@@ -190,15 +189,14 @@ export function bindDialogEvents(): void {
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!presetSaveDialog.classList.contains("hidden")) {
-      // 批次 11 迭代 3:另存为预设弹窗(焦点还给触发按钮;批次 12 C9:统一走
-      // closePresetSaveDialog 以解除焦点陷阱,不再直接操作 DOM)
+      // 另存为预设弹窗:统一走 closePresetSaveDialog 以解除焦点陷阱,不再直接操作 DOM
       closePresetSaveDialog();
     } else if (!completeDialog.classList.contains("hidden")) {
       hideCompleteDialog();
     } else if (!batchDialog.classList.contains("hidden")) {
       hideBatchDialog();
     } else if (isSettingsDrawerOpen()) {
-      // P0-3:抽屉在 Esc 链末位(弹窗优先);关闭后焦点由 drawer 模块归还 ⚙ 按钮
+      // 抽屉在 Esc 链末位(弹窗优先);关闭后焦点由 drawer 模块归还 ⚙ 按钮
       closeSettingsDrawer();
     }
   });

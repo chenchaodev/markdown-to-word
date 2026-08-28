@@ -1,9 +1,8 @@
 /**
- * renderer 转换编排(R8 自 renderer.ts 抽出,行为等价):
- * 单文件 / 批量 / 合并三种转换流程——状态守卫与 mode 置位、进度条启停、
+ * 转换编排:单文件 / 批量 / 合并三种流程——状态守卫与 mode 置位、进度条启停、
  * 结果经 dialogs 展示(汇总条 + 弹窗)。只经 state.ts 读写状态。
- * 批次 15(R5):转换成功后刷新最近区块改经 state.recentRefreshHandler 回调
- * (组合根 renderer.ts 接线),不再 import recent-files,打破 ESM 环。
+ * 不变量:转换成功后经 state.recentRefreshHandler 回调刷新最近区块(组合根接线),
+ * 不 import recent-files,避免 ESM 环。
  */
 import { statusEl } from "../dom/refs.js";
 import { state } from "../state/state.js";
@@ -22,13 +21,13 @@ import { updateActionButtons } from "./file-list.js";
 import { t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 
-/** B9:错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
+/** 错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
 function displayError(message: string): string {
   return actionableError(message, translate);
 }
 
 /**
- * F6:转换前预检。聚合各文件警告,无问题静默继续;有问题弹报告对话,
+ * 转换前预检。聚合各文件警告,无问题静默继续;有问题弹报告对话,
  * 用户「继续转换」才执行 action,「取消」中止。预检自身异常不阻断转换。
  */
 export async function withPrecheck(
@@ -80,16 +79,16 @@ export async function runConvert(
         outputPath,
         warnings: result.warnings,
       });
-      // 批次 11 迭代 2:用户勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
+      // 用户勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
       if (!state.suppressCompleteDialog) {
         showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
       }
-      void state.recentRefreshHandler?.(); // 批次 11:成功后刷新最近转换区块(批次 15 R5:经 state 回调,不再 import recent-files)
+      void state.recentRefreshHandler?.(); // 成功后刷新最近转换区块(经 state 回调,不再 import recent-files)
     } else {
       const error = displayError(result.error ?? t("common.unknownError"));
       setError(t("convert.failed.status", { error }));
       showSummary({ kind: "fail", title: t("convert.failed.title"), error });
-      // 批次 11 迭代 2:用户勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
+      // 用户勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
       if (!state.suppressCompleteDialog) {
         showCompleteDialog("", error, baseName(filePath)); // 失败弹窗:错误三要素
       }
@@ -108,7 +107,7 @@ export async function runConvert(
 
 /**
  * 批量转换:每文件独立输出,完成弹汇总弹窗逐条展示。
- * @param files 显式目标列表(批次 11 迭代 2「重试失败项」入口);缺省用当前选中列表。
+ * @param files 显式目标列表(「重试失败项」入口);缺省用当前选中列表。
  * @param format 显式格式(重试按原格式);缺省用当前格式选择。
  */
 export async function runBatch(
@@ -150,7 +149,7 @@ export async function runBatch(
       warnings: result.items.flatMap((item) => item.warnings ?? []),
     });
     showBatchDialog(result); // 成败均弹窗,逐条可见
-    void state.recentRefreshHandler?.(); // 批次 11:批量结束刷新(主进程已记录成功项;批次 15 R5:经 state 回调)
+    void state.recentRefreshHandler?.(); // 批量结束刷新(主进程已记录成功项;经 state 回调)
   } catch (err) {
     state.lastBatchResult = null;
     const message = errorMessage(err);
@@ -163,7 +162,6 @@ export async function runBatch(
   }
 }
 
-/** 合并转换:所有文件合成一个文档,复用完成弹窗。 */
 export async function runMerge(): Promise<void> {
   if (state.selectedFiles.length < 2) return;
   state.mode = "merge";
@@ -192,16 +190,16 @@ export async function runMerge(): Promise<void> {
         outputPath,
         warnings: result.warnings,
       });
-      // 批次 11 迭代 2:勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
+      // 勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
       if (!state.suppressCompleteDialog) {
         showCompleteDialog(outputPath);
       }
-      void state.recentRefreshHandler?.(); // 批次 11:成功后刷新最近转换区块(批次 15 R5:经 state 回调,不再 import recent-files)
+      void state.recentRefreshHandler?.(); // 成功后刷新最近转换区块(经 state 回调,不再 import recent-files)
     } else {
       const error = displayError(result.error ?? t("common.unknownError"));
       setError(t("convert.merge.failed", { error }));
       showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error });
-      // 批次 11 迭代 2:勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
+      // 勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
       // 入口已守卫 selectedFiles.length ≥ 2,首项必存在
       if (!state.suppressCompleteDialog) {
         showCompleteDialog(

@@ -1,12 +1,10 @@
 /**
- * 事件域·选择与列表(批③自 events.ts 按域拆出;P1-4 行降噪;UI 改版 v4 统一队列卡):
+ * 事件域·选择与列表:
  * - 系统对话框选择(openDialog:替换 / 追加两语义)与拖放区点击/键盘入口;
  * - 队列卡头侧动作(预览[单文件可见] / 追加 / 清空;旧单文件「移除」按钮退役,
  *   清空列表覆盖其语义);
  * - 多文件列表交互:点击委托(移除)、双击预览、键盘 Alt+↑↓ 排序、
  *   拖拽排序(dragstart/dragover/drop/dragend,含插入指示与边缘自动滚动)。
- * 与原单文件 bindEvents 的差异仅为本域监听集中注册;各监听的元素/事件类型
- * 组合互不重复,注册顺序变化无可观察行为影响。
  * 依赖方向:本模块 → dom/state/utils/file-list/pure/core/i18n 与同目录
  * dialogs-events(仅 openPreviewFor);不反向引用组合根。
  */
@@ -31,7 +29,7 @@ import {
 } from "../file-list.js";
 import { t } from "../../../core/i18n.js";
 
-/** 列表边缘自动滚动步长(MR-15 具名;px/次,dragover 事件粒度)。 */
+/** 列表边缘自动滚动步长(px/次,dragover 事件粒度)。 */
 const EDGE_SCROLL_STEP_PX = 14;
 
 /* ---------- 预览(转换前,经主进程打开与 PDF 同排版的窗口) ---------- */
@@ -52,8 +50,7 @@ export function openPreviewFor(filePath: string): void {
 }
 
 /* ---------- 选择文件(系统对话框) ---------- */
-// B6:原模块级 `const ERROR_MESSAGE = t("file.onlyMarkdown")` 在模块加载期求值,
-// 语言切换后不更新 → 移到使用点直接 t()(openDialog 内)。
+// 原模块级常量在模块加载期求值,语言切换后不更新 → 移到使用点直接 t()
 
 /** 打开文件对话框;append=true 时与现有列表合并(「追加文件 / 继续添加」入口)。 */
 export async function openDialog(append = false): Promise<void> {
@@ -85,8 +82,7 @@ export function bindSelectionEvents(): void {
   });
 
   // 点击拖放区打开对话框;键盘可用(Enter / 空格)。
-  // 批次 12(C1):行为与文案对齐——多文件态(≥2)点击=追加(与「可继续添加」一致),
-  // 单文件/默认态点击=更换/选择;列表内按钮已 stopPropagation,行为不变
+  // 多文件态(≥2)点击=追加,单文件/默认态点击=更换/选择;列表内按钮已 stopPropagation
   dropZone.addEventListener("click", () => {
     void openDialog(state.selectedFiles.length >= 2);
   });
@@ -97,23 +93,22 @@ export function bindSelectionEvents(): void {
     }
   });
 
-  // 迭代 4:单文件态「预览」按钮(转换前预览排版;stopPropagation 避免触发拖放区
-  // 打开对话框;UI 改版 v4 起按钮位于统一队列卡头侧,仅单文件可见)
+  // 单文件态「预览」按钮:stopPropagation 避免触发拖放区打开对话框;仅单文件可见
   previewBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     if (state.mode !== null || state.selectedFiles.length !== 1) return;
     openPreviewFor(state.selectedFiles[0]!); // 上行已守卫 length === 1
   });
 
-  // 「追加文件」按钮(UI 改版 v4 两态共用):对话框追加合并,与现有列表去重;
-  // stopPropagation 防冒泡触发拖放区点击=更换文件(C1 语义);追加后 n≥2 由
+  // 「追加文件」按钮(两态共用):对话框追加合并,与现有列表去重;
+  // stopPropagation 防冒泡触发拖放区点击=更换文件;追加后 n≥2 由
   // renderSelection 自动切多文件态
   appendFileBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     void openDialog(true);
   });
 
-  // 「清空列表」按钮(UI 改版 v4 兼并旧单文件「移除」语义):清空选择回初始态
+  // 「清空列表」按钮(兼并旧单文件「移除」语义):清空选择回初始态
   clearListBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     if (state.mode !== null) return;
@@ -121,7 +116,7 @@ export function bindSelectionEvents(): void {
   });
 
   // 多文件列表:点击列表本身不触发换文件(避免误开对话框);
-  // P1-4 降噪后行内唯一常驻控件为「移除」,走事件委托按行内 data-index 定位。
+  // 行内唯一常驻控件为「移除」,走事件委托按行内 data-index 定位。
   // (排序 = 整行拖拽 / 行聚焦后 Alt+↑↓,见下方 keydown;预览 = 行双击)
   multiList.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -141,9 +136,9 @@ export function bindSelectionEvents(): void {
     );
   });
 
-  // 键盘排序补偿(P1-4):行聚焦后 Alt+↑/↓ 移动(替代已删除的上移/下移按钮);
+  // 键盘排序补偿:行聚焦后 Alt+↑/↓ 移动(替代已删除的上移/下移按钮);
   // 转换中与拖拽中守卫同拖拽路径;移动后焦点跟随被移动的行。
-  // UI 改版 v4:单文件态行无 grip/序号且不可拖拽,Alt+± 越界守卫天然拦截
+  // 单文件态行无 grip/序号且不可拖拽,Alt+± 越界守卫天然拦截
   multiList.addEventListener("keydown", (event) => {
     if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
     if (state.mode !== null) return;
@@ -162,11 +157,9 @@ export function bindSelectionEvents(): void {
     moved?.focus();
   });
 
-  // 批次 11 迭代 4:列表行双击 = 预览该行(UI 改版 v4 单/多文件态一致,
-  // 复用 openPreviewFor 现有链路,不重复实现)。
-  // 双击落在行内按钮上不触发(按钮单击已有各自语义,避免双击「预览」连开多个窗口);
-  // 双击行的序号/文件名/空白处才预览;dblclick 由两次 click 组成,click 已在上面
-  // stopPropagation,不会误触拖放区打开对话框。
+  // 列表行双击 = 预览该行(单/多文件态一致,复用 openPreviewFor 现有链路)。
+  // 双击落在行内按钮上不触发(避免连开多个窗口);dblclick 由两次 click 组成,
+  // 上方 click 已 stopPropagation,不会误触拖放区打开对话框。
   multiList.addEventListener("dblclick", (event) => {
     event.stopPropagation();
     if (state.mode !== null) return;
@@ -176,7 +169,7 @@ export function bindSelectionEvents(): void {
     openPreviewFor(state.selectedFiles[Number(li.dataset.index)]!); // 同上,行与列表一一同步
   });
 
-  // 拖拽排序(HTML5 drag events;UI 改版 v4 仅多文件态 draggable=true):
+  // 拖拽排序(HTML5 drag events;仅多文件态 draggable=true):
   // 列表位于可滚动容器内,悬停边缘时自动滚动。
   // 所有内部拖拽事件 stopPropagation,避免触发拖放区的外部文件高亮 / 换文件逻辑。
   multiList.addEventListener("dragstart", (event) => {

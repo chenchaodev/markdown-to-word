@@ -1,13 +1,13 @@
 /**
- * 事件域·拖放与跳过列表(批③自 events.ts 按域拆出,行为零变化):
+ * 事件域·拖放与跳过列表:
  * - 拖放区外部文件/文件夹拖入(dragover 高亮 / dragleave 防闪烁 / drop 解析);
  * - File.path 已被 Electron 32+ 移除,经 preload webUtils 解析真实路径后交
  *   主进程 collectMarkdowns 展开过滤;
- * - B9 拖放反馈:被跳过的非 Markdown 文件名可折叠列表 + 转换中拖入提示 +
+ * - 拖放反馈:被跳过的非 Markdown 文件名可折叠列表 + 转换中拖入提示 +
  *   重复文件单独文案(appendSelection 内部);
  * - document 级兜底:阻止浏览器默认「打开文件/跳转」。
- * 与原单文件 bindEvents 的差异仅为本域监听集中注册;dropZone 的 click/keydown
- * (打开对话框)属 selection 域,与本域监听事件类型不同,顺序无行为影响。
+ * dropZone 的 click/keydown(打开对话框)属 selection 域,与本域监听事件类型不同,
+ * 顺序无行为影响。
  */
 import { dropSkipped, dropSkippedList, dropSkippedToggle, dropZone } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
@@ -16,7 +16,6 @@ import { setError, setStatus } from "../../state/utils.js";
 import { appendSelection, clearDragState } from "../file-list.js";
 import { t } from "../../../core/i18n.js";
 
-/** 展示被跳过的非 Markdown 文件名(可折叠;空列表隐藏整块)。 */
 function showSkippedList(skipped: string[]): void {
   dropSkipped.classList.toggle("hidden", skipped.length === 0);
   if (skipped.length === 0) return;
@@ -35,7 +34,7 @@ function showSkippedList(skipped: string[]): void {
 async function resolveDropped(paths: string[]): Promise<void> {
   try {
     const { files, skipped } = await window.api.collectMarkdowns(paths);
-    showSkippedList(skipped); // B9:跳过项列具体文件名(可折叠);无跳过时隐藏
+    showSkippedList(skipped); // 跳过项列具体文件名(可折叠);无跳过时隐藏
     if (files.length === 0) {
       setError(
         skipped.length > 0
@@ -76,7 +75,7 @@ export function bindDropEvents(): void {
       return;
     }
     if (state.mode !== null) {
-      // B9:转换中拖入不再静默忽略,状态区给出提示
+      // 转换中拖入不再静默忽略,状态区给出提示
       setStatus(t("drop.busy"), false, true);
       return;
     }
