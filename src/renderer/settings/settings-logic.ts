@@ -1,10 +1,9 @@
 /**
- * 设置面板纯逻辑层(方向 B「代码质量与测试」速赢项;批次 12 抽取):
- * 自 settings-panel.ts 抽出的零 DOM 依赖纯函数——不触碰 document/window/dom.ts
- * 导出、不依赖模块级 DOM 状态,可直接 Node 单测(经 dist/renderer/settings/settings-logic.js)。
+ * 设置面板纯逻辑层:自 settings-panel.ts 抽出的零 DOM 依赖纯函数——不触碰
+ * document/window/dom.ts 导出、不依赖模块级 DOM 状态,可直接 Node 单测。
  * 依赖仅 core/settings-defaults(契约/常量/硬编码预设,纯模块)。
  * 行为与抽取前逐一对应(settings-panel.ts 仅改 import 路径,零行为改动)。
- * 批次 15(R2):再抽 applySettingsToControls 的匹配/回填计算、预设保存/删除数据变换、
+ * 另抽 applySettingsToControls 的匹配/回填计算、预设保存/删除数据变换、
  * 设置对象与控件值互转、输入校验/钳制——settings-panel.ts 仅保留 DOM 赋值与事件绑定。
  */
 import {
@@ -76,7 +75,7 @@ export function clampMargin(value: number): number {
 /**
  * 计算模板预设下拉应显示的值:优先保持当前选中(其值与设置一致时不被弹回),
  * 否则回退 matchesPreset 全局匹配(loadSettings/导入/删除后自动选中)。
- * 修复场景(批次 13 bug):自定义预设值与某硬编码预设全等时,find 命中硬编码项
+ * 修复场景:自定义预设值与某硬编码预设全等时,find 命中硬编码项
  * 导致选中自定义预设后被弹回——先按 currentValue 精确命中,再走全局匹配。
  */
 export function resolvePresetSelection(
@@ -91,14 +90,14 @@ export function resolvePresetSelection(
   return matched?.id ?? "default";
 }
 
-/* ---------- 批次 15(R2):loadSettings / applySettingsToControls / 预设保存删除 / 输入校验 ---------- */
+/* ---------- loadSettings / applySettingsToControls / 预设保存删除 / 输入校验 ---------- */
 
 /**
  * 设置对象与默认值防御性合并(loadSettings:旧版本设置缺字段时按默认值兜底)。
- * MR-11 双源显式化:main 侧 persist/settings.ts loadSettings 已保证返回完整合法
- * AppSettings,本函数是 renderer 侧的第二道防御(跨进程边界各自兜底,不信任 IPC
- * 对端)——两套实现语义必须一致(theme/outputDir/pdfCss 等缺失兜底两边各写一遍,
- * 改动须双侧同步);恒等断言由 test 侧守护段落地(车道 D)。
+ * 双源显式化:main 侧 loadSettings 已保证返回完整合法 AppSettings,本函数是
+ * renderer 侧的第二道防御(跨进程边界各自兜底,不信任 IPC 对端)——两套实现语义
+ * 必须一致(theme/outputDir/pdfCss 等缺失兜底两边各写一遍,改动须双侧同步);
+ * 恒等断言由 test 侧守护段落地。
  */
 export function mergeSettingsWithDefaults(loaded: Partial<AppSettings>): AppSettings {
   return {
@@ -107,14 +106,14 @@ export function mergeSettingsWithDefaults(loaded: Partial<AppSettings>): AppSett
     outputDir: loaded.outputDir ?? DEFAULT_SETTINGS.outputDir,
     pageSetup: { ...DEFAULT_SETTINGS.pageSetup, ...loaded.pageSetup },
     typography: { ...DEFAULT_SETTINGS.typography, ...loaded.typography },
-    // F4:headerFooter 逐字段深合并——旧档缺整块或缺单字段均按默认兜底,
-    // 与 main 侧 sanitizeHeaderFooter 语义一致(MR-11 双侧防御)
+    // headerFooter 逐字段深合并——旧档缺整块或缺单字段均按默认兜底,
+    // 与 main 侧 sanitizeHeaderFooter 语义一致(双侧防御)
     headerFooter: { ...DEFAULT_SETTINGS.headerFooter, ...loaded.headerFooter },
-    // F5:watermark 逐字段深合并(同 headerFooter 先例)
+    // watermark 逐字段深合并(同 headerFooter 先例)
     watermark: { ...DEFAULT_SETTINGS.watermark, ...loaded.watermark },
     customPresets: loaded.customPresets ?? DEFAULT_SETTINGS.customPresets,
     pdfCss: loaded.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
-    // B13:theme 缺失(旧 settings.json)→ "system"(显式 null/undefined 同样兜底)
+    // theme 缺失(旧 settings.json)→ "system"(显式 null/undefined 同样兜底)
     theme: loaded.theme ?? DEFAULT_SETTINGS.theme,
   };
 }
@@ -186,7 +185,7 @@ export interface SettingsControlValues {
   headingScale: string;
   headingSpacing: string;
   firstLineIndent: boolean;
-  /** 界面重构 v3:对齐方式枚举(radio 组 name="align",left/justify) */
+  /** 对齐方式枚举(radio 组 name="align",left/justify) */
   align: AppSettings["typography"]["align"];
   headingNumbering: boolean;
   captionNumbering: boolean;
@@ -202,13 +201,13 @@ export interface SettingsControlValues {
   outputDirText: string;
   language: string;
   theme: string;
-  /** F4 页眉页脚 */
+  /** 页眉页脚 */
   headerMode: AppSettings["headerFooter"]["headerMode"];
   headerText: string;
   headerLayout: AppSettings["headerFooter"]["headerLayout"];
   footerEnabled: boolean;
   headerLogoPath: string;
-  /** F5 文字水印 */
+  /** 文字水印 */
   watermarkText: string;
   watermarkAngle: string;
   watermarkOpacity: string;
@@ -261,7 +260,7 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
 }
 
 /**
- * 页眉 logo 路径 → 回显文件名(F4):取末段路径段(兼容 / 与 \ 分隔),
+ * 页眉 logo 路径 → 回显文件名:取末段路径段(兼容 / 与 \ 分隔),
  * 空路径返回空串(调用方显示「未选择」文案)。renderer 无 node:path,自实现。
  */
 export function headerLogoDisplayName(headerLogoPath: string): string {
@@ -269,7 +268,7 @@ export function headerLogoDisplayName(headerLogoPath: string): string {
   return segments[segments.length - 1] ?? "";
 }
 
-/* ---------- B13 外观主题:data-theme 属性应用(纯函数,DOM 无关可直测) ---------- */
+/* ---------- 外观主题:data-theme 属性应用(纯函数,DOM 无关可直测) ---------- */
 /** data-theme 属性应用目标最小接口(测试注入假对象,不依赖真实 DOM)。 */
 export interface ThemeAttributeTarget {
   setAttribute(qualifiedName: string, value: string): void;
@@ -277,7 +276,7 @@ export interface ThemeAttributeTarget {
 }
 
 /**
- * 外观主题 → data-theme 属性(B13 与视觉代理的契约单源):
+ * 外观主题 → data-theme 属性(与视觉代理的契约单源):
  * - 显式 light/dark → 设 data-theme="light"|"dark"
  * - system → 移除 data-theme 属性(CSS @media prefers-color-scheme 接管)
  * DOM 无关纯函数:settings-panel.applyTheme 注入 document.documentElement 调用。

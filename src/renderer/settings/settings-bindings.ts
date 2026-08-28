@@ -1,12 +1,11 @@
 /**
- * renderer 设置控件事件绑定(B8 自 settings-panel.ts 抽出,行为零变化):
- * bindSettingsEvents 集中全部设置控件 change/click 接线(格式 / 页面设置 / 排版 /
+ * 设置控件事件绑定:集中全部设置控件 change/click 接线(格式 / 页面设置 / 排版 /
  * 模板预设 / 输出目录 / 语言),以及仅绑定侧使用的字段处理器(边距钳制、字号/行距
- * 校验)与页面/排版整体写回。加载/回填/持久化/预设弹窗交互仍单源 settings-panel.ts,
+ * 校验)与页面/排版整体写回。加载/回填/持久化/预设弹窗交互单源 settings-panel.ts,
  * 本模块单向依赖之(不反向),组合根 renderer.ts 直接 import 本模块的
  * bindSettingsEvents(避免 panel⇄bindings 环)。
  *
- * UI 改版 v4:快速参数条(主界面)镜像接线——
+ * 快速参数条(主界面)镜像接线:
  * - 预设 select 两处(#templatePreset / #quickPreset)共用 applyTemplatePreset;
  * - 输出目录两处 chips 由 setOutputDirDisplay 同写,「更改…」两钮共用 pickOutputDir;
  * - paper/orientation 镜像分段为同名 radio 组,change 绑定经 paperInputs/
@@ -122,11 +121,11 @@ import {
    saveCustomPreset,
    syncHeaderCustomVisibility,
 } from "./settings-panel.js";
-// 界面重构 v3:预设切换即时反馈(toast 单实例,ui/toast)
+// 预设切换即时反馈(toast 单实例,ui/toast)
 import { showToast } from "../ui/toast.js";
 
-/* ---------- 设置类型(契约单源 core/settings-defaults.ts,B7:type-only 派生,
-   编译期擦除,不新增运行时依赖) ---------- */
+/* ---------- 设置类型(契约单源 core/settings-defaults.ts;type-only 派生,
+    编译期擦除,不新增运行时依赖) ---------- */
 type Paper = PageSetup["paper"];
 type Orientation = PageSetup["orientation"];
 type AfterConvert = AppSettings["afterConvert"];
@@ -141,18 +140,18 @@ function persistTypography(): void {
   persistSettings({ typography: { ...state.settings.typography } });
 }
 
-/** 页眉页脚字段(F4)整体写回。 */
+/** 页眉页脚字段整体写回。 */
 function persistHeaderFooter(): void {
   persistSettings({ headerFooter: { ...state.settings.headerFooter } });
 }
 
-/** 文字水印字段(F5)整体写回。 */
+/** 文字水印字段整体写回。 */
 function persistWatermark(): void {
   persistSettings({ watermark: { ...state.settings.watermark } });
 }
 
 /**
- * 预设切换 toast 的被覆盖组标签(界面重构 v3;与模板预设应用逻辑同步):
+ * 预设切换 toast 的被覆盖组标签(与模板预设应用逻辑同步):
  * 预设整体写入 pageSetup(「页面」组)与 typography——其中字体/字号/行距/缩进/
  * 对齐/标题档位属「文字」组,headingNumbering/captionNumbering 属「编号与目录」组。
  * TemplatePreset 契约两组均为必填,正常全部列出;字段级判断仅为契约演进留余地。
@@ -211,7 +210,7 @@ function handleTypographyNumberChange(
   persistTypography();
 }
 
-/* ---------- UI 改版 v4:快速参数条镜像的共享写入路径 ---------- */
+/* ---------- 快速参数条镜像的共享写入路径 ---------- */
 /**
  * 套用模板预设(抽屉 select 与快速参数条 select 共用):
  * 整体套用排版与页面设置,hydration 保护下统一回填所有相关控件并持久化;
@@ -232,7 +231,7 @@ function applyTemplatePreset(presetId: string): void {
     typography: { ...state.settings.typography },
     pageSetup: { ...state.settings.pageSetup },
   });
-  // 界面重构 v3:预设切换即时反馈——toast 列出被覆盖的设置组(只陈述事实)
+  // 预设切换即时反馈——toast 列出被覆盖的设置组
   showToast(
     t("toast.presetSwitched", {
       name: preset.name,
@@ -241,7 +240,7 @@ function applyTemplatePreset(presetId: string): void {
   );
 }
 
-/** 输出目录显示文本双写(UI 改版 v4):抽屉 chip 与快速参数条 chip 同值同 title。 */
+/** 输出目录显示文本双写:抽屉 chip 与快速参数条 chip 同值同 title。 */
 function setOutputDirDisplay(dir: string): void {
   const text = outputDirDisplayText(dir);
   outputDirValue.textContent = text;
@@ -277,9 +276,8 @@ export function bindSettingsEvents(): void {
   });
 
   /* ---------- 页面设置面板:任一控件变更即时生效并持久化 ---------- */
-  // 界面重构 v3:纸张/方向改 seg 分段(radio 组;枚举 ≤5 → seg,guidelines §3.1),
-  // 组绑定模式与 alignInputs/themeInputs 一致。
-  // UI 改版 v4:paperInputs/orientationInputs 为全文档同名组查询——快速参数条的
+  // 纸张/方向改 seg 分段(radio 组;枚举 ≤5 → seg),组绑定模式与 alignInputs/themeInputs 一致。
+  // paperInputs/orientationInputs 为全文档同名组查询——快速参数条的
   // 镜像分段自动纳入绑定与回填,此处零改动
   paperInputs.forEach((input) => {
     input.addEventListener("change", () => {
@@ -380,7 +378,7 @@ export function bindSettingsEvents(): void {
     handleTypographyNumberChange("bodySizePt", BODY_SIZE_MIN, BODY_SIZE_MAX),
   );
 
-  // 界面重构 v3:正文字号 stepper ± 按钮(±0.5,上下限钳制后经既有 change 链路
+  // 正文字号 stepper ± 按钮(±0.5,上下限钳制后经既有 change 链路
   // 校验/持久化;非法输入以当前设置值为基准,不放大脏值)
   const stepBodySize = (delta: number): void => {
     if (state.hydratingSettings) return;
@@ -398,14 +396,13 @@ export function bindSettingsEvents(): void {
     handleTypographyNumberChange("lineSpacing", LINE_SPACING_MIN, LINE_SPACING_MAX),
   );
 
-  // 界面重构 v3:行距 range 滑杆 mono 实时回显(input 拖动期跟随;
+  // 行距 range 滑杆 mono 实时回显(input 拖动期跟随;
   // change 落定走上方既有校验/持久化链路)
   lineSpacingInput.addEventListener("input", () => {
     lineSpacingValue.textContent = lineSpacingInput.value;
   });
 
-  // F3 标题排版粒度:标题字号/间距档位(界面重构 v3 自 select 改 seg 分段,
-  // 三档;变更即时生效并持久化)
+  // 标题排版粒度:标题字号/间距档位(seg 分段,三档;变更即时生效并持久化)
   headingScaleInputs.forEach((input) => {
     input.addEventListener("change", () => {
       if (!input.checked || state.hydratingSettings) return;
@@ -428,7 +425,7 @@ export function bindSettingsEvents(): void {
     persistTypography();
   });
 
-  // 界面重构 v3:对齐方式由布尔 checkbox 升级为枚举 radio 组(left/justify),
+  // 对齐方式由布尔 checkbox 升级为枚举 radio 组(left/justify),
   // 存储契约不变(typography.align);选中值即写入
   alignInputs.forEach((input) => {
     input.addEventListener("change", () => {
@@ -450,8 +447,8 @@ export function bindSettingsEvents(): void {
     persistTypography();
   });
 
-  /* ---------- 页眉页脚(F4):任一控件变更即时生效并持久化 ---------- */
-  // 界面重构 v3:页眉模式改 seg 分段(模式 + 条件字段容器,IA §3.1);
+  /* ---------- 页眉页脚:任一控件变更即时生效并持久化 ---------- */
+  // 页眉模式改 seg 分段(模式 + 条件字段容器);
   // 自定义控件块仅 custom 模式展开(.cond.show)
   headerModeInputs.forEach((input) => {
     input.addEventListener("change", () => {
@@ -509,7 +506,7 @@ export function bindSettingsEvents(): void {
     persistHeaderFooter();
   });
 
-  /* ---------- 文字水印(F5):任一控件变更即时生效并持久化 ---------- */
+  /* ---------- 文字水印:任一控件变更即时生效并持久化 ---------- */
   watermarkTextInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;
     state.settings.watermark.text = watermarkTextInput.value;
@@ -546,8 +543,8 @@ export function bindSettingsEvents(): void {
     persistWatermark();
   });
 
-  // 模板预设:整体套用排版与页面设置(UI 改版 v4:抽屉与快速参数条两处 select
-  // 共用 applyTemplatePreset,批次 11 迭代 3 起硬编码 + 自定义预设统一走此路径)
+  // 模板预设:整体套用排版与页面设置(抽屉与快速参数条两处 select
+  // 共用 applyTemplatePreset,硬编码 + 自定义预设统一走此路径)
   templatePresetSelect.addEventListener("change", () => {
     applyTemplatePreset(templatePresetSelect.value);
   });
@@ -556,7 +553,7 @@ export function bindSettingsEvents(): void {
     applyTemplatePreset(quickPresetSelect.value);
   });
 
-  // 批次 11 迭代 3:另存为预设(弹窗输入名称 → 保存当前排版+页面设置)
+  // 另存为预设(弹窗输入名称 → 保存当前排版+页面设置)
   presetSaveBtn.addEventListener("click", openPresetSaveDialog);
   presetSaveCancel.addEventListener("click", closePresetSaveDialog);
   presetSaveOk.addEventListener("click", () => void saveCustomPreset());
@@ -572,15 +569,15 @@ export function bindSettingsEvents(): void {
   });
   // 仅自定义预设可删;删除后回退「默认」
   presetDeleteBtn.addEventListener("click", deleteCustomPreset);
-  // 批次 13:预设 JSON 导入 / 导出(IIFE + void,规避 no-misused-promises)
+  // 预设 JSON 导入 / 导出(IIFE + void,规避 no-misused-promises)
   presetImportBtn.addEventListener("click", () => void importCustomPresets());
   presetExportBtn.addEventListener("click", () => void exportCustomPresets());
-  // 批次 16:PDF 样式 CSS 导入 / 清除(IIFE + void,规避 no-misused-promises)
+  // PDF 样式 CSS 导入 / 清除(IIFE + void,规避 no-misused-promises)
   pdfCssImportBtn.addEventListener("click", () => void importPdfCss());
   docxTemplateImportBtn.addEventListener("click", () => void importDocxTemplate());
   pdfCssClearBtn.addEventListener("click", clearPdfCss);
 
-  // 界面重构 v3:PDF 自定义 CSS 文本域(IA 06 textarea 形态;与导入/清除同写
+  // PDF 自定义 CSS 文本域(与导入/清除同写
   // settings.pdfCss,状态行与清除按钮可见性同步回填逻辑)
   pdfCssTextInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;
@@ -592,8 +589,8 @@ export function bindSettingsEvents(): void {
     pdfCssClearBtn.classList.toggle("hidden", !pdfCssTextInput.value);
   });
 
-  // 界面重构 v3:抽屉底部「恢复默认」——转换相关各组复位为默认值并整体持久化
-  //(07 应用偏好 theme/language 与自定义预设保留,不随此键重置;toast 只陈述事实)
+  // 抽屉底部「恢复默认」——转换相关各组复位为默认值并整体持久化
+  //(theme/language 与自定义预设保留,不随此键重置;toast 只陈述事实)
   drawerResetBtn.addEventListener("click", () => {
     if (state.hydratingSettings) return;
     const d = DEFAULT_SETTINGS;
@@ -633,7 +630,7 @@ export function bindSettingsEvents(): void {
     showToast(t("toast.settingsReset"));
   });
 
-  // 批次 7 → UI 改版 v4:输出目录选择 / 恢复默认(空串 = 与源文件相同目录);
+  // 输出目录选择 / 恢复默认(空串 = 与源文件相同目录);
   // 抽屉与快速参数条两处入口共享 pickOutputDir / setOutputDirDisplay
   outputDirPick.addEventListener("click", () => void pickOutputDir());
 
@@ -645,7 +642,7 @@ export function bindSettingsEvents(): void {
     persistSettings({ outputDir: "" });
   });
 
-  /* ---------- 快速参数条冒泡守卫(UI 改版 v4) ----------
+  /* ---------- 快速参数条冒泡守卫 ----------
    * #quickBar 位于拖放区(#dropZone 点击/键盘 = 选择文件)内部:
    * click 与键盘事件整体阻断冒泡,防止调参动作误触「打开文件对话框」;
    * 阻断不影响各控件的自身交互(select 展开/radio 切换/button click 正常触发)。 */
@@ -656,7 +653,7 @@ export function bindSettingsEvents(): void {
     if (event.key === "Enter" || event.key === " ") event.stopPropagation();
   });
 
-  // i18n:界面语言切换(P0-4 自 radio 组改 select;选项由 LANGUAGES 注册表动态生成,
+  // i18n:界面语言切换(自 radio 组改 select;选项由 LANGUAGES 注册表动态生成,
   // 须先于事件绑定重建;即时生效:静态文案重刷 + 动态文案经 t() 自动跟随,
   // 状态栏/文件列表/最近区块等动态区域显式重渲染)
   rebuildLanguageOptions();
@@ -665,7 +662,7 @@ export function bindSettingsEvents(): void {
     const lang = languageSelect.value as Language;
     state.settings.language = lang;
     setLanguage(lang);
-    mirrorLanguage(lang); // B6:切换落定即镜像,下次启动 lang-bootstrap.js 尽早生效
+    mirrorLanguage(lang); // 切换落定即镜像,下次启动 lang-bootstrap.js 尽早生效
     applyStaticTexts();
     persistSettings({ language: lang });
     setStatus("");
@@ -673,7 +670,7 @@ export function bindSettingsEvents(): void {
     void state.recentRefreshHandler?.();
   });
 
-  // B13:外观主题切换(radio;即时生效:data-theme 属性设/移除 + 持久化;
+  // 外观主题切换(radio;即时生效:data-theme 属性设/移除 + 持久化;
   // system = 移除属性,CSS @media prefers-color-scheme 接管)
   themeInputs.forEach((input) => {
     input.addEventListener("change", () => {
