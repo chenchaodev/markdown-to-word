@@ -1,13 +1,13 @@
 /**
  * 图片解析器(convert context.imageResolver 的 main 侧实现):
- * - 本地相对路径:path.resolve(baseDir, src) 读文件(与批次 1 行为一致)
+ * - 本地相对路径:path.resolve(baseDir, src) 读文件
  * - http(s):下载 Buffer(默认 10s 超时,timeoutMs 可注入;仅接受 2xx),失败返回 null
  * - 其余(data: 等):返回 null
  * 同 URL 并发去重缓存:一个文档内同 URL 只下载一次;仅成功结果缓存,失败
  * (404/超时/网络错误 → null)不缓存——一次网络抖动不导致批量期间该 URL 永久失败,下次重试。
  * 纯 Node API(全局 fetch + AbortSignal.timeout),无新增依赖。
  * 警告不在此收集(core 渲染层负责),这里只返回 Buffer / null。
- * MR-3 SSRF 加固(安全收紧,正常路径不受影响):
+ * SSRF 加固(安全收紧,正常路径不受影响):
  * - 响应体大小上限 MAX_RESPONSE_BYTES(Content-Length 预检 + 流式累计双保险,
  *   超限中止读取返回 null → core 层走既有「图片加载失败」警告通道);
  * - 私网/回环/链路本地地址拦截:每跳重定向目标均先解析 DNS 并校验 IP,防借主进程
@@ -18,30 +18,30 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import dns from "node:dns/promises";
 import net from "node:net";
-// 契约单源(B7):ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
+// 契约单源:ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
 import type { ImageResolver } from "../../core/image/image-resolver.js";
 
 const HTTP_TIMEOUT_MS = 10_000;
 
-/** 响应体大小上限(MR-3):20MB,远超正常文档图片需求,防恶意大响应耗尽内存。 */
+/** 响应体大小上限:20MB,远超正常文档图片需求,防恶意大响应耗尽内存。 */
 export const MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
 
-/** 重定向跟随上限(MR-3):防重定向循环拖住转换。 */
+/** 重定向跟随上限:防重定向循环拖住转换。 */
 const MAX_REDIRECTS = 5;
 
 /**
- * 私网/回环拦截总开关(MR-3):false = 拦截(默认,安全收紧);
+ * 私网/回环拦截总开关:false = 拦截(默认,安全收紧);
  * 未来若有「本地图片服务」类合法场景需要放宽,改此常量或经 per-resolver 选项覆盖。
  */
 export const ALLOW_PRIVATE_ADDRESSES = false;
 
-/** image-downloader 可注入选项(MR-3;均缺省走上方模块级默认)。 */
+/** image-downloader 可注入选项(均缺省走上方模块级默认)。 */
 export interface ImageDownloaderOptions {
   /** 允许私网/回环地址(测试本地 server 等场景;生产默认 false)。 */
   allowPrivateAddresses?: boolean;
 }
 
-/* ---------- MR-3:IP 分类与主机校验 ---------- */
+/* ---------- IP 分类与主机校验 ---------- */
 
 /** IPv4 私网/回环/链路本地/CGNAT 判定(非法地址按私网处理,宁可错拦)。 */
 function isPrivateIPv4(ip: string): boolean {
@@ -86,10 +86,10 @@ async function isHostAllowed(hostname: string): Promise<boolean> {
 
 /** 创建绑定 baseDir 的 imageResolver;每次文档转换新建一个实例(缓存随文档生命周期)。
  * timeoutMs:http(s) 下载超时(默认 HTTP_TIMEOUT_MS = 10s,测试可注入缩短)。
- * options:MR-3 SSRF 策略选项(allowPrivateAddresses,默认随模块常量收紧)。
+ * options:SSRF 策略选项(allowPrivateAddresses,默认随模块常量收紧)。
  * 缓存语义:fetch 前 cache.set 保证并发去重(在途 Promise 共享);结算后失败(null)条目
  * 异步删除,成功结果保留——失败下次调用重新下载,成功不重复请求。
- * B5:附带 exists 轻量存在性通道——本地路径 fs.access 判定(免整读),ENOENT → false,
+ * 附带 exists 轻量存在性通道——本地路径 fs.access 判定(免整读),ENOENT → false,
  * 其他错误(权限等)抛出保留错误码;非本地路径退回完整解析(pdf 侧 checkLocalImages
  * 仅收本地 src,此为防御兜底)。 */
 export function createImageResolver(
@@ -122,7 +122,7 @@ export function createImageResolver(
       return true;
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return false;
-      throw err; // 权限等其他错误抛出,checkLocalImages 按 B4 错误码细分文案
+      throw err; // 权限等其他错误抛出,checkLocalImages 按错误码细分文案
     }
   };
   return Object.assign(resolve, { exists });
@@ -130,7 +130,7 @@ export function createImageResolver(
 
 /** 下载 http(s) 资源:默认 10s 超时(timeoutMs 由 createImageResolver 注入),仅接受 2xx;
  * 任何失败(超时/非 2xx/网络错误/私网拦截/体积超限/重定向超限)→ null,不抛。
- * MR-3:手动跟随重定向(redirect:"manual"),每一跳目标都过私网校验后再请求。 */
+ * 手动跟随重定向(redirect:"manual"),每一跳目标都过私网校验后再请求。 */
 async function downloadHttp(url: string, timeoutMs: number, allowPrivateAddresses: boolean): Promise<Buffer | null> {
   try {
     let current = url;
@@ -152,7 +152,7 @@ async function downloadHttp(url: string, timeoutMs: number, allowPrivateAddresse
   }
 }
 
-/** 读响应体(MR-3):Content-Length 预检 + 流式累计双保险,超过 MAX_RESPONSE_BYTES
+/** 读响应体:Content-Length 预检 + 流式累计双保险,超过 MAX_RESPONSE_BYTES
  *  中止读取(取消流释放连接)返回 null → core 层走既有「图片加载失败」警告通道。 */
 async function readBodyCapped(res: Response): Promise<Buffer | null> {
   const contentLength = Number(res.headers.get("content-length") ?? "");

@@ -1,5 +1,5 @@
 /**
- * 预览窗口子系统(自 main/index.ts 抽取,行为零变化):
+ * 预览窗口子系统:
  * 读 md → convert("pdf") 复用 PDF 排版 HTML → 写临时文件 → 可见窗口 loadFile。
  * 允许并发多开;closed 清理注册与临时文件;focus 时按 mtime 对比源文件,
  * 变更则重渲染;设置变更经 preview:refresh 全量刷新。转换中不触碰预览。
@@ -21,13 +21,11 @@ import { getKatexDir } from "../services/resource-dirs.js";
 import { renderMermaid } from "../services/mermaid-service.js";
 import { hardenWebContents } from "../services/web-hardening.js";
 
-/** 预览窗默认尺寸(无有效记忆时使用;MR-16 前为唯一尺寸)。 */
+/** 预览窗默认尺寸(无有效记忆时使用)。 */
 const PREVIEW_DEFAULT_WIDTH = 900;
 const PREVIEW_DEFAULT_HEIGHT = 1100;
 
-/**
- * 预览窗口注册表(批次 11 迭代 3「E 预览跟随刷新」)。
- */
+/** 预览窗口注册表。 */
 interface PreviewEntry {
   win: BrowserWindow;
   mdPath: string;
@@ -61,7 +59,7 @@ async function renderPreviewHtml(mdPath: string): Promise<string> {
 }
 
 /** 预览窗口内显示错误页(源文件缺失/渲染失败;保留窗口,恢复后 focus 会重新检查)。
- *  MR-16:配色随设置主题(theme=dark 深色 / light 浅色 / system 跟随系统深色偏好),
+ *  配色随设置主题(theme=dark 深色 / light 浅色 / system 跟随系统深色偏好),
  *  与主界面 base.css 的双作用域策略一致(显式 data-theme 优先,system 用媒体查询)。 */
 function showPreviewError(win: BrowserWindow, message: string): void {
   if (win.isDestroyed()) return;
@@ -83,7 +81,7 @@ function showPreviewError(win: BrowserWindow, message: string): void {
 </style></head>
 <body><div class="box"><h1>${t("preview.errorTitle")}</h1><p>${escapeHtml(message)}</p></div></body></html>`;
   void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {
-    /* B2:错误页加载失败(窗口恰被关闭等),静默即可,无进一步动作可做 */
+    /* 错误页加载失败(窗口恰被关闭等),静默即可,无进一步动作可做 */
   });
 }
 
@@ -94,7 +92,7 @@ function showPreviewError(win: BrowserWindow, message: string): void {
  */
 export async function refreshPreviewWindow(entry: PreviewEntry): Promise<void> {
   if (entry.win.isDestroyed()) return;
-  // B2:新临时文件清理函数提升到 try 外——失败路径(stat/loadFile 中断)也能回收,
+  // 新临时文件清理函数提升到 try 外——失败路径(stat/loadFile 中断)也能回收,
   // 此前失败时新 tmp 引用丢失,临时 HTML 残留至进程退出
   let newCleanup: (() => Promise<void>) | null = null;
   try {
@@ -142,7 +140,7 @@ export async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; 
     const tmp = await writeTempHtml(html);
     cleanup = tmp.cleanup;
     const baseName = baseNameFromMdPath(mdPath);
-    // MR-16:预览窗尺寸记忆(与主窗同机制:pickWindowBounds 钳制 + ui-state 独立 key;
+    // 预览窗尺寸记忆(与主窗同机制:pickWindowBounds 钳制 + ui-state 独立 key;
     // 无有效记忆回落默认尺寸)
     const savedBounds = pickWindowBounds(
       loadUiState().previewWindowBounds,
@@ -154,11 +152,11 @@ export async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; 
       ...(savedBounds ?? {}),
       title: t("preview.windowTitle", { name: baseName }),
       autoHideMenuBar: true,
-      // MR-13:webPreferences 全显式(与 mermaid-service 对齐;默认值虽安全,显式防漂移)
+      // webPreferences 全显式(与 mermaid-service 对齐;默认值虽安全,显式防漂移)
       webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
-    hardenWebContents(win); // B1:预览 HTML 含用户 markdown 渲染的链接,导航收口
-    // MR-16:关闭时记忆尺寸(独立 key previewWindowBounds;全屏不记录,与主窗一致;
+    hardenWebContents(win); // 预览 HTML 含用户 markdown 渲染的链接,导航收口
+    // 关闭时记忆尺寸(独立 key previewWindowBounds;全屏不记录,与主窗一致;
     // 多预览并发时以最后关闭者为准)。写盘失败静默,不影响窗口关闭。
     win.on("close", (event) => {
       if (win!.isFullScreen()) return;
@@ -181,7 +179,7 @@ export async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; 
       previews.delete(entry);
       void entry.cleanup().catch(() => undefined);
     });
-    // 批次 11 迭代 3:源文件变更(或恢复)时刷新;已是最新则不动作
+    // 源文件变更(或恢复)时刷新;已是最新则不动作
     win.on("focus", () => void checkPreviewSource(entry));
     await win.loadFile(tmp.htmlPath);
     return { ok: true };

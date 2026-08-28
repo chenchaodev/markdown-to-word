@@ -1,8 +1,7 @@
 /**
- * 临时 HTML 文件生命周期(预览/打印共用,R8 批 3 L6):
- * 原内联逻辑在 converter.ts renderPdf 与 index.ts openPreviewWindow 各自一份,
- * 提炼为写文件 + 清理 一对操作。清理失败(如仍被 Chromium 占用)仅记录,不阻断。
- * MR-14 卫生加固:
+ * 临时 HTML 文件生命周期(预览/打印共用):写文件 + 清理 一对操作。
+ * 清理失败(如仍被 Chromium 占用)仅记录,不阻断。
+ * 卫生加固:
  * - 文件名随机段改 crypto.randomUUID()(CSPRNG,替代 Math.random);
  * - writeFile 加 'wx' 独占标志(防理论上的文件名碰撞覆盖;碰撞时换名重试);
  * - 启动期清扫崩溃残留 tmp 未做:残留仅发生在「写入成功后进程即崩溃」的极端路径,

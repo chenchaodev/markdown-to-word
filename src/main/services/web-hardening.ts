@@ -1,5 +1,5 @@
 /**
- * WebContents 加固(B1 安全审计):导航收口 + 外链外开。
+ * WebContents 加固:导航收口 + 外链外开。
  * - setWindowOpenHandler:拒绝一切 window.open/新窗口;http(s) 目标转交系统浏览器
  * - will-navigate:拦截页内真实导航(编程式 loadFile/loadURL 不触发此事件,
  *   Electron 官方语义,故自身刷新不受影响);http(s) 外链转 shell.openExternal,

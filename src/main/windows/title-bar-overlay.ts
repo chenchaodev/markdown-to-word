@@ -1,5 +1,5 @@
 /**
- * 界面重构 v3:Windows 标题栏 overlay(titleBarOverlay)配色单源。
+ * Windows 标题栏 overlay(titleBarOverlay)配色单源。
  * - 色值/高度常量唯一来源:BrowserWindow 初始 options 与运行时 setTitleBarOverlay
  *   均从这里取值,禁止散落字面量;
  * - 主题主动方是 renderer(设置面板切换 + 持久化),经 IPC「theme:syncOverlay」

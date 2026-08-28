@@ -1,5 +1,5 @@
 /**
- * Mermaid 渲染服务(批次 10 功能 1,main 进程层):
+ * Mermaid 渲染服务(main 进程层):
  * 单例隐藏 BrowserWindow 加载 mermaid.min.js(IIFE 产物 3.5MB,file:// 直用,规避 v11
  * ESM 动态 import 的模块 CORS),executeJavaScript 调页面内 renderMermaid:
  * initialize → parse 预检 → mermaid.render 拿 SVG → 注入 #graphDiv → fonts.ready →
@@ -111,12 +111,12 @@ async function ensureWindow(): Promise<BrowserWindow> {
           backgroundThrottling: false,
         },
       });
-      // B2:构造后任一步失败(加固/临时 HTML/loadFile)统一销毁再抛——此前仅
+      // 构造后任一步失败(加固/临时 HTML/loadFile)统一销毁再抛——此前仅
       // loadFile 有销毁分支,中途抛错会泄漏半初始化窗口(非 destroyed 僵尸,
       // 干扰 getAllWindows 计数与 will-quit 退出兜底)
       try {
         w.on("closed", reset);
-        // B1:四类窗口统一导航收口(页面无链接,纯防御性;executeJavaScript 不受影响)
+        // 四类窗口统一导航收口(页面无链接,纯防御性;executeJavaScript 不受影响)
         hardenWebContents(w);
         // 渲染进程崩溃:销毁窗口并复位,下次调用重建(本次渲染经 executeJavaScript reject 降级 null)
         w.webContents.on("render-process-gone", () => {
@@ -177,7 +177,7 @@ async function doRender(code: string, timeoutMs: number): Promise<MermaidResult 
   } catch (err) {
     // 降级路径:语法错误/超时/窗口崩溃/脚本加载失败,core 层负责降级渲染;日志留痕便于诊断
     console.log(`[mermaid-service] render failed: ${err instanceof Error ? err.message : String(err)}`);
-    // B2:超时意味着页面内 executeJavaScript 可能仍挂起——队列已放行下一任务,
+    // 超时意味着页面内 executeJavaScript 可能仍挂起——队列已放行下一任务,
     // 同窗口两次渲染存在交错风险(极小但非零)。销毁窗口(closed → reset)强制
     // 下一次渲染走全新页面,消除挂起残留。
     if (err instanceof Error && err.message === MERMAID_TIMEOUT_MESSAGE && win && !win.isDestroyed()) {

@@ -1,10 +1,10 @@
 /**
- * 资源目录解析单一来源(目录重组批⑤由 katex-dir.ts + mermaid-dir.ts 合并):
+ * 资源目录解析单一来源(目录重组由 katex-dir.ts + mermaid-dir.ts 合并):
  * 两者的定位策略刻意不同,合并同文件便于对照维护——
  *
  * KaTeX:全仓库唯一持有 electron app.getAppPath() 依赖的位置——app.getAppPath() 保证
  * dev/打包一致(打包后 node_modules 随 asar 内置);docx 走 MathML 不需要,
- * 仅 pdf 渲染加载 katex.min.css 与字体用(批次 6)。
+ * 仅 pdf 渲染加载 katex.min.css 与字体用。
  * converter(convertImpl/buildConvertContext)不 import electron app,
  * katexDir 由调用方(main 入口层:index.ts / smoke)经 getKatexDir() 计算后传入,
  * 便于 convertImpl 脱离 Electron 直测。
