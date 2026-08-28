@@ -5,7 +5,7 @@
  * 补充断言(中优先级缺口):代码块 docx 序列化(hljs 高亮/Consolas/10pt/逐行 w:br)、
  * 代码块 pdf hljs 高亮(language-ts 围栏 + token 类 span)、引用块(左缩进 720 + 灰底
  * F2F2F2)、列表(w:numPr + numbering.xml bullet/decimal)、表格表头加粗(w:b/w:bCs)。
- * 图片尺寸(R4:H3 行为修复):1×1 小图不放大(9525 EMU)、800×400 大图等比缩到 400 宽
+ * 图片尺寸(H3 行为修复):1×1 小图不放大(9525 EMU)、800×400 大图等比缩到 400 宽
  * (3810000×1905000 EMU)、webp 降级为占位文本 + 警告(独立转换,不污染主样例)。
  */
 import fs from "node:fs/promises";
@@ -237,7 +237,7 @@ export async function run() {
         : null,
     warnings: webpWarnings,
   });
-  // B6:警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
+  // 警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
   const webpWarnOk = webpWarnings.some((w) => {
     const text = typeof w === "string" ? w : formatWarning(w);
     return text.includes("webp") && text.includes("已跳过");
@@ -254,7 +254,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:webp 图片降级(warning + 占位文本,主样例不受影响)断言通过");
 
-  // ---------- B3c:未知魔数图片跳过嵌入(sniffImageType null 化,imageToDocx 调用方处理) ----------
+  // ---------- 未知魔数图片跳过嵌入(sniffImageType null 化,imageToDocx 调用方处理) ----------
   // 依据(src/core/image/image-type.ts):B3 起未知字节头返回 null(不再伪装 png),
   // docx imageToDocx 收到 null → 追加「图片格式无法识别,已跳过」警告 + 占位文本。
   const unknownWarnings = [];
@@ -274,7 +274,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:B3 未知魔数图片跳过嵌入(警告 + 占位文本)断言通过");
 
-  // ---------- B3c:GFM 表格对齐(renderTable node.align → 段落 w:jc center/right) ----------
+  // ---------- GFM 表格对齐(renderTable node.align → 段落 w:jc center/right) ----------
   // 依据(src/core/docx/render.ts):mdast 表格 align 数组逐列映射 AlignmentType,
   // 未声明列保持缺省(左对齐,无 w:jc)。docx 库序列化:<w:jc w:val="center"/>。
   const alignDocx = await convert(
@@ -302,7 +302,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:B3 表格列对齐(:--/:-:/--: → 缺省/center/right)断言通过");
 
-  // ---------- B3c:自闭合 <br/> 白名单放行(html-whitelist 三处扫描器同步) ----------
+  // ---------- 自闭合 <br/> 白名单放行(html-whitelist 三处扫描器同步) ----------
   // 此前 <br/> 整串判非法:docx 危险段丢弃 / pdf 整段转义。B3 起仅空标签 br 放行自闭合。
   const brDocx = await convert("<strong>粗</strong><br/>换行后", "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const brXml = await unzipPart(brDocx.buffer, "word/document.xml");
@@ -318,7 +318,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:B3 自闭合 <br/> 白名单放行(docx 渲染 + pdf 不转义)断言通过");
 
-  // 缺失图片警告(M6:检查并入 imageResolver 失败路径,dist/core/convert.ts 已移除
+  // 缺失图片警告(检查并入 imageResolver 失败路径,dist/core/convert.ts 已移除
   // stat 预扫;docx imageToDocx resolver 返回 null → warnings 追加统一文案
   // 「图片加载失败: <src>」,本地与外链同构)。样例引用不存在的 missing-img.png
   // (无 fixture,与 toc-caption 段 missing-fig.png 同做法);resolver 注入 null 模拟缺失。
@@ -336,7 +336,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:缺失图片警告(warnings 含「图片加载失败:」与文件名)断言通过");
 
-  // pdf 侧同文案:checkLocalImages 经 resolver 失败路径(M6 替代 convert 层 stat 预扫)
+  // pdf 侧同文案:checkLocalImages 经 resolver 失败路径(替代 convert 层 stat 预扫)
   const pdfMissingWarnings = [];
   await convert("![缺图](missing-img.png)", "pdf", {
     baseDir: FIXTURES_DIR,
@@ -348,7 +348,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:pdf 缺失图片警告(统一文案经 resolver 失败路径)断言通过");
 
-  // ---------- B4:图片读取失败原因细分(imageLoadFailureWarning,docx/pdf 双侧) ----------
+  // ---------- 图片读取失败原因细分(imageLoadFailureWarning,docx/pdf 双侧) ----------
   // 依据(src/core/image/image-warning.ts):resolver 抛出的 fs 错误按错误码分类——
   // ENOENT → 「图片文件不存在」/ EACCES|EPERM → 「图片文件无访问权限」/
   // 其他或返回 null → 统一「图片加载失败」兜底。docx 与 pdf 行为对齐。
@@ -379,7 +379,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:B4 图片失败原因细分(ENOENT/EACCES 独立文案,docx/pdf 对齐)断言通过");
 
-  // ---------- G8 补齐:convert warnings ?? [] 兜底(convert.ts:67) ----------
+  // ---------- convert warnings ?? [] 兜底(convert.ts:67) ----------
   // 依据(dist/core/convert.ts):context.warnings 缺省时内部兜底为空数组,转换不抛错;
   // 缺失图片等警告路径在无 warnings 收集器时静默(不崩溃)。
   const noWarnDocx = await convert("![缺图](missing.png)", "docx", { baseDir: FIXTURES_DIR });
@@ -411,7 +411,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:代码块 pdf 高亮(language-ts 围栏 + hljs token 类 span)断言通过");
 
-  // ---------- G8 补齐:hljs.highlight 抛错 → 转义兜底(render.ts:109-110) ----------
+  // ---------- hljs.highlight 抛错 → 转义兜底(render.ts:109-110) ----------
   // 依据(dist/core/pdf/render.ts highlight):hljs.getLanguage 命中后 highlight 抛错
   // (语言包异常)→ catch 回退转义输出 <pre class="hljs"><code>escapeHtml(str)</code></pre>。
   // 触发:注册编译期即抛错的坏语言(match 与 begin 并存,hljs compileMatch 抛
@@ -419,7 +419,7 @@ export async function run() {
   // 注入(与 render.ts 同一模块单例);用后 unregister 清理,不影响其他断言。
   hljs.registerLanguage("broken", () => ({ match: "x", begin: /y/ }));
   try {
-    // B4:高亮降级警告(warn.highlightFallback,与 docx 侧同 key 同文案口径)
+    // 高亮降级警告(warn.highlightFallback,与 docx 侧同 key 同文案口径)
     const brokenPdfWarnings = [];
     const brokenPdf = await convert("```broken\nif (a < b && c > d) {}\n```\n", "pdf", {
       baseDir: FIXTURES_DIR,
@@ -439,7 +439,7 @@ export async function run() {
     hljs.unregisterLanguage("broken");
   }
 
-  // ---------- G8 补齐:脚注定义内 blockquote/thematicBreak(render.ts:955-961) ----------
+  // ---------- 脚注定义内 blockquote/thematicBreak(render.ts:955-961) ----------
   // 依据(src/core/docx/render.ts renderFootnoteDefinition):脚注定义子块复用块渲染,
   // blockquote → renderBlockquote(左缩进 720 + 灰底 F2F2F2),thematicBreak →
   // renderThematicBreak(下边框 single 999999);产物在 footnotes.xml 部件。
@@ -459,7 +459,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:脚注定义内 blockquote/thematicBreak 渲染断言通过");
 
-  // ---------- B4:列表项/引用块内不支持的块级内容降级渲染 + 警告(render.ts) ----------
+  // ---------- 列表项/引用块内不支持的块级内容降级渲染 + 警告(render.ts) ----------
   // 依据(src/core/docx/render.ts):列表项内 display 公式/html/表格、引用块内代码块/
   // display 公式/html/表格此前静默丢弃(内容丢失);B4 起按既有降级线转文本
   // (公式 → TeX 源码等宽灰字 / 表格 → 逐行文本段落 / 代码块 → 等宽文本代码块 /
@@ -527,7 +527,7 @@ export async function run() {
   }
   console.log("[ok] basic-render:B4 容器内不支持块级降级渲染(公式/表格/代码块/html)+ 警告 断言通过");
 
-  // ---------- B5:imageToDocx resolver memo 缓存(render.ts resolveImageCached) ----------
+  // ---------- imageToDocx resolver memo 缓存(render.ts resolveImageCached) ----------
   // 同一图片 URL 在文档多处出现时只走一次 resolver(成功缓存);失败(null)不缓存,
   // 同一缺失 URL 第二次出现重新解析(重试语义,与 main 侧 image-downloader 缓存口径一致)。
   {

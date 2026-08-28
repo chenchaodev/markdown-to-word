@@ -1,10 +1,10 @@
 /**
- * 契约单源恒等性断言(B7 第 1 波「契约单源与解环」):
+ * 契约单源恒等性断言:
  * - CROSS_REF_KINDS:docx/pdf 两侧渲染模块 re-export 的常量与 core/cross-ref.ts
  *   单源为同一对象引用(ESM live binding,两侧 import 同源即恒等);
  * - 章节 label 正则族(SEC_LABEL_RE / kindLabelRegex / stripSecLabelSuffix):
  *   行为断言(label 提取、剥离、fig/tab/sec 构造);
- * - 白名单标签集恒等(B7 第 3 波):INLINE_TAG_STYLES + br ↔ ALLOWED_INLINE_TAGS
+ * - 白名单标签集恒等:INLINE_TAG_STYLES + br ↔ ALLOWED_INLINE_TAGS
  *   键集一致,防两处平行表漂移。
  * 纯断言段,无产物输出。
  */

@@ -1,5 +1,5 @@
 /**
- * 内联格式白名单单一实现测试(重构 R1,契约收敛 H1):
+ * 内联格式白名单单一实现测试:
  * - isAllowedInlineHtml 判定规则直测(合法/非法矩阵);
  * - ALLOWED_INLINE_TAGS 集合完整性快照。
  * 双格式端到端一致性由 raw-html.test.js 覆盖,此段只验证共享实现本身。
@@ -14,8 +14,8 @@ export async function run() {
     ["单标签", "<strong>粗体</strong>"],
     ["嵌套", "<strong>粗<em>斜</em></strong>"],
     ["br 空标签", "a<br>b"],
-    ["br 自闭合(B3)", "a<br/>b"],
-    ["br 自闭合带空格(B3)", "a<br />b"],
+    ["br 自闭合", "a<br/>b"],
+    ["br 自闭合带空格", "a<br />b"],
     ["开标签尾随空格", "<strong >粗体</strong>"],
     ["多段独立标签", "<i>a</i><b>b</b>"],
     ["大小写", "<STRONG>粗</STRONG>"],
@@ -38,7 +38,7 @@ export async function run() {
     ["br 闭标签", "</br>"],
     ["闭标签带属性", "</strong class='x'>"],
     ["空开标签", "<>a</>"],
-    ["非空标签自闭合(B3:仍非法)", "<em/>a"],
+    ["非空标签自闭合(仍非法)", "<em/>a"],
     ["自闭合带属性伪装", '<img src="x" />'],
   ];
   for (const [label, input] of invalid) {

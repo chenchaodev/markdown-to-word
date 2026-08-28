@@ -1,5 +1,5 @@
 /**
- * 批注验收(批次 11):行内 `[锚定文本]{批注=内容}` → docx 批注。
+ * 批注验收:行内 `[锚定文本]{批注=内容}` → docx 批注。
  * 断言 comments.xml 部件存在、commentRangeStart/End/Reference 结构、锚定文本
  * 保留、批注内容(含 rich 加粗/链接)存在、多批注 id 唯一、author 固定;
  * 表格单元格内批注生效;链接与 {#eq:label} 语法不受影响;pdf 路线原样输出。
@@ -24,7 +24,7 @@ const commentMd = `# 批注测试
 `;
 export const fixtures = { main: commentMd };
 
-/** 批注验收(批次 11) */
+/** 批注验收 */
 export async function run() {
   const docxArtifact = await convert(commentMd, "docx", {
     baseDir: FIXTURES_DIR,

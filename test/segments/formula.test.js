@@ -1,5 +1,5 @@
 /**
- * 公式测试(原 make-batch4-sample.mjs 段 7):
+ * 公式测试:
  * docx:KaTeX(MathML)→ docx Math 组件;OOXML 序列化名已实证(docx 9.7.1
  * index.cjs):Math 容器 → <m:oMath>,MathRun → <m:r><m:t>,分式 → <m:f>,
  * 上下标 → <m:sSubSup>,开方 → <m:rad>。
@@ -68,9 +68,9 @@ export async function run() {
   }
   console.log("[ok] PDF 公式:KaTeX 结构 + CSS 字体内联生效");
 
-  // ---------- G8 补齐 + B4:loadKatexCss 读取失败返回空串 + warnings 上报 ----------
+  // ---------- loadKatexCss 读取失败返回空串 + warnings 上报 ----------
   // 依据(dist/core/pdf/template.ts):katexDir 无效时 readFileSync 抛错 → catch 返回 ""
-  // 并经 warnings 通道上报 warn.katexCssLoadFailed(B4 失败可见性,此前静默)。
+  // 并经 warnings 通道上报 warn.katexCssLoadFailed(失败可见性,此前静默)。
   // renderPdfHtml 不抛错;公式仍渲染为 KaTeX HTML(仅缺字体样式)。
   const badKatexWarnings = [];
   const badKatexPdf = await convert(formulaMd, "pdf", {
@@ -114,7 +114,7 @@ export async function run() {
     throw new Error("公式断言失败:降级公式不应产出 m:oMath(整式降级不混排)");
   }
   // 断言:convert 返回 warnings 含降级警告文案(含公式源码)。
-  // B6:警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案。
+  // 警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案。
   const degradeWarnOk = degradeWarnings.some((w) => {
     const text = typeof w === "string" ? w : formatWarning(w);
     return text.includes("公式解析失败,降级为 TeX 源码") && text.includes("\\frac{1}{");
@@ -124,7 +124,7 @@ export async function run() {
   }
   console.log("[ok] docx 公式降级:TeX 源码等宽灰字 + 无 oMath + warnings 警告 断言通过");
 
-  // ---------- G1 补齐:munderover 非 ∑ 回落(munderoverToNary 252-264 / moText 267-274) ----------
+  // ---------- munderover 非 ∑ 回落(munderoverToNary 252-264 / moText 267-274) ----------
   // 依据(dist/core/docx/handlers/math.ts):display 模式 \prod / \bigcup 的 KaTeX MathML 产物为
   // <munderover><mo>∏/⋃</mo>…</munderover>(仅 ∑ 走 MathSum);首子 mo 文本非 ∑ →
   // MathSubSuperScript 回落(base = mo 文本 run,sub/sup 为兄弟节点),不产出 <m:nary>。

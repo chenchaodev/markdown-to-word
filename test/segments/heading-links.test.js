@@ -1,5 +1,5 @@
 /**
- * 标题编号 + 内部/外部链接验收(原 make-batch4-sample.mjs 段 3,补 h4-h6/外链 rels):
+ * 标题编号 + 内部/外部链接验收(补 h4-h6/外链 rels):
  * linkMd → docx;断言 numbering.xml 多级 text 模板、document.xml 的
  * w:hyperlink w:anchor 内部锚点与标题书签(编号不破坏 Bookmark);
  * h4-h6:样式(Heading4/5/6)/书签齐全,编号仅挂 h1-h3(实现事实:
@@ -38,12 +38,12 @@ title: 标题编号与链接测试
 `;
 export const fixtures = { main: linkMd };
 
-/** 标题编号 + 内部/外部链接验收(批次 5b) */
+/** 标题编号 + 内部/外部链接验收 */
 export async function run() {
   const linkDocx = await convert(linkMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const numberingXml = await unzipPart(linkDocx.buffer, "word/numbering.xml");
   const documentXml = await unzipPart(linkDocx.buffer, "word/document.xml");
-  // R4 回归守卫:书签 w:id 文档内唯一。docx Bookmark 组件每枚独立计数恒为 1 →
+  // 回归守卫:书签 w:id 文档内唯一。docx Bookmark 组件每枚独立计数恒为 1 →
   // 全文档标题/公式书签 w:id 全部冲突(Word 要求文档内唯一,实测 WPS 显示异常);
   // bookmarkChildren 改用 ctx.bookmarkNextId 自增,每枚 bookmarkStart/End 对独占 id。
   // 此处收集全部 w:bookmarkStart 的 w:id,去重后数量须等于总数。

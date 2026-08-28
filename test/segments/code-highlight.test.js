@@ -111,7 +111,7 @@ export async function run() {
   }
   console.log("[ok] code-highlight:文本完整(高亮拆分后原文各片段均在)断言通过");
 
-  // ---- 6. B4:语言已知但 hljs 高亮抛错 → 降级等宽 + warn.highlightFallback 警告 ----
+  // ---- 6. 语言已知但 hljs 高亮抛错 → 降级等宽 + warn.highlightFallback 警告 ----
   // 依据(src/core/docx/handlers/code-highlight.ts):getLanguage 命中后 highlight 抛错(语言包
   // 异常)→ onFallback(lang) 回调 + null;renderCode 经回调上报 keyed 警告并降级等宽文本。
   // 触发方式与 basic-render pdf 侧一致(注册编译期即抛错的坏语言,用后注销)。

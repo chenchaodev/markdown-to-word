@@ -2,7 +2,7 @@
  * 编码预检段:UTF-8 无 BOM / UTF-8 BOM / UTF-16LE BOM / UTF-16BE BOM / GBK 解码与标记。
  * decodeMarkdown 规则:UTF-8 / UTF-16(LE+BE)BOM 剥离;无 BOM 严格 UTF-8 校验,
  * 失败按 GBK/GB18030 解码并标记 encoding="gbk"(调用方据此追加警告文案)。
- * B3:UTF-16 LE/BE 的 encoding 字段如实返回 "utf-16"(此前 LE 失真为 "utf-8");
+ * UTF-16 LE/BE 的 encoding 字段如实返回 "utf-16"(此前 LE 失真为 "utf-8");
  * BE 此前不识别,落 gb18030 分支产生乱码。
  */
 import iconv from "iconv-lite";
@@ -25,7 +25,7 @@ export async function run() {
   if (utf16leBom.encoding !== "utf-16" || !utf16leBom.text.includes("中文正文")) {
     throw new Error("编码预检断言失败:UTF-16LE BOM 未正确解码/标记(B3:utf-16)");
   }
-  // B3:UTF-16 BE(FE FF)此前不识别 → gb18030 乱码;现按 utf16-be 解码
+  // UTF-16 BE(FE FF)此前不识别 → gb18030 乱码;现按 utf16-be 解码
   // (iconv encode 可能自带 BOM,拼接后即便双 BOM 也只影响首字符前的 U+FEFF)
   const utf16beBom = decodeMarkdown(
     Buffer.concat([Buffer.from([0xfe, 0xff]), iconv.encode("中文正文", "utf16-be")]),

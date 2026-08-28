@@ -1,5 +1,5 @@
 /**
- * F3 标题排版粒度验收:headingScale(标题字号缩放档位)+ headingSpacing(标题间距档位)。
+ * 标题排版粒度验收:headingScale(标题字号缩放档位)+ headingSpacing(标题间距档位)。
  * 断言分层:
  * - 纯函数直测:档位 → h1-h6 字号(pt)/间距(pt/twips)映射表(core/settings/typography.ts
  *   单源;standard 档 = 升级前 PDF 固定值,回归保障);
@@ -163,7 +163,7 @@ export async function run() {
     const loaded = mod.loadSettings();
     assert(loaded.typography.headingScale === "standard", "非法 headingScale 应被 sanitize 钳制回 standard");
     assert(loaded.typography.headingSpacing === "standard", "缺失 headingSpacing 应兜底 standard");
-    // renderer 侧 mergeSettingsWithDefaults 同语义兜底(MR-11 双侧防御)
+    // renderer 侧 mergeSettingsWithDefaults 同语义兜底(双侧防御)
     const merged = mergeSettingsWithDefaults({
       ...DEFAULT_SETTINGS_MERGE_SEED(),
       typography: { fontAscii: "Arial" },

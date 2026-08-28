@@ -1,5 +1,5 @@
 /**
- * 页眉页脚自定义验收(F4):
+ * 页眉页脚自定义验收:
  * docx 断言(custom 文字入 header XML / leftRight 右对齐制表位 / logo w:drawing /
  * none 无页眉部件 / footerEnabled=false 无页脚部件 / default 行为回归=标题居中);
  * pdf 断言模板字符串(headerTemplate 按模式构造、logo data URI、footer 开关),

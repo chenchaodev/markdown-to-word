@@ -79,7 +79,7 @@ export async function run() {
 
   // 断言 6(反例):无 frontmatter 时双格式均不产出封面(context.title 不触发封面)。
   // 注意:封面标记用 author/date 灰字(808080)+ 作者文本——不可用 w:sz=44 判别,
-  // F3 起正文 h1(standard 档 22pt)同样产出 44 half-points 的标题 run
+  // 正文 h1(standard 档 22pt)同样产出 44 half-points 的标题 run
   const noCoverMd = "# 无封面标题\n\n正文内容。";
   const noCoverDocx = await convert(noCoverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const noCoverDocument = await unzipPart(noCoverDocx.buffer, "word/document.xml");
