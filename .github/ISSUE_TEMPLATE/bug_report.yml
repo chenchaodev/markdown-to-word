@@ -1,0 +1,83 @@
+name: Bug 报告
+description: 报告软件问题或异常行为
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您提交 Bug 报告！请先搜索[已有 Issue](https://github.com/chenchaodev/markdown-to-word/issues) 是否已存在相同问题。
+
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows 版本
+      description: 例如 Windows 11 23H2
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+
+  - type: input
+    id: software_version
+    attributes:
+      label: 软件版本
+      description: markdown-to-word 版本号（可在标题栏查看）
+      placeholder: "3.5.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 清晰描述遇到的问题
+      placeholder: "描述问题的现象..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请提供可复现的操作步骤
+      placeholder: |
+        1. 打开应用
+        2. 选择文件...
+        3. 点击转换...
+        4. 出现错误
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望与实际行为
+      description: 描述期望的结果和实际的结果
+      placeholder: |
+        期望：...
+        实际：...
+    validations:
+      required: false
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: 样例文件
+      description: 如有条件，请拖拽或上传可复现问题的 Markdown 样例文件（可选）
+      placeholder: "拖拽文件到此处或点击上传..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: 如有错误日志或控制台输出，请粘贴在此（可选）
+      render: shell
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        > 提交前请先搜索[已有 Issue](https://github.com/chenchaodev/markdown-to-word/issues)，避免重复提交。

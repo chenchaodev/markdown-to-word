@@ -1,0 +1,53 @@
+name: 功能请求
+description: 提出新功能或改进建议
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您的功能建议！请先搜索[已有 Issue](https://github.com/chenchaodev/markdown-to-word/issues) 是否已有类似请求。
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 需求场景
+      description: 描述您在什么场景下需要此功能
+      placeholder: "当我在处理...时，希望可以..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: feature
+    attributes:
+      label: 期望功能
+      description: 详细描述您期望的功能行为
+      placeholder: "希望软件能够..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: 是否愿意贡献
+      description: 您是否愿意参与实现此功能
+      options:
+        - 是
+        - 否
+        - 看情况
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 其他有助于理解需求的上下文（可选）
+      placeholder: "补充说明..."
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        > 提交前请先搜索[已有 Issue](https://github.com/chenchaodev/markdown-to-word/issues)，避免重复提交。
