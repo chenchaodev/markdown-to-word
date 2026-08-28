@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-08-28:**设置抽屉重组为 6 组 Tab 导航完成并随 3.8.0 发版**(typecheck/65 段全绿;smoke 本沙箱环境受限未跑,GUI 实测待补;版本号三统一 package.json=tag v3.8.0=CHANGELOG [3.8.0]):原 9 分区归并为 6 组(01 预设/02 排版/03 页眉页脚与水印/04 编号与目录/05 转换/06 应用),左侧 tab 栏导航+右侧当前组独立滚动;抽屉加宽 100px 选项不拥挤、tab 标签折行禁横向滚动;预设作用域收敛「排版·编号与目录」;导出后行为文案「打开所在文件夹」→「打开文件夹」;i18n 增删组名键;settings-ia.md 同步;控件 id/name 全保留
 - 2026-08-28:**B1 AI 清理 + A1 中文排版预设 + C1 Obsidian 兼容 完成并随 3.7.0 发版**(typecheck/lint/build/65 段全绿;smoke 本沙箱环境受限未跑,GUI 实测待补;版本号三统一 package.json=lockfile=tag v3.7.0=CHANGELOG [3.7.0]):B1 新增 core/markdown/ai-cleanup.ts + preprocessMarkdown 编排 + 转换入口注入 + 09 分区开关 + i18n;A1 TEMPLATE_PRESETS 增 official-cn/cn-reader/cn-minimal + 预设下拉动态化(allPresets());C1 新增 core/markdown/obsidian.ts + 转换入口注入 + 09 分区开关 + i18n;自动断言见 test/segments/{ai-cleanup,chinese-presets,obsidian,presets,settings}.test.js
 - 2026-08-28:**关于页重构完成并随 3.6.0 发版**(typecheck/lint/build/62 段全绿;GUI 实测通过;版本号三统一 package.json=lockfile=tag v3.6.0=CHANGELOG [3.6.0]):自研关于页面(纸感卡片+钤印+三语),去重+快速上手/特性标签+手册按钮(中性墨色),入口置标题栏设置右侧、弹窗居中主窗口;作者链接 GitHub 主页;手册链接 master 分支
 - 2026-08-28:**F7 目录带页码完成并随 3.3.0 发版**(ADR-007 混合路线,部分推翻 D1;typecheck/lint/build/60 段/smoke 全绿;GUI 实测通过 ACCEPTANCE F7 D1/D2 全勾):批① docx opt-in「Word 域目录」(tocMode:'static'|'field' 设置单源 + 双格式一致开关 + UI 抽屉 L2 目录模式下拉 + i18n 三语 + toc-caption.test.js 补断言);批② PDF 两遍法静态页码(field 模式触发——第一遍打印经既有 /Dests 命名目标解析定位标题页码,免 pdfjs 文本匹配 → 第二遍注入 .toc-page 点线引导页码重印,正文布局一致;自动断言见 test/segments/toc-pagenum.test.js)

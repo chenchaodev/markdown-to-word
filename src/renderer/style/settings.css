@@ -23,7 +23,7 @@
   right: 0;
   display: flex;
   flex-direction: column;
-  width: min(340px, calc(100vw - 48px));
+  width: min(440px, calc(100vw - 48px));
   height: 100%;
   background: var(--canvas);
   border-left: 1px solid var(--line);
@@ -93,8 +93,69 @@
 .drawer-body {
   flex: 1;
   min-height: 0;
-  padding: 2px 18px 20px;
+  display: flex;
+  flex-direction: row;
+}
+
+/* ---------- 设置 Tab 导航(左侧竖向) + 右侧面板 ---------- */
+.settings-tabs {
+  flex: none;
+  width: 96px;
+  padding: 10px 0;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.settings-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  padding: 9px 8px 9px 8px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  color: var(--mut);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-tab:hover {
+  color: var(--ink);
+  background: var(--inset);
+}
+
+.settings-tab.active {
+  color: var(--acc);
+  border-left-color: var(--acc);
+  background: var(--inset);
+}
+
+.settings-panels {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 18px 20px;
+}
+
+.settings-panels > .sec {
+  display: none;
+  margin-top: 10px;
+}
+
+.settings-panels > .sec.active {
+  display: block;
 }
 
 .drawer-foot {
@@ -390,15 +451,16 @@
   min-width: 0;
 }
 
-/* 响应式:紧凑档抽屉收窄(guidelines §5) */
+/* 响应式:紧凑档抽屉收窄(guidelines §5);宽度随 tab 栏(96px)同步加宽,
+ * 并用 calc(100vw - 48px) 兜底,避免窄屏溢出视口 */
 @media (max-width: 1080px) {
   .drawer {
-    width: 320px;
+    width: min(416px, calc(100vw - 48px));
   }
 }
 
 @media (max-width: 900px) {
   .drawer {
-    width: 300px;
+    width: min(396px, calc(100vw - 48px));
   }
 }

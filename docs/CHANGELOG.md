@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [3.8.0] - 2026-08-28
+- **设置抽屉重组为 6 组 Tab 导航(版本号三统一 package.json=tag v3.8.0=CHANGELOG [3.8.0];typecheck/65 段全绿;smoke 本沙箱环境受限未跑,GUI 实测待补)**:原 9 分区按功能/频率/认知重归并为 6 组(01 预设 / 02 排版 / 03 页眉页脚与水印 / 04 编号与目录 / 05 转换 / 06 应用),左侧竖向 tab 栏导航、右侧仅显示当前组独立滚动;抽屉整体加宽 100px(tab 栏在选项区之外新增,选项保持原宽不拥挤),tab 标签允许折行且全抽屉禁横向滚动;预设作用域同步收敛为「排版·编号与目录」;「导出后行为」文案「打开所在文件夹」→「打开文件夹」(zh/en/ja);i18n 增 groupTypography/groupHeaderWatermark/groupConvert、删 groupPage/groupText/groupOutput/groupWatermark;docs/design/settings-ia.md 同步新骨架与迁移映射;控件 id/name 全保留
+
 ## [3.7.0] - 2026-08-28
 - **B1 AI 清理 + A1 中文排版预设 + C1 Obsidian 兼容 三功能齐发(版本号三统一 package.json=lockfile=tag v3.7.0=CHANGELOG [3.7.0];typecheck/lint/build/65 段全绿;smoke 本沙箱环境受限未跑,GUI 实测待补)**:
   - **B1 AI 清理前置**:新增 `core/markdown/ai-cleanup.ts`(围栏/frontmatter 感知,split/join 实现智能引号→直引号、en/em dash→破折号、列表项补空格、空行折叠),`preprocessMarkdown` 编排,单文件/合并转换入口注入;`aiCleanup` 设置开关(09 分区)+ i18n zh/en/ja;自动断言见 test/segments/ai-cleanup.test.js

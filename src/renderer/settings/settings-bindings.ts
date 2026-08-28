@@ -159,20 +159,12 @@ function persistWatermark(): void {
  */
 function presetCoveredGroupLabels(preset: TemplatePreset): string {
   const groups: string[] = [];
-  if (preset.pageSetup) groups.push(t("settings.groupPage"));
+  // 重组后预设覆盖「排版」(页面 + 文字合并)与「编号与目录」两组
+  if (preset.pageSetup || preset.typography) {
+    groups.push(t("settings.groupTypography"));
+  }
   if (preset.typography) {
     const typo = preset.typography;
-    const hasTextGroup = [
-      typo.fontAscii,
-      typo.fontEastAsia,
-      typo.bodySizePt,
-      typo.lineSpacing,
-      typo.firstLineIndent,
-      typo.align,
-      typo.headingScale,
-      typo.headingSpacing,
-    ].some((value) => value !== undefined);
-    if (hasTextGroup) groups.push(t("settings.groupText"));
     if (
       typo.headingNumbering !== undefined ||
       typo.captionNumbering !== undefined

@@ -389,8 +389,17 @@
           </button>
         </header>
         <div class="drawer-body">
+          <nav class="settings-tabs">
+            <button type="button" class="settings-tab active" data-group="preset" data-i18n="settings.groupPreset">预 设</button>
+            <button type="button" class="settings-tab" data-group="typography" data-i18n="settings.groupTypography">排 版</button>
+            <button type="button" class="settings-tab" data-group="headerwatermark" data-i18n="settings.groupHeaderWatermark">页眉页脚与水印</button>
+            <button type="button" class="settings-tab" data-group="numbering" data-i18n="settings.groupNumbering">编号与目录</button>
+            <button type="button" class="settings-tab" data-group="convert" data-i18n="settings.groupConvert">转 换</button>
+            <button type="button" class="settings-tab" data-group="app" data-i18n="settings.groupApp">应 用</button>
+          </nav>
+          <div class="settings-panels">
           <!-- ── 01 预设:风格起点与其管理(本体入预设) ── -->
-          <section class="sec">
+          <section class="sec active" data-group="preset">
             <div class="sec-h"><span class="sec-num">01</span><span class="sec-title" data-i18n="settings.groupPreset">预 设</span><span class="sec-rule"></span></div>
             <div class="setting-field">
               <label class="setting-label" for="templatePreset" data-i18n="settings.presetLabel">模板预设</label>
@@ -407,7 +416,7 @@
                 选择模板将覆盖排版与页面设置
               </span>
             </div>
-            <p class="scope-note" data-i18n="settings.presetScopeNote">预设包含「页面 · 文字 · 编号与目录」三组；不含页眉页脚与输出。</p>
+            <p class="scope-note" data-i18n="settings.presetScopeNote">预设包含「排版 · 编号与目录」；不含 页眉页脚与水印 · 转换 · 应用</p>
             <div class="mgmt">
               <button type="button" id="presetSaveBtn" class="btn btn-ghost sm">
                 <span data-i18n="preset.saveAs">另存为预设…</span>
@@ -433,9 +442,9 @@
             </div>
           </section>
 
-          <!-- ── 02 页面:物理版面(纸 → 向 → 边距,决策序) ── -->
-          <section class="sec">
-            <div class="sec-h"><span class="sec-num">02</span><span class="sec-title" data-i18n="settings.groupPage">页 面</span><span class="sec-rule"></span></div>
+          <!-- ── 02 排版:物理页面 + 字符段落(合并原 02 页面 + 03 文字,✅入预设) ── -->
+          <section class="sec" data-group="typography">
+            <div class="sec-h"><span class="sec-num">02</span><span class="sec-title" data-i18n="settings.groupTypography">排 版</span><span class="sec-rule"></span></div>
             <!-- 界面重构 v3:枚举 ≤5 → seg 分段(guidelines §3.1 映射表);radio 语义保留,
                  name="paper"/name="orientation" 与 settings-bindings 的组绑定对应。
                  UI 改版 v4:同名 radio 组在快速参数条中镜像一份(document 级同组成组),
@@ -474,11 +483,8 @@
               </div>
               <p id="marginError" class="field-error hidden"></p>
             </div>
-          </section>
 
-          <!-- ── 03 文字:字符与段落观感 ── -->
-          <section class="sec">
-            <div class="sec-h"><span class="sec-num">03</span><span class="sec-title" data-i18n="settings.groupText">文 字</span><span class="sec-rule"></span></div>
+          <!-- ── 03 文字:字符与段落观感(合并入 02 排版) ── -->
             <div class="row">
               <label class="row-l" for="fontEastAsia" data-i18n="settings.fontEastAsia">中文字体</label>
               <input type="text" id="fontEastAsia" class="tin" style="width: 170px" list="fontEastAsiaSuggestions" />
@@ -563,9 +569,9 @@
             </div>
           </section>
 
-          <!-- ── 04 页眉 · 页脚(组头挂「不入预设」徽标):模式 + 条件字段容器 ── -->
-          <section class="sec">
-            <div class="sec-h"><span class="sec-num">04</span><span class="sec-title" data-i18n="settings.groupHeaderFooter">页眉 · 页脚</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
+          <!-- ── 03 页眉页脚与水印(❌不入预设,合并原 04 + 05) ── -->
+          <section class="sec" data-group="headerwatermark">
+            <div class="sec-h"><span class="sec-num">03</span><span class="sec-title" data-i18n="settings.groupHeaderWatermark">页眉页脚与水印</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
             <!-- 模式 + 条件字段(IA §3.1 抽屉唯一折叠形态):主控 seg 置首,
                  条件字段收入 .cond 凹陷容器,仅 custom 展开(settings-bindings 同步) -->
             <div class="row">
@@ -611,12 +617,9 @@
                 <input type="checkbox" id="footerEnabled" class="switch-input" />
               </div>
             </div></div></div>
-            <p class="scope-note" data-i18n="settings.headerFooterDefaultNote">默认模式：页眉居中显示文档标题，页脚固定显示页码，不受开关控制。</p>
-          </section>
+              <p class="scope-note" data-i18n="settings.headerFooterDefaultNote">默认模式：页眉居中显示文档标题，页脚固定显示页码，不受开关控制。</p>
 
-          <!-- ── 05 文字水印(组头挂「不入预设」徽标;与页眉页脚同组概念,置文档外壳层) ── -->
-          <section class="sec">
-            <div class="sec-h"><span class="sec-num">05</span><span class="sec-title" data-i18n="settings.groupWatermark">文字水印</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
+            <!-- ── 05 文字水印(合并入 03 页眉页脚与水印) ── -->
             <div class="row block">
               <label class="row-l" for="watermarkText" data-i18n="settings.watermarkText">水印文字</label>
               <input type="text" id="watermarkText" class="tin" style="width: 100%" placeholder="" />
@@ -640,9 +643,9 @@
             <p class="scope-note" data-i18n="settings.watermarkNote">文字水印叠加于每页(旋转置底);PDF 与 Word 双格式通用,不随预设保存。</p>
           </section>
 
-          <!-- ── 06 编号与目录:结构惯例(大 → 小元素层级,H1 分页收尾) ── -->
-          <section class="sec">
-            <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupNumbering">编号与目录</span><span class="sec-rule"></span></div>
+          <!-- ── 04 编号与目录(✅入预设) ── -->
+          <section class="sec" data-group="numbering">
+            <div class="sec-h"><span class="sec-num">04</span><span class="sec-title" data-i18n="settings.groupNumbering">编号与目录</span><span class="sec-rule"></span></div>
             <div class="sw-row">
               <span>
                 <span class="row-l" data-i18n="settings.headingNumbering">章节编号</span>
@@ -684,10 +687,27 @@
             </div>
           </section>
 
-          <!-- ── 06 输出:产物去向与处置(不入预设)。UI 改版 v4:输出目录同时镜像到
-               主界面快速参数条(#quickOutputDir),两处 chips 由 bindings 同写同回填 ── -->
-          <section class="sec">
-            <div class="sec-h"><span class="sec-num">07</span><span class="sec-title" data-i18n="settings.groupOutput">输 出</span><span class="sec-rule"></span></div>
+          <!-- ── 05 转换(❌不入预设,合并原 09 AI/Obsidian + 07 输出) ── -->
+          <section class="sec" data-group="convert">
+            <div class="sec-h"><span class="sec-num">05</span><span class="sec-title" data-i18n="settings.groupConvert">转 换</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.aiCleanup">AI 清理</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.aiCleanupDesc">转换前自动规整 AI 生成的 Markdown（智能引号、破折号、列表、空行）</span>
+              </span>
+              <input type="checkbox" id="aiCleanup" class="switch-input" />
+            </div>
+            <div class="sw-row">
+              <span>
+                <span class="row-l" data-i18n="settings.obsidianCompat">Obsidian 兼容</span>
+                <span class="row-sub" style="display: block" data-i18n="settings.obsidianCompatDesc">将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接</span>
+              </span>
+              <input type="checkbox" id="obsidianCompat" class="switch-input" />
+            </div>
+            <div class="row block">
+              <label class="row-l" for="obsidianAttachmentFolder" data-i18n="settings.obsidianAttachmentFolder">Obsidian 附件子文件夹</label>
+              <input type="text" id="obsidianAttachmentFolder" class="tin" style="width: 100%" />
+            </div>
             <div class="row block">
               <div class="row-l" data-i18n="settings.outputDir">输出目录</div>
               <div class="row-sub" data-i18n="settings.outputDirHint">留空则保存到源文件所在目录</div>
@@ -724,7 +744,7 @@
                 <span class="scope-tag" style="margin-left: 6px" data-i18n="settings.tagPdfOnly">仅 PDF</span>
               </div>
               <!-- 界面重构 v3:IA 06 规定 textarea 形态(settings-ia §2/§3.1 路径类同构之外
-                   的原始样式编辑位);与导入/清除按钮同写 settings.pdfCss -->
+                    的原始样式编辑位);与导入/清除按钮同写 settings.pdfCss -->
               <textarea
                 id="pdfCssText"
                 class="ta"
@@ -748,9 +768,9 @@
             </div>
           </section>
 
-          <!-- ── 07 应用:软件自身偏好(不入预设) ── -->
-          <section class="sec">
-            <div class="sec-h"><span class="sec-num">08</span><span class="sec-title" data-i18n="settings.groupApp">应 用</span><span class="sec-rule"></span></div>
+          <!-- ── 06 应用(❌不入预设) ── -->
+          <section class="sec" data-group="app">
+            <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupApp">应 用</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
             <div class="row">
               <span class="row-l" data-i18n="settings.groupAppearance">主题</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.groupAppearance" aria-label="主题">
@@ -777,30 +797,8 @@
             </div>
           </section>
 
-          <!-- ── 09 AI 清理与 Obsidian 兼容(不入预设) ── -->
-          <section class="sec">
-            <div class="sec-h"><span class="sec-num">09</span><span class="sec-title" data-i18n="settings.groupAiObsidian">AI 与 Obsidian</span><span class="sec-rule"></span></div>
-            <div class="sw-row">
-              <span>
-                <span class="row-l" data-i18n="settings.aiCleanup">AI 清理</span>
-                <span class="row-sub" style="display: block" data-i18n="settings.aiCleanupDesc">转换前自动规整 AI 生成的 Markdown（智能引号、破折号、列表、空行）</span>
-              </span>
-              <input type="checkbox" id="aiCleanup" class="switch-input" />
-            </div>
-            <div class="sw-row">
-              <span>
-                <span class="row-l" data-i18n="settings.obsidianCompat">Obsidian 兼容</span>
-                <span class="row-sub" style="display: block" data-i18n="settings.obsidianCompatDesc">将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接</span>
-              </span>
-              <input type="checkbox" id="obsidianCompat" class="switch-input" />
-            </div>
-            <div class="row block">
-              <label class="row-l" for="obsidianAttachmentFolder" data-i18n="settings.obsidianAttachmentFolder">Obsidian 附件子文件夹</label>
-              <input type="text" id="obsidianAttachmentFolder" class="tin" style="width: 100%" />
-            </div>
-          </section>
-
           <p class="settings-note" data-i18n="settings.autoSaveNote">设置即时生效并自动保存</p>
+          </div>
         </div>
         <footer class="drawer-foot">
           <!-- 界面重构 v3:mockup 抽屉底栏左位「恢复默认」(转换相关各组复位;

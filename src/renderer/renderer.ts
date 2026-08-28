@@ -38,7 +38,7 @@ import { bindEvents } from "./convert/events/index.js";
 import { bindSettingsEvents } from "./settings/settings-bindings.js";
 import { bindSettingsDrawerEvents } from "./settings/settings-drawer.js";
 import { aboutOpenBtn } from "./dom/refs.js";
-import { loadSettings } from "./settings/settings-panel.js";
+import { loadSettings, initSettingsTabs } from "./settings/settings-panel.js";
 import {
   bindRecentFilesEvents,
   initUiStateRestore,
@@ -71,6 +71,8 @@ bindRecentFilesEvents();
 updateActionButtons();
 // 设置面板:事件绑定先于回填(时序与拆分前一致:绑定在模块加载期,回填在 await 之后)
 bindSettingsEvents();
+// 设置抽屉 Tab 导航(6 组切换)初始化
+initSettingsTabs();
 // P0-3:设置抽屉开合事件(⚙/chip/遮罩/关闭按钮;Esc 走 dialogs-events 链末位)
 bindSettingsDrawerEvents();
 // 标题栏「关于」按钮 → 经 preload 打开关于窗口

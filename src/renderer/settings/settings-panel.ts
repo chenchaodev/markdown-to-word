@@ -546,3 +546,21 @@ export function setSuppressCompleteDialog(checked: boolean): void {
     /* 忽略:UI 状态写入失败不阻塞主流程 */
   });
 }
+
+/* ---------- 设置抽屉 Tab 导航(6 组切换) ---------- */
+/** 绑定左侧竖向 tab 与右侧面板:点击切换 active 组,默认激活 preset。
+ *  仅控制显隐与高亮,不触碰任何设置控件的 id/name(绑定逻辑零改动)。 */
+export function initSettingsTabs(): void {
+  const tabs = document.querySelectorAll<HTMLButtonElement>(".settings-tab");
+  const panels = document.querySelectorAll<HTMLElement>(".settings-panels > .sec");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const group = tab.dataset.group;
+      if (!group) return;
+      tabs.forEach((t) => t.classList.toggle("active", t === tab));
+      panels.forEach((p) =>
+        p.classList.toggle("active", p.dataset.group === group),
+      );
+    });
+  });
+}
