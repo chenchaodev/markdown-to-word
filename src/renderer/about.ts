@@ -10,6 +10,8 @@ declare global {
 
 const REPO_URL = "https://github.com/chenchaodev/markdown-to-word";
 const LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html";
+const MANUAL_URL =
+  "https://github.com/chenchaodev/markdown-to-word/blob/main/docs/USER-GUIDE.md";
 
 document.addEventListener("DOMContentLoaded", () => {
   // i18n: read persisted language, set, and apply static texts
@@ -25,33 +27,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   applyStaticTexts();
 
-  // Read version from query string
+  // Read version from query string → badge next to wordmark
   const version = new URLSearchParams(location.search).get("v") ?? "";
   const versionEl = document.getElementById("version");
-  if (versionEl) versionEl.textContent = version;
+  if (versionEl) versionEl.textContent = version ? `v${version}` : "";
 
-  // Also set version into meta row
-  const metaVersionEl = document.getElementById("meta-version");
-  if (metaVersionEl) metaVersionEl.textContent = version || "—";
-
-  // Set license link href
-  const licenseLink = document.querySelector<HTMLAnchorElement>(
-    ".meta-value a[href]",
-  );
-  if (licenseLink && !licenseLink.getAttribute("href")) {
-    licenseLink.href = LICENSE_URL;
-  }
-
-  // Wire click handlers: primary button → open GitHub in external browser
-  const primaryBtn = document.querySelector<HTMLButtonElement>(".btn-primary");
-  if (primaryBtn) {
-    primaryBtn.addEventListener("click", () => {
-      window.aboutApi.openExternal(REPO_URL);
+  // Primary action → open user manual in external browser
+  const manualBtn = document.getElementById("aboutOpenBtn");
+  if (manualBtn) {
+    manualBtn.addEventListener("click", () => {
+      window.aboutApi.openExternal(MANUAL_URL);
     });
   }
 
-  // Wire repo link → open GitHub in external browser (prevent default navigation)
-  const repoLink = document.querySelector<HTMLAnchorElement>(".about-repo a");
+  // Repo link → open in external browser (suppress in-page navigation)
+  const repoLink = document.getElementById("repoLink");
   if (repoLink) {
     repoLink.addEventListener("click", (e) => {
       e.preventDefault();
@@ -59,7 +49,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Wire license link → open license page in external browser
+  // License link → open in external browser
+  const licenseLink = document.querySelector<HTMLAnchorElement>(
+    ".about-meta .meta-value a[href]",
+  );
   if (licenseLink) {
     licenseLink.addEventListener("click", (e) => {
       e.preventDefault();
