@@ -26,6 +26,7 @@ import {
   type ConvertContext,
 } from "./context.js";
 import { MARKDOWN_EXT_RE, resolveOutputPath, stripMarkdownExt } from "./paths.js";
+import { preprocessMarkdown } from "./preprocess.js";
 
 /**
  * GBK 解码 + 警告收集(MR-6 自 convertImpl/mergeConvertImpl 同构样板抽出):
@@ -101,7 +102,9 @@ export async function convertImpl(
   const settings = await loadSettings();
   onProgress?.("read");
   const warnings: ConvertWarning[] = [];
-  const md = await readMarkdownDecoded(filePath, warnings, "warn.gbkEncoding");
+  const rawMd = await readMarkdownDecoded(filePath, warnings, "warn.gbkEncoding");
+  // B1/C1:转换前文本预处理(AI 清理 / Obsidian 兼容),按设置开关组合
+  const md = preprocessMarkdown(rawMd, settings);
 
   // B9 进度分阶段:docx 沿用粗粒度 render;pdf 由 core 经 onStage 细分
   // parse/inline/mermaid/katex,print 在 renderPdf 内 printToPDF 前上报

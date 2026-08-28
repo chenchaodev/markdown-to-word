@@ -18,6 +18,7 @@ import {
 } from "./context.js";
 import { stripMarkdownExt } from "./paths.js";
 import { persistArtifact, readMarkdownDecoded, runAfterConvert } from "./single.js";
+import { preprocessMarkdown } from "./preprocess.js";
 
 export interface ConvertResult {
   ok: boolean;
@@ -62,11 +63,13 @@ export async function mergeConvertImpl(
     })),
   );
   const mergedMd = mergeMarkdowns(inputs);
+  // B1/C1:转换前文本预处理(AI 清理 / Obsidian 兼容),按设置开关组合
+  const md = preprocessMarkdown(mergedMd, settings);
   const baseName = stripMarkdownExt(path.basename(firstFile));
   // B9 进度分阶段:与 convertImpl 同构——docx 粗粒度 render,pdf 由 onStage 细分
   if (format === "docx") onProgress?.("render");
   const artifact = await convert(
-    mergedMd,
+    md,
     format,
     await buildConvertContext({
       baseDir: path.dirname(firstFile),
