@@ -1,14 +1,10 @@
 /**
- * PDF 书签大纲注入(批次 4「长文档」,书签优先)。
- * 方案(规划/ADR-004 定稿,勿改):printToPDF 产物含 /Dests 命名目标但无大纲树
- * (Chromium 上游限制,electron #32288);本模块读命名目标 → pdf-lib 注入 Outlines。
- * 样板来源:pdf-lib 无高层大纲 API,按 marp-cli setOutline(issue #1151)+
- * obsidian-pdf-plus 命名目标解析改造;调研结论见 docs/RESEARCH.md 2026-08-04 条目。
- * 关键点:
- * - 中文标题必须 PDFHexString.fromText(UTF-16BE);PDFString 会被按 PDFDocEncoding
- *   解成乱码(issue #516,勿回退)
+ * PDF 书签大纲注入:读 printToPDF 产物的命名目标 → pdf-lib 注入 Outlines 树。
+ * 不变量:
+ * - printToPDF 产物含 /Dests 命名目标但无大纲树(Chromium 上游限制,electron #32288)
+ * - 中文标题必须 PDFHexString.fromText(UTF-16BE);PDFString 会被按 PDFDocEncoding 解成乱码(勿回退)
  * - Dest 第 0 元素必须是页面 PDFRef(不是页码);命名目标数组可直接复用
- * - 子项 Count 为负 = 折叠;保存不破坏原 Link 注释/字体/图片(实测)
+ * - 子项 Count 为负 = 折叠;保存不破坏原 Link 注释/字体/图片
  */
 import {
   PDFArray,
@@ -115,7 +111,7 @@ function resolveDest(target: unknown, doc: PDFDocument): PDFArray | null {
 }
 
 /**
- * 命名目标 → 页码(1-based,与 /Dests 同解析路径,F7-② 目录页码两遍法用)。
+  * 命名目标 → 页码(1-based,与 /Dests 同解析路径)。
  * 给定标题 slug 列表,解析其在已打印 PDF 中的页码:lookupNamedDest 取命名目标,
  * 目标数组第 0 元素为页面 PDFRef,遍历页面树建立「objNum:gen → 序号」映射定位页码
  * (与 setOutline 收集 pageRefs 同源;复用 /Dests,免 pdfjs 文本匹配)。
@@ -150,7 +146,7 @@ export function pageNumbersForNames(doc: PDFDocument, names: string[]): Record<s
  * 注入多级大纲(marp setOutline 样板):向 doc 写入 Outlines 树并挂到 catalog。
  * 若 PDF 已存在大纲会被覆盖(printToPDF 产物无大纲,无影响)。
  *
- * 前置条件(隐式契约,CORE-11 显式化):outlines 必须非空——空数组时下方
+  * 前置条件(隐式契约):outlines 必须非空——空数组时下方
  * refMap.get(outlines[0]) 为 undefined,产物大纲树损坏。调用方(main/converter
  * single.ts)以 extractHeadings().length > 0 前置把关;本函数不加守卫保持既有行为。
  */

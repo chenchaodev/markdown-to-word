@@ -1,11 +1,10 @@
 /**
- * pdf 题注/章节交叉引用规则(B8 拆分自 render.ts,行为零变化):
- * xref_recognize core 规则 + paragraph_open 渲染包装单源。
- * 原 overrideXrefRule 单回调三段逻辑拆为三个具名函数(编排仍按原顺序):
+ * pdf 题注/章节交叉引用规则:xref_recognize core 规则 + paragraph_open 渲染包装单源。
+ * 单回调三段逻辑拆为三个具名函数(编排仍按原顺序):
  *   1. scanXrefDefinitions —— 第一遍顶层扫描(计数 + 剥离 + 登记);
  *   2. replaceXrefLinks   —— 第二遍链接引用替换(命中改写 / 悬空解包 + 警告);
  *   3. wrapParagraphOpenAnchor —— 渲染器包装(题注段落开头注入锚点)。
- * 语义注释随代码搬移不精简;文案/占位见 CROSS_REF_KINDS,勿散落硬编码。
+ * 文案/占位见 CROSS_REF_KINDS,勿散落硬编码。
  */
 import type MarkdownIt from "markdown-it";
 import {
@@ -40,7 +39,7 @@ interface XrefLabelTables {
 }
 
 /**
- * 题注/章节交叉引用(批次 10 功能 2,与 docx 侧契约一致;文案/占位见
+ * 题注/章节交叉引用(与 docx 侧契约一致;文案/占位见
  * CROSS_REF_KINDS,勿散落硬编码):
  * - 引用语法:[图](#fig:label) / [表](#tab:label) / [章节](#sec:label),label 为
  *   [\w-]+;命中时文本(恰为默认文本)→ 静态编号(「图 3.1」「表 1」「3.2」),
@@ -56,7 +55,7 @@ interface XrefLabelTables {
  *   - 标题(顶层,与 docx 只遍历 ast.children 一致):尾部 {#sec:label} 无条件
  *     剥离(语法;不进标题文本/目录/slug),headingNumbering 开启且深度 ≤3 时
  *     登记章节号(计数与章节号文本走 heading-numbering.ts 共享纯函数,与 docx
- *     预扫同源;DECIDE-1 裁决统一 Word 口径——无 h1 文档跳过前导零级,h2 引用
+ *     预扫同源;统一 Word 口径——无 h1 文档跳过前导零级,h2 引用
  *     显示「1」,CSS counter 分支同步,见 template.ts);锚点
  *     <span id="sec:label"> 注入标题开头(经 heading_open 渲染包装);
  * - 计数器语义镜像模板 CSS:headingNumbering 开时 h1 增 → h2/h3 清零,
@@ -116,7 +115,7 @@ function scanXrefDefinitions(
       // label 同步剥离 inline.content(标题 id slug 的来源,避免 label 进 slug)
       inline.content = stripSecLabelSuffix(inline.content);
       if (isNumbered) {
-        // 章节号文本走共享纯函数(与 docx 预扫同源;DECIDE-1 裁决 Word 口径:
+        // 章节号文本走共享纯函数(与 docx 预扫同源;统一 Word 口径:
         // 无 h1 跳过前导零级,h2 引用显示「1」,CSS counter 分支同步见 template.ts)
         const chapterText = chapterNumberFromCounters(headingCounters, Number(token.tag[1]));
         if (chapterText !== null) {
@@ -134,7 +133,7 @@ function scanXrefDefinitions(
       const cls = pOpen?.attrGet("class");
       if (cls !== "fig-caption" && cls !== "tab-caption") continue;
       // captionNumbering 关:label 原样保留不剥离不登记(docx 契约;
-      // 前缀剥除为 caption_recognize 的 8b 既有行为,不在此改)
+      // 前缀剥除为 caption_recognize 的既有行为,不在此改)
       if (!opts.captionNumbering) continue;
       const kind = cls === "fig-caption" ? "fig" : "tab";
       if (kind === "fig") captionCounters.fig++;

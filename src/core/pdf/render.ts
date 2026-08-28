@@ -1,11 +1,11 @@
 /**
- * G4:markdown → PDF 渲染管线(markdown-it → HTML 模板 → 主进程 printToPDF)。
- * 调研结论见 docs/RESEARCH.md(G4 调研条目):
+ * markdown → PDF 渲染管线(markdown-it → HTML 模板 → 主进程 printToPDF)。
+ * 调研结论见 docs/RESEARCH.md:
  * - markdown-it 核心内置表格/删除线;任务列表用 @mdit/plugin-tasklist
  * - highlight.js 走 lib/common ESM 子集;printToPDF 需 printBackground: true 才有代码底色
  * - 图片统一转 file:// URL(markdown-it 原样输出绝对路径会解析失败)
  * - 任务列表 checkbox 有 Chromium 打印 bug,渲染后用 ☐/☑ 字符替代(打印稳定)
- * B8 拆分:本文件为编排层(选项契约 + markdown-it 组装 + 主流程),渲染规则按
+ * 本文件为编排层(选项契约 + markdown-it 组装 + 主流程),渲染规则按
  * 类别拆至 rules/(shared/caption/equation/xref/html/image/heading-id),
  * Mermaid 占位替换拆至 mermaid.ts;依赖方向单向(rules/* → core 共享模块,
  * 本文件 → rules/*,不反向)。CROSS_REF_KINDS 契约 re-export 保留在此,
@@ -16,7 +16,7 @@ import { footnote } from "@mdit/plugin-footnote";
 import { tasklist } from "@mdit/plugin-tasklist";
 import { katex } from "@mdit/plugin-katex";
 import hljs from "highlight.js/lib/common";
-// 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,B7 解环)
+// 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,此处解环)
 import {
   DEFAULT_PAGE_SETUP,
   mmToPx,
@@ -32,12 +32,12 @@ import type { MermaidResolver } from "../markdown/mermaid.js";
 import { buildCoverHtml, buildTemplate, buildTemplateCss, loadKatexCss } from "./template.js";
 import type { WatermarkSettings } from "../settings/settings-defaults.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
-// 契约单源(B7):ImageResolver 类型收敛 core 共享模块(仅类型导入;
-// 原 re-export 无外部消费者,CORE-9 清理移除)
+// 契约单源:ImageResolver 类型收敛 core 共享模块(仅类型导入;
+// 原 re-export 无外部消费者,已清理移除)
 import type { ImageResolver } from "../image/image-resolver.js";
 import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
-// 渲染规则(B8 拆分):按 rule 类别分文件,共享工具单源 rules/shared.ts
+// 渲染规则:按 rule 类别分文件,共享工具单源 rules/shared.ts
 import { overrideCaptionRule } from "./rules/caption.js";
 import { overrideEquationRule } from "./rules/equation.js";
 import { overrideXrefRule } from "./rules/xref.js";
@@ -53,7 +53,7 @@ export interface RenderPdfHtmlOptions {
   /** frontmatter 元数据(metadata.title 存在时渲染封面页,标题优先级高于 options.title) */
   metadata?: DocMetadata;
   /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;缺失本地图/外链下载失败同构;
-   *  B6 起元素为 ConvertWarning,keyed 警告经显示层 formatWarning 按语言格式化) */
+   * 元素为 ConvertWarning,keyed 警告经显示层 formatWarning 按语言格式化) */
   warnings?: ConvertWarning[];
   /** 外链图片下载注入(主进程提供;失败返回 null) */
   imageResolver?: ImageResolver;
@@ -75,7 +75,7 @@ export interface RenderPdfHtmlOptions {
   /** 公式编号开关(默认开;关时 eq_numbering 规则仍注册但只隐藏 label 段——
    *  公式不编号、label 不登记、引用保持原文本) */
   equationNumbering?: boolean;
-  /** 用户自定义样式 CSS(批次 16:模板导入·CSS 覆盖 pdf 路线;追加到默认模板
+  /** 用户自定义样式 CSS(模板导入·CSS 覆盖 pdf 路线;追加到默认模板
    *  CSS 之后,同一 <style> 内后声明覆盖默认样式;缺省/空串不注入) */
   pdfCss?: string;
   /** KaTeX 资源目录(绝对路径,含 katex.min.css 与 fonts/ 子目录,即
@@ -86,9 +86,9 @@ export interface RenderPdfHtmlOptions {
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏保持
    *  原代码块渲染,行为不变) */
   mermaidResolver?: MermaidResolver;
-  /** 文字水印(F5;缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
+  /** 文字水印(缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
   watermark?: WatermarkSettings;
-  /** 渲染子阶段上报(B9 进度分阶段):parse(markdown-it 渲染)/ inline(图片检查
+  /** 渲染子阶段上报:parse(markdown-it 渲染)/ inline(图片检查
    *  与外链内嵌)/ mermaid(占位替换)/ katex(KaTeX 样式装载)四个阶段键,
    *  经 main/converter.ts 的 onProgress 通道转发为 convert:progress;
    *  缺省不上报,行为不变。 */
@@ -142,7 +142,7 @@ function buildMarkdownIt(
             "</code></pre>"
           );
         } catch {
-          // B4:语言包异常时回退转义输出 + 上报降级警告(与 docx 侧同 key 同文案口径)
+          // 语言包异常时回退转义输出 + 上报降级警告(与 docx 侧同 key 同文案口径)
           warnings.push(highlightFallbackWarning(lang));
         }
       }
@@ -151,7 +151,7 @@ function buildMarkdownIt(
   });
   md.use(tasklist);
   md.use(footnote);
-  // 批次 6:公式插件($..$ / $$..$$ / \(..\) / \[..\] / ```math 围栏;throwOnError=false,
+  // 公式插件($..$ / $$..$$ / \(..\) / \[..\] / ```math 围栏;throwOnError=false,
   // 渲染失败输出 katex-error 标记,不抛)
   md.use(katex);
   overrideHtmlRules(md);
@@ -178,7 +178,7 @@ export async function renderPdfHtml(
   const headingNumbering = options.headingNumbering ?? typography.headingNumbering;
   const captionNumbering = options.captionNumbering ?? typography.captionNumbering;
   const equationNumbering = options.equationNumbering ?? true;
-  // B4:warnings 提前创建——buildMarkdownIt 的 highlight 回调需经此上报高亮降级警告
+  // warnings 提前创建——buildMarkdownIt 的 highlight 回调需经此上报高亮降级警告
   const warnings: ConvertWarning[] = options.warnings ?? [];
   const md = buildMarkdownIt(
     options.mermaidResolver !== undefined,
@@ -188,7 +188,7 @@ export async function renderPdfHtml(
     warnings,
   );
   const localImageSrcs: string[] = [];
-  // F1:正文内容区宽(px,96dpi)= 内容区 mm ÷ 25.4 × 96(landscape 视觉宽度为
+  // 正文内容区宽(px,96dpi)= 内容区 mm ÷ 25.4 × 96(landscape 视觉宽度为
   // 纸高,与 docx 侧 textWidthTwips 同口径);height 百分比属性换算基准
   const paper = PAPER_SIZES_MM[pageSetup.paper];
   const contentWidthPx = mmToPx(
@@ -197,9 +197,9 @@ export async function renderPdfHtml(
       pageSetup.marginRight,
   );
   overrideImageRule(md, options.baseDir, localImageSrcs, contentWidthPx);
-  // F1:独立成段图片段落挂 fig-image 类(模板 CSS 居中),与 docx 侧同契约
+  // 独立成段图片段落挂 fig-image 类(模板 CSS 居中),与 docx 侧同契约
   overrideFigureRule(md);
-  // F2:表格列宽(分隔行 dash 比例)——源码行与 token.map 同源行号,
+  // 表格列宽(分隔行 dash 比例)——源码行与 token.map 同源行号,
   // 与 docx 侧 parse.ts 共用 markdown/table-width.ts 纯函数
   overrideTableWidthRule(md, mdSource.split(/\r\n|\n|\r/));
   // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
@@ -208,13 +208,13 @@ export async function renderPdfHtml(
   const title = options.metadata?.title ?? options.title ?? "文档";
   // warnings 经 env 注入 core 规则(eq_numbering 未知公式标签提示用;脚注插件
   // 对 env.footnotes 惰性初始化,传入额外键无副作用)
-  options.onStage?.("parse"); // B9:markdown-it 解析渲染阶段
+  options.onStage?.("parse"); // markdown-it 解析渲染阶段
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource, { warnings }));
-  // M6:本地图片存在性检查并入 resolver 失败路径(单次 IO;HTML 保持 file:// 由 Chromium 渲染)
-  options.onStage?.("inline"); // B9:图片检查 + 外链内嵌阶段(两处共用一个阶段键)
+  // 本地图片存在性检查并入 resolver 失败路径(单次 IO;HTML 保持 file:// 由 Chromium 渲染)
+  options.onStage?.("inline"); // 图片检查 + 外链内嵌阶段(两处共用一个阶段键)
   await checkLocalImages(localImageSrcs, options.imageResolver, warnings);
   // Mermaid 占位 → 内联 SVG / 失败降级代码块(异步串行,须在返回 html 前完成)
-  options.onStage?.("mermaid"); // B9:Mermaid 占位替换阶段
+  options.onStage?.("mermaid"); // Mermaid 占位替换阶段
   const bodyWithMermaid = await replaceMermaidPlaceholders(bodyHtml, options.mermaidResolver, warnings);
   // 封面 + 目录 + 正文:buildCoverHtml/buildTocHtml 各自以 page-break 结尾,
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
@@ -222,11 +222,11 @@ export async function renderPdfHtml(
   const tocHtml = (options.toc ?? true) ? buildTocHtml(bodyWithMermaid) : "";
   const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyWithMermaid;
   const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings);
-  options.onStage?.("katex"); // B9:KaTeX 样式装载阶段(loadKatexCss 在 buildTemplate 内执行)
+  options.onStage?.("katex"); // KaTeX 样式装载阶段(loadKatexCss 在 buildTemplate 内执行)
   return buildTemplate(
     processedBody,
     title,
-    // 批次 16:用户 CSS 追加到默认 CSS 末尾(同一 <style> 内后声明覆盖默认样式)
+    // 用户 CSS 追加到默认 CSS 末尾(同一 <style> 内后声明覆盖默认样式)
     buildTemplateCss(
       pageSetup,
       options.breakBeforeH1 ?? false,

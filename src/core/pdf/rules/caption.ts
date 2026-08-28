@@ -1,13 +1,12 @@
 /**
- * pdf 题注前缀行识别规则(B8 拆分自 render.ts,行为零变化):
- * caption_recognize core 规则单源。语义注释随代码搬移不精简。
+ * pdf 题注前缀行识别规则:caption_recognize core 规则单源。
  */
 import type MarkdownIt from "markdown-it";
 import { CAPTION_PREFIX_RE } from "../../markdown/cross-ref.js";
 import { createDepthTracker } from "./shared.js";
 
 /**
- * 题注前缀行识别(8b,与 docx 侧 buildCaptionContext 顶层预扫契约一致):
+ * 题注前缀行识别(与 docx 侧 buildCaptionContext 顶层预扫契约一致):
  * 块 token 流中,顶层「含图片段落」或「表格」之后紧跟的、以「图:」/「表:」
  * (半角/全角冒号)开头的段落 → 标记为 fig-caption/tab-caption 并剥除前缀。
  * 编号由 CSS counter 伪元素渲染(不进文本节点,目录/书签不受影响)。

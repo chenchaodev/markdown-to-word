@@ -1,9 +1,6 @@
 /**
- * PDF 模板集:页眉页脚模板(PDF_FOOTER_TEMPLATE)、文档模板 CSS(buildTemplateCss)、
- * KaTeX CSS 加载(loadKatexCss)、完整 HTML 模板(buildTemplate)、封面 HTML(buildCoverHtml)。
- * 自 pdf/render.ts 拆分(R3 行为等价重构,原注释语义与实现原样保留)。
- * escapeHtml/decodeEntities 已集中 src/core/util/utils.ts(R8 批 4 L3),消费者直连该模块
- * (原 re-export 无外部消费者,CORE-9 清理移除)。
+ * PDF 模板集:页眉页脚模板、文档模板 CSS、KaTeX CSS 加载、完整 HTML 模板、封面 HTML。
+ * escapeHtml/decodeEntities 已集中 src/core/util/utils.ts,消费者直连该模块。
  */
 import path from "node:path";
 import { readFileSync } from "node:fs";
@@ -25,9 +22,9 @@ export const PDF_FOOTER_TEMPLATE =
   '第 <span class="pageNumber"></span> 页 / 共 <span class="totalPages"></span> 页</div>';
 
 /**
- * 空 chrome 模板(F4):displayHeaderFooter 常开(页脚机制依赖),无页眉/无页脚时
+  * 空 chrome 模板:displayHeaderFooter 常开(页脚机制依赖),无页眉/无页脚时
  * 以空 span 占位——与既有 headerTemplate:"<span></span>" 同构,不破坏现有
- * margins=0 + @page 边距机制(RESEARCH.md G4 实测口径)。
+  * margins=0 + @page 边距机制(RESEARCH.md 实测口径)。
  */
 export const PDF_EMPTY_CHROME_TEMPLATE = "<span></span>";
 
@@ -35,7 +32,7 @@ export const PDF_EMPTY_CHROME_TEMPLATE = "<span></span>";
 const PDF_HEADER_LOGO_HEIGHT_PX = 20;
 
 /**
- * 自定义页眉模板(F4;printToPDF headerTemplate 用):
+  * 自定义页眉模板(printToPDF headerTemplate 用):
  * - 仅 headerMode=custom 产出内容;default 维持现状(无页眉)、none 空模板
  * - Chromium header/footer 模板限制:内联样式 + 显式 font-size,禁止外部资源——
  *   logo 经 base64 data URI 内嵌(mimeFromBuffer 魔数判定,不可识别则省略 logo)
@@ -78,7 +75,7 @@ export function buildPdfHeaderTemplate(
 }
 
 /**
- * h1-h6 规则生成(F3):字号/段前段后间距由 headingScale/headingSpacing 档位经
+  * h1-h6 规则生成:字号/段前段后间距由 headingScale/headingSpacing 档位经
  * core/settings/typography.ts 纯函数换算(与 docx 侧同源,双格式观感对齐);
  * 装饰性样式固定:h1/h2 下边线 + padding-bottom,h5/h6 弱化灰。
  */
@@ -135,7 +132,7 @@ export function buildTemplateCss(
     orphans: 2; widows: 2;
   }
 
-  /* 标题节奏(F3 标题排版粒度):字号/段前段后间距由 headingScale/headingSpacing
+  /* 标题节奏:字号/段前段后间距由 headingScale/headingSpacing
      档位参数化,与 docx 侧同源换算(core/settings/typography.ts 纯函数,standard 档
      = 升级前固定值);h1/h2 下边线锚定章节,3-6 级靠字号与间距区分;
      标题行高收紧,且不与后续内容分离(break-after: avoid,避免孤立标题) */
@@ -156,7 +153,7 @@ ${buildHeadingRules(typography)}
   .toc-l2 { margin-left: 1.5em; }
   .toc-l3 { margin-left: 3em; }
   .toc a { color: inherit; text-decoration: none; }
-  /* F7-② 目录页码:条目与页码两端对齐 + 点线引导,页码右置灰色 */
+  /* 目录页码:条目与页码两端对齐 + 点线引导,页码右置灰色 */
   .toc li { display: flex; align-items: baseline; }
   .toc li a { flex: 1 1 auto; display: flex; align-items: baseline; color: inherit; text-decoration: none; }
   .toc li a::after { content: ""; flex: 1 1 auto; border-bottom: 1px dotted #c8c8c8; margin: 0 .4em .35em; min-width: 1.5em; }
@@ -199,7 +196,7 @@ ${buildHeadingRules(typography)}
   tr { break-inside: avoid; }
 
   img { max-width: 100%; break-inside: avoid; }
-  /* 独立成段图片(F1 figure 语义):居中渲染,首行缩进/两端对齐不适用;
+  /* 独立成段图片(figure 语义):居中渲染,首行缩进/两端对齐不适用;
      紧随的 .fig-caption 题注保持在图下方(编号机制不变) */
   p.fig-image { text-align: center; text-indent: 0; }
   ul, ol { margin: 0 0 10px; padding-left: 26px; }
@@ -254,7 +251,7 @@ ${headingNumbering ? (
   h1::before { content: counter(h1c) " "; }
   h2::before { content: counter(h1c) "." counter(h2c) " "; }
   h3::before { content: counter(h1c) "." counter(h2c) "." counter(h3c) " "; }` : `
-  /* 章节编号(无 h1 文档,DECIDE-1 裁决统一 Word 口径):跳过前导零级,
+  /* 章节编号(无 h1 文档,统一 Word 口径):跳过前导零级,
      h2 从「1」起(::before 省略 h1c 前缀),与 xref_recognize 登记的引用
      编号文本(heading-numbering.ts 共享纯函数)一致。已知罕见边界:无 h1 且
      首个标题前无 h2 的 h3,CSS 显示「0.1」而引用文本为「1」——CSS counter
@@ -265,11 +262,11 @@ ${headingNumbering ? (
   h2::before { content: counter(h2c) " "; }
   h3::before { content: counter(h2c) "." counter(h3c) " "; }`) : ""}
 ${captionNumbering ? `
-  /* 题注编号(8b):图/表题注居中小一号,编号经 ::before 伪元素(不进文本节点,
+  /* 题注编号:图/表题注居中小一号,编号经 ::before 伪元素(不进文本节点,
      书签/目录不受影响);章节号 = 最近 h1,图/表序在 h1 处重置(与 docx 侧
      SEQ \\s 1 语义一致)。文档无 h1 时退化为纯序数(全文档连续,与 docx 对齐) */
   .fig-caption, .tab-caption { text-align: center; font-size: 10pt; margin: 4px 0 12px; break-inside: avoid; }
-  /* 图/表序自增(8b 遗留修复:此前缺 counter-increment,序数恒为 0,
+  /* 图/表序自增(遗留修复:此前缺 counter-increment,序数恒为 0,
      所有题注显示「图 N.0」;编号文本与 xref_recognize 登记同源,勿漂移) */
   .fig-caption { counter-increment: figc; }
   .tab-caption { counter-increment: tabc; }
@@ -288,7 +285,7 @@ ${typography.firstLineIndent ? `
 ${typography.align === "justify" ? `
   /* 正文两端对齐(排版设置) */
   p { text-align: justify; }` : ""}
-  /* 公式块(8d):display 公式居中,编号右缘垂直居中(编号绝对定位,
+  /* 公式块:display 公式居中,编号右缘垂直居中(编号绝对定位,
      KaTeX display 外边距归零避免与公式块外边距双重叠加) */
   .eq-block { position: relative; text-align: center; margin: 1em 0; }
   .eq-block .katex-display { margin: 0; }
@@ -300,14 +297,14 @@ ${typography.align === "justify" ? `
  *  (katex.min.css 用 url(fonts/X.woff2),fonts 与 css 必须同级,file:// 下相对
  *  路径按 html 文件位置解析会失败,须绝对化),并追加打印/超宽保护规则。
  *  读取失败返回空串(公式仍渲染为 KaTeX HTML,仅缺字体样式,不抛错);
- *  B4:传入 warnings 时经 keyed 警告通道上报失败原因(warn.katexCssLoadFailed)。 */
+  * 传入 warnings 时经 keyed 警告通道上报失败原因(warn.katexCssLoadFailed)。 */
 export function loadKatexCss(katexDir: string, warnings?: ConvertWarning[]): string {
   try {
     const fontsBase = path.join(katexDir, "fonts").replace(/\\/g, "/");
     const css = readFileSync(path.join(katexDir, "katex.min.css"), "utf8");
     return (
       css.replace(/url\(fonts\//g, `url(file://${fontsBase}/`) +
-      "\n/* 批次 6:打印色彩保真 + 超宽公式保护(KaTeX 超宽溢出固有,保守处理) */\n" +
+      "\n/* 打印色彩保真 + 超宽公式保护(KaTeX 超宽溢出固有,保守处理) */\n" +
       "body { print-color-adjust: exact; }\n" +
       ".katex-display { max-width: 100%; overflow-x: auto; }\n"
     );
@@ -323,7 +320,7 @@ export function loadKatexCss(katexDir: string, warnings?: ConvertWarning[]): str
 }
 
 /**
- * 预览/打印 HTML 的 CSP(B1 安全审计):该 HTML 由用户 markdown 渲染而来,
+  * 预览/打印 HTML 的 CSP(安全审计):该 HTML 由用户 markdown 渲染而来,
  * 经 loadFile(file://) 加载进预览/打印窗口,须收紧资源来源——
  * 样式全部内联(<style>),图片为 file://(本地)与 data:(外链内嵌),
  * KaTeX 字体为 CSS 内 file:// 引用;脚本零需求 → default-src 'none' 兜底拦截。
@@ -341,7 +338,7 @@ export function sanitizeStyleCss(css: string): string {
 }
 
 /**
- * 文字水印 CSS + 覆盖层(F5):固定定位居中、旋转、半透明,置于正文之下
+  * 文字水印 CSS + 覆盖层:固定定位居中、旋转、半透明,置于正文之下
  * (z-index:-1,正文无背景故水印隐于文字之后);printToPDF 下 fixed 元素在每页
  * 重复渲染,实现整本文档水印。text 空串 → 返回空串(零渲染)。
  */
@@ -351,7 +348,7 @@ function buildWatermarkCss(watermark: WatermarkSettings | undefined): string {
   const angle = watermark.angle;
   const opacity = watermark.opacity;
   return `
-  /* 文字水印(F5):固定居中 + 旋转 + 半透明,置于正文之下 */
+  /* 文字水印:固定居中 + 旋转 + 半透明,置于正文之下 */
   .wm {
     position: fixed;
     top: 50%; left: 50%;

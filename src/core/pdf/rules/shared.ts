@@ -1,13 +1,12 @@
 /**
- * pdf 渲染规则共享契约(B8 拆分自 render.ts,行为零变化):
- * markdown-it core 规则族(caption_recognize / eq_numbering / xref_recognize)与
- * 渲染器包装(heading_open / paragraph_open 锚点注入)共用的底层工具单源。
+ * pdf 渲染规则共享契约:markdown-it core 规则族(caption_recognize / eq_numbering /
+ * xref_recognize)与渲染器包装(heading_open / paragraph_open 锚点注入)共用的底层工具单源。
  * 依赖方向单向:各规则模块 → 本模块 → core 共享模块(cross-ref),不反向。
  */
 import { kindLabelRegex } from "../../markdown/cross-ref.js";
 
 /**
- * 容器深度跟踪器(B7 收敛 caption_recognize / eq_numbering / xref_recognize 三处
+ * 容器深度跟踪器(收敛 caption_recognize / eq_numbering / xref_recognize 三处
  * 同构的嵌套层级判断):跟踪 blockquote/list_item/table_cell 开闭 token 维护深度,
  * isTopLevel() 判定当前是否处于文档顶层(三处规则均只对顶层内容生效,与 docx 侧
  * 只遍历 ast.children 顶层的契约一致)。feed 对非容器 token 无操作;调用方先 feed
@@ -46,7 +45,7 @@ export interface LinkScanToken {
 }
 
 /**
- * eq_numbering / xref_recognize 第二遍「链接引用替换」共享骨架(B7 收敛两处同构
+ * eq_numbering / xref_recognize 第二遍「链接引用替换」共享骨架(收敛两处同构
  * 循环,消除重复扫描):遍历所有 inline token 的 children(含容器/脚注内),对每个
  * href 匹配 hrefRe 的 link_open 定位「链接内(link_close 前)首个 text token」后回调
  * visit;labels 为 href 正则捕获组序列(eq 单组 label;xref 两组 kind+label)。
@@ -97,7 +96,7 @@ export function forEachRefLink(
 }
 
 /**
- * 从 inline children 尾部剥离 {#<kind>:<label>}(批次 10 功能 2):从最后一个
+ * 从 inline children 尾部剥离 {#<kind>:<label>}:从最后一个
  * 文本叶子节点匹配(从尾向前跳过 close/html 等非文本节点,兼容 **格式** {#label}
  * 与 强调整串内带 label 的嵌套;与 docx 侧 stripTrailingSecLabel 语义一致);
  * 命中则改写该 text 节点内容并返回 label,无匹配返回 undefined 且不改动。

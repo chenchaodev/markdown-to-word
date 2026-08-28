@@ -1,12 +1,12 @@
 /**
- * pdf 图片规则(B8 拆分自 render.ts;F1 图片控制增强扩展):
+ * pdf 图片规则:
  * 1. 路径改写:相对/绝对路径统一转 file:// URL,本地 src 收集供存在性检查;
- * 2. 尺寸属性(F1):image 后紧跟的完整 {width=…}/{height=…} 属性块文本
+ * 2. 尺寸属性:image 后紧跟的完整 {width=…}/{height=…} 属性块文本
  *    (core/markdown/image-size.ts 单源解析)注入 style——width 百分比原样注入
  *    (CSS 相对容器宽,与「百分比=相对正文内容宽度」语义天然一致);height 百分比
  *    按内容宽换算为 px 注入(打印场景 CSS height 百分比相对容器高、容器高度不定,
  *    与语义不符);px 值原样注入。属性文本从输出中剥除;非法值走 keyed 警告;
- * 3. figure 识别(F1):独立成段的图片段落挂 p.fig-image 类(模板 CSS 居中),
+ * 3. figure 识别:独立成段的图片段落挂 p.fig-image 类(模板 CSS 居中),
  *    与 docx 侧 isFigureParagraph 同契约(镜像实现,输入为 markdown-it token 流)。
  */
 import path from "node:path";
@@ -29,7 +29,7 @@ interface TextLikeToken {
 
 /** 图片规则:相对/绝对路径统一转 file:// URL,http(s) 保留原样。
  *  本地 src(保持 markdown 原文)收集到 localSrcs,供 checkLocalImages
- *  经 resolver 做存在性检查(M6:单次 IO,替代 convert 层 stat 预扫)。
+ *  经 resolver 做存在性检查(单次 IO,替代 convert 层 stat 预扫)。
  *  contentWidthPx:正文内容区宽(px,96dpi;render.ts 按 pageSetup 计算),
  *  height 百分比换算基准。 */
 export function overrideImageRule(
@@ -94,7 +94,7 @@ function applySizeAttrs(
 }
 
 /**
- * figure 识别(F1):顶层「段落唯一内容是图片(+尾随尺寸属性块)」→ paragraph_open
+ * figure 识别:顶层「段落唯一内容是图片(+尾随尺寸属性块)」→ paragraph_open
  * 挂 fig-image 类(模板 CSS 居中 + 取消首行缩进)。与 docx 侧 isFigureParagraph
  * 同契约:仅顶层段落(容器深度限制,blockquote/list 内不识别,与 docx 侧只遍历
  * ast.children 顶层一致);tight list 的 hidden 隐式段落同样排除。

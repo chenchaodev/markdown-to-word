@@ -1,13 +1,12 @@
 /**
- * pdf Mermaid 占位替换(B8 拆分自 render.ts,行为零变化):
- * highlight 占位 → 内联 SVG / 降级代码块单源。语义注释随代码搬移不精简。
+ * pdf Mermaid 占位替换:highlight 占位 → 内联 SVG / 降级代码块单源。
  */
 import { decodeEntities, escapeHtml } from "../util/utils.js";
 import { mermaidEmptyWarning, mermaidFailedWarning, type ConvertWarning } from "../i18n.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 
 /**
- * Mermaid 占位替换(8c):扫描 highlight 回调产出的 <div class="mermaid">…</div>
+  * Mermaid 占位替换:扫描 highlight 回调产出的 <div class="mermaid">…</div>
  * (内容为 escapeHtml 后的代码文本,占位内无原生 </div>,正则非贪婪匹配安全),
  * decodeEntities 还原原码后逐个 await mermaidResolver 渲染 → 成功替换为内联
  * SVG 容器;失败(null/抛错)→ 降级为 mermaid-fallback 等宽代码块 + 警告

@@ -1,17 +1,16 @@
 /**
- * pdf 公式编号规则(B8 拆分自 render.ts,行为零变化):
- * eq_numbering core 规则 + math_block 渲染包装单源。语义注释随代码搬移不精简。
+ * pdf 公式编号规则:eq_numbering core 规则 + math_block 渲染包装单源。
  */
 import type MarkdownIt from "markdown-it";
 import { EQ_LABEL_RE, EQ_REF_HREF_RE } from "../../markdown/cross-ref.js";
 import { createDepthTracker, forEachRefLink } from "./shared.js";
 
 /**
- * 公式编号 + 交叉引用(8d,与 docx 侧契约一致;免更新路线,编号静态注入文本):
+ * 公式编号 + 交叉引用(与 docx 侧契约一致;免更新路线,编号静态注入文本):
  * - 编号对象:顶层(blockquote/list_item/table 单元格外)display 公式(math_block,
  *   由 @mdit/plugin-katex 产生),按文档顺序全文连续编号 1,2,3…
  * - label 语法:公式块之后紧跟独立段落 {#eq:label}(整段纯文本串接恰为该标记,
- *   B3 起粗斜体包裹亦命中以对齐 docx 口径,label 为 [\w-]+),
+ *   粗斜体包裹亦命中以对齐 docx 口径,label 为 [\w-]+),
  *   该段标记 hidden 不渲染,label 登记给前一个 math_block(生成页内锚点)
  * - 引用语法:链接 [式](#eq:label) / [公式](#eq:label) 文本替换为「式 (N)」/「公式 (N)」
  *   并保留跳转;其他文本的 #eq:label 链接保持原文本;未知 label → 「式 (?)」
@@ -47,7 +46,7 @@ export function overrideEquationRule(md: MarkdownIt, numbering: boolean = true):
         depth.isTopLevel()
       ) {
         // label 段:paragraph_open + inline + paragraph_close。
-        // B3 口径对齐 docx:整段「纯文本串接」恰为 {#eq:label} 即命中——此前要求
+        // 口径对齐 docx:整段「纯文本串接」恰为 {#eq:label} 即命中——此前要求
         // 唯一 text child,粗斜体包裹的 label(如 **{#eq:a}**)双格式登记结果不同
         const inline = tokens[i - 1];
         if (!inline || inline.type !== "inline" || !inline.children) continue;

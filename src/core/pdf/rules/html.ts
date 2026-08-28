@@ -1,7 +1,5 @@
 /**
- * pdf 行内 HTML 白名单规则(B8 拆分自 render.ts,行为零变化):
- * html_whitelist 解析规则 + html_block/html_inline 渲染包装单源。
- * 语义注释随代码搬移不精简。
+ * pdf 行内 HTML 白名单规则:html_whitelist 解析规则 + html_block/html_inline 渲染包装单源。
  */
 import type MarkdownIt from "markdown-it";
 import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
@@ -29,7 +27,7 @@ function matchAllowedHtmlExpression(src: string, pos: number): number {
       stack.pop();
       if (stack.length === 0) return close + 1 - pos; // 完整表达式
     } else {
-      // B3:自闭合 <br/> / <br /> 此前整串判非法转义;仅空标签 br 放行自闭合
+      // 自闭合 <br/> / <br /> 此前整串判非法转义;仅空标签 br 放行自闭合
       const raw = inner.trim();
       const selfClosed = raw.endsWith("/");
       const name = (selfClosed ? raw.slice(0, -1) : raw).trim().toLowerCase();

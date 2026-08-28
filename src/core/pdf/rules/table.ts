@@ -1,8 +1,7 @@
 /**
- * pdf 表格列宽规则(F2 表格列宽控制,B8 规则拆分惯例):
- * GFM 无标准列宽语法,采用分隔行 dash 比例信号(core/markdown/table-width.ts
- * 单源解析,与 docx 侧 parse.ts 同构:表头行号 docx 取 node.position.start.line − 1,
- * 本侧取 table_open token.map[0],均为 0-based 表头行)。
+ * pdf 表格列宽规则:GFM 无标准列宽语法,采用分隔行 dash 比例信号(core/markdown/
+ * table-width.ts 单源解析,与 docx 侧 parse.ts 同构:表头行号 docx 取
+ * node.position.start.line − 1,本侧取 table_open token.map[0],均为 0-based 表头行)。
  *
  * 注入方式(Chromium 打印稳定):table_open 挂 style table-layout:fixed,
  * 首行 th_open 挂 width:N%(fixed 布局下列宽由首行单元格决定,无需 colgroup
