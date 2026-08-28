@@ -1,5 +1,5 @@
 /**
- * 批量转换实现(目录重组批⑤自 converter.ts 拆出):
+ * 批量转换实现:
  * 并发上限 2 的简单池,每文件独立 convertImpl,失败不中断。
  */
 import path from "node:path";
@@ -37,7 +37,7 @@ export interface BatchResult {
 
 /**
  * 批量转换:并发上限 2 的简单池,每文件独立 convertImpl,失败不中断。
- * 批次 7:取消支持(未开始项跳过,记 canceledCount);完成后按 afterConvert
+ * 取消支持(未开始项跳过,记 canceledCount);完成后按 afterConvert
  * 打开第一个成功项(与单文件一致,不再强制跳过);进度经 onProgress 上报。
  */
 export async function batchConvertImpl(

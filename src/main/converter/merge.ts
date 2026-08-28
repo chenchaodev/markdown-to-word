@@ -1,5 +1,5 @@
 /**
- * 合并转换实现(目录重组批⑤自 converter.ts 拆出):
+ * 合并转换实现:
  * 读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片绝对化)→ 单次 convert。
  */
 import path from "node:path";
@@ -24,7 +24,7 @@ export interface ConvertResult {
   ok: boolean;
   outputPath?: string;
   error?: string;
-  /** 非致命警告(如缺失本地图片),成功时可能携带;B6 起元素为 ConvertWarning(keyed) */
+  /** 非致命警告(如缺失本地图片),成功时可能携带;元素为 ConvertWarning(keyed) */
   warnings?: ConvertWarning[];
   /** 用户主动取消(非错误) */
   canceled?: boolean;
@@ -34,8 +34,8 @@ export interface ConvertResult {
  * 合并转换:读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片绝对化)→ 单次 convert。
  * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;执行 runAfterConvert(单输出,与单文件一致)。
  * 任一步失败直接抛(调用方 catch 为 { ok:false, error })。
- * 批次 7 补:进度经 onProgress 上报(与单文件同构;B9 起 pdf 细分
- * parse/inline/mermaid/katex/print,docx 保持 read/render/done),修复合并进度条不动。
+ * 进度经 onProgress 上报(与单文件同构;pdf 细分
+ * parse/inline/mermaid/katex/print,docx 保持 read/render/done)。
  */
 export async function mergeConvertImpl(
   files: string[],
@@ -45,7 +45,7 @@ export async function mergeConvertImpl(
   katexDir?: string,
 ): Promise<ConvertResult> {
   if (files.length === 0) {
-    // 生成期本地化(B6 决策):同 convertImpl,throw 文案无法显示层重映射,抛出点用 t()。
+    // 生成期本地化:同 convertImpl,throw 文案无法显示层重映射,抛出点用 t()。
     throw new Error(t("convert.noFilesSelected"));
   }
   const firstFile = files[0]!; // 上方长度守卫保证非空数组,首文件必存在
@@ -55,7 +55,7 @@ export async function mergeConvertImpl(
   const settings = await loadSettings();
   const warnings: ConvertWarning[] = [];
   onProgress?.("read");
-  // MR-6:GBK 解码+警告与渲染产物落盘收尾样板单源 single.ts(readMarkdownDecoded/persistArtifact)
+  // GBK 解码+警告与渲染产物落盘收尾样板单源 single.ts(readMarkdownDecoded/persistArtifact)
   const inputs = await Promise.all(
     files.map(async (file) => ({
       content: await readMarkdownDecoded(file, warnings, "warn.gbkEncodingFile"),
@@ -63,10 +63,9 @@ export async function mergeConvertImpl(
     })),
   );
   const mergedMd = mergeMarkdowns(inputs);
-  // B1/C1:转换前文本预处理(AI 清理 / Obsidian 兼容),按设置开关组合
   const md = preprocessMarkdown(mergedMd, settings);
   const baseName = stripMarkdownExt(path.basename(firstFile));
-  // B9 进度分阶段:与 convertImpl 同构——docx 粗粒度 render,pdf 由 onStage 细分
+  // 进度分阶段:与 convertImpl 同构——docx 粗粒度 render,pdf 由 onStage 细分
   if (format === "docx") onProgress?.("render");
   const artifact = await convert(
     md,
@@ -93,7 +92,7 @@ export async function mergeConvertImpl(
     `${baseName}-合并`,
   );
   warnings.push(...outWarnings);
-  // B2:与 convertImpl 对齐尊重 skipAfterConvert(同抽象层行为一致)
+  // 与 convertImpl 对齐尊重 skipAfterConvert(同抽象层行为一致)
   if (!ctx.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
   return { ok: true, outputPath, warnings };
 }

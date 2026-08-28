@@ -1,5 +1,5 @@
 /**
- * 路径收集与输出路径解析(目录重组批⑤自 converter.ts 拆出):
+ * 路径收集与输出路径解析:
  * resolveOutputPath(重名序号/超长回落)、collectMarkdownPaths(目录递归收集)、
  * filterExistingPaths(会话恢复保序过滤)。
  */
@@ -8,8 +8,7 @@ import path from "node:path";
 import type { ConvertFormat } from "../../core/convert.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 
-/** markdown 扩展名判定单源(MR-6:原 single/merge/logic 各持一套正则拼写):
- *  .md / .markdown,大小写不敏感。 */
+/** markdown 扩展名判定单源: .md / .markdown,大小写不敏感。 */
 export const MARKDOWN_EXT_RE = /\.(md|markdown)$/i;
 
 /** 路径(或文件名)去掉 markdown 扩展名;非 md 后缀原样返回。 */
@@ -27,7 +26,7 @@ export async function pathExists(p: string): Promise<boolean> {
 }
 
 /**
- * 解析输出路径(批次 7「体验优化」):
+ * 解析输出路径:
  * - outputDir 空串 → 源文件同目录;非空 → outputDir(不存在则创建,失败回落源目录)
  * - 重名自动加序号「名 (2).ext」,绝不覆盖已有文件
  * - 超长路径(>250 字符)→ 回落源目录并警告(Windows MAX_PATH 限制,Electron 侧无解)
@@ -115,7 +114,7 @@ export async function collectMarkdownPaths(paths: string[]): Promise<{ files: st
 }
 
 /**
- * 保序过滤仍存在的路径(批次 11 会话恢复用):逐个 fs.stat,存在即保留,缺失剔除,
+ * 保序过滤仍存在的路径(会话恢复用):逐个 fs.stat,存在即保留,缺失剔除,
  * 不改变传入顺序(会话列表顺序 = 用户排列的合并顺序,不可被打乱)。
  * 与 collectMarkdownPaths 不同:不排序、不展开目录、不做扩展名过滤。
  */

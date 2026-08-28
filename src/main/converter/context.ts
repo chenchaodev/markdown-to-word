@@ -1,8 +1,8 @@
 /**
- * 转换上下文与共享构造器(目录重组批⑤自 converter.ts 拆出):
+ * 转换上下文与共享构造器:
  * - ConvertContext/createConvertContext/ConvertCanceledError/throwIfCanceled:取消语义
  * - getImageResolver + resolverCache:批量场景按 baseDir 共享图片解析器(LRU 上限)
- * - buildConvertContext:settings → core convert() 上下文映射收敛(R10-1)
+ * - buildConvertContext:settings → core convert() 上下文映射收敛
  * 依赖方向:single/batch/merge 反向 import 本模块,本模块不依赖三者(无环)。
  */
 import fs from "node:fs/promises";
@@ -18,7 +18,7 @@ import { createImageResolver } from "../services/image-downloader.js";
 import type { AppSettings } from "../persist/settings.js";
 
 /** 批量共享 imageResolver:按 baseDir 缓存,HTTP 去重缓存跨文件生效。
- *  B2:容量上限(超限淘汰最早条目)——长会话跨多目录使用时不再单调增长。 */
+ *  容量上限(超限淘汰最早条目)——长会话跨多目录使用时不再单调增长。 */
 const RESOLVER_CACHE_MAX = 16;
 const resolverCache = new Map<string, ImageResolver>();
 
@@ -26,8 +26,8 @@ const resolverCache = new Map<string, ImageResolver>();
  * 转换调用上下文:取消标志随调用携带,根治全局可变状态(历史 bug fd40480/f809c57
  * 即全局标志跨调用残留导致误判取消)。每次新转换调用新建 context(cancelRequested
  * 初始 false),「取消后复位」语义天然成立;IPC 层经 ctxByWebContents 注册表
- * (windows/web-contents-registry.ts,MR-9 下沉)接 convert:cancel。
- * fix-10 遗留归并:原独立 ConvertOptions(仅 skipAfterConvert 一字段、批量调用处
+ * (windows/web-contents-registry.ts)接 convert:cancel。
+ * 原独立 ConvertOptions(仅 skipAfterConvert 一字段、批量调用处
  * undefined 占位)并入 ctx,签名 5 参 → 4 参,行为不变。
  */
 export interface ConvertContext {
@@ -77,7 +77,7 @@ export function getImageResolver(baseDir: string): ImageResolver {
 }
 
 /**
- * 页眉 logo 文件读取(F4;main 层唯一 IO 点,core 零 IO):
+ * 页眉 logo 文件读取(main 层唯一 IO 点,core 零 IO):
  * 仅 headerMode=custom 且配置了路径时读取;魔数嗅探结果原样传递
  * (webp/null 的逐管线降级与告警在 core 侧 render.ts 统一处理);
  * 读取失败 → keyed 警告 + undefined(降级为无 logo,不中断转换)。
@@ -97,12 +97,12 @@ export async function resolveHeaderLogo(
 }
 
 /**
- * settings → core convert() 上下文映射收敛(R10-1):
+ * settings → core convert() 上下文映射收敛:
  * convertImpl / mergeConvertImpl / openPreviewWindow 三处统一经此构造,防止
  * pageSetup/typography/breakBeforeH1/toc/imageResolver 逐字重复导致漂移。
- * F4:改为 async——页眉 logo 需读文件(main 层 IO),三处调用方均为 async 上下文,
+ * 改为 async——页眉 logo 需读文件(main 层 IO),三处调用方均为 async 上下文,
  * await 透传即可。katexDir 由调用方(main 入口层)传入:getKatexDir()(现居
- * resource-dirs.ts)经 electron app.getAppPath() 计算(批次 6,保证 dev/打包一致),
+ * resource-dirs.ts)经 electron app.getAppPath() 计算(保证 dev/打包一致),
  * 本 helper 不依赖 electron app,convertImpl 可脱离 Electron 直测(docx 走 MathML
  * 本就不需要 katexDir)。
  */
@@ -111,7 +111,7 @@ export interface BuildConvertContextOptions {
   baseDir: string;
   /** 文档标题(docx 元数据 / pdf <title>) */
   title: string;
-  /** 警告收集器(与调用方共享同一数组;转换中发现的问题追加至此;B6 起元素为 ConvertWarning) */
+  /** 警告收集器(与调用方共享同一数组;转换中发现的问题追加至此;元素为 ConvertWarning) */
   warnings?: ConvertWarning[];
   /** 应用设置(pageSetup/typography/breakBeforeH1/toc 取用) */
   settings: AppSettings;
@@ -126,10 +126,10 @@ export interface BuildConvertContextOptions {
 }
 
 export async function buildConvertContext(options: BuildConvertContextOptions): Promise<CoreConvertContext> {
-  // F4:页眉页脚配置归一化(缺字段补默认 = 现状行为)+ logo 文件读取(失败降级)
+  // 页眉页脚配置归一化(缺字段补默认 = 现状行为)+ logo 文件读取(失败降级)
   const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...options.settings.headerFooter };
   const headerLogo = await resolveHeaderLogo(headerFooter, options.warnings);
-  // F5:水印配置归一化(缺字段补默认 = 不启用)
+  // 水印配置归一化(缺字段补默认 = 不启用)
   const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...options.settings.watermark };
   return {
     baseDir: options.baseDir,

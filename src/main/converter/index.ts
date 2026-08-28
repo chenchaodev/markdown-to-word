@@ -1,7 +1,6 @@
 /**
- * 主进程转换编排层 —— 桶导出(目录重组批⑤自 570 行单文件拆分):
- * 实现按职责分模块(同目录单文件),本文件仅 re-export(批⑥桶自 main 根级并入本目录 index.ts)
- * 
+ * 主进程转换编排层 —— 桶导出:实现按职责分模块(同目录单文件),本文件仅 re-export。
+ *
  * 模块划分与依赖方向(单向无环):
  * - context.ts:取消语义(ConvertContext/createConvertContext/ConvertCanceledError/
  *   throwIfCanceled)+ getImageResolver 缓存 + buildConvertContext 映射收敛
@@ -18,7 +17,7 @@
 export type { BatchItem, BatchProgressInfo, BatchResult } from "./batch.js";
 export { batchConvertImpl } from "./batch.js";
 export type { BuildConvertContextOptions, ConvertContext } from "./context.js";
-// MR-17:throwIfCanceled 桶导出已删(消费方均直连 ./context.js,桶出口无外部消费者);
+// throwIfCanceled 桶导出已删(消费方均直连 ./context.js,桶出口无外部消费者);
 // pathExists 同(paths.ts 内部使用,无外部消费者)。
 export {
   buildConvertContext,
