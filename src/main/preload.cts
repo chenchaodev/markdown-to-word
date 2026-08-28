@@ -40,6 +40,8 @@ const CH = {
   previewOpen: "preview:open",
   previewRefresh: "preview:refresh",
   menuOpen: "menu:open",
+  /** 打开「关于」窗口(标题栏按钮触发) */
+  aboutOpen: "about:open",
 } as const;
 
 // MR-5:api 对象提为具名 const,实现即契约——renderer.ts 的 window.api 类型由
@@ -126,6 +128,10 @@ const api = {
     return () => {
       ipcRenderer.removeListener(CH.menuOpen, listener);
     };
+  },
+  /** 标题栏「关于」按钮 → 打开关于窗口(无返回值,fire-and-forget) */
+  openAbout: (): void => {
+    ipcRenderer.send(CH.aboutOpen);
   },
 };
 

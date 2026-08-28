@@ -122,6 +122,7 @@ const dict = {
     "about.license": "License",
     "about.viewRepo": "View on GitHub",
     "about.version": "Version",
+    "about.open": "About",
     "dialog.openFailed": "Failed to open file dialog: ${error}",
 
     /* ---------- Conversion pre-check (F6) ---------- */

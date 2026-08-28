@@ -904,6 +904,29 @@ svg.ic {
   height: 17px;
 }
 
+/* 标题栏文字按钮(关于等常驻入口;复用 token,hover/focus 与 icon-btn 同语义) */
+.tb-btn {
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-btn-sm);
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--mut);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.13s ease, color 0.13s ease;
+}
+.tb-btn:hover {
+  background: var(--card-2);
+  color: var(--ink);
+}
+.tb-btn:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
 /* ---- 4.2 分段控件(radio 语义保留:透明 input 覆盖承接点击与焦点) ---- */
 .segmented {
   display: inline-flex;

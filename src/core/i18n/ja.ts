@@ -126,6 +126,7 @@ const dict: Partial<Record<Dict, string>> = {
     "about.license": "ライセンス",
     "about.viewRepo": "GitHub で見る",
     "about.version": "バージョン",
+    "about.open": "このアプリについて",
     "dialog.openFailed": "ファイルダイアログを開けませんでした:${error}",
 
     /* ---------- 一括結果 ---------- */

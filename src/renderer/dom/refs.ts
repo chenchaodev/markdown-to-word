@@ -351,6 +351,10 @@ export const drawerCloseBtn = document.getElementById(
 export const settingsOpenBtn = document.getElementById(
   "settingsOpenBtn",
 ) as HTMLButtonElement;
+// 标题栏「关于」按钮(renderer → about:open IPC 打开关于窗口)
+export const aboutOpenBtn = document.getElementById(
+  "aboutOpenBtn",
+) as HTMLButtonElement;
 // 抽屉副标题(问题 3):「当前预设 · 纸张」(文案由 settings-panel 合成、
 // settings-drawer.updateDrawerMeta 写入;空串时 CSS :empty 隐藏)
 export const drawerSubtitle = document.getElementById(

@@ -70,6 +70,8 @@ export const IPC_CHANNELS = {
   uiStateSet: "ui-state:set",
   /* ---- 应用域 ---- */
   appVersion: "app:version",
+  /** 打开「关于」窗口(标题栏按钮经 renderer → main 转发) */
+  aboutOpen: "about:open",
   /* ---- Shell 域 ---- */
   /** 资源管理器中显示目标文件 */
   shellRevealInFolder: "shell:revealInFolder",

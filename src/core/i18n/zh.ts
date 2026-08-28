@@ -124,6 +124,7 @@ const dict = {
     "about.license": "许可证",
     "about.viewRepo": "在 GitHub 查看",
     "about.version": "版本",
+    "about.open": "关于",
     "dialog.openFailed": "打开文件对话框失败:${error}",
 
     /* ---------- 转换预检(F6) ---------- */

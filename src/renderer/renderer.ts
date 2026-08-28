@@ -37,6 +37,7 @@ import { updateActionButtons } from "./convert/file-list.js";
 import { bindEvents } from "./convert/events/index.js";
 import { bindSettingsEvents } from "./settings/settings-bindings.js";
 import { bindSettingsDrawerEvents } from "./settings/settings-drawer.js";
+import { aboutOpenBtn } from "./dom/refs.js";
 import { loadSettings } from "./settings/settings-panel.js";
 import {
   bindRecentFilesEvents,
@@ -72,6 +73,10 @@ updateActionButtons();
 bindSettingsEvents();
 // P0-3:设置抽屉开合事件(⚙/chip/遮罩/关闭按钮;Esc 走 dialogs-events 链末位)
 bindSettingsDrawerEvents();
+// 标题栏「关于」按钮 → 经 preload 打开关于窗口
+aboutOpenBtn.addEventListener("click", () => {
+  window.api.openAbout();
+});
 // 读取持久化设置并回填控件(失败静默回退默认值)
 void loadSettings();
 // 批次 11:UI 状态恢复(面板展开态 / 会话文件 / 最近转换区块;失败静默保持默认)

@@ -1,7 +1,8 @@
 /**
  * 应用菜单(自 main/index.ts 抽取,行为零变化):
- * 文件(打开文件…/退出)+ 帮助(关于)。菜单项只做转发/胶水,
- * 不复刻业务逻辑;退出用 role(平台默认行为)。
+ * 文件(打开文件…/退出)。菜单项只做转发/胶水,
+ * 不复刻业务逻辑;退出用 role(平台默认行为)。「关于」入口已迁至标题栏按钮
+ * (renderer → about:open IPC),不再走帮助菜单。
  */
 import { app, BrowserWindow, Menu, ipcMain } from "electron";
 import path from "node:path";
@@ -13,6 +14,11 @@ import { getMainWindow } from "./windows/main-window.js";
 
 ipcMain.handle("about:open-external", (_e, url: string) => {
   openExternalIfHttp(url);
+});
+
+// 标题栏「关于」按钮(renderer 经 window.api.openAbout → about:open 转发)打开自定义关于窗口
+ipcMain.on(CH.aboutOpen, () => {
+  showAboutDialog();
 });
 
 /**
@@ -69,10 +75,6 @@ export function buildAppMenu(): void {
         { type: "separator" },
         { label: t("menu.quit"), role: "quit" },
       ],
-    },
-    {
-      label: t("menu.help"),
-      submenu: [{ label: t("menu.about"), click: showAboutDialog }],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
