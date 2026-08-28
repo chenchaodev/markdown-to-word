@@ -3,13 +3,13 @@
  * 实现事实(读源码确认):
  * - t():zh 默认输出(与既有文案逐字一致);setLanguage("en") 后输出英文;
  *   参数插值 ${name} 占位(缺失参数保留占位符原样);缺失 key 回退返回 key 本身(不抛错)
- * - 语言状态经 t() 输出观察(getLanguage 导出已随 CORE-9 清理移除)
+ * - 语言状态经 t() 输出观察(getLanguage 导出已移除)
  * - applyStaticTexts():document 未定义(main 进程)时安全返回,不触碰 DOM
  * - settings.language:isValidSettings 缺 language(旧文件)合法、注册表内语言合法、
  *   未注册值非法;sanitizePatch 非法值回退 "zh"、合法值保留;loadSettings 旧文件兜底 "zh"
  * - 磁盘备份/恢复模式与 settings.test.js 一致(settings.ts 无注入点,只能读写真实路径;
  *   模块级 settingsCache 惰性缓存 → 每场景用 query-string 动态 import 取全新模块实例;
- *   备份/全新实例样板已迁移 test/common/settings.js 公共助手,TEST-9)
+ *   备份/全新实例样板已迁移 test/common/settings.js 公共助手)
  */
 import fs from "node:fs/promises";
 import { app } from "electron";
@@ -30,8 +30,8 @@ export async function run() {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const i18n = await import("../../dist/core/i18n.js");
 
-    // ---- 1. t() 基础:zh 默认输出(与既有文案逐字一致;语言状态经 t() 输出观察,
-    //      getLanguage 导出已随 CORE-9 清理移除) ----
+  // ---- 1. t() 基础:zh 默认输出(与既有文案逐字一致;语言状态经 t() 输出观察,
+  //      getLanguage 导出已移除) ----
     assert(i18n.t("app.title") === "Markdown 转换工具", "zh 默认输出应逐字一致");
     assert(i18n.t("file.selectFirst") === "请先选择 Markdown 文件", "zh 默认输出应逐字一致");
     assert(i18n.t("convert.done.status", { outputPath: "C:\\out\\a.docx" }) === "转换完成:C:\\out\\a.docx", "zh 参数插值应替换占位符");
@@ -85,7 +85,7 @@ export async function run() {
     const m2 = await freshModule();
     assert(m2.loadSettings().language === "en", "合法文件 language en 应原样读取");
 
-    // ---- 9. formatWarning 三分支(B6 keyed 警告)----
+    // ---- 9. formatWarning 三分支(keyed 警告)----
     // 9a. string 直通
     assert(i18n.formatWarning("纯文本警告") === "纯文本警告", "formatWarning:string 应原样返回");
     // 9b. KeyedWarning key 命中 + 插值(zh)
@@ -109,7 +109,7 @@ export async function run() {
       `zh/en 键集应一致,zh 独有=${JSON.stringify(zhKeys.filter((k) => !enKeys.includes(k)))},en 独有=${JSON.stringify(enKeys.filter((k) => !zhKeys.includes(k)))}`,
     );
 
-    // ---- 11. warnOnce 对象去重(B6:去重键 = key + JSON(params))----
+    // ---- 11. warnOnce 对象去重(去重键 = key + JSON(params))----
     // 悬空交叉引用重复出现 N 次 → 仅 1 条 KeyedWarning(docx render.ts warnDedup)
     const dedupWarnings = [];
     await convert("[图](#fig:x)\n\n[图](#fig:x)\n\n[图](#fig:x)\n\n正文", "docx", {

@@ -102,7 +102,7 @@ export async function run() {
     console.log(`[ok] 页面设置:${paper} landscape docx 宽高交换 + pdf size 断言通过`);
   }
 
-  // 4. 分页符产物(pdf 侧中间 html,原 smoke 断言下沉 A1):
+  // 4. 分页符产物(pdf 侧中间 html):
   //    <!-- page-break --> → <div class="page-break"></div>
   const pbArtifact = await convert(pbMd, "pdf", {
     baseDir: FIXTURES_DIR,

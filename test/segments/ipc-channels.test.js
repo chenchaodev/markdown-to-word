@@ -1,5 +1,5 @@
 /**
- * IPC channel 单源恒等性断言(B12「IPC 面整理」):
+ * IPC channel 单源恒等性断言:
  * - main 侧单源:dist/main/ipc/channels.js 的 IPC_CHANNELS(命名统一「域:动作」);
  * - preload 侧镜像:preload.cts 因沙箱隔离(sandbox:true 下 preload.cjs 运行时
  *   只能 require electron)无法 import ESM 常量模块,侧内镜像同名常量;
@@ -66,7 +66,7 @@ export async function run() {
   }
 
   // ---- main 侧接线抽查:dist/main 全部产物不应残留旧字面量(handle 全部经 CH.* 引用) ----
-  // 目录重组批④后 handle 注册分散在 dist/main(含 ipc/、windows/ 子目录),递归全扫
+  // 目录重组后 handle 注册分散在 dist/main(含 ipc/、windows/ 子目录),递归全扫
   const mainFiles = fs.readdirSync(distMain, { recursive: true, encoding: "utf8" })
     .filter((rel) => rel.endsWith(".js"))
     .map((rel) => path.join(distMain, rel));

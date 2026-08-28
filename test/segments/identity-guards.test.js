@@ -1,15 +1,15 @@
 /**
- * 恒等断言守护段(TEST-5:已知双源全部纳入运行期守护;跨 src/core 与 src/renderer
+ * 恒等断言守护段(已知双源全部纳入运行期守护;跨 src/core 与 src/renderer
  * 只读 import,经 dist 断言):
  * (a) renderer state/pure.ts STAGE_TEXT / formatRecentTime 的 zh 默认文案 ↔
- *     core i18n 字典(zh.ts)convert.stage.* / recent.time.* 逐字相等(MR-1;
- *     pure 层零 import 约束导致 zh 原文双份,漂移在此即时暴露);
+ *     core i18n 字典(zh.ts)convert.stage.* / recent.time.* 逐字相等
+ *     (pure 层零 import 约束导致 zh 原文双份,漂移在此即时暴露);
  * (b) MAX_RECENT_FILES:main persist/ui-state.ts(导出常量)↔ renderer ui/recent-files.ts
- *     (模块私有未导出,MR-4——经源码文本提取恒等断言,改任一侧未同步即失败);
- * (c) 设置默认值防御性合并双侧关键字段抽样一致(MR-11):main persist/settings.ts
+ *     (模块私有未导出——经源码文本提取恒等断言,改任一侧未同步即失败);
+ * (c) 设置默认值防御性合并双侧关键字段抽样一致:main persist/settings.ts
  *     loadSettings sanitize ↔ renderer settings-logic.ts mergeSettingsWithDefaults,
  *     以「旧版合法文件缺字段」与「完整合法文件」两场景对比双侧产出;
- * (d) 行内 HTML 白名单表达式扫描双份算法对同一组样本产出一致(CORE-11 双向指针):
+ * (d) 行内 HTML 白名单表达式扫描双份算法对同一组样本产出一致:
  *     core/markdown/html-whitelist.ts isAllowedInlineHtml(整串布尔判定)↔
  *     core/docx/handlers/inline-html.ts normalizeInlineHtml + parseInlineHtml
  *     (节点流合并扫描),白名单接受性必须逐样本一致。
@@ -103,7 +103,7 @@ export async function run() {
   console.log("[ok] identity-guards:(a) STAGE_TEXT/stageText/formatRecentTime ↔ i18n 字典 zh 逐字恒等 断言通过");
 
   // ================= (b) MAX_RECENT_FILES:main 导出常量 ↔ renderer 私有常量 =================
-  // renderer 侧未导出(MR-4 记录在案):源码文本提取断言,重命名/改值未同步即失败
+  // renderer 侧未导出:源码文本提取断言,重命名/改值未同步即失败
   const recentFilesSrc = await fs.readFile(path.join(ROOT, "src/renderer/ui/recent-files.ts"), "utf8");
   const m = /const MAX_RECENT_FILES = (\d+);/.exec(recentFilesSrc);
   assert(m !== null, "recent-files.ts 应存在 MAX_RECENT_FILES 常量声明(声明形态变更须同步本守护段)");

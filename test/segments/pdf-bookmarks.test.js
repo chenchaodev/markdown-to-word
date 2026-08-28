@@ -1,5 +1,5 @@
 /**
- * PDF 书签端到端(R8 批 4 A2;smoke 书签断言的独立化 + buildBookmarkTree 层级直测):
+ * PDF 书签端到端(smoke 书签断言的独立化 + buildBookmarkTree 层级直测):
  * convert("pdf") 中间 html → htmlToPdf(printToPDF 链路,与主进程 renderPdf 对齐)
  * → extractHeadings + buildBookmarkTree → injectBookmarks → PDFDocument 回读:
  * Outlines 存在、中文标题(PDFHexString 解码)、Dest[0] 为页面 PDFRef(防「全部回退首页」回归)。
@@ -25,7 +25,7 @@ async function assertOutline(pdfBytes, expectedTitle, label) {
   if (!(title instanceof PDFHexString) || title.decodeText() !== expectedTitle) {
     throw new Error(`${label} 书签标题异常: ${title?.toString()}`);
   }
-  // 回归:书签 Dest[0] 必须是页面 PDFRef(曾全部回退首页致点击不跳转,见批次 4 修复)
+  // 回归:书签 Dest[0] 必须是页面 PDFRef(曾全部回退首页致点击不跳转)
   const destArr = firstDict?.get(PDFName.of("Dest"));
   if (!(destArr instanceof PDFArray) || !(destArr.asArray()[0] instanceof PDFRef)) {
     throw new Error(`${label} 书签 Dest 异常: ${destArr?.toString()}`);
@@ -79,9 +79,9 @@ export async function run() {
   await assertOutline(withBookmarks, "书签一级标题", "书签端到端");
   console.log("[ok] 书签端到端:Outlines 注入,中文标题 + Dest 页面引用正确");
 
-  // ---------- G3 补齐:lookupNamedDest 解析路径直测(bookmarks.ts) ----------
-  // 依据(dist/core/pdf/bookmarks.ts):旧式 /Dests 字典(82-84)、decodeURIComponent
-  // catch(100-101,非法百分号编码名原样返回)、PDFDict 间接目标(109-115,/D 解引用)。
+  // ---------- lookupNamedDest 解析路径直测(bookmarks.ts) ----------
+  // 依据(dist/core/pdf/bookmarks.ts):旧式 /Dests 字典、decodeURIComponent
+  // catch(非法百分号编码名原样返回)、PDFDict 间接目标(/D 解引用)。
   // 构造:PDFDocument.create + catalog 挂 /Dests(经 register 为间接对象,与真实 PDF
   // 一致),save → load 回读后 lookupNamedDest 断言(与 printToPDF 产物同构)。
 

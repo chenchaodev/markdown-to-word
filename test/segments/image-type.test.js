@@ -1,10 +1,10 @@
 /**
- * image-type.ts 三函数单测(R8 收尾批 1 C1;R2 抽取、R4 修复核心的回归锚):
- * - sniffImageType:PNG/JPEG/GIF/WEBP 魔数判定;B3 起未知/数据不足 → null
+ * image-type.ts 三函数单测:
+ * - sniffImageType:PNG/JPEG/GIF/WEBP 魔数判定;未知/数据不足 → null
  *   (不再伪装 png,由调用方跳过嵌入并警告);
  * - imageSizeFromBuffer:PNG(IHDR offset 16/20)/JPEG(SOF 扫描)像素尺寸,
  *   畸形/无 SOF/尺寸为 0 → null(docx 等比缩放数据源);
- * - mimeFromBuffer:data URL 用 MIME;B3 起未知 → null(调用方按失败降级)。
+ * - mimeFromBuffer:data URL 用 MIME;未知 → null(调用方按失败降级)。
  * 全部断言基于可构造的最小文件头 bytes(静态构造,零 IO、零 fixture 文件)。
  */
 import {
@@ -66,7 +66,7 @@ export async function run() {
     "webp",
     "sniff WEBP",
   );
-  // B3:未知与数据不足 → null(不伪装 png,由调用方跳过嵌入 + 警告)
+  // 未知与数据不足 → null(不伪装 png,由调用方跳过嵌入 + 警告)
   assertEq(sniffImageType(Buffer.from("hello")), null, "sniff 未知 → null");
   assertEq(sniffImageType(Buffer.alloc(0)), null, "sniff 空数据 → null");
   assertEq(sniffImageType(Buffer.from([0x89, 0x50])), null, "sniff 截断魔数 → null");
@@ -101,7 +101,7 @@ export async function run() {
   assertEq(imageSizeFromBuffer(Buffer.from([0x89, 0x50, 0x4e, 0x47])), null, "PNG 数据不足 → null");
   console.log("[ok] imageSizeFromBuffer:PNG/JPEG 尺寸解析 + 零尺寸/无 SOF/畸形/类型不符 → null 断言通过");
 
-  // ---------- mimeFromBuffer:data URL 用 MIME,B3 起未知 → null ----------
+  // ---------- mimeFromBuffer:data URL 用 MIME,未知 → null ----------
   assertEq(mimeFromBuffer(pngHeader(10, 10)), "image/png", "mime PNG");
   assertEq(mimeFromBuffer(jpegHeader(10, 10)), "image/jpeg", "mime JPEG");
   assertEq(

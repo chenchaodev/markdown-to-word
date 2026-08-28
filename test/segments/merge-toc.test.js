@@ -1,9 +1,9 @@
 /**
- * F8 合并总目录增强(固化既有单 pass 合并通路行为,无需新增代码):
+ * 合并总目录增强(固化既有单 pass 合并通路行为,无需新增代码):
  * - 合并多文件后单次 convert 产出「总目录」覆盖所有源文件标题(docx + pdf 双格式断言)
  * - 跨文件页码准确:field 模式两遍法对合并产物注入的页码随文档顺序单调,
  *   且后文件(经 page-break 起新页)标题页码严格大于前文件(PDF)
- * 复用 mergeMarkdowns → convert 一次;TOC 覆盖与页码由 F7 机制保障,本段防止回归。
+ * 复用 mergeMarkdowns → convert 一次;TOC 覆盖与页码由既有机制保障,本段防止回归。
  */
 import { convert } from "../../dist/core/convert.js";
 import { mergeMarkdowns } from "../../dist/core/pipeline/merge.js";

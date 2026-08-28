@@ -1,5 +1,5 @@
 /**
- * 图片控制增强段(F1):Pandoc 风格尾随尺寸属性 + figure 题注绑定。
+ * 图片控制增强段:Pandoc 风格尾随尺寸属性 + figure 题注绑定。
  * 覆盖五类断言(零注册):
  * (a) 语法解析纯函数直测(core/markdown/image-size.ts:词法/校验范围/边界);
  * (b) docx 产物断言(EMU 尺寸换算 / figure 居中 jc / 属性文本剥除);
@@ -205,7 +205,7 @@ export async function run() {
   console.log("[ok] image-size:(d) 非法值 keyed 警告(zh/en)+ 默认尺寸降级(docx/pdf 对齐)断言通过");
 
   // ================= (e) 无属性回归 + 题注绑定 =================
-  // 无属性:行内图片不居中、尺寸走原 scaleToFit(1×1 不放大);独立成段图片居中(F1 figure 语义)
+  // 无属性:行内图片不居中、尺寸走原 scaleToFit(1×1 不放大);独立成段图片居中(figure 语义)
   const plainDocx = await renderDocx(parseMarkdown("前文 ![内联](./g1-tiny.png) 后文\n\n![独图](./g1-tiny.png)\n"), {
     imageResolver: resolver,
     warnings: [],

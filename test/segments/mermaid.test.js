@@ -1,5 +1,5 @@
 /**
- * Mermaid 渲染 core 层契约测试(批次 10 功能 1,8c):
+ * Mermaid 渲染 core 层契约测试:
  * 注入 fake resolver 断言 core 层行为(真实渲染由 test/main/mermaid-service.test.js 覆盖),
  * 零依赖真实渲染。断言依据 src/core/markdown/mermaid.ts 契约与实现事实(勿臆测):
  *
@@ -49,7 +49,7 @@ export const fixtures = {
 
 /** Mermaid 图表渲染 core 层契约 */
 export async function run() {
-  // ---- 1/9. docx 成功路径:resolver 被调用(围栏原文)→ 内嵌 PNG 图片(缩放 600×300→400×200) ----
+  // ---- docx 成功路径:resolver 被调用(围栏原文)→ 内嵌 PNG 图片(缩放 600×300→400×200) ----
   {
     const received = [];
     const okResolver = async (code) => {
@@ -78,7 +78,7 @@ export async function run() {
     console.log("[ok] mermaid:docx 成功路径 resolver 收围栏原文 + a:blip/缩放 EMU/media 部件,断言通过");
   }
 
-  // ---- 2/9. docx 降级路径:resolver 返回 null → 代码原文保留 + 无图片 + 警告 ----
+  // ---- docx 降级路径:resolver 返回 null → 代码原文保留 + 无图片 + 警告 ----
   {
     const warnings = [];
     const docx = await convert(MD_OK, "docx", {
@@ -99,7 +99,7 @@ export async function run() {
     console.log("[ok] mermaid:docx 降级路径(null)代码原文保留 + 警告,断言通过");
   }
 
-  // ---- 2b. docx 降级路径(抛错):警告带 reason ----
+  // ---- docx 降级路径(抛错):警告带 reason ----
   {
     const warnings = [];
     const docx = await convert(MD_OK, "docx", {
@@ -119,7 +119,7 @@ export async function run() {
     console.log("[ok] mermaid:docx 降级路径(抛错 boom)警告带 reason,断言通过");
   }
 
-  // ---- 3/9. docx 无 resolver:原行为不变(代码块文本,无图片,无警告) ----
+  // ---- docx 无 resolver:原行为不变(代码块文本,无图片,无警告) ----
   {
     const warnings = [];
     const docx = await convert(MD_OK, "docx", { baseDir: FIXTURES_DIR, warnings });
@@ -136,7 +136,7 @@ export async function run() {
     console.log("[ok] mermaid:docx 无 resolver 原行为不变,断言通过");
   }
 
-  // ---- 4/9. pdf 成功路径:mermaid-svg 内联 + 无占位残留 + 特殊字符逐字符还原 ----
+  // ---- pdf 成功路径:mermaid-svg 内联 + 无占位残留 + 特殊字符逐字符还原 ----
   {
     const received = [];
     const okResolver = async (code) => {
@@ -153,14 +153,14 @@ export async function run() {
     if (pdf.html.includes('<div class="mermaid">')) {
       throw new Error("pdf 成功路径:存在占位残留 <div class=\"mermaid\">");
     }
-    // 特殊字符(8/9):escapeHtml(占位)→ decodeEntities(还原)对称,resolver 收到逐字符原码
+    // 特殊字符:escapeHtml(占位)→ decodeEntities(还原)对称,resolver 收到逐字符原码
     if (received.length !== 1 || received[0] !== 'graph TD; A["<x> & \'q\'"]\n') {
       throw new Error(`pdf 成功路径:resolver 未收到逐字符原码(含尾随换行),received=${JSON.stringify(received)}`);
     }
     console.log("[ok] mermaid:pdf 成功路径 mermaid-svg 内联 + 特殊字符逐字符往返,断言通过");
   }
 
-  // ---- 5/9. pdf 降级路径:null → mermaid-fallback 转义代码块 + 警告 ----
+  // ---- pdf 降级路径:null → mermaid-fallback 转义代码块 + 警告 ----
   {
     const warnings = [];
     const pdf = await convert(MD_SPECIAL, "pdf", {
@@ -187,7 +187,7 @@ export async function run() {
     console.log("[ok] mermaid:pdf 降级路径(null)mermaid-fallback 转义原文 + 警告,断言通过");
   }
 
-  // ---- 5b. pdf 降级路径(抛错):警告带 reason + fallback 代码块(render.ts:659-663) ----
+  // ---- pdf 降级路径(抛错):警告带 reason + fallback 代码块 ----
   {
     const warnings = [];
     const pdf = await convert(MD_SPECIAL, "pdf", {
@@ -213,7 +213,7 @@ export async function run() {
     console.log("[ok] mermaid:pdf 降级路径(抛错 boom)警告带 reason + fallback,断言通过");
   }
 
-  // ---- 6/9. pdf 无 resolver:原 hljs 兜底(不产占位、无 mermaid class) ----
+  // ---- pdf 无 resolver:原 hljs 兜底(不产占位、无 mermaid class) ----
   {
     const pdf = await convert(MD_OK, "pdf", { baseDir: FIXTURES_DIR, warnings: [] });
     // markdown-it 兜底:非注册语言经 escapeHtml(--&gt;),内容行保留缩进,包装为 hljs pre
@@ -226,7 +226,7 @@ export async function run() {
     console.log("[ok] mermaid:pdf 无 resolver 原 hljs 兜底,断言通过");
   }
 
-  // ---- 7/9. 非 mermaid 围栏不变(docx 文本 / pdf hljs 高亮,带 resolver 也不被劫持) ----
+  // ---- 非 mermaid 围栏不变(docx 文本 / pdf hljs 高亮,带 resolver 也不被劫持) ----
   {
     const docx = await convert(MD_JS, "docx", {
       baseDir: FIXTURES_DIR,

@@ -3,12 +3,12 @@
  * - 本地读取:path.resolve(baseDir, src) 相对/绝对路径均读文件,缺失与 data: 等非 http → null
  * - http 下载:200 成功返回内容一致的 Buffer;404 / 连接拒绝 → null
  * - 同 URL 缓存:并发去重(在途 Promise 共享,仅成功结果缓存);失败(404/超时)不缓存,
- *   下次调用重新下载(R10-4),实例间隔离
- * - M6 集成:缺失检查并入 resolver 失败路径(convert 层 stat 预扫已移除),resolver
+ *   下次调用重新下载,实例间隔离
+ * - 缺失检查并入 resolver 失败路径(convert 层 stat 预扫已移除),resolver
  *   返回 null → 转换 warnings 追加统一文案「图片加载失败: <src>」(本地缺失有警告,
  *   存在的本地图片无警告;文案三处统一见 core/image-warning.ts)
- * - B5 exists 轻量存在性通道:本地存在 → true / 缺失 → false / data: 退回完整解析
- * - MR-3 SSRF 加固:默认拦截私网/回环(127.0.0.1 目标在 fetch 前被拦,server 计数 0);
+ * - exists 轻量存在性通道:本地存在 → true / 缺失 → false / data: 退回完整解析
+ * - SSRF 加固:默认拦截私网/回环(127.0.0.1 目标在 fetch 前被拦,server 计数 0);
  *   本地 server 测试场景经第三参 opt-in({ allowPrivateAddresses: true })放行
  * 超时分支:createImageResolver 第二参 timeoutMs 注入(默认 10s 不变),慢响应 server +
  * timeoutMs=50 断言超时 → null;index.ts 模块私有 resolverCache(跨 baseDir 共享)
@@ -25,7 +25,7 @@ import { saveArtifact } from "../common/artifacts.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
 
-/** 测试用 http resolver:本地 server 场景显式放行私网(MR-3 默认拦截 127.0.0.1)。 */
+/** 测试用 http resolver:本地 server 场景显式放行私网(默认拦截 127.0.0.1)。 */
 function localResolver(timeoutMs) {
   return createImageResolver("", timeoutMs, { allowPrivateAddresses: true });
 }
@@ -87,7 +87,7 @@ export async function run() {
     throw new Error("image-downloader 断言失败:data: URI 应返回 null");
   }
 
-  // ---- 断言 4b:B5 exists 轻量存在性通道(本地 fs.access,免整读) ----
+  // ---- 断言 4b:exists 轻量存在性通道(本地 fs.access,免整读) ----
   // 存在 → true;缺失(ENOENT)→ false;data: 等非本地路径退回完整解析(null → false)。
   if ((await local.exists("./g1-tiny.png")) !== true) {
     throw new Error("image-downloader 断言失败:exists 对存在的本地图片应返回 true");
@@ -114,7 +114,7 @@ export async function run() {
     const resolver = localResolver();
     const url = `http://127.0.0.1:${port}/img.png`;
 
-    // ---- 断言 5a:MR-3 默认拦截私网——未 opt-in 时 127.0.0.1 目标在 fetch 前被拦 ----
+    // ---- 断言 5a:默认拦截私网——未 opt-in 时 127.0.0.1 目标在 fetch 前被拦 ----
     // 字面量回环 IP 直接判定私网 → 返回 null 且请求不发出(server 计数保持 0);
     // 显式 allowPrivateAddresses:false 与默认行为一致(策略缺省收紧)。
     if ((await createImageResolver("")(url)) !== null) {
@@ -146,7 +146,7 @@ export async function run() {
     }
 
     // ---- 断言 7:非 2xx(404)→ null,且失败结果不缓存(第二次重新请求,计数 2,仍 null) ----
-    // R10-4 行为修复:仅成功缓存——失败不缓存,一次网络抖动不导致批量期间该 URL 永久失败。
+    // 仅成功缓存——失败不缓存,一次网络抖动不导致批量期间该 URL 永久失败。
     const url404 = `http://127.0.0.1:${srv404.port}/missing.png`;
     if ((await resolver(url404)) !== null) {
       throw new Error("image-downloader 断言失败:404 应返回 null");
@@ -186,13 +186,13 @@ export async function run() {
   }
 
   // ---- 断言 9:连接拒绝(server 已关闭)→ null(opt-in 放行私网,排除拦截干扰,
-  //   确保失败原因确为连接拒绝而非 MR-3 私网过滤) ----
+  //   确保失败原因确为连接拒绝而非私网过滤) ----
   const refused = await localResolver()(`http://127.0.0.1:${port}/x.png`);
   if (refused !== null) {
     throw new Error("image-downloader 断言失败:连接拒绝应返回 null");
   }
 
-  // ---- 断言 10:M6 集成——缺失检查并入 resolver 失败路径(单次 IO),统一警告文案 ----
+  // ---- 断言 10:缺失检查并入 resolver 失败路径(单次 IO),统一警告文案 ----
   // convert 层 stat 预扫已移除:docx 侧经 imageToDocx 失败路径、pdf 侧经
   // checkLocalImages,均走本 resolver 返回 null → 警告统一为「图片加载失败: <src>」。
   const { convert } = await import("../../dist/core/convert.js");

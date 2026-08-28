@@ -1,11 +1,11 @@
 /**
- * IPC 注册体段(src/main/ipc/register.ts;TEST-4 覆盖缺口补测:此前仅 smoke 兜底):
+ * IPC 注册体段(src/main/ipc/register.ts:此前仅 smoke 兜底):
  * 可脱离真实窗口/对话框直测的 handler 逻辑(经 dist/main/ipc/register.js):
  * - 注册面:临时包装 ipcMain.handle 捕获注册表(仍走原 handle 真实注册),断言
  *   全部预期 channel 均有 handler(防漏注册);
- * - 入参类型守卫(B1):convertSingle/convertBatch/convertMerge 非法入参 →
+ * - 入参类型守卫:convertSingle/convertBatch/convertMerge 非法入参 →
  *   { ok:false, error }(守卫先于 runWithCtx,无需真实 BrowserWindow/event.sender);
- * - MR-12 shell 白名单:未登记路径 revealInFolder/openPath → { ok:false, error }
+ * - shell 白名单:未登记路径 revealInFolder/openPath → { ok:false, error }
  *   (测试进程白名单为空,拒绝路径不触达 shell,无用户可见副作用);
  * - 纯转发 handler 直调:fileCollectMarkdown(目录递归收集/skipped)、
  *   fileFilterExisting(保序剔除缺失)、settingsGet/settingsSet、uiStateGet/uiStateSet、
@@ -56,7 +56,7 @@ export async function run() {
   }
   console.log(`[ok] ipc-register:${expected.length} 个预期 channel 全部注册 断言通过`);
 
-  // ---- 2. B1 入参类型守卫:非法入参 → { ok:false, error },不触达转换链路 ----
+  // ---- 2. 入参类型守卫:非法入参 → { ok:false, error },不触达转换链路 ----
   const badSingle = await handlers.get(CH.convertSingle)(fakeEvent, 42, "docx");
   assert(badSingle.ok === false && typeof badSingle.error === "string" && badSingle.error.length > 0,
     "convertSingle 非字符串路径应返回 { ok:false, error }");
@@ -68,7 +68,7 @@ export async function run() {
   assert(badMerge.ok === false, "convertMerge 混入非字符串元素应返回 { ok:false, error }");
   console.log("[ok] ipc-register:convertSingle/Batch/Merge 入参类型守卫(B1)断言通过");
 
-  // ---- 3. MR-12 shell 白名单:未登记路径拒绝且不触达 shell(测试进程白名单为空) ----
+  // ---- 3. shell 白名单:未登记路径拒绝且不触达 shell(测试进程白名单为空) ----
   const reveal = handlers.get(CH.shellRevealInFolder)(fakeEvent, "C:\\definitely\\not\\allowed.docx");
   assert(reveal.ok === false && typeof reveal.error === "string", "revealInFolder 白名单外路径应拒绝");
   const revealBad = handlers.get(CH.shellRevealInFolder)(fakeEvent, 42);

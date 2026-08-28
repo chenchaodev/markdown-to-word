@@ -1,5 +1,5 @@
 /**
- * PDF 章节编号 + 元数据验收(原 make-batch4-sample.mjs 段 4,独立化):
+ * PDF 章节编号 + 元数据验收:
  * 自建小 md(frontmatter title/author 沿用原样例,正文仅需触发 h1 + 分页)→ pdf;
  * 断言章节编号 counter CSS;setPdfMetadata 后 PDFDocument 回读 title/author 一致。
  * 本段不落盘产物(与原段 4 一致)。
@@ -27,7 +27,7 @@ date: 2026-08-05
 `;
 export const fixtures = { main: pdfMetaMd };
 
-/** PDF 章节编号 + 元数据验收(批次 5c) */
+/** PDF 章节编号 + 元数据验收 */
 export async function run() {
   const pdfArtifact = await convert(pdfMetaMd, "pdf", {
     baseDir: FIXTURES_DIR,
@@ -50,9 +50,9 @@ export async function run() {
   }
   console.log(`[ok] PDF 元数据:title="${pdfTitle}" author="${pdfAuthor}" 读回一致`);
 
-  // ---------- G4 补齐:无元数据原样返回(metadata.ts:20,31-32) ----------
-  // 依据(dist/core/pdf/metadata.ts):metadata 缺省(20 行)或空对象无 title/author/date
-  // (31-32 行)均直接返回原 bytes(引用不变,不重存)。
+  // ---------- 无元数据原样返回(metadata.ts) ----------
+  // 依据(dist/core/pdf/metadata.ts):metadata 缺省或空对象无 title/author/date
+  // 均直接返回原 bytes(引用不变,不重存)。
   const passthroughUndef = await setPdfMetadata(pdf, undefined);
   if (passthroughUndef !== pdf) {
     throw new Error("PDF 元数据断言失败:metadata 缺省时应原样返回原 bytes(引用不变)");
@@ -63,7 +63,7 @@ export async function run() {
   }
   console.log("[ok] PDF 元数据:无元数据(缺省/空对象)原样返回,断言通过");
 
-  // ---------- B3:date 解析失败不再静默兜底当前时间 ----------
+  // ---------- date 解析失败不再静默兜底当前时间 ----------
   // 仅不可解析 date(无 title/author)→ 不注入任何字段,原样返回(此前会以当前时间
   // 兜底创建/修改时间,误导归档检索);title + 坏 date → title 注入、日期保持原值。
   const badDateOnly = await setPdfMetadata(pdf, { date: "不是日期" });

@@ -1,12 +1,12 @@
 /**
- * PDF 渲染后处理直测(G2 补齐,批次 14):
+ * PDF 渲染后处理直测:
  * embedExternalImages / checkLocalImages 纯函数直测(零 Electron 依赖,直接 import dist):
  * - embedExternalImages:worker 抛错 / 空结果 → 保留原 URL + 统一警告(图片加载失败: <src>);
  *   URL 替换循环精确匹配(src="..." 包裹 + escapeRegExp),互为子串的 URL 不误替换;
  *   同 URL 去重(resolver 只调一次,替换仍覆盖全部出现)。
  * - checkLocalImages:resolver 抛错(catch 路径)与返回 null → 统一警告;src 去重;
  *   成功不警告;无 resolver 直接返回。
- * - B5:embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败,产物逐字断言);
+ * - embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败,产物逐字断言);
  *   checkLocalImages exists 轻量通道(true/false/抛错细分,不回调完整 resolver)。
  * 断言依据 src/core/pdf/postprocess.ts(降级行为:失败保留原 URL/追加警告,不抛错)。
  */
@@ -16,7 +16,7 @@ import { formatWarning } from "../../dist/core/i18n.js";
 // 1x1 PNG 魔数头(mimeFromBuffer → image/png;data URL 前缀 data:image/png;base64,)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-/** PDF 渲染后处理直测(G2) */
+/** PDF 渲染后处理直测 */
 export async function run() {
   // ---- 1. embedExternalImages:worker 抛错 + 空结果 → 保留原 URL + 统一警告 ----
   {
@@ -106,7 +106,7 @@ export async function run() {
     console.log("[ok] postprocess:checkLocalImages catch(抛错)/null 统一警告 + 成功/无 resolver 不警告");
   }
 
-  // ---- 4. B4:checkLocalImages 失败原因细分(ENOENT/EACCES → 独立文案,其他 → 兜底) ----
+  // ---- 4. checkLocalImages 失败原因细分(ENOENT/EACCES → 独立文案,其他 → 兜底) ----
   // 依据(src/core/image/image-warning.ts imageLoadFailureWarning):fs 错误码分类——
   // ENOENT → 「图片文件不存在」/ EACCES|EPERM → 「图片文件无访问权限」/ 其他 → 统一兜底;
   // 与 docx 侧 imageToDocx 同一构造器,行为对齐。
@@ -131,7 +131,7 @@ export async function run() {
     console.log("[ok] postprocess:B4 checkLocalImages 失败原因细分(ENOENT/EACCES/兜底)断言通过");
   }
 
-  // ---- 5. B5:embedExternalImages cursor 单遍遍历——多图乱序 + 相邻 + 中间失败 ----
+  // ---- 5. embedExternalImages cursor 单遍遍历——多图乱序 + 相邻 + 中间失败 ----
   // 单遍按出现顺序处理全部外链 img:成功替换、失败原样保留(cursor 不动),
   // 相邻标签无遗漏、首尾分段拼接完整。
   {
@@ -163,7 +163,7 @@ export async function run() {
     console.log("[ok] postprocess:B5 embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败)断言通过");
   }
 
-  // ---- 6. B5:checkLocalImages 轻量存在性通道(exists)----
+  // ---- 6. checkLocalImages 轻量存在性通道(exists)----
   // resolver 附带 exists 时优先走它(免整读):true/false 分支 + 抛错保留错误码细分;
   // 全程不回调完整 resolver。
   {

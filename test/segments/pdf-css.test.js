@@ -1,5 +1,5 @@
 /**
- * PDF 自定义样式 CSS 覆盖测试(批次 16:模板导入·CSS 覆盖 pdf 路线):
+ * PDF 自定义样式 CSS 覆盖测试:
  * 用户导入的 CSS 持久化于 settings.pdfCss,渲染时追加到默认模板 CSS 之后
  * (同一 <style> 内后声明覆盖默认样式);docx 路线不消费 CSS(OOXML 无 CSS 概念)。
  * 断言(经 convert pdf 全链路,含 ConvertContext → renderPdfHtml 透传):
@@ -7,8 +7,8 @@
  *   位于默认样式同一 <style> 内(非独立 style 块)
  * - 不传 pdfCss → 输出不含用户 CSS(回归,默认行为不变)
  * - 空串 pdfCss → 等价于不传(不注入)
- * - 恶意 CSS(含 </style> 提前闭合序列)→ 被剥离,不产生第二个 <style> 边界(B1 注入防护)
- * - 输出 HTML 带 CSP meta(B1:预览/打印窗口内容安全基线)
+ * - 恶意 CSS(含 </style> 提前闭合序列)→ 被剥离,不产生第二个 <style> 边界(注入防护)
+ * - 输出 HTML 带 CSP meta(预览/打印窗口内容安全基线)
  */
 import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
@@ -53,7 +53,7 @@ export async function run() {
   }
   console.log("[ok] pdfCss:空串 pdfCss 不注入(回归)");
 
-  // ---- 4. B1 注入防护:含 </style> 的用户 CSS 被剥离,不提前闭合 <style> ----
+  // ---- 4. 注入防护:含 </style> 的用户 CSS 被剥离,不提前闭合 <style> ----
   const malicious = 'body { color: red; } </style><img src=x onerror=alert(1)>';
   const sanitized = await convert(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: malicious });
   const firstStyleEnd = sanitized.html.indexOf("</style>");
@@ -65,7 +65,7 @@ export async function run() {
   }
   console.log("[ok] pdfCss:</style> 注入序列被剥离(B1 sanitizeStyleCss)");
 
-  // ---- 5. B1 CSP meta:预览/打印 HTML 基线 ----
+  // ---- 5. CSP meta:预览/打印 HTML 基线 ----
   if (!withCss.html.includes('http-equiv="Content-Security-Policy"')) {
     throw new Error("pdfCss 断言失败:输出 HTML 应包含 CSP meta(B1)");
   }

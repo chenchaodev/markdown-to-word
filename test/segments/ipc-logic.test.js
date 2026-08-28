@@ -1,5 +1,5 @@
 /**
- * 主进程 IPC 纯逻辑层直测(src/main/ipc/logic.ts;批次 15 R6 自 index.ts IPC handler 抽出):
+ * 主进程 IPC 纯逻辑层直测(src/main/ipc/logic.ts:自 index.ts IPC handler 抽出):
  * 零 Electron API 纯函数,经 dist/main/ipc/logic.js 直接断言(Node 段)。
  * 断言面(可验证事实,与抽取前行为逐一对应):
  * - errorMessage:Error → message;字符串 → 原样;null/对象 → String(err)
@@ -8,8 +8,8 @@
  * - importPresetsFromText:坏 JSON/版本非 1/空 presets → 原错误文案透传;
  *   合法 → 合并序(incoming 在前)/同名取 incoming 值/imported-overridden 计数
  * - buildPresetsExportPayload:schemaVersion:1 包装 + 2 空格缩进 + 末尾换行(序列化字符串精确断言)
- * - isString/isStringArray/isConvertFormat:IPC 入参类型守卫(B1,元素逐一校验/格式白名单)
- * - runConvertTask(B11 自 index.ts runWithCtx 抽出的纯核心,deps 注入):
+ * - isString/isStringArray/isConvertFormat:IPC 入参类型守卫(元素逐一校验/格式白名单)
+ * - runConvertTask(自 index.ts runWithCtx 抽出的纯核心,deps 注入):
  *   成功透传任务值 / 取消错误 → onCanceled() 形态 / 其他错误归一 { ok:false,error } /
  *   register-finally 注销序(含异常与取消路径)/ ctx 每次新建不复用
  */
@@ -114,7 +114,7 @@ export async function run() {
   );
   console.log("[ok] buildPresetsExportPayload:序列化字符串精确断言(单条/空列表)通过");
 
-  // ---------- IPC 入参类型守卫(B1) ----------
+  // ---------- IPC 入参类型守卫 ----------
   assert(isString("x") === true && isString(42) === false, "isString:string/非字符串");
   assert(isStringArray(["a", "b"]) === true, "isStringArray:纯字符串数组通过");
   assert(isStringArray([]) === true, "isStringArray:空数组通过");
@@ -125,7 +125,7 @@ export async function run() {
   assert(!isConvertFormat("DOCX") && !isConvertFormat("html"), "isConvertFormat:大小写敏感/未知格式拒绝");
   console.log("[ok] IPC 入参守卫:isString/isStringArray/isConvertFormat 断言通过");
 
-  // ---------- runConvertTask(B11 自 index.ts runWithCtx 抽出,deps 注入直测) ----------
+  // ---------- runConvertTask(自 index.ts runWithCtx 抽出,deps 注入直测) ----------
   /** 构造带事件记录的 mock deps(镜像 index.ts 真实注入:ctx 新建/注册/注销 + 取消判定) */
   function makeDeps({ canceledErrors = [] } = {}) {
     const log = [];

@@ -1,9 +1,9 @@
 /**
- * mdast 工具直测段(src/core/util/mdast-utils.ts 纯函数,TEST-4 覆盖缺口补测:
+ * mdast 工具直测段(src/core/util/mdast-utils.ts 纯函数:
  * 此前仅经 toc/captions 间接触达,无专属段):
  * 实现事实(读源码确认):
  * - collectPlainText:递归拼接子树 value(text/inlineCode 等含 value 的节点);
- * - comment 节点(批次 11 批注扩展):只累加 anchor(锚定文本)行内节点,
+ * - comment 节点:只累加 anchor(锚定文本)行内节点,
  *   content(批注内容)为元数据不计入——标题 slug / 目录条目 / 题注前缀识别
  *   均以本函数为纯文本来源,批注内容混入会污染锚文本;
  * - 无 value 且无 children 的节点 → "";空 children → ""。
