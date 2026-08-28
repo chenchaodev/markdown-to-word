@@ -1,14 +1,7 @@
 /**
  * Mermaid 渲染服务验收(main 进程层;经 dist/main/services/mermaid-service.js,electron 环境):
- * 本迭代 mermaid 链路 main 侧真实断言兜底(渲染在隐藏 BrowserWindow + mermaid 11.16.1):
- * - renderMermaid("graph TD; A-->B") → 非 null(渲染成功)
- * - png 为 PNG 魔数(89 50 4E 47),width/height > 0(逻辑 1x 尺寸)
- * - svg 为完整 SVG 字符串(含 <svg 标签)
- * - 语法错误 → null(降级路径:页面内 parse 预检失败)
- * - 渲染超时 → null(executeJavaScript 挂起 + 注入短超时;串行队列/窗口不被卡死)
- * - 畸形返回值防御校验 → null(svg 形状非法/PNG 空/尺寸非法)
- * - 渲染进程崩溃 → null 且下次调用自动重建窗口(forcefullyCrashRenderer 实测)
- * - 脚本加载失败(loadFile 抛错)→ null 且临时 HTML 清理、下次调用重建
+ * 断言面:真实渲染成功(PNG 魔数/逻辑尺寸/SVG 完整)、语法错误/超时/畸形返回值/崩溃/
+ * 脚本加载失败均降级 null 且窗口自动重建、will-quit 退出兜底销毁窗口且可重建。
  * 模拟手段:BrowserWindow.prototype.webContents getter 临时替换(converter.test.js 同款
  * 模式,descriptor 一律 try/finally 恢复;本段与其他段同进程串行,不能污染原型)。
  * 说明:窗口懒创建、单例复用;本段结束后窗口仍在,由 acceptance 末尾 app.quit()
@@ -27,7 +20,7 @@ function assert(cond, msg) {
 
 /**
  * 临时替换 BrowserWindow.prototype.webContents getter(返回 fakeFactory(真实 wc));返回恢复函数。
- * B2 起窗口可能在补丁激活期间被重建(超时后销毁→下次渲染重建):fake 用 Proxy 把
+ * 窗口可能在补丁激活期间被重建(超时后销毁→下次渲染重建):fake 用 Proxy 把
  * 未覆盖成员转发到真实 webContents——否则构造器内部与 hardenWebContents 访问
  * setWindowOpenHandler/on 等方法会抛错,产生半初始化僵尸窗口。
  * descriptor 一律 try/finally 恢复;本段与其他段同进程串行,不能污染原型。

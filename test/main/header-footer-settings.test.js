@@ -1,5 +1,5 @@
 /**
- * 页眉页脚设置主进程层验收(F4):
+ * 页眉页脚设置主进程层验收:
  * - sanitize 往返:旧档无 headerFooter 字段 → 默认(现状行为);非法值逐字段回退;
  *   合法值保留(updateSettings patch 路径同语义)
  * - resolveHeaderLogo:路径不存在 → undefined + warn.headerLogoLoadFailed keyed 警告

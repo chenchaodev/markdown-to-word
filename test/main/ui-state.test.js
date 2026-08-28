@@ -1,21 +1,7 @@
 /**
  * UI 状态持久化测试(src/main/persist/ui-state.ts 纯逻辑层;测试经 dist/main/persist/ui-state.js):
- * 与 settings.test.js 同款策略——备份真实 ui-state.json,finally 恢复;
- * 每场景用 query-string 动态 import 取全新模块实例(模块级缓存按 URL 键隔离)。
- * 校验宽松(与 settings 整文件回退不同):字段非法/缺失 → 该字段默认值,不影响其它字段。
- * 断言面:
- * - 原子写往返:saveUiState(patch) → 写盘 → 全新实例 loadUiState 逐字段一致;无 .tmp 残留
- * - 损坏 JSON(parse 失败)→ 全字段默认,不写盘
- * - 字段类型非法:recentFiles 非数组/条目缺字段/format 非法/ts 非数 → 过滤;
- *   lastSessionFiles 混入非字符串/空串 → 过滤;lastOpenDir 非字符串 → "";
- *   windowBounds 缺字段/非数/宽高 ≤0 → null;panelOpen 非布尔 → 默认 false
- *   (批次 N:单一设置面板,默认折叠以突出主流程)
- * - recentFiles 去重 + 上限 10:同 path 保留 ts 最大;按 ts 降序;截断 10;追加合并语义;
- *   空数组 = 清空(renderer「清空最近」)
- * - lastOpenDir 缺失/空串 → ""
- * - pickWindowBounds:x/y 落在某工作区内保留;全工作区外/尺寸非法 → null
- * - suppressCompleteDialog(P1-2 默认 true=不弹):布尔往返持久化;缺失/非 boolean → 默认 true
- * - isMaximized(B9 窗口最大化记忆):true 往返持久化;缺失/非 boolean → false;patch 合并保留
+ * 策略——备份真实 ui-state.json,finally 恢复;每场景用 query-string 动态 import 取全新模块实例。
+ * 校验宽松:字段非法/缺失 → 该字段默认值,不影响其它字段。
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -225,7 +211,7 @@ export async function run() {
     assert(mod.pickWindowBounds(null, areas) === null, "pickWindowBounds:null 应丢弃");
     console.log("[ok] ui-state:pickWindowBounds 工作区钳制(区内保留/区外与非法丢弃)");
 
-    // ---- 8. suppressCompleteDialog(P1-2 默认翻转 true=不弹):布尔往返持久化;缺失/非 boolean → 默认 true ----
+    // ---- 8. suppressCompleteDialog(默认 true=不弹):布尔往返持久化;缺失/非 boolean → 默认 true ----
     await fs.writeFile(uiFile, JSON.stringify({ suppressCompleteDialog: true }), "utf8");
     const m10 = await freshModule();
     assert(m10.loadUiState().suppressCompleteDialog === true, "suppressCompleteDialog:true 应原样读回");
@@ -238,10 +224,10 @@ export async function run() {
     await fs.writeFile(uiFile, JSON.stringify({}), "utf8");
     const m13 = await freshModule();
     assert(m13.loadUiState().suppressCompleteDialog === true, "suppressCompleteDialog:缺失应回退默认 true");
-    assert(m13.DEFAULT_UI_STATE.suppressCompleteDialog === true, "DEFAULT_UI_STATE.suppressCompleteDialog 应为 true(P1-2)");
-    console.log("[ok] ui-state:suppressCompleteDialog 往返/宽松校验(布尔持久化,缺失与非 boolean 回退默认 true=P1-2 不弹)");
+    assert(m13.DEFAULT_UI_STATE.suppressCompleteDialog === true, "DEFAULT_UI_STATE.suppressCompleteDialog 应为 true");
+    console.log("[ok] ui-state:suppressCompleteDialog 往返/宽松校验(布尔持久化,缺失与非 boolean 回退默认 true 不弹)");
 
-    // ---- 9. isMaximized(B9 窗口最大化状态记忆):true 往返持久化;缺失/非 boolean → false ----
+    // ---- 9. isMaximized(窗口最大化状态记忆):true 往返持久化;缺失/非 boolean → false ----
     await fs.writeFile(uiFile, JSON.stringify({ isMaximized: true }), "utf8");
     const m14 = await freshModule();
     assert(m14.loadUiState().isMaximized === true, "isMaximized:true 应原样读回");

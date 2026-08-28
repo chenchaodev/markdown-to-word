@@ -1,16 +1,7 @@
 /**
- * 转换编排验收(位于 test/main/ = 主进程层测试;src/main/converter/(批⑤拆分,
- * converter.ts 为桶导出),测试经 dist/main/converter/index.js,electron 环境):
- * 覆盖从 smoke 迁出的纯逻辑断言(不依赖 Electron 打印/窗口,断言与 smoke 原版一字未改):
- * - 重名保护:convertImpl 两次 → 「名 (2).docx」且两产物共存
- * - 批量汇总(3 成功 + 1 缺失)与 merge docx(frontmatter 仅首文件/图片嵌入/标题齐全)
- * - 取消链路:批量取消(canceledCount=2/未开始项标记)、取消后复位(批量/merge)、
- *   pdf 预取消(ConvertCanceledError + 不产出文件)
- * - 设置注入端到端:持久化往返、landscape → w:orient、breakBeforeH1 → pageBreakBefore、
- *   分页符 → w:br page(toc:false 下仅显式分页符)
- * - getImageResolver 缓存同一性:同 baseDir 两次调用返回同一实例(批量跨文件共享语义)
- * - pdf 渲染失败:printToPDF/loadFile 抛错 → convertImpl 抛非 ConvertCanceledError,
- *   finally 销毁窗口并清理临时文件(临时目录无 m2w-*.html 残留)
+ * 转换编排验收(位于 test/main/ = 主进程层测试;src/main/converter/ 经桶导出
+ * converter.ts,测试经 dist/main/converter/index.js,electron 环境):
+ * 覆盖从 smoke 迁出的纯逻辑断言(不依赖 Electron 打印/窗口,断言与 smoke 原版一字未改)。
  * 实现事实(读源码确认):
  * - settings.ts 模块级 settingsCache:本段经 dist/main/persist/settings.js 直连同一实例
  *   (converter.js 内部同 URL import → 同一模块实例),全部场景共享缓存
@@ -18,7 +9,7 @@
  *   原本无 settings.json 时恢复后删除文件,不污染用户设置(settings.test.js 同款卫生)
  * - convertImpl 输出目录 = settings.outputDir(空串 → 源文件同目录):本段统一置 ""
  *   + afterConvert "none"(测试环境不触发打开文件),保证断言确定性
- * - 样例源文件入 fixtures 体系(test/fixtures/main/,B11 自内联常量迁出);
+ * - 样例源文件入 fixtures 体系(test/fixtures/main/);
  *   运行时副本/产物放 os.tmpdir() 独立目录,finally 整体删除,不污染 output/smoke
  */
 import fs from "node:fs/promises";
@@ -40,7 +31,7 @@ import {
   mergeConvertImpl,
 } from "../../dist/main/converter/index.js";
 
-// 样例迁 fixtures 体系(B11;静态文件直接放 test/fixtures/main/,不接 gen-fixtures
+// 样例迁 fixtures 体系(静态文件直接放 test/fixtures/main/,不接 gen-fixtures
 // 生成器——check:fixtures 只覆盖 segments 段导出的 acceptance fixtures 对象)
 const SAMPLE_MD_PATH = path.join(FIXTURES_DIR, "main", "converter-sample.md");
 const PNG_1PX_PATH = path.join(FIXTURES_DIR, "main", "g4-preview.png");
@@ -206,9 +197,9 @@ export async function run() {
     assert(pbXml.includes('<w:br w:type="page"/>'), '分页符:document.xml 缺少 <w:br w:type="page"/>');
     console.log("[ok] converter:设置注入(持久化/landscape/breakBeforeH1/分页符 docx)");
 
-    // ---- 8b. pdfCss 透传(批次 16):buildConvertContext 应把 settings.pdfCss 映射到 core 上下文 ----
+    // ---- 8b. pdfCss 透传:buildConvertContext 应把 settings.pdfCss 映射到 core 上下文 ----
     // (IPC 导入对话框无法自动化,标注 GUI 实测;此处断言 main 侧设置 → 上下文映射链路)
-    // F4:buildConvertContext 改 async(页眉 logo 读文件),调用点 await
+    // buildConvertContext 改 async(页眉 logo 读文件),调用点 await
     const pdfCssCtx = await buildConvertContext({
       baseDir: dir,
       title: "t",
@@ -318,7 +309,7 @@ export async function run() {
     console.log("[ok] converter:runAfterConvert open 失败(降级不抛 + 日志留痕)");
 
     // ---- 11. merge pdf 分支(451-453 行):合并 → renderPdf → 落盘 %PDF + 进度分阶段上报 ----
-    // B9 起 pdf 链路细分:read → parse → inline → mermaid → katex → print(printToPDF 前)→ done
+    // pdf 链路细分:read → parse → inline → mermaid → katex → print(printToPDF 前)→ done
     const mergeStages = [];
     const mergePdf = await mergeConvertImpl([mergeA, mergeB], "pdf", (stage) => mergeStages.push(stage));
     assert(mergePdf.ok && !!mergePdf.outputPath, `merge pdf 失败: ${mergePdf.error}`);

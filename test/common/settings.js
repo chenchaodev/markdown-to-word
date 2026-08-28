@@ -1,8 +1,8 @@
 /**
  * 用户设置备份/恢复公共 helper:
- * - backupSettings:缓存级快照(R8 批 3 L7,原内联逻辑在 test/main/converter.test.js);
+ * - backupSettings:缓存级快照(原内联逻辑在 test/main/converter.test.js);
  * - backupSettingsFile / freshSettingsModule / settingsJsonPath:原始文件级备份 +
- *   全新模块实例(TEST-9 自 i18n.test.js / settings.test.js 手写样板迁移,行为等价)。
+ *   全新模块实例(自 i18n.test.js / settings.test.js 手写样板迁移,行为等价)。
  * 注意:smoke.ts 属应用代码(src/main),不得 import test/,保持自身实现。
  */
 import { app } from "electron";

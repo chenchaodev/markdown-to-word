@@ -35,7 +35,7 @@ export async function run() {
     await fs.writeFile(gbkMd, iconv.encode(GBK_MD, "gbk"));
 
     const result = await convertImpl(gbkMd, "docx");
-    // B6:警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
+    // 警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
     assert(
       result.warnings.some((w) => formatWarning(w).includes("已按 GBK 编码读取")),
       `warnings 缺少 GBK 警告: ${JSON.stringify(result.warnings)}`,

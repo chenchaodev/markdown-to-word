@@ -1,24 +1,12 @@
 /**
  * 路径收集/输出路径解析验收(位于 test/main/ = 主进程层;src/main/converter/paths.ts
- * (批⑤拆分,经桶导出 converter.ts),测试经 dist/main/converter/index.js,electron 环境):
- * 迭代 3 低优先级缺口(ROADMAP 141/142 行),重构后两函数已导出 → 升级为直测:
- * - collectMarkdownPaths:目录递归(.md/.markdown 含嵌套)、点开头目录(.git/.hidden)
- *   与点开头文件跳过、目录内非 md 静默忽略、直接传非 md/不存在 → skipped、
- *   直接传 .md → files、排序大小写不敏感(localeCompare sensitivity base)、
- *   seen 按 path.resolve 去重(重复路径只收集一次)
- * - resolveOutputPath:outputDir 空串 → 源目录、有效 → mkdir 创建并落指定目录、
- *   baseName 覆盖、pdf → .pdf、候选 >250 字符 → 回落源目录 +「输出路径过长」警告、
- *   outputDir mkdir 失败(指向已存在文件)→ 回落源目录 +「输出目录不可用」警告
- * 实现事实(读源码确认):
- * - skipped 记录传入原串(本段统一传绝对路径,断言确定);visit 的 seen 在 stat 前
- *   即去重,目录重复传入也只扫一次
+ * 经桶导出 converter.ts,测试经 dist/main/converter/index.js,electron 环境):
+ * 实现事实(读源码确认,非显然行为):
+ * - skipped 记录传入原串;visit 的 seen 在 stat 前即去重,目录重复传入也只扫一次
  * - 点前缀跳过是「entry.name 以 . 开头」判定,对目录与文件一视同仁
- *   (.hiddenfile.md 同样不收集,断言以实际行为为准)
- * - 超长回落(源码 138-142 行):回落源目录后重算 candidate,但不再二次检查长度
+ * - 超长回落:回落源目录后重算 candidate,但不再二次检查长度
  *   ——源目录 + 超长 baseName 仍 >250 时原样进入 pathExists 循环并返回
- * - 重名序号循环(pathExists → 「名 (2).ext」)本段不重复断言:converter.test.js
- *   经 convertImpl 两次转换已覆盖;runAfterConvert none 分支亦由 converter.test.js
- *   隐式覆盖(afterConvert 恒置 none),show-in-folder/open 触发真实 GUI 转实测
+ * - 重名序号循环(「名 (2).ext」)由 converter.test.js 经 convertImpl 两次转换覆盖,本段不重复断言
  * 样例/产物全部放 os.tmpdir() 独立目录,finally 整体删除,不污染 output/smoke
  */
 import fs from "node:fs/promises";

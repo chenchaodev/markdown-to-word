@@ -1,7 +1,6 @@
 /**
  * KaTeX/Mermaid 资源目录解析直测(位于 test/main/ = 主进程层;
- * src/main/services/resource-dirs.ts(批⑤由 katex-dir.ts + mermaid-dir.ts 合并的单一来源,
- * 批⑥自 main 根级移入 services/,经 dist/main/services/resource-dirs.js):
+ * src/main/services/resource-dirs.ts,经 dist/main/services/resource-dirs.js):
  * dev/test/打包三态路径定位逻辑——打包态无法在测试环境真实模拟,
  * 纯逻辑部分(resolveKatexDir/resolveMermaidDir)以依赖注入参数化覆盖三态分支:
  * - resolveKatexDir(appPath):join(appPath,"node_modules","katex","dist")

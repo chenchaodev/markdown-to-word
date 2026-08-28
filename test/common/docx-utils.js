@@ -1,6 +1,6 @@
 /**
  * docx(OOXML zip)解包与断言工具。
- * B10b:解包统一 jszip 内存解析,删除系统 tar 路径(tar 依赖系统二进制 + 临时目录
+ * 解包统一 jszip 内存解析,删除系统 tar 路径(tar 依赖系统二进制 + 临时目录
  * 往返,Windows 下慢且行为随环境漂移);unzipPart 因此为 async(返回 Promise<string>)。
  */
 import JSZip from "jszip";
