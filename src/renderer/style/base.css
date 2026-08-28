@@ -1,14 +1,7 @@
-/* Markdown 转换工具 — 基础样式(UI 改版 v4r1 渲染层批次):
- * 设计令牌单源(docs/design/ui-guidelines.md §1 落地)、reset、应用骨架
- * (标题栏 44px 拖拽区 / 几何恒定主舞台 + 统一内容列 / 历史浮出面板 / 消息区 /
- * 底部动作栏)、通用控件(btn 族 / 分段 / 开关 / 输入件)、响应式四档与动效纪律。
- * 引入顺序固定:base → drop → settings → dialogs(index.html 多 <link> 同源引入,
- * CSP 无需改动);后加载文件的更高特异性规则覆盖先加载者。
- *
- * 令牌纪律(红线):任何组件规则不得硬编码 hex——一律经本文件语义变量引用;
- * 「跟随系统」主题当前仍由 CSS @media prefers-color-scheme 兜底(过渡态:
- * 主进程 titleBarOverlay 通道落地宿主解析 data-theme 后移除,见 docs/design/
- * ui-guidelines.md §1.1 注记),显式 light/dark 走 html[data-theme]。 */
+/* 基础样式:设计令牌单源 / reset / 应用骨架 / 通用控件 / 响应式与动效纪律。
+ * 引入顺序固定:base → drop → settings → dialogs;后加载文件覆盖先加载者。
+ * 令牌纪律(红线):组件规则不得硬编码 hex,一律经本文件语义变量引用;
+ * 「跟随系统」主题暂由 @media prefers-color-scheme 兜底(主进程解析 data-theme 后移除)。 */
 
 /* ========== 1. 设计令牌(ui-guidelines §1 单源落地) ========== */
 :root {
@@ -62,9 +55,9 @@
   /* 标题栏高度(矮窗档降为 40px,抽屉/遮罩 top 联动) */
   --tbh: 44px;
 
-  /* UI 改版 v4:舞台几何恒定令牌。--col-w = 统一内容列宽(.stage 即居中列,
+  /* 舞台几何恒定令牌。--col-w = 统一内容列宽(.stage 即居中列,
    * 文稿台/队列卡/快速参数条同宽同轴);--panes-h = 三态 pane 区高度
-   * (基准 = 空态文稿台自然高度,v4r1 微调后 ≈291 含顶距,裁切线外扩仍有净空);
+   * (基准 = 空态文稿台自然高度,裁切线外扩仍有净空);
    * --quickbar-h = 快速参数条高度;.stage 总高 = panes + quickbar,
    * 三种舞台状态同高,历史开合/消息增减不改写(矮窗档在 §6 覆盖) */
   --col-w: 760px;
@@ -342,7 +335,7 @@ svg.ic {
   padding: 18px 26px 12px;
 }
 
-/* ---- 3.3 历史记录浮出面板(UI 改版 v4 ④):
+/* ---- 3.3 历史记录浮出面板:
  *     标题条 40px 常驻占位(安静、一眼可见);展开体为 absolute 浮层,
  *     向上盖住舞台下部——不挤压任何元素,舞台/消息区零位移。
  *     无记录整块不渲染(hidden,由 recent-files 控制) ---- */
@@ -350,7 +343,7 @@ svg.ic {
   flex: none;
   position: relative;
   border-top: 1px solid var(--line);
-  /* v4r2:内容对齐统一内容列(背景/发丝线仍全宽),消除各段宽度突变 */
+  /* 内容对齐统一内容列(背景/发丝线仍全宽),消除各段宽度突变 */
   padding: 0 max(18px, calc((100% - var(--col-w)) / 2));
 }
 
@@ -529,7 +522,7 @@ svg.ic {
 .feed {
   flex: none;
   border-top: 1px solid var(--line);
-  /* v4r2r2:固定槽高(不再 min-height 随内容长高)——转换开始/完成时状态行与
+  /* 固定槽高(不再 min-height 随内容长高)——转换开始/完成时状态行与
    * 汇总条不再挤压舞台;超长内容内部滚动,safe center 防居中溢出裁顶 */
   height: 96px;
   padding: 11px max(18px, calc((100% - var(--col-w)) / 2)) 13px;
@@ -594,7 +587,7 @@ svg.ic {
   border-color: var(--acc-ring);
 }
 
-/* 3.0 打磨遗留项④:状态行 busy/ok 呼吸色(圆点明暗 + 微缩放呼吸) */
+/* 状态行 busy/ok 呼吸色(圆点明暗 + 微缩放呼吸) */
 .status--busy::before {
   background: var(--acc);
   animation: status-breathe 1.5s ease-in-out infinite;
@@ -610,7 +603,7 @@ svg.ic {
   50% { opacity: 0.4; transform: scale(0.78); }
 }
 
-/* 3.0 打磨遗留项③:就绪态主按钮脉冲引导(Ctrl+Enter/Ctrl+O 可触发时) */
+/* 就绪态主按钮脉冲引导(Ctrl+Enter/Ctrl+O 可触发时) */
 .btn.pulse:not(:disabled) {
   animation: btn-pulse 1.9s ease-in-out infinite;
 }
@@ -638,13 +631,13 @@ svg.ic {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  /* v4r2:内容对齐统一内容列(工具带背景仍全宽) */
+  /* 内容对齐统一内容列(工具带背景仍全宽) */
   padding: 8px max(22px, calc((100% - var(--col-w)) / 2));
   gap: 12px;
 }
 
 /* 转换进度行(mockup §9 progress 模式):旋转指示 + 5px 细轨 + mono 百分比 + 取消。
- * v4r2r2:与动作按钮同行(flex 1 1 auto,不再 1 1 100% 独占整行)——独占行会让
+ * 与动作按钮同行(flex 1 1 auto,不再 1 1 100% 独占整行)——独占行会让
  * 动作栏增高 ~52px,挤压舞台致转换开始时大小跳动;转换中隐藏快捷键提示腾位
  * (下方 :has 规则),动作栏全程恒高。 */
 .progress-area {
@@ -711,7 +704,7 @@ svg.ic {
   color: var(--mut);
 }
 
-/* 转换中隐藏快捷键提示:为同行动度条腾位,动作栏高度恒定(v4r2r2 防跳动) */
+/* 转换中隐藏快捷键提示:为同行动度条腾位,动作栏高度恒定 */
 .actionbar:has(#progressArea:not(.hidden)) .hint {
   display: none;
 }
@@ -1299,7 +1292,7 @@ input[type="range"]::-webkit-slider-thumb {
 
   /* 矮窗档舞台域规则(.drop-core/.caps/.rules)在 drop.css §7 ——
    * 级联纪律:base 先于 drop 加载,舞台域覆盖若留在本文件会被 drop.css 同名
-   * 规则按序压掉(v4r2 踩坑:矮窗压缩与半屏折行曾整段失效) */
+   * 规则按序压掉(矮窗压缩与半屏折行曾整段失效) */
 
   .feed {
     height: 86px;

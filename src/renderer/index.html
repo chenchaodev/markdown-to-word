@@ -8,8 +8,8 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'"
     />
     <title data-i18n="app.title">Markdown 转换工具</title>
-    <!-- B6 FOUC 缓解:尽早按 localStorage 语言镜像设置 <html lang>(外部脚本,CSP 'self' 放行;
-         决策记录见 lang-bootstrap.js 头注释) -->
+    <!-- 尽早按 localStorage 语言镜像设置 <html lang>(外部脚本,CSP 'self' 放行;
+          决策记录见 lang-bootstrap.js 头注释) -->
     <script src="./lang-bootstrap.js"></script>
     <!-- 四域样式按序引入(base → drop → settings → dialogs),级联顺序与拆分前一致 -->
     <link rel="stylesheet" href="./style/base.css" />
@@ -86,10 +86,10 @@
       <!-- ══ 内容区:主舞台(三态)/ 历史浮出面板(常驻标题条)/ 消息区(feed) -->
       <div class="content">
         <!-- 主舞台(#dropZone 兼任拖放与点击入口,data-stage 驱动三态切换)。
-             几何恒定契约(UI 改版 v4 ①):内部 .stage 高度锁定(--panes-h + --quickbar-h,
-             三种舞台状态同高,基准 = 空态文稿台自然高度);历史开合 / 消息增减 /
-             进度条出现均不改写本区块一个像素;.stage-wrap 加 scrollbar-gutter: stable
-             杜绝滚动条出现引起的水平位移(历史开合左右跳动根因) -->
+              几何恒定契约:内部 .stage 高度锁定(--panes-h + --quickbar-h,
+              三种舞台状态同高,基准 = 空态文稿台自然高度);历史开合 / 消息增减 /
+              进度条出现均不改写本区块一个像素;.stage-wrap 加 scrollbar-gutter: stable
+              杜绝滚动条出现引起的水平位移(历史开合左右跳动根因) -->
         <div
           id="dropZone"
           class="stage-wrap"
@@ -102,8 +102,8 @@
           <div class="stage">
             <div class="stage-panes">
               <!-- ▩ 空态:待印文稿台(全站唯一签名元素:四角裁切线 + 直排题字 + 钤印)。
-                   UI 改版 v4r2:文稿台纸面壳上移为 .stage 常驻容器(空/文件态共用,
-                   消除导入文件时的容器突变),本层只保留签名装饰与投放内容 -->
+                    文稿台纸面壳上移为 .stage 常驻容器(空/文件态共用,
+                    消除导入文件时的容器突变),本层只保留签名装饰与投放内容 -->
               <section class="pane pane-empty" data-i18n-aria-label="drop.areaLabel" aria-label="文件选择">
                 <div class="drop-layer">
                   <div class="rules" aria-hidden="true"></div>
@@ -136,10 +136,10 @@
                 </div>
               </section>
 
-              <!-- ▩ 文件队列(UI 改版 v4 三态统一②):单文件 = 只有一行的队列,
-                   grip 与序号仅在多文件渲染(n≥2);预览仅单文件可见;
-                   底部批量/合并语义说明仅 n≥2 显示。id 契约保留:
-                   multiCount/multiList/previewBtn/appendFileBtn/clearListBtn -->
+              <!-- ▩ 文件队列(三态统一):单文件 = 只有一行的队列,
+                    grip 与序号仅在多文件渲染(n≥2);预览仅单文件可见;
+                    底部批量/合并语义说明仅 n≥2 显示。id 契约保留:
+                    multiCount/multiList/previewBtn/appendFileBtn/clearListBtn -->
               <section class="pane pane-files" aria-label="文件队列">
                 <div class="ph">
                   <span class="ph-title" data-i18n="stage.manuscript">文 稿</span>
@@ -170,10 +170,10 @@
               </section>
             </div>
 
-            <!-- ▩ 快速参数条(UI 改版 v4 落位③):舞台内底部常驻,预设/纸张/方向/输出目录
-                 四项高频转换参数主界面直达;与抽屉同源双向同步(paper/orientation radio
-                 同 name 自动成组,select/chip 经 settings-bindings 显式镜像),
-                 抽屉仍为完整真相源(七组 IA 不缺项) -->
+            <!-- ▩ 快速参数条:舞台内底部常驻,预设/纸张/方向/输出目录
+                  四项高频转换参数主界面直达;与抽屉同源双向同步(paper/orientation radio
+                  同 name 自动成组,select/chip 经 settings-bindings 显式镜像),
+                  抽屉仍为完整真相源(七组 IA 不缺项) -->
             <div class="quick-bar" id="quickBar" role="group" data-i18n-aria-label="quick.title" aria-label="快速转换参数">
               <label class="qb-field">
                 <span class="qb-label" data-i18n="settings.presetLabel">模板预设</span>
@@ -214,10 +214,10 @@
           </div>
         </div>
 
-        <!-- ▩ 历史记录常驻折叠条(UI 改版 v4 ④改浮出面板):标题条 40px 常驻占位,
-             无记录整块不渲染(hidden);展开体改为 absolute 浮层向上盖住舞台下部——
-             不挤压任何元素,舞台/消息区零位移。空态默认展开、有文件自动收起、
-             手动可切换(data-open);列表内部滚动约 3 行 -->
+        <!-- ▩ 历史记录常驻折叠条:标题条 40px 常驻占位,
+              无记录整块不渲染(hidden);展开体改为 absolute 浮层向上盖住舞台下部——
+              不挤压任何元素,舞台/消息区零位移。空态默认展开、有文件自动收起、
+              手动可切换(data-open);列表内部滚动约 3 行 -->
         <section id="historyBar" class="history hidden" data-open="false" data-i18n-aria-label="history.title" aria-label="最近转换">
           <header class="h-head">
             <button type="button" id="histToggle" class="h-toggle" aria-expanded="true">
@@ -239,7 +239,7 @@
         <div id="messageSlot" class="feed">
           <p id="status" class="status" role="status" aria-live="polite"></p>
 
-          <!-- B9 拖放反馈细化:被跳过的非 Markdown 文件名列表(可折叠) -->
+          <!-- 被跳过的非 Markdown 文件名列表(可折叠) -->
           <details id="dropSkipped" class="summary-warnings hidden">
             <summary id="dropSkippedToggle" class="summary-warnings-summary"></summary>
             <ul id="dropSkippedList" class="summary-warnings-list"></ul>
@@ -294,8 +294,8 @@
 
       <!-- ══ 底部动作栏:快捷键提示 + 合并转换(多文件态)+ 主按钮(开始/批量)+ 进度行 -->
       <footer class="actionbar">
-        <!-- 转换进度(P2-2 精简行):旋转指示 + 细进度条 + mono 百分比 + 取消按钮,
-             转换中显示;布局样式见 base.css §3.5(mockup §9 progress 模式) -->
+        <!-- 转换进度:旋转指示 + 细进度条 + mono 百分比 + 取消按钮,
+              转换中显示;布局样式见 base.css §3.5(mockup §9 progress 模式) -->
         <div id="progressArea" class="progress-area hidden">
           <span class="spin" aria-hidden="true"></span>
           <div
@@ -445,10 +445,10 @@
           <!-- ── 02 排版:物理页面 + 字符段落(合并原 02 页面 + 03 文字,✅入预设) ── -->
           <section class="sec" data-group="typography">
             <div class="sec-h"><span class="sec-num">02</span><span class="sec-title" data-i18n="settings.groupTypography">排 版</span><span class="sec-rule"></span></div>
-            <!-- 界面重构 v3:枚举 ≤5 → seg 分段(guidelines §3.1 映射表);radio 语义保留,
-                 name="paper"/name="orientation" 与 settings-bindings 的组绑定对应。
-                 UI 改版 v4:同名 radio 组在快速参数条中镜像一份(document 级同组成组),
-                 点击任一侧即互斥同步,绑定与回填零改动 -->
+            <!-- 枚举 ≤5 → seg 分段(guidelines §3.1 映射表);radio 语义保留,
+                  name="paper"/name="orientation" 与 settings-bindings 的组绑定对应。
+                  同名 radio 组在快速参数条中镜像一份(document 级同组成组),
+                  点击任一侧即互斥同步,绑定与回填零改动 -->
             <div class="row">
               <span class="row-l" data-i18n="settings.paper">纸张</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.paper" aria-label="纸张">
@@ -510,8 +510,8 @@
               </datalist>
             </div>
             <p id="fontAsciiError" class="field-error hidden"></p>
-            <!-- 界面重构 v3:有界离散数值 → stepper(guidelines §3.1);input id 不变,
-                 ± 按钮经 settings-bindings 步进并走既有 change 校验/持久化链路 -->
+            <!-- 有界离散数值 → stepper(guidelines §3.1);input id 不变,
+                  ± 按钮经 settings-bindings 步进并走既有 change 校验/持久化链路 -->
             <div class="row">
               <label class="row-l" for="bodySizePt"><span data-i18n="settings.bodySize">正文字号</span><span class="setting-label-hint" data-i18n="settings.bodySizeHint">(pt)</span></label>
               <span class="stepper">
@@ -521,7 +521,7 @@
               </span>
             </div>
             <p id="bodySizeError" class="field-error hidden"></p>
-            <!-- 界面重构 v3:有界连续数值 → range 滑杆 + mono 实时回显(guidelines §3.1) -->
+            <!-- 有界连续数值 → range 滑杆 + mono 实时回显(guidelines §3.1) -->
             <div class="row">
               <label class="row-l" for="lineSpacing"><span data-i18n="settings.lineSpacing">行距倍数</span><span class="setting-label-hint" data-i18n="settings.lineSpacingHint">(倍数)</span></label>
               <span class="row-r">
@@ -743,8 +743,8 @@
                 <span data-i18n="settings.pdfCssLabel">PDF 自定义 CSS</span>
                 <span class="scope-tag" style="margin-left: 6px" data-i18n="settings.tagPdfOnly">仅 PDF</span>
               </div>
-              <!-- 界面重构 v3:IA 06 规定 textarea 形态(settings-ia §2/§3.1 路径类同构之外
-                    的原始样式编辑位);与导入/清除按钮同写 settings.pdfCss -->
+              <!-- IA 06 规定 textarea 形态(settings-ia §2/§3.1 路径类同构之外
+                     的原始样式编辑位);与导入/清除按钮同写 settings.pdfCss -->
               <textarea
                 id="pdfCssText"
                 class="ta"
@@ -801,8 +801,8 @@
           </div>
         </div>
         <footer class="drawer-foot">
-          <!-- 界面重构 v3:mockup 抽屉底栏左位「恢复默认」(转换相关各组复位;
-                07 应用偏好与自定义预设保留,语义见 settings-bindings 接线) -->
+          <!-- mockup 抽屉底栏左位「恢复默认」(转换相关各组复位;
+                 07 应用偏好与自定义预设保留,语义见 settings-bindings 接线) -->
           <button
             type="button"
             id="drawerResetBtn"
@@ -829,7 +829,7 @@
       aria-labelledby="completeDialogTitle"
       aria-describedby="completeDialogDesc"
     >
-      <!-- 界面重构 v3:dialog--complete 对齐 mockup 完成弹窗(482px 档宽 + 钤印落款,
+      <!-- dialog--complete 对齐 mockup 完成弹窗(482px 档宽 + 钤印落款,
            钤印动画仅播一次,reduced-motion 全局兜底);既有 id 全部保留 -->
       <div class="dialog dialog--complete">
         <div class="dialog-head">
@@ -866,7 +866,7 @@
     </div>
   </div>
 
-  <!-- 转换预检报告(F6):仅当发现问题弹出,列出警告 + 继续/取消 -->
+   <!-- 转换预检报告:仅当发现问题弹出,列出警告 + 继续/取消 -->
   <div
     id="precheckDialog"
     class="dialog-overlay hidden"
