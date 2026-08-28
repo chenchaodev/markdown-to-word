@@ -1,5 +1,5 @@
 /**
- * 批注语法(批次 11):行内 `[锚定文本]{批注=内容}`。
+ * 批注语法:行内 `[锚定文本]{批注=内容}`。
  *
  * 解析:micromark text 扩展将整段识别为单一 token(commentText),from-markdown
  * 扩展转为 mdast comment 节点(anchor/content 为行内 PhrasingContent[],经同一

@@ -1,8 +1,8 @@
 /**
- * 内联格式白名单(批次 5 契约):docx/pdf 双格式共享的单一实现。
- * 原 docx/render.ts 与 pdf/render.ts 各持一份逐字副本(注释互指「双格式契约,须同步修改」),
- * 抽取后任何标签集/判定规则变更只改此处,双格式自动一致。
- * 渲染差异保留在各侧扫描器(双向同步指针,CORE-11 补全):
+ * 内联格式白名单:docx/pdf 双格式共享的单一实现。
+ * 原 docx/render.ts 与 pdf/render.ts 各持一份逐字副本,抽取后任何标签集/判定规则
+ * 变更只改此处,双格式自动一致。
+ * 渲染差异保留在各侧扫描器(双向同步指针):
  * - docx:src/core/docx/handlers/inline-html.ts normalizeInlineHtml(节点流合并)
  * - pdf:src/core/pdf/rules/html.ts matchAllowedHtmlExpression(源码栈扫描)
  * 两份扫描算法对 br/自闭合/嵌套的处理规则逐条对齐,修改任一侧须同步另一侧。
@@ -44,7 +44,7 @@ export function isAllowedInlineHtml(content: string): boolean {
       if (!/^[a-z][a-z0-9]*$/.test(name)) return false; // 带属性/非法开标签
       if (!ALLOWED_INLINE_TAGS.has(name)) return false;
       if (name === "br") {
-        // br 空标签不入栈(B3:自闭合 <br/> 走同一分支)
+        // br 空标签不入栈;自闭合 <br/> 走同一分支
       } else {
         if (selfClosed) return false; // 非空标签自闭合不放行(保守)
         stack.push(name);

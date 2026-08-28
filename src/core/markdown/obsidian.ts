@@ -36,7 +36,7 @@ export function normalizeObsidian(md: string, options: ObsidianOptions = {}): st
     let heading = "";
     const hashIdx = target.indexOf("#");
     if (hashIdx >= 0) {
-      heading = target.slice(hashIdx); // 含 #
+      heading = target.slice(hashIdx);
       target = target.slice(0, hashIdx).trim();
     }
     const isEmbed = bang === "!";
@@ -48,11 +48,10 @@ export function normalizeObsidian(md: string, options: ObsidianOptions = {}): st
         const imgPath = attachmentFolder ? `${attachmentFolder}/${target}` : target;
         return `![${alt}](${imgPath})`;
       }
-      // 笔记嵌入 → 当作链接
+      // 笔记嵌入当作链接处理
       const text = alias || target;
       return `[${text}](${target}${noteExt}${heading})`;
     }
-    // 普通双链 → 标准链接
     const text = alias || target;
     return `[${text}](${target}${noteExt}${heading})`;
   });

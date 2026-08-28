@@ -5,7 +5,7 @@
  * - 悬空交叉引用(引用 #(eq|sec|fig|tab):label 但全文未定义对应 {#...:label});
  * - 未标注语言的代码块(``` 后无语言标识)。
  * 纯函数 + 依赖注入(exists 默认 fs.existsSync,便于测试与沙箱复用)。
- * 设计:F6 转换预检报告;无问题返回空数组(renderer 侧静默继续转换)。
+ * 无问题返回空数组(renderer 侧静默继续转换)。
  */
 import { existsSync } from "node:fs";
 import path from "node:path";

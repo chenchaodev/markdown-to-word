@@ -36,7 +36,6 @@ export function cleanupMarkdown(md: string, options: AiCleanupOptions = {}): str
 }
 
 function cleanupBody(body: string, opts: Required<AiCleanupOptions>): string {
-  // 统一换行
   const lines = body.replace(/\r\n?/g, "\n").split("\n");
   let inFence = false;
   let fenceChar = "";

@@ -1,5 +1,5 @@
 /**
- * 表格列宽信号解析(F2 表格列宽控制,纯模块零运行时导入):
+ * 表格列宽信号解析(纯模块零运行时导入):
  * GFM 无标准列宽语法,采用 Pandoc pipe-tables 行为——分隔行各单元格 dash 数
  * 比例作为列宽信号。docx(mdast position)/pdf(markdown-it token.map)两侧
  * 共用同一实现,保证双管线语义对齐。

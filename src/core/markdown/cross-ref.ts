@@ -1,12 +1,11 @@
 /**
- * 交叉引用契约单源(B7 第 1 波):fig/tab/sec 三类引用的类型常量与
- * 章节 label({#sec:label})正则族收敛于此,docx/pdf 两侧渲染共用,
- * 消除原「同一契约两份平行定义、注释互指勿单侧改」的人肉同步。
+ * 交叉引用契约单源:fig/tab/sec 三类引用的类型常量与章节 label({#sec:label})
+ * 正则族收敛于此,docx/pdf 两侧渲染共用,消除原两份平行定义的人肉同步。
  * 纯模块:零导入,无运行时依赖。
  */
 
 /**
- * 交叉引用类型常量(批次 10 功能 2):fig/tab/sec 三类引用集中定义。
+ * 交叉引用类型常量:fig/tab/sec 三类引用集中定义。
  * - label 前缀:行内链接 #<prefix>:<label> 匹配([\w-]+);
  * - defaultText:引用文本恰为此文本时替换为编号(其他文本保持原样仍跳转);
  * - danglingText:查表未命中时默认文本的占位;
@@ -20,7 +19,7 @@ export const CROSS_REF_KINDS = {
 
 export type CrossRefKind = keyof typeof CROSS_REF_KINDS;
 
-/** 标题行内 label 后缀(批次 10 功能 2:{#sec:label};捕获组 1 = label)。
+/** 标题行内 label 后缀({#sec:label};捕获组 1 = label)。
  *  parse.ts 提取 label、渲染侧剥离标题文本共用同一实例(剥离场景忽略捕获组,
  *  replace 行为与无捕获组版本逐字等价)。 */
 export const SEC_LABEL_RE = /\s*\{#sec:([\w-]+)\}$/;
@@ -37,10 +36,10 @@ export function stripSecLabelSuffix(text: string): string {
   return text.replace(SEC_LABEL_RE, "");
 }
 
-/* ---------- 正则族单源(CORE-3):docx/pdf 两侧渲染共用,勿散落硬编码 ---------- */
+/* ---------- 正则族单源:docx/pdf 两侧渲染共用,勿散落硬编码 ---------- */
 
-/** 公式 label 段正则(9d):整段纯文本串接恰为 {#eq:label} 即命中(B3 起粗斜体
- *  包裹亦命中),捕获组 1 = label。docx equations.ts 与 pdf equation.ts 共用。 */
+/** 公式 label 段正则:整段纯文本串接恰为 {#eq:label} 即命中(粗斜体包裹亦命中),
+ *  捕获组 1 = label。docx equations.ts 与 pdf equation.ts 共用。 */
 export const EQ_LABEL_RE = /^\{#eq:([\w-]+)\}$/;
 
 /** 公式引用 href 正则:[式](#eq:label) 链接 url 匹配,捕获组 1 = label。
