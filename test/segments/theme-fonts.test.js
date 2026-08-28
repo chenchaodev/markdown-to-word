@@ -1,7 +1,7 @@
 /**
  * 主题字体集中配置专断言(锁 AGENTS 硬约束「docx 渲染字体集中配置,中文 eastAsia
- * 不允许散落硬编码」;审计盲区 B11-3):
- * 架构现状(B7 后,以实际实现为准):theme.ts 只收与用户设置无关的固定样式常量,
+ * 不允许散落硬编码」):
+ * 架构现状(以实际实现为准):theme.ts 只收与用户设置无关的固定样式常量,
  * 正文 eastAsia 字体唯一来源 = core/typography.ts DEFAULT_TYPOGRAPHY(默认 微软雅黑),
  * 经 renderDocx 注入 styles.default。断言面:
  * - theme.ts 导出的固定样式常量齐全且非空(集中配置载体存在)

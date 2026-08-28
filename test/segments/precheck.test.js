@@ -1,5 +1,5 @@
 /**
- * F6 转换预检核心逻辑断言:缺失本地图片 / 悬空交叉引用 / 未标注语言代码块;
+ * 转换预检核心逻辑断言:缺失本地图片 / 悬空交叉引用 / 未标注语言代码块;
  * 注入 exists 模拟文件系统,不依赖真实磁盘与 Electron。
  * 单源:dist/core/markdown/precheck.js(precheckMarkdown)。
  */

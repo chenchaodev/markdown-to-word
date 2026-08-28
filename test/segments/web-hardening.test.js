@@ -1,7 +1,6 @@
 /**
- * WebContents 加固段(src/main/services/web-hardening.ts;TEST-4 覆盖缺口补测,
- * main/services 此前唯二无专属测试的服务之二):
- * 实现事实(读源码确认,B1 安全审计语义):
+ * WebContents 加固段(src/main/services/web-hardening.ts;main/services 此前无专属测试的服务,覆盖缺口补测):
+ * 实现事实(读源码确认):
  * - isHttpUrl:仅 http/https(大小写不敏感)放行;ftp:/javascript:/file:/about: 等一律拒绝
  * - openExternalIfHttp:非 http(s) 直接跳过(无副作用、不抛);http(s) 交 shell.openExternal
  *   (测试内以记录桩替换 openExternal 隔离真实外开副作用,并断言分流调用)

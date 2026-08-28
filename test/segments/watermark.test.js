@@ -1,5 +1,5 @@
 /**
- * 文字水印验收(F5):
+ * 文字水印验收:
  * docx 断言(watermark text 进入 header XML / 浅灰配色 #999999 / 空 text 不生成水印头);
  * pdf 断言(html 含 .wm 覆盖层元素与旋转/不透明度 CSS / 空 text 无水印元素);
  * 不依赖真打印。另断言默认配置下 watermark.text 为空(零渲染)。

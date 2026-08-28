@@ -7,9 +7,9 @@
  * - sanitizeTypography:bodySizePt 8-24、lineSpacing 1.0-2.5 范围校验,越界 → DEFAULT_TYPOGRAPHY
  *   值;字体须非空字符串、布尔字段须 boolean、align 枚举(left/justify);整块兜底,
  *   始终返回合法完整对象
- * - sanitizePatch:仅 SETTING_KEYS 14 键(version/format/pageSetup/typography/breakBeforeH1/
- *   toc/equationNumbering/afterConvert/outputDir/customPresets/pdfCss/language/theme/headerFooter)白名单,未知键过滤;非法值回退默认
- * - sanitizeCustomPresets(批次 11 迭代 3):非数组 → [];条目须对象且 name 非空;
+ * - sanitizePatch:仅 SETTING_KEYS 白名单(version/format/pageSetup/typography/breakBeforeH1/
+ *   toc/equationNumbering/afterConvert/outputDir/customPresets/pdfCss/language/theme/headerFooter),未知键过滤;非法值回退默认
+ * - sanitizeCustomPresets:非数组 → [];条目须对象且 name 非空;
  *   typography 逐字段钳制、pageSetup 非法对象整条丢弃;同名去重(保留先出现);
  *   截断 MAX_CUSTOM_PRESETS=10
  * - loadSettings:JSON parse 失败 / 形状非法(isValidSettings)→ 返回 DEFAULT_SETTINGS 引用
@@ -17,14 +17,14 @@
  * - settingsFilePath = app.getPath("userData")/settings.json(无注入点)→ 测试备份真实文件、
  *   finally 恢复;模块级 settingsCache 惰性缓存 → 每场景用 query-string 动态 import 取
  *   全新模块实例(实证:Node ESM 同文件不同 query = 独立实例,缓存按 URL 键;
- *   备份/全新实例样板已迁移 test/common/settings.js 公共助手,TEST-9)
+ *   备份/全新实例样板已迁移 test/common/settings.js 公共助手)
  * - sanitizePageSetup/sanitizeTypography/sanitizePatch 均未导出 → 经 updateSettings 公开
  *   路径断言(patch 合并 + sanitize + 持久化 + 返回 next)
- * - isValidSettings(批次 15 R3 起导出):整文件形状校验纯函数直测——任一字段非法
+ * - isValidSettings:整文件形状校验纯函数直测——任一字段非法
  *   (如 marginTop:"abc")→ false(loadSettings 据此整体回退 DEFAULT_SETTINGS 引用);
  *   合法完整对象 → true(合法值保留)
  * - saveSettings 写队列(promise 链):并发调用串行执行,调用序 = 写盘序,链尾即最终态
- *   (M4,防并发交错写同一 tmp 文件丢更新;失败不截断队列,错误由各自调用方处理)
+ *   (防并发交错写同一 tmp 文件丢更新;失败不截断队列,错误由各自调用方处理)
  */
 import fs from "node:fs/promises";
 import { app } from "electron";
@@ -111,7 +111,7 @@ export async function run() {
     const r8c = await mod.updateSettings({ tocMode: "bogus" });
     assert(r8c.tocMode === "static", "非法 tocMode 应回退默认 static");
 
-    // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 16 键核对 ----
+    // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 键核对 ----
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
@@ -122,7 +122,7 @@ export async function run() {
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));
     assert(!("evil" in persisted) && !("xss" in persisted), "写盘内容不应含白名单外键");
 
-    // ---- 5b. pdfCss(批次 16):合法 string 保留 / 非 string 回退默认空串 ----
+    // ---- 5b. pdfCss:合法 string 保留 / 非 string 回退默认空串 ----
     const r9b = await mod.updateSettings({ pdfCss: "body { color: red; }" });
     assert(r9b.pdfCss === "body { color: red; }", "pdfCss 合法 string 应保留");
     const r9c = await mod.updateSettings({ pdfCss: 123 });
@@ -130,7 +130,7 @@ export async function run() {
     const r9d = await mod.updateSettings({ pdfCss: "" });
     assert(r9d.pdfCss === "", "pdfCss 空串应保留(清除语义)");
 
-    // ---- 5c. theme(B13):合法枚举保留 / 枚举外回退默认 system ----
+    // ---- 5c. theme:合法枚举保留 / 枚举外回退默认 system ----
     const r9e = await mod.updateSettings({ theme: "dark" });
     assert(r9e.theme === "dark", "theme 合法值(dark)应保留");
     const r9f = await mod.updateSettings({ theme: "light" });
@@ -181,7 +181,7 @@ export async function run() {
     );
     console.log("[ok] settings:非法边距(非有限数)整文件回退默认");
 
-    // ---- 7c. isValidSettings 直测(批次 15 R3:导出纯函数,不依赖磁盘 IO) ----
+    // ---- 7c. isValidSettings 直测(导出纯函数,不依赖磁盘 IO) ----
     // 依据(dist/main/persist/settings.ts isValidSettings):整文件形状校验——任一字段非法
     // → false(loadSettings 据此整体回退 DEFAULT_SETTINGS 引用);合法完整对象 → true。
     // typography/customPresets 不参与形状校验(loadSettings 单独 sanitize)。
@@ -209,7 +209,7 @@ export async function run() {
     const legacyNoLang = { ...validSettings };
     delete legacyNoLang.language;
     assert(mod.isValidSettings(legacyNoLang) === true, "缺 language 的旧文件应通过形状校验");
-    // theme 缺失(B13,旧文件)视为合法,存在则须为 system/light/dark
+    // theme 缺失(旧文件)视为合法,存在则须为 system/light/dark
     const legacyNoTheme = { ...validSettings };
     delete legacyNoTheme.theme;
     assert(mod.isValidSettings(legacyNoTheme) === true, "缺 theme 的旧文件应通过形状校验");
@@ -305,7 +305,7 @@ export async function run() {
     );
 
     // ---- 10. saveSettings 写队列串行化:并发 updateSettings 不交错、不丢更新 ----
-    // M4:saveSettings 经 promise 链串行(write tmp + rename 原子段不插入其它写);
+    // saveSettings 经 promise 链串行(write tmp + rename 原子段不插入其它写);
     // 并发调用全部成功,最终落盘 = 最后一次调用的完整状态(调用序 = 写盘序,
     // next 在调用时同步计算合并当时缓存,语义不变),无残留 .tmp。
     const [rA, rB, rC, rD] = await Promise.all([
@@ -339,7 +339,7 @@ export async function run() {
 
 console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文件回退/并发写队列 断言通过");
 
-    // ---- 11. customPresets(批次 11 迭代 3):合法保留/非法丢弃/同名去重/上限截断/非数组回退 ----
+    // ---- 11. customPresets:合法保留/非法丢弃/同名去重/上限截断/非数组回退 ----
     const r11 = await mod.updateSettings({
       customPresets: [
         { name: "我的模板", typography: { bodySizePt: 13, fontEastAsia: "宋体" }, pageSetup: { marginTop: -5, paper: "A4", orientation: "portrait", marginBottom: 20, marginLeft: 30, marginRight: 40 } },

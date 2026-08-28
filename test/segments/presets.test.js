@@ -1,5 +1,5 @@
 /**
- * TEMPLATE_PRESETS / matchesPreset 契约单测(R8 收尾批 1 C2;R1 下沉预设的回归锚):
+ * TEMPLATE_PRESETS / matchesPreset 契约单测:
  * - matchesPreset:预设与「自身数据构成的设置」自匹配;default 预设与 DEFAULT_SETTINGS
  *   匹配;微调任一排版/页面字段 → 不匹配;
  * - 值域契约:全部预设的 字号/行距/边距 落在范围常量(BODY_SIZE/LINE_SPACING/MARGIN)内

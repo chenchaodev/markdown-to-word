@@ -2,7 +2,7 @@
  * 标题栏 overlay 配色单源测试(src/main/windows/title-bar-overlay.ts 纯逻辑层;
  * 测试经 dist/main/windows/title-bar-overlay.js,运行于 Electron 主进程——
  * 模块 import nativeTheme,须在 Electron 环境加载):
- * 断言面(界面重构 v3):
+ * 断言面:
  * - 常量契约:light/dark 色值与高度与视觉基准一致(#F7F7F4/#1E2126、#191D23/#E9E7E1、44px),
  *   防 BrowserWindow 初始 options 与运行时同步两侧漂移;
  * - isThemePreference IPC 入参守卫:三枚举放行,非法值(null/数字/未知串)拒绝;

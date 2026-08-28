@@ -1,8 +1,8 @@
 /**
- * renderer 纯函数层直测(B1,R8 收尾评审缺口):
+ * renderer 纯函数层直测:
  * - isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT 原在 utils.ts,
- *   被 dom.ts 顶层 import 挡住无法 Node 直测;R8 收尾评审定为缺口,
- *   B1 拆出 pure.ts(零 import;批③移至 src/renderer/state/)后经 dist/renderer/state/pure.js 直接断言
+ *   被 dom.ts 顶层 import 挡住无法 Node 直测;后拆出 pure.ts(零 import;移至 src/renderer/state/)
+ *   经 dist/renderer/state/pure.js 直接断言
  * - 契约:utils.ts re-export 保持 renderer 内部 import 路径不变
  *   (renderer.ts 等仍从 ./utils.js 导入),本段直测 pure.js 即测同一实现
  */
@@ -120,7 +120,7 @@ export async function run() {
     ["read", "正在读取文件…"],
     ["render", "正在渲染文档…"],
     ["done", "正在完成…"],
-    // B9:pdf 链路细分阶段
+  // pdf 链路细分阶段
     ["parse", "正在解析 Markdown…"],
     ["inline", "正在处理图片…"],
     ["mermaid", "正在渲染 Mermaid 图表…"],
@@ -147,7 +147,7 @@ export async function run() {
     ["read", 15],
     ["render", 70],
     ["done", 95],
-    // B9:pdf 链路细分阶段(单调递增,不回退)
+    // pdf 链路细分阶段(单调递增,不回退)
     ["parse", 30],
     ["inline", 45],
     ["mermaid", 55],
@@ -167,7 +167,7 @@ export async function run() {
   }
   console.log("[ok] STAGE_PERCENT:read=15/render=70/done=95 + B9 pdf 细分(parse/inline/mermaid/katex/print)+ 与 STAGE_TEXT 键集一致 断言通过");
 
-  // ---------- actionableError(B9:错误码 → 可操作文案,未识别透传) ----------
+  // ---------- actionableError(错误码 → 可操作文案,未识别透传) ----------
   const fakeT = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
   const errCases = [
     ["EBUSY: resource busy or locked, open 'C:\\a.docx'", "error.fileBusy"],
@@ -193,7 +193,7 @@ export async function run() {
   }
   console.log(`[ok] actionableError:${errCases.length} 组错误码映射(EBUSY/ENOENT/EACCES/ENOSPC/长路径)+ ${passthrough.length} 组未识别透传 断言通过`);
 
-  // ---------- partitionDuplicates(B9:拖放反馈细化,重复文件单独拆分) ----------
+  // ---------- partitionDuplicates(拖放反馈细化,重复文件单独拆分) ----------
   const existing = ["C:\\a.md", "C:\\b.md"];
   const dup1 = partitionDuplicates(existing, ["C:\\c.md", "C:\\a.md", "C:\\d.md"]);
   if (JSON.stringify(dup1.added) !== JSON.stringify(["C:\\c.md", "C:\\d.md"]) || JSON.stringify(dup1.duplicates) !== JSON.stringify(["C:\\a.md"])) {
@@ -210,7 +210,7 @@ export async function run() {
   }
   console.log("[ok] partitionDuplicates:与既有列表去重/incoming 内部重复/空列表 断言通过");
 
-  // ---------- selectionStatus(B9:摘要 + 非 Markdown 跳过 + 重复文件 三段组合句式) ----------
+  // ---------- selectionStatus(摘要 + 非 Markdown 跳过 + 重复文件 三段组合句式) ----------
   const selCases = [
     // [summary, skipped, duplicates, 期望 key 或原文]
     ["已选择 2 个文件", 0, 0, "已选择 2 个文件"], // 无跳过无重复 → 摘要原样
@@ -226,7 +226,7 @@ export async function run() {
   }
   console.log(`[ok] selectionStatus:${selCases.length} 组句式组合(原样/仅跳过/仅重复/并存合并)断言通过`);
 
-  // ---------- formatRecentTime(批次 11:最近转换相对时间) ----------
+  // ---------- formatRecentTime(最近转换相对时间) ----------
   // 固定 now = 2026-08-13 15:00(本地时间构造,避免时区波动;全部断言注入 now)
   const NOW = new Date(2026, 7, 13, 15, 0).getTime();
   const cases = [
@@ -261,7 +261,7 @@ export async function run() {
   }
   console.log("[ok] formatRecentTime:今天/昨天/今年日期/跨年日期/跨月边界/前一天同一时刻/补零/默认 now 断言通过");
 
-  // ---------- batchRetryPaths / batchSuccessPaths(批次 11 迭代 2:重试失败项 / 复制全部路径) ----------
+  // ---------- batchRetryPaths / batchSuccessPaths(重试失败项 / 复制全部路径) ----------
   const items = [
     { ok: true, file: "C:\\ok1.md", outputPath: "C:\\out1.docx" },
     { ok: false, file: "C:\\bad.md", error: "boom" }, // 失败 → 重试目标

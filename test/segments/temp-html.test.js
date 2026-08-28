@@ -1,7 +1,6 @@
 /**
  * 临时 HTML 文件生命周期段(src/main/services/temp-html.ts 纯 Node 层,零 Electron API):
- * TEST-4 覆盖缺口补测(main/services 此前唯二无专属测试的服务之一)。
- * 实现事实(读源码确认,MR-14 加固后):
+ * 实现事实(读源码确认):
  * - writeTempHtml:写入 os.tmpdir(),命名 m2w-{pid}-{time}-{uuid短}.html
  *   (随机段为 crypto.randomUUID() 前 8 位,CSPRNG;非 Math.random);
  * - 'wx' 独占创建标志:文件已存在即 EEXIST 换名重试(防碰撞覆盖;

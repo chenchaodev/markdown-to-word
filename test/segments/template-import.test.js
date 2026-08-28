@@ -1,5 +1,5 @@
 /**
- * F9 docx 模板导入(浅导入 v1)测试:
+ * docx 模板导入(浅导入 v1)测试:
  * - 用 jszip 构造最小 .docx(Normal/Heading1 样式 + 文档 sectPr),验证 importDocxTemplate
  *   提取字体/字号(标题样式优先)+ 页面尺寸/边距(纸张匹配 + 朝向判定)
  * - 复用既有单 convert 通路,此测试锁定提取映射不被回归

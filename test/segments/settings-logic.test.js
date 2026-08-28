@@ -1,5 +1,5 @@
 /**
- * 设置面板纯逻辑层直测(src/renderer/settings/settings-logic.ts;批次 12 自 settings-panel.ts 抽出):
+ * 设置面板纯逻辑层直测(src/renderer/settings/settings-logic.ts;自 settings-panel.ts 抽出):
  * 零 DOM 依赖纯函数,经 dist/renderer/settings/settings-logic.js 直接断言(Node 段,零 Electron API)。
  * 断言面(可验证事实,与抽取前行为逐一对应):
  * - validatePresetName:空名/纯空白 → 「请输入预设名称」;同名(trim 后比较)→
@@ -10,14 +10,14 @@
  * - allPresets:硬编码 3 项在前 + 自定义项追加末尾,自定义项转 custom: id
  * - customPresetNameFromId:custom: 前缀 → 名称;非自定义 → null;空名 → ""
  * - clampMargin:0/1000 边界保留、负数钳 0、超限钳 1000、小数保留
- * - resolvePresetSelection(批次 13 bug 回归):当前选中自定义预设且值=硬编码预设值时
+ * - resolvePresetSelection:当前选中自定义预设且值=硬编码预设值时
  *   不被弹回;选中项不匹配/已删除 → 回退全局匹配;无匹配 → default;硬编码选中保持
- * - 批次 15(R2)新增:mergeSettingsWithDefaults(loadSettings 防御性合并)、
+ * - mergeSettingsWithDefaults(loadSettings 防御性合并)、
  *   resolvePresetHint(回填 hint 计算)、outputDirDisplayText(输出目录占位文案)、
  *   buildCustomPresetEntry(另存为预设快照)、removeCustomPresetByName(按名删除保序)、
  *   parseMarginValue(边距输入解析+钳制)、validateNumberRange(字号/行距范围校验)、
  *   settingsToControlValues(设置对象 → 控件回填值映射)
- * - B13 新增:mergeSettingsWithDefaults/settingsToControlValues 的 theme 字段、
+ * - theme 字段:mergeSettingsWithDefaults/settingsToControlValues 的 theme、
  *   applyThemeOn(data-theme 属性应用纯函数:light/dark 设属性,system 移除属性)
  */
 import {
@@ -126,7 +126,7 @@ export async function run() {
   assert(clampMargin(12.5) === 12.5, "区间内小数应保留");
   console.log("[ok] clampMargin:0/1000 边界保留、负数/超限钳制、小数保留 断言通过");
 
-  // ---------- resolvePresetSelection(批次 13 bug 回归:自定义预设不被弹回硬编码项) ----------
+  // ---------- resolvePresetSelection(自定义预设不被弹回硬编码项) ----------
   const paperTpl = TEMPLATE_PRESETS.find((p) => p.id === "paper");
   const paperLike = () => ({
     typography: { ...paperTpl.typography },
@@ -166,7 +166,7 @@ export async function run() {
   );
   console.log("[ok] resolvePresetSelection:选中保持(不弹回)/回退全局匹配/已删回退/无匹配 default/硬编码保持 断言通过");
 
-  // ---------- mergeSettingsWithDefaults(批次 15 R2:loadSettings 防御性合并) ----------
+  // ---------- mergeSettingsWithDefaults(loadSettings 防御性合并) ----------
   assert(
     JSON.stringify(mergeSettingsWithDefaults(DEFAULT_SETTINGS)) === JSON.stringify(DEFAULT_SETTINGS),
     "完整设置应原样透传",
@@ -197,7 +197,7 @@ export async function run() {
     "typography 部分字段合并(显式覆盖 + 默认兜底)",
   );
   assert(mergeSettingsWithDefaults({}).outputDir === "", "空对象 → 全默认(outputDir 空串)");
-  // B13:theme 缺失 → 默认 system;显式值保留
+  // theme 缺失 → 默认 system;显式值保留
   assert(
     mergeSettingsWithDefaults({}).theme === "system",
     "缺 theme → 默认 system(B13)",
@@ -208,7 +208,7 @@ export async function run() {
   );
   console.log("[ok] mergeSettingsWithDefaults:完整透传/显式字段保留/缺字段默认兜底/部分字段合并/theme 兜底 断言通过");
 
-  // ---------- resolvePresetHint(批次 15 R2:回填 hint 计算) ----------
+  // ---------- resolvePresetHint(回填 hint 计算) ----------
   const paperTplHint = TEMPLATE_PRESETS.find((p) => p.id === "paper").hint;
   const paperHint = resolvePresetHint([], "paper");
   assert(
@@ -227,12 +227,12 @@ export async function run() {
   );
   console.log("[ok] resolvePresetHint:硬编码命中/自定义/未知 id 文案与 isCustom 断言通过");
 
-  // ---------- outputDirDisplayText(批次 15 R2:输出目录占位文案) ----------
+  // ---------- outputDirDisplayText(输出目录占位文案) ----------
   assert(outputDirDisplayText("C:\\out") === "C:\\out", "非空目录原样返回");
   assert(outputDirDisplayText("") === "与源文件相同目录", "空串 → 「与源文件相同目录」");
   console.log("[ok] outputDirDisplayText:非空原样/空串占位文案 断言通过");
 
-  // ---------- buildCustomPresetEntry(批次 15 R2:另存为预设数据变换) ----------
+  // ---------- buildCustomPresetEntry(另存为预设数据变换) ----------
   const srcSettings = {
     ...DEFAULT_SETTINGS,
     typography: { ...DEFAULT_SETTINGS.typography, bodySizePt: 14 },
@@ -249,7 +249,7 @@ export async function run() {
   assert(srcSettings.typography.bodySizePt === 14, "快照深拷贝:改结果不影响源设置");
   console.log("[ok] buildCustomPresetEntry:名称/快照/深拷贝 断言通过");
 
-  // ---------- removeCustomPresetByName(批次 15 R2:删除预设数据变换) ----------
+  // ---------- removeCustomPresetByName(删除预设数据变换) ----------
   const list = [preset("a"), preset("b"), preset("c")];
   const removed = removeCustomPresetByName(list, "b");
   assert(
@@ -260,7 +260,7 @@ export async function run() {
   assert(removeCustomPresetByName([], "a").length === 0, "空列表 → 空数组");
   console.log("[ok] removeCustomPresetByName:按名删除保序/无匹配/空列表 断言通过");
 
-  // ---------- parseMarginValue(批次 15 R2:边距输入解析+钳制) ----------
+  // ---------- parseMarginValue(边距输入解析+钳制) ----------
   assert(parseMarginValue(12.5) === 12.5, "有限数 → 原值");
   assert(parseMarginValue(-5) === 0, "负数 → 钳 0");
   assert(parseMarginValue(1001) === 1000, "超上限 → 钳 1000");
@@ -268,7 +268,7 @@ export async function run() {
   assert(parseMarginValue(Infinity) === null, "Infinity → null");
   console.log("[ok] parseMarginValue:有限数钳制/NaN/Infinity → null 断言通过");
 
-  // ---------- validateNumberRange(批次 15 R2:字号/行距范围校验) ----------
+  // ---------- validateNumberRange(字号/行距范围校验) ----------
   assert(validateNumberRange(12, 8, 24) === true, "范围内 → true");
   assert(validateNumberRange(8, 8, 24) === true, "下边界 → true");
   assert(validateNumberRange(24, 8, 24) === true, "上边界 → true");
@@ -277,7 +277,7 @@ export async function run() {
   assert(validateNumberRange(NaN, 8, 24) === false, "NaN → false");
   console.log("[ok] validateNumberRange:范围内/边界/越界/NaN 断言通过");
 
-  // ---------- settingsToControlValues(批次 15 R2:设置对象 → 控件回填值映射) ----------
+  // ---------- settingsToControlValues(设置对象 → 控件回填值映射) ----------
   const customSettings = {
     ...DEFAULT_SETTINGS,
     format: "pdf",
@@ -320,13 +320,13 @@ export async function run() {
   assert(leftCv.align === "left", "align=left → 枚举原样映射");
   const emptyDirCv = settingsToControlValues(DEFAULT_SETTINGS);
   assert(emptyDirCv.outputDirText === "与源文件相同目录", "空输出目录 → 占位文案");
-  // B13:theme 映射(默认 system / 显式 dark)
+  // theme 映射(默认 system / 显式 dark)
   assert(emptyDirCv.theme === "system", "theme 默认映射为 system");
   const darkCv = settingsToControlValues({ ...DEFAULT_SETTINGS, theme: "dark" });
   assert(darkCv.theme === "dark", "theme=dark 应原样映射");
   console.log("[ok] settingsToControlValues:全字段映射/数值转字符串/align 判定/输出目录文案/theme 映射 断言通过");
 
-  // ---------- applyThemeOn(B13:data-theme 属性应用,DOM 无关直测) ----------
+  // ---------- applyThemeOn(data-theme 属性应用,DOM 无关直测) ----------
   const makeTarget = () => {
     const calls = [];
     return {

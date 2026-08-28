@@ -1,5 +1,5 @@
 /**
- * 预设 JSON 导入/导出纯函数直测(src/main/persist/settings.ts parsePresetsFile/mergePresets;批次 13):
+ * 预设 JSON 导入/导出纯函数直测(src/main/persist/settings.ts parsePresetsFile/mergePresets):
  * 纯 Node 段(经 dist/main/persist/settings.js 导入,不触对话框/文件 IO——那部分走 GUI 实测)。
  * 断言面(与实现逐条对应):
  * - parsePresetsFile:schemaVersion:1 包装解析 / 裸数组兼容 / 坏 JSON → 「文件不是有效的 JSON」/
@@ -20,7 +20,7 @@ function assert(cond, msg) {
 
 const preset = (name, typography = {}, pageSetup = {}) => ({ name, typography, pageSetup });
 
-/** 批次 13:预设导入/导出纯函数直测(纯 Node 段,零 Electron API) */
+/** 预设导入/导出纯函数直测(纯 Node 段,零 Electron API) */
 export async function run() {
   // ---------- parsePresetsFile ----------
   // 1. 合法 schemaVersion:1 包装:字段原样保留

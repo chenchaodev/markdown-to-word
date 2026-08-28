@@ -1,5 +1,5 @@
 /**
- * 内联格式白名单测试(原 make-batch4-sample.mjs 段 6):
+ * 内联格式白名单测试:
  * 双格式一致:白名单无属性标签渲染为对应格式(pdf 原样输出 / docx 样式运行);
  * 危险样例(脚本/块级 div/带属性标签)安全兜底(pdf 转义 / docx 跳过)。
  * 序列化名已实证(docx 9.7.1 index.cjs):bold → <w:b/>(OnOffElement true 无 val)、

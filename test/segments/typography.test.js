@@ -1,5 +1,5 @@
 /**
- * 排版设置验收(原 make-batch4-sample.mjs 段 5):
+ * 排版设置验收:
  * 双格式共用同一 typography 契约;docx 断言字号/字体/对齐/标题编号关闭,
  * pdf 断言模板 CSS 参数化;双格式产物落盘。
  */
@@ -18,7 +18,7 @@ const typoMd = `# 排版设置测试
 `;
 export const fixtures = { main: typoMd };
 
-/** 排版设置验收(批次 5a) */
+/** 排版设置验收 */
 export async function run() {
   // 双格式共用同一 typography 契约(renderer 侧平行定义,字段名/默认值须同步):
   // 字号 14pt、行距 1.5、首行缩进 2 字符、两端对齐、宋体、标题编号关闭

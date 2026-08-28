@@ -1,5 +1,5 @@
 /**
- * F7-② 目录页码(两遍法)测试:
+ * 目录页码(两遍法)测试:
  * - 纯逻辑:injectTocPageNumbers 将 slug→页码 注入 .toc 条目(<span class="toc-page">N</span>)
  * - 端到端:field 模式转换 → 第一遍打印 → 经 /Dests 解析标题页码(pageNumbersForNames)
  *   → 第二遍注入页码 span,且页码随文档顺序单调递增、在页范围内

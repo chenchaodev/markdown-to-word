@@ -1,5 +1,5 @@
 /**
- * 表格列宽控制段(F2):分隔行 dash 比例信号(Pandoc pipe-tables 行为)。
+ * 表格列宽控制段:分隔行 dash 比例信号(Pandoc pipe-tables 行为)。
  * 覆盖四类断言(零注册):
  * (a) 解析纯函数直测(core/markdown/table-width.ts:分隔行词法/冒号不计/
  *     阈值判定/百分比取整守恒);
@@ -91,7 +91,7 @@ export async function run() {
   );
   assert(xml.includes('<w:tblLayout w:type="fixed"/>'), "比例表应为固定布局(tblLayout fixed)");
   assert(xml.includes('<w:tcW w:type="dxa" w:w="1738"/>') && xml.includes('<w:tcW w:type="dxa" w:w="6539"/>'), "单元格 tcW 应与 gridCol 同步(dxa)");
-  // 对齐样式与列宽共存:B 列居中(:-----------:)仍映射 w:jc center(B3 行为不变)
+  // 对齐样式与列宽共存:B 列居中(:-----------:)仍映射 w:jc center(行为不变)
   const jcCenterInCell = /<w:tcW w:type="dxa" w:w="6539"\/>[\s\S]*?<w:jc w:val="center"\/>[\s\S]*?<\/w:tc>/.test(xml);
   assert(jcCenterInCell, "B 列(79%)居中对齐应与列宽共存(w:jc center)");
   console.log("[ok] table-width:(b) docx tblGrid 比例宽度 + 固定布局 + tcW 同步 + 对齐共存 断言通过");
@@ -139,7 +139,7 @@ export async function run() {
 
   // ================= (e) 等宽回归:docx 序列化逐字节不变 =================
   // basic-render 全要素样例的等宽表(| ---- | ---- | ---- |):无固定布局、无 tcW、
-  // gridCol 保持 docx 库缺省占位(w=100),与 F2 之前序列化完全一致
+  // gridCol 保持 docx 库缺省占位(w=100),与改动前序列化完全一致
   const plainMd = "| 功能 | 状态 |\n| ---- | ---- |\n| 标题渲染 | 完成 |\n";
   const plainBuffer = await renderDocx(parseMarkdown(plainMd), {});
   const plainXml = await unzipPart(plainBuffer, "word/document.xml");

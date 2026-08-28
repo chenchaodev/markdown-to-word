@@ -1,5 +1,5 @@
 /**
- * 通用文本工具直测(批次 14 G5):src/core/util/utils.ts 单分支补齐。
+ * 通用文本工具直测:src/core/util/utils.ts 单分支补齐。
  * - decodeNumeric 非法码点(20-21 行):数值实体码点越界(> 0x10FFFF)返回原样不抛;
  *   合法码点正常解码(含增补平面代理对)。
  * - escapeRegExp(35-36 行):正则特殊字符全部转义,结果可安全字面匹配。

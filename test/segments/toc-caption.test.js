@@ -1,5 +1,5 @@
 /**
- * TOC 静态目录 + 图/表题注编号测试(原 make-batch4-sample.mjs 段 9):
+ * TOC 静态目录 + 图/表题注编号测试:
  * 8a 免更新路线:docx TableOfContents beginDirty:false + cachedEntries
  * (静态条目,纯超链接跳书签、无页码)→ 打开即见、不弹「更新域」提示;
  * 8b 前缀行识别:「图: /表:」(半角/全角冒号)紧跟图/表段落之后 → 题注,
@@ -63,7 +63,7 @@ export async function run() {
   if (!b8Document.includes('w:anchor="第一章"')) {
     throw new Error("批次8断言失败:静态目录条目缺少指向标题书签的超链接");
   }
-  // F7-①:field 模式 → beginDirty:true(Word/WPS 打开弹更新提示并注入真实页码),条目仍指向书签
+  // field 模式 → beginDirty:true(Word/WPS 打开弹更新提示并注入真实页码),条目仍指向书签
   const batch8FieldToc = await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [], tocMode: "field" });
   const fieldDoc = await unzipPart(batch8FieldToc.buffer, "word/document.xml");
   if (!fieldDoc.includes('w:dirty="true"')) {
