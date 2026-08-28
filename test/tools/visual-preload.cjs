@@ -1,4 +1,4 @@
-// 视觉自查工具 · preload(UI 改版 v4r1 配套):
+// 视觉自查工具 · preload:
 // contextIsolation 关闭后与页面同世界,先于 renderer.js 注入 window.api 桩,
 // 使界面可离线驱动到各舞台状态;window.__vc 暴露测试控制面(下一次对话框返回值等)。
 "use strict";

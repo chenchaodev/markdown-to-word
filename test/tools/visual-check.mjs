@@ -1,5 +1,5 @@
 /**
- * 视觉自查工具(UI 改版 v4r1 配套;`npm run ui:shots`):
+ * 视觉自查工具(`npm run ui:shots`):
  * 以离线 api 桩驱动 renderer 到四个关键舞台状态,逐状态截图到
  * output/artifacts/ui-v4/,供人工/代理目检布局一致性(不参与 CI 门禁)。
  * 场景:empty(空态)/ single(单文件)/ multi(多文件)/ history(历史浮层展开),

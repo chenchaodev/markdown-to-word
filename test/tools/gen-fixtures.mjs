@@ -111,7 +111,7 @@ function firstDiffLine(a, b) {
 }
 
 // --check 比对前做 EOL 归一化(CRLF→LF):生成器落盘 LF,但 Windows autocrlf 下
-// checkout 会把工作区文本产物转成 CRLF(审计 TEST-1)。.gitattributes 已固定
+// checkout 会把工作区文本产物转成 CRLF。.gitattributes 已固定
 // fixtures 的 eol=lf,此处归一化是双保险——即使属性未生效/旧 checkout 也不误报。
 const normalizeEol = (s) => s.replace(/\r\n/g, "\n");
 

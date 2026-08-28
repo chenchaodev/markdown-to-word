@@ -4,12 +4,12 @@
  * - convertImpl docx 全链路落盘(基础链路 + 产物存在,端到端性质)
  * - pdf 链路:printToPDF 产物魔数 + 书签注入(Outlines 中文标题 + Dest 页面引用)+ 合并书签
  * - renderer 诊断(executeJavaScript:window.api 注入/按钮可点/状态区反馈/弹窗隐藏)
- * - IPC 接线端到端(B12):经 window.api 真实 invoke convert:single/convert:merge/
+ * - IPC 接线端到端:经 window.api 真实 invoke convert:single/convert:merge/
  *   app:version 全链路(channel 改名后接线正确性;成功项会写最近文件,结束前还原)
  * 纯逻辑断言(重名保护/批量汇总/merge docx/取消链路/设置注入/分页符产物)已迁
  * test/segments|main(分页符 pdf 中间 html 在 page-setup 段),本文件不再触碰设置与取消。
  *
- * 定位(目录重组批⑤迁出生产路径):开发诊断设施,源码居 test/tools/(与 gen-fixtures
+ * 定位:开发诊断设施,源码居 test/tools/(与 gen-fixtures
  * 同区,纯 .mjs 直连 dist 编译产物,与全部测试段同构);不进 src 编译面 → 不进 dist →
  * electron-builder files(dist/**)天然排除,不再进安装包。经 index.ts 在 --smoke 分支
  * 以 URL 动态 import(打包产物无此文件,--smoke 仅 dev 使用)。
@@ -20,7 +20,7 @@
  * 自清理可覆盖;否则会污染用户设置的输出目录如 Downloads,且 (N) 序号变体越积越多)、
  * afterConvert 强制 "none"(不自动打开产物弹窗);结束前恢复原设置(与 converter.test.js 同款
  * save/restore,崩溃残留风险一致)。
- * 批次 12:ui-state 同样隔离——备份内存态并清空 lastSessionFiles(必须经 saveUiState 同步
+ * ui-state 同样隔离——备份内存态并清空 lastSessionFiles(必须经 saveUiState 同步
  * 磁盘与模块缓存,直改文件不生效:createWindow 已把真实状态读入缓存,renderer 走缓存);
  * 否则用户残留会话让 convertBtn 非禁用,「未选文件点击守卫」误报。结束恢复(含失败路径),
  * 原文件不存在则删除临时写入的文件。
@@ -77,7 +77,7 @@ async function assertOutline(filePath, expectedTitle, label) {
   if (!(title instanceof PDFHexString) || title.decodeText() !== expectedTitle) {
     throw new Error(`${label} 书签标题异常: ${title?.toString()}`);
   }
-  // 回归:书签 Dest[0] 必须是页面 PDFRef(曾全部回退首页致点击不跳转,见批次 4 修复)
+  // 回归:书签 Dest[0] 必须是页面 PDFRef(曾全部回退首页致点击不跳转)
   const destArr = firstDict?.get(PDFName.of("Dest"));
   if (!(destArr instanceof PDFArray) || !(destArr.asArray()[0] instanceof PDFRef)) {
     throw new Error(`${label} 书签 Dest 异常: ${destArr?.toString()}`);
@@ -86,7 +86,7 @@ async function assertOutline(filePath, expectedTitle, label) {
 
 /** 运行冒烟断言;任何失败抛错,由 index.ts 捕获后 app.exit(1) */
 export async function runSmoke(win) {
-  // 批次 12:ui-state 隔离(先于一切,尽早完成,缩小与 renderer 启动恢复的竞态窗口)。
+  // ui-state 隔离(先于一切,尽早完成,缩小与 renderer 启动恢复的竞态窗口)。
   // 备份内存态(createWindow 已把用户真实状态读入模块缓存)→ 清空 lastSessionFiles;
   // 结束时恢复,原文件不存在则删除临时写入的文件。
   const hadUiStateFile = await fs.access(UI_STATE_PATH).then(
@@ -94,11 +94,11 @@ export async function runSmoke(win) {
     () => false,
   );
   const origUi = loadUiState();
-  // P1-3:recentFiles 一并清空——下方主进程转换会经 recordRecentFiles 写入最近记录,
+  // recentFiles 一并清空——下方主进程转换会经 recordRecentFiles 写入最近记录,
   // 渲染进程启动时 chips 将据此渲染;先清空保证「启动隐藏」断言确定(结束前恢复原值)
   await writeWithRetry(() => saveUiState({ lastSessionFiles: [], recentFiles: [] }), "ui-state 隔离写入");
-  // 批次 11 迭代 4:应用菜单守卫(autoHideMenuBar 下 Alt 唤出,缺失即回归)。
-  // B2:文案经 t() 取值(与 buildAppMenu 同源),语言设置为 en 时不再误报
+  // 应用菜单守卫(autoHideMenuBar 下 Alt 唤出,缺失即回归)。
+  // 文案经 t() 取值(与 buildAppMenu 同源),语言设置为 en 时不再误报
   const appMenu = Menu.getApplicationMenu();
   const menuLabels = appMenu?.items.map((item) => item.label) ?? [];
   if (!appMenu || !menuLabels.includes(t("menu.file")) || !menuLabels.includes(t("menu.help"))) {
@@ -107,7 +107,7 @@ export async function runSmoke(win) {
   const outDir = SMOKE_DIR;
   const sampleMd = path.join(outDir, "smoke-basic.md");
   await fs.mkdir(outDir, { recursive: true });
-  // 批次 7 起重名保护:同名产物不再覆盖 → smoke 自清理本次会生成的产物(含 (2) 序号变体),
+  // 重名保护:同名产物不再覆盖 → smoke 自清理本次会生成的产物(含 (2) 序号变体),
   // 保证断言确定性;output/ 下的验收样例等其他文件不受影响。
   // Windows 下被阅读器占用的文件删除会 EBUSY,容错跳过(残留由重名序号机制规避)。
   for (const name of await fs.readdir(outDir)) {
@@ -121,7 +121,7 @@ export async function runSmoke(win) {
     }
   }
   // 输出隔离:强制 outputDir "" + afterConvert "none"(见文件头注释),结束前恢复原设置;
-  // B13:theme 强制 "system"——renderer diag 的 data-theme 初始态守卫依赖默认主题
+  // theme 强制 "system"——renderer diag 的 data-theme 初始态守卫依赖默认主题
   const orig = loadSettings();
   await updateSettings({ outputDir: "", afterConvert: "none", theme: "system" });
   try {
@@ -133,7 +133,7 @@ export async function runSmoke(win) {
     const stat = await fs.stat(outputPath);
     console.log(`[smoke] convert ok: ${outputPath} (${stat.size} bytes)`);
     // PDF 链路:中文/表格/代码块/任务列表/本地图片 → printToPDF
-    // P0 排查结论:1px 图人工不可辨认(且 printToPDF 极小图易被忽略),样例换 100x80 红底白点图
+    // 排查结论:1px 图人工不可辨认(且 printToPDF 极小图易被忽略),样例换 100x80 红底白点图
     const pngPath = path.join(outDir, "smoke-pdf.png");
     await fs.writeFile(
       pngPath,
@@ -172,10 +172,10 @@ export async function runSmoke(win) {
     const pdfHead = (await fs.readFile(pdfResult.outputPath)).subarray(0, 5).toString("latin1");
     if (pdfHead !== "%PDF-") throw new Error(`PDF 魔数校验失败: ${pdfHead}`);
     console.log(`[smoke] pdf convert ok: ${pdfResult.outputPath} (${pdfStat.size} bytes)`);
-    // 批次 4:书签注入断言(读回 /Outlines,标题中文正确;覆盖用户实测「侧边栏书签为空」问题)
+    // 书签注入断言(读回 /Outlines,标题中文正确;覆盖用户实测「侧边栏书签为空」问题)
     await assertOutline(pdfResult.outputPath, "PDF 冒烟 中文标题", "PDF");
     console.log(`[smoke] pdf 书签 ok: Outlines 注入,中文标题 + Dest 页面引用正确`);
-    // 批次 4:合并 PDF 书签断言(用户实测「合并 PDF 侧边栏书签为空」的直接回归场景)
+    // 合并 PDF 书签断言(用户实测「合并 PDF 侧边栏书签为空」的直接回归场景)
     const mergeA = path.join(outDir, "smoke-merge-1.md");
     const mergeB = path.join(outDir, "smoke-merge-2.md");
     await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](smoke-pdf.png)\n`);
@@ -200,7 +200,7 @@ export async function runSmoke(win) {
         if (btn) {
           report.btnDisabledBefore = btn.disabled;
           // disabled 按钮的 .click() 不触发监听 → 先解除禁用再点击,
-          // 断言「未选文件」守卫路径(曾因恒空而零覆盖,见 R8 收尾 A3)
+          // 断言「未选文件」守卫路径(曾因恒空而零覆盖)
           btn.disabled = false;
           btn.click();
           await sleep(50);
@@ -213,33 +213,33 @@ export async function runSmoke(win) {
         report.dialogExists = !!dlg;
         report.dialogHiddenAtStart = dlg ? dlg.classList.contains("hidden") : null;
         report.dialogVisibleAtStart = dlg ? getComputedStyle(dlg).display !== "none" : null;
-        // 迭代 4 预览入口迁移:单文件态「预览」按钮存在且初始禁用(未选文件);
+        // 预览入口迁移:单文件态「预览」按钮存在且初始禁用(未选文件);
         // 完成弹窗内「预览」按钮必须已移除
         const previewBtn = document.getElementById("previewBtn");
         report.previewBtnExists = !!previewBtn;
         report.previewBtnDisabledAtStart = previewBtn ? previewBtn.disabled : null;
         report.dialogPreviewRemoved = !document.getElementById("completeDialogPreview");
-        // 批次 11 迭代 2:完成弹窗「不再提示」/ 批量弹窗「重试失败项 / 复制全部路径」存在性。
-        // 界面重构 v3:设置面板侧「转换完成弹窗提示」控件已按 settings-ia.md 迁移映射表
+        // 完成弹窗「不再提示」/ 批量弹窗「重试失败项 / 复制全部路径」存在性。
+        // 设置面板侧「转换完成弹窗提示」控件已按 settings-ia.md 迁移映射表
         // 移除(场景被 afterConvert 覆盖,仅保留弹窗内入口)——此处改为断言其确已移除
         report.suppressInputExists = !!document.getElementById("completeDialogSuppress");
         report.completeDialogPromptRemoved = !document.getElementById("completeDialogPrompt");
         report.retryBtnExists = !!document.getElementById("batchDialogRetry");
         report.copyAllBtnExists = !!document.getElementById("batchDialogCopyAll");
-        // 批次 11 迭代 3:自定义预设控件存在性 + previewRefresh API 注入
+        // 自定义预设控件存在性 + previewRefresh API 注入
         report.presetSaveBtnExists = !!document.getElementById("presetSaveBtn");
         report.presetDeleteBtnExists = !!document.getElementById("presetDeleteBtn");
         report.presetSaveDialogExists = !!document.getElementById("presetSaveDialog");
         report.previewRefreshApi = typeof window.api.previewRefresh === "function";
-        // B9 拖放反馈细化:被跳过文件名折叠列表存在且初始隐藏
+        // 拖放反馈细化:被跳过文件名折叠列表存在且初始隐藏
         const dropSkipped = document.getElementById("dropSkipped");
         report.dropSkippedExists = !!dropSkipped;
         report.dropSkippedHiddenAtStart = dropSkipped ? dropSkipped.classList.contains("hidden") : null;
-        // B13 外观主题:默认 system 时 data-theme 属性必须不存在(CSS @media 接管)+
+        // 外观主题:默认 system 时 data-theme 属性必须不存在(CSS @media 接管)+
         // 设置面板三个 theme radio 就位
         report.noDataThemeAtStart = !document.documentElement.hasAttribute("data-theme");
         report.themeRadioCount = document.querySelectorAll('input[name="theme"]').length;
-        // P0-3 设置抽屉:容器存在且启动时隐藏(旧主页面 details 面板已移除);
+        // 设置抽屉:容器存在且启动时隐藏(旧主页面 details 面板已移除);
         // 顶栏入口(齿轮)与方向/语言 select、抽屉副标题就位
         const settingsDrawer = document.getElementById("settingsDrawer");
         report.settingsDrawerExists = !!settingsDrawer;
@@ -247,7 +247,7 @@ export async function runSmoke(win) {
         report.drawerOpenBtnExists = !!document.getElementById("settingsOpenBtn");
         report.drawerCloseBtnExists = !!document.getElementById("drawerCloseBtn");
         report.drawerSubtitleExists = !!document.getElementById("drawerSubtitle");
-        // 界面重构 v3:枚举 ≤5 → seg 分段(guidelines §3.1);六组 radio 计数就位
+        // 枚举 ≤5 → seg 分段(guidelines §3.1);六组 radio 计数就位
         // (纸张 5 / 方向 2 / 标题字号档位 3 / 标题间距档位 3 / 页眉模式 3 / 页眉布局 2)
         report.paperSegCount = document.querySelectorAll('input[name="paper"]').length;
         report.orientationSegCount = document.querySelectorAll('input[name="orientation"]').length;
@@ -259,7 +259,7 @@ export async function runSmoke(win) {
         // 语言裁撤回归守卫:下拉选项由 LANGUAGES 注册表动态生成,应恰为 zh/en/ja 三项
         report.languageOptionCount = document.querySelectorAll("#languageSelect option").length;
         report.formatSegmentCount = document.querySelectorAll(".header-actions input[name='format']").length;
-        // 界面重构 v3(settings-ia 决策 6):最近转换自「空态 chips」改造为
+        // 最近转换自「空态 chips」改造为
         // 「主舞台与消息区之间的常驻折叠条」——historyBar 存在且启动隐藏
         // (隔离环境无最近记录,无记录整块不渲染);旧 recentChips/recentSection 必须已移除
         const historyBar = document.getElementById("historyBar");
@@ -267,7 +267,7 @@ export async function runSmoke(win) {
         report.historyBarHiddenAtStart = historyBar ? historyBar.classList.contains("hidden") : null;
         report.recentChipsRemoved = !document.getElementById("recentChips");
         report.recentSectionRemoved = !document.getElementById("recentSection");
-        // 问题 2a 回归守卫:文档级零滚动(html/body overflow:hidden + .app 外边距
+        // 回归守卫:文档级零滚动(html/body overflow:hidden + .app 外边距
         // 算术闭合;scrollHeight 超出视口即说明边距塌陷/内容溢出回归)
         report.docScrollOk =
           document.documentElement.scrollHeight <= window.innerHeight &&
@@ -276,8 +276,8 @@ export async function runSmoke(win) {
         return report;
       })()`);
       console.log(`[smoke] renderer diag: ${JSON.stringify(diag)}`);
-      // 守卫断言:无文件时点击转换按钮 → 状态区错误文案 + 红字(迭代 3 交互语义)。
-      // 批次 12:btnDisabledBefore 必须为 true——lastSessionFiles 未隔离(用户残留会话恢复)
+      // 守卫断言:无文件时点击转换按钮 → 状态区错误文案 + 红字(交互语义)。
+      // btnDisabledBefore 必须为 true——lastSessionFiles 未隔离(用户残留会话恢复)
       // 时按钮非禁用,该断言即失败,隔离失效可被立即发现
       if (
         diag.btnDisabledBefore !== true ||
@@ -288,7 +288,7 @@ export async function runSmoke(win) {
           `[smoke] renderer diag FAILED: 点击守卫断言 btnDisabledBefore=${diag.btnDisabledBefore}, statusAfterClick=${JSON.stringify(diag.statusAfterClick)}(期望 ${t("file.selectFirst")}), statusIsError=${diag.statusIsError}(lastSessionFiles 未隔离或回归)`,
         );
       }
-      // 批次 11 迭代 2:新增控件存在性守卫(缺失即回归;设置面板侧弹窗提示控件
+      // 新增控件存在性守卫(缺失即回归;设置面板侧弹窗提示控件
       // 已按 IA 迁移映射表移除,残留即回归)
       if (
         !diag.suppressInputExists ||
@@ -305,7 +305,7 @@ export async function runSmoke(win) {
           })}`,
         );
       }
-      // 批次 11 迭代 3:自定义预设控件 + previewRefresh API 守卫(缺失即回归)
+      // 自定义预设控件 + previewRefresh API 守卫(缺失即回归)
       if (
         !diag.presetSaveBtnExists ||
         !diag.presetDeleteBtnExists ||
@@ -321,7 +321,7 @@ export async function runSmoke(win) {
           })}`,
         );
       }
-      // B9:拖放跳过列表控件守卫(存在且初始隐藏,缺失即回归)
+      // 拖放跳过列表控件守卫(存在且初始隐藏,缺失即回归)
       if (diag.dropSkippedExists !== true || diag.dropSkippedHiddenAtStart !== true) {
         throw new Error(
           `[smoke] renderer diag FAILED: B9 dropSkipped 控件异常 ${JSON.stringify({
@@ -330,7 +330,7 @@ export async function runSmoke(win) {
           })}`,
         );
       }
-      // B13:外观主题守卫——默认 system 时 data-theme 属性不存在 + 三个 theme radio 就位
+      // 外观主题守卫——默认 system 时 data-theme 属性不存在 + 三个 theme radio 就位
       // (theme 已在隔离段强制 "system",用户残留设置不会误报)
       if (diag.noDataThemeAtStart !== true || diag.themeRadioCount !== 3) {
         throw new Error(
@@ -340,10 +340,10 @@ export async function runSmoke(win) {
           })}`,
         );
       }
-      // P0-3/P1-1/界面重构 v3:设置抽屉守卫——容器存在且启动隐藏,顶栏入口、
+      // 设置抽屉守卫——容器存在且启动隐藏,顶栏入口、
       // 语言 select、格式分段(2 项)与六组 seg 分段(纸 5/向 2/字号档 3/间距档 3/
       // 页眉模式 3/页眉布局 2)就位;缺失即回归。
-      // UI 改版 v4:paper/orientation 为全文档同名 radio 组——快速参数条镜像一份
+      // paper/orientation 为全文档同名 radio 组——快速参数条镜像一份
       // (纸 5+5=10 / 向 2+2=4),其余四组仍仅抽屉一处
       if (
         diag.settingsDrawerExists !== true ||
@@ -380,7 +380,7 @@ export async function runSmoke(win) {
           })}`,
         );
       }
-      // 界面重构 v3:最近转换常驻折叠条守卫——historyBar 存在且启动隐藏
+      // 最近转换常驻折叠条守卫——historyBar 存在且启动隐藏
       // (隔离环境无记录,无记录整块不渲染),旧 chips/独立区块已移除;缺失/残留即回归
       if (
         diag.historyBarExists !== true ||
@@ -397,7 +397,7 @@ export async function runSmoke(win) {
           })}`,
         );
       }
-      // 问题 2a:文档级零滚动守卫(scrollHeight 超出视口即边距塌陷/内容溢出回归)
+      // 文档级零滚动守卫(scrollHeight 超出视口即边距塌陷/内容溢出回归)
       if (diag.docScrollOk !== true) {
         throw new Error(
           `[smoke] renderer diag FAILED: 文档级出现滚动(scrollHeight 超出视口) ${JSON.stringify({
@@ -406,7 +406,7 @@ export async function runSmoke(win) {
           })}`,
         );
       }
-      // B12:IPC 接线端到端证据——经 preload(window.api)真实走 invoke → main
+      // IPC 接线端到端证据——经 preload(window.api)真实走 invoke → main
       // handler → convertImpl 全链路(channel 改名后接线正确性;直接调 convertImpl
       // 的上方断言不经过 IPC,覆盖不到 handle 注册)。路径经 JSON.stringify 注入,
       // 防 Windows 反斜杠转义破坏脚本字面量。
@@ -436,7 +436,7 @@ export async function runSmoke(win) {
   } finally {
     // 恢复用户设置(文件 + 模块级缓存);崩溃时残留风险与 converter.test.js 一致
     await updateSettings(orig);
-    // 批次 12:恢复 ui-state(含失败路径)——原文件存在则整体还原(磁盘 + 缓存),
+    // 恢复 ui-state(含失败路径)——原文件存在则整体还原(磁盘 + 缓存),
     // 不存在则删除临时写入的文件;失败仅告警不阻塞(EBUSY 容错,与产物清理同先例)
     try {
       await writeWithRetry(
