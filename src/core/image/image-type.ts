@@ -1,14 +1,14 @@
 /**
  * 图片类型与尺寸判定(魔数读取,无 IO):
- * - sniffImageType:docx ImageRun 用类型(png/jpg/gif/webp);B3 起未知字节头返回
+ * - sniffImageType:docx ImageRun 用类型(png/jpg/gif/webp);未知字节头返回
  *   null(不再伪装 png——错误标签靠下游软件自行嗅探兜底,行为不可预期),
  *   由调用方跳过嵌入并警告;webp 由调用方降级
  * - imageSizeFromBuffer:PNG/JPEG 像素尺寸解析(docx 缩放用,其他/畸形数据返回 null)
- * - mimeFromBuffer:data URL 用 MIME(png/jpeg/gif/webp);B3 起未知返回 null,
+ * - mimeFromBuffer:data URL 用 MIME(png/jpeg/gif/webp);未知返回 null,
  *   由调用方按失败降级(保留原链接 + 统一警告)
  */
 
-/** 依据文件魔数判断图片类型;无法识别 → null(B3:调用方跳过+警告,不伪装 png) */
+/** 依据文件魔数判断图片类型;无法识别 → null(调用方跳过+警告,不伪装 png) */
 export function sniffImageType(data: Buffer): "png" | "jpg" | "gif" | "webp" | null {
   if (data.length >= 4 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
     return "png";
@@ -73,7 +73,7 @@ export function imageSizeFromBuffer(data: Buffer): { width: number; height: numb
   return null;
 }
 
-/** 魔数判断图片 MIME(data URL 用);无法识别 → null(B3:调用方按失败降级) */
+/** 魔数判断图片 MIME(data URL 用);无法识别 → null(调用方按失败降级) */
 export function mimeFromBuffer(data: Buffer): string | null {
   if (data.length >= 4 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
     return "image/png";

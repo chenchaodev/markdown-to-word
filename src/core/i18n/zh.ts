@@ -1,6 +1,6 @@
 /**
  * 中文字典(键集唯一事实源):Dict 类型 = keyof typeof dict,i18n.t() 的 key
- * 编译期约束由此派生(CORE-10);en.ts 以 satisfies Record<Dict,string> 锁定全量,
+ * 编译期约束由此派生;en.ts 以 satisfies Record<Dict,string> 锁定全量,
  * 其余语言 Partial<Dict> 缺失键走回退链(当前语言 → en → key)。
  * - zh 值 = 现有文案原文逐字保留(默认行为等价,既有测试断言不变)
  * - key 按模块前缀命名:convert.stage.read / dialog.complete.title / menu.file 等
@@ -41,7 +41,7 @@ const dict = {
     "convert.stage.converting": "正在转换…",
     "convert.stage.read": "正在读取文件…",
     "convert.stage.render": "正在渲染文档…",
-    // B9 进度分阶段(pdf 链路细分;print 由 main/converter.ts 在 printToPDF 前上报)
+    // 进度分阶段(pdf 链路细分;print 由 main/converter.ts 在 printToPDF 前上报)
     "convert.stage.parse": "正在解析 Markdown…",
     "convert.stage.inline": "正在处理图片…",
     "convert.stage.mermaid": "正在渲染 Mermaid 图表…",
@@ -87,7 +87,7 @@ const dict = {
     "file.selectedCount": "已选择 ${count} 个 Markdown 文件",
     "file.selectedSummary": "已选择 ${count} 个文件",
     "file.skippedSuffix": "${summary}(跳过 ${count} 个非 Markdown 项)",
-    // B9 拖放反馈细化:重复文件单独文案;两者并存时用合并句式
+    // 拖放反馈细化:重复文件单独文案;两者并存时用合并句式
     "file.duplicatesSuffix": "${summary}(${count} 个重复文件已跳过)",
     "file.skippedBothSuffix": "${summary}(跳过 ${skipped} 个非 Markdown 项、${duplicates} 个重复文件)",
     "file.skippedListToggle": "已跳过的 ${count} 个非 Markdown 文件",
@@ -95,7 +95,7 @@ const dict = {
     "file.removeAria": "移除 ${name}",
     "file.clearList": "清空列表",
     "file.areaLabel": "文件选择",
-    // v3 界面重构:占位态单文件文案 + 底部批量/合并说明后缀
+    // 占位态单文件文案 + 底部批量/合并说明后缀
     "file.selectedOne": "已选择 1 个文件",
     "file.batchFoot": "：每个文件各自输出一份",
     "file.mergeFoot": "：按当前顺序合成一个文档",
@@ -135,7 +135,7 @@ const dict = {
     "about.manual": "查看使用手册",
     "dialog.openFailed": "打开文件对话框失败:${error}",
 
-    /* ---------- 转换预检(F6) ---------- */
+    /* ---------- 转换预检 ---------- */
     "precheck.title": "转换预检",
     "precheck.desc": "转换前发现 ${count} 处可能影响排版的问题,确认是否继续?",
     "precheck.continue": "继续转换",
@@ -154,7 +154,7 @@ const dict = {
     "summary.details": "失败详情",
     "summary.revealTitle": "在资源管理器中显示输出文件",
 
-    /* ---------- 最近转换(P1-3:主舞台空态快捷 chips) ---------- */
+    /* ---------- 最近转换 ---------- */
     "recent.clear": "清空最近",
     // 交互语义:单击 chip = 加载到列表;行尾 ↻ 按钮 = 按原格式直接重转
     "recent.itemTitle": "加载到文件列表:${path}",
@@ -166,7 +166,7 @@ const dict = {
     "recent.time.yesterday": "昨天 ${time}",
     "recent.time.monthDay": "${month}月${day}日",
     "recent.time.fullDate": "${year}年${month}月${day}日",
-    // v3 界面重构:最近转换栏(historyBar)标题与清空按钮
+    // 最近转换栏(historyBar)标题与清空按钮
     "history.title": "最近转换",
     "history.clear": "清空记录",
     // 行尾 ↻ 按钮:按原格式直接重转(行为契约键,renderer 用)
@@ -181,10 +181,10 @@ const dict = {
     "settings.groupTypography": "排 版",
     "settings.groupHeaderFooter": "页眉页脚",
     "settings.groupHeaderWatermark": "页眉页脚与水印",
-    // F4 页眉页脚自定义
+    // 页眉页脚自定义
     "settings.headerMode": "页眉",
     "settings.headerModeDefault": "默认(文档标题)",
-    // 界面重构 v3:页眉模式 seg 分段(短档位文案)与行标签
+    // 页眉模式 seg 分段(短档位文案)与行标签
     "settings.modeDefault": "默认",
     "settings.headerModeLabel": "页眉模式",
     "settings.headerModeCustom": "自定义",
@@ -211,7 +211,7 @@ const dict = {
     "settings.groupManage": "模板管理",
     "settings.groupApp": "应用偏好",
     "settings.groupLanguage": "界面语言",
-    // B13:外观主题(P0-4 起键复用为 L4 字段标签)
+    // 外观主题(键复用为 L4 字段标签)
     "settings.groupAppearance": "外观主题",
     "settings.themeSystem": "跟随系统",
     "settings.themeLight": "浅色",
@@ -254,7 +254,7 @@ const dict = {
     "settings.tierCompact": "紧凑",
     "settings.tierStandard": "标准",
     "settings.tierSpacious": "舒展",
-    // 界面重构 v3:标题两档位行标签(IA 命名「××档位」)+ 字号步进器 aria
+    // 标题两档位行标签(IA 命名「××档位」)+ 字号步进器 aria
     "settings.headingScaleTier": "标题字号档位",
     "settings.headingSpacingTier": "标题间距档位",
     "settings.stepDecreaseAria": "减小字号",
@@ -287,7 +287,7 @@ const dict = {
     "settings.outputDirDefault": "与源文件相同目录",
     "settings.outputDirPick": "选择…",
     "settings.outputDirReset": "恢复默认",
-    // 界面重构 v3:抽屉底栏「恢复默认」(转换相关各组复位;应用偏好与自定义预设保留)
+    // 抽屉底栏「恢复默认」(转换相关各组复位;应用偏好与自定义预设保留)
     "settings.resetDefaults": "恢复默认",
     "settings.resetDefaultsTitle": "恢复默认设置（应用偏好与自定义预设保留）",
     "settings.afterConvert": "导出后",
@@ -312,7 +312,7 @@ const dict = {
     "settings.selectDirFailed": "选择输出目录失败:${error}",
     "settings.cssTooLarge": "CSS 文件过大(超过 ${kb}KB 上限)",
 
-    /* ---------- UI 改版 v4:快速参数条 ---------- */
+    /* ---------- 快速参数条 ---------- */
     "quick.title": "快速转换参数",
 
     /* ---------- 模板预设 ---------- */
@@ -338,9 +338,9 @@ const dict = {
     "preset.customHint": "自定义预设",
     "preset.modifiedHint": "已微调,与模板预设不一致",
     "preset.hintTitle": "选择模板将覆盖排版与页面设置",
-    // v3:切换预设后的 toast 反馈(行为契约键,renderer 用)
+    // 切换预设后的 toast 反馈(行为契约键,renderer 用)
     "toast.presetSwitched": "已切换到预设「${name}」,覆盖:${groups}",
-    // v3:抽屉「恢复默认」后的 toast 反馈(只陈述事实)
+    // 抽屉「恢复默认」后的 toast 反馈(只陈述事实)
     "toast.settingsReset": "已恢复默认设置",
     "preset.saveFailed": "保存失败,请重试",
     "preset.deleteFailed": "删除预设失败,请重试",
@@ -352,7 +352,7 @@ const dict = {
     "preset.noneToExport": "暂无自定义预设可导出",
     "preset.readFailed": "读取文件失败:${error}",
     "preset.writeFailed": "写入文件失败:${error}",
-    // F9:docx 模板导入(浅导入 v1)
+    // docx 模板导入(浅导入)
     "dialog.importDocxTemplate": "导入 Word 模板",
     "settings.importDocxTemplate": "导入 Word 模板…",
     "settings.importDocxTemplateTitle": "从 Word 文档导入字体与页面尺寸",
@@ -374,14 +374,14 @@ const dict = {
     "drop.ariaLabel": "点击或拖入 Markdown 文件（支持多个）",
     "drop.hint": "将 Markdown 文件或文件夹拖到此处",
     "drop.or": "或",
-    // P1-6 空态能力说明:扩展名 + 语法能力一行标注
+    // 空态能力说明:扩展名 + 语法能力一行标注
     "drop.capabilities": "支持 .md / .markdown · 表格 · 公式 · 代码高亮 · Mermaid",
     "drop.change": "点击更换文件，或拖入添加",
     "drop.multiHint": "拖拽或按钮可调整顺序；点击或拖入可继续添加",
     "drop.dblclickHint": "双击列表行可预览排版",
-    // B9:转换中拖入文件的状态提示(不静默忽略)
+    // 转换中拖入文件的状态提示(不静默忽略)
     "drop.busy": "转换进行中,请稍后再添加文件",
-    // v3 界面重构:空态主视觉文案(文案以 index.html 定稿为准)
+    // 空态主视觉文案(文案以 index.html 定稿为准)
     "drop.areaLabel": "文件选择",
     "drop.title": "拖入 Markdown 文件",
     "drop.sub": "松手即加入队列，也可以一次选择多个文件",
@@ -411,7 +411,7 @@ const dict = {
     "menu.help": "帮助",
     "menu.about": "关于",
 
-    /* ---------- 转换警告(core keyed 警告,fallback = 中文原文;B6 i18n 收口) ---------- */
+    /* ---------- 转换警告(core keyed 警告,fallback = 中文原文;i18n 收口) ---------- */
     "warn.formulaParseFailed": "公式解析失败,降级为 TeX 源码: ${tex}",
     "warn.mermaidEmpty": "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块",
     "warn.mermaidFailed": "Mermaid 渲染失败: ${reason},已降级为代码块",
@@ -437,7 +437,7 @@ const dict = {
     /* ---------- 错误(生成期本地化:throw 文案经 error.message 单次字符串通道到 GUI) ---------- */
     "convert.noFilesSelected": "未选择文件",
 
-    /* ---------- 错误码 → 可操作文案(B9:renderer 显示层按错误码重映射,未识别透传) ---------- */
+    /* ---------- 错误码 → 可操作文案(renderer 显示层按错误码重映射,未识别透传) ---------- */
     "error.fileBusy": "文件被占用,请关闭正在使用该文件的程序后重试",
     "error.fileNotFound": "文件不存在,请确认文件未被移动或删除",
     "error.accessDenied": "没有访问权限,请检查文件或目录权限后重试",
@@ -445,7 +445,7 @@ const dict = {
     "error.pathTooLong": "文件路径过长(超过 Windows 路径长度限制),请将文件移动到更浅的目录后重试",
   } as const;
 
-/** 字典 key 编译期单源(CORE-10):i18n.t() 的 key 参数受此 keyof 约束,
+/** 字典 key 编译期单源:i18n.t() 的 key 参数受此 keyof 约束,
  *  拼错 key 即编译报错;动态 key 场景走 i18n 内部 tByKey。 */
 export type Dict = keyof typeof dict;
 

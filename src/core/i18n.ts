@@ -27,7 +27,7 @@ export { DICT, LANGUAGES, htmlLangOf, isLanguage };
 export type { Dict as I18nKey, Language };
 
 /**
- * keyed 警告(B6 i18n 收口):core 生成的警告不再硬编码中文文案,
+ * keyed 警告(i18n 收口):core 生成的警告不再硬编码中文文案,
  * 携带字典 key + 插值参数 + 缺失 key 时的兜底文案(fallback = 改造前中文原文逐字保留,
  * 保证 zh 界面行为等价)。经 IPC 原样传到 renderer,显示层 formatWarning 按当前语言格式化。
  */
@@ -63,7 +63,7 @@ export function crossRefNotFoundWarning(kind: string, ref: string): KeyedWarning
 }
 
 /**
- * 代码高亮降级警告(B4,docx/pdf 共用单一来源):
+ * 代码高亮降级警告(docx/pdf 共用单一来源):
  * hljs 语言包命中但 highlight 抛错 / 解析校验失败时,两侧均降级为纯文本并上报本警告。
  */
 export function highlightFallbackWarning(lang: string): KeyedWarning {
@@ -75,7 +75,7 @@ export function highlightFallbackWarning(lang: string): KeyedWarning {
 }
 
 /**
- * Mermaid 渲染失败警告族(CORE-4 工厂化,docx/pdf 共用单一来源):
+ * Mermaid 渲染失败警告族(docx/pdf 共用单一来源):
  * resolver 返回空结果 → mermaidEmpty;抛错 → mermaidFailed(params.reason)。
  * 两侧降级语义一致(内容不丢失、不中断转换),文案改动单点生效。
  */
@@ -95,7 +95,7 @@ export function mermaidFailedWarning(reason: string): KeyedWarning {
 }
 
 /**
- * 代码块未标注语言警告(F6 转换预检):``` 后缺语言标识,高亮/排版可能降级。
+ * 代码块未标注语言警告(转换预检):``` 后缺语言标识,高亮/排版可能降级。
  */
 export function unlabeledCodeBlockWarning(): KeyedWarning {
   return {
@@ -128,7 +128,7 @@ function tByKey(key: string, params?: Record<string, string | number>): string {
 }
 
 /**
- * 取当前语言文案(CORE-10:key 参数受 I18nKey 编译期约束,拼错即编译报错;
+ * 取当前语言文案(key 参数受 I18nKey 编译期约束,拼错即编译报错;
  * 缺失 key 运行期经回退链兜底,最终返回 key 本身,不抛错——动态 key 场景走 tByKey)。
  * 参数插值:模板 ${name} 占位,params 提供同名值;缺失参数保留占位符原样。
  */

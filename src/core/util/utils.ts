@@ -1,5 +1,5 @@
 /**
- * 通用文本工具(escape 集中,R8 批 4 L3):
+ * 通用文本工具(escape 集中):
  * escapeHtml/decodeEntities/escapeRegExp 原散落于 pdf/template.ts、pdf/postprocess.ts、
  * docx/handlers/math.ts(两份 decodeEntities 语义微差),统一收口于此,消除重复与漂移。
  * - decodeEntities 语义取 template 版(数值实体范围检查 + &nbsp; + &amp; 最后解防二次解码),

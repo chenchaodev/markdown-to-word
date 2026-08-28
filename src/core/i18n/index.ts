@@ -2,11 +2,10 @@
  * i18n 语言注册表(单一事实源):
  * - LANGUAGES:有序注册表(zh/en 在前),语言选项/校验/htmlLang 映射全部由此派生,
  *   新增语言 = 新建字典文件 + 在此登记一项,不再散落硬编码
- *   (历史注:ko/fr/ru 曾随 1.3.0 注册表化加入,后按需求裁撤;已存用户的该偏好
- *   经 settings 校验字段级兜底回退 zh,见 main/persist/settings.ts)
  * - Language:由注册表派生的联合类型(消灭 "zh" | "en" 硬编码)
  * - DICT:聚合字典对象,供逻辑层(i18n.ts)查表;zh 全量(键集唯一事实源)、
  *   en 全量(satisfies 锁定)、ja Partial(缺失键走回退链)
+ * 未知语言码经 settings 校验兜底回退 zh(兼容已移除语言的存量用户配置)。
  */
 import { dict as zh, type Dict } from "./zh.js";
 import { dict as en } from "./en.js";
@@ -15,7 +14,7 @@ import { dict as ja } from "./ja.js";
 export type { Dict };
 
 /** 有序语言注册表:code = settings.json 持久化值;label = 本地化自称(设置面板直接显示);
- *  htmlLang = BCP 47(<html lang> 值)。zh/en 保持在前(历史默认序)。 */
+ *  htmlLang = BCP 47(<html lang> 值)。zh/en 保持在前(默认序)。 */
 export const LANGUAGES = [
   { code: "zh", label: "中文", htmlLang: "zh-CN" },
   { code: "en", label: "English", htmlLang: "en" },

@@ -44,7 +44,7 @@ export function parseFrontmatter(md: string): { metadata: DocMetadata; body: str
     if (value === "") continue;
     (metadata as Record<string, string>)[key] = value;
   }
-  // B3 守卫:块内未命中任何已知 key → 不是 frontmatter(以 `---` 分隔线开头的
+  // 守卫:块内未命中任何已知 key → 不是 frontmatter(以 `---` 分隔线开头的
   // 普通文档)。此前无条件剥离,夹在两个 --- 之间的正文会静默丢失且 metadata 为空。
   if (Object.keys(metadata).length === 0) return { metadata: {}, body: md };
   return { metadata, body: md.slice(match[0].length) };

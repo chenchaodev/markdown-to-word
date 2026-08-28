@@ -31,7 +31,7 @@ import {
 } from "./pdf/template.js";
 import type { HeaderLogoData } from "./docx/chrome.js";
 import type { MermaidResolver } from "./markdown/mermaid.js";
-// 契约单源(B7):ImageResolver 类型收敛 core/image/image-resolver.ts(仅类型导入)
+// 契约单源:ImageResolver 类型收敛 core/image/image-resolver.ts(仅类型导入)
 import type { ImageResolver } from "./image/image-resolver.js";
 // 页面设置契约收敛于 settings-defaults.ts(单一来源),此处 re-export 保持既有导入面
 // (docx/pdf render、main settings、测试等历史 import 源不变)
@@ -43,7 +43,7 @@ export {
   type HeaderFooterSettings,
   type WatermarkSettings,
 } from "./settings/settings-defaults.js";
-// ConvertFormat 单源 settings-defaults(CORE-8 收敛 B7 平行类型残留);
+// ConvertFormat 单源 settings-defaults(收敛平行类型残留);
 // re-export 保持 main 侧既有 import 路径(core/convert.js)不变
 export type { ConvertFormat } from "./settings/settings-defaults.js";
 import type { ConvertFormat, PageSetup, TocMode } from "./settings/settings-defaults.js";
@@ -63,7 +63,7 @@ export interface ConvertContext {
   /** 文档标题(pdf 用 <title>) */
   title?: string;
   /** 警告收集器(可选):转换中发现的非致命问题(如缺失图片)追加至此;
-   *  B6 起元素为 ConvertWarning(keyed 警告经显示层 formatWarning 按语言格式化) */
+   *  元素为 ConvertWarning(keyed 警告经显示层 formatWarning 按语言格式化) */
   warnings?: ConvertWarning[];
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
   pageSetup?: PageSetup;
@@ -83,13 +83,13 @@ export interface ConvertContext {
   pdfCss?: string;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
-  /** 页眉页脚配置(F4;缺省 DEFAULT_HEADER_FOOTER = 现状行为) */
+   /** 页眉页脚配置(缺省 DEFAULT_HEADER_FOOTER = 现状行为) */
   headerFooter?: HeaderFooterSettings;
   /** 页眉 logo 已读数据(main 层读文件后注入,core 零 IO;仅 headerMode=custom 消费) */
   headerLogo?: HeaderLogoData;
-  /** 文字水印(F5;缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
+  /** 文字水印(缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
   watermark?: WatermarkSettings;
-  /** PDF 渲染子阶段回调(B9 进度分阶段上报):pdf 链路经此上报 parse/inline/
+   /** PDF 渲染子阶段回调(进度分阶段上报):pdf 链路经此上报 parse/inline/
    *  mermaid/katex 四个子阶段(print 由 main/converter.ts 在 printToPDF 前上报);
    *  缺省不上报(core 层零依赖,行为不变)。向后兼容:旧消费方对未知 stage 键
    *  原样兜底(renderer stageText 未知键透传),协议只增不改。 */
@@ -106,11 +106,11 @@ export interface PdfArtifact {
   kind: "pdf";
   /** 完整 HTML 文档,落盘临时文件后 loadFile + printToPDF */
   html: string;
-  /** printToPDF 的 headerTemplate(F4:default/none = 空模板,custom = 文字+logo) */
+   /** printToPDF 的 headerTemplate(default/none = 空模板,custom = 文字+logo) */
   headerTemplate: string;
   /** printToPDF 的 footerTemplate(页码;footerEnabled=false 时为空模板) */
   footerTemplate: string;
-  /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;F7 两遍法页码用) */
+   /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;两遍法页码用) */
   tocMode: TocMode;
   /** frontmatter 元数据(PDF Info 注入用) */
   metadata?: DocMetadata;
@@ -123,19 +123,19 @@ export async function convert(
   format: ConvertFormat,
   context: ConvertContext,
 ): Promise<ConvertArtifact> {
-  // footgun(CORE-11):context.warnings 缺省时本函数内部以临时数组兜底,
+  // footgun:context.warnings 缺省时本函数内部以临时数组兜底,
   // 收集到的警告随调用结束静默丢弃——需要警告的调用方必须显式传入数组。
   const warnings = context.warnings ?? [];
   // 先剥离 frontmatter:解析与渲染均只作用于正文(body)
   const { metadata, body } = parseFrontmatter(md);
-  // 页眉页脚配置归一化(F4):缺省字段补默认(= 现状行为),双管线共用同一取值
+  // 页眉页脚配置归一化:缺省字段补默认(= 现状行为),双管线共用同一取值
   const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...context.headerFooter };
-  // F5:水印配置归一化(缺省字段补默认;text 空串视为关闭,由渲染层判定零渲染)
+  // 水印配置归一化(缺省字段补默认;text 空串视为关闭,由渲染层判定零渲染)
   const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...context.watermark };
 
   if (format === "pdf") {
     // pdf 分支只消费 body 字符串(markdown-it 在 renderPdfHtml 内另行解析),
-    // 不做 remark 解析(CORE-1:原无条件 parseMarkdown 使每次 PDF 转换
+    // 不做 remark 解析(原无条件 parseMarkdown 使每次 PDF 转换
     // 白做一次 AST 构建 + 全标题 slug 遍历)
     return {
       kind: "pdf",
@@ -156,7 +156,7 @@ export async function convert(
         onStage: context.onStage,
         watermark,
       }),
-      // F4:页眉模板按配置构造(logo data URI 内嵌);页脚开关关闭时空模板占位
+      // 页眉模板按配置构造(logo data URI 内嵌);页脚开关关闭时空模板占位
       // (displayHeaderFooter 常开,机制不变,见 PDF_EMPTY_CHROME_TEMPLATE 注释)
       headerTemplate: buildPdfHeaderTemplate(headerFooter, context.headerLogo),
       footerTemplate: headerFooter.footerEnabled ? PDF_FOOTER_TEMPLATE : PDF_EMPTY_CHROME_TEMPLATE,

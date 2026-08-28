@@ -1,5 +1,5 @@
 /**
- * 日文字典(首批四语 i18n):Partial<Dict>,缺失键由回退链兜底(当前语言 → en → key)。
+ * 日文字典:Partial<Dict>,缺失键由回退链兜底(当前语言 → en → key)。
  * 插值占位符 ${name} 原样保留;warn.crossRefNotFound / warn.unsupportedBlockInContainer
  * 的 kind/blockType/container 参数为推送期中文类别词,文案口径与 en 一致(省略或保留插值)。
  */
@@ -91,7 +91,7 @@ const dict: Partial<Record<Dict, string>> = {
     "file.removeAria": "${name} を削除",
     "file.clearList": "リストをクリア",
     "file.areaLabel": "ファイル選択",
-    // v3 UI リニューアル:プレースホルダー状態の単一ファイル文言 + 一括/結合の説明接尾辞
+    // プレースホルダー状態の単一ファイル文言 + 一括/結合の説明接尾辞
     "file.selectedOne": "1 件のファイルを選択中",
     "file.batchFoot": ":ファイルごとに個別のドキュメントを出力",
     "file.mergeFoot": ":現在の順序で 1 つのドキュメントに統合",
@@ -101,7 +101,7 @@ const dict: Partial<Record<Dict, string>> = {
     "dialog.failed.title": "変換失敗",
     "dialog.complete.desc": "ドキュメントを生成しました。出力先は下記の通りです",
 
-    /* ---------- 変換前チェック(F6) ---------- */
+    /* ---------- 変換前チェック ---------- */
     "precheck.title": "変換前チェック",
     "precheck.desc": "変換前に ${count} 件の問題が見つかりました。続行しますか?",
     "precheck.continue": "続行して変換",
@@ -150,7 +150,7 @@ const dict: Partial<Record<Dict, string>> = {
     "summary.details": "失敗の詳細",
     "summary.revealTitle": "エクスプローラーで出力ファイルを表示",
 
-    /* ---------- 最近の変換(P1-3:空状態クイックチップ) ---------- */
+    /* ---------- 最近の変換 ---------- */
     "recent.clear": "履歴をクリア",
     // 操作チップ:クリック = リストへ読み込み、行末 ↻ = 元の形式で再変換
     "recent.itemTitle": "ファイルリストへ読み込み:${path}",
@@ -162,7 +162,7 @@ const dict: Partial<Record<Dict, string>> = {
     "recent.time.yesterday": "昨日 ${time}",
     "recent.time.monthDay": "${month}月${day}日",
     "recent.time.fullDate": "${year}年${month}月${day}日",
-    // v3 UI リニューアル:履歴バーのタイトルとクリアボタン
+    // 履歴バーのタイトルとクリアボタン
     "history.title": "変換履歴",
     "history.clear": "履歴をクリア",
     // 行末 ↻ ボタン:元の形式で再変換(動作契約キー)
@@ -177,7 +177,7 @@ const dict: Partial<Record<Dict, string>> = {
     "settings.groupTypography": "組版",
     "settings.groupHeaderFooter": "ヘッダー / フッター",
     "settings.groupHeaderWatermark": "ヘッダー/フッターとウォーターマーク",
-    // F4 ヘッダー / フッターのカスタマイズ
+    // ヘッダー / フッターのカスタマイズ
     "settings.headerMode": "ヘッダー",
     "settings.headerModeDefault": "デフォルト(文書タイトル)",
     "settings.headerModeCustom": "カスタム",
@@ -195,7 +195,7 @@ const dict: Partial<Record<Dict, string>> = {
     "settings.footerEnabledLabel": "カスタムフッター",
     "settings.footerEnabledDesc": "「X ページ / Y ページ」を表示。カスタムモード時のみ有効",
     "settings.headerFooterDefaultNote": "デフォルトモード:ヘッダー中央に文書タイトル、フッターにページ番号を常に表示します。これらのスイッチでは制御されません",
-    // F5 文字列ウォーターマーク(ヘッダー/フッターと同じ「プリセット非対象」グループ)
+    // 文字列ウォーターマーク(ヘッダー/フッターと同じ「プリセット非対象」グループ)
     "settings.watermarkText": "ウォーターマーク文字",
     "settings.watermarkAngle": "回転角度",
     "settings.watermarkOpacity": "不透明度",
@@ -303,7 +303,7 @@ const dict: Partial<Record<Dict, string>> = {
     "settings.selectDirFailed": "出力ディレクトリの選択に失敗しました:${error}",
     "settings.cssTooLarge": "CSS ファイルが大きすぎます(${kb}KB 上限超過)",
 
-    /* ---------- v4: クイック設定バー ---------- */
+    /* ---------- クイック設定バー ---------- */
     "quick.title": "クイック変換パラメータ",
     "settings.resetDefaults": "デフォルト設定に戻す",
     "settings.resetDefaultsTitle": "デフォルト設定に戻します(アプリ設定とカスタムプリセットは保持)",
@@ -331,7 +331,7 @@ const dict: Partial<Record<Dict, string>> = {
     "preset.customHint": "カスタムプリセット",
     "preset.modifiedHint": "調整済み(テンプレートプリセットと一致しません)",
     "preset.hintTitle": "テンプレートを選択すると組版とページ設定が上書きされます",
-    // v3:プリセット切り替え後のトースト表示(動作契約キー)
+    // プリセット切り替え後のトースト表示(動作契約キー)
     "toast.presetSwitched": "プリセット「${name}」を適用しました(上書き:${groups})",
     "toast.settingsReset": "設定をデフォルトに戻しました",
     "preset.saveFailed": "保存に失敗しました。再試行してください",
@@ -344,7 +344,7 @@ const dict: Partial<Record<Dict, string>> = {
     "preset.noneToExport": "エクスポート可能なカスタムプリセットがありません",
     "preset.readFailed": "ファイルの読み込みに失敗しました:${error}",
     "preset.writeFailed": "ファイルの書き込みに失敗しました:${error}",
-    // F9:docx テンプレート导入(浅い导入 v1)
+    // docx テンプレート导入(浅い导入)
     "dialog.importDocxTemplate": "Word テンプレートをインポート",
     "settings.importDocxTemplate": "Word テンプレートをインポート…",
     "settings.importDocxTemplateTitle": "Word 文書からフォントと用紙サイズをインポート",
@@ -366,13 +366,13 @@ const dict: Partial<Record<Dict, string>> = {
     "drop.ariaLabel": "クリックまたは Markdown ファイルをドロップ(複数可)",
     "drop.hint": "Markdown ファイルまたはフォルダーをここにドロップ",
     "drop.or": "または",
-    // P1-6 空状態の機能説明:拡張子 + 構文能力を一行で表記
+    // 空状態の機能説明:拡張子 + 構文能力を一行で表記
     "drop.capabilities": ".md / .markdown 対応 · 表 · 数式 · コードハイライト · Mermaid",
     "drop.change": "クリックで変更、ドロップで追加",
     "drop.multiHint": "ドラッグまたはボタンで並べ替え、クリック/ドロップで追加できます",
     "drop.dblclickHint": "行をダブルクリックするとレイアウトをプレビューできます",
     "drop.busy": "変換が進行中です。後ほどファイルを追加してください",
-    // v3 UI リニューアル:空状態のメインビジュアル文言
+    // 空状態のメインビジュアル文言
     "drop.areaLabel": "ファイル選択",
     "drop.title": "Markdown ファイルをドロップ",
     "drop.sub": "そのままドロップでキューに追加できます。複数ファイルを一度に選択することもできます",

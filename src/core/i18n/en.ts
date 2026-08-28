@@ -39,7 +39,7 @@ const dict = {
     "convert.stage.converting": "Converting…",
     "convert.stage.read": "Reading file…",
     "convert.stage.render": "Rendering document…",
-    // B9 staged progress (PDF pipeline sub-stages; "print" reported before printToPDF)
+    // staged progress (PDF pipeline sub-stages; "print" reported before printToPDF)
     "convert.stage.parse": "Parsing Markdown…",
     "convert.stage.inline": "Processing images…",
     "convert.stage.mermaid": "Rendering Mermaid diagrams…",
@@ -85,7 +85,7 @@ const dict = {
     "file.selectedCount": "${count} Markdown files selected",
     "file.selectedSummary": "${count} files selected",
     "file.skippedSuffix": "${summary} (skipped ${count} non-Markdown items)",
-    // B9 drop feedback: duplicates reported separately; combined form when both present
+    // drop feedback: duplicates reported separately; combined form when both present
     "file.duplicatesSuffix": "${summary} (${count} duplicate files skipped)",
     "file.skippedBothSuffix": "${summary} (skipped ${skipped} non-Markdown items and ${duplicates} duplicates)",
     "file.skippedListToggle": "${count} skipped non-Markdown files",
@@ -93,7 +93,7 @@ const dict = {
     "file.removeAria": "Remove ${name}",
     "file.clearList": "Clear list",
     "file.areaLabel": "File selection",
-    // v3 UI rework: placeholder single-file copy + batch/merge footer suffixes
+    // placeholder single-file copy + batch/merge footer suffixes
     "file.selectedOne": "1 file selected",
     "file.batchFoot": ": one document per file",
     "file.mergeFoot": ": combine all files into one document in the current order",
@@ -133,7 +133,7 @@ const dict = {
     "about.manual": "View User Manual",
     "dialog.openFailed": "Failed to open file dialog: ${error}",
 
-    /* ---------- Conversion pre-check (F6) ---------- */
+    /* ---------- Conversion pre-check ---------- */
     "precheck.title": "Pre-check",
     "precheck.desc": "Found ${count} issue(s) that may affect the layout. Continue anyway?",
     "precheck.continue": "Convert anyway",
@@ -152,7 +152,7 @@ const dict = {
     "summary.details": "Failure details",
     "summary.revealTitle": "Show output file in Explorer",
 
-    /* ---------- Recent conversions (P1-3: empty-state quick chips) ---------- */
+    /* ---------- Recent conversions ---------- */
     "recent.clear": "Clear recent",
     // Interaction: click chip = load into list; trailing ↻ button = re-convert in original format
     "recent.itemTitle": "Load into file list: ${path}",
@@ -164,7 +164,7 @@ const dict = {
     "recent.time.yesterday": "Yesterday ${time}",
     "recent.time.monthDay": "${month}/${day}",
     "recent.time.fullDate": "${year}/${month}/${day}",
-    // v3 UI rework: history bar title & clear button
+    // history bar title & clear button
     "history.title": "Recent conversions",
     "history.clear": "Clear history",
     // trailing ↻ button: re-convert in original format (behavior contract key)
@@ -179,10 +179,10 @@ const dict = {
     "settings.groupTypography": "Typography",
     "settings.groupHeaderFooter": "Header & footer",
     "settings.groupHeaderWatermark": "Header, footer & watermark",
-    // F4 header/footer customization
+    // header/footer customization
     "settings.headerMode": "Header",
     "settings.headerModeDefault": "Default (document title)",
-    // v3: header mode segmented control (short option label) and row label
+    // header mode segmented control (short option label) and row label
     "settings.modeDefault": "Default",
     "settings.headerModeLabel": "Header mode",
     "settings.headerModeCustom": "Custom",
@@ -198,7 +198,7 @@ const dict = {
     "settings.footerEnabledLabel": "Custom footer",
     "settings.footerEnabledDesc": "Show \"Page X of Y\"; only effective in custom mode",
     "settings.headerFooterDefaultNote": "Default mode: the header shows the document title centered and the footer always shows the page number; not controlled by these toggles.",
-    // F5 text watermark (same "not in preset" group as header/footer)
+    // text watermark (same "not in preset" group as header/footer)
     "settings.watermarkText": "Watermark text",
     "settings.watermarkAngle": "Rotation angle",
     "settings.watermarkOpacity": "Opacity",
@@ -210,7 +210,7 @@ const dict = {
     "settings.groupManage": "Template management",
     "settings.groupApp": "Preferences",
     "settings.groupLanguage": "Interface language",
-    // B13: appearance theme (P0-4: key reused as the L4 field label)
+    // appearance theme (key reused as the L4 field label)
     "settings.groupAppearance": "Appearance",
     "settings.themeSystem": "Follow system",
     "settings.themeLight": "Light",
@@ -253,7 +253,7 @@ const dict = {
     "settings.tierCompact": "Compact",
     "settings.tierStandard": "Standard",
     "settings.tierSpacious": "Relaxed",
-    // v3: heading tier row labels (IA naming) + body size stepper aria labels
+    // heading tier row labels (IA naming) + body size stepper aria labels
     "settings.headingScaleTier": "Heading size scale",
     "settings.headingSpacingTier": "Heading spacing scale",
     "settings.stepDecreaseAria": "Decrease font size",
@@ -286,7 +286,7 @@ const dict = {
     "settings.outputDirDefault": "Same directory as source file",
     "settings.outputDirPick": "Choose…",
     "settings.outputDirReset": "Reset to default",
-    // v3: drawer footer "restore defaults" (conversion-related groups; app preferences and custom presets kept)
+    // drawer footer "restore defaults" (conversion-related groups; app preferences and custom presets kept)
     "settings.resetDefaults": "Restore defaults",
     "settings.resetDefaultsTitle": "Restore default settings (app preferences and custom presets are kept)",
     "settings.afterConvert": "After export",
@@ -311,7 +311,7 @@ const dict = {
     "settings.selectDirFailed": "Failed to select output directory: ${error}",
     "settings.cssTooLarge": "CSS file too large (exceeds ${kb}KB limit)",
 
-    /* ---------- v4: quick settings bar ---------- */
+    /* ---------- quick settings bar ---------- */
     "quick.title": "Quick conversion settings",
 
     /* ---------- Template presets ---------- */
@@ -337,9 +337,9 @@ const dict = {
     "preset.customHint": "Custom preset",
     "preset.modifiedHint": "Modified, no longer matches a template preset",
     "preset.hintTitle": "Selecting a template overrides typography and page settings",
-    // v3: toast feedback after switching presets (behavior contract key)
+    // toast feedback after switching presets (behavior contract key)
     "toast.presetSwitched": "Preset \"${name}\" applied (overrode: ${groups})",
-    // v3: toast feedback after drawer "restore defaults" (facts only)
+    // toast feedback after drawer "restore defaults" (facts only)
     "toast.settingsReset": "Settings restored to defaults",
     "preset.saveFailed": "Save failed, please retry",
     "preset.deleteFailed": "Delete failed, please retry",
@@ -351,7 +351,7 @@ const dict = {
     "preset.noneToExport": "No custom presets to export",
     "preset.readFailed": "Failed to read file: ${error}",
     "preset.writeFailed": "Failed to write file: ${error}",
-    // F9: docx template import (shallow v1)
+    // docx template import (shallow)
     "dialog.importDocxTemplate": "Import Word template",
     "settings.importDocxTemplate": "Import Word template…",
     "settings.importDocxTemplateTitle": "Import fonts and page size from a Word document",
@@ -373,14 +373,14 @@ const dict = {
     "drop.ariaLabel": "Click or drop Markdown files (multiple supported)",
     "drop.hint": "Drop Markdown files or folders here",
     "drop.or": "or",
-    // P1-6 empty-state capability note: extensions + syntax features in one line
+    // empty-state capability note: extensions + syntax features in one line
     "drop.capabilities": "Supports .md / .markdown · tables · formulas · code highlight · Mermaid",
     "drop.change": "Click to change the file, or drop to add",
     "drop.multiHint": "Drag or use buttons to reorder; click or drop to add more",
     "drop.dblclickHint": "Double-click a row to preview the layout",
-    // B9: status hint when files are dropped while a conversion is running
+    // status hint when files are dropped while a conversion is running
     "drop.busy": "Conversion in progress, please wait before adding files",
-    // v3 UI rework: empty-state hero copy
+    // empty-state hero copy
     "drop.areaLabel": "File selection",
     "drop.title": "Drop Markdown files",
     "drop.sub": "Release to add them to the queue; you can also select multiple files at once",
@@ -440,7 +440,7 @@ const dict = {
     /* ---------- Errors (localized at throw time: message reaches GUI via a one-shot string channel) ---------- */
     "convert.noFilesSelected": "No files selected",
 
-    /* ---------- Error code → actionable message (B9: remapped at display time, unknown codes pass through) ---------- */
+    /* ---------- Error code → actionable message (remapped at display time, unknown codes pass through) ---------- */
     "error.fileBusy": "The file is in use. Close the program using it and retry",
     "error.fileNotFound": "File not found. Please verify the file has not been moved or deleted",
     "error.accessDenied": "Access denied. Check file or folder permissions and retry",

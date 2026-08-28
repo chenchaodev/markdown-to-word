@@ -10,7 +10,7 @@
 import { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
 export { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
 // 仅类型导入(编译期擦除,不引入运行时依赖):Language 契约定义于 i18n.ts,
-// 消费方从 i18n 导入(原 re-export 无消费者,CORE-9 清理移除)
+// 消费方从 i18n 导入(原 re-export 无消费者,清理移除)
 import type { Language } from "../i18n.js";
 
 /** 转换格式 */
@@ -20,21 +20,21 @@ export type ConvertFormat = "docx" | "pdf";
 export type AfterConvertAction = "none" | "show-in-folder" | "open";
 
 /**
- * 目录模式(F7-①):docx 目录页生成方式。
+  * 目录模式:docx 目录页生成方式。
  * - static(默认)= 免更新静态目录:打开即见、可点击跳转、无页码、不弹更新域提示(现状行为)
  * - field = Word 域目录:TOC 域 + 打开触发更新、注入真实页码(Word/WPS 打开弹一次更新提示)
  */
 export type TocMode = "static" | "field";
 
 /**
- * 外观主题偏好(B13):
+  * 外观主题偏好:
  * - system(默认)= 跟随系统:renderer 移除 data-theme 属性,CSS @media
  *   prefers-color-scheme 接管(视觉层契约,勿在 JS 侧解析系统主题)
  * - light / dark = 显式主题:renderer 设 document.documentElement.dataset.theme
  */
 export type ThemePreference = "system" | "light" | "dark";
 
-/** 页面设置(批次 1:docx section / pdf @page 参数化;单位 mm)。 */
+/** 页面设置(docx section / pdf @page 参数化;单位 mm)。 */
 export interface PageSetup {
   paper: "A4" | "A3" | "A5" | "Letter" | "Legal";
   orientation: "portrait" | "landscape";
@@ -45,7 +45,7 @@ export interface PageSetup {
 }
 
 /**
- * 页眉页脚设置(F4 文档外壳,不入排版预设——预设只管排版/页面,
+  * 页眉页脚设置(文档外壳,不入排版预设——预设只管排版/页面,
  * matchesPreset/PRESET_COMPARE_FIELDS 不消费本对象):
  * - headerMode=default 为现状行为(文档标题居中 + 页码页脚),存量 settings.json
  *   缺本字段时双侧(main sanitize / renderer merge)兜底到默认即行为不变
@@ -73,7 +73,7 @@ export const DEFAULT_HEADER_FOOTER: HeaderFooterSettings = {
   footerEnabled: true,
 };
 
-/* ---------- 文字水印(F5) ---------- */
+/* ---------- 文字水印 ---------- */
 /**
  * 文字水印设置:与页眉页脚同组(「不入预设」),文档外壳层装饰。
  * - text 空串 = 不启用(零渲染)
@@ -109,7 +109,7 @@ export const DEFAULT_PAGE_SETUP: PageSetup = {
   marginRight: 32,
 };
 
-/* ---------- 页面几何换算(CORE-5 自 docx/render.ts 上移,PageSetup 领域单点化) ---------- */
+/* ---------- 页面几何换算(PageSetup 领域单点化) ---------- */
 
 /** 纸张 mm 尺寸表(宽 × 高,纵向值;landscape 由消费方/docx 库处理交换,勿在此交换) */
 export const PAPER_SIZES_MM: Record<PageSetup["paper"], { width: number; height: number }> = {
@@ -125,12 +125,12 @@ export function mmToTwips(mm: number): number {
   return Math.round(mm * 56.6929);
 }
 
-/** twips → px(96dpi 基准;1px = 1440/96 = 15 twips)。图片尺寸属性百分比换算用(F1)。 */
+/** twips → px(96dpi 基准;1px = 1440/96 = 15 twips)。图片尺寸属性百分比换算用。 */
 export function twipsToPx(twips: number): number {
   return twips / 15;
 }
 
-/** mm → px(96dpi 基准;1in = 25.4mm = 96px)。pdf 侧图片尺寸属性百分比换算用(F1)。 */
+/** mm → px(96dpi 基准;1in = 25.4mm = 96px)。pdf 侧图片尺寸属性百分比换算用。 */
 export function mmToPx(mm: number): number {
   return (mm / 25.4) * 96;
 }
@@ -150,7 +150,7 @@ export interface AppSettings {
   breakBeforeH1: boolean;
   /** 自动生成目录页(默认开;docx 静态目录 / PDF 目录同开关) */
   toc: boolean;
-  /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;docx 生效,PDF 见 F7-②) */
+   /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;docx 生效,PDF 见) */
   tocMode: TocMode;
   /** 公式编号开关(默认开;关时公式不编号、label 段原样渲染、引用保持原文本,docx/pdf 一致) */
   equationNumbering: boolean;
@@ -158,7 +158,7 @@ export interface AppSettings {
   afterConvert: AfterConvertAction;
   /** 输出目录:空串 = 输出到源文件同目录(默认);非空 = 固定输出目录(须绝对路径) */
   outputDir: string;
-  /** 自定义模板预设(批次 11 迭代 3;上限 MAX_CUSTOM_PRESETS,名称非空去重) */
+  /** 自定义模板预设(上限 MAX_CUSTOM_PRESETS,名称非空去重) */
   customPresets: CustomPreset[];
   /** PDF 自定义样式 CSS(用户导入,追加到默认样式后覆盖;默认空) */
   pdfCss: string;
@@ -168,9 +168,9 @@ export interface AppSettings {
   theme: ThemePreference;
   /** 页眉页脚(默认 = 现状行为:标题页眉 + 页码页脚;见 HeaderFooterSettings) */
   headerFooter: HeaderFooterSettings;
-  /** 文字水印(F5;与页眉页脚同组「不入预设」;空 text = 不启用) */
+   /** 文字水印(与页眉页脚同组「不入预设」;空 text = 不启用) */
   watermark: WatermarkSettings;
-  /** AI 清理(B1):转换前自动规整 AI 生成的 Markdown(智能引号/破折号/列表格式/空行) */
+   /** AI 清理:转换前自动规整 AI 生成的 Markdown(智能引号/破折号/列表格式/空行) */
   aiCleanup: boolean;
   /** Obsidian 兼容(C1):将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接 */
   obsidianCompat: boolean;
@@ -233,7 +233,7 @@ export interface TemplatePreset {
   pageSetup: PageSetup;
 }
 
-/** 预设值已定稿,勿改(与批次 6 规划一致)。 */
+/** 预设值已定稿,勿改。 */
 export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: "default",

@@ -1,6 +1,6 @@
 /**
  * 排版设置契约(core 侧定义;主进程 settings.ts 持久化,renderer 经
- * core/settings-defaults.ts 消费同一类型——B7 起无平行定义,单源即此处)。
+ * core/settings-defaults.ts 消费同一类型——无平行定义,单源即此处)。
  * 应用范围:docx styles.default 与普通正文段落、PDF 模板 CSS(body/正文段落)。
  */
 
@@ -19,21 +19,21 @@ export interface TypographySettings {
   align: "left" | "justify";
   /** 章节自动编号,默认 true */
   headingNumbering: boolean;
-  /** 图/表题注自动编号(8b:前缀行识别 + 静态编号),默认 true */
+  /** 图/表题注自动编号(前缀行识别 + 静态编号),默认 true */
   captionNumbering: boolean;
-  /** 标题字号缩放档位(F3;默认 "standard" = 升级前观感),见 HEADING_SCALE_FACTORS */
+  /** 标题字号缩放档位(默认 "standard" = 升级前观感),见 HEADING_SCALE_FACTORS */
   headingScale: HeadingScale;
-  /** 标题段前/段后间距档位(F3;默认 "standard"),见 HEADING_SPACING_BASE_PT */
+  /** 标题段前/段后间距档位(默认 "standard"),见 HEADING_SPACING_BASE_PT */
   headingSpacing: HeadingSpacingTier;
 }
 
 /**
- * 标题字号缩放档位(F3):不做 h1-h6 逐级独立输入(控件爆炸),以基准档位
+  * 标题字号缩放档位:不做 h1-h6 逐级独立输入(控件爆炸),以基准档位
  * 映射到各级相对正文字号的缩放系数(见 HEADING_SCALE_FACTORS)。
  */
 export type HeadingScale = "compact" | "standard" | "spacious";
 
-/** 标题段前/段后间距档位(F3):对 HEADING_SPACING_BASE_PT 基准表整体乘系数。 */
+/** 标题段前/段后间距档位:对 HEADING_SPACING_BASE_PT 基准表整体乘系数。 */
 export type HeadingSpacingTier = "compact" | "standard" | "spacious";
 
 /** 档位枚举表(sanitize 白名单单源;main persist 与 GUI 下拉共用) */
