@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-08-28:**关于页重构完成并随 3.6.0 发版**(typecheck/lint/build/62 段全绿;GUI 实测通过;版本号三统一 package.json=lockfile=tag v3.6.0=CHANGELOG [3.6.0]):自研关于页面(纸感卡片+钤印+三语),去重+快速上手/特性标签+手册按钮(中性墨色),入口置标题栏设置右侧、弹窗居中主窗口;作者链接 GitHub 主页;手册链接 master 分支
 - 2026-08-28:**F7 目录带页码完成并随 3.3.0 发版**(ADR-007 混合路线,部分推翻 D1;typecheck/lint/build/60 段/smoke 全绿;GUI 实测通过 ACCEPTANCE F7 D1/D2 全勾):批① docx opt-in「Word 域目录」(tocMode:'static'|'field' 设置单源 + 双格式一致开关 + UI 抽屉 L2 目录模式下拉 + i18n 三语 + toc-caption.test.js 补断言);批② PDF 两遍法静态页码(field 模式触发——第一遍打印经既有 /Dests 命名目标解析定位标题页码,免 pdfjs 文本匹配 → 第二遍注入 .toc-page 点线引导页码重印,正文布局一致;自动断言见 test/segments/toc-pagenum.test.js)
 - 2026-08-28:**F8 合并总目录增强完成并随 3.4.0 发版**(typecheck/lint/build/61 段/smoke 全绿;GUI 实测通过 ACCEPTANCE F8 D1(2026-08-28 随 3.4.0 验收关闭):现状合并已是单 convert 通路(mergeMarkdowns → convert 一次),标题/题注编号本就跨文件连续、TOC 本就覆盖全文;F8 仅固化「合并总目录覆盖全部源文件标题 + 跨文件页码准确」行为(无需新增核心代码,仅补测试防止回归);自动断言见 test/segments/merge-toc.test.js(docx+pdf 双格式总目录覆盖 A+B 共 8 标题、PDF 跨文件页码单调且 B>A、.toc-page 注入)
 - 2026-08-28:**F9 docx 模板导入完成并随 3.5.0 发版**(typecheck/lint/build/62 段/smoke 全绿;GUI 实测通过 ACCEPTANCE F9 D1(2026-08-28 随 3.5.0 验收关闭):浅导入 v1(ADR-008)——jszip 解包 .docx 提取 Normal/Heading1 样式 rPr(字体 ascii/eastAsia)+ 字号 + 文档 sectPr(页面尺寸/边距),映射回 typography/pageSetup 设置(标题样式字体优先、页面尺寸匹配纸张+朝向判定);UI 设置抽屉 01 预设·管理动作行新增「导入 Word 模板」按钮,main 打开对话框→解包合并持久化→回填控件;i18n zh/en/ja 补齐;颜色等深导入列后续独立候选;自动断言见 test/segments/template-import.test.js(纵向 A4+横向 Letter 两案例)

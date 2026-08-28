@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [3.6.0] - 2026-08-28
+- **自定义关于窗口(品牌纸感卡片 + 朱砂钤印 + 三语,随 3.6.0 发布;版本号三统一 package.json=lockfile=tag v3.6.0=CHANGELOG [3.6.0];typecheck/lint/build/62 段全绿)**:从原生对话框替换为自研 About 页面,展示软件名称 / 版本 / 卖点 / 作者 / 许可证 / GitHub 仓库,新增「快速上手」三步与特性标签;去除重复项(版本号双显、仓库链接三连);主按钮改中性墨色(非付印语义)跳转 GitHub 用户手册(master 分支),作者 chenchaodev 链接至 GitHub 主页;入口置于标题栏设置按钮右侧(中性墨色信息图标),弹窗居中于主窗口;i18n zh/en/ja 补齐
+
 ## [3.5.0] - 2026-08-28
 - **F9 docx 模板导入浅导入 v1(ADR-008;typecheck/lint/build/62 段/smoke 全绿)**:jszip 解包 .docx 提取 Normal/Heading1 样式 rPr(西文/中文字体)+ 字号 + 文档 sectPr(页面尺寸/边距),映射回现有 typography/pageSetup 设置(标题样式字体优先、页面尺寸匹配纸张+朝向判定);UI 设置抽屉 01 预设·管理动作行新增「导入 Word 模板…」按钮(main 打开对话框→解包合并持久化→回填控件),i18n zh/en/ja 补齐;颜色等深导入列后续独立候选;自动断言见 test/segments/template-import.test.js(纵向 A4+横向 Letter 两案例);GUI 实测待用户复核(ACCEPTANCE F9 D1)
 
