@@ -16,7 +16,7 @@ import { app } from "electron";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createJsonWriter } from "./atomic-json.js";
-// 页面设置契约单源(settings-defaults;原经 core/convert.js 导入形成环,B7 解环)
+// 页面设置契约单源(settings-defaults;原经 core/convert.js 导入形成环,已解环)
 import type { PageSetup } from "../../core/settings/settings-defaults.js";
 import { DEFAULT_PAGE_SETUP } from "../../core/settings/settings-defaults.js";
 import type { TypographySettings } from "../../core/settings/typography.js";
@@ -97,8 +97,8 @@ function isValidOutputDir(value: unknown): value is string {
 
 /**
  * 整文件形状校验:任一字段非法即视为损坏,整体回退默认。
- * 导出供直测(R3,presets-import 同模式):loadSettings 的「整文件回退」语义
- * 由本函数判定,测试直接断言合法/非法输入,不依赖磁盘 IO。
+ * 导出供直测:loadSettings 的「整文件回退」语义由本函数判定,测试直接断言
+ * 合法/非法输入,不依赖磁盘 IO。
  */
 export function isValidSettings(value: unknown): value is AppSettings {
   if (typeof value !== "object" || value === null) return false;
@@ -122,7 +122,7 @@ export function isValidSettings(value: unknown): value is AppSettings {
   // 改由 loadSettings 对 language 字段级兜底 DEFAULT_SETTINGS.language(zh)
   // theme 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "system";存在则须枚举内值
   if ("theme" in s && !isOneOf(s.theme, THEMES)) return false;
-  // B1/C1:新增开关为可选字段(旧 settings.json 缺省视为合法,loadSettings 兜底默认)
+  // 新增开关为可选字段(旧 settings.json 缺省视为合法,loadSettings 兜底默认)
   if ("aiCleanup" in s && typeof s.aiCleanup !== "boolean") return false;
   if ("obsidianCompat" in s && typeof s.obsidianCompat !== "boolean") return false;
   if ("obsidianAttachmentFolder" in s && typeof s.obsidianAttachmentFolder !== "string") return false;
@@ -142,11 +142,11 @@ export function isValidSettings(value: unknown): value is AppSettings {
 }
 
 export function loadSettings(): AppSettings {
-  // MR-11 双源显式化:本函数(main 侧 sanitize/兜底)与 renderer 侧
+  // 双源显式化:本函数(main 侧 sanitize/兜底)与 renderer 侧
   // settings-logic.ts mergeSettingsWithDefaults 是有意的双侧防御——跨进程边界
   // (settingsGet IPC)两侧各自保证「返回完整合法 AppSettings」,任一侧兜底逻辑
   // 改动(尤其 theme/outputDir/pdfCss 缺失兜底)必须保持语义一致;恒等断言由
-  // test 侧守护段落地(车道 D),改此处前先核对另一侧。
+  // test 侧守护段落地,改此处前先核对另一侧。
   if (settingsCache) return settingsCache;
   let loaded: AppSettings = DEFAULT_SETTINGS;
   try {
@@ -160,28 +160,27 @@ export function loadSettings(): AppSettings {
         ...parsed,
         outputDir: isValidOutputDir(parsed.outputDir) ? parsed.outputDir : "",
         toc: typeof parsed.toc === "boolean" ? parsed.toc : DEFAULT_SETTINGS.toc,
-        // F7:tocMode 缺失(旧文件)→ "static";存在 → 原样保留(枚举已过形状校验)
+        // tocMode 缺失(旧文件)→ "static";存在 → 原样保留(枚举已过形状校验)
         tocMode: isOneOf(parsed.tocMode, TOC_MODES) ? parsed.tocMode : DEFAULT_SETTINGS.tocMode,
         equationNumbering:
           typeof parsed.equationNumbering === "boolean"
             ? parsed.equationNumbering
             : DEFAULT_SETTINGS.equationNumbering,
-        // 批次 16:pdfCss 缺失(旧文件)→ "";存在 → 原样保留
+        // pdfCss 缺失(旧文件)→ "";存在 → 原样保留
         pdfCss: typeof parsed.pdfCss === "string" ? parsed.pdfCss : DEFAULT_SETTINGS.pdfCss,
         // i18n:language 缺失(旧文件)→ 默认 zh;存在但已不在注册表(语言裁撤,
         // 如 ko/fr/ru)→ 字段级兜底 zh,其余偏好原样保留
         language: isLanguage(parsed.language) ? parsed.language : DEFAULT_SETTINGS.language,
-        // B13:theme 缺失(旧文件)→ "system";存在 → 原样保留(枚举已过形状校验)
+        // theme 缺失(旧文件)→ "system";存在 → 原样保留(枚举已过形状校验)
         theme: isOneOf(parsed.theme, THEMES) ? parsed.theme : DEFAULT_SETTINGS.theme,
         typography: sanitizeTypography(parsed.typography),
-        // 批次 11 迭代 3:customPresets 缺失(旧文件)→ [];存在 → 逐条校验
+        // customPresets 缺失(旧文件)→ [];存在 → 逐条校验
         customPresets: sanitizeCustomPresets(parsed.customPresets),
-        // F4:headerFooter 不参与 isValidSettings 整文件形状校验(同 typography
-        // 先例——旧文件缺字段走字段级兜底,不因部分字段缺失整体回退默认)
+        // headerFooter 不参与 isValidSettings 整文件形状校验(同 typography 先例——旧文件缺字段走字段级兜底,不因部分字段缺失整体回退默认)
         headerFooter: sanitizeHeaderFooter(parsed.headerFooter),
-        // F5:watermark 同 headerFooter 先例(整文件形状校验不查;字段级兜底)
+        // watermark 同 headerFooter 先例(整文件形状校验不查;字段级兜底)
         watermark: sanitizeWatermark(parsed.watermark),
-        // B1/C1:旧 settings.json 缺字段 → 兜底默认(与 toc/theme 同先例)
+        // 旧 settings.json 缺字段 → 兜底默认(与 toc/theme 同先例)
         aiCleanup: typeof parsed.aiCleanup === "boolean" ? parsed.aiCleanup : DEFAULT_SETTINGS.aiCleanup,
         obsidianCompat:
           typeof parsed.obsidianCompat === "boolean"
@@ -201,7 +200,7 @@ export function loadSettings(): AppSettings {
 }
 
 /** 原子写:临时文件 + rename(Windows 下 rename 可覆盖已存在文件)。
- *  M4:经写队列串行执行——write+rename 之间不得插入其它写(同 tmp 路径),
+ *  经写队列串行执行——write+rename 之间不得插入其它写(同 tmp 路径),
  *  调用序 = 写盘序,链尾即最终态;缓存更新与写盘同序,失败不截断队列。 */
 export async function saveSettings(next: AppSettings): Promise<void> {
   await writeSettingsJson(settingsFilePath(), next, () => {
@@ -301,7 +300,7 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
 }
 
 /**
- * headerFooter 逐字段校验(F4,仿 sanitizeTypography 整块兜底):
+ * headerFooter 逐字段校验(仿 sanitizeTypography 整块兜底):
  * 枚举字段(headerMode/headerLayout)非法或缺失 → 默认;字符串字段钳制为 string
  * (非 string 丢弃);布尔钳制。始终返回合法完整对象。
  */
@@ -320,7 +319,7 @@ function sanitizeHeaderFooter(value: unknown): HeaderFooterSettings {
 }
 
 /**
- * watermark 逐字段校验(F5,仿 sanitizeHeaderFooter):
+ * watermark 逐字段校验(仿 sanitizeHeaderFooter):
  * text 钳制为 string(空串 = 关闭);angle 钳制到 [0,360];opacity 钳制到 [0,1];
  * gray 钳制为 boolean。始终返回合法完整对象。
  */
@@ -338,7 +337,7 @@ function sanitizeWatermark(value: unknown): WatermarkSettings {
 }
 
 /**
- * customPresets 逐条校验(批次 11 迭代 3):
+ * customPresets 逐条校验:
  * - 非数组 → []
  * - 条目须为对象且 name 非空字符串(trim 后);typography 经 sanitizeTypography
  *   逐字段钳制(始终合法),pageSetup 经 sanitizePageSetup(非法对象 → 整条丢弃)
@@ -363,7 +362,7 @@ function sanitizeCustomPresets(value: unknown): CustomPreset[] {
   return out;
 }
 
-/* ---------- 批次 13:模板预设导入/导出(纯逻辑;对话框/文件 IO 在 ipc/register.ts) ---------- */
+/* ---------- 模板预设导入/导出(纯逻辑;对话框/文件 IO 在 ipc/register.ts) ---------- */
 export type ParsePresetsResult =
   | { ok: true; presets: CustomPreset[] }
   | { ok: false; error: string };
@@ -383,7 +382,7 @@ export type ExportPresetsResult =
   | { ok: true; canceled: false; count: number }
   | { ok: false; error: string };
 
-/* ---------- 批次 16:PDF 样式 CSS 导入(对话框/文件 IO 在 ipc/register.ts) ---------- */
+/* ---------- PDF 样式 CSS 导入(对话框/文件 IO 在 ipc/register.ts) ---------- */
 /** PDF 自定义 CSS 导入大小上限(字节;超出拒绝导入,防误选大文件拖垮 settings.json)。 */
 export const MAX_PDF_CSS_BYTES = 100 * 1024;
 
@@ -392,7 +391,7 @@ export type ImportPdfCssResult =
   | { ok: true; canceled: false; css: string; name: string }
   | { ok: false; error: string };
 
-/* ---------- F9:docx 模板导入(浅导入 v1,对话框/文件 IO 在 ipc/register.ts) ---------- */
+/* ---------- docx 模板导入(浅导入 v1,对话框/文件 IO 在 ipc/register.ts) ---------- */
 /**
  * docx 模板导入结果:成功返回合并后的完整 typography/pageSetup(供 renderer 回填);
  * 取消 → { ok:true, canceled:true };解析/读取异常 → { ok:false, error }。
@@ -406,7 +405,7 @@ export type ImportDocxTemplateResult =
 export const PRESETS_SCHEMA_VERSION = 1;
 
 /**
- * 解析导入的预设 JSON(批次 13):
+ * 解析导入的预设 JSON:
  * - JSON.parse 失败 → 「文件不是有效的 JSON」
  * - 裸数组兼容(归一化);对象须 schemaVersion === 1,其余 → 「不支持的模板文件版本」
  * - 逐条过 sanitizeCustomPresets:空名/非法 pageSetup 丢弃、数值钳制、同名去重保留先出现、截断 10
@@ -437,7 +436,7 @@ export function parsePresetsFile(text: string): ParsePresetsResult {
 }
 
 /**
- * 导入合并(批次 13):incoming 覆盖 existing 的同名项——合并序 incoming 在前,
+ * 导入合并:incoming 覆盖 existing 的同名项——合并序 incoming 在前,
  * 复用 sanitizeCustomPresets 去重「保留先出现」的语义;其余追加,截断 10。
  * 入参不被修改(结果为新对象数组)。
  */
@@ -496,7 +495,7 @@ function sanitizeTypography(value: unknown): TypographySettings {
   if (isOneOf(src.align, ALIGNS)) out.align = src.align;
   if (typeof src.headingNumbering === "boolean") out.headingNumbering = src.headingNumbering;
   if (typeof src.captionNumbering === "boolean") out.captionNumbering = src.captionNumbering;
-  // F3 标题排版粒度:档位枚举,非法(或缺失,旧 settings.json)→ 默认 standard 档
+  // 标题排版粒度:档位枚举,非法(或缺失,旧 settings.json)→ 默认 standard 档
   if (isOneOf(src.headingScale, HEADING_SCALE_TIERS)) out.headingScale = src.headingScale;
   if (isOneOf(src.headingSpacing, HEADING_SPACING_TIERS)) out.headingSpacing = src.headingSpacing;
   return out;

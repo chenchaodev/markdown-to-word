@@ -1,6 +1,6 @@
 /**
- * 主进程 IPC 纯逻辑层(批次 15 R6):自 register.ts IPC handler 抽出的无 Electron
- * 依赖纯函数(解析/合并/校验/路径处理/数据变换),供直测。
+ * 主进程 IPC 纯逻辑层:自 register.ts IPC handler 抽出的无 Electron 依赖纯函数
+ * (解析/合并/校验/路径处理/数据变换),供直测。
  * 约定:只放不依赖 electron API 的纯逻辑;对话框/文件 IO/窗口/持久化留在 register.ts 薄壳。
  */
 import path from "node:path";
@@ -16,11 +16,11 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/* ---------- convert 系 handler 共用样板(B11 自 register.ts runWithCtx 抽出,行为等价):
+/* ---------- convert 系 handler 共用样板(自 register.ts runWithCtx 抽出,行为等价):
  * context 注册/释放 + 错误归一化集中一处。Electron 触点(event.sender/BrowserWindow/
  * ConvertCanceledError 实例判定)经 deps 注入,本模块保持零 electron 运行时依赖可直测。
- * 取消语义(刚根治的历史 bug 领域)不再分散在三个 handler:
- * - ctx 每次调用新建(「取消后复位」语义),由 registerCtx 按调用方键注册(多窗口隔离,M3)
+ * 取消语义(历史 bug 领域)不再分散在三个 handler:
+ * - ctx 每次调用新建(「取消后复位」语义),由 registerCtx 按调用方键注册(多窗口隔离)
  * - finally 注销引用(含异常/取消路径,避免悬挂)
  * - 取消错误 → onCanceled()(调用方给出取消结果形态);其他错误归一 { ok:false, error } ---------- */
 
@@ -53,8 +53,8 @@ export async function runConvertTask<T>(
   }
 }
 
-/* ---------- IPC 入参类型守卫(B1 安全审计):renderer 传参异常时快速失败,
-   不让脏值流入业务层(此前 convert/shell/preview 无校验,format 非法静默落 pdf 分支)。 ---------- */
+/* ---------- IPC 入参类型守卫:renderer 传参异常时快速失败,
+    不让脏值流入业务层(此前 convert/shell/preview 无校验,format 非法静默落 pdf 分支)。 ---------- */
 
 export function isString(v: unknown): v is string {
   return typeof v === "string";
@@ -81,8 +81,7 @@ export function buildRecentFileEntries(
     .map((p) => ({ path: p, name: path.basename(p), format, ts }));
 }
 
-/** 预览标题/基础名:去 .md/.markdown 扩展(大小写不敏感),其余原样。
- *  MR-6:扩展名判定单源 converter/paths.ts(stripMarkdownExt)。 */
+/** 预览标题/基础名:去 .md/.markdown 扩展(大小写不敏感),其余原样;扩展名判定单源 converter/paths.ts(stripMarkdownExt)。 */
 export function baseNameFromMdPath(mdPath: string): string {
   return stripMarkdownExt(path.basename(mdPath));
 }
@@ -92,7 +91,7 @@ export type ImportPresetsMergeResult =
   | { ok: false; error: string }
   | { ok: true; presets: CustomPreset[]; imported: number; overridden: number };
 
-/** 预设导入纯逻辑(批次 13 流程的解析+合并+整形;对话框/读文件/持久化在 register.ts)。 */
+/** 预设导入纯逻辑(解析+合并+整形;对话框/读文件/持久化在 register.ts)。 */
 export function importPresetsFromText(
   text: string,
   existing: readonly CustomPreset[],

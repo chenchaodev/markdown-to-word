@@ -1,6 +1,5 @@
 /**
- * JSON 文件原子写共享工具(main 层;批次 15 第 8 项,自 settings.ts / ui-state.ts
- * 双份实现抽出,行为零变化):
+ * JSON 文件原子写共享工具(main 层;自 settings.ts / ui-state.ts 双份实现抽出,行为零变化):
  * - 原子写:临时文件 + rename(Windows 下 rename 可覆盖已存在文件)
  * - 写队列:promise 链串行化——write+rename 之间不得插入其它写(同 tmp 路径),
  *   调用序 = 写盘序,链尾即最终态;单次写失败(如磁盘错误)不截断队列,

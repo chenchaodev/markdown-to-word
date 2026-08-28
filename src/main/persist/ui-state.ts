@@ -1,5 +1,5 @@
 /**
- * UI 状态持久化:userData/ui-state.json(批次 11 迭代 1「状态记忆」)。
+ * UI 状态持久化:userData/ui-state.json。
  * 与 settings.ts 同款原子写(tmp + rename)与写队列串行化,但校验宽松:
  * UI 状态损坏只丢弃对应字段回默认值,不抛错、不影响 settings.json 契约。
  * 取舍:UI 状态是辅助记忆(窗口位置/最近文件),损坏不应影响主配置;
@@ -9,18 +9,14 @@
  * - lastSessionFiles: 上次会话的文件列表(renderer 恢复时逐项校验存在性)
  * - lastOpenDir: 对话框记忆目录(目录存在才作为 defaultPath 使用)
  * - windowBounds: 窗口位置 {x,y,width,height} | null(恢复时钳制到显示器工作区)
- * - previewWindowBounds: 预览窗口位置(MR-16 体验对称;独立 key 与主窗互不覆盖,
- *   多预览并发时以最后关闭者为准;恢复时同样经 pickWindowBounds 钳制)
- * - isMaximized: 关闭时是否最大化(B9 窗口最大化状态记忆;恢复时 maximize(),
- *   windowBounds 此时存的是 getNormalBounds() 的还原态尺寸)
- * - panelOpen: 设置面板 details 展开态 {page, typography}(批次 N:单一设置面板,
- *   默认折叠以突出主流程;typography 为兼容保留字段,renderer 写镜像同值)
-  * - suppressCompleteDialog: 转换完成弹窗「不再提示」(P1-2 起默认 true = 不弹,内联反馈承接)
+ * - previewWindowBounds: 预览窗口位置(独立 key 与主窗互不覆盖,多预览并发时以最后关闭者为准)
+ * - isMaximized: 关闭时是否最大化(恢复时 maximize();windowBounds 存 getNormalBounds() 还原态尺寸)
+ * - panelOpen: 设置面板 details 展开态 {page, typography}(默认折叠以突出主流程)
+ * - suppressCompleteDialog: 转换完成弹窗「不再提示」(默认 true = 不弹,内联反馈承接)
  * 读时逐字段校验类型,非法/缺失 → 该字段默认值(不复用 settings 的整文件回退);
  * saveUiState 以 patch 合并当前状态,recentFiles 为「追加合并」语义
- * (同 path 保留 ts 最大者 → 重复转换自然置顶);空数组 = 清空(替换语义,
- * renderer「清空最近」传 { recentFiles: [] })。
- * 纯函数 pickWindowBounds 单独导出,供窗口创建(windows/main-window、windows/preview)与测试复用。
+ * (同 path 保留 ts 最大者 → 重复转换自然置顶);空数组 = 清空(替换语义)。
+ * 纯函数 pickWindowBounds 单独导出,供窗口创建与测试复用。
  */
 import { app } from "electron";
 import { readFileSync } from "node:fs";
@@ -51,13 +47,13 @@ export interface UiState {
   lastSessionFiles: string[];
   lastOpenDir: string;
   windowBounds: WindowBounds | null;
-  /** 预览窗口位置(MR-16;独立 key,恢复时经 pickWindowBounds 钳制)。 */
+  /** 预览窗口位置(独立 key,恢复时经 pickWindowBounds 钳制)。 */
   previewWindowBounds: WindowBounds | null;
-  /** 关闭时窗口是否最大化(B9;true 时启动恢复 maximize(),windowBounds 为还原态尺寸)。 */
+  /** 关闭时窗口是否最大化(恢复时 maximize();windowBounds 存 getNormalBounds() 还原态尺寸)。 */
   isMaximized: boolean;
   panelOpen: PanelOpen;
   /** 转换完成弹窗「不再提示」(true = 跳过弹窗,汇总条照常)。
-   *  P1-2:默认翻转为 true(不弹)——内联反馈已完备,模态打断流;
+   *  默认翻转为 true(不弹)——内联反馈已完备,模态打断流;
    *  已持久化的布尔值(用户显式选过弹窗=false)原样尊重,仅缺省/非法时落默认。 */
   suppressCompleteDialog: boolean;
 }
@@ -69,14 +65,12 @@ export const DEFAULT_UI_STATE: UiState = {
   windowBounds: null,
   previewWindowBounds: null,
   isMaximized: false,
-  // 批次 N:设置收敛为单一面板,默认折叠(已记忆的展开态仍优先恢复)
+  // 设置收敛为单一面板,默认折叠(已记忆的展开态仍优先恢复)
   panelOpen: { page: false, typography: false },
   suppressCompleteDialog: true,
 };
 
-/** 最近文件上限(与 renderer 的 recent-files.ts 展示截断一致)。
- *  MR-4 双源显式化:renderer 侧同名常量必须与本值恒等(恒等断言由 test 侧守护段
- *  落地,车道 D);改此值须双侧同步。 */
+/** 最近文件上限(与 renderer 的 recent-files.ts 展示截断一致;renderer 侧同名常量须与本值恒等,由测试守护;改此值须双侧同步)。 */
 export const MAX_RECENT_FILES = 10;
 
 /** 显示器工作区(与 Electron Display.workArea 同形状,便于无 Electron 直测)。 */

@@ -1,5 +1,5 @@
 /**
- * IPC channel 名单一来源(B12「IPC 面整理」):
+ * IPC channel 名单一来源:
  * - 全部 channel 统一「域:动作」命名(域在前,动宾序一致;历史混名的
  *   import:pdf-css → css:import、dialog:openMarkdowns → file:openDialog 等已归位);
  * - main/index.ts 的 handle/send 一律经本模块引用,禁止散落字符串字面量;
@@ -30,7 +30,7 @@ export const IPC_CHANNELS = {
   /* ---- 目录域 ---- */
   /** 选择输出目录(取消返回 null) */
   dirSelect: "dir:select",
-  /** F4:选择页眉 logo 图片(取消返回 null) */
+  /** 选择页眉 logo 图片(取消返回 null) */
   headerLogoSelect: "header-logo:select",
   /* ---- 转换域 ---- */
   /** 单文件转换 */
@@ -45,7 +45,7 @@ export const IPC_CHANNELS = {
   convertProgress: "convert:progress",
   /** 批量转换进度推送({index,total,file,stage}) */
   convertBatchProgress: "convert:batchProgress",
-  /** F6:转换前静态预检(读文件 + 解析 + 扫描,返回 ConvertWarning[]) */
+  /** 转换前静态预检(读文件 + 解析 + 扫描,返回 ConvertWarning[]) */
   convertPrecheck: "convert:precheck",
   /* ---- 预设域 ---- */
   /** 导入模板预设 JSON */
@@ -55,14 +55,14 @@ export const IPC_CHANNELS = {
   /* ---- CSS 域 ---- */
   /** 导入 CSS 文件作为 PDF 样式模板 */
   cssImport: "css:import",
-  /* ---- docx 模板导入(F9 浅导入 v1) ---- */
+  /* ---- docx 模板导入(浅导入 v1) ---- */
   /** 导入 Word 模板(.docx):解包提取样式/页面映射到当前设置 */
   templateImportDocx: "template:importDocx",
   /* ---- 设置域 ---- */
   settingsGet: "settings:get",
   settingsSet: "settings:set",
   /* ---- 主题域 ---- */
-  /** 界面重构 v3:标题栏 overlay 配色同步(renderer 主题变更后调用,传主题偏好
+  /** 标题栏 overlay 配色同步(renderer 主题变更后调用,传主题偏好
    *  system/light/dark;system 由 main 经 nativeTheme 解析实际生效主题) */
   themeSyncOverlay: "theme:syncOverlay",
   /* ---- UI 状态域 ---- */

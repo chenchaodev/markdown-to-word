@@ -1,9 +1,6 @@
 /**
- * IPC 注册体(自 main/index.ts 抽取,行为零变化):全部 ipcMain.handle 注册 +
- * convert 系 handler 共用的 ctx 注册表与样板。
- * 依赖方向(单向,防循环):本模块 → windows/preview、windows/web-contents-registry
- * (ctxByWebContents 注册表,MR-9 自本模块下沉)/ converter / persist /
- * services / logic;窗口层不再反向依赖本模块。
+ * IPC 注册体:全部 ipcMain.handle 注册 + convert 系 handler 共用 ctx 注册表与样板。
+ * 依赖方向单向(防循环):本模块 → 窗口/converter/persist/services/logic,窗口层不反向依赖本模块。
  */
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
@@ -59,10 +56,10 @@ import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/pr
 import { ctxByWebContents } from "../windows/web-contents-registry.js";
 
 /**
- * convert 系 handler 共用样板(R10-3;B11 抽纯逻辑至 ipc-logic.runConvertTask,
- * 本函数只保留 Electron 触点:win 解析 + 按 webContents id 注册/注销 + 取消错误判定)。
- * 取消语义(刚根治的历史 bug 领域)不再分散在三个 handler:
- * - ctx 每次调用新建(「取消后复位」语义),按 webContents id 注册(多窗口隔离,M3)
+ * convert 系 handler 共用样板:本函数只保留 Electron 触点(win 解析 + 按 webContents id 注册/注销 + 取消错误判定),
+ * 纯逻辑下沉至 ipc-logic.runConvertTask。
+ * 取消语义(历史 bug 领域)集中此处,不再分散在三个 handler:
+ * - ctx 每次调用新建(「取消后复位」语义),按 webContents id 注册(多窗口隔离)
  * - finally 删除引用(含异常/取消路径,避免悬挂)
  * - ConvertCanceledError → onCanceled()(调用方给出取消结果形态);其他错误归一 { ok:false, error }
  */
@@ -86,9 +83,8 @@ async function runWithCtx<T>(
 }
 
 /**
- * 转换成功钩子(批次 11):记录最近文件条目 {path,name,format,ts}。
- * saveUiState 内部按 path 去重(保留 ts 最大)+ 截断 10,重复转换自然置顶;
- * 写入失败静默,不影响转换结果。
+ * 转换成功钩子:记录最近文件条目 {path,name,format,ts}。
+ * saveUiState 内部按 path 去重(保留 ts 最大)+ 截断 10,重复转换自然置顶;写入失败静默,不影响转换结果。
  */
 async function recordRecentFiles(filePaths: string[], format: ConvertFormat): Promise<void> {
   const entries = buildRecentFileEntries(filePaths, format, Date.now());
@@ -113,8 +109,7 @@ async function lastOpenDirIfValid(): Promise<string | undefined> {
 }
 
 /**
- * 导入类 handler 共用模板(MR-7 自 presetsImport/cssImport 同构流程抽出):
- * 打开对话框(取消 → { ok:true, canceled:true })→ readFile → process 校验/持久化
+ * 导入类 handler 共用模板:打开对话框(取消 → { ok:true, canceled:true })→ readFile → process 校验/持久化
  * → 成功后记忆所选目录 → catch 归一为可读文案。process 返回 ok:false 时跳过目录记忆。
  */
 async function importFileViaDialog<T extends ImportPresetsResult | ImportPdfCssResult>(options: {
@@ -146,8 +141,8 @@ async function importFileViaDialog<T extends ImportPresetsResult | ImportPdfCssR
   }
 }
 
-/* ---------- MR-12 加固:shell.openPath/showItemInFolder 白名单 ----------
- * 仅允许本会话成功转换产物的输出路径(各转换 handler 成功时登记)。被攻破的
+/* ---------- 安全边界:shell.openPath/showItemInFolder 白名单 ----------
+ * 仅放行本会话成功转换产物的输出路径(各转换 handler 成功时登记)。被攻破的
  * renderer 原本可借主进程打开任意文件;白名单外路径拒绝并返回错误,renderer
  * 走既有错误提示通道展示。会话级集合即可覆盖全部合法入口(弹窗/汇总条的
  * 路径均来自当次转换结果);应用重启后 renderer 侧缓存同样清零,无合法场景受损。 */
@@ -162,8 +157,6 @@ function isAllowedOutputPath(p: string): boolean {
 }
 
 export function registerIpc(): void {
-  // 选择多个 markdown 文件(批量/合并入口;取消返回 []);
-  // 批次 11:defaultPath 记忆上次目录,成功后回写所选文件所在目录
   ipcMain.handle(CH.fileOpenDialog, async () => {
     const result = await dialog.showOpenDialog({
       title: t("dialog.openMarkdowns"),
@@ -178,7 +171,7 @@ export function registerIpc(): void {
   });
 
   // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示;用户取消返回 { ok:false, canceled:true }
-  // B1:入参类型守卫(format 非 docx/pdf 时此前静默落 pdf 分支,现显式失败)
+  // 入参类型守卫:format 非 docx/pdf 时此前静默落 pdf 分支,现显式失败
   ipcMain.handle(CH.convertSingle, async (event, filePath: unknown, format: unknown): Promise<ConvertResult> => {
     if (!isString(filePath) || !isConvertFormat(format)) {
       return { ok: false, error: t("common.invalidParams") };
@@ -186,25 +179,23 @@ export function registerIpc(): void {
     return runWithCtx(
       event,
       async (ctx, win) => {
-        // B12:progress payload 带 mode 标识,renderer 直接消费归属(不再按调用上下文推断)
+        // progress payload 带 mode 标识,renderer 直接消费归属(不再按调用上下文推断)
         const send = (stage: string): void =>
           win?.webContents.send(CH.convertProgress, { stage, mode: "single" satisfies ConvertMode });
         const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
-        allowOutputPath(outputPath); // MR-12:产物路径入 shell 白名单
-        await recordRecentFiles([filePath], format); // 批次 11:成功后记最近文件
+        allowOutputPath(outputPath); // 产物路径入 shell 白名单
+        await recordRecentFiles([filePath], format);
         return { ok: true, outputPath, warnings };
       },
       () => ({ ok: false, canceled: true, error: t("common.canceled") }),
     );
   });
 
-  // 取消当前窗口的转换(单文件/批量/合并通用;批量由 batchConvertImpl 内部检查)
   ipcMain.handle(CH.convertCancel, (event): void => {
     ctxByWebContents.get(event.sender.id)?.cancel();
   });
 
-  // F6:转换前静态预检(读取 → 解析 → 扫描;返回 ConvertWarning[])。
-  // 仅读取与解析,不触发实际渲染;文件不可读时返回 [] 交由转换自身报错,不阻断流程。
+  // 转换前静态预检:仅读取与解析,不触发实际渲染;文件不可读时返回 [] 交由转换自身报错,不阻断流程。
   ipcMain.handle(
     CH.convertPrecheck,
     async (_event, filePath: unknown): Promise<ConvertWarning[]> => {
@@ -219,7 +210,6 @@ export function registerIpc(): void {
     },
   );
 
-  // 选择输出目录(批次 7;取消返回 null);批次 11:defaultPath 记忆 + 成功后回写所选目录
   ipcMain.handle(CH.dirSelect, async (): Promise<string | null> => {
     const result = await dialog.showOpenDialog({
       title: t("dialog.selectDir"),
@@ -232,8 +222,6 @@ export function registerIpc(): void {
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
-  // F4:选择页眉 logo 图片(限图片扩展名;取消返回 null)。
-  // 与 dirSelect 同样板记忆 lastOpenDir,便于连续选择同目录资源
   ipcMain.handle(CH.headerLogoSelect, async (): Promise<string | null> => {
     const result = await dialog.showOpenDialog({
       title: t("dialog.selectHeaderLogo"),
@@ -249,8 +237,7 @@ export function registerIpc(): void {
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
-  // 拖放路径收集:目录递归取 md,非 md 的传入路径进 skipped
-  // B1:元素级校验(此前只 guard Array.isArray,非字符串元素会让 path.resolve 抛 TypeError)
+  // 元素级校验:此前只 guard Array.isArray,非字符串元素会让 path.resolve 抛 TypeError
   ipcMain.handle(
     CH.fileCollectMarkdown,
     (_event, paths: unknown): Promise<{ files: string[]; skipped: string[] }> => {
@@ -272,11 +259,10 @@ export function registerIpc(): void {
           const send = (info: BatchProgressInfo): void =>
             win?.webContents.send(CH.convertBatchProgress, info);
           const result = await batchConvertImpl(files, format, send, ctx, getKatexDir());
-          // MR-12:成功项产物路径入 shell 白名单
+          // 成功项产物路径入 shell 白名单
           for (const item of result.items) {
             if (item.ok && item.outputPath) allowOutputPath(item.outputPath);
           }
-          // 批次 11:成功后记录每个成功项的最近文件条目
           await recordRecentFiles(
             result.items.filter((item) => item.ok && item.file).map((item) => item.file),
             format,
@@ -289,8 +275,6 @@ export function registerIpc(): void {
   );
 
   // 合并转换:多文件 → mergeMarkdowns → 单次 convert,输出 {首文件名}-合并.{ext}
-  // 批次 7 补:进度走 convert:progress(与单文件同通道),renderer 的 runMerge 已订阅该事件;
-  // 用户取消 → 返回 { ok:false, canceled:true }(与单文件 handler 一致,renderer 据此走取消分支)。
   ipcMain.handle(CH.convertMerge, async (event, files: unknown, format: unknown): Promise<ConvertResult> => {
     if (!isStringArray(files) || !isConvertFormat(format)) {
       return { ok: false, error: t("common.invalidParams") };
@@ -298,13 +282,12 @@ export function registerIpc(): void {
     return runWithCtx(
       event,
       async (ctx, win) => {
-        // B12:与单文件同通道,payload.mode = "merge" 区分归属
+        // 与单文件同通道,payload.mode = "merge" 区分归属
         const send = (stage: string): void =>
           win?.webContents.send(CH.convertProgress, { stage, mode: "merge" satisfies ConvertMode });
         const result = await mergeConvertImpl(files, format, send, ctx, getKatexDir());
-        // 批次 11:合并成功 → 全部源文件均成功转换,逐个记最近文件
         if (result.ok) {
-          if (result.outputPath) allowOutputPath(result.outputPath); // MR-12:产物路径入 shell 白名单
+          if (result.outputPath) allowOutputPath(result.outputPath); // 产物路径入 shell 白名单
           await recordRecentFiles(files, format);
         }
         return result;
@@ -313,16 +296,15 @@ export function registerIpc(): void {
     );
   });
   ipcMain.handle(CH.settingsGet, (): AppSettings => loadSettings());
-  // 发版 1.0.0:界面版本信息(renderer header 显示;与「关于」对话框同源 app.getVersion)
+  // 界面版本信息:与「关于」对话框同源 app.getVersion
   ipcMain.handle(CH.appVersion, (): string => app.getVersion());
 
   ipcMain.handle(CH.settingsSet, (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
     return updateSettings(patch);
   });
 
-  // 界面重构 v3:标题栏 overlay 配色同步(renderer 主题变更后调用;主题主动方是
-  // renderer,main 只负责原生 overlay 绘制)。入参守卫:非法值警告留痕不静默
-  // (配色失同步可感知但不致命,不值得走错误弹窗打断主题切换)。
+  // 标题栏 overlay 配色同步:renderer 主题变更后调用,主题主动方是 renderer,main 只负责原生 overlay 绘制。
+  // 入参守卫:非法值警告留痕不静默(配色失同步可感知但不致命,不值得走错误弹窗打断主题切换)。
   ipcMain.handle(CH.themeSyncOverlay, (_event, theme: unknown): void => {
     if (!isThemePreference(theme)) {
       console.warn("[main] theme:syncOverlay 收到非法主题值:", theme);
@@ -331,9 +313,8 @@ export function registerIpc(): void {
     syncTitleBarOverlay(getMainWindow(), theme);
   });
 
-  // 批次 13:导入模板预设 JSON(选文件 → 解析校验 → 同名覆盖合并 → 上限 10 → 持久化)。
-  // 取消 → { ok:true, canceled:true };解析/读取异常 → { ok:false, error }(可读文案)
-  // MR-7:对话框/读文件/记目录/catch 样板收敛 importFileViaDialog
+  // 导入模板预设 JSON:选文件 → 解析校验 → 同名覆盖合并 → 上限 10 → 持久化;
+  // 取消 → { ok:true, canceled:true },解析/读取异常 → { ok:false, error }(可读文案)。
   ipcMain.handle(CH.presetsImport, (): Promise<ImportPresetsResult> =>
     importFileViaDialog({
       title: t("dialog.importPresets"),
@@ -352,8 +333,8 @@ export function registerIpc(): void {
     }),
   );
 
-  // 批次 13:导出全部自定义预设为 JSON(保存对话框;schemaVersion:1 包装,2 空格缩进)。
-  // 空预设 main 侧前置拦截(renderer 侧可同样提示,两处一致);取消 → { ok:true, canceled:true }
+  // 导出全部自定义预设为 JSON:保存对话框,schemaVersion:1 包装 + 2 空格缩进;
+  // 空预设 main 侧前置拦截(renderer 侧可同样提示,两处一致);取消 → { ok:true, canceled:true }。
   ipcMain.handle(CH.presetsExport, async (): Promise<ExportPresetsResult> => {
     const presets = loadSettings().customPresets;
     if (presets.length === 0) return { ok: false, error: t("preset.noneToExport") };
@@ -372,10 +353,9 @@ export function registerIpc(): void {
     }
   });
 
-  // 批次 16:导入 CSS 文件作为 PDF 样式模板(选文件 → 读内容 → 大小上限校验 → 返回内容+文件名)。
-  // 内容由 renderer 经 settings:set 持久化到 settings.pdfCss(pdf 渲染时追加到默认样式后覆盖)。
-  // 取消 → { ok:true, canceled:true };读取异常/超限 → { ok:false, error }(可读文案)
-  // MR-7:对话框/读文件/记目录/catch 样板收敛 importFileViaDialog
+  // 导入 CSS 文件作为 PDF 样式模板:选文件 → 读内容 → 大小上限校验 → 返回内容+文件名;
+  // 内容由 renderer 经 settings:set 持久化到 settings.pdfCss(pdf 渲染时追加到默认样式后覆盖);
+  // 取消 → { ok:true, canceled:true },读取异常/超限 → { ok:false, error }(可读文案)。
   ipcMain.handle(CH.cssImport, (): Promise<ImportPdfCssResult> =>
     importFileViaDialog({
       title: t("dialog.importPdfCss"),
@@ -389,9 +369,9 @@ export function registerIpc(): void {
     }),
   );
 
-  // F9:导入 Word 模板(.docx,浅导入 v1,ADR-008):选文件 → 读字节 → 解包提取样式/页面
-  // → 与现有设置合并(typography/pageSetup 各自深合并)→ 持久化 → 返回合并后完整对象。
-  // 取消 → { ok:true, canceled:true };读取/解析异常 → { ok:false, error }(可读文案)
+  // 导入 Word 模板(.docx,浅导入 v1):选文件 → 读字节 → 解包提取样式/页面
+  // → 与现有设置合并(typography/pageSetup 各自深合并)→ 持久化 → 返回合并后完整对象;
+  // 取消 → { ok:true, canceled:true },读取/解析异常 → { ok:false, error }(可读文案)。
   ipcMain.handle(CH.templateImportDocx, async (): Promise<ImportDocxTemplateResult> => {
     const result = await dialog.showOpenDialog({
       title: t("dialog.importDocxTemplate"),
@@ -419,19 +399,19 @@ export function registerIpc(): void {
     }
   });
 
-  // 批次 11:UI 状态读写(最近文件/会话文件/记忆目录/窗口位置/面板展开态;独立于 settings)
+  // UI 状态读写(最近文件/会话文件/记忆目录/窗口位置/面板展开态;独立于 settings)
   ipcMain.handle(CH.uiStateGet, (): UiState => loadUiState());
   ipcMain.handle(CH.uiStateSet, (_event, patch: Partial<UiState>): Promise<UiState> => {
     return saveUiState(patch);
   });
 
-  // 批次 11:会话恢复用——保序过滤仍存在的路径(缺失剔除,不打乱用户排列顺序)
+  // 会话恢复用:保序过滤仍存在的路径(缺失剔除,不打乱用户排列顺序)
   ipcMain.handle(CH.fileFilterExisting, (_event, paths: unknown): Promise<string[]> => {
     return filterExistingPaths(isStringArray(paths) ? paths : []);
   });
 
-  // 导出后行为:资源管理器中显示 / 默认程序打开(B1:入参类型守卫)。
-  // MR-12:仅允许本会话转换产物白名单内的路径;拒绝时返回 { ok:false, error }
+  // 导出后行为:资源管理器中显示 / 默认程序打开(入参类型守卫)。
+  // 安全边界:仅放行本会话转换产物白名单内的路径;拒绝时返回 { ok:false, error }
   // (revealInFolder 签名由 void 改为结果对象,renderer 据此走既有错误提示通道)。
   ipcMain.handle(CH.shellRevealInFolder, (_event, filePath: unknown): { ok: boolean; error?: string } => {
     if (!isString(filePath)) return { ok: false, error: t("common.invalidParams") };
@@ -442,7 +422,7 @@ export function registerIpc(): void {
 
   ipcMain.handle(CH.shellOpenPath, async (_event, filePath: unknown): Promise<{ ok: boolean; error?: string }> => {
     if (!isString(filePath)) return { ok: false, error: t("common.invalidParams") };
-    if (!isAllowedOutputPath(filePath)) return { ok: false, error: t("shell.notAllowed") }; // MR-12 白名单
+    if (!isAllowedOutputPath(filePath)) return { ok: false, error: t("shell.notAllowed") }; // 白名单校验
     const error = await shell.openPath(filePath);
     return error ? { ok: false, error } : { ok: true };
   });
@@ -453,8 +433,8 @@ export function registerIpc(): void {
     return openPreviewWindow(mdPath);
   });
 
-  // 批次 11 迭代 3:设置变更后刷新所有预览窗口(renderer 在 settingsSet 成功后调用;
-  // 无预览窗口时为空操作;刷新失败在窗口内显示错误页,不影响主窗口)
+  // 设置变更后刷新所有预览窗口:renderer 在 settingsSet 成功后调用;
+  // 无预览窗口时为空操作;刷新失败在窗口内显示错误页,不影响主窗口
   ipcMain.handle(CH.previewRefresh, (): void => {
     for (const entry of previews) void refreshPreviewWindow(entry);
   });

@@ -1,8 +1,6 @@
 /**
- * 应用菜单(自 main/index.ts 抽取,行为零变化):
- * 文件(打开文件…/退出)。菜单项只做转发/胶水,
- * 不复刻业务逻辑;退出用 role(平台默认行为)。「关于」入口已迁至标题栏按钮
- * (renderer → about:open IPC),不再走帮助菜单。
+ * 应用菜单组合根:文件(打开文件…/退出)菜单,菜单项只做转发/胶水,不复刻业务逻辑。
+ * 不变量:「关于」入口经标题栏按钮(renderer → about:open IPC),不走帮助菜单;退出用 role(平台默认行为)。
  */
 import { app, BrowserWindow, Menu, ipcMain } from "electron";
 import path from "node:path";
