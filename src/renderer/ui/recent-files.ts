@@ -21,6 +21,7 @@ import { setError, setStatus } from "../state/utils.js";
 import { state } from "../state/state.js";
 import { syncSuppressCompleteDialog } from "../settings/settings-panel.js";
 import { applyDrawerOpenState } from "../settings/settings-drawer.js";
+import { syncFirstRunGuide } from "./first-run-guide.js";
 import { t, type I18nKey } from "../../core/i18n.js";
 
 /** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。
@@ -162,6 +163,9 @@ export async function initUiStateRestore(): Promise<void> {
   applyDrawerOpenState(ui.panelOpen.page);
   // 完成弹窗「不再提示」→ 同步弹窗内 checkbox 与内存态(不写回,避免启动写盘)
   syncSuppressCompleteDialog(ui.suppressCompleteDialog);
+  // 首启引导标志 → 内存态,并据当前舞台状态决定是否呈现引导卡
+  state.firstRun = ui.firstRun;
+  syncFirstRunGuide();
   // 会话文件恢复:逐项校验存在性(主进程 filterExistingPaths 保序过滤,缺失剔除)
   try {
     const existing = await window.api.filterExistingPaths(ui.lastSessionFiles);

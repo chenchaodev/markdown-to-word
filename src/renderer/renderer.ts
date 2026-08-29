@@ -16,6 +16,7 @@ import {
   initUiStateRestore,
   refreshRecentFiles,
 } from "./ui/recent-files.js";
+import { initFirstRunGuide } from "./ui/first-run-guide.js";
 import { t } from "../core/i18n.js";
 
 /**
@@ -53,6 +54,8 @@ aboutOpenBtn.addEventListener("click", () => {
 });
 // 读取持久化设置并回填控件(失败静默回退默认值)
 void loadSettings();
+// 首启引导装配(接线跳过/步骤按钮 + 监听舞台状态;首屏呈现由 initUiStateRestore 触发)
+initFirstRunGuide();
 // UI 状态恢复(面板展开态 / 会话文件 / 最近转换区块;失败静默保持默认)
 void initUiStateRestore();
 // 转换成功后刷新最近区块的回调接线(convert-flow 经 state 调用,

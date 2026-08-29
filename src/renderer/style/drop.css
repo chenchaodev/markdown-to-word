@@ -285,6 +285,147 @@
   font-size: 13px;
 }
 
+/* ========== 首启引导(增强空态) ==========
+ * 仅 firstRun 且空态显示;克制视觉(次级面 + 发丝线,无大色块 / 无朱砂 / 无 emoji);
+ * 出现动效 ≤220ms,reduced-motion 由 base.css 全局兜底瞬时无跳变。
+ * 引导卡绝对定位于空态底部,显示时预留底部空间(上推投放内容 + 隐藏能力胶囊),
+ * 避免与空态交互(拖放 / 粘贴 / 向导按钮)重叠。 */
+.firstrun-guide {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 10px;
+  z-index: 2;
+  background: var(--card-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 10px 14px;
+  animation: frg-in 0.22s ease-out;
+}
+
+.firstrun-guide.hidden {
+  display: none;
+}
+
+.frg-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.frg-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+}
+
+.frg-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.frg-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--mut);
+}
+
+.frg-steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
+.frg-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.frg-step-btn {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: none;
+  border: none;
+  padding: 2px 5px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.13s ease, color 0.13s ease;
+}
+
+.frg-step-btn:hover {
+  background: var(--card);
+  color: var(--ink);
+}
+
+.frg-step-btn:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.frg-step-btn.is-static {
+  cursor: default;
+  color: var(--ink);
+}
+
+.frg-step-btn.is-static:hover {
+  background: none;
+  color: var(--ink);
+}
+
+.frg-step-sub {
+  font-size: 11px;
+  color: var(--mut);
+  padding-left: 5px;
+}
+
+.frg-arrow {
+  color: var(--mut);
+  font-size: 13px;
+  flex: none;
+}
+
+#firstRunDismiss {
+  margin-left: auto;
+  flex: none;
+}
+
+/* 引导显示时:在投放层底部预留净空(上推内容)+ 隐藏能力胶囊,避免与引导卡重叠 */
+.stage-wrap.show-guide .drop-layer {
+  padding-bottom: 84px;
+}
+
+.stage-wrap.show-guide .caps {
+  display: none;
+}
+
+@keyframes frg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ========== 文件态 · 统一队列卡 ==========
  * 头部/队列/提示同为纸面内容;队列行以发丝线分行,不再嵌套卡片壳;
  * 超长走列表内部滚动(listcard 弹性收缩,几何恒定不破)。 */

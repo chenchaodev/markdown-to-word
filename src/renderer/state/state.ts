@@ -55,6 +55,8 @@ export const state = {
   lastBatchFormat: undefined as "docx" | "pdf" | undefined,
   /** 转换完成弹窗「不再提示」(ui-state 字段的内存镜像)。 */
   suppressCompleteDialog: false,
+  /** 首启引导标志(ui-state 字段的内存镜像):true = 尚未引导过,引导跳过/关闭后置 false。 */
+  firstRun: false,
   /** 转换成功后刷新最近区块的回调(recent-files 注册、convert-flow 调用,
    *  打破 recent-files ↔ convert-flow 的 ESM 循环依赖;组合根 renderer.ts 接线)。
    *  允许返回 Promise(注册方 refreshRecentFiles 为 async,内部已自吞错误)。 */

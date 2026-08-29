@@ -56,6 +56,11 @@ export interface UiState {
    *  默认翻转为 true(不弹)——内联反馈已完备,模态打断流;
    *  已持久化的布尔值(用户显式选过弹窗=false)原样尊重,仅缺省/非法时落默认。 */
   suppressCompleteDialog: boolean;
+  /** 首启引导标志:true = 尚未引导过(纯净首次启动),引导跳过/关闭后置 false。
+   *  与设置偏好分离,不污染 settings.json;持久化落 ui-state.json。
+   *  迁移语义见 loadUiState:已存在 ui-state.json 的老用户(文件存在但无本字段)
+   *  视为已用过,不再弹首启引导;仅"文件不存在"的纯净首次启动才默认 true。 */
+  firstRun: boolean;
 }
 
 export const DEFAULT_UI_STATE: UiState = {
@@ -68,6 +73,8 @@ export const DEFAULT_UI_STATE: UiState = {
   // 设置收敛为单一面板,默认折叠(已记忆的展开态仍优先恢复)
   panelOpen: { page: false, typography: false },
   suppressCompleteDialog: true,
+  // 纯净首次启动默认 true;已存在 ui-state.json 的老用户经 loadUiState 迁移回落 false
+  firstRun: true,
 };
 
 /** 最近文件上限(与 renderer 的 recent-files.ts 展示截断一致;renderer 侧同名常量须与本值恒等,由测试守护;改此值须双侧同步)。 */
@@ -189,6 +196,7 @@ function sanitizeUiState(value: unknown): UiState {
     isMaximized: sanitizeBool(s.isMaximized, DEFAULT_UI_STATE.isMaximized),
     panelOpen: sanitizePanelOpen(s.panelOpen),
     suppressCompleteDialog: sanitizeBool(s.suppressCompleteDialog, DEFAULT_UI_STATE.suppressCompleteDialog),
+    firstRun: sanitizeBool(s.firstRun, DEFAULT_UI_STATE.firstRun),
   };
 }
 
@@ -199,11 +207,20 @@ function sanitizeUiState(value: unknown): UiState {
 export function loadUiState(): UiState {
   if (uiCache) return uiCache;
   let loaded: UiState = { ...DEFAULT_UI_STATE, panelOpen: { ...DEFAULT_UI_STATE.panelOpen } };
+  let fileExisted = false;
   try {
     const raw = readFileSync(uiStateFilePath(), "utf8");
+    fileExisted = true;
     loaded = sanitizeUiState(JSON.parse(raw));
   } catch {
     // 缺文件 / 读取失败 / parse 失败 → 默认值(不写盘)
+  }
+  // 迁移:已存在 ui-state.json 的老用户(文件存在但无 firstRun 字段)视为已用过,
+  // 不再弹首启引导;仅"文件不存在"的纯净首次启动才默认 true。
+  if (fileExisted) {
+    loaded.firstRun = sanitizeBool(loaded.firstRun, false);
+  } else {
+    loaded.firstRun = true;
   }
   uiCache = loaded;
   return loaded;
@@ -256,6 +273,9 @@ export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
         patch.suppressCompleteDialog,
         DEFAULT_UI_STATE.suppressCompleteDialog,
       );
+    }
+    if (patch.firstRun !== undefined) {
+      next.firstRun = sanitizeBool(patch.firstRun, DEFAULT_UI_STATE.firstRun);
     }
   }
   await writeUiStateJson(uiStateFilePath(), next, () => {
