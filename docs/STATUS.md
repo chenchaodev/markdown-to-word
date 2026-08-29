@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-08-29:**D1 GUI 易用反制 AIDOC 随 3.10.0 发版**(typecheck/lint/build 全绿;GUI 实测通过 2026-08-29;版本号三统一 package.json=tag v3.10.0=CHANGELOG [3.10.0];预设扩面覆盖交付链/向导补全高频复杂项/首次启动引导三批 + 实测修复(向导下一步/结果区滚动条/主舞台跳动/弹窗高度/toast 层级)均独立提交可回退)
+
 - 2026-08-29:**D1 GUI 易用反制 AIDOC 晋升并开工**(预设扩面覆盖交付链/向导补全高频复杂项/首次启动引导三批,从 ROADMAP-CANDIDATES 晋升,规划即契约入 ROADMAP 当前待办 + ACCEPTANCE;独立提交可回退;每批 GUI 实测走 ACCEPTANCE)
 - 2026-08-29:**剪贴板直转 + 成书向导 完成并随 3.9.0 发版**(typecheck/lint/build/68 段全绿;GUI 实测通过 2026-08-29;版本号三统一 package.json=tag v3.9.0=CHANGELOG [3.9.0];剪贴板直转决策:①不做热键仅按钮 ②剪贴板始终当 Markdown ③文件路径当文件加入队列;成书向导决策:封面页双格式 docx+pdf/仅空态按钮入口/设置实时写入/封面不含单位):剪贴板直转落盘 main IPC clipboard:read+临时 md+renderer 空态按钮+i18n(GUI 实测通过);成书向导落盘 renderer 向导 stepper 模态+核心 metadata 透传+readFrontmatter IPC+空态按钮+i18n(68 段测试全绿);设计文档 docs/design/book-wizard.md;GUI 实测项见 ACCEPTANCE;独立提交可回退
 - 2026-08-28:**设置抽屉重组为 6 组 Tab 导航完成并随 3.8.0 发版**(typecheck/65 段全绿;smoke 本沙箱环境受限未跑,GUI 实测待补;版本号三统一 package.json=tag v3.8.0=CHANGELOG [3.8.0]):原 9 分区归并为 6 组(01 预设/02 排版/03 页眉页脚与水印/04 编号与目录/05 转换/06 应用),左侧 tab 栏导航+右侧当前组独立滚动;抽屉加宽 100px 选项不拥挤、tab 标签折行禁横向滚动;预设作用域收敛「排版·编号与目录」;导出后行为文案「打开所在文件夹」→「打开文件夹」;i18n 增删组名键;settings-ia.md 同步;控件 id/name 全保留

@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [3.10.0] - 2026-08-29
+- **D1 GUI 易用反制 AIDOC 晋升发布 + 实测修复(版本号三统一 package.json=tag v3.10.0=CHANGELOG [3.10.0];typecheck/lint/build 全绿;GUI 实测通过 2026-08-29)**:
+  - **预设扩面覆盖交付链**:内置预设现覆盖页眉页脚(标题居中+页码)/水印/公式编号/H1 前分页,切换预设 toast 列出新增被覆盖组(页眉页脚/水印/编号);套用预设后「恢复默认」/自定义预设仍只存排版+页面不污染外壳;切换预设不改 tocMode
+  - **向导补全高频复杂项**:成书向导内可设边距/字体微调/标题档位/编号开关/输出目录/afterConvert/页眉 logo,全程不打开 35 控件抽屉即产出复杂成书;向导产出 docx/pdf 含上述设置与抽屉手设等价
+  - **首次启动引导**:首次启动出现引导路径(选预设→向导→转换),可跳过不强制打开设置抽屉;尊重 prefers-reduced-motion;非首次启动不再出现
+  - **D1 实测修复(GUI 实测反馈)**:向导第五步「下一步」在源文件≥2 时仍陈旧禁用的 stale 状态(syncSources 末尾补 renderStep() 重算);完成结果区(#resultSummary)滚动条(矮窗档媒体查询 .feed 固定 86px 覆盖常规档 height:auto,改为 height:auto);主舞台跳动(窗口 minHeight 560→680 保证 stage 设计高 362px 不被结果区撑高挤压);向导/弹窗对话框高度(.dialog--wizard max-height 改 height 固定避免内容溢出;.dialog-path 移除 max-height 限制完整显示路径);toast 层级 80→110 高于抽屉/弹窗遮罩避免被遮挡
+
 ## [3.9.0] - 2026-08-29
 - **剪贴板直转 + 成书向导 双功能齐发(版本号三统一 package.json=tag v3.9.0=CHANGELOG [3.9.0];typecheck/lint/build/68 段全绿;GUI 实测通过 2026-08-29)**:
   - **剪贴板直转**:空态「选择文件」下方新增「粘贴 Markdown 转换」按钮(无热键);点击经新增 IPC `clipboard:read` 读剪贴板——文本写临时 .md 走 `convert:single`,文件路径复用 drop 入队;空/非文本 toast;新增 `writeTempMarkdown` + `test/main/temp-markdown.test.js`;i18n 4 键

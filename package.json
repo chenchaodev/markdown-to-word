@@ -1,6 +1,6 @@
 {
   "name": "markdown-to-word",
-  "version": "3.9.0",
+  "version": "3.10.0",
   "private": true,
   "description": "Markdown 转 Word/PDF 等格式的 Windows 桌面工具",
   "license": "GPL-3.0",
