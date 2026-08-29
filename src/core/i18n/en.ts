@@ -178,6 +178,7 @@ const dict = {
     "settings.groupCommon": "Common",
     "settings.groupTypography": "Typography",
     "settings.groupHeaderFooter": "Header & footer",
+    "settings.groupWatermark": "Watermark",
     "settings.groupHeaderWatermark": "Header, footer & watermark",
     // header/footer customization
     "settings.headerMode": "Header",
@@ -204,7 +205,7 @@ const dict = {
     "settings.watermarkOpacity": "Opacity",
     "settings.watermarkGray": "Classic light-gray look",
     "settings.watermarkGrayDesc": "Off uses the body text color",
-    "settings.watermarkNote": "Text watermark overlays every page (rotated, behind text); applies to both PDF and Word, not saved with presets.",
+    "settings.watermarkNote": "Text watermark overlays every page (rotated, behind text); applies to both PDF and Word.",
     "settings.degree": "deg",
     "settings.groupAdvanced": "Advanced",
     "settings.groupManage": "Template management",
@@ -217,7 +218,7 @@ const dict = {
     "settings.themeDark": "Dark",
     "settings.presetLabel": "Template preset",
     "settings.groupPreset": "Preset",
-    "settings.presetScopeNote": "Presets cover Typography and Numbering & TOC; header/footer & watermark, conversion, and app preferences are not included.",
+    "settings.presetScopeNote": "Presets cover Typography, Numbering & TOC, header/footer, and watermark; conversion and app preferences are not included.",
     "settings.tagNotInPreset": "Not in preset",
     "settings.tagPdfOnly": "PDF only",
     "settings.paper": "Paper",
@@ -490,6 +491,19 @@ const dict = {
     "wizard.output.pdf": "PDF",
     "wizard.output.both": "Both",
     "wizard.output.start": "Click \"Publish\" to start conversion with the settings above.",
+    "wizard.typography.fold": "Typography tweaks",
+    "wizard.typography.foldHint": "After picking a preset, fine-tune page and fonts here.",
+    "wizard.output.title": "Output",
+
+    /* ---------- First-run guide (enhanced empty state) ---------- */
+    "guide.title": "Quick start",
+    "guide.desc": "Three steps to export with zero config",
+    "guide.step1": "Pick a preset",
+    "guide.step1Hint": "or keep defaults",
+    "guide.step2": "Book wizard",
+    "guide.step2Hint": "optional",
+    "guide.step3": "Convert",
+    "guide.dismiss": "Got it",
 } satisfies Record<Dict, string>;
 
 export { dict };

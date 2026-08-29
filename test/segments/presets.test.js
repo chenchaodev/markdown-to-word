@@ -10,7 +10,9 @@
 import {
   BODY_SIZE_MAX,
   BODY_SIZE_MIN,
+  DEFAULT_HEADER_FOOTER,
   DEFAULT_SETTINGS,
+  DEFAULT_WATERMARK,
   LINE_SPACING_MAX,
   LINE_SPACING_MIN,
   MARGIN_MAX_MM,
@@ -19,7 +21,7 @@ import {
   matchesPreset,
 } from "../../dist/core/settings/settings-defaults.js";
 
-/** 由预设排版 + 页面设置构成一份完整设置(其余字段取默认值) */
+/** 由预设排版 + 页面设置 + 完整交付链构成一份完整设置(其余字段取默认值) */
 function settingsFromPreset(id, extra) {
   const preset = TEMPLATE_PRESETS.find((p) => p.id === id);
   if (!preset) throw new Error(`预设不存在: ${id}`);
@@ -27,6 +29,14 @@ function settingsFromPreset(id, extra) {
     ...DEFAULT_SETTINGS,
     typography: { ...preset.typography },
     pageSetup: { ...preset.pageSetup },
+    ...(preset.headerFooter ? { headerFooter: { ...preset.headerFooter } } : {}),
+    ...(preset.watermark ? { watermark: { ...preset.watermark } } : {}),
+    ...(preset.equationNumbering !== undefined
+      ? { equationNumbering: preset.equationNumbering }
+      : {}),
+    ...(preset.breakBeforeH1 !== undefined
+      ? { breakBeforeH1: preset.breakBeforeH1 }
+      : {}),
     ...extra,
   };
 }
@@ -50,6 +60,80 @@ export async function run() {
     "预设 id/name/hint 非空",
   );
   console.log(`[ok] 预设结构:${TEMPLATE_PRESETS.length} 个预设,id 唯一,name/hint 非空 断言通过`);
+
+  // ---------- 完整交付链:每个内置预设均携带 headerFooter/watermark/编号 ----------
+  for (const preset of TEMPLATE_PRESETS) {
+    assertEq(
+      preset.headerFooter !== undefined,
+      true,
+      `预设 ${preset.id} 携带 headerFooter`,
+    );
+    assertEq(
+      preset.watermark !== undefined,
+      true,
+      `预设 ${preset.id} 携带 watermark`,
+    );
+    assertEq(
+      preset.equationNumbering !== undefined,
+      true,
+      `预设 ${preset.id} 携带 equationNumbering`,
+    );
+    assertEq(
+      preset.breakBeforeH1 !== undefined,
+      true,
+      `预设 ${preset.id} 携带 breakBeforeH1`,
+    );
+    // 交付链字段须为 sane 默认值(无 watermark、页眉=标题居中+页码)
+    assertEq(
+      preset.watermark.text,
+      DEFAULT_WATERMARK.text,
+      `预设 ${preset.id} watermark.text 默认空`,
+    );
+    assertEq(
+      preset.headerFooter.headerMode,
+      DEFAULT_HEADER_FOOTER.headerMode,
+      `预设 ${preset.id} headerMode 默认`,
+    );
+  }
+  console.log("[ok] 完整交付链:全部内置预设携带 headerFooter/watermark/equationNumbering/breakBeforeH1 断言通过");
+
+  // ---------- 预设 → 设置合并:新字段等于预设值(数据层模拟 applyTemplatePreset) ----------
+  for (const preset of TEMPLATE_PRESETS) {
+    const merged = {
+      ...DEFAULT_SETTINGS,
+      typography: { ...preset.typography },
+      pageSetup: { ...preset.pageSetup },
+      ...(preset.headerFooter ? { headerFooter: { ...preset.headerFooter } } : {}),
+      ...(preset.watermark ? { watermark: { ...preset.watermark } } : {}),
+      ...(preset.equationNumbering !== undefined
+        ? { equationNumbering: preset.equationNumbering }
+        : {}),
+      ...(preset.breakBeforeH1 !== undefined
+        ? { breakBeforeH1: preset.breakBeforeH1 }
+        : {}),
+    };
+    assertEq(
+      merged.equationNumbering,
+      preset.equationNumbering,
+      `合并 equationNumbering(${preset.id})`,
+    );
+    assertEq(
+      merged.breakBeforeH1,
+      preset.breakBeforeH1,
+      `合并 breakBeforeH1(${preset.id})`,
+    );
+    assertEq(
+      merged.headerFooter.headerMode,
+      preset.headerFooter.headerMode,
+      `合并 headerFooter(${preset.id})`,
+    );
+    assertEq(
+      merged.watermark.text,
+      preset.watermark.text,
+      `合并 watermark(${preset.id})`,
+    );
+  }
+  console.log("[ok] 预设→设置合并:新字段(equationNumbering/breakBeforeH1/headerFooter/watermark)等于预设值 断言通过");
 
   // ---------- matchesPreset:自匹配 + 默认设置匹配 + 微调不匹配 ----------
   for (const preset of TEMPLATE_PRESETS) {
@@ -84,7 +168,38 @@ export async function run() {
     false,
     "微调上边距后不匹配",
   );
-  console.log("[ok] matchesPreset:全预设自匹配、default 匹配默认设置、微调任一字段不匹配 断言通过");
+  // 完整交付链:headerFooter 被改 → 不匹配(预设定义了 headerFooter)
+  assertEq(
+    matchesPreset(
+      defaultPreset,
+      settingsFromPreset("default", {
+        headerFooter: { ...DEFAULT_SETTINGS.headerFooter, headerMode: "none" },
+      }),
+    ),
+    false,
+    "改 headerFooter 后不匹配",
+  );
+  // watermark 被改 → 不匹配
+  assertEq(
+    matchesPreset(
+      defaultPreset,
+      settingsFromPreset("default", {
+        watermark: { ...DEFAULT_SETTINGS.watermark, text: "机密" },
+      }),
+    ),
+    false,
+    "改 watermark 后不匹配",
+  );
+  // equationNumbering 被改 → 不匹配
+  assertEq(
+    matchesPreset(
+      defaultPreset,
+      settingsFromPreset("default", { equationNumbering: !DEFAULT_SETTINGS.equationNumbering }),
+    ),
+    false,
+    "改 equationNumbering 后不匹配",
+  );
+  console.log("[ok] matchesPreset:全预设自匹配、default 匹配默认设置、微调任一字段(含交付链)不匹配 断言通过");
 
   // ---------- 值域契约:预设值落在范围常量内(改预设值时须同步本段) ----------
   for (const preset of TEMPLATE_PRESETS) {

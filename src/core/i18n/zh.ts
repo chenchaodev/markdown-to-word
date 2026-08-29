@@ -180,6 +180,7 @@ const dict = {
     "settings.groupCommon": "常用",
     "settings.groupTypography": "排 版",
     "settings.groupHeaderFooter": "页眉页脚",
+    "settings.groupWatermark": "水印",
     "settings.groupHeaderWatermark": "页眉页脚与水印",
     // 页眉页脚自定义
     "settings.headerMode": "页眉",
@@ -205,7 +206,7 @@ const dict = {
     "settings.watermarkOpacity": "不透明度",
     "settings.watermarkGray": "浅灰经典观感",
     "settings.watermarkGrayDesc": "关闭则沿用正文字色",
-    "settings.watermarkNote": "文字水印叠加于每页(旋转置底)；PDF 与 Word 双格式通用，不随预设保存。",
+    "settings.watermarkNote": "文字水印叠加于每页(旋转置底)；PDF 与 Word 双格式通用。",
     "settings.degree": "度",
     "settings.groupAdvanced": "高级",
     "settings.groupManage": "模板管理",
@@ -218,7 +219,7 @@ const dict = {
     "settings.themeDark": "深色",
     "settings.presetLabel": "模板预设",
     "settings.groupPreset": "预 设",
-    "settings.presetScopeNote": "预设包含「排版 · 编号与目录」；不含 页眉页脚与水印 · 转换 · 应用",
+    "settings.presetScopeNote": "预设包含「排版 · 编号与目录 · 页眉页脚 · 水印」；不含 转换 · 应用",
     "settings.tagNotInPreset": "不入预设",
     "settings.tagPdfOnly": "仅 PDF",
     "settings.paper": "纸张",
@@ -488,6 +489,19 @@ const dict = {
     "wizard.output.pdf": "PDF",
     "wizard.output.both": "双格式",
     "wizard.output.start": "点「付印」开始转换;将按以上设置生成文档。",
+    "wizard.typography.fold": "排版微调",
+    "wizard.typography.foldHint": "选定预设后,可在此微调页面与字体。",
+    "wizard.output.title": "输出设置",
+
+    /* ---------- 首启引导(增强空态) ---------- */
+    "guide.title": "首次上手",
+    "guide.desc": "三步即可零配置出稿",
+    "guide.step1": "选预设",
+    "guide.step1Hint": "或保持默认",
+    "guide.step2": "成书向导",
+    "guide.step2Hint": "可选",
+    "guide.step3": "转换",
+    "guide.dismiss": "知道了",
   } as const;
 
 /** 字典 key 编译期单源:i18n.t() 的 key 参数受此 keyof 约束,

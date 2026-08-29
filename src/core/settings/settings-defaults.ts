@@ -45,13 +45,15 @@ export interface PageSetup {
 }
 
 /**
-  * 页眉页脚设置(文档外壳,不入排版预设——预设只管排版/页面,
- * matchesPreset/PRESET_COMPARE_FIELDS 不消费本对象):
- * - headerMode=default 为现状行为(文档标题居中 + 页码页脚),存量 settings.json
- *   缺本字段时双侧(main sanitize / renderer merge)兜底到默认即行为不变
- * - headerLogoPath 只存路径;文件读取在 main 层(core 零 IO),
- *   core 渲染层收已读好的图片数据(docx/chrome.ts HeaderLogoData)
- */
+  * 页眉页脚设置(文档外壳):
+  * 内置 TEMPLATE_PRESETS 现可携带 headerFooter,作为「选预设即完整交付链」的一部分
+  * (matchesPreset/PRESET_COMPARE_FIELDS 在 preset 定义时消费本对象);
+  * 用户预设(CustomPreset)有意保持仅 typography+pageSetup 不变。
+  * - headerMode=default 为现状行为(文档标题居中 + 页码页脚),存量 settings.json
+  *   缺本字段时双侧(main sanitize / renderer merge)兜底到默认即行为不变
+  * - headerLogoPath 只存路径;文件读取在 main 层(core 零 IO),
+  *   core 渲染层收已读好的图片数据(docx/chrome.ts HeaderLogoData)
+  */
 export interface HeaderFooterSettings {
   /** 页眉模式:default=文档标题居中(现状行为)/custom=自定义文字+logo/none=无页眉 */
   headerMode: "default" | "custom" | "none";
@@ -75,7 +77,10 @@ export const DEFAULT_HEADER_FOOTER: HeaderFooterSettings = {
 
 /* ---------- 文字水印 ---------- */
 /**
- * 文字水印设置:与页眉页脚同组(「不入预设」),文档外壳层装饰。
+ * 文字水印设置:与页眉页脚同组,文档外壳层装饰。
+ * 内置 TEMPLATE_PRESETS 现可携带 watermark,作为「选预设即完整交付链」的一部分
+ * (matchesPreset/PRESET_COMPARE_FIELDS 在 preset 定义时消费本对象);
+ * 用户预设(CustomPreset)有意保持仅 typography+pageSetup 不变。
  * - text 空串 = 不启用(零渲染)
  * - angle 旋转角度(度,0–360),经典观感默认 45
  * - opacity 不透明度(0–1),浅色不干扰正文
@@ -220,7 +225,7 @@ export const BODY_SIZE_MAX = 24;
 export const LINE_SPACING_MIN = 1.0;
 export const LINE_SPACING_MAX = 2.5;
 
-/* ---------- 模板预设:排版 + 页面设置的快照(套用后仍可微调,不写死模板 id) ---------- */
+/* ---------- 模板预设:排版 + 页面设置 + 完整交付链(页眉页脚/水印/编号)的快照 ---------- */
 export interface TemplatePreset {
   id: string;
   /** 中文名,用户可见 */
@@ -231,6 +236,14 @@ export interface TemplatePreset {
   i18nKey?: string;
   typography: TypographySettings;
   pageSetup: PageSetup;
+  /** 页眉页脚(完整交付链;仅内置预设携带,用户预设 CustomPreset 不存) */
+  headerFooter?: HeaderFooterSettings;
+  /** 文字水印(完整交付链;仅内置预设携带,用户预设 CustomPreset 不存) */
+  watermark?: WatermarkSettings;
+  /** 公式编号开关(完整交付链;仅内置预设携带) */
+  equationNumbering?: boolean;
+  /** H1 前分页(完整交付链;仅内置预设携带) */
+  breakBeforeH1?: boolean;
 }
 
 /** 预设值已定稿,勿改。 */
@@ -242,6 +255,10 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
     hint: "常规文档:微软雅黑正文、两端对齐、行距 1.5",
     typography: { ...DEFAULT_TYPOGRAPHY },
     pageSetup: { ...DEFAULT_PAGE_SETUP },
+    headerFooter: { ...DEFAULT_HEADER_FOOTER },
+    watermark: { ...DEFAULT_WATERMARK },
+    equationNumbering: true,
+    breakBeforeH1: false,
   },
   {
     id: "paper",
@@ -268,6 +285,10 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       marginLeft: 31.7,
       marginRight: 31.7,
     },
+    headerFooter: { ...DEFAULT_HEADER_FOOTER },
+    watermark: { ...DEFAULT_WATERMARK },
+    equationNumbering: true,
+    breakBeforeH1: true,
   },
   {
     id: "business",
@@ -294,6 +315,10 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       marginLeft: 25.4,
       marginRight: 25.4,
     },
+    headerFooter: { ...DEFAULT_HEADER_FOOTER },
+    watermark: { ...DEFAULT_WATERMARK },
+    equationNumbering: false,
+    breakBeforeH1: false,
   },
   {
     id: "official-cn",
@@ -320,6 +345,10 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       marginLeft: 28,
       marginRight: 26,
     },
+    headerFooter: { ...DEFAULT_HEADER_FOOTER },
+    watermark: { ...DEFAULT_WATERMARK },
+    equationNumbering: true,
+    breakBeforeH1: true,
   },
   {
     id: "cn-reader",
@@ -339,6 +368,10 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       headingSpacing: "standard",
     },
     pageSetup: { ...DEFAULT_PAGE_SETUP },
+    headerFooter: { ...DEFAULT_HEADER_FOOTER },
+    watermark: { ...DEFAULT_WATERMARK },
+    equationNumbering: true,
+    breakBeforeH1: false,
   },
   {
     id: "cn-minimal",
@@ -365,11 +398,16 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       marginLeft: 25.4,
       marginRight: 25.4,
     },
+    headerFooter: { ...DEFAULT_HEADER_FOOTER },
+    watermark: { ...DEFAULT_WATERMARK },
+    equationNumbering: false,
+    breakBeforeH1: false,
   },
 ];
 
 /**
- * matchesPreset 参与比较的字段清单(单一来源):排版 + 页面设置全字段。
+ * matchesPreset 参与比较的字段清单(单一来源):排版 + 页面设置全字段,
+ * 以及完整交付链(页眉页脚/水印/编号)——后者仅当 preset 定义时参与比较。
  * 新增 TypographySettings / PageSetup 字段时在此补一行,漏补会导致
  * 预设回填静默失准(新增字段不参与匹配);字段名受 keyof 约束,拼错编译期报错。
  */
@@ -387,16 +425,46 @@ const PRESET_COMPARE_FIELDS = {
     "headingSpacing",
   ],
   pageSetup: ["paper", "orientation", "marginTop", "marginBottom", "marginLeft", "marginRight"],
+  headerFooter: ["headerMode", "headerText", "headerLogoPath", "headerLayout", "footerEnabled"],
+  watermark: ["text", "angle", "opacity", "gray"],
 } as const;
 
 /** 当前排版与页面设置是否与某预设完全一致(renderer 回填时选中对应模板)。 */
 export function matchesPreset(preset: TemplatePreset, settings: AppSettings): boolean {
+  const typographyOk = PRESET_COMPARE_FIELDS.typography.every(
+    (field) => preset.typography[field] === settings.typography[field],
+  );
+  const pageSetupOk = PRESET_COMPARE_FIELDS.pageSetup.every(
+    (field) => preset.pageSetup[field] === settings.pageSetup[field],
+  );
+  const presetHeaderFooter = preset.headerFooter;
+  const headerFooterOk =
+    !presetHeaderFooter ||
+    !settings.headerFooter ||
+    PRESET_COMPARE_FIELDS.headerFooter.every(
+      (field) => presetHeaderFooter[field] === settings.headerFooter[field],
+    );
+  const presetWatermark = preset.watermark;
+  const watermarkOk =
+    !presetWatermark ||
+    !settings.watermark ||
+    PRESET_COMPARE_FIELDS.watermark.every(
+      (field) => presetWatermark[field] === settings.watermark[field],
+    );
+  const equationNumberingOk =
+    preset.equationNumbering === undefined ||
+    settings.equationNumbering === undefined ||
+    preset.equationNumbering === settings.equationNumbering;
+  const breakBeforeH1Ok =
+    preset.breakBeforeH1 === undefined ||
+    settings.breakBeforeH1 === undefined ||
+    preset.breakBeforeH1 === settings.breakBeforeH1;
   return (
-    PRESET_COMPARE_FIELDS.typography.every(
-      (field) => preset.typography[field] === settings.typography[field],
-    ) &&
-    PRESET_COMPARE_FIELDS.pageSetup.every(
-      (field) => preset.pageSetup[field] === settings.pageSetup[field],
-    )
+    typographyOk &&
+    pageSetupOk &&
+    headerFooterOk &&
+    watermarkOk &&
+    equationNumberingOk &&
+    breakBeforeH1Ok
   );
 }

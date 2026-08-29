@@ -176,6 +176,7 @@ const dict: Partial<Record<Dict, string>> = {
     "settings.groupCommon": "共通",
     "settings.groupTypography": "組版",
     "settings.groupHeaderFooter": "ヘッダー / フッター",
+    "settings.groupWatermark": "ウォーターマーク",
     "settings.groupHeaderWatermark": "ヘッダー/フッターとウォーターマーク",
     // ヘッダー / フッターのカスタマイズ
     "settings.headerMode": "ヘッダー",
@@ -201,7 +202,7 @@ const dict: Partial<Record<Dict, string>> = {
     "settings.watermarkOpacity": "不透明度",
     "settings.watermarkGray": "クラシック薄灰",
     "settings.watermarkGrayDesc": "オフの場合は本文の文字色を使用",
-    "settings.watermarkNote": "文字列ウォーターマークは各ページに重ねて表示(回転・背面)。PDF と Word 両対応、プリセットには保存されません。",
+    "settings.watermarkNote": "文字列ウォーターマークは各ページに重ねて表示(回転・背面)。PDF と Word 両対応。",
     "settings.degree": "度",
     "settings.groupAdvanced": "詳細",
     "settings.groupManage": "テンプレート管理",
@@ -213,7 +214,7 @@ const dict: Partial<Record<Dict, string>> = {
     "settings.themeDark": "ダーク",
     "settings.presetLabel": "テンプレートプリセット",
     "settings.groupPreset": "プリセット",
-    "settings.presetScopeNote": "プリセットには「組版 · 番号と目次」が含まれます。ヘッダー/フッターとウォーターマーク・変換・アプリ設定は含まれません",
+    "settings.presetScopeNote": "プリセットには「組版 · 番号と目次 · ヘッダー/フッター · ウォーターマーク」が含まれます。変換・アプリ設定は含まれません",
     "settings.tagNotInPreset": "プリセット外",
     "settings.tagPdfOnly": "PDF のみ",
     "settings.paper": "用紙",
@@ -480,6 +481,19 @@ const dict: Partial<Record<Dict, string>> = {
     "wizard.output.pdf": "PDF",
     "wizard.output.both": "両方",
     "wizard.output.start": "「出力する」をクリックすると上記設定で変換を開始します。",
+    "wizard.typography.fold": "組版の微調整",
+    "wizard.typography.foldHint": "プリセット選択後、ここでページとフォントを微調整できます。",
+    "wizard.output.title": "出力",
+
+    /* ---------- 初回ガイド(空状態の拡張) ---------- */
+    "guide.title": "初回ガイド",
+    "guide.desc": "3 ステップで設定不要に出力",
+    "guide.step1": "プリセットを選ぶ",
+    "guide.step1Hint": "または既定のまま",
+    "guide.step2": "成書ウィザード",
+    "guide.step2Hint": "任意",
+    "guide.step3": "変換",
+    "guide.dismiss": "わかりました",
 };
 
 export { dict };

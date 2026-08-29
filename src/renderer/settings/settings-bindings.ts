@@ -171,6 +171,16 @@ function presetCoveredGroupLabels(preset: TemplatePreset): string {
       groups.push(t("settings.groupNumbering"));
     }
   }
+  // 完整交付链:页眉页脚 / 水印 / 编号(breakBeforeH1 亦属编号组)
+  if (preset.headerFooter) {
+    groups.push(t("settings.groupHeaderFooter"));
+  }
+  if (preset.watermark) {
+    groups.push(t("settings.groupWatermark"));
+  }
+  if (preset.equationNumbering !== undefined || preset.breakBeforeH1 !== undefined) {
+    groups.push(t("settings.groupNumbering"));
+  }
   return groups.join(" · ");
 }
 
@@ -224,12 +234,28 @@ export function applyTemplatePreset(presetId: string): void {
   if (!preset) return;
   state.settings.typography = { ...preset.typography };
   state.settings.pageSetup = { ...preset.pageSetup };
+  if (preset.headerFooter) state.settings.headerFooter = { ...preset.headerFooter };
+  if (preset.watermark) state.settings.watermark = { ...preset.watermark };
+  if (preset.equationNumbering !== undefined) {
+    state.settings.equationNumbering = preset.equationNumbering;
+  }
+  if (preset.breakBeforeH1 !== undefined) {
+    state.settings.breakBeforeH1 = preset.breakBeforeH1;
+  }
   state.hydratingSettings = true;
   applySettingsToControls();
   state.hydratingSettings = false;
   persistSettings({
     typography: { ...state.settings.typography },
     pageSetup: { ...state.settings.pageSetup },
+    ...(preset.headerFooter ? { headerFooter: { ...state.settings.headerFooter } } : {}),
+    ...(preset.watermark ? { watermark: { ...state.settings.watermark } } : {}),
+    ...(preset.equationNumbering !== undefined
+      ? { equationNumbering: state.settings.equationNumbering }
+      : {}),
+    ...(preset.breakBeforeH1 !== undefined
+      ? { breakBeforeH1: state.settings.breakBeforeH1 }
+      : {}),
   });
   // 预设切换即时反馈——toast 列出被覆盖的设置组
   showToast(
