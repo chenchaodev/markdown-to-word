@@ -175,15 +175,15 @@
 > 来源：ROADMAP-CANDIDATES.md（剪贴板直转 综合 70 / 成书向导 综合 85）。设计决策已拍板（见各条）。开发前确认，独立提交可回退；GUI 面走 ACCEPTANCE 人工实测。
 
 #### 剪贴板直转 / 拖放增强（体验）
-- [x] **剪贴板直转**：主界面空态/拖放区加「粘贴 Markdown 转换」按钮；新增 IPC `clipboard:read` 返回 `{type:'text'|'files', text?, paths?}`（走 Electron `clipboard`，区分文本与文件路径）；Markdown 文本写入 userData 临时目录后走现有 `convert:single`（`convert-flow.ts:55 runConvert`）；剪贴板为文件路径时复用现有 drop 逻辑（`collectMarkdowns`）——**GUI 实测通过 2026-08-29 随 3.9.0 发版关闭**
+- [x] **剪贴板直转**：主界面空态/拖放区加「粘贴 Markdown 转换」按钮；新增 IPC `clipboard:read` 返回 `{type:'text'|'files', text?, paths?}`（走 Electron `clipboard`，区分文本与文件路径）；Markdown 文本写入 userData 临时目录后走现有 `convert:single`（`convert-flow.ts:55 runConvert`）；剪贴板为文件路径时复用现有 drop 逻辑（`collectMarkdowns`）——**GUI 实测通过 2026-08-29 随 3.10.1 发版关闭**
   - 设计决策（已拍板）：① **不做热键**（仅按钮显式触发，避免与文本框粘贴冲突）；② **剪贴板内容始终当 Markdown**（符合工具定位，不启发式判断）
   - i18n：按钮/反馈文案键（zh/en/ja）
   - 自动断言：建议补 test/segments 或 main 段覆盖临时文件→convert 通路
-- [x] **拖放增强（打磨）**：文件夹递归（`collectMarkdownPaths`）与去重（`partitionDuplicates`）已具备；仅打磨——拖入即追加到合并队列、去重/跳过反馈更明显（复用现有 selectionStatus）——**GUI 实测通过 2026-08-29 随 3.9.0 发版关闭**
+- [x] **拖放增强（打磨）**：文件夹递归（`collectMarkdownPaths`）与去重（`partitionDuplicates`）已具备；仅打磨——拖入即追加到合并队列、去重/跳过反馈更明显（复用现有 selectionStatus）——**GUI 实测通过 2026-08-29 随 3.10.1 发版关闭**
   - 工作量小，可与剪贴板直转同批
 
 #### 成书向导（体验）
-- [x] **成书向导**：renderer 内自建 stepper 模态（复用 `trapFocus` 焦点陷阱，参考 about 模态；不新建 BrowserWindow，保持共享 state）；串联 F4/F5/F8/F9 + 预设系统 + 封面页——**GUI 实测通过 2026-08-29 随 3.9.0 发版关闭**
+- [x] **成书向导**：renderer 内自建 stepper 模态（复用 `trapFocus` 焦点陷阱，参考 about 模态；不新建 BrowserWindow，保持共享 state）；串联 F4/F5/F8/F9 + 预设系统 + 封面页——**GUI 实测通过 2026-08-29 随 3.10.1 发版关闭**
   - 步骤（每步可跳过）：① 模板/预设（`applyTemplatePreset` 或 `template:importDocx` 回填 typography/pageSetup）② 封面页（从 frontmatter 或向导输入取标题/作者，生成独立封面：docx 走封面节 / pdf 走 HTML 模板封面，双格式均支持）③ 页眉页脚（`headerFooter`）④ 水印（`watermark`）⑤ 合并源多选+排序（`mergeMarkdowns` 以 page-break 拼接）⑥ 目录/页码（开 `toc` + `tocMode:'field'`）→ 合并草稿 settings 后调 `runMerge`（`convert-flow.ts:165`）输出单 docx/pdf
   - 设计决策（已拍板）：① **封面页纳入成书向导范围**（docx 封面节 + pdf HTML 模板封面，双格式均支持）；② 向导编排 F4/F5/F8/F9+预设+封面页，封面页需新增 docx 封面节与 pdf 封面模板（双格式必要新增，非纯编排）；③ 输出支持 docx 与 pdf（双格式）
   - 设计细化决策（已拍板）：封面不含「单位」字段（不扩展核心）；向导入口仅空态投放区按钮（不做菜单）；向导内设置实时写入 `state.settings` + autosave（与抽屉一致）
