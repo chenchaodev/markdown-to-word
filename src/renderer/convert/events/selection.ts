@@ -10,9 +10,11 @@
  */
 import {
   appendFileBtn,
+  bookWizardBtn,
   clearListBtn,
   dropZone,
   multiList,
+  pasteConvertBtn,
   previewBtn,
   selectBtn,
 } from "../../dom/refs.js";
@@ -27,6 +29,8 @@ import {
   renderMultiList,
   renderSelection,
 } from "../file-list.js";
+import { runConvert } from "../convert-flow.js";
+import { openBookWizard } from "../../wizard/book-wizard.js";
 import { t } from "../../../core/i18n.js";
 
 /** 列表边缘自动滚动步长(px/次,dragover 事件粒度)。 */
@@ -81,6 +85,34 @@ export function bindSelectionEvents(): void {
     void openDialog(false);
   });
 
+  // 「粘贴 Markdown 转换」按钮(仅空态显示,按钮在 .pane-empty 内,文件态该 pane 已隐藏):
+  // 读系统剪贴板 → 文件路径走 drop 管线展开/过滤,文本写临时 md 走 runConvert,
+  // 空/非文本非文件 toast 提示;转换中禁用,结束后恢复。stopPropagation 防冒泡触发拖放区。
+  pasteConvertBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (pasteConvertBtn.disabled) return;
+    pasteConvertBtn.disabled = true;
+    void (async () => {
+      try {
+        const res = await window.api.clipboardRead();
+        if (res.type === "empty") {
+          setStatus(t("b3.empty"));
+          return;
+        }
+        if (res.type === "files") {
+          const mdPaths = await window.api.collectMarkdowns(res.paths); // 复用 drop 管线展开/过滤
+          appendSelection(mdPaths.files, mdPaths.skipped.length);
+          return;
+        }
+        await runConvert(res.mdPath, state.selectedFormat);
+      } catch (err) {
+        setError(errorMessage(err)); // 复用现有错误提示
+      } finally {
+        pasteConvertBtn.disabled = false;
+      }
+    })();
+  });
+
   // 点击拖放区打开对话框;键盘可用(Enter / 空格)。
   // 多文件态(≥2)点击=追加,单文件/默认态点击=更换/选择;列表内按钮已 stopPropagation
   dropZone.addEventListener("click", () => {
@@ -98,6 +130,14 @@ export function bindSelectionEvents(): void {
     event.stopPropagation();
     if (state.mode !== null || state.selectedFiles.length !== 1) return;
     openPreviewFor(state.selectedFiles[0]!); // 上行已守卫 length === 1
+  });
+
+  // 「成书向导」按钮(仅空态显示,位于 .pane-empty 内;文件态该 pane 已隐藏):
+  // 打开 7 步成书向导模态;stopPropagation 防冒泡触发拖放区点击=打开文件对话框。
+  bookWizardBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (bookWizardBtn.disabled) return;
+    openBookWizard();
   });
 
   // 「追加文件」按钮(两态共用):对话框追加合并,与现有列表去重;

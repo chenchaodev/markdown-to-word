@@ -46,6 +46,7 @@ function cleanupTempUserData() {
   try {
     fs.rmSync(tempUserData, { recursive: true, force: true });
   } catch {
+    // 清理失败静默忽略,不影响退出流程
   }
 }
 

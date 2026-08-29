@@ -12,6 +12,7 @@ import type { ImageResolver } from "../../core/image/image-resolver.js";
 import { sniffImageType } from "../../core/image/image-type.js";
 import { headerLogoLoadFailedWarning } from "../../core/image/image-warning.js";
 import type { HeaderLogoData } from "../../core/docx/chrome.js";
+import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK, type HeaderFooterSettings, type WatermarkSettings } from "../../core/settings/settings-defaults.js";
 import type { MermaidResolver } from "../../core/markdown/mermaid.js";
 import { createImageResolver } from "../services/image-downloader.js";
@@ -111,6 +112,8 @@ export interface BuildConvertContextOptions {
   baseDir: string;
   /** 文档标题(docx 元数据 / pdf <title>) */
   title: string;
+  /** 显式文档元数据(封面用);优先于 frontmatter 解析出的 metadata */
+  metadata?: DocMetadata;
   /** 警告收集器(与调用方共享同一数组;转换中发现的问题追加至此;元素为 ConvertWarning) */
   warnings?: ConvertWarning[];
   /** 应用设置(pageSetup/typography/breakBeforeH1/toc 取用) */
@@ -134,6 +137,7 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
   return {
     baseDir: options.baseDir,
     title: options.title,
+    metadata: options.metadata,
     warnings: options.warnings,
     pageSetup: options.settings.pageSetup,
     typography: options.settings.typography,

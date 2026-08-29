@@ -9,21 +9,25 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppSettings, ExportPresetsResult, ImportDocxTemplateResult, ImportPdfCssResult, ImportPresetsResult } from "./persist/settings.js";
 import type { ConvertWarning } from "../core/i18n.js";
 import type { ConvertProgressPayload } from "./ipc/channels.js";
+import type { ClipboardReadResult } from "./ipc/types.js";
 import type { UiState } from "./persist/ui-state.js";
 // 批量进度 payload 类型单源 converter/batch.ts(原内联 shape 三份镜像清零)
 import type { BatchProgressInfo, BatchResult } from "./converter/batch.js";
 import type { ConvertResult } from "./converter/merge.js";
+import type { DocMetadata } from "../core/pipeline/frontmatter.js";
 
 /** IPC channel 名镜像(与 src/main/ipc/channels.ts IPC_CHANNELS 逐键同值,勿单侧改动)。 */
 const CH = {
   fileOpenDialog: "file:openDialog",
   fileCollectMarkdown: "file:collectMarkdown",
+  readFrontmatter: "file:readFrontmatter",
   fileFilterExisting: "file:filterExisting",
   dirSelect: "dir:select",
   headerLogoSelect: "header-logo:select",
   convertSingle: "convert:single",
   convertBatch: "convert:batch",
   convertMerge: "convert:merge",
+  clipboardRead: "clipboard:read",
   convertCancel: "convert:cancel",
   convertProgress: "convert:progress",
   convertBatchProgress: "convert:batchProgress",
@@ -69,8 +73,16 @@ const api = {
     ipcRenderer.invoke(CH.convertSingle, filePath, format),
   convertBatch: (files: string[], format: "docx" | "pdf"): Promise<BatchResult> =>
     ipcRenderer.invoke(CH.convertBatch, files, format),
-  convertMerge: (files: string[], format: "docx" | "pdf"): Promise<ConvertResult> =>
-    ipcRenderer.invoke(CH.convertMerge, files, format),
+  convertMerge: (
+    files: string[],
+    format: "docx" | "pdf",
+    options?: { metadata?: DocMetadata },
+  ): Promise<ConvertResult> => ipcRenderer.invoke(CH.convertMerge, files, format, options),
+  /** 读取单文件 frontmatter 元数据(向导封面预填用) */
+  readFrontmatter: (filePath: string): Promise<DocMetadata> =>
+    ipcRenderer.invoke(CH.readFrontmatter, filePath),
+  /** 读取系统剪贴板:文本写临时 md 返回路径,或返回文件路径,或 empty */
+  clipboardRead: (): Promise<ClipboardReadResult> => ipcRenderer.invoke(CH.clipboardRead),
   // 转换前静态预检:main 读文件 + 解析 + 扫描,返回 ConvertWarning[]
   precheck: (filePath: string): Promise<ConvertWarning[]> => ipcRenderer.invoke(CH.convertPrecheck, filePath),
   // payload 带 mode 标识(single/batch/merge),renderer 直接消费归属

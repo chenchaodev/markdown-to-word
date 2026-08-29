@@ -216,7 +216,7 @@ function handleTypographyNumberChange(
  * 整体套用排版与页面设置,hydration 保护下统一回填所有相关控件并持久化;
  * 回填同时按匹配结果同步两侧 select 与 hint(当前即所选预设)。
  */
-function applyTemplatePreset(presetId: string): void {
+export function applyTemplatePreset(presetId: string): void {
   if (state.hydratingSettings) return;
   const preset = allPresets(state.settings.customPresets).find(
     (p) => p.id === presetId,

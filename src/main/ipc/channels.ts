@@ -23,6 +23,8 @@ export const IPC_CHANNELS = {
   /* ---- 文件域 ---- */
   /** 多选 markdown 文件对话框(取消返回 []) */
   fileOpenDialog: "file:openDialog",
+  /** 读取单文件 frontmatter 元数据(向导封面预填用) */
+  readFrontmatter: "file:readFrontmatter",
   /** 拖放路径收集:目录递归取 md,非 md 进 skipped */
   fileCollectMarkdown: "file:collectMarkdown",
   /** 保序过滤仍存在的路径(会话恢复) */
@@ -39,6 +41,8 @@ export const IPC_CHANNELS = {
   convertBatch: "convert:batch",
   /** 合并转换 */
   convertMerge: "convert:merge",
+  /** 读取系统剪贴板:文本写临时 md 返回路径,或返回文件路径,或 empty */
+  clipboardRead: "clipboard:read",
   /** 取消当前窗口的转换(单文件/批量/合并通用) */
   convertCancel: "convert:cancel",
   /** 单文件/合并转换进度推送(payload 见 ConvertProgressPayload) */

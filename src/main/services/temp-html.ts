@@ -45,3 +45,26 @@ export async function writeTempHtml(
   }
   throw lastError;
 }
+
+/**
+ * 写入临时 Markdown(os.tmpdir,命名 m2w-{pid}-{time}-{uuid短}.md),返回路径。
+ * 临时文件留 os.tmpdir,无需 cleanup,OS 自管(与 writeTempHtml 同款随机段 + 'wx' 独占)。
+ */
+export async function writeTempMarkdown(text: string): Promise<{ mdPath: string }> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < NAME_COLLISION_RETRIES; attempt++) {
+    const mdPath = path.join(
+      os.tmpdir(),
+      `m2w-${process.pid}-${Date.now()}-${randomUUID().slice(0, 8)}.md`,
+    );
+    try {
+      // 'wx':独占创建,已存在即抛 EEXIST(防碰撞覆盖),换名重试
+      await fs.writeFile(mdPath, text, { encoding: "utf8", flag: "wx" });
+      return { mdPath };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") throw err;
+      lastError = err;
+    }
+  }
+  throw lastError;
+}

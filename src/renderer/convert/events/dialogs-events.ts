@@ -41,6 +41,7 @@ import {
 import { applySelection } from "../file-list.js";
 import { runBatch } from "../convert-flow.js";
 import { closeSettingsDrawer, isSettingsDrawerOpen } from "../../settings/settings-drawer.js";
+import { closeBookWizard } from "../../wizard/book-wizard.js";
 import { closePresetSaveDialog, setSuppressCompleteDialog } from "../../settings/settings-panel.js";
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";
@@ -198,6 +199,10 @@ export function bindDialogEvents(): void {
     } else if (isSettingsDrawerOpen()) {
       // 抽屉在 Esc 链末位(弹窗优先);关闭后焦点由 drawer 模块归还 ⚙ 按钮
       closeSettingsDrawer();
+    } else {
+      // 成书向导:弹窗/抽屉之后;元素动态创建,按 id 查询;关闭后焦点归还触发按钮
+      const bookWizardEl = document.getElementById("bookWizard");
+      if (bookWizardEl && !bookWizardEl.classList.contains("hidden")) closeBookWizard();
     }
   });
 }

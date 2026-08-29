@@ -31,10 +31,10 @@ import {
 } from "./pdf/template.js";
 import type { HeaderLogoData } from "./docx/chrome.js";
 import type { MermaidResolver } from "./markdown/mermaid.js";
-// 契约单源:ImageResolver 类型收敛 core/image/image-resolver.ts(仅类型导入)
+// 契约单源:ImageResolver 类型收敛于 core/image/image-resolver.ts(此处仅类型导入)
 import type { ImageResolver } from "./image/image-resolver.js";
-// 页面设置契约收敛于 settings-defaults.ts(单一来源),此处 re-export 保持既有导入面
-// (docx/pdf render、main settings、测试等历史 import 源不变)
+// 页面设置契约单源在 settings-defaults.ts;此处 re-export 默认值与类型,
+// 以兼容下游直接从 core/convert 取默认值的既有写法(docx/pdf render、main、测试)。
 export {
   DEFAULT_PAGE_SETUP,
   DEFAULT_HEADER_FOOTER,
@@ -43,8 +43,8 @@ export {
   type HeaderFooterSettings,
   type WatermarkSettings,
 } from "./settings/settings-defaults.js";
-// ConvertFormat 单源 settings-defaults(收敛平行类型残留);
-// re-export 保持 main 侧既有 import 路径(core/convert.js)不变
+// ConvertFormat 单源在 settings-defaults.ts(收敛平行类型残留);
+// re-export 以兼容 main 侧既有从 core/convert 导入 ConvertFormat 的写法。
 export type { ConvertFormat } from "./settings/settings-defaults.js";
 import type { ConvertFormat, PageSetup, TocMode } from "./settings/settings-defaults.js";
 import {
@@ -62,6 +62,8 @@ export interface ConvertContext {
   imageResolver?: ImageResolver;
   /** 文档标题(pdf 用 <title>) */
   title?: string;
+  /** 显式文档元数据(封面用);优先于 frontmatter 解析出的 metadata(覆盖语义) */
+  metadata?: DocMetadata;
   /** 警告收集器(可选):转换中发现的非致命问题(如缺失图片)追加至此;
    *  元素为 ConvertWarning(keyed 警告经显示层 formatWarning 按语言格式化) */
   warnings?: ConvertWarning[];
@@ -83,16 +85,18 @@ export interface ConvertContext {
   pdfCss?: string;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
-   /** 页眉页脚配置(缺省 DEFAULT_HEADER_FOOTER = 现状行为) */
+  /** 页眉页脚配置(缺省 DEFAULT_HEADER_FOOTER:标题页眉 + 页码页脚) */
   headerFooter?: HeaderFooterSettings;
   /** 页眉 logo 已读数据(main 层读文件后注入,core 零 IO;仅 headerMode=custom 消费) */
   headerLogo?: HeaderLogoData;
   /** 文字水印(缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
   watermark?: WatermarkSettings;
-   /** PDF 渲染子阶段回调(进度分阶段上报):pdf 链路经此上报 parse/inline/
-   *  mermaid/katex 四个子阶段(print 由 main/converter.ts 在 printToPDF 前上报);
-   *  缺省不上报(core 层零依赖,行为不变)。向后兼容:旧消费方对未知 stage 键
-   *  原样兜底(renderer stageText 未知键透传),协议只增不改。 */
+  /**
+   * PDF 渲染子阶段进度回调:pdf 链路经此上报 parse / inline / mermaid / katex
+   * 四个子阶段(main/converter.ts 在 printToPDF 前另上报 print 阶段)。
+   * 缺省不上报(core 层零依赖,行为不变)。协议只增不改:旧消费方对未知
+   * stage 键原样兜底(renderer 的 stageText 对未知键透传)。
+   */
   onStage?: (stage: string) => void;
 }
 
@@ -106,11 +110,11 @@ export interface PdfArtifact {
   kind: "pdf";
   /** 完整 HTML 文档,落盘临时文件后 loadFile + printToPDF */
   html: string;
-   /** printToPDF 的 headerTemplate(default/none = 空模板,custom = 文字+logo) */
+  /** printToPDF 的 headerTemplate(default/none = 空模板,custom = 文字 + logo) */
   headerTemplate: string;
   /** printToPDF 的 footerTemplate(页码;footerEnabled=false 时为空模板) */
   footerTemplate: string;
-   /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;两遍法页码用) */
+  /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;PDF 两遍渲染时用于回填页码) */
   tocMode: TocMode;
   /** frontmatter 元数据(PDF Info 注入用) */
   metadata?: DocMetadata;
@@ -123,12 +127,15 @@ export async function convert(
   format: ConvertFormat,
   context: ConvertContext,
 ): Promise<ConvertArtifact> {
-  // footgun:context.warnings 缺省时本函数内部以临时数组兜底,
-  // 收集到的警告随调用结束静默丢弃——需要警告的调用方必须显式传入数组。
+  // 注意:context.warnings 缺省时退化为局部空数组,收集到的警告在调用结束后被丢弃;
+  // 需要拿到警告的调用方必须显式传入 context.warnings 数组。
   const warnings = context.warnings ?? [];
   // 先剥离 frontmatter:解析与渲染均只作用于正文(body)
-  const { metadata, body } = parseFrontmatter(md);
-  // 页眉页脚配置归一化:缺省字段补默认(= 现状行为),双管线共用同一取值
+  const { metadata: parsedMetadata, body } = parseFrontmatter(md);
+  // 显式 metadata(context.metadata)优先于 frontmatter 解析出的 metadata:
+  // 向导封面覆盖 frontmatter 即走此路径;未传则回落 frontmatter(回归不变)
+  const metadata = context.metadata ?? parsedMetadata;
+  // 页眉页脚配置归一化:以 DEFAULT_HEADER_FOOTER 为基准补缺失字段,docx 与 pdf 共用同一份取值
   const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...context.headerFooter };
   // 水印配置归一化(缺省字段补默认;text 空串视为关闭,由渲染层判定零渲染)
   const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...context.watermark };

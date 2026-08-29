@@ -4,6 +4,7 @@
  */
 import path from "node:path";
 import { convert, type ConvertFormat } from "../../core/convert.js";
+import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
 import { mergeMarkdowns } from "../../core/pipeline/merge.js";
@@ -43,6 +44,7 @@ export async function mergeConvertImpl(
   onProgress?: (stage: string) => void,
   ctx: ConvertContext = createConvertContext(),
   katexDir?: string,
+  metadata?: DocMetadata,
 ): Promise<ConvertResult> {
   if (files.length === 0) {
     // 生成期本地化:同 convertImpl,throw 文案无法显示层重映射,抛出点用 t()。
@@ -73,6 +75,7 @@ export async function mergeConvertImpl(
     await buildConvertContext({
       baseDir: path.dirname(firstFile),
       title: baseName,
+      metadata,
       warnings,
       settings,
       imageResolver: getImageResolver(path.dirname(firstFile)),

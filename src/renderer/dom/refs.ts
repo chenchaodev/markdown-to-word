@@ -6,6 +6,8 @@
  */
 export const dropZone = document.getElementById("dropZone") as HTMLDivElement;
 export const selectBtn = document.getElementById("selectBtn") as HTMLButtonElement;
+export const pasteConvertBtn = document.getElementById("pasteConvertBtn") as HTMLButtonElement;
+export const bookWizardBtn = document.getElementById("bookWizardBtn") as HTMLButtonElement;
 export const multiCount = document.getElementById("multiCount") as HTMLParagraphElement;
 export const multiList = document.getElementById("multiList") as HTMLUListElement;
 export const statusEl = document.getElementById("status") as HTMLParagraphElement;

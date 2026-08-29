@@ -2,7 +2,7 @@
  * IPC 注册体:全部 ipcMain.handle 注册 + convert 系 handler 共用 ctx 注册表与样板。
  * 依赖方向单向(防循环):本模块 → 窗口/converter/persist/services/logic,窗口层不反向依赖本模块。
  */
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertFormat } from "../../core/convert.js";
@@ -49,9 +49,12 @@ import {
 } from "../converter/index.js";
 import { getKatexDir } from "../services/resource-dirs.js";
 import { importDocxTemplate } from "../../core/docx/template-import.js";
+import { parseFrontmatter, type DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { getMainWindow } from "../windows/main-window.js";
 import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
 import { IPC_CHANNELS as CH, type ConvertMode } from "./channels.js";
+import { writeTempMarkdown } from "../services/temp-html.js";
+import type { ClipboardReadResult } from "./types.js";
 import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";
 import { ctxByWebContents } from "../windows/web-contents-registry.js";
 
@@ -154,6 +157,11 @@ function allowOutputPath(outputPath: string): void {
 
 function isAllowedOutputPath(p: string): boolean {
   return allowedOutputPaths.has(p);
+}
+
+/** convertMerge 第 3 参类型守卫:含可选 metadata 字段 */
+function isMetadataOptions(v: unknown): v is { metadata?: DocMetadata } {
+  return typeof v === "object" && v !== null && ("metadata" in v);
 }
 
 export function registerIpc(): void {
@@ -275,26 +283,65 @@ export function registerIpc(): void {
   );
 
   // 合并转换:多文件 → mergeMarkdowns → 单次 convert,输出 {首文件名}-合并.{ext}
-  ipcMain.handle(CH.convertMerge, async (event, files: unknown, format: unknown): Promise<ConvertResult> => {
-    if (!isStringArray(files) || !isConvertFormat(format)) {
-      return { ok: false, error: t("common.invalidParams") };
+  // 第 3 参 options.metadata:向导封面显式元数据,优先于首文件 frontmatter
+  ipcMain.handle(
+    CH.convertMerge,
+    async (event, files: unknown, format: unknown, options: unknown): Promise<ConvertResult> => {
+      if (!isStringArray(files) || !isConvertFormat(format)) {
+        return { ok: false, error: t("common.invalidParams") };
+      }
+      const metadata = isMetadataOptions(options) ? options.metadata : undefined;
+      return runWithCtx(
+        event,
+        async (ctx, win) => {
+          // 与单文件同通道,payload.mode = "merge" 区分归属
+          const send = (stage: string): void =>
+            win?.webContents.send(CH.convertProgress, { stage, mode: "merge" satisfies ConvertMode });
+          const result = await mergeConvertImpl(files, format, send, ctx, getKatexDir(), metadata);
+          if (result.ok) {
+            if (result.outputPath) allowOutputPath(result.outputPath); // 产物路径入 shell 白名单
+            await recordRecentFiles(files, format);
+          }
+          return result;
+        },
+        () => ({ ok: false, canceled: true, error: t("common.canceled") }),
+      );
+    },
+  );
+
+  // 读取单文件 frontmatter 元数据(向导封面预填用):返回解析出的 metadata
+  ipcMain.handle(CH.readFrontmatter, async (_event, filePath: unknown): Promise<DocMetadata> => {
+    if (!isString(filePath)) return {};
+    try {
+      const text = await fs.readFile(filePath, "utf8");
+      return parseFrontmatter(text).metadata;
+    } catch {
+      return {};
     }
-    return runWithCtx(
-      event,
-      async (ctx, win) => {
-        // 与单文件同通道,payload.mode = "merge" 区分归属
-        const send = (stage: string): void =>
-          win?.webContents.send(CH.convertProgress, { stage, mode: "merge" satisfies ConvertMode });
-        const result = await mergeConvertImpl(files, format, send, ctx, getKatexDir());
-        if (result.ok) {
-          if (result.outputPath) allowOutputPath(result.outputPath); // 产物路径入 shell 白名单
-          await recordRecentFiles(files, format);
-        }
-        return result;
-      },
-      () => ({ ok: false, canceled: true, error: t("common.canceled") }),
-    );
   });
+
+  // 读取系统剪贴板:优先文件路径(Windows 剪贴板 FileNameW 格式:UTF-16LE、
+  // \u0000 分隔、末尾空字符)→ 文本写临时 md → 空/非文本非文件返回 empty。
+  ipcMain.handle(CH.clipboardRead, async (): Promise<ClipboardReadResult> => {
+    // 1) 先试文件路径(Windows 剪贴板 FileNameW 格式:UTF-16LE、\u0000 分隔、末尾空字符)
+    const buf = clipboard.readBuffer("FileNameW");
+    if (buf && buf.length > 2) {
+      const s = buf.toString("utf16le");
+      const paths = s
+        .split("\u0000")
+        .map((x) => x.trim())
+        .filter((x) => x.length > 0 && !x.endsWith(":"));
+      if (paths.length) return { type: "files", paths };
+    }
+    // 2) 文本 → 临时 md
+    const text = clipboard.readText();
+    if (text && text.trim().length > 0) {
+      const { mdPath } = await writeTempMarkdown(text);
+      return { type: "text", mdPath };
+    }
+    return { type: "empty" };
+  });
+
   ipcMain.handle(CH.settingsGet, (): AppSettings => loadSettings());
   // 界面版本信息:与「关于」对话框同源 app.getVersion
   ipcMain.handle(CH.appVersion, (): string => app.getVersion());

@@ -20,6 +20,7 @@ import { showBatchDialog, showCompleteDialog, showPrecheckDialog, showSummary } 
 import { updateActionButtons } from "./file-list.js";
 import { t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";
+import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 
 /** 错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
 function displayError(message: string): string {
@@ -162,8 +163,13 @@ export async function runBatch(
   }
 }
 
-export async function runMerge(): Promise<void> {
-  if (state.selectedFiles.length < 2) return;
+export async function runMerge(
+  opts?: { files?: string[]; format?: "docx" | "pdf"; metadata?: DocMetadata },
+): Promise<void> {
+  const files = opts?.files ?? state.selectedFiles;
+  const format = opts?.format ?? state.selectedFormat;
+  const metadata = opts?.metadata;
+  if (files.length < 2) return;
   state.mode = "merge";
   updateActionButtons();
   setStatus(t("convert.merge.stage"));
@@ -171,8 +177,9 @@ export async function runMerge(): Promise<void> {
   showProgress();
   try {
     const result = await window.api.convertMerge(
-      state.selectedFiles,
-      state.selectedFormat,
+      files,
+      format,
+      metadata ? { metadata } : undefined,
     );
     if (result.canceled) {
       setStatus(t("common.canceled"));
