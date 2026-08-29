@@ -98,11 +98,13 @@ export async function runSmoke(win) {
   // 渲染进程启动时 chips 将据此渲染;先清空保证「启动隐藏」断言确定(结束前恢复原值)
   await writeWithRetry(() => saveUiState({ lastSessionFiles: [], recentFiles: [] }), "ui-state 隔离写入");
   // 应用菜单守卫(autoHideMenuBar 下 Alt 唤出,缺失即回归)。
-  // 文案经 t() 取值(与 buildAppMenu 同源),语言设置为 en 时不再误报
+  // 文案经 t() 取值(与 buildAppMenu 同源),语言设置为 en 时不再误报。
+  // 「关于」入口 3.6.0 起经标题栏信息图标(about:open IPC),帮助菜单有意移除,
+  // 守卫只断言文件菜单存在(确保 buildAppMenu 已执行)
   const appMenu = Menu.getApplicationMenu();
   const menuLabels = appMenu?.items.map((item) => item.label) ?? [];
-  if (!appMenu || !menuLabels.includes(t("menu.file")) || !menuLabels.includes(t("menu.help"))) {
-    throw new Error(`[smoke] 应用菜单缺失: ${JSON.stringify(menuLabels)}(期望 ${t("menu.file")}/${t("menu.help")})`);
+  if (!appMenu || !menuLabels.includes(t("menu.file"))) {
+    throw new Error(`[smoke] 应用菜单缺失: ${JSON.stringify(menuLabels)}(期望 ${t("menu.file")})`);
   }
   const outDir = SMOKE_DIR;
   const sampleMd = path.join(outDir, "smoke-basic.md");
