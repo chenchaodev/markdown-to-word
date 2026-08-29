@@ -13,8 +13,8 @@
 ## 开发环境
 
 - **Node.js** >= 20.19（ESM 模式）
-- **npm** 依赖安装使用国内镜像（项目 `.npmrc` 已配置 npmmirror）
-- **Electron 镜像**：国内网络需设置环境变量（详见 [开发者手册](docs/DEV-GUIDE.md)）：
+- **npm** 依赖安装使用国内镜像（项目 `.npmrc` 仅含 registry，已配置 npmmirror）
+- **Electron 镜像**：国内网络需设置环境变量（本地开发跑一次 `scripts/setup-env.ps1` 写入用户级环境变量即可，详见 [开发者手册](docs/DEV-GUIDE.md)；GitHub Actions 不需要）：
   ```
   ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
   ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/

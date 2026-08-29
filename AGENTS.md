@@ -4,7 +4,7 @@
 - 技术栈:Node.js + TypeScript,ESM(`"type": "module"`),Node >= 20.19(勿回退;typescript-eslint 经 side-by-side 用 TS 6 API(`typescript` 别名 `@typescript/typescript6`),`tsc` 二进制仍为 TS 7(`@typescript/native` 别名))
 - npm 走国内镜像:项目 `.npmrc` 已配置 npmmirror,勿移除;install 失败先怀疑网络
 - 转换核心(docx 路线):`docx` 9.x + remark 自研渲染管线;pdf 路线:markdown-it + HTML 模板 + Electron `printToPDF`(勿回退到 md-to-pdf);选型结论见 `docs/ROADMAP.md`,实际验证事实记录于 `docs/RESEARCH.md`
-- GUI:Electron 43;安装/打包走镜像,`ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR` 写死勿回退
+- GUI:Electron 43;安装/打包走镜像,本地开发经 `scripts/setup-env.ps1` 设 `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR` 用户级环境变量(写死勿回退;GitHub Actions 不需要);`.npmrc` 仅含 registry,勿在 .npmrc 写 electron 镜像键(npm 未知配置警告 + electron-builder 读不到)
 - 架构方向:转换核心 `src/core/` 与 GUI(`src/main/` + `src/renderer/`)分离,便于测试与复用(开发时细化)
 - docx 渲染必须走 `core/docx/theme.ts` 集中字体配置(中文 eastAsia),不允许散落硬编码
 - 显式分页符语法固定 `<!-- page-break -->`(不占 `---` 的 hr 语义);docx landscape 尺寸传原始(纵向)值,勿手动交换(docx 库自动交换)
@@ -31,4 +31,4 @@
 - Windows 坑:跨项目通用坑(pwsh 引号/MAX_PATH/EBUSY/编码)见全局配置目录 `WINDOWS-GUIDE.md`;本仓库具体坑见 `docs/RESEARCH.md`
 - 代码结构与质量(注释规范/命名/契约单源/测试体系等细则):见全局配置目录 `CODE-GUIDE.md`,写代码/重构/测试前先读
 
-- 版本:v1.2(改本文件时递增版本号,超限先瘦身)
+- 版本:v1.3(改本文件时递增版本号,超限先瘦身)
