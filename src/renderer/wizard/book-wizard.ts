@@ -642,6 +642,8 @@ function syncSources(): void {
   // 同步主舞台文件列表(向导关闭后可见)
   state.selectedFiles = [...draft.sources];
   renderSelection();
+  // 合并源增减后即时刷新导航按钮态(否则「下一步」disabled 停留陈旧值,见 canAdvance 第 5 步门槛)
+  renderStep();
 }
 
 function moveSource(i: number, offset: number): void {

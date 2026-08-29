@@ -64,7 +64,10 @@ export function createWindow(): BrowserWindow {
     // 最小尺寸,防止窗口过小导致布局挤压不可用;
     // 统一内容列自适应收缩 + ≤720 档参数条折两行,支持 1280/1366 屏半屏操作
     minWidth: 640,
-    minHeight: 560,
+    // 最小高度须保证主 stage 几何恒定:标题栏(44)+ 历史(40)+ stage 设计高(362)
+    // + 结果区典型余量(~234)≈680;低于此值结果区撑高会挤压 stage-wrap 致主舞台跳动,
+    // 且 >640 使矮窗档媒体查询不触发(恒定用常规档令牌)
+    minHeight: 680,
     ...(savedBounds ?? {}),
     title: t("app.title"),
     ...(fs.existsSync(windowIcon) ? { icon: windowIcon } : {}),

@@ -160,7 +160,7 @@ body {
 }
 
 /* 纸张颗粒(mockup §2 签名氛围):全窗固定覆盖,overlay 混合,z-index 1
- * 位于内容之上、浮出面板(5)/toast(80)/抽屉(90)/弹窗(100)之下;pointer-events 放行 */
+  * 位于内容之上、浮出面板(5)/toast(110)/抽屉(90)/弹窗(100)之下;pointer-events 放行 */
 body::after {
   content: "";
   position: fixed;
@@ -523,8 +523,11 @@ svg.ic {
   flex: none;
   border-top: 1px solid var(--line);
   /* 固定槽高(不再 min-height 随内容长高)——转换开始/完成时状态行与
-   * 汇总条不再挤压舞台;超长内容内部滚动,safe center 防居中溢出裁顶 */
-  height: 96px;
+   * 汇总条不再挤压舞台;超长内容内部滚动,safe center 防居中溢出裁顶。
+   * 完成态同时渲染状态行 + 汇总条(含路径/按钮/折叠警告/跳过列表)高度不定,
+   * 固定上限(96/150/240)都会在某些结果下被撑爆出现滚动条;改为随内容自适应、
+   * 彻底去掉高度上限,结果区域始终完整容纳、消灭滚动条(overflow 仅作极端兜底) */
+  height: auto;
   padding: 11px max(18px, calc((100% - var(--col-w)) / 2)) 13px;
   display: flex;
   flex-direction: column;
@@ -727,7 +730,7 @@ svg.ic {
   left: 50%;
   bottom: 76px;
   transform: translate(-50%, 8px);
-  z-index: 80;
+  z-index: 110;
   max-width: calc(100% - 48px);
   padding: 8px 16px;
   font-size: 12.5px;
@@ -1295,7 +1298,9 @@ input[type="range"]::-webkit-slider-thumb {
    * 规则按序压掉(矮窗压缩与半屏折行曾整段失效) */
 
   .feed {
-    height: 86px;
+    /* 矮窗档仍须随内容自适应:固定 86px 会让完成结果(状态行+汇总条+路径+按钮)
+     * 溢出内部滚动,与常规档 height:auto 行为一致,消灭滚动条 */
+    height: auto;
     /* 仅调垂直:水平保持 max() 列对齐公式(覆盖成固定 18px 会破坏统一内容列) */
     padding: 10px max(18px, calc((100% - var(--col-w)) / 2)) 11px;
   }

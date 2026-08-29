@@ -106,8 +106,6 @@
   font-size: 12px;
   line-height: 1.6;
   word-break: break-all;
-  max-height: 132px;
-  overflow-y: auto;
   color: var(--ink-2);
   background: var(--inset);
   border: 1px solid var(--line);
@@ -481,7 +479,7 @@
   display: flex;
   flex-direction: column;
   width: min(680px, 100%);
-  max-height: calc(100vh - 48px);
+  height: min(680px, calc(100vh - 48px));
   padding: 0;
   overflow: hidden;
 }
