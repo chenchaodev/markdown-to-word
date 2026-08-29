@@ -81,10 +81,12 @@ jobs:
             process.stdout.write(m ? m[1].trim() : '');
           ")
           # 只上传安装包与更新元数据(builder-debug.yml 为 electron-builder 调试文件,1.0.1 起不再上传)
-          if [ -n "$NOTES" ]; then
-            gh release create "${{ github.ref_name }}" release/*.exe release/latest.yml --notes "$NOTES"
-          else
-            gh release create "${{ github.ref_name }}" release/*.exe release/latest.yml --generate-notes
-          fi
+           # release 标题固定为版本号(tag 名),不再沿用 commit 主题
+           TITLE="${{ github.ref_name }}"
+           if [ -n "$NOTES" ]; then
+             gh release create "${{ github.ref_name }}" release/*.exe release/latest.yml --title "$TITLE" --notes "$NOTES"
+           else
+             gh release create "${{ github.ref_name }}" release/*.exe release/latest.yml --title "$TITLE" --generate-notes
+           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
