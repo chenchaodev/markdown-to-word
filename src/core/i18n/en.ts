@@ -451,7 +451,7 @@ const dict = {
     "error.diskFull": "Not enough disk space. Free up space and retry",
     "error.pathTooLong": "File path too long (exceeds the Windows path limit). Move the file to a shallower folder and retry",
 
-    /* ---------- Book wizard (B4) ---------- */
+    /* ---------- Book wizard ---------- */
     "wizard.title": "Book Wizard",
     "wizard.sub": "Template · Cover · Header/footer · Watermark · Merge · TOC · Publish",
     "wizard.open": "Book Wizard",

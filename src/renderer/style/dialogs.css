@@ -474,7 +474,7 @@
   user-select: text;
 }
 
-/* ══ 成书向导(B4):renderer 内 stepper 模态,复用 .dialog-overlay 模态与令牌 ══
+/* ══ 成书向导:renderer 内 stepper 模态,复用 .dialog-overlay 模态与令牌 ══
  * 不引入新控件形态(枚举 ≤5 → seg、布尔 → switch、路径/文本 → tin),
  * 与设置抽屉/完成弹窗同源视觉;朱砂(--acc)仅用于末步「付印」按钮。 */
 .dialog--wizard {

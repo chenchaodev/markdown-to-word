@@ -1,5 +1,5 @@
 /**
- * 成书向导状态机纯函数测试(B4):边界与「可前进/可付印」判定。
+ * 成书向导状态机纯函数测试:边界与「可前进/可付印」判定。
  * 不依赖 DOM/IPC,直接对 dist/renderer/wizard/wizard-state.js 断言。
  */
 import {

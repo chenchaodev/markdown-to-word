@@ -396,7 +396,7 @@ const dict = {
     "select.title": "选择 Markdown 文件(Ctrl+O)",
     "append.label": "追加文件",
     "append.title": "添加更多文件(Ctrl+O)",
-    // B3 剪贴板直转(空态「粘贴 Markdown 转换」按钮)
+    // 剪贴板直转(空态「粘贴 Markdown 转换」按钮)
     "b3.label": "粘贴 Markdown 转换",
     "b3.title": "粘贴剪贴板中的 Markdown 并转换",
     "b3.empty": "剪贴板为空或非文本",
@@ -449,7 +449,7 @@ const dict = {
     "error.diskFull": "磁盘空间不足,请清理磁盘空间后重试",
     "error.pathTooLong": "文件路径过长(超过 Windows 路径长度限制),请将文件移动到更浅的目录后重试",
 
-    /* ---------- 成书向导(B4) ---------- */
+    /* ---------- 成书向导 ---------- */
     "wizard.title": "成书向导",
     "wizard.sub": "模板 · 封面 · 页眉页脚 · 水印 · 合并 · 目录 · 付印",
     "wizard.open": "成书向导",

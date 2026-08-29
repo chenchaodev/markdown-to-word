@@ -1,5 +1,5 @@
 /**
- * 封面元数据覆盖测试(B4 关联):convert 的 context.metadata 优先于 frontmatter 解析出的
+ * 封面元数据覆盖测试:convert 的 context.metadata 优先于 frontmatter 解析出的
  * metadata。向导「封面」步即经此通道传入显式元数据,覆盖首文件 frontmatter。
  * - 给定 frontmatter title 与 context.metadata.title 不同 → 产物封面用 metadata.title;
  * - 不传 metadata → 回落 frontmatter(既有行为不变)。

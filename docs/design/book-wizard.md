@@ -1,7 +1,7 @@
-# B4 成书向导 · UI/交互设计（草稿）
+# 成书向导 · UI/交互设计（草稿）
 
 > 状态：**设计稿（待校订）**。文案均为 DRAFT，措辞后续由人工校订。
-> 适用范围：renderer 内 stepper 模态（非独立 BrowserWindow）+ B3 剪贴板直转按钮。
+> 适用范围：renderer 内 stepper 模态（非独立 BrowserWindow）+ 剪贴板直转按钮。
 > 单一事实源：`docs/design/ui-guidelines.md`（令牌/控件/红线）、`docs/design/settings-ia.md`（7 组 IA）。
 > 本文件不写实现代码，只描述结构、交互、令牌与文案键。
 
@@ -136,7 +136,7 @@
 - **共享状态**：向导内改的模板/页眉/水印/目录，直接写 `state.settings`（与抽屉同源），并走既有 autosave。关向导不丢设置——与关抽屉行为一致。
 - **合并源**：第 5 步选的文件直接进 `state.selectedFiles`（复用 `appendSelection` / `collectMarkdowns`），即使中途关向导，文件也留在主舞台队列。
   - **封面字段**：标题/作者/日期是**文档元数据**，不在 `state.settings` 里。向导收集进一个临时 `wizardDraft.cover`，在「付印」时随 `runMerge` 传入（见 §4.2 与 §9 风险）。
-  - **入口（已拍板）**：仅空态投放区加一个「成书向导」按钮（与 B3 并列），`btn-solid`（墨色），与 B3 同级；不做菜单入口。
+  - **入口（已拍板）**：仅空态投放区加一个「成书向导」按钮（与剪贴板直转并列），`btn-solid`（墨色），与剪贴板直转同级；不做菜单入口。
 - **付印后反馈**：第 7 步「付印」→ 关向导（释放陷阱、焦点归还触发钮）→ 调 `runMerge`（`convert-flow.ts:165`）→ 复用主舞台动作栏的进度条 + 既有「转换完成」弹窗（钤印 `梓`）+ 常驻结果汇总条。向导自身不重造进度/结果 UI。
 
 ---
@@ -215,7 +215,7 @@
 
 ---
 
-## 5. B3 剪贴板直转按钮（极简）
+## 5. 剪贴板直转按钮（极简）
 
 - **位置**：空态投放区（`.pane-empty` 的 `.drop-core`）内，与「选择文件」按钮并列——放在「选择文件」下方或右侧，作为次级输入动作。
 - **标签（DRAFT）**：`粘贴 Markdown 转换`。
@@ -316,7 +316,7 @@
 | `wizard.output.done` | 已生成 {name} | Generated {name} | {name} を生成しました |
 | `wizard.output.fail` | 生成失败 | Generation failed | 生成失敗 |
 
-**B3 剪贴板直转**
+**剪贴板直转**
 | `b3.label` | 粘贴 Markdown 转换 | Paste Markdown to convert | Markdown を貼り付けて変換 |
 | `b3.title` | 从剪贴板粘贴 Markdown 并转换 | Paste Markdown from clipboard and convert | クリップボードから Markdown を貼り付けて変換 |
 | `b3.empty` | 剪贴板里没有可转换的文本 | No convertible text in clipboard | クリップボードに変換できるテキストなし |
@@ -330,7 +330,7 @@
 
 1. **「单位」字段（已拍板：暂不包含）**：`DocMetadata` 仅解析 `title/author/date`，无 `organization`。已决策首版封面不含「单位」字段（不扩展核心）；后续若需，再单独评估核心扩展。本稿已移除 `fieldOrg` / `orgNote`。
 2. **封面元数据传入管线（高）**：现有封面来自首文件 frontmatter；向导要支持「手动填 / 覆盖 frontmatter」。需 `convertMerge` / `convertSingle` 接受 `cover` 覆盖参数（核心改动）。否则向导封面步只能改首文件 frontmatter 文件本身（不优雅）。
-3. **向导入口（已拍板：仅空态按钮）**：已决策仅空态投放区加「成书向导」按钮（与 B3 并列），不做菜单入口。
+3. **向导入口（已拍板：仅空态按钮）**：已决策仅空态投放区加「成书向导」按钮（与剪贴板直转并列），不做菜单入口。
 4. **跳过合并源的含义（中）**：第 5 步跳过 = 不合并（仅当前列表普通转换）。但若列表 < 2，「成书」语义不成立——是否允许跳过？建议：文件 < 2 时「跳过」也禁用，强制至少合并两步或退回单文件流程。
 5. **设置实时写 vs 草稿（已拍板：实时写入）**：采用「向导内改设置实时写 `state.settings` + autosave，与抽屉一致」，关向导不丢设置。封面元数据（标题/作者/日期）仍走 `wizardDraft.cover`，付印时随 `runMerge` 传入。
 6. **双格式输出文件名（低）**：`runMerge` 当前输出 `{首文件名}-合并.{ext}`；双格式需两个扩展名。结果汇总条需能列两个路径（现有 `result-summary-path` 为单行截断，需小改支持双行）。
@@ -349,7 +349,7 @@
 **新增（仅结构/CSS，不新发明控件）**
 - `dialogs.css` 内追加 `.dialog--wizard`、`.wizard-head`、`.wizard-sub`、`.wizard-steps`、`.wz-step`、`.wizard-body`、`.wz-pane`、`.wizard-foot`、`.wz-cover-preview`（全部用既有令牌，无新 hex）。
 - `index.html` 内新增 `#bookWizard` 模态块（结构见 §3.1）。
-- 空态 `.drop-core` 内新增 B3 按钮 `#pasteConvertBtn`（`btn-solid`）。
+- 空态 `.drop-core` 内新增剪贴板直转按钮 `#pasteConvertBtn`（`btn-solid`）。
 - i18n：新增约 50 个键（§8）。
 
 **不新增**：独立 BrowserWindow、新动画体系、新钤印、新控件类型。

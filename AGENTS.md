@@ -19,7 +19,8 @@
 - 提交前:过 typecheck / build,`git status` 只含本逻辑单元文件
 - 提交即固化:一次提交 = 一个可独立回退的逻辑单元;`docs/CHANGELOG.md` 平时提交不写(流水查 git log,完整迭代发版时从 git log 汇总写版本条目,小型/琐碎并入下次);实测状态变化同批更新验收记录与 `docs/STATUS.md` 打开事项,收尾同步「当前状态」;勿依赖「迭代完成」「会话切换」判断(见全局 AGENTS.md「提交时」)
 - pwsh 环境坑:commit message 用单引号包裹,避免内嵌 ASCII 双引号被拆包(已踩坑)
-- 版本号三统一(1.0.0 起):package.json / git tag / CHANGELOG 同号(如 1.0.0 → tag v1.0.0 → CHANGELOG [1.0.0]);0.32.0 及以前为迭代序列 0.NN.M 与发布号 0.5.x 解耦的历史,勿回退
+  - 版本号三统一(1.0.0 起):package.json / git tag / CHANGELOG 同号(如 1.0.0 → tag v1.0.0 → CHANGELOG [1.0.0]);0.32.0 及以前为迭代序列 0.NN.M 与发布号 0.5.x 解耦的历史,勿回退
+  - 规划编号不进交付物:ROADMAP-CANDIDATES 的候选编号(B1–B11 等)属规划阶段内部用语,晋升实现后须用描述性功能名(如 成书向导/剪贴板直转),不得写入代码注释/文件名/发版文档(CHANGELOG/STATUS/ACCEPTANCE/ROADMAP 小节标题);发版前做「规划编号→功能名」重命名,避免批次概念泄漏
 - 测试体系:`test/`(segments/ core 渲染 + main/ 主进程层,按内容主题零注册 + fixtures/ 静态样例 + common/ 工具),入口 `npm run test`(acceptance)、`test:smoke`、`test:all`;产物 `output/artifacts` + `output/smoke`;新增能力须补对应测试段,缺口清单见 ROADMAP
 
 ## 流程(遵循全局配置目录 WORKFLOW-GUIDE.md 阶段 0-8)
