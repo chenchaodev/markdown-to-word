@@ -192,6 +192,13 @@
   - 自动断言：stepper 状态机纯函数可单测；转换通路复用现有 merge 断言；封面 docx 封面节 / pdf 封面模板断言
   - 设计文档：`docs/design/book-wizard.md`（UI/交互稿已定稿；含剪贴板直转按钮）
 
+#### D1 GUI 易用反制 AIDOC（防御主题；2026-08-29 从 ROADMAP-CANDIDATES 晋升，规划即契约）
+> 来源：ROADMAP-CANDIDATES D1（GUI 易用反制 AIDOC，综合 65，防御）。目标：持续打磨零配置/向导化，预设默认即正确、复杂能力藏进向导，区隔 AIDOC Station 配置复杂（竞品研判：注入式强依赖 Word/WPS 宿主、配置面宽；我方独立生成 .docx + 合理默认 + 向导化占优）。每批独立提交可回退；GUI 面走 ACCEPTANCE 人工实测。
+
+- [ ] **预设扩面覆盖交付链**（M,P1；反转「页眉页脚/水印 不入预设」决策）：`TemplatePreset` 增可选 `headerFooter`/`watermark`/`equationNumbering`/`breakBeforeH1`；6 个内置预设补 sane 值（页眉页脚默认=标题居中+页码、水印空、编号按场景）；`matchesPreset`/`PRESET_COMPARE_FIELDS` 同步；`applyTemplatePreset`(settings-bindings.ts:225)合并新字段（不碰 toc/tocMode/自定义预设）；`presetCoveredGroupLabels` 增组；i18n `settings.presetScopeNote`/`settings.watermarkNote` 更新；自动断言见 test/segments/presets.test.js（字段命中矩阵 + 套用生效）
+- [ ] **向导补全高频复杂项**（M-L,P1；依赖预设扩面）：成书向导 step 增边距/字体微调入口/标题档位/编号开关/输出目录/afterConvert/页眉 logo 选择（复用 settings-bindings 控件）；全程不进 35 控件抽屉即可产出复杂成书；GUI 实测
+- [ ] **首次启动引导**（M,P2；依赖上两项）：renderer 首启 tour 或增强空态（引导「选预设→向导→转换」），firstRun 持久化、可跳过、尊重 prefers-reduced-motion；GUI 实测
+
 ## 已完成(历史规划压缩;详情见 CHANGELOG 对应版本与 archive 存档)
 
 ### 二期批次 1-9(按批独立交付,含验收标准)
