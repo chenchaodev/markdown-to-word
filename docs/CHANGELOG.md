@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [3.9.0] - 2026-08-29
+- **B3 剪贴板直转 + B4 成书向导 双功能齐发(版本号三统一 package.json=tag v3.9.0=CHANGELOG [3.9.0];typecheck/lint/build/68 段全绿;GUI 实测通过 2026-08-29)**:
+  - **B3 剪贴板直转**:空态「选择文件」下方新增「粘贴 Markdown 转换」按钮(无热键);点击经新增 IPC `clipboard:read` 读剪贴板——文本写临时 .md 走 `convert:single`,文件路径复用 drop 入队;空/非文本 toast;新增 `writeTempMarkdown` + `test/main/temp-markdown.test.js`;i18n 4 键
+  - **B4 成书向导**:renderer stepper 模态(复用 trapFocus)串联 模板预设/F4 页眉页脚/F5 水印/F8 合并/F9 模板导入 + 封面页;7 步向导内设置实时写入 `state.settings`+autosave;封面双格式(docx 封面节 + pdf HTML 模板,不含单位字段);新增 `ConvertContext.metadata` 透传 + `readFrontmatter` IPC + `runMerge` 显式参数;i18n ~48 `wizard.*` 键;新增 `test/segments/cover-metadata.test.js`/`wizard-state.test.js`;设计文档 docs/design/b4-book-wizard.md
+
 ## [3.8.0] - 2026-08-28
 - **设置抽屉重组为 6 组 Tab 导航(版本号三统一 package.json=tag v3.8.0=CHANGELOG [3.8.0];typecheck/65 段全绿;smoke 本沙箱环境受限未跑,GUI 实测待补)**:原 9 分区按功能/频率/认知重归并为 6 组(01 预设 / 02 排版 / 03 页眉页脚与水印 / 04 编号与目录 / 05 转换 / 06 应用),左侧竖向 tab 栏导航、右侧仅显示当前组独立滚动;抽屉整体加宽 100px(tab 栏在选项区之外新增,选项保持原宽不拥挤),tab 标签允许折行且全抽屉禁横向滚动;预设作用域同步收敛为「排版·编号与目录」;「导出后行为」文案「打开所在文件夹」→「打开文件夹」(zh/en/ja);i18n 增 groupTypography/groupHeaderWatermark/groupConvert、删 groupPage/groupText/groupOutput/groupWatermark;docs/design/settings-ia.md 同步新骨架与迁移映射;控件 id/name 全保留
 
