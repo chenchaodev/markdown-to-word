@@ -686,3 +686,67 @@
 .wizard-foot .btn-primary:hover {
   background: var(--acc-strong, var(--acc));
 }
+
+/* 向导内折叠分组(排版微调):原生 details,令牌化,无新动画(尊重 reduced-motion) */
+.wz-fold {
+  margin: 4px 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-2);
+}
+
+.wz-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wz-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.wz-fold > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--mut);
+  border-bottom: 1.5px solid var(--mut);
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+
+.wz-fold[open] > summary::after {
+  transform: rotate(-135deg);
+}
+
+.wz-fold-body {
+  padding: 2px 14px 14px;
+}
+
+/* 行距滑杆 mono 实时回显 */
+.wz-range-out {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  min-width: 38px;
+  text-align: right;
+}
+
+/* 编号开关区与上方目录控件分隔 */
+.wz-num-block {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wz-fold > summary::after {
+    transition: none;
+  }
+}

@@ -14,11 +14,27 @@
  */
 import { t, applyStaticTexts } from "../../core/i18n.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
+import {
+  BODY_SIZE_MAX,
+  BODY_SIZE_MIN,
+  LINE_SPACING_MAX,
+  LINE_SPACING_MIN,
+  MARGIN_MAX_MM,
+  type AppSettings,
+} from "../../core/settings/settings-defaults.js";
 import { state } from "../state/state.js";
-import { trapFocus } from "../state/utils.js";
+import { hideFieldError, setError, showFieldError, trapFocus } from "../state/utils.js";
+import { errorMessage } from "../state/pure.js";
 import { applyTemplatePreset } from "../settings/settings-bindings.js";
 import { importDocxTemplate, persistSettings } from "../settings/settings-panel.js";
-import { allPresets } from "../settings/settings-logic.js";
+import {
+  allPresets,
+  headerLogoDisplayName,
+  outputDirDisplayText,
+  parseMarginValue,
+  validateNumberRange,
+  type MarginField,
+} from "../settings/settings-logic.js";
 import { renderSelection } from "../convert/file-list.js";
 import { runMerge } from "../convert/convert-flow.js";
 import {
@@ -87,6 +103,126 @@ function cleanMetadata(cover: WizardDraft["cover"]): DocMetadata | undefined {
   return { title: title || undefined, author: author || undefined, date: date || undefined };
 }
 
+/* ---------- 向导内设置绑定助手 ----------
+ * 复用 settings-logic 的钳制/校验纯函数与既有 i18n 提示键,实时写
+ * state.settings + autosave(与设置抽屉同源,关向导不丢设置)。控件形态沿用
+ * 既有令牌类(.mm-grid / .stepper / .segmented / .switch-input / .path-chip)。 */
+
+/** 边距输入:复用 parseMarginValue 钳制 + settings.marginRange 提示,实时写 pageSetup。 */
+function bindMarginInput(key: MarginField, input: HTMLInputElement, errorEl: HTMLElement): void {
+  input.addEventListener("change", () => {
+    const clamped = parseMarginValue(input.valueAsNumber);
+    if (clamped === null) {
+      input.value = String(state.settings.pageSetup[key]);
+      showFieldError(errorEl, t("settings.marginRange", { max: MARGIN_MAX_MM }));
+      return;
+    }
+    state.settings.pageSetup[key] = clamped;
+    input.value = String(clamped);
+    hideFieldError(errorEl);
+    persistSettings({ pageSetup: { ...state.settings.pageSetup } });
+  });
+}
+
+/** 字号/行距输入:复用 validateNumberRange + settings.numberRange 提示,实时写 typography。 */
+function bindTypographyNumber(
+  key: "bodySizePt" | "lineSpacing",
+  input: HTMLInputElement,
+  errorEl: HTMLElement,
+  min: number,
+  max: number,
+): void {
+  input.addEventListener("change", () => {
+    const value = input.valueAsNumber;
+    if (!validateNumberRange(value, min, max)) {
+      input.value = String(state.settings.typography[key]);
+      showFieldError(errorEl, t("settings.numberRange", { min, max }));
+      return;
+    }
+    state.settings.typography[key] = value;
+    hideFieldError(errorEl);
+    persistSettings({ typography: { ...state.settings.typography } });
+  });
+}
+
+/** 字体 combo 输入:空值恢复并提示,实时写 typography。 */
+function bindFontInput(
+  key: "fontAscii" | "fontEastAsia",
+  input: HTMLInputElement,
+  errorEl: HTMLElement,
+  emptyKey: string,
+): void {
+  input.addEventListener("change", () => {
+    const value = input.value.trim();
+    if (!value) {
+      input.value = state.settings.typography[key];
+      showFieldError(errorEl, t(emptyKey as never));
+      return;
+    }
+    state.settings.typography[key] = value;
+    hideFieldError(errorEl);
+    persistSettings({ typography: { ...state.settings.typography } });
+  });
+}
+
+/** 标题档位 seg:实时写 typography(headingScale / headingSpacing)。 */
+function bindHeadingTier(name: string, value: string): void {
+  if (name === "headingScale") {
+    state.settings.typography.headingScale = value as AppSettings["typography"]["headingScale"];
+  } else {
+    state.settings.typography.headingSpacing = value as AppSettings["typography"]["headingSpacing"];
+  }
+  persistSettings({ typography: { ...state.settings.typography } });
+}
+
+/** 开关行(13px 主标签 + 11.5px 灰色说明 + switch),复用 .sw-row 形态。 */
+function swRow(labelKey: string, subKey: string, checked: boolean, onChange: (v: boolean) => void): HTMLElement {
+  const input = h("input", {
+    type: "checkbox",
+    class: "switch-input",
+    ...(checked ? { checked: true } : {}),
+  }) as HTMLInputElement;
+  input.addEventListener("change", () => onChange(input.checked));
+  return h("div", { class: "sw-row" }, [
+    h("span", {}, [
+      h("span", { class: "row-l", dataset: { i18n: labelKey }, text: t(labelKey as never) }),
+      h("span", { class: "row-sub", dataset: { i18n: subKey }, text: t(subKey as never) }),
+    ]),
+    input,
+  ]);
+}
+
+/** 输出目录选择:复用抽屉同款逻辑(selectDir → 写 state.settings + 更新 chip + 持久化)。 */
+async function pickOutputDir(chip: HTMLElement): Promise<void> {
+  try {
+    const dir = await window.api.selectDir();
+    if (!dir) return; // 用户取消
+    state.settings.outputDir = dir;
+    const text = outputDirDisplayText(dir);
+    chip.textContent = text;
+    chip.title = text;
+    persistSettings({ outputDir: dir });
+  } catch (err) {
+    setError(t("settings.selectDirFailed", { error: errorMessage(err) }));
+  }
+}
+
+/** 页眉 Logo 选择:复用抽屉同款逻辑(selectHeaderLogo → 写 headerFooter + 更新状态 + 持久化)。 */
+async function pickHeaderLogo(statusEl: HTMLElement, clearBtn: HTMLButtonElement): Promise<void> {
+  try {
+    const logoPath = await window.api.selectHeaderLogo();
+    if (!logoPath) return; // 用户取消
+    state.settings.headerFooter.headerLogoPath = logoPath;
+    const name = headerLogoDisplayName(logoPath);
+    statusEl.textContent = name;
+    statusEl.title = name;
+    clearBtn.classList.remove("hidden");
+    persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+  } catch (err) {
+    setError(t("settings.selectDirFailed", { error: errorMessage(err) }));
+  }
+}
+
 /* ---------- 步骤 1:模板预设 ---------- */
 function buildStepTemplate(): HTMLElement {
   const select = h("select", { id: "wizardPreset", class: "setting-select" }) as HTMLSelectElement;
@@ -103,6 +239,130 @@ function buildStepTemplate(): HTMLElement {
   }, [t("wizard.template.import")]);
   importBtn.addEventListener("click", () => void importDocxTemplate());
 
+  /* 排版微调折叠区:页面边距 + 字体微调(预设选定后用户可微调) */
+  const marginError = h("p", { class: "field-error hidden" });
+  const marginCell = (key: MarginField, label: string): HTMLElement => {
+    const input = h("input", {
+      type: "number", class: "tin", min: "0", max: String(MARGIN_MAX_MM), step: "0.5",
+      value: String(state.settings.pageSetup[key]),
+    }) as HTMLInputElement;
+    bindMarginInput(key, input, marginError);
+    return h("div", { class: "mm-cell" }, [
+      h("label", { text: label }),
+      h("div", { class: "mm-in" }, [input, h("span", { text: "mm" })]),
+    ]);
+  };
+  const marginGrid = h("div", { class: "mm-grid" }, [
+    marginCell("marginTop", t("settings.marginTop")),
+    marginCell("marginBottom", t("settings.marginBottom")),
+    marginCell("marginLeft", t("settings.marginLeft")),
+    marginCell("marginRight", t("settings.marginRight")),
+  ]);
+
+  const fontEaInput = h("input", {
+    type: "text", class: "tin",
+    value: state.settings.typography.fontEastAsia,
+  }) as HTMLInputElement;
+  fontEaInput.setAttribute("list", "fontEastAsiaSuggestions");
+  const fontEaError = h("p", { class: "field-error hidden" });
+  bindFontInput("fontEastAsia", fontEaInput, fontEaError, "settings.fontEastAsiaEmpty");
+
+  const fontAsciiInput = h("input", {
+    type: "text", class: "tin",
+    value: state.settings.typography.fontAscii,
+  }) as HTMLInputElement;
+  fontAsciiInput.setAttribute("list", "fontAsciiSuggestions");
+  const fontAsciiError = h("p", { class: "field-error hidden" });
+  bindFontInput("fontAscii", fontAsciiInput, fontAsciiError, "settings.fontAsciiEmpty");
+
+  const bodySizeError = h("p", { class: "field-error hidden" });
+  const bodySizeInput = h("input", {
+    type: "number", class: "stepper-value", value: String(state.settings.typography.bodySizePt),
+    min: String(BODY_SIZE_MIN), max: String(BODY_SIZE_MAX), step: "0.5",
+  }) as HTMLInputElement;
+  const bodySizeDec = h("button", { type: "button", "aria-label": t("settings.stepDecreaseAria") }, ["−"]);
+  const bodySizeInc = h("button", { type: "button", "aria-label": t("settings.stepIncreaseAria") }, ["+"]);
+  const stepBody = (delta: number): void => {
+    const base = Number.isFinite(bodySizeInput.valueAsNumber)
+      ? bodySizeInput.valueAsNumber
+      : state.settings.typography.bodySizePt;
+    bodySizeInput.value = String(Math.min(BODY_SIZE_MAX, Math.max(BODY_SIZE_MIN, base + delta)));
+    bodySizeInput.dispatchEvent(new Event("change"));
+  };
+  bodySizeDec.addEventListener("click", () => stepBody(-0.5));
+  bodySizeInc.addEventListener("click", () => stepBody(0.5));
+  bindTypographyNumber("bodySizePt", bodySizeInput, bodySizeError, BODY_SIZE_MIN, BODY_SIZE_MAX);
+  const bodySizeStepper = h("span", { class: "stepper" }, [bodySizeDec, bodySizeInput, bodySizeInc]);
+
+  const lineSpacingError = h("p", { class: "field-error hidden" });
+  const lineSpacingInput = h("input", {
+    type: "range", min: String(LINE_SPACING_MIN), max: String(LINE_SPACING_MAX), step: "0.05",
+    value: String(state.settings.typography.lineSpacing),
+  }) as HTMLInputElement;
+  const lineSpacingOut = h("output", { class: "wz-range-out", text: String(state.settings.typography.lineSpacing) });
+  lineSpacingInput.addEventListener("input", () => { lineSpacingOut.textContent = lineSpacingInput.value; });
+  bindTypographyNumber("lineSpacing", lineSpacingInput, lineSpacingError, LINE_SPACING_MIN, LINE_SPACING_MAX);
+
+  const headingScaleRadios = h("span", { class: "segmented seg-sm", role: "radiogroup" }, [
+    radio("wizardHeadingScale", "compact", t("settings.tierCompact"), state.settings.typography.headingScale === "compact"),
+    radio("wizardHeadingScale", "standard", t("settings.tierStandard"), state.settings.typography.headingScale === "standard"),
+    radio("wizardHeadingScale", "spacious", t("settings.tierSpacious"), state.settings.typography.headingScale === "spacious"),
+  ]);
+  headingScaleRadios.addEventListener("change", () => bindHeadingTier("headingScale", checkedValue(headingScaleRadios)));
+
+  const headingSpacingRadios = h("span", { class: "segmented seg-sm", role: "radiogroup" }, [
+    radio("wizardHeadingSpacing", "compact", t("settings.tierCompact"), state.settings.typography.headingSpacing === "compact"),
+    radio("wizardHeadingSpacing", "standard", t("settings.tierStandard"), state.settings.typography.headingSpacing === "standard"),
+    radio("wizardHeadingSpacing", "spacious", t("settings.tierSpacious"), state.settings.typography.headingSpacing === "spacious"),
+  ]);
+  headingSpacingRadios.addEventListener("change", () => bindHeadingTier("headingSpacing", checkedValue(headingSpacingRadios)));
+
+  const fold = h("details", { class: "wz-fold", open: true }, [
+    h("summary", {}, [
+      h("span", { class: "wz-fold-title", dataset: { i18n: "wizard.typography.fold" }, text: t("wizard.typography.fold") }),
+    ]),
+    h("div", { class: "wz-fold-body" }, [
+      h("p", { class: "wz-hint", dataset: { i18n: "wizard.typography.foldHint" }, text: t("wizard.typography.foldHint") }),
+      h("div", { class: "wz-field" }, [
+        h("label", { class: "wz-label", dataset: { i18n: "settings.margins" }, text: t("settings.margins") }),
+        marginGrid,
+        marginError,
+      ]),
+      h("div", { class: "wz-field" }, [
+        h("label", { class: "wz-label", dataset: { i18n: "settings.fontEastAsia" }, text: t("settings.fontEastAsia") }),
+        fontEaInput,
+        fontEaError,
+      ]),
+      h("div", { class: "wz-field" }, [
+        h("label", { class: "wz-label", dataset: { i18n: "settings.fontAscii" }, text: t("settings.fontAscii") }),
+        fontAsciiInput,
+        fontAsciiError,
+      ]),
+      h("div", { class: "wz-field" }, [
+        h("label", { class: "wz-label" }, [
+          h("span", { dataset: { i18n: "settings.bodySize" }, text: t("settings.bodySize") }),
+          h("span", { class: "setting-label-hint", dataset: { i18n: "settings.bodySizeHint" }, text: t("settings.bodySizeHint") }),
+        ]),
+        bodySizeStepper,
+      ]),
+      h("div", { class: "wz-field" }, [
+        h("label", { class: "wz-label" }, [
+          h("span", { dataset: { i18n: "settings.lineSpacing" }, text: t("settings.lineSpacing") }),
+          h("span", { class: "setting-label-hint", dataset: { i18n: "settings.lineSpacingHint" }, text: t("settings.lineSpacingHint") }),
+        ]),
+        h("span", { class: "row-r" }, [lineSpacingInput, lineSpacingOut]),
+      ]),
+      h("div", { class: "wz-field" }, [
+        h("label", { class: "wz-label", dataset: { i18n: "settings.headingScaleTier" }, text: t("settings.headingScaleTier") }),
+        headingScaleRadios,
+      ]),
+      h("div", { class: "wz-field" }, [
+        h("label", { class: "wz-label", dataset: { i18n: "settings.headingSpacingTier" }, text: t("settings.headingSpacingTier") }),
+        headingSpacingRadios,
+      ]),
+    ]),
+  ]);
+
   return h("section", { class: "wz-pane", dataset: { step: "1" } }, [
     h("div", { class: "wz-field" }, [
       h("label", { class: "wz-label", dataset: { i18n: "wizard.template.label" }, text: t("wizard.template.label") }),
@@ -110,6 +370,7 @@ function buildStepTemplate(): HTMLElement {
     ]),
     h("div", { class: "wz-actions" }, [importBtn]),
     h("p", { class: "wz-hint", dataset: { i18n: "wizard.template.hint" }, text: t("wizard.template.hint") }),
+    fold,
   ]);
 }
 
@@ -187,6 +448,32 @@ function buildStepHeader(): HTMLElement {
       h("div", { class: "wz-field" }, [
         h("label", { class: "wz-label", dataset: { i18n: "settings.headerText" }, text: t("settings.headerText") }),
         headerText,
+      ]),
+      h("div", { class: "wz-field" }, [
+        h("label", { class: "wz-label", dataset: { i18n: "settings.headerLogo" }, text: t("settings.headerLogo") }),
+        (() => {
+          const logoStatus = h("span", {
+            class: "path-chip",
+            id: "wizardHeaderLogoStatus",
+            text: headerLogoDisplayName(state.settings.headerFooter.headerLogoPath) || t("settings.headerLogoNone"),
+          });
+          const logoClear = h("button", {
+            type: "button", class: "btn btn-text sm hidden", dataset: { i18n: "settings.cssClear" },
+          }, [t("settings.cssClear")]) as HTMLButtonElement;
+          const logoPick = h("button", {
+            type: "button", class: "btn btn-ghost sm", dataset: { i18n: "settings.headerLogoPick" },
+          }, [t("settings.headerLogoPick")]);
+          logoPick.addEventListener("click", () => void pickHeaderLogo(logoStatus, logoClear));
+          logoClear.addEventListener("click", () => {
+            state.settings.headerFooter.headerLogoPath = "";
+            logoStatus.textContent = t("settings.headerLogoNone");
+            logoStatus.title = "";
+            logoClear.classList.add("hidden");
+            persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+          });
+          if (state.settings.headerFooter.headerLogoPath) logoClear.classList.remove("hidden");
+          return h("div", { class: "outputdir-row" }, [logoStatus, logoPick, logoClear]);
+        })(),
       ]),
       h("div", { class: "wz-field" }, [
         h("label", { class: "wz-label", dataset: { i18n: "settings.headerLayout" }, text: t("settings.headerLayout") }),
@@ -401,6 +688,27 @@ function buildStepToc(): HTMLElement {
   tocSwitch.checked = state.settings.toc;
   modeSelect.value = state.settings.tocMode;
 
+  /* 编号开关区:章节/题注/公式编号 + H1 前分页(与设置抽屉 04 组同源) */
+  const numberingTitle = h("div", { class: "sub-label", dataset: { i18n: "settings.groupNumbering" }, text: t("settings.groupNumbering") });
+  const numRows = h("div", { class: "wz-num-block" }, [
+    swRow("settings.headingNumbering", "settings.headingNumberingDesc", state.settings.typography.headingNumbering, (v) => {
+      state.settings.typography.headingNumbering = v;
+      persistSettings({ typography: { ...state.settings.typography } });
+    }),
+    swRow("settings.captionNumbering", "settings.captionNumberingDesc", state.settings.typography.captionNumbering, (v) => {
+      state.settings.typography.captionNumbering = v;
+      persistSettings({ typography: { ...state.settings.typography } });
+    }),
+    swRow("settings.equationNumbering", "settings.equationNumberingDesc", state.settings.equationNumbering, (v) => {
+      state.settings.equationNumbering = v;
+      persistSettings({ equationNumbering: v });
+    }),
+    swRow("settings.breakBeforeH1", "settings.breakBeforeH1Desc", state.settings.breakBeforeH1, (v) => {
+      state.settings.breakBeforeH1 = v;
+      persistSettings({ breakBeforeH1: v });
+    }),
+  ]);
+
   return h("section", { class: "wz-pane", dataset: { step: "6" } }, [
     h("div", { class: "sw-row" }, [
       h("span", {}, [
@@ -413,6 +721,8 @@ function buildStepToc(): HTMLElement {
       h("label", { class: "wz-label", dataset: { i18n: "wizard.toc.mode" }, text: t("wizard.toc.mode") }),
       h("span", { class: "sel-wrap" }, [modeSelect]),
     ]),
+    numberingTitle,
+    numRows,
   ]);
 }
 
@@ -428,10 +738,51 @@ function buildStepOutput(): HTMLElement {
       if (r.checked) draft.format = r.value as WizardDraft["format"];
     }),
   );
+
+  /* 输出目录 + 导出后行为(与设置抽屉 05 组同源) */
+  const outDirChip = h("span", {
+    class: "path-chip",
+    id: "wizardOutputDir",
+    text: outputDirDisplayText(state.settings.outputDir),
+  });
+  const outDirPick = h("button", {
+    type: "button", class: "btn btn-ghost sm", dataset: { i18n: "settings.outputDirPick" },
+  }, [t("settings.outputDirPick")]);
+  const outDirReset = h("button", {
+    type: "button", class: "btn btn-text sm", dataset: { i18n: "settings.outputDirReset" },
+  }, [t("settings.outputDirReset")]);
+  outDirPick.addEventListener("click", () => void pickOutputDir(outDirChip));
+  outDirReset.addEventListener("click", () => {
+    state.settings.outputDir = "";
+    outDirChip.textContent = t("settings.outputDirDefault");
+    outDirChip.title = "";
+    persistSettings({ outputDir: "" });
+  });
+
+  const afterRadios = h("span", { class: "segmented seg-sm", role: "radiogroup" }, [
+    radio("wizardAfterConvert", "none", t("settings.afterNone"), state.settings.afterConvert === "none"),
+    radio("wizardAfterConvert", "show-in-folder", t("common.reveal"), state.settings.afterConvert === "show-in-folder"),
+    radio("wizardAfterConvert", "open", t("common.open"), state.settings.afterConvert === "open"),
+  ]);
+  afterRadios.addEventListener("change", () => {
+    state.settings.afterConvert = checkedValue(afterRadios) as AppSettings["afterConvert"];
+    persistSettings({ afterConvert: state.settings.afterConvert });
+  });
+
   return h("section", { class: "wz-pane", dataset: { step: "7" } }, [
     h("div", { class: "wz-field" }, [
       h("label", { class: "wz-label", dataset: { i18n: "wizard.output.format" }, text: t("wizard.output.format") }),
       formatRadios,
+    ]),
+    h("div", { class: "sub-label", dataset: { i18n: "wizard.output.title" }, text: t("wizard.output.title") }),
+    h("div", { class: "wz-field" }, [
+      h("label", { class: "wz-label", dataset: { i18n: "settings.outputDir" }, text: t("settings.outputDir") }),
+      h("span", { class: "row-sub", dataset: { i18n: "settings.outputDirHint" }, text: t("settings.outputDirHint") }),
+      h("div", { class: "outputdir-row" }, [outDirChip, outDirPick, outDirReset]),
+    ]),
+    h("div", { class: "wz-field" }, [
+      h("label", { class: "wz-label", dataset: { i18n: "settings.afterConvert" }, text: t("settings.afterConvert") }),
+      afterRadios,
     ]),
     h("p", { class: "wz-hint", dataset: { i18n: "wizard.output.start" }, text: t("wizard.output.start") }),
   ]);
