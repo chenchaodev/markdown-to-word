@@ -20,7 +20,7 @@ const LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html";
 const MANUAL_URL =
   "https://github.com/chenchaodev/markdown-to-word/blob/master/docs/USER-GUIDE.md";
 
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("DOMContentLoaded", () => {
   // i18n: read persisted language, set, and apply static texts
   try {
     const value = localStorage.getItem("m2w.language");
@@ -75,7 +75,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (retryBtn) retryBtn.hidden = false;
     }
   }
-  await renderUpdateStatus();
+  void renderUpdateStatus();
 
   // Primary action → open user manual in external browser
   const manualBtn = document.getElementById("aboutOpenBtn");
