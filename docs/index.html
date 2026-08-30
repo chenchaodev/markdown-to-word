@@ -281,9 +281,8 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
 .feature-card:nth-child(2){animation-delay:.1s}
 .feature-card:nth-child(3){animation-delay:.15s}
 .feature-card:nth-child(4){animation-delay:.2s}
-.feature-card:nth-child(5){animation-delay:.2s}
-.feature-card:nth-child(6){animation-delay:.25s}
-.feature-card:nth-child(7){animation-delay:.3s}
+.feature-card:nth-child(5){animation-delay:.25s}
+.feature-card:nth-child(6){animation-delay:.3s}
 
 /* ===== Scroll reveal via IntersectionObserver ===== */
 .reveal{opacity:0;transform:translateY(24px);transition:opacity .55s ease-out,transform .55s ease-out}
@@ -309,8 +308,8 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
     </span>
     <h1>Markdown<span>ToWord</span></h1>
     <p class="hero-tagline">
-      <span class="inline" data-lang="zh">Markdown 转 Word / PDF 的本地桌面工具。文件不上传，离线可用；输出真正的 .docx 文档，中文排版可控。</span>
-      <span class="inline" data-lang="en">A local desktop tool that converts Markdown to Word / PDF. No uploads, fully offline. Produces real .docx files with controllable Chinese typesetting.</span>
+      <span class="inline" data-lang="zh">Markdown 转 Word / PDF 的本地桌面工具。文件不上传，离线可用；输出真正的 .docx 文档，中文排版可控。支持剪贴板直转、七步成书向导、AI 清理、Obsidian 兼容。</span>
+      <span class="inline" data-lang="en">A local desktop tool that converts Markdown to Word / PDF. No uploads, fully offline. Produces real .docx files with controllable Chinese typesetting. Supports clipboard convert, book wizard, AI cleanup, and Obsidian compatibility.</span>
     </p>
     <div class="hero-actions">
       <a href="https://github.com/chenchaodev/markdown-to-word/releases/latest" class="btn btn-primary">
@@ -380,8 +379,8 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
           <span class="inline" data-lang="en">Chinese Typesetting</span>
         </h3>
         <p>
-          <span class="inline" data-lang="zh">字体字号行距缩进、章节/题注/公式自动编号、目录、封面、页眉页脚页码，排版参数可逐项调节。</span>
-          <span class="inline" data-lang="en">Fonts, sizes, line spacing, indentation, auto-numbered headings/captions/equations, TOC, cover page, headers, footers, and page numbers — all adjustable.</span>
+          <span class="inline" data-lang="zh">字体字号行距缩进、章节/题注/公式自动编号、目录、封面、页眉页脚页码，排版参数可逐项调节。学术排版支持公式交叉引用与图/表/章节跳转。</span>
+          <span class="inline" data-lang="en">Fonts, sizes, line spacing, indentation, auto-numbered headings/captions/equations, TOC, cover page, headers, footers, and page numbers — all adjustable. Academic support includes equation cross-references and figure/table/section jumps.</span>
         </p>
       </div>
 
@@ -400,51 +399,122 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
         </p>
       </div>
 
-      <!-- Card 5: Academic -->
+      <!-- Card 5: Book Wizard + Clipboard -->
       <div class="feature-card reveal">
         <div class="feature-icon">
-          <svg viewBox="0 0 24 24"><path d="M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3L1 9l11 6 9-4.91V17h2V9L12 3z"/></svg>
+          <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
         </div>
         <h3>
-          <span class="inline" data-lang="zh">学术排版</span>
-          <span class="inline" data-lang="en">Academic Formatting</span>
+          <span class="inline" data-lang="zh">成书向导与剪贴板直转</span>
+          <span class="inline" data-lang="en">Book Wizard & Clipboard Convert</span>
         </h3>
         <p>
-          <span class="inline" data-lang="zh">公式（OMML / KaTeX）编号与交叉引用、图/表/章节引用跳转，适合论文与技术文档。</span>
-          <span class="inline" data-lang="en">Numbered equations (OMML/KaTeX) with cross-references, figure/table/section reference jumps — built for papers and technical docs.</span>
+          <span class="inline" data-lang="zh">七步引导式成书——串联模板预设、页眉页脚、水印、合并、封面页，全程无需打开设置面板。主界面空态「粘贴 Markdown 转换」，不必先存文件。</span>
+          <span class="inline" data-lang="en">Seven-step guided book creation — chain template presets, headers/footers, watermarks, merge, and cover pages without opening settings. Paste Markdown directly from clipboard on the empty state to convert without saving first.</span>
         </p>
       </div>
 
-<!-- Card 6: Dark mode & i18n -->
+      <!-- Card 6: AI cleanup + Obsidian + Template import -->
       <div class="feature-card reveal">
         <div class="feature-icon">
           <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>
         </div>
         <h3>
-          <span class="inline" data-lang="zh">暗色模式与多语言</span>
-          <span class="inline" data-lang="en">Dark Mode & Multi-language</span>
+          <span class="inline" data-lang="zh">智能兼容与模板导入</span>
+          <span class="inline" data-lang="en">Smart Compat & Template Import</span>
         </h3>
         <p>
-          <span class="inline" data-lang="zh">三态暗色模式、界面多语言（中/英）、模板预设导入导出、自定义 PDF CSS、实时预览、最近转换记录。</span>
-          <span class="inline" data-lang="en">Three-state dark mode, multi-language UI (CN/EN), template presets with JSON import/export, custom PDF CSS, live preview, and recent conversions.</span>
+          <span class="inline" data-lang="zh">转换前 AI 自动规整智能引号、破折号、列表空格。自动转换 Obsidian 双链与嵌入。导入 Word 模板提取字体与页面设置。</span>
+          <span class="inline" data-lang="en">AI auto-normalizes smart quotes, em-dashes, and list spacing before conversion. Converts Obsidian wikilinks and embeds automatically. Import Word templates to extract fonts and page settings.</span>
         </p>
       </div>
 
-      <!-- Card 7: Update notification -->
-      <div class="feature-card reveal">
-        <div class="feature-icon">
-          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+    </div>
+  </div>
+</section>
+
+<!-- ===== More Capabilities ===== -->
+<section class="section" id="more" style="background:var(--hero-bg);color:var(--hero-ink);padding:var(--space-xl) 0 var(--space-2xl)">
+  <div class="container">
+    <span class="section-label reveal" style="color:var(--accent-active)">
+      <span class="inline" data-lang="zh">更多能力</span>
+      <span class="inline" data-lang="en">More Capabilities</span>
+    </span>
+    <h2 class="section-title reveal" style="color:var(--hero-ink)">
+      <span class="inline" data-lang="zh">持续打磨的细节</span>
+      <span class="inline" data-lang="en">Refined Details</span>
+    </h2>
+    <div class="more-grid reveal" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--space-sm) var(--space-lg);margin-top:var(--space-lg)">
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>学术排版</strong> · 公式（OMML/KaTeX）编号与交叉引用、图/表/章节引用跳转</span>
+          <span class="inline" data-lang="en"><strong>Academic</strong> · Numbered equations (OMML/KaTeX) with cross-references, figure/table/section jumps</span>
         </div>
-        <h3>
-          <span class="inline" data-lang="zh">更新提示</span>
-          <span class="inline" data-lang="en">Update Notification</span>
-        </h3>
-        <p>
-          <span class="inline" data-lang="zh">关于窗口自动检查 GitHub 最新版本；版本号下显示状态——已是最新、发现新版本含下载按钮、离线静默降级；提供手动重试。</span>
-          <span class="inline" data-lang="en">About window auto-checks GitHub for latest version; shows status under version badge — up to date, new version with download button, or offline silently; manual retry available.</span>
-        </p>
       </div>
-
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>文字水印</strong> · 控制文字、旋转角度、不透明度；Word 旋转置底、PDF 固定覆盖层</span>
+          <span class="inline" data-lang="en"><strong>Watermark</strong> · Custom text, rotation, opacity; Word uses rotated baseline, PDF uses fixed overlay</span>
+        </div>
+      </div>
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>转换预检</strong> · 转换前自动体检缺失本地图片、悬空交叉引用、未标注语言代码块</span>
+          <span class="inline" data-lang="en"><strong>Pre-check</strong> · Auto-checks for missing local images, dangling cross-references, unlabeled code blocks</span>
+        </div>
+      </div>
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>目录带页码</strong> · 静态/域两种模式，Word 与 PDF 均可生成带真实页码的目录</span>
+          <span class="inline" data-lang="en"><strong>TOC with Page Numbers</strong> · Static or field mode; Word and PDF both generate TOC with real page numbers</span>
+        </div>
+      </div>
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>暗色模式</strong> · 跟随系统 / 浅色 / 深色三态切换</span>
+          <span class="inline" data-lang="en"><strong>Dark Mode</strong> · Follow system / light / dark three-state toggle</span>
+        </div>
+      </div>
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>多语言界面</strong> · 中文 / English / 日本語三语切换</span>
+          <span class="inline" data-lang="en"><strong>Multi-language</strong> · Chinese / English / Japanese UI</span>
+        </div>
+      </div>
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>模板预设</strong> · 内置多套排版预设，支持 JSON 导入导出，自定义 PDF CSS</span>
+          <span class="inline" data-lang="en"><strong>Template Presets</strong> · Built-in layout presets, JSON import/export, custom PDF CSS</span>
+        </div>
+      </div>
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>实时预览</strong> · 转换前可预览源文件，跟随文件刷新；最近转换记录一键重转</span>
+          <span class="inline" data-lang="en"><strong>Live Preview</strong> · Preview source before conversion, auto-refresh; recent conversions with one-click re-convert</span>
+        </div>
+      </div>
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>首次引导</strong> · 首次启动出现选预设→向导→转换引导路径，可跳过</span>
+          <span class="inline" data-lang="en"><strong>First Launch Guide</strong> · Onboarding path: pick preset → wizard → convert; skippable</span>
+        </div>
+      </div>
+      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
+        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
+        <div>
+          <span class="inline" data-lang="zh"><strong>更新提示</strong> · 关于窗口自动检查 GitHub 最新版本，发现新版本可一键下载</span>
+          <span class="inline" data-lang="en"><strong>Update Notification</strong> · About window auto-checks GitHub for latest version, one-click download</span>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -463,23 +533,23 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
     <div class="ss-main reveal">
       <img src="images/ui-main.png" alt="Main window">
       <p class="ss-caption">
-        <span class="inline" data-lang="zh">主界面：选择文件 → 选择格式 → 开始转换</span>
-        <span class="inline" data-lang="en">Main window: pick files → choose format → convert</span>
+        <span class="inline" data-lang="zh">主界面：拖入或粘贴 Markdown → 选择格式 → 开始转换</span>
+        <span class="inline" data-lang="en">Main window: drag or paste Markdown → choose format → convert</span>
       </p>
     </div>
     <div class="ss-row">
       <div class="ss-item reveal">
-        <img src="images/ui-empty.png" alt="Empty state">
+        <img src="images/ui-empty.png" alt="Empty state with clipboard paste">
         <p class="ss-caption">
-          <span class="inline" data-lang="zh">空态界面</span>
-          <span class="inline" data-lang="en">Empty state</span>
+          <span class="inline" data-lang="zh">空态：支持粘贴剪贴板 Markdown 直接转换</span>
+          <span class="inline" data-lang="en">Empty state: paste Markdown from clipboard to convert directly</span>
         </p>
       </div>
       <div class="ss-item reveal">
         <img src="images/ui-history.png" alt="Recent conversions">
         <p class="ss-caption">
-          <span class="inline" data-lang="zh">最近转换面板</span>
-          <span class="inline" data-lang="en">Recent conversions panel</span>
+          <span class="inline" data-lang="zh">最近转换：一键重转历史文件</span>
+          <span class="inline" data-lang="en">Recent conversions: one-click re-convert</span>
         </p>
       </div>
     </div>
@@ -504,6 +574,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
       <span class="tech-tag">Mermaid 11</span>
       <span class="tech-tag">highlight.js</span>
       <span class="tech-tag">pdf-lib</span>
+      <span class="tech-tag">AI Cleanup</span>
     </div>
   </div>
 </section>
