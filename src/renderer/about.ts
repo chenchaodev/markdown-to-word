@@ -41,16 +41,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Update status row (under version badge)
   const statusEl = document.getElementById("updateStatus");
+  const textEl = document.getElementById("updateText");
   const retryBtn = document.getElementById("updateRetry");
   async function renderUpdateStatus() {
-    if (!statusEl) return;
-    statusEl.textContent = t("about.updateChecking");
+    if (!statusEl || !textEl) return;
+    textEl.textContent = t("about.updateChecking");
     statusEl.className = "update-status update-status--checking";
     if (retryBtn) retryBtn.hidden = true;
     try {
       const res = await window.aboutApi.checkUpdate();
       if (res.status === "available" && res.latest && res.url) {
-        statusEl.textContent = t("about.updateAvailable", {
+        textEl.textContent = t("about.updateAvailable", {
           latest: `v${res.latest}`,
           current: `v${res.current}`,
         });
@@ -62,15 +63,15 @@ document.addEventListener("DOMContentLoaded", () => {
           };
         }
       } else if (res.status === "latest") {
-        statusEl.textContent = t("about.updateLatest");
+        textEl.textContent = t("about.updateLatest");
         statusEl.className = "update-status update-status--latest";
       } else {
-        statusEl.textContent = t("about.updateError");
+        textEl.textContent = t("about.updateError");
         statusEl.className = "update-status update-status--error";
         if (retryBtn) retryBtn.hidden = false;
       }
     } catch {
-      statusEl.textContent = t("about.updateError");
+      textEl.textContent = t("about.updateError");
       statusEl.className = "update-status update-status--error";
       if (retryBtn) retryBtn.hidden = false;
     }
