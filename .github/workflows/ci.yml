@@ -20,10 +20,10 @@ jobs:
     # 30 分钟为正常耗时的约 2 倍余量,超时即视为挂死快速失败,不占用 runner
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # node 22 为当前 LTS(CI 门禁可用较新 LTS;release.yml 用 20 保持发版环境稳定)
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -55,9 +55,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm

@@ -21,7 +21,7 @@ jobs:
     # 含 NSIS 打包比 CI 长(打包约 5-10 分钟),40 分钟为正常耗时约 2 倍余量,防挂死占用 runner
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 版本一致性守卫(审计 ENG-2):tag 名(vX.Y.Z)必须与 package.json version 一致,
       # 不一致 fail fast,防止「版本号三统一」错位(tag/package.json/CHANGELOG,lockfile
@@ -36,7 +36,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -60,7 +60,7 @@ jobs:
       # 失败兜底:打包半途失败时留存 release/ 已产出物(如部分安装包/日志)供排查,成功时不触发
       - name: Upload failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: failure-artifacts
           path: release/
