@@ -368,6 +368,32 @@
       height: 16px;
       flex-shrink: 0;
     }
+
+    /* ===== Update status row (under version badge) ===== */
+    .update-status {
+      margin-top: 6px;
+      font-size: 11.5px;
+      color: var(--mut);
+      line-height: 1.5;
+    }
+    .update-status--checking { color: var(--mut); }
+    .update-status--latest { color: var(--ok); }
+    .update-status--available { color: var(--ink-2); }
+    .update-status--error { color: var(--mut); }
+    .update-status .update-retry {
+      margin-left: 8px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-family: var(--ff-ui);
+      color: var(--solid-fg);
+      background: var(--solid-bg);
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: filter 120ms ease;
+    }
+    .update-status .update-retry:hover { filter: brightness(1.12); }
+    .update-status .update-retry:active { filter: brightness(0.96); }
   </style>
 </head>
 <body>
@@ -389,9 +415,10 @@
       <span class="about-ver" id="version"></span>
     </div>
 
-    <!-- Subtitle / tagline -->
-    <div class="about-subtitle" data-i18n="about.subtitle"></div>
-
+    <!-- Update status row (under version badge) -->
+    <div class="update-status" id="updateStatus" aria-live="polite">
+      <button class="update-retry" id="updateRetry" type="button" hidden data-i18n="about.checkUpdate"></button>
+    </div>
     <hr class="about-divider">
 
     <!-- Quick start -->

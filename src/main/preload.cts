@@ -49,6 +49,8 @@ const CH = {
   menuOpen: "menu:open",
   /** 打开「关于」窗口(标题栏按钮触发) */
   aboutOpen: "about:open",
+  /** 关于页更新检查(main 进程查 GitHub Releases latest) */
+  aboutCheckUpdate: "about:check-update",
 } as const;
 
 // api 对象提为具名 const,实现即契约——renderer.ts 的 window.api 类型由

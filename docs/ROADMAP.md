@@ -36,6 +36,15 @@
 > 原则:每项独立提交可回退;core 行为改动须补测试段断言;重构行为等价。规模:S≤3 文件 / M 中 / L 大。决策点已于 2026-08-23 全部拍板(见各条「已拍板」)。
 
 #### B14 文档修正(S,零风险;2026-08-23 完成,7 项逐项勾验于 2026-08-24)
+
+#### 关于页更新提示(S,零风险;2026-08-30 规划落盘)
+- [ ] main 进程新增 `about:check-update` IPC(handle),查 GitHub Releases latest API(`https://api.github.com/repos/<REPO>/releases/latest`,UA=markdown-to-word),语义化比对 `app.getVersion()` 与 `tag_name`,返回 `{status:'latest'|'available'|'error', current, latest?, url?}`
+- [ ] `about-preload.cjs` 暴露 `aboutApi.checkUpdate()` → `ipcRenderer.invoke`
+- [ ] `about.ts` 开窗即异步调用渲染状态行(版本徽章下,发丝线分隔):检查中/已最新/发现新版本+墨色下载按钮/离线静默;手动「检查更新」按钮重试
+- [ ] `about.html` 状态行 DOM + 内联样式(沿用现有配色,禁朱砂红)
+- [ ] i18n 三语补齐 `about.updateChecking/updateLatest/updateAvailable/updateError/checkUpdate`
+- [ ] 版本比较纯函数 `compareVersions()` 单测段 `test/segments/about-update.test.js`
+- [ ] GUI 实测项见 ACCEPTANCE「关于页更新提示」
 - [x] docs/README.md:3 自述改「Windows 桌面应用」
 - [x] convert.ts 头注释代码高亮差异行更新(双格式均走 hljs)
 - [x] WPS-COMPAT.md 目录条目矛盾修正(非域、无需更新域)+ 矩阵状态回填

@@ -131,6 +131,11 @@ const dict = {
     "about.featBatch": "Batch files",
     "about.featHeader": "Custom headers & footers",
     "about.manual": "View User Manual",
+    "about.updateChecking": "Checking for updates…",
+    "about.updateLatest": "Already up to date",
+    "about.updateAvailable": "New version ${latest} available (current ${current})",
+    "about.updateError": "Unable to check for updates",
+    "about.checkUpdate": "Check for updates",
     "dialog.openFailed": "Failed to open file dialog: ${error}",
 
     /* ---------- Conversion pre-check ---------- */

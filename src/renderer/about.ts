@@ -1,9 +1,15 @@
-import { setLanguage, applyStaticTexts, isLanguage } from "../core/i18n.js";
+import { setLanguage, applyStaticTexts, isLanguage, t } from "../core/i18n.js";
 
 declare global {
   interface Window {
     aboutApi: {
       openExternal(url: string): void;
+      checkUpdate(): Promise<{
+        status: "latest" | "available" | "error";
+        current: string;
+        latest?: string;
+        url?: string;
+      }>;
     };
   }
 }
@@ -14,7 +20,7 @@ const LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html";
 const MANUAL_URL =
   "https://github.com/chenchaodev/markdown-to-word/blob/master/docs/USER-GUIDE.md";
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   // i18n: read persisted language, set, and apply static texts
   try {
     const value = localStorage.getItem("m2w.language");
@@ -32,6 +38,44 @@ document.addEventListener("DOMContentLoaded", () => {
   const version = new URLSearchParams(location.search).get("v") ?? "";
   const versionEl = document.getElementById("version");
   if (versionEl) versionEl.textContent = version ? `v${version}` : "";
+
+  // Update status row (under version badge)
+  const statusEl = document.getElementById("updateStatus");
+  const retryBtn = document.getElementById("updateRetry");
+  async function renderUpdateStatus() {
+    if (!statusEl) return;
+    statusEl.textContent = t("about.updateChecking");
+    statusEl.className = "update-status update-status--checking";
+    if (retryBtn) retryBtn.hidden = true;
+    try {
+      const res = await window.aboutApi.checkUpdate();
+      if (res.status === "available" && res.latest && res.url) {
+        statusEl.textContent = t("about.updateAvailable", {
+          latest: `v${res.latest}`,
+          current: `v${res.current}`,
+        });
+        statusEl.className = "update-status update-status--available";
+        if (retryBtn) {
+          retryBtn.hidden = false;
+          retryBtn.onclick = () => {
+            window.aboutApi.openExternal(res.url!);
+          };
+        }
+      } else if (res.status === "latest") {
+        statusEl.textContent = t("about.updateLatest");
+        statusEl.className = "update-status update-status--latest";
+      } else {
+        statusEl.textContent = t("about.updateError");
+        statusEl.className = "update-status update-status--error";
+        if (retryBtn) retryBtn.hidden = false;
+      }
+    } catch {
+      statusEl.textContent = t("about.updateError");
+      statusEl.className = "update-status update-status--error";
+      if (retryBtn) retryBtn.hidden = false;
+    }
+  }
+  await renderUpdateStatus();
 
   // Primary action → open user manual in external browser
   const manualBtn = document.getElementById("aboutOpenBtn");

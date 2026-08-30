@@ -58,6 +58,21 @@ import type { ClipboardReadResult } from "./types.js";
 import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";
 import { ctxByWebContents } from "../windows/web-contents-registry.js";
 
+/** 版本比较:返回 -1/0/1 表示 a<b / a=b / a>b(仅 major.minor.patch,忽略 prerelease) */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    const na = pa[i] ?? 0;
+    const nb = pb[i] ?? 0;
+    if (na !== nb) return na < nb ? -1 : 1;
+  }
+  return 0;
+}
+
+/** GitHub 仓库 slug(owner/repo),集中一处;从 package.json repository 或现有 docs/index.html 链接取 */
+const REPO_SLUG = "chenchaodev/markdown-to-word";
+
 /**
  * convert 系 handler 共用样板:本函数只保留 Electron 触点(win 解析 + 按 webContents id 注册/注销 + 取消错误判定),
  * 纯逻辑下沉至 ipc-logic.runConvertTask。
@@ -345,6 +360,31 @@ export function registerIpc(): void {
   ipcMain.handle(CH.settingsGet, (): AppSettings => loadSettings());
   // 界面版本信息:与「关于」对话框同源 app.getVersion
   ipcMain.handle(CH.appVersion, (): string => app.getVersion());
+
+  // 关于页更新检查:main 进程查 GitHub Releases latest,避开 renderer CORS/UA 限制
+  ipcMain.handle(CH.aboutCheckUpdate, async (): Promise<{
+    status: "latest" | "available" | "error";
+    current: string;
+    latest?: string;
+    url?: string;
+  }> => {
+    const current = app.getVersion();
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${REPO_SLUG}/releases/latest`,
+        { headers: { "User-Agent": "markdown-to-word" } },
+      );
+      if (!res.ok) return { status: "error", current };
+      const data = (await res.json()) as { tag_name?: string; html_url?: string };
+      const latest = String(data.tag_name ?? "").replace(/^v/i, "");
+      const url = data.html_url ?? `https://github.com/${REPO_SLUG}/releases/latest`;
+      if (!latest) return { status: "error", current };
+      const status = compareVersions(current, latest) < 0 ? "available" : "latest";
+      return { status, current, latest, url };
+    } catch {
+      return { status: "error", current };
+    }
+  });
 
   ipcMain.handle(CH.settingsSet, (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
     return updateSettings(patch);

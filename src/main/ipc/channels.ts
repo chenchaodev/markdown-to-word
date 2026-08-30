@@ -76,6 +76,8 @@ export const IPC_CHANNELS = {
   appVersion: "app:version",
   /** 打开「关于」窗口(标题栏按钮经 renderer → main 转发) */
   aboutOpen: "about:open",
+  /** 检查更新:main 进程查 GitHub Releases latest,返回 {status,current,latest?,url?} */
+  aboutCheckUpdate: "about:check-update",
   /* ---- Shell 域 ---- */
   /** 资源管理器中显示目标文件 */
   shellRevealInFolder: "shell:revealInFolder",

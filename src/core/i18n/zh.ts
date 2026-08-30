@@ -133,6 +133,11 @@ const dict = {
     "about.featBatch": "多文件批量",
     "about.featHeader": "可自定义页眉页脚",
     "about.manual": "查看使用手册",
+    "about.updateChecking": "检查更新中…",
+    "about.updateLatest": "已是最新版本",
+    "about.updateAvailable": "发现新版本 ${latest}(当前 ${current})",
+    "about.updateError": "暂无法检查更新",
+    "about.checkUpdate": "检查更新",
     "dialog.openFailed": "打开文件对话框失败:${error}",
 
     /* ---------- 转换预检 ---------- */

@@ -119,7 +119,7 @@ const dict: Partial<Record<Dict, string>> = {
     "dialog.about.title": "このアプリについて",
     "dialog.about.message": "Markdown 変換ツール",
     "dialog.about.detail": "バージョン ${version}\n\nMarkdown ファイルを Word / PDF ドキュメントに変換します",
-    "about.aboutTitle": "MarkdownToWord について",
+"about.aboutTitle": "MarkdownToWord について",
     "about.subtitle": "ローカル · 本物の .docx · 中国語組版",
     "about.author": "作者",
     "about.repo": "GitHub リポジトリ",
@@ -135,6 +135,11 @@ const dict: Partial<Record<Dict, string>> = {
     "about.featBatch": "複数ファイル一括",
     "about.featHeader": "ヘッダー・フッター編集可",
     "about.manual": "使い方を見る",
+    "about.updateChecking": "更新を確認中…",
+    "about.updateLatest": "最新版です",
+    "about.updateAvailable": "新しいバージョン ${latest} が利用可能です(現在 ${current})",
+    "about.updateError": "更新を確認できません",
+    "about.checkUpdate": "更新を確認",
     "dialog.openFailed": "ファイルダイアログを開けませんでした:${error}",
 
     /* ---------- 一括結果 ---------- */
