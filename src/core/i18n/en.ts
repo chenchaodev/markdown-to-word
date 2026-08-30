@@ -136,6 +136,7 @@ const dict = {
     "about.updateAvailable": "New version ${latest} available (current ${current})",
     "about.updateError": "Unable to check for updates",
     "about.checkUpdate": "Check for updates",
+    "about.downloadUpdate": "Download update",
     "dialog.openFailed": "Failed to open file dialog: ${error}",
 
     /* ---------- Conversion pre-check ---------- */

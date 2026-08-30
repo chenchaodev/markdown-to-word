@@ -140,6 +140,7 @@ const dict: Partial<Record<Dict, string>> = {
     "about.updateAvailable": "新しいバージョン ${latest} が利用可能です(現在 ${current})",
     "about.updateError": "更新を確認できません",
     "about.checkUpdate": "更新を確認",
+    "about.downloadUpdate": "更新をダウンロード",
     "dialog.openFailed": "ファイルダイアログを開けませんでした:${error}",
 
     /* ---------- 一括結果 ---------- */

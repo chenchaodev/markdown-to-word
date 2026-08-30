@@ -138,6 +138,7 @@ const dict = {
     "about.updateAvailable": "发现新版本 ${latest}(当前 ${current})",
     "about.updateError": "暂无法检查更新",
     "about.checkUpdate": "检查更新",
+    "about.downloadUpdate": "下载更新",
     "dialog.openFailed": "打开文件对话框失败:${error}",
 
     /* ---------- 转换预检 ---------- */

@@ -57,6 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         statusEl.className = "update-status update-status--available";
         if (retryBtn) {
+          retryBtn.textContent = t("about.downloadUpdate");
           retryBtn.hidden = false;
           retryBtn.onclick = () => {
             window.aboutApi.openExternal(res.url!);
@@ -68,12 +69,18 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         textEl.textContent = t("about.updateError");
         statusEl.className = "update-status update-status--error";
-        if (retryBtn) retryBtn.hidden = false;
+        if (retryBtn) {
+          retryBtn.textContent = t("about.checkUpdate");
+          retryBtn.hidden = false;
+        }
       }
     } catch {
       textEl.textContent = t("about.updateError");
       statusEl.className = "update-status update-status--error";
-      if (retryBtn) retryBtn.hidden = false;
+      if (retryBtn) {
+        retryBtn.textContent = t("about.checkUpdate");
+        retryBtn.hidden = false;
+      }
     }
   }
   void renderUpdateStatus();
