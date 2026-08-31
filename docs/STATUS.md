@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-08-31:**封版暂停开发,文档全面重写完成(3.11.5 发版)**(typecheck/lint 全绿;README/README_EN/USER-GUIDE 按最新功能全面重写;版本号三统一 package.json=tag v3.11.5=CHANGELOG [3.11.5])
+
 - 2026-08-31:**封版暂停开发,文档技术债清理完成(3.11.4 发版)**(typecheck/lint/build/smoke 全绿;文档更新至最新状态;版本号三统一 package.json=tag v3.11.4=CHANGELOG [3.11.4];暂停新功能开发,专注文档维护与技术债清理)
 
 - 2026-08-30:**3.10.1 修复发版(合并 3.9/3.10 两次失败发版的全部功能:剪贴板直转+成书向导+D1 GUI 易用反制 AIDOC+实测修复;另修 CI smoke 菜单守卫陈旧断言)**(typecheck/lint/build/本地 smoke 全绿;GUI 实测通过 2026-08-29;版本号三统一 package.json=tag v3.10.1=CHANGELOG [3.10.1];远程无 v3.9.0/v3.10.0 tag,功能并入本版)
