@@ -26,16 +26,75 @@ No environment setup needed for end users — just grab the installer:
 
 The installer is wizard-based and lets you choose the install directory. It supports single-file, batch, and merge modes; existing outputs are auto-renamed (never overwritten).
 
-To build from source, see **Quick start** below.
-
 ### Features
 
-- **Convert**: consistent Word (.docx) / PDF (.pdf) rendering; single / batch / merge modes; auto-suffix on name clash
-- **Layout**: Chinese fonts, sizes, line spacing & indentation; paper margins & orientation; auto-numbered headings / captions / equations; TOC, cover, header/footer/page numbers
-- **Syntax**: full GFM (task lists / strikethrough), footnotes, comments, Mermaid diagrams, code highlighting, inline-HTML allowlist, `<!-- page-break -->` page breaks
-- **Academic**: numbered equations (OMML/KaTeX) with cross-references; figure/table/section cross-reference jumps
-- **UX**: dark mode (3-state), multi-language UI (registry-driven, progressively extensible), template presets (JSON import/export), custom PDF CSS, live preview, recent conversions
-- **Robust**: encoding compatibility (UTF-8/UTF-16/GBK), networked-image embedding (intranet blocked + size cap), actionable failure hints, zero network when offline
+#### Core Conversion
+
+- **Dual-format output**: Consistent Word (.docx) / PDF (.pdf) rendering — what you see is what you get
+- **Three modes**: Single file / batch (one document per file) / merge (multiple files into one document)
+- **Clipboard convert**: "Paste Markdown to Convert" button on empty state — reads clipboard text directly; file paths are added to queue
+
+#### Layout Control
+
+- **Chinese fonts & sizes**: Independent settings for Western/Chinese fonts, body text 8-24pt
+- **Line spacing & indentation**: 1.0-2.5x line height, first-line indent 2 characters
+- **Page setup**: A4/A3/A5/Letter/Legal, portrait/landscape, margins 0-1000mm
+- **TOC modes**: Static TOC (default) or Word field TOC (with real page numbers); PDF always has page numbers
+- **Heading typography**: Title scaling/spacing three levels (compact/standard/relaxed), consistent between docx and PDF
+
+#### Auto-numbering
+
+- **Chapter numbering**: Headings auto-numbered as "1 / 1.1 / 1.1.1"
+- **Caption numbering**: Figure/table auto-numbering (continuous across document)
+- **Equation numbering**: Standalone equation blocks auto-numbered; inline equations not numbered
+
+#### Academic Features
+
+- **Math support**: Native OMML (docx) / KaTeX (PDF) rendering
+- **Cross-references**: Equation/figure/table/section cross-reference jumps
+- **Mermaid diagrams**: `mermaid` fenced code blocks rendered as diagrams (PNG in docx / SVG in PDF)
+
+#### Book Wizard
+
+Seven-step guided workflow that chains all features — no need to open settings:
+
+1. **Template/Preset**: Choose built-in preset or import Word template
+2. **Cover page**: Title/author from frontmatter or wizard input, generates independent cover
+3. **Header/Footer**: Default/custom/none modes, supports logo and layout
+4. **Watermark**: Text/rotation/opacity/light gray classic look
+5. **Merge sources**: Select multiple Markdown files + sort, joined with page-breaks
+6. **TOC/Page numbers**: Enable TOC + choose mode
+7. **Output**: Single docx/pdf with cover page and complete table of contents
+
+#### Smart Processing
+
+- **AI cleanup pre-process**: Auto-normalizes smart quotes, em-dashes, list spacing and blank lines before conversion
+- **Obsidian compatibility**: Auto-converts `[[wikilinks]]` / `![[embeds]]` to standard Markdown
+- **Pre-conversion check**: Scans for missing images, dangling references, unlabeled code blocks
+- **Encoding compatibility**: Auto-detects UTF-8/UTF-16/GBK — no manual handling needed
+
+#### Template Presets
+
+- **Built-in presets**: Default / Academic / Business / Official / Long-form / Minimal
+- **Preset coverage**: Headers/footers/watermark/equation numbering/H1 page breaks
+- **Import/Export**: JSON format for custom preset backup and sharing
+- **Word template import**: Unpack .docx to extract fonts and page settings
+
+#### User Experience
+
+- **Responsive layout**: Minimum width 640, four breakpoints (comfortable/compact/narrow/short)
+- **Dark mode**: Follow system / light / dark three-state toggle
+- **Multi-language UI**: Chinese / English / Japanese
+- **First-launch guide**: Onboarding path: pick preset → wizard → convert
+- **Recent conversions**: Shows recent history, click to load / double-click to re-convert
+- **Live preview**: Preview source before conversion, auto-refreshes with file changes
+- **Update notification**: About window auto-checks GitHub for latest version
+
+#### Reliability
+
+- **Network images**: Auto-download and embed (intranet blocked + 20MB size cap)
+- **Actionable error hints**: Clear error messages with suggested actions (file in use/missing/permissions)
+- **Offline operation**: Zero network dependency, fully local conversion
 
 ### Screenshots
 
@@ -66,7 +125,7 @@ npm run dist    # package the Windows NSIS installer into release/
 - Electron 43 + Node.js >= 20.19 + TypeScript (ESM)
 - docx 9.x (Word rendering) + remark (parsing)
 - markdown-it 14.3 (PDF rendering) + Electron printToPDF
-- pdf-lib (PDF bookmarks/metadata), KaTeX (math), Mermaid 11 (diagrams), highlight.js (code)
+- pdf-lib (PDF bookmarks/metadata), KaTeX (math), Mermaid 11 (diagrams), highlight.js (code highlighting)
 
 ### Development
 
@@ -79,11 +138,17 @@ npm run test:smoke   # Electron smoke test
 npm run test:all     # acceptance + smoke
 ```
 
+Test system: Zero-registration acceptance tests organized by content topic in `test/` (segments for rendering + pure logic, main for main process layer, 62 segments total). Static fixtures in `test/fixtures/`, output to `output/`.
+
 ### Documentation
 
-- [User Guide](docs/USER-GUIDE.md) · [Dev Guide](docs/DEV-GUIDE.md) · [Changelog](docs/CHANGELOG.md)
-- [Roadmap](docs/ROADMAP.md) · [Acceptance](docs/ACCEPTANCE.md) · [Status](docs/STATUS.md)
-- [Research](docs/RESEARCH.md) · [ADR](docs/ADR.md)
+- [User Guide](docs/USER-GUIDE.md): Installation, operations, settings, supported Markdown syntax, FAQ
+- [Dev Guide](docs/DEV-GUIDE.md): Environment, commands, code map, verification baseline
+- [Changelog](docs/CHANGELOG.md): Version history
+- [Roadmap](docs/ROADMAP.md): Requirements, architecture, milestones
+- [Acceptance](docs/ACCEPTANCE.md): Batch acceptance checklists and test results
+- [Status](docs/STATUS.md): Current status and open items
+- [Research](docs/RESEARCH.md) / [ADR](docs/ADR.md): Technical findings and decisions
 
 ### License
 
