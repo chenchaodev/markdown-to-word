@@ -40,15 +40,15 @@ To build from source, see **Quick start** below.
 ### Screenshots
 
 <p align="center">
-  <img src="docs/images/ui-main.png" alt="Main window (multiple files)" width="80%">
+  <img src="docs/images/ui-main.jpg" alt="Main window (multiple files)" width="80%">
   <br><em>Main window: pick files → pick format → convert</em>
 </p>
 
 <p align="center">
-  <img src="docs/images/ui-empty.png" alt="Empty main window" width="48%">
+  <img src="docs/images/ui-empty.jpg" alt="Empty main window" width="48%">
   &nbsp;
-  <img src="docs/images/ui-history.png" alt="Recent conversions panel" width="48%">
-  <br><em>Left: empty state　Right: recent conversions panel</em>
+  <img src="docs/images/ui-settings.jpg" alt="Settings panel" width="48%">
+  <br><em>Left: empty state　Right: settings panel (6 tab groups)</em>
 </p>
 
 ### Quick start (developers)

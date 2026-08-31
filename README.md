@@ -37,20 +37,21 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 - **语法**：GFM 全支持（任务列表/删除线）、脚注、批注、Mermaid 图表、代码高亮、行内 HTML 白名单、`<!-- page-break -->` 分页符
 - **学术**：公式（OMML/KaTeX）编号与交叉引用、图/表/章节交叉引用跳转
 - **体验**：暗色模式（三态）、界面多语言（注册表驱动，渐进扩展）、模板预设（JSON 导入/导出）、PDF 自定义 CSS、实时预览、最近转换
+- **新增**：剪贴板直转、成书向导（七步引导）、AI 清理前置、中文排版预设（公文/长文阅读/极简）、Obsidian 兼容、关于页更新提示
 - **可靠**：编码兼容（UTF-8/UTF-16/GBK）、网络图片下载嵌入（私网拦截+大小上限）、失败原因可操作提示、离线零网络
 
 ### 界面截图
 
 <p align="center">
-  <img src="docs/images/ui-main.png" alt="主界面（多文件）" width="80%">
+  <img src="docs/images/ui-main.jpg" alt="主界面（多文件）" width="80%">
   <br><em>主界面：选择文件 → 选择格式 → 开始转换</em>
 </p>
 
 <p align="center">
-  <img src="docs/images/ui-empty.png" alt="空态主界面" width="48%">
+  <img src="docs/images/ui-empty.jpg" alt="空态主界面" width="48%">
   &nbsp;
-  <img src="docs/images/ui-history.png" alt="最近转换面板" width="48%">
-  <br><em>左：空态主界面　右：最近转换面板</em>
+  <img src="docs/images/ui-settings.jpg" alt="设置面板" width="48%">
+  <br><em>左：空态主界面　右：设置面板（6 组标签页）</em>
 </p>
 
 ### 快速开始（开发者）

@@ -58,7 +58,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - `src/core/` 纯转换逻辑,无 IO,可测试
   - `convert.ts`:格式注册表 + `convert(md, format, options)` 统一入口(pdf 分支不构建 remark AST)
   - `pipeline/`:`parse.ts`(remark→mdast)/`frontmatter.ts`(YAML 手写解析)/`merge.ts`(多文件合并)
-  - `markdown/`:`slug.ts`/`cross-ref.ts`(交叉引用契约正则族单源)/`heading-numbering.ts`(标题编号计数共享纯函数)/`html-whitelist.ts`(行内 HTML 白名单 docx/pdf 单源)/`comment.ts`(批注语法 remark 插件)/`mermaid.ts`
+  - `markdown/`:`slug.ts`/`cross-ref.ts`(交叉引用契约正则族单源)/`heading-numbering.ts`(标题编号计数共享纯函数)/`html-whitelist.ts`(行内 HTML 白名单 docx/pdf 单源)/`comment.ts`(批注语法 remark 插件)/`mermaid.ts`/`ai-cleanup.ts`(AI 输出清理)/`obsidian.ts`(Obsidian 双链兼容)/`precheck.ts`(转换前预检)/`image-size.ts`(图片尺寸属性解析)/`table-width.ts`(表格列宽信号解析)
   - `image/`:`image-resolver.ts`(类型+optional exists)/`image-type.ts`(魔数嗅探)/`image-warning.ts`(警告工厂)
   - `settings/`:`settings-defaults.ts`(默认值+页面几何 PAPER_SIZES_MM/mmToTwips+ConvertFormat 单源)/`typography.ts`
   - `util/`:`encoding.ts`(编码预检)/`mdast-utils.ts`/`utils.ts`
@@ -79,7 +79,8 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `state/`:`pure.ts`(纯函数含 errorMessage()/STAGE_TEXT)/`state.ts`(批量契约类型自 main 单源导入)/`utils.ts`(translate 适配器衔接 I18nKey)
   - `settings/`:`settings-panel.ts`/`settings-bindings.ts`/`settings-logic.ts`(纯函数直测)
   - `convert/`:`convert-flow.ts` + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)
-  - `file-list.ts`/`ui/`(`dialogs.ts`/`recent-files.ts`,bindRecentFilesEvents 范式)
+  - `file-list.ts`/`ui/`(`dialogs.ts`/`recent-files.ts`,bindRecentFilesEvents 范式)/`first-run-guide.ts`(首次启动引导)
+  - `wizard/`:`book-wizard.ts`(成书向导主逻辑)/`wizard-state.ts`(向导状态管理)
 - `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与纯逻辑)+ main/(主进程层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/gen-fixtures.mjs 与 smoke/);`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)、`scripts/check-build-fresh.mjs`(构建新鲜度守卫)
 
 ## 测试体系(按内容主题零注册,新增=新建段文件)

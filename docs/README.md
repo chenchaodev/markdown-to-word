@@ -25,6 +25,9 @@ markdown-to-word:Markdown 转 Word / PDF 的 Windows 桌面应用。项目知识
 | `USER-GUIDE.md` | 终端用户使用说明(安装/操作/设置/FAQ) | 功能或设置变化时 |
 | `ACCEPTANCE.md` | 批次验收清单与实测结果记录 | 验收变更/实测完成时 |
 | `WPS-COMPAT.md` | Word/WPS 双实测兼容矩阵(守护既有功能) | 实测完成/发现问题时 |
+| `design/ui-guidelines.md` | UI 视觉规范(冷灰纸+朱砂红、字体三角色、签名元素) | UI 设计变更时 |
+| `design/settings-ia.md` | 设置信息架构(设置面板布局与交互) | 设置重组时 |
+| `design/book-wizard.md` | 成书向导设计(UI/交互稿) | 向导功能变更时 |
 
 按需新建的文档(`REQUIREMENTS.md` / `TEST-MANUAL.md`):建文件同批在本表追加一行;用不到的不建。故障排查不单独建文档——坑/根因沉淀在 RESEARCH.md。
 
