@@ -7,6 +7,7 @@
 import JSZip from "jszip";
 import { convert } from "../../dist/core/convert.js";
 import { DEFAULT_WATERMARK, DEFAULT_HEADER_FOOTER } from "../../dist/core/settings/settings-defaults.js";
+import { WATERMARK_GRAY, WATERMARK_INK } from "../../dist/core/style/colors.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 
 function assert(cond, msg) {
@@ -39,7 +40,7 @@ export async function run() {
   const grayXml = grayHeaders.texts.join("\n");
   assert(grayHeaders.names.length > 0, "水印应生成 header part");
   assert(grayXml.includes("机密文档"), "水印文字应写入 header XML");
-  assert(grayXml.includes("999999"), "gray=true 应使用浅灰配色 #999999");
+  assert(grayXml.includes(WATERMARK_GRAY), `gray=true 应使用共享常量浅灰配色 ${WATERMARK_GRAY}`);
   assert(grayXml.includes("wps:wsp"), "水印应使用 DML 文本框(wps:wsp)");
   assert(grayXml.includes('rot="2700000"'), "默认角度 45 应渲染为 DML rot=2700000(逆时针 45°)");
   assert(grayXml.includes('anchor="ctr"'), "DML wps:bodyPr 应垂直居中(anchor=ctr)");
@@ -53,7 +54,7 @@ export async function run() {
     watermark: wmColor,
   });
   const colorXml = (await headerXmls(colorDocx.buffer)).texts.join("\n");
-  assert(colorXml.includes("1F2328"), "gray=false 应使用正文字色 #1F2328");
+  assert(colorXml.includes(WATERMARK_INK), `gray=false 应使用共享常量正文字色 ${WATERMARK_INK}`);
 
   // ---- 3. docx:空 text 不生成水印头(none 模式 + 空 text = 无任何 header) ----
   const emptyDocx = await convert(md, "docx", {
@@ -77,6 +78,7 @@ export async function run() {
   assert(pdfDoc.html.includes('class="wm"'), "PDF html 应含水印覆盖层元素");
   assert(pdfDoc.html.includes(">机密文档</div>"), "PDF 水印元素应含文字");
   assert(pdfDoc.html.includes("rotate(45deg)"), "PDF 水印 CSS 应含旋转角度");
+  assert(pdfDoc.html.includes(`color: #${WATERMARK_GRAY}`), `PDF 水印 CSS 应与 docx 同源取色(#${WATERMARK_GRAY})`);
   assert(pdfDoc.html.includes("opacity: 0.15"), "PDF 水印 CSS 应含不透明度");
 
   // ---- 6. pdf:空 text 无水印元素 ----

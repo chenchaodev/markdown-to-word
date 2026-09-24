@@ -25,3 +25,6 @@ export const QUOTE_BG_GRAY = "F2F2F2";
 
 /** 分隔线灰(thematicBreak 底边框) */
 export const RULE_GRAY = "999999";
+
+/** 表格边框黑(docx 表格 six-side borders;pdf 侧表格边框走模板 CSS #d0d7de,双管线观感既有差异,勿混改) */
+export const TABLE_BORDER_BLACK = "000000";

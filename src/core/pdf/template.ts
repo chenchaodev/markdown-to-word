@@ -13,6 +13,7 @@ import {
 import type { PageSetup, HeaderFooterSettings, WatermarkSettings } from "../settings/settings-defaults.js";
 import type { ConvertWarning } from "../i18n.js";
 import { escapeHtml } from "../util/utils.js";
+import { WATERMARK_GRAY, WATERMARK_INK } from "../style/colors.js";
 import { mimeFromBuffer } from "../image/image-type.js";
 import type { HeaderLogoData } from "../docx/chrome.js";
 
@@ -344,7 +345,7 @@ export function sanitizeStyleCss(css: string): string {
  */
 function buildWatermarkCss(watermark: WatermarkSettings | undefined): string {
   if (!watermark || !watermark.text.trim()) return "";
-  const color = watermark.gray ? "#999999" : "#1f2328";
+  const color = `#${watermark.gray ? WATERMARK_GRAY : WATERMARK_INK}`;
   const angle = watermark.angle;
   const opacity = watermark.opacity;
   return `

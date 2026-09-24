@@ -19,6 +19,7 @@ import {
   VerticalAnchor,
 } from "docx";
 import { MUTED_TEXT_GRAY, SECONDARY_TEXT_GRAY } from "./theme.js";
+import { WATERMARK_GRAY, WATERMARK_INK } from "../style/colors.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import { imageSizeFromBuffer } from "../image/image-type.js";
 import type { TocMode, WatermarkSettings } from "../settings/settings-defaults.js";
@@ -247,7 +248,7 @@ export function renderFooter(): Footer {
  */
 let watermarkShapeSeq = 0;
 export function renderWatermarkParagraph(watermark: WatermarkSettings): Paragraph {
-  const color = watermark.gray ? "999999" : "1F2328";
+  const color = watermark.gray ? WATERMARK_GRAY : WATERMARK_INK;
   const run = new TextRun({ text: watermark.text, size: 144, color, bold: true });
   const contentPara = new Paragraph({ alignment: AlignmentType.CENTER, children: [run] });
   // 600pt × 200pt → EMU (1pt = 12700 EMU)

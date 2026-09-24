@@ -9,6 +9,7 @@ import { AlignmentType, BorderStyle, Paragraph, Table, TableCell, TableLayoutTyp
 import type { Table as MdTable } from "mdast";
 import { renderPhrasing } from "./content.js";
 import { normalizeInlineHtml } from "./inline-html.js";
+import { TABLE_BORDER_BLACK } from "../theme.js";
 import type { Ctx } from "../ctx.js";
 
 export async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
@@ -46,7 +47,7 @@ export async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
     }
     rows.push(new TableRow({ children: cells }));
   }
-  const border = { style: BorderStyle.SINGLE, size: 4, color: "000000" };
+  const border = { style: BorderStyle.SINGLE, size: 4, color: TABLE_BORDER_BLACK };
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: {

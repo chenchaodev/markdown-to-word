@@ -28,6 +28,7 @@ import {
   mmToTwips,
   twipsToPx,
 } from "../../dist/core/settings/settings-defaults.js";
+import { TABLE_BORDER_BLACK } from "../../dist/core/docx/theme.js";
 import { unzipPart } from "../common/docx-utils.js";
 
 function assert(cond, msg) {
@@ -94,6 +95,12 @@ export async function run() {
   // 对齐样式与列宽共存:B 列居中(:-----------:)仍映射 w:jc center(行为不变)
   const jcCenterInCell = /<w:tcW w:type="dxa" w:w="6539"\/>[\s\S]*?<w:jc w:val="center"\/>[\s\S]*?<\/w:tc>/.test(xml);
   assert(jcCenterInCell, "B 列(79%)居中对齐应与列宽共存(w:jc center)");
+  // 表格边框色经 theme 常量单源(勿在 table.ts 散落硬编码)
+  const tblBorders = /<w:tblBorders>[\s\S]*?<\/w:tblBorders>/.exec(xml)?.[0] ?? "";
+  assert(
+    tblBorders.includes(`w:color="${TABLE_BORDER_BLACK}"`),
+    `表格边框 six-side 应取自 theme 常量 TABLE_BORDER_BLACK(${TABLE_BORDER_BLACK})`,
+  );
   console.log("[ok] table-width:(b) docx tblGrid 比例宽度 + 固定布局 + tcW 同步 + 对齐共存 断言通过");
 
   // ================= (c) pdf 产物断言 =================
