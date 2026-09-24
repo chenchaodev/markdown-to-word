@@ -23,16 +23,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # 版本一致性守卫(审计 ENG-2):tag 名(vX.Y.Z)必须与 package.json version 一致,
-      # 不一致 fail fast,防止「版本号三统一」错位(tag/package.json/CHANGELOG,lockfile
-      # 为第四源,由发版 checklist 保证同步)。放在 install 之前,失败不浪费安装时间。
-      - name: Verify tag matches package.json version
+      # 版本一致性守卫(审计 ENG-2):tag 名(vX.Y.Z)必须与 package.json、package-lock.json
+      # 的 version 一致(版本号四源统一,CHANGELOG 由发版 checklist 人工核对),不一致
+      # fail fast,防止版本号错位(曾发生 lockfile 漏同步)。放在 install 之前,失败不浪费安装时间。
+      - name: Verify tag matches package.json & lockfile version
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
+          LOCK_VERSION=$(node -p "require('./package-lock.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} 与 package.json version ${PKG_VERSION} 不一致,拒绝发版"
+            exit 1
+          fi
+          if [ "$TAG_VERSION" != "$LOCK_VERSION" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 package-lock.json version ${LOCK_VERSION} 不一致,拒绝发版"
             exit 1
           fi
 
