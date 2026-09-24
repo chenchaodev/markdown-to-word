@@ -49,6 +49,8 @@ const CH = {
   menuOpen: "menu:open",
   /** 打开「关于」窗口(标题栏按钮触发) */
   aboutOpen: "about:open",
+  /** 关于窗内打开外链(关于窗专用,主窗 api 不暴露,仅镜像保键集恒等) */
+  aboutOpenExternal: "about:open-external",
   /** 关于页更新检查(main 进程查 GitHub Releases latest) */
   aboutCheckUpdate: "about:check-update",
 } as const;

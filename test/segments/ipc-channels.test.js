@@ -3,8 +3,10 @@
  * - main 侧单源:dist/main/ipc/channels.js 的 IPC_CHANNELS(命名统一「域:动作」);
  * - preload 侧镜像:preload.cts 因沙箱隔离(sandbox:true 下 preload.cjs 运行时
  *   只能 require electron)无法 import ESM 常量模块,侧内镜像同名常量;
- * - 本段对 dist/main/preload.cjs 文本提取全部 ipcRenderer.invoke/on/removeListener
- *   的 channel 字面量,与单源做双向集合恒等断言,防两侧漂移;
+ * - 本段对 dist/main/preload.cjs 与 dist/renderer/about-preload.cjs 文本提取
+ *   全部 ipcRenderer.invoke/on/removeListener 的 channel 字面量,与单源做双向
+ *   集合恒等断言(主窗 preload)或子集恒等 + 键集断言(about-preload),
+ *   防两侧漂移;
  * - 附「域:动作」命名形状断言(域在前 + 冒号分隔),防新 channel 回退混名序。
  */
 import fs from "node:fs";
@@ -64,6 +66,42 @@ export async function run() {
   for (const m of preloadSrc.matchAll(/\b(?:invoke|on|removeListener)\((["'])([^"']+)\1/g)) {
     throw new Error(`ipc-channels 断言失败:preload 出现裸字符串 channel "${m[2]}"(应经 CH.* 引用)`);
   }
+
+  // ---- about-preload(关于窗独立 CJS preload,copied 到 dist/renderer)----
+  // 同款提取:CH 镜像恒等 + 调用点无裸字符串;键集断言为 about 域两键
+  // (它是子集镜像——主窗 preload 才与单源全量恒等,故不反向要求单源键全出现)
+  const aboutSrc = fs.readFileSync(
+    path.join(path.dirname(distMain), "renderer", "about-preload.cjs"),
+    "utf8",
+  );
+  const aboutMatch = aboutSrc.match(/const CH = \{([\s\S]*?)\};/);
+  if (!aboutMatch) {
+    throw new Error("ipc-channels 断言失败:about-preload.cjs 未找到 CH 镜像对象(产物结构变化)");
+  }
+  const aboutMirror = {};
+  for (const m of aboutMatch[1].matchAll(/(\w+):\s*"([^"]+)"/g)) {
+    aboutMirror[m[1]] = m[2];
+  }
+  const expectedAboutKeys = ["aboutOpenExternal", "aboutCheckUpdate"].sort();
+  const actualAboutKeys = Object.keys(aboutMirror).sort();
+  if (JSON.stringify(actualAboutKeys) !== JSON.stringify(expectedAboutKeys)) {
+    throw new Error(
+      `ipc-channels 断言失败:about-preload 镜像键集应为 about 域两键,实际=${JSON.stringify(actualAboutKeys)}`,
+    );
+  }
+  for (const [key, value] of Object.entries(aboutMirror)) {
+    if (IPC_CHANNELS[key] !== value) {
+      throw new Error(
+        `ipc-channels 断言失败:about-preload 镜像 ${key}="${value}" 与单源 "${IPC_CHANNELS[key]}" 漂移`,
+      );
+    }
+  }
+  for (const m of aboutSrc.matchAll(/\b(?:invoke|on|removeListener)\((["'])([^"']+)\1/g)) {
+    throw new Error(
+      `ipc-channels 断言失败:about-preload 出现裸字符串 channel "${m[2]}"(应经 CH.* 引用)`,
+    );
+  }
+  console.log("[ok] ipc-channels:about-preload 镜像恒等(about 域两键)+ 调用点无裸字符串 断言通过");
 
   // ---- main 侧接线抽查:dist/main 全部产物不应残留旧字面量(handle 全部经 CH.* 引用) ----
   // 目录重组后 handle 注册分散在 dist/main(含 ipc/、windows/ 子目录),递归全扫

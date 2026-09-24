@@ -10,7 +10,7 @@ import { IPC_CHANNELS as CH } from "./ipc/channels.js";
 import { openExternalIfHttp } from "./services/web-hardening.js";
 import { getMainWindow } from "./windows/main-window.js";
 
-ipcMain.handle("about:open-external", (_e, url: string) => {
+ipcMain.handle(CH.aboutOpenExternal, (_e, url: string) => {
   openExternalIfHttp(url);
 });
 
