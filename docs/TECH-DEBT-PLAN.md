@@ -11,7 +11,7 @@
 >
 > **A 批完成(2026-09-25)**:A1 段数订正(STATUS/ci.yml → 69 段,实测 60 segments + 9 main)、A2 沉没债补登记(ROADMAP「已知限制」节:契约类型归位 core[候选池 E1 本就在册]+ test 段归位)、A3 coverage/tmp 残留 JSON 清理、A4 G1-G9 盘点**全部关闭**(G1-G8 断言证据齐全,G9 维持不补;关闭记录写入 RESEARCH 2026-08-15 条目 + 候选池 E2 状态回写);A5 留待随 B2。纯文档/chore 提交。
 >
-> **B 批完成(2026-09-25,每批一提交)**:B1 about 外链 IPC 收口进 channels 单源(about-preload 侧内镜像 + ipc-channels 段双向断言扩展)、B3 日字典 Partial→satisfies 全量锁(441 键编译期锁定 + 过时口径同步)、B4 令牌破例清零(switch 拨钮/钤印内环/抽屉投影三令牌化 + 关于窗原生底色经 nativeTheme 随系统主题,ui-guidelines 令牌表同步)、B2+A5 关于窗 `sandbox: false→true`(调研结论:preload 仅依赖 electron 白名单、脚本全外部、链接经 IPC 外开,均沙箱兼容)+ about.html CSP 与主窗同口径(一次性脚本 13 项断言:preload API/CSP 生效/IPC 往返/深浅主题/console 零 violation)、B5 深色双块恒等断言段(**修法偏离原案并声明**:「合并选择器组」受 CSS 语法限制不可行、「生成式去重」对过渡态块过重,改镜像+恒等断言与 preload 同构,段数 69→70)。全量 70 段 + typecheck/lint + ui:shots 双主题抽查全绿;**B2 三项人工实测在 ACCEPTANCE「关于窗沙箱与 CSP 验收记录」待勾**。
+> **B 批完成(2026-09-25,每批一提交)**:B1 about 外链 IPC 收口进 channels 单源(about-preload 侧内镜像 + ipc-channels 段双向断言扩展)、B3 日字典 Partial→satisfies 全量锁(441 键编译期锁定 + 过时口径同步)、B4 令牌破例清零(switch 拨钮/钤印内环/抽屉投影三令牌化 + 关于窗原生底色经 nativeTheme 随系统主题,ui-guidelines 令牌表同步)、B2+A5 关于窗 `sandbox: false→true`(调研结论:preload 仅依赖 electron 白名单、脚本全外部、链接经 IPC 外开,均沙箱兼容)+ about.html CSP 与主窗同口径(一次性脚本 13 项断言:preload API/CSP 生效/IPC 往返/深浅主题/console 零 violation)、B5 深色双块恒等断言段(**修法偏离原案并声明**:「合并选择器组」受 CSS 语法限制不可行、「生成式去重」对过渡态块过重,改镜像+恒等断言与 preload 同构,段数 69→70)。全量 70 段 + typecheck/lint + ui:shots 双主题抽查全绿;**B2 三项人工实测 2026-09-25 通过(ACCEPTANCE「关于窗沙箱与 CSP 验收记录」关闭)**。
 
 ---
 
