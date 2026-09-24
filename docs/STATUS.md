@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 2026-09-25:**封版期文档一致性回写 + 发版门禁补强**(lockfile 版本 3.10.2→3.11.5 修正、release.yml 增 tag↔package.json↔lockfile 四源校验、ROADMAP D1/F8/F9 状态回写、ACCEPTANCE 删陈旧副本、关于页更新提示 GUI 实测通过 U1-U3 关闭;typecheck/lint 全绿)
+- 2026-09-25:**封版期文档一致性回写 + 发版门禁补强**(lockfile 版本 3.10.2→3.11.5 修正、release.yml 增 tag↔package.json↔lockfile 四源校验、ROADMAP D1/F8/F9 状态回写、ACCEPTANCE 删陈旧副本、关于页更新提示 GUI 实测通过 U1-U3 关闭;typecheck/lint 全绿;代码分析四路盘点落盘 archive 原文+RESEARCH 摘要+README 登记,处置计划 docs/TECH-DEBT-PLAN.md)
 
 - 2026-08-31:**封版暂停开发,文档全面重写完成(3.11.5 发版)**(typecheck/lint 全绿;README/README_EN/USER-GUIDE 按最新功能全面重写;版本号三统一 package.json=tag v3.11.5=CHANGELOG [3.11.5])
 

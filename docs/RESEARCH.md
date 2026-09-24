@@ -3,6 +3,12 @@
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 > **路径迁移注记(2026-08-24)**:目录结构重组(2026-08-23,提交 6f3d72a~9909d74)前历史条目「关联」字段中的扁平路径已失效——对照关系:`src/settings.ts`→`src/main/persist/settings.ts`、`src/index.ts`→`src/main/`(拆 windows/ipc/menu/converter/persist/services)、`src/renderer.ts`→`src/renderer/renderer.ts`+六功能域、`src/core/{i18n-dict}.ts`→`src/core/i18n/`、core 根级散文件→`pipeline/markdown/image/settings/util/` 子域。时间戳记录按规约不改写原文。
 
+### 2026-09-25 00:47:12 四路代码分析盘点(core / GUI / 测试工程化 / 文档状态)
+- **结论**:全库健康度良好、无阻塞性缺陷(契约单源/安全基线/测试恒等守护突出);核心发现:①双管线平行实现 + 警告去重/hljs 配色多处双源(仅测试护栏,候选池标「勿动」不合并)②GUI 超 500 行 TS 三文件(book-wizard 967/settings-bindings 710/settings-panel 560)、`about:open-external` 游离 IPC 单源、关于窗 sandbox:false 全仓唯一 ③覆盖率无门槛不进 CI + G1-G9 分支缺口未关闭、smoke 硬编码断言有 flaky 风险 ④lockfile 版本漂移(当场修复 + release.yml 三方校验门禁)与文档状态矛盾(ROADMAP D1/F8/F9、ACCEPTANCE 陈旧副本、关于页口径,均已回写关闭)
+- **处置**:剩余约 20 项按 `docs/TECH-DEBT-PLAN.md` 分 A(封版期维护)/B(安全契约收口)/C(core 双源收敛)/D(结构重构)/E(测试增强)五阶段排期;决策点仅 C4(core 零 IO 口径)与 E2(smoke 断言治理)
+- 来源: 4 个 explorer 子代理并行只读分析 + 主会话汇总
+- 关联: 原文存档 docs/archive/20260925-004712-代码分析四路盘点.md;处置计划 docs/TECH-DEBT-PLAN.md
+
 ### 2026-08-25 功能开发技术路线调研(F7 目录带页码 / F9 docx 模板导入)
 - **F9 模板导入**:npm 无现成库做「读任意 .docx 模板套用样式」;Pandoc reference-doc=部件级选择性搬运(styles 替换/numbering 合并魔数隔离/settings 白名单/rels 自建),坑多(#1305 numId 断链/#9522 settings 整搬损坏)。**推荐浅导入 v1**(jszip 读 styles.xml 关键 rPr→映射 theme.ts/settings 字段,3-5 天,契合集中字体配置硬约束),深导入列后续独立候选
 - **F7 目录带页码**:Word TOC 域+updateFields 打开必弹更新提示(不可关闭,docx#1212),WPS 可能不响应自动更新;docx 静态页码不可行(OOXML 无 page 实体)。**推荐混合路线**:pdf 两遍法静态页码(占位等高目录保布局一致+PDF.js 文本匹配定位,Typora 因单遍打印流做不到=独占差异化)+docx 默认维持静态目录、新增 opt-in 域目录开关(cachedEntries 预填防空白);WPS 行为纳入双实测
