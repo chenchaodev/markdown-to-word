@@ -14,6 +14,7 @@ import type { PageSetup, HeaderFooterSettings, WatermarkSettings } from "../sett
 import type { ConvertWarning } from "../i18n.js";
 import { escapeHtml } from "../util/utils.js";
 import { WATERMARK_GRAY, WATERMARK_INK } from "../style/colors.js";
+import { buildHljsCss } from "../style/hljs-palette.js";
 import { mimeFromBuffer } from "../image/image-type.js";
 import type { HeaderLogoData } from "../docx/chrome.js";
 
@@ -216,28 +217,9 @@ ${buildHeadingRules(typography)}
   a.footnote-backref { text-decoration: none; margin-left: 2px; }
   del { color: #8c959f; }
 
-  /* 代码高亮(GitHub Light 色板;printBackground 打印背景) */
-  .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: #cf222e; }
-  .hljs-string, .hljs-regexp { color: #0a3069; }
-  .hljs-number { color: #0550ae; }
-  .hljs-comment { color: #6e7781; font-style: italic; }
-  .hljs-title, .hljs-function { color: #8250df; }
-  .hljs-attr, .hljs-attribute { color: #953800; }
-  .hljs-variable, .hljs-template-variable { color: #953800; }
-  .hljs-built_in { color: #0550ae; }
-  .hljs-meta { color: #57606a; }
-  .hljs-symbol, .hljs-bullet { color: #0550ae; }
-  /* 补充常见 token 类(沿用同色板,补上 highlight.js 各语言的高频输出) */
-  .hljs-type, .hljs-selector-class, .hljs-name, .hljs-tag { color: #116329; }
-  .hljs-property { color: #0550ae; }
-  .hljs-operator { color: #cf222e; }
-  .hljs-link { color: #0a3069; }
-  .hljs-quote, .hljs-doctag { color: #6e7781; }
-  .hljs-section { color: #8250df; }
-  .hljs-deletion { color: #cf222e; background: #ffebe9; }
-  .hljs-addition { color: #116329; background: #dafbe1; }
-  .hljs-emphasis { font-style: italic; }
-  .hljs-strong { font-weight: 600; }
+  /* 代码高亮(GitHub Light 色板;printBackground 打印背景)。
+     色板与选择器组由 core/style/hljs-palette.ts 单源生成(与 docx 逐 token 着色同源) */
+${buildHljsCss()}
 ${breakBeforeH1 ? `
   /* 一级标题前分页(breakBeforeH1);文档首元素为 h1 时避免空白首页 */
   h1 { break-before: page; }

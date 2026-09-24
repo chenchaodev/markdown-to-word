@@ -137,4 +137,31 @@ export async function run() {
   }
 
   await saveArtifact("code-highlight", { docx: buffer });
+
+  // ---- 7. 色板单源:docx 与 pdf 同取 HLJS_PALETTE(消除双源) ----
+  const { HLJS_PALETTE, buildHljsCss } = await import("../../dist/core/style/hljs-palette.js");
+  const { convert } = await import("../../dist/core/convert.js");
+  // 7a. docx 产物色值 ⊆ 色板(样例命中的 token 类逐一来自单源)
+  for (const cls of ["keyword", "string", "comment", "title", "built_in", "number"]) {
+    const color = HLJS_PALETTE[cls]?.color;
+    if (!color) throw new Error(`code-highlight 断言失败:色板缺少 token 类 ${cls}`);
+    if (!xml.includes(`<w:color w:val="${color}"/>`)) {
+      throw new Error(`code-highlight 断言失败:docx 未落地单源色板 ${cls}=${color}`);
+    }
+  }
+  // 7b. pdf 侧 .hljs-* CSS 由同一色板生成(buildHljsCss 产物逐条进模板)
+  const pdfArt = await convert(MD_TS, "pdf", { baseDir: "." });
+  const hljsCss = buildHljsCss();
+  if (!pdfArt.html.includes(hljsCss)) {
+    throw new Error("code-highlight 断言失败:pdf 模板 CSS 应包含 buildHljsCss 单源生成产物");
+  }
+  for (const [cls, style] of Object.entries(HLJS_PALETTE)) {
+    if (style.color && !hljsCss.includes(`#${style.color.toLowerCase()}`)) {
+      throw new Error(`code-highlight 断言失败:生成 CSS 缺少 ${cls} 色值 #${style.color.toLowerCase()}`);
+    }
+    if (style.background && !hljsCss.includes(`background: #${style.background.toLowerCase()}`)) {
+      throw new Error(`code-highlight 断言失败:生成 CSS 缺少 ${cls} 底色`);
+    }
+  }
+  console.log("[ok] code-highlight:色板单源(docx 落地 + pdf 生成 CSS 逐 token 同源)断言通过");
 }
