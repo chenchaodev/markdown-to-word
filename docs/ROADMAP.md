@@ -180,6 +180,8 @@
 - **printToPDF 产物图片显示无法自动化断言**:smoke 可见图人工验证(维持人工不自动化)
 - **renderer 交互 / IPC dialog / preview 生命周期**:维持 GUI 实测,不自动化(见「维持人工不自动化」节)
 - **docx 侧任务列表无 checkbox 视觉**:设计如此(与 pdf ☐/☑ 字符替代不同)
+- **契约类型寄居 main 反向依赖**(RESEARCH 2026-08-24 P1):ConvertProgressPayload/ConvertMode/UiState/RecentFile 被 renderer type-only import,建议迁 core(如 core/ipc-contract.ts);候选池 E1 在册,处置计划 D4(恢复开发后)——2026-09-25 技术债 A2 补登记
+- **test 段归位**(RESEARCH 2026-08-24 P2):ipc-channels/ipc-logic/image-downloader/presets-import 四段 main 直测住 segments/,settings-logic/renderer-pure 应入 test/renderer/(需扩 acceptance.mjs 自动发现根);处置计划 D5(恢复开发后);实施前需裁定「镜像 src vs 主题式命名」口径冲突——2026-09-25 技术债 A2 补登记
 
 ### 候选池晋升待办（2026-08-29 从 ROADMAP-CANDIDATES 挑选，规划即契约）
 > 来源：ROADMAP-CANDIDATES.md（剪贴板直转 综合 70 / 成书向导 综合 85）。设计决策已拍板（见各条）。开发前确认，独立提交可回退；GUI 面走 ACCEPTANCE 人工实测。

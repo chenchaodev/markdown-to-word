@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 A 批完成**(A1 段数订正 STATUS/ci.yml→69 段;A2 沉没债补登记 ROADMAP「已知限制」:契约类型归位 core+test 段归位;A3 coverage/tmp 残留清理;A4 G1-G9 盘点全部关闭[G1-G8 断言证据齐全,G9 维持不补,关闭记录入 RESEARCH+候选池 E2];A5 关于窗 CSP 随 B2;纯文档提交,typecheck/lint 基线见下条)
+
 - 2026-09-25:**封版期文档一致性回写 + 发版门禁补强**(lockfile 版本 3.10.2→3.11.5 修正、release.yml 增 tag↔package.json↔lockfile 四源校验、ROADMAP D1/F8/F9 状态回写、ACCEPTANCE 删陈旧副本、关于页更新提示 GUI 实测通过 U1-U3 关闭;typecheck/lint 全绿;代码分析四路盘点落盘 archive 原文+RESEARCH 摘要+README 登记,处置计划 docs/TECH-DEBT-PLAN.md)
 
 - 2026-08-31:**封版暂停开发,文档全面重写完成(3.11.5 发版)**(typecheck/lint 全绿;README/README_EN/USER-GUIDE 按最新功能全面重写;版本号三统一 package.json=tag v3.11.5=CHANGELOG [3.11.5])
@@ -57,7 +59,7 @@
 ## 验证基线
 
 - 已跑通:`npm run typecheck`、`npm run lint`、`npm run build`、`npx electron . --smoke`(启动 + docx/pdf 双链路 + 设置持久化/landscape 端到端 + 批量/合并端到端 + renderer 诊断)、`npm run test:coverage`(c8)
-- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染与纯逻辑)与 `main/`(主进程层)下 `*.test.js`,当前 **57 段**;单段筛选 `M2W_ONLY='段名子串'`;新增测试=新建段文件零注册);main 侧行为已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
+- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染与纯逻辑)与 `main/`(主进程层)下 `*.test.js`,当前 **69 段**;单段筛选 `M2W_ONLY='段名子串'`;新增测试=新建段文件零注册);main 侧行为已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
 - 恒等守护:`test/segments/identity-guards.test.js` 锁已知双源(zh 文案↔字典/MAX_RECENT_FILES/设置合并双侧/白名单扫描一致性)
 - 验收样例:`npm run gen:fixtures`(需先 build)按功能自动生成 `test/fixtures/acceptance/*.md`(GUI 人工实测直接拖入);`npm run check:fixtures` 漂移校验(EOL 归一化,.gitattributes 双保险;CI 门禁步骤);新增功能=测试段顶层加 `export const fixtures = { main: ... }`
 - smoke 自清理 output/smoke 临时产物(Windows 占用文件 EBUSY 容错跳过)
