@@ -3,6 +3,7 @@
  */
 import type MarkdownIt from "markdown-it";
 import { EQ_LABEL_RE, EQ_REF_HREF_RE } from "../../markdown/cross-ref.js";
+import { pushWarningOnce } from "../../i18n.js";
 import { createDepthTracker, forEachRefLink } from "./shared.js";
 
 /**
@@ -73,16 +74,17 @@ export function overrideEquationRule(md: MarkdownIt, numbering: boolean = true):
     }
     if (!numbering) return; // 关开关:不做引用替换(引用保持原文本)
     // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内;
-    // 骨架见 forEachRefLink)
-    const unknownLabels = new Set<string>();
+    // 骨架见 forEachRefLink)。去重入列经共享 pushWarningOnce(集合生命周期 =
+    // 单次渲染,与 docx 侧 ctx.warnedKeys 同口径)
+    const warnedKeys = new Set<string>();
     forEachRefLink(tokens, EQ_REF_HREF_RE, ({ labels, textToken }) => {
       const label = labels[0]!; // 捕获组结构保证
       const num = labelIndex.get(label);
-      if (num === undefined && !unknownLabels.has(label)) {
-        unknownLabels.add(label); // 同标签只提示一次,避免重复刷屏
+      if (num === undefined) {
+        // 同标签只提示一次,避免重复刷屏(键 = key + JSON(params))
         // 与 docx 侧同场景文案不同(历史差异,勿单侧改):docx 为
         // 「交叉引用未找到公式 label: <label>」(warn.crossRefNotFound)
-        state.env.warnings?.push({
+        pushWarningOnce(warnedKeys, state.env.warnings, {
           key: "warn.eqLabelUndefined",
           params: { label },
           fallback: `引用未定义的公式标签: eq:${label}`,

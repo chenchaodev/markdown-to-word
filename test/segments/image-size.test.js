@@ -204,6 +204,17 @@ export async function run() {
   }
   console.log("[ok] image-size:(d) 非法值 keyed 警告(zh/en)+ 默认尺寸降级(docx/pdf 对齐)断言通过");
 
+  // (d2) 非法属性去重:同一 src 同一非法属性出现 N 次 → 双侧各只报 1 条
+  // (docx/pdf 均经共享 i18n.pushWarningOnce,键 = key + JSON(params))
+  for (const fmt of ["docx", "pdf"]) {
+    const dupWarnings = [];
+    const dupMd = "![坏图](./g1-tiny.png){width=-3}\n\n重复 ![坏图](./g1-tiny.png){width=-3}\n";
+    await convert(dupMd, fmt, { baseDir: FIXTURES_DIR, imageResolver: resolver, warnings: dupWarnings });
+    const dupCount = dupWarnings.filter((w) => typeof w === "object" && w.key === "warn.imageAttrInvalid").length;
+    assert(dupCount === 1, `${fmt} 同一非法属性 ×2 应去重为 1 条,实际 ${dupCount}`);
+  }
+  console.log("[ok] image-size:(d2) 非法属性重复出现去重(docx/pdf 各 1 条,共享 pushWarningOnce)断言通过");
+
   // ================= (e) 无属性回归 + 题注绑定 =================
   // 无属性:行内图片不居中、尺寸走原 scaleToFit(1×1 不放大);独立成段图片居中(figure 语义)
   const plainDocx = await renderDocx(parseMarkdown("前文 ![内联](./g1-tiny.png) 后文\n\n![独图](./g1-tiny.png)\n"), {

@@ -18,8 +18,7 @@ import {
   chapterNumberFromCounters,
   createHeadingCounters,
 } from "../../markdown/heading-numbering.js";
-import type { ConvertWarning } from "../../i18n.js";
-import { crossRefNotFoundWarning } from "../../i18n.js";
+import { crossRefNotFoundWarning, pushWarningOnce, type ConvertWarning } from "../../i18n.js";
 import { attrDel, createDepthTracker, forEachRefLink, stripTrailingLabel, type LinkScanToken } from "./shared.js";
 
 /** 块级 token 的结构化最小签名(避免深导入 markdown-it/lib/token):在
@@ -45,7 +44,7 @@ interface XrefLabelTables {
  *   [\w-]+;命中时文本(恰为默认文本)→ 静态编号(「图 3.1」「表 1」「3.2」),
  *   保留跳转;其他文本保持原样仍跳转;悬空 → 默认文本占位「图 (?)」/「(?)」,
  *   不带链接(目标锚点不存在,不生成死链;同 docx 侧),警告经 env.warnings
- *   提示(按「前缀:label」去重,仿 eq_numbering);
+ *   提示(经共享 pushWarningOnce 按 key + JSON(params) 去重,同 eq_numbering);
  * - 编号对象与登记(免更新路线,静态注入):
  *   - 图/表题注(caption_recognize 已设 fig-caption/tab-caption class):尾部
  *     {#fig:label}/{#tab:label} 剥离并登记;编号文本镜像模板 CSS ::before 显示
@@ -162,7 +161,7 @@ interface CoreRuleState {
 /**
  * 第二段:链接引用替换。命中登记表 → 默认文本改写为静态编号并保留 href 跳转
  * (目标锚点由第一遍注入);悬空 → 默认文本占位「(?)」并解包链接结构(不带链接,
- * 不生成死链)+ 警告(按「前缀:label」去重)。
+ * 不生成死链)+ 警告(经共享 pushWarningOnce 按 key + JSON(params) 去重)。
  */
 function replaceXrefLinks(
   tokens: readonly LinkScanToken[],
@@ -170,7 +169,7 @@ function replaceXrefLinks(
   captionLabels: XrefLabelTables["captionLabels"],
   headingLabels: XrefLabelTables["headingLabels"],
 ): void {
-  const unknownLabels = new Set<string>();
+  const warnedKeys = new Set<string>();
   forEachRefLink(tokens, CROSS_REF_HREF_RE, ({ labels, textToken }) => {
     const kind = labels[0] as CrossRefKind;
     const label = labels[1]!; // 捕获组结构保证
@@ -187,10 +186,9 @@ function replaceXrefLinks(
       if (textToken && textToken.content === def.defaultText) textToken.content = numberText;
       return false; // 命中:保留 href 跳转(目标锚点由第一遍注入)
     }
-    if (!unknownLabels.has(`${kind}:${label}`)) {
-      unknownLabels.add(`${kind}:${label}`); // 同引用只提示一次
-      state.env.warnings?.push(crossRefNotFoundWarning(def.kindName, `${kind}:${label}`));
-    }
+    // 悬空 → 同引用只提示一次(去重入列经共享 pushWarningOnce,键 = key +
+    // JSON(params),与 docx 侧同口径;集合生命周期 = 单次规则执行)
+    pushWarningOnce(warnedKeys, state.env.warnings, crossRefNotFoundWarning(def.kindName, `${kind}:${label}`));
     if (textToken && textToken.content === def.defaultText) textToken.content = def.danglingText;
     // 悬空不带链接(docx 契约:目标锚点不存在,不生成死链)——解包链接
     // 结构(仅移除 link_open/link_close,保留内部文本与嵌套格式,按普通

@@ -104,6 +104,31 @@ export function unlabeledCodeBlockWarning(): KeyedWarning {
   };
 }
 
+/**
+ * 警告去重键(单源,docx/pdf 双管线共用):key + JSON(params)。params 相同才
+ * 视为同一警告(不同 TeX 源码/label 的降级各自保留一条);调用侧勿自定义键格式。
+ */
+export function warnDedupKey(warning: KeyedWarning): string {
+  return `${warning.key}:${JSON.stringify(warning.params ?? null)}`;
+}
+
+/**
+ * 去重入列(纯函数,双管线共用):同一去重键只入 warnings 一次,防 GUI 警告列表
+ * 刷屏(悬空交叉引用被引 N 次只产生 1 条)。seen 集合由调用方持有,生命周期 =
+ * 单次转换/单次渲染(docx 侧为 ctx.warnedKeys,pdf 各规则为规则内集合,键含
+ * warning key 故互不冲突);即使 warnings 缺省也登记 seen(与既有行为一致)。
+ */
+export function pushWarningOnce(
+  seen: Set<string>,
+  warnings: ConvertWarning[] | undefined,
+  warning: KeyedWarning,
+): void {
+  const key = warnDedupKey(warning);
+  if (seen.has(key)) return;
+  seen.add(key);
+  warnings?.push(warning);
+}
+
 /** 当前语言(模块级状态;默认 zh,setLanguage 更新)。 */
 let current: Language = "zh";
 

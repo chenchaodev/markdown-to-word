@@ -16,7 +16,7 @@ import type {
 } from "docx";
 import type { FootnoteDefinition } from "mdast";
 import type { BlockContent } from "mdast";
-import type { ConvertWarning, KeyedWarning } from "../i18n.js";
+import { pushWarningOnce, type ConvertWarning, type KeyedWarning } from "../i18n.js";
 import type { TypographySettings } from "../settings/typography.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import type { ImageResolver } from "../image/image-resolver.js";
@@ -59,9 +59,9 @@ export interface Ctx {
   footnoteNextId: { value: number };
   /** identifier → 已分配脚注 id(重复引用共享同一脚注,与 Word 语义一致) */
   footnoteIdByLabel: Map<string, number>;
-  /** 已发出过的警告集合(悬空交叉引用等逐引用去重,防 GUI 警告列表刷屏)。
-   *  注意:pdf 侧并非同模式——pdf 各规则自建 unknownLabels Set(equation.ts/xref.ts)
-   *  按引用键去重,与本处「key + JSON(params)」机制并行,两套互不感知。 */
+  /** 已发出过的警告去重键集合(悬空交叉引用等逐引用去重,防 GUI 警告列表刷屏)。
+   *  去重键与入列逻辑单源 i18n.warnDedupKey/pushWarningOnce;pdf 侧各规则持各自
+   *  集合、共用同一函数与键口径(键含 warning key,互不冲突)。 */
   warnedKeys: Set<string>;
   /** 公式 label → 编号查表(renderDocx 预扫后挂入;行内交叉引用渲染用) */
   equationLabels?: Map<string, number>;
@@ -117,17 +117,13 @@ export type InlineChild =
   | CommentReference;
 
 /**
- * 去重警告:同一文案只入 warnings 一次。悬空交叉引用被引 N 次此前产生
- * N 条重复警告,GUI 警告列表刷屏;pdf 侧 unknownLabels Set 早已去重,此处对齐
- * (机制两套并行:本函数按 key + JSON(params),pdf 按「前缀:label」引用键,见
- * ctx.warnedKeys 注释)。元素改为 KeyedWarning 对象后,去重键 = key + JSON(params)
- * (params 相同才视为同一警告;不同 TeX 源码/label 的公式降级各自保留一条)。
+ * 去重警告(薄封装):同一文案只入 warnings 一次。悬空交叉引用被引 N 次此前产生
+ * N 条重复警告,GUI 警告列表刷屏。去重键与入列逻辑单源 i18n.pushWarningOnce
+ * (键 = key + JSON(params),params 相同才视为同一警告;不同 TeX 源码/label 的
+ * 公式降级各自保留一条),pdf 各规则直调同一函数、自持集合(见 ctx.warnedKeys 注释)。
  */
 export function warnDedup(ctx: Ctx, warning: KeyedWarning): void {
-  const dedupKey = `${warning.key}:${JSON.stringify(warning.params ?? null)}`;
-  if (ctx.warnedKeys.has(dedupKey)) return;
-  ctx.warnedKeys.add(dedupKey);
-  ctx.warnings?.push(warning);
+  pushWarningOnce(ctx.warnedKeys, ctx.warnings, warning);
 }
 
 /** 公式解析失败降级警告(display/inline 共用同一 key,params 带 TeX 源码) */

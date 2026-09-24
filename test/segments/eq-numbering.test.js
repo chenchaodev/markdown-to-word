@@ -105,6 +105,23 @@ export async function run() {
   // 行内公式不编号(无 eq-num 包裹在行内公式上)
   console.log("[ok] PDF 公式编号 + 交叉引用:eq-block/锚点/引用文本/label 不渲染/悬空兜底 断言通过");
 
+  // ---------- 悬空公式引用去重(双侧经共享 i18n.pushWarningOnce,键 = key + JSON(params)) ----------
+  // 同一未知 label 被引用 N 次 → docx/pdf 各只报 1 条(防 GUI 警告列表刷屏)
+  const dupMd = "$$\nE = mc^2\n$$\n\n{#eq:dup}\n\n悬空 [式](#eq:ghost)、[式](#eq:ghost)、[公式](#eq:ghost)。";
+  const dupDocxWarnings = [];
+  await convert(dupMd, "docx", { baseDir: FIXTURES_DIR, warnings: dupDocxWarnings });
+  const dupDocxCount = dupDocxWarnings.filter((w) => formatWarning(w) === "交叉引用未找到公式 label: ghost").length;
+  if (dupDocxCount !== 1) {
+    throw new Error(`去重断言失败:docx 悬空公式引用 ×3 应只报 1 条,实际 ${dupDocxCount}`);
+  }
+  const dupPdfWarnings = [];
+  await convert(dupMd, "pdf", { baseDir: FIXTURES_DIR, title: "去重", warnings: dupPdfWarnings, katexDir });
+  const dupPdfCount = dupPdfWarnings.filter((w) => typeof w === "object" && w.key === "warn.eqLabelUndefined").length;
+  if (dupPdfCount !== 1) {
+    throw new Error(`去重断言失败:pdf 悬空公式引用 ×3 应只报 1 条 warn.eqLabelUndefined,实际 ${dupPdfCount}`);
+  }
+  console.log("[ok] 悬空公式引用去重(docx/pdf 双侧各 1 条,共享 pushWarningOnce 键口径)断言通过");
+
   // ---------- label 口径对齐 docx(pdf 侧放宽为「整段纯文本串接」) ----------
   // 此前 pdf 要求 label 段为唯一纯 text child,粗斜体包裹的 **{#eq:x}** 不命中 →
   // 登记失败且标记行按普通段落显示;docx collectPlainText 本就宽松,双格式一致。

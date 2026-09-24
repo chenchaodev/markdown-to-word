@@ -15,7 +15,7 @@ import type MarkdownIt from "markdown-it";
 import { parseImageSizeAttrs, type ImageDim } from "../../markdown/image-size.js";
 import { imageAttrInvalidWarning } from "../../image/image-warning.js";
 import { createDepthTracker } from "./shared.js";
-import type { ConvertWarning } from "../../i18n.js";
+import { pushWarningOnce, type ConvertWarning } from "../../i18n.js";
 
 /** 结构化最小契约(与仓库惯例一致,不直接 import markdown-it Token 类型):
  *  applySizeAttrs 只依赖 attrSet 与兄弟 text token 的 type/content。 */
@@ -40,8 +40,9 @@ export function overrideImageRule(
 ): void {
     const defaultRule = md.renderer.rules.image;
     if (!defaultRule) return; // markdown-it 内置 image 规则,理论不可达
-    // 非法属性警告去重(pdf 侧自建 Set 口径,与 equation.ts/xref.ts unknownLabels 一致)
-    const warned = new Set<string>();
+    // 非法属性警告去重(共享 pushWarningOnce 键口径,与 docx ctx.warnedKeys 同源;
+    // 集合生命周期 = 单次渲染,md 实例每次 renderPdfHtml 新建)
+    const warnedKeys = new Set<string>();
     md.renderer.rules.image = (tokens, idx, options, env, self) => {
       const token = tokens[idx]!; // 渲染器契约:idx 必为有效下标
       const src = token.attrGet("src") ?? "";
@@ -50,7 +51,7 @@ export function overrideImageRule(
         const abs = path.isAbsolute(src) ? src : path.resolve(baseDir, src);
         token.attrSet("src", pathToFileURL(abs).href);
       }
-      applySizeAttrs(token, tokens[idx + 1], src, contentWidthPx, env, warned);
+      applySizeAttrs(token, tokens[idx + 1], src, contentWidthPx, env, warnedKeys);
       return defaultRule(tokens, idx, options, env, self);
     };
 }
@@ -65,7 +66,7 @@ function dimToCss(prop: "width" | "height", dim: ImageDim, contentWidthPx: numbe
 /**
  * 尾随尺寸属性消费:image 的下一个兄弟 text token 恰为完整 {…} 属性块时,
  * 解析结果注入 style、属性文本剥除(next.content = "");无尺寸键的花括号文本
- * 原样保留。非法值经 env.warnings 上报 keyed 警告(warned 按 src+attr 去重)。
+ * 原样保留。非法值经 env.warnings 上报 keyed 警告(经共享 pushWarningOnce 去重)。
  */
 function applySizeAttrs(
   token: StyleToken,
@@ -73,18 +74,14 @@ function applySizeAttrs(
   src: string,
   contentWidthPx: number,
   env: unknown,
-  warned: Set<string>,
+  warnedKeys: Set<string>,
 ): void {
   if (!next || next.type !== "text") return;
   const parsed = parseImageSizeAttrs(next.content);
   if (!parsed.hasSizeKeys) return;
   const warnings = (env as { warnings?: ConvertWarning[] }).warnings;
   for (const raw of parsed.invalid) {
-    const dedupKey = `${src}:${raw}`;
-    if (!warned.has(dedupKey)) {
-      warned.add(dedupKey);
-      warnings?.push(imageAttrInvalidWarning(src, raw));
-    }
+    pushWarningOnce(warnedKeys, warnings, imageAttrInvalidWarning(src, raw));
   }
   const style: string[] = [];
   if (parsed.attrs.width) style.push(dimToCss("width", parsed.attrs.width, contentWidthPx));

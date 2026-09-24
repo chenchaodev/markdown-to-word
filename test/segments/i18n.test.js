@@ -123,7 +123,25 @@ export async function run() {
     assert(dw.fallback === "交叉引用未找到图 label: fig:x", `fallback 应逐字保留中文原文,实际 ${dw.fallback}`);
     assert(i18n.formatWarning(dw) === "交叉引用未找到图 label: fig:x", "zh 下格式化结果应与 fallback 一致");
 
-    console.log("[ok] i18n:t() 默认/切换/插值/缺 key 回退 + formatWarning 三分支 + en 键集一致性 + warnOnce 对象去重 + settings.language 校验/兜底 断言通过");
+    // ---- 12. 共享去重纯函数 warnDedupKey/pushWarningOnce(docx/pdf 双管线单源) ----
+    const kw = { key: "warn.imageLoadFailed", params: { src: "a.png" }, fallback: "兜底" };
+    assert(i18n.warnDedupKey(kw) === 'warn.imageLoadFailed:{"src":"a.png"}', "warnDedupKey 应为 key + JSON(params)");
+    assert(
+      i18n.warnDedupKey({ key: "warn.mermaidEmpty", fallback: "x" }) === "warn.mermaidEmpty:null",
+      "无 params 时去重键应为 key + null",
+    );
+    const seen = new Set();
+    const out = [];
+    i18n.pushWarningOnce(seen, out, kw);
+    i18n.pushWarningOnce(seen, out, { ...kw }); // 同 key 同 params → 去重
+    i18n.pushWarningOnce(seen, out, { ...kw, params: { src: "b.png" } }); // params 不同 → 保留
+    assert(out.length === 2, `pushWarningOnce 应按 key+params 去重,期望 2 条,实际 ${out.length}`);
+    // warnings 缺省时仍登记 seen(不抛错;后续同键入列同样被拒)
+    const seenOnly = new Set();
+    i18n.pushWarningOnce(seenOnly, undefined, kw);
+    assert(seenOnly.size === 1, "warnings 缺省时应登记去重键");
+
+    console.log("[ok] i18n:t() 默认/切换/插值/缺 key 回退 + formatWarning 三分支 + en 键集一致性 + warnOnce 对象去重 + 共享去重纯函数 + settings.language 校验/兜底 断言通过");
   } finally {
     // 恢复真实 settings.json(原有内容或删除),避免污染用户设置(公共助手)
     await restore();
