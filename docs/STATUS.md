@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-09-25:**封版期文档一致性回写 + 发版门禁补强**(lockfile 版本 3.10.2→3.11.5 修正、release.yml 增 tag↔package.json↔lockfile 四源校验、ROADMAP D1/F8/F9 状态回写、ACCEPTANCE 删陈旧副本、关于页更新提示 GUI 实测通过 U1-U3 关闭;typecheck/lint 全绿)
+
 - 2026-08-31:**封版暂停开发,文档全面重写完成(3.11.5 发版)**(typecheck/lint 全绿;README/README_EN/USER-GUIDE 按最新功能全面重写;版本号三统一 package.json=tag v3.11.5=CHANGELOG [3.11.5])
 
 - 2026-08-31:**封版暂停开发,文档技术债清理完成(3.11.4 发版)**(typecheck/lint/build/smoke 全绿;文档更新至最新状态;版本号三统一 package.json=tag v3.11.4=CHANGELOG [3.11.4];暂停新功能开发,专注文档维护与技术债清理)
@@ -60,7 +62,7 @@
 - 验收样例:`npm run gen:fixtures`(需先 build)按功能自动生成 `test/fixtures/acceptance/*.md`(GUI 人工实测直接拖入);`npm run check:fixtures` 漂移校验(EOL 归一化,.gitattributes 双保险;CI 门禁步骤);新增功能=测试段顶层加 `export const fixtures = { main: ... }`
 - smoke 自清理 output/smoke 临时产物(Windows 占用文件 EBUSY 容错跳过)
 - 打包:`npm run dist`(electron-builder NSIS);验证链:--dir → asar list → win-unpacked 启动存活 → 静默安装/卸载(退出码 0);打包版 `--smoke` 不可用(asar 内只读);镜像环境变量见 DEV-GUIDE
-- CI 门禁:.github/workflows/ci.yml(windows-latest node22 全量 + node20-floor 地板守卫 + check:fixtures + smoke);release.yml 含 tag↔package.json 版本校验
+- CI 门禁:.github/workflows/ci.yml(windows-latest node22 全量 + node20-floor 地板守卫 + check:fixtures + smoke);release.yml 含 tag↔package.json↔lockfile 版本校验(四源统一门禁)
 
 ## 铁律(勿回退)
 > 项目级硬约束(技术栈/镜像/字体/分页符/依赖钉死)已全部迁至项目 `AGENTS.md`「硬约束」节,以彼处为准。
@@ -71,4 +73,4 @@
 - [x] 审计整改 P0~P5 + i18n 字典拆分:人工 GUI 实测通过(2026-08-24),随 1.3.0 发版关闭
 - [x] 功能候选全部收口(批次 10:8c Mermaid / 交叉引用 / 模板导入 / 公式编号开关 / 批注 / WPS 兼容矩阵;排期 3 项全部关闭或转砍);ROADMAP「当前待办」无未关闭排期项
 - [x] 测试缺口(24 项)已全部补齐(2026-08-13);新增缺口按需入 ROADMAP
-- [x] 关于页更新提示:main 进程查 GitHub Releases latest API,关于窗开启即异步检查,版本徽章下显示状态行(检查中/已最新/发现新版本+墨色下载按钮/离线静默),i18n 三语;自动断言见 test/segments/about-update.test.js(版本比较纯函数),GUI 实测项见 ACCEPTANCE
+- [x] 关于页更新提示:main 进程查 GitHub Releases latest API,关于窗开启即异步检查,版本徽章下显示状态行(检查中/已最新/发现新版本+墨色下载按钮/离线静默),i18n 三语;自动断言见 test/segments/about-update.test.js(版本比较纯函数),GUI 实测通过(2026-09-25,ACCEPTANCE U1-U3 全勾关闭)

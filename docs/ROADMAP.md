@@ -31,7 +31,7 @@
 > 2026-08-13 整理:合并原「待办(排期)」「延后(不排批)」与批次 8/9「备选/暂缓/不做(记后续)」并去重,历史规划压缩至「已完成」节,详情见 archive 存档。
 > 2026-08-23 全库质量审计后新增「审计改进排期 B1-B14」(全部待办唯一明细在此;证据链见 archive/2026-08-23-133005)。
 > 2026-08-23 目录结构优化方案探查定稿入待办(暂缓排期,排在现有待办之后;实施前须重新探查;证据链见 archive/20260823-230554)。
-> 2026-08-31 **封版暂停开发**:版本 3.11.4 封版,暂停新功能开发,进入文档技术债清理阶段。当前待办项(D1 GUI 易用反制 AIDOC 三批)暂停排期,待后续恢复开发时继续(关于页更新提示已完成)。
+> 2026-08-31 **封版暂停开发**:版本 3.11.5 封版,暂停新功能开发,进入文档技术债清理阶段。此前待办 D1 GUI 易用反制 AIDOC 三批已随 3.10.1 完成(GUI 实测通过 2026-08-29),关于页更新提示已完成,当前无未关闭排期项(2026-09-25 状态回写)。
 
 ### 审计改进排期 B1-B14(2026-08-23,完成即勾选)
 > 原则:每项独立提交可回退;core 行为改动须补测试段断言;重构行为等价。规模:S≤3 文件 / M 中 / L 大。决策点已于 2026-08-23 全部拍板(见各条「已拍板」)。
@@ -45,7 +45,7 @@
 - [x] `about.html` 状态行 DOM + 内联样式(沿用现有配色,禁朱砂红)
 - [x] i18n 三语补齐 `about.updateChecking/updateLatest/updateAvailable/updateError/checkUpdate`
 - [x] 版本比较纯函数 `compareVersions()` 单测段 `test/segments/about-update.test.js`
-- [x] GUI 实测项见 ACCEPTANCE「关于页更新提示」
+- [x] GUI 实测项见 ACCEPTANCE「关于页更新提示」(GUI 实测通过 2026-09-25 关闭)
 - [x] docs/README.md:3 自述改「Windows 桌面应用」
 - [x] convert.ts 头注释代码高亮差异行更新(双格式均走 hljs)
 - [x] WPS-COMPAT.md 目录条目矛盾修正(非域、无需更新域)+ 矩阵状态回填
@@ -138,8 +138,8 @@
 - [x] **F7 目录带页码**(ADR-007 混合路线,部分推翻 D1;批①/批②均已完成 2026-08-28):**已完成(3.3.0,GUI 实测通过 2026-08-28 随 3.3.0 关闭)**
   - [x] **F7-① docx opt-in Word 域目录**:settings 新增 `tocMode: 'static' | 'field'`(默认 static=现状免更新静态目录);field=真实 TOC 域(beginDirty 触发 Word/WPS 打开更新、注入真实页码);双格式一致开关;`toc-caption.test.js` 补断言;UI 抽屉 L2 目录模式下拉 + i18n 三语
   - [x] **F7-② PDF 两遍法静态页码**:field 模式触发——第一遍打印经既有 /Dests 命名目标解析定位标题页码(pageNumbersForNames,与书签大纲同源,免 pdfjs 文本匹配)→ 第二遍注入目录页码 span(.toc-page 点线引导)重印;TOC 后硬分页符保正文布局一致;自动断言见 test/segments/toc-pagenum.test.js(/Dests 解析页码 + 注入一致、随文档顺序单调);WPS 行为纳入双实测
-- [x] **F8 合并总目录增强**(C2):合并已是单 convert 通路(mergeMarkdowns → convert 一次),标题/题注编号本就跨文件连续、TOC 本就覆盖全文;本项固化「合并总目录覆盖全部源文件标题 + 跨文件页码准确」(field 模式两遍法,经文件间 page-break 起新页,B 页码严格大于 A);自动断言见 test/segments/merge-toc.test.js(docx+pdf 双格式总目录覆盖 A+B 共 8 标题、PDF 跨文件页码单调且 B>A、.toc-page 注入);typecheck/lint/build/61 段/smoke 全绿;状态:完成(未发布)
-  - [x] **F9 docx 模板导入**:浅导入 v1(ADR-008)已完成——jszip 解包 .docx 提取 Normal/Heading1 样式 rPr(字体 ascii/eastAsia)+ 字号 + 文档 sectPr(页面尺寸/边距),映射回 typography/pageSetup 设置(标题样式字体优先、页面尺寸匹配纸张+朝向判定);UI 设置抽屉 01 预设·管理动作行新增「导入 Word 模板」按钮(F4 同 IA 落位),main 打开对话框→解包合并持久化→回填;颜色等深导入留后续独立候选;自动断言见 test/segments/template-import.test.js(纵向 A4+横向 Letter 两案例);typecheck/lint/build/62 段/smoke 全绿;状态:完成(未发布)
+- [x] **F8 合并总目录增强**(C2):合并已是单 convert 通路(mergeMarkdowns → convert 一次),标题/题注编号本就跨文件连续、TOC 本就覆盖全文;本项固化「合并总目录覆盖全部源文件标题 + 跨文件页码准确」(field 模式两遍法,经文件间 page-break 起新页,B 页码严格大于 A);自动断言见 test/segments/merge-toc.test.js(docx+pdf 双格式总目录覆盖 A+B 共 8 标题、PDF 跨文件页码单调且 B>A、.toc-page 注入);typecheck/lint/build/61 段/smoke 全绿;状态:已完成(随 3.4.0 发布)
+  - [x] **F9 docx 模板导入**:浅导入 v1(ADR-008)已完成——jszip 解包 .docx 提取 Normal/Heading1 样式 rPr(字体 ascii/eastAsia)+ 字号 + 文档 sectPr(页面尺寸/边距),映射回 typography/pageSetup 设置(标题样式字体优先、页面尺寸匹配纸张+朝向判定);UI 设置抽屉 01 预设·管理动作行新增「导入 Word 模板」按钮(F4 同 IA 落位),main 打开对话框→解包合并持久化→回填;颜色等深导入留后续独立候选;自动断言见 test/segments/template-import.test.js(纵向 A4+横向 Letter 两案例);typecheck/lint/build/62 段/smoke 全绿;状态:已完成(随 3.5.0 发布)
 
 #### 记录不排期(2026-08-25 用户裁定)
 - B2 HTML 白名单扩展(块级标签+受控属性)、HTML 导出第三格式、frontmatter 元数据扩展——有价值但未入选本轮,后续可重新提案
@@ -202,12 +202,12 @@
   - 自动断言：stepper 状态机纯函数可单测；转换通路复用现有 merge 断言；封面 docx 封面节 / pdf 封面模板断言
   - 设计文档：`docs/design/book-wizard.md`（UI/交互稿已定稿；含剪贴板直转按钮）
 
-#### D1 GUI 易用反制 AIDOC（防御主题；2026-08-29 从 ROADMAP-CANDIDATES 晋升，规划即契约）
+#### D1 GUI 易用反制 AIDOC（防御主题；2026-08-29 从 ROADMAP-CANDIDATES 晋升，规划即契约；三批均已完成，随 3.10.1 发布，GUI 实测通过 2026-08-29）
 > 来源：ROADMAP-CANDIDATES D1（GUI 易用反制 AIDOC，综合 65，防御）。目标：持续打磨零配置/向导化，预设默认即正确、复杂能力藏进向导，区隔 AIDOC Station 配置复杂（竞品研判：注入式强依赖 Word/WPS 宿主、配置面宽；我方独立生成 .docx + 合理默认 + 向导化占优）。每批独立提交可回退；GUI 面走 ACCEPTANCE 人工实测。
 
-- [ ] **预设扩面覆盖交付链**（M,P1；反转「页眉页脚/水印 不入预设」决策）：`TemplatePreset` 增可选 `headerFooter`/`watermark`/`equationNumbering`/`breakBeforeH1`；6 个内置预设补 sane 值（页眉页脚默认=标题居中+页码、水印空、编号按场景）；`matchesPreset`/`PRESET_COMPARE_FIELDS` 同步；`applyTemplatePreset`(settings-bindings.ts:225)合并新字段（不碰 toc/tocMode/自定义预设）；`presetCoveredGroupLabels` 增组；i18n `settings.presetScopeNote`/`settings.watermarkNote` 更新；自动断言见 test/segments/presets.test.js（字段命中矩阵 + 套用生效）
-- [ ] **向导补全高频复杂项**（M-L,P1；依赖预设扩面）：成书向导 step 增边距/字体微调入口/标题档位/编号开关/输出目录/afterConvert/页眉 logo 选择（复用 settings-bindings 控件）；全程不进 35 控件抽屉即可产出复杂成书；GUI 实测
-- [ ] **首次启动引导**（M,P2；依赖上两项）：renderer 首启 tour 或增强空态（引导「选预设→向导→转换」），firstRun 持久化、可跳过、尊重 prefers-reduced-motion；GUI 实测
+- [x] **预设扩面覆盖交付链**（M,P1；反转「页眉页脚/水印 不入预设」决策）：`TemplatePreset` 增可选 `headerFooter`/`watermark`/`equationNumbering`/`breakBeforeH1`；6 个内置预设补 sane 值（页眉页脚默认=标题居中+页码、水印空、编号按场景）；`matchesPreset`/`PRESET_COMPARE_FIELDS` 同步；`applyTemplatePreset`(settings-bindings.ts:225)合并新字段（不碰 toc/tocMode/自定义预设）；`presetCoveredGroupLabels` 增组；i18n `settings.presetScopeNote`/`settings.watermarkNote` 更新；自动断言见 test/segments/presets.test.js（字段命中矩阵 + 套用生效）
+- [x] **向导补全高频复杂项**（M-L,P1；依赖预设扩面）：成书向导 step 增边距/字体微调入口/标题档位/编号开关/输出目录/afterConvert/页眉 logo 选择（复用 settings-bindings 控件）；全程不进 35 控件抽屉即可产出复杂成书；GUI 实测
+- [x] **首次启动引导**（M,P2；依赖上两项）：renderer 首启 tour 或增强空态（引导「选预设→向导→转换」），firstRun 持久化、可跳过、尊重 prefers-reduced-motion；GUI 实测
 
 ## 已完成(历史规划压缩;详情见 CHANGELOG 对应版本与 archive 存档)
 
