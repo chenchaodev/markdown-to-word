@@ -2,7 +2,7 @@
  * i18n 多语言注册表守护段(方案A 字典拆分改造):
  * 经 dist 断言(与既有段一致),覆盖四类回归面:
  * (a) 键集包含关系:en 键集 = zh 键集(satisfies 全量约束的运行期冒烟);
- *     各 Partial 语言(ja)键集 ⊆ zh 键集(多键即编译期已报错,此处防运行期漂移)
+ *     ja 键集 ⊆ zh(编译期 satisfies 已锁全量,此处防运行期漂移)
  * (b) 回退链行为:当前语言 → en → key——ja 已全量翻译(无天然缺口),改为断言
  *     全字典级不变量:ja 下遍历全部 zh 键 t() 永不返回裸 key(en 全量兜底);
  *     另保留两级均缺失分支(formatWarning fallback / t 裸 key)断言
@@ -38,9 +38,9 @@ export async function run() {
     zhKeys.length === enKeys.length && zhKeys.every((k, i) => k === enKeys[i]),
     `en 键集应与 zh 全等,zh 独有=${JSON.stringify(zhKeys.filter((k) => !enKeys.includes(k)))},en 独有=${JSON.stringify(enKeys.filter((k) => !zhKeys.includes(k)))}`,
   );
-  const partialCodes = LANGUAGES.map((l) => l.code).filter((c) => c !== "zh" && c !== "en");
+  const otherCodes = LANGUAGES.map((l) => l.code).filter((c) => c !== "zh" && c !== "en");
   const coverage = {};
-  for (const code of partialCodes) {
+  for (const code of otherCodes) {
     const extra = Object.keys(DICT[code]).filter((k) => !zhKeys.includes(k));
     assert(extra.length === 0, `${code} 字典不应有 zh 之外的键,多出=${JSON.stringify(extra)}`);
     coverage[code] = Object.keys(DICT[code]).length;
@@ -56,7 +56,7 @@ export async function run() {
     }
   }
   console.log(
-    `[ok] i18n-registry:(a) en=zh 全量(${zhKeys.length} 键);Partial 语言键集 ⊆ zh 且占位符一致 ${JSON.stringify(coverage)} 断言通过`,
+    `[ok] i18n-registry:(a) en=zh 全量(${zhKeys.length} 键);其余语言键集 ⊆ zh 且占位符一致 ${JSON.stringify(coverage)} 断言通过`,
   );
 
   // ================= (b) 回退链行为(当前语言 → en → key) =================

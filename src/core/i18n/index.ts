@@ -3,8 +3,8 @@
  * - LANGUAGES:有序注册表(zh/en 在前),语言选项/校验/htmlLang 映射全部由此派生,
  *   新增语言 = 新建字典文件 + 在此登记一项,不再散落硬编码
  * - Language:由注册表派生的联合类型(消灭 "zh" | "en" 硬编码)
- * - DICT:聚合字典对象,供逻辑层(i18n.ts)查表;zh 全量(键集唯一事实源)、
- *   en 全量(satisfies 锁定)、ja Partial(缺失键走回退链)
+ * - DICT:聚合字典对象,供逻辑层(i18n.ts)查表;zh/en/ja 三语全量
+ *   (en/ja 由各自 satisfies 键集锁定,缺失键编译报错)
  * 未知语言码经 settings 校验兜底回退 zh(兼容已移除语言的存量用户配置)。
  */
 import { dict as zh, type Dict } from "./zh.js";
@@ -24,7 +24,8 @@ export const LANGUAGES = [
 /** 语言代码联合类型(由注册表派生,勿手写) */
 export type Language = (typeof LANGUAGES)[number]["code"];
 
-/** 聚合字典:zh/en 全量,其余 Partial(缺失键由回退链兜底,见 i18n.ts tByKey) */
+/** 聚合字典:三语全量(编译期 satisfies 键集锁定);运行期查表未知 key 的
+ *  回退语义(当前语言 → en → key)由 i18n.ts tByKey 兜底 */
 export const DICT: Record<Language, Partial<Record<Dict, string>>> = {
   zh,
   en,

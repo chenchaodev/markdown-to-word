@@ -1,11 +1,11 @@
 /**
  * 界面多语言(i18n)逻辑层:main + renderer 共享的纯模块。
- * 字典与语言注册表在 ./i18n/(zh.ts 键集唯一事实源,en.ts satisfies 全量,
- * ja Partial;index.ts 为 LANGUAGES/DICT 注册表单一事实源),
+ * 字典与语言注册表在 ./i18n/(zh.ts 键集唯一事实源,en/ja 均 satisfies 全量;
+ * index.ts 为 LANGUAGES/DICT 注册表单一事实源),
  * 本模块 re-export DICT/I18nKey/Language 保持既有 import 面不变。
  * - 参数插值:t("key", { error }) 模板用 ${error} 占位(与既有模板字符串一致)
- * - 回退链:当前语言 → en → key(zh 为源语言永不全缺;en 全量约束由编译期锁定;
- *   Partial 语言缺失键回退 en 文案而非裸 key)
+ * - 回退链:当前语言 → en → key(zh 为源语言永不全缺;en/ja 全量由编译期锁定,
+ *   回退仅对运行期查表遇到的未知 key 生效,字典层无缺口)
  * - 缺失 key(两级均无):回退返回 key 本身(不抛错)
  * - applyStaticTexts:遍历 [data-i18n] / [data-i18n-placeholder] / [data-i18n-title] /
  *   [data-i18n-aria-label] 替换静态文案(仅 renderer 调用;main 进程 import 本模块

@@ -1,7 +1,7 @@
 /**
  * 中文字典(键集唯一事实源):Dict 类型 = keyof typeof dict,i18n.t() 的 key
- * 编译期约束由此派生;en.ts 以 satisfies Record<Dict,string> 锁定全量,
- * 其余语言 Partial<Dict> 缺失键走回退链(当前语言 → en → key)。
+ * 编译期约束由此派生;en/ja.ts 均以 satisfies Record<Dict,string> 锁定全量,
+ * 运行期未知 key(如外部写入)走回退链(当前语言 → en → key)。
  * - zh 值 = 现有文案原文逐字保留(默认行为等价,既有测试断言不变)
  * - key 按模块前缀命名:convert.stage.read / dialog.complete.title / menu.file 等
  * - 原 settings.langZh/langEn 两键随「语言选项由 LANGUAGES 注册表动态生成」移除

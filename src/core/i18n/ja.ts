@@ -1,11 +1,13 @@
 /**
- * 日文字典:Partial<Dict>,缺失键由回退链兜底(当前语言 → en → key)。
+ * 日文字典:zh.ts 键集的全量映射(satisfies Record<Dict,string> 编译期锁定,
+ * 缺键/多键均编译报错)。回退链(当前语言 → en → key)仅对运行期外部写入的
+ * 未知 key 生效,字典本身不允许出现缺口——防止新增 zh 键漏译时静默回退英文。
  * 插值占位符 ${name} 原样保留;warn.crossRefNotFound / warn.unsupportedBlockInContainer
  * 的 kind/blockType/container 参数为推送期中文类别词,文案口径与 en 一致(省略或保留插值)。
  */
 import type { Dict } from "./zh.js";
 
-const dict: Partial<Record<Dict, string>> = {
+const dict = {
     /* ---------- アプリ / ウィンドウ ---------- */
     "app.title": "Markdown 変換ツール",
     "app.versionTitle": "Markdown 変換ツール v${version}",
@@ -500,6 +502,6 @@ const dict: Partial<Record<Dict, string>> = {
     "guide.step2Hint": "任意",
     "guide.step3": "変換",
     "guide.dismiss": "わかりました",
-};
+} satisfies Record<Dict, string>;
 
 export { dict };
