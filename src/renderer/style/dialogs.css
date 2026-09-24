@@ -78,7 +78,7 @@
   font-size: 28px;
   line-height: 1;
   transform: rotate(-6deg);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28), 0 8px 20px var(--acc-ring);
+  box-shadow: inset 0 0 0 2px var(--seal-ring), 0 8px 20px var(--acc-ring);
   animation: stamp-in 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.18) both;
 }
 

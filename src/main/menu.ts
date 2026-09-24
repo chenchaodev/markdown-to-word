@@ -2,7 +2,7 @@
  * 应用菜单组合根:文件(打开文件…/退出)菜单,菜单项只做转发/胶水,不复刻业务逻辑。
  * 不变量:「关于」入口经标题栏按钮(renderer → about:open IPC),不走帮助菜单;退出用 role(平台默认行为)。
  */
-import { app, BrowserWindow, Menu, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, ipcMain, nativeTheme } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { t } from "../core/i18n.js";
@@ -33,6 +33,15 @@ function openFromAppMenu(): void {
   mainWindow.webContents.send(CH.menuOpen);
 }
 
+/** 关于窗原生底色(light/dark;色值与渲染层 --canvas 基准一致,base.css 为色值
+ *  单源,main 无法 import CSS,按 title-bar-overlay 同款「基准一致」口径维护)。
+ *  关于窗内容随系统深浅(about.html @media prefers-color-scheme,不读应用主题偏好),
+ *  底色须与内容同源,故创建时经 nativeTheme 解析——勿改取应用主题,会与页面脱节。 */
+const ABOUT_WINDOW_BG = {
+  light: "#F1F1EE",
+  dark: "#15181D",
+} as const;
+
 /** 菜单「关于」:应用名 + 版本(app.getVersion())+ 简短说明。 */
 function showAboutDialog(): void {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -51,7 +60,7 @@ function showAboutDialog(): void {
     modal: true,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: "#F1F1EE",
+    backgroundColor: ABOUT_WINDOW_BG[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
     webPreferences: {
       preload,
       contextIsolation: true,

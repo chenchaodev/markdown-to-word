@@ -39,11 +39,14 @@
   --solid-fg: #fbfbf9;
   --scrim: rgba(13, 14, 17, 0.42);
   --on-acc: #ffffff; /* 朱砂/墨色实心上的文字 */
+  --seal-ring: rgba(255, 255, 255, 0.28); /* 钤印内环白线(三处钤印共用,勿写回字面量) */
+  --switch-knob: #ffffff; /* switch 拨钮白点(深色块取近白降刺眼) */
   --grain-op: 0.05; /* 纸张颗粒不透明度(mockup §2 body::after) */
 
-  /* 阴影两档 */
+  /* 阴影:card/pop 两档 + 抽屉侧投影 */
   --shadow-card: 0 1px 2px rgba(24, 25, 28, 0.05), 0 2px 6px rgba(24, 25, 28, 0.04);
   --shadow-pop: 0 18px 50px rgba(15, 16, 20, 0.22);
+  --shadow-drawer: -20px 0 50px rgba(10, 11, 14, 0.2);
 
   /* 形状:窗口 12 / 卡片·抽屉 10 / 按钮 8(sm 7)/ 输入件 7 / 胶囊 999 / 文稿台 3 */
   --radius-win: 12px;
@@ -95,6 +98,7 @@ html[data-theme="dark"] {
   --solid-bg-h: #f6f4ef;
   --solid-fg: #16181d;
   --scrim: rgba(5, 6, 8, 0.58);
+  --switch-knob: #eef0f2;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.5);
   --grain-op: 0.07;
@@ -128,6 +132,7 @@ html[data-theme="dark"] {
     --solid-bg-h: #f6f4ef;
     --solid-fg: #16181d;
     --scrim: rgba(5, 6, 8, 0.58);
+    --switch-knob: #eef0f2;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25);
     --shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.5);
     --grain-op: 0.07;
@@ -277,7 +282,7 @@ svg.ic {
   font-family: var(--font-display);
   font-size: 13px;
   line-height: 1;
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 0 0 1.5px var(--seal-ring);
 }
 
 .tb-name {
@@ -991,13 +996,9 @@ svg.ic {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--switch-knob);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: transform 0.16s ease;
-}
-
-html[data-theme="dark"] .switch-input::after {
-  background: #eef0f2;
 }
 
 .switch-input:checked {
