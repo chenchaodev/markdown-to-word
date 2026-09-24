@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 B 批完成**(B1 about 外链 IPC 收口 channels 单源+镜像恒等;B3 ja 字典 satisfies 全量锁 441 键;B4 令牌破例清零[新增 --switch-knob/--seal-ring/--shadow-drawer]+关于窗底色随系统主题;B2+A5 关于窗 sandbox:true+CSP 与主窗同口径[一次性脚本 13 项断言];B5 深色双块恒等断言段,段数 69→70;typecheck/lint/70 段全绿+ui:shots 双主题抽查;**待人工实测**:ACCEPTANCE「关于窗沙箱与 CSP 验收记录」3 项)
+
 - 2026-09-25:**技术债 A 批完成**(A1 段数订正 STATUS/ci.yml→69 段;A2 沉没债补登记 ROADMAP「已知限制」:契约类型归位 core+test 段归位;A3 coverage/tmp 残留清理;A4 G1-G9 盘点全部关闭[G1-G8 断言证据齐全,G9 维持不补,关闭记录入 RESEARCH+候选池 E2];A5 关于窗 CSP 随 B2;纯文档提交,typecheck/lint 基线见下条)
 
 - 2026-09-25:**封版期文档一致性回写 + 发版门禁补强**(lockfile 版本 3.10.2→3.11.5 修正、release.yml 增 tag↔package.json↔lockfile 四源校验、ROADMAP D1/F8/F9 状态回写、ACCEPTANCE 删陈旧副本、关于页更新提示 GUI 实测通过 U1-U3 关闭;typecheck/lint 全绿;代码分析四路盘点落盘 archive 原文+RESEARCH 摘要+README 登记,处置计划 docs/TECH-DEBT-PLAN.md)
