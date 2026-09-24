@@ -65,7 +65,9 @@ function showAboutDialog(): void {
       preload,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // 沙箱勿回退:about-preload 仅 require electron 白名单 API(与主窗 preload
+      // 同约束);需要 Node API 先过安全评估,别直接关 sandbox
+      sandbox: true,
     },
   });
   void win.loadFile(aboutUrl, { query: { v: app.getVersion() } });

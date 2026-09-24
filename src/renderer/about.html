@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=520, initial-scale=1.0">
+  <!-- CSP 与主窗同口径(index.html):脚本全外部('self'),样式含内联块(unsafe-inline),
+       页面无 img/字体 url,链接点击经 about.js preventDefault → IPC 外开 -->
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'"
+  />
   <title data-i18n="about.aboutTitle"></title>
   <script src="lang-bootstrap.js"></script>
   <style>
