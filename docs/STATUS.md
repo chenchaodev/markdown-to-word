@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-09-25:**发版 3.11.7 完成**(技术债 D 批六项结构重构随版发布;四源同号 package.json=lockfile=tag v3.11.7=CHANGELOG [3.11.7];typecheck/lint/build/70 段/smoke 全绿;GitHub Release 资产 MarkdownToWord-Setup-3.11.7.exe + latest.yml,Release 四源门禁与 CI 流水线均 success;发版内容仅对话框位置记忆一处用户可感知改进,其余为内部重构)
 - 2026-09-25:**技术债 D 批(结构重构)六项全部关闭,`docs/TECH-DEBT-PLAN.md` 已回写**:六项独立提交 `fdd132f`(D5 段归位)→`9b57dee`(D6 对话框样板)→`07ee67a`(D4/C5 契约归位)→`fb4c70e`(D3 pdf 模板三拆)→`06a3bd2`(D2 settings 六组拆线)→`b3d7d83`(D1 向导三块拆分),每项 typecheck/lint/build/70 段/smoke 全绿;**GUI 实测已通过(2026-09-25,ACCEPTANCE 两处复测记录回写,无未关闭项)**;E 批(E1-E5)待恢复开发,决策点仅剩 E2
 
 - 2026-09-25:**技术债 D1 完成(`book-wizard.ts` 967 行按「步骤渲染/校验/提交」三块拆五文件)**:`wizard-steps.ts`(408 行,版式四步:模板/封面/页眉页脚/水印 + 封面实时预览与封面控件引用)、`wizard-steps-delivery.ts`(273 行,交付三步:合并源/目录/付印 + 合并源数据操作与当前步渲染 `renderStep`——与 syncSources 互调同岛落位,拆分以依赖无环优先)、`wizard-fields.ts`(180 行,「校验」块:边距/字号/行距/字体钳制校验绑定 + h/radio/开关行等共用零件)、`wizard-runtime.ts`(35 行,草稿/模态容器/步序单例——ESM 导入绑定只读,赋值经 resetDraft/setStep/setWizardEl 收口,避免单例留外壳成环)、`book-wizard.ts`(219 行,外壳/导航/打开关闭 + 「付印提交」节 cleanMetadata/finishWizard);机械化等价核对:差异仅 import 重排/函数 export 化/setter 收口/局部 el 收窄,函数体零行为漂移;外部契约不变(`openBookWizard`/`closeBookWizard` 导出与三处消费点零改动);DEV-GUIDE 代码地图同步;typecheck/lint/build/70 段/smoke 全绿;向导 GUI 实测随 D 批收尾统一走 ACCEPTANCE
