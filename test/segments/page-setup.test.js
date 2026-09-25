@@ -19,8 +19,10 @@ import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import {
+  DEFAULT_PAGE_SETUP,
   MARGIN_MAX_MM,
   MIN_PAGE_CONTENT_MM,
+  correctPageSetup,
   validatePageSetup,
 } from "../../dist/core/settings/settings-defaults.js";
 
@@ -147,6 +149,65 @@ export async function run() {
   }
   console.log("[ok] 页面几何 validator:五纸张×两方向/0 边距/内容宽高计算断言通过");
 
+  // 3.1.1 core 单一纠正策略:合法值原样、双边超限按固定最小修正规则确定性收敛。
+  const legalCorrection = correctPageSetup({
+    paper: "A4", orientation: "portrait", marginTop: 20, marginBottom: 30, marginLeft: 15, marginRight: 40,
+  });
+  if (legalCorrection.corrected || JSON.stringify(legalCorrection.pageSetup) !== JSON.stringify({
+    paper: "A4", orientation: "portrait", marginTop: 20, marginBottom: 30, marginLeft: 15, marginRight: 40,
+  })) {
+    throw new Error("合法页面设置应原样通过 core 纠正策略");
+  }
+  const bothVertical = correctPageSetup({
+    paper: "A4", orientation: "portrait", marginTop: 200, marginBottom: 200, marginLeft: 10, marginRight: 10,
+  });
+  if (
+    bothVertical.pageSetup.marginTop !== 96 ||
+    bothVertical.pageSetup.marginBottom !== 200 ||
+    !bothVertical.reasons.includes("insufficient-content")
+  ) {
+    throw new Error(`双边纵向超限应仅削减溢出总量,保留 top=96/bottom=200:${JSON.stringify(bothVertical)}`);
+  }
+  const bothHorizontal = correctPageSetup({
+    paper: "A4", orientation: "portrait", marginTop: 10, marginBottom: 10, marginLeft: 200, marginRight: 200,
+  });
+  if (
+    bothHorizontal.pageSetup.marginLeft !== 9 ||
+    bothHorizontal.pageSetup.marginRight !== 200
+  ) {
+    throw new Error(`双边横向超限应仅削减溢出总量,保留 left=9/right=200:${JSON.stringify(bothHorizontal)}`);
+  }
+  const firstOverCapacity = correctPageSetup({
+    paper: "A4", orientation: "portrait", marginTop: 400, marginBottom: 400, marginLeft: 0, marginRight: 0,
+  });
+  if (
+    firstOverCapacity.pageSetup.marginTop !== 0 ||
+    firstOverCapacity.pageSetup.marginBottom !== 296
+  ) {
+    throw new Error("第一边不足以独自吸收溢出时应归零并从第二边扣除剩余量");
+  }
+  const minimalOverflow = correctPageSetup({
+    paper: "A4", orientation: "portrait", marginTop: 150, marginBottom: 200, marginLeft: 10, marginRight: 10,
+  });
+  if (minimalOverflow.pageSetup.marginTop !== 96 || minimalOverflow.pageSetup.marginBottom !== 200) {
+    throw new Error(`150/200 双边超限应仅削减 54mm，不应无谓清零:${JSON.stringify(minimalOverflow)}`);
+  }
+  const invalidEnums = correctPageSetup({
+    paper: "B5", orientation: "sideways", marginTop: "bad", marginBottom: -1, marginLeft: 0, marginRight: 0,
+  });
+  if (
+    invalidEnums.pageSetup.paper !== "A4" ||
+    invalidEnums.pageSetup.orientation !== "portrait" ||
+    invalidEnums.pageSetup.marginTop !== 25 ||
+    invalidEnums.pageSetup.marginBottom !== 0 ||
+    !invalidEnums.reasons.includes("invalid-paper") ||
+    !invalidEnums.reasons.includes("invalid-orientation") ||
+    !invalidEnums.reasons.includes("invalid-margin")
+  ) {
+    throw new Error(`非法枚举/边距应逐字段回退并报告原因:${JSON.stringify(invalidEnums)}`);
+  }
+  console.log("[ok] core 页面纠正策略:合法原样/双边超限确定性最小修正/非法字段原因断言通过");
+
   // 3.2 最小内容区:恰好达到下限通过，略低、零/负内容区与越界边距拒绝
   const atMinimum = validatePageSetup({
     paper: "A5",
@@ -265,6 +326,28 @@ export async function run() {
     if (!rejected) throw new Error(`${format} core 渲染边界应拒绝零内容区页面设置`);
   }
   console.log("[ok] 页面几何 validator:docx/pdf 独立渲染边界一致拒绝断言通过");
+
+  const invalidPaperErrors = [];
+  for (const format of ["docx", "pdf"]) {
+    try {
+      await convert(md, format, {
+        baseDir: FIXTURES_DIR,
+        warnings: [],
+        pageSetup: { ...DEFAULT_PAGE_SETUP, paper: "A6" },
+      });
+    } catch (error) {
+      invalidPaperErrors.push(error);
+    }
+  }
+  if (
+    invalidPaperErrors.length !== 2 ||
+    !(invalidPaperErrors[0] instanceof RangeError) ||
+    !(invalidPaperErrors[1] instanceof RangeError) ||
+    invalidPaperErrors[0].message !== invalidPaperErrors[1].message
+  ) {
+    throw new Error(`PDF 必须在纸张尺寸计算前复用 DOCX validator 错误契约:${JSON.stringify(invalidPaperErrors.map((error) => String(error)))}`);
+  }
+  console.log("[ok] PDF 渲染边界:validatePageSetup 先于纸张计算且 DOCX/PDF 错误契约一致");
 
   // 4. 分页符产物(pdf 侧中间 html):
   //    <!-- page-break --> → <div class="page-break"></div>

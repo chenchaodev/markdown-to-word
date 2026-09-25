@@ -24,17 +24,21 @@ import {
   DEFAULT_SETTINGS,
   MAX_CUSTOM_PRESETS,
   TEMPLATE_PRESETS,
+  correctPageSetup,
 } from "../../dist/core/settings/settings-defaults.js";
 import {
   CUSTOM_PRESET_ID_PREFIX,
   allPresets,
+  applySettingsRuntimeEffects,
   applyThemeOn,
   buildCustomPresetEntry,
   clampMargin,
   customPresetNameFromId,
   customPresetToTemplate,
   mergeSettingsWithDefaults,
+  normalizePageSetup,
   outputDirDisplayText,
+  reconcileSettingsSave,
   parseMarginValue,
   removeCustomPresetByName,
   resolvePresetHint,
@@ -206,7 +210,162 @@ export async function run() {
     mergeSettingsWithDefaults({ theme: "dark" }).theme === "dark",
     "显式 theme=dark 应保留",
   );
-  console.log("[ok] mergeSettingsWithDefaults:完整透传/显式字段保留/缺字段默认兜底/部分字段合并/theme 兜底 断言通过");
+  const invalidGeometry = mergeSettingsWithDefaults({
+    pageSetup: { ...DEFAULT_SETTINGS.pageSetup, marginBottom: 1000 },
+  });
+  assert(
+    invalidGeometry.pageSetup.marginTop === 0 && invalidGeometry.pageSetup.marginBottom === 296,
+    "IPC 防御性合并遇到非法几何应复用 core 确定性修正(top=0/bottom=296)",
+  );
+  let mergePageError = null;
+  mergeSettingsWithDefaults(
+    { pageSetup: { ...DEFAULT_SETTINGS.pageSetup, marginBottom: 1000 } },
+    (message) => { mergePageError = message; },
+  );
+  assert(typeof mergePageError === "string", "merge 发现非法几何时应上送可见错误");
+  console.log("[ok] mergeSettingsWithDefaults:完整透传/显式字段保留/缺字段默认兜底/部分字段合并/theme 兜底/非法几何回退 断言通过");
+
+  // ---------- normalizePageSetup(复用 core validatePageSetup 的 renderer 输入防线) ----------
+  const validPage = normalizePageSetup({
+    ...DEFAULT_SETTINGS.pageSetup,
+    paper: "A5",
+    marginLeft: 30,
+    marginRight: 30,
+  });
+  assert(
+    validPage.corrected === false && validPage.error === null && validPage.pageSetup.paper === "A5",
+    "合法页面设置应原样通过且无错误",
+  );
+  const invalidA4 = normalizePageSetup({
+    ...DEFAULT_SETTINGS.pageSetup,
+    marginBottom: 1000,
+  });
+  assert(
+    invalidA4.corrected === true &&
+      typeof invalidA4.error === "string" &&
+      invalidA4.error.includes("页面内容区") &&
+      invalidA4.pageSetup.marginTop === 0 &&
+      invalidA4.pageSetup.marginBottom === 296,
+    "A4 下边距 1000 应由 core 几何策略修正并提供可见错误",
+  );
+  const invalidA5 = normalizePageSetup({
+    ...DEFAULT_SETTINGS.pageSetup,
+    paper: "A5",
+    marginLeft: 74,
+    marginRight: 74,
+  });
+  assert(
+    invalidA5.corrected === true &&
+      invalidA5.pageSetup.paper === "A5" &&
+      invalidA5.pageSetup.marginLeft === 73 &&
+      invalidA5.pageSetup.marginRight === 74,
+    "A5 零内容区应按 core 策略确定性修正，不得把非法几何写入 renderer 状态",
+  );
+  console.log("[ok] normalizePageSetup:core validator 合法透传/非法几何回退+可见错误 断言通过");
+
+  // partial pageSetup patch 与 main sanitize 一样以 fallback=当前值合并。
+  const partialPage = normalizePageSetup(
+    { paper: "A5" },
+    { ...DEFAULT_SETTINGS.pageSetup, marginTop: 11, marginBottom: 12, marginLeft: 13, marginRight: 14 },
+  );
+  assert(
+    partialPage.corrected === false &&
+      partialPage.pageSetup.paper === "A5" &&
+      partialPage.pageSetup.marginTop === 11 &&
+      partialPage.pageSetup.marginBottom === 12 &&
+      partialPage.pageSetup.marginLeft === 13 &&
+      partialPage.pageSetup.marginRight === 14,
+    "partial pageSetup 应复用当前 fallback，不得重置未提供边距",
+  );
+  const sameCorrection = normalizePageSetup({
+    paper: "A4", orientation: "portrait", marginTop: 200, marginBottom: 200, marginLeft: 10, marginRight: 10,
+  });
+  const coreCorrection = correctPageSetup({
+    paper: "A4", orientation: "portrait", marginTop: 200, marginBottom: 200, marginLeft: 10, marginRight: 10,
+  });
+  assert(
+    JSON.stringify(sameCorrection.pageSetup) === JSON.stringify(coreCorrection.pageSetup) &&
+      JSON.stringify(sameCorrection.reasons) === JSON.stringify(coreCorrection.reasons),
+    "renderer normalize 与 core 纠正策略应对非法几何输出完全一致",
+  );
+  let migrationWarning = null;
+  let migrationWarningCount = 0;
+  const migrationLoaded = {
+    ...DEFAULT_SETTINGS,
+    pageSetup: { ...DEFAULT_SETTINGS.pageSetup, marginBottom: 1000 },
+    migration: {
+      kind: "page-setup-correction",
+      id: "test-page-setup-warning-1",
+      original: { marginBottom: 1000 },
+      corrected: { ...DEFAULT_SETTINGS.pageSetup, marginTop: 0, marginBottom: 296 },
+      reasons: ["insufficient-content"],
+      message: "旧页面几何已自动修正",
+      persistence: "scheduled",
+    },
+  };
+  const onMigrationWarning = (message) => {
+    migrationWarning = message;
+    migrationWarningCount += 1;
+  };
+  mergeSettingsWithDefaults(migrationLoaded, onMigrationWarning);
+  mergeSettingsWithDefaults(migrationLoaded, onMigrationWarning);
+  assert(
+    migrationWarning === "旧页面几何已自动修正" && migrationWarningCount === 1,
+    "同一 migration 应交给 renderer 用户提示一次，不能重复显示 scheduled warning",
+  );
+  console.log("[ok] renderer normalize/merge:partial fallback/core 恒等/结构化迁移 warning 去重断言通过");
+
+  // 保存失败回滚：依赖注入证明 state/控件共用的 apply 收到 main cache。
+  let applied = null;
+  let failureShown = false;
+  const fallbackSettings = { ...DEFAULT_SETTINGS, format: "docx" };
+  const failedSave = await reconcileSettingsSave({
+    save: async () => { throw new Error("disk full"); },
+    loadAuthoritative: async () => ({ ...DEFAULT_SETTINGS, format: "pdf" }),
+    fallback: () => fallbackSettings,
+    isCurrent: () => true,
+    apply: (settings) => { applied = settings; },
+    onFailure: () => { failureShown = true; },
+  });
+  const failedControls = settingsToControlValues(applied);
+  assert(
+    failedSave === "failed" && applied?.format === "pdf" &&
+      failedControls.format === "pdf" && failedControls.paper === "A4" && failureShown,
+    "保存失败应把 main cache 同步给 state/控件并显示错误",
+  );
+  let fallbackApplied = null;
+  const failedReload = await reconcileSettingsSave({
+    save: async () => { throw new Error("disk full"); },
+    loadAuthoritative: async () => { throw new Error("ipc unavailable"); },
+    fallback: () => fallbackSettings,
+    isCurrent: () => true,
+    apply: (settings) => { fallbackApplied = settings; },
+    onFailure: () => {},
+  });
+  assert(
+    failedReload === "failed" && fallbackApplied === fallbackSettings,
+    "main cache 读取失败时应回滚到最近确认的 renderer 权威快照",
+  );
+  console.log("[ok] reconcileSettingsSave:失败回滚到 main cache/最近快照断言通过");
+
+  const runtimeEffects = [];
+  applySettingsRuntimeEffects(
+    { ...DEFAULT_SETTINGS, format: "pdf", language: "en", theme: "dark" },
+    {
+      setSelectedFormat: (format) => runtimeEffects.push(["format", format]),
+      setLanguage: (language) => runtimeEffects.push(["language", language]),
+      mirrorLanguage: (language) => runtimeEffects.push(["mirror", language]),
+      applyStaticTexts: () => runtimeEffects.push(["texts"]),
+      applyTheme: (theme) => runtimeEffects.push(["theme", theme]),
+    },
+  );
+  assert(
+    JSON.stringify(runtimeEffects) === JSON.stringify([
+      ["format", "pdf"], ["language", "en"], ["mirror", "en"], ["texts"], ["theme", "dark"],
+    ]),
+    "权威设置副作用应同步 selectedFormat/语言/语言镜像/静态文案/主题",
+  );
+  console.log("[ok] applySettingsRuntimeEffects:selectedFormat/语言/主题副作用断言通过");
 
   // ---------- resolvePresetHint(回填 hint 计算) ----------
   const paperTplHint = TEMPLATE_PRESETS.find((p) => p.id === "paper").hint;

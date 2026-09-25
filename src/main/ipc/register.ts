@@ -9,6 +9,8 @@ import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { BatchProgressInfo, BatchResult, ConvertMode, PrecheckResult, UiState } from "../../core/ipc-contract.js";
 import { t } from "../../core/i18n.js";
 import { precheckMarkdown } from "../../core/markdown/precheck.js";
+import type { ConvertWarning } from "../../core/i18n.js";
+import { prepareMarkdown } from "../converter/preprocess.js";
 import {
   buildPresetsExportPayload,
   buildRecentFileEntries,
@@ -45,7 +47,7 @@ import {
 } from "../converter/index.js";
 import { getKatexDir } from "../services/resource-dirs.js";
 import { importDocxTemplate } from "../../core/docx/template-import.js";
-import { parseFrontmatter, type DocMetadata } from "../../core/pipeline/frontmatter.js";
+import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { getMainWindow } from "../windows/main-window.js";
 import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
 import { IPC_CHANNELS as CH } from "./channels.js";
@@ -246,17 +248,18 @@ export function registerIpc(): void {
         event,
         "precheck",
         async () => {
-          let content: string;
-          try {
-            content = await fs.readFile(filePath, "utf8");
-          } catch {
-            return [];
-          }
-          return precheckMarkdown(content, path.dirname(filePath));
+          const warnings: ConvertWarning[] = [];
+          const prepared = await prepareMarkdown(filePath, loadSettings(), warnings);
+          return [
+            ...warnings,
+            ...precheckMarkdown(prepared.body, path.dirname(filePath)),
+          ];
         },
         () => [],
         () => ({ ok: false, busy: true, error: t("convert.stage.converting") }),
       );
+      // 不可读/读取失败不扩大既有 PrecheckResult 契约:与转换前缺失文件一致返回
+      // 空 warning 数组;busy 仍透传为 OperationBusyResult。
       if (Array.isArray(result) || ("busy" in result && result.busy)) return result;
       return [];
     },
@@ -357,12 +360,13 @@ export function registerIpc(): void {
     },
   );
 
-  // 读取单文件 frontmatter 元数据(向导封面预填用):返回解析出的 metadata
+  // 读取单文件 frontmatter 元数据(向导封面预填用):走统一文件准备链,
+  // 覆盖 GBK/UTF-16 解码与 frontmatter 隔离;读取失败仍沿用空 metadata 降级。
   ipcMain.handle(CH.readFrontmatter, async (_event, filePath: unknown): Promise<DocMetadata> => {
     if (!isString(filePath)) return {};
     try {
-      const text = await fs.readFile(filePath, "utf8");
-      return parseFrontmatter(text).metadata;
+      const prepared = await prepareMarkdown(filePath, loadSettings());
+      return prepared.metadata;
     } catch {
       return {};
     }

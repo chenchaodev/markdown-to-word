@@ -29,7 +29,7 @@ import hljs from "highlight.js/lib/common";
 import {
   DEFAULT_PAGE_SETUP,
   mmToPx,
-  PAPER_SIZES_MM,
+  validatePageSetup,
   type PageSetup,
 } from "../settings/settings-defaults.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
@@ -184,6 +184,8 @@ export async function renderPdfHtml(
   options: RenderPdfHtmlOptions,
 ): Promise<string> {
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
+  // 必须在任何纸张尺寸/内容区计算前执行；与 DOCX 侧共用同一错误契约。
+  const pageGeometry = validatePageSetup(pageSetup);
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
   // 两个编号开关提前计算:core 规则(xref_recognize)与模板 CSS 共用同一取值
   const headingNumbering = options.headingNumbering ?? typography.headingNumbering;
@@ -201,12 +203,7 @@ export async function renderPdfHtml(
   const localImageSrcs: string[] = [];
   // 正文内容区宽(px,96dpi)= 内容区 mm ÷ 25.4 × 96(landscape 视觉宽度为
   // 纸高,与 docx 侧 textWidthTwips 同口径);height 百分比属性换算基准
-  const paper = PAPER_SIZES_MM[pageSetup.paper];
-  const contentWidthPx = mmToPx(
-    (pageSetup.orientation === "landscape" ? paper.height : paper.width) -
-      pageSetup.marginLeft -
-      pageSetup.marginRight,
-  );
+  const contentWidthPx = mmToPx(pageGeometry.contentWidthMm);
   overrideImageRule(md, options.baseDir, localImageSrcs, contentWidthPx);
   // 独立成段图片段落挂 fig-image 类(模板 CSS 居中),与 docx 侧同契约
   overrideFigureRule(md);

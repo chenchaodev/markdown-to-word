@@ -17,6 +17,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import iconv from "iconv-lite";
 import { app, ipcMain } from "electron";
 import { registerIpc } from "../../dist/main/ipc/register.js";
 import { IPC_CHANNELS as CH } from "../../dist/main/ipc/channels.js";
@@ -47,6 +48,7 @@ export async function run() {
   const expected = [
     CH.fileOpenDialog, CH.fileCollectMarkdown, CH.fileFilterExisting, CH.dirSelect,
     CH.convertSingle, CH.convertBatch, CH.convertMerge, CH.convertCancel, CH.convertPrecheck,
+    CH.readFrontmatter,
     CH.presetsImport, CH.presetsExport, CH.cssImport,
     CH.settingsGet, CH.settingsSet, CH.uiStateGet, CH.uiStateSet,
     CH.appVersion, CH.shellRevealInFolder, CH.shellOpenPath,
@@ -139,6 +141,39 @@ export async function run() {
       "filterExisting 应保序保留存在路径、剔除缺失",
     );
     console.log("[ok] ipc-register:fileFilterExisting 保序剔除缺失 断言通过");
+
+    // ---- 5b. readFrontmatter 走统一准备链:UTF-8/GBK/UTF-16 与 frontmatter 双链 ----
+    const frontmatter = "---\r\ntitle: [[你好世界]]\r\nauthor: 作者\r\n---\r\n\r\n[[正文]]\r\n";
+    const frontmatterPath = path.join(tmpDir, "frontmatter.md");
+    await fs.writeFile(frontmatterPath, frontmatter, "utf8");
+    const gbkFrontmatterPath = path.join(tmpDir, "frontmatter-gbk.md");
+    await fs.writeFile(gbkFrontmatterPath, iconv.encode(frontmatter, "gbk"));
+    const utf16LeFrontmatterPath = path.join(tmpDir, "frontmatter-utf16le.md");
+    await fs.writeFile(
+      utf16LeFrontmatterPath,
+      Buffer.concat([Buffer.from([0xff, 0xfe]), iconv.encode(frontmatter, "utf-16le")]),
+    );
+    const utf16BeFrontmatterPath = path.join(tmpDir, "frontmatter-utf16be.md");
+    await fs.writeFile(
+      utf16BeFrontmatterPath,
+      Buffer.concat([Buffer.from([0xfe, 0xff]), iconv.encode(frontmatter, "utf-16be")]),
+    );
+    for (const filePath of [frontmatterPath, gbkFrontmatterPath, utf16LeFrontmatterPath, utf16BeFrontmatterPath]) {
+      const metadata = await handlers.get(CH.readFrontmatter)(fakeEvent, filePath);
+      assert(
+        metadata.title === "[[你好世界]]" && metadata.author === "作者",
+        `readFrontmatter 编码/双链解析失败:${filePath}`,
+      );
+    }
+
+    // ---- 5c. precheck 缺文件/读取失败仍返回空数组,不扩大 PrecheckResult ----
+    const missingPrecheck = await handlers.get(CH.convertPrecheck)(fakeEvent, path.join(tmpDir, "missing.md"));
+    const directoryPrecheck = await handlers.get(CH.convertPrecheck)(fakeEvent, tmpDir);
+    assert(
+      Array.isArray(missingPrecheck) && missingPrecheck.length === 0 &&
+        Array.isArray(directoryPrecheck) && directoryPrecheck.length === 0,
+      "precheck 缺文件/读取失败应保持空 warning 数组契约",
+    );
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }

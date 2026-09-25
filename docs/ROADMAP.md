@@ -5,7 +5,7 @@
 
 ## 当前待办
 
-- **全库代码优化计划（已确认，七阶段执行中）**：按 `docs/OPTIMIZATION-PLAN.md` 与 `docs/OPTIMIZATION-CHECKLIST.md` 推进；D-01～D-12 已裁决，阶段 0/1 部分完成，阶段 2 仅完成 core 子单元；阶段 3 未开始（红测试草稿不计入实现），后续严格按 checklist 门禁推进。
+- **全库代码优化计划（已确认，七阶段执行中）**：按 `docs/OPTIMIZATION-PLAN.md` 与 `docs/OPTIMIZATION-CHECKLIST.md` 推进；D-01～D-12 已裁决，阶段 2A（准备链、几何迁移、D-03 路径边界）已通过 `verify:ci`；OPT-2.3 输出原子提交与 D-03 媒体预算仍待办；阶段 3 未开始（红测试草稿不计入实现）；下一阶段从阶段 0 首个未满足 checklist 项重启。
   - 排期原则：每项独立提交可回退；core 行为改动须补测试段断言；重构行为等价；GUI 面走 ACCEPTANCE 人工实测。规模口径 S/M/L 见 `BACKLOG.md`。
 
 ## 已完成（倒序）

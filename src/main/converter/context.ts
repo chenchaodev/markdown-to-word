@@ -6,6 +6,7 @@
  * 依赖方向:single/batch/merge 反向 import 本模块,本模块不依赖三者(无环)。
  */
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { ConvertContext as CoreConvertContext } from "../../core/convert.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import type { ImageResolver } from "../../core/image/image-resolver.js";
@@ -18,7 +19,7 @@ import type { MermaidResolver } from "../../core/markdown/mermaid.js";
 import { createImageResolver } from "../services/image-downloader.js";
 import type { AppSettings } from "../persist/settings.js";
 
-/** 批量共享 imageResolver:按 baseDir 缓存,HTTP 去重缓存跨文件生效。
+/** 批量共享 imageResolver:按解析 baseDir + trusted roots 组合键缓存,HTTP 去重缓存跨文件生效。
  *  容量上限(超限淘汰最早条目)——长会话跨多目录使用时不再单调增长。 */
 const RESOLVER_CACHE_MAX = 16;
 const resolverCache = new Map<string, ImageResolver>();
@@ -64,15 +65,26 @@ export function throwIfCanceled(ctx: ConvertContext): void {
   if (ctx.cancelRequested) throw new ConvertCanceledError();
 }
 
-export function getImageResolver(baseDir: string): ImageResolver {
-  let resolver = resolverCache.get(baseDir);
+export interface ImageResolverOptions {
+  /** 额外的输入源目录;解析 baseDir 与允许读取的 trusted roots 分离。 */
+  trustedRoots?: readonly string[];
+}
+
+function imageResolverCacheKey(baseDir: string, trustedRoots: readonly string[]): string {
+  return JSON.stringify([path.resolve(baseDir), [...trustedRoots].map((root) => path.resolve(root)).sort()]);
+}
+
+export function getImageResolver(baseDir: string, options: ImageResolverOptions = {}): ImageResolver {
+  const trustedRoots = [...new Set((options.trustedRoots ?? []).map((root) => path.resolve(root)))];
+  const cacheKey = imageResolverCacheKey(baseDir, trustedRoots);
+  let resolver = resolverCache.get(cacheKey);
   if (!resolver) {
     if (resolverCache.size >= RESOLVER_CACHE_MAX) {
       const oldest = resolverCache.keys().next().value;
       if (oldest !== undefined) resolverCache.delete(oldest);
     }
-    resolver = createImageResolver(baseDir);
-    resolverCache.set(baseDir, resolver);
+    resolver = createImageResolver(baseDir, undefined, { trustedRoots });
+    resolverCache.set(cacheKey, resolver);
   }
   return resolver;
 }

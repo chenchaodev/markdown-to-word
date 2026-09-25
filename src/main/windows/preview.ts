@@ -8,9 +8,9 @@ import { BrowserWindow, screen } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { convert } from "../../core/convert.js";
-import { decodeMarkdown } from "../../core/util/encoding.js";
 import { escapeHtml } from "../../core/util/utils.js";
-import { t } from "../../core/i18n.js";
+import { formatWarning, t } from "../../core/i18n.js";
+import type { ConvertWarning } from "../../core/i18n.js";
 import { createImageResolver } from "../services/image-downloader.js";
 import { baseNameFromMdPath, errorMessage } from "../ipc/logic.js";
 import { loadSettings } from "../persist/settings.js";
@@ -18,6 +18,7 @@ import { loadUiState, pickWindowBounds, saveUiState } from "../persist/ui-state.
 import type { WindowBounds } from "../../core/ipc-contract.js";
 import { writeTempHtml } from "../services/temp-html.js";
 import { buildConvertContext } from "../converter/index.js";
+import { prepareMarkdown } from "../converter/preprocess.js";
 import { getKatexDir } from "../services/resource-dirs.js";
 import { renderMermaid } from "../services/mermaid-service.js";
 import { hardenWebContents } from "../services/web-hardening.js";
@@ -40,10 +41,16 @@ export const previews = new Set<PreviewEntry>();
 /** 预览渲染:读 md → convert("pdf") 复用 PDF 排版 HTML(打开与刷新共用同一路径)。 */
 async function renderPreviewHtml(mdPath: string): Promise<string> {
   const settings = await loadSettings();
-  const { text: md } = decodeMarkdown(await fs.readFile(mdPath));
+  const warnings: ConvertWarning[] = [];
+  const prepared = await prepareMarkdown(mdPath, settings, warnings);
+  // 预览没有转换结果 warning 回传通道;明确写入主进程 warning sink,避免编码
+  // 提示静默丢失,也不把非致命编码提示升级为预览失败。
+  for (const warning of warnings) {
+    console.warn(`[preview] ${formatWarning(warning)}`);
+  }
   const baseName = baseNameFromMdPath(mdPath);
   const artifact = await convert(
-    md,
+    prepared.markdown,
     "pdf",
     await buildConvertContext({
       baseDir: path.dirname(mdPath),

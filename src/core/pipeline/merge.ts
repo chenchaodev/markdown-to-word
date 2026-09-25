@@ -2,8 +2,8 @@
  * 多文件合并(main 侧 convert:merge 的纯逻辑层;无 IO,可单测)。
  * 规则(设计评审定稿):
  * - 首文件的 frontmatter 保留原样;后续文件的 frontmatter 剥离(仅取 body,metadata 丢弃)
- * - 每文件图片相对路径 → 绝对路径(基于各自 baseDir;围栏/行内代码块内不改写);
- *   http(s):/data:/绝对路径原样保留
+ * - 每文件图片相对路径 → 相对合并输出 baseDir 的安全引用;围栏/行内代码块内不改写;
+ *   http(s):/data:/file:/UNC/用户绝对路径原样保留,交给下游安全策略判定
  * - 文件间以 `\n\n<!-- page-break -->\n\n` 拼接(上一文件尾部已有显式分页符时
  *   改用普通空行拼接,防相邻两个分页符产生空白页)
  * - 空文件(trim 后)跳过,不产生空段
@@ -14,6 +14,11 @@ import { parseFrontmatter } from "./frontmatter.js";
 export interface MergeInput {
   content: string;
   baseDir: string;
+}
+
+export interface MergeOptions {
+  /** 合并后文档的逻辑 baseDir;图片引用以此为基准生成相对路径。 */
+  outputBaseDir?: string;
 }
 
 /** 文件间分隔:显式分页符(渲染层已支持,勿改语法) */
@@ -30,19 +35,18 @@ function endsWithPageBreak(text: string): boolean {
  * 组 1=alt,组 2=src,组 3=可选 title(含前导空白,替换时原样保留)。
  * 已知限制:引用式图片 ![alt][ref] 语法不在本正则范围内(不匹配,原样保留,不处理)。
  */
-// src 组用非捕获内组 (?:...) 包住量词,避免重复捕获组只留最后一次迭代(组 2 须为完整 src)
+// src 组用非捕获内组 (?:...) 包住量词,避免重复捕获组(组 2 须为完整 src)
 const IMAGE_RE = /!\[([^\]]*)\]\(((?:[^()\s]|\([^)]*\))+)(\s+["'][^"']*["'])?\)/g;
 
-export function mergeMarkdowns(files: MergeInput[]): string {
+export function mergeMarkdowns(files: MergeInput[], options: MergeOptions = {}): string {
+  const outputBaseDir = options.outputBaseDir ?? files[0]?.baseDir;
   const parts: string[] = [];
   files.forEach((file, index) => {
-    let text = file.content;
-    if (index > 0) {
-      // 后续文件剥离 frontmatter(拼接文本层面移除,metadata 丢弃)
-      text = parseFrontmatter(text).body;
-    }
-    text = absolutizeImages(text, file.baseDir);
-    text = text.trim();
+    const parsed = splitFrontmatter(file.content);
+    // 首文件 frontmatter 原样保护;后续文件只取 body。只 trim body,
+    // 避免 frontmatter 的前导空格、换行和图片语法被 merge 改写。
+    const body = rebaseImages(parsed.body, file.baseDir, outputBaseDir ?? file.baseDir).trim();
+    const text = index === 0 ? parsed.frontmatter + body : body;
     if (!text) return; // 空文件跳过,不产生空段
     parts.push(text);
   });
@@ -59,24 +63,48 @@ export function mergeMarkdowns(files: MergeInput[]): string {
   return merged;
 }
 
-  /** 相对路径图片 src → 绝对路径;URL / data: / 绝对路径原样保留(替换时保留 title 部分)。
-   *  修复:win32 的 path.resolve 输出反斜杠绝对路径,markdown-it 链接规范化会把
-   *  反斜杠 URL 编码(%5C)且盘符丢失,导致后续 file:// 解析失败图片不显示(单文件链路
-   *  不走本函数故不受影响)——统一转正斜杠,跨平台安全。
-   *  围栏代码块与行内代码内的示例图片语法不改写(此前全文替换污染展示内容)。
-   *  实现:先以占位符摘除代码区(围栏含未闭合至文末、行内成对反引号),替换后还原。 */
-function absolutizeImages(md: string, baseDir: string): string {
+interface SplitFrontmatter {
+  frontmatter: string;
+  body: string;
+}
+
+function splitFrontmatter(md: string): SplitFrontmatter {
+  const parsed = parseFrontmatter(md);
+  return {
+    frontmatter: md.slice(0, md.length - parsed.body.length),
+    body: parsed.body,
+  };
+}
+
+/**
+ * 相对路径图片 src → 相对 outputBaseDir;外部/绝对路径原样保留。
+ * merge 生成的是新的文档上下文,内部改写不能再制造 D-03 会拒绝的绝对路径。
+ * 围栏代码块与行内代码内的示例图片语法不改写;实现先摘除代码区,替换后还原。
+ */
+function rebaseImages(md: string, sourceBaseDir: string, outputBaseDir: string): string {
   const vault: string[] = [];
   const stash = (s: string): string => `\u0000${vault.push(s) - 1}\u0000`;
   let work = md.replace(
-    /(^|\n)[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n[ \t]*\2(?=[\s]*(\n|$))|$)/g,
+    /(^|\n)[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n[ \t]*\2(?=[ \s]*(\n|$))|$)/g,
     (m) => stash(m),
   );
   work = work.replace(/`[^`\n]+`/g, (m) => stash(m));
   work = work.replace(IMAGE_RE, (match, alt: string, src: string, title: string | undefined) => {
-    if (/^(https?:|data:)/i.test(src) || path.isAbsolute(src)) return match;
-    const abs = path.resolve(baseDir, src).replace(/\\/g, "/");
-    return `![${alt}](${abs}${title ?? ""})`;
+    if (isExternalOrAbsoluteSource(src)) return match;
+    const absolute = path.resolve(sourceBaseDir, src);
+    const relativePath = path.relative(path.resolve(outputBaseDir), absolute).replace(/\\/g, "/");
+    const relative = relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+    return `![${alt}](${relative}${title ?? ""})`;
   });
   return work.replace(/\u0000(\d+)\u0000/g, (_, i: string) => vault[Number(i)] ?? "");
+}
+
+/** Windows drive/UNC、POSIX 根路径和带协议 URL 都不是 merge 内部可改写的相对引用。 */
+function isExternalOrAbsoluteSource(src: string): boolean {
+  return (
+    /^[a-z][a-z\d+.-]*:/i.test(src) ||
+    path.isAbsolute(src) ||
+    path.posix.isAbsolute(src) ||
+    path.win32.isAbsolute(src)
+  );
 }

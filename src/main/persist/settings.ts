@@ -2,10 +2,12 @@
  * 应用设置持久化:userData/settings.json(手写实现,不引 electron-store)。
  * 模块级内存缓存 + 惰性加载:首次 loadSettings 读盘,之后读缓存;
  * 因此 app.getPath("userData") 天然只在 app.whenReady 之后才被调用。
- * 文件损坏(JSON parse 失败或形状非法)→ 返回默认值,不写盘。
- * 回退策略(与 ui-state.ts 的差异是有意的,勿对齐):settings 为「整文件回退」——
- * 任一字段非法即整体回退 DEFAULT_SETTINGS(核心配置契约,宁可全默认也不半保留);
- * ui-state.ts 为「字段级宽松回退」——UI 状态损坏只丢对应字段(见 ui-state.ts 头注释)。
+ * 文件损坏(JSON parse 失败或非 pageSetup 字段形状非法)→ 返回默认值,不写盘；
+ * pageSetup 非法则只迁移该块并保留其它用户设置，纠正结果经 IPC 瞬时 warning 交给
+ * renderer，同时排入原子写队列固化。
+ * 回退策略(与 ui-state.ts 的差异是有意的,勿对齐):settings 的非 pageSetup
+ * 字段为「整文件回退」——任一字段非法即整体回退 DEFAULT_SETTINGS；ui-state.ts
+ * 为「字段级宽松回退」——UI 状态损坏只丢对应字段(见 ui-state.ts 头注释)。
  * 写入经 promise 链串行化(saveSettings 写队列):并发调用不会交错写同一
  * tmp 文件,调用序 = 写盘序,链尾即最终态(防并发丢更新)。
  * 契约(AppSettings 类型/DEFAULT_SETTINGS/范围常量)收敛于 core/settings-defaults.ts,
@@ -17,8 +19,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createJsonWriter } from "./atomic-json.js";
 // 页面设置契约单源(settings-defaults;原经 core/convert.js 导入形成环,已解环)
-import type { PageSetup } from "../../core/settings/settings-defaults.js";
-import { DEFAULT_PAGE_SETUP } from "../../core/settings/settings-defaults.js";
+import type {
+  PageSetup,
+  PageSetupCorrectionResult,
+  SettingsMigrationNotice,
+} from "../../core/settings/settings-defaults.js";
+import { correctPageSetup, DEFAULT_PAGE_SETUP } from "../../core/settings/settings-defaults.js";
 import type { TypographySettings } from "../../core/settings/typography.js";
 import {
   DEFAULT_TYPOGRAPHY,
@@ -29,8 +35,6 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_HEADER_FOOTER,
   DEFAULT_WATERMARK,
-  MARGIN_MIN_MM,
-  MARGIN_MAX_MM,
   MAX_CUSTOM_PRESETS,
   type AppSettings,
   type CustomPreset,
@@ -43,8 +47,6 @@ export { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings
 const SETTINGS_FILE_NAME = "settings.json";
 const FORMATS = ["docx", "pdf"] as const;
 const AFTER_CONVERT_ACTIONS = ["none", "show-in-folder", "open"] as const;
-const PAPERS = ["A4", "A3", "A5", "Letter", "Legal"] as const;
-const ORIENTATIONS = ["portrait", "landscape"] as const;
 const ALIGNS = ["left", "justify"] as const;
 const THEMES = ["system", "light", "dark"] as const;
 const TOC_MODES = ["static", "field"] as const;
@@ -78,6 +80,48 @@ let settingsCache: AppSettings | null = null;
 /** 原子写 + 写队列(共享工具,见 atomic-json.ts;独立队列,与 ui-state 互不串扰) */
 const writeSettingsJson = createJsonWriter();
 
+/** migration 仅供 IPC 瞬时消费;写盘前必须从完整设置剥离。 */
+function persistedSettings(settings: AppSettings): AppSettings {
+  const persisted = { ...settings };
+  delete persisted.migration;
+  return persisted;
+}
+
+function warnPageSetupCorrection(
+  result: PageSetupCorrectionResult,
+  context: "load" | "update",
+): void {
+  if (!result.corrected || !result.message) return;
+  console.warn(
+    `[settings] ${context} pageSetup 已自动修正:${result.message}${JSON.stringify(result.pageSetup)}`,
+  );
+}
+
+function schedulePageSetupMigration(
+  settings: AppSettings,
+  migration: SettingsMigrationNotice,
+): void {
+  // 必须进入同一写队列，并在真正执行时取最新 cache，不能把 load 时的旧完整
+  // 快照排在后续 update 之前写回；否则迁移写成功但会把用户刚改的字段覆盖掉。
+  void writeSettingsJson.enqueue(async (write) => {
+    const current = settingsCache ?? settings;
+    const persisted = persistedSettings(current);
+    try {
+      await write(settingsFilePath(), persisted, () => {
+        if (settingsCache?.migration === migration) {
+          settingsCache.migration.persistence = "committed";
+        }
+      });
+    } catch (error: unknown) {
+      if (settingsCache?.migration === migration) {
+        settingsCache.migration.persistence = "failed";
+      }
+      // renderer 已收到 migration；这里再留持久化失败日志，禁止静默吞错。
+      console.error("[settings] pageSetup 迁移结果写盘失败", error);
+    }
+  });
+}
+
 function settingsFilePath(): string {
   return path.join(app.getPath("userData"), SETTINGS_FILE_NAME);
 }
@@ -96,9 +140,10 @@ function isValidOutputDir(value: unknown): value is string {
 }
 
 /**
- * 整文件形状校验:任一字段非法即视为损坏,整体回退默认。
- * 导出供直测:loadSettings 的「整文件回退」语义由本函数判定,测试直接断言
- * 合法/非法输入,不依赖磁盘 IO。
+ * 整文件形状校验:非 pageSetup 字段任一非法即视为损坏,整体回退默认；
+ * pageSetup 非法交由 core correctPageSetup 做字段级迁移。
+ * 导出供直测:loadSettings 的「整文件回退 + pageSetup 迁移」语义由本函数判定,
+ * 测试直接断言合法/非法输入,不依赖磁盘 IO。
  */
 export function isValidSettings(value: unknown): value is AppSettings {
   if (typeof value !== "object" || value === null) return false;
@@ -126,18 +171,8 @@ export function isValidSettings(value: unknown): value is AppSettings {
   if ("aiCleanup" in s && typeof s.aiCleanup !== "boolean") return false;
   if ("obsidianCompat" in s && typeof s.obsidianCompat !== "boolean") return false;
   if ("obsidianAttachmentFolder" in s && typeof s.obsidianAttachmentFolder !== "string") return false;
-  const ps = s.pageSetup as Record<string, unknown> | undefined;
-  if (typeof ps !== "object" || ps === null) return false;
-  if (!isOneOf(ps.paper, PAPERS)) return false;
-  if (!isOneOf(ps.orientation, ORIENTATIONS)) return false;
-  if (
-    !isFiniteNumber(ps.marginTop) ||
-    !isFiniteNumber(ps.marginBottom) ||
-    !isFiniteNumber(ps.marginLeft) ||
-    !isFiniteNumber(ps.marginRight)
-  ) {
-    return false;
-  }
+  // pageSetup 整块交由 core correctPageSetup 迁移：非法 paper/orientation/几何只
+  // 修正该块，不能让旧配置连带丢失其它用户设置。
   return true;
 }
 
@@ -153,11 +188,28 @@ export function loadSettings(): AppSettings {
     const raw = readFileSync(settingsFilePath(), "utf8");
     const parsed: unknown = JSON.parse(raw);
     if (isValidSettings(parsed)) {
-      // typography 不参与整文件形状校验:旧 settings.json 缺该字段时,
-      // 其余设置保留,typography 经 sanitize 自然落到默认,不报错
-      // outputDir 同理:缺失(旧文件)→ 兜底 ""
+      // pageSetup 由 core 唯一纯策略纠正；其它旧字段仍按原策略逐项兜底。
+      const pageSetupCorrection = correctPageSetup(parsed.pageSetup);
+      warnPageSetupCorrection(pageSetupCorrection, "load");
+      const migration: SettingsMigrationNotice | undefined = pageSetupCorrection.corrected
+        ? {
+            kind: "page-setup-correction",
+            id: JSON.stringify({
+              original: parsed.pageSetup,
+              corrected: pageSetupCorrection.pageSetup,
+              reasons: pageSetupCorrection.reasons,
+            }),
+            original: parsed.pageSetup,
+            corrected: pageSetupCorrection.pageSetup,
+            reasons: pageSetupCorrection.reasons,
+            message: pageSetupCorrection.message ?? "页面设置已自动修正。",
+            persistence: "scheduled",
+          }
+        : undefined;
       loaded = {
         ...parsed,
+        pageSetup: pageSetupCorrection.pageSetup,
+        ...(migration ? { migration } : {}),
         outputDir: isValidOutputDir(parsed.outputDir) ? parsed.outputDir : "",
         toc: typeof parsed.toc === "boolean" ? parsed.toc : DEFAULT_SETTINGS.toc,
         // tocMode 缺失(旧文件)→ "static";存在 → 原样保留(枚举已过形状校验)
@@ -191,6 +243,8 @@ export function loadSettings(): AppSettings {
             ? parsed.obsidianAttachmentFolder
             : DEFAULT_SETTINGS.obsidianAttachmentFolder,
       };
+      if (!migration) delete loaded.migration;
+      if (migration) schedulePageSetupMigration(loaded, migration);
     }
   } catch {
     // 缺文件 / 读取失败 / parse 失败 → 默认值(不写盘)
@@ -204,9 +258,10 @@ export function loadSettings(): AppSettings {
  *  这样并发不同字段 patch 不会因“队列外读旧缓存”互相覆盖;失败向调用方抛出,
  *  不提交缓存,后续队列任务仍可继续。 */
 export async function saveSettings(next: AppSettings): Promise<void> {
+  const persisted = persistedSettings(next);
   await writeSettingsJson.enqueue(async (write) => {
-    await write(settingsFilePath(), next, () => {
-      settingsCache = next;
+    await write(settingsFilePath(), persisted, () => {
+      settingsCache = persisted;
     });
   });
 }
@@ -214,7 +269,11 @@ export async function saveSettings(next: AppSettings): Promise<void> {
 /** 合并 + 持久化 + 返回;patch 按 DEFAULT_SETTINGS 键白名单校验,非法值回退默认。 */
 export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
   return writeSettingsJson.enqueue(async (write) => {
-    const next: AppSettings = { ...loadSettings(), ...sanitizePatch(patch) };
+    const current = loadSettings();
+    const next: AppSettings = {
+      ...persistedSettings(current),
+      ...sanitizePatch(patch, current),
+    };
     await write(settingsFilePath(), next, () => {
       settingsCache = next;
     });
@@ -222,7 +281,7 @@ export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSe
   });
 }
 
-function sanitizePatch(patch: unknown): Partial<AppSettings> {
+function sanitizePatch(patch: unknown, current: AppSettings): Partial<AppSettings> {
   if (typeof patch !== "object" || patch === null || Array.isArray(patch)) return {};
   const src = patch as Record<string, unknown>;
   const out: Partial<AppSettings> = {};
@@ -260,7 +319,7 @@ function sanitizePatch(patch: unknown): Partial<AppSettings> {
         out.outputDir = isValidOutputDir(src.outputDir) ? src.outputDir : DEFAULT_SETTINGS.outputDir;
         break;
       case "pageSetup": {
-        const pageSetup = sanitizePageSetup(src.pageSetup);
+        const pageSetup = sanitizePageSetup(src.pageSetup, current.pageSetup, "update");
         if (pageSetup) out.pageSetup = pageSetup;
         break;
       }
@@ -461,20 +520,19 @@ export function mergePresets(
   return { presets, imported, overridden };
 }
 
-/** pageSetup 逐字段校验:paper/orientation 枚举,数值钳制 0-1000mm,非法字段回退默认 */
-function sanitizePageSetup(value: unknown): PageSetup | undefined {
+/**
+ * 持久化侧 pageSetup 入口:仅委托 core 唯一纠正策略。
+ * 非对象 patch 视为未提供；对象 patch 以 current 合并语义交给策略，缺边距不重置。
+ */
+function sanitizePageSetup(
+  value: unknown,
+  fallback: PageSetup = DEFAULT_PAGE_SETUP,
+  context?: "load" | "update",
+): PageSetup | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const ps = value as Record<string, unknown>;
-  const out: PageSetup = { ...DEFAULT_PAGE_SETUP };
-  if (isOneOf(ps.paper, PAPERS)) out.paper = ps.paper;
-  if (isOneOf(ps.orientation, ORIENTATIONS)) out.orientation = ps.orientation;
-  const clamp = (v: unknown, fallback: number): number =>
-    isFiniteNumber(v) ? Math.min(MARGIN_MAX_MM, Math.max(MARGIN_MIN_MM, v)) : fallback;
-  out.marginTop = clamp(ps.marginTop, DEFAULT_PAGE_SETUP.marginTop);
-  out.marginBottom = clamp(ps.marginBottom, DEFAULT_PAGE_SETUP.marginBottom);
-  out.marginLeft = clamp(ps.marginLeft, DEFAULT_PAGE_SETUP.marginLeft);
-  out.marginRight = clamp(ps.marginRight, DEFAULT_PAGE_SETUP.marginRight);
-  return out;
+  const result = correctPageSetup(value, fallback);
+  if (context) warnPageSetupCorrection(result, context);
+  return result.pageSetup;
 }
 
 /**

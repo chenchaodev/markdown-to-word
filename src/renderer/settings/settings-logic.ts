@@ -12,9 +12,12 @@ import {
   MARGIN_MIN_MM,
   MAX_CUSTOM_PRESETS,
   TEMPLATE_PRESETS,
+  correctPageSetup,
   matchesPreset,
   type AppSettings,
   type CustomPreset,
+  type PageSetup,
+  type PageSetupCorrectionResult,
   type TemplatePreset,
   type ThemePreference,
 } from "../../core/settings/settings-defaults.js";
@@ -22,6 +25,37 @@ import { t } from "../../core/i18n.js";
 
 /** 自定义预设下拉 id 前缀(选中/删除判定与 id 解析共用)。 */
 export const CUSTOM_PRESET_ID_PREFIX = "custom:";
+
+/** 同一迁移在 main cache→renderer 多次同步时只显示一次 warning。 */
+const shownMigrationWarnings = new Set<string>();
+
+function migrationWarningKey(migration: NonNullable<AppSettings["migration"]>): string {
+  return migration.id ?? JSON.stringify({
+    original: migration.original,
+    corrected: migration.corrected,
+    reasons: migration.reasons,
+  });
+}
+
+export interface SettingsRuntimeEffects {
+  setSelectedFormat(format: AppSettings["format"]): void;
+  setLanguage(language: AppSettings["language"]): void;
+  mirrorLanguage(language: AppSettings["language"]): void;
+  applyStaticTexts(): void;
+  applyTheme(theme: AppSettings["theme"]): void;
+}
+
+/** 设置权威值的运行时副作用单源;保存失败回滚与成功收敛都必须走此顺序。 */
+export function applySettingsRuntimeEffects(
+  settings: AppSettings,
+  effects: SettingsRuntimeEffects,
+): void {
+  effects.setSelectedFormat(settings.format);
+  effects.setLanguage(settings.language);
+  effects.mirrorLanguage(settings.language);
+  effects.applyStaticTexts();
+  effects.applyTheme(settings.theme);
+}
 
 /**
  * 预设名校验(另存为弹窗):空名/同名/达上限 → 错误文案;合法 → null。
@@ -92,6 +126,25 @@ export function resolvePresetSelection(
 
 /* ---------- loadSettings / applySettingsToControls / 预设保存删除 / 输入校验 ---------- */
 
+/** renderer normalize 直接返回 core 纠正契约,仅以 error 保留旧调用面字段名。 */
+export type NormalizedPageSetup = PageSetupCorrectionResult & {
+  /** @deprecated 兼容既有 renderer 调用面;值与 message 相同。 */
+  error: string | null;
+};
+
+/**
+ * renderer 页面设置防线:委托 core 唯一纠正策略。
+ * fallback 默认为 DEFAULT_PAGE_SETUP；partial pageSetup patch 传当前 pageSetup 后，
+ * 未提供的边距沿用当前值，不会重置为默认。
+ */
+export function normalizePageSetup(
+  value: unknown,
+  fallback: PageSetup = DEFAULT_SETTINGS.pageSetup,
+): NormalizedPageSetup {
+  const result = correctPageSetup(value, fallback);
+  return { ...result, error: result.message };
+}
+
 /**
  * 设置对象与默认值防御性合并(loadSettings:旧版本设置缺字段时按默认值兜底)。
  * 双源显式化:main 侧 loadSettings 已保证返回完整合法 AppSettings,本函数是
@@ -99,23 +152,84 @@ export function resolvePresetSelection(
  * 必须一致(theme/outputDir/pdfCss 等缺失兜底两边各写一遍,改动须双侧同步);
  * 恒等断言由 test 侧守护段落地。
  */
-export function mergeSettingsWithDefaults(loaded: Partial<AppSettings>): AppSettings {
-  return {
+export function mergeSettingsWithDefaults(
+  loaded: Partial<AppSettings>,
+  onPageSetupError?: (error: string) => void,
+): AppSettings {
+  const source = loaded ?? {};
+  const pageSetup = normalizePageSetup(source.pageSetup);
+  const migration = source.migration;
+  if (migration?.kind === "page-setup-correction") {
+    if (onPageSetupError) {
+      const key = migrationWarningKey(migration);
+      if (!shownMigrationWarnings.has(key)) {
+        shownMigrationWarnings.add(key);
+        onPageSetupError(migration.message);
+      }
+    }
+  } else if (pageSetup.error) {
+    onPageSetupError?.(pageSetup.error);
+  }
+  const merged: AppSettings = {
     ...DEFAULT_SETTINGS,
-    ...loaded,
-    outputDir: loaded.outputDir ?? DEFAULT_SETTINGS.outputDir,
-    pageSetup: { ...DEFAULT_SETTINGS.pageSetup, ...loaded.pageSetup },
-    typography: { ...DEFAULT_SETTINGS.typography, ...loaded.typography },
+    ...source,
+    outputDir: source.outputDir ?? DEFAULT_SETTINGS.outputDir,
+    pageSetup: pageSetup.pageSetup,
+    typography: { ...DEFAULT_SETTINGS.typography, ...source.typography },
     // headerFooter 逐字段深合并——旧档缺整块或缺单字段均按默认兜底,
     // 与 main 侧 sanitizeHeaderFooter 语义一致(双侧防御)
-    headerFooter: { ...DEFAULT_SETTINGS.headerFooter, ...loaded.headerFooter },
+    headerFooter: { ...DEFAULT_SETTINGS.headerFooter, ...source.headerFooter },
     // watermark 逐字段深合并(同 headerFooter 先例)
-    watermark: { ...DEFAULT_SETTINGS.watermark, ...loaded.watermark },
-    customPresets: loaded.customPresets ?? DEFAULT_SETTINGS.customPresets,
-    pdfCss: loaded.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
+    watermark: { ...DEFAULT_SETTINGS.watermark, ...source.watermark },
+    customPresets: source.customPresets ?? DEFAULT_SETTINGS.customPresets,
+    pdfCss: source.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
     // theme 缺失(旧 settings.json)→ "system"(显式 null/undefined 同样兜底)
-    theme: loaded.theme ?? DEFAULT_SETTINGS.theme,
+    theme: source.theme ?? DEFAULT_SETTINGS.theme,
   };
+  // migration 是 main→renderer 的瞬时提示，不进入 renderer 设置状态或后续 patch。
+  delete merged.migration;
+  return merged;
+}
+
+export type SettingsSaveOutcome = "saved" | "failed" | "superseded";
+
+/** 保存协调器的依赖注入契约;apply 同时负责同步 renderer state 与全部控件回填。 */
+export interface SettingsSaveReconciler<T> {
+  save(): Promise<T>;
+  loadAuthoritative(): Promise<T>;
+  fallback(): T;
+  isCurrent(): boolean;
+  apply(settings: T): void;
+  onFailure(): void;
+}
+
+/**
+ * 设置保存事务协调:成功后用 main 返回值覆盖 renderer；失败后读取 main cache，
+ * 再以最近确认值兜底，并把同一权威结果交给 apply(其中同步 state 与控件)。
+ * 较旧请求不得覆盖较新的乐观编辑，最终由 isCurrent 判定的最新请求收敛。
+ */
+export async function reconcileSettingsSave<T>(
+  reconciler: SettingsSaveReconciler<T>,
+): Promise<SettingsSaveOutcome> {
+  let saved: T;
+  try {
+    saved = await reconciler.save();
+  } catch {
+    if (!reconciler.isCurrent()) return "superseded";
+    let authoritative: T;
+    try {
+      authoritative = await reconciler.loadAuthoritative();
+    } catch {
+      authoritative = reconciler.fallback();
+    }
+    if (reconciler.isCurrent()) {
+      reconciler.apply(authoritative);
+      reconciler.onFailure();
+    }
+    return "failed";
+  }
+  if (reconciler.isCurrent()) reconciler.apply(saved);
+  return reconciler.isCurrent() ? "saved" : "superseded";
 }
 
 /**

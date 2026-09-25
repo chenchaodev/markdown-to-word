@@ -1,6 +1,6 @@
 /**
  * 图片解析器段(src/main/services/image-downloader.ts 纯逻辑层,不起 Electron 窗口):
- * - 本地读取:path.resolve(baseDir, src) 相对/绝对路径均读文件,缺失与 data: 等非 http → null
+ * - 本地读取:源目录/显式可信根内相对路径可读;绝对、UNC、越界与链接越界拒绝
  * - http 下载:200 成功返回内容一致的 Buffer;404 / 连接拒绝 → null
  * - 同 URL 缓存:并发去重(在途 Promise 共享,仅成功结果缓存);失败(404/超时)不缓存,
  *   下次调用重新下载,实例间隔离
@@ -71,10 +71,46 @@ export async function run() {
     throw new Error("image-downloader 断言失败:本地相对路径未读到与 fixture 一致的 Buffer");
   }
 
-  // ---- 断言 2:本地绝对路径(path.resolve 遇绝对路径原样返回) ----
-  const abs = await local(PNG_PATH);
-  if (!abs || !abs.equals(fixtureBytes)) {
-    throw new Error("image-downloader 断言失败:本地绝对路径未读到与 fixture 一致的 Buffer");
+  // ---- 断言 2:绝对路径与 UNC 即使指向可读文件也拒绝 ----
+  if ((await local(PNG_PATH)) !== null) {
+    throw new Error("image-downloader 断言失败:本地绝对路径应拒绝");
+  }
+  if ((await local("\\\\server\\share\\image.png")) !== null) {
+    throw new Error("image-downloader 断言失败:UNC 路径应拒绝");
+  }
+
+  // ---- 断言 2b:显式可信根内相对路径(含 ..)允许,未授予同一根则拒绝 ----
+  const nestedBase = path.join(FIXTURES_DIR, "nested-source");
+  const untrustedNested = createImageResolver(nestedBase);
+  if ((await untrustedNested("../g1-tiny.png")) !== null) {
+    throw new Error("image-downloader 断言失败:未显式授予的父目录不应成为可信根");
+  }
+  const trustedNested = createImageResolver(nestedBase, undefined, { trustedRoots: [FIXTURES_DIR] });
+  const trustedRelative = await trustedNested("../g1-tiny.png");
+  if (!trustedRelative || !trustedRelative.equals(fixtureBytes)) {
+    throw new Error("image-downloader 断言失败:显式可信根内相对路径未读到 fixture");
+  }
+
+  // ---- 断言 2c:可移植模拟 symlink/junction 越界(realpath 目标离开源根即拒绝) ----
+  const insideCandidate = path.join(FIXTURES_DIR, "g1-tiny.png");
+  const linkedResolver = createImageResolver(FIXTURES_DIR, undefined, {
+    realpath: async (candidate) => (candidate === insideCandidate ? path.join(path.dirname(FIXTURES_DIR), "outside.png") : candidate),
+  });
+  if ((await linkedResolver("./g1-tiny.png")) !== null) {
+    throw new Error("image-downloader 断言失败:realpath 指向源根外的链接目标应拒绝");
+  }
+
+  // ---- 断言 2d:文件读取后链接目标变化 → 丢弃已读 Buffer(IO 前后双检) ----
+  let candidateRealpathCalls = 0;
+  const swappedResolver = createImageResolver(FIXTURES_DIR, undefined, {
+    realpath: async (candidate) => {
+      if (candidate !== insideCandidate) return candidate;
+      candidateRealpathCalls += 1;
+      return candidateRealpathCalls === 1 ? candidate : path.join(path.dirname(FIXTURES_DIR), "outside.png");
+    },
+  });
+  if ((await swappedResolver("./g1-tiny.png")) !== null || candidateRealpathCalls < 2) {
+    throw new Error("image-downloader 断言失败:读取后链接目标变化未触发二次边界校验");
   }
 
   // ---- 断言 3:本地缺失文件 → null ----
@@ -92,8 +128,11 @@ export async function run() {
   if ((await local.exists("./g1-tiny.png")) !== true) {
     throw new Error("image-downloader 断言失败:exists 对存在的本地图片应返回 true");
   }
-  if ((await local.exists(PNG_PATH)) !== true) {
-    throw new Error("image-downloader 断言失败:exists 对存在的绝对路径应返回 true");
+  if ((await local.exists(PNG_PATH)) !== false) {
+    throw new Error("image-downloader 断言失败:exists 应拒绝存在的绝对路径");
+  }
+  if ((await local.exists("\\\\server\\share\\image.png")) !== false) {
+    throw new Error("image-downloader 断言失败:exists 应拒绝 UNC 路径");
   }
   if ((await local.exists("./missing-xxx.png")) !== false) {
     throw new Error("image-downloader 断言失败:exists 对缺失本地文件应返回 false");

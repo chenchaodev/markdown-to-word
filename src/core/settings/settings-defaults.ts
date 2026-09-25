@@ -44,6 +44,38 @@ export interface PageSetup {
   marginRight: number;
 }
 
+/** 页面设置自动修正原因(稳定结构,供 main 迁移与 renderer 警告共用)。 */
+export type PageSetupCorrectionReason =
+  | "invalid-page-setup"
+  | "invalid-paper"
+  | "invalid-orientation"
+  | "invalid-margin"
+  | "insufficient-content";
+
+/** 页面设置纠正策略结果。message 为稳定的中文用户可见说明,reasons 供诊断。 */
+export interface PageSetupCorrectionResult {
+  pageSetup: PageSetup;
+  corrected: boolean;
+  reasons: PageSetupCorrectionReason[];
+  message: string | null;
+}
+
+/**
+ * loadSettings 的瞬时迁移契约:非法旧 pageSetup 纠正后随 settingsGet 返回,
+ * 由 renderer 在 scheduled 阶段显示一次 warning。committed/failed 是 main 写入
+ * 队列的最终状态;该字段只存在于 IPC 结果/内存,绝不写入 settings.json。
+ */
+export interface SettingsMigrationNotice {
+  kind: "page-setup-correction";
+  /** 稳定指纹:renderer 用于同一迁移只显示一次 warning。 */
+  id: string;
+  original: unknown;
+  corrected: PageSetup;
+  reasons: PageSetupCorrectionReason[];
+  message: string;
+  persistence: "scheduled" | "committed" | "failed";
+}
+
 /**
   * 页眉页脚设置(文档外壳):
   * 内置 TEMPLATE_PRESETS 现可携带 headerFooter,作为「选预设即完整交付链」的一部分
@@ -151,6 +183,8 @@ export interface AppSettings {
   format: ConvertFormat;
   pageSetup: PageSetup;
   typography: TypographySettings;
+  /** main load 迁移瞬时提示;不参与 settings.json 持久化,renderer 消费后丢弃。 */
+  migration?: SettingsMigrationNotice;
   /** H1 前分页(默认关) */
   breakBeforeH1: boolean;
   /** 自动生成目录页(默认开;docx 静态目录 / PDF 目录同开关) */
@@ -266,6 +300,118 @@ export function validatePageSetup(pageSetup: PageSetup): PageGeometry {
     );
   }
   return { pageWidthMm, pageHeightMm, contentWidthMm, contentHeightMm };
+}
+
+const PAPER_VALUES = Object.keys(PAPER_SIZES_MM) as PageSetup["paper"][];
+const ORIENTATION_VALUES: PageSetup["orientation"][] = ["portrait", "landscape"];
+
+function pageSetupCorrectionMessage(reasons: readonly PageSetupCorrectionReason[]): string {
+  const details: string[] = [];
+  if (reasons.includes("invalid-page-setup")) details.push("页面设置结构");
+  if (reasons.includes("invalid-paper")) details.push("纸张");
+  if (reasons.includes("invalid-orientation")) details.push("方向");
+  if (reasons.includes("invalid-margin")) details.push("边距");
+  if (reasons.includes("insufficient-content")) details.push("页面内容区");
+  return `检测到不合法的${details.join("、")}设置，已自动修正为可渲染配置。`;
+}
+
+/**
+ * 双边边距同时超出可用空间时的确定性最小溢出修正:
+ * 只削减恰好等于 overflow 的总量，优先从第一边扣除，避免无谓把第二边清零；
+ * 第一边不足以吸收 overflow 时才归零第一边并从第二边扣除剩余量。
+ * 纵向按 top→bottom、横向按 left→right 执行；该顺序是迁移契约，不得改成比例分摊。
+ */
+function shrinkMarginsToCapacity(
+  first: number,
+  second: number,
+  capacity: number,
+): [number, number] {
+  if (first + second <= capacity) return [first, second];
+  const overflow = first + second - capacity;
+  const fromFirst = Math.min(first, overflow);
+  return [first - fromFirst, Math.max(0, second - (overflow - fromFirst))];
+}
+
+/**
+ * 页面设置唯一纯纠正策略:main load/update 与 renderer normalize/merge 共用。
+ * - 显式非法 paper/orientation/margin 回退 fallback 对应字段；缺字段沿用 fallback；
+ * - margin 先钳制到单边范围，再按上述双边最小修正规则保证内容区不小于下限；
+ * - 返回纠正原因与稳定用户提示，调用层不得另写第二套修正算法。
+ */
+export function correctPageSetup(
+  value: unknown,
+  fallback: PageSetup = DEFAULT_PAGE_SETUP,
+): PageSetupCorrectionResult {
+  const reasons: PageSetupCorrectionReason[] = [];
+  const addReason = (reason: PageSetupCorrectionReason): void => {
+    if (!reasons.includes(reason)) reasons.push(reason);
+  };
+  const source =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  if (!source) addReason("invalid-page-setup");
+
+  const src = source ?? {};
+  const out: PageSetup = { ...fallback };
+  if (Object.prototype.hasOwnProperty.call(src, "paper")) {
+    if (PAPER_VALUES.includes(src.paper as PageSetup["paper"])) {
+      out.paper = src.paper as PageSetup["paper"];
+    } else {
+      addReason("invalid-paper");
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(src, "orientation")) {
+    if (ORIENTATION_VALUES.includes(src.orientation as PageSetup["orientation"])) {
+      out.orientation = src.orientation as PageSetup["orientation"];
+    } else {
+      addReason("invalid-orientation");
+    }
+  }
+
+  for (const field of PAGE_SETUP_MARGINS) {
+    if (!Object.prototype.hasOwnProperty.call(src, field)) continue;
+    const margin = src[field];
+    if (typeof margin !== "number" || !Number.isFinite(margin)) {
+      addReason("invalid-margin");
+      continue;
+    }
+    const clamped = Math.min(MARGIN_MAX_MM, Math.max(MARGIN_MIN_MM, margin));
+    out[field] = clamped;
+    if (clamped !== margin) addReason("invalid-margin");
+  }
+
+  try {
+    validatePageSetup(out);
+  } catch {
+    const geometry = validatePageSetup({
+      ...out,
+      marginTop: 0,
+      marginBottom: 0,
+      marginLeft: 0,
+      marginRight: 0,
+    });
+    [out.marginTop, out.marginBottom] = shrinkMarginsToCapacity(
+      out.marginTop,
+      out.marginBottom,
+      geometry.pageHeightMm - MIN_PAGE_CONTENT_MM,
+    );
+    [out.marginLeft, out.marginRight] = shrinkMarginsToCapacity(
+      out.marginLeft,
+      out.marginRight,
+      geometry.pageWidthMm - MIN_PAGE_CONTENT_MM,
+    );
+    addReason("insufficient-content");
+  }
+
+  validatePageSetup(out);
+  const corrected = reasons.length > 0;
+  return {
+    pageSetup: out,
+    corrected,
+    reasons,
+    message: corrected ? pageSetupCorrectionMessage(reasons) : null,
+  };
 }
 
 /** 字号与行距的合法范围(与控件 min/max 一致,范围外回显当前值) */

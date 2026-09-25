@@ -18,7 +18,7 @@
 |---|---|---|
 | 阶段 0 工程口径/门禁 | `[~]` 部分完成 | Node/基础 verify 已有；live 文档、geometry/产物门禁、失败探针、维护台账未闭环 |
 | 阶段 1 single-flight/持久化 | `[~]` 部分完成 | 主要实现已有；真实并发/取消/关闭/after-convert 竞态与 GUI 验收未闭环 |
-| 阶段 2 内容/几何/输出 | `[~]` 仅 core 子单元 | main/renderer 准备链、迁移、本地图片边界、输出原子提交未完成 |
+| 阶段 2 内容/几何/输出 | `[~]` 2A 已完成，2B 待办 | 准备链、几何迁移、D-03 路径边界已落地；媒体类型/大小预算与输出原子提交未完成 |
 | 阶段 3 资源/生命周期 | `[ ]` 未开始 | 仅有未提交红测试草稿，不能计为实现 |
 | 阶段 4 renderer UX | `[ ]` 未开始 | 依赖阶段 1/2 状态契约稳定 |
 | 阶段 5 边界/双管线/测试 | `[~]` 基础存在 | checkJs 全量、runner 隔离、fixture 契约、差异矩阵未完成 |
@@ -123,23 +123,24 @@
 - [x] core frontmatter LF/CRLF/CR。
 - [x] core fenced/inline/HTML code/escaped 保护。
 - [x] core thematic break 与开关关闭保真。
-- [ ] single/batch/merge/preview/precheck 同一 preparation chain。
-- [ ] GBK/UTF-16 预览/预检/转换一致。
-- [ ] D-03 本地图片绝对/UNC/越界拒绝及测试。
+- [x] single/batch/merge/preview/precheck 同一 preparation chain（含 readFrontmatter）。
+- [x] GBK/UTF-16 预览/预检/转换一致，warning 顺序稳定。
+- [x] D-03 本地图片绝对/UNC/file URL/越界/链接规范化拒绝及测试。
+- [ ] D-03 本地扩展名/魔数/单文件大小限制（留阶段 3 资源预算）。
 
-**证据**：`1180218`；core segments。
+**证据**：`1180218`；本 2A 提交；core/main segments。
 **退出条件**：所有入口使用同一准备语义，内容保真和图片边界全绿。
 
 ### OPT-2.2 页面几何 validator — `[~]`
 
-- [x] core 唯一 `validatePageSetup()`。
-- [x] docx/pdf render 边界接入。
-- [x] 纸张/方向/边距/最小内容区测试。
-- [ ] main sanitize/load 迁移 warning。
-- [ ] renderer normalize/merge 接入同一契约。
-- [ ] 旧 settings 保留其它字段并给可见反馈。
+- [x] core 唯一 `validatePageSetup()` 与 `correctPageSetup()`。
+- [x] docx/pdf render 边界接入，PDF 在尺寸计算前校验。
+- [x] 纸张/方向/边距/最小内容区与最小溢出修正测试。
+- [x] main sanitize/load 迁移、结构化 warning、队列固化与 cache 状态。
+- [x] renderer normalize/merge 接入同一契约，保存失败完整回滚运行时副作用。
+- [x] 旧 settings 保留其它字段并给可见反馈。
 
-**证据**：`1180218`；当前 settings/geometry 测试草稿。
+**证据**：`1180218`；本 2A 提交；page-setup/main settings/renderer tests。
 **退出条件**：main/renderer/core 三层对非法几何策略一致且可解释。
 
 ### OPT-2.3 输出选名与原子提交 — `[ ]`
@@ -157,7 +158,7 @@
 
 - [ ] OPT-2.1～2.3 全部 `[x]`。
 - [ ] 阶段 2 红测试全部对应生产实现并通过。
-- [ ] `verify:ci` 在不含未来阶段红测试的工作树上全绿。
+- [x] `verify:ci` 在不含未来阶段红测试的当前 2A 工作树上全绿（72 段、coverage、fixtures、smoke）。
 
 ## 4. 阶段 3：资源预算、取消传播与生命周期
 

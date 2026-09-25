@@ -16,6 +16,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
+import iconv from "iconv-lite";
 import { BrowserWindow, shell } from "electron";
 import { loadSettings, updateSettings } from "../../dist/main/persist/settings.js";
 import { backupSettings } from "../common/settings.js";
@@ -85,6 +86,7 @@ export async function run() {
     // ---- 3. merge docx:frontmatter 仅首文件保留/标题齐全/图片嵌入 ----
     const pngPath = path.join(dir, "g4-preview.png");
     await fs.writeFile(pngPath, png1px);
+    const pngLarge = await fs.readFile(path.join(FIXTURES_DIR, "img-800x400.png"));
     const mergeA = path.join(dir, "merge-a.md");
     const mergeB = path.join(dir, "merge-b.md");
     await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](g4-preview.png)\n`);
@@ -104,6 +106,73 @@ export async function run() {
     const mergeRels = await mergeZip.file("word/_rels/document.xml.rels").async("string");
     assert(mergeRels.includes("image"), "合并产物图片未嵌入");
     console.log(`[ok] converter:merge ${path.basename(mergeResult.outputPath)} (frontmatter/图片/标题正确)`);
+
+    // ---- 3b. 跨目录 Obsidian/frontmatter/page-break/warning 顺序回归 ----
+    await updateSettings({ obsidianCompat: true, aiCleanup: false, toc: false, breakBeforeH1: false });
+    const crossRootA = path.join(dir, "cross-a");
+    const crossRootB = path.join(dir, "cross-b");
+    const obsidianA = path.join(crossRootA, "obsidian-a.md");
+    const obsidianB = path.join(crossRootB, "obsidian-b.md");
+    const imageA = path.join(crossRootA, "Attachments", "a.png");
+    const imageB = path.join(crossRootB, "Attachments", "b.png");
+    await fs.mkdir(path.dirname(imageA), { recursive: true });
+    await fs.mkdir(path.dirname(imageB), { recursive: true });
+    await fs.writeFile(imageA, png1px);
+    await fs.writeFile(imageB, pngLarge);
+    await fs.writeFile(
+      obsidianA,
+      "---\ntitle: 跨目录首文件\n---\n\n# 跨目录第一章\n\n![[a.png]]\n\n<!-- page-break -->\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      obsidianB,
+      "---\ntitle: 跨目录第二文件\n---\n\n# 跨目录第二章\n\n![[b.png]]\n",
+      "utf8",
+    );
+    const crossMerge = await mergeConvertImpl([obsidianA, obsidianB], "docx");
+    assert(crossMerge.ok && !!crossMerge.outputPath, `跨目录 Obsidian merge 失败:${crossMerge.error ?? ""}`);
+    const crossZip = await JSZip.loadAsync(await fs.readFile(crossMerge.outputPath));
+    const crossXml = await crossZip.file("word/document.xml").async("string");
+    const crossRels = await crossZip.file("word/_rels/document.xml.rels").async("string");
+    assert(crossXml.includes("跨目录首文件") && crossXml.includes("跨目录第二章"), "跨目录 merge 标题缺失");
+    assert(!crossXml.includes("跨目录第二文件"), "后续 frontmatter title 不应残留");
+    assert((crossRels.match(/relationships\/image/g) ?? []).length >= 2, "跨目录 Obsidian 图片未全部嵌入");
+    assert((crossXml.match(/<w:br w:type="page"\/>/g) ?? []).length === 2, "frontmatter 封面与显式分页符各一次,merge 不应叠加");
+
+    const crossPdf = await mergeConvertImpl([obsidianA, obsidianB], "pdf");
+    assert(crossPdf.ok && !!crossPdf.outputPath, `跨目录 Obsidian PDF merge 失败:${crossPdf.error ?? ""}`);
+    const crossPdfBytes = await fs.readFile(crossPdf.outputPath);
+    assert(crossPdfBytes.subarray(0, 4).toString("ascii") === "%PDF", "跨目录 PDF 产物缺少 PDF magic");
+    assert(/\/Subtype\s*\/Image/.test(crossPdfBytes.toString("latin1")), "跨目录 PDF 产物缺少真实图片对象");
+    console.log("[ok] converter:跨目录 Obsidian 图片真实嵌入 docx/pdf");
+
+    const boundaryInput = path.join(crossRootA, "boundary.md");
+    const outsideImage = path.join(dir, "outside.png");
+    await fs.writeFile(outsideImage, png1px);
+    await fs.writeFile(
+      boundaryInput,
+      `---\ntitle: 越界图片\n---\n\n![越界](${outsideImage})\n`,
+      "utf8",
+    );
+    const boundaryMerge = await mergeConvertImpl([boundaryInput], "docx");
+    assert(boundaryMerge.ok && !!boundaryMerge.outputPath, `越界图片 merge 应完成降级:${boundaryMerge.error ?? ""}`);
+    const boundaryZip = await JSZip.loadAsync(await fs.readFile(boundaryMerge.outputPath));
+    const boundaryRels = await boundaryZip.file("word/_rels/document.xml.rels").async("string");
+    assert(!boundaryRels.includes("image"), "用户绝对路径图片应被 D-03 拒绝且不得嵌入");
+    assert((boundaryMerge.warnings?.length ?? 0) > 0, "用户绝对路径图片应产生越界/加载 warning");
+    console.log("[ok] converter:merge 用户绝对路径图片拒绝(真实 docx 产物)");
+
+    const warnA = path.join(dir, "warn-a.md");
+    const warnB = path.join(dir, "warn-b.md");
+    await fs.writeFile(warnA, iconv.encode("# 你好世界 A\n", "gbk"));
+    await fs.writeFile(warnB, iconv.encode("# 你好世界 B\n", "gbk"));
+    const warningMerge = await mergeConvertImpl([warnB, warnA], "docx");
+    assert(
+      JSON.stringify(warningMerge.warnings?.map((warning) => warning.params?.file)) ===
+        JSON.stringify(["warn-b.md", "warn-a.md"]),
+      `merge warning 顺序应按输入文件序稳定:${JSON.stringify(warningMerge.warnings)}`,
+    );
+    console.log("[ok] converter:跨目录 Obsidian 图片/frontmatter/page-break + warning 顺序");
 
     // ---- 4. 批量取消:首个进度事件取消 → 在途项检查点取消 + 未开始项标记 ----
     const cancelFiles = ["batch-cancel-1.md", "batch-cancel-2.md", "batch-cancel-3.md"].map((n) =>

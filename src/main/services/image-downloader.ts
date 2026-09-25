@@ -1,6 +1,6 @@
 /**
  * 图片解析器(convert context.imageResolver 的 main 侧实现):
- * - 本地相对路径:path.resolve(baseDir, src) 读文件
+ * - 本地相对路径:仅允许源文档目录或显式可信根目录内,realpath 前后复核边界
  * - http(s):下载 Buffer(默认 10s 超时,timeoutMs 可注入;仅接受 2xx),失败返回 null
  * - 其余(data: 等):返回 null
  * 同 URL 并发去重缓存:一个文档内同 URL 只下载一次;仅成功结果缓存,失败
@@ -20,6 +20,8 @@ import dns from "node:dns/promises";
 import net from "node:net";
 // 契约单源:ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
 import type { ImageResolver } from "../../core/image/image-resolver.js";
+// 契约单源:本地图片可信边界与 precheck/PDF 规则共用 core/markdown/precheck.ts 策略
+import { createLocalImagePathPolicy } from "../../core/markdown/precheck.js";
 
 const HTTP_TIMEOUT_MS = 10_000;
 
@@ -39,6 +41,10 @@ export const ALLOW_PRIVATE_ADDRESSES = false;
 export interface ImageDownloaderOptions {
   /** 允许私网/回环地址(测试本地 server 等场景;生产默认 false)。 */
   allowPrivateAddresses?: boolean;
+  /** 额外可信本地图片根目录;源文档目录始终可信,绝对路径与 UNC 仍一律拒绝。 */
+  trustedRoots?: readonly string[];
+  /** realpath 异步注入点,用于平台可移植的 symlink/junction 越界测试。 */
+  realpath?: (candidate: string) => Promise<string>;
 }
 
 /* ---------- IP 分类与主机校验 ---------- */
@@ -86,18 +92,22 @@ async function isHostAllowed(hostname: string): Promise<boolean> {
 
 /** 创建绑定 baseDir 的 imageResolver;每次文档转换新建一个实例(缓存随文档生命周期)。
  * timeoutMs:http(s) 下载超时(默认 HTTP_TIMEOUT_MS = 10s,测试可注入缩短)。
- * options:SSRF 策略选项(allowPrivateAddresses,默认随模块常量收紧)。
+ * options:SSRF 策略与本地可信根选项;本地 IO 前后均复核 symlink/junction 边界。
  * 缓存语义:fetch 前 cache.set 保证并发去重(在途 Promise 共享);结算后失败(null)条目
  * 异步删除,成功结果保留——失败下次调用重新下载,成功不重复请求。
- * 附带 exists 轻量存在性通道——本地路径 fs.access 判定(免整读),ENOENT → false,
- * 其他错误(权限等)抛出保留错误码;非本地路径退回完整解析(pdf 侧 checkLocalImages
- * 仅收本地 src,此为防御兜底)。 */
+ * exists 轻量通道:边界通过后 fs.access 判定(免整读),ENOENT → false,其他错误抛出
+ * 保留错误码;非本地路径退回完整解析(pdf 侧 checkLocalImages 仅收本地 src)。 */
 export function createImageResolver(
   baseDir: string,
   timeoutMs: number = HTTP_TIMEOUT_MS,
   options: ImageDownloaderOptions = {},
 ): ImageResolver {
   const allowPrivateAddresses = options.allowPrivateAddresses ?? ALLOW_PRIVATE_ADDRESSES;
+  const localImagePolicy = createLocalImagePathPolicy({
+    baseDir,
+    trustedRoots: options.trustedRoots,
+    realpath: options.realpath,
+  });
   const cache = new Map<string, Promise<Buffer | null>>();
   const resolve = (src: string): Promise<Buffer | null> => {
     if (/^https?:\/\//i.test(src)) {
@@ -113,19 +123,30 @@ export function createImageResolver(
       }
       return pending;
     }
-    return readLocal(path.resolve(baseDir, src));
+    return readLocal(src, localImagePolicy);
   };
   const exists = async (src: string): Promise<boolean> => {
     if (/^https?:\/\//i.test(src)) return (await resolve(src)) !== null;
+    const initial = await localImagePolicy.resolve(src);
+    if (!initial.filePath) {
+      if (initial.error) throw initial.error;
+      return false;
+    }
     try {
-      await fs.access(path.resolve(baseDir, src));
-      return true;
+      await fs.access(initial.filePath);
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return false;
-      throw err; // 权限等其他错误抛出,checkLocalImages 按错误码细分文案
+      throw err;
     }
+    const final = await localImagePolicy.resolve(src);
+    if (final.error) throw final.error;
+    return final.filePath !== null && samePath(final.filePath, initial.filePath);
   };
   return Object.assign(resolve, { exists });
+}
+
+function samePath(left: string, right: string): boolean {
+  return path.relative(left, right) === "";
 }
 
 /** 下载 http(s) 资源:默认 10s 超时(timeoutMs 由 createImageResolver 注入),仅接受 2xx;
@@ -174,9 +195,17 @@ async function readBodyCapped(res: Response): Promise<Buffer | null> {
   return Buffer.concat(chunks);
 }
 
-async function readLocal(filePath: string): Promise<Buffer | null> {
+async function readLocal(
+  src: string,
+  policy: ReturnType<typeof createLocalImagePathPolicy>,
+): Promise<Buffer | null> {
+  const initial = await policy.resolve(src);
+  if (!initial.filePath) return null;
   try {
-    return await fs.readFile(filePath);
+    const data = await fs.readFile(initial.filePath);
+    // 读后复核真实目标:校验与 fs.readFile 之间若链接被替换,已读 Buffer 也不得返回。
+    const final = await policy.resolve(src);
+    return final.filePath !== null && samePath(final.filePath, initial.filePath) ? data : null;
   } catch {
     return null;
   }

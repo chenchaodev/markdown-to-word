@@ -10,6 +10,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
 import { convert } from "../../dist/core/convert.js";
@@ -347,6 +348,35 @@ export async function run() {
     throw new Error("basic-render 断言失败:pdf 缺失图片应产生统一「图片加载失败:」警告");
   }
   console.log("[ok] basic-render:pdf 缺失图片警告(统一文案经 resolver 失败路径)断言通过");
+
+  // ---------- PDF 本地图片边界:拒绝 src 改写为越界 file:// ----------
+  // overrideImageRule 与 resolver/precheck 共用词法 + realpath 边界策略。绝对路径即使
+  // 指向现存 fixture 也不得交给 Chromium;../ 越出 baseDir 时同样置为 about:blank。
+  const absolutePdfSrc = pathToFileURL(path.join(FIXTURES_DIR, "g1-tiny.png")).href.replace(/^file:\/\/\//, "/");
+  const absoluteBoundaryPdf = await convert(`![越界](${absolutePdfSrc})`, "pdf", {
+    baseDir: FIXTURES_DIR,
+    imageResolver: async () => null,
+    warnings: [],
+  });
+  if (absoluteBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "g1-tiny.png")).href)) {
+    throw new Error("basic-render 断言失败:PDF 绝对本地图片路径被改写为 file URL");
+  }
+  if (absoluteBoundaryPdf.html.includes("g1-tiny.png")) {
+    throw new Error("basic-render 断言失败:PDF 越界图片原始路径仍交给 Chromium");
+  }
+  const nestedBaseDir = path.join(FIXTURES_DIR, "nested-source");
+  const traversalBoundaryPdf = await convert("![越界](../g1-tiny.png)", "pdf", {
+    baseDir: nestedBaseDir,
+    imageResolver: async () => null,
+    warnings: [],
+  });
+  if (traversalBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "g1-tiny.png")).href)) {
+    throw new Error("basic-render 断言失败:PDF .. 越界图片被改写为 file URL");
+  }
+  if (!absoluteBoundaryPdf.html.includes('src="about:blank"') || !traversalBoundaryPdf.html.includes('src="about:blank"')) {
+    throw new Error("basic-render 断言失败:PDF 越界图片未置为安全空 src");
+  }
+  console.log("[ok] basic-render:PDF 本地图片绝对路径/.. 越界 file URL 阻断断言通过");
 
   // ---------- 图片读取失败原因细分(imageLoadFailureWarning,docx/pdf 双侧) ----------
   // 依据(src/core/image/image-warning.ts):resolver 抛出的 fs 错误按错误码分类——

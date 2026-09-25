@@ -27,16 +27,12 @@ async function collectMarkdown(dir) {
 
 /** 主样例:括号 URL 合并输出(mergeMarkdowns 运行值;真实合并验收样例为 manual/ 目录
  *  多文件,见段头注释),gen-fixtures 落盘为 acceptance/merge.md。
- *  注意:mergeMarkdowns 会把相对图片引用按 baseDir 绝对化(管线特性),直接导出会把
- *  本机绝对路径写进 fixture(CI 检出路径不同必漂移,2026-08-24 实证);且 my(1).png
- *  本不存在(样例演示缺失图片警告),绝对路径无意义——导出前还原为相对引用,
- *  与生成器「仓库绝对路径禁入」守卫配套(gen-fixtures.mjs)。 */
-const bracketPngAbs = path.resolve(FIXTURES_DIR, "my(1).png").replace(/\\/g, "/");
+ *  注意:mergeMarkdowns 会把相对图片引用按合并 baseDir 重定位为相对引用(管线特性),直接导出不会把本机绝对路径写进 fixture;my(1).png 本不存在,用于演示缺失图片 warning。 */
 const bracketInput = [
   { content: "![a](https://example.com/a(b).png)\n\n![b](./my(1).png)", baseDir: FIXTURES_DIR },
 ];
-const bracketMerged = mergeMarkdowns(bracketInput); // 运行值(相对引用已绝对化):行为断言用
-const bracketMd = bracketMerged.replace(bracketPngAbs, "./my(1).png"); // 导出值:还原相对引用防机器路径入库
+const bracketMerged = mergeMarkdowns(bracketInput);
+const bracketMd = bracketMerged; // 合并输出已是相对引用,可直接作为 fixture
 export const fixtures = { main: bracketMd };
 
 export async function run() {
@@ -81,21 +77,52 @@ export async function run() {
   console.log(`[ok] merge:合并 ${mdFiles.length} 文件,提取标题 ${headings.length} 条,书签注入完成`);
   await saveArtifact("merged-manual", { pdf: finalPdf });
 
-  // 括号配对 URL:绝对 URL 含括号原样保留;相对路径含括号转绝对路径且括号保留
-  // (断言用运行值 bracketMerged;导出值 bracketMd 已还原相对引用供 fixture 落盘)
+  // 括号配对 URL:绝对 URL 含括号原样保留;相对路径含括号重定位为合并基准下的相对引用
   if (!bracketMerged.includes("https://example.com/a(b).png")) {
     throw new Error(`merge 断言失败:含括号的绝对 URL 应原样保留,实际输出:\n${bracketMerged}`);
   }
-  // win32 反斜杠绝对路径会被 markdown-it 链接规范化编码(%5C)导致图片不显示,
-  // absolutizeImages 统一输出正斜杠绝对路径 → 期望值同步转正斜杠
-  const expectAbs = path.resolve(FIXTURES_DIR, "my(1).png").replace(/\\/g, "/");
-  if (!bracketMerged.includes(expectAbs)) {
-    throw new Error(`merge 断言失败:含括号的相对路径应转为正斜杠绝对路径(期望包含 ${expectAbs}),实际输出:\n${bracketMerged}`);
+  if (!bracketMerged.includes("![b](./my(1).png)")) {
+    throw new Error(`merge 断言失败:相对路径应重定位为相对引用,实际输出:\n${bracketMerged}`);
   }
-  if (!path.isAbsolute(expectAbs)) {
-    throw new Error("merge 断言失败:期望的绝对路径构造无效");
+  console.log("[ok] merge:括号配对 URL(绝对原样保留/相对重定位)断言通过");
+
+  // 用户绝对/UNC/file URL 不属于 merge 内部可改写范围,必须原样保留给 D-03 拒绝。
+  const absoluteImage = path.resolve(FIXTURES_DIR, "absolute.png").replace(/\\/g, "/");
+  const externalSources = mergeMarkdowns([{
+    content: `![absolute](${absoluteImage})\n\n![unc](//server/share/image.png)\n\n![file](file:///C:/temp/image.png)`,
+    baseDir: FIXTURES_DIR,
+  }]);
+  for (const source of [absoluteImage, "//server/share/image.png", "file:///C:/temp/image.png"]) {
+    if (!externalSources.includes(source)) {
+      throw new Error(`merge 断言失败:用户绝对/UNC/file URL 应原样保留:${source}\n${externalSources}`);
+    }
   }
-  console.log("[ok] merge:括号配对 URL(绝对原样保留/相对转绝对)断言通过");
+  console.log("[ok] merge:用户绝对/UNC/file URL 原样保留(交给 D-03 拒绝)断言通过");
+
+  // ---------- 首文件 frontmatter 保护与 body trim ----------
+  const leadingFrontmatter = "  ---\r\ntitle: [[原始标题]]\r\ncover: ![front](front.png)\r\n  ---\r\n\r\n  ![body](body.png)\r\n";
+  const protectedLeading = mergeMarkdowns([
+    { content: leadingFrontmatter, baseDir: FIXTURES_DIR },
+  ]);
+  const protectedPrefix = "  ---\r\ntitle: [[原始标题]]\r\ncover: ![front](front.png)\r\n  ---\r\n";
+  if (!protectedLeading.startsWith(protectedPrefix) || !protectedLeading.includes("![front](front.png)")) {
+    throw new Error(`merge 断言失败:首文件 frontmatter/前导空格/内部图片未原样保护:\n${protectedLeading}`);
+  }
+  if (!protectedLeading.endsWith("![body](./body.png)")) {
+    throw new Error(`merge 断言失败:首文件只应 trim body:\n${protectedLeading}`);
+  }
+  const onlyFrontmatter = "---\ntitle: only\n---\n";
+  if (mergeMarkdowns([{ content: onlyFrontmatter, baseDir: FIXTURES_DIR }]) !== onlyFrontmatter) {
+    throw new Error("merge 断言失败:仅 frontmatter 的首文件应原样保留");
+  }
+  for (const newline of ["\n", "\r\n", "\r"]) {
+    const lineEndingFrontmatter = `---${newline}title: t${newline}cover: ![front](front.png)${newline}---${newline}${newline}![body](body.png)${newline}`;
+    const lineEndingResult = mergeMarkdowns([{ content: lineEndingFrontmatter, baseDir: FIXTURES_DIR }]);
+    if (!lineEndingResult.startsWith(`---${newline}title: t${newline}cover: ![front](front.png)${newline}---${newline}`)) {
+      throw new Error(`merge 断言失败:${newline === "\r" ? "CR" : newline === "\r\n" ? "CRLF" : "LF"} frontmatter 未原样保护`);
+    }
+  }
+  console.log("[ok] merge:首文件 frontmatter 保护(前导空格/仅 frontmatter/CRLF/CR/内部图片)断言通过");
 
   // ---------- 空文件跳过(merge.ts) ----------
   // 依据(dist/core/merge.ts):text.trim() 后为空 → return 跳过,不产生空段;
@@ -149,11 +176,8 @@ export async function run() {
       throw new Error(`merge 断言失败:代码块内示例图片语法被改写:${sample},实际输出:\n${codeAware}`);
     }
   }
-  if (codeAware.includes("](real.png)") || codeAware.includes("](tail.png)")) {
-    throw new Error(`merge 断言失败:代码块外图片应转为绝对路径,实际输出:\n${codeAware}`);
+  if (!codeAware.includes("![真实](./real.png)") || !codeAware.includes("![尾部](./tail.png)")) {
+    throw new Error(`merge 断言失败:代码块外图片应重定位为相对路径,实际输出:\n${codeAware}`);
   }
-  if (!codeAware.includes(`${path.resolve(FIXTURES_DIR, "real.png").replace(/\\/g, "/")}`)) {
-    throw new Error(`merge 断言失败:代码块外真实图片应为绝对路径,实际输出:\n${codeAware}`);
-  }
-  console.log("[ok] merge:B3 代码块感知(围栏/行内不改写,块外照常转绝对路径)断言通过");
+  console.log("[ok] merge:B3 代码块感知(围栏/行内不改写,块外重定位为相对路径)断言通过");
 }

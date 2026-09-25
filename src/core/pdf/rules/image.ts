@@ -1,6 +1,6 @@
 /**
  * pdf 图片规则:
- * 1. 路径改写:相对/绝对路径统一转 file:// URL,本地 src 收集供存在性检查;
+ * 1. 路径改写:仅边界校验通过的本地相对路径转 file:// URL,越界路径置空防 Chromium 读取;
  * 2. 尺寸属性:image 后紧跟的完整 {width=…}/{height=…} 属性块文本
  *    (core/markdown/image-size.ts 单源解析)注入 style——width 百分比原样注入
  *    (CSS 相对容器宽,与「百分比=相对正文内容宽度」语义天然一致);height 百分比
@@ -9,10 +9,10 @@
  * 3. figure 识别:独立成段的图片段落挂 p.fig-image 类(模板 CSS 居中),
  *    与 docx 侧 isFigureParagraph 同契约(镜像实现,输入为 markdown-it token 流)。
  */
-import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type MarkdownIt from "markdown-it";
 import { parseImageSizeAttrs, type ImageDim } from "../../markdown/image-size.js";
+import { createLocalImagePathPolicy } from "../../markdown/precheck.js";
 import { imageAttrInvalidWarning } from "../../image/image-warning.js";
 import { createDepthTracker } from "./shared.js";
 import { pushWarningOnce, type ConvertWarning } from "../../i18n.js";
@@ -27,9 +27,9 @@ interface TextLikeToken {
   content: string;
 }
 
-/** 图片规则:相对/绝对路径统一转 file:// URL,http(s) 保留原样。
- *  本地 src(保持 markdown 原文)收集到 localSrcs,供 checkLocalImages
- *  经 resolver 做存在性检查(单次 IO,替代 convert 层 stat 预扫)。
+/** 图片规则:边界内的本地相对路径转 file:// URL,http(s) 保留原样。
+ *  原始本地 src 收集到 localSrcs,供 checkLocalImages 经 resolver 做存在性检查;
+ *  绝对/UNC/越界或 realpath 后越界的路径置为 about:blank,禁止 Chromium 自行解析。
  *  contentWidthPx:正文内容区宽(px,96dpi;render.ts 按 pageSetup 计算),
  *  height 百分比换算基准。 */
 export function overrideImageRule(
@@ -40,6 +40,7 @@ export function overrideImageRule(
 ): void {
     const defaultRule = md.renderer.rules.image;
     if (!defaultRule) return; // markdown-it 内置 image 规则,理论不可达
+    const localImagePolicy = createLocalImagePathPolicy({ baseDir });
     // 非法属性警告去重(共享 pushWarningOnce 键口径,与 docx ctx.warnedKeys 同源;
     // 集合生命周期 = 单次渲染,md 实例每次 renderPdfHtml 新建)
     const warnedKeys = new Set<string>();
@@ -48,8 +49,8 @@ export function overrideImageRule(
       const src = token.attrGet("src") ?? "";
       if (src && !/^(https?:|data:)/i.test(src)) {
         localSrcs.push(src);
-        const abs = path.isAbsolute(src) ? src : path.resolve(baseDir, src);
-        token.attrSet("src", pathToFileURL(abs).href);
+        const resolution = localImagePolicy.resolveSync(src);
+        token.attrSet("src", resolution.filePath ? pathToFileURL(resolution.filePath).href : "about:blank");
       }
       applySizeAttrs(token, tokens[idx + 1], src, contentWidthPx, env, warnedKeys);
       return defaultRule(tokens, idx, options, env, self);

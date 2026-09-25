@@ -8,7 +8,6 @@ import path from "node:path";
 import { convert } from "../../core/convert.js";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { PdfArtifact } from "../../core/convert.js";
-import { decodeMarkdown } from "../../core/util/encoding.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
 import { buildBookmarkTree, injectBookmarks, pageNumbersForNames } from "../../core/pdf/bookmarks.js";
@@ -27,32 +26,7 @@ import {
   type ConvertContext,
 } from "./context.js";
 import { MARKDOWN_EXT_RE, resolveOutputPath, stripMarkdownExt } from "./paths.js";
-import { preprocessMarkdown } from "./preprocess.js";
-
-/**
- * GBK 解码 + 警告收集:
- * 读文件 → decodeMarkdown;GBK 编码时向共享 warnings 追加警告(gbkKey 由调用方
- * 给定:单文件 warn.gbkEncoding / 合并逐文件 warn.gbkEncodingFile+文件名参数)。
- */
-export async function readMarkdownDecoded(
-  filePath: string,
-  warnings: ConvertWarning[],
-  gbkKey: "warn.gbkEncoding" | "warn.gbkEncodingFile",
-): Promise<string> {
-  const { text, encoding } = decodeMarkdown(await fs.readFile(filePath));
-  if (encoding === "gbk") {
-    warnings.push(
-      gbkKey === "warn.gbkEncodingFile"
-        ? {
-            key: gbkKey,
-            params: { file: path.basename(filePath) },
-            fallback: `已按 GBK 编码读取:${path.basename(filePath)}`,
-          }
-        : { key: gbkKey, fallback: "已按 GBK 编码读取:文件编码非 UTF-8" },
-    );
-  }
-  return text;
-}
+import { prepareMarkdown } from "./preprocess.js";
 
 /**
  * 渲染产物落盘收尾:
@@ -105,8 +79,8 @@ export async function convertImpl(
   const settings = settingsSnapshot ?? loadSettings();
   onProgress?.("read");
   const warnings: ConvertWarning[] = [];
-  const rawMd = await readMarkdownDecoded(filePath, warnings, "warn.gbkEncoding");
-  const md = preprocessMarkdown(rawMd, settings);
+  const prepared = await prepareMarkdown(filePath, settings, warnings, "warn.gbkEncoding");
+  const md = prepared.markdown;
 
   // 进度分阶段:docx 沿用粗粒度 render;pdf 由 core 经 onStage 细分
   // parse/inline/mermaid/katex,print 在 renderPdf 内 printToPDF 前上报

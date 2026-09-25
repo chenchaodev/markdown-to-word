@@ -19,7 +19,10 @@ import {
 import { htmlLangOf } from "../../core/i18n.js";
 import {
   headerLogoDisplayName,
+  applySettingsRuntimeEffects,
   mergeSettingsWithDefaults,
+  normalizePageSetup,
+  reconcileSettingsSave,
   resolvePresetHint,
   resolvePresetSelection,
   allPresets,
@@ -133,6 +136,29 @@ export function rebuildLanguageOptions(): void {
 }
 
 /* ---------- 设置:加载 / 回填 / 写回 ---------- */
+let latestMainSettings: AppSettings = structuredClone(state.settings);
+let settingsSaveRevision = 0;
+
+/** main 权威值同时覆盖 renderer state、语言/主题副作用与全部控件。 */
+function applyAuthoritativeSettings(settings: AppSettings): void {
+  state.settings = mergeSettingsWithDefaults(settings);
+  latestMainSettings = structuredClone(state.settings);
+  applySettingsRuntimeEffects(state.settings, {
+    setSelectedFormat: (format) => { state.selectedFormat = format; },
+    setLanguage,
+    mirrorLanguage,
+    applyStaticTexts,
+    applyTheme,
+  });
+  state.hydratingSettings = true;
+  try {
+    rebuildPresetOptions();
+    applySettingsToControls();
+  } finally {
+    state.hydratingSettings = false;
+  }
+}
+
 /** 启动时读取持久化设置,失败静默回退默认值;回填后解除 hydration 标记。 */
 export async function loadSettings(): Promise<void> {
   let loaded: AppSettings;
@@ -142,7 +168,10 @@ export async function loadSettings(): Promise<void> {
     loaded = DEFAULT_SETTINGS;
   }
   // 防御性合并:旧版本设置缺字段时按默认值兜底(outputDir 缺省 = 源目录)
-  state.settings = mergeSettingsWithDefaults(loaded);
+  state.settings = mergeSettingsWithDefaults(loaded, (message) => {
+    setError(message);
+  });
+  latestMainSettings = structuredClone(state.settings);
   // i18n:主进程语言来源 = 持久化设置;启动即应用(静态文案 + 动态文案经 t() 自动跟随)
   setLanguage(state.settings.language);
   mirrorLanguage(state.settings.language); // 镜像写 localStorage 供 lang-bootstrap.js 尽早读
@@ -284,17 +313,34 @@ function composeDrawerMetaText(): string {
   return `${presetName} · ${checkedRadioValue(paperInputs)}`;
 }
 
-/** 写回设置;写盘失败保留控件当前编辑内容并显示可观察错误,不打断用户操作。
- * 写盘成功后刷新所有预览窗口(设置变更即时反映到预览);预览刷新失败不伪装成设置保存失败。
- * 写回同时刷新副标题——纸张等直接改控件的路径不经过回填,在此统一兜住。 */
+/** 写回设置;成功后以 main 返回值同步 state/控件，失败则回滚到 main cache。
+ * 写盘成功后刷新所有预览窗口；预览刷新失败不伪装成设置保存失败。 */
 export function persistSettings(patch: Partial<AppSettings>): void {
+  let nextPatch = patch;
+  if (Object.prototype.hasOwnProperty.call(patch, "pageSetup")) {
+    const candidate = { ...state.settings.pageSetup, ...(patch.pageSetup ?? {}) };
+    const normalized = normalizePageSetup(candidate, state.settings.pageSetup);
+    if (normalized.corrected) {
+      state.settings.pageSetup = normalized.pageSetup;
+      if (normalized.error) setError(normalized.error);
+      applySettingsToControls();
+      nextPatch = { ...patch, pageSetup: normalized.pageSetup };
+    }
+  }
   updateDrawerMeta(composeDrawerMetaText());
-  void window.api
-    .settingsSet(patch)
-    .then(() => window.api.previewRefresh().catch(() => undefined))
-    .catch(() => {
-      setError(t("preset.saveFailed"));
-    });
+  const revision = ++settingsSaveRevision;
+  void reconcileSettingsSave({
+    save: () => window.api.settingsSet(nextPatch),
+    loadAuthoritative: () => window.api.settingsGet(),
+    fallback: () => latestMainSettings,
+    isCurrent: () => revision === settingsSaveRevision,
+    apply: applyAuthoritativeSettings,
+    onFailure: () => setError(t("preset.saveFailed")),
+  }).then((outcome) => {
+    if (outcome !== "failed") {
+      void window.api.previewRefresh().catch(() => undefined);
+    }
+  });
 }
 
 /* ---------- 分组整体写回(六组绑定共用的持久化路径,单源本模块) ---------- */

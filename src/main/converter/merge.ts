@@ -19,8 +19,8 @@ import {
   type ConvertContext,
 } from "./context.js";
 import { stripMarkdownExt } from "./paths.js";
-import { persistArtifact, readMarkdownDecoded, runAfterConvert } from "./single.js";
-import { preprocessMarkdown } from "./preprocess.js";
+import { persistArtifact, runAfterConvert } from "./single.js";
+import { prepareMarkdown } from "./preprocess.js";
 
 export interface ConvertResult {
   ok: boolean;
@@ -32,8 +32,27 @@ export interface ConvertResult {
   canceled?: boolean;
 }
 
+/** 取输入源目录的公共祖先,作为合并文档的逻辑图片基准。 */
+function commonBaseDir(dirs: string[]): string {
+  const first = path.resolve(dirs[0] ?? process.cwd());
+  let common = first;
+  for (const dir of dirs.slice(1)) {
+    const candidate = path.resolve(dir);
+    while (true) {
+      const relative = path.relative(common, candidate);
+      if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
+        break;
+      }
+      const parent = path.dirname(common);
+      if (parent === common) return first;
+      common = parent;
+    }
+  }
+  return common;
+}
+
 /**
- * 合并转换:读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片绝对化)→ 单次 convert。
+ * 合并转换:读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片相对公共 baseDir 重定位)→ 单次 convert。
  * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;执行 runAfterConvert(单输出,与单文件一致)。
  * 任一步失败直接抛(调用方 catch 为 { ok:false, error })。
  * 进度经 onProgress 上报(与单文件同构;pdf 细分
@@ -58,15 +77,26 @@ export async function mergeConvertImpl(
   const settings = await loadSettings();
   const warnings: ConvertWarning[] = [];
   onProgress?.("read");
-  // GBK 解码+警告与渲染产物落盘收尾样板单源 single.ts(readMarkdownDecoded/persistArtifact)
-  const inputs = await Promise.all(
-    files.map(async (file) => ({
-      content: await readMarkdownDecoded(file, warnings, "warn.gbkEncodingFile"),
-      baseDir: path.dirname(file),
-    })),
+  // 每个输入独立收集准备 warning,再按 files 顺序合并,避免并发读取完成顺序
+  // 决定 warning 顺序;正文/图片仍保留各输入的 baseDir 供 mergeMarkdowns 重定位。
+  const preparedInputs = await Promise.all(
+    files.map(async (file) => {
+      const fileWarnings: ConvertWarning[] = [];
+      const prepared = await prepareMarkdown(file, settings, fileWarnings, "warn.gbkEncodingFile");
+      return {
+        content: prepared.markdown,
+        baseDir: path.dirname(file),
+        warnings: fileWarnings,
+      };
+    }),
   );
-  const mergedMd = mergeMarkdowns(inputs);
-  const md = preprocessMarkdown(mergedMd, settings);
+  const inputs = preparedInputs.map(({ content, baseDir }) => ({ content, baseDir }));
+  for (const input of preparedInputs) warnings.push(...input.warnings);
+  // 合并文档的逻辑解析 baseDir 取所有输入目录的公共祖先;允许读取的根
+  // 单独显式传入各输入源目录,解析基准不隐式扩大 trusted roots。
+  const mergeBaseDir = commonBaseDir(inputs.map((input) => input.baseDir));
+  const trustedRoots = [...new Set(inputs.map((input) => path.resolve(input.baseDir)))];
+  const md = mergeMarkdowns(inputs, { outputBaseDir: mergeBaseDir });
   const baseName = stripMarkdownExt(path.basename(firstFile));
   // 进度分阶段:与 convertImpl 同构——docx 粗粒度 render,pdf 由 onStage 细分
   if (format === "docx") onProgress?.("render");
@@ -74,12 +104,12 @@ export async function mergeConvertImpl(
     md,
     format,
     await buildConvertContext({
-      baseDir: path.dirname(firstFile),
+      baseDir: mergeBaseDir,
       title: baseName,
       metadata,
       warnings,
       settings,
-      imageResolver: getImageResolver(path.dirname(firstFile)),
+      imageResolver: getImageResolver(mergeBaseDir, { trustedRoots }),
       katexDir,
       mermaidResolver: renderMermaid,
       ...(format === "pdf" ? { onStage: (stage: string) => onProgress?.(stage) } : {}),
