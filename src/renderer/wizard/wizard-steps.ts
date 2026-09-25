@@ -23,6 +23,7 @@ import { importDocxTemplate, persistSettings } from "../settings/settings-panel.
 import {
   allPresets,
   headerLogoDisplayName,
+  presetDisplayName,
   type MarginField,
 } from "../settings/settings-logic.js";
 import {
@@ -31,10 +32,15 @@ import {
   bindMarginInput,
   bindTypographyNumber,
   checkedValue,
+  fieldErrorNode,
+  fieldRow,
+  groupRow,
   h,
   pickHeaderLogo,
   radio,
+  radioGroup,
   setChecked,
+  swRow,
   type AppHeaderMode,
   type AppHeaderLayout,
 } from "./wizard-fields.js";
@@ -51,7 +57,8 @@ export let coverFromFm: HTMLElement;
 export function buildStepTemplate(): HTMLElement {
   const select = h("select", { id: "wizardPreset", class: "setting-select" }) as HTMLSelectElement;
   for (const preset of allPresets(state.settings.customPresets)) {
-    const opt = h("option", { value: preset.id, text: preset.i18nKey ? t(preset.i18nKey as never) : preset.name });
+    // 预设名本地化口径与设置面板下拉一致(内置走字典/自定义走 name;缺键回退 name)
+    const opt = h("option", { value: preset.id, text: presetDisplayName(preset) });
     select.appendChild(opt);
   }
   select.addEventListener("change", () => applyTemplatePreset(select.value));
@@ -63,16 +70,21 @@ export function buildStepTemplate(): HTMLElement {
   }, [t("wizard.template.import")]);
   importBtn.addEventListener("click", () => void importDocxTemplate());
 
-  /* 排版微调折叠区:页面边距 + 字体微调(预设选定后用户可微调) */
-  const marginError = h("p", { class: "field-error hidden" });
+  /* 排版微调折叠区:页面边距 + 字体微调(预设选定后用户可微调)
+   * 无障碍:每个控件都有 id + label[for];错误节点 role=alert 并由
+   * show/hideFieldError 维护控件 aria-invalid(见 wizard-fields 注释)。 */
+  const marginError = fieldErrorNode();
+  const marginLabelId = "wiz-margin-label";
   const marginCell = (key: MarginField, label: string): HTMLElement => {
+    const inputId = `wiz-margin-${key}`;
     const input = h("input", {
       type: "number", class: "tin", min: "0", max: String(MARGIN_MAX_MM), step: "0.5",
+      id: inputId, "aria-describedby": marginError.id,
       value: String(state.settings.pageSetup[key]),
     }) as HTMLInputElement;
     bindMarginInput(key, input, marginError);
     return h("div", { class: "mm-cell" }, [
-      h("label", { text: label }),
+      h("label", { for: inputId, text: label }),
       h("div", { class: "mm-in" }, [input, h("span", { text: "mm" })]),
     ]);
   };
@@ -82,13 +94,21 @@ export function buildStepTemplate(): HTMLElement {
     marginCell("marginLeft", t("settings.marginLeft")),
     marginCell("marginRight", t("settings.marginRight")),
   ]);
+  // 四格共享一条错误:按组播报(role=group + aria-labelledby),不逐格标红
+  const marginField = h("div", {
+    class: "wz-field", role: "group", "aria-labelledby": marginLabelId,
+  }, [
+    h("span", { class: "wz-label", id: marginLabelId, dataset: { i18n: "settings.margins" }, text: t("settings.margins") }),
+    marginGrid,
+    marginError,
+  ]);
 
   const fontEaInput = h("input", {
     type: "text", class: "tin",
     value: state.settings.typography.fontEastAsia,
   }) as HTMLInputElement;
   fontEaInput.setAttribute("list", "fontEastAsiaSuggestions");
-  const fontEaError = h("p", { class: "field-error hidden" });
+  const fontEaError = fieldErrorNode();
   bindFontInput("fontEastAsia", fontEaInput, fontEaError, "settings.fontEastAsiaEmpty");
 
   const fontAsciiInput = h("input", {
@@ -96,13 +116,14 @@ export function buildStepTemplate(): HTMLElement {
     value: state.settings.typography.fontAscii,
   }) as HTMLInputElement;
   fontAsciiInput.setAttribute("list", "fontAsciiSuggestions");
-  const fontAsciiError = h("p", { class: "field-error hidden" });
+  const fontAsciiError = fieldErrorNode();
   bindFontInput("fontAscii", fontAsciiInput, fontAsciiError, "settings.fontAsciiEmpty");
 
-  const bodySizeError = h("p", { class: "field-error hidden" });
+  const bodySizeError = fieldErrorNode();
   const bodySizeInput = h("input", {
     type: "number", class: "stepper-value", value: String(state.settings.typography.bodySizePt),
     min: String(BODY_SIZE_MIN), max: String(BODY_SIZE_MAX), step: "0.5",
+    id: "wiz-bodySize", "aria-describedby": bodySizeError.id,
   }) as HTMLInputElement;
   const bodySizeDec = h("button", { type: "button", "aria-label": t("settings.stepDecreaseAria") }, ["−"]);
   const bodySizeInc = h("button", { type: "button", "aria-label": t("settings.stepIncreaseAria") }, ["+"]);
@@ -118,23 +139,24 @@ export function buildStepTemplate(): HTMLElement {
   bindTypographyNumber("bodySizePt", bodySizeInput, bodySizeError, BODY_SIZE_MIN, BODY_SIZE_MAX);
   const bodySizeStepper = h("span", { class: "stepper" }, [bodySizeDec, bodySizeInput, bodySizeInc]);
 
-  const lineSpacingError = h("p", { class: "field-error hidden" });
+  const lineSpacingError = fieldErrorNode();
   const lineSpacingInput = h("input", {
     type: "range", min: String(LINE_SPACING_MIN), max: String(LINE_SPACING_MAX), step: "0.05",
+    id: "wiz-lineSpacing", "aria-describedby": lineSpacingError.id,
     value: String(state.settings.typography.lineSpacing),
   }) as HTMLInputElement;
   const lineSpacingOut = h("output", { class: "wz-range-out", text: String(state.settings.typography.lineSpacing) });
   lineSpacingInput.addEventListener("input", () => { lineSpacingOut.textContent = lineSpacingInput.value; });
   bindTypographyNumber("lineSpacing", lineSpacingInput, lineSpacingError, LINE_SPACING_MIN, LINE_SPACING_MAX);
 
-  const headingScaleRadios = h("span", { class: "segmented seg-sm", role: "radiogroup" }, [
+  const headingScaleRadios = radioGroup([
     radio("wizardHeadingScale", "compact", t("settings.tierCompact"), state.settings.typography.headingScale === "compact"),
     radio("wizardHeadingScale", "standard", t("settings.tierStandard"), state.settings.typography.headingScale === "standard"),
     radio("wizardHeadingScale", "spacious", t("settings.tierSpacious"), state.settings.typography.headingScale === "spacious"),
   ]);
   headingScaleRadios.addEventListener("change", () => bindHeadingTier("headingScale", checkedValue(headingScaleRadios)));
 
-  const headingSpacingRadios = h("span", { class: "segmented seg-sm", role: "radiogroup" }, [
+  const headingSpacingRadios = radioGroup([
     radio("wizardHeadingSpacing", "compact", t("settings.tierCompact"), state.settings.typography.headingSpacing === "compact"),
     radio("wizardHeadingSpacing", "standard", t("settings.tierStandard"), state.settings.typography.headingSpacing === "standard"),
     radio("wizardHeadingSpacing", "spacious", t("settings.tierSpacious"), state.settings.typography.headingSpacing === "spacious"),
@@ -147,51 +169,32 @@ export function buildStepTemplate(): HTMLElement {
     ]),
     h("div", { class: "wz-fold-body" }, [
       h("p", { class: "wz-hint", dataset: { i18n: "wizard.typography.foldHint" }, text: t("wizard.typography.foldHint") }),
+      marginField,
+      fieldRow("settings.fontEastAsia", fontEaInput, { errorEl: fontEaError }),
+      fieldRow("settings.fontAscii", fontAsciiInput, { errorEl: fontAsciiError }),
       h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label", dataset: { i18n: "settings.margins" }, text: t("settings.margins") }),
-        marginGrid,
-        marginError,
-      ]),
-      h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label", dataset: { i18n: "settings.fontEastAsia" }, text: t("settings.fontEastAsia") }),
-        fontEaInput,
-        fontEaError,
-      ]),
-      h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label", dataset: { i18n: "settings.fontAscii" }, text: t("settings.fontAscii") }),
-        fontAsciiInput,
-        fontAsciiError,
-      ]),
-      h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label" }, [
+        h("label", { class: "wz-label", for: "wiz-bodySize" }, [
           h("span", { dataset: { i18n: "settings.bodySize" }, text: t("settings.bodySize") }),
           h("span", { class: "setting-label-hint", dataset: { i18n: "settings.bodySizeHint" }, text: t("settings.bodySizeHint") }),
         ]),
         bodySizeStepper,
+        bodySizeError,
       ]),
       h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label" }, [
+        h("label", { class: "wz-label", for: "wiz-lineSpacing" }, [
           h("span", { dataset: { i18n: "settings.lineSpacing" }, text: t("settings.lineSpacing") }),
           h("span", { class: "setting-label-hint", dataset: { i18n: "settings.lineSpacingHint" }, text: t("settings.lineSpacingHint") }),
         ]),
         h("span", { class: "row-r" }, [lineSpacingInput, lineSpacingOut]),
+        lineSpacingError,
       ]),
-      h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label", dataset: { i18n: "settings.headingScaleTier" }, text: t("settings.headingScaleTier") }),
-        headingScaleRadios,
-      ]),
-      h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label", dataset: { i18n: "settings.headingSpacingTier" }, text: t("settings.headingSpacingTier") }),
-        headingSpacingRadios,
-      ]),
+      groupRow("settings.headingScaleTier", headingScaleRadios),
+      groupRow("settings.headingSpacingTier", headingSpacingRadios),
     ]),
   ]);
 
   return h("section", { class: "wz-pane", dataset: { step: "1" } }, [
-    h("div", { class: "wz-field" }, [
-      h("label", { class: "wz-label", dataset: { i18n: "wizard.template.label" }, text: t("wizard.template.label") }),
-      h("span", { class: "sel-wrap" }, [select]),
-    ]),
+    groupRow("wizard.template.label", h("span", { class: "sel-wrap" }, [select]), select),
     h("div", { class: "wz-actions" }, [importBtn]),
     h("p", { class: "wz-hint", dataset: { i18n: "wizard.template.hint" }, text: t("wizard.template.hint") }),
     fold,
@@ -217,18 +220,9 @@ export function buildStepCover(): HTMLElement {
   coverDateInput.addEventListener("input", onInput);
 
   return h("section", { class: "wz-pane", dataset: { step: "2" } }, [
-    h("div", { class: "wz-field" }, [
-      h("label", { class: "wz-label", dataset: { i18n: "wizard.cover.fieldTitle" }, text: t("wizard.cover.fieldTitle") }),
-      coverTitleInput,
-    ]),
-    h("div", { class: "wz-field" }, [
-      h("label", { class: "wz-label", dataset: { i18n: "wizard.cover.fieldAuthor" }, text: t("wizard.cover.fieldAuthor") }),
-      coverAuthorInput,
-    ]),
-    h("div", { class: "wz-field" }, [
-      h("label", { class: "wz-label", dataset: { i18n: "wizard.cover.fieldDate" }, text: t("wizard.cover.fieldDate") }),
-      coverDateInput,
-    ]),
+    fieldRow("wizard.cover.fieldTitle", coverTitleInput),
+    fieldRow("wizard.cover.fieldAuthor", coverAuthorInput),
+    fieldRow("wizard.cover.fieldDate", coverDateInput),
     coverFromFm,
     h("div", { class: "wz-preview-wrap" }, [
       h("span", { class: "wz-label", dataset: { i18n: "wizard.cover.preview" }, text: t("wizard.cover.preview") }),
@@ -255,61 +249,58 @@ export function renderCoverPreview(): void {
 }
 
 /* ---------- 步骤 3:页眉页脚 ---------- */
+/** 页眉图片行(状态 chip + 选择/清除):抽出成独立函数,便于 groupRow 整组标注 */
+function buildHeaderLogoRow(): HTMLElement {
+  const logoStatus = h("span", {
+    class: "path-chip",
+    id: "wizardHeaderLogoStatus",
+    text: headerLogoDisplayName(state.settings.headerFooter.headerLogoPath) || t("settings.headerLogoNone"),
+  });
+  const logoClear = h("button", {
+    type: "button", class: "btn btn-text sm hidden", dataset: { i18n: "settings.cssClear" },
+  }, [t("settings.cssClear")]) as HTMLButtonElement;
+  const logoPick = h("button", {
+    type: "button", class: "btn btn-ghost sm", dataset: { i18n: "settings.headerLogoPick" },
+  }, [t("settings.headerLogoPick")]);
+  logoPick.addEventListener("click", () => void pickHeaderLogo(logoStatus, logoClear));
+  logoClear.addEventListener("click", () => {
+    state.settings.headerFooter.headerLogoPath = "";
+    logoStatus.textContent = t("settings.headerLogoNone");
+    logoStatus.title = "";
+    logoClear.classList.add("hidden");
+    persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+  });
+  if (state.settings.headerFooter.headerLogoPath) logoClear.classList.remove("hidden");
+  return h("div", { class: "outputdir-row" }, [logoStatus, logoPick, logoClear]);
+}
+
 export function buildStepHeader(): HTMLElement {
-  const modeRadios = h("span", { class: "segmented seg-sm", role: "radiogroup" }, [
+  const modeRadios = radioGroup([
     radio("wizardHeaderMode", "default", t("settings.modeDefault"), true),
     radio("wizardHeaderMode", "custom", t("settings.headerModeCustom"), false),
     radio("wizardHeaderMode", "none", t("settings.headerModeNone"), false),
   ]);
   const headerText = h("input", { type: "text", class: "tin", id: "wizardHeaderText" }) as HTMLInputElement;
-  const layoutRadios = h("span", { class: "segmented seg-sm", role: "radiogroup" }, [
+  const layoutRadios = radioGroup([
     radio("wizardHeaderLayout", "center", t("settings.headerLayoutCenter"), true),
     radio("wizardHeaderLayout", "leftRight", t("settings.headerLayoutLeftRight"), false),
   ]);
-  const footerSwitch = h("input", { type: "checkbox", class: "switch-input", id: "wizardFooter" }) as HTMLInputElement;
+  // 页脚开关走共用开关行(swRow 已带 aria-labelledby/describedby)
+  const footerRow = swRow(
+    "settings.footerEnabledLabel",
+    "settings.footerEnabledDesc",
+    state.settings.headerFooter.footerEnabled,
+    (v) => {
+      state.settings.headerFooter.footerEnabled = v;
+      persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+    },
+  );
   const cond = h("div", { class: "cond", inert: true }, [
     h("div", { class: "cond-in" }, [
-      h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label", dataset: { i18n: "settings.headerText" }, text: t("settings.headerText") }),
-        headerText,
-      ]),
-      h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label", dataset: { i18n: "settings.headerLogo" }, text: t("settings.headerLogo") }),
-        (() => {
-          const logoStatus = h("span", {
-            class: "path-chip",
-            id: "wizardHeaderLogoStatus",
-            text: headerLogoDisplayName(state.settings.headerFooter.headerLogoPath) || t("settings.headerLogoNone"),
-          });
-          const logoClear = h("button", {
-            type: "button", class: "btn btn-text sm hidden", dataset: { i18n: "settings.cssClear" },
-          }, [t("settings.cssClear")]) as HTMLButtonElement;
-          const logoPick = h("button", {
-            type: "button", class: "btn btn-ghost sm", dataset: { i18n: "settings.headerLogoPick" },
-          }, [t("settings.headerLogoPick")]);
-          logoPick.addEventListener("click", () => void pickHeaderLogo(logoStatus, logoClear));
-          logoClear.addEventListener("click", () => {
-            state.settings.headerFooter.headerLogoPath = "";
-            logoStatus.textContent = t("settings.headerLogoNone");
-            logoStatus.title = "";
-            logoClear.classList.add("hidden");
-            persistSettings({ headerFooter: { ...state.settings.headerFooter } });
-          });
-          if (state.settings.headerFooter.headerLogoPath) logoClear.classList.remove("hidden");
-          return h("div", { class: "outputdir-row" }, [logoStatus, logoPick, logoClear]);
-        })(),
-      ]),
-      h("div", { class: "wz-field" }, [
-        h("label", { class: "wz-label", dataset: { i18n: "settings.headerLayout" }, text: t("settings.headerLayout") }),
-        layoutRadios,
-      ]),
-      h("div", { class: "sw-row" }, [
-        h("span", {}, [
-          h("span", { class: "row-l", dataset: { i18n: "settings.footerEnabledLabel" }, text: t("settings.footerEnabledLabel") }),
-          h("span", { class: "row-sub", dataset: { i18n: "settings.footerEnabledDesc" }, text: t("settings.footerEnabledDesc") }),
-        ]),
-        footerSwitch,
-      ]),
+      fieldRow("settings.headerText", headerText),
+      groupRow("settings.headerLogo", buildHeaderLogoRow()),
+      groupRow("settings.headerLayout", layoutRadios),
+      footerRow,
     ]),
   ]);
 
@@ -331,8 +322,8 @@ export function buildStepHeader(): HTMLElement {
     state.settings.headerFooter.headerLayout = checkedValue(layoutRadios) as AppHeaderLayout;
     persistSettings({ headerFooter: { ...state.settings.headerFooter } });
   });
-  footerSwitch.addEventListener("change", () => {
-    state.settings.headerFooter.footerEnabled = footerSwitch.checked;
+  layoutRadios.addEventListener("change", () => {
+    state.settings.headerFooter.headerLayout = checkedValue(layoutRadios) as AppHeaderLayout;
     persistSettings({ headerFooter: { ...state.settings.headerFooter } });
   });
 
@@ -340,14 +331,10 @@ export function buildStepHeader(): HTMLElement {
   setChecked(modeRadios, state.settings.headerFooter.headerMode);
   headerText.value = state.settings.headerFooter.headerText;
   setChecked(layoutRadios, state.settings.headerFooter.headerLayout);
-  footerSwitch.checked = state.settings.headerFooter.footerEnabled;
   syncCond();
 
   return h("section", { class: "wz-pane", dataset: { step: "3" } }, [
-    h("div", { class: "wz-field" }, [
-      h("label", { class: "wz-label", dataset: { i18n: "settings.headerModeLabel" }, text: t("settings.headerModeLabel") }),
-      modeRadios,
-    ]),
+    groupRow("settings.headerModeLabel", modeRadios),
     cond,
   ]);
 }
@@ -357,7 +344,15 @@ export function buildStepWatermark(): HTMLElement {
   const text = h("input", { type: "text", class: "tin", id: "wizardWmText" }) as HTMLInputElement;
   const angle = h("input", { type: "number", class: "tin tin-num", min: "0", max: "360", step: "1", id: "wizardWmAngle" }) as HTMLInputElement;
   const opacity = h("input", { type: "number", class: "tin tin-num", min: "0", max: "1", step: "0.05", id: "wizardWmOpacity" }) as HTMLInputElement;
-  const gray = h("input", { type: "checkbox", class: "switch-input", id: "wizardWmGray" }) as HTMLInputElement;
+  const grayRow = swRow(
+    "settings.watermarkGray",
+    "settings.watermarkGrayDesc",
+    state.settings.watermark.gray,
+    (v) => {
+      state.settings.watermark.gray = v;
+      persistSettings({ watermark: { ...state.settings.watermark } });
+    },
+  );
 
   text.addEventListener("change", () => {
     state.settings.watermark.text = text.value;
@@ -373,36 +368,20 @@ export function buildStepWatermark(): HTMLElement {
     opacity.value = String(state.settings.watermark.opacity);
     persistSettings({ watermark: { ...state.settings.watermark } });
   });
-  gray.addEventListener("change", () => {
-    state.settings.watermark.gray = gray.checked;
-    persistSettings({ watermark: { ...state.settings.watermark } });
-  });
 
   text.value = state.settings.watermark.text;
   angle.value = String(state.settings.watermark.angle);
   opacity.value = String(state.settings.watermark.opacity);
-  gray.checked = state.settings.watermark.gray;
 
   return h("section", { class: "wz-pane", dataset: { step: "4" } }, [
+    fieldRow("settings.watermarkText", text),
+    // 角度带行内单位:单位与输入同行,label[for] 指向输入即可
     h("div", { class: "wz-field" }, [
-      h("label", { class: "wz-label", dataset: { i18n: "settings.watermarkText" }, text: t("settings.watermarkText") }),
-      text,
-    ]),
-    h("div", { class: "wz-field" }, [
-      h("label", { class: "wz-label", dataset: { i18n: "settings.watermarkAngle" }, text: t("settings.watermarkAngle") }),
+      h("label", { class: "wz-label", for: "wizardWmAngle", dataset: { i18n: "settings.watermarkAngle" }, text: t("settings.watermarkAngle") }),
       angle,
       h("span", { class: "row-unit", dataset: { i18n: "settings.degree" }, text: t("settings.degree") }),
     ]),
-    h("div", { class: "wz-field" }, [
-      h("label", { class: "wz-label", dataset: { i18n: "settings.watermarkOpacity" }, text: t("settings.watermarkOpacity") }),
-      opacity,
-    ]),
-    h("div", { class: "sw-row" }, [
-      h("span", {}, [
-        h("span", { class: "row-l", dataset: { i18n: "settings.watermarkGray" }, text: t("settings.watermarkGray") }),
-        h("span", { class: "row-sub", dataset: { i18n: "settings.watermarkGrayDesc" }, text: t("settings.watermarkGrayDesc") }),
-      ]),
-      gray,
-    ]),
+    fieldRow("settings.watermarkOpacity", opacity),
+    grayRow,
   ]);
 }

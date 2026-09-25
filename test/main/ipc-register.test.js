@@ -12,7 +12,9 @@
  * - 纯转发 handler 直调:fileCollectMarkdown(目录递归收集/skipped/扫描预算警告回传)、
  *   fileFilterExisting(保序剔除缺失)、settingsGet/settingsSet、uiStateGet/uiStateSet、
  *   appVersion(与 app.getVersion 同源)、previewOpen 非法入参、previewRefresh 空操作、
- *   convertCancel 无 ctx 时空操作。
+ *   convertCancel 无 ctx 时空操作;
+ * - settings:set 的 main 侧运行时副作用(真实触点端到端:语言变更后 main 文案经 t()
+ *   即时切换、应用菜单即时重建;副作用判定本身见 settings-runtime-sync 段)。
  * 不在自动断言面:对话框系(fileOpenDialog/dirSelect/presetsImport/presetsExport/
  * cssImport,依赖真实 dialog)、合法转换链路(convertImpl 全流程,converter.test.js 已覆盖)。
  */
@@ -20,11 +22,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import iconv from "iconv-lite";
-import { app, ipcMain } from "electron";
+import { app, ipcMain, Menu } from "electron";
 import { registerIpc } from "../../dist/main/ipc/register.js";
 import { IPC_CHANNELS as CH } from "../../dist/main/ipc/channels.js";
 import { MAX_SCAN_DEPTH } from "../../dist/main/converter/paths.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning, t } from "../../dist/core/i18n.js";
 import { beginWebContentsOperation, finishWebContentsOperation } from "../../dist/main/windows/web-contents-registry.js";
 
 function assert(cond, msg) {
@@ -244,6 +246,35 @@ export async function run() {
   assert(updated.format === "pdf", "settings:set 合法 patch 应生效");
   const reread = handlers.get(CH.settingsGet)();
   assert(reread.format === "pdf", "settings:set 后 get 应读到新值(缓存一致)");
+
+  // ---- 6b. settings:set 语言/主题变更 → main 侧文案与菜单即时跟随(不需重启,不依赖 renderer 另发通道) ----
+  // 端到端走真实触点:setLanguage + buildAppMenu(菜单项 label 经 t() 实时查表);
+  // 触点判定本身(何时调、调给谁)见 settings-runtime-sync 段。
+  // 断言后恢复原语言:主进程语言是模块级状态,同进程后续段共用。
+  const originLanguage = settings.language;
+  try {
+    const en = await handlers.get(CH.settingsSet)(undefined, { language: "en" });
+    assert(en.language === "en", "settings:set 应落盘新语言");
+    assert(t("menu.file") === "File",
+      `主进程文案应即时切到英文(menu.file),实际 ${JSON.stringify(t("menu.file"))}`);
+    const enMenu = Menu.getApplicationMenu();
+    assert(enMenu !== null, "settings:set 改语言后应已重建应用菜单");
+    assert(enMenu.items[0]?.label === "File",
+      `菜单首项标签应即时切到英文,实际 ${JSON.stringify(enMenu.items[0]?.label)}`);
+    // 同值重复保存:判定为无变化 → 不重建菜单,菜单仍为当前语言(幂等)
+    const sameLang = await handlers.get(CH.settingsSet)(undefined, { language: "en" });
+    assert(sameLang.language === "en" && Menu.getApplicationMenu()?.items[0]?.label === "File",
+      "同语言重复保存应保持菜单为当前语言");
+    // 主题变更走同一副作用切口(overlay 配色下发见 settings-runtime-sync 段;
+    // 此处无主窗口,只断言落盘与 handler 正常返回)
+    const themed = await handlers.get(CH.settingsSet)(undefined, { theme: "dark" });
+    assert(themed.theme === "dark", "settings:set 应落盘新主题");
+  } finally {
+    await handlers.get(CH.settingsSet)(undefined, { language: originLanguage });
+    assert(t("menu.file") === "文件",
+      `恢复原语言后主进程文案应回中文,实际 ${JSON.stringify(t("menu.file"))}`);
+  }
+  console.log("[ok] ipc-register:settings:set 语言/主题变更即时同步(main 文案 + 应用菜单)断言通过");
 
   const uiState = await handlers.get(CH.uiStateSet)(undefined, { lastOpenDir: tmpMarkerDir() });
   assert(uiState.lastOpenDir === tmpMarkerDir(), "ui-state:set patch 应生效");

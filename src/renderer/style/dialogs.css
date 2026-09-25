@@ -136,7 +136,9 @@
   padding: 8px 10px;
   font-size: 12.5px;
   line-height: 1.5;
-  color: var(--acc);
+  /* 错误正文用 --acc-ink(对纸面与 --acc-soft 底均 ≥4.5:1);
+   * 底色/边框仍走 --acc 系列 */
+  color: var(--acc-ink);
   background: var(--acc-soft);
   border: 1px solid var(--acc-ring);
   border-radius: var(--radius-in);
@@ -178,7 +180,7 @@
 }
 
 .batch-summary--fail {
-  color: var(--acc);
+  color: var(--acc-ink);
   font-weight: 600;
 }
 
@@ -229,6 +231,11 @@
   color: var(--acc);
 }
 
+/* 取消条目:中性弱化(与成功绿/失败红区分,取消不是错误) */
+.batch-item--canceled .batch-item-icon {
+  color: var(--mut);
+}
+
 .batch-item-name {
   font-size: 13.5px;
   font-weight: 600;
@@ -254,12 +261,19 @@
 }
 
 .batch-item-msg--error {
-  color: var(--acc);
+  color: var(--acc-ink);
 }
 
 .batch-item-msg--warning {
   color: var(--warn);
 }
+
+.batch-item-msg--canceled {
+  color: var(--mut);
+}
+
+/* .copy-ok 无需额外配色:反馈节点沿用按钮本身的 --ink-2 文字色,
+   复制是中性动作,不用 --ok 绿(绿只属结果勾选与完成态)。 */
 
 /* 常驻结果汇总条:成功绿勾 / 失败朱砂,打开引导按钮 + 可折叠警告 */
 .result-summary {
@@ -273,12 +287,23 @@
   box-shadow: var(--shadow-card);
 }
 
+/* 汇总条落在固定消息槽里(高度受 --feed-h 约束):槽内纵向再收 2px,
+   让「状态行 + 汇总条(含输出路径与打开按钮)」的完成态不必起内滚动条 */
+.feed .result-summary {
+  padding: 8px 12px;
+}
+
 .result-summary--ok {
   border-color: var(--ok-soft);
 }
 
 .result-summary--fail {
   border-color: var(--acc-ring);
+}
+
+/* 取消 = 中性态:不套成功绿/失败红,边框回归发丝线,图标走 --mut */
+.result-summary--canceled {
+  border-color: var(--line);
 }
 
 .result-summary-main {
@@ -301,6 +326,11 @@
 
 .result-summary--fail .result-summary-icon {
   color: var(--acc);
+}
+
+/* 取消图标显式取弱化色(不依赖继承,避免被后续色规则带偏) */
+.result-summary--canceled .result-summary-icon {
+  color: var(--mut);
 }
 
 .result-summary-texts {
@@ -654,11 +684,17 @@
   color: var(--mut);
 }
 
-/* 合并源列表:复用 .mlist / .multi-item(主列表同款) */
+/* 向导合并源列表:复用 .mlist / .multi-item(主队列同款)。
+ * 行内只有「序号 + 文件名 + 操作组」三个子项(无 grip / 无独立序号列),
+ * 直接套主队列的四列网格会把文件名挤进 26px 序号列 —— 故此处收敛为三列。 */
 .wizard-body .mlist {
   margin: 10px 0 0;
   max-height: 240px;
   overflow-y: auto;
+}
+
+.wizard-body .mlist .multi-item {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
 }
 
 /* 向导底栏:跳过(左) + 上一步/下一步/付印(右) */

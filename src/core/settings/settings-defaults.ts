@@ -425,10 +425,16 @@ export interface TemplatePreset {
   id: string;
   /** 中文名,用户可见 */
   name: string;
-  /** 简短说明,显示在模板选择行 */
+  /** 简短说明的中文原文,显示在模板选择行(字典缺键时的回退底,勿清空) */
   hint: string;
   /** i18n 键(硬编码预设本地化用;自定义预设留空,回退 name) */
   i18nKey?: string;
+  /**
+   * hint 的 i18n 键(预设说明三语化;内置 6 预设必填)。
+   * 显示层一律经 presetHintText 取值:字典命中→当前语言说明,未配键或缺键→回退 hint 原文,
+   * 因此中文 hint 字段不可删除(它是缺键时的兜底,勿清空/勿改写)。
+   */
+  hintI18nKey?: string;
   typography: TypographySettings;
   pageSetup: PageSetup;
   /** 页眉页脚(完整交付链;仅内置预设携带,用户预设 CustomPreset 不存) */
@@ -446,6 +452,7 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: "default",
     i18nKey: "preset.default",
+    hintI18nKey: "preset.hintDefault",
     name: "默认",
     hint: "常规文档:微软雅黑正文、两端对齐、行距 1.5",
     typography: { ...DEFAULT_TYPOGRAPHY },
@@ -458,6 +465,7 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: "paper",
     i18nKey: "preset.paper",
+    hintI18nKey: "preset.hintPaper",
     name: "学术论文",
     hint: "论文常用:宋体正文 + Times New Roman 西文、两端对齐、标准页边距",
     typography: {
@@ -488,6 +496,7 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: "business",
     i18nKey: "preset.business",
+    hintI18nKey: "preset.hintBusiness",
     name: "商务简报",
     hint: "简报常用:微软雅黑正文、左对齐、行距 1.15、页边距更紧凑",
     typography: {
@@ -518,6 +527,7 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: "official-cn",
     i18nKey: "preset.officialCn",
+    hintI18nKey: "preset.hintOfficialCn",
     name: "中文公文",
     hint: "仿宋正文 + Times New Roman 西文、两端对齐、GB 标准页边距",
     typography: {
@@ -548,6 +558,7 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: "cn-reader",
     i18nKey: "preset.cnReader",
+    hintI18nKey: "preset.hintCnReader",
     name: "中文长文",
     hint: "宋体正文、1.75 倍行距、首行缩进，适合阅读型长文档",
     typography: {
@@ -571,6 +582,7 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: "cn-minimal",
     i18nKey: "preset.cnMinimal",
+    hintI18nKey: "preset.hintCnMinimal",
     name: "中文极简",
     hint: "微软雅黑正文、左对齐、无首行缩进、紧凑行距，适合随手笔记",
     typography: {

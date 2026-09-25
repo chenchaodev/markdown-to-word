@@ -51,7 +51,53 @@ import type { ConvertWarning } from "../../core/i18n.js";
 let completeDialogTrap: (() => void) | null = null;
 let batchDialogTrap: (() => void) | null = null;
 
+/* ---------- 复制反馈(标签/反馈两枚 i18n 节点,只切显隐) ----------
+ * 契约:反馈不改写标签 textContent(改写会抹掉 data-i18n,语言切换后不再本地化);
+ * 单实例 timer(后一次复制顶替前一次);弹窗打开前复位,不得跨弹窗残留。 */
+const COPY_FEEDBACK_MS = 1500;
+
+const COPY_FEEDBACK_IDS = [
+  { labelId: "completeDialogCopyLabel", okId: "completeDialogCopyOk" },
+  { labelId: "batchDialogCopyAllLabel", okId: "batchDialogCopyAllOk" },
+] as const;
+
+let copyFeedbackTimer: number | undefined;
+
+function setCopyFeedbackVisible(visible: boolean): void {
+  for (const { labelId, okId } of COPY_FEEDBACK_IDS) {
+    // 反馈可见时:标签隐藏、反馈节点显示;复位时相反
+    document.getElementById(labelId)?.classList.toggle("hidden", visible);
+    document.getElementById(okId)?.classList.toggle("hidden", !visible);
+  }
+}
+
+/** 复制成功:隐藏标签、显示「已复制」;到期复原(单实例计时器)。 */
+export function showCopyFeedback(): void {
+  setCopyFeedbackVisible(true);
+  if (copyFeedbackTimer !== undefined) window.clearTimeout(copyFeedbackTimer);
+  copyFeedbackTimer = window.setTimeout(() => {
+    copyFeedbackTimer = undefined;
+    setCopyFeedbackVisible(false);
+  }, COPY_FEEDBACK_MS);
+}
+
+/** 复位复制反馈:由 show* 弹窗入口调用,清掉上一次的反馈与计时器。 */
+export function resetCopyFeedback(): void {
+  if (copyFeedbackTimer !== undefined) {
+    window.clearTimeout(copyFeedbackTimer);
+    copyFeedbackTimer = undefined;
+  }
+  setCopyFeedbackVisible(false);
+}
+
 /* ---------- 转换结果汇总条(常驻,不依赖弹窗;成功/失败/取消三态 + 打开引导 + 可折叠警告) ---------- */
+/** 三态图标路径:成功勾 / 失败叉 / 取消横杠(取消为中性,不用红也不用绿)。 */
+const SUMMARY_ICON_PATHS = {
+  ok: "M20 6L9 17l-5-5",
+  fail: "M18 6L6 18M6 6l12 12",
+  canceled: "M6 12h12",
+} as const;
+
 export interface SummaryOptions {
   kind: "ok" | "fail" | "canceled";
   title: string;
@@ -65,12 +111,14 @@ export interface SummaryOptions {
 
 export function showSummary(opts: SummaryOptions): void {
   resultSummary.classList.remove("hidden");
-  const ok = opts.kind === "ok";
-  resultSummary.classList.toggle("result-summary--ok", ok);
-  resultSummary.classList.toggle("result-summary--fail", !ok);
+  const kind = opts.kind;
+  // 三态互斥:取消既不是成功也不是失败,不加 ok/fail 修饰类(视觉回归到中性纸面)
+  resultSummary.classList.toggle("result-summary--ok", kind === "ok");
+  resultSummary.classList.toggle("result-summary--fail", kind === "fail");
+  resultSummary.classList.toggle("result-summary--canceled", kind === "canceled");
   summaryIcon
     .querySelector("path")
-    ?.setAttribute("d", ok ? "M20 6L9 17l-5-5" : "M18 6L6 18M6 6l12 12");
+    ?.setAttribute("d", SUMMARY_ICON_PATHS[kind]);
   summaryText.textContent = opts.title;
   state.summaryOutputPath = opts.outputPath ?? "";
   summaryPath.classList.toggle("hidden", !opts.outputPath);
@@ -120,6 +168,7 @@ export function showCompleteDialog(
   completeDialogError.textContent = "";
   completeDialogReveal.classList.toggle("hidden", !ok);
   completeDialogOpen.classList.toggle("hidden", !ok);
+  resetCopyFeedback(); // 打开即复位:上一次的「已复制」不得跨弹窗残留
   completeDialog.classList.remove("hidden");
   completeDialogOk.focus(); // 焦点落在默认操作(确定)上
   completeDialogTrap?.(); // 二次调用防御:先解除旧陷阱
@@ -147,7 +196,17 @@ export function showBatchDialogError(message: string): void {
 }
 
 /* ---------- 批量结果汇总弹窗 ---------- */
+/** 批量弹窗标题(按结果取语义,不恒写「完成」):失败走失败标题,全取消走中性取消,
+ *  其余(含部分取消)走完成标题。语言切换后由 data-i18n 复位为完成标题。 */
+function batchDialogTitleFor(result: BatchResult): string {
+  if (result.failCount > 0) return t("convert.batch.failedTitle");
+  if (result.okCount === 0 && result.canceledCount > 0) return t("common.canceled");
+  return t("dialog.batch.title");
+}
+
 export function showBatchDialog(result: BatchResult): void {
+  const titleEl = document.getElementById("batchDialogTitle");
+  if (titleEl) titleEl.textContent = batchDialogTitleFor(result);
   const canceledText =
     result.canceledCount > 0
       ? t("batch.canceledSuffix", { count: result.canceledCount })
@@ -165,6 +224,7 @@ export function showBatchDialog(result: BatchResult): void {
   batchDialogCopyAll.disabled = batchSuccessPaths(result.items).length === 0;
   batchDialogError.classList.add("hidden");
   batchDialogError.textContent = "";
+  resetCopyFeedback(); // 同完成弹窗:打开即复位复制反馈
   batchDialog.classList.remove("hidden");
   batchDialogOk.focus(); // 焦点落在默认操作(确定)上
   batchDialogTrap?.(); // 二次调用防御:先解除旧陷阱

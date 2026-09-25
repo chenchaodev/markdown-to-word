@@ -21,7 +21,31 @@ import {
   type TemplatePreset,
   type ThemePreference,
 } from "../../core/settings/settings-defaults.js";
-import { t } from "../../core/i18n.js";
+import { t, type I18nKey } from "../../core/i18n.js";
+
+/**
+ * 预设名本地化(单一来源;settings-panel 的下拉选项、向导步骤 1、套用 toast 共用此口径)。
+ * - 内置预设走 i18nKey 字典 → 随语言切换;
+ * - 自定义预设无 i18nKey → 直接用用户命名的 name;
+ * - 字典缺键时 t() 回退为 key 本身,此时改用 name 兜底,任何语言下都不出现裸键。
+ */
+export function presetDisplayName(preset: TemplatePreset): string {
+  if (!preset.i18nKey) return preset.name;
+  const text = t(preset.i18nKey as I18nKey);
+  return text === preset.i18nKey ? preset.name : text;
+}
+
+/**
+ * 预设说明本地化(单一来源;applySettingsToControls 回填 hint 经此取值)。
+ * - 内置预设走 hintI18nKey 字典 → 随语言切换;
+ * - 自定义预设(仅 preset.customHint,无 hintI18nKey)与未配键 → 用 hint 字段值;
+ * - 字典缺键时 t() 回退为 key 本身,同样改用 hint 原文兜底(不抛错、不显裸键)。
+ */
+export function presetHintText(preset: TemplatePreset): string {
+  if (!preset.hintI18nKey) return preset.hint;
+  const text = t(preset.hintI18nKey as I18nKey);
+  return text === preset.hintI18nKey ? preset.hint : text;
+}
 
 /** 自定义预设下拉 id 前缀(选中/删除判定与 id 解析共用)。 */
 export const CUSTOM_PRESET_ID_PREFIX = "custom:";
@@ -256,21 +280,17 @@ export function mergePendingSavePatch(
 
 /**
  * 模板预设 hint 计算(applySettingsToControls 回填):选中项为自定义/不存在 →
- * 自定义提示文案 + isCustom=true;否则返回该预设 hint + isCustom=false。
- * 文案与抽取前一致(「已微调,与模板预设不一致」)。
+ * 「已微调」提示文案 + isCustom=true;否则返回该预设的当前语言说明 + isCustom=false。
+ * 纯函数,故两个方向都无残留:命中预设 → 预设说明(可从「已微调」复位回预设),
+ * 微调后(选中项不存在)→「已微调」;语言切换后重算即得对应语言文案。
  */
 export function resolvePresetHint(
   customPresets: readonly CustomPreset[],
   matchedPresetId: string,
 ): { hint: string; isCustom: boolean } {
   const matchedPreset = allPresets(customPresets).find((p) => p.id === matchedPresetId);
-  const isCustom = !matchedPreset;
-  return {
-    hint: isCustom
-      ? t("preset.modifiedHint")
-      : (matchedPreset ?? TEMPLATE_PRESETS[0]).hint,
-    isCustom,
-  };
+  if (!matchedPreset) return { hint: t("preset.modifiedHint"), isCustom: true };
+  return { hint: presetHintText(matchedPreset), isCustom: false };
 }
 
 /** 输出目录显示文案:空串 = 「与源文件相同目录」(回填与恢复默认共用)。 */

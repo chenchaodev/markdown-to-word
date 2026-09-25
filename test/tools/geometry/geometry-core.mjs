@@ -7,7 +7,7 @@
  *   4) 恒定断言组(阶段跳动)。
  *
  * 失败语义:缺场景 / 场景步骤失败 / 缺选择器 / 必需节点不可见 / 视口不匹配 /
- * 响应式档位未生效 / 舞台状态不匹配 / 水平溢出 / 水平裁切 / 槽塌陷 /
+ * 响应式档位未生效 / 舞台状态不匹配 / 水平溢出 / 水平裁切 / 槽塌陷 / 槽越界(撑高) /
  * 阶段跳动超阈值 / 紧凑档纵向滚动 / 列轴漂移,一律记 error 并使 ok=false;
  * 任何"跳过"都必须以 finding 形式显式出现,禁止静默通过。
  *
@@ -258,7 +258,9 @@ export function runGeometryGate(samples, options = {}) {
       }
     }
 
-    // 固定槽不塌陷:常驻占位节点必须保有最小高度
+    // 固定槽:常驻占位节点必须落在 [minHeight, maxHeight?] 区间内
+    // (下限防塌陷;上限用于「固定槽被撑爆/退化为自适应」——消息区改为 height:auto
+    //  或结果汇总撑高时,高度会冲出上限,这条正是 OPT-4.4 恢复固定槽的守护)
     for (const slot of SLOT_INVARIANTS) {
       const node = sample.nodes[slot.node];
       if (node === null || node === undefined || !node.visible) continue;
@@ -269,6 +271,15 @@ export function runGeometryGate(samples, options = {}) {
           slot.node,
           `${label}固定槽 ${slot.node}(${sel(slot.node)}) 高度 ${node.rect.height}px 低于下限 ${slot.minHeight}px;${slot.why}`,
           { expected: `height>=${slot.minHeight}`, actual: String(node.rect.height) },
+        );
+      }
+      if (slot.maxHeight !== undefined && node.rect.height > slot.maxHeight) {
+        add(
+          "slot-overflow",
+          sc.id,
+          slot.node,
+          `${label}固定槽 ${slot.node}(${sel(slot.node)}) 高度 ${node.rect.height}px 超出上限 ${slot.maxHeight}px(固定槽被内容撑高/退化为自适应);${slot.why}`,
+          { expected: `height<=${slot.maxHeight}`, actual: String(node.rect.height) },
         );
       }
     }

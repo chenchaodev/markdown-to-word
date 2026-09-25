@@ -23,6 +23,7 @@ import {
   mergeSettingsWithDefaults,
   mergePendingSavePatch,
   normalizePageSetup,
+  outputDirDisplayText,
   reconcileSettingsSave,
   resolvePresetHint,
   resolvePresetSelection,
@@ -232,14 +233,6 @@ export function applySettingsToControls(): void {
   );
   templatePresetSelect.value = matchedPresetId;
   quickPresetSelect.value = matchedPresetId;
-  const { hint, isCustom } = resolvePresetHint(
-    state.settings.customPresets,
-    matchedPresetId,
-  );
-  templatePresetHint.textContent = hint;
-  // 单行省略时完整文案经 title 悬浮可见(与 textContent 同步)
-  templatePresetHint.title = hint;
-  templatePresetHint.classList.toggle("template-hint--custom", isCustom);
   // 仅自定义预设可删(选中项以 custom: 前缀标识)
   presetDeleteBtn.classList.toggle(
     "hidden",
@@ -264,19 +257,8 @@ export function applySettingsToControls(): void {
   themeInputs.forEach(
     (input) => (input.checked = input.value === v.theme),
   );
-  // 输出目录:空串显示「与源文件相同目录」。
-  // 抽屉 chip 与快速参数条镜像 chip 同步同值同 title
-  outputDirValue.textContent = v.outputDirText;
-  outputDirValue.title = v.outputDirText;
-  quickOutputDirChip.textContent = v.outputDirText;
-  quickOutputDirChip.title = v.outputDirText;
-  // PDF 样式 CSS 回显(settings.json 只存内容不存文件名,显示通用文案;
-  // 非空 → 「已导入自定义 CSS」+ 清除按钮可用)。内容同步进文本域
+  // 动态状态节点(输出目录 / PDF CSS / Logo / 预设提示)统一走 refreshDynamicSettingsText
   pdfCssTextInput.value = state.settings.pdfCss;
-  pdfCssStatus.textContent = state.settings.pdfCss
-    ? t("settings.pdfCssImported")
-    : t("settings.pdfCssNone");
-  pdfCssClearBtn.classList.toggle("hidden", !state.settings.pdfCss);
   // 页眉页脚回填:模式/文字/布局/页脚开关 + logo 文件名回显与清除按钮可见性
   headerModeInputs.forEach(
     (input) => (input.checked = input.value === v.headerMode),
@@ -286,18 +268,69 @@ export function applySettingsToControls(): void {
     (input) => (input.checked = input.value === v.headerLayout),
   );
   footerEnabledInput.checked = v.footerEnabled;
-  const logoName = headerLogoDisplayName(v.headerLogoPath);
-  headerLogoStatus.textContent = logoName || t("settings.headerLogoNone");
-  headerLogoStatus.title = logoName;
-  headerLogoClearBtn.classList.toggle("hidden", !v.headerLogoPath);
   syncHeaderCustomVisibility();
   // 文字水印回填:文字/角度/不透明度/浅灰
   watermarkTextInput.value = v.watermarkText;
   watermarkAngleInput.value = v.watermarkAngle;
   watermarkOpacityInput.value = v.watermarkOpacity;
   watermarkGrayInput.checked = v.watermarkGray;
+  // 动态状态节点:预设提示 + 输出目录 + PDF CSS + Logo(单一来源,见下节)
+  refreshDynamicSettingsText();
   // 抽屉副标题随回填刷新(「预设名 · 纸张」)
   updateDrawerMeta(composeDrawerMetaText());
+}
+
+/* ---------- 动态状态节点(内容来自设置状态,index.html 中不带 data-i18n) ----------
+ * 契约:applyStaticTexts 只负责静态文案;这些节点的值是「用户当前真实值」
+ * (输出目录 / Logo 文件名 / 导入状态 / 当前预设提示),若挂 data-i18n 会被
+ * 字典默认值覆盖(路径回默认目录、已选 Logo 显示未选、CSS 显示未导入)。
+ * 因此改由本组函数按当前语言重算,语言切换后必须重跑。 */
+
+/** 输出目录双写:抽屉 chip + 快速参数条镜像 chip(同值同 title)。 */
+export function syncOutputDirDisplay(dir: string): void {
+  const text = outputDirDisplayText(dir);
+  for (const chip of [outputDirValue, quickOutputDirChip]) {
+    chip.textContent = text;
+    chip.title = text;
+  }
+}
+
+/** PDF 样式 CSS 导入状态(label 用于导入后带文件名的即时反馈,缺省按有无内容取通用文案)。 */
+export function syncPdfCssState(css: string, label?: string): void {
+  pdfCssStatus.textContent =
+    label ?? (css ? t("settings.pdfCssImported") : t("settings.pdfCssNone"));
+  pdfCssClearBtn.classList.toggle("hidden", !css);
+}
+
+/** 页眉 Logo 回显(仅文件名;清除钮随路径显隐)。 */
+export function syncHeaderLogoDisplay(path: string): void {
+  const name = headerLogoDisplayName(path);
+  headerLogoStatus.textContent = name || t("settings.headerLogoNone");
+  headerLogoStatus.title = name;
+  headerLogoClearBtn.classList.toggle("hidden", !path);
+}
+
+/**
+ * 动态状态节点重算:回填与语言切换共用(切换语言后静态文案已刷,
+ * 动态节点必须按新语言重算,否则显示旧语言;也不能靠 data-i18n,见上)。
+ */
+export function refreshDynamicSettingsText(): void {
+  const matchedPresetId = resolvePresetSelection(
+    state.settings.customPresets,
+    state.settings,
+    templatePresetSelect.value,
+  );
+  const { hint, isCustom } = resolvePresetHint(
+    state.settings.customPresets,
+    matchedPresetId,
+  );
+  templatePresetHint.textContent = hint;
+  // 单行省略时完整文案经 title 悬浮可见(与 textContent 同步)
+  templatePresetHint.title = hint;
+  templatePresetHint.classList.toggle("template-hint--custom", isCustom);
+  syncOutputDirDisplay(state.settings.outputDir);
+  syncPdfCssState(state.settings.pdfCss);
+  syncHeaderLogoDisplay(state.settings.headerFooter.headerLogoPath);
 }
 
 /**
@@ -442,8 +475,7 @@ export async function importPdfCss(): Promise<void> {
     state.settings.pdfCss = r.css;
     pdfCssTextInput.value = r.css; // 导入内容同步进文本域
     persistSettings({ pdfCss: r.css });
-    pdfCssStatus.textContent = t("settings.cssImported", { name: r.name });
-    pdfCssClearBtn.classList.remove("hidden");
+    syncPdfCssState(r.css, t("settings.cssImported", { name: r.name }));
     setStatus(t("settings.cssImportedStatus", { name: r.name }));
   } catch (err) {
     const message = errorMessage(err);
@@ -456,8 +488,7 @@ export function clearPdfCss(): void {
   state.settings.pdfCss = "";
   pdfCssTextInput.value = ""; // 文本域同步清空
   persistSettings({ pdfCss: "" });
-  pdfCssStatus.textContent = t("settings.pdfCssNone");
-  pdfCssClearBtn.classList.add("hidden");
+  syncPdfCssState(""); // 状态行与清除按钮一并复位
 }
 
 /* ---------- docx 模板导入(浅导入 v1;main 内选文件 + 解包提取 + 合并持久化全包) ---------- */

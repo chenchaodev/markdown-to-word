@@ -17,18 +17,26 @@
     html, body { height: 100%; }
     body { overflow: hidden; }
 
-    /* ===== Tokens (scoped under .about-root) ===== */
+    /* ===== Tokens (scoped under .about-root) =====
+     * 值与主窗 base.css §1 令牌表同源(about 窗不引样式表,故在此内联一份;
+     * 改色必须两边同改,视觉身份「冷灰纸 + 朱砂」不得分叉)。
+     * 覆盖集合 = 本页实际用到的令牌,不得少于用到的:var() 引用完整性
+     * 由 test/renderer/ui-contract-guards.test.js 断言。 */
     .about-root {
+      color-scheme: light;
       --canvas: #F1F1EE;
       --card: #FBFBF9;
+      --card-2: #F3F3EF; /* 步骤序号底 / 特性胶囊底 */
       --ink: #1E2126;
       --ink-2: #494E58;
-      --mut: #71767F;
+      --mut: #686D76;
       --line: #E2E2DC;
       --acc: #B5301C;
+      --acc-ink: #B5301C;
       --acc-h: #982512;
       --acc-soft: rgba(181,48,28,.09);
       --acc-ring: rgba(181,48,28,.30);
+      --ok: #2F7D4F; /* 「已是最新」勾 */
       --radius: 10px;
       --solid-bg: #22252B;
       --solid-fg: #FBFBF9;
@@ -41,19 +49,48 @@
       --seal-size: 76px;
     }
 
-    /* ===== Dark mode remap ===== */
+    /* ===== Dark mode =====
+     * 双来源,与主窗 base.css 同口径:宿主显式选择优先(显式块写在媒体查询之前,
+     * 靠层叠顺序取胜),未显式选择时跟随系统。宿主通道(about.ts / about-preload,
+     * 本轮写入范围外)把与主窗同名的 data-theme 写到 <html> 或 .about-root 上时,
+     * 本页即刻跟随主窗主题;未接通前仍按系统偏好兜底。 */
+    html[data-theme="dark"] .about-root,
+    .about-root[data-theme="dark"] {
+      color-scheme: dark;
+      --canvas: #15181D;
+      --card: #1C2027;
+      --card-2: #232830;
+      --ink: #E9E7E1;
+      --ink-2: #B8BCC4;
+      --mut: #8B929D;
+      --line: #2A2F38;
+      --acc: #C23D1E;
+      --acc-ink: #EA6A4A;
+      --acc-h: #D5542F;
+      --acc-soft: rgba(205,69,38,.16);
+      --acc-ring: rgba(205,69,38,.38);
+      --ok: #4C9E6D;
+      --solid-bg: #E9E7E1;
+      --solid-fg: #16181D;
+    }
+
     @media (prefers-color-scheme: dark) {
-      .about-root {
+      html:not([data-theme="light"]) .about-root,
+      .about-root:not([data-theme="light"]) {
+        color-scheme: dark;
         --canvas: #15181D;
         --card: #1C2027;
+        --card-2: #232830;
         --ink: #E9E7E1;
         --ink-2: #B8BCC4;
-        --mut: #878E99;
+        --mut: #8B929D;
         --line: #2A2F38;
         --acc: #C23D1E;
+        --acc-ink: #EA6A4A;
         --acc-h: #D5542F;
         --acc-soft: rgba(205,69,38,.16);
         --acc-ring: rgba(205,69,38,.38);
+        --ok: #4C9E6D;
         --solid-bg: #E9E7E1;
         --solid-fg: #16181D;
       }
@@ -169,11 +206,20 @@
       }
     }
 
-    /* Respect reduced motion */
+    /* 尊重「降低动态效果」:与主窗 base.css 同口径,钤印入场与所有过渡一并关闭 */
     @media (prefers-reduced-motion: reduce) {
       .seal {
         animation: none;
         opacity: 1;
+      }
+
+      .about-root *,
+      .about-root *::before,
+      .about-root *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
       }
     }
 
@@ -265,8 +311,9 @@
       transition: color 120ms ease, border-color 120ms ease;
     }
 
+    /* 链接悬停:朱砂文字用 --acc-ink(深色下 --acc 仅 3.4:1,不够正文小字) */
     .meta-value a:hover {
-      color: var(--acc);
+      color: var(--acc-ink);
       border-bottom-color: var(--acc);
     }
 

@@ -40,9 +40,85 @@ export function h(tag: string, props: Props = {}, children: (Node | string)[] = 
   return el;
 }
 
+/**
+ * 向导内 id 发放器(每次打开向导重建 DOM,id 需在同一文档内唯一且可被
+ * label/aria-describedby 反查):同一 key 在一次向导会话内返回同一个 id,
+ * 重建时由新的控件树重新登记(旧节点已随外壳摘除)。
+ */
+let wizardIdSeq = 0;
+export function wizardId(prefix: string): string {
+  wizardIdSeq += 1;
+  return `wiz-${prefix}-${wizardIdSeq}`;
+}
+
+/**
+ * 带程序关联的字段行:label(for → control.id)+ 可选说明行 / 错误节点
+ * (aria-describedby)。读屏用户聚焦控件时能听到「字段名 + 说明(+ 错误)」。
+ * 结构沿用既有 .wz-field > .wz-label + 控件 + .wz-hint(说明在控件之后,与向导
+ * 其余提示行同序),不新增控件形态。错误节点须带 role=alert(见 fieldErrorNode)。
+ */
+export function fieldRow(
+  labelKey: string,
+  control: HTMLElement,
+  opts: { hintKey?: string; hintText?: string; errorEl?: HTMLElement } = {},
+): HTMLElement {
+  const controlId = control.id.length > 0 ? control.id : wizardId("field");
+  control.id = controlId;
+  const hintText = opts.hintText ?? (opts.hintKey ? t(opts.hintKey as never) : "");
+  const hintId = hintText.length > 0 ? wizardId("hint") : "";
+  const errorId = opts.errorEl?.id ?? "";
+  const described = [hintId, errorId].filter((token) => token.length > 0);
+  control.setAttribute("aria-invalid", "false");
+  if (described.length > 0) control.setAttribute("aria-describedby", described.join(" "));
+  const children: HTMLElement[] = [
+    h("label", { class: "wz-label", for: controlId, dataset: { i18n: labelKey }, text: t(labelKey as never) }),
+    control,
+  ];
+  if (hintId.length > 0) {
+    children.push(
+      h("span", {
+        class: "wz-hint",
+        id: hintId,
+        dataset: opts.hintKey ? { i18n: opts.hintKey } : {},
+        text: hintText,
+      }),
+    );
+  }
+  if (opts.errorEl) children.push(opts.errorEl);
+  return h("div", { class: "wz-field" }, children);
+}
+
+/**
+ * 成组字段行(单选组 / 下拉 / 文件选择这类"控件 + 说明块"的整组形态):
+ * 可见标签用 span(id 供反查)而不是 label[for] —— 整组不是单一表单控件,
+ * for 指向容器没有意义;改为 role=group + aria-labelledby,并把同一 id 挂到
+ * 真实控件上(读屏进组与聚焦控件时都能听到组名)。
+ */
+export function groupRow(
+  labelKey: string,
+  control: HTMLElement,
+  labelTarget?: HTMLElement,
+): HTMLElement {
+  const controlId = control.id.length > 0 ? control.id : wizardId("group");
+  control.id = controlId;
+  const labelId = `${controlId}-label`;
+  (labelTarget ?? control).setAttribute("aria-labelledby", labelId);
+  return h("div", { class: "wz-field", role: "group", "aria-labelledby": labelId }, [
+    h("span", { class: "wz-label", id: labelId, dataset: { i18n: labelKey }, text: t(labelKey as never) }),
+    control,
+  ]);
+}
+
 /* ---------- 向导内设置绑定助手 ----------
  * 复用 settings-logic 的钳制/校验纯函数与既有 i18n 提示键,实时写
- * state.settings + autosave(与设置抽屉同源,关向导不丢设置)。 */
+ * state.settings + autosave(与设置抽屉同源,关向导不丢设置)。
+ * 错误一律「就地可见」:错误节点带 role=alert,并把控件传入 show/hideFieldError,
+ * 由其维护 aria-invalid / aria-describedby。 */
+
+/** 错误节点(带 role=alert 供读屏即时播报;id 供控件 aria-describedby 反查)。 */
+export function fieldErrorNode(): HTMLElement {
+  return h("p", { class: "field-error hidden", id: wizardId("err"), role: "alert" });
+}
 
 /** 边距输入:复用 parseMarginValue 钳制 + settings.marginRange 提示,实时写 pageSetup。 */
 export function bindMarginInput(key: MarginField, input: HTMLInputElement, errorEl: HTMLElement): void {
@@ -50,12 +126,12 @@ export function bindMarginInput(key: MarginField, input: HTMLInputElement, error
     const clamped = parseMarginValue(input.valueAsNumber);
     if (clamped === null) {
       input.value = String(state.settings.pageSetup[key]);
-      showFieldError(errorEl, t("settings.marginRange", { max: MARGIN_MAX_MM }));
+      showFieldError(errorEl, t("settings.marginRange", { max: MARGIN_MAX_MM }), input);
       return;
     }
     state.settings.pageSetup[key] = clamped;
     input.value = String(clamped);
-    hideFieldError(errorEl);
+    hideFieldError(errorEl, input);
     persistSettings({ pageSetup: { ...state.settings.pageSetup } });
   });
 }
@@ -72,11 +148,11 @@ export function bindTypographyNumber(
     const value = input.valueAsNumber;
     if (!validateNumberRange(value, min, max)) {
       input.value = String(state.settings.typography[key]);
-      showFieldError(errorEl, t("settings.numberRange", { min, max }));
+      showFieldError(errorEl, t("settings.numberRange", { min, max }), input);
       return;
     }
     state.settings.typography[key] = value;
-    hideFieldError(errorEl);
+    hideFieldError(errorEl, input);
     persistSettings({ typography: { ...state.settings.typography } });
   });
 }
@@ -92,11 +168,11 @@ export function bindFontInput(
     const value = input.value.trim();
     if (!value) {
       input.value = state.settings.typography[key];
-      showFieldError(errorEl, t(emptyKey as never));
+      showFieldError(errorEl, t(emptyKey as never), input);
       return;
     }
     state.settings.typography[key] = value;
-    hideFieldError(errorEl);
+    hideFieldError(errorEl, input);
     persistSettings({ typography: { ...state.settings.typography } });
   });
 }
@@ -111,18 +187,31 @@ export function bindHeadingTier(name: string, value: string): void {
   persistSettings({ typography: { ...state.settings.typography } });
 }
 
-/** 开关行(13px 主标签 + 11.5px 灰色说明 + switch),复用 .sw-row 形态。 */
-export function swRow(labelKey: string, subKey: string, checked: boolean, onChange: (v: boolean) => void): HTMLElement {
+/**
+ * 开关行(13px 主标签 + 11.5px 灰色说明 + switch),复用 .sw-row 形态。
+ * 无障碍:标签与说明都是 span(非 label 元素),故以 aria-labelledby /
+ * aria-describedby 显式关联到 switch —— 否则读屏只会报「复选框」。
+ */
+export function swRow(
+  labelKey: string,
+  subKey: string,
+  checked: boolean,
+  onChange: (v: boolean) => void,
+): HTMLElement {
+  const labelId = wizardId("swlabel");
+  const subId = wizardId("swdesc");
   const input = h("input", {
     type: "checkbox",
     class: "switch-input",
+    "aria-labelledby": labelId,
+    "aria-describedby": subId,
     ...(checked ? { checked: true } : {}),
   }) as HTMLInputElement;
   input.addEventListener("change", () => onChange(input.checked));
   return h("div", { class: "sw-row" }, [
     h("span", {}, [
-      h("span", { class: "row-l", dataset: { i18n: labelKey }, text: t(labelKey as never) }),
-      h("span", { class: "row-sub", dataset: { i18n: subKey }, text: t(subKey as never) }),
+      h("span", { class: "row-l", id: labelId, dataset: { i18n: labelKey }, text: t(labelKey as never) }),
+      h("span", { class: "row-sub", id: subId, dataset: { i18n: subKey }, text: t(subKey as never) }),
     ]),
     input,
   ]);
@@ -160,6 +249,15 @@ export async function pickHeaderLogo(statusEl: HTMLElement, clearBtn: HTMLButton
 }
 
 /* ---------- 小工具:radio / 取值 / 回填 ---------- */
+/**
+ * 命名 radio 组:组名一律由外层 groupRow 以 aria-labelledby 指向可见标签提供
+ * (名字取自可见文案,且随语言切换由 applyStaticTexts 一起刷新);
+ * 单项由 label 包裹天然可读。
+ */
+export function radioGroup(children: HTMLElement[]): HTMLElement {
+  return h("span", { class: "segmented seg-sm", role: "radiogroup" }, children);
+}
+
 export function radio(name: string, value: string, label: string, checked: boolean): HTMLElement {
   const input = h("input", { type: "radio", name, value, ...(checked ? { checked: true } : {}) });
   return h("label", { class: "segment" }, [input, h("span", { text: label })]);

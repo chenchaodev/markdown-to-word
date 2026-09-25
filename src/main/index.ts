@@ -5,11 +5,9 @@
  * 子模块:windows/main-window(主窗口)、windows/preview(预览)、ipc/register(IPC 注册)、menu(菜单)。
  */
 import { app, BrowserWindow, session } from "electron";
-import { setLanguage } from "../core/i18n.js";
 import { loadSettings } from "./persist/settings.js";
 import { createWindow, getMainWindow } from "./windows/main-window.js";
-import { registerIpc } from "./ipc/register.js";
-import { buildAppMenu } from "./menu.js";
+import { applyStartupSettingsRuntime, registerIpc } from "./ipc/register.js";
 
 const SMOKE = process.argv.includes("--smoke");
 
@@ -39,11 +37,14 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(async () => {
-    // i18n:主进程语言来源 = 持久化设置(菜单/对话框标题/预览错误页按此语言)
-    setLanguage(loadSettings().language);
+    // i18n + 应用菜单:主进程语言来源 = 持久化设置(菜单/对话框标题/预览错误页按此
+    // 语言);启动与运行期设置变更共用同一副作用编排(单源,见 ipc/register 的运行时
+    // 副作用区块),避免两处各写一份初始化。菜单先于窗口创建,窗口创建即带应用菜单
+    // (autoHideMenuBar 下 Alt 唤出);此刻无主窗口,标题栏 overlay 同步为空操作
+    // (createWindow 内按持久化主题同步)。
+    applyStartupSettingsRuntime(loadSettings());
     // 权限请求显式全拒:应用无相机/定位/通知等需求;默认拒绝之上显式声明,防未来新增窗口/webview 类型时遗漏收口
     session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-    buildAppMenu(); // 菜单先于窗口创建,窗口创建即带应用菜单(autoHideMenuBar 下 Alt 唤出)
     registerIpc();
     // activate 先于首次 createWindow 注册(macOS 极早期 dock 点击不丢失)
     app.on("activate", () => {

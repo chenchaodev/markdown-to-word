@@ -1,8 +1,10 @@
 /**
  * renderer 组合根:API 契约声明、事件接线与初始化编排。
- * 不变量:事件绑定先于设置回填(时序与模块化拆分前一致);模块级副作用仅在加载期执行一次;
- * 跨进程边界不信任 IPC 对端(设置合并 renderer 侧二次兜底);依赖方向单向
- * (本文件 → dom/state/settings/convert/ui,不反向引用子模块私有符号)。
+ * 不变量:事件绑定先于设置回填(时序与模块化拆分前一致);设置回填与 UI 状态恢复
+ * 汇合于启动屏障后统一揭示(揭示在 finally,任一路失败也必须显示界面);
+ * 模块级副作用仅在加载期执行一次;跨进程边界不信任 IPC 对端(设置合并 renderer
+ * 侧二次兜底);依赖方向单向(本文件 → dom/state/settings/convert/ui,不反向引用
+ * 子模块私有符号)。
  */
 import { state } from "./state/state.js";
 import { updateActionButtons } from "./convert/file-list.js";
@@ -33,6 +35,57 @@ declare global {
   }
 }
 
+/* ---------- 启动屏障 ---------- */
+/**
+ * 首屏防闪:设置回填与 UI 状态恢复都是跨进程异步回填,若各自独立 await,
+ * 浏览器会先按「默认设置 + 空会话」绘制一帧,用户看到白闪 + 设置跳变。
+ * 手法:模块加载期同步隐藏根元素 → 两路初始化并行汇合 → 一次性揭示。
+ * 选型说明(勿回退):
+ * - 用 CSSOM 属性赋值(documentElement.style.visibility)而非 HTML 内联
+ *   style 属性:后者受 CSP style-src 约束,且需要改 index.html/CSS;
+ *   本仓 CSP 为 style-src 'self' 'unsafe-inline',CSSOM 赋值两种情况都放行,
+ *   取不依赖 CSP 宽松度的一种;
+ * - 不隐藏 window 本体而隐藏根元素:保留窗口尺寸/滚动条度量,几何门禁
+ *   (check-geometry 量 getBoundingClientRect)不受影响;
+ * - 揭示只在成功路径的做法会被任一路 reject 卡成永久白屏,故揭示放 finally。
+ */
+const rootEl = document.documentElement;
+rootEl.style.visibility = "hidden";
+// 兜底揭示:初始化阶段抛未捕获错误(事件绑定/装配失败)时不能停在隐藏态白屏,
+// 错误事件到达即揭示(屏障正常走完后该赋值是空操作,故监听无需 once 摘除)。
+window.addEventListener("error", () => {
+  rootEl.style.visibility = "";
+});
+
+/** 屏障内单路失败隔离:留痕后按该路默认状态继续,不阻断另一路与揭示。 */
+async function settleInit(label: string, task: Promise<unknown>): Promise<void> {
+  try {
+    await task;
+  } catch (err) {
+    console.error(`[init] ${label} 失败(该项保持默认状态)`, err);
+  }
+}
+
+/**
+ * 启动屏障:loadSettings(设置/语言/主题/控件回填)与 initUiStateRestore
+ * (面板展开态 / 会话文件 / 最近记录)并行,汇合后统一重绘一次再揭示。
+ * 两路本身各自内部已兜底失败(读失败静默回退默认),此处再兜一层 promise 拒绝,
+ * 保证屏障必然 settle。
+ */
+async function runInitBarrier(): Promise<void> {
+  try {
+    await Promise.all([
+      settleInit("loadSettings", loadSettings()),
+      settleInit("initUiStateRestore", initUiStateRestore()),
+    ]);
+  } finally {
+    // 读一次 offsetHeight 强制同步布局/样式刷新:两路 DOM 变更在同一帧生效,
+    // 不会先揭示再跳变(read 触发 flush,代价一次 reflow,仅启动期一次)。
+    void document.body.offsetHeight;
+    rootEl.style.visibility = "";
+  }
+}
+
 /* ---------- 初始化 ---------- */
 // 事件绑定先于其余初始化(时序与拆分前一致:原绑定在模块加载期执行,
 // 先于 updateActionButtons / 设置回填;bindEvents 内含进度订阅与菜单订阅)
@@ -52,12 +105,10 @@ bindSettingsDrawerEvents();
 aboutOpenBtn.addEventListener("click", () => {
   window.api.openAbout();
 });
-// 读取持久化设置并回填控件(失败静默回退默认值)
-void loadSettings();
 // 首启引导装配(接线跳过/步骤按钮 + 监听舞台状态;首屏呈现由 initUiStateRestore 触发)
 initFirstRunGuide();
-// UI 状态恢复(面板展开态 / 会话文件 / 最近转换区块;失败静默保持默认)
-void initUiStateRestore();
+// 设置回填 + UI 状态恢复并行汇合于启动屏障,汇合后统一重绘一次(见屏障区块)
+void runInitBarrier();
 // 转换成功后刷新最近区块的回调接线(convert-flow 经 state 调用,
 // 不再 import recent-files,打破 recent-files ↔ convert-flow 的 ESM 环)
 state.recentRefreshHandler = refreshRecentFiles;

@@ -35,6 +35,9 @@ export function setStatus(text: string, isError = false, isWarning = false): voi
   statusEl.classList.toggle("status--error", isError);
   statusEl.classList.toggle("status--warning", isWarning);
   statusEl.title = text;
+  // 播报语义:错误是确定性终态,用 role=alert(assertive)立即打断;
+  // 进度/结果等常规状态回 role=status(polite)按序播报。
+  statusEl.setAttribute("role", isError ? "alert" : "status");
   // 错误/警告为确定性终态:清除 busy/ok 呼吸色,避免与语义色叠加
   if (isError || isWarning) setStatusTone("");
 }
@@ -60,12 +63,24 @@ export function setError(message: string): void {
 }
 
 /* ---------- 转换进度 ---------- */
-/** 更新进度条宽度与百分比文本(0–100 钳制)。 */
+/**
+ * 更新进度条宽度与百分比文本(0–100 钳制),并同步读屏语义:
+ * - aria-valuenow:纯数值(机器可读);
+ * - aria-valuetext:「阶段 + 百分比」—— 读屏用户需要知道"在做什么",
+ *   百分比本身没有信息量。阶段文案复用状态行(#status)的当前文本:
+ *   它是转换阶段/结果的唯一播报位(setStatus 先于 setProgress 写入),
+ *   此处只做拼接,不在本层另起一套阶段来源。
+ */
 export function setProgress(percent: number): void {
   const clamped = Math.min(100, Math.max(0, Math.round(percent)));
   progressFill.style.width = `${clamped}%`;
   progressText.textContent = `${clamped}%`;
   progressTrack.setAttribute("aria-valuenow", String(clamped));
+  const stage = (statusEl.textContent ?? "").trim();
+  progressTrack.setAttribute(
+    "aria-valuetext",
+    stage.length > 0 ? `${stage} ${clamped}%` : `${clamped}%`,
+  );
 }
 
 /** 显示进度区并复位进度(同时使能取消按钮)。 */
@@ -80,15 +95,49 @@ export function hideProgress(): void {
   progressArea.classList.add("hidden");
 }
 
-/* ---------- 字段级错误提示(边距 / 字体 / 字号 / 行距) ---------- */
-/** 字段内错误提示:显示消息并保持控件值可编辑(仅提示,不阻塞)。 */
-export function showFieldError(el: HTMLElement, message: string): void {
-  el.textContent = message;
-  el.classList.remove("hidden");
+/* ---------- 字段级错误提示(边距 / 字体 / 字号 / 行距) ----------
+ * 无障碍契约(错误必须"就地可见"且可被读屏关联):
+ * - 错误节点带 role=alert(即时播报)+ id;
+ * - 关联控件由调用方显式传入 control,或经错误节点的 aria-controls 反查
+ *   (index.html 里单控件错误节点声明 aria-controls,共享型如四边边距不声明);
+ * - 控件被标 aria-invalid,并把错误节点追加进 aria-describedby(不覆盖既有描述)。
+ */
+function resolveFieldControl(errorEl: HTMLElement, control?: HTMLElement): HTMLElement | null {
+  if (control) return control;
+  const id = errorEl.getAttribute("aria-controls");
+  if (!id) return null;
+  return document.getElementById(id);
 }
 
-export function hideFieldError(el: HTMLElement): void {
+function describeFieldError(control: HTMLElement, errorEl: HTMLElement, invalid: boolean): void {
+  control.setAttribute("aria-invalid", invalid ? "true" : "false");
+  const errorId = errorEl.id;
+  if (!errorId) return;
+  const described = (control.getAttribute("aria-describedby") ?? "")
+    .split(/\s+/)
+    .filter((token) => token.length > 0 && token !== errorId);
+  const tokens = invalid ? [...described, errorId] : described;
+  if (tokens.length > 0) control.setAttribute("aria-describedby", tokens.join(" "));
+  else control.removeAttribute("aria-describedby");
+}
+
+/** 字段内错误提示:显示消息、标记控件 aria-invalid,并保持控件可编辑(仅提示,不阻塞)。 */
+export function showFieldError(
+  el: HTMLElement,
+  message: string,
+  control?: HTMLElement,
+): void {
+  el.textContent = message;
+  el.classList.remove("hidden");
+  const target = resolveFieldControl(el, control);
+  if (target) describeFieldError(target, el, true);
+}
+
+/** 复位字段错误:隐藏提示并清掉控件的 aria-invalid(aria-describedby 保留错误节点以外的说明)。 */
+export function hideFieldError(el: HTMLElement, control?: HTMLElement): void {
   el.classList.add("hidden");
+  const target = resolveFieldControl(el, control);
+  if (target) describeFieldError(target, el, false);
 }
 
 /* ---------- 弹窗焦点陷阱(栈式多弹窗协调) ---------- */

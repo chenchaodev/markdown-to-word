@@ -38,6 +38,7 @@ import {
   closePrecheckDialog,
   showBatchDialog,
   showBatchDialogError,
+  showCopyFeedback,
   showDialogError,
 } from "../../ui/dialogs.js";
 import { applySelection } from "../file-list.js";
@@ -49,8 +50,8 @@ import { setSuppressCompleteDialog } from "../../settings/settings-panel.js";
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";
 
-/** 复制成功反馈文案恢复时长(「已复制」→ 原文案)。 */
-const COPY_FEEDBACK_MS = 1500;
+/** 复制成功反馈的恢复由 ui/dialogs 统一管理(单实例计时器 + 打开即复位),
+ *  本域只负责写剪贴板与调用 showCopyFeedback——不改写按钮文案。 */
 
 /* ---------- 本域事件绑定(index 组合入口逐域调用) ---------- */
 export function bindDialogEvents(): void {
@@ -122,10 +123,7 @@ export function bindDialogEvents(): void {
       if (paths.length === 0) return;
       try {
         await navigator.clipboard.writeText(paths.join("\n"));
-        batchDialogCopyAll.textContent = t("common.copied");
-        window.setTimeout(() => {
-          batchDialogCopyAll.textContent = t("batch.copyAll");
-        }, COPY_FEEDBACK_MS);
+        showCopyFeedback();
       } catch {
         showBatchDialogError(t("common.copyFailed"));
       }
@@ -171,10 +169,7 @@ export function bindDialogEvents(): void {
       if (!text) return;
       try {
         await navigator.clipboard.writeText(text);
-        completeDialogCopy.textContent = t("common.copied");
-        window.setTimeout(() => {
-          completeDialogCopy.textContent = t("common.copyPath");
-        }, COPY_FEEDBACK_MS);
+        showCopyFeedback();
       } catch {
         showDialogError(t("common.copyFailed"));
       }

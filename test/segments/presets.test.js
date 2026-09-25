@@ -5,8 +5,11 @@
  * - 值域契约:全部预设的 字号/行距/边距 落在范围常量(BODY_SIZE/LINE_SPACING/MARGIN)内
  *   (「预设值已定稿,勿改」的契约锚,防止改坏或越界);
  * - id 唯一性:模板下拉按 id 定位,重复 id 会串预设。
+ * - 预设说明三语化:每个内置预设声明唯一 hintI18nKey 且三语字典均命中;
+ *   hint 字段是字典缺键时的回退底(非空),且与 zh 键值逐字一致(免得两处各改一处)。
  * 注意:渲染侧保证「预设字段键完整」(TypeScript 结构类型),本段只断言值与匹配语义。
  */
+import { LANGUAGES, DICT } from "../../dist/core/i18n/index.js";
 import {
   BODY_SIZE_MAX,
   BODY_SIZE_MIN,
@@ -60,6 +63,51 @@ export async function run() {
     "预设 id/name/hint 非空",
   );
   console.log(`[ok] 预设结构:${TEMPLATE_PRESETS.length} 个预设,id 唯一,name/hint 非空 断言通过`);
+
+  // ---------- 预设说明三语化:hintI18nKey 契约(内置 6 预设必填 + 三语齐备) ----------
+  const hintKeys = new Set();
+  for (const preset of TEMPLATE_PRESETS) {
+    assertEq(
+      typeof preset.hintI18nKey === "string" && preset.hintI18nKey.length > 0,
+      true,
+      `预设 ${preset.id} 应声明非空 hintI18nKey`,
+    );
+    assertEq(
+      hintKeys.has(preset.hintI18nKey),
+      false,
+      `hintI18nKey 应唯一(重复:${preset.hintI18nKey})`,
+    );
+    hintKeys.add(preset.hintI18nKey);
+    // hint 是字典缺键时的回退底:删掉/清空会让缺键语言退化成空提示
+    assertEq(
+      typeof preset.hint === "string" && preset.hint.length > 0,
+      true,
+      `预设 ${preset.id} hint 回退原文应非空`,
+    );
+    // 三语字典均须有该键(渲染层 presetHintText 据此取当前语言说明)
+    for (const { code } of LANGUAGES) {
+      const value = DICT[code][preset.hintI18nKey];
+      assertEq(
+        typeof value === "string" && value.length > 0,
+        true,
+        `${code} 字典应含非空 ${preset.hintI18nKey}`,
+      );
+    }
+    // zh 键值 = hint 回退原文(两处文案同源,任一处改动须同步,防 zh 显示与缺键回退漂移)
+    assertEq(
+      DICT.zh[preset.hintI18nKey],
+      preset.hint,
+      `zh.${preset.hintI18nKey} 应与预设 ${preset.id} 的 hint 逐字一致`,
+    );
+  }
+  assertEq(
+    hintKeys.size,
+    TEMPLATE_PRESETS.length,
+    "hintI18nKey 键数应与预设数一致",
+  );
+  console.log(
+    `[ok] 预设说明三语化:${TEMPLATE_PRESETS.length} 个内置预设均声明唯一 hintI18nKey,${LANGUAGES.map((l) => l.code).join("/")} 字典齐备,zh 键值 = hint 回退原文 断言通过`,
+  );
 
   // ---------- 完整交付链:每个内置预设均携带 headerFooter/watermark/编号 ----------
   for (const preset of TEMPLATE_PRESETS) {

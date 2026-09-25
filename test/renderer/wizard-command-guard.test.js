@@ -60,6 +60,18 @@ function makeElement(closestSelector = "") {
     addEventListener(type, fn) { listeners.set(type, fn); },
     removeEventListener(type) { listeners.delete(type); },
     focus() {},
+    // 向导外壳每次 open 重建(见 book-wizard.openBookWizard),旧节点需从父节点摘除
+    remove() {
+      this.isConnected = false;
+      const parent = this.parent;
+      if (parent) {
+        const i = parent.children.indexOf(this);
+        if (i >= 0) parent.children.splice(i, 1);
+        this.parent = null;
+      }
+    },
+    parent: null,
+    isConnected: true,
     replaceChildren(...nodes) { this.children = nodes; },
     setAttribute(name, value) {
       if (name === "id") this.id = String(value);
@@ -73,7 +85,7 @@ function makeElement(closestSelector = "") {
       return closestSelector !== "" && selector.includes(closestSelector) ? el : null;
     },
     append(...nodes) { this.children.push(...nodes); },
-    appendChild(node) { this.children.push(node); return node; },
+    appendChild(node) { this.children.push(node); node.parent = this; return node; },
     get listener() { return listeners; },
   };
   Object.defineProperty(el, "className", {
@@ -221,11 +233,16 @@ export async function run() {
     assert(convertBtn.disabled === false, "预检结算后按钮忙态复位");
 
     // ---- 3. 向导打开:自身遮罩不计阻断,背景命令/快捷键阻断 ----
+    // 向导每次 open 重建外壳(步骤控件在构建期读最新 settings),故容器需按次重取
+    const currentOverlay = () => {
+      const el = body.children[body.children.length - 1];
+      assert(el && el.id === "bookWizard", "向导应构建自己的模态容器");
+      // 动态外壳不在 refs 中,登记进元素表以便模态判定与按 id 定位(Esc 链亦按 id 查询)
+      elements.set("bookWizard", el);
+      return el;
+    };
     bookWizard.openBookWizard();
-    const overlay = body.children[0];
-    assert(overlay && overlay.id === "bookWizard", "向导应构建自己的模态容器");
-    // 动态外壳不在 refs 中,登记进元素表以便模态判定与按 id 定位(Esc 链亦按 id 查询)
-    elements.set("bookWizard", overlay);
+    let overlay = currentOverlay();
     assert(!overlay.classList.contains("hidden"), "向导打开后遮罩可见");
     assert(flow.isBackgroundCommandBlocked(), "向导打开时背景命令应被判定阻断");
     const precheckBeforeModal = precheckCalls;
@@ -278,7 +295,8 @@ export async function run() {
 
     // ---- 6. 转换进行中再付印:不并发起第二条链;结算后可再付印 ----
     bookWizard.openBookWizard();
-    assert(step() === 1 && !overlay.classList.contains("hidden"), "向导应可复开");
+    overlay = currentOverlay();
+    assert(step() === 1 && !overlay.classList.contains("hidden"), "向导应可复开(复开为重建,容器重新取)");
     const finishBtn2 = findById(overlay, "wizardFinish");
     runtime.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
     state.mode = "merge";
@@ -296,6 +314,7 @@ export async function run() {
 
     // ---- 7. 前序留下前台模态(完成弹窗):第二次格式转换按单一明确结果拦下 ----
     bookWizard.openBookWizard();
+    overlay = currentOverlay();
     runtime.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
     runtime.draft.format = "both";
     state.suppressCompleteDialog = false; // 转换结束展示完成弹窗(前台模态)

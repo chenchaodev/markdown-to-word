@@ -231,10 +231,16 @@ export async function runBatch(
             canceled: canceledText,
           })
         : t("convert.batch.doneAll", { count: result.okCount, canceled: canceledText });
+    // 三态归类:取消是中性态——全取消不得显示成功勾/绿态;有失败才走失败,
+    // 其余(含部分取消)按成功处理。状态行 tone 与汇总条 kind 用同一判定。
+    const allCanceled =
+      result.failCount === 0 && result.okCount === 0 && result.canceledCount > 0;
+    const summaryKind: "ok" | "fail" | "canceled" =
+      result.failCount > 0 ? "fail" : allCanceled ? "canceled" : "ok";
     setStatus(title, false, result.failCount > 0);
-    setStatusTone(result.failCount > 0 ? "" : "ok");
+    setStatusTone(summaryKind === "ok" ? "ok" : "");
     showSummary({
-      kind: result.failCount > 0 ? "fail" : "ok",
+      kind: summaryKind,
       title,
       hasDetails: result.failCount > 0,
       warnings: result.items.flatMap((item) => item.warnings ?? []),

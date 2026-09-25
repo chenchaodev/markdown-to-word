@@ -5,9 +5,9 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
+import type { ConvertFormat, ThemePreference } from "../../core/settings/settings-defaults.js";
 import type { BatchProgressInfo, BatchResult, ConvertMode, PrecheckResult, UiState } from "../../core/ipc-contract.js";
-import { t } from "../../core/i18n.js";
+import { t, setLanguage, type Language } from "../../core/i18n.js";
 import { precheckMarkdown } from "../../core/markdown/precheck.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { prepareMarkdown } from "../converter/preprocess.js";
@@ -55,6 +55,7 @@ import { importDocxTemplate } from "../../core/docx/template-import.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { getMainWindow } from "../windows/main-window.js";
 import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
+import { buildAppMenu } from "../menu.js";
 import { IPC_CHANNELS as CH } from "./channels.js";
 import {
   clipboardTempDir,
@@ -238,6 +239,88 @@ function watchClipboardTempOwner(sender: Electron.WebContents, ownerId: string):
 app.on("will-quit", () => {
   void clipboardTempSources.releaseAll();
 });
+
+/* ---------- 设置落盘后的 main 侧运行时副作用(单源) ---------- */
+/**
+ * 设置里 language/theme 两项的 main 侧表现此前只在启动时初始化一次
+ * (index.ts 的 setLanguage + buildAppMenu),运行期改设置后菜单仍是旧语言、
+ * 标题栏 overlay 仍是旧配色——renderer 单独改了它管得到的部分。
+ * 此处收口「设置值 → main 侧表现」的唯一判定与执行,启动与 settings:set 共用。
+ */
+
+/** 副作用判定结果(字段为 null/false = 该项无变化,不动作)。 */
+export interface SettingsRuntimePlan {
+  /** 需切换到的界面语言(null = 语言未变) */
+  language: Language | null;
+  /** 是否重建应用菜单(菜单文案经 t() 查表,语言变了必须重建才生效) */
+  menu: boolean;
+  /** 需同步的标题栏 overlay 主题(null = 主题未变) */
+  overlay: ThemePreference | null;
+}
+
+/** 副作用执行触点(依赖注入:判定是纯函数,Electron 触点经此注入便于直测)。 */
+export interface SettingsRuntimeDeps {
+  setLanguage(lang: Language): void;
+  buildMenu(): void;
+  /** 按主题偏好同步标题栏 overlay(win 由 resolveMainWindow 解析,可为 null) */
+  syncOverlay(pref: ThemePreference, win: BrowserWindow | null): void;
+  resolveMainWindow(): BrowserWindow | null;
+}
+
+/** 生产接线(setLanguage/菜单构建/overlay 同步/主窗口解析各自单源,勿在此复制实现)。 */
+const defaultRuntimeDeps: SettingsRuntimeDeps = {
+  setLanguage,
+  buildMenu: buildAppMenu,
+  syncOverlay: (pref, win) => syncTitleBarOverlay(win, pref),
+  resolveMainWindow: getMainWindow,
+};
+
+/**
+ * 副作用判定(纯函数,单源):语言变 → 切语言 + 重建菜单;主题变 → 同步标题栏 overlay。
+ * before 传 null = 无基线(启动路径,此时 main 侧一切都是初值)→ 全量应用一次。
+ * 无变化一律不动作:settings:set 频繁触发,重建菜单/重设 overlay 无视觉收益。
+ */
+export function planSettingsRuntimeSync(
+  before: Pick<AppSettings, "language" | "theme"> | null,
+  after: Pick<AppSettings, "language" | "theme">,
+): SettingsRuntimePlan {
+  const languageChanged = before === null || before.language !== after.language;
+  const themeChanged = before === null || before.theme !== after.theme;
+  return {
+    language: languageChanged ? after.language : null,
+    menu: languageChanged,
+    overlay: themeChanged ? after.theme : null,
+  };
+}
+
+/** 执行判定结果(返回 plan 供调用方留痕与直测)。 */
+export function applySettingsRuntimeSync(
+  before: Pick<AppSettings, "language" | "theme"> | null,
+  after: Pick<AppSettings, "language" | "theme">,
+  deps: SettingsRuntimeDeps = defaultRuntimeDeps,
+): SettingsRuntimePlan {
+  const plan = planSettingsRuntimeSync(before, after);
+  if (plan.language !== null) {
+    deps.setLanguage(plan.language);
+    if (plan.menu) deps.buildMenu();
+  }
+  if (plan.overlay !== null) {
+    deps.syncOverlay(plan.overlay, deps.resolveMainWindow());
+  }
+  return plan;
+}
+
+/**
+ * 启动路径入口(无基线):按持久化设置全量应用一次 main 侧副作用。
+ * 此刻主窗口尚未创建 → overlay 同步为空操作(createWindow 内按持久化主题同步
+ * overlay,单源仍在 windows/title-bar-overlay.ts),调用它只为与运行期共用同一编排。
+ */
+export function applyStartupSettingsRuntime(
+  settings: Pick<AppSettings, "language" | "theme">,
+  deps: SettingsRuntimeDeps = defaultRuntimeDeps,
+): SettingsRuntimePlan {
+  return applySettingsRuntimeSync(null, settings, deps);
+}
 
 export function registerIpc(): void {
   ipcMain.handle(CH.fileOpenDialog, async () => {
@@ -487,11 +570,23 @@ export function registerIpc(): void {
     }
   });
 
-  ipcMain.handle(CH.settingsSet, (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
-    return updateSettings(patch);
-  });
+  // 设置落盘 → main 侧运行时副作用即时生效(语言/菜单/标题栏 overlay,单源见上方
+  // 运行时副作用区块):改语言后菜单文案与对话框标题立刻跟上,改主题后原生标题栏
+  // 按钮区配色立刻跟上(不依赖 renderer 另发 theme:syncOverlay)。
+  // before 取落盘前的权威值(缓存对象,updateSettings 产出新对象不污染它)→ 判定差异。
+  ipcMain.handle(
+    CH.settingsSet,
+    async (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
+      const before = loadSettings();
+      const next = await updateSettings(patch);
+      applySettingsRuntimeSync(before, next);
+      return next;
+    },
+  );
 
-  // 标题栏 overlay 配色同步:renderer 主题变更后调用,主题主动方是 renderer,main 只负责原生 overlay 绘制。
+  // 标题栏 overlay 配色同步:renderer 主题变更后调用(切换当拍即生效,早于落盘),
+  // 主题主动方是 renderer,main 只负责原生 overlay 绘制;settings:set 落盘后另有
+  // 一次权威同步(上方副作用区块),两者幂等重设,不是双源。
   // 入参守卫:非法值警告留痕不静默(配色失同步可感知但不致命,不值得走错误弹窗打断主题切换)。
   ipcMain.handle(CH.themeSyncOverlay, (_event, theme: unknown): void => {
     if (!isThemePreference(theme)) {

@@ -17,6 +17,10 @@
  *   buildCustomPresetEntry(另存为预设快照)、removeCustomPresetByName(按名删除保序)、
  *   parseMarginValue(边距输入解析+钳制)、validateNumberRange(字号/行距范围校验)、
  *   settingsToControlValues(设置对象 → 控件回填值映射)
+ * - 预设名/说明三语化:presetHintText(内置走 hintI18nKey 字典,缺键/未配键回退 hint 原文)、
+ *   presetDisplayName(内置走 i18nKey,自定义走 name,缺键回退 name)、
+ *   resolvePresetHint 三语命中 + 自定义/「已微调」分支可达与复位、
+ *   套用 toast 用本地化名(en/ja 下不中英混排)
  * - reconcileSettingsSave(保存协调):失败保留草稿不调用 apply(控件不回滚到 main
  *   cache)、过期请求让位(不报失败)、成功以 main 权威值回填
  * - mergePendingSavePatch(失败草稿并入下一次提交):块级字段逐字段合并、
@@ -24,6 +28,8 @@
  * - theme 字段:mergeSettingsWithDefaults/settingsToControlValues 的 theme、
  *   applyThemeOn(data-theme 属性应用纯函数:light/dark 设属性,system 移除属性)
  */
+import { DICT, LANGUAGES } from "../../dist/core/i18n/index.js";
+import { setLanguage, t } from "../../dist/core/i18n.js";
 import {
   DEFAULT_SETTINGS,
   MAX_CUSTOM_PRESETS,
@@ -43,6 +49,8 @@ import {
   mergeSettingsWithDefaults,
   normalizePageSetup,
   outputDirDisplayText,
+  presetDisplayName,
+  presetHintText,
   reconcileSettingsSave,
   parseMarginValue,
   removeCustomPresetByName,
@@ -416,24 +424,147 @@ export async function run() {
   );
   console.log("[ok] applySettingsRuntimeEffects:selectedFormat/语言/主题副作用断言通过");
 
-  // ---------- resolvePresetHint(回填 hint 计算) ----------
-  const paperTplHint = TEMPLATE_PRESETS.find((p) => p.id === "paper").hint;
-  const paperHint = resolvePresetHint([], "paper");
+  // ---------- resolvePresetHint(回填 hint 计算;三语 + 分支可达与复位) ----------
+  // 语言为 i18n 模块级状态:本段内切语言,段末复位 zh(后续断言依赖中文文案)
+  const paperPreset = TEMPLATE_PRESETS.find((p) => p.id === "paper");
+  // zh(默认):内置预设命中 → 字典值(= hint 兜底原文)+ isCustom=false
+  const zhPaperHint = resolvePresetHint([], "paper");
   assert(
-    paperHint.isCustom === false && paperHint.hint === paperTplHint,
-    "硬编码预设命中 → 其 hint + isCustom=false",
+    zhPaperHint.isCustom === false && zhPaperHint.hint === paperPreset.hint,
+    "zh:内置预设命中 → 其 hint + isCustom=false",
   );
-  const customHint = resolvePresetHint([preset("我的模板")], `${CUSTOM_PRESET_ID_PREFIX}我的模板`);
   assert(
-    customHint.isCustom === false && customHint.hint === "自定义预设 · 仅排版与页面",
+    zhPaperHint.hint === DICT.zh[paperPreset.hintI18nKey],
+    "zh:提示应取自 hintI18nKey 字典值(与 hint 兜底原文同源)",
+  );
+  // en / ja:提示随当前语言切换,且不回落中文原文
+  for (const { code } of LANGUAGES.filter((l) => l.code !== "zh")) {
+    setLanguage(code);
+    const localized = resolvePresetHint([], "paper");
+    assert(
+      localized.isCustom === false &&
+        localized.hint === DICT[code][paperPreset.hintI18nKey] &&
+        localized.hint !== paperPreset.hint,
+      `${code}:内置预设提示应走 hintI18nKey 字典(不得回落中文原文)`,
+    );
+    assert(
+      localized.hint !== paperPreset.hintI18nKey,
+      `${code}:字典缺键时不得把裸键当提示显示`,
+    );
+  }
+  setLanguage("zh");
+  // 全部 6 个内置预设:三语下均命中各自字典键(逐个确认无遗漏预设)
+  for (const p of TEMPLATE_PRESETS) {
+    for (const { code } of LANGUAGES) {
+      setLanguage(code);
+      const hit = resolvePresetHint([], p.id);
+      assert(
+        hit.isCustom === false && hit.hint === DICT[code][p.hintI18nKey],
+        `${code}:预设 ${p.id} 提示应等于 ${code}.${p.hintI18nKey}`,
+      );
+    }
+  }
+  setLanguage("zh");
+  // 缺键安全回退:字典未命中 → 回落 hint 原文(不显裸键、不抛错)
+  const unknownKeyPreset = { ...paperPreset, hintI18nKey: "preset.hintNoSuchKey" };
+  assert(
+    presetHintText(unknownKeyPreset) === paperPreset.hint,
+    "hintI18nKey 字典缺键 → 回退 hint 原文(安全回退底)",
+  );
+  assert(
+    presetHintText({ ...paperPreset, hintI18nKey: undefined }) === paperPreset.hint,
+    "未声明 hintI18nKey(如自定义预设)→ hint 原文",
+  );
+  assert(
+    resolvePresetHint([], "default").hint !== "default" &&
+      presetHintText({ ...paperPreset, hintI18nKey: "preset.hintNoSuchKey" }) !== "preset.hintNoSuchKey",
+    "回退后不得把裸键暴露给用户",
+  );
+  // 自定义预设分支(customHint 随语言)+ 「已微调」分支(未知 id)
+  const customHintZh = resolvePresetHint([preset("我的模板")], `${CUSTOM_PRESET_ID_PREFIX}我的模板`);
+  assert(
+    customHintZh.isCustom === false && customHintZh.hint === DICT.zh["preset.customHint"],
     "自定义预设命中(allPresets 含 custom 项)→ 其 hint(仅排版与页面,与内置完整交付链不同)+ isCustom=false",
   );
+  setLanguage("en");
+  const customHintEn = resolvePresetHint([preset("我的模板")], `${CUSTOM_PRESET_ID_PREFIX}我的模板`);
+  assert(
+    customHintEn.isCustom === false && customHintEn.hint === DICT.en["preset.customHint"],
+    "en:自定义预设提示应随语言切换",
+  );
+  setLanguage("zh");
   const unknownHint = resolvePresetHint([], "不存在的id");
   assert(
-    unknownHint.isCustom === true && unknownHint.hint === "已微调,与模板预设不一致",
-    "未知 id → 同自定义提示文案 + isCustom=true",
+    unknownHint.isCustom === true && unknownHint.hint === DICT.zh["preset.modifiedHint"],
+    "未知 id → 「已微调」提示文案 + isCustom=true",
   );
-  console.log("[ok] resolvePresetHint:硬编码命中/自定义/未知 id 文案与 isCustom 断言通过");
+  // 分支复位:「已微调」状态回到合法预设 id → 恢复预设说明(不留上一分支残留)
+  assert(
+    resolvePresetHint([], "paper").hint === zhPaperHint.hint &&
+      resolvePresetHint([], "paper").isCustom === false,
+    "从「已微调」复位到内置预设 → 恢复该预设说明(纯函数,无状态残留)",
+  );
+  // 自定义预设删除后其 id 不再可达 → 落回「已微调」(已删选中项的既有语义)
+  assert(
+    resolvePresetHint([], `${CUSTOM_PRESET_ID_PREFIX}已删`).isCustom === true,
+    "自定义预设已删除(选中项不存在)→ 「已微调」分支",
+  );
+  console.log("[ok] resolvePresetHint:三语命中全部内置预设/自定义/未知 id 分支与复位/缺键回退 hint 原文 断言通过");
+
+  // ---------- presetDisplayName(预设名本地化:下拉/向导/toast 共用单一口径) ----------
+  assert(
+    presetDisplayName(paperPreset) === DICT.zh["preset.paper"] && presetDisplayName(paperPreset) === paperPreset.name,
+    "zh:内置预设名取字典值(与中文原文一致)",
+  );
+  for (const { code } of LANGUAGES.filter((l) => l.code !== "zh")) {
+    setLanguage(code);
+    assert(
+      presetDisplayName(paperPreset) === DICT[code]["preset.paper"],
+      `${code}:内置预设名应取 ${code} 字典值(不回落中文名)`,
+    );
+  }
+  setLanguage("zh");
+  // 自定义预设无 i18nKey → 直接用用户命名的 name(任何语言都不翻译用户数据)
+  const named = customPresetToTemplate(preset("我的模板"));
+  for (const { code } of LANGUAGES) {
+    setLanguage(code);
+    assert(presetDisplayName(named) === "我的模板", `${code}:自定义预设名应原样用 name`);
+  }
+  setLanguage("zh");
+  // 字典缺键 → 回退 name(不显裸键)
+  assert(
+    presetDisplayName({ ...paperPreset, i18nKey: "preset.noSuchKey" }) === paperPreset.name,
+    "i18nKey 字典缺键 → 回退 name(安全回退底)",
+  );
+  assert(
+    presetDisplayName({ ...paperPreset, i18nKey: undefined }) === paperPreset.name,
+    "未声明 i18nKey → name",
+  );
+  // 套用预设 toast:名随语言,en/ja 下不出现中文(不得中英/中日混排)
+  for (const { code } of LANGUAGES) {
+    setLanguage(code);
+    const toast = t("toast.presetSwitched", {
+      name: presetDisplayName(paperPreset),
+      groups: "Typography · Numbering",
+    });
+    assert(
+      toast.includes(DICT[code]["preset.paper"]),
+      `${code}:套用 toast 应含本语言预设名(实测 ${JSON.stringify(toast)})`,
+    );
+    if (code === "zh") continue;
+    assert(
+      !toast.includes(DICT.zh["preset.paper"]),
+      `${code}:套用 toast 不应混入中文预设名(混排回归,实测 ${JSON.stringify(toast)})`,
+    );
+    if (code === "en") {
+      assert(
+        !/[一-鿿]/.test(toast),
+        `en:套用 toast 不应含任何汉字(实测 ${JSON.stringify(toast)})`,
+      );
+    }
+  }
+  setLanguage("zh");
+  console.log("[ok] presetDisplayName:内置三语命中/自定义原样 name/缺键回退 name + toast 无中英混排 断言通过");
 
   // ---------- outputDirDisplayText(输出目录占位文案) ----------
   assert(outputDirDisplayText("C:\\out") === "C:\\out", "非空目录原样返回");

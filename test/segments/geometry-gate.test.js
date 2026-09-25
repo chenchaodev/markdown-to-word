@@ -72,7 +72,8 @@ function layoutFor(viewport) {
   const headerH = isTall ? 44 : 40;
   const wrapPadTop = isTall ? 16 : 12;
   const barH = 62;
-  const feedH = 62;
+  // 消息区固定槽高度 = base.css --feed-h 令牌值(常规 96 / 矮窗 86),不是自适应
+  const feedH = isTall ? 96 : 86;
   const headH = isTall ? 40 : 36;
   const barTop = viewport[1] - barH;
   const feedTop = barTop - feedH;
@@ -293,7 +294,7 @@ export async function run() {
   const withinTol = runGeometryGate(jump(0.5), { mediaConditions: MEDIA_CONDITIONS });
   assert(withinTol.ok, `容差内的 0.5px 抖动不应判红,实际:${withinTol.findings.map((f) => f.rule).join(",")}`);
   expectRule(jump(4), "geometry-jump", "converting-960");
-  // 槽节点只锁高度:仅纵向位移不判红(位置由上方消息区内容自适应决定)
+  // 槽节点只锁高度:仅纵向位移不判红(位置由固定槽之上的布局决定)
   const slotShift = withNode(cleanSamples(), "multi-960", "historyHead", (n) => {
     n.rect = { ...n.rect, top: n.rect.top + 9, bottom: n.rect.bottom + 9 };
   });
@@ -307,6 +308,35 @@ export async function run() {
     }),
     "geometry-jump",
     "multi-960",
+  );
+
+  // ---------- 7b. 固定消息槽(OPT-4.4):高度恒定 + 撑高即判红 ----------
+  // (1) 完成态(状态行 + 结果汇总条同处一槽)不得改写槽高
+  expectRule(
+    withNode(cleanSamples(), "after-convert-960", "feed", (n) => {
+      n.rect = { ...n.rect, height: n.rect.height + 30, bottom: n.rect.bottom + 30 };
+      n.clientHeight = n.clientHeight + 30;
+    }),
+    "geometry-jump",
+    "after-convert-960",
+  );
+  // (2) 槽退化为 height:auto(结果汇总撑高)即越上限
+  expectRule(
+    withNode(cleanSamples(), "after-convert-960", "feed", (n) => {
+      n.rect = { ...n.rect, height: 214, bottom: n.rect.top + 214 };
+      n.clientHeight = 214;
+    }),
+    "slot-overflow",
+    "after-convert-960",
+  );
+  // (3) 槽塌陷(高度趋零)命中下限,而不是被上限规则漏过
+  expectRule(
+    withNode(cleanSamples(), "compact-multi-880", "feed", (n) => {
+      n.rect = { ...n.rect, height: 24, bottom: n.rect.top + 24 };
+      n.clientHeight = 24;
+    }),
+    "slot-collapsed",
+    "compact-multi-880",
   );
 
   // ---------- 8. 容差与滚动预算可注入(门禁松紧由参数决定,而非硬编码) ----------

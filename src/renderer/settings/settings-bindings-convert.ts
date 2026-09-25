@@ -7,7 +7,6 @@
  */
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import { t } from "../../core/i18n.js";
-import { outputDirDisplayText } from "./settings-logic.js";
 import {
   afterConvertInputs,
   aiCleanupInput,
@@ -16,29 +15,23 @@ import {
   obsidianCompatInput,
   outputDirPick,
   outputDirReset,
-  outputDirValue,
   pdfCssClearBtn,
   pdfCssImportBtn,
-  pdfCssStatus,
   pdfCssTextInput,
-  quickOutputDirChip,
   quickOutputPickBtn,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError } from "../state/utils.js";
 import { errorMessage } from "../state/pure.js";
-import { clearPdfCss, importPdfCss, persistSettings } from "./settings-panel.js";
+import {
+  clearPdfCss,
+  importPdfCss,
+  persistSettings,
+  syncOutputDirDisplay,
+  syncPdfCssState,
+} from "./settings-panel.js";
 
 type AfterConvert = AppSettings["afterConvert"];
-
-/** 输出目录显示文本双写:抽屉 chip 与快速参数条 chip 同值同 title。 */
-function setOutputDirDisplay(dir: string): void {
-  const text = outputDirDisplayText(dir);
-  outputDirValue.textContent = text;
-  outputDirValue.title = text;
-  quickOutputDirChip.textContent = text;
-  quickOutputDirChip.title = text;
-}
 
 /** 打开目录选择对话框(抽屉「更改…」与快速参数条「更改…」共用);取消无动作。 */
 async function pickOutputDir(): Promise<void> {
@@ -46,7 +39,7 @@ async function pickOutputDir(): Promise<void> {
     const dir = await window.api.selectDir();
     if (!dir) return; // 用户取消
     state.settings.outputDir = dir;
-    setOutputDirDisplay(dir);
+    syncOutputDirDisplay(dir); // 动态节点单源(settings-panel)
     persistSettings({ outputDir: dir });
   } catch (err) {
     const message = errorMessage(err);
@@ -100,21 +93,18 @@ export function bindConvertGroup(): void {
     if (state.hydratingSettings) return;
     state.settings.pdfCss = pdfCssTextInput.value;
     persistSettings({ pdfCss: pdfCssTextInput.value });
-    pdfCssStatus.textContent = pdfCssTextInput.value
-      ? t("settings.pdfCssImported")
-      : t("settings.pdfCssNone");
-    pdfCssClearBtn.classList.toggle("hidden", !pdfCssTextInput.value);
+    syncPdfCssState(pdfCssTextInput.value); // 状态行与清除按钮显隐单源
   });
 
   // 输出目录选择 / 恢复默认(空串 = 与源文件相同目录);
-  // 抽屉与快速参数条两处入口共享 pickOutputDir / setOutputDirDisplay
+  // 抽屉与快速参数条两处入口共享 pickOutputDir / syncOutputDirDisplay
   outputDirPick.addEventListener("click", () => void pickOutputDir());
 
   quickOutputPickBtn.addEventListener("click", () => void pickOutputDir());
 
   outputDirReset.addEventListener("click", () => {
     state.settings.outputDir = "";
-    setOutputDirDisplay("");
+    syncOutputDirDisplay("");
     persistSettings({ outputDir: "" });
   });
 }

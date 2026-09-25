@@ -7,13 +7,11 @@
  */
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import { t } from "../../core/i18n.js";
-import { headerLogoDisplayName } from "./settings-logic.js";
 import {
   footerEnabledInput,
   headerLayoutInputs,
   headerLogoClearBtn,
   headerLogoPickBtn,
-  headerLogoStatus,
   headerModeInputs,
   headerTextInput,
   watermarkAngleInput,
@@ -28,6 +26,7 @@ import {
   persistHeaderFooter,
   persistWatermark,
   syncHeaderCustomVisibility,
+  syncHeaderLogoDisplay,
 } from "./settings-panel.js";
 
 /** 页眉页脚与水印组全部控件接线(bindSettingsEvents 编排调用)。 */
@@ -71,10 +70,7 @@ export function bindHeaderWatermarkGroup(): void {
         const logoPath = await window.api.selectHeaderLogo();
         if (!logoPath) return; // 用户取消
         state.settings.headerFooter.headerLogoPath = logoPath;
-        const name = headerLogoDisplayName(logoPath);
-        headerLogoStatus.textContent = name;
-        headerLogoStatus.title = name;
-        headerLogoClearBtn.classList.remove("hidden");
+        syncHeaderLogoDisplay(logoPath); // 动态节点单源(settings-panel)
         persistHeaderFooter();
       } catch (err) {
         setError(t("settings.selectDirFailed", { error: errorMessage(err) }));
@@ -84,9 +80,7 @@ export function bindHeaderWatermarkGroup(): void {
 
   headerLogoClearBtn.addEventListener("click", () => {
     state.settings.headerFooter.headerLogoPath = "";
-    headerLogoStatus.textContent = t("settings.headerLogoNone");
-    headerLogoStatus.title = "";
-    headerLogoClearBtn.classList.add("hidden");
+    syncHeaderLogoDisplay("");
     persistHeaderFooter();
   });
 

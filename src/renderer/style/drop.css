@@ -405,7 +405,9 @@
   flex: none;
 }
 
-/* 引导显示时:在投放层底部预留净空(上推内容)+ 隐藏能力胶囊,避免与引导卡重叠 */
+/* 引导显示时:在投放层底部预留净空(上推内容)+ 隐藏能力胶囊,避免与引导卡重叠。
+ * 预留值按档位给足:引导卡在三步换行/字号放大时高度会涨,窄窗与矮窗档
+ * 更容易折行,故这两档加高净空(行数少的常规档 84px 仍够)。 */
 .stage-wrap.show-guide .drop-layer {
   padding-bottom: 84px;
 }
@@ -464,14 +466,15 @@
   gap: 8px;
 }
 
+/* 队列直接排在纸面上(ui-guidelines §2 queuecard:发丝线分行,不再嵌套卡壳):
+ * 容器只负责「弹性收缩 + 行内滚动」,不再自带边线与圆角,避免纸面上再套一张卡。
+ * 行间分隔由 .multi-item 的 border-bottom 承担;首尾行的圆角裁切也一并去掉
+ * (无外框即无圆角可裁)。 */
 .listcard {
   flex: 0 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-in);
-  overflow: hidden;
 }
 
 /* 队列列表:弹性填充 + 内部滚动(行数多时卡片收缩,纸面高度不变) */
@@ -718,6 +721,11 @@
   .rules {
     inset: 40px 40px;
   }
+
+  /* 矮窗档引导卡更易折行:加高底部净空,防止与投放按钮重叠 */
+  .stage-wrap.show-guide .drop-layer {
+    padding-bottom: 128px;
+  }
 }
 
 /* —— 半屏档:≤720(minWidth 640):参数条折两行,空态能力胶囊让位 —— */
@@ -748,6 +756,11 @@
   /* 0 0 100% 禁收缩强制独占一行(1 1 100% 会被压缩回单行) */
   .qb-output {
     flex: 0 0 100%;
+  }
+
+  /* 半屏档(640 宽)引导标题与三步最易折行:同样加高底部净空 */
+  .stage-wrap.show-guide .drop-layer {
+    padding-bottom: 128px;
   }
 
   .qb-chip {

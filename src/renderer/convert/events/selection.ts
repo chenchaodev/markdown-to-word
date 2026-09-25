@@ -4,7 +4,7 @@
  *   (拖放区只对自身目标响应,内部控件冒泡不叠加第二个动作);
  * - 队列卡头侧动作(预览[单文件可见] / 追加 / 清空;旧单文件「移除」按钮退役,
  *   清空列表覆盖其语义);
- * - 多文件列表交互:点击委托(移除)、双击预览、键盘 Alt+↑↓ 排序、
+ * - 多文件列表交互:点击委托(移除)、双击/回车预览、键盘 Alt+↑↓ 排序、
  *   拖拽排序(dragstart/dragover/drop/dragend,含插入指示与边缘自动滚动)。
  * 依赖方向:本模块 → dom/state/utils/file-list/pure/core/i18n 与同目录
  * dialogs-events(仅 openPreviewFor);不反向引用组合根。
@@ -40,10 +40,11 @@ const EDGE_SCROLL_STEP_PX = 14;
 /**
  * 容器内自带行为的交互元素选择器(事件边界):祖先容器只对自身目标响应,
  * 内部控件的 click / Enter / Space 冒泡不得再叠加第二个动作。
- * 覆盖 button/link/表单控件/label(summary 同理)+ 显式交互 role。
+ * 覆盖 button/link/表单控件/label(summary 同理)+ 显式交互 role
+ * + .multi-item(队列行 tabindex=0 且有行级 Enter/Space 语义,最易穿透容器键盘入口)。
  */
 const OWN_ACTION_SELECTOR =
-  "button, a[href], input, select, textarea, label, summary, [role='button'], [role='radio'], [role='switch'], [role='tab'], [role='combobox']";
+  "button, a[href], input, select, textarea, label, summary, .multi-item, [role='button'], [role='radio'], [role='switch'], [role='tab'], [role='combobox']";
 
 /**
  * 事件是否发源于容器自身(而非内部交互控件)。
@@ -203,13 +204,24 @@ export function bindSelectionEvents(): void {
     );
   });
 
-  // 键盘排序补偿:行聚焦后 Alt+↑/↓ 移动(替代已删除的上移/下移按钮);
-  // 转换中与拖拽中守卫同拖拽路径;移动后焦点跟随被移动的行。
-  // 单文件态行无 grip/序号且不可拖拽,Alt+± 越界守卫天然拦截
+  // 队列行键盘:行级激活(Enter/Space)+ 排序(Alt+↑/↓)。两支同属一个监听器。
+  // 行为边界——行内 Enter/Space 属行自身,冒泡到拖放区会被判为「容器自身目标」
+  // 而打开文件对话框,叠加出第二个动作(焦点落在行上时尤其明显)。故先判行激活并吞冒泡:
+  // Enter 与行双击同语义 = 预览该行(键盘补齐);Space 仅占用,避免误开预览窗口。
+  // 排序 = 整行拖拽(鼠标) / 行聚焦后 Alt+↑↓(键盘);转换中与拖拽中守卫同拖拽路径;
+  // 移动后焦点跟随被移动的行;单文件态行无 grip/序号且不可拖拽,Alt+± 越界守卫天然拦截。
   multiList.addEventListener("keydown", (event) => {
+    const li = (event.target as HTMLElement).closest<HTMLLIElement>(".multi-item");
+    if (li && (event.key === "Enter" || event.key === " ")) {
+      event.stopPropagation(); // 不再穿透到 dropZone 的容器级键盘入口
+      event.preventDefault(); // 阻止 Space 触发列表滚动
+      if (state.mode !== null || event.key !== "Enter") return;
+      const previewPath = state.selectedFiles[Number(li.dataset.index)];
+      if (previewPath) openPreviewFor(previewPath);
+      return;
+    }
     if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
     if (state.mode !== null) return;
-    const li = (event.target as HTMLElement).closest<HTMLLIElement>(".multi-item");
     if (!li) return;
     event.preventDefault(); // 阻止滚动等默认行为
     const index = Number(li.dataset.index);

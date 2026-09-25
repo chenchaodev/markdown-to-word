@@ -246,7 +246,7 @@ export const CONSTANT_GROUPS = [
     axes: ["height"],
     baseline: "empty-960",
     members: STATES_960,
-    why: "固定槽:历史标题条为 40px 常驻占位(矮窗档 36px),浮层开合与文件态切换不得改变占位高度(其纵向位置由上方消息区内容自适应决定,不在本不变量内)",
+    why: "固定槽:历史标题条为 40px 常驻占位(矮窗档 36px),浮层开合与文件态切换不得改变占位高度(其纵向位置由固定消息槽 --feed-h 钉死,见 feed-slot 组)",
   },
   {
     id: "stage-880",
@@ -277,15 +277,47 @@ export const CONSTANT_GROUPS = [
     members: ["halfscreen-multi-640", "halfscreen-empty-640"],
     why: "半屏档两态外框相同(舞台高度=min(可用高,设计高),设计高取矮窗档令牌),文件态与空态舞台几何须恒等",
   },
+  // 消息区固定槽(OPT-4.4):--feed-h 令牌锁高,状态行/跳过列表/结果汇总的增减
+  // 一律不改写槽高,故其上下邻居(舞台下沿、历史条上沿)也不再被推挤。
+  {
+    id: "feed-slot-960",
+    node: "feed",
+    axes: ["height"],
+    baseline: "empty-960",
+    members: STATES_960,
+    why: "固定消息槽:常规档 --feed-h=96px,转换开始/完成时状态行与结果汇总条的增减不得改写槽高(超出部分在槽内滚动)",
+  },
+  {
+    id: "feed-slot-880",
+    node: "feed",
+    axes: ["height"],
+    baseline: "compact-multi-880",
+    members: STATES_COMPACT,
+    why: "紧凑档固定消息槽:矮窗档 --feed-h=86px,进度行显隐与历史浮层开合不得改写槽高",
+  },
+  {
+    id: "feed-slot-640",
+    node: "feed",
+    axes: ["height"],
+    baseline: "halfscreen-multi-640",
+    members: ["halfscreen-multi-640", "halfscreen-empty-640"],
+    why: "半屏档固定消息槽:640×560 仍走矮窗档 --feed-h=86px,清空列表(文件态→空态)不得改写槽高",
+  },
 ];
 
 /**
- * 固定槽不塌陷下限(px):消息区与历史标题条是常驻占位,高度趋零即布局塌陷。
- * 只断言"不塌陷",不断言具体档位值(档位值由 CONSTANT_GROUPS 的恒等性覆盖)。
+ * 固定槽高度区间(px):常驻占位不得塌陷(下限),也不得被内容撑高/退化为自适应(上限)。
+ * 上限取「两档令牌值 + 1px 容差」:--feed-h 常规 96 / 矮窗 86,超出即说明 .feed 又回到
+ * height:auto(OPT-4.4 前的状态),或结果汇总把槽顶开。
  */
 export const SLOT_INVARIANTS = [
   { node: "historyHead", minHeight: 30, why: "历史标题条常驻占位(常规档 40px / 矮窗档 36px)" },
-  { node: "feed", minHeight: 30, why: "消息区常驻槽(状态行 / 跳过列表 / 结果汇总)" },
+  {
+    node: "feed",
+    minHeight: 80,
+    maxHeight: 97,
+    why: "消息区固定槽(常规档 96px / 矮窗档 86px,见 base.css --feed-h);低于 80 是塌陷,高于 97 说明被内容撑高",
+  },
 ];
 
 /** 默认容差(px):亚像素舍入 + 1px 边框级抖动不算跳动 */

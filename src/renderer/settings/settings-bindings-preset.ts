@@ -8,7 +8,7 @@
  */
 import type { TemplatePreset } from "../../core/settings/settings-defaults.js";
 import { t } from "../../core/i18n.js";
-import { allPresets } from "./settings-logic.js";
+import { allPresets, presetDisplayName } from "./settings-logic.js";
 import {
   docxTemplateImportBtn,
   presetDeleteBtn,
@@ -110,9 +110,11 @@ export function applyTemplatePreset(presetId: string): void {
       : {}),
   });
   // 预设切换即时反馈——toast 列出被覆盖的设置组
+  // 预设名经 presetDisplayName 取当前语言文案(内置走字典/自定义走用户命名),
+  // 不得直接用 preset.name ——那是中文原文,en/ja 下会与外层英文/日文句子混排。
   showToast(
     t("toast.presetSwitched", {
-      name: preset.name,
+      name: presetDisplayName(preset),
       groups: presetCoveredGroupLabels(preset),
     }),
   );

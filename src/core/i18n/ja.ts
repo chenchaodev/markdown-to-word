@@ -325,6 +325,13 @@ const dict = {
     "preset.officialCn": "中国語公文",
     "preset.cnReader": "中国語長文",
     "preset.cnMinimal": "中国語ミニマル",
+    // プリセット説明(フォント名は中国語の正式名ではなく通称表記。写植値 宋体/仿宋_GB2312 は SimSun/FangSong_GB2312)
+    "preset.hintDefault": "一般的な文書:本文は Microsoft YaHei、両端揃え、行送り 1.5",
+    "preset.hintPaper": "論文向け:本文は SimSun、西文は Times New Roman、両端揃え、標準余白",
+    "preset.hintBusiness": "資料向け:本文は Microsoft YaHei、左揃え、行送り 1.15、余白は詰める",
+    "preset.hintOfficialCn": "本文は FangSong_GB2312、西文は Times New Roman、両端揃え、GB 標準余白",
+    "preset.hintCnReader": "本文は SimSun、行送り 1.75、字下げあり。読み物向けの長文に",
+    "preset.hintCnMinimal": "本文は Microsoft YaHei、左揃え、字下げなし、行送りを詰める。書き留め向きに",
     "preset.saveAs": "プリセットとして保存…",
     "preset.saveAsTitle": "プリセットとして保存",
     "preset.saveDesc": "現在の組版とページ設定をカスタムプリセットとして保存します(ヘッダー/フッターとウォーターマークは含みません)",

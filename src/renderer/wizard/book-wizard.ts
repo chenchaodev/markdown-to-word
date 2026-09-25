@@ -13,6 +13,9 @@
  * - wizard-runtime.ts:草稿/容器/步序单例(ESM 导入绑定只读,赋值经
  *   resetDraft/setStep/setWizardEl 收口,避免单例留外壳成环)
  *
+ * 生命周期:open 时**重建**外壳(各步骤在构建期读最新 settings,步骤名按当前语言
+ * 生成),close 仅隐藏——下次 open 走 dispose + build,不复用旧控件快照。
+ *
  * 状态归属(设计 §3.6):向导内改的模板/页眉/水印/目录直接写 `state.settings` +
  * `persistSettings`(与设置抽屉同源,实时落盘);封面元数据(标题/作者/日期)走
  * `wizardDraft.cover`,付印时随 `runMerge` 传入,不写 settings。
@@ -69,16 +72,19 @@ import {
   sourcesList,
 } from "./wizard-steps-delivery.js";
 
-/** 步骤标签(设计 §3.3 七步名) */
-const STEP_LABELS: string[] = [
-  t("wizard.stepTemplate"),
-  t("wizard.stepCover"),
-  t("wizard.stepHeader"),
-  t("wizard.stepWatermark"),
-  t("wizard.stepMerge"),
-  t("wizard.stepToc"),
-  t("wizard.stepOutput"),
-];
+/** 步骤标签(设计 §3.3 七步名):构建期取当前语言,
+ *  不得在模块加载期求值(启动语言未定,且语言切换后旧缓存不会更新)。 */
+function stepLabels(): string[] {
+  return [
+    t("wizard.stepTemplate"),
+    t("wizard.stepCover"),
+    t("wizard.stepHeader"),
+    t("wizard.stepWatermark"),
+    t("wizard.stepMerge"),
+    t("wizard.stepToc"),
+    t("wizard.stepOutput"),
+  ];
+}
 
 /* ---------- 模块级可变(向导单例外的外壳生命周期:焦点陷阱/触发钮) ---------- */
 let releaseTrap: (() => void) | null = null;
@@ -86,12 +92,13 @@ let triggerBtn: HTMLElement | null = null;
 
 /* ---------- 向导外壳构建 ---------- */
 function buildWizard(): HTMLElement {
+  const labels = stepLabels();
   const steps = h("ol", { class: "wizard-steps", id: "wizardSteps", "aria-label": t("wizard.title") });
   for (let i = 1; i <= WIZARD_TOTAL_STEPS; i++) {
     steps.appendChild(
       h("li", { dataset: { step: String(i) } }, [
         h("span", { class: "wz-dot" }),
-        h("span", { class: "wz-step-label", text: STEP_LABELS[i - 1] ?? `步骤 ${i}` }),
+        h("span", { class: "wz-step-label", text: labels[i - 1] ?? `步骤 ${i}` }),
       ]),
     );
   }
@@ -222,13 +229,16 @@ export function openBookWizard(): void {
   triggerBtn = document.activeElement as HTMLElement;
   resetDraft();
   setStep(1);
-  let el = wizardEl;
-  if (!el) {
-    el = buildWizard();
-    setWizardEl(el);
-    document.body.appendChild(el);
-  }
-  // 重置瞬时字段(向导复用缓存 DOM,避免上次输入残留与 draft 不一致)
+  // 每次打开重建外壳:各步骤控件在构建期从 state.settings 取值,复用旧 DOM 会让
+  // 向导停留在上次打开时的设置快照(向导外改过排版/页眉/水印/目录后再开会失真);
+  // 重建同时让步骤名按当前语言生成(stepLabels 构建期取 t)。
+  wizardEl?.remove();
+  releaseTrap?.();
+  releaseTrap = null;
+  const el = buildWizard();
+  setWizardEl(el);
+  document.body.appendChild(el);
+  // 重置瞬时字段(草稿与控件同源,避免上次输入残留)
   coverTitleInput.value = "";
   coverAuthorInput.value = "";
   coverDateInput.value = "";
@@ -244,7 +254,6 @@ export function openBookWizard(): void {
   renderStep();
   renderCoverPreview();
   // 焦点陷阱(栈式,与抽屉/弹窗同机制)
-  releaseTrap?.();
   releaseTrap = trapFocus(el);
   // 焦点落首个可聚焦元素(关闭钮)
   el.querySelector<HTMLButtonElement>("#wizardCloseBtn")?.focus();
@@ -256,6 +265,12 @@ export function closeBookWizard(): void {
   releaseTrap?.();
   releaseTrap = null;
   // 焦点归还触发按钮(与 closeSettingsDrawer 同模式)
-  triggerBtn?.focus();
+  const btn = triggerBtn;
   triggerBtn = null;
+  if (btn?.isConnected) btn.focus();
+  // 触发按钮可能已随舞台状态切换而失效(如向导内选了文件 → 空态按钮消失),
+  // 焦点无落点时退回舞台容器(region + tabindex),避免焦点掉到 body
+  if (!document.activeElement || document.activeElement === document.body) {
+    document.getElementById("dropZone")?.focus();
+  }
 }

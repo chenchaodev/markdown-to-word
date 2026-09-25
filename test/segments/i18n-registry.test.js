@@ -10,6 +10,8 @@
  * (d) settings 校验派生:isValidSettings 接受全部注册语言码;非法/未注册语言码
  *     不再整文件拒绝,loadSettings 字段级兜底 zh(语言裁撤迁移:已存 ko/fr/ru
  *     用户仅语言回退,其余偏好保留);settings.json 往返无损;旧文件缺 language 兜底 zh
+ * (f) warn.pathScanLimit:目录扫描预算触顶三语齐备
+ * (g) preset.hint*:预设说明键三语齐备 + 无插值占位符 + t() 逐语言命中
  */
 import fs from "node:fs/promises";
 import { app } from "electron";
@@ -204,4 +206,41 @@ export async function run() {
   );
   setLanguage("zh");
   console.log("[ok] i18n-registry:(f) warn.pathScanLimit 三语齐备 + 占位符一致(en/ja 非中文原文) 断言通过");
+
+  // ================= (g) 预设说明键(preset.hint*):三语齐备 + 无占位符 =================
+  // 内置预设说明按 hintI18nKey 三语化:任一语言缺键会退化成英文兜底(中文界面口径不一)
+  // 或裸键(用户看到 "preset.hintPaper"),故此处逐键断言三语命中、无插值占位符、
+  // en/ja 译文不沿用中文原文。
+  const presetHintKeys = [
+    "preset.hintDefault",
+    "preset.hintPaper",
+    "preset.hintBusiness",
+    "preset.hintOfficialCn",
+    "preset.hintCnReader",
+    "preset.hintCnMinimal",
+  ];
+  for (const key of presetHintKeys) {
+    for (const { code } of LANGUAGES) {
+      const value = DICT[code][key];
+      assert(
+        typeof value === "string" && value.trim().length > 0,
+        `${code} 应有非空文案 ${key}`,
+      );
+      assert(
+        !value.includes("${"),
+        `${code}.${key} 不应含插值占位符(预设说明为固定文案,实测 ${JSON.stringify(value)})`,
+      );
+    }
+    assert(DICT.en[key] !== DICT.zh[key], `en.${key} 不应沿用中文原文`);
+    assert(DICT.ja[key] !== DICT.zh[key], `ja.${key} 不应沿用中文原文`);
+    // 逐语言经 t() 验证命中(缺键时 t 会回退裸 key/英文,均在此暴露)
+    for (const { code } of LANGUAGES) {
+      setLanguage(code);
+      assert(t(key) === DICT[code][key], `${code} 下 t(${key}) 应命中本语言字典`);
+    }
+  }
+  setLanguage("zh");
+  console.log(
+    `[ok] i18n-registry:(g) 预设说明 ${presetHintKeys.length} 键三语齐备 + 无占位符 + t() 逐语言命中(en/ja 非中文原文) 断言通过`,
+  );
 }

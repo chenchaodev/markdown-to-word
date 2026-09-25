@@ -17,6 +17,7 @@ import {
   mirrorLanguage,
   persistSettings,
   rebuildLanguageOptions,
+  refreshDynamicSettingsText,
 } from "./settings-panel.js";
 
 /** 应用组全部控件接线(bindSettingsEvents 编排调用)。 */
@@ -63,7 +64,7 @@ export function bindAppGroup(): void {
   });
 
   // i18n:界面语言切换(自 radio 组改 select;选项由 LANGUAGES 注册表动态生成,
-  // 须先于事件绑定重建;即时生效:静态文案重刷 + 动态文案经 t() 自动跟随,
+  // 须先于事件绑定重建;即时生效:静态文案重刷 + 动态节点按新语言重算,
   // 状态栏/文件列表/最近区块等动态区域显式重渲染)
   rebuildLanguageOptions();
   languageSelect.addEventListener("change", () => {
@@ -72,7 +73,10 @@ export function bindAppGroup(): void {
     state.settings.language = lang;
     setLanguage(lang);
     mirrorLanguage(lang); // 切换落定即镜像,下次启动 lang-bootstrap.js 尽早生效
-    applyStaticTexts();
+    applyStaticTexts(); // 静态文案:字典 → DOM
+    // 动态状态节点(输出目录 / PDF CSS / Logo / 预设提示)不带 data-i18n,
+    // 必须在此按新语言重算,否则会停在旧语言文案(见 settings-panel 同名注释)
+    refreshDynamicSettingsText();
     persistSettings({ language: lang });
     setStatus("");
     renderSelection();
