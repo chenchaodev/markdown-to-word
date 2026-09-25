@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 D 批(结构重构)六项全部关闭,`docs/TECH-DEBT-PLAN.md` 已回写**:六项独立提交 `fdd132f`(D5 段归位)→`9b57dee`(D6 对话框样板)→`07ee67a`(D4/C5 契约归位)→`fb4c70e`(D3 pdf 模板三拆)→`06a3bd2`(D2 settings 六组拆线)→`b3d7d83`(D1 向导三块拆分),每项 typecheck/lint/build/70 段/smoke 全绿;**打开事项:设置抽屉六组与成书向导 GUI 实测随人工验收统一走 ACCEPTANCE,反馈按三分类处理(bug→修复批次 / 新需求→ROADMAP / 不做→记砍)**;E 批(E1-E5)待恢复开发,决策点仅剩 E2;D 批未 push(等指令)
+
 - 2026-09-25:**技术债 D1 完成(`book-wizard.ts` 967 行按「步骤渲染/校验/提交」三块拆五文件)**:`wizard-steps.ts`(408 行,版式四步:模板/封面/页眉页脚/水印 + 封面实时预览与封面控件引用)、`wizard-steps-delivery.ts`(273 行,交付三步:合并源/目录/付印 + 合并源数据操作与当前步渲染 `renderStep`——与 syncSources 互调同岛落位,拆分以依赖无环优先)、`wizard-fields.ts`(180 行,「校验」块:边距/字号/行距/字体钳制校验绑定 + h/radio/开关行等共用零件)、`wizard-runtime.ts`(35 行,草稿/模态容器/步序单例——ESM 导入绑定只读,赋值经 resetDraft/setStep/setWizardEl 收口,避免单例留外壳成环)、`book-wizard.ts`(219 行,外壳/导航/打开关闭 + 「付印提交」节 cleanMetadata/finishWizard);机械化等价核对:差异仅 import 重排/函数 export 化/setter 收口/局部 el 收窄,函数体零行为漂移;外部契约不变(`openBookWizard`/`closeBookWizard` 导出与三处消费点零改动);DEV-GUIDE 代码地图同步;typecheck/lint/build/70 段/smoke 全绿;向导 GUI 实测随 D 批收尾统一走 ACCEPTANCE
 
 - 2026-09-25:**技术债 D2 完成(settings 接线按六组 Tab 拆分)**:`settings-bindings.ts` 710 行 → 8 文件(编排 51 + preset 154 / typography 194 / headerwatermark 129 / numbering 57 / convert 120 / app 93,分组口径 = index.html `data-group`);57 处 addEventListener 逐一搬移零增减,机械化等价核对(除 import 重排与函数 export 化外零行为行差异);`settings-panel.ts` 560 → 443(预设弹窗/保存/删除/导入导出 127 行迁 `settings-preset-actions.ts` 163,四个分组 persist 整体写回收为 panel 单源导出);`applyTemplatePreset` 随预设组落位(book-wizard 改源 import)、`closePresetSaveDialog` 归 preset-actions(dialogs-events 改源),无 re-export 垫片;控件 id/name 零触碰(HTML/refs 未动——refs 类型导出编译期守卫引用完整性 + smoke 控件计数);DEV-GUIDE 代码地图与 BOOK-WIZARD/dialogs-events 依赖注释同步;typecheck/lint/build/70 段/smoke 全绿;GUI 实测随 D 批收尾统一走 ACCEPTANCE

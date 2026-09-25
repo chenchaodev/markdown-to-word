@@ -14,6 +14,8 @@
 > **B 批完成(2026-09-25,每批一提交)**:B1 about 外链 IPC 收口进 channels 单源(about-preload 侧内镜像 + ipc-channels 段双向断言扩展)、B3 日字典 Partial→satisfies 全量锁(441 键编译期锁定 + 过时口径同步)、B4 令牌破例清零(switch 拨钮/钤印内环/抽屉投影三令牌化 + 关于窗原生底色经 nativeTheme 随系统主题,ui-guidelines 令牌表同步)、B2+A5 关于窗 `sandbox: false→true`(调研结论:preload 仅依赖 electron 白名单、脚本全外部、链接经 IPC 外开,均沙箱兼容)+ about.html CSP 与主窗同口径(一次性脚本 13 项断言:preload API/CSP 生效/IPC 往返/深浅主题/console 零 violation)、B5 深色双块恒等断言段(**修法偏离原案并声明**:「合并选择器组」受 CSS 语法限制不可行、「生成式去重」对过渡态块过重,改镜像+恒等断言与 preload 同构,段数 69→70)。全量 70 段 + typecheck/lint + ui:shots 双主题抽查全绿;**B2 三项人工实测 2026-09-25 通过(ACCEPTANCE「关于窗沙箱与 CSP 验收记录」关闭)**。
 >
 > **C 批完成(2026-09-25,每批一提交)**:C3 水印色三处与表格边框色收 `core/style/colors.ts`/theme 单源、C2 hljs 30 色板抽 `core/style/hljs-palette.ts` 共享常量(docx handler 与 pdf CSS 双侧引用)、C1 警告去重抽 i18n 共享 `warnDedupKey`+`pushWarningOnce`(docx ctx 改薄封装,pdf equation/xref/image 三处自建 Set 归零)、C4 决策点拍板 **①a 最小注入**——`loadKatexCss` 增 `deps.read` 注入与 precheck `exists` 同构(默认 readFileSync),DEV-GUIDE「零 IO」口径订正为「常态零 IO + 两处 fs 访问依赖注入默认值」,formula 段补注入断言。每批核心回归:全量 typecheck/lint/70 段 + smoke 全绿。**C5 并入 D4 不单独做 → 封版期 A/B/C 三批全部完成,剩余 D/E 待恢复开发。**
+>
+> **D 批完成(2026-09-25,六项独立提交,顺序 D5→D6→D4/C5→D3→D2→D1)**:D5 test 段归位(9 段迁 `test/main/`、4 段迁新建 `test/renderer/`,acceptance.mjs 扩三发现根,段分布 48+18+4→经 D6 后 47+19+4=70)、D6 对话框样板收口(`selectAndRememberDir` 助手四处收口 + `compareVersions` 下沉 `ipc/logic.ts`;**行为等价偏离声明**:模板导入目录记忆提前为选择成功即记忆)、D4/C5 契约类型迁 `core/ipc-contract.ts` 单源(renderer→main type-only 反向依赖清零,仅剩 `PreloadApi` 属 preload「实现即契约」推导设计声明出范围)+ `convert.ts` re-export 删除 7 处消费点直连、D3 `pdf/template.ts` 三拆(`template.ts` 模板结构与安全 158 / `template-css.ts` 213 / `katex-css.ts` 44,配合 C4 零 IO 口径同步)、D2 settings 接线按六组 Tab 拆(`settings-bindings.ts` 710→编排 51+六组 binder,57 处 addEventListener 零增减;`settings-panel.ts` 560→443+预设动作岛 `settings-preset-actions.ts` 163;**契约守卫口径订正**:控件 id/name 无独立断言段,实为 refs 类型导出编译期守卫 + smoke 控件计数)、D1 `book-wizard.ts` 967→五文件(步骤渲染两岛 wizard-steps/wizard-steps-delivery + 校验 wizard-fields + 提交在外壳 book-wizard 219 + 单例 wizard-runtime setter 收口防环)。每批 typecheck/lint/build/70 段/smoke 全绿 + 机械化等价核对(函数体零漂移);**GUI 实测随收尾统一走 ACCEPTANCE(待人工)**。
 
 ---
 
@@ -105,9 +107,9 @@
   ├─ B 批(推荐做):B1 → B3 → B4 → B2 → B5,每批一提交
   └─ C 批(可选):C3 → C2 → C1 → C4(先拍板) —— 每批跑核心回归
 恢复开发时
-  ├─ D 批(一个大迭代拆 6 独立提交):D5 → D6 → D4/C5 → D3/C4 → D2 → D1
+  ├─ D 批(一个大迭代拆 6 独立提交):D5 → D6 → D4/C5 → D3 → D2 → D1 —— 全部完成(2026-09-25,GUI 实测待走 ACCEPTANCE)
   └─ E 批:E1(优先,含 A4 落地)→ E4 → E2 → E3 → E5
 不做/冻结:R1 双管线合并(勿动)、E2 全量化
 ```
 
-**总计**:已完成 **13 项**(A 批 4 项 + A5 随 B2 + B 批 5 项 + C 批 4 项,其中 C4 拍板 ①a);剩余 **D6 项(C5 并入 D4)+ E5 项 = 11 项**,均待恢复开发(决策点仅剩 E2)。
+**总计**:已完成 **19 项**(A 批 4 项 + A5 随 B2 + B 批 5 项 + C 批 4 项,其中 C4 拍板 ①a;D 批 6 项,C5 并入 D4);剩余 **E 批 5 项**,均待恢复开发(决策点仅剩 E2)。
