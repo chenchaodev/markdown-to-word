@@ -20,8 +20,11 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import iconv from "iconv-lite";
+import { PDFDict, PDFDocument, PDFHexString, PDFName } from "pdf-lib";
 import { BrowserWindow, shell } from "electron";
 import { loadSettings, updateSettings } from "../../dist/main/persist/settings.js";
+import { renderPdf } from "../../dist/main/converter/single.js";
+import { convert } from "../../dist/core/convert.js";
 import { backupSettings } from "../common/settings.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import {
@@ -42,6 +45,25 @@ const PNG_1PX_PATH = path.join(FIXTURES_DIR, "main", "g4-preview.png");
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`converter 断言失败:${msg}`);
+}
+
+/** 读回 PDF 大纲标题序列(遍历 First/Next 兄弟链并就地递归;h2/h3 为子节点) */
+async function outlineTitles(pdfBytes) {
+  const doc = await PDFDocument.load(new Uint8Array(pdfBytes));
+  const outlinesDict = doc.context.lookup(doc.catalog.get(PDFName.of("Outlines")), PDFDict);
+  if (!outlinesDict) return null; // 无大纲(调用方据此区分"缺大纲"与"标题为空")
+  const titles = [];
+  const walk = (parentDict) => {
+    for (let ref = parentDict.get(PDFName.of("First")); ref; ) {
+      const node = doc.context.lookup(ref, PDFDict);
+      const title = node?.get(PDFName.of("Title"));
+      if (title instanceof PDFHexString) titles.push(title.decodeText());
+      if (node) walk(node);
+      ref = node?.get(PDFName.of("Next"));
+    }
+  };
+  walk(outlinesDict);
+  return titles;
 }
 
 export async function run() {
@@ -498,6 +520,67 @@ export async function run() {
       `filterExistingPaths 应保序保留存在项并剔除缺失,实际 ${JSON.stringify(filtered)}`,
     );
     console.log("[ok] converter:filterExistingPaths(存在保留/缺失剔除/保序)");
+
+    // ---- 13. PDF field 模式两遍法(目录页码回填)端到端:真实打印两遍 + 书签大纲注入 ----
+    // 编排层回归:renderPdf 的标题来源(结构化数据优先、缺失回退兼容层)与两遍法
+    // 目录项定位(id 集合)共同决定产物;断言落在可观察事实——两遍打印成功、
+    // 大纲标题序列 = h1-h3(h4 不进目录/书签)。
+    // 注:pdf-lib save 默认打包对象流,产物字节里 grep 不到 "/Outlines",须经
+    // PDFDocument 回读 catalog(与 pdf-bookmarks 段同款做法)。
+    await updateSettings({ obsidianCompat: false, aiCleanup: true, toc: true, tocMode: "field" });
+    const fieldMd = path.join(dir, "field-toc.md");
+    await fs.writeFile(
+      fieldMd,
+      "# 目录甲\n\n正文一。\n\n## 目录甲之一\n\n正文二。\n\n### 目录甲之一之一\n\n正文三。\n\n" +
+        "#### 目录甲之末级(不进目录)\n\n正文四。\n",
+      "utf8",
+    );
+    const fieldResult = await convertImpl(fieldMd, "pdf");
+    const fieldBytes = await fs.readFile(fieldResult.outputPath);
+    assert(fieldBytes.subarray(0, 4).toString("ascii") === "%PDF", "field 模式产物非 PDF 魔数");
+    const bookmarkTitles = await outlineTitles(fieldBytes);
+    assert(
+      JSON.stringify(bookmarkTitles) === JSON.stringify(["目录甲", "目录甲之一", "目录甲之一之一"]),
+      `field 模式书签标题序列应取 h1-h3(h4 不进目录),实际 ${JSON.stringify(bookmarkTitles)}`,
+    );
+    console.log("[ok] converter:PDF field 模式两遍法(目录页码回填 + 书签大纲 h1-h3)");
+
+    // ---- 13b. renderPdf 优先消费产物透传的结构化标题(不从 HTML 反解析) ----
+    // 编排层 seam 守护:pdf 产物可携带 headings(同一次渲染管线产出,见
+    // core/pdf/render.ts renderPdfDocument)。此处刻意传入与 HTML 不同的结构化标题,
+    // 大纲标题若随之变化即证明编排层取的是结构化数据(缺失时才回退兼容层)。
+    {
+      const structuredMd = "# 结构化甲\n\n正文一。\n\n## 结构化乙\n\n正文二。\n";
+      const artifact = await convert(structuredMd, "pdf", {
+        baseDir: dir,
+        title: "结构化标题",
+        warnings: [],
+        toc: true,
+        tocMode: "static",
+      });
+      const structuredArtifact = {
+        ...artifact,
+        headings: [{ level: 1, id: "结构化甲", text: "结构化甲(取自结构化数据)" }],
+      };
+      const structuredOut = await renderPdf(
+        structuredArtifact,
+        path.join(dir, "structured-headings.pdf"),
+        createConvertContext(),
+      );
+      const structuredTitles = await outlineTitles(await fs.readFile(structuredOut));
+      assert(
+        JSON.stringify(structuredTitles) === JSON.stringify(["结构化甲(取自结构化数据)"]),
+        `renderPdf 应优先用产物透传的结构化标题,实际 ${JSON.stringify(structuredTitles)}`,
+      );
+      // 兼容层回退:同一 HTML 不带 headings 时,标题回退自 HTML 反解析(行为等价)
+      const fallbackOut = await renderPdf(artifact, path.join(dir, "fallback-headings.pdf"), createConvertContext());
+      const fallbackTitles = await outlineTitles(await fs.readFile(fallbackOut));
+      assert(
+        JSON.stringify(fallbackTitles) === JSON.stringify(["结构化甲", "结构化乙"]),
+        `未透传 headings 时应回退兼容层提取,实际 ${JSON.stringify(fallbackTitles)}`,
+      );
+      console.log("[ok] converter:renderPdf 标题来源(结构化数据优先 / 缺失回退兼容层)");
+    }
   } finally {
     // 恢复设置文件 + 模块级缓存(updateSettings 双写);原本无文件则删除,不污染用户设置
     await restoreSettings.restore();

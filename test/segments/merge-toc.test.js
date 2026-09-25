@@ -1,6 +1,8 @@
 /**
  * 合并总目录增强(固化既有单 pass 合并通路行为,无需新增代码):
  * - 合并多文件后单次 convert 产出「总目录」覆盖所有源文件标题(docx + pdf 双格式断言)
+ * - 结构化目录数据:同一次渲染管线产出的 headings 覆盖合并后全部标题、id 跨文件唯一
+ *   (渐进替换:目录不再从 HTML 反解析,见 core/pdf/render.ts renderPdfDocument)
  * - 跨文件页码准确:field 模式两遍法对合并产物注入的页码随文档顺序单调,
  *   且后文件(经 page-break 起新页)标题页码严格大于前文件(PDF)
  * 复用 mergeMarkdowns → convert 一次;TOC 覆盖与页码由既有机制保障,本段防止回归。
@@ -8,6 +10,7 @@
 import { convert } from "../../dist/core/convert.js";
 import { mergeMarkdowns } from "../../dist/core/pipeline/merge.js";
 import { extractHeadings, injectTocPageNumbers } from "../../dist/core/pdf/postprocess.js";
+import { renderPdfDocument } from "../../dist/core/pdf/render.js";
 import { pageNumbersForNames } from "../../dist/core/pdf/bookmarks.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { PDFDocument } from "pdf-lib";
@@ -106,4 +109,27 @@ export async function run() {
     throw new Error("F8 断言失败:合并页码未注入 .toc-page");
   }
   console.log("[ok] 合并 PDF 跨文件页码准确(A<B)且已注入 断言通过");
+
+  // 结构化目录数据:与合并后 HTML 同一次渲染产出,覆盖 A+B 全部 8 个标题、id 跨文件唯一
+  {
+    const { html: structuredHtml, headings } = await renderPdfDocument(mergedMd, {
+      baseDir: FIXTURES_DIR,
+      title: "F8 合并",
+      toc: true,
+    });
+    if (JSON.stringify(headings.map((h) => h.text)) !== JSON.stringify(ALL_TITLES)) {
+      throw new Error(
+        `F8 断言失败:合并结构化标题序列异常,texts=${JSON.stringify(headings.map((h) => h.text))}`,
+      );
+    }
+    const ids = headings.map((h) => h.id);
+    if (new Set(ids).size !== ALL_TITLES.length) {
+      throw new Error(`F8 断言失败:合并结构化标题 id 应跨文件唯一,ids=${JSON.stringify(ids)}`);
+    }
+    // 与旧兼容层逐字一致(渐进替换不改行为)
+    if (JSON.stringify(extractHeadings(structuredHtml)) !== JSON.stringify(headings)) {
+      throw new Error("F8 断言失败:合并结构化标题与兼容层提取不一致");
+    }
+    console.log("[ok] 合并 PDF 结构化目录数据(A+B 共 8 条、id 唯一、与兼容层一致)断言通过");
+  }
 }

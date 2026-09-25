@@ -43,6 +43,8 @@ import { buildTemplateCss } from "./template-css.js";
 import { loadKatexCss } from "./katex-css.js";
 import type { WatermarkSettings } from "../settings/settings-defaults.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages, type ImageStageOptions } from "./postprocess.js";
+// 目录/书签共享的标题结构单源(见 pdf/bookmarks.ts);结构化标题由 rules/heading-id.ts 产出
+import type { PdfHeading } from "./bookmarks.js";
 // 契约单源:ImageResolver 类型收敛 core 共享模块(仅类型导入;
 // 原 re-export 无外部消费者,已清理移除)
 import type { ImageResolver } from "../image/image-resolver.js";
@@ -227,11 +229,31 @@ function guardUntrustedMath(md: MarkdownIt): void {
 /**
  * markdown → 完整 HTML 文档(供 loadFile 后 printToPDF)。
  * 返回 Promise:本地图片存在性检查与外链内嵌经 imageResolver 异步执行。
+ * 只取 HTML 字符串的调用方用本函数;需要结构化标题用并列入口 renderPdfDocument。
  */
 export async function renderPdfHtml(
   mdSource: string,
   options: RenderPdfHtmlOptions,
 ): Promise<string> {
+  return (await renderPdfDocument(mdSource, options)).html;
+}
+
+/**
+ * PDF 渲染产物:完整 HTML 文档 + 同一次渲染管线产出的结构化标题(目录/书签/两遍法
+ * 页码共用,免从 HTML 反解析)。只取 HTML 字符串的调用方用 renderPdfHtml(两者共用
+ * 同一实现,勿分叉)。
+ */
+export interface PdfHtmlDocument {
+  /** 完整 HTML 文档(落盘临时文件后 loadFile + printToPDF) */
+  html: string;
+  /** 结构化标题(文档顺序,只含 h1-h3;id 即正文锚点) */
+  headings: PdfHeading[];
+}
+
+export async function renderPdfDocument(
+  mdSource: string,
+  options: RenderPdfHtmlOptions,
+): Promise<PdfHtmlDocument> {
   // 入口检查点:预取消/过期 deadline 在 markdown-it 解析(最重的同步阶段)前短路,
   // 也不上报 parse 阶段——上层据此判定「未进入渲染」
   const guard = options.guard ?? createCancellationGuard();
@@ -267,8 +289,10 @@ export async function renderPdfHtml(
   // 表格列宽(分隔行 dash 比例)——源码行与 token.map 同源行号,
   // 与 docx 侧 parse.ts 共用 markdown/table-width.ts 纯函数
   overrideTableWidthRule(md, mdSource.split(/\r\n|\n|\r/));
-  // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一
-  overrideHeadingIdRule(md, new Map<string, number>());
+  // seen 生命周期 = 本次渲染闭包,渲染顺序即文档顺序,保证标题 id 文档内唯一;
+  // headings 出参同源产出(渲染期结构化,不再从 HTML 反解析)
+  const headings: PdfHeading[] = [];
+  overrideHeadingIdRule(md, new Map<string, number>(), headings);
   // 标题优先级:frontmatter metadata.title > options.title
   const title = options.metadata?.title ?? options.title ?? "文档";
   // warnings 经 env 注入 core 规则(eq_numbering 未知公式标签提示用;脚注插件
@@ -286,13 +310,14 @@ export async function renderPdfHtml(
   const bodyWithMermaid = await replaceMermaidPlaceholders(bodyHtml, options.mermaidResolver, warnings, guard);
   // 封面 + 目录 + 正文:buildCoverHtml/buildTocHtml 各自以 page-break 结尾,
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
-  // toc 开关(默认开):关闭时不生成目录页(docx 侧同开关,双格式一致)
-  const tocHtml = (options.toc ?? true) ? buildTocHtml(bodyWithMermaid) : "";
+  // toc 开关(默认开):关闭时不生成目录页(docx 侧同开关,双格式一致);
+  // 目录条目取同一次渲染产出的结构化标题(层级口径同 docx 侧 prescan tocEntries)
+  const tocHtml = (options.toc ?? true) ? buildTocHtml(headings) : "";
   const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyWithMermaid;
   const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings, imageStage);
   guard.throwIfCanceled();
   options.onStage?.("katex"); // KaTeX 样式装载阶段(loadKatexCss 在 buildTemplate 内执行)
-  return buildTemplate(
+  const html = buildTemplate(
     processedBody,
     title,
     // 用户 CSS 追加到默认 CSS 末尾(同一 <style> 内后声明覆盖默认样式)
@@ -307,4 +332,5 @@ export async function renderPdfHtml(
     options.katexDir ? loadKatexCss(options.katexDir, warnings) : "",
     options.watermark,
   );
+  return { html, headings };
 }

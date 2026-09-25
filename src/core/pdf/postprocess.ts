@@ -1,17 +1,19 @@
 /**
- * PDF 渲染后处理:标题提取(目录/书签共用)、目录 HTML、本地图片存在性检查与
+ * PDF 渲染后处理:目录 HTML、目录页码注入、本地图片存在性检查与
  * 外链图片内嵌(有界并发 + 数量/单图/总字节/单请求时限预算,取值单源于
  * core/resource-limits.ts)及辅助函数。
  * 双管线对应:src/core/docx/prescan.ts 为 docx 侧对应阶段,但方向相反——docx
- * 在渲染前从 AST 预扫(上下文写入 ctx),本侧在渲染后从 HTML 提取(pdf 无预扫:
- * 识别由 pdf/rules/* 在渲染期即时完成)。重叠口径:目录条目两侧同取 h1-h3
- * (extractHeadings/buildTocHtml ↔ prescan 第 5 轮 tocEntries);外链图片内嵌在
- * 本侧执行,docx 侧为渲染期经 imageResolver 消费(docx/handlers/image-run.ts)。
+ * 在渲染前从 AST 预扫(上下文写入 ctx),本侧标题在渲染期由 pdf/rules/heading-id.ts
+ * 即时产出结构化数据(pdf 无预扫)。重叠口径:目录条目两侧同取 h1-h3
+ * (buildTocHtml 取结构化标题 ↔ prescan 第 5 轮 tocEntries,层级上限常量单源
+ * rules/heading-id.ts PDF_TOC_MAX_LEVEL);外链图片内嵌在本侧执行,docx 侧为
+ * 渲染期经 imageResolver 消费(docx/handlers/image-run.ts)。
  * 修改目录层级/标题提取/图片内嵌口径须同步核对 src/core/docx/prescan.ts。
  * 稳定口径:并发上限内完成全部检查后,警告按文档顺序统一入列(不按异步完成
  * 顺序),取消不降级为图片失败警告(经守卫上抛)。
  */
 import { decodeEntities, escapeHtml, escapeRegExp } from "../util/utils.js";
+import { PDF_TOC_MAX_LEVEL } from "./rules/heading-id.js";
 import { mimeFromBuffer } from "../image/image-type.js";
 import { imageLoadFailedWarning, imageLoadFailureWarning, imageNotFoundWarning, unrecognizedImageWarning } from "../image/image-warning.js";
 import type { ConvertWarning } from "../i18n.js";
@@ -21,8 +23,12 @@ import { createCancellationGuard, createGuardedImageResolver, isConversionCancel
 import { ImageBudgetLedger, resolveImageBudget, type ImageResourceBudget } from "../resource-limits.js";
 
 /**
- * 从渲染后正文提取 h1-h3 标题(id 由 overrideHeadingIdRule 生成,与正文锚点
- * 一一对应)。目录 HTML 与 PDF 书签共用;标题文本剥行内标签 + 实体解码。
+ * 兼容层:从渲染后 HTML 反解析 h1-h3 标题(剥标签 + 实体解码)。
+ * 仅供**没有结构化数据**的旧路径使用(产物未透传 headings,见
+ * core/pdf/render.ts renderPdfDocument);正常主链路的标题由渲染期结构化产出
+ * (rules/heading-id.ts),不经此正则。保留原因:外部/旧产物 HTML 与直测仍按
+ * HTML 断言(见 test/segments/headings.test.js)。
+ * 与 docx 侧目录层级口径同步:只取 h1-h3(同 PDF_TOC_MAX_LEVEL ↔ prescan 第 5 轮)。
  */
 export function extractHeadings(bodyHtml: string): PdfHeading[] {
   const headings: PdfHeading[] = [];
@@ -35,41 +41,67 @@ export function extractHeadings(bodyHtml: string): PdfHeading[] {
 }
 
 /**
- * 目录 HTML:从渲染后正文提取 h1-h3(id 由 overrideHeadingIdRule 生成,与正文锚点
- * 一一对应),生成无页码锚点链接列表(实测 printToPDF 保留页内锚点为可点击链接,
- * 含跨页)。标题文本剥行内标签 + 实体解码;标题不足 1 个返回空串(不生成目录)。
- * 输出:<div class="toc">…<ul>…</ul></div> + 分页 div。
+ * 目录 HTML:由结构化标题(渲染期同一次管线产出,见 rules/heading-id.ts)生成
+ * 无页码锚点链接列表(实测 printToPDF 保留页内锚点为可点击链接,含跨页)。
+ * 层级只取 h1-h3(与 docx 侧 prescan 第 5 轮 tocEntries 同步,上限常量单源
+ * PDF_TOC_MAX_LEVEL);空数组返回空串(不生成目录)。
+ * 输出:<div class="toc">…<ul data-toc>…</ul></div> + 分页 div。
+ * `data-toc` 是目录容器的结构标记:页码注入按此定位条目,与 toc-lN/toc 样式类
+ * 解耦(样式类改名不破功能,勿删)。
  */
-export function buildTocHtml(bodyHtml: string): string {
-  const items = extractHeadings(bodyHtml).map(
-    ({ level, id, text }) => `<li class="toc-l${level}"><a href="#${id}">${escapeHtml(text)}</a></li>`,
-  );
+export function buildTocHtml(headings: readonly PdfHeading[]): string {
+  const items = headings
+    .filter(({ level }) => level <= PDF_TOC_MAX_LEVEL)
+    .map(
+      ({ level, id, text }) => `<li class="toc-l${level}"><a href="#${id}">${escapeHtml(text)}</a></li>`,
+    );
   if (items.length === 0) return "";
   return (
     '<div class="toc">' +
     '<div class="toc-title">目录</div>' +
-    `<ul>${items.join("")}</ul>` +
+    `<ul data-toc>${items.join("")}</ul>` +
     "</div>" +
     '<div class="page-break"></div>'
   );
 }
 
+/** 目录条目内层形态:单个锚点(可带已注入的页码 span)——保证只动目录项、不碰正文 li */
+const TOC_ITEM_RE = /^<a href="#([^"]+)">([\s\S]*?)<\/a>(?:<span class="toc-page">[^<]*<\/span>)?$/;
+
 /**
- * 目录页码注入:将 slug→页码(1-based)映射注入已渲染 HTML 的目录条目。
- * 仅替换 .toc 块内 `<li class="toc-lN"><a href="#id">text</a></li>`,
- * 追加 `<span class="toc-page">页码</span>`;正文普通 <li> 不受影响。
+ * 目录页码注入:将 slug→页码(1-based)映射注入已渲染 HTML 的目录条目,追加
+ * `<span class="toc-page">页码</span>`(重复注入时替换旧页码,不叠加)。
+ * 定位依据是**已知标题 id 集合**(headingIds,缺省取 pageNumbers 的键),不再解析
+ * `<li class="toc-lN">` 的形态:目录项样式类改名不影响功能。
+ * 作用域优先取 `<ul data-toc>` 容器;文档无该标记(外部/旧产物)时退化为全文按
+ * id 集合定位。
  * 两遍法第二遍调用:第一遍打印后经 /Dests 解析出页码(pageNumbersForNames),
  * 再注入 HTML 并重印,正文分页因 TOC 后硬分页符不变、页码一致。
  */
-export function injectTocPageNumbers(html: string, pageNumbers: Record<string, number>): string {
-  return html.replace(
-    /<li class="toc-l(\d)"><a href="#([^"]+)">([\s\S]*?)<\/a><\/li>/g,
-    (_m, level, id, text) => {
+export function injectTocPageNumbers(
+  html: string,
+  pageNumbers: Record<string, number>,
+  headingIds?: readonly string[],
+): string {
+  const ids = new Set(headingIds ?? Object.keys(pageNumbers));
+  if (ids.size === 0) return html;
+  const injectItems = (region: string): string =>
+    region.replace(/<li\b([^>]*)>([\s\S]*?)<\/li>/g, (item, attrs: string, inner: string) => {
+      const entry = TOC_ITEM_RE.exec(inner.trim());
+      const id = entry?.[1];
+      if (!id || !ids.has(id)) return item;
       const page = pageNumbers[id];
       const pageSpan = page != null ? `<span class="toc-page">${page}</span>` : "";
-      return `<li class="toc-l${level}"><a href="#${id}">${text}</a>${pageSpan}</li>`;
-    },
-  );
+      return `<li${attrs}><a href="#${id}">${entry[2]}</a>${pageSpan}</li>`;
+    });
+  const marked = /(<ul\b[^>]*\bdata-toc\b[^>]*>)([\s\S]*?)(<\/ul>)/.exec(html);
+  if (!marked) return injectItems(html); // 兼容:无结构标记的旧/外部产物
+  const full = marked[0]!; // 整段(含标记与 </ul>)
+  const open = marked[1]!; // <ul … data-toc …>
+  const inner = marked[2]!; // 目录条目区
+  const close = marked[3]!; // </ul>
+  const start = marked.index;
+  return html.slice(0, start) + open + injectItems(inner) + close + html.slice(start + full.length);
 }
 
 /** 图片处理可选参数:取消信号 + 预算覆盖(缺省字段取 core/resource-limits.ts 默认值) */

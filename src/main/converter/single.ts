@@ -9,7 +9,7 @@ import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { PdfArtifact } from "../../core/convert.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
-import { buildBookmarkTree, injectBookmarks, pageNumbersForNames } from "../../core/pdf/bookmarks.js";
+import { buildBookmarkTree, injectBookmarks, pageNumbersForNames, type PdfHeading } from "../../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../../core/pdf/metadata.js";
 import { extractHeadings, injectTocPageNumbers } from "../../core/pdf/postprocess.js";
 import { PDFDocument } from "pdf-lib";
@@ -145,6 +145,17 @@ export async function convertImpl(
 }
 
 /**
+ * pdf 标题来源:优先用产物透传的结构化标题(与 HTML 同一次渲染管线产出,见
+ * core/pdf/render.ts renderPdfDocument);产物未透传(旧产物/直构 PdfArtifact)时
+ * 回退 postprocess 的 HTML 反解析兼容层。两条路径的 id 同源(rules/heading-id.ts
+ * 生成,与 /Dests 命名目标一一对应),故目录/书签行为一致。
+ */
+function resolvePdfHeadings(artifact: PdfArtifact): PdfHeading[] {
+  const structured = (artifact as PdfArtifact & { headings?: PdfHeading[] }).headings;
+  return Array.isArray(structured) && structured.length > 0 ? structured : extractHeadings(artifact.html);
+}
+
+/**
  * pdf 产物落盘:临时 HTML → 隐藏窗口 printToPDF → 经产物提交器提交到 preferredPath。
  * 单文件/合并共用;临时文件与窗口在 finally 中清理,失败也会销毁窗口。
  * preferredPath 为首选路径(重名序号由提交器独占创建时决定),返回实际落盘路径。
@@ -189,16 +200,18 @@ export async function renderPdf(
       await cleanup();
     }
   };
-  // 从渲染后 HTML 提取标题(与目录同源,封面/目录本身非 h 标签不受影响),
-  // 注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即命名目标名,无需文本定位)。
-  const headings = extractHeadings(artifact.html);
+  // 标题(与目录同源,封面/目录本身非 h 标签不受影响):优先结构化数据,缺失时回退
+  // HTML 反解析兼容层。用于注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即
+  // 命名目标名,无需文本定位)与 field 模式两遍法的目录项定位。
+  const headings = resolvePdfHeadings(artifact);
   // field 模式 → 两遍法注入目录页码(第一遍打印解析 /Dests 定位标题页码,
-  // 第二遍注入页码重印;TOC 后硬分页符保证正文分页一致、页码准确)
+  // 第二遍按已知 id 集合注入页码重印;TOC 后硬分页符保证正文分页一致、页码准确)
   let data = await printOnce(artifact.html);
   if (artifact.tocMode === "field" && headings.length > 0) {
+    const ids = headings.map((h) => h.id);
     const doc = await PDFDocument.load(new Uint8Array(data));
-    const pageNumbers = pageNumbersForNames(doc, headings.map((h) => h.id));
-    data = await printOnce(injectTocPageNumbers(artifact.html, pageNumbers));
+    const pageNumbers = pageNumbersForNames(doc, ids);
+    data = await printOnce(injectTocPageNumbers(artifact.html, pageNumbers, ids));
   }
   // printToPDF 不可中断(Electron 原子调用),取消需等本轮打印结束;
   // 但落盘/书签/元数据必须中止 → 打印后立即检查,取消则不产出文件、不报成功。

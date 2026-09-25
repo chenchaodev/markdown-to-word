@@ -9,13 +9,18 @@
  *   成功不警告;无 resolver 直接返回。
  * - embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败,产物逐字断言);
  *   checkLocalImages exists 轻量通道(true/false/抛错细分,不回调完整 resolver)。
+ * - 目录结构化数据(渐进替换):renderPdfDocument 同一次管线产出的 headings
+ *   (h1 层级正确 / h4-h6 有 id 不进目录 / 重复 id 去重 / 文本剥标签与实体解码
+ *   与旧 HTML 反解析口径一致),buildTocHtml 由结构化标题生成目录项。
  * 资源预算与取消(本段重点):有界并发 + request 契约注入(signal/maxBytes/timeoutMs)、
  * 数量/单图/文档总字节预算、单请求超时降级、外部取消上抛且不写图片失败警告、
  * warning 按文档顺序稳定(不随异步完成顺序抖动)。
  * 断言依据 src/core/pdf/postprocess.ts(降级行为:失败保留原 URL/追加警告,不抛错)。
  */
-import { checkLocalImages, embedExternalImages } from "../../dist/core/pdf/postprocess.js";
+import { buildTocHtml, checkLocalImages, embedExternalImages, extractHeadings } from "../../dist/core/pdf/postprocess.js";
+import { renderPdfDocument } from "../../dist/core/pdf/render.js";
 import { formatWarning } from "../../dist/core/i18n.js";
+import { FIXTURES_DIR } from "../common/paths.js";
 
 // 1x1 PNG 魔数头(mimeFromBuffer → image/png;data URL 前缀 data:image/png;base64,)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -428,5 +433,89 @@ export async function run() {
     console.log(
       `[ok] postprocess:大量图片 ${count} 张在预算内完成(默认全内嵌 / maxImages=10 时仅请求 10 次),耗时 ${Date.now() - startedAt}ms`,
     );
+  }
+
+  // ---- 13. 目录结构化数据(渐进替换):同一次管线产出的 headings + 目录生成 ----
+  // 依据(src/core/pdf/render.ts renderPdfDocument / rules/heading-id.ts):标题在渲染期
+  // 结构化产出(level/id/text),目录 HTML 由此生成,不再从渲染后 HTML 反解析。
+  {
+    const md = [
+      "# 章一",
+      "",
+      "## 1.1 **小节** 与 `代码`",
+      "",
+      "### 1.1.1 A & B",
+      "",
+      "#### 第四节(有 id 不进目录)",
+      "",
+      "##### 第五节",
+      "",
+      "###### 第六节",
+      "",
+      "# 章一",
+      "",
+      "## 尾随 <b>行内 HTML</b>",
+      "",
+    ].join("\n");
+    const { html, headings } = await renderPdfDocument(md, { baseDir: FIXTURES_DIR, title: "结构化标题", toc: true });
+    // h1 层级正确 + 文本剥行内标签、实体解码(与旧 HTML 反解析口径逐字一致)
+    const first = headings[0];
+    if (!first || first.level !== 1 || first.text !== "章一" || first.id !== "章一") {
+      throw new Error(`postprocess 断言失败:h1 结构化标题异常,first=${JSON.stringify(first)}`);
+    }
+    const texts = headings.map((h) => h.text);
+    if (JSON.stringify(texts) !== JSON.stringify(["章一", "1.1 小节 与 代码", "1.1.1 A & B", "章一", "尾随 行内 HTML"])) {
+      throw new Error(`postprocess 断言失败:结构化标题文本/层级序列异常,texts=${JSON.stringify(texts)}`);
+    }
+    const levels = headings.map((h) => h.level);
+    if (JSON.stringify(levels) !== JSON.stringify([1, 2, 3, 1, 2])) {
+      throw new Error(`postprocess 断言失败:标题层级序列异常(期望 h1/h2/h3/h1/h2),levels=${JSON.stringify(levels)}`);
+    }
+    // 重复标题 id 去重(uniqueSlug 单源),且 id 文档内唯一
+    const ids = headings.map((h) => h.id);
+    if (ids[0] !== "章一" || ids[3] !== "章一-2" || new Set(ids).size !== ids.length) {
+      throw new Error(`postprocess 断言失败:重复标题 id 未去重或出现重复,ids=${JSON.stringify(ids)}`);
+    }
+    // h4-h6 确有 id(排除"标题没渲染"的假绿),但不进目录/结构化标题
+    if (!/<h4 id="[^"]+"/.test(html) || !/<h5 id="[^"]+"/.test(html) || !/<h6 id="[^"]+"/.test(html)) {
+      throw new Error("postprocess 断言失败:h4-h6 应带 id 渲染(不进目录≠不渲染)");
+    }
+    const tocRegion = /<ul[^>]*data-toc[^>]*>([\s\S]*?)<\/ul>/.exec(html)?.[1] ?? "";
+    if (tocRegion === "") throw new Error("postprocess 断言失败:目录区(data-toc)未生成");
+    if (tocRegion.includes("第四节") || tocRegion.includes("第五节") || tocRegion.includes("第六节")) {
+      throw new Error(`postprocess 断言失败:h4-h6 不应进目录,toc=${tocRegion}`);
+    }
+    for (const id of ids) {
+      if (!tocRegion.includes(`<a href="#${id}">`)) {
+        throw new Error(`postprocess 断言失败:目录项缺失锚点 #${id},toc=${tocRegion}`);
+      }
+    }
+    // 结构化数据与旧兼容层(HTML 反解析)逐字一致——渐进替换不改行为
+    if (JSON.stringify(extractHeadings(html)) !== JSON.stringify(headings)) {
+      throw new Error(
+        `postprocess 断言失败:结构化标题与兼容层提取不一致,regex=${JSON.stringify(extractHeadings(html))}`,
+      );
+    }
+    console.log("[ok] postprocess:结构化标题(h1 层级/h4-h6 不进目录/重复 id 去重/与兼容层一致)");
+  }
+
+  // ---- 14. buildTocHtml 直测:消费结构化标题 + 层级上限防御 + 空输入 ----
+  {
+    const toc = buildTocHtml([
+      { level: 1, id: "a", text: "第一章" },
+      { level: 2, id: "b", text: "1.1 <b>小节</b>" }, // 文本按 HTML 转义,原样入目录
+      { level: 4, id: "d", text: "第四节" }, // 层级上限外的防御过滤
+    ]);
+    if (!toc.includes('<ul data-toc>') || !toc.includes('<li class="toc-l1"><a href="#a">第一章</a></li>')) {
+      throw new Error(`postprocess 断言失败:buildTocHtml 未按结构化标题生成目录项,toc=${toc}`);
+    }
+    if (!toc.includes("<a href=\"#b\">1.1 &lt;b&gt;小节&lt;/b&gt;</a>")) {
+      throw new Error(`postprocess 断言失败:buildTocHtml 未转义标题文本,toc=${toc}`);
+    }
+    if (toc.includes("#d") || toc.includes("第四节")) {
+      throw new Error(`postprocess 断言失败:buildTocHtml 不应收录 h4(层级上限 3),toc=${toc}`);
+    }
+    if (buildTocHtml([]) !== "") throw new Error("postprocess 断言失败:无标题时 buildTocHtml 应返回空串(不生成目录)");
+    console.log("[ok] postprocess:buildTocHtml 结构化入参 + 层级上限防御 + 空输入空串");
   }
 }
