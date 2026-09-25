@@ -15,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { t } from "../../core/i18n.js";
 import { disposeMermaidService } from "../services/mermaid-service.js";
+import { clipboardTempSources } from "../services/temp-html.js";
 import { loadUiState, pickWindowBounds, saveUiState } from "../persist/ui-state.js";
 import { loadSettings } from "../persist/settings.js";
 import {
@@ -112,10 +113,15 @@ export function createWindow(): BrowserWindow {
     console.error("[main] renderer index.html 加载失败:", err);
   });
   // mermaid 渲染窗口为常驻隐藏单例:主窗口关闭时销毁,否则 window-all-closed 永不触发
-  // (隐藏窗口未关 → 应用无法退出);服务懒重建,后续渲染不受影响
+  // (隐藏窗口未关 → 应用无法退出);服务懒重建,后续渲染不受影响。
+  // 剪贴板临时源按 webContents 登记:主窗口关闭(含「转换进行中放弃并关闭」)时
+  // 一并释放名下未消费/未收尾的临时 Markdown,不留 %TEMP% 残留。id 须在创建时
+  // 取:closed 回调里再访问 win.webContents 可能已失效。
+  const webContentsId = win.webContents.id;
   win.on("closed", () => {
     mainWindow = null;
     disposeMermaidService();
+    void clipboardTempSources.releaseOwner(String(webContentsId));
   });
   // 关闭时保存窗口位置;最大化状态一并记忆(isMaximized + 还原态
   // 尺寸 getNormalBounds(),恢复时 maximize() 后还原态尺寸仍正确);

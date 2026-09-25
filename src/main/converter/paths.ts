@@ -2,11 +2,28 @@
  * 路径收集与输出路径解析:
  * resolveOutputPath(输出目录/超长回落)、collectMarkdownPaths(目录递归收集)、
  * filterExistingPaths(会话恢复保序过滤)。
+ * 目录扫描有预算:realpath 规范路径去重(junction/symlink 环不再无限递归)、
+ * 深度与条目数上限;超限停止收集并经 warnings 通道上报(不静默截断)。
  */
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
-import type { ConvertWarning } from "../../core/i18n.js";
+import type { ConvertWarning, KeyedWarning } from "../../core/i18n.js";
+
+/** 目录递归深度上限:超出层级的子目录不再展开(异常深的树不拖垮会话) */
+export const MAX_SCAN_DEPTH = 32;
+/** 单次收集的目录条目上限:超大目录树按上限截断并上报 */
+export const MAX_SCAN_ENTRIES = 20_000;
+
+/** 扫描预算触顶警告:kind 为触顶维度(条目数/层级),limit 为对应上限值 */
+export function pathScanLimitWarning(kind: string, limit: number): KeyedWarning {
+  return {
+    key: "warn.pathScanLimit",
+    params: { kind, limit },
+    fallback: `目录扫描达到${kind}上限(${limit}),已停止收集剩余内容`,
+  };
+}
 
 /** markdown 扩展名判定单源: .md / .markdown,大小写不敏感。 */
 export const MARKDOWN_EXT_RE = /\.(md|markdown)$/i;
@@ -63,29 +80,64 @@ export async function resolveOutputPath(
 /**
  * 收集 markdown 路径:目录递归收集其下所有 .md/.markdown 文件(跳过点开头的目录,如 .git),
  * 文件直接保留;非 md 的传入路径进 skipped(目录内非 md 文件静默忽略,目录不列入 skipped)。
- * 结果按字典序排序(大小写不敏感);seen 集合防符号链接循环。
+ * 结果按字典序排序(大小写不敏感)。
+ * 循环与预算(阶段 3 资源预算):
+ * - 访问去重按 realpath 规范路径 —— 目录 junction/symlink 指回自身或其祖先时
+ *   词法路径不同但规范路径相同,据此终止递归(此前词法去重会无限展开);
+ * - 深度超 MAX_SCAN_DEPTH 的子目录不展开,条目累计超 MAX_SCAN_ENTRIES 即整体停止,
+ *   两种触顶都经 warnings 上报(pathScanLimitWarning),不静默截断;
+ * - files 仍为词法绝对路径(调用方按其展示/打开路径,不改既有语义)。
  */
-export async function collectMarkdownPaths(paths: string[]): Promise<{ files: string[]; skipped: string[] }> {
+export async function collectMarkdownPaths(
+  paths: string[],
+  warnings?: ConvertWarning[],
+): Promise<{ files: string[]; skipped: string[] }> {
   const files: string[] = [];
   const skipped: string[] = [];
-  const seen = new Set<string>();
+  const visited = new Set<string>(); // realpath 规范路径(junction/symlink 环去重)
+  let scanned = 0;
+  let limitWarning: KeyedWarning | undefined;
 
-  async function visit(p: string, passedDirectly: boolean): Promise<void> {
+  async function visit(p: string, passedDirectly: boolean, depth: number): Promise<void> {
+    if (limitWarning) return; // 预算已触顶:整体停止
     const resolved = path.resolve(p);
-    if (seen.has(resolved)) return; // 循环保护
-    seen.add(resolved);
-    let st: Awaited<ReturnType<typeof fs.stat>>;
+    if (depth > MAX_SCAN_DEPTH) {
+      limitWarning = pathScanLimitWarning("层级", MAX_SCAN_DEPTH);
+      return;
+    }
+    // 规范路径用于去重:词法路径相同时同一实体,规范路径相同即同一实体
+    // (junction 指向祖先目录时词法路径不同 → 靠这一层终止递归)
+    let canonical: string;
     try {
-      st = await fs.stat(resolved);
+      canonical = await fs.realpath(resolved);
     } catch {
       if (passedDirectly) skipped.push(p); // 不存在/无法访问的传入路径
       return;
     }
+    if (visited.has(canonical)) return; // 循环保护(含 junction/symlink 自指)
+    visited.add(canonical);
+    let st: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      st = await fs.stat(canonical);
+    } catch {
+      if (passedDirectly) skipped.push(p);
+      return;
+    }
     if (st.isDirectory()) {
-      const entries = await fs.readdir(resolved, { withFileTypes: true });
+      let entries: Dirent[];
+      try {
+        entries = await fs.readdir(canonical, { withFileTypes: true });
+      } catch {
+        return; // 目录不可读:静默跳过(不把整次收集判失败)
+      }
       for (const entry of entries) {
         if (entry.name.startsWith(".")) continue; // 跳过 .git 等点开头目录
-        await visit(path.join(resolved, entry.name), false);
+        scanned += 1;
+        if (scanned > MAX_SCAN_ENTRIES) {
+          limitWarning = pathScanLimitWarning("条目数", MAX_SCAN_ENTRIES);
+          return;
+        }
+        await visit(path.join(canonical, entry.name), false, depth + 1);
       }
       return;
     }
@@ -96,7 +148,11 @@ export async function collectMarkdownPaths(paths: string[]): Promise<{ files: st
     }
   }
 
-  for (const p of paths) await visit(p, true);
+  for (const p of paths) {
+    if (limitWarning) break;
+    await visit(p, true, 0);
+  }
+  if (limitWarning) warnings?.push(limitWarning);
   files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   return { files, skipped };
 }

@@ -40,7 +40,6 @@ import { loadUiState, saveUiState } from "../persist/ui-state.js";
 import {
   batchConvertImpl,
   collectMarkdownPaths,
-  ConvertCanceledError,
   convertImpl,
   createConvertContext,
   filterExistingPaths,
@@ -48,15 +47,23 @@ import {
   type ConvertContext,
   type ConvertResult,
 } from "../converter/index.js";
+// 取消判定按错误码单源(ERR_CONVERSION_CANCELLED,core/cancel.ts):main 层的
+// ConvertCanceledError 与 core 渲染期取消错误同码,只认类引用会漏判后者
+import { isConversionCanceled } from "../../core/cancel.js";
 import { getKatexDir } from "../services/resource-dirs.js";
 import { importDocxTemplate } from "../../core/docx/template-import.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { getMainWindow } from "../windows/main-window.js";
 import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
 import { IPC_CHANNELS as CH } from "./channels.js";
-import { writeTempMarkdown } from "../services/temp-html.js";
+import {
+  clipboardTempDir,
+  clipboardTempSources,
+  clipboardTitle,
+  writeTempMarkdown,
+} from "../services/temp-html.js";
 import type { ClipboardReadResult } from "./types.js";
-import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";
+import { openPreviewWindow, previews, requestPreviewRefresh } from "../windows/preview.js";
 import {
   beginWebContentsOperation,
   cancelWebContentsOperation,
@@ -73,7 +80,9 @@ const REPO_SLUG = "chenchaodev/markdown-to-word";
  * 取消语义(历史 bug 领域)集中此处,不再分散在三个 handler:
  * - ctx 每次调用新建(「取消后复位」语义),按 webContents id 原子注册(多窗口隔离)
  * - 注册冲突立即返回 busy;finally 以 token compare-and-delete 释放
- * - ConvertCanceledError → onCanceled()(调用方给出取消结果形态);其他错误归一 { ok:false, error }
+ * - 取消错误 → onCanceled()(调用方给出取消结果形态);其他错误归一 { ok:false, error }
+ *   取消判定按错误码(ERR_CONVERSION_CANCELLED 单源于 core/cancel.ts):渲染期取消经
+ *   signal 到达 core 时抛的是 core 侧错误类型,只认 main 类引用会把它误报为「转换失败」。
  */
 async function runWithCtx<T>(
   event: Electron.IpcMainInvokeEvent,
@@ -94,7 +103,7 @@ async function runWithCtx<T>(
       unregisterCtx: () => {
         if (token !== null) finishWebContentsOperation(senderId, token);
       },
-      isCanceledError: (err) => err instanceof ConvertCanceledError,
+      isCanceledError: isConversionCanceled,
     },
     (ctx) => fn(ctx, BrowserWindow.fromWebContents(event.sender)),
     onCanceled,
@@ -105,9 +114,12 @@ async function runWithCtx<T>(
 /**
  * 转换成功钩子:记录最近文件条目 {path,name,format,ts}。
  * saveUiState 内部按 path 去重(保留 ts 最大)+ 截断 10,重复转换自然置顶;写入失败静默,不影响转换结果。
+ * 剪贴板临时源不入账:它是一次性中间物(收尾即删除),记进去只会留下点不开的
+ * %TEMP% 条目。判定走会话级注册表(含已释放的路径),不依赖登记顺序。
  */
 async function recordRecentFiles(filePaths: string[], format: ConvertFormat): Promise<void> {
-  const entries = buildRecentFileEntries(filePaths, format, Date.now());
+  const durable = filePaths.filter((p) => !clipboardTempSources.isTempSource(p));
+  const entries = buildRecentFileEntries(durable, format, Date.now());
   if (entries.length === 0) return;
   try {
     await saveUiState({ recentFiles: entries });
@@ -205,6 +217,28 @@ function isMetadataOptions(v: unknown): v is { metadata?: DocMetadata } {
   return typeof v === "object" && v !== null && ("metadata" in v);
 }
 
+/** 已挂「销毁即释放」监听的 webContents(每窗口只挂一次,防多次粘贴堆叠监听)。 */
+const clipboardTempOwnersWatched = new Set<number>();
+
+/**
+ * 发起窗口销毁时释放其名下未消费的剪贴板临时源(未走完转换的粘贴不残留)。
+ * 监听挂在 WebContents 自身上,随窗口回收,无需解绑;主窗口正常关闭路径另有
+ * windows/main-window.ts 的显式 dispose 接线(覆盖「转换进行中关闭」等先销毁场景)。
+ */
+function watchClipboardTempOwner(sender: Electron.WebContents, ownerId: string): void {
+  if (clipboardTempOwnersWatched.has(sender.id)) return;
+  clipboardTempOwnersWatched.add(sender.id);
+  sender.once("destroyed", () => {
+    clipboardTempOwnersWatched.delete(sender.id);
+    void clipboardTempSources.releaseOwner(ownerId);
+  });
+}
+
+// 退出兜底:窗口 closed 之外的退出路径(如转换放弃后强制退出)同样回收未消费临时源。
+app.on("will-quit", () => {
+  void clipboardTempSources.releaseAll();
+});
+
 export function registerIpc(): void {
   ipcMain.handle(CH.fileOpenDialog, async () => {
     const paths = await selectAndRememberDir({
@@ -217,25 +251,33 @@ export function registerIpc(): void {
 
   // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示;用户取消返回 { ok:false, canceled:true }
   // 入参类型守卫:format 非 docx/pdf 时此前静默落 pdf 分支,现显式失败
+  // 剪贴板临时源:本 handler 是其唯一消费点,故 finally 一处覆盖成功/失败/取消/
+  // busy 四种结局(转换已 settle,此刻删源不影响产物);非剪贴板路径为空操作。
   ipcMain.handle(CH.convertSingle, async (event, filePath: unknown, format: unknown): Promise<ConvertResult | BusyResult> => {
     if (!isString(filePath) || !isConvertFormat(format)) {
       return { ok: false, error: t("common.invalidParams") };
     }
-    return runWithCtx(
-      event,
-      "single",
-      async (ctx, win) => {
-        // progress payload 带 mode 标识,renderer 直接消费归属(不再按调用上下文推断)
-        const send = (stage: string): void =>
-          win?.webContents.send(CH.convertProgress, { stage, mode: "single" satisfies ConvertMode });
-        const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
-        allowOutputPath(outputPath); // 产物路径入 shell 白名单
-        await recordRecentFiles([filePath], format);
-        return { ok: true, outputPath, warnings };
-      },
-      () => ({ ok: false, canceled: true, error: t("common.canceled") }),
-      () => operationBusyResult(t("convert.stage.converting")),
-    );
+    try {
+      return await runWithCtx(
+        event,
+        "single",
+        async (ctx, win) => {
+          // progress payload 带 mode 标识,renderer 直接消费归属(不再按调用上下文推断)
+          const send = (stage: string): void =>
+            win?.webContents.send(CH.convertProgress, { stage, mode: "single" satisfies ConvertMode });
+          const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
+          allowOutputPath(outputPath); // 产物路径入 shell 白名单
+          await recordRecentFiles([filePath], format);
+          return { ok: true, outputPath, warnings };
+        },
+        () => ({ ok: false, canceled: true, error: t("common.canceled") }),
+        () => operationBusyResult(t("convert.stage.converting")),
+      );
+    } finally {
+      if (clipboardTempSources.isTempSource(filePath)) {
+        void clipboardTempSources.releaseByPath(filePath);
+      }
+    }
   });
 
   ipcMain.handle(CH.convertCancel, (event): void => {
@@ -292,10 +334,17 @@ export function registerIpc(): void {
   });
 
   // 元素级校验:此前只 guard Array.isArray,非字符串元素会让 path.resolve 抛 TypeError
+  // 扫描预算警告(深度/条目数触顶)随结果返回,不静默截断:既有 files/skipped 语义
+  // 不变,warnings 为附加字段(仅解构 files/skipped 的消费方不受影响)。
   ipcMain.handle(
     CH.fileCollectMarkdown,
-    (_event, paths: unknown): Promise<{ files: string[]; skipped: string[] }> => {
-      return collectMarkdownPaths(isStringArray(paths) ? paths : []);
+    async (
+      _event,
+      paths: unknown,
+    ): Promise<{ files: string[]; skipped: string[]; warnings: ConvertWarning[] }> => {
+      const warnings: ConvertWarning[] = [];
+      const result = await collectMarkdownPaths(isStringArray(paths) ? paths : [], warnings);
+      return { ...result, warnings };
     },
   );
 
@@ -380,7 +429,10 @@ export function registerIpc(): void {
 
   // 读取系统剪贴板:优先文件路径(Windows 剪贴板 FileNameW 格式:UTF-16LE、
   // \u0000 分隔、末尾空字符)→ 文本写临时 md → 空/非文本非文件返回 empty。
-  ipcMain.handle(CH.clipboardRead, async (): Promise<ClipboardReadResult> => {
+  // 文本分支的临时源是**一次性句柄**:登记到发起方 webContents 名下,五条出口
+  // 都会删除(转换成功/失败/取消收尾、发起窗口关闭、进程退出),再次粘贴先释放
+  // 上一份;未消费的残留由后两者兜底,不留 %TEMP% 垃圾。
+  ipcMain.handle(CH.clipboardRead, async (event): Promise<ClipboardReadResult> => {
     // 1) 先试文件路径(Windows 剪贴板 FileNameW 格式:UTF-16LE、\u0000 分隔、末尾空字符)
     const buf = clipboard.readBuffer("FileNameW");
     if (buf && buf.length > 2) {
@@ -391,11 +443,17 @@ export function registerIpc(): void {
         .filter((x) => x.length > 0 && !x.endsWith(":"));
       if (paths.length) return { type: "files", paths };
     }
-    // 2) 文本 → 临时 md
+    // 2) 文本 → 临时 md(文件基名取自内容标题,产物名与文档标题均可读)
     const text = clipboard.readText();
     if (text && text.trim().length > 0) {
-      const { mdPath } = await writeTempMarkdown(text);
-      return { type: "text", mdPath };
+      const ownerId = String(event.sender.id);
+      const source = await writeTempMarkdown(text, {
+        title: clipboardTitle(text, t("b3.label")),
+        dir: clipboardTempDir(),
+      });
+      await clipboardTempSources.add(ownerId, source);
+      watchClipboardTempOwner(event.sender, ownerId);
+      return { type: "text", mdPath: source.mdPath };
     }
     return { type: "empty" };
   });
@@ -562,8 +620,9 @@ export function registerIpc(): void {
   });
 
   // 设置变更后刷新所有预览窗口:renderer 在 settingsSet 成功后调用;
-  // 无预览窗口时为空操作;刷新失败在窗口内显示错误页,不影响主窗口
+  // 无预览窗口时为空操作;刷新走每窗口串行队列 + 代号(旧代不覆盖新页);
+  // 刷新失败在窗口内显示错误页,不影响主窗口
   ipcMain.handle(CH.previewRefresh, (): void => {
-    for (const entry of previews) void refreshPreviewWindow(entry);
+    for (const entry of previews) void requestPreviewRefresh(entry);
   });
 }

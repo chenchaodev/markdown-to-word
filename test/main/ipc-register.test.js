@@ -9,7 +9,7 @@
  *   见 operation-single-flight.test.js);
  * - shell 白名单:未登记路径 revealInFolder/openPath → { ok:false, error }
  *   (测试进程白名单为空,拒绝路径不触达 shell,无用户可见副作用);
- * - 纯转发 handler 直调:fileCollectMarkdown(目录递归收集/skipped)、
+ * - 纯转发 handler 直调:fileCollectMarkdown(目录递归收集/skipped/扫描预算警告回传)、
  *   fileFilterExisting(保序剔除缺失)、settingsGet/settingsSet、uiStateGet/uiStateSet、
  *   appVersion(与 app.getVersion 同源)、previewOpen 非法入参、previewRefresh 空操作、
  *   convertCancel 无 ctx 时空操作。
@@ -23,6 +23,8 @@ import iconv from "iconv-lite";
 import { app, ipcMain } from "electron";
 import { registerIpc } from "../../dist/main/ipc/register.js";
 import { IPC_CHANNELS as CH } from "../../dist/main/ipc/channels.js";
+import { MAX_SCAN_DEPTH } from "../../dist/main/converter/paths.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 import { beginWebContentsOperation, finishWebContentsOperation } from "../../dist/main/windows/web-contents-registry.js";
 
 function assert(cond, msg) {
@@ -135,7 +137,36 @@ export async function run() {
 
     const empty = await handlers.get(CH.fileCollectMarkdown)(fakeEvent, [42]);
     assert(empty.files.length === 0 && empty.skipped.length === 0, "非数组入参应按空输入处理(零收集)");
+    // 扫描预算未触顶:files/skipped 语义不变,附加的 warnings 为空数组
+    assert(Array.isArray(collected.warnings) && collected.warnings.length === 0,
+      `未触顶的收集不应有扫描预算警告,实际 ${JSON.stringify(collected.warnings)}`);
+
+    // 深度超 MAX_SCAN_DEPTH:不静默截断,预算警告经 handler 返回(不被丢弃)
+    // 深度自「传入路径」起逐层下探,故扫描入口是深层目录的上级 tmpDir
+    let deepDir = tmpDir;
+    for (let i = 0; i <= MAX_SCAN_DEPTH + 2; i++) deepDir = path.join(deepDir, `d${i}`);
+    await fs.mkdir(deepDir, { recursive: true });
+    await fs.writeFile(path.join(deepDir, "too-deep.md"), "# deep", "utf8");
+    const budgeted = await handlers.get(CH.fileCollectMarkdown)(fakeEvent, [tmpDir]);
+    assert(
+      Array.isArray(budgeted.warnings) && budgeted.warnings.length === 1 &&
+        budgeted.warnings[0].key === "warn.pathScanLimit" &&
+        typeof budgeted.warnings[0].fallback === "string" && budgeted.warnings[0].fallback.length > 0,
+      `深度超限应随结果返回单条扫描预算警告,实际 ${JSON.stringify(budgeted.warnings)}`,
+    );
+    assert(
+      formatWarning(budgeted.warnings[0]).includes(`层级上限(${MAX_SCAN_DEPTH})`),
+      `扫描预算警告文案口径不符,实际 ${formatWarning(budgeted.warnings[0])}`,
+    );
+    assert(
+      Array.isArray(budgeted.files) && budgeted.files.length > 0 &&
+        !budgeted.files.some((f) => f.endsWith("too-deep.md")) &&
+        budgeted.files.some((f) => f.endsWith("a.md")),
+      // 触顶后停止收集,已扫到的文件照常返回(截断范围随 readdir 顺序,不断言具体数量)
+      `超深文件不应被收集(既有 files 字段语义不变),实际 ${JSON.stringify(budgeted.files)}`,
+    );
     console.log("[ok] ipc-register:fileCollectMarkdown 递归收集/skipped/点目录跳过/类型守卫 断言通过");
+    console.log("[ok] ipc-register:fileCollectMarkdown 扫描预算警告经 IPC 返回(不静默截断)");
 
     // ---- 5. fileFilterExisting:保序过滤仍存在的路径 ----
     const existing = path.join(tmpDir, "a.md");

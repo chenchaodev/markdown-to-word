@@ -69,9 +69,18 @@ import {
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import type { TocMode } from "../settings/settings-defaults.js";
 import type { ImageResolver } from "../image/image-resolver.js";
+// 取消与资源预算:守卫由 convert 层构造并注入(signal/deadline 单源),
+// 图片 resolver 在此包上请求契约(信号/单请求时限/单图与文档字节预算)。
+import { createCancellationGuard, createGuardedImageResolver, type CancellationGuard } from "../cancel.js";
+import { ImageBudgetLedger, resolveImageBudget, type ImageResourceBudget } from "../resource-limits.js";
 
 export interface RenderOptions {
   imageResolver?: ImageResolver;
+  /** 取消守卫(convert 层构造:signal/deadline 单源);缺省新建无外部取消的守卫。
+   *  块级渲染循环与图片请求均经此检查取消,取消后立即退出而非跑完整篇。 */
+  guard?: CancellationGuard;
+  /** 图片资源预算覆盖(缺省取 core/resource-limits.ts 默认值) */
+  imageBudget?: ImageResourceBudget;
   /** frontmatter 元数据(metadata.title 存在时渲染封面页) */
   metadata?: DocMetadata;
   /** 文档标题(docx 页眉用;优先级低于 metadata.title) */
@@ -119,6 +128,9 @@ function isSupportedBlock(node: RootContent): node is BlockContent {
  * core 层保持无 IO:图片一律经 imageResolver 注入(由调用方负责读文件)。
  */
 export async function renderDocx(ast: Root, options: RenderOptions = {}): Promise<Buffer> {
+  // 入口检查点:预取消/过期 deadline 在建 ctx、预扫之前短路,不启动任何 resolver
+  const guard = options.guard ?? createCancellationGuard();
+  guard.throwIfCanceled();
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
   // 页面几何提前计算:contentWidthPx 注入 Ctx,图片尺寸属性百分比换算用
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
@@ -127,9 +139,18 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   const landscape = pageSetup.orientation === "landscape";
   // 文本区宽(公式编号 tab 制表位基准)复用核心 validator 的视觉方向结果。
   const textWidthTwips = mmToTwips(geometry.contentWidthMm);
+  // 图片预算(缺省取单源默认值):台账生命周期 = 单次 renderDocx,不跨转换累计
+  const imageBudget = resolveImageBudget(options.imageBudget);
   // 开关统一「构造时解析默认」:Ctx 全字段必填,下游无需判空
   const ctx: Ctx = {
-    imageResolver: options.imageResolver,
+    // 图片解析经守卫包装:注入 request(signal/maxBytes/timeoutMs)、单请求时限、
+    // 文档级数量/字节预算(记账口径 = 原始字节,docx 内嵌即原始字节)。
+    imageResolver: createGuardedImageResolver({
+      resolver: options.imageResolver,
+      guard,
+      budget: imageBudget,
+      ledger: new ImageBudgetLedger(imageBudget),
+    }),
     warnings: options.warnings,
     listLevel: 0,
     typography,
@@ -185,6 +206,8 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     children.push(...renderTocPage(tocEntries, ctx.tocMode));
   }
   for (const node of ast.children) {
+    // 块级检查点:逐块复查取消/期限,长文档(块数多、单块重)不必跑完整篇才退出
+    guard.throwIfCanceled();
     if (isSupportedBlock(node)) {
       children.push(...(await renderBlock(node, ctx, captions, equations, textWidthTwips)));
     }
@@ -249,6 +272,9 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
       },
     ],
   });
+  // 打包前最后一道检查点:Packer.toBuffer 不可中断,取消在此之后只能等它跑完,
+  // 故必须先查——否则取消仍会产出一个完整的 docx Buffer(上层会误以为成功)
+  guard.throwIfCanceled();
   return Packer.toBuffer(doc);
 }
 

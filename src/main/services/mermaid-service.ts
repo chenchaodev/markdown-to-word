@@ -10,8 +10,14 @@
  * 脚本与内联脚本一并拦截 → 必须显式 `script-src 'unsafe-inline' file:`;其余保持
  * default-src 'none'(断 connect/fetch/object)+ img-src data:(外部图片发不出去),
  * 离线隐私承诺不变。
- * 生命周期:懒创建复用窗口;主窗口关闭(见 index.ts disposeMermaidService)或应用
- * 退出时销毁;渲染串行队列(promise 链),多文档并发转换不交错 executeJavaScript。
+ * 生命周期(懒创建复用 + 代号化):
+ * - 窗口销毁(dispose/崩溃/超时)→ 会话丢弃,代号(epoch)+1;
+ * - 代号前进后,在途任务不得把窗口扶正为单例、不得复活已 dispose 的窗口
+ *   (否则「转换中放弃并关闭」会在退出路径留下常驻隐藏窗口,window-all-closed 永不触发);
+ * - 提交任务时记下代号,启动时代号已变(期间发生 dispose)→ 直接放弃本次渲染,
+ *   不新建窗口;
+ * - 每个窗口各自持有其页面临时 HTML 的清理函数,会话丢弃即删(含被取代的旧会话)。
+ * 渲染串行队列(promise 链),多文档并发转换不交错 executeJavaScript。
  */
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
@@ -24,18 +30,54 @@ import { writeTempHtml } from "./temp-html.js";
 /** 单次渲染超时(含首次预热外的脚本解析;超时按渲染失败降级) */
 const RENDER_TIMEOUT_MS = 15_000;
 
-let win: BrowserWindow | null = null;
-let loadPromise: Promise<BrowserWindow> | null = null;
-let cleanupHtml: (() => Promise<void>) | null = null;
+/** 隐藏窗口的一次「会话」:窗口 + 其页面临时 HTML 清理 + 创建时代号。 */
+interface MermaidSession {
+  win: BrowserWindow;
+  /** 创建时的服务代号;代号前进后本会话结果一律作废。 */
+  epoch: number;
+  /** 本会话页面临时 HTML 清理(会话丢弃时执行,幂等)。 */
+  cleanup: () => Promise<void>;
+}
+
+/** 当前单例会话(无窗口时为 null)。 */
+let session: MermaidSession | null = null;
+/** 在途创建(复用同一 Promise 避免并发重复建窗);loadEpoch 记录其所属代号。 */
+let loadPromise: Promise<MermaidSession> | null = null;
+let loadEpoch = -1;
+/** 服务代号:任何会话丢弃(销毁/dispose/崩溃/超时)都 +1,使在途任务失效。 */
+let epoch = 0;
 /** 渲染串行队列:单例窗口的 executeJavaScript 不交错(多文档并发转换时排队) */
 let queue: Promise<unknown> = Promise.resolve();
 
-function reset(): void {
-  win = null;
+/** 会话已失效(dispose/崩溃后窗口被换代):本次渲染放弃,不是渲染失败。 */
+class StaleEpochError extends Error {
+  constructor() {
+    super("mermaid 会话已失效");
+    this.name = "StaleEpochError";
+  }
+}
+
+function isStaleEpoch(err: unknown): boolean {
+  return err instanceof StaleEpochError;
+}
+
+/** 销毁某会话的窗口(若仍存活)并回收其临时 HTML;会话已丢弃时为空操作。 */
+function discardSession(target: MermaidSession): void {
+  if (!target.win.isDestroyed()) target.win.destroy();
+  void target.cleanup();
+}
+
+/**
+ * 丢弃当前会话:代号前进(在途任务作废)+ 销毁窗口 + 删除其临时 HTML。
+ * 幂等,可重复调用;也是 dispose 与窗口自身消失(崩溃/超时销毁)的唯一收口。
+ */
+function dropSession(): void {
+  epoch += 1;
+  const current = session;
+  session = null;
   loadPromise = null;
-  const cleanup = cleanupHtml;
-  cleanupHtml = null;
-  if (cleanup) void cleanup();
+  loadEpoch = -1;
+  if (current !== null) discardSession(current);
 }
 
 function buildPageHtml(mermaidDir: string): string {
@@ -97,46 +139,83 @@ function buildPageHtml(mermaidDir: string): string {
 </html>`;
 }
 
-async function ensureWindow(): Promise<BrowserWindow> {
-  if (win && !win.isDestroyed()) return win;
-  if (!loadPromise) {
-    const p = (async () => {
-      const w = new BrowserWindow({
-        show: false,
-        webPreferences: {
-          sandbox: true,
-          contextIsolation: true,
-          nodeIntegration: false,
-          // 隐藏窗口默认节流 → 布局/字体拿未完成帧;必须关掉才能可靠光栅化
-          backgroundThrottling: false,
-        },
-      });
-      // 构造后任一步失败(加固/临时 HTML/loadFile)统一销毁再抛——此前仅
-      // loadFile 有销毁分支,中途抛错会泄漏半初始化窗口(非 destroyed 僵尸,
-      // 干扰 getAllWindows 计数与 will-quit 退出兜底)
-      try {
-        w.on("closed", reset);
-        // 四类窗口统一导航收口(页面无链接,纯防御性;executeJavaScript 不受影响)
-        hardenWebContents(w);
-        // 渲染进程崩溃:销毁窗口并复位,下次调用重建(本次渲染经 executeJavaScript reject 降级 null)
-        w.webContents.on("render-process-gone", () => {
-          if (!w.isDestroyed()) w.destroy();
-        });
-        const { htmlPath, cleanup } = await writeTempHtml(buildPageHtml(getMermaidDir()));
-        cleanupHtml = cleanup;
-        await w.loadFile(htmlPath);
-      } catch (err) {
-        if (!w.isDestroyed()) w.destroy();
-        throw err;
+/**
+ * 新建一个会话(隐藏窗口 + 页面临时 HTML + 加载)。
+ * 每步 await 之后复查代号:期间若发生 dispose/崩溃/换代,立即销毁本窗口并放弃,
+ * 绝不让过期任务把窗口扶正为单例(复活窗口 = 退出路径上的孤儿隐藏窗口)。
+ */
+async function createSession(): Promise<MermaidSession> {
+  const createdEpoch = epoch;
+  const w = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      // 隐藏窗口默认节流 → 布局/字体拿未完成帧;必须关掉才能可靠光栅化
+      backgroundThrottling: false,
+    },
+  });
+  let cleanup: (() => Promise<void>) | null = null;
+  const releasePage = async (): Promise<void> => {
+    await cleanup?.();
+  };
+  const assertFresh = (): void => {
+    if (createdEpoch === epoch && !w.isDestroyed()) return;
+    if (!w.isDestroyed()) w.destroy();
+    throw new StaleEpochError();
+  };
+  // 构造后任一步失败(加固/临时 HTML/loadFile)统一销毁再抛——中途抛错会泄漏
+  // 半初始化窗口(非 destroyed 僵尸,干扰 getAllWindows 计数与 will-quit 退出兜底)
+  try {
+    w.on("closed", () => {
+      if (session?.win === w) {
+        dropSession(); // 单例窗口消失(崩溃/超时销毁)→ 复位并换代
+        return;
       }
-      win = w;
-      return w;
-    })();
-    // 预热失败复位,下次调用重建(3.5MB 脚本解析首次约数百 ms,之后复用)
-    loadPromise = p.catch((err) => {
-      loadPromise = null;
-      throw err;
+      void releasePage(); // 已被换代取代的旧会话窗口:各自回收自己的临时 HTML
     });
+    // 四类窗口统一导航收口(页面无链接,纯防御性;executeJavaScript 不受影响)
+    hardenWebContents(w);
+    // 渲染进程崩溃:销毁窗口并复位,下次调用重建(本次渲染经 executeJavaScript reject 降级 null)
+    w.webContents.on("render-process-gone", () => {
+      if (!w.isDestroyed()) w.destroy();
+    });
+    const tmp = await writeTempHtml(buildPageHtml(getMermaidDir()));
+    cleanup = tmp.cleanup;
+    assertFresh();
+    await w.loadFile(tmp.htmlPath);
+    assertFresh();
+  } catch (err) {
+    const pending = cleanup;
+    cleanup = null; // 已摘除:closed 处理器不再重复回收
+    if (!w.isDestroyed()) w.destroy();
+    await pending?.(); // 构造失败:本页临时 HTML 由本次调用自己回收
+    throw err;
+  }
+  return { win: w, epoch: createdEpoch, cleanup: releasePage };
+}
+
+/** 取当前会话,按需创建(同代号内并发只建一次);预热失败下次调用重建(3.5MB 脚本解析首次约数百 ms)。 */
+async function ensureSession(): Promise<MermaidSession> {
+  if (session !== null && !session.win.isDestroyed()) return session;
+  if (loadPromise === null || loadEpoch !== epoch) {
+    loadEpoch = epoch;
+    loadPromise = createSession().then(
+      (created) => {
+        // 落地前最后闸门:代号已前进的旧任务不得成为单例
+        if (created.epoch !== epoch) {
+          discardSession(created);
+          throw new StaleEpochError();
+        }
+        session = created;
+        return created;
+      },
+      (err) => {
+        loadPromise = null; // 预热失败复位,下次调用重建
+        throw err;
+      },
+    );
   }
   return loadPromise;
 }
@@ -161,10 +240,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 async function doRender(code: string, timeoutMs: number): Promise<MermaidResult | null> {
+  /** 本次渲染实际使用的会话(超时销毁针对它,不用可能已换代的全局单例)。 */
+  let active: MermaidSession | null = null;
   try {
-    const w = await ensureWindow();
+    active = await ensureSession();
     const result = await withTimeout(
-      w.webContents.executeJavaScript(`window.renderMermaid(${JSON.stringify(code)})`),
+      active.win.webContents.executeJavaScript(`window.renderMermaid(${JSON.stringify(code)})`),
       timeoutMs,
     );
     if (!result || typeof result.svg !== "string" || typeof result.pngDataUrl !== "string") return null;
@@ -175,13 +256,18 @@ async function doRender(code: string, timeoutMs: number): Promise<MermaidResult 
     if (png.length === 0) return null;
     return { svg: result.svg, png, width, height };
   } catch (err) {
+    if (isStaleEpoch(err)) {
+      // 换代/dispose 期间放弃本次渲染(非失败):不建窗、不复活窗口
+      console.log("[mermaid-service] render skipped: 会话已失效");
+      return null;
+    }
     // 降级路径:语法错误/超时/窗口崩溃/脚本加载失败,core 层负责降级渲染;日志留痕便于诊断
     console.log(`[mermaid-service] render failed: ${err instanceof Error ? err.message : String(err)}`);
     // 超时意味着页面内 executeJavaScript 可能仍挂起——队列已放行下一任务,
-    // 同窗口两次渲染存在交错风险(极小但非零)。销毁窗口(closed → reset)强制
+    // 同窗口两次渲染存在交错风险(极小但非零)。销毁窗口(closed → dropSession)强制
     // 下一次渲染走全新页面,消除挂起残留。
-    if (err instanceof Error && err.message === MERMAID_TIMEOUT_MESSAGE && win && !win.isDestroyed()) {
-      win.destroy();
+    if (err instanceof Error && err.message === MERMAID_TIMEOUT_MESSAGE && active !== null) {
+      discardSession(active);
     }
     return null;
   }
@@ -190,10 +276,13 @@ async function doRender(code: string, timeoutMs: number): Promise<MermaidResult 
 /**
  * 渲染 mermaid 代码块,失败返回 null(core 层负责降级)。
  * 调用方并发安全:内部 promise 链串行,无需外部加锁。
+ * 提交时记下服务代号:轮到本任务时若期间发生过 dispose(窗口换代),直接放弃本次
+ * 渲染而不新建窗口——避免「主窗口已关/转换已放弃」后仍在退出路径上拉起隐藏窗口。
  * @param timeoutMs 单次渲染超时(默认 RENDER_TIMEOUT_MS;测试可注入短超时,对外契约不变)
  */
 export function renderMermaid(code: string, timeoutMs: number = RENDER_TIMEOUT_MS): Promise<MermaidResult | null> {
-  const task = queue.then(() => doRender(code, timeoutMs));
+  const submittedEpoch = epoch;
+  const task = queue.then(() => (submittedEpoch === epoch ? doRender(code, timeoutMs) : null));
   queue = task.then(
     () => undefined,
     () => undefined,
@@ -203,14 +292,14 @@ export function renderMermaid(code: string, timeoutMs: number = RENDER_TIMEOUT_M
 
 /**
  * 销毁常驻隐藏窗口(index.ts 主窗口 closed 时调用):
- * 否则该窗口使 window-all-closed 永不触发,应用无法退出。幂等,可重复调用。
+ * 否则该窗口使 window-all-closed 永不触发,应用无法退出。幂等,可重复调用;
+ * 同时删除该会话的临时 HTML 并使在途任务代号失效(旧任务不得复活窗口)。
  */
 export function disposeMermaidService(): void {
-  if (win && !win.isDestroyed()) win.destroy();
-  reset();
+  dropSession();
 }
 
 // 应用退出兜底(will-quit 时窗口已关闭,此处为显式保障,见文件头注释)
 app.on("will-quit", () => {
-  if (win && !win.isDestroyed()) win.destroy();
+  dropSession();
 });

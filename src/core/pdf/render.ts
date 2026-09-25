@@ -42,7 +42,7 @@ import { buildCoverHtml, buildTemplate } from "./template.js";
 import { buildTemplateCss } from "./template-css.js";
 import { loadKatexCss } from "./katex-css.js";
 import type { WatermarkSettings } from "../settings/settings-defaults.js";
-import { buildTocHtml, checkLocalImages, embedExternalImages } from "./postprocess.js";
+import { buildTocHtml, checkLocalImages, embedExternalImages, type ImageStageOptions } from "./postprocess.js";
 // 契约单源:ImageResolver 类型收敛 core 共享模块(仅类型导入;
 // 原 re-export 无外部消费者,已清理移除)
 import type { ImageResolver } from "../image/image-resolver.js";
@@ -57,6 +57,15 @@ import { overrideFigureRule, overrideImageRule } from "./rules/image.js";
 import { overrideTableWidthRule } from "./rules/table.js";
 import { overrideHeadingIdRule } from "./rules/heading-id.js";
 import { replaceMermaidPlaceholders } from "./mermaid.js";
+// 取消与资源预算:守卫由 convert 层构造并注入(signal/deadline 单源),
+// 各阶段边界设检查点;公式与图片预算取值单源 core/resource-limits.ts。
+import { createCancellationGuard, type CancellationGuard } from "../cancel.js";
+import {
+  DEFAULT_KATEX_RESOURCE_LIMITS,
+  hasUntrustedTexCommand,
+  resolveImageBudget,
+  type ImageResourceBudget,
+} from "../resource-limits.js";
 
 export interface RenderPdfHtmlOptions {
   /** markdown 文件所在目录,相对路径图片以此为基准 */
@@ -68,6 +77,11 @@ export interface RenderPdfHtmlOptions {
   warnings?: ConvertWarning[];
   /** 外链图片下载注入(主进程提供;失败返回 null) */
   imageResolver?: ImageResolver;
+  /** 取消守卫(convert 层构造:signal/deadline 单源);缺省新建无外部取消的守卫。
+   *  parse / inline / mermaid / katex 各阶段边界设检查点,取消后不再进入下一阶段。 */
+  guard?: CancellationGuard;
+  /** 图片资源预算覆盖(缺省取 core/resource-limits.ts 默认值) */
+  imageBudget?: ImageResourceBudget;
   /** 页面 <title>,缺省取文件名(不含扩展名) */
   title?: string;
   /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
@@ -162,9 +176,12 @@ function buildMarkdownIt(
   });
   md.use(tasklist);
   md.use(footnote);
-  // 公式插件($..$ / $$..$$ / \(..\) / \[..\] / ```math 围栏;throwOnError=false,
-  // 渲染失败输出 katex-error 标记,不抛)
-  md.use(katex);
+  // 公式插件($..$ / $$..$$ / \(..\) / \[..\] / ```math 围栏)。资源边界与错误模式
+  // 转发 core/resource-limits.ts 单源取值(throwOnError=false → 渲染失败输出
+  // katex-error 标记不抛;trust=false 拒绝外部引用指令;maxExpand/maxSize 挡住
+  // 宏展开失控)——与 docx 侧 texToDocxMath 同一份边界,勿单侧调整。
+  md.use(katex, DEFAULT_KATEX_RESOURCE_LIMITS);
+  guardUntrustedMath(md);
   overrideHtmlRules(md);
   overrideCaptionRule(md);
   // 公式编号开关关闭时 eq_numbering 规则仍注册(numbering=false):label 段照常
@@ -176,6 +193,38 @@ function buildMarkdownIt(
 }
 
 /**
+ * 公式信任闸门:含外部引用/HTML 扩展指令(\includegraphics、\href、\url 等)的
+ * TeX 在交给 KaTeX 之前整式降级为 katex-error + 源码。
+ * 为什么需要这一层:KaTeX 在 trust=false 下不抛错,只把这类命令渲染为红色文本,
+ * 既不进入既有 katex-error 降级通道,也不与 docx 侧的降级形态一致(docx 侧靠
+ * MathML 产物含未覆盖节点而降级)。闸门与 KaTeX 资源边界同源(单源
+ * resource-limits.ts 的 hasUntrustedTexCommand),故与插件注册同处本文件;
+ * 编号/题注等渲染规则仍在 rules/*。
+ * 与 KaTeX 自身错误产物同形(class="katex-error" + title 说明),模板 CSS 与
+ * 既有降级样式无需区分,内容不丢失。
+ */
+function guardUntrustedMath(md: MarkdownIt): void {
+  const reject = (tex: string): string =>
+    `<span class="katex-error" title="公式含不受信任的外部引用指令,已按源码显示">${md.utils.escapeHtml(tex)}</span>`;
+  const inlineRule = md.renderer.rules.math_inline;
+  md.renderer.rules.math_inline = (tokens, idx, options, env, self) => {
+    const token = tokens[idx]!; // 渲染器契约:idx 必为有效下标
+    if (hasUntrustedTexCommand(token.content)) return reject(token.content);
+    return inlineRule
+      ? inlineRule(tokens, idx, options, env, self)
+      : self.renderToken(tokens, idx, options);
+  };
+  const blockRule = md.renderer.rules.math_block;
+  md.renderer.rules.math_block = (tokens, idx, options, env, self) => {
+    const token = tokens[idx]!; // 渲染器契约:idx 必为有效下标
+    if (hasUntrustedTexCommand(token.content)) return reject(token.content);
+    return blockRule
+      ? blockRule(tokens, idx, options, env, self)
+      : self.renderToken(tokens, idx, options);
+  };
+}
+
+/**
  * markdown → 完整 HTML 文档(供 loadFile 后 printToPDF)。
  * 返回 Promise:本地图片存在性检查与外链内嵌经 imageResolver 异步执行。
  */
@@ -183,6 +232,14 @@ export async function renderPdfHtml(
   mdSource: string,
   options: RenderPdfHtmlOptions,
 ): Promise<string> {
+  // 入口检查点:预取消/过期 deadline 在 markdown-it 解析(最重的同步阶段)前短路,
+  // 也不上报 parse 阶段——上层据此判定「未进入渲染」
+  const guard = options.guard ?? createCancellationGuard();
+  guard.throwIfCanceled();
+  const imageStage: ImageStageOptions = {
+    signal: guard.signal,
+    ...resolveImageBudget(options.imageBudget),
+  };
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
   // 必须在任何纸张尺寸/内容区计算前执行；与 DOCX 侧共用同一错误契约。
   const pageGeometry = validatePageSetup(pageSetup);
@@ -218,18 +275,22 @@ export async function renderPdfHtml(
   // 对 env.footnotes 惰性初始化,传入额外键无副作用)
   options.onStage?.("parse"); // markdown-it 解析渲染阶段
   const bodyHtml = replaceTaskCheckboxes(md.render(mdSource, { warnings }));
+  // 阶段边界检查点:同步解析(最易超时的一段)之后先复查取消,再进入图片处理
+  guard.throwIfCanceled();
   // 本地图片存在性检查并入 resolver 失败路径(单次 IO;HTML 保持 file:// 由 Chromium 渲染)
   options.onStage?.("inline"); // 图片检查 + 外链内嵌阶段(两处共用一个阶段键)
-  await checkLocalImages(localImageSrcs, options.imageResolver, warnings);
+  await checkLocalImages(localImageSrcs, options.imageResolver, warnings, imageStage);
   // Mermaid 占位 → 内联 SVG / 失败降级代码块(异步串行,须在返回 html 前完成)
+  guard.throwIfCanceled();
   options.onStage?.("mermaid"); // Mermaid 占位替换阶段
-  const bodyWithMermaid = await replaceMermaidPlaceholders(bodyHtml, options.mermaidResolver, warnings);
+  const bodyWithMermaid = await replaceMermaidPlaceholders(bodyHtml, options.mermaidResolver, warnings, guard);
   // 封面 + 目录 + 正文:buildCoverHtml/buildTocHtml 各自以 page-break 结尾,
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
   // toc 开关(默认开):关闭时不生成目录页(docx 侧同开关,双格式一致)
   const tocHtml = (options.toc ?? true) ? buildTocHtml(bodyWithMermaid) : "";
   const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyWithMermaid;
-  const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings);
+  const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings, imageStage);
+  guard.throwIfCanceled();
   options.onStage?.("katex"); // KaTeX 样式装载阶段(loadKatexCss 在 buildTemplate 内执行)
   return buildTemplate(
     processedBody,

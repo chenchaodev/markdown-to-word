@@ -15,6 +15,9 @@ import { ImageRun, TextRun } from "docx";
 import type { Image } from "mdast";
 import { SECONDARY_TEXT_GRAY } from "../theme.js";
 import { sniffImageType, imageSizeFromBuffer } from "../../image/image-type.js";
+// 取消不得被降级通道吞掉:resolver 失败一律转警告,但取消必须上抛,
+// 否则转换会带着缺图产物继续跑完并报成功(见 core/cancel.ts 口径)。
+import { isConversionCanceled } from "../../cancel.js";
 import {
   imageLoadFailureWarning,
   unrecognizedImageWarning,
@@ -45,7 +48,9 @@ export function scaleToFit(width: number, height: number): { width: number; heig
  * resolver(下载/读盘),后续命中复用同一 Promise(并发同 URL 也共享在途请求)。
  * 失败(null/抛错)不缓存:结算后删除条目,该 URL 后续出现重新解析
  * (已持有旧 Promise 的并发等待者仍共享本次结果,不受删除影响)。
- * 前置条件:ctx.imageResolver 已注入(imageToDocx 调用前已判空)。
+ * 取消错误上抛不转警告(降级线只覆盖普通失败)。
+ * 前置条件:ctx.imageResolver 已注入(imageToDocx 调用前已判空);
+ * 该 resolver 已由 docx/render.ts 包上请求守卫(信号/时限/预算)。
  */
 async function resolveImageCached(ctx: Ctx, url: string): Promise<ImageLoadResult> {
   const memo = ctx.imageMemo;
@@ -56,13 +61,18 @@ async function resolveImageCached(ctx: Ctx, url: string): Promise<ImageLoadResul
       try {
         return { data: await resolver(url) };
       } catch (err) {
+        if (isConversionCanceled(err)) throw err;
         return { data: null, error: err };
       }
     })();
     memo.set(url, pending);
-    void pending.then((r) => {
-      if (!r.data) memo.delete(url);
-    });
+    void pending.then(
+      (r) => {
+        if (!r.data) memo.delete(url);
+      },
+      // 取消导致该条目被拒:同步删除,避免取消态 Promise 留在 memo 里
+      () => memo.delete(url),
+    );
   }
   return pending;
 }

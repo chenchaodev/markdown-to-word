@@ -446,6 +446,9 @@ const dict = {
     "warn.imageAttrInvalid": "图片尺寸属性无效,已忽略: ${attr}(${src})",
     "warn.headerLogoLoadFailed": "页眉 logo 加载失败,已忽略: ${src}",
     "warn.unlabeledCodeBlock": "代码块未标注语言,可能无法正确高亮排版",
+    // 目录扫描预算触顶:kind 为触顶维度(条目数/层级)、limit 为对应上限值;
+    // 值与 pathScanLimitWarning 的 fallback 逐字一致(默认值等价)
+    "warn.pathScanLimit": "目录扫描达到${kind}上限(${limit}),已停止收集剩余内容",
 
     /* ---------- 错误(生成期本地化:throw 文案经 error.message 单次字符串通道到 GUI) ---------- */
     "convert.noFilesSelected": "未选择文件",

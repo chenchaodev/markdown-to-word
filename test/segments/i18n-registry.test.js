@@ -169,4 +169,39 @@ export async function run() {
     "lang-bootstrap.js 应读取 m2w.htmlLang 镜像(不得回退为内置 code→htmlLang 硬编码映射)",
   );
   console.log("[ok] i18n-registry:(e) lang-bootstrap 读 htmlLang 镜像(无硬编码映射回归) 断言通过");
+
+  // ---- (f) warn.pathScanLimit:目录扫描预算触顶三语齐备 ----
+  // 触碰维度(kind)与上限值(limit)同键插值:三语占位符必须一致,且译文不得
+  // 沿用中文原文(否则 en/ja 下扫描截断对用户不可读)
+  const limitPh = (s) =>
+    [...String(s).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
+  const limitKeys = ["kind", "limit"];
+  for (const code of LANGUAGES.map((l) => l.code)) {
+    const value = DICT[code]["warn.pathScanLimit"];
+    assert(typeof value === "string" && value.length > 0, `${code} 应有 warn.pathScanLimit 文案`);
+    assert(
+      limitPh(value) === limitKeys.join(","),
+      `${code}.warn.pathScanLimit 占位符应为 [${limitKeys.join(",")}],实际 [${limitPh(value)}]`,
+    );
+  }
+  assert(
+    DICT.en["warn.pathScanLimit"] !== DICT.zh["warn.pathScanLimit"],
+    "en.warn.pathScanLimit 不应沿用中文原文",
+  );
+  assert(
+    DICT.ja["warn.pathScanLimit"] !== DICT.zh["warn.pathScanLimit"],
+    "ja.warn.pathScanLimit 不应沿用中文原文",
+  );
+  // zh 值为默认语言口径,须与「已停止收集」语义一致(调用侧 kind/limit 插值后成句)
+  assert(
+    DICT.zh["warn.pathScanLimit"].includes("已停止收集"),
+    "zh.warn.pathScanLimit 应说明扫描已停止收集(用户需知情截断)",
+  );
+  setLanguage("en");
+  assert(
+    t("warn.pathScanLimit", { kind: "条目数", limit: 20000 }).includes("20000"),
+    "en 下 warn.pathScanLimit 应插值出上限值",
+  );
+  setLanguage("zh");
+  console.log("[ok] i18n-registry:(f) warn.pathScanLimit 三语齐备 + 占位符一致(en/ja 非中文原文) 断言通过");
 }

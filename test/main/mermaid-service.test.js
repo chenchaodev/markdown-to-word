@@ -1,7 +1,8 @@
 /**
  * Mermaid 渲染服务验收(main 进程层;经 dist/main/services/mermaid-service.js,electron 环境):
  * 断言面:真实渲染成功(PNG 魔数/逻辑尺寸/SVG 完整)、语法错误/超时/畸形返回值/崩溃/
- * 脚本加载失败均降级 null 且窗口自动重建、will-quit 退出兜底销毁窗口且可重建。
+ * 脚本加载失败均降级 null 且窗口自动重建、dispose 在途(会话创建未 settle)与 dispose
+ * 后排队任务均不复活窗口且临时 HTML 回收、will-quit 退出兜底销毁窗口且可重建。
  * 模拟手段:BrowserWindow.prototype.webContents getter 临时替换(converter.test.js 同款
  * 模式,descriptor 一律 try/finally 恢复;本段与其他段同进程串行,不能污染原型)。
  * 说明:窗口懒创建、单例复用;本段结束后窗口仍在,由 acceptance 末尾 app.quit()
@@ -16,6 +17,25 @@ const GOOD_CODE = "graph TD; A-->B";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`mermaid-service 断言失败:${msg}`);
+}
+
+/** 等待条件成立(轮询上限兜底,避免时序假设导致假阴性)。 */
+async function waitFor(predicate, label, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error(`mermaid-service 断言失败:等待超时(${label})`);
+}
+
+/**
+ * 本段新增的临时 HTML 残留(空数组 = 已回收干净)。排除段起点就存在的文件:
+ * 其他段(如预览)遗留的文件不归本段断言,否则依赖段序。
+ */
+async function tempHtmlLeft(baseline) {
+  const names = await fs.readdir(os.tmpdir());
+  return names.filter((n) => n.startsWith(`m2w-${process.pid}-`) && !baseline.has(n));
 }
 
 /**
@@ -45,6 +65,9 @@ function patchWebContents(fakeFactory) {
 }
 
 export async function run() {
+  const baseline = new Set(
+    (await fs.readdir(os.tmpdir())).filter((n) => n.startsWith(`m2w-${process.pid}-`)),
+  );
   // ---- 1. 真实渲染成功:PNG 魔数/逻辑尺寸/SVG 完整 ----
   const result = await renderMermaid(GOOD_CODE);
   assert(result, "renderMermaid 返回 null(渲染失败)");
@@ -150,7 +173,85 @@ export async function run() {
   const afterLoadFail = await renderMermaid(GOOD_CODE);
   assert(afterLoadFail, "loadFile 失败后窗口应重建并恢复渲染");
 
-  // ---- 6. 退出兜底(will-quit 监听,200 行):销毁常驻窗口;再次渲染自动重建 ----
+  // ---- 6. dispose 在途(会话创建未 settle):旧代任务不得复活窗口,临时 HTML 需回收 ----
+  disposeMermaidService();
+  await new Promise((r) => setTimeout(r, 100));
+  const baselineInflight = BrowserWindow.getAllWindows().length;
+  const slowLoadFile = BrowserWindow.prototype.loadFile;
+  BrowserWindow.prototype.loadFile = function patched(file, options) {
+    // 会话页加载延迟 250ms:让 dispose 落在「窗口已建、页面未加载」的创建在途窗口
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        if (this.isDestroyed()) {
+          reject(new Error("window destroyed"));
+          return;
+        }
+        slowLoadFile.call(this, file, options).then(resolve, reject);
+      }, 250);
+    });
+  };
+  let inflight;
+  try {
+    inflight = renderMermaid("DISPOSE_INFLIGHT", 5000);
+    await waitFor(
+      () => BrowserWindow.getAllWindows().length > baselineInflight,
+      "会话创建进入在途窗口",
+    );
+    disposeMermaidService(); // 创建在途时释放服务(等价主窗口关闭/放弃转换)
+    assert((await inflight) === null, "dispose 在途的渲染应放弃(返回 null 而非失败日志)");
+  } finally {
+    BrowserWindow.prototype.loadFile = slowLoadFile;
+  }
+  assert(
+    BrowserWindow.getAllWindows().length === baselineInflight,
+    "dispose 在途的旧代任务不得复活窗口(否则退出路径留下孤儿隐藏窗口)",
+  );
+  await new Promise((r) => setTimeout(r, 150)); // 等 closed → 临时 HTML 删除
+  const inflightLeft = await tempHtmlLeft(baseline);
+  assert(inflightLeft.length === 0, `dispose 在途:临时 HTML 残留 ${inflightLeft.join(", ")}`);
+  assert(await renderMermaid(GOOD_CODE), "dispose 在途后应能重建会话并恢复渲染");
+  console.log("[ok] mermaid-service:dispose 在途(创建未 settle)不复活窗口 + 临时 HTML 回收");
+
+  // ---- 7. dispose 后已排队任务:不得新建窗口(代号失效即放弃本次渲染) ----
+  disposeMermaidService();
+  const baselineQueued = BrowserWindow.getAllWindows().length;
+  let releaseFirst;
+  let execCalls = 0;
+  restoreWc = null;
+  try {
+    restoreWc = patchWebContents(() => ({
+      executeJavaScript: () => {
+        execCalls += 1;
+        return new Promise((resolve) => {
+          releaseFirst = () =>
+            resolve({ svg: "<svg/>", pngDataUrl: "data:image/png;base64,AAAA", width: 4, height: 4 });
+        });
+      },
+    }));
+    const firstTask = renderMermaid("QUEUED_FIRST", 5000);
+    await waitFor(() => releaseFirst !== undefined, "首个渲染进入 executeJavaScript(队列被占)");
+    const queuedTask = renderMermaid("QUEUED_SECOND", 5000); // 排队中,尚未开始
+    disposeMermaidService(); // 换代:排队任务提交时的代号失效
+    releaseFirst();
+    assert((await firstTask) !== null, "首个渲染(fake 返回合法结果)应正常完成");
+    const queuedStart = Date.now();
+    assert((await queuedTask) === null, "dispose 后排队的任务应放弃,不新建窗口");
+    assert(
+      Date.now() - queuedStart < 1000,
+      "放弃的排队任务应立即结算(不得走 5s 超时才降级,那说明它仍建了窗口)",
+    );
+    assert(execCalls === 1, `dispose 后排队任务不得再触达页面(executeJavaScript 应仅 1 次),实际 ${execCalls}`);
+  } finally {
+    if (restoreWc) restoreWc();
+  }
+  assert(
+    BrowserWindow.getAllWindows().length === baselineQueued,
+    "dispose 后排队任务不得留下窗口",
+  );
+  console.log("[ok] mermaid-service:dispose 后排队任务放弃渲染,不复活窗口");
+
+  // ---- 8. 退出兜底(will-quit 监听):销毁常驻窗口;再次渲染自动重建 ----
+  assert(await renderMermaid(GOOD_CODE), "will-quit 测试前置:先重建常驻窗口");
   const quitWin = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
   assert(quitWin, "will-quit 测试前置:未找到 mermaid 常驻窗口");
   app.emit("will-quit"); // 手动触发事件仅运行监听器,不真正退出应用

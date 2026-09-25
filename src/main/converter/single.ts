@@ -17,8 +17,11 @@ import { renderMermaid } from "../services/mermaid-service.js";
 import { loadSettings, type AppSettings } from "../persist/settings.js";
 import { hardenWebContents } from "../services/web-hardening.js";
 import { writeTempHtml } from "../services/temp-html.js";
+// 取消判定按错误码单源(main 闸门与 core 渲染期取消同码,见 core/cancel.ts)
+import { isConversionCanceled } from "../../core/cancel.js";
 import {
   buildConvertContext,
+  ConvertCanceledError,
   createConvertContext,
   getImageResolver,
   throwIfCanceled,
@@ -61,6 +64,9 @@ export async function persistArtifact(
  * 纯函数便于冒烟自测与未来 CLI 复用;进度经 onProgress 上报。
  * pdf 链路:core 产出 HTML → 写临时文件 → 隐藏窗口 loadFile → printToPDF。
  * 取消:ctx 默认新建(「取消后复位」语义);skipAfterConvert 经 ctx 携带(见 ConvertContext)。
+ * ctx 的 signal/deadline 透传给 core(见 buildConvertContext 的 convert 入参):渲染层各
+ * 检查点与图片/图表回调都能感知取消,不必等整篇渲染结束;渲染期抛出的 core 取消错误在
+ * 本层归一为 ConvertCanceledError(main 面取消判定只认本层类型,与 merge 同构)。
  * settingsSnapshot 仅供批量在批次开始时传入 immutable 快照;单文件/合并未传时各自读取当前设置。
  * katexDir(pdf 公式资源目录)由调用方(main 入口层)传入,本函数不依赖 electron app。
  */
@@ -87,22 +93,34 @@ export async function convertImpl(
   // 进度分阶段:docx 沿用粗粒度 render;pdf 由 core 经 onStage 细分
   // parse/inline/mermaid/katex,print 在 renderPdf 内 printToPDF 前上报
   if (format === "docx") onProgress?.("render");
-  const artifact = await convert(
-    md,
-    format,
-    await buildConvertContext({
-      baseDir: path.dirname(filePath),
-      title: stripMarkdownExt(path.basename(filePath)),
-      warnings,
-      settings,
-      // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
-      imageResolver: getImageResolver(path.dirname(filePath)),
-      katexDir,
-      // Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,失败返回 null 由 core 降级)
-      mermaidResolver: renderMermaid,
-      ...(format === "pdf" ? { onStage: (stage: string) => onProgress?.(stage) } : {}),
-    }),
-  );
+  let artifact: Awaited<ReturnType<typeof convert>>;
+  try {
+    artifact = await convert(
+      md,
+      format,
+      await buildConvertContext({
+        baseDir: path.dirname(filePath),
+        // 取消与时间上限透传 core:单文件渲染(整篇单次 convert)可被中途取消,
+        // 否则取消只能等渲染结束才在下方闸门生效;批量逐文件经 batchCtx 同样生效
+        convert: ctx,
+        title: stripMarkdownExt(path.basename(filePath)),
+        warnings,
+        settings,
+        // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
+        imageResolver: getImageResolver(path.dirname(filePath)),
+        katexDir,
+        // Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,失败返回 null 由 core 降级)
+        mermaidResolver: renderMermaid,
+        ...(format === "pdf" ? { onStage: (stage: string) => onProgress?.(stage) } : {}),
+      }),
+    );
+  } catch (err) {
+    // 渲染期取消(core 抛 core 侧取消错误)归一为本层 ConvertCanceledError:main 面的取消
+    // 判定(IPC 取消分支与调用方 catch)只认本层类型,不归一会把「用户取消/时间上限」
+    // 上报为转换失败。普通失败原样上抛。
+    if (isConversionCanceled(err)) throw new ConvertCanceledError();
+    throw err;
+  }
   throwIfCanceled(ctx);
 
   const { outputPath, warnings: outWarnings } = await persistArtifact(

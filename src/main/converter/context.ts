@@ -1,6 +1,7 @@
 /**
  * 转换上下文与共享构造器:
  * - ConvertContext/createConvertContext/ConvertCanceledError/throwIfCanceled:取消语义
+ *   (signal/deadline 随上下文透传 core;错误码单源于 core/cancel.ts)
  * - getImageResolver + resolverCache:批量场景按 baseDir 共享图片解析器(LRU 上限)
  * - buildConvertContext:settings → core convert() 上下文映射收敛
  * 依赖方向:single/batch/merge 反向 import 本模块,本模块不依赖三者(无环)。
@@ -16,6 +17,10 @@ import type { HeaderLogoData } from "../../core/docx/chrome.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK, type HeaderFooterSettings, type WatermarkSettings } from "../../core/settings/settings-defaults.js";
 import type { MermaidResolver } from "../../core/markdown/mermaid.js";
+// 取消错误码单源于 core/cancel.ts:本层 ConvertCanceledError 继承之,
+// 故 main 取消与 core 渲染期取消同码(ERR_CONVERSION_CANCELLED);消费方
+// (IPC 取消分支、批量汇总)一律用 isConversionCanceled 判定,不认类引用。
+import { ConversionCanceledError } from "../../core/cancel.js";
 import { createImageResolver } from "../services/image-downloader.js";
 import type { AppSettings } from "../persist/settings.js";
 
@@ -41,24 +46,45 @@ export interface ConvertContext {
   cancelRequested: boolean;
   /** 请求取消(convert:cancel / 关窗放弃经 ctxByWebContents 注册表定位 ctx 后调用) */
   cancel(): void;
+  /**
+   * 取消信号:供 core ConvertContext 透传,使取消能到达渲染层各检查点与
+   * 图片/图表回调(取消不再只能等整篇渲染结束才生效)。cancel() 即置为 aborted。
+   */
+  signal: AbortSignal;
+  /** 绝对截止时间(epoch ms,可选):传入后 core 在该时刻按取消处理 */
+  deadline?: number;
   /** 让位:本次转换不触发导出后行为(批量逐文件调用置位,批次末尾由 batchConvertImpl 统一触发一次) */
   skipAfterConvert?: boolean;
 }
 
-/** 新建转换上下文:取消标志初始 false,每次调用不复用旧标志 */
-export function createConvertContext(): ConvertContext {
+/**
+ * 新建转换上下文:取消标志初始 false,每次调用不复用旧标志。
+ * deadline 为可选的绝对时间上限,随上下文透传给 core(见 ConvertContext.deadline)。
+ */
+export function createConvertContext(options: { deadline?: number } = {}): ConvertContext {
   let cancelRequested = false;
+  const controller = new AbortController();
   return {
     get cancelRequested() {
       return cancelRequested;
     },
     cancel() {
+      // 幂等:重复取消不再改写 signal.reason(已取消时保持首次原因)
+      if (cancelRequested) return;
       cancelRequested = true;
+      controller.abort(new ConvertCanceledError());
     },
+    signal: controller.signal,
+    deadline: options.deadline,
   };
 }
 
-export class ConvertCanceledError extends Error {
+/**
+ * 转换已取消(main 层闸门抛出)。继承 core 的取消错误类型:
+ * 错误码与渲染期取消一致(ERR_CONVERSION_CANCELLED),name 保持本层历史取值
+ * (GUI 文案与既有测试按 name 判定),两者可互相替换。
+ */
+export class ConvertCanceledError extends ConversionCanceledError {
   constructor() {
     super("已取消");
     this.name = "ConvertCanceledError";
@@ -126,6 +152,12 @@ export async function resolveHeaderLogo(
 export interface BuildConvertContextOptions {
   /** markdown 文件所在目录(图片相对路径基准) */
   baseDir: string;
+  /**
+   * 本次转换的取消上下文(main 层 ConvertContext):其 signal/deadline 透传给
+   * core,使「用户取消 / 关窗放弃 / 时间上限」能到达渲染层检查点与异步回调。
+   * 缺省(预览等无取消通道的调用方)则 core 侧无外部取消,行为不变。
+   */
+  convert?: ConvertContext;
   /** 文档标题(docx 元数据 / pdf <title>) */
   title: string;
   /** 显式文档元数据(封面用);优先于 frontmatter 解析出的 metadata */
@@ -152,6 +184,9 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
   const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...options.settings.watermark };
   return {
     baseDir: options.baseDir,
+    // 取消与时间上限透传(core 渲染层据此在阶段边界与异步回调处退出)
+    signal: options.convert?.signal,
+    deadline: options.convert?.deadline,
     title: options.title,
     metadata: options.metadata,
     warnings: options.warnings,

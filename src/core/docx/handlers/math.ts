@@ -26,11 +26,17 @@
  *   <annotation encoding="application/x-tex">源</annotation></semantics></math></span>;
  *   display 模式仅 math 加 display="block" 属性,不额外包 mstyle。
  * - 解析失败(throwOnError:false)产物为 <span class="katex-error" …>。
+ * - 资源边界(maxExpand/maxSize/trust)取自 core/resource-limits.ts 单源,
+ *   与 pdf 管线(@mdit/plugin-katex 转发同一份取值)一致:宏展开失控与外部
+ *   引用指令在 KaTeX 侧被拒 → 整式降级为 TeX 源码,不拖垮转换。
  * - 文本转义仅 5 个字符(& < > " '),空格/运算符用原始 Unicode;
  *   mstyle 仅 \color / \small 等特殊构造产出。
  */
 import katex from "katex";
 import { decodeEntities } from "../../util/utils.js";
+// 资源边界单源:公式来自用户 markdown(不可信输入),宏展开与信任指令的边界
+// 取值与 pdf 管线(@mdit/plugin-katex 转发同一份 DEFAULT_KATEX_RESOURCE_LIMITS)一致
+import { DEFAULT_KATEX_RESOURCE_LIMITS, hasUntrustedTexCommand } from "../../resource-limits.js";
 import {
   MathFraction,
   MathLimitLower,
@@ -61,8 +67,13 @@ interface MathMlNode {
  * ok:false 时 text 为原 TeX 源码(整式降级,调用方渲染为等宽灰字并追加警告)。
  */
 export function texToDocxMath(tex: string): TexToDocxMathResult {
-  // throwOnError:false:解析失败不抛异常,产物含 class="katex-error"
-  const html = katex.renderToString(tex, { output: "mathml", throwOnError: false });
+  // 信任闸门:外部引用/HTML 扩展指令在不可信输入下整式降级(KaTeX trust=false
+  // 只把这类命令渲染为红色文本,不报错,故在此显式拦截以与 pdf 管线同口径)
+  if (hasUntrustedTexCommand(tex)) return { ok: false, text: tex };
+  // 资源边界与错误模式取自单源(见 resource-limits.ts):throwOnError=false 时
+  // 解析失败不抛异常,产物含 class="katex-error";maxExpand/maxSize 挡住宏展开
+  // 失控与超大显式尺寸;trust=false 拒绝 \includegraphics/\href 等外部引用指令。
+  const html = katex.renderToString(tex, { output: "mathml", ...DEFAULT_KATEX_RESOURCE_LIMITS });
   if (html.includes('class="katex-error"')) return { ok: false, text: tex };
   // 结构异常(未闭合/子元素数量非预期等)一律整式降级,不抛错中断转换
   try {

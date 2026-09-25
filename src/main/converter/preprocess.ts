@@ -24,6 +24,34 @@ export interface PreparedMarkdown {
 }
 
 /**
+ * 单个 markdown 源文件的体积上限：整篇进内存做 AST/HTML 渲染，超过此量级
+ * 单文件即可拖垮会话（批量与合并另有总量上限）。32MB 远超正常文档。
+ */
+export const MAX_SOURCE_FILE_BYTES = 32 * 1024 * 1024;
+
+/** 读源文件字节：读前 stat 与读后长度双检，任一超限即拒绝。 */
+async function readSourceBytes(filePath: string): Promise<Buffer> {
+  let size: number | null = null;
+  try {
+    size = (await fs.stat(filePath)).size;
+  } catch {
+    size = null; // 缺失/不可访问:交由 readFile 抛出原始错误码(错误文案依赖它)
+  }
+  if (size !== null && size > MAX_SOURCE_FILE_BYTES) {
+    throw new Error(
+      `文件体积超过上限(${(MAX_SOURCE_FILE_BYTES / 1024 / 1024).toFixed(0)}MB):${path.basename(filePath)}`,
+    );
+  }
+  const data = await fs.readFile(filePath);
+  if (data.length > MAX_SOURCE_FILE_BYTES) {
+    throw new Error(
+      `文件体积超过上限(${(MAX_SOURCE_FILE_BYTES / 1024 / 1024).toFixed(0)}MB):${path.basename(filePath)}`,
+    );
+  }
+  return data;
+}
+
+/**
  * 对原始 markdown 做转换前规整。
  * 顺序：先解析并隔离 frontmatter，再只对正文执行 Obsidian 语法归一与 AI 清理，
  * 最后原样拼回 frontmatter。两开关独立，仅启用项生效；均未启用时正文与 frontmatter
@@ -77,6 +105,9 @@ export function prepareMarkdownText(md: string, settings: AppSettings): Prepared
 /**
  * 文件准备链：读取字节并解码，再走唯一的文本准备链。
  * gbkKey 由调用方给出：单文件/预览使用通用警告，合并按文件给出文件名。
+ * 体积闸门：单文件超过 MAX_SOURCE_FILE_BYTES 直接拒绝（读前 stat 拦截，
+ * 避免把超大文件整个读进内存；读后再核一次长度，覆盖 stat 之后被替换的情况）。
+ * 拒绝而非截断——静默截断会产出缺尾的文档。错误文案 i18n 化列入后续字典维护项。
  */
 export async function prepareMarkdown(
   filePath: string,
@@ -84,7 +115,7 @@ export async function prepareMarkdown(
   warnings?: ConvertWarning[],
   gbkKey: "warn.gbkEncoding" | "warn.gbkEncodingFile" = "warn.gbkEncoding",
 ): Promise<PreparedMarkdown> {
-  const { text, encoding } = decodeMarkdown(await fs.readFile(filePath));
+  const { text, encoding } = decodeMarkdown(await readSourceBytes(filePath));
   if (encoding === "gbk" && warnings) {
     warnings.push(
       gbkKey === "warn.gbkEncodingFile"

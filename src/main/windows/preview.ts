@@ -3,6 +3,11 @@
  * 读 md → convert("pdf") 复用 PDF 排版 HTML → 写临时文件 → 可见窗口 loadFile。
  * 允许并发多开;closed 清理注册与临时文件;focus 时按 mtime 对比源文件,
  * 变更则重渲染;设置变更经 preview:refresh 全量刷新。转换中不触碰预览。
+ * 刷新一致性(并发入口:设置刷新 / focus 检测 / 手动重开):
+ * - 每窗口一条串行队列:渲染、loadFile、临时文件回收不交错,旧页不会后到覆盖新页;
+ * - 代号(generation)单调递增:只有最新一代的结果可落地,过期任务既不 loadFile
+ *   也不动当前页的临时文件(不提前删除新页正在用的文件),失败也不覆盖新页的错误页;
+ * - 窗口关闭即 closed 标记:在途刷新安全退出(不写注册表、不删他人文件)。
  */
 import { BrowserWindow, screen } from "electron";
 import fs from "node:fs/promises";
@@ -27,14 +32,20 @@ import { hardenWebContents } from "../services/web-hardening.js";
 const PREVIEW_DEFAULT_WIDTH = 900;
 const PREVIEW_DEFAULT_HEIGHT = 1100;
 
-/** 预览窗口注册表。 */
-interface PreviewEntry {
+/** 预览窗口注册表条目(每窗口独立刷新状态:代号 + 串行队列)。 */
+export interface PreviewEntry {
   win: BrowserWindow;
   mdPath: string;
   /** 打开/上次刷新时记录的源文件 mtime(focus 时对比,变了才重渲染)。 */
   mtimeMs: number;
-  /** 当前展示的临时 HTML 清理函数(每次刷新替换为新临时文件的清理)。 */
-  cleanup: () => Promise<void>;
+  /** 当前展示页面对应的临时 HTML 清理函数(被新页取代或窗口关闭时释放;已释放为 null)。 */
+  cleanup: (() => Promise<void>) | null;
+  /** 刷新代号:每次请求刷新 +1;非最新代的任务结果一律作废。 */
+  generation: number;
+  /** 刷新串行队列(同窗口渲染/loadFile/清理不交错)。 */
+  queue: Promise<void>;
+  /** 窗口已关闭:在途刷新安全退出。 */
+  closed: boolean;
 }
 export const previews = new Set<PreviewEntry>();
 
@@ -93,36 +104,70 @@ function showPreviewError(win: BrowserWindow, message: string): void {
   });
 }
 
+/** 刷新任务是否已过期(窗口关闭,或期间又发起了更新的刷新)。 */
+function isStaleRefresh(entry: PreviewEntry, generation: number): boolean {
+  return entry.closed || entry.generation !== generation;
+}
+
 /**
- * 重渲染单个预览窗口:重读设置 + 源文件 → 渲染 → 写新临时文件 → loadFile。
- * 刷新成功后替换注册表清理函数(旧临时文件在新页面加载完成后清理)并更新 mtime;
- * 任何失败(含源文件缺失)→ 窗口内错误页。
+ * 单代刷新(在串行队列内执行):重读设置 + 源文件 → 渲染 → 写新临时文件 → loadFile
+ * → 接管本页临时文件 → 回收旧页临时文件。
+ * 临时文件所有权分三段:未接管(过期/失败/加载失败)即删;接管后由窗口关闭或
+ * 下一次刷新负责,不在本函数提前删除(否则会删掉新页正在用的文件)。
  */
-export async function refreshPreviewWindow(entry: PreviewEntry): Promise<void> {
-  if (entry.win.isDestroyed()) return;
-  // 新临时文件清理函数提升到 try 外——失败路径(stat/loadFile 中断)也能回收,
-  // 此前失败时新 tmp 引用丢失,临时 HTML 残留至进程退出
-  let newCleanup: (() => Promise<void>) | null = null;
+async function runPreviewRefresh(entry: PreviewEntry, generation: number): Promise<void> {
+  if (isStaleRefresh(entry, generation)) return;
+  // 待接管句柄:置 null 即表示所有权已移交注册表(catch 中不再删它)
+  let pending: { htmlPath: string; cleanup: () => Promise<void> } | null = null;
   try {
     const html = await renderPreviewHtml(entry.mdPath);
-    const tmp = await writeTempHtml(html);
-    newCleanup = tmp.cleanup;
-    const oldCleanup = entry.cleanup;
-    entry.cleanup = tmp.cleanup;
+    if (isStaleRefresh(entry, generation)) return;
+    pending = await writeTempHtml(html);
+    if (isStaleRefresh(entry, generation)) {
+      await pending.cleanup(); // 已过期:不展示也不保留
+      return;
+    }
     // 渲染完成后再 stat:捕获渲染期间的最新 mtime,下次 focus 以新值对比
     const st = await fs.stat(entry.mdPath);
+    await entry.win.loadFile(pending.htmlPath);
+    if (isStaleRefresh(entry, generation)) {
+      await pending.cleanup(); // 加载期间被取代/窗口已关:本页作废
+      return;
+    }
+    const previous = entry.cleanup;
+    entry.cleanup = pending.cleanup;
+    pending = null; // 所有权移交注册表
     entry.mtimeMs = st.mtimeMs;
-    await entry.win.loadFile(tmp.htmlPath);
-    await oldCleanup(); // 旧临时文件已不再被引用
+    await previous?.().catch(() => undefined); // 旧页临时文件:仅在新页加载完成后回收
   } catch (err) {
-    await newCleanup?.().catch(() => undefined);
+    await pending?.cleanup().catch(() => undefined);
+    if (isStaleRefresh(entry, generation)) return; // 旧代失败不覆盖新页/已关闭窗口
     showPreviewError(entry.win, errorMessage(err));
   }
 }
 
-/** focus 时检查源文件:缺失 → 错误页;mtime 变更 → 重渲染。 */
+/**
+ * 请求刷新单个预览窗口(并发入口统一走此):代号 +1 后挂到该窗口的串行队列。
+ * 队列保证渲染与 loadFile 不交错,代号保证只有最新一代的结果落地;
+ * 返回的 Promise 在该次刷新结算后 resolve(测试可 await)。
+ */
+export function requestPreviewRefresh(entry: PreviewEntry): Promise<void> {
+  const generation = ++entry.generation;
+  const task = entry.queue.then(
+    () => runPreviewRefresh(entry, generation),
+    () => runPreviewRefresh(entry, generation),
+  );
+  // 队列链吞掉失败:一次刷新出错不得让后续刷新永久排队
+  entry.queue = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
+}
+
+/** focus 时检查源文件:缺失 → 错误页;mtime 变更 → 请求刷新。 */
 async function checkPreviewSource(entry: PreviewEntry): Promise<void> {
-  if (entry.win.isDestroyed()) return;
+  if (entry.closed || entry.win.isDestroyed()) return;
   let st;
   try {
     st = await fs.stat(entry.mdPath);
@@ -130,7 +175,7 @@ async function checkPreviewSource(entry: PreviewEntry): Promise<void> {
     showPreviewError(entry.win, t("preview.sourceMissing", { path: entry.mdPath }));
     return;
   }
-  if (st.mtimeMs !== entry.mtimeMs) await refreshPreviewWindow(entry);
+  if (st.mtimeMs !== entry.mtimeMs) await requestPreviewRefresh(entry);
 }
 
 /**
@@ -181,15 +226,29 @@ export async function openPreviewWindow(mdPath: string): Promise<{ ok: boolean; 
       mdPath,
       mtimeMs: st.mtimeMs,
       cleanup: tmp.cleanup,
+      generation: 0,
+      queue: Promise.resolve(),
+      closed: false,
     };
     previews.add(entry);
     win.on("closed", () => {
+      entry.closed = true;
+      entry.generation += 1; // 在途刷新立即失效(不得再 loadFile/写注册表)
       previews.delete(entry);
-      void entry.cleanup().catch(() => undefined);
+      const cleanup = entry.cleanup;
+      entry.cleanup = null;
+      void cleanup?.().catch(() => undefined);
     });
     // 源文件变更(或恢复)时刷新;已是最新则不动作
     win.on("focus", () => void checkPreviewSource(entry));
-    await win.loadFile(tmp.htmlPath);
+    // 初次加载也进串行队列:打开后立刻发生的刷新(settings 变更/focus)排在初载之后,
+    // 否则初载后到会用旧页覆盖刚刷新的页面(并删掉刷新页正在用的临时文件)
+    const initialLoad = win.loadFile(tmp.htmlPath);
+    entry.queue = initialLoad.then(
+      () => undefined,
+      () => undefined,
+    );
+    await initialLoad;
     return { ok: true };
   } catch (err) {
     win?.destroy();

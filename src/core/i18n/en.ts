@@ -448,6 +448,9 @@ const dict = {
     "warn.imageAttrInvalid": "Invalid image size attribute, ignored: ${attr} (${src})",
     "warn.headerLogoLoadFailed": "Failed to load header logo, ignored: ${src}",
     "warn.unlabeledCodeBlock": "Code block has no language tag; highlighting may be incorrect",
+    // kind 为推送期的中文类别词(条目数/层级,来自 pathScanLimitWarning 调用侧),
+    // 文案保留插值以便定位触顶维度(同 warn.unsupportedBlockInContainer 口径)
+    "warn.pathScanLimit": "Directory scan limit reached (${kind}: ${limit}), stopped collecting the remaining content",
 
     /* ---------- Errors (localized at throw time: message reaches GUI via a one-shot string channel) ---------- */
     "convert.noFilesSelected": "No files selected",

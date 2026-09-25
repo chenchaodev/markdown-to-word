@@ -440,6 +440,9 @@ const dict = {
     "warn.imageAttrInvalid": "画像サイズ属性が無効のため無視しました: ${attr}(${src})",
     "warn.headerLogoLoadFailed": "ヘッダーロゴの読み込みに失敗したため無視しました: ${src}",
     "warn.unlabeledCodeBlock": "コードブロックに言語指定がありません。強調が正しくない可能性があります",
+    // kind は推送期の中国語カテゴリ語(条目数/层级)のためプレースホルダーを保持
+    // (en と同じ口径で、触頂した次元を特定できる情報を落とさない)
+    "warn.pathScanLimit": "ディレクトリ走査が上限 (${kind}: ${limit}) に達し、残りの収集を停止しました",
 
     /* ---------- エラー(生成時にローカライズ) ---------- */
     "convert.noFilesSelected": "ファイルが選択されていません",

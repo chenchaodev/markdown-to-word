@@ -42,10 +42,26 @@ import {
   type HeaderFooterSettings,
   type WatermarkSettings,
 } from "./settings/settings-defaults.js";
+// 取消契约单源:signal/deadline → CancellationGuard,两条渲染管线共用同一守卫
+import { createCancellationGuard } from "./cancel.js";
+import type { ImageResourceBudget } from "./resource-limits.js";
 
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */
   baseDir: string;
+  /**
+   * 外部取消信号(AbortSignal):main 层 convert:cancel / 关窗放弃经此传播到
+   * 渲染层各检查点与图片/图表回调。取消以 ConversionCanceledError
+   * (code = ERR_CONVERSION_CANCELLED)退出,不与普通失败混用同一通道。
+   */
+  signal?: AbortSignal;
+  /**
+   * 绝对截止时间(epoch ms):到期即按取消处理;已过期者在 convert 入口即短路,
+   * 不启动任何 resolver。与 signal 任一触发均取消。
+   */
+  deadline?: number;
+  /** 图片资源预算覆盖(缺省取 core/resource-limits.ts 默认值) */
+  imageBudget?: ImageResourceBudget;
   /** 图片解析回调(契约单源 core/image-resolver.ts):返回 null 表示跳过该图
    *  (缺失检查并入此失败路径,单次 IO);exists 轻量存在性通道可选 */
   imageResolver?: ImageResolver;
@@ -116,70 +132,90 @@ export async function convert(
   format: ConvertFormat,
   context: ConvertContext,
 ): Promise<ConvertArtifact> {
-  // 注意:context.warnings 缺省时退化为局部空数组,收集到的警告在调用结束后被丢弃;
-  // 需要拿到警告的调用方必须显式传入 context.warnings 数组。
-  const warnings = context.warnings ?? [];
-  // 先剥离 frontmatter:解析与渲染均只作用于正文(body)
-  const { metadata: parsedMetadata, body } = parseFrontmatter(md);
-  // 显式 metadata(context.metadata)优先于 frontmatter 解析出的 metadata:
-  // 向导封面覆盖 frontmatter 即走此路径;未传则回落 frontmatter(回归不变)
-  const metadata = context.metadata ?? parsedMetadata;
-  // 页眉页脚配置归一化:以 DEFAULT_HEADER_FOOTER 为基准补缺失字段,docx 与 pdf 共用同一份取值
-  const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...context.headerFooter };
-  // 水印配置归一化(缺省字段补默认;text 空串视为关闭,由渲染层判定零渲染)
-  const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...context.watermark };
+  // 取消守卫单一来源:signal/deadline 收敛为一个信号,两条管线共用;
+  // 入口检查点在任何解析/渲染之前——预取消与已过期 deadline 不启动任何 resolver。
+  const guard = createCancellationGuard({ signal: context.signal, deadline: context.deadline });
+  try {
+    guard.throwIfCanceled();
+    // 注意:context.warnings 缺省时退化为局部空数组,收集到的警告在调用结束后被丢弃;
+    // 需要拿到警告的调用方必须显式传入 context.warnings 数组。
+    const warnings = context.warnings ?? [];
+    // 先剥离 frontmatter:解析与渲染均只作用于正文(body)
+    const { metadata: parsedMetadata, body } = parseFrontmatter(md);
+    // 显式 metadata(context.metadata)优先于 frontmatter 解析出的 metadata:
+    // 向导封面覆盖 frontmatter 即走此路径;未传则回落 frontmatter(回归不变)
+    const metadata = context.metadata ?? parsedMetadata;
+    // 页眉页脚配置归一化:以 DEFAULT_HEADER_FOOTER 为基准补缺失字段,docx 与 pdf 共用同一份取值
+    const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...context.headerFooter };
+    // 水印配置归一化(缺省字段补默认;text 空串视为关闭,由渲染层判定零渲染)
+    const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...context.watermark };
+    // Mermaid 渲染回调与取消竞速(隐藏窗口服务不配合取消时也能退出);
+    // 未注入 resolver 时保持 undefined(docx 侧按普通代码块渲染)
+    const injectedMermaid = context.mermaidResolver;
+    const mermaidResolver = injectedMermaid
+      ? (code: string) => guard.race(injectedMermaid(code))
+      : undefined;
 
-  if (format === "pdf") {
-    // pdf 分支只消费 body 字符串(markdown-it 在 renderPdfHtml 内另行解析),
-    // 不做 remark 解析(原无条件 parseMarkdown 使每次 PDF 转换
-    // 白做一次 AST 构建 + 全标题 slug 遍历)
+    if (format === "pdf") {
+      // pdf 分支只消费 body 字符串(markdown-it 在 renderPdfHtml 内另行解析),
+      // 不做 remark 解析(原无条件 parseMarkdown 使每次 PDF 转换
+      // 白做一次 AST 构建 + 全标题 slug 遍历)
+      return {
+        kind: "pdf",
+        html: await renderPdfHtml(body, {
+          baseDir: context.baseDir,
+          title: context.title,
+          metadata,
+          warnings,
+          imageResolver: context.imageResolver,
+          guard,
+          imageBudget: context.imageBudget,
+          pageSetup: context.pageSetup,
+          typography: context.typography,
+          breakBeforeH1: context.breakBeforeH1,
+          toc: context.toc,
+          equationNumbering: context.equationNumbering,
+          katexDir: context.katexDir,
+          pdfCss: context.pdfCss,
+          mermaidResolver,
+          onStage: context.onStage,
+          watermark,
+        }),
+        // 页眉模板按配置构造(logo data URI 内嵌);页脚开关关闭时空模板占位
+        // (displayHeaderFooter 常开,机制不变,见 PDF_EMPTY_CHROME_TEMPLATE 注释)
+        headerTemplate: buildPdfHeaderTemplate(headerFooter, context.headerLogo),
+        footerTemplate: headerFooter.footerEnabled ? PDF_FOOTER_TEMPLATE : PDF_EMPTY_CHROME_TEMPLATE,
+        tocMode: context.tocMode ?? "static",
+        metadata,
+      };
+    }
+    // docx 分支才需要 remark AST(解析责任在 convert 层,与 pdf 层「传原文」不对称
+    // 是双管线有意差异,见头注释)
+    guard.throwIfCanceled(); // 同步解析(remark + 全文预扫)前复查:长文本不必解析完才退出
+    const ast = parseMarkdown(body);
     return {
-      kind: "pdf",
-      html: await renderPdfHtml(body, {
-        baseDir: context.baseDir,
-        title: context.title,
+      kind: "docx",
+      buffer: await renderDocx(ast, {
+        imageResolver: context.imageResolver,
+        guard,
+        imageBudget: context.imageBudget,
         metadata,
         warnings,
-        imageResolver: context.imageResolver,
         pageSetup: context.pageSetup,
         typography: context.typography,
         breakBeforeH1: context.breakBeforeH1,
         toc: context.toc,
+        tocMode: context.tocMode,
         equationNumbering: context.equationNumbering,
-        katexDir: context.katexDir,
-        pdfCss: context.pdfCss,
-        mermaidResolver: context.mermaidResolver,
-        onStage: context.onStage,
+        title: context.title,
+        mermaidResolver,
+        headerFooter,
+        headerLogo: context.headerLogo,
         watermark,
       }),
-      // 页眉模板按配置构造(logo data URI 内嵌);页脚开关关闭时空模板占位
-      // (displayHeaderFooter 常开,机制不变,见 PDF_EMPTY_CHROME_TEMPLATE 注释)
-      headerTemplate: buildPdfHeaderTemplate(headerFooter, context.headerLogo),
-      footerTemplate: headerFooter.footerEnabled ? PDF_FOOTER_TEMPLATE : PDF_EMPTY_CHROME_TEMPLATE,
-      tocMode: context.tocMode ?? "static",
-      metadata,
     };
+  } finally {
+    // 释放 deadline 计时器(不 unref 也能退出,但显式释放避免长会话累积)
+    guard.dispose();
   }
-  // docx 分支才需要 remark AST(解析责任在 convert 层,与 pdf 层「传原文」不对称
-  // 是双管线有意差异,见头注释)
-  const ast = parseMarkdown(body);
-  return {
-    kind: "docx",
-    buffer: await renderDocx(ast, {
-      imageResolver: context.imageResolver,
-      metadata,
-      warnings,
-      pageSetup: context.pageSetup,
-      typography: context.typography,
-      breakBeforeH1: context.breakBeforeH1,
-      toc: context.toc,
-      tocMode: context.tocMode,
-      equationNumbering: context.equationNumbering,
-      title: context.title,
-      mermaidResolver: context.mermaidResolver,
-      headerFooter,
-      headerLogo: context.headerLogo,
-      watermark,
-    }),
-  };
 }

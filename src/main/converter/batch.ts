@@ -9,8 +9,17 @@ import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { BatchItem, BatchProgressInfo, BatchResult } from "../../core/ipc-contract.js";
 import { loadSettings } from "../persist/settings.js";
-import { ConvertCanceledError, createConvertContext, type ConvertContext } from "./context.js";
+import { createConvertContext, type ConvertContext } from "./context.js";
+import { isConversionCanceled } from "../../core/cancel.js";
 import { convertImpl, runAfterConvert } from "./single.js";
+
+/**
+ * 单批次文件数上限:批量对每个文件独立读盘 + 整篇渲染,数量无界会把一次操作
+ * 放大成长时间占用(会话内其余入口全部排队)。超限直接拒绝整批,不静默截断
+ * (截断会让用户以为全部文件都已转换)。
+ * 提示文案 i18n 化列入后续字典维护项(与产物提交器的错误文案同口径)。
+ */
+export const MAX_BATCH_FILES = 500;
 
 /**
  * 批量转换:并发上限 2 的简单池,每文件独立 convertImpl,失败不中断。
@@ -23,6 +32,7 @@ import { convertImpl, runAfterConvert } from "./single.js";
  * 由本函数在批次末尾统一执行一次;取消闸门在 runAfterConvert 内最后一刻复查。
  * 汇总完整性:取消后 items 必须逐项归属(ok/fail/canceled),不留空洞,
  * okCount + failCount + canceledCount === files.length。
+ * 预算:文件数超 MAX_BATCH_FILES 直接拒绝整批(不静默截断)。
  */
 export async function batchConvertImpl(
   files: string[],
@@ -31,6 +41,9 @@ export async function batchConvertImpl(
   ctx: ConvertContext = createConvertContext(),
   katexDir?: string,
 ): Promise<BatchResult> {
+  if (files.length > MAX_BATCH_FILES) {
+    throw new Error(`批量转换文件数超过上限(${MAX_BATCH_FILES} 个):${files.length}`);
+  }
   // 深拷贝:loadSettings 返回模块级缓存对象本体,直接沿用会让批次中途的设置改写渗入本批次
   const settingsSnapshot = structuredClone(loadSettings());
   const batchCtx: ConvertContext = {
@@ -38,6 +51,9 @@ export async function batchConvertImpl(
       return ctx.cancelRequested;
     },
     cancel: () => ctx.cancel(),
+    // 取消信号与时间上限直接透传:逐文件 convertImpl 经 core 渲染层感知取消
+    signal: ctx.signal,
+    deadline: ctx.deadline,
     skipAfterConvert: true,
   };
   const total = files.length;
@@ -83,7 +99,9 @@ export async function batchConvertImpl(
         items[index] = { file, ok: true, outputPath, warnings };
         okCount++;
       } catch (err) {
-        if (err instanceof ConvertCanceledError) {
+        // 取消判定按错误码(main 闸门与 core 渲染期取消同码,见 core/cancel.ts):
+        // 只认本层类引用会把渲染期取消误计为失败,汇总失真
+        if (isConversionCanceled(err)) {
           items[index] = { file, ok: false, canceled: true };
           canceledCount++;
           // 退出前结算未取项:否则并发 worker 全走取消分支时,尾部索引无人认领

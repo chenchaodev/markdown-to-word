@@ -3,12 +3,17 @@
  * - 本地相对路径:仅允许源文档目录或显式可信根目录内,realpath 前后复核边界
  * - http(s):下载 Buffer(默认 10s 超时,timeoutMs 可注入;仅接受 2xx),失败返回 null
  * - 其余(data: 等):返回 null
+ * 请求契约(契约单源 core/image/image-resolver.ts):每次调用可带
+ * { signal, maxBytes, timeoutMs }——signal 取消即中止;单图字节上限超过即中止读取;
+ * 时限覆盖 DNS 解析/连接/读取全过程(DNS 单独计时,不与连接抢同一预算)。
  * 同 URL 并发去重缓存:一个文档内同 URL 只下载一次;仅成功结果缓存,失败
  * (404/超时/网络错误 → null)不缓存——一次网络抖动不导致批量期间该 URL 永久失败,下次重试。
- * 纯 Node API(全局 fetch + AbortSignal.timeout),无新增依赖。
+ * 缓存另有条目数与字节预算:长会话跨目录/多文档共用实例时不会单调增长。
+ * 纯 Node API(全局 fetch + AbortSignal),无新增依赖。
  * 警告不在此收集(core 渲染层负责),这里只返回 Buffer / null。
  * SSRF 加固(安全收紧,正常路径不受影响):
- * - 响应体大小上限 MAX_RESPONSE_BYTES(Content-Length 预检 + 流式累计双保险,
+ * - 响应体大小上限(上限取请求 maxBytes,缺省 MAX_RESPONSE_BYTES;
+ *   Content-Length 预检 + 流式累计双保险,
  *   超限中止读取返回 null → core 层走既有「图片加载失败」警告通道);
  * - 私网/回环/链路本地地址拦截:每跳重定向目标均先解析 DNS 并校验 IP,防借主进程
  *   网络位置做内网探测;策略经 ALLOW_PRIVATE_ADDRESSES 常量与 per-resolver 选项
@@ -19,17 +24,23 @@ import path from "node:path";
 import dns from "node:dns/promises";
 import net from "node:net";
 // 契约单源:ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
-import type { ImageResolver } from "../../core/image/image-resolver.js";
+import type { ImageResolver, ImageResolverRequest } from "../../core/image/image-resolver.js";
 // 契约单源:本地图片可信边界与 precheck/PDF 规则共用 core/markdown/precheck.ts 策略
 import { createLocalImagePathPolicy } from "../../core/markdown/precheck.js";
 
 const HTTP_TIMEOUT_MS = 10_000;
 
-/** 响应体大小上限:20MB,远超正常文档图片需求,防恶意大响应耗尽内存。 */
+/** 响应体大小上限:20MB,远超正常文档图片需求,防恶意大响应耗尽内存。
+ *  请求带 maxBytes 时以请求值为准(渲染层预算单源 core/resource-limits.ts)。 */
 export const MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
 
 /** 重定向跟随上限:防重定向循环拖住转换。 */
 const MAX_REDIRECTS = 5;
+
+/** 下载缓存条目上限:超出后按插入顺序淘汰最早条目(在途条目不淘汰,其等待者仍持有同一 Promise)。 */
+export const MAX_CACHE_ENTRIES = 64;
+/** 下载缓存字节上限:超出后同样按插入顺序淘汰,防长会话多目录共用实例时字节单调增长。 */
+export const MAX_CACHE_BYTES = 32 * 1024 * 1024;
 
 /**
  * 私网/回环拦截总开关:false = 拦截(默认,安全收紧);
@@ -78,23 +89,37 @@ export function isPrivateAddress(ip: string): boolean {
   return net.isIP(ip) === 6 ? isPrivateIPv6(ip) : isPrivateIPv4(ip);
 }
 
-/** 主机是否允许直连:字面量 IP 直接判定;域名解析后全部地址均须非私网(任一命中即拒,
- *  防 DNS rebinding 双答案绕过);解析失败按不允许处理(下载本会失败,提前拦截)。 */
-async function isHostAllowed(hostname: string): Promise<boolean> {
-  if (net.isIP(hostname)) return !isPrivateAddress(hostname);
+/** 带时限的等待:超时返回 null(调用方按「不可用」处理,不留悬挂 promise) */
+async function withDeadline<T>(work: Promise<T>, timeoutMs: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const addrs = await dns.lookup(hostname, { all: true });
-    return addrs.length > 0 && addrs.every((a) => !isPrivateAddress(a.address));
-  } catch {
-    return false;
+    return await Promise.race([
+      work,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), timeoutMs);
+        timer.unref?.(); // 计时器不持有事件循环
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
+/** 主机是否允许直连:字面量 IP 直接判定;域名解析后全部地址均须非私网(任一命中即拒,
+ *  防 DNS rebinding 双答案绕过);解析失败或超时按不允许处理(下载本会失败,提前拦截)。
+ *  DNS 单独计时:解析卡住不应占满整个请求预算。 */
+async function isHostAllowed(hostname: string, timeoutMs: number): Promise<boolean> {
+  if (net.isIP(hostname)) return !isPrivateAddress(hostname);
+  const addrs = await withDeadline(dns.lookup(hostname, { all: true }), timeoutMs);
+  return addrs !== null && addrs.length > 0 && addrs.every((a) => !isPrivateAddress(a.address));
+}
+
 /** 创建绑定 baseDir 的 imageResolver;每次文档转换新建一个实例(缓存随文档生命周期)。
- * timeoutMs:http(s) 下载超时(默认 HTTP_TIMEOUT_MS = 10s,测试可注入缩短)。
+ * timeoutMs:http(s) 下载超时(默认 HTTP_TIMEOUT_MS = 10s,测试可注入缩短);
+ *  单次请求带 request 时以其 timeoutMs/maxBytes/signal 为准。
  * options:SSRF 策略与本地可信根选项;本地 IO 前后均复核 symlink/junction 边界。
  * 缓存语义:fetch 前 cache.set 保证并发去重(在途 Promise 共享);结算后失败(null)条目
- * 异步删除,成功结果保留——失败下次调用重新下载,成功不重复请求。
+ * 异步删除,成功结果按条目数/字节预算淘汰最早条目——失败下次调用重新下载,成功在预算内不重复请求。
  * exists 轻量通道:边界通过后 fs.access 判定(免整读),ENOENT → false,其他错误抛出
  * 保留错误码;非本地路径退回完整解析(pdf 侧 checkLocalImages 仅收本地 src)。 */
 export function createImageResolver(
@@ -109,29 +134,60 @@ export function createImageResolver(
     realpath: options.realpath,
   });
   const cache = new Map<string, Promise<Buffer | null>>();
-  const resolve = (src: string): Promise<Buffer | null> => {
+  const cachedBytes = new Map<string, number>(); // 仅成功结算条目;在途条目不入账
+  let cachedTotal = 0;
+  const forget = (src: string): void => {
+    const size = cachedBytes.get(src);
+    if (size !== undefined) {
+      cachedTotal -= size;
+      cachedBytes.delete(src);
+    }
+    cache.delete(src);
+  };
+  const evict = (): void => {
+    for (const [key] of cache) {
+      if (cache.size <= MAX_CACHE_ENTRIES && cachedTotal <= MAX_CACHE_BYTES) return;
+      if (!cachedBytes.has(key)) continue; // 在途条目不淘汰(等待者仍持有同一 Promise)
+      forget(key);
+    }
+  };
+  const resolve = (src: string, request?: ImageResolverRequest): Promise<Buffer | null> => {
+    // 请求已取消:不再发起 IO(渲染层守卫已把取消上抛,此处只是不再浪费一次读/请求)
+    if (request?.signal.aborted) return Promise.resolve(null);
     if (/^https?:\/\//i.test(src)) {
       let pending = cache.get(src);
       if (!pending) {
-        pending = downloadHttp(src, timeoutMs, allowPrivateAddresses);
+        pending = downloadHttp(src, timeoutMs, allowPrivateAddresses, request);
         cache.set(src, pending);
         // 失败不缓存:结算为 null(404/超时/网络错误)时删除条目,下次调用重新下载。
         // 并发调用已持有同一 pending(去重语义保留),仅影响后续调用。
-        void pending.then((buf) => {
-          if (buf === null) cache.delete(src);
-        });
+        void pending.then(
+          (buf) => {
+            if (buf === null) {
+              forget(src);
+              return;
+            }
+            cachedBytes.set(src, buf.length);
+            cachedTotal += buf.length;
+            evict();
+          },
+          () => forget(src),
+        );
       }
       return pending;
     }
-    return readLocal(src, localImagePolicy);
+    return readLocal(src, localImagePolicy, request);
   };
-  const exists = async (src: string): Promise<boolean> => {
-    if (/^https?:\/\//i.test(src)) return (await resolve(src)) !== null;
+  const exists = async (src: string, request?: ImageResolverRequest): Promise<boolean> => {
+    if (request?.signal.aborted) return false;
+    if (/^https?:\/\//i.test(src)) return (await resolve(src, request)) !== null;
     const initial = await localImagePolicy.resolve(src);
     if (!initial.filePath) {
       if (initial.error) throw initial.error;
       return false;
     }
+    // 单图字节上限不在 exists 通道判定:该通道只回答「存在且可读」,超预算属于解析
+    // 失败(由 readLocal 归 null → 统一「图片加载失败」),报成「文件不存在」是误导
     try {
       await fs.access(initial.filePath);
     } catch (err) {
@@ -149,15 +205,28 @@ function samePath(left: string, right: string): boolean {
   return path.relative(left, right) === "";
 }
 
-/** 下载 http(s) 资源:默认 10s 超时(timeoutMs 由 createImageResolver 注入),仅接受 2xx;
- * 任何失败(超时/非 2xx/网络错误/私网拦截/体积超限/重定向超限)→ null,不抛。
- * 手动跟随重定向(redirect:"manual"),每一跳目标都过私网校验后再请求。 */
-async function downloadHttp(url: string, timeoutMs: number, allowPrivateAddresses: boolean): Promise<Buffer | null> {
+/** 下载 http(s) 资源:仅接受 2xx;
+ * 任何失败(超时/非 2xx/网络错误/私网拦截/体积超限/重定向超限/已取消)→ null,不抛。
+ * 手动跟随重定向(redirect:"manual"),每一跳目标都过私网校验后再请求。
+ * 请求约束(request):时限取 request.timeoutMs(缺省实例级 timeoutMs)、
+ * 体积上限取 request.maxBytes(缺省 MAX_RESPONSE_BYTES)、取消信号与时限信号合并。 */
+async function downloadHttp(
+  url: string,
+  timeoutMs: number,
+  allowPrivateAddresses: boolean,
+  request?: ImageResolverRequest,
+): Promise<Buffer | null> {
+  const effectiveTimeout = request?.timeoutMs ?? timeoutMs;
+  const maxBytes = request?.maxBytes ?? MAX_RESPONSE_BYTES;
+  const timeoutSignal = AbortSignal.timeout(effectiveTimeout);
+  const signal = request?.signal
+    ? AbortSignal.any([request.signal, timeoutSignal])
+    : timeoutSignal;
   try {
     let current = url;
     for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
-      if (!allowPrivateAddresses && !(await isHostAllowed(new URL(current).hostname))) return null;
-      const res = await fetch(current, { signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
+      if (!allowPrivateAddresses && !(await isHostAllowed(new URL(current).hostname, effectiveTimeout))) return null;
+      const res = await fetch(current, { signal, redirect: "manual" });
       if (res.status >= 300 && res.status < 400) {
         const location = res.headers.get("location");
         if (!location) return null;
@@ -165,7 +234,7 @@ async function downloadHttp(url: string, timeoutMs: number, allowPrivateAddresse
         continue;
       }
       if (!res.ok) return null;
-      return await readBodyCapped(res);
+      return await readBodyCapped(res, maxBytes);
     }
     return null; // 重定向次数超限
   } catch {
@@ -173,11 +242,11 @@ async function downloadHttp(url: string, timeoutMs: number, allowPrivateAddresse
   }
 }
 
-/** 读响应体:Content-Length 预检 + 流式累计双保险,超过 MAX_RESPONSE_BYTES
+/** 读响应体:Content-Length 预检 + 流式累计双保险,超过 maxBytes
  *  中止读取(取消流释放连接)返回 null → core 层走既有「图片加载失败」警告通道。 */
-async function readBodyCapped(res: Response): Promise<Buffer | null> {
+async function readBodyCapped(res: Response, maxBytes: number): Promise<Buffer | null> {
   const contentLength = Number(res.headers.get("content-length") ?? "");
-  if (Number.isFinite(contentLength) && contentLength > MAX_RESPONSE_BYTES) return null;
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) return null;
   const reader = res.body?.getReader();
   if (!reader) return Buffer.from(await res.arrayBuffer()); // 无流的兜底路径(罕见)
   const chunks: Buffer[] = [];
@@ -186,7 +255,7 @@ async function readBodyCapped(res: Response): Promise<Buffer | null> {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > MAX_RESPONSE_BYTES) {
+    if (total > maxBytes) {
       void reader.cancel().catch(() => undefined); // 超限中止,尽早释放连接
       return null;
     }
@@ -195,14 +264,28 @@ async function readBodyCapped(res: Response): Promise<Buffer | null> {
   return Buffer.concat(chunks);
 }
 
+/**
+ * 读本地图片:边界校验 → 读盘 → 读后复核(IO 前后双检,防校验与读取之间链接被替换)。
+ * maxBytes:读前 stat 预检 + 读后长度复核,任一超限即归 null(不把超大文件读进内存);
+ * 归 null 而非抛错,统一走 core 侧「图片加载失败」警告通道。
+ */
 async function readLocal(
   src: string,
   policy: ReturnType<typeof createLocalImagePathPolicy>,
+  request?: ImageResolverRequest,
 ): Promise<Buffer | null> {
+  const maxBytes = request?.maxBytes ?? MAX_RESPONSE_BYTES;
   const initial = await policy.resolve(src);
   if (!initial.filePath) return null;
   try {
+    const stat = await fs.stat(initial.filePath);
+    if (stat.size > maxBytes) return null;
+  } catch {
+    return null; // 缺失/不可读:与读失败同一路径
+  }
+  try {
     const data = await fs.readFile(initial.filePath);
+    if (data.length > maxBytes) return null;
     // 读后复核真实目标:校验与 fs.readFile 之间若链接被替换,已读 Buffer 也不得返回。
     const final = await policy.resolve(src);
     return final.filePath !== null && samePath(final.filePath, initial.filePath) ? data : null;
