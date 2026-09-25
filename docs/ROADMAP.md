@@ -46,10 +46,10 @@
 - [x] docx/pdf 双实现 14 文件补差异与同步义务头注(render 对/handlers↔rules 七对/chrome↔template/prescan↔postprocess),零行为变更
 - [x] typecheck/lint/build + 70 段 + smoke 全绿
 
-### 审计改进排期 B1-B14(2026-08-23,完成即勾选)
+### 审计改进批次(2026-08-23,完成即勾选)
 > 原则:每项独立提交可回退;core 行为改动须补测试段断言;重构行为等价。规模:S≤3 文件 / M 中 / L 大。决策点已于 2026-08-23 全部拍板(见各条「已拍板」)。
 
-#### B14 文档修正(S,零风险;2026-08-23 完成,7 项逐项勾验于 2026-08-24)
+#### 文档修正(S,零风险;2026-08-23 完成,7 项逐项勾验于 2026-08-24)
 
 #### 关于页更新提示(S,零风险;2026-08-30 规划落盘,已完成)
 - [x] main 进程新增 `about:check-update` IPC(handle),查 GitHub Releases latest API(`https://api.github.com/repos/<REPO>/releases/latest`,UA=markdown-to-word),语义化比对 `app.getVersion()` 与 `tag_name`,返回 `{status:'latest'|'available'|'error', current, latest?, url?}`
@@ -66,37 +66,37 @@
 - [x] 根 README 安装节补 ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR 前置说明
 - [x] USER-GUIDE FAQ 扩充(公式未编号 / 图片不显示 / SmartScreen 未签名)
 
-#### B1 安全加固·预览链路(M,P0;2026-08-23 完成,commit cb40e04)
+#### 安全加固·预览链路(M,最高优先;2026-08-23 完成,commit cb40e04)
 > 6 项全部完成:模板 CSP meta/CSS 注入净化 `</style`/四窗口外链导航收口(setWindowOpenHandler deny+will-navigate preventDefault)/IPC 参数类型守卫统一/permission 全拒/mermaid CSP 接受项注释固化。
 
-#### B2 主进程健壮性(M,P0;2026-08-23 完成,commit ac1b357)
+#### 主进程健壮性(M,最高优先;2026-08-23 完成,commit ac1b357)
 > 9 项全部完成:单实例锁/unhandledRejection 兜底/关窗转换拦截/preview loadFile cleanup/activate 时序/mergeConvertImpl 尊重 skipAfterConvert/resolverCache 上限/mermaid 超时重建/smoke 断言去中文冻结。
 
-#### B3 core 数据与渲染正确性(L,P0;2026-08-23 完成,提交 7d85fad/c9e16b6/B3c 批次)
+#### core 数据与渲染正确性(L,最高优先;2026-08-23 完成,提交 7d85fad/c9e16b6 等)
 > 16 项全部完成:frontmatter 守卫/slug 截断碰撞/题注编号全文档连续/表格列对齐/eq label pdf 放宽/UTF-16 BE/白名单大小写+自闭合 br/merge 代码块感知+分页符防叠加/脚注共享 id/悬空引用去重/metadata date/未知图片跳过。明细与证据链见 git log 对应提交。
 
-#### B10 工程门禁与测试基建(M,P1;2026-08-23 完成,B10a/b/c 三波)
+#### 工程门禁与测试基建(M,高优先;2026-08-23 完成,三波提交)
 > 10 项全部完成:ci.yml 新建/release.yml 加固/userData 隔离/逐段看门狗/incremental/noUncheckedIndexedAccess(约 145 错清零)/删死配置/smoke 守卫/copy-renderer 清理/jszip 统一。两枚踩坑记 RESEARCH(混合目录不可整删/incremental 不重建被删产物)。
 
-#### B6 i18n 收口(M,P1;2026-08-23 完成,commit 9d6a2d5)
+#### i18n 收口(M,高优先;2026-08-23 完成,commit 9d6a2d5)
 > 9 项全部完成:警告文案 key 化(ConvertWarning/KeyedWarning+formatWarning)/converter 与 main throw 文案接字典/Mermaid 降级 key 化/renderer ERROR_MESSAGE 使用点求值/版本 title 字典化/EN 键集编译期锁定/preset.nameLimit 标点/lang-bootstrap FOUC 缓解。
 
-#### B4 降级与失败可见性(M,P1;2026-08-23 完成,commit d6dd721)
+#### 降级与失败可见性(M,高优先;2026-08-23 完成,commit d6dd721)
 > 4 项全部完成:容器块级内容降级渲染+警告/hljs 降级警告/katexCss 加载失败上报/图片读取失败原因细分(双格式对齐)。
 
-#### B5 性能(S-M,P1;2026-08-23 完成,commit 3ebec63)
+#### 性能(S-M,高优先;2026-08-23 完成,commit 3ebec63)
 > 完成:docx 图片 resolver memo/embedExternalImages cursor 分段/checkLocalImages exists 通道;(可选)buildMarkdownIt 复用评估后不做(闭包捕获 warnings)。
 
-#### B7 契约单源与解环(M-L,P1 重构;行为零变化;2026-08-23 完成,三波提交 089eac3/e471d2d/0694814)
+#### 契约单源与解环(M-L,高优先重构;行为零变化;2026-08-23 完成,三波提交 089eac3/e471d2d/0694814)
 > 14 项全部完成:循环依赖解除/CROSS_REF_KINDS 单源/sec-label 正则族单源/ImageResolver 单源/pdf 深度跟踪器/eq-xref 二遍合并/bookmarkChildren 共享/decodeEntities 统一/白名单恒等断言/typography type-only 共享/matchesPreset 数组驱动/theme 死导出处置/链接文本提取复用/mermaid 信任边界注释/颜色字号魔法数字收敛。
 
-#### B8 大文件拆分(L,P2 重构;依赖 B7;2026-08-23 完成,两波提交 20ed1c8/0a6c9ce)
+#### 大文件拆分(L,中优先重构;依赖契约单源与解环;2026-08-23 完成,两波提交 20ed1c8/0a6c9ce)
 > 7 项全部完成:docx/render.ts 1262→467(8 模块)/pdf/render.ts 790→209(rules 化)/renderer.ts 705→147(events 抽取)/settings-bindings 抽离/renderer 卫生三项。(后续审计整改批已进一步拆至 ~256 行并新增 heading/table/numbering 模块。)
 
-#### B11 测试盲区补齐(S-M,P2;依赖 B10 userData 隔离;2026-08-23 完成,commit dd9dfbd)
+#### 测试盲区补齐(S-M,中优先;依赖 userData 隔离前置;2026-08-23 完成,commit dd9dfbd)
 > 5 项全部完成:atomic-json 直测/resource-dirs 直测/theme-fonts 专断言/converter fixtures 迁移/runConvertTask 纯逻辑直测。
 
-#### B9 UX 体验批(M,P1-P2;2026-08-23 完成,提交 8780c14 视觉批+46c0d4d 交互逻辑批;GUI 实测已通过 2026-08-24,随 1.2.0 发版)
+#### UX 体验批(M,高~中优先;2026-08-23 完成,提交 8780c14 视觉批+46c0d4d 交互逻辑批;GUI 实测已通过 2026-08-24,随 1.2.0 发版)
 - [x] 进度分阶段:PDF parse/inline/katex/mermaid/print 上报(core onStage 回调协议只增不改向后兼容);print 阶段取消置灰+「正在写入」文案
 - [x] 错误码→可操作文案映射(EBUSY/ENOENT/EACCES/ENOSPC/长路径;actionableError 纯函数直测,未识别透传)
 - [x] 转换中拖入文件 setStatus 提示(drop.busy 提示不再静默)
@@ -107,15 +107,15 @@
 - [x] 弹窗动画尊重 prefers-reduced-motion(降瞬时出现,keyframes 终态=自然态无跳变)
 - [x] .settings-grid 窄窗响应式断点(≤720px 降单列)
 
-#### B13 暗色模式(M,P2 功能新增;已拍板做;2026-08-23 完成,commit 5a91a4a,GUI 实测已通过 2026-08-24,随 1.2.0 发版)
+#### 暗色模式(M,中优先·功能新增;已拍板做;2026-08-23 完成,commit 5a91a4a,GUI 实测已通过 2026-08-24,随 1.2.0 发版)
 - [x] CSS 变量双主题(33 个语义化变量,data-theme=dark 与 prefers-color-scheme 双作用域同套深色值)+设置「跟随系统/浅色/深色」三态(AppSettings.theme 全链路,applyThemeOn 纯函数直测)
 
-#### B12 IPC 面整理(M,P3;面广靠后;已拍板做;2026-08-23 完成,commit 2df5e35)
+#### IPC 面整理(M,低优先;面广靠后;已拍板做;2026-08-23 完成,commit 2df5e35)
 - [x] channel 命名统一「域:动作」(23 channel 单源 main/ipc-channels.ts,8 个改名;preload 沙箱侧镜像+dist 恒等断言)
 - [x] convert:progress 事件带 mode 标识,去 renderer 侧推断耦合(payload {stage,mode},renderer 直接消费)
 - [x] preload/renderer/smoke/测试全量同步(smoke 新增 IPC 端到端 diag+ipc-channels 测试段)
 
-#### 目录结构重组(L,P2 重构;2026-08-23 探定稿;已完成 6 批提交 6f3d72a/b1e50e9/061e8dd/d31cb21/2819a2a/9909d74,GUI 回归实测已通过 2026-08-24)
+#### 目录结构重组(L,中优先重构;2026-08-23 探定稿;已完成 6 批提交 6f3d72a/b1e50e9/061e8dd/d31cb21/2819a2a/9909d74,GUI 回归实测已通过 2026-08-24)
 > 方案全文见 archive/20260823-230554-目录结构优化方案.md(目标结构树/拆分明细/纯移动清单/划分原则/明确不做清单);RESEARCH 同日条目有摘要。
 - [x] **前置:实施前对代码做再次探查**(exp-1 结论:欠账①②③④⑤仍成立且 events/index 因 B9/B12 略加重;⑥已被 B8 大部分消化降级纯移动;i18n 引用面实测 35 处 import 远低于原估 ~90)
 - [x] 批① core/i18n.ts 拆 dict/index(i18n-dict.ts 同文件保键集编译期锁定+facade re-export 引用面零改动)+ core 根级 16 文件归组 pipeline/settings/markdown/image/util(~107 处 import 改写;contract-single-source.test.js 路径断言同步)
@@ -126,7 +126,7 @@
 - [x] 批⑥ main 根级文件归组补遗(2026-08-24,方案漏排经用户指出补齐;9909d74):ipc/(channels+logic)/persist/(settings/ui-state/atomic-json)/services/(image-downloader/mermaid-service/resource-dirs/web-hardening/temp-html);menu.ts 留根级单文件锚点;resolveMermaidDir 相对定位深度随产物层级同步调整
 > 每批独立提交,typecheck/build/test 全绿验证;批③④⑤ 有 GUI 面列入人工实测。
 
-#### 审计整改 P0~P5(2026-08-24,五车道并行实施,依据 archive/2026-08-24-134811-审计待办清单.md)
+#### 审计整改(2026-08-24,五车道并行实施,依据 archive/2026-08-24-134811-审计待办清单.md)
 > 61 项待办中约 54 项实施、7 项不做/仅记录(裁决见 archive/2026-08-24-193838-审计整改裁决与不做项.md);DECIDE-1 已拍板统一 Word 口径「1」。明细落点见各提交。
 - [x] P0 流程洞:lockfile 同步(ac8a685)+ 发版 checklist 四源统一 + release.yml tag↔version 校验;.gitattributes + check:fixtures EOL 归一进 CI
 - [x] P1 文档同步债:DEV-GUIDE 代码地图重写/README+USER-GUIDE 补暗色模式与交互修正/段数单一出处/ROADMAP 回填压缩/STATUS 整形/ACCEPTANCE 整形/注释勘误批(CORE-6+MR-8)
@@ -137,9 +137,9 @@
 - [x] i18n 多语言架构改造(方案A 分文件+注册表):src/core/i18n/(zh.ts 键集唯一事实源+en 全量 satisfies+ja/ko/fr/ru Partial),回退链 当前语言→en→key,Language 类型从注册表派生收拢 4 处硬编码(i18n.ts 类型/html lang 映射/settings 校验/settings 面板选项)
 
 #### 排期结论
-> B1-B14 与目录结构重组已全部完成(2026-08-24 发版 1.2.0);审计整改 P0~P5 与 i18n 字典拆分已完成(2026-08-24)。当前无未关闭排期项;新需求先进 `BACKLOG.md` 评估登记,确认后移入本节。
+> 审计改进批次与目录结构重组已全部完成(2026-08-24 发版 1.2.0);审计整改五车道与 i18n 字典拆分已完成(2026-08-24)。当前无未关闭排期项;新需求先进 `BACKLOG.md` 评估登记,确认后移入本节。
 
-### 功能开发排期 F1-F9(2026-08-25 立项,2.0.0 后新阶段)
+### 功能开发批次(2026-08-25 立项,2.0.0 后新阶段)
 > 依据:@explorer 能力盘点 + @librarian 竞品对标双路调研(存档 archive/2026-08-25-182036-功能候选调研与迭代排期.md);用户拍板 9 项做、3 项记录不排期。**两项推翻既有决策**:目录带页码推翻批次 8 的 D1 免更新路线决策(拍板后须更新 ADR);docx 模板导入解除 2026-08-14 暂缓裁决(原否 docx4js+OOXML 逆映射,须重新探技术路线)。每批独立提交可回退,GUI 面改动走 ACCEPTANCE 人工实测。
 
 - [x] **F1 图片控制增强**(B1):`{width=..}`/`{height=..}` 图片属性语法(Pandoc 风格)+ figure 题注语义绑定(图片独立成段且后跟「图：」行时绑定居中);落点 image-run handler + CROSS_REF_KINDS 表驱动;双格式对齐——**已完成(2.1.0,GUI 实测通过)**
