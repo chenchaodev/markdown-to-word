@@ -20,17 +20,17 @@
 - 提交即固化:一次提交 = 一个可独立回退的逻辑单元;`docs/CHANGELOG.md` 平时提交不写(发版时按全局 `CHANGELOG-GUIDE.md` 面向用户重写,不贴 commit 原文,小型/琐碎并入下次);实测状态变化同批更新验收记录与 `docs/STATUS.md` 打开事项,收尾同步「当前状态」;勿依赖「迭代完成」「会话切换」判断(见全局 AGENTS.md「提交时」)
 - pwsh 环境坑:commit message 用单引号包裹,避免内嵌 ASCII 双引号被拆包(已踩坑)
   - 版本号三统一(1.0.0 起):package.json / git tag / CHANGELOG 同号(如 1.0.0 → tag v1.0.0 → CHANGELOG [1.0.0]);0.32.0 及以前为迭代序列 0.NN.M 与发布号 0.5.x 解耦的历史,勿回退
-  - 规划编号不进交付物:ROADMAP-CANDIDATES 的候选编号(B1–B11 等)属规划阶段内部用语,晋升实现后须用描述性功能名(如 成书向导/剪贴板直转),不得写入代码注释/文件名/发版文档(CHANGELOG/STATUS/ACCEPTANCE/ROADMAP 小节标题);发版前做「规划编号→功能名」重命名,避免批次概念泄漏
+  - 规划编号不进交付物:BACKLOG.md 的候选编号(B1–B11 等)属规划阶段内部用语,晋升实现后须用描述性功能名(如 成书向导/剪贴板直转),不得写入代码注释/文件名/发版文档(CHANGELOG/STATUS/ACCEPTANCE/ROADMAP 小节标题);发版前做「规划编号→功能名」重命名,避免批次概念泄漏
 - 测试体系:`test/`(segments/ core 渲染与跨域守护 + main/ 主进程层 + renderer/ UI 层,镜像 src 三层,按内容主题零注册 + fixtures/ 静态样例 + common/ 工具),入口 `npm run test`(acceptance)、`test:smoke`、`test:all`;产物 `output/artifacts` + `output/smoke`;新增能力须补对应测试段,缺口清单见 ROADMAP
 
 ## 流程(遵循全局配置目录 WORKFLOW-GUIDE.md 阶段 0-8)
 - 文档驱动:需求/设计文档 → 规划文档(STATUS 顶部一条 + ACCEPTANCE 清单 + ROADMAP 变更)→ 开发前确认,规划即契约;开发中不反复更新,收尾统一同步
 - 排期先价值确认:高确定性直接规划;探索性先确认值得否,不值留候选池「已明确不做」区、不投调研预算(文档加密即此类:调研后确认不做)
-- **需求入口(backlog 单源)**:所有新需求/候选/曾砍重提先登记 `docs/ROADMAP-CANDIDATES.md`(项目 backlog:分类 + 业务价值/工作量评估),经用户确认后移入 ROADMAP「当前待办」再开发;ROADMAP 只放已确认项,处置记录(不做/暂缓/已知限制)集中候选池,不散写 ROADMAP/STATUS
+- **需求入口(backlog 单源)**:所有新需求/候选/曾砍重提先登记 `docs/BACKLOG.md`(项目 backlog:分类 + 业务价值/工作量评估),经用户确认后移入 ROADMAP「当前待办」再开发;ROADMAP 只放已确认项,处置记录(不做/暂缓/已知限制)集中候选池,不散写 ROADMAP/STATUS
 - ACCEPTANCE 只列人工 GUI 实测项,可自动断言项写「自动断言见 test/segments/X.test.js」指针,不重复描述
 - 同轮实测反馈的多个小修复合并为一个修复批次提交(仍保持逻辑单元独立),减少收尾往返
 - 回归守护:核心路径(转换/渲染/格式输出)改动跑对应测试段 + smoke;外围(设置/UI)按影响面跑受影响段
 - Windows 坑:跨项目通用坑(pwsh 引号/MAX_PATH/EBUSY/编码)见全局配置目录 `WINDOWS-GUIDE.md`;本仓库具体坑见 `docs/RESEARCH.md`
 - 代码结构与质量(注释规范/命名/契约单源/测试体系等细则):见全局配置目录 `CODE-GUIDE.md`,写代码/重构/测试前先读
 
-- 版本:v1.4(改本文件时递增版本号,超限先瘦身)
+- 版本:v1.5(改本文件时递增版本号,超限先瘦身)

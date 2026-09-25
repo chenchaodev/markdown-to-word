@@ -8,7 +8,7 @@ markdown-to-word: Markdown 转 Word / PDF 的 Windows 桌面应用。项目知�
 - **搭环境/跑命令/找代码** → `DEV-GUIDE.md`
 - **追溯设计决策** → `RESEARCH.md` / `ADR.md`
 - **排查故障** → `RESEARCH.md`（坑/根因沉淀）
-- **查看进度/找需求入口** → `ROADMAP-CANDIDATES.md`（backlog,需求唯一入口）→ `ROADMAP.md` / `STATUS.md` / `CHANGELOG.md`
+- **查看进度/找需求入口** → `BACKLOG.md`（项目 backlog,需求唯一入口）→ `ROADMAP.md` / `STATUS.md` / `CHANGELOG.md`
 - **交付实测** → `ACCEPTANCE.md`
 - **UI 设计** → `design/` 目录
 
@@ -21,6 +21,7 @@ markdown-to-word: Markdown 转 Word / PDF 的 Windows 桌面应用。项目知�
 | `RESEARCH.md` | 库/技术事实、调研结论 | 得出已验证结论时 |
 | `ADR.md` | 架构决策（ADR） | 做架构决策/审查时 |
 | `ROADMAP.md` | 需求范围/选型/架构/里程碑 | 规划变更或里程碑完成时 |
+| `BACKLOG.md` | 项目 backlog（所有需求唯一入口,分类 + 业务价值/工作量评估） | 新需求登记/处置变更时 |
 | `DEV-GUIDE.md` | 环境/命令/代码地图/验证方式 | 环境或代码结构变化时 |
 | `USER-GUIDE.md` | 终端用户使用说明（安装/操作/设置/FAQ） | 功能或设置变化时 |
 | `ACCEPTANCE.md` | 批次验收清单与实测结果记录 | 验收变更/实测完成时 |

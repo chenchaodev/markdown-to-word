@@ -241,7 +241,7 @@
 
 > 规划:2026-08-14 开工(方向 A,方案存档 docs/archive/20260814-185113-双方向探索方案.md);@designer 评审 20 项问题(P1-P20)+ 12 项候选(C1-C12);本批实施 **Phase 0 速赢 7 项** 拆 4 验收单元。
 > 语义决策:多文件态点击拖放区=追加(与文案一致);单文件态点击=更换文件(文案同步);「清空列表」按钮兜底重新选择。
-> 自动化:typecheck/build/31 段/smoke 全绿;renderer 交互按「维持人工不自动化」(现记 ROADMAP-CANDIDATES「维持人工·已知限制」)走 GUI 实测。
+> 自动化:typecheck/build/31 段/smoke 全绿;renderer 交互按「维持人工不自动化」(现记 BACKLOG「维持人工·已知限制」)走 GUI 实测。
 
 ## 待实测清单(≤5 项)
 
@@ -722,7 +722,7 @@
 
 ## D1 GUI 易用反制 AIDOC 验收记录（GUI 实测通过 2026-08-29,随 3.10.1 发版关闭）
 
-> 防御主题(ROADMAP-CANDIDATES D1):零配置/向导化,区隔 AIDOC Station。自动断言见对应 test/segments;本清单只列人工 GUI 实测项。
+> 防御主题(BACKLOG D1):零配置/向导化,区隔 AIDOC Station。自动断言见对应 test/segments;本清单只列人工 GUI 实测项。
 
 ### 预设扩面覆盖交付链
 - [x] 切换任一内置预设:页眉页脚(标题居中+页码)/水印/公式编号/ H1 前分页 随预设一并生效(非仅排版+页面)

@@ -1,4 +1,4 @@
-# 项目 Backlog（ROADMAP-CANDIDATES）
+# 项目 Backlog（BACKLOG.md）
 
 > 更新：2026-09-25（结构：分类 × 处置双维，替上一版处置四层结构）
 > **性质**：所有新需求/候选/曾砍重提先在此登记（分类 + 处置 + 业务价值/工作量）；**经用户确认后移入 `ROADMAP.md`「当前待办」**再进入开发。ROADMAP 只放已确认项；暂缓/不做等处置结论集中本文件，不散写 ROADMAP/STATUS。规则见项目 `AGENTS.md`「流程」与全局 `WORKFLOW-GUIDE.md` 阶段 0/1。
