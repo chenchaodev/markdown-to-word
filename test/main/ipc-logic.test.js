@@ -19,7 +19,12 @@
  *   预检三出口归一(警告数组原样 / busy 形状稳定 / 异常 → 单条可观察失败警告)
  * - webContents operation registry:转换/预检 single-flight、cancel 指向当前操作、
  *   compare-and-delete 防止旧 token 删除后继操作
+ * - 依赖边界:dist/main/ipc/logic.js 的运行时依赖图(含传递依赖)不含 electron,
+ *   故本段在纯 Node 下可直连产物,无需 electron mock
  */
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   baseNameFromMdPath,
   buildPresetsExportPayload,
@@ -312,4 +317,36 @@ export async function run() {
   assert(!hasWebContentsOperation(7001), "7001 释放后不应牵连 7002");
   finishWebContentsOperation(7002, otherToken);
   console.log("[ok] operation registry:single-flight/占用不被替换/current cancel/compare-and-delete/多窗口隔离 断言通过");
+
+  // ---------- 依赖边界:logic.js 运行时依赖图(含传递)零 electron ----------
+  // 纯逻辑层若(直接或经传递依赖)import electron,本段在纯 Node 下就无法直连产物;
+  // electron 触点必须经 deps 注入(runConvertTask)或留在 register.ts 薄壳。
+  const distRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dist");
+  const electronImportRe = /(?:from|import|require\()\s*["']([^"']+)["']/g;
+  const seen = new Set();
+  const queue = [path.join(distRoot, "main", "ipc", "logic.js")];
+  const electronHitters = [];
+  let visitedCount = 0;
+  while (queue.length > 0) {
+    const file = queue.pop();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    if (!fs.existsSync(file)) continue;
+    visitedCount += 1;
+    const src = fs.readFileSync(file, "utf8");
+    for (const m of src.matchAll(electronImportRe)) {
+      const spec = m[1];
+      if (spec === "electron") {
+        electronHitters.push(path.relative(distRoot, file).replace(/\\/g, "/"));
+        continue;
+      }
+      if (spec.startsWith(".")) queue.push(path.resolve(path.dirname(file), spec));
+    }
+  }
+  assert(
+    electronHitters.length === 0,
+    `logic 依赖图不应触达 electron,实际触达:${[...new Set(electronHitters)].join(", ")}`,
+  );
+  assert(visitedCount > 1, `依赖图应可遍历(实际 ${visitedCount} 个模块),解析规则可能失效`);
+  console.log(`[ok] logic 依赖边界:运行时依赖图零 electron(遍历 ${visitedCount} 个模块) 断言通过`);
 }

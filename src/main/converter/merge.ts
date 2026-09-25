@@ -9,6 +9,10 @@ import path from "node:path";
 import { convert } from "../../core/convert.js";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
+import type { ConvertResult } from "../../core/ipc-contract.js";
+// ConvertResult 契约单源 core/ipc-contract.ts(跨进程数据形状);此处 re-export
+// 保持 converter/index.ts 与既有导入面不变,勿在本文件重复声明。
+export type { ConvertResult } from "../../core/ipc-contract.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
 import { mergeMarkdowns } from "../../core/pipeline/merge.js";
@@ -33,16 +37,6 @@ export const MAX_MERGE_FILES = 200;
 export const MAX_MERGE_TOTAL_BYTES = 128 * 1024 * 1024;
 /** 合并阶段读盘并发上限(有界并发,非 Promise.all 全开) */
 export const MERGE_READ_CONCURRENCY = 4;
-
-export interface ConvertResult {
-  ok: boolean;
-  outputPath?: string;
-  error?: string;
-  /** 非致命警告(如缺失本地图片),成功时可能携带;元素为 ConvertWarning(keyed) */
-  warnings?: ConvertWarning[];
-  /** 用户主动取消(非错误) */
-  canceled?: boolean;
-}
 
 /**
  * 有界并发映射(保序):结果数组与入参等长且顺序一致,

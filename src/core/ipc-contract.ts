@@ -11,6 +11,8 @@
  * 批量执行实现留 main/converter/batch.ts——实现侧 import 本文件类型,须满足本契约。
  */
 import type { ConvertWarning } from "./i18n.js";
+import type { PageSetup } from "./settings/settings-defaults.js";
+import type { TypographySettings } from "./settings/typography.js";
 
 /** 同一 webContents 已有转换/预检时的统一 IPC 结果。 */
 export interface OperationBusyResult {
@@ -73,6 +75,59 @@ export interface BatchResult {
   /** 用户主动取消的未开始项数量 */
   canceledCount: number;
 }
+
+/* ---------- 单文件/合并转换(convert:single / convert:merge 的 invoke 结果) ---------- */
+
+/**
+ * 单文件与合并转换共用的返回契约(形状单源,勿在 main/preload/renderer 侧重声明):
+ * 取消经 canceled 表达(非错误),警告可在成功时携带。
+ */
+export interface ConvertResult {
+  ok: boolean;
+  outputPath?: string;
+  error?: string;
+  /** 非致命警告(如缺失本地图片),成功时可能携带;元素为 ConvertWarning(keyed) */
+  warnings?: ConvertWarning[];
+  /** 用户主动取消(非错误) */
+  canceled?: boolean;
+}
+
+/* ---------- 导入/导出类 handler 返回(presetsImport/presetsExport/cssImport/templateImportDocx) ---------- */
+
+/** 预设导入结果:取消 → { ok:true, canceled:true };成功 → 合并后的 imported/overridden 计数。 */
+export type ImportPresetsResult =
+  | { ok: true; canceled: true }
+  | { ok: true; canceled: false; imported: number; overridden: number }
+  | { ok: false; error: string };
+
+/** 预设导出结果:取消 → { ok:true, canceled:true };成功 → 导出的条数;无预设 → { ok:false, error }。 */
+export type ExportPresetsResult =
+  | { ok: true; canceled: true }
+  | { ok: true; canceled: false; count: number }
+  | { ok: false; error: string };
+
+/** PDF 自定义 CSS 导入结果:成功 → css 文本 + 文件名(供 renderer 回填)。 */
+export type ImportPdfCssResult =
+  | { ok: true; canceled: true }
+  | { ok: true; canceled: false; css: string; name: string }
+  | { ok: false; error: string };
+
+/**
+ * docx 模板导入结果(浅导入 v1):成功返回合并后的完整 typography/pageSetup
+ * (供 renderer 回填);取消 → { ok:true, canceled:true };解析/读取异常 → { ok:false, error }。
+ */
+export type ImportDocxTemplateResult =
+  | { ok: true; canceled: true }
+  | { ok: true; canceled: false; typography: TypographySettings; pageSetup: PageSetup }
+  | { ok: false; error: string };
+
+/* ---------- 剪贴板读取(clipboard:read 的 invoke 结果) ---------- */
+
+/** 剪贴板读取结果:文本写临时 md 返回路径,或返回文件路径,或 empty。 */
+export type ClipboardReadResult =
+  | { type: "text"; mdPath: string }
+  | { type: "files"; paths: string[] }
+  | { type: "empty" };
 
 /* ---------- UI 状态(uiStateGet/uiStateSet 往返 + userData/ui-state.json 持久化形状) ---------- */
 

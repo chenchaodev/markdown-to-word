@@ -2,13 +2,17 @@
  * 主进程 IPC 纯逻辑层:自 register.ts IPC handler 抽出的无 Electron 依赖纯函数
  * (解析/合并/校验/路径处理/数据变换),供直测。
  * 约定:只放不依赖 electron API 的纯逻辑;对话框/文件 IO/窗口/持久化留在 register.ts 薄壳。
+ * 依赖边界:运行时依赖仅 node:path、core/(契约 + i18n)与两个 electron 无关的
+ * main 纯模块(convert 预设解析合并的 persist/preset-file、路径工具 converter/paths);
+ * 凡触达 electron 的类型(main/converter、persist/settings)一律 `import type`,
+ * 编译期擦除——故本模块产物可被纯 Node 段直接 import,不必加载 electron mock。
  */
 import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { CustomPreset } from "../../core/settings/settings-defaults.js";
 import type { OperationBusyResult, PrecheckResult, RecentFile } from "../../core/ipc-contract.js";
 import type { ConvertWarning, KeyedWarning } from "../../core/i18n.js";
-import { mergePresets, parsePresetsFile } from "../persist/settings.js";
+import { mergePresets, parsePresetsFile } from "../persist/preset-file.js";
 import type { ConvertContext } from "../converter/index.js";
 import { stripMarkdownExt } from "../converter/paths.js";
 

@@ -6,15 +6,25 @@
  * - 章节 label 正则族(SEC_LABEL_RE / kindLabelRegex / stripSecLabelSuffix):
  *   行为断言(label 提取、剥离、fig/tab/sec 构造);
  * - 白名单标签集恒等:INLINE_TAG_STYLES + br ↔ ALLOWED_INLINE_TAGS
- *   键集一致,防两处平行表漂移。
+ *   键集一致,防两处平行表漂移;
+ * - 跨进程类型单源(源码文本判定:类型编译期擦除、产物无痕迹):
+ *   ConvertResult 只在 core/ipc-contract.ts 声明,preload / ipc logic / renderer /
+ *   converter 侧均不重复声明;preload 的类型依赖只来自 core 契约。
  * 纯断言段,无产物输出。
  */
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CROSS_REF_KINDS,
   SEC_LABEL_RE,
   kindLabelRegex,
   stripSecLabelSuffix,
 } from "../../dist/core/markdown/cross-ref.js";
+
+const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src");
+/** @param {string} rel 相对 src 的 POSIX 路径 */
+const readSrc = (rel) => fs.readFileSync(path.join(srcRoot, rel), "utf8");
 
 export async function run() {
   // ---- 恒等性:docx/pdf 两侧导入同源(同一对象引用) ----
@@ -73,4 +83,42 @@ export async function run() {
   const { assertInlineTagStylesMatchWhitelist } = await import("../../dist/core/docx/handlers/inline-html.js");
   assertInlineTagStylesMatchWhitelist();
   console.log("[ok] contract:白名单标签集恒等(ALLOWED_INLINE_TAGS ↔ INLINE_TAG_STYLES+br) 断言通过");
+
+  // ---- 跨进程类型单源:ConvertResult 只在 core/ipc-contract.ts 声明 ----
+  // 类型声明编译期擦除,产物无痕迹,故按源码文本判定(re-export/import 不算声明)。
+  const declRe = /\b(?:interface|type)\s+ConvertResult\b/;
+  const contractSrc = readSrc("core/ipc-contract.ts");
+  if (!declRe.test(contractSrc)) {
+    throw new Error("contract 断言失败:ConvertResult 应在 core/ipc-contract.ts 单源声明");
+  }
+  const noRedeclare = [
+    "main/preload.cts",
+    "main/ipc/logic.ts",
+    "main/ipc/types.ts",
+    "main/converter/merge.ts",
+    "main/converter/index.ts",
+    "main/persist/settings.ts",
+    "main/persist/preset-file.ts",
+    "renderer/renderer.ts",
+  ];
+  for (const file of noRedeclare) {
+    if (declRe.test(readSrc(file))) {
+      throw new Error(`contract 断言失败:${file} 重复声明 ConvertResult(应经 core/ipc-contract.ts 取用)`);
+    }
+  }
+  console.log(`[ok] contract:ConvertResult 仅 core/ipc-contract.ts 声明(${noRedeclare.length} 个消费方无重复声明) 断言通过`);
+
+  // ---- preload 类型依赖只来自 core 契约(不 type-only 反向引用 main 实现路径) ----
+  const preloadSrc = readSrc("main/preload.cts");
+  for (const m of preloadSrc.matchAll(/from\s*["']([^"']+)["']/g)) {
+    const spec = m[1] ?? "";
+    // 相对路径写法(./ 或 ../main/)即指向 main 侧模块;core 走 ../core/,裸包名不算
+    if (spec.startsWith("../main/") || spec.startsWith("./")) {
+      throw new Error(`contract 断言失败:preload 仍引用 main 侧路径「${spec}」(契约类型应取自 core)`);
+    }
+  }
+  if (!/import type \{[^}]*\bConvertResult\b[^}]*\} from "\.\.\/core\/ipc-contract\.js"/.test(preloadSrc)) {
+    throw new Error("contract 断言失败:preload 应自 core/ipc-contract.ts type-only 取用 ConvertResult");
+  }
+  console.log("[ok] contract:preload 类型依赖仅来自 core 契约(ConvertResult 自 core/ipc-contract 取用) 断言通过");
 }

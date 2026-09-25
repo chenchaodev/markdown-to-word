@@ -6,12 +6,25 @@
 // preload.cjs 运行时只能 require electron,不能加载本项目 ESM 模块)无法直接
 // import,侧内镜像同名常量,漂移由 test/main/ipc-channels.test.js 恒等断言兜底。
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { AppSettings, ExportPresetsResult, ImportDocxTemplateResult, ImportPdfCssResult, ImportPresetsResult } from "./persist/settings.js";
-import type { ClipboardReadResult } from "./ipc/types.js";
-// 跨进程契约类型(ConvertProgressPayload/UiState/Batch*)单源 core/ipc-contract.ts
-// (契约收敛 core 后 renderer 侧不再 type-only 反向 import main;编译期擦除)
-import type { BatchOperationBusyResult, BatchProgressInfo, BatchResult, ConvertProgressPayload, OperationBusyResult, PrecheckResult, UiState } from "../core/ipc-contract.js";
-import type { ConvertResult } from "./converter/merge.js";
+// 跨进程契约类型单源 core/(ipc-contract + settings-defaults + frontmatter):
+// preload 只做 type-only 依赖(编译期擦除,无运行时依赖,沙箱下不受 ESM 加载限制),
+// 不从 main 实现模块(persist/settings、ipc/types、converter/merge)反向取类型。
+import type {
+  BatchOperationBusyResult,
+  BatchProgressInfo,
+  BatchResult,
+  ClipboardReadResult,
+  ConvertProgressPayload,
+  ConvertResult,
+  ExportPresetsResult,
+  ImportDocxTemplateResult,
+  ImportPdfCssResult,
+  ImportPresetsResult,
+  OperationBusyResult,
+  PrecheckResult,
+  UiState,
+} from "../core/ipc-contract.js";
+import type { AppSettings } from "../core/settings/settings-defaults.js";
 import type { DocMetadata } from "../core/pipeline/frontmatter.js";
 
 /** IPC channel 名镜像(与 src/main/ipc/channels.ts IPC_CHANNELS 逐键同值,勿单侧改动)。 */
