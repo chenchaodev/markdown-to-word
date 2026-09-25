@@ -19,7 +19,7 @@
 | 阶段 0 工程口径/门禁 | `[x]` 本地完成 | Node/live 文档、环境指纹、几何/产物/clean 门禁与决策台账已落地；远端 lane 实跑证据后置 |
 | 阶段 1 single-flight/持久化 | `[~]` 实现完成，GUI 待用户 | main/renderer/persistence/batch 实现与自动断言全绿；真实窗口 GUI 验收保留 |
 | 阶段 2 内容/几何/输出 | `[~]` 2A/2B 实现完成 | 准备链、几何迁移、D-03 路径边界、原子输出提交已落地；D-03 媒体类型/大小预算仍待阶段 3 |
-| 阶段 3 资源/生命周期 | `[ ]` 未开始 | 仅有未提交红测试草稿，不能计为实现 |
+| 阶段 3 资源/生命周期 | `[x]` 完成 | 取消/期限、资源预算、目录/图片限制、KaTeX 上限、clipboard/preview/Mermaid 生命周期已落地；90 段门禁全绿 |
 | 阶段 4 renderer UX | `[~]` 部分完成 | D-02 文档/设计/renderer 文案已同步；交互、向导、主题与 GUI 验收待办 |
 | 阶段 5 边界/双管线/测试 | `[~]` 基础存在 | checkJs 全量、runner 隔离、fixture 契约、差异矩阵未完成 |
 | 阶段 6 发布/视觉/安装 | `[~]` 部分完成 | clean/manifest/ASAR/geometry 本地门禁已入链；SCA/SBOM/安装与远端证据待办 |
@@ -171,42 +171,42 @@
 
 ## 4. 阶段 3：资源预算、取消传播与生命周期
 
-### OPT-3.1 core 取消与预算契约 — `[ ]`
+### OPT-3.1 core 取消与预算契约 — `[x]`
 
-- [ ] AbortSignal/deadline/稳定取消错误码。
-- [ ] docx/pdf/resolver 取消传播。
-- [ ] 单 URL/单图/文档图片数量、字节、并发预算。
-- [ ] KaTeX maxExpand/maxSize/trust 资源边界。
-- [ ] 正向 deadline 与各阶段取消测试。
+- [x] AbortSignal/deadline/稳定取消错误码。
+- [x] docx/pdf/resolver 取消传播。
+- [x] 单 URL/单图/文档图片数量、字节、并发预算。
+- [x] KaTeX maxExpand/maxSize/trust 资源边界。
+- [x] 正向 deadline 与各阶段取消测试。
 
-**证据**：当前无 core resource-limits/signal 契约；`test/segments/core-resources.test.js` 是未提交红测试。
-**退出条件**：永不 resolve、超时、取消、正常完成均有确定结果。
+**证据**：`3c429c8`；`src/core/cancel.ts`、`resource-limits.ts`；`test/segments/core-resources.test.js`、`test/main/convert-cancel.test.js`、`merge-cancel.test.js`。
+**已知边界**：`MAX_SCAN_ENTRIES` 的 2 万条目截断未物理造满，深度/同类停止告警通路已实跑。
 
-### OPT-3.2 输入与目录预算 — `[ ]`
+### OPT-3.2 输入与目录预算 — `[x]`
 
-- [ ] realpath/junction/symlink 循环保护。
-- [ ] 深度/条目/单文件/批量/merge 总量上限。
-- [ ] 本地/外链图片有界并发与 warning 顺序。
-- [ ] DNS/连接/超时/取消/缓存预算。
+- [x] realpath/junction/symlink 循环保护。
+- [x] 深度/条目/单文件/批量/merge 总量上限。
+- [x] 本地/外链图片有界并发与 warning 顺序。
+- [x] DNS/连接/超时/取消/缓存预算。
 
-**证据**：当前 `paths.ts`、merge、图片 resolver 尚无完整契约。
+**证据**：`3c429c8`；`test/main/input-budget.test.js`、`image-request-budget.test.js`、`merge-cancel.test.js`、`test/segments/pdf-postprocess.test.js`。
 **退出条件**：压力输入在预算内结束且不留半成品。
 
-### OPT-3.3 临时文件、预览与 Mermaid — `[ ]`
+### OPT-3.3 临时文件、预览与 Mermaid — `[x]`
 
-- [ ] clipboard Markdown 一次性 cleanup handle。
-- [ ] preview generation/串行刷新。
-- [ ] Mermaid epoch/dispose。
-- [ ] 取消后 after-convert/临时资源清理。
+- [x] clipboard Markdown 一次性 cleanup handle。
+- [x] preview generation/串行刷新。
+- [x] Mermaid epoch/dispose。
+- [x] 取消后 after-convert/临时资源清理。
 
-**证据**：`temp-html.ts`、preview、Mermaid 尚有缺口。
+**证据**：`3c429c8`；`test/main/temp-markdown.test.js`、`preview.test.js`、`mermaid-service.test.js`。
 **退出条件**：成功/失败/取消/退出均无敏感临时文件和孤儿窗口。
 
 ### 阶段 3 门禁
 
-- [ ] OPT-3.1～3.3 全部 `[x]`。
-- [ ] 取消/超时/压力/生命周期测试全绿。
-- [ ] 阶段 2/3 的红测试全部转绿并按逻辑单元提交。
+- [x] OPT-3.1～3.3 全部 `[x]`。
+- [x] 取消/超时/压力/生命周期测试全绿。
+- [x] 阶段 2/3 红测试已迁入 `test/segments/` 并全绿；`test/pending/` 保留历史副本，不参与 acceptance。
 
 ## 5. 阶段 4：renderer UX、向导、动态 i18n、主题
 
@@ -308,7 +308,7 @@
 ## 9. 当前工作树残留处理
 
 - [x] 阶段 2 集成红测试已转绿并纳入 2A 提交。
-- [x] 阶段 3 `test/pending/` 红测试已隔离，不参与当前 acceptance；阶段 3 实现时迁回并拆分。
+- [x] 阶段 3 红测试已迁入 `test/segments/core-resources.test.js` 与 `test/segments/pdf-postprocess.test.js`；`test/pending/` 仅保留历史副本，不参与 acceptance。
 - [x] `.opencode/` 为工具运行产物，不纳入项目提交。
 
 ## 10. 每次阶段执行记录模板
