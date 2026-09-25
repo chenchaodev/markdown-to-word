@@ -15,6 +15,8 @@
  * - mermaid:docx 内嵌 PNG(2x);pdf 内联 SVG(矢量)。→ mermaid.test.js
  * - 目录:docx 静态目录(打开即见、可点击跳转、无页码);pdf 目录同开关。
  *   → toc-caption.test.js
+ * - 编号开关(headingNumbering / captionNumbering):本层只透传显式项,
+ *   默认值由两侧 render 的 `options.X ?? typography.X` 解析(见两字段 JSDoc)。
  * - 脚注:docx 写 footnotes.xml 部件;pdf 渲染为 HTML 脚注。→ footnotes.test.js
  */
 import { parseMarkdown } from "./pipeline/parse.js";
@@ -23,7 +25,9 @@ import type { DocMetadata } from "./pipeline/frontmatter.js";
 import type { TypographySettings } from "./settings/typography.js";
 import type { ConvertWarning } from "./i18n.js";
 import { renderDocx } from "./docx/render.js";
-import { renderPdfHtml } from "./pdf/render.js";
+import { renderPdfDocument } from "./pdf/render.js";
+// PdfHeading 契约单源在 pdf/bookmarks.ts(docx 侧无对应物:目录由 Word 域生成)
+import type { PdfHeading } from "./pdf/bookmarks.js";
 import {
   buildPdfHeaderTemplate,
   PDF_EMPTY_CHROME_TEMPLATE,
@@ -82,6 +86,20 @@ export interface ConvertContext {
   toc?: boolean;
   /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;docx 生效) */
   tocMode?: TocMode;
+  /**
+   * 标题章节自动编号显式项(透传 docx/pdf 双管线)。
+   * 优先级契约:显式项 > typography.headingNumbering > 各 render 的构造默认;
+   * 默认值的解析留在两侧 render(renderDocx / renderPdfHtml 内的
+   * `options.X ?? typography.X`),本层只做原样透传,不做归一化——这样
+   * 「谁解析默认」只有一处实现,两侧 render 的默认口径不会因本层新增字段而漂移。
+   * 不传时行为与既有调用方(只给 typography)完全一致。
+   */
+  headingNumbering?: boolean;
+  /**
+   * 图/表题注自动编号显式项(透传 docx/pdf 双管线)。
+   * 优先级契约同 headingNumbering:显式项 > typography.captionNumbering > render 构造默认。
+   */
+  captionNumbering?: boolean;
   /** 公式编号开关(默认开;docx/pdf 双格式同开关,关时公式不编号、label 段原样渲染、引用保持原文本) */
   equationNumbering?: boolean;
   /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
@@ -121,6 +139,12 @@ export interface PdfArtifact {
   footerTemplate: string;
   /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;PDF 两遍渲染时用于回填页码) */
   tocMode: TocMode;
+  /**
+   * 结构化标题(文档顺序,level 1-3;h4-h6 不入列)。
+   * 与 html 同一次渲染管线产出,供 PDF 两遍法回填目录页码与书签树消费,
+   * 避免下游对成品 HTML 做正则反解析(见 pdf/render.ts renderPdfDocument)。
+   */
+  headings: PdfHeading[];
   /** frontmatter 元数据(PDF Info 注入用) */
   metadata?: DocMetadata;
 }
@@ -157,30 +181,38 @@ export async function convert(
       : undefined;
 
     if (format === "pdf") {
-      // pdf 分支只消费 body 字符串(markdown-it 在 renderPdfHtml 内另行解析),
+      // pdf 分支只消费 body 字符串(markdown-it 在 renderPdfDocument 内另行解析),
       // 不做 remark 解析(原无条件 parseMarkdown 使每次 PDF 转换
       // 白做一次 AST 构建 + 全标题 slug 遍历)
+      // 结构化 headings 与 html 出自同一次渲染管线:下游两遍法回填目录页码、
+      // 书签树注入与 metadata 解析统一消费,不再对成品 HTML 做正则反解析
+      // (OPT-5.2 第四条;renderPdfHtml 保留为仅取 html 的薄封装)。
+      const { html, headings } = await renderPdfDocument(body, {
+        baseDir: context.baseDir,
+        title: context.title,
+        metadata,
+        warnings,
+        imageResolver: context.imageResolver,
+        guard,
+        imageBudget: context.imageBudget,
+        pageSetup: context.pageSetup,
+        typography: context.typography,
+        breakBeforeH1: context.breakBeforeH1,
+        toc: context.toc,
+        // 编号显式项原样透传:默认值解析在 renderPdfDocument 内(options.X ?? typography.X)
+        headingNumbering: context.headingNumbering,
+        captionNumbering: context.captionNumbering,
+        equationNumbering: context.equationNumbering,
+        katexDir: context.katexDir,
+        pdfCss: context.pdfCss,
+        mermaidResolver,
+        onStage: context.onStage,
+        watermark,
+      });
       return {
         kind: "pdf",
-        html: await renderPdfHtml(body, {
-          baseDir: context.baseDir,
-          title: context.title,
-          metadata,
-          warnings,
-          imageResolver: context.imageResolver,
-          guard,
-          imageBudget: context.imageBudget,
-          pageSetup: context.pageSetup,
-          typography: context.typography,
-          breakBeforeH1: context.breakBeforeH1,
-          toc: context.toc,
-          equationNumbering: context.equationNumbering,
-          katexDir: context.katexDir,
-          pdfCss: context.pdfCss,
-          mermaidResolver,
-          onStage: context.onStage,
-          watermark,
-        }),
+        html,
+        headings,
         // 页眉模板按配置构造(logo data URI 内嵌);页脚开关关闭时空模板占位
         // (displayHeaderFooter 常开,机制不变,见 PDF_EMPTY_CHROME_TEMPLATE 注释)
         headerTemplate: buildPdfHeaderTemplate(headerFooter, context.headerLogo),
@@ -206,6 +238,9 @@ export async function convert(
         breakBeforeH1: context.breakBeforeH1,
         toc: context.toc,
         tocMode: context.tocMode,
+        // 编号显式项原样透传:默认值解析在 renderDocx 内(options.X ?? typography.X)
+        headingNumbering: context.headingNumbering,
+        captionNumbering: context.captionNumbering,
         equationNumbering: context.equationNumbering,
         title: context.title,
         mermaidResolver,

@@ -12,6 +12,11 @@
 | comments.md | 批注验收:行内 `[锚定文本]{批注=内容}` → docx 批注。 | test/segments/comments.test.js |
 | cover.md | 封面页测试(双格式,新段): | test/segments/cover.test.js |
 | cross-ref.md | 题注/章节交叉引用测试(docx + pdf 双格式): | test/segments/cross-ref.test.js |
+| dual-pipeline-matrix-caption-before-h1.md | 双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(21 行,含双侧提取器与来源锚点)。(场景:caption-before-h1) | test/segments/dual-pipeline-matrix.test.js |
+| dual-pipeline-matrix-caption-label.md | 双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(21 行,含双侧提取器与来源锚点)。(场景:caption-label) | test/segments/dual-pipeline-matrix.test.js |
+| dual-pipeline-matrix-deep-headings.md | 双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(21 行,含双侧提取器与来源锚点)。(场景:deep-headings) | test/segments/dual-pipeline-matrix.test.js |
+| dual-pipeline-matrix-katex-boundary.md | 双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(21 行,含双侧提取器与来源锚点)。(场景:katex-boundary) | test/segments/dual-pipeline-matrix.test.js |
+| dual-pipeline-matrix.md | 双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(21 行,含双侧提取器与来源锚点)。(场景:main) | test/segments/dual-pipeline-matrix.test.js |
 | eq-numbering.md | 公式编号 + 交叉引用测试: | test/segments/eq-numbering.test.js |
 | footnotes.md | 脚注 + 页眉页脚验收(补页眉/页脚内容断言): | test/segments/footnotes.test.js |
 | formula-degrade.md | 公式测试:(场景:degrade) | test/segments/formula.test.js |
