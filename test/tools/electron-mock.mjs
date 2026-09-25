@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * electron 最小 mock(供 gen-fixtures 纯 Node 环境使用):
  * electron 包是 CJS(默认导出 exe 路径字符串),命名导入会抛 SyntaxError;

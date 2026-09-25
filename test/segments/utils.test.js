@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 通用文本工具直测:src/core/util/utils.ts 单分支补齐。
  * - decodeNumeric 非法码点(20-21 行):数值实体码点越界(> 0x10FFFF)返回原样不抛;

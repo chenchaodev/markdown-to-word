@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 E5 完成(测试树类型检查落地,`// @ts-check` 渐进)**:新增 `tsconfig.test.json`(extends 主配置,allowJs 纳入 test/ 全部 js/mjs/cjs,checkJs 保持 false)——按文件头 `// @ts-check` 注释逐文件启用,无手工排除清单(吸取 E4 教训);`npm run typecheck` 串联两配置(CI 自动门禁);全量标注摸底 **83 文件 809 错误**(69 文件有错,TS7006 隐式 any ×200 主导)→ 首批仅标注 **13 个零错误文件**(common 3 + main 1 + segments 8 + tools 1),余 69 文件为渐进增长面(事实与 tsc 两行为实证见 RESEARCH 同日条目);门禁语义双探针确证(标注→报错、未标注→静默);typecheck/lint/70 段全绿
 - 2026-09-25:**技术债 E3 完成(看门狗超时改「记录失败继续跑」试点)**:`runner.runAll` 超时分支去掉 `break`——超时段记失败后**照常放行后续段**(一次看全失败面),标志 `aborted`→`hung`(语义改为「存在未终止悬挂段,结果打印完毕由入口硬退出统一释放资源」,`acceptance.mjs` 消息同步);悬挂段与后续段的隔离仍不做(逐段子进程成本高,已知局限注释保留并注明 E3);探针实证:临时悬挂段 8s 超时记 fail,其后 toc-caption/watermark/main/renderer 段全部照常执行并汇总,exit 1 + 收尾消息正确;正常全量 70 段(17.7s)与 lint 不受影响
 
 - 2026-09-25:**技术债 E2 完成(smoke 固定等待改条件等待;口径经用户拍板「仅动等待,计数全保留」)**:逐处核实 3 处固定 `setTimeout`——1500ms 等页面加载改轮询 `readyState+convertBtn`(就绪即过、10s 超时显式失败,不再盲跑诊断)、页内 50ms 等状态区改轮询 `status.textContent`(同步更新首轮即过、最长 2s;`statusEl` 为缓存引用原地改文本,单次捕获即等价)、`writeWithRetry` 150ms 为失败重试退避(非条件等待,保留);**9 处精确计数断言全保留**(拍板为有意防回归守卫,计划「E2 全量化」维持冻结);smoke ×2 连跑通过、renderer diag 与改造前逐字节一致、lint 绿(计数断言零触碰)

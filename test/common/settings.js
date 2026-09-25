@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 用户设置备份/恢复公共 helper:
  * - backupSettings:缓存级快照(原内联逻辑在 test/main/converter.test.js);

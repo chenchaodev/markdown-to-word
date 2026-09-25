@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 内联格式白名单单一实现测试:
  * - isAllowedInlineHtml 判定规则直测(合法/非法矩阵);

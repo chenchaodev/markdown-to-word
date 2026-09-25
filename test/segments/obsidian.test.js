@@ -1,3 +1,4 @@
+// @ts-check
 import { normalizeObsidian } from "../../dist/core/markdown/obsidian.js";
 
 export async function run() {

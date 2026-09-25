@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 编码预检段:UTF-8 无 BOM / UTF-8 BOM / UTF-16LE BOM / UTF-16BE BOM / GBK 解码与标记。
  * decodeMarkdown 规则:UTF-8 / UTF-16(LE+BE)BOM 剥离;无 BOM 严格 UTF-8 校验,

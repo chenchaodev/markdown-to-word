@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 关于页更新检查:版本比较纯函数单测。
  * 断言对象 = dist/main/ipc/logic.js 的 compareVersions 真实实现(自 register.ts

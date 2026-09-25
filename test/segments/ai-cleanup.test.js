@@ -1,3 +1,4 @@
+// @ts-check
 import { cleanupMarkdown } from "../../dist/core/markdown/ai-cleanup.js";
 
 export async function run() {

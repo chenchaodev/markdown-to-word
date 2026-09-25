@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 测试路径常量:输入(fixtures,入仓可版本化)与产物(artifacts/smoke,gitignore)分离。
  */

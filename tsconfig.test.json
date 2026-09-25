@@ -1,0 +1,15 @@
+{
+  // 测试树类型检查配置(技术债 E5):allowJs 纳入 test/*.js|mjs|cjs,checkJs 保持 false——
+  // 按文件头 `// @ts-check` 注释渐进启用(无注释的文件只解析不检查,不产生报错压力)。
+  // 渐进语义:新测试文件默认不标注;标注后即受 typecheck 门禁(本配置由 npm run typecheck 串联)。
+  // 不继承 emit 相关:rootDir 放宽到根(test 文件跨目录),noEmit 不产出产物。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "incremental": false,
+    "rootDir": "."
+  },
+  "include": ["test"]
+}

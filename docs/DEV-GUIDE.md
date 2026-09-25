@@ -12,7 +12,7 @@
 | 命令 | 用途 |
 | ---- | ---- |
 | `npm install` | 安装依赖(首次先 `npm install -D typescript @types/node`,Electron 单独装并设镜像) |
-| `npm run typecheck` | TS 类型检查(`tsc --noEmit`,TS 7) |
+| `npm run typecheck` | TS 类型检查(主树 `tsc --noEmit` + 测试树 `tsconfig.test.json` 按 `// @ts-check` 渐进,TS 7) |
 | `npm run lint` | ESLint 10 flat 检查 `src/ test/ scripts/`(typescript-eslint 类型感知规则,side-by-side TS 6 API) |
 | `npm run build` | 构建 core 到 `dist/`(`tsc` + copy-renderer) |
 | `npm run dev` | 启动 Electron 开发(自带构建新鲜度守卫) |

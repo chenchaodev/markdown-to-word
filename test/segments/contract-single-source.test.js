@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 契约单源恒等性断言:
  * - CROSS_REF_KINDS:docx/pdf 两侧渲染模块 re-export 的常量与 core/cross-ref.ts
