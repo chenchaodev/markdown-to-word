@@ -193,7 +193,15 @@ export async function runSmoke(win) {
     console.log(`[smoke] merge pdf 书签 ok: 合并产物 Outlines 注入,中文标题 + Dest 页面引用正确`);
     // renderer 侧诊断:window.api 是否注入、转换按钮是否可点、点击后状态区反馈
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500)); // 等页面加载
+      // 条件等待页面就绪(替代固定 1500ms;就绪即过、超时显式失败,不再盲跑诊断)
+      let pageReady = false;
+      for (let waited = 0; waited <= 10000 && !pageReady; waited += 100) {
+        if (waited > 0) await new Promise((resolve) => setTimeout(resolve, 100));
+        pageReady = await win.webContents
+          .executeJavaScript(`document.readyState === "complete" && !!document.getElementById("convertBtn")`)
+          .catch(() => false);
+      }
+      if (!pageReady) throw new Error("[smoke] 页面就绪等待超时(readyState/convertBtn)");
       const diag = await win.webContents.executeJavaScript(`(async () => {
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         const report = { api: typeof window.api };
@@ -205,8 +213,9 @@ export async function runSmoke(win) {
           // 断言「未选文件」守卫路径(曾因恒空而零覆盖)
           btn.disabled = false;
           btn.click();
-          await sleep(50);
           const status = document.getElementById("status");
+          // 条件等待状态区更新(替代固定 50ms;同步更新首轮即过,最长 2s 后以现值断言)
+          for (let i = 0; i < 100 && !(status && status.textContent); i++) await sleep(20);
           report.statusAfterClick = status ? status.textContent : "";
           report.statusIsError = status ? status.classList.contains("status--error") : null;
         }
