@@ -316,9 +316,9 @@ export async function run() {
     ]);
     // 每个调用返回各自合并结果(调用间互不吞并)
     assert(rA.format === "pdf" && rA.toc === true && rA.breakBeforeH1 === true, "并发调用 1 应返回自身合并结果");
-    assert(rB.format === "docx" && rB.afterConvert === "open", "并发调用 2 应返回自身合并结果");
-    assert(rC.pageSetup.marginTop === 12.5, "并发调用 3 应返回自身合并结果");
-    assert(rD.typography.bodySizePt === 13, "并发调用 4 应返回自身合并结果");
+    assert(rB.format === "docx" && rB.afterConvert === "open" && rB.toc === true, "并发调用 2 应读到调用 1 已提交字段");
+    assert(rC.pageSetup.marginTop === 12.5 && rC.afterConvert === "open" && rC.toc === true, "并发调用 3 应保留前序字段");
+    assert(rD.typography.bodySizePt === 13 && rD.format === "docx" && rD.afterConvert === "open", "并发调用 4 应保留前序字段");
     // 最终落盘 = 最后一次调用返回的完整状态(完整相等,不交错/不丢字段)
     const final = JSON.parse(await fs.readFile(settingsFile, "utf8"));
     assert(
@@ -336,6 +336,25 @@ export async function run() {
       tmpLeft = false;
     }
     assert(!tmpLeft, "写队列完成后不应残留 .tmp 临时文件");
+
+    // ---- 10b. 写失败可观察:不更新缓存、不吞错误,且后续 mutation 仍可恢复 ----
+    // settingsFilePath 固定走 userData/settings.json;将该目标暂时替换为目录,
+    // 触发 rename 失败,不依赖平台特定的权限/锁定行为。
+    await fs.rm(settingsFile, { force: true });
+    await fs.mkdir(settingsFile, { recursive: true });
+    const mFail = await freshModule("settings-failure");
+    let failureObserved = false;
+    try {
+      await mFail.updateSettings({ format: "pdf" });
+    } catch {
+      failureObserved = true;
+    }
+    assert(failureObserved, "settings 写失败必须向调用方抛出,不得静默成功");
+    assert(mFail.loadSettings().format !== "pdf", "settings 写失败不得更新缓存");
+    await fs.rm(settingsFile, { recursive: true, force: true });
+    await mFail.updateSettings({ format: "pdf" });
+    assert(mFail.loadSettings().format === "pdf", "settings 写失败后队列应继续处理下一次 mutation");
+    console.log("[ok] settings:写失败可观察(不吞错/不更新缓存/队列可恢复)");
 
 console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文件回退/并发写队列 断言通过");
 

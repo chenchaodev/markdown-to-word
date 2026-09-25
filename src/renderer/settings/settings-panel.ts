@@ -284,16 +284,16 @@ function composeDrawerMetaText(): string {
   return `${presetName} · ${checkedRadioValue(paperInputs)}`;
 }
 
-/** 写回设置;失败静默(下次交互仍以磁盘为准),不打断用户操作。
- * 写盘成功后刷新所有预览窗口(设置变更即时反映到预览)。
+/** 写回设置;写盘失败保留控件当前编辑内容并显示可观察错误,不打断用户操作。
+ * 写盘成功后刷新所有预览窗口(设置变更即时反映到预览);预览刷新失败不伪装成设置保存失败。
  * 写回同时刷新副标题——纸张等直接改控件的路径不经过回填,在此统一兜住。 */
 export function persistSettings(patch: Partial<AppSettings>): void {
   updateDrawerMeta(composeDrawerMetaText());
   void window.api
     .settingsSet(patch)
-    .then(() => window.api.previewRefresh())
+    .then(() => window.api.previewRefresh().catch(() => undefined))
     .catch(() => {
-      /* 忽略:设置写入失败不阻塞主流程 */
+      setError(t("preset.saveFailed"));
     });
 }
 

@@ -200,19 +200,26 @@ export function loadSettings(): AppSettings {
 }
 
 /** 原子写:临时文件 + rename(Windows 下 rename 可覆盖已存在文件)。
- *  经写队列串行执行——write+rename 之间不得插入其它写(同 tmp 路径),
- *  调用序 = 写盘序,链尾即最终态;缓存更新与写盘同序,失败不截断队列。 */
+ *  读当前值、合并 patch、序列化、提交缓存整体在 writeSettingsJson 队列中完成。
+ *  这样并发不同字段 patch 不会因“队列外读旧缓存”互相覆盖;失败向调用方抛出,
+ *  不提交缓存,后续队列任务仍可继续。 */
 export async function saveSettings(next: AppSettings): Promise<void> {
-  await writeSettingsJson(settingsFilePath(), next, () => {
-    settingsCache = next;
+  await writeSettingsJson.enqueue(async (write) => {
+    await write(settingsFilePath(), next, () => {
+      settingsCache = next;
+    });
   });
 }
 
-/** 合并 + 持久化 + 返回;patch 按 DEFAULT_SETTINGS 键白名单校验,非法值回退默认 */
+/** 合并 + 持久化 + 返回;patch 按 DEFAULT_SETTINGS 键白名单校验,非法值回退默认。 */
 export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
-  const next: AppSettings = { ...loadSettings(), ...sanitizePatch(patch) };
-  await saveSettings(next);
-  return next;
+  return writeSettingsJson.enqueue(async (write) => {
+    const next: AppSettings = { ...loadSettings(), ...sanitizePatch(patch) };
+    await write(settingsFilePath(), next, () => {
+      settingsCache = next;
+    });
+    return next;
+  });
 }
 
 function sanitizePatch(patch: unknown): Partial<AppSettings> {

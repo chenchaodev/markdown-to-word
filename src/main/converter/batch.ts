@@ -12,8 +12,10 @@ import { convertImpl, runAfterConvert } from "./single.js";
 
 /**
  * 批量转换:并发上限 2 的简单池,每文件独立 convertImpl,失败不中断。
- * 取消支持(未开始项跳过,记 canceledCount);完成后按 afterConvert
+ * 取消支持(未开始项跳过,记 canceledCount);完成后按批次设置快照的 afterConvert
  * 打开第一个成功项(与单文件一致,不再强制跳过);进度经 onProgress 上报。
+ * 批次开始复制设置快照,后续设置 mutation 不影响本批次;每个文件跳过单文件
+ * after-convert,由本函数统一执行一次。
  */
 export async function batchConvertImpl(
   files: string[],
@@ -22,6 +24,14 @@ export async function batchConvertImpl(
   ctx: ConvertContext = createConvertContext(),
   katexDir?: string,
 ): Promise<BatchResult> {
+  const settingsSnapshot = structuredClone(loadSettings());
+  const batchCtx: ConvertContext = {
+    get cancelRequested() {
+      return ctx.cancelRequested;
+    },
+    cancel: () => ctx.cancel(),
+    skipAfterConvert: true,
+  };
   const total = files.length;
   const items: BatchItem[] = new Array<BatchItem>(total);
   let okCount = 0;
@@ -31,7 +41,7 @@ export async function batchConvertImpl(
 
   async function worker(): Promise<void> {
     for (;;) {
-      if (ctx.cancelRequested) {
+      if (batchCtx.cancelRequested) {
         // 未开始项(含当前索引)标记取消,不再处理
         for (let i = next; i < total; i++) {
           if (!items[i]) {
@@ -47,7 +57,14 @@ export async function batchConvertImpl(
       const send = (stage: string): void =>
         onProgress?.({ index: index + 1, total, file: path.basename(file), stage });
       try {
-        const { outputPath, warnings } = await convertImpl(file, format, send, ctx, katexDir);
+        const { outputPath, warnings } = await convertImpl(
+          file,
+          format,
+          send,
+          batchCtx,
+          katexDir,
+          settingsSnapshot,
+        );
         items[index] = { file, ok: true, outputPath, warnings };
         okCount++;
       } catch (err) {
@@ -64,11 +81,10 @@ export async function batchConvertImpl(
 
   await Promise.all(Array.from({ length: Math.min(2, total) }, () => worker()));
   // 批量导出后行为:与单文件一致,作用于第一个成功项(避免打开 N 个文件)
-  if (!ctx.cancelRequested) {
+  if (!batchCtx.cancelRequested) {
     const firstOk = items.find((i) => i.ok);
     if (firstOk?.outputPath) {
-      const settings = await loadSettings();
-      await runAfterConvert(settings.afterConvert, firstOk.outputPath);
+      await runAfterConvert(settingsSnapshot.afterConvert, firstOk.outputPath);
     }
   }
   return { ok: true, items, okCount, failCount, canceledCount };

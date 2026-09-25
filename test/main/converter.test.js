@@ -268,6 +268,64 @@ export async function run() {
       }
     }
 
+    // ---- 9b. 批量/合并副作用所有权:批量只执行一次 after-convert,合并只执行一次;
+    //      批次开始使用 immutable settings snapshot(批次中修改缓存不改变本批次配置) ----
+    await updateSettings({ afterConvert: "open", breakBeforeH1: true });
+    const snapshotOpenCalls = [];
+    const snapshotOpenOriginal = shell.openPath;
+    let snapshotOpenViaDefine = false;
+    try {
+      try {
+        shell.openPath = async (opened) => {
+          snapshotOpenCalls.push(opened);
+          return "";
+        };
+      } catch {
+        snapshotOpenViaDefine = true;
+        Object.defineProperty(shell, "openPath", {
+          configurable: true,
+          writable: true,
+          value: async (opened) => {
+            snapshotOpenCalls.push(opened);
+            return "";
+          },
+        });
+      }
+      // 直接改缓存对象模拟批次运行期间设置更新;实现应先深拷贝快照,
+      // 旧实现会让后续文件读到 false,新实现两项断言都应保持。
+      const liveSettings = loadSettings();
+      const snapshotBatch = await batchConvertImpl(
+        batchFiles.slice(0, 2),
+        "docx",
+        (stage) => {
+          if (stage === "read") liveSettings.breakBeforeH1 = false;
+        },
+      );
+      assert(snapshotBatch.okCount === 2, "快照批量转换应完成两项");
+      assert(snapshotOpenCalls.length === 1, `批量 after-convert 只应执行一次,实际 ${snapshotOpenCalls.length} 次`);
+      for (const item of snapshotBatch.items) {
+        assert(!!item.ok, "快照批量应全部成功");
+        const zip = await JSZip.loadAsync(await fs.readFile(item.outputPath));
+        const xml = await zip.file("word/document.xml").async("string");
+        assert(xml.includes("<w:pageBreakBefore/>"), "批次中途修改设置不得混合本批次配置");
+      }
+      const snapshotMerge = await mergeConvertImpl([mergeA, mergeB], "docx");
+      assert(snapshotMerge.ok, "快照合并转换应成功");
+      assert(snapshotOpenCalls.length === 2, `合并 after-convert 只应执行一次(总计两次),实际 ${snapshotOpenCalls.length} 次`);
+    } finally {
+      if (snapshotOpenViaDefine) {
+        Object.defineProperty(shell, "openPath", {
+          configurable: true,
+          writable: true,
+          value: snapshotOpenOriginal,
+        });
+      } else {
+        shell.openPath = snapshotOpenOriginal;
+      }
+      await updateSettings({ afterConvert: "none", breakBeforeH1: false });
+    }
+    console.log("[ok] converter:批量/合并 after-convert 单次执行 + 批次 settings snapshot");
+
     // ---- 10. runAfterConvert open 失败(326-329 行):openPath 返回错误 → 降级不抛,日志留痕 ----
     // 模拟:shell.openPath 临时替换为必失败 mock(直接赋值,不可写则 defineProperty 兜底);
     // console.log 临时捕获断言「[afterConvert] 打开失败」文案;afterConvert 恢复 none

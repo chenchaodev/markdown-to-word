@@ -36,10 +36,13 @@ export function renderSelection(): void {
   state.stageChangedHandler?.();
 
   if (n >= 1) {
+    // renderMultiList 已负责一次会话持久化;避免这里再写一遍造成重复 ui-state mutation。
     renderMultiList();
+  } else {
+    // 空列表同样需要保存清空状态。
+    persistSessionFiles();
   }
   updateActionButtons();
-  persistSessionFiles();
 }
 
 /** 重建队列列表:

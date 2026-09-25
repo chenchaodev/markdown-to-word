@@ -72,6 +72,30 @@ export async function run() {
     assert(JSON.parse(await fs.readFile(fileA2, "utf8")).who === "a-second", "A 实例串行后续写内容不符");
     console.log("[ok] atomic-json:并发不交叉(实例间独立队列,实例内串行)");
 
+    // ---- 3b. mutation queue:读当前值与合并在同一队列内,不同字段并发不丢 ----
+    // enqueue 的回调提供“队列内写”能力:调用方把读当前值/合并也放入队列,
+    // 但不能再调用公开 writer(否则会等待自己)。两个任务交错发起时,第二个
+    // 任务必须在第一个提交缓存后读取当前值。
+    const mutationFile = path.join(dir, "mutation.json");
+    const mutationWriter = createJsonWriter();
+    const current = { left: false, right: false };
+    const mutate = (patch) =>
+      mutationWriter.enqueue(async (write) => {
+        const next = { ...current, ...patch };
+        await write(mutationFile, next, () => Object.assign(current, next));
+        return next;
+      });
+    const [leftResult, rightResult] = await Promise.all([
+      mutate({ left: true }),
+      mutate({ right: true }),
+    ]);
+    assert(leftResult.left && !leftResult.right, "mutation 第一个结果应只含自身补丁");
+    assert(rightResult.left && rightResult.right, "mutation 第二个结果应读到第一个已提交字段");
+    assert(current.left && current.right, "mutation 并发不同字段不得丢更新");
+    const mutationDisk = JSON.parse(await fs.readFile(mutationFile, "utf8"));
+    assert(mutationDisk.left && mutationDisk.right, "mutation 最终落盘应包含全部字段");
+    console.log("[ok] atomic-json:mutation queue(读改写整体串行,不同字段并发不丢)");
+
     // ---- 4. 失败路径:目标目录不存在 → writeFile(tmp) 失败;旧文件不破坏、队列不截断 ----
     const writerF = createJsonWriter();
     const goodFile = path.join(dir, "good.json");

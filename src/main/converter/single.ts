@@ -85,6 +85,7 @@ export async function persistArtifact(
  * 纯函数便于冒烟自测与未来 CLI 复用;进度经 onProgress 上报。
  * pdf 链路:core 产出 HTML → 写临时文件 → 隐藏窗口 loadFile → printToPDF。
  * 取消:ctx 默认新建(「取消后复位」语义);skipAfterConvert 经 ctx 携带(见 ConvertContext)。
+ * settingsSnapshot 仅供批量在批次开始时传入 immutable 快照;单文件/合并未传时各自读取当前设置。
  * katexDir(pdf 公式资源目录)由调用方(main 入口层)传入,本函数不依赖 electron app。
  */
 export async function convertImpl(
@@ -93,6 +94,7 @@ export async function convertImpl(
   onProgress?: (stage: string) => void,
   ctx: ConvertContext = createConvertContext(),
   katexDir?: string,
+  settingsSnapshot?: AppSettings,
 ): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
   if (!MARKDOWN_EXT_RE.test(filePath)) {
     // 生成期本地化:throw 文案经 error.message 单次字符串通道到 GUI,
@@ -100,7 +102,7 @@ export async function convertImpl(
     throw new Error(t("file.onlyMarkdown"));
   }
   throwIfCanceled(ctx);
-  const settings = await loadSettings();
+  const settings = settingsSnapshot ?? loadSettings();
   onProgress?.("read");
   const warnings: ConvertWarning[] = [];
   const rawMd = await readMarkdownDecoded(filePath, warnings, "warn.gbkEncoding");
@@ -137,7 +139,10 @@ export async function convertImpl(
   );
   warnings.push(...outWarnings);
 
-  if (!ctx.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
+  if (!ctx.skipAfterConvert) {
+    throwIfCanceled(ctx);
+    await runAfterConvert(settings.afterConvert, outputPath);
+  }
   return { outputPath, warnings };
 }
 

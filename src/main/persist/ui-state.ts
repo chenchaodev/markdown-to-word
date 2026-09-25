@@ -195,55 +195,57 @@ export function loadUiState(): UiState {
  * 写失败(如磁盘错误)向上抛出,由调用方决定是否静默。
  */
 export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
-  const current = loadUiState();
-  const next: UiState = {
-    ...current,
-    recentFiles: current.recentFiles,
-    lastSessionFiles: current.lastSessionFiles,
-    lastOpenDir: current.lastOpenDir,
-    windowBounds: current.windowBounds,
-    previewWindowBounds: current.previewWindowBounds,
-    isMaximized: current.isMaximized,
-    panelOpen: { ...current.panelOpen },
-  };
-  if (patch && typeof patch === "object" && !Array.isArray(patch)) {
-    if (Array.isArray(patch.recentFiles)) {
-      // 空数组 = 清空(替换语义,renderer「清空最近」传 { recentFiles: [] });
-      // 非空 = 追加合并(转换成功后追加新条目,ipc/register.ts recordRecentFiles 调用)
-      next.recentFiles =
-        patch.recentFiles.length === 0
-          ? []
-          : dedupeRecentFiles([
-              ...current.recentFiles,
-              ...sanitizeRecentFiles(patch.recentFiles),
-            ]);
+  return writeUiStateJson.enqueue(async (write) => {
+    const current = loadUiState();
+    const next: UiState = {
+      ...current,
+      recentFiles: current.recentFiles,
+      lastSessionFiles: current.lastSessionFiles,
+      lastOpenDir: current.lastOpenDir,
+      windowBounds: current.windowBounds,
+      previewWindowBounds: current.previewWindowBounds,
+      isMaximized: current.isMaximized,
+      panelOpen: { ...current.panelOpen },
+    };
+    if (patch && typeof patch === "object" && !Array.isArray(patch)) {
+      if (Array.isArray(patch.recentFiles)) {
+        // 空数组 = 清空(替换语义,renderer「清空最近」传 { recentFiles: [] });
+        // 非空 = 追加合并(转换成功后追加新条目,ipc/register.ts recordRecentFiles 调用)
+        next.recentFiles =
+          patch.recentFiles.length === 0
+            ? []
+            : dedupeRecentFiles([
+                ...current.recentFiles,
+                ...sanitizeRecentFiles(patch.recentFiles),
+              ]);
+      }
+      if (Array.isArray(patch.lastSessionFiles)) {
+        next.lastSessionFiles = sanitizeSessionFiles(patch.lastSessionFiles);
+      }
+      if (patch.lastOpenDir !== undefined) next.lastOpenDir = sanitizeOpenDir(patch.lastOpenDir);
+      if (patch.windowBounds !== undefined) next.windowBounds = sanitizeWindowBounds(patch.windowBounds);
+      if (patch.previewWindowBounds !== undefined) {
+        next.previewWindowBounds = sanitizeWindowBounds(patch.previewWindowBounds);
+      }
+      if (patch.isMaximized !== undefined) {
+        next.isMaximized = sanitizeBool(patch.isMaximized, DEFAULT_UI_STATE.isMaximized);
+      }
+      if (patch.panelOpen !== undefined) next.panelOpen = sanitizePanelOpen(patch.panelOpen);
+      if (patch.suppressCompleteDialog !== undefined) {
+        next.suppressCompleteDialog = sanitizeBool(
+          patch.suppressCompleteDialog,
+          DEFAULT_UI_STATE.suppressCompleteDialog,
+        );
+      }
+      if (patch.firstRun !== undefined) {
+        next.firstRun = sanitizeBool(patch.firstRun, DEFAULT_UI_STATE.firstRun);
+      }
     }
-    if (Array.isArray(patch.lastSessionFiles)) {
-      next.lastSessionFiles = sanitizeSessionFiles(patch.lastSessionFiles);
-    }
-    if (patch.lastOpenDir !== undefined) next.lastOpenDir = sanitizeOpenDir(patch.lastOpenDir);
-    if (patch.windowBounds !== undefined) next.windowBounds = sanitizeWindowBounds(patch.windowBounds);
-    if (patch.previewWindowBounds !== undefined) {
-      next.previewWindowBounds = sanitizeWindowBounds(patch.previewWindowBounds);
-    }
-    if (patch.isMaximized !== undefined) {
-      next.isMaximized = sanitizeBool(patch.isMaximized, DEFAULT_UI_STATE.isMaximized);
-    }
-    if (patch.panelOpen !== undefined) next.panelOpen = sanitizePanelOpen(patch.panelOpen);
-    if (patch.suppressCompleteDialog !== undefined) {
-      next.suppressCompleteDialog = sanitizeBool(
-        patch.suppressCompleteDialog,
-        DEFAULT_UI_STATE.suppressCompleteDialog,
-      );
-    }
-    if (patch.firstRun !== undefined) {
-      next.firstRun = sanitizeBool(patch.firstRun, DEFAULT_UI_STATE.firstRun);
-    }
-  }
-  await writeUiStateJson(uiStateFilePath(), next, () => {
-    uiCache = next;
+    await write(uiStateFilePath(), next, () => {
+      uiCache = next;
+    });
+    return next;
   });
-  return next;
 }
 
 /**

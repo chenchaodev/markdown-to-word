@@ -252,6 +252,42 @@ export async function run() {
     const m18 = await freshModule();
     assert(m18.loadUiState().isMaximized === true, "patch 未携带 isMaximized 时应保留现值");
     console.log("[ok] ui-state:isMaximized 往返/宽松校验(true 持久化,缺失与非 boolean 回退 false,patch 合并保留)");
+
+    // ---- 10. mutation queue:不同顶层字段并发 patch 不丢,最终缓存与落盘一致 ----
+    const m19 = await freshModule();
+    const [dirResult, boundsResult, maximizedResult] = await Promise.all([
+      m19.saveUiState({ lastOpenDir: "C:\\queue-a" }),
+      m19.saveUiState({ windowBounds: { x: 1, y: 2, width: 640, height: 480 } }),
+      m19.saveUiState({ isMaximized: false }),
+    ]);
+    assert(dirResult.lastOpenDir === "C:\\queue-a", "ui-state mutation 第一个结果应含自身字段");
+    assert(boundsResult.lastOpenDir === "C:\\queue-a" && boundsResult.windowBounds?.width === 640, "ui-state mutation 第二个结果应保留前序字段");
+    assert(maximizedResult.lastOpenDir === "C:\\queue-a" && maximizedResult.windowBounds?.width === 640, "ui-state mutation 第三个结果应保留前序字段");
+    const m20 = await freshModule();
+    const queued = m20.loadUiState();
+    assert(
+      queued.lastOpenDir === "C:\\queue-a" && queued.windowBounds?.width === 640 && queued.isMaximized === false,
+      `ui-state 并发不同顶层字段不得丢更新,实际 ${JSON.stringify(queued)}`,
+    );
+    console.log("[ok] ui-state:mutation queue(不同顶层字段并发 patch 不丢)");
+
+    // ---- 11. 写失败可观察:不更新缓存、不吞错误,且后续 mutation 仍可恢复 ----
+    // 目标路径暂替换为目录,避免依赖 Windows 权限/文件锁的非确定性。
+    await fs.rm(uiFile, { force: true });
+    await fs.mkdir(uiFile, { recursive: true });
+    const mFail = await freshModule();
+    let failureObserved = false;
+    try {
+      await mFail.saveUiState({ lastOpenDir: "C:\\should-not-commit" });
+    } catch {
+      failureObserved = true;
+    }
+    assert(failureObserved, "ui-state 写失败必须向调用方抛出,不得静默成功");
+    assert(mFail.loadUiState().lastOpenDir !== "C:\\should-not-commit", "ui-state 写失败不得更新缓存");
+    await fs.rm(uiFile, { recursive: true, force: true });
+    await mFail.saveUiState({ lastOpenDir: "C:\\recovered" });
+    assert(mFail.loadUiState().lastOpenDir === "C:\\recovered", "ui-state 写失败后队列应继续处理下一次 mutation");
+    console.log("[ok] ui-state:写失败可观察(不吞错/不更新缓存/队列可恢复)");
   } finally {
     // 恢复真实 ui-state.json(原有内容或删除),避免污染用户状态
     if (hadFile) await fs.writeFile(uiFile, backup, "utf8");

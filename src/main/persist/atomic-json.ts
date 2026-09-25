@@ -11,24 +11,50 @@ import { rename, writeFile } from "node:fs/promises";
 
 /** 原子 JSON 写入器:filePath 目标文件(tmp 为 filePath + ".tmp"),value 序列化对象,
  *  onCommitted 在写盘成功后同步调用(调用方更新内存缓存,与写盘同序)。 */
-export type JsonWriter = (
+export type JsonWrite = (
   filePath: string,
   value: unknown,
   onCommitted?: () => void,
 ) => Promise<void>;
 
+/**
+ * 原子 JSON 写入队列。
+ * - 直接调用:提交一次完整 JSON 写盘任务。
+ * - enqueue:把“读当前值 → 合并 patch → 写盘”整个事务排入同一队列；回调收到
+ *   write,只能使用该回调写入,不要再次调用外层 writer(否则会等待自己)。
+ */
+export interface JsonWriter {
+  (filePath: string, value: unknown, onCommitted?: () => void): Promise<void>;
+  enqueue<T>(mutate: (write: JsonWrite) => Promise<T>): Promise<T>;
+}
+
 /** 创建原子 JSON 写入器(独立写队列,实例间互不串扰)。 */
 export function createJsonWriter(): JsonWriter {
   let writeChain: Promise<void> = Promise.resolve();
-  return (filePath, value, onCommitted) => {
+
+  const writeNow: JsonWrite = async (filePath, value, onCommitted) => {
     const tmpPath = `${filePath}.tmp`;
-    const task = writeChain.then(async () => {
-      await writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-      await rename(tmpPath, filePath);
-      onCommitted?.();
-    });
+    await writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await rename(tmpPath, filePath);
+    onCommitted?.();
+  };
+
+  const writer = ((filePath: string, value: unknown, onCommitted?: () => void) => {
+    const task = writeChain.then(() => writeNow(filePath, value, onCommitted));
     // 单次写失败不阻断后续写入;错误由本调用方各自处理
     writeChain = task.catch(() => undefined);
     return task;
+  }) as JsonWriter;
+
+  writer.enqueue = <T>(mutate: (write: JsonWrite) => Promise<T>): Promise<T> => {
+    const task = writeChain.then(() => mutate(writeNow));
+    // 事务失败同样不能截断队列;调用方仍能收到本次原始错误
+    writeChain = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
   };
+
+  return writer;
 }
