@@ -10,7 +10,7 @@
  */
 import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n.js";
-import { loadKatexCss } from "../../dist/core/pdf/template.js";
+import { loadKatexCss } from "../../dist/core/pdf/katex-css.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
@@ -70,7 +70,7 @@ export async function run() {
   console.log("[ok] PDF 公式:KaTeX 结构 + CSS 字体内联生效");
 
   // ---------- loadKatexCss 读取失败返回空串 + warnings 上报 ----------
-  // 依据(dist/core/pdf/template.ts):katexDir 无效时 readFileSync 抛错 → catch 返回 ""
+  // 依据(dist/core/pdf/katex-css.ts):katexDir 无效时 readFileSync 抛错 → catch 返回 ""
   // 并经 warnings 通道上报 warn.katexCssLoadFailed(失败可见性,此前静默)。
   // renderPdfHtml 不抛错;公式仍渲染为 KaTeX HTML(仅缺字体样式)。
   const badKatexWarnings = [];
@@ -92,7 +92,7 @@ export async function run() {
   console.log("[ok] PDF 公式:loadKatexCss 读取失败返回空串 + warnings 上报(KaTeX 样式加载失败),断言通过");
 
   // ---------- loadKatexCss 依赖注入(read 默认 node:fs,注入后不落盘) ----------
-  // 依据(src/core/pdf/template.ts):读取经 deps.read 注入,默认 readFileSync;
+  // 依据(src/core/pdf/katex-css.ts):读取经 deps.read 注入,默认 readFileSync;
   // 注入自定义 read 时即使 katexDir 不存在也产出注入内容(证明未触碰真实文件系统)。
   const injectedCss = loadKatexCss(path.join(FIXTURES_DIR, "no-such-katex"), [], {
     read: () => "/*injected*/.katex { color: red; }",

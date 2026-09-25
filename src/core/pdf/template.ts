@@ -1,20 +1,13 @@
 /**
- * PDF 模板集:页眉页脚模板、文档模板 CSS、KaTeX CSS 加载、完整 HTML 模板、封面 HTML。
+ * PDF 模板集:页眉页脚 chrome 模板、完整 HTML 组装、封面 HTML、样式注入防护。
+ * 职责三分(D3):文档模板 CSS 在 template-css.ts、KaTeX CSS 加载在 katex-css.ts,
+ * 本文件只管模板结构与安全(TEMPLATE_CSP / sanitizeStyleCss);
  * escapeHtml/decodeEntities 已集中 src/core/util/utils.ts,消费者直连该模块。
  */
-import path from "node:path";
-import { readFileSync } from "node:fs";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
-import {
-  headingFontSizePt,
-  headingSpacingPt,
-  type TypographySettings,
-} from "../settings/typography.js";
-import type { PageSetup, HeaderFooterSettings, WatermarkSettings } from "../settings/settings-defaults.js";
-import type { ConvertWarning } from "../i18n.js";
+import type { HeaderFooterSettings, WatermarkSettings } from "../settings/settings-defaults.js";
 import { escapeHtml } from "../util/utils.js";
 import { WATERMARK_GRAY, WATERMARK_INK } from "../style/colors.js";
-import { buildHljsCss } from "../style/hljs-palette.js";
 import { mimeFromBuffer } from "../image/image-type.js";
 import type { HeaderLogoData } from "../docx/chrome.js";
 
@@ -25,9 +18,9 @@ export const PDF_FOOTER_TEMPLATE =
 
 /**
   * 空 chrome 模板:displayHeaderFooter 常开(页脚机制依赖),无页眉/无页脚时
- * 以空 span 占位——与既有 headerTemplate:"<span></span>" 同构,不破坏现有
+  * 以空 span 占位——与既有 headerTemplate:"<span></span>" 同构,不破坏现有
   * margins=0 + @page 边距机制(RESEARCH.md 实测口径)。
- */
+  */
 export const PDF_EMPTY_CHROME_TEMPLATE = "<span></span>";
 
 /** 页眉 logo 显示高度(px,与 docx 侧 HEADER_LOGO_MAX_HEIGHT_PX 视觉对齐) */
@@ -35,13 +28,13 @@ const PDF_HEADER_LOGO_HEIGHT_PX = 20;
 
 /**
   * 自定义页眉模板(printToPDF headerTemplate 用):
- * - 仅 headerMode=custom 产出内容;default 维持现状(无页眉)、none 空模板
- * - Chromium header/footer 模板限制:内联样式 + 显式 font-size,禁止外部资源——
- *   logo 经 base64 data URI 内嵌(mimeFromBuffer 魔数判定,不可识别则省略 logo)
- * - 字号/灰度与 docx 侧对齐(7pt / #888888 = theme.MUTED_TEXT_GRAY)
- * - leftRight 布局用 float(模板渲染上下文对 flex 支持不稳,float 为保守选择):
- *   logo 左 + 文字右;无 logo 时文字靠左
- */
+  * - 仅 headerMode=custom 产出内容;default 维持现状(无页眉)、none 空模板
+  * - Chromium header/footer 模板限制:内联样式 + 显式 font-size,禁止外部资源——
+  *   logo 经 base64 data URI 内嵌(mimeFromBuffer 魔数判定,不可识别则省略 logo)
+  * - 字号/灰度与 docx 侧对齐(7pt / #888888 = theme.MUTED_TEXT_GRAY)
+  * - leftRight 布局用 float(模板渲染上下文对 flex 支持不稳,float 为保守选择):
+  *   logo 左 + 文字右;无 logo 时文字靠左
+  */
 export function buildPdfHeaderTemplate(
   headerFooter: HeaderFooterSettings,
   headerLogo?: HeaderLogoData,
@@ -77,248 +70,11 @@ export function buildPdfHeaderTemplate(
 }
 
 /**
-  * h1-h6 规则生成:字号/段前段后间距由 headingScale/headingSpacing 档位经
- * core/settings/typography.ts 纯函数换算(与 docx 侧同源,双格式观感对齐);
- * 装饰性样式固定:h1/h2 下边线 + padding-bottom,h5/h6 弱化灰。
- */
-function buildHeadingRules(typography: TypographySettings): string {
-  const rules: string[] = [];
-  for (let level = 1; level <= 6; level++) {
-    const size = headingFontSizePt(typography.bodySizePt, typography.headingScale, level);
-    const spacing = headingSpacingPt(typography.headingSpacing, level);
-    const border =
-      level === 1
-        ? " border-bottom: 2px solid #d0d7de; padding-bottom: 8px;"
-        : level === 2
-          ? " border-bottom: 1px solid #d0d7de; padding-bottom: 6px;"
-          : "";
-    const color = level >= 5 ? " color: #57606a;" : "";
-    rules.push(
-      `  h${level} { font-size: ${size}pt; margin: ${spacing.before}pt 0 ${spacing.after}pt;${border}${color} }`,
-    );
-  }
-  return rules.join("\n");
-}
-
-/** 转换矩阵与 docx 路线对齐的文档模板样式(分页、中文字体、代码高亮、表格、跨页避让)。
- *  @page 尺寸/边距由 pageSetup 生成(margin 顺序 top right bottom left);
- *  breakBeforeH1 为 true 时追加一级标题前分页规则;
- *  typography 参数化 body 字体/字号/行距,并追加首行缩进/两端对齐规则;
- *  headingNumbering 为 true 时追加章节编号规则(与 docx 侧 decimal 编号语义一致)。
- *  注意:编号经 ::before 伪元素渲染,不进入 HTML 文本节点,
- *  故 extractHeadings/书签/目录文本不受影响(与 docx 侧书签不含编号一致)。 */
-export function buildTemplateCss(
-  pageSetup: PageSetup,
-  breakBeforeH1: boolean,
-  typography: TypographySettings,
-  headingNumbering: boolean,
-  captionNumbering: boolean,
-  hasH1: boolean,
-): string {
-  const size = pageSetup.paper + (pageSetup.orientation === "landscape" ? " landscape" : "");
-  const { marginTop, marginRight, marginBottom, marginLeft } = pageSetup;
-  return `
-  @page { size: ${size}; margin: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm; }
-  .page-break { break-before: page; height: 0; }
-  /* 分页符后紧跟的 h1 不再强制分页:breakBeforeH1 下两个相邻 break-before 叠加,
-     Chromium printToPDF 会产生 1 个空白页(实测确认,相邻分页符不合并);
-     breakBeforeH1 关闭时 h1 无 break-before,本规则无副作用,故无条件加 */
-  .page-break + h1 { break-before: auto; }
-  * { box-sizing: border-box; }
-
-  /* 基础排版:行高兼顾中英混排(排版设置参数化);orphans/widows 保证跨页段落不零碎。
-     字体/字号/行距由排版设置参数化(中文为主 + 西文衬底) */
-  body {
-    font-family: "${typography.fontEastAsia}", "${typography.fontAscii}", sans-serif;
-    font-size: ${typography.bodySizePt}pt; line-height: ${typography.lineSpacing}; color: #1f2328; margin: 0;
-    orphans: 2; widows: 2;
-  }
-
-  /* 标题节奏:字号/段前段后间距由 headingScale/headingSpacing
-     档位参数化,与 docx 侧同源换算(core/settings/typography.ts 纯函数,standard 档
-     = 升级前固定值);h1/h2 下边线锚定章节,3-6 级靠字号与间距区分;
-     标题行高收紧,且不与后续内容分离(break-after: avoid,避免孤立标题) */
-  h1, h2, h3, h4, h5, h6 { line-height: 1.3; break-after: avoid; }
-${buildHeadingRules(typography)}
-  body > :first-child { margin-top: 0; } /* 文档首元素不产生多余顶距 */
-
-  /* 封面页:居中大标题 + 灰色作者/日期,顶部留白视觉居中 */
-  .cover { text-align: center; padding-top: 80mm; }
-  .cover-title { font-size: 28pt; font-weight: 700; margin: 0 0 20px; }
-  .cover-meta { font-size: 12pt; color: #888; }
-
-  /* 目录页:无页码,条目为页内锚点链接(printToPDF 保留为可点击链接);
-     层级靠左缩进区分,链接沿用正文颜色(继承而非蓝色) */
-  .toc-title { font-size: 18pt; font-weight: 700; margin-bottom: 16px; }
-  .toc ul { list-style: none; padding: 0; margin: 0; }
-  .toc-l1 { margin: 6px 0; }
-  .toc-l2 { margin-left: 1.5em; }
-  .toc-l3 { margin-left: 3em; }
-  .toc a { color: inherit; text-decoration: none; }
-  /* 目录页码:条目与页码两端对齐 + 点线引导,页码右置灰色 */
-  .toc li { display: flex; align-items: baseline; }
-  .toc li a { flex: 1 1 auto; display: flex; align-items: baseline; color: inherit; text-decoration: none; }
-  .toc li a::after { content: ""; flex: 1 1 auto; border-bottom: 1px dotted #c8c8c8; margin: 0 .4em .35em; min-width: 1.5em; }
-  .toc-page { flex: 0 0 auto; color: #888; margin-left: .3em; }
-
-  p { margin: 0 0 10px; }
-  a { color: #0969da; text-decoration: none; }
-  hr { border: none; border-top: 1px solid #d0d7de; margin: 18px 0; }
-
-  /* 行内代码与代码块 */
-  code {
-    font-family: Consolas, "Cascadia Mono", monospace;
-    font-size: 0.9em; background: #f6f8fa; padding: 2px 5px; border-radius: 4px;
-    overflow-wrap: break-word; /* 长行内代码换行而非溢出页边 */
-  }
-  pre.hljs {
-    background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px;
-    padding: 12px 14px; overflow: hidden; break-inside: avoid;
-  }
-  pre.hljs code {
-    background: none; padding: 0; font-size: 9.5pt; line-height: 1.5;
-    white-space: pre-wrap; word-break: break-word; /* 长代码行折行,避免打印裁切 */
-  }
-
-  /* 引用块:末段收敛间距;整块避免跨页 */
-  blockquote {
-    margin: 0 0 10px; padding: 2px 14px; color: #57606a;
-    border-left: 4px solid #d0d7de; break-inside: avoid;
-  }
-  blockquote > :last-child { margin-bottom: 0; }
-
-  /* 表格:表头底色 + 斑马纹;行内不跨页,长表格按行断开 */
-  table {
-    border-collapse: collapse; width: 100%; margin: 0 0 12px;
-    font-size: 10pt; break-inside: avoid;
-  }
-  th, td { border: 1px solid #d0d7de; padding: 6px 10px; text-align: left; vertical-align: top; }
-  th { background: #f0f3f6; font-weight: 600; }
-  tr:nth-child(even) td { background: #f8f9fa; }
-  tr { break-inside: avoid; }
-
-  img { max-width: 100%; break-inside: avoid; }
-  /* 独立成段图片(figure 语义):居中渲染,首行缩进/两端对齐不适用;
-     紧随的 .fig-caption 题注保持在图下方(编号机制不变) */
-  p.fig-image { text-align: center; text-indent: 0; }
-  ul, ol { margin: 0 0 10px; padding-left: 26px; }
-  li { margin: 2px 0; }
-  li > p { margin: 0 0 4px; } /* 宽松列表项内的段落收紧,避免空洞 */
-  li > p:last-child { margin-bottom: 0; }
-  li.task-list-item { list-style: none; margin-left: -18px; }
-  li.task-list-item::before { content: ""; }
-  /* 脚注区:缩小字号与正文区分(Chromium 不支持 float: footnote,
-     脚注按文档流集中在内容末尾渲染,为 HTML→PDF 固有行为) */
-  .footnotes { font-size: 9pt; }
-  hr.footnotes-sep { border: none; border-top: 1px solid #d0d7de; margin: 16px 0 8px; }
-  ol.footnotes-list { padding-left: 22px; }
-  li.footnote-item { break-inside: avoid; }
-  sup.footnote-ref a { text-decoration: none; color: inherit; }
-  a.footnote-backref { text-decoration: none; margin-left: 2px; }
-  del { color: #8c959f; }
-
-  /* 代码高亮(GitHub Light 色板;printBackground 打印背景)。
-     色板与选择器组由 core/style/hljs-palette.ts 单源生成(与 docx 逐 token 着色同源) */
-${buildHljsCss()}
-${breakBeforeH1 ? `
-  /* 一级标题前分页(breakBeforeH1);文档首元素为 h1 时避免空白首页 */
-  h1 { break-before: page; }
-  body > h1:first-child { break-before: auto; }` : ""}
-${headingNumbering ? (
-  hasH1 ? `
-  /* 章节编号:与 docx 标题编号语义一致(1 / 1.1 / 1.1.1) */
-  body { counter-reset: h1c h2c h3c; }
-  h1 { counter-increment: h1c; counter-reset: h2c h3c; }
-  h2 { counter-increment: h2c; counter-reset: h3c; }
-  h3 { counter-increment: h3c; }
-  h1::before { content: counter(h1c) " "; }
-  h2::before { content: counter(h1c) "." counter(h2c) " "; }
-  h3::before { content: counter(h1c) "." counter(h2c) "." counter(h3c) " "; }` : `
-  /* 章节编号(无 h1 文档,统一 Word 口径):跳过前导零级,
-     h2 从「1」起(::before 省略 h1c 前缀),与 xref_recognize 登记的引用
-     编号文本(heading-numbering.ts 共享纯函数)一致。已知罕见边界:无 h1 且
-     首个标题前无 h2 的 h3,CSS 显示「0.1」而引用文本为「1」——CSS counter
-     无法按计数器取值条件省略中间零级,验收已声明接受。 */
-  body { counter-reset: h2c h3c; }
-  h2 { counter-increment: h2c; counter-reset: h3c; }
-  h3 { counter-increment: h3c; }
-  h2::before { content: counter(h2c) " "; }
-  h3::before { content: counter(h2c) "." counter(h3c) " "; }`) : ""}
-${captionNumbering ? `
-  /* 题注编号:图/表题注居中小一号,编号经 ::before 伪元素(不进文本节点,
-     书签/目录不受影响);章节号 = 最近 h1,图/表序在 h1 处重置(与 docx 侧
-     SEQ \\s 1 语义一致)。文档无 h1 时退化为纯序数(全文档连续,与 docx 对齐) */
-  .fig-caption, .tab-caption { text-align: center; font-size: 10pt; margin: 4px 0 12px; break-inside: avoid; }
-  /* 图/表序自增(遗留修复:此前缺 counter-increment,序数恒为 0,
-     所有题注显示「图 N.0」;编号文本与 xref_recognize 登记同源,勿漂移) */
-  .fig-caption { counter-increment: figc; }
-  .tab-caption { counter-increment: tabc; }
-${headingNumbering && hasH1 ? `
-  body { counter-reset: h1c h2c h3c figc tabc; }
-  h1 { counter-reset: h2c h3c figc tabc; }
-  .fig-caption::before { content: "图 " counter(h1c) "." counter(figc) " "; }
-  .tab-caption::before { content: "表 " counter(h1c) "." counter(tabc) " "; }` : `
-  body { counter-reset: figc tabc; }
-  .fig-caption::before { content: "图 " counter(figc) " "; }
-  .tab-caption::before { content: "表 " counter(tabc) " "; }`}
-` : ""}
-${typography.firstLineIndent ? `
-  /* 首行缩进 2 字符(排版设置;中文排版惯例,与 docx 侧 firstLineChars=200 语义一致) */
-  p { text-indent: 2em; }` : ""}
-${typography.align === "justify" ? `
-  /* 正文两端对齐(排版设置) */
-  p { text-align: justify; }` : ""}
-  /* 公式块:display 公式居中,编号右缘垂直居中(编号绝对定位,
-     KaTeX display 外边距归零避免与公式块外边距双重叠加) */
-  .eq-block { position: relative; text-align: center; margin: 1em 0; }
-  .eq-block .katex-display { margin: 0; }
-  .eq-num { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
-`;
-}
-
-/** KaTeX CSS 读取依赖(注入点:默认 node:fs.readFileSync,便于测试与无盘环境复用) */
-export interface KatexCssDeps {
-  read?: (file: string, encoding: "utf8") => string;
-}
-
-/** KaTeX CSS 内联:读 katex.min.css,把相对字体引用改写为 file:// 绝对路径
- *  (katex.min.css 用 url(fonts/X.woff2),fonts 与 css 必须同级,file:// 下相对
- *  路径按 html 文件位置解析会失败,须绝对化),并追加打印/超宽保护规则。
- *  读取失败返回空串(公式仍渲染为 KaTeX HTML,仅缺字体样式,不抛错);
-  * 传入 warnings 时经 keyed 警告通道上报失败原因(warn.katexCssLoadFailed)。
- *  文件读取经 deps 注入(默认 readFileSync),core 不硬依赖 node:fs。 */
-export function loadKatexCss(
-  katexDir: string,
-  warnings?: ConvertWarning[],
-  deps: KatexCssDeps = {},
-): string {
-  const read = deps.read ?? readFileSync;
-  try {
-    const fontsBase = path.join(katexDir, "fonts").replace(/\\/g, "/");
-    const css = read(path.join(katexDir, "katex.min.css"), "utf8");
-    return (
-      css.replace(/url\(fonts\//g, `url(file://${fontsBase}/`) +
-      "\n/* 打印色彩保真 + 超宽公式保护(KaTeX 超宽溢出固有,保守处理) */\n" +
-      "body { print-color-adjust: exact; }\n" +
-      ".katex-display { max-width: 100%; overflow-x: auto; }\n"
-    );
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    warnings?.push({
-      key: "warn.katexCssLoadFailed",
-      params: { error: reason },
-      fallback: `KaTeX 样式加载失败,公式字体样式缺失: ${reason}`,
-    });
-    return "";
-  }
-}
-
-/**
   * 预览/打印 HTML 的 CSP(安全审计):该 HTML 由用户 markdown 渲染而来,
- * 经 loadFile(file://) 加载进预览/打印窗口,须收紧资源来源——
- * 样式全部内联(<style>),图片为 file://(本地)与 data:(外链内嵌),
- * KaTeX 字体为 CSS 内 file:// 引用;脚本零需求 → default-src 'none' 兜底拦截。
- */
+  * 经 loadFile(file://) 加载进预览/打印窗口,须收紧资源来源——
+  * 样式全部内联(<style>),图片为 file://(本地)与 data:(外链内嵌),
+  * KaTeX 字体为 CSS 内 file:// 引用;脚本零需求 → default-src 'none' 兜底拦截。
+  */
 export const TEMPLATE_CSP =
   "default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file:";
 
@@ -333,9 +89,9 @@ export function sanitizeStyleCss(css: string): string {
 
 /**
   * 文字水印 CSS + 覆盖层:固定定位居中、旋转、半透明,置于正文之下
- * (z-index:-1,正文无背景故水印隐于文字之后);printToPDF 下 fixed 元素在每页
- * 重复渲染,实现整本文档水印。text 空串 → 返回空串(零渲染)。
- */
+  * (z-index:-1,正文无背景故水印隐于文字之后);printToPDF 下 fixed 元素在每页
+  * 重复渲染,实现整本文档水印。text 空串 → 返回空串(零渲染)。
+  */
 function buildWatermarkCss(watermark: WatermarkSettings | undefined): string {
   if (!watermark || !watermark.text.trim()) return "";
   const color = `#${watermark.gray ? WATERMARK_GRAY : WATERMARK_INK}`;
@@ -400,4 +156,3 @@ export function buildCoverHtml(metadata: DocMetadata | undefined): string {
     '<div class="page-break"></div>'
   );
 }
-

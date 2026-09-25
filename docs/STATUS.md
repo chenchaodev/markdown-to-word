@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 D3 完成(`core/pdf/template.ts` 403 行职责拆分)**:拆为三文件——`template.ts`(158 行,模板结构与安全:页眉页脚 chrome/HTML 组装/TEMPLATE_CSP/sanitizeStyleCss/封面)、`template-css.ts`(213 行,文档模板 CSS 纯函数生成)、`katex-css.ts`(44 行,KaTeX CSS 加载,core 唯一 fs 注入点随之归位);消费点同步(render.ts 三 import 分流、formula/page-setup 段注释与 import 路径)、DEV-GUIDE 零 IO 口径 `pdf/template.ts`→`pdf/katex-css.ts` 与 pdf/ 代码地图更新;typecheck/lint/build/70 段/smoke 全绿
+
 - 2026-09-25:**技术债 D4/C5 完成(跨进程契约类型归位 core + convert.ts 双入口收口)**:新建 `core/ipc-contract.ts` 单源承载全部跨进程契约(ConvertProgressPayload/ConvertMode、BatchItem/BatchProgressInfo/BatchResult、UiState/PanelOpen/WindowBounds/RecentFile),main 侧(channels/persist/converter)与 renderer 侧共同 import 同一契约,renderer→main type-only 反向依赖清零——仅剩 `renderer.ts` 的 `type PreloadApi`,属 preload「实现即契约」推导设计(评审 P1 未列入迁移范围,维持不动并声明);C5 并入:`core/convert.ts` 的 DEFAULT_*/ConvertFormat re-export 双入口删除,7 处消费点(6 main + 1 测试)直连 settings-defaults;RESEARCH 2026-08-24 条目补处置行(P1/P2/口径冲突关闭)、候选池 E1 状态回写、ROADMAP 已知限制关闭、DEV-GUIDE 代码地图增列;typecheck/lint/build/70 段/smoke 全绿
 
 - 2026-09-25:**技术债 D6 完成(打开对话框样板收口 + compareVersions 单源化)**:抽 `selectAndRememberDir` 助手,四处 handler(fileOpenDialog/dirSelect/headerLogoSelect/templateImportDocx)的「开对话框→默认目录回落→记忆所选」三连样板收口;**行为等价偏离声明**:模板导入的目录记忆时机由「处理成功后」提前为「选择成功即记忆」(读取失败也记住刚浏览的位置),importFileViaDialog 维持原有「处理失败跳过记忆」语义;`compareVersions` 自 register.ts 下沉 `ipc/logic.ts` 纯逻辑层,`about-update` 段的内联同逻辑副本删除、改直测 dist 真实实现(双源清零)并按镜像口径归位 `test/main/`(段分布 47+19+4);typecheck/lint/70 段/smoke 全绿

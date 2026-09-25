@@ -47,7 +47,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 > ⚠️ **测试对象是 dist 非 src**:验收/smoke 跑的是 `dist/` 编译产物。绕过 npm 直接 `electron test/acceptance.mjs` 会静默测旧产物无任何提示——改动后务必经 `npm run build` 或 `npm run test`(自带 build)。
 
 ## 架构(设计决策,勿随意偏离)
-- 分层:转换核心 `src/core/` 纯逻辑、常态零 IO 可测试(fs 访问仅 `precheck.ts` 的 exists 与 `pdf/template.ts` 的 read 两处,均依赖注入、默认 `node:fs`,可整体替换);GUI 主进程 `src/main/`;UI `src/renderer/`(vanilla TS + 原生 DOM,不引前端框架);依赖方向单向 core←main←renderer 不反向
+- 分层:转换核心 `src/core/` 纯逻辑、常态零 IO 可测试(fs 访问仅 `precheck.ts` 的 exists 与 `pdf/katex-css.ts` 的 read 两处,均依赖注入、默认 `node:fs`,可整体替换);GUI 主进程 `src/main/`;UI `src/renderer/`(vanilla TS + 原生 DOM,不引前端框架);依赖方向单向 core←main←renderer 不反向
 - **转换在主进程执行**(docx 库为 Node 原生;printToPDF 走系统字体,中文零配置);renderer 经 IPC 触发
 - IPC:channel 名单源 `main/ipc/channels.ts`;`contextIsolation` + preload 白名单 + 进度 `webContents.send` 推送;拖放取路径用 `webUtils.getPathForFile`(File.path 已移除)
 - 未来扩展格式只需在 convert.ts 注册表登记 renderer
@@ -65,7 +65,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `util/`:`encoding.ts`(编码预检)/`mdast-utils.ts`/`utils.ts`
   - `i18n.ts` + `i18n/`:逻辑层(t() 插值/applyStaticTexts/KeyedWarning)+ 字典注册表(`zh.ts` 键集唯一事实源 / `en.ts` 全量 satisfies / 其余语言 Partial 回退链 当前语言→en→key;Language 类型从注册表派生)
   - `docx/`:`render.ts`(编排器 ~256 行)/`theme.ts`(字体集中配置,eastAsia 勿散落硬编码)/`ctx.ts`(渲染上下文,选项构造时解析默认)/`prescan.ts`/`chrome.ts`(封面/目录/页眉页脚)/`numbering.ts`(编号配置)/`handlers/`(13 个节点处理器:heading/table/captions/equations/code-block/code-highlight/image-run/link-xref/inline-html/fallback/content/math/bookmark)
-  - `pdf/`:`render.ts`(编排器)/`template.ts`(HTML 模板)/`postprocess.ts`/`metadata.ts`/`bookmarks.ts`(pdf-lib 书签注入)/`mermaid.ts`/`rules/`(markdown-it 规则覆盖:caption/equation/xref/html/image/heading-id/shared)
+  - `pdf/`:`render.ts`(编排器)/`template.ts`(HTML 组装+页眉页脚 chrome+CSP/sanitize 防护)/`template-css.ts`(文档模板 CSS 生成)/`katex-css.ts`(KaTeX CSS 加载,唯一 fs 注入点)/`postprocess.ts`/`metadata.ts`/`bookmarks.ts`(pdf-lib 书签注入)/`mermaid.ts`/`rules/`(markdown-it 规则覆盖:caption/equation/xref/html/image/heading-id/shared)
 - `src/main/`:Electron 主进程
   - `index.ts`:组合根(~74 行);`menu.ts`:应用菜单
   - `windows/`:`main-window.ts`/`preview.ts`(预览窗+尺寸记忆)/`web-contents-registry.ts`(ctxByWebContents 注册表,窗口层不反向依赖 IPC 层)
