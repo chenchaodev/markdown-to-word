@@ -6,7 +6,8 @@
 import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { CustomPreset } from "../../core/settings/settings-defaults.js";
-import type { RecentFile } from "../../core/ipc-contract.js";
+import type { OperationBusyResult, PrecheckResult, RecentFile } from "../../core/ipc-contract.js";
+import type { ConvertWarning, KeyedWarning } from "../../core/i18n.js";
 import { mergePresets, parsePresetsFile } from "../persist/settings.js";
 import type { ConvertContext } from "../converter/index.js";
 import { stripMarkdownExt } from "../converter/paths.js";
@@ -54,6 +55,68 @@ export interface BusyResult {
   ok: false;
   busy: true;
   error: string;
+}
+
+/**
+ * busy 结果单一构造点(形状单源):四个 convert 系 handler 的 onBusy 全走此处,
+ * 保证 busy 恒为 { ok:false, busy:true, error } 三键(多/少键都属契约漂移,
+ * renderer 依 busy===true 分流)。批量在其上并接计数字段(旧 renderer 兼容)。
+ */
+export function operationBusyResult(error: string): OperationBusyResult {
+  return { ok: false, busy: true, error };
+}
+
+/**
+ * 活动操作冲突判定(判定依据 busy===true,与 renderer 侧 convert-flow 的同名判定
+ * 一致;契约形状单源在 core/ipc-contract.OperationBusyResult,两侧各自持有一份
+ * 纯判定,不跨进程共享代码)。
+ */
+export function isOperationBusyResult(outcome: unknown): outcome is BusyResult {
+  return (
+    typeof outcome === "object" &&
+    outcome !== null &&
+    "busy" in outcome &&
+    (outcome as BusyResult).busy === true
+  );
+}
+
+/* ---------- 预检结果归一(异常不留空白) ----------
+ * 预检通道的返回契约是 PrecheckResult(警告数组 | 活动操作冲突),由 core/ipc-contract
+ * 单源定义;预检自身抛错(文件缺失/解码失败/读取异常)此前被折叠成空数组,用户与
+ * 日志都看不到失败发生过。此处不扩契约(新增联合分支须改 core 契约文件,两侧
+ * 同批回退),改以一条可观察的失败警告承载:renderer 走既有警告列表展示,
+ * 用户可继续转换或取消;缺字典条目时回退 fallback 原文。 */
+
+/** 预检失败警告(携带失败原因;renderer 按警告展示,不阻断主流程)。 */
+export function precheckFailedWarning(error: string): KeyedWarning {
+  return {
+    key: "warn.precheckFailed",
+    params: { error },
+    fallback: `预检失败,已跳过预检:${error}`,
+  };
+}
+
+/** runConvertTask 在预检通道的三种出口(警告数组 / busy / 归一错误)。 */
+export type PrecheckOutcome = ConvertWarning[] | BusyResult | { ok: false; error: string };
+
+/** 预检失败出口判定(非数组且非 busy 即为异常归一结果)。 */
+export function isPrecheckFailureOutcome(
+  outcome: PrecheckOutcome,
+): outcome is { ok: false; error: string } {
+  return !Array.isArray(outcome) && !isOperationBusyResult(outcome);
+}
+
+/**
+ * 预检结果归一(纯函数,可直测):
+ * - 警告数组 → 原样返回(成功语义不变)
+ * - 活动操作冲突 → 经 operationBusyResult 重建,形状稳定(renderer 走既有 busy 通道)
+ * - 异常归一 { ok:false, error } → 单条失败警告(可见且兼容 PrecheckResult)
+ * 取消出口(空数组)与既有语义一致,不在此改写。
+ */
+export function normalizePrecheckOutcome(outcome: PrecheckOutcome): PrecheckResult {
+  if (Array.isArray(outcome)) return [...outcome];
+  if (isOperationBusyResult(outcome)) return operationBusyResult(outcome.error);
+  return [precheckFailedWarning(outcome.error)];
 }
 
 export async function runConvertTask<T>(

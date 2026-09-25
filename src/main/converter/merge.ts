@@ -53,8 +53,9 @@ function commonBaseDir(dirs: string[]): string {
 
 /**
  * 合并转换:读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片相对公共 baseDir 重定位)→ 单次 convert。
- * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;执行 runAfterConvert(单输出,与单文件一致)。
- * 任一步失败直接抛(调用方 catch 为 { ok:false, error })。
+ * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;导出后行为由本函数触发一次
+ * (单输出,与单文件一致;批量调用方经 skipAfterConvert 让位),落盘后仍有最终取消检查。
+ * 任一步失败直接抛(调用方 catch 为 { ok:false, error };取消抛 ConvertCanceledError)。
  * 进度经 onProgress 上报(与单文件同构;pdf 细分
  * parse/inline/mermaid/katex/print,docx 保持 read/render/done)。
  */
@@ -126,7 +127,13 @@ export async function mergeConvertImpl(
     `${baseName}-合并`,
   );
   warnings.push(...outWarnings);
-  // 与 convertImpl 对齐尊重 skipAfterConvert(同抽象层行为一致)
-  if (!ctx.skipAfterConvert) await runAfterConvert(settings.afterConvert, outputPath);
+  // 副作用所有权:合并只有单个产物,由本函数触发一次(与单文件同构;批量调用方
+  // 经 skipAfterConvert 让位)。最终取消检查落在「产物已落盘 → 打开产物」的最后
+  // 窗口:此处取消(用户取消或关窗放弃)则抛 ConvertCanceledError,调用方回「已取消」,
+  // 绝不打开产物——与 convertImpl 的闸门位置对齐(勿只依赖落盘前的检查点)。
+  if (!ctx.skipAfterConvert) {
+    throwIfCanceled(ctx);
+    await runAfterConvert(settings.afterConvert, outputPath, ctx);
+  }
   return { ok: true, outputPath, warnings };
 }

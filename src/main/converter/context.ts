@@ -28,16 +28,20 @@ const resolverCache = new Map<string, ImageResolver>();
  * 转换调用上下文:取消标志随调用携带,根治全局可变状态(历史 bug fd40480/f809c57
  * 即全局标志跨调用残留导致误判取消)。每次新转换调用新建 context(cancelRequested
  * 初始 false),「取消后复位」语义天然成立;IPC 层经 ctxByWebContents 注册表
- * (windows/web-contents-registry.ts)接 convert:cancel。
+ * (windows/web-contents-registry.ts)接 convert:cancel——主窗「放弃转换并关闭」
+ * 走同一入口(cancelWebContentsOperation),故关窗中止与用户取消在转换层同构。
  * 原独立 ConvertOptions(仅 skipAfterConvert 一字段、批量调用处
  * undefined 占位)并入 ctx,签名 5 参 → 4 参,行为不变。
+ * 副作用所有权:导出后行为(runAfterConvert)由「本次转换的拥有者」触发——
+ * 单文件每次转换一次、合并每次合并一次、批量整批一次(逐文件置
+ * skipAfterConvert 让位,由 batchConvertImpl 收口),本字段即让位标记。
  */
 export interface ConvertContext {
   /** 已请求取消(检查点只读;取消经 cancel() 置位) */
   cancelRequested: boolean;
-  /** 请求取消(convert:cancel 经 ctxByWebContents 注册表定位 ctx 后调用) */
+  /** 请求取消(convert:cancel / 关窗放弃经 ctxByWebContents 注册表定位 ctx 后调用) */
   cancel(): void;
-  /** 跳过 runAfterConvert(批量模式避免逐个打开 N 个文件;当前批量调用未置位) */
+  /** 让位:本次转换不触发导出后行为(批量逐文件调用置位,批次末尾由 batchConvertImpl 统一触发一次) */
   skipAfterConvert?: boolean;
 }
 

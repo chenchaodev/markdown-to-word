@@ -1,7 +1,8 @@
 /**
  * 主窗口创建与关闭确认族:
  * createWindow(位置/最大化记忆 + web 加固 + 关闭确认拦截)与
- * confirmCloseDuringConvert(转换进行中关窗确认)。
+ * confirmCloseDuringConvert(转换进行中关窗确认;确认/取消/等待释放/超时强杀
+ * 的判定收口在 runCloseAbortFlow,Electron 触点经依赖注入,判定可直测)。
  * win32 走 titleBarStyle:hidden + titleBarOverlay 无边框自绘标题栏
  * (overlay 配色单源 windows/title-bar-overlay.ts,主题同步经 IPC theme:syncOverlay)。
  * 依赖方向:本模块 → windows/web-contents-registry(共享活动操作注册表,查询
@@ -24,7 +25,7 @@ import {
 import { hardenWebContents } from "../services/web-hardening.js";
 import {
   cancelWebContentsOperation,
-  getWebContentsOperation,
+  hasWebContentsOperation,
 } from "./web-contents-registry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -123,7 +124,7 @@ export function createWindow(): BrowserWindow {
   // 转换进行中先拦截确认(直接销毁会令 send 抛 "Object has been destroyed",
   // 且 fs.writeFile 后中断可能留下半成品输出文件)
   win.on("close", (event) => {
-    if (getWebContentsOperation(win.webContents.id) !== undefined && !closeAborts.has(win)) {
+    if (hasWebContentsOperation(win.webContents.id) && !closeAborts.has(win)) {
       event.preventDefault();
       void confirmCloseDuringConvert(win);
       return;
@@ -150,29 +151,106 @@ const CLOSE_ABORT_TIMEOUT_MS = 30_000;
 const CLOSE_ABORT_POLL_MS = 100;
 
 /**
- * 关窗时转换进行中的确认弹窗。
+ * 关窗放弃流程的可观察结局(判定单一来源,close handler 与直测共用):
+ * - keep:用户选择继续转换,不动作(窗口保留)
+ * - destroyed:流程期间窗口已销毁,不动作
+ * - idle:确认放弃时已无活动操作,直接关闭(无需 cancel/等待)
+ * - closed:活动操作已释放,正常关闭
+ * - forced:超时仍未释放,强杀窗口(兜底防卡死)
+ */
+export type CloseAbortOutcome = "keep" | "destroyed" | "idle" | "closed" | "forced";
+
+/** 关窗放弃流程依赖(Electron 触点经此注入,流程本身零 Electron 运行时依赖可直测)。 */
+export interface CloseAbortDeps {
+  /** 关闭确认:用户是否选择「放弃并关闭」 */
+  confirm(): Promise<boolean>;
+  isDestroyed(): boolean;
+  /** 同一 webContents 当前是否仍有活动操作(转换/预检/批量/合并共用注册表) */
+  hasOperation(): boolean;
+  /** 请求取消当前活动操作(无活动操作为空操作) */
+  cancelOperation(): void;
+  now(): number;
+  delay(ms: number): Promise<void>;
+  close(): void;
+  destroy(): void;
+}
+
+/** 轮询与超时参数(调用方注入真实常量,测试可压缩时间轴)。 */
+export interface CloseAbortTiming {
+  pollMs: number;
+  timeoutMs: number;
+}
+
+/**
+ * 关窗放弃流程编排(纯判定 + 依赖注入):
+ * 确认放弃 → cancel 当前活动操作 → 轮询等待注册表释放(任务 finally 的
+ * compare-and-delete)→ 释放则正常 close,超时兜底 destroy。
+ * 轮询期间若旧操作已释放但同一 webContents 又出现新操作,继续等待新操作,
+ * 避免在转换进行中销毁窗口(旧 token 的 finally 也不会误删新操作 context)。
+ */
+export async function runCloseAbortFlow(
+  deps: CloseAbortDeps,
+  timing: CloseAbortTiming,
+): Promise<CloseAbortOutcome> {
+  if (deps.isDestroyed()) return "destroyed";
+  if (!(await deps.confirm())) return "keep";
+  if (deps.isDestroyed()) return "destroyed";
+  if (!deps.hasOperation()) {
+    deps.close();
+    return "idle";
+  }
+  deps.cancelOperation();
+  const deadline = deps.now() + timing.timeoutMs;
+  while (deps.hasOperation() && !deps.isDestroyed() && deps.now() < deadline) {
+    await deps.delay(timing.pollMs);
+  }
+  if (deps.isDestroyed()) return "destroyed";
+  if (deps.hasOperation()) {
+    deps.destroy();
+    return "forced";
+  }
+  deps.close();
+  return "closed";
+}
+
+/**
+ * 关窗时转换进行中的确认弹窗(Electron 薄壳:对话框/窗口/注册表/计时经
+ * deps 注入 runCloseAbortFlow,关闭与超时判定见该函数)。
  * 「继续转换」→ 不动作(窗口保留);「放弃并关闭」→ cancel 转换并等 finally
  * 释放 ctx(取消检查点在打印/写盘前后均有),正常路径重新 close;超时兜底 destroy。
+ * closeAborts 放行标记只在「放弃并关闭」落地时登记:keep 分支若登记,
+ * 下一次关闭将绕过确认在转换进行中直接关窗。
  */
-async function confirmCloseDuringConvert(win: BrowserWindow): Promise<void> {
-  if (win.isDestroyed()) return;
-  const choice = await dialog.showMessageBox(win, {
-    type: "warning",
-    title: t("close.confirmTitle"),
-    message: t("close.confirmMessage"),
-    buttons: [t("close.keepConverting"), t("close.abortAndClose")],
-    defaultId: 0,
-    cancelId: 0,
-  });
-  if (choice.response !== 1 || win.isDestroyed()) return;
-  closeAborts.add(win);
+export async function confirmCloseDuringConvert(win: BrowserWindow): Promise<void> {
   const id = win.webContents.id;
-  cancelWebContentsOperation(id);
-  const deadline = Date.now() + CLOSE_ABORT_TIMEOUT_MS;
-  while (getWebContentsOperation(id) !== undefined && Date.now() < deadline && !win.isDestroyed()) {
-    await new Promise((resolve) => setTimeout(resolve, CLOSE_ABORT_POLL_MS));
+  const outcome = await runCloseAbortFlow(
+    {
+      confirm: async () => {
+        const choice = await dialog.showMessageBox(win, {
+          type: "warning",
+          title: t("close.confirmTitle"),
+          message: t("close.confirmMessage"),
+          buttons: [t("close.keepConverting"), t("close.abortAndClose")],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        if (choice.response !== 1) return false;
+        closeAborts.add(win);
+        return true;
+      },
+      isDestroyed: () => win.isDestroyed(),
+      hasOperation: () => hasWebContentsOperation(id),
+      cancelOperation: () => {
+        cancelWebContentsOperation(id);
+      },
+      now: () => Date.now(),
+      delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      close: () => win.close(),
+      destroy: () => win.destroy(),
+    },
+    { pollMs: CLOSE_ABORT_POLL_MS, timeoutMs: CLOSE_ABORT_TIMEOUT_MS },
+  );
+  if (outcome === "forced") {
+    console.warn("[main] 放弃转换后等待活动操作释放超时,强制关闭窗口");
   }
-  if (win.isDestroyed()) return;
-  if (getWebContentsOperation(id) !== undefined) win.destroy();
-  else win.close();
 }

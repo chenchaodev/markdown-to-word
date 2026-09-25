@@ -11,7 +11,9 @@
  */
 import { state } from "../state/state.js";
 import { dropZone } from "../dom/refs.js";
+import { setError } from "../state/utils.js";
 import { openBookWizard } from "../wizard/book-wizard.js";
+import { t } from "../../core/i18n.js";
 
 let guideEl: HTMLElement | null = null;
 
@@ -67,7 +69,10 @@ function dismissGuide(): void {
   state.firstRun = false;
   guideEl?.classList.add("hidden");
   dropZone.classList.remove("show-guide");
-  void window.api.uiStateSet({ firstRun: false }).catch(() => {
-    /* 忽略:持久化失败不阻塞主流程 */
+  void window.api.uiStateSet({ firstRun: false }).catch((err: unknown) => {
+    // 收起与内存态照旧生效(本次会话不再打扰),但下次启动引导会回来:
+    // 写盘失败必须可见,否则用户以为"跳过"已生效。
+    console.error("[first-run] 引导跳过状态写盘失败(下次启动可能重现引导)", err);
+    setError(t("preset.saveFailed"));
   });
 }

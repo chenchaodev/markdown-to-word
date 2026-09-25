@@ -2,6 +2,9 @@
  * UI 状态持久化测试(src/main/persist/ui-state.ts 纯逻辑层;测试经 dist/main/persist/ui-state.js):
  * 策略——备份真实 ui-state.json,finally 恢复;每场景用 query-string 动态 import 取全新模块实例。
  * 校验宽松:字段非法/缺失 → 该字段默认值,不影响其它字段。
+ * 并发与重启:mutation queue 内读改写(不同顶层字段并发 patch 不丢)+ 全新实例
+ * 读盘复核(最近文件/会话文件/窗口状态并发字段全部保留);写失败不更新缓存、
+ * 错误上抛、队列不截断(恢复后重启读盘一致)。
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -27,6 +30,10 @@ export async function run() {
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const mod = await freshModule();
+    // 段内基线复位:同进程内其它段(如 operation-single-flight 经真实 IPC 写
+    // 最近文件)会先落到同一 userData/ui-state.json,本段以 DEFAULT_UI_STATE
+    // 作为已知起点,消除跨段顺序依赖;收尾 finally 仍恢复原文件内容。
+    await fs.writeFile(uiFile, JSON.stringify(mod.DEFAULT_UI_STATE), "utf8");
 
     // ---- 1. 原子写往返:saveUiState 落盘 → 全新实例 loadUiState 逐字段一致,无 .tmp 残留 ----
     const patch = {
@@ -40,7 +47,10 @@ export async function run() {
       panelOpen: { page: false, typography: true },
     };
     const saved = await mod.saveUiState(patch);
-    assert(saved.recentFiles.length === 2 && saved.lastOpenDir === "C:\\docs", "saveUiState 返回值异常");
+    assert(
+      saved.recentFiles.length === 2 && saved.lastOpenDir === "C:\\docs",
+      `saveUiState 返回值异常:${JSON.stringify(saved)}`,
+    );
     assert(saved.windowBounds?.width === 900 && saved.panelOpen.page === false, "saveUiState 返回值异常(嵌套字段)");
     const m2 = await freshModule();
     const loaded = m2.loadUiState();
@@ -271,6 +281,36 @@ export async function run() {
     );
     console.log("[ok] ui-state:mutation queue(不同顶层字段并发 patch 不丢)");
 
+    // ---- 10b. 重启后并发字段全部保留:最近文件 / 会话文件 / 窗口状态同批并发 ----
+    // 模拟重启 = 全新模块实例读 ui-state.json;renderer 的「转换成功追加最近文件」
+    // 与「列表变化写会话文件」「窗口关闭写 bounds」天然并发,任一丢更新都在此暴露。
+    const m21 = await freshModule();
+    const sessionA = ["C:\\work\\a.md", "C:\\work\\b.md"];
+    await Promise.all([
+      m21.saveUiState({ recentFiles: [{ path: "C:\\work\\a.md", name: "a.md", format: "docx", ts: 10 }] }),
+      m21.saveUiState({ lastSessionFiles: sessionA }),
+      m21.saveUiState({ windowBounds: { x: 20, y: 30, width: 1024, height: 768 }, isMaximized: true }),
+    ]);
+    const m22 = await freshModule();
+    const restarted = m22.loadUiState();
+    assert(
+      restarted.recentFiles.length === 1 && restarted.recentFiles[0].path === "C:\\work\\a.md",
+      `重启后最近文件应保留,实际 ${JSON.stringify(restarted.recentFiles)}`,
+    );
+    assert(
+      JSON.stringify(restarted.lastSessionFiles) === JSON.stringify(sessionA),
+      `重启后会话文件应保留,实际 ${JSON.stringify(restarted.lastSessionFiles)}`,
+    );
+    assert(
+      restarted.windowBounds?.width === 1024 && restarted.windowBounds?.x === 20 && restarted.isMaximized === true,
+      `重启后窗口状态应保留,实际 ${JSON.stringify(restarted.windowBounds)} maximized=${restarted.isMaximized}`,
+    );
+    assert(
+      restarted.lastOpenDir === "C:\\queue-a",
+      `重启后前序 mutation 的字段仍应保留,实际 ${restarted.lastOpenDir}`,
+    );
+    console.log("[ok] ui-state:重启读盘(最近文件/会话文件/窗口状态并发字段全部保留)");
+
     // ---- 11. 写失败可观察:不更新缓存、不吞错误,且后续 mutation 仍可恢复 ----
     // 目标路径暂替换为目录,避免依赖 Windows 权限/文件锁的非确定性。
     await fs.rm(uiFile, { force: true });
@@ -287,7 +327,16 @@ export async function run() {
     await fs.rm(uiFile, { recursive: true, force: true });
     await mFail.saveUiState({ lastOpenDir: "C:\\recovered" });
     assert(mFail.loadUiState().lastOpenDir === "C:\\recovered", "ui-state 写失败后队列应继续处理下一次 mutation");
-    console.log("[ok] ui-state:写失败可观察(不吞错/不更新缓存/队列可恢复)");
+    // 恢复后重启读盘:拿到恢复成功的那次写(失败尝试未污染磁盘)
+    // 注:本段把目标路径临时替换为目录,该实例的缓存基线因此退化为默认态,
+    // 故此处只断言恢复值本身落盘,不要求保留失败前字段(见 10b 的重启覆盖)。
+    const mFailRestart = await freshModule();
+    const recovered = mFailRestart.loadUiState();
+    assert(
+      recovered.lastOpenDir === "C:\\recovered",
+      `失败恢复后重启读盘应拿到恢复写入的值,实际 ${JSON.stringify(recovered.lastOpenDir)}`,
+    );
+    console.log("[ok] ui-state:写失败可观察(不吞错/不更新缓存/队列可恢复/重启读盘一致)");
   } finally {
     // 恢复真实 ui-state.json(原有内容或删除),避免污染用户状态
     if (hadFile) await fs.writeFile(uiFile, backup, "utf8");

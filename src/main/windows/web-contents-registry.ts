@@ -15,7 +15,11 @@ export interface WebContentsOperation {
 
 const operationsByWebContents = new Map<number, WebContentsOperation>();
 
-/** 原子占用 webContents;已有活动操作时返回 null,调用方须返回明确 busy。 */
+/**
+ * 原子占用 webContents;已有活动操作时返回 null(不覆盖既有 context),
+ * 调用方须返回明确 busy。占用在调用栈内同步完成(无 await 前置),
+ * 故同一 tick 内连续发起的多个 handler 首个占用成功、其余必得 null。
+ */
 export function beginWebContentsOperation(
   webContentsId: number,
   kind: WebContentsOperationKind,
@@ -39,7 +43,19 @@ export function getWebContentsOperation(webContentsId: number): WebContentsOpera
   return operationsByWebContents.get(webContentsId);
 }
 
-/** 取消当前操作;无活动操作时为空操作。 */
-export function cancelWebContentsOperation(webContentsId: number): void {
-  operationsByWebContents.get(webContentsId)?.context.cancel();
+/** 是否有活动操作(关窗确认与等待释放只判存在性,不取用 context)。 */
+export function hasWebContentsOperation(webContentsId: number): boolean {
+  return operationsByWebContents.has(webContentsId);
+}
+
+/**
+ * 取消当前操作;返回是否确有活动操作被取消(无活动操作为空操作)。
+ * 取消只置位 ctx 标志,注销仍由任务 finally 的 compare-and-delete 完成,
+ * 故取消与「旧 token 释放」不会互相误删。
+ */
+export function cancelWebContentsOperation(webContentsId: number): boolean {
+  const current = operationsByWebContents.get(webContentsId);
+  if (!current) return false;
+  current.context.cancel();
+  return true;
 }

@@ -1,6 +1,7 @@
 /**
  * 事件域·选择与列表:
- * - 系统对话框选择(openDialog:替换 / 追加两语义)与拖放区点击/键盘入口;
+ * - 系统对话框选择(openDialog:替换 / 追加两语义)与拖放区点击/键盘入口
+ *   (拖放区只对自身目标响应,内部控件冒泡不叠加第二个动作);
  * - 队列卡头侧动作(预览[单文件可见] / 追加 / 清空;旧单文件「移除」按钮退役,
  *   清空列表覆盖其语义);
  * - 多文件列表交互:点击委托(移除)、双击预览、键盘 Alt+↑↓ 排序、
@@ -29,12 +30,31 @@ import {
   renderMultiList,
   renderSelection,
 } from "../file-list.js";
-import { runConvert } from "../convert-flow.js";
+import { runConvert, isConvertCommandBlocked } from "../convert-flow.js";
 import { openBookWizard } from "../../wizard/book-wizard.js";
 import { t } from "../../../core/i18n.js";
 
 /** 列表边缘自动滚动步长(px/次,dragover 事件粒度)。 */
 const EDGE_SCROLL_STEP_PX = 14;
+
+/**
+ * 容器内自带行为的交互元素选择器(事件边界):祖先容器只对自身目标响应,
+ * 内部控件的 click / Enter / Space 冒泡不得再叠加第二个动作。
+ * 覆盖 button/link/表单控件/label(summary 同理)+ 显式交互 role。
+ */
+const OWN_ACTION_SELECTOR =
+  "button, a[href], input, select, textarea, label, summary, [role='button'], [role='radio'], [role='switch'], [role='tab'], [role='combobox']";
+
+/**
+ * 事件是否发源于容器自身(而非内部交互控件)。
+ * 拖放区容器 role=region(非 button),故非交互子节点(纸面壳/题字/文案)仍算自身目标,
+ * 点击空白处照常打开文件对话框。closest 缺席时按自身目标处理(无祖先可冒泡)。
+ */
+function isOwnEventTarget(event: Event): boolean {
+  const target = event.target as (Element & { closest?: unknown }) | null;
+  if (target === null || typeof target.closest !== "function") return true;
+  return target.closest(OWN_ACTION_SELECTOR) === null;
+}
 
 /* ---------- 预览(转换前,经主进程打开与 PDF 同排版的窗口) ---------- */
 /** 打开指定文件的预览窗口;失败时状态区提示(文件名 + 原因 + 操作)。
@@ -56,9 +76,12 @@ export function openPreviewFor(filePath: string): void {
 /* ---------- 选择文件(系统对话框) ---------- */
 // 原模块级常量在模块加载期求值,语言切换后不更新 → 移到使用点直接 t()
 
-/** 打开文件对话框;append=true 时与现有列表合并(「追加文件 / 继续添加」入口)。 */
+/**
+ * 打开文件对话框;append=true 时与现有列表合并(「追加文件 / 继续添加」入口)。
+ * 与转换命令同锁:转换中/预检中/模态或向导打开时不另开对话框(避免叠第二层模态)。
+ */
 export async function openDialog(append = false): Promise<void> {
-  if (state.mode !== null) return;
+  if (isConvertCommandBlocked()) return;
   try {
     const paths = await window.api.openMarkdowns();
     if (paths.length === 0) return; // 用户取消,保持现状
@@ -87,10 +110,10 @@ export function bindSelectionEvents(): void {
 
   // 「粘贴 Markdown 转换」按钮(仅空态显示,按钮在 .pane-empty 内,文件态该 pane 已隐藏):
   // 读系统剪贴板 → 文件路径走 drop 管线展开/过滤,文本写临时 md 走 runConvert,
-  // 空/非文本非文件 toast 提示;转换中禁用,结束后恢复。stopPropagation 防冒泡触发拖放区。
+  // 空/非文本非文件 toast 提示;转换/预检/模态期间阻断,结束后恢复。stopPropagation 防冒泡触发拖放区。
   pasteConvertBtn.addEventListener("click", (event) => {
     event.stopPropagation();
-    if (pasteConvertBtn.disabled) return;
+    if (pasteConvertBtn.disabled || isConvertCommandBlocked()) return;
     pasteConvertBtn.disabled = true;
     void (async () => {
       try {
@@ -114,15 +137,19 @@ export function bindSelectionEvents(): void {
   });
 
   // 点击拖放区打开对话框;键盘可用(Enter / 空格)。
-  // 多文件态(≥2)点击=追加,单文件/默认态点击=更换/选择;列表内按钮已 stopPropagation
-  dropZone.addEventListener("click", () => {
+  // 多文件态(≥2)点击=追加,单文件/默认态点击=更换/选择。
+  // 事件边界(事件只对容器自身目标生效):容器内控件(队列动作、首启引导、
+  // 快速参数条)各自处理点击与 Enter/Space,冒泡到本监听器时不再起第二个动作;
+  // 容器 role=region(非 button),嵌套交互元素不再与按钮语义冲突。
+  dropZone.addEventListener("click", (event) => {
+    if (!isOwnEventTarget(event)) return;
     void openDialog(state.selectedFiles.length >= 2);
   });
   dropZone.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      void openDialog(state.selectedFiles.length >= 2);
-    }
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (!isOwnEventTarget(event)) return;
+    event.preventDefault();
+    void openDialog(state.selectedFiles.length >= 2);
   });
 
   // 单文件态「预览」按钮:stopPropagation 避免触发拖放区打开对话框;仅单文件可见

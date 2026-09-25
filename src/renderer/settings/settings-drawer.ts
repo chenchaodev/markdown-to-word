@@ -13,7 +13,8 @@ import {
   settingsDrawer,
   settingsOpenBtn,
 } from "../dom/refs.js";
-import { trapFocus } from "../state/utils.js";
+import { trapFocus, setError } from "../state/utils.js";
+import { t } from "../../core/i18n.js";
 
 /* 焦点陷阱句柄(二次调用防御:先解除旧陷阱再启用新陷阱) */
 let drawerTrap: (() => void) | null = null;
@@ -61,8 +62,11 @@ function persistDrawerOpen(): void {
   const open = isSettingsDrawerOpen();
   void window.api
     .uiStateSet({ panelOpen: { page: open, typography: open } })
-    .catch(() => {
-      /* 忽略:UI 状态写入失败不阻塞主流程 */
+    .catch((err: unknown) => {
+      // 开合本身已生效(抽屉状态是本次会话内的真实状态),但下次启动会回到旧值:
+      // 写盘失败必须可见,不静默当作"已记住"。
+      console.error("[settings-drawer] 抽屉开合记忆写盘失败(下次启动可能恢复旧开合)", err);
+      setError(t("preset.saveFailed"));
     });
 }
 

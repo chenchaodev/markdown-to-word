@@ -18,8 +18,11 @@ import {
   errorMessage,
   importPresetsFromText,
   isConvertFormat,
+  isPrecheckFailureOutcome,
   isString,
   isStringArray,
+  normalizePrecheckOutcome,
+  operationBusyResult,
   runConvertTask,
   type BusyResult,
 } from "./logic.js";
@@ -231,7 +234,7 @@ export function registerIpc(): void {
         return { ok: true, outputPath, warnings };
       },
       () => ({ ok: false, canceled: true, error: t("common.canceled") }),
-      () => ({ ok: false, busy: true, error: t("convert.stage.converting") }),
+      () => operationBusyResult(t("convert.stage.converting")),
     );
   });
 
@@ -239,12 +242,15 @@ export function registerIpc(): void {
     cancelWebContentsOperation(event.sender.id);
   });
 
-  // 转换前静态预检:仅读取与解析,不触发实际渲染;文件不可读时返回 [] 交由转换自身报错,不阻断流程。
+  // 转换前静态预检:仅读取与解析,不触发实际渲染;与转换共享同一活动操作注册表
+  // (转换进行中返回明确 busy,单窗口同一时刻至多一个预检/转换)。
+  // 预检自身失败(文件缺失/解码失败/读取异常)不静默折叠为空数组:归一为一条
+  // 失败警告随既有 PrecheckResult 通道返回,用户可见且仍可选择继续转换。
   ipcMain.handle(
     CH.convertPrecheck,
     async (event, filePath: unknown): Promise<PrecheckResult> => {
       if (!isString(filePath)) return [];
-      const result = await runWithCtx(
+      const outcome = await runWithCtx(
         event,
         "precheck",
         async () => {
@@ -256,12 +262,13 @@ export function registerIpc(): void {
           ];
         },
         () => [],
-        () => ({ ok: false, busy: true, error: t("convert.stage.converting") }),
+        () => operationBusyResult(t("convert.stage.converting")),
       );
-      // 不可读/读取失败不扩大既有 PrecheckResult 契约:与转换前缺失文件一致返回
-      // 空 warning 数组;busy 仍透传为 OperationBusyResult。
-      if (Array.isArray(result) || ("busy" in result && result.busy)) return result;
-      return [];
+      // 失败在主进程留痕(用户可见警告之外的可追溯记录),再归一为 PrecheckResult
+      if (isPrecheckFailureOutcome(outcome)) {
+        console.error(`[main] convert:precheck 失败(${filePath}):`, outcome.error);
+      }
+      return normalizePrecheckOutcome(outcome);
     },
   );
 
@@ -318,10 +325,9 @@ export function registerIpc(): void {
           return result;
         },
         () => ({ ok: false, error: t("common.canceled") }),
+        // busy 基形与其它 handler 同源(逻辑.operationBusyResult),此处并接批量计数字段
         () => ({
-          ok: false,
-          busy: true,
-          error: t("convert.stage.converting"),
+          ...operationBusyResult(t("convert.stage.converting")),
           items: [],
           okCount: 0,
           failCount: 0,
@@ -355,7 +361,7 @@ export function registerIpc(): void {
           return result;
         },
         () => ({ ok: false, canceled: true, error: t("common.canceled") }),
-        () => ({ ok: false, busy: true, error: t("convert.stage.converting") }),
+        () => operationBusyResult(t("convert.stage.converting")),
       );
     },
   );

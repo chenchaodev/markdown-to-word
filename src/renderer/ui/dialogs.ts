@@ -282,17 +282,37 @@ export function showPrecheckDialog(warnings: ConvertWarning[]): Promise<boolean>
   return precheckPromise;
 }
 
-/** 预检报告所有关闭路径统一走此函数,确保 resolver 与 Promise 必定结算。 */
-export function closePrecheckDialog(ok: boolean): void {
+/** 释放陷阱并归还焦点(关闭路径共用;焦点陷阱持有者已失效时不重复解除)。 */
+function releasePrecheck(): void {
   precheckTrap?.();
   precheckTrap = null;
   precheckDialog.classList.add("hidden");
   focusActionButton();
+}
+
+/** 预检报告所有关闭路径统一走此函数,确保 resolver 与 Promise 必定结算。 */
+export function closePrecheckDialog(ok: boolean): void {
+  releasePrecheck();
   precheckResolve?.(ok);
   precheckResolve = null;
   precheckPromise = null;
 }
 
-// 预检弹窗按钮(模块加载期绑定一次)
+// 预检弹窗按钮与遮罩(模块加载期绑定一次):按钮 / 点遮罩 / Esc(dialogs-events 域) /
+// 窗口关闭(unload)四条路径都必须经过 closePrecheckDialog 结算,任一路径遗漏都会
+// 让预检链与命令锁永久悬挂,表现为界面此后不再响应任何转换命令。
 precheckContinue.addEventListener("click", () => closePrecheckDialog(true));
 precheckCancel.addEventListener("click", () => closePrecheckDialog(false));
+precheckDialog.addEventListener("click", (event) => {
+  // 只响应遮罩本身,点卡片内部不关闭
+  if (event.target === precheckDialog) closePrecheckDialog(false);
+});
+window.addEventListener("unload", () => {
+  // 窗口关闭:不再归还焦点(页面即将销毁),只解除陷阱并按取消结算
+  if (precheckPromise === null) return;
+  precheckTrap?.();
+  precheckTrap = null;
+  precheckResolve?.(false);
+  precheckResolve = null;
+  precheckPromise = null;
+});

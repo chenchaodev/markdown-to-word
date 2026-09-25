@@ -114,8 +114,12 @@ export async function convertImpl(
   warnings.push(...outWarnings);
 
   if (!ctx.skipAfterConvert) {
+    // 副作用闸门:本函数是单文件转换的副作用拥有者(批量/合并逐文件调用经
+    // skipAfterConvert 让位)。闸门落在「产物已落盘 → 打开产物」的最后窗口:
+    // 此处取消(用户取消或关窗放弃)则抛 ConvertCanceledError,调用方回「已取消」,
+    // 绝不打开产物。
     throwIfCanceled(ctx);
-    await runAfterConvert(settings.afterConvert, outputPath);
+    await runAfterConvert(settings.afterConvert, outputPath, ctx);
   }
   return { outputPath, warnings };
 }
@@ -190,15 +194,25 @@ export async function renderPdf(
 
 /**
  * 导出后行为(按设置):资源管理器中显示 / 默认程序打开。
+ * 所有权:仅「拥有者」调用——单文件(每次转换一次)、合并(整个合并一次,单产物)、
+ * 批量(整个批次一次);本函数不判所有权,让位由 ctx.skipAfterConvert 表达。
+ * 取消闸门:传 ctx 时在触发 shell 的最后时刻复查(与 shell 调用之间无 await,
+ * 「检查通过 → 触发」不可被取消插入)——取消后一律无产物副作用(不打开文件/文件夹),
+ * 且静默跳过不抛:是否报「已取消」由拥有者决定(单文件/合并在调用前显式
+ * throwIfCanceled,批量经 canceledCount 汇总)。
  * openPath 返回非空字符串即失败,仅日志记录,不抛给用户。
  */
-export async function runAfterConvert(action: AppSettings["afterConvert"], outputPath: string): Promise<void> {
+export async function runAfterConvert(
+  action: AppSettings["afterConvert"],
+  outputPath: string,
+  ctx?: ConvertContext,
+): Promise<void> {
+  if (action === "none") return;
+  if (ctx?.cancelRequested) return; // 取消闸门:最后一刻复查,取消后不打开产物
   if (action === "show-in-folder") {
     shell.showItemInFolder(outputPath);
     return;
   }
-  if (action === "open") {
-    const error = await shell.openPath(outputPath);
-    if (error) console.log(`[afterConvert] 打开失败: ${error}`);
-  }
+  const error = await shell.openPath(outputPath);
+  if (error) console.log(`[afterConvert] 打开失败: ${error}`);
 }

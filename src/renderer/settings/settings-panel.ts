@@ -21,6 +21,7 @@ import {
   headerLogoDisplayName,
   applySettingsRuntimeEffects,
   mergeSettingsWithDefaults,
+  mergePendingSavePatch,
   normalizePageSetup,
   reconcileSettingsSave,
   resolvePresetHint,
@@ -72,6 +73,7 @@ import {
   presetDeleteBtn,
   quickOutputDirChip,
   quickPresetSelect,
+  statusEl,
   templatePresetHint,
   templatePresetSelect,
   themeInputs,
@@ -136,13 +138,17 @@ export function rebuildLanguageOptions(): void {
 }
 
 /* ---------- 设置:加载 / 回填 / 写回 ---------- */
-let latestMainSettings: AppSettings = structuredClone(state.settings);
 let settingsSaveRevision = 0;
+
+/** 保存失败后待重试的草稿 patch(失败不丢编辑内容):下一次保存与新 patch 合并后
+ *  一并提交,成功即清空;否则失败期间编辑的字段只存在于 renderer 内存。 */
+let pendingSavePatch: Partial<AppSettings> = {};
+/** 最近一次失败反馈写入状态区的原文:成功保存后据此精确复位(不误清其它流程提示)。 */
+let pendingSaveFailureText: string | null = null;
 
 /** main 权威值同时覆盖 renderer state、语言/主题副作用与全部控件。 */
 function applyAuthoritativeSettings(settings: AppSettings): void {
   state.settings = mergeSettingsWithDefaults(settings);
-  latestMainSettings = structuredClone(state.settings);
   applySettingsRuntimeEffects(state.settings, {
     setSelectedFormat: (format) => { state.selectedFormat = format; },
     setLanguage,
@@ -171,7 +177,6 @@ export async function loadSettings(): Promise<void> {
   state.settings = mergeSettingsWithDefaults(loaded, (message) => {
     setError(message);
   });
-  latestMainSettings = structuredClone(state.settings);
   // i18n:主进程语言来源 = 持久化设置;启动即应用(静态文案 + 动态文案经 t() 自动跟随)
   setLanguage(state.settings.language);
   mirrorLanguage(state.settings.language); // 镜像写 localStorage 供 lang-bootstrap.js 尽早读
@@ -313,7 +318,9 @@ function composeDrawerMetaText(): string {
   return `${presetName} · ${checkedRadioValue(paperInputs)}`;
 }
 
-/** 写回设置;成功后以 main 返回值同步 state/控件，失败则回滚到 main cache。
+/** 写回设置;成功后以 main 返回值同步 state/控件；失败则**保留用户当前编辑内容**
+ *  (控件不回滚到 main cache),把草稿并入待重试 patch 并给出可见失败反馈,
+ *  待下一次保存一并提交。
  * 写盘成功后刷新所有预览窗口；预览刷新失败不伪装成设置保存失败。 */
 export function persistSettings(patch: Partial<AppSettings>): void {
   let nextPatch = patch;
@@ -329,18 +336,47 @@ export function persistSettings(patch: Partial<AppSettings>): void {
   }
   updateDrawerMeta(composeDrawerMetaText());
   const revision = ++settingsSaveRevision;
+  // 待重试草稿 + 本次编辑:失败过的字段必须随下一次保存落盘,否则只活在内存里
+  const attempt = mergePendingSavePatch(pendingSavePatch, nextPatch);
   void reconcileSettingsSave({
-    save: () => window.api.settingsSet(nextPatch),
-    loadAuthoritative: () => window.api.settingsGet(),
-    fallback: () => latestMainSettings,
+    save: () => window.api.settingsSet(attempt),
     isCurrent: () => revision === settingsSaveRevision,
     apply: applyAuthoritativeSettings,
-    onFailure: () => setError(t("preset.saveFailed")),
+    onFailure: (error) => {
+      pendingSavePatch = attempt;
+      reportSettingsSaveFailure(error);
+    },
   }).then((outcome) => {
+    if (outcome === "saved") {
+      pendingSavePatch = {};
+      clearSettingsSaveFailure();
+    }
     if (outcome !== "failed") {
       void window.api.previewRefresh().catch(() => undefined);
     }
+  }).catch((error: unknown) => {
+    // 回填/清理环节异常(如控件回填抛错):按未提交处理——草稿保留并给出可见
+    // 反馈,下次保存仍会带上它重试;不静默吞错。
+    pendingSavePatch = attempt;
+    reportSettingsSaveFailure(error);
   });
+}
+
+/** 保存失败反馈:状态区可见提示 + 留痕;编辑内容与控件值一律保留(草稿),
+ *  提示持续显示直到下一次成功保存——期间它就是"未保存"状态的唯一可见标记。 */
+function reportSettingsSaveFailure(error: unknown): void {
+  console.error("[settings] 设置写盘失败(保留当前编辑内容,待下次保存重试)", error);
+  pendingSaveFailureText = t("preset.saveFailed");
+  setError(pendingSaveFailureText);
+}
+
+/** 成功保存后复位未保存提示:仅当状态区仍是本模块写入的失败原文才清空,
+ *  避免抹掉转换/复制等其他流程刚写入的状态文案。 */
+function clearSettingsSaveFailure(): void {
+  if (!pendingSaveFailureText) return;
+  const writtenByUs = statusEl.textContent === pendingSaveFailureText;
+  pendingSaveFailureText = null;
+  if (writtenByUs) setStatus("");
 }
 
 /* ---------- 分组整体写回(六组绑定共用的持久化路径,单源本模块) ---------- */
@@ -462,11 +498,15 @@ export function syncSuppressCompleteDialog(checked: boolean): void {
   completeDialogSuppressInput.checked = checked;
 }
 
-/** 更新并持久化「不再提示」(弹窗内 checkbox;写入失败静默)。 */
+/** 更新并持久化「不再提示」(弹窗内 checkbox;与设置保存同一失败反馈口径:
+ *  写失败保留勾选态、状态区提示保存失败并留痕,不静默显示成功;
+ *  写回路径为 ui-state 而非 settings.json,故不进 pendingSavePatch 草稿队列)。 */
 export function setSuppressCompleteDialog(checked: boolean): void {
   syncSuppressCompleteDialog(checked);
-  void window.api.uiStateSet({ suppressCompleteDialog: checked }).catch(() => {
-    /* 忽略:UI 状态写入失败不阻塞主流程 */
+  void window.api.uiStateSet({ suppressCompleteDialog: checked }).catch((err: unknown) => {
+    // 勾选态保留(本次会话行为一致),但下次启动会回到旧值:必须可见,不静默
+    console.error("[settings] 完成弹窗偏好写盘失败(本次勾选仅存于内存)", err);
+    setError(t("preset.saveFailed"));
   });
 }
 

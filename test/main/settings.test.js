@@ -27,6 +27,9 @@
  *   合法完整对象 → true(合法值保留)
  * - saveSettings 写队列(promise 链):并发调用串行执行,调用序 = 写盘序,链尾即最终态
  *   (防并发交错写同一 tmp 文件丢更新;失败不截断队列,错误由各自调用方处理)
+ * - mutation queue:「读当前值 → 合并 patch → 落盘 → 提交缓存」在同一队列内,
+ *   并发不同字段 patch 互不覆盖;写失败不提交缓存(内存/磁盘停在最后一次成功值),
+ *   恢复写入后全新实例(重启)读盘逐字段一致
  */
 import fs from "node:fs/promises";
 import { mkdirSync, rmSync } from "node:fs";
@@ -498,6 +501,37 @@ export async function run() {
     }
     assert(!tmpLeft, "写队列完成后不应残留 .tmp 临时文件");
 
+    // ---- 10a. 重启后并发字段全部保留:全新模块实例(读盘)逐字段复核 ----
+    // 模拟重启 = 丢弃内存缓存的全新实例读 settings.json:并发 patch 的每个字段
+    // 都必须落盘保留(丢更新在这里才暴露),且与缓存终态一致。
+    const mRestart = await freshModule();
+    const restarted = mRestart.loadSettings();
+    assert(
+      restarted.format === "docx" && restarted.afterConvert === "open" && restarted.toc === true &&
+      restarted.breakBeforeH1 === true,
+      `重启后并发字段应全部保留,实际 ${JSON.stringify({
+        format: restarted.format,
+        afterConvert: restarted.afterConvert,
+        toc: restarted.toc,
+        breakBeforeH1: restarted.breakBeforeH1,
+      })}`,
+    );
+    assert(
+      restarted.pageSetup.marginTop === 12.5 && restarted.pageSetup.marginBottom === 20 &&
+      restarted.pageSetup.marginLeft === 30 && restarted.pageSetup.marginRight === 40,
+      `重启后并发 patch 的 pageSetup 应保留,实际 ${JSON.stringify(restarted.pageSetup)}`,
+    );
+    assert(
+      restarted.typography.bodySizePt === 13,
+      `重启后并发 patch 的 typography 应保留,实际 ${JSON.stringify(restarted.typography)}`,
+    );
+    assert(
+      JSON.stringify(restarted) === JSON.stringify(rD),
+      "重启读回内容应与最后一次成功写盘结果完全一致(内存/磁盘一致)",
+    );
+    validatePageSetup(restarted.pageSetup);
+    console.log("[ok] settings:重启读盘(并发不同字段全部保留,与缓存终态一致)");
+
     // ---- 10b. 写失败可观察:不更新缓存、不吞错误,且后续 mutation 仍可恢复 ----
     // settingsFilePath 固定走 userData/settings.json;将该目标暂时替换为目录,
     // 触发 rename 失败,不依赖平台特定的权限/锁定行为。
@@ -515,7 +549,16 @@ export async function run() {
     await fs.rm(settingsFile, { recursive: true, force: true });
     await mFail.updateSettings({ format: "pdf" });
     assert(mFail.loadSettings().format === "pdf", "settings 写失败后队列应继续处理下一次 mutation");
-    console.log("[ok] settings:写失败可观察(不吞错/不更新缓存/队列可恢复)");
+    // 恢复写入后重启读盘:拿到的是恢复成功的那次写(失败尝试未污染磁盘)
+    // 注:本段把目标路径临时替换为目录,该实例的缓存基线因此退化为默认态,
+    // 故此处只断言恢复值本身落盘(重启字段保留见 10a)。
+    const mFailRestart = await freshModule("settings-failure-restart");
+    const recoveredDisk = mFailRestart.loadSettings();
+    assert(
+      recoveredDisk.format === "pdf",
+      `失败恢复后重启读盘应拿到恢复写入的值,实际 ${recoveredDisk.format}`,
+    );
+    console.log("[ok] settings:写失败可观察(不吞错/不更新缓存/队列可恢复/重启读盘一致)");
 
 console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文件回退/并发写队列 断言通过");
 

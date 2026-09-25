@@ -236,13 +236,20 @@ export function bindRecentFilesEvents(): void {
     if (row?.dataset.path) loadRecentItem(row.dataset.path);
   });
 
-  // 「清空记录」:清空并隐藏整条(以主进程合并结果为准)
-  recentClearBtn.addEventListener("click", () => {
-    void window.api
-      .uiStateSet({ recentFiles: [] })
-      .then((ui) => renderRecentList(ui.recentFiles))
-      .catch(() => renderRecentList([]));
-  });
+  // 「清空记录」:清空并隐藏整条(以主进程合并结果为准;失败路径见 clearRecentFiles)
+  recentClearBtn.addEventListener("click", () => void clearRecentFiles());
+}
+
+/** 清空最近记录:以主进程合并结果为准重渲染;写失败保留当前列表并给出可见反馈
+ *  (main 侧记录仍在,不能显示成已清空)。导出供直测断言该失败路径。 */
+export function clearRecentFiles(): Promise<void> {
+  return window.api
+    .uiStateSet({ recentFiles: [] })
+    .then((ui) => renderRecentList(ui.recentFiles))
+    .catch((err: unknown) => {
+      console.error("[recent-files] 清空最近记录写盘失败(记录仍保留)", err);
+      setError(t("preset.saveFailed"));
+    });
 }
 
 /** 单击加载:替换选择载入列表(不转换),状态区提示文件名。 */

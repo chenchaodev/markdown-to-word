@@ -7,7 +7,8 @@
  *   链尾即最终态(文件内容 = 最后一次写入)
  * - 并发调用不交叉:不同实例独立队列互不阻塞;同实例并发各写各的目标文件
  * - 失败路径:单次写失败(tmp 目录不存在 → ENOENT)不破坏旧文件、不截断队列
- *   (后续写照常成功)、错误由调用方 promise 捕获
+ *   (后续写照常成功)、不残留半成品 tmp、错误由调用方 promise 捕获
+ * - 失败后重试可恢复:同一内容在失败后再次写成功(队列不截断 + 缓存只在成功后提交)
  * 样例全部放 os.tmpdir() 独立目录,finally 整体删除。
  */
 import fs from "node:fs/promises";
@@ -109,10 +110,17 @@ export async function run() {
     }
     assert(failed, "失败写应向调用方抛错(错误由调用方处理)");
     assert(JSON.parse(await fs.readFile(goodFile, "utf8")).v === 1, "失败写不应破坏旧文件");
+    // 失败清理:半成品 tmp 不残留(否则易被误当作已提交结果)
+    await fs
+      .access(`${badFile}.tmp`)
+      .then(
+        () => assert(false, "失败写不应残留 .tmp 临时文件"),
+        () => undefined, // ENOENT = 已清理,符合预期
+      );
     // 失败后队列仍可用:同一实例后续写成功(单次失败不截断队列)
     await writerF(goodFile, { v: 3 });
     assert(JSON.parse(await fs.readFile(goodFile, "utf8")).v === 3, "失败后同实例后续写应成功(队列不截断)");
-    console.log("[ok] atomic-json:失败路径(调用方收到错误/旧文件完好/队列不截断)");
+    console.log("[ok] atomic-json:失败路径(调用方收到错误/旧文件完好/tmp 已清理/队列不截断)");
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }

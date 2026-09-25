@@ -9,7 +9,10 @@
  * 字段为「整文件回退」——任一字段非法即整体回退 DEFAULT_SETTINGS；ui-state.ts
  * 为「字段级宽松回退」——UI 状态损坏只丢对应字段(见 ui-state.ts 头注释)。
  * 写入经 promise 链串行化(saveSettings 写队列):并发调用不会交错写同一
- * tmp 文件,调用序 = 写盘序,链尾即最终态(防并发丢更新)。
+ * tmp 文件,调用序 = 写盘序,链尾即最终态(防并发丢更新);
+ * 「读当前值 → 合并 patch → 落盘 → 提交缓存」整体在同一 mutation queue 内完成,
+ * 故并发不同字段 patch 互不覆盖;写失败不提交缓存——内存与磁盘都停在最后一次
+ * 成功值(重启读回一致),错误上抛由调用方呈现,不静默显示成功。
  * 契约(AppSettings 类型/DEFAULT_SETTINGS/范围常量)收敛于 core/settings-defaults.ts,
  * 此处只做持久化与校验;AppSettings/DEFAULT_SETTINGS re-export 保持既有导入面
  * (converter/ipc 各模块经 persist/settings 导入)。

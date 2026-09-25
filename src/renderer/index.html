@@ -86,6 +86,11 @@
       <!-- ══ 内容区:主舞台(三态)/ 历史浮出面板(常驻标题条)/ 消息区(feed) -->
       <div class="content">
         <!-- 主舞台(#dropZone 兼任拖放与点击入口,data-stage 驱动三态切换)。
+              事件边界:容器内控件(队列动作 / 首启引导 / 快速参数条)各自处理
+              click 与 Enter/Space,冒泡到容器时不再叠加第二个动作(打开文件对话框);
+              故 role 取 region 而非 button —— 作为 button 会与内部交互元素语义冲突,
+              且键盘 Enter/Space 在内部控件上同时激活祖先。tabindex 保留使容器自身
+              仍可聚焦,键盘用户可达投放区。
               几何恒定契约:内部 .stage 高度锁定(--panes-h + --quickbar-h,
               三种舞台状态同高,基准 = 空态文稿台自然高度);历史开合 / 消息增减 /
               进度条出现均不改写本区块一个像素;.stage-wrap 加 scrollbar-gutter: stable
@@ -94,7 +99,7 @@
           id="dropZone"
           class="stage-wrap"
           data-stage="empty"
-          role="button"
+          role="region"
           tabindex="0"
           data-i18n-aria-label="drop.ariaLabel"
           aria-label="点击或拖入 Markdown 文件（支持多个）"

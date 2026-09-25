@@ -5,6 +5,8 @@
  *   全部预期 channel 均有 handler(防漏注册);
  * - 入参类型守卫:convertSingle/convertBatch/convertMerge 非法入参 →
  *   { ok:false, error }(守卫先于 runWithCtx,无需真实 BrowserWindow/event.sender);
+ * - 注册表被外部占用时的 busy 形状(手工预占,只验形状;真实并发调用 handler
+ *   见 operation-single-flight.test.js);
  * - shell 白名单:未登记路径 revealInFolder/openPath → { ok:false, error }
  *   (测试进程白名单为空,拒绝路径不触达 shell,无用户可见副作用);
  * - 纯转发 handler 直调:fileCollectMarkdown(目录递归收集/skipped)、
@@ -83,6 +85,8 @@ export async function run() {
   console.log("[ok] ipc-register:MR-12 shell 白名单拒绝(未登记/非字符串)断言通过");
 
   // ---- 3.1 同一 webContents 的转换/预检共享 single-flight:第二次明确 busy ----
+  // 本段手工预占注册表(仅验 busy 形状与守卫优先级);真实并发调用 handler
+  // 「同时最多一个活动操作」由 operation-single-flight.test.js 断言。
   const busyCtx = { cancel() {} };
   const busyToken = beginWebContentsOperation(fakeEvent.sender.id, "single", busyCtx);
   assert(busyToken !== null, "测试应先占用 sender operation");
@@ -166,13 +170,36 @@ export async function run() {
       );
     }
 
-    // ---- 5c. precheck 缺文件/读取失败仍返回空数组,不扩大 PrecheckResult ----
-    const missingPrecheck = await handlers.get(CH.convertPrecheck)(fakeEvent, path.join(tmpDir, "missing.md"));
-    const directoryPrecheck = await handlers.get(CH.convertPrecheck)(fakeEvent, tmpDir);
+    // ---- 5c. precheck 缺文件/读取失败:不静默空数组,返回单条可观察失败警告 ----
+    // 契约仍为 PrecheckResult(警告数组 | busy):异常以失败警告承载,renderer
+    // 走既有警告列表展示,用户可见且仍可选择继续转换(不扩联合类型)。
+    const logged = [];
+    const originalError = console.error;
+    console.error = (...args) => logged.push(args.map((a) => String(a)).join(" "));
+    let missingPrecheck;
+    let directoryPrecheck;
+    try {
+      missingPrecheck = await handlers.get(CH.convertPrecheck)(fakeEvent, path.join(tmpDir, "missing.md"));
+      directoryPrecheck = await handlers.get(CH.convertPrecheck)(fakeEvent, tmpDir);
+    } finally {
+      console.error = originalError;
+    }
+    for (const [label, result] of [["缺文件", missingPrecheck], ["目录", directoryPrecheck]]) {
+      assert(
+        Array.isArray(result) && result.length === 1 &&
+          typeof result[0] === "object" && result[0].key === "warn.precheckFailed" &&
+          typeof result[0].fallback === "string" && result[0].fallback.length > 0,
+        `precheck ${label}应返回单条可观察失败警告(实际 ${JSON.stringify(result)})`,
+      );
+    }
     assert(
-      Array.isArray(missingPrecheck) && missingPrecheck.length === 0 &&
-        Array.isArray(directoryPrecheck) && directoryPrecheck.length === 0,
-      "precheck 缺文件/读取失败应保持空 warning 数组契约",
+      logged.length === 2 && logged.every((line) => line.includes("convert:precheck 失败")),
+      `precheck 失败应在主进程留痕(实际 ${JSON.stringify(logged)})`,
+    );
+    // 非字符串入参仍是零成本的空数组(守卫先于注册表与文件访问)
+    assert(
+      JSON.stringify(await handlers.get(CH.convertPrecheck)(fakeEvent, 42)) === "[]",
+      "precheck 非字符串入参应返回空数组",
     );
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);

@@ -5,6 +5,11 @@
  * 不变量:data-stage(empty/single/multi)驱动 CSS 切换同一 .pane-files;
  * renderMultiList 覆盖 n≥1 全部情形(n=1 省略 grip/序号且不可拖拽);
  * 「预览」仅单文件可见,「清空列表」兼并单文件移除语义。
+ * 操作按钮忙态 = 转换中(state.mode 单源)或命令锁持有中(预检,探针注入,
+ * 与各入口点击守卫同源)。
+ * 会话持久化(lastSessionFiles)只有一个写入点:renderQueue 内的 persistSessionFiles;
+ * renderSelection 与 renderMultiList(排序/移除重排)都经它,同一次渲染不重复写盘,
+ * 纯重渲染(语言切换等)内容未变亦不产生 mutation;写失败不静默(状态区提示 + 留痕)。
  */
 import {
   appendFileBtn,
@@ -21,7 +26,7 @@ import {
   statusEl,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { setStatus, translate } from "../state/utils.js";
+import { setError, setStatus, translate } from "../state/utils.js";
 import { baseName, partitionDuplicates, selectionStatus, truncateMiddle } from "../state/pure.js";
 import { t } from "../../core/i18n.js";
 
@@ -35,21 +40,23 @@ export function renderSelection(): void {
   // 反向注册避免 ESM 环
   state.stageChangedHandler?.();
 
-  if (n >= 1) {
-    // renderMultiList 已负责一次会话持久化;避免这里再写一遍造成重复 ui-state mutation。
-    renderMultiList();
-  } else {
-    // 空列表同样需要保存清空状态。
-    persistSessionFiles();
-  }
+  // 队列行渲染与会话持久化一次完成(同一写入点,不再按空/非空分支各写一次)
+  renderQueue();
   updateActionButtons();
 }
 
-/** 重建队列列表:
- *  n=1 → 单行(无 grip/序号,draggable=false,双击仍可预览);
- *  n≥2 → 完整队列行:手柄 + 序号 + 文件名 + 移除,严格按 selectedFiles 顺序渲染。
- *  排序 = 整行拖拽 + 键盘补偿(行聚焦后 Alt+↑/↓);预览 = 行双击。 */
+/** 重建队列列表(移除/键盘排序/拖拽排序后重排,不经 renderSelection 的快捷入口)。
+ *  行结构契约见 renderQueue:n=1 单行(无 grip/序号,draggable=false,双击仍可预览);
+ *  n≥2 完整队列行(手柄 + 序号 + 文件名 + 移除),严格按 selectedFiles 顺序。 */
 export function renderMultiList(): void {
+  renderQueue();
+}
+
+/** 队列渲染 + 会话持久化的唯一组合入口:
+ *  - n≥1 渲染队列行,n=0 时 replaceChildren 清空(选择被清空的既有行为);
+ *  - 排序 = 整行拖拽 + 键盘补偿(行聚焦后 Alt+↑/↓),预览 = 行双击(见 events/selection);
+ *  - 收尾经 persistSessionFiles 落一次会话持久化,两条渲染路径共用此单一写入点。 */
+function renderQueue(): void {
   const n = state.selectedFiles.length;
   multiCount.textContent = t("file.selectedCount", { count: n });
   multiList.replaceChildren(
@@ -92,14 +99,29 @@ export function renderMultiList(): void {
   persistSessionFiles();
 }
 
+/** 已成功写盘(uiStateSet resolve)的会话文件内容键:用于跳过内容未变的重复写入
+ *  (纯重渲染,如语言切换后的 renderSelection)。失败不记入,保证下次保存仍会重试。 */
+let persistedSessionKey: string | null = null;
+
 /**
- * 文件列表变化(增/删/清空/排序)后同步 lastSessionFiles,下次启动恢复;
- * 写入失败静默(不阻塞主流程)。
+ * 会话文件持久化(唯一写入点,由 renderQueue 调用):
+ * - 内容与上次成功写盘一致 → 跳过,避免同一渲染路径产生重复 ui-state mutation;
+ * - 写失败:保留编辑内容(列表不变、main 缓存与磁盘停在最后一次成功值),状态区
+ *   统一提示保存失败并留痕,禁止静默显示成功;不记入 key,后续保存可恢复。
  */
 export function persistSessionFiles(): void {
-  void window.api.uiStateSet({ lastSessionFiles: [...state.selectedFiles] }).catch(() => {
-    /* 忽略:UI 状态写入失败不阻塞主流程 */
-  });
+  const files = [...state.selectedFiles];
+  const key = JSON.stringify(files);
+  if (key === persistedSessionKey) return;
+  void window.api.uiStateSet({ lastSessionFiles: files }).then(
+    () => {
+      persistedSessionKey = key;
+    },
+    (err: unknown) => {
+      console.error("[file-list] 会话文件写盘失败", err);
+      setError(t("preset.saveFailed"));
+    },
+  );
 }
 
 /** 移除该文件的图标按钮。 */
@@ -169,11 +191,25 @@ export function appendSelection(files: string[], skipped = 0): void {
   applySelection([...state.selectedFiles, ...added], skipped, duplicates.length);
 }
 
+/**
+ * 命令忙探针(依赖注入):命令锁持有中(预检进行中)时按钮同样置灰,
+ * 与各入口点击守卫同源,避免「看着可点、点了没反应」。
+ * 探针由 convert-flow 在模块加载期注入(它持命令锁,且已依赖本模块),
+ * 本模块不反向 import,保持依赖单向。
+ */
+let commandBusyProbe: (() => boolean) | null = null;
+
+/** 注册命令忙探针(命令域加载期注册一次,单源)。 */
+export function setCommandBusyProbe(probe: () => boolean): void {
+  commandBusyProbe = probe;
+}
+
 export function updateActionButtons(): void {
   const n = state.selectedFiles.length;
   const multi = n >= 2;
   const single = n === 1;
-  const busy = state.mode !== null; // 转换中 = mode 单源
+  // 忙 = 转换中(mode 单源)或命令锁持有中(预检)
+  const busy = state.mode !== null || commandBusyProbe?.() === true;
   convertBtn.classList.toggle("hidden", multi);
   batchBtn.classList.toggle("hidden", !multi);
   mergeBtn.classList.toggle("hidden", !multi);

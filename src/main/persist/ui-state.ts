@@ -190,21 +190,19 @@ export function loadUiState(): UiState {
 
 /**
  * 原子写(tmp + rename)+ 写队列串行化(仿 settings.ts):
- * patch 与当前状态合并后整体落盘,recentFiles 为追加合并语义
- * (去重保留 ts 最大 → 重复转换置顶;上限 10);空数组 = 清空(替换语义)。
- * 写失败(如磁盘错误)向上抛出,由调用方决定是否静默。
+ * 「读当前值 → 合并 patch → 落盘 → 提交缓存」整体在队列内完成,不同顶层字段
+ * 并发 patch 互不丢更新(最近文件、窗口 bounds、会话文件、抽屉展开态各自独立);
+ * patch 合并为逐字段选择性语义(未携带字段保留现值),recentFiles 为追加合并
+ * (去重保留 ts 最大 → 重复转换置顶;上限 10),空数组 = 清空(替换语义)。
+ * 写失败(如磁盘错误)向上抛出且不提交缓存:内存与磁盘都停在最后一次成功值,
+ * 错误由调用方呈现给用户(禁止静默显示成功);队列不截断,下一次保存可恢复。
  */
 export async function saveUiState(patch: Partial<UiState>): Promise<UiState> {
   return writeUiStateJson.enqueue(async (write) => {
     const current = loadUiState();
+    // 展开 current 即「未携带字段保留现值」;panelOpen 深拷贝避免与缓存共享引用
     const next: UiState = {
       ...current,
-      recentFiles: current.recentFiles,
-      lastSessionFiles: current.lastSessionFiles,
-      lastOpenDir: current.lastOpenDir,
-      windowBounds: current.windowBounds,
-      previewWindowBounds: current.previewWindowBounds,
-      isMaximized: current.isMaximized,
       panelOpen: { ...current.panelOpen },
     };
     if (patch && typeof patch === "object" && !Array.isArray(patch)) {

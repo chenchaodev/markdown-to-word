@@ -25,7 +25,12 @@ import { t, applyStaticTexts } from "../../core/i18n.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { state } from "../state/state.js";
 import { trapFocus } from "../state/utils.js";
-import { runMerge } from "../convert/convert-flow.js";
+import {
+  isBackgroundCommandBlocked,
+  isConvertCommandBlocked,
+  runMerge,
+  withPrecheck,
+} from "../convert/convert-flow.js";
 import {
   WIZARD_TOTAL_STEPS,
   canAdvance,
@@ -106,9 +111,18 @@ function buildWizard(): HTMLElement {
   const nextBtn = h("button", { type: "button", id: "wizardNext", class: "btn btn-solid", dataset: { i18n: "wizard.next" } }, [t("wizard.next")]);
   const finishBtn = h("button", { type: "button", id: "wizardFinish", class: "btn btn-primary hidden", dataset: { i18n: "wizard.finish" } }, [t("wizard.finish")]);
 
-  skipBtn.addEventListener("click", () => goTo(nextStep(currentStep)));
-  prevBtn.addEventListener("click", () => goTo(prevStep(currentStep)));
+  // 向导内命令入口统一前置校验:转换/预检期间一律不响应(判定口径见 isWizardCommandBlocked),
+  // 拒绝时步序不变,用户可继续停留在当前步;关闭向导始终可用,不留死路。
+  skipBtn.addEventListener("click", () => {
+    if (isWizardCommandBlocked()) return;
+    goTo(nextStep(currentStep));
+  });
+  prevBtn.addEventListener("click", () => {
+    if (isWizardCommandBlocked()) return;
+    goTo(prevStep(currentStep));
+  });
   nextBtn.addEventListener("click", () => {
+    if (isWizardCommandBlocked()) return;
     if (canAdvance(currentStep, draft)) goTo(nextStep(currentStep));
   });
   finishBtn.addEventListener("click", () => void finishWizard());
@@ -150,6 +164,21 @@ function goTo(step: number): void {
   renderStep();
 }
 
+/**
+ * 向导内命令锁判定:与全局入口同一前置校验口径,但不计向导自身遮罩。
+ * 向导是当前唯一前台层,它的可见性是自身状态的表达,不是「背景被模态阻断」的信号;
+ * 若直接取 isConvertCommandBlocked,向导内每个命令都会被自身遮罩否决。
+ * 取判定时临时摘掉自身遮罩并在同一任务内恢复(不产生重排/闪烁,焦点陷阱不受影响)。
+ */
+function isWizardCommandBlocked(): boolean {
+  if (!wizardEl) return isConvertCommandBlocked();
+  const visible = !wizardEl.classList.contains("hidden");
+  if (visible) wizardEl.classList.add("hidden");
+  const blocked = isConvertCommandBlocked();
+  if (visible) wizardEl.classList.remove("hidden");
+  return blocked;
+}
+
 /* ---------- 付印提交 ---------- */
 /* 封面元数据清洗:全空则不传(回落 frontmatter) */
 function cleanMetadata(cover: WizardDraft["cover"]): DocMetadata | undefined {
@@ -160,16 +189,29 @@ function cleanMetadata(cover: WizardDraft["cover"]): DocMetadata | undefined {
   return { title: title || undefined, author: author || undefined, date: date || undefined };
 }
 
+/**
+ * 付印提交:整条链(单格式 or docx+pdf 两格式)作为一条命令执行。
+ * 期间另有命令(转换/预检)时本次付印不生效且向导保持打开;先解除自身模态再进链,
+ * 使链内命令锁判定只反映外部命令;链本身经 withPrecheck 单一 flight 持链,
+ * 不会与背景命令并发起第二条链。
+ */
 async function finishWizard(): Promise<void> {
+  if (isWizardCommandBlocked()) return;
   const files = draft.sources.length ? draft.sources : state.selectedFiles;
   const metadata = cleanMetadata(draft.cover);
+  const format = draft.format;
   closeBookWizard();
-  if (draft.format === "both") {
-    await runMerge({ files, format: "docx", metadata });
-    await runMerge({ files, format: "pdf", metadata });
-  } else {
-    await runMerge({ files, format: draft.format, metadata });
-  }
+  await withPrecheck([], async () => {
+    if (format === "both") {
+      await runMerge({ files, format: "docx", metadata });
+      // 两次转换处于同一微任务续段,无用户事件可插入;显式复检统一守卫,
+      // 前序若留下前台模态(完成弹窗)则第二次转换按单一明确结果拦下
+      if (isBackgroundCommandBlocked()) return;
+      await runMerge({ files, format: "pdf", metadata });
+    } else {
+      await runMerge({ files, format, metadata });
+    }
+  });
 }
 
 /* ---------- 打开 / 关闭 ---------- */

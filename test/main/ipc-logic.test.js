@@ -14,6 +14,9 @@
  *   成功透传任务值 / 取消错误 → onCanceled() 形态 / 其他错误归一 { ok:false,error } /
  *   register-finally 注销序(含异常与取消路径)/ ctx 每次新建不复用 /
  *   operation registry 占用冲突 → onBusy,不执行 task
+ * - operationBusyResult / isOperationBusyResult:busy 形状单源(恒三键)与判定
+ * - normalizePrecheckOutcome / isPrecheckFailureOutcome / precheckFailedWarning:
+ *   预检三出口归一(警告数组原样 / busy 形状稳定 / 异常 → 单条可观察失败警告)
  * - webContents operation registry:转换/预检 single-flight、cancel 指向当前操作、
  *   compare-and-delete 防止旧 token 删除后继操作
  */
@@ -24,8 +27,13 @@ import {
   errorMessage,
   importPresetsFromText,
   isConvertFormat,
+  isOperationBusyResult,
+  isPrecheckFailureOutcome,
   isString,
   isStringArray,
+  normalizePrecheckOutcome,
+  operationBusyResult,
+  precheckFailedWarning,
   runConvertTask,
 } from "../../dist/main/ipc/logic.js";
 import {
@@ -33,6 +41,7 @@ import {
   cancelWebContentsOperation,
   finishWebContentsOperation,
   getWebContentsOperation,
+  hasWebContentsOperation,
 } from "../../dist/main/windows/web-contents-registry.js";
 
 function assert(cond, msg) {
@@ -232,17 +241,63 @@ export async function run() {
   }
   console.log("[ok] runConvertTask:成功透传/取消形态/错误归一/ctx 新建不复用/finally 注序/busy 断言通过");
 
+  // ---------- busy 形状单源(operationBusyResult / isOperationBusyResult) ----------
+  {
+    const busy = operationBusyResult("正在转换…");
+    assert(Object.keys(busy).sort().join(",") === "busy,error,ok",
+      `busy 形状应恒为三键(实际 ${Object.keys(busy).sort().join(",")})`);
+    assert(busy.ok === false && busy.busy === true && busy.error === "正在转换…", "busy 字段值不符");
+    // 每次构造均为新对象(调用方按需并接字段,如批量计数字段,互不污染)
+    assert(operationBusyResult("x") !== operationBusyResult("x"), "busy 结果不应复用同一对象引用");
+    assert(isOperationBusyResult(busy) === true, "isOperationBusyResult 应放行 busy 结果");
+    for (const v of [null, undefined, [], {}, { ok: false }, { busy: false }, { busy: 1 }, "busy"]) {
+      assert(!isOperationBusyResult(v), `isOperationBusyResult 应拒绝 ${JSON.stringify(v)}`);
+    }
+  }
+
+  // ---------- 预检结果归一(警告数组 / busy / 异常三出口) ----------
+  {
+    const warnings = [{ key: "warn.unlabeledCodeBlock", fallback: "代码块未标注语言,可能无法正确高亮排版" }];
+    const same = normalizePrecheckOutcome(warnings);
+    assert(Array.isArray(same) && same.length === 1 && same[0] === warnings[0],
+      "警告数组出口应原样透传(成功语义不变)");
+    assert(same !== warnings, "归一应返回新数组,不与调用方数组共享引用");
+
+    const busyOutcome = normalizePrecheckOutcome({ ...operationBusyResult("忙"), extra: 1 });
+    assert(isOperationBusyResult(busyOutcome) && Object.keys(busyOutcome).sort().join(",") === "busy,error,ok",
+      "busy 出口应重建为稳定三键(多余键被丢弃)");
+
+    const failed = { ok: false, error: "ENOENT: no such file" };
+    assert(isPrecheckFailureOutcome(failed) === true, "异常归一结果应判定为预检失败出口");
+    assert(isPrecheckFailureOutcome([]) === false && isPrecheckFailureOutcome(operationBusyResult("忙")) === false,
+      "警告数组/busy 不应被判为预检失败");
+    const failureWarnings = normalizePrecheckOutcome(failed);
+    assert(Array.isArray(failureWarnings) && failureWarnings.length === 1,
+      "预检异常应转为单条失败警告(不再静默空数组)");
+    assert(
+      JSON.stringify(failureWarnings[0]) === JSON.stringify(precheckFailedWarning("ENOENT: no such file")),
+      "失败警告应与 precheckFailedWarning 同形(key+params+fallback)",
+    );
+    assert(failureWarnings[0].params.error === "ENOENT: no such file", "失败警告应携带失败原因");
+    assert(failureWarnings[0].fallback.includes("ENOENT"), "fallback 文案应含失败原因(字典缺 key 时兜底可见)");
+  }
+  console.log("[ok] busy 形状单源 + 预检三出口归一(数组透传/busy 稳定/异常可观察) 断言通过");
+
   // ---------- webContents operation registry ----------
   const firstCtx = { id: 1, cancel() { this.canceled = true; } };
   const firstToken = beginWebContentsOperation(7001, "single", firstCtx);
   assert(firstToken !== null, "首个操作应注册成功");
+  assert(hasWebContentsOperation(7001), "占用后 hasWebContentsOperation 应为真");
   assert(beginWebContentsOperation(7001, "batch", { id: 2, cancel() {} }) === null,
     "同一 webContents 的第二个操作应拒绝");
   assert(getWebContentsOperation(7001)?.kind === "single", "注册表应保留首个操作类型");
-  cancelWebContentsOperation(7001);
+  assert(getWebContentsOperation(7001)?.context === firstCtx, "被拒操作不得替换已占用 context");
+  assert(cancelWebContentsOperation(7001) === true, "存在活动操作时 cancel 应返回 true");
   assert(firstCtx.canceled === true, "cancel 应指向当前活动操作");
 
   assert(finishWebContentsOperation(7001, firstToken) === true, "当前 token 应先释放首个操作");
+  assert(!hasWebContentsOperation(7001), "释放后 hasWebContentsOperation 应为假");
+  assert(cancelWebContentsOperation(7001) === false, "无活动操作时 cancel 应返回 false(空操作)");
   const secondCtx = { id: 3, cancel() {} };
   const secondToken = beginWebContentsOperation(7001, "precheck", secondCtx);
   assert(secondToken !== null, "旧操作结束后同 key 应可注册新操作");
@@ -251,5 +306,10 @@ export async function run() {
   assert(getWebContentsOperation(7001)?.context === secondCtx, "后继操作仍应保持注册");
   assert(finishWebContentsOperation(7001, secondToken) === true, "当前 token 应可释放操作");
   assert(getWebContentsOperation(7001) === undefined, "当前 token 释放后注册表应为空");
-  console.log("[ok] operation registry:single-flight/current cancel/compare-and-delete 断言通过");
+  // 不同 webContents 互不干扰(多窗口隔离)
+  const otherToken = beginWebContentsOperation(7002, "merge", { id: 4, cancel() {} });
+  assert(otherToken !== null && hasWebContentsOperation(7002), "另一 webContents 应可独立占用");
+  assert(!hasWebContentsOperation(7001), "7001 释放后不应牵连 7002");
+  finishWebContentsOperation(7002, otherToken);
+  console.log("[ok] operation registry:single-flight/占用不被替换/current cancel/compare-and-delete/多窗口隔离 断言通过");
 }

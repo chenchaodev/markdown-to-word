@@ -1,6 +1,8 @@
 /**
  * 转换编排:单文件 / 批量 / 合并三种流程——状态守卫与 mode 置位、进度条启停、
  * 结果经 dialogs 展示(汇总条 + 弹窗)。只经 state.ts 读写状态。
+ * 命令锁:isBackgroundCommandBlocked(转换中/模态向导)与 isConvertCommandBlocked
+ * (再加预检中)为所有入口的唯一前置校验,预检链经 withPrecheck single-flight。
  * 不变量:转换成功后经 state.recentRefreshHandler 回调刷新最近区块(组合根接线),
  * 不 import recent-files,避免 ESM 环。
  */
@@ -18,7 +20,7 @@ import {
 } from "../state/utils.js";
 import { actionableError, baseName, errorMessage } from "../state/pure.js";
 import { showBatchDialog, showCompleteDialog, showPrecheckDialog, showSummary } from "../ui/dialogs.js";
-import { updateActionButtons } from "./file-list.js";
+import { setCommandBusyProbe, updateActionButtons } from "./file-list.js";
 import { t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
@@ -28,37 +30,77 @@ function displayError(message: string): string {
   return actionableError(message, translate);
 }
 
+/** 活动预检链:令牌 + Promise。重复入口复用同一条链,所有出口按令牌释放。 */
+interface ActivePrecheck {
+  token: symbol;
+  promise: Promise<void>;
+}
+
+/** 预检中(命令锁的一部分):预检链存在期间新命令一律拒绝。 */
+let activePrecheck: ActivePrecheck | null = null;
+
+/** 令牌比对释放:已过期的旧链不得清掉后一条链的锁。 */
+function releasePrecheck(token: symbol): void {
+  if (activePrecheck === null || activePrecheck.token !== token) return;
+  activePrecheck = null;
+  updateActionButtons(); // 预检结束:按钮忙态随命令锁复位
+}
+
+// 预检期按钮置灰:探针注入使按钮忙态与本模块的命令锁同源(反向注册,避免 file-list 依赖本模块)
+setCommandBusyProbe(isConvertCommandBlocked);
+
 /** 模态/向导打开时禁止背景命令;转换结果弹窗同样复用 dialog-overlay 标记。 */
 function isModalCommandBlocked(): boolean {
   return document.querySelector(".dialog-overlay:not(.hidden)") !== null;
 }
 
-/** renderer 活动命令锁:转换、预检、模态/向导任一存在时拒绝新命令。 */
+/**
+ * 统一前置校验(不含预检锁):转换中或模态/向导打开时拒绝新命令。
+ * 预检链自身的续作(报告弹窗「继续转换」)不被自身预检锁拦住,只受本判定约束。
+ */
+export function isBackgroundCommandBlocked(): boolean {
+  return state.mode !== null || isModalCommandBlocked();
+}
+
+/** renderer 活动命令锁:预检、转换、模态/向导任一存在时拒绝新命令。 */
 export function isConvertCommandBlocked(): boolean {
-  return activePrecheckPromise !== null || state.mode !== null || isModalCommandBlocked();
+  return activePrecheck !== null || isBackgroundCommandBlocked();
 }
 
 function isBusyResult(value: unknown): value is OperationBusyResult {
   return typeof value === "object" && value !== null && "busy" in value && value.busy === true;
 }
 
-/** 当前预检/命令链;重复入口返回同一 Promise,所有出口 finally 清理。 */
-let activePrecheckPromise: Promise<void> | null = null;
-let activePrecheckToken: symbol | null = null;
-
 /**
  * 转换前预检 + renderer command single-flight。聚合各文件警告,无问题静默继续;
  * 有问题弹报告对话。预检/用户决策/实际 action 视为同一命令,重复点击不启动第二条链。
+ * 返回的 Promise 必定结算(取消/忙碌/决策后受阻/异常均收敛),调用方 void 启动即可。
  */
 export function withPrecheck(
   filePaths: string[],
   action: () => void | Promise<void>,
 ): Promise<void> {
-  if (activePrecheckPromise !== null) return activePrecheckPromise;
-  if (state.mode !== null || isModalCommandBlocked()) return Promise.resolve();
+  if (activePrecheck !== null) return activePrecheck.promise;
+  if (isBackgroundCommandBlocked()) return Promise.resolve();
 
-  const token = Symbol("precheck-operation");
-  const operation: Promise<void> = (async (): Promise<void> => {
+  const token = Symbol("precheck-command");
+  const operation = runPrecheckChain(token, filePaths, action);
+  activePrecheck = { token, promise: operation };
+  updateActionButtons(); // 预检进行中:按钮置灰(与点击守卫一致)
+  return operation;
+}
+
+/**
+ * 预检链主体:逐文件预检 → 报告决策 → 交接 action。
+ * 锁与 state.mode 的交接在 action 首个同步段的前后完成(其间无 await),
+ * 两条命令链不会同时处于「无锁且无 mode」的空档。
+ */
+async function runPrecheckChain(
+  token: symbol,
+  filePaths: string[],
+  action: () => void | Promise<void>,
+): Promise<void> {
+  try {
     const warnings: ConvertWarning[] = [];
     for (const filePath of filePaths) {
       try {
@@ -75,31 +117,18 @@ export function withPrecheck(
     if (warnings.length > 0) {
       const ok = await showPrecheckDialog(warnings);
       if (!ok) return;
+      // 决策等待期间可能已进入转换或新模态打开:续作与其他入口共用同一前置校验
+      if (isBackgroundCommandBlocked()) return;
     }
     // action 的首个同步段会置 state.mode;先释放预检锁,让受控 action 通过统一守卫。
-    if (activePrecheckToken === token) {
-      activePrecheckToken = null;
-      activePrecheckPromise = null;
-    }
+    releasePrecheck(token);
     await action();
-  })();
-  activePrecheckToken = token;
-  activePrecheckPromise = operation;
-  void operation.then(
-    () => {
-      if (activePrecheckToken === token) {
-        activePrecheckToken = null;
-        activePrecheckPromise = null;
-      }
-    },
-    () => {
-      if (activePrecheckToken === token) {
-        activePrecheckToken = null;
-        activePrecheckPromise = null;
-      }
-    },
-  );
-  return operation;
+  } catch (err) {
+    // 链自身异常不外泄为未处理拒绝(各入口均 void 启动):命令未执行,按失败提示
+    setError(errorMessage(err));
+  } finally {
+    releasePrecheck(token);
+  }
 }
 
 /** 单文件转换(与旧版行为一致)。 */
@@ -107,6 +136,8 @@ export async function runConvert(
   filePath: string,
   format: "docx" | "pdf",
 ): Promise<void> {
+  // 完整命令锁(含预检):本函数可被不经 withPrecheck 的入口直接调用
+  // (粘贴直转 / 最近记录行内重新转换),预检期间同样不得另起转换
   if (isConvertCommandBlocked()) return;
   state.mode = "single";
   updateActionButtons(); // 禁用选择入口与转换按钮,防止重复点击
@@ -171,7 +202,7 @@ export async function runBatch(
   const targets = files ?? state.selectedFiles;
   // 主入口(不传文件)沿用「≥2 个文件」规则;重试失败项入口允许单个失败文件单独重转
   if (targets.length < (files === undefined ? 2 : 1)) return;
-  if (state.mode !== null || isModalCommandBlocked()) return;
+  if (isBackgroundCommandBlocked()) return;
   const fmt = format ?? state.selectedFormat;
   state.lastBatchFormat = fmt; // 重试失败项按原格式重转
   state.mode = "batch";
@@ -229,7 +260,7 @@ export async function runMerge(
   const format = opts?.format ?? state.selectedFormat;
   const metadata = opts?.metadata;
   if (files.length < 2) return;
-  if (state.mode !== null || isModalCommandBlocked()) return;
+  if (isBackgroundCommandBlocked()) return;
   state.mode = "merge";
   updateActionButtons();
   setStatus(t("convert.merge.stage"));

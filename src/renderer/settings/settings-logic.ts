@@ -193,20 +193,21 @@ export function mergeSettingsWithDefaults(
 
 export type SettingsSaveOutcome = "saved" | "failed" | "superseded";
 
-/** 保存协调器的依赖注入契约;apply 同时负责同步 renderer state 与全部控件回填。 */
+/** 保存协调器的依赖注入契约:apply 只在成功时用 main 权威值同步 renderer state
+ *  与全部控件回填;失败不调用 apply(草稿保留),由 onFailure 呈现失败与未保存状态。 */
 export interface SettingsSaveReconciler<T> {
   save(): Promise<T>;
-  loadAuthoritative(): Promise<T>;
-  fallback(): T;
   isCurrent(): boolean;
   apply(settings: T): void;
-  onFailure(): void;
+  onFailure(error: unknown): void;
 }
 
 /**
- * 设置保存事务协调:成功后用 main 返回值覆盖 renderer；失败后读取 main cache，
- * 再以最近确认值兜底，并把同一权威结果交给 apply(其中同步 state 与控件)。
- * 较旧请求不得覆盖较新的乐观编辑，最终由 isCurrent 判定的最新请求收敛。
+ * 设置保存事务协调:成功且为最新请求时用 main 返回值回填 renderer(权威值);
+ * 失败时**不回滚**——不读 main cache、不覆盖控件,用户当前编辑内容原样保留为
+ * 草稿(失败期间 main 缓存与磁盘停在最后一次成功值),交由 onFailure 呈现失败与
+ * 未保存状态,待下一次保存把草稿一并提交(见 mergePendingSavePatch)。
+ * 较旧请求(已被更新请求取代)既不回填也不报错,最终由 isCurrent 判定的最新请求收敛。
  */
 export async function reconcileSettingsSave<T>(
   reconciler: SettingsSaveReconciler<T>,
@@ -214,22 +215,43 @@ export async function reconcileSettingsSave<T>(
   let saved: T;
   try {
     saved = await reconciler.save();
-  } catch {
+  } catch (error: unknown) {
     if (!reconciler.isCurrent()) return "superseded";
-    let authoritative: T;
-    try {
-      authoritative = await reconciler.loadAuthoritative();
-    } catch {
-      authoritative = reconciler.fallback();
-    }
-    if (reconciler.isCurrent()) {
-      reconciler.apply(authoritative);
-      reconciler.onFailure();
-    }
+    reconciler.onFailure(error);
     return "failed";
   }
-  if (reconciler.isCurrent()) reconciler.apply(saved);
-  return reconciler.isCurrent() ? "saved" : "superseded";
+  if (!reconciler.isCurrent()) return "superseded";
+  reconciler.apply(saved);
+  return "saved";
+}
+
+/** 块级设置字段(patch 合并时需逐字段深合并,其余为标量后值覆盖)。 */
+function mergeBlock<T extends object>(a: T | undefined, b: T | undefined): T | undefined {
+  // 仅两侧都有值才需合并;缺侧时直接沿用另一侧(展开 current 的语义在调用方兜底)
+  if (!a || !b) return undefined;
+  return { ...a, ...b };
+}
+
+/**
+ * 待重试草稿 patch 与新 patch 的合并(纯函数):块级字段逐字段合并、标量后者覆盖。
+ * 用途:上次保存失败而保留的草稿必须并入下一次提交,否则失败期间编辑的字段会
+ * 永远只留在 renderer 内存(main 侧无该值),形成"控件看起来已改、实际未落盘"的
+ * 静默分叉。pending 更早、next 为用户最新编辑,故 next 覆盖 pending。
+ */
+export function mergePendingSavePatch(
+  pending: Partial<AppSettings>,
+  next: Partial<AppSettings>,
+): Partial<AppSettings> {
+  const merged: Partial<AppSettings> = { ...pending, ...next };
+  const pageSetup = mergeBlock(pending.pageSetup, next.pageSetup);
+  if (pageSetup) merged.pageSetup = pageSetup;
+  const typography = mergeBlock(pending.typography, next.typography);
+  if (typography) merged.typography = typography;
+  const headerFooter = mergeBlock(pending.headerFooter, next.headerFooter);
+  if (headerFooter) merged.headerFooter = headerFooter;
+  const watermark = mergeBlock(pending.watermark, next.watermark);
+  if (watermark) merged.watermark = watermark;
+  return merged;
 }
 
 /**

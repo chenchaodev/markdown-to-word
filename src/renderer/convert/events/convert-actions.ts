@@ -2,7 +2,8 @@
  * 事件域·转换入口与进度订阅:
  * - 转换按钮:单文件 convertBtn / 批量 batchBtn / 合并 mergeBtn / 取消 cancelBtn;
  * - 快捷键:Ctrl+Enter 主转换(单文件/批量)、Ctrl+O 追加文件(openDialog 属
- *   selection 域,经 import 复用);
+ *   selection 域,经 import 复用);守卫统一走 isConvertCommandBlocked,
+ *   被阻断时不 preventDefault(模态内控件的 Enter/Space 激活不受影响);
  * - 进度订阅:convert:progress 带 mode 标识直接与 state.mode 比对归属,
  *   迟到事件(mode 已复位)忽略;批量走 convert:batchProgress;print 阶段取消
  *   按钮置灰;窗口 unload 时退订两个订阅(主进程侧 IPC 通道卫生)。
@@ -83,22 +84,25 @@ export function bindConvertActionsEvents(): void {
     setProgress(base + step);
   });
 
-  // 快捷键 Ctrl+Enter 触发主转换(单文件/批量),Ctrl+O 添加文件
+  // 快捷键 Ctrl+Enter 触发主转换(单文件/批量),Ctrl+O 添加文件。
+  // 守卫先于 preventDefault:命令被阻断时不吞按键默认行为(模态内控件的 Enter/Space
+  // 激活不受影响);阻断判定与按钮、菜单入口共用同一命令锁(预检/转换/模态/向导)。
   document.addEventListener("keydown", (event) => {
     const mod = event.ctrlKey || event.metaKey;
     if (!mod) return;
     const key = event.key.toLowerCase();
     if (key === "enter") {
-      event.preventDefault();
       if (isConvertCommandBlocked()) return;
+      event.preventDefault();
       if (state.selectedFiles.length === 1) {
         void withPrecheck([state.selectedFiles[0]!], () => runConvert(state.selectedFiles[0]!, state.selectedFormat)); // 上行已守卫 length === 1
       } else if (state.selectedFiles.length >= 2) {
         void withPrecheck(state.selectedFiles, () => runBatch());
       }
     } else if (key === "o") {
+      if (isConvertCommandBlocked()) return;
       event.preventDefault();
-      if (!isConvertCommandBlocked()) void openDialog(true);
+      void openDialog(true);
     }
   });
 

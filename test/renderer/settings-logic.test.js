@@ -17,6 +17,10 @@
  *   buildCustomPresetEntry(另存为预设快照)、removeCustomPresetByName(按名删除保序)、
  *   parseMarginValue(边距输入解析+钳制)、validateNumberRange(字号/行距范围校验)、
  *   settingsToControlValues(设置对象 → 控件回填值映射)
+ * - reconcileSettingsSave(保存协调):失败保留草稿不调用 apply(控件不回滚到 main
+ *   cache)、过期请求让位(不报失败)、成功以 main 权威值回填
+ * - mergePendingSavePatch(失败草稿并入下一次提交):块级字段逐字段合并、
+ *   标量后值覆盖、无草稿时退化为原 patch
  * - theme 字段:mergeSettingsWithDefaults/settingsToControlValues 的 theme、
  *   applyThemeOn(data-theme 属性应用纯函数:light/dark 设属性,system 移除属性)
  */
@@ -35,6 +39,7 @@ import {
   clampMargin,
   customPresetNameFromId,
   customPresetToTemplate,
+  mergePendingSavePatch,
   mergeSettingsWithDefaults,
   normalizePageSetup,
   outputDirDisplayText,
@@ -315,38 +320,82 @@ export async function run() {
   );
   console.log("[ok] renderer normalize/merge:partial fallback/core 恒等/结构化迁移 warning 去重断言通过");
 
-  // 保存失败回滚：依赖注入证明 state/控件共用的 apply 收到 main cache。
+  // 保存失败保留草稿：依赖注入证明失败路径不碰 apply（控件/state 不回滚到 main cache），
+  // 只报失败；成功路径仍以 main 权威值回填。
   let applied = null;
   let failureShown = false;
-  const fallbackSettings = { ...DEFAULT_SETTINGS, format: "docx" };
+  let failureError = null;
+  // 用户当前编辑内容（草稿）：失败时必须原样保留
+  const draft = { ...DEFAULT_SETTINGS, format: "pdf" };
   const failedSave = await reconcileSettingsSave({
     save: async () => { throw new Error("disk full"); },
-    loadAuthoritative: async () => ({ ...DEFAULT_SETTINGS, format: "pdf" }),
-    fallback: () => fallbackSettings,
     isCurrent: () => true,
     apply: (settings) => { applied = settings; },
-    onFailure: () => { failureShown = true; },
+    onFailure: (error) => { failureShown = true; failureError = error; },
   });
-  const failedControls = settingsToControlValues(applied);
   assert(
-    failedSave === "failed" && applied?.format === "pdf" &&
-      failedControls.format === "pdf" && failedControls.paper === "A4" && failureShown,
-    "保存失败应把 main cache 同步给 state/控件并显示错误",
+    failedSave === "failed" && applied === null && failureShown &&
+      failureError instanceof Error && failureError.message === "disk full",
+    "保存失败应保留编辑内容(不调用 apply 回滚)并把错误交给失败回调",
   );
-  let fallbackApplied = null;
-  const failedReload = await reconcileSettingsSave({
-    save: async () => { throw new Error("disk full"); },
-    loadAuthoritative: async () => { throw new Error("ipc unavailable"); },
-    fallback: () => fallbackSettings,
+  assert(
+    draft.format === "pdf",
+    "失败路径不得修改调用方持有的草稿对象",
+  );
+  // 已被更新请求取代的失败：不报失败、不回填（由最新请求收敛）
+  let staleApplied = null;
+  let staleFailureShown = false;
+  const staleFailure = await reconcileSettingsSave({
+    save: async () => { throw new Error("stale"); },
+    isCurrent: () => false,
+    apply: (settings) => { staleApplied = settings; },
+    onFailure: () => { staleFailureShown = true; },
+  });
+  assert(
+    staleFailure === "superseded" && staleApplied === null && !staleFailureShown,
+    "过期请求的失败不应回填也不应报错(避免覆盖更新请求的收敛结果)",
+  );
+  // 成功且为最新请求：以 main 返回值权威回填（验收 3：成功回填不破坏）
+  let successApplied = null;
+  const successSave = await reconcileSettingsSave({
+    save: async () => ({ ...DEFAULT_SETTINGS, format: "pdf", theme: "dark" }),
     isCurrent: () => true,
-    apply: (settings) => { fallbackApplied = settings; },
+    apply: (settings) => { successApplied = settings; },
     onFailure: () => {},
   });
+  const successControls = settingsToControlValues(successApplied);
   assert(
-    failedReload === "failed" && fallbackApplied === fallbackSettings,
-    "main cache 读取失败时应回滚到最近确认的 renderer 权威快照",
+    successSave === "saved" && successApplied?.format === "pdf" &&
+      successControls.format === "pdf" && successApplied.theme === "dark",
+    "保存成功应以 main 权威值回填 state/控件",
   );
-  console.log("[ok] reconcileSettingsSave:失败回滚到 main cache/最近快照断言通过");
+  console.log("[ok] reconcileSettingsSave:失败保留草稿不回滚/过期请求让位/成功权威回填断言通过");
+
+  // mergePendingSavePatch：失败草稿必须并入下一次提交（否则失败字段永远只存内存）
+  const pendingMerged = mergePendingSavePatch(
+    { format: "pdf", typography: { bodySizePt: 13, fontAscii: "Inter" } },
+    { theme: "dark", typography: { bodySizePt: 15 } },
+  );
+  assert(
+    pendingMerged.format === "pdf" && pendingMerged.theme === "dark",
+    `草稿标量字段应与新 patch 一并提交,实际 ${JSON.stringify(pendingMerged)}`,
+  );
+  assert(
+    pendingMerged.typography?.bodySizePt === 15 && pendingMerged.typography?.fontAscii === "Inter",
+    `块级字段应逐字段合并(新值覆盖同名字段,未提及字段保留草稿值),实际 ${JSON.stringify(pendingMerged.typography)}`,
+  );
+  const freshMerged = mergePendingSavePatch({}, { format: "pdf" });
+  assert(
+    freshMerged.format === "pdf" && freshMerged.typography === undefined,
+    "无草稿时应退化为原 patch(不注入空块)",
+  );
+  // 同字段二次编辑：用户最新值覆盖草稿值（不复活旧值）
+  const reeditMerged = mergePendingSavePatch({ theme: "dark" }, { theme: "light" });
+  assert(
+    reeditMerged.theme === "light",
+    `同一字段的再次编辑应以最新值为准,实际 ${String(reeditMerged.theme)}`,
+  );
+  console.log("[ok] mergePendingSavePatch:草稿并入提交/块级深合并/最新编辑优先断言通过");
 
   const runtimeEffects = [];
   applySettingsRuntimeEffects(

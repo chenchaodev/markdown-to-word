@@ -2,7 +2,7 @@
  * renderer 转换命令/预检 single-flight 直测:
  * - withPrecheck 对同一活动命令返回同一 Promise,预检只调用一次;
  * - 模态/向导可见时拒绝背景命令,转换 mode 也计入锁;
- * - 预检报告 Promise 单实例,显式关闭路径必定结算。
+ * - 预检报告 Promise 单实例,按钮 / 遮罩 / Esc / 窗口关闭各关闭路径必定结算。
  * 用最小 DOM stub 动态载入真实 dist renderer 模块,不引入新依赖。
  */
 import fs from "node:fs";
@@ -48,10 +48,34 @@ function makeElement() {
     querySelector() { return null; },
     querySelectorAll() { return []; },
     contains() { return false; },
+    closest() { return null; },
     append() {},
     appendChild() {},
     get listener() { return listeners; },
   };
+}
+
+/**
+ * 进程内共享的 DOM stub:dist renderer 模块在进程内只 import 一次,dom/refs 的元素
+ * 解析与 dialogs 的模块级事件绑定(含 window unload)都发生在首个 import 段里。
+ * 各段各自安装的 document/window 只影响之后的调用,若元素与监听器表不共享,
+ * 后跑的段拿不到模块级监听器所在的宿主。共享同一批对象,任一段都能驱动它们。
+ */
+function stubDom() {
+  globalThis.__m2wRendererDomStub ??= { elements: new Map(), windowListeners: new Map() };
+  return globalThis.__m2wRendererDomStub;
+}
+
+/** window 事件登记(同一事件类型可有多个模块监听,dialogs 与 convert-actions 都挂 unload)。 */
+function addWindowListener(listeners, type, fn) {
+  const list = listeners.get(type) ?? [];
+  list.push(fn);
+  listeners.set(type, list);
+}
+
+/** 触发已登记的 window 事件(dialogs 的关闭结算路径经此驱动)。 */
+function fireWindow(listeners, type) {
+  for (const fn of listeners.get(type) ?? []) fn();
 }
 
 export async function run() {
@@ -62,11 +86,21 @@ export async function run() {
   let resolvePrecheck;
   const precheckResult = new Promise((resolve) => { resolvePrecheck = resolve; });
   const element = makeElement();
+  // 共享 stub 宿主:元素与 window 监听器表跨段复用(模块只 import 一次,见 stubDom)
+  const { elements, windowListeners } = stubDom();
+  const elementFor = (id) => {
+    let el = elements.get(id);
+    if (!el) {
+      el = makeElement();
+      elements.set(id, el);
+    }
+    return el;
+  };
   const fakeDocument = {
     activeElement: element,
     documentElement: makeElement(),
     body: makeElement(),
-    getElementById: () => element,
+    getElementById: (id) => elementFor(id),
     querySelector: (selector) => (
       modalVisible && selector.includes("dialog-overlay") ? element : null
     ),
@@ -86,6 +120,8 @@ export async function run() {
     },
     setTimeout,
     clearTimeout,
+    addEventListener(type, fn) { addWindowListener(windowListeners, type, fn); },
+    removeEventListener(type) { windowListeners.delete(type); },
   };
 
   try {
@@ -142,6 +178,29 @@ export async function run() {
     const dialogPromise4 = dialogs.showPrecheckDialog([]);
     dialogs.closePrecheckDialog(false);
     assert((await dialogPromise4) === false, "Esc 统一关闭函数必须结算另一条预检 Promise");
+
+    // 遮罩点击路径:点遮罩本身按取消结算(点卡片内部不关闭)
+    const dialogPromise5 = dialogs.showPrecheckDialog([]);
+    const precheckDialogEl = elementFor("precheckDialog");
+    const overlayClick = precheckDialogEl.listener.get("click");
+    assert(typeof overlayClick === "function", "预检弹窗应绑定遮罩点击处理器");
+    overlayClick({ target: makeElement() });
+    assert(precheckDialogEl.classList.contains("hidden") === false, "点卡片内部不应关闭预检弹窗");
+    overlayClick({ target: precheckDialogEl });
+    assert((await dialogPromise5) === false, "遮罩点击必须结算预检 Promise(false)");
+
+    // 窗口关闭路径:unload 结算(不归还焦点),否则预检链与命令锁永久悬挂
+    const dialogPromise6 = dialogs.showPrecheckDialog([]);
+    assert(
+      (windowListeners.get("unload") ?? []).length >= 1,
+      "预检弹窗应注册 unload 结算路径",
+    );
+    fireWindow(windowListeners, "unload");
+    assert((await dialogPromise6) === false, "窗口关闭必须结算预检 Promise(false)");
+    const dialogPromise7 = dialogs.showPrecheckDialog([]);
+    assert(dialogPromise7 !== dialogPromise6, "结算后应可开启下一次预检(单实例不残留)");
+    dialogs.closePrecheckDialog(true);
+    assert((await dialogPromise7) === true, "结算后的下一次预检同样可正常放行");
 
     const eventsSource = fs.readFileSync(
       path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../src/renderer/convert/events/dialogs-events.ts"),

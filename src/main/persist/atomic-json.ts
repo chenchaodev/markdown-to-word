@@ -4,10 +4,12 @@
  * - 写队列:promise 链串行化——write+rename 之间不得插入其它写(同 tmp 路径),
  *   调用序 = 写盘序,链尾即最终态;单次写失败(如磁盘错误)不截断队列,
  *   错误由调用方各自处理
+ * - 失败清理:write/rename 失败时尽力删除半成品 tmp(原文件保持不变、不提交缓存),
+ *   避免残留文件被误当作已提交结果
  * 每实例独立队列(settings / ui-state 各持一实例,保持原双链语义)。
  * 注意:core/ 为纯净层(无 IO、无 Electron),本工具属 main 层,勿下沉。
  */
-import { rename, writeFile } from "node:fs/promises";
+import { rename, rm, writeFile } from "node:fs/promises";
 
 /** 原子 JSON 写入器:filePath 目标文件(tmp 为 filePath + ".tmp"),value 序列化对象,
  *  onCommitted 在写盘成功后同步调用(调用方更新内存缓存,与写盘同序)。 */
@@ -34,8 +36,15 @@ export function createJsonWriter(): JsonWriter {
 
   const writeNow: JsonWrite = async (filePath, value, onCommitted) => {
     const tmpPath = `${filePath}.tmp`;
-    await writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-    await rename(tmpPath, filePath);
+    try {
+      await writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+      await rename(tmpPath, filePath);
+    } catch (error: unknown) {
+      // 失败不提交缓存(原文件保持为最后一次成功值),并清理半成品 tmp;
+      // 错误原样抛给调用方,队列不截断,下一次写仍可恢复。
+      await rm(tmpPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
     onCommitted?.();
   };
 
