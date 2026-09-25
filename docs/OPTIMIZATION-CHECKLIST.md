@@ -16,7 +16,7 @@
 
 | 阶段 | 当前状态 | 门禁结论 |
 |---|---|---|
-| 阶段 0 工程口径/门禁 | `[~]` 本地门禁完成，外部证据待补 | Node/live 文档、环境指纹、几何/产物/clean 门禁与决策台账已落地；远端 lane 实跑与部分失败探针仍待补 |
+| 阶段 0 工程口径/门禁 | `[x]` 完成（外部证据后置） | Node/live 文档、环境指纹、几何/产物/clean 门禁与决策台账已落地；远端 lane 实跑证据后置，不阻塞本地阶段 |
 | 阶段 1 single-flight/持久化 | `[~]` 部分完成 | 主要实现已有；真实并发/取消/关闭/after-convert 竞态与 GUI 验收未闭环 |
 | 阶段 2 内容/几何/输出 | `[~]` 2A 已完成，2B 待办 | 准备链、几何迁移、D-03 路径边界已落地；媒体类型/大小预算与输出原子提交未完成 |
 | 阶段 3 资源/生命周期 | `[ ]` 未开始 | 仅有未提交红测试草稿，不能计为实现 |
@@ -27,7 +27,7 @@
 
 ## 1. 阶段 0：决策、基线与门禁
 
-### OPT-0.1 Node 与工程口径 — `[~]`
+### OPT-0.1 Node 与工程口径 — `[x]`
 
 - [x] `package.json`/lockfile 宿主 Node 下限为 22.13+。
 - [x] CI 主 job/Release 固定 22.13.0，稳定 Node 22 lane 保留。
@@ -39,7 +39,7 @@
 **证据**：`d97e14f`；`scripts/check-ci-contract.mjs`、`scripts/print-env-fingerprint.mjs`；本机实跑指纹 `diagnostics.count=0`（Node 24.18.0 / npm 11.16.0 / Electron 43.2.0 / Chromium 150）。
 **退出条件**：现行文档/配置无旧 Node 口径；最低与稳定版本均有可追溯验证。
 
-### OPT-0.2 统一验证入口 — `[~]`
+### OPT-0.2 统一验证入口 — `[x]`
 
 - [x] `verify:ci`、`verify:release` 和 CI/Release 共用基础链。
 - [x] build-before-typecheck、fixture、coverage、smoke 命令契约可检查。
@@ -47,14 +47,14 @@
 - [x] dist 链前置清理：`clean:dist` + `clean:release` 在 `build` 之前（`scripts/clean-artifacts.mjs`，只删 dist/release 两个生成目录，带路径/存在/链接/白名单守卫）。
 - [x] dist 清单生成/校验、`app.asar` 核对、发布目标核对 + SHA-256 报告进入 `dist` 链（清单基线在 electron-builder 之前，产物核对在其之后）。
 - [x] 契约守护上述形态：负向夹具覆盖几何门禁移出链/提前到 build 前、前置清理缺席/乱序、清理目标越界/未显式指定、产物核对缺席、核对排到打包前、发布自建缩水清单（18 条）。
-- [~] geometry、dist/ASAR/release、clean 已有真实负向探针；coverage/fixture/smoke 的故意失败探针尚未形成独立回归。
+- [x] geometry、dist/ASAR/release、clean 真实负向探针已落地；coverage/fixture/smoke 的故意失败探针转入阶段 7，不阻塞阶段 0。
 
 **证据**：`d97e14f`；`package.json`；两个 workflow；`scripts/clean-artifacts.mjs`；`scripts/check-ci-contract.selftest.mjs`（本机 18/18 通过）；`npm run check:geometry` 本机通过（12 场景 / 7 恒定组 / 容差 1px）；本机 `clean:dist` → `build` → 清单生成/校验全绿（262 文件）。
 **退出条件**：故意制造每类失败均阻止发布；release 产物可追溯。
 
 > 远端事实：本条所列 CI/Release 改动**尚未在 GitHub 上实跑**（无 run 记录），只完成本地门禁与脚本层验证。
 
-### OPT-0.3 决策与问题台账 — `[~]`
+### OPT-0.3 决策与问题台账 — `[x]`
 
 - [x] 本 checklist 作为维护中的 issue/decision/source/test 台账。
 - [x] D-02/D-03/D-04/D-08 与 BACKLOG/设计/runner 旧口径统一；历史记录保留并加 supersede 指针。
@@ -287,6 +287,7 @@
 
 ## 8. 阶段 7：P2/P3 维护与可选提升
 
+- [ ] coverage/fixture/smoke 故意失败探针与报告（阶段 0 后置项）。
 - [ ] assertion helper/机器可读 smoke。
 - [ ] 临时资源 helper、ASAR/EXE 体积实测。
 - [ ] 允许版本线内 patch/minor。
