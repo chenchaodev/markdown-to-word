@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 D2 完成(settings 接线按六组 Tab 拆分)**:`settings-bindings.ts` 710 行 → 8 文件(编排 51 + preset 154 / typography 194 / headerwatermark 129 / numbering 57 / convert 120 / app 93,分组口径 = index.html `data-group`);57 处 addEventListener 逐一搬移零增减,机械化等价核对(除 import 重排与函数 export 化外零行为行差异);`settings-panel.ts` 560 → 443(预设弹窗/保存/删除/导入导出 127 行迁 `settings-preset-actions.ts` 163,四个分组 persist 整体写回收为 panel 单源导出);`applyTemplatePreset` 随预设组落位(book-wizard 改源 import)、`closePresetSaveDialog` 归 preset-actions(dialogs-events 改源),无 re-export 垫片;控件 id/name 零触碰(HTML/refs 未动——refs 类型导出编译期守卫引用完整性 + smoke 控件计数);DEV-GUIDE 代码地图与 BOOK-WIZARD/dialogs-events 依赖注释同步;typecheck/lint/build/70 段/smoke 全绿;GUI 实测随 D 批收尾统一走 ACCEPTANCE
+
 - 2026-09-25:**技术债 D3 完成(`core/pdf/template.ts` 403 行职责拆分)**:拆为三文件——`template.ts`(158 行,模板结构与安全:页眉页脚 chrome/HTML 组装/TEMPLATE_CSP/sanitizeStyleCss/封面)、`template-css.ts`(213 行,文档模板 CSS 纯函数生成)、`katex-css.ts`(44 行,KaTeX CSS 加载,core 唯一 fs 注入点随之归位);消费点同步(render.ts 三 import 分流、formula/page-setup 段注释与 import 路径)、DEV-GUIDE 零 IO 口径 `pdf/template.ts`→`pdf/katex-css.ts` 与 pdf/ 代码地图更新;typecheck/lint/build/70 段/smoke 全绿
 
 - 2026-09-25:**技术债 D4/C5 完成(跨进程契约类型归位 core + convert.ts 双入口收口)**:新建 `core/ipc-contract.ts` 单源承载全部跨进程契约(ConvertProgressPayload/ConvertMode、BatchItem/BatchProgressInfo/BatchResult、UiState/PanelOpen/WindowBounds/RecentFile),main 侧(channels/persist/converter)与 renderer 侧共同 import 同一契约,renderer→main type-only 反向依赖清零——仅剩 `renderer.ts` 的 `type PreloadApi`,属 preload「实现即契约」推导设计(评审 P1 未列入迁移范围,维持不动并声明);C5 并入:`core/convert.ts` 的 DEFAULT_*/ConvertFormat re-export 双入口删除,7 处消费点(6 main + 1 测试)直连 settings-defaults;RESEARCH 2026-08-24 条目补处置行(P1/P2/口径冲突关闭)、候选池 E1 状态回写、ROADMAP 已知限制关闭、DEV-GUIDE 代码地图增列;typecheck/lint/build/70 段/smoke 全绿

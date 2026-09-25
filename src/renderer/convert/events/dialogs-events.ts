@@ -8,7 +8,8 @@
  * - Esc 关闭:另存为预设 → 完成 → 批量,按可见性互斥处理;
  * - 菜单转发:「文件 → 打开文件…」复用 selection.openDialog(false) 链路。
  * 依赖方向单向:本模块 → dom/state/utils/dialogs/file-list/convert-flow/
- * settings-panel/同目录 selection(仅 openDialog),无环。
+ * settings-panel/同目录 selection(仅 openDialog),无环;
+ * 另存为预设弹窗的 Esc 关闭 import settings-preset-actions(closePresetSaveDialog)。
  */
 import {
   batchDialog,
@@ -42,7 +43,8 @@ import { applySelection } from "../file-list.js";
 import { runBatch } from "../convert-flow.js";
 import { closeSettingsDrawer, isSettingsDrawerOpen } from "../../settings/settings-drawer.js";
 import { closeBookWizard } from "../../wizard/book-wizard.js";
-import { closePresetSaveDialog, setSuppressCompleteDialog } from "../../settings/settings-panel.js";
+import { closePresetSaveDialog } from "../../settings/settings-preset-actions.js";
+import { setSuppressCompleteDialog } from "../../settings/settings-panel.js";
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";
 

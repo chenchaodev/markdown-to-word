@@ -1,6 +1,8 @@
 /**
- * 设置面板:设置加载/回填/校验/钳制/预设套用/persist 三件套,以及预设弹窗与
- * 导入导出交互;全部设置控件的事件绑定见 settings-bindings.ts(单向依赖本模块)。
+ * 设置面板:设置加载/回填/校验/钳制/持久化写回(persistSettings + 四组整体
+ * 写回)、预设选项重建、PDF CSS 与 Word 模板导入;全部设置控件的事件绑定见
+ * settings-bindings.ts 六组分组文件(单向依赖本模块),自定义预设弹窗/保存/删除/
+ * 导入导出见 settings-preset-actions.ts(单向依赖本模块)——两者均不被本模块反向引用。
  * 抽屉开合/焦点/副标题写入见 settings-drawer.ts(本模块单向依赖之)。
  * 依赖方向:本模块 → core/settings-defaults、dom.ts、state.ts、settings-drawer;
  * 不反向引用 renderer.ts 的私有符号。
@@ -11,24 +13,18 @@
  */
 import {
   DEFAULT_SETTINGS,
-  TEMPLATE_PRESETS,
   type AppSettings,
   type PageSetup,
 } from "../../core/settings/settings-defaults.js";
 import { htmlLangOf } from "../../core/i18n.js";
 import {
-  buildCustomPresetEntry,
-  customPresetNameFromId,
-  customPresetToTemplate,
   headerLogoDisplayName,
   mergeSettingsWithDefaults,
-  removeCustomPresetByName,
   resolvePresetHint,
   resolvePresetSelection,
   allPresets,
   applyThemeOn,
   settingsToControlValues,
-  validatePresetName,
 } from "./settings-logic.js";
 import {
   afterConvertInputs,
@@ -71,10 +67,6 @@ import {
   pdfCssStatus,
   pdfCssTextInput,
   presetDeleteBtn,
-  presetNameInput,
-  presetSaveBtn,
-  presetSaveDialog,
-  presetSaveError,
   quickOutputDirChip,
   quickPresetSelect,
   templatePresetHint,
@@ -84,14 +76,11 @@ import {
   tocModeSelect,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { setError, setStatus, trapFocus } from "../state/utils.js";
+import { setError, setStatus } from "../state/utils.js";
 import { errorMessage } from "../state/pure.js";
 import { applyStaticTexts, setLanguage, t, LANGUAGES, type I18nKey, type Language } from "../../core/i18n.js";
 // 抽屉副标题文案写入归抽屉模块(本模块只负责由设置值合成文案)
 import { updateDrawerMeta } from "./settings-drawer.js";
-
-/* 另存为预设弹窗焦点陷阱句柄:打开时启用,关闭时解除 */
-let presetSaveTrap: (() => void) | null = null;
 
 /**
  * 外观主题应用到文档根元素:显式 light/dark 设 data-theme,
@@ -308,14 +297,35 @@ export function persistSettings(patch: Partial<AppSettings>): void {
     });
 }
 
-/* ---------- 自定义模板预设(另存为预设) ---------- */
-/* 纯逻辑(预设映射/名校验/上限判断/名称解析/边距钳制)收敛于 settings-logic.ts,
- * 本模块只保留 DOM 交互(弹窗显隐/焦点陷阱/错误提示/持久化调用)。 */
+/* ---------- 分组整体写回(六组绑定共用的持久化路径,单源本模块) ---------- */
+/** 页面尺寸相关字段(纸张/方向/边距)整体写回。 */
+export function persistPageSetup(): void {
+  persistSettings({ pageSetup: { ...state.settings.pageSetup } });
+}
+
+/** 排版相关字段(字体/字号/行距/段落样式)整体写回。 */
+export function persistTypography(): void {
+  persistSettings({ typography: { ...state.settings.typography } });
+}
+
+/** 页眉页脚字段整体写回。 */
+export function persistHeaderFooter(): void {
+  persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+}
+
+/** 文字水印字段整体写回。 */
+export function persistWatermark(): void {
+  persistSettings({ watermark: { ...state.settings.watermark } });
+}
+
+/* ---------- 预设选项重建 ---------- */
+/* 纯逻辑(预设映射/名校验/上限判断/名称解析)收敛于 settings-logic.ts,
+ * 弹窗显隐/焦点陷阱/保存删除/导入导出 DOM 交互归 settings-preset-actions.ts。 */
 
 /** 重建下拉选项(双写):全部预设(硬编码 TEMPLATE_PRESETS + 自定义)统一由
  *  allPresets() 动态生成,HTML 不再写死;硬编码预设经 i18nKey + data-i18n 随语言本地化,
  *  自定义预设用 name。抽屉 #templatePreset 与快速参数条 #quickPreset 同步。 */
-function rebuildPresetOptions(): void {
+export function rebuildPresetOptions(): void {
   const presets = allPresets(state.settings.customPresets);
   for (const select of [templatePresetSelect, quickPresetSelect]) {
     const prev = select.value;
@@ -333,133 +343,6 @@ function rebuildPresetOptions(): void {
       select.appendChild(option);
     }
     if (presets.some((p) => p.id === prev)) select.value = prev;
-  }
-}
-
-/** 另存为预设弹窗:打开(清空输入与错误,焦点进输入框)。 */
-export function openPresetSaveDialog(): void {
-  presetNameInput.value = "";
-  presetSaveError.classList.add("hidden");
-  presetSaveError.textContent = "";
-  presetSaveDialog.classList.remove("hidden");
-  presetNameInput.focus();
-  // Tab 循环不逃逸到背景页。二次调用防御——先解除
-  // 旧陷阱再启用新陷阱,避免重复 open 时旧 keydown 监听句柄被覆盖而泄漏。
-  presetSaveTrap?.();
-  presetSaveTrap = trapFocus(presetSaveDialog);
-}
-
-/** 关闭另存为预设弹窗(导出:renderer Esc 分支与弹窗内按钮共用,统一解除焦点陷阱)。 */
-export function closePresetSaveDialog(): void {
-  presetSaveTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
-  presetSaveTrap = null;
-  presetSaveDialog.classList.add("hidden");
-  presetSaveBtn.focus(); // 焦点还给触发按钮,便于键盘继续操作
-}
-
-function showPresetSaveError(message: string): void {
-  presetSaveError.textContent = message;
-  presetSaveError.classList.remove("hidden");
-}
-
-/** 保存当前排版+页面设置为自定义预设(名称非空、同名拒绝;成功后下拉选中新预设)。 */
-export async function saveCustomPreset(): Promise<void> {
-  const name = presetNameInput.value.trim();
-  // 达上限不再静默截断,弹窗内明确提示先删除(校验逻辑在 settings-logic)
-  const error = validatePresetName(name, state.settings.customPresets);
-  if (error) {
-    showPresetSaveError(error);
-    return;
-  }
-  const entry = buildCustomPresetEntry(name, state.settings);
-  const next = [...state.settings.customPresets, entry];
-  try {
-    const saved = await window.api.settingsSet({ customPresets: next });
-    state.settings.customPresets = saved.customPresets;
-    closePresetSaveDialog();
-    rebuildPresetOptions();
-    // 显式选中新预设(值=当前设置,resolvePresetSelection 保持选中,不被硬编码项弹回)
-    templatePresetSelect.value = customPresetToTemplate(entry).id;
-    quickPresetSelect.value = templatePresetSelect.value; // 镜像同步
-    applySettingsToControls(); // 当前设置即新预设 → 自动选中并显示其 hint
-  } catch {
-    showPresetSaveError(t("preset.saveFailed"));
-  }
-}
-
-/** 删除当前选中的自定义预设;删除后回退「默认」预设(整体套用并持久化)。 */
-export function deleteCustomPreset(): void {
-  const name = customPresetNameFromId(templatePresetSelect.value);
-  if (!name) return;
-  const next = removeCustomPresetByName(state.settings.customPresets, name);
-  void window.api
-    .settingsSet({ customPresets: next })
-    .then((saved) => {
-      state.settings.customPresets = saved.customPresets;
-      rebuildPresetOptions();
-      // 回退「默认」:与下拉选中 default 行为一致(整体套用 + 回填 + 持久化)
-      const preset = TEMPLATE_PRESETS.find((p) => p.id === "default");
-      if (!preset) return;
-      state.settings.typography = { ...preset.typography };
-      state.settings.pageSetup = { ...preset.pageSetup };
-      state.hydratingSettings = true;
-      applySettingsToControls();
-      state.hydratingSettings = false;
-      persistSettings({
-        typography: { ...state.settings.typography },
-        pageSetup: { ...state.settings.pageSetup },
-      });
-    })
-    .catch(() => setError(t("preset.deleteFailed")));
-}
-
-/* ---------- 模板预设导入/导出(main 内选文件 + 合并/导出 + 持久化全包) ---------- */
-/** 导入自定义预设 JSON:main 打开对话框 → 读文件 → 与现有合并(同名覆盖,上限 10)→ 持久化。
- *  成功后同步最新列表并重刷下拉;取消无动作;失败状态区提示。 */
-export async function importCustomPresets(): Promise<void> {
-  try {
-    const r = await window.api.importPresets();
-    if (!r.ok) {
-      setError(t("preset.importFailed", { error: r.error }));
-      return;
-    }
-    if (r.canceled) return; // 用户取消:无动作
-    // 合并结果已在 main 持久化,这里只同步内存列表供下拉重刷(失败静默,反馈不受影响)
-    try {
-      const fresh = await window.api.settingsGet();
-      state.settings.customPresets = fresh.customPresets;
-    } catch {
-      /* 忽略:列表刷新失败时下拉保持旧数据 */
-    }
-    rebuildPresetOptions();
-    applySettingsToControls(); // 重刷后按 matchesPreset 重算 select/hint,不强制切换选中项
-    setStatus(
-      r.overridden > 0
-        ? t("preset.importedOverridden", {
-            imported: r.imported,
-            overridden: r.overridden,
-          })
-        : t("preset.imported", { count: r.imported }),
-    );
-  } catch (err) {
-    const message = errorMessage(err);
-    setError(t("preset.importFailed", { error: message }));
-  }
-}
-
-/** 导出全部自定义预设为 JSON 文件;成功时反馈数量,取消无动作。 */
-export async function exportCustomPresets(): Promise<void> {
-  try {
-    const r = await window.api.exportPresets();
-    if (!r.ok) {
-      setError(t("preset.exportFailed", { error: r.error }));
-      return;
-    }
-    if (r.canceled) return; // 用户取消:无动作
-    setStatus(t("preset.exported", { count: r.count }));
-  } catch (err) {
-    const message = errorMessage(err);
-    setError(t("preset.exportFailed", { error: message }));
   }
 }
 

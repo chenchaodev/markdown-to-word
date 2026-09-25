@@ -78,7 +78,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `index.html` / `style/`(base/drop/settings/dialogs 四文件)/`lang-bootstrap.js`(FOUC 缓解)
   - `renderer.ts`:组合根;`dom/refs.ts`:DOM 引用
   - `state/`:`pure.ts`(纯函数含 errorMessage()/STAGE_TEXT)/`state.ts`(批量契约类型自 main 单源导入)/`utils.ts`(translate 适配器衔接 I18nKey)
-  - `settings/`:`settings-panel.ts`/`settings-bindings.ts`/`settings-logic.ts`(纯函数直测)
+  - `settings/`:`settings-panel.ts`(加载/回填/持久化写回+分组 persist 单源)/`settings-bindings.ts`(绑定编排)+ `settings-bindings-{preset,typography,headerwatermark,numbering,convert,app}.ts`(六组 Tab 接线,与 index.html data-group 同口径,控件 id/name 零触碰)/`settings-preset-actions.ts`(预设弹窗/保存/删除/导入导出)/`settings-logic.ts`(纯函数直测)/`settings-drawer.ts`
   - `convert/`:`convert-flow.ts` + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)
   - `file-list.ts`/`ui/`(`dialogs.ts`/`recent-files.ts`,bindRecentFilesEvents 范式)/`first-run-guide.ts`(首次启动引导)
   - `wizard/`:`book-wizard.ts`(成书向导主逻辑)/`wizard-state.ts`(向导状态管理)

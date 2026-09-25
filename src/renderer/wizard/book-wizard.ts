@@ -8,8 +8,8 @@
  * `persistSettings`(与设置抽屉同源,实时落盘);封面元数据(标题/作者/日期)走
  * `wizardDraft.cover`,付印时随 `runMerge` 传入,不写 settings。
  *
- * 依赖方向单向:本模块 → state/utils(焦点陷阱)/ settings-bindings(preset)/
- * settings-panel(persist/importDocx)/ convert-flow(runMerge)/ wizard-state(纯 reducer);
+ * 依赖方向单向:本模块 → state/utils(焦点陷阱)/ settings-bindings-preset
+ * (applyTemplatePreset)/ settings-panel(persist/importDocx)/ convert-flow(runMerge)/ wizard-state(纯 reducer);
  * 不反向引用组合根,closeBookWizard 供 dialogs-events 的 Esc 链调用。
  */
 import { t, applyStaticTexts } from "../../core/i18n.js";
@@ -25,7 +25,7 @@ import {
 import { state } from "../state/state.js";
 import { hideFieldError, setError, showFieldError, trapFocus } from "../state/utils.js";
 import { errorMessage } from "../state/pure.js";
-import { applyTemplatePreset } from "../settings/settings-bindings.js";
+import { applyTemplatePreset } from "../settings/settings-bindings-preset.js";
 import { importDocxTemplate, persistSettings } from "../settings/settings-panel.js";
 import {
   allPresets,
