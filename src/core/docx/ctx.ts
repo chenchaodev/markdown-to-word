@@ -1,5 +1,8 @@
 /**
  * docx 渲染共享契约:Ctx 渲染上下文与行内元素/样式类型单源。
+ * Ctx 按职责分组:只读配置(CtxConfig)与五组可变状态(交叉引用/脚注/批注/图片/警告),
+ * 组装点唯一(docx/render.ts renderDocx);各组字段均为引用类型,故嵌套列表逐层
+ * 浅克隆 ctx 即可共享同一份可变状态(见 handlers/content.ts renderList 注释)。
  * 不变量:子模块统一从本模块取型,依赖方向单向(子模块 → ctx,不反向)。
  */
 import type {
@@ -33,10 +36,11 @@ export interface ImageLoadResult {
  *  单源别名:equations.ts 与 fallback.ts 原各持一份,统一取型于此。 */
 export type MdMath = Extract<BlockContent, { type: "math" }>;
 
-export interface Ctx {
-  imageResolver?: ImageResolver;
-  warnings?: ConvertWarning[];
-  listLevel: number;
+/**
+ * 只读配置组(渲染期不改写):排版、功能开关与页面几何。
+ * 开关在 renderDocx 构造时统一解析默认,故本组全字段必填,下游无需判空。
+ */
+export interface CtxConfig {
   /** 排版设置(已解析默认,渲染时以 typography 为准) */
   typography: TypographySettings;
   /** 一级标题前分页(已解析默认:关) */
@@ -51,42 +55,81 @@ export interface Ctx {
   tocMode: TocMode;
   /** 公式编号开关(已解析默认:开;关时公式原样渲染、label 段原样渲染、引用保持原文本) */
   equationNumbering: boolean;
-  /** 脚注定义索引:identifier → definition 节点(renderDocx 预扫) */
-  footnoteDefinitions: Map<string, FootnoteDefinition>;
+  /** 正文内容区宽(px,96dpi;= 文本区 twips ÷ 15,renderDocx 构造时注入)。
+   *  图片尺寸属性百分比(width/height=%)相对该宽度换算。 */
+  contentWidthPx: number;
+}
+
+/** 交叉引用与书签状态组:label 查表 + 书签 id 分配(预扫写、渲染期读) */
+export interface CtxXref {
+  /** 公式 label → 编号查表(prescan 后挂入;行内公式交叉引用渲染用) */
+  equationLabels?: Map<string, number>;
+  /** 题注 label → 编号文本(图/表交叉引用查表;buildCaptionContext 预扫时登记) */
+  captionLabels: Map<string, CaptionLabelInfo>;
+  /** 章节 label → 章节号文本 + 标题书签 slug(章节交叉引用查表;prescan 登记) */
+  headingLabels: Map<string, HeadingLabelInfo>;
+  /** docx 书签 linkId 自增计数器(逐文档新建,保证文档内 bookmarkStart/End id 唯一) */
+  bookmarkNextId: { value: number };
+}
+
+/** 脚注状态组:定义索引(预扫) + 收集器与 id 分配(渲染期写) */
+export interface CtxFootnote {
+  /** 脚注定义索引:identifier → definition 节点(prescan 预扫) */
+  definitions: Map<string, FootnoteDefinition>;
   /** 脚注收集器:引用渲染时写入,id 字符串从 "1" 起 */
-  footnotes: Record<string, { children: Paragraph[] }>;
+  notes: Record<string, { children: Paragraph[] }>;
   /** 下一个脚注 id(可变对象,嵌套引用共用计数器) */
-  footnoteNextId: { value: number };
+  nextId: { value: number };
   /** identifier → 已分配脚注 id(重复引用共享同一脚注,与 Word 语义一致) */
-  footnoteIdByLabel: Map<string, number>;
+  idByLabel: Map<string, number>;
+}
+
+/** 批注状态组:id 分配与收集器(渲染期写) */
+export interface CtxComment {
+  /** 批注 id 自增计数器(逐文档新建,保证文档内 commentRangeStart/End/Reference id 唯一) */
+  nextId: { value: number };
+  /** 批注收集器:引用渲染时写入,id 字符串从 "1" 起(与脚注同模式) */
+  notes: Record<string, { children: Paragraph[] }>;
+}
+
+/** 图片状态组:注入的 resolver(core 层零 IO,字节由调用方读后经 resolver 取得)+ 解析 memo */
+export interface CtxImage {
+  resolver?: ImageResolver;
+  /** 解析 memo(url → 在途/已成功结果 Promise)。ctx 生命周期 = 单次转换,
+   *  不跨转换泄漏;以 Promise 缓存保证并发同 URL 共享同一请求。成功缓存、失败
+   *  (null/抛错)不缓存——失败条目结算后删除,同一 URL 后续出现重试。 */
+  memo: Map<string, Promise<ImageLoadResult>>;
+}
+
+/** 警告状态组:收集列表(可缺省,不收集即静默)+ 去重键集合 */
+export interface CtxWarning {
+  list?: ConvertWarning[];
   /** 已发出过的警告去重键集合(悬空交叉引用等逐引用去重,防 GUI 警告列表刷屏)。
    *  去重键与入列逻辑单源 i18n.warnDedupKey/pushWarningOnce;pdf 侧各规则持各自
    *  集合、共用同一函数与键口径(键含 warning key,互不冲突)。 */
   warnedKeys: Set<string>;
-  /** 公式 label → 编号查表(renderDocx 预扫后挂入;行内交叉引用渲染用) */
-  equationLabels?: Map<string, number>;
-  /** 题注 label → 编号文本(图/表交叉引用查表;buildCaptionContext 预扫时登记) */
-  captionLabels: Map<string, CaptionLabelInfo>;
-  /** 章节 label → 章节号文本 + 标题书签 slug(章节交叉引用查表;renderDocx 预扫登记) */
-  headingLabels: Map<string, HeadingLabelInfo>;
-  /** docx 书签 linkId 自增计数器(逐文档新建,保证文档内 bookmarkStart/End id 唯一) */
-  bookmarkNextId: { value: number };
-  /** 批注 id 自增计数器(逐文档新建,保证文档内 commentRangeStart/End/Reference id 唯一) */
-  commentNextId: { value: number };
-  /** 批注收集器:引用渲染时写入,id 字符串从 "1" 起(与脚注同模式) */
-  comments: Record<string, { children: Paragraph[] }>;
-  /** Mermaid 渲染回调(mermaid 围栏代码块 → 内嵌 PNG 图片;缺失时按普通代码块渲染) */
-  mermaidResolver?: MermaidResolver;
-  /** 正文内容区宽(px,96dpi;= 文本区 twips ÷ 15,renderDocx 构造时注入)。
-   *  图片尺寸属性百分比(width/height=%)相对该宽度换算。 */
-  contentWidthPx: number;
-  /** 图片解析 memo(url → 在途/已成功结果 Promise)。ctx 生命周期 = 单次转换,
-   *  不跨转换泄漏;以 Promise 缓存保证并发同 URL 共享同一请求。成功缓存、失败
-   *  (null/抛错)不缓存——失败条目结算后删除,同一 URL 后续出现重试。 */
-  imageMemo: Map<string, Promise<ImageLoadResult>>;
 }
 
-  /** 章节 label 登记信息(交叉引用查表) */
+export interface Ctx {
+  /** 渲染期游标:列表嵌套层级(唯一按层级克隆的标量,其余状态均在子对象内) */
+  listLevel: number;
+  /** 只读配置组(排版/开关/几何) */
+  config: CtxConfig;
+  /** 交叉引用与书签状态组 */
+  xref: CtxXref;
+  /** 脚注状态组 */
+  footnote: CtxFootnote;
+  /** 批注状态组 */
+  comment: CtxComment;
+  /** 图片状态组 */
+  image: CtxImage;
+  /** 警告状态组 */
+  warning: CtxWarning;
+  /** Mermaid 渲染回调(mermaid 围栏代码块 → 内嵌 PNG 图片;缺失时按普通代码块渲染) */
+  mermaidResolver?: MermaidResolver;
+}
+
+/** 章节 label 登记信息(交叉引用查表) */
 export interface HeadingLabelInfo {
   /** 静态章节号文本(「1」「3.2」「3.2.1」;无 h1 时从「1」起,见 chapterNumberFromCounters) */
   chapterText: string;
@@ -94,7 +137,7 @@ export interface HeadingLabelInfo {
   slug: string;
 }
 
-  /** 行内 run 样式(沿父子链累积传递;size 为 half-points,标题字号经此下发) */
+/** 行内 run 样式(沿父子链累积传递;size 为 half-points,标题字号经此下发) */
 export interface RunStyle {
   italics?: boolean;
   bold?: boolean;
@@ -120,10 +163,10 @@ export type InlineChild =
  * 去重警告(薄封装):同一文案只入 warnings 一次。悬空交叉引用被引 N 次此前产生
  * N 条重复警告,GUI 警告列表刷屏。去重键与入列逻辑单源 i18n.pushWarningOnce
  * (键 = key + JSON(params),params 相同才视为同一警告;不同 TeX 源码/label 的
- * 公式降级各自保留一条),pdf 各规则直调同一函数、自持集合(见 ctx.warnedKeys 注释)。
+ * 公式降级各自保留一条),pdf 各规则直调同一函数、自持集合(见 ctx.warning.warnedKeys 注释)。
  */
 export function warnDedup(ctx: Ctx, warning: KeyedWarning): void {
-  pushWarningOnce(ctx.warnedKeys, ctx.warnings, warning);
+  pushWarningOnce(ctx.warning.warnedKeys, ctx.warning.list, warning);
 }
 
 /** 公式解析失败降级警告(display/inline 共用同一 key,params 带 TeX 源码) */

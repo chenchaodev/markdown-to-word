@@ -75,7 +75,7 @@ export function overrideEquationRule(md: MarkdownIt, numbering: boolean = true):
     if (!numbering) return; // 关开关:不做引用替换(引用保持原文本)
     // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内;
     // 骨架见 forEachRefLink)。去重入列经共享 pushWarningOnce(集合生命周期 =
-    // 单次渲染,与 docx 侧 ctx.warnedKeys 同口径)
+    // 单次渲染,与 docx 侧 ctx.warning.warnedKeys 同口径)
     const warnedKeys = new Set<string>();
     forEachRefLink(tokens, EQ_REF_HREF_RE, ({ labels, textToken }) => {
       const label = labels[0]!; // 捕获组结构保证

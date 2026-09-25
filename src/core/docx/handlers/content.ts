@@ -80,7 +80,7 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
         runs.push(new DocxMath({ children: result.children }));
       } else {
         runs.push(new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY }));
-        ctx.warnings?.push(formulaParseFailedWarning(node.value));
+        ctx.warning.list?.push(formulaParseFailedWarning(node.value));
       }
       break;
     }
@@ -92,15 +92,15 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       runs.push(await imageToDocx(node, ctx, style));
       break;
     case "footnoteReference": {
-      const def = ctx.footnoteDefinitions.get(node.identifier);
+      const def = ctx.footnote.definitions.get(node.identifier);
       if (def) {
         // 同一脚注多次引用共享同一 id(此前每次出现分配新 id + 重渲染定义,
         // 产生两条独立脚注,与 Word 共享编号语义不符)
-        let id = ctx.footnoteIdByLabel.get(node.identifier);
+        let id = ctx.footnote.idByLabel.get(node.identifier);
         if (id === undefined) {
-          id = ctx.footnoteNextId.value++;
-          ctx.footnotes[String(id)] = { children: await renderFootnoteDefinition(def, ctx) };
-          ctx.footnoteIdByLabel.set(node.identifier, id);
+          id = ctx.footnote.nextId.value++;
+          ctx.footnote.notes[String(id)] = { children: await renderFootnoteDefinition(def, ctx) };
+          ctx.footnote.idByLabel.set(node.identifier, id);
         }
         runs.push(new FootnoteReferenceRun(id));
       }
@@ -112,12 +112,12 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       // commentReference(必须包在 TextRun 内);批注内容收集为独立段落
       // (author 固定 "markdown-to-word",date 缺省由库取当前时间;内容不继承
       // 锚定处样式,批注气泡独立排版)
-      const id = ctx.commentNextId.value++;
+      const id = ctx.comment.nextId.value++;
       runs.push(new CommentRangeStart(id));
       for (const child of node.anchor) await pushRuns(runs, child, ctx, style);
       runs.push(new CommentRangeEnd(id));
       runs.push(new TextRun({ children: [new CommentReference(id)] }));
-      ctx.comments[String(id)] = {
+      ctx.comment.notes[String(id)] = {
         children: [new Paragraph({ children: await renderPhrasing(node.content, ctx) })],
       };
       break;
@@ -176,9 +176,11 @@ export async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
   for (const item of node.children as ListItem[]) {
     for (const child of item.children) {
       if (child.type === "list") {
-        // ctx 浅拷贝前提:Ctx 全部可变状态均为引用类型
-        // (Map/Set/对象计数器),浅拷贝共享同一实例即共享可变状态;
-        // 未来若新增标量可变字段,此处逐层克隆会静默失效,须改显式传递。
+        // ctx 浅拷贝前提:可变状态全部收在五个子对象内(xref / footnote /
+        // comment / image / warning),子对象本身是引用类型,浅拷贝共享同一实例
+        // 即共享可变状态(不需深克隆);listLevel 是 Ctx 上唯一的标量游标,
+        // 恰为此处要覆盖的字段(config 为只读组,整体共享无碍)。
+        // 未来若在 Ctx 顶层新增标量可变字段,此处逐层克隆会静默失效,须改显式传递。
         result.push(...(await renderList(child, { ...ctx, listLevel: ctx.listLevel + 1 })));
       } else if (child.type === "paragraph") {
         result.push(

@@ -65,7 +65,7 @@ function isCaptionTarget(node: Node): boolean {
  */
 function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo> {
   const captions = new Map<MdParagraph, CaptionInfo>();
-  if (!ctx.captionNumbering) return captions;
+  if (!ctx.config.captionNumbering) return captions;
   let chapter = 0;
   let figIndex = 0;
   let tabIndex = 0;
@@ -75,7 +75,7 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
       chapter++;
       // 仅章节编号开启时图/表序在 h1 处重置;关闭时全文档连续(实现曾无条件重置
       // 导致双格式分歧)
-      if (ctx.headingNumbering) {
+      if (ctx.config.headingNumbering) {
         figIndex = 0;
         tabIndex = 0;
       }
@@ -101,7 +101,7 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
     }
     const info: CaptionInfo = {
       type: isFigure ? "figure" : "table",
-      chapter: ctx.headingNumbering && chapter > 0 ? chapter : null,
+      chapter: ctx.config.headingNumbering && chapter > 0 ? chapter : null,
       index,
       text,
       label,
@@ -109,7 +109,7 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
     captions.set(node, info);
     // label 登记(交叉引用查表,仿 equations labelIndex 模式):label → 类型 + 编号显示文本
     if (label !== undefined) {
-      ctx.captionLabels.set(label, { kind: isFigure ? "fig" : "tab", numberText: captionNumberText(info) });
+      ctx.xref.captionLabels.set(label, { kind: isFigure ? "fig" : "tab", numberText: captionNumberText(info) });
     }
   }
   return captions;
@@ -126,16 +126,16 @@ function captionNumberText(caption: CaptionInfo): string {
 /** 题注段落:居中、比正文小一号(≥8pt)、无首行缩进;文本 = 自动编号 + 题注文本 */
 function renderCaptionParagraph(caption: CaptionInfo, ctx: Ctx): Paragraph {
   const label = captionNumberText(caption);
-  const size = Math.max(8, ctx.typography.bodySizePt - 1);
+  const size = Math.max(8, ctx.config.typography.bodySizePt - 1);
   const textRun = new TextRun({ text: caption.text === "" ? label : `${label} ${caption.text}`, size: size * 2 });
   let children: ParagraphChild[] = [textRun];
   // label 书签:题注带 {#fig:label}/{#tab:label} 时包
   // fig-<label>/tab-<label> 书签,供交叉引用 InternalHyperlink 跳转;id 由
-  // ctx.bookmarkNextId 自增保证文档内唯一(与 render.ts 共用
+  // ctx.xref.bookmarkNextId 自增保证文档内唯一(与 render.ts 共用
   // bookmark.ts wrapBookmark,避免运行时循环)
   if (caption.label !== undefined) {
     const name = docxBookmarkId(`${caption.type === "figure" ? "fig" : "tab"}-${caption.label}`);
-    children = wrapBookmark(ctx.bookmarkNextId, name, children);
+    children = wrapBookmark(ctx.xref.bookmarkNextId, name, children);
   }
   return new Paragraph({
     alignment: AlignmentType.CENTER,

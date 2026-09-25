@@ -1,6 +1,6 @@
 /**
  * 标题块渲染:renderHeading + 行内 sec label 剥离。
- * {#sec:label} 的章节号登记在 prescan(headingLabels),本模块只负责渲染期剥离
+ * {#sec:label} 的章节号登记在 prescan(xref.headingLabels),本模块只负责渲染期剥离
  * 与标题段落构造(书签包裹/编号挂载/h1 前分页)。
  * 双管线对应:src/core/pdf/rules/heading-id.ts(pdf 侧标题 id/锚点注入规则)。
  * 差异与同步点:id 去重单源 core/markdown/slug.ts uniqueSlug——本侧 id 在
@@ -31,9 +31,10 @@ export async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph>
   // 标题排版粒度:字号/段前段后由 headingScale/headingSpacing 档位参数化
   // (纯函数单源 core/settings/typography.ts,pdf CSS 同源换算,双格式观感对齐);
   // 字号 half-points = pt × 2,经 RunStyle 下发到标题内文本 runs
+  const { typography } = ctx.config;
   const sizeHalfPoints =
-    headingFontSizePt(ctx.typography.bodySizePt, ctx.typography.headingScale, node.depth) * 2;
-  const spacing = headingSpacingTwips(ctx.typography.headingSpacing, node.depth);
+    headingFontSizePt(typography.bodySizePt, typography.headingScale, node.depth) * 2;
+  const spacing = headingSpacingTwips(typography.headingSpacing, node.depth);
   // 行内 label:{#sec:label} 尾部后缀不渲染——渲染前从最后一个
   // 叶子文本节点剥离(递归副本,不改 AST;parse.ts 已从 slug 剥离,此处剥离
   // 渲染文本,label 不进标题文本;label 的章节号登记在 renderDocx 预扫完成)
@@ -45,16 +46,16 @@ export async function renderHeading(node: Heading, ctx: Ctx): Promise<Paragraph>
   return new Paragraph({
     heading: levels[node.depth] ?? HeadingLevel.HEADING_6,
     spacing: { before: spacing.before, after: spacing.after },
-    pageBreakBefore: node.depth === 1 && ctx.breakBeforeH1,
+    pageBreakBefore: node.depth === 1 && ctx.config.breakBeforeH1,
     numbering:
-      node.depth <= 3 && ctx.headingNumbering
+      node.depth <= 3 && ctx.config.headingNumbering
         ? { reference: "md-heading", level: node.depth - 1 }
         : undefined,
     // docx 9.x Paragraph 无 bookmarks 选项:书签以 BookmarkStart/End 包裹标题 runs
-    // 实现(linkId 由 ctx.bookmarkNextId 自增,避免组件级恒为 1 的书签 id 冲突)
+    // 实现(linkId 由 ctx.xref.bookmarkNextId 自增,避免组件级恒为 1 的书签 id 冲突)
     children:
       typeof id === "string" && id !== ""
-        ? wrapBookmark(ctx.bookmarkNextId, docxBookmarkId(id), runs)
+        ? wrapBookmark(ctx.xref.bookmarkNextId, docxBookmarkId(id), runs)
         : runs,
   });
 }

@@ -41,7 +41,7 @@ export function overrideImageRule(
     const defaultRule = md.renderer.rules.image;
     if (!defaultRule) return; // markdown-it 内置 image 规则,理论不可达
     const localImagePolicy = createLocalImagePathPolicy({ baseDir });
-    // 非法属性警告去重(共享 pushWarningOnce 键口径,与 docx ctx.warnedKeys 同源;
+    // 非法属性警告去重(共享 pushWarningOnce 键口径,与 docx ctx.warning.warnedKeys 同源;
     // 集合生命周期 = 单次渲染,md 实例每次 renderPdfHtml 新建)
     const warnedKeys = new Set<string>();
     md.renderer.rules.image = (tokens, idx, options, env, self) => {

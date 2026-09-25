@@ -18,10 +18,10 @@ import { TABLE_BORDER_BLACK } from "../theme.js";
 import type { Ctx } from "../ctx.js";
 
 export async function renderTable(node: MdTable, ctx: Ctx): Promise<Table> {
-  // 列宽百分比(和=100)→ DXA(1px = 15 twips,contentWidthPx 与页面几何
+  // 列宽百分比(和=100)→ DXA(1px = 15 twips,config.contentWidthPx 与页面几何
   // 同源)。末列吸收取整余量,保证 gridCol 合计恰为内容区总宽。
   const pcts = node.data?.colWidthsPct;
-  const totalDxa = Math.round(ctx.contentWidthPx * 15);
+  const totalDxa = Math.round(ctx.config.contentWidthPx * 15);
   const colDxa = pcts
     ? pcts.map((p, i) =>
         i < pcts.length - 1 ? Math.round((totalDxa * p) / 100) : totalDxa - sumPrev(pcts, totalDxa),

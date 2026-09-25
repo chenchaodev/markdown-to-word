@@ -21,9 +21,9 @@ import type { Ctx, InlineChild } from "../ctx.js";
  *  普通正文段落与白名单 html 段落共用,保证白名单段落排版与正文一致。 */
 export function renderBodyParagraph(children: InlineChild[], ctx: Ctx): Paragraph {
   return new Paragraph({
-    alignment: ctx.typography.align === "justify" ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
-    spacing: { line: Math.round(ctx.typography.lineSpacing * 240), lineRule: LineRuleType.AUTO },
-    indent: ctx.typography.firstLineIndent ? { firstLineChars: 200 } : undefined,
+    alignment: ctx.config.typography.align === "justify" ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
+    spacing: { line: Math.round(ctx.config.typography.lineSpacing * 240), lineRule: LineRuleType.AUTO },
+    indent: ctx.config.typography.firstLineIndent ? { firstLineChars: 200 } : undefined,
     children,
   });
 }

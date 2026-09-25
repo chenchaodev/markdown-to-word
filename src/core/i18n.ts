@@ -115,7 +115,7 @@ export function warnDedupKey(warning: KeyedWarning): string {
 /**
  * 去重入列(纯函数,双管线共用):同一去重键只入 warnings 一次,防 GUI 警告列表
  * 刷屏(悬空交叉引用被引 N 次只产生 1 条)。seen 集合由调用方持有,生命周期 =
- * 单次转换/单次渲染(docx 侧为 ctx.warnedKeys,pdf 各规则为规则内集合,键含
+ * 单次转换/单次渲染(docx 侧为 ctx.warning.warnedKeys,pdf 各规则为规则内集合,键含
  * warning key 故互不冲突);即使 warnings 缺省也登记 seen(与既有行为一致)。
  */
 export function pushWarningOnce(

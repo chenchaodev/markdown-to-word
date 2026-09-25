@@ -44,19 +44,19 @@ export function scaleToFit(width: number, height: number): { width: number; heig
 }
 
 /**
- * 经 ctx.imageMemo 缓存的图片解析。同一 URL 在文档多处出现时只走一次
+ * 经 ctx.image.memo 缓存的图片解析。同一 URL 在文档多处出现时只走一次
  * resolver(下载/读盘),后续命中复用同一 Promise(并发同 URL 也共享在途请求)。
  * 失败(null/抛错)不缓存:结算后删除条目,该 URL 后续出现重新解析
  * (已持有旧 Promise 的并发等待者仍共享本次结果,不受删除影响)。
  * 取消错误上抛不转警告(降级线只覆盖普通失败)。
- * 前置条件:ctx.imageResolver 已注入(imageToDocx 调用前已判空);
+ * 前置条件:ctx.image.resolver 已注入(imageToDocx 调用前已判空);
  * 该 resolver 已由 docx/render.ts 包上请求守卫(信号/时限/预算)。
  */
 async function resolveImageCached(ctx: Ctx, url: string): Promise<ImageLoadResult> {
-  const memo = ctx.imageMemo;
+  const memo = ctx.image.memo;
   let pending = memo.get(url);
   if (!pending) {
-    const resolver = ctx.imageResolver!;
+    const resolver = ctx.image.resolver!;
     pending = (async (): Promise<ImageLoadResult> => {
       try {
         return { data: await resolver(url) };
@@ -81,7 +81,7 @@ async function resolveImageCached(ctx: Ctx, url: string): Promise<ImageLoadResul
  *  尺寸规则:能解析出 PNG/JPEG 尺寸时按 scaleToFit(上限 IMAGE_MAX_WIDTH,不放大);
  *  无法解析尺寸(其他格式/畸形数据)→ IMAGE_FALLBACK_WIDTH×IMAGE_FALLBACK_HEIGHT 兜底。
  *  sizeAttrs(尾随 {width=…}/{height=…} 解析结果,见 core/markdown/image-size.ts)
- *  存在且非空时改走 resolveImageDisplaySize——百分比相对 ctx.contentWidthPx、
+ *  存在且非空时改走 resolveImageDisplaySize——百分比相对 ctx.config.contentWidthPx、
  *  只给一维按原图宽高等比缩放、两维都给按给定值;显式尺寸绕过 scaleToFit 上限
  *  (用户意图优先)。原图尺寸不可解析时以兜底尺寸作为等比基准。
  *  本地缺失与外链下载失败统一经 resolver 失败路径告警(单次 IO);
@@ -94,24 +94,24 @@ export async function imageToDocx(
   sizeAttrs?: ImageSizeAttrs,
 ): Promise<InlineChild> {
   const fallback = () => new TextRun({ text: `[图片: ${node.alt || node.url}]`, color: SECONDARY_TEXT_GRAY, ...style });
-    if (!ctx.imageResolver) {
-    ctx.warnings?.push(imageLoadFailureWarning(node.url));
+    if (!ctx.image.resolver) {
+    ctx.warning.list?.push(imageLoadFailureWarning(node.url));
     return fallback();
   }
   const { data, error } = await resolveImageCached(ctx, node.url);
   if (!data) {
-    // 此处 imageResolver 必已注入(上方判空返回),失败一律告警
-    ctx.warnings?.push(imageLoadFailureWarning(node.url, error));
+    // 此处 resolver 必已注入(上方判空返回),失败一律告警
+    ctx.warning.list?.push(imageLoadFailureWarning(node.url, error));
     return fallback();
   }
   const type = sniffImageType(data);
   if (type === "webp") {
-    ctx.warnings?.push(webpSkippedWarning(node.url));
+    ctx.warning.list?.push(webpSkippedWarning(node.url));
     return fallback();
   }
     // 未知魔数不再伪装 png(错误标签靠 Word 自行嗅探兜底,行为不可预期)→ 跳过+警告
   if (type === null) {
-    ctx.warnings?.push(unrecognizedImageWarning(node.url));
+    ctx.warning.list?.push(unrecognizedImageWarning(node.url));
     return fallback();
   }
   const size = imageSizeFromBuffer(data);
@@ -120,7 +120,7 @@ export async function imageToDocx(
     sizeAttrs !== undefined && (sizeAttrs.width !== undefined || sizeAttrs.height !== undefined);
   const natural = size ?? { width: IMAGE_FALLBACK_WIDTH, height: IMAGE_FALLBACK_HEIGHT };
   const { width, height } = hasExplicitSize
-    ? resolveImageDisplaySize(natural, sizeAttrs, ctx.contentWidthPx)
+    ? resolveImageDisplaySize(natural, sizeAttrs, ctx.config.contentWidthPx)
     : scaleToFit(natural.width, natural.height);
   return new ImageRun({ type, data, transformation: { width, height } });
 }

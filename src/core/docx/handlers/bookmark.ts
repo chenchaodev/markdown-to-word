@@ -11,7 +11,7 @@ import type { ParagraphChild } from "docx";
  * 不用 docx Bookmark 组件:其实例每枚独立 linkId 计数(恒为 1)→ 文档内
  * 标题书签与公式书签全部 w:id="1" 冲突(Word 要求文档内唯一,实测 WPS 显示异常);
  * 改用导出组件 + nextId 自增保证文档内唯一(nextId 由调用方传入,通常为
- * ctx.bookmarkNextId,生命周期 = 单次渲染闭包)。
+ * ctx.xref.bookmarkNextId,生命周期 = 单次渲染闭包)。
  * `as unknown` 断言依据(d.ts 实证):BookmarkStart/End 不在 ParagraphChild
  * 联合类型内,但运行时可作为 Paragraph children 合法输出——全库该断言收敛于本函数一处。
  */

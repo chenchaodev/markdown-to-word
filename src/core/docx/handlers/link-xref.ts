@@ -30,10 +30,10 @@ export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: R
   // 「式 (?)」无链接 + 警告;其他文本的 #eq: 链接保持原文本跳转公式书签。
   // 公式编号开关关闭时整个分支不生效:按普通 # 锚点链接渲染(保持原文本,
   // 不降级「(?)」、不追加警告,与 pdf 侧不注册 eq_numbering 规则行为一致)
-  const eqMatch = ctx.equationNumbering === false ? null : EQ_REF_HREF_RE.exec(url);
+  const eqMatch = ctx.config.equationNumbering === false ? null : EQ_REF_HREF_RE.exec(url);
   if (eqMatch) {
     const label = eqMatch[1]!; // 正则含捕获组且已匹配,组必存在
-    const n = ctx.equationLabels?.get(label);
+    const n = ctx.xref.equationLabels?.get(label);
     if (text === "式" || text === "公式") {
       if (n !== undefined) {
         runs.push(
@@ -73,14 +73,14 @@ export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: R
     let numberText: string | undefined;
     let anchor: string | undefined;
     if (kind === "sec") {
-      const info = ctx.headingLabels.get(label);
+      const info = ctx.xref.headingLabels.get(label);
       if (info) {
         numberText = info.chapterText;
         anchor = docxBookmarkId(info.slug);
       }
     } else {
-      const info = ctx.captionLabels.get(label);
-      // captionLabels 登记时已限定 kind 与前缀一致(见 captions.ts),此处防御性校验
+      const info = ctx.xref.captionLabels.get(label);
+      // xref.captionLabels 登记时已限定 kind 与前缀一致(见 captions.ts),此处防御性校验
       if (info && info.kind === kind) {
         numberText = info.numberText;
         anchor = docxBookmarkId(`${kind}-${label}`);

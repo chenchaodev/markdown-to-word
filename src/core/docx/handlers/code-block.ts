@@ -25,10 +25,10 @@ export async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
           children: [new ImageRun({ type: "png", data: result.png, transformation: { width, height } })],
         });
       }
-      ctx.warnings?.push(mermaidEmptyWarning());
+      ctx.warning.list?.push(mermaidEmptyWarning());
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      ctx.warnings?.push(mermaidFailedWarning(reason));
+      ctx.warning.list?.push(mermaidFailedWarning(reason));
     }
   }
   // 语言已知但高亮失败(hljs 抛错/解析校验失败)→ 上报降级警告

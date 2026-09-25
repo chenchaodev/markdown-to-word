@@ -132,7 +132,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   const guard = options.guard ?? createCancellationGuard();
   guard.throwIfCanceled();
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
-  // 页面几何提前计算:contentWidthPx 注入 Ctx,图片尺寸属性百分比换算用
+  // 页面几何提前计算:contentWidthPx 注入 Ctx.config,图片尺寸属性百分比换算用
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
   const geometry = validatePageSetup(pageSetup);
   const paper = PAPER_SIZES_MM[pageSetup.paper];
@@ -141,38 +141,51 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   const textWidthTwips = mmToTwips(geometry.contentWidthMm);
   // 图片预算(缺省取单源默认值):台账生命周期 = 单次 renderDocx,不跨转换累计
   const imageBudget = resolveImageBudget(options.imageBudget);
-  // 开关统一「构造时解析默认」:Ctx 全字段必填,下游无需判空
+  // 开关统一「构造时解析默认」:Ctx 与各子对象全字段必填,下游无需判空
+  // (Ctx 分组契约见 ctx.ts;本函数是唯一的 Ctx 组装点)
   const ctx: Ctx = {
-    // 图片解析经守卫包装:注入 request(signal/maxBytes/timeoutMs)、单请求时限、
-    // 文档级数量/字节预算(记账口径 = 原始字节,docx 内嵌即原始字节)。
-    imageResolver: createGuardedImageResolver({
-      resolver: options.imageResolver,
-      guard,
-      budget: imageBudget,
-      ledger: new ImageBudgetLedger(imageBudget),
-    }),
-    warnings: options.warnings,
     listLevel: 0,
-    typography,
-    breakBeforeH1: options.breakBeforeH1 ?? false,
-    headingNumbering: options.headingNumbering ?? typography.headingNumbering,
-    captionNumbering: options.captionNumbering ?? typography.captionNumbering,
-    toc: options.toc ?? true,
-    tocMode: options.tocMode ?? "static",
-    equationNumbering: options.equationNumbering ?? true,
-    footnoteDefinitions: new Map(),
-    footnotes: {},
-    footnoteNextId: { value: 1 },
-    footnoteIdByLabel: new Map(),
-    warnedKeys: new Set(),
-    bookmarkNextId: { value: 1 },
-    commentNextId: { value: 1 },
-    comments: {},
-    captionLabels: new Map(),
-    headingLabels: new Map(),
+    config: {
+      typography,
+      breakBeforeH1: options.breakBeforeH1 ?? false,
+      headingNumbering: options.headingNumbering ?? typography.headingNumbering,
+      captionNumbering: options.captionNumbering ?? typography.captionNumbering,
+      toc: options.toc ?? true,
+      tocMode: options.tocMode ?? "static",
+      equationNumbering: options.equationNumbering ?? true,
+      contentWidthPx: twipsToPx(textWidthTwips),
+    },
+    xref: {
+      captionLabels: new Map(),
+      headingLabels: new Map(),
+      bookmarkNextId: { value: 1 },
+    },
+    footnote: {
+      definitions: new Map(),
+      notes: {},
+      nextId: { value: 1 },
+      idByLabel: new Map(),
+    },
+    comment: {
+      nextId: { value: 1 },
+      notes: {},
+    },
+    image: {
+      // 图片解析经守卫包装:注入 request(signal/maxBytes/timeoutMs)、单请求时限、
+      // 文档级数量/字节预算(记账口径 = 原始字节,docx 内嵌即原始字节)。
+      resolver: createGuardedImageResolver({
+        resolver: options.imageResolver,
+        guard,
+        budget: imageBudget,
+        ledger: new ImageBudgetLedger(imageBudget),
+      }),
+      memo: new Map(),
+    },
+    warning: {
+      list: options.warnings,
+      warnedKeys: new Set(),
+    },
     mermaidResolver: options.mermaidResolver,
-    imageMemo: new Map(),
-    contentWidthPx: twipsToPx(textWidthTwips),
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
   const title = options.metadata?.title ?? options.title;
@@ -186,15 +199,15 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   if (headerLogo && headerFooter.headerMode === "custom") {
     const src = headerFooter.headerLogoPath;
     if (headerLogo.extension === "webp") {
-      ctx.warnings?.push(webpSkippedWarning(src));
+      ctx.warning.list?.push(webpSkippedWarning(src));
       headerLogo = undefined;
     } else if (headerLogo.extension === null) {
-      ctx.warnings?.push(unrecognizedImageWarning(src));
+      ctx.warning.list?.push(unrecognizedImageWarning(src));
       headerLogo = undefined;
     }
   }
   // 五轮预扫(脚注定义/题注上下文/章节 label/公式编号/目录条目,详见 prescan.ts);
-  // 预扫就地写入 ctx(footnoteDefinitions/headingLabels/equationLabels)
+  // 预扫就地写入 ctx(footnote.definitions/xref.headingLabels/xref.equationLabels)
   const { tocEntries, captions, equations } = prescanDocument(ast, ctx);
   const children: (Paragraph | Table | TableOfContents)[] = [];
   // 封面页:metadata.title 存在时置于文档最前(独占一页,不计入标题层级/书签)
@@ -202,8 +215,8 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     children.push(...renderCoverPage(options.metadata));
   }
   // 目录页:开关开启且正文含标题节点时插入(封面之后/文档最前,独占一页;无标题的短文档不生成)
-  if (ctx.toc && tocEntries.length > 0) {
-    children.push(...renderTocPage(tocEntries, ctx.tocMode));
+  if (ctx.config.toc && tocEntries.length > 0) {
+    children.push(...renderTocPage(tocEntries, ctx.config.tocMode));
   }
   for (const node of ast.children) {
     // 块级检查点:逐块复查取消/期限,长文档(块数多、单块重)不必跑完整篇才退出
@@ -245,15 +258,15 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     },
     numbering: { config: [...numberingOptions().config, ...headingNumberingOptions().config] },
     // 空脚注表不生成 footnotes part(避免空 part 导致打开异常)
-    footnotes: Object.keys(ctx.footnotes).length > 0 ? ctx.footnotes : undefined,
+    footnotes: Object.keys(ctx.footnote.notes).length > 0 ? ctx.footnote.notes : undefined,
     // 批注容器:渲染期收集的批注按 id 组装;author 固定
     // "markdown-to-word",date 缺省由库取当前时间(库对空容器同样生成
     // comments.xml,传 undefined 与空容器等价,此处仅非空时显式传入;
     // comments 选项收 ICommentOptions 普通对象,非 Comment 实例)
     comments:
-      Object.keys(ctx.comments).length > 0
+      Object.keys(ctx.comment.notes).length > 0
         ? {
-            children: Object.entries(ctx.comments).map(([id, c]) => ({
+            children: Object.entries(ctx.comment.notes).map(([id, c]) => ({
               id: Number(id),
               author: "markdown-to-word",
               children: c.children,

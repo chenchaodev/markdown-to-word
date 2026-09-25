@@ -1,6 +1,6 @@
 /**
  * renderDocx 预扫:正文渲染前的五轮全文扫描,收敛为单次 prescanDocument 调用。
- * 预扫会就地写入 ctx(footnoteDefinitions / headingLabels / equationLabels),并返回结构化结果。
+ * 预扫会就地写入 ctx(footnote.definitions / xref.headingLabels / xref.equationLabels),并返回结构化结果。
  * 各轮顺序:题注上下文 → 章节 label → 公式上下文 → 目录条目。
  * 双管线对应:src/core/pdf/postprocess.ts 为 pdf 侧对应阶段,但方向相反——本侧
  * 在渲染前从 AST 预扫,pdf 侧在渲染后从 HTML 提取(pdf 无预扫:题注/公式/交叉
@@ -25,7 +25,7 @@ import type { TocEntry } from "./chrome.js";
 
 /** 预扫结构化结果:目录条目 + 题注上下文 + 公式编号上下文(renderBlock 渲染期消费) */
 export interface DocumentPrescan {
-  /** 静态目录条目(ctx.toc 开启时收集;标题书签 href,见 chrome.renderTocPage) */
+  /** 静态目录条目(ctx.config.toc 开启时收集;标题书签 href,见 chrome.renderTocPage) */
   tocEntries: TocEntry[];
   /** 题注段识别表(段落节点 → CaptionInfo;renderBlock paragraph case 查表) */
   captions: Map<MdParagraph, CaptionInfo>;
@@ -35,19 +35,19 @@ export interface DocumentPrescan {
 
 /**
  * 五轮预扫:
- * 1. 脚注定义索引(identifier → definition 节点,写入 ctx.footnoteDefinitions);
- * 2. 题注上下文(buildCaptionContext:图/表识别 + captionLabels 登记);
- * 3. 章节 label(headingLabels 登记,引用可能出现在目标标题之前,渲染期登记会漏;
+ * 1. 脚注定义索引(identifier → definition 节点,写入 ctx.footnote.definitions);
+ * 2. 题注上下文(buildCaptionContext:图/表识别 + xref.captionLabels 登记);
+ * 3. 章节 label(xref.headingLabels 登记,引用可能出现在目标标题之前,渲染期登记会漏;
  *    与 captions/equations 预扫模式一致。计数走 heading-numbering.ts 共享纯函数
  *    (pdf xref 同源),headingNumbering 关闭时不计数 → 引用侧按悬空处理);
- * 4. 公式编号上下文(buildEquationContext,labelIndex 写入 ctx.equationLabels);
- * 5. 目录条目(ctx.toc 开启时,h1-h3 且有 id 的标题)。
+ * 4. 公式编号上下文(buildEquationContext,labelIndex 写入 ctx.xref.equationLabels);
+ * 5. 目录条目(ctx.config.toc 开启时,h1-h3 且有 id 的标题)。
  */
 export function prescanDocument(ast: Root, ctx: Ctx): DocumentPrescan {
   // 预扫脚注定义:identifier → definition 节点(正文循环跳过,引用渲染时取内容)
   for (const node of ast.children) {
     if (node.type === "footnoteDefinition") {
-      ctx.footnoteDefinitions.set(node.identifier, node);
+      ctx.footnote.definitions.set(node.identifier, node);
     }
   }
   // 预扫目录条目 + 题注上下文(题注编号:章节号 = 最近 h1 计数,图/表序按 h1 章节重置,
@@ -60,23 +60,23 @@ export function prescanDocument(ast: Root, ctx: Ctx): DocumentPrescan {
   // 口径:无 h1 跳过前导零级)
   const headingCounters = createHeadingCounters();
   for (const node of ast.children) {
-    if (node.type !== "heading" || !ctx.headingNumbering || node.depth > 3) continue;
+    if (node.type !== "heading" || !ctx.config.headingNumbering || node.depth > 3) continue;
     bumpHeadingCounter(headingCounters, node.depth);
     const chapterText = chapterNumberFromCounters(headingCounters, node.depth);
     const secLabel = node.data?.secLabel;
     const id = node.data?.id;
     if (chapterText !== null && secLabel !== undefined && typeof id === "string" && id !== "") {
-      ctx.headingLabels.set(secLabel, { chapterText, slug: id });
+      ctx.xref.headingLabels.set(secLabel, { chapterText, slug: id });
     }
   }
   // 预扫公式编号上下文:display 公式全文连续编号 + {#eq:label} 标签登记 + 交叉引用查表。
   // 公式编号开关关闭时仍调用 buildEquationContext(numbering=false):label 段照常识别并
   // 跳过渲染(语法标记不显示),但公式不编号、label 不登记、无孤立 label 警告;引用查表
   // 为空 → 行内引用保持原文本(见 pushRuns 的 equationNumbering 门控)
-  const equations: EquationContext = buildEquationContext(ast, ctx, ctx.equationNumbering);
+  const equations: EquationContext = buildEquationContext(ast, ctx, ctx.config.equationNumbering);
   // label 查表挂到 ctx(行内链接渲染处 pushRuns 经 ctx 访问)
-  ctx.equationLabels = equations.labelIndex;
-  if (ctx.toc) {
+  ctx.xref.equationLabels = equations.labelIndex;
+  if (ctx.config.toc) {
     for (const node of ast.children) {
       if (node.type === "heading" && node.depth <= 3) {
         const id = node.data?.id;

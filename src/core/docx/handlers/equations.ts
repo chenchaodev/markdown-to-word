@@ -75,7 +75,7 @@ function buildEquationContext(ast: Root, ctx: Ctx, numbering: boolean = true): E
           lastInfo.label = label;
           labelIndex.set(label, lastInfo.index);
         } else {
-          ctx.warnings?.push({
+          ctx.warning.list?.push({
             key: "warn.eqLabelOrphan",
             params: { label },
             fallback: `公式 label 前无公式,已忽略: {#eq:${label}}`,
@@ -116,7 +116,7 @@ export function renderDisplayMath(
         }),
       ];
     }
-    ctx.warnings?.push(formulaParseFailedWarning(node.value));
+    ctx.warning.list?.push(formulaParseFailedWarning(node.value));
     return [
       new Paragraph({
         alignment: AlignmentType.CENTER,
@@ -125,7 +125,7 @@ export function renderDisplayMath(
     ];
   }
   if (!result.ok) {
-    ctx.warnings?.push(formulaParseFailedWarning(node.value));
+    ctx.warning.list?.push(formulaParseFailedWarning(node.value));
   }
   // 公式主体:解析成功 → docx Math;失败 → TeX 源码等宽灰字
   const mathChild: DocxMath | TextRun = result.ok
@@ -148,7 +148,7 @@ export function renderDisplayMath(
     ],
     children:
       eq.label !== undefined
-        ? wrapBookmark(ctx.bookmarkNextId, docxBookmarkId(`eq-${eq.label}`), equationRuns)
+        ? wrapBookmark(ctx.xref.bookmarkNextId, docxBookmarkId(`eq-${eq.label}`), equationRuns)
         : equationRuns,
   });
   return [paragraph];
