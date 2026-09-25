@@ -44,12 +44,13 @@ export async function runSegment(fileUrl) {
 
 /**
  * 单段执行 + 看门狗竞速(仅在看门狗启用时调用):
- * - 超时 → 该段标记失败并置 aborted 标志,由 runAll 停止后续段、入口打印结果后硬退出。
+ * - 超时 → 该段标记失败,继续放行后续段(一次看全失败面,E3 试点),置 hung 标志。
  * - 已知局限(务实取舍):段与 runner 同进程(Electron 环境),无法安全终止单个悬挂段
  *   的 promise;不做每段子进程隔离——段依赖 Electron 运行时,逐段拉起 electron 进程
- *   成本高且引入 IPC/生命周期脆弱机制。因此超时后放弃「放行下一段」语义,改为快速失败 +
- *   全局硬退出(app.exit),由进程退出确定性释放悬挂段持有的 BrowserWindow 等资源。
- * 返回 { ok, ms, error? },不含 file(由 runAll 补齐)
+ *   成本高且引入 IPC/生命周期脆弱机制。故超时后悬挂段仍后台残留,由 runAll 跑完
+ *   全部段、入口打印结果后硬退出(app.exit)统一释放其持有的 BrowserWindow 等资源;
+ *   残留段与后续段的隔离亦不做(仅此一处已知局限,见 TECH-DEBT-PLAN E3)。
+ * 返回 { ok, ms, error?, timedOut? },不含 file(由 runAll 补齐)
  */
 async function runSegmentWithWatchdog(s, timeout) {
   const start = Date.now();
@@ -57,7 +58,7 @@ async function runSegmentWithWatchdog(s, timeout) {
   let timer;
   const watchdog = new Promise((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error(`测试段超时(${timeout}ms): ${s.name}(已中止后续段,进程将硬退出以释放悬挂资源)`)),
+      () => reject(new Error(`测试段超时(${timeout}ms): ${s.name}(该段记失败,后续段继续执行,进程收尾硬退出释放悬挂资源)`)),
       timeout,
     );
   });
@@ -78,7 +79,8 @@ async function runSegmentWithWatchdog(s, timeout) {
  * 顺序执行全部测试段(目录顺序 + 目录内文件名排序),返回逐段结果。
  * options.segmentTimeoutMs:单段看门狗超时(ms),由入口(acceptance.mjs)从环境变量
  * M2W_ACCEPTANCE_SEGMENT_TIMEOUT_MS 读入并传入;0 或 NaN 等无效值 = 不启用(默认行为不变)。
- * 某段看门狗超时 → 记为失败并停止后续段;返回值 aborted=true 提示入口须硬退出
+ * 某段看门狗超时 → 记为失败且**继续执行后续段**(一次看全失败面,E3 试点);
+ * 返回值 hung=true 提示入口:存在未终止的悬挂段,结果打印完毕须硬退出释放资源
  * (悬挂段无法在同进程内被终止,详见 runSegmentWithWatchdog 注释)。
  */
 export async function runAll(dirs, options = {}) {
@@ -86,7 +88,7 @@ export async function runAll(dirs, options = {}) {
   const watchdogEnabled = timeout > 0 && Number.isFinite(timeout);
   const segments = await discoverSegments(dirs);
   const results = [];
-  let aborted = false;
+  let hung = false;
   for (const s of segments) {
     if (!watchdogEnabled) {
       const start = Date.now();
@@ -100,11 +102,11 @@ export async function runAll(dirs, options = {}) {
       const r = await runSegmentWithWatchdog(s, timeout);
       results.push({ file: s.name, ...r });
       if (r.timedOut) {
-        // 超时段可能仍持有窗口/句柄且继续后台跑 → 不放行下一段,交入口硬退出
-        aborted = true;
-        break;
+        // 超时段未终止仍后台残留 → 记录失败后照常放行后续段(E3 试点「不中止后续」),
+        // 悬挂资源由入口在结果打印完毕后硬退出统一释放
+        hung = true;
       }
     }
   }
-  return { results, aborted };
+  return { results, hung };
 }

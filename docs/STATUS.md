@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 E3 完成(看门狗超时改「记录失败继续跑」试点)**:`runner.runAll` 超时分支去掉 `break`——超时段记失败后**照常放行后续段**(一次看全失败面),标志 `aborted`→`hung`(语义改为「存在未终止悬挂段,结果打印完毕由入口硬退出统一释放资源」,`acceptance.mjs` 消息同步);悬挂段与后续段的隔离仍不做(逐段子进程成本高,已知局限注释保留并注明 E3);探针实证:临时悬挂段 8s 超时记 fail,其后 toc-caption/watermark/main/renderer 段全部照常执行并汇总,exit 1 + 收尾消息正确;正常全量 70 段(17.7s)与 lint 不受影响
+
 - 2026-09-25:**技术债 E2 完成(smoke 固定等待改条件等待;口径经用户拍板「仅动等待,计数全保留」)**:逐处核实 3 处固定 `setTimeout`——1500ms 等页面加载改轮询 `readyState+convertBtn`(就绪即过、10s 超时显式失败,不再盲跑诊断)、页内 50ms 等状态区改轮询 `status.textContent`(同步更新首轮即过、最长 2s;`statusEl` 为缓存引用原地改文本,单次捕获即等价)、`writeWithRetry` 150ms 为失败重试退避(非条件等待,保留);**9 处精确计数断言全保留**(拍板为有意防回归守卫,计划「E2 全量化」维持冻结);smoke ×2 连跑通过、renderer diag 与改造前逐字节一致、lint 绿(计数断言零触碰)
 - 2026-09-25:**技术债 E4 完成(`allowDefaultProject` 手工清单改运行时自动扫描)**:库约束源码实证(`typescript-estree/validateDefaultProjectForFilesGlob`:glob 含 `**` 或等于裸 `*` 即 throw,递归通配不可用,故原手工逐目录枚举是当时唯一写法)→ 改为 eslint.config.js 加载时按 `src/test/scripts` 实际目录 × 目录中出现的扩展名(.js/.mjs/.cjs)生成逐目录 glob(去重排序),**新增子目录零登记自动覆盖**;等价核对:lint 面 215 文件 / 0 问题与改造前一致;新目录探针实证(`test/eguard-probe/probe.js` lint 通过——手工清单时代必报「not found by the project service」,同 D5 实证风险,探针已清理);失败模式保持显式不静默(漏匹配或超 100 文件上限均 lint 报错)
 - 2026-09-25:**技术债 E1 完成(覆盖率门槛进 CI)**:①本地 `test:coverage` 摸基线 = stmts 93.92 / branch 88.84 / funcs 93.15 / lines 93.92(A4 盘点已证 G1-G8 断言全覆盖、G9 不补,E1③「补 G1-G9 断言」经核实**无需执行**——计划假设的 60% 低基线已不成立);②门槛 **90/85/90/90**(低起点留开发余量防大面回归,后续渐进收紧)写入 `test:coverage` 脚本单源,`ci.yml` 验收步改跑该脚本——本地与 CI 同一门禁;实证 c8 每次运行自清 tmp(无陈旧合并虚高)、门禁语义(反向 99 → exit 1 / 正向 → exit 0);typecheck/lint/build/70 段+覆盖率全绿

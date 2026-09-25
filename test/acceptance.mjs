@@ -57,7 +57,7 @@ app.on("window-all-closed", () => {});
 
 void app.whenReady().then(async () => {
   const totalStart = Date.now();
-  const { results, aborted } = await runAll([segmentsDir, mainDir, rendererDir], {
+  const { results, hung } = await runAll([segmentsDir, mainDir, rendererDir], {
     segmentTimeoutMs: Number(
       process.env.M2W_ACCEPTANCE_SEGMENT_TIMEOUT_MS ?? 180000,
     ),
@@ -70,9 +70,10 @@ void app.whenReady().then(async () => {
     }
   }
   printStats(results, totalStart);
-  // 看门狗超时 → 悬挂段无法在同进程内终止(runner 注释),此处硬退出确定性释放资源
-  if (aborted) {
-    console.error("[fail] 存在超时段,已中止后续段;进程硬退出以释放悬挂资源");
+  // 看门狗超时 → 悬挂段无法在同进程内终止(runner 注释);后续段已照常跑完,
+  // 此处硬退出确定性释放悬挂资源(E3 试点:超时不中止后续,一次看全失败面)
+  if (hung) {
+    console.error("[fail] 存在超时段(该段记失败,后续段已照常执行);结果打印完毕,进程硬退出以释放悬挂资源");
     cleanupTempUserData();
     app.exit(1);
     return;
