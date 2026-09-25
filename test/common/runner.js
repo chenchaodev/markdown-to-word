@@ -49,7 +49,7 @@ export async function runSegment(fileUrl) {
  *   的 promise;不做每段子进程隔离——段依赖 Electron 运行时,逐段拉起 electron 进程
  *   成本高且引入 IPC/生命周期脆弱机制。故超时后悬挂段仍后台残留,由 runAll 跑完
  *   全部段、入口打印结果后硬退出(app.exit)统一释放其持有的 BrowserWindow 等资源;
- *   残留段与后续段的隔离亦不做(仅此一处已知局限,见 ROADMAP「已知限制」条目)。
+ *   残留段与后续段的隔离亦不做(仅此一处已知局限,见 ROADMAP-CANDIDATES「维持人工·已知限制」)。
  * 返回 { ok, ms, error?, timedOut? },不含 file(由 runAll 补齐)
  */
 async function runSegmentWithWatchdog(s, timeout) {

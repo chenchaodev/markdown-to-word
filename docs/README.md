@@ -8,7 +8,7 @@ markdown-to-word: Markdown 转 Word / PDF 的 Windows 桌面应用。项目知�
 - **搭环境/跑命令/找代码** → `DEV-GUIDE.md`
 - **追溯设计决策** → `RESEARCH.md` / `ADR.md`
 - **排查故障** → `RESEARCH.md`（坑/根因沉淀）
-- **查看进度** → `STATUS.md` / `ROADMAP.md` / `CHANGELOG.md`
+- **查看进度/找需求入口** → `ROADMAP-CANDIDATES.md`（backlog,需求唯一入口）→ `ROADMAP.md` / `STATUS.md` / `CHANGELOG.md`
 - **交付实测** → `ACCEPTANCE.md`
 - **UI 设计** → `design/` 目录
 
@@ -21,6 +21,7 @@ markdown-to-word: Markdown 转 Word / PDF 的 Windows 桌面应用。项目知�
 | `RESEARCH.md` | 库/技术事实、调研结论 | 得出已验证结论时 |
 | `ADR.md` | 架构决策（ADR） | 做架构决策/审查时 |
 | `ROADMAP.md` | 需求范围/选型/架构/里程碑 | 规划变更或里程碑完成时 |
+| `TECH-DEBT-PLAN.md` | 技术债处置计划(代码分析产出,分阶段排期) | 分析结论更新/批次执行完成时 |
 | `DEV-GUIDE.md` | 环境/命令/代码地图/验证方式 | 环境或代码结构变化时 |
 | `USER-GUIDE.md` | 终端用户使用说明（安装/操作/设置/FAQ） | 功能或设置变化时 |
 | `ACCEPTANCE.md` | 批次验收清单与实测结果记录 | 验收变更/实测完成时 |
@@ -49,8 +50,7 @@ markdown-to-word: Markdown 转 Word / PDF 的 Windows 桌面应用。项目知�
 | `2026-08-23-133005-全库质量审计.md` | 1.0.0 后全库审计 |
 | `20260823-230554-目录结构优化方案.md` | 目录/文件结构重组方案 |
 | `2026-08-25-182036-功能候选调研与迭代排期.md` | 2.0.0 后功能开发调研 |
-| `20260925-004712-代码分析四路盘点.md` | 四路代码分析(core/GUI/测试/文档;处置计划见下行存档) |
-| `20260925-130122-技术债处置计划.md` | 技术债处置计划(A-E 五批 24 项全部完成;四路盘点的处置计划) |
+| `20260925-004712-代码分析四路盘点.md` | 四路代码分析(core/GUI/测试/文档;处置计划见 TECH-DEBT-PLAN.md) |
 
 ## 维护约定
 
