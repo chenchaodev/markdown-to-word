@@ -21,7 +21,7 @@
 - pwsh 环境坑:commit message 用单引号包裹,避免内嵌 ASCII 双引号被拆包(已踩坑)
   - 版本号三统一(1.0.0 起):package.json / git tag / CHANGELOG 同号(如 1.0.0 → tag v1.0.0 → CHANGELOG [1.0.0]);0.32.0 及以前为迭代序列 0.NN.M 与发布号 0.5.x 解耦的历史,勿回退
   - 规划编号不进交付物:ROADMAP-CANDIDATES 的候选编号(B1–B11 等)属规划阶段内部用语,晋升实现后须用描述性功能名(如 成书向导/剪贴板直转),不得写入代码注释/文件名/发版文档(CHANGELOG/STATUS/ACCEPTANCE/ROADMAP 小节标题);发版前做「规划编号→功能名」重命名,避免批次概念泄漏
-- 测试体系:`test/`(segments/ core 渲染 + main/ 主进程层,按内容主题零注册 + fixtures/ 静态样例 + common/ 工具),入口 `npm run test`(acceptance)、`test:smoke`、`test:all`;产物 `output/artifacts` + `output/smoke`;新增能力须补对应测试段,缺口清单见 ROADMAP
+- 测试体系:`test/`(segments/ core 渲染与跨域守护 + main/ 主进程层 + renderer/ UI 层,镜像 src 三层,按内容主题零注册 + fixtures/ 静态样例 + common/ 工具),入口 `npm run test`(acceptance)、`test:smoke`、`test:all`;产物 `output/artifacts` + `output/smoke`;新增能力须补对应测试段,缺口清单见 ROADMAP
 
 ## 流程(遵循全局配置目录 WORKFLOW-GUIDE.md 阶段 0-8)
 - 文档驱动:需求/设计文档 → 规划文档(STATUS 顶部一条 + ACCEPTANCE 清单 + ROADMAP 变更)→ 开发前确认,规划即契约;开发中不反复更新,收尾统一同步

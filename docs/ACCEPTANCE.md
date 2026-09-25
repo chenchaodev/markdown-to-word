@@ -382,7 +382,7 @@
 
 ## 批次「B9 UX 体验批」验收记录(2026-08-23)
 
-> 代码 + 自动化验证已完成(45 段/smoke 全绿,提交 8780c14 视觉批+46c0d4d 交互逻辑批);自动断言见 test/segments/renderer-pure.test.js(stageText/actionableError/partitionDuplicates/selectionStatus)与 test/main/ui-state.test.js(isMaximized)。GUI 实测已通过(2026-08-24 用户确认)。
+> 代码 + 自动化验证已完成(45 段/smoke 全绿,提交 8780c14 视觉批+46c0d4d 交互逻辑批);自动断言见 test/renderer/renderer-pure.test.js(stageText/actionableError/partitionDuplicates/selectionStatus)与 test/main/ui-state.test.js(isMaximized)。GUI 实测已通过(2026-08-24 用户确认)。
 
 ### 进度与错误反馈
 - [x] PDF 转换进度分阶段递进(读取→解析→渲染各阶段百分比单调上升,不回退)
@@ -402,7 +402,7 @@
 
 ## 批次「B13 暗色模式」验收记录(2026-08-23)
 
-> 代码 + 自动化验证已完成(45 段/smoke 全绿,提交 5a91a4a);自动断言见 test/segments/settings-logic.test.js(applyThemeOn 直测)。GUI 实测已通过(2026-08-24 用户确认)。
+> 代码 + 自动化验证已完成(45 段/smoke 全绿,提交 5a91a4a);自动断言见 test/renderer/settings-logic.test.js(applyThemeOn 直测)。GUI 实测已通过(2026-08-24 用户确认)。
 
 - [x] 设置面板「外观主题」三选一切换即时生效:浅色/深色界面整体变色(背景/文字/按钮/弹窗/列表悬停)
 - [x] 「跟随系统」下修改系统深浅色设置,应用界面跟随变化

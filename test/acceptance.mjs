@@ -1,13 +1,13 @@
 /**
- * 验收测试入口:自动发现并顺序执行 segments/(core 渲染)与 main/(主进程层)
- * 下的 *.test.js。段 = 一个内容主题的断言;新增测试 = 在 segments/ 或 main/
- * 新建 xxx.test.js 并导出 async function run(),零注册(入口自动发现)。
+ * 验收测试入口:自动发现并顺序执行 segments/(core 渲染)、main/(主进程层)与
+ * renderer/(UI 层)下的 *.test.js。段 = 一个内容主题的断言;新增测试 = 按被测
+ * 代码所在层新建 xxx.test.js 并导出 async function run(),零注册(入口自动发现)。
  *
- * 目录组织标准(三种并存,按序判断新测试归属):
- * 1. segments/ = 按内容主题命名(core 渲染能力的一个主题一段);
- * 2. main/ = 按层命名(主进程层,需要 Electron 环境/直测 dist/main);
- * 3. 例外约定:零 Electron API 的纯逻辑段即使测的是 main/renderer 代码,
- *    也住 segments/(如 ipc-channels/ipc-logic/presets-import/settings-logic 等)。
+ * 目录组织标准(test 树镜像 src 三层 + 跨域例外,按序判断新测试归属):
+ * 1. segments/ = src/core 渲染能力的一个内容主题一段;跨层契约/恒等守护段
+ *    (无单一归属层,如 identity-guards、i18n-registry)亦住此处;
+ * 2. main/ = 被测主体为 src/main 的主题段(含零 Electron API 的纯逻辑直测);
+ * 3. renderer/ = 被测主体为 src/renderer 的主题段(纯函数/状态机/CSS 令牌恒等)。
  *
  * 单段筛选(开发迭代提速):设环境变量 M2W_ONLY=子串[,子串...] 只跑段名
  * 含任一子串的段(大小写不敏感,如 M2W_ONLY=basic-render 或 M2W_ONLY=mermaid,pdf-meta);
@@ -25,6 +25,7 @@ import { runAll } from "./common/runner.js";
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
 const segmentsDir = path.join(testRoot, "segments");
 const mainDir = path.join(testRoot, "main");
+const rendererDir = path.join(testRoot, "renderer");
 
 // userData 隔离:whenReady 前重定向到一次性临时目录,
 // 防止验收测试读写真实 %APPDATA% 下的用户数据。
@@ -56,7 +57,7 @@ app.on("window-all-closed", () => {});
 
 void app.whenReady().then(async () => {
   const totalStart = Date.now();
-  const { results, aborted } = await runAll([segmentsDir, mainDir], {
+  const { results, aborted } = await runAll([segmentsDir, mainDir, rendererDir], {
     segmentTimeoutMs: Number(
       process.env.M2W_ACCEPTANCE_SEGMENT_TIMEOUT_MS ?? 180000,
     ),

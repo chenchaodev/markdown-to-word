@@ -25,6 +25,7 @@ export default tseslint.config(
             "test/*.mjs",
             "test/common/*.js",
             "test/main/*.js",
+            "test/renderer/*.js",
             "test/segments/*.js",
             "test/tools/*.mjs",
             "test/tools/*.cjs",

@@ -18,7 +18,7 @@
 | `npm run dev` | 启动 Electron 开发(自带构建新鲜度守卫) |
 | `npx electron . --smoke` | 冒烟自测(启动 + convert 链路,自清理产物) |
 | `npm run dist` | electron-builder 打包 NSIS 安装包(输出 `release/`) |
-| `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`,自动发现 `segments/` 与 `main/` 下 `*.test.js`;需先 build;新增测试=新建段文件零注册) |
+| `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`,自动发现 `segments/`、`main/` 与 `renderer/` 下 `*.test.js`;需先 build;新增测试=新建段文件零注册) |
 | `npm run test:smoke` | 冒烟自测(`electron . --smoke`,前置构建新鲜度守卫) |
 | `npm run test:coverage` | c8 覆盖率报告(主进程 V8 coverage + sourceMap 映射) |
 | `npm run test:all` | 验收 + 冒烟 |
@@ -81,15 +81,15 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `convert/`:`convert-flow.ts` + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)
   - `file-list.ts`/`ui/`(`dialogs.ts`/`recent-files.ts`,bindRecentFilesEvents 范式)/`first-run-guide.ts`(首次启动引导)
   - `wizard/`:`book-wizard.ts`(成书向导主逻辑)/`wizard-state.ts`(向导状态管理)
-- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与纯逻辑)+ main/(主进程层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/gen-fixtures.mjs 与 smoke/);`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)、`scripts/check-build-fresh.mjs`(构建新鲜度守卫)
+- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/gen-fixtures.mjs 与 smoke/);`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)、`scripts/check-build-fresh.mjs`(构建新鲜度守卫)
 
 ## 测试体系(按内容主题零注册,新增=新建段文件)
-- 目录组织标准(三种并存,均为合法):`test/segments/` 按内容主题(core 渲染与跨域纯逻辑)/`test/main/` 按主进程层;「零 Electron API 纯逻辑」段也可住 segments/
+- 目录组织标准(test 树镜像 src 三层,按被测主体归属;目录内按内容主题命名):`test/segments/` = core 渲染主题与跨层契约/恒等守护段 /`test/main/` = 主进程层主题段 /`test/renderer/` = UI 层主题段(纯函数/状态机/CSS 令牌恒等)
 - 静态样例入 `test/fixtures/`(acceptance/ 生成 + manual/ 手工);产物 `output/artifacts` + `output/smoke`(可清理重建,smoke 自清理)
 - 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`i18n/ru.ts` 刻意缺失 `warn.katexCssLoadFailed` 一键作为回退链测试夹具,补译须同步改测试**
 - 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(EOL 归一化,`.gitattributes` 双保险;CI 门禁步骤)
 
 ## 验证方式
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(全局铁律 3)
-- 验证基线(命令、断言、打包验证链)见 `docs/STATUS.md`「验证基线」;验收测试段明细见 `test/segments/` 与 `test/main/`
+- 验证基线(命令、断言、打包验证链)见 `docs/STATUS.md`「验证基线」;验收测试段明细见 `test/segments/`、`test/main/` 与 `test/renderer/`
 - docx/PDF 验收样例固定含中英混排,生成后人工打开检查中文渲染

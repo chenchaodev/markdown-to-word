@@ -5,7 +5,7 @@
  * - main/index.ts 的 handle/send 一律经本模块引用,禁止散落字符串字面量;
  * - preload.cts 因沙箱隔离(sandbox:true 下 preload.cjs 只能 require electron,
  *   无法在运行时加载本项目 ESM 模块)无法直接 import 本文件,侧内镜像同名常量,
- *   漂移由 test/segments/ipc-channels.test.js 对 dist 双侧提取恒等断言兜底。
+ *   漂移由 test/main/ipc-channels.test.js 对 dist 双侧提取恒等断言兜底。
  */
 
 /** 转换模式标识(convert:progress payload.mode;批量走 convert:batchProgress 独立通道,mode 预留)。 */

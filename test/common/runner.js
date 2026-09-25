@@ -1,6 +1,6 @@
 /**
  * 测试段执行框架:
- * - 段文件 = test/segments/ 或 test/main/ 下 *.test.js,须导出 async function run()
+ * - 段文件 = test/segments/、test/main/ 或 test/renderer/ 下 *.test.js,须导出 async function run()
  * - 新增测试 = 新建段文件即可,零注册(入口按目录顺序自动发现)
  * - 单段筛选:设 M2W_ONLY=basic-render,mermaid 可只跑名称含任一子串的段
  *   (逗号分隔多个子串,大小写不敏感,匹配段名如 segments/basic-render.test.js;

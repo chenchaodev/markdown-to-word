@@ -4,7 +4,7 @@
  */
 // channel 名单源在 ./ipc/channels.ts;本文件因沙箱隔离(sandbox:true 下
 // preload.cjs 运行时只能 require electron,不能加载本项目 ESM 模块)无法直接
-// import,侧内镜像同名常量,漂移由 test/segments/ipc-channels.test.js 恒等断言兜底。
+// import,侧内镜像同名常量,漂移由 test/main/ipc-channels.test.js 恒等断言兜底。
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppSettings, ExportPresetsResult, ImportDocxTemplateResult, ImportPdfCssResult, ImportPresetsResult } from "./persist/settings.js";
 import type { ConvertWarning } from "../core/i18n.js";
