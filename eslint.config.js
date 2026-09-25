@@ -1,7 +1,32 @@
 // ESLint 10 flat config(ESM)。typescript-eslint 经 side-by-side 使用 TS 6 API
 // (package.json: typescript 别名 @typescript/typescript6,tsc 二进制仍为 TS 7)。
 // 规则集:仅 correctness(方向 B 决策,2026-08-14,见 archive/20260814-185113)。
+import { readdirSync } from "node:fs";
+import { extname, join } from "node:path";
 import tseslint from "typescript-eslint";
+
+// allowDefaultProject 目录 glob 运行时扫描生成(技术债 E4,2026-09-25,替代手工清单)。
+// 库约束实证(typescript-estree validateDefaultProjectForFilesGlob):glob 含 `**`
+// 或等于裸 `*` 即 throw(性能护栏),递归通配不可用——故按「实际存在的目录 × 该目录
+// 中出现的扩展名(.js/.mjs/.cjs)」生成逐目录 glob,新增子目录自动覆盖,无需登记。
+// 失败模式保持显式不静默:文件不在 tsconfig program 又无 glob 匹配 → lint 时
+// ts-eslint 报「not found by the project service」;匹配文件数超上限(100)→ 同样报错。
+const NON_PROGRAM_EXTS = new Set([".js", ".mjs", ".cjs"]);
+function defaultProjectGlobs(roots) {
+  const globs = new Set();
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules") continue;
+        walk(join(dir, entry.name));
+      } else if (NON_PROGRAM_EXTS.has(extname(entry.name))) {
+        globs.add(`${dir.replaceAll("\\", "/")}/*${extname(entry.name)}`);
+      }
+    }
+  };
+  roots.forEach(walk);
+  return [...globs].sort();
+}
 
 export default tseslint.config(
   {
@@ -14,24 +39,9 @@ export default tseslint.config(
         // 批次 15 第 5 项:lint 范围扩到 test/scripts。tsconfig.json 无 allowJs,
         // .js/.mjs 不进 TS program(projectService 报「not found by the project service」),
         // 经 allowDefaultProject 放行(typescript-eslint 官方方案,不改 tsconfig 结构)。
-        // 注:allowDefaultProject 禁止 ** 通配(性能护栏),故按目录显式枚举;
-        // 默认 8 文件上限不足(test/scripts 共 47 个 .js/.mjs),按官方逃生口上调。
+        // 清单来源:defaultProjectGlobs 运行时扫描(文件头注释),新目录零登记。
         projectService: {
-          // 注意(审计 ENG-10):此清单为手工枚举,新增 test 子目录(或 scripts 子目录)
-          // 时必须同步在此追加对应 glob,否则该目录 .js/.mjs 会因不在 TS program 而 lint 报错。
-          allowDefaultProject: [
-            "src/renderer/lang-bootstrap.js",
-            "src/renderer/about-preload.cjs",
-            "test/*.mjs",
-            "test/common/*.js",
-            "test/main/*.js",
-            "test/renderer/*.js",
-            "test/segments/*.js",
-            "test/tools/*.mjs",
-            "test/tools/*.cjs",
-            "test/tools/smoke/*.mjs",
-            "scripts/*.mjs",
-          ],
+          allowDefaultProject: defaultProjectGlobs(["src", "test", "scripts"]),
           maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 100,
         },
         tsconfigRootDir: import.meta.dirname,

@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 E4 完成(`allowDefaultProject` 手工清单改运行时自动扫描)**:库约束源码实证(`typescript-estree/validateDefaultProjectForFilesGlob`:glob 含 `**` 或等于裸 `*` 即 throw,递归通配不可用,故原手工逐目录枚举是当时唯一写法)→ 改为 eslint.config.js 加载时按 `src/test/scripts` 实际目录 × 目录中出现的扩展名(.js/.mjs/.cjs)生成逐目录 glob(去重排序),**新增子目录零登记自动覆盖**;等价核对:lint 面 215 文件 / 0 问题与改造前一致;新目录探针实证(`test/eguard-probe/probe.js` lint 通过——手工清单时代必报「not found by the project service」,同 D5 实证风险,探针已清理);失败模式保持显式不静默(漏匹配或超 100 文件上限均 lint 报错)
 - 2026-09-25:**技术债 E1 完成(覆盖率门槛进 CI)**:①本地 `test:coverage` 摸基线 = stmts 93.92 / branch 88.84 / funcs 93.15 / lines 93.92(A4 盘点已证 G1-G8 断言全覆盖、G9 不补,E1③「补 G1-G9 断言」经核实**无需执行**——计划假设的 60% 低基线已不成立);②门槛 **90/85/90/90**(低起点留开发余量防大面回归,后续渐进收紧)写入 `test:coverage` 脚本单源,`ci.yml` 验收步改跑该脚本——本地与 CI 同一门禁;实证 c8 每次运行自清 tmp(无陈旧合并虚高)、门禁语义(反向 99 → exit 1 / 正向 → exit 0);typecheck/lint/build/70 段+覆盖率全绿
 - 2026-09-25:**发版 3.11.7 完成**(技术债 D 批六项结构重构随版发布;四源同号 package.json=lockfile=tag v3.11.7=CHANGELOG [3.11.7];typecheck/lint/build/70 段/smoke 全绿;GitHub Release 资产 MarkdownToWord-Setup-3.11.7.exe + latest.yml,Release 四源门禁与 CI 流水线均 success;发版内容仅对话框位置记忆一处用户可感知改进,其余为内部重构)
 - 2026-09-25:**技术债 D 批(结构重构)六项全部关闭,`docs/TECH-DEBT-PLAN.md` 已回写**:六项独立提交 `fdd132f`(D5 段归位)→`9b57dee`(D6 对话框样板)→`07ee67a`(D4/C5 契约归位)→`fb4c70e`(D3 pdf 模板三拆)→`06a3bd2`(D2 settings 六组拆线)→`b3d7d83`(D1 向导三块拆分),每项 typecheck/lint/build/70 段/smoke 全绿;**GUI 实测已通过(2026-09-25,ACCEPTANCE 两处复测记录回写,无未关闭项)**;E 批(E1-E5)待恢复开发,决策点仅剩 E2
