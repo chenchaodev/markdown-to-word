@@ -18,7 +18,7 @@
 |---|---|---|
 | 阶段 0 工程口径/门禁 | `[x]` 本地完成 | Node/live 文档、环境指纹、几何/产物/clean 门禁与决策台账已落地；远端 lane 实跑证据后置 |
 | 阶段 1 single-flight/持久化 | `[~]` 实现完成，GUI 待用户 | main/renderer/persistence/batch 实现与自动断言全绿；真实窗口 GUI 验收保留 |
-| 阶段 2 内容/几何/输出 | `[~]` 2A 已完成，2B 待办 | 准备链、几何迁移、D-03 路径边界已落地；媒体类型/大小预算与输出原子提交未完成 |
+| 阶段 2 内容/几何/输出 | `[~]` 2A/2B 实现完成 | 准备链、几何迁移、D-03 路径边界、原子输出提交已落地；D-03 媒体类型/大小预算仍待阶段 3 |
 | 阶段 3 资源/生命周期 | `[ ]` 未开始 | 仅有未提交红测试草稿，不能计为实现 |
 | 阶段 4 renderer UX | `[~]` 部分完成 | D-02 文档/设计/renderer 文案已同步；交互、向导、主题与 GUI 验收待办 |
 | 阶段 5 边界/双管线/测试 | `[~]` 基础存在 | checkJs 全量、runner 隔离、fixture 契约、差异矩阵未完成 |
@@ -152,22 +152,22 @@
 **证据**：`1180218`；本 2A 提交；page-setup/main settings/renderer tests。
 **退出条件**：main/renderer/core 三层对非法几何策略一致且可解释。
 
-### OPT-2.3 输出选名与原子提交 — `[ ]`
+### OPT-2.3 输出选名与原子提交 — `[x]`
 
-- [ ] 独占 reservation/重选序号。
-- [ ] 同目录临时文件 + 原子提交。
-- [ ] docx/pdf/batch/merge 共用提交器。
-- [ ] 失败清理临时文件。
-- [ ] 并发同名/进程中断/ZIP/PDF magic 测试。
+- [x] 独占 reservation/重选序号。
+- [x] 同目录临时文件 + 原子提交。
+- [x] docx/pdf/batch/merge 共用提交器。
+- [x] 失败清理临时文件。
+- [x] 并发同名/中断失败/ZIP/PDF magic 测试。
 
-**证据**：当前 `paths.ts`、`single.ts` 仍直接最终写入。
-**退出条件**：并发不覆盖、中断无错误最终文件。
+**证据**：本 2B 提交；`src/main/converter/artifact-writer.ts`、`test/main/artifact-commit.test.js`、`converter.test.js`、`paths.test.js`。
+**已知边界**：无同目录硬链接能力的文件系统安全失败并提示改输出目录，不退化为非原子直写；错误文案 i18n 化列入后续 UI/i18n 维护项。
 
 ### 阶段 2 门禁
 
 - [ ] OPT-2.1～2.3 全部 `[x]`。
 - [ ] 阶段 2 红测试全部对应生产实现并通过。
-- [x] `verify:ci` 在不含未来阶段红测试的当前 2A 工作树上全绿（77 段、coverage、fixtures、smoke、geometry）。
+- [x] `verify:ci` 在不含未来阶段红测试的当前 2A/2B 工作树上全绿（84 段、coverage、fixtures、smoke、geometry）。
 
 ## 4. 阶段 3：资源预算、取消传播与生命周期
 

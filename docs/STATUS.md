@@ -5,6 +5,7 @@
 > 当前定位:3.12.0 已发版;封版期维持「暂停新功能开发,文档维护 + 技术债清理」(需求入口见 BACKLOG,确认后排 ROADMAP「当前待办」)。
 > 历史批次明细见 `docs/CHANGELOG.md` 与 git log;审计与调研证据链见 `docs/archive/`。
 
+- 2026-09-26:**阶段 2B 完成，阶段 3 待开始**:提交 `fefbf19` 建立同目录临时文件、魔数校验、硬链接独占提交与 EEXIST 递增选名；无原子提交能力时安全失败，不退化直写；`verify:ci` 84 段全绿；D-03 媒体类型/大小预算转入阶段 3
 - 2026-09-26:**阶段 1 实现完成，GUI 待用户**:提交 `a8aa428` 收口真实 IPC single-flight、关闭/取消竞态、预检异常可观察、renderer 命令/向导锁、设置失败草稿与 ui-state 反馈、批量/合并 after-convert 竞态；`verify:ci` 83 段全绿；阶段 1 仅保留用户 GUI 验收
 - 2026-09-26:**阶段 0 完成，阶段 1 执行中**:阶段 0 本地门禁与决策台账已通过 `verify:ci`（77 段、coverage、fixtures、smoke、geometry），提交 `eb372b4`；远端 GitHub lane 实跑证据后置，coverage/fixture/smoke 故意失败探针转入阶段 7；当前进入阶段 1 四项验收面，暂不推送远程
 - 2026-09-26:**阶段 0 门禁接入(几何/产物/指纹)**:新增稳定入口 `check:env`、`check:geometry`、`gen:dist-manifest`、`check:dist-manifest`、`check:asar`、`check:release`;`verify:ci` 链尾接入几何门禁(build 必在其前),`verify:release` 仍为 verify:ci + dist,dist 内部为 build → dist 清单 → electron-builder → 清单校验/ASAR 核对/发布目标核对(含 SHA-256 报告);契约自检新增「几何在链且在 build 后」「清单基线先于打包、产物核对后于打包」断言(负向夹具 8→18);CI/Release 在 `npm ci` 后落环境指纹(Node/npm/Electron/Chromium/字体/DPI),主 CI 与 Release 均以 `always` 上传几何报告/截图与发布留痕,Release 资产改为按当前版本点名上传(不再 `release/*.exe` 通配);本地 check:contract/selftest/typecheck/lint/几何门禁(12 场景 7 恒定组,exit 0)/dist 清单/环境指纹全绿;**远端 GitHub lane 尚未实跑**
