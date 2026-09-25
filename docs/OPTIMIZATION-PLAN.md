@@ -12,7 +12,7 @@
 
 | ID | 裁决 | 落地要求 |
 |---|---|---|
-| D-01 | 宿主 Node 统一提升到 **22.12+** | 保持 Electron 43、markdown-it 14.3、remark/自研 docx、markdown-it+HTML+printToPDF PDF 路线；同步 package、CI、Release、文档和验证矩阵。 |
+| D-01 | 宿主 Node 统一提升到 **22.13+**（满足当前 ESLint/Electron engine，仍在批准的 22.12+ 范围内） | 保持 Electron 43、markdown-it 14.3、remark/自研 docx、markdown-it+HTML+printToPDF PDF 路线；同步 package、CI、Release、文档和验证矩阵。 |
 | D-02 | 预设按最新“完整交付链” | 内置预设覆盖排版、编号、页眉页脚、水印、公式编号和 H1 分页；统一设计文档、USER-GUIDE、CHANGELOG、ACCEPTANCE、UI 文案和 toast。自定义预设的存储范围必须显式定义。 |
 | D-03 | 本地图片严格限制 | 仅允许源文档目录或明确可信根目录内图片；校验扩展名/魔数/大小；拒绝绝对路径、UNC 和越界 `..`。 |
 | D-04 | 暂不代码签名 | 不接入证书；加强发布哈希、发布说明、SmartScreen 提示、签名状态记录和产物验证；将“未签名”保留为明确风险。 |
@@ -59,8 +59,8 @@
 
 ### OPT-0.1 Node 与工程口径
 
-- 更新 `package.json` engines、lockfile/安装检查、CI、Release、DEV-GUIDE、README 和本计划中的 Node 口径为 22.12+。
-- 在 Node 22.12+、当前稳定 Node 22/后续支持版本分别执行安装、build、typecheck、lint、smoke。
+- 更新 `package.json` engines、lockfile/安装检查、CI、Release、DEV-GUIDE、README 和本计划中的 Node 口径为 22.13+（满足当前 ESLint/Electron engine，仍在批准的 22.12+ 范围内）。
+- 在 Node 22.13+、当前稳定 Node 22/后续支持版本分别执行安装、build、typecheck、lint、smoke。
 - 记录 `node --version`、`npm --version`、Electron/Chromium/内置 Node 版本和环境指纹。
 
 ### OPT-0.2 统一验证入口

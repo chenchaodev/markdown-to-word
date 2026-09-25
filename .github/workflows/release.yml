@@ -18,8 +18,9 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
-    # 含 NSIS 打包比 CI 长(打包约 5-10 分钟),40 分钟为正常耗时约 2 倍余量,防挂死占用 runner
-    timeout-minutes: 40
+    # 含全量门禁(与 CI 同链)与 NSIS 打包(约 5-10 分钟),正常约 30-40 分钟,
+    # 75 分钟为正常耗时的约 2 倍余量,防挂死占用 runner
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
 
@@ -41,25 +42,26 @@ jobs:
             exit 1
           fi
 
+      # 地板版本(engines >=22.13.0)与 ci.yml 主 job 一致:发布环境与门禁环境同 Node 口径
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22.13.0
           cache: npm
+
+      # Node 口径与门禁链自检:与依赖安装解耦,版本/命令漂移时在 npm ci 之前即 fail fast
+      - name: Check engineering contract
+        run: node scripts/check-ci-contract.mjs
 
       # CI 环境走官方源(GitHub 服务器访问官方源最快;本地 .npmrc 镜像配置不动)
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
-      # E5 后 typecheck 含 test 树(tsconfig.test.json):测试 import dist/ 编译产物 → 须先 build
-      - name: Build & typecheck & lint
-        run: npm run build && npm run typecheck && npm run lint
-
-      - name: Acceptance tests
-        run: npm run test
-
+      # 统一门禁入口 + 打包:verify:release = verify:ci(契约自检/build/typecheck/lint/
+      # acceptance/coverage/fixture 漂移/smoke)追加 dist,复用 ci.yml 同一条链,
+      # 发布不再维护第二份缩水命令清单,tag 无法绕过 coverage/fixture/smoke 门禁。
       # electron-builder 打包 NSIS 安装包(产物 release/MarkdownToWord-Setup-<版本>.exe + latest.yml)
-      - name: Package (NSIS)
-        run: npm run dist
+      - name: Verify & package (verify:release)
+        run: npm run verify:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

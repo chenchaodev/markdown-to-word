@@ -112,7 +112,7 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 
 ### 快速开始（开发者）
 
-环境要求：Node.js >= 20.19（国内网络请先设置 Electron 镜像，详见 [开发者手册](docs/DEV-GUIDE.md#环境)：`ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`）
+环境要求：Node.js >= 22.13（国内网络请先设置 Electron 镜像，详见 [开发者手册](docs/DEV-GUIDE.md#环境)：`ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`）
 
 ```bash
 # 安装依赖
@@ -127,7 +127,7 @@ npm run dist
 
 ### 技术栈
 
-- Electron 43 + Node.js >= 20.19 + TypeScript（ESM）
+- Electron 43 + Node.js >= 22.13 + TypeScript（ESM）
 - docx 9.x（Word 渲染）+ remark（解析）
 - markdown-it 14.3（PDF 渲染）+ Electron printToPDF
 - pdf-lib（PDF 书签/元数据）、KaTeX（公式）、Mermaid 11（图表）、highlight.js（代码高亮）

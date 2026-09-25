@@ -29,7 +29,7 @@
   "type": "module",
   "main": "dist/main/index.js",
   "engines": {
-    "node": ">=20.19"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
@@ -45,6 +45,10 @@
     "icons": "node scripts/svg-to-ico.mjs",
     "test:coverage": "npm run build && c8 --reporter=text --include=\"dist/**\" --check-coverage --statements=90 --branches=85 --functions=90 --lines=90 electron test/acceptance.mjs",
     "test:all": "npm run test && npm run test:smoke",
+    "check:contract": "node scripts/check-ci-contract.mjs",
+    "check:contract:selftest": "node scripts/check-ci-contract.selftest.mjs",
+    "verify:ci": "npm run check:contract && npm run check:contract:selftest && npm run build && npm run typecheck && npm run lint && npm run test && npm run test:coverage && npm run check:fixtures && npm run test:smoke",
+    "verify:release": "npm run verify:ci && npm run dist",
     "dist": "npm run build && electron-builder --win nsis --x64 --publish never"
   },
   "build": {

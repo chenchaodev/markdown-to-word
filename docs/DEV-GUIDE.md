@@ -1,7 +1,7 @@
 # 开发者手册
 
 ## 环境
-- Node >= 20.19(ESM;typescript-eslint 经 side-by-side 用 TS 6 API,`tsc` 二进制仍为 TS 7——package.json 中 `typescript` 别名 `@typescript/typescript6`,`@typescript/native` 别名真实 TS 7;勿回退)
+- Node >= 22.13(ESM;typescript-eslint 经 side-by-side 用 TS 6 API,`tsc` 二进制仍为 TS 7——package.json 中 `typescript` 别名 `@typescript/typescript6`,`@typescript/native` 别名真实 TS 7;勿回退)
 - npm 源:npmmirror(见根 `.npmrc`,仅含 registry,勿回退)
 - Electron 二进制镜像(本地开发勿回退,装 electron/打包前设置):经 `scripts/setup-env.ps1` 一次性写入**用户级环境变量** `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`(GitHub Actions 不需要);勿在 `.npmrc` 写这两个键——npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`,electron-builder 读不到
   - `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`

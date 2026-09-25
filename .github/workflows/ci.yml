@@ -1,7 +1,11 @@
 name: CI
 
-# 门禁流水线:push 到 master 或任意分支开 PR 时跑 typecheck/lint/验收测试。
-# 触发条件与并发组见下方配置;测试需 Electron 图形环境,windows-latest 可直接跑。
+# 门禁流水线:push 到 master 或任意分支开 PR 时跑统一验证入口 verify:ci
+# (契约自检及其回归 → build → typecheck → lint → acceptance → coverage → fixture 漂移 → smoke)。
+# 命令清单单源于 package.json scripts,本文件不逐条复述门禁命令(与 release.yml 共用
+# 同一 verify:ci 链,发布不维护第二份缩水清单)。
+# Node 口径单源于 package.json engines;scripts/check-ci-contract.mjs 断言本文件与
+# release.yml 的 node-version 不低于该地板,且至少一处精确钉住地板版本。
 on:
   push:
     branches:
@@ -16,56 +20,49 @@ concurrency:
 jobs:
   ci:
     runs-on: windows-latest
-    # 全流程(install/typecheck/lint/build+70 段验收+fixtures 校验+smoke)正常约 10-15 分钟;
-    # 30 分钟为正常耗时的约 2 倍余量,超时即视为挂死快速失败,不占用 runner
-    timeout-minutes: 30
+    # 全流程(install + 契约自检 + build/typecheck/lint + acceptance 段 + coverage 段
+    # + fixtures 校验 + smoke)正常约 20-30 分钟;45 分钟为正常耗时的约 1.5 倍余量,
+    # 超时即视为挂死快速失败,不占用 runner
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
 
-      # node 22 为当前 LTS(CI 门禁可用较新 LTS;release.yml 用 20 保持发版环境稳定)
+      # 地板版本(engines >=22.13.0)精确钉住:满足当前 ESLint/Electron engine 的最低可复现基线
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 22.13.0
           cache: npm
+
+      # Node 口径与门禁链自检:与依赖安装解耦,版本/命令漂移时在 npm ci 之前即 fail fast
+      - name: Check engineering contract
+        run: node scripts/check-ci-contract.mjs
 
       # 与 release.yml 同决策:CI 环境走官方源(GitHub 服务器访问官方源最快;本地 .npmrc 镜像配置不动)
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
-      # E5 后 typecheck 含 test 树(tsconfig.test.json):测试 import dist/ 编译产物 → 须先 build(与 release.yml 同序)
-      - name: Build & typecheck & lint
-        run: npm run build && npm run typecheck && npm run lint
+      # 统一门禁入口:build 必须先于 typecheck(测试树 import dist/ 编译产物),
+      # 顺序与完整性由 scripts/check-ci-contract.mjs 断言守护
+      - name: Verify (verify:ci)
+        run: npm run verify:ci
 
-      # test 自带 build(tsc + copy-renderer);带覆盖率门槛(基线 93.92/88.84/93.15/93.92,
-      # 阈值 90/85/90/90 = 低起点留开发余量防大面回归,渐进收紧;门槛与本地 test:coverage 单源)
-      - name: Acceptance tests
-        run: npm run test:coverage
-
-      # fixtures 漂移校验(审计 TEST-1):依赖 dist/ 编译产物,须在 test(build)之后跑;
-      # EOL 归一化见 gen-fixtures.mjs --check 与 .gitattributes
-      - name: Check fixtures drift
-        run: npm run check:fixtures
-
-      # smoke 端到端主链路(windows runner 可跑;自带 build 新鲜度守卫)
-      - name: Smoke test
-        run: npm run test:smoke
-
-  # Node 地板守卫(审计 ENG-5):engines 声明 >=20.19,但主 job 用 22,
-  # 地板版本从未被验证。此 job 只验证「地板可安装依赖 + typecheck + 构建」,
-  # 不重复全量测试(控制 CI 时长);发版环境(release.yml)本身用 node 20。
-  node20-floor:
+  # 当前稳定 22.x 兼容 lane(审计 ENG-5:engines 地板由主 job 精确钉住验证,此 lane
+  # 覆盖「当前稳定/后续支持版本」也可用,跑 install + build/typecheck/lint + smoke;
+  # 不重复全量验收段与 coverage,控制 CI 时长)
+  node-lts:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
+      # 主线别名(非精确钉住):跟随 22.x 最新 patch/minor,验证浮动版本也可用
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Build & typecheck on Node 20 floor
-        run: npm run build && npm run typecheck
+      - name: Build & typecheck & lint & smoke on latest Node 22
+        run: npm run build && npm run typecheck && npm run lint && npm run test:smoke

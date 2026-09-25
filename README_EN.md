@@ -112,7 +112,7 @@ Seven-step guided workflow that chains all features — no need to open settings
 
 ### Quick start (developers)
 
-Requirements: Node.js >= 20.19 (in China, set the Electron mirror first — see [DEV-GUIDE](docs/DEV-GUIDE.md#环境): `ELECTRON_MIRROR` and `ELECTRON_BUILDER_BINARIES_MIRROR`)
+Requirements: Node.js >= 22.13 (in China, set the Electron mirror first — see [DEV-GUIDE](docs/DEV-GUIDE.md#环境): `ELECTRON_MIRROR` and `ELECTRON_BUILDER_BINARIES_MIRROR`)
 
 ```bash
 npm install
@@ -122,7 +122,7 @@ npm run dist    # package the Windows NSIS installer into release/
 
 ### Tech stack
 
-- Electron 43 + Node.js >= 20.19 + TypeScript (ESM)
+- Electron 43 + Node.js >= 22.13 + TypeScript (ESM)
 - docx 9.x (Word rendering) + remark (parsing)
 - markdown-it 14.3 (PDF rendering) + Electron printToPDF
 - pdf-lib (PDF bookmarks/metadata), KaTeX (math), Mermaid 11 (diagrams), highlight.js (code highlighting)
