@@ -81,7 +81,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `settings/`:`settings-panel.ts`(加载/回填/持久化写回+分组 persist 单源)/`settings-bindings.ts`(绑定编排)+ `settings-bindings-{preset,typography,headerwatermark,numbering,convert,app}.ts`(六组 Tab 接线,与 index.html data-group 同口径,控件 id/name 零触碰)/`settings-preset-actions.ts`(预设弹窗/保存/删除/导入导出)/`settings-logic.ts`(纯函数直测)/`settings-drawer.ts`
   - `convert/`:`convert-flow.ts` + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)
   - `file-list.ts`/`ui/`(`dialogs.ts`/`recent-files.ts`,bindRecentFilesEvents 范式)/`first-run-guide.ts`(首次启动引导)
-  - `wizard/`:`book-wizard.ts`(成书向导主逻辑)/`wizard-state.ts`(向导状态管理)
+  - `wizard/`:`book-wizard.ts`(向导外壳/导航/打开关闭+付印提交)/`wizard-steps.ts`(步骤渲染·版式四步:模板/封面/页眉页脚/水印)/`wizard-steps-delivery.ts`(步骤渲染·交付三步:合并源/目录/付印+当前步渲染)/`wizard-fields.ts`(字段校验绑定+共用 DOM/radio 零件)/`wizard-runtime.ts`(草稿/容器/步序单例,防环)/`wizard-state.ts`(向导状态管理纯 reducer)
 - `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/gen-fixtures.mjs 与 smoke/);`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)、`scripts/check-build-fresh.mjs`(构建新鲜度守卫)
 
 ## 测试体系(按内容主题零注册,新增=新建段文件)
