@@ -43,7 +43,7 @@
     "test:smoke": "node scripts/check-build-fresh.mjs && electron . --smoke",
     "ui:shots": "electron test/tools/visual-check.mjs",
     "icons": "node scripts/svg-to-ico.mjs",
-    "test:coverage": "npm run build && c8 --reporter=text --include=\"dist/**\" electron test/acceptance.mjs",
+    "test:coverage": "npm run build && c8 --reporter=text --include=\"dist/**\" --check-coverage --statements=90 --branches=85 --functions=90 --lines=90 electron test/acceptance.mjs",
     "test:all": "npm run test && npm run test:smoke",
     "dist": "npm run build && electron-builder --win nsis --x64 --publish never"
   },

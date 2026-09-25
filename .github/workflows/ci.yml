@@ -35,9 +35,10 @@ jobs:
       - name: Typecheck & lint
         run: npm run typecheck && npm run lint
 
-      # test 自带 build(tsc + copy-renderer)
+      # test 自带 build(tsc + copy-renderer);带覆盖率门槛(基线 93.92/88.84/93.15/93.92,
+      # 阈值 90/85/90/90 = 低起点留开发余量防大面回归,渐进收紧;门槛与本地 test:coverage 单源)
       - name: Acceptance tests
-        run: npm run test
+        run: npm run test:coverage
 
       # fixtures 漂移校验(审计 TEST-1):依赖 dist/ 编译产物,须在 test(build)之后跑;
       # EOL 归一化见 gen-fixtures.mjs --check 与 .gitattributes
