@@ -18,6 +18,11 @@ import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import {
+  MARGIN_MAX_MM,
+  MIN_PAGE_CONTENT_MM,
+  validatePageSetup,
+} from "../../dist/core/settings/settings-defaults.js";
 
 const md = `页面设置验收:纸张与边距参数化。\n`;
 
@@ -37,6 +42,14 @@ const PAPERS_TWIPS = {
   A5: [8391, 11906], // 148×210
   Letter: [12240, 15840], // 215.9×279.4
   Legal: [12240, 20160], // 215.9×355.6
+};
+
+const PAPERS_MM = {
+  A4: [210, 297],
+  A3: [297, 420],
+  A5: [148, 210],
+  Letter: [215.9, 279.4],
+  Legal: [215.9, 355.6],
 };
 
 // 边距组 1(四值互异,防属性错位):20/40/30/15 mm → 1134/2268/1701/850 twips
@@ -101,6 +114,157 @@ export async function run() {
     }
     console.log(`[ok] 页面设置:${paper} landscape docx 宽高交换 + pdf size 断言通过`);
   }
+
+  // 3.1 核心 validator:五种纸张 × 两种方向均按视觉尺寸计算内容区
+  for (const [paper, [portraitWidth, portraitHeight]] of Object.entries(PAPERS_MM)) {
+    for (const orientation of ["portrait", "landscape"]) {
+      const pageSetup = { paper, orientation, ...M1 };
+      const geometry = validatePageSetup(pageSetup);
+      const expectedWidth = orientation === "landscape" ? portraitHeight : portraitWidth;
+      const expectedHeight = orientation === "landscape" ? portraitWidth : portraitHeight;
+      const expectedContentWidth = expectedWidth - M1.marginLeft - M1.marginRight;
+      const expectedContentHeight = expectedHeight - M1.marginTop - M1.marginBottom;
+      if (
+        geometry.pageWidthMm !== expectedWidth ||
+        geometry.pageHeightMm !== expectedHeight ||
+        geometry.contentWidthMm !== expectedContentWidth ||
+        geometry.contentHeightMm !== expectedContentHeight
+      ) {
+        throw new Error(`页面几何 validator 失败:${paper} ${orientation}`);
+      }
+    }
+  }
+  const zeroMargin = validatePageSetup({
+    paper: "A4",
+    orientation: "portrait",
+    marginTop: 0,
+    marginBottom: 0,
+    marginLeft: 0,
+    marginRight: 0,
+  });
+  if (zeroMargin.contentWidthMm !== 210 || zeroMargin.contentHeightMm !== 297) {
+    throw new Error("页面几何 validator:0 边距应是合法边界且内容区等于纸张尺寸");
+  }
+  console.log("[ok] 页面几何 validator:五纸张×两方向/0 边距/内容宽高计算断言通过");
+
+  // 3.2 最小内容区:恰好达到下限通过，略低、零/负内容区与越界边距拒绝
+  const atMinimum = validatePageSetup({
+    paper: "A5",
+    orientation: "portrait",
+    marginTop: 0,
+    marginBottom: 0,
+    marginLeft: (148 - MIN_PAGE_CONTENT_MM) / 2,
+    marginRight: (148 - MIN_PAGE_CONTENT_MM) / 2,
+  });
+  if (atMinimum.contentWidthMm !== MIN_PAGE_CONTENT_MM) {
+    throw new Error("页面几何 validator:内容区恰好等于最小值应通过");
+  }
+  const invalidPageSetups = [
+    {
+      name: "未知纸张",
+      value: {
+        paper: "A6",
+        orientation: "portrait",
+        marginTop: 0,
+        marginBottom: 0,
+        marginLeft: 0,
+        marginRight: 0,
+      },
+    },
+    {
+      name: "未知方向",
+      value: {
+        paper: "A4",
+        orientation: "sideways",
+        marginTop: 0,
+        marginBottom: 0,
+        marginLeft: 0,
+        marginRight: 0,
+      },
+    },
+    {
+      name: "内容区略低于最小值",
+      value: {
+        paper: "A5",
+        orientation: "portrait",
+        marginTop: 0,
+        marginBottom: 0,
+        marginLeft: 73.6,
+        marginRight: 73.6,
+      },
+    },
+    {
+      name: "内容区为零",
+      value: {
+        paper: "A5",
+        orientation: "portrait",
+        marginTop: 0,
+        marginBottom: 0,
+        marginLeft: 74,
+        marginRight: 74,
+      },
+    },
+    {
+      name: "内容区为负",
+      value: {
+        paper: "A4",
+        orientation: "portrait",
+        marginTop: 200,
+        marginBottom: 200,
+        marginLeft: 0,
+        marginRight: 0,
+      },
+    },
+    {
+      name: "边距达到 1000",
+      value: {
+        paper: "A4",
+        orientation: "portrait",
+        marginTop: MARGIN_MAX_MM,
+        marginBottom: MARGIN_MAX_MM,
+        marginLeft: MARGIN_MAX_MM,
+        marginRight: MARGIN_MAX_MM,
+      },
+    },
+    {
+      name: "边距超过 1000",
+      value: {
+        paper: "A4",
+        orientation: "portrait",
+        marginTop: MARGIN_MAX_MM + 0.1,
+        marginBottom: 0,
+        marginLeft: 0,
+        marginRight: 0,
+      },
+    },
+  ];
+  for (const { name, value } of invalidPageSetups) {
+    let rejected = false;
+    try {
+      validatePageSetup(value);
+    } catch (error) {
+      rejected = error instanceof RangeError;
+    }
+    if (!rejected) throw new Error(`页面几何 validator 应拒绝:${name}`);
+  }
+  console.log("[ok] 页面几何 validator:最小内容区/0·负值/1000·越界边距拒绝断言通过");
+
+  // 3.3 docx/pdf 两条独立渲染边界均重复执行同一 validator
+  const invalidRenderSetup = invalidPageSetups.find(({ name }) => name === "内容区为零").value;
+  for (const format of ["docx", "pdf"]) {
+    let rejected = false;
+    try {
+      await convert(md, format, {
+        baseDir: FIXTURES_DIR,
+        warnings: [],
+        pageSetup: invalidRenderSetup,
+      });
+    } catch (error) {
+      rejected = error instanceof RangeError;
+    }
+    if (!rejected) throw new Error(`${format} core 渲染边界应拒绝零内容区页面设置`);
+  }
+  console.log("[ok] 页面几何 validator:docx/pdf 独立渲染边界一致拒绝断言通过");
 
   // 4. 分页符产物(pdf 侧中间 html):
   //    <!-- page-break --> → <div class="page-break"></div>

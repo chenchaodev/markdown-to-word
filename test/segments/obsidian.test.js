@@ -31,4 +31,50 @@ export async function run() {
   const f = normalizeObsidian("![[图1.png]]", { attachmentFolder: "" });
   if (f !== "![图1](图1.png)") throw new Error(`空附件文件夹失败: ${JSON.stringify(f)}`);
   console.log("[ok] obsidian: 空附件文件夹");
+
+  // fenced code:反引号/波浪号及 info string 内均不改写
+  for (const source of [
+    "```md\n[[代码笔记]]\n![[图.png]]\n```",
+    "~~~obsidian meta\n[[代码笔记]]\n![[图.png]]\n~~~",
+  ]) {
+    if (normalizeObsidian(source) !== source) {
+      throw new Error(`fenced code 被误改: ${JSON.stringify(source)}`);
+    }
+  }
+  console.log("[ok] obsidian: fenced code/info string 跳过");
+
+  // inline code:支持单/多反引号，只改写代码外双链
+  const inline = normalizeObsidian("外 [[外链]] `内 [[代码]]` ``多 [[代码]]``");
+  if (inline !== "外 [外链](外链.md) `内 [[代码]]` ``多 [[代码]]``") {
+    throw new Error(`inline code 边界失败: ${JSON.stringify(inline)}`);
+  }
+  console.log("[ok] obsidian: inline code 跳过");
+
+  // HTML code:code/pre 的完整内容视为代码；普通 HTML 标签外的双链仍改写
+  const htmlInline = normalizeObsidian("前 [[外链]] <code>内 [[代码]]</code> 后 [[尾链]]");
+  if (htmlInline !== "前 [外链](外链.md) <code>内 [[代码]]</code> 后 [尾链](尾链.md)") {
+    throw new Error(`HTML inline code 边界失败: ${JSON.stringify(htmlInline)}`);
+  }
+  const htmlBlock = "前 [[外链]]\n<pre>\n内 [[代码]]\n![[图.png]]\n</pre>\n后 [[尾链]]";
+  if (normalizeObsidian(htmlBlock) !== "前 [外链](外链.md)\n<pre>\n内 [[代码]]\n![[图.png]]\n</pre>\n后 [尾链](尾链.md)") {
+    throw new Error(`HTML block code 边界失败: ${JSON.stringify(normalizeObsidian(htmlBlock))}`);
+  }
+  console.log("[ok] obsidian: HTML code 跳过");
+
+  // escaped 双链保持 Markdown 字面量；CRLF/CR 与无目标输入也不发生额外改写
+  for (const source of [
+    String.raw`\[\[不应改写\]\] 与 [[应改写]]`,
+    "```\r\n[[代码]]\r\n```\r\n正文",
+    "~~~\r[[代码]]\r~~~",
+    "无目标文本",
+  ]) {
+    const expected = source === String.raw`\[\[不应改写\]\] 与 [[应改写]]`
+      ? String.raw`\[\[不应改写\]\] 与 [应改写](应改写.md)`
+      : source;
+    const actual = normalizeObsidian(source);
+    if (actual !== expected) {
+      throw new Error(`Obsidian 跳过边界失败: ${JSON.stringify({ source, expected, actual })}`);
+    }
+  }
+  console.log("[ok] obsidian: escaped 文本/CRLF/CR/无目标输入保持或仅改写目标");
 }

@@ -9,7 +9,7 @@ import {
   headingSpacingPt,
   type TypographySettings,
 } from "../settings/typography.js";
-import type { PageSetup } from "../settings/settings-defaults.js";
+import { validatePageSetup, type PageSetup } from "../settings/settings-defaults.js";
 import { buildHljsCss } from "../style/hljs-palette.js";
 
 /**
@@ -51,6 +51,8 @@ export function buildTemplateCss(
   captionNumbering: boolean,
   hasH1: boolean,
 ): string {
+  // PDF 模板是 core PDF 渲染的页面几何门禁；与 docx 边界复用同一契约。
+  validatePageSetup(pageSetup);
   const size = pageSetup.paper + (pageSetup.orientation === "landscape" ? " landscape" : "");
   const { marginTop, marginRight, marginBottom, marginLeft } = pageSetup;
   return `

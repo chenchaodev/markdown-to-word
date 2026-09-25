@@ -48,6 +48,7 @@ import {
   mmToTwips,
   PAPER_SIZES_MM,
   twipsToPx,
+  validatePageSetup,
   type HeaderFooterSettings,
   type PageSetup,
   type WatermarkSettings,
@@ -121,11 +122,11 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
   // 页面几何提前计算:contentWidthPx 注入 Ctx,图片尺寸属性百分比换算用
   const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
+  const geometry = validatePageSetup(pageSetup);
   const paper = PAPER_SIZES_MM[pageSetup.paper];
   const landscape = pageSetup.orientation === "landscape";
-  // 文本区宽(公式编号 tab 制表位基准):PAPER_SIZES_MM 给纵向值,landscape 下
-  // 视觉宽度为纸高(参照下方 size 的处理语义)— 左右边距 = 可用文本宽度
-  const textWidthTwips = mmToTwips((landscape ? paper.height : paper.width) - pageSetup.marginLeft - pageSetup.marginRight);
+  // 文本区宽(公式编号 tab 制表位基准)复用核心 validator 的视觉方向结果。
+  const textWidthTwips = mmToTwips(geometry.contentWidthMm);
   // 开关统一「构造时解析默认」:Ctx 全字段必填,下游无需判空
   const ctx: Ctx = {
     imageResolver: options.imageResolver,

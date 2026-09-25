@@ -219,6 +219,55 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export const MARGIN_MIN_MM = 0;
 export const MARGIN_MAX_MM = 1000;
 
+/** 页面内容区宽/高的最小值(mm)；用于阻断零宽、负宽等不可渲染配置。 */
+export const MIN_PAGE_CONTENT_MM = 1;
+
+/** validatePageSetup 返回的视觉页面尺寸与内容区尺寸(mm)。 */
+export interface PageGeometry {
+  pageWidthMm: number;
+  pageHeightMm: number;
+  contentWidthMm: number;
+  contentHeightMm: number;
+}
+
+const PAGE_SETUP_MARGINS = ["marginTop", "marginBottom", "marginLeft", "marginRight"] as const;
+
+/**
+ * 页面设置唯一核心 validator：校验纸张、方向、四边距及最小内容区，并按视觉
+ * 方向返回页面/内容宽高。调用层可据此统一迁移、拒绝或渲染；docx 的纸张尺寸
+ * 仍按契约传纵向原值，由 docx 库处理 landscape 交换。
+ */
+export function validatePageSetup(pageSetup: PageSetup): PageGeometry {
+  if (!Object.prototype.hasOwnProperty.call(PAPER_SIZES_MM, pageSetup.paper)) {
+    throw new RangeError(`不支持的纸张尺寸:${String(pageSetup.paper)}`);
+  }
+  if (pageSetup.orientation !== "portrait" && pageSetup.orientation !== "landscape") {
+    throw new RangeError(`不支持的页面方向:${String(pageSetup.orientation)}`);
+  }
+  for (const field of PAGE_SETUP_MARGINS) {
+    const value = pageSetup[field];
+    if (
+      !Number.isFinite(value) ||
+      value < MARGIN_MIN_MM ||
+      value > MARGIN_MAX_MM
+    ) {
+      throw new RangeError(`${field} 必须在 ${MARGIN_MIN_MM}-${MARGIN_MAX_MM} mm 之间`);
+    }
+  }
+
+  const portrait = PAPER_SIZES_MM[pageSetup.paper];
+  const pageWidthMm = pageSetup.orientation === "landscape" ? portrait.height : portrait.width;
+  const pageHeightMm = pageSetup.orientation === "landscape" ? portrait.width : portrait.height;
+  const contentWidthMm = pageWidthMm - pageSetup.marginLeft - pageSetup.marginRight;
+  const contentHeightMm = pageHeightMm - pageSetup.marginTop - pageSetup.marginBottom;
+  if (contentWidthMm < MIN_PAGE_CONTENT_MM || contentHeightMm < MIN_PAGE_CONTENT_MM) {
+    throw new RangeError(
+      `页面内容区必须至少为 ${MIN_PAGE_CONTENT_MM}×${MIN_PAGE_CONTENT_MM} mm`,
+    );
+  }
+  return { pageWidthMm, pageHeightMm, contentWidthMm, contentHeightMm };
+}
+
 /** 字号与行距的合法范围(与控件 min/max 一致,范围外回显当前值) */
 export const BODY_SIZE_MIN = 8;
 export const BODY_SIZE_MAX = 24;

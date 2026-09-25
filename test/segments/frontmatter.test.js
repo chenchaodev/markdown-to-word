@@ -130,5 +130,29 @@ author: 作者
   assert(Object.keys(r17.metadata).length === 0, "纯文字夹层不产生 metadata");
   assert(r17.body === prose, "纯文字夹层必须原样保留为 body(防误吞)");
 
-  console.log("[ok] frontmatter:引号剥离/注释跳过/大小写/异常格式兜底/B3 已知 key 守卫 断言通过");
+  // ---- 17. LF/CRLF/单独 CR 使用同一 frontmatter 边界契约 ----
+  for (const eol of ["\n", "\r\n", "\r"]) {
+    const source = ["---", "title: 换行标题", "author: 换行作者", "---", "", "正文"].join(eol);
+    const result = parseFrontmatter(source);
+    assert(result.metadata.title === "换行标题", `${JSON.stringify(eol)} 应解析 title`);
+    assert(result.metadata.author === "换行作者", `${JSON.stringify(eol)} 应解析 author`);
+    assert(
+      result.body === `${eol}正文`,
+      `${JSON.stringify(eol)} body 应原样保留定界块后的行尾与正文`,
+    );
+  }
+
+  // ---- 18. 定界行只允许水平空白;相似文本不应被当作 frontmatter ----
+  for (const source of [
+    "--- not-a-delimiter\ntitle: 普通正文\n---\n正文",
+    "正文\n---\ntitle: 非文档开头\n---\n",
+  ]) {
+    const result = parseFrontmatter(source);
+    assert(
+      Object.keys(result.metadata).length === 0 && result.body === source,
+      `相似定界文本不应误判:${JSON.stringify(source)}`,
+    );
+  }
+
+  console.log("[ok] frontmatter:引号剥离/注释跳过/大小写/异常格式兜底/已知 key 守卫/LF·CRLF·CR 边界 断言通过");
 }
