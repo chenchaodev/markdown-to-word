@@ -331,7 +331,7 @@ const dict = {
     "preset.cnMinimal": "Chinese minimal",
     "preset.saveAs": "Save as preset…",
     "preset.saveAsTitle": "Save as preset",
-    "preset.saveDesc": "Save current typography and page settings as a custom preset",
+    "preset.saveDesc": "Save current typography and page settings as a custom preset (header/footer and watermark are not included)",
     "preset.delete": "Delete preset",
     "preset.import": "Import presets…",
     "preset.importTitle": "Import custom presets from a JSON file",
@@ -342,9 +342,9 @@ const dict = {
     "preset.nameRequired": "Please enter a preset name",
     "preset.nameDuplicate": "A preset with this name already exists, please choose another",
     "preset.nameLimit": "Reached the limit of ${max}, please delete one first",
-    "preset.customHint": "Custom preset",
+    "preset.customHint": "Custom preset · typography + page only",
     "preset.modifiedHint": "Modified, no longer matches a template preset",
-    "preset.hintTitle": "Selecting a template overrides typography and page settings",
+    "preset.hintTitle": "Switching presets overrides the matching settings: built-in presets also cover header/footer and watermark; custom presets cover typography and page settings only",
     // toast feedback after switching presets (behavior contract key)
     "toast.presetSwitched": "Preset \"${name}\" applied (overrode: ${groups})",
     // toast feedback after drawer "restore defaults" (facts only)

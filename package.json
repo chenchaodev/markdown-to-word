@@ -47,9 +47,17 @@
     "test:all": "npm run test && npm run test:smoke",
     "check:contract": "node scripts/check-ci-contract.mjs",
     "check:contract:selftest": "node scripts/check-ci-contract.selftest.mjs",
-    "verify:ci": "npm run check:contract && npm run check:contract:selftest && npm run build && npm run typecheck && npm run lint && npm run test && npm run test:coverage && npm run check:fixtures && npm run test:smoke",
+    "check:env": "node scripts/print-env-fingerprint.mjs",
+    "check:geometry": "electron scripts/check-geometry.mjs",
+    "gen:dist-manifest": "node scripts/check-dist-manifest.mjs",
+    "check:dist-manifest": "node scripts/check-dist-manifest.mjs --check",
+    "check:asar": "node scripts/check-asar-manifest.mjs",
+    "check:release": "node scripts/check-release-artifacts.mjs",
+    "clean:dist": "node scripts/clean-artifacts.mjs --target dist",
+    "clean:release": "node scripts/clean-artifacts.mjs --target release",
+    "verify:ci": "npm run check:contract && npm run check:contract:selftest && npm run build && npm run typecheck && npm run lint && npm run test && npm run test:coverage && npm run check:fixtures && npm run test:smoke && npm run check:geometry",
     "verify:release": "npm run verify:ci && npm run dist",
-    "dist": "npm run build && electron-builder --win nsis --x64 --publish never"
+    "dist": "npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest && electron-builder --win nsis --x64 --publish never && npm run check:dist-manifest && npm run check:asar && npm run check:release"
   },
   "build": {
     "appId": "com.markdown.tools.m2w",

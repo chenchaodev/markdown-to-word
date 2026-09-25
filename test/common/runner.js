@@ -45,11 +45,15 @@ export async function runSegment(fileUrl) {
 /**
  * 单段执行 + 看门狗竞速(仅在看门狗启用时调用):
  * - 超时 → 该段标记失败,继续放行后续段(一次看全失败面,E3 试点),置 hung 标志。
- * - 已知局限(务实取舍):段与 runner 同进程(Electron 环境),无法安全终止单个悬挂段
- *   的 promise;不做每段子进程隔离——段依赖 Electron 运行时,逐段拉起 electron 进程
- *   成本高且引入 IPC/生命周期脆弱机制。故超时后悬挂段仍后台残留,由 runAll 跑完
- *   全部段、入口打印结果后硬退出(app.exit)统一释放其持有的 BrowserWindow 等资源;
- *   残留段与后续段的隔离亦不做(仅此一处已知局限,见 BACKLOG.md「维持人工·已知限制」)。
+ * - 已知局限(临时取舍,非终态):段与 runner 同进程(Electron 环境),无法安全终止单个
+ *   悬挂段的 promise。故超时后悬挂段仍后台残留,由 runAll 跑完全部段、入口打印结果后
+ *   硬退出(app.exit)统一释放其持有的 BrowserWindow 等资源;残留段与后续段的隔离
+ *   亦不做。
+ *   ⚠️ 口径变更(2026-09-25,`docs/OPTIMIZATION-PLAN.md` D-08「测试段逐子进程隔离」):
+ *   正式口径 = 每段独立子进程 + 硬超时 + 资源回收 + case 级报告 + 失败 artifact,
+ *   **排优化计划阶段 5,当前尚未实现**;本文件仍为同进程 + 看门狗,不得据本注释认为
+ *   隔离已完成。原「不做每段子进程隔离」的结论已被该裁决 supersede,历史留痕见
+ *   `docs/BACKLOG.md`「看门狗悬挂段隔离」行(处置 = 已被裁决取代)与「维持人工·已知限制」。
  * 返回 { ok, ms, error?, timedOut? },不含 file(由 runAll 补齐)
  */
 async function runSegmentWithWatchdog(s, timeout) {
@@ -82,6 +86,7 @@ async function runSegmentWithWatchdog(s, timeout) {
  * 某段看门狗超时 → 记为失败且**继续执行后续段**(一次看全失败面,E3 试点);
  * 返回值 hung=true 提示入口:存在未终止的悬挂段,结果打印完毕须硬退出释放资源
  * (悬挂段无法在同进程内被终止,详见 runSegmentWithWatchdog 注释)。
+ * 逐段子进程隔离为 D-08 正式口径但**阶段 5 待实现**,本文件现状 = 同进程 + 看门狗。
  */
 export async function runAll(dirs, options = {}) {
   const timeout = Number(options.segmentTimeoutMs ?? 0);

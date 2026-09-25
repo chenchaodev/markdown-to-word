@@ -1,7 +1,8 @@
 name: CI
 
 # 门禁流水线:push 到 master 或任意分支开 PR 时跑统一验证入口 verify:ci
-# (契约自检及其回归 → build → typecheck → lint → acceptance → coverage → fixture 漂移 → smoke)。
+# (契约自检及其回归 → build → typecheck → lint → acceptance → coverage → fixture 漂移
+# → smoke → 几何门禁)。
 # 命令清单单源于 package.json scripts,本文件不逐条复述门禁命令(与 release.yml 共用
 # 同一 verify:ci 链,发布不维护第二份缩水清单)。
 # Node 口径单源于 package.json engines;scripts/check-ci-contract.mjs 断言本文件与
@@ -21,9 +22,9 @@ jobs:
   ci:
     runs-on: windows-latest
     # 全流程(install + 契约自检 + build/typecheck/lint + acceptance 段 + coverage 段
-    # + fixtures 校验 + smoke)正常约 20-30 分钟;45 分钟为正常耗时的约 1.5 倍余量,
-    # 超时即视为挂死快速失败,不占用 runner
-    timeout-minutes: 45
+    # + fixtures 校验 + smoke + 几何门禁与诊断 artifact 上传)正常约 30-40 分钟;
+    # 60 分钟为正常耗时的约 1.5 倍余量,超时即视为挂死快速失败,不占用 runner
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
@@ -41,10 +42,33 @@ jobs:
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
-      # 统一门禁入口:build 必须先于 typecheck(测试树 import dist/ 编译产物),
-      # 顺序与完整性由 scripts/check-ci-contract.mjs 断言守护
+      # 环境指纹(Node/npm/Electron/Chromium/字体/DPI):几何与渲染类失败高度依赖
+      # 宿主环境,不落指纹就只能靠猜。同时写成文件,失败时随诊断 artifact 留存。
+      # 探针取不到值时以 unavailable/partial 记入 diagnostics 且不阻断(默认非 --strict),
+      # 仅脚本本身无法运行时才失败。
+      - name: Record environment fingerprint
+        shell: bash
+        run: |
+          mkdir -p output/artifacts
+          npm run --silent check:env | tee output/artifacts/env-fingerprint.txt
+
+      # 统一门禁入口:build 必须先于 typecheck(测试树 import dist/ 编译产物)与几何门禁
+      # (采样 dist/renderer),顺序与完整性由 scripts/check-ci-contract.mjs 断言守护
       - name: Verify (verify:ci)
         run: npm run verify:ci
+
+      # 诊断留存:always 语义保证门禁判红时报告与截图仍可下载(几何门禁失败时
+      # 逐场景 finding 在报告里,FAILED 截图在同目录)
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ci-diagnostics
+          path: |
+            output/artifacts/env-fingerprint.txt
+            output/artifacts/ui-geometry/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # 当前稳定 22.x 兼容 lane(审计 ENG-5:engines 地板由主 job 精确钉住验证,此 lane
   # 覆盖「当前稳定/后续支持版本」也可用,跑 install + build/typecheck/lint + smoke;

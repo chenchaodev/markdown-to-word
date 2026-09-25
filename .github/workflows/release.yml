@@ -18,9 +18,9 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
-    # 含全量门禁(与 CI 同链)与 NSIS 打包(约 5-10 分钟),正常约 30-40 分钟,
-    # 75 分钟为正常耗时的约 2 倍余量,防挂死占用 runner
-    timeout-minutes: 75
+    # 含全量门禁(与 CI 同链)、NSIS 打包与打包后产物核对(清单/ASAR/发布目标)、
+    # 约 10-15 分钟,正常约 40-50 分钟;90 分钟为正常耗时的约 2 倍余量,防挂死占用 runner
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
 
@@ -56,10 +56,25 @@ jobs:
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
-      # 统一门禁入口 + 打包:verify:release = verify:ci(契约自检/build/typecheck/lint/
-      # acceptance/coverage/fixture 漂移/smoke)追加 dist,复用 ci.yml 同一条链,
-      # 发布不再维护第二份缩水命令清单,tag 无法绕过 coverage/fixture/smoke 门禁。
-      # electron-builder 打包 NSIS 安装包(产物 release/MarkdownToWord-Setup-<版本>.exe + latest.yml)
+      # 环境指纹(Node/npm/Electron/Chromium/字体/DPI):与 ci.yml 同入口同写法,
+      # 打包/渲染类差异先看指纹再猜;同时写成文件,失败时随诊断 artifact 留存。
+      # 探针取不到值时以 unavailable/partial 记入 diagnostics 且不阻断(默认非 --strict)。
+      - name: Record environment fingerprint
+        shell: bash
+        run: |
+          mkdir -p output/artifacts
+          npm run --silent check:env | tee output/artifacts/env-fingerprint.txt
+
+      # 统一门禁入口 + 打包 + 产物核对:verify:release = verify:ci(契约自检/build/
+      # typecheck/lint/acceptance/coverage/fixture 漂移/smoke/几何门禁)追加 dist,
+      # dist 内部先 clean:dist/clean:release(清掉上一版残留与历史安装包)→ build →
+      # dist 清单 → electron-builder → 清单校验/ASAR 核对/发布目标核对(含 SHA-256 报告),
+      # 复用 ci.yml 同一条链,发布不再维护第二份缩水命令清单,
+      # tag 无法绕过 geometry/coverage/fixture/smoke 门禁。
+      # 清理只删 dist/ 与 release/ 两个生成目录,路径守卫在 scripts/clean-artifacts.mjs,
+      # 链形态由 scripts/check-ci-contract.mjs 断言(勿把清理扩散到其它目录)。
+      # electron-builder 打包 NSIS 安装包(产物 release/MarkdownToWord-Setup-<版本>.exe
+      # + .blockmap + latest.yml;确切文件名由 package.json build.nsis.artifactName 展开)
       - name: Verify & package (verify:release)
         run: npm run verify:release
         env:
@@ -75,9 +90,27 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      # 自动生成 Release 并上传安装包与更新元数据。
+      # 诊断与发布留痕:always 语义保证门禁/打包判红时环境指纹、几何报告与截图、
+      # dist 清单、发布产物 SHA-256 报告仍可下载(报告只在全部核对通过后生成)
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-diagnostics
+          path: |
+            output/artifacts/env-fingerprint.txt
+            output/artifacts/ui-geometry/
+            output/artifacts/dist-manifest.json
+            output/artifacts/release-artifacts.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # 自动生成 Release 并上传安装包、差分索引与更新元数据。
       # notes 取自 docs/CHANGELOG.md 最新版本条目(发版时人工整理的功能汇总,准确反映本次变更);
       # 提取为空(未写 CHANGELOG)时回退 --generate-notes(commit 列表)。
+      # 资产按当前版本点名上传,不用 release/*.exe 通配:release 是累积目录,
+      # 通配会把历史版本的安装包一起发出去,自动更新通道也会拿到错误的最新包。
+      # 文件名由 package.json 的 artifactName 模板展开,与 check:release 核对的是同一份产物。
       # 注意:windows-latest 默认 shell 是 pwsh,本步骤为 bash 语法,必须显式 shell: bash
       - name: Create GitHub Release
         shell: bash
@@ -88,13 +121,20 @@ jobs:
             const m = md.match(/## \[[^\]]+\] - [^\n]+\n([\s\S]*?)(?=\n## \[|\$)/);
             process.stdout.write(m ? m[1].trim() : '');
           ")
-          # 只上传安装包与更新元数据(builder-debug.yml 为 electron-builder 调试文件,1.0.1 起不再上传)
-           # release 标题固定为版本号(tag 名),不再沿用 commit 主题
-           TITLE="${{ github.ref_name }}"
-           if [ -n "$NOTES" ]; then
-             gh release create "${{ github.ref_name }}" release/*.exe release/latest.yml --title "$TITLE" --notes "$NOTES"
-           else
-             gh release create "${{ github.ref_name }}" release/*.exe release/latest.yml --title "$TITLE" --generate-notes
-           fi
+          INSTALLER=$(node -e 'const p = require("./package.json"); process.stdout.write(p.build.nsis.artifactName.replace("${productName}", p.build.productName).replace("${version}", p.version).replace("${ext}", "exe"))')
+          ASSETS="release/${INSTALLER} release/${INSTALLER}.blockmap release/latest.yml"
+          for asset in $ASSETS; do
+            if [ ! -f "$asset" ]; then
+              echo "::error::缺少当前版本发布资产 ${asset}(产物核对应已在 verify:release 拦截,此处兜底)"
+              exit 1
+            fi
+          done
+          # release 标题固定为版本号(tag 名),不再沿用 commit 主题
+          TITLE="${{ github.ref_name }}"
+          if [ -n "$NOTES" ]; then
+            gh release create "${{ github.ref_name }}" $ASSETS --title "$TITLE" --notes "$NOTES"
+          else
+            gh release create "${{ github.ref_name }}" $ASSETS --title "$TITLE" --generate-notes
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

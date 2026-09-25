@@ -1,16 +1,23 @@
-// 工程契约自检(Node 口径 + 门禁链),无产物、幂等,exit 0/1。
+// 工程契约自检(Node 口径 + 门禁链 + 产物核对链),无产物、幂等,exit 0/1。
 //
 // 用途:把「宿主 Node 版本口径」与「CI/Release 门禁命令清单」收敛到单一来源
 // (package.json engines + scripts 链),并把下列易漏约定变成可执行断言:
 //   - lockfile 与两个 workflow 的 Node 口径与 engines 地板一致,且存在精确钉住地板的 lane;
 //   - workflow 与 scripts 引用的本地脚本文件真实存在;
 //   - build 先于 typecheck(typecheck 含测试树,测试 import dist/ 编译产物);
-//   - verify:release 复用 verify:ci 链并只追加 dist(发布不维护第二份缩水清单)。
+//   - 几何门禁(check:geometry)在 verify:ci 链内且晚于 build —— 链尾是唯一位置:
+//     它需要在 smoke 之后运行(此时 dist 已是本次构建),又必须早于 dist 打包;
+//   - dist 链形态:先清理生成目录(clean:dist + clean:release)→ build → 生成 dist
+//     清单(基线)→ electron-builder → 产物核对(dist 清单校验 / app.asar 核对 /
+//     发布目标核对),即「从干净目录打出,再核对刚打出的那份包」;
+//   - 清理目标白名单:clean:* 只能指向 dist/release/all(删除不可逆,不许扩散到其它目录);
+//   - verify:release 复用 verify:ci 链并只追加 dist(发布不维护第二份缩水清单,
+//     故几何门禁与产物核对无法被 tag 绕过)。
 // 该脚本在 verify:ci 首步与两条 workflow 的依赖安装之前各跑一次:
 // Node 版本不符时在 npm install 之前就 fail fast,不必等 EBADENGINE 警告或构建失败。
 //
 // 单一来源:Node 地板 = package.json engines.node;门禁链 = verify:ci。
-// 本脚本不校验具体产物内容(那是各段测试与 smoke 的职责)。
+// 本脚本不校验具体产物内容(那是各段测试、smoke 与几何门禁的职责)。
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -65,7 +72,11 @@ if (compareSemver(runtime, floor) < 0) {
 
 /** node-version 合法写法:主线别名(22)或完整版本(22.12.0);主线别名需不低于地板主线 */
 const NODE_VERSION_RE = /node-version:\s*['"]?([\w.]+)['"]?/g;
-const NPM_RUN_RE = /npm run ([\w:.-]+)/g;
+/**
+ * workflow 里的 `npm run <script>`;允许脚本名前夹带 npm 开关
+ * (如 --silent 抑制 run 头噪声),开关不参与脚本名捕获,只取其后的脚本名。
+ */
+const NPM_RUN_RE = /npm run (?:-{1,2}[\w-]+ )*([\w:.-]+)/g;
 const WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/release.yml'];
 
 /** 去掉整行 YAML 注释:注释里出现的版本号/命令字样不应被当作配置 */
@@ -154,8 +165,9 @@ function topLevelScriptNames(name) {
     });
 }
 
-// CI 门禁必备步骤(顺序即依赖顺序):build 产出 dist/ 编译产物,测试与 fixture 校验都跑 dist。
-const REQUIRED_CI_STEPS = ['build', 'typecheck', 'lint', 'test', 'test:coverage', 'check:fixtures', 'test:smoke'];
+// CI 门禁必备步骤(顺序即依赖顺序):build 产出 dist/ 编译产物,测试与 fixture 校验都跑 dist;
+// check:geometry 收尾(采样 dist/renderer,须在 build 之后、且是链内最后一步)。
+const REQUIRED_CI_STEPS = ['build', 'typecheck', 'lint', 'test', 'test:coverage', 'check:fixtures', 'test:smoke', 'check:geometry'];
 
 const ciChain = expandScript('verify:ci');
 let cursor = -1;
@@ -174,11 +186,67 @@ if (buildAt === -1 || typecheckAt === -1 || buildAt > typecheckAt) {
   fail(`verify:ci 须先 build 再 typecheck(typecheck 含测试树,测试 import dist/),当前 build@${buildAt} typecheck@${typecheckAt}`);
 }
 
+// 几何门禁采样 dist/renderer 的真实 Electron 窗口:build 之前跑只会拿到上一次的界面,
+// 门禁形同虚设却报绿,故与 typecheck 同级断言「build 在前」。
+const geometryAt = ciChain.indexOf('check:geometry');
+if (buildAt !== -1 && geometryAt !== -1 && buildAt > geometryAt) {
+  fail(`verify:ci 须先 build 再 check:geometry(几何门禁采样本次构建的 dist/renderer),当前 build@${buildAt} check:geometry@${geometryAt}`);
+}
+
 // verify:release 只允许「复用 verify:ci + 追加 dist」两种形态:发布若自行拼装
 // 子集命令(coverage/fixture/smoke 任一缺失即等于绕过门禁),此处即拦截。
 const releaseTopLevel = topLevelScriptNames('verify:release');
 if (releaseTopLevel.join(',') !== 'verify:ci,dist') {
   fail(`verify:release 须恰为 verify:ci + dist(复用同一门禁链,不维护第二份清单),当前:${releaseTopLevel.join(' -> ') || '空'}`);
+}
+
+// ---- dist 链形态:先清理、再构建、清单基线在打包前、产物核对在打包后 ----
+// 不清理则源文件改名/删除后的残留产物会打进包、release/ 的历史安装包会与本次产物并存;
+// 清单与哈希核对只能证明「一致」,证不了「没多带」。放在 electron-builder 之前校验 dist
+// 同样只能证明「打包前的 dist 干净」,证明不了「打进包里的就是这一份」——所以两侧都要卡。
+const DIST_PREP_STEPS = ['clean:dist', 'clean:release', 'build', 'gen:dist-manifest'];
+const DIST_ARTIFACT_STEPS = ['check:dist-manifest', 'check:asar', 'check:release'];
+
+const distBody = scripts.dist ?? '';
+if (distBody === '') {
+  fail('scripts.dist 未在 package.json 中定义(verify:release 依赖它)');
+} else {
+  const builderAt = distBody.indexOf('electron-builder');
+  if (builderAt === -1) {
+    fail('scripts.dist 缺少 electron-builder 打包命令');
+  }
+  let previousAt = -1;
+  for (const step of DIST_PREP_STEPS) {
+    const at = distBody.indexOf(`npm run ${step}`);
+    if (at === -1) {
+      fail(`scripts.dist 缺少前置步骤 ${step}(顺序须为 ${DIST_PREP_STEPS.join(' → ')} → electron-builder → ${DIST_ARTIFACT_STEPS.join(' → ')})`);
+    } else if (at < previousAt) {
+      fail(`scripts.dist 步骤乱序:${step} 出现在 ${DIST_PREP_STEPS[DIST_PREP_STEPS.indexOf(step) - 1]} 之前(顺序须为 ${DIST_PREP_STEPS.join(' → ')}),当前 ${step}@${at} 上一步@${previousAt}`);
+    } else if (builderAt !== -1 && at > builderAt) {
+      fail(`scripts.dist 的 ${step} 须在 electron-builder 之前,当前 ${step}@${at} builder@${builderAt}`);
+    }
+    if (at > previousAt) previousAt = at;
+  }
+  for (const step of DIST_ARTIFACT_STEPS) {
+    const at = distBody.indexOf(`npm run ${step}`);
+    if (at === -1) {
+      fail(`scripts.dist 缺少产物核对步骤 ${step}(发布链不得只打包不核对)`);
+    } else if (builderAt !== -1 && at < builderAt) {
+      fail(`scripts.dist 的 ${step} 须在 electron-builder 之后(核对对象是刚打出的包),当前 ${step}@${at} builder@${builderAt}`);
+    }
+  }
+}
+
+// ---- 清理目标白名单(删除不可逆,不许扩散)----
+const CLEAN_TARGETS = new Set(['dist', 'release', 'all']);
+for (const [name, body] of Object.entries(scripts)) {
+  if (!name.startsWith('clean:')) continue;
+  const target = /--target[= ]([^\s]+)/.exec(body);
+  if (target === null) {
+    fail(`scripts.${name} 未用 --target 显式指定清理目标(白名单 ${[...CLEAN_TARGETS].join('/')}),不做隐式删除`);
+  } else if (!CLEAN_TARGETS.has(target[1])) {
+    fail(`scripts.${name} 的清理目标 ${target[1]} 不在白名单(${[...CLEAN_TARGETS].join('/')})内,拒绝删除该路径`);
+  }
 }
 
 // ---- 被引用脚本文件存在性(package.json 全量 scripts + 两个 workflow)----
@@ -206,5 +274,6 @@ if (problems.length > 0) {
 }
 console.log(
   `[ok] 工程契约自检通过:Node 地板 ${floorStr}(engines/lockfile/CI/Release 口径一致,当前 ${process.versions.node});` +
-    `verify:ci 链 ${topLevelScriptNames('verify:ci').join(' -> ')};verify:release = verify:ci + dist;被引用脚本均存在`,
+    `verify:ci 链 ${topLevelScriptNames('verify:ci').join(' -> ')};verify:release = verify:ci + dist;` +
+    `dist 链 先清 dist/release 再构建、清单基线先于打包、产物核对后于打包;清理目标限定 dist/release;被引用脚本均存在`,
 );

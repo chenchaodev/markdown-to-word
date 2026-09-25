@@ -217,7 +217,7 @@
             <!-- ▩ 快速参数条:舞台内底部常驻,预设/纸张/方向/输出目录
                   四项高频转换参数主界面直达;与抽屉同源双向同步(paper/orientation radio
                   同 name 自动成组,select/chip 经 settings-bindings 显式镜像),
-                  抽屉仍为完整真相源(七组 IA 不缺项) -->
+                  抽屉仍为完整真相源(六组 IA 不缺项) -->
             <div class="quick-bar" id="quickBar" role="group" data-i18n-aria-label="quick.title" aria-label="快速转换参数">
               <label class="qb-field">
                 <span class="qb-label" data-i18n="settings.presetLabel">模板预设</span>
@@ -406,7 +406,7 @@
     <!-- toast 轻提示(settings-ia §3.7:预设切换等即时反馈;单实例,2.4s 自动消失) -->
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <!-- ══ 设置抽屉:遮罩盖内容区(top 联动 --tbh),右滑面板七组编号(01–07),
+    <!-- ══ 设置抽屉:遮罩盖内容区(top 联动 --tbh),右滑面板六组编号(01–06),
          信息架构严格按 docs/design/settings-ia.md 迁移映射表。
          控件 id 与 settings-bindings/settings-panel 的绑定、回填逻辑一一对应,勿改 id -->
     <div id="settingsDrawer" class="drawer-overlay hidden">
@@ -456,11 +456,13 @@
               <span id="templatePresetHint" class="settings-note"
                 data-i18n="preset.hintTitle"
                 data-i18n-title="preset.hintTitle"
-                title="选择模板将覆盖排版与页面设置">
-                选择模板将覆盖排版与页面设置
+                title="切换预设会覆盖对应设置:内置预设含页眉页脚与水印,自定义预设仅排版与页面">
+                切换预设会覆盖对应设置:内置预设含页眉页脚与水印,自定义预设仅排版与页面
               </span>
             </div>
-            <p class="scope-note" data-i18n="settings.presetScopeNote">预设包含「排版 · 编号与目录」；不含 页眉页脚与水印 · 转换 · 应用</p>
+            <!-- 预设作用域唯一文档点(与 core/i18n zh settings.presetScopeNote 逐字一致):
+                 内置预设含「排版 · 编号与目录 · 页眉页脚 · 水印」;自定义预设仅存排版 + 页面 -->
+            <p class="scope-note" data-i18n="settings.presetScopeNote">预设包含「排版 · 编号与目录 · 页眉页脚 · 水印」；不含 转换 · 应用</p>
             <div class="mgmt">
               <button type="button" id="presetSaveBtn" class="btn btn-ghost sm">
                 <span data-i18n="preset.saveAs">另存为预设…</span>
@@ -613,9 +615,9 @@
             </div>
           </section>
 
-          <!-- ── 03 页眉页脚与水印(❌不入预设,合并原 04 + 05) ── -->
+          <!-- ── 03 页眉页脚与水印(合并原 04 + 05;内置预设含,自定义预设不含) ── -->
           <section class="sec" data-group="headerwatermark">
-            <div class="sec-h"><span class="sec-num">03</span><span class="sec-title" data-i18n="settings.groupHeaderWatermark">页眉页脚与水印</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
+            <div class="sec-h"><span class="sec-num">03</span><span class="sec-title" data-i18n="settings.groupHeaderWatermark">页眉页脚与水印</span><span class="sec-rule"></span></div>
             <!-- 模式 + 条件字段(IA §3.1 抽屉唯一折叠形态):主控 seg 置首,
                  条件字段收入 .cond 凹陷容器,仅 custom 展开(settings-bindings 同步) -->
             <div class="row">
@@ -684,10 +686,10 @@
               </span>
               <input type="checkbox" id="watermarkGray" class="switch-input" />
             </div>
-            <p class="scope-note" data-i18n="settings.watermarkNote">文字水印叠加于每页(旋转置底);PDF 与 Word 双格式通用,不随预设保存。</p>
+            <p class="scope-note" data-i18n="settings.watermarkNote">文字水印叠加于每页(旋转置底)；PDF 与 Word 双格式通用。</p>
           </section>
 
-          <!-- ── 04 编号与目录(✅入预设) ── -->
+          <!-- ── 04 编号与目录(内置预设含章节/题注/公式编号 + H1 分页;自定义预设随排版含章节/题注编号) ── -->
           <section class="sec" data-group="numbering">
             <div class="sec-h"><span class="sec-num">04</span><span class="sec-title" data-i18n="settings.groupNumbering">编号与目录</span><span class="sec-rule"></span></div>
             <div class="sw-row">
@@ -731,7 +733,7 @@
             </div>
           </section>
 
-          <!-- ── 05 转换(❌不入预设,合并原 09 AI/Obsidian + 07 输出) ── -->
+          <!-- ── 05 转换(不入任何预设,合并原 09 AI/Obsidian + 07 输出) ── -->
           <section class="sec" data-group="convert">
             <div class="sec-h"><span class="sec-num">05</span><span class="sec-title" data-i18n="settings.groupConvert">转 换</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
             <div class="sw-row">
@@ -812,7 +814,7 @@
             </div>
           </section>
 
-          <!-- ── 06 应用(❌不入预设) ── -->
+          <!-- ── 06 应用(不入任何预设) ── -->
           <section class="sec" data-group="app">
             <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupApp">应 用</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
             <div class="row">
@@ -982,7 +984,7 @@
     >
       <div class="dialog dialog--preset-save">
         <h2 id="presetSaveTitle" class="dialog-title" data-i18n="preset.saveAsTitle">另存为预设</h2>
-        <p class="dialog-desc" data-i18n="preset.saveDesc">将当前排版与页面设置保存为自定义预设</p>
+        <p class="dialog-desc" data-i18n="preset.saveDesc">将当前排版与页面设置保存为自定义预设(不含页眉页脚与水印)</p>
         <label class="setting-label" for="presetNameInput" data-i18n="preset.nameLabel">预设名称</label>
         <input
           type="text"

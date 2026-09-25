@@ -1,8 +1,10 @@
 // 契约自检脚本自身的回归守护(负向夹具)。
 //
 // verify:ci 的第一道门是 check:contract;若该脚本被改成「永远通过」或某个断言被
-// 误删,配置漂移(Node 口径、门禁链缩水、build/typecheck 乱序、脚本缺失)就会静默
-// 放行发布,没有任何其他检查能发现。此处用临时夹具逐条制造漂移,断言自检脚本
+// 误删,配置漂移(Node 口径、门禁链缩水、build/typecheck 与几何门禁乱序、前置清理被
+// 移出/乱序、清理目标越界、产物核对被移出或排到打包之前、脚本缺失)就会静默放行
+// 发布,没有任何其他检查能发现。此处用
+// 临时夹具逐条制造漂移,断言自检脚本
 // 确实以非零码拒绝,并断言未漂移时通过。纯 fs + 子进程,无产物:临时目录
 // 写在系统临时目录并在 finally 清理(测试对象是夹具,不是本仓库文件)。
 
@@ -17,9 +19,17 @@ const checkerPath = join(projectRoot, 'scripts', 'check-ci-contract.mjs');
 
 const FLOOR = '22.13.0';
 
-/** 夹具基线:与真实仓库同构的门禁链(verify:ci 全步 + verify:release 追加 dist) */
+/** 夹具基线:与真实仓库同构的门禁链(verify:ci 全步含几何门禁 + verify:release 追加 dist) */
 const FIXTURE_SCRIPTS = {
   'check:contract': 'node scripts/check-ci-contract.mjs',
+  'check:env': 'node scripts/print-env-fingerprint.mjs',
+  'check:geometry': 'electron scripts/check-geometry.mjs',
+  'gen:dist-manifest': 'node scripts/check-dist-manifest.mjs',
+  'check:dist-manifest': 'node scripts/check-dist-manifest.mjs --check',
+  'check:asar': 'node scripts/check-asar-manifest.mjs',
+  'check:release': 'node scripts/check-release-artifacts.mjs',
+  'clean:dist': 'node scripts/clean-artifacts.mjs --target dist',
+  'clean:release': 'node scripts/clean-artifacts.mjs --target release',
   build: 'tsc',
   typecheck: 'tsc --noEmit',
   lint: 'eslint src/',
@@ -27,15 +37,27 @@ const FIXTURE_SCRIPTS = {
   'test:coverage': 'npm run build && c8 electron test/acceptance.mjs',
   'check:fixtures': 'node test/tools/gen-fixtures.mjs --check',
   'test:smoke': 'node scripts/check-build-fresh.mjs && electron . --smoke',
-  dist: 'npm run build && electron-builder',
+  dist:
+    'npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest ' +
+    '&& electron-builder && npm run check:dist-manifest && npm run check:asar && npm run check:release',
   'verify:ci':
     'npm run check:contract && npm run build && npm run typecheck && npm run lint && npm run test ' +
-    '&& npm run test:coverage && npm run check:fixtures && npm run test:smoke',
+    '&& npm run test:coverage && npm run check:fixtures && npm run test:smoke && npm run check:geometry',
   'verify:release': 'npm run verify:ci && npm run dist',
 };
 
 /** 夹具内被 script 引用的占位文件(内容无关,只需存在) */
-const FIXTURE_PLACEHOLDERS = ['test/acceptance.mjs', 'test/tools/gen-fixtures.mjs', 'scripts/check-build-fresh.mjs'];
+const FIXTURE_PLACEHOLDERS = [
+  'test/acceptance.mjs',
+  'test/tools/gen-fixtures.mjs',
+  'scripts/check-build-fresh.mjs',
+  'scripts/check-geometry.mjs',
+  'scripts/check-dist-manifest.mjs',
+  'scripts/check-asar-manifest.mjs',
+  'scripts/check-release-artifacts.mjs',
+  'scripts/clean-artifacts.mjs',
+  'scripts/print-env-fingerprint.mjs',
+];
 
 function writeFileIn(dir, relative, content) {
   const target = join(dir, relative);
@@ -66,6 +88,7 @@ function createFixture(mutate) {
       `          node-version: ${FLOOR}`,
       '      - run: node scripts/check-ci-contract.mjs',
       '      - run: npm ci --registry=https://registry.npmjs.org',
+      '      - run: npm run --silent check:env',
       `      - run: npm run ${verifyScript}`,
       '',
     ].join('\n');
@@ -133,11 +156,79 @@ const CASES = [
     expect: /须先 build 再 typecheck/,
   },
   {
-    name: 'verify:release 自建缩水清单(绕过 coverage/fixture/smoke)',
+    name: 'verify:release 自建缩水清单(绕过 coverage/fixture/smoke/geometry)',
     mutate: ({ pkg }) => {
       pkg.scripts['verify:release'] = 'npm run build && npm run test && npm run dist';
     },
     expect: /verify:release 须恰为 verify:ci \+ dist/,
+  },
+  {
+    name: '几何门禁被移出 CI 链(布局漂移无人拦截)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace(' && npm run check:geometry', '');
+    },
+    expect: /verify:ci 缺少门禁步骤 check:geometry/,
+  },
+  {
+    name: '几何门禁被提到链首(采样未构建/上次构建的界面)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = `npm run check:geometry && ${pkg.scripts['verify:ci']}`;
+    },
+    expect: /须先 build 再 check:geometry/,
+  },
+  {
+    name: 'dist 链缺少 ASAR 核对(只打包不核对交付物)',
+    mutate: ({ pkg }) => {
+      pkg.scripts.dist = pkg.scripts.dist.replace(' && npm run check:asar', '');
+    },
+    expect: /scripts\.dist 缺少产物核对步骤 check:asar/,
+  },
+  {
+    name: '产物核对被排到 electron-builder 之前(证明不了包内容来自本次构建)',
+    mutate: ({ pkg }) => {
+      pkg.scripts.dist =
+        'npm run build && npm run check:dist-manifest && npm run check:asar ' +
+        '&& electron-builder && npm run check:release';
+    },
+    expect: /check:dist-manifest 须在 electron-builder 之后/,
+  },
+  {
+    name: 'dist 链不做前置清理(改名/删除源文件的残留产物会打进包)',
+    mutate: ({ pkg }) => {
+      pkg.scripts.dist = pkg.scripts.dist.replace('npm run clean:dist && ', '');
+    },
+    expect: /scripts\.dist 缺少前置步骤 clean:dist/,
+  },
+  {
+    name: 'dist 链不清理 release 目录(历史版本安装包与本次产物并存)',
+    mutate: ({ pkg }) => {
+      pkg.scripts.dist = pkg.scripts.dist.replace('npm run clean:release && ', '');
+    },
+    expect: /scripts\.dist 缺少前置步骤 clean:release/,
+  },
+  {
+    name: '清理被排到 build 之后(先构建再清理,等于没清)',
+    mutate: ({ pkg }) => {
+      pkg.scripts.dist = pkg.scripts.dist.replace(
+        'npm run clean:dist && npm run clean:release && npm run build',
+        'npm run clean:release && npm run clean:dist && npm run build',
+      );
+    },
+    expect: /scripts\.dist 步骤乱序/,
+  },
+  {
+    name: '清理目标越出白名单(试图删源码/文档目录)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['clean:dist'] = 'node scripts/clean-artifacts.mjs --target src';
+    },
+    expect: /清理目标 src 不在白名单\(dist\/release\/all\)内/,
+  },
+  {
+    name: 'clean 脚本未显式指定目标(隐式删除风险)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['clean:release'] = 'node scripts/clean-artifacts.mjs';
+    },
+    expect: /scripts\.clean:release 未用 --target 显式指定清理目标/,
   },
   {
     name: 'script 引用已删除的脚本文件',
@@ -150,6 +241,11 @@ const CASES = [
     name: 'workflow 调用不存在的 npm script',
     mutate: ({ dir }) => patchInFixture(dir, '.github/workflows/ci.yml', 'npm run verify:ci', 'npm run verify:gate'),
     expect: /引用了不存在的 npm script:verify:gate/,
+  },
+  {
+    name: 'workflow 夹带 npm 开关调用的脚本不存在(开关不掩盖脚本名校验)',
+    mutate: ({ dir }) => patchInFixture(dir, '.github/workflows/ci.yml', 'npm run --silent check:env', 'npm run --silent check:ghost'),
+    expect: /引用了不存在的 npm script:check:ghost/,
   },
   {
     name: '地板 lane 退化为模糊主线别名(地板不可复现)',

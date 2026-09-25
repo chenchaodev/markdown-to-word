@@ -5,9 +5,9 @@
  * - validatePresetName:空名/纯空白 → 「请输入预设名称」;同名(trim 后比较)→
  *   「已存在同名预设,请换一个名称」;达上限(≥10 条)→ 「已达 10 个上限,请先删除」
  *   (文案含全角逗号);合法(含前后空白)→ null
- * - customPresetToTemplate:id = custom:{name} / name / hint「自定义预设」/ typography
+ * - customPresetToTemplate:id = custom:{name} / name / hint「自定义预设 · 仅排版与页面」/ typography
  *   与 pageSetup 原引用映射
- * - allPresets:硬编码 3 项在前 + 自定义项追加末尾,自定义项转 custom: id
+ * - allPresets:硬编码预设在前(数量以 TEMPLATE_PRESETS.length 为准)+ 自定义项追加末尾,自定义项转 custom: id
  * - customPresetNameFromId:custom: 前缀 → 名称;非自定义 → null;空名 → ""
  * - clampMargin:0/1000 边界保留、负数钳 0、超限钳 1000、小数保留
  * - resolvePresetSelection:当前选中自定义预设且值=硬编码预设值时
@@ -92,7 +92,7 @@ export async function run() {
   assert(
     tpl.id === `${CUSTOM_PRESET_ID_PREFIX}我的模板` &&
       tpl.name === "我的模板" &&
-      tpl.hint === "自定义预设",
+      tpl.hint === "自定义预设 · 仅排版与页面",
     "customPresetToTemplate:id(custom: 前缀)/name/hint 应正确映射",
   );
   assert(tpl.typography === typography && tpl.pageSetup === pageSetup, "customPresetToTemplate:typography/pageSetup 应原引用映射");
@@ -109,7 +109,7 @@ export async function run() {
       combined[TEMPLATE_PRESETS.length + 1].id === `${CUSTOM_PRESET_ID_PREFIX}简报二`,
     "allPresets:自定义项应追加末尾且 id 带 custom: 前缀",
   );
-  assert(allPresets([]).length === TEMPLATE_PRESETS.length, "allPresets:空自定义列表 → 仅硬编码 3 项");
+  assert(allPresets([]).length === TEMPLATE_PRESETS.length, "allPresets:空自定义列表 → 仅硬编码内置预设(TEMPLATE_PRESETS.length 项)");
   console.log("[ok] allPresets:硬编码在前 + 自定义追加(custom: id) + 空列表 断言通过");
 
   // ---------- customPresetNameFromId ----------
@@ -376,8 +376,8 @@ export async function run() {
   );
   const customHint = resolvePresetHint([preset("我的模板")], `${CUSTOM_PRESET_ID_PREFIX}我的模板`);
   assert(
-    customHint.isCustom === false && customHint.hint === "自定义预设",
-    "自定义预设命中(allPresets 含 custom 项)→ 其 hint(customPresetToTemplate 生成)+ isCustom=false",
+    customHint.isCustom === false && customHint.hint === "自定义预设 · 仅排版与页面",
+    "自定义预设命中(allPresets 含 custom 项)→ 其 hint(仅排版与页面,与内置完整交付链不同)+ isCustom=false",
   );
   const unknownHint = resolvePresetHint([], "不存在的id");
   assert(

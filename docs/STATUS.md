@@ -5,6 +5,8 @@
 > 当前定位:3.12.0 已发版;封版期维持「暂停新功能开发,文档维护 + 技术债清理」(需求入口见 BACKLOG,确认后排 ROADMAP「当前待办」)。
 > 历史批次明细见 `docs/CHANGELOG.md` 与 git log;审计与调研证据链见 `docs/archive/`。
 
+- 2026-09-26:**阶段 0 门禁接入(几何/产物/指纹)**:新增稳定入口 `check:env`、`check:geometry`、`gen:dist-manifest`、`check:dist-manifest`、`check:asar`、`check:release`;`verify:ci` 链尾接入几何门禁(build 必在其前),`verify:release` 仍为 verify:ci + dist,dist 内部为 build → dist 清单 → electron-builder → 清单校验/ASAR 核对/发布目标核对(含 SHA-256 报告);契约自检新增「几何在链且在 build 后」「清单基线先于打包、产物核对后于打包」断言(负向夹具 8→18);CI/Release 在 `npm ci` 后落环境指纹(Node/npm/Electron/Chromium/字体/DPI),主 CI 与 Release 均以 `always` 上传几何报告/截图与发布留痕,Release 资产改为按当前版本点名上传(不再 `release/*.exe` 通配);本地 check:contract/selftest/typecheck/lint/几何门禁(12 场景 7 恒定组,exit 0)/dist 清单/环境指纹全绿;**远端 GitHub lane 尚未实跑**
+- 2026-09-26:**发布链补前置清理(`clean:dist`/`clean:release`)**:新增 `scripts/clean-artifacts.mjs`,只删 dist/release 两个生成目录 —— 目标写死并与 package.json 打包配置对账,带保护区/上跳段/符号链接/realpath 越界守卫,`--target` 只收 dist/release/all、不接受任意路径,`--dry-run` 可预演,删除失败给可操作提示;置于 dist 链 build 之前,契约断言清理必在、有序、目标不越界(负向夹具 13→18);**关键实测**:只删 dist/ 而保留根目录 `tsconfig.tsbuildinfo` 会让 tsc 判定全部最新、一个文件都不发出(clean 后 build 仅剩 8 个复制资源),故清理连带删除根目录 `*.tsbuildinfo`,配对后 clean build 产出 262 文件且必需入口齐全;残留探针实跑(注入残留 → 清单校验判红 → 移除转绿);本机整条 `npm run dist` 实跑 exit 0(清单 262 文件、asar 10633 个文件交叉核对通过、release 3.12.0 三件套无历史残留、SHA-256 报告已生成),`release/` 已只剩当前版本产物(原 0.5.1/1.0.0/2.1.0 历史产物按授权清除);守卫反例(`--target src`、缺 target、未知参数、打包配置已迁移)全部拒绝且零删除
 - 2026-09-25:**全库优化阶段 2A 完成并进入阶段 0 重启**:统一 Markdown 准备链、main/renderer 页面几何迁移与回滚、D-03 路径边界、merge 图片安全重定位已落地；`npm run verify:ci` 通过（72 段、coverage、fixtures、smoke）；OPT-2.3 输出原子提交与 D-03 媒体类型/大小预算仍未完成；阶段 3 红测试仍在 `test/pending/`，不计入实现；下一提交后从阶段 0 checklist 首个未满足项开始，暂不推送远程
 - 2026-09-25:**发版 3.12.0 完成**(离线隐私文案区隔 + 双管线差异注释随版;GUI 实测通过 3 项全勾,验收关闭;四源同号 package.json=lockfile=tag v3.12.0=CHANGELOG [3.12.0];本会话 typecheck/lint/build/70 段/smoke 全绿;Release run 36114674025 与 CI run 36114669244 均 success,资产 MarkdownToWord-Setup-3.12.0.exe + latest.yml 已核对)
 - 2026-09-25:**BACKLOG 晋升两项开发完成**:「离线隐私文案区隔」(关于页 `about.privacyNote` 说明行 + FAQ「离线与隐私」条目 + i18n 三语;文案如实保留两处联网例外,不写绝对「不联网」)与「双管线差异注释」(14 文件补差异/同步义务头注,纯注释零行为变更);typecheck/lint/build + 70 段 + smoke 全绿;GUI 实测通过(ACCEPTANCE「离线隐私文案区隔」3 项全勾关闭,随 3.12.0 发版)
@@ -18,12 +20,13 @@
 ## 验证基线
 
 - 已跑通:`npm run typecheck`、`npm run lint`、`npm run build`、`npx electron . --smoke`、`npm run test:coverage`(c8，core/main 自动产物口径；GUI renderer 编排层按人工验收边界排除，renderer 断言仍执行)
-- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染与跨域守护)、`main/`(主进程层)与 `renderer/`(UI 层)下 `*.test.js`,当前 **71 段 = segments 47 + main 19 + renderer 5**;单段筛选 `M2W_ONLY='段名子串'`;新增测试=新建段文件零注册);main 侧行为已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
+- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染与跨域守护)、`main/`(主进程层)与 `renderer/`(UI 层)下 `*.test.js`,当前 **77 段 = segments 53 + main 19 + renderer 5**;单段筛选 `M2W_ONLY='段名子串'`;新增测试=新建段文件零注册);main 侧行为已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
 - 恒等守护:`test/segments/identity-guards.test.js` 锁已知双源(zh 文案↔字典/MAX_RECENT_FILES/设置合并双侧/白名单扫描一致性)
 - 验收样例:`npm run gen:fixtures`(需先 build)按功能自动生成 `test/fixtures/acceptance/*.md`(GUI 人工实测直接拖入);`npm run check:fixtures` 漂移校验(EOL 归一化,.gitattributes 双保险;CI 门禁步骤);新增功能=测试段顶层加 `export const fixtures = { main: ... }`
 - smoke 自清理 output/smoke 临时产物(Windows 占用文件 EBUSY 容错跳过)
-- 打包:`npm run dist`(electron-builder NSIS);验证链:--dir → asar list → win-unpacked 启动存活 → 静默安装/卸载(退出码 0);打包版 `--smoke` 不可用(asar 内只读);镜像环境变量见 DEV-GUIDE
-- CI 门禁:.github/workflows/ci.yml(windows-latest Node 22.13 主门禁 + Node 22 稳定线 + verify:ci 全链 + check:fixtures + smoke);release.yml 含 tag↔package.json↔lockfile 版本校验与 verify:release 全链
+- 打包:`npm run dist`(`clean:dist` + `clean:release` → build → dist 清单 → electron-builder NSIS → `check:dist-manifest`/`check:asar`/`check:release`);`clean:dist` 必须连带删根目录 `*.tsbuildinfo`,否则 tsc 增量缓存会让 clean 后的 build 不产出任何文件;清理只覆盖 dist/release 两个生成目录,`node scripts/clean-artifacts.mjs --target dist|release|all [--dry-run]` 可单独预演;验证链:--dir → asar list → win-unpacked 启动存活 → 静默安装/卸载(退出码 0);打包版 `--smoke` 不可用(asar 内只读);镜像环境变量见 DEV-GUIDE
+- 产物与布局门禁:`npm run check:geometry`(真实 Electron 窗口采样 renderer 几何,报告+截图落 `output/artifacts/ui-geometry/`,`verify:ci` 链尾一步);`npm run gen:dist-manifest`/`check:dist-manifest`(dist 规范化清单)、`check:asar`(app.asar 结构+与清单 SHA-256 交叉核对)、`check:release`(当前版本安装包/blockmap/latest.yml 一致性 + SHA-256 报告,拒绝历史产物残留);`npm run check:env`(Node/npm/Electron/Chromium/字体/DPI 指纹,探针缺值不阻断)
+- CI 门禁:.github/workflows/ci.yml(windows-latest Node 22.13 主门禁 + Node 22 稳定线 + verify:ci 全链含几何门禁 + `always` 上传环境指纹与几何报告/截图);release.yml 含 tag↔package.json↔lockfile 版本校验、verify:release 全链(含打包后产物核对)、`always` 上传诊断留痕,Release 资产按当前版本点名上传(安装包 + blockmap + latest.yml)
 
 ## 铁律(勿回退)
 > 项目级硬约束(技术栈/镜像/字体/分页符/依赖钉死)已全部迁至项目 `AGENTS.md`「硬约束」节,以彼处为准。

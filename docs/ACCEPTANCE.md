@@ -1,7 +1,20 @@
 # 界面重构 v3「印刷付梓」验收记录
 
-> 实施依据(均已用户确认):`docs/design/ui-mockup.html`(视觉基准)+ `docs/design/settings-ia.md`(七组信息架构)+ `docs/design/ui-guidelines.md`(令牌/控件/红线)。
-> 自动断言:typecheck/lint/build + test 全段 + smoke;本清单只列人工 GUI 实测项。
+> 实施依据(均已用户确认):`docs/design/ui-mockup.html`(视觉基准)+ `docs/design/settings-ia.md`(六组信息架构)+ `docs/design/ui-guidelines.md`(令牌/控件/红线)。
+> 自动断言:typecheck/lint/build + test 全段 + smoke;工程门禁另见 `test/segments/geometry-gate.test.js`、`test/segments/clean-artifacts-gate.test.js`、`test/segments/dist-manifest-gate.test.js`、`test/segments/release-artifact-gate.test.js`、`test/segments/env-fingerprint.test.js`;本清单只列人工 GUI 实测项。
+
+## 口径 supersede 记录(2026-09-25 阶段 0 统一,不改写以下历史条目)
+
+> 原则:下方各节的 `[x]` 是**当时实测的事实**,一律保留不改;凡与下列现行裁决冲突的表述,以裁决为准,并在此登记取代关系。裁决出处:`docs/OPTIMIZATION-PLAN.md`(D-01~D-12)与 `docs/OPTIMIZATION-CHECKLIST.md`(执行台账)。
+>
+> | 历史条目中的表述 | 现行口径 | 取代依据 |
+> |---|---|---|
+> | W1/页眉页脚/水印节的「不入预设」徽标、「套用模板预设不改变水印/页眉页脚」 | 徽标与该结论**仅对自定义预设**成立(自定义预设只存排版+页面设置);**内置预设携带完整交付链**(排版、编号与目录、页眉页脚、水印、公式编号、H1 分页),套用内置预设会一并写入,toast 列出被覆盖分组 | D-02 |
+> | S3「应用预设仅覆盖页面/文字/编号目录三组,页眉页脚/输出/应用不受影响」 | 对内置预设为**四组**(排版、编号与目录、页眉页脚、水印);「输出/应用」两组不入预设的说法仍成立 | D-02 |
+> | 页眉页脚节「不入预设体系」、`settings-ia.md` 同源表述 | 同上，按 D-02 区分内置/自定义；设计文档与 renderer 当前口径已同步，旧表述仅保留为历史记录并由本表指向 | D-02 |
+> | 本地图片「相对路径找不到文件」类提示未说明拒绝面 | 绝对路径 / UNC / `file://` 及其他协议 URL / 越界 `..`(含 realpath 越界)**一律拒绝**,不读取不嵌入、仅产出加载失败警告;媒体类型与单文件大小上限**未实施**,排阶段 3 | D-03 |
+> | 安装包未签名只作「已知限制」陈述 | 现阶段**明确不签名**(不采购/不接证书、不因缺签名阻断发布),未签名保留为**明确风险**;缓解手段 = 发布 SHA-256 + 发布说明 + SmartScreen 提示 + 签名状态记录 + 产物验证(阶段 6) | D-04 |
+> | 「看门狗:超时段记失败继续跑 + 收尾硬退出」被记为终态取舍 | 正式口径 = 测试段**逐子进程隔离**(硬超时、资源回收、case 级报告、失败 artifact),**阶段 5 待实现**;现状仍为同进程 | D-08 |
 
 ## 文字水印 验收记录
 

@@ -13,6 +13,10 @@
  * 含任一子串的段(大小写不敏感,如 M2W_ONLY=basic-render 或 M2W_ONLY=mermaid,pdf-meta);
  * 不设 = 全量运行,行为不变。
  *
+ * 段隔离现状(勿误读):当前为**单进程顺序跑完全部段**,仅靠看门狗标记超时段;
+ * `docs/OPTIMIZATION-PLAN.md` D-08 的正式口径是逐段独立子进程 + 硬超时 + 资源回收
+ * + case 级报告 + 失败 artifact,排阶段 5,**尚未实现**。
+ *
  * 用法: npm run test(需已 build;等价 npx electron test/acceptance.mjs)
  */
 import { app } from "electron";
@@ -70,8 +74,8 @@ void app.whenReady().then(async () => {
     }
   }
   printStats(results, totalStart);
-  // 看门狗超时 → 悬挂段无法在同进程内终止(runner 注释);后续段已照常跑完,
-  // 此处硬退出确定性释放悬挂资源(E3 试点:超时不中止后续,一次看全失败面)
+  // 看门狗超时 → 悬挂段无法在同进程内终止(runner 注释;逐段隔离为 D-08 阶段 5 待实现项);
+  // 后续段已照常跑完,此处硬退出确定性释放悬挂资源(E3 试点:超时不中止后续,一次看全失败面)
   if (hung) {
     console.error("[fail] 存在超时段(该段记失败,后续段已照常执行);结果打印完毕,进程硬退出以释放悬挂资源");
     cleanupTempUserData();
