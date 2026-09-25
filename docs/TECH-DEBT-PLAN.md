@@ -7,7 +7,7 @@
 >
 > **已完成(不再执行)**:lockfile 版本 3.10.2→3.11.5 修正 + release.yml 四源版本门禁、ROADMAP D1/F8/F9 状态回写、ACCEPTANCE 陈旧副本删除、关于页更新提示验收关闭(U1-U3,2026-09-25 实测)、本地 tag 同步(v3.11.4/v3.11.5)。
 >
-> **决策点状态**:C4(core 零 IO 口径)已拍板 ①a 最小注入并随 C 批完成;仅剩 E2(smoke 断言治理),恢复开发后执行前需拍板。
+> **决策点状态**:C4(core 零 IO 口径)已拍板 ①a 最小注入并随 C 批完成;E2(smoke 断言治理)已拍板「仅动等待,计数全保留」并随 E 批完成(2026-09-25)——**决策点全部关闭**。
 >
 > **A 批完成(2026-09-25)**:A1 段数订正(STATUS/ci.yml → 69 段,实测 60 segments + 9 main)、A2 沉没债补登记(ROADMAP「已知限制」节:契约类型归位 core[候选池 E1 本就在册]+ test 段归位)、A3 coverage/tmp 残留 JSON 清理、A4 G1-G9 盘点**全部关闭**(G1-G8 断言证据齐全,G9 维持不补;关闭记录写入 RESEARCH 2026-08-15 条目 + 候选池 E2 状态回写);A5 留待随 B2。纯文档/chore 提交。
 >
@@ -16,6 +16,8 @@
 > **C 批完成(2026-09-25,每批一提交)**:C3 水印色三处与表格边框色收 `core/style/colors.ts`/theme 单源、C2 hljs 30 色板抽 `core/style/hljs-palette.ts` 共享常量(docx handler 与 pdf CSS 双侧引用)、C1 警告去重抽 i18n 共享 `warnDedupKey`+`pushWarningOnce`(docx ctx 改薄封装,pdf equation/xref/image 三处自建 Set 归零)、C4 决策点拍板 **①a 最小注入**——`loadKatexCss` 增 `deps.read` 注入与 precheck `exists` 同构(默认 readFileSync),DEV-GUIDE「零 IO」口径订正为「常态零 IO + 两处 fs 访问依赖注入默认值」,formula 段补注入断言。每批核心回归:全量 typecheck/lint/70 段 + smoke 全绿。**C5 并入 D4 不单独做 → 封版期 A/B/C 三批全部完成,剩余 D/E 待恢复开发。**
 >
 > **D 批完成(2026-09-25,六项独立提交,顺序 D5→D6→D4/C5→D3→D2→D1)**:D5 test 段归位(9 段迁 `test/main/`、4 段迁新建 `test/renderer/`,acceptance.mjs 扩三发现根,段分布 48+18+4→经 D6 后 47+19+4=70)、D6 对话框样板收口(`selectAndRememberDir` 助手四处收口 + `compareVersions` 下沉 `ipc/logic.ts`;**行为等价偏离声明**:模板导入目录记忆提前为选择成功即记忆)、D4/C5 契约类型迁 `core/ipc-contract.ts` 单源(renderer→main type-only 反向依赖清零,仅剩 `PreloadApi` 属 preload「实现即契约」推导设计声明出范围)+ `convert.ts` re-export 删除 7 处消费点直连、D3 `pdf/template.ts` 三拆(`template.ts` 模板结构与安全 158 / `template-css.ts` 213 / `katex-css.ts` 44,配合 C4 零 IO 口径同步)、D2 settings 接线按六组 Tab 拆(`settings-bindings.ts` 710→编排 51+六组 binder,57 处 addEventListener 零增减;`settings-panel.ts` 560→443+预设动作岛 `settings-preset-actions.ts` 163;**契约守卫口径订正**:控件 id/name 无独立断言段,实为 refs 类型导出编译期守卫 + smoke 控件计数)、D1 `book-wizard.ts` 967→五文件(步骤渲染两岛 wizard-steps/wizard-steps-delivery + 校验 wizard-fields + 提交在外壳 book-wizard 219 + 单例 wizard-runtime setter 收口防环)。每批 typecheck/lint/build/70 段/smoke 全绿 + 机械化等价核对(函数体零漂移);**GUI 实测随收尾统一走 ACCEPTANCE(待人工)**。
+>
+> **E 批完成(2026-09-25,五项独立提交,顺序 E1→E4→E2→E3→E5)**:E1 覆盖率门槛进 CI(本地摸底基线 stmts 93.92/branch 88.84/funcs 93.15/lines 93.92——A4 已证 G1-G8 断言全覆盖故「补 G1-G9 断言」步经核实无需执行;门槛 **90/85/90/90** 写入 `test:coverage` 脚本单源,ci.yml 验收步改跑该脚本,本地与 CI 同一门禁,c8 自清 tmp 与门禁退出码均实证)、E4 `allowDefaultProject` 手工清单改运行时自动扫描(库源码实证 glob 禁 `**`/裸 `*`,按 src/test/scripts 实际目录 × 扩展名生成逐目录 glob,新子目录零登记;lint 面 215 文件等价 + 新目录探针实证)、E2 决策点拍板 **「仅动等待,计数全保留」**——smoke 两处固定等待改条件等待(1500ms 页面加载→readyState+convertBtn 轮询、页内 50ms→status.textContent 轮询;`writeWithRetry` 150ms 核实为失败重试退避保留),9 处精确计数断言零触碰(全量化维持冻结),smoke ×2 diag 与改造前逐字节一致、E3 看门狗「超时不中止后续」试点(`runAll` 超时分支去 break,`aborted`→`hung` 语义改「存在悬挂段,结果打印完入口硬退出」;悬挂探针实证后续段照常执行;悬挂段与后续段隔离仍不做,为已知局限)、E5 测试树类型检查渐进落地(`tsconfig.test.json` allowJs + checkJs:false,按 `// @ts-check` 逐文件启用无手工排除清单;全量摸底 83 文件 809 错误→首批 13 个零错误文件标注,`npm run typecheck` 串联双配置成 CI 门禁)。每项独立验证全绿(门禁正反向/等价核对/探针/双探针语义 + 70 段)。**至此 A-E 五批 24 项全部关闭,无剩余项。**
 
 ---
 
@@ -108,8 +110,8 @@
   └─ C 批(可选):C3 → C2 → C1 → C4(先拍板) —— 每批跑核心回归
 恢复开发时
   ├─ D 批(一个大迭代拆 6 独立提交):D5 → D6 → D4/C5 → D3 → D2 → D1 —— 全部完成(2026-09-25,GUI 实测待走 ACCEPTANCE)
-  └─ E 批:E1(优先,含 A4 落地)→ E4 → E2 → E3 → E5
+  └─ E 批:E1(优先,含 A4 落地)→ E4 → E2 → E3 → E5 —— 全部完成(2026-09-25,E2 拍板「仅动等待,计数全保留」)
 不做/冻结:R1 双管线合并(勿动)、E2 全量化
 ```
 
-**总计**:已完成 **19 项**(A 批 4 项 + A5 随 B2 + B 批 5 项 + C 批 4 项,其中 C4 拍板 ①a;D 批 6 项,C5 并入 D4);剩余 **E 批 5 项**,均待恢复开发(决策点仅剩 E2)。
+**总计**:已完成 **24 项**(A 批 4 项 + A5 随 B2 + B 批 5 项 + C 批 4 项,其中 C4 拍板 ①a;D 批 6 项,C5 并入 D4;E 批 5 项,其中 E2 拍板「仅动等待,计数全保留」);**无剩余项,计划全部关闭(2026-09-25)**。
