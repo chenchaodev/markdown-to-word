@@ -47,7 +47,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 > ⚠️ **测试对象是 dist 非 src**:验收/smoke 跑的是 `dist/` 编译产物。绕过 npm 直接 `electron test/acceptance.mjs` 会静默测旧产物无任何提示——改动后务必经 `npm run build` 或 `npm run test`(自带 build)。
 
 ## 架构(设计决策,勿随意偏离)
-- 分层:转换核心 `src/core/` 纯逻辑无 IO 可测试;GUI 主进程 `src/main/`;UI `src/renderer/`(vanilla TS + 原生 DOM,不引前端框架);依赖方向单向 core←main←renderer 不反向
+- 分层:转换核心 `src/core/` 纯逻辑、常态零 IO 可测试(fs 访问仅 `precheck.ts` 的 exists 与 `pdf/template.ts` 的 read 两处,均依赖注入、默认 `node:fs`,可整体替换);GUI 主进程 `src/main/`;UI `src/renderer/`(vanilla TS + 原生 DOM,不引前端框架);依赖方向单向 core←main←renderer 不反向
 - **转换在主进程执行**(docx 库为 Node 原生;printToPDF 走系统字体,中文零配置);renderer 经 IPC 触发
 - IPC:channel 名单源 `main/ipc/channels.ts`;`contextIsolation` + preload 白名单 + 进度 `webContents.send` 推送;拖放取路径用 `webUtils.getPathForFile`(File.path 已移除)
 - 未来扩展格式只需在 convert.ts 注册表登记 renderer
@@ -55,7 +55,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - 标题编号计数单源:`core/markdown/heading-numbering.ts` 共享纯函数(docx prescan 与 pdf xref 共用;无 h1 文档章节引用统一 Word 口径「1」,CSS counter 同口径)
 
 ## 代码地图
-- `src/core/` 纯转换逻辑,无 IO,可测试
+- `src/core/` 纯转换逻辑,常态零 IO(仅 precheck exists / loadKatexCss read 两处 fs 访问经依赖注入),可测试
   - `convert.ts`:格式注册表 + `convert(md, format, options)` 统一入口(pdf 分支不构建 remark AST)
   - `pipeline/`:`parse.ts`(remark→mdast)/`frontmatter.ts`(YAML 手写解析)/`merge.ts`(多文件合并)
   - `markdown/`:`slug.ts`/`cross-ref.ts`(交叉引用契约正则族单源)/`heading-numbering.ts`(标题编号计数共享纯函数)/`html-whitelist.ts`(行内 HTML 白名单 docx/pdf 单源)/`comment.ts`(批注语法 remark 插件)/`mermaid.ts`/`ai-cleanup.ts`(AI 输出清理)/`obsidian.ts`(Obsidian 双链兼容)/`precheck.ts`(转换前预检)/`image-size.ts`(图片尺寸属性解析)/`table-width.ts`(表格列宽信号解析)

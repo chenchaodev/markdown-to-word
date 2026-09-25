@@ -10,6 +10,7 @@
  */
 import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n.js";
+import { loadKatexCss } from "../../dist/core/pdf/template.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
@@ -89,6 +90,30 @@ export async function run() {
     throw new Error(`公式断言失败:无效 katexDir 未产生 KaTeX CSS 加载失败警告,warnings=${JSON.stringify(badKatexWarnings)}`);
   }
   console.log("[ok] PDF 公式:loadKatexCss 读取失败返回空串 + warnings 上报(KaTeX 样式加载失败),断言通过");
+
+  // ---------- loadKatexCss 依赖注入(read 默认 node:fs,注入后不落盘) ----------
+  // 依据(src/core/pdf/template.ts):读取经 deps.read 注入,默认 readFileSync;
+  // 注入自定义 read 时即使 katexDir 不存在也产出注入内容(证明未触碰真实文件系统)。
+  const injectedCss = loadKatexCss(path.join(FIXTURES_DIR, "no-such-katex"), [], {
+    read: () => "/*injected*/.katex { color: red; }",
+  });
+  if (!injectedCss.includes("/*injected*/")) {
+    throw new Error("公式断言失败:loadKatexCss 未走注入 read(无效 katexDir 应产出注入内容而非空串)");
+  }
+  // 注入 read 自身失败 → 与 fs 失败同通道:空串 + warn.katexCssLoadFailed(不回落真实 fs)
+  const injectWarnings = [];
+  const injectFailed = loadKatexCss(KATEX_DIR, injectWarnings, {
+    read: () => {
+      throw new Error("injected read failure");
+    },
+  });
+  if (injectFailed !== "") {
+    throw new Error("公式断言失败:注入 read 抛错时 loadKatexCss 应返回空串(不应静默回落 readFileSync)");
+  }
+  if (!injectWarnings.some((w) => formatWarning(w).includes("KaTeX 样式加载失败"))) {
+    throw new Error(`公式断言失败:注入 read 抛错未走 keyed 警告通道,warnings=${JSON.stringify(injectWarnings)}`);
+  }
+  console.log("[ok] PDF 公式:loadKatexCss read 依赖注入生效(不落盘 + 注入失败同警告通道),断言通过");
 
   // ---------- 降级分支:解析失败的公式 → TeX 源码等宽灰字 + 警告 ----------
   // 依据(dist/core/docx/handlers/math.ts texToDocxMath):katex throwOnError:false 下解析失败
