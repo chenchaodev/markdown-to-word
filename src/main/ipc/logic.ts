@@ -34,28 +34,36 @@ export function compareVersions(a: string, b: string): number {
  * ConvertCanceledError 实例判定)经 deps 注入,本模块保持零 electron 运行时依赖可直测。
  * 取消语义(历史 bug 领域)不再分散在三个 handler:
  * - ctx 每次调用新建(「取消后复位」语义),由 registerCtx 按调用方键注册(多窗口隔离)
- * - finally 注销引用(含异常/取消路径,避免悬挂)
+ * - registerCtx 失败表示同 key 已有活动操作 → onBusy(),不执行 task
+ * - finally compare-and-delete 注销本 token(含异常/取消路径,避免悬挂或删掉后继任务)
  * - 取消错误 → onCanceled()(调用方给出取消结果形态);其他错误归一 { ok:false, error } ---------- */
 
 /** runConvertTask 的环境依赖(由 register.ts 注入真实实现,测试注入 mock)。 */
 export interface ConvertTaskDeps {
   /** 新建转换 context(每次调用新建,取消标志不复用)。 */
   createContext: () => ConvertContext;
-  /** 按 key 注册 context(register.ts:ctxByWebContents.set(senderId, ctx))。 */
-  registerCtx: (ctx: ConvertContext) => void;
-  /** 注销 context(finally 路径;register.ts:ctxByWebContents.delete(senderId))。 */
+  /** 按 key 原子注册 context;返回 false 表示已有活动操作。 */
+  registerCtx: (ctx: ConvertContext) => boolean;
+  /** compare-and-delete 注销本任务 token(finally 路径)。 */
   unregisterCtx: () => void;
   /** 取消错误判定(register.ts:err instanceof ConvertCanceledError)。 */
   isCanceledError: (err: unknown) => boolean;
+}
+
+export interface BusyResult {
+  ok: false;
+  busy: true;
+  error: string;
 }
 
 export async function runConvertTask<T>(
   deps: ConvertTaskDeps,
   task: (ctx: ConvertContext) => Promise<T>,
   onCanceled: () => T | { ok: false; error: string },
-): Promise<T | { ok: false; error: string }> {
+  onBusy: () => T | BusyResult,
+): Promise<T | BusyResult | { ok: false; error: string }> {
   const ctx = deps.createContext();
-  deps.registerCtx(ctx);
+  if (!deps.registerCtx(ctx)) return onBusy();
   try {
     return await task(ctx);
   } catch (err) {

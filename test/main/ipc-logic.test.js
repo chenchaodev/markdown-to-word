@@ -12,7 +12,10 @@
  * - compareVersions(自 register.ts 下沉):由 main/about-update.test.js 直测覆盖(单一断言面)
  * - runConvertTask(自 index.ts runWithCtx 抽出的纯核心,deps 注入):
  *   成功透传任务值 / 取消错误 → onCanceled() 形态 / 其他错误归一 { ok:false,error } /
- *   register-finally 注销序(含异常与取消路径)/ ctx 每次新建不复用
+ *   register-finally 注销序(含异常与取消路径)/ ctx 每次新建不复用 /
+ *   operation registry 占用冲突 → onBusy,不执行 task
+ * - webContents operation registry:转换/预检 single-flight、cancel 指向当前操作、
+ *   compare-and-delete 防止旧 token 删除后继操作
  */
 import {
   baseNameFromMdPath,
@@ -25,6 +28,12 @@ import {
   isStringArray,
   runConvertTask,
 } from "../../dist/main/ipc/logic.js";
+import {
+  beginWebContentsOperation,
+  cancelWebContentsOperation,
+  finishWebContentsOperation,
+  getWebContentsOperation,
+} from "../../dist/main/windows/web-contents-registry.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`ipc-logic 断言失败:${msg}`);
@@ -145,7 +154,7 @@ export async function run() {
   // 1. 成功路径:任务值透传;register → task → finally unregister
   {
     const { deps, log } = makeDeps();
-    const result = await runConvertTask(deps, async (ctx) => `ok:${ctx.id}`, () => "canceled");
+    const result = await runConvertTask(deps, async (ctx) => `ok:${ctx.id}`, () => "canceled", () => "busy");
     assert(result === "ok:1", `成功路径应透传任务值,实际 ${JSON.stringify(result)}`);
     assert(
       JSON.stringify(log) === JSON.stringify([["register", 1], ["unregister"]]),
@@ -163,6 +172,7 @@ export async function run() {
         throw cancelErr;
       },
       () => onCanceledResult,
+      () => "busy",
     );
     assert(result === onCanceledResult, "取消路径应原样返回 onCanceled() 结果");
     assert(log[log.length - 1][0] === "unregister", "取消路径 finally 也应注销引用(避免悬挂)");
@@ -172,18 +182,18 @@ export async function run() {
     const { deps } = makeDeps();
     const r1 = await runConvertTask(deps, async () => {
       throw new Error("磁盘错误");
-    }, () => "canceled");
+    }, () => "canceled", () => "busy");
     assert(r1.ok === false && r1.error === "磁盘错误", `Error 应归一为 { ok:false, error:message },实际 ${JSON.stringify(r1)}`);
     const r2 = await runConvertTask(deps, async () => {
       throw "裸字符串错误";
-    }, () => "canceled");
+    }, () => "canceled", () => "busy");
     assert(r2.ok === false && r2.error === "裸字符串错误", "非 Error 抛出值应 String 归一");
   }
   // 4. ctx 每次调用新建不复用(「取消后复位」语义)+ 失败不残留注册
   {
     const { deps, log } = makeDeps();
-    await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled"); // 第一次
-    await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled"); // 第二次
+    await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled", () => "busy"); // 第一次
+    await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled", () => "busy"); // 第二次
     const ctxIds = log.filter((e) => e[0] === "register").map((e) => e[1]);
     assert(ctxIds.length === 2 && ctxIds[0] !== ctxIds[1], `每次调用应新建 ctx,实际 ${JSON.stringify(ctxIds)}`);
     assert(log.filter((e) => e[0] === "unregister").length === 2, "每次调用结束都应注销");
@@ -193,10 +203,53 @@ export async function run() {
     const { deps, log } = makeDeps();
     await runConvertTask(deps, async () => {
       throw new Error("x");
-    }, () => "canceled").catch(() => undefined);
-    const ok = await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled");
+    }, () => "canceled", () => "busy").catch(() => undefined);
+    const ok = await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled", () => "busy");
     assert(ok === 2, `失败后再次调用应拿到新 ctx(id=2)正常完成,实际 ${JSON.stringify(ok)}`);
     assert(log.filter((e) => e[0] === "unregister").length === 2, "失败+成功两次调用各注销一次");
   }
-  console.log("[ok] runConvertTask:成功透传/取消形态/错误归一/ctx 新建不复用/finally 注序 断言通过");
+  // 6. 同一 key 已有活动操作 → onBusy 返回明确 busy,task/createContext 均不执行
+  {
+    let createCount = 0;
+    let taskCount = 0;
+    let unregisterCount = 0;
+    const deps = {
+      createContext: () => ({ id: ++createCount, cancel() {} }),
+      registerCtx: () => false,
+      unregisterCtx: () => { unregisterCount++; },
+      isCanceledError: () => false,
+    };
+    const busy = { ok: false, busy: true, error: "已有操作正在进行" };
+    const result = await runConvertTask(
+      deps,
+      async () => { taskCount++; return "unexpected"; },
+      () => "canceled",
+      () => busy,
+    );
+    assert(result === busy, "注册冲突应原样返回 onBusy 结果");
+    assert(createCount === 1 && taskCount === 0, "busy 时只构造待注册 ctx,不执行任务");
+    assert(unregisterCount === 0, "未成功注册时不应误注销已有操作");
+  }
+  console.log("[ok] runConvertTask:成功透传/取消形态/错误归一/ctx 新建不复用/finally 注序/busy 断言通过");
+
+  // ---------- webContents operation registry ----------
+  const firstCtx = { id: 1, cancel() { this.canceled = true; } };
+  const firstToken = beginWebContentsOperation(7001, "single", firstCtx);
+  assert(firstToken !== null, "首个操作应注册成功");
+  assert(beginWebContentsOperation(7001, "batch", { id: 2, cancel() {} }) === null,
+    "同一 webContents 的第二个操作应拒绝");
+  assert(getWebContentsOperation(7001)?.kind === "single", "注册表应保留首个操作类型");
+  cancelWebContentsOperation(7001);
+  assert(firstCtx.canceled === true, "cancel 应指向当前活动操作");
+
+  assert(finishWebContentsOperation(7001, firstToken) === true, "当前 token 应先释放首个操作");
+  const secondCtx = { id: 3, cancel() {} };
+  const secondToken = beginWebContentsOperation(7001, "precheck", secondCtx);
+  assert(secondToken !== null, "旧操作结束后同 key 应可注册新操作");
+  assert(finishWebContentsOperation(7001, firstToken) === false,
+    "旧 token 的 compare-and-delete 不应删除新操作");
+  assert(getWebContentsOperation(7001)?.context === secondCtx, "后继操作仍应保持注册");
+  assert(finishWebContentsOperation(7001, secondToken) === true, "当前 token 应可释放操作");
+  assert(getWebContentsOperation(7001) === undefined, "当前 token 释放后注册表应为空");
+  console.log("[ok] operation registry:single-flight/current cancel/compare-and-delete 断言通过");
 }

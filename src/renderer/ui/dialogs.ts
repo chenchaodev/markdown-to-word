@@ -248,9 +248,14 @@ export function renderBatchItem(item: BatchItem): HTMLLIElement {
 /* ---------- 转换预检报告弹窗 ---------- */
 let precheckTrap: (() => void) | null = null;
 let precheckResolve: ((ok: boolean) => void) | null = null;
+let precheckPromise: Promise<boolean> | null = null;
 
-/** 展示预检报告;返回 Promise<boolean>:用户点「继续转换」= true,「取消」= false。 */
+/**
+ * 展示预检报告;返回单实例 Promise<boolean>:用户点「继续转换」= true,「取消」= false。
+ * 重复调用复用现有 Promise,防止后一次覆盖 resolver 令前一次永久悬挂。
+ */
 export function showPrecheckDialog(warnings: ConvertWarning[]): Promise<boolean> {
+  if (precheckPromise !== null) return precheckPromise;
   precheckList.replaceChildren(
     ...warnings.map((warning) => {
       const li = document.createElement("li");
@@ -271,18 +276,21 @@ export function showPrecheckDialog(warnings: ConvertWarning[]): Promise<boolean>
   precheckContinue.focus();
   precheckTrap?.(); // 二次调用防御:先解除旧陷阱
   precheckTrap = trapFocus(precheckDialog);
-  return new Promise<boolean>((resolve) => {
+  precheckPromise = new Promise<boolean>((resolve) => {
     precheckResolve = resolve;
   });
+  return precheckPromise;
 }
 
-function closePrecheckDialog(ok: boolean): void {
+/** 预检报告所有关闭路径统一走此函数,确保 resolver 与 Promise 必定结算。 */
+export function closePrecheckDialog(ok: boolean): void {
   precheckTrap?.();
   precheckTrap = null;
   precheckDialog.classList.add("hidden");
   focusActionButton();
   precheckResolve?.(ok);
   precheckResolve = null;
+  precheckPromise = null;
 }
 
 // 预检弹窗按钮(模块加载期绑定一次)

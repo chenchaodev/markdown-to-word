@@ -13,7 +13,7 @@ import { batchBtn, cancelBtn, convertBtn, mergeBtn } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
 import { baseName, STAGE_PERCENT, stageText } from "../../state/pure.js";
 import { setError, setProgress, setStatus, translate } from "../../state/utils.js";
-import { runBatch, runConvert, runMerge, withPrecheck } from "../convert-flow.js";
+import { isConvertCommandBlocked, runBatch, runConvert, runMerge, withPrecheck } from "../convert-flow.js";
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";
 
@@ -21,6 +21,7 @@ import { t } from "../../../core/i18n.js";
 export function bindConvertActionsEvents(): void {
   // 转换按钮:单文件(docx / pdf 均已支持)
   convertBtn.addEventListener("click", () => {
+    if (isConvertCommandBlocked()) return;
     const filePath = state.selectedFiles[0];
     if (!filePath) {
       setError(t("file.selectFirst"));
@@ -31,13 +32,13 @@ export function bindConvertActionsEvents(): void {
 
   // 批量转换按钮(≥2 个文件时可见)
   batchBtn.addEventListener("click", () => {
-    if (state.selectedFiles.length < 2) return;
+    if (isConvertCommandBlocked() || state.selectedFiles.length < 2) return;
     void withPrecheck(state.selectedFiles, () => runBatch());
   });
 
   // 合并转换按钮(≥2 个文件时可见)
   mergeBtn.addEventListener("click", () => {
-    if (state.selectedFiles.length < 2) return;
+    if (isConvertCommandBlocked() || state.selectedFiles.length < 2) return;
     void withPrecheck(state.selectedFiles, () => runMerge());
   });
 
@@ -89,7 +90,7 @@ export function bindConvertActionsEvents(): void {
     const key = event.key.toLowerCase();
     if (key === "enter") {
       event.preventDefault();
-      if (state.mode !== null) return;
+      if (isConvertCommandBlocked()) return;
       if (state.selectedFiles.length === 1) {
         void withPrecheck([state.selectedFiles[0]!], () => runConvert(state.selectedFiles[0]!, state.selectedFormat)); // 上行已守卫 length === 1
       } else if (state.selectedFiles.length >= 2) {
@@ -97,7 +98,7 @@ export function bindConvertActionsEvents(): void {
       }
     } else if (key === "o") {
       event.preventDefault();
-      void openDialog(true);
+      if (!isConvertCommandBlocked()) void openDialog(true);
     }
   });
 

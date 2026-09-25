@@ -20,6 +20,7 @@ import path from "node:path";
 import { app, ipcMain } from "electron";
 import { registerIpc } from "../../dist/main/ipc/register.js";
 import { IPC_CHANNELS as CH } from "../../dist/main/ipc/channels.js";
+import { beginWebContentsOperation, finishWebContentsOperation } from "../../dist/main/windows/web-contents-registry.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`ipc-register 断言失败:${msg}`);
@@ -45,7 +46,7 @@ export async function run() {
   // ---- 1. 注册面:全部预期 channel 均有 handler(防漏注册) ----
   const expected = [
     CH.fileOpenDialog, CH.fileCollectMarkdown, CH.fileFilterExisting, CH.dirSelect,
-    CH.convertSingle, CH.convertBatch, CH.convertMerge, CH.convertCancel,
+    CH.convertSingle, CH.convertBatch, CH.convertMerge, CH.convertCancel, CH.convertPrecheck,
     CH.presetsImport, CH.presetsExport, CH.cssImport,
     CH.settingsGet, CH.settingsSet, CH.uiStateGet, CH.uiStateSet,
     CH.appVersion, CH.shellRevealInFolder, CH.shellOpenPath,
@@ -78,6 +79,29 @@ export async function run() {
   const openNonStr = await handlers.get(CH.shellOpenPath)(fakeEvent, null);
   assert(openNonStr.ok === false, "openPath 非字符串入参应拒绝");
   console.log("[ok] ipc-register:MR-12 shell 白名单拒绝(未登记/非字符串)断言通过");
+
+  // ---- 3.1 同一 webContents 的转换/预检共享 single-flight:第二次明确 busy ----
+  const busyCtx = { cancel() {} };
+  const busyToken = beginWebContentsOperation(fakeEvent.sender.id, "single", busyCtx);
+  assert(busyToken !== null, "测试应先占用 sender operation");
+  try {
+    const busyConvert = await handlers.get(CH.convertSingle)(fakeEvent, "C:/a.md", "docx");
+    assert(busyConvert.ok === false && busyConvert.busy === true && typeof busyConvert.error === "string",
+      "活动转换期间第二次 convertSingle 应返回 { ok:false, busy:true, error }");
+    const busyPrecheck = await handlers.get(CH.convertPrecheck)(fakeEvent, "C:/a.md");
+    assert(busyPrecheck.ok === false && busyPrecheck.busy === true,
+      "活动转换期间 convertPrecheck 应返回明确 busy");
+    const busyBatch = await handlers.get(CH.convertBatch)(fakeEvent, ["a.md", "b.md"], "docx");
+    assert(
+      busyBatch.ok === false && busyBatch.busy === true &&
+      Array.isArray(busyBatch.items) && busyBatch.okCount === 0 &&
+      busyBatch.failCount === 0 && busyBatch.canceledCount === 0,
+      "活动转换期间 convertBatch 应返回兼容旧 renderer 计数字段的 busy",
+    );
+  } finally {
+    finishWebContentsOperation(fakeEvent.sender.id, busyToken);
+  }
+  console.log("[ok] ipc-register:同 webContents convert/precheck single-flight busy 断言通过");
 
   // ---- 4. fileCollectMarkdown:目录递归收集 md / 非 md 进 skipped / 缺失传入路径进 skipped ----
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "m2w-ipcreg-"));

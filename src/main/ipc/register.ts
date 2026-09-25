@@ -6,10 +6,9 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron"
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
-import type { BatchProgressInfo, BatchResult, ConvertMode, UiState } from "../../core/ipc-contract.js";
+import type { BatchProgressInfo, BatchResult, ConvertMode, PrecheckResult, UiState } from "../../core/ipc-contract.js";
 import { t } from "../../core/i18n.js";
 import { precheckMarkdown } from "../../core/markdown/precheck.js";
-import type { ConvertWarning } from "../../core/i18n.js";
 import {
   buildPresetsExportPayload,
   buildRecentFileEntries,
@@ -20,6 +19,7 @@ import {
   isString,
   isStringArray,
   runConvertTask,
+  type BusyResult,
 } from "./logic.js";
 import {
   loadSettings,
@@ -52,7 +52,12 @@ import { IPC_CHANNELS as CH } from "./channels.js";
 import { writeTempMarkdown } from "../services/temp-html.js";
 import type { ClipboardReadResult } from "./types.js";
 import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";
-import { ctxByWebContents } from "../windows/web-contents-registry.js";
+import {
+  beginWebContentsOperation,
+  cancelWebContentsOperation,
+  finishWebContentsOperation,
+  type WebContentsOperationKind,
+} from "../windows/web-contents-registry.js";
 
 /** GitHub 仓库 slug(owner/repo),集中一处;从 package.json repository 或现有 docs/index.html 链接取 */
 const REPO_SLUG = "chenchaodev/markdown-to-word";
@@ -61,26 +66,34 @@ const REPO_SLUG = "chenchaodev/markdown-to-word";
  * convert 系 handler 共用样板:本函数只保留 Electron 触点(win 解析 + 按 webContents id 注册/注销 + 取消错误判定),
  * 纯逻辑下沉至 ipc-logic.runConvertTask。
  * 取消语义(历史 bug 领域)集中此处,不再分散在三个 handler:
- * - ctx 每次调用新建(「取消后复位」语义),按 webContents id 注册(多窗口隔离)
- * - finally 删除引用(含异常/取消路径,避免悬挂)
+ * - ctx 每次调用新建(「取消后复位」语义),按 webContents id 原子注册(多窗口隔离)
+ * - 注册冲突立即返回 busy;finally 以 token compare-and-delete 释放
  * - ConvertCanceledError → onCanceled()(调用方给出取消结果形态);其他错误归一 { ok:false, error }
  */
 async function runWithCtx<T>(
   event: Electron.IpcMainInvokeEvent,
+  kind: WebContentsOperationKind,
   fn: (ctx: ConvertContext, win: BrowserWindow | null) => Promise<T>,
   onCanceled: () => T | { ok: false; error: string },
-): Promise<T | { ok: false; error: string }> {
-  const win = BrowserWindow.fromWebContents(event.sender);
+  onBusy: () => T | BusyResult,
+): Promise<T | BusyResult | { ok: false; error: string }> {
   const senderId = event.sender.id;
+  let token: symbol | null = null;
   return runConvertTask(
     {
       createContext: createConvertContext,
-      registerCtx: (ctx) => ctxByWebContents.set(senderId, ctx),
-      unregisterCtx: () => ctxByWebContents.delete(senderId),
+      registerCtx: (ctx) => {
+        token = beginWebContentsOperation(senderId, kind, ctx);
+        return token !== null;
+      },
+      unregisterCtx: () => {
+        if (token !== null) finishWebContentsOperation(senderId, token);
+      },
       isCanceledError: (err) => err instanceof ConvertCanceledError,
     },
-    (ctx) => fn(ctx, win),
+    (ctx) => fn(ctx, BrowserWindow.fromWebContents(event.sender)),
     onCanceled,
+    onBusy,
   );
 }
 
@@ -199,12 +212,13 @@ export function registerIpc(): void {
 
   // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示;用户取消返回 { ok:false, canceled:true }
   // 入参类型守卫:format 非 docx/pdf 时此前静默落 pdf 分支,现显式失败
-  ipcMain.handle(CH.convertSingle, async (event, filePath: unknown, format: unknown): Promise<ConvertResult> => {
+  ipcMain.handle(CH.convertSingle, async (event, filePath: unknown, format: unknown): Promise<ConvertResult | BusyResult> => {
     if (!isString(filePath) || !isConvertFormat(format)) {
       return { ok: false, error: t("common.invalidParams") };
     }
     return runWithCtx(
       event,
+      "single",
       async (ctx, win) => {
         // progress payload 带 mode 标识,renderer 直接消费归属(不再按调用上下文推断)
         const send = (stage: string): void =>
@@ -215,25 +229,36 @@ export function registerIpc(): void {
         return { ok: true, outputPath, warnings };
       },
       () => ({ ok: false, canceled: true, error: t("common.canceled") }),
+      () => ({ ok: false, busy: true, error: t("convert.stage.converting") }),
     );
   });
 
   ipcMain.handle(CH.convertCancel, (event): void => {
-    ctxByWebContents.get(event.sender.id)?.cancel();
+    cancelWebContentsOperation(event.sender.id);
   });
 
   // 转换前静态预检:仅读取与解析,不触发实际渲染;文件不可读时返回 [] 交由转换自身报错,不阻断流程。
   ipcMain.handle(
     CH.convertPrecheck,
-    async (_event, filePath: unknown): Promise<ConvertWarning[]> => {
+    async (event, filePath: unknown): Promise<PrecheckResult> => {
       if (!isString(filePath)) return [];
-      let content: string;
-      try {
-        content = await fs.readFile(filePath, "utf8");
-      } catch {
-        return [];
-      }
-      return precheckMarkdown(content, path.dirname(filePath));
+      const result = await runWithCtx(
+        event,
+        "precheck",
+        async () => {
+          let content: string;
+          try {
+            content = await fs.readFile(filePath, "utf8");
+          } catch {
+            return [];
+          }
+          return precheckMarkdown(content, path.dirname(filePath));
+        },
+        () => [],
+        () => ({ ok: false, busy: true, error: t("convert.stage.converting") }),
+      );
+      if (Array.isArray(result) || ("busy" in result && result.busy)) return result;
+      return [];
     },
   );
 
@@ -268,12 +293,13 @@ export function registerIpc(): void {
   // 不抛 ConvertCanceledError(onCanceled 分支为防御兜底,与 catch-all 归一一致)
   ipcMain.handle(
     CH.convertBatch,
-    async (event, files: unknown, format: unknown): Promise<BatchResult | { ok: false; error: string }> => {
+    async (event, files: unknown, format: unknown): Promise<BatchResult | { ok: false; error: string } | BusyResult> => {
       if (!isStringArray(files) || !isConvertFormat(format)) {
         return { ok: false, error: t("common.invalidParams") };
       }
       return runWithCtx(
         event,
+        "batch",
         async (ctx, win) => {
           const send = (info: BatchProgressInfo): void =>
             win?.webContents.send(CH.convertBatchProgress, info);
@@ -289,6 +315,15 @@ export function registerIpc(): void {
           return result;
         },
         () => ({ ok: false, error: t("common.canceled") }),
+        () => ({
+          ok: false,
+          busy: true,
+          error: t("convert.stage.converting"),
+          items: [],
+          okCount: 0,
+          failCount: 0,
+          canceledCount: 0,
+        }),
       );
     },
   );
@@ -297,13 +332,14 @@ export function registerIpc(): void {
   // 第 3 参 options.metadata:向导封面显式元数据,优先于首文件 frontmatter
   ipcMain.handle(
     CH.convertMerge,
-    async (event, files: unknown, format: unknown, options: unknown): Promise<ConvertResult> => {
+    async (event, files: unknown, format: unknown, options: unknown): Promise<ConvertResult | BusyResult> => {
       if (!isStringArray(files) || !isConvertFormat(format)) {
         return { ok: false, error: t("common.invalidParams") };
       }
       const metadata = isMetadataOptions(options) ? options.metadata : undefined;
       return runWithCtx(
         event,
+        "merge",
         async (ctx, win) => {
           // 与单文件同通道,payload.mode = "merge" 区分归属
           const send = (stage: string): void =>
@@ -316,6 +352,7 @@ export function registerIpc(): void {
           return result;
         },
         () => ({ ok: false, canceled: true, error: t("common.canceled") }),
+        () => ({ ok: false, busy: true, error: t("convert.stage.converting") }),
       );
     },
   );

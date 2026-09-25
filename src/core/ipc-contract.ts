@@ -12,6 +12,24 @@
  */
 import type { ConvertWarning } from "./i18n.js";
 
+/** 同一 webContents 已有转换/预检时的统一 IPC 结果。 */
+export interface OperationBusyResult {
+  ok: false;
+  busy: true;
+  error: string;
+}
+
+/** 预检成功返回警告数组;busy 返回统一活动操作冲突。 */
+export type PrecheckResult = ConvertWarning[] | OperationBusyResult;
+
+/** 批量 busy 保留 BatchResult 计数字段,旧 renderer 不会因缺字段崩溃。 */
+export type BatchOperationBusyResult = OperationBusyResult & {
+  items: BatchItem[];
+  okCount: 0;
+  failCount: 0;
+  canceledCount: 0;
+};
+
 /* ---------- 转换进度(convert:progress 推送 payload) ---------- */
 
 /** 转换模式标识(convert:progress payload.mode;批量走 convert:batchProgress 独立通道,mode 预留)。 */

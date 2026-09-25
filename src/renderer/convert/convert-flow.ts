@@ -6,6 +6,7 @@
  */
 import { statusEl } from "../dom/refs.js";
 import { state } from "../state/state.js";
+import type { OperationBusyResult } from "../../core/ipc-contract.js";
 import {
   hideProgress,
   setError,
@@ -27,29 +28,78 @@ function displayError(message: string): string {
   return actionableError(message, translate);
 }
 
+/** 模态/向导打开时禁止背景命令;转换结果弹窗同样复用 dialog-overlay 标记。 */
+function isModalCommandBlocked(): boolean {
+  return document.querySelector(".dialog-overlay:not(.hidden)") !== null;
+}
+
+/** renderer 活动命令锁:转换、预检、模态/向导任一存在时拒绝新命令。 */
+export function isConvertCommandBlocked(): boolean {
+  return activePrecheckPromise !== null || state.mode !== null || isModalCommandBlocked();
+}
+
+function isBusyResult(value: unknown): value is OperationBusyResult {
+  return typeof value === "object" && value !== null && "busy" in value && value.busy === true;
+}
+
+/** 当前预检/命令链;重复入口返回同一 Promise,所有出口 finally 清理。 */
+let activePrecheckPromise: Promise<void> | null = null;
+let activePrecheckToken: symbol | null = null;
+
 /**
- * 转换前预检。聚合各文件警告,无问题静默继续;有问题弹报告对话,
- * 用户「继续转换」才执行 action,「取消」中止。预检自身异常不阻断转换。
+ * 转换前预检 + renderer command single-flight。聚合各文件警告,无问题静默继续;
+ * 有问题弹报告对话。预检/用户决策/实际 action 视为同一命令,重复点击不启动第二条链。
  */
-export async function withPrecheck(
+export function withPrecheck(
   filePaths: string[],
   action: () => void | Promise<void>,
 ): Promise<void> {
-  const warnings: ConvertWarning[] = [];
-  for (const filePath of filePaths) {
-    try {
-      const ws = await window.api.precheck(filePath);
-      if (ws?.length) warnings.push(...ws);
-    } catch {
-      // 预检失败不阻断主流程
+  if (activePrecheckPromise !== null) return activePrecheckPromise;
+  if (state.mode !== null || isModalCommandBlocked()) return Promise.resolve();
+
+  const token = Symbol("precheck-operation");
+  const operation: Promise<void> = (async (): Promise<void> => {
+    const warnings: ConvertWarning[] = [];
+    for (const filePath of filePaths) {
+      try {
+        const ws = await window.api.precheck(filePath);
+        if (isBusyResult(ws)) {
+          setError(ws.error);
+          return;
+        }
+        if (ws.length > 0) warnings.push(...ws);
+      } catch {
+        // 预检失败不阻断主流程
+      }
     }
-  }
-  if (warnings.length === 0) {
+    if (warnings.length > 0) {
+      const ok = await showPrecheckDialog(warnings);
+      if (!ok) return;
+    }
+    // action 的首个同步段会置 state.mode;先释放预检锁,让受控 action 通过统一守卫。
+    if (activePrecheckToken === token) {
+      activePrecheckToken = null;
+      activePrecheckPromise = null;
+    }
     await action();
-    return;
-  }
-  const ok = await showPrecheckDialog(warnings);
-  if (ok) await action();
+  })();
+  activePrecheckToken = token;
+  activePrecheckPromise = operation;
+  void operation.then(
+    () => {
+      if (activePrecheckToken === token) {
+        activePrecheckToken = null;
+        activePrecheckPromise = null;
+      }
+    },
+    () => {
+      if (activePrecheckToken === token) {
+        activePrecheckToken = null;
+        activePrecheckPromise = null;
+      }
+    },
+  );
+  return operation;
 }
 
 /** 单文件转换(与旧版行为一致)。 */
@@ -57,6 +107,7 @@ export async function runConvert(
   filePath: string,
   format: "docx" | "pdf",
 ): Promise<void> {
+  if (isConvertCommandBlocked()) return;
   state.mode = "single";
   updateActionButtons(); // 禁用选择入口与转换按钮,防止重复点击
   setStatus(t("convert.stage.converting"));
@@ -64,7 +115,9 @@ export async function runConvert(
   showProgress();
   try {
     const result = await window.api.convert(filePath, format);
-    if (result.canceled) {
+    if (isBusyResult(result)) {
+      setError(result.error);
+    } else if (result.canceled) {
       setStatus(t("common.canceled"));
       setStatusTone("");
       showSummary({ kind: "canceled", title: t("convert.canceled.title") });
@@ -118,6 +171,7 @@ export async function runBatch(
   const targets = files ?? state.selectedFiles;
   // 主入口(不传文件)沿用「≥2 个文件」规则;重试失败项入口允许单个失败文件单独重转
   if (targets.length < (files === undefined ? 2 : 1)) return;
+  if (state.mode !== null || isModalCommandBlocked()) return;
   const fmt = format ?? state.selectedFormat;
   state.lastBatchFormat = fmt; // 重试失败项按原格式重转
   state.mode = "batch";
@@ -127,6 +181,11 @@ export async function runBatch(
   showProgress();
   try {
     const result = await window.api.convertBatch(targets, fmt);
+    if ("busy" in result) {
+      setError(result.error);
+      showSummary({ kind: "fail", title: t("convert.batch.failedTitle"), error: result.error });
+      return;
+    }
     state.lastBatchResult = result;
     setProgress(100);
     const canceledText =
@@ -170,6 +229,7 @@ export async function runMerge(
   const format = opts?.format ?? state.selectedFormat;
   const metadata = opts?.metadata;
   if (files.length < 2) return;
+  if (state.mode !== null || isModalCommandBlocked()) return;
   state.mode = "merge";
   updateActionButtons();
   setStatus(t("convert.merge.stage"));
@@ -181,7 +241,9 @@ export async function runMerge(
       format,
       metadata ? { metadata } : undefined,
     );
-    if (result.canceled) {
+    if (isBusyResult(result)) {
+      setError(result.error);
+    } else if (result.canceled) {
       setStatus(t("common.canceled"));
       setStatusTone("");
       showSummary({ kind: "canceled", title: t("convert.merge.canceledTitle") });

@@ -4,8 +4,8 @@
  * confirmCloseDuringConvert(转换进行中关窗确认)。
  * win32 走 titleBarStyle:hidden + titleBarOverlay 无边框自绘标题栏
  * (overlay 配色单源 windows/title-bar-overlay.ts,主题同步经 IPC theme:syncOverlay)。
- * 依赖方向:本模块 → windows/web-contents-registry(共享 ctxByWebContents,查询
- * 转换进行中状态;注册表下沉后不再依赖 ipc 层);
+ * 依赖方向:本模块 → windows/web-contents-registry(共享活动操作注册表,查询
+ * 转换/预检状态;注册表下沉后不再依赖 ipc 层);
  * menu.ts 反向 import 本模块的 getMainWindow(菜单定位主窗口),不构成循环。
  */
 import { app, BrowserWindow, dialog, nativeTheme, screen } from "electron";
@@ -22,7 +22,10 @@ import {
   TITLE_BAR_OVERLAY_HEIGHT,
 } from "./title-bar-overlay.js";
 import { hardenWebContents } from "../services/web-hardening.js";
-import { ctxByWebContents } from "./web-contents-registry.js";
+import {
+  cancelWebContentsOperation,
+  getWebContentsOperation,
+} from "./web-contents-registry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -120,7 +123,7 @@ export function createWindow(): BrowserWindow {
   // 转换进行中先拦截确认(直接销毁会令 send 抛 "Object has been destroyed",
   // 且 fs.writeFile 后中断可能留下半成品输出文件)
   win.on("close", (event) => {
-    if (ctxByWebContents.has(win.webContents.id) && !closeAborts.has(win)) {
+    if (getWebContentsOperation(win.webContents.id) !== undefined && !closeAborts.has(win)) {
       event.preventDefault();
       void confirmCloseDuringConvert(win);
       return;
@@ -164,12 +167,12 @@ async function confirmCloseDuringConvert(win: BrowserWindow): Promise<void> {
   if (choice.response !== 1 || win.isDestroyed()) return;
   closeAborts.add(win);
   const id = win.webContents.id;
-  ctxByWebContents.get(id)?.cancel();
+  cancelWebContentsOperation(id);
   const deadline = Date.now() + CLOSE_ABORT_TIMEOUT_MS;
-  while (ctxByWebContents.has(id) && Date.now() < deadline && !win.isDestroyed()) {
+  while (getWebContentsOperation(id) !== undefined && Date.now() < deadline && !win.isDestroyed()) {
     await new Promise((resolve) => setTimeout(resolve, CLOSE_ABORT_POLL_MS));
   }
   if (win.isDestroyed()) return;
-  if (ctxByWebContents.has(id)) win.destroy();
+  if (getWebContentsOperation(id) !== undefined) win.destroy();
   else win.close();
 }

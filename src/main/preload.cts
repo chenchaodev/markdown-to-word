@@ -7,11 +7,10 @@
 // import,侧内镜像同名常量,漂移由 test/main/ipc-channels.test.js 恒等断言兜底。
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppSettings, ExportPresetsResult, ImportDocxTemplateResult, ImportPdfCssResult, ImportPresetsResult } from "./persist/settings.js";
-import type { ConvertWarning } from "../core/i18n.js";
 import type { ClipboardReadResult } from "./ipc/types.js";
 // 跨进程契约类型(ConvertProgressPayload/UiState/Batch*)单源 core/ipc-contract.ts
 // (契约收敛 core 后 renderer 侧不再 type-only 反向 import main;编译期擦除)
-import type { BatchProgressInfo, BatchResult, ConvertProgressPayload, UiState } from "../core/ipc-contract.js";
+import type { BatchOperationBusyResult, BatchProgressInfo, BatchResult, ConvertProgressPayload, OperationBusyResult, PrecheckResult, UiState } from "../core/ipc-contract.js";
 import type { ConvertResult } from "./converter/merge.js";
 import type { DocMetadata } from "../core/pipeline/frontmatter.js";
 
@@ -72,22 +71,22 @@ const api = {
   collectMarkdowns: (paths: string[]): Promise<{ files: string[]; skipped: string[] }> =>
     ipcRenderer.invoke(CH.fileCollectMarkdown, paths),
   // 三个转换方法显式返回类型(实现即契约,不再依赖 renderer 手工镜像兜底)
-  convert: (filePath: string, format: "docx" | "pdf"): Promise<ConvertResult> =>
+  convert: (filePath: string, format: "docx" | "pdf"): Promise<ConvertResult | OperationBusyResult> =>
     ipcRenderer.invoke(CH.convertSingle, filePath, format),
-  convertBatch: (files: string[], format: "docx" | "pdf"): Promise<BatchResult> =>
+  convertBatch: (files: string[], format: "docx" | "pdf"): Promise<BatchResult | BatchOperationBusyResult> =>
     ipcRenderer.invoke(CH.convertBatch, files, format),
   convertMerge: (
     files: string[],
     format: "docx" | "pdf",
     options?: { metadata?: DocMetadata },
-  ): Promise<ConvertResult> => ipcRenderer.invoke(CH.convertMerge, files, format, options),
+  ): Promise<ConvertResult | OperationBusyResult> => ipcRenderer.invoke(CH.convertMerge, files, format, options),
   /** 读取单文件 frontmatter 元数据(向导封面预填用) */
   readFrontmatter: (filePath: string): Promise<DocMetadata> =>
     ipcRenderer.invoke(CH.readFrontmatter, filePath),
   /** 读取系统剪贴板:文本写临时 md 返回路径,或返回文件路径,或 empty */
   clipboardRead: (): Promise<ClipboardReadResult> => ipcRenderer.invoke(CH.clipboardRead),
   // 转换前静态预检:main 读文件 + 解析 + 扫描,返回 ConvertWarning[]
-  precheck: (filePath: string): Promise<ConvertWarning[]> => ipcRenderer.invoke(CH.convertPrecheck, filePath),
+  precheck: (filePath: string): Promise<PrecheckResult> => ipcRenderer.invoke(CH.convertPrecheck, filePath),
   // payload 带 mode 标识(single/batch/merge),renderer 直接消费归属
   onConvertProgress: (cb: (info: ConvertProgressPayload) => void): (() => void) => {
     const listener = (_event: unknown, data: ConvertProgressPayload): void => cb(data);

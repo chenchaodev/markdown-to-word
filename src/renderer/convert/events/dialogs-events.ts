@@ -35,12 +35,13 @@ import { batchRetryPaths, batchSuccessPaths, errorMessage } from "../../state/pu
 import {
   hideBatchDialog,
   hideCompleteDialog,
+  closePrecheckDialog,
   showBatchDialog,
   showBatchDialogError,
   showDialogError,
 } from "../../ui/dialogs.js";
 import { applySelection } from "../file-list.js";
-import { runBatch } from "../convert-flow.js";
+import { isConvertCommandBlocked, runBatch, withPrecheck } from "../convert-flow.js";
 import { closeSettingsDrawer, isSettingsDrawerOpen } from "../../settings/settings-drawer.js";
 import { closeBookWizard } from "../../wizard/book-wizard.js";
 import { closePresetSaveDialog } from "../../settings/settings-preset-actions.js";
@@ -110,7 +111,7 @@ export function bindDialogEvents(): void {
     if (failed.length === 0) return;
     hideBatchDialog();
     applySelection(failed);
-    void runBatch(failed, state.lastBatchFormat);
+    void withPrecheck(failed, () => runBatch(failed, state.lastBatchFormat));
   });
 
   // 批量弹窗「复制全部路径」:成功项输出路径换行拼接复制到剪贴板
@@ -181,7 +182,9 @@ export function bindDialogEvents(): void {
   });
 
   // 应用菜单「文件 → 打开文件…」→ 复用现有选择链路(替换选择,与「选择文件」按钮一致)
-  window.api.onMenuOpen(() => void openDialog(false));
+  window.api.onMenuOpen(() => {
+    if (!isConvertCommandBlocked()) void openDialog(false);
+  });
 
   // 弹窗关闭:确定按钮 / 点击遮罩 / Esc 三种方式
   completeDialogOk.addEventListener("click", hideCompleteDialog);
@@ -191,7 +194,9 @@ export function bindDialogEvents(): void {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (!presetSaveDialog.classList.contains("hidden")) {
+    if (!document.getElementById("precheckDialog")?.classList.contains("hidden")) {
+      closePrecheckDialog(false);
+    } else if (!presetSaveDialog.classList.contains("hidden")) {
       // 另存为预设弹窗:统一走 closePresetSaveDialog 以解除焦点陷阱,不再直接操作 DOM
       closePresetSaveDialog();
     } else if (!completeDialog.classList.contains("hidden")) {
