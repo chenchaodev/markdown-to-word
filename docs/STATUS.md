@@ -2,10 +2,11 @@
 
 ## 当前状态
 
-> 当前定位:3.11.8 已发版;封版期维持「暂停新功能开发,文档维护 + 技术债清理」(需求入口见 BACKLOG,确认后排 ROADMAP「当前待办」)。
+> 当前定位:3.12.0 已发版;封版期维持「暂停新功能开发,文档维护 + 技术债清理」(需求入口见 BACKLOG,确认后排 ROADMAP「当前待办」)。
 > 历史批次明细见 `docs/CHANGELOG.md` 与 git log;审计与调研证据链见 `docs/archive/`。
 
-- 2026-09-25:**BACKLOG 晋升两项开发完成(待 GUI 实测)**:「离线隐私文案区隔」(关于页 `about.privacyNote` 说明行 + FAQ「离线与隐私」条目 + i18n 三语;文案如实保留两处联网例外,不写绝对「不联网」)与「双管线差异注释」(14 文件补差异/同步义务头注,纯注释零行为变更);typecheck/lint/build + 70 段 + smoke 全绿;GUI 实测项见 ACCEPTANCE「离线隐私文案区隔」(打开项)
+- 2026-09-25:**发版 3.12.0 完成**(离线隐私文案区隔 + 双管线差异注释随版;GUI 实测通过 3 项全勾,验收关闭;四源同号 package.json=lockfile=tag v3.12.0=CHANGELOG [3.12.0];本会话 typecheck/lint/build/70 段/smoke 全绿)
+- 2026-09-25:**BACKLOG 晋升两项开发完成**:「离线隐私文案区隔」(关于页 `about.privacyNote` 说明行 + FAQ「离线与隐私」条目 + i18n 三语;文案如实保留两处联网例外,不写绝对「不联网」)与「双管线差异注释」(14 文件补差异/同步义务头注,纯注释零行为变更);typecheck/lint/build + 70 段 + smoke 全绿;GUI 实测通过(ACCEPTANCE「离线隐私文案区隔」3 项全勾关闭,随 3.12.0 发版)
 - 2026-09-25:**发版 3.11.8 完成**(维护版,src 零变更,E 批测试工程化与需求管道 backlog 重组随版;四源同号 package.json=lockfile=tag v3.11.8=CHANGELOG [3.11.8];本地 typecheck/lint/build/70 段/smoke 全绿;GitHub Release 资产 MarkdownToWord-Setup-3.11.8.exe + latest.yml,Release 四源门禁与 CI 均 success;踩坑:typecheck 依赖 dist 于构建前跑必挂,Release/CI 首跑双败,三处 workflow 改 build 先行,经用户确认将首推 tag 移至修复提交 d75fe3f 后发布成功,详见 RESEARCH 同日条目)
 - 2026-09-25:**需求管道重组:候选池升格项目 backlog,文件定名 `BACKLOG.md`(所有需求唯一入口)**:backlog 全文重写(功能新增/体验优化/架构优化·技术债/防御·安全分节,处置列标注待拍板/渐进执行中/暂缓/已明确不做,逐项业务价值+工作量;非任务备忘集中「维持人工·已知限制」节);ROADMAP 删处置小节(砍/记录不排期/暂不执行项/测试遗留/功能候选/候选池晋升/已知限制/维持人工不自动化)并入候选池,已完成历史保留;指针同步(RESEARCH/计划归档注记/runner/README);规则写入项目 AGENTS「流程」与全局 WORKFLOW-GUIDE 阶段 0/1(v1.9)
 - 2026-09-25:**技术债计划按文档规范归置,原 `docs/TECH-DEBT-PLAN.md` 撤档**:收官后按落盘规范分流——原文存 `docs/archive/20260925-130122-技术债处置计划.md`(头部归档注记含分流指针);结论入 RESEARCH(四路盘点条目「处置/关联」更新);内容入 ROADMAP(「已完成」批次压缩记录)与 BACKLOG(渐进两项/smoke 计数冻结/看门狗悬挂段隔离等处置记录,随同日需求管道重组单源化);索引与指针同步(docs/README 登记、runner.js 局限注释);本文件同步瘦身(已关闭打开事项与过期状态归 CHANGELOG/archive,保持 ≤80 行)

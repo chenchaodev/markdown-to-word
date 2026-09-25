@@ -36,11 +36,11 @@
 
 ### 离线隐私文案区隔 + 双管线差异注释(2026-09-25 自 BACKLOG 晋升,均 S)
 
-#### 离线隐私文案区隔(防御·安全,S;2026-09-25 开发完成,GUI 实测待)
+#### 离线隐私文案区隔(防御·安全,S;2026-09-25 完成,GUI 实测通过关闭)
 - [x] 关于页新增完整离线隐私表述(`about.privacyNote`,胶囊区尾说明行,走 token/三级文字色)
 - [x] USER-GUIDE FAQ 新增「离线与隐私」条目(口径一致,如实列两处联网例外:网络图片按需下载/关于页更新检查)
 - [x] i18n 三语补齐(zh/en/ja 键对齐,identity-guards 断言)
-- [ ] GUI 实测项见 ACCEPTANCE「离线隐私文案区隔」(待人工实测)
+- [x] GUI 实测项见 ACCEPTANCE「离线隐私文案区隔」(2026-09-25 实测通过关闭)
 
 #### 双管线差异注释(架构优化·技术债,S;2026-09-25 完成)
 - [x] docx/pdf 双实现 14 文件补差异与同步义务头注(render 对/handlers↔rules 七对/chrome↔template/prescan↔postprocess),零行为变更
