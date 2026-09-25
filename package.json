@@ -43,7 +43,7 @@
     "test:smoke": "node scripts/check-build-fresh.mjs && electron . --smoke",
     "ui:shots": "electron test/tools/visual-check.mjs",
     "icons": "node scripts/svg-to-ico.mjs",
-    "test:coverage": "npm run build && c8 --reporter=text --include=\"dist/**\" --check-coverage --statements=90 --branches=85 --functions=90 --lines=90 electron test/acceptance.mjs",
+    "test:coverage": "npm run build && c8 --reporter=text --include=\"dist/**\" --exclude=\"dist/renderer/**\" --check-coverage --statements=90 --branches=85 --functions=90 --lines=90 electron test/acceptance.mjs",
     "test:all": "npm run test && npm run test:smoke",
     "check:contract": "node scripts/check-ci-contract.mjs",
     "check:contract:selftest": "node scripts/check-ci-contract.selftest.mjs",

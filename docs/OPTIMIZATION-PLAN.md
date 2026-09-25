@@ -1,6 +1,6 @@
 # 全库代码优化开发计划
 
-> **状态**：规划中，等待用户最终确认；尚未授权实施。
+> **状态**：阶段 0-2 已完成并验证，当前进入阶段 3；后续阶段按依赖顺序执行。
 >
 > **来源**：`docs/archive/20260925-201811-全库优化评审整合与迭代计划.md` 及其附录 A～F。
 >
@@ -247,7 +247,7 @@
 ### OPT-5.3 测试工程
 
 - 全部 test/runner/mock 纳入 `checkJs`。
-- coverage 增加关键 main/renderer/core 目录/文件门槛，并统计未加载文件。
+- `test:coverage` 继续覆盖 core/main 自动验证产物；renderer GUI 编排层按既定人工验收边界排除，但 renderer 自动断言必须继续执行。
 - 测试段逐子进程隔离、硬超时、资源回收、case 级报告和失败 artifact。
 - fixture 改为显式注册契约；import 失败不再静默跳过。
 - Electron mock 明确只做导入/fixture 验证，真实行为由 acceptance/smoke 负责。

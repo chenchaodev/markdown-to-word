@@ -20,7 +20,7 @@
 | `npm run dist` | electron-builder 打包 NSIS 安装包(输出 `release/`) |
 | `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`,自动发现 `segments/`、`main/` 与 `renderer/` 下 `*.test.js`;需先 build;新增测试=新建段文件零注册) |
 | `npm run test:smoke` | 冒烟自测(`electron . --smoke`,前置构建新鲜度守卫) |
-| `npm run test:coverage` | c8 覆盖率报告(主进程 V8 coverage + sourceMap 映射) |
+| `npm run test:coverage` | c8 覆盖率报告(自动验证的 core/main 产物；GUI renderer 编排层按测试边界排除，renderer 断言仍由 acceptance 执行) |
 | `npm run test:all` | 验收 + 冒烟 |
 | `npm run gen:fixtures` | 验收样例生成器(需先 build) |
 | `npm run check:fixtures` | fixtures 漂移校验(幂等,exit 0/1;CI 门禁步骤) |
