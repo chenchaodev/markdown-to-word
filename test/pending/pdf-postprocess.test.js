@@ -194,4 +194,152 @@ export async function run() {
     }
     console.log("[ok] postprocess:B5 checkLocalImages exists 轻量通道(true/false/抛错细分)断言通过");
   }
+
+  // ---- 7. checkLocalImages 有界并发 + warning 按文档顺序稳定 ----
+  {
+    const srcs = Array.from({ length: 8 }, (_, i) => `${i}.png`);
+    let active = 0;
+    let maxActive = 0;
+    const warnings = [];
+    const resolver = async (src, request) => {
+      if (!request || request.signal === undefined || request.maxBytes <= 0 || request.timeoutMs <= 0) {
+        throw new Error("resolver request 契约未注入");
+      }
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, Number.parseInt(src, 10) % 3));
+      active -= 1;
+      return src.startsWith("7") ? null : PNG_MAGIC;
+    };
+    await checkLocalImages(srcs, resolver, warnings);
+    if (maxActive > 3) {
+      throw new Error(`postprocess 断言失败:本地图片检查应使用有界并发(<=3),实际 ${maxActive}`);
+    }
+    if (warnings.length !== 1 || formatWarning(warnings[0]) !== "图片加载失败: 7.png") {
+      throw new Error(`postprocess 断言失败:本地图片 warning 应按文档顺序稳定,warnings=${JSON.stringify(warnings)}`);
+    }
+    console.log("[ok] postprocess:本地图片有界并发 + request 契约 + warning 顺序稳定");
+  }
+
+  // ---- 8. 外链图片失败 warning 按 URL 文档顺序稳定(完成顺序故意逆序) ----
+  {
+    const html = [
+      '<img src="https://x.example/1.png">',
+      '<img src="https://x.example/2.png">',
+      '<img src="https://x.example/3.png">',
+    ].join("");
+    const warnings = [];
+    const resolver = async (url) => {
+      const index = Number.parseInt(url.slice(-5, -4), 10);
+      await new Promise((resolve) => setTimeout(resolve, (4 - index) * 3));
+      throw new Error("boom");
+    };
+    await embedExternalImages(html, resolver, warnings, {
+      requestTimeoutMs: 100,
+      maxImageBytes: 32,
+      maxDocumentBytes: 128,
+      maxImages: 10,
+      concurrency: 3,
+    });
+    const texts = warnings.map((w) => formatWarning(w));
+    const expected = [1, 2, 3].map((i) => `图片加载失败: https://x.example/${i}.png`);
+    if (JSON.stringify(texts) !== JSON.stringify(expected)) {
+      throw new Error(`postprocess 断言失败:外链图片 warning 应按文档顺序稳定,texts=${JSON.stringify(texts)}`);
+    }
+    console.log("[ok] postprocess:外链图片 warning 顺序不受异步完成顺序影响");
+  }
+
+  // ---- 9. 外链图片数量/单图/文档总字节预算 + resolver maxBytes 契约 ----
+  {
+    const html = [1, 2, 3].map((i) => `<img src="https://x.example/${i}.png">`).join("");
+    const warnings = [];
+    const calls = [];
+    const resolver = async (url, request) => {
+      calls.push({ url, request });
+      return Buffer.concat([PNG_MAGIC, Buffer.from(url.slice(-5, -4))]);
+    };
+    const out = await embedExternalImages(html, resolver, warnings, {
+      requestTimeoutMs: 100,
+      maxImageBytes: 9,
+      maxDocumentBytes: 18,
+      maxImages: 2,
+      concurrency: 2,
+    });
+    if (calls.length !== 2 || !calls.every(({ request }) => request.maxBytes === 9 && request.timeoutMs === 100)) {
+      throw new Error(`postprocess 断言失败:数量预算应阻止第三个 resolver 调用且注入单图预算,calls=${JSON.stringify(calls)}`);
+    }
+    const first = `data:image/png;base64,${Buffer.concat([PNG_MAGIC, Buffer.from("1")]).toString("base64")}`;
+    if (!out.includes(first) || (out.match(/data:image\/png/g) || []).length !== 1) {
+      throw new Error(`postprocess 断言失败:前 2 张各 9 bytes 应在总预算 18 内仅首图成功,out=${out}`);
+    }
+    const texts = warnings.map((w) => formatWarning(w));
+    const expected = [
+      "图片加载失败: https://x.example/2.png",
+      "图片加载失败: https://x.example/3.png",
+    ];
+    if (JSON.stringify(texts) !== JSON.stringify(expected)) {
+      throw new Error(`postprocess 断言失败:预算超限 warning 应稳定按文档顺序,texts=${JSON.stringify(texts)}`);
+    }
+    console.log("[ok] postprocess:外链图片数量/单图/总字节预算 + maxBytes 注入 + 稳定降级");
+  }
+
+  // ---- 10. 永不 resolve 的 resolver 受单请求超时约束,返回普通失败 warning ----
+  {
+    const html = '<img src="https://x.example/hang.png">';
+    const warnings = [];
+    const startedAt = Date.now();
+    const out = await embedExternalImages(html, () => new Promise(() => {}), warnings, {
+      requestTimeoutMs: 15,
+      maxImageBytes: 32,
+      maxDocumentBytes: 64,
+      maxImages: 2,
+      concurrency: 1,
+    });
+    if (out !== html || Date.now() - startedAt >= 1000) {
+      throw new Error("postprocess 断言失败:单请求超时应快速降级并保留原 URL");
+    }
+    if (warnings.length !== 1 || formatWarning(warnings[0]) !== "图片加载失败: https://x.example/hang.png") {
+      throw new Error(`postprocess 断言失败:超时 warning 应稳定,warnings=${JSON.stringify(warnings)}`);
+    }
+    console.log("[ok] postprocess:永不 resolve 的外链 resolver 在单请求超时内降级");
+  }
+
+  // ---- 11. 外部取消向 resolver signal 传播,取消不伪装为普通图片失败 ----
+  {
+    const html = '<img src="https://x.example/cancel.png">';
+    const warnings = [];
+    const controller = new AbortController();
+    let requestSignal;
+    const resolver = (_url, request) => {
+      requestSignal = request.signal;
+      return new Promise((_resolve, reject) => {
+        request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
+      });
+    };
+    const pending = embedExternalImages(html, resolver, warnings, {
+      signal: controller.signal,
+      requestTimeoutMs: 1000,
+      maxImageBytes: 32,
+      maxDocumentBytes: 64,
+      maxImages: 2,
+      concurrency: 1,
+    });
+    setTimeout(() => controller.abort(new Error("cancelled-by-test")), 5);
+    let error;
+    try {
+      await pending;
+    } catch (err) {
+      error = err;
+    }
+    if (!error || error.code !== "ERR_CONVERSION_CANCELLED") {
+      throw new Error(`postprocess 断言失败:外部取消应使用独立错误码,error=${error?.stack ?? error}`);
+    }
+    if (requestSignal?.aborted !== true) {
+      throw new Error("postprocess 断言失败:resolver 未收到已取消的 request.signal");
+    }
+    if (warnings.length !== 0) {
+      throw new Error(`postprocess 断言失败:取消不应写入普通图片失败 warning,warnings=${JSON.stringify(warnings)}`);
+    }
+    console.log("[ok] postprocess:外部取消传播至 resolver request.signal 且使用独立错误码");
+  }
 }

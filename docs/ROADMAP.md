@@ -5,7 +5,7 @@
 
 ## 当前待办
 
-- **全库代码优化计划（已确认，七阶段执行中）**：按 `docs/OPTIMIZATION-PLAN.md` 推进；D-01～D-12 已裁决，阶段 0-1 已完成，阶段 2 当前仅完成 core 子单元，main/renderer/输出集成待收口；阶段 3 暂停，避免越序。每阶段独立验证、独立提交，完成后再评估后续阶段。
+- **全库代码优化计划（已确认，七阶段执行中）**：按 `docs/OPTIMIZATION-PLAN.md` 与 `docs/OPTIMIZATION-CHECKLIST.md` 推进；D-01～D-12 已裁决，阶段 0/1 部分完成，阶段 2 仅完成 core 子单元；阶段 3 未开始（红测试草稿不计入实现），后续严格按 checklist 门禁推进。
   - 排期原则：每项独立提交可回退；core 行为改动须补测试段断言；重构行为等价；GUI 面走 ACCEPTANCE 人工实测。规模口径 S/M/L 见 `BACKLOG.md`。
 
 ## 已完成（倒序）

@@ -5,7 +5,7 @@
 > 当前定位:3.12.0 已发版;封版期维持「暂停新功能开发,文档维护 + 技术债清理」(需求入口见 BACKLOG,确认后排 ROADMAP「当前待办」)。
 > 历史批次明细见 `docs/CHANGELOG.md` 与 git log;审计与调研证据链见 `docs/archive/`。
 
-- 2026-09-25:**全库代码优化阶段 0-1 完成，阶段 2 仅完成 core 子单元**:Node/门禁、single-flight、持久化 mutation queue、core 预处理安全与页面几何已落地；阶段 2 的 main sanitize/旧设置迁移、renderer 校验、预览/预检统一准备链、输出选名/原子提交仍未完成；阶段 3 已暂停，先收口阶段 2；71 段 acceptance、coverage(94.06/88.79/91.39/94.06)、fixture、smoke 当前全绿；暂不推送远程
+- 2026-09-25:**全库代码优化计划审计完成，阶段 0/1 部分完成，阶段 2 仅 core 子单元完成**:已建立 `docs/OPTIMIZATION-CHECKLIST.md` 逐项门禁；阶段 0 尚缺 live 文档/geometry/产物失败探针，阶段 1 尚缺真实并发/关闭/after-action 验收，阶段 2 尚缺 main/renderer 准备链、几何迁移、本地图片边界和输出原子提交；阶段 3 的资源测试为未提交红测试草稿，暂不计入完成；暂不推送远程
 - 2026-09-25:**发版 3.12.0 完成**(离线隐私文案区隔 + 双管线差异注释随版;GUI 实测通过 3 项全勾,验收关闭;四源同号 package.json=lockfile=tag v3.12.0=CHANGELOG [3.12.0];本会话 typecheck/lint/build/70 段/smoke 全绿;Release run 36114674025 与 CI run 36114669244 均 success,资产 MarkdownToWord-Setup-3.12.0.exe + latest.yml 已核对)
 - 2026-09-25:**BACKLOG 晋升两项开发完成**:「离线隐私文案区隔」(关于页 `about.privacyNote` 说明行 + FAQ「离线与隐私」条目 + i18n 三语;文案如实保留两处联网例外,不写绝对「不联网」)与「双管线差异注释」(14 文件补差异/同步义务头注,纯注释零行为变更);typecheck/lint/build + 70 段 + smoke 全绿;GUI 实测通过(ACCEPTANCE「离线隐私文案区隔」3 项全勾关闭,随 3.12.0 发版)
 - 2026-09-25:**发版 3.11.8 完成**(维护版,src 零变更,E 批测试工程化与需求管道 backlog 重组随版;四源同号 package.json=lockfile=tag v3.11.8=CHANGELOG [3.11.8];本地 typecheck/lint/build/70 段/smoke 全绿;GitHub Release 资产 MarkdownToWord-Setup-3.11.8.exe + latest.yml,Release 四源门禁与 CI 均 success;踩坑:typecheck 依赖 dist 于构建前跑必挂,Release/CI 首跑双败,三处 workflow 改 build 先行,经用户确认将首推 tag 移至修复提交 d75fe3f 后发布成功,详见 RESEARCH 同日条目)
