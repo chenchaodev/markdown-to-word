@@ -1,18 +1,9 @@
 /**
- * 关于页更新检查:版本比较纯函数单测
- * 与 main/ipc/register.ts 的 compareVersions 保持一致逻辑
+ * 关于页更新检查:版本比较纯函数单测。
+ * 断言对象 = dist/main/ipc/logic.js 的 compareVersions 真实实现(自 register.ts
+ * 下沉的单源;此前本段内联同逻辑副本,属双源,已改直测实现)。
  */
-/** 版本比较:返回 -1/0/1 表示 a<b / a=b / a>b(仅 major.minor.patch,忽略 prerelease) */
-function compareVersions(a, b) {
-  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
-  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < 3; i++) {
-    const na = pa[i] ?? 0;
-    const nb = pb[i] ?? 0;
-    if (na !== nb) return na < nb ? -1 : 1;
-  }
-  return 0;
-}
+import { compareVersions } from "../../dist/main/ipc/logic.js";
 
 export async function run() {
   // equal versions
@@ -29,7 +20,7 @@ export async function run() {
 
   // patch difference
   if (compareVersions("3.10.1", "3.10.2") !== -1) throw new Error("patch diff 3.10.1<3.10.2 failed");
-  if (compareVersions("3.10.2", "3.10.1") !== 1) throw new Error("patch diff 3.10.2>3.10.1 failed");
+  if (compareVersions("3.10.2", "3.10.1") !== 1) throw new Error("patch diff 3.10.2<3.10.1 failed");
 
   // missing segments treated as 0
   if (compareVersions("1", "1.0.0") !== 0) throw new Error("missing segments 1 vs 1.0.0 failed");
@@ -43,5 +34,5 @@ export async function run() {
   if (compareVersions("3.10.x", "3.10.0") !== 0) throw new Error("non-numeric 3.10.x vs 3.10.0 failed");
   if (compareVersions("3.10.0", "3.10.x") !== 0) throw new Error("non-numeric 3.10.0 vs 3.10.x failed");
 
-  console.log("[ok] about-update:compareVersions 版本比较纯函数断言通过");
+  console.log("[ok] about-update:compareVersions 版本比较纯函数断言通过(直测 ipc/logic 单源)");
 }

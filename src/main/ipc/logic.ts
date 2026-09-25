@@ -16,6 +16,19 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** 版本比较:返回 -1/0/1 表示 a<b / a=b / a>b(仅 major.minor.patch,忽略 prerelease;
+ * 段缺失按 0 补齐,非数字段按 0 计)。关于页更新提示与注册表版本比较共用。 */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    const na = pa[i] ?? 0;
+    const nb = pb[i] ?? 0;
+    if (na !== nb) return na < nb ? -1 : 1;
+  }
+  return 0;
+}
+
 /* ---------- convert 系 handler 共用样板(自 register.ts runWithCtx 抽出,行为等价):
  * context 注册/释放 + 错误归一化集中一处。Electron 触点(event.sender/BrowserWindow/
  * ConvertCanceledError 实例判定)经 deps 注入,本模块保持零 electron 运行时依赖可直测。

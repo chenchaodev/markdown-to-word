@@ -12,6 +12,7 @@ import type { ConvertWarning } from "../../core/i18n.js";
 import {
   buildPresetsExportPayload,
   buildRecentFileEntries,
+  compareVersions,
   errorMessage,
   importPresetsFromText,
   isConvertFormat,
@@ -57,18 +58,6 @@ import { writeTempMarkdown } from "../services/temp-html.js";
 import type { ClipboardReadResult } from "./types.js";
 import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";
 import { ctxByWebContents } from "../windows/web-contents-registry.js";
-
-/** 版本比较:返回 -1/0/1 表示 a<b / a=b / a>b(仅 major.minor.patch,忽略 prerelease) */
-function compareVersions(a: string, b: string): number {
-  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
-  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < 3; i++) {
-    const na = pa[i] ?? 0;
-    const nb = pb[i] ?? 0;
-    if (na !== nb) return na < nb ? -1 : 1;
-  }
-  return 0;
-}
 
 /** GitHub 仓库 slug(owner/repo),集中一处;从 package.json repository 或现有 docs/index.html 链接取 */
 const REPO_SLUG = "chenchaodev/markdown-to-word";
@@ -127,6 +116,30 @@ async function lastOpenDirIfValid(): Promise<string | undefined> {
 }
 
 /**
+ * 打开选择对话框 + 记忆所选目录(四处 handler 共用样板,收口「开对话框 → 默认
+ * 目录回落 → 记忆所选」三连重复):defaultPath 取上次记忆目录;选择成功 → 记忆
+ * 首项所在目录(目录选择本身即目录,文件选择取 dirname;下次默认打开位置),
+ * 写入失败静默不影响返回;取消或空选 → null。
+ */
+async function selectAndRememberDir(options: {
+  title: string;
+  properties: NonNullable<Electron.OpenDialogOptions["properties"]>;
+  filters?: Electron.OpenDialogOptions["filters"];
+}): Promise<string[] | null> {
+  const result = await dialog.showOpenDialog({
+    title: options.title,
+    defaultPath: await lastOpenDirIfValid(),
+    filters: options.filters,
+    properties: options.properties,
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const first = result.filePaths[0]!; // 上方已拦截取消与空列表,首项必存在
+  const selectedDir = options.properties.includes("openDirectory");
+  await saveUiState({ lastOpenDir: selectedDir ? first : path.dirname(first) }).catch(() => undefined);
+  return result.filePaths;
+}
+
+/**
  * 导入类 handler 共用模板:打开对话框(取消 → { ok:true, canceled:true })→ readFile → process 校验/持久化
  * → 成功后记忆所选目录 → catch 归一为可读文案。process 返回 ok:false 时跳过目录记忆。
  */
@@ -181,16 +194,12 @@ function isMetadataOptions(v: unknown): v is { metadata?: DocMetadata } {
 
 export function registerIpc(): void {
   ipcMain.handle(CH.fileOpenDialog, async () => {
-    const result = await dialog.showOpenDialog({
+    const paths = await selectAndRememberDir({
       title: t("dialog.openMarkdowns"),
-      defaultPath: await lastOpenDirIfValid(),
-      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
       properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
     });
-    if (!result.canceled && result.filePaths.length > 0) {
-      await saveUiState({ lastOpenDir: path.dirname(result.filePaths[0]!) }).catch(() => undefined); // length>0 已守卫
-    }
-    return result.canceled ? [] : result.filePaths;
+    return paths ?? [];
   });
 
   // 执行转换:错误不外抛,统一返回 { ok, error } 让 renderer 展示;用户取消返回 { ok:false, canceled:true }
@@ -234,30 +243,22 @@ export function registerIpc(): void {
   );
 
   ipcMain.handle(CH.dirSelect, async (): Promise<string | null> => {
-    const result = await dialog.showOpenDialog({
+    const paths = await selectAndRememberDir({
       title: t("dialog.selectDir"),
-      defaultPath: await lastOpenDirIfValid(),
       properties: ["openDirectory", "createDirectory"],
     });
-    if (!result.canceled && result.filePaths[0]) {
-      await saveUiState({ lastOpenDir: result.filePaths[0] }).catch(() => undefined);
-    }
-    return result.canceled ? null : result.filePaths[0] ?? null;
+    return paths?.[0] ?? null;
   });
 
   ipcMain.handle(CH.headerLogoSelect, async (): Promise<string | null> => {
-    const result = await dialog.showOpenDialog({
+    const paths = await selectAndRememberDir({
       title: t("dialog.selectHeaderLogo"),
-      defaultPath: await lastOpenDirIfValid(),
       properties: ["openFile"],
       filters: [
         { name: t("dialog.imageFiles"), extensions: ["png", "jpg", "jpeg", "gif", "webp"] },
       ],
     });
-    if (!result.canceled && result.filePaths[0]) {
-      await saveUiState({ lastOpenDir: result.filePaths[0] }).catch(() => undefined);
-    }
-    return result.canceled ? null : result.filePaths[0] ?? null;
+    return paths?.[0] ?? null;
   });
 
   // 元素级校验:此前只 guard Array.isArray,非字符串元素会让 path.resolve 抛 TypeError
@@ -460,17 +461,16 @@ export function registerIpc(): void {
   // → 与现有设置合并(typography/pageSetup 各自深合并)→ 持久化 → 返回合并后完整对象;
   // 取消 → { ok:true, canceled:true },读取/解析异常 → { ok:false, error }(可读文案)。
   ipcMain.handle(CH.templateImportDocx, async (): Promise<ImportDocxTemplateResult> => {
-    const result = await dialog.showOpenDialog({
+    const paths = await selectAndRememberDir({
       title: t("dialog.importDocxTemplate"),
-      defaultPath: await lastOpenDirIfValid(),
-      filters: [{ name: "Word 文档", extensions: ["docx"] }],
       properties: ["openFile"],
+      filters: [{ name: "Word 文档", extensions: ["docx"] }],
     });
-    if (result.canceled || result.filePaths.length === 0) {
+    if (!paths) {
       return { ok: true, canceled: true };
     }
     try {
-      const filePath = result.filePaths[0]!; // 上方已拦截取消与空列表,首项必存在
+      const filePath = paths[0]!; // 上方已拦截取消与空列表,首项必存在
       const buf = await fs.readFile(filePath);
       const partial = await importDocxTemplate(new Uint8Array(buf));
       const settings = loadSettings();
@@ -479,7 +479,6 @@ export function registerIpc(): void {
         pageSetup: { ...settings.pageSetup, ...partial.pageSetup },
       };
       await updateSettings({ typography: merged.typography, pageSetup: merged.pageSetup });
-      await saveUiState({ lastOpenDir: path.dirname(filePath) }).catch(() => undefined);
       return { ok: true, canceled: false, typography: merged.typography, pageSetup: merged.pageSetup };
     } catch (err) {
       return { ok: false, error: t("template.readFailed", { error: errorMessage(err) }) };

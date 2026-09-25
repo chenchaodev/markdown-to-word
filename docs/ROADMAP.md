@@ -44,7 +44,7 @@
 - [x] `about.ts` 开窗即异步调用渲染状态行(版本徽章下,发丝线分隔):检查中/已最新/发现新版本+墨色下载按钮/离线静默;手动「检查更新」按钮重试
 - [x] `about.html` 状态行 DOM + 内联样式(沿用现有配色,禁朱砂红)
 - [x] i18n 三语补齐 `about.updateChecking/updateLatest/updateAvailable/updateError/checkUpdate`
-- [x] 版本比较纯函数 `compareVersions()` 单测段 `test/segments/about-update.test.js`
+- [x] 版本比较纯函数 `compareVersions()` 单测段 `test/main/about-update.test.js`
 - [x] GUI 实测项见 ACCEPTANCE「关于页更新提示」(GUI 实测通过 2026-09-25 关闭)
 - [x] docs/README.md:3 自述改「Windows 桌面应用」
 - [x] convert.ts 头注释代码高亮差异行更新(双格式均走 hljs)

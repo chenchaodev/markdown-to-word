@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 D6 完成(打开对话框样板收口 + compareVersions 单源化)**:抽 `selectAndRememberDir` 助手,四处 handler(fileOpenDialog/dirSelect/headerLogoSelect/templateImportDocx)的「开对话框→默认目录回落→记忆所选」三连样板收口;**行为等价偏离声明**:模板导入的目录记忆时机由「处理成功后」提前为「选择成功即记忆」(读取失败也记住刚浏览的位置),importFileViaDialog 维持原有「处理失败跳过记忆」语义;`compareVersions` 自 register.ts 下沉 `ipc/logic.ts` 纯逻辑层,`about-update` 段的内联同逻辑副本删除、改直测 dist 真实实现(双源清零)并按镜像口径归位 `test/main/`(段分布 47+19+4);typecheck/lint/70 段/smoke 全绿
 - 2026-09-25:**技术债 D 批开工,D5 test 段归位完成(用户裁定「全量镜像三层」口径)**:test 树镜像 src 分层——9 个 main 主题段→`test/main/`、4 个 renderer 主题段→新建 `test/renderer/`(acceptance.mjs 扩第三发现根),segments 只留 48 个 core 渲染主题与跨层契约守护段;目录组织标准由「三条并存」改镜像三层(AGENTS/DEV-GUIDE/acceptance·runner 头注释与 6 处指针同步);eslint `allowDefaultProject` 手工清单补 `test/renderer/*.js`(E4 风险实证);段数 70 不变(48+18+4),typecheck/lint/70 段/smoke 全绿;后续 D6→D4/C5→D3→D2→D1 逐项独立提交
 - 2026-09-25:**发版 3.11.6 完成**(技术债 A/B/C 三批随版发布,封版期维护批收官;四源同号 package.json=lockfile=tag v3.11.6=CHANGELOG [3.11.6];typecheck/lint/70 段/smoke 全绿;GitHub Release 资产 MarkdownToWord-Setup-3.11.6.exe + latest.yml,Release 四源门禁与 CI 流水线均 success)
 - 2026-09-25:**技术债 C 批完成(core 双源收敛 + 零 IO 口径,封版期 A/B/C 三批全部收官)**(C3 水印色三处+表格边框色收 `core/style/colors.ts`/theme 单源;C2 hljs 30 色板抽 `core/style/hljs-palette.ts` 共享常量,docx/pdf 双侧引用;C1 警告去重抽 i18n 共享 `warnDedupKey`/`pushWarningOnce`,docx ctx 薄封装+pdf equation/xref/image 三处自建 Set 归零;C4 决策点拍板 **①a 最小注入**:`loadKatexCss` 增 `deps.read` 注入与 precheck 同构、DEV-GUIDE「零 IO」口径订正「常态零 IO+两处注入默认值」;每批核心回归,全量 typecheck/lint/70 段/smoke 全绿;C5 并入 D4;自动断言见 test/segments/{watermark,table-width,code-highlight,i18n,eq-numbering,image-size,formula}.test.js)
@@ -65,7 +66,7 @@
 ## 验证基线
 
 - 已跑通:`npm run typecheck`、`npm run lint`、`npm run build`、`npx electron . --smoke`(启动 + docx/pdf 双链路 + 设置持久化/landscape 端到端 + 批量/合并端到端 + renderer 诊断)、`npm run test:coverage`(c8)
-- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染与跨域守护)、`main/`(主进程层)与 `renderer/`(UI 层)下 `*.test.js`,当前 **70 段 = segments 48 + main 18 + renderer 4**;单段筛选 `M2W_ONLY='段名子串'`;新增测试=新建段文件零注册);main 侧行为已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
+- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染与跨域守护)、`main/`(主进程层)与 `renderer/`(UI 层)下 `*.test.js`,当前 **70 段 = segments 47 + main 19 + renderer 4**;单段筛选 `M2W_ONLY='段名子串'`;新增测试=新建段文件零注册);main 侧行为已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
 - 恒等守护:`test/segments/identity-guards.test.js` 锁已知双源(zh 文案↔字典/MAX_RECENT_FILES/设置合并双侧/白名单扫描一致性)
 - 验收样例:`npm run gen:fixtures`(需先 build)按功能自动生成 `test/fixtures/acceptance/*.md`(GUI 人工实测直接拖入);`npm run check:fixtures` 漂移校验(EOL 归一化,.gitattributes 双保险;CI 门禁步骤);新增功能=测试段顶层加 `export const fixtures = { main: ... }`
 - smoke 自清理 output/smoke 临时产物(Windows 占用文件 EBUSY 容错跳过)
@@ -81,4 +82,4 @@
 - [x] 审计整改 P0~P5 + i18n 字典拆分:人工 GUI 实测通过(2026-08-24),随 1.3.0 发版关闭
 - [x] 功能候选全部收口(批次 10:8c Mermaid / 交叉引用 / 模板导入 / 公式编号开关 / 批注 / WPS 兼容矩阵;排期 3 项全部关闭或转砍);ROADMAP「当前待办」无未关闭排期项
 - [x] 测试缺口(24 项)已全部补齐(2026-08-13);新增缺口按需入 ROADMAP
-- [x] 关于页更新提示:main 进程查 GitHub Releases latest API,关于窗开启即异步检查,版本徽章下显示状态行(检查中/已最新/发现新版本+墨色下载按钮/离线静默),i18n 三语;自动断言见 test/segments/about-update.test.js(版本比较纯函数),GUI 实测通过(2026-09-25,ACCEPTANCE U1-U3 全勾关闭)
+- [x] 关于页更新提示:main 进程查 GitHub Releases latest API,关于窗开启即异步检查,版本徽章下显示状态行(检查中/已最新/发现新版本+墨色下载按钮/离线静默),i18n 三语;自动断言见 test/main/about-update.test.js(版本比较纯函数),GUI 实测通过(2026-09-25,ACCEPTANCE U1-U3 全勾关闭)

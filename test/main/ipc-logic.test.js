@@ -9,6 +9,7 @@
  *   合法 → 合并序(incoming 在前)/同名取 incoming 值/imported-overridden 计数
  * - buildPresetsExportPayload:schemaVersion:1 包装 + 2 空格缩进 + 末尾换行(序列化字符串精确断言)
  * - isString/isStringArray/isConvertFormat:IPC 入参类型守卫(元素逐一校验/格式白名单)
+ * - compareVersions(自 register.ts 下沉):由 main/about-update.test.js 直测覆盖(单一断言面)
  * - runConvertTask(自 index.ts runWithCtx 抽出的纯核心,deps 注入):
  *   成功透传任务值 / 取消错误 → onCanceled() 形态 / 其他错误归一 { ok:false,error } /
  *   register-finally 注销序(含异常与取消路径)/ ctx 每次新建不复用
