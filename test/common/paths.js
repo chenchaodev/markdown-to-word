@@ -17,5 +17,28 @@ export const ARTIFACTS_DIR = path.join(ROOT, "output", "artifacts");
 /** smoke 临时产物(运行时自清理) */
 export const SMOKE_DIR = path.join(ROOT, "output", "smoke");
 
+/** 失败段专属产物(失败日志 + 该段 buffer 快照;与成功路径产物目录分离,互不覆盖) */
+export const FAILURES_DIR = path.join(ARTIFACTS_DIR, "failures");
+
+/**
+ * 某失败段的产物目录:段名 → 目录名(段名 segments/utils.test.js → segments_utils)。
+ * 段名带目录前缀,替换分隔符即可保证跨目录同名段不落进同一目录。
+ * @param {string} segmentName 段名(如 segments/utils.test.js)
+ * @returns {string} 绝对目录路径
+ */
+export function segmentFailureDir(segmentName) {
+  const dirName = segmentName.replace(/[\\/]/g, "_").replace(/\.test\.js$/, "");
+  return path.join(FAILURES_DIR, dirName);
+}
+
+/**
+ * 报告/日志用的仓库相对路径(统一正斜杠,跨平台可比对)。
+ * @param {string} target 绝对路径
+ * @returns {string}
+ */
+export function repoRelative(target) {
+  return path.relative(ROOT, target).split(path.sep).join("/");
+}
+
 /** KaTeX dist 目录(公式相关段使用) */
 export const KATEX_DIR = path.join(ROOT, "node_modules", "katex", "dist");
