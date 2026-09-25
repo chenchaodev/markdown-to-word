@@ -47,6 +47,7 @@
     "test:all": "npm run test && npm run test:smoke",
     "check:contract": "node scripts/check-ci-contract.mjs",
     "check:contract:selftest": "node scripts/check-ci-contract.selftest.mjs",
+    "check:boundary": "node scripts/check-import-boundary.mjs",
     "check:env": "node scripts/print-env-fingerprint.mjs",
     "check:geometry": "electron scripts/check-geometry.mjs",
     "gen:dist-manifest": "node scripts/check-dist-manifest.mjs",
@@ -55,7 +56,7 @@
     "check:release": "node scripts/check-release-artifacts.mjs",
     "clean:dist": "node scripts/clean-artifacts.mjs --target dist",
     "clean:release": "node scripts/clean-artifacts.mjs --target release",
-    "verify:ci": "npm run check:contract && npm run check:contract:selftest && npm run build && npm run typecheck && npm run lint && npm run test && npm run test:coverage && npm run check:fixtures && npm run test:smoke && npm run check:geometry",
+    "verify:ci": "npm run check:contract && npm run check:contract:selftest && npm run check:boundary && npm run build && npm run typecheck && npm run lint && npm run test && npm run test:coverage && npm run check:fixtures && npm run test:smoke && npm run check:geometry",
     "verify:release": "npm run verify:ci && npm run dist",
     "dist": "npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest && electron-builder --win nsis --x64 --publish never && npm run check:dist-manifest && npm run check:asar && npm run check:release"
   },
@@ -99,7 +100,6 @@
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
     "eslint": "^10.8.1",
-    "jszip": "^3.10.1",
     "png-to-ico": "^3.0.2",
     "sharp": "^0.35.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
@@ -112,12 +112,22 @@
     "docx": "^9.7.1",
     "highlight.js": "^11.11.1",
     "iconv-lite": "^0.7.3",
+    "jszip": "^3.10.1",
     "katex": "^0.18.1",
     "markdown-it": "^14.3.0",
+    "mdast-util-from-markdown": "2.0.3",
+    "mdast-util-gfm": "3.1.0",
+    "mdast-util-math": "3.0.0",
     "mermaid": "11.16.1",
+    "micromark-extension-gfm": "3.0.0",
+    "micromark-extension-math": "3.1.0",
+    "micromark-util-symbol": "2.0.1",
+    "micromark-util-types": "2.0.2",
     "pdf-lib": "^1.17.1",
     "remark": "^15.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "unified": "11.0.5",
+    "unist-util-visit": "5.1.0"
   }
 }

@@ -5,6 +5,8 @@
 //   - lockfile 与两个 workflow 的 Node 口径与 engines 地板一致,且存在精确钉住地板的 lane;
 //   - workflow 与 scripts 引用的本地脚本文件真实存在;
 //   - build 先于 typecheck(typecheck 含测试树,测试 import dist/ 编译产物);
+//   - 依赖声明与 import 层向门禁(check:boundary)紧随契约自检且早于 build:
+//     它判定源码文本、不消费 dist,排到构建之后就失去了 fail-fast 意义;
 //   - 几何门禁(check:geometry)在 verify:ci 链内且晚于 build —— 链尾是唯一位置:
 //     它需要在 smoke 之后运行(此时 dist 已是本次构建),又必须早于 dist 打包;
 //   - dist 链形态:先清理生成目录(clean:dist + clean:release)→ build → 生成 dist
@@ -165,9 +167,23 @@ function topLevelScriptNames(name) {
     });
 }
 
-// CI 门禁必备步骤(顺序即依赖顺序):build 产出 dist/ 编译产物,测试与 fixture 校验都跑 dist;
-// check:geometry 收尾(采样 dist/renderer,须在 build 之后、且是链内最后一步)。
-const REQUIRED_CI_STEPS = ['build', 'typecheck', 'lint', 'test', 'test:coverage', 'check:fixtures', 'test:smoke', 'check:geometry'];
+// CI 门禁必备步骤(顺序即依赖顺序):check:contract 之后立刻核对依赖声明与
+// import 层向(纯文本判定,不依赖 dist,故须早于 build —— 构建之后才发现
+// 传递依赖漏声明,已经白跑一次);build 产出 dist/ 编译产物,测试与 fixture
+// 校验都跑 dist;check:geometry 收尾(采样 dist/renderer,须在 build 之后、
+// 且是链内最后一步)。
+const REQUIRED_CI_STEPS = [
+  'check:contract',
+  'check:boundary',
+  'build',
+  'typecheck',
+  'lint',
+  'test',
+  'test:coverage',
+  'check:fixtures',
+  'test:smoke',
+  'check:geometry',
+];
 
 const ciChain = expandScript('verify:ci');
 let cursor = -1;
@@ -184,6 +200,16 @@ const buildAt = ciChain.indexOf('build');
 const typecheckAt = ciChain.indexOf('typecheck');
 if (buildAt === -1 || typecheckAt === -1 || buildAt > typecheckAt) {
   fail(`verify:ci 须先 build 再 typecheck(typecheck 含测试树,测试 import dist/),当前 build@${buildAt} typecheck@${typecheckAt}`);
+}
+
+// 依赖声明/层向门禁判定的是源码文本,不消费 dist:排到 build 之后等于让
+// 「jszip 只在 devDependencies」「core 反向依赖 main」这类漂移白跑一次构建
+// 才被拦下,故与 typecheck 同级断言「boundary 在 build 之前」。
+const boundaryAt = ciChain.indexOf('check:boundary');
+if (buildAt !== -1 && boundaryAt !== -1 && boundaryAt > buildAt) {
+  fail(
+    `verify:ci 须先 check:boundary 再 build(依赖声明与 import 层向在构建前判定),当前 build@${buildAt} check:boundary@${boundaryAt}`,
+  );
 }
 
 // 几何门禁采样 dist/renderer 的真实 Electron 窗口:build 之前跑只会拿到上一次的界面,

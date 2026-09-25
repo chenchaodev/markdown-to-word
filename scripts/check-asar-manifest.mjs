@@ -8,6 +8,11 @@
 //      夹具、密钥等本不该进包的文件);
 //   3. 入口与资源:package.json(版本须等于仓库版本)、主进程入口、renderer 入口、
 //      core 入口、KaTeX(pdf 公式字体/css)与 Mermaid(IIFE 产物)资源必须在包内;
+//      另含「devDependencies 中的生产包不得出现在 ASAR 生产依赖判定」的自检:
+//      见 REQUIRED_ENTRIES 里 jszip 那条 —— 只有声明进 dependencies 的包才会被
+//      electron-builder 收进 node_modules,故「包内有没有」与「该不该有」分属两
+//      道门:本脚本只管「声明了的必须在包内」,「该不该声明」由
+//      scripts/check-import-boundary.mjs 判定,两者不可互相替代;
 //   4. 内容:与 clean build 的 dist 清单逐项核对(路径 + 大小 + SHA-256),
 //      证明「打进去的 dist 就是刚构建的那份 clean dist」。
 //
@@ -46,6 +51,14 @@ export const REQUIRED_ENTRIES = [
   { group: 'renderer', path: 'dist/renderer/lang-bootstrap.js' },
   { group: 'core', path: 'dist/core/convert.js' },
   { group: 'core', path: 'dist/core/pipeline/parse.js' },
+  // 模板导入(docx 模板合并)运行时读 zip:jszip 必须是**生产**依赖才会随包分发,
+  // 故在此钉一条包内条目 —— 依赖声明一旦把它退回 devDependencies,打包会静默
+  // 裁掉 node_modules/jszip,只有「解包后缺文件」才暴露。
+  // 生产/开发依赖之分由 package.json 段位决定,不由本表推断:声明正确性由
+  // scripts/check-import-boundary.mjs(源码 import ↔ dependencies 求差)判定,
+  // 本表只负责「声明为生产依赖的包确实在包内」。同理 katex/mermaid 以 file:// 资源
+  // 形式被引用,也在本表钉住。
+  { group: '生产依赖(jszip)', path: 'node_modules/jszip/lib/index.js' },
   // 公式:pdf 管线按 katex.min.css + woff2 字体 file:// 加载(见 src/main/services/resource-dirs.ts)
   { group: 'KaTeX 资源', path: 'node_modules/katex/dist/katex.min.css' },
   { group: 'KaTeX 资源', path: 'node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2' },

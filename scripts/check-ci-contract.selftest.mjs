@@ -1,8 +1,9 @@
 // 契约自检脚本自身的回归守护(负向夹具)。
 //
 // verify:ci 的第一道门是 check:contract;若该脚本被改成「永远通过」或某个断言被
-// 误删,配置漂移(Node 口径、门禁链缩水、build/typecheck 与几何门禁乱序、前置清理被
-// 移出/乱序、清理目标越界、产物核对被移出或排到打包之前、脚本缺失)就会静默放行
+// 误删,配置漂移(Node 口径、门禁链缩水、build/typecheck 与几何门禁乱序、依赖声明/
+// 层向门禁被移出或排到构建之后、前置清理被移出/乱序、清理目标越界、产物核对被移出
+// 或排到打包之前、脚本缺失)就会静默放行
 // 发布,没有任何其他检查能发现。此处用
 // 临时夹具逐条制造漂移,断言自检脚本
 // 确实以非零码拒绝,并断言未漂移时通过。纯 fs + 子进程,无产物:临时目录
@@ -22,6 +23,7 @@ const FLOOR = '22.13.0';
 /** 夹具基线:与真实仓库同构的门禁链(verify:ci 全步含几何门禁 + verify:release 追加 dist) */
 const FIXTURE_SCRIPTS = {
   'check:contract': 'node scripts/check-ci-contract.mjs',
+  'check:boundary': 'node scripts/check-import-boundary.mjs',
   'check:env': 'node scripts/print-env-fingerprint.mjs',
   'check:geometry': 'electron scripts/check-geometry.mjs',
   'gen:dist-manifest': 'node scripts/check-dist-manifest.mjs',
@@ -41,7 +43,7 @@ const FIXTURE_SCRIPTS = {
     'npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest ' +
     '&& electron-builder && npm run check:dist-manifest && npm run check:asar && npm run check:release',
   'verify:ci':
-    'npm run check:contract && npm run build && npm run typecheck && npm run lint && npm run test ' +
+    'npm run check:contract && npm run check:boundary && npm run build && npm run typecheck && npm run lint && npm run test ' +
     '&& npm run test:coverage && npm run check:fixtures && npm run test:smoke && npm run check:geometry',
   'verify:release': 'npm run verify:ci && npm run dist',
 };
@@ -55,6 +57,7 @@ const FIXTURE_PLACEHOLDERS = [
   'scripts/check-dist-manifest.mjs',
   'scripts/check-asar-manifest.mjs',
   'scripts/check-release-artifacts.mjs',
+  'scripts/check-import-boundary.mjs',
   'scripts/clean-artifacts.mjs',
   'scripts/print-env-fingerprint.mjs',
 ];
@@ -251,6 +254,28 @@ const CASES = [
     name: '地板 lane 退化为模糊主线别名(地板不可复现)',
     mutate: ({ dir }) => patchInFixture(dir, '.github/workflows/ci.yml', `node-version: ${FLOOR}`, 'node-version: 22'),
     expect: /没有任何 lane 精确钉住 engines 地板/,
+  },
+  {
+    name: '依赖声明/层向门禁被移出 CI 链(传递依赖漏声明与层向漂移无人拦截)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace(' && npm run check:boundary', '');
+    },
+    expect: /verify:ci 缺少门禁步骤 check:boundary/,
+  },
+  {
+    name: '依赖声明/层向门禁被排到 build 之后(漂移要白跑一次构建才被拦下)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace(
+        ' && npm run check:boundary',
+        '',
+      ).replace('npm run build &&', 'npm run build && npm run check:boundary &&');
+    },
+    expect: /须先 check:boundary 再 build/,
+  },
+  {
+    name: 'check:boundary 指向已不存在的脚本(门禁静默失效)',
+    mutate: ({ dir }) => rmSync(join(dir, 'scripts', 'check-import-boundary.mjs'), { force: true }),
+    expect: /引用的文件不存在:scripts\/check-import-boundary\.mjs/,
   },
 ];
 
