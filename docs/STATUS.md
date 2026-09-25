@@ -2,6 +2,7 @@
 
 ## 当前状态
 
+- 2026-09-25:**发版 3.11.6 完成**(技术债 A/B/C 三批随版发布,封版期维护批收官;四源同号 package.json=lockfile=tag v3.11.6=CHANGELOG [3.11.6];typecheck/lint/70 段/smoke 全绿;GitHub Release 资产 MarkdownToWord-Setup-3.11.6.exe + latest.yml,Release 四源门禁与 CI 流水线均 success)
 - 2026-09-25:**技术债 C 批完成(core 双源收敛 + 零 IO 口径,封版期 A/B/C 三批全部收官)**(C3 水印色三处+表格边框色收 `core/style/colors.ts`/theme 单源;C2 hljs 30 色板抽 `core/style/hljs-palette.ts` 共享常量,docx/pdf 双侧引用;C1 警告去重抽 i18n 共享 `warnDedupKey`/`pushWarningOnce`,docx ctx 薄封装+pdf equation/xref/image 三处自建 Set 归零;C4 决策点拍板 **①a 最小注入**:`loadKatexCss` 增 `deps.read` 注入与 precheck 同构、DEV-GUIDE「零 IO」口径订正「常态零 IO+两处注入默认值」;每批核心回归,全量 typecheck/lint/70 段/smoke 全绿;C5 并入 D4;自动断言见 test/segments/{watermark,table-width,code-highlight,i18n,eq-numbering,image-size,formula}.test.js)
 
 - 2026-09-25:**技术债 B 批完成**(B1 about 外链 IPC 收口 channels 单源+镜像恒等;B3 ja 字典 satisfies 全量锁 441 键;B4 令牌破例清零[新增 --switch-knob/--seal-ring/--shadow-drawer]+关于窗底色随系统主题;B2+A5 关于窗 sandbox:true+CSP 与主窗同口径[一次性脚本 13 项断言];B5 深色双块恒等断言段,段数 69→70;typecheck/lint/70 段全绿+ui:shots 双主题抽查;GUI 实测通过 2026-09-25,ACCEPTANCE「关于窗沙箱与 CSP」3 项全勾关闭)
