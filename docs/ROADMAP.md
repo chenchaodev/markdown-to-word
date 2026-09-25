@@ -5,7 +5,7 @@
 
 ## 当前待办
 
-- **全库代码优化计划（已确认，七阶段执行中）**：按 `docs/OPTIMIZATION-PLAN.md` 与 `docs/OPTIMIZATION-CHECKLIST.md` 推进；阶段 0 本地门禁已完成（远端 lane 证据后置），阶段 1 实现与自动断言已完成（用户 GUI 验收待办，`a8aa428`），阶段 2A/2B 与阶段 3 实现完成（`90d389b`/`fefbf19`/`3c429c8`）；下一步进入阶段 4 renderer UX，阶段 4-7 按 checklist 推进。
+- **全库代码优化计划（已确认，七阶段执行中）**：按 `docs/OPTIMIZATION-PLAN.md` 与 `docs/OPTIMIZATION-CHECKLIST.md` 推进；阶段 0 本地门禁已完成（远端 lane 证据后置），阶段 1 实现与自动断言已完成（用户 GUI 验收待办，`a8aa428`），阶段 2A/2B、阶段 3、阶段 4 自动断言完成（`90d389b`/`fefbf19`/`3c429c8`/`499a6bc`）；下一步进入阶段 5 边界/双管线/测试工程，阶段 5-7 按 checklist 推进。
   - **阶段 0 · OPT-0.3 口径统一（2026-09-25～26，文档/UI 层，零行为变更）**：D-02 内置预设「完整交付链」+ 自定义预设只存排版/页面（USER-GUIDE、设计文档、renderer、ACCEPTANCE supersede 块同步）；D-03 绝对/UNC/`file://`/越界拒绝写进用户与 WPS 文档，媒体类型与大小上限明确标为阶段 3；D-04 BACKLOG 改为「本阶段不签名 + 保留 hash/风险/状态记录」；D-08 BACKLOG 旧「明确不做」标为 superseded，runner 注释改为阶段 5 待实现。遗留的内置预设 hint 三语化与不可达提示分支登记在 checklist OPT-4.3。
   - 排期原则：每项独立提交可回退；core 行为改动须补测试段断言；重构行为等价；GUI 面走 ACCEPTANCE 人工实测。规模口径 S/M/L 见 `BACKLOG.md`。
 
