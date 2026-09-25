@@ -2,6 +2,20 @@
  * docx 渲染主入口:renderDocx 编排(预扫 → 正文块渲染 → Document 组装)。
  * 不变量:各渲染职责拆分到独立模块(编号/标题/表格/公式/chrome/预扫/行内/
  * 链接/图片/代码块/容器降级),本模块仅做编排,core 层保持无 IO。
+ *
+ * 双管线对应(与 src/core/pdf/render.ts 成对;格式差异总览单源 core/convert.ts
+ * 头注「双管线差异」):本侧输入 mdast AST(pipeline/parse.ts 预解析)产 Buffer;
+ * pdf 侧输入 markdown 源文、经 markdown-it 产 HTML 文档(printToPDF 在主进程)。
+ * 结构信息获取方式相反:本侧渲染前经 prescan.ts 全文预扫(题注/章节/公式上下文
+ * 写入 ctx、目录条目),pdf 侧无预扫(rules/* 在渲染期即时识别),目录条目渲染后
+ * 由 pdf/postprocess.ts 从 HTML 提取。chrome 分居 docx/chrome.ts(封面/目录页/
+ * 页眉页脚/水印组件)与 pdf/template.ts + pdf/postprocess.ts(封面/页眉页脚/水印
+ * 模板、目录)。选项契约:RenderOptions 与 pdf 侧 RenderPdfHtmlOptions 的同名开关
+ * (pageSetup/typography/toc/headingNumbering/captionNumbering/equationNumbering/
+ * mermaidResolver/watermark)语义与默认值须两侧对齐(默认值单源
+ * settings-defaults/typography);本侧独有 tocMode/headerFooter/headerLogo,
+ * pdf 侧独有 baseDir/pdfCss/katexDir/onStage。修改任一侧的选项语义或渲染主流程,
+ * 须同步核对 src/core/pdf/render.ts 对应项。
  */
 import {
   AlignmentType,

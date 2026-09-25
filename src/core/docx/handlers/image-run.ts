@@ -4,6 +4,12 @@
  * 图片控制增强:尾随 {width=…}/{height=…} 属性解析结果经 sizeAttrs 注入,
  * 显式尺寸绕过 scaleToFit 上限(用户意图优先);独立成段图片(figure)由
  * render.ts 判定后走 renderFigureParagraph 居中渲染。
+ * 双管线对应:src/core/pdf/rules/image.ts(路径 file:// 改写 / 尺寸属性注入 /
+ * figure 识别);尺寸属性解析与 figure 判定单源 core/markdown/image-size.ts
+ * (pdf 侧头注指向本侧 isFigureParagraph 契约)。差异:本侧 resolver 加载字节经
+ * ImageRun 内嵌、超宽经 scaleToFit 等比缩到上限;pdf 侧本地图保持 file:// 由
+ * Chromium 渲染、height 百分比按内容区宽换算为 px。修改尺寸属性/figure 判定
+ * 语义须同步核对 src/core/pdf/rules/image.ts。
  */
 import { ImageRun, TextRun } from "docx";
 import type { Image } from "mdast";

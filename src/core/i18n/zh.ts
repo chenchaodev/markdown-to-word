@@ -132,6 +132,7 @@ const dict = {
     "about.featCjk": "中文优化",
     "about.featBatch": "多文件批量",
     "about.featHeader": "可自定义页眉页脚",
+    "about.privacyNote": "所有转换均在本机完成，文档不会上传到服务器，也不离开这台电脑。",
     "about.manual": "查看使用手册",
     "about.updateChecking": "检查更新中…",
     "about.updateLatest": "已是最新版本",

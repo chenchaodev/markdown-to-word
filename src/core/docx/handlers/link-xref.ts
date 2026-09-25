@@ -2,6 +2,11 @@
  * 链接/交叉引用行内渲染:pushRuns 的 link case 抽出。
  * 覆盖四类目标:#eq: 公式引用、#fig/#tab/sec 交叉引用、#slug 内部锚点、
  * http(s) 外链;其余(相对路径等)保持假链接样式。行为与拆分前逐字一致。
+ * 双管线对应:src/core/pdf/rules/xref.ts(题注/章节交叉引用 + 悬空解包,其头注
+ * 载明与本侧契约一致);公式引用 #eq: 分支的 pdf 对应在
+ * src/core/pdf/rules/equation.ts 第二遍链接替换。差异:本侧按 mdast Link 节点
+ * 逐个渲染(跳转经书签),pdf 侧在 token 流改写链接文本(跳转经锚点 id)。
+ * 修改引用改写/悬空处理/文案(单源 cross-ref.ts)须同步核对上述对侧文件。
  */
 import { ExternalHyperlink, InternalHyperlink, TextRun } from "docx";
 import type { Link } from "mdast";

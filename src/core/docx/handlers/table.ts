@@ -4,6 +4,11 @@
  * 列宽控制:解析期挂 data.colWidthsPct(见 pipeline/parse.ts)时按比例生成
  * tblGrid(gridCol,DXA)+ 固定布局 + 单元格 tcW;无信号时行为与旧版完全一致
  * (不产 tblGrid、自动布局)。
+ * 双管线对应:src/core/pdf/rules/table.ts(列宽注入);列宽信号解析单源
+ * core/markdown/table-width.ts(本侧 parse.ts 读源码行,pdf 侧读 token.map 表头行,
+ * 其头注载明同构口径)。差异:边框本侧 six-side borders 黑线(theme.ts
+ * TABLE_BORDER_BLACK),pdf 侧走模板 CSS #d0d7de(theme.ts 注:双管线观感既有差异,
+ * 勿混改)。修改列宽信号/列对齐语义须同步核对 src/core/pdf/rules/table.ts。
  */
 import { AlignmentType, BorderStyle, Paragraph, Table, TableCell, TableLayoutType, TableRow, WidthType } from "docx";
 import type { Table as MdTable } from "mdast";

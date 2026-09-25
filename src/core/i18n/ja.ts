@@ -136,6 +136,7 @@ const dict = {
     "about.featCjk": "中国語最適化",
     "about.featBatch": "複数ファイル一括",
     "about.featHeader": "ヘッダー・フッター編集可",
+    "about.privacyNote": "変換はすべてこの端末で行われ、文書がサーバーにアップロードされたり、この端末から外に出たりすることはありません。",
     "about.manual": "使い方を見る",
     "about.updateChecking": "更新を確認中…",
     "about.updateLatest": "最新版です",

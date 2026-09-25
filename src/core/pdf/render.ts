@@ -10,6 +10,15 @@
  * Mermaid 占位替换拆至 mermaid.ts;依赖方向单向(rules/* → core 共享模块,
  * 本文件 → rules/*,不反向)。CROSS_REF_KINDS 契约 re-export 保留在此,
  * 外部 import 路径不变(contract 断言段依赖 dist/core/pdf/render.js)。
+ *
+ * 双管线对应(与 src/core/docx/render.ts 成对;格式差异总览单源 core/convert.ts
+ * 头注「双管线差异」):本侧输入 markdown 源文(markdown-it 即时识别,无 docx 侧
+ * prescan 预扫),输出完整 HTML 文档;docx 侧输入预解析 AST 产 Buffer。chrome
+ * 拆于 template.ts(封面/水印/页眉页脚模板)与 postprocess.ts(目录 h1-h3 条目),
+ * docx 侧对应集中在 docx/chrome.ts + docx/prescan.ts。同名开关(toc/
+ * headingNumbering/captionNumbering/equationNumbering/pageSetup/typography/
+ * mermaidResolver/watermark)语义与默认值须与 docx 侧 RenderOptions 对齐——
+ * 修改任一侧须同步核对 src/core/docx/render.ts 对应项。
  */
 import MarkdownIt from "markdown-it";
 import { footnote } from "@mdit/plugin-footnote";

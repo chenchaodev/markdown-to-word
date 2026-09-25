@@ -1,6 +1,12 @@
 /**
  * PDF 渲染后处理:标题提取(目录/书签共用)、目录 HTML、外链图片内嵌(并发上限
  * EXTERNAL_IMAGE_CONCURRENCY)及辅助函数。
+ * 双管线对应:src/core/docx/prescan.ts 为 docx 侧对应阶段,但方向相反——docx
+ * 在渲染前从 AST 预扫(上下文写入 ctx),本侧在渲染后从 HTML 提取(pdf 无预扫:
+ * 识别由 pdf/rules/* 在渲染期即时完成)。重叠口径:目录条目两侧同取 h1-h3
+ * (extractHeadings/buildTocHtml ↔ prescan 第 5 轮 tocEntries);外链图片内嵌在
+ * 本侧执行,docx 侧为渲染期经 imageResolver 消费(docx/handlers/image-run.ts)。
+ * 修改目录层级/标题提取/图片内嵌口径须同步核对 src/core/docx/prescan.ts。
  */
 import { decodeEntities, escapeHtml, escapeRegExp } from "../util/utils.js";
 import { mimeFromBuffer } from "../image/image-type.js";

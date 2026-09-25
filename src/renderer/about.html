@@ -338,6 +338,14 @@
       white-space: nowrap;
     }
 
+    /* 离线隐私说明行:胶囊区尾整行,11.5px 弱化说明口径(三级文字色 --mut) */
+    .feat-note {
+      flex-basis: 100%;
+      font-size: 11.5px;
+      color: var(--mut);
+      line-height: 1.55;
+    }
+
     /* ===== Primary action (neutral; 非付印语义, 不用朱砂) ===== */
     .about-actions {
       margin-top: 0;
@@ -445,6 +453,7 @@
       <span class="feat-tag" data-i18n="about.featCjk"></span>
       <span class="feat-tag" data-i18n="about.featBatch"></span>
       <span class="feat-tag" data-i18n="about.featHeader"></span>
+      <p class="feat-note" data-i18n="about.privacyNote"></p>
     </div>
 
     <hr class="about-divider">

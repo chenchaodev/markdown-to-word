@@ -130,6 +130,7 @@ const dict = {
     "about.featCjk": "CJK-optimized",
     "about.featBatch": "Batch files",
     "about.featHeader": "Custom headers & footers",
+    "about.privacyNote": "All conversion runs on this device — your documents are never uploaded to a server and never leave this computer.",
     "about.manual": "View User Manual",
     "about.updateChecking": "Checking for updates…",
     "about.updateLatest": "Already up to date",

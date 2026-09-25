@@ -2,6 +2,13 @@
  * 标题块渲染:renderHeading + 行内 sec label 剥离。
  * {#sec:label} 的章节号登记在 prescan(headingLabels),本模块只负责渲染期剥离
  * 与标题段落构造(书签包裹/编号挂载/h1 前分页)。
+ * 双管线对应:src/core/pdf/rules/heading-id.ts(pdf 侧标题 id/锚点注入规则)。
+ * 差异与同步点:id 去重单源 core/markdown/slug.ts uniqueSlug——本侧 id 在
+ * pipeline/parse.ts 生成、渲染期经 docxBookmarkId 包书签(Word 命名限制);
+ * pdf 侧在 heading-id.ts 渲染期生成 HTML id 并注入 sec 锚点 span。
+ * {#sec:label} 剥离:本侧 slug 在 pipeline/parse.ts、渲染文本在本模块
+ * (stripSecLabelSuffix 单源);pdf 侧统一在 xref_recognize 扫描期。修改
+ * id/label 剥离/锚点语义须同步核对 src/core/pdf/rules/heading-id.ts。
  */
 import { HeadingLevel, Paragraph } from "docx";
 import type { Heading, PhrasingContent } from "mdast";

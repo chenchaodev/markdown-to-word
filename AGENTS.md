@@ -23,7 +23,7 @@
   - 规划编号不进交付物:BACKLOG.md 的候选编号(B1–B11 等)属规划阶段内部用语,晋升实现后须用描述性功能名(如 成书向导/剪贴板直转),不得写入代码注释/文件名/发版文档(CHANGELOG/STATUS/ACCEPTANCE/ROADMAP 小节标题);发版前做「规划编号→功能名」重命名,避免批次概念泄漏
 - 测试体系:`test/`(segments/ core 渲染与跨域守护 + main/ 主进程层 + renderer/ UI 层,镜像 src 三层,按内容主题零注册 + fixtures/ 静态样例 + common/ 工具),入口 `npm run test`(acceptance)、`test:smoke`、`test:all`;产物 `output/artifacts` + `output/smoke`;新增能力须补对应测试段,缺口清单见 ROADMAP
 
-## 流程(遵循全局配置目录 WORKFLOW-GUIDE.md 阶段 0-8)
+## 流程(遵循全局配置目录 WORKFLOW-PLAN.md / WORKFLOW-DELIVER.md 阶段 0-8)
 - 文档驱动:需求/设计文档 → 规划文档(STATUS 顶部一条 + ACCEPTANCE 清单 + ROADMAP 变更)→ 开发前确认,规划即契约;开发中不反复更新,收尾统一同步
 - 排期先价值确认:高确定性直接规划;探索性先确认值得否,不值留候选池「已明确不做」区、不投调研预算(文档加密即此类:调研后确认不做)
 - **需求入口(backlog 单源)**:所有新需求/候选/曾砍重提先登记 `docs/BACKLOG.md`(项目 backlog:分类 + 业务价值/工作量评估),经用户确认后移入 ROADMAP「当前待办」再开发;ROADMAP 只放已确认项,处置记录(不做/暂缓/已知限制)集中候选池,不散写 ROADMAP/STATUS

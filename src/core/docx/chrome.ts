@@ -1,6 +1,13 @@
 /**
  * 文档 chrome 组合根:封面页、目录页、页眉页脚——文档外壳构建逻辑,与正文渲染分离。
  * 不变量:纯 docx 组件构造,无 AST 依赖。
+ * 双管线对应:src/core/pdf/template.ts 为 pdf 侧对应文件(封面 buildCoverHtml、
+ * 页眉 buildPdfHeaderTemplate、页脚 PDF_FOOTER_TEMPLATE、水印样式/占位内联于
+ * buildTemplate;HeaderLogoData 类型单源在本文件,template.ts 导入)。差异:
+ * 目录页对侧不在 template.ts——pdf 目录为 pdf/postprocess.ts buildTocHtml
+ * (与本侧 renderTocPage 同开关、同取 h1-h3 标题)。字号/灰度对齐点见下方
+ * 常量区与 template.ts 内联注(如页眉页脚 7pt / #888888);修改
+ * 封面/页眉页脚/水印的外观或开关须同步核对 src/core/pdf/template.ts。
  */
 import {
   AlignmentType,

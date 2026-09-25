@@ -1,3 +1,13 @@
+/**
+ * docx 公式子系统:预扫期编号上下文 + 渲染期 display 公式——buildEquationContext
+ * (由 prescan.ts 调用:全文连续编号 + 公式块后 {#eq:label} 段登记,label 段
+ * 渲染期跳过)与 renderDisplayMath(经 handlers/math.ts 转 Office MathML;解析
+ * 失败降级 TeX 源码 + formulaParseFailedWarning,降级公式同样占编号)。
+ * 双管线对应:src/core/pdf/rules/equation.ts(eq_numbering 规则,其头注载明与
+ * 本侧契约一致)。差异:本侧渲染 Office MathML、pdf 侧渲染 KaTeX HTML;编号同为
+ * 免更新路线静态注入、仅顶层(容器内公式不计数不编号)。修改编号/label 登记/
+ * 引用替换语义须同步核对 src/core/pdf/rules/equation.ts。
+ */
 import type { Root, Paragraph as MdParagraph } from "mdast";
 import {
   AlignmentType,

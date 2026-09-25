@@ -1,3 +1,14 @@
+/**
+ * docx 题注子系统:预扫期识别 + 渲染期题注段——buildCaptionContext(由 prescan.ts
+ * 调用:识别「图:/表: 前缀段」,分配章节号/章节内序数,label 登记)与
+ * renderCaptionParagraph(render.ts 题注段 case:居中题注段 + 编号文本注入 +
+ * label 书签包裹)。
+ * 双管线对应:src/core/pdf/rules/caption.ts(caption_recognize 规则,其头注载明
+ * 与本侧 buildCaptionContext 顶层预扫契约一致)。差异:本侧编号在渲染期静态注入
+ * 文本(免更新路线),pdf 侧编号由 CSS counter 伪元素生成、不进文本节点。
+ * 识别口径(前缀正则 CAPTION_PREFIX_RE 单源、仅顶层、图/表目标判定)修改
+ * 任一侧须同步核对 src/core/pdf/rules/caption.ts。
+ */
 import type { Node, Root, Paragraph as MdParagraph } from "mdast";
 import { AlignmentType, Paragraph, TextRun } from "docx";
 import type { ParagraphChild } from "docx";

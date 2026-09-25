@@ -2,6 +2,12 @@
  * renderDocx 预扫:正文渲染前的五轮全文扫描,收敛为单次 prescanDocument 调用。
  * 预扫会就地写入 ctx(footnoteDefinitions / headingLabels / equationLabels),并返回结构化结果。
  * 各轮顺序:题注上下文 → 章节 label → 公式上下文 → 目录条目。
+ * 双管线对应:src/core/pdf/postprocess.ts 为 pdf 侧对应阶段,但方向相反——本侧
+ * 在渲染前从 AST 预扫,pdf 侧在渲染后从 HTML 提取(pdf 无预扫:题注/公式/交叉
+ * 引用识别由 rules/* 在渲染期即时完成)。重叠口径:目录条目两侧同取 h1-h3
+ * (本侧第 5 轮 ↔ pdf extractHeadings/buildTocHtml);图片外链内嵌 pdf 侧在
+ * postprocess 执行,本侧为渲染期经 imageResolver 消费(handlers/image-run.ts)。
+ * 修改目录层级/标题提取口径须同步核对 src/core/pdf/postprocess.ts。
  */
 import type { Root, Paragraph as MdParagraph } from "mdast";
 import { buildCaptionContext, type CaptionInfo } from "./handlers/captions.js";

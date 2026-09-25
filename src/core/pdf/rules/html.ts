@@ -1,5 +1,10 @@
 /**
  * pdf 行内 HTML 白名单规则:html_whitelist 解析规则 + html_block/html_inline 渲染包装单源。
+ * 双管线对应:src/core/docx/handlers/inline-html.ts(其头注载明两侧扫描算法逐条
+ * 对齐、互为双向指针;白名单判定单源 core/markdown/html-whitelist.ts)。差异:
+ * 本侧为 matchAllowedHtmlExpression 源码扫描组合 token,docx 侧为
+ * normalizeInlineHtml 节点流合并——白名单集合或判定口径修改任一侧,须同步核对
+ * src/core/docx/handlers/inline-html.ts。
  */
 import type MarkdownIt from "markdown-it";
 import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
