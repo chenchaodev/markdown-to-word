@@ -16,13 +16,13 @@
 
 | 阶段 | 当前状态 | 门禁结论 |
 |---|---|---|
-| 阶段 0 工程口径/门禁 | `[x]` 完成（外部证据后置） | Node/live 文档、环境指纹、几何/产物/clean 门禁与决策台账已落地；远端 lane 实跑证据后置，不阻塞本地阶段 |
-| 阶段 1 single-flight/持久化 | `[~]` 部分完成 | 主要实现已有；真实并发/取消/关闭/after-convert 竞态与 GUI 验收未闭环 |
+| 阶段 0 工程口径/门禁 | `[x]` 本地完成 | Node/live 文档、环境指纹、几何/产物/clean 门禁与决策台账已落地；远端 lane 实跑证据后置 |
+| 阶段 1 single-flight/持久化 | `[~]` 执行中 | 主要实现已有；真实并发/取消/关闭/after-convert 竞态与 GUI 验收进行中 |
 | 阶段 2 内容/几何/输出 | `[~]` 2A 已完成，2B 待办 | 准备链、几何迁移、D-03 路径边界已落地；媒体类型/大小预算与输出原子提交未完成 |
 | 阶段 3 资源/生命周期 | `[ ]` 未开始 | 仅有未提交红测试草稿，不能计为实现 |
-| 阶段 4 renderer UX | `[ ]` 未开始 | 依赖阶段 1/2 状态契约稳定 |
+| 阶段 4 renderer UX | `[~]` 部分完成 | D-02 文档/设计/renderer 文案已同步；交互、向导、主题与 GUI 验收待办 |
 | 阶段 5 边界/双管线/测试 | `[~]` 基础存在 | checkJs 全量、runner 隔离、fixture 契约、差异矩阵未完成 |
-| 阶段 6 发布/视觉/安装 | `[ ]` 未开始 | geometry/ASAR/SCA/SBOM/安装验证未完成 |
+| 阶段 6 发布/视觉/安装 | `[~]` 部分完成 | clean/manifest/ASAR/geometry 本地门禁已入链；SCA/SBOM/安装与远端证据待办 |
 | 阶段 7 P2/P3 | `[ ]` 后置 | 不阻塞主线，但全部 actionable 项保留 |
 
 ## 1. 阶段 0：决策、基线与门禁
@@ -34,10 +34,10 @@
 - [x] 契约脚本与负向夹具通过（18 条夹具）。
 - [x] 环境指纹可采集并入 CI/Release：`scripts/print-env-fingerprint.mjs` 覆盖 Node/npm/Electron/Chromium/字体/DPI，两条 workflow 在 `npm ci` 之后落文件并随 `always` artifact 留存；探针缺值记 diagnostics 不阻断。
 - [x] `docs/index.html`、其他 live 文档中的 Node 口径同步。
-- [!] 后续支持 Node lane 的远端实际运行记录待有推送授权后补齐；本地契约与脚本验证已完成。
+- [-] 后续支持 Node lane 的远端实际运行记录后置到远端发布证据（需推送授权），不影响阶段 0 本地完成。
 
 **证据**：`d97e14f`；`scripts/check-ci-contract.mjs`、`scripts/print-env-fingerprint.mjs`；本机实跑指纹 `diagnostics.count=0`（Node 24.18.0 / npm 11.16.0 / Electron 43.2.0 / Chromium 150）。
-**退出条件**：现行文档/配置无旧 Node 口径；最低与稳定版本均有可追溯验证。
+**退出条件**：本地文档/配置无旧 Node 口径；Node 地板与稳定 lane 契约可追溯；远端 lane 实跑作为后置证据项。
 
 ### OPT-0.2 统一验证入口 — `[x]`
 
@@ -52,7 +52,7 @@
 **证据**：`d97e14f`；`package.json`；两个 workflow；`scripts/clean-artifacts.mjs`；`scripts/check-ci-contract.selftest.mjs`（本机 18/18 通过）；`npm run check:geometry` 本机通过（12 场景 / 7 恒定组 / 容差 1px）；本机 `clean:dist` → `build` → 清单生成/校验全绿（262 文件）。
 **退出条件**：故意制造每类失败均阻止发布；release 产物可追溯。
 
-> 远端事实：本条所列 CI/Release 改动**尚未在 GitHub 上实跑**（无 run 记录），只完成本地门禁与脚本层验证。
+> 后置项：CI/Release 改动尚未在 GitHub 上实跑（无 run 记录），该远端证据不改变阶段 0 本地完成结论；发布前须补跑并归档。
 
 ### OPT-0.3 决策与问题台账 — `[x]`
 
@@ -67,6 +67,12 @@
 - [x] 本地 OPT-0.1～0.3 实现与契约已通过；远端 Node lane/部分故意失败探针作为外部或后续证据项保留。
 - [x] 当前工作树无未使用导入/未声明红测试（阶段 3 草稿已隔离）。
 - [x] `check:contract`、selftest、typecheck、lint、build、acceptance、geometry 通过（77 段）。
+
+### 阶段 0 明确后置项（不计入本地完成）
+
+- [-] GitHub Actions 主 job、稳定 Node lane、Release 的远端实跑与 artifact 归档（需推送授权）。
+- [-] coverage/fixture/smoke 故意失败探针（转阶段 7）。
+- [-] 内置预设 core hint 三语化与不可达提示分支（转 OPT-4.3）。
 
 ## 2. 阶段 1：single-flight、取消与持久化
 
@@ -216,9 +222,9 @@
 - [ ] 向导重开同步最新设置。
 - [ ] main 语言/菜单/标题栏同步。
 
-### OPT-4.3 预设与取消状态 — `[ ]`
+### OPT-4.3 预设与取消状态 — `[~]`
 
-- [ ] D-02 作用域文档/代码/文案统一。
+- [x] D-02 作用域文档/设计/renderer 当前文案统一（历史口径保留 supersede 指针）。
 - [ ] 内置 `TEMPLATE_PRESETS` 提示三语化（消除 core 硬编码 hint）。
 - [ ] `resolvePresetHint` 自定义/微调分支可达性与提示复位。
 - [ ] canceled 中性视觉与批量标题组合。
@@ -274,14 +280,17 @@
 
 - [x] Node/lockfile/版本一致性基础。
 - [ ] OSV/SCA、SBOM、许可证/NOTICE。
-- [ ] action SHA/环境指纹。
-- [ ] 安装包 hash、未签名提示与状态记录。
+- [x] 环境指纹脚本与 CI/Release 接入。
+- [ ] GitHub action SHA 固定。
+- [x] 本地安装包 hash、ASAR 与当前版本产物核对。
+- [ ] 未签名提示、签名状态记录与发布说明固化。
 
-### OPT-6.3 视觉/安装验证 — `[ ]`
+### OPT-6.3 视觉/安装验证 — `[~]`
 
-- [ ] geometry gate 进入 CI/Release。（脚本与 workflow 步骤已随阶段 0 接好：几何门禁在 `verify:ci` 链内，主 CI 与 Release 均 `always` 上传报告/截图；待真实 GitHub lane 运行记录后再勾）
-- [ ] 截图 artifact/失败定位。（同上，artifact 步骤已就位，缺远端实证）
-- [ ] unpacked 启动、ASAR 清单、安装/启动/卸载 smoke。（ASAR 清单核对已在 `dist` 链内；unpacked 启动与安装/卸载 smoke 未做）
+- [x] geometry gate 进入 CI/Release 的本地契约与 workflow 配置。
+- [ ] GitHub lane 实跑证据（远端报告/截图 artifact）。
+- [x] 截图 artifact/失败定位脚本与失败输出已就位。
+- [ ] unpacked 启动、安装/启动/卸载 smoke。
 
 **阶段 6 门禁**：发布链路完整、产物可追溯、geometry/安装验证全绿。
 
