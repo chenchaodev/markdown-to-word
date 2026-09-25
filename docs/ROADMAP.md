@@ -31,7 +31,7 @@
 > 2026-08-13 整理:合并原「待办(排期)」「延后(不排批)」与批次 8/9「备选/暂缓/不做(记后续)」并去重,历史规划压缩至「已完成」节,详情见 archive 存档。
 > 2026-08-23 全库质量审计后新增「审计改进排期 B1-B14」(全部待办唯一明细在此;证据链见 archive/2026-08-23-133005)。
 > 2026-08-23 目录结构优化方案探查定稿入待办(暂缓排期,排在现有待办之后;实施前须重新探查;证据链见 archive/20260823-230554)。
-> 2026-08-31 **封版暂停开发**:版本 3.11.5 封版,暂停新功能开发,进入文档技术债清理阶段。此前待办 D1 GUI 易用反制 AIDOC 三批已随 3.10.1 完成(GUI 实测通过 2026-08-29),关于页更新提示已完成,当前无未关闭排期项(2026-09-25 状态回写)。
+> 2026-08-31 **封版暂停开发**:版本 3.11.5 封版,暂停新功能开发,进入文档技术债清理阶段。此前待办 D1 GUI 易用反制 AIDOC 三批已随 3.10.1 完成(GUI 实测通过 2026-08-29),关于页更新提示已完成,当前无未关闭排期项(2026-09-25 状态回写)。**技术债处置五批 24 项已于 2026-09-25 全部完成**(计划归档 archive/20260925-130122-技术债处置计划.md;批次压缩记录见「已完成」节,渐进遗留见「测试遗留」)。
 
 ### 审计改进排期 B1-B14(2026-08-23,完成即勾选)
 > 原则:每项独立提交可回退;core 行为改动须补测试段断言;重构行为等价。规模:S≤3 文件 / M 中 / L 大。决策点已于 2026-08-23 全部拍板(见各条「已拍板」)。
@@ -166,6 +166,8 @@
 - [x] **B1 renderer 纯函数段**(2026-08-11 R8 收尾评审提出,未执行;低风险纯测试)——抽 `src/renderer/pure.ts`(isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT 等零 DOM 函数,现居 utils.ts),utils.ts 改 re-export(renderer 内部 import 路径不变),新建 segments/renderer-pure.test.js;建议作为下一个小迭代(零行为改动);**已完成(2026-08-13,482160e,renderer-pure.test.js 已建,缺口清零)**
 - [x] C4(不排期):isCaptionTarget/buildEquationContext/collectPlainText 直测——产物断言(toc-caption/formula/eq-numbering)已间接覆盖,边际收益低,不做
 - [x] R10-7(不做留档):pdf/render.ts 容器深度跟踪 helper——收益 ~20 行且 token 流语义敏感,评审结论「可不做」
+- [ ] **E5 测试段 `// @ts-check` 存量渐进标注**:首批 13/71 文件已标注(2026-09-25 随 E5 落地,机制见 `tsconfig.test.json` 头注释),余 69 文件 809 错误(TS7006 隐式 any ×200 主导);新测试段随手标注、存量按文件清零后补标,无排期
+- [ ] **E1 覆盖率门槛渐进收紧**:现 90/85/90/90(`npm run test:coverage` 脚本单源,本地与 CI 同门禁),2026-09-25 基线 93.92/88.84/93.15/93.92;覆盖率上台阶后随脚本上调,无排期
 
 ### 砍(已决策不做)
 - CLI 转正(无用户需求,调试可走脚本/直接调 core)、自动更新与签名(本地离线隐私卖点,更新反噬)、目录监视与同步、PDF 多栏、批量重命名
@@ -173,6 +175,7 @@
 - 文档加密(2026-08-16 用户确认不做):docx 库不支持加密(非 OOXML 标准),替代需引入 officecrypto-tool 新依赖;pdf 侧需 qpdf 原生二进制分发,成本高 ROI 低;调研依据 archive/20260816-114520
 - 完整 Mermaid 取消不再成立(已升回功能候选 8c)
 - 最近文件:批次 11 I1 已实现(一键重转/会话恢复),原延后项作废
+- E2 计数断言全量化(2026-09-25 拍板「仅动等待,计数全保留」:9 处精确计数为有意防回归守卫,维持现状不再触碰)
 
 ### 已知限制(技术债/不做,记录不遗忘)
 - **M7 extractHeadings 正则依赖渲染细节**(pdf/render.ts):标题提取正则与渲染结构耦合,重构需谨慎(2026-08-11 审计记录)
@@ -182,6 +185,7 @@
 - **docx 侧任务列表无 checkbox 视觉**:设计如此(与 pdf ☐/☑ 字符替代不同)
 - [x] **契约类型寄居 main 反向依赖**(RESEARCH 2026-08-24 P1;候选池 E1;处置计划 D4):ConvertProgressPayload/ConvertMode/UiState/RecentFile 被 renderer type-only import 构成 renderer→main 反向依赖——**已完成(2026-09-25 D4,随行 C5 re-export 收口)**:新建 `core/ipc-contract.ts` 承载全部跨进程契约(ConvertProgressPayload/ConvertMode + BatchItem/BatchProgressInfo/BatchResult + UiState/PanelOpen/WindowBounds/RecentFile),main 侧(channels/persist/converter)与 renderer 侧共同 import 单源;renderer→main import 清零(仅剩 renderer.ts 的 `type PreloadApi`,属 preload「实现即契约」推导设计,评审未列入迁移范围,维持不动);C5 并入清理:core/convert.ts 的 DEFAULT_*/ConvertFormat re-export 双入口删除,消费点直连 settings-defaults(6 处 main + 1 处测试)
 - [x] **test 段归位**(RESEARCH 2026-08-24 P2;处置计划 D5):ipc-channels/ipc-logic/image-downloader/presets-import 四段 main 直测住 segments/,settings-logic/renderer-pure 应入 test/renderer/(需扩 acceptance.mjs 自动发现根)——**已完成(2026-09-25 D5,用户裁定「全量镜像三层」口径)**:test 树镜像 src 分层,9 个 main 主题段→test/main/、4 个 renderer 主题段(renderer-pure/settings-logic/wizard-state/dark-token-parity)→test/renderer/(acceptance.mjs 扩第三发现根),segments 只留 core 渲染主题与跨层契约守护(identity-guards/i18n-registry/heading-scale);目录组织标准三条并存改为镜像三层,AGENTS/DEV-GUIDE/acceptance 头注释/指针同步,段数 70 不变(48+18+4)
+- **E3 看门狗超时段与后续段无隔离**(2026-09-25 试点记录):`runner.runAll` 超时段记失败后照常放行后续段(一次看全失败面),标志 `hung`=存在未终止悬挂段,结果打印完毕由入口硬退出统一释放悬挂资源;悬挂段与后续段隔离不做(逐段子进程成本高;见 test/common/runner.js 注释)
 
 ### 候选池晋升待办（2026-08-29 从 ROADMAP-CANDIDATES 挑选，规划即契约）
 > 来源：ROADMAP-CANDIDATES.md（剪贴板直转 综合 70 / 成书向导 综合 85）。设计决策已拍板（见各条）。开发前确认，独立提交可回退；GUI 面走 ACCEPTANCE 人工实测。
@@ -247,6 +251,14 @@
 - **待修复**:PDF 任务列表 checkbox 替换失效(289b837,2026-08-10);docx 侧无 checkbox 视觉为设计如此
 - **迭代 4「预览入口迁移」**(2026-08-11):单/多文件态预览按钮 + 完成弹窗移除预览,用户 6 项清单全通过
 - **P0 bug:smoke-merge-1-合并.pdf 图片未显示**(392fca1,2026-08-11 用户验证通过)——merge 反斜杠绝对路径 %5C 编码 bug + 样例图可见化;不加端到端断言(printToPDF 图片自动化检测不可靠,实证),由 smoke 可见图人工验证
+
+### 技术债处置五批（2026-09-25 全部关闭；计划原文与逐项记录见 archive/20260925-130122-技术债处置计划）
+- 封版期维护 4 项 + 关于窗 CSP 并入安全批：段数订正、沉没债补登记（契约归位与测试段归位，闭环见「已知限制」）、coverage 残留清理、G1-G9 盘点关闭（证据入 RESEARCH）；纯文档提交
+- 安全与契约收口 5 项：关于页外链 IPC 收口单源、ja 字典 satisfies 全量锁 441 键、令牌破例清零、关于窗沙箱+CSP 与主窗同口径（GUI 实测通过，ACCEPTANCE 关闭）、深色双块恒等断言
+- core 双源收敛 4 项：水印与表格边框色收单源、highlight.js 30 色板共享常量、警告去重 i18n 共享、KaTeX CSS 加载拍板「常态零 IO+两处注入默认值」——与安全批同随 3.11.6 发版
+- 结构重构 6 项：测试段镜像三层归位、打开对话框样板收口与版本比较单源、跨进程契约归位 core/ipc-contract.ts、pdf 模板三拆、settings 六组拆线、成书向导五文件拆分——GUI 实测通过，随 3.11.7 发版（提交链见 STATUS）
+- 测试增强 5 项：覆盖率门槛 90/85/90/90 进 CI（本地与 CI 同门禁）、eslint 项目 globs 运行时自动扫描、smoke 固定等待改条件等待（拍板「仅动等待，计数全保留」）、看门狗超时改「记录失败继续跑」、测试段 `// @ts-check` 首批 13 文件渐进——无用户可见变化
+- 两个决策点均已拍板（KaTeX 加载取最小注入、smoke 仅动等待）；逐项提交链 git log 可查，批次详情见 STATUS 顶部条目与计划归档；渐进遗留见「测试遗留」
 
 ### 维持人工不自动化
 - printToPDF 产物图片显示(smoke 可见图人工验证)、renderer 交互、preview:open 生命周期、IPC dialog(ACCEPTANCE GUI 实测清单)
