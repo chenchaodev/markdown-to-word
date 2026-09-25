@@ -17,7 +17,7 @@
 | 阶段 | 当前状态 | 门禁结论 |
 |---|---|---|
 | 阶段 0 工程口径/门禁 | `[x]` 本地完成 | Node/live 文档、环境指纹、几何/产物/clean 门禁与决策台账已落地；远端 lane 实跑证据后置 |
-| 阶段 1 single-flight/持久化 | `[~]` 执行中 | 主要实现已有；真实并发/取消/关闭/after-convert 竞态与 GUI 验收进行中 |
+| 阶段 1 single-flight/持久化 | `[~]` 实现完成，GUI 待用户 | main/renderer/persistence/batch 实现与自动断言全绿；真实窗口 GUI 验收保留 |
 | 阶段 2 内容/几何/输出 | `[~]` 2A 已完成，2B 待办 | 准备链、几何迁移、D-03 路径边界已落地；媒体类型/大小预算与输出原子提交未完成 |
 | 阶段 3 资源/生命周期 | `[ ]` 未开始 | 仅有未提交红测试草稿，不能计为实现 |
 | 阶段 4 renderer UX | `[~]` 部分完成 | D-02 文档/设计/renderer 文案已同步；交互、向导、主题与 GUI 验收待办 |
@@ -76,53 +76,54 @@
 
 ## 2. 阶段 1：single-flight、取消与持久化
 
-### OPT-1.1 main operation registry — `[~]`
+### OPT-1.1 main operation registry — `[x]`
 
 - [x] webContents 维度 registry。
 - [x] single/batch/merge/precheck 共用注册。
 - [x] compare-and-delete、busy 结果、当前 cancel。
-- [ ] 真实异步 IPC 并发最大活动数测试。
-- [ ] close/超时/旧 token 交错测试。
-- [ ] precheck 异常/忙碌结果可观察性收口。
+- [x] 真实异步 IPC 并发最大活动数测试。
+- [x] close/超时/旧 token 交错测试。
+- [x] precheck 异常/忙碌结果可观察性收口。
 
-**证据**：`fbbf5b7`；`test/main/ipc-logic.test.js`、`ipc-register.test.js`。
+**证据**：`a8aa428`；`test/main/operation-single-flight.test.js`、`test/main/window-close-abort.test.js`、`test/main/ipc-logic.test.js`、`ipc-register.test.js`。
 **退出条件**：真实 handler 并发、取消、关闭时序测试全绿。
 
 ### OPT-1.2 renderer command/precheck lock — `[~]`
 
 - [x] active Promise/token、按钮/快捷键守卫、预检 Promise 单实例。
-- [ ] dropZone 祖先 role/button 与事件冒泡修复。
-- [ ] 所有真实按钮/遮罩/Esc/窗口关闭路径结算测试。
+- [x] dropZone 祖先 role/button 与事件冒泡修复。
+- [x] 所有真实按钮/遮罩/Esc/窗口关闭路径结算测试。
 - [ ] GUI 验收覆盖向导/模态/背景入口。
 
-**证据**：`fbbf5b7`；`test/renderer/convert-command-lock.test.js`。
-**退出条件**：键盘/鼠标/弹窗全路径无双触发/悬挂 Promise。
+**证据**：`a8aa428`；`test/renderer/command-entry-guard.test.js`、`wizard-command-guard.test.js`、`convert-command-lock.test.js`。
+**退出条件**：键盘/鼠标/弹窗全路径无双触发/悬挂 Promise；GUI 项由用户实测关闭。
 
-### OPT-1.3 settings/ui-state mutation queue — `[~]`
+### OPT-1.3 settings/ui-state mutation queue — `[x]`
 
 - [x] 读改写/写盘/cache commit 同队列。
 - [x] 写失败不更新缓存且队列可恢复。
-- [ ] session/ui-state 写失败的统一 GUI 可见反馈。
-- [ ] 重启后并发字段保留验证。
+- [x] session/ui-state 写失败的统一 GUI 可见反馈。
+- [x] 重启后并发字段保留验证。
 
-**证据**：`89c71c8`；main atomic/settings/ui-state tests。
+**证据**：`a8aa428`；`test/main/atomic-json.test.js`、`settings.test.js`、`ui-state.test.js`、`test/renderer/session-persist-feedback.test.js`。
 **退出条件**：设置、最近文件、窗口状态均不丢，失败可操作。
 
-### OPT-1.4 批量副作用 — `[~]`
+### OPT-1.4 批量副作用 — `[x]`
 
 - [x] 批次 immutable settings snapshot。
 - [x] batch after-convert 一次、取消跳过。
-- [ ] merge 最终取消检查。
-- [ ] single/batch/merge cancel/close 精确 after-action 次数测试。
+- [x] merge 最终取消检查。
+- [x] single/batch/merge cancel/close 精确 after-action 次数测试。
 
-**证据**：`89c71c8`；`test/main/converter.test.js`。
+**证据**：`a8aa428`；`test/main/converter-after-convert.test.js`、`test/main/converter.test.js`。
 **退出条件**：任何取消/失败/关闭后不打开产物。
 
 ### 阶段 1 门禁
 
-- [ ] OPT-1.1～1.4 全部 `[x]`。
-- [ ] main 并发/取消/关闭和 renderer GUI 验收完成。
-- [ ] 独立提交可回退，阶段验证记录完整。
+- [x] OPT-1.1、OPT-1.3、OPT-1.4 实现与自动断言完成。
+- [x] main 并发/取消/关闭与 renderer 命令/模态/向导自动断言完成。
+- [ ] 用户 GUI 实测（双击/快捷键/模态/向导/关闭/保存失败）待用户验收。
+- [x] 独立提交 `a8aa428`，阶段验证记录完整（`verify:ci` 83 段全绿）。
 
 ## 3. 阶段 2：内容完整性、页面几何、输出原子性
 
