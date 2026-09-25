@@ -9,6 +9,9 @@
  *   原本无 settings.json 时恢复后删除文件,不污染用户设置(settings.test.js 同款卫生)
  * - convertImpl 输出目录 = settings.outputDir(空串 → 源文件同目录):本段统一置 ""
  *   + afterConvert "none"(测试环境不触发打开文件),保证断言确定性
+ * - 落盘统一经产物提交器(artifact-writer,独占创建 + 魔数校验):并发同名转换不再互相
+ *   覆盖,序号「名 (2).ext」由提交器遇 EEXIST 递增(1b/1c 为编排层端到端回归;
+ *   能确定性证伪旧「先判空再写」的 24 路并发在 artifact-commit.test.js)
  * - 样例源文件入 fixtures 体系(test/fixtures/main/);
  *   运行时副本/产物放 os.tmpdir() 独立目录,finally 整体删除,不污染 output/smoke
  */
@@ -64,6 +67,36 @@ export async function run() {
     await fs.stat(dup1.outputPath);
     await fs.stat(dup2.outputPath);
     console.log(`[ok] converter:重名保护 ${path.basename(dup2.outputPath)} 与 ${path.basename(dup1.outputPath)} 共存`);
+
+    // ---- 1b. 并发同名不覆盖(端到端编排层):同一 md 4 路并发 convertImpl → 4 个互异产物
+    // 且均可解包。落盘统一经产物提交器独占创建(artifact-writer),写盘前不再 stat 判空。
+    // 注:转换链路的渲染耗时把「判空 → 写盘」窗口稀释得很小,本条守的是编排层四路并发
+    // 的产物共存;能确定性证伪旧「先判空再写」写法的是提交器层 24 路并发
+    // (artifact-commit.test.js),同条件下旧写法 24 路只落 1 个文件 ----
+    const raceMd = path.join(dir, "race.md");
+    await fs.writeFile(raceMd, "# 并发同名\n\n正文\n");
+    const raceResults = await Promise.all(Array.from({ length: 4 }, () => convertImpl(raceMd, "docx")));
+    const racePaths = raceResults.map((r) => r.outputPath);
+    assert(
+      new Set(racePaths).size === 4,
+      `并发同名转换应得到 4 个互异产物,实际 ${JSON.stringify(racePaths.map((p) => path.basename(p)))}`,
+    );
+    for (const racePath of racePaths) {
+      const raceZip = await JSZip.loadAsync(await fs.readFile(racePath));
+      assert(!!raceZip.file("word/document.xml"), `并发产物 ${path.basename(racePath)} 缺少 document.xml(疑似被覆盖)`);
+    }
+    console.log("[ok] converter:并发同名转换 4 路(互异产物/均可解包/无覆盖)");
+
+    // ---- 1c. 批量同文件重复:同一文件 3 份进池(并发上限 2 = 真实并发窗口)→ 3 个互异产物 ----
+    const dupBatch = await batchConvertImpl([raceMd, raceMd, raceMd], "docx");
+    assert(dupBatch.okCount === 3, `同文件批量应全部成功,实际 ok=${dupBatch.okCount}`);
+    const dupBatchPaths = dupBatch.items.map((item) => item.outputPath);
+    assert(
+      new Set(dupBatchPaths).size === 3,
+      `同文件批量应得到 3 个互异产物,实际 ${JSON.stringify(dupBatchPaths)}`,
+    );
+    for (const batchPath of dupBatchPaths) await fs.stat(batchPath);
+    console.log("[ok] converter:同文件批量 3 份(池内并发 → 3 个互异产物共存)");
 
     // ---- 2. 批量转换:3 成功 + 1 缺失 → 汇总逐条正确 + 产物存在 ----
     const batchFiles = ["batch-a.md", "batch-b.md", "batch-c.md"].map((n) => path.join(dir, n));

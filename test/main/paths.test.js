@@ -1,12 +1,15 @@
 /**
- * 路径收集/输出路径解析验收(位于 test/main/ = 主进程层;src/main/converter/paths.ts
+ * 路径收集/输出首选路径解析验收(位于 test/main/ = 主进程层;src/main/converter/paths.ts
  * 经桶导出 converter.ts,测试经 dist/main/converter/index.js,electron 环境):
  * 实现事实(读源码确认,非显然行为):
  * - skipped 记录传入原串;visit 的 seen 在 stat 前即去重,目录重复传入也只扫一次
  * - 点前缀跳过是「entry.name 以 . 开头」判定,对目录与文件一视同仁
  * - 超长回落:回落源目录后重算 candidate,但不再二次检查长度
- *   ——源目录 + 超长 baseName 仍 >250 时原样进入 pathExists 循环并返回
- * - 重名序号循环(「名 (2).ext」)由 converter.test.js 经 convertImpl 两次转换覆盖,本段不重复断言
+ *   ——源目录 + 超长 baseName 仍 >250 时原样返回
+ * - resolveOutputPath 只给「首选路径」,不做存在性探测:重名序号「名 (2).ext」由产物
+ *   提交器(artifact-writer)在独占创建时遇 EEXIST 递增决定。写盘前 stat 判空会留下
+ *   TOCTOU 覆盖窗口,故本段以「同名已存在仍返回同一首选路径」守护该契约;
+ *   序号与并发不覆盖的回归见 artifact-commit.test.js 与 converter.test.js
  * 样例/产物全部放 os.tmpdir() 独立目录,finally 整体删除,不污染 output/smoke
  */
 import fs from "node:fs/promises";
@@ -123,9 +126,21 @@ export async function run() {
     await fs.stat(targetDir); // mkdir recursive 已创建
     console.log("[ok] paths:resolveOutputPath 输出目录(空串→源目录/有效→创建落盘/baseName/pdf)");
 
-    // ---- 8. 超长路径(候选 >250):回落源目录 + 一条「输出路径过长」警告,文件名不截断;
-    // 回落后的 candidate 不再二次检查长度——源目录 + 超长 baseName 仍 >250 时原样返回
-    // (源码 138-142 行,以实际实现为准) ----
+    // ---- 8. 不做存在性探测:同名文件已存在时仍返回同一首选路径(无「(2)」后缀)。
+    // 选名与占位由产物提交器经独占创建合并完成,此处的 stat 探测是覆盖根因,不得回归 ----
+    const takenName = path.join(srcDir, "taken.docx");
+    await fs.writeFile(takenName, "占位", "utf8");
+    const takenOnce = await resolveOutputPath(srcMd, "docx", "", "taken");
+    const takenTwice = await resolveOutputPath(srcMd, "docx", "", "taken");
+    assert(
+      path.basename(takenOnce.outputPath) === "taken.docx" && takenOnce.outputPath === takenTwice.outputPath,
+      `存在性探测回归:已存在同名文件时仍应返回首选路径,实际 ${takenOnce.outputPath} / ${takenTwice.outputPath}`,
+    );
+    await fs.rm(takenName, { force: true });
+    console.log("[ok] paths:resolveOutputPath 不做存在性探测(首选路径交由提交器独占创建)");
+
+    // ---- 9. 超长路径(候选 >250):回落源目录 + 一条「输出路径过长」警告,文件名不截断;
+    // 回落后的 candidate 不再二次检查长度——源目录 + 超长 baseName 仍 >250 时原样返回 ----
     const longName = "x".repeat(260);
     const longOut = await resolveOutputPath(srcMd, "docx", targetDir, longName);
     assert(
@@ -137,7 +152,7 @@ export async function run() {
     assert(longOut.outputPath.length > 250, "超长路径:回落后的候选长度与实现不符(仍 >250)");
     console.log("[ok] paths:resolveOutputPath 超长路径回落(>250→源目录+警告,不截断)");
 
-    // ---- 9. outputDir mkdir 失败(指向已存在的普通文件 → EEXIST)→ 回落源目录
+    // ---- 10. outputDir mkdir 失败(指向已存在的普通文件 → EEXIST)→ 回落源目录
     // + 一条「输出目录不可用」警告 ----
     const blocker = path.join(dir, "blocker.txt");
     await fs.writeFile(blocker, "blocker", "utf8");

@@ -3,7 +3,6 @@
  * renderPdf/runAfterConvert 供 batch/merge 复用(模块内导出,不经桶导出对外)。
  */
 import { BrowserWindow, shell } from "electron";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { convert } from "../../core/convert.js";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
@@ -25,13 +24,16 @@ import {
   throwIfCanceled,
   type ConvertContext,
 } from "./context.js";
+import { commitArtifact } from "./artifact-writer.js";
 import { MARKDOWN_EXT_RE, resolveOutputPath, stripMarkdownExt } from "./paths.js";
 import { prepareMarkdown } from "./preprocess.js";
 
 /**
  * 渲染产物落盘收尾:
- * 解析输出路径(重名序号/超长回落)→ docx 直接写盘 / pdf 经隐藏窗口 printToPDF
- * → onProgress("done")。导出后行为(runAfterConvert)仍由调用方按各自语义执行。
+ * 解析输出首选路径(输出目录/超长回落)→ docx 直接提交 / pdf 经隐藏窗口 printToPDF
+ * → onProgress("done")。落盘统一经产物提交器(独占创建 + 魔数校验),两种格式、
+ * 单文件/批量/合并共用同一提交路径;实际路径可能带重名序号「名 (2).ext」。
+ * 导出后行为(runAfterConvert)仍由调用方按各自语义执行。
  */
 export async function persistArtifact(
   artifact: PdfArtifact | { kind: "docx"; buffer: Uint8Array },
@@ -42,15 +44,15 @@ export async function persistArtifact(
   onProgress?: (stage: string) => void,
   baseName?: string,
 ): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
-  const { outputPath, warnings } = await resolveOutputPath(sourcePath, format, outputDir, baseName);
-  if (artifact.kind === "docx") {
-    await fs.writeFile(outputPath, artifact.buffer);
-    onProgress?.("done");
-  } else {
-    // pdf:临时 HTML → 隐藏窗口 printToPDF → 落盘(与合并共用 renderPdf;print 阶段在内部上报)
-    await renderPdf(artifact, outputPath, ctx, onProgress);
-    onProgress?.("done");
-  }
+  const { outputPath: preferredPath, warnings } = await resolveOutputPath(sourcePath, format, outputDir, baseName);
+  // 取消闸门:产物已渲染完但用户已取消 → 提交器在写最终路径前复查,取消则零副作用
+  // (临时文件在提交器 finally 内清理,不留半成品)。
+  const outputPath =
+    artifact.kind === "docx"
+      ? await commitArtifact(preferredPath, artifact.buffer, { beforeCommit: () => throwIfCanceled(ctx) })
+      : // pdf:临时 HTML → 隐藏窗口 printToPDF → 提交落盘(与合并共用 renderPdf;print 阶段在内部上报)
+        await renderPdf(artifact, preferredPath, ctx, onProgress);
+  onProgress?.("done");
   return { outputPath, warnings };
 }
 
@@ -125,17 +127,18 @@ export async function convertImpl(
 }
 
 /**
- * pdf 产物落盘:临时 HTML → 隐藏窗口 printToPDF → 写输出文件。
+ * pdf 产物落盘:临时 HTML → 隐藏窗口 printToPDF → 经产物提交器提交到 preferredPath。
  * 单文件/合并共用;临时文件与窗口在 finally 中清理,失败也会销毁窗口。
+ * preferredPath 为首选路径(重名序号由提交器独占创建时决定),返回实际落盘路径。
  * onStage(可选)在 printToPDF 前上报 "print" 阶段(printToPDF 不可中断,
  * renderer 据此置灰取消按钮 + 显示「正在写入 PDF…」)。
  */
 export async function renderPdf(
   artifact: PdfArtifact,
-  outputPath: string,
+  preferredPath: string,
   ctx: ConvertContext,
   onStage?: (stage: string) => void,
-): Promise<void> {
+): Promise<string> {
   // 单遍打印:写临时 HTML → 隐藏窗口加载 → printToPDF → 返回 bytes(窗口/临时文件 finally 清理)
   const printOnce = async (html: string): Promise<Uint8Array> => {
     const { htmlPath, cleanup } = await writeTempHtml(html);
@@ -189,7 +192,8 @@ export async function renderPdf(
   // 书签注入之后追加 PDF Info 元数据注入(frontmatter title/author/date → 文档属性)。
   // 顺序固定:书签 → 元数据(后者经 pdf-lib 整体重存,必须最后执行,否则会丢弃书签)。
   const output = await setPdfMetadata(bookmarked, artifact.metadata);
-  await fs.writeFile(outputPath, output);
+  // 提交器在写最终路径前再查一次取消(此处到落盘之间仍有 await):取消则不产出文件。
+  return commitArtifact(preferredPath, output, { beforeCommit: () => throwIfCanceled(ctx) });
 }
 
 /**

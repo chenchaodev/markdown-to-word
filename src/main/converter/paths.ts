@@ -1,6 +1,6 @@
 /**
  * 路径收集与输出路径解析:
- * resolveOutputPath(重名序号/超长回落)、collectMarkdownPaths(目录递归收集)、
+ * resolveOutputPath(输出目录/超长回落)、collectMarkdownPaths(目录递归收集)、
  * filterExistingPaths(会话恢复保序过滤)。
  */
 import fs from "node:fs/promises";
@@ -16,20 +16,13 @@ export function stripMarkdownExt(name: string): string {
   return name.replace(MARKDOWN_EXT_RE, "");
 }
 
-export async function pathExists(p: string): Promise<boolean> {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * 解析输出路径:
+ * 解析输出首选路径:
  * - outputDir 空串 → 源文件同目录;非空 → outputDir(不存在则创建,失败回落源目录)
- * - 重名自动加序号「名 (2).ext」,绝不覆盖已有文件
  * - 超长路径(>250 字符)→ 回落源目录并警告(Windows MAX_PATH 限制,Electron 侧无解)
+ * - 不做存在性探测:重名序号「名 (2).ext」由产物提交器(artifact-writer)在独占创建时
+ *   遇 EEXIST 递增决定。写盘前先 stat 判空必然留下「判空 → 写盘」之间的 TOCTOU 窗口
+ *   (批量/多窗口/外部进程并发同名会互相覆盖),故探测逻辑已从本模块移出。
  * 返回 warnings 携带回落原因;调用方负责把 warnings 并入转换结果。
  */
 export async function resolveOutputPath(
@@ -63,11 +56,6 @@ export async function resolveOutputPath(
     });
     dir = srcDir;
     candidate = path.join(dir, `${name}${ext}`);
-  }
-  let i = 2;
-  while (await pathExists(candidate)) {
-    candidate = path.join(dir, `${name} (${i})${ext}`);
-    i++;
   }
   return { outputPath: candidate, warnings };
 }

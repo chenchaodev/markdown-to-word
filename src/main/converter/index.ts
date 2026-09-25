@@ -7,7 +7,8 @@
  * - single.ts:convertImpl + renderPdf + runAfterConvert(batch/merge 复用后两者)
  * - batch.ts:batchConvertImpl(并发 2 池)
  * - merge.ts:mergeConvertImpl(多文件合并单次转换)
- * - paths.ts:resolveOutputPath / collectMarkdownPaths / filterExistingPaths
+ * - paths.ts:resolveOutputPath(首选路径,不做存在性探测) / collectMarkdownPaths / filterExistingPaths
+ * - artifact-writer.ts:commitArtifact(同目录临时文件 + 硬链接独占提交,四种转换路径落盘唯一入口)
  * 定位 = 主进程编排层(非纯逻辑,纯逻辑在 src/core/):依赖 electron(app/BrowserWindow/shell)
  * 是允许的;converter 可 import persist/services/core,反向(persist/services
  * import converter)禁止,index.ts import converter。
@@ -18,8 +19,8 @@
 // 桶出口不再转手(消费方直连 core,避免双入口);本桶只导出实现。
 export { batchConvertImpl } from "./batch.js";
 export type { BuildConvertContextOptions, ConvertContext } from "./context.js";
-// throwIfCanceled 桶导出已删(消费方均直连 ./context.js,桶出口无外部消费者);
-// pathExists 同(paths.ts 内部使用,无外部消费者)。
+// throwIfCanceled 桶导出已删(消费方均直连 ./context.js,桶出口无外部消费者)。
+// commitArtifact 未入桶:消费方(single.ts)与测试经 dist 直连 artifact-writer.js。
 export {
   buildConvertContext,
   ConvertCanceledError,
