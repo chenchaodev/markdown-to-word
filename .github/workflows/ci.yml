@@ -32,8 +32,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Typecheck & lint
-        run: npm run typecheck && npm run lint
+      # E5 后 typecheck 含 test 树(tsconfig.test.json):测试 import dist/ 编译产物 → 须先 build(与 release.yml 同序)
+      - name: Build & typecheck & lint
+        run: npm run build && npm run typecheck && npm run lint
 
       # test 自带 build(tsc + copy-renderer);带覆盖率门槛(基线 93.92/88.84/93.15/93.92,
       # 阈值 90/85/90/90 = 低起点留开发余量防大面回归,渐进收紧;门槛与本地 test:coverage 单源)
@@ -66,5 +67,5 @@ jobs:
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Typecheck & build on Node 20 floor
-        run: npm run typecheck && npm run build
+      - name: Build & typecheck on Node 20 floor
+        run: npm run build && npm run typecheck

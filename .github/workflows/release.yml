@@ -50,8 +50,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
-      - name: Typecheck & lint
-        run: npm run typecheck && npm run lint
+      # E5 后 typecheck 含 test 树(tsconfig.test.json):测试 import dist/ 编译产物 → 须先 build
+      - name: Build & typecheck & lint
+        run: npm run build && npm run typecheck && npm run lint
 
       - name: Acceptance tests
         run: npm run test
