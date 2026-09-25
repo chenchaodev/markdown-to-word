@@ -7,11 +7,13 @@
 >
 > **已完成(不再执行)**:lockfile 版本 3.10.2→3.11.5 修正 + release.yml 四源版本门禁、ROADMAP D1/F8/F9 状态回写、ACCEPTANCE 陈旧副本删除、关于页更新提示验收关闭(U1-U3,2026-09-25 实测)、本地 tag 同步(v3.11.4/v3.11.5)。
 >
-> **仅有的两个决策点**:C4(core 零 IO 口径)、E2(smoke 断言治理),执行前需拍板方向。
+> **决策点状态**:C4(core 零 IO 口径)已拍板 ①a 最小注入并随 C 批完成;仅剩 E2(smoke 断言治理),恢复开发后执行前需拍板。
 >
 > **A 批完成(2026-09-25)**:A1 段数订正(STATUS/ci.yml → 69 段,实测 60 segments + 9 main)、A2 沉没债补登记(ROADMAP「已知限制」节:契约类型归位 core[候选池 E1 本就在册]+ test 段归位)、A3 coverage/tmp 残留 JSON 清理、A4 G1-G9 盘点**全部关闭**(G1-G8 断言证据齐全,G9 维持不补;关闭记录写入 RESEARCH 2026-08-15 条目 + 候选池 E2 状态回写);A5 留待随 B2。纯文档/chore 提交。
 >
 > **B 批完成(2026-09-25,每批一提交)**:B1 about 外链 IPC 收口进 channels 单源(about-preload 侧内镜像 + ipc-channels 段双向断言扩展)、B3 日字典 Partial→satisfies 全量锁(441 键编译期锁定 + 过时口径同步)、B4 令牌破例清零(switch 拨钮/钤印内环/抽屉投影三令牌化 + 关于窗原生底色经 nativeTheme 随系统主题,ui-guidelines 令牌表同步)、B2+A5 关于窗 `sandbox: false→true`(调研结论:preload 仅依赖 electron 白名单、脚本全外部、链接经 IPC 外开,均沙箱兼容)+ about.html CSP 与主窗同口径(一次性脚本 13 项断言:preload API/CSP 生效/IPC 往返/深浅主题/console 零 violation)、B5 深色双块恒等断言段(**修法偏离原案并声明**:「合并选择器组」受 CSS 语法限制不可行、「生成式去重」对过渡态块过重,改镜像+恒等断言与 preload 同构,段数 69→70)。全量 70 段 + typecheck/lint + ui:shots 双主题抽查全绿;**B2 三项人工实测 2026-09-25 通过(ACCEPTANCE「关于窗沙箱与 CSP 验收记录」关闭)**。
+>
+> **C 批完成(2026-09-25,每批一提交)**:C3 水印色三处与表格边框色收 `core/style/colors.ts`/theme 单源、C2 hljs 30 色板抽 `core/style/hljs-palette.ts` 共享常量(docx handler 与 pdf CSS 双侧引用)、C1 警告去重抽 i18n 共享 `warnDedupKey`+`pushWarningOnce`(docx ctx 改薄封装,pdf equation/xref/image 三处自建 Set 归零)、C4 决策点拍板 **①a 最小注入**——`loadKatexCss` 增 `deps.read` 注入与 precheck `exists` 同构(默认 readFileSync),DEV-GUIDE「零 IO」口径订正为「常态零 IO + 两处 fs 访问依赖注入默认值」,formula 段补注入断言。每批核心回归:全量 typecheck/lint/70 段 + smoke 全绿。**C5 并入 D4 不单独做 → 封版期 A/B/C 三批全部完成,剩余 D/E 待恢复开发。**
 
 ---
 
@@ -108,4 +110,4 @@
 不做/冻结:R1 双管线合并(勿动)、E2 全量化
 ```
 
-**总计**:已完成 **9 项**(A 批 4 项 + A5 随 B2 + B 批 5 项);剩余 **C4 项(C5 并入 D4)+ D6 项 + E5 项 = 15 项**,均待恢复开发(C 批封版期可选,C4 执行前需先拍板)。
+**总计**:已完成 **13 项**(A 批 4 项 + A5 随 B2 + B 批 5 项 + C 批 4 项,其中 C4 拍板 ①a);剩余 **D6 项(C5 并入 D4)+ E5 项 = 11 项**,均待恢复开发(决策点仅剩 E2)。

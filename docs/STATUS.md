@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 C 批完成(core 双源收敛 + 零 IO 口径,封版期 A/B/C 三批全部收官)**(C3 水印色三处+表格边框色收 `core/style/colors.ts`/theme 单源;C2 hljs 30 色板抽 `core/style/hljs-palette.ts` 共享常量,docx/pdf 双侧引用;C1 警告去重抽 i18n 共享 `warnDedupKey`/`pushWarningOnce`,docx ctx 薄封装+pdf equation/xref/image 三处自建 Set 归零;C4 决策点拍板 **①a 最小注入**:`loadKatexCss` 增 `deps.read` 注入与 precheck 同构、DEV-GUIDE「零 IO」口径订正「常态零 IO+两处注入默认值」;每批核心回归,全量 typecheck/lint/70 段/smoke 全绿;C5 并入 D4;自动断言见 test/segments/{watermark,table-width,code-highlight,i18n,eq-numbering,image-size,formula}.test.js)
+
 - 2026-09-25:**技术债 B 批完成**(B1 about 外链 IPC 收口 channels 单源+镜像恒等;B3 ja 字典 satisfies 全量锁 441 键;B4 令牌破例清零[新增 --switch-knob/--seal-ring/--shadow-drawer]+关于窗底色随系统主题;B2+A5 关于窗 sandbox:true+CSP 与主窗同口径[一次性脚本 13 项断言];B5 深色双块恒等断言段,段数 69→70;typecheck/lint/70 段全绿+ui:shots 双主题抽查;GUI 实测通过 2026-09-25,ACCEPTANCE「关于窗沙箱与 CSP」3 项全勾关闭)
 
 - 2026-09-25:**技术债 A 批完成**(A1 段数订正 STATUS/ci.yml→69 段;A2 沉没债补登记 ROADMAP「已知限制」:契约类型归位 core+test 段归位;A3 coverage/tmp 残留清理;A4 G1-G9 盘点全部关闭[G1-G8 断言证据齐全,G9 维持不补,关闭记录入 RESEARCH+候选池 E2];A5 关于窗 CSP 随 B2;纯文档提交,typecheck/lint 基线见下条)
