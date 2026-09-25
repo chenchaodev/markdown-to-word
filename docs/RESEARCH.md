@@ -3,6 +3,12 @@
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 > **路径迁移注记(2026-08-24)**:目录结构重组(2026-08-23,提交 6f3d72a~9909d74)前历史条目「关联」字段中的扁平路径已失效——对照关系:`src/settings.ts`→`src/main/persist/settings.ts`、`src/index.ts`→`src/main/`(拆 windows/ipc/menu/converter/persist/services)、`src/renderer.ts`→`src/renderer/renderer.ts`+六功能域、`src/core/{i18n-dict}.ts`→`src/core/i18n/`、core 根级散文件→`pipeline/markdown/image/settings/util/` 子域。时间戳记录按规约不改写原文。
 
+### 2026-09-25 E5 双配置 typecheck 的 CI 顺序依赖(3.11.8 发版踩坑)
+- **结论**:test 树 typecheck(`tsconfig.test.json`)编译期 import `dist/**` 编译产物 → 任何全新工作区(CI runner / 清空 dist 的本地)必须先 `npm run build` 再 typecheck,否则批量报 TS2307 Cannot find module,且未标注文件连带 TS7006(类型解析失败致隐式 any);本地因常驻 dist 不复现。
+- **理由**:E5 按文件头 `// @ts-check` 渐进启用(checkJs:false),类型需 dist 下实际 .js;测试文件相对路径 import(`../../dist/...`)无法经 tsconfig paths 重映射回 src,故正解为顺序修复(构建先行),不做路径改造。
+- **来源**:3.11.8 首次发版 Release 与 CI 双失败(2026-09-25,TS2307 批量报错日志);本地双配置 typecheck 全绿反证 dist 存在性;E5 当时仅本地验证未跑远端 CI 即随批推送。
+- **关联**:修复 = `.github/workflows` 三处步骤 build 先行(release.yml 主 job、ci.yml 主 job、ci.yml Node20 地板 job,提交 d75fe3f);发版记录见 STATUS 顶栏 3.11.8 条目。
+
 ### 2026-09-25 00:47:12 四路代码分析盘点(core / GUI / 测试工程化 / 文档状态)
 - **结论**:全库健康度良好、无阻塞性缺陷(契约单源/安全基线/测试恒等守护突出);核心发现:①双管线平行实现 + 警告去重/hljs 配色多处双源(仅测试护栏,候选池标「勿动」不合并)②GUI 超 500 行 TS 三文件(book-wizard 967/settings-bindings 710/settings-panel 560)、`about:open-external` 游离 IPC 单源、关于窗 sandbox:false 全仓唯一 ③覆盖率无门槛不进 CI + G1-G9 分支缺口未关闭、smoke 硬编码断言有 flaky 风险 ④lockfile 版本漂移(当场修复 + release.yml 三方校验门禁)与文档状态矛盾(ROADMAP D1/F8/F9、ACCEPTANCE 陈旧副本、关于页口径,均已回写关闭)
 - **处置**:剩余约 20 项分 A(封版期维护)/B(安全契约收口)/C(core 双源收敛)/D(结构重构)/E(测试增强)五阶段排期——**五批 24 项全部完成(2026-09-25)**,决策点 C4 拍板 ①a 最小注入、E2 拍板「仅动等待,计数全保留」均随批完成;计划收官归档(见「关联」),遗留渐进/冻结/限制三类处置随需求管道重组(同日)集中入 BACKLOG(项目 backlog)
