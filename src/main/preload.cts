@@ -8,11 +8,10 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppSettings, ExportPresetsResult, ImportDocxTemplateResult, ImportPdfCssResult, ImportPresetsResult } from "./persist/settings.js";
 import type { ConvertWarning } from "../core/i18n.js";
-import type { ConvertProgressPayload } from "./ipc/channels.js";
 import type { ClipboardReadResult } from "./ipc/types.js";
-import type { UiState } from "./persist/ui-state.js";
-// 批量进度 payload 类型单源 converter/batch.ts(原内联 shape 三份镜像清零)
-import type { BatchProgressInfo, BatchResult } from "./converter/batch.js";
+// 跨进程契约类型(ConvertProgressPayload/UiState/Batch*)单源 core/ipc-contract.ts
+// (契约收敛 core 后 renderer 侧不再 type-only 反向 import main;编译期擦除)
+import type { BatchProgressInfo, BatchResult, ConvertProgressPayload, UiState } from "../core/ipc-contract.js";
 import type { ConvertResult } from "./converter/merge.js";
 import type { DocMetadata } from "../core/pipeline/frontmatter.js";
 

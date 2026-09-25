@@ -3,7 +3,8 @@
  * 读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片绝对化)→ 单次 convert。
  */
 import path from "node:path";
-import { convert, type ConvertFormat } from "../../core/convert.js";
+import { convert } from "../../core/convert.js";
+import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";

@@ -1,22 +1,21 @@
 /**
  * renderer 共享可变状态(单一来源)与 IPC 契约类型。
  * 不变量:全部模块级可变状态收敛于此,feature 模块只经本模块读写,不各自持有副本;
- * 批量契约类型(BatchItem/BatchProgressInfo/BatchResult)单源 main/converter/batch.ts,
+ * 批量契约类型(BatchItem/BatchProgressInfo/BatchResult)单源 core/ipc-contract.ts,
  * 本模块 re-export 保持既有导入路径(编译期擦除,无运行时依赖)。
  */
 import { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
-import type { BatchItem, BatchProgressInfo, BatchResult } from "../../main/converter/batch.js";
-import type { ConvertProgressPayload } from "../../main/ipc/channels.js";
+import type { BatchItem, BatchProgressInfo, BatchResult, ConvertProgressPayload } from "../../core/ipc-contract.js";
 
 /* ---------- 批量 / 合并契约类型 ---------- */
-/** convert:progress 事件 payload(类型单源 main/ipc-channels.ts)。 */
+/** convert:progress 事件 payload(类型单源 core/ipc-contract.ts)。 */
 export type { ConvertProgressPayload };
 
 /**
  * 批量契约类型单源:BatchProgressInfo/BatchItem/BatchResult 收敛
- * main/converter/batch.ts(主进程实现侧),本模块 re-export 保持既有导入路径
+ * core/ipc-contract.ts(跨进程契约层),本模块 re-export 保持既有导入路径
  * (renderer 各模块仍从 state.js 取用,编译期擦除无运行时依赖);
- * preload.cts 同样从 batch.ts import type——三份内联镜像清零。
+ * preload.cts 同样从 core import type——renderer→main 反向依赖清零。
  */
 export type { BatchItem, BatchProgressInfo, BatchResult };
 

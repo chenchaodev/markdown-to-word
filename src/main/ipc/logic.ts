@@ -4,10 +4,10 @@
  * 约定:只放不依赖 electron API 的纯逻辑;对话框/文件 IO/窗口/持久化留在 register.ts 薄壳。
  */
 import path from "node:path";
-import type { ConvertFormat } from "../../core/convert.js";
+import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { CustomPreset } from "../../core/settings/settings-defaults.js";
+import type { RecentFile } from "../../core/ipc-contract.js";
 import { mergePresets, parsePresetsFile } from "../persist/settings.js";
-import type { RecentFile } from "../persist/ui-state.js";
 import type { ConvertContext } from "../converter/index.js";
 import { stripMarkdownExt } from "../converter/paths.js";
 

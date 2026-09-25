@@ -5,7 +5,8 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ConvertFormat } from "../../core/convert.js";
+import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
+import type { BatchProgressInfo, BatchResult, ConvertMode, UiState } from "../../core/ipc-contract.js";
 import { t } from "../../core/i18n.js";
 import { precheckMarkdown } from "../../core/markdown/precheck.js";
 import type { ConvertWarning } from "../../core/i18n.js";
@@ -30,11 +31,7 @@ import {
   type ImportPdfCssResult,
   type ImportPresetsResult,
 } from "../persist/settings.js";
-import {
-  loadUiState,
-  saveUiState,
-  type UiState,
-} from "../persist/ui-state.js";
+import { loadUiState, saveUiState } from "../persist/ui-state.js";
 import {
   batchConvertImpl,
   collectMarkdownPaths,
@@ -43,8 +40,6 @@ import {
   createConvertContext,
   filterExistingPaths,
   mergeConvertImpl,
-  type BatchProgressInfo,
-  type BatchResult,
   type ConvertContext,
   type ConvertResult,
 } from "../converter/index.js";
@@ -53,7 +48,7 @@ import { importDocxTemplate } from "../../core/docx/template-import.js";
 import { parseFrontmatter, type DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { getMainWindow } from "../windows/main-window.js";
 import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
-import { IPC_CHANNELS as CH, type ConvertMode } from "./channels.js";
+import { IPC_CHANNELS as CH } from "./channels.js";
 import { writeTempMarkdown } from "../services/temp-html.js";
 import type { ClipboardReadResult } from "./types.js";
 import { openPreviewWindow, previews, refreshPreviewWindow } from "../windows/preview.js";

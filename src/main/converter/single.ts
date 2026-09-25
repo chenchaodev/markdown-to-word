@@ -5,7 +5,9 @@
 import { BrowserWindow, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { convert, type ConvertFormat, type PdfArtifact } from "../../core/convert.js";
+import { convert } from "../../core/convert.js";
+import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
+import type { PdfArtifact } from "../../core/convert.js";
 import { decodeMarkdown } from "../../core/util/encoding.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";

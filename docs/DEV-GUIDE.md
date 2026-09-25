@@ -56,7 +56,8 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 
 ## 代码地图
 - `src/core/` 纯转换逻辑,常态零 IO(仅 precheck exists / loadKatexCss read 两处 fs 访问经依赖注入),可测试
-  - `convert.ts`:格式注册表 + `convert(md, format, options)` 统一入口(pdf 分支不构建 remark AST)
+  - `convert.ts`:格式注册表 + `convert(md, format, options)` 统一入口(pdf 分支不构建 remark AST;页面设置/ConvertFormat 契约单源在 settings-defaults,不在此转手)
+  - `ipc-contract.ts`:跨进程契约类型单源(ConvertProgressPayload/ConvertMode、BatchItem/BatchProgressInfo/BatchResult、UiState/RecentFile 等纯数据形状;main 实现侧与 renderer 共同 import,type-only 编译期擦除,消除 renderer→main 反向依赖)
   - `pipeline/`:`parse.ts`(remark→mdast)/`frontmatter.ts`(YAML 手写解析)/`merge.ts`(多文件合并)
   - `markdown/`:`slug.ts`/`cross-ref.ts`(交叉引用契约正则族单源)/`heading-numbering.ts`(标题编号计数共享纯函数)/`html-whitelist.ts`(行内 HTML 白名单 docx/pdf 单源)/`comment.ts`(批注语法 remark 插件)/`mermaid.ts`/`ai-cleanup.ts`(AI 输出清理)/`obsidian.ts`(Obsidian 双链兼容)/`precheck.ts`(转换前预检)/`image-size.ts`(图片尺寸属性解析)/`table-width.ts`(表格列宽信号解析)
   - `image/`:`image-resolver.ts`(类型+optional exists)/`image-type.ts`(魔数嗅探)/`image-warning.ts`(警告工厂)

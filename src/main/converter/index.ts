@@ -14,7 +14,8 @@
  * 取消语义:每次调用新建 ConvertContext(取消标志不复用,根治历史 bug fd40480/f809c57
  * 全局可变状态跨调用残留)。
  */
-export type { BatchItem, BatchProgressInfo, BatchResult } from "./batch.js";
+// 批量契约类型(BatchItem/BatchProgressInfo/BatchResult)单源 core/ipc-contract.ts,
+// 桶出口不再转手(消费方直连 core,避免双入口);本桶只导出实现。
 export { batchConvertImpl } from "./batch.js";
 export type { BuildConvertContextOptions, ConvertContext } from "./context.js";
 // throwIfCanceled 桶导出已删(消费方均直连 ./context.js,桶出口无外部消费者);

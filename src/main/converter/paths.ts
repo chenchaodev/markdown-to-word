@@ -5,7 +5,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ConvertFormat } from "../../core/convert.js";
+import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 
 /** markdown 扩展名判定单源: .md / .markdown,大小写不敏感。 */

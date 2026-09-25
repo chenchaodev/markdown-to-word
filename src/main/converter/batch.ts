@@ -1,39 +1,14 @@
 /**
  * 批量转换实现:
  * 并发上限 2 的简单池,每文件独立 convertImpl,失败不中断。
+ * 返回/进度类型契约(BatchResult/BatchItem/BatchProgressInfo)单源 core/ipc-contract.ts。
  */
 import path from "node:path";
-import type { ConvertFormat } from "../../core/convert.js";
-import type { ConvertWarning } from "../../core/i18n.js";
+import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
+import type { BatchItem, BatchProgressInfo, BatchResult } from "../../core/ipc-contract.js";
 import { loadSettings } from "../persist/settings.js";
 import { ConvertCanceledError, createConvertContext, type ConvertContext } from "./context.js";
 import { convertImpl, runAfterConvert } from "./single.js";
-
-export interface BatchProgressInfo {
-  index: number;
-  total: number;
-  file: string;
-  stage: string;
-}
-
-export interface BatchItem {
-  file: string;
-  ok: boolean;
-  outputPath?: string;
-  error?: string;
-  warnings?: ConvertWarning[];
-  /** 用户主动取消(未开始即跳过) */
-  canceled?: boolean;
-}
-
-export interface BatchResult {
-  ok: true;
-  items: BatchItem[];
-  okCount: number;
-  failCount: number;
-  /** 用户主动取消的未开始项数量 */
-  canceledCount: number;
-}
 
 /**
  * 批量转换:并发上限 2 的简单池,每文件独立 convertImpl,失败不中断。

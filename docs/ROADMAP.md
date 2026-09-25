@@ -180,7 +180,7 @@
 - **printToPDF 产物图片显示无法自动化断言**:smoke 可见图人工验证(维持人工不自动化)
 - **renderer 交互 / IPC dialog / preview 生命周期**:维持 GUI 实测,不自动化(见「维持人工不自动化」节)
 - **docx 侧任务列表无 checkbox 视觉**:设计如此(与 pdf ☐/☑ 字符替代不同)
-- **契约类型寄居 main 反向依赖**(RESEARCH 2026-08-24 P1):ConvertProgressPayload/ConvertMode/UiState/RecentFile 被 renderer type-only import,建议迁 core(如 core/ipc-contract.ts);候选池 E1 在册,处置计划 D4(恢复开发后)——2026-09-25 技术债 A2 补登记
+- [x] **契约类型寄居 main 反向依赖**(RESEARCH 2026-08-24 P1;候选池 E1;处置计划 D4):ConvertProgressPayload/ConvertMode/UiState/RecentFile 被 renderer type-only import 构成 renderer→main 反向依赖——**已完成(2026-09-25 D4,随行 C5 re-export 收口)**:新建 `core/ipc-contract.ts` 承载全部跨进程契约(ConvertProgressPayload/ConvertMode + BatchItem/BatchProgressInfo/BatchResult + UiState/PanelOpen/WindowBounds/RecentFile),main 侧(channels/persist/converter)与 renderer 侧共同 import 单源;renderer→main import 清零(仅剩 renderer.ts 的 `type PreloadApi`,属 preload「实现即契约」推导设计,评审未列入迁移范围,维持不动);C5 并入清理:core/convert.ts 的 DEFAULT_*/ConvertFormat re-export 双入口删除,消费点直连 settings-defaults(6 处 main + 1 处测试)
 - [x] **test 段归位**(RESEARCH 2026-08-24 P2;处置计划 D5):ipc-channels/ipc-logic/image-downloader/presets-import 四段 main 直测住 segments/,settings-logic/renderer-pure 应入 test/renderer/(需扩 acceptance.mjs 自动发现根)——**已完成(2026-09-25 D5,用户裁定「全量镜像三层」口径)**:test 树镜像 src 分层,9 个 main 主题段→test/main/、4 个 renderer 主题段(renderer-pure/settings-logic/wizard-state/dark-token-parity)→test/renderer/(acceptance.mjs 扩第三发现根),segments 只留 core 渲染主题与跨层契约守护(identity-guards/i18n-registry/heading-scale);目录组织标准三条并存改为镜像三层,AGENTS/DEV-GUIDE/acceptance 头注释/指针同步,段数 70 不变(48+18+4)
 
 ### 候选池晋升待办（2026-08-29 从 ROADMAP-CANDIDATES 挑选，规划即契约）

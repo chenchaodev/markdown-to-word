@@ -33,19 +33,8 @@ import type { HeaderLogoData } from "./docx/chrome.js";
 import type { MermaidResolver } from "./markdown/mermaid.js";
 // 契约单源:ImageResolver 类型收敛于 core/image/image-resolver.ts(此处仅类型导入)
 import type { ImageResolver } from "./image/image-resolver.js";
-// 页面设置契约单源在 settings-defaults.ts;此处 re-export 默认值与类型,
-// 以兼容下游直接从 core/convert 取默认值的既有写法(docx/pdf render、main、测试)。
-export {
-  DEFAULT_PAGE_SETUP,
-  DEFAULT_HEADER_FOOTER,
-  DEFAULT_WATERMARK,
-  type PageSetup,
-  type HeaderFooterSettings,
-  type WatermarkSettings,
-} from "./settings/settings-defaults.js";
-// ConvertFormat 单源在 settings-defaults.ts(收敛平行类型残留);
-// re-export 以兼容 main 侧既有从 core/convert 导入 ConvertFormat 的写法。
-export type { ConvertFormat } from "./settings/settings-defaults.js";
+// 页面设置与格式契约单源在 settings-defaults.ts;本文件不再转手 re-export(双入口
+// 已清):下游(main/测试)一律直连 settings-defaults 取类型与默认值。
 import type { ConvertFormat, PageSetup, TocMode } from "./settings/settings-defaults.js";
 import {
   DEFAULT_HEADER_FOOTER,

@@ -38,6 +38,7 @@
 - **P1 契约类型归位**:`main/ipc/channels.ts` 的 ConvertProgressPayload/ConvertMode 类型与 `main/persist/ui-state.ts` 的 UiState/RecentFile 类型均被 renderer type-only import(1+3 处),构成 renderer→main 反向依赖;建议迁 core(如 core/ipc-contract.ts),channel 常量/IO 实现留 main;可与 BatchResult/BatchItem 收敛合并为同一「契约归位」迭代
 - **P2 test 归位**:segments/ 里 ipc-channels/ipc-logic/image-downloader/presets-import 四段实为直测 dist/main → 应入 test/main/;settings-logic/renderer-pure 两段直测 dist/renderer → 新建 test/renderer/(需同步扩展 acceptance.mjs 自动发现根);pdf-css-sample.css 零引用应入 fixtures/manual/
 - **口径冲突**:本评审「test 部分镜像 src」与 0823 方案裁定「segments 主题式命名不镜像 src」相抵,实施前需用户裁定,采纳则同步改 acceptance.mjs 头注释与 AGENTS.md 测试体系描述
+- **处置(2026-09-25,技术债 D4/D5 落地)**:P1 契约类型归位已完成——新建 core/ipc-contract.ts 承载 ConvertProgressPayload/ConvertMode/UiState/RecentFile(+Batch 三类型同迭代合并),channel 常量/IO 实现留 main,renderer→main type-only 反向依赖清零(仅 PreloadApi 维持实现推导);P2 test 归位已完成——用户裁定「全量镜像三层」口径(超出本评审的部分镜像:9 个 main 主题段+4 个 renderer 主题段全迁,acceptance.mjs 扩第三发现根),pdf-css-sample.css 已随 A3 清理(零引用无搬移必要);口径冲突经用户裁定关闭
 - **确认合理不动**:mermaid 三同名各归其位(可改名澄清如 pdf/mermaid-placeholder.ts);pipeline/merge vs converter/merge 同名但纯函数 vs IO 分层正确;i18n/settings 三处/image-downloader(IO 属 main)/lang-bootstrap.js/preload.cts/dom 单文件/fixtures 双份 png 均有技术理由
 - 来源: @oracle ora-1(全量结构+约 20 文件头部核实);关联: 原文存档 docs/archive/20260824-022655-目录结构评审.md;前序: docs/archive/20260823-230554-目录结构优化方案.md
 

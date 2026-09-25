@@ -28,7 +28,7 @@
  */
 import fs from "node:fs/promises";
 import { app } from "electron";
-import { DEFAULT_PAGE_SETUP } from "../../dist/core/convert.js";
+import { DEFAULT_PAGE_SETUP } from "../../dist/core/settings/settings-defaults.js";
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 

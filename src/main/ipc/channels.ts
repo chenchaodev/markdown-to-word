@@ -3,21 +3,12 @@
  * - 全部 channel 统一「域:动作」命名(域在前,动宾序一致;历史混名的
  *   import:pdf-css → css:import、dialog:openMarkdowns → file:openDialog 等已归位);
  * - main/index.ts 的 handle/send 一律经本模块引用,禁止散落字符串字面量;
+ * - 事件 payload 形状契约(ConvertProgressPayload/ConvertMode)在 core/ipc-contract.ts
+ *   (跨进程契约收敛 core,channel 常量与 handle 实现留 main);
  * - preload.cts 因沙箱隔离(sandbox:true 下 preload.cjs 只能 require electron,
  *   无法在运行时加载本项目 ESM 模块)无法直接 import 本文件,侧内镜像同名常量,
  *   漂移由 test/main/ipc-channels.test.js 对 dist 双侧提取恒等断言兜底。
  */
-
-/** 转换模式标识(convert:progress payload.mode;批量走 convert:batchProgress 独立通道,mode 预留)。 */
-export type ConvertMode = "single" | "batch" | "merge";
-
-/** convert:progress 事件 payload(main → renderer 推送)。 */
-export interface ConvertProgressPayload {
-  /** 阶段键(read/render/done + pdf 细分 parse/inline/mermaid/katex/print) */
-  stage: string;
-  /** 发起本次转换的入口模式(renderer 直接消费,不再按调用上下文推断) */
-  mode: ConvertMode;
-}
 
 export const IPC_CHANNELS = {
   /* ---- 文件域 ---- */

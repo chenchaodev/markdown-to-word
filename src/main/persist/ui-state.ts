@@ -22,46 +22,8 @@ import { app } from "electron";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createJsonWriter } from "./atomic-json.js";
-
-export interface RecentFile {
-  path: string;
-  name: string;
-  format: "docx" | "pdf";
-  ts: number;
-}
-
-export interface PanelOpen {
-  page: boolean;
-  typography: boolean;
-}
-
-export interface WindowBounds {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface UiState {
-  recentFiles: RecentFile[];
-  lastSessionFiles: string[];
-  lastOpenDir: string;
-  windowBounds: WindowBounds | null;
-  /** 预览窗口位置(独立 key,恢复时经 pickWindowBounds 钳制)。 */
-  previewWindowBounds: WindowBounds | null;
-  /** 关闭时窗口是否最大化(恢复时 maximize();windowBounds 存 getNormalBounds() 还原态尺寸)。 */
-  isMaximized: boolean;
-  panelOpen: PanelOpen;
-  /** 转换完成弹窗「不再提示」(true = 跳过弹窗,汇总条照常)。
-   *  默认翻转为 true(不弹)——内联反馈已完备,模态打断流;
-   *  已持久化的布尔值(用户显式选过弹窗=false)原样尊重,仅缺省/非法时落默认。 */
-  suppressCompleteDialog: boolean;
-  /** 首启引导标志:true = 尚未引导过(纯净首次启动),引导跳过/关闭后置 false。
-   *  与设置偏好分离,不污染 settings.json;持久化落 ui-state.json。
-   *  迁移语义见 loadUiState:已存在 ui-state.json 的老用户(文件存在但无本字段)
-   *  视为已用过,不再弹首启引导;仅"文件不存在"的纯净首次启动才默认 true。 */
-  firstRun: boolean;
-}
+// 形状契约单源 core/ipc-contract.ts(跨进程共享),本模块只做 IO/校验/默认值
+import type { PanelOpen, RecentFile, UiState, WindowBounds } from "../../core/ipc-contract.js";
 
 export const DEFAULT_UI_STATE: UiState = {
   recentFiles: [],

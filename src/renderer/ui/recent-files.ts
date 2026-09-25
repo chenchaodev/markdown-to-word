@@ -13,7 +13,7 @@ import {
   recentList,
   statusEl,
 } from "../dom/refs.js";
-import type { RecentFile, UiState } from "../../main/persist/ui-state.js";
+import type { RecentFile, UiState } from "../../core/ipc-contract.js";
 import { applySelection } from "../convert/file-list.js";
 import { runConvert } from "../convert/convert-flow.js";
 import { baseName, errorMessage, formatRecentTime } from "../state/pure.js";

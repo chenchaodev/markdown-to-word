@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- 2026-09-25:**技术债 D4/C5 完成(跨进程契约类型归位 core + convert.ts 双入口收口)**:新建 `core/ipc-contract.ts` 单源承载全部跨进程契约(ConvertProgressPayload/ConvertMode、BatchItem/BatchProgressInfo/BatchResult、UiState/PanelOpen/WindowBounds/RecentFile),main 侧(channels/persist/converter)与 renderer 侧共同 import 同一契约,renderer→main type-only 反向依赖清零——仅剩 `renderer.ts` 的 `type PreloadApi`,属 preload「实现即契约」推导设计(评审 P1 未列入迁移范围,维持不动并声明);C5 并入:`core/convert.ts` 的 DEFAULT_*/ConvertFormat re-export 双入口删除,7 处消费点(6 main + 1 测试)直连 settings-defaults;RESEARCH 2026-08-24 条目补处置行(P1/P2/口径冲突关闭)、候选池 E1 状态回写、ROADMAP 已知限制关闭、DEV-GUIDE 代码地图增列;typecheck/lint/build/70 段/smoke 全绿
+
 - 2026-09-25:**技术债 D6 完成(打开对话框样板收口 + compareVersions 单源化)**:抽 `selectAndRememberDir` 助手,四处 handler(fileOpenDialog/dirSelect/headerLogoSelect/templateImportDocx)的「开对话框→默认目录回落→记忆所选」三连样板收口;**行为等价偏离声明**:模板导入的目录记忆时机由「处理成功后」提前为「选择成功即记忆」(读取失败也记住刚浏览的位置),importFileViaDialog 维持原有「处理失败跳过记忆」语义;`compareVersions` 自 register.ts 下沉 `ipc/logic.ts` 纯逻辑层,`about-update` 段的内联同逻辑副本删除、改直测 dist 真实实现(双源清零)并按镜像口径归位 `test/main/`(段分布 47+19+4);typecheck/lint/70 段/smoke 全绿
 - 2026-09-25:**技术债 D 批开工,D5 test 段归位完成(用户裁定「全量镜像三层」口径)**:test 树镜像 src 分层——9 个 main 主题段→`test/main/`、4 个 renderer 主题段→新建 `test/renderer/`(acceptance.mjs 扩第三发现根),segments 只留 48 个 core 渲染主题与跨层契约守护段;目录组织标准由「三条并存」改镜像三层(AGENTS/DEV-GUIDE/acceptance·runner 头注释与 6 处指针同步);eslint `allowDefaultProject` 手工清单补 `test/renderer/*.js`(E4 风险实证);段数 70 不变(48+18+4),typecheck/lint/70 段/smoke 全绿;后续 D6→D4/C5→D3→D2→D1 逐项独立提交
 - 2026-09-25:**发版 3.11.6 完成**(技术债 A/B/C 三批随版发布,封版期维护批收官;四源同号 package.json=lockfile=tag v3.11.6=CHANGELOG [3.11.6];typecheck/lint/70 段/smoke 全绿;GitHub Release 资产 MarkdownToWord-Setup-3.11.6.exe + latest.yml,Release 四源门禁与 CI 流水线均 success)
