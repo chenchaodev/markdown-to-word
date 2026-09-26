@@ -34,6 +34,7 @@ date: 2026-08-05
 
 [^2]: 第二个脚注,中文内容。
 `;
+export const meta = { description: "脚注 + 页眉页脚验收(补页眉/页脚内容断言):" };
 export const fixtures = { main: footnoteMd };
 
 /** 脚注 + 页眉页脚验收 */

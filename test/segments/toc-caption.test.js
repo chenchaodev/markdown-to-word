@@ -51,6 +51,7 @@ const batch8Md = `# 第一章
 
 图: 第二章开头无图的孤立题注(普通段落)
 `;
+export const meta = { description: "TOC 静态目录 + 图/表题注编号测试:" };
 export const fixtures = { main: batch8Md };
 
 export async function run() {

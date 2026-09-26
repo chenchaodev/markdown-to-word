@@ -33,6 +33,7 @@ const bracketInput = [
 ];
 const bracketMerged = mergeMarkdowns(bracketInput);
 const bracketMd = bracketMerged; // 合并输出已是相对引用,可直接作为 fixture
+export const meta = { description: "合并段:FIXTURES_DIR/manual 全部 .md(含 chapters/ 子目录)→ 合并 → PDF → 书签注入 + 元数据。" };
 export const fixtures = { main: bracketMd };
 
 export async function run() {

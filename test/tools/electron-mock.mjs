@@ -4,6 +4,11 @@
  * electron 包是 CJS(默认导出 exe 路径字符串),命名导入会抛 SyntaxError;
  * 段模块依赖链(如 test/common/pdf-utils.js 的 BrowserWindow)需要命名导出,
  * 但模块顶层只做 import 声明、方法在 run() 内才被调用,空实现即可满足。
+ *
+ * 边界契约:本文件的命名导出集合必须覆盖 src/main、src/core 对 electron 的全部
+ * 具名 import(type-only 说明符已被编译期擦除,不需要 mock)。缺项会让依赖该模块的
+ * 测试段在纯 Node 下 import 失败,静态守护见 test/segments/electron-mock-coverage.test.js
+ * ——新增/删除导出前先跑该段,别等 check:fixtures 报运行期错误。
  */
 export const app = {
   getPath: () => "",
@@ -60,6 +65,8 @@ export const screen = {
 };
 export const Menu = { buildFromTemplate: () => ({ popup: () => {}, append: () => {} }) };
 export const contextBridge = { exposeInMainWorld: () => {} };
+export const nativeTheme = { shouldUseDarkColors: false, themeSource: "system" };
+export const webUtils = { getPathForFile: () => "" };
 export const protocol = { registerFileProtocol: () => {}, handle: () => {} };
 export const net = { isOnline: () => true };
 export const session = { defaultSession: null, fromPartition: () => null };

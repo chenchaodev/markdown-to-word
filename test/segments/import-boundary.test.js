@@ -144,6 +144,9 @@ function layerOf(file, spec) {
   return joined.split("/")[0];
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const sandboxes = [];
   const track = (dir) => {

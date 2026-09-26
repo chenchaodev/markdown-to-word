@@ -39,6 +39,7 @@ const MD_OK = "# 图表\n\n```mermaid\ngraph TD\n  A-->B\n```\n";
 const MD_SPECIAL = '# 图\n\n```mermaid\ngraph TD; A["<x> & \'q\'"]\n```\n';
 const MD_JS = "# 代码\n\n```js\nconst a = 1;\n```\n";
 
+export const meta = { description: "Mermaid 渲染 core 层契约测试:" };
 // 场景样例导出(gen-fixtures 落盘为 acceptance/mermaid[-special|-js].md):
 // main = mermaid 围栏主样例;special = 特殊字符围栏;js = 非 mermaid 围栏
 export const fixtures = {

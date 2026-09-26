@@ -27,6 +27,7 @@ date: 2026-08-10
 
 这是封面验收文档的正文内容。
 `;
+export const meta = { description: "封面页测试(双格式,新段):" };
 export const fixtures = { main: coverMd };
 
 export async function run() {

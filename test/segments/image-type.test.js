@@ -51,6 +51,9 @@ function assertEq(actual, expected, label) {
   }
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 /** image-type.ts 三函数单测 */
 export async function run() {
   // ---------- sniffImageType:魔数判定 + 未知/截断回退 ----------

@@ -1,6 +1,9 @@
 // @ts-check
 import { cleanupMarkdown } from "../../dist/core/markdown/ai-cleanup.js";
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // 智能引号归一（' ' " " → ' "）
   const q = cleanupMarkdown("他说\u2018你好\u2019和\u201C世界\u201D");

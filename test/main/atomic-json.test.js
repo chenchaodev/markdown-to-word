@@ -20,6 +20,9 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`atomic-json 断言失败:${msg}`);
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const dir = path.join(os.tmpdir(), `m2w-atomic-json-${process.pid}`);
   await fs.mkdir(dir, { recursive: true });

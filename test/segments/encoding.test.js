@@ -9,6 +9,9 @@
 import iconv from "iconv-lite";
 import { decodeMarkdown } from "../../dist/core/util/encoding.js";
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const utf8NoBom = decodeMarkdown(Buffer.from("中文正文 hello", "utf8"));
   if (utf8NoBom.encoding !== "utf-8" || !utf8NoBom.text.includes("中文正文")) {

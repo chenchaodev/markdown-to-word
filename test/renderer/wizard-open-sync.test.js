@@ -22,6 +22,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
 const distUrl = (rel) => pathToFileURL(path.join(repoRoot, "dist", rel)).href;
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const dom = installDomStub({ api: {} });
   try {

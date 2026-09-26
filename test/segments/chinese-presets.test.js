@@ -1,5 +1,8 @@
 import { TEMPLATE_PRESETS } from "../../dist/core/settings/settings-defaults.js";
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const ids = TEMPLATE_PRESETS.map((p) => p.id);
   for (const id of ["official-cn", "cn-reader", "cn-minimal"]) {

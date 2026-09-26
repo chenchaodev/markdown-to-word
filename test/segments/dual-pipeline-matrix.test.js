@@ -204,6 +204,7 @@ $$
 $$
 `;
 
+export const meta = { description: "双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(21 行,含双侧提取器与来源锚点)。" };
 // 场景导出(gen-fixtures 落盘为 acceptance/dual-pipeline-matrix*.md)
 export const fixtures = {
   main: mainMd,

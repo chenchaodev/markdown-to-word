@@ -33,6 +33,9 @@ async function assertCancelled(promise, label) {
   }
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---- 1. 预取消在 frontmatter/渲染前终止,不触发图片 resolver ----
   {

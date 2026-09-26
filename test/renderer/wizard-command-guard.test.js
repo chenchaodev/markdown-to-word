@@ -114,6 +114,9 @@ async function flush() {
 /** index.html 中的模态遮罩容器 id(动态创建的向导遮罩走 class 判定)。 */
 const OVERLAY_IDS = new Set(["precheckDialog", "completeDialog", "batchDialog", "presetSaveDialog"]);
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;

@@ -11,6 +11,9 @@ const existsAll = () => true;
 const existsNone = () => false;
 const realpathIdentity = (/** @type {string} */ candidate) => candidate;
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // 1) 干净输入返回空数组
   const clean = precheckMarkdown(

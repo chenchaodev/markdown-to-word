@@ -179,6 +179,9 @@ function withNode(samples, scenarioId, key, fn) {
   });
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---------- 1. 正向:全绿样本零 finding ----------
   const green = runGeometryGate(cleanSamples(), { mediaConditions: MEDIA_CONDITIONS });

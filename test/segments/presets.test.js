@@ -51,6 +51,9 @@ function assertEq(actual, expected, label) {
   }
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 /** TEMPLATE_PRESETS / matchesPreset 契约单测 */
 export async function run() {
   // ---------- 预设数量与 id 唯一性(模板下拉按 id 定位) ----------

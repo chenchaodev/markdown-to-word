@@ -54,6 +54,7 @@ const WEBP_BYTES = Buffer.concat([
   Buffer.from("WEBP"),
 ]);
 
+export const meta = { description: "页眉页脚自定义验收:" };
 /** 主样例:自定义页眉样例(gen-fixtures 落盘为 acceptance/header-footer.md) */
 export const fixtures = {
   main: "# 页眉页脚测试\n\n本文档用于人工实测自定义页眉(文字 + Logo)与页脚开关。\n",

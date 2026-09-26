@@ -13,6 +13,9 @@ import {
   prevStep,
 } from "../../dist/renderer/wizard/wizard-state.js";
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // 总步数 = 7
   if (WIZARD_TOTAL_STEPS !== 7) throw new Error(`WIZARD_TOTAL_STEPS 应为 7,实际 ${WIZARD_TOTAL_STEPS}`);

@@ -42,6 +42,7 @@ const fileB = `# 第三章 B
 
 另一段。
 `;
+export const meta = { description: "合并总目录增强(固化既有单 pass 合并通路行为,无需新增代码):" };
 export const fixtures = { main: fileA + "\n\n" + fileB };
 
 const A_TITLES = ["第一章 A", "1.1 A 小节一", "第二章 A", "2.1 A 小节二"];

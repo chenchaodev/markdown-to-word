@@ -21,6 +21,9 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`i18n 断言失败:${msg}`);
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const settingsFile = settingsJsonPath();
   // 备份真实 settings.json(如有),finally 恢复(与 settings.test.js 同模式;公共助手)

@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 /**
  * 验收 md 样例生成器(纯 Node,无 Electron 依赖):
- * 扫描 test/segments/ 与 test/main/ 下的 *.test.js,动态 import 段模块,
- * 将 `export const fixtures`(key=场景名,value=md 字符串)落盘为
- * test/fixtures/acceptance/<段基名>[-<场景>].md,复制 md 中引用的本地图片
+ * 扫描 test/segments、test/main、test/renderer 下的 *.test.js(目录集合与
+ * test/acceptance.mjs 交给 runner 的三目录恒等,由 test/segments/fixture-contract.test.js
+ * 断言锁住),**逐个动态 import 后读显式契约**——不预筛源码、不解析注释:
+ * - `fixtures`:key=场景名,value=md 字符串;不产出样例的段显式写 `fixtures = null`;
+ * - `meta.description`:README 索引文案(显式字段,取代「取文件头 JSDoc 首行」)。
+ * 落盘 test/fixtures/acceptance/<段基名>[-<场景>].md,复制 md 中引用的本地图片
  * (引用路径不改写,GUI 按 md 所在目录解析),最后生成 README.md 索引。
  * 幂等:同一输入重复生成结果逐字节一致。
+ *
+ * 契约缺失一律判红(不静默跳过):段 import 失败、未显式导出 fixtures、fixtures 无可用
+ * 场景/值非字符串/键名非法、缺 meta.description、产物文件名撞车,或白名单里的豁免
+ * 已失效 → 打印全部问题并 exit 1。确因纯 Node 环境无法 import 的段才可登记进
+ * SEGMENT_EXEMPTIONS(须写理由,理由为空或段已不存在同样判红)。
  *
  * 用法:
  *   node test/tools/gen-fixtures.mjs           # 生成(需先 npm run build)
@@ -16,74 +24,187 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT, FIXTURES_DIR } from "../common/paths.js";
 
-// 纯 Node 下段模块依赖链(common/pdf-utils.js 等)import electron 命名导出会
-// 抛 SyntaxError,注册 loader 将其解析为 mock(Node < 18.19 无 register 时跳过,
-// 相关段会走 import 失败分支)。
-try {
-  const { register } = await import("node:module");
-  register("./electron-mock-loader.mjs", import.meta.url);
-} catch {
-  // Node 过旧,无 register:依赖 electron 的段将 import 失败并跳过
-}
-
 const ACCEPTANCE_DIR = path.join(FIXTURES_DIR, "acceptance");
 const CHECK = process.argv.includes("--check");
+
+/**
+ * 候选测试段目录(与 test/acceptance.mjs 交给 runAll 的三目录同一集合)。
+ * 增删扫描目录必须同步改两处,否则 test/segments/fixture-contract.test.js 判红。
+ */
+export const FIXTURE_SEGMENT_DIRS = ["segments", "main", "renderer"];
+
+/**
+ * import 豁免白名单:仅登记「纯 Node 下确实无法 import」的段。当前为空——全部段在
+ * 纯 Node + electron-mock 下均可 import(mock 覆盖由 test/segments/electron-mock-coverage.test.js
+ * 静态守护)。确需豁免时按 { segment, reason } 登记并写明理由:理由为空、段名已不存在
+ * (改名/删除后残留)、或该段已能正常 import(豁免失效)均判红,防白名单沦为永久盲区。
+ * @type {{segment: string, reason: string}[]}
+ */
+export const SEGMENT_EXEMPTIONS = [];
 
 /** md 中图片引用:![...](path) 与 src="path" */
 const IMG_MD_RE = /!\[[^\]]*\]\(([^)]+)\)/g;
 const IMG_SRC_RE = /src="([^"]+)"/g;
 
-/** 扫描测试段文件(segments + main,排序保证幂等) */
-function listTestFiles() {
-  const files = [];
-  for (const dir of [path.join(ROOT, "test", "segments"), path.join(ROOT, "test", "main")]) {
-    for (const name of fs.readdirSync(dir).sort()) {
-      if (name.endsWith(".test.js")) files.push(path.join(dir, name));
+/** fixtures 键名:直接作产物文件名后缀,故只允许文件名字符(不做静默替换) */
+const FIXTURE_KEY_RE = /^[A-Za-z0-9_-]+$/;
+
+const README_HEADER = [
+  "# 验收样例",
+  "",
+  "由 `test/tools/gen-fixtures.mjs` 从测试段命名导出自动生成(勿手改),",
+  "供 GUI 人工实测直接拖入。重新生成:`npm run gen:fixtures`;校验:`npm run check:fixtures`。",
+  "",
+  "| 文件 | 功能/场景 | 对应测试段 |",
+  "| --- | --- | --- |",
+];
+
+/** 值类型的可读标签(错误信息用) */
+function describeValue(v) {
+  if (v === null) return "null";
+  if (Array.isArray(v)) return "数组";
+  return typeof v;
+}
+
+/**
+ * 列出候选测试段(目录内文件名排序,保证幂序)。
+ * 只读目录项、不读源码:「有没有 fixture」由 import 后的显式契约决定,不做文本预筛。
+ * @returns {{name: string, file: string, relDir: string, baseName: string}[]}
+ */
+export function listCandidateSegments() {
+  const segments = [];
+  for (const relDir of FIXTURE_SEGMENT_DIRS) {
+    const dir = path.join(ROOT, "test", relDir);
+    for (const file of fs.readdirSync(dir).sort()) {
+      if (!file.endsWith(".test.js")) continue;
+      segments.push({
+        name: `${relDir}/${file}`,
+        file: path.join(dir, file),
+        relDir,
+        baseName: file.slice(0, -".test.js".length),
+      });
     }
   }
-  return files;
+  return segments;
 }
 
-/** 段文件头 JSDoc 注释第一行文本(/** 后第一个非空行) */
-function jsdocFirstLine(source) {
-  const m = source.match(/\/\*\*([\s\S]*?)\*\//);
-  if (!m) return "";
-  const lines = m[1]
-    .split(/\r?\n/)
-    .map((l) => l.replace(/^\s*\*\s?/, "").trim());
-  return lines.find((l) => l.length > 0) ?? "";
+/**
+ * 校验单段的 fixture 显式契约,返回问题清单(空数组 = 契约完整)。
+ * 纯函数(只读传入的模块命名空间),便于守护段用合成模块逐条覆盖失败模式。
+ * @param {string} name 段名(错误定位用)
+ * @param {Record<string, unknown>} mod 段模块命名空间
+ * @returns {string[]}
+ */
+export function validateSegmentContract(name, mod) {
+  const problems = [];
+  if (!("fixtures" in mod)) {
+    return [
+      `${name}:未显式声明 fixture 契约——导出 fixtures(场景 → md 字符串映射)或 fixtures = null(本段无验收样例)`,
+    ];
+  }
+  const { fixtures } = mod;
+  if (fixtures === null) return problems; // 显式声明「本段无样例」:合法终态
+  if (typeof fixtures !== "object" || Array.isArray(fixtures)) {
+    return [`${name}:fixtures 必须是场景映射对象或 null,实际 ${describeValue(fixtures)}`];
+  }
+  const entries = Object.entries(fixtures);
+  if (entries.length === 0) {
+    return [`${name}:fixtures 为空对象——本段若无样例请显式写 fixtures = null(空对象会让人以为漏填场景)`];
+  }
+  const badKeys = entries.map(([key]) => key).filter((key) => !FIXTURE_KEY_RE.test(key));
+  if (badKeys.length > 0) {
+    problems.push(`${name}:fixtures 键名只允许 [A-Za-z0-9_-](直接作产物文件名后缀),非法键:${badKeys.join(", ")}`);
+  }
+  const badValues = entries.filter(([, v]) => typeof v !== "string").map(([key]) => key);
+  if (badValues.length > 0) {
+    problems.push(`${name}:fixtures 场景值必须是 md 字符串,以下键不是:${badValues.join(", ")}`);
+  }
+  const description = /** @type {{ description?: unknown } | undefined} */ (mod.meta)?.description;
+  if (typeof description !== "string" || description.trim() === "") {
+    problems.push(`${name}:缺 meta.description(README 索引文案取自该显式字段,不再解析文件头注释)`);
+  }
+  return problems;
 }
 
-/** 动态 import 段模块;含 fixtures 导出的段必须可解析(否则产物不完整 → exit 1),
- *  dist/ 未构建时给明确提示;无 fixtures 的段失败仅告警跳过。
- *  electron-mock 缺命名导出时(SyntaxError: ... does not provide an export named 'X')
- *  报错信息显式指出缺失的 specifier,免排障猜测 */
-async function importModule(file, hasFixtures) {
-  try {
-    return await import(pathToFileURL(file).href);
-  } catch (err) {
-    const msg = String(err?.message ?? err);
-    const isDistMissing = /dist[\\/]/.test(msg);
-    const missingExport = msg.match(/does not provide an export named ['"]([^'"]+)['"]/i);
-    if (hasFixtures) {
-      if (missingExport) {
-        console.error(
-          `[gen-fixtures] 段模块 import 失败:electron-mock 缺少导出「${missingExport[1]}」` +
-            `(请在 test/tools/electron-mock.mjs 补充该命名导出)`,
-        );
-      } else {
-        console.error(
-          isDistMissing
-            ? "[gen-fixtures] 段模块 import 失败,请先 npm run build(段模块依赖 dist/ 编译产物)"
-            : "[gen-fixtures] 段模块 import 失败,无法生成完整验收样例"
-        );
+/**
+ * 段 + fixtures → 产物清单(键名排序保证幂等;键 main 落 <段基名>.md,其余加后缀)。
+ * 非法键在此剔除(validateSegmentContract 已就该情况判红,这里只是不再产出坏文件名)。
+ * @param {{baseName: string}} seg
+ * @param {Record<string, string>} fixtures
+ * @returns {{name: string, content: string, key: string}[]}
+ */
+export function planFixtureOutputs(seg, fixtures) {
+  return Object.keys(fixtures)
+    .filter((key) => typeof fixtures[key] === "string" && FIXTURE_KEY_RE.test(key))
+    .sort()
+    .map((key) => ({
+      name: key === "main" ? `${seg.baseName}.md` : `${seg.baseName}-${key}.md`,
+      content: fixtures[key],
+      key,
+    }));
+}
+
+/**
+ * 产物文件名全局查重:跨目录同名段 + 同键会互相覆盖(静默丢样例,最难察觉)。
+ * @param {{relDir: string, baseName: string, outputs: {name: string, key: string}[]}[]} entries
+ * @returns {string[]}
+ */
+export function findOutputNameCollisions(entries) {
+  const owner = new Map();
+  const problems = [];
+  for (const e of entries) {
+    for (const o of e.outputs) {
+      const first = owner.get(o.name);
+      if (first === undefined) {
+        owner.set(o.name, e);
+        continue;
       }
-      console.error(`  ${path.relative(ROOT, file)}: ${msg.split("\n")[0]}`);
-      process.exit(1);
+      problems.push(
+        `${o.name}:${first.relDir}/${first.baseName}.test.js 与 ${e.relDir}/${e.baseName}.test.js 的场景产物重名(会互相覆盖)`,
+      );
     }
-    console.warn(`[gen-fixtures] 跳过 ${path.relative(ROOT, file)}:import 失败(${msg.split("\n")[0]})`);
-    return null;
   }
+  return problems;
+}
+
+/**
+ * README 索引正文(描述取自 meta.description 显式字段)。
+ * 多场景段共用一条描述,追加 fixtures 键名(即文件名后缀)消歧;单场景段保持原描述。
+ * @param {{relDir: string, baseName: string, description: string, outputs: {name: string, key: string}[]}[]} entries
+ * @returns {string}
+ */
+export function buildReadme(entries) {
+  const lines = [...README_HEADER];
+  for (const e of entries) {
+    for (const o of e.outputs) {
+      const multi = e.outputs.length > 1;
+      const desc = ((multi ? `${e.description}(场景:${o.key})` : e.description) || "-").replace(/\|/g, "\\|");
+      lines.push(`| ${o.name} | ${desc} | test/${e.relDir}/${e.baseName}.test.js |`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** 注册 electron mock 解析器(必须早于任何段模块 import);Node 过旧 → 硬失败而非跳过 */
+async function registerElectronMock() {
+  const { register } = await import("node:module");
+  if (typeof register !== "function") {
+    throw new Error("当前 Node 不支持 module.register,无法在纯 Node 下加载段模块(需 Node >= 20.6)");
+  }
+  register("./electron-mock-loader.mjs", import.meta.url);
+}
+
+/** 段模块 import 失败的归一化诊断(段名 + 归因;区分 dist 缺失与 mock 缺命名导出) */
+function describeImportFailure(name, err) {
+  const msg = String(err?.message ?? err).split("\n")[0];
+  const missingExport = msg.match(/does not provide an export named ['"]([^'"]+)['"]/i);
+  if (missingExport) {
+    return `${name}:段模块 import 失败——electron-mock 缺命名导出「${missingExport[1]}」(补进 test/tools/electron-mock.mjs;自动断言见 test/segments/electron-mock-coverage.test.js)`;
+  }
+  if (/dist[\\/]/.test(msg)) {
+    return `${name}:段模块 import 失败(段模块依赖 dist/ 编译产物,请先 npm run build):${msg}`;
+  }
+  return `${name}:段模块 import 失败:${msg}`;
 }
 
 /** 收集 md 中的本地图片引用(排除外链/锚点/data URI,剥离 title 与尖括号) */
@@ -115,36 +236,78 @@ function firstDiffLine(a, b) {
 // fixtures 的 eol=lf,此处归一化是双保险——即使属性未生效/旧 checkout 也不误报。
 const normalizeEol = (s) => s.replace(/\r\n/g, "\n");
 
-async function main() {
-  const files = listTestFiles();
-  const entries = []; // { relDir, baseName, desc, outputs: [{ name, content }] }
-  let scanned = 0;
+async function collectContracts() {
+  const segments = listCandidateSegments();
+  const exemptReasons = new Map(SEGMENT_EXEMPTIONS.map((e) => [e.segment, e.reason]));
+  const known = new Set(segments.map((s) => s.name));
+  /** @type {string[]} */
+  const problems = [];
 
-  for (const file of files) {
-    scanned++;
-    const source = fs.readFileSync(file, "utf8");
-    // 无 fixtures 导出 → 静默跳过(不 import,避免无谓的 electron 依赖失败)
-    if (!/\bexport\s+const\s+fixtures\b/.test(source)) continue;
-    const mod = await importModule(file, true);
-    if (!mod?.fixtures || typeof mod.fixtures !== "object") continue;
-    const keys = Object.keys(mod.fixtures)
-      .filter((k) => typeof mod.fixtures[k] === "string")
-      .sort();
-    if (keys.length === 0) continue;
-    const baseName = path.basename(file, ".test.js");
-    const relDir = path.relative(path.join(ROOT, "test"), path.dirname(file)).replace(/\\/g, "/");
-    const outputs = keys.map((key) => ({
-      name: key === "main" ? `${baseName}.md` : `${baseName}-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}.md`,
-      content: mod.fixtures[key],
-      key,
-    }));
-    entries.push({ relDir, baseName, desc: jsdocFirstLine(source), outputs });
+  // 白名单自检:理由缺失 / 段名已不存在(改名或删除后残留)先判红,免得豁免悄悄失效
+  for (const e of SEGMENT_EXEMPTIONS) {
+    if (typeof e.reason !== "string" || e.reason.trim() === "") {
+      problems.push(`豁免登记「${e.segment}」未注明理由:SEGMENT_EXEMPTIONS 每条都须写清为何该段在纯 Node 下不可 import`);
+    }
+    if (!known.has(e.segment)) {
+      problems.push(`豁免登记「${e.segment}」已不是现存测试段(段改名/删除后残留,请删除该条目)`);
+    }
   }
 
-  // 排序保证幂等(README 行序与写盘顺序一致)
-  entries.sort((a, b) => a.baseName.localeCompare(b.baseName));
+  const entries = [];
+  let exemptSkipped = 0;
+  for (const seg of segments) {
+    /** @type {Record<string, unknown>} */
+    let mod;
+    try {
+      mod = await import(pathToFileURL(seg.file).href);
+    } catch (err) {
+      const reason = exemptReasons.get(seg.name);
+      if (reason === undefined) {
+        problems.push(describeImportFailure(seg.name, err));
+        continue;
+      }
+      exemptSkipped += 1;
+      console.warn(`[gen-fixtures] 按白名单豁免跳过 ${seg.name}:${reason}`);
+      continue;
+    }
+    // 豁免失效:该段已能正常 import → 白名单条目是多余盲区,判红促清理
+    if (exemptReasons.has(seg.name)) {
+      problems.push(
+        `豁免登记「${seg.name}」已失效:该段现在能正常 import,请删除 SEGMENT_EXEMPTIONS 中的对应条目(原理由:${exemptReasons.get(seg.name)})`,
+      );
+    }
+    const segProblems = validateSegmentContract(seg.name, mod);
+    if (segProblems.length > 0) {
+      problems.push(...segProblems);
+      continue;
+    }
+    if (mod.fixtures === null) continue;
+    const outputs = planFixtureOutputs(seg, /** @type {Record<string, string>} */ (mod.fixtures));
+    entries.push({
+      relDir: seg.relDir,
+      baseName: seg.baseName,
+      description: /** @type {string} */ (mod.meta).description,
+      outputs,
+    });
+  }
 
-  // 图片复制清单(去重;源不存在 → 静默跳过,该样例本就是演示缺失警告)
+  problems.push(...findOutputNameCollisions(entries));
+  // 排序保证幂等(README 行序与写盘顺序一致);同名段以目录名定序,避免跨目录抖动
+  entries.sort((a, b) => a.baseName.localeCompare(b.baseName) || a.relDir.localeCompare(b.relDir));
+  return { segments, entries, problems, exemptSkipped };
+}
+
+async function main() {
+  await registerElectronMock();
+  const { segments, entries, problems, exemptSkipped } = await collectContracts();
+
+  if (problems.length > 0) {
+    console.error(`[gen-fixtures] 显式契约校验失败(${problems.length} 项;不静默跳过,请逐条修):`);
+    for (const p of problems) console.error(`  - ${p}`);
+    process.exit(1);
+  }
+
+  // 图片复制清单(去重;源不存在 → 跳过,该样例本就是演示缺失警告)
   const imageCopies = [];
   for (const e of entries) {
     for (const o of e.outputs) {
@@ -158,26 +321,8 @@ async function main() {
     }
   }
 
-  // README 索引
-  const readmeLines = [
-    "# 验收样例",
-    "",
-    "由 `test/tools/gen-fixtures.mjs` 从测试段命名导出自动生成(勿手改),",
-    "供 GUI 人工实测直接拖入。重新生成:`npm run gen:fixtures`;校验:`npm run check:fixtures`。",
-    "",
-    "| 文件 | 功能/场景 | 对应测试段 |",
-    "| --- | --- | --- |",
-  ];
-  for (const e of entries) {
-    for (const o of e.outputs) {
-      // 多场景段共用同一 JSDoc 首行(常以冒号截断),人工实测者难区分场景 →
-      // 追加 fixtures 键名(即文件名后缀)消歧;单场景段保持原描述不变
-      const multi = e.outputs.length > 1;
-      const desc = ((multi ? `${e.desc || "-"}(场景:${o.key})` : e.desc) || "-").replace(/\|/g, "\\|");
-      readmeLines.push(`| ${o.name} | ${desc} | test/${e.relDir}/${e.baseName}.test.js |`);
-    }
-  }
-  const readme = readmeLines.join("\n") + "\n";
+  const readme = buildReadme(entries);
+  const outputCount = entries.reduce((n, e) => n + e.outputs.length, 0);
 
   // ---- --check:内存重生成比对,不落盘 ----
   if (CHECK) {
@@ -208,8 +353,7 @@ async function main() {
     } else {
       const existing = normalizeEol(fs.readFileSync(readmeFile, "utf8"));
       if (existing !== readme) {
-        const line = firstDiffLine(existing, readme);
-        report("README.md", ` 内容不一致(首处差异第 ${line} 行)`);
+        report("README.md", ` 内容不一致(首处差异第 ${readme === "" ? "-" : firstDiffLine(existing, readme)} 行)`);
       }
     }
     for (const c of imageCopies) {
@@ -225,7 +369,10 @@ async function main() {
       console.error("[gen-fixtures] --check 失败:acceptance/ 与生成内容存在差异");
       process.exit(1);
     }
-    console.log(`[gen-fixtures] --check 通过:${entries.length} 段 ${entries.reduce((n, e) => n + e.outputs.length, 0)} 个 md + README.md + ${imageCopies.length} 个图片与生成内容一致`);
+    const exemptNote = exemptSkipped > 0 ? ` + ${exemptSkipped} 段按白名单豁免` : "";
+    console.log(
+      `[gen-fixtures] --check 通过:${entries.length} 段 ${outputCount} 个 md + README.md + ${imageCopies.length} 个图片与生成内容一致(扫描 ${segments.length} 段${exemptNote})`,
+    );
     process.exit(0);
   }
 
@@ -249,10 +396,11 @@ async function main() {
   }
   fs.writeFileSync(path.join(ACCEPTANCE_DIR, "README.md"), readme, "utf8");
 
-  console.log(`[gen-fixtures] 扫描 ${scanned} 个测试段,${entries.length} 段含 fixtures 导出`);
+  const exemptNote = exemptSkipped > 0 ? `,${exemptSkipped} 段按白名单豁免` : "";
+  console.log(`[gen-fixtures] 扫描 ${segments.length} 个测试段(契约齐备),${entries.length} 段含 fixtures 导出${exemptNote}`);
   for (const e of entries) {
     for (const o of e.outputs) {
-      console.log(`  + ${o.name} (${o.content.length} 字符,${e.desc || "-"})`);
+      console.log(`  + ${o.name} (${o.content.length} 字符,${e.description || "-"})`);
     }
   }
   for (const c of imageCopies) {
@@ -262,7 +410,14 @@ async function main() {
   console.log(`[gen-fixtures] 完成:${path.relative(ROOT, ACCEPTANCE_DIR)}/`);
 }
 
-main().catch((err) => {
-  console.error(`[gen-fixtures] 失败:${err?.stack ?? err}`);
-  process.exit(1);
-});
+// 仅 CLI 直跑时执行;被测试段 import 复用纯函数时不得触发任何副作用
+// (尤其不能 register electron mock loader——那会污染宿主进程的 electron 解析)
+const isCli =
+  process.argv[1] !== undefined && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+
+if (isCli) {
+  main().catch((err) => {
+    console.error(`[gen-fixtures] 失败:${err?.stack ?? err}`);
+    process.exit(1);
+  });
+}

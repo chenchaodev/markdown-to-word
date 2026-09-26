@@ -14,6 +14,9 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`ui-state 断言失败:${msg}`);
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const uiFile = path.join(app.getPath("userData"), "ui-state.json");
   // 备份真实 ui-state.json(如有),finally 恢复(ui-state.ts 无注入点,只能读写真实路径)

@@ -28,6 +28,7 @@ const MD_PLAIN = "```\nconst plain = 1;\n```\n";
 // 未知语言围栏:hljs.getLanguage 未命中 → 降级等宽文本(无高亮)
 const MD_UNKNOWN = "```nolangxyz\nconst unknown = 1;\n```\n";
 
+export const meta = { description: "代码块 docx 语法高亮段(实现 src/core/docx/handlers/code-highlight.ts,GitHub Light 色板):" };
 // 场景样例导出(gen-fixtures 落盘为 acceptance/code-highlight[-plain|-unknown].md)
 export const fixtures = {
   main: MD_TS,

@@ -26,6 +26,9 @@ async function headerXmls(buffer) {
 
 const md = "# 水印测试\n\n本文档用于人工实测文字水印。\n";
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---- 1. docx:水印文字进入 header XML(gray=true → #999999) ----
   const wmGray = { ...DEFAULT_WATERMARK, text: "机密文档", angle: 45, opacity: 0.15, gray: true };

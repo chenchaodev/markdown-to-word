@@ -93,6 +93,9 @@ function independentManifest(distDir) {
     });
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   await withTempDir(async (tmp) => {
     // ---------- 1. 正向:生成 → 校验,清单规范化且可被独立实现复现 ----------

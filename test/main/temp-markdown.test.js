@@ -47,6 +47,9 @@ async function waitGone(target, label) {
   throw new Error(`temp-markdown 断言失败:${label} 文件应被删除(${target})`);
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const dir = clipboardTempDir();
   await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);

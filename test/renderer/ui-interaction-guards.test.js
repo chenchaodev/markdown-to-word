@@ -42,6 +42,9 @@ function tagOf(html, id) {
   return m[0];
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---------- 源契约:动态节点不得挂 data-i18n ----------
   const indexHtml = fs.readFileSync(path.join(repoRoot, "src", "renderer", "index.html"), "utf8");

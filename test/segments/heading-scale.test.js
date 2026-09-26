@@ -41,6 +41,9 @@ function typo(overrides = {}) {
   return { ...DEFAULT_TYPOGRAPHY, bodySizePt: 12, ...overrides };
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ================= 1. 纯函数直测:档位 → 字号/间距映射表 =================
   // standard 档 @12pt = 升级前 PDF 模板固定值(22/17/14/12/11/11),回归锚点

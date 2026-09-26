@@ -7,6 +7,9 @@
  */
 import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../dist/core/markdown/html-whitelist.js";
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const valid = [
     ["纯文本", "普通文本"],

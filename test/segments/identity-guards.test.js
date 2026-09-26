@@ -62,6 +62,9 @@ function docxScannerAccepts(expr) {
   return normalizeInlineHtml(splitHtmlNodes(expr)).some((n) => n.type === "html" && n.value === expr);
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ================= (a) zh 文案恒等:STAGE_TEXT / formatRecentTime ↔ i18n 字典 zh =================
   for (const [stage, text] of Object.entries(STAGE_TEXT)) {

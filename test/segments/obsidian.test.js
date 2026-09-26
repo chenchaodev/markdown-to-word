@@ -1,6 +1,9 @@
 // @ts-check
 import { normalizeObsidian } from "../../dist/core/markdown/obsidian.js";
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // 普通双链
   const a = normalizeObsidian("见 [[笔记一]]");

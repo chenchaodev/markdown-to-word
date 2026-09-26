@@ -20,6 +20,9 @@ const md = `# 标题
 
 const USER_CSS = "body { color: red; }";
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---- 1. 传 pdfCss → 用户 CSS 注入且位于默认 CSS 之后(后加载覆盖) ----
   const withCss = await convert(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: USER_CSS });

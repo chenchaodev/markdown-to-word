@@ -48,6 +48,9 @@ const sampleMd = `# 主题字体断言
  *  main/settings.ts、renderer 设置层与 i18n 文案;docx/pdf 渲染层必须经 typography 注入) */
 const CJK_FONT_RE = /微软雅黑|宋体|黑体|楷体|仿宋|SimSun|Microsoft YaHei/;
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---- 1. theme 固定样式常量齐全且非空(集中配置载体存在) ----
   const constants = {

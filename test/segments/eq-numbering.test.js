@@ -32,6 +32,7 @@ $$
 
 如 [式](#eq:energy) 与 [公式](#eq:force) 所示;悬空引用 [式](#eq:unknown)。
 `;
+export const meta = { description: "公式编号 + 交叉引用测试:" };
 export const fixtures = { main: batch9Md };
 
 export async function run() {

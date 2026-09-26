@@ -16,7 +16,9 @@
  *   output/artifacts/failures/<段名>/(见 artifacts.saveFailureArtifacts),
  *   成功段不写;引用串随 case 结果上送,便于报告与失败日志指向具体附件;
  * - 段 run() 以 `return { cases: suite.results }` 把结果交回 runner;漏回传时 runner
- *   兜底取本模块登记的 suite(见 drainSuites),避免「登记了却静默判过」。
+ *   兜底取本模块登记的 suite(见 drainSuites),避免「登记了却静默判过」;
+ * - setCaseProgressSink:可选的 case 结算观察钩子,逐段子进程隔离下由宿主用于
+ *   落盘"超时前已完成进度"(被硬终止的段仍留证据);同进程模型无消费者。
  *
  * 未接入本契约的旧段行为不变:抛错即段失败,runner 按段级处理(报告无 case 行)。
  */
@@ -46,6 +48,23 @@
 
 /** 段执行期间登记的 suite 容器(case/snapshots 数组引用固定,便于外部事后读取) */
 const registered = [];
+
+/**
+ * case 结算观察钩子(可选,默认 null):每结算一个 case 回调一次(传入该 suite 的活数组)。
+ * 逐段子进程隔离下由宿主用它把"超时前已完成进度"增量落盘(见 setCaseProgressSink),
+ * 使被硬终止的段仍能留下已完成 case 的证据;同进程模型下无消费者,零开销。
+ * @type {((cases: CaseResult[]) => void) | null}
+ */
+let progressSink = null;
+
+/**
+ * 登记/注销 case 结算观察钩子(段执行期由宿主注册,写完最终结果后注销,
+ * 避免迟到的结算再覆盖已完成的回传文件)。
+ * @param {((cases: CaseResult[]) => void) | null} sink 钩子;传 null 注销
+ */
+export function setCaseProgressSink(sink) {
+  progressSink = sink;
+}
 
 /**
  * 断言辅助:条件不成立即抛错(message 即失败消息,进入 case 结果与失败日志)。
@@ -100,7 +119,6 @@ export function createCaseSuite() {
     active = result;
     try {
       await fn();
-      return result;
     } catch (err) {
       result.ok = false;
       result.message = err instanceof Error ? err.message : String(err);
@@ -108,6 +126,9 @@ export function createCaseSuite() {
     } finally {
       result.ms = Date.now() - start;
       active = undefined;
+      // 进度留痕:订阅方(子进程宿主)据此把"已完成部分"落盘,段被硬终止也不丢证据;
+      // 必须在 finally 内(通过路径不走 try 之后的语句)
+      progressSink?.(cases);
     }
     return result;
   }
@@ -161,8 +182,9 @@ export function createCaseSuite() {
 /**
  * 取走并清空已登记的 suite 容器:runner 在每段执行结束后调用,作为段 run()
  * 未回传 case 结果时的兜底(同时防止残留串到下一段)。
- * 已知局限:看门狗超时的悬挂段无法终止,它**之后**新建的 suite 会被下一段取走
- * (悬挂段与后续段同进程的固有串扰,随逐段子进程隔离一并消除)。
+ * 逐段子进程隔离下,每段进程内至多一个 suite 串到本段结果,跨段串扰已消除
+ * (同进程回退模型下,看门狗超时的悬挂段无法终止,它**之后**新建的 suite 仍会
+ * 被下一段取走——这是回退模型的固有局限,切回默认隔离模型即消失)。
  * @returns {{ cases: CaseResult[], snapshots: ArtifactSnapshot[] }[]}
  */
 export function drainSuites() {

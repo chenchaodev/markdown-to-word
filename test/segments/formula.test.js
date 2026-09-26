@@ -39,6 +39,7 @@ const degradeMd = `# 公式降级
 
 $$ \\frac{1}{ $$
 `;
+export const meta = { description: "公式测试:" };
 export const fixtures = { main: formulaMd, degrade: degradeMd };
 
 export async function run() {

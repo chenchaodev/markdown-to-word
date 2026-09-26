@@ -21,6 +21,9 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`resource-dirs 断言失败:${msg}`);
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---- 1. resolveKatexDir 三态参数化 ----
   // dev 态:appPath = 项目根

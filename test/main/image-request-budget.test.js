@@ -67,6 +67,9 @@ function requestOf({ maxBytes = MAX_RESPONSE_BYTES, timeoutMs = 5000, signal } =
   return { signal: signal ?? new AbortController().signal, maxBytes, timeoutMs };
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const fixtureBytes = await fs.readFile(PNG_PATH);
 

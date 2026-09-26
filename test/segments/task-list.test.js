@@ -20,6 +20,7 @@ const taskMd = `# 任务列表测试
 - [ ] 待办
 - 普通项
 `;
+export const meta = { description: "任务列表验收(GFM task list):" };
 export const fixtures = { main: taskMd };
 
 /** 任务列表验收 */

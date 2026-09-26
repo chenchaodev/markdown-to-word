@@ -26,6 +26,7 @@ const md = `# 第一章
 
 另一段正文。
 `;
+export const meta = { description: "目录页码(两遍法)测试:" };
 export const fixtures = { main: md };
 
 export async function run() {

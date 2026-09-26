@@ -23,6 +23,9 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`title-bar-overlay 断言失败:${msg}`);
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---- 常量契约(与 docs/design/ui-mockup.html 视觉基准一致;改动须双侧同步) ----
   assert(TITLE_BAR_OVERLAY_HEIGHT === 44, `height 应为 44,实际 ${TITLE_BAR_OVERLAY_HEIGHT}`);

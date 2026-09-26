@@ -16,6 +16,7 @@ const typoMd = `# 排版设置测试
 
 第二段正文,继续验证排版参数化。
 `;
+export const meta = { description: "排版设置验收:" };
 export const fixtures = { main: typoMd };
 
 /** 排版设置验收 */

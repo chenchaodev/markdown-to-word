@@ -72,6 +72,7 @@ function hello(name: string): string {
 文档结尾 End of document。
 `;
 
+export const meta = { description: "基础渲染段:全要素中英混排样例 → docx + pdf。" };
 // 主样例导出(gen-fixtures 落盘为 acceptance/basic-render.md;样例内 ./g1-tiny.png
 // 与 ./img-800x400.png 由生成器复制到 acceptance/ 下,引用路径不改写)
 export const fixtures = { main: markdown };

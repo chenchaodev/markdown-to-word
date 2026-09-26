@@ -175,6 +175,9 @@ function makeReleaseFixture(tmp, { version = FIXTURE_VERSION, mutate } = {}) {
   return { releaseDir, installerPath, installerName, pkgPath, installerSha256: createHash("sha256").update(content).digest("hex") };
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---------- 0. 契约常量自检:防止必备条目清单被清空后检查变成空转 ----------
   assert(EXPECTED_TOP_LEVEL.length === 3, "顶层白名单应为 dist/node_modules/package.json 三项");

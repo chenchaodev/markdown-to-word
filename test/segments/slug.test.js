@@ -10,6 +10,9 @@
  */
 import { slugify, uniqueSlug, docxBookmarkId } from "../../dist/core/markdown/slug.js";
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 /** slug.ts 三函数单测 */
 export async function run() {
   // ---------- slugify ----------

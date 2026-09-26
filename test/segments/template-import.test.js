@@ -44,6 +44,7 @@ export async function buildDocx(styles, doc) {
   return zip.generateAsync({ type: "uint8array" });
 }
 
+export const meta = { description: "docx 模板导入(浅导入 v1)测试:" };
 export const fixtures = { main: stylesXml };
 
 export async function run() {

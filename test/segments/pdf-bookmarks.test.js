@@ -51,6 +51,7 @@ const md = `# 书签一级标题
 
 跨页小节。
 `;
+export const meta = { description: "PDF 书签端到端(smoke 书签断言的独立化 + buildBookmarkTree 层级直测):" };
 export const fixtures = { main: md };
 
 /** PDF 书签端到端验收 */

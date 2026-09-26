@@ -24,6 +24,9 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`init-barrier 断言失败:${msg}`);
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---- 1. 屏障调用点存在,且两路初始化汇合于同一个 Promise.all ----
   // 锚点用调用语句(声明处 runInitBarrier(): 的空参列表也会命中 "runInitBarrier()")

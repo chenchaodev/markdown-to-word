@@ -39,6 +39,7 @@ import { saveArtifact } from "../common/artifacts.js";
 
 const B = FIXTURES_DIR;
 
+export const meta = { description: "题注/章节交叉引用测试(docx + pdf 双格式):" };
 /** 主样例:h1 章节 + 图/表题注 + 章节引用(引用先于目标标题出现,验证预扫)+
  *  公式混排(验证 #eq: 不回归)+ 悬空引用(图引用两次,验证警告按文案去重) */
 export const fixtures = { main: `# 第一章 {#sec:c1}

@@ -152,6 +152,9 @@ function definedVarNames(css) {
   return new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]));
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   /* ---------- 1. 令牌完整性:引用了就得定义 ---------- */
   // 1a. 主窗三份样式:每个 var(--x) 要么在 base.css 定义,要么自带兜底值

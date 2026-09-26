@@ -29,6 +29,7 @@ const crossMd = `# 交叉边界测试
 
 前缀 <strong>乙</strong></div> 结尾
 `;
+export const meta = { description: "内联格式白名单测试:" };
 export const fixtures = { main: htmlMd, cross: crossMd };
 
 export async function run() {

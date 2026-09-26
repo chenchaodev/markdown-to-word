@@ -53,6 +53,9 @@ function fakeWindow() {
   };
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---- 1. 判定:单项变化 / 无变化 / 双项变化 ----
   const langOnly = planSettingsRuntimeSync(

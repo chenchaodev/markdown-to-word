@@ -36,6 +36,7 @@ title: 标题编号与链接测试
 
 ###### 六级标题
 `;
+export const meta = { description: "标题编号 + 内部/外部链接验收(补 h4-h6/外链 rels):" };
 export const fixtures = { main: linkMd };
 
 /** 标题编号 + 内部/外部链接验收 */

@@ -25,6 +25,7 @@ date: 2026-08-05
 
 ## 第二页小节
 `;
+export const meta = { description: "PDF 章节编号 + 元数据验收:" };
 export const fixtures = { main: pdfMetaMd };
 
 /** PDF 章节编号 + 元数据验收 */

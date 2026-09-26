@@ -26,6 +26,9 @@ const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 /** @param {string} rel 相对 src 的 POSIX 路径 */
 const readSrc = (rel) => fs.readFileSync(path.join(srcRoot, rel), "utf8");
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---- 恒等性:docx/pdf 两侧导入同源(同一对象引用) ----
   const { CROSS_REF_KINDS: docxKinds } = await import("../../dist/core/docx/render.js");

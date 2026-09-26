@@ -22,6 +22,7 @@ const commentMd = `# 批注测试
 
 [普通链接](https://example.com)与[文本]{#eq:label}不受影响。
 `;
+export const meta = { description: "批注验收:行内 `[锚定文本]{批注=内容}` → docx 批注。" };
 export const fixtures = { main: commentMd };
 
 /** 批注验收 */

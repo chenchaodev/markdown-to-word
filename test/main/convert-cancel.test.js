@@ -37,6 +37,9 @@ async function artifactsOf(dir) {
   return (await fs.readdir(dir)).filter((name) => name.endsWith(".docx"));
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const dir = path.join(os.tmpdir(), `m2w-convert-cancel-${process.pid}`);
   const { restore: restoreSettings } = await backupSettings();

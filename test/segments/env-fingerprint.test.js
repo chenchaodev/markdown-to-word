@@ -65,6 +65,9 @@ const positiveProbes = {
   }, "Windows AppliedDPI registry value"),
 };
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const positive = await collectEnvironmentFingerprint(positiveProbes);
   assert.deepEqual(Object.keys(positive), ["schemaVersion", "versions", "system", "diagnostics"]);

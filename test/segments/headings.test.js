@@ -15,6 +15,9 @@ function assertEq(actual, expected, label) {
   }
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   // ---------- 基本提取:h1-h3 + id,顺序保持 ----------
   const body = [

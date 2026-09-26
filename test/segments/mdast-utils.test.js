@@ -14,6 +14,9 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`mdast-utils 断言失败:${msg}`);
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 /** 纯 Node 段(零 Electron API) */
 export async function run() {
   // ---- 1. 叶子节点:value 直取 ----
