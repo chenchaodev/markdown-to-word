@@ -152,6 +152,38 @@ export function decideEntryExit({ entry, phase, error, crashExitCode = ENTRY_EXI
 }
 
 /**
+ * 判定「本轮跑完 0 个段」该如何收口(REF-024:筛选词拼错不得静默关掉整轮门禁)。
+ *
+ * 为什么是门禁级问题:段筛选词(`M2W_ONLY`)拼错时,发现面返回空清单,旧实现照常打印
+ * 「全部 0 段通过」并 `return 0` —— **一个 typo 就把整轮门禁静默关掉**且无任何告警。
+ * 这比崩溃更危险:崩溃至少会红,而「0 段通过」是绿的。本函数沿用本模块既有范式把该
+ * 判定抽成纯函数,使 entry-exit-guard 段能确定性断言,不必真跑一遍全量门禁。
+ *
+ * 两种「0 段」必须给不同诊断,否则修好了也难排查:
+ * - 筛选命中 0 个 → 筛选词无匹配(拼写错,或段名已改)
+ * - 未设筛选却 0 个 → 段清单本身为空(目录配错 / 段被误删)
+ *
+ * @param {{ segmentCount: number, only?: string | null }} input 段数与当轮筛选词
+ * @returns {{ code: number, failed: boolean, text: string }} 同 `decideEntryExit` 形态
+ */
+export function decideZeroSegmentRun({ segmentCount, only = null }) {
+  if (segmentCount > 0) return { code: ENTRY_EXIT.OK, failed: false, text: "" };
+  const filtered = typeof only === "string" && only.trim() !== "";
+  const cause = filtered
+    ? `筛选词 ${JSON.stringify(only)} 未命中任何段(检查拼写;或清空该变量表示不过滤)`
+    : "未设筛选却发现 0 个段(段清单为空,或 segments/main/renderer 目录配错)";
+  return {
+    code: ENTRY_EXIT.CRASH,
+    failed: true,
+    text: [
+      "[entry:acceptance] 0 段执行 | 门禁判红",
+      `原因:${cause}`,
+      "排查方向:此前行为是打印「全部 0 段通过」并退出 0,一个筛选词 typo 即可静默关掉整轮门禁",
+    ].join("\n"),
+  };
+}
+
+/**
  * 退出前把 stdout/stderr 冲干净:app.exit 立即终止进程,管道场景下未落盘输出会被截断
  * (门禁的逐条 finding 就在这些流里)。
  * @returns {Promise<void>} 冲刷完成

@@ -38,6 +38,7 @@ import {
   ENTRY_PHASE,
   LOAD_WATCHDOG_ENV,
   decideEntryExit,
+  decideZeroSegmentRun,
   runEntry,
 } from "../common/entry-guard.mjs";
 
@@ -209,6 +210,27 @@ export async function run() {
       cyclic.self = cyclic;
       const cyclicDecision = decideEntryExit({ entry: "probe", phase: ENTRY_PHASE.READY, error: cyclic });
       assert(cyclicDecision.code !== 0, "循环引用对象仍应判红");
+    });
+
+    await suite.case("0 段执行必须判红(REF-024:筛选词 typo 曾静默关掉整轮门禁)", async () => {
+      // 负向:筛选词拼错 → 发现面返回空清单 → 必须非零 + 诊断回显筛选词
+      // (旧行为是打印「全部 0 段通过」并退出 0,一个 typo 关掉整轮门禁)
+      const miss = decideZeroSegmentRun({ segmentCount: 0, only: "basic-rendr" });
+      assert(miss.code !== 0, "筛选词命中 0 段时必须判红(此前退出 0)");
+      assertIncludes(miss.text, "basic-rendr", "诊断应回显筛选词,便于定位拼写错误");
+      assertIncludes(miss.text, "未命中任何段", "诊断应点明是筛选未命中");
+      // 负向:未设筛选却 0 段 → 另一种原因,诊断必须不同(否则修好了也难排查)
+      const empty = decideZeroSegmentRun({ segmentCount: 0, only: null });
+      assert(empty.code !== 0, "未设筛选却 0 段也必须判红");
+      assertIncludes(empty.text, "未设筛选", "诊断应区分「段清单为空」与「筛选未命中」");
+      // 边界:全空白筛选词等价于未设,不得误报成「筛选未命中」
+      const blank = decideZeroSegmentRun({ segmentCount: 0, only: "   " });
+      assertIncludes(blank.text, "未设筛选", "全空白筛选词应按未设处理");
+      // 正向锚点:有段执行时不得误伤(否则每轮正常跑批都会被判红)
+      const ok = decideZeroSegmentRun({ segmentCount: 118, only: "basic-render" });
+      assert(!ok.failed, "有段执行时不得判红");
+      assertEq(ok.code, 0, "有段执行时退出码应为 0");
+      assertEq(ok.text, "", "有段执行时不应产出噪声诊断");
     });
 
     await suite.case("崩溃码可注入:各入口自有语义码(1 红 / 2 未测量)不被守卫覆盖", async () => {

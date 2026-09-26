@@ -36,7 +36,7 @@
 import { app } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runEntry } from "./common/entry-guard.mjs";
+import { decideZeroSegmentRun, runEntry } from "./common/entry-guard.mjs";
 import { createTempUserData, redirectUserData, removeTempUserData } from "./common/userdata.js";
 
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +97,19 @@ async function work(runner) {
       process.env.M2W_ACCEPTANCE_SEGMENT_TIMEOUT_MS ?? 180000,
     ),
   });
+  // REF-024:0 段必须判红。段筛选词拼错时发现面返回空清单,旧实现照常打印
+  // 「全部 0 段通过」并 return 0 —— 一个 typo 就把整轮门禁静默关掉。这比崩溃更危险:
+  // 崩溃至少会红,而「0 段通过」是绿的。判定抽在 entry-guard 的 decideZeroSegmentRun,
+  // 那里可被 entry-exit-guard 段确定性断言(本段另有真实进程的端到端锚点)。
+  const zeroRun = decideZeroSegmentRun({
+    segmentCount: results.length,
+    only: process.env[runner.ONLY_ENV] ?? null,
+  });
+  if (zeroRun.failed) {
+    console.error(zeroRun.text);
+    removeTempUserData(tempUserData);
+    return zeroRun.code;
+  }
   for (const r of results) {
     if (r.ok) {
       console.log(`[ok] ${r.file} (${r.ms}ms)`);
