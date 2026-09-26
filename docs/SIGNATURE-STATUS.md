@@ -57,6 +57,6 @@ Get-AuthenticodeSignature -LiteralPath "release\MarkdownToWord-Setup-<版本>.ex
 ## 相关
 
 - 裁决：ADR-013 发布供应链与「现阶段明确不签名」（`docs/ADR.md`）
-- 待办状态：`docs/BACKLOG.md`「代码签名 = 暂缓」「安装包未签名 = 风险记录」
+- 待办状态：`docs/ROADMAP.md` 候选区 REF-015「代码签名」(处置：暂缓)
 - 事实核对脚本：`scripts/check-signature-status.mjs`
 - 守护测试：`test/segments/signature-status.test.js`
