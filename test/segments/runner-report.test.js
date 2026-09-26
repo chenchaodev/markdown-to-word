@@ -45,20 +45,54 @@ import path from "node:path";
 import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../common/paths.js";
 import { CONCURRENCY_ENV, ONLY_ENV, describeChildExitCode, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
 
-/** 临时段文件沙盒(仓库 output/ 下,gitignore 覆盖;不落 test/,免被 typecheck/lint 扫入) */
-const SANDBOX = path.join(ROOT, "output", "tmp", "runner-report-selftest");
+/** 沙盒目录名前缀(mkdtemp 在其后附 6 位随机后缀;尾部短横线便于识别残留目录) */
+const SANDBOX_PREFIX = "runner-report-selftest-";
+
+/**
+ * 建本次运行专属的沙盒目录(output/tmp/ 下 mkdtemp,天然唯一;父目录顺带创建,
+ * 冷克隆下 output/ 尚不存在)。
+ * @returns {string} 沙盒绝对路径
+ */
+function createSandbox() {
+  const parent = path.join(ROOT, "output", "tmp");
+  fs.mkdirSync(parent, { recursive: true });
+  return fs.mkdtempSync(path.join(parent, SANDBOX_PREFIX));
+}
+
+/**
+ * 临时段文件沙盒(仓库 output/ 下,gitignore 覆盖;不落 test/,免被 typecheck/lint 扫入)。
+ * 目录名**每次运行唯一**(mkdtemp 口径,与 test/common/userdata.js 的 createTempUserData
+ * 同款):固定路径下两套验收同时跑时,一方 cleanupSandbox() 删掉沙盒、另一方嵌套 runAll
+ * 去 import 夹具就炸 ERR_MODULE_NOT_FOUND(表现为「自测段偶发红」)。唯一化的代价只是
+ * 崩溃残留目录多留在 output/tmp/(已 gitignore),换来两套验收零互删。
+ */
+const SANDBOX = createSandbox();
+
+/**
+ * 沙盒段名(runAll 结果 / discoverSegments 的键 = `<沙盒目录名>/<段文件名>`,
+ * 见 runner.js discoverSegments 的 `${path.basename(dir)}/${f}`)。
+ * 必须由实际沙盒目录名派生,否则唯一后缀一加,段名与沙盒就对不上(筛选与失败目录全断)。
+ */
+const SANDBOX_DIR_NAME = path.basename(SANDBOX);
+
+/**
+ * 沙盒段名(段文件名 → runAll/discoverSegments 认的完整段名)。
+ * @param {string} file 沙盒内的段文件名
+ * @returns {string} 带沙盒目录前缀的段名
+ */
+const segName = (file) => `${SANDBOX_DIR_NAME}/${file}`;
 
 /** 沙盒段 → 仓库内 case 契约模块的相对路径(output/tmp/<沙盒>/ → test/common/) */
 const CASE_MODULE = "../../../test/common/case.js";
 
-const FAIL_SEG = "runner-report-selftest/cases-fail.test.js";
-const PASS_SEG = "runner-report-selftest/cases-pass.test.js";
-const CRASH_SEG = "runner-report-selftest/crash.test.js";
-const HANG_SEG = "runner-report-selftest/hang.test.js";
-const LEGACY_SEG = "runner-report-selftest/legacy-fail.test.js";
-const STATE_A_SEG = "runner-report-selftest/state-a.test.js";
-const STATE_B_SEG = "runner-report-selftest/state-b.test.js";
-const ENV_SEG = "runner-report-selftest/env-report.test.js";
+const FAIL_SEG = segName("cases-fail.test.js");
+const PASS_SEG = segName("cases-pass.test.js");
+const CRASH_SEG = segName("crash.test.js");
+const HANG_SEG = segName("hang.test.js");
+const LEGACY_SEG = segName("legacy-fail.test.js");
+const STATE_A_SEG = segName("state-a.test.js");
+const STATE_B_SEG = segName("state-b.test.js");
+const ENV_SEG = segName("env-report.test.js");
 /** 目录内文件名排序 = 执行顺序(cases-pass 之后才是 crash/env-report/hang,其后才是 legacy 与 state-*) */
 const ALL_SEGS = [FAIL_SEG, PASS_SEG, CRASH_SEG, ENV_SEG, HANG_SEG, LEGACY_SEG, STATE_A_SEG, STATE_B_SEG];
 /** 同进程回退模型下只造的三段(无崩溃/悬挂/状态隔离夹具,见 setupSandbox) */
@@ -530,7 +564,8 @@ export async function run() {
 
     // ---- 1.8 失败轮次不写成功路径产物目录 ----
     const added = readDirSafe(ARTIFACTS_DIR).filter((e) => !artifactsBefore.includes(e));
-    if (added.some((e) => e !== "failures" && e.startsWith("runner-report-selftest"))) {
+    // 标记用沙盒名前缀(不是固定全名):成功路径产物若以本段名义落盘,必然带此前缀
+    if (added.some((e) => e !== "failures" && e.startsWith(SANDBOX_PREFIX))) {
       fail(`失败轮次在成功路径产物目录写入了 ${added.join(", ")}`);
     }
 
@@ -572,7 +607,7 @@ export async function run() {
     }
 
     /* ---------- 4. 选择面与发现面互不渗透(本段被 M2W_ONLY 单段筛选跑时仍能自跑) ---------- */
-    // 外层真实会出现的筛选词:它命中零个沙盒段(段名前缀是 runner-report-selftest/),
+    // 外层真实会出现的筛选词:它命中零个沙盒段(段名前缀是沙盒目录名 `runner-report-selftest-…/`),
     // 正是「本段在 M2W_ONLY=segments 下把沙盒段全滤空」那次的形态
     const outerNeedle = "segments";
     const baseline = await discoverSegments([SANDBOX], { only: null });
