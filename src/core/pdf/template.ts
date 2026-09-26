@@ -2,7 +2,7 @@
  * PDF 模板集:页眉页脚 chrome 模板、完整 HTML 组装、封面 HTML、样式注入防护。
  * 职责三分:文档模板 CSS 在 template-css.ts、KaTeX CSS 加载在 katex-css.ts,
  * 本文件只管模板结构与安全(TEMPLATE_CSP / sanitizeStyleCss);
- * escapeHtml/decodeEntities 已集中 src/core/util/utils.ts,消费者直连该模块。
+ * escapeHtml/decodeEntities 已集中 src/core/util/text-escape.ts,消费者直连该模块。
  * 双管线对应:src/core/docx/chrome.ts 为 docx 侧对应文件(封面/页眉页脚/水印
  * 组件;HeaderLogoData 类型单源于彼导入)。差异:目录页不在本文件——pdf 目录经
  * postprocess.ts buildTocHtml 从渲染后正文提取,docx 侧对应 chrome.ts
@@ -11,7 +11,7 @@
  */
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import type { HeaderFooterSettings, WatermarkSettings } from "../settings/settings-defaults.js";
-import { escapeHtml } from "../util/utils.js";
+import { escapeHtml } from "../util/text-escape.js";
 import { WATERMARK_GRAY, WATERMARK_INK } from "../style/colors.js";
 import { mimeFromBuffer } from "../image/image-type.js";
 import type { HeaderLogoData } from "../docx/chrome.js";

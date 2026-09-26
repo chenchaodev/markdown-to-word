@@ -12,7 +12,7 @@
  * 稳定口径:并发上限内完成全部检查后,警告按文档顺序统一入列(不按异步完成
  * 顺序),取消不降级为图片失败警告(经守卫上抛)。
  */
-import { decodeEntities, escapeHtml, escapeRegExp } from "../util/utils.js";
+import { decodeEntities, escapeHtml, escapeRegExp } from "../util/text-escape.js";
 import { PDF_TOC_MAX_LEVEL } from "./rules/heading-id.js";
 import { mimeFromBuffer } from "../image/image-type.js";
 import { imageLoadFailedWarning, imageLoadFailureWarning, imageNotFoundWarning, unrecognizedImageWarning } from "../image/image-warning.js";
