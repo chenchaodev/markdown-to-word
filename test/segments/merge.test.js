@@ -107,7 +107,7 @@ export async function run() {
       throw new Error(`merge 断言失败:用户绝对/UNC/file URL 应原样保留:${source}\n${externalSources}`);
     }
   }
-  console.log("[ok] merge:用户绝对/UNC/file URL 原样保留(交给 D-03 拒绝)断言通过");
+  console.log("[ok] merge:用户绝对/UNC/file URL 原样保留(交给 图片信任边界(ADR-012) 拒绝)断言通过");
 
   // ---------- 首文件 frontmatter 保护与 body trim ----------
   const leadingFrontmatter = "  ---\r\ntitle: [[原始标题]]\r\ncover: ![front](front.png)\r\n  ---\r\n\r\n  ![body](body.png)\r\n";
@@ -160,7 +160,7 @@ export async function run() {
   if (noDoubleBreak !== "# 甲\n\n<!-- page-break -->\n\n# 乙\n\n<!-- page-break -->\n\n# 丙") {
     throw new Error(`merge 断言失败:尾部分页符不应叠加,实际输出:\n${JSON.stringify(noDoubleBreak)}`);
   }
-  console.log("[ok] merge:B3 分页符防叠加断言通过");
+  console.log("[ok] merge:剪贴板直转 分页符防叠加断言通过");
 
   // ---------- 代码块内示例图片语法不参与路径改写(absolutizeImages) ----------
   const codeAware = mergeMarkdowns([
@@ -189,5 +189,5 @@ export async function run() {
   if (!codeAware.includes("![真实](./real.png)") || !codeAware.includes("![尾部](./tail.png)")) {
     throw new Error(`merge 断言失败:代码块外图片应重定位为相对路径,实际输出:\n${codeAware}`);
   }
-  console.log("[ok] merge:B3 代码块感知(围栏/行内不改写,块外重定位为相对路径)断言通过");
+  console.log("[ok] merge:剪贴板直转 代码块感知(围栏/行内不改写,块外重定位为相对路径)断言通过");
 }

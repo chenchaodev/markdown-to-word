@@ -155,7 +155,7 @@ export async function run() {
         throw new Error(`postprocess 断言失败:checkLocalImages 缺少细分警告「${expected}」,warnings=${JSON.stringify(warnings)}`);
       }
     }
-    console.log("[ok] postprocess:B4 checkLocalImages 失败原因细分(ENOENT/EACCES/兜底)断言通过");
+    console.log("[ok] postprocess:成书向导 checkLocalImages 失败原因细分(ENOENT/EACCES/兜底)断言通过");
   }
 
   // ---- 5. embedExternalImages cursor 单遍遍历——多图乱序 + 相邻 + 中间失败 ----
@@ -181,7 +181,7 @@ export async function run() {
       `<img src="${dataOf("https://x.example/1.png")}"><img src="https://x.example/bad.png">` +
       `<p>正文</p><img src="${dataOf("https://x.example/1.png")}"><img src="${dataOf("https://x.example/3.png")}">`;
     if (out !== expected) {
-      throw new Error(`postprocess 断言失败:B5 多图乱序/相邻场景产物不符,out=${out}`);
+      throw new Error(`postprocess 断言失败:多图乱序/相邻场景产物不符,out=${out}`);
     }
     // 去重:URL1 两处出现只下载一次
     if (calls.filter((c) => c === "https://x.example/1.png").length !== 1) {
@@ -190,7 +190,7 @@ export async function run() {
     if (warnings.length !== 1 || formatWarning(warnings[0]) !== "图片加载失败: https://x.example/bad.png") {
       throw new Error(`postprocess 断言失败:失败 URL 应恰一条统一警告,warnings=${JSON.stringify(warnings)}`);
     }
-    console.log("[ok] postprocess:B5 embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败)断言通过");
+    console.log("[ok] postprocess:embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败)断言通过");
   }
 
   // ---- 6. checkLocalImages 轻量存在性通道(exists)----
@@ -224,7 +224,7 @@ export async function run() {
     ) {
       throw new Error(`postprocess 断言失败:exists 通道警告异常,texts=${JSON.stringify(texts)}`);
     }
-    console.log("[ok] postprocess:B5 checkLocalImages exists 轻量通道(true/false/抛错细分)断言通过");
+    console.log("[ok] postprocess:checkLocalImages exists 轻量通道(true/false/抛错细分)断言通过");
   }
 
   // ---- 7. checkLocalImages 有界并发 + warning 按文档顺序稳定 ----

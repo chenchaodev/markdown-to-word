@@ -201,7 +201,7 @@ export async function run() {
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
     const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter", "watermark", "aiCleanup", "obsidianCompat", "obsidianAttachmentFolder"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 19 键(F4 headerFooter + F5 watermark + F7 tocMode + B1 aiCleanup + C1 obsidianCompat/obsidianAttachmentFolder)");
+    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 19 键(页眉页脚自定义 headerFooter + 文字水印 watermark + 目录带页码(ADR-007) tocMode + AI 清理 aiCleanup + Obsidian 兼容 obsidianCompat/obsidianAttachmentFolder)");
     for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));
@@ -422,7 +422,7 @@ export async function run() {
     assert(s3.outputDir === "", "旧文件缺 outputDir → 兜底空串");
     assert(s3.pdfCss === "", "旧文件缺 pdfCss → 兜底空串");
     assert(s3.language === "zh", "旧文件缺 language → 兜底 zh");
-    assert(s3.theme === "system", "旧文件缺 theme → 兜底 system(B13)");
+    assert(s3.theme === "system", "旧文件缺 theme → 兜底 system(theme 键)");
     assert(
       JSON.stringify(s3.customPresets) === "[]",
       "旧文件缺 customPresets → 兜底空数组",
@@ -489,7 +489,7 @@ export async function run() {
     assert(s4.outputDir === "C:\\tmp\\out", "绝对路径 outputDir 应保留");
     assert(s4.pdfCss === "body { color: red; }", "合法文件 pdfCss 应原样读取");
     assert(s4.language === "en", "合法文件 language 应原样读取");
-    assert(s4.theme === "dark", "合法文件 theme 应原样读取(B13)");
+    assert(s4.theme === "dark", "合法文件 theme 应原样读取(theme 键)");
     assert(s4.pageSetup.marginTop === 0 && s4.pageSetup.marginBottom === 200, "合法文件 0 边界与合法边距应保留");
     assert(
       s4.typography.bodySizePt === 14 && s4.typography.align === "left" && s4.typography.fontEastAsia === "宋体",

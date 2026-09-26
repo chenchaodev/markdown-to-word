@@ -153,25 +153,25 @@ export async function run() {
   }));
   const boldLabelHtml = pdfHtmlOf(boldLabelPdf);
   if (!boldLabelHtml.includes('id="eq:bold-lab"')) {
-    throw new Error(`批次9断言失败:B3 粗斜体包裹 label 未登记锚点(pdf):\n${boldLabelHtml}`);
+    throw new Error(`批次9断言失败:剪贴板直转 粗斜体包裹 label 未登记锚点(pdf):\n${boldLabelHtml}`);
   }
   if (boldLabelHtml.includes("{#eq:bold-lab}")) {
-    throw new Error("批次9断言失败:B3 粗斜体包裹 label 标记行不应渲染字面文本");
+    throw new Error("批次9断言失败:剪贴板直转 粗斜体包裹 label 标记行不应渲染字面文本");
   }
   if (!boldLabelHtml.includes('href="#eq:bold-lab">式 (1)<')) {
-    throw new Error("批次9断言失败:B3 粗斜体包裹 label 的交叉引用未替换为「式 (1)」");
+    throw new Error("批次9断言失败:剪贴板直转 粗斜体包裹 label 的交叉引用未替换为「式 (1)」");
   }
   const boldLabelDocx = /** @type {ConvertArtifact} */ (
     await convert(boldLabelMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const boldLabelXml = await unzipPart(docxBufferOf(boldLabelDocx), "word/document.xml");
   if (!boldLabelXml.includes('w:name="eq-bold-lab"')) {
-    throw new Error("批次9断言失败:B3 粗斜体包裹 label 未登记书签(docx)");
+    throw new Error("批次9断言失败:剪贴板直转 粗斜体包裹 label 未登记书签(docx)");
   }
   if (!boldLabelXml.includes("式 (1)")) {
-    throw new Error("批次9断言失败:B3 粗斜体包裹 label 的交叉引用未替换(docx)");
+    throw new Error("批次9断言失败:剪贴板直转 粗斜体包裹 label 的交叉引用未替换(docx)");
   }
-  console.log("[ok] B3 粗斜体包裹 {#eq:label}:pdf 放宽命中 + docx 契约锁定(双格式一致)断言通过");
+  console.log("[ok] 剪贴板直转 粗斜体包裹 {#eq:label}:pdf 放宽命中 + docx 契约锁定(双格式一致)断言通过");
 
   // ---------- 公式编号开关关闭(equationNumbering: false,docx/pdf 双格式一致) ----------
   // 关开关语义:display 公式不编号(原样渲染,无 (N) 文本)、{#eq:label} 独立段仍隐藏

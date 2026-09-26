@@ -88,7 +88,7 @@ export async function run() {
   assertEq(sniffImageType(Buffer.from("hello")), null, "sniff 未知 → null");
   assertEq(sniffImageType(Buffer.alloc(0)), null, "sniff 空数据 → null");
   assertEq(sniffImageType(Buffer.from([0x89, 0x50])), null, "sniff 截断魔数 → null");
-  console.log("[ok] sniffImageType:PNG/JPEG/GIF/WEBP 判定 + 未知/截断 → null(B3)断言通过");
+  console.log("[ok] sniffImageType:PNG/JPEG/GIF/WEBP 判定 + 未知/截断 → null(剪贴板直转)断言通过");
 
   // ---------- imageSizeFromBuffer:PNG(IHDR)/JPEG(SOF) 尺寸解析 ----------
   const pngSize = imageSizeFromBuffer(pngHeader(320, 240));
@@ -133,5 +133,5 @@ export async function run() {
     "mime WEBP",
   );
   assertEq(mimeFromBuffer(Buffer.from("hello")), null, "mime 未知 → null");
-  console.log("[ok] mimeFromBuffer:四类 MIME 判定 + 未知 → null(B3)断言通过");
+  console.log("[ok] mimeFromBuffer:四类 MIME 判定 + 未知 → null(剪贴板直转)断言通过");
 }

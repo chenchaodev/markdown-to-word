@@ -81,10 +81,10 @@ export async function run() {
   );
   const fieldDoc = await unzipPart(docxBufferOf(batch8FieldToc), "word/document.xml");
   if (!fieldDoc.includes('w:dirty="true"')) {
-    throw new Error("F7-①断言失败:field 模式目录 dirty 属性应为 true(触发 Word 更新域)");
+    throw new Error("目录带页码(ADR-007)断言失败:field 模式目录 dirty 属性应为 true(触发 Word 更新域)");
   }
   if (!fieldDoc.includes('w:anchor="第一章"')) {
-    throw new Error("F7-①断言失败:field 模式目录条目仍应指向标题书签");
+    throw new Error("目录带页码(ADR-007)断言失败:field 模式目录条目仍应指向标题书签");
   }
   // 8b-1:静态编号注入(章节号 + 章节内序数,图/表独立、h1 重置)
   for (const needle of ["图 1.1 总体架构示意图", "表 1.1 参数说明表", "图 1.2 小节内的图", "表 2.1 第二章的表"]) {

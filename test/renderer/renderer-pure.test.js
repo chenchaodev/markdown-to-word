@@ -170,7 +170,7 @@ export async function run() {
       throw new Error(`STAGE_PERCENT 断言失败:缺 ${key} 键(STAGE_TEXT 与 STAGE_PERCENT 键集应一致)`);
     }
   }
-  console.log("[ok] STAGE_PERCENT:read=15/render=70/done=95 + B9 pdf 细分(parse/inline/mermaid/katex/print)+ 与 STAGE_TEXT 键集一致 断言通过");
+  console.log("[ok] STAGE_PERCENT:read=15/render=70/done=95 + pdf 细分(parse/inline/mermaid/katex/print)+ 与 STAGE_TEXT 键集一致 断言通过");
 
   // ---------- actionableError(错误码 → 可操作文案,未识别透传) ----------
   /**

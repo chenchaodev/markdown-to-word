@@ -268,7 +268,7 @@ export async function run() {
     assert(boundaryMerge.ok && !!boundaryMerge.outputPath, `越界图片 merge 应完成降级:${boundaryMerge.error ?? ""}`);
     const boundaryZip = await JSZip.loadAsync(await fs.readFile(boundaryMerge.outputPath));
     const boundaryRels = await entryText(boundaryZip, "word/_rels/document.xml.rels");
-    assert(!boundaryRels.includes("image"), "用户绝对路径图片应被 D-03 拒绝且不得嵌入");
+    assert(!boundaryRels.includes("image"), "用户绝对路径图片应被 图片信任边界(ADR-012) 拒绝且不得嵌入");
     assert((boundaryMerge.warnings?.length ?? 0) > 0, "用户绝对路径图片应产生越界/加载 warning");
     console.log("[ok] converter:merge 用户绝对路径图片拒绝(真实 docx 产物)");
 

@@ -128,7 +128,7 @@ export async function run() {
   const full = Array.from({ length: MAX_CUSTOM_PRESETS }, (_, i) => preset(`p${i}`));
   assert(
     validatePresetName("新模板", full) === `已达 ${MAX_CUSTOM_PRESETS} 个上限,请先删除`,
-    `达上限应返回「已达 ${MAX_CUSTOM_PRESETS} 个上限,请先删除」(B6:全角逗号统一为半角)`,
+    `达上限应返回「已达 ${MAX_CUSTOM_PRESETS} 个上限,请先删除」(全角逗号统一为半角)`,
   );
   assert(
     validatePresetName(" 新模板 ", full.slice(0, MAX_CUSTOM_PRESETS - 1)) === null,
@@ -257,7 +257,7 @@ export async function run() {
   // theme 缺失 → 默认 system;显式值保留
   assert(
     mergeSettingsWithDefaults({}).theme === "system",
-    "缺 theme → 默认 system(B13)",
+    "缺 theme → 默认 system(theme 键)",
   );
   assert(
     mergeSettingsWithDefaults({ theme: "dark" }).theme === "dark",

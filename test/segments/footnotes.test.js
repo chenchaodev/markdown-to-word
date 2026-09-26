@@ -63,15 +63,15 @@ export async function run() {
   const footnotesXml = await unzipPart(docxBuffer, "word/footnotes.xml");
   const refCount = ((await unzipPart(docxBuffer, "word/document.xml")).match(/<w:footnoteReference /g) || []).length;
   if (refCount !== 3) {
-    throw new Error(`B3 脚注共享断言失败:正文应有 3 个脚注引用(1+1+1),实际 ${refCount}`);
+    throw new Error(`剪贴板直转 脚注共享断言失败:正文应有 3 个脚注引用(1+1+1),实际 ${refCount}`);
   }
   if (!footnotesXml.includes('w:id="1"') || !footnotesXml.includes('w:id="2"')) {
-    throw new Error("B3 脚注共享断言失败:应存在内容脚注 id 1/2");
+    throw new Error("剪贴板直转 脚注共享断言失败:应存在内容脚注 id 1/2");
   }
   if (footnotesXml.includes('w:id="3"')) {
-    throw new Error("B3 脚注共享断言失败:重复引用不得产生第三条脚注(应共享 id)");
+    throw new Error("剪贴板直转 脚注共享断言失败:重复引用不得产生第三条脚注(应共享 id)");
   }
-  console.log("[ok] B3 脚注共享:[^1] 重复引用 → 正文 3 引用、脚注区仅 2 条内容脚注");
+  console.log("[ok] 剪贴板直转 脚注共享:[^1] 重复引用 → 正文 3 引用、脚注区仅 2 条内容脚注");
 
   // 页眉内容断言(renderHeader 实现事实:标题文本居中 + 7pt(14 half-points)灰 888888;
   // 标题取 metadata.title 优先,样例 frontmatter title=「脚注与页眉页脚验收」)

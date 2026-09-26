@@ -27,7 +27,7 @@ export async function run() {
     Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("中文正文", "utf16le")]),
   );
   if (utf16leBom.encoding !== "utf-16" || !utf16leBom.text.includes("中文正文")) {
-    throw new Error("编码预检断言失败:UTF-16LE BOM 未正确解码/标记(B3:utf-16)");
+    throw new Error("编码预检断言失败:UTF-16LE BOM 未正确解码/标记(剪贴板直转:utf-16)");
   }
   // UTF-16 BE(FE FF)此前不识别 → gb18030 乱码;现按 utf16-be 解码
   // (iconv encode 可能自带 BOM,拼接后即便双 BOM 也只影响首字符前的 U+FEFF)
@@ -35,7 +35,7 @@ export async function run() {
     Buffer.concat([Buffer.from([0xfe, 0xff]), iconv.encode("中文正文", "utf16-be")]),
   );
   if (utf16beBom.encoding !== "utf-16" || !utf16beBom.text.includes("中文正文")) {
-    throw new Error("编码预检断言失败:UTF-16BE BOM 未正确解码/标记(B3 新增)");
+    throw new Error("编码预检断言失败:UTF-16BE BOM 未正确解码/标记(剪贴板直转 新增)");
   }
   const gbkBuf = iconv.encode("GBK 中文正文 hello", "gbk");
   const gbk = decodeMarkdown(gbkBuf);

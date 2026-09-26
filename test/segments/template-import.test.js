@@ -69,12 +69,12 @@ export async function run() {
   const buf1 = await buildDocx(stylesXml, docXml(11906, 16838, 1440));
   const r1 = /** @type {TemplateExtracted} */ (await importDocxTemplate(buf1));
   // 字体:标题样式(Heading1)优先 → Georgia / 黑体;字号取 Normal 24 half-pt → 12pt
-  if (r1.typography.fontAscii !== "Georgia") throw new Error(`F9 断言失败:字体应为 Georgia,实得 ${r1.typography.fontAscii}`);
-  if (r1.typography.fontEastAsia !== "黑体") throw new Error(`F9 断言失败:中文字体应为 黑体,实得 ${r1.typography.fontEastAsia}`);
-  if (r1.typography.bodySizePt !== 12) throw new Error(`F9 断言失败:字号应为 12pt,实得 ${r1.typography.bodySizePt}`);
+  if (r1.typography.fontAscii !== "Georgia") throw new Error(`模板导入(ADR-008) 断言失败:字体应为 Georgia,实得 ${r1.typography.fontAscii}`);
+  if (r1.typography.fontEastAsia !== "黑体") throw new Error(`模板导入(ADR-008) 断言失败:中文字体应为 黑体,实得 ${r1.typography.fontEastAsia}`);
+  if (r1.typography.bodySizePt !== 12) throw new Error(`模板导入(ADR-008) 断言失败:字号应为 12pt,实得 ${r1.typography.bodySizePt}`);
   // 页面:A4 纵向 + 四边 25.4mm
-  if (r1.pageSetup.paper !== "A4") throw new Error(`F9 断言失败:纸张应为 A4,实得 ${r1.pageSetup.paper}`);
-  if (r1.pageSetup.orientation !== "portrait") throw new Error(`F9 断言失败:朝向应为 portrait`);
+  if (r1.pageSetup.paper !== "A4") throw new Error(`模板导入(ADR-008) 断言失败:纸张应为 A4,实得 ${r1.pageSetup.paper}`);
+  if (r1.pageSetup.orientation !== "portrait") throw new Error(`模板导入(ADR-008) 断言失败:朝向应为 portrait`);
   for (const k of /** @type {("marginTop" | "marginBottom" | "marginLeft" | "marginRight")[]} */ ([
     "marginTop",
     "marginBottom",
@@ -83,17 +83,17 @@ export async function run() {
   ])) {
     // 边距缺失时按 NaN 比较(与原实现一致,不因此处收窄改变判定)
     const v = /** @type {number} */ (r1.pageSetup[k]);
-    if (Math.abs(v - 25.4) > 0.2) throw new Error(`F9 断言失败:边距 ${k} 应为 ~25.4mm,实得 ${v}`);
+    if (Math.abs(v - 25.4) > 0.2) throw new Error(`模板导入(ADR-008) 断言失败:边距 ${k} 应为 ~25.4mm,实得 ${v}`);
   }
-  console.log("[ok] F9 浅导入:纵向 A4 + 字体/字号/边距提取 断言通过");
+  console.log("[ok] 模板导入(ADR-008) 浅导入:纵向 A4 + 字体/字号/边距提取 断言通过");
 
   // 案例 2:横向 Letter(交换 w/h:15840×12240)+ 720 twips(12.7mm)边距 → landscape
   const letterLandW = 15840; // 279.4mm
   const letterLandH = 12240; // 215.9mm
   const buf2 = await buildDocx(stylesXml, docXml(letterLandW, letterLandH, 720));
   const r2 = /** @type {TemplateExtracted} */ (await importDocxTemplate(buf2));
-  if (r2.pageSetup.paper !== "Letter") throw new Error(`F9 断言失败:纸张应为 Letter,实得 ${r2.pageSetup.paper}`);
-  if (r2.pageSetup.orientation !== "landscape") throw new Error(`F9 断言失败:朝向应为 landscape`);
+  if (r2.pageSetup.paper !== "Letter") throw new Error(`模板导入(ADR-008) 断言失败:纸张应为 Letter,实得 ${r2.pageSetup.paper}`);
+  if (r2.pageSetup.orientation !== "landscape") throw new Error(`模板导入(ADR-008) 断言失败:朝向应为 landscape`);
   for (const k of /** @type {("marginTop" | "marginBottom" | "marginLeft" | "marginRight")[]} */ ([
     "marginTop",
     "marginBottom",
@@ -102,7 +102,7 @@ export async function run() {
   ])) {
     // 边距缺失时按 NaN 比较(与原实现一致,不因此处收窄改变判定)
     const v = /** @type {number} */ (r2.pageSetup[k]);
-    if (Math.abs(v - 12.7) > 0.2) throw new Error(`F9 断言失败:边距 ${k} 应为 ~12.7mm,实得 ${v}`);
+    if (Math.abs(v - 12.7) > 0.2) throw new Error(`模板导入(ADR-008) 断言失败:边距 ${k} 应为 ~12.7mm,实得 ${v}`);
   }
-  console.log("[ok] F9 浅导入:横向 Letter + 朝向判定 + 边距提取 断言通过");
+  console.log("[ok] 模板导入(ADR-008) 浅导入:横向 Letter + 朝向判定 + 边距提取 断言通过");
 }
