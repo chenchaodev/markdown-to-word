@@ -67,7 +67,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `docx/`:`render.ts`(编排器 ~256 行)/`theme.ts`(字体集中配置,eastAsia 勿散落硬编码)/`ctx.ts`(渲染上下文,选项构造时解析默认)/`prescan.ts`/`chrome.ts`(封面/目录/页眉页脚)/`numbering.ts`(编号配置)/`handlers/`(13 个节点处理器:heading/table/captions/equations/code-block/code-highlight/image-run/link-xref/inline-html/fallback/content/math/bookmark)
   - `pdf/`:`render.ts`(编排器)/`template.ts`(HTML 组装+页眉页脚 chrome+CSP/sanitize 防护)/`template-css.ts`(文档模板 CSS 生成)/`katex-css.ts`(KaTeX CSS 加载,唯一 fs 注入点)/`postprocess.ts`/`metadata.ts`/`bookmarks.ts`(pdf-lib 书签注入)/`mermaid.ts`/`rules/`(markdown-it 规则覆盖:caption/equation/xref/html/image/heading-id/shared)
 - `src/main/`:Electron 主进程
-  - `index.ts`:组合根(~74 行);`menu.ts`:应用菜单
+  - `index.ts`:组合根(~74 行);`menu.ts`:应用菜单;`smoke.ts`:**冒烟唯一实现**(编译进 `dist/main/smoke.js` 随包分发,故解包产物也能跑 `--smoke`;`test/tools/smoke/smoke.mjs` 仅为 dev 侧薄转调,勿在两处各写一份)
   - `windows/`:`main-window.ts`/`preview.ts`(预览窗+尺寸记忆)/`web-contents-registry.ts`(ctxByWebContents 注册表,窗口层不反向依赖 IPC 层)
   - `ipc/`:`channels.ts`(channel 名单源+恒等测试守护)/`register.ts`(handler 注册,导入类 handler 走 importFileViaDialog 模板)/`logic.ts`(纯逻辑)
   - `converter/`:`index.ts`(编排)/`single.ts`/`batch.ts`/`merge.ts`/`paths.ts`(扩展名判定单源)/`context.ts`(buildConvertContext)
@@ -82,7 +82,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `convert/`:`convert-flow.ts` + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)
   - `file-list.ts`/`ui/`(`dialogs.ts`/`recent-files.ts`,bindRecentFilesEvents 范式)/`first-run-guide.ts`(首次启动引导)
   - `wizard/`:`book-wizard.ts`(向导外壳/导航/打开关闭+付印提交)/`wizard-steps.ts`(步骤渲染·版式四步:模板/封面/页眉页脚/水印)/`wizard-steps-delivery.ts`(步骤渲染·交付三步:合并源/目录/付印+当前步渲染)/`wizard-fields.ts`(字段校验绑定+共用 DOM/radio 零件)/`wizard-runtime.ts`(草稿/容器/步序单例,防环)/`wizard-state.ts`(向导状态管理纯 reducer)
-- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/gen-fixtures.mjs 与 smoke/);`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)、`scripts/check-build-fresh.mjs`(构建新鲜度守卫)
+- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/gen-fixtures.mjs 与 smoke/(薄转调,实现见 `src/main/smoke.ts`));`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)、`scripts/check-build-fresh.mjs`(构建新鲜度守卫)
 
 ## 测试体系(按内容主题零注册,新增=新建段文件)
 - 目录组织标准(test 树镜像 src 三层,按被测主体归属;目录内按内容主题命名):`test/segments/` = core 渲染主题与跨层契约/恒等守护段 /`test/main/` = 主进程层主题段 /`test/renderer/` = UI 层主题段(纯函数/状态机/CSS 令牌恒等)

@@ -18,11 +18,11 @@
 |---|---|---|
 | 阶段 0 工程口径/门禁 | `[x]` 本地完成 | Node/live 文档、环境指纹、几何/产物/clean 门禁与决策台账已落地；远端 lane 实跑证据后置 |
 | 阶段 1 single-flight/持久化 | `[~]` 实现完成，GUI 待用户 | main/renderer/persistence/batch 实现与自动断言全绿；真实窗口 GUI 验收保留 |
-| 阶段 2 内容/几何/输出 | `[~]` 2A/2B 实现完成 | 准备链、几何迁移、D-03 路径边界、原子输出提交已落地；D-03 媒体类型/大小预算仍待阶段 3 |
+| 阶段 2 内容/几何/输出 | `[x]` 完成 | 准备链、几何迁移、D-03 路径/类型/大小边界、原子输出提交已落地（D-03 媒体限制由阶段 3 预算承接） |
 | 阶段 3 资源/生命周期 | `[x]` 完成 | 取消/期限、资源预算、目录/图片限制、KaTeX 上限、clipboard/preview/Mermaid 生命周期已落地；90 段门禁全绿 |
 | 阶段 4 renderer UX | `[~]` 自动断言完成，GUI 待用户 | 交互、初始化、预设/取消态、ARIA/视觉/geometry 已落地；真实窗口与读屏目视验收待用户 |
 | 阶段 5 边界/双管线/测试 | `[x]` 完成 | 边界契约门禁、21 行双管线差异矩阵、逐段子进程隔离、fixture 显式注册、测试树全量 `@ts-check` 均已落地；101 段门禁全绿 |
-| 阶段 6 发布/视觉/安装 | `[~]` 部分完成 | clean/manifest/ASAR/geometry 本地门禁已入链；SCA/SBOM/安装与远端证据待办 |
+| 阶段 6 发布/视觉/安装 | `[~]` 可执行部分完成 | 供应链门禁(SCA/SBOM/许可证)、action SHA 固定、签名状态记录、解包冒烟与安装 smoke 脚本已落地；仅余 GitHub lane 实跑与真实装卸两项需授权 |
 | 阶段 7 P2/P3 | `[ ]` 后置 | 不阻塞主线，但全部 actionable 项保留 |
 
 ## 1. 阶段 0：决策、基线与门禁
@@ -127,7 +127,7 @@
 
 ## 3. 阶段 2：内容完整性、页面几何、输出原子性
 
-### OPT-2.1 Markdown 预处理安全 — `[~]`
+### OPT-2.1 Markdown 预处理安全 — `[x]`
 
 - [x] core frontmatter LF/CRLF/CR。
 - [x] core fenced/inline/HTML code/escaped 保护。
@@ -135,12 +135,12 @@
 - [x] single/batch/merge/preview/precheck 同一 preparation chain（含 readFrontmatter）。
 - [x] GBK/UTF-16 预览/预检/转换一致，warning 顺序稳定。
 - [x] D-03 本地图片绝对/UNC/file URL/越界/链接规范化拒绝及测试。
-- [ ] D-03 本地扩展名/魔数/单文件大小限制（留阶段 3 资源预算）。
+- [x] D-03 本地扩展名/魔数/单文件大小限制（阶段 3 落地：`preprocess.ts` `MAX_SOURCE_FILE_BYTES` 32MB stat 预检 + 读后复核；`core/image/image-type.ts` 魔数白名单 png/jpg/gif/webp，未知返回 null 由消费方降级告警）。
 
 **证据**：`1180218`；本 2A 提交；core/main segments。
 **退出条件**：所有入口使用同一准备语义，内容保真和图片边界全绿。
 
-### OPT-2.2 页面几何 validator — `[~]`
+### OPT-2.2 页面几何 validator — `[x]`
 
 - [x] core 唯一 `validatePageSetup()` 与 `correctPageSetup()`。
 - [x] docx/pdf render 边界接入，PDF 在尺寸计算前校验。
@@ -165,9 +165,9 @@
 
 ### 阶段 2 门禁
 
-- [ ] OPT-2.1～2.3 全部 `[x]`。
-- [ ] 阶段 2 红测试全部对应生产实现并通过。
-- [x] `verify:ci` 在不含未来阶段红测试的当前 2A/2B 工作树上全绿（84 段、coverage、fixtures、smoke、geometry）。
+- [x] OPT-2.1～2.3 全部 `[x]`（D-03 媒体限制经阶段 3 预算补齐）。
+- [x] 阶段 2 红测试全部对应生产实现并通过。
+- [x] `verify:ci` 全量全绿（105 段、coverage、fixtures、smoke、geometry 12 场景/10 恒定组）。
 
 ## 4. 阶段 3：资源预算、取消传播与生命周期
 
@@ -286,31 +286,46 @@
 
 ## 7. 阶段 6：发布可重复性、供应链、视觉/安装
 
-### OPT-6.1 clean build/ASAR — `[~]`
+### OPT-6.1 clean build/ASAR — `[x]`
 
 - [x] clean dist：`clean:dist`/`clean:release` 在 dist 链的 build 之前（`scripts/clean-artifacts.mjs`；只删 dist/release 两个生成目录，路径/存在/链接/白名单守卫齐备）。
 - [x] dist/ASAR manifest/hash/入口可达性核对进入 `dist` 链：清单在 electron-builder 之前生成，包内 `dist/**` 与清单逐项 SHA-256 交叉核对（证明「打进包的就是本次 dist」，并挡住顶层误打包）。
 - [x] 陈旧/改名残留探针已实跑：向 dist 注入模拟残留后 `check:dist-manifest --check` 判红（`产物陈旧(stale):core/__stale_probe.js`），移除后复验转绿。
-- [x] 本机整条 `npm run dist` 实跑通过：clean → build → 清单(262 文件)→ electron-builder → `check:dist-manifest` ✓ → `check:asar` ✓(10633 个文件、与清单核对 262 项)→ `check:release` ✓(3.12.0 三件套、无历史残留、SHA-256 报告已生成)。
-- [ ] 删除/重命名**源**文件探针（真改源码验证产物随之消失，未做）。
+- [x] 本机整条 `npm run dist` 实跑通过：clean → build → 清单(272 文件)→ electron-builder → `check:dist-manifest` ✓ → `check:asar` ✓(10643 个文件)→ `check:release` ✓(3.12.0 三件套、SHA-256 报告)→ `check:signature` ✓(3 个产物均 unsigned)→ `check:unpacked-smoke` ✓(解包产物 `--smoke` 退出码 0、五条标记齐备)。
+- [x] 删除/重命名**源**文件探针已实跑（2026-09-26）：新增临时源 → 产物与清单同步出现 → 重命名 → **旧名产物残留** → 删除 → `clean:dist` 重建后归零。
 
-### OPT-6.2 供应链 — `[~]`
+**探针结论（真实边界，非推测）**：`npm run dist` 因首步 `clean:dist` 整目录清空，**发布链不可能带出陈旧产物**；但裸跑 `npm run build`（tsc 增量）**不会回收已删除/重命名源的输出**，且 `gen:dist-manifest` 只是对 dist 的快照、自身无法发现陈旧。故开发期若只跑 `build`，`check:dist-manifest --check` 会判绿而 dist 实含残留——**判断产物新鲜度必须走 dist 链或先 clean**。
+
+### OPT-6.2 供应链 — `[x]`
 
 - [x] Node/lockfile/版本一致性基础。
-- [ ] OSV/SCA、SBOM、许可证/NOTICE。
+- [x] OSV/SCA、SBOM、许可证/NOTICE（`scripts/supply/`，独立入口 `check:supply`，接入 CI/Release 而非本地 verify:ci）。
 - [x] 环境指纹脚本与 CI/Release 接入。
-- [ ] GitHub action SHA 固定。
+- [x] GitHub action SHA 固定（13 处浮动 tag 全部固定到 40 位 commit SHA + `# vX.Y.Z` 注释）。
 - [x] 本地安装包 hash、ASAR 与当前版本产物核对。
-- [ ] 未签名提示、签名状态记录与发布说明固化。
+- [x] 未签名提示、签名状态记录与发布说明固化（`docs/SIGNATURE-STATUS.md` + `check:signature` + `signature-status` 段）。
+
+**SCA 实测结论**：生产树 **0 条漏洞**；含 dev 全树 16 条（14 high + 2 moderate）**全部为 dev-only**，按既定口径只记录不阻断。npmmirror 的 audit 端点实测 404 不可用，如实记为 `unavailable` 并由 OSV.dev 两阶段兜底；**全部源不可用时判红**，绝不把「扫不到」谎报成「无漏洞」。
+
+**许可证**：660 组件（生产 233 / 开发 427），unknown 归零。`khroma@2.1.0` 曾因 npm 元数据缺 `license` 字段被判红，经外部核验确认其**实际为 MIT**（仓库小写 `license` 文件、README 声明、GitHub `spdx_id: MIT`、MIT 全文随 tarball 分发），故修的是门禁自身——取值改为**字段优先、缺失时回落随包许可证物证**并记录来源与证据文件名；内容无法识别仍判红（**不猜测**）。
+
+**已知口径差**：`sbom.cdx.json` 按设计只读 lockfile，故仍把 khroma 记为 `NOASSERTION`，与 `licenses.json`/`NOTICE.md` 的 MIT 取值不一致。SBOM 保持「以 lockfile 为准」是有意的（离线可复现），差异待后续统一排期。
 
 ### OPT-6.3 视觉/安装验证 — `[~]`
 
 - [x] geometry gate 进入 CI/Release 的本地契约与 workflow 配置。
-- [ ] GitHub lane 实跑证据（远端报告/截图 artifact）。
 - [x] 截图 artifact/失败定位脚本与失败输出已就位。
-- [ ] unpacked 启动、安装/启动/卸载 smoke。
+- [x] unpacked 启动 smoke（**已实跑转绿**：解包产物以 `--smoke` 启动退出码 0、五条诊断标记齐备、一次性 userData 已清、`release/` 零改动）。
+- [x] ASAR 清单核对（`check:asar` 逐步核对必备条目，冒烟入口已升级为硬门禁）。
+- [x] 安装/启动/卸载 smoke **脚本**已实现：默认预演零副作用，`--execute` 才真实执行并先打印 9 行系统改动警告。
+- [-] GitHub lane 实跑证据（远端报告/截图 artifact）——需推送授权，后置。
+- [-] **真实**安装/卸载执行——会改动用户系统（Program Files / 注册表 / 开始菜单），需用户明确授权后执行。
 
-**阶段 6 门禁**：发布链路完整、产物可追溯、geometry/安装验证全绿。
+**已知边界**：
+- action 固定 SHA 的代价：**Dependabot 的漏洞告警对 SHA 固定的 action 失效**（仅版本更新 PR 仍有效），已记录待后续用其它手段补偿。
+- 打包冒烟实现已下沉到 `dist/main/smoke.js` 随包分发；因此每个安装包都含这段仅在 `--smoke` 时执行的代码（约 33KB），属有意取舍（换取发布链能自动验证解包产物）。
+
+**阶段 6 门禁**：可本地执行部分全部通过（`verify:ci` 105 段、`npm run dist` 整链、解包冒烟、供应链门禁）；仅余两项需用户授权的外部证据。
 
 ## 8. 阶段 7：P2/P3 维护与可选提升
 
