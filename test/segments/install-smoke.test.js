@@ -17,7 +17,13 @@
  * 5. 产物缺失给可操作提示(先跑 dist 链)而不是裸报错;另覆盖 app.asar 内缺冒烟入口的
  *    能力缺口告警(先告警、再取证,不放水也不误判);
  * 6. 隔离与清理:两次运行各用一个新的一次性 userData,APPDATA/LOCALAPPDATA 与
- *    --user-data-dir 都落在该目录内,进程退出后目录被删除。
+ *    --user-data-dir 都落在该目录内,进程退出后目录被删除;
+ * 7. 默认安装目录按构建口径推导(build.nsis.perMachine:true → %ProgramFiles%,
+ *    否则 → %LOCALAPPDATA%\Programs\),--install-dir 可覆盖;两种口径的 --execute
+ *    警告各自准确(按用户安装不得出现提权/UAC 字样,那是事实错误的引导);
+ * 8. 安装部分完成(注册表项 + 开始菜单快捷方式已写、文件未落)时失败:输出点名残留的
+ *    具体键与快捷方式路径,并在未提权前提下尽力自愈;安装前就存在的同名键/文件
+ *    绝不删除;自愈不改变判定(仍为红)。
  *
  * 沙箱纪律(硬约束):被测脚本的项目根由脚本自身位置推导(读 package.json、按
  * build.directories.output 找 release),故把生产脚本**逐字节原样**复制到临时沙盒的
@@ -29,16 +35,17 @@
  * --launcher + --launcher-runtime 把「启动目标」换成 Node 跑的桩脚本,参数与真启动
  * 完全一致;定位/预检/进程树硬杀/标记判定那段代码两者共用。
  *
- * 安装脚本的 --execute 真实路径在本段**不真跑**:它会写 Program Files / 注册表 / 开始
- * 菜单(改动用户系统,须用户授权)。该路径的判定逻辑由沙盒注入的替身执行器(记账 + 预置
+ * 安装脚本的 --execute 真实路径在本段**不真跑**:它会写安装目录 / 注册表 / 开始菜单
+ * (改动用户系统,须用户授权)。该路径的判定逻辑由沙盒注入的替身执行器(记账 + 预置
  * 结果)覆盖:调用序、退出码判红、超时判红、残留比对、一次性 userData 清理都走真实分支,
- * 只是不碰系统。
+ * 只是不碰系统;残留自愈由「假系统」替身(内存里的注册表键/开始菜单痕迹 + 记账删除器)
+ * 驱动,能验证「删哪些/不删哪些」,同样不碰系统。
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { runInstallFlow } from "../../scripts/check-install-smoke.mjs";
+import { defaultInstallDir, runInstallFlow, startMenuTraces } from "../../scripts/check-install-smoke.mjs";
 import { SMOKE_MARKERS } from "../../scripts/smoke-proc.mjs";
 import { ROOT } from "../common/paths.js";
 
@@ -160,6 +167,7 @@ function writeFileIn(root, relative, content) {
  * @param {object} [options] 夹具选项
  * @param {boolean} [options.smokeEntryInAsar] app.asar 内是否含冒烟入口(默认含:正向路径)
  * @param {boolean} [options.installer] 是否生成假安装包(默认生成)
+ * @param {boolean} [options.perMachine] 夹具 build.nsis.perMachine(默认不设 = 按用户安装)
  * @returns {string} 沙盒根目录
  */
 /**
@@ -192,7 +200,7 @@ function makeAsarBytes(entryRelative) {
   return Buffer.concat([header, json]);
 }
 
-function createSandbox({ smokeEntryInAsar = true, installer = true } = {}) {
+function createSandbox({ smokeEntryInAsar = true, installer = true, perMachine = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX));
   for (const name of SANDBOX_SCRIPTS) {
     const target = path.join(root, "scripts", name);
@@ -215,7 +223,11 @@ function createSandbox({ smokeEntryInAsar = true, installer = true } = {}) {
           appId: "com.fixture.app",
           productName: FIXTURE_PRODUCT,
           directories: { output: "release" },
-          nsis: { artifactName: "${productName}-Setup-${version}.${ext}" },
+          nsis: {
+            artifactName: "${productName}-Setup-${version}.${ext}",
+            // 只在显式为 true 时写入:对齐「perMachine 不设 = 按用户安装」的真实构建口径
+            ...(perMachine ? { perMachine: true } : {}),
+          },
         },
       },
       null,
@@ -234,6 +246,34 @@ function createSandbox({ smokeEntryInAsar = true, installer = true } = {}) {
 }
 
 /**
+ * 合并子进程环境覆盖:覆盖项的键名与继承项**大小写不敏感**去重后再写入。
+ *
+ * 两层理由(均为实测):
+ *   1. Windows 环境变量名不区分大小写,而 process.env 展开后可能带全大写旧键
+ *      (LOCALAPPDATA/PROGRAMFILES 都是全大写)—— 直接 `{...process.env, ...env}` 会让
+ *      父进程旧值以「先出现者胜」压过覆盖值,测试就悄悄验到真实系统路径,假绿比红更糟;
+ *   2. ProgramFiles 一类**根本覆盖不了**:即便键名完全一致地改写,子进程仍读到系统真值
+ *      (该变量由 Windows 按 Known Folder 重新派生,实测 node/cmd 两条路都如此)。
+ *      故按机器口径的落点只能在纯函数层注入断言,CLI 层只断言「不落 LOCALAPPDATA」。
+ * @param {Record<string, string>} overrides 覆盖项
+ * @returns {Record<string, string>} 合并后的环境
+ */
+function mergeChildEnv(overrides) {
+  /** @type {Map<string, string>} */
+  const merged = new Map();
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) merged.set(key, value);
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    for (const existing of merged.keys()) {
+      if (existing.toLowerCase() === key.toLowerCase()) merged.delete(existing);
+    }
+    merged.set(key, value);
+  }
+  return Object.fromEntries(merged);
+}
+
+/**
  * 在沙盒内执行检查脚本。
  * @param {string} root 沙盒根
  * @param {string} scriptName scripts/ 下的脚本名
@@ -247,7 +287,7 @@ function runScript(root, scriptName, args, env = {}) {
     cwd: root,
     encoding: "utf8",
     timeout: 120_000,
-    env: { ...process.env, ...env },
+    env: mergeChildEnv(env),
   });
   assert(result.error === undefined, `沙盒脚本启动失败:${result.error?.message ?? "未知错误"}`);
   return { code: result.status, output: `${result.stdout ?? ""}${result.stderr ?? ""}`, ms: Date.now() - started };
@@ -403,7 +443,8 @@ function okResult(output = "") {
  * @param {import("../../scripts/smoke-proc.mjs").ProcessRunResult} [spec.installResult] 安装步骤预置结果
  * @param {import("../../scripts/smoke-proc.mjs").ProcessRunResult} [spec.uninstallResult] 卸载步骤预置结果
  * @param {string[]} [spec.registryAfter] 卸载后仍存在的注册表键(默认空 = 已清理干净)
- * @returns {Promise<{ code: number; calls: string[]; launchCalls: { userDataDir: string; existedDuring: boolean }[] }>} 结果
+ * @param {boolean} [spec.perMachine] 构建口径(默认 false = 按用户安装)
+ * @returns {Promise<{ code: number; calls: string[]; launchCalls: { userDataDir: string; existedDuring: boolean }[]; deletedKeys: string[]; removedPaths: string[] }>} 结果
  */
 async function runInstallExecuteWithStubs({
   installDir,
@@ -412,11 +453,16 @@ async function runInstallExecuteWithStubs({
   installResult,
   uninstallResult,
   registryAfter = [],
+  perMachine = false,
 }) {
   /** @type {string[]} */
   const calls = [];
   /** @type {{ userDataDir: string; existedDuring: boolean }[]} */
   const launchCalls = [];
+  /** @type {string[]} */
+  const deletedKeys = [];
+  /** @type {string[]} */
+  const removedPaths = [];
   // 安装前不存在 → 安装后存在(含目录内的应用与卸载器)→ 卸载后消失(状态机式替身,不真碰文件系统)
   let installed = false;
   const exePath = path.join(installDir, `${FIXTURE_PRODUCT}.exe`);
@@ -435,7 +481,13 @@ async function runInstallExecuteWithStubs({
   const code = await runInstallFlow({
     installer: path.join(scratchRoot, "fake-installer.exe"),
     installDir,
-    facts: { productName: FIXTURE_PRODUCT, version: FIXTURE_VERSION, artifactTemplate: "", releaseDir: "release" },
+    facts: {
+      productName: FIXTURE_PRODUCT,
+      version: FIXTURE_VERSION,
+      artifactTemplate: "",
+      releaseDir: "release",
+      perMachine,
+    },
     timeoutMs: 1000,
     scratchRoot,
     run: async (spec) => {
@@ -456,8 +508,125 @@ async function runInstallExecuteWithStubs({
     exists,
     listDir,
     queryRegistry,
+    // 沙盒纪律:自愈的删除类副作用一律换成记账替身,绝不落到真实注册表/文件系统
+    deleteRegistryKey: async (key) => {
+      deletedKeys.push(key);
+      return true;
+    },
+    removePath: (target) => {
+      removedPaths.push(target);
+      return true;
+    },
   });
-  return { code, calls, launchCalls };
+  return { code, calls, launchCalls, deletedKeys, removedPaths };
+}
+
+/** 假系统里「本次安装新建」的卸载注册表键(键名带 GUID 变体,故不硬编码到脚本内) */
+const FIXTURE_NEW_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9f8b6a11-0c3d-4a2e-9f10-5b7c2d4e1a60}_is1";
+/** 假系统里「安装前就存在」的同产品卸载键(既有安装,自愈绝不能删) */
+const FIXTURE_PRE_EXISTING_KEY =
+  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3b1d77aa-52c9-4e6b-8c31-1f0d9a4b2e55}_is1";
+
+/**
+ * 用「假系统」跑安装脚本的 --execute 路径:把安装器/卸载器该做的系统改动与脚本自愈该做
+ * 的删除全部收进一个内存状态,删除类副作用(deleteRegistryKey / removePath)换成记账替身。
+ *
+ * 这样「哪些该删、哪些绝不删」在**状态层**被真跑(能断言删除清单逐项),但不碰真实注册表
+ * 与开始菜单 —— 自愈逻辑最危险的地方正是删错对象,验证必须能给出负向断言。
+ *
+ * @param {object} spec 场景
+ * @param {string} spec.installDir 假安装目录
+ * @param {string} spec.scratchRoot 临时根
+ * @param {string[]} [spec.registryBefore] 安装前就存在的卸载注册表键
+ * @param {string[]} [spec.startMenuBefore] 安装前就存在的开始菜单痕迹路径
+ * @param {boolean} [spec.perMachine] 构建口径(默认 false = 按用户安装)
+ * @param {boolean} [spec.writesFiles] 安装命令是否真的落文件(默认 true;false = 装到一半)
+ * @param {boolean} [spec.writesResidue] 安装命令是否写注册表项 + 开始菜单快捷方式(默认 false)
+ * @param {boolean} [spec.uninstallLeavesResidue] 卸载命令是否把注册表/快捷方式留下(默认 false)
+ * @param {boolean} [spec.canDelete] 删除类操作是否成功(默认 true;false = 模拟删不掉)
+ * @param {import("../../scripts/smoke-proc.mjs").ProcessRunResult} [spec.installResult] 安装结果
+ * @param {import("../../scripts/smoke-proc.mjs").ProcessRunResult} [spec.launchResult] 启动结果
+ * @returns {Promise<{ code: number; registry: Set<string>; traces: Set<string>; deletedKeys: string[]; removedPaths: string[]; launchCalls: number }>} 运行后状态
+ */
+async function runInstallExecuteWithFakeSystem({
+  installDir,
+  scratchRoot,
+  registryBefore = [],
+  startMenuBefore = [],
+  perMachine = false,
+  writesFiles = true,
+  writesResidue = false,
+  uninstallLeavesResidue = false,
+  canDelete = true,
+  installResult,
+  launchResult,
+}) {
+  const registry = new Set(registryBefore);
+  const traces = new Set(startMenuBefore);
+  /** @type {string[]} */
+  const deletedKeys = [];
+  /** @type {string[]} */
+  const removedPaths = [];
+  let installed = false;
+  let launched = 0;
+  const exePath = path.join(installDir, `${FIXTURE_PRODUCT}.exe`);
+  const uninstallerPath = path.join(installDir, `Uninstall ${FIXTURE_PRODUCT}.exe`);
+  const newShortcut = startMenuTraces(FIXTURE_PRODUCT).find((trace) => trace.kind === "shortcut");
+  assert(newShortcut !== undefined, "开始菜单痕迹清单应含 .lnk 快捷方式形态");
+  const shortcutPath = newShortcut.path;
+  const exists = (/** @type {string} */ target) => {
+    if (target === installDir) return installed;
+    if (target === exePath || target === uninstallerPath) return installed;
+    return traces.has(target);
+  };
+  const code = await runInstallFlow({
+    installer: path.join(scratchRoot, "fake-installer.exe"),
+    installDir,
+    facts: { productName: FIXTURE_PRODUCT, version: FIXTURE_VERSION, artifactTemplate: "", releaseDir: "release", perMachine },
+    timeoutMs: 1000,
+    scratchRoot,
+    run: async (spec) => {
+      if (spec.command.endsWith("fake-installer.exe")) {
+        const result = installResult ?? okResult("[fixture] installed\n");
+        if (result.code === 0) {
+          installed = writesFiles;
+          if (writesResidue) {
+            registry.add(FIXTURE_NEW_KEY);
+            traces.add(shortcutPath);
+          }
+        }
+        return result;
+      }
+      const result = okResult("[fixture] uninstalled\n");
+      installed = false;
+      if (!uninstallLeavesResidue) {
+        registry.delete(FIXTURE_NEW_KEY);
+        traces.delete(shortcutPath);
+      }
+      return result;
+    },
+    launchSmoke: async () => {
+      launched += 1;
+      return launchResult ?? okResult(stubSuccessOutput());
+    },
+    exists,
+    listDir: () => [`${FIXTURE_PRODUCT}.exe`, `Uninstall ${FIXTURE_PRODUCT}.exe`],
+    queryRegistry: async () => [...registry],
+    deleteRegistryKey: async (key) => {
+      deletedKeys.push(key);
+      if (!canDelete) return false;
+      registry.delete(key);
+      return true;
+    },
+    removePath: (target) => {
+      removedPaths.push(target);
+      if (!canDelete) return false;
+      traces.delete(target);
+      if (target === installDir) installed = false;
+      return true;
+    },
+  });
+  return { code, registry, traces, deletedKeys, removedPaths, launchCalls: launched };
 }
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
@@ -773,15 +942,23 @@ export async function run() {
       // 超时也要走完卸载(不留安装痕迹),调用序仍是 安装 → 启动 → 卸载
       assert(timedOut.result.calls.length === 2, `超时应仍执行卸载,实际 ${JSON.stringify(timedOut.result.calls)}`);
 
+      const leftoverKey = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{fixture}_is1";
       const residue = await withCapturedOutput(() =>
         runInstallExecuteWithStubs({
           installDir,
           scratchRoot: scratch,
-          registryAfter: ["HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{fixture}_is1"],
+          registryAfter: [leftoverKey],
         }),
       );
       assert(residue.result.code === 1, `卸载后注册表残留应判红,实际 ${residue.result.code}\n${residue.output}`);
-      assert(/静默卸载后仍存在卸载注册表项/.test(residue.output), `应报出注册表残留;实际:${residue.output}`);
+      assert(
+        residue.output.includes("本次运行新增了安装残留") && residue.output.includes(leftoverKey),
+        `应报出新增残留并点名具体键名;实际:${residue.output}`,
+      );
+      assert(
+        residue.result.deletedKeys.join("|") === leftoverKey,
+        `残留的卸载注册表项应被自愈清掉(沙盒记账替身);实际 ${JSON.stringify(residue.result.deletedKeys)}`,
+      );
 
       const installFail = await withCapturedOutput(() =>
         runInstallExecuteWithStubs({
@@ -826,6 +1003,212 @@ export async function run() {
         `解包检查 --help 应说明启动器选项;实际:${unpackedHelp.output}`,
       );
       console.log("[ok] install-smoke:--help/未知选项/非法超时均按预期处理(不给「假通过」的口子)");
+    }
+
+    // ---------- 11. 默认安装目录按构建口径推导 + 警告文案按口径生成 ----------
+    {
+      const root = createSandbox();
+      sandboxes.push(root);
+      const fakeLocalAppData = path.join(root, "fake-localappdata");
+      const fakeProgramFiles = path.join(root, "fake-programfiles");
+      const env = { LOCALAPPDATA: fakeLocalAppData, ProgramFiles: fakeProgramFiles };
+
+      // 纯函数层:两种口径各自的落点(环境注入,不读真实系统变量)
+      assert(
+        defaultInstallDir({ productName: FIXTURE_PRODUCT, perMachine: false }, env) ===
+          path.join(fakeLocalAppData, "Programs", FIXTURE_PRODUCT),
+        "按用户安装应落在 %LOCALAPPDATA%\\Programs\\<productName>",
+      );
+      assert(
+        defaultInstallDir({ productName: FIXTURE_PRODUCT, perMachine: true }, env) ===
+          path.join(fakeProgramFiles, FIXTURE_PRODUCT),
+        "按机器安装应落在 %ProgramFiles%\\<productName>",
+      );
+
+      // CLI 层:默认 package.json(perMachine 未设)→ 按用户路径
+      const perUser = runScript(root, "check-install-smoke.mjs", [], env);
+      assert(perUser.code === 0, `预演应零退出,实际 ${perUser.code}\n${perUser.output}`);
+      assert(
+        perUser.output.includes(`/D=${path.join(fakeLocalAppData, "Programs", FIXTURE_PRODUCT)}`),
+        `未设 perMachine 时应按用户路径预演;实际:${perUser.output}`,
+      );
+      assert(
+        perUser.output.includes("仅当前用户(无需管理员权限)"),
+        `预演应声明安装范围为按用户;实际:${perUser.output}`,
+      );
+      const perUserHelp = runScript(root, "check-install-smoke.mjs", ["--help"]);
+      assert(
+        perUserHelp.output.includes("%LOCALAPPDATA%\\Programs\\<productName>"),
+        `--help 应给出按用户口径的默认安装目录;实际:${perUserHelp.output}`,
+      );
+
+      // CLI 层:perMachine: true → Program Files 路径(ProgramFiles 无法被子进程覆盖,
+      // 故按测试进程里的真值断言「落在 Program Files 下、且不是按用户路径」)
+      const machineRoot = createSandbox({ perMachine: true });
+      sandboxes.push(machineRoot);
+      const realProgramFiles = process.env.ProgramFiles ?? process.env.PROGRAMFILES ?? "C:\\Program Files";
+      const perMachine = runScript(machineRoot, "check-install-smoke.mjs", []);
+      assert(perMachine.code === 0, `预演应零退出,实际 ${perMachine.code}\n${perMachine.output}`);
+      assert(
+        perMachine.output.includes(`/D=${path.join(realProgramFiles, FIXTURE_PRODUCT)}`),
+        `perMachine: true 时应按 Program Files 路径预演;实际:${perMachine.output}`,
+      );
+      assert(
+        !perMachine.output.includes(path.join(fakeLocalAppData, "Programs", FIXTURE_PRODUCT)),
+        "perMachine: true 时不得落回按用户路径",
+      );
+      assert(
+        perMachine.output.includes("所有用户(需管理员权限)"),
+        `预演应声明安装范围为所有用户;实际:${perMachine.output}`,
+      );
+      const machineHelp = runScript(machineRoot, "check-install-smoke.mjs", ["--help"]);
+      assert(
+        machineHelp.output.includes("%ProgramFiles%\\<productName>"),
+        `--help 应给出按机器口径的默认安装目录;实际:${machineHelp.output}`,
+      );
+
+      // 显式覆盖优先于推导
+      const custom = path.join(root, "custom-target");
+      const overridden = runScript(root, "check-install-smoke.mjs", ["--install-dir", custom]);
+      assert(
+        overridden.output.includes(`/D=${custom}`) && !overridden.output.includes(fakeLocalAppData),
+        `--install-dir 应覆盖推导出的默认目录;实际:${overridden.output}`,
+      );
+      assert(
+        !fs.existsSync(custom),
+        "预演模式即使指定了安装目录也不得创建它(覆盖参数不改变零副作用契约)",
+      );
+
+      // --execute 警告文案:按用户不出现提权/UAC 字样(按用户安装根本不需要提权,
+      // 无条件喊 UAC 会误导人去开管理员终端);按机器则必须点名 UAC
+      const userWarn = await withCapturedOutput(() =>
+        runInstallExecuteWithStubs({ installDir: path.join(root, "installed", FIXTURE_PRODUCT), scratchRoot: path.join(root, "scratch") }),
+      );
+      assert(/即将真实执行安装/.test(userWarn.output), `按用户路径应打印 execute 警告;实际:${userWarn.output}`);
+      assert(
+        userWarn.output.includes("不需要管理员权限"),
+        `按用户安装的警告应说明无需提权;实际:${userWarn.output}`,
+      );
+      assert(
+        !/UAC/.test(userWarn.output),
+        `按用户安装的警告不得出现 UAC 字样(与事实矛盾);实际:${userWarn.output}`,
+      );
+      const machineWarn = await withCapturedOutput(() =>
+        runInstallExecuteWithStubs({
+          installDir: path.join(root, "installed-machine", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-machine"),
+          perMachine: true,
+        }),
+      );
+      assert(
+        /需要管理员权限/.test(machineWarn.output) && /UAC/.test(machineWarn.output),
+        `按机器安装的警告应点名提权与 UAC;实际:${machineWarn.output}`,
+      );
+      console.log("[ok] install-smoke:默认安装目录按 perMachine 推导(按用户/按机器各就各位,--install-dir 可覆盖),警告文案随口径生成");
+    }
+
+    // ---------- 12. 安装部分完成:点名残留 + 尽力自愈 + 不误删 + 判定仍红 ----------
+    {
+      const root = createSandbox();
+      sandboxes.push(root);
+      const scratch = path.join(root, "scratch");
+      const installDir = path.join(root, "installed", FIXTURE_PRODUCT);
+      const shortcut = startMenuTraces(FIXTURE_PRODUCT).find((trace) => trace.kind === "shortcut");
+      assert(shortcut !== undefined, "开始菜单痕迹清单应含 .lnk 快捷方式形态(实测安装器写的就是它)");
+      const shortcutPath = shortcut.path;
+
+      // 场景 A:装到一半 —— 卸载注册表项与开始菜单快捷方式已写、安装文件未落
+      const partial = await withCapturedOutput(() =>
+        runInstallExecuteWithFakeSystem({ installDir, scratchRoot: scratch, writesFiles: false, writesResidue: true }),
+      );
+      assert(partial.result.code === 1, `装到一半应判红,实际 ${partial.result.code}\n${partial.output}`);
+      assert(
+        partial.output.includes(FIXTURE_NEW_KEY),
+        `失败输出应点名残留的卸载注册表项(完整键名);实际:${partial.output}`,
+      );
+      assert(
+        partial.output.includes(shortcutPath),
+        `失败输出应点名残留的开始菜单快捷方式完整路径;实际:${partial.output}`,
+      );
+      assert(
+        /静默安装后安装目录不存在/.test(partial.output) && /跳过静默卸载/.test(partial.output),
+        `应同时报出「文件没落」与「跳过卸载」两条根因;实际:${partial.output}`,
+      );
+      assert(/已自动清理/.test(partial.output), `能安全删的本次残留应主动清掉并如实报告;实际:${partial.output}`);
+      assert(
+        partial.result.registry.has(FIXTURE_NEW_KEY) === false,
+        "本次新增的卸载注册表项应已被自愈清掉",
+      );
+      assert(partial.result.traces.has(shortcutPath) === false, "本次新增的开始菜单快捷方式应已被自愈清掉");
+      assert(
+        partial.result.deletedKeys.join("|") === FIXTURE_NEW_KEY,
+        `注册表删除清单应只有本次新增的那一个;实际 ${JSON.stringify(partial.result.deletedKeys)}`,
+      );
+      assert(
+        partial.result.removedPaths.join("|") === shortcutPath,
+        `文件删除清单应只有本次新增的快捷方式;实际 ${JSON.stringify(partial.result.removedPaths)}`,
+      );
+      assert(partial.result.launchCalls === 0, "文件没落时不应启动 smoke(卸载器也不存在)");
+
+      // 场景 B:既有安装(安装前就存在的同产品键与快捷方式)绝不删除
+      const keep = await withCapturedOutput(() =>
+        runInstallExecuteWithFakeSystem({
+          installDir,
+          scratchRoot: path.join(root, "scratch-keep"),
+          registryBefore: [FIXTURE_PRE_EXISTING_KEY],
+          startMenuBefore: [shortcutPath],
+          writesResidue: true,
+          uninstallLeavesResidue: true,
+        }),
+      );
+      assert(keep.result.code === 1, `卸载留下注册表残留应判红,实际 ${keep.result.code}\n${keep.output}`);
+      assert(
+        !keep.output.includes(FIXTURE_PRE_EXISTING_KEY),
+        `安装前就存在的键不属本次残留,不应出现在残留/清理报告里;实际:${keep.output}`,
+      );
+      assert(
+        keep.result.deletedKeys.join("|") === FIXTURE_NEW_KEY,
+        `只准删本次新增的键;实际 ${JSON.stringify(keep.result.deletedKeys)}`,
+      );
+      assert(
+        keep.result.removedPaths.length === 0,
+        `安装前就存在的快捷方式不得删除;实际 ${JSON.stringify(keep.result.removedPaths)}`,
+      );
+      assert(
+        keep.result.registry.has(FIXTURE_PRE_EXISTING_KEY) && keep.result.traces.has(shortcutPath),
+        "既有安装的键与快捷方式必须原样保留",
+      );
+
+      // 场景 C:删不掉时点名并给出可照抄的人工清理命令
+      const locked = await withCapturedOutput(() =>
+        runInstallExecuteWithFakeSystem({
+          installDir,
+          scratchRoot: path.join(root, "scratch-locked"),
+          writesFiles: false,
+          writesResidue: true,
+          canDelete: false,
+        }),
+      );
+      assert(locked.result.code === 1, `自愈失败仍应判红,实际 ${locked.result.code}\n${locked.output}`);
+      assert(
+        locked.output.includes(`reg delete "${FIXTURE_NEW_KEY}" /f`),
+        `注册表删不掉时应给出人工清理命令原文;实际:${locked.output}`,
+      );
+      assert(
+        locked.output.includes(`del /f /q "${shortcutPath}"`),
+        `快捷方式删不掉时应给出人工清理命令原文;实际:${locked.output}`,
+      );
+      assert(
+        locked.result.registry.has(FIXTURE_NEW_KEY) && locked.result.traces.has(shortcutPath),
+        "自愈失败时不得谎报已清理",
+      );
+
+      // 场景 D:自愈不得把判定洗成绿 —— 残留即使被清干净,主判定仍为红
+      assert(
+        partial.result.code === 1 && partial.output.includes("本次运行新增了安装残留"),
+        "自愈之后仍须报出「新增残留」这条根因(判红不能被自愈掩盖)",
+      );
+      console.log("[ok] install-smoke:装到一半时点名残留键与快捷方式路径、主动自愈、既有安装不误删、自愈不改判定");
     }
   } catch (error) {
     failure = /** @type {Error} */ (error);
