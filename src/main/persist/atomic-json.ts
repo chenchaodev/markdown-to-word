@@ -146,6 +146,13 @@ export type JsonWrite = (
 export interface JsonWriter {
   (filePath: string, value: unknown, onCommitted?: () => void): Promise<void>;
   enqueue<T>(mutate: (write: JsonWrite) => Promise<T>): Promise<T>;
+  /**
+   * 等待队列中所有**已提交**的写盘任务结算(含瞬时占用重试),不含此后新提交的写。
+   * 排在队尾的空事务即 drain —— 与「等固定时长后放弃」的区别是:前者保证写已落盘,
+   * 后者不保证,写迟到落盘会覆盖调用方在等待期里做的新写入。
+   * 单次写失败不截断队列(见 createJsonWriter),故 drain 在有失败写时同样 resolve。
+   */
+  drain(): Promise<void>;
 }
 
 /** 创建原子 JSON 写入器(独立写队列,实例间互不串扰)。
@@ -198,6 +205,9 @@ export function createJsonWriter(deps: JsonWriterDeps = defaultJsonWriterDeps): 
     );
     return task;
   };
+
+  // drain = 排在队尾的空事务:它 resolve 即代表此前所有写(含重试)已结算
+  writer.drain = () => writer.enqueue(async () => undefined);
 
   return writer;
 }

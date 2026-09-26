@@ -275,6 +275,12 @@ export async function saveSettings(next: AppSettings): Promise<void> {
   });
 }
 
+/** 等设置写队列排空:loadSettings 的迁移写是 fire-and-forget(见其调度处),退出前
+ *  必须 drain,否则队列里未落盘的迁移结果会随进程一起丢掉。 */
+export function whenSettingsIdle(): Promise<void> {
+  return writeSettingsJson.drain();
+}
+
 /** 合并 + 持久化 + 返回;patch 按 DEFAULT_SETTINGS 键白名单校验,非法值回退默认。 */
 export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
   return writeSettingsJson.enqueue(async (write) => {

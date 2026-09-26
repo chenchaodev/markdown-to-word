@@ -156,31 +156,33 @@ export async function run() {
     assert(JSON.parse(await fs.readFile(goodFile, "utf8")).v === 3, "失败后同实例后续写应成功(队列不截断)");
     console.log("[ok] atomic-json:失败路径(调用方收到错误/旧文件完好/tmp 已清理/队列不截断)");
 
+    /** 记录每次 rename 收到的错误码,按脚本决定第几次放行;放行那轮走真实 rename,
+     *  否则只抛错不落盘,断言「内容真正落盘」就成了一句空话。
+     *  提升到函数作用域:第 5 组(重试)与第 6 组(drain 穿过重试)共用同一实现,不复制。
+     * @param {Array<string | null>} codes 依次抛出的错误码(null 表示放行并真实 rename)
+     * @returns {{ seen: string[]; transport: (from: string, to: string) => Promise<void> }} */
+    const makeFlakyRename = (codes) => {
+      const seen = /** @type {string[]} */ ([]);
+      let call = 0;
+      return {
+        seen,
+        transport: async (/** @type {string} */ from, /** @type {string} */ to) => {
+          const code = codes[Math.min(call, codes.length - 1)] ?? null;
+          call += 1;
+          if (code !== null) {
+            seen.push(code);
+            throw Object.assign(new Error(`rename 失败: ${code}`), { code });
+          }
+          await defaultJsonWriterDeps.rename(from, to);
+        },
+      };
+    };
+
     // ---- 5. 瞬时占用重试:rename 命中「被读句柄占用」类错误码须有界退避后成功 ----
     // 背景(实测):Windows 上 rename 覆盖正被读句柄占用的目标必然 EPERM(确定性),
     // 与并发读竞争 40 次约 23 次失败。杀软/索引器/云同步随手一握即触发,属瞬时占用,
     // 不重试就会丢掉整次写(本仓 settings 迁移曾因此在 CI runner 上整段失败)。
     {
-      /** 记录每次 rename 收到的错误码,按脚本决定第几次放行;放行那轮走真实 rename,
-       *  否则只抛错不落盘,断言「内容真正落盘」就成了一句空话
-       * @param {Array<string | null>} codes 依次抛出的错误码(null 表示放行并真实 rename)
-       * @returns {{ seen: string[]; transport: (from: string, to: string) => Promise<void> }} */
-      const makeFlakyRename = (codes) => {
-        const seen = /** @type {string[]} */ ([]);
-        let call = 0;
-        return {
-          seen,
-          transport: async (/** @type {string} */ from, /** @type {string} */ to) => {
-            const code = codes[Math.min(call, codes.length - 1)] ?? null;
-            call += 1;
-            if (code !== null) {
-              seen.push(code);
-              throw Object.assign(new Error(`rename 失败: ${code}`), { code });
-            }
-            await defaultJsonWriterDeps.rename(from, to);
-          },
-        };
-      };
       const delays = /** @type {number[]} */ ([]);
       const sleep = async (/** @type {number} */ ms) => {
         delays.push(ms);
@@ -236,6 +238,62 @@ export async function run() {
           () => undefined, // ENOENT = 已清理
         );
       console.log("[ok] atomic-json:瞬时占用重试(有界退避落地/真实故障不重试/耗尽即抛错并清理)");
+    }
+
+    // ---- 6. drain:等待队列结算(含重试),而非立即 resolve ----
+    // drain 是「确定性地等写落盘」的替代品,用来取代「等固定时长再放弃」——后者不保证
+    // 写已落盘,迟到落盘会覆盖调用方在等待期里做的新写入。故必须证明它真的等。
+    {
+      const delays = /** @type {number[]} */ ([]);
+      const sleep = async (/** @type {number} */ ms) => {
+        delays.push(ms);
+      };
+      const budget = { attempts: 6, baseDelayMs: 4, maxDelayMs: 40 };
+
+      // 6a. 队列里有待写时,drain 必须等它落盘后才 resolve
+      const drainFile = path.join(dir, "drain.json");
+      const pending = createWriter({ ...defaultJsonWriterDeps, sleep, renameRetry: budget });
+      const settled = [];
+      for (let i = 0; i < 3; i++) settled.push(await pending(drainFile, { seq: i }));
+      const drained = pending.drain();
+      let drainDone = false;
+      void drained.then(() => {
+        drainDone = true;
+      });
+      // 队列空时 drain 立即完成是合法的,故此处只断言「drain resolve 时三次写都已在盘上」
+      await drained;
+      const onDisk = JSON.parse(await fs.readFile(drainFile, "utf8"));
+      assert(onDisk.seq === 2, `drain resolve 时队列应已排空(盘面为最后一次写),实际 ${JSON.stringify(onDisk)}`);
+
+      // 6b. 关键性质:drain 必须穿过瞬时占用重试 —— 重试未结束时它不能 resolve
+      const flaky = makeFlakyRename(["EPERM", "EPERM", null]);
+      const retryWriter = createWriter({ ...defaultJsonWriterDeps, rename: flaky.transport, sleep, renameRetry: budget });
+      const retryFile = path.join(dir, "drain-retry.json");
+      void retryWriter(retryFile, { v: 1 }).catch(() => undefined);
+      await retryWriter.drain();
+      assert(
+        flaky.seen.length === 2,
+        `drain 应等到重试成功为止,实际重试 ${flaky.seen.length} 次(见重试码 ${JSON.stringify(flaky.seen)})`,
+      );
+      assert(
+        JSON.parse(await fs.readFile(retryFile, "utf8")).v === 1,
+        "drain resolve 时经重试的那次写必须已在盘面",
+      );
+      assert(drainDone, "drain 的 promise 应当已 resolve");
+
+      // 6c. 队列里有失败写时 drain 仍须 resolve(队列不截断,不得把 drain 变成死等)
+      const failing = createWriter({
+        ...defaultJsonWriterDeps,
+        rename: async () => {
+          throw Object.assign(new Error("rename 失败: ENOSPC"), { code: "ENOSPC" });
+        },
+        sleep,
+        renameRetry: budget,
+      });
+      const failFile = path.join(dir, "drain-fail.json");
+      await failing(failFile, { v: 1 }).catch(() => undefined);
+      await failing.drain();
+      console.log("[ok] atomic-json:drain(等队列落盘/穿过重试/失败写不致死等)");
     }
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);

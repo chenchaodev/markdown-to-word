@@ -274,24 +274,17 @@ export async function run() {
       "loadSettings 应返回结构化 migration 供 renderer 显示 warning",
     );
     validatePageSetup(s2b.pageSetup);
-    // 等待预算须覆盖产品的瞬时占用重试保证:Windows 上 rename 覆盖被读句柄占用的
-    // 目标必然 EPERM,atomic-json 为此做有界退避重试(默认 6 次、4ms 起、封顶 40ms,
-    // 最坏约 140ms)。断言本身不变(仍要求迁移真的固化到盘面、瞬时 migration 未落盘),
-    // 只是把「等多久」对齐到产品实际承诺,而不是一个比保证更短的任意数字。
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const disk = JSON.parse(await fs.readFile(settingsFile, "utf8"));
-      if (disk.pageSetup?.paper === "A4" && disk.pageSetup?.marginBottom === 296) break;
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+    // 等迁移写**结算**,而不是「等够久再放弃」:loadSettings 的迁移写是 fire-and-forget,
+    // 固定预算的轮询在慢机上到点放弃后,写仍可能迟到落盘并覆盖下一小节写入的内容
+    // (曾表现为下一小节读到陈旧设置)。drain 是确定性的:它 resolve 即代表队列已排空。
+    await m2b.whenSettingsIdle();
     const migratedDisk = JSON.parse(await fs.readFile(settingsFile, "utf8"));
     assert(
       migratedDisk.pageSetup?.paper === "A4" && migratedDisk.pageSetup?.marginBottom === 296 && !migratedDisk.migration,
       "load 迁移的合法 pageSetup 应可靠固化，且瞬时 migration 不写入 settings.json",
     );
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if (m2b.loadSettings().migration?.persistence === "committed") break;
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+    // committed 标志由写盘的 onCommitted 回调同步置位,而上面的 drain 已保证写结算,
+    // 故此处无需再轮询等待。
     assert(
       m2b.loadSettings().migration?.persistence === "committed",
       "迁移写成功后 cache 中的 migration 状态必须为 committed",
@@ -342,10 +335,8 @@ export async function run() {
     mMigrationFailure.loadSettings();
     rmSync(settingsFile, { force: true });
     mkdirSync(settingsFile);
-    for (let attempt = 0; attempt < 20; attempt++) {
-      if (mMigrationFailure.loadSettings().migration?.persistence === "failed") break;
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+    // 排空后该次写已结算(失败也在 catch 里置位),无需轮询。
+    await mMigrationFailure.whenSettingsIdle();
     assert(
       mMigrationFailure.loadSettings().migration?.persistence === "failed",
       "迁移写失败时 cache 必须记录 failed 状态",
@@ -471,11 +462,9 @@ export async function run() {
       loadGeometryWarnings.some((message) => message.includes("pageSetup") && message.includes("自动修正")),
       "loadSettings 迁移几何非法旧设置时应输出 warning",
     );
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const disk = JSON.parse(await fs.readFile(settingsFile, "utf8"));
-      if (disk.pageSetup?.paper === "A4" && disk.pageSetup?.marginTop === 296) break;
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+    // 排空后再让下一小节覆写文件:这一处原本是「最多等 100ms」的轮询,慢机上到点放弃后
+    // 迁移写会迟到落盘、覆盖下一小节刚写入的合法设置(曾表现为下一小节读到陈旧内容判红)。
+    await mGeometry.whenSettingsIdle();
 
     // ---- 9. 合法完整文件:原样读取(含 0 边界边距与 typography 全字段) ----
     await fs.writeFile(

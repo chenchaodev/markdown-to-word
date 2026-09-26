@@ -6,7 +6,7 @@
  * smoke(--smoke 冒烟实现;落在 src 编译面 → dist/main/smoke.js 随包分发,解包产物也能跑冒烟)。
  */
 import { app, BrowserWindow, session } from "electron";
-import { loadSettings } from "./persist/settings.js";
+import { loadSettings, whenSettingsIdle } from "./persist/settings.js";
 import { createWindow, getMainWindow } from "./windows/main-window.js";
 import { applyStartupSettingsRuntime, registerIpc } from "./ipc/register.js";
 import { applyDefaultDenyPermissions } from "./services/session-permissions.js";
@@ -79,5 +79,13 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform === "darwin") return;
+  // 退出前排空设置写队列:loadSettings 的迁移写是 fire-and-forget(不等它落盘就返回),
+  // 不排空则队列里未落盘的迁移结果随进程一起丢掉。排空失败不阻止退出 —— 此时
+  // 旧值仍在盘上,比起「退不出去」更可取。
+  void whenSettingsIdle()
+    .catch((error: unknown) => {
+      console.error("[main] 退出前排空设置写队列失败(继续退出):", error);
+    })
+    .then(() => app.quit());
 });

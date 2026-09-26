@@ -3,6 +3,14 @@
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见ADR.md。原文存档:docs/archive/。
 > **路径迁移注记(2026-08-24)**:目录结构重组(2026-08-23,提交 6f3d72a~9909d74)前历史条目「关联」字段中的扁平路径已失效——对照关系:`src/settings.ts`→`src/main/persist/settings.ts`、`src/index.ts`→`src/main/`(拆 windows/ipc/menu/converter/persist/services)、`src/renderer.ts`→`src/renderer/renderer.ts`+六功能域、`src/core/{i18n-dict}.ts`→`src/core/i18n/`、core 根级散文件→`pipeline/markdown/image/settings/util/` 子域。时间戳记录按规约不改写原文。
 
+### 2026-09-26 23:20:00 「等固定时长」不是同步:fire-and-forget 写必须用 drain 等结算(勿回退)
+- **结论**:① `loadSettings` 的迁移写是 **`void` fire-and-forget**(`settings.ts` 内 `void writeSettingsJson.enqueue(...)`,不等它落盘就返回)。因此**外部无法通过「等够久」确认写已落盘** —— 轮询到点放弃后,写仍可能**迟到落盘并覆盖调用方在等待期里做的新写入**。本仓真实故障:某小节等迁移写落盘最多等 100ms,慢机上到点放弃 → 下一小节覆写 `settings.json` → 上一小节的迁移结果迟到落盘盖掉它 → 下一小节读到陈旧内容、断言「合法文件字段应原样读取」判红。**同一段的另一处则报 `rm` 撞 `EISDIR`**(目标路径当时是目录)。
+- **正确解法是 drain**:在写入器上暴露 `drain()` —— **排在队尾的空事务**即 drain,它 resolve 即代表此前所有写(含重试)已结算;单次写失败不截断队列,故有失败写时 drain 同样 resolve(不会变成死等)。测试 `await` 它,取代固定预算轮询;**退出路径也必须 drain**,否则队列里未落盘的写随进程一起丢掉(这是真实产品缺口,不只是测试问题)。
+- **与 rename 重试的交互(放大效应,非唯一成因)**:rename 的瞬时占用重试把「快速失败、什么都不落盘」变成了「可能在百毫秒后成功落盘」,因而**扩大了迟到覆盖的窗口**。但根因是上面的同步方式本身不成立 —— 任何超过该预算的写(慢盘、fsync 慢)都会触发同样的覆盖,与重试无关。修 drain 同时消掉两者。
+- **理由**:这类失败极具误导性 —— 断言名字指向「设置读取」,实际是**上一个异步写的迟到落盘**;不逐段核对写入时序就只会去查读取逻辑,越查越偏。且它只在慢机/runner 上暴露,本机反复跑全绿。
+- **来源**:2026-09-26 CI 连续两次在同一段失败、两种不同错误;逐段核对 `[ok]` 进度后定位到「第一轮过、第二轮(覆盖率那轮)挂」的覆盖时序。
+- **关联**:`src/main/persist/atomic-json.ts`(`JsonWriter.drain`,队尾空事务)、`src/main/persist/settings.ts`(`whenSettingsIdle`)、`src/main/index.ts`(`window-all-closed` 退出前 drain,失败不阻止退出)、`test/main/atomic-json.test.js`(断言 drain 等落盘/穿过重试/失败写不致死等)、`test/main/settings.test.js`(四处轮询改用 drain)。**给 `JsonWriter` 加 drain 时须一并核查其他使用方**(`ui-state` 共用同一写入器,按需同样暴露)。
+
 ### 2026-09-26 22:10:00 docx MathSum 的 m:e 必须装被加数,否则 WPS 显示方框(勿回退)
 - **结论**:① docx 9.7.1 的 `MathSum({ children })` 里 **`children` 是被加数**(`∑_{i=1}^{n} x` 的 `x`),传 `[]` 会产出**空的 `<m:e/>`**;WPS 遇到没有操作数的 `m:nary` 会在该位置画一个**方框「□」**(Word 亦然,非 WPS 专属)。库实现里 `naryPr` 已内置 `∑`,故 `children` 绝不能再塞运算符——那会让 `∑` 显示两次且被加数丢失。② **KaTeX 产出的 `<munderover>` 节点只含运算符与上下限,被加数在它的下一个兄弟节点里**;要拿到被加数必须由 `walkChildren` 在遍历时取 `children[i+1]`,且**只消费这一个**兄弟(`∑…i = …` 的 `=` 与后续分式必须留在 `m:nary` 之外)。③ 这段转换此前是**不可达的死代码**(旧测试明确注明 `munderover`/`MathSum` 不可达),错误一直存在但从不执行 —— 是 display 公式改为按 display 模式渲染后才第一次真正走到,于是暴露出是错的。**教训:「某能力不可达」不等于「该路径已验证」,激活死代码必须重读实现。**
 - **另一条同域事实**:列表项/引用块内的公式节点 value 会被 remark-math 解析成带尾随 `$$` 的**脏值**(如 `"\frac{1}{2}\n$$"`),送进 KaTeX 必然解析失败 —— 与「渲染层是否递归进 math」是两个独立缺陷,只修后者仍会降级。两者同时修好后,列表/引用块内公式才真正走通 Office MathML 管线而非降级成 TeX 源码。
