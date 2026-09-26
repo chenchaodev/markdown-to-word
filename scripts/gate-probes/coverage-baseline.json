@@ -13,7 +13,7 @@
     "为什么不用 c8 的 --per-file(它看起来正好能堵「平均值稀释」):实测 94 个文件里有 33 个低于任一现阈值(最低的 src/core/image/image-type.ts 54.7%、src/main/smoke.ts 44.9%),--per-file 会要求先补齐几十个文件才能过,不是可落地的收紧手段,故改用显式的 0% 集合核对。",
     "别把本表当生成物:阈值与豁免的取舍是人的判断,故意不做 --write 自动重生成,免得一次自动重写把收紧面悄悄放宽(同 scripts/pinned-actions.baseline.json 的取向)。"
   ],
-  "headroomPp": 4,
+  "headroomPp": 5,
   "floor": {
     "statements": 85,
     "branches": 80,
@@ -21,10 +21,10 @@
     "lines": 85
   },
   "measured": {
-    "statements": null,
-    "branches": null,
-    "functions": null,
-    "lines": null
+    "statements": 92.81,
+    "branches": 89.03,
+    "functions": 93.1,
+    "lines": 92.81
   },
   "thresholds": {
     "statements": 90,
