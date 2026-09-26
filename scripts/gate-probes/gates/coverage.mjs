@@ -141,7 +141,13 @@ export async function probeCoverage(ctx) {
       command: node.command,
       args: [c8Bin, ...parsed.flags, node.command, "harness.mjs"],
       cwd: sandbox,
-      env: node.env,
+      // 子 c8 必须写进**自己的** NODE_V8_COVERAGE 目录。node.env 不覆盖该变量时,
+      // 子进程会继承外层 test:coverage 的同一个临时目录,并在自身 report 阶段把它清空 ——
+      // 结果是外层所有「文件名排序在 gate-probes.test.js 之前」的段,其 V8 覆盖数据整段丢失。
+      // 2026-09 实测:只跑 formula 段时 math.ts 为 86.15%/80%,同一运行加上 gate-probes 段
+      // 即掉到 0%/0%,而探针自身全绿。**这是让覆盖率门禁静默少算的坑,必须按目录隔离**,
+      // 不能靠给测试段改名去排序绕过。
+      env: { ...node.env, NODE_V8_COVERAGE: path.join(sandbox, ".v8cov") },
       timeoutMs: ctx.timeoutMs,
     });
 

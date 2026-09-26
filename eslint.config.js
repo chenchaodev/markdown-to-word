@@ -44,7 +44,12 @@ export default tseslint.config(
           allowDefaultProject: defaultProjectGlobs(["src", "test", "scripts"]),
           // 阶段 0 新增几何/产物/指纹脚本与测试后默认项目文件数超过 100；
           // 提高上限是为保持零登记 lint 覆盖，不是放宽类型门禁。
-          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 200,
+          // 2026-09 续提:阶段 5-7 拆分与新增脚本后该数已达 200(恰好等于旧上限,
+          // 零余量) —— 再加任何一个 .js/.mjs 就会整体报 "Too many files (>200)"
+          // 把 lint 打成一片红。清单是 defaultProjectGlobs 运行时扫描得出的,
+          // 不存在「登记遗漏」,故按当前实际规模留出余量;此值只影响 lint 的性能护栏,
+          // **不放宽任何类型或规则门禁**。
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 300,
         },
         tsconfigRootDir: import.meta.dirname,
       },
