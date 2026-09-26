@@ -9,6 +9,7 @@ import {
   convertBtn,
   dropZone,
   mergeBtn,
+  messageSlot,
   progressArea,
   progressFill,
   progressText,
@@ -83,16 +84,22 @@ export function setProgress(percent: number): void {
   );
 }
 
-/** 显示进度区并复位进度(同时使能取消按钮)。 */
+/** 显示进度区并复位进度(同时使能取消按钮)。
+ *  同步把消息槽标为 aria-busy:转换期间读屏用户需要一个「忙碌」状态位,
+ *  进度百分比之外的整体语义(正在进行转换)由它承担。 */
 export function showProgress(): void {
   progressArea.classList.remove("hidden");
   cancelBtn.disabled = false;
+  messageSlot.setAttribute("aria-busy", "true");
   setProgress(0);
 }
 
-/** 隐藏进度区(转换结束;取消按钮状态随之下次 showProgress 复位)。 */
+/** 隐藏进度区(转换结束;取消按钮状态随之下次 showProgress 复位)。
+ *  aria-busy 显式写回 "false" 而非摘除属性:缺省值本就是 false,两者语义等价,
+ *  少依赖一个 DOM 接口(renderer 测试以最小元素 stub 驱动本模块)。 */
 export function hideProgress(): void {
   progressArea.classList.add("hidden");
+  messageSlot.setAttribute("aria-busy", "false");
 }
 
 /* ---------- 字段级错误提示(边距 / 字体 / 字号 / 行距) ----------
@@ -193,10 +200,62 @@ export function trapFocus(dialog: HTMLElement): () => void {
 }
 
 /* ---------- 焦点管理 ---------- */
-/** 焦点还给当前可见的主操作按钮(弹窗关闭后)。 */
+/**
+ * 焦点来源栈(栈式,与 trapStack 同理):打开抽屉/弹窗时记下当时的
+ * document.activeElement,关闭时按栈序归还。栈而非单值的原因:预设保存弹窗
+ * 可以叠在设置抽屉之上,抽屉内记的来源(⚙)不该被弹窗的关闭动作提前归还。
+ * 归还时逐级回退:元素已卸载(如向导内选文件后空态按钮消失)或已 disabled
+ * 就退到下一级兜底,保证焦点不丢到 body。
+ */
+const focusOriginStack: HTMLElement[] = [];
+
+/** 元素是否仍可作为焦点落点:可聚焦且未被 disabled 摘掉。
+ *  用鸭子类型而非 instanceof HTMLElement/HTMLButtonElement —— Node 侧的
+ *  renderer 测试以最小 DOM stub 驱动本模块,全局 HTMLElement 不存在,
+ * instanceof 会直接抛 ReferenceError。 */
+function isFocusableTarget(el: HTMLElement): boolean {
+  if (typeof el.focus !== "function") return false;
+  const maybeButton = el as Partial<HTMLButtonElement>;
+  return maybeButton.disabled !== true;
+}
+
+/**
+ * 记录焦点来源:浮层打开前调用。
+ * 防御:来源必须是文档内可聚焦元素(body / null 一律不入栈),否则归还时会
+ * 把焦点按到一个不可聚焦的祖先上。
+ */
+export function rememberFocusOrigin(): void {
+  const active = document.activeElement as HTMLElement | null;
+  if (!active || active === document.body) return;
+  if (!isFocusableTarget(active)) return;
+  focusOriginStack.push(active);
+}
+
+/**
+ * 归还焦点:浮层关闭后调用。优先还给打开它的那个元素;该元素已失效时
+ * 交给 fallback(默认:当前可见的主操作按钮 → 舞台容器)。
+ */
+export function restoreFocusOrigin(fallback?: () => void): void {
+  const origin = focusOriginStack.pop();
+  if (origin && origin.isConnected && isFocusableTarget(origin)) {
+    origin.focus();
+    return;
+  }
+  (fallback ?? focusActionButton)();
+}
+
+/** 焦点还给当前可见的主操作按钮(浮层关闭后的兜底落点)。
+ *  三枚主操作都不可用(转换中 / 无文件)时退到舞台容器
+ *  (role=region + tabindex=0),避免焦点掉到 body 而键盘链路断掉。 */
 export function focusActionButton(): void {
   const visible = [batchBtn, convertBtn, mergeBtn].find(
     (btn) => !btn.classList.contains("hidden") && !btn.disabled,
   );
-  visible?.focus();
+  if (visible) {
+    visible.focus();
+    return;
+  }
+  if (!document.body.contains(document.activeElement) || document.activeElement === document.body) {
+    dropZone.focus();
+  }
 }

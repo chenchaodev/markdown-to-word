@@ -1,9 +1,9 @@
 /**
  * 设置抽屉:开合管理(⚙ 按钮 / 关闭按钮 / 遮罩 / Esc 链末位关闭,焦点陷阱防逃逸,
- * 关闭后焦点归还 ⚙ 按钮)、开合记忆(ui-state.panelOpen.page;typography 字段为
- * main 侧形状兼容保留镜像同值,sanitize 契约不变)、转换中可打开(即时生效链路
- * 不经过本模块)、副标题「当前预设名 · 纸张」(自顶栏 chip 迁入,由 settings-panel
- * 回填/写回后刷新;空文案时 CSS :empty 隐藏)。
+ * 打开时焦点落当前分组 Tab、关闭后焦点归还触发元素)、开合记忆(ui-state.panelOpen.page;
+ * typography 字段为 main 侧形状兼容保留镜像同值,sanitize 契约不变)、转换中可打开
+ * (即时生效链路不经过本模块)、副标题「当前预设名 · 纸张」(自顶栏 chip 迁入,由
+ * settings-panel 回填/写回后刷新;空文案时 CSS :empty 隐藏)。
  * 依赖方向:本模块 → dom/state/utils 与 core/i18n;不反向引用消费方。
  */
 import {
@@ -13,7 +13,7 @@ import {
   settingsDrawer,
   settingsOpenBtn,
 } from "../dom/refs.js";
-import { trapFocus, setError } from "../state/utils.js";
+import { trapFocus, setError, rememberFocusOrigin, restoreFocusOrigin } from "../state/utils.js";
 import { t } from "../../core/i18n.js";
 
 /* 焦点陷阱句柄(二次调用防御:先解除旧陷阱再启用新陷阱) */
@@ -23,23 +23,35 @@ export function isSettingsDrawerOpen(): boolean {
   return !settingsDrawer.classList.contains("hidden");
 }
 
-/** 打开抽屉(幂等);焦点落关闭按钮,Tab 循环锁定在抽屉内。 */
+/** 抽屉初始焦点落点:当前激活的分组 Tab(roving tabindex 里 tabindex=0 的那枚)。
+ *  取 Tab 而非关闭钮的理由:抽屉的主体结构就是左侧六组竖向导航,焦点落在
+ *  导航上,方向键即可在组间走,Tab 直接进入当前组面板 —— 与 ARIA 对
+ *  「以 tablist 开场的对话框」的落点约定一致。取 .active 类为准(aria-selected
+ *  目前只有初始态正确,组切换只同步类名,见 settings-panel.initSettingsTabs)。
+ *  导航缺失时退回关闭钮,保证焦点不丢。 */
+function focusDrawerEntry(): void {
+  const activeTab = settingsDrawer.querySelector<HTMLElement>(".settings-tab.active");
+  (activeTab ?? drawerCloseBtn).focus();
+}
+
+/** 打开抽屉(幂等);焦点落当前分组 Tab,Tab 循环锁定在抽屉内。 */
 export function openSettingsDrawer(): void {
   if (isSettingsDrawerOpen()) return;
   settingsDrawer.classList.remove("hidden");
-  drawerCloseBtn.focus();
+  rememberFocusOrigin(); // 记下触发元素(顶栏 ⚙),关闭后原样归还
+  focusDrawerEntry();
   drawerTrap?.(); // 二次调用防御:先解除旧陷阱再启用新陷阱
   drawerTrap = trapFocus(settingsDrawer);
 }
 
-/** 关闭抽屉(幂等);解除陷阱并把焦点还给触发按钮。 */
+/** 关闭抽屉(幂等);解除陷阱并把焦点还给触发元素(失效则退回可见的主操作钮)。 */
 export function closeSettingsDrawer(): void {
   if (!isSettingsDrawerOpen()) return;
   drawerTrap?.();
   drawerTrap = null;
   settingsDrawer.classList.add("hidden");
+  restoreFocusOrigin();
   persistDrawerOpen();
-  settingsOpenBtn.focus();
 }
 
 /**

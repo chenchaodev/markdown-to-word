@@ -20,6 +20,7 @@ import {
   completeDialogReveal,
   completeDialogTitle,
   completeOutputPath,
+  copyLiveEl,
   precheckDialog,
   precheckDialogDesc,
   precheckList,
@@ -39,7 +40,12 @@ import {
 } from "../dom/refs.js";
 import { state, type BatchItem, type BatchResult } from "../state/state.js";
 import { baseName } from "../state/pure.js";
-import { focusActionButton, trapFocus } from "../state/utils.js";
+import {
+  focusActionButton,
+  rememberFocusOrigin,
+  restoreFocusOrigin,
+  trapFocus,
+} from "../state/utils.js";
 import { batchSuccessPaths } from "../state/pure.js";
 import { formatWarning, t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";
@@ -51,9 +57,14 @@ import type { ConvertWarning } from "../../core/i18n.js";
 let completeDialogTrap: (() => void) | null = null;
 let batchDialogTrap: (() => void) | null = null;
 
-/* ---------- 复制反馈(标签/反馈两枚 i18n 节点,只切显隐) ----------
+/* ---------- 复制反馈(标签/反馈两枚 i18n 节点 + 一条常驻读屏播报位) ----------
  * 契约:反馈不改写标签 textContent(改写会抹掉 data-i18n,语言切换后不再本地化);
- * 单实例 timer(后一次复制顶替前一次);弹窗打开前复位,不得跨弹窗残留。 */
+ * 单实例 timer(后一次复制顶替前一次);弹窗打开前复位,不得跨弹窗残留。
+ * 读屏播报:按钮内的显隐互换靠不住 —— 反馈节点是 display:none→flex 且文本
+ * 不变,live region 收不到内容变更。故另设一条常驻 sr-only region(#copyLive)
+ * 承接「已复制」,视觉仍由按钮内的显隐表达。
+ * 失败不重复播报:失败走弹窗内 role=alert 错误块(showDialogError /
+ * showBatchDialogError),那里已是即时打断位,再播一次会双重念白。 */
 const COPY_FEEDBACK_MS = 1500;
 
 const COPY_FEEDBACK_IDS = [
@@ -71,9 +82,18 @@ function setCopyFeedbackVisible(visible: boolean): void {
   }
 }
 
-/** 复制成功:隐藏标签、显示「已复制」;到期复原(单实例计时器)。 */
+/** 写入读屏播报位:先清空再写,保证「连续复制同一路径」也构成一次内容变更
+ *  (文本不变时部分读屏会跳过播报)。#copyLive 是 index.html 的常驻契约节点,
+ *  与其余 refs 同级,不设存在性兜底。 */
+function announceCopyResult(message: string): void {
+  copyLiveEl.textContent = "";
+  copyLiveEl.textContent = message;
+}
+
+/** 复制成功:隐藏标签、显示「已复制」;到期复原(单实例计时器)并播报一次。 */
 export function showCopyFeedback(): void {
   setCopyFeedbackVisible(true);
+  announceCopyResult(t("common.copied"));
   if (copyFeedbackTimer !== undefined) window.clearTimeout(copyFeedbackTimer);
   copyFeedbackTimer = window.setTimeout(() => {
     copyFeedbackTimer = undefined;
@@ -81,13 +101,14 @@ export function showCopyFeedback(): void {
   }, COPY_FEEDBACK_MS);
 }
 
-/** 复位复制反馈:由 show* 弹窗入口调用,清掉上一次的反馈与计时器。 */
+/** 复位复制反馈:由 show* 弹窗入口调用,清掉上一次的反馈、计时器与播报残留。 */
 export function resetCopyFeedback(): void {
   if (copyFeedbackTimer !== undefined) {
     window.clearTimeout(copyFeedbackTimer);
     copyFeedbackTimer = undefined;
   }
   setCopyFeedbackVisible(false);
+  copyLiveEl.textContent = "";
 }
 
 /* ---------- 转换结果汇总条(常驻,不依赖弹窗;成功/失败/取消三态 + 打开引导 + 可折叠警告) ---------- */
@@ -142,6 +163,12 @@ export function showSummary(opts: SummaryOptions): void {
       return li;
     }),
   );
+  // 完成态收束重放:汇总条常驻、不再回 hidden,动画只会在首次显示时跑一次;
+  // 摘挂 + 读一次 offsetWidth(强制样式重算)+ 挂回,让每一次完成都重新播一拍。
+  // 读布局是本文件唯一一次强制重排,每次转换一次,代价可忽略。
+  resultSummary.classList.remove("res-beat");
+  void resultSummary.offsetWidth;
+  resultSummary.classList.add("res-beat");
 }
 
 /* ---------- 转换完成弹窗(单文件 / 合并) ---------- */
@@ -170,6 +197,7 @@ export function showCompleteDialog(
   completeDialogOpen.classList.toggle("hidden", !ok);
   resetCopyFeedback(); // 打开即复位:上一次的「已复制」不得跨弹窗残留
   completeDialog.classList.remove("hidden");
+  rememberFocusOrigin(); // 记下触发元素(主操作钮 / 汇总条「失败详情」/ 快捷键)
   completeDialogOk.focus(); // 焦点落在默认操作(确定)上
   completeDialogTrap?.(); // 二次调用防御:先解除旧陷阱
   completeDialogTrap = trapFocus(completeDialog); // Tab 循环不逃逸到背景页
@@ -179,7 +207,7 @@ export function hideCompleteDialog(): void {
   completeDialogTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
   completeDialogTrap = null;
   completeDialog.classList.add("hidden");
-  focusActionButton(); // 焦点还给触发按钮,便于键盘继续操作
+  restoreFocusOrigin(focusActionButton); // 焦点还给触发元素;失效则退到主操作钮
 }
 
 /** 弹窗内错误提示(打开文件失败等非致命错误,不打断弹窗)。 */
@@ -226,6 +254,7 @@ export function showBatchDialog(result: BatchResult): void {
   batchDialogError.textContent = "";
   resetCopyFeedback(); // 同完成弹窗:打开即复位复制反馈
   batchDialog.classList.remove("hidden");
+  rememberFocusOrigin(); // 同完成弹窗:记下触发元素(批量钮 / 汇总条「失败详情」)
   batchDialogOk.focus(); // 焦点落在默认操作(确定)上
   batchDialogTrap?.(); // 二次调用防御:先解除旧陷阱
   batchDialogTrap = trapFocus(batchDialog); // Tab 循环不逃逸到背景页
@@ -235,7 +264,7 @@ export function hideBatchDialog(): void {
   batchDialogTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
   batchDialogTrap = null;
   batchDialog.classList.add("hidden");
-  focusActionButton();
+  restoreFocusOrigin(focusActionButton);
 }
 
 /** 逐条结果:文件名 + 成功/失败/取消图标 + 警告(黄)/错误(红)/取消(灰)信息。 */
@@ -333,6 +362,7 @@ export function showPrecheckDialog(warnings: ConvertWarning[]): Promise<boolean>
   );
   precheckDialogDesc.textContent = t("precheck.desc", { count: warnings.length });
   precheckDialog.classList.remove("hidden");
+  rememberFocusOrigin(); // 记下发起转换的那个动作,关闭后回到它
   precheckContinue.focus();
   precheckTrap?.(); // 二次调用防御:先解除旧陷阱
   precheckTrap = trapFocus(precheckDialog);
@@ -347,7 +377,7 @@ function releasePrecheck(): void {
   precheckTrap?.();
   precheckTrap = null;
   precheckDialog.classList.add("hidden");
-  focusActionButton();
+  restoreFocusOrigin(focusActionButton);
 }
 
 /** 预检报告所有关闭路径统一走此函数,确保 resolver 与 Promise 必定结算。 */

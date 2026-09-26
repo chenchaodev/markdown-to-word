@@ -333,6 +333,42 @@
   color: var(--mut);
 }
 
+/* 完成态收束(每次完成各播一次,不喧宾夺主):
+ * 汇总条淡入 + 成功绿勾轻落一拍。只动 opacity / transform —— 消息区是
+ * --feed-h 锁高的固定槽,完成反馈一律不得改写槽内几何(ui-guidelines §5.2);
+ * 也不设 animation-delay / pointer-events,播完即常态,不阻塞后续操作。
+ * 类名由 showSummary 摘挂重放:汇总条常驻不再回 hidden,动画不会自动重来。 */
+.result-summary.res-beat {
+  animation: res-in 0.2s ease-out;
+}
+
+@keyframes res-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* 绿勾只属「成功」(朱砂/绿都不越界:失败与取消不配落笔动效) */
+.result-summary--ok.res-beat .result-summary-icon {
+  animation: res-ok-in 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+
+@keyframes res-ok-in {
+  from {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .result-summary-texts {
   flex: 1;
   min-width: 0;

@@ -11,7 +11,7 @@ import { updateActionButtons } from "./convert/file-list.js";
 import { bindEvents } from "./convert/events/index.js";
 import { bindSettingsEvents } from "./settings/settings-bindings.js";
 import { bindSettingsDrawerEvents } from "./settings/settings-drawer.js";
-import { aboutOpenBtn } from "./dom/refs.js";
+import { aboutOpenBtn, dropZone } from "./dom/refs.js";
 import { loadSettings, initSettingsTabs } from "./settings/settings-panel.js";
 import {
   bindRecentFilesEvents,
@@ -83,7 +83,21 @@ async function runInitBarrier(): Promise<void> {
     // 不会先揭示再跳变(read 触发 flush,代价一次 reflow,仅启动期一次)。
     void document.body.offsetHeight;
     rootEl.style.visibility = "";
+    focusStageEntry();
   }
+}
+
+/**
+ * 首屏焦点落点:舞台容器(#dropZone,role=region + tabindex=0)。
+ * 不落焦的代价:键盘用户的起点是 body,Tab 要先穿过标题栏与整条动作栏才到文稿台,
+ * 而文稿台才是这个应用的主入口(投放/选择文件)。落在舞台上时,后续 Tab 顺序
+ * 与视觉顺序一致(舞台 → 队列行 → 动作栏)。
+ * 舞台有 tabindex 但 .stage-wrap:focus-visible 显式去掉了描边(纸面不该有
+ * 焦点框),故聚焦不产生视觉跳动;此处只做程序性聚焦,不用 focus-visible。
+ * 揭示之后再落焦:屏障期间根元素不可见,提前聚焦没有意义。
+ */
+function focusStageEntry(): void {
+  dropZone.focus();
 }
 
 /* ---------- 初始化 ---------- */

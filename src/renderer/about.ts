@@ -37,7 +37,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // Read version from query string → badge next to wordmark
   const version = new URLSearchParams(location.search).get("v") ?? "";
   const versionEl = document.getElementById("version");
-  if (versionEl) versionEl.textContent = version ? `v${version}` : "";
+  if (versionEl) {
+    versionEl.textContent = version ? `v${version}` : "";
+    // 徽标只显示版本号,含义靠 title 补全;与主窗标题栏 .tb-ver 用同一条字典键,
+    // 同一份数据在两处的说明口径不分叉
+    versionEl.title = version ? t("app.versionTitle", { version }) : "";
+  }
 
   // Update status row (under version badge)
   const statusEl = document.getElementById("updateStatus");
@@ -92,6 +97,12 @@ document.addEventListener("DOMContentLoaded", () => {
       window.aboutApi.openExternal(MANUAL_URL);
     });
   }
+
+  // 初始焦点:落在「查看使用手册」——本页唯一的主动作(许可 / 仓库 / 作者都是
+  // 外链,信息性质)。不落焦时键盘用户的起点是文档根,得先 Tab 过整张信息卡
+  // 才够得到动作钮。落焦后 Shift+Tab 可原路退回三条外链,顺序与视觉一致。
+  // 焦点环走既有 :focus-visible(朱砂描边),无新增样式。
+  manualBtn?.focus();
 
   // Repo link → open in external browser (suppress in-page navigation)
   const repoLink = document.getElementById("repoLink");

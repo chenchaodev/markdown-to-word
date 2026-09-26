@@ -290,8 +290,10 @@
              (高度由 --feed-h 锁死,内容超出在槽内滚动)。
              子元素 id 不变,setStatus / showSkippedList / showSummary 渲染调用零改动。
              #status 是转换阶段/结果的唯一播报位:role 由 setStatus 按语义在
-             status(polite) ⇄ alert(assertive) 间切换,aria-atomic 保证整句播报。 -->
-        <div id="messageSlot" class="feed">
+             status(polite) ⇄ alert(assertive) 间切换,aria-atomic 保证整句播报。
+             aria-busy 由 showProgress / hideProgress 挂落:转换期间整体标记为忙碌,
+             百分比之外给读屏一个「正在转换」的状态位。 -->
+        <div id="messageSlot" class="feed" aria-busy="false">
           <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></p>
 
           <!-- 被跳过的非 Markdown 文件名列表(可折叠) -->
@@ -1054,6 +1056,13 @@
         </div>
       </div>
     </div>
+
+    <!-- 复制反馈的读屏播报位:常驻 sr-only live region,视觉隐藏但留在无障碍树内。
+         按钮内的「复制路径」↔「已复制」是显隐互换且文本不变,读屏收不到内容变更,
+         故由本节点承接消息(ui/dialogs.showCopyFeedback 写入、resetCopyFeedback 清空);
+         复制失败走弹窗内 role=alert 错误块,不在此重复播报。
+         刻意不带 data-i18n:文案由字典在写入时刻取,静态回退留空。 -->
+    <p id="copyLive" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
 
     <script type="module" src="./renderer.js"></script>
   </body>

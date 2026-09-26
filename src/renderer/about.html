@@ -31,6 +31,7 @@
       --ink-2: #494E58;
       --mut: #686D76;
       --line: #E2E2DC;
+      --line-2: #CCCDC5; /* 控件描边:版本徽标与链接下划线(与 base.css 同名同值) */
       --acc: #B5301C;
       --acc-ink: #B5301C;
       --acc-h: #982512;
@@ -64,6 +65,7 @@
       --ink-2: #B8BCC4;
       --mut: #8B929D;
       --line: #2A2F38;
+      --line-2: #3B424E;
       --acc: #C23D1E;
       --acc-ink: #EA6A4A;
       --acc-h: #D5542F;
@@ -85,6 +87,7 @@
         --ink-2: #B8BCC4;
         --mut: #8B929D;
         --line: #2A2F38;
+        --line-2: #3B424E;
         --acc: #C23D1E;
         --acc-ink: #EA6A4A;
         --acc-h: #D5542F;
@@ -255,11 +258,13 @@
       gap: 10px;
     }
 
+    /* 版本徽标:数据层(mono),描边取控件档 --line-2 与主窗 .tb-ver 对齐,
+       使其读作一枚有意为之的数据牌而不是纸面上的浅渍 */
     .about-ver {
       font-family: var(--ff-mono);
       font-size: 12px;
       color: var(--mut);
-      border: 1px solid var(--line);
+      border: 1px solid var(--line-2);
       border-radius: 999px;
       padding: 1px 8px;
       white-space: nowrap;
@@ -277,7 +282,7 @@
       border-top: 1px solid var(--line);
     }
 
-    /* ===== Meta rows ===== */
+    /* Meta rows:dl 由 .meta-row 逐行排布(div 作分组壳,HTML5 允许) */
     .about-meta {
       display: flex;
       flex-direction: column;
@@ -304,10 +309,12 @@
       color: var(--ink-2);
     }
 
+    /* 链接常驻下划线(--line-2):只靠颜色与正文区分,读屏与色觉障碍用户都要
+       额外的可识别线索(非仅 hover 才出现的线索);hover 转朱砂。 */
     .meta-value a {
       color: var(--ink-2);
       text-decoration: none;
-      border-bottom: 1px solid transparent;
+      border-bottom: 1px solid var(--line-2);
       transition: color 120ms ease, border-color 120ms ease;
     }
 
@@ -325,7 +332,10 @@
     }
 
     /* ===== Quick start ===== */
+    /* 章节题:衬线不做正文、层级靠字重 + 三级文字色(guidelines §4.4);
+       用 h2 让读屏拿到「快速上手」这一节的结构位置 */
     .about-section-title {
+      font-family: var(--ff-ui);
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.06em;
@@ -470,9 +480,12 @@
     <!-- Vertical label -->
     <span class="vertical-label" aria-hidden="true">本地离线 · 真 docx</span>
 
-    <!-- Brand: wordmark + version badge -->
+    <!-- Brand: wordmark + version badge。
+         文档大纲:wordmark 是本页唯一的 h1(页面题字,展示衬线只做声音不做正文,
+         见 ui-guidelines §1.2),窗口 <title> 是它的文档名;版本号是紧随其后的
+         数据层(mono 徽标 + title 说明全称,与主窗标题栏 .tb-ver 同一口径) -->
     <div class="about-brand">
-      <span class="about-wordmark">MarkdownToWord</span>
+      <h1 class="about-wordmark">MarkdownToWord</h1>
       <span class="about-ver" id="version"></span>
     </div>
 
@@ -485,7 +498,7 @@
 
     <!-- Quick start -->
     <div class="about-section">
-      <div class="about-section-title" data-i18n="about.quickStart"></div>
+      <h2 class="about-section-title" data-i18n="about.quickStart"></h2>
       <ol class="about-steps">
         <li data-i18n="about.step1"></li>
         <li data-i18n="about.step2"></li>
@@ -505,27 +518,29 @@
 
     <hr class="about-divider">
 
-    <!-- Meta rows (single repo entry) -->
-    <div class="about-meta">
+    <!-- Meta rows (single repo entry):dl/dt/dd 而非 div 对 div ——
+         「标签 → 取值」是定义关系,读屏会成对播报(如「许可证:GPL-3.0」),
+         视觉排布仍由 .meta-row 的 flex 基线对齐承担,呈现零变化 -->
+    <dl class="about-meta">
       <div class="meta-row">
-        <span class="meta-label" data-i18n="about.author"></span>
-        <span class="meta-value">
+        <dt class="meta-label" data-i18n="about.author"></dt>
+        <dd class="meta-value">
           <a id="authorLink" href="https://github.com/chenchaodev" target="_blank" rel="noopener noreferrer">chenchaodev</a>
-        </span>
+        </dd>
       </div>
       <div class="meta-row">
-        <span class="meta-label" data-i18n="about.license"></span>
-        <span class="meta-value">
+        <dt class="meta-label" data-i18n="about.license"></dt>
+        <dd class="meta-value">
           <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener noreferrer">GPL-3.0</a>
-        </span>
+        </dd>
       </div>
       <div class="meta-row">
-        <span class="meta-label" data-i18n="about.repo"></span>
-        <span class="meta-value">
+        <dt class="meta-label" data-i18n="about.repo"></dt>
+        <dd class="meta-value">
           <a id="repoLink" href="https://github.com/chenchaodev/markdown-to-word" target="_blank" rel="noopener noreferrer">github.com/chenchaodev/markdown-to-word</a>
-        </span>
+        </dd>
       </div>
-    </div>
+    </dl>
 
     <!-- Primary action: user manual -->
     <div class="about-actions">

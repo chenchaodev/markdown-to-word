@@ -18,14 +18,19 @@ import {
 } from "./settings-logic.js";
 import {
   presetNameInput,
-  presetSaveBtn,
   presetSaveDialog,
   presetSaveError,
   quickPresetSelect,
   templatePresetSelect,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { setError, setStatus, trapFocus } from "../state/utils.js";
+import {
+  setError,
+  setStatus,
+  rememberFocusOrigin,
+  restoreFocusOrigin,
+  trapFocus,
+} from "../state/utils.js";
 import { errorMessage } from "../state/pure.js";
 import {
   applySettingsToControls,
@@ -42,6 +47,9 @@ export function openPresetSaveDialog(): void {
   presetSaveError.classList.add("hidden");
   presetSaveError.textContent = "";
   presetSaveDialog.classList.remove("hidden");
+  // 本弹窗叠在设置抽屉之上,焦点来源走栈:关闭时先还本弹窗的来源(抽屉内
+  // 「另存为预设」钮),抽屉后续关闭再还它自己的来源(顶栏 ⚙),层级不乱。
+  rememberFocusOrigin();
   presetNameInput.focus();
   // Tab 循环不逃逸到背景页。二次调用防御——先解除
   // 旧陷阱再启用新陷阱,避免重复 open 时旧 keydown 监听句柄被覆盖而泄漏。
@@ -54,7 +62,7 @@ export function closePresetSaveDialog(): void {
   presetSaveTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
   presetSaveTrap = null;
   presetSaveDialog.classList.add("hidden");
-  presetSaveBtn.focus(); // 焦点还给触发按钮,便于键盘继续操作
+  restoreFocusOrigin(); // 焦点还给触发按钮,便于键盘继续操作
 }
 
 function showPresetSaveError(message: string): void {

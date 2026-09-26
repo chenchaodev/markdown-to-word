@@ -556,7 +556,10 @@
   justify-content: flex-end;
 }
 
-/* 行内移除(破坏性操作红线:墨色描边系,不用红) */
+/* 行内移除(破坏性操作红线:墨色描边系,不用红)
+ * 常驻可见但压低存在感,行被指向(悬停 / 键盘聚焦)时才完全显形:与最近列表
+ * .rops 的「靠近才浮现」同一套交互语汇,又不学它把动作整个藏起来 ——
+ * 队列的移除是高频动作,藏起来会丢可发现性。只动 opacity,行内布局不动 */
 .multi-remove {
   width: 28px;
   height: 28px;
@@ -564,7 +567,8 @@
   display: grid;
   place-items: center;
   color: var(--mut);
-  transition: background-color 0.13s ease, color 0.13s ease;
+  opacity: 0.55;
+  transition: background-color 0.13s ease, color 0.13s ease, opacity 0.13s ease;
   flex: none;
 }
 
@@ -576,6 +580,11 @@
 .multi-remove:hover {
   background: var(--card-2);
   color: var(--ink);
+}
+
+.multi-item:hover .multi-remove,
+.multi-item:focus-within .multi-remove {
+  opacity: 1;
 }
 
 .multi-remove:focus-visible {

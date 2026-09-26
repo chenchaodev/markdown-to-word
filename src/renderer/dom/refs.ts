@@ -265,6 +265,11 @@ export const progressTrack = document.getElementById(
 export const progressFill = document.getElementById("progressFill") as HTMLDivElement;
 export const progressText = document.getElementById("progressText") as HTMLSpanElement;
 export const cancelBtn = document.getElementById("cancelBtn") as HTMLButtonElement;
+// 消息区固定槽(状态行 / 跳过列表 / 结果汇总;转换期间带 aria-busy)
+export const messageSlot = document.getElementById("messageSlot") as HTMLDivElement;
+// 复制反馈的读屏播报位(常驻 sr-only live region;成功文案经 ui/dialogs 写入,
+// 失败走弹窗内的 role=alert 错误块,不重复播报)
+export const copyLiveEl = document.getElementById("copyLive") as HTMLParagraphElement;
 // 转换结果汇总(常驻,不依赖弹窗;打开引导 + 可折叠警告)
 export const resultSummary = document.getElementById("resultSummary") as HTMLDivElement;
 export const summaryIcon = document.getElementById("summaryIcon") as HTMLElement;
