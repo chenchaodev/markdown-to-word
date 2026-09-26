@@ -3,16 +3,27 @@
 > 规则见全局配置目录 @WORKFLOW-PLAN.md 阶段 1;规则与数据真源之分 → 全局配置目录 @AGENTS.md 首节
 > **写入的命令/事实须实际验证过**。**追加式**:结论未变 → 就地更新并移至顶部;被推翻 → **新增一条**并把旧条标「已被 … 取代」,旧条**保留**。**号永不复用**;规划编号不作决策标识。「涉架构」四判据 → @AGENTS.md「代码结构与质量」。
 > **ADR-009~ADR-015 由 campaign REF-001 从已撤除的优化计划裁决表升格**(原文查 git);该 campaign 的文档契约裁决 D-01~D-05 见其 `docs/campaigns/REF-001-全库优化收尾/PLAN.md`。
+> **早期条目(ADR-001~ADR-008)已拆到 `adr/`**,每条一个文件;本文件只留本索引、格式示例、ADR-009 及以后的条目与文末编号台账(台账是 ADR 号唯一真值,**不进 `adr/`**)。
 
 ## 索引
 
-| ADR | 主题 | ADR | 主题 | ADR | 主题 |
-|---|---|---|---|---|---|
-| ADR-015 | 测试工程化与范围纳入 | ADR-010 | Node 地板/唯一验证入口/依赖钉死 | ADR-005 | 预设模板(默认/学术/商务) |
-| ADR-014 | 双管线保持独立 | ADR-009 | 文档与流程契约口径 | ADR-004 | PDF 书签优先 |
-| ADR-013 | 发布供应链与「明确不签名」 | ADR-008 | F9 模板导入浅导入 v1 | ADR-003 | 后续批次规划评审 |
-| ADR-012 | 图片信任边界与资源上限 | ADR-007 | F7 目录带页码混合路线 | ADR-002 | Electron GUI + printToPDF(取代 ADR-001 的 pdf 路线) |
-| ADR-011 | 预设口径:内置携带完整交付链 | ADR-006 | 公式 KaTeX → docx Math(OMML) | ADR-001 | 非对称管线 + 格式注册表(docx 部分仍有效) |
+| ADR | 主题 | 位置 |
+|---|---|---|
+| ADR-001 | 非对称转换管线 + 格式注册表(docx 部分仍有效) | [adr/ADR-001-非对称转换管线与格式注册表.md](adr/ADR-001-非对称转换管线与格式注册表.md) |
+| ADR-002 | Electron GUI + 自研 printToPDF 管线(取代 ADR-001 的 pdf 路线) | [adr/ADR-002-Electron-GUI-与-printToPDF-管线.md](adr/ADR-002-Electron-GUI-与-printToPDF-管线.md) |
+| ADR-003 | 后续阶段规划评审 | [adr/ADR-003-后续阶段规划评审.md](adr/ADR-003-后续阶段规划评审.md) |
+| ADR-004 | PDF 书签优先 | [adr/ADR-004-PDF-书签优先.md](adr/ADR-004-PDF-书签优先.md) |
+| ADR-005 | 预设模板(默认/学术论文/商务简报) | [adr/ADR-005-预设模板.md](adr/ADR-005-预设模板.md) |
+| ADR-006 | 公式 KaTeX → docx Math(OMML) | [adr/ADR-006-公式路线-KaTeX-与-OMML.md](adr/ADR-006-公式路线-KaTeX-与-OMML.md) |
+| ADR-007 | 目录带页码混合路线 | [adr/ADR-007-目录带页码混合路线.md](adr/ADR-007-目录带页码混合路线.md) |
+| ADR-008 | 模板导入浅导入 v1 | [adr/ADR-008-模板导入浅导入.md](adr/ADR-008-模板导入浅导入.md) |
+| ADR-009 | 文档与流程契约口径 | [#ADR-009](#2026-09-26-194000-文档与流程契约口径adr-009) |
+| ADR-010 | Node 地板 / 唯一验证入口 / 依赖钉死 | [#ADR-010](#2026-09-26-194000-工程口径node-地板唯一验证入口依赖钉死adr-010) |
+| ADR-011 | 预设口径:内置携带完整交付链 | [#ADR-011](#2026-09-26-194000-预设口径内置携带完整交付链adr-011) |
+| ADR-012 | 图片信任边界与资源上限 | [#ADR-012](#2026-09-26-194000-本地与外链图片的信任边界与资源上限adr-012) |
+| ADR-013 | 发布供应链与「明确不签名」 | [#ADR-013](#2026-09-26-194000-发布供应链与现阶段明确不签名adr-013) |
+| ADR-014 | 双管线保持独立 | [#ADR-014](#2026-09-26-194000-双管线保持独立adr-014) |
+| ADR-015 | 测试工程化与范围纳入 | [#ADR-015](#2026-09-26-194000-测试工程化与计划范围纳入adr-015) |
 
 ## 格式示例(固定,勿删勿改)
 
@@ -88,59 +99,8 @@
 - 来源:campaign 裁决 D-01~D-05 升格(REF-001)
 - 关联:`docs/ROADMAP.md`、`AGENTS.md`
 
-### 2026-08-25 功能开发技术路线拍板:F7 目录带页码混合路线(ADR-007,推翻 D1)/F9 模板导入浅导入 v1(ADR-008)
-- **F7 决策**:PDF 用两遍法静态页码(第一遍标题锚点+占位等高目录保证布局一致→PDF.js 文本匹配定位页码→第二遍注入);docx 默认维持 D1 免更新静态目录不变,新增 opt-in「Word 域目录」开关(TOC 域+updateFields+cachedEntries 预填条目;Word 打开弹一次更新提示不可关闭,WPS 可能需手动刷新——纳入 WPS-COMPAT 双实测)。**部分推翻批次 8 的 D1 免更新路线**:域目录作为用户自选 opt-in 而非默认
-- 理由:docx 静态页码不可行(OOXML 无 page 实体,分页由渲染引擎决定);pdf 两遍法是 Typora 因单遍打印流做不到的独占差异化;弹窗权衡交用户自选而非强加
-- **F9 决策**:模板导入做浅导入 v1——jszip 解包用户 .docx 模板,提取 Heading 1-6/Normal 样式 rPr(字体 ascii/eastAsia/字号/颜色/basedOn 一层继承)映射到现有 settings/theme 字段(含 sectPr 页面尺寸边距);不做部件级深导入(Pandoc 式 styles 替换+numbering 合并+settings 白名单,2-4 周+长期维护负担),列后续独立候选
-- 理由:npm 无现成库;浅导入覆盖约 80% 诉求且契合 theme.ts 集中字体配置硬约束;解析层是深导入真子集可演进不锁死
-- 来源: @librarian 技术路线调研 + 用户拍板(2026-08-25)
-- 关联: docs/archive/2026-08-25-182036-功能候选调研与迭代排期.md 第六节、docs/RESEARCH.md 同日条目、ROADMAP F7/F9
-
-### 2026-08-08 10:20:16 批次 6 公式路线:KaTeX → docx Math(OMML),PDF 复用 KaTeX 渲染(ADR-006)
-- 决策:docx 公式走 KaTeX MathML 输出 → 转 docx Math(OMML,超出调研范围超额交付);PDF 公式直接 KaTeX HTML+字体渲染(与已有 printToPDF 管线一致);MathML 转换失败时降级为 TeX 源码纯文本兜底
-- 理由:单一公式源(KaTeX)双格式复用;OMML 为 Word 原生公式格式,可编辑;PDF 侧无需第二套公式引擎
-- 来源: @librarian(lib 调研)+ 自查(落地验证)
-- 关联: docs/RESEARCH.md 2026-08-08 10:20:16 批次6公式链路条目、docs/archive/2026-08-06-2229-批次6公式链路调研.md、CHANGELOG 0.16.0
-
-### 2026-08-06 22:28:50 批次 6 模板包:预设模板(默认/学术论文/商务简报)(ADR-005)
-- 决策:新增预设模板下拉,一键套用「排版设置 + 页面设置快照」;模板微调后下拉回退「默认」并提示不一致
-- 理由:学术正式化目标下,排版参数化(批次 5)升级为可复用模板;避免用户每次手动配齐参数
-- 来源: 自查(用户需求)
-- 关联: CHANGELOG 0.15.0、src/main/settings.ts 模板预设
-
-### 2026-08-04 22:44:37 批次 4 开工:PDF 书签优先(ADR-004)
-- 决策:批次 4「长文档」开工,PDF 书签优先(用户实测反馈侧边栏书签为空);脚注/页眉页脚+页码随后
-- 方案确认:读 printToPDF 产出的 /Dests 命名目标 → pdf-lib 注入大纲(免 pdfjs 文本定位);已实测合并 PDF 含 18 个 Link 注释 + /Dests 命名目标,锚点链接存在但无大纲树
-- 红线:书签 H1/H2 最小版或砍;注意 /Dests key 编码(中文 slug 为 UTF-16BE hex)
-- 理由:用户实测反馈 + 前置产物结构解析(研究结论 2026-08-04 20:57:34 条目)
-- 来源: 自查(用户反馈 + 产物解析)
-- 关联: docs/ROADMAP.md 批次 4、docs/RESEARCH.md 2026-08-04 20:57:34 条目
-
-### 2026-08-03 23:28:16 后续批次规划评审(批次 3 拆批 + 批次 5/6 方向,ADR-003)
-- 决策:批次 3 拆两批——3「批量+合并」(多选/拖放文件夹+队列+失败汇总;合并=渲染前 md 拼接,frontmatter 仅取首个,封面/全局 TOC 自动成立)与 4「长文档」(PDF 书签 + 脚注);批次 5「中文排版深化+保真补全」(字体/字号/行距/首行缩进/两端对齐/章节编号/docx 内部链接/raw HTML 白名单);批次 6「学术正式化」(脚注/公式 KaTeX+OMML spike/模板包)
-- **PDF 书签改方向**:弃 pdfjs 文本定位(拆 span/中文匹配脆),改「读 printToPDF 产出的 /Dests 命名目标 → pdf-lib 注入大纲」——slug/标题文本自产一一对应,免文本提取,风险高→中低;注意 /Dests key 编码(中文 slug 为 UTF-16BE hex)
-- 砍:自动更新/签名、i18n、目录监视/同步、Mermaid/CLI;延后:最近文件、代码高亮主题切换、分节页面设置、图片尺寸/表格列宽
-- 理由:@oracle 评审(ora-1);护城河重心从「格式正确」转向「排版可定制」
-- 来源: @oracle
-- 关联: docs/ROADMAP.md、原文存档 docs/archive/2026-08-03-2325-后续批次规划评审.md(2026-08-15 archive 清理已删,决策见本条)
-
-### 2026-08-02 19:20:18 Electron GUI + 自研 printToPDF 管线(ADR-002)
-- 决策:产品形态改为 Windows GUI(Electron 43);pdf 路线弃 md-to-pdf,改「markdown-it → HTML 模板 → `webContents.printToPDF()`」;转换在主进程执行;IPC 用 `contextIsolation` + preload 白名单(`invoke`/`send`);新增 `src/main/` 与 `src/renderer/`,core 与注册表设计不变
-- 理由:主进程即 Node,转换核心零改造复用;Electron 自带 Chromium 一份两用(GUI + PDF 打印),避免双份 ~300MB 体积;HTML 模板为二期预览铺路
-- 修订:ADR-001 中 pdf 路线(md-to-pdf)被本条目取代;docx 自研管线与格式注册表不变
-- 来源: @oracle
-- 关联: docs/ROADMAP.md
-
-### 2026-08-02 18:20:36 非对称转换管线 + 格式注册表(ADR-001)
-- 决策:docx 走 remark AST 自研渲染,PDF 走 md-to-pdf 现成管线;`src/core/convert.ts` 以格式注册表分发
-- 理由:中文 eastAsia 可控是硬需求,值得自研 docx 渲染;注册表预留格式扩展
-- 已被 2026-08-02 19:20:18 ADR-002 部分取代(pdf 路线);docx 部分与注册表设计仍然有效
-- 回退:若自研 docx 渲染工作量失控,回退到 `@mohtasham/md-to-docx`
-- 来源: @oracle
-- 关联: docs/ROADMAP.md
-
 ## 编号台账
 
-> **ADR 号唯一真值。** 与 `docs/ROADMAP.md`「编号台账」同一纪律:连号、永不复用、「已用」记**已分配过的最大值**。核对:人工读本行与「条目」节已用最大号对表;发版前确认 → 全局配置目录 @PUBLISH-GUIDE.md。
+> **ADR 号唯一真值。** 与 `docs/ROADMAP.md`「编号台账」同一纪律:连号、永不复用、「已用」记**已分配过的最大值**。核对:人工读本行与本文件「索引」节已用最大号对表(ADR-001~ADR-008 的条目在 `adr/`,台账仍只在本文件一处);发版前确认 → 全局配置目录 @PUBLISH-GUIDE.md。
 
 已用 ADR 001-015  ｜ 下一个 ADR-016
