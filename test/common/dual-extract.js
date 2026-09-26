@@ -69,6 +69,28 @@ export function docxLinkBody(xml, anchor) {
 }
 
 /**
+ * pdf 内部链接的内部片段(自 <a href="#锚点"> 起到 </a> 止),docxLinkBody 的 pdf 侧
+ * 同构件:两侧「命中哪一条」的读法只此一处定义,一段判过、另一段就不必再抄裸字符串。
+ *
+ * 与 docxLinkBody 同为「片段原文」语义(不剥标签):docx 侧编号文本与锚点属性同在
+ * `<w:hyperlink>` 内,html 侧同理,故消费方一律用 `.includes(编号文本)` 判「这一条链
+ * 的文本是不是被替换成了编号」。空串 = 无此链(悬空引用在 pdf 侧不留死链,故空串即
+ * 「判悬空」,这是「不该命中」类断言的口径)。
+ * @param {string} html pdf HTML 文档
+ * @param {string} anchorId 目标锚点 id(如 fig:same;题注锚点带 kind 前缀)
+ * @returns {string} 链接体片段文本(无该链接时为空串)
+ */
+export function pdfLinkBody(html, anchorId) {
+  const start = html.indexOf(`href="#${anchorId}"`);
+  if (start < 0) return "";
+  // 开标签的 '>':href 值内不含 '>',故其后第一个 '>' 即开标签末尾
+  const open = html.indexOf(">", start);
+  if (open < 0) return "";
+  const end = html.indexOf("</a>", open);
+  return end < 0 ? "" : html.slice(open + 1, end);
+}
+
+/**
  * pdf 目录条目(h1-h3 → toc-lN)。
  * @param {string} html pdf HTML 文档
  * @returns {{level: number, id: string}[]} 目录条目

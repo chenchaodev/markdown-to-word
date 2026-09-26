@@ -38,7 +38,7 @@
 import { formatWarning } from "../../dist/core/i18n.js";
 import { DEFAULT_KATEX_RESOURCE_LIMITS } from "../../dist/core/resource-limits.js";
 import { ALLOWED_INLINE_TAGS } from "../../dist/core/markdown/html-whitelist.js";
-import { docxBookmarks, docxLinkBody, docxTocAnchors, pdfHeadingIds, pdfTocItems } from "../common/dual-extract.js";
+import { docxBookmarks, docxLinkBody, docxTocAnchors, pdfHeadingIds, pdfLinkBody, pdfTocItems } from "../common/dual-extract.js";
 import { buildMatrixCtx } from "../common/dual-sandbox.js";
 import { captionBeforeH1Md, captionLabelMd, deepHeadingsMd, katexBoundaryMd, mainMd } from "../common/dual-samples.js";
 
@@ -465,12 +465,12 @@ const MATRIX = [
         "docx 同名 label 的表引用应命中自己(不被图题注覆盖)",
       );
       must(
-        nsPdfHtml.includes('href="#fig:same">图 1<'),
+        pdfLinkBody(nsPdfHtml, "fig:same").includes("图 1"),
         "xref-label-namespace",
         "PDF 同名 label 的图引用应命中自己(kind 分域)",
       );
       must(
-        nsPdfHtml.includes('href="#tab:same">表 1<'),
+        pdfLinkBody(nsPdfHtml, "tab:same").includes("表 1"),
         "xref-label-namespace",
         "PDF 同名 label 的表引用应命中自己(不被图题注覆盖)",
       );
@@ -507,7 +507,7 @@ const MATRIX = [
         "PDF 跨 kind 引用应输出占位文本",
       );
       must(
-        !nsPdfHtml.includes('href="#fig:onlytab"') && !nsPdfHtml.includes('href="#tab:onlyfig"'),
+        pdfLinkBody(nsPdfHtml, "fig:onlytab") === "" && pdfLinkBody(nsPdfHtml, "tab:onlyfig") === "",
         "xref-label-namespace",
         "PDF 跨 kind 悬空引用不应保留死链 href",
       );
@@ -518,7 +518,7 @@ const MATRIX = [
         "docx 同 kind 重名应后写覆盖(命中后一个题注编号)",
       );
       must(
-        dupPdfHtml.includes('href="#fig:dup">图 2<'),
+        pdfLinkBody(dupPdfHtml, "fig:dup").includes("图 2"),
         "xref-label-namespace",
         "PDF 同 kind 重名应后写覆盖(与 docx 同口径)",
       );

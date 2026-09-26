@@ -43,6 +43,11 @@ import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+// 「命中哪一条」的读法单源:docx 读链接体、pdf 读 <a> 体(见 test/common/dual-extract.js)。
+// 只看「锚点是否存在」判不出命中了哪一条 —— 同名 label(fig:same / tab:same)下必须把
+// 链接体内的编号文本与跳转目标绑在一起看,故两段(本段与 dual-pipeline-matrix 段)都调它,
+// 不再各抄一份裸字符串。
+import { docxLinkBody, pdfLinkBody } from "../common/dual-extract.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
@@ -398,10 +403,10 @@ export async function run() {
   if (!nsX.includes('<w:bookmarkStart w:name="fig-same"') || !nsX.includes('<w:bookmarkStart w:name="tab-same"')) {
     throw new Error("docx 同名 label:fig/tab 题注都应生成各自书签(互不覆盖)");
   }
-  if (!nsX.includes('<w:hyperlink w:history="1" w:anchor="fig-same">') || !nsX.includes('<w:t xml:space="preserve">图 1</w:t>')) {
+  if (!docxLinkBody(nsX, "fig-same").includes("图 1")) {
     throw new Error("docx 同名 label:图引用应命中图题注(不判悬空)");
   }
-  if (!nsX.includes('<w:hyperlink w:history="1" w:anchor="tab-same">') || !nsX.includes('<w:t xml:space="preserve">表 1</w:t>')) {
+  if (!docxLinkBody(nsX, "tab-same").includes("表 1")) {
     throw new Error("docx 同名 label:表引用应命中表题注(不判悬空)");
   }
   // 跨 kind 引用(label 只存在于另一 kind 的命名空间)→ 悬空
@@ -422,13 +427,13 @@ export async function run() {
     await convert(mdNs, "pdf", { baseDir: B, title: "t", warnings: nsPW })
   );
   const nsHtml = pdfHtmlOf(nsP);
-  if (!nsHtml.includes('href="#fig:same">图 1<') || !nsHtml.includes('href="#tab:same">表 1<')) {
+  if (!pdfLinkBody(nsHtml, "fig:same").includes("图 1") || !pdfLinkBody(nsHtml, "tab:same").includes("表 1")) {
     throw new Error("pdf 同名 label:图/表引用应各命中各的锚点(kind 分域)");
   }
   if (!nsHtml.includes("图 (?)") || !nsHtml.includes("表 (?)")) {
     throw new Error("pdf 跨 kind 引用应输出占位");
   }
-  if (nsHtml.includes('href="#fig:onlytab"') || nsHtml.includes('href="#tab:onlyfig"')) {
+  if (pdfLinkBody(nsHtml, "fig:onlytab") !== "" || pdfLinkBody(nsHtml, "tab:onlyfig") !== "") {
     throw new Error("pdf 跨 kind 悬空引用不应保留死链 href");
   }
   for (const want of ["交叉引用未找到图 label: fig:onlytab", "交叉引用未找到表 label: tab:onlyfig"]) {
@@ -451,13 +456,13 @@ export async function run() {
   const dupW = [];
   const dupD = /** @type {ConvertArtifact} */ (await convert(mdDup, "docx", { baseDir: B, warnings: dupW }));
   const dupX = await unzipPart(docxBufferOf(dupD), "word/document.xml");
-  if (!dupX.includes('<w:hyperlink w:history="1" w:anchor="fig-dup">') || !dupX.includes('<w:t xml:space="preserve">图 2</w:t>')) {
+  if (!docxLinkBody(dupX, "fig-dup").includes("图 2")) {
     throw new Error("docx 同 kind 重名 label:应后写覆盖(命中后一个题注编号 图 2)");
   }
   const dupP = /** @type {ConvertArtifact} */ (
     await convert(mdDup, "pdf", { baseDir: B, title: "t", warnings: [] })
   );
-  if (!pdfHtmlOf(dupP).includes('href="#fig:dup">图 2<')) {
+  if (!pdfLinkBody(pdfHtmlOf(dupP), "fig:dup").includes("图 2")) {
     throw new Error("pdf 同 kind 重名 label:应后写覆盖(与 docx 同口径 图 2)");
   }
   console.log("[ok] cross-ref:题注 label 按 kind 分命名空间(同名互不覆盖、跨 kind 悬空、同 kind 重名后写覆盖)断言通过");
