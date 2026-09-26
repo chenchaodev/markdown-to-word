@@ -124,6 +124,12 @@ export const LAYER_RULES = Object.freeze([
     forbid: 'prefix:../main',
     reason: 'preload 运行在沙箱 renderer 侧,不经上跳引用 main 进程模块',
   },
+  {
+    id: 'main-no-renderer',
+    scope: 'main',
+    forbid: 'layer:renderer',
+    reason: 'main 是 GUI 的宿主而非被依赖方,不得反向引用 renderer 内部模块(依赖方向单向 core ← main ← renderer;跨界只经 preload 暴露的 contextBridge API)',
+  },
 ]);
 
 // ---- 源码文本 → import 事实 ----
@@ -392,7 +398,7 @@ export async function main(argv = []) {
   console.log(
     `[ok] import 边界自检通过(${scopeText}):`
       + `运行时 import 的包均在 dependencies(host 内建 ${Object.keys(HOST_PROVIDED_RUNTIME).join('/')} 除外);`
-      + `core 不依赖宿主且不反向依赖 GUI 两层;renderer 不反向依赖 main;preload 不上跳引用 main;`
+      + `core 不依赖宿主且不反向依赖 GUI 两层;renderer 不反向依赖 main;main 不反向依赖 renderer;preload 不上跳引用 main;`
       + `core 的 node: 内建白名单限 ${CORE_NODE_BUILTIN_FILES.length} 个文件`,
   );
   return 0;

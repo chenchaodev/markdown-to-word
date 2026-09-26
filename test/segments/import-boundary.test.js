@@ -329,6 +329,10 @@ export async function run() {
                 `${label}:preload 不得 import ../main/**(${file} → ${spec})`,
               );
             }
+            // 层向 6:main 不反向依赖 renderer
+            if (file.startsWith("main/") && kind === "relative" && layerOf(file, spec) === "renderer") {
+              assert(false, `${label}:${file} 不得 import renderer 层 ${spec}(依赖方向单向 core ← main ← renderer)`);
+            }
           }
         }
       }
@@ -358,8 +362,8 @@ export async function run() {
         assert(/** @type {{ typeOnly: boolean }} */ (hit).typeOnly, `放行条目 ${allow.file} → ${allow.spec} 已不是 type-only(编译期不再擦除,应改判红)`);
         assert(allow.note.includes("层向收口项(反向 type-only 依赖待收敛)"), `放行条目 ${allow.file} → ${allow.spec} 的注释须标注这是层向收口项(反向 type-only 依赖待收敛)`);
       }
-      // 规则表形态:四条层向断言都在
-      for (const id of ["core-no-host", "core-no-upward", "renderer-no-main", "preload-no-main"]) {
+      // 规则表形态:五条层向断言都在
+      for (const id of ["core-no-host", "core-no-upward", "renderer-no-main", "preload-no-main", "main-no-renderer"]) {
         assert(LAYER_RULES.some((r) => r.id === id), `层向规则表缺 ${id}`);
       }
       // 沙盒基线:放行条目失效不报错(条目对应文件不在沙盒里)
@@ -374,7 +378,7 @@ export async function run() {
         );
         assert(!result.output.includes("[boundary:fail]"), `失效条目不得产生 fail 行:${result.output}`);
       }
-      console.log("[ok] import-boundary:独立抽取器复核通过(core 禁宿主/禁上跳、renderer 禁 main、preload 禁上跳、生产依赖覆盖、放行条目有效性)");
+      console.log("[ok] import-boundary:独立抽取器复核通过(core 禁宿主/禁上跳、renderer 禁 main、main 禁 renderer、preload 禁上跳、生产依赖覆盖、放行条目有效性)");
     }
 
     // ================= 4. 沙盒负向夹具:逐条制造漂移,断言精确诊断 =================
@@ -517,7 +521,21 @@ export async function run() {
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assert(result.code === 0, `已声明包的 type-only import 应放行,实际 ${result.code}:${result.output}`);
       }
-      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / 放行条目仅对 type-only 生效 / 已声明包的类型引用放行)");
+      // 5d. main → renderer 跨层引用必须判红(层向规则 main-no-renderer,补上此前只靠约定的方向)
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "main/ipc/logic.ts": 'import { el } from "../../renderer/dom/refs.js";\nexport { el };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /main\/ipc\/logic\.ts:import「\.\.\/\.\.\/renderer\/dom\/refs\.js」违反层向规则 main-no-renderer/,
+          "main 反向依赖 renderer",
+        );
+      }
+      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / 放行条目仅对 type-only 生效 / 已声明包的类型引用放行 / main→renderer 跨层引用判红)");
     }
 
     // ================= 6. 规则原语的单元断言(判定链的接缝) =================
