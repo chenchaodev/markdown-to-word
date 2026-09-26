@@ -6,6 +6,12 @@
 // 「因错误原因失败」与「门禁抓到了故障」区分开。
 import { GATE_META } from "./contract.mjs";
 
+// TS 的 JS 模式下 JSDoc typedef 是**文件作用域**:不显式引入就会解析失败并静默退化为 any,
+// 使下游(段)的回调参数变成隐式 any 而报 TS7006。下列 typedef 只作类型引入,无运行时开销。
+/** @typedef {import("./contract.mjs").GateProbeResult} GateProbeResult */
+/** @typedef {import("./contract.mjs").ProbeCase} ProbeCase */
+/** @typedef {import("./contract.mjs").ProbeFinding} ProbeFinding */
+
 /**
  * 判定并登记一条探针结果:退出码期望 + 期望关键字 + 禁止关键字,三者合成 ok。
  * @param {object} spec 探针声明

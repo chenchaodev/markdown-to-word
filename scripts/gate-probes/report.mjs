@@ -11,6 +11,12 @@ import { probeDistManifest } from "./gates/dist-manifest.mjs";
 import { probeFixtures } from "./gates/fixtures.mjs";
 import { buildSandbox, createTreeSandbox, describeChangedFiles, diffProtectedTree, removeSandbox, snapshotProtectedTree } from "./sandbox.mjs";
 
+// TS 的 JS 模式下 JSDoc typedef 是**文件作用域**:不显式引入就会解析失败并静默退化为 any,
+// 使下游(段)的回调参数变成隐式 any 而报 TS7006。下列 typedef 只作类型引入,无运行时开销。
+/** @typedef {import("./contract.mjs").GateProbeReport} GateProbeReport */
+/** @typedef {import("./contract.mjs").GateProbeResult} GateProbeResult */
+/** @typedef {import("./contract.mjs").ProbeFinding} ProbeFinding */
+
 /**
  * 跑选定门禁的探针,产出报告(不落盘;落盘由调用方决定)。
  * @param {object} [options] 选项
