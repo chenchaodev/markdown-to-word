@@ -2,7 +2,8 @@
 //
 // verify:ci 的第一道门是 check:contract;若该脚本被改成「永远通过」或某个断言被
 // 误删,配置漂移(Node 口径、门禁链缩水、build/typecheck 与几何门禁乱序、依赖声明/
-// 层向门禁被移出或排到构建之后、前置清理被移出/乱序、清理目标越界、产物核对被移出
+// 层向门禁与 action 引用固定门禁被移出或排到构建之后、前置清理被移出/乱序、清理
+// 目标越界、产物核对被移出
 // 或排到打包之前、脚本缺失)就会静默放行
 // 发布,没有任何其他检查能发现。此处用
 // 临时夹具逐条制造漂移,断言自检脚本
@@ -24,6 +25,7 @@ const FLOOR = '22.13.0';
 const FIXTURE_SCRIPTS = {
   'check:contract': 'node scripts/check-ci-contract.mjs',
   'check:boundary': 'node scripts/check-import-boundary.mjs',
+  'check:pinned-actions': 'node scripts/check-pinned-actions.mjs',
   'check:env': 'node scripts/print-env-fingerprint.mjs',
   'check:geometry': 'electron scripts/check-geometry.mjs',
   'gen:dist-manifest': 'node scripts/check-dist-manifest.mjs',
@@ -43,7 +45,7 @@ const FIXTURE_SCRIPTS = {
     'npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest ' +
     '&& electron-builder && npm run check:dist-manifest && npm run check:asar && npm run check:release',
   'verify:ci':
-    'npm run check:contract && npm run check:boundary && npm run build && npm run typecheck && npm run lint && npm run test ' +
+    'npm run check:contract && npm run check:boundary && npm run check:pinned-actions && npm run build && npm run typecheck && npm run lint && npm run test ' +
     '&& npm run test:coverage && npm run check:fixtures && npm run test:smoke && npm run check:geometry',
   'verify:release': 'npm run verify:ci && npm run dist',
 };
@@ -58,6 +60,7 @@ const FIXTURE_PLACEHOLDERS = [
   'scripts/check-asar-manifest.mjs',
   'scripts/check-release-artifacts.mjs',
   'scripts/check-import-boundary.mjs',
+  'scripts/check-pinned-actions.mjs',
   'scripts/clean-artifacts.mjs',
   'scripts/print-env-fingerprint.mjs',
 ];
@@ -276,6 +279,27 @@ const CASES = [
     name: 'check:boundary 指向已不存在的脚本(门禁静默失效)',
     mutate: ({ dir }) => rmSync(join(dir, 'scripts', 'check-import-boundary.mjs'), { force: true }),
     expect: /引用的文件不存在:scripts\/check-import-boundary\.mjs/,
+  },
+  {
+    name: 'action 引用固定门禁被移出 CI 链(SHA 固定的补偿面无人守护)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace(' && npm run check:pinned-actions', '');
+    },
+    expect: /verify:ci 缺少门禁步骤 check:pinned-actions/,
+  },
+  {
+    name: 'action 引用固定门禁被排到 build 之后(漂移要白跑一次构建才被拦下)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci']
+        .replace(' && npm run check:pinned-actions', '')
+        .replace('npm run build &&', 'npm run build && npm run check:pinned-actions &&');
+    },
+    expect: /须先 check:pinned-actions 再 build/,
+  },
+  {
+    name: 'check:pinned-actions 指向已不存在的脚本(门禁静默失效)',
+    mutate: ({ dir }) => rmSync(join(dir, 'scripts', 'check-pinned-actions.mjs'), { force: true }),
+    expect: /引用的文件不存在:scripts\/check-pinned-actions\.mjs/,
   },
 ];
 

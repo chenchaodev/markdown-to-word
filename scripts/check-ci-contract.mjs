@@ -7,6 +7,9 @@
 //   - build 先于 typecheck(typecheck 含测试树,测试 import dist/ 编译产物);
 //   - 依赖声明与 import 层向门禁(check:boundary)紧随契约自检且早于 build:
 //     它判定源码文本、不消费 dist,排到构建之后就失去了 fail-fast 意义;
+//   - action 引用固定门禁(check:pinned-actions)与 check:boundary 同级、同在 build
+//     之前:它判定 workflow 文本、离线可跑,排到构建之后同样失去 fail-fast 意义
+//     (固定 SHA 后 Dependabot 漏洞告警失效,这道门禁是补偿面,不许被挪到链尾);
 //   - 几何门禁(check:geometry)在 verify:ci 链内且晚于 build —— 链尾是唯一位置:
 //     它需要在 smoke 之后运行(此时 dist 已是本次构建),又必须早于 dist 打包;
 //   - dist 链形态:先清理生成目录(clean:dist + clean:release)→ build → 生成 dist
@@ -169,12 +172,14 @@ function topLevelScriptNames(name) {
 
 // CI 门禁必备步骤(顺序即依赖顺序):check:contract 之后立刻核对依赖声明与
 // import 层向(纯文本判定,不依赖 dist,故须早于 build —— 构建之后才发现
-// 传递依赖漏声明,已经白跑一次);build 产出 dist/ 编译产物,测试与 fixture
-// 校验都跑 dist;check:geometry 收尾(采样 dist/renderer,须在 build 之后、
-// 且是链内最后一步)。
+// 传递依赖漏声明,已经白跑一次)与 action 引用固定(同理由:纯文本、可离线,
+// 排在 build 之后等于让 workflow 漂移白跑一次构建才被拦下);build 产出 dist/
+// 编译产物,测试与 fixture 校验都跑 dist;check:geometry 收尾(采样
+// dist/renderer,须在 build 之后、且是链内最后一步)。
 const REQUIRED_CI_STEPS = [
   'check:contract',
   'check:boundary',
+  'check:pinned-actions',
   'build',
   'typecheck',
   'lint',
@@ -209,6 +214,15 @@ const boundaryAt = ciChain.indexOf('check:boundary');
 if (buildAt !== -1 && boundaryAt !== -1 && boundaryAt > buildAt) {
   fail(
     `verify:ci 须先 check:boundary 再 build(依赖声明与 import 层向在构建前判定),当前 build@${buildAt} check:boundary@${boundaryAt}`,
+  );
+}
+
+// action 引用固定门禁同样只判定 workflow 文本(纯正则 + JSON 基线,离线可跑):
+// 排到 build 之后,「有人把 uses: 改回浮动 tag」这类漂移要白跑一次构建才被拦下。
+const pinnedAt = ciChain.indexOf('check:pinned-actions');
+if (buildAt !== -1 && pinnedAt !== -1 && pinnedAt > buildAt) {
+  fail(
+    `verify:ci 须先 check:pinned-actions 再 build(action 引用固定在构建前判定),当前 build@${buildAt} check:pinned-actions@${pinnedAt}`,
   );
 }
 

@@ -1,0 +1,27 @@
+{
+  "baselineSchema": 1,
+  "note": [
+    "已知 action 版本基线:workflow 里每处 `uses:` 的 SHA 与版本注释都必须与本表一致。",
+    "存在的理由:Dependabot 的版本更新 PR 对 SHA 固定有效,但漏洞告警对 SHA 固定无效",
+    "(固定 SHA 后 Dependabot 不再解析 action 依赖图,上游出漏洞时仓库收不到告警)。",
+    "本表就是那个补偿面 —— 换 action 版本必须同一次 PR 改这里,让升级在 diff 里显式可见、可 review。",
+    "维护方式:先在 workflow 里换 SHA 与「# vX.Y.Z」注释,再把本表对应条目的 sha/version 改成同一组值;",
+    "新增 action 先在本表补条目再改 workflow(门禁对「未登记的 action」判红)。",
+    "版本号与 SHA 的真伪由人工/评审确认,门禁只校验格式合法且与本表一致(离线运行,不查漏洞库)。",
+    "别把本表当生成物:故意不做 --write 自动重生成,免得一次自动生成把版本升级变成无人 review 的静默改动。"
+  ],
+  "actions": {
+    "actions/checkout": {
+      "sha": "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+      "version": "v5.1.0"
+    },
+    "actions/setup-node": {
+      "sha": "a0853c24544627f65ddf259abe73b1d18a591444",
+      "version": "v5.0.0"
+    },
+    "actions/upload-artifact": {
+      "sha": "330a01c490aca151604b8cf639adc76d48f6c5d4",
+      "version": "v5.0.0"
+    }
+  }
+}
