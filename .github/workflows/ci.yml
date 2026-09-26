@@ -121,8 +121,20 @@ jobs:
         with:
           node-version: 22.13.0
 
-      # 不需要 npm ci:SCA 走远端 audit 端点,SBOM 与许可证清单只读 lockfile,
-      # 少一次依赖安装即少一个失败面
+      # 装依赖(经 --ignore-scripts:只要包文件供许可证核对,不跑生命周期脚本,
+      # 因此不必下载 electron/sharp 的原生二进制,比主 job 的完整 npm ci 快得多)。
+      #
+      # 这里曾刻意不装依赖,理由是「SCA 走远端 audit 端点、SBOM 与许可证只读
+      # lockfile」——实测该假设不成立,造成两类错误结论(见 scripts/supply 注释):
+      #   1. 许可证的物证回落(读 node_modules/<pkg> 里的 LICENSE 文件)在缺包目录时
+      #      无从核对,khroma 被判「许可证缺失」而误阻断;
+      #   2. 没有依赖树时 `npm audit --omit=dev` 的 dev 剪枝失效,纯构建期工具
+      #      (xmldom/fast-uri/js-yaml/sharp)泄漏进生产树 pass 被误判为发布风险。
+      # 判定层已改以 lockfile 的 dev 标记为准(不再依赖 pass 口径),但装依赖仍是
+      # 许可证物证核对的前提,故此步不可省。
+      - name: Install dependencies (no scripts, for license evidence)
+        run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+
       # CI 走官方 registry 拿权威 npm advisory(GitHub runner 访问官方源最快,与本文件
       # 主 job 的 `npm ci --registry=` 同一口径);本地跑仍按项目 .npmrc 国内镜像。
       # 镜像的 audit 端点实测不可用,此时脚本会如实记为 unavailable 并由 OSV 兜底,

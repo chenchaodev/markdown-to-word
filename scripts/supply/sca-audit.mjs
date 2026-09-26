@@ -201,7 +201,7 @@ export function parseAuditPayload({ tree, registry, result }) {
  * @param {any} payload audit --json 的解析结果(JSON.parse 结果,未做形状校验)
  * @returns {ScaFinding[]} 归一化条目(按 严重度 → 包名 排序)
  */
-export function normalizeAuditVulnerabilities(payload) {
+export function normalizeAuditVulnerabilities(payload, scopeByName = null) {
   const entries = [];
   for (const [name, value] of Object.entries(payload.vulnerabilities ?? {})) {
     if (value === null || typeof value !== 'object') continue;
@@ -222,6 +222,11 @@ export function normalizeAuditVulnerabilities(payload) {
       fix: describeFix(value.fixAvailable),
       severitySource: 'npm-audit',
       source: 'npm-audit',
+      // 依赖范围取自 lockfile 的 dev 标记(npm 自己算的权威口径),不是「这条来自
+      // 哪一次 audit pass」。没装依赖时 `npm audit --omit=dev` 的 dev 剪枝会失效,
+      // dev 包会泄漏进生产树那次 pass —— 按 pass 定阻断会把纯开发工具判成发布风险。
+      // 查不到组件时留 undefined,由判定层回退到 pass 口径并留痕。
+      ...(scopeByName instanceof Map && scopeByName.has(name) ? { dependencyScope: scopeByName.get(name) } : {}),
     });
   }
   return sortFindings(entries);
@@ -480,7 +485,21 @@ export function evaluateSca(scan) {
       }
       if (!BLOCKING_SEVERITIES.includes(finding.severity)) continue;
       const titles = finding.advisories.map((item) => item.title).join('; ') || '无公告标题';
-      if (tree === TREE_PRODUCTION) {
+      // 权威判据是 lockfile 的 dev 标记,不是「这条来自哪一次 audit pass」:
+      // 没装依赖时 `npm audit --omit=dev` 的 dev 剪枝失效,dev 包会泄漏进生产树
+      // 那次 pass,按 pass 定阻断会把纯构建期工具判成发布风险(已实测误判)。
+      // 两边不一致时按 lockfile 判(它是 npm 自己算的 dev/prd 归属),并留痕 ——
+      // 静默按任一边放行都会让报告与真实依赖归属脱节。
+      // 只有生产树 pass 存在「本该只含生产组件」的预期,故只对它判分歧;
+      // 全树 pass 本就同时含生产与 dev 组件,生产包出现在其中是正常的。
+      if (tree === TREE_PRODUCTION && finding.dependencyScope === 'development') {
+        notes.push(`分树口径与 lockfile dev 标记不一致(以 lockfile 为准:development):${finding.name}(${finding.severity}) 由 production pass 命中`);
+      }
+      // 查不到 lockfile 归属时(组件不在 lockfile 里)回退到 pass 口径,保持旧行为
+      const isProduction = finding.dependencyScope
+        ? finding.dependencyScope === 'production'
+        : tree === TREE_PRODUCTION;
+      if (isProduction) {
         blocking.push(`生产树漏洞:${finding.name}(${finding.severity.toUpperCase()}) ${finding.fix} — ${titles}`);
       } else if (!productionKeys.has(findingKey(finding))) {
         notes.push(`仅开发依赖命中(不阻断,不进发布包):${finding.name}(${finding.severity}) ${finding.fix}`);
@@ -565,8 +584,10 @@ export async function runScaScan(options = {}) {
       },
     });
     if (allOk) {
+      // 权威判据:lockfile 的 dev 标记(组件表已含,OSV 路径同一口径)
+      const scopeByName = new Map(components.map((component) => [component.name, component.dependencyScope]));
       for (const tree of TREES) {
-        const findings = normalizeAuditVulnerabilities(parsedByTree.get(tree).payload);
+        const findings = normalizeAuditVulnerabilities(parsedByTree.get(tree).payload, scopeByName);
         scopes[tree] = {
           status: STATUS_OK,
           source: 'npm-audit',

@@ -837,6 +837,42 @@ export async function run() {
       assert(projected.blocking.some((item) => /生产树漏洞:prod-lib\(HIGH\) 升级到 1\.0\.3/.test(item)), `OSV 修复版本须从公告 ranges 解析,实际:${projected.blocking.join(";")}`);
     });
 
+    // 回归:误判「纯构建期工具是发布风险」。实测本仓 CI 上 xmldom/fast-uri/js-yaml/
+    // sharp 全是 dev-only,却因 supply-chain job 不装依赖、`npm audit --omit=dev`
+    // 的 dev 剪枝失效,被泄漏进生产树 pass 判红。权威判据必须是 lockfile 的
+    // dev 标记,不是「这条来自哪一次 pass」。
+    await suite.case("SCA dev-only 包泄漏进生产树 pass → 不误判为发布风险,且口径分歧留痕", async () => {
+      const { lockPath } = sandbox("sca-dev-leak");
+      // 生产树那次也报出 dev-only 的 dev-tool(剪枝失效的真实形态)
+      const npm = fakeNpm({
+        production: { stdout: auditJsonWithVuln("dev-tool", "high"), exitCode: 1 },
+        all: { stdout: auditJsonWithVuln("dev-tool", "high"), exitCode: 1 },
+      });
+      const report = await runScaScan({ lockPath, registry: "https://registry.npmmirror.com", allowOsv: false, transport: npm.transport });
+      assert(
+        report.blocking.length === 0,
+        `dev-only 包即使出现在生产树 pass 也不得判红(不进发布包),实际阻断:${report.blocking.join(";")}`,
+      );
+      assert(
+        report.notes.some((note) => /分树口径与 lockfile dev 标记不一致.*dev-tool.*由 production pass 命中/.test(note)),
+        `pass 口径与 lockfile 不一致必须留痕(不得静默按任一边放行),实际 notes:${report.notes.join(";")}`,
+      );
+      // 反向:真生产依赖仍在生产树 pass 命中时必须照旧判红
+      const strict = fakeNpm({
+        production: { stdout: auditJsonWithVuln("prod-lib", "high"), exitCode: 1 },
+        all: { stdout: auditJsonWithVuln("prod-lib", "high"), exitCode: 1 },
+      });
+      const strictReport = await runScaScan({ lockPath, registry: "https://registry.npmmirror.com", allowOsv: false, transport: strict.transport });
+      assert(
+        strictReport.blocking.some((item) => /生产树漏洞:prod-lib\(HIGH\)/.test(item)),
+        `真生产依赖命中仍须判红,实际:${strictReport.blocking.join(";")}`,
+      );
+      assert(
+        !strictReport.notes.some((note) => /分树口径与 lockfile dev 标记不一致/.test(note)),
+        "真生产依赖口径一致时不应误报分歧",
+      );
+    });
+
     await suite.case("SBOM 离线确定性:同输入两次逐字节一致且键序稳定", async () => {
       const { lockPath } = sandbox("sbom-determinism");
       const first = generateSbom(lockPath, "package-lock.json");
