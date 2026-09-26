@@ -1,88 +1,34 @@
 // @ts-check
 /**
- * 沙箱副本闭包判定(测试树共享的纯函数层,单一来源):
- * 从**源码文本**还原「哪些文件被逐字节复制进沙箱」,并审计这批副本的 import 闭包。
+ * 沙盒副本闭包 · 纯文本层(测试树共享,零 node: 依赖):
+ * 把「一段源码文本」变成可断言的词法事实 —— 剥注释、抽 specifier、判 specifier 种类、
+ * 解析相对路径、以及对「复制源表达式」做静态求值。
  *
- * 为何要有这一层(而不是留在守护段里):「被逐字节复制进沙箱」这件事本身在漂移 —— 今天只有
- * install-smoke 段复制,明天 check-* 系列的自检/探针也会复制。判定口径若埋在段里,每加一个
- * 复制点就得把判定重抄一遍(必然漂移),且无法被合成样本单测。故拆成零依赖纯函数层,
- * 由守护段(test/segments/contract-single-source.test.js 的 (e) 节)只做装配与断言。
+ * 为何分两层(本层 / 扫描审计层):见同目录 copy-closure-audit.js 的文件头。两层合起来是
+ * 一次完整守护,拆开是因为它们的变化驱动力不同 —— 本层随「源码文本长什么样」变(语言写法、
+ * 表达式形态),上层随「仓库里有哪些复制点」变(哪个脚本被复制、沙盒怎么组装)。
  *
- * 依赖分层(刻意):本文件**零 import** —— 不碰 fs/path/任何 I/O。
- * 「遍历测试树与 scripts/、读文件」留在守护段(它已有 fs/path),本文件只吃「文本 → 结论」。
+ * 依赖方向单向:守护段 → copy-closure-audit.js → 本文件。**本文件不 import 上层**,
+ * 也不 import 任何 node: 内建模块(零 I/O:不读文件、不遍历目录,只吃字符串)。
+ * 目录遍历与读文件留在守护段(它已有 fs/path)。
  *
- * 依赖方向单向:守护段 → 本文件;本文件不依赖任何段,也不依赖 dist 产物。
+ * 本层被上层与守护段共用的符号(JS_SOURCE_RE、SourceFile)刻意放在这里,避免出现第二份定义。
  *
- * ---- 已知覆盖边界(不是「已完全覆盖」,改判定前先读这段)----
- * 静态求值只认写在源码里的形状。以下三类复制源**解析不出**,只登记、不判红:
- * 1) 运行时拼装的列表(如从配置里解析出的 configFiles 之类的 for-of 目标);
- * 2) 多层别名链(一层 const 别名可解,两层以上保守放弃);
- * 3) 跨目录整树复制(cpSync 目录 + node_modules 联接,见 COPY_MECHANISMS 的 tree-mirror):
- *    整棵树都在沙盒里,相对依赖天然闭合,不适用本模块的逐文件闭包。
- * 后果:若将来有人用「运行时拼装列表」的方式复制一个 JS 模块,本守护**不会自动纳入**它。
- * 那时需人工扩 resolveCopySource 支持该形态,或给该复制机制新增一个 COPY_MECHANISMS scope;
- * 在此之前,这类复制点只出现在 scanCopySites().unresolved / treeMirrors 的登记里(段会打印)。
- *
- * ---- 行数例外(已接受,写明理由)----
- * 本文件约 730 行,超出全局 CODE-GUIDE 的 ~500 行参考线。刻意不拆的理由:
- * 1) 它是**一个内聚职责**(文本 → 副本集合 → 闭包结论),三段之间靠同一批 typedef 与
- *    COPY_MECHANISMS/SANDBOX_ENTRY_EVIDENCE 两张表串在一起,拆开只会得到两个必须成对 import 的模块;
- * 2) 篇幅主体是判定理由的 JSDoc(每条规则都记了「为什么这样判、踩过什么坑」),为凑行数删文档
- *    等于把本模块唯一的价值删掉;
- * 3) 若日后确需真拆,天然切口是「纯文本层」(blankComments/specifiers/相对解析/复制源求值)
- *    与「扫描+审计层」(scanCopySites/auditCopySet/auditEntryEvidence)两片 —— 那是一次
- *    纯搬迁,前提是允许新增第二个 test/common 文件。
+ * ⚠ 已知覆盖边界与行数口径:见守护段 test/segments/contract-single-source.test.js 的文件头
+ *   「沙盒副本闭包 · 已知覆盖边界」小节 —— 那里是唯一权威处,本文件不重复,避免两份说法漂移。
  */
 
-/** 复制机制与判定范围(本文件单源;新增复制形态时在此登记,勿散落在解析器里) */
-export const COPY_MECHANISMS = [
-  { call: "copyFileSync", scope: "per-file" },
-  { call: "copyFile", scope: "per-file" },
-  // 整树镜像(cpSync 目录 + node_modules 联接):整棵树都在沙盒里,相对依赖天然闭合,
-  // 且 node_modules 被联接 → 裸包名也能解析。这类复制点只登记不判红(见 scanCopySites)
-  { call: "cpSync", scope: "tree-mirror" },
-];
+/** 只把「会被当模块解析的源文件」纳入副本闭包(图片/清单等资源不在范围);遍历侧与扫描层都复用它 */
+export const JS_SOURCE_RE = /\.(?:js|mjs|cjs)$/;
 
 /** 解析上限:一个复制表达式展开出的候选路径数上限(防御正则/别名链失控) */
 const MAX_RESOLVED_ALTS = 64;
 
 /**
- * 沙盒入口副本登记:复制进来就是为了**被执行**、因而在副本集合内没有上游 import 的脚本。
- *
- * 为何要人工登记而不是自动推断:「被当入口执行」在源码里只有语义(某次 spawn/runScript 传了
- * 这个文件名),纯文本上与「拼一个沙盒内路径」「段自身 import 了它」不可区分 —— 实测按
- * 「复制行之外被提及」自动推断,会把复制点上方那行 `path.join(root, "test/common/userdata.js")`
- * 也当成入口证据,于是「删掉使用方的相对 import」这种真实风险反而判不出来。故改为
- * 显式登记 + 机械抽查:登记项必须(a)确实在副本集合里、(b)复制点位置对得上、
- * (c)复制行之外存在一行「提及该文件且带执行类调用」的代码。
- * 新增/删除复制点时本表必须同步;漏登记 → 该副本判红(而不是静默放过)。
- * @type {{ rel: string; via: string; how: string }[]}
+ * @typedef {object} SourceFile 待扫描的源文件
+ * @property {string} path 仓库相对 POSIX 路径
+ * @property {string} text 文件文本
  */
-export const SANDBOX_ENTRY_EVIDENCE = [
-  {
-    rel: "scripts/check-unpacked-smoke.mjs",
-    via: "test/segments/install-smoke.test.js",
-    how: "runScript(root, \"check-unpacked-smoke.mjs\", …) 在沙盒内执行",
-  },
-  {
-    rel: "scripts/check-install-smoke.mjs",
-    via: "test/segments/install-smoke.test.js",
-    how: "runScript(root, \"check-install-smoke.mjs\", …) 在沙盒内执行",
-  },
-  {
-    rel: "scripts/check-ci-contract.mjs",
-    via: "scripts/check-ci-contract.selftest.mjs",
-    how: "spawnSync(process.execPath, ['scripts/check-ci-contract.mjs']) 在夹具内执行",
-  },
-];
-
-/**
- * 「这一行在执行某个东西」的特征词(入口登记的机械抽查用)。
- * 收紧它的理由:光看「复制行之外提到了这个文件名」会被两种无关提及满足 ——
- * 复制点上方拼沙盒路径的那一行、以及段自身对该脚本的 import。带上执行类调用才算数。
- * 新增沙盒执行封装(如 runScript / runCli)时在此登记,否则相关入口登记会开始报错。
- */
-export const ENTRY_EXECUTION_TOKENS = ["spawnSync", "spawn(", "execFile", "execSync", "exec(", "fork(", "runScript", "runCli", "runGate"];
 
 /**
  * 把注释抹成空格(等长:行号列号都保持),字符串与模板原样保留。
@@ -138,11 +84,12 @@ export function blankComments(text) {
 
 /**
  * 跳过一段引号字符串/模板(处理转义;模板不递归扫 `${}`)。
+ * 词法层最底层的原语,上层(扫描审计层)的实参/环境解析也复用它 —— 故 export,避免两份定义漂移。
  * @param {string} text 源文本
  * @param {number} start 引号所在下标
  * @returns {number} 结束引号之后的下标
  */
-function skipQuoted(text, start) {
+export function skipQuoted(text, start) {
   const quote = text[start];
   let i = start + 1;
   while (i < text.length) {
@@ -254,106 +201,6 @@ export function resolveRelativeSpecifier(fromRel, spec) {
     stack.push(seg);
   }
   return stack.join("/");
-}
-
-/**
- * 从 `(` 处读出调用实参(括号/引号配对;用于取复制调用的源路径表达式)。
- * 首个实参不含外层左括号本身 —— 否则取到的表达式会「少一个右括号」,配平失败。
- * @param {string} text 源文本
- * @param {number} open 左括号下标
- * @returns {string[]} 各实参的原始文本
- */
-function readCallArgs(text, open) {
-  /** @type {string[]} */
-  const args = [];
-  let depth = 1; // 外层左括号已消费
-  let i = open + 1;
-  let current = "";
-  while (i < text.length) {
-    const ch = text[i] ?? "";
-    if (ch === '"' || ch === "'" || ch === "`") {
-      const end = skipQuoted(text, i);
-      current += text.slice(i, end);
-      i = end;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") depth += 1;
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        args.push(current.trim());
-        return args;
-      }
-    }
-    if (ch === "," && depth === 1) {
-      args.push(current.trim());
-      current = "";
-      i += 1;
-      continue;
-    }
-    current += ch;
-    i += 1;
-  }
-  return [...args, current.trim()];
-}
-
-/**
- * 收集中途常量环境:顶层 `const NAME = <initializer>`(initializer 支持跨行数组字面量)。
- * 判定只认顶层 const —— 函数内 const/let 的局部绑定对「这个文件复制了谁」无影响。
- * @param {string} text 源文本
- * @returns {Map<string, string>} 名字 → initializer 文本
- */
-function collectConstEnv(text) {
-  /** @type {Map<string, string>} */
-  const env = new Map();
-  const decl = /^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*/gm;
-  for (const m of text.matchAll(decl)) {
-    const name = m[1];
-    const start = (m.index ?? 0) + m[0].length;
-    if (name === undefined) continue;
-    let init = "";
-    if (text[start] === "[") {
-      let depth = 0;
-      let i = start;
-      for (; i < text.length; i += 1) {
-        const ch = text[i];
-        if (ch === '"' || ch === "'" || ch === "`") {
-          i = skipQuoted(text, i) - 1;
-          continue;
-        }
-        if (ch === "[") depth += 1;
-        else if (ch === "]") {
-          depth -= 1;
-          if (depth === 0) {
-            i += 1;
-            break;
-          }
-        }
-      }
-      init = text.slice(start, i);
-    } else {
-      const end = text.indexOf("\n", start);
-      init = text.slice(start, end < 0 ? text.length : end).replace(/;\s*$/, "").trim();
-    }
-    env.set(name, init);
-  }
-  return env;
-}
-
-/**
- * 收集 for-of 循环环境:`for (const X of LIST)` → X 的取值来自 LIST 常量数组。
- * 文件级(不判作用域):复制点与循环头常隔几行,按作用域收紧只会漏。
- * @param {string} text 源文本
- * @returns {Map<string, string>} 循环变量 → 数组常量名
- */
-function collectLoopEnv(text) {
-  /** @type {Map<string, string>} */
-  const env = new Map();
-  const re = /for\s*\(\s*(?:const|let)\s+([A-Za-z_$][\w$]*)\s+of\s+([A-Za-z_$][\w$]*)\s*\)/g;
-  for (const m of text.matchAll(re)) {
-    if (m[1] !== undefined && m[2] !== undefined) env.set(m[1], m[2]);
-  }
-  return env;
 }
 
 /**
@@ -489,240 +336,4 @@ function splitTopLevelArgs(text) {
   }
   if (current.trim() !== "") args.push(current.trim());
   return args;
-}
-
-/* ---------- 扫描与审计 ---------- */
-
-/** 只把「会被当模块解析的源文件」纳入副本闭包(图片/清单等资源不在范围);遍历侧由守护段复用 */
-export const JS_SOURCE_RE = /\.(?:js|mjs|cjs)$/;
-
-/**
- * @typedef {object} SourceFile 待扫描的源文件
- * @property {string} path 仓库相对 POSIX 路径
- * @property {string} text 文件文本
- */
-
-/**
- * @typedef {object} CopySite 一个被逐字节复制进沙箱的仓库文件
- * @property {string} rel 被复制文件的仓库相对 POSIX 路径
- * @property {string} via 复制点所在文件的仓库相对 POSIX 路径
- * @property {number} line 复制调用所在行号
- */
-
-/**
- * @typedef {object} UnresolvedSite 登记但不判红的复制点
- * @property {string} file 所在文件
- * @property {number} line 行号
- * @property {string} expr 源路径表达式原文
- * @property {string} reason 不判红的原因
- */
-
-/**
- * @typedef {object} ScanResult 扫描结果
- * @property {CopySite[]} copies 静态可解析的逐文件副本
- * @property {UnresolvedSite[]} unresolved 解析不出仓库文件的复制点(登记,不判红)
- * @property {UnresolvedSite[]} treeMirrors 整树镜像式复制点(登记,不判红)
- */
-
-/**
- * 扫出「被逐字节复制进沙箱」的仓库文件(事实源 = 代码里的复制调用,不硬编码任何文件名)。
- * 解析不出的复制点只登记:静态求值不可能覆盖所有写法(运行时拼装的列表、多层别名),
- * 把它们判红会让守护变成「必须改解析器」的负担;但必须登记并打印,否则等于没看见。
- * @param {SourceFile[]} files 待扫描源文件(调用方给全 test/ 与 scripts/)
- * @returns {ScanResult}
- */
-export function scanCopySites(files) {
-  /** @type {CopySite[]} */
-  const copies = [];
-  /** @type {UnresolvedSite[]} */
-  const unresolved = [];
-  /** @type {UnresolvedSite[]} */
-  const treeMirrors = [];
-  for (const file of files) {
-    const code = blankComments(file.text);
-    const constEnv = collectConstEnv(file.text);
-    const loopEnv = collectLoopEnv(file.text);
-    for (const mechanism of COPY_MECHANISMS) {
-      const callRe = new RegExp(`\\b${mechanism.call}\\s*\\(`, "g");
-      for (const m of code.matchAll(callRe)) {
-        const index = m.index ?? 0;
-        const line = code.slice(0, index).split("\n").length;
-        const expr = readCallArgs(code, index + m[0].length - 1)[0] ?? "";
-        if (mechanism.scope === "tree-mirror") {
-          treeMirrors.push({ file: file.path, line, expr, reason: "整树镜像(目录 + node_modules 联接),相对依赖天然闭合" });
-          continue;
-        }
-        const rels = resolveCopySource(expr, constEnv, loopEnv);
-        if (rels === null || rels.length === 0) {
-          unresolved.push({
-            file: file.path,
-            line,
-            expr,
-            reason: rels === null ? "源表达式无法静态解析(动态列表 / 非仓库路径 / 多层别名)" : "解析结果不是仓库内文件",
-          });
-          continue;
-        }
-        for (const rel of rels) {
-          if (!JS_SOURCE_RE.test(rel)) continue;
-          copies.push({ rel, via: file.path, line });
-        }
-      }
-    }
-  }
-  return { copies, unresolved, treeMirrors };
-}
-
-/**
- * @typedef {object} ClosureViolation 闭包违规
- * @property {string} rel 副本的仓库相对 POSIX 路径
- * @property {number} line 违规行号(基于原文本)
- * @property {string} spec 违规的 specifier
- * @property {string} kind 违规种类
- * @property {string} detail 人可读说明
- */
-
-/**
- * @typedef {object} OrphanCopy 死副本
- * @property {string} rel 副本的仓库相对 POSIX 路径
- * @property {string} via 复制点所在文件
- * @property {string} reason 判红理由
- */
-
-/**
- * 审计副本集合的 import 闭包:
- * 1) 只允许 `node:` 内建 —— 逐文件复制的沙盒里没有 node_modules,裸包名必然解析失败;
- * 2) 相对 specifier 的目标必须同在副本集合内 —— 复制点只复制被点名的文件;
- * 3) 不得有死副本 —— 复制进来却没人用(既无同集合内的相对 import 入边,也不在
- *    SANDBOX_ENTRY_EVIDENCE 里登记为沙盒入口),说明复制与引用其中之一已失效,
- *    该副本承载的语义(清理/校验)会静默丢失。
- * 纯函数:只吃副本清单与文本,便于用合成样本先红后绿。
- * @param {CopySite[]} copies 副本清单(含复制点文件与行号)
- * @param {Map<string, string>} texts 仓库相对路径 → 文本(含副本与复制点文件)
- * @param {{ rel: string; via: string; how?: string }[]} [entryEvidence] 沙盒入口登记(默认无)
- * @returns {{ violations: ClosureViolation[]; orphans: OrphanCopy[]; edges: { from: string; to: string; line: number; spec: string }[] }}
- */
-export function auditCopySet(copies, texts, entryEvidence = []) {
-  const relSet = new Set(copies.map((c) => c.rel));
-  /** @type {ClosureViolation[]} */
-  const violations = [];
-  /** @type {{ from: string; to: string; line: number; spec: string }[]} */
-  const edges = [];
-  /** @type {Map<string, Set<string>>} */
-  const incoming = new Map();
-  for (const copy of copies) {
-    const text = texts.get(copy.rel);
-    if (text === undefined) {
-      violations.push({
-        rel: copy.rel,
-        line: copy.line,
-        spec: "",
-        kind: "source-unreadable",
-        detail: "副本源文件不可读(扫描结果与磁盘不一致,复制点可能已失效)",
-      });
-      continue;
-    }
-    for (const { line, spec } of collectSpecifiers(blankComments(text))) {
-      const cls = classifySpecifier(spec);
-      if (cls === "node") continue;
-      if (cls === "bare") {
-        violations.push({
-          rel: copy.rel,
-          line,
-          spec,
-          kind: "bare-specifier",
-          detail: "裸包名 specifier:逐文件复制的沙盒内无 node_modules,该 import 必然解析失败",
-        });
-        continue;
-      }
-      const resolved = resolveRelativeSpecifier(copy.rel, spec);
-      edges.push({ from: copy.rel, to: resolved, line, spec });
-      if (relSet.has(resolved)) {
-        if (!incoming.has(resolved)) incoming.set(resolved, new Set());
-        incoming.get(resolved)?.add(copy.rel);
-        continue;
-      }
-      violations.push({
-        rel: copy.rel,
-        line,
-        spec,
-        kind: "relative-outside-copy-set",
-        detail: `相对 import 目标 ${resolved} 不在逐字节复制集合内(复制点只复制被点名的文件,不会连带复制同目录依赖)`,
-      });
-    }
-  }
-  /** @type {OrphanCopy[]} */
-  const orphans = [];
-  const entryRels = new Set(entryEvidence.map((e) => e.rel));
-  const seen = new Set();
-  for (const copy of copies) {
-    if (seen.has(copy.rel)) continue;
-    seen.add(copy.rel);
-    if ((incoming.get(copy.rel)?.size ?? 0) > 0) continue; // 同集合内确有入边:它真的在被用
-    if (entryRels.has(copy.rel)) continue; // 已登记为沙盒入口(登记本身受 auditEntryEvidence 抽查)
-    orphans.push({
-      rel: copy.rel,
-      via: copy.via,
-      reason:
-        "死副本:同集合内无相对 import 入边,也未登记为沙盒入口 —— 复制与引用已对不上,该副本承载的语义会静默丢失",
-    });
-  }
-  return { violations, orphans, edges };
-}
-
-/**
- * 沙盒入口登记的机械抽查:登记项必须仍在副本集合里、复制点对得上、且复制行之外存在
- * 「提及该文件 + 带执行类调用」的代码行。第三条是关键:没有它,登记就能把任意死副本洗白,
- * 而那正是本条守护要防的事。
- * @param {CopySite[]} copies 副本清单
- * @param {Map<string, string>} texts 仓库相对路径 → 文本
- * @param {{ rel: string; via: string; how: string }[]} entryEvidence 登记项
- * @returns {string[]} 问题清单(空数组 = 登记全部有效)
- */
-export function auditEntryEvidence(copies, texts, entryEvidence) {
-  /** @type {string[]} */
-  const problems = [];
-  for (const entry of entryEvidence) {
-    const site = copies.find((c) => c.rel === entry.rel);
-    if (site === undefined) {
-      problems.push(`登记项 ${entry.rel} 已不在副本集合内(复制点被删或改了复制范围,请同步本表)`);
-      continue;
-    }
-    if (site.via !== entry.via) {
-      problems.push(`登记项 ${entry.rel} 的复制点已迁移:${entry.via} → ${site.via}(请同步本表)`);
-      continue;
-    }
-    const viaText = texts.get(entry.via);
-    const execLines = viaText === undefined ? [] : findEntryExecutionLines(viaText, site);
-    if (execLines.length === 0) {
-      problems.push(
-        `登记项 ${entry.rel} 在 ${entry.via} 的复制行(${site.line})之外已无「提及它且带执行类调用」的行 —— 它多半不再被当入口执行(原登记理由:${entry.how}),请删除该登记并复核复制点`,
-      );
-      continue;
-    }
-    if (entry.how.trim() === "") {
-      problems.push(`登记项 ${entry.rel} 缺 how 说明(人工复核的依据,不得留空)`);
-    }
-  }
-  return problems;
-}
-
-/**
- * 找出「复制行之外、既提到该副本文件又带执行类调用」的行号(入口登记的机械证据)。
- * @param {string} viaText 复制点所在文件文本
- * @param {CopySite} copy 副本记录
- * @returns {number[]} 行号(升序)
- */
-export function findEntryExecutionLines(viaText, copy) {
-  const base = copy.rel.slice(copy.rel.lastIndexOf("/") + 1);
-  /** @type {number[]} */
-  const lines = [];
-  blankComments(viaText)
-    .split("\n")
-    .forEach((line, i) => {
-      const row = i + 1;
-      if (row === copy.line) return;
-      if (!line.includes(base)) return;
-      if (ENTRY_EXECUTION_TOKENS.some((token) => line.includes(token))) lines.push(row);
-    });
-  return lines;
 }

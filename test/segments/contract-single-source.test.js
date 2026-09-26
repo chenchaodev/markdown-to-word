@@ -10,7 +10,7 @@
  * - 跨进程类型单源(源码文本判定:类型编译期擦除、产物无痕迹):
  *   ConvertResult 只在 core/ipc-contract.ts 声明,preload / ipc logic / renderer /
  *   converter 侧均不重复声明;preload 的类型依赖只来自 core 契约。
- * - 沙箱副本闭包(源码文本判定;判定纯函数层在 test/common/copy-closure.js,
+ * - 沙箱副本闭包(源码文本判定;判定纯函数层在 test/common/ 的两个文件,
  *   本段只做遍历、装配与断言 —— 见文件末 (e) 节):
  *   被**逐字节复制**进沙箱并在沙盒内解析的模块,其 import 必须闭合 —— 只允许 `node:`
  *   内建,相对 specifier 的目标必须同在副本集合内。原因:复制点只复制被点名的那几个文件,
@@ -20,7 +20,23 @@
  *   另一面同样要守:不得出现「复制了却没人用」的死副本 —— 复制点与引用一旦脱节
  *   (典型:使用方的相对 import 被删或改成绝对路径),该副本承载的清理/校验语义会静默消失。
  *   沙盒入口(复制进来就是为了被执行、没有上游 import 的脚本)凭 SANDBOX_ENTRY_EVIDENCE 登记,
- *   登记项受机械抽查(必须在复制行之外被真实提及),不能靠登记把死副本洗白。
+ *   登记项受机械抽查(必须在复制行之外存在「提及它 + 带执行类调用」的代码行),不能靠登记把死副本洗白。
+ *   判定分两层、都在 test/common/ 且零 node: 依赖(判定口径单源,勿在段内重抄):
+ *   - test/common/copy-closure.js:纯文本层(剥注释 / 抽 specifier / 分类 / 相对解析 / 表达式求值);
+ *   - test/common/copy-closure-audit.js:扫描 + 审计层(复制点提取 / 闭包审计 / 入口登记抽查);
+ *   依赖方向单向:本段 → 审计层 → 文本层。目录遍历与读文件只在本段(它已有 fs/path)。
+ *
+ * ---- 沙盒副本闭包 · 已知覆盖边界(不是「已完全覆盖」,改判定前先读这段)----
+ * 静态求值只认写在源码里的形状。以下三类复制源**解析不出**,只登记、不判红:
+ * 1) 运行时拼装的列表(如从配置里解析出的 configFiles 之类的 for-of 目标);
+ * 2) 多层别名链(一层 const 别名可解,两层以上保守放弃);
+ * 3) 跨目录整树复制(cpSync 目录 + node_modules 联接,见审计层 COPY_MECHANISMS 的 tree-mirror):
+ *    整棵树都在沙盒里,相对依赖天然闭合,不适用逐文件闭包。
+ * 后果:若将来有人用「运行时拼装列表」的方式复制一个 JS 模块,本守护**不会自动纳入**它。
+ * 那时需人工扩 copy-closure.js 的 resolveCopySource 支持该形态,或给该复制机制新增一个
+ * COPY_MECHANISMS scope;在此之前,这类复制点只出现在 scanCopySites() 的
+ * unresolved / treeMirrors 登记里(本段的 [ok] 行会打印数量)。
+ *
  * 纯断言段,无产物输出。
  */
 import fs from "node:fs";
@@ -34,15 +50,17 @@ import {
 } from "../../dist/core/markdown/cross-ref.js";
 import {
   COPY_MECHANISMS,
-  JS_SOURCE_RE,
   SANDBOX_ENTRY_EVIDENCE,
   auditCopySet,
   auditEntryEvidence,
+  scanCopySites,
+} from "../common/copy-closure-audit.js";
+import {
+  JS_SOURCE_RE,
   blankComments,
   classifySpecifier,
   collectSpecifiers,
   resolveRelativeSpecifier,
-  scanCopySites,
 } from "../common/copy-closure.js";
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -265,7 +283,7 @@ export async function run() {
     collectSpecifiers(blankComments(texts.get(c.rel) ?? "")).every((s) => classifySpecifier(s.spec) === "node"),
   );
   assert(dependencyFree !== undefined, `负向夹具缺失:应至少有一个「只依赖 node: 内建」的副本(实际副本 ${copiedRels.length} 个)`);
-  const fixture = /** @type {import("../common/copy-closure.js").CopySite} */ (dependencyFree);
+  const fixture = /** @type {import("../common/copy-closure-audit.js").CopySite} */ (dependencyFree);
   const baseText = /** @type {string} */ (texts.get(fixture.rel));
   const relativeInjection = `${baseText}\nimport { TEMP_PREFIX } from "./temp-resource.js";\n`;
   /** @type {Map<string, string>} */
