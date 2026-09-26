@@ -855,7 +855,7 @@ export async function run() {
     // 字节记账:可回收只算「可避免的同包名同版本副本」;跨版本同名同大小文件**不计入**
     // 任何可回收口径(0.16 与 0.18 之间那些文件同名同大小但内容不同,不是冗余)。
     {
-      /** @type {(asarFiles: Record<string, number | string>) => { sb: string, box: ReturnType<typeof createReleaseSandbox>, measurement: import("../../scripts/pack-size.mjs").PackSizeMeasurement, verdict: import("../../scripts/pack-size.mjs").PackSizeVerdict, report: import("../../scripts/pack-size.mjs").PackSizeReport }} */
+      /** @type {(asarFiles: Record<string, number | string>) => { sb: string, box: ReturnType<typeof createReleaseSandbox>, measurement: import("../../scripts/pack-size/contract.mjs").PackSizeMeasurement, verdict: import("../../scripts/pack-size/contract.mjs").PackSizeVerdict, report: import("../../scripts/pack-size/contract.mjs").PackSizeReport }} */
       const gate = (asarFiles) => {
         const sb = track(fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX)));
         const box = createReleaseSandbox({ root: sb, asarFiles });
@@ -879,9 +879,9 @@ export async function run() {
       };
       /**
        * 取某个包名的判重结论。
-       * @param {import("../../scripts/pack-size.mjs").PackSizeReport} report 报告
+       * @param {import("../../scripts/pack-size/contract.mjs").PackSizeReport} report 报告
        * @param {string} name 包名
-       * @returns {import("../../scripts/pack-size.mjs").PackSizeDuplicateFinding} 该包名的结论
+       * @returns {import("../../scripts/pack-size/contract.mjs").PackSizeDuplicateFinding} 该包名的结论
        */
       const findingOf = (report, name) => {
         const finding = report.duplicates?.findings.find((item) => item.name === name);
