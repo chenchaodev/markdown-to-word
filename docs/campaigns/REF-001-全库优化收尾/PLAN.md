@@ -32,7 +32,7 @@
 | ID | 阶段 | 目标 | 关联 | 退出条件(可判定) | 门禁命令 |
 |---|---|---|---|---|---|
 | #01 | 0 | 立 campaign 骨架 + 编号台账起算 + 删无效自述 | — | PLAN/STATE 就位,三处台账一致 | `node -e "const f=require('fs');for(const p of ['docs/ROADMAP.md','docs/ADR.md','docs/ACCEPTANCE.md']){const t=f.readFileSync(p,'utf8');if(!/台账/.test(t))throw new Error(p+' 缺台账')}console.log('ok')"` |
-| #02 | 0 | 断链与死指针修正 | — | 全库零悬空指针 | `grep -rn "WINDOWS-GUIDE\|CHANGELOG-GUIDE\|全局铁律\|AGENTS.md「提交时」" AGENTS.md docs/ --include=*.md \| grep -v docs/archive/` 输出为空 |
+| #02 | 0 | 断链与死指针修正 | — | 常驻层零悬空指针(#07 撤除 OPTIMIZATION-* 后本门禁覆盖全 `docs/`) | `grep -rn "WINDOWS-GUIDE\|CHANGELOG-GUIDE\|全局铁律\|「提交时」" AGENTS.md docs/ --include=*.md \| grep -vE "docs/(archive\|campaigns)/\|docs/OPTIMIZATION-"` 输出为空 |
 | #03 | 0 | STATUS.md 重写 ≤1,200 | #01 | 容量达标 + 四路分流无残留 | `node -e "const n=[...require('fs').readFileSync('docs/STATUS.md','utf8')].length;console.log(n);if(n>1200)process.exit(1)"` |
 | #04 | 0 | ACCEPTANCE.md 重建 ≤6,000 | #03 | 容量达标 + 功能点无丢失 | `node -e "const n=[...require('fs').readFileSync('docs/ACCEPTANCE.md','utf8')].length;console.log(n);if(n>6000)process.exit(1)"` |
 | #05 | 0 | ROADMAP.md 重建 + 删 BACKLOG.md | #04 | 候选区覆盖全部未实现项 | 人工核对:逐条比对 BACKLOG 迁移前的每个候选行在 ROADMAP「候选区」或「已知限制」有落点 |

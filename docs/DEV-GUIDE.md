@@ -97,6 +97,6 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(EOL 归一化,`.gitattributes` 双保险;CI 门禁步骤)
 
 ## 验证方式
-- 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(全局铁律 3)
+- 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(提交前置 → 全局配置目录 `WORKFLOW-DELIVER.md` 阶段 5「前置核对」;发布/打包产物属对外动作 → 全局配置目录 `AGENTS.md` 安全底线 3)
 - 验证基线(命令、断言、打包验证链)见 `docs/STATUS.md`「验证基线」;验收测试段明细见 `test/segments/`、`test/main/` 与 `test/renderer/`
 - docx/PDF 验收样例固定含中英混排,生成后人工打开检查中文渲染

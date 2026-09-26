@@ -40,7 +40,7 @@
 - **结论**:① **打开的文件句柄不阻止删除** —— libuv 以 `FILE_SHARE_DELETE` 打开文件,`rmSync` 照样成功(实测)。因此「开一个句柄来造 EBUSY」这类夹具在 Windows 上是**假的**,它验证的是空气。能**稳定**造出「删不掉」的是**把进程 cwd 切进该子目录**(`process.chdir()`,必 EPERM;node 与 Electron 均实测)。② `Buffer.compare` 返回 -1/0/1 的 **memcmp 大小关系**,**不是首个差异下标** —— 拿它当差异偏移用会让「差异位置」信息静默消失。③ **Electron 的 asar 虚拟 fs 会接管任何含 `.asar` 的路径**:`writeFileSync` / `openSync+writeSync` / `rename` / `copyFile` 四种写法一律抛 `Invalid package`,连读也走归档解析。测试要在临时区造/读 `.asar` 文件,须临时置 `process.noAsar = true`(记得还原),或整体交给纯 node 子进程代做。
 - **理由**:①决定「EBUSY 重试」类夹具到底有没有测到东西;②会让断言失败信息少掉最有用的一环;③会让「造个假 asar」这种看似简单的夹具在写入阶段就炸,并把排查方向误导到归档解析。
 - **来源**:2026-09-26 阶段 7 实测(node 与 Electron 双侧),以及 `test/common/temp-resource.js` 的占用锚点由「开句柄」改为「切 cwd」。
-- **关联**:`test/common/temp-resource.js`(EBUSY 退避与占用锚点)、`test/segments/install-smoke.test.js`(asar 写入走纯 node 子进程)、`test/common/assert.js`(`firstByteDiff` 不得复用 `Buffer.compare` 的返回值)。**这些是跨项目通用的 Windows/Node 行为,符合晋升全局 `WINDOWS-GUIDE.md` 的条件,但本轮只落本仓 RESEARCH,是否晋升由用户定。**
+- **关联**:`test/common/temp-resource.js`(EBUSY 退避与占用锚点)、`test/segments/install-smoke.test.js`(asar 写入走纯 node 子进程)、`test/common/assert.js`(`firstByteDiff` 不得复用 `Buffer.compare` 的返回值)。**这些是跨项目通用的 Windows/Node 行为,符合晋升全局配置目录 `ENV-GUIDE.md`「一、Windows 平台坑」的条件,但本轮只落本仓 RESEARCH,是否晋升由用户定。**
 
 ### 2026-09-26 20:10:00 renderer 测试段的元素 stub 契约(易致假红)
 - **结论**:`test/renderer/**` 的段各自带一套**极简元素 stub**,并非统一实现。例如 `test/renderer/wizard-command-guard.test.js` 的 stub 有 `setAttribute`,但**没有** `removeAttribute` / `getAttribute` / `offsetWidth`,且 `querySelector` **恒返回 null**。被测代码一旦新增对这类成员的调用,就会在段内抛错,表现为**与真实缺陷毫无关系的断言失败**(本轮一次 `removeAttribute('aria-busy')` 让「付印两格式应依次执行两次合并」报成`mergeCount === 1`)。另一面:Node 侧段以最小 stub 驱动,**全局 `HTMLElement` 不存在**,故**不得用 `instanceof HTMLElement`** 判类型,须用鸭子类型。
