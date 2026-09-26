@@ -17,6 +17,10 @@
  *   注册表释放,后续请求不被悬挂注册阻塞;
  * - 预检异常:缺文件/目录不再静默返回空数组,而是单条可观察失败警告
  *   (key=warn.precheckFailed)且主进程留痕;合法文件的正常警告仍原样返回。
+ *
+ * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/common/runner.js),自建
+ * BrowserWindow 作事件源并在 finally 销毁,注册表占用与产物目录均段内自持,
+ * 不依赖入口退出兜底,也不假设任何跨段状态。
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -76,6 +80,9 @@ function captureHandlers() {
 
 /** 让出事件循环一拍(采样飞行中的注册表状态) */
 const nextTick = () => new Promise((resolve) => setImmediate(resolve));
+
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
 
 export async function run() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "m2w-singleflight-"));

@@ -4,9 +4,11 @@
  * 脚本加载失败均降级 null 且窗口自动重建、dispose 在途(会话创建未 settle)与 dispose
  * 后排队任务均不复活窗口且临时 HTML 回收、will-quit 退出兜底销毁窗口且可重建。
  * 模拟手段:BrowserWindow.prototype.webContents getter 临时替换(converter.test.js 同款
- * 模式,descriptor 一律 try/finally 恢复;本段与其他段同进程串行,不能污染原型)。
- * 说明:窗口懒创建、单例复用;本段结束后窗口仍在,由 acceptance 末尾 app.quit()
- * 触发清理(closed → 临时 HTML 删除)。
+ * 模式,descriptor 一律 try/finally 恢复;每段跑在独立子进程里,污染不外溢,
+ * try/finally 仍是段内卫生,兼防本段后续断言读到被污染的原型)。
+ * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/common/runner.js),窗口懒创建、
+ * 单例复用;段末由本段自己 disposeMermaidService() 收尾并等临时 HTML 回收干净,
+ * **不再依赖入口的 app.quit()**(入口已不持有任何段窗口)。
  */
 import { app, BrowserWindow } from "electron";
 import fs from "node:fs/promises";
@@ -38,6 +40,17 @@ async function tempHtmlLeft(baseline) {
   return names.filter((n) => n.startsWith(`m2w-${process.pid}-`) && !baseline.has(n));
 }
 
+/** 等待本段新增的临时 HTML 全部回收(窗口 destroy → closed → 删除是异步链路,需轮询落定) */
+async function waitNoTempHtml(baseline, label) {
+  const deadline = Date.now() + 3000;
+  let left = await tempHtmlLeft(baseline);
+  while (left.length > 0 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 25));
+    left = await tempHtmlLeft(baseline);
+  }
+  assert(left.length === 0, `${label}:临时 HTML 残留 ${left.join(", ")}`);
+}
+
 /**
  * 临时替换 BrowserWindow.prototype.webContents getter(返回 fakeFactory(真实 wc));返回恢复函数。
  * 窗口可能在补丁激活期间被重建(超时后销毁→下次渲染重建):fake 用 Proxy 把
@@ -63,6 +76,9 @@ function patchWebContents(fakeFactory) {
   });
   return () => Object.defineProperty(BrowserWindow.prototype, "webContents", descriptor);
 }
+
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
 
 export async function run() {
   const baseline = new Set(
@@ -264,4 +280,15 @@ export async function run() {
       "语法错误(含 catch 日志文案)/超时/畸形返回值(含无逗号空 PNG)/崩溃/loadFile 失败均降级 null," +
       "崩溃与加载失败后自动重建;will-quit 退出兜底销毁窗口且可重建",
   );
+
+  // ---- 9. 段末 teardown:常驻会话窗口与临时 HTML 在段内收干净 ----
+  // 逐段子进程隔离后,入口不再持有段窗口(也无 app.quit() 兜底),残留若靠宿主退出时
+  // 顺带关闭窗口,就是"依赖入口生命周期"的跨段假设;本段显式 dispose 并等回收落定。
+  disposeMermaidService();
+  await waitNoTempHtml(baseline, "段末 teardown");
+  assert(
+    BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length === 0,
+    "段末 teardown:不应留下未销毁的常驻窗口",
+  );
+  console.log("[ok] mermaid-service:段末 teardown(常驻窗口销毁 + 临时 HTML 回收,不依赖入口退出)");
 }

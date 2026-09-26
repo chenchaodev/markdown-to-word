@@ -66,6 +66,9 @@ async function outlineTitles(pdfBytes) {
   return titles;
 }
 
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
+
 export async function run() {
   const dir = path.join(os.tmpdir(), `m2w-converter-${process.pid}`);
   const sampleMd = path.join(dir, "sample.md");
@@ -344,7 +347,7 @@ export async function run() {
     // 方案:webContents 是 BrowserWindow.prototype 上的 getter → 临时替换为「取原实例后把实例的
     // printToPDF 换成必抛 mock」;若该 getter 不存在(版本差异),回退 patch loadFile 抛错,同样覆盖
     // 「渲染/打印阶段失败 → finally 销毁窗口 + cleanup 删临时文件」路径。descriptor 一律 try/finally
-    // 恢复(本段与其他段同进程串行,不能污染原型)。
+    // 恢复(本段跑在独立子进程内,污染不外溢;try/finally 仍是段内卫生)。
     const pdfFailMd = path.join(dir, "pdf-fail.md");
     await fs.writeFile(pdfFailMd, "# PDF 渲染失败\n\n正文\n");
     const wcDescriptor = Object.getOwnPropertyDescriptor(BrowserWindow.prototype, "webContents");

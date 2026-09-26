@@ -6,6 +6,8 @@
  *   展示页即最新代(旧页不会后到覆盖新页),窗口当前临时文件不被提前删除;
  * - 窗口关闭后刷新安全退出:关闭前的在途刷新不 loadFile、不写注册表、临时文件不残留;
  * - loadFile 未 settle 时关闭:该次刷新结算后不留孤儿窗口与临时文件。
+ * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/common/runner.js),窗口与
+ * 临时 HTML 全程自持,finally 里逐个 destroy 并等回收落定,不依赖入口退出兜底。
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -35,8 +37,9 @@ async function tempHtmlFiles() {
 }
 
 /**
- * 本段新增的临时 HTML(排除其他段遗留:如 mermaid 服务的常驻会话页,
- * 按设计由 acceptance 末尾 app.quit() 回收,不归本段断言)。
+ * 本段新增的临时 HTML(排除段起点就存在的文件)。
+ * 逐段子进程隔离后本进程只有本段的临时文件(临时文件按 m2w-{pid}- 命名),基线集
+ * 实际为空;仍按基线取差集,是为了断言只针对本段产物,不把"进程里别人的文件"算进失败面。
  */
 async function previewTempFiles(baseline) {
   return (await tempHtmlFiles()).filter((n) => !baseline.has(n));
@@ -52,6 +55,9 @@ async function waitNoTempHtml(baseline, label) {
   }
   assert(left.length === 0, `${label}:临时 HTML 应全部回收,实际 ${left.join(",")}`);
 }
+
+// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+export const fixtures = null;
 
 export async function run() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "m2w-preview-"));
