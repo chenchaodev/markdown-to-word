@@ -21,7 +21,7 @@
 | 阶段 2 内容/几何/输出 | `[~]` 2A/2B 实现完成 | 准备链、几何迁移、D-03 路径边界、原子输出提交已落地；D-03 媒体类型/大小预算仍待阶段 3 |
 | 阶段 3 资源/生命周期 | `[x]` 完成 | 取消/期限、资源预算、目录/图片限制、KaTeX 上限、clipboard/preview/Mermaid 生命周期已落地；90 段门禁全绿 |
 | 阶段 4 renderer UX | `[~]` 自动断言完成，GUI 待用户 | 交互、初始化、预设/取消态、ARIA/视觉/geometry 已落地；真实窗口与读屏目视验收待用户 |
-| 阶段 5 边界/双管线/测试 | `[~]` 基础存在 | checkJs 全量、runner 隔离、fixture 契约、差异矩阵未完成 |
+| 阶段 5 边界/双管线/测试 | `[x]` 完成 | 边界契约门禁、21 行双管线差异矩阵、逐段子进程隔离、fixture 显式注册、测试树全量 `@ts-check` 均已落地；101 段门禁全绿 |
 | 阶段 6 发布/视觉/安装 | `[~]` 部分完成 | clean/manifest/ASAR/geometry 本地门禁已入链；SCA/SBOM/安装与远端证据待办 |
 | 阶段 7 P2/P3 | `[ ]` 后置 | 不阻塞主线，但全部 actionable 项保留 |
 
@@ -246,30 +246,43 @@
 
 ## 6. 阶段 5：边界、双管线契约、测试工程
 
-### OPT-5.1 边界契约 — `[~]`
+### OPT-5.1 边界契约 — `[x]`
 
 - [x] 部分 IPC contract 归位。
-- [ ] main logic 纯化/IO 边界明确。
-- [ ] renderer/preload type-only 依赖清理。
-- [ ] import boundary 自动检查。
+- [x] main logic 纯化/IO 边界明确（抽出零 electron 纯模块 `main/persist/preset-file.ts`，`logic.ts` 运行时依赖图零 electron，BFS 守护）。
+- [x] renderer/preload type-only 依赖清理（`ConvertResult` 等 6 个契约上提 `core/ipc-contract.ts`；preload 类型依赖仅来自 core）。
+- [x] import boundary 自动检查（`check:boundary` 入 verify:ci；依赖声明求差 + 4 条层向断言 + core node 内建白名单，src/dist 双形态，负向夹具 18→21）。
+- [x] 传递依赖声明修正（jszip 移入 dependencies；9 个 core 运行时传递依赖按 lockfile 实际版本钉死；ASAR 必备条目补 jszip）。
 
-### OPT-5.2 双管线差异矩阵 — `[ ]`
+**证据**：`02cfd59`、`004b4ab`；`scripts/check-import-boundary.mjs`、`test/segments/import-boundary.test.js`。
 
-- [ ] 必须一致/允许不同矩阵。
-- [ ] differential fixtures。
-- [ ] heading/caption/equation/HTML/TOC 显式契约。
-- [ ] PDF 目录结构化数据渐进替换。
-- [ ] DOCX Ctx 按范围拆分。
+### OPT-5.2 双管线差异矩阵 — `[x]`
 
-### OPT-5.3 测试工程 — `[~]`
+- [x] 必须一致/允许不同矩阵（21 行可执行断言：必须一致 12 / 允许不同 9；每行含双侧提取器与源码行号锚点，行结构受守护）。
+- [x] differential fixtures（5 个 `dual-pipeline-matrix*` 样例，全部被断言实际消费）。
+- [x] heading/caption/equation/HTML/TOC 显式契约（`ConvertContext` 增 `headingNumbering`/`captionNumbering` 并透传双管线；toc-caption 补 docx×pdf 四组合覆盖断言）。
+- [x] PDF 目录结构化数据渐进替换（`renderPdfDocument` 与 html 同管线产出 headings；`extractHeadings` 降级为兼容层；`injectTocPageNumbers` 按 id 集合定位）。
+- [x] DOCX Ctx 按范围拆分（20 个扁平字段 → `config` 只读配置 + `xref`/`footnote`/`comment`/`image`/`warning` 五个可变状态子对象，单源构造点保持唯一）。
 
-- [x] coverage/fixture/77 段基础门禁。
+**证据**：`5c8572d`、`2cdd08a`；`test/segments/dual-pipeline-matrix.test.js`（21 行矩阵）、`src/main/converter/artifact-writer.ts` 同批。
+
+### OPT-5.3 测试工程 — `[x]`
+
+- [x] coverage/fixture/基础门禁（101 段；c8 阈值 90/85/90/90，core/main 范围）。
 - [x] core/main coverage 范围明确。
-- [ ] 全部测试 `checkJs`。
-- [ ] 逐段子进程隔离与失败 artifact。
-- [ ] fixture 显式注册、mock 边界、case 级报告。
+- [x] 全部测试 `checkJs`（108 个测试源文件全量标注 `@ts-check`，清零 2053 条；**逐文件 pragma 模型**，`checkJs` 必须保持 false —— 测试消费 dist 编译产物，全局开启会把它拉进检查范围；由 `tscheck-coverage` 段守护）。
+- [x] 逐段子进程隔离与失败 artifact（父进程按段派生独立 Electron 子进程；硬超时 `taskkill /T /F` 杀进程树；userData 隔离下沉到每段；失败落盘 `output/artifacts/failures/<段名>/`；`M2W_ACCEPTANCE_INPROC=1` 保留同进程回退）。
+- [x] fixture 显式注册、mock 边界、case 级报告（去掉正则预筛，改为三目录统一 import 后读显式契约，不声明即判红；扫描范围补齐 renderer；`electron-mock-coverage` 段静态守护 mock 覆盖面并堵出 `nativeTheme`/`webUtils` 真实漂移；case 级契约 + 跨进程增量回传）。
 
-**阶段 5 门禁**：以上全部 `[x]`，checkJs/runner/fixture/差异测试通过。
+**证据**：`629b3b2`、`529810e`、`583f345`。
+
+**已知边界与教训**：
+- 隔离模型耗时 2.21x（100 段：隔离 90.2s vs 同进程 40.9s），未为速度牺牲隔离性；降本备选（K 槽并发编排）未实施。
+- TS7 native（`tsc`）在程序内存在**任一语法错误**时会跳过全程序语义诊断 → 「tsc 输出为空」可能是假绿。验收须双编译器交叉（TS7 CLI + TS6 API 探针）。
+- `.js` 中非空断言 `!` 触发 TS8013 语法错误，同上会引发假绿；测试树禁用 `!`，改用断言函数（`@returns {asserts cond}`）与显式读取 helper。
+- 差异矩阵段 1237 行超 CODE-GUIDE ~500 行参考；题注 label 命名空间不分 kind（语义变更）已登记 BACKLOG 待拍板。
+
+**阶段 5 门禁**：全部 `[x]`；`verify:ci` 通过（101 段、coverage、fixtures、smoke、geometry 12 场景/10 恒定组），TS7 CLI 与 TS6 探针双侧零类型错误。
 
 ## 7. 阶段 6：发布可重复性、供应链、视觉/安装
 

@@ -5,6 +5,7 @@
 > 当前定位:3.12.0 已发版;封版期维持「暂停新功能开发,文档维护 + 技术债清理」(需求入口见 BACKLOG,确认后排 ROADMAP「当前待办」)。
 > 历史批次明细见 `docs/CHANGELOG.md` 与 git log;审计与调研证据链见 `docs/archive/`。
 
+- 2026-09-26:**阶段 5 完成，阶段 6 待开始**:传递依赖声明修正(jszip 移入 dependencies + 9 个 core 传递依赖钉版)与 `check:boundary` 导入门禁入 verify:ci(负向夹具 18→21);`logic.ts` 去 electron 依赖 + 跨层类型归位 core;PDF 目录改结构化标题数据(不再正则反解析);21 行双管线差异矩阵(必须一致 12 / 允许不同 9)+ 5 个 differential fixture;DOCX Ctx 拆为 config + 5 个可变状态子对象;测试段改逐段独立 Electron 子进程(硬超时杀进程树、userData 段级隔离、case 级报告、失败 artifact 落盘);fixture 改显式注册 + mock 边界守护(堵出 nativeTheme/webUtils 真实漂移);108 个测试源文件全量 `@ts-check`、清零 2053 条类型错误(新增 `convert-helpers.js` 判别式收窄 + `tscheck-coverage` 守护段);`verify:ci` 101 段全绿且 TS7 CLI 与 TS6 API 探针双侧零类型错误;隔离模型耗时 2.21x(90.2s vs 40.9s)
 - 2026-09-26:**阶段 4 自动断言完成，GUI 待用户**:提交 `499a6bc` 收口动态节点 i18n、向导重开/语言、复制/取消中性态、初始化 barrier、main 语言菜单标题栏同步、ARIA/视觉守卫；主会话 `verify:ci` 95 段全绿，geometry 12 场景/10 恒定组；真实窗口/读屏/深浅主题验收待用户
 - 2026-09-26:**阶段 3 完成，阶段 4 待开始**:提交 `3c429c8` 落地 core signal/deadline/稳定取消码、resolver/目录/批量/合并预算、KaTeX 资源上限、clipboard/preview/Mermaid 生命周期；主会话 `verify:ci` 90 段全绿；`test/pending/` 红测试已迁入 `test/segments/`，保留历史副本
 - 2026-09-26:**阶段 2B 完成，阶段 3 待开始**:提交 `fefbf19` 建立同目录临时文件、魔数校验、硬链接独占提交与 EEXIST 递增选名；无原子提交能力时安全失败，不退化直写；`verify:ci` 84 段全绿；D-03 媒体类型/大小预算转入阶段 3
