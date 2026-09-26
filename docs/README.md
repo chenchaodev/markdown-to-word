@@ -28,7 +28,6 @@ markdown-to-word: Markdown 转 Word / PDF 的 Windows 桌面应用。项目知�
 | `WPS-COMPAT.md` | Word/WPS 双实测兼容矩阵 | 实测完成/发现问题时 |
 | `design/ui-guidelines.md` | UI 视觉规范（冷灰纸+朱砂红、字体三角色、签名元素） | UI 设计变更时 |
 | `design/settings-ia.md` | 设置信息架构（设置面板布局与交互） | 设置重组时 |
-| `design/book-wizard.md` | 成书向导设计（UI/交互稿） | 向导功能变更时 |
 | `design/ui-mockup.html` | UI 交互原型（HTML） | 界面重构时 |
 | `OPTIMIZATION-PLAN.md` | 全库代码优化开发计划（裁决、阶段、验收与回退） | 优化排期/裁决变更时 |
 | `OPTIMIZATION-CHECKLIST.md` | 全库优化逐阶段执行门禁与证据台账 | 每阶段开始/结束更新 |
