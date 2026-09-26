@@ -30,6 +30,9 @@
  *     超出段数的值夹取到段数(夹取只约束真正派生 worker 的池);
  * 13. 段内嵌套 runAll 不消费外层并发变量:本段进程内查不到该变量,且在显式设上该变量的
  *     前提下跑嵌套编排,派生的段宿主子进程 env 里同样查不到(否则夹具进程与外层池抢核)。
+ * 14. win32 异常退出码须标注成可读文案:32 位高位值是 NTSTATUS 异常码(如 3221225477 =
+ *     0xC0000005 STATUS_ACCESS_VIOLATION)而非进程退出码,只印十进制会丢掉唯一线索;
+ *     普通码与无码保持原样,未收录的高位值标「含义未收录」而不猜。
  *
  * 模型自适应:同进程回退模型下不造崩溃/悬挂/状态隔离夹具(崩溃夹具的 process.exit 会
  * 带走整轮验收,悬挂夹具在同进程内无法被终止),只跑与模型无关的 case 契约/旧段/筛选断言。
@@ -40,7 +43,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../common/paths.js";
-import { CONCURRENCY_ENV, ONLY_ENV, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
+import { CONCURRENCY_ENV, ONLY_ENV, describeChildExitCode, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
 
 /** 临时段文件沙盒(仓库 output/ 下,gitignore 覆盖;不落 test/,免被 typecheck/lint 扫入) */
 const SANDBOX = path.join(ROOT, "output", "tmp", "runner-report-selftest");
@@ -696,6 +699,32 @@ export async function run() {
     } else {
       console.log("[selftest] 同进程回退模型:跳过段宿主 env 边界断言(该模型无子进程 env,夹具与编排器同进程)");
     }
+
+    // 6. win32 异常退出码的可读标注:32 位高位值是 NTSTATUS 异常码而非退出码,
+    // 直接印十进制等于丢掉唯一线索(2026-09-26 的 0xC0000005 事故即如此)。
+    const exitCodeCases = /** @type {[number | null | undefined, string[]][]} */ ([
+      [0, ["退出码 0"]],
+      [1, ["退出码 1"]],
+      [255, ["退出码 255"]],
+      [null, ["无退出码"]],
+      [undefined, ["无退出码"]],
+      [0xc0000005, ["3221225477", "C0000005", "ACCESS_VIOLATION", "不是段的断言失败"]],
+      [0xc0000135, ["C0000135", "DLL"]],
+      [0x80000003, ["高位值", "含义未收录"]],
+    ]);
+    for (const [given, needles] of exitCodeCases) {
+      const text = describeChildExitCode(given);
+      for (const needle of needles) {
+        if (!text.includes(needle)) {
+          fail(`describeChildExitCode(${String(given)}) 应含「${needle}」,实际「${text}」`);
+        }
+      }
+    }
+    // 高位判读的边界:0x7fffffff 及以下仍是普通退出码,不得被当成异常终止
+    if (!describeChildExitCode(0x7fffffff).startsWith("退出码 ")) {
+      fail(`0x7fffffff 应仍按普通退出码标注,实际「${describeChildExitCode(0x7fffffff)}」`);
+    }
+    console.log("[selftest] win32 异常退出码标注:已覆盖普通码/无码/已收录异常码/未收录高位值/判读边界");
   } finally {
     removeSandboxFile(A_USERDATA_FILE);
     removeSandboxFile(B_USERDATA_FILE);

@@ -189,6 +189,11 @@
 
 ## 测试与门禁
 
+### 2026-09-26 23:35:00 win32 上「子进程退出码」大于 0x7fffffff 时它是 NTSTATUS 异常码
+- **结论**:Windows 上进程被异常终止时,父进程拿到的「退出码」不是退出码,而是 **NTSTATUS 异常码**:判据是值 `> 0x7fffffff`(32 位高位置 1);`0xC0000005` = `STATUS_ACCESS_VIOLATION`(3221225477,访问冲突)、`0xC0000409` = `STATUS_STACK_BUFFER_OVERRUN`、`0xC0000374` = `STATUS_HEAP_CORRUPTION`、`0xC0000135/0138/0139/0142` = DLL 缺失/导出序号缺失/入口点缺失/DLL 初始化失败。`0x7fffffff` 及以下仍是普通退出码(0–255)。只印十进制等于丢掉唯一线索 —— 2026-09-26 那次 runner-only 失败就是这样:两轮复发各只拿到「实际 3221225477」一个数字,无法判断是段自身崩了还是宿主被外部终止。已加 `describeChildExitCode()` 标注(未收录的高位值只标「疑似异常终止」而不猜)
+- **凭记忆写常量是危险的**:本条那 9 个码初版写错一个(`STATUS_ORDINAL_NOT_FOUND` 记成 `0xC000013A`,实为 `0xC0000138`),已按权威头文件(wine 的 `include/winnt.h`,与 MS-ERREF 同源常量)逐条复核。**记错的常量比不记更坏** —— 它会把排查引向错误结论。凡硬编码的外部常量表,写入前必须逐条对权威来源核,未收录的宁可不收
+- **来源/验证**:权威常量表逐条对照;9 个常量 + 普通码/无码/判读边界的断言在 `test/segments/runner-report.test.js`;**关联**:`test/common/runner.js`(`describeChildExitCode` 与段崩溃文案生成点)、`docs/ROADMAP.md` 的 REF-023
+
 ### 2026-09-26 23:20:00 测量验收时踩的两个坑:日志落进 `output/`、两套验收并行
 - **结论**:验证「段并发」这类改动时,两个**编排层**陷阱会让数据整批作废,且都与被测实现无关:① 把轮次日志重定向到 `output/tmp/` 之下 —— `output/` 在 `gate-probes` 的 `PROTECTED_PATHS` 里,于是每轮都报「探针期间真实工作树发生变化」,**118 段里恰好那一段红**,极易误判成并发把探针搞坏了;实测连废 5 轮。② 同时起两套验收 —— `test/segments/runner-report.test.js` 的自测沙盒是**固定路径** `output/tmp/runner-report-selftest/`,两套并行时一方 `cleanupSandbox()` 删掉沙盒,另一方嵌套 `runAll` 去 import 夹具就炸 `ERR_MODULE_NOT_FOUND`,表现为「自测段偶发红」。
 - **可复用的守卫**:每轮前后记录 `git diff | sha256sum` + `git status --porcelain | sha256sum` + 固定沙盒的存在性与 mtime,三者任一不一致即判该轮被污染并重跑。注意该守卫**只管 tracked 文件**,抓不到「另一套验收在跑」——那要靠沙盒 mtime 或干脆串行化。**任何测量产物一律落在仓库外**(本仓用 `%LOCALAPPDATA%\Temp`)。

@@ -511,9 +511,47 @@ async function runSegmentIsolated(s, timeout, { captureLog = false } = {}) {
     ms,
     ret: { cases: partialCases, artifacts: [] },
     error: new Error(
-      `测试段子进程异常退出(退出码 ${exit.code ?? "无"},无完整结果回传): ${s.name}(段崩溃;后续段继续执行)`,
+      `测试段子进程异常退出(${describeChildExitCode(exit.code)},无完整结果回传): ${s.name}(段崩溃;后续段继续执行)`,
     ),
   });
+}
+
+/**
+ * 把子进程退出码标注成可读文案(win32 专属判读)。
+ *
+ * 为什么需要:Windows 上进程被**异常终止**时,父进程拿到的「退出码」其实是 NTSTATUS
+ * 异常码,如 `3221225477` = `0xC0000005` = `STATUS_ACCESS_VIOLATION`(访问冲突)。
+ * 直接印十进制,读者只会当成一个无意义的大数 —— 2026-09-26 那次 runner-only 失败
+ * 就是这样:两轮复发各只拿到「实际 3221225477」这一个数字,无法据此判断是段自身崩了
+ * 还是宿主被外部终止。标出异常名与「这通常不是段的断言失败」,下次复发日志自带线索。
+ *
+ * 口径:仅在 `code > 0x7fffffff`(即高位置 1 的 32 位值)时按 NTSTATUS 解读;
+ * `0xC0000005` 这类高位异常码的十进制必然大于该界,正常的 0–255 退出码不会命中;
+ * 边界值取自 Node 对 win32 退出码的既有处理(`process.exitCode` 在 win32 上限 32 位)。
+ * 未收录的异常码只标「高位值(疑似异常终止)」,不猜具体含义。
+ * @param {number | null | undefined} code 子进程退出码
+ * @returns {string} 可直接嵌进错误文案的描述
+ */
+export function describeChildExitCode(code) {
+  if (code === null || code === undefined) return "无退出码";
+  if (!Number.isInteger(code) || code <= 0) return `退出码 ${String(code)}`;
+  if (code <= 0x7fffffff) return `退出码 ${String(code)}`;
+  const status = code >>> 0;
+  const known = /** @type {Record<number, string>} */ ({
+    0xc0000005: "STATUS_ACCESS_VIOLATION(访问冲突)",
+    0xc0000409: "STATUS_STACK_BUFFER_OVERRUN(栈缓冲区溢出,常为 __fastfail)",
+    0xc0000374: "STATUS_HEAP_CORRUPTION(堆损坏)",
+    0xc0000006: "STATUS_IN_PAGE_ERROR(分页文件/内存映射读取失败)",
+    0xc000001d: "STATUS_ILLEGAL_INSTRUCTION(非法指令)",
+    0xc0000139: "STATUS_ENTRYPOINT_NOT_FOUND(入口点缺失)",
+    0xc0000138: "STATUS_ORDINAL_NOT_FOUND(导出序号缺失)",
+    0xc0000135: "STATUS_DLL_NOT_FOUND(DLL 缺失)",
+    0xc0000142: "STATUS_DLL_INIT_FAILED(DLL 初始化失败)",
+  });
+  const name = known[status];
+  return name === undefined
+    ? `高位值 ${String(code)}(0x${status.toString(16).toUpperCase()},疑似异常终止,含义未收录)`
+    : `异常终止 ${String(code)}=0x${status.toString(16).toUpperCase()} ${name} —— 这不是段的断言失败`;
 }
 
 /**
