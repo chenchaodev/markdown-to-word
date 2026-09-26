@@ -14,11 +14,11 @@
 ## 规则
 - 提交:一次提交 = 一个可独立回退的逻辑单元;message 用 prefix(`feat:`、`fix:`、`docs:`、`chore:`、`refactor:`、`perf:`、`test:`);提交前过 typecheck/build,`git status` 只含本逻辑单元文件;`docs/CHANGELOG.md` 平时不写,发版按全局配置目录 `PUBLISH-GUIDE.md` 面向用户重写;实测状态变化同批更新 `docs/ACCEPTANCE.md` / `docs/STATUS.md` 阻塞行并同步仪表盘
 - 版本号三统一(1.0.0 起):package.json / git tag / `docs/CHANGELOG.md` 同号
-- 规划编号不进交付物:候选区 `B1`–`B11` 属规划内部用语,晋升后改用描述性功能名(如 成书向导/剪贴板直转),禁写入代码注释/文件名/`docs/CHANGELOG.md`/`docs/STATUS.md`/`docs/ACCEPTANCE.md`/`docs/ROADMAP.md` 小节标题;发版前做「编号→功能名」重命名
+- 规划编号不进交付物:候选区 `B1`–`B11` 属规划内部用语,晋升后改用描述性功能名(如 成书向导/剪贴板直转),禁写入代码注释/文件名/`docs/` 下全部文档的小节标题;发版前做「编号→功能名」重命名
 - pwsh 坑:commit message 用单引号包裹(内嵌 ASCII 双引号会被拆包);跨项目通用坑(pwsh 引号/MAX_PATH/EBUSY/编码)见全局配置目录 `ENV-GUIDE.md`「一、Windows 平台坑」,本仓具体坑见 `docs/RESEARCH.md`
 - 测试体系:`test/` 镜像 `src/` 三层(segments/ · main/ · renderer/),按内容主题零注册;入口 `npm run test`(acceptance)/`test:smoke`/`test:all`;新增能力须补测试段,缺口见 `docs/ROADMAP.md`;核心路径改动跑对应测试段 + smoke,外围按影响面跑
 - 流程(全局配置目录 `WORKFLOW-PLAN.md`/`WORKFLOW-DELIVER.md` 阶段 0-8):文档驱动,规划即契约;排期先价值确认;**需求入口单源 = `docs/ROADMAP.md`「候选区」**(分类 + 价值/工作量 → 确认 → 移「已排期」);`docs/ACCEPTANCE.md` 只列人工 GUI 实测项,自动断言只留指针;代码结构与质量(注释/命名/契约单源/测试细则)见全局配置目录 `CODE-GUIDE.md`,改代码/重构/测试前先读
 
 ## 文件信息
 - **本文件容量** ≤2500 字符(砍除顺序见全局配置目录 `META-GUIDE.md` 四)
-- 版本:v1.7(2026-09-26)
+- 版本:v1.8(2026-09-26)
