@@ -1,0 +1,92 @@
+{
+  "baselineSchema": 1,
+  "note": [
+    "coverage 门禁的阈值与豁免基线:c8 阈值(收紧面) + 结构性不可测文件的显式豁免(可见面)。单源:`test/segments/coverage-gate.test.js` 逐项核对本表与 package.json 的 test:coverage 参数向量。",
+    "存在的理由:`--all` 打开后,「不可达文件」与「结构性不可测文件」混进同一个百分比 —— 前者(新增且从未被 import 的死代码)应当被抓,后者(Electron 入口、纯类型模块)不该让所有代码一起降分。平均值同时掩盖两者,是本门禁最大的盲区。",
+    "本表把后者逐条显式列出来(每条写明为何无法单测,并给出可复算的判定依据),让前者无处藏身:清单外的新 0% 文件由 `node scripts/gate-probes/coverage-gate.mjs --zero` 显式判红;清单本身也被守护(条目字段缺失/理由为空/文件已不存在/分类与真实产物形态不符/豁免已失效/新增空模块未登记,任一情况都判红)。",
+    "维护顺序(勿跳步):① 在**干净树**上跑重测命令拿到实测值 → ② 人工确认阈值 → ③ 把 measured 与 thresholds 一起写回本表 → ④ package.json 的 test:coverage 阈值须与本表 thresholds 逐项相同。",
+    "重测命令(接线后即 npm run test:coverage):`npm run build && c8 --reporter=text --reporter=json-summary --all --check-coverage --include=\"dist/**\" --exclude=\"dist/renderer/**\" --exclude=\"dist/core/ipc-contract.js\" … --statements=90 --branches=85 --functions=90 --lines=90 electron test/acceptance.mjs`。实测值同时出现在 stdout 的 All files 行与 coverage/coverage-summary.json 的 total.*.pct。",
+    "不要为了变绿而单下调 thresholds:thresholds 必须落在 [floor, measured] 区间内,且不得低于 measured − headroomPp。headroomPp 是「阈值允许比上一次干净树实测低多少」的显式余量(阈值本来就该低于实测值,否则门禁在干净树上也会红)。这条规则拦的是静默降级:实测值是独立测出来的、不会跟着阈值走,阈值一降就超余量 → 判红;要合法下调,必须先在干净树重测并把 measured 一起改(于是「实测值掉了几个点」本身变成 diff 里可见的回归),或者去改 floor(更显眼)。",
+    "measured 为 null 表示「尚未在干净树登记实测值」,此时门禁判红(阈值失去锚点,等于没人看守)。",
+    "headroomPp 的取法:取「干净树实测 − 拟定阈值」在四个指标上的**最大值**,向上取整到整数(它只界定「允许的余量」,不影响阈值严格度本身)。沙盒参考值下最大差距是 branches(88.56 − 85 = 3.56pp),故取 4;干净树实测出来后请按同一公式重算。",
+    "referenceSandbox 是在**沙盒副本**里测到的参考值(工作树当时有并行改动、6/113 段因沙盒缺 docs/.github 与在途 WIP 失败,数值偏低,仅供参考,不得直接当 measured 用)。它同时是「阈值不需要下调」的证据:排除 6 个豁免文件后 statements 92.71% / branches 88.56% / functions 92.72%,现阈值 90/85/90/90 全部达标。",
+    "为什么不用 c8 的 --per-file(它看起来正好能堵「平均值稀释」):实测 94 个文件里有 33 个低于任一现阈值(最低的 src/core/image/image-type.ts 54.7%、src/main/smoke.ts 44.9%),--per-file 会要求先补齐几十个文件才能过,不是可落地的收紧手段,故改用显式的 0% 集合核对。",
+    "别把本表当生成物:阈值与豁免的取舍是人的判断,故意不做 --write 自动重生成,免得一次自动重写把收紧面悄悄放宽(同 scripts/pinned-actions.baseline.json 的取向)。"
+  ],
+  "headroomPp": 4,
+  "floor": {
+    "statements": 85,
+    "branches": 80,
+    "functions": 85,
+    "lines": 85
+  },
+  "measured": {
+    "statements": null,
+    "branches": null,
+    "functions": null,
+    "lines": null
+  },
+  "thresholds": {
+    "statements": 90,
+    "branches": 85,
+    "functions": 90,
+    "lines": 90
+  },
+  "referenceSandbox": {
+    "note": "沙盒副本实测(2026-09-26;工作树有并行改动 + 6/113 段失败,数值偏低,仅供参考)",
+    "flags": "--reporter=text --reporter=json-summary --all --check-coverage --include=dist/** --exclude=dist/renderer/**",
+    "withUnreachable": {
+      "statements": 89.94,
+      "branches": 88.38,
+      "functions": 91.67
+    },
+    "excludingExemptions": {
+      "statements": 92.71,
+      "branches": 88.56,
+      "functions": 92.72
+    },
+    "filesBelowSomeThreshold": 33,
+    "filesAfterExclusions": 94
+  },
+  "requireFlags": [
+    "--all",
+    "--check-coverage",
+    "--reporter=text",
+    "--reporter=json-summary",
+    "--include=dist/**",
+    "--exclude=dist/renderer/**"
+  ],
+  "requireExcludesInFlag": true,
+  "exemptions": [
+    {
+      "file": "src/core/ipc-contract.ts",
+      "category": "empty-module",
+      "reason": "纯类型契约单源(全部导出为 interface/type)。判定依据:编译产物 dist/core/ipc-contract.js 只有 `export {};`(node -e 打印产物 + guard 用 isEmptyModuleArtifact 核对);而带 source map 的覆盖率报告把整个 .ts 源记成未覆盖 —— 实测 statements 0/186、functions 0/1,即「无可执行语句」被记成「零覆盖」。它不是死代码,也没有可补的测试:main/ipc-channels 等段测的是它的消费面。"
+    },
+    {
+      "file": "src/core/image/image-resolver.ts",
+      "category": "empty-module",
+      "reason": "图片解析回调的类型契约(interface + type alias,零运行时代码)。判定依据:产物 dist/core/image/image-resolver.js 只有 `export {};`;覆盖率报告记 statements 0/33、functions 0/1。解析能力本身由 core/cancel 与 main/image-downloader 的段覆盖,与本类型模块无关。"
+    },
+    {
+      "file": "src/core/markdown/mermaid.ts",
+      "category": "empty-module",
+      "reason": "mermaid 渲染的类型契约单源(产物 `export {};`,报告记 statements 0/25、functions 0/1)。特别注意:它有 mermaid 相关段在测(segments/mermaid、main/mermaid-service),但那些段测的是 core/docx 的 mermaid handler 与 main 的 mermaid-service 客户端,与本文件(纯类型)无关 —— 0% 不代表 mermaid 能力没测,别被这个 0% 误导成「mermaid 没覆盖」。"
+    },
+    {
+      "file": "src/main/ipc/types.ts",
+      "category": "empty-module",
+      "reason": "剪贴板契约的兼容 re-export(`export type { ClipboardReadResult } from …`),产物 `export {};`,报告记 statements 0/5、functions 0/1。契约单源已归位 core/ipc-contract.ts,本文件只为维持 register.ts 的导入面。"
+    },
+    {
+      "file": "src/main/index.ts",
+      "category": "runtime-entry",
+      "reason": "Electron 主进程入口:import 即触发单实例锁、建窗、注册 IPC 与生命周期,段内无法 import 它(那正是「启动 Electron」本身);测试里出现的 dist/main/index.js 只是夹具字符串/asar 期望条目,不是 import(guard 用模块说明符位置的正则核对)。它的端到端行为由 test:smoke(`electron . --smoke`)在真实运行时覆盖,覆盖率统计跑的 acceptance 段不含 smoke。关键接线另有静态断言守护(test/main/session-permission-deny.test.js 断言入口调用 applyDefaultDenyPermissions(session.defaultSession))。实测报告记 statements 0/83。"
+    },
+    {
+      "file": "src/main/preload.cts",
+      "category": "runtime-entry",
+      "reason": "preload 脚本:由渲染进程在 window 创建时加载,依赖 window 与 ipcRenderer 全局注入,单测环境没有这些宿主。其契约由 renderer 段按「window.api 形状」静态断言(segments/ui-contract-guards、command-entry-guard 等),不由覆盖率统计。产物为 dist/main/preload.cjs,实测报告记 statements 0/166。"
+    }
+  ]
+}
