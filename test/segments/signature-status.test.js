@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
 import {
+  buildEntry,
   classifyAuthenticode,
   collectExeFiles,
   compareStatus,
@@ -66,6 +67,47 @@ export async function run() {
     "无法判定的提示须明确「不得当作未签名放行」",
   );
   console.log("[ok] signature-status:比对锚点(一致放行/冲突判红/无法判定判红且措辞正确)");
+
+  // ---- 1b. buildEntry:探测路径(注入 probe)----
+  // 回归:CI 上实测 Get-AuthenticodeSignature 因 Microsoft.PowerShell.Security
+  // 模块加载不了而直接抛错(PSModulePath 被 CI 注入值污染)。原实现里 execFileSync
+  // 抛错会绕过全部三态逻辑,直接崩成 Node 原始堆栈;「探测手段不可用」必须
+  // 与「状态无法判定」分开,同样判红,不得被当成 unsigned 放行。
+  {
+    const okEntry = buildEntry(path.join(ROOT, "release", "Setup-1.0.0.exe"), () => "NotSigned");
+    assert(okEntry.status === "unsigned" && okEntry.ok === true, "探测返回 NotSigned 应判为 unsigned 且放行");
+
+    const signedEntry = buildEntry(path.join(ROOT, "release", "Setup-1.0.0.exe"), () => "Valid");
+    assert(signedEntry.ok === false, "探测返回 Valid 与声明 unsigned 冲突须判红");
+
+    const indetEntry = buildEntry(path.join(ROOT, "release", "Setup-1.0.0.exe"), () => "NotTrusted");
+    assert(
+      indetEntry.status === "indeterminate" && indetEntry.ok === false,
+      "NotTrusted 仍走 indeterminate 路径且判红",
+    );
+
+    const boom = buildEntry(path.join(ROOT, "release", "Setup-1.0.0.exe"), () => {
+      // 忠实复刻 CI 上真实 PowerShell 报错形态(含末行的 FullyQualifiedErrorId 标签)
+      throw new Error(
+        "Get-AuthenticodeSignature : The 'Get-AuthenticodeSignature' command was found in the module \n" +
+          "'Microsoft.PowerShell.Security', but the module could not be loaded.\n" +
+          "    + FullyQualifiedErrorId : CouldNotAutoloadMatchingModule",
+      );
+    });
+    assert(boom.status === "probe-unavailable", `探测命令失败须单列 probe-unavailable,实际 ${boom.status}`);
+    assert(boom.ok === false, "探测手段不可用必须判红(取不到事实不得放行)");
+    assert(
+      Boolean(boom.reason) &&
+        String(boom.reason).includes("不得据此推断") &&
+        String(boom.reason).includes("探测手段不可用"),
+      "探测失败的提示须区分于签名状态异常,并写明不得据此推断未签名",
+    );
+    assert(
+      String(boom.reason).includes("CouldNotAutoloadMatchingModule"),
+      `探测失败须带上原始错误首行以便定位,实际:${String(boom.reason)}`,
+    );
+  }
+  console.log("[ok] signature-status:buildEntry(正常映射/探测不可用单列并判红且措辞正确)");
 
   // ---- 2. 沙箱:collectExeFiles 只收 exe,递归且忽略非可执行产物 ----
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-signature-"));

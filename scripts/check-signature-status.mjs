@@ -10,6 +10,10 @@
 //   - indeterminate : 其余状态(UnknownError / NotTrusted / HashMismatch / NotSupportedFileFormat …)
 //                     —— 其中 NotTrusted 意味着「有签名但证书链不受信」,与 unsigned 语义相反,
 //                     一律按无法判定处理并判红,不得归入 unsigned。
+// 另有一类**不属于 Authenticode 状态**:探测命令本身失败(如
+// Microsoft.PowerShell.Security 模块加载不了,连 Status 都没取到),记为
+// probe-unavailable。它与 indeterminate 分开报,避免把「取不到事实」误导成
+// 「签名状态异常」;同样判红 —— 取不到事实不得当作未签名放行。
 //
 // 声明来源:本脚本内的 EXPECTED_SIGNATURE_STATUS(D-04)。文档侧由
 // docs/SIGNATURE-STATUS.md 记录同一事实,test/segments/signature-status.test.js
@@ -96,17 +100,80 @@ export function collectExeFiles(dir) {
 
 /**
  * 读取单个文件的 Authenticode 状态(PowerShell)。
+ *
+ * ⚠️ 必须重置 PSModulePath 再显式导入模块(勿删,这是 CI 上实测踩到的坑):
+ * GitHub Actions 会给会话注入一个 **pwsh 口径的 PSModulePath**,子进程
+ * `powershell.exe`(Windows PowerShell 5.1)继承后解析不到自己那份
+ * Microsoft.PowerShell.Security,`Get-AuthenticodeSignature` 直接不可用,报
+ * `CouldNotAutoloadMatchingModule`。故从 Machine/User 环境变量重取一份干净的
+ * 模块路径覆盖继承值,并显式 Import-Module —— 只加 -NoProfile 挡不住这个。
  * @param {string} file exe 绝对路径
  * @returns {string} 原始 Status 文本
  */
 function readAuthenticodeStatus(file) {
   // 单引号包裹并把路径内单引号转义,避免破坏命令
   const safe = file.replace(/'/g, "''");
-  return execFileSync(
-    'powershell',
-    ['-NoProfile', '-NonInteractive', '-Command', `(Get-AuthenticodeSignature -LiteralPath '${safe}').Status`],
-    { encoding: 'utf8' },
-  ).trim();
+  const script = [
+    // 丢掉继承来的 PSModulePath,改用机器/用户级的那份(缺失项跳过,避免尾随分号)
+    "$ErrorActionPreference = 'Stop';",
+    "$mp = @(",
+    "  [Environment]::GetEnvironmentVariable('PSModulePath', 'Machine'),",
+    "  [Environment]::GetEnvironmentVariable('PSModulePath', 'User')",
+    ") | Where-Object { $_ };",
+    "$env:PSModulePath = ($mp -join ';');",
+    "Import-Module Microsoft.PowerShell.Security -ErrorAction Stop;",
+    `(Get-AuthenticodeSignature -LiteralPath '${safe}').Status`,
+  ].join(' ');
+  return execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    encoding: 'utf8',
+  }).trim();
+}
+
+/**
+ * 探测单个产物并产出一条核对结论(纯函数,probe 可注入故失败路径可测)。
+ *
+ * 探测手段本身不可用(如 Microsoft.PowerShell.Security 模块加载不了)与
+ * 「拿到了状态但判读不出」是两回事:前者连事实都没取到,不能混进 indeterminate
+ * 一起报,否则排查时会被误导成签名状态异常。故单列 probe-unavailable 并同样判红。
+ * @param {string} file exe 绝对路径(用于错误信息)
+ * @param {() => string} probe 返回 Authenticode 原始 Status;抛错即视为探测手段不可用
+ * @param {string} expected 声明状态
+ * @returns {{ file: string; raw: string; status: string; ok: boolean; reason?: string }} 核对结论
+ */
+export function buildEntry(file, probe, expected = EXPECTED_SIGNATURE_STATUS) {
+  /** @type {string} */
+  let raw;
+  try {
+    raw = probe();
+  } catch (error) {
+    // PowerShell 报错里最具诊断价值的是 FullyQualifiedErrorId(如
+    // CouldNotAutoloadMatchingModule),它通常在末行。只取首行会把它丢掉,让
+    // 「模块加载失败」退化成一句难定位的残句,故两段都留。
+    const message = error instanceof Error ? error.message : String(error);
+    const firstLine = message.split('\n')[0].trim();
+    const errorId = /FullyQualifiedErrorId\s*:\s*(\S+)/.exec(message)?.[1];
+    const detail = errorId ? `${firstLine} [${errorId}]` : firstLine;
+    return {
+      file: path.relative(process.cwd(), file),
+      raw: '(探测手段不可用)',
+      status: 'probe-unavailable',
+      ok: false,
+      reason:
+        `无法读取 Authenticode 状态(探测命令失败):${detail}\n` +
+        '      这是探测手段不可用,不是签名状态异常;不得据此推断「未签名」。' +
+        'Windows 上先确认 Get-AuthenticodeSignature 可用(Get-Command),' +
+        '若为模块加载问题检查 PSModulePath 是否被 CI 注入值污染。',
+    };
+  }
+  const status = classifyAuthenticode(raw);
+  const verdict = compareStatus(status, expected);
+  return {
+    file: path.relative(process.cwd(), file),
+    raw,
+    status,
+    ok: verdict.ok,
+    ...(verdict.reason ? { reason: verdict.reason } : {}),
+  };
 }
 
 /**
@@ -144,18 +211,7 @@ export function main(argv = []) {
     return 1;
   }
 
-  const entries = exes.map((file) => {
-    const raw = readAuthenticodeStatus(file);
-    const status = classifyAuthenticode(raw);
-    const verdict = compareStatus(status, EXPECTED_SIGNATURE_STATUS);
-    return {
-      file: path.relative(process.cwd(), file),
-      raw,
-      status,
-      ok: verdict.ok,
-      ...(verdict.reason ? { reason: verdict.reason } : {}),
-    };
-  });
+  const entries = exes.map((file) => buildEntry(file, () => readAuthenticodeStatus(file)));
 
   const failed = entries.filter((e) => !e.ok);
   if (options.json) {
