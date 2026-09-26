@@ -15,7 +15,7 @@
  *
  * 三层断言:
  * 1. 事实层(读文本,不调被测实现):真实 workflow 里每处 uses: 均为 40 位小写十六进制
- *    SHA + 「# vX.Y.Z」注释;基线登记的三个 action 与注释版本逐一对齐;门禁入口已入
+ *    SHA + 「# vX.Y.Z」注释;基线登记的四个 action 与注释版本逐一对齐;门禁入口已入
  *    verify:ci 且早于 build(判定不消费 dist)。
  * 2. 判定逻辑:沙盒负向夹具逐条制造漂移(浮动 tag / 缺版本注释 / 注释与基线不符 /
  *    SHA 长度或字符集非法 / 同 action 跨文件不一致 / 一个 SHA 跨 action 复用 /
@@ -201,7 +201,7 @@ export async function run() {
     // ================= 1. 事实层:真实 workflow 与基线 =================
     {
       const usages = collectUsages(WORKFLOWS_DIR);
-      assert(usages.length === 13, `本仓应有 13 处 uses: 引用,实际 ${usages.length} 处(新增 action 时同步更新本断言与基线)`);
+      assert(usages.length === 14, `本仓应有 14 处 uses: 引用,实际 ${usages.length} 处(新增 action 时同步更新本断言与基线)`);
 
       /** @type {Map<string, Set<string>>} action → 实际固定到的 SHA 集合 */
       const shasByRepo = new Map();
@@ -218,11 +218,11 @@ export async function run() {
         assert(shas.size === 1, `${repo} 被固定到 ${shas.size} 个不同 SHA(${[...shas].join(" / ")}),同一 action 必须同版本`);
       }
       assert(
-        [...shasByRepo.keys()].sort().join(",") === "actions/checkout,actions/setup-node,actions/upload-artifact",
-        `本仓应只用三个官方 action,实际 ${[...shasByRepo.keys()].sort().join(",")}`,
+        [...shasByRepo.keys()].sort().join(",") === "actions/cache,actions/checkout,actions/setup-node,actions/upload-artifact",
+        `本仓应只用四个官方 action,实际 ${[...shasByRepo.keys()].sort().join(",")}`,
       );
 
-      // 基线:三个 action 的 SHA 与版本注释必须逐一对齐
+      // 基线:四个 action 的 SHA 与版本注释必须逐一对齐
       const baseline = JSON.parse(fs.readFileSync(BASELINE_PATH, "utf8"));
       const parsed = parseBaseline(baseline);
       assert(parsed.problems.length === 0, `版本基线自身应合规:${parsed.problems.join(" | ")}`);
@@ -256,7 +256,7 @@ export async function run() {
       const buildAt = chain.indexOf("npm run build");
       assert(pinnedAt !== -1, `verify:ci 应含 check:pinned-actions,实际 ${chain.join(" -> ")}`);
       assert(pinnedAt < buildAt, `check:pinned-actions 应早于 build(判定 workflow 文本,不消费 dist),实际 ${chain.join(" -> ")}`);
-      console.log("[ok] pinned-actions:事实层(13 处引用全为 40 位 SHA + 版本注释 / 基线三方对齐 / 门禁早于 build 入链)");
+      console.log("[ok] pinned-actions:事实层(14 处引用全为 40 位 SHA + 版本注释 / 基线三方对齐 / 门禁早于 build 入链)");
     }
 
     // ================= 2. 判定原语 =================
@@ -548,10 +548,10 @@ export async function run() {
     {
       const real = await runCli([]);
       assert(real.code === 0, `真实仓库应通过自建门禁,实际 ${real.code}:${real.output}`);
-      assert(real.output.includes("13 处 uses"), `真实仓库应报出 13 处引用:${real.output}`);
+      assert(real.output.includes("14 处 uses"), `真实仓库应报出 14 处引用:${real.output}`);
       const relaxedReal = await runCli(["--no-baseline"]);
       assert(relaxedReal.code === 0, `真实仓库 --no-baseline 应通过,实际 ${relaxedReal.code}:${relaxedReal.output}`);
-      console.log("[ok] pinned-actions:真实仓库 CLI 复跑通过(13 处引用 / 基线一致)");
+      console.log("[ok] pinned-actions:真实仓库 CLI 复跑通过(14 处引用 / 基线一致)");
     }
   } finally {
     for (const dir of sandboxes) {
