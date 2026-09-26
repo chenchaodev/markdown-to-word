@@ -1,8 +1,9 @@
 /**
  * 主进程入口:应用生命周期编排。
  * 本文件只留:app 生命周期(whenReady / activate / window-all-closed)、
- * 单实例锁、进程级兜底、SMOKE 入口(--smoke 分支动态 import test/tools/smoke/smoke.mjs)。
- * 子模块:windows/main-window(主窗口)、windows/preview(预览)、ipc/register(IPC 注册)、menu(菜单)。
+ * 单实例锁、进程级兜底、SMOKE 入口(--smoke 分支动态 import ./smoke.js)。
+ * 子模块:windows/main-window(主窗口)、windows/preview(预览)、ipc/register(IPC 注册)、menu(菜单)、
+ * smoke(--smoke 冒烟实现;落在 src 编译面 → dist/main/smoke.js 随包分发,解包产物也能跑冒烟)。
  */
 import { app, BrowserWindow, session } from "electron";
 import { loadSettings } from "./persist/settings.js";
@@ -57,15 +58,18 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
     });
     if (SMOKE) {
       try {
-        // 冒烟入口(迁出生产路径):源码 test/tools/smoke/smoke.mjs(dev-only 诊断设施,不进 src 编译面 → 不进 dist → 打包天然排除)。经 URL 动态 import,说明符保持非字面量以避免对 dev-only 路径做编译期解析;打包产物无此文件,--smoke 仅 dev 使用,缺失时走 catch 退出。
-        const smokeUrl = new URL("../../test/tools/smoke/smoke.mjs", import.meta.url).href;
-        const { runSmoke } = await import(smokeUrl);
+        // 冒烟入口(单一实现,编译进 dist/main/smoke.js):dev 与打包产物同一条代码路径
+        // ——发布侧检查正是以 --smoke 启动真实可执行文件并断言诊断标记,入口必须随包分发。
+        // 动态 import(而非静态)只为不在正常启动路径上加载冒烟模块;说明符是字面量相对
+        // 路径,编译产物里恒解析到同目录 smoke.js(dev 与 app.asar 内均成立)。
+        const { runSmoke } = await import("./smoke.js");
         await runSmoke(win);
       } catch (err) {
         console.error("[smoke] convert FAILED:", err);
         app.exit(1);
         return;
       }
+      // 成功路径:留一拍让渲染进程把 console 转发落盘,再以退出码 0 结束
       setTimeout(() => app.quit(), 500);
     }
   });
