@@ -20,8 +20,8 @@
       "version": "v5.0.0"
     },
     "actions/upload-artifact": {
-      "sha": "330a01c490aca151604b8cf639adc76d48f6c5d4",
-      "version": "v5.0.0"
+      "sha": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+      "version": "v7.0.1"
     }
   }
 }

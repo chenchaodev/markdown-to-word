@@ -22,7 +22,13 @@ jobs:
     # 约 10-15 分钟,正常约 40-50 分钟;90 分钟为正常耗时的约 2 倍余量,防挂死占用 runner
     timeout-minutes: 90
     steps:
+      # 凭据不落盘:actions/checkout 默认把 token 写进 .git/config 供后续 git 命令复用。
+      # 本仓脚本没有任何 git 写操作(连只读的 fetch/describe/rev-list 都没有),发版用的
+      # 是 gh release create 的 GH_TOKEN 环境变量而非工作区凭据,故关掉持久化不影响
+      # 发布;换来的是它不会随诊断 artifact 留存而落到工作区文件里。
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # 版本一致性守卫(审计 ENG-2):tag 名(vX.Y.Z)必须与 package.json、package-lock.json
       # 的 version 一致(版本号四源统一,CHANGELOG 由发版 checklist 人工核对),不一致
@@ -124,7 +130,7 @@ jobs:
       # 失败兜底:打包半途失败时留存 release/ 已产出物(如部分安装包/日志)供排查,成功时不触发
       - name: Upload failure artifacts
         if: failure()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: failure-artifacts
           path: release/
@@ -135,12 +141,13 @@ jobs:
       # dist 清单、发布产物 SHA-256 报告仍可下载(报告只在全部核对通过后生成)
       - name: Upload diagnostics
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-diagnostics
           path: |
             output/artifacts/env-fingerprint.txt
             output/artifacts/ui-geometry/
+            output/artifacts/failures/
             output/artifacts/dist-manifest.json
             output/artifacts/release-artifacts.json
           if-no-files-found: ignore
@@ -150,7 +157,7 @@ jobs:
       # SCA 报告,供发版留痕与漏洞追溯
       - name: Upload supply artifacts
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: supply-artifacts
           path: output/artifacts/supply/

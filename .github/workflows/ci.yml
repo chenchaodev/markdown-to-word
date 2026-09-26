@@ -13,6 +13,13 @@ on:
       - master
   pull_request:
 
+# 最小权限:本 workflow 全程只读仓库 —— checkout 取代码、装依赖、跑门禁、上传诊断
+# artifact,没有一步写回 GitHub(不建 PR/评论/发布/改设置)。不显式声明就会继承仓库或
+# 组织默认权限(可能含写),一旦某个第三方 action 出事,越权面从一个仓库放大到整个
+# 组织,故在此按 job 实际用到的面收窄到 contents: read。
+permissions:
+  contents: read
+
 # 同引用新推送取消在途旧构建(PR 场景避免过时构建排队浪费资源)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,7 +33,12 @@ jobs:
     # 60 分钟为正常耗时的约 1.5 倍余量,超时即视为挂死快速失败,不占用 runner
     timeout-minutes: 60
     steps:
+      # 凭据不落盘:actions/checkout 默认把 token 写进 .git/config 供后续 git 命令复用。
+      # 本仓脚本没有任何 git 写操作(连只读的 fetch/describe/rev-list 都没有),token 无处
+      # 可用,关掉持久化零代价;换来的是它不会残留在工作区被后面的诊断 artifact 上传带出。
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # 地板版本(engines >=22.13.0)精确钉住:满足当前 ESLint/Electron engine 的最低可复现基线
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
@@ -97,12 +109,13 @@ jobs:
       # 逐场景 finding 在报告里,FAILED 截图在同目录)
       - name: Upload diagnostics
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-diagnostics
           path: |
             output/artifacts/env-fingerprint.txt
             output/artifacts/ui-geometry/
+            output/artifacts/failures/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -114,7 +127,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
+      # 凭据不落盘:同主 job checkout(本仓无 git 写操作,token 无处可用,且不该被 artifact 带出)
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # 地板版本与主 job 一致(lockfile v3 依赖图解析口径)
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
@@ -145,7 +161,7 @@ jobs:
       # 诊断留存:SBOM / licenses.json / NOTICE.md / sca-report.json / supply-report.json
       - name: Upload supply artifacts
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: supply-artifacts
           path: output/artifacts/supply/
@@ -159,7 +175,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
+      # 凭据不落盘:同主 job checkout(本仓无 git 写操作,token 无处可用,且不该被 artifact 带出)
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # 主线别名(非精确钉住):跟随 22.x 最新 patch/minor,验证浮动版本也可用
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
