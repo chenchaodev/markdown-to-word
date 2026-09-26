@@ -1,7 +1,14 @@
 /**
- * renderer 通用工具:状态区/错误提示/字段内错误、进度条控制、焦点回给主操作按钮。
- * 纯函数(isMarkdown/errorMessage 等)单源 state/pure.ts(零 DOM 依赖,可 Node 直测)。
- * 只依赖 dom.ts 元素映射与 state.ts 的 errorFlashTimer。
+ * renderer DOM 操作原语:状态区/错误提示/字段内错误、进度条控制、焦点陷阱与焦点归还。
+ *
+ * 原在 `state/utils.ts`。搬家的理由:该文件实为 DOM 工具箱(13 个导出里只有依赖
+ * `state.errorFlashTimer` 的状态区写入,其余全是元素读写与焦点管理),而 `state/`
+ * 这个目录名会让读者误以为 renderer 各模块只应单向依赖 `state/` —— 实际每个功能
+ * 目录都深度依赖本模块的副作用。移到 `ui/` 并改名 `dom-ops` 后,`state/` 只剩
+ * 真正的 store(`state.ts`)与纯函数核(`pure.ts`),目录名与内容一致。
+ *
+ * 纯函数(isMarkdown/errorMessage 等)单源 `state/pure.ts`(零 DOM 依赖,可 Node 直测)。
+ * 只依赖 `dom/refs.ts` 的元素映射与 `state/state.ts` 的 errorFlashTimer,无环。
  */
 import {
   batchBtn,
@@ -16,7 +23,7 @@ import {
   progressTrack,
   statusEl,
 } from "../dom/refs.js";
-import { state } from "./state.js";
+import { state } from "../state/state.js";
 import { t, type I18nKey } from "../../core/i18n.js";
 
 /** 错误提示红色描边自动消退时长。 */

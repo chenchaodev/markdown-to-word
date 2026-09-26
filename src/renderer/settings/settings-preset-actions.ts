@@ -30,7 +30,7 @@ import {
   rememberFocusOrigin,
   restoreFocusOrigin,
   trapFocus,
-} from "../state/utils.js";
+} from "../ui/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
 import {
   applySettingsToControls,

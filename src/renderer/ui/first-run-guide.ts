@@ -11,7 +11,7 @@
  */
 import { state } from "../state/state.js";
 import { dropZone } from "../dom/refs.js";
-import { setError } from "../state/utils.js";
+import { setError } from "./dom-ops.js";
 import { openBookWizard } from "../wizard/book-wizard.js";
 import { t } from "../../core/i18n.js";
 

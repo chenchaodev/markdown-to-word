@@ -4,7 +4,7 @@
  * typography 字段为 main 侧形状兼容保留镜像同值,sanitize 契约不变)、转换中可打开
  * (即时生效链路不经过本模块)、副标题「当前预设名 · 纸张」(自顶栏 chip 迁入,由
  * settings-panel 回填/写回后刷新;空文案时 CSS :empty 隐藏)。
- * 依赖方向:本模块 → dom/state/utils 与 core/i18n;不反向引用消费方。
+ * 依赖方向:本模块 → dom/ui/dom-ops 与 core/i18n;不反向引用消费方。
  */
 import {
   drawerCloseBtn,
@@ -13,7 +13,7 @@ import {
   settingsDrawer,
   settingsOpenBtn,
 } from "../dom/refs.js";
-import { trapFocus, setError, rememberFocusOrigin, restoreFocusOrigin } from "../state/utils.js";
+import { trapFocus, setError, rememberFocusOrigin, restoreFocusOrigin } from "../ui/dom-ops.js";
 import { t } from "../../core/i18n.js";
 
 /* 焦点陷阱句柄(二次调用防御:先解除旧陷阱再启用新陷阱) */

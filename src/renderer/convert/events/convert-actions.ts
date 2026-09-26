@@ -13,7 +13,7 @@
 import { batchBtn, cancelBtn, convertBtn, mergeBtn } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
 import { baseName, STAGE_PERCENT, stageText } from "../../state/pure.js";
-import { setError, setProgress, setStatus, translate } from "../../state/utils.js";
+import { setError, setProgress, setStatus, translate } from "../../ui/dom-ops.js";
 import { isConvertCommandBlocked, runBatch, runConvert, runMerge, withPrecheck } from "../convert-flow.js";
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";

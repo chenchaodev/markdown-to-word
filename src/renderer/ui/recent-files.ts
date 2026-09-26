@@ -17,7 +17,7 @@ import type { RecentFile, UiState } from "../../core/ipc-contract.js";
 import { applySelection } from "../convert/file-list.js";
 import { runConvert } from "../convert/convert-flow.js";
 import { baseName, errorMessage, formatRecentTime } from "../state/pure.js";
-import { setError, setStatus } from "../state/utils.js";
+import { setError, setStatus } from "./dom-ops.js";
 import { state } from "../state/state.js";
 import { syncSuppressCompleteDialog } from "../settings/settings-panel.js";
 import { applyDrawerOpenState } from "../settings/settings-drawer.js";

@@ -12,7 +12,7 @@
 import { t } from "../../core/i18n.js";
 import { MARGIN_MAX_MM, type AppSettings } from "../../core/settings/settings-defaults.js";
 import { state } from "../state/state.js";
-import { hideFieldError, setError, showFieldError } from "../state/utils.js";
+import { hideFieldError, setError, showFieldError } from "../ui/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
 import {
   headerLogoDisplayName,

@@ -82,7 +82,7 @@ import {
   tocModeSelect,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { setError, setStatus } from "../state/utils.js";
+import { setError, setStatus } from "../ui/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
 import { applyStaticTexts, setLanguage, t, LANGUAGES, type I18nKey, type Language } from "../../core/i18n.js";
 // 抽屉副标题文案写入归抽屉模块(本模块只负责由设置值合成文案)

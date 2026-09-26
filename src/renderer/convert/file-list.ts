@@ -27,7 +27,7 @@ import {
   statusEl,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { setError, setStatus, translate } from "../state/utils.js";
+import { setError, setStatus, translate } from "../ui/dom-ops.js";
 import { baseName, partitionDuplicates, selectionStatus, truncateMiddle } from "../state/pure.js";
 import { t } from "../../core/i18n.js";
 

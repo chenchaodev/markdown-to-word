@@ -17,7 +17,7 @@ import {
   setStatusTone,
   showProgress,
   translate,
-} from "../state/utils.js";
+} from "../ui/dom-ops.js";
 import { actionableError, baseName, errorMessage } from "../state/pure.js";
 import { showBatchDialog, showCompleteDialog, showPrecheckDialog, showSummary } from "../ui/dialogs.js";
 import { setCommandBusyProbe, updateActionButtons } from "./file-list.js";

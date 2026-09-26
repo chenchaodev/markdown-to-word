@@ -45,7 +45,7 @@ import {
   rememberFocusOrigin,
   restoreFocusOrigin,
   trapFocus,
-} from "../state/utils.js";
+} from "./dom-ops.js";
 import { batchSuccessPaths } from "../state/pure.js";
 import { formatWarning, t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";

@@ -38,7 +38,7 @@ import {
   paperInputs,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { hideFieldError, showFieldError } from "../state/utils.js";
+import { hideFieldError, showFieldError } from "../ui/dom-ops.js";
 import { persistPageSetup, persistTypography } from "./settings-panel.js";
 
 type Paper = PageSetup["paper"];

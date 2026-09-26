@@ -20,7 +20,7 @@ import {
   watermarkTextInput,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { setError } from "../state/utils.js";
+import { setError } from "../ui/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
 import {
   persistHeaderFooter,

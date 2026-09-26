@@ -367,7 +367,7 @@ export async function run() {
     // (5) 转换忙碌态:进度区启停同时把消息槽标 aria-busy。
     // 百分比之外读屏还需要一个「正在转换」的整体状态位 —— 挂在消息槽上,
     // 与状态行(role=status)的阶段播报分工:一个说「在做什么」,一个说「忙」。
-    const utils = await import(distUrl("renderer/state/utils.js"));
+    const utils = await import(distUrl("renderer/ui/dom-ops.js"));
     const messageSlot = dom.elementFor("messageSlot");
     utils.showProgress();
     assert(

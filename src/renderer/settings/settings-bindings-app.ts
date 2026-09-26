@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings
 import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n.js";
 import { drawerResetBtn, languageSelect, themeInputs } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { setStatus } from "../state/utils.js";
+import { setStatus } from "../ui/dom-ops.js";
 import { renderSelection } from "../convert/file-list.js";
 import { showToast } from "../ui/toast.js";
 import {
