@@ -361,12 +361,19 @@ export async function run() {
     async function runRealEntry(name, body) {
       const file = path.join(scratch, name);
       fs.writeFileSync(file, body, "utf8");
+      // 覆盖采集环境(c8 只注入 NODE_V8_COVERAGE 一个)对入口探针必须剥掉:探针只验退出码
+      // 与诊断,不执行 dist/**,而覆盖写手挂在它的退出路径上 —— Windows runner 上活着的
+      // Electron 主进程硬退(app.exit)时回写覆盖会以 0xC0000005 访问冲突取代真实退出码,
+      // 断言因此以与被测行为无关的方式判红。同一约束的段内嵌套版见 test/common/runner.js
+      /** @type {NodeJS.ProcessEnv} */
+      const childEnv = { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: "1" };
+      delete childEnv.NODE_V8_COVERAGE;
       return await new Promise((resolve) => {
         const child = spawn(process.execPath, [file], {
           cwd: ROOT,
           stdio: ["ignore", "pipe", "pipe"],
           windowsHide: true,
-          env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: "1" },
+          env: childEnv,
         });
         let output = "";
         child.stdout.setEncoding("utf8");

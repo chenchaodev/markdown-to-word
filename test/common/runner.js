@@ -41,6 +41,8 @@ export const SEGMENT_FILE_ENV = "M2W_SEGMENT_FILE";
 export const SEGMENT_RESULT_ENV = "M2W_SEGMENT_RESULT";
 /** 顶层段筛选词的环境变量名(选择面输入;段内发现面不消费,见 resolveOnlySelection) */
 export const ONLY_ENV = "M2W_ONLY";
+/** 覆盖采集环境变量名(c8 只注入这一个;覆盖率那一轮由 c8 设,见 package.json 的 test:coverage) */
+const COVERAGE_ENV = "NODE_V8_COVERAGE";
 /** 回退开关:设 1/true 切回同进程模型(仅二分定位用,默认隔离) */
 export const INPROC_ENV = "M2W_ACCEPTANCE_INPROC";
 /** 每段 userData 目录名前缀(与段内业务临时目录 m2w-* 区分,便于识别残留) */
@@ -303,7 +305,8 @@ function killProcessTree(child) {
  * - 段崩溃(渲染进程崩溃/未捕获异常/硬 exit)→ 无回传或 complete=false,按崩溃归一;
  * - 超时 → 杀掉进程树,该段记 timeout 失败;回传文件里若有超时前已完成的 case
  *   (宿主经 case 进度钩子增量落盘),一并作为失败面证据;
- * - 子进程 env 不含 ONLY_ENV(顶层筛选词只属顶层,段内发现面不消费它)。
+ * - 子进程 env 不含 ONLY_ENV(顶层筛选词只属顶层,段内发现面不消费它);
+ * - 嵌套编排(父进程自身是段宿主)派生的子进程 env 另不含覆盖采集环境(见该分支注释)。
  * @param {SegmentDescriptor} s 段描述
  * @param {number} timeout 硬超时(ms);0/NaN 等无效值 = 不启用(等段自然结束)
  * @returns {Promise<SegmentRunResult>}
@@ -326,6 +329,14 @@ async function runSegmentIsolated(s, timeout) {
     [USER_DATA_ENV]: userDataDir,
   };
   delete childEnv[ONLY_ENV];
+  // 覆盖采集环境不下传给**嵌套编排**的子进程(段内自跑派生的是夹具进程,不执行 dist/**,
+  // 对覆盖汇总零贡献)。原因不是省时间而是稳定性:c8 的覆盖写手挂在被测进程的退出路径上,
+  // 活着的 Electron 主进程硬退(app.exit / process.exit)时回写覆盖会在 Windows runner 上
+  // 以 0xC0000005 访问冲突**取代真实退出码**,于是「段崩溃应上报退出码」这类断言会以与
+  // 被测行为无关的方式判红。判据取「父进程自身是段宿主」(M2W_SEGMENT_FILE 存在),故顶层
+  // 段的覆盖采集不受影响。若将来新增的嵌套编排会执行 dist/**,必须在此显式保留采集 ——
+  // 否则是静默少算覆盖率(比崩溃更难发现)。
+  if (process.env[SEGMENT_FILE_ENV] !== undefined) delete childEnv[COVERAGE_ENV];
   const child = spawn(process.execPath, [SEGMENT_HOST], {
     stdio: ["ignore", "inherit", "inherit"],
     windowsHide: true,
