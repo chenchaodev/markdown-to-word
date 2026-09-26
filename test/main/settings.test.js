@@ -274,7 +274,11 @@ export async function run() {
       "loadSettings 应返回结构化 migration 供 renderer 显示 warning",
     );
     validatePageSetup(s2b.pageSetup);
-    for (let attempt = 0; attempt < 20; attempt++) {
+    // 等待预算须覆盖产品的瞬时占用重试保证:Windows 上 rename 覆盖被读句柄占用的
+    // 目标必然 EPERM,atomic-json 为此做有界退避重试(默认 6 次、4ms 起、封顶 40ms,
+    // 最坏约 140ms)。断言本身不变(仍要求迁移真的固化到盘面、瞬时 migration 未落盘),
+    // 只是把「等多久」对齐到产品实际承诺,而不是一个比保证更短的任意数字。
+    for (let attempt = 0; attempt < 100; attempt++) {
       const disk = JSON.parse(await fs.readFile(settingsFile, "utf8"));
       if (disk.pageSetup?.paper === "A4" && disk.pageSetup?.marginBottom === 296) break;
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -284,7 +288,7 @@ export async function run() {
       migratedDisk.pageSetup?.paper === "A4" && migratedDisk.pageSetup?.marginBottom === 296 && !migratedDisk.migration,
       "load 迁移的合法 pageSetup 应可靠固化，且瞬时 migration 不写入 settings.json",
     );
-    for (let attempt = 0; attempt < 20; attempt++) {
+    for (let attempt = 0; attempt < 100; attempt++) {
       if (m2b.loadSettings().migration?.persistence === "committed") break;
       await new Promise((resolve) => setTimeout(resolve, 5));
     }

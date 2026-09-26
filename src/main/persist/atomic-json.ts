@@ -11,6 +11,12 @@
  * - 失败清理:write/fsync/rename 失败时尽力删除半成品 tmp(原文件保持不变、不提交缓存),
  *   避免残留文件被误当作已提交结果;rename 之后的父目录 fsync 失败不视为写失败
  *   (内容已就位,只是目录项未保证落盘),仅留痕。
+ * - 瞬时占用重试(勿删):Windows 上 rename 覆盖**正被读句柄占用**的目标必然 EPERM
+ *   (实测确定性;与并发读竞争 40 次约 23 次失败),杀软扫描/搜索索引器/云同步/备份工具
+ *   随手一握即触发。内容已 fsync 后只对 rename 做有界退避重试(默认 6 次、4ms 起、
+ *   单次封顶 40ms,最坏约 140ms),首轮不带延迟故无占用时零额外代价。仅重试
+ *   EPERM/EBUSY/EACCES 这一「瞬时占用」族;ENOENT/ENOSPC/EROFS 等真实故障照原样
+ *   上抛,不靠重试掩盖。
  * 每实例独立队列(settings / ui-state 各持一实例,保持原双链语义)。
  * 注意:core/ 为纯净层(无 IO、无 Electron),本工具属 main 层,勿下沉。
  */
@@ -38,6 +44,57 @@ export interface JsonWriterDeps {
    * rename 已完成,把它报成写失败会让调用方以为旧值仍在(实际已被替换)。
    */
   syncDir: (dirPath: string) => Promise<void>;
+  /** 等待(可注入:测试传假实现免真实耗时,否则无法确定性断言重试节奏) */
+  sleep?: (ms: number) => Promise<void>;
+  /** rename 的瞬时占用重试预算(可注入以便测试收紧) */
+  renameRetry?: { attempts: number; baseDelayMs: number; maxDelayMs: number };
+}
+
+/**
+ * Windows「文件被他人打开占用」类错误码。rename 覆盖一个正被读句柄占用的目标时
+ * 必然命中(实测:确定性 EPERM;与并发读竞争 40 次约 23 次失败),杀软/搜索索引器/
+ * 云同步/备份工具随手一握即触发。这类占用是**瞬时**的,重试即可成功;而 ENOENT /
+ * ENOSPC / EROFS 等是真实故障,重试无意义且会掩盖问题,故只重试本族。
+ */
+const TRANSIENT_LOCK_CODES: ReadonlySet<string> = new Set(["EPERM", "EBUSY", "EACCES"]);
+
+/** 默认重试预算:6 次、4ms 起指数退避、单次封顶 40ms(最坏合计约 140ms)。
+ *  取这个量级的理由:真实杀软/索引器占用通常在百毫秒内释放,而设置写盘在 UI 线程
+ *  的等待必须无感;首轮不带延迟,只有真被占用时才付代价。 */
+const DEFAULT_RENAME_RETRY = { attempts: 6, baseDelayMs: 4, maxDelayMs: 40 } as const;
+
+function isTransientLockError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && TRANSIENT_LOCK_CODES.has(code);
+}
+
+/** 等待(未注入时用真实 setTimeout) */
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 带瞬时占用重试的 rename。
+ * 只重试 rename 本身(内容已写入并 fsync,重做一遍是浪费);重试耗尽或命中非瞬时
+ * 错误码时照原样抛出,由调用方的 catch 走 tmp 清理与错误上抛。
+ */
+async function renameWithTransientRetry(
+  deps: JsonWriterDeps,
+  tmpPath: string,
+  filePath: string,
+): Promise<void> {
+  const budget = deps.renameRetry ?? DEFAULT_RENAME_RETRY;
+  const sleep = deps.sleep ?? defaultSleep;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await deps.rename(tmpPath, filePath);
+      return;
+    } catch (error: unknown) {
+      if (attempt >= budget.attempts || !isTransientLockError(error)) throw error;
+      const delay = Math.min(budget.baseDelayMs * 2 ** (attempt - 1), budget.maxDelayMs);
+      await sleep(delay);
+    }
+  }
 }
 
 /**
@@ -108,7 +165,9 @@ export function createJsonWriter(deps: JsonWriterDeps = defaultJsonWriterDeps): 
       } finally {
         await handle.close();
       }
-      await deps.rename(tmpPath, filePath);
+      // rename 覆盖「正被读句柄占用」的目标在 Windows 上必然 EPERM(实测确定性),
+      // 瞬时占用重试即可成功;内容已落盘并 fsync,故只重试 rename 本身
+      await renameWithTransientRetry(deps, tmpPath, filePath);
     } catch (error: unknown) {
       // 失败不提交缓存(原文件保持为最后一次成功值),并清理半成品 tmp;
       // 错误原样抛给调用方,队列不截断,下一次写仍可恢复。

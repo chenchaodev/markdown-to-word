@@ -15,7 +15,17 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createJsonWriter } from "../../dist/main/persist/atomic-json.js";
+import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
+
+/* 类型取自 src(真接口所在):dist 不产 .d.ts,interface 在 JS 里被擦除,
+   从 dist 推断只会拿到 defaultJsonWriterDeps 的字面量形状(缺可选依赖面字段),
+   注入 deps 就会被判成多余属性。与 atomic-json-durability.test.js 同一约定。 */
+/** @typedef {import("../../src/main/persist/atomic-json.js").JsonWriterDeps} JsonWriterDeps */
+/** @typedef {import("../../src/main/persist/atomic-json.js").JsonWriter} JsonWriter */
+
+const createWriter = /** @type {(deps?: JsonWriterDeps) => JsonWriter} */ (
+  /** @type {unknown} */ (createJsonWriter)
+);
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -145,6 +155,88 @@ export async function run() {
     await writerF(goodFile, { v: 3 });
     assert(JSON.parse(await fs.readFile(goodFile, "utf8")).v === 3, "失败后同实例后续写应成功(队列不截断)");
     console.log("[ok] atomic-json:失败路径(调用方收到错误/旧文件完好/tmp 已清理/队列不截断)");
+
+    // ---- 5. 瞬时占用重试:rename 命中「被读句柄占用」类错误码须有界退避后成功 ----
+    // 背景(实测):Windows 上 rename 覆盖正被读句柄占用的目标必然 EPERM(确定性),
+    // 与并发读竞争 40 次约 23 次失败。杀软/索引器/云同步随手一握即触发,属瞬时占用,
+    // 不重试就会丢掉整次写(本仓 settings 迁移曾因此在 CI runner 上整段失败)。
+    {
+      /** 记录每次 rename 收到的错误码,按脚本决定第几次放行;放行那轮走真实 rename,
+       *  否则只抛错不落盘,断言「内容真正落盘」就成了一句空话
+       * @param {Array<string | null>} codes 依次抛出的错误码(null 表示放行并真实 rename)
+       * @returns {{ seen: string[]; transport: (from: string, to: string) => Promise<void> }} */
+      const makeFlakyRename = (codes) => {
+        const seen = /** @type {string[]} */ ([]);
+        let call = 0;
+        return {
+          seen,
+          transport: async (/** @type {string} */ from, /** @type {string} */ to) => {
+            const code = codes[Math.min(call, codes.length - 1)] ?? null;
+            call += 1;
+            if (code !== null) {
+              seen.push(code);
+              throw Object.assign(new Error(`rename 失败: ${code}`), { code });
+            }
+            await defaultJsonWriterDeps.rename(from, to);
+          },
+        };
+      };
+      const delays = /** @type {number[]} */ ([]);
+      const sleep = async (/** @type {number} */ ms) => {
+        delays.push(ms);
+      };
+      const budget = { attempts: 6, baseDelayMs: 4, maxDelayMs: 40 };
+
+      // 5a. 前两次瞬时占用,第三次成功 → 写盘落地,退避序列有界且递增
+      const flaky = makeFlakyRename(["EPERM", "EBUSY", null]);
+      const writerR = createWriter({ ...defaultJsonWriterDeps, rename: flaky.transport, sleep, renameRetry: budget });
+      const retryFile = path.join(dir, "retry.json");
+      await writerR(retryFile, { v: 9 });
+      assert(JSON.parse(await fs.readFile(retryFile, "utf8")).v === 9, "瞬时占用重试后内容应真正落盘");
+      assert(flaky.seen.length === 2, `应恰好重试 2 次后成功,实际 ${JSON.stringify(flaky.seen)}`);
+      assert(
+        delays.length === 2 && delays[0] === 4 && delays[1] === 8,
+        `退避应从 baseDelayMs 起指数增长,实际 ${JSON.stringify(delays)}`,
+      );
+      assert(delays.every((ms) => ms <= budget.maxDelayMs), `单次退避不得超过封顶,实际 ${JSON.stringify(delays)}`);
+
+      // 5b. 真实故障码不得重试(重试掩盖问题)→ 立即抛错、tmp 已清理
+      const hard = makeFlakyRename(["ENOSPC"]);
+      const writerH = createWriter({ ...defaultJsonWriterDeps, rename: hard.transport, sleep, renameRetry: budget });
+      const hardFile = path.join(dir, "hard.json");
+      let hardFailed = false;
+      try {
+        await writerH(hardFile, { v: 1 });
+      } catch (err) {
+        hardFailed = /** @type {{ code?: string }} */ (err).code === "ENOSPC";
+      }
+      assert(hardFailed, "ENOSPC 等真实故障须原样上抛");
+      assert(hard.seen.length === 1, `真实故障不得重试,实际尝试 ${hard.seen.length} 次`);
+      assert(delays.length === 2, "真实故障路径不得产生退避等待");
+
+      // 5c. 瞬时占用持续到预算耗尽 → 仍须抛错且清理 tmp(不得静默当成功)
+      const alwaysBusy = makeFlakyRename(["EBUSY"]);
+      const writerA = createWriter({ ...defaultJsonWriterDeps, rename: alwaysBusy.transport, sleep, renameRetry: budget });
+      const busyFile = path.join(dir, "busy.json");
+      let busyFailed = false;
+      try {
+        await writerA(busyFile, { v: 1 });
+      } catch {
+        busyFailed = true;
+      }
+      assert(busyFailed, "重试预算耗尽须向调用方抛错");
+      assert(
+        alwaysBusy.seen.length === budget.attempts,
+        `应恰好尝试 budget.attempts=${budget.attempts} 次,实际 ${alwaysBusy.seen.length}`,
+      );
+      await fs
+        .access(`${busyFile}.tmp`)
+        .then(
+          () => assert(false, "重试耗尽后不应残留 .tmp"),
+          () => undefined, // ENOENT = 已清理
+        );
+      console.log("[ok] atomic-json:瞬时占用重试(有界退避落地/真实故障不重试/耗尽即抛错并清理)");
+    }
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
