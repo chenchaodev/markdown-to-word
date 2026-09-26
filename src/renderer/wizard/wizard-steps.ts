@@ -19,7 +19,8 @@ import {
 } from "../../core/settings/settings-defaults.js";
 import { state } from "../state/state.js";
 import { applyTemplatePreset } from "../settings/settings-bindings-preset.js";
-import { importDocxTemplate, persistSettings } from "../settings/settings-panel.js";
+import { importDocxTemplate } from "../settings/settings-panel.js";
+import { persistSettings } from "../settings/settings-save.js";
 import {
   allPresets,
   headerLogoDisplayName,

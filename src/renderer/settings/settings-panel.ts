@@ -21,16 +21,14 @@ import {
   headerLogoDisplayName,
   applySettingsRuntimeEffects,
   mergeSettingsWithDefaults,
-  mergePendingSavePatch,
-  normalizePageSetup,
   outputDirDisplayText,
-  reconcileSettingsSave,
   resolvePresetHint,
   resolvePresetSelection,
   allPresets,
   applyThemeOn,
   settingsToControlValues,
 } from "./settings-logic.js";
+import { persistSettings, registerSettingsSaveHooks } from "./settings-save.js";
 import {
   afterConvertInputs,
   alignInputs,
@@ -139,13 +137,10 @@ export function rebuildLanguageOptions(): void {
 }
 
 /* ---------- 设置:加载 / 回填 / 写回 ---------- */
-let settingsSaveRevision = 0;
-
-/** 保存失败后待重试的草稿 patch(失败不丢编辑内容):下一次保存与新 patch 合并后
- *  一并提交,成功即清空;否则失败期间编辑的字段只存在于 renderer 内存。 */
-let pendingSavePatch: Partial<AppSettings> = {};
-/** 最近一次失败反馈写入状态区的原文:成功保存后据此精确复位(不误清其它流程提示)。 */
-let pendingSaveFailureText: string | null = null;
+/* 写回流水线(保存修订号 / 待重试草稿 / 失败文案原文)已移入 settings-save.ts:
+ * 那三份状态是**跨模块共享**的 —— 抽屉与向导必须落在同一份草稿上,否则交替写入会丢字段。
+ * 本模块只保留 DOM 触点(applySettingsToControls / applyAuthoritativeSettings /
+ * composeDrawerMetaText),并在模块初始化时经 registerSettingsSaveHooks 交出去。 */
 
 /** main 权威值同时覆盖 renderer state、语言/主题副作用与全部控件。 */
 function applyAuthoritativeSettings(settings: AppSettings): void {
@@ -351,66 +346,25 @@ function composeDrawerMetaText(): string {
   return `${presetName} · ${checkedRadioValue(paperInputs)}`;
 }
 
-/** 写回设置;成功后以 main 返回值同步 state/控件；失败则**保留用户当前编辑内容**
- *  (控件不回滚到 main cache),把草稿并入待重试 patch 并给出可见失败反馈,
- *  待下一次保存一并提交。
- * 写盘成功后刷新所有预览窗口；预览刷新失败不伪装成设置保存失败。 */
-export function persistSettings(patch: Partial<AppSettings>): void {
-  let nextPatch = patch;
-  if (Object.prototype.hasOwnProperty.call(patch, "pageSetup")) {
-    const candidate = { ...state.settings.pageSetup, ...(patch.pageSetup ?? {}) };
-    const normalized = normalizePageSetup(candidate, state.settings.pageSetup);
-    if (normalized.corrected) {
-      state.settings.pageSetup = normalized.pageSetup;
-      if (normalized.error) setError(normalized.error);
-      applySettingsToControls();
-      nextPatch = { ...patch, pageSetup: normalized.pageSetup };
-    }
-  }
-  updateDrawerMeta(composeDrawerMetaText());
-  const revision = ++settingsSaveRevision;
-  // 待重试草稿 + 本次编辑:失败过的字段必须随下一次保存落盘,否则只活在内存里
-  const attempt = mergePendingSavePatch(pendingSavePatch, nextPatch);
-  void reconcileSettingsSave({
-    save: () => window.api.settingsSet(attempt),
-    isCurrent: () => revision === settingsSaveRevision,
-    apply: applyAuthoritativeSettings,
-    onFailure: (error) => {
-      pendingSavePatch = attempt;
-      reportSettingsSaveFailure(error);
-    },
-  }).then((outcome) => {
-    if (outcome === "saved") {
-      pendingSavePatch = {};
-      clearSettingsSaveFailure();
-    }
-    if (outcome !== "failed") {
-      void window.api.previewRefresh().catch(() => undefined);
-    }
-  }).catch((error: unknown) => {
-    // 回填/清理环节异常(如控件回填抛错):按未提交处理——草稿保留并给出可见
-    // 反馈,下次保存仍会带上它重试;不静默吞错。
-    pendingSavePatch = attempt;
-    reportSettingsSaveFailure(error);
-  });
-}
+/* 写回流水线的 DOM 触点在此交出:台账与写回逻辑在 settings-save.ts,本模块只提供
+ * 「回填控件 / 落 main 权威值 / 刷抽屉副标题 / 状态区读写与判源」这几个触点。
+ * 必须在模块初始化时注册 —— 向导(wizard/)直接调 settings-save 的 persistSettings,
+ * 靠这份注册拿到与从前逐字一致的回填与失败反馈。 */
+registerSettingsSaveHooks({
+  applyControls: () => applySettingsToControls(),
+  applyAuthoritative: (settings) => applyAuthoritativeSettings(settings),
+  setError: (message) => setError(message),
+  isStatusMine: (text) => statusEl.textContent === text,
+  clearStatus: () => setStatus(""),
+  refreshDrawerMeta: () => updateDrawerMeta(composeDrawerMetaText()),
+});
 
-/** 保存失败反馈:状态区可见提示 + 留痕;编辑内容与控件值一律保留(草稿),
- *  提示持续显示直到下一次成功保存——期间它就是"未保存"状态的唯一可见标记。 */
-function reportSettingsSaveFailure(error: unknown): void {
-  console.error("[settings] 设置写盘失败(保留当前编辑内容,待下次保存重试)", error);
-  pendingSaveFailureText = t("preset.saveFailed");
-  setError(pendingSaveFailureText);
-}
-
-/** 成功保存后复位未保存提示:仅当状态区仍是本模块写入的失败原文才清空,
- *  避免抹掉转换/复制等其他流程刚写入的状态文案。 */
-function clearSettingsSaveFailure(): void {
-  if (!pendingSaveFailureText) return;
-  const writtenByUs = statusEl.textContent === pendingSaveFailureText;
-  pendingSaveFailureText = null;
-  if (writtenByUs) setStatus("");
-}
+/* 写回入口转出自 settings-save.ts:保持本模块既有导出面不变
+ * (settings-bindings-* 与 settings-preset-actions 仍从此处取),而向导改从
+ * settings-save.js 直取,不再经由本模块 —— 见 settings-save.ts 文件头「拆法」。
+ * 本模块自身也用 persistSettings(下方四个分组写回),故是 import + export 两段:
+ * 单纯 `export … from` 只再导出、不产生局部绑定。 */
+export { persistSettings };
 
 /* ---------- 分组整体写回(六组绑定共用的持久化路径,单源本模块) ---------- */
 /** 页面尺寸相关字段(纸张/方向/边距)整体写回。 */

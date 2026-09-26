@@ -13,7 +13,7 @@
 import { t } from "../../core/i18n.js";
 import { AppSettings } from "../../core/settings/settings-defaults.js";
 import { state } from "../state/state.js";
-import { persistSettings } from "../settings/settings-panel.js";
+import { persistSettings } from "../settings/settings-save.js";
 import { outputDirDisplayText } from "../settings/settings-logic.js";
 import { renderSelection } from "../convert/file-list.js";
 import {

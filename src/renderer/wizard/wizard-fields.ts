@@ -21,7 +21,7 @@ import {
   validateNumberRange,
   type MarginField,
 } from "../settings/settings-logic.js";
-import { persistSettings } from "../settings/settings-panel.js";
+import { persistSettings } from "../settings/settings-save.js";
 
 /* ---------- 极简 DOM 构造助手(步骤渲染与外壳共用,避免散落 createElement) ---------- */
 type Props = Record<string, unknown>;
