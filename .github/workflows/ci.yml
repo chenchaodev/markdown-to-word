@@ -26,10 +26,10 @@ jobs:
     # 60 分钟为正常耗时的约 1.5 倍余量,超时即视为挂死快速失败,不占用 runner
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       # 地板版本(engines >=22.13.0)精确钉住:满足当前 ESLint/Electron engine 的最低可复现基线
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22.13.0
           cache: npm
@@ -61,7 +61,7 @@ jobs:
       # 逐场景 finding 在报告里,FAILED 截图在同目录)
       - name: Upload diagnostics
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: ci-diagnostics
           path: |
@@ -70,6 +70,40 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # 供应链门禁(独立 job,不并入本地 verify:ci):SCA 需联网查 advisory 库,
+  # npmmirror 的 audit 端点实测未实现、OSV 的可达性也随网络波动,并入本地链会让
+  # 「代码有问题」与「网络抖动」共用一个退出码。故只在这里与 Release 里跑,
+  # 失败(含扫描源不可用)即判红,阻断本 workflow。
+  supply-chain:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # 地板版本与主 job 一致(lockfile v3 依赖图解析口径)
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.13.0
+
+      # 不需要 npm ci:SCA 走远端 audit 端点,SBOM 与许可证清单只读 lockfile,
+      # 少一次依赖安装即少一个失败面
+      # CI 走官方 registry 拿权威 npm advisory(GitHub runner 访问官方源最快,与本文件
+      # 主 job 的 `npm ci --registry=` 同一口径);本地跑仍按项目 .npmrc 国内镜像。
+      # 镜像的 audit 端点实测不可用,此时脚本会如实记为 unavailable 并由 OSV 兜底,
+      # 绝不把「扫不到」谎报成「无漏洞」。
+      - name: Supply chain gate (check:supply)
+        run: npm run check:supply -- --registry=https://registry.npmjs.org
+
+      # 诊断留存:SBOM / licenses.json / NOTICE.md / sca-report.json / supply-report.json
+      - name: Upload supply artifacts
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: supply-artifacts
+          path: output/artifacts/supply/
+          if-no-files-found: ignore
+          retention-days: 14
+
   # 当前稳定 22.x 兼容 lane(审计 ENG-5:engines 地板由主 job 精确钉住验证,此 lane
   # 覆盖「当前稳定/后续支持版本」也可用,跑 install + build/typecheck/lint + smoke;
   # 不重复全量验收段与 coverage,控制 CI 时长)
@@ -77,10 +111,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       # 主线别名(非精确钉住):跟随 22.x 最新 patch/minor,验证浮动版本也可用
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: npm

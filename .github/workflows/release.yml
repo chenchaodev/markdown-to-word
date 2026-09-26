@@ -22,7 +22,7 @@ jobs:
     # 约 10-15 分钟,正常约 40-50 分钟;90 分钟为正常耗时的约 2 倍余量,防挂死占用 runner
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       # 版本一致性守卫(审计 ENG-2):tag 名(vX.Y.Z)必须与 package.json、package-lock.json
       # 的 version 一致(版本号四源统一,CHANGELOG 由发版 checklist 人工核对),不一致
@@ -43,7 +43,7 @@ jobs:
           fi
 
       # 地板版本(engines >=22.13.0)与 ci.yml 主 job 一致:发布环境与门禁环境同 Node 口径
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22.13.0
           cache: npm
@@ -65,6 +65,15 @@ jobs:
           mkdir -p output/artifacts
           npm run --silent check:env | tee output/artifacts/env-fingerprint.txt
 
+      # 供应链门禁(独立步骤,不并入 verify:ci/verify:release):SCA 需联网查 advisory 库,
+      # 本地链不跑,并进去会让「代码有问题」与「网络抖动」共用一个退出码。放在打包之前 ——
+      # 依赖有问题就别浪费时间打安装包。判红口径:生产树漏洞、无声明许可证、SBOM 漂移,
+      # 以及扫描源全部不可用(「未能判定」不等于「无漏洞」,不得据此放行)。
+      # 与 ci.yml 同一口径:Release 在 GitHub runner 上跑,走官方 registry 拿权威
+      # npm advisory;本地仍按项目 .npmrc 国内镜像。扫不到时记 unavailable,不谎报无漏洞。
+      - name: Supply chain gate (check:supply)
+        run: npm run check:supply -- --registry=https://registry.npmjs.org
+
       # 统一门禁入口 + 打包 + 产物核对:verify:release = verify:ci(契约自检/build/
       # typecheck/lint/acceptance/coverage/fixture 漂移/smoke/几何门禁)追加 dist,
       # dist 内部先 clean:dist/clean:release(清掉上一版残留与历史安装包)→ build →
@@ -83,7 +92,7 @@ jobs:
       # 失败兜底:打包半途失败时留存 release/ 已产出物(如部分安装包/日志)供排查,成功时不触发
       - name: Upload failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: failure-artifacts
           path: release/
@@ -94,7 +103,7 @@ jobs:
       # dist 清单、发布产物 SHA-256 报告仍可下载(报告只在全部核对通过后生成)
       - name: Upload diagnostics
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: release-diagnostics
           path: |
@@ -102,6 +111,17 @@ jobs:
             output/artifacts/ui-geometry/
             output/artifacts/dist-manifest.json
             output/artifacts/release-artifacts.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # 供应链产物留存(独立步骤,不改上面的诊断上传清单):SBOM / 许可证清单 / NOTICE /
+      # SCA 报告,供发版留痕与漏洞追溯
+      - name: Upload supply artifacts
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: supply-artifacts
+          path: output/artifacts/supply/
           if-no-files-found: ignore
           retention-days: 14
 
