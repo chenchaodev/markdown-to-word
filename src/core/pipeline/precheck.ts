@@ -12,7 +12,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { visit } from "unist-util-visit";
-import { parseMarkdown } from "../pipeline/parse.js";
+import { parseMarkdown } from "./parse.js";
 import type { ConvertWarning } from "../i18n.js";
 import { crossRefNotFoundWarning, unlabeledCodeBlockWarning } from "../i18n.js";
 import { imageNotFoundWarning } from "../image/image-warning.js";

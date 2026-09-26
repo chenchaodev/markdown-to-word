@@ -72,7 +72,7 @@ export const RESOURCE_ONLY_DEPENDENCIES = Object.freeze({
  * 同时约束 src 源与其编译产物 dist/*.js。
  */
 export const CORE_NODE_BUILTIN_FILES = Object.freeze([
-  'core/markdown/precheck.ts',
+  'core/pipeline/precheck.ts',
   'core/pdf/katex-css.ts',
   'core/pdf/rules/image.ts',
   'core/pipeline/merge.ts',

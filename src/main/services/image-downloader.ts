@@ -25,8 +25,8 @@ import dns from "node:dns/promises";
 import net from "node:net";
 // 契约单源:ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
 import type { ImageResolver, ImageResolverRequest } from "../../core/image/image-resolver.js";
-// 契约单源:本地图片可信边界与 precheck/PDF 规则共用 core/markdown/precheck.ts 策略
-import { createLocalImagePathPolicy } from "../../core/markdown/precheck.js";
+// 契约单源:本地图片可信边界与 precheck/PDF 规则共用 core/pipeline/precheck.ts 策略
+import { createLocalImagePathPolicy } from "../../core/pipeline/precheck.js";
 
 const HTTP_TIMEOUT_MS = 10_000;
 

@@ -12,7 +12,7 @@
 import { pathToFileURL } from "node:url";
 import type MarkdownIt from "markdown-it";
 import { parseImageSizeAttrs, type ImageDim } from "../../markdown/image-size.js";
-import { createLocalImagePathPolicy } from "../../markdown/precheck.js";
+import { createLocalImagePathPolicy } from "../../pipeline/precheck.js";
 import { imageAttrInvalidWarning } from "../../image/image-warning.js";
 import { createDepthTracker } from "./shared.js";
 import { pushWarningOnce, type ConvertWarning } from "../../i18n.js";

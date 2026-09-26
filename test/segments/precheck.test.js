@@ -2,10 +2,10 @@
 /**
  * 转换预检核心逻辑断言:本地图片可信边界/缺失 / 悬空交叉引用 / 未标注语言代码块;
  * 注入 exists 与 realpathSync 模拟文件系统及链接越界,不依赖真实磁盘与 Electron。
- * 单源:dist/core/markdown/precheck.js(precheckMarkdown)。
+ * 单源:dist/core/pipeline/precheck.js(precheckMarkdown)。
  */
 import path from "node:path";
-import { precheckMarkdown } from "../../dist/core/markdown/precheck.js";
+import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
 
 const existsAll = () => true;
 const existsNone = () => false;

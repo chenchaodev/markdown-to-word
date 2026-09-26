@@ -9,7 +9,7 @@ import path from "node:path";
 import iconv from "iconv-lite";
 import { DEFAULT_SETTINGS } from "../../dist/core/settings/settings-defaults.js";
 import { prepareMarkdown, prepareMarkdownText } from "../../dist/main/converter/preprocess.js";
-import { precheckMarkdown } from "../../dist/core/markdown/precheck.js";
+import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
