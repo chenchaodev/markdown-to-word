@@ -396,7 +396,7 @@ export async function run() {
     "multi-960",
   );
 
-  // ---------- 7b. 固定消息槽(OPT-4.4):高度恒定 + 撑高即判红 ----------
+  // ---------- 7b. 固定消息槽:高度恒定 + 撑高即判红 ----------
   // (1) 完成态(状态行 + 结果汇总条同处一槽)不得改写槽高
   expectRule(
     withNode(cleanSamples(), "after-convert-960", "feed", (n) => {

@@ -1,5 +1,5 @@
 /**
- * 成书向导字段校验与共用零件(拆分自 book-wizard.ts,D1,纯搬移零行为改动)
+ * 成书向导字段校验与共用零件(拆分自 book-wizard.ts,纯搬移零行为改动)
  * 「校验」块:边距 / 字号 / 行距 / 字体的钳制校验绑定(非法回显当前设置值 +
  * 字段内 i18n 提示),复用 settings-logic 纯函数与既有 settings.* 提示键,
  * 实时写 state.settings + persistSettings(与设置抽屉同源,关向导不丢设置);

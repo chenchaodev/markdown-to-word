@@ -186,7 +186,8 @@ export async function convert(
       // 白做一次 AST 构建 + 全标题 slug 遍历)
       // 结构化 headings 与 html 出自同一次渲染管线:下游两遍法回填目录页码、
       // 书签树注入与 metadata 解析统一消费,不再对成品 HTML 做正则反解析
-      // (OPT-5.2 第四条;renderPdfHtml 保留为仅取 html 的薄封装)。
+      // (PDF 目录/页码改走结构化数据,不再对成品 HTML 做正则反解析;
+      // renderPdfHtml 保留为仅取 html 的薄封装)。
       const { html, headings } = await renderPdfDocument(body, {
         baseDir: context.baseDir,
         title: context.title,

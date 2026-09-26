@@ -2,7 +2,7 @@
  * 应用组(Tab「应 用」)接线:抽屉底部恢复默认/界面语言切换/外观主题。
  * 语言选项须在绑定前按注册表重建(输入为运行期生成,顺序不可倒)。
  * 分组口径 = index.html 六组 Tab 的 data-group=app;拆自
- * settings-bindings.ts(D2,纯搬移零行为改动),编排入口在 settings-bindings。
+ * settings-bindings.ts(纯搬移零行为改动),编排入口在 settings-bindings。
  */
 import { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
 import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n.js";

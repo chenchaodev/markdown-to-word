@@ -99,7 +99,7 @@ function dimToPx(d: ImageDim, contentWidthPx: number): number {
 }
 
 /**
- * 显式尺寸 → 显示尺寸(px,F1;docx/pdf 共用同一换算契约):
+ * 显式尺寸 → 显示尺寸(px;docx/pdf 共用同一换算契约):
  * - 百分比维度相对 contentWidthPx(正文内容区宽);
  * - 只给一维 → 另一维按原图(natural)宽高等比缩放;
  * - 两维都给 → 按给定值(不保持比例,与 Pandoc 一致);

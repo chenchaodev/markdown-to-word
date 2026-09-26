@@ -1,6 +1,6 @@
 /**
  * KaTeX CSS 加载:pdf 领域唯一 fs 访问点(依赖注入,默认 node:fs.readFileSync)。
- * 拆自 pdf/template.ts(D3 职责分离:模板结构/CSS 生成/资源加载三分)。
+ * 拆自 pdf/template.ts(职责分离:模板结构/CSS 生成/资源加载三分)。
  */
 import path from "node:path";
 import { readFileSync } from "node:fs";

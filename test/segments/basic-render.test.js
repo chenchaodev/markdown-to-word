@@ -278,7 +278,7 @@ export async function run() {
   console.log("[ok] basic-render:webp 图片降级(warning + 占位文本,主样例不受影响)断言通过");
 
   // ---------- 未知魔数图片跳过嵌入(sniffImageType null 化,imageToDocx 调用方处理) ----------
-  // 依据(src/core/image/image-type.ts):B3 起未知字节头返回 null(不再伪装 png),
+  // 依据(src/core/image/image-type.ts):未知字节头返回 null(不再伪装 png),
   // docx imageToDocx 收到 null → 追加「图片格式无法识别,已跳过」警告 + 占位文本。
   /** @type {Warning[]} */
   const unknownWarnings = [];
@@ -329,7 +329,7 @@ export async function run() {
   console.log("[ok] basic-render:B3 表格列对齐(:--/:-:/--: → 缺省/center/right)断言通过");
 
   // ---------- 自闭合 <br/> 白名单放行(html-whitelist 三处扫描器同步) ----------
-  // 此前 <br/> 整串判非法:docx 危险段丢弃 / pdf 整段转义。B3 起仅空标签 br 放行自闭合。
+  // 此前 <br/> 整串判非法:docx 危险段丢弃 / pdf 整段转义;现仅空标签 br 放行自闭合。
   const brDocx = asDocxArtifact(
     await convertTyped("<strong>粗</strong><br/>换行后", "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
   );

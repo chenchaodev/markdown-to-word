@@ -356,7 +356,7 @@ export function runGeometryGate(samples, options = {}) {
 
     // 固定槽:常驻占位节点必须落在 [minHeight, maxHeight?] 区间内
     // (下限防塌陷;上限用于「固定槽被撑爆/退化为自适应」——消息区改为 height:auto
-    //  或结果汇总撑高时,高度会冲出上限,这条正是 OPT-4.4 恢复固定槽的守护)
+    //  或结果汇总撑高时,高度会冲出上限,这条正是「恢复固定槽」的守护)
     for (const slot of SLOT_INVARIANTS) {
       const node = sample.nodes[slot.node];
       if (node === null || node === undefined || !node.visible) continue;

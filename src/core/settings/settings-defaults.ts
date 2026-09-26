@@ -211,9 +211,9 @@ export interface AppSettings {
   watermark: WatermarkSettings;
    /** AI 清理:转换前自动规整 AI 生成的 Markdown(智能引号/破折号/列表格式/空行) */
   aiCleanup: boolean;
-  /** Obsidian 兼容(C1):将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接 */
+  /** Obsidian 兼容:将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接 */
   obsidianCompat: boolean;
-  /** Obsidian 附件子文件夹名(C1;用于解析 ![[图片]] 路径前缀) */
+  /** Obsidian 附件子文件夹名(用于解析 ![[图片]] 路径前缀) */
   obsidianAttachmentFolder: string;
 }
 

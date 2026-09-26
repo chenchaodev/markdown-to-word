@@ -330,7 +330,7 @@ export const CONSTANT_GROUPS = [
     members: ["halfscreen-multi-640", "halfscreen-empty-640"],
     why: "半屏档两态外框相同(舞台高度=min(可用高,设计高),设计高取矮窗档令牌),文件态与空态舞台几何须恒等",
   },
-  // 消息区固定槽(OPT-4.4):--feed-h 令牌锁高,状态行/跳过列表/结果汇总的增减
+  // 消息区固定槽:--feed-h 令牌锁高,状态行/跳过列表/结果汇总的增减
   // 一律不改写槽高,故其上下邻居(舞台下沿、历史条上沿)也不再被推挤。
   {
     id: "feed-slot-960",
@@ -361,7 +361,7 @@ export const CONSTANT_GROUPS = [
 /**
  * 固定槽高度区间(px):常驻占位不得塌陷(下限),也不得被内容撑高/退化为自适应(上限)。
  * 上限取「两档令牌值 + 1px 容差」:--feed-h 常规 96 / 矮窗 86,超出即说明 .feed 又回到
- * height:auto(OPT-4.4 前的状态),或结果汇总把槽顶开。
+ * height:auto(恢复固定槽之前的状态),或结果汇总把槽顶开。
  * @type {SlotInvariant[]}
  */
 export const SLOT_INVARIANTS = [

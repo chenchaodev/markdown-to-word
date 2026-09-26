@@ -96,7 +96,7 @@ export async function run() {
   }
   console.log("[ok] merge:括号配对 URL(绝对原样保留/相对重定位)断言通过");
 
-  // 用户绝对/UNC/file URL 不属于 merge 内部可改写范围,必须原样保留给 D-03 拒绝。
+  // 用户绝对/UNC/file URL 不属于 merge 内部可改写范围,必须原样保留给图片信任边界(ADR-012)拒绝。
   const absoluteImage = path.resolve(FIXTURES_DIR, "absolute.png").replace(/\\/g, "/");
   const externalSources = mergeMarkdowns([{
     content: `![absolute](${absoluteImage})\n\n![unc](//server/share/image.png)\n\n![file](file:///C:/temp/image.png)`,

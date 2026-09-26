@@ -1,8 +1,8 @@
 // @ts-check
 /**
- * 安装包签名状态守护段(D-04「暂不代码签名」;位于 test/segments/ = 跨域守护段)。
+ * 安装包签名状态守护段(现阶段明确不接入代码签名,口径见 docs/ADR.md 的 ADR-013;位于 test/segments/ = 跨域守护段)。
  *
- * D-04 裁决是「暂不签名,未签名作为明确风险保留」。风险被如实告知的前提是三处一致:
+ * 该裁决是「暂不签名,未签名作为明确风险保留」。风险被如实告知的前提是三处一致:
  *   1) 打包配置确实没有证书(否则「未签名」是假话);
  *   2) `docs/SIGNATURE-STATUS.md` 声明的状态 == `scripts/check-signature-status.mjs`
  *      的 `EXPECTED_SIGNATURE_STATUS`(声明侧与事实侧的判定基准必须同源);

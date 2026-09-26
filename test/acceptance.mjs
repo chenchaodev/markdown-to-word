@@ -11,7 +11,7 @@
  * 2. main/ = 被测主体为 src/main 的主题段(含零 Electron API 的纯逻辑直测);
  * 3. renderer/ = 被测主体为 src/renderer 的主题段(纯函数/状态机/CSS 令牌恒等)。
  *
- * 执行模型(D-08 正式口径):**每段一个独立 Electron 子进程**(宿主 test/common/
+ * 执行模型(ADR-015 正式口径):**每段一个独立 Electron 子进程**(宿主 test/common/
  * segment-host.mjs,编排见 test/common/runner.js),段内崩溃/悬挂/超时只终结该段,
  * 父进程跑完全部段后汇总;每段独立 userData 目录,退出即清理(见 test/common/userdata.js)。
  * 设 M2W_ACCEPTANCE_INPROC=1 可切回旧的同进程顺序 + 看门狗模型(仅供二分定位)。

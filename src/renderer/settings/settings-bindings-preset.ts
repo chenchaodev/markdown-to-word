@@ -4,7 +4,7 @@
  * 套用逻辑 applyTemplatePreset 为跨模块契约(成书向导亦 import 本模块调用),
  * 随本组落位——预设即本组的核心写入路径。
  * 分组口径 = index.html 六组 Tab 的 data-group=preset;拆自
- * settings-bindings.ts(D2,纯搬移零行为改动),编排入口在 settings-bindings。
+ * settings-bindings.ts(纯搬移零行为改动),编排入口在 settings-bindings。
  */
 import type { TemplatePreset } from "../../core/settings/settings-defaults.js";
 import { t } from "../../core/i18n.js";

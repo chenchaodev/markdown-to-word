@@ -1,7 +1,7 @@
 /**
  * 自定义预设交互:另存为弹窗(显隐/焦点陷阱/错误提示)、保存/删除、预设 JSON
  * 导入导出;纯逻辑(预设映射/名校验/上限判断/名称解析)在 settings-logic.ts,
- * 本模块只保留 DOM 交互与持久化调用。拆自 settings-panel.ts(D2,纯搬移
+ * 本模块只保留 DOM 交互与持久化调用。拆自 settings-panel.ts(纯搬移
  * 零行为改动)。依赖方向:本模块 → settings-panel(回填/写回/选项重建单源),
  * 不反向;事件绑定侧(settings-bindings-preset)与 renderer Esc 分支 import 本模块。
  */
@@ -71,7 +71,7 @@ function showPresetSaveError(message: string): void {
 }
 
 /** 保存当前排版+页面设置为自定义预设(名称非空、同名拒绝;成功后下拉选中新预设)。
- *  口径(D-02,2026-09-25 统一):自定义预设**只存 typography + pageSetup**;
+ *  口径(ADR-011「预设口径」,2026-09-25 统一):自定义预设**只存 typography + pageSetup**;
  *  页眉页脚/水印/公式编号/H1 分页不在存储范围 —— 内置 TEMPLATE_PRESETS 携带完整交付链,
  *  见 core/settings/settings-defaults.ts 的 TemplatePreset 注释;界面上的「不入预设」
  *  角标只挂在 05 转换 / 06 应用(两种预设都不含的组),03 页眉页脚与水印不挂该角标。 */
@@ -104,7 +104,7 @@ export async function saveCustomPreset(): Promise<void> {
  *  (自定义预设的存储范围),与 settings-bindings-preset.ts 的 applyTemplatePreset
  *  「套用内置预设 = 完整交付链(含 headerFooter/watermark/equationNumbering/
  *  breakBeforeH1)」不是同一条路径,故删除预设不会改动页眉页脚与水印。
- *  D-02 统一的是「口径」,本行为差异需另开实现项处理,不在阶段 0 口径统一范围内。 */
+ *  ADR-011 统一的是「口径」,本行为差异需另开实现项处理,不在该次口径统一范围内。 */
 export function deleteCustomPreset(): void {
   const name = customPresetNameFromId(templatePresetSelect.value);
   if (!name) return;

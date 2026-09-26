@@ -1,6 +1,6 @@
 /**
  * PDF 模板集:页眉页脚 chrome 模板、完整 HTML 组装、封面 HTML、样式注入防护。
- * 职责三分(D3):文档模板 CSS 在 template-css.ts、KaTeX CSS 加载在 katex-css.ts,
+ * 职责三分:文档模板 CSS 在 template-css.ts、KaTeX CSS 加载在 katex-css.ts,
  * 本文件只管模板结构与安全(TEMPLATE_CSP / sanitizeStyleCss);
  * escapeHtml/decodeEntities 已集中 src/core/util/utils.ts,消费者直连该模块。
  * 双管线对应:src/core/docx/chrome.ts 为 docx 侧对应文件(封面/页眉页脚/水印

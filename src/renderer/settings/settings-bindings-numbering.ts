@@ -3,7 +3,7 @@
  * 公式编号/标题编号/题注编号——变更即时写回并持久化(标题与题注编号经
  * typography 整体写回,与排版组共用 persistTypography)。
  * 分组口径 = index.html 六组 Tab 的 data-group=numbering;拆自
- * settings-bindings.ts(D2,纯搬移零行为改动),编排入口在 settings-bindings。
+ * settings-bindings.ts(纯搬移零行为改动),编排入口在 settings-bindings。
  */
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import {

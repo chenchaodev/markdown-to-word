@@ -3,7 +3,7 @@
  * 转换后行为/AI 清理/Obsidian 兼容与附件目录/PDF 自定义 CSS 文本域与导入清除/
  * 输出目录选择与复位(抽屉与快速参数条两处入口共用同一写入路径)。
  * 分组口径 = index.html 六组 Tab 的 data-group=convert;拆自
- * settings-bindings.ts(D2,纯搬移零行为改动),编排入口在 settings-bindings。
+ * settings-bindings.ts(纯搬移零行为改动),编排入口在 settings-bindings。
  */
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import { t } from "../../core/i18n.js";

@@ -172,7 +172,7 @@ export interface BuildConvertContextOptions {
   katexDir?: string;
   /** Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,见 src/core/markdown/mermaid.ts) */
   mermaidResolver?: MermaidResolver;
-  /** PDF 渲染子阶段回调(B9:parse/inline/mermaid/katex,透传 core ConvertContext) */
+  /** PDF 渲染子阶段回调(parse/inline/mermaid/katex,透传 core ConvertContext) */
   onStage?: (stage: string) => void;
 }
 

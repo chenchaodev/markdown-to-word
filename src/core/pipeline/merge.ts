@@ -78,7 +78,7 @@ function splitFrontmatter(md: string): SplitFrontmatter {
 
 /**
  * 相对路径图片 src → 相对 outputBaseDir;外部/绝对路径原样保留。
- * merge 生成的是新的文档上下文,内部改写不能再制造 D-03 会拒绝的绝对路径。
+ * merge 生成的是新的文档上下文,内部改写不能再制造图片信任边界(ADR-012)会拒绝的绝对路径。
  * 围栏代码块与行内代码内的示例图片语法不改写;实现先摘除代码区,替换后还原。
  */
 function rebaseImages(md: string, sourceBaseDir: string, outputBaseDir: string): string {

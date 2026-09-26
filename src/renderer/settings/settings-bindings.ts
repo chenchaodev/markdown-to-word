@@ -1,6 +1,6 @@
 /**
  * 设置控件事件绑定编排(组合根 init 处调用):按 index.html 六组 Tab 依次接线,
- * 各组实现在同名分组文件(纯搬移拆分,D2,零行为改动):
+ * 各组实现在同名分组文件(纯搬移拆分,零行为改动):
  * - settings-bindings-preset.ts     预 设(含 applyTemplatePreset 跨模块契约)
  * - settings-bindings-typography.ts 排 版(纸张/边距/字体/字号/行距/档位/对齐)
  * - settings-bindings-headerwatermark.ts 页眉页脚与水印

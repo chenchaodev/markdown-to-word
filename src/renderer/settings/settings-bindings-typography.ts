@@ -3,7 +3,7 @@
  * 行距(含滑杆回显)/标题字号与间距档位/首行缩进/对齐——变更钳制校验后
  * 即时写回并持久化;字号/行距/边距非法输入以当前设置值兜底并字段内提示。
  * 分组口径 = index.html 六组 Tab 的 data-group=typography;拆自
- * settings-bindings.ts(D2,纯搬移零行为改动),编排入口在 settings-bindings。
+ * settings-bindings.ts(纯搬移零行为改动),编排入口在 settings-bindings。
  */
 import {
   BODY_SIZE_MAX,

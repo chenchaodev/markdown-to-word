@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 测试段执行框架(逐段子进程隔离,正式口径见 docs/OPTIMIZATION-PLAN.md D-08):
+ * 测试段执行框架(逐段子进程隔离,正式口径见 docs/ADR.md 的 ADR-015「测试工程化与范围纳入」):
  * - 段文件 = test/segments/、test/main/ 或 test/renderer/ 下 *.test.js,须导出 async function run()
  * - 新增测试 = 新建段文件即可,零注册(入口按目录顺序自动发现)
  * - 单段筛选(选择面):设 M2W_ONLY=basic-render,mermaid 可只跑名称含任一子串的段

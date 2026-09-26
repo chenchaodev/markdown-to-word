@@ -3,7 +3,7 @@
  * 显隐)/页眉文字/页脚开关/logo 选择与清除/水印文字/角度/不透明度/浅灰——
  * 变更钳制后即时写回并持久化。
  * 分组口径 = index.html 六组 Tab 的 data-group=headerwatermark;拆自
- * settings-bindings.ts(D2,纯搬移零行为改动),编排入口在 settings-bindings。
+ * settings-bindings.ts(纯搬移零行为改动),编排入口在 settings-bindings。
  */
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import { t } from "../../core/i18n.js";
