@@ -54,11 +54,19 @@
     "check:dist-manifest": "node scripts/check-dist-manifest.mjs --check",
     "check:asar": "node scripts/check-asar-manifest.mjs",
     "check:release": "node scripts/check-release-artifacts.mjs",
+    "check:signature": "node scripts/check-signature-status.mjs",
+    "check:supply": "node scripts/supply/check-supply-chain.mjs",
+    "gen:sbom": "node scripts/supply/gen-sbom.mjs",
+    "check:sbom": "node scripts/supply/gen-sbom.mjs --check",
+    "gen:licenses": "node scripts/supply/gen-licenses.mjs",
+    "check:sca": "node scripts/supply/sca-audit.mjs",
+    "check:unpacked-smoke": "node scripts/check-unpacked-smoke.mjs",
+    "check:install-smoke": "node scripts/check-install-smoke.mjs",
     "clean:dist": "node scripts/clean-artifacts.mjs --target dist",
     "clean:release": "node scripts/clean-artifacts.mjs --target release",
     "verify:ci": "npm run check:contract && npm run check:contract:selftest && npm run check:boundary && npm run build && npm run typecheck && npm run lint && npm run test && npm run test:coverage && npm run check:fixtures && npm run test:smoke && npm run check:geometry",
     "verify:release": "npm run verify:ci && npm run dist",
-    "dist": "npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest && electron-builder --win nsis --x64 --publish never && npm run check:dist-manifest && npm run check:asar && npm run check:release"
+    "dist": "npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest && electron-builder --win nsis --x64 --publish never && npm run check:dist-manifest && npm run check:asar && npm run check:release && npm run check:signature && npm run check:unpacked-smoke"
   },
   "build": {
     "appId": "com.markdown.tools.m2w",
