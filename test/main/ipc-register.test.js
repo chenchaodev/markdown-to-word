@@ -85,7 +85,7 @@ export async function run() {
   assert(badBatch.ok === false, "convertBatch 非数组 files 应返回 { ok:false, error }");
   const badMerge = await handlers.get(CH.convertMerge)(fakeEvent, ["a.md", 42], "docx");
   assert(badMerge.ok === false, "convertMerge 混入非字符串元素应返回 { ok:false, error }");
-  console.log("[ok] ipc-register:convertSingle/Batch/Merge 入参类型守卫(AI 清理)断言通过");
+  console.log("[ok] ipc-register:convertSingle/Batch/Merge 入参类型守卫断言通过");
 
   // ---- 3. shell 白名单:未登记路径拒绝且不触达 shell(测试进程白名单为空) ----
   const reveal = handlers.get(CH.shellRevealInFolder)(fakeEvent, "C:\\definitely\\not\\allowed.docx");

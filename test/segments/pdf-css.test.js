@@ -74,11 +74,11 @@ export async function run() {
   if (firstStyleEnd === -1 || injectedImg === -1 || injectedImg > firstStyleEnd) {
     throw new Error("pdfCss 断言失败:</style> 序列应被剥离,注入标记不得逃逸出 <style>");
   }
-  console.log("[ok] pdfCss:</style> 注入序列被剥离(AI 清理 sanitizeStyleCss)");
+  console.log("[ok] pdfCss:</style> 注入序列被剥离(sanitizeStyleCss)");
 
   // ---- 5. CSP meta:预览/打印 HTML 基线 ----
   if (!withCss.html.includes('http-equiv="Content-Security-Policy"')) {
-    throw new Error("pdfCss 断言失败:输出 HTML 应包含 CSP meta(AI 清理)");
+    throw new Error("pdfCss 断言失败:输出 HTML 应包含 CSP meta");
   }
-  console.log("[ok] pdfCss:CSP meta 存在(AI 清理 预览/打印窗口安全基线)");
+  console.log("[ok] pdfCss:CSP meta 存在(预览/打印窗口安全基线)");
 }

@@ -89,7 +89,7 @@ export async function run() {
       afterCreated !== undefined &&
       origCreated.getTime() === afterCreated.getTime());
   if (!same) {
-    throw new Error("PDF 元数据断言失败:坏 date 不应改变创建时间(剪贴板直转)");
+    throw new Error("PDF 元数据断言失败:坏 date 不应改变创建时间");
   }
-  console.log("[ok] PDF 元数据:date 解析失败不兜底当前时间(剪贴板直转),title 照常注入");
+  console.log("[ok] PDF 元数据:date 解析失败不兜底当前时间,title 照常注入");
 }

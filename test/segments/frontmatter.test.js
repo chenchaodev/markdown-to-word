@@ -84,7 +84,7 @@ author: 作者
   // 已知 key 守卫:块内未命中已知 key → 不视为 frontmatter,原样保留为正文(不吞内容)
   assert(
     r7.body === "---\ntags: a,b\nplain line\nkeywords: [x]\n---\n",
-    "未知 key 块应整体保留为 body(剪贴板直转 守卫)",
+    "未知 key 块应整体保留为 body(守卫)",
   );
 
   // ---- 7. 空值跳过(title: / author: "") ----
@@ -114,10 +114,10 @@ author: 作者
   // (此前会静默剥除;保留后按普通主题分隔线渲染,行为可预期)
   const r11b = parseFrontmatter("---\n\n---\n正文");
   assert(Object.keys(r11b.metadata).length === 0, "空行分隔的空 frontmatter 不应产生 metadata");
-  assert(r11b.body === "---\n\n---\n正文", "空 frontmatter 块应整体保留为 body(剪贴板直转 守卫)");
+  assert(r11b.body === "---\n\n---\n正文", "空 frontmatter 块应整体保留为 body(守卫)");
   const r11c = parseFrontmatter("---\n\n---\n\n正文");
   assert(Object.keys(r11c.metadata).length === 0, "关闭定界后空行仍为空 frontmatter(无 metadata)");
-  assert(r11c.body === "---\n\n---\n\n正文", "空块整体保留为 body(剪贴板直转 守卫)");
+  assert(r11c.body === "---\n\n---\n\n正文", "空块整体保留为 body(守卫)");
 
   // ---- 11. 仅元数据无正文 ----
   const r12 = parseFrontmatter("---\ntitle: 只有元数据\n---\n");

@@ -160,7 +160,7 @@ export async function run() {
   if (noDoubleBreak !== "# 甲\n\n<!-- page-break -->\n\n# 乙\n\n<!-- page-break -->\n\n# 丙") {
     throw new Error(`merge 断言失败:尾部分页符不应叠加,实际输出:\n${JSON.stringify(noDoubleBreak)}`);
   }
-  console.log("[ok] merge:剪贴板直转 分页符防叠加断言通过");
+  console.log("[ok] merge:分页符防叠加断言通过");
 
   // ---------- 代码块内示例图片语法不参与路径改写(absolutizeImages) ----------
   const codeAware = mergeMarkdowns([
@@ -189,5 +189,5 @@ export async function run() {
   if (!codeAware.includes("![真实](./real.png)") || !codeAware.includes("![尾部](./tail.png)")) {
     throw new Error(`merge 断言失败:代码块外图片应重定位为相对路径,实际输出:\n${codeAware}`);
   }
-  console.log("[ok] merge:剪贴板直转 代码块感知(围栏/行内不改写,块外重定位为相对路径)断言通过");
+  console.log("[ok] merge:代码块感知(围栏/行内不改写,块外重定位为相对路径)断言通过");
 }

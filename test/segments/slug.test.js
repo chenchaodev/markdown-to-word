@@ -105,7 +105,7 @@ export async function run() {
     throw new Error("docxBookmarkId 测试前置失败:构造的两标题应共享前 40 字符");
   }
   if (docxBookmarkId(long1) === docxBookmarkId(long2)) {
-    throw new Error("docxBookmarkId 断言失败:共享前 40 字符的不同标题不得产出同名书签(剪贴板直转)");
+    throw new Error("docxBookmarkId 断言失败:共享前 40 字符的不同标题不得产出同名书签");
   }
-  console.log("[ok] docxBookmarkId:数字前缀/短输入原样/剪贴板直转 截断加哈希(40 字符·确定性·防碰撞)断言通过");
+  console.log("[ok] docxBookmarkId:数字前缀/短输入原样/截断加哈希(40 字符·确定性·防碰撞)断言通过");
 }

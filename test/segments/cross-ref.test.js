@@ -121,7 +121,7 @@ export async function run() {
   if (!has('<w:t xml:space="preserve">(?)</w:t>')) throw new Error('docx 悬空章节引用无占位「(?)」');
   // 警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
   const figXCount = warnings.filter((w) => formatWarning(w) === "交叉引用未找到图 label: fig:x").length;
-  if (figXCount !== 1) throw new Error(`docx 悬空图警告应去重为 1 条(实际 ${figXCount},剪贴板直转 契约)`);
+  if (figXCount !== 1) throw new Error(`docx 悬空图警告应去重为 1 条(实际 ${figXCount},去重契约)`);
   if (!warnings.some((w) => formatWarning(w) === "交叉引用未找到章节 label: sec:s1")) {
     throw new Error("docx 缺少悬空章节警告 sec:s1");
   }
@@ -353,10 +353,10 @@ export async function run() {
   }));
   const hnOffCapX = await unzipPart(docxBufferOf(hnOffCapD), "word/document.xml");
   if (!hnOffCapX.includes('<w:t xml:space="preserve">图 1 甲图</w:t>')) {
-    throw new Error("剪贴板直转 断言失败:headingNumbering 关时首图应为「图 1」");
+    throw new Error("图编号断言失败:headingNumbering 关时首图应为「图 1」");
   }
   if (!hnOffCapX.includes('<w:t xml:space="preserve">图 2 乙图</w:t>')) {
-    throw new Error("剪贴板直转 断言失败:headingNumbering 关时次章图应连续编号「图 2」(不得按章重置为「图 1」)");
+    throw new Error("图编号断言失败:headingNumbering 关时次章图应连续编号「图 2」(不得按章重置为「图 1」)");
   }
   const hnOffCapP = /** @type {ConvertArtifact} */ (await convert(mdCapContinuous, "pdf", {
     baseDir: B,
@@ -368,10 +368,10 @@ export async function run() {
   // 断言连续性语义:走全局重置分支(body 重置一次),且无 h1 级重置规则
   const hnOffCapHtml = pdfHtmlOf(hnOffCapP);
   if (!hnOffCapHtml.includes("body { counter-reset: figc tabc; }")) {
-    throw new Error("剪贴板直转 断言失败:pdf headingNumbering 关时应使用全局题注计数器(连续编号)");
+    throw new Error("题注编号断言失败:pdf headingNumbering 关时应使用全局题注计数器(连续编号)");
   }
   if (/h1 \{ counter-reset:[^}]*figc/.test(hnOffCapHtml)) {
-    throw new Error("剪贴板直转 断言失败:pdf headingNumbering 关时不得存在 h1 级题注重置规则");
+    throw new Error("题注编号断言失败:pdf headingNumbering 关时不得存在 h1 级题注重置规则");
   }
 
   // ============ 场景 I:题注 label 按 kind 分命名空间 ============

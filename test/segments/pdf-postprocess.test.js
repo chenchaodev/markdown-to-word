@@ -155,7 +155,7 @@ export async function run() {
         throw new Error(`postprocess 断言失败:checkLocalImages 缺少细分警告「${expected}」,warnings=${JSON.stringify(warnings)}`);
       }
     }
-    console.log("[ok] postprocess:成书向导 checkLocalImages 失败原因细分(ENOENT/EACCES/兜底)断言通过");
+    console.log("[ok] postprocess:checkLocalImages 失败原因细分(ENOENT/EACCES/兜底)断言通过");
   }
 
   // ---- 5. embedExternalImages cursor 单遍遍历——多图乱序 + 相邻 + 中间失败 ----

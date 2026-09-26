@@ -142,7 +142,7 @@ export async function run() {
     if (brokenXml.includes("<w:color")) {
       throw new Error("code-highlight 断言失败:hljs 抛错降级不应有高亮色(<w:color)");
     }
-    console.log("[ok] code-highlight:成书向导 hljs 抛错降级等宽 + 高亮降级警告 断言通过");
+    console.log("[ok] code-highlight:hljs 抛错降级等宽 + 高亮降级警告 断言通过");
   } finally {
     hljs.unregisterLanguage("broken");
   }

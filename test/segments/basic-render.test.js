@@ -296,7 +296,7 @@ export async function run() {
   if (unknownXml.includes("<w:drawing>")) {
     throw new Error("basic-render 断言失败:未知魔数图片不应生成 drawing");
   }
-  console.log("[ok] basic-render:剪贴板直转 未知魔数图片跳过嵌入(警告 + 占位文本)断言通过");
+  console.log("[ok] basic-render:未知魔数图片跳过嵌入(警告 + 占位文本)断言通过");
 
   // ---------- GFM 表格对齐(renderTable node.align → 段落 w:jc center/right) ----------
   // 依据(src/core/docx/render.ts):mdast 表格 align 数组逐列映射 AlignmentType,
@@ -326,7 +326,7 @@ export async function run() {
   if (!bProps.includes('w:val="center"')) {
     throw new Error(`basic-render 断言失败:居中列单元格段落属性缺 center:${bProps}`);
   }
-  console.log("[ok] basic-render:剪贴板直转 表格列对齐(:--/:-:/--: → 缺省/center/right)断言通过");
+  console.log("[ok] basic-render:表格列对齐(:--/:-:/--: → 缺省/center/right)断言通过");
 
   // ---------- 自闭合 <br/> 白名单放行(html-whitelist 三处扫描器同步) ----------
   // 此前 <br/> 整串判非法:docx 危险段丢弃 / pdf 整段转义;现仅空标签 br 放行自闭合。
@@ -346,7 +346,7 @@ export async function run() {
   if (!brPdf.html.includes("<br/>") || !brPdf.html.includes("<strong>粗</strong>")) {
     throw new Error(`basic-render 断言失败:pdf 侧 <br/>/<strong> 未按白名单原样输出:\n${brPdf.html}`);
   }
-  console.log("[ok] basic-render:剪贴板直转 自闭合 <br/> 白名单放行(docx 渲染 + pdf 不转义)断言通过");
+  console.log("[ok] basic-render:自闭合 <br/> 白名单放行(docx 渲染 + pdf 不转义)断言通过");
 
   // 缺失图片警告(检查并入 imageResolver 失败路径,dist/core/convert.ts 已移除
   // stat 预扫;docx imageToDocx resolver 返回 null → warnings 追加统一文案
@@ -451,7 +451,7 @@ export async function run() {
       throw new Error(`basic-render 断言失败:${fmt} EACCES 未细分为「图片文件无访问权限」,warnings=${JSON.stringify(eaccesWarnings)}`);
     }
   }
-  console.log("[ok] basic-render:成书向导 图片失败原因细分(ENOENT/EACCES 独立文案,docx/pdf 对齐)断言通过");
+  console.log("[ok] basic-render:图片失败原因细分(ENOENT/EACCES 独立文案,docx/pdf 对齐)断言通过");
 
   // ---------- convert warnings ?? [] 兜底(convert.ts:67) ----------
   // 依据(dist/core/convert.ts):context.warnings 缺省时内部兜底为空数组,转换不抛错;
