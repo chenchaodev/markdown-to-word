@@ -13,7 +13,7 @@ import { buildBookmarkTree, injectBookmarks, pageNumbersForNames, type PdfHeadin
 import { setPdfMetadata } from "../../core/pdf/metadata.js";
 import { extractHeadings, injectTocPageNumbers } from "../../core/pdf/postprocess.js";
 import { PDFDocument } from "pdf-lib";
-import { renderMermaid } from "../services/mermaid-service.js";
+import { renderMermaidStrict } from "../services/mermaid-service.js";
 import { loadSettings, type AppSettings } from "../persist/settings.js";
 import { hardenWebContents } from "../services/web-hardening.js";
 import { writeTempHtml } from "../services/temp-html.js";
@@ -109,8 +109,10 @@ export async function convertImpl(
         // 本地文件直接读取;http(s) 下载(10s 超时,失败返回 null);同 URL 并发去重;按 baseDir 跨文件共享
         imageResolver: getImageResolver(path.dirname(filePath)),
         katexDir,
-        // Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,失败返回 null 由 core 降级)
-        mermaidResolver: renderMermaid,
+        // Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约)。
+        // 用严格模式:失败带真实原因抛出,core 既有 warning 通道据此在 UI 呈现
+        // (warn.mermaidFailed),降级渲染仍由 core 负责(代码块,内容不丢)
+        mermaidResolver: renderMermaidStrict,
         ...(format === "pdf" ? { onStage: (stage: string) => onProgress?.(stage) } : {}),
       }),
     );

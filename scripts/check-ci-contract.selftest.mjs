@@ -131,6 +131,30 @@ function patchInFixture(dir, relative, from, to) {
   writeFileSync(target, current.replace(from, to), 'utf8');
 }
 
+/**
+ * 同步改夹具的 engines 地板(package.json + lockfile 根包,两处必须一致,
+ * 否则会先命中「lockfile 与 package.json 漂移」那条断言,测不到本条意图)。
+ */
+function setFixtureFloor(pkg, lock, floor) {
+  pkg.engines.node = `>=${floor}`;
+  lock.packages[''].engines.node = `>=${floor}`;
+}
+
+/**
+ * 重写两个 workflow 的 node-version lane(原有那条就地替换,extraLanes 各起一条
+ * setup-node 步骤,形态与 CI 预览 lane 一致)。
+ * 两个 workflow 都要改:地板钉住断言是**逐 workflow** 判定的,只改一个等于
+ * 让另一条报「没有 lane 钉住地板」,测不到版本比较本身。
+ */
+function setWorkflowLanes(dir, floor, extraLanes = []) {
+  const block = [floor, ...extraLanes]
+    .map((version, i) => (i === 0 ? '' : '      - uses: actions/setup-node@v5\n        with:\n') + `          node-version: ${version}`)
+    .join('\n');
+  for (const file of ['.github/workflows/ci.yml', '.github/workflows/release.yml']) {
+    patchInFixture(dir, file, `          node-version: ${FLOOR}\n`, `${block}\n`);
+  }
+}
+
 // 每条负向夹具须命中一个真实历史缺陷或现实漂移形态(旧 Node 20 流水线、乱序、
 // 发布自建缩水清单、引用已删除脚本),而非人造噪声。
 const CASES = [
@@ -300,6 +324,33 @@ const CASES = [
     name: 'check:pinned-actions 指向已不存在的脚本(门禁静默失效)',
     mutate: ({ dir }) => rmSync(join(dir, 'scripts', 'check-pinned-actions.mjs'), { force: true }),
     expect: /引用的文件不存在:scripts\/check-pinned-actions\.mjs/,
+  },
+  // ---- 版本比较的 prerelease 语义(semver 优先级,非字符串比)----
+  {
+    name: '预发布地板 + 更高预发布 lane(beta 之间可比)→ 通过',
+    mutate: ({ dir, pkg, lock }) => {
+      setFixtureFloor(pkg, lock, '22.13.0-beta.1');
+      setWorkflowLanes(dir, '22.13.0-beta.1', ['22.13.0-beta.2', '22.13.0']);
+    },
+    expect: null,
+  },
+  {
+    name: '正式地板 + 同数值段预发布 lane(1.0.0-beta.1 < 1.0.0)',
+    mutate: ({ dir }) => setWorkflowLanes(dir, FLOOR, ['22.13.0-beta.1']),
+    expect: /低于 engines 地板/,
+  },
+  {
+    name: '预发布地板 + 更低预发布 lane(beta.1 < beta.2,不得按字符串比)',
+    mutate: ({ dir, pkg, lock }) => {
+      setFixtureFloor(pkg, lock, '22.13.0-beta.2');
+      setWorkflowLanes(dir, '22.13.0-beta.2', ['22.13.0-beta.1']);
+    },
+    expect: /低于 engines 地板/,
+  },
+  {
+    name: 'node-version 用 build 元数据(不受支持的写法,不得静默放行)',
+    mutate: ({ dir }) => setWorkflowLanes(dir, FLOOR, ['22.13.0+build.5']),
+    expect: /是不受支持的写法/,
   },
 ];
 

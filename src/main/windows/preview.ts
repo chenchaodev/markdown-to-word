@@ -70,6 +70,8 @@ async function renderPreviewHtml(mdPath: string): Promise<string> {
       // 预览不经 getImageResolver 共享缓存:允许并发打开多个预览,各自独立解析器
       imageResolver: createImageResolver(path.dirname(mdPath)),
       katexDir: getKatexDir(),
+      // 预览没有转换结果 warning 回传通道(见上),故用只降级的 renderMermaid:
+      // 失败原因无处上屏,抛错只会让 core 生成一条随即被丢弃的警告
       mermaidResolver: renderMermaid,
     }),
   );

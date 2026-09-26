@@ -38,12 +38,71 @@ function readText(relativePath) {
   return readFileSync(join(projectRoot, relativePath), 'utf8');
 }
 
-/** 语义化版本号比较(仅 major.minor.patch):a < b → -1,a === b → 0,a > b → 1 */
-function compareSemver(a, b) {
-  for (let i = 0; i < 3; i += 1) {
-    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+/**
+ * 语义化版本号解析 + 优先级比较(支持预发布标识)。
+ *
+ * 为什么不引 semver 包:本脚本刻意零依赖——两条 workflow 都在 `npm install` 之前
+ * 各跑它一次(Node 版本不符要在装依赖之前就 fail fast)。一旦 import 'semver',
+ * 它恰好在最需要它的那次执行里不可用(ERR_MODULE_NOT_FOUND),门禁自我否定。
+ * 而这里只需要 major.minor.patch + 可选预发布这一小段优先级,自写二十余行即可,
+ * 逐条规则都有回归夹具兜着(见 check-ci-contract.selftest.mjs 的 prerelease 夹具)。
+ */
+const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+
+/**
+ * 解析语义化版本号;写法不受支持时抛错(调用方先经正则校验,此处只作兜底)。
+ * @param {string} version 版本号字符串
+ * @returns {{core: [number, number, number], pre: string[] | null}} 数值段 + 预发布段
+ */
+function parseSemver(version) {
+  const m = SEMVER_RE.exec(version);
+  if (m === null) throw new Error(`不受支持的版本写法:${version}`);
+  const pre = m[4] === undefined ? null : m[4].split('.');
+  return { core: [Number(m[1]), Number(m[2]), Number(m[3])], pre };
+}
+
+/**
+ * 预发布段比较(《语义化版本》2.0.0 §11):纯数字段按数值比,数字段低于字母段,
+ * 字母段按 ASCII 比;段集为对方前缀时短者低(beta < beta.1)。
+ * @param {string[] | null} a
+ * @param {string[] | null} b
+ * @returns {number} -1 / 0 / 1
+ */
+function comparePrerelease(a, b) {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1; // 正式版高于同数值段的任意预发布(1.0.0 > 1.0.0-beta.1)
+  if (b === null) return -1;
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const x = a[i];
+    const y = b[i];
+    if (x === undefined) return -1; // 前缀关系:段少者低
+    if (y === undefined) return 1;
+    const xIsNum = /^\d+$/.test(x);
+    const yIsNum = /^\d+$/.test(y);
+    if (xIsNum && yIsNum) {
+      if (Number(x) !== Number(y)) return Number(x) < Number(y) ? -1 : 1;
+      continue;
+    }
+    if (xIsNum !== yIsNum) return xIsNum ? -1 : 1; // 数字段低于字母段
+    if (x !== y) return x < y ? -1 : 1;
   }
   return 0;
+}
+
+/**
+ * 语义化版本号优先级比较:a < b → -1,a === b → 0,a > b → 1。
+ * 数值段先比,相同再比预发布(故 1.0.0-beta.1 < 1.0.0,而 beta.1 < beta.2 可比)。
+ * @param {string} a
+ * @param {string} b
+ * @returns {number} -1 / 0 / 1
+ */
+function compareVersions(a, b) {
+  const pa = parseSemver(a);
+  const pb = parseSemver(b);
+  for (let i = 0; i < 3; i += 1) {
+    if (pa.core[i] !== pb.core[i]) return pa.core[i] < pb.core[i] ? -1 : 1;
+  }
+  return comparePrerelease(pa.pre, pb.pre);
 }
 
 // ---- Node 地板(单源:package.json engines.node)----
@@ -54,13 +113,12 @@ const enginesNode = pkg.engines?.node;
 if (typeof enginesNode !== 'string') {
   fail('package.json 缺少 engines.node,宿主 Node 口径无单源');
 }
-const floorMatch = typeof enginesNode === 'string' ? /^>=\s*v?(\d+)\.(\d+)\.(\d+)$/.exec(enginesNode) : null;
+const floorMatch = typeof enginesNode === 'string' ? /^>=\s*v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(enginesNode) : null;
 if (floorMatch === null) {
-  fail(`engines.node 只接受 ">=major.minor.patch" 形式以便精确比对,实际 ${String(enginesNode)}`);
+  fail(`engines.node 只接受 ">=major.minor.patch[-prerelease]" 形式以便精确比对,实际 ${String(enginesNode)}`);
 }
-const floorStr = floorMatch === null ? '0.0.0' : `${floorMatch[1]}.${floorMatch[2]}.${floorMatch[3]}`;
-const floor = floorMatch === null ? [0, 0, 0] : [Number(floorMatch[1]), Number(floorMatch[2]), Number(floorMatch[3])];
-const floorMajor = floor[0];
+const floorStr = floorMatch === null ? '0.0.0' : floorMatch[1];
+const floorMajor = Number(floorStr.split('-')[0].split('.')[0]);
 
 if (lock.packages?.['']?.engines?.node !== enginesNode) {
   fail(
@@ -68,15 +126,24 @@ if (lock.packages?.['']?.engines?.node !== enginesNode) {
   );
 }
 
-const runtime = process.versions.node.split('.').map(Number);
-if (compareSemver(runtime, floor) < 0) {
+// 宿主 Node 口径可能带预发布后缀(nightly/rc 发行版):比对只取数值段——
+// engines 地板写的是正式版,拿 nightly 的数值段与之比,才不会把「更新的预览版」
+// 误判成低于地板(旧实现 split('.') 后对 NaN 的比较恰好等价于此,此处显式化)。
+const runtimeVersion = process.versions.node.replace(/[-+].*$/, '');
+if (compareVersions(runtimeVersion, floorStr) < 0) {
   fail(`当前 Node ${process.versions.node} 低于 engines 地板 ${enginesNode},请升级宿主 Node 后再执行门禁`);
 }
 
 // ---- workflow 口径:Node lane 与引用的 npm scripts ----
 
-/** node-version 合法写法:主线别名(22)或完整版本(22.12.0);主线别名需不低于地板主线 */
-const NODE_VERSION_RE = /node-version:\s*['"]?([\w.]+)['"]?/g;
+/**
+ * workflow `node-version:` 的取值捕获类:`[\w.+-]` 覆盖主线别名(22)、完整版本
+ * (22.12.0)与预发布后缀(24.0.0-nightly…)——预发布版是 CI 预览 lane 的常见写法,
+ * 捕获类漏掉 `-` 会把它截成 `24.0.0`,等于把预览版当正式版放行(勿收窄)。
+ */
+const NODE_VERSION_RE = /node-version:\s*['"]?([\w.+-]+)['"]?/g;
+/** lane 完整版本写法:`major.minor.patch` + 可选预发布后缀(不接受 v 前缀与 build 元数据) */
+const NODE_VERSION_FULL_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 /**
  * workflow 里的 `npm run <script>`;允许脚本名前夹带 npm 开关
  * (如 --silent 抑制 run 头噪声),开关不参与脚本名捕获,只取其后的脚本名。
@@ -104,8 +171,10 @@ for (const workflow of WORKFLOWS) {
       if (Number(version) < floorMajor) {
         fail(`${workflow} 的 node-version: ${version} 低于 engines 地板主线 ${floorMajor}(${enginesNode})`);
       }
-    } else if (/^\d+\.\d+\.\d+$/.test(version)) {
-      if (compareSemver(version.split('.').map(Number), floor) < 0) {
+    } else if (NODE_VERSION_FULL_RE.test(version)) {
+      // 按 semver 优先级比:预发布 lane 低于同数值段的正式地板(22.13.0-beta.1 < 22.13.0),
+      // 预发布之间可比(beta.1 < beta.2),不按字符串比
+      if (compareVersions(version, floorStr) < 0) {
         fail(`${workflow} 的 node-version: ${version} 低于 engines 地板 ${enginesNode}`);
       }
     } else {

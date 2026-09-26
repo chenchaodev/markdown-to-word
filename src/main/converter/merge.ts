@@ -16,7 +16,7 @@ export type { ConvertResult } from "../../core/ipc-contract.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
 import { mergeMarkdowns } from "../../core/pipeline/merge.js";
-import { renderMermaid } from "../services/mermaid-service.js";
+import { renderMermaidStrict } from "../services/mermaid-service.js";
 import { loadSettings } from "../persist/settings.js";
 import {
   buildConvertContext,
@@ -170,7 +170,7 @@ export async function mergeConvertImpl(
         settings,
         imageResolver: getImageResolver(mergeBaseDir, { trustedRoots }),
         katexDir,
-        mermaidResolver: renderMermaid,
+        mermaidResolver: renderMermaidStrict, // 同单文件:严格模式,失败原因经 core warning 通道上屏
         ...(format === "pdf" ? { onStage: (stage: string) => onProgress?.(stage) } : {}),
       }),
     );

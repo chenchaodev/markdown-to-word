@@ -6,6 +6,11 @@
  * canvas 2x 光栅化 PNG。类型契约见 src/core/markdown/mermaid.ts(单一来源)。
  * 降级:任何异常(语法错误/15s 超时/窗口崩溃)→ 返回 null,core 层负责降级渲染。
  * 超时经 renderMermaid 第二参数可注入(默认 15s,测试用短超时,对外契约不变)。
+ * 两个导出,同一队列同一实现,差别只在失败怎么表达:
+ * - renderMermaid:失败 → null(core 记 warn.mermaidEmpty,不带原因);
+ * - renderMermaidStrict(= 转换链路注入 core 的 mermaidResolver):失败 → 抛错并带真实原因,
+ *   经 core 既有 warning 通道(warn.mermaidFailed + ${reason})呈现在 UI 上——
+ *   原因不留在 console 里当唯一线索。降级渲染结果两者一致(仍为代码块)。
  * CSP(实测 2026-08-13):file:// 页面 CSP 生效,纯 `default-src 'none'` 会连 file://
  * 脚本与内联脚本一并拦截 → 必须显式 `script-src 'unsafe-inline' file:`;其余保持
  * default-src 'none'(断 connect/fetch/object)+ img-src data:(外部图片发不出去),
@@ -239,7 +244,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-async function doRender(code: string, timeoutMs: number): Promise<MermaidResult | null> {
+/** 单次渲染的结局:成功带结果;失败带原因(供 UI warning 通道呈现);
+ *  skipped = 会话换代期间主动放弃(非失败,不上报警告)。 */
+type RenderOutcome =
+  | { ok: true; result: MermaidResult }
+  | { ok: false; skipped: true; reason: null }
+  | { ok: false; skipped: false; reason: string };
+
+async function doRender(code: string, timeoutMs: number): Promise<RenderOutcome> {
   /** 本次渲染实际使用的会话(超时销毁针对它,不用可能已换代的全局单例)。 */
   let active: MermaidSession | null = null;
   try {
@@ -248,28 +260,36 @@ async function doRender(code: string, timeoutMs: number): Promise<MermaidResult 
       active.win.webContents.executeJavaScript(`window.renderMermaid(${JSON.stringify(code)})`),
       timeoutMs,
     );
-    if (!result || typeof result.svg !== "string" || typeof result.pngDataUrl !== "string") return null;
+    if (!result || typeof result.svg !== "string" || typeof result.pngDataUrl !== "string") {
+      return { ok: false, skipped: false, reason: "渲染服务返回了非法结果" };
+    }
     const width = Number(result.width);
     const height = Number(result.height);
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return { ok: false, skipped: false, reason: `渲染结果尺寸非法(${width}x${height})` };
+    }
     const png = Buffer.from(result.pngDataUrl.split(",")[1] ?? "", "base64");
-    if (png.length === 0) return null;
-    return { svg: result.svg, png, width, height };
+    if (png.length === 0) {
+      return { ok: false, skipped: false, reason: "渲染结果 PNG 为空" };
+    }
+    return { ok: true, result: { svg: result.svg, png, width, height } };
   } catch (err) {
     if (isStaleEpoch(err)) {
       // 换代/dispose 期间放弃本次渲染(非失败):不建窗、不复活窗口
       console.log("[mermaid-service] render skipped: 会话已失效");
-      return null;
+      return { ok: false, skipped: true, reason: null };
     }
-    // 降级路径:语法错误/超时/窗口崩溃/脚本加载失败,core 层负责降级渲染;日志留痕便于诊断
-    console.log(`[mermaid-service] render failed: ${err instanceof Error ? err.message : String(err)}`);
+    // 降级路径:语法错误/超时/窗口崩溃/脚本加载失败,core 层负责降级渲染;
+    // 原因既留日志便于诊断,又随 reason 交给调用方经既有 warning 通道上屏
+    const reason = err instanceof Error ? err.message : String(err);
+    console.log(`[mermaid-service] render failed: ${reason}`);
     // 超时意味着页面内 executeJavaScript 可能仍挂起——队列已放行下一任务,
     // 同窗口两次渲染存在交错风险(极小但非零)。销毁窗口(closed → dropSession)强制
     // 下一次渲染走全新页面,消除挂起残留。
     if (err instanceof Error && err.message === MERMAID_TIMEOUT_MESSAGE && active !== null) {
       discardSession(active);
     }
-    return null;
+    return { ok: false, skipped: false, reason };
   }
 }
 
@@ -281,8 +301,46 @@ async function doRender(code: string, timeoutMs: number): Promise<MermaidResult 
  * @param timeoutMs 单次渲染超时(默认 RENDER_TIMEOUT_MS;测试可注入短超时,对外契约不变)
  */
 export function renderMermaid(code: string, timeoutMs: number = RENDER_TIMEOUT_MS): Promise<MermaidResult | null> {
+  return submit(code, timeoutMs).then((outcome) => (outcome.ok ? outcome.result : null));
+}
+
+/** 渲染失败抛出的错误(reason 供 core 生成 warn.mermaidFailed 警告的 params) */
+export class MermaidRenderError extends Error {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super(reason);
+    this.name = "MermaidRenderError";
+    this.reason = reason;
+  }
+}
+
+/**
+ * 严格模式渲染(= 转换链路注入 core 的 mermaidResolver):失败**抛错并带上真实原因**,
+ * 由 core 既有 warning 通道(warn.mermaidFailed + ${reason})呈现在 UI 上;
+ * 降级语义与 renderMermaid 完全一致(内容不丢、不中断转换,仍渲染为代码块)。
+ * 会话换代导致的主动放弃不算失败,仍返回 null(不制造假警告)。
+ * @param timeoutMs 单次渲染超时(默认 RENDER_TIMEOUT_MS)
+ */
+export function renderMermaidStrict(
+  code: string,
+  timeoutMs: number = RENDER_TIMEOUT_MS,
+): Promise<MermaidResult | null> {
+  return submit(code, timeoutMs).then((outcome) => {
+    if (outcome.ok) return outcome.result;
+    if (outcome.skipped) return null;
+    throw new MermaidRenderError(outcome.reason);
+  });
+}
+
+/** 提交一次渲染到串行队列(两个导出共用同一队列与代号闸门,故并发安全) */
+function submit(code: string, timeoutMs: number): Promise<RenderOutcome> {
   const submittedEpoch = epoch;
-  const task = queue.then(() => (submittedEpoch === epoch ? doRender(code, timeoutMs) : null));
+  const task = queue.then(() =>
+    submittedEpoch === epoch
+      ? doRender(code, timeoutMs)
+      : Promise.resolve<RenderOutcome>({ ok: false, skipped: true, reason: null }),
+  );
   queue = task.then(
     () => undefined,
     () => undefined,

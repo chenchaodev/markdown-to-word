@@ -57,6 +57,7 @@ import { getMainWindow } from "../windows/main-window.js";
 import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
 import { buildAppMenu } from "../menu.js";
 import { IPC_CHANNELS as CH } from "./channels.js";
+import { createOutputAllowlist } from "./output-allowlist.js";
 import {
   clipboardTempDir,
   clipboardTempSources,
@@ -201,16 +202,15 @@ async function importFileViaDialog<T extends ImportPresetsResult | ImportPdfCssR
 /* ---------- 安全边界:shell.openPath/showItemInFolder 白名单 ----------
  * 仅放行本会话成功转换产物的输出路径(各转换 handler 成功时登记)。被攻破的
  * renderer 原本可借主进程打开任意文件;白名单外路径拒绝并返回错误,renderer
- * 走既有错误提示通道展示。会话级集合即可覆盖全部合法入口(弹窗/汇总条的
- * 路径均来自当次转换结果);应用重启后 renderer 侧缓存同样清零,无合法场景受损。 */
-const allowedOutputPaths = new Set<string>();
+ * 走既有错误提示通道展示。白名单的绑定/规范化/上限三条收口与单源实现见
+ * ./output-allowlist.ts(勿在此另写一份字符串集合)。 */
+const outputAllowlist = createOutputAllowlist();
 
+/** 登记本会话产物路径:目标不存在/非文件/路径非法时不登记并留痕(不静默放过) */
 function allowOutputPath(outputPath: string): void {
-  allowedOutputPaths.add(outputPath);
-}
-
-function isAllowedOutputPath(p: string): boolean {
-  return allowedOutputPaths.has(p);
+  if (!outputAllowlist.allow(outputPath)) {
+    console.warn(`[main] 产物未入 shell 白名单(目标不存在或路径非法):${outputPath}`);
+  }
 }
 
 /** convertMerge 第 3 参类型守卫:含可选 metadata 字段 */
@@ -692,19 +692,23 @@ export function registerIpc(): void {
   });
 
   // 导出后行为:资源管理器中显示 / 默认程序打开(入参类型守卫)。
-  // 安全边界:仅放行本会话转换产物白名单内的路径;拒绝时返回 { ok:false, error }
-  // (revealInFolder 签名由 void 改为结果对象,renderer 据此走既有错误提示通道)。
+  // 安全边界:仅放行白名单内且**打开瞬间仍存在**的本会话转换产物
+  // (resolveOpenable 一次完成「成员判定 + 复验存在 + 取规范化路径」,
+  // shell 侧收到的也是规范化后的绝对路径);拒绝时返回 { ok:false, error },
+  // renderer 据此走既有错误提示通道。
   ipcMain.handle(CH.shellRevealInFolder, (_event, filePath: unknown): { ok: boolean; error?: string } => {
     if (!isString(filePath)) return { ok: false, error: t("common.invalidParams") };
-    if (!isAllowedOutputPath(filePath)) return { ok: false, error: t("shell.notAllowed") };
-    shell.showItemInFolder(filePath);
+    const target = outputAllowlist.resolveOpenable(filePath);
+    if (target === null) return { ok: false, error: t("shell.notAllowed") };
+    shell.showItemInFolder(target);
     return { ok: true };
   });
 
   ipcMain.handle(CH.shellOpenPath, async (_event, filePath: unknown): Promise<{ ok: boolean; error?: string }> => {
     if (!isString(filePath)) return { ok: false, error: t("common.invalidParams") };
-    if (!isAllowedOutputPath(filePath)) return { ok: false, error: t("shell.notAllowed") }; // 白名单校验
-    const error = await shell.openPath(filePath);
+    const target = outputAllowlist.resolveOpenable(filePath); // 白名单校验 + 存在复验
+    if (target === null) return { ok: false, error: t("shell.notAllowed") };
+    const error = await shell.openPath(target);
     return error ? { ok: false, error } : { ok: true };
   });
 

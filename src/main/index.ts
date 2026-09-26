@@ -9,6 +9,7 @@ import { app, BrowserWindow, session } from "electron";
 import { loadSettings } from "./persist/settings.js";
 import { createWindow, getMainWindow } from "./windows/main-window.js";
 import { applyStartupSettingsRuntime, registerIpc } from "./ipc/register.js";
+import { applyDefaultDenyPermissions } from "./services/session-permissions.js";
 
 const SMOKE = process.argv.includes("--smoke");
 
@@ -44,8 +45,10 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
     // (autoHideMenuBar 下 Alt 唤出);此刻无主窗口,标题栏 overlay 同步为空操作
     // (createWindow 内按持久化主题同步)。
     applyStartupSettingsRuntime(loadSettings());
-    // 权限请求显式全拒:应用无相机/定位/通知等需求;默认拒绝之上显式声明,防未来新增窗口/webview 类型时遗漏收口
-    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+    // 权限三通道显式全拒(request/check/device):应用无相机/麦克风/定位/通知/硬件直连需求,
+    // 默认拒绝之上显式声明,防未来新增窗口/webview/partition 类型时遗漏收口。
+    // 威胁模型与「勿改为允许」的论证见 services/session-permissions.ts 文件头。
+    applyDefaultDenyPermissions(session.defaultSession);
     registerIpc();
     // activate 先于首次 createWindow 注册(macOS 极早期 dock 点击不丢失)
     app.on("activate", () => {
