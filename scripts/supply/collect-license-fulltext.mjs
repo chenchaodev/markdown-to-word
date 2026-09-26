@@ -37,9 +37,11 @@ import {
   LICENSE_FILE_EXTENSIONS,
   LICENSE_FILE_STATUS,
   LICENSE_FILE_STEMS,
+  LICENSE_SHAPE,
   SCOPE_PRODUCTION,
   SUPPLY_OUTPUT_DIR,
   detectLicenseFromText,
+  detectLicensesInText,
   errorMessage,
   hashBuffer,
   isMainModule,
@@ -103,7 +105,11 @@ const USAGE = `用法: node scripts/supply/collect-license-fulltext.mjs [选项]
  * @property {string} storedPath 副本路径(相对 --output-dir,POSIX)
  * @property {string} sha256 副本内容指纹
  * @property {number} bytes 字节数
- * @property {string | null} detectedLicense 识别出的许可证(认不出为 null)
+ * @property {string | null} detectedLicense 识别出的许可证(认不出为 null;多许可时为首个)
+ * @property {string} detectedLicenses 识别到的全部许可证标识(单许可时长度 1;认不出为空)
+ * @property {string} licenseShape 文件形态(single / multi-license / unrecognized)
+ * @property {string | null} declaredLicense 该包在上游的原始声明(供人工对照)
+ * @property {boolean | null} declaredInDetected 声明是否落在 detectedLicenses 内(null = 无声明可比)
  * @property {string | null} match 命中方式(SPDX-License-Identifier / text / null)
  * @property {boolean} recognized 是否识别成功
  */
@@ -208,7 +214,7 @@ function listLicenseNamedFiles(packageDir) {
  * @param {string} key 包标识(目录名)
  * @returns {{ status: string; reasonCode: string | null; reason: string; candidateFiles: string[]; unrecognizedNameFiles: string[]; files: FulltextFile[] }} 收集结果
  */
-function collectPackageFiles(packageDir, outputDir, key) {
+function collectPackageFiles(packageDir, outputDir, key, declaredLicense) {
   if (!existsSync(packageDir)) {
     return {
       status: PACKAGE_FULLTEXT_STATUS.missing,
@@ -246,13 +252,23 @@ function collectPackageFiles(packageDir, outputDir, key) {
     const target = path.join(targetDir, file);
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, buffer);
-    const detected = detectLicenseFromText(buffer.toString('utf8'));
+    const text = buffer.toString('utf8');
+    const detected = detectLicenseFromText(text);
+    // 形态识别:如实列出该文件里全部许可证标识,并直接给出「声明是否在其中」的对照。
+    // 上游合法拼接多套正文的文件(d3-geo 的 ISC+MIT、marked 的 MIT+BSD-3 CLA 等)若只报
+    // 首个命中项,诊断层会产出「识别 MIT / 声明 ISC」这种假警报,让复核者误判为
+    // 存在许可不一致。绝不替人选定适用分支 —— 只列候选,由人判断。
+    const shape = detectLicensesInText(text, { declared: declaredLicense });
     files.push({
       sourceFile: file,
       storedPath: toPosix(path.relative(outputDir, target)),
       sha256: hashBuffer(buffer),
       bytes: buffer.byteLength,
       detectedLicense: detected.license,
+      detectedLicenses: shape.licenses,
+      licenseShape: shape.status,
+      declaredLicense: shape.declared,
+      declaredInDetected: shape.declaredInDetected,
       match: detected.license === null ? null : detected.match,
       recognized: detected.license !== null,
     });
@@ -336,7 +352,7 @@ export function collectLicenseFulltext({ lockPath, lockLabel, outputDir, decisio
       index,
     );
     const key = packageKey(component.name, component.version);
-    const collected = collectPackageFiles(path.resolve(packagesRoot, component.lockPath), outputDir, key);
+    const collected = collectPackageFiles(path.resolve(packagesRoot, component.lockPath), outputDir, key, component.license);
     const obligations = outcome.selectedBranch === null ? null : resolveObligationSummary(outcome.selectedBranch);
     return {
       name: component.name,
@@ -419,6 +435,23 @@ export function formatFulltextLog(report) {
   }
   for (const key of report.unrecognized) {
     lines.push(`[fulltext:warn] 许可证文件已复制但内容识别不出许可证(不猜测,需人工确认):${key}`);
+  }
+  // 多许可证文件:直接给出「检测到哪些 / 声明是哪个 / 声明是否在其中」的对照,
+  // 让复核者一眼看出有无不一致 —— 不必自己去两处比对(那正是假警报的来源)。
+  for (const item of report.packages) {
+    for (const file of item.files) {
+      if (file.licenseShape !== LICENSE_SHAPE.multi) continue;
+      const contrast =
+        file.declaredInDetected === true
+          ? `声明 ${file.declaredLicense} 在其中 → 无许可不一致`
+          : file.declaredInDetected === false
+            ? `声明 ${file.declaredLicense ?? '(无)'} 不在其中 → 需人工核对适用分支`
+            : '(该包无上游声明可比对)';
+      lines.push(
+        `[fulltext:info] ${item.name}@${item.version} 的 ${file.sourceFile} 是多许可证文件:` +
+          `检测到 [${file.detectedLicenses.join(", ")}];${contrast}(不自动选定适用分支,由人判断)`,
+      );
+    }
   }
   for (const dir of report.stale) {
     lines.push(`[fulltext:warn] 产物目录里存在已不在依赖树中的残留包目录(依赖下线后不会自动清理,需人工删除):${dir}`);

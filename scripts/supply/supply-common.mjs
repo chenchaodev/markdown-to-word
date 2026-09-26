@@ -275,6 +275,9 @@ export function parseSpdxLicenseTag(text) {
 /**
  * 许可证文件正文 → 许可证标识:先看 SPDX 标签,再用标记表匹配正文。
  * 匹配不到一律返回 null(调用方判 unknown),不做任何推断。
+ *
+ * 只返回**首个**命中项:这是判定层的老口径,判定层有 lockfile 字段优先,不受拼接影响。
+ * 需要「这个文件里到底有几套许可证」时用 detectLicensesInText(诊断层)。
  * @param {string} text 文件开头文本
  * @returns {{ license: string | null; match: string | null }} 许可证标识与命中方式
  */
@@ -285,6 +288,154 @@ export function detectLicenseFromText(text) {
     if (marker.re.test(text)) return { license: marker.spdx, match: LICENSE_MATCH_TEXT };
   }
   return { license: null, match: null };
+}
+
+/* ---------- 多许可证文件形态识别(诊断层) ---------- */
+
+/**
+ * 为什么需要形态识别:真实包里有相当一部分许可证文件是**合法拼接**多套正文的
+ * (上游自己的许可 + 内嵌第三方库/数据集的许可,如 d3-geo 的 ISC + GeographicLib MIT、
+ * marked 的 MIT + BSD-3 派生 CLA)。这类文件若只报首个命中项,诊断层就会产出
+ * 「识别 MIT / 声明 ISC」这种**假警报** —— 复核者会误判为存在许可不一致,
+ * 白白消耗复核精力并损伤报告可信度。
+ *
+ * 方向是「增信息」而非「放宽」:不改变任何判定,只让诊断层如实列出全部候选,
+ * 并直接给出「声明是否在检测集内」的对照结论。
+ */
+
+/** 形态识别的状态取值(与单标识口径的 license=null 区分开) */
+export const LICENSE_SHAPE = Object.freeze({
+  /** 恰好识别出一套许可证 */
+  single: 'single',
+  /** 识别出两套以上互斥许可证正文 → 需人工判断哪套适用 */
+  multi: 'multi-license',
+  /** 一套都识别不出 */
+  unrecognized: 'unrecognized',
+});
+
+/**
+ * 「独占成段」判据用的补充特征表。
+ *
+ * 为什么不能直接复用 LICENSE_TEXT_MARKERS:那里面 ISC/MIT/BSD 用的都是**正文特征句**,
+ * 它们在单个许可证文件内部也可能作为「引述」出现(argparse 的 CWI 协议里就有一段
+ * 形似 ISC 的授权句)。若用「全文任意位置命中」判拼接,会把这类文件误判成多许可。
+ *
+ * 判据收紧为**行首独占成段**:特征必须出现在某一行的行首(允许缩进),而不是句中。
+ * 交叉引用(GPL-3.0 第 13 节提到 AGPL)与模板(Apache-2.0 附录的适用声明)都不满足
+ * 「另一套许可证的正文以独立段落起始」这一形态,故不会被算成第二套。
+ * @type {ReadonlyArray<{ spdx: string; re: RegExp }>}
+ */
+const LICENSE_BLOCK_MARKERS = Object.freeze([
+  // SPDX 标签行本身是机器可读声明,出现即算一段(但只认单个标签行,见下方说明)
+  { spdx: 'ISC', re: /^[ \t]*Permission to use, copy, modify, and\/or distribute this software/im },
+  { spdx: 'MIT', re: /^[ \t]*Permission is hereby granted, free of charge/im },
+  { spdx: 'BSD', re: /^[ \t]*Redistribution and use in source and binary forms/im },
+  // Apache 的独占成段有三种真实写法:许可证全文的标题行(常居中、有前导空格)、NOTICE
+  // 里的 "Apache-Style ... License" 段、以及「Licensed under the Apache License」适用
+  // 声明段(内嵌第三方许可时常见,如 d3-scale-chromatic 里的 ColorBrewer 段)。
+  { spdx: 'Apache-2.0', re: /^[ \t]*(?:Apache License|Apache-Style .* License|Licensed under the Apache License)/im },
+  { spdx: 'GPL-3.0', re: /^[ \t]*GNU (?:AFFERO |LESSER )?GENERAL PUBLIC LICENSE/im },
+  { spdx: 'MPL-2.0', re: /^[ \t]*Mozilla Public License/im },
+  { spdx: 'Unlicense', re: /^[ \t]*This is free and unencumbered software released into the public domain/im },
+]);
+
+/**
+ * BSD 段的细分:独占成段后还要看有没有免责声明条款,才能分 2/3 条款。
+ * 与判定层标记表同源(同一套措辞判据),避免两处对「几条款」的理解分叉。
+ * @param {string} text 文件文本
+ * @returns {string[]} 该段落的 BSD 变体标识
+ */
+function bsdVariantsOf(text) {
+  if (!/^[ \t]*Redistribution and use in source and binary forms/im.test(text)) return [];
+  const hasDisclaimer = /Neither the name of|(?:The\s+)?name\s+[^\n]{0,80}?may (?:not )?be used to endorse/i.test(text);
+  return [hasDisclaimer ? 'BSD-3-Clause' : 'BSD-2-Clause'];
+}
+
+/**
+ * 全文里「独占成段」出现的许可证标识集合(行首判据)。
+ * @param {string} text 文件文本
+ * @returns {Set<string>} 标识集合
+ */
+function blockLevelLicenses(text) {
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const marker of LICENSE_BLOCK_MARKERS) {
+    if (!marker.re.test(text)) continue;
+    if (marker.spdx === 'BSD') {
+      for (const variant of bsdVariantsOf(text)) found.add(variant);
+      continue;
+    }
+    found.add(marker.spdx);
+  }
+  return found;
+}
+
+/**
+ * 形态识别结果。
+ * @typedef {object} LicenseShapeResult
+ * @property {string} status LICENSE_SHAPE 取值
+ * @property {string[]} licenses 识别到的全部标识(按标记表优先级排序;空数组 = 认不出)
+ * @property {string | null} license 首个标识(= licenses[0],与老口径一致;认不出为 null)
+ * @property {string} match 命中方式(SPDX-License-Identifier / text / null)
+ * @property {string | null} declared 传入的上游声明(未传为 null)
+ * @property {boolean | null} declaredInDetected 声明是否落在检测集内(未传声明为 null)
+ */
+
+/**
+ * 许可证文件形态识别:如实列出该文件里识别到的**全部**许可证标识,并直接给出
+ * 「上游声明是否在检测集内」的对照结论。
+ *
+ * 绝不替人选定适用分支 —— 多许可时只列候选,由人判断哪套适用(启发式「取第一套」
+ * 等于替上游做决定,是越界)。
+ * @param {string} text 文件文本
+ * @param {{ declared?: string | null }} [options] 可传入上游声明以得到对照结论
+ * @returns {LicenseShapeResult} 形态识别结果
+ */
+export function detectLicensesInText(text, options = {}) {
+  const declared = typeof options.declared === 'string' && options.declared.trim() !== '' ? options.declared.trim() : null;
+  // SPDX 标签是上游自述的机器可读声明,优先且权威:一个文件只该有一个标签,
+  // 故走单标识口径,不做多许可推断(否则「标签 + 正文」的正常组合会被误判成拼接)。
+  const tagged = parseSpdxLicenseTag(text);
+  if (tagged !== null) {
+    return finishShape([tagged], LICENSE_MATCH_SPDX_TAG, declared);
+  }
+  const blocks = [...blockLevelLicenses(text)];
+  if (blocks.length === 0) {
+    return { status: LICENSE_SHAPE.unrecognized, licenses: [], license: null, match: null, declared, declaredInDetected: declared === null ? null : false };
+  }
+  return finishShape(blocks, LICENSE_MATCH_TEXT, declared);
+}
+
+/**
+ * 收口形态识别结果:按标记表优先级排序(与判定层同一套顺序,便于人工对照),
+ * 并计算「声明是否在检测集内」。
+ * @param {string[]} ids 识别到的标识
+ * @param {string | null} match 命中方式
+ * @param {string | null} declared 上游声明
+ * @returns {LicenseShapeResult} 形态识别结果
+ */
+function finishShape(ids, match, declared) {
+  const order = LICENSE_TEXT_MARKERS.map((marker) => marker.spdx);
+  const sorted = [...new Set(ids)].sort((a, b) => {
+    const ia = order.indexOf(a);
+    const ib = order.indexOf(b);
+    return (ia === -1 ? order.length : ia) - (ib === -1 ? order.length : ib);
+  });
+  // 声明是多分支表达式时,任一分支落在检测集内即算「已覆盖」——
+  // 拼接文件常见 dual-licensed 声明,只比对整串会误报成「声明不在其中」。
+  const covered = declared === null ? null : normalizeSpdxExpression(declared)
+    .split(/[()]|\s+(?:OR|AND|WITH)\s+/i)
+    .map((token) => token.trim())
+    .filter((token) => token !== '')
+    .some((token) => sorted.some((id) => id.toLowerCase() === token.toLowerCase() || token.toLowerCase().startsWith(`${id.toLowerCase()}-`)));
+  return {
+    status: sorted.length >= 2 ? LICENSE_SHAPE.multi : LICENSE_SHAPE.single,
+    licenses: sorted,
+    license: sorted[0] ?? null,
+    match,
+    declared,
+    declaredInDetected: covered,
+  };
 }
 
 /**

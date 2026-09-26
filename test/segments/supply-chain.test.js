@@ -37,8 +37,10 @@ import {
 import {
   DECISION_STATUS,
   LICENSE_FILE_EXTENSIONS,
+  LICENSE_SHAPE,
   LICENSE_TEXT_MARKERS,
   classifyLicense,
+  detectLicensesInText,
   createDecisionIndex,
   cvss3BaseScore,
   loadLicenseDecisions,
@@ -403,6 +405,131 @@ function makeFulltextLockfile(dir) {
 function isGnuFamilyRequiringVersion(re) {
   return /GNU (?:AFFERO |LESSER |LIBRARY )?GENERAL PUBLIC LICENSE/i.test(re.source);
 }
+
+/**
+ * d3-geo 型拼接文件:上游 ISC 正文 + 内嵌 GeographicLib 的 MIT 正文。
+ * 取自 node_modules/d3-geo/LICENSE 的真实结构(两段各有独立的 Copyright 行与授权段)。
+ */
+const LICENSE_TEXT_D3GEO_STYLE = `Copyright 2010-2024 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES.
+
+This license applies to GeographicLib, versions 1.12 and later.
+
+Copyright 2008-2012 Charles Karney
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal
+in the Software without restriction.
+`;
+
+/**
+ * d3-scale-chromatic 型拼接文件:上游 ISC 正文 + ColorBrewer 的 Apache-2.0 声明段。
+ * 取自 node_modules/d3-scale-chromatic/LICENSE 的真实结构。
+ */
+const LICENSE_TEXT_D3SCALE_STYLE = `Copyright 2010-2024 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS".
+
+Apache-Style Software License for ColorBrewer software and ColorBrewer Color Schemes
+
+Copyright 2002 Cynthia Brewer, Mark Harrower, and The Pennsylvania State University
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+`;
+
+/**
+ * marked 型拼接文件:MIT 正文 + 一段 BSD-3 派生的 CLA(含免责声明条款)。
+ * 取自 node_modules/marked/LICENSE.md 的真实结构。
+ */
+const LICENSE_TEXT_MARKED_STYLE = `# License information
+
+## Contribution License Agreement
+
+If you contribute code to this project, you are implicitly allowing your code
+to be distributed under the MIT license.
+
+## Marked
+
+Copyright (c) 2018+, MarkedJS
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+* Neither the name “Markdown” nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+`;
+
+/**
+ * GPL-3.0 全文节选:正文含 AGPL/LGPL 交叉引用(第 13 节),但这是**单个**许可证文件。
+ * 用于钉住红线 —— 交叉引用不得被当成「多许可证拼接」。
+ */
+const LICENSE_TEXT_GPL3_FULL = `                    GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+  Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+  Everyone is permitted to copy and distribute verbatim copies
+  of this license document, but changing it is not allowed.
+
+  13. Use with the GNU Affero General Public License.
+
+  Notwithstanding any other provision of this License, you have
+permission to link or combine your covered work with a work licensed
+under version 3 of the GNU Affero General Public License into a single
+combined work, and to convey the resulting work.
+
+  This License does not grant permission to use the trade names,
+trademarks, service marks, or product names of the licensor.
+`;
+
+/**
+ * Apache-2.0 全文节选:含文末「APPENDIX: How to apply」许可模板。
+ * 模板里的 "Licensed under the Apache License" 是**同一许可证**的适用声明,
+ * 不是第二套许可证 —— 用于钉住红线,不得判成多许可。
+ */
+const LICENSE_TEXT_APACHE_FULL = `                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+   "License" shall mean the terms and conditions for use, reproduction,
+and distribution as defined by Sections 1 through 9 of this document.
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+boilerplate notice, with the fields enclosed by brackets "[]"
+replaced with your own identifying information.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+`;
 
 /**
  * jszip 的 LICENSE.markdown 真实文首(节选):「MIT + GPLv3 双许可合订本」,开篇即声明
@@ -1135,6 +1262,77 @@ export async function run() {
       assert(detectLicenseFromText(LICENSE_TEXT_BSD3).license === "BSD-3-Clause", "模板措辞的 BSD-3 仍须识别为 BSD-3-Clause");
       // 真正的二条款仍须是二条款(收紧不得误伤)
       assert(detectLicenseFromText(LICENSE_TEXT_BSD2).license === "BSD-2-Clause", "BSD-2 仍须识别为 BSD-2-Clause");
+    });
+
+    await suite.case("多许可证文件形态识别:拼接 → multi-license 并列全部;交叉引用/模板不得误判", async () => {
+      // ① d3-geo 型:ISC 段 + 内嵌 GeographicLib 的 MIT 段(上游合法拼接两套正文)。
+      // 这是「假警报」的根源:只报首个命中项会产出「识别 MIT / 声明 ISC」,让复核者
+      // 误判为许可不一致,而实际是两段都在。
+      const d3geo = detectLicensesInText(LICENSE_TEXT_D3GEO_STYLE);
+      assert(d3geo.status === LICENSE_SHAPE.multi, `拼接文件应记 multi-license,实际 ${JSON.stringify(d3geo)}`);
+      assert(d3geo.licenses.includes("ISC") && d3geo.licenses.includes("MIT"), `应列出两套标识,实际 ${JSON.stringify(d3geo.licenses)}`);
+      assert(d3geo.licenses.length === 2, `恰好两套,实际 ${JSON.stringify(d3geo.licenses)}`);
+      assert(d3geo.declared === null, "未提供声明时不得凭空造出 declared");
+
+      // ② d3-scale-chromatic 型:ISC 段 + ColorBrewer 的 Apache-2.0 段
+      const chromatic = detectLicensesInText(LICENSE_TEXT_D3SCALE_STYLE);
+      assert(chromatic.status === LICENSE_SHAPE.multi, `应记 multi-license,实际 ${JSON.stringify(chromatic)}`);
+      assert(chromatic.licenses.includes("ISC") && chromatic.licenses.includes("Apache-2.0"), `应列出 ISC 与 Apache-2.0,实际 ${JSON.stringify(chromatic.licenses)}`);
+
+      // ③ marked 型:MIT 段 + 一段 BSD-3 派生的 CLA(带免责声明条款)
+      const markedStyle = detectLicensesInText(LICENSE_TEXT_MARKED_STYLE);
+      assert(markedStyle.status === LICENSE_SHAPE.multi, `应记 multi-license,实际 ${JSON.stringify(markedStyle)}`);
+      assert(markedStyle.licenses.includes("MIT") && markedStyle.licenses.includes("BSD-3-Clause"), `应列出 MIT 与 BSD-3-Clause,实际 ${JSON.stringify(markedStyle.licenses)}`);
+
+      // ④ 红线:单个真实许可证文件绝不可被误判为 multi-license。
+      // GPL-3.0 全文正文提及 AGPL/LGPL(交叉引用)不是多许可证;Apache-2.0 附录里的
+      // 许可模板也不是。这两条若被误判,报告会把正常的单许可文件全标成待人工判断。
+      /** @type {Array<[string, string]>} */
+      const singleLicenseSamples = [
+        ["GPL-3.0 全文", LICENSE_TEXT_GPL3_FULL],
+        ["LGPL-3.0 全文", LICENSE_TEXT_LGPL3],
+        ["Apache-2.0 全文(含附录模板)", LICENSE_TEXT_APACHE_FULL],
+        ["MIT", LICENSE_TEXT_MIT],
+        ["ISC 标题式", LICENSE_TEXT_ISC],
+        ["BSD-3-Clause", LICENSE_TEXT_BSD3],
+        ["MPL-2.0", LICENSE_TEXT_MPL2],
+        ["AGPL-3.0", LICENSE_TEXT_AGPL3],
+        ["Unlicense", LICENSE_TEXT_UNLICENSE],
+      ];
+      for (const [label, sample] of singleLicenseSamples) {
+        const single = detectLicensesInText(sample);
+        assert(single.status !== LICENSE_SHAPE.multi, `${label} 是单许可证文件,不得判成 multi-license,实际 ${JSON.stringify(single)}`);
+      }
+      // GPL-3.0 全文里确实同时出现 AGPL/LGPL 字样,却仍须是单许可(GPL-3.0)
+      assert(/GNU AFFERO GENERAL PUBLIC LICENSE/i.test(LICENSE_TEXT_GPL3_FULL), "夹具前提:GPL-3.0 全文确实提及 AGPL");
+      assert(detectLicensesInText(LICENSE_TEXT_GPL3_FULL).licenses.join() === "GPL-3.0", "提及 AGPL/LGPL 不构成多许可证");
+      // Apache-2.0 附录模板也不构成
+      assert(detectLicensesInText(LICENSE_TEXT_APACHE_FULL).licenses.join() === "Apache-2.0", "Apache 附录模板不构成多许可证");
+
+      // 单许可文件仍按原口径给出唯一标识(不得因为新增形态识别而退化)
+      assert(detectLicensesInText(LICENSE_TEXT_MIT).licenses.join() === "MIT", "单许可文件应给出唯一标识");
+      assert(detectLicensesInText(LICENSE_TEXT_MIT).status === "single", "单许可文件状态应为 single");
+      // 与 multi-license 严格区分:三态必须互不相同(混用会把「多套待判断」与
+      // 「一套认不出」混为一谈,复核者就无法分辨该做什么)
+      const shapes = [LICENSE_SHAPE.single, LICENSE_SHAPE.multi, LICENSE_SHAPE.unrecognized];
+      assert(new Set(shapes).size === 3, `三态必须互不相同,实际:${shapes.join(",")}`);
+
+      // ⑤ 声明不在检测集内时必须能被看出来,不得静默放过
+      const noMatch = detectLicensesInText(LICENSE_TEXT_D3GEO_STYLE, { declared: "GPL-3.0-or-later" });
+      assert(noMatch.declared === "GPL-3.0-or-later", "应如实带回声明值");
+      assert(noMatch.declaredInDetected === false, "声明不在检测集内时该标志必须为 false");
+      const match = detectLicensesInText(LICENSE_TEXT_D3GEO_STYLE, { declared: "ISC" });
+      assert(match.declaredInDetected === true, "声明在检测集内时该标志必须为 true");
+      // 多分支声明:任一分支在检测集内即视为已覆盖(ISC OR MIT 都出现了)
+      const either = detectLicensesInText(LICENSE_TEXT_D3GEO_STYLE, { declared: "ISC OR MIT" });
+      assert(either.declaredInDetected === true, "多分支声明任一命中即算覆盖");
+      const neither = detectLicensesInText(LICENSE_TEXT_D3GEO_STYLE, { declared: "GPL-3.0-or-later" });
+      assert(neither.declaredInDetected === false, "全部分支都不命中才算未覆盖");
+
+      // ⑥ 认不出仍是 unrecognized,不得与 multi-license 混为一谈
+      const unknown = detectLicensesInText("Copyright 2026 Someone. All rights reserved.\n");
+      assert(unknown.status === LICENSE_SHAPE.unrecognized, `认不出应是 unrecognized,实际 ${unknown.status}`);
+      assert(unknown.licenses.length === 0, "认不出时不得给出任何标识");
     });
 
     await suite.case("多选一分支选定的判定口径(纯函数):范围/表达式/义务摘要/清单校验", async () => {
