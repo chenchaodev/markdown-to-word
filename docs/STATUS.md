@@ -5,6 +5,11 @@
 > 当前定位:3.13.0 已发版;封版期维持「暂停新功能开发,文档维护 + 技术债清理」(需求入口见 BACKLOG,确认后排 ROADMAP「当前待办」)。
 > 历史批次明细见 `docs/CHANGELOG.md` 与 git log;审计与调研证据链见 `docs/archive/`。
 
+- 2026-09-26:**三项遗留修完(发版后第一个迭代)**:①`texToDocxMath` 补 `displayMode` 入参(必填、无默认),display 公式的 `\sum`/`\lim` 上下限从右侧改为上下方(`m:nary`/`m:limLow`),行内公式**保持原样不变**成对断言;判定单源落在入参,真值来源是 mdast 节点类型(`math` 块级 / `inlineMath` 行内),传递链本就没丢信息。②**Electron 门禁入口失败路径修好** —— 实测三条:`app.quit()` 不吃 `process.exitCode`(抛错后真实退出码仍是 **0,失败被判绿**)、加载期抛错只打一句 load 错误且进程永不退出、`.then()` 回调抛错只降级为 warning 而进程照活;五个入口的失败路径收敛到 `test/common/entry-guard.mjs`(纯函数判定层 + 壳层,失败关闭),守卫断言见 `test/segments/entry-exit-guard.test.js`。③测试框架区分「选择面」与「发现面」两个语义(`M2W_ONLY` 顶层筛选词跨进程渗进段内,把段自测要发现的沙盒段滤空),契约单源在 `runner.js`,`M2W_ONLY=segments` 下段清单已独立核验与磁盘完全一致(未放宽也未漏跑)
+  过程记录:三条线并行派发,主会话**逐条独立核验而非采信** —— 用探针实测 display 双模式产物结构、真实起 Electron 验退出码三态、比对段清单双向差集;核验中纠正了自己两处错判(把 `M2W_ONLY=core` 说成全量、说几何门禁能验公式排版),也纠正了子代理一处编造的「顶层 await」前提
+  待用户判断:display 公式在 **Word/WPS 的实际视觉效果本机无法确认**(自动断言只锁 OOXML 结构标签,目视样例见 `output/artifacts/math-structures.docx`);`\int` 上下限两侧仍同形需另立工作项
+  其余遗留:`fixture-contract.test.js` 的冗余 env 补丁(纯可读性)、`session-persist-feedback` 段会摘掉兜底 unhandledRejection 监听
+
 - 2026-09-26:**3.13.0 发版完成,阶段 0-7 收口**:14 项人工验收全部通过(用户逐项确认);发版链经历**四轮「CI 红了 → 定位 → 修 → 重打 tag」**,四条根因全是「本机绿、远端红」,已全部修复并各补回归断言:
   1. `supply-chain` job 刻意不装依赖 → `npm audit --omit=dev` 的 dev 剪枝失效,纯构建期工具(xmldom/fast-uri/js-yaml/sharp)泄漏进生产树 pass 被误判为发布风险(同因导致 khroma 许可证无从核对)。判定层改以 lockfile 的 dev 标记为权威判据,job 补 `npm ci --ignore-scripts`;四包升到同主版本内修复版
   2. 三个段在 runner 上失败:错误码写死 `EPERM` 而 runner 给 `EBUSY`(同属「被占用」族,已改为断言码族)、缺导航提交等待(真竞态)、`pathToFileURL` 把 8.3 短路径的 `~` 编码成 `%7E` 而 Chromium 原样保留、`realpath` 展开 8.3 短名而期望值用词法根
