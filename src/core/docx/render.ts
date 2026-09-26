@@ -20,7 +20,6 @@
 import {
   AlignmentType,
   Document,
-  Header,
   Packer,
   PageBreak,
   PageOrientation,
@@ -34,7 +33,8 @@ import { renderCaptionParagraph } from "./handlers/captions.js";
 import { renderDisplayMath, type EquationContext } from "./handlers/equations.js";
 import { type Ctx } from "./ctx.js";
 import { prescanDocument } from "./prescan.js";
-import { renderCoverPage, renderTocPage, renderHeader, renderFooter, renderWatermarkParagraph, type HeaderLogoData } from "./chrome.js";
+import { renderCoverPage, renderTocPage, renderFooter, type HeaderLogoData } from "./chrome.js";
+import { buildHeaders } from "./headers.js";
 import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./handlers/content.js";
 import { renderCode } from "./handlers/code-block.js";
 import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./handlers/inline-html.js";
@@ -292,52 +292,6 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
 }
 
 // ---------- 块级节点 ----------
-
-/**
- * section 页眉装配分流:按 headerMode 产出 headers 配置或 undefined。
- * - default:现状行为——有标题才装配(标题居中)
- * - custom:文字(trim 后)与 logo 至少一项存在才装配(全空无内容可显示)
- * - none:不装配
- */
-function buildHeaderForSection(
-  headerFooter: HeaderFooterSettings,
-  title: string | undefined,
-  headerLogo: HeaderLogoData | undefined,
-  contentWidthTwips: number,
-): { default: ReturnType<typeof renderHeader> } | undefined {
-  if (headerFooter.headerMode === "none") return undefined;
-  if (headerFooter.headerMode === "custom") {
-    const text = headerFooter.headerText.trim();
-    if (!text && !headerLogo) return undefined;
-    return {
-      default: renderHeader({ kind: "custom", text, logo: headerLogo, layout: headerFooter.headerLayout }, contentWidthTwips),
-    };
-  }
-  return title ? { default: renderHeader({ kind: "title", title }, contentWidthTwips) } : undefined;
-}
-
-/**
- * 页眉 + 水印合并装配:headerFooter 经 buildHeaderForSection 产出 title/
- * custom 页眉(可能无);水印(text 非空)作为置底段落并入同一 default 头——
- * docx 头类型仅 default/first/even,标题头与水印须共存于同一 default 头,
- * 故以「标题头段落 + 水印段落」重构一个 Header(标题头段落经其 options.children 取回)。
- * 水印关闭(text 空)或标题头无(default none 且无标题)时,仅水印自成 default 头。
- */
-function buildHeaders(
-  headerFooter: HeaderFooterSettings,
-  title: string | undefined,
-  headerLogo: HeaderLogoData | undefined,
-  contentWidthTwips: number,
-  watermark: WatermarkSettings,
-): { default: Header } | undefined {
-  const base = buildHeaderForSection(headerFooter, title, headerLogo, contentWidthTwips);
-  if (!watermark.text.trim()) return base;
-  const wmPara = renderWatermarkParagraph(watermark);
-  if (!base) return { default: new Header({ children: [wmPara] }) };
-  return {
-    default: new Header({ children: [...(base.default.options.children as readonly Paragraph[]), wmPara] }),
-  };
-}
 
 async function renderBlock(
   node: BlockContent,
