@@ -11,16 +11,14 @@ import {
   MARGIN_MAX_MM,
   MARGIN_MIN_MM,
   MAX_CUSTOM_PRESETS,
-  TEMPLATE_PRESETS,
   correctPageSetup,
-  matchesPreset,
   type AppSettings,
   type CustomPreset,
   type PageSetup,
   type PageSetupCorrectionResult,
-  type TemplatePreset,
   type ThemePreference,
 } from "../../core/settings/settings-defaults.js";
+import { TEMPLATE_PRESETS, matchesPreset, type TemplatePreset } from "../../core/settings/presets.js";
 import { t, type I18nKey } from "../../core/i18n.js";
 
 /**

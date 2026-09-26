@@ -34,9 +34,9 @@ import { setLanguage, t } from "../../dist/core/i18n.js";
 import {
   DEFAULT_SETTINGS,
   MAX_CUSTOM_PRESETS,
-  TEMPLATE_PRESETS,
   correctPageSetup,
 } from "../../dist/core/settings/settings-defaults.js";
+import { TEMPLATE_PRESETS } from "../../dist/core/settings/presets.js";
 import {
   CUSTOM_PRESET_ID_PREFIX,
   allPresets,

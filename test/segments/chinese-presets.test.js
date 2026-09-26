@@ -1,5 +1,5 @@
 // @ts-check
-import { TEMPLATE_PRESETS } from "../../dist/core/settings/settings-defaults.js";
+import { TEMPLATE_PRESETS } from "../../dist/core/settings/presets.js";
 
 /**
  * 按 id 取预设:缺失即显式抛错(find 的返回是「可能不存在」,断言层需要确定项)。

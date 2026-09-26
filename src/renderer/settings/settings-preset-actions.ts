@@ -5,9 +5,7 @@
  * 零行为改动)。依赖方向:本模块 → settings-panel(回填/写回/选项重建单源),
  * 不反向;事件绑定侧(settings-bindings-preset)与 renderer Esc 分支 import 本模块。
  */
-import {
-  TEMPLATE_PRESETS,
-} from "../../core/settings/settings-defaults.js";
+import { TEMPLATE_PRESETS } from "../../core/settings/presets.js";
 import { t } from "../../core/i18n.js";
 import {
   buildCustomPresetEntry,

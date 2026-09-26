@@ -6,7 +6,7 @@
  * 分组口径 = index.html 六组 Tab 的 data-group=preset;拆自
  * settings-bindings.ts(纯搬移零行为改动),编排入口在 settings-bindings。
  */
-import type { TemplatePreset } from "../../core/settings/settings-defaults.js";
+import type { TemplatePreset } from "../../core/settings/presets.js";
 import { t } from "../../core/i18n.js";
 import { allPresets, presetDisplayName } from "./settings-logic.js";
 import {

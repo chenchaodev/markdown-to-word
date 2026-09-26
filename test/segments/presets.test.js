@@ -21,9 +21,8 @@ import {
   LINE_SPACING_MIN,
   MARGIN_MAX_MM,
   MARGIN_MIN_MM,
-  TEMPLATE_PRESETS,
-  matchesPreset,
 } from "../../dist/core/settings/settings-defaults.js";
+import { TEMPLATE_PRESETS, matchesPreset } from "../../dist/core/settings/presets.js";
 
 /**
  * 由预设排版 + 页面设置 + 完整交付链构成一份完整设置(其余字段取默认值)。
