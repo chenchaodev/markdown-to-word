@@ -15,7 +15,9 @@ export type { ConvertProgressPayload };
  * 批量契约类型单源:BatchProgressInfo/BatchItem/BatchResult 收敛
  * core/ipc-contract.ts(跨进程契约层),本模块 re-export 保持既有导入路径
  * (renderer 各模块仍从 state.js 取用,编译期擦除无运行时依赖);
- * preload.cts 同样从 core import type——renderer→main 反向依赖清零。
+ * preload.cts 同样从 core import type——renderer→main 反向依赖**只剩 1 条已登记项**:
+ * `src/renderer/renderer.ts` 的 `import type { PreloadApi }`,放行见
+ * `scripts/check-import-boundary.mjs` 的 `REVERSE_TYPE_ALLOWLIST`;收口见 campaign REF-025 计划项 #03。
  */
 export type { BatchItem, BatchProgressInfo, BatchResult };
 
