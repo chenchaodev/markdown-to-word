@@ -86,6 +86,9 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 
 ## 测试体系(按内容主题零注册,新增=新建段文件)
 - 目录组织标准(test 树镜像 src 三层,按被测主体归属;目录内按内容主题命名):`test/segments/` = core 渲染主题与跨层契约/恒等守护段 /`test/main/` = 主进程层主题段 /`test/renderer/` = UI 层主题段(纯函数/状态机/CSS 令牌恒等)
+  - **归属判例(跨层段)**:归属看**被测主体**,断言穿过别层不改变归属 —— 被测主体在 `src/main`、core 仅作被断言的接收方时,段归 `test/main/`(例:`main/mermaid-warning-channel.test.js` 测 main 侧渲染服务与 converter 接线,core 的 warning 通道是被断言对象)。
+  - **同模块多段口径**:同一被测模块可按内容主题拆多段,文件名带主题后缀,不要求一段覆盖模块全部行为(例:`main/atomic-json.test.js` 断言落盘/队列/失败清理,`main/atomic-json-durability.test.js` 断言 fsync 时点与耐久性)。
+  - **段目录以三目录为全集**:`test/pending/` 是暂存区,**不在** fixtures 扫描与段发现范围内;勿把待启用段长期停在那里(易与「三目录恒等」并存造成误读)。
 - 静态样例入 `test/fixtures/`(acceptance/ 生成 + manual/ 手工);产物 `output/artifacts` + `output/smoke`(可清理重建,smoke 自清理)
 - 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`i18n/ru.ts` 刻意缺失 `warn.katexCssLoadFailed` 一键作为回退链测试夹具,补译须同步改测试**
 - 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(EOL 归一化,`.gitattributes` 双保险;CI 门禁步骤)
