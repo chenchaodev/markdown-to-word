@@ -10,7 +10,8 @@
 // 收集口径:
 //   - 只收**生产依赖**(随包分发才有提供全文的义务;仅开发依赖不随包分发);
 //   - 每个包目录内按既有识别层的同一份候选名规则(license/licence/copying/notice,
-//     可带 .txt/.md/.rst,无扩展名)列出候选文件,按字节**逐字复制**到
+//     可带 .txt/.md/.rst/.markdown,无扩展名;扩展名单源在 supply-common),列出候选文件,
+//     按字节**逐字复制**到
 //     `<输出目录>/licenses-fulltext/<包名>@<版本>/<原文件名>`,不改名、不改内容;
 //   - 清单逐文件记录:来自哪个包、来源文件名、存储路径(相对输出目录)、sha256、字节数、
 //     以及该文件的许可证识别结果(命中的标识 + 命中方式:SPDX 标签 / 正文特征 / 未识别);
@@ -34,8 +35,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   LICENSE_FILE_EXTENSIONS,
-  LICENSE_FILE_STEMS,
   LICENSE_FILE_STATUS,
+  LICENSE_FILE_STEMS,
   SCOPE_PRODUCTION,
   SUPPLY_OUTPUT_DIR,
   detectLicenseFromText,
@@ -160,7 +161,9 @@ function missingReasonText(reasonCode, candidates) {
   if (reasonCode === FULLTEXT_REASON.unreadableFile) {
     return `包目录内的许可证文件读不出来:${candidates.join('、')}`;
   }
-  return '已安装包目录内没有许可证文件(候选名 license/licence/copying/notice,大小写不敏感,可带 .txt/.md/.rst)';
+  // 扩展名清单取自 supply-common 单源:放宽候选名时文案必须跟着变,否则报告会给出
+  // 与实际判定不符的诊断(排障时会被文案带偏)
+  return `已安装包目录内没有许可证文件(候选名 ${LICENSE_FILE_STEMS.join('/')},大小写不敏感,可带 ${LICENSE_FILE_EXTENSIONS.filter((ext) => ext !== '').join('/')})`;
 }
 
 /**

@@ -162,11 +162,22 @@ export function classifyLicense(raw) {
 /** 许可证文件候选名主干(小写;实际比对大小写不敏感) */
 export const LICENSE_FILE_STEMS = Object.freeze(['license', 'licence', 'copying', 'notice']);
 
-/** 许可证文件可接受的扩展名(空串 = 无扩展名) */
-export const LICENSE_FILE_EXTENSIONS = Object.freeze(['', '.txt', '.md', '.rst']);
+/**
+ * 许可证文件可接受的扩展名(空串 = 无扩展名)。
+ *
+ * `.markdown` 收录理由:jszip(用户亲自拍板选 MIT 分支的生产依赖)随包分发的许可文件
+ * 名为 `LICENSE.markdown`,不收则该包的许可证全文取不到 —— 「按需收集全文」这项决定
+ * 恰好在最关键的包上落空。收录只放宽「看不看这个文件」,**不放宽「认不认它是许可证」**:
+ * 认不出仍记 unrecognized/unknown 并判红(见 LICENSE_TEXT_MARKERS 的「绝不猜测」纪律)。
+ * 扩展名是通用名,单独不足以构成许可证证据,故这一层无判断风险。
+ */
+export const LICENSE_FILE_EXTENSIONS = Object.freeze(['', '.txt', '.md', '.rst', '.markdown']);
 
-/** 候选文件名判定(大小写不敏感;只按 basename 匹配,不跨目录) */
-const LICENSE_FILE_NAME_RE = new RegExp(`^(?:${LICENSE_FILE_STEMS.join('|')})(?:\\.(?:txt|md|rst))?$`, 'i');
+/** 候选文件名判定(大小写不敏感;只按 basename 匹配,不跨目录;扩展名取自上方单源,不另写一份) */
+const LICENSE_FILE_NAME_RE = new RegExp(
+  `^(?:${LICENSE_FILE_STEMS.join('|')})(?:\\.(?:${LICENSE_FILE_EXTENSIONS.filter((ext) => ext !== '').map((ext) => ext.slice(1)).join('|')}))?$`,
+  'i',
+);
 
 /** 许可证文件识别只看开头这么多字节:许可证标题/版本/授权句都在文首,不必读全文 */
 export const LICENSE_FILE_HEAD_BYTES = 16384;
@@ -181,7 +192,10 @@ export const LICENSE_FILE_HEAD_BYTES = 16384;
  * @type {ReadonlyArray<{ spdx: string; re: RegExp }>}
  */
 export const LICENSE_TEXT_MARKERS = Object.freeze([
-  { spdx: 'AGPL-3.0', re: /GNU AFFERO GENERAL PUBLIC LICENSE/i },
+  // AGPL 必须连版本行一起认(与 GPL-3.0/LGPL-3.0 同形):GPLv3 正文第 13 节有一句
+  // 「Use with the GNU Affero General Public License」交叉引用,只认标题字样会把
+  // 「MIT OR GPLv3」这类合订本误判成 AGPL-3.0 —— 比真实许可更强,属误导性错标。
+  { spdx: 'AGPL-3.0', re: /GNU AFFERO GENERAL PUBLIC LICENSE\s+Version 3\b/i },
   { spdx: 'LGPL-2.1', re: /GNU (?:LIBRARY|LESSER) GENERAL PUBLIC LICENSE\s+Version 2\b/i },
   { spdx: 'LGPL-3.0', re: /GNU LESSER GENERAL PUBLIC LICENSE\s+Version 3\b/i },
   { spdx: 'GPL-2.0', re: /GNU GENERAL PUBLIC LICENSE\s+Version 2\b/i },
@@ -190,9 +204,17 @@ export const LICENSE_TEXT_MARKERS = Object.freeze([
   { spdx: 'CDDL-1.0', re: /COMMON DEVELOPMENT AND DISTRIBUTION LICENSE[\s\S]{0,80}?Version 1\.0/i },
   // Apache:标题行 + 版本行/官方 URL 成对出现才算(单见 "Apache" 可能只是正文提及)
   { spdx: 'Apache-2.0', re: /(?=[\s\S]*Apache License)(?=[\s\S]*(?:Version 2\.0, January 2004|apache\.org\/licenses\/LICENSE-2\.0))/i },
-  // BSD 三条款有"Neither the name of"条款,二条款没有;仅凭共有段落无法区分
-  { spdx: 'BSD-3-Clause', re: /(?=[\s\S]*Redistribution and use in source and binary forms)(?=[\s\S]*Neither the name of)/i },
-  { spdx: 'BSD-2-Clause', re: /(?=[\s\S]*Redistribution and use in source and binary forms)(?![\s\S]*Neither the name of)/i },
+  // BSD 三条款有免责声明条款,二条款没有;仅凭共有段落无法区分。
+  // 免责声明条款有两种常见措辞:模板写法「Neither the name of ...」,以及把持有者名字
+  // 直接写进条款的写法「The name <持有者> may not be used to endorse」——后者曾被当成
+  // 二条款,把 3-Clause 认成 2-Clause,**少算一个免责声明义务**(义务低报,比认不出更危险)。
+  // 故三条款认两种措辞,二条款则对两种措辞都否定。
+  { spdx: 'BSD-3-Clause', re: /(?=[\s\S]*Redistribution and use in source and binary forms)(?=[\s\S]*(?:Neither the name of|(?:The\s+)?name\s+[^\n]{0,80}?may (?:not )?be used to endorse))/i },
+  // 二条款的否定前瞻覆盖**任何措辞的免责声明条款**(模板写法与「持有者名字」写法,
+  // 以及 may be / may not be 两种语气),而不只是模板的 "Neither the name of":
+  // 只否定模板措辞时,带免责声明的文件会掉进二条款 —— 把 3-Clause 认成 2-Clause
+  // 会**少算一个免责声明义务**,属义务低报,比认不出更危险。
+  { spdx: 'BSD-2-Clause', re: /(?=[\s\S]*Redistribution and use in source and binary forms)(?![\s\S]*Neither the name of)(?![\s\S]*(?:The\s+)?name\s+[^\n]{0,80}?may (?:not )?be used to endorse)/i },
   { spdx: '0BSD', re: /Zero-Clause BSD|\b0BSD\b/i },
   { spdx: 'ISC', re: /ISC[- ]Licen[cs]e/i },
   { spdx: 'MIT', re: /The MIT Licen[cs]e|Permission is hereby granted, free of charge/i },

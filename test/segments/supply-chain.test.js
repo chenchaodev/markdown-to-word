@@ -36,6 +36,8 @@ import {
 } from "../../scripts/supply/sca-audit.mjs";
 import {
   DECISION_STATUS,
+  LICENSE_FILE_EXTENSIONS,
+  LICENSE_TEXT_MARKERS,
   classifyLicense,
   createDecisionIndex,
   cvss3BaseScore,
@@ -387,6 +389,85 @@ function makeFulltextLockfile(dir) {
     { name: "silent-lib", version: "3.0.0", license: "MIT" },
   ]);
 }
+
+/**
+ * 判定一个 GNU 系标记是否要求版本行(AGPL 收紧的根因就是它曾不要求)。
+ *
+ * 判据刻意收窄到「GNU 系 + 必须带版本行」这一族:0BSD/ISC/MIT/Unlicense 属
+ * 标题行/特征句族,它们与「版本行」无关(0BSD 与 ISC 正文几乎逐字相同、只有标题行
+ * 不同,本来就只能认标题行)。把这几族也塞进同一条断言会逼出一堆与本次根因无关的
+ * 改动,反而扩大风险面。
+ * @param {RegExp} re 标记正则
+ * @returns {boolean} 该标记是否属于「必须要求版本行」的 GNU 系
+ */
+function isGnuFamilyRequiringVersion(re) {
+  return /GNU (?:AFFERO |LESSER |LIBRARY )?GENERAL PUBLIC LICENSE/i.test(re.source);
+}
+
+/**
+ * jszip 的 LICENSE.markdown 真实文首(节选):「MIT + GPLv3 双许可合订本」,开篇即声明
+ * 二选一,后附 MIT 全文与 GPLv3 全文。
+ *
+ * 复现的坑:GPLv3 正文第 13 节有一句交叉引用「Use with the GNU Affero General Public
+ * License」,而 AGPL 标记若不要求版本行,就会把这份文件判成 AGPL-3.0 —— 比它真实的
+ * 许可(MIT OR GPL-3.0-or-later)更强,错标会误导人工复核。
+ */
+const LICENSE_TEXT_DUAL_MIT_GPL = `JSZip is dual licensed. At your choice you may use it under the MIT license *or* the GPLv3
+license.
+
+The MIT License
+===============
+
+Copyright (c) 2009-2016 Stuart Knightley
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction.
+
+GPL version 3
+=============
+
+                    GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+  13. Use with the GNU Affero General Public License.
+
+  Notwithstanding any other provision of this License, you have
+permission to link or combine your covered work with a work licensed
+under version 3 of the GNU Affero General Public License into a single
+combined work.
+`;
+
+/**
+ * GPLv3 正文第 13 节的交叉引用片段(单独一段,不含任何 AGPL 标题行)。
+ * 用于钉住「GPLv3 提到 AGPL ≠ 这份文件是 AGPL」。
+ */
+const LICENSE_TEXT_GPL3_SECTION13 = `                    GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+  13. Use with the GNU Affero General Public License.
+`;
+
+/**
+ * BSD-3-Clause 变体:免责声明条款写成「The name <持有者> may not be used to endorse」,
+ * 而不是模板里的「Neither the name of ...」(rw@1.3.3 的真实写法)。
+ * 用于钉住「有免责声明条款但不是模板措辞时,不得被当成二条款」。
+ */
+const LICENSE_TEXT_BSD3_NAMED = `Copyright (c) 2014-2016, Michael Bostock
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* The name Michael Bostock may not be used to endorse or promote products
+  derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED.
+`;
 
 /** npmmirror audit 端点不可用的真实响应(npm 打到 stdout 的那段 JSON) */
 const MIRROR_AUDIT_UNAVAILABLE = {
@@ -943,14 +1024,14 @@ export async function run() {
       const silent = report.packages.find((item) => item.name === "silent-lib");
       assert(silent?.status === PACKAGE_FULLTEXT_STATUS.missing && silent?.reasonCode === "no-license-file", `无许可证文件须记 missing/no-license-file,实际 ${JSON.stringify(silent)}`);
       assert(silent?.files.length === 0 && report.missing.join() === "silent-lib@3.0.0", `缺项须进 missing 清单,实际 ${report.missing.join()}`);
-      // 名字像许可证但扩展名不在候选内(如 LICENSE.markdown):须报出,否则会被误读成
+      // 名字像许可证但扩展名不在候选内(如 LICENSE.BSD):须报出,否则会被误读成
       // 「上游没随包发许可」;但候选名规则不得顺手放宽(那会改变许可证识别层的判定口径)
-      makePackageDir(dir, "silent-lib", { "LICENSE.markdown": LICENSE_TEXT_MIT });
+      makePackageDir(dir, "silent-lib", { "LICENSE.BSD": LICENSE_TEXT_MIT });
       const withNearMiss = collectLicenseFulltext({ lockPath, lockLabel: "package-lock.json", outputDir, decisions });
       const nearMiss = withNearMiss.packages.find((item) => item.name === "silent-lib");
       assert(nearMiss?.status === PACKAGE_FULLTEXT_STATUS.missing, "候选名不认的文件不得被当成已收集");
-      assert(nearMiss?.unrecognizedNameFiles?.join() === "LICENSE.markdown", `须报出名字像许可证的文件,实际 ${JSON.stringify(nearMiss?.unrecognizedNameFiles)}`);
-      assert(/名字像许可证但扩展名不在候选内的文件:LICENSE\.markdown/.test(formatFulltextLog(withNearMiss).join("\n")), "日志须点名该文件,便于人工去取原文");
+      assert(nearMiss?.unrecognizedNameFiles?.join() === "LICENSE.BSD", `须报出名字像许可证的文件,实际 ${JSON.stringify(nearMiss?.unrecognizedNameFiles)}`);
+      assert(/名字像许可证但扩展名不在候选内的文件:LICENSE\.BSD/.test(formatFulltextLog(withNearMiss).join("\n")), "日志须点名该文件,便于人工去取原文");
       assert(report.status === "incomplete", "有缺项时整体状态应为 incomplete");
       const log = formatFulltextLog(report).join("\n");
       assert(/\[fulltext:missing\] silent-lib@3\.0\.0 — no-license-file/.test(log), `缺项须逐条报出,实际:${log}`);
@@ -969,6 +1050,91 @@ export async function run() {
       assert(fs.existsSync(path.join(outCli, "licenses-fulltext.json")), "CLI 应产出清单文件");
       const strict = runCli(["scripts/supply/collect-license-fulltext.mjs", "--lock", lockPath, "--output-dir", outCli, "--strict"]);
       assert(strict.status === 1 && /--strict/.test(strict.output), `--strict 下缺项应判红,实际 ${strict.status}:${strict.output}`);
+    });
+
+    await suite.case("候选名含 .markdown:jszip 类包能收齐全文,且不因扩展名就把非许可证文件当许可证", async () => {
+      const dir = path.join(tmp, "license-markdown-ext");
+      fs.mkdirSync(dir, { recursive: true });
+      const lockPath = makeFallbackLockfile(dir, [
+        { name: "dual-md", version: "1.0.0", license: "(MIT OR GPL-3.0-or-later)" },
+        { name: "business-md", version: "2.0.0", license: "MIT" },
+        { name: "near-miss-bsd", version: "3.0.0", license: "MIT" },
+      ]);
+      // ① 正向:.markdown 扩展名的许可证文件必须被收进候选集并逐字复制
+      makePackageDir(dir, "dual-md", { "LICENSE.markdown": LICENSE_TEXT_MIT });
+      // ③ 负向:同名同扩展名但内容是普通业务文档 —— 扩展名匹配不得成为放行依据
+      makePackageDir(dir, "business-md", { "LICENSE.markdown": "Copyright 2026 Someone. All rights reserved.\n" });
+      // 诊断项:名字像许可证但扩展名仍不在候选内(.BSD 未收录),须报出而不静默跳过
+      makePackageDir(dir, "near-miss-bsd", { "LICENSE.BSD": LICENSE_TEXT_BSD2 });
+
+      const report = collectLicenseFulltext({ lockPath, lockLabel: "package-lock.json", outputDir: path.join(dir, "out"), decisions: null });
+
+      // ① jszip 形态的包:.markdown 被收齐,逐字落盘并记录来源文件名与哈希
+      const dual = report.packages.find((item) => item.name === "dual-md");
+      assert(dual?.status === PACKAGE_FULLTEXT_STATUS.collected, `.markdown 许可证文件应收齐,实际 ${JSON.stringify(dual)}`);
+      const dualFile = dual?.files[0];
+      assert(dualFile?.sourceFile === "LICENSE.markdown", `须记录来源文件名,实际 ${JSON.stringify(dualFile)}`);
+      assert(dualFile?.storedPath === "licenses-fulltext/dual-md@1.0.0/LICENSE.markdown", `须记录副本路径,实际 ${dualFile?.storedPath}`);
+      assert(dualFile?.sha256 === hashBuffer(Buffer.from(LICENSE_TEXT_MIT, "utf8")), "须记录副本内容指纹");
+      assert(fs.readFileSync(path.join(dir, "out", "licenses-fulltext", "dual-md@1.0.0", "LICENSE.markdown"), "utf8") === LICENSE_TEXT_MIT, "全文须逐字落盘");
+
+      // ③ 负向不回归:扩展名匹配只决定「看不看这个文件」,不决定「认不认它是许可证」。
+      // 内容认不出必须仍记 unrecognized/unknown + needsReview,绝不放行 —— 这是
+      // 「.markdown 是通用扩展名」这项改动的全部风险点,必须钉死。
+      const business = report.packages.find((item) => item.name === "business-md");
+      assert(business?.files.length === 1, "该文件仍应被复制(供人工看),只是认不出内容");
+      assert(business?.files[0]?.recognized === false && business?.files[0]?.detectedLicense === null, `扩展名匹配不得成为放行依据,实际 ${JSON.stringify(business?.files[0])}`);
+      assert(business?.status === PACKAGE_FULLTEXT_STATUS.copiedUnrecognized, `认不出须记 copied-unrecognized,实际 ${business?.status}`);
+      assert(report.unrecognized.join() === "business-md@2.0.0", `未识别项须进清单报出,实际 ${report.unrecognized.join()}`);
+      // 判定层同样不放行:二级回落对认不出的文件返回 unknown → 判红
+      const businessDir = path.join(dir, "node_modules", "business-md");
+      assert(detectPackageLicense(businessDir).status === "unrecognized", "识别层须记 unrecognized");
+      assert(detectPackageLicense(businessDir).license === null, "认不出时不得给出任何许可证标识");
+      assert(classifyLicense(detectPackageLicense(businessDir).license).needsReview === true, "认不出必须保持需人工复核,不得因扩展名放行");
+
+      // 诊断项仍报出,且不被当成已收集
+      const bsd = report.packages.find((item) => item.name === "near-miss-bsd");
+      assert(bsd?.status === PACKAGE_FULLTEXT_STATUS.missing && bsd?.unrecognizedNameFiles?.join() === "LICENSE.BSD", `未收录扩展名须报出,实际 ${JSON.stringify(bsd)}`);
+
+      // 扩展名清单是单源:新增 .markdown 后仍由同一张表派生,排序稳定
+      assert(LICENSE_FILE_EXTENSIONS.join() === ",.txt,.md,.rst,.markdown", `扩展名单源内容应固定,实际 ${LICENSE_FILE_EXTENSIONS.join()}`);
+      assert(listLicenseFiles(path.join(dir, "node_modules", "dual-md")).join() === "LICENSE.markdown", "候选名识别应含 .markdown");
+    });
+
+    await suite.case("标记表收紧:GPLv3 提及 AGPL 不得判成 AGPL-3.0;BSD 免责声明不得漏算", async () => {
+      // ① AGPL 收紧的核心回归:jszip 式「MIT + GPLv3 合订本」绝不能被标成 AGPL-3.0。
+      // 断言命中**具体标识**而非只判「不是 AGPL」—— 因为该文件同时含 MIT 与 GPLv3,
+      // 正确结果应是 GPL-3.0(GPLv3 全文在文中有版本行标题),而不是任意一个别的值。
+      const dual = detectLicenseFromText(LICENSE_TEXT_DUAL_MIT_GPL);
+      // 先断言「不是 AGPL」再断言具体标识:TS 会在前一条断言后把类型收窄成字面量,
+      // 顺序反过来会让后一条断言失去类型意义
+      assert(dual.license !== "AGPL-3.0", `GPLv3 第 13 节提及 AGPL 不得把文件判成 AGPL-3.0,实际 ${JSON.stringify(dual)}`);
+      assert(dual.license === "GPL-3.0", `双许可合订本应判 GPL-3.0(GPLv3 全文有版本行),实际 ${JSON.stringify(dual)}`);
+
+      // ② 单段 GPLv3 第 13 节:含 AGPL 字样但不是 AGPL 文件,更不能判 AGPL
+      const section13 = detectLicenseFromText(LICENSE_TEXT_GPL3_SECTION13);
+      assert(section13.license === "GPL-3.0", `GPLv3 正文应判 GPL-3.0,实际 ${JSON.stringify(section13)}`);
+
+      // ③ 真 AGPL-3.0 全文仍须认得出(收紧不得把真阳性也打死)
+      assert(detectLicenseFromText(LICENSE_TEXT_AGPL3).license === "AGPL-3.0", "真 AGPL-3.0 全文必须仍能识别");
+
+      // ④ 全表自查:GNU 系标记(AGPL/LGPL/GPL)必须逐条要求版本行。
+      // 这是结构性守护 —— AGPL 曾只认标题字样,被 GPLv3 第 13 节的一句交叉引用误命中,
+      // 断言把「不得再有松散的 GNU 系标记」固化成可执行契约,防其复发。
+      const looseGnu = LICENSE_TEXT_MARKERS.filter((marker) => isGnuFamilyRequiringVersion(marker.re) && !/\\s\+Version\s/.test(marker.re.source));
+      assert(looseGnu.length === 0, `GNU 系标记必须要求版本行,实际松散:${looseGnu.map((m) => m.spdx).join(",")}`);
+      // 且 GNU 系五类都必须在表内(防有人删掉某个标记来「绕过」上面的断言)
+      const gnuSpdx = LICENSE_TEXT_MARKERS.map((m) => m.spdx).filter((spdx) => /^(?:A?GPL|LGPL)/.test(spdx)).sort();
+      assert(gnuSpdx.join() === "AGPL-3.0,GPL-2.0,GPL-3.0,LGPL-2.1,LGPL-3.0", `GNU 系标记应齐备,实际:${gnuSpdx.join()}`);
+
+      // ⑤ BSD:带免责声明条款的三条款不得被当成二条款(把 3-Clause 认成 2-Clause 会
+      // 少算一个免责声明义务,属义务低报,比认不出更危险)
+      const namedBsd = detectLicenseFromText(LICENSE_TEXT_BSD3_NAMED);
+      assert(namedBsd.license !== "BSD-2-Clause", `有免责声明条款的文件不得判成 BSD-2-Clause,实际 ${JSON.stringify(namedBsd)}`);
+      // 模板措辞的三条款仍须精确认出
+      assert(detectLicenseFromText(LICENSE_TEXT_BSD3).license === "BSD-3-Clause", "模板措辞的 BSD-3 仍须识别为 BSD-3-Clause");
+      // 真正的二条款仍须是二条款(收紧不得误伤)
+      assert(detectLicenseFromText(LICENSE_TEXT_BSD2).license === "BSD-2-Clause", "BSD-2 仍须识别为 BSD-2-Clause");
     });
 
     await suite.case("多选一分支选定的判定口径(纯函数):范围/表达式/义务摘要/清单校验", async () => {

@@ -3,7 +3,8 @@
 // 许可证取值两级回落(每级都记录来源与证据,便于人工复核):
 //   1. lockfile/package.json 的 license 字段(来源 lockfile);
 //   2. 字段缺失时,到已安装包目录内大小写不敏感地找许可证文件(候选
-//      license/licence/copying/notice,可带 .txt/.md/.rst,无扩展名),读文首做
+//      license/licence/copying/notice,可带 .txt/.md/.rst/.markdown,无扩展名;
+//      扩展名单源在 supply-common 的 LICENSE_FILE_EXTENSIONS),读文首做
 //      标记匹配;命中则来源记 package-file 并附证据文件名。
 // 依据只有文件内可验证的声明(SPDX 标签行或许可证特征标记):两处都没有可用依据时
 // 仍判 unknown 并**判红** —— 「元数据缺失」不等于「许可证未知」,反过来「文件像
@@ -44,7 +45,9 @@ import {
   DECISION_STATUS,
   LICENSE_DECISIONS_FILE,
   LICENSE_DECISIONS_SCHEMA,
+  LICENSE_FILE_EXTENSIONS,
   LICENSE_FILE_STATUS,
+  LICENSE_FILE_STEMS,
   LICENSE_GROUPS,
   LICENSE_GROUP_TITLES,
   LICENSE_SOURCE_LOCKFILE,
@@ -187,13 +190,21 @@ export const UNKNOWN_REASON_UNRECOGNIZED_FILE = LICENSE_FILE_STATUS.unrecognized
 /** 未知许可证的原因码:调用方未提供安装树(纯 lockfile 口径),根本没核对随包文件 */
 export const UNKNOWN_REASON_NO_LOOKUP = 'no-lookup';
 
+/**
+ * 候选名规则的人读描述(扩展名清单取自 supply-common 的单源,不在文案里另写一份 ——
+ * 放宽扩展名时若文案不同步,报告就会给出与实际判定不符的诊断)。
+ * @returns {string} 候选名描述
+ */
+function candidateNameText() {
+  return `候选名 ${LICENSE_FILE_STEMS.join('/')},大小写不敏感,可带 ${LICENSE_FILE_EXTENSIONS.filter((ext) => ext !== '').join('/')}`;
+}
+
 /** 判定原因文案:把「为什么判不出来」说清(含下一步动作),供报告与 CLI 直接展示 */
 const UNKNOWN_REASON_TEXT = Object.freeze({
   [UNKNOWN_REASON_NO_LOOKUP]: 'lockfile 条目无 license 字段;本次未提供安装树,未核对随包分发的许可证文件',
   [UNKNOWN_REASON_NO_PACKAGE_DIR]:
     'lockfile 条目无 license 字段;已安装包目录不存在(未安装或被剪枝),无法核对随包分发的许可证文件',
-  [UNKNOWN_REASON_NO_LICENSE_FILE]:
-    'lockfile 条目无 license 字段;已安装包目录内没有许可证文件(候选名 license/licence/copying/notice,大小写不敏感,可带 .txt/.md/.rst)',
+  [UNKNOWN_REASON_NO_LICENSE_FILE]: `lockfile 条目无 license 字段;已安装包目录内没有许可证文件(${candidateNameText()})`,
   [UNKNOWN_REASON_UNRECOGNIZED_FILE]:
     'lockfile 条目无 license 字段;已找到许可证文件但其内容无法匹配任何已知许可证标记(不做猜测),需人工确认上游许可证',
 });
