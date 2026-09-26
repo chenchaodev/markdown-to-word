@@ -31,21 +31,21 @@
 
 | ID | 阶段 | 目标 | 关联 | 退出条件(可判定) | 门禁命令 |
 |---|---|---|---|---|---|
-| #01 | 0 | 立 campaign 骨架 + 编号台账起算 + 删无效自述 | — | PLAN/STATE 就位,三处台账一致 | `node -e "const f=require('fs');for(const p of ['docs/ROADMAP.md','docs/ADR.md','docs/ACCEPTANCE.md']){const t=f.readFileSync(p,'utf8');if(!/台账/.test(t))throw new Error(p+' 缺台账')}console.log('ok')"` |
-| #02 | 0 | 断链与死指针修正 | — | 常驻层零悬空指针(#07 撤除 OPTIMIZATION-* 后本门禁覆盖全 `docs/`) | `grep -rn "WINDOWS-GUIDE\|CHANGELOG-GUIDE\|全局铁律\|「提交时」" AGENTS.md docs/ --include=*.md \| grep -vE "docs/(archive\|campaigns)/\|docs/OPTIMIZATION-"` 输出为空 |
-| #03 | 0 | STATUS.md 重写 ≤1,200 | #01 | 容量达标 + 四路分流无残留 | `node -e "const n=[...require('fs').readFileSync('docs/STATUS.md','utf8')].length;console.log(n);if(n>1200)process.exit(1)"` |
-| #04 | 0 | ACCEPTANCE.md 重建 ≤6,000 | #03 | 容量达标 + 功能点无丢失 | `node -e "const n=[...require('fs').readFileSync('docs/ACCEPTANCE.md','utf8')].length;console.log(n);if(n>6000)process.exit(1)"` |
-| #05 | 0 | ROADMAP.md 重建 + 删 BACKLOG.md | #04 | 候选区覆盖全部未实现项 | 人工核对:逐条比对 BACKLOG 迁移前的每个候选行在 ROADMAP「候选区」或「已知限制」有落点 |
-| #06 | 0 | ADR.md 补齐 ≤8,000/≤15 条 | #05 | D-0N 全部有落点(ADR-009~015) | `node -e "const s=require('fs').readFileSync('docs/ADR.md','utf8');const n=[...s].length,c=(s.match(/^### 20/gm)||[]).length;console.log(n,c);if(n>8000\|\|c>15)process.exit(1)"` |
-| #07 | 0 | 阶段细节入 campaign + 删 OPTIMIZATION-* | #06 | 常驻层无阶段细节 | `ls docs/OPTIMIZATION-PLAN.md docs/OPTIMIZATION-CHECKLIST.md 2>&1 \| grep -c "No such file"` 输出为 `2` |
-| #08 | 0 | archive 44 份命名统一 + 删 docs/README 存档清单节 | #02 | 零断链 | `git status --short docs/archive/` 全部为 `R`(重命名)且无 `D`/`??` |
-| #09 | 0 | 代码/测试注释规划编号清洗 | #07 | 规划编号零残留 | `npm run typecheck && npm run lint && npm run test:smoke` |
-| #10 | 0 | 单源去重 5 项 | #09 | 每项 grep 单一命中 | 逐项 `grep -rn "<该事实>" docs/ AGENTS.md` 只命中单一事实源文件 |
-| #11 | 0 | docs/README + 根 README + README_EN | #08,#10 | 容量达标 + 零断链 | `node -e "for(const p of ['docs/README.md','README.md','README_EN.md']){const n=[...require('fs').readFileSync(p,'utf8')].length;console.log(p,n)}"` + `grep` 核对指针 |
-| #12 | 0 | 项目 AGENTS.md 重写 ≤2,500 | #11 | 容量达标 + 指针成立 | `node -e "const n=[...require('fs').readFileSync('AGENTS.md','utf8')].length;console.log(n);if(n>2500)process.exit(1)"` |
-| #13 | 0 | 新增 scripts/check-docs-contract.mjs | #12 | 自测通过 | `node scripts/check-docs-contract.mjs` |
-| #14 | 0 | RESEARCH.md 拆主题二级标题 ≤40,000 | #07 | 容量达标 + 条目不删 | `node -e "const n=[...require('fs').readFileSync('docs/RESEARCH.md','utf8')].length;console.log(n);if(n>40000)process.exit(1)"` + 条目数不减 |
-| #15 | 0 | 删 docs/design/book-wizard.md | #11 | grep 零引用 | `grep -rn "book-wizard" . --include=*.md --include=*.html --include=*.ts --include=*.js \| grep -v docs/archive/` 输出为空 |
+| #01 | 0 | 立 campaign 骨架 + 编号台账起算 + 删无效自述 —— **已完成 `3ad3514`** | — | PLAN/STATE 就位,三处台账一致 | `node -e "const f=require('fs');for(const p of ['docs/ROADMAP.md','docs/ADR.md','docs/ACCEPTANCE.md']){const t=f.readFileSync(p,'utf8');if(!/台账/.test(t))throw new Error(p+' 缺台账')}console.log('ok')"` |
+| #02 | 0 | 断链与死指针修正 —— **已完成 `f75b34e`** | — | 常驻层零悬空指针(#07 撤除 OPTIMIZATION-* 后本门禁覆盖全 `docs/`) | `grep -rn "WINDOWS-GUIDE\|CHANGELOG-GUIDE\|全局铁律\|「提交时」" AGENTS.md docs/ --include=*.md \| grep -vE "docs/(archive\|campaigns)/\|docs/OPTIMIZATION-"` 输出为空 |
+| #03 | 0 | STATUS.md 重写 ≤1,200 —— **已完成 `57df1a0`** | #01 | 容量达标 + 四路分流无残留 | `node -e "const n=[...require('fs').readFileSync('docs/STATUS.md','utf8')].length;console.log(n);if(n>1200)process.exit(1)"` |
+| #04 | 0 | ACCEPTANCE.md 重建 ≤6,000 —— **已完成 `b877315`** | #03 | 容量达标 + 功能点无丢失 | `node -e "const n=[...require('fs').readFileSync('docs/ACCEPTANCE.md','utf8')].length;console.log(n);if(n>6000)process.exit(1)"` |
+| #05 | 0 | ROADMAP.md 重建 + 删 BACKLOG.md —— **已完成 `22d6a1f`** | #04 | 候选区覆盖全部未实现项 | 人工核对:逐条比对 BACKLOG 迁移前的每个候选行在 ROADMAP「候选区」或「已知限制」有落点 |
+| #06 | 0 | ADR.md 补齐 ≤8,000/≤15 条 —— **已完成 `788b447`**(后续 `43ee341` 早期 ADR 拆入 `docs/adr/`) | #05 | D-0N 全部有落点(ADR-009~015) | `node -e "const s=require('fs').readFileSync('docs/ADR.md','utf8');const n=[...s].length,c=(s.match(/^### 20/gm)||[]).length;console.log(n,c);if(n>8000\|\|c>15)process.exit(1)"` |
+| #07 | 0 | 阶段细节入 campaign + 删 OPTIMIZATION-* —— **已完成 `001409d`**(台账原文快照 `docs/archive/20260926-211455-…` 随本提交留档,见 #23) | #06 | 常驻层无阶段细节 | `ls docs/OPTIMIZATION-PLAN.md docs/OPTIMIZATION-CHECKLIST.md 2>&1 \| grep -c "No such file"` 输出为 `2` |
+| #08 | 0 | archive 44 份命名统一 + 删 docs/README 存档清单节 —— **已完成 `75dd880`** | #02 | 零断链 | `git status --short docs/archive/` 全部为 `R`(重命名)且无 `D`/`??` |
+| #09 | 0 | 代码/测试注释规划编号清洗 —— **已完成 `2f074ee`** | #07 | 规划编号零残留 | `npm run typecheck && npm run lint && npm run test:smoke` |
+| #10 | 0 | 单源去重 5 项 —— **已完成 `e08cee1`** | #09 | 每项 grep 单一命中 | 逐项 `grep -rn "<该事实>" docs/ AGENTS.md` 只命中单一事实源文件 |
+| #11 | 0 | docs/README + 根 README + README_EN —— **已完成 `b4b27b6`** | #08,#10 | 容量达标 + 零断链 | `node -e "for(const p of ['docs/README.md','README.md','README_EN.md']){const n=[...require('fs').readFileSync(p,'utf8')].length;console.log(p,n)}"` + `grep` 核对指针 |
+| #12 | 0 | 项目 AGENTS.md 重写 ≤2,500 —— **已完成 `0ad9583`** | #11 | 容量达标 + 指针成立 | `node -e "const n=[...require('fs').readFileSync('AGENTS.md','utf8')].length;console.log(n);if(n>2500)process.exit(1)"` |
+| #13 | 0 | 新增 scripts/check-docs-contract.mjs —— **已撤销(行保留,计划表是历史记录)**:全局配置目录 `check-pointers.mjs` 已具备项目模式(配置仓 commit `49dd23d`,非本仓历史),容量契约的单一来源是 `docs/README.md` 的容量表 + `AGENTS.md` 的 `≤N 字符` 声明行,再建项目内脚本会造第二份真源;本仓 `scripts/check-docs-contract.mjs` 不存在,门禁改跑 `node "C:/Users/chenc/.config/opencode/tools/check-pointers.mjs"` | #12 | ~~自测通过~~ 改为「全局项目模式 0 错误」 | `node "C:/Users/chenc/.config/opencode/tools/check-pointers.mjs"` |
+| #14 | 0 | RESEARCH.md 拆主题二级标题 ≤40,000 —— **已完成**:9 个技术主题二级标题、44 条原条目零删减、PLAN「待升 RESEARCH」16 条升格为正式条目、3 类悬空指针(已撤除文件 / 不存在小节 / archive 旧名 16 处)全修 + ADR-007/008 改指 `docs/adr/` 真实路径;36,212 ≤ 40,000,`check-pointers` 项目模式 0 错误。**提交归属待主会话处理**:结构性改动已被并行 lane 的 `2fff4e3` 顺带提交(非本项编号),压缩增量待提交 | #07 | 容量达标 + 条目不删 | `node -e "const n=[...require('fs').readFileSync('docs/RESEARCH.md','utf8')].length;console.log(n);if(n>40000)process.exit(1)"` + 条目数不减 |
+| #15 | 0 | 删 docs/design/book-wizard.md —— **已完成 `f5705b8`**:该设计稿已撤除(原文件不存在),原文留档 `docs/archive/20260926-212110-成书向导设计稿.md` | #11 | grep 零引用 | `grep -rn "book-wizard" . --include=*.md --include=*.html --include=*.ts --include=*.js \| grep -v docs/archive/` 输出为空 |
 | #16 | 1 | 原 OPT-1.2 遗留:向导/模态/背景入口的 GUI 验收 | — | 真实窗口下向导与模态期间的背景入口无双触发,遮罩/Esc/关窗三条路径都结算 | 人工实测(PLAN「人工验收」节逐条核对) |
 | #17 | 1 | 原 OPT-1 门禁遗留:双击/快捷键/模态/向导/关闭/保存失败的 GUI 实测 | — | 六条路径逐一确认无双触发与悬挂;保存失败保留编辑内容并显示失败反馈 | 人工实测(PLAN「人工验收」节逐条核对) |
 | #18 | 1 | 原 OPT-4.1 遗留:真实窗口 GUI/键盘全链路验收 | — | dropZone 与内部控件的冒泡隔离在真实窗口成立,舞台/参数条无抖动 | 人工实测(PLAN「人工验收」节逐条核对) |
@@ -53,6 +53,7 @@
 | #20 | 1 | 原 OPT-4.3 遗留:预设/取消/复制反馈 GUI 实测 | — | 内置预设按完整交付链生效、取消为中性态、复制反馈复位 | 人工实测(PLAN「人工验收」节逐条核对) |
 | #21 | 1 | 原 OPT-4.4 遗留:纯键盘/读屏与深浅主题目视验收 | — | 纯键盘/读屏可走完选择→预览→排序→设置→向导→预检→取消→错误恢复;深浅主题对比度达标 | 人工实测(PLAN「人工验收」节逐条核对) |
 | #22 | 1 | 原 OPT-7 遗留:允许版本线内 patch/minor 的逐包裁决 | — | 每个待升依赖有「升/不升」书面结论;可自动判定的部分由 `check:contract` 覆盖,许可本身是人工裁决 | `npm ls <包>` 无 peer 告警 + `npm run typecheck && npm run lint && npm run test:smoke` |
+| #23 | 0 | `#07 补充` 留存已撤除的全库优化计划与执行台账原文快照 → `docs/archive/20260926-211455-全库优化计划与执行台账.md` —— **已完成,快照随 `001409d`(#07)一并落盘**;号取 23 是为避开阶段 1 已占用的 #16~#22 | #07 | 快照文件存在且 `docs/archive/` 内无同名重复 | `ls docs/archive/20260926-211455-全库优化计划与执行台账.md` 存在 |
 
 ## 人工验收（≤5 条；campaign 期间只写在本节，不写 `docs/ACCEPTANCE.md`）
 
@@ -80,31 +81,22 @@
 | 6 发布/视觉/安装 | 可执行部分完成;远端 lane 与真实装卸的外部证据已补齐/后置 | `00f3ea4`、`91b1d3a`、`ac6fefc`、`10e7fce`、`d8f1429` |
 | 7 P2/P3 | 完成;依赖 patch/minor 裁决遗留转 #22 | `verify:ci` 全绿 + 门禁反向探针 + 跨 DPI 基线 |
 
+**提交归属易误判处(查 git log 前先读这段,2026-09-26 记)**
+
+> 上表是本 campaign *收尾*的前身七阶段;本 campaign 计划项的 commit 不在上表,完整映射见上方「计划与阶段」表各行。以下三条是 `git log` 直查会误判的特例。
+
+- **#23 与 #07 同处一条提交 `001409d`**:#23 的快照 `docs/archive/20260926-211455-全库优化计划与执行台账.md`(751 行)原由独立提交 `5c2b155`(`docs(存档): 留存撤除的全库优化计划与执行台账原文快照 (REF-001 #23)`)落盘,后被 **#07 的 amend 吞并**。`5c2b155` 现在**只在 reflog 与对象库**(`HEAD@{14}: commit (amend)`):`git branch --contains 5c2b155` 为空、`git merge-base --is-ancestor 5c2b155 master` 为假 —— **不在 master 可达历史上**。故 `git log --grep='(REF-001 #23)'` 查不到结果是预期行为、不是丢提交;取该快照用 `git show 001409d -- docs/archive/20260926-211455-全库优化计划与执行台账.md`。**用户裁决:不改历史**(不 rebase、不 cherry-pick 复原),只在此注明。
+- **#15 = `f5705b8`**(`docs(设计): 撤除已过时的向导设计稿并留档 (REF-001 #15)`):撤除 docs/design 下的向导设计稿(原文件已不存在,故正文不写该路径,免被门禁判死链),原文留档 `docs/archive/20260926-212110-成书向导设计稿.md`。
+- **#14 无独立编号提交**:结构性改动(9 主题分节 + 压缩 + 16 条升格)被并行 lane 的 `2fff4e3`(`fix(测试): 二层探针子进程不继承覆盖采集环境…`)顺带提交,`git log --grep='(REF-001 #14)'` 同样查不到;该 lane 另在同一文件插入一条自己的实测条目。
+
 **原「完整问题覆盖索引」(计划 ID ↔ 覆盖的 canonical 问题 ↔ 阶段)与「每个任务的完成定义」的落点**:前者是本 campaign 计划项表(#01~#22)与已落地证据的映射,证据在 git;后者的七条完成定义由本文件硬约束②(客观可判的退出条件 + 门禁命令)与 `docs/DEV-GUIDE.md`「验证基线」节承担。
 
 **原「执行前待办」的落点**:登记 BACKLOG/ROADMAP → 已由 #05 完成(候选区 + 台账);读 `CODE-GUIDE.md` → 项目 `AGENTS.md`「代码结构与质量」行;读 Windows 坑指南 → 已由 #02 改指 `ENV-GUIDE.md`。
 
 ## 待升 RESEARCH 的技术事实（#14 承接）
 
-> #03 把 `docs/STATUS.md` 的日期流水按四路分流拆尽、#07 撤除原优化计划与执行台账时,下列**库/框架实测事实**在 `docs/RESEARCH.md` 尚无对应条目;本批对 `docs/RESEARCH.md` 的写权限仅限那一处断链,故先在此留证,由 #14 升格为正式条目(**条目不删,只补**)。
-
-- **`npm audit --omit=dev` 在刻意不装依赖的 job 里 dev 剪枝失效**:纯构建期工具(xmldom/fast-uri/js-yaml/sharp)泄漏进生产树并被判为发布风险。判定层须以 **lockfile 的 dev 标记**为权威判据,job 补 `npm ci --ignore-scripts`。
-- **`pathToFileURL` 把 8.3 短路径的 `~` 编码成 `%7E`**,而 Chromium 原样保留;配 `realpath` 展开 8.3 短名后,期望值若用词法根比对必然不等。断言须按码族/两侧归一化后比较。
-- **CI 注入的 `PSModulePath` 污染使 Windows PowerShell 5.1 加载不到 `Microsoft.PowerShell.Security`**,签名核对探测命令在 runner 上不可用;探测失败须走 `probe-unavailable` 三态而非崩原始堆栈。
-- **Windows 上 `rename` 覆盖正被读句柄占用的目标必然 EPERM**(杀软/索引器/云同步随手一握即触发,实测确定性),一次瞬时占用即丢整次写;须补有界退避重试(仅 EPERM/EBUSY/EACCES 族)。**代价**:重试把「快速失败、什么都不落盘」变成「可能百毫秒后成功落盘」,**扩大**了 fire-and-forget 写的迟到覆盖窗口 —— 根因仍是同步方式本身不成立(参见同库 2026-09-26 23:20:00 drain 条目)。
-- **测试段同进程连跑两遍时的迟到覆盖**(本批主因):同一段在 `verify:ci` 里跑两遍(`npm test` 与 `test:coverage`),第一遍过、第二遍挂。已由 drain 修掉,但「同一段在一轮里跑多遍」这一形态本身值得留档。
-
-- **TS7 native(`tsc`)在程序内存在任一语法错误时会跳过全程序语义诊断** —— 「tsc 输出为空」可能是假绿;验收须双编译器交叉(TS7 CLI + TS6 API 探针)。配套:`.js` 中非空断言 `!` 触发 TS8013,测试树禁用 `!`,改用 `@returns {asserts cond}` 与显式读取 helper。
-- **覆盖率会静默少算**:门禁探针在沙盒里再跑一次真 c8 而未覆盖 `NODE_V8_COVERAGE`,子进程继承外层同一临时目录并在其 report 阶段清空 → 所有文件名排在探针段之前的段的覆盖数据整段丢失,而探针自身全绿。修法是给子 c8 指定沙盒内的 `NODE_V8_COVERAGE`;**不能用「给测试段改名去排序」绕过**(会让门禁依赖字母序而非真实覆盖)。
-- **eslint `maximumDefaultProjectFileMatchCount` 是性能护栏而非类型门禁**:达到上限时整体报 `Too many files`,再加任一 `.js/.mjs` 就把 lint 打成一片红;本仓已由 200 提到 300。
-- **裸跑 `npm run build` 不回收已删除/重命名源的输出**(tsc 增量),而 `gen:dist-manifest` 只是快照、自身发现不了陈旧;判断产物新鲜度必须走 dist 链或先 `clean:dist`。`clean:dist` 必须连带删根目录 `*.tsbuildinfo`,否则增量缓存会让 clean 后 build 几乎不产出文件。
-- **覆盖率阈值棘轮**:`floor`(85/80/85/85) + `headroomPp`(5) 在真实仓库上验证有牙 —— 降阈值、谎报 `measured`、只改基线不改命令,三种手法都判红;实测低于门槛时的正确动作是补测试而非降阈值。
-- **npmmirror 的 `npm audit` 端点实测 404 不可用**:须如实记为 `unavailable` 并由 OSV.dev 两阶段兜底,**全部源不可用时判红**,绝不把「扫不到」谎报成「无漏洞」。
-- **包元数据缺 `license` 字段时的取值纪律**:字段优先、缺失时回落随包许可证物证(仓库小写 `license` 文件 / README 声明 / 远端 SPDX)并记录来源与证据文件名;内容仍无法识别才判红(**不猜测**)。故 SBOM(以 lockfile 为准)与许可证清单(物证为准)可能对同一包给出不同取值,这是有意的差异。
-- **显式落盘的顺序**:写内容 → 文件句柄 `fsync` → `rename` → 父目录 `fsync`;缺文件 fsync 时断电可得 0 字节配置,读回整文件回退默认 = 用户全部偏好静默归零。
-- **自写 prerelease 版本比较器、刻意不引 semver 包**:该脚本在两条 workflow 的 `npm install` 之前各跑一次,`import 'semver'` 恰好在最需要它时 `ERR_MODULE_NOT_FOUND`,等于门禁自我否定。
-- **跨 DPI 几何采样用 Electron 进程内 `--force-device-scale-factor` 模拟(不改系统 DPI)**:页面实读 `devicePixelRatio` 与期望不符即判「未测量」并以**退出码 2** 结束;worker 报告判绿但退出码非 0 时**以退出码为准**(该规则在一次真实故障下拦下过假绿)。
-- **NSIS 按用户模式与非交互安装**:安装目录不可硬写 `%ProgramFiles%`(本仓实测 `UninstallString` 带 `/currentuser`);安装器在失败前已写入卸载注册表项与开始菜单 `.lnk` 时,两者都指向不存在的 exe,会在 Windows「应用」里留下无法卸载的幽灵条目 —— 失败清理须按前后快照差集只清本次新增残留并点名具体键/路径。
+> **本段已清空 —— 16 条全部由 #14 升格为 `docs/RESEARCH.md` 正式条目(结论/理由/验证/来源/关联五段齐备),分布见该文件「依赖与工具链」「Electron 主进程与安全」「测试与门禁」「供应链与发布」四节,时间戳统一 `2026-09-26 21:14:55`。** 本段保留作为占位:**若后续阶段再产生同类库/框架实测事实,先在此留证,再由下一个文档整改项升格(条目只增不删)。
+> 另:`docs/RESEARCH.md` 容量契约(≤40,000 字符)与本段的冲突由 #14 收尾时上报,详见该提交的报告。
 ## 范围外
 
 - 代码、测试、脚本、构建配置与依赖清单的任何行为改动(阶段 0 只动文档;阶段 1 的 GUI 实测发现问题另按模式 1 登记新工作项)
