@@ -1,0 +1,74 @@
+{
+  "baselineSchema": 1,
+  "duplicateWatch": [
+    "katex"
+  ],
+  "duplicateWatchNote": [
+    "判重门禁名单:哪些包名出现「可证明的重复」时判红。名单是数据不是代码常量 ——",
+    "引擎对任意包名通用(按 包名 + 版本 + 各包声明的范围 判定,见 scripts/pack-size.mjs",
+    "的 analyzeDuplicates),这里只决定「哪些包名纳入门禁」。",
+    "判红只认三类可证明的缺陷:①某副本版本不满足其引用方声明的范围(semver 违规);",
+    "②同包名同版本多副本且祖先位置已有同版本(可提升位置的冗余嵌套);③整份副本可去掉",
+    "(其全部引用方都被另一份同包名副本满足,本可统一版本)。",
+    "同包名不同版本、声明范围互不重叠 = npm 按 semver 正确并存(合法并存),只报信息不判红",
+    "—— 本仓 katex 就是这一类:0.18.1 由项目管线要求,0.16.47 由 mermaid(^0.16.45)与",
+    "micromark-extension-math(^0.16.0)要求,顶层 0.18.1 不满足它们的范围,强行统一会破坏",
+    "它们声明的 semver 语义。",
+    "名单之外的发现照样扫出来写进报告与摘要(可见但不门禁),便于复核后决定是否纳入:",
+    "当前 release/ 里名单外的多副本包有 commander / cose-base / layout-base / d3-array /",
+    "d3-path / d3-shape / iconv-lite / internmap(都是 Mermaid 生态内部的 KB~数百 KB 级",
+    "并存),量级与 katex(单份约 3.8 MiB,含约 1 MiB 字体)不可同日而语,故暂不入门禁。",
+    "",
+    "字节记账分两栏,不要混:可回收 = 「可避免的同包名同版本副本」;不可回收 = 同版本却",
+    "分处兄弟分支、当前树形下无法合并的并存;跨版本同名同大小文件(0.16 与 0.18 之间很多)",
+    "两侧都不计入 —— 那些文件内容不同、各自需要,把字节说成「省下来了」是错误记账。"
+  ],
+  "note": [
+    "打包体积基线:门禁 scripts/pack-size.mjs 用它比对本次 dist 实测值,抓「打包膨胀」",
+    "(误打整个 node_modules、KaTeX 被重复打包、依赖升级带来的病态增长)。",
+    "字节口径:app.asar/解包 exe/安装包/解包目录合计 = 磁盘实占字节;asar 内子项 = 包内",
+    "逻辑内容字节(含 unpacked 条目,它们解包到 app.asar.unpacked 随包分发),故子项之和",
+    "与 app.asar 文件字节不相等,差额即 asar 头 + 解包条目(报告 asar 段单列)。",
+    "",
+    "阈值刻意宽松 —— 判定用「相对 + 绝对」双闸取较宽者:",
+    "  容许增长 = max(基线 × maxRelativeGrowth, minGrowthBytes[该项])",
+    "只有实际增长超过它才判红。因此单项至少要涨 20% 才可能变红,大条目还要再越过",
+    "绝对闸(app.asar 要 +64 MiB ≈ +37%)。理由:正常依赖升级本来就会让体积漂移,",
+    "宁可漏报也不要把升级搞成红灯;真正的确定性缺陷交给「重复打包检测」与包内条目",
+    "断言(asar-manifest 那条线),它们不受阈值影响、直接判红。",
+    "",
+    "维护方式:首次基线为一次真实 dist 的实测值(用 `node scripts/pack-size.mjs",
+    "--print-measurements` 打印当前值),此后**人工**把有意接受的新值改进来(换版本、",
+    "有意增删依赖时同一次改动里改)。刻意不做 --write/--update 自动重生成 —— 自动",
+    "重生成会让一次体积突变变成无人 review 的静默改动(与 scripts/pinned-actions.",
+    "baseline.json 同纪律)。",
+    "",
+    "首次基线不与历史比较:本表建立之前的体积无人负责,那段时间的膨胀只能靠本次实测",
+    "登记为事实。"
+  ],
+  "thresholds": {
+    "maxRelativeGrowth": 0.2,
+    "maxShrinkRatio": 0.5,
+    "minGrowthBytes": 67108864,
+    "minGrowthBytesByItem": {
+      "installer": 33554432,
+      "asarMermaid": 16777216,
+      "asarKatex": 1048576,
+      "asarKatexDist": 1048576,
+      "asarKatexFonts": 1048576,
+      "asarDist": 1048576
+    }
+  },
+  "items": {
+    "appAsar": 170991912,
+    "unpackedExe": 225947136,
+    "unpackedTotal": 488562570,
+    "installer": 125606383,
+    "asarNodeModules": 167271087,
+    "asarKatex": 4013499,
+    "asarKatexDist": 2967611,
+    "asarKatexFonts": 1076572,
+    "asarMermaid": 86947952,
+    "asarDist": 1712618
+  }
+}
