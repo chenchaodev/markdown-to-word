@@ -96,7 +96,10 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`i18n/ru.ts` 刻意缺失 `warn.katexCssLoadFailed` 一键作为回退链测试夹具,补译须同步改测试**
 - 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(EOL 归一化,`.gitattributes` 双保险;CI 门禁步骤)
 
-## 验证方式
+## 验证基线
+> **本节是验证基线的单一出处**;`docs/STATUS.md` 的「验证基线」行只回指本节,不在那里复述命令。
+
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(提交前置 → 全局配置目录 `WORKFLOW-DELIVER.md` 阶段 5「前置核对」;发布/打包产物属对外动作 → 全局配置目录 `AGENTS.md` 安全底线 3)
-- 验证基线(命令、断言、打包验证链)见 `docs/STATUS.md`「验证基线」;验收测试段明细见 `test/segments/`、`test/main/` 与 `test/renderer/`
+- 类型/构建/门禁命令清单见本文件「命令」节;覆盖率、fixture、smoke、几何与产物门禁的接入点见 `package.json` 脚本(`verify:ci` / `verify:release` / `dist`)
+- 验收测试段明细见 `test/segments/`、`test/main/` 与 `test/renderer/`;恒等守护与边界守护段清单见本文件「测试体系」节
 - docx/PDF 验收样例固定含中英混排,生成后人工打开检查中文渲染
