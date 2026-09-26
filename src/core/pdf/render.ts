@@ -184,6 +184,22 @@ function buildMarkdownIt(
   // 宏展开失控)——与 docx 侧 texToDocxMath 同一份边界,勿单侧调整。
   md.use(katex, DEFAULT_KATEX_RESOURCE_LIMITS);
   guardUntrustedMath(md);
+  // ---- 以下 override 的注册顺序即执行顺序(改动本块必读)----
+  //
+  // 机制:rules/* 走 `md.core.ruler.push(规则名, fn)`,而这四条用的是**互异**规则名
+  // (caption_recognize / eq_numbering / figure_recognize / xref_recognize),故它们
+  // 不存在「同名后者覆盖前者」,而是**按 push 先后依次执行**。若哪天两条用了同名,
+  // 语义会静默翻转成「后者覆盖前者」——那时本注释的顺序推理即失效,须重新核对。
+  // (html.ts 走的是 `md.inline.ruler.before(...)`,属 inline 阶段,不参与本处的顺序关系。)
+  //
+  // 不变量:**label 登记类规则必须先于 `xref_recognize` 注册** —— xref 靠解析
+  // `[...](#eq:label)` 这类引用来定位目标,而 label 是由 caption/figure/equation
+  // 三条规则在渲染期登记的。谁晚于 xref 注册,谁的 label 就赶不上本轮引用替换。
+  //
+  // 当前顺序与需要盯的两处:caption_recognize(本块)与 eq_numbering(本块)都先于
+  // overrideXrefRule;而 `figure_recognize` 由下面的 overrideImageRule 在**更晚**处
+  // 注册 —— 调整本块顺序时,图题注引用是必须用差异矩阵(`test/segments/
+  // dual-pipeline-matrix.test.js`)复核的那一条,不要凭读代码断定它没问题。
   overrideHtmlRules(md);
   overrideCaptionRule(md);
   // 公式编号开关关闭时 eq_numbering 规则仍注册(numbering=false):label 段照常

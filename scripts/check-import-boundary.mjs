@@ -140,6 +140,19 @@ export const LAYER_RULES = Object.freeze([
     forbid: 'prefix:../../',
     reason: '冒烟须能在打包产物里运行(build.files 只收 dist/**),smoke 不得逃出 src/(即不得引用仓库相对路径、test/ 等不入包路径);test 侧只做薄转调',
   },
+  {
+    id: 'renderer-foundation-no-feature-dep',
+    scope: 'renderer-foundation',
+    // 分层口径(REF-025 #13):renderer 内部**不**整体分层 —— 实测 convert / settings /
+    // ui / wizard 四个功能目录两两互依(5 对双向、共 29 条目录边),它们是平铺协作的
+    // peer 模块,对它们断言「方向」会一加就红。故只约束**基础层**:元素映射(dom/)与
+    // 纯函数核+store(state/)。实测这两层在全部 29 条边中**无任何出边**,即它们是叶子,
+    // 任何功能模块都依赖它们、它们不依赖任何功能目录 —— 这条是真不变量,机械可判。
+    // 它守住的是两条语义:pure.ts「零 DOM 依赖」与 refs.ts「无业务知识」;一旦反向
+    // 依赖,这两条不变量就名存实亡(比如 refs 里塞进设置项判断)。
+    forbid: 'prefix:../convert/,../settings/,../ui/,../wizard/',
+    reason: 'renderer 基础层(dom/ 元素映射、state/ 纯函数核与 store)是所有功能模块的共同底座,不得反向依赖任何功能目录;唯一合法的向上引用是 ../../core/(跨进程契约单源)',
+  },
 ]);
 
 // ---- 源码文本 → import 事实 ----
@@ -242,6 +255,11 @@ function scopeMatches(scope, file) {
   // smoke 住在 main/ 下但按「文件」而非「目录」划层:它不是 main 的一个子模块,而是
   // 随包分发的自测入口(build.files 只收 dist/**),边界纪律独立于 main 的一般约束
   if (scope === 'smoke') return file === 'main/smoke.ts' || file === 'main/smoke.js';
+  // renderer 的基础层:scope 按 src 顶层目录匹配(core/main/renderer),而这两处在
+  // renderer/ 之下,故单列一个 scope 形态
+  if (scope === 'renderer-foundation') {
+    return file.startsWith('renderer/dom/') || file.startsWith('renderer/state/');
+  }
   return file === scope || file.startsWith(`${scope}/`);
 }
 
@@ -257,7 +275,13 @@ function ruleHits(rule, entry) {
     return layers.includes(resolveLayer(entry.file, entry.spec));
   }
   if (rule.forbid.startsWith('prefix:')) {
-    return entry.kind === 'relative' && entry.spec.startsWith(rule.forbid.slice('prefix:'.length));
+    // 逗号分隔的多个前缀(与 layer: 的列表约定一致)。单前缀是它的退化情形,行为不变。
+    // 之所以需要列表:resolveLayer 返回的是**顶层**目录(renderer 内部路径的首段恒为
+    // renderer),故 layer: 形态表达不了 renderer 内部的边 —— 要约束 renderer 内部的
+    // 方向只能用相对说明符前缀,而一个方向往往要同时禁多个目标目录。
+    if (entry.kind !== 'relative') return false;
+    const prefixes = rule.forbid.slice('prefix:'.length).split(',').map((p) => p.trim()).filter(Boolean);
+    return prefixes.some((p) => entry.spec.startsWith(p));
   }
   throw new Error(`未知的层向规则形态:${rule.forbid}`);
 }
@@ -413,6 +437,7 @@ export async function main(argv = []) {
       + `运行时 import 的包均在 dependencies(host 内建 ${Object.keys(HOST_PROVIDED_RUNTIME).join('/')} 除外);`
       + `core 不依赖宿主且不反向依赖 GUI 两层;renderer 不反向依赖 main;main 不反向依赖 renderer;preload 不上跳引用 main;`
       + `smoke 不逃出 src/;`
+      + `renderer 基础层(dom/state)不反向依赖功能目录;`
       + `core 的 node: 内建白名单限 ${CORE_NODE_BUILTIN_FILES.length} 个文件`,
   );
   return 0;

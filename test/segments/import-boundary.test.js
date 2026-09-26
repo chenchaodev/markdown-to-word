@@ -370,6 +370,7 @@ export async function run() {
         "preload-no-main",
         "main-no-renderer",
         "smoke-no-outside-src",
+        "renderer-foundation-no-feature-dep",
       ]) {
         assert(LAYER_RULES.some((r) => r.id === id), `层向规则表缺 ${id}`);
       }
@@ -568,6 +569,36 @@ export async function run() {
         track(sb.dir);
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assert(result.code === 0, `合法的 smoke 依赖图应零退出,实际 ${result.code}:${result.output}`);
+      }
+      // 5g. renderer 基础层反向依赖功能目录必须判红
+      // (REF-025 #13:实测 convert/settings/ui/wizard 两两互依、无法约束方向,但基础层
+      //  dom/ 与 state/ 在全部 29 条目录边中无任何出边 —— 那条才是真不变量)
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "renderer/state/pure.ts": 'import { el } from "../ui/dom-ops.js";\nexport { el };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /renderer\/state\/pure\.ts:import「\.\.\/ui\/dom-ops\.js」违反层向规则 renderer-foundation-no-feature-dep/,
+          "renderer 基础层反向依赖功能目录",
+        );
+      }
+      // 5h. 边界:基础层唯一合法的向上逃逸是 ../../core/(跨进程契约单源),不得被 5g 误伤
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          {
+            "renderer/state/state.ts":
+              'import { DEFAULT_SETTINGS } from "../../core/settings/settings-defaults.js";\nexport { DEFAULT_SETTINGS };\n',
+            "renderer/dom/refs.ts": 'export const el = null;\n',
+          },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(result.code === 0, `基础层引 core 应放行,实际 ${result.code}:${result.output}`);
       }
       console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / 放行条目仅对 type-only 生效 / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / 合法 smoke 依赖图不误伤)");
     }
