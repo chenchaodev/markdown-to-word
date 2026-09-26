@@ -47,7 +47,7 @@ const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"))
 const SRC_DIR = path.join(ROOT, "src");
 const DIST_DIR = path.join(ROOT, "dist");
 
-/** OPT-5.1 补声明的传递依赖:按 package-lock 实际版本钉死,运行时真的被 src import */
+/** 补声明的传递依赖:按 package-lock 实际版本钉死,运行时真的被 src import */
 const DECLARED_TRANSITIVE_DEPS = {
   "mdast-util-from-markdown": "2.0.3",
   "mdast-util-gfm": "3.1.0",
@@ -356,7 +356,7 @@ export async function run() {
         const hit = imports.find((i) => i.spec === allow.spec);
         assert(hit !== undefined, `放行条目 ${allow.file} → ${allow.spec} 在 src 中已不存在(请删除该条目)`);
         assert(/** @type {{ typeOnly: boolean }} */ (hit).typeOnly, `放行条目 ${allow.file} → ${allow.spec} 已不是 type-only(编译期不再擦除,应改判红)`);
-        assert(allow.note.includes("OPT-5.1"), `放行条目 ${allow.file} → ${allow.spec} 的注释须标注 OPT-5.1 收口项`);
+        assert(allow.note.includes("层向收口项(反向 type-only 依赖待收敛)"), `放行条目 ${allow.file} → ${allow.spec} 的注释须标注这是层向收口项(反向 type-only 依赖待收敛)`);
       }
       // 规则表形态:四条层向断言都在
       for (const id of ["core-no-host", "core-no-upward", "renderer-no-main", "preload-no-main"]) {

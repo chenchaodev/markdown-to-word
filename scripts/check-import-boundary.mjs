@@ -87,7 +87,7 @@ export const REVERSE_TYPE_ALLOWLIST = Object.freeze([
   {
     file: 'renderer/renderer.ts',
     spec: '../main/preload.cjs',
-    note: 'OPT-5.1 收口项:window.api 的类型单源在 preload(见 src/main/preload.cts 头注),'
+    note: '层向收口项(反向 type-only 依赖待收敛):window.api 的类型单源在 preload(见 src/main/preload.cts 头注),'
       + 'renderer 经 import type 取 PreloadApi 推导全局声明;编译期擦除,产物无此依赖。'
       + '收口方向:把 PreloadApi 抽到 core 侧共享契约模块,renderer 与 preload 同源引用。',
   },
