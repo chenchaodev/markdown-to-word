@@ -5,6 +5,7 @@
  * Office MathML(仅 KaTeX 真解析失败才降级 TeX 源码,那是公式自身的兜底)。
  */
 import { PageBreak, Paragraph, TextRun } from "docx";
+import type { IParagraphOptions } from "docx";
 import type { Html as MdHtml, Table as MdTable } from "mdast";
 import type { KeyedWarning } from "../../i18n.js";
 import { CODE_FONT, MUTED_TEXT_GRAY } from "../theme.js";
@@ -26,9 +27,12 @@ export function unsupportedBlockWarning(blockType: string, container: string): K
   };
 }
 
-/** 容器内降级文本段落:等宽灰字(与顶层公式解析失败降级同款样式) */
-function fallbackTextParagraph(text: string): Paragraph {
+/** 容器内降级文本段落:等宽灰字(与顶层公式解析失败降级同款样式)。
+ *  paragraphProps 为所在容器注入的段落装饰(引用块 = 左缩进 + 底纹),
+ *  装饰归容器语义所有,本降级通道只负责透传。 */
+function fallbackTextParagraph(text: string, paragraphProps: IParagraphOptions = {}): Paragraph {
   return new Paragraph({
+    ...paragraphProps,
     children: [new TextRun({ text, font: CODE_FONT, color: MUTED_TEXT_GRAY })],
   });
 }
@@ -39,11 +43,18 @@ function fallbackTextParagraph(text: string): Paragraph {
  * - 表格 → 逐行文本段落(单元格纯文本以「 | 」连接)+ 警告。
  * 代码块由调用方处理(列表内既有 renderCode 路径;引用块内补齐为同款);
  * 公式由 equations.ts renderContainerMath 正常渲染,不经本降级通道。
+ * paragraphProps:所在容器注入的段落装饰(引用块 = 左缩进 + 底纹,与其内普通
+ * 段落同一份)。表格逐行段与 html 原文段一并带上,免得灰底带只盖住引用块内的
+ * 一部分内容(公式/段落有装饰、表格/代码块无装饰的断带形态)。唯一例外:
+ * - 分页注释段是版式标记而非块内内容,不上装饰(否则新页页首留一条无内容灰带);
+ * - 白名单行内标签段经 renderInlineHtmlParagraph 的 paragraphProps 透传同一份装饰,
+ *   故容器内此类段与相邻段一致。
  */
 export async function renderContainerFallback(
   node: MdHtml | MdTable,
   ctx: Ctx,
   container: string,
+  paragraphProps: IParagraphOptions = {},
 ): Promise<Paragraph[]> {
   switch (node.type) {
     case "html": {
@@ -52,15 +63,16 @@ export async function renderContainerFallback(
         return [new Paragraph({ children: [new PageBreak()] })];
       }
       if (isAllowedInlineHtml(value)) {
-        return [renderInlineHtmlParagraph(node.value, ctx)];
+        return [renderInlineHtmlParagraph(node.value, ctx, paragraphProps)];
       }
       warnDedup(ctx, unsupportedBlockWarning("HTML", container));
-      return [fallbackTextParagraph(node.value)];
+      return [fallbackTextParagraph(node.value, paragraphProps)];
     }
     case "table": {
       warnDedup(ctx, unsupportedBlockWarning("表格", container));
       return node.children.map((row) =>
         new Paragraph({
+          ...paragraphProps,
           children: [
             new TextRun({ text: row.children.map((cell) => collectPlainText(cell)).join(" | ") }),
           ],

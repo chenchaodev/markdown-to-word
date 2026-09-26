@@ -215,8 +215,11 @@ export async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
   return result;
 }
 
-/** 引用块段落装饰:左缩进 + 底纹。块内所有内容(普通段落、代码块、公式)共用同一份,
- *  免得公式走 Office MathML 后与同块其他段落底纹/缩进不一致 */
+/** 引用块段落装饰:左缩进 + 底纹。块内所有内容类型共用这一份——普通段落、公式
+ *  (renderContainerMath)、代码块(renderCode)、白名单外 html 原文段与表格逐行段
+ *  (renderContainerFallback)都经 paragraphProps 注入,免得灰底带只盖住引用块内的
+ *  一部分内容(嵌套引用块递归复用同一份,不叠加深)。字面量只此一处,各渲染分支
+ *  不复制。 */
 const QUOTE_PARAGRAPH_PROPS = {
   indent: { left: 720 },
   shading: { type: "clear", fill: QUOTE_BG_GRAY },
@@ -238,15 +241,15 @@ export async function renderBlockquote(node: Blockquote, ctx: Ctx): Promise<Para
       // 引用块内代码块此前静默丢弃 → 按代码块渲染(renderCode 既有路径)+ 警告
     else if (child.type === "code") {
       warnDedup(ctx, unsupportedBlockWarning("代码块", "引用块"));
-      paragraphs.push(await renderCode(child, ctx));
+      paragraphs.push(await renderCode(child, ctx, QUOTE_PARAGRAPH_PROPS));
     }
       // 引用块内 display 公式 → 与顶层同一条 Office MathML 管线,并沿用引用段落装饰
     else if (child.type === "math") {
       paragraphs.push(...renderContainerMath(child, ctx, QUOTE_PARAGRAPH_PROPS));
     }
-      // 引用块内 html/表格此前静默丢弃 → 降级渲染 + 警告
+      // 引用块内 html/表格此前静默丢弃 → 降级渲染 + 警告(同样沿用引用段落装饰)
     else if (child.type === "html" || child.type === "table") {
-      paragraphs.push(...(await renderContainerFallback(child, ctx, "引用块")));
+      paragraphs.push(...(await renderContainerFallback(child, ctx, "引用块", QUOTE_PARAGRAPH_PROPS)));
     }
   }
   return paragraphs;

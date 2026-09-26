@@ -79,13 +79,14 @@ const FORMULA_DEGRADED = "公式解析失败,降级为 TeX 源码";
 /**
  * 单篇 md → document.xml + 格式化后的警告文案(公开管线的唯一入口)。
  * @param {string} md markdown 文本
+ * @param {Record<string, unknown>} [extra] 追加的转换上下文(如 mermaidResolver)
  * @returns {Promise<{ xml: string; warns: string[] }>} 产物 XML 与警告文案
  */
-async function renderDocxXml(md) {
+async function renderDocxXml(md, extra) {
   /** @type {ConvertWarning[]} */
   const warnings = [];
   const artifact = /** @type {ConvertArtifact} */ (
-    await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings })
+    await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings, ...extra })
   );
   return {
     xml: await unzipPart(docxBufferOf(artifact), "word/document.xml"),
@@ -184,6 +185,18 @@ function paragraphContaining(xml, needle) {
     throw new Error(`docx 公式/容器降级断言失败:${needle} 不在 <w:p>…</w:p> 内`);
   }
   return xml.slice(start, end + "</w:p>".length);
+}
+
+/**
+ * 提取 document.xml 中全部 <w:p>…</w:p> 段落片段(「整篇文档每一段都必须/不得
+ * 带某属性」这类整体口径断言用:逐 needle 取段会漏掉「某内容类型整类没被装饰」)。
+ * 本段样例均为单层段落(docx 的 w:p 只在 w:tbl 内嵌套,样例不含真表格),
+ * 故非贪婪匹配即精确。
+ * @param {string} xml document.xml
+ * @returns {string[]} 各段落 XML
+ */
+function allParagraphs(xml) {
+  return xml.match(/<w:p>[\s\S]*?<\/w:p>/g) ?? [];
 }
 
 /**
@@ -530,13 +543,22 @@ export async function run() {
 
   // ---------- 旁路二:白名单行内标签(<br>)在容器内照常按正文排版成段 ----------
   // 白名单判定单源 core/markdown/html-whitelist.ts;命中 → renderInlineHtmlParagraph
-  // (复用正文 5a 排版:行距 + 首行缩进 + 两端对齐),不追加降级警告。
+  // (复用正文 5a 排版:行距 + 两端对齐),不追加降级警告。
+  // 缩进不再是正文的首行缩进 200 而是引用块装饰的 720:容器注入的 paragraphProps
+  // 在 renderBodyParagraph 的 indent 之后展开,整体替换 —— 与代码块那条同理,
+  // 免得灰底带左缘与同块其他段落错开。
   const quoteBr = await renderDocxXml("> <br>\n");
   expectPresent(
     quoteBr.xml,
-    ["<w:br/>", 'w:firstLineChars="200"', 'w:jc w:val="both"'],
-    "容器内白名单行内 html 按正文排版成段",
+    [
+      "<w:br/>",
+      'w:jc w:val="both"',
+      '<w:ind w:left="720"/>',
+      '<w:shd w:fill="F2F2F2" w:val="clear"/>',
+    ],
+    "容器内白名单行内 html 按正文排版成段 + 沿用引用块装饰",
   );
+  expectAbsent(quoteBr.xml, ['w:firstLineChars="200"'], "容器装饰应整体替换正文首行缩进");
   expectAbsent(quoteBr.xml, [MONO_GRAY_COLOR], "容器内白名单 html 不走降级样式");
   if (quoteBr.warns.length > 0) {
     throw new Error(
@@ -548,13 +570,18 @@ export async function run() {
   // ---------- 旁路三:引用块内代码块按代码块渲染 + 「代码块 在引用块内」警告 ----------
   // unsupportedBlockWarning 的第三个调用点(content.ts renderBlockquote 的 code 分支):
   // 警告类别词是「代码块」,内容走既有 renderCode 路径(等宽 + 关键字着色),不是纯文本降级。
+  // 缩进是 720 而非 renderCode 自带的 360:引用段落装饰(content.ts QUOTE_PARAGRAPH_PROPS,
+  // 唯一来源)在 renderCode 的 spacing/indent 之后展开,整体覆盖代码块自身缩进,
+  // 免得灰底带左缘与同块其他段落错开。
   const quoteCode = await renderDocxXml("> ```js\n> const a = 1;\n> ```\n");
   expectPresent(
     quoteCode.xml,
     [
-      // 代码块排版(段前后间距 + 左缩进),与普通正文段不同
+      // 代码块排版(段前后间距 + 引用块装饰的左缩进),与普通正文段不同
       'w:after="120" w:before="120"',
-      'w:ind w:left="360"',
+      '<w:ind w:left="720"/>',
+      // 引用块装饰的灰底(与同块普通段落同一份 QUOTE_PARAGRAPH_PROPS)
+      '<w:shd w:fill="F2F2F2" w:val="clear"/>',
       // 关键字着色色值证明走的是「代码块 + 高亮」路径而非纯文本降级;
       // 文本按高亮 token 切 run,故逐 token 断言而非找整行
       '<w:color w:val="CF222E"/>',
@@ -563,20 +590,193 @@ export async function run() {
     ],
     "引用块内代码块内容成文",
   );
+  expectAbsent(quoteCode.xml, ['<w:ind w:left="360"/>'], "引用块内代码块缩进须被引用段落装饰覆盖");
   expectAbsent(quoteCode.xml, [MONO_GRAY_COLOR], "引用块内代码块走代码块样式而非降级灰字");
   expectWarningCount(quoteCode.warns, `代码块 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块内代码块警告");
-  console.log("[ok] docx 引用块内代码块 → 代码块样式成文 + 「代码块 在引用块内暂不支持」警告");
+  console.log("[ok] docx 引用块内代码块 → 代码块样式成文 + 引用段落底纹/缩进 + 「代码块 在引用块内暂不支持」警告");
+
+  // ================= 第三部分:引用块段落装饰全覆盖 =================
+  // 缺陷(装饰只覆盖引用块内一部分内容):灰底带是**逐段落**画的,引用块内各类内容
+  // 各自成段,只有拿到引用段落装饰(content.ts QUOTE_PARAGRAPH_PROPS,单源)的段才
+  // 被涂灰。缺一段就是「悬空灰带 + 断掉的引用块」——公式/普通段落有装饰而
+  // 代码块/表格逐行段/html 原文段没有时,产物即用户截图那形态(Word/WPS 一致,
+  // 属产物结构问题而非渲染器差异)。
+  // 装饰的两个权威 needle(序列化形态取自实际产物,属性字母序 shd 在 ind 之前):
+  /** 引用块底纹(QUOTE_BG_GRAY 灰底) */
+  const QUOTE_SHADING = '<w:shd w:fill="F2F2F2" w:val="clear"/>';
+  /** 引用块左缩进 720 twips */
+  const QUOTE_INDENT = '<w:ind w:left="720"/>';
+  /** 1x1 真实 PNG 魔数头(docx 不校验图片内容,同 segments/mermaid.test.js) */
+  const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  // ---------- 引用块内每种内容类型的段落都带同一份装饰 ----------
+  // 样例刻意只由一个引用块构成(内含嵌套引用块),于是「整篇每一段都带装饰」等价于
+  // 「块内每种内容类型都带装饰」:某类内容整类漏装饰(公式之外的代码块/表格/html)
+  // 会被这条整体口径断言抓住,不必逐类穷举也不会漏。
+  const quoteAll = await renderDocxXml(
+    [
+      "> 引用正文段落",
+      ">",
+      "> $$",
+      "> \\frac{1}{2}",
+      "> $$",
+      ">",
+      "> ```js",
+      "> const quoteHighlightMark = 1;",
+      "> ```",
+      ">",
+      "> ```",
+      "> quotePlainMark",
+      "> ```",
+      ">",
+      "> ```mermaid",
+      "> graph TD",
+      ">   A-->B",
+      "> ```",
+      ">",
+      "> <div>提示</div>",
+      ">",
+      "> | 列一 | 列二 |",
+      "> | --- | --- |",
+      "> | 甲 | 乙 |",
+      ">",
+      "> 外层引用",
+      ">",
+      "> > 嵌套引用段落",
+      "",
+    ].join("\n"),
+    {
+      mermaidResolver: async () => ({
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300"></svg>',
+        png: pngMagic,
+        width: 600,
+        height: 300,
+      }),
+    },
+  );
+  // 逐类点名(needle → 该段 XML),确认「这五类内容确实各自成段且带装饰」,
+  // 避免只靠计数而漏判「某类内容根本没渲染出来」:
+  /** @type {[string, string][]} [needle, 该内容类型的中文名] */
+  const quoteContentTypes = [
+    ["引用正文段落", "普通段落"],
+    ["<m:oMath>", "display 公式"],
+    ["quoteHighlightMark", "代码块(语法高亮路径)"],
+    ["quotePlainMark", "代码块(等宽文本路径)"],
+    ["a:blip", "代码块(mermaid 图片路径)"],
+    ["&lt;div&gt;提示&lt;/div&gt;", "白名单外 html 原文段"],
+    ["列一 | 列二", "表格逐行段(表头行)"],
+    ["甲 | 乙", "表格逐行段(数据行)"],
+    ["嵌套引用段落", "嵌套引用块段落"],
+  ];
+  for (const [needle, label] of quoteContentTypes) {
+    const para = paragraphContaining(quoteAll.xml, needle);
+    if (!para.includes(QUOTE_SHADING) || !para.includes(QUOTE_INDENT)) {
+      throw new Error(
+        `docx 引用块装饰断言失败:引用块内${label}段落缺少装饰(底纹 ${QUOTE_SHADING} / 缩进 ${QUOTE_INDENT}),实际段落=${para.slice(0, 400)}`,
+      );
+    }
+  }
+  // 整体口径:整篇(仅含引用块)每一个段落都必须带装饰——新增内容类型若忘记注入装饰,
+  // 这里立即变红(逐类断言只覆盖已列出的类型)。
+  const quoteParas = allParagraphs(quoteAll.xml);
+  const undecorated = quoteParas.filter((p) => !p.includes(QUOTE_SHADING) || !p.includes(QUOTE_INDENT));
+  if (undecorated.length > 0) {
+    throw new Error(
+      `docx 引用块装饰断言失败:引用块样例中有 ${undecorated.length} 段缺装饰(共 ${quoteParas.length} 段),首段=${(undecorated[0] ?? "").slice(0, 400)}`,
+    );
+  }
+  expectCount(quoteAll.xml, QUOTE_INDENT, quoteParas.length, "每段都带引用块缩进");
+  console.log(
+    `[ok] docx 引用块内每种内容类型段落都带同一份装饰(底纹+缩进):${quoteParas.length} 段全绿(段落/公式/代码块三路径/mermaid 图/html 原文/表格逐行/嵌套引用)`,
+  );
+
+  // ---------- 反向锁:非引用块内的段落一律不带引用装饰(防过度施加) ----------
+  // QUOTE_PARAGRAPH_PROPS 只由 renderBlockquote 注入;顶层与列表项内的段落
+  // (正文段、代码块三路径中的两条、真表格单元格段、列表内表格逐行段/代码块/
+  // html 原文段)不得出现灰底或 720 缩进。
+  const nonQuote = await renderDocxXml(
+    [
+      "正文段落",
+      "",
+      "```js",
+      "const topCodeMark = 1;",
+      "```",
+      "",
+      "```",
+      "topPlainMark",
+      "```",
+      "",
+      "| 表头 | 值 |",
+      "| --- | --- |",
+      "| 单元格 | 1 |",
+      "",
+      "- 列表项含表格",
+      "",
+      "  | 列一 | 列二 |",
+      "  | --- | --- |",
+      "  | 甲 | 乙 |",
+      "",
+      "- 列表项含代码",
+      "",
+      "  ```",
+      "  listCodeMark",
+      "  ```",
+      "",
+      "- 列表项含 html",
+      "",
+      "  <div>列表提示</div>",
+      "",
+    ].join("\n"),
+  );
+  // 全局口径:整篇不含灰底(docx 侧 F2F2F2 的唯一来源就是引用块底纹,见 theme.ts)
+  expectCount(nonQuote.xml, QUOTE_SHADING, 0, "非引用块内容不得出现引用块底纹");
+  for (const [needle, label] of /** @type {[string, string][]} */ ([
+    ["正文段落", "顶层正文段"],
+    ["topCodeMark", "顶层代码块(高亮)"],
+    ["topPlainMark", "顶层代码块(等宽)"],
+    ["单元格", "顶层真表格单元格段"],
+    ["列一 | 列二", "列表项内表格逐行段"],
+    ["listCodeMark", "列表项内代码块"],
+    ["&lt;div&gt;列表提示&lt;/div&gt;", "列表项内 html 原文段"],
+  ])) {
+    const para = paragraphContaining(nonQuote.xml, needle);
+    if (para.includes(QUOTE_SHADING) || para.includes(QUOTE_INDENT)) {
+      throw new Error(
+        `docx 引用块装饰断言失败:${label}被误加引用块装饰,实际段落=${para.slice(0, 400)}`,
+      );
+    }
+  }
+  // 顶层代码块仍保留自身 360 缩进(装饰未被误施加到容器外)
+  expectPresent(
+    paragraphContaining(nonQuote.xml, "topCodeMark"),
+    ['<w:ind w:left="360"/>'],
+    "顶层代码块保留自身缩进 360",
+  );
+  console.log("[ok] docx 非引用块内容不带引用块装饰(顶层正文/代码块/真表格单元格 + 列表项内表格/代码块/html 逐段核对)");
+
+  // ---------- 引用块内分页注释段不上装饰(版式标记,非块内内容) ----------
+  // 装饰是逐段落画的:分页符段是无内容的空段,涂灰会在新页页首留一条悬空灰带
+  // (正是本次要消除的形态)。见 fallback.ts renderContainerFallback 注释。
+  const quoteBreakOnly = await renderDocxXml("> <!-- page-break -->\n");
+  expectCount(quoteBreakOnly.xml, QUOTE_SHADING, 0, "引用块内分页注释段不带底纹");
+  expectCount(quoteBreakOnly.xml, QUOTE_INDENT, 0, "引用块内分页注释段不带缩进");
+  expectPresent(quoteBreakOnly.xml, ['<w:br w:type="page"/>'], "分页注释段仍照常分页");
+  console.log("[ok] docx 引用块内分页注释段不涂灰(<w:br w:type=\"page\"/> 照常,零装饰避免页首悬空灰带)");
 
   // ================= 落盘样例(供人工在 Word/WPS 核对实际排版) =================
   // display ∑ 与行内 ∑ 成对入样例:上下方排布 vs 右侧排布只能目视确认,
   // 自动断言只覆盖 OOXML 结构,视觉效果留人工核对。
   // 容器内公式也入样例:列表项与引用块内的 \frac{1}{2} 应目视确认为分式
   // (自动断言已锁 <m:f>,WPS/Word 的实际排版效果仍需人眼确认)。
+  // 引用块样例刻意串起「段落 → 公式 → 代码块 → html → 表格」多类内容连续成块:
+  // 灰底带是否连贯覆盖整块(本次修复的缺陷)只能目视确认,自动断言只锁 pPr 装饰。
   const showcaseMd =
     "# 公式结构与容器降级\n\n$$\n\\sqrt[3]{x}\n$$\n\n$$\n\\sum_{i=1}^{n} i\n$$\n\n" +
     "行内对照 $\\sum_{i=1}^{n} i$、$\\lim_{x \\to 0} f(x)$。\n\n$$\n\\lim_{x \\to 0} f(x)\n$$\n\n" +
     "$\\overline{AB}$、$\\underline{x}$、$\\pmod{n}$、$\\text{中文混排}$。\n\n- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n\n" +
-    "> $$\n> \\frac{1}{2}\n> $$\n\n> | 列一 | 列二 |\n> | --- | --- |\n> | 甲 | 乙 |\n";
+    "> 引用块内多类内容(灰底带应连贯覆盖整块)\n>\n> $$\n> \\frac{1}{2}\n> $$\n>\n" +
+    "> ```js\n> const quoteMark = 1;\n> ```\n>\n> <div>html 原文段</div>\n>\n" +
+    "> | 列一 | 列二 |\n> | --- | --- |\n> | 甲 | 乙 |\n";
   const showcase = await renderDocxXml(showcaseMd);
   expectPresent(
     showcase.xml,
@@ -588,6 +788,9 @@ export async function run() {
       "<m:sSubSup>",
       "<m:t>中文混排</m:t>",
       "甲 | 乙",
+      // 引用块内代码块与 html 原文段(样例即人工目视「灰底带是否连贯覆盖整块」的核对材料)
+      "quoteMark",
+      "html 原文段",
       // 容器内两个分式(列表 + 引用块)也成公式
       "<m:f>",
       // display ∑ 的被加数在 <m:e> 内(样例即人工目视「∑ 处不该有方框」的核对材料)

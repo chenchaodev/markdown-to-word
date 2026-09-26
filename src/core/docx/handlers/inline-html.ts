@@ -12,19 +12,28 @@
  * equations 先例一致)。
  */
 import { AlignmentType, LineRuleType, Paragraph, TextRun } from "docx";
+import type { IParagraphOptions } from "docx";
 import type { PhrasingContent } from "mdast";
 import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
 import { CODE_FONT } from "../theme.js";
 import type { Ctx, InlineChild } from "../ctx.js";
 
 /** 正文段落(排版设置:两端对齐/行距/首行缩进)。
- *  普通正文段落与白名单 html 段落共用,保证白名单段落排版与正文一致。 */
-export function renderBodyParagraph(children: InlineChild[], ctx: Ctx): Paragraph {
+ *  普通正文段落与白名单 html 段落共用,保证白名单段落排版与正文一致。
+ *  paragraphProps:所在容器注入的段落装饰(如引用块的左缩进 + 底纹)。展开在
+ *  排版设置**之后**,故容器的缩进/底纹整体覆盖正文默认值 —— 否则引用块内的
+ *  白名单 html 段会缺装饰,与同块其他段落之间留出一条白缝。 */
+export function renderBodyParagraph(
+  children: InlineChild[],
+  ctx: Ctx,
+  paragraphProps: IParagraphOptions = {},
+): Paragraph {
   return new Paragraph({
     alignment: ctx.config.typography.align === "justify" ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
     spacing: { line: Math.round(ctx.config.typography.lineSpacing * 240), lineRule: LineRuleType.AUTO },
     indent: ctx.config.typography.firstLineIndent ? { firstLineChars: 200 } : undefined,
     children,
+    ...paragraphProps,
   });
 }
 
@@ -203,6 +212,6 @@ export function inlineHtmlItemsToRuns(items: InlineHtmlItem[]): TextRun[] {
 }
 
 /** 白名单 html 块节点 → 正文段落(复用 renderBodyParagraph,排版设置生效) */
-export function renderInlineHtmlParagraph(value: string, ctx: Ctx): Paragraph {
-  return renderBodyParagraph(inlineHtmlItemsToRuns(parseInlineHtml(value)), ctx);
+export function renderInlineHtmlParagraph(value: string, ctx: Ctx, paragraphProps: IParagraphOptions = {}): Paragraph {
+  return renderBodyParagraph(inlineHtmlItemsToRuns(parseInlineHtml(value)), ctx, paragraphProps);
 }

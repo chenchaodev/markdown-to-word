@@ -3,6 +3,7 @@
  * 纯叶子模块(不依赖行内渲染簇),供正文/列表/引用块/脚注定义共用。
  */
 import { ImageRun, Paragraph, TextRun } from "docx";
+import type { IParagraphOptions } from "docx";
 import type { Code } from "mdast";
 import { CODE_FONT, CODE_SIZE } from "../theme.js";
 import { highlightCodeRuns } from "./code-highlight.js";
@@ -14,14 +15,24 @@ import { warnDedup, type Ctx } from "../ctx.js";
  *  与行内图片共用 scaleToFit);渲染失败(null/抛错)或缺失 resolver 时降级为
  *  等宽文本代码块(行为不变,内容不丢失,与公式降级语义一致)。
  *  已知语言(hljs.getLanguage 命中)走语法高亮(code-highlight.ts,GitHub Light
- *  色板);无语言/未知语言/高亮解析失败 → 等宽文本代码块。 */
-export async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
+ *  色板);无语言/未知语言/高亮解析失败 → 等宽文本代码块。
+ *  段落装饰(引用块的左缩进 + 底纹)由调用方经 paragraphProps 注入:装饰归容器
+ *  语义所有(content.ts renderBlockquote 与其内普通段落共用同一份),代码块
+ *  本身不感知所在容器。装饰展开在自带 spacing/indent **之后**——容器缩进须
+ *  整体覆盖代码块自身的 360,否则灰底带左缘与同块其他段落错开(灰带只盖一段)。
+ *  mermaid 图片段一并带上:图片也是引用块内的一行内容,同样不该断带。 */
+export async function renderCode(
+  node: Code,
+  ctx: Ctx,
+  paragraphProps: IParagraphOptions = {},
+): Promise<Paragraph> {
   if (node.lang === "mermaid" && ctx.mermaidResolver) {
     try {
       const result = await ctx.mermaidResolver(node.value);
       if (result) {
         const { width, height } = scaleToFit(result.width, result.height);
         return new Paragraph({
+          ...paragraphProps,
           children: [new ImageRun({ type: "png", data: result.png, transformation: { width, height } })],
         });
       }
@@ -40,6 +51,7 @@ export async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
     return new Paragraph({
       spacing: { before: 120, after: 120 },
       indent: { left: 360 },
+      ...paragraphProps,
       children: highlighted,
     });
   }
@@ -52,6 +64,7 @@ export async function renderCode(node: Code, ctx: Ctx): Promise<Paragraph> {
   return new Paragraph({
     spacing: { before: 120, after: 120 },
     indent: { left: 360 },
+    ...paragraphProps,
     children,
   });
 }
