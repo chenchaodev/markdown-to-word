@@ -33,7 +33,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "lint": "eslint src/ test/ scripts/",
+    "lint": "eslint src/ test/ scripts/ --cache --cache-location node_modules/.cache/eslint/.eslintcache",
     "build": "tsc && node scripts/copy-renderer.mjs",
     "dev": "npm run build && electron .",
     "start": "node scripts/check-build-fresh.mjs && electron .",
@@ -45,6 +45,7 @@
     "icons": "node scripts/svg-to-ico.mjs",
     "test:coverage": "npm run build && c8 --reporter=text --reporter=json-summary --all --include=\"dist/**\" --exclude=\"dist/renderer/**\" --exclude=\"dist/core/ipc-contract.js\" --exclude=\"dist/core/image/image-resolver.js\" --exclude=\"dist/core/markdown/mermaid.js\" --exclude=\"dist/main/ipc/types.js\" --exclude=\"dist/main/index.js\" --exclude=\"dist/main/preload.cjs\" --check-coverage --statements=90 --branches=85 --functions=90 --lines=90 electron test/acceptance.mjs",
     "check:coverage-zero": "node scripts/gate-probes/coverage-gate.mjs --zero",
+    "report:coverage-renderer": "node scripts/renderer-coverage-report.mjs",
     "check:gates": "node scripts/check-gate-probes.mjs",
     "test:all": "npm run test && npm run test:smoke",
     "check:smoke-report": "node scripts/smoke-report.mjs",

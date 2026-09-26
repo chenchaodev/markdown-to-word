@@ -68,6 +68,19 @@ jobs:
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
+      # lint 缓存(REF-020):`lint` 是 verify:ci 链里仅次于两遍测试的开销(单次约 40 秒量级)。
+      # 位置是**正确性要求**:必须排在 `npm ci` 之后 —— npm ci 会整个删掉 node_modules,
+      # 提前恢复的缓存会被抹掉。
+      # 失效有两道,故无需自研失效逻辑:① key 带 lockfile 哈希,依赖图一变即自然失效;
+      # ② ESLint 自身按文件元数据 + config 哈希二次失效(--cache-strategy 默认 metadata)。
+      # 缓存目录与 lint 脚本的 --cache-location 一致(node_modules/.cache/eslint/),
+      # 且落在既有 node_modules/ 忽略规则内,不需要额外 .gitignore 条目。
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules/.cache
+          key: ${{ runner.os }}-m2w-lint-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-m2w-lint-
+
       # 环境指纹(Node/npm/Electron/Chromium/字体/DPI):几何与渲染类失败高度依赖
       # 宿主环境,不落指纹就只能靠猜。同时写成文件,失败时随诊断 artifact 留存。
       # 探针取不到值时以 unavailable/partial 记入 diagnostics 且不阻断(默认非 --strict),
