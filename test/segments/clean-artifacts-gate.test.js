@@ -20,9 +20,10 @@
  *    本段用「只改 TARGET_DIRS 一行」的沙盒夹具把目标重定向到恶意值来触达它们,
  *    并用「重定向到普通目录应真删」的正向锚点证明夹具本身是忠实通路(否则负向
  *    用例可能只是「脚本根本跑不起来」);改写后除该常量行外与生产脚本逐字节一致。
- * 6. 删除失败:占用目标目录(Windows CWD 占用)复现 EPERM,断言非零退出 + 可操作
- *    诊断(不带调用栈)、目标仍在、释放占用后重试成功。POSIX 允许删除他进程 CWD,
- *    故该用例仅在 win32 执行,平台未复现时显式记 skip。
+ * 6. 删除失败:占用目标目录(Windows CWD 占用)复现「删不掉」错误码族
+ *    (EPERM/EBUSY/EACCES 随争用时机不同),断言非零退出 + 可操作诊断
+ *    (不带调用栈)、码位属占用族、目标仍在、释放占用后重试成功。POSIX 允许删除
+ *    他进程 CWD,故该用例仅在 win32 执行,平台未复现时显式记 skip。
  *
  * 沙箱纪律(硬约束):被测脚本的 PROJECT_ROOT 由脚本自身位置推导,所以一切执行都在
  * os.tmpdir() 下的临时沙盒里进行 —— 把生产脚本**原样复制**到沙盒的 scripts/ 后调用,
@@ -192,6 +193,35 @@ function runClean(root, args, scriptName = "clean-artifacts.mjs") {
 }
 
 /**
+ * Windows「目标被占用、删不掉」的合法错误码族。
+ * 同一语义在不同争用时机会落到不同码位:他进程 CWD 持锁多给 EPERM,索引器/杀软扫描
+ * 或目录句柄共享多给 EBUSY,ACL/只读多给 EACCES。断言认这一族而非写死单一码位,但
+ * 绝不放宽为「任意失败都算通过」—— 族外码位(如 ENOENT/UNKNOWN)仍判红。
+ */
+const OCCUPIED_CODES = ["EPERM", "EBUSY", "EACCES"];
+
+/**
+ * 断言删除失败落在「被占用」语义上(而非别的失败原因蒙混过关):
+ * 诊断文本含「删除 <target> 失败(」,且括号内码位属 OCCUPIED_CODES 族。
+ * 「该次运行确实没删掉」由调用方对目标目录的存活断言承担(诊断 + 码族 + 未删除三件套)。
+ * @param {{ code: number | null; output: string }} result 子进程结果
+ * @param {string} target 被删目标名(如 dist)
+ * @param {string} label 用例标签
+ * @returns {void}
+ */
+function assertOccupiedDeleteFailure(result, target, label) {
+  const head = `删除 ${target} 失败(`;
+  const at = result.output.indexOf(head);
+  assert(at >= 0, `${label} 诊断应含「${head}...」;输出:${result.output}`);
+  const body = result.output.slice(at + head.length);
+  const code = /^\s*([A-Za-z]+)/.exec(body)?.[1] ?? "";
+  assert(
+    OCCUPIED_CODES.includes(code),
+    `${label} 括号内码位应为占用族 ${OCCUPIED_CODES.join("/")} 之一,实际 ${code || "(无码位)"};输出:${result.output}`,
+  );
+}
+
+/**
  * 沙盒内关键夹具是否原样留存(用于「零删除」断言)。
  * @param {string} root 沙盒根目录
  * @returns {string[]} 已消失的夹具相对路径(空数组 = 零删除)
@@ -252,7 +282,8 @@ function snapshotRealOutputs() {
 }
 
 /**
- * 占住目标目录的子进程:Windows 下 CWD 被占用时递归删除必失败(EPERM)。
+ * 占住目标目录的子进程:Windows 下 CWD 被占用时递归删除必失败(占用码族:见
+ * OCCUPIED_CODES,具体码位随争用时机在 EPERM/EBUSY/EACCES 间浮动)。
  * @param {string} dir 要占住的目录
  * @returns {{ ready: Promise<void>; release: () => void }} 就绪信号与释放句柄
  */
@@ -536,10 +567,13 @@ export async function run() {
           if (result.code === 0) {
             console.log("[skip] 本机未复现占用导致的删除失败(平台允许删除他进程 CWD),失败诊断未覆盖");
           } else {
-            assertFailure(result, /删除 dist 失败\(EPERM/, "占用导致的删除失败");
+            // 三件套断言:①诊断文本点名「删除 dist 失败」②括号内码位属 Windows 占用族
+            // ③该次运行确实没删掉(目标仍在)—— 缺一件都可能让「因别的原因失败」蒙混过关
+            assertFailure(result, /删除 dist 失败\(/, "占用导致的删除失败");
+            assertOccupiedDeleteFailure(result, "dist", "占用导致的删除失败");
             assert(/Windows 上多为文件占用/.test(result.output), `应给出 Windows 占用提示;实际 ${result.output}`);
             assert(/退出正在运行的 MarkdownToWord/.test(result.output), `提示应可操作(点名退进程);实际 ${result.output}`);
-            assert(fs.existsSync(path.join(root, "dist")), "删除失败后目标必须仍在");
+            assert(fs.existsSync(path.join(root, "dist")), `删除失败后目标必须仍在(占用下不得被删);输出:${result.output}`);
             assert(fs.existsSync(path.join(root, "tsconfig.tsbuildinfo")), "删除失败不得连带删增量缓存(先失败即中止)");
             assert(fs.existsSync(path.join(root, "release")), "删除失败不得波及 release");
             reproduced = true;

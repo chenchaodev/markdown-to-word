@@ -4,6 +4,8 @@
  * 经桶导出 converter.ts,测试经 dist/main/converter/index.js,electron 环境):
  * 实现事实(读源码确认,非显然行为):
  * - skipped 记录传入原串;visit 的 seen 在 stat 前即去重,目录重复传入也只扫一次
+ * - 目录递归的返回路径以每层 realpath 规范形式为基准(Windows 上 8.3 短路径会被
+ *   realpath 还原成长路径),直接传入的文件则按传入的词法路径返回 —— 两场景基准不同
  * - 点前缀跳过是「entry.name 以 . 开头」判定,对目录与文件一视同仁
  * - 超长回落:回落源目录后重算 candidate,但不再二次检查长度
  *   ——源目录 + 超长 baseName 仍 >250 时原样返回
@@ -27,6 +29,33 @@ import { formatWarning } from "../../dist/core/i18n.js";
  */
 function assert(cond, msg) {
   if (!cond) throw new Error(`paths 断言失败:${msg}`);
+}
+
+/**
+ * 集合差异的可读诊断(供失败消息用):排序后逐行列出「多出/缺失」,并附两侧全集。
+ * 只服务可诊断性 —— 判定仍在调用方 assert 里,本函数不放宽任何条件;不打印集合的
+ * 失败在 CI 上无法定位差异。
+ * @param {readonly string[]} actual 实际值
+ * @param {readonly string[]} expected 期望值
+ * @returns {string} 多行诊断文本
+ */
+function describeSetDiff(actual, expected) {
+  const actualSet = new Set(actual);
+  const expectedSet = new Set(expected);
+  const sorted = (/** @type {Iterable<string>} */ items) => [...items].sort();
+  const extra = sorted(actual).filter((x) => !expectedSet.has(x));
+  const missing = sorted(expected).filter((x) => !actualSet.has(x));
+  return [
+    `实际 ${actual.length} 项 / 期望 ${expected.length} 项`,
+    `多出 ${extra.length} 项:`,
+    ...extra.map((x) => `  + ${x}`),
+    `缺失 ${missing.length} 项:`,
+    ...missing.map((x) => `  - ${x}`),
+    "实际全集(排序):",
+    ...sorted(actual).map((x) => `  = ${x}`),
+    "期望全集(排序):",
+    ...sorted(expected).map((x) => `  = ${x}`),
+  ].join("\n");
 }
 
 /**
@@ -72,30 +101,43 @@ export async function run() {
       await fs.writeFile(file, `# ${path.basename(file)}\n\n正文\n`, "utf8");
     }
 
+    // 目录递归的返回路径以 root 的 realpath 规范形式为基准(实现用 realpath 展开每层
+    // 条目),而直接传入的文件按传入原样返回(词法路径)—— 两个场景基准不同,期望值
+    // 分别构造。os.tmpdir() 在 CI(Windows runner 的 TEMP=C:\Users\RUNNER~1\...) 上
+    // 是 8.3 短路径,fs.realpath 会把它还原成长路径,故期望值不能直接用 os.tmpdir()
+    // 拼出的词法根,否则两侧只差根前缀就会被判成「集合不符」。
+    const canonicalRoot = await fs.realpath(root);
+    /**
+     * 规范根下的期望路径(目录递归的判定基准)。
+     * @param {string} relative 相对 root 的 POSIX 风格路径
+     * @returns {string} 绝对路径
+     */
+    const rooted = (relative) => path.join(canonicalRoot, ...relative.split("/"));
+
     // ---- 1/2/3. 目录递归:嵌套子目录全部 .md/.markdown 收集;点开头目录(.git/.hidden)
     // 与其内文件、点开头文件(.hiddenfile.md)一律跳过;目录内非 md(notes.txt/pic.png/
     // deep.txt)静默忽略(不进 files 也不进 skipped) ----
     const tree = await collectMarkdownPaths([root]);
     const expectedTree = [
-      f.a,
-      f.b,
-      f.sortApple,
-      f.sortBanana,
-      f.sortMango,
-      f.sortZebra,
-      f.deep,
-      f.deepest,
+      rooted("a.md"),
+      rooted("b.markdown"),
+      rooted("sortdir/apple.md"),
+      rooted("sortdir/Banana.md"),
+      rooted("sortdir/mango.md"),
+      rooted("sortdir/zebra.md"),
+      rooted("sub/deep.md"),
+      rooted("sub/nested/deepest.markdown"),
     ];
     assert(tree.skipped.length === 0, `目录递归:skipped 应为空,实际 ${JSON.stringify(tree.skipped)}`);
     assert(
       tree.files.length === expectedTree.length && expectedTree.every((file) => tree.files.includes(file)),
-      "目录递归:收集集合不符",
+      `目录递归:收集集合不符\n${describeSetDiff(tree.files, expectedTree)}`,
     );
     assert(
-      !tree.files.includes(f.gitHistory) && !tree.files.includes(f.hiddenSecret),
+      !tree.files.includes(rooted(".git/history.md")) && !tree.files.includes(rooted(".hidden/secret.md")),
       "目录递归:点开头目录内文件被收集",
     );
-    assert(!tree.files.includes(f.dotFile), "目录递归:点开头文件被收集(实际行为:点前缀条目一律跳过)");
+    assert(!tree.files.includes(rooted(".hiddenfile.md")), "目录递归:点开头文件被收集(实际行为:点前缀条目一律跳过)");
     console.log("[ok] paths:collectMarkdownPaths 目录递归(嵌套/点目录/点文件跳过/非 md 静默)");
 
     // ---- 6. 排序:localeCompare sensitivity base(大小写不敏感)。
@@ -103,16 +145,19 @@ export async function run() {
     // sortdir < sub(全路径字典序,跨目录稳定) ----
     /**
      * 文件在收集结果中的下标(未收集到则为 -1)。
-     * @param {string} file 目标文件
+     * @param {string} relative 相对 root 的 POSIX 风格路径
      * @returns {number} 下标
      */
-    const idx = (file) => tree.files.indexOf(file);
-    assert(idx(f.sortApple) < idx(f.sortBanana), "排序:apple 应在 Banana 前(大小写不敏感)");
+    const idx = (relative) => tree.files.indexOf(rooted(relative));
+    assert(idx("sortdir/apple.md") < idx("sortdir/Banana.md"), "排序:apple 应在 Banana 前(大小写不敏感)");
     assert(
-      idx(f.sortBanana) < idx(f.sortMango) && idx(f.sortMango) < idx(f.sortZebra),
+      idx("sortdir/Banana.md") < idx("sortdir/mango.md") && idx("sortdir/mango.md") < idx("sortdir/zebra.md"),
       "排序:sortdir 内字典序错误",
     );
-    assert(idx(f.a) < idx(f.b) && idx(f.sortApple) < idx(f.deep), "排序:跨目录全路径字典序错误");
+    assert(
+      idx("a.md") < idx("b.markdown") && idx("sortdir/apple.md") < idx("sub/deep.md"),
+      "排序:跨目录全路径字典序错误",
+    );
     console.log("[ok] paths:collectMarkdownPaths 排序(大小写不敏感字典序)");
 
     // ---- 4/5/7. 直接传:md 进 files、非 md 与不存在进 skipped、seen 去重 ----
@@ -122,7 +167,10 @@ export async function run() {
     sameMembers(direct.skipped, [f.txt, ghost], "直接传非 md/不存在 skipped 错误");
     assert(direct.files.length === 2, "去重:重复传入同一路径仍收集两次");
     const dupDir = await collectMarkdownPaths([root, root]); // 目录重复传入 → seen 按 resolve 去重只扫一次
-    assert(dupDir.files.length === expectedTree.length, "去重:目录重复传入收集数量不一致");
+    assert(
+      dupDir.files.length === expectedTree.length,
+      `去重:目录重复传入收集数量不一致\n${describeSetDiff(dupDir.files, expectedTree)}`,
+    );
     console.log("[ok] paths:collectMarkdownPaths 直接传 md/skipped/不存在/去重");
 
     // ================= resolveOutputPath =================

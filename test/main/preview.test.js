@@ -5,6 +5,7 @@
  * - 打开:GBK 准备 warning 进入主进程 warning sink,且不把打开流程变成未处理异常;
  * - 并发刷新:两次请求排队执行,只有最新一代落地 —— 旧代临时文件被回收、
  *   展示页即最新代(旧页不会后到覆盖新页),窗口当前临时文件不被提前删除;
+ *   比对展示页前等导航真正提交(loadFile 结算 ≠ getURL 已更新,慢机上会读到上一代);
  * - 窗口关闭后刷新安全退出:关闭前的在途刷新不 loadFile、不写注册表、临时文件不残留;
  * - loadFile 未 settle 时关闭:该次刷新结算后不留孤儿窗口与临时文件。
  * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/common/runner.js),窗口与
@@ -13,7 +14,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import iconv from "iconv-lite";
 import { openPreviewWindow, previews, requestPreviewRefresh } from "../../dist/main/windows/preview.js";
 
@@ -49,6 +50,55 @@ async function waitFor(predicate, label, timeoutMs = 5000) {
     await new Promise((r) => setTimeout(r, 25));
   }
   throw new Error(`preview 断言失败:等待超时(${label})`);
+}
+
+/** 导航提交等待上限:CI 上渲染 + 磁盘 IO 明显慢于本机,给足余量;到点仍未提交即判红 */
+const NAV_COMMIT_TIMEOUT_MS = 20_000;
+
+/**
+ * 窗口当前展示的文件路径;非 file: URL(如 data: 错误页顶上来)记 null。
+ * 判定按「文件路径」而非 URL 字符串比:pathToFileURL 会把 8.3 短路径里的 ~ 编码成
+ * %7E,而 Chromium 的 getURL() 原样保留 ~ —— 两侧字符串在 Windows runner(TEMP 是
+ * C:\Users\RUNNER~1\...) 上必然不等,那是编码策略差异而非展示错了页面。
+ * @param {string} url webContents.getURL()
+ * @returns {string | null} 文件路径(非 file: URL 记 null)
+ */
+function shownFilePath(url) {
+  if (!url.startsWith("file:")) return null;
+  try {
+    return fileURLToPath(url);
+  } catch {
+    return null; // 非法 file URL:同样按「不是目标文件」处理
+  }
+}
+
+/**
+ * 等到窗口真正提交了 expectedFile 那一次导航(仍是旧页就继续等),再交调用方断言。
+ * 为什么要等:刷新队列结算(loadFile 的 Promise resolve)与 webContents 提交导航之间
+ * 存在时序差 —— getURL() 在本机几乎无差,慢机/CI 上仍停在上一代页面,立即读会把
+ * 「旧代已回收」误判成「展示页不是最新一代」。固定 sleep 在 CI 上同样会抖,故有界轮询。
+ * 超时即抛错(绝不静默通过),消息带期望文件、实际 URL/文件、已等待时长与窗口存活状态。
+ * @param {{ webContents: { getURL: () => string }; isDestroyed: () => boolean }} win 目标窗口
+ * @param {string} expectedFile 期望展示的临时文件绝对路径
+ * @param {string} label 场景标签(消息用)
+ * @returns {Promise<string>} 提交时的 URL(交调用方断言)
+ */
+async function waitForShownFile(win, expectedFile, label) {
+  const startedAt = Date.now();
+  let url = win.webContents.getURL();
+  while (shownFilePath(url) !== expectedFile && Date.now() - startedAt < NAV_COMMIT_TIMEOUT_MS) {
+    await new Promise((r) => setTimeout(r, 25));
+    url = win.webContents.getURL();
+  }
+  if (shownFilePath(url) !== expectedFile) {
+    throw new Error(
+      `preview 断言失败:${label}:展示页未在 ${NAV_COMMIT_TIMEOUT_MS}ms 内提交为当前代临时文件(超时)\n` +
+        `  期望文件:${expectedFile}\n  实际 URL:${url}\n` +
+        `  实际文件:${shownFilePath(url) ?? "(非 file: URL)"}\n` +
+        `  已等待:${Date.now() - startedAt}ms\n  窗口已销毁:${win.isDestroyed()}`,
+    );
+  }
+  return url;
 }
 
 /**
@@ -125,10 +175,13 @@ export async function run() {
     );
     const [currentHtml] = afterRefresh;
     assert(currentHtml !== undefined, "两次刷新后应恰好剩一个当前页临时 HTML");
-    const shownUrl = entry.win.webContents.getURL();
+    // 等导航真正提交再比对(而非刷新 Promise 结算即读):慢机上 getURL 可能仍停在
+    // 上一代,那会把「旧代已回收」误判成「展示页不是最新一代」
+    const expectedFile = path.join(os.tmpdir(), currentHtml);
+    const shownUrl = await waitForShownFile(entry.win, expectedFile, "并发刷新后");
     assert(
-      shownUrl === pathToFileURL(path.join(os.tmpdir(), currentHtml)).href,
-      `展示页应为最新一代临时文件,实际 ${shownUrl}`,
+      shownFilePath(shownUrl) === expectedFile,
+      `展示页应为最新一代临时文件(${expectedFile}),实际 ${shownUrl}`,
     );
     // 旧页不得后到覆盖新页:代号只前进不回退,当前页句柄与展示文件一致
     assert(
@@ -241,9 +294,12 @@ export async function run() {
       assert(left.length === 1, `竞态刷新后应只剩刷新页一个临时 HTML,实际 ${left.join(",")}`);
       const [raceHtml] = left;
       assert(raceHtml !== undefined, "竞态刷新后应恰好剩一个刷新页临时 HTML");
+      // 同上:等刷新页的导航真正提交再比对,否则慢机上读到的是初载页
+      const raceExpectedFile = path.join(os.tmpdir(), raceHtml);
+      const raceShownUrl = await waitForShownFile(entry3.win, raceExpectedFile, "竞态刷新后");
       assert(
-        entry3.win.webContents.getURL() === pathToFileURL(path.join(os.tmpdir(), raceHtml)).href,
-        `展示页应为刷新后的页面(初载不得后到覆盖),实际 ${entry3.win.webContents.getURL()}`,
+        shownFilePath(raceShownUrl) === raceExpectedFile,
+        `展示页应为刷新后的页面(初载不得后到覆盖),实际 ${raceShownUrl}`,
       );
       entry3.win.destroy();
       await waitNoTempHtml(baseline, "竞态刷新后");
