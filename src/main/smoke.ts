@@ -29,6 +29,15 @@
  *    冒烟目录一律经 resolveSmokeOutDir 按 app.getAppPath()/app.getPath("temp") 解析。
  * 2. 需要的资源(katex 字体目录等)走 resource-dirs 解析,不得硬编码路径。
  * 3. 不得把 dev-only 代码引入本模块的依赖图(test/ 不可 import,test 侧只做薄转调)。
+ *
+ * 机械化程度(REF-025 #20 勘察结论):第 1、3 条中「**依赖图不得逃出 src/**」这半已由
+ * `scripts/check-import-boundary.mjs` 的层向规则 `smoke-no-outside-src` 机械断言
+ * (scope 按文件划层,forbid 用既有的 `prefix:../../` 形态,未扩展门禁词汇;因
+ * `resolveLayer` 不锚定 src 根,`layer:` 形态抓不到向上逃逸)。
+ * **仍未机械化的**:第 1 条中「不得出现仓库相对路径**字符串字面量**」与第 2 条
+ * 「资源是否经 resource-dirs 解析」—— 前者要扫字面量、后者要语义分析,都超出该脚本
+ * 现有的 `bare:` / `layer:` / `prefix:` 三种 import 规则形态;硬做等于扩展门禁的能力
+ * 词汇。改这两条时靠本注释,别假设有门禁兜着。
  */
 import { app, Menu } from "electron";
 import type { BrowserWindow } from "electron";

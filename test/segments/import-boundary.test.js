@@ -362,8 +362,15 @@ export async function run() {
         assert(/** @type {{ typeOnly: boolean }} */ (hit).typeOnly, `放行条目 ${allow.file} → ${allow.spec} 已不是 type-only(编译期不再擦除,应改判红)`);
         assert(allow.note.includes("层向收口项(反向 type-only 依赖待收敛)"), `放行条目 ${allow.file} → ${allow.spec} 的注释须标注这是层向收口项(反向 type-only 依赖待收敛)`);
       }
-      // 规则表形态:五条层向断言都在
-      for (const id of ["core-no-host", "core-no-upward", "renderer-no-main", "preload-no-main", "main-no-renderer"]) {
+      // 规则表形态:六条层向断言都在
+      for (const id of [
+        "core-no-host",
+        "core-no-upward",
+        "renderer-no-main",
+        "preload-no-main",
+        "main-no-renderer",
+        "smoke-no-outside-src",
+      ]) {
         assert(LAYER_RULES.some((r) => r.id === id), `层向规则表缺 ${id}`);
       }
       // 沙盒基线:放行条目失效不报错(条目对应文件不在沙盒里)
@@ -535,7 +542,34 @@ export async function run() {
           "main 反向依赖 renderer",
         );
       }
-      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / 放行条目仅对 type-only 生效 / 已声明包的类型引用放行 / main→renderer 跨层引用判红)");
+      // 5e. smoke 引入 test/ 必须判红(层向规则 smoke-no-test-import:打包产物只收 dist/**)
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "main/smoke.ts": 'import { x } from "../../test/common/assert.js";\nexport { x };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /main\/smoke\.ts:import「\.\.\/\.\.\/test\/common\/assert\.js」违反层向规则 smoke-no-outside-src/,
+          "smoke 逃出 src/(引入 test/)",
+        );
+      }
+      // 5f. 冒烟正文自身合法(经 main/core 取依赖、只 import 内建与已声明包)不得被新规则误伤
+      {
+        const sb = createSandbox(
+          { dependencies: { "pdf-lib": "1.17.1" }, devDependencies: { electron: "43.0.0" } },
+          {
+            "main/smoke.ts":
+              'import { app } from "electron";\nimport fs from "node:fs/promises";\nimport { PDFDocument } from "pdf-lib";\nexport { app, fs, PDFDocument };\n',
+          },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(result.code === 0, `合法的 smoke 依赖图应零退出,实际 ${result.code}:${result.output}`);
+      }
+      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / 放行条目仅对 type-only 生效 / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / 合法 smoke 依赖图不误伤)");
     }
 
     // ================= 6. 规则原语的单元断言(判定链的接缝) =================

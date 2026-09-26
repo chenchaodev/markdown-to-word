@@ -130,6 +130,16 @@ export const LAYER_RULES = Object.freeze([
     forbid: 'layer:renderer',
     reason: 'main 是 GUI 的宿主而非被依赖方,不得反向引用 renderer 内部模块(依赖方向单向 core ← main ← renderer;跨界只经 preload 暴露的 contextBridge API)',
   },
+  {
+    id: 'smoke-no-outside-src',
+    scope: 'smoke',
+    // 用既有的 prefix: 形态而非 layer:—— resolveLayer 是相对文件目录拼接、不锚定 src 根,
+    // 故 ../../test/x 归一化后首段是「..」而非「test」,layer: 形态抓不到向上逃逸。
+    // 而本规则的意图正是「不得逃出 src/」:smoke 编译产物在 dist/main/,凡 ../../ 开头
+    // 的依赖都已在包外(build.files 只收 dist/**),解包后必然跑不起来。
+    forbid: 'prefix:../../',
+    reason: '冒烟须能在打包产物里运行(build.files 只收 dist/**),smoke 不得逃出 src/(即不得引用仓库相对路径、test/ 等不入包路径);test 侧只做薄转调',
+  },
 ]);
 
 // ---- 源码文本 → import 事实 ----
@@ -229,6 +239,9 @@ export function resolveLayer(file, spec) {
 
 function scopeMatches(scope, file) {
   if (scope === 'preload') return file === 'main/preload.cts' || file === 'main/preload.cjs';
+  // smoke 住在 main/ 下但按「文件」而非「目录」划层:它不是 main 的一个子模块,而是
+  // 随包分发的自测入口(build.files 只收 dist/**),边界纪律独立于 main 的一般约束
+  if (scope === 'smoke') return file === 'main/smoke.ts' || file === 'main/smoke.js';
   return file === scope || file.startsWith(`${scope}/`);
 }
 
@@ -399,6 +412,7 @@ export async function main(argv = []) {
     `[ok] import 边界自检通过(${scopeText}):`
       + `运行时 import 的包均在 dependencies(host 内建 ${Object.keys(HOST_PROVIDED_RUNTIME).join('/')} 除外);`
       + `core 不依赖宿主且不反向依赖 GUI 两层;renderer 不反向依赖 main;main 不反向依赖 renderer;preload 不上跳引用 main;`
+      + `smoke 不逃出 src/;`
       + `core 的 node: 内建白名单限 ${CORE_NODE_BUILTIN_FILES.length} 个文件`,
   );
   return 0;
