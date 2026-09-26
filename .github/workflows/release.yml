@@ -112,7 +112,7 @@ jobs:
           exit 0
 
       # 统一门禁入口 + 打包 + 产物核对:verify:release = verify:ci(契约自检/依赖声明
-      # 与层向/action 引用固定/build/typecheck/lint/acceptance/coverage/fixture
+      # 与层向/action 引用固定/build/typecheck/lint/验收段(带覆盖率插桩)/fixture
       # 漂移/smoke/几何门禁)追加 dist,
       # dist 内部先 clean:dist/clean:release(清掉上一版残留与历史安装包)→ build →
       # dist 清单 → electron-builder → 清单校验/ASAR 核对/发布目标核对(含 SHA-256 报告),

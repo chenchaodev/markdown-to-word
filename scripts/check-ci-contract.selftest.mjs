@@ -2,8 +2,8 @@
 //
 // verify:ci 的第一道门是 check:contract;若该脚本被改成「永远通过」或某个断言被
 // 误删,配置漂移(Node 口径、门禁链缩水、build/typecheck 与几何门禁乱序、依赖声明/
-// 层向门禁与 action 引用固定门禁被移出或排到构建之后、前置清理被移出/乱序、清理
-// 目标越界、产物核对被移出
+// 层向门禁与 action 引用固定门禁被移出或排到构建之后、全量验收段被移出/改成裸跑/
+// 被加回重复跑、前置清理被移出/乱序、清理目标越界、产物核对被移出
 // 或排到打包之前、脚本缺失)就会静默放行
 // 发布,没有任何其他检查能发现。此处用
 // 临时夹具逐条制造漂移,断言自检脚本
@@ -45,7 +45,7 @@ const FIXTURE_SCRIPTS = {
     'npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest ' +
     '&& electron-builder && npm run check:dist-manifest && npm run check:asar && npm run check:release',
   'verify:ci':
-    'npm run check:contract && npm run check:boundary && npm run check:pinned-actions && npm run build && npm run typecheck && npm run lint && npm run test ' +
+    'npm run check:contract && npm run check:boundary && npm run check:pinned-actions && npm run build && npm run typecheck && npm run lint ' +
     '&& npm run test:coverage && npm run check:fixtures && npm run test:smoke && npm run check:geometry',
   'verify:release': 'npm run verify:ci && npm run dist',
 };
@@ -324,6 +324,31 @@ const CASES = [
     name: 'check:pinned-actions 指向已不存在的脚本(门禁静默失效)',
     mutate: ({ dir }) => rmSync(join(dir, 'scripts', 'check-pinned-actions.mjs'), { force: true }),
     expect: /引用的文件不存在:scripts\/check-pinned-actions\.mjs/,
+  },
+  // ---- 全量验收段的形态(只跑一遍、只跑插桩那一遍)----
+  {
+    name: '覆盖率门禁被移出 CI 链(c8 阈值与 check:coverage-zero 失去唯一执行者)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace(' && npm run test:coverage', '');
+    },
+    expect: /全量验收只保留插桩那一遍/,
+  },
+  {
+    name: '全量验收被改成裸跑(以为不带插桩也能守住覆盖率门禁)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace('npm run test:coverage', 'npm run test');
+    },
+    expect: /全量验收只保留插桩那一遍/,
+  },
+  {
+    name: '裸跑那一遍被加回链内(同一批段跑两遍,对覆盖率数据零贡献)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace(
+        ' && npm run test:coverage',
+        ' && npm run test && npm run test:coverage',
+      );
+    },
+    expect: /全量验收只保留插桩那一遍/,
   },
   // ---- 版本比较的 prerelease 语义(semver 优先级,非字符串比)----
   {

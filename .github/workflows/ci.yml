@@ -2,7 +2,10 @@ name: CI
 
 # 门禁流水线:push 到 master 或任意分支开 PR 时跑统一验证入口 verify:ci
 # (契约自检及其回归 → 依赖声明/层向 → action 引用固定 → build → typecheck → lint
-# → acceptance → coverage → fixture 漂移 → smoke → 几何门禁)。
+# → 验收段(带覆盖率插桩) → fixture 漂移 → smoke → 几何门禁)。
+# 全量验收在链内只跑一遍,且就是带插桩的那一遍:覆盖率阈值与 check:coverage-zero 都
+# 由它供给;不插桩的裸跑遍进程内没有 NODE_V8_COVERAGE,对覆盖率数据零贡献,数字逐位
+# 不变,再跑一遍只是多花一遍时长(裁决见 ADR-016)。
 # 命令清单单源于 package.json scripts,本文件不逐条复述门禁命令(与 release.yml 共用
 # 同一 verify:ci 链,发布不维护第二份缩水清单)。
 # Node 口径单源于 package.json engines;scripts/check-ci-contract.mjs 断言本文件与
@@ -28,9 +31,10 @@ concurrency:
 jobs:
   ci:
     runs-on: windows-latest
-    # 全流程(install + 契约自检 + build/typecheck/lint + acceptance 段 + coverage 段
-    # + fixtures 校验 + smoke + 几何门禁与诊断 artifact 上传)正常约 30-40 分钟;
-    # 60 分钟为正常耗时的约 1.5 倍余量,超时即视为挂死快速失败,不占用 runner
+    # 全流程(install + 契约自检 + build/typecheck/lint + 验收段 + 覆盖率探针
+    # + fixtures 校验 + smoke + 几何门禁与诊断 artifact 上传)的正常耗时以实测为准
+    # (分钟量级,随 runner 负载浮动);timeout-minutes 是防挂死的硬上限,不是耗时预期 ——
+    # 超时即视为挂死快速失败,不占用 runner
     timeout-minutes: 60
     steps:
       # 凭据不落盘:actions/checkout 默认把 token 写进 .git/config 供后续 git 命令复用。

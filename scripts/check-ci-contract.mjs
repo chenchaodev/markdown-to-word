@@ -5,6 +5,10 @@
 //   - lockfile 与两个 workflow 的 Node 口径与 engines 地板一致,且存在精确钉住地板的 lane;
 //   - workflow 与 scripts 引用的本地脚本文件真实存在;
 //   - build 先于 typecheck(typecheck 含测试树,测试 import dist/ 编译产物);
+//   - 全量验收段(test / test:coverage 跑的是同一批段)在链内只跑一遍,且只保留插桩
+//     的那一遍:覆盖率门禁(c8 阈值 + check:coverage-zero)由它供给,删掉则静默失效;
+//     裸跑那一遍不插桩(进程无 NODE_V8_COVERAGE),对覆盖率数据贡献恒为 0,数字一个
+//     bit 不变,再跑一遍只是多花一遍时长;不带插桩的入口信号由链内 test:smoke 承担;
 //   - 依赖声明与 import 层向门禁(check:boundary)紧随契约自检且早于 build:
 //     它判定源码文本、不消费 dist,排到构建之后就失去了 fail-fast 意义;
 //   - action 引用固定门禁(check:pinned-actions)与 check:boundary 同级、同在 build
@@ -252,7 +256,6 @@ const REQUIRED_CI_STEPS = [
   'build',
   'typecheck',
   'lint',
-  'test',
   'test:coverage',
   'check:fixtures',
   'test:smoke',
@@ -268,6 +271,27 @@ for (const step of REQUIRED_CI_STEPS) {
     continue;
   }
   cursor = at;
+}
+
+// 全量验收段在链内的形态:插桩那一遍恰一次、裸跑那一遍零次(两个方向都要挡)。
+// 重复跑同一批段是纯浪费 —— 裸跑那一遍不插桩,进程无 NODE_V8_COVERAGE,对 c8 的
+// 覆盖率数据贡献恒为 0(--all 的分母来自 --include 的文件集合,与跑几遍无关),数字
+// 一个 bit 不变;而把插桩那一遍删掉则覆盖率门禁(c8 阈值 + check:coverage-zero)失去
+// 唯一执行者,CI 仍报绿 —— 阈值不为 0 时 c8 自己会红,不依赖另一遍裸跑兜底。
+// 计数按展开后的脚本名精确相等(子串匹配会让 test 命中 test:coverage,断言自欺)。
+const FULL_RUN_ENTRIES = [
+  { name: 'test:coverage', times: 1 },
+  { name: 'test', times: 0 },
+];
+for (const { name, times } of FULL_RUN_ENTRIES) {
+  const actual = ciChain.filter((step) => step === name).length;
+  if (actual !== times) {
+    fail(
+      `verify:ci 全量验收只保留插桩那一遍(须 test:coverage 恰 1 次、裸跑 test 0 次):` +
+        `同一批段重复跑是纯浪费,删掉则覆盖率门禁失效。当前链中 ${name} 出现 ${actual} 次` +
+        `(链:${ciChain.join(' -> ') || '空'})`,
+    );
+  }
 }
 
 const buildAt = ciChain.indexOf('build');
