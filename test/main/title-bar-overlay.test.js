@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 标题栏 overlay 配色单源测试(src/main/windows/title-bar-overlay.ts 纯逻辑层;
  * 测试经 dist/main/windows/title-bar-overlay.js,运行于 Electron 主进程——
@@ -19,6 +20,12 @@ import {
   TITLE_BAR_OVERLAY_HEIGHT,
 } from "../../dist/main/windows/title-bar-overlay.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`title-bar-overlay 断言失败:${msg}`);
 }
@@ -47,7 +54,12 @@ export async function run() {
   // ---- 主题解析:显式透传 + system 按 nativeTheme 解析 ----
   assert(resolveEffectiveTheme("light") === "light", "显式 light 应透传");
   assert(resolveEffectiveTheme("dark") === "dark", "显式 dark 应透传");
-  const expected = nativeTheme.shouldUseDarkMode ? "dark" : "light";
+  // nativeTheme.shouldUseDarkMode 不在 Electron 的 NativeTheme 类型声明里
+  // (运行时存在,类型未收录):按该成员读取当前生效主题,供 system 解析断言比对。
+  const shouldUseDarkMode = /** @type {{ shouldUseDarkMode?: boolean }} */ (
+    /** @type {unknown} */ (nativeTheme)
+  ).shouldUseDarkMode;
+  const expected = shouldUseDarkMode ? "dark" : "light";
   assert(resolveEffectiveTheme("system") === expected, "system 应解析为 nativeTheme 实际生效主题");
   console.log("[ok] title-bar-overlay:resolveEffectiveTheme 主题解析 断言通过");
 

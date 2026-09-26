@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * main Markdown 准备链单测：解码、Obsidian/AI 预处理与 frontmatter 解析必须同源。
  * 该段不依赖 Electron 窗口，直接覆盖转换/预览/预检共同消费的 helper。
@@ -10,6 +11,12 @@ import { DEFAULT_SETTINGS } from "../../dist/core/settings/settings-defaults.js"
 import { prepareMarkdown, prepareMarkdownText } from "../../dist/main/converter/preprocess.js";
 import { precheckMarkdown } from "../../dist/core/markdown/precheck.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`preprocess 断言失败:${msg}`);
 }
@@ -32,7 +39,9 @@ export async function run() {
       obsidianCompat: true,
       obsidianAttachmentFolder: "Attachments",
     };
-    const prepared = await prepareMarkdown(mdPath, settings);
+    const prepared = /** @type {import("../../src/main/converter/preprocess.js").PreparedMarkdown} */ (
+      await prepareMarkdown(mdPath, settings)
+    );
     assert(prepared.metadata.title === "[[原始标题]]", "frontmatter title 不应被 Obsidian 预处理改写");
     assert(prepared.metadata.author === "测试", "frontmatter CRLF 应完整解析");
     assert(
@@ -46,7 +55,9 @@ export async function run() {
     // 开关关闭时保持解码文本字节语义；frontmatter 与正文的三种换行均不重写。
     for (const newline of ["\n", "\r\n", "\r"]) {
       const raw = `---${newline}title: [[原始标题]]${newline}---${newline}[[目标]]${newline}`;
-      const untouched = prepareMarkdownText(raw, DEFAULT_SETTINGS);
+      const untouched = /** @type {import("../../src/main/converter/preprocess.js").PreparedMarkdown} */ (
+        prepareMarkdownText(raw, DEFAULT_SETTINGS)
+      );
       assert(untouched.markdown === raw, `关闭预处理开关时 ${newline === "\r" ? "CR" : newline === "\r\n" ? "CRLF" : "LF"} 应字节级不变`);
       assert(untouched.body === `[[目标]]${newline}`, "关闭预处理时 body 应保持原文");
       assert(untouched.metadata.title === "[[原始标题]]", "换行变体不应影响 frontmatter metadata");
@@ -54,11 +65,11 @@ export async function run() {
 
     const gbkPath = path.join(dir, "gbk.md");
     await fs.writeFile(gbkPath, iconv.encode("# 你好世界\n\n正文\n", "gbk"));
-    const warnings = [];
+    const warnings = /** @type {import("../../src/core/i18n.js").KeyedWarning[]} */ ([]);
     const gbkPrepared = await prepareMarkdown(gbkPath, settings, warnings);
     assert(gbkPrepared.markdown.includes("你好世界"), "GBK 应经统一解码链正确读取");
     assert(
-      warnings.length === 1 && warnings[0].key === "warn.gbkEncoding",
+      warnings.length === 1 && warnings[0]?.key === "warn.gbkEncoding",
       "GBK 准备应产生统一编码 warning",
     );
     const precheckWarnings = precheckMarkdown(

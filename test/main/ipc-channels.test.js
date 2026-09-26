@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * IPC channel 单源恒等性断言(接入 case 级报告):
  * - main 侧单源:dist/main/ipc/channels.js 的 IPC_CHANNELS(命名统一「域:动作」);
@@ -24,19 +25,32 @@ const distMain = path.join(
   "main",
 );
 
-/** 提取 preload 源码里的 CH 镜像对象键值(产物结构变化时明确报错) */
+/**
+ * 提取 preload 源码里的 CH 镜像对象键值(产物结构变化时明确报错)
+ * @param {string} src 产物源码
+ * @param {string} file 产物文件名(消息用)
+ * @returns {Record<string, string>} 镜像键值对
+ */
 function parseMirror(src, file) {
   const mirrorMatch = src.match(/const CH = \{([\s\S]*?)\};/);
   assert(mirrorMatch, `${file} 未找到 CH 镜像对象(产物结构变化)`);
+  // 共享 assert(test/common/case.js)不带 asserts 签名,匹配组在此显式收窄
+  const mirrorBody = mirrorMatch?.[1] ?? "";
+  /** @type {Record<string, string>} */
   const mirror = {};
-  for (const m of mirrorMatch[1].matchAll(/(\w+):\s*"([^"]+)"/g)) {
-    mirror[m[1]] = m[2];
+  for (const m of mirrorBody.matchAll(/(\w+):\s*"([^"]+)"/g)) {
+    mirror[m[1] ?? ""] = m[2] ?? ""; // 正则的两个捕获组必然有值
   }
   assert(Object.keys(mirror).length > 0, `${file} 的 CH 镜像对象未解析到任何键值对`);
   return mirror;
 }
 
-/** 找出首个裸字符串 channel 调用点(应全部经 CH.* 引用) */
+/**
+ * 找出首个裸字符串 channel 调用点(应全部经 CH.* 引用)
+ * @param {string} src 产物源码
+ * @param {string} file 产物文件名(消息用)
+ * @returns {string | null} 首个裸调用点描述(无则 null)
+ */
 function findBareChannelCall(src, file) {
   for (const m of src.matchAll(/\b(?:invoke|on|removeListener)\((["'])([^"']+)\1/g)) {
     return `${file} 出现裸字符串 channel "${m[2]}"(应经 CH.* 引用)`;
@@ -67,14 +81,16 @@ export async function run() {
   // 直接解析其键值对与单源比对(比逐调用点提字面量更严:镜像对象即全部 channel)。
   await suite.case("preload 镜像与单源恒等", () => {
     const mirror = parseMirror(preloadSrc, "preload.cjs");
-    for (const [key, value] of Object.entries(IPC_CHANNELS)) {
+    // 单源是字面量对象(键名固定),此处按「键 → channel 名」字典视图逐键比对
+    const channels = /** @type {Record<string, string>} */ (IPC_CHANNELS);
+    for (const [key, value] of Object.entries(channels)) {
       assert(
         mirror[key] === value,
         `preload 镜像 ${key}="${mirror[key]}" 与单源 "${value}" 漂移`,
       );
     }
     for (const key of Object.keys(mirror)) {
-      assert(key in IPC_CHANNELS, `preload 镜像多出单源没有的键 "${key}"`);
+      assert(key in channels, `preload 镜像多出单源没有的键 "${key}"`);
     }
   });
 
@@ -100,9 +116,10 @@ export async function run() {
       `about-preload 镜像键集应为 about 域两键,实际=${JSON.stringify(actualAboutKeys)}`,
     );
     for (const [key, value] of Object.entries(aboutMirror)) {
+      const channels = /** @type {Record<string, string>} */ (IPC_CHANNELS);
       assert(
-        IPC_CHANNELS[key] === value,
-        `about-preload 镜像 ${key}="${value}" 与单源 "${IPC_CHANNELS[key]}" 漂移`,
+        channels[key] === value,
+        `about-preload 镜像 ${key}="${value}" 与单源 "${channels[key]}" 漂移`,
       );
     }
   });

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 验收测试入口(父进程/编排器):自动发现并顺序执行 segments/(core 渲染)、
  * main/(主进程层)与 renderer/(UI 层)下的 *.test.js。段 = 一个内容主题的断言;
@@ -40,6 +41,11 @@ const rendererDir = path.join(testRoot, "renderer");
 // whenReady 前重定向到一次性临时目录,防止验收测试读写真实 %APPDATA% 下的用户数据。
 const tempUserData = redirectUserData(app, createTempUserData("m2w-acceptance-"));
 
+/**
+ * 打印总耗时与最慢的 5 段(段结果形状单一来源在 test/common/runner.js)。
+ * @param {import("./common/runner.js").SegmentResultEntry[]} results 段结果
+ * @param {number} totalStart 全量开始的 Date.now() 时刻
+ */
 function printStats(results, totalStart) {
   const totalSeconds = ((Date.now() - totalStart) / 1000).toFixed(1);
   const slowest = [...results]
@@ -76,7 +82,10 @@ void app.whenReady().then(async () => {
     if (r.ok) {
       console.log(`[ok] ${r.file} (${r.ms}ms)`);
     } else {
-      console.error(`[fail] ${r.file}: ${r.error.stack ?? r.error}`);
+      // 段级错误按「Error → stack(缺则 toString)/非 Error → String」归一为可打印文案
+      const err = r.error;
+      const detail = err instanceof Error ? (err.stack ?? String(err)) : String(err);
+      console.error(`[fail] ${r.file}: ${detail}`);
     }
   }
   // case 级摘要(仅段内接入 case 契约的段有内容;无 case 契约的旧段输出完全不变)

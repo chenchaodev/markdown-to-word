@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * PDF 章节编号 + 元数据验收:
  * 自建小 md(frontmatter title/author 沿用原样例,正文仅需触发 h1 + 分页)→ pdf;
@@ -9,6 +10,7 @@ import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
 import { PDFDocument } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
+import { asPdfArtifact } from "../common/convert-helpers.js";
 
 /** 主样例:frontmatter 元数据 + 章节编号 + 分页(gen-fixtures 落盘为 acceptance/pdf-meta.md) */
 const pdfMetaMd = `---
@@ -30,11 +32,13 @@ export const fixtures = { main: pdfMetaMd };
 
 /** PDF 章节编号 + 元数据验收 */
 export async function run() {
-  const pdfArtifact = await convert(pdfMetaMd, "pdf", {
-    baseDir: FIXTURES_DIR,
-    title: "脚注与页眉页脚验收",
-    warnings: [],
-  });
+  const pdfArtifact = asPdfArtifact(
+    await convert(pdfMetaMd, "pdf", {
+      baseDir: FIXTURES_DIR,
+      title: "脚注与页眉页脚验收",
+      warnings: [],
+    }),
+  );
   // 章节编号:CSS counter 规则(::before 伪元素,1/1.1/1.1.1)进入模板样式
   if (!pdfArtifact.html.includes("counter(h1c)") || !pdfArtifact.html.includes("h1::before")) {
     throw new Error("PDF 章节编号断言失败:缺少 counter 编号 CSS");

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 导出后行为(after-convert)副作用所有权段(test/main/,与 converter.test.js 同为
  * 主进程层,经 dist/main/converter/index.js 真实实现,docx 链路不依赖 Electron 打印):
@@ -33,18 +34,55 @@ import {
 } from "../../dist/main/converter/index.js";
 import { backupSettings } from "../common/settings.js";
 
+/** 记录到的 shell 副作用(动作 + 被作用的产物路径) */
+/** @typedef {{ action: "open" | "show-in-folder", path: string }} ShellCall */
+/** 本段打桩的 shell 成员(副作用所有权断言面就这两个) */
+/** @typedef {"openPath" | "showItemInFolder"} ShellKey */
+/** 转换上下文(取消标志 + 取消入口) */
+/** @typedef {ReturnType<typeof createConvertContext>} ConvertCtx */
+/** 批量进度事件(跨进程契约单源) */
+/** @typedef {import("../../src/core/ipc-contract.js").BatchProgressInfo} BatchProgress */
+/** 批量汇总结果(取实现签名,避免与契约的可选字段形状漂移) */
+/** @typedef {Awaited<ReturnType<typeof batchConvertImpl>>} BatchResult */
+/** 单文件/合并转换返回(跨进程契约单源;error 由 ipc 层补,直调实现层恒为成功分支) */
+/** @typedef {import("../../src/core/ipc-contract.js").ConvertResult} ConvertResult */
+
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`converter-after-convert 断言失败:${msg}`);
 }
 
-/** 记录 shell 副作用调用:{ action, path };finally 还原原实现 */
+/**
+ * 记录 shell 副作用调用:{ action, path };finally 还原原实现
+ * @param {(calls: ShellCall[]) => Promise<unknown>} fn 段体:收到调用记录后自行断言
+ * @returns {Promise<unknown>} fn 的返回值
+ */
 async function withShellRecorder(fn) {
-  const calls = [];
-  const originals = { openPath: shell.openPath, showItemInFolder: shell.showItemInFolder };
+  const calls = /** @type {ShellCall[]} */ ([]);
+  const originals = /** @type {Record<ShellKey, unknown>} */ ({
+    openPath: shell.openPath,
+    showItemInFolder: shell.showItemInFolder,
+  });
   const viaDefine = new Set();
+  // Electron 把两个成员声明为各自的具体签名(返回类型 Promise<string> / void),
+  // 测试按 key 动态换实现,故取一个「单字符串入参」的字典视图来索引
+  // (仅测试期视图,不回写 Electron 类型)。
+  const shellView = /** @type {Record<ShellKey, (path: string) => unknown>} */ (
+    /** @type {unknown} */ (shell)
+  );
+  /**
+   * @param {ShellKey} key 目标成员
+   * @param {(path: string) => unknown} impl 替换实现
+   * @returns {void}
+   */
   const patch = (key, impl) => {
     try {
-      shell[key] = impl;
+      shellView[key] = impl;
     } catch {
       Object.defineProperty(shell, key, { configurable: true, writable: true, value: impl });
       viaDefine.add(key);
@@ -60,17 +98,23 @@ async function withShellRecorder(fn) {
   try {
     return await fn(calls);
   } finally {
-    for (const key of ["openPath", "showItemInFolder"]) {
+    for (const key of /** @type {ShellKey[]} */ (["openPath", "showItemInFolder"])) {
       if (viaDefine.has(key)) {
         Object.defineProperty(shell, key, { configurable: true, writable: true, value: originals[key] });
       } else {
-        shell[key] = originals[key];
+        shellView[key] = /** @type {(path: string) => unknown} */ (originals[key]);
       }
     }
   }
 }
 
-/** 取消点:stage 命中即 ctx.cancel()(模拟进度回调里收到取消,如 IPC convert:cancel) */
+/**
+ * 取消点:stage 命中即 ctx.cancel()(模拟进度回调里收到取消,如 IPC convert:cancel)
+ * @param {string[]} stages 已上报 stage 序列(就地累积)
+ * @param {ConvertCtx} ctx 取消入口
+ * @param {string} wanted 命中即取消的 stage
+ * @returns {(stage: string) => void} 进度回调
+ */
 function cancelOnStage(stages, ctx, wanted) {
   return (stage) => {
     stages.push(stage);
@@ -78,7 +122,13 @@ function cancelOnStage(stages, ctx, wanted) {
   };
 }
 
-/** 汇总完整性:逐项有归属(无空洞)且计数和 = 文件总数 */
+/**
+ * 汇总完整性:逐项有归属(无空洞)且计数和 = 文件总数
+ * @param {BatchResult} result 批量汇总
+ * @param {number} total 文件总数
+ * @param {string} label 场景标签(消息用)
+ * @returns {void}
+ */
 function assertBatchTotals(result, total, label) {
   assert(
     result.items.length === total && result.items.every((item) => !!item),
@@ -96,7 +146,11 @@ export const fixtures = null;
 export async function run() {
   const dir = path.join(os.tmpdir(), `m2w-after-convert-${process.pid}`);
   const restoreSettings = await backupSettings();
-  /** 目录内以 base 开头的非 md 文件名(产物;重名序号变体一并计入) */
+  /**
+   * 目录内以 base 开头的非 md 文件名(产物;重名序号变体一并计入)
+   * @param {string} base 产物名前缀
+   * @returns {Promise<string[]>} 文件名列表
+   */
   const outputsOf = async (base) =>
     (await fs.readdir(dir)).filter((name) => name.startsWith(base) && !name.endsWith(".md"));
   try {
@@ -123,8 +177,9 @@ export async function run() {
     await updateSettings({ afterConvert: "open" });
     await withShellRecorder(async (calls) => {
       const result = await convertImpl(singleMd, "docx");
+      const [only] = calls;
       assert(calls.length === 1, `单文件 open 应恰好 1 次,实际 ${calls.length} 次`);
-      assert(calls[0].action === "open" && calls[0].path === result.outputPath, "单文件 open 应打开本次产物");
+      assert(only?.action === "open" && only.path === result.outputPath, "单文件 open 应打开本次产物");
     });
     console.log("[ok] after-convert:单文件成功恰好 1 次(作用于本次产物)");
 
@@ -132,8 +187,9 @@ export async function run() {
     await updateSettings({ afterConvert: "show-in-folder" });
     await withShellRecorder(async (calls) => {
       const result = await convertImpl(folderMd, "docx");
+      const [only] = calls;
       assert(calls.length === 1, `单文件 show-in-folder 应恰好 1 次,实际 ${calls.length} 次`);
-      assert(calls[0].action === "show-in-folder" && calls[0].path === result.outputPath, "应在资源管理器定位本次产物");
+      assert(only?.action === "show-in-folder" && only.path === result.outputPath, "应在资源管理器定位本次产物");
     });
     console.log("[ok] after-convert:单文件 show-in-folder 恰好 1 次");
 
@@ -206,7 +262,7 @@ export async function run() {
           await convertImpl(
             postPersistMd,
             "docx",
-            (stage) => {
+            (/** @type {string} */ stage) => {
               // 只在落盘后取消:闸门窗口(产物已写盘 → 打开产物)才是本例的断言面
               if (stage === "done") cancelWebContentsOperation(webContentsId);
             },
@@ -231,8 +287,9 @@ export async function run() {
       assert(result.okCount === batchFiles.length, `批量应全部成功,实际 ok=${result.okCount}`);
       assertBatchTotals(result, batchFiles.length, "批量成功");
       assert(calls.length === 1, `批量 after-convert 应恰好 1 次,实际 ${calls.length} 次`);
+      const [only] = calls;
       const firstOk = result.items.find((item) => item.ok);
-      assert(calls[0].path === firstOk.outputPath, "批量应打开第一个成功项产物");
+      assert(only?.path === firstOk?.outputPath, "批量应打开第一个成功项产物");
     });
     console.log("[ok] after-convert:批量成功整批恰好 1 次(第一个成功项)");
 
@@ -241,7 +298,7 @@ export async function run() {
     await withShellRecorder(async (calls) => {
       const ctx = createConvertContext();
       let doneCount = 0;
-      const result = await batchConvertImpl(batchFiles, "docx", (info) => {
+      const result = await batchConvertImpl(batchFiles, "docx", (/** @type {BatchProgress} */ info) => {
         if (info.stage === "done" && ++doneCount === 2) ctx.cancel();
       }, ctx);
       assert(result.canceledCount > 0, "第 2 个文件落盘后取消应有取消项");
@@ -258,7 +315,7 @@ export async function run() {
       const ctx = createConvertContext();
       const inFlightFiles = [1, 2, 3, 4].map((n) => path.join(dir, `race-${n}.md`));
       for (const file of inFlightFiles) await fs.writeFile(file, `# ${path.basename(file)}\n\n正文\n`, "utf8");
-      const result = await batchConvertImpl(inFlightFiles, "docx", (info) => {
+      const result = await batchConvertImpl(inFlightFiles, "docx", (/** @type {BatchProgress} */ info) => {
         // 第 2 个文件刚被取走(read 阶段)即取消:此时两个 worker 都在 convertImpl 内
         if (info.stage === "read" && info.index === 2) ctx.cancel();
       }, ctx);
@@ -286,7 +343,7 @@ export async function run() {
     await withShellRecorder(async (calls) => {
       const snapshotFiles = [1, 2, 3].map((n) => path.join(dir, `snapshot-${n}.md`));
       for (const file of snapshotFiles) await fs.writeFile(file, `# ${path.basename(file)}\n\n正文\n`, "utf8");
-      const result = await batchConvertImpl(snapshotFiles, "docx", (info) => {
+      const result = await batchConvertImpl(snapshotFiles, "docx", (/** @type {BatchProgress} */ info) => {
         if (info.stage !== "read") return;
         // 直接改模块级缓存(等价于批次运行期间用户改设置并落缓存):嵌套块一并改
         const live = loadSettings();
@@ -295,8 +352,10 @@ export async function run() {
       });
       assert(result.okCount === snapshotFiles.length, "快照批量应全部成功");
       for (const item of result.items) {
-        const xml = await (await JSZip.loadAsync(await fs.readFile(item.outputPath)))
-          .file("word/document.xml").async("string");
+        const zip = await JSZip.loadAsync(await fs.readFile(item.outputPath));
+        const documentXml = zip.file("word/document.xml");
+        assert(documentXml !== null, `产物应含 word/document.xml:${item.file}`);
+        const xml = await documentXml.async("string");
         assert(xml.includes('w:orient="landscape"'), `批次中途改设置不得产生混合配置:${item.file}`);
       }
       // 快照的 afterConvert("open")仍生效 → 整批 1 次;若读到中途的 "none" 则为 0 次
@@ -311,17 +370,18 @@ export async function run() {
     // ---- 12. 合并成功:整次合并恰好 1 次(单产物) ----
     await updateSettings({ afterConvert: "open" });
     await withShellRecorder(async (calls) => {
-      const result = await mergeConvertImpl([mergeA, mergeB], "docx");
+      const result = /** @type {ConvertResult} */ (await mergeConvertImpl([mergeA, mergeB], "docx"));
+      const [only] = calls;
       assert(result.ok && !!result.outputPath, `合并应成功:${result.error ?? ""}`);
       assert(calls.length === 1, `合并 after-convert 应恰好 1 次,实际 ${calls.length} 次`);
-      assert(calls[0].path === result.outputPath, "合并应打开本次合并产物");
+      assert(only?.path === result.outputPath, "合并应打开本次合并产物");
     });
     console.log("[ok] after-convert:合并成功整次恰好 1 次");
 
     // ---- 13. 合并取消(落盘后最终取消检查):产物已写盘但绝不打开 + 抛取消错误 ----
     await withShellRecorder(async (calls) => {
       const ctx = createConvertContext();
-      const stages = [];
+      const stages = /** @type {string[]} */ ([]);
       let canceled = false;
       try {
         await mergeConvertImpl([mergeA, mergeB], "docx", cancelOnStage(stages, ctx, "done"), ctx);

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Mermaid 渲染 core 层契约测试:
  * 注入 fake resolver 断言 core 层行为(真实渲染由 test/main/mermaid-service.test.js 覆盖),
@@ -29,6 +30,21 @@ import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart, zipContains } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { asDocxArtifact, asPdfArtifact } from "../common/convert-helpers.js";
+
+/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+
+/**
+ * convert() 的类型化别名:运行期就是 dist 的 convert(零行为差异),只把返回类型
+ * 对齐到 src 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind
+ * 被拓宽为 string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
+ * 入参保持宽松(本段按运行时事实传上下文,上下文契约由 core 自身类型守护)。
+ * @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>}
+ */
+const convertTyped =
+  /** @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>} */ (
+    convert
+  );
 
 // 1x1 真实 PNG 魔数头(docx 不校验内容,unzipPart 只读 xml,media 存在性用 zipContains)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -52,13 +68,15 @@ export const fixtures = {
 export async function run() {
   // ---- docx 成功路径:resolver 被调用(围栏原文)→ 内嵌 PNG 图片(缩放 600×300→400×200) ----
   {
+    /** @type {string[]} */
     const received = [];
-    const okResolver = async (code) => {
+    const okResolver = async (/** @type {string} */ code) => {
       received.push(code);
       return { svg: FAKE_SVG, png: PNG_MAGIC, width: 600, height: 300 };
     };
+    /** @type {Warning[]} */
     const warnings = [];
-    const docx = await convert(MD_OK, "docx", { baseDir: FIXTURES_DIR, warnings, mermaidResolver: okResolver });
+    const docx = asDocxArtifact(await convertTyped(MD_OK, "docx", { baseDir: FIXTURES_DIR, warnings, mermaidResolver: okResolver }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (received.length !== 1 || received[0] !== "graph TD\n  A-->B") {
       throw new Error(`docx 成功路径:resolver 未收到围栏原文,received=${JSON.stringify(received)}(remark fence 去尾换行)`);
@@ -81,12 +99,13 @@ export async function run() {
 
   // ---- docx 降级路径:resolver 返回 null → 代码原文保留 + 无图片 + 警告 ----
   {
+    /** @type {Warning[]} */
     const warnings = [];
-    const docx = await convert(MD_OK, "docx", {
+    const docx = asDocxArtifact(await convertTyped(MD_OK, "docx", {
       baseDir: FIXTURES_DIR,
       warnings,
       mermaidResolver: async () => null,
-    });
+    }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (xml.includes("a:blip")) {
       throw new Error("docx 降级路径:null 结果不应内嵌图片");
@@ -102,14 +121,15 @@ export async function run() {
 
   // ---- docx 降级路径(抛错):警告带 reason ----
   {
+    /** @type {Warning[]} */
     const warnings = [];
-    const docx = await convert(MD_OK, "docx", {
+    const docx = asDocxArtifact(await convertTyped(MD_OK, "docx", {
       baseDir: FIXTURES_DIR,
       warnings,
       mermaidResolver: async () => {
         throw new Error("boom");
       },
-    });
+    }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (xml.includes("a:blip") || !xml.includes("graph TD")) {
       throw new Error("docx 降级路径(抛错):应降级为代码块原文且无图片");
@@ -122,8 +142,9 @@ export async function run() {
 
   // ---- docx 无 resolver:原行为不变(代码块文本,无图片,无警告) ----
   {
+    /** @type {Warning[]} */
     const warnings = [];
-    const docx = await convert(MD_OK, "docx", { baseDir: FIXTURES_DIR, warnings });
+    const docx = asDocxArtifact(await convertTyped(MD_OK, "docx", { baseDir: FIXTURES_DIR, warnings }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (xml.includes("a:blip")) {
       throw new Error("docx 无 resolver:mermaid 围栏不应内嵌图片(原行为)");
@@ -139,12 +160,13 @@ export async function run() {
 
   // ---- pdf 成功路径:mermaid-svg 内联 + 无占位残留 + 特殊字符逐字符还原 ----
   {
+    /** @type {string[]} */
     const received = [];
-    const okResolver = async (code) => {
+    const okResolver = async (/** @type {string} */ code) => {
       received.push(code);
       return { svg: FAKE_SVG, png: PNG_MAGIC, width: 600, height: 300 };
     };
-    const pdf = await convert(MD_SPECIAL, "pdf", { baseDir: FIXTURES_DIR, warnings: [], mermaidResolver: okResolver });
+    const pdf = asPdfArtifact(await convertTyped(MD_SPECIAL, "pdf", { baseDir: FIXTURES_DIR, warnings: [], mermaidResolver: okResolver }));
     if (!pdf.html.includes('<div class="mermaid-svg">')) {
       throw new Error('pdf 成功路径:缺少 <div class="mermaid-svg">');
     }
@@ -163,12 +185,13 @@ export async function run() {
 
   // ---- pdf 降级路径:null → mermaid-fallback 转义代码块 + 警告 ----
   {
+    /** @type {Warning[]} */
     const warnings = [];
-    const pdf = await convert(MD_SPECIAL, "pdf", {
+    const pdf = asPdfArtifact(await convertTyped(MD_SPECIAL, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings,
       mermaidResolver: async () => null,
-    });
+    }));
     if (!pdf.html.includes('<pre class="mermaid-fallback"><code>')) {
       throw new Error('pdf 降级路径:缺少 <pre class="mermaid-fallback">');
     }
@@ -190,14 +213,15 @@ export async function run() {
 
   // ---- pdf 降级路径(抛错):警告带 reason + fallback 代码块 ----
   {
+    /** @type {Warning[]} */
     const warnings = [];
-    const pdf = await convert(MD_SPECIAL, "pdf", {
+    const pdf = asPdfArtifact(await convertTyped(MD_SPECIAL, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings,
       mermaidResolver: async () => {
         throw new Error("boom");
       },
-    });
+    }));
     if (!pdf.html.includes('<pre class="mermaid-fallback"><code>')) {
       throw new Error('pdf 降级路径(抛错):缺少 <pre class="mermaid-fallback">');
     }
@@ -216,7 +240,7 @@ export async function run() {
 
   // ---- pdf 无 resolver:原 hljs 兜底(不产占位、无 mermaid class) ----
   {
-    const pdf = await convert(MD_OK, "pdf", { baseDir: FIXTURES_DIR, warnings: [] });
+    const pdf = asPdfArtifact(await convertTyped(MD_OK, "pdf", { baseDir: FIXTURES_DIR, warnings: [] }));
     // markdown-it 兜底:非注册语言经 escapeHtml(--&gt;),内容行保留缩进,包装为 hljs pre
     if (!pdf.html.includes('<pre class="hljs"><code>graph TD\n  A--&gt;B\n</code></pre>')) {
       throw new Error("pdf 无 resolver:缺少原 hljs 兜底代码块(转义形态)");
@@ -229,11 +253,11 @@ export async function run() {
 
   // ---- 非 mermaid 围栏不变(docx 文本 / pdf hljs 高亮,带 resolver 也不被劫持) ----
   {
-    const docx = await convert(MD_JS, "docx", {
+    const docx = asDocxArtifact(await convertTyped(MD_JS, "docx", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       mermaidResolver: async () => ({ svg: FAKE_SVG, png: PNG_MAGIC, width: 100, height: 50 }),
-    });
+    }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (xml.includes("a:blip")) {
       throw new Error("非 mermaid 围栏:js 围栏不应走 mermaid 图片分支");
@@ -245,11 +269,11 @@ export async function run() {
         throw new Error(`非 mermaid 围栏:docx 应保留 js 代码文本片段「${frag}」`);
       }
     }
-    const pdf = await convert(MD_JS, "pdf", {
+    const pdf = asPdfArtifact(await convertTyped(MD_JS, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       mermaidResolver: async () => ({ svg: FAKE_SVG, png: PNG_MAGIC, width: 100, height: 50 }),
-    });
+    }));
     if (!pdf.html.includes('<pre class="hljs"><code class="language-js">')) {
       throw new Error("非 mermaid 围栏:pdf 应走 js hljs 高亮(带 resolver 也不变)");
     }

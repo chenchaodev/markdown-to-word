@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 关窗放弃流程测试(src/main/windows/main-window.ts 的 runCloseAbortFlow +
  * confirmCloseDuringConvert,配合 src/main/windows/web-contents-registry.ts;
@@ -33,16 +34,59 @@ import { updateSettings } from "../../dist/main/persist/settings.js";
 import { backupSettings } from "../common/settings.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`window-close-abort 断言失败:${msg}`);
 }
 
 const POLL = 100;
 
+/** 假流程状态(时钟 / 活动操作数 / 窗口是否已销毁) */
+/** @typedef {{ clock: number, active: number, destroyed: boolean }} FlowState */
+/** 计划步骤:每次 delay 推进时钟后执行一步,可改状态(可传 null 占位) */
+/** @typedef {((state: FlowState, calls: string[]) => void) | null} PlanStep */
+/** makeFlow 选项(全部可省,默认即「有活动操作 + 不释放 + 不弹确认」以外的中性值) */
+/** @typedef {{
+ *   active?: number,
+ *   destroyed?: boolean,
+ *   plan?: PlanStep[],
+ *   confirm?: false | ((state: FlowState) => boolean),
+ *   releaseOnCancel?: boolean,
+ * }} FlowOptions */
+
+/**
+ * 取数值(经函数取值:前一次 `assert(v === N)` 会把 v 收窄成字面量,
+ * 而两次断言之间实现会改变该值——直接再比较会误报「无交集」)。
+ * @param {number} value 数值
+ * @returns {number} 原值
+ */
+const num = (value) => value;
+
 /**
  * 假流程依赖:状态机 + 调用记录。
  * active = 当前 webContents 上的活动操作数(关窗判定只看存在性);
  * delay 每次推进时钟 pollMs 并执行一步计划,用于压缩 30s 超时为毫秒级。
+ * @param {FlowOptions} [options] 初始状态与行为开关
+ * @returns {{
+ *   deps: {
+ *     confirm: () => Promise<boolean>,
+ *     isDestroyed: () => boolean,
+ *     hasOperation: () => boolean,
+ *     cancelOperation: () => void,
+ *     now: () => number,
+ *     delay: (ms: number) => Promise<void>,
+ *     close: () => void,
+ *     destroy: () => void,
+ *   },
+ *   calls: string[],
+ *   delays: number[],
+ *   state: FlowState,
+ * }} 依赖桩 + 调用/延迟记录 + 状态
  */
 function makeFlow(options = {}) {
   const state = {
@@ -50,8 +94,8 @@ function makeFlow(options = {}) {
     active: options.active ?? 1,
     destroyed: options.destroyed ?? false,
   };
-  const calls = [];
-  const delays = [];
+  const calls = /** @type {string[]} */ ([]);
+  const delays = /** @type {number[]} */ ([]);
   const plan = options.plan ?? [];
   let step = 0;
   const deps = {
@@ -76,13 +120,15 @@ function makeFlow(options = {}) {
       calls.push("now");
       return state.clock;
     },
-    delay: async (ms) => {
+    delay: async (/** @type {number} */ ms) => {
       delays.push(ms);
       state.clock += ms;
       const next = plan[step++];
       if (next) next(state, calls);
     },
-    close: () => calls.push("close"),
+    close: () => {
+      calls.push("close");
+    },
     destroy: () => {
       state.destroyed = true;
       calls.push("destroy");
@@ -91,6 +137,12 @@ function makeFlow(options = {}) {
   return { deps, calls, delays, state };
 }
 
+/**
+ * 统计某个副作用被调用的次数。
+ * @param {string[]} calls 调用记录
+ * @param {string} name 目标名
+ * @returns {number} 次数
+ */
 const countCall = (calls, name) => calls.filter((c) => c === name).length;
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
@@ -152,7 +204,7 @@ export async function run() {
   }
   // ---------- 5. 交错:旧操作释放后新任务占用 → 继续等待,不半路关窗 ----------
   {
-    const freshCall = [];
+    const freshCall = /** @type {string[]} */ ([]);
     const { deps, calls } = makeFlow({
       releaseOnCancel: false,
       plan: [
@@ -189,8 +241,8 @@ export async function run() {
     const ctxA = { canceled: 0, cancel() { this.canceled++; } };
     const tokenA = beginWebContentsOperation(id, "single", ctxA);
     assert(tokenA !== null && hasWebContentsOperation(id), "首个操作应占用成功");
-    assert(cancelWebContentsOperation(id) === true && ctxA.canceled === 1, "放弃转换应取消当前操作一次");
-    assert(cancelWebContentsOperation(id) === true && ctxA.canceled === 2, "注册仍在时重复取消仍指向当前操作");
+    assert(cancelWebContentsOperation(id) === true && num(ctxA.canceled) === 1, "放弃转换应取消当前操作一次");
+    assert(cancelWebContentsOperation(id) === true && num(ctxA.canceled) === 2, "注册仍在时重复取消仍指向当前操作");
     assert(finishWebContentsOperation(id, tokenA) === true, "旧任务 finally 应释放自身 token");
     const ctxB = { canceled: 0, cancel() { this.canceled++; } };
     const tokenB = beginWebContentsOperation(id, "precheck", ctxB);
@@ -236,7 +288,7 @@ export async function run() {
     const keepToken = beginWebContentsOperation(senderId, "single", keepCtx);
     dialog.showMessageBox = async () => {
       dialogCalls.push("keep");
-      return { response: 0 };
+      return { response: 0, checkboxChecked: false };
     };
     try {
       await confirmCloseDuringConvert(win);
@@ -252,7 +304,7 @@ export async function run() {
     // 8.2 abort 选择:取消真实飞行中的转换,待 finally 释放后关窗
     dialog.showMessageBox = async () => {
       dialogCalls.push("abort");
-      return { response: 1 };
+      return { response: 1, checkboxChecked: false };
     };
     const pending = handlers.get(CH.convertSingle)(event, md, "docx");
     assert(hasWebContentsOperation(senderId), "真实转换应已占用注册表");

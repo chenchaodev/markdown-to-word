@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 内联格式白名单测试:
  * 双格式一致:白名单无属性标签渲染为对应格式(pdf 原样输出 / docx 样式运行);
@@ -12,6 +13,7 @@ import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:白名单标签 + 危险样例(gen-fixtures 落盘为 acceptance/raw-html.md) */
 const htmlMd = `# 白名单测试
@@ -33,8 +35,11 @@ export const meta = { description: "内联格式白名单测试:" };
 export const fixtures = { main: htmlMd, cross: crossMd };
 
 export async function run() {
-  const htmlDocx = await convert(htmlMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const htmlDocument = await unzipPart(htmlDocx.buffer, "word/document.xml");
+  const htmlDocx = docxBufferOf(
+    await convert(htmlMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
+  );
+  const htmlDocument = await unzipPart(htmlDocx, "word/document.xml");
+  /** @type {[string, string][]} 断言表 [XML 片段, 中文标签] */
   const htmlDocxChecks = [
     ["粗体", "strong 文本"],
     ["斜体", "em 文本"],
@@ -51,12 +56,14 @@ export async function run() {
     if (!htmlDocument.includes(needle)) throw new Error(`白名单断言失败:docx 缺少 ${label}(${needle})`);
   }
   // 危险样例 docx 侧整体跳过(块级 html 节点跳过 + 段落内危险段归一化丢弃,内容文本不残留)
-  for (const [needle, label] of [
+  /** @type {[string, string][]} 断言表 [XML 片段, 中文标签] */
+  const htmlDocxDangerChecks = [
     ["alert", "script 内容"],
     ["块级", "div 内容"],
     ["带属性", "带属性标签内容"],
     ['class="', "属性标签"],
-  ]) {
+  ];
+  for (const [needle, label] of htmlDocxDangerChecks) {
     if (htmlDocument.includes(needle)) throw new Error(`白名单断言失败:docx 不应含 ${label}`);
   }
   console.log("[ok] docx 白名单:白名单标签渲染 + 危险样例跳过 全部通过");
@@ -64,7 +71,10 @@ export async function run() {
   // pdf:白名单整串原样输出(Chromium 渲染);危险样例转义。
   // 注:转义仅作用于标签字符(< > & "),标签内文本(如 alert(1)、块级)按转义语义
   // 保留为可见文本,故断言"标签被转义"(&lt;script&gt; / &lt;div)而非文本消失。
-  const htmlPdf = await convert(htmlMd, "pdf", { baseDir: FIXTURES_DIR, title: "白名单测试", warnings: [] });
+  const htmlPdf = asPdfArtifact(
+    await convert(htmlMd, "pdf", { baseDir: FIXTURES_DIR, title: "白名单测试", warnings: [] }),
+  );
+  /** @type {[string, string][]} 断言表 [HTML 片段, 中文标签] */
   const htmlPdfChecks = [
     ["<strong>粗体</strong>", "strong 原样输出"],
     ["<em>斜体</em>", "em 原样输出"],
@@ -80,11 +90,13 @@ export async function run() {
   for (const [needle, label] of htmlPdfChecks) {
     if (!htmlPdf.html.includes(needle)) throw new Error(`白名单断言失败:PDF 缺少 ${label}(${needle})`);
   }
-  for (const [needle, label] of [
+  /** @type {[string, string][]} 断言表 [HTML 片段, 中文标签] */
+  const htmlPdfDangerChecks = [
     ["<script", "script 明文标签"],
     ['<div class="x"', "div 明文标签(用户输入特有,模板 div 为 page-break/cover 等,不受影响)"],
     ["<strong class=", "带属性 strong 明文标签"],
-  ]) {
+  ];
+  for (const [needle, label] of htmlPdfDangerChecks) {
     if (htmlPdf.html.includes(needle)) throw new Error(`白名单断言失败:PDF 不应含 ${label}`);
   }
   console.log("[ok] PDF 白名单:白名单原样输出 + 危险样例转义 全部通过");
@@ -97,8 +109,10 @@ export async function run() {
   // 丢弃语义):「<strong>险</div>」无法构成白名单表达式 → 危险段(开标签起至首个
   // 闭标签 html 节点)整体丢弃、内容文本(险)不残留;而「<strong>乙</strong></div>」
   // 白名单整串合并先行 → 乙 保留为粗体运行,孤立危险闭标签丢弃。
-  const crossDocx = await convert(crossMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const crossDocument = await unzipPart(crossDocx.buffer, "word/document.xml");
+  const crossDocument = await unzipPart(
+    docxBufferOf(await convert(crossMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })),
+    "word/document.xml",
+  );
   if (crossDocument.includes("</div>")) {
     throw new Error("交叉边界断言失败:docx 不应残留危险闭标签 </div>");
   }
@@ -113,7 +127,9 @@ export async function run() {
   }
   console.log("[ok] docx 交叉边界:危险段整体丢弃(无 </div> 残留/文本不残留)+ 白名单整串保留 + 行首 html 块渲染");
 
-  const crossPdf = await convert(crossMd, "pdf", { baseDir: FIXTURES_DIR, title: "交叉边界测试", warnings: [] });
+  const crossPdf = asPdfArtifact(
+    await convert(crossMd, "pdf", { baseDir: FIXTURES_DIR, title: "交叉边界测试", warnings: [] }),
+  );
   if (!crossPdf.html.includes("<strong>行首粗体</strong>")) {
     throw new Error("交叉边界断言失败:PDF 行首白名单 html_block 应原样输出");
   }
@@ -126,5 +142,5 @@ export async function run() {
   console.log("[ok] PDF 交叉边界:行首 html_block 白名单原样输出 + 危险交错转义");
 
   const htmlPdfBin = await htmlToPdf(htmlPdf.html, htmlPdf.footerTemplate);
-  await saveArtifact("raw-html", { docx: htmlDocx.buffer, pdf: htmlPdfBin });
+  await saveArtifact("raw-html", { docx: htmlDocx, pdf: htmlPdfBin });
 }

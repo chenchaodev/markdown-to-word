@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 公式测试:
  * docx:KaTeX(MathML)→ docx Math 组件;OOXML 序列化名已实证(docx 9.7.1
@@ -16,6 +17,11 @@ import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import path from "node:path";
 import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
+import { asPdfArtifact, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+
+/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
+ *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
+ /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 
 /** 主样例:行内/分式/上下标/开方公式(gen-fixtures 落盘为 acceptance/formula.md) */
 const formulaMd = `# 公式测试
@@ -44,28 +50,31 @@ export const fixtures = { main: formulaMd, degrade: degradeMd };
 
 export async function run() {
   const katexDir = KATEX_DIR;
-  const formulaDocx = await convert(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], katexDir });
-  const formulaDocument = await unzipPart(formulaDocx.buffer, "word/document.xml");
+  const formulaDocx = /** @type {ConvertArtifact} */ (
+    await convert(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], katexDir })
+  );
+  const formulaDocument = await unzipPart(docxBufferOf(formulaDocx), "word/document.xml");
   if (!formulaDocument.includes("<m:oMath")) {
     throw new Error("公式断言失败:document.xml 缺少 <m:oMath(公式未生成)");
   }
-  for (const [needle, label] of [
+  for (const [needle, label] of /** @type {[string, string][]} */ ([
     ["<m:t>x</m:t>", "x 上标文本"],
     ["<m:f>", "分式 m:f"],
     ["<m:sSubSup>", "上下标 m:sSubSup"],
     ["<m:rad>", "开方 m:rad"],
-  ]) {
+  ])) {
     if (!formulaDocument.includes(needle)) throw new Error(`公式断言失败:document.xml 缺少 ${label}(${needle})`);
   }
   console.log("[ok] docx 公式:m:oMath 与 分式/上下标/开方 序列化齐全");
 
-  const formulaPdf = await convert(formulaMd, "pdf", {
+  const formulaPdf = /** @type {ConvertArtifact} */ (await convert(formulaMd, "pdf", {
     baseDir: FIXTURES_DIR, title: "公式测试", warnings: [], katexDir,
-  });
-  if (!formulaPdf.html.includes('class="katex"')) {
+  }));
+  const formulaHtml = pdfHtmlOf(formulaPdf);
+  if (!formulaHtml.includes('class="katex"')) {
     throw new Error('公式断言失败:PDF 缺少 KaTeX 渲染结构(class="katex")');
   }
-  if (!formulaPdf.html.includes("@font-face")) {
+  if (!formulaHtml.includes("@font-face")) {
     throw new Error("公式断言失败:PDF 缺少 @font-face(KaTeX CSS 内联未生效)");
   }
   console.log("[ok] PDF 公式:KaTeX 结构 + CSS 字体内联生效");
@@ -74,17 +83,19 @@ export async function run() {
   // 依据(dist/core/pdf/katex-css.ts):katexDir 无效时 readFileSync 抛错 → catch 返回 ""
   // 并经 warnings 通道上报 warn.katexCssLoadFailed(失败可见性,此前静默)。
   // renderPdfHtml 不抛错;公式仍渲染为 KaTeX HTML(仅缺字体样式)。
+  /** @type {unknown[]} */
   const badKatexWarnings = [];
-  const badKatexPdf = await convert(formulaMd, "pdf", {
+  const badKatexPdf = /** @type {ConvertArtifact} */ (await convert(formulaMd, "pdf", {
     baseDir: FIXTURES_DIR,
     title: "公式测试",
     warnings: badKatexWarnings,
     katexDir: path.join(FIXTURES_DIR, "no-such-katex"),
-  });
-  if (badKatexPdf.html.includes("@font-face")) {
+  }));
+  const badKatexHtml = pdfHtmlOf(badKatexPdf);
+  if (badKatexHtml.includes("@font-face")) {
     throw new Error("公式断言失败:无效 katexDir 不应内联 @font-face(loadKatexCss 应返回空串)");
   }
-  if (!badKatexPdf.html.includes('class="katex"')) {
+  if (!badKatexHtml.includes('class="katex"')) {
     throw new Error("公式断言失败:无效 katexDir 时公式仍应渲染为 KaTeX HTML");
   }
   if (!badKatexWarnings.some((w) => formatWarning(w).includes("KaTeX 样式加载失败"))) {
@@ -102,6 +113,7 @@ export async function run() {
     throw new Error("公式断言失败:loadKatexCss 未走注入 read(无效 katexDir 应产出注入内容而非空串)");
   }
   // 注入 read 自身失败 → 与 fs 失败同通道:空串 + warn.katexCssLoadFailed(不回落真实 fs)
+  /** @type {unknown[]} */
   const injectWarnings = [];
   const injectFailed = loadKatexCss(KATEX_DIR, injectWarnings, {
     read: () => {
@@ -122,9 +134,12 @@ export async function run() {
   // renderBlock case "math" / pushRuns case "inlineMath")渲染为 TextRun 等宽灰字
   // (CODE_FONT=Consolas,color 888888)并追加警告「公式解析失败,降级为 TeX 源码: …」,
   // 不产出 m:oMath(整式降级,不混排)。失败样例:未闭合分组 \frac{1}{。
+  /** @type {unknown[]} */
   const degradeWarnings = [];
-  const degradeDocx = await convert(degradeMd, "docx", { baseDir: FIXTURES_DIR, warnings: degradeWarnings });
-  const degradeDocument = await unzipPart(degradeDocx.buffer, "word/document.xml");
+  const degradeDocx = /** @type {ConvertArtifact} */ (
+    await convert(degradeMd, "docx", { baseDir: FIXTURES_DIR, warnings: degradeWarnings })
+  );
+  const degradeDocument = await unzipPart(docxBufferOf(degradeDocx), "word/document.xml");
   // 断言:降级 TeX 源码以等宽灰字出现在 document.xml(样式 needle 已实证:color 888888)
   if (!degradeDocument.includes("\\frac{1}{")) {
     throw new Error("公式断言失败:降级公式 TeX 源码未出现在 document.xml");
@@ -165,8 +180,10 @@ $$
 \\bigcup_{i=1}^{n} A_i
 $$
 `;
-  const fallbackDocx = await convert(fallbackMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const fallbackDocument = await unzipPart(fallbackDocx.buffer, "word/document.xml");
+  const fallbackDocx = /** @type {ConvertArtifact} */ (
+    await convert(fallbackMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
+  );
+  const fallbackDocument = await unzipPart(docxBufferOf(fallbackDocx), "word/document.xml");
   // 回落结构:MathSubSuperScript 而非 MathSum(无 m:nary)
   if (!fallbackDocument.includes("<m:sSubSup>")) {
     throw new Error("公式断言失败:非 ∑ munderover 未回落 MathSubSuperScript(<m:sSubSup>)");
@@ -175,16 +192,16 @@ $$
     throw new Error("公式断言失败:非 ∑ munderover 不应产出 MathSum(<m:nary)");
   }
   // mo 文本化(moText):∏ / ⋃ 以 MathRun 文本进 base,sub/sup 兄弟节点文本齐全
-  for (const [needle, label] of [
+  for (const [needle, label] of /** @type {[string, string][]} */ ([
     ["<m:t>∏</m:t>", "∏ 基文本"],
     ["<m:t>⋃</m:t>", "⋃ 基文本"],
     ["<m:t>i</m:t>", "下标 i"],
     ["<m:t>n</m:t>", "上标 n"],
-  ]) {
+  ])) {
     if (!fallbackDocument.includes(needle)) throw new Error(`公式断言失败:非 ∑ 回落缺少 ${label}(${needle})`);
   }
   console.log("[ok] docx 公式:munderover 非 ∑ 回落(MathSubSuperScript + mo 文本,无 m:nary)断言通过");
 
-  const formulaPdfBin = await htmlToPdf(formulaPdf.html, formulaPdf.footerTemplate);
-  await saveArtifact("formula", { docx: formulaDocx.buffer, pdf: formulaPdfBin });
+  const formulaPdfBin = await htmlToPdf(formulaHtml, asPdfArtifact(formulaPdf).footerTemplate);
+  await saveArtifact("formula", { docx: docxBufferOf(formulaDocx), pdf: formulaPdfBin });
 }

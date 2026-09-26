@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 启动屏障段(src/renderer/renderer.ts 的组合根初始化编排):
  * renderer.ts 是 DOM 绑定的组合根(模块顶层即 querySelector 取节点),Node/Electron
@@ -20,6 +21,13 @@ const SRC = fs.readFileSync(
   "utf8",
 );
 
+/**
+ * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
+ * (cond 为假即抛,后续代码无须再判空)。
+ * @param {unknown} cond
+ * @param {string} msg
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`init-barrier 断言失败:${msg}`);
 }

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * case 级断言契约:段内把断言收敛为具名 case,收集「名称/耗时/通过失败/失败消息/
  * 附件引用」,由 runner 聚合、入口打印 case 级报告,失败段另落盘失败产物。
@@ -46,7 +47,10 @@
  * @property {string[]} attachments 附件引用(attach 登记的产物文件名)
  */
 
-/** 段执行期间登记的 suite 容器(case/snapshots 数组引用固定,便于外部事后读取) */
+/**
+ * 段执行期间登记的 suite 容器(case/snapshots 数组引用固定,便于外部事后读取)
+ * @type {{ cases: CaseResult[], snapshots: ArtifactSnapshot[] }[]}
+ */
 const registered = [];
 
 /**

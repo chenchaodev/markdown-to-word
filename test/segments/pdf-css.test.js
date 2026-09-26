@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * PDF 自定义样式 CSS 覆盖测试:
  * 用户导入的 CSS 持久化于 settings.pdfCss,渲染时追加到默认模板 CSS 之后
@@ -12,6 +13,7 @@
  */
 import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { asPdfArtifact } from "../common/convert-helpers.js";
 
 const md = `# 标题
 
@@ -25,7 +27,9 @@ export const fixtures = null;
 
 export async function run() {
   // ---- 1. 传 pdfCss → 用户 CSS 注入且位于默认 CSS 之后(后加载覆盖) ----
-  const withCss = await convert(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: USER_CSS });
+  const withCss = asPdfArtifact(
+    await convert(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: USER_CSS }),
+  );
   const userIdx = withCss.html.indexOf(USER_CSS);
   if (userIdx === -1) {
     throw new Error("pdfCss 断言失败:输出 HTML 应包含用户 CSS");
@@ -43,14 +47,16 @@ export async function run() {
   console.log("[ok] pdfCss:用户 CSS 追加到默认 CSS 之后(同一 <style> 内后声明覆盖)");
 
   // ---- 2. 回归:不传 pdfCss → 输出不含用户 CSS(默认行为不变) ----
-  const withoutCss = await convert(md, "pdf", { baseDir: FIXTURES_DIR });
+  const withoutCss = asPdfArtifact(await convert(md, "pdf", { baseDir: FIXTURES_DIR }));
   if (withoutCss.html.includes(USER_CSS)) {
     throw new Error("pdfCss 断言失败:不传 pdfCss 时输出不应包含用户 CSS(回归)");
   }
   console.log("[ok] pdfCss:不传 pdfCss 不注入(回归)");
 
   // ---- 3. 回归:空串 pdfCss → 等价于不传(不注入) ----
-  const emptyCss = await convert(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: "" });
+  const emptyCss = asPdfArtifact(
+    await convert(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: "" }),
+  );
   if (emptyCss.html.includes(USER_CSS)) {
     throw new Error("pdfCss 断言失败:空串 pdfCss 不应注入用户 CSS(回归)");
   }
@@ -58,7 +64,9 @@ export async function run() {
 
   // ---- 4. 注入防护:含 </style> 的用户 CSS 被剥离,不提前闭合 <style> ----
   const malicious = 'body { color: red; } </style><img src=x onerror=alert(1)>';
-  const sanitized = await convert(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: malicious });
+  const sanitized = asPdfArtifact(
+    await convert(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: malicious }),
+  );
   const firstStyleEnd = sanitized.html.indexOf("</style>");
   // 净化成功:注入标记作为文本留在 <style> 内部(位于合法 </style> 之前);
   // 若被提前闭合,注入标记会出现在第一个 </style> 之后成为真实元素

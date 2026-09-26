@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * WebContents 加固段(src/main/services/web-hardening.ts;main/services 此前无专属测试的服务,覆盖缺口补测):
  * 实现事实(读源码确认):
@@ -12,18 +13,40 @@
 import { shell } from "electron";
 import { hardenWebContents, isHttpUrl, openExternalIfHttp } from "../../dist/main/services/web-hardening.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`web-hardening 断言失败:${msg}`);
 }
 
-/** 构造假 BrowserWindow:捕获 setWindowOpenHandler / will-navigate 注册的 handler */
+/**
+ * 构造假 BrowserWindow:捕获 setWindowOpenHandler / will-navigate 注册的 handler
+ * @returns {{
+ *   windowOpen?: (details: { url: string }) => { action: string },
+ *   willNavigate?: (event: { preventDefault: () => void }, url: string) => void,
+ * }} 捕获到的 handler(未注册则该键缺失)
+ */
 function captureHandlers() {
+  /** @type {{ windowOpen?: (details: { url: string }) => { action: string }, willNavigate?: (event: { preventDefault: () => void }, url: string) => void }} */
   const captured = {};
   const fakeWin = {
     webContents: {
+      /**
+       * @param {(details: { url: string }) => { action: string }} fn 注册的 handler
+       * @returns {void}
+       */
       setWindowOpenHandler(fn) {
         captured.windowOpen = fn;
       },
+      /**
+       * @param {string} event 事件名
+       * @param {(event: { preventDefault: () => void }, url: string) => void} fn 监听器
+       * @returns {void}
+       */
       on(event, fn) {
         if (event === "will-navigate") captured.willNavigate = fn;
       },
@@ -33,7 +56,10 @@ function captureHandlers() {
   return captured;
 }
 
-/** 构造可观察 preventDefault 的假事件 */
+/**
+ * 构造可观察 preventDefault 的假事件
+ * @returns {{ prevented: boolean, preventDefault: () => void }} 假事件
+ */
 function fakeEvent() {
   return { prevented: false, preventDefault() { this.prevented = true; } };
 }
@@ -63,7 +89,7 @@ export async function run() {
   // http(s) 目标经 openExternalIfHttp 会转交系统浏览器——真实执行会在验收机上
   // 唤起默认浏览器(2026-08-24 实测踩坑)。以记录桩替换并顺带断言分流调用;
   // ESM 严格模式下对只读属性赋值会抛错→段失败响亮暴露,不会静默真开浏览器。
-  const externalCalls = [];
+  const externalCalls = /** @type {string[]} */ ([]);
   const realOpenExternal = shell.openExternal;
   shell.openExternal = async (url) => { externalCalls.push(url); };
   try {

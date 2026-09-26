@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * runner 自测段(被测 = 测试框架自身:执行模型 + case 级报告 + 失败 artifact):
  * 在 output/tmp/ 下临时写出真实段文件跑 runAll(隔离模型七段/回退模型三段),覆盖两组契约。
@@ -31,6 +32,7 @@ import { formatCaseReport, resolveIsolation, runAll, summarizeCases } from "../c
 
 /** 临时段文件沙盒(仓库 output/ 下,gitignore 覆盖;不落 test/,免被 typecheck/lint 扫入) */
 const SANDBOX = path.join(ROOT, "output", "tmp", "runner-report-selftest");
+
 /** 沙盒段 → 仓库内 case 契约模块的相对路径(output/tmp/<沙盒>/ → test/common/) */
 const CASE_MODULE = "../../../test/common/case.js";
 
@@ -56,16 +58,79 @@ const SNAPSHOT_BYTES = "M2W-FAILURE-SNAPSHOT-BYTES";
 const A_USERDATA_FILE = "state-a-userdata.txt";
 const B_USERDATA_FILE = "state-b-userdata.txt";
 
+/**
+ * 段结果项(runAll 汇总项的类型;契约单源在 test/common/runner.js,此处按签名派生)。
+ * @typedef {Awaited<ReturnType<typeof runAll>>["results"][number]} SegmentResultEntry
+ */
+
+/**
+ * 取段结果(缺失即失败:沙盒段清单与执行结果必须一一对应)。
+ * @param {Map<string, SegmentResultEntry>} byFile 段结果索引
+ * @param {string} name 段文件名
+ * @returns {SegmentResultEntry} 该段结果
+ */
+function resultOf(byFile, name) {
+  const entry = byFile.get(name);
+  if (entry === undefined) fail(`未执行沙盒段 ${name}`);
+  return entry;
+}
+
+/**
+ * 取数组第 index 项(缺失即失败:用于 case 结果的下标访问收窄)。
+ * @template T
+ * @param {T[]} items 数组
+ * @param {number} index 下标
+ * @returns {T} 该项
+ */
+function at(items, index) {
+  const item = items[index];
+  if (item === undefined) fail(`缺少第 ${index} 项`);
+  return item;
+}
+
+/**
+ * 读段级错误的 stack(段错误声明为 unknown——回退模型下为段内抛出原值)。
+ * @param {unknown} error 段级错误
+ * @returns {string} stack 文本(无则空串)
+ */
+function errorStack(error) {
+  return error !== null && typeof error === "object" && "stack" in error ? String(error.stack) : "";
+}
+
+/**
+ * 读段级错误的 message(段错误声明为 unknown,按可读文本取用)。
+ * @param {unknown} error 段级错误
+ * @returns {string} message 文本(无则空串)
+ */
+function errorMessage(error) {
+  return error !== null && typeof error === "object" && "message" in error ? String(error.message) : "";
+}
+
+/**
+ * 写一个沙盒段文件。
+ * @param {string} name 段文件名
+ * @param {string} source 段源码
+ * @returns {void}
+ */
 function writeSegment(name, source) {
   fs.mkdirSync(SANDBOX, { recursive: true });
   fs.writeFileSync(path.join(SANDBOX, name), source, "utf8");
 }
 
+/**
+ * 删除一个沙盒文件。
+ * @param {string} name 文件名
+ * @returns {void}
+ */
 function removeSandboxFile(name) {
   fs.rmSync(path.join(SANDBOX, name), { force: true });
 }
 
-/** 读产物目录条目(目录不存在 = 空) */
+/**
+ * 读产物目录条目(目录不存在 = 空)。
+ * @param {string} dir 目录
+ * @returns {string[]} 条目名
+ */
 function readDirSafe(dir) {
   try {
     return fs.readdirSync(dir);
@@ -202,7 +267,13 @@ function cleanupSandbox() {
   }
 }
 
-/** 临时设 M2W_ONLY 并在 finally 复原(筛选在父进程完成,子进程只跑选中的段) */
+/**
+ * 临时设 M2W_ONLY 并在 finally 复原(筛选在父进程完成,子进程只跑选中的段)。
+ * @template T
+ * @param {string} only M2W_ONLY 取值
+ * @param {() => Promise<T> | T} body 夹具主体
+ * @returns {Promise<T>} body 的返回值
+ */
 async function withOnly(only, body) {
   const previous = process.env.M2W_ONLY;
   process.env.M2W_ONLY = only;
@@ -214,6 +285,11 @@ async function withOnly(only, body) {
   }
 }
 
+/**
+ * 断言失败出口(不依赖被测件的 assert,见文件头沙盒纪律)。
+ * @param {string} message 失败说明
+ * @returns {never} 恒抛错
+ */
 function fail(message) {
   throw new Error(`runner 自测:${message}`);
 }
@@ -246,33 +322,34 @@ export async function run() {
       if (!byFile.has(name)) fail(`未执行沙盒段 ${name}`);
     }
     for (const name of shouldFail) {
-      if (byFile.get(name).ok) fail(`${name} 应失败但判通过`);
+      if (resultOf(byFile, name).ok) fail(`${name} 应失败但判通过`);
     }
     for (const name of shouldPass) {
-      if (!byFile.get(name).ok) {
-        fail(`${name} 应通过,实际 ${byFile.get(name).error?.stack ?? byFile.get(name).error}`);
+      const passed = resultOf(byFile, name);
+      if (!passed.ok) {
+        fail(`${name} 应通过,实际 ${errorStack(passed.error) || String(passed.error)}`);
       }
     }
 
     // ---- 1.1 崩溃/悬挂段之后的段确实跑完了(隔离的核心收益) ----
     if (isolating) {
-      if (!byFile.get(STATE_B_SEG).ok) {
+      if (!resultOf(byFile, STATE_B_SEG).ok) {
         fail("崩溃段与悬挂段之后的段未跑完(隔离失效)");
       }
-      const crashResult = byFile.get(CRASH_SEG);
-      if (!/异常退出/.test(String(crashResult.error?.message)) || !/退出码 7/.test(String(crashResult.error?.message))) {
-        fail(`崩溃段应记为异常退出(退出码 7),实际 ${crashResult.error?.message}`);
+      const crashResult = resultOf(byFile, CRASH_SEG);
+      if (!/异常退出/.test(errorMessage(crashResult.error)) || !/退出码 7/.test(errorMessage(crashResult.error))) {
+        fail(`崩溃段应记为异常退出(退出码 7),实际 ${errorMessage(crashResult.error)}`);
       }
       const crashLog = fs.readFileSync(path.join(segmentFailureDir(CRASH_SEG), "failure.log"), "utf8");
       if (!crashLog.includes("异常退出")) {
         fail("崩溃段失败日志应含段级错误(异常退出)");
       }
-      const hangResult = byFile.get(HANG_SEG);
+      const hangResult = resultOf(byFile, HANG_SEG);
       if (hangResult.timedOut !== true) {
         fail(`悬挂段应标 timedOut,实际 ${JSON.stringify(hangResult.timedOut)}`);
       }
-      if (!/测试段超时/.test(String(hangResult.error?.message))) {
-        fail(`悬挂段应记超时失败,实际 ${hangResult.error?.message}`);
+      if (!/测试段超时/.test(errorMessage(hangResult.error))) {
+        fail(`悬挂段应记超时失败,实际 ${errorMessage(hangResult.error)}`);
       }
       if (!Array.isArray(hangResult.cases) || hangResult.cases.length !== 2) {
         fail(`悬挂段应回传超时前已完成的 2 条 case,实际 ${JSON.stringify(hangResult.cases)}`);
@@ -286,11 +363,13 @@ export async function run() {
     }
 
     // ---- 1.2 case 级结果跨进程回传(失败段) ----
-    const failResult = byFile.get(FAIL_SEG);
+    const failResult = resultOf(byFile, FAIL_SEG);
     if (!Array.isArray(failResult.cases) || failResult.cases.length !== 2) {
       fail(`失败段应回传 2 条 case 结果,实际 ${failResult.cases?.length}`);
     }
-    const [first, second] = failResult.cases;
+    const failCases = failResult.cases;
+    const first = at(failCases, 0);
+    const second = at(failCases, 1);
     if (first.ok !== true || second.ok !== false) {
       fail("case 通过/失败标记不符(第一个应通过、第二个应失败)");
     }
@@ -303,8 +382,8 @@ export async function run() {
     if (second.message !== "故意失败") {
       fail(`失败 case 消息应原样上送,实际 ${second.message}`);
     }
-    if (failResult.error?.stack?.includes("1/2 个 case 失败") !== true) {
-      fail(`case 失败应聚合为段级错误,实际 ${failResult.error?.stack}`);
+    if (errorStack(failResult.error).includes("1/2 个 case 失败") !== true) {
+      fail(`case 失败应聚合为段级错误,实际 ${errorStack(failResult.error)}`);
     }
 
     // ---- 1.3 失败产物落盘(失败日志 + buffer 快照,经子进程回传的 buffer) ----
@@ -331,8 +410,9 @@ export async function run() {
     }
 
     // ---- 1.4 成功段不产失败目录 ----
-    const passResult = byFile.get(PASS_SEG);
-    if (passResult.cases?.length !== 1 || passResult.cases[0].ok !== true) {
+    const passResult = resultOf(byFile, PASS_SEG);
+    const passCases = passResult.cases;
+    if (!Array.isArray(passCases) || passCases.length !== 1 || at(passCases, 0).ok !== true) {
       fail("成功段应回传 1 条通过 case");
     }
     if (passResult.failureDir !== undefined) {
@@ -343,12 +423,12 @@ export async function run() {
     }
 
     // ---- 1.5 旧段兼容(无 case 契约,抛错即段失败) ----
-    const legacyResult = byFile.get(LEGACY_SEG);
+    const legacyResult = resultOf(byFile, LEGACY_SEG);
     if ("cases" in legacyResult) {
       fail("未接入 case 契约的旧段结果不应带 cases 键");
     }
-    if (!legacyResult.error?.stack?.includes("legacy 段故意抛错")) {
-      fail(`旧段错误应原样上送,实际 ${legacyResult.error?.stack}`);
+    if (!errorStack(legacyResult.error).includes("legacy 段故意抛错")) {
+      fail(`旧段错误应原样上送,实际 ${errorStack(legacyResult.error)}`);
     }
     const legacyLog = fs.readFileSync(path.join(segmentFailureDir(LEGACY_SEG), "failure.log"), "utf8");
     if (!legacyLog.includes("legacy 段故意抛错")) {
@@ -379,7 +459,7 @@ export async function run() {
     if (report.includes(LEGACY_SEG)) {
       fail("无 case 契约的段不应出现在 case 报告里");
     }
-    if (formatCaseReport([legacyResult]) !== "") {
+    if (formatCaseReport([resultOf(byFile, LEGACY_SEG)]) !== "") {
       fail("全部为旧段时 case 报告应为空串(旧段输出不变)");
     }
     const summary = summarizeCases(results);
@@ -407,13 +487,14 @@ export async function run() {
     const filtered = await withOnly(onlyNeedle, () =>
       runAll([SANDBOX], { segmentTimeoutMs: isolating ? ISOLATED_TIMEOUT_MS : INPROC_TIMEOUT_MS }),
     );
-    if (filtered.results.length !== 1 || filtered.results[0].file !== onlyExpected) {
+    if (filtered.results.length !== 1 || at(filtered.results, 0).file !== onlyExpected) {
       fail(
         `M2W_ONLY=${onlyNeedle} 应只跑 ${onlyExpected},实际 ${filtered.results.map((r) => r.file).join(", ")}`,
       );
     }
-    if (!filtered.results[0].ok) {
-      fail(`M2W_ONLY 选中的段应正常执行,实际 ${filtered.results[0].error?.stack}`);
+    const onlyResult = at(filtered.results, 0);
+    if (!onlyResult.ok) {
+      fail(`M2W_ONLY 选中的段应正常执行,实际 ${errorStack(onlyResult.error)}`);
     }
 
     /* ---------- 3. 回退开关:同进程模型判定与产物不变(仅二分定位用) ---------- */
@@ -427,13 +508,13 @@ export async function run() {
     for (const name of [FAIL_SEG, PASS_SEG, LEGACY_SEG]) {
       if (!inprocByFile.has(name)) fail(`同进程回退模型未执行 ${name}`);
     }
-    if (inprocByFile.get(PASS_SEG).ok !== true) {
-      fail(`同进程回退模型 ${PASS_SEG} 应通过,实际 ${inprocByFile.get(PASS_SEG).error?.stack}`);
+    if (resultOf(inprocByFile, PASS_SEG).ok !== true) {
+      fail(`同进程回退模型 ${PASS_SEG} 应通过,实际 ${errorStack(resultOf(inprocByFile, PASS_SEG).error)}`);
     }
-    if (inprocByFile.get(FAIL_SEG).ok !== false || inprocByFile.get(FAIL_SEG).cases?.length !== 2) {
+    if (resultOf(inprocByFile, FAIL_SEG).ok !== false || resultOf(inprocByFile, FAIL_SEG).cases?.length !== 2) {
       fail("同进程回退模型下 case 失败聚合与回传结果应不变");
     }
-    if (inprocByFile.get(LEGACY_SEG).error?.stack?.includes("legacy 段故意抛错") !== true) {
+    if (errorStack(resultOf(inprocByFile, LEGACY_SEG).error).includes("legacy 段故意抛错") !== true) {
       fail("同进程回退模型下旧段错误应原样上送");
     }
   } finally {

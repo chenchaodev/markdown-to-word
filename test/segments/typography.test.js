@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 排版设置验收:
  * 双格式共用同一 typography 契约;docx 断言字号/字体/对齐/标题编号关闭,
@@ -8,6 +9,7 @@ import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:排版设置正文(字号/行距/缩进/对齐,gen-fixtures 落盘为 acceptance/typography.md) */
 const typoMd = `# 排版设置测试
@@ -35,9 +37,11 @@ export async function run() {
   // docx:styles.default 字号(14pt×2=28 half-points)+ eastAsia 宋体;
   // 正文段落两端对齐;headingNumbering=false → 全文无编号引用
   // (md 无列表,故 w:numPr 全缺即可稳定断言标题编号已关闭)
-  const typoDocx = await convert(typoMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], typography });
-  const typoStyles = await unzipPart(typoDocx.buffer, "word/styles.xml");
-  const typoDocument = await unzipPart(typoDocx.buffer, "word/document.xml");
+  const typoDocx = docxBufferOf(
+    await convert(typoMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], typography }),
+  );
+  const typoStyles = await unzipPart(typoDocx, "word/styles.xml");
+  const typoDocument = await unzipPart(typoDocx, "word/document.xml");
   if (!typoStyles.includes('<w:sz w:val="28"/>')) {
     throw new Error('排版断言失败:styles.xml 缺少 w:sz w:val="28"(14pt×2 half-points)');
   }
@@ -64,7 +68,10 @@ export async function run() {
   console.log("[ok] docx 排版设置:字号28/宋体/两端对齐/标题编号关闭/行距360/首行缩进200 全部生效");
 
   // pdf:模板 CSS 参数化断言(renderPdfHtml 产物字符串,不依赖 printToPDF)
-  const typoPdf = await convert(typoMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [], typography });
+  const typoPdf = asPdfArtifact(
+    await convert(typoMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [], typography }),
+  );
+  /** @type {[string, string][]} [CSS 片段, 中文标签] */
   const typoChecks = [
     ["font-size: 14pt", "font-size 14pt"],
     ["text-indent: 2em", "首行缩进 text-indent"],
@@ -79,5 +86,5 @@ export async function run() {
   }
   console.log("[ok] PDF 排版设置:14pt/2em 缩进/两端对齐/宋体/编号关闭 全部生效");
   const typoPdfBin = await htmlToPdf(typoPdf.html, typoPdf.footerTemplate);
-  await saveArtifact("typography", { docx: typoDocx.buffer, pdf: typoPdfBin });
+  await saveArtifact("typography", { docx: typoDocx, pdf: typoPdfBin });
 }

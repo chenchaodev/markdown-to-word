@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 成书向导状态机纯函数测试:边界与「可前进/可付印」判定。
  * 不依赖 DOM/IPC,直接对 dist/renderer/wizard/wizard-state.js 断言。
@@ -15,6 +16,15 @@ import {
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
 export const fixtures = null;
+
+/**
+ * 向导草稿(与 src/renderer/wizard/wizard-state.ts 的 WizardDraft 同形;
+ * dist 编译产物无类型标注,空数组字面量会被推成 never[],此处按源码契约声明)。
+ * @typedef {object} WizardDraft
+ * @property {{ title: string, author: string, date: string }} cover
+ * @property {string[]} sources
+ * @property {string} format
+ */
 
 export async function run() {
   // 总步数 = 7
@@ -39,7 +49,8 @@ export async function run() {
   const empty = createDraft();
   if (!canAdvance(1, empty)) throw new Error("非合并源步应恒可前进");
   if (canAdvance(5, empty)) throw new Error("合并源步 <2 文件不应可前进");
-  const two = createDraft();
+  // 草稿形状取自 src 的 WizardDraft(dist 为编译产物、无类型标注,空数组字面量会被推成 never[])
+  const two = /** @type {WizardDraft} */ (createDraft());
   two.sources = ["a.md", "b.md"];
   if (!canAdvance(5, two)) throw new Error("合并源步 ≥2 文件应可前进");
 

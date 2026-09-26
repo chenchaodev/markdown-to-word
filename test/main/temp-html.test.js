@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 临时 HTML 文件生命周期段(src/main/services/temp-html.ts 纯 Node 层,零 Electron API):
  * 实现事实(读源码确认):
@@ -14,6 +15,12 @@ import os from "node:os";
 import path from "node:path";
 import { writeTempHtml } from "../../dist/main/services/temp-html.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`temp-html 断言失败:${msg}`);
 }

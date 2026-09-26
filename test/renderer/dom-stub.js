@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * renderer 段共用 DOM stub(dist renderer 模块在 Node 段直接 import,需要一个最小 DOM)。
  *
@@ -10,12 +11,57 @@
  * children / attributes / remove / isConnected / fire 等钩子。
  */
 
+/**
+ * 读全局槽位(如 document / window / 跨段共享宿主)。
+ *
+ * 放宽理由:Node 段以最小 stub 顶替浏览器全局,stub 只实现被测路径触及的成员,
+ * 完整 DOM 全局契约由浏览器提供;这些键也不在 lib.dom 的 Window 类型上,
+ * 故按运行期键名读写(而非把 stub 当完整 Window/Document 赋值)。
+ *
+ * @param {string} name
+ * @returns {unknown}
+ */
+export function globalSlot(name) {
+  const scope = /** @type {Record<string, unknown>} */ (globalThis);
+  return scope[name];
+}
+
+/**
+ * 写全局槽位(安装/复位 stub 用);放宽理由同 globalSlot。
+ * @param {string} name
+ * @param {unknown} value
+ * @returns {void}
+ */
+export function setGlobalSlot(name, value) {
+  const scope = /** @type {Record<string, unknown>} */ (globalThis);
+  scope[name] = value;
+}
+
+/**
+ * classList stub:只实现被测代码触及的成员。
+ * @typedef {object} StubClassList
+ * @property {(...names: string[]) => void} add
+ * @property {(...names: string[]) => void} remove
+ * @property {(name: string) => boolean} contains
+ * @property {(name: string, force?: boolean) => boolean} toggle
+ * @property {Set<string>} values
+ */
+
+/**
+ * @param {string[]} [initial]
+ * @returns {StubClassList}
+ */
 function makeClassList(initial = ["hidden"]) {
   const values = new Set(initial);
   return {
-    add: (...names) => names.forEach((n) => values.add(n)),
-    remove: (...names) => names.forEach((n) => values.delete(n)),
-    contains: (name) => values.has(name),
+    add: (/** @type {string[]} */ ...names) => names.forEach((n) => values.add(n)),
+    remove: (/** @type {string[]} */ ...names) => names.forEach((n) => values.delete(n)),
+    contains: (/** @type {string} */ name) => values.has(name),
+    /**
+     * @param {string} name
+     * @param {boolean} [force]
+     * @returns {boolean}
+     */
     toggle(name, force) {
       const enabled = force ?? !values.has(name);
       if (enabled) values.add(name);
@@ -26,8 +72,80 @@ function makeClassList(initial = ["hidden"]) {
   };
 }
 
+/**
+ * 子节点:元素或文本(向导外壳按 h() 构建时会混排文本节点)。
+ * @typedef {StubElement | string} StubNode
+ */
+
+/**
+ * 子树查询的覆写位:段内可注入最小探针节点(只需承接 setAttribute,
+ * 见 ui-interaction-guards 的图标路径探针)。
+ * @typedef {{ setAttribute: (key: string, value: string) => void }} StubProbe
+ */
+
+/**
+ * 元素 stub:实现被测 dist 模块触及的 DOM 成员;未列出的成员不提供
+ * (真实浏览器契约在 dist 侧按需使用,本 stub 只覆盖被测路径)。
+ * @typedef {object} StubElement
+ * @property {StubClassList} classList
+ * @property {Record<string, string>} dataset
+ * @property {Record<string, string>} style
+ * @property {StubNode[]} children
+ * @property {string} textContent
+ * @property {string} title
+ * @property {string} value
+ * @property {string} id
+ * @property {string} className
+ * @property {boolean} disabled
+ * @property {boolean} hidden
+ * @property {boolean} isConnected
+ * // 勾选态:开关类控件由被测模块按需赋值(stub 不预置,故为可选)
+ * @property {boolean} [checked]
+ * @property {(type: string, fn: (...args: unknown[]) => unknown) => void} addEventListener
+ * @property {(type: string) => void} removeEventListener
+ * @property {(type: string) => boolean} hasListener
+ * @property {(k: string, v: unknown) => void} setAttribute
+ * @property {(k: string) => void} removeAttribute
+ * @property {(k: string) => boolean} hasAttribute
+ * @property {(k: string) => string | null} getAttribute
+ * @property {() => void} focus
+ * @property {() => void} remove
+ * @property {(...nodes: StubNode[]) => void} append
+ * @property {(node: StubNode) => StubNode} appendChild
+ * @property {(...nodes: StubNode[]) => void} replaceChildren
+ * @property {(selector: string) => StubProbe | null} querySelector
+ * @property {(selector: string) => StubNode[]} querySelectorAll
+ * @property {(selector: string) => StubNode | null} closest
+ * @property {(node: StubNode) => boolean} contains
+ * @property {() => { top: number; height: number }} getBoundingClientRect
+ * @property {Map<string, (...args: unknown[]) => unknown>} listener
+ * @property {Map<string, (...args: unknown[]) => unknown>} listeners
+ * @property {Map<string, string>} attributes
+ */
+
+/**
+ * setAttribute 契约:属性值同时回写到元素自身字段(dist 模块读 el.title / el.hidden 等)。
+ * 元素 stub 是开放对象,属性名由被测代码在运行期给出(键集非静态契约)。
+ * @param {StubElement} el
+ * @param {string} key
+ * @param {string} value
+ * @returns {void}
+ */
+function setStubProp(el, key, value) {
+  // 放宽理由:按被测代码给出的任意属性名回写字段,静态键集不可枚举。
+  const open = /** @type {Record<string, unknown>} */ (el);
+  open[key] = value;
+}
+
+/**
+ * 元素工厂:props 用于按用例覆盖初始字段(如 id / dataset),其余走默认。
+ * @param {Partial<StubElement>} [props]
+ * @returns {StubElement}
+ */
 export function makeElement(props = {}) {
+  /** @type {Map<string, (...args: unknown[]) => unknown>} */
   const listeners = new Map();
+  /** @type {Map<string, string>} */
   const attributes = new Map();
   const el = {
     classList: makeClassList(),
@@ -43,18 +161,23 @@ export function makeElement(props = {}) {
     hidden: false,
     isConnected: true,
     ...props,
-    addEventListener(type, fn) { listeners.set(type, fn); },
-    removeEventListener(type) { listeners.delete(type); },
-    hasListener(type) { return listeners.has(type); },
-    setAttribute(k, v) { attributes.set(k, String(v)); el[k] = String(v); },
-    removeAttribute(k) { attributes.delete(k); },
-    hasAttribute(k) { return attributes.has(k); },
-    getAttribute(k) { return attributes.get(k) ?? null; },
+    addEventListener(/** @type {string} */ type, /** @type {(...args: unknown[]) => unknown} */ fn) {
+      listeners.set(type, fn);
+    },
+    removeEventListener(/** @type {string} */ type) { listeners.delete(type); },
+    hasListener(/** @type {string} */ type) { return listeners.has(type); },
+    setAttribute(/** @type {string} */ k, /** @type {unknown} */ v) {
+      attributes.set(k, String(v));
+      setStubProp(/** @type {StubElement} */ (el), k, String(v));
+    },
+    removeAttribute(/** @type {string} */ k) { attributes.delete(k); },
+    hasAttribute(/** @type {string} */ k) { return attributes.has(k); },
+    getAttribute(/** @type {string} */ k) { return attributes.get(k) ?? null; },
     focus() {},
     remove() { el.isConnected = false; },
-    append(...nodes) { el.children.push(...nodes); },
-    appendChild(node) { el.children.push(node); return node; },
-    replaceChildren(...nodes) { el.children = nodes; },
+    append(/** @type {StubNode[]} */ ...nodes) { el.children.push(...nodes); },
+    appendChild(/** @type {StubNode} */ node) { el.children.push(node); return node; },
+    replaceChildren(/** @type {StubNode[]} */ ...nodes) { el.children = nodes; },
     querySelector() { return null; },
     querySelectorAll() { return []; },
     closest() { return null; },
@@ -64,10 +187,16 @@ export function makeElement(props = {}) {
     get listeners() { return listeners; },
     get attributes() { return attributes; },
   };
-  return el;
+  return /** @type {StubElement} */ (el);
 }
 
-/** 触发元素上登记的监听器(单类型单槽,与既有段一致)。 */
+/**
+ * 触发元素上登记的监听器(单类型单槽,与既有段一致)。
+ * @param {StubElement} el
+ * @param {string} type
+ * @param {unknown} [event]
+ * @returns {unknown}
+ */
 export function fireListener(el, type, event) {
   const map = el.listeners ?? el.listener;
   const fn = map?.get(type);
@@ -77,13 +206,22 @@ export function fireListener(el, type, event) {
   return fn(event);
 }
 
-/** 合成键盘事件:记录 stopPropagation / preventDefault,供边界断言。 */
+/**
+ * 合成键盘事件:记录 stopPropagation / preventDefault,供边界断言。
+ * preventDefaultCalled 与 defaultPrevented 一同初始化(此前只在 preventDefault()
+ * 首次调用时隐式建键),stub 的可观察状态不变。
+ * @param {string} key
+ * @param {unknown} target
+ * @param {Partial<StubKeyEvent>} [extra]
+ * @returns {StubKeyEvent}
+ */
 export function makeKeyEvent(key, target, extra = {}) {
   return {
     key,
     target,
     altKey: false,
     defaultPrevented: false,
+    preventDefaultCalled: false,
     propagationStopped: false,
     stopPropagation() { this.propagationStopped = true; },
     preventDefault() { this.preventDefaultCalled = true; this.defaultPrevented = true; },
@@ -92,22 +230,48 @@ export function makeKeyEvent(key, target, extra = {}) {
 }
 
 /**
+ * 合成键盘事件形状。
+ * @typedef {object} StubKeyEvent
+ * @property {string} key
+ * @property {unknown} target
+ * @property {boolean} altKey
+ * @property {boolean} defaultPrevented
+ * @property {boolean} preventDefaultCalled
+ * @property {boolean} propagationStopped
+ * @property {() => void} stopPropagation
+ * @property {() => void} preventDefault
+ */
+
+/**
+ * 跨段共享的 stub 宿主:元素表与 window 监听器表(见文件头「跨段共享约定」)。
+ * @typedef {object} DomStubHost
+ * @property {Map<string, StubElement>} elements
+ * @property {Map<string, ((...args: unknown[]) => unknown)[]>} windowListeners
+ * @property {StubElement[]} created
+ */
+
+/**
  * 安装 stub:返回元素表、创建元素流水(window 供动态构建的模块追加节点)、
  * document/window 与 restore()。api 由调用方按用例补齐。
+ * @param {{ api?: Record<string, unknown>, activeElement?: StubElement | null }} [options]
  */
 export function installDomStub({ api = {}, activeElement = null } = {}) {
-  const originalDocument = globalThis.document;
-  const originalWindow = globalThis.window;
-  const host = (globalThis.__m2wRendererDomStub ??= {
+  const originalDocument = globalSlot("document");
+  const originalWindow = globalSlot("window");
+  // 前序段可能已建 host(且未带 created 流水)——按需补齐,共享同一实例
+  const existing = globalSlot("__m2wRendererDomStub");
+  /** @type {DomStubHost} */
+  const host = /** @type {DomStubHost} */ (existing ?? {
     elements: new Map(),
     windowListeners: new Map(),
     created: [],
   });
-  // 前序段可能已建 host(且未带 created 流水)——按需补齐,共享同一实例
   host.elements ??= new Map();
   host.windowListeners ??= new Map();
   host.created ??= [];
+  setGlobalSlot("__m2wRendererDomStub", host);
 
+  /** @param {string} id @returns {StubElement} */
   const elementFor = (id) => {
     let el = host.elements.get(id);
     if (!el) {
@@ -123,6 +287,7 @@ export function installDomStub({ api = {}, activeElement = null } = {}) {
     return el;
   };
 
+  /** @type {Map<string, (...args: unknown[]) => unknown>} */
   const documentListeners = new Map();
   const fakeDocument = {
     activeElement: activeElement ?? elementFor("__active__"),
@@ -133,8 +298,10 @@ export function installDomStub({ api = {}, activeElement = null } = {}) {
     querySelectorAll: () => [],
     createElement: createTracked,
     createElementNS: createTracked,
-    addEventListener(type, fn) { documentListeners.set(type, fn); },
-    removeEventListener(type) { documentListeners.delete(type); },
+    addEventListener(/** @type {string} */ type, /** @type {(...args: unknown[]) => unknown} */ fn) {
+      documentListeners.set(type, fn);
+    },
+    removeEventListener(/** @type {string} */ type) { documentListeners.delete(type); },
   };
 
   const fakeWindow = {
@@ -143,16 +310,16 @@ export function installDomStub({ api = {}, activeElement = null } = {}) {
     },
     setTimeout,
     clearTimeout,
-    addEventListener(type, fn) {
+    addEventListener(/** @type {string} */ type, /** @type {(...args: unknown[]) => unknown} */ fn) {
       const list = host.windowListeners.get(type) ?? [];
       list.push(fn);
       host.windowListeners.set(type, list);
     },
-    removeEventListener(type) { host.windowListeners.delete(type); },
+    removeEventListener(/** @type {string} */ type) { host.windowListeners.delete(type); },
   };
 
-  globalThis.document = fakeDocument;
-  globalThis.window = fakeWindow;
+  setGlobalSlot("document", fakeDocument);
+  setGlobalSlot("window", fakeWindow);
 
   return {
     elements: host.elements,
@@ -162,14 +329,14 @@ export function installDomStub({ api = {}, activeElement = null } = {}) {
     elementFor,
     documentListeners,
     restore() {
-      globalThis.document = originalDocument;
-      globalThis.window = originalWindow;
+      setGlobalSlot("document", originalDocument);
+      setGlobalSlot("window", originalWindow);
     },
   };
 }
 
 /** 触发 window 级监听(unload 等)。 */
-export function fireWindow(type) {
-  const host = globalThis.__m2wRendererDomStub;
+export function fireWindow(/** @type {string} */ type) {
+  const host = /** @type {DomStubHost | undefined} */ (globalSlot("__m2wRendererDomStub"));
   for (const fn of host?.windowListeners.get(type) ?? []) fn();
 }

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 产物提交器验收(位于 test/main/ = 主进程层;src/main/converter/artifact-writer.ts,
  * 测试经 dist/main/converter/artifact-writer.js 直连,electron 环境):
@@ -24,30 +25,53 @@ import os from "node:os";
 import path from "node:path";
 import { ARTIFACT_TEMP_PREFIX, commitArtifact } from "../../dist/main/converter/artifact-writer.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`artifact-commit 断言失败:${msg}`);
 }
 
-/** 造带合法 ZIP 魔数的载荷(内容带唯一 tag,用于验证不发生交叉污染) */
+/**
+ * 造带合法 ZIP 魔数的载荷(内容带唯一 tag,用于验证不发生交叉污染)
+ * @param {string} tag 载荷唯一标记
+ * @param {number} [size] 载荷总长
+ * @returns {Buffer} 载荷字节
+ */
 function zipBytes(tag, size = 512) {
   const body = Buffer.alloc(size, 0x20);
   body.write(`m2w-payload:${tag}`, 0, "utf8");
   return Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), body]);
 }
 
-/** 造带合法 %PDF 魔数的载荷 */
+/**
+ * 造带合法 %PDF 魔数的载荷
+ * @param {string} tag 载荷唯一标记
+ * @returns {Buffer} 载荷字节
+ */
 function pdfBytes(tag) {
   return Buffer.concat([Buffer.from("%PDF-1.7\n", "ascii"), Buffer.from(`m2w-payload:${tag}\n`, "utf8")]);
 }
 
-/** 目录内残留的提交器临时文件名(空数组 = 已清理干净) */
+/**
+ * 目录内残留的提交器临时文件名(空数组 = 已清理干净)
+ * @param {string} dir 目录
+ * @returns {Promise<string[]>} 残留文件名列表
+ */
 async function tempLeftovers(dir) {
   return (await fs.readdir(dir)).filter((name) => name.startsWith(ARTIFACT_TEMP_PREFIX));
 }
 
-/** 造一个带指定 errno code 的错误(注入 link 用,与 Node 系统错误同形) */
+/**
+ * 造一个带指定 errno code 的错误(注入 link 用,与 Node 系统错误同形)
+ * @param {string} code errno code
+ * @returns {NodeJS.ErrnoException} 带 code 的错误
+ */
 function errnoError(code) {
-  const err = new Error(`mock ${code}`);
+  const err = /** @type {NodeJS.ErrnoException} */ (new Error(`mock ${code}`));
   err.code = code;
   return err;
 }
@@ -133,11 +157,12 @@ export async function run() {
       { name: "未知扩展名", target: path.join(magicDir, "weird.rtf"), payload: zipBytes("x") },
     ];
     for (const testCase of magicCases) {
-      let failed = null;
+      /** @type {NodeJS.ErrnoException | null} */
+    let failed = null;
       try {
         await commitArtifact(testCase.target, testCase.payload);
       } catch (err) {
-        failed = err;
+        failed = /** @type {NodeJS.ErrnoException} */ (err);
       }
       assert(!!failed, `${testCase.name}:应抛错阻断提交`);
       assert(
@@ -159,11 +184,12 @@ export async function run() {
     const failDir = path.join(dir, "fail");
     await fs.mkdir(failDir, { recursive: true });
     const failTarget = path.join(failDir, "fail.docx");
+    /** @type {NodeJS.ErrnoException | null} */
     let failError = null;
     try {
       await commitArtifact(failTarget, zipBytes("fail"), { link: async () => { throw errnoError("EIO"); } });
     } catch (err) {
-      failError = err;
+      failError = /** @type {NodeJS.ErrnoException} */ (err);
     }
     assert(!!failError && failError.code === "EIO", `提交故障应原样上抛 EIO,实际 ${failError}`);
     assert(
@@ -172,6 +198,7 @@ export async function run() {
     );
     // 取消闸门:提交前抛错(与 ConvertCanceledError 同形)→ 不提交任何文件
     const cancelTarget = path.join(failDir, "cancel.docx");
+    /** @type {NodeJS.ErrnoException | null} */
     let cancelError = null;
     try {
       await commitArtifact(cancelTarget, zipBytes("cancel"), {
@@ -182,7 +209,7 @@ export async function run() {
         },
       });
     } catch (err) {
-      cancelError = err;
+      cancelError = /** @type {NodeJS.ErrnoException} */ (err);
     }
     assert(cancelError?.name === "ConvertCanceledError", `取消闸门应原样上抛,实际 ${cancelError}`);
     assert(
@@ -199,6 +226,7 @@ export async function run() {
     const unsupportedCodes = ["EPERM", "EACCES", "EXDEV", "ENOSYS", "EOPNOTSUPP", "ENOTSUP", "EMLINK", "EINVAL"];
     for (const code of unsupportedCodes) {
       const target = path.join(noLinkDir, `nolink-${code}.docx`);
+      /** @type {NodeJS.ErrnoException | null} */
       let failed = null;
       try {
         await commitArtifact(target, zipBytes(code), {
@@ -207,7 +235,7 @@ export async function run() {
           },
         });
       } catch (err) {
-        failed = err;
+        failed = /** @type {NodeJS.ErrnoException} */ (err);
       }
       assert(!!failed, `不支持链接错误码 ${code}:应抛错,而不是把产物直写最终路径`);
       assert(
@@ -229,6 +257,7 @@ export async function run() {
 
     // 6b. 真实故障与「环境不支持」严格区分:EIO 原样上抛,不被改写成「换目录」提示
     const eioTarget = path.join(noLinkDir, "eio.docx");
+    /** @type {NodeJS.ErrnoException | null} */
     let eioError = null;
     try {
       await commitArtifact(eioTarget, zipBytes("eio"), {
@@ -237,7 +266,7 @@ export async function run() {
         },
       });
     } catch (err) {
-      eioError = err;
+      eioError = /** @type {NodeJS.ErrnoException} */ (err);
     }
     assert(
       eioError?.code === "EIO" && !eioError.message.includes("原子提交"),
@@ -251,23 +280,27 @@ export async function run() {
     // 6c. 判定顺序:EEXIST 优先于「不支持」——同名先递增序号,空闲名才报不支持。
     // 桩须区分两种情形(被占 → EEXIST,空闲 → EPERM),否则永远走不到递增分支
     await fs.writeFile(path.join(noLinkDir, "order.docx"), "既有产物", "utf8");
-    const occupiedThenUnsupported = async (_existingPath, newPath) => {
+    const occupiedThenUnsupported = async (
+      /** @type {string} */ _existingPath,
+      /** @type {string} */ newPath,
+    ) => {
       const taken = await fs.access(newPath).then(
         () => true,
         () => false,
       );
       throw taken ? errnoError("EEXIST") : errnoError("EPERM");
     };
+    /** @type {NodeJS.ErrnoException | null} */
     let orderError = null;
     try {
       await commitArtifact(path.join(noLinkDir, "order.docx"), zipBytes("order"), {
         link: occupiedThenUnsupported,
       });
     } catch (err) {
-      orderError = err;
+      orderError = /** @type {NodeJS.ErrnoException} */ (err);
     }
     assert(
-      orderError?.message.includes("order (2).docx"),
+      orderError !== null && orderError.message.includes("order (2).docx"),
       `同名时应先递增序号再报不支持,实际 ${orderError?.message}`,
     );
     assert(

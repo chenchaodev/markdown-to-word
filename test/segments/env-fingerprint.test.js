@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 环境指纹契约段：守护稳定的 JSON/文本接口、可诊断的命令失败路径，以及公开页 Node 下限。
  * 探针均以依赖注入提供夹具，不读取或启动真实 Electron；真实命令失败由 runCommand 短进程断言。
@@ -12,10 +13,24 @@ import {
   runCommand,
 } from "../../scripts/print-env-fingerprint.mjs";
 
+/**
+ * 构造探针结果(与 scripts/print-env-fingerprint.mjs 的 result() 同形)。
+ * @param {string} status 探针状态(ok / partial / unavailable)
+ * @param {unknown} value 探针值(各探针异构:字符串 / 版本对象 / 字体信息等)
+ * @param {string} source 探针来源(诊断与报告文案)
+ * @param {unknown} [error] 失败信息(默认 null)
+ * @returns {{ status: string, value: unknown, source: string, error: unknown }} 探针结果
+ */
 function probeResult(status, value, source, error = null) {
   return { status, value, source, error };
 }
 
+/**
+ * 构造 unavailable 探针结果。
+ * @param {string} source 探针来源
+ * @param {unknown} error 失败信息
+ * @returns {{ status: string, value: unknown, source: string, error: unknown }} 探针结果
+ */
 function unavailable(source, error) {
   return probeResult("unavailable", null, source, error);
 }
@@ -142,8 +157,12 @@ export async function run() {
   assert.equal(negative.system.fonts.status, "unavailable");
   assert.equal(negative.system.display.status, "unavailable");
   assert.equal(negative.diagnostics.length, 4);
+  // 上一行已断言 diagnostics.length === 4,两个来源必然各命中一条;显式校验缺失以免静默跳过断言
   const npmDiagnostic = negative.diagnostics.find((diagnostic) => diagnostic.source === "npm");
   const electronDiagnostic = negative.diagnostics.find((diagnostic) => diagnostic.source === "electron-process");
+  if (!npmDiagnostic || !electronDiagnostic) {
+    throw new Error("负例指纹缺少 npm / electron-process 诊断项");
+  }
   assert.match(npmDiagnostic.message, /npm --version.*exitCode 7.*simulated npm failure/);
   assert.match(electronDiagnostic.message, /Electron version probe.*exitCode 9/);
   assert.doesNotThrow(() => JSON.parse(formatFingerprintJson(negative)), "失败路径的 JSON 仍应可解析");

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 活动操作 single-flight 直测(真实异步 IPC handler 并发;
  * src/main/ipc/register.ts + src/main/windows/web-contents-registry.ts,
@@ -36,6 +37,12 @@ import { updateSettings } from "../../dist/main/persist/settings.js";
 import { backupSettings } from "../common/settings.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`operation-single-flight 断言失败:${msg}`);
 }
@@ -46,6 +53,13 @@ const BATCH_BUSY_KEYS = ["busy", "canceledCount", "error", "failCount", "items",
   .sort()
   .join(",");
 
+/**
+ * busy 键集合精确断言(形状稳定:多键/缺键均属契约漂移)
+ * @param {{ ok?: unknown, busy?: unknown, error?: unknown } | null} result busy 结果
+ * @param {string} msg 场景标签(消息用)
+ * @param {string} [expectedKeys] 期望的键集合(排序后逗号串)
+ * @returns {void}
+ */
 function assertBusy(result, msg, expectedKeys = BUSY_KEYS) {
   assert(
     result !== null && typeof result === "object" && !Array.isArray(result),
@@ -121,7 +135,7 @@ export async function run() {
       handlers.get(CH.convertPrecheck)(event, precheckMd),
     ];
     // 飞行采样:注册表内始终是同一个 context(后继请求既不新增也不替换)
-    const samples = [];
+    const samples = /** @type {(object | null)[]} */ ([]);
     let settled = false;
     const sampler = (async () => {
       while (!settled) {
@@ -169,7 +183,7 @@ export async function run() {
     console.log("[ok] single-flight:飞行中取消 → canceled 结果 + 注册表释放 + 后续请求可执行");
 
     // ---------- 3. 预检异常可观察(不再静默空数组),正常警告语义不变 ----------
-    const logged = [];
+    const logged = /** @type {string[]} */ ([]);
     const originalError = console.error;
     console.error = (...args) => logged.push(args.map((a) => String(a)).join(" "));
     let missingResult;

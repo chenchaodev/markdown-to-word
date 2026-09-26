@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 /**
  * 验收 md 样例生成器(纯 Node,无 Electron 依赖):
  * 扫描 test/segments、test/main、test/renderer 下的 *.test.js(目录集合与
@@ -59,7 +60,10 @@ const README_HEADER = [
   "| --- | --- | --- |",
 ];
 
-/** 值类型的可读标签(错误信息用) */
+/** 值类型的可读标签(错误信息用)
+ * @param {unknown} v 待描述的值
+ * @returns {string}
+ */
 function describeValue(v) {
   if (v === null) return "null";
   if (Array.isArray(v)) return "数组";
@@ -96,6 +100,7 @@ export function listCandidateSegments() {
  * @returns {string[]}
  */
 export function validateSegmentContract(name, mod) {
+  /** @type {string[]} */
   const problems = [];
   if (!("fixtures" in mod)) {
     return [
@@ -139,7 +144,8 @@ export function planFixtureOutputs(seg, fixtures) {
     .sort()
     .map((key) => ({
       name: key === "main" ? `${seg.baseName}.md` : `${seg.baseName}-${key}.md`,
-      content: fixtures[key],
+      // 上方 filter 已断言值为字符串(非字符串键不进产物)
+      content: /** @type {string} */ (fixtures[key]),
       key,
     }));
 }
@@ -194,9 +200,16 @@ async function registerElectronMock() {
   register("./electron-mock-loader.mjs", import.meta.url);
 }
 
-/** 段模块 import 失败的归一化诊断(段名 + 归因;区分 dist 缺失与 mock 缺命名导出) */
+/** 段模块 import 失败的归一化诊断(段名 + 归因;区分 dist 缺失与 mock 缺命名导出)
+ * @param {string} name 段名
+ * @param {unknown} err import 抛出的原值
+ * @returns {string}
+ */
 function describeImportFailure(name, err) {
-  const msg = String(err?.message ?? err).split("\n")[0];
+  // 抛出的原值不保证是 Error,带 message 属性的对象按其 message 归因,其余按 toString
+  const rawMessage = /** @type {{ message?: unknown }} */ (err)?.message ?? err;
+  // String(...) 的 split 结果恒至少一段,?? "" 只是满足定长元组索引的取值域
+  const msg = String(rawMessage).split("\n")[0] ?? "";
   const missingExport = msg.match(/does not provide an export named ['"]([^'"]+)['"]/i);
   if (missingExport) {
     return `${name}:段模块 import 失败——electron-mock 缺命名导出「${missingExport[1]}」(补进 test/tools/electron-mock.mjs;自动断言见 test/segments/electron-mock-coverage.test.js)`;
@@ -207,12 +220,16 @@ function describeImportFailure(name, err) {
   return `${name}:段模块 import 失败:${msg}`;
 }
 
-/** 收集 md 中的本地图片引用(排除外链/锚点/data URI,剥离 title 与尖括号) */
+/** 收集 md 中的本地图片引用(排除外链/锚点/data URI,剥离 title 与尖括号)
+ * @param {string} md md 文本
+ * @returns {string[]} 引用路径(去重)
+ */
 function collectImageRefs(md) {
   const refs = new Set();
   for (const re of [IMG_MD_RE, IMG_SRC_RE]) {
     for (const m of md.matchAll(re)) {
-      let p = m[1].trim().replace(/^<|>$/g, "").split(/\s+/)[0];
+      // 两个模式的捕获组均为必选,?? "" 只是满足定长元组索引的取值域
+      let p = (m[1] ?? "").trim().replace(/^<|>$/g, "").split(/\s+/)[0] ?? "";
       if (!p || /^https?:\/\//i.test(p) || /^#/.test(p) || /^data:/i.test(p)) continue;
       refs.add(p);
     }
@@ -220,7 +237,11 @@ function collectImageRefs(md) {
   return [...refs];
 }
 
-/** 首处差异行号(1 起;一致返回 -1) */
+/** 首处差异行号(1 起;一致返回 -1)
+ * @param {string} a 现有文本
+ * @param {string} b 应生成文本
+ * @returns {number}
+ */
 function firstDiffLine(a, b) {
   const la = a.split("\n");
   const lb = b.split("\n");
@@ -234,7 +255,7 @@ function firstDiffLine(a, b) {
 // --check 比对前做 EOL 归一化(CRLF→LF):生成器落盘 LF,但 Windows autocrlf 下
 // checkout 会把工作区文本产物转成 CRLF。.gitattributes 已固定
 // fixtures 的 eol=lf,此处归一化是双保险——即使属性未生效/旧 checkout 也不误报。
-const normalizeEol = (s) => s.replace(/\r\n/g, "\n");
+const normalizeEol = (/** @type {string} */ s) => s.replace(/\r\n/g, "\n");
 
 async function collectContracts() {
   const segments = listCandidateSegments();
@@ -286,7 +307,8 @@ async function collectContracts() {
     entries.push({
       relDir: seg.relDir,
       baseName: seg.baseName,
-      description: /** @type {string} */ (mod.meta).description,
+      // validateSegmentContract 已判定 description 为非空字符串
+      description: /** @type {{ description: string }} */ (mod.meta).description,
       outputs,
     });
   }
@@ -308,6 +330,7 @@ async function main() {
   }
 
   // 图片复制清单(去重;源不存在 → 跳过,该样例本就是演示缺失警告)
+  /** @type {{ src: string, dest: string }[]} */
   const imageCopies = [];
   for (const e of entries) {
     for (const o of e.outputs) {
@@ -327,6 +350,11 @@ async function main() {
   // ---- --check:内存重生成比对,不落盘 ----
   if (CHECK) {
     let ok = true;
+    /**
+     * 记一条差异(逐条列全,退出码统一在末尾给)
+     * @param {string} name 产物文件名
+     * @param {string} detail 差异描述
+     */
     const report = (name, detail) => {
       ok = false;
       console.error(`[check] ${name}:${detail}`);

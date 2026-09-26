@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Mermaid 渲染服务验收(main 进程层;经 dist/main/services/mermaid-service.js,electron 环境):
  * 断言面:真实渲染成功(PNG 魔数/逻辑尺寸/SVG 完整)、语法错误/超时/畸形返回值/崩溃/
@@ -17,11 +18,23 @@ import { disposeMermaidService, renderMermaid } from "../../dist/main/services/m
 
 const GOOD_CODE = "graph TD; A-->B";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`mermaid-service 断言失败:${msg}`);
 }
 
-/** 等待条件成立(轮询上限兜底,避免时序假设导致假阴性)。 */
+/**
+ * 等待条件成立(轮询上限兜底,避免时序假设导致假阴性)。
+ * @param {() => boolean} predicate 判定函数
+ * @param {string} label 等待目标(超时消息用)
+ * @param {number} [timeoutMs] 超时上限
+ * @returns {Promise<void>} 条件成立即返回
+ */
 async function waitFor(predicate, label, timeoutMs = 5000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -34,13 +47,20 @@ async function waitFor(predicate, label, timeoutMs = 5000) {
 /**
  * 本段新增的临时 HTML 残留(空数组 = 已回收干净)。排除段起点就存在的文件:
  * 其他段(如预览)遗留的文件不归本段断言,否则依赖段序。
+ * @param {Set<string>} baseline 段起点已有的临时文件名
+ * @returns {Promise<string[]>} 残留文件名列表
  */
 async function tempHtmlLeft(baseline) {
   const names = await fs.readdir(os.tmpdir());
   return names.filter((n) => n.startsWith(`m2w-${process.pid}-`) && !baseline.has(n));
 }
 
-/** 等待本段新增的临时 HTML 全部回收(窗口 destroy → closed → 删除是异步链路,需轮询落定) */
+/**
+ * 等待本段新增的临时 HTML 全部回收(窗口 destroy → closed → 删除是异步链路,需轮询落定)
+ * @param {Set<string>} baseline 段起点已有的临时文件名
+ * @param {string} label 场景标签(消息用)
+ * @returns {Promise<void>} 全部回收即返回
+ */
 async function waitNoTempHtml(baseline, label) {
   const deadline = Date.now() + 3000;
   let left = await tempHtmlLeft(baseline);
@@ -57,17 +77,21 @@ async function waitNoTempHtml(baseline, label) {
  * 未覆盖成员转发到真实 webContents——否则构造器内部与 hardenWebContents 访问
  * setWindowOpenHandler/on 等方法会抛错,产生半初始化僵尸窗口。
  * descriptor 一律 try/finally 恢复;本段与其他段同进程串行,不能污染原型。
+ * @param {(real: Electron.WebContents) => object} fakeFactory 由真实 wc 造 fake 的工厂
+ * @returns {() => void} 恢复函数(还原原 descriptor)
  */
 function patchWebContents(fakeFactory) {
   const descriptor = Object.getOwnPropertyDescriptor(BrowserWindow.prototype, "webContents");
+  assert(descriptor?.get !== undefined, "取不到 BrowserWindow.prototype.webContents 的 getter");
+  const webContentsGetter = descriptor.get;
   Object.defineProperty(BrowserWindow.prototype, "webContents", {
     configurable: true,
     get() {
-      const real = descriptor.get.call(this);
+      const real = webContentsGetter.call(this);
       const fake = fakeFactory(real);
       return new Proxy(fake, {
         get(target, prop) {
-          if (prop in target) return target[prop];
+          if (prop in target) return /** @type {Record<string | symbol, unknown>} */ (target)[prop];
           const value = Reflect.get(real, prop);
           return typeof value === "function" ? value.bind(real) : value;
         },
@@ -100,7 +124,7 @@ export async function run() {
 
   // ---- 2. 降级路径:语法错误 → 页面内 parse 预检失败 → null;catch 日志留痕(170 行) ----
   const origLog = console.log;
-  const logs = [];
+  const logs = /** @type {string[]} */ ([]);
   console.log = (...args) => {
     logs.push(args.join(" "));
   };
@@ -120,7 +144,7 @@ export async function run() {
   let restoreWc = null;
   try {
     restoreWc = patchWebContents(() => ({
-      executeJavaScript: async (script) => {
+      executeJavaScript: async (/** @type {string} */ script) => {
         if (script.includes("TIMEOUT_SENTINEL")) return new Promise(() => {}); // 永不 settle → 超时
         if (script.includes("BADSHAPE_SENTINEL")) return { svg: 123 }; // 形状非法
         if (script.includes("EMPTYPNG_SENTINEL"))
@@ -155,11 +179,14 @@ export async function run() {
   );
   restoreWc = null;
   try {
-    restoreWc = patchWebContents((realWc) => {
+    restoreWc = patchWebContents((/** @type {Electron.WebContents} */ realWc) => {
       const origExecute = realWc.executeJavaScript;
-      realWc.executeJavaScript = async (...args) => {
+      realWc.executeJavaScript = async (
+        /** @type {string} */ code,
+        /** @type {boolean} */ userGesture,
+      ) => {
         realWc.forcefullyCrashRenderer(); // 真实崩溃:原 promise reject 或挂起,由注入超时兜底
-        return origExecute.apply(realWc, args);
+        return origExecute.call(realWc, code, userGesture);
       };
       return realWc;
     });
@@ -194,7 +221,10 @@ export async function run() {
   await new Promise((r) => setTimeout(r, 100));
   const baselineInflight = BrowserWindow.getAllWindows().length;
   const slowLoadFile = BrowserWindow.prototype.loadFile;
-  BrowserWindow.prototype.loadFile = function patched(file, options) {
+  BrowserWindow.prototype.loadFile = function patched(
+    /** @type {string} */ file,
+    /** @type {import("electron").LoadFileOptions | undefined} */ options,
+  ) {
     // 会话页加载延迟 250ms:让 dispose 落在「窗口已建、页面未加载」的创建在途窗口
     return new Promise((resolve, reject) => {
       setTimeout(() => {
@@ -231,6 +261,7 @@ export async function run() {
   // ---- 7. dispose 后已排队任务:不得新建窗口(代号失效即放弃本次渲染) ----
   disposeMermaidService();
   const baselineQueued = BrowserWindow.getAllWindows().length;
+  /** @type {(() => void) | undefined} */
   let releaseFirst;
   let execCalls = 0;
   restoreWc = null;
@@ -246,6 +277,7 @@ export async function run() {
     }));
     const firstTask = renderMermaid("QUEUED_FIRST", 5000);
     await waitFor(() => releaseFirst !== undefined, "首个渲染进入 executeJavaScript(队列被占)");
+    assert(releaseFirst !== undefined, "首个渲染应已交出释放句柄");
     const queuedTask = renderMermaid("QUEUED_SECOND", 5000); // 排队中,尚未开始
     disposeMermaidService(); // 换代:排队任务提交时的代号失效
     releaseFirst();

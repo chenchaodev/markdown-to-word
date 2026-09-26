@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * renderer 持久化失败反馈直测(测试经 dist/renderer/**,零依赖最小 DOM stub):
  * - 会话持久化单一写入点:renderSelection 与 renderMultiList/moveItem 每次变更
@@ -10,18 +11,70 @@
  */
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 
+/**
+ * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
+ * (cond 为假即抛,后续代码无须再判空)。
+ * @param {unknown} cond
+ * @param {string} msg
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`session-persist-feedback 断言失败:${msg}`);
 }
 
+/**
+ * classList stub:只实现被测代码触及的成员。
+ * @typedef {object} StubClassList
+ * @property {(...names: string[]) => void} add
+ * @property {(...names: string[]) => void} remove
+ * @property {(name: string) => boolean} contains
+ * @property {(name: string, force?: boolean) => boolean} toggle
+ */
+
+/**
+ * 元素 stub:只实现设置/会话持久化链路触及的 DOM 成员。
+ * @typedef {object} StubElement
+ * @property {StubClassList} classList
+ * @property {Record<string, string>} dataset
+ * @property {Record<string, string>} style
+ * @property {string} textContent
+ * @property {string} title
+ * @property {string} innerHTML
+ * @property {string} value
+ * @property {boolean} disabled
+ * @property {boolean} checked
+ * @property {boolean} inert
+ * @property {unknown[]} selectedOptions
+ * @property {(type: string, fn: (...args: unknown[]) => unknown) => void} addEventListener
+ * @property {(type: string) => void} removeEventListener
+ * @property {() => void} focus
+ * @property {() => void} replaceChildren
+ * @property {() => void} setAttribute
+ * @property {() => void} removeAttribute
+ * @property {() => null} getAttribute
+ * @property {() => boolean} hasAttribute
+ * @property {(selector: string) => null} querySelector
+ * @property {(selector: string) => never[]} querySelectorAll
+ * @property {() => boolean} contains
+ * @property {() => void} append
+ * @property {() => void} appendChild
+ */
+
+/** @param {string[]} [initial] @returns {StubClassList} */
 function makeClassList(initial = []) {
   const values = new Set(initial);
   return {
-    add: (...names) => names.forEach((name) => values.add(name)),
-    remove: (...names) => names.forEach((name) => values.delete(name)),
-    contains: (name) => values.has(name),
-    toggle: (name, force) => {
+    add: (/** @type {string[]} */ ...names) => names.forEach((name) => values.add(name)),
+    remove: (/** @type {string[]} */ ...names) => names.forEach((name) => values.delete(name)),
+    contains: (/** @type {string} */ name) => values.has(name),
+    /**
+     * @param {string} name
+     * @param {boolean} [force]
+     * @returns {boolean}
+     */
+    toggle(name, force) {
       const enabled = force ?? !values.has(name);
       if (enabled) values.add(name);
       else values.delete(name);
@@ -30,9 +83,11 @@ function makeClassList(initial = []) {
   };
 }
 
+/** @returns {StubElement} */
 function makeElement() {
+  /** @type {Map<string, (...args: unknown[]) => unknown>} */
   const listeners = new Map();
-  return {
+  const el = {
     classList: makeClassList([]),
     dataset: {},
     style: {},
@@ -44,8 +99,10 @@ function makeElement() {
     checked: false,
     inert: false,
     selectedOptions: [],
-    addEventListener(type, fn) { listeners.set(type, fn); },
-    removeEventListener(type) { listeners.delete(type); },
+    addEventListener(/** @type {string} */ type, /** @type {(...args: unknown[]) => unknown} */ fn) {
+      listeners.set(type, fn);
+    },
+    removeEventListener(/** @type {string} */ type) { listeners.delete(type); },
     focus() {},
     replaceChildren() {},
     setAttribute() {},
@@ -58,6 +115,32 @@ function makeElement() {
     append() {},
     appendChild() {},
   };
+  return /** @type {StubElement} */ (el);
+}
+
+/**
+ * 取记录数组的指定一条(缺失即断言失败,避免断言在 undefined 上静默失真)。
+ * @template T
+ * @param {T[]} list
+ * @param {number} index
+ * @returns {T}
+ */
+function recordAt(list, index) {
+  const item = list[index];
+  assert(item, `记录数组缺少第 ${index + 1} 条`);
+  return item;
+}
+
+/**
+ * 取记录数组的最后一条(缺失即断言失败)。
+ * @template T
+ * @param {T[]} list
+ * @returns {T}
+ */
+function lastRecord(list) {
+  const item = list.at(-1);
+  assert(item, "记录数组应已有一条写入");
+  return item;
 }
 
 /** 等待挂起的 promise 回调(persist 的 then 分支)落地。 */
@@ -68,14 +151,16 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
  * document stub 加载过 dom/refs.js(元素绑定在当时的 stub 上)。本段只做"补缺",
  * 不覆盖已有实现,避免跨段加载顺序影响本段断言。
  */
-function hardenElementShape(value, seen = new Set()) {
+function hardenElementShape(/** @type {unknown} */ value, /** @type {Set<unknown>} */ seen = new Set()) {
   if (!value || typeof value !== "object" || seen.has(value)) return;
   seen.add(value);
   if (Array.isArray(value)) {
     value.forEach((item) => hardenElementShape(item, seen));
     return;
   }
-  const members = Object.values(value);
+  // 元素/容器 stub 是开放对象(成员由 refs 模块与 harden 目标动态给出),按字符串键读写
+  const open = /** @type {Record<string, unknown>} */ (value);
+  const members = Object.values(open);
   // 容器对象(成员全是对象,如 refs.marginInputs 这类 id→元素映射):
   // 只递归成员,绝不注入元素成员(否则回填会遍历到伪键)
   if (members.length > 0 && members.every((item) => item && typeof item === "object")) {
@@ -84,8 +169,8 @@ function hardenElementShape(value, seen = new Set()) {
   }
   const template = makeElement();
   for (const [key, fallback] of Object.entries(template)) {
-    if (value[key] !== undefined) continue;
-    value[key] = typeof fallback === "function" ? fallback.bind(value) : fallback;
+    if (open[key] !== undefined) continue;
+    open[key] = typeof fallback === "function" ? fallback.bind(value) : fallback;
   }
 }
 
@@ -93,79 +178,93 @@ function hardenElementShape(value, seen = new Set()) {
 export const fixtures = null;
 
 export async function run() {
-  const originalDocument = globalThis.document;
-  const originalWindow = globalThis.window;
-  const originalMutationObserver = globalThis.MutationObserver;
+  const originalDocument = globalSlot("document");
+  const originalWindow = globalSlot("window");
+  const originalMutationObserver = globalSlot("MutationObserver");
   const originalError = console.error;
   // 供 finally 复位用(try 内赋值;模块加载失败时保持 null,复位即跳过)
   let stateSnapshot = null;
   let stateRef = null;
   let setLanguageRef = null;
+  /** @type {Map<string, StubElement>} */
   const elements = new Map();
+  /** @param {string} id @returns {StubElement} */
   const el = (id) => {
     if (!elements.has(id)) elements.set(id, makeElement());
-    return elements.get(id);
+    const found = elements.get(id);
+    assert(found, `元素 #${id} 应已登记`);
+    return found;
   };
   // settingsGet/settingsSet 记录调用;uiStateSet 可切换成功/失败,记录每次 patch
   // (用于断言写入点唯一与内容)
+  /** @type {Array<Record<string, unknown>>} */
   const calls = [];
+  /** @type {Array<Record<string, unknown>>} */
   const settingsCalls = [];
   let rejectWrites = false;
   let rejectSettings = false;
+  /** @type {Record<string, unknown> | null} */
   let mainSettings = null;
-  globalThis.document = {
+  // window.api 桩:本段单独持有引用,便于按用例改写单个方法(被测模块始终经 window.api 调用)
+  const apiStub = {
+    uiStateSet: (/** @type {Record<string, unknown>} */ patch) => {
+      calls.push(patch);
+      return rejectWrites
+        ? Promise.reject(new Error("EACCES: ui-state.json"))
+        : Promise.resolve({ ...patch });
+    },
+    settingsSet: (/** @type {Record<string, unknown>} */ patch) => {
+      settingsCalls.push(patch);
+      if (rejectSettings) return Promise.reject(new Error("EPERM: settings.json"));
+      // 模拟 main 侧 patch 合并(只提交本次 patch 携带的字段)
+      mainSettings = { ...(mainSettings ?? {}), ...patch };
+      return Promise.resolve({ ...mainSettings });
+    },
+    settingsGet: () => Promise.resolve(mainSettings ?? {}),
+    previewRefresh: () => Promise.resolve(),
+  };
+  setGlobalSlot("document", {
     documentElement: makeElement(),
     body: makeElement(),
-    getElementById: (id) => el(id),
+    getElementById: /** @param {string} id */ (id) => el(id),
     querySelector: () => null,
     querySelectorAll: () => [],
     createElement: () => makeElement(),
     createElementNS: () => makeElement(),
     addEventListener() {},
     removeEventListener() {},
-  };
+  });
   // 首启引导经 MutationObserver 监听 #dropZone 的 data-stage;此处只需注册不触发,
   // 舞台切换由用例直接改 dataset 后显式调 syncFirstRunGuide 驱动。
-  globalThis.MutationObserver = class {
+  setGlobalSlot("MutationObserver", class {
     observe() {}
     disconnect() {}
-  };
-  globalThis.window = {
-    api: {
-      uiStateSet: (patch) => {
-        calls.push(patch);
-        return rejectWrites
-          ? Promise.reject(new Error("EACCES: ui-state.json"))
-          : Promise.resolve({ ...patch });
-      },
-      settingsSet: (patch) => {
-        settingsCalls.push(patch);
-        if (rejectSettings) return Promise.reject(new Error("EPERM: settings.json"));
-        // 模拟 main 侧 patch 合并(只提交本次 patch 携带的字段)
-        mainSettings = { ...(mainSettings ?? {}), ...patch };
-        return Promise.resolve({ ...mainSettings });
-      },
-      settingsGet: () => Promise.resolve(mainSettings ?? {}),
-      previewRefresh: () => Promise.resolve(),
-    },
+  });
+  setGlobalSlot("window", {
+    api: apiStub,
     setTimeout,
     clearTimeout,
     addEventListener() {},
     removeEventListener() {},
     location: { href: "file:///index.html" },
     localStorage: { getItem: () => null, setItem() {} },
-  };
+  });
 
   try {
     // 被测代码在写失败时用 console.error 留痕(契约的一部分,需断言);
     // 全程静音并收集,避免污染段输出
+    /** @type {string[]} */
     const loggedErrors = [];
     console.error = (...args) => { loggedErrors.push(args.map(String).join(" ")); };
     // 未捕获的 rejection 也收集:被测链路的异常必须显式暴露而非静默
+    /** @type {string[]} */
     const unhandled = [];
     process.on("unhandledRejection", (reason) => {
-      unhandled.push(String(reason?.stack ?? reason));
+      // 放宽理由:rejection reason 可能是 Error 也可能是任意抛出值,按 { stack? } 视图读取
+      const err = /** @type {{ stack?: string } | undefined} */ (reason);
+      unhandled.push(String(err?.stack ?? reason));
     });    const here = path.dirname(fileURLToPath(import.meta.url));
+    /** @param {string} rel @returns {Promise<any>} */
     const load = (rel) => import(pathToFileURL(path.resolve(here, rel)).href);
     const { state } = await load("../../dist/renderer/state/state.js");
     stateRef = state;
@@ -201,8 +300,8 @@ export async function run() {
     await flush(); // 去重键在写成功后回填,须等 then 分支落地
     assert(countCalls() === 1, `renderSelection 应只写一次会话文件,实际 ${countCalls()} 次`);
     assert(
-      JSON.stringify(calls[0].lastSessionFiles) === JSON.stringify(["C:\\session-persist\\case-1.md"]),
-      `写入内容应等于当前选择,实际 ${JSON.stringify(calls[0])}`,
+      JSON.stringify(recordAt(calls, 0).lastSessionFiles) === JSON.stringify(["C:\\session-persist\\case-1.md"]),
+      `写入内容应等于当前选择,实际 ${JSON.stringify(recordAt(calls, 0))}`,
     );
     // 内容未变的纯重渲染(语言切换等)不重复写
     fileList.renderSelection();
@@ -214,7 +313,7 @@ export async function run() {
     await flush();
     assert(countCalls() === 2, `清空选择应写一次,实际 ${countCalls()} 次`);
     assert(
-      JSON.stringify(calls[1].lastSessionFiles) === JSON.stringify([]),
+      JSON.stringify(recordAt(calls, 1).lastSessionFiles) === JSON.stringify([]),
       "清空选择应写入空数组",
     );
 
@@ -225,8 +324,8 @@ export async function run() {
     await flush();
     assert(countCalls() === 3, `排序重排应写一次,实际 ${countCalls()} 次`);
     assert(
-      JSON.stringify(calls[2].lastSessionFiles) === JSON.stringify([...pair].reverse()),
-      `排序后应写入新顺序,实际 ${JSON.stringify(calls[2].lastSessionFiles)}`,
+      JSON.stringify(recordAt(calls, 2).lastSessionFiles) === JSON.stringify([...pair].reverse()),
+      `排序后应写入新顺序,实际 ${JSON.stringify(recordAt(calls, 2).lastSessionFiles)}`,
     );
     assert(
       JSON.stringify(state.selectedFiles) === JSON.stringify([...pair].reverse()),
@@ -289,9 +388,10 @@ export async function run() {
     );
 
     // ---- 7. 清空最近记录(recent-files):写失败保留列表,不静默显示为空 ----
+    /** @type {Array<Record<string, unknown>>} */
     const recentCalls = [];
     // 该模块的 uiStateSet 单独可控(清空动作走 recentFiles 字段)
-    globalThis.window.api.uiStateSet = (patch) => {
+    apiStub.uiStateSet = (/** @type {Record<string, unknown>} */ patch) => {
       recentCalls.push(patch);
       if (!("recentFiles" in patch)) return Promise.resolve({ ...patch });
       return Promise.reject(new Error("EACCES: ui-state.json"));
@@ -303,8 +403,8 @@ export async function run() {
     await recentFiles.clearRecentFiles();
     assert(recentCalls.length === 1, `清空最近应只发一次 ui-state 写,实际 ${recentCalls.length} 次`);
     assert(
-      JSON.stringify(recentCalls[0]) === JSON.stringify({ recentFiles: [] }),
-      `清空最近应提交空数组,实际 ${JSON.stringify(recentCalls[0])}`,
+      JSON.stringify(recordAt(recentCalls, 0)) === JSON.stringify({ recentFiles: [] }),
+      `清空最近应提交空数组,实际 ${JSON.stringify(recordAt(recentCalls, 0))}`,
     );
     assert(
       statusEl.textContent === saveFailed,
@@ -328,8 +428,8 @@ export async function run() {
     firstRunGuide.syncFirstRunGuide();
     await flush();
     assert(
-      recentCalls.at(-1)?.firstRun === false,
-      `离开空态应写回 firstRun=false,实际 ${JSON.stringify(recentCalls.at(-1))}`,
+      lastRecord(recentCalls).firstRun === false,
+      `离开空态应写回 firstRun=false,实际 ${JSON.stringify(lastRecord(recentCalls))}`,
     );
     assert(state.firstRun === false, "引导收起后内存标志应为 false");
     assert(
@@ -358,8 +458,8 @@ export async function run() {
       `设置保存失败应给出可见提示,实际 ${JSON.stringify(statusEl.textContent)}`,
     );
     assert(
-      settingsCalls.at(-1)?.toc === true,
-      `失败请求应已提交用户编辑值,实际 ${JSON.stringify(settingsCalls.at(-1))}`,
+      lastRecord(settingsCalls).toc === true,
+      `失败请求应已提交用户编辑值,实际 ${JSON.stringify(lastRecord(settingsCalls))}`,
     );
     assert(
       loggedErrors.some((line) => line.includes("设置写盘失败")),
@@ -374,8 +474,8 @@ export async function run() {
     await flush();
     await flush();
     assert(
-      settingsCalls.at(-1)?.toc === true && settingsCalls.at(-1)?.format === "pdf",
-      `重试保存应同时提交失败草稿与新编辑,实际 ${JSON.stringify(settingsCalls.at(-1))}`,
+      lastRecord(settingsCalls).toc === true && lastRecord(settingsCalls).format === "pdf",
+      `重试保存应同时提交失败草稿与新编辑,实际 ${JSON.stringify(lastRecord(settingsCalls))}`,
     );
     assert(
       state.settings.toc === true && state.settings.format === "pdf",
@@ -390,8 +490,8 @@ export async function run() {
     await flush();
     await flush();
     assert(
-      settingsCalls.at(-1)?.toc === undefined,
-      `成功后待重试草稿应清空,实际 ${JSON.stringify(settingsCalls.at(-1))}`,
+      lastRecord(settingsCalls).toc === undefined,
+      `成功后待重试草稿应清空,实际 ${JSON.stringify(lastRecord(settingsCalls))}`,
     );
     assert(
       state.settings.toc === true && state.settings.theme === "dark",
@@ -421,8 +521,8 @@ export async function run() {
     // 复位进程级单例(state / i18n 语言),避免污染后续段
     if (stateSnapshot && stateRef) Object.assign(stateRef, stateSnapshot);
     if (setLanguageRef) setLanguageRef("zh");
-    globalThis.document = originalDocument;
-    globalThis.window = originalWindow;
-    globalThis.MutationObserver = originalMutationObserver;
+    setGlobalSlot("document", originalDocument);
+    setGlobalSlot("window", originalWindow);
+    setGlobalSlot("MutationObserver", originalMutationObserver);
   }
 }

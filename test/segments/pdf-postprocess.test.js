@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * PDF 渲染后处理直测(test/segments = src/core 渲染层主题段,经 dist 断言,
  * 零 Electron 依赖——被测纯函数不经 printToPDF):
@@ -22,6 +23,13 @@ import { renderPdfDocument } from "../../dist/core/pdf/render.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 
+/**
+ * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物):
+ * dist 是 tsc 产物、无类型标注,故警告条目与图片请求约束从 src 单源引用而非内联复制。
+ */
+/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/image/image-resolver.js").ImageResolverRequest} ImageRequest */
+
 // 1x1 PNG 魔数头(mimeFromBuffer → image/png;data URL 前缀 data:image/png;base64,)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -33,8 +41,9 @@ export async function run() {
   // ---- 1. embedExternalImages:worker 抛错 + 空结果 → 保留原 URL + 统一警告 ----
   {
     const html = '<img src="https://a.example/x.png"><img src="https://b.example/y.png">';
+    /** @type {Warning[]} */
     const warnings = [];
-    const resolver = async (url) => {
+    const resolver = async (/** @type {string} */ url) => {
       if (url === "https://a.example/x.png") throw new Error("boom"); // worker catch 路径
       return Buffer.alloc(0); // 空结果(data.length === 0 → 降级)
     };
@@ -58,9 +67,11 @@ export async function run() {
     const html =
       '<img src="https://example.com/a"><img src="https://example.com/a/b">' +
       '<img src="https://example.com/a">'; // 与 URL1 重复(去重:resolver 只调一次,替换覆盖 2 处)
+    /** @type {Warning[]} */
     const warnings = [];
+    /** @type {string[]} */
     const calls = [];
-    const resolver = async (url) => {
+    const resolver = async (/** @type {string} */ url) => {
       calls.push(url);
       return Buffer.concat([PNG_MAGIC, Buffer.from(url === "https://example.com/a" ? "A" : "B")]);
     };
@@ -89,9 +100,10 @@ export async function run() {
 
   // ---- 3. checkLocalImages:catch 路径(抛错)与 null 均追加统一警告;成功/无 resolver 不警告 ----
   {
+    /** @type {Warning[]} */
     const warnings = [];
     const srcs = ["a.png", "b.png", "a.png"]; // 含重复(Set 去重)
-    const resolver = async (src) => {
+    const resolver = async (/** @type {string} */ src) => {
       if (src === "a.png") throw new Error("boom"); // catch 路径
       return null; // 缺失
     };
@@ -104,12 +116,14 @@ export async function run() {
       throw new Error(`postprocess 断言失败:checkLocalImages 警告异常(期望去重后 2 条),warnings=${JSON.stringify(warnings)}`);
     }
     // 成功路径:resolver 返回 Buffer → 不警告
+    /** @type {Warning[]} */
     const okWarnings = [];
     await checkLocalImages(["ok.png"], async () => PNG_MAGIC, okWarnings);
     if (okWarnings.length !== 0) {
       throw new Error(`postprocess 断言失败:成功不应警告,okWarnings=${JSON.stringify(okWarnings)}`);
     }
     // 无 resolver:直接返回,不调用、不警告
+    /** @type {Warning[]} */
     const noResolverWarnings = [];
     await checkLocalImages(["x.png"], undefined, noResolverWarnings);
     if (noResolverWarnings.length !== 0) {
@@ -123,8 +137,9 @@ export async function run() {
   // ENOENT → 「图片文件不存在」/ EACCES|EPERM → 「图片文件无访问权限」/ 其他 → 统一兜底;
   // 与 docx 侧 imageToDocx 同一构造器,行为对齐。
   {
+    /** @type {Warning[]} */
     const warnings = [];
-    const resolver = async (src) => {
+    const resolver = async (/** @type {string} */ src) => {
       if (src === "gone.png") throw Object.assign(new Error("enoent"), { code: "ENOENT" });
       if (src === "locked.png") throw Object.assign(new Error("eacces"), { code: "EACCES" });
       throw new Error("boom"); // 无错误码 → 统一「图片加载失败」兜底
@@ -150,14 +165,17 @@ export async function run() {
     const html =
       '<img src="https://x.example/1.png"><img src="https://x.example/bad.png">' +
       '<p>正文</p><img src="https://x.example/1.png"><img src="https://x.example/3.png">';
+    /** @type {Warning[]} */
     const warnings = [];
+    /** @type {string[]} */
     const calls = [];
-    const resolver = async (url) => {
+    const resolver = async (/** @type {string} */ url) => {
       calls.push(url);
       if (url.includes("bad")) throw new Error("boom");
       return Buffer.concat([PNG_MAGIC, Buffer.from(url)]);
     };
     const out = await embedExternalImages(html, resolver, warnings);
+    /** @param {string} url 外链 URL */
     const dataOf = (url) => `data:image/png;base64,${Buffer.concat([PNG_MAGIC, Buffer.from(url)]).toString("base64")}`;
     const expected =
       `<img src="${dataOf("https://x.example/1.png")}"><img src="https://x.example/bad.png">` +
@@ -179,18 +197,20 @@ export async function run() {
   // resolver 附带 exists 时优先走它(免整读):true/false 分支 + 抛错保留错误码细分;
   // 全程不回调完整 resolver。
   {
+    /** @type {string[]} */
     const calls = [];
     let resolveCalls = 0;
     const resolver = () => {
       resolveCalls += 1;
       return Promise.resolve(null);
     };
-    resolver.exists = async (src) => {
+    resolver.exists = async (/** @type {string} */ src) => {
       calls.push(src);
       if (src === "ok.png") return true;
       if (src === "gone.png") return false;
       throw Object.assign(new Error("denied"), { code: "EACCES" });
     };
+    /** @type {Warning[]} */
     const warnings = [];
     await checkLocalImages(["ok.png", "gone.png", "locked.png"], resolver, warnings);
     if (resolveCalls !== 0) {
@@ -212,8 +232,9 @@ export async function run() {
     const srcs = Array.from({ length: 8 }, (_, i) => `${i}.png`);
     let active = 0;
     let maxActive = 0;
+    /** @type {Warning[]} */
     const warnings = [];
-    const resolver = async (src, request) => {
+    const resolver = async (/** @type {string} */ src, /** @type {ImageRequest} */ request) => {
       if (!request || request.signal === undefined || request.maxBytes <= 0 || request.timeoutMs <= 0) {
         throw new Error("resolver request 契约未注入");
       }
@@ -240,8 +261,9 @@ export async function run() {
       '<img src="https://x.example/2.png">',
       '<img src="https://x.example/3.png">',
     ].join("");
+    /** @type {Warning[]} */
     const warnings = [];
-    const resolver = async (url) => {
+    const resolver = async (/** @type {string} */ url) => {
       const index = Number.parseInt(url.slice(-5, -4), 10);
       await new Promise((resolve) => setTimeout(resolve, (4 - index) * 3));
       throw new Error("boom");
@@ -264,9 +286,11 @@ export async function run() {
   // ---- 9. 外链图片数量/单图/文档总字节预算 + resolver maxBytes 契约 ----
   {
     const html = [1, 2, 3].map((i) => `<img src="https://x.example/${i}.png">`).join("");
+    /** @type {Warning[]} */
     const warnings = [];
+    /** @type {{url: string, request: ImageRequest}[]} */
     const calls = [];
-    const resolver = async (url, request) => {
+    const resolver = async (/** @type {string} */ url, /** @type {ImageRequest} */ request) => {
       calls.push({ url, request });
       return Buffer.concat([PNG_MAGIC, Buffer.from(url.slice(-5, -4))]);
     };
@@ -298,6 +322,7 @@ export async function run() {
   // ---- 10. 永不 resolve 的 resolver 受单请求超时约束,返回普通失败 warning ----
   {
     const html = '<img src="https://x.example/hang.png">';
+    /** @type {Warning[]} */
     const warnings = [];
     const startedAt = Date.now();
     const out = await embedExternalImages(html, () => new Promise(() => {}), warnings, {
@@ -318,6 +343,7 @@ export async function run() {
 
   // ---- 10b. 本地图片检查同样受单请求超时约束(不写警告前先快速退出) ----
   {
+    /** @type {Warning[]} */
     const warnings = [];
     const startedAt = Date.now();
     await checkLocalImages(["hang.png"], () => new Promise(() => {}), warnings, {
@@ -336,10 +362,12 @@ export async function run() {
   // ---- 11. 外部取消向 resolver signal 传播,取消不伪装为普通图片失败 ----
   {
     const html = '<img src="https://x.example/cancel.png">';
+    /** @type {Warning[]} */
     const warnings = [];
     const controller = new AbortController();
+    /** @type {AbortSignal | undefined} */
     let requestSignal;
-    const resolver = (_url, request) => {
+    const resolver = (/** @type {string} */ _url, /** @type {ImageRequest} */ request) => {
       requestSignal = request.signal;
       return new Promise((_resolve, reject) => {
         request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
@@ -354,11 +382,13 @@ export async function run() {
       concurrency: 1,
     });
     setTimeout(() => controller.abort(new Error("cancelled-by-test")), 5);
+    /** @type {{ code?: string, stack?: string } | undefined} */
     let error;
     try {
       await pending;
     } catch (err) {
-      error = err;
+      // 放宽理由:catch 变量为 unknown;取消错误按 core 契约为带 code 的 Error 实例
+      error = /** @type {{ code?: string, stack?: string }} */ (err);
     }
     if (!error || error.code !== "ERR_CONVERSION_CANCELLED") {
       throw new Error(`postprocess 断言失败:外部取消应使用独立错误码,error=${error?.stack ?? error}`);
@@ -374,11 +404,12 @@ export async function run() {
 
   // ---- 11b. 本地图片检查的外部取消同样上抛,不写图片失败 warning ----
   {
+    /** @type {Warning[]} */
     const warnings = [];
     const controller = new AbortController();
     const pending = checkLocalImages(
       ["a.png"],
-      (_src, request) =>
+      (/** @type {string} */ _src, /** @type {ImageRequest} */ request) =>
         new Promise((_resolve, reject) => {
           request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
         }),
@@ -386,11 +417,13 @@ export async function run() {
       { signal: controller.signal, requestTimeoutMs: 1000 },
     );
     setTimeout(() => controller.abort(new Error("cancelled-local")), 5);
+    /** @type {{ code?: string, stack?: string } | undefined} */
     let error;
     try {
       await pending;
     } catch (err) {
-      error = err;
+      // 放宽理由:catch 变量为 unknown;取消错误按 core 契约为带 code 的 Error 实例
+      error = /** @type {{ code?: string, stack?: string }} */ (err);
     }
     if (!error || error.code !== "ERR_CONVERSION_CANCELLED" || warnings.length !== 0) {
       throw new Error(
@@ -404,6 +437,7 @@ export async function run() {
   {
     const count = 300;
     const html = Array.from({ length: count }, (_, i) => `<img src="https://x.example/${i}.png">`).join("");
+    /** @type {Warning[]} */
     const warnings = [];
     const startedAt = Date.now();
     const out = await embedExternalImages(html, async () => Buffer.concat([PNG_MAGIC, Buffer.from("1")]), warnings, {
@@ -417,6 +451,7 @@ export async function run() {
       );
     }
     // 数量预算收紧到 10:第 11 张起不再发起请求,按文档顺序稳定降级
+    /** @type {Warning[]} */
     const cappedWarnings = [];
     let calls = 0;
     await embedExternalImages(html, async () => {

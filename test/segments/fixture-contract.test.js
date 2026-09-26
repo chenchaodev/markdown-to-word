@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 验收样例生成器契约守护段(位于 test/segments/ = 跨域守护段;被测为
  * test/tools/gen-fixtures.mjs 的显式契约与扫描范围,纯 Node,不依赖 dist):
@@ -34,11 +35,21 @@ import {
 /** 从 test/acceptance.mjs 抽「交给 runner 的段目录」(path.join(testRoot, "…")) */
 const ACCEPTANCE_DIR_RE = /path\.join\(testRoot,\s*"([^"]+)"\)/g;
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`fixture-contract 断言失败:${msg}`);
 }
 
-/** 段对象(planFixtureOutputs 只用 baseName) */
+/**
+ * 段对象(planFixtureOutputs 只用 baseName)。
+ * @param {string} baseName 段文件名(不含 .test.js)
+ * @returns {{ baseName: string }} 最小段对象
+ */
 const seg = (baseName) => ({ baseName });
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
@@ -109,7 +120,13 @@ export async function run() {
 
   // ================= 4. 契约判定:逐条失败模式 =================
   {
-    /** 断言某个合成模块被判红,且诊断同时含段名与关键线索 */
+    /**
+     * 断言某个合成模块被判红,且诊断同时含段名与关键线索。
+     * @param {Record<string, unknown>} mod 合成模块对象
+     * @param {string} needle 诊断必含线索
+     * @param {string} label 失败标签
+     * @returns {void}
+     */
     const expectProblem = (mod, needle, label) => {
       const problems = validateSegmentContract("segments/probe.test.js", mod);
       assert(problems.length > 0, `${label}:应判红,实际零问题`);
@@ -122,6 +139,12 @@ export async function run() {
         `${label}:诊断须含「${needle}」,实际 ${problems.join(" | ")}`,
       );
     };
+    /**
+     * 断言某个合成模块不判红(正向锚点)。
+     * @param {Record<string, unknown>} mod 合成模块对象
+     * @param {string} label 失败标签
+     * @returns {void}
+     */
     const ok = (mod, label) => {
       const problems = validateSegmentContract("segments/probe.test.js", mod);
       assert(problems.length === 0, `${label}:不应判红,实际 ${problems.join(" | ")}`);
@@ -149,7 +172,10 @@ export async function run() {
       outputs.map((o) => o.name).join(",") === "demo-alpha.md,demo.md,demo-zeta.md",
       `产物命名规则(main 键不加后缀、其余加后缀、按键排序、非法键剔除)不符:实际 ${outputs.map((o) => o.name).join(",")}`,
     );
-    assert(outputs.find((o) => o.key === "main").content === "m", "产物内容应与 fixtures 键一一对应");
+    const mainOutput = outputs.find((o) => o.key === "main");
+    // 上方已断言命名结果含 demo.md(即 main 键产物),此处显式校验缺失以免静默跳过
+    if (!mainOutput) throw new Error("产物命名断言失败:缺少 main 键产物");
+    assert(mainOutput.content === "m", "产物内容应与 fixtures 键一一对应");
 
     const collide = [
       { relDir: "segments", baseName: "dup", outputs: [{ name: "dup.md", key: "main" }] },

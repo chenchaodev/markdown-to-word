@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * image-type.ts 三函数单测:
  * - sniffImageType:PNG/JPEG/GIF/WEBP 魔数判定;未知/数据不足 → null
@@ -13,7 +14,12 @@ import {
   sniffImageType,
 } from "../../dist/core/image/image-type.js";
 
-/** 构造最小 PNG 文件头(签名 + 长度 + IHDR 块;仅前 24 字节,尺寸位于 offset 16/20) */
+/**
+ * 构造最小 PNG 文件头(签名 + 长度 + IHDR 块;仅前 24 字节,尺寸位于 offset 16/20)。
+ * @param {number} width 像素宽
+ * @param {number} height 像素高
+ * @returns {Buffer} 24 字节文件头
+ */
 function pngHeader(width, height) {
   const buf = Buffer.alloc(24);
   buf.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0); // PNG 签名
@@ -27,6 +33,9 @@ function pngHeader(width, height) {
 /**
  * 构造最小 JPEG 文件头:SOI(FF D8)+ APP0 段 + SOF0 段。
  * SOF0 段:FF C0 | 段长 00 11(2+1+2+2+3*3) | 精度 08 | height | width | 3 分量×3。
+ * @param {number} width 像素宽
+ * @param {number} height 像素高
+ * @returns {Buffer} 最小 JPEG 文件头
  */
 function jpegHeader(width, height) {
   const parts = [];
@@ -44,7 +53,13 @@ function jpegHeader(width, height) {
   return Buffer.concat(parts);
 }
 
-/** 断言辅助:统一报错格式(与 slug 段同风格) */
+/**
+ * 断言辅助:统一报错格式(与 slug 段同风格)。
+ * @param {unknown} actual 实际值
+ * @param {unknown} expected 期望值
+ * @param {string} label 失败标签
+ * @returns {void}
+ */
 function assertEq(actual, expected, label) {
   if (actual !== expected) {
     throw new Error(`${label} 断言失败: ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 任务列表验收(GFM task list):
  * - docx:remark-gfm 将 [x]/[ ] 标记剥除(段落文本为「已完成」「待办」),renderList
@@ -12,6 +13,11 @@ import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { asPdfArtifact, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+
+/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
+ *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
+ /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 
 /** 主样例:GFM 任务列表(已完成/待办/普通项,gen-fixtures 落盘为 acceptance/task-list.md) */
 const taskMd = `# 任务列表测试
@@ -26,8 +32,10 @@ export const fixtures = { main: taskMd };
 /** 任务列表验收 */
 export async function run() {
   // ---------- docx ----------
-  const docxArtifact = await convert(taskMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const documentXml = await unzipPart(docxArtifact.buffer, "word/document.xml");
+  const docxArtifact = /** @type {ConvertArtifact} */ (
+    await convert(taskMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
+  );
+  const documentXml = await unzipPart(docxBufferOf(docxArtifact), "word/document.xml");
   // 列表项文本:[x]/[ ] 标记已被 remark-gfm 剥除(断言「已完成」「待办」渲染)
   for (const text of ["已完成", "待办", "普通项"]) {
     const idx = documentXml.indexOf(text);
@@ -46,12 +54,12 @@ export async function run() {
   console.log("[ok] docx 任务列表:[x]/[ ] 标记剥除、按普通列表项渲染、无 checkbox 字形");
 
   // ---------- pdf ----------
-  const pdfArtifact = await convert(taskMd, "pdf", {
+  const pdfArtifact = /** @type {ConvertArtifact} */ (await convert(taskMd, "pdf", {
     baseDir: FIXTURES_DIR,
     title: "任务列表测试",
     warnings: [],
-  });
-  const pdfHtml = pdfArtifact.html;
+  }));
+  const pdfHtml = pdfHtmlOf(pdfArtifact);
   // 任务列表结构:plugin 输出 ul.task-list-container > li.task-list-item
   if (!pdfHtml.includes('<ul class="task-list-container">') || !pdfHtml.includes('<li class="task-list-item">')) {
     throw new Error("任务列表断言失败:PDF 缺少任务列表容器/条目结构");
@@ -83,11 +91,16 @@ export async function run() {
   }
   console.log("[ok] PDF 任务列表:☑/☐ 字符替代生效(input/label 移除)、文本、普通项不受影响 断言通过");
 
-  const pdfBin = await htmlToPdf(pdfArtifact.html, pdfArtifact.footerTemplate);
-  await saveArtifact("task-list", { docx: docxArtifact.buffer, pdf: pdfBin });
+  const pdfBin = await htmlToPdf(pdfHtml, asPdfArtifact(pdfArtifact).footerTemplate);
+  await saveArtifact("task-list", { docx: docxBufferOf(docxArtifact), pdf: pdfBin });
 }
 
-/** 取 document.xml 中以 searchIdx 为锚的段落 XML(回溯 <w:p> 起点、前瞻 </w:p> 终点) */
+/**
+ * 取 document.xml 中以 searchIdx 为锚的段落 XML(回溯 <w:p> 起点、前瞻 </w:p> 终点)。
+ * @param {string} documentXml document.xml 全文
+ * @param {number} searchIdx 锚点下标
+ * @returns {string} 段落 XML
+ */
 function paragraphXmlAt(documentXml, searchIdx) {
   const start = documentXml.lastIndexOf("<w:p>", searchIdx);
   const end = documentXml.indexOf("</w:p>", searchIdx);

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 标题编号 + 内部/外部链接验收(补 h4-h6/外链 rels):
  * linkMd → docx;断言 numbering.xml 多级 text 模板、document.xml 的
@@ -11,6 +12,7 @@ import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:标题编号 + 内部锚点/外部链接 + h1-h6(gen-fixtures 落盘为 acceptance/heading-links.md) */
 const linkMd = `---
@@ -41,9 +43,11 @@ export const fixtures = { main: linkMd };
 
 /** 标题编号 + 内部/外部链接验收 */
 export async function run() {
-  const linkDocx = await convert(linkMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const numberingXml = await unzipPart(linkDocx.buffer, "word/numbering.xml");
-  const documentXml = await unzipPart(linkDocx.buffer, "word/document.xml");
+  const linkDocx = docxBufferOf(
+    await convert(linkMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
+  );
+  const numberingXml = await unzipPart(linkDocx, "word/numbering.xml");
+  const documentXml = await unzipPart(linkDocx, "word/document.xml");
   // 回归守卫:书签 w:id 文档内唯一。docx Bookmark 组件每枚独立计数恒为 1 →
   // 全文档标题/公式书签 w:id 全部冲突(Word 要求文档内唯一,实测 WPS 显示异常);
   // bookmarkChildren 改用 ctx.bookmarkNextId 自增,每枚 bookmarkStart/End 对独占 id。
@@ -67,7 +71,7 @@ export async function run() {
   }
   // 外链(ExternalHyperlink 实现事实):URL 只进 rels(document.xml 经 r:id 引用,
   // 关系 Id 为 docx 库随机生成,须动态比对);关系类型 hyperlink + TargetMode External
-  const relsXml = await unzipPart(linkDocx.buffer, "word/_rels/document.xml.rels");
+  const relsXml = await unzipPart(linkDocx, "word/_rels/document.xml.rels");
   if (!relsXml.includes('Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"')) {
     throw new Error("外链断言失败:document.xml.rels 缺少 hyperlink 关系类型");
   }
@@ -110,10 +114,15 @@ export async function run() {
   }
   console.log("[ok] docx 标题编号/内部链接:numbering md-heading + hyperlink anchor + 书签齐全;h4-h6 样式/书签齐全且无编号");
   console.log("[ok] docx 外链:rels hyperlink External 关系 + document.xml r:id 匹配");
-  await saveArtifact("heading-links", { docx: linkDocx.buffer });
+  await saveArtifact("heading-links", { docx: linkDocx });
 }
 
-/** 取 document.xml 中以 searchIdx 为锚的段落 XML(回溯 <w:p> 起点、前瞻 </w:p> 终点) */
+/**
+ * 取 document.xml 中以 searchIdx 为锚的段落 XML(回溯 <w:p> 起点、前瞻 </w:p> 终点)。
+ * @param {string} documentXml document.xml 全文
+ * @param {number} searchIdx 锚点下标
+ * @returns {string} 段落 XML 片段
+ */
 function paragraphXmlAt(documentXml, searchIdx) {
   const start = documentXml.lastIndexOf("<w:p>", searchIdx);
   const end = documentXml.indexOf("</w:p>", searchIdx);

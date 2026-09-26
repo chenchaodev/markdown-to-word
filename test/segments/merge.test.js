@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 合并段:FIXTURES_DIR/manual 全部 .md(含 chapters/ 子目录)→ 合并 → PDF → 书签注入 + 元数据。
  * (collectMarkdown 递归收集;convert baseDir 用 manual 目录,10-附录.md 引用的
@@ -13,9 +14,15 @@ import { extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { asPdfArtifact } from "../common/convert-helpers.js";
 
-/** 递归收集目录下全部 .md(含子目录) */
+/**
+ * 递归收集目录下全部 .md(含子目录)。
+ * @param {string} dir 起始目录
+ * @returns {Promise<string[]>} .md 绝对路径列表
+ */
 async function collectMarkdown(dir) {
+  /** @type {string[]} */
   const files = [];
   for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -43,12 +50,14 @@ export async function run() {
     mdFiles.map(async (f) => ({ content: await fs.readFile(f, "utf8"), baseDir: path.dirname(f) })),
   );
   const mergedMd = mergeMarkdowns(inputs);
-  const mergedArtifact = await convert(mergedMd, "pdf", {
-    baseDir: manualDir,
-    title: "产品白皮书",
-    warnings: [],
-    pageSetup: { paper: "A4", orientation: "portrait", marginTop: 25, marginBottom: 25, marginLeft: 32, marginRight: 32 },
-  });
+  const mergedArtifact = asPdfArtifact(
+    await convert(mergedMd, "pdf", {
+      baseDir: manualDir,
+      title: "产品白皮书",
+      warnings: [],
+      pageSetup: { paper: "A4", orientation: "portrait", marginTop: 25, marginBottom: 25, marginLeft: 32, marginRight: 32 },
+    }),
+  );
   // 图片 file:// 改写守卫(纯逻辑层防线):
   // overrideImageRule(pdf/render.ts)渲染期将本地图片统一改写为 file:// 绝对路径
   // (pathToFileURL 输出正斜杠;http(s)/data: 保留原样;改写发生在渲染期、与文件

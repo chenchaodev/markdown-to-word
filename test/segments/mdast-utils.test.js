@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * mdast 工具直测段(src/core/util/mdast-utils.ts 纯函数:
  * 此前仅经 toc/captions 间接触达,无专属段):
@@ -10,6 +11,12 @@
  */
 import { collectPlainText } from "../../dist/core/util/mdast-utils.js";
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`mdast-utils 断言失败:${msg}`);
 }

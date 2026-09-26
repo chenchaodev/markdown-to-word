@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 设置面板纯逻辑层直测(src/renderer/settings/settings-logic.ts;自 settings-panel.ts 抽出):
  * 零 DOM 依赖纯函数,经 dist/renderer/settings/settings-logic.js 直接断言(Node 段,零 Electron API)。
@@ -61,11 +62,46 @@ import {
   validatePresetName,
 } from "../../dist/renderer/settings/settings-logic.js";
 
+/**
+ * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
+ * (cond 为假即抛,后续代码无须再判空)。
+ * @param {unknown} cond
+ * @param {string} msg
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`settings-logic 断言失败:${msg}`);
 }
 
+/** @param {string} name @returns {{ name: string, typography: object, pageSetup: object }} */
 const preset = (name) => ({ name, typography: {}, pageSetup: {} });
+
+/** 合并后的完整设置(dist 编译产物无类型标注,取 mergeSettingsWithDefaults 的返回形状)。 */
+/** @typedef {ReturnType<typeof mergeSettingsWithDefaults>} AppSettings */
+
+/**
+ * 取指定语言的字典表(dist DICT 为三语字面量对象,动态语言码访问在此收敛)。
+ * @param {string} code
+ * @returns {Record<string, string>}
+ */
+function langDict(code) {
+  // 放宽理由:dist DICT 为字面量对象,按语言码动态取表(键集即三语注册表)。
+  const dicts = /** @type {Record<string, Record<string, string>>} */ (DICT);
+  const dict = dicts[code];
+  assert(dict, `i18n 字典应注册语言 ${code}`);
+  return dict;
+}
+
+/**
+ * 取指定语言下的文案(缺键返回 undefined,由调用方按「字典缺键 → 回退」语义处理)。
+ * @param {string} code
+ * @param {string | undefined} key
+ * @returns {string | undefined}
+ */
+function dictText(code, key) {
+  if (key === undefined) return undefined;
+  return langDict(code)[key];
+}
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -148,6 +184,7 @@ export async function run() {
 
   // ---------- resolvePresetSelection(自定义预设不被弹回硬编码项) ----------
   const paperTpl = TEMPLATE_PRESETS.find((p) => p.id === "paper");
+  assert(paperTpl, "TEMPLATE_PRESETS 应含 paper(学术论文)预设");
   const paperLike = () => ({
     typography: { ...paperTpl.typography },
     pageSetup: { ...paperTpl.pageSetup },
@@ -233,10 +270,11 @@ export async function run() {
     invalidGeometry.pageSetup.marginTop === 0 && invalidGeometry.pageSetup.marginBottom === 296,
     "IPC 防御性合并遇到非法几何应复用 core 确定性修正(top=0/bottom=296)",
   );
+  /** @type {string | null} */
   let mergePageError = null;
   mergeSettingsWithDefaults(
     { pageSetup: { ...DEFAULT_SETTINGS.pageSetup, marginBottom: 1000 } },
-    (message) => { mergePageError = message; },
+    (/** @type {string} */ message) => { mergePageError = message; },
   );
   assert(typeof mergePageError === "string", "merge 发现非法几何时应上送可见错误");
   console.log("[ok] mergeSettingsWithDefaults:完整透传/显式字段保留/缺字段默认兜底/部分字段合并/theme 兜底/非法几何回退 断言通过");
@@ -319,7 +357,7 @@ export async function run() {
       persistence: "scheduled",
     },
   };
-  const onMigrationWarning = (message) => {
+  const onMigrationWarning = (/** @type {string} */ message) => {
     migrationWarning = message;
     migrationWarningCount += 1;
   };
@@ -333,20 +371,27 @@ export async function run() {
 
   // 保存失败保留草稿：依赖注入证明失败路径不碰 apply（控件/state 不回滚到 main cache），
   // 只报失败；成功路径仍以 main 权威值回填。
+  /** @type {AppSettings | null} */
   let applied = null;
   let failureShown = false;
+  /** @type {{ message?: string } | null} */
   let failureError = null;
+  // 失败对象经读取函数取值:其赋值发生在 onFailure 回调内,流分析看不到,
+  // 直接读会被收窄成初始 null
+  const lastFailure = () => failureError;
   // 用户当前编辑内容（草稿）：失败时必须原样保留
   const draft = { ...DEFAULT_SETTINGS, format: "pdf" };
   const failedSave = await reconcileSettingsSave({
     save: async () => { throw new Error("disk full"); },
     isCurrent: () => true,
-    apply: (settings) => { applied = settings; },
-    onFailure: (error) => { failureShown = true; failureError = error; },
+    apply: (/** @type {AppSettings} */ settings) => { applied = settings; },
+    onFailure: (/** @type {{ message?: string }} */ error) => { failureShown = true; failureError = error; },
   });
+  // 失败对象在断言处取值(onFailure 回调内的赋值,流分析看不到,直接读会被收窄成初始 null)
+  const failure = lastFailure();
   assert(
     failedSave === "failed" && applied === null && failureShown &&
-      failureError instanceof Error && failureError.message === "disk full",
+      failure instanceof Error && failure.message === "disk full",
     "保存失败应保留编辑内容(不调用 apply 回滚)并把错误交给失败回调",
   );
   assert(
@@ -354,12 +399,13 @@ export async function run() {
     "失败路径不得修改调用方持有的草稿对象",
   );
   // 已被更新请求取代的失败：不报失败、不回填（由最新请求收敛）
+  /** @type {AppSettings | null} */
   let staleApplied = null;
   let staleFailureShown = false;
   const staleFailure = await reconcileSettingsSave({
     save: async () => { throw new Error("stale"); },
     isCurrent: () => false,
-    apply: (settings) => { staleApplied = settings; },
+    apply: (/** @type {AppSettings} */ settings) => { staleApplied = settings; },
     onFailure: () => { staleFailureShown = true; },
   });
   assert(
@@ -367,14 +413,16 @@ export async function run() {
     "过期请求的失败不应回填也不应报错(避免覆盖更新请求的收敛结果)",
   );
   // 成功且为最新请求：以 main 返回值权威回填（验收 3：成功回填不破坏）
+  /** @type {AppSettings | null} */
   let successApplied = null;
   const successSave = await reconcileSettingsSave({
     save: async () => ({ ...DEFAULT_SETTINGS, format: "pdf", theme: "dark" }),
     isCurrent: () => true,
-    apply: (settings) => { successApplied = settings; },
+    apply: (/** @type {AppSettings} */ settings) => { successApplied = settings; },
     onFailure: () => {},
   });
-  const successControls = settingsToControlValues(successApplied);
+  // 成功路径:apply 收到 main 权威值(下方断言即校验其字段与控件映射)
+  const successControls = settingsToControlValues(/** @type {AppSettings} */ (successApplied));
   assert(
     successSave === "saved" && successApplied?.format === "pdf" &&
       successControls.format === "pdf" && successApplied.theme === "dark",
@@ -408,15 +456,16 @@ export async function run() {
   );
   console.log("[ok] mergePendingSavePatch:草稿并入提交/块级深合并/最新编辑优先断言通过");
 
+  /** @type {string[][]} */
   const runtimeEffects = [];
   applySettingsRuntimeEffects(
     { ...DEFAULT_SETTINGS, format: "pdf", language: "en", theme: "dark" },
     {
-      setSelectedFormat: (format) => runtimeEffects.push(["format", format]),
-      setLanguage: (language) => runtimeEffects.push(["language", language]),
-      mirrorLanguage: (language) => runtimeEffects.push(["mirror", language]),
+      setSelectedFormat: (/** @type {string} */ format) => runtimeEffects.push(["format", format]),
+      setLanguage: (/** @type {string} */ language) => runtimeEffects.push(["language", language]),
+      mirrorLanguage: (/** @type {string} */ language) => runtimeEffects.push(["mirror", language]),
       applyStaticTexts: () => runtimeEffects.push(["texts"]),
-      applyTheme: (theme) => runtimeEffects.push(["theme", theme]),
+      applyTheme: (/** @type {string} */ theme) => runtimeEffects.push(["theme", theme]),
     },
   );
   assert(
@@ -430,6 +479,7 @@ export async function run() {
   // ---------- resolvePresetHint(回填 hint 计算;三语 + 分支可达与复位) ----------
   // 语言为 i18n 模块级状态:本段内切语言,段末复位 zh(后续断言依赖中文文案)
   const paperPreset = TEMPLATE_PRESETS.find((p) => p.id === "paper");
+  assert(paperPreset, "TEMPLATE_PRESETS 应含 paper(学术论文)预设");
   // zh(默认):内置预设命中 → 字典值(= hint 兜底原文)+ isCustom=false
   const zhPaperHint = resolvePresetHint([], "paper");
   assert(
@@ -437,7 +487,7 @@ export async function run() {
     "zh:内置预设命中 → 其 hint + isCustom=false",
   );
   assert(
-    zhPaperHint.hint === DICT.zh[paperPreset.hintI18nKey],
+    zhPaperHint.hint === dictText("zh", paperPreset.hintI18nKey),
     "zh:提示应取自 hintI18nKey 字典值(与 hint 兜底原文同源)",
   );
   // en / ja:提示随当前语言切换,且不回落中文原文
@@ -446,7 +496,7 @@ export async function run() {
     const localized = resolvePresetHint([], "paper");
     assert(
       localized.isCustom === false &&
-        localized.hint === DICT[code][paperPreset.hintI18nKey] &&
+        localized.hint === dictText(code, paperPreset.hintI18nKey) &&
         localized.hint !== paperPreset.hint,
       `${code}:内置预设提示应走 hintI18nKey 字典(不得回落中文原文)`,
     );
@@ -462,7 +512,7 @@ export async function run() {
       setLanguage(code);
       const hit = resolvePresetHint([], p.id);
       assert(
-        hit.isCustom === false && hit.hint === DICT[code][p.hintI18nKey],
+        hit.isCustom === false && hit.hint === dictText(code, p.hintI18nKey),
         `${code}:预设 ${p.id} 提示应等于 ${code}.${p.hintI18nKey}`,
       );
     }
@@ -522,7 +572,7 @@ export async function run() {
   for (const { code } of LANGUAGES.filter((l) => l.code !== "zh")) {
     setLanguage(code);
     assert(
-      presetDisplayName(paperPreset) === DICT[code]["preset.paper"],
+      presetDisplayName(paperPreset) === dictText(code, "preset.paper"),
       `${code}:内置预设名应取 ${code} 字典值(不回落中文名)`,
     );
   }
@@ -551,7 +601,7 @@ export async function run() {
       groups: "Typography · Numbering",
     });
     assert(
-      toast.includes(DICT[code]["preset.paper"]),
+      toast.includes(dictText(code, "preset.paper")),
       `${code}:套用 toast 应含本语言预设名(实测 ${JSON.stringify(toast)})`,
     );
     if (code === "zh") continue;
@@ -595,7 +645,7 @@ export async function run() {
   const list = [preset("a"), preset("b"), preset("c")];
   const removed = removeCustomPresetByName(list, "b");
   assert(
-    JSON.stringify(removed.map((p) => p.name)) === JSON.stringify(["a", "c"]),
+    JSON.stringify(removed.map((/** @type {{ name: string }} */ p) => p.name)) === JSON.stringify(["a", "c"]),
     "按名删除且保序",
   );
   assert(removeCustomPresetByName(list, "不存在").length === 3, "无匹配 → 原列表");
@@ -669,33 +719,50 @@ export async function run() {
   console.log("[ok] settingsToControlValues:全字段映射/数值转字符串/align 判定/输出目录文案/theme 映射 断言通过");
 
   // ---------- applyThemeOn(data-theme 属性应用,DOM 无关直测) ----------
+  /**
+   * 取记录数组的指定一条(缺失即断言失败,避免断言在 undefined 上静默失真)。
+   * @template T
+   * @param {T[]} list
+   * @param {number} index
+   * @returns {T}
+   */
+  const recordAt = (list, index) => {
+    const item = list[index];
+    assert(item, `记录数组缺少第 ${index + 1} 条`);
+    return item;
+  };
   const makeTarget = () => {
+    /** @type {string[][]} */
     const calls = [];
     return {
       calls,
-      setAttribute(name, value) { calls.push(["set", name, value]); },
-      removeAttribute(name) { calls.push(["remove", name]); },
+      setAttribute(/** @type {string} */ name, /** @type {string} */ value) {
+        calls.push(["set", name, value]);
+      },
+      removeAttribute(/** @type {string} */ name) { calls.push(["remove", name]); },
     };
   };
   // 显式 light/dark → 设 data-theme 属性
   for (const theme of ["light", "dark"]) {
     const target = makeTarget();
     applyThemeOn(target, theme);
+    const setCall = recordAt(target.calls, 0);
     assert(
       target.calls.length === 1 &&
-        target.calls[0][0] === "set" &&
-        target.calls[0][1] === "data-theme" &&
-        target.calls[0][2] === theme,
+        setCall[0] === "set" &&
+        setCall[1] === "data-theme" &&
+        setCall[2] === theme,
       `theme=${theme} 应设 data-theme="${theme}"`,
     );
   }
   // system → 移除 data-theme 属性(CSS @media prefers-color-scheme 接管)
   const sysTarget = makeTarget();
   applyThemeOn(sysTarget, "system");
+  const removeCall = recordAt(sysTarget.calls, 0);
   assert(
     sysTarget.calls.length === 1 &&
-      sysTarget.calls[0][0] === "remove" &&
-      sysTarget.calls[0][1] === "data-theme",
+      removeCall[0] === "remove" &&
+      removeCall[1] === "data-theme",
     "theme=system 应移除 data-theme 属性",
   );
   console.log("[ok] applyThemeOn:light/dark 设属性/system 移除属性 断言通过");

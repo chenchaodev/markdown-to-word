@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 主进程 IPC 纯逻辑层直测(src/main/ipc/logic.ts:自 index.ts IPC handler 抽出):
  * 零 Electron API 纯函数,经 dist/main/ipc/logic.js 直接断言(Node 段)。
@@ -49,11 +50,45 @@ import {
   hasWebContentsOperation,
 } from "../../dist/main/windows/web-contents-registry.js";
 
+/** 预设条目(契约单源) */
+/** @typedef {import("../../src/core/settings/settings-defaults.js").CustomPreset} CustomPreset */
+/** 排版字段(契约单源;夹具可只给部分字段) */
+/** @typedef {import("../../src/core/settings/typography.js").TypographySettings} TypographySettings */
+/** 页面字段(契约单源;夹具可只给部分字段) */
+/** @typedef {import("../../src/core/settings/settings-defaults.js").PageSetup} PageSetup */
+/** 预设导入纯逻辑结果(实现签名声明的契约) */
+/** @typedef {import("../../src/main/ipc/logic.js").ImportPresetsMergeResult} ImportPresetsMergeResult */
+/** keyed 警告(带 params 的那一支) */
+/** @typedef {import("../../src/core/i18n.js").KeyedWarning} KeyedWarning */
+
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`ipc-logic 断言失败:${msg}`);
 }
 
-const preset = (name, typography = {}, pageSetup = {}) => ({ name, typography, pageSetup });
+/**
+ * 预设夹具条目:字段可残缺(被测逻辑负责补默认/去重),对外按契约形状参与。
+ * @param {string} name 预设名
+ * @param {Partial<TypographySettings>} [typography] 排版字段(默认全缺)
+ * @param {Partial<PageSetup>} [pageSetup] 页面字段(默认全缺)
+ * @returns {CustomPreset} 预设条目
+ */
+const preset = (name, typography = {}, pageSetup = {}) =>
+  /** @type {CustomPreset} */ ({ name, typography, pageSetup });
+
+/**
+ * 预设导入纯逻辑(经 dist 跑实现;返回形状按实现签名声明的契约取)。
+ * @param {string} text 预设文件文本
+ * @param {readonly CustomPreset[]} existing 现有预设
+ * @returns {ImportPresetsMergeResult} 导入+合并结果
+ */
+const importPresets = (text, existing) =>
+  /** @type {ImportPresetsMergeResult} */ (importPresetsFromText(text, existing));
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -75,13 +110,13 @@ export async function run() {
   );
   assert(entries.length === 3, "非字符串/空串应被过滤");
   assert(
-    entries[0].path === "C:/docs/a.md" && entries[0].name === "a.md",
+    entries[0]?.path === "C:/docs/a.md" && entries[0]?.name === "a.md",
     "name 应取 basename",
   );
-  assert(entries[1].name === "b.pdf", "非 md 扩展也应取 basename");
-  assert(entries[2].name === "c.MD", "basename 大小写保留");
+  assert(entries[1]?.name === "b.pdf", "非 md 扩展也应取 basename");
+  assert(entries[2]?.name === "c.MD", "basename 大小写保留");
   assert(
-    entries.every((e) => e.format === "docx" && e.ts === 123456),
+    entries.every((/** @type {{ path: string, name: string, format: string, ts: number }} */ e) => e.format === "docx" && e.ts === 123456),
     "format/ts 应透传",
   );
   assert(buildRecentFileEntries([], "pdf", 1).length === 0, "空列表 → 空结果");
@@ -97,16 +132,16 @@ export async function run() {
 
   // ---------- importPresetsFromText ----------
   // 1. 坏 JSON → 原错误文案透传
-  const r1 = importPresetsFromText("{not json!!", []);
+  const r1 = importPresets("{not json!!", []);
   assert(!r1.ok && r1.error === "文件不是有效的 JSON", "坏 JSON → 「文件不是有效的 JSON」");
   // 2. schemaVersion 非 1 → 原错误文案透传
-  const r2 = importPresetsFromText(JSON.stringify({ schemaVersion: 2, presets: [preset("x")] }), []);
+  const r2 = importPresets(JSON.stringify({ schemaVersion: 2, presets: [preset("x")] }), []);
   assert(!r2.ok && r2.error === "不支持的模板文件版本", "schemaVersion 非 1 → 「不支持的模板文件版本」");
   // 3. 空 presets → 「文件不含有效预设」
-  const r3 = importPresetsFromText("[]", []);
+  const r3 = importPresets("[]", []);
   assert(!r3.ok && r3.error === "文件不含有效预设", "空 presets → 「文件不含有效预设」");
   // 4. 合法:同名覆盖 + 追加,imported/overridden 计数
-  const r4 = importPresetsFromText(
+  const r4 = importPresets(
     JSON.stringify({
       schemaVersion: 1,
       presets: [preset("A", { bodySizePt: 14 }), preset("B")],
@@ -116,7 +151,7 @@ export async function run() {
   assert(r4.ok, "合法导入应成功");
   if (r4.ok) {
     assert(r4.presets.map((p) => p.name).join(",") === "A,B", "合并序:incoming 在前");
-    assert(r4.presets[0].typography.bodySizePt === 14, "同名项取 incoming 值");
+    assert(r4.presets[0]?.typography.bodySizePt === 14, "同名项取 incoming 值");
     assert(r4.imported === 2 && r4.overridden === 1, "imported=2 / overridden=1");
   }
   console.log("[ok] importPresetsFromText:错误文案透传(坏 JSON/版本/空)/合并序/同名覆盖/计数 断言通过");
@@ -154,14 +189,29 @@ export async function run() {
 
   // ---------- runConvertTask(自 index.ts runWithCtx 抽出,deps 注入直测) ----------
   /** 构造带事件记录的 mock deps(镜像 index.ts 真实注入:ctx 新建/注册/注销 + 取消判定) */
+  /**
+   * @param {{ canceledErrors?: unknown[] }} [options] 视为「取消错误」的异常实例集合
+   * @returns {{
+   *   log: (string | number)[][],
+   *   deps: {
+   *     createContext: () => { id: number },
+   *     registerCtx: (ctx: { id: number }) => boolean,
+   *     unregisterCtx: () => void,
+   *     isCanceledError: (err: unknown) => boolean,
+   *   },
+   * }} 事件记录 + 注入依赖
+   */
   function makeDeps({ canceledErrors = [] } = {}) {
-    const log = [];
+    const log = /** @type {(string | number)[][]} */ ([]);
     let seq = 0;
     return {
       log,
       deps: {
         createContext: () => ({ id: ++seq }),
-        registerCtx: (ctx) => log.push(["register", ctx.id]),
+        registerCtx: (ctx) => {
+          log.push(["register", ctx.id]);
+          return true; // 占用成功(镜像注册表接受首次操作)
+        },
         unregisterCtx: () => log.push(["unregister"]),
         isCanceledError: (err) => canceledErrors.includes(err),
       },
@@ -171,7 +221,7 @@ export async function run() {
   // 1. 成功路径:任务值透传;register → task → finally unregister
   {
     const { deps, log } = makeDeps();
-    const result = await runConvertTask(deps, async (ctx) => `ok:${ctx.id}`, () => "canceled", () => "busy");
+    const result = await runConvertTask(deps, async (/** @type {{ id: number }} */ ctx) => `ok:${ctx.id}`, () => "canceled", () => "busy");
     assert(result === "ok:1", `成功路径应透传任务值,实际 ${JSON.stringify(result)}`);
     assert(
       JSON.stringify(log) === JSON.stringify([["register", 1], ["unregister"]]),
@@ -192,7 +242,7 @@ export async function run() {
       () => "busy",
     );
     assert(result === onCanceledResult, "取消路径应原样返回 onCanceled() 结果");
-    assert(log[log.length - 1][0] === "unregister", "取消路径 finally 也应注销引用(避免悬挂)");
+    assert(log[log.length - 1]?.[0] === "unregister", "取消路径 finally 也应注销引用(避免悬挂)");
   }
   // 3. 非取消错误归一:{ ok:false, error } 且 error 经 errorMessage(Error→message/非 Error→String)
   {
@@ -209,8 +259,8 @@ export async function run() {
   // 4. ctx 每次调用新建不复用(「取消后复位」语义)+ 失败不残留注册
   {
     const { deps, log } = makeDeps();
-    await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled", () => "busy"); // 第一次
-    await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled", () => "busy"); // 第二次
+    await runConvertTask(deps, async (/** @type {{ id: number }} */ ctx) => ctx.id, () => "canceled", () => "busy"); // 第一次
+    await runConvertTask(deps, async (/** @type {{ id: number }} */ ctx) => ctx.id, () => "canceled", () => "busy"); // 第二次
     const ctxIds = log.filter((e) => e[0] === "register").map((e) => e[1]);
     assert(ctxIds.length === 2 && ctxIds[0] !== ctxIds[1], `每次调用应新建 ctx,实际 ${JSON.stringify(ctxIds)}`);
     assert(log.filter((e) => e[0] === "unregister").length === 2, "每次调用结束都应注销");
@@ -221,7 +271,7 @@ export async function run() {
     await runConvertTask(deps, async () => {
       throw new Error("x");
     }, () => "canceled", () => "busy").catch(() => undefined);
-    const ok = await runConvertTask(deps, async (ctx) => ctx.id, () => "canceled", () => "busy");
+    const ok = await runConvertTask(deps, async (/** @type {{ id: number }} */ ctx) => ctx.id, () => "canceled", () => "busy");
     assert(ok === 2, `失败后再次调用应拿到新 ctx(id=2)正常完成,实际 ${JSON.stringify(ok)}`);
     assert(log.filter((e) => e[0] === "unregister").length === 2, "失败+成功两次调用各注销一次");
   }
@@ -279,20 +329,20 @@ export async function run() {
     assert(isPrecheckFailureOutcome(failed) === true, "异常归一结果应判定为预检失败出口");
     assert(isPrecheckFailureOutcome([]) === false && isPrecheckFailureOutcome(operationBusyResult("忙")) === false,
       "警告数组/busy 不应被判为预检失败");
-    const failureWarnings = normalizePrecheckOutcome(failed);
+    const failureWarnings = /** @type {KeyedWarning[]} */ (normalizePrecheckOutcome(failed));
     assert(Array.isArray(failureWarnings) && failureWarnings.length === 1,
       "预检异常应转为单条失败警告(不再静默空数组)");
     assert(
       JSON.stringify(failureWarnings[0]) === JSON.stringify(precheckFailedWarning("ENOENT: no such file")),
       "失败警告应与 precheckFailedWarning 同形(key+params+fallback)",
     );
-    assert(failureWarnings[0].params.error === "ENOENT: no such file", "失败警告应携带失败原因");
-    assert(failureWarnings[0].fallback.includes("ENOENT"), "fallback 文案应含失败原因(字典缺 key 时兜底可见)");
+    assert(failureWarnings[0]?.params?.error === "ENOENT: no such file", "失败警告应携带失败原因");
+    assert(failureWarnings[0]?.fallback.includes("ENOENT"), "fallback 文案应含失败原因(字典缺 key 时兜底可见)");
   }
   console.log("[ok] busy 形状单源 + 预检三出口归一(数组透传/busy 稳定/异常可观察) 断言通过");
 
   // ---------- webContents operation registry ----------
-  const firstCtx = { id: 1, cancel() { this.canceled = true; } };
+  const firstCtx = { id: 1, canceled: false, cancel() { this.canceled = true; } };
   const firstToken = beginWebContentsOperation(7001, "single", firstCtx);
   assert(firstToken !== null, "首个操作应注册成功");
   assert(hasWebContentsOperation(7001), "占用后 hasWebContentsOperation 应为真");
@@ -332,13 +382,14 @@ export async function run() {
   let visitedCount = 0;
   while (queue.length > 0) {
     const file = queue.pop();
+    if (file === undefined) break; // 队列已空(理论上进不了循环,显式收窄便于类型门禁)
     if (seen.has(file)) continue;
     seen.add(file);
     if (!fs.existsSync(file)) continue;
     visitedCount += 1;
     const src = fs.readFileSync(file, "utf8");
     for (const m of src.matchAll(electronImportRe)) {
-      const spec = m[1];
+      const spec = m[1] ?? ""; // 正则必带一个捕获组;缺省按空串处理(既非 electron 也非相对路径)
       if (spec === "electron") {
         electronHitters.push(path.relative(distRoot, file).replace(/\\/g, "/"));
         continue;

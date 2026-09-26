@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * KaTeX/Mermaid 资源目录解析直测(位于 test/main/ = 主进程层;
  * src/main/services/resource-dirs.ts,经 dist/main/services/resource-dirs.js):
@@ -17,6 +18,12 @@ import { app } from "electron";
 import { getKatexDir, getMermaidDir, resolveKatexDir, resolveMermaidDir } from "../../dist/main/services/resource-dirs.js";
 import { ROOT } from "../common/paths.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`resource-dirs 断言失败:${msg}`);
 }

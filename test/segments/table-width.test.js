@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 表格列宽控制段:分隔行 dash 比例信号(Pandoc pipe-tables 行为)。
  * 覆盖四类断言(零注册):
@@ -30,14 +31,25 @@ import {
 } from "../../dist/core/settings/settings-defaults.js";
 import { TABLE_BORDER_BLACK } from "../../dist/core/docx/theme.js";
 import { unzipPart } from "../common/docx-utils.js";
+import { pdfHtmlOf } from "../common/convert-helpers.js";
 
+/** 产物契约类型取自 src 单源(dist 是 tsc 产物、无类型标注,kind 会被拓宽为 string,
+ *  不能直接作为收窄入参)。 */
+ /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`table-width 断言失败:${msg}`);
 }
 
 /** 内容区总宽(DXA/twips)契约值:A4 纵向默认边距(docx 渲染同链路换算) */
 const CONTENT_WIDTH_MM =
-  PAPER_SIZES_MM[DEFAULT_PAGE_SETUP.paper].width -
+  PAPER_SIZES_MM[/** @type {keyof typeof PAPER_SIZES_MM} */ (DEFAULT_PAGE_SETUP.paper)].width -
   DEFAULT_PAGE_SETUP.marginLeft -
   DEFAULT_PAGE_SETUP.marginRight; // 146mm
 const TOTAL_DXA = Math.round(twipsToPx(mmToTwips(CONTENT_WIDTH_MM)) * 15); // 8277
@@ -66,8 +78,10 @@ export async function run() {
   // 百分比换算:前 n-1 列四舍五入、末列吸收余数(和恒为 100)
   assert(JSON.stringify(delimiterWidthsPercent([3, 11])) === "[21,79]", "[3,11] → [21,79](末列吸收余数)");
   assert(JSON.stringify(delimiterWidthsPercent([1, 10])) === "[9,91]", "[1,10] → [9,91](末列吸收余数)");
-  const triple = delimiterWidthsPercent([1, 1, 10]);
-  assert(triple[0] + triple[1] + triple[2] === 100 && triple[2] === 84, "三列取整后总和守恒为 100");
+  // [1,1,10] 必触发(比例 10 ≥3),故按非空数组断言;三项求和用 reduce 表达
+  // (与显式三项链加等价,规避 noUncheckedIndexedAccess 的逐项 undefined 噪声)
+  const triple = /** @type {number[]} */ (delimiterWidthsPercent([1, 1, 10]));
+  assert(triple.reduce((sum, pct) => sum + pct, 0) === 100 && triple[2] === 84, "三列取整后总和守恒为 100");
   // 源码行入口:表头行号(0-based)+ 下一行分隔行;越界安全
   const lines = ["text", "| A | B |", "|---|:-----------:|", "| 1 | 2 |"];
   assert(JSON.stringify(tableColumnWidthsFromSource(lines, 1)) === "[21,79]", "源码行入口按表头行号解析");
@@ -107,16 +121,24 @@ export async function run() {
   console.log("[ok] table-width:(b) docx tblGrid 比例宽度 + 固定布局 + tcW 同步 + 对齐共存 断言通过");
 
   // ================= (c) pdf 产物断言 =================
+  /** @type {unknown[]} */
   const pdfWarnings = [];
-  const pdf = await convert(docxMd, "pdf", { baseDir: ".", warnings: pdfWarnings });
-  const tables = pdf.html.match(/<table[\s\S]*?<\/table>/g) ?? [];
+  const pdf = /** @type {ConvertArtifact} */ (
+    await convert(docxMd, "pdf", { baseDir: ".", warnings: pdfWarnings })
+  );
+  const tables = pdfHtmlOf(pdf).match(/<table[\s\S]*?<\/table>/g) ?? [];
   assert(tables.length === 2, "两个表格均应渲染");
-  assert(tables[0].startsWith('<table style="table-layout:fixed">'), "比例表应注入 table-layout:fixed");
-  assert(tables[0].includes('<th style="width:21%">'), "比例表首列 th 应注入 width:21%");
-  assert(tables[0].includes('<th style="text-align:center;width:79%">'), "比例表次列对齐样式应以「;」拼接保留(width 追加)");
+  // 长度已断言为 2:按位置取两张表(规避 noUncheckedIndexedAccess 的下标 undefined)
+  const [fixedTable, plainTable] = /** @type {[string, string]} */ (tables);
+  assert(fixedTable.startsWith('<table style="table-layout:fixed">'), "比例表应注入 table-layout:fixed");
+  assert(fixedTable.includes('<th style="width:21%">'), "比例表首列 th 应注入 width:21%");
+  assert(
+    fixedTable.includes('<th style="text-align:center;width:79%">'),
+    "比例表次列对齐样式应以「;」拼接保留(width 追加)",
+  );
   // 等宽表完全不受影响(回归)
-  assert(tables[1].startsWith("<table>"), "等宽表不应注入任何样式(回归)");
-  assert(!tables[1].includes("table-layout"), "等宽表无固定布局(回归)");
+  assert(plainTable.startsWith("<table>"), "等宽表不应注入任何样式(回归)");
+  assert(!plainTable.includes("table-layout"), "等宽表无固定布局(回归)");
   console.log("[ok] table-width:(c) pdf table-layout:fixed + th width% 注入 + 对齐拼接保留 断言通过");
 
   // ================= (d) 阈值边界与多表独立 =================
@@ -131,16 +153,29 @@ export async function run() {
     "| a | b |",
     "",
   ].join("\n");
-  const edgePdf = await convert(edgeMd, "pdf", { baseDir: ".", warnings: [] });
-  const edgeTables = edgePdf.html.match(/<table[\s\S]*?<\/table>/g) ?? [];
+  const edgePdf = /** @type {ConvertArtifact} */ (
+    await convert(edgeMd, "pdf", { baseDir: ".", warnings: [] })
+  );
+  const edgeTables = pdfHtmlOf(edgePdf).match(/<table[\s\S]*?<\/table>/g) ?? [];
   assert(edgeTables.length === 2, "边界用例两个表格均应渲染");
-  assert(!edgeTables[0].includes("table-layout"), "[3,5] 比例不足不触发(阈值下界)");
-  assert(edgeTables[1].includes("table-layout:fixed"), "[2,10] 比例达标触发(阈值上界)");
+  const [edgeNoTrigger, edgeTrigger] = /** @type {[string, string]} */ (edgeTables);
+  assert(!edgeNoTrigger.includes("table-layout"), "[3,5] 比例不足不触发(阈值下界)");
+  assert(edgeTrigger.includes("table-layout:fixed"), "[2,10] 比例达标触发(阈值上界)");
   // 多表独立:同一文档内各表按各自分隔行取信号(前文 b/c 已覆盖两表场景,此处
   // 断言 docx 侧第二个表无 tcW——信号只作用于触发表)
   const edgeAst = parseMarkdown(edgeMd);
-  assert(edgeAst.children[0]?.type === "table" && edgeAst.children[0].data?.colWidthsPct === undefined, "边界一解析期即无信号(data 缺省)");
-  assert(JSON.stringify(edgeAst.children[1]?.data?.colWidthsPct) === "[17,83]", "边界二解析期挂 colWidthsPct([2,10] → [17,83])");
+  // colWidthsPct 为解析期动态挂载(见 pipeline/parse.ts),mdast 类型未声明该字段,
+  // 故按结构取该字段
+  assert(
+    edgeAst.children[0]?.type === "table" &&
+      /** @type {{ colWidthsPct?: number[] }} */ (edgeAst.children[0].data)?.colWidthsPct === undefined,
+    "边界一解析期即无信号(data 缺省)",
+  );
+  assert(
+    JSON.stringify(/** @type {{ colWidthsPct?: number[] }} */ (edgeAst.children[1]?.data)?.colWidthsPct) ===
+      "[17,83]",
+    "边界二解析期挂 colWidthsPct([2,10] → [17,83])",
+  );
   const edgeBuffer = await renderDocx(edgeAst, {});
   const edgeXml = await unzipPart(edgeBuffer, "word/document.xml");
   assert((edgeXml.match(/<w:tblLayout w:type="fixed"\/>/g) ?? []).length === 1, "仅触发表的固定布局(逐表独立)");

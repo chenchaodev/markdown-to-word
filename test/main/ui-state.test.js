@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * UI 状态持久化测试(src/main/persist/ui-state.ts 纯逻辑层;测试经 dist/main/persist/ui-state.js):
  * 策略——备份真实 ui-state.json,finally 恢复;每场景用 query-string 动态 import 取全新模块实例。
@@ -10,6 +11,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 
+/** 最近文件条目(跨进程契约单源;本段经动态 import 拿产物实例,类型按契约取) */
+/** @typedef {import("../../src/core/ipc-contract.js").RecentFile} RecentFile */
+
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`ui-state 断言失败:${msg}`);
 }
@@ -148,10 +158,10 @@ export async function run() {
     const s5 = m5.loadUiState();
     assert(s5.recentFiles.length === 10, `recentFiles 应截断到 10,实际 ${s5.recentFiles.length}`);
     assert(
-      new Set(s5.recentFiles.map((e) => e.path)).size === 10,
+      new Set(s5.recentFiles.map((/** @type {RecentFile} */ e) => e.path)).size === 10,
       "recentFiles 应按 path 去重",
     );
-    const f5 = s5.recentFiles.find((e) => e.path === "C:\\f5.md");
+    const f5 = s5.recentFiles.find((/** @type {RecentFile} */ e) => e.path === "C:\\f5.md");
     assert(f5 && f5.ts === 1000 && f5.format === "pdf", "重复 path 应保留 ts 最大条目");
     for (let i = 1; i < s5.recentFiles.length; i++) {
       assert(s5.recentFiles[i - 1].ts >= s5.recentFiles[i].ts, "recentFiles 应按 ts 降序");
@@ -173,7 +183,7 @@ export async function run() {
     const m7 = await freshModule();
     const s7 = m7.loadUiState();
     assert(s7.recentFiles.length === 2, `追加合并后应 2 条,实际 ${JSON.stringify(s7.recentFiles)}`);
-    const x = s7.recentFiles.find((e) => e.path === "C:\\x.md");
+    const x = s7.recentFiles.find((/** @type {RecentFile} */ e) => e.path === "C:\\x.md");
     assert(x && x.ts === 2 && x.format === "pdf", "追加合并:x 应只留 ts 最大条目且置顶");
     assert(s7.recentFiles[0].path === "C:\\x.md", "追加合并:ts 最大应排最前");
     console.log("[ok] ui-state:saveUiState 追加合并(重复 path 去重置顶)");
@@ -342,7 +352,12 @@ export async function run() {
     console.log("[ok] ui-state:写失败可观察(不吞错/不更新缓存/队列可恢复/重启读盘一致)");
   } finally {
     // 恢复真实 ui-state.json(原有内容或删除),避免污染用户状态
-    if (hadFile) await fs.writeFile(uiFile, backup, "utf8");
-    else await fs.rm(uiFile, { force: true });
+    if (hadFile) {
+      // hadFile 为真时 backup 必已读到内容(readFile 成功才置位),此处显式收窄
+      assert(backup !== null, "hadFile 为真时 backup 不应为空");
+      await fs.writeFile(uiFile, backup, "utf8");
+    } else {
+      await fs.rm(uiFile, { force: true });
+    }
   }
 }

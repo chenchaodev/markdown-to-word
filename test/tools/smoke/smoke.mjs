@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 冒烟自测(--smoke 模式,index.ts 经动态 import 一行调用):
  * 只保留必须依赖 Electron 的端到端断言。
@@ -40,12 +41,25 @@ import { loadUiState, saveUiState } from "../../../dist/main/persist/ui-state.js
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // test/tools/smoke → 项目根/output/smoke(三级上跳;产物落仓库 output/,gitignore 覆盖)
 const SMOKE_DIR = path.join(__dirname, "..", "..", "..", "output", "smoke");
+/**
+ * 转换结果契约的本地视图:字段形状的单一来源是 src/core/ipc-contract.ts 的 ConvertResult,
+ * 但 dist 是 tsc 产物、无 .d.ts,类型只能从 JS 实现反推(合并链路只return成功分支,推不出
+ * error 字段)。故在此显式声明契约形状。
+ * @typedef {object} ConvertResult
+ * @property {boolean} ok
+ * @property {string} [outputPath] 产物路径
+ * @property {string} [error] 失败原因
+ * @property {unknown[]} [warnings] 非致命警告
+ * @property {boolean} [canceled] 用户主动取消
+ */
 /** ui-state.json 绝对路径(与 ui-state.ts 同源;隔离/恢复用,内容读写一律经 saveUiState)。 */
 const UI_STATE_PATH = path.join(app.getPath("userData"), "ui-state.json");
 
 /**
  * 带重试的一次性写(Windows 文件占用 EBUSY 多为瞬时,重试 3 次×150ms 再放弃)。
- * @param label 失败报错文案(区分「隔离写入」与「恢复」)。
+ * @param {() => unknown | Promise<unknown>} task 写操作
+ * @param {string} label 失败报错文案(区分「隔离写入」与「恢复」)。
+ * @returns {Promise<void>}
  */
 async function writeWithRetry(task, label) {
   let lastErr;
@@ -63,7 +77,12 @@ async function writeWithRetry(task, label) {
   );
 }
 
-/** 断言 PDF 大纲:首条目 Title(中文)与 Dest[0] 页面 PDFRef(单文件/合并书签共用) */
+/** 断言 PDF 大纲:首条目 Title(中文)与 Dest[0] 页面 PDFRef(单文件/合并书签共用)
+ * @param {string} filePath 产物路径
+ * @param {string} expectedTitle 期望的书签标题
+ * @param {string} label 报错定位标签
+ * @returns {Promise<void>}
+ */
 async function assertOutline(filePath, expectedTitle, label) {
   const doc = await PDFDocument.load(await fs.readFile(filePath));
   const outlinesRef = doc.catalog.get(PDFName.of("Outlines"));
@@ -84,7 +103,10 @@ async function assertOutline(filePath, expectedTitle, label) {
   }
 }
 
-/** 运行冒烟断言;任何失败抛错,由 index.ts 捕获后 app.exit(1) */
+/** 运行冒烟断言;任何失败抛错,由 index.ts 捕获后 app.exit(1)
+ * @param {import("electron").BrowserWindow} win 主窗口
+ * @returns {Promise<void>}
+ */
 export async function runSmoke(win) {
   // ui-state 隔离(先于一切,尽早完成,缩小与 renderer 启动恢复的竞态窗口)。
   // 备份内存态(createWindow 已把用户真实状态读入模块缓存)→ 清空 lastSessionFiles;
@@ -182,9 +204,13 @@ export async function runSmoke(win) {
     const mergeB = path.join(outDir, "smoke-merge-2.md");
     await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](smoke-pdf.png)\n`);
     await fs.writeFile(mergeB, `---\ntitle: 合并第二文件\n---\n\n# 合并第二章\n\n正文\n`);
-    const mergePdfResult = await mergeConvertImpl([mergeA, mergeB], "pdf", undefined, undefined, getKatexDir());
+    const mergePdfResult = /** @type {ConvertResult} */ (
+      await mergeConvertImpl([mergeA, mergeB], "pdf", undefined, undefined, getKatexDir())
+    );
     // 重名序号变体兼容:输出目录可配置后产物可能为「smoke-merge-1-合并 (2).pdf」,
     // 断言剥离 (N) 序号后缀后须以 -合并.pdf 结尾(与 batch 断言同源修复)
+    // 放宽理由:mergeConvertImpl 的 dist 产物无 .d.ts,TS 只能反推出成功分支
+    // (无 error 字段),此处按 ipc-contract 的 ConvertResult 契约视图取诊断文案
     const mergePdfBase = mergePdfResult.outputPath?.replace(/\s\(\d+\)(?=\.pdf$)/, "");
     if (!mergePdfResult.ok || !mergePdfResult.outputPath || !mergePdfBase?.endsWith("-合并.pdf")) {
       throw new Error(`合并 PDF 输出异常: ${mergePdfResult.error ?? mergePdfResult.outputPath}`);

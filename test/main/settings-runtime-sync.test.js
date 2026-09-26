@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 设置落盘后 main 侧运行时副作用段(src/main/ipc/register.ts 的运行时副作用区块;
  * 经 dist/main/ipc/register.js,运行于 Electron 主进程——模块 import electron 与
@@ -23,32 +24,65 @@ import {
   TITLE_BAR_OVERLAY_HEIGHT,
 } from "../../dist/main/windows/title-bar-overlay.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`settings-runtime-sync 断言失败:${msg}`);
 }
 
-/** 记录调用序的假触点(返回值即调用序列,便于断言「调了谁、传了什么」)。 */
+/** 假 BrowserWindow(overlay 只需 isDestroyed + setTitleBarOverlay 两个面) */
+/** @typedef {{ isDestroyed: () => boolean, setTitleBarOverlay: (options: TitleBarOverlay) => void }} FakeWindow */
+/** 下发给 setTitleBarOverlay 的 overlay 参数(配色 + 高度) */
+/** @typedef {{ color: string, symbolColor: string, height: number }} TitleBarOverlay */
+/** 界面语言(契约单源) */
+/** @typedef {import("../../src/core/i18n.js").Language} Language */
+/** 主题偏好(契约单源) */
+/** @typedef {import("../../src/core/settings/settings-defaults.js").ThemePreference} ThemePreference */
+/** 一次调用的记录元素(动作名 + 该动作的参数) */
+/** @typedef {(string | TitleBarOverlay | FakeWindow | null)[]} CallRecord */
+
+/**
+ * 记录调用序的假触点(返回值即调用序列,便于断言「调了谁、传了什么」)。
+ * @param {FakeWindow | null} [win] 假窗口
+ * @returns {{
+ *   calls: CallRecord[],
+ *   deps: {
+ *     setLanguage: (lang: Language) => void,
+ *     buildMenu: () => void,
+ *     syncOverlay: (pref: ThemePreference, target: FakeWindow | null) => void,
+ *     resolveMainWindow: () => FakeWindow | null,
+ *   },
+ * }} 调用序列 + 注入依赖
+ */
 function spyDeps(win = null) {
-  const calls = [];
+  const calls = /** @type {CallRecord[]} */ ([]);
   return {
     calls,
     deps: {
-      setLanguage: (lang) => calls.push(["setLanguage", lang]),
+      setLanguage: (/** @type {Language} */ lang) => calls.push(["setLanguage", lang]),
       buildMenu: () => calls.push(["buildMenu"]),
-      syncOverlay: (pref, target) => calls.push(["syncOverlay", pref, target]),
+      syncOverlay: (/** @type {ThemePreference} */ pref, /** @type {FakeWindow | null} */ target) =>
+        calls.push(["syncOverlay", pref, target]),
       resolveMainWindow: () => win,
     },
   };
 }
 
-/** 假 BrowserWindow(overlay 只需 isDestroyed + setTitleBarOverlay 两个面)。 */
+/**
+ * 假 BrowserWindow(overlay 只需 isDestroyed + setTitleBarOverlay 两个面)。
+ * @returns {{ calls: TitleBarOverlay[], win: FakeWindow }} 下发记录 + 假窗口
+ */
 function fakeWindow() {
-  const calls = [];
+  const calls = /** @type {TitleBarOverlay[]} */ ([]);
   return {
     calls,
     win: {
       isDestroyed: () => false,
-      setTitleBarOverlay: (options) => calls.push(options),
+      setTitleBarOverlay: (/** @type {TitleBarOverlay} */ options) => calls.push(options),
     },
   };
 }
@@ -109,7 +143,7 @@ export async function run() {
     { language: "en", theme: "dark" },
     themeDeps,
   );
-  assert(themeCalls.length === 1 && themeCalls[0][0] === "syncOverlay" && themeCalls[0][1] === "dark",
+  assert(themeCalls.length === 1 && themeCalls[0]?.[0] === "syncOverlay" && themeCalls[0]?.[1] === "dark",
     `主题变化应只调 syncOverlay('dark'),实际 ${JSON.stringify(themeCalls)}`);
 
   // 无变化 → 零调用
@@ -131,7 +165,7 @@ export async function run() {
     { language: "zh", theme: "dark" },
     targetCase.deps,
   );
-  assert(targetCase.calls.length === 1 && targetCase.calls[0][2] === target.win,
+  assert(targetCase.calls.length === 1 && targetCase.calls[0]?.[2] === target.win,
     "syncOverlay 第二参应为 resolveMainWindow() 解析结果");
 
   // ---- 4. overlay 真链路:真实 syncTitleBarOverlay + 假窗口 → 写入对应配色 ----
@@ -150,7 +184,8 @@ export async function run() {
     if (process.platform === "win32") {
       assert(fw.calls.length === 1, `theme=${theme} 应向主窗口下发一次 setTitleBarOverlay,实际 ${fw.calls.length} 次`);
       const got = fw.calls[0];
-      const want = TITLE_BAR_OVERLAY_COLORS[theme];
+      assert(got !== undefined, `theme=${theme} 应取到唯一一次下发的 overlay 参数`);
+      const want = TITLE_BAR_OVERLAY_COLORS[/** @type {"light" | "dark"} */ (theme)];
       assert(
         got.color === want.color && got.symbolColor === want.symbolColor &&
           got.height === TITLE_BAR_OVERLAY_HEIGHT,
@@ -175,6 +210,7 @@ export async function run() {
   );
   if (process.platform === "win32") {
     const got = sysFw.calls[0];
+    assert(got !== undefined, "system 主题应取到唯一一次下发的 overlay 参数");
     const colors = [TITLE_BAR_OVERLAY_COLORS.light, TITLE_BAR_OVERLAY_COLORS.dark];
     assert(
       sysFw.calls.length === 1 &&

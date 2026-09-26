@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * i18n 多语言注册表守护段(方案A 字典拆分改造):
  * 经 dist 断言(与既有段一致),覆盖四类回归面:
@@ -27,6 +28,12 @@ import {
   settingsJsonPath,
 } from "../common/settings.js";
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`i18n-registry 断言失败:${msg}`);
 }
@@ -35,6 +42,14 @@ function assert(cond, msg) {
 export const fixtures = null;
 
 export async function run() {
+  // 本段按语言码动态索引字典(DICT 的键是字面量联合),故先取 Record 视图
+  const DICT_VIEW = /** @type {Record<string, Record<string, string>>} */ (/** @type {unknown} */ (DICT));
+  /**
+   * 取指定语言的字典。
+   * @param {string} code 语言码
+   * @returns {Record<string, string>} 该语言字典
+   */
+  const dictOf = (code) => /** @type {Record<string, string>} */ (DICT_VIEW[code]);
   const zhKeys = Object.keys(DICT.zh).sort();
   const enKeys = Object.keys(DICT.en).sort();
 
@@ -44,19 +59,21 @@ export async function run() {
     `en 键集应与 zh 全等,zh 独有=${JSON.stringify(zhKeys.filter((k) => !enKeys.includes(k)))},en 独有=${JSON.stringify(enKeys.filter((k) => !zhKeys.includes(k)))}`,
   );
   const otherCodes = LANGUAGES.map((l) => l.code).filter((c) => c !== "zh" && c !== "en");
+  /** @type {Record<string, number>} */
   const coverage = {};
   for (const code of otherCodes) {
-    const extra = Object.keys(DICT[code]).filter((k) => !zhKeys.includes(k));
+    const extra = Object.keys(dictOf(code)).filter((k) => !zhKeys.includes(k));
     assert(extra.length === 0, `${code} 字典不应有 zh 之外的键,多出=${JSON.stringify(extra)}`);
-    coverage[code] = Object.keys(DICT[code]).length;
+    coverage[code] = Object.keys(dictOf(code)).length;
     // 抽查插值占位符不丢失:含 ${} 的 zh 模板,译文若存在则占位符集合必须一致
     // (例外:warn.crossRefNotFound 的 kind 参数按 en 口径省略,允许为 zh 子集)
-    for (const [key, value] of Object.entries(DICT[code])) {
-      const ph = (s) => [...String(s).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
-      if (!DICT.zh[key].includes("${")) continue;
+    for (const [key, value] of Object.entries(dictOf(code))) {
+      const ph = (/** @type {unknown} */ s) => [...String(s).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
+      // zh 键缺失时原实现会在此抛错,此处只做非空收窄,行为不变
+      if (!/** @type {string} */ (dictOf("zh")[key]).includes("${")) continue;
       assert(
-        ph(value) === ph(DICT.zh[key]) || key === "warn.crossRefNotFound",
-        `${code}.${key} 插值占位符应与 zh 一致:zh=[${ph(DICT.zh[key])}] ${code}=[${ph(value)}]`,
+        ph(value) === ph(dictOf("zh")[key]) || key === "warn.crossRefNotFound",
+        `${code}.${key} 插值占位符应与 zh 一致:zh=[${ph(dictOf("zh")[key])}] ${code}=[${ph(value)}]`,
       );
     }
   }
@@ -86,6 +103,7 @@ export async function run() {
   console.log("[ok] i18n-registry:(b) 回退链全字典不变量(ja 下无裸 key,en 兜底)+ 两级均缺失分支 断言通过");
 
   // ================= (c) htmlLang 映射(BCP 47) =================
+  /** @type {Record<string, string>} */
   const EXPECTED_HTML_LANG = {
     zh: "zh-CN",
     en: "en",
@@ -178,11 +196,11 @@ export async function run() {
   // ---- (f) warn.pathScanLimit:目录扫描预算触顶三语齐备 ----
   // 触碰维度(kind)与上限值(limit)同键插值:三语占位符必须一致,且译文不得
   // 沿用中文原文(否则 en/ja 下扫描截断对用户不可读)
-  const limitPh = (s) =>
+  const limitPh = (/** @type {unknown} */ s) =>
     [...String(s).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
   const limitKeys = ["kind", "limit"];
   for (const code of LANGUAGES.map((l) => l.code)) {
-    const value = DICT[code]["warn.pathScanLimit"];
+    const value = dictOf(code)["warn.pathScanLimit"];
     assert(typeof value === "string" && value.length > 0, `${code} 应有 warn.pathScanLimit 文案`);
     assert(
       limitPh(value) === limitKeys.join(","),
@@ -224,22 +242,23 @@ export async function run() {
   ];
   for (const key of presetHintKeys) {
     for (const { code } of LANGUAGES) {
-      const value = DICT[code][key];
+      const value = dictOf(code)[key];
       assert(
         typeof value === "string" && value.trim().length > 0,
         `${code} 应有非空文案 ${key}`,
       );
+      // 上一行已断言 value 为非空字符串,此处按该前置假设收窄
       assert(
-        !value.includes("${"),
+        !/** @type {string} */ (value).includes("${"),
         `${code}.${key} 不应含插值占位符(预设说明为固定文案,实测 ${JSON.stringify(value)})`,
       );
     }
-    assert(DICT.en[key] !== DICT.zh[key], `en.${key} 不应沿用中文原文`);
-    assert(DICT.ja[key] !== DICT.zh[key], `ja.${key} 不应沿用中文原文`);
+    assert(dictOf("en")[key] !== dictOf("zh")[key], `en.${key} 不应沿用中文原文`);
+    assert(dictOf("ja")[key] !== dictOf("zh")[key], `ja.${key} 不应沿用中文原文`);
     // 逐语言经 t() 验证命中(缺键时 t 会回退裸 key/英文,均在此暴露)
     for (const { code } of LANGUAGES) {
       setLanguage(code);
-      assert(t(key) === DICT[code][key], `${code} 下 t(${key}) 应命中本语言字典`);
+      assert(t(key) === dictOf(code)[key], `${code} 下 t(${key}) 应命中本语言字典`);
     }
   }
   setLanguage("zh");

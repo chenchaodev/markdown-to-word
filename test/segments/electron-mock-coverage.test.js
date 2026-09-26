@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * electron mock 边界静态守护段(位于 test/segments/ = 跨域守护段;被测为
  * test/tools/electron-mock.mjs 的命名导出集合与 src 的 electron 具名 import 事实,
@@ -50,6 +51,12 @@ const TEST_REQUIRED = ["BrowserWindow", "Menu", "app", "dialog", "ipcMain", "nat
 const ELECTRON_IMPORT_RE =
   /^[ \t]*import\s+(type\s+)?((?:(?!\bimport\b)[^;])*?)\s*from\s*(['"])electron\3[ \t]*;?[ \t]*$/gm;
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`electron-mock-coverage 断言失败:${msg}`);
 }
@@ -65,7 +72,8 @@ export function collectElectronBindings(source) {
   const required = new Set();
   let namespace = false;
   for (const m of source.matchAll(ELECTRON_IMPORT_RE)) {
-    const clause = m[2].trim();
+    // 捕获组 2 在正则里必参与匹配(整个子句),`?.` 仅作类型收窄,运行期不改变取值
+    const clause = m[2]?.trim() ?? "";
     const braceAt = clause.indexOf("{");
     const head = (braceAt === -1 ? clause : clause.slice(0, braceAt)).replace(/,\s*$/, "").trim();
     if (head.startsWith("*")) {
@@ -84,9 +92,16 @@ export function collectElectronBindings(source) {
   return { required, namespace };
 }
 
-/** 递归列出扩展名命中的文件(按路径排序,保证报告稳定) */
+/**
+ * 递归列出扩展名命中的文件(按路径排序,保证报告稳定)。
+ * @param {string} root 绝对目录
+ * @param {string[]} extensions 命中的扩展名(含点)
+ * @returns {string[]} 命中的文件绝对路径
+ */
 function listFiles(root, extensions) {
+  /** @type {string[]} */
   const out = [];
+  /** @param {string} dir 当前目录 */
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const abs = path.join(dir, entry.name);
@@ -176,6 +191,7 @@ export async function run() {
   // ---- 3. test/ 侧:生成器会 import 的段与共享 helper 同样全覆盖 ----
   {
     const roots = ["common", "segments", "main", "renderer"].map((d) => path.join(ROOT, "test", d));
+    /** @type {{ required: Set<string>, namespaceFiles: string[] }} */
     const merged = { required: new Set(), namespaceFiles: [] };
     for (const dir of roots) {
       const scan = scanTree(dir, [".js", ".mjs", ".cjs"]);

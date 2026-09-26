@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 原子 JSON 写入器直测(位于 test/main/ = 主进程层;src/main/persist/atomic-json.ts,
  * 测试经 dist/main/persist/atomic-json.js,electron 环境):
@@ -16,6 +17,12 @@ import os from "node:os";
 import path from "node:path";
 import { createJsonWriter } from "../../dist/main/persist/atomic-json.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`atomic-json 断言失败:${msg}`);
 }
@@ -42,8 +49,8 @@ export async function run() {
 
     // ---- 2. 写队列串行顺序:并发发起,完成序 = 调用序,链尾即最终态 ----
     const file2 = path.join(dir, "queue.json");
-    const committedOrder = [];
-    const writes = [];
+    const committedOrder = /** @type {number[]} */ ([]);
+    const writes = /** @type {Promise<void>[]} */ ([]);
     for (let i = 1; i <= 20; i++) {
       writes.push(writer(file2, { seq: i }, () => committedOrder.push(i)));
     }
@@ -57,8 +64,13 @@ export async function run() {
     console.log("[ok] atomic-json:写队列串行(20 并发写完成序=调用序,链尾=最终态)");
 
     // ---- 3. 并发调用不交叉:不同实例独立队列;同实例多目标文件各自完整 ----
+    // 门闩句柄:resolve 由下面构造 Promise 时写入,await 后即可调用
+    /** @type {{ resolve: (() => void) | null }} */
     const slowGate = { resolve: null };
-    const gate = new Promise((resolve) => (slowGate.resolve = resolve));
+    /** @type {Promise<void>} */
+    const gate = new Promise((resolve) => {
+      slowGate.resolve = () => resolve(undefined);
+    });
     const writerA = createJsonWriter();
     const writerB = createJsonWriter();
     const fileA1 = path.join(dir, "a1.json");
@@ -70,6 +82,7 @@ export async function run() {
     const aSecond = writerA(fileA2, { who: "a-second" });
     const bRaw = await bWrite;
     assert(JSON.parse(bRaw).who === "b", "B 实例不应被 A 实例队列阻塞(实例间独立)");
+    assert(slowGate.resolve !== null, "门闩 Promise 构造后应已交出 resolve");
     slowGate.resolve();
     await Promise.all([aFirst, aSecond]);
     assert(JSON.parse(await fs.readFile(fileA1, "utf8")).who === "a-first", "A 实例首写内容不符");
@@ -81,8 +94,16 @@ export async function run() {
     // 但不能再调用公开 writer(否则会等待自己)。两个任务交错发起时,第二个
     // 任务必须在第一个提交缓存后读取当前值。
     const mutationFile = path.join(dir, "mutation.json");
-    const mutationWriter = createJsonWriter();
+    // dist 产物不带类型标注:enqueue 是 writer 上的附加成员,按实现声明的契约取
+    const mutationWriter = /** @type {import("../../src/main/persist/atomic-json.js").JsonWriter} */ (
+      createJsonWriter()
+    );
     const current = { left: false, right: false };
+    /**
+     * 排一个「读当前值 → 合并 → 写盘」事务。
+     * @param {{ left?: boolean, right?: boolean }} patch 本次补丁
+     * @returns {Promise<{ left: boolean, right: boolean }>} 合并后的值
+     */
     const mutate = (patch) =>
       mutationWriter.enqueue(async (write) => {
         const next = { ...current, ...patch };

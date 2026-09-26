@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * dist 构建边界与清单门禁(位于 test/segments/ = 跨域守护段;被测为 scripts/ 下的
  * 构建/发布门禁脚本,纯 Node 逻辑不经 dist 编译产物):
@@ -24,11 +25,28 @@ import { evaluateFreshness, main as buildFreshMain } from "../../scripts/check-b
 import { copyRenderer } from "../../scripts/copy-renderer.mjs";
 import { ROOT } from "../common/paths.js";
 
+/**
+ * 清单结构视图:被测的 scripts/check-dist-manifest.mjs 为无类型标注的 JS,
+ * parseManifest 直接返回 JSON.parse 结果(推为 any),故测试侧显式声明所断言的形状。
+ * @typedef {{ path: string; size: number; sha256: string }} ManifestEntry
+ * @typedef {{ schema: string; fileCount: number; totalSize: number; files: ManifestEntry[] }} Manifest
+ */
+
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`dist-manifest-gate 断言失败:${msg}`);
 }
 
-/** 临时目录 + 兜底清理:测试对象是夹具,finally 保证不留残留(支持异步回调) */
+/**
+ * 临时目录 + 兜底清理:测试对象是夹具,finally 保证不留残留(支持异步回调)。
+ * @param {(dir: string) => unknown} fn 在临时目录上执行的夹具逻辑
+ * @returns {Promise<unknown>} fn 的返回值(透传)
+ */
 async function withTempDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-dist-gate-"));
   try {
@@ -38,8 +56,13 @@ async function withTempDir(fn) {
   }
 }
 
-/** 跑脚本 main():吞掉其 console 输出,返回 { code, output } 供失败原因断言 */
+/**
+ * 跑脚本 main():吞掉其 console 输出,返回 { code, output } 供失败原因断言。
+ * @param {() => unknown} fn 被调用的脚本 main
+ * @returns {Promise<{ code: unknown; output: string }>} 退出码与合并后的输出
+ */
 async function runChecker(fn) {
+  /** @type {string[]} */
   const lines = [];
   const originalLog = console.log;
   const originalError = console.error;
@@ -54,6 +77,13 @@ async function runChecker(fn) {
   }
 }
 
+/**
+ * 在目录下写入相对路径文件(自动建父目录)。
+ * @param {string} dir 基准目录
+ * @param {string} relative POSIX 风格相对路径
+ * @param {string} content 文件内容
+ * @returns {string} 落盘绝对路径
+ */
 function writeFileIn(dir, relative, content) {
   const target = path.join(dir, ...relative.split("/"));
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -61,8 +91,13 @@ function writeFileIn(dir, relative, content) {
   return target;
 }
 
-/** 造一份形状与真实 dist 一致的最小 dist(main/renderer/core + 样式子目录) */
+/**
+ * 造一份形状与真实 dist 一致的最小 dist(main/renderer/core + 样式子目录)。
+ * @param {string} dir 待填充的 dist 目录
+ * @returns {Record<string, string>} 落盘的相对路径 → 内容映射
+ */
 function makeDist(dir) {
+  /** @type {Record<string, string>} */
   const files = {
     "main/index.js": "export const main = 1;\n",
     "main/preload.cjs": '"use strict";\n',
@@ -74,9 +109,17 @@ function makeDist(dir) {
   return files;
 }
 
-/** 与被测实现无关的清单计算:用于交叉验证脚本输出不是「自证」 */
+/**
+ * 与被测实现无关的清单计算:用于交叉验证脚本输出不是「自证」。
+ * @param {string} distDir dist 根目录
+ * @returns {ManifestEntry[]} 逐字段重算的清单条目
+ */
 function independentManifest(distDir) {
-  const walk = (base, dir = base, out = []) => {
+  const walk = (
+    /** @type {string} */ base,
+    /** @type {string} */ dir = base,
+    /** @type {string[]} */ out = [],
+  ) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(base, abs, out);
@@ -106,7 +149,7 @@ export async function run() {
     const generated = await runChecker(() => distManifestMain(["--dist", distDir, "--output", manifestPath]));
     assert(generated.code === 0, `生成模式应通过,实际 ${generated.code}:${generated.output}`);
 
-    const manifest = parseManifest(fs.readFileSync(manifestPath, "utf8"));
+    const manifest = /** @type {Manifest} */ (parseManifest(fs.readFileSync(manifestPath, "utf8")));
     assert(manifest.schema === MANIFEST_SCHEMA, `schema 应为 ${MANIFEST_SCHEMA},实际 ${manifest.schema}`);
     assert(manifest.fileCount === 5, `fileCount 应为 5,实际 ${manifest.fileCount}`);
     assert(
@@ -140,6 +183,7 @@ export async function run() {
     console.log("[ok] dist-manifest-gate:生成/幂等/校验三态通过,清单与独立实现一致(5 个文件)");
 
     // ---------- 2. 负向:三类漂移 + 清单自身损坏 + 参数/输入异常 ----------
+    /** @type {{ name: string; arrange: (target: string, manifestFile: string) => void; expect: RegExp }[]} */
     const negative = [
       {
         name: "stale 残留(clean build 后多出的旧文件)",
@@ -224,7 +268,7 @@ export async function run() {
     assert(fs.existsSync(realDist), "真实 dist 应存在(验收链先于测试执行 build)");
     const realManifest = await runChecker(() => distManifestMain(["--dist", realDist, "--output", manifestPath]));
     assert(realManifest.code === 0, `真实 dist 应能生成清单,实际 ${realManifest.code}:${realManifest.output}`);
-    const realParsed = parseManifest(fs.readFileSync(manifestPath, "utf8"));
+    const realParsed = /** @type {Manifest} */ (parseManifest(fs.readFileSync(manifestPath, "utf8")));
     assert(realParsed.fileCount > 100, `真实 dist 文件数应远大于夹具,实际 ${realParsed.fileCount}`);
     assert(
       realParsed.files.some((entry) => entry.path === "main/index.js") &&
@@ -267,10 +311,16 @@ export async function run() {
 
     fs.utimesSync(path.join(srcDir, "main", "index.ts"), later, later);
     const stale = evaluateFreshness({ srcDir, distDir });
-    assert(stale.length === 1 && /存在晚于 dist 的 src 改动/.test(stale[0]), `src 晚于 dist 应判过期,实际 ${stale[0]}`);
+    assert(
+      stale.length === 1 && /存在晚于 dist 的 src 改动/.test(/** @type {string} */ (stale[0])),
+      `src 晚于 dist 应判过期,实际 ${stale[0]}`,
+    );
 
     const absent = evaluateFreshness({ srcDir, distDir: path.join(tmp, "no-dist") });
-    assert(absent.length === 1 && /dist 为空或不存在/.test(absent[0]), `dist 缺失应判过期,实际 ${absent[0]}`);
+    assert(
+      absent.length === 1 && /dist 为空或不存在/.test(/** @type {string} */ (absent[0])),
+      `dist 缺失应判过期,实际 ${absent[0]}`,
+    );
 
     const missingSrc = await runChecker(() => buildFreshMain(["--src", path.join(tmp, "no-src")]));
     assert(missingSrc.code === 1 && /源码目录不存在/.test(missingSrc.output), "源码目录不存在应非零退出");
@@ -314,14 +364,22 @@ export async function run() {
   });
 }
 
-/** 把清单的 schema 改成旧版本 */
+/**
+ * 把清单的 schema 改成旧版本。
+ * @param {string} manifestPath 清单文件路径
+ * @returns {void}
+ */
 function writeFileSyncSchema(manifestPath) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.schema = "m2w/dist-manifest@0";
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
-/** 往清单塞入上跳路径条目(可疑输入,须被拒绝而不是拿去查归档) */
+/**
+ * 往清单塞入上跳路径条目(可疑输入,须被拒绝而不是拿去查归档)。
+ * @param {string} manifestPath 清单文件路径
+ * @returns {void}
+ */
 function writeFileSyncTraversal(manifestPath) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   manifest.files.push({ path: "../../outside.js", size: 1, sha256: "0".repeat(64) });

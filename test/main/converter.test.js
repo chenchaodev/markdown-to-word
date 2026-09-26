@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 转换编排验收(位于 test/main/ = 主进程层测试;src/main/converter/ 经桶导出
  * converter.ts,测试经 dist/main/converter/index.js,electron 环境):
@@ -43,16 +44,67 @@ import {
 const SAMPLE_MD_PATH = path.join(FIXTURES_DIR, "main", "converter-sample.md");
 const PNG_1PX_PATH = path.join(FIXTURES_DIR, "main", "g4-preview.png");
 
+/** 单文件/合并转换返回(跨进程契约单源) */
+/** @typedef {import("../../src/core/ipc-contract.js").ConvertResult} ConvertResult */
+/** 转换上下文(取消标志 + 取消入口) */
+/** @typedef {ReturnType<typeof createConvertContext>} ConvertCtx */
+
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`converter 断言失败:${msg}`);
 }
 
-/** 读回 PDF 大纲标题序列(遍历 First/Next 兄弟链并就地递归;h2/h3 为子节点) */
+/**
+ * 合并转换(经 dist 跑实现;返回形状按跨进程契约取——实现层失败直接抛错,
+ * error 字段由 ipc 层补,直调恒为成功分支,读它只为失败信息留全上下文)。
+ * @param {string[]} files 源文件
+ * @param {string} format 产物格式
+ * @param {(stage: string) => void} [onProgress] 进度回调
+ * @param {ConvertCtx} [ctx] 取消上下文(默认新建)
+ * @returns {Promise<ConvertResult>} 合并结果
+ */
+const mergeFiles = (files, format, onProgress, ctx = createConvertContext()) =>
+  /** @type {Promise<ConvertResult>} */ (mergeConvertImpl(files, format, onProgress, ctx));
+
+/**
+ * 取 docx 产物包内条目文本(缺条目即断言失败,不用可选链静默放过)。
+ * @param {JSZip} zip 产物包
+ * @param {string} entryPath 条目路径
+ * @returns {Promise<string>} 条目文本
+ */
+const entryText = async (zip, entryPath) => {
+  const entry = zip.file(entryPath);
+  assert(entry !== null, `产物应含 ${entryPath}`);
+  return entry.async("string");
+};
+
+/**
+ * 数组当前长度(经函数取值:前一次 `assert(len === N)` 会把 length 收窄成字面量,
+ * 而两次断言之间长度会被实现副作用改变,直接再比较会误报无交集)。
+ * @param {readonly unknown[]} arr 目标数组
+ * @returns {number} 当前长度
+ */
+const sizeOf = (arr) => arr.length;
+
+/**
+ * 读回 PDF 大纲标题序列(遍历 First/Next 兄弟链并就地递归;h2/h3 为子节点)
+ * @param {Buffer | Uint8Array} pdfBytes PDF 字节
+ * @returns {Promise<string[] | null>} 标题序列(无大纲返回 null)
+ */
 async function outlineTitles(pdfBytes) {
   const doc = await PDFDocument.load(new Uint8Array(pdfBytes));
   const outlinesDict = doc.context.lookup(doc.catalog.get(PDFName.of("Outlines")), PDFDict);
   if (!outlinesDict) return null; // 无大纲(调用方据此区分"缺大纲"与"标题为空")
-  const titles = [];
+  const titles = /** @type {string[]} */ ([]);
+  /**
+   * @param {PDFDict} parentDict 起始节点
+   * @returns {void}
+   */
   const walk = (parentDict) => {
     for (let ref = parentDict.get(PDFName.of("First")); ref; ) {
       const node = doc.context.lookup(ref, PDFDict);
@@ -149,7 +201,7 @@ export async function run() {
     const mergeB = path.join(dir, "merge-b.md");
     await fs.writeFile(mergeA, `---\ntitle: 合并首文件\n---\n\n# 合并第一章\n\n![图](g4-preview.png)\n`);
     await fs.writeFile(mergeB, `---\ntitle: 合并第二文件\n---\n\n# 合并第二章\n\n正文\n`);
-    const mergeResult = await mergeConvertImpl([mergeA, mergeB], "docx");
+    const mergeResult = await mergeFiles([mergeA, mergeB], "docx");
     // 重名序号变体兼容:输出目录可配置后产物可能为「merge-a-合并 (2).docx」,
     // 断言剥离 (N) 序号后缀后须以 -合并.docx 结尾(与 batch 断言同源修复)
     const mergeBase = mergeResult.outputPath?.replace(/\s\(\d+\)(?=\.docx$)/, "");
@@ -158,10 +210,10 @@ export async function run() {
       `合并输出异常: ${mergeResult.error ?? mergeResult.outputPath}`,
     );
     const mergeZip = await JSZip.loadAsync(await fs.readFile(mergeResult.outputPath));
-    const mergeXml = await mergeZip.file("word/document.xml").async("string");
+    const mergeXml = await entryText(mergeZip, "word/document.xml");
     assert(mergeXml.includes("合并第一章") && mergeXml.includes("合并第二章"), "合并产物缺少文件标题");
     assert(!mergeXml.includes("合并第二文件"), "合并产物残留后续 frontmatter title");
-    const mergeRels = await mergeZip.file("word/_rels/document.xml.rels").async("string");
+    const mergeRels = await entryText(mergeZip, "word/_rels/document.xml.rels");
     assert(mergeRels.includes("image"), "合并产物图片未嵌入");
     console.log(`[ok] converter:merge ${path.basename(mergeResult.outputPath)} (frontmatter/图片/标题正确)`);
 
@@ -187,17 +239,17 @@ export async function run() {
       "---\ntitle: 跨目录第二文件\n---\n\n# 跨目录第二章\n\n![[b.png]]\n",
       "utf8",
     );
-    const crossMerge = await mergeConvertImpl([obsidianA, obsidianB], "docx");
+    const crossMerge = await mergeFiles([obsidianA, obsidianB], "docx");
     assert(crossMerge.ok && !!crossMerge.outputPath, `跨目录 Obsidian merge 失败:${crossMerge.error ?? ""}`);
     const crossZip = await JSZip.loadAsync(await fs.readFile(crossMerge.outputPath));
-    const crossXml = await crossZip.file("word/document.xml").async("string");
-    const crossRels = await crossZip.file("word/_rels/document.xml.rels").async("string");
+    const crossXml = await entryText(crossZip, "word/document.xml");
+    const crossRels = await entryText(crossZip, "word/_rels/document.xml.rels");
     assert(crossXml.includes("跨目录首文件") && crossXml.includes("跨目录第二章"), "跨目录 merge 标题缺失");
     assert(!crossXml.includes("跨目录第二文件"), "后续 frontmatter title 不应残留");
     assert((crossRels.match(/relationships\/image/g) ?? []).length >= 2, "跨目录 Obsidian 图片未全部嵌入");
     assert((crossXml.match(/<w:br w:type="page"\/>/g) ?? []).length === 2, "frontmatter 封面与显式分页符各一次,merge 不应叠加");
 
-    const crossPdf = await mergeConvertImpl([obsidianA, obsidianB], "pdf");
+    const crossPdf = await mergeFiles([obsidianA, obsidianB], "pdf");
     assert(crossPdf.ok && !!crossPdf.outputPath, `跨目录 Obsidian PDF merge 失败:${crossPdf.error ?? ""}`);
     const crossPdfBytes = await fs.readFile(crossPdf.outputPath);
     assert(crossPdfBytes.subarray(0, 4).toString("ascii") === "%PDF", "跨目录 PDF 产物缺少 PDF magic");
@@ -212,10 +264,10 @@ export async function run() {
       `---\ntitle: 越界图片\n---\n\n![越界](${outsideImage})\n`,
       "utf8",
     );
-    const boundaryMerge = await mergeConvertImpl([boundaryInput], "docx");
+    const boundaryMerge = await mergeFiles([boundaryInput], "docx");
     assert(boundaryMerge.ok && !!boundaryMerge.outputPath, `越界图片 merge 应完成降级:${boundaryMerge.error ?? ""}`);
     const boundaryZip = await JSZip.loadAsync(await fs.readFile(boundaryMerge.outputPath));
-    const boundaryRels = await boundaryZip.file("word/_rels/document.xml.rels").async("string");
+    const boundaryRels = await entryText(boundaryZip, "word/_rels/document.xml.rels");
     assert(!boundaryRels.includes("image"), "用户绝对路径图片应被 D-03 拒绝且不得嵌入");
     assert((boundaryMerge.warnings?.length ?? 0) > 0, "用户绝对路径图片应产生越界/加载 warning");
     console.log("[ok] converter:merge 用户绝对路径图片拒绝(真实 docx 产物)");
@@ -224,9 +276,9 @@ export async function run() {
     const warnB = path.join(dir, "warn-b.md");
     await fs.writeFile(warnA, iconv.encode("# 你好世界 A\n", "gbk"));
     await fs.writeFile(warnB, iconv.encode("# 你好世界 B\n", "gbk"));
-    const warningMerge = await mergeConvertImpl([warnB, warnA], "docx");
+    const warningMerge = await mergeFiles([warnB, warnA], "docx");
     assert(
-      JSON.stringify(warningMerge.warnings?.map((warning) => warning.params?.file)) ===
+      JSON.stringify(warningMerge.warnings?.map((warning) => (typeof warning === "object" ? warning.params?.file : undefined))) ===
         JSON.stringify(["warn-b.md", "warn-a.md"]),
       `merge warning 顺序应按输入文件序稳定:${JSON.stringify(warningMerge.warnings)}`,
     );
@@ -236,8 +288,10 @@ export async function run() {
     const cancelFiles = ["batch-cancel-1.md", "batch-cancel-2.md", "batch-cancel-3.md"].map((n) =>
       path.join(dir, n),
     );
-    await fs.writeFile(cancelFiles[1], "# 取消测试 2\n\n正文\n");
-    await fs.writeFile(cancelFiles[2], "# 取消测试 3\n\n正文\n");
+    const [, cancelSecond, cancelThird] = cancelFiles;
+    assert(cancelSecond !== undefined && cancelThird !== undefined, "取消夹具应备齐三份");
+    await fs.writeFile(cancelSecond, "# 取消测试 2\n\n正文\n");
+    await fs.writeFile(cancelThird, "# 取消测试 3\n\n正文\n");
     const cancelBatchCtx = createConvertContext(); // 每次调用新建 context,取消经 ctx.cancel() 置位
     const cancelBatch = await batchConvertImpl(
       cancelFiles,
@@ -291,12 +345,12 @@ export async function run() {
     const mergeCancelCtx = createConvertContext();
     let mergeCanceled = false;
     try {
-      await mergeConvertImpl([mergeA, mergeB], "docx", () => mergeCancelCtx.cancel(), mergeCancelCtx);
+      await mergeFiles([mergeA, mergeB], "docx", () => mergeCancelCtx.cancel(), mergeCancelCtx);
     } catch (err) {
       mergeCanceled = err instanceof ConvertCanceledError;
     }
     assert(mergeCanceled, "merge 取消:未抛 ConvertCanceledError");
-    const mergeRetry = await mergeConvertImpl([mergeA, mergeB], "docx");
+    const mergeRetry = await mergeFiles([mergeA, mergeB], "docx");
     assert(mergeRetry.ok, `merge 复位断言失败: ${mergeRetry.error}`);
     console.log("[ok] converter:merge 取消复位(取消后再次合并成功)");
 
@@ -312,15 +366,13 @@ export async function run() {
     assert(landXml.includes('w:orient="landscape"'), "页面设置 landscape 未生效");
     // breakBeforeH1 产物效果:设置开启 → document.xml 断言 H1 前分页
     const h1Result = await convertImpl(sampleMd, "docx");
-    const h1Xml = await (await JSZip.loadAsync(await fs.readFile(h1Result.outputPath)))
-      .file("word/document.xml").async("string");
+    const h1Xml = await entryText(await JSZip.loadAsync(await fs.readFile(h1Result.outputPath)), "word/document.xml");
     assert(h1Xml.includes("<w:pageBreakBefore/>"), "breakBeforeH1:document.xml 缺少 <w:pageBreakBefore/>");
     // 分页符:关闭 toc,保证 w:br w:type="page" 仅来自显式 <!-- page-break -->
     // (目录页自带分页符会污染计数)
     await updateSettings({ toc: false });
     const pbResult = await convertImpl(sampleMd, "docx");
-    const pbXml = await (await JSZip.loadAsync(await fs.readFile(pbResult.outputPath)))
-      .file("word/document.xml").async("string");
+    const pbXml = await entryText(await JSZip.loadAsync(await fs.readFile(pbResult.outputPath)), "word/document.xml");
     assert(pbXml.includes('<w:br w:type="page"/>'), '分页符:document.xml 缺少 <w:br w:type="page"/>');
     console.log("[ok] converter:设置注入(持久化/landscape/breakBeforeH1/分页符 docx)");
 
@@ -354,11 +406,12 @@ export async function run() {
     const origLoadFile = BrowserWindow.prototype.loadFile;
     let patched = false;
     try {
-      if (wcDescriptor?.get) {
+      const wcGetter = wcDescriptor?.get;
+      if (wcGetter) {
         Object.defineProperty(BrowserWindow.prototype, "webContents", {
           configurable: true,
           get() {
-            const wc = wcDescriptor.get.call(this);
+            const wc = wcGetter.call(this);
             wc.printToPDF = async () => {
               throw new Error("mock printToPDF 失败");
             };
@@ -398,7 +451,7 @@ export async function run() {
     // ---- 9b. 批量/合并副作用所有权:批量只执行一次 after-convert,合并只执行一次;
     //      批次开始使用 immutable settings snapshot(批次中修改缓存不改变本批次配置) ----
     await updateSettings({ afterConvert: "open", breakBeforeH1: true });
-    const snapshotOpenCalls = [];
+    const snapshotOpenCalls = /** @type {string[]} */ ([]);
     const snapshotOpenOriginal = shell.openPath;
     let snapshotOpenViaDefine = false;
     try {
@@ -412,7 +465,7 @@ export async function run() {
         Object.defineProperty(shell, "openPath", {
           configurable: true,
           writable: true,
-          value: async (opened) => {
+          value: async (/** @type {string} */ opened) => {
             snapshotOpenCalls.push(opened);
             return "";
           },
@@ -424,21 +477,21 @@ export async function run() {
       const snapshotBatch = await batchConvertImpl(
         batchFiles.slice(0, 2),
         "docx",
-        (stage) => {
+        (/** @type {string} */ stage) => {
           if (stage === "read") liveSettings.breakBeforeH1 = false;
         },
       );
       assert(snapshotBatch.okCount === 2, "快照批量转换应完成两项");
-      assert(snapshotOpenCalls.length === 1, `批量 after-convert 只应执行一次,实际 ${snapshotOpenCalls.length} 次`);
+      assert(sizeOf(snapshotOpenCalls) === 1, `批量 after-convert 只应执行一次,实际 ${snapshotOpenCalls.length} 次`);
       for (const item of snapshotBatch.items) {
         assert(!!item.ok, "快照批量应全部成功");
         const zip = await JSZip.loadAsync(await fs.readFile(item.outputPath));
-        const xml = await zip.file("word/document.xml").async("string");
+        const xml = await entryText(zip, "word/document.xml");
         assert(xml.includes("<w:pageBreakBefore/>"), "批次中途修改设置不得混合本批次配置");
       }
-      const snapshotMerge = await mergeConvertImpl([mergeA, mergeB], "docx");
+      const snapshotMerge = await mergeFiles([mergeA, mergeB], "docx");
       assert(snapshotMerge.ok, "快照合并转换应成功");
-      assert(snapshotOpenCalls.length === 2, `合并 after-convert 只应执行一次(总计两次),实际 ${snapshotOpenCalls.length} 次`);
+      assert(sizeOf(snapshotOpenCalls) === 2, `合并 after-convert 只应执行一次(总计两次),实际 ${snapshotOpenCalls.length} 次`);
     } finally {
       if (snapshotOpenViaDefine) {
         Object.defineProperty(shell, "openPath", {
@@ -468,7 +521,7 @@ export async function run() {
         value: async () => "mock open error",
       });
     }
-    const openLogs = [];
+    const openLogs = /** @type {string[]} */ ([]);
     const origLog = console.log;
     console.log = (...args) => {
       openLogs.push(args.join(" "));
@@ -495,8 +548,8 @@ export async function run() {
 
     // ---- 11. merge pdf 分支(451-453 行):合并 → renderPdf → 落盘 %PDF + 进度分阶段上报 ----
     // pdf 链路细分:read → parse → inline → mermaid → katex → print(printToPDF 前)→ done
-    const mergeStages = [];
-    const mergePdf = await mergeConvertImpl([mergeA, mergeB], "pdf", (stage) => mergeStages.push(stage));
+    const mergeStages = /** @type {string[]} */ ([]);
+    const mergePdf = await mergeFiles([mergeA, mergeB], "pdf", (stage) => mergeStages.push(stage));
     assert(mergePdf.ok && !!mergePdf.outputPath, `merge pdf 失败: ${mergePdf.error}`);
     const mergePdfBase = mergePdf.outputPath.replace(/\s\(\d+\)(?=\.pdf$)/, "");
     assert(mergePdfBase.endsWith("-合并.pdf"), `merge pdf 输出命名异常: ${mergePdf.outputPath}`);

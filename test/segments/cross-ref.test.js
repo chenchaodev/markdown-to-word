@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 题注/章节交叉引用测试(docx + pdf 双格式):
  * 断言依据为 src/core/docx/render.ts(CROSS_REF_KINDS / captions.ts)与
@@ -36,7 +37,14 @@ import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
 
+/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
+ *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
+ /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+
+/** 警告收集器:元素为 ConvertWarning(string 或 KeyedWarning),dist 产物无类型导出,
+ *  故以 unknown[] 如实标注(断言统一经 formatWarning 归一为文案后比较)。 */
 const B = FIXTURES_DIR;
 
 export const meta = { description: "题注/章节交叉引用测试(docx + pdf 双格式):" };
@@ -75,10 +83,11 @@ $$
 export async function run() {
   const MD = fixtures.main; // 主样例来自命名导出(gen-fixtures 落盘为 acceptance/cross-ref.md)
   // ============ 场景 A:主样例(h1 + 图/表/章节/公式 + 悬空) ============
+  /** @type {unknown[]} */
   const warnings = [];
-  const docx = await convert(MD, "docx", { baseDir: B, warnings });
-  const xml = await unzipPart(docx.buffer, "word/document.xml");
-  const has = (s) => xml.includes(s);
+  const docx = /** @type {ConvertArtifact} */ (await convert(MD, "docx", { baseDir: B, warnings }));
+  const xml = await unzipPart(docxBufferOf(docx), "word/document.xml");
+  const has = (/** @type {string} */ s) => xml.includes(s);
 
   // A1 docx 题注:书签 + 静态编号文本;图/表独立计数;label 不渲染
   if (!has('<w:bookmarkStart w:name="fig-a"')) throw new Error("docx 缺少题注书签 fig-a");
@@ -122,9 +131,12 @@ export async function run() {
   if (!has('<w:t xml:space="preserve">式 (1)</w:t>')) throw new Error('docx 公式引用文本非「式 (1)」');
 
   // ============ 场景 B:pdf 主样例 ============
+  /** @type {unknown[]} */
   const warningsP = [];
-  const pdf = await convert(MD, "pdf", { baseDir: B, warnings: warningsP, title: "t" });
-  const html = pdf.html;
+  const pdf = /** @type {ConvertArtifact} */ (
+    await convert(MD, "pdf", { baseDir: B, warnings: warningsP, title: "t" })
+  );
+  const html = pdfHtmlOf(pdf);
 
   // B1 pdf 锚点:题注 fig:/tab:、标题 sec:
   if (!html.includes('<span id="fig:a"></span>')) throw new Error('pdf 缺少题注锚点 <span id="fig:a">');
@@ -157,7 +169,7 @@ export async function run() {
     throw new Error("pdf label 泄漏到 HTML 文本");
   }
 
-  await saveArtifact("cross-ref", { docx: docx.buffer });
+  await saveArtifact("cross-ref", { docx: docxBufferOf(docx) });
 
   // ============ 场景 C:题注交换顺序 → 引用编号跟随 ============
   const mdOrder1 = `# 甲
@@ -184,18 +196,20 @@ export async function run() {
 
 见 [图](#fig:a) 与 [图](#fig:b)。
 `;
-  const o1 = await convert(mdOrder1, "docx", { baseDir: B, warnings: [] });
-  const o2 = await convert(mdOrder2, "docx", { baseDir: B, warnings: [] });
-  const x1 = await unzipPart(o1.buffer, "word/document.xml");
-  const x2 = await unzipPart(o2.buffer, "word/document.xml");
+  const o1 = /** @type {ConvertArtifact} */ (await convert(mdOrder1, "docx", { baseDir: B, warnings: [] }));
+  const o2 = /** @type {ConvertArtifact} */ (await convert(mdOrder2, "docx", { baseDir: B, warnings: [] }));
+  const x1 = await unzipPart(docxBufferOf(o1), "word/document.xml");
+  const x2 = await unzipPart(docxBufferOf(o2), "word/document.xml");
   if (!x1.includes('<w:t xml:space="preserve">图 1.1</w:t>') || !x1.includes('<w:t xml:space="preserve">图 1.2</w:t>')) {
     throw new Error("docx 顺序 1:引用编号非图 1.1/图 1.2");
   }
   if (!x2.includes('<w:t xml:space="preserve">图 1.2</w:t>')) {
     throw new Error("docx 顺序 2:交换题注顺序后 [图](#fig:a) 引用编号未跟随(应图 1.2)");
   }
-  const pOrder2 = await convert(mdOrder2, "pdf", { baseDir: B, warnings: [], title: "t" });
-  if (!pOrder2.html.includes(">图 1.2</a>")) {
+  const pOrder2 = /** @type {ConvertArtifact} */ (
+    await convert(mdOrder2, "pdf", { baseDir: B, warnings: [], title: "t" })
+  );
+  if (!pdfHtmlOf(pOrder2).includes(">图 1.2</a>")) {
     throw new Error("pdf 顺序 2:交换题注顺序后引用编号未跟随(应图 1.2)");
   }
 
@@ -206,16 +220,20 @@ export async function run() {
 
 见 [章节](#sec:s3)。
 `;
+  /** @type {unknown[]} */
   const dW = [];
-  const dD = await convert(mdNoH1, "docx", { baseDir: B, warnings: dW });
-  const dX = await unzipPart(dD.buffer, "word/document.xml");
+  const dD = /** @type {ConvertArtifact} */ (await convert(mdNoH1, "docx", { baseDir: B, warnings: dW }));
+  const dX = await unzipPart(docxBufferOf(dD), "word/document.xml");
   if (!dX.includes('<w:t xml:space="preserve">3</w:t>')) throw new Error('docx 无 h1 场景 [章节](#sec:s3) 非「3」(前导未出现级跳过)');
-  const dP = await convert(mdNoH1, "pdf", { baseDir: B, warnings: [], title: "t" });
-  if (!dP.html.includes(">3</a>")) {
+  const dP = /** @type {ConvertArtifact} */ (
+    await convert(mdNoH1, "pdf", { baseDir: B, warnings: [], title: "t" })
+  );
+  const dPHtml = pdfHtmlOf(dP);
+  if (!dPHtml.includes(">3</a>")) {
     throw new Error('pdf 无 h1 场景 [章节](#sec:s3) 非「3」(DECIDE-1 统一 Word 口径,跳过前导零级)');
   }
   // CSS counter 分支同步:无 h1 时 ::before 省略 h1c 前缀(h2 从「1」起)
-  if (!dP.html.includes('h2::before { content: counter(h2c) " "; }')) {
+  if (!dPHtml.includes('h2::before { content: counter(h2c) " "; }')) {
     throw new Error("pdf 无 h1 场景 CSS 编号应省略 h1c 前缀(DECIDE-1 口径同步)");
   }
 
@@ -224,26 +242,27 @@ export async function run() {
 
 图: 图一 {#fig:a}
 `;
+  /** @type {unknown[]} */
   const capOffW = [];
-  const capOffD = await convert(mdCapOff, "docx", {
+  const capOffD = /** @type {ConvertArtifact} */ (await convert(mdCapOff, "docx", {
     baseDir: B,
     warnings: capOffW,
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: false },
-  });
-  const capOffX = await unzipPart(capOffD.buffer, "word/document.xml");
+  }));
+  const capOffX = await unzipPart(docxBufferOf(capOffD), "word/document.xml");
   if (!capOffX.includes('<w:t xml:space="preserve">图: 图一 {#fig:a}</w:t>')) {
     throw new Error("docx captionNumbering 关:题注行应原样保留 label");
   }
   if (capOffX.includes('<w:bookmarkStart w:name="fig-a"')) {
     throw new Error("docx captionNumbering 关:不应生成 fig-a 书签");
   }
-  const capOffP = await convert(mdCapOff, "pdf", {
+  const capOffP = /** @type {ConvertArtifact} */ (await convert(mdCapOff, "pdf", {
     baseDir: B,
     warnings: [],
     title: "t",
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: false },
-  });
-  if (!capOffP.html.includes("{#fig:a}")) {
+  }));
+  if (!pdfHtmlOf(capOffP).includes("{#fig:a}")) {
     throw new Error("pdf captionNumbering 关:label 应原样保留不剥离");
   }
 
@@ -252,26 +271,27 @@ export async function run() {
 
 见 [章节](#sec:s1)。
 `;
+  /** @type {unknown[]} */
   const hnOffW = [];
-  const hnOffD = await convert(mdHnOff, "docx", {
+  const hnOffD = /** @type {ConvertArtifact} */ (await convert(mdHnOff, "docx", {
     baseDir: B,
     warnings: hnOffW,
     typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
-  });
-  const hnOffX = await unzipPart(hnOffD.buffer, "word/document.xml");
+  }));
+  const hnOffX = await unzipPart(docxBufferOf(hnOffD), "word/document.xml");
   if (!hnOffX.includes('<w:t xml:space="preserve">(?)</w:t>')) {
     throw new Error("docx headingNumbering 关:[章节] 引用应显示「(?)」");
   }
   if (!hnOffW.some((w) => formatWarning(w) === "交叉引用未找到章节 label: sec:s1")) {
     throw new Error("docx headingNumbering 关:缺少悬空章节警告");
   }
-  const hnOffP = await convert(mdHnOff, "pdf", {
+  const hnOffP = /** @type {ConvertArtifact} */ (await convert(mdHnOff, "pdf", {
     baseDir: B,
     warnings: [],
     title: "t",
     typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
-  });
-  if (!hnOffP.html.includes("(?)")) throw new Error("pdf headingNumbering 关:[章节] 引用应显示「(?)」");
+  }));
+  if (!pdfHtmlOf(hnOffP).includes("(?)")) throw new Error("pdf headingNumbering 关:[章节] 引用应显示「(?)」");
 
   // ============ 场景 G:chapter null(captions.ts:87)与题注空文本(captions.ts:113) ============
   // 依据(src/core/docx/handlers/captions.ts):chapter = headingNumbering && chapter>0 ? chapter : null;
@@ -281,8 +301,10 @@ export async function run() {
 
 图: 图甲
 `;
-  const gNoH1 = await convert(mdNoH1Cap, "docx", { baseDir: B, warnings: [] });
-  const gNoH1X = await unzipPart(gNoH1.buffer, "word/document.xml");
+  const gNoH1 = /** @type {ConvertArtifact} */ (
+    await convert(mdNoH1Cap, "docx", { baseDir: B, warnings: [] })
+  );
+  const gNoH1X = await unzipPart(docxBufferOf(gNoH1), "word/document.xml");
   if (!gNoH1X.includes('<w:t xml:space="preserve">图 1 图甲</w:t>')) {
     throw new Error('docx 无 h1 题注应无章节前缀「图 1 图甲」(chapter null)');
   }
@@ -292,8 +314,10 @@ export async function run() {
 
 图: {#fig:a}
 `;
-  const gEmpty = await convert(mdEmptyCap, "docx", { baseDir: B, warnings: [] });
-  const gEmptyX = await unzipPart(gEmpty.buffer, "word/document.xml");
+  const gEmpty = /** @type {ConvertArtifact} */ (
+    await convert(mdEmptyCap, "docx", { baseDir: B, warnings: [] })
+  );
+  const gEmptyX = await unzipPart(docxBufferOf(gEmpty), "word/document.xml");
   if (!gEmptyX.includes('<w:t xml:space="preserve">图 1.1</w:t>')) {
     throw new Error('docx 空题注文本应仅渲染编号「图 1.1」(无尾随空格)');
   }
@@ -317,30 +341,31 @@ export async function run() {
 
 图: 乙图
 `;
-  const hnOffCapD = await convert(mdCapContinuous, "docx", {
+  const hnOffCapD = /** @type {ConvertArtifact} */ (await convert(mdCapContinuous, "docx", {
     baseDir: B,
     warnings: [],
     typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
-  });
-  const hnOffCapX = await unzipPart(hnOffCapD.buffer, "word/document.xml");
+  }));
+  const hnOffCapX = await unzipPart(docxBufferOf(hnOffCapD), "word/document.xml");
   if (!hnOffCapX.includes('<w:t xml:space="preserve">图 1 甲图</w:t>')) {
     throw new Error("B3 断言失败:headingNumbering 关时首图应为「图 1」");
   }
   if (!hnOffCapX.includes('<w:t xml:space="preserve">图 2 乙图</w:t>')) {
     throw new Error("B3 断言失败:headingNumbering 关时次章图应连续编号「图 2」(不得按章重置为「图 1」)");
   }
-  const hnOffCapP = await convert(mdCapContinuous, "pdf", {
+  const hnOffCapP = /** @type {ConvertArtifact} */ (await convert(mdCapContinuous, "pdf", {
     baseDir: B,
     warnings: [],
     title: "t",
     typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
-  });
+  }));
   // pdf 编号经 CSS counter 在打印期生成,HTML 源码无「图 N」字面文本;
   // 断言连续性语义:走全局重置分支(body 重置一次),且无 h1 级重置规则
-  if (!hnOffCapP.html.includes("body { counter-reset: figc tabc; }")) {
+  const hnOffCapHtml = pdfHtmlOf(hnOffCapP);
+  if (!hnOffCapHtml.includes("body { counter-reset: figc tabc; }")) {
     throw new Error("B3 断言失败:pdf headingNumbering 关时应使用全局题注计数器(连续编号)");
   }
-  if (/h1 \{ counter-reset:[^}]*figc/.test(hnOffCapP.html)) {
+  if (/h1 \{ counter-reset:[^}]*figc/.test(hnOffCapHtml)) {
     throw new Error("B3 断言失败:pdf headingNumbering 关时不得存在 h1 级题注重置规则");
   }
 

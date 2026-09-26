@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * renderer 纯函数层直测:
  * - isMarkdown/baseName/truncateMiddle/stageText/STAGE_PERCENT 原在 utils.ts,
@@ -146,6 +147,7 @@ export async function run() {
   console.log(`[ok] stageText:${stageCases.length} 组映射 + ${fallbackCases.length} 组未知键原样兜底 断言通过`);
 
   // ---------- STAGE_PERCENT ----------
+  /** @type {[keyof typeof STAGE_PERCENT, number][]} */
   const percentCases = [
     ["read", 15],
     ["render", 70],
@@ -171,6 +173,11 @@ export async function run() {
   console.log("[ok] STAGE_PERCENT:read=15/render=70/done=95 + B9 pdf 细分(parse/inline/mermaid/katex/print)+ 与 STAGE_TEXT 键集一致 断言通过");
 
   // ---------- actionableError(错误码 → 可操作文案,未识别透传) ----------
+  /**
+   * @param {string} key
+   * @param {Record<string, string>} [params]
+   * @returns {string}
+   */
   const fakeT = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
   const errCases = [
     ["EBUSY: resource busy or locked, open 'C:\\a.docx'", "error.fileBusy"],
@@ -214,6 +221,7 @@ export async function run() {
   console.log("[ok] partitionDuplicates:与既有列表去重/incoming 内部重复/空列表 断言通过");
 
   // ---------- selectionStatus(摘要 + 非 Markdown 跳过 + 重复文件 三段组合句式) ----------
+  /** @type {[string, number, number, string][]} */
   const selCases = [
     // [summary, skipped, duplicates, 期望 key 或原文]
     ["已选择 2 个文件", 0, 0, "已选择 2 个文件"], // 无跳过无重复 → 摘要原样

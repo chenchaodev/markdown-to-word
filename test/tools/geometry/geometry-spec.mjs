@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * geometry gate 规格单源(零 DOM / 零 Electron / 零 IO):测量节点表、场景表(视口/驱动步骤/
  * 必需节点/截图名)、恒定断言组、固定槽下限、容差与滚动预算默认值,以及高度维度媒体查询的
@@ -5,9 +6,58 @@
  *
  * 契约/常量单源:驱动(采样)与判定(裁决)共用本表,新增测量点或场景只改这里。
  */
+
+/* ---------- 规格表项的类型契约(判定层与驱动脚本共同消费) ---------- */
+
+/**
+ * @typedef {[number, number]} Viewport 场景视口(定长二元组,消费方按下标取宽高)
+ */
+
+/**
+ * @typedef {object} ColumnAxis 列轴断言组
+ * @property {string} name 组名(报告用)
+ * @property {"border" | "padding"} box 比对用的盒语义
+ * @property {string[]} members 组内成员节点 key
+ * @property {string} [ref] 参照节点 key(缺省时以首个可用成员为参照)
+ */
+
+/**
+ * @typedef {object} Scenario 场景表项
+ * @property {string} id 场景 id(采样结果以 id 对齐)
+ * @property {Viewport} viewport 场景视口
+ * @property {string} [expectStage] 期望的舞台状态(data-stage)
+ * @property {boolean} [compact] 是否为紧凑/半屏档(纵向滚动免滚动断言对象)
+ * @property {string} [shot] 截图名后缀
+ * @property {{ op: string, [k: string]: unknown }[]} steps 声明式驱动指令
+ * @property {string[]} [visible] 必需在场且可见的节点 key
+ * @property {string[]} [present] 必需在场的节点 key(允许隐藏)
+ * @property {ColumnAxis[]} columnAxis 列轴断言组
+ */
+
+/**
+ * @typedef {object} ConstantGroup 恒定断言组(组内节点在成员场景间几何须恒等)
+ * @property {string} id 组 id
+ * @property {string} node 受约束节点 key
+ * @property {string} baseline 基准场景 id
+ * @property {string[]} members 参与断言的场景 id
+ * @property {("left" | "top" | "width" | "height")[]} [axes] 比对轴(缺省四轴全比)
+ * @property {string} why 契约说明(失败消息引用)
+ */
+
+/**
+ * @typedef {object} SlotInvariant 固定槽高度区间
+ * @property {string} node 槽节点 key
+ * @property {number} minHeight 高度下限(防塌陷)
+ * @property {number} [maxHeight] 高度上限(防被内容撑高/退化为自适应)
+ * @property {string} why 契约说明
+ */
+
 /** 场景视口(与 visual-check 同口径:基准 960×680 / 紧凑 880×620 / 半屏 640×560) */
+/** @type {Viewport} */
 export const VIEWPORT_BASE = [960, 680];
+/** @type {Viewport} */
 export const VIEWPORT_COMPACT = [880, 620];
+/** @type {Viewport} */
 export const VIEWPORT_HALFSCREEN = [640, 560];
 
 /**
@@ -53,6 +103,7 @@ export const X_CLIP_KEYS = ["dropZone", "feed", "recentList"];
  * - 纸面脚注列:参数条铺满纸面内容盒(drop.css .quick-bar),以 .stage 内容盒为参照;
  *   比对 padding box —— .stage 自带 1px 边线,比 border box 会整体偏移 1px。
  * 无 ref 的组以首个成员为参照;所有成员另受"不得越出纸面内容盒"守护(border box vs 纸面 padding box)。
+ * @type {ColumnAxis[]}
  */
 const FILE_COLUMNS = [
   { name: "queue-column", box: "border", members: ["ph", "listcard", "fhint"] },
@@ -78,6 +129,7 @@ const COMMON_PRESENT = [
  * 场景表(顺序即驱动顺序,单窗口逐步推进,复刻 visual-check 的场景序列):
  * steps 为声明式驱动指令,由 scripts/check-geometry.mjs 解释执行;
  * 视口变化由驱动自动 setContentSize(不必写 resize 步骤),实际视口与规格不符即判失败。
+ * @type {Scenario[]}
  */
 export const SCENARIOS = [
   {
@@ -224,6 +276,7 @@ const STATES_COMPACT = ["compact-multi-880", "compact-converting-880", "compact-
  * 恒定断言组:同视口内,某节点在多个状态间几何必须恒等(逐轴差值 > 容差即"跳动")。
  * members 显式列出,故「哪个状态参与了哪个不变量」在规格里可读、可审;
  * axes 缺省比对 left/top/width/height,只关心占位高度的槽节点用 axes:["height"] 收窄。
+ * @type {ConstantGroup[]}
  */
 export const CONSTANT_GROUPS = [
   {
@@ -309,6 +362,7 @@ export const CONSTANT_GROUPS = [
  * 固定槽高度区间(px):常驻占位不得塌陷(下限),也不得被内容撑高/退化为自适应(上限)。
  * 上限取「两档令牌值 + 1px 容差」:--feed-h 常规 96 / 矮窗 86,超出即说明 .feed 又回到
  * height:auto(OPT-4.4 前的状态),或结果汇总把槽顶开。
+ * @type {SlotInvariant[]}
  */
 export const SLOT_INVARIANTS = [
   { node: "historyHead", minHeight: 30, why: "历史标题条常驻占位(常规档 40px / 矮窗档 36px)" },
@@ -337,11 +391,15 @@ const MEDIA_CONDITION_RE = /^\(\s*(min|max)-(width|height)\s*:\s*(\d+(?:\.\d+)?)
  * 高度维度的响应式档是几何前提(矮窗档令牌决定 --tbh/--panes-h/--quickbar-h),
  * 而隐藏窗口在 Windows 上 setContentSize 后媒体查询重算会滞后一帧以上 ——
  * 条件本身从 CSS 单源取出,既做「档位是否生效」断言,又做 resize 落定判据。
+ * @param {string} cssText 样式表全文
+ * @returns {string[]} 条件串(去重、保持出现序)
  */
 export function extractHeightMediaConditions(cssText) {
+  /** @type {string[]} */
   const found = [];
   for (const m of cssText.matchAll(/@media\s*(\([^)]*\bheight\b[^)]*\))/g)) {
-    const cond = m[1].replace(/\s+/g, " ").trim();
+    // 捕获组恒有值(模式里括号内为必选),?? "" 只是满足定长元组索引的取值域
+    const cond = (m[1] ?? "").replace(/\s+/g, " ").trim();
     if (!found.includes(cond)) found.push(cond);
   }
   return found;
@@ -351,6 +409,9 @@ export function extractHeightMediaConditions(cssText) {
  * 求值高度/宽度维度媒体查询在给定视口下是否成立。
  * 只支持 (min|max)-(width|height): Npx;出现其他写法(复合条件、em/rem、其他特征)
  * 直接抛错 —— 宁可门禁红并要求扩展求值器,也不静默跳过未覆盖的档位。
+ * @param {string} condition 媒体查询条件串(如 (min-height: 640px))
+ * @param {{ width: number, height: number }} viewport 视口尺寸(px)
+ * @returns {boolean} 条件在该视口下是否成立
  */
 export function evaluateMediaCondition(condition, viewport) {
   const m = MEDIA_CONDITION_RE.exec(condition);

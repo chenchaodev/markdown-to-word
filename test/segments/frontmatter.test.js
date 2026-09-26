@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * frontmatter 解析测试(src/core/pipeline/frontmatter.ts 纯逻辑;测试经 dist/core/pipeline/frontmatter.js):
  * 实现事实(已知 key 守卫):
@@ -10,8 +11,24 @@
  *   空值(含 `""` 剥离后)→ 不写入
  * - body = md.slice(match[0].length)(frontmatter 块整体剥除,含其后的换行)
  */
-import { parseFrontmatter } from "../../dist/core/pipeline/frontmatter.js";
+import { parseFrontmatter as parseFrontmatterRaw } from "../../dist/core/pipeline/frontmatter.js";
 
+/**
+ * 解析结果契约:metadata 字段取自 src 的 DocMetadata 单源(dist 是 tsc 产物、
+ * 无类型标注,空对象字面量会被推断为 {},键访问即报错)。
+ * @typedef {{ metadata: import("../../src/core/pipeline/frontmatter.js").DocMetadata; body: string }} FrontmatterResult
+ */
+
+/** 按 src 契约收窄的解析入口(运行时仍是 dist 产物,类型只取自 src) */
+ /** @type {(md: string) => FrontmatterResult} */
+const parseFrontmatter = parseFrontmatterRaw;
+
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`frontmatter 断言失败:${msg}`);
 }

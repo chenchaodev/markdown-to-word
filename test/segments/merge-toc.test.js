@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 合并总目录增强(固化既有单 pass 合并通路行为,无需新增代码):
  * - 合并多文件后单次 convert 产出「总目录」覆盖所有源文件标题(docx + pdf 双格式断言)
@@ -16,6 +17,7 @@ import { unzipPart } from "../common/docx-utils.js";
 import { PDFDocument } from "pdf-lib";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
 
 const fileA = `# 第一章 A
 
@@ -47,6 +49,20 @@ export const fixtures = { main: fileA + "\n\n" + fileB };
 
 const A_TITLES = ["第一章 A", "1.1 A 小节一", "第二章 A", "2.1 A 小节二"];
 const B_TITLES = ["第三章 B", "3.1 B 小节一", "第四章 B", "4.1 B 小节二"];
+
+/**
+ * 取标题对应页码(标题必在 ordered 中:上方已断言 8 条标题序列与 A/B 标题一致)。
+ * @param {{ text: unknown, page: number | undefined }[]} ordered 文档顺序标题 → 页码
+ * @param {string} text 标题文本
+ * @returns {number} 页码
+ */
+function pageOf(ordered, text) {
+  const found = ordered.find((o) => o.text === text);
+  if (!found || found.page == null) {
+    throw new Error(`F8 断言失败:标题「${text}」未解析到页码`);
+  }
+  return found.page;
+}
 const ALL_TITLES = [...A_TITLES, ...B_TITLES];
 
 export async function run() {
@@ -60,7 +76,7 @@ export async function run() {
 
   // docx:合并产物含总目录且覆盖两个文件全部标题
   const docx = await convert(mergedMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: true });
-  const docXml = await unzipPart(docx.buffer, "word/document.xml");
+  const docXml = await unzipPart(docxBufferOf(docx), "word/document.xml");
   if (!docXml.includes("TOC")) throw new Error("F8 断言失败:合并 docx 缺少 TOC 指令");
   for (const t of ALL_TITLES) {
     if (!docXml.includes(t)) throw new Error(`F8 断言失败:合并 docx 总目录/正文缺少标题「${t}」`);
@@ -68,13 +84,15 @@ export async function run() {
   console.log("[ok] 合并 docx 总目录覆盖全部源文件标题(A+B 共 8) 断言通过");
 
   // pdf:合并产物总目录(artifact.html)覆盖两个文件全部标题
-  const pdfArt = await convert(mergedMd, "pdf", {
-    baseDir: FIXTURES_DIR,
-    title: "F8 合并",
-    warnings: [],
-    toc: true,
-    tocMode: "field",
-  });
+  const pdfArt = asPdfArtifact(
+    await convert(mergedMd, "pdf", {
+      baseDir: FIXTURES_DIR,
+      title: "F8 合并",
+      warnings: [],
+      toc: true,
+      tocMode: "field",
+    }),
+  );
   if (!pdfArt.html.includes('class="toc"')) throw new Error("F8 断言失败:合并 pdf 缺少总目录");
   for (const t of ALL_TITLES) {
     if (!pdfArt.html.includes(t)) throw new Error(`F8 断言失败:合并 pdf 总目录/正文缺少标题「${t}」`);
@@ -85,9 +103,11 @@ export async function run() {
   const headings = extractHeadings(pdfArt.html);
   const pass1 = await htmlToPdf(pdfArt.html, pdfArt.footerTemplate);
   const pdfDoc = await PDFDocument.load(new Uint8Array(pass1));
-  const pageNumbers = pageNumbersForNames(
-    pdfDoc,
-    headings.map((h) => h.id),
+  const pageNumbers = /** @type {Record<string, number>} */ (
+    pageNumbersForNames(
+      pdfDoc,
+      headings.map((h) => h.id),
+    )
   );
   // 文档顺序标题 → 页码,校验单调非降
   const ordered = headings.map((h) => ({ text: h.text, page: pageNumbers[h.id] }));
@@ -98,8 +118,8 @@ export async function run() {
     prev = o.page;
   }
   // 跨文件:B 文件首个标题页码应严格大于 A 文件末个标题页码(page-break 起新页)
-  const aPages = A_TITLES.map((t) => ordered.find((o) => o.text === t).page);
-  const bPages = B_TITLES.map((t) => ordered.find((o) => o.text === t).page);
+  const aPages = A_TITLES.map((t) => pageOf(ordered, t));
+  const bPages = B_TITLES.map((t) => pageOf(ordered, t));
   const maxA = Math.max(...aPages);
   const minB = Math.min(...bPages);
   if (!(minB > maxA)) {

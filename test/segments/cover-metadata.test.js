@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 封面元数据覆盖测试:convert 的 context.metadata 优先于 frontmatter 解析出的
  * metadata。向导「封面」步即经此通道传入显式元数据,覆盖首文件 frontmatter。
@@ -7,6 +8,7 @@
 import { convert } from "../../dist/core/convert.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
 
 const md = `---
 title: frontmatter标题
@@ -29,7 +31,7 @@ export async function run() {
     warnings: [],
     metadata: { title: "向导标题", author: "向导作者", date: "2026-09-09" },
   });
-  const document = await unzipPart(docx.buffer, "word/document.xml");
+  const document = await unzipPart(docxBufferOf(docx), "word/document.xml");
   if (!document.includes("向导标题")) throw new Error("docx 封面应显示 metadata.title=向导标题");
   if (!document.includes("向导作者")) throw new Error("docx 封面应显示 metadata.author=向导作者");
   if (document.includes("frontmatter标题")) {
@@ -38,11 +40,13 @@ export async function run() {
   console.log("[ok] docx:context.metadata 覆盖 frontmatter 封面");
 
   // 断言 2:context.metadata 覆盖 frontmatter(pdf)
-  const pdf = await convert(md, "pdf", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    metadata: { title: "向导标题", author: "向导作者", date: "2026-09-09" },
-  });
+  const pdf = asPdfArtifact(
+    await convert(md, "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      metadata: { title: "向导标题", author: "向导作者", date: "2026-09-09" },
+    }),
+  );
   if (!pdf.html.includes('<div class="cover-title">向导标题</div>')) {
     throw new Error("PDF 封面应显示 metadata.title=向导标题");
   }
@@ -53,7 +57,7 @@ export async function run() {
 
   // 断言 3(回归):不传 metadata → 回落 frontmatter
   const docxFb = await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const docFb = await unzipPart(docxFb.buffer, "word/document.xml");
+  const docFb = await unzipPart(docxBufferOf(docxFb), "word/document.xml");
   if (!docFb.includes("frontmatter标题")) {
     throw new Error("不传 metadata 时应回落 frontmatter title");
   }

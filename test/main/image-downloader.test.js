@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 图片解析器段(src/main/services/image-downloader.ts 纯逻辑层,不起 Electron 窗口):
  * - 本地读取:源目录/显式可信根内相对路径可读;绝对、UNC、越界与链接越界拒绝
@@ -25,15 +26,33 @@ import { saveArtifact } from "../common/artifacts.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
 
-/** 测试用 http resolver:本地 server 场景显式放行私网(默认拦截 127.0.0.1)。 */
+/**
+ * 测试用 http resolver:本地 server 场景显式放行私网(默认拦截 127.0.0.1)。
+ * @param {number} [timeoutMs] 单请求超时(毫秒)
+ * @returns {ReturnType<typeof createImageResolver>} 图片 resolver
+ */
 function localResolver(timeoutMs) {
   return createImageResolver("", timeoutMs, { allowPrivateAddresses: true });
 }
 
-/** 启动本地 http server:固定 status + body 响应(delayMs 可选,响应前延迟),getCount() 返回请求次数 */
+/** 本地测试 server 句柄 */
+/**
+ * @typedef {object} TestServer
+ * @property {http.Server} server 服务实例
+ * @property {number} port 实际监听端口
+ * @property {() => number} getCount 已处理请求数
+ */
+
+/**
+ * 启动本地 http server:固定 status + body 响应(delayMs 可选,响应前延迟),getCount() 返回请求次数
+ * @param {number} status 响应状态码
+ * @param {string | Buffer} body 响应体
+ * @param {number} [delayMs] 响应前延迟(毫秒)
+ * @returns {Promise<TestServer>} 服务句柄
+ */
 function startServer(status, body, delayMs = 0) {
   let count = 0;
-  const server = http.createServer((req, res) => {
+  const server = http.createServer((_req, res) => {
     count += 1;
     setTimeout(() => {
       try {
@@ -46,14 +65,24 @@ function startServer(status, body, delayMs = 0) {
       }
     }, delayMs);
   });
-  return new Promise((resolve) => {
+  /** @type {Promise<TestServer>} */
+  const listening = new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
-      resolve({ server, port: server.address().port, getCount: () => count });
+      const address = server.address();
+      if (typeof address !== "object" || address === null) {
+        throw new Error("image-downloader 断言失败:本地 server 应已绑定 TCP 端口");
+      }
+      resolve({ server, port: address.port, getCount: () => count });
     });
   });
+  return listening;
 }
 
-/** 关闭 server:closeAllConnections 强制断开 undici keep-alive 空闲连接,避免 close 回调挂起 */
+/**
+ * 关闭 server:closeAllConnections 强制断开 undici keep-alive 空闲连接,避免 close 回调挂起
+ * @param {http.Server} server 服务实例
+ * @returns {Promise<void>} close 回调落地即返回
+ */
 function closeServer(server) {
   return new Promise((resolve) => {
     server.close(() => resolve());
@@ -97,7 +126,7 @@ export async function run() {
   // ---- 断言 2c:可移植模拟 symlink/junction 越界(realpath 目标离开源根即拒绝) ----
   const insideCandidate = path.join(FIXTURES_DIR, "g1-tiny.png");
   const linkedResolver = createImageResolver(FIXTURES_DIR, undefined, {
-    realpath: async (candidate) => (candidate === insideCandidate ? path.join(path.dirname(FIXTURES_DIR), "outside.png") : candidate),
+    realpath: async (/** @type {string} */ candidate) => (candidate === insideCandidate ? path.join(path.dirname(FIXTURES_DIR), "outside.png") : candidate),
   });
   if ((await linkedResolver("./g1-tiny.png")) !== null) {
     throw new Error("image-downloader 断言失败:realpath 指向源根外的链接目标应拒绝");
@@ -106,7 +135,7 @@ export async function run() {
   // ---- 断言 2d:文件读取后链接目标变化 → 丢弃已读 Buffer(IO 前后双检) ----
   let candidateRealpathCalls = 0;
   const swappedResolver = createImageResolver(FIXTURES_DIR, undefined, {
-    realpath: async (candidate) => {
+    realpath: async (/** @type {string} */ candidate) => {
       if (candidate !== insideCandidate) return candidate;
       candidateRealpathCalls += 1;
       return candidateRealpathCalls === 1 ? candidate : path.join(path.dirname(FIXTURES_DIR), "outside.png");
@@ -238,7 +267,7 @@ export async function run() {
   // convert 层 stat 预扫已移除:docx 侧经 imageToDocx 失败路径、pdf 侧经
   // checkLocalImages,均走本 resolver 返回 null → 警告统一为「图片加载失败: <src>」。
   const { convert } = await import("../../dist/core/convert.js");
-  const wMissing = [];
+  const wMissing = /** @type {import("../../src/core/i18n.js").ConvertWarning[]} */ ([]);
   await convert("![缺图](missing-xxx.png)", "docx", {
     baseDir: FIXTURES_DIR,
     imageResolver: createImageResolver(FIXTURES_DIR),
@@ -247,7 +276,7 @@ export async function run() {
   if (!wMissing.some((w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-xxx.png"))) {
     throw new Error("image-downloader 断言失败:缺失本地图片应产生统一「图片加载失败:」警告");
   }
-  const wOk = [];
+  const wOk = /** @type {import("../../src/core/i18n.js").ConvertWarning[]} */ ([]);
   await convert("![有图](./g1-tiny.png)", "docx", {
     baseDir: FIXTURES_DIR,
     imageResolver: createImageResolver(FIXTURES_DIR),
@@ -258,5 +287,8 @@ export async function run() {
   }
 
   console.log("[ok] image-downloader:本地/远程读取、失败兜底、并发去重、失败不缓存(重试)、超时注入与 MR-3 私网默认拦截断言通过");
-  await saveArtifact("image-downloader", { png: fixtureBytes });
+  // 放宽理由:本段留存的产物是原始 PNG 样例(docx/pdf 之外),共享 helper 的
+  // ArtifactBuffers 只声明了 docx/pdf 两个可选键,而 writeBuffers 本身按 entries
+  // 遍历、与格式无关,故此处按其结构投影传入,不改共享契约(不在本段写入范围)。
+  await saveArtifact("image-downloader", /** @type {{ docx?: Buffer, pdf?: Buffer }} */ ({ png: fixtureBytes }));
 }

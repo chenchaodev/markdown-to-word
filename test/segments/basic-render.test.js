@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 基础渲染段:全要素中英混排样例 → docx + pdf。
  * 来源:scripts/g1-verify.mjs 全文(样例 md 原样保留;图片引用改为 FIXTURES_DIR 下
@@ -19,6 +20,21 @@ import hljs from "highlight.js/lib/common";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { asDocxArtifact, asPdfArtifact } from "../common/convert-helpers.js";
+
+/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+
+/**
+ * convert() 的类型化别名:运行期就是 dist 的 convert(零行为差异),只把返回类型
+ * 对齐到 src 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind
+ * 被拓宽为 string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
+ * 入参保持宽松(本段按运行时事实传上下文,上下文契约由 core 自身类型守护)。
+ * @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>}
+ */
+const convertTyped =
+  /** @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>} */ (
+    convert
+  );
 
 // 全要素中英混排样例(md 字符串原样保留;图片引用 ./g1-tiny.png,由 imageResolver 基准到 FIXTURES_DIR)
 const markdown = `# G1 验证文档 中文标题
@@ -80,6 +96,9 @@ export const fixtures = { main: markdown };
 /**
  * 定位文本所在段落属性:取该文本 w:t 之前最近一个 <w:pPr> 到其 </w:pPr> 的片段
  * (列表/引用/代码块的序列化事实:段属性在文本 run 之前,前一段属性已闭合)。
+ * @param {string} xml document.xml 文本
+ * @param {string} text 目标文本
+ * @returns {string} 段落属性片段
  */
 function paragraphProps(xml, text) {
   const idx = xml.indexOf(`<w:t xml:space="preserve">${text}</w:t>`);
@@ -95,7 +114,7 @@ function paragraphProps(xml, text) {
 export async function run() {
   const ast = parseMarkdown(markdown);
   const buffer = await renderDocx(ast, {
-    imageResolver: async (src) => {
+    imageResolver: async (/** @type {string} */ src) => {
       if (src.startsWith("http://") || src.startsWith("https://")) return null;
       const p = path.resolve(FIXTURES_DIR, src);
       try {
@@ -178,6 +197,7 @@ export async function run() {
   // 列表(renderList):无序/有序分别挂 numbering(reference md-list-bullet/md-list-number,
   // level = min(listLevel,3));docx 库序列化为 w:numPr 引用 numbering.xml 的抽象编号。
   // 文本前最近一个 pPr 即本列表项段落属性(w:pStyle ListParagraph + w:numPr)
+  /** @type {[string, number][]} */
   const listCases = [
     ["无序项目一 Apple", 0], // 无序顶层
     ["嵌套子项 1", 1], // 无序二级
@@ -231,9 +251,10 @@ export async function run() {
 
   // webp 降级:docx 库不支持 webp 内嵌 → 占位文本 + 警告。
   // 独立转换(单独 markdown + resolver 返回 RIFF....WEBP 魔数),不污染主样例断言。
+  /** @type {Warning[]} */
   const webpWarnings = [];
   const webpBuffer = await renderDocx(parseMarkdown("![webp](./fake.webp)"), {
-    imageResolver: async (src) =>
+    imageResolver: async (/** @type {string} */ src) =>
       src === "./fake.webp"
         ? Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])
         : null,
@@ -259,6 +280,7 @@ export async function run() {
   // ---------- 未知魔数图片跳过嵌入(sniffImageType null 化,imageToDocx 调用方处理) ----------
   // 依据(src/core/image/image-type.ts):B3 起未知字节头返回 null(不再伪装 png),
   // docx imageToDocx 收到 null → 追加「图片格式无法识别,已跳过」警告 + 占位文本。
+  /** @type {Warning[]} */
   const unknownWarnings = [];
   const unknownBuffer = await renderDocx(parseMarkdown("![坏图](./junk.bin)"), {
     imageResolver: async () => Buffer.from("not-an-image"),
@@ -279,10 +301,12 @@ export async function run() {
   // ---------- GFM 表格对齐(renderTable node.align → 段落 w:jc center/right) ----------
   // 依据(src/core/docx/render.ts):mdast 表格 align 数组逐列映射 AlignmentType,
   // 未声明列保持缺省(左对齐,无 w:jc)。docx 库序列化:<w:jc w:val="center"/>。
-  const alignDocx = await convert(
-    "| 左 | 中 | 右 |\n| :-- | :-: | --: |\n| a | b | c |",
-    "docx",
-    { baseDir: FIXTURES_DIR, warnings: [] },
+  const alignDocx = asDocxArtifact(
+    await convertTyped(
+      "| 左 | 中 | 右 |\n| :-- | :-: | --: |\n| a | b | c |",
+      "docx",
+      { baseDir: FIXTURES_DIR, warnings: [] },
+    ),
   );
   const alignXml = await unzipPart(alignDocx.buffer, "word/document.xml");
   if (!alignXml.includes('<w:jc w:val="center"/>')) {
@@ -306,12 +330,16 @@ export async function run() {
 
   // ---------- 自闭合 <br/> 白名单放行(html-whitelist 三处扫描器同步) ----------
   // 此前 <br/> 整串判非法:docx 危险段丢弃 / pdf 整段转义。B3 起仅空标签 br 放行自闭合。
-  const brDocx = await convert("<strong>粗</strong><br/>换行后", "docx", { baseDir: FIXTURES_DIR, warnings: [] });
+  const brDocx = asDocxArtifact(
+    await convertTyped("<strong>粗</strong><br/>换行后", "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
+  );
   const brXml = await unzipPart(brDocx.buffer, "word/document.xml");
   if (!brXml.includes("<w:br/>")) throw new Error("basic-render 断言失败:<br/> 未产出换行 run(<w:br/>)");
   if (!brXml.includes("换行后")) throw new Error("basic-render 断言失败:<br/> 后文本被危险段丢弃");
   if (!brXml.includes(">粗<")) throw new Error("basic-render 断言失败:<strong> 内容丢失");
-  const brPdf = await convert("<strong>粗</strong><br/>换行后", "pdf", { baseDir: FIXTURES_DIR, warnings: [] });
+  const brPdf = asPdfArtifact(
+    await convertTyped("<strong>粗</strong><br/>换行后", "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
+  );
   if (brPdf.html.includes("&lt;strong&gt;")) {
     throw new Error(`basic-render 断言失败:pdf 侧合法表达式仍被转义:\n${brPdf.html}`);
   }
@@ -324,8 +352,9 @@ export async function run() {
   // stat 预扫;docx imageToDocx resolver 返回 null → warnings 追加统一文案
   // 「图片加载失败: <src>」,本地与外链同构)。样例引用不存在的 missing-img.png
   // (无 fixture,与 toc-caption 段 missing-fig.png 同做法);resolver 注入 null 模拟缺失。
+  /** @type {Warning[]} */
   const missingWarnings = [];
-  await convert("![缺图](missing-img.png)", "docx", {
+  await convertTyped("![缺图](missing-img.png)", "docx", {
     baseDir: FIXTURES_DIR,
     imageResolver: async () => null,
     warnings: missingWarnings,
@@ -339,8 +368,9 @@ export async function run() {
   console.log("[ok] basic-render:缺失图片警告(warnings 含「图片加载失败:」与文件名)断言通过");
 
   // pdf 侧同文案:checkLocalImages 经 resolver 失败路径(替代 convert 层 stat 预扫)
+  /** @type {Warning[]} */
   const pdfMissingWarnings = [];
-  await convert("![缺图](missing-img.png)", "pdf", {
+  await convertTyped("![缺图](missing-img.png)", "pdf", {
     baseDir: FIXTURES_DIR,
     imageResolver: async () => null,
     warnings: pdfMissingWarnings,
@@ -354,11 +384,13 @@ export async function run() {
   // overrideImageRule 与 resolver/precheck 共用词法 + realpath 边界策略。绝对路径即使
   // 指向现存 fixture 也不得交给 Chromium;../ 越出 baseDir 时同样置为 about:blank。
   const absolutePdfSrc = pathToFileURL(path.join(FIXTURES_DIR, "g1-tiny.png")).href.replace(/^file:\/\/\//, "/");
-  const absoluteBoundaryPdf = await convert(`![越界](${absolutePdfSrc})`, "pdf", {
-    baseDir: FIXTURES_DIR,
-    imageResolver: async () => null,
-    warnings: [],
-  });
+  const absoluteBoundaryPdf = asPdfArtifact(
+    await convertTyped(`![越界](${absolutePdfSrc})`, "pdf", {
+      baseDir: FIXTURES_DIR,
+      imageResolver: async () => null,
+      warnings: [],
+    }),
+  );
   if (absoluteBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "g1-tiny.png")).href)) {
     throw new Error("basic-render 断言失败:PDF 绝对本地图片路径被改写为 file URL");
   }
@@ -366,11 +398,13 @@ export async function run() {
     throw new Error("basic-render 断言失败:PDF 越界图片原始路径仍交给 Chromium");
   }
   const nestedBaseDir = path.join(FIXTURES_DIR, "nested-source");
-  const traversalBoundaryPdf = await convert("![越界](../g1-tiny.png)", "pdf", {
-    baseDir: nestedBaseDir,
-    imageResolver: async () => null,
-    warnings: [],
-  });
+  const traversalBoundaryPdf = asPdfArtifact(
+    await convertTyped("![越界](../g1-tiny.png)", "pdf", {
+      baseDir: nestedBaseDir,
+      imageResolver: async () => null,
+      warnings: [],
+    }),
+  );
   if (traversalBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "g1-tiny.png")).href)) {
     throw new Error("basic-render 断言失败:PDF .. 越界图片被改写为 file URL");
   }
@@ -383,10 +417,18 @@ export async function run() {
   // 依据(src/core/image/image-warning.ts):resolver 抛出的 fs 错误按错误码分类——
   // ENOENT → 「图片文件不存在」/ EACCES|EPERM → 「图片文件无访问权限」/
   // 其他或返回 null → 统一「图片加载失败」兜底。docx 与 pdf 行为对齐。
+  /**
+   * @param {string} code fs 错误码
+   * @param {string} msg 错误消息
+   * @returns {Error & {code: string}} 带错误码的 Error
+   */
   const fsErr = (code, msg) => Object.assign(new Error(msg), { code });
-  for (const fmt of ["docx", "pdf"]) {
+  /** @type {("docx" | "pdf")[]} */
+  const formats = ["docx", "pdf"];
+  for (const fmt of formats) {
+    /** @type {Warning[]} */
     const enoentWarnings = [];
-    await convert("![缺图](missing-img.png)", fmt, {
+    await convertTyped("![缺图](missing-img.png)", fmt, {
       baseDir: FIXTURES_DIR,
       imageResolver: async () => {
         throw fsErr("ENOENT", "ENOENT: no such file or directory");
@@ -396,8 +438,9 @@ export async function run() {
     if (!enoentWarnings.some((w) => formatWarning(w) === "图片文件不存在: missing-img.png")) {
       throw new Error(`basic-render 断言失败:${fmt} ENOENT 未细分为「图片文件不存在」,warnings=${JSON.stringify(enoentWarnings)}`);
     }
+    /** @type {Warning[]} */
     const eaccesWarnings = [];
-    await convert("![缺图](missing-img.png)", fmt, {
+    await convertTyped("![缺图](missing-img.png)", fmt, {
       baseDir: FIXTURES_DIR,
       imageResolver: async () => {
         throw fsErr("EACCES", "EACCES: permission denied");
@@ -413,11 +456,11 @@ export async function run() {
   // ---------- convert warnings ?? [] 兜底(convert.ts:67) ----------
   // 依据(dist/core/convert.ts):context.warnings 缺省时内部兜底为空数组,转换不抛错;
   // 缺失图片等警告路径在无 warnings 收集器时静默(不崩溃)。
-  const noWarnDocx = await convert("![缺图](missing.png)", "docx", { baseDir: FIXTURES_DIR });
+  const noWarnDocx = asDocxArtifact(await convertTyped("![缺图](missing.png)", "docx", { baseDir: FIXTURES_DIR }));
   if (noWarnDocx.buffer.length === 0) {
     throw new Error("basic-render 断言失败:convert 无 warnings 参数时应正常产出 docx buffer");
   }
-  const noWarnPdf = await convert("![缺图](missing.png)", "pdf", { baseDir: FIXTURES_DIR });
+  const noWarnPdf = asPdfArtifact(await convertTyped("![缺图](missing.png)", "pdf", { baseDir: FIXTURES_DIR }));
   if (noWarnPdf.html.length === 0) {
     throw new Error("basic-render 断言失败:convert 无 warnings 参数时应正常产出 pdf html");
   }
@@ -426,7 +469,8 @@ export async function run() {
   // ---------- 补充断言:代码块 pdf hljs 高亮(实现 src/core/pdf/render.ts highlight) ----------
   // ```ts 围栏 → <pre class="hljs"><code class="language-ts"> + hljs.highlight(value) 的
   // token 类 span(hljs 11.x:keyword/title function_/params/attr/built_in/string/subst)
-  const pdfArtifact = await convert(markdown, "pdf", { baseDir: FIXTURES_DIR, warnings: [] });
+  const pdfArtifact = asPdfArtifact(await convertTyped(markdown, "pdf", { baseDir: FIXTURES_DIR, warnings: [] }));
+  /** @type {[string, string][]} */
   const pdfChecks = [
     ['<pre class="hljs"><code class="language-ts">', "language-ts 围栏"],
     ['<span class="hljs-keyword">function</span>', "hljs-keyword"],
@@ -448,14 +492,23 @@ export async function run() {
   // 触发:注册编译期即抛错的坏语言(match 与 begin 并存,hljs compileMatch 抛
   // "begin & end are not supported with match"),经 highlight.js/lib/common 共享实例
   // 注入(与 render.ts 同一模块单例);用后 unregister 清理,不影响其他断言。
-  hljs.registerLanguage("broken", () => ({ match: "x", begin: /y/ }));
+  // 放宽理由:故意注册结构不完整的假语言,触发「语言已知但高亮编译抛错」降级路径;
+  // hljs 的 LanguageFn 类型要求完整语法定义,而本段要的正是它不合法(经 unknown 中转,
+  // 避免误标为类型相容的正常注册)。
+  const brokenLanguage = /** @type {ReturnType<Parameters<typeof hljs.registerLanguage>[1]>} */ (
+    /** @type {unknown} */ ({ match: "x", begin: /y/ })
+  );
+  hljs.registerLanguage("broken", () => brokenLanguage);
   try {
     // 高亮降级警告(warn.highlightFallback,与 docx 侧同 key 同文案口径)
+    /** @type {Warning[]} */
     const brokenPdfWarnings = [];
-    const brokenPdf = await convert("```broken\nif (a < b && c > d) {}\n```\n", "pdf", {
-      baseDir: FIXTURES_DIR,
-      warnings: brokenPdfWarnings,
-    });
+    const brokenPdf = asPdfArtifact(
+      await convertTyped("```broken\nif (a < b && c > d) {}\n```\n", "pdf", {
+        baseDir: FIXTURES_DIR,
+        warnings: brokenPdfWarnings,
+      }),
+    );
     if (!brokenPdf.html.includes('<pre class="hljs"><code>if (a &lt; b &amp;&amp; c &gt; d) {}\n</code></pre>')) {
       throw new Error("basic-render 断言失败:hljs 抛错未回退转义输出(期望 escapeHtml 兜底)");
     }
@@ -474,10 +527,12 @@ export async function run() {
   // 依据(src/core/docx/render.ts renderFootnoteDefinition):脚注定义子块复用块渲染,
   // blockquote → renderBlockquote(左缩进 720 + 灰底 F2F2F2),thematicBreak →
   // renderThematicBreak(下边框 single 999999);产物在 footnotes.xml 部件。
-  const fnDocx = await convert("正文[^1]\n\n[^1]: 脚注内容\n\n    > 引用内容\n\n    ---\n", "docx", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-  });
+  const fnDocx = asDocxArtifact(
+    await convertTyped("正文[^1]\n\n[^1]: 脚注内容\n\n    > 引用内容\n\n    ---\n", "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+    }),
+  );
   const fnXml = await unzipPart(fnDocx.buffer, "word/footnotes.xml");
   if (!fnXml.includes("引用内容")) {
     throw new Error("basic-render 断言失败:脚注定义内 blockquote 文本未渲染");
@@ -496,6 +551,7 @@ export async function run() {
   // (公式 → TeX 源码等宽灰字 / 表格 → 逐行文本段落 / 代码块 → 等宽文本代码块 /
   // 白名单外 html → 原样文本)+ keyed 警告(warn.unsupportedBlockInContainer,
   // 经 warnDedup 按 类型+容器 去重)。
+  /** @type {Warning[]} */
   const containerWarnings = [];
   const containerMd = [
     "# 容器降级",
@@ -544,8 +600,8 @@ export async function run() {
     throw new Error("basic-render 断言失败:引用块内白名单外 html 未降级为原样文本");
   }
   // 警告文案断言(formatWarning 格式化后逐字匹配)
-  const expectContainerWarn = (text) =>
-    containerWarnings.some((w) => formatWarning(w) === text);
+  /** @param {string} text 期望文案 */
+  const expectContainerWarn = (text) => containerWarnings.some((w) => formatWarning(w) === text);
   for (const text of [
     "公式 在列表内暂不支持,已降级为文本",
     "表格 在列表内暂不支持,已降级为文本",
@@ -564,15 +620,17 @@ export async function run() {
   {
     const png = await fs.readFile(path.join(FIXTURES_DIR, "g1-tiny.png"));
     const memoMd = ["# memo", "", "![图A](./memo-a.png)", "", "![图B](./memo-a.png)", "", "![缺1](./memo-miss.png)", "", "![缺2](./memo-miss.png)", ""].join("\n");
+    /** @type {string[]} */
     const calls = [];
     const memoBuffer = await renderDocx(parseMarkdown(memoMd), {
-      imageResolver: async (src) => {
+      imageResolver: async (/** @type {string} */ src) => {
         calls.push(src);
         if (src.includes("memo-miss")) return null; // 失败
         return png;
       },
     });
     const memoXml = await unzipPart(memoBuffer, "word/document.xml");
+    /** @param {string} src 图片 src */
     const countOf = (src) => calls.filter((c) => c === src).length;
     if (countOf("./memo-a.png") !== 1) {
       throw new Error(`basic-render 断言失败:同 URL 两处出现应只调 resolver 一次,实际 ${countOf("./memo-a.png")} 次,calls=${JSON.stringify(calls)}`);

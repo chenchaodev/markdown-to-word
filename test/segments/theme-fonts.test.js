@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 主题字体集中配置专断言(锁 AGENTS 硬约束「docx 渲染字体集中配置,中文 eastAsia
  * 不允许散落硬编码」):
@@ -26,7 +27,14 @@ import {
 } from "../../dist/core/docx/theme.js";
 import { FIXTURES_DIR, ROOT } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
+import { docxBufferOf } from "../common/convert-helpers.js";
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`theme-fonts 断言失败:${msg}`);
 }
@@ -84,8 +92,10 @@ export async function run() {
 
   // ---- 3. 产物级:styles.xml eastAsia 与集中配置一致 ----
   // 不传 typography → renderDocx 回落 DEFAULT_TYPOGRAPHY(render.ts:options.typography ?? DEFAULT_TYPOGRAPHY)
-  const artifact = await convert(sampleMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const stylesXml = await unzipPart(artifact.buffer, "word/styles.xml");
+  const artifact = docxBufferOf(
+    await convert(sampleMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
+  );
+  const stylesXml = await unzipPart(artifact, "word/styles.xml");
   assert(
     stylesXml.includes(`w:eastAsia="${DEFAULT_TYPOGRAPHY.fontEastAsia}"`),
     `styles.xml 缺少 w:eastAsia="${DEFAULT_TYPOGRAPHY.fontEastAsia}"(应与集中配置逐字一致)`,
@@ -97,7 +107,7 @@ export async function run() {
   console.log(`[ok] theme-fonts:styles.xml eastAsia=${DEFAULT_TYPOGRAPHY.fontEastAsia} 与集中配置一致`);
 
   // ---- 4. 产物级:document.xml 中 theme 常量消费点逐一落地 ----
-  const documentXml = await unzipPart(artifact.buffer, "word/document.xml");
+  const documentXml = await unzipPart(artifact, "word/document.xml");
   // 代码字体:CODE_FONT=Consolas(code-block/code-highlight 经 theme 引用)
   assert(documentXml.includes('w:eastAsia="Consolas"'), "document.xml 缺少 Consolas(CODE_FONT 未落地)");
   // 代码字号:CODE_SIZE=20 half-points

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 页眉页脚设置主进程层验收:
  * - sanitize 往返:旧档无 headerFooter 字段 → 默认(现状行为);非法值逐字段回退;
@@ -10,6 +11,12 @@ import path from "node:path";
 import { DEFAULT_HEADER_FOOTER } from "../../dist/core/settings/settings-defaults.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`header-footer(main) 断言失败:${msg}`);
 }
@@ -86,14 +93,14 @@ export async function run() {
 
     // ---- 4. resolveHeaderLogo:读取失败 → 警告 + undefined;非 custom/空路径 → 不读 ----
     const ctxMod = await import("../../dist/main/converter/context.js");
-    const warnings = [];
+    const warnings = /** @type {import("../../src/core/i18n.js").KeyedWarning[]} */ ([]);
     const missing = await ctxMod.resolveHeaderLogo(
       { ...DEFAULT_HEADER_FOOTER, headerMode: "custom", headerLogoPath: "Z:\\no\\such\\logo.png" },
       warnings,
     );
     assert(missing === undefined, "读取失败应返回 undefined(降级为无 logo)");
     assert(
-      warnings.length === 1 && warnings[0].key === "warn.headerLogoLoadFailed",
+      warnings.length === 1 && warnings[0]?.key === "warn.headerLogoLoadFailed",
       "读取失败应产生 warn.headerLogoLoadFailed keyed 警告",
     );
     const skipped = await ctxMod.resolveHeaderLogo({ ...DEFAULT_HEADER_FOOTER, headerLogoPath: "C:\\x.png" });

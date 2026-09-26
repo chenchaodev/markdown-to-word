@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * extractHeadings 直测(PDF 目录/书签共用的提取逻辑):
  * - h1-h3 + id 提取为 {level, id, text}(id 与正文锚点一一对应);
@@ -8,7 +9,13 @@
  */
 import { extractHeadings } from "../../dist/core/pdf/postprocess.js";
 
-/** 断言辅助:统一报错格式(与 slug 段同风格) */
+/**
+ * 断言辅助:统一报错格式(与 slug 段同风格)。
+ * @param {unknown} actual 实际值
+ * @param {unknown} expected 期望值
+ * @param {string} label 断言标签
+ * @returns {void}
+ */
 function assertEq(actual, expected, label) {
   if (actual !== expected) {
     throw new Error(`${label} 断言失败: ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
@@ -30,12 +37,14 @@ export async function run() {
   ].join("\n");
   const headings = extractHeadings(body);
   assertEq(headings.length, 3, "提取数量(h4/无 id 排除)");
-  assertEq(headings[0].level, 1, "首条 level");
-  assertEq(headings[0].id, "sec-1", "首条 id");
-  assertEq(headings[0].text, "第一章", "首条文本(中文)");
-  assertEq(headings[1].level, 2, "第二条 level");
-  assertEq(headings[1].text, "1.1 小节", "第二条文本");
-  assertEq(headings[2].level, 3, "第三条 level");
+  // 上行已断言长度为 3:按位置取三条(规避 noUncheckedIndexedAccess 的下标 undefined)
+  const [h1, h2, h3] = /** @type {[typeof headings[0], typeof headings[0], typeof headings[0]]} */ (headings);
+  assertEq(h1.level, 1, "首条 level");
+  assertEq(h1.id, "sec-1", "首条 id");
+  assertEq(h1.text, "第一章", "首条文本(中文)");
+  assertEq(h2.level, 2, "第二条 level");
+  assertEq(h2.text, "1.1 小节", "第二条文本");
+  assertEq(h3.level, 3, "第三条 level");
   console.log("[ok] extractHeadings:h1-h3 + id 提取、h4/无 id 排除、顺序保持 断言通过");
 
   // ---------- 文本净化:行内标签剥离 + 实体解码 ----------
@@ -45,9 +54,10 @@ export async function run() {
     '<h3 id="r3"><span>嵌套<span>标签</span></span></h3>',
   ].join("\n");
   const cleaned = extractHeadings(rich);
-  assertEq(cleaned[0].text, "含 inline 与 加粗 的标题", "行内标签剥离");
-  assertEq(cleaned[1].text, "a & b <c>", "实体解码(&amp; &lt; &gt;)");
-  assertEq(cleaned[2].text, "嵌套标签", "嵌套标签递归剥离");
+  const [rich1, rich2, rich3] = /** @type {[typeof cleaned[0], typeof cleaned[0], typeof cleaned[0]]} */ (cleaned);
+  assertEq(rich1.text, "含 inline 与 加粗 的标题", "行内标签剥离");
+  assertEq(rich2.text, "a & b <c>", "实体解码(&amp; &lt; &gt;)");
+  assertEq(rich3.text, "嵌套标签", "嵌套标签递归剥离");
   console.log("[ok] extractHeadings:行内标签剥离 + 实体解码 + 嵌套标签 断言通过");
 
   // ---------- 边界:空输入 / 无标题 ----------

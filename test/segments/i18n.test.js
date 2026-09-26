@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * i18n 测试(src/core/i18n.ts 纯逻辑 + src/main/persist/settings.ts language 字段):
  * 实现事实(读源码确认):
@@ -17,9 +18,21 @@ import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`i18n 断言失败:${msg}`);
 }
+
+/**
+ * 带去重键的结构化警告(与 dist/core/i18n.js 的 KeyedWarning 同形;
+ * dist 为无类型标注的编译产物,测试侧显式声明以获得收窄)。
+ * @typedef {{ key: string, params?: Record<string, string>, fallback: string }} KeyedWarning
+ */
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -114,19 +127,21 @@ export async function run() {
 
     // ---- 11. warnOnce 对象去重(去重键 = key + JSON(params))----
     // 悬空交叉引用重复出现 N 次 → 仅 1 条 KeyedWarning(docx render.ts warnDedup)
+    /** @type {KeyedWarning[]} */
     const dedupWarnings = [];
     await convert("[图](#fig:x)\n\n[图](#fig:x)\n\n[图](#fig:x)\n\n正文", "docx", {
       baseDir: FIXTURES_DIR,
       warnings: dedupWarnings,
     });
     assert(dedupWarnings.length === 1, `悬空引用 ×3 应去重为 1 条警告,实际 ${dedupWarnings.length}`);
-    const [dw] = dedupWarnings;
+    const [dw] = /** @type {[KeyedWarning]} */ (dedupWarnings);
     assert(typeof dw === "object" && dw.key === "warn.crossRefNotFound", `去重后应为 warn.crossRefNotFound 对象,实际 ${JSON.stringify(dw)}`);
     assert(dw.params && dw.params.ref === "fig:x", `params.ref 应为 fig:x,实际 ${JSON.stringify(dw.params)}`);
     assert(dw.fallback === "交叉引用未找到图 label: fig:x", `fallback 应逐字保留中文原文,实际 ${dw.fallback}`);
     assert(i18n.formatWarning(dw) === "交叉引用未找到图 label: fig:x", "zh 下格式化结果应与 fallback 一致");
 
     // ---- 12. 共享去重纯函数 warnDedupKey/pushWarningOnce(docx/pdf 双管线单源) ----
+    /** @type {KeyedWarning} */
     const kw = { key: "warn.imageLoadFailed", params: { src: "a.png" }, fallback: "兜底" };
     assert(i18n.warnDedupKey(kw) === 'warn.imageLoadFailed:{"src":"a.png"}', "warnDedupKey 应为 key + JSON(params)");
     assert(
@@ -134,6 +149,7 @@ export async function run() {
       "无 params 时去重键应为 key + null",
     );
     const seen = new Set();
+    /** @type {KeyedWarning[]} */
     const out = [];
     i18n.pushWarningOnce(seen, out, kw);
     i18n.pushWarningOnce(seen, out, { ...kw }); // 同 key 同 params → 去重

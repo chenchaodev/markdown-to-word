@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * TOC 静态目录 + 图/表题注编号测试:
  * 8a 免更新路线:docx TableOfContents beginDirty:false + cachedEntries
@@ -17,6 +18,11 @@ import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { asPdfArtifact, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+
+/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
+ *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
+ /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 
 /** 主样例:TOC + 题注(含孤立题注/缺失图片),gen-fixtures 落盘为 acceptance/toc-caption.md */
 const batch8Md = `# 第一章
@@ -55,8 +61,10 @@ export const meta = { description: "TOC 静态目录 + 图/表题注编号测试
 export const fixtures = { main: batch8Md };
 
 export async function run() {
-  const batch8Docx = await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const b8Document = await unzipPart(batch8Docx.buffer, "word/document.xml");
+  const batch8Docx = /** @type {ConvertArtifact} */ (
+    await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
+  );
+  const b8Document = await unzipPart(docxBufferOf(batch8Docx), "word/document.xml");
   // 8a-1:TOC 域指令仍在(w:sdt > w:instrText TOC \o "1-3" \h)
   if (!b8Document.includes("TOC")) throw new Error("批次8断言失败:document.xml 缺少 TOC 域指令");
   // 8a-2:beginDirty:false → w:dirty="false"(显式关,Word 打开不提示更新域)
@@ -68,8 +76,10 @@ export async function run() {
     throw new Error("批次8断言失败:静态目录条目缺少指向标题书签的超链接");
   }
   // field 模式 → beginDirty:true(Word/WPS 打开弹更新提示并注入真实页码),条目仍指向书签
-  const batch8FieldToc = await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [], tocMode: "field" });
-  const fieldDoc = await unzipPart(batch8FieldToc.buffer, "word/document.xml");
+  const batch8FieldToc = /** @type {ConvertArtifact} */ (
+    await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [], tocMode: "field" })
+  );
+  const fieldDoc = await unzipPart(docxBufferOf(batch8FieldToc), "word/document.xml");
   if (!fieldDoc.includes('w:dirty="true"')) {
     throw new Error("F7-①断言失败:field 模式目录 dirty 属性应为 true(触发 Word 更新域)");
   }
@@ -85,40 +95,47 @@ export async function run() {
     throw new Error("批次8断言失败:孤立「图:」行应按普通段落保留原文");
   }
   // 8a-4:toc 关闭 → docx 无 TOC 指令
-  const batch8NoToc = await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: false });
-  if ((await unzipPart(batch8NoToc.buffer, "word/document.xml")).includes("TOC")) {
+  const batch8NoToc = /** @type {ConvertArtifact} */ (
+    await convert(batch8Md, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: false })
+  );
+  if ((await unzipPart(docxBufferOf(batch8NoToc), "word/document.xml")).includes("TOC")) {
     throw new Error("批次8断言失败:toc:false 时 document.xml 不应含 TOC 指令");
   }
   // 8b-3:captionNumbering 显式关闭(不再借 typography 绕道)→ 题注行按普通段落(原文保留)
-  const batch8NoCaption = await convert(batch8Md, "docx", {
+  const batch8NoCaption = /** @type {ConvertArtifact} */ (await convert(batch8Md, "docx", {
     baseDir: FIXTURES_DIR, warnings: [],
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: true },
     captionNumbering: false,
-  });
-  if (!(await unzipPart(batch8NoCaption.buffer, "word/document.xml")).includes("图: 总体架构示意图")) {
+  }));
+  if (!(await unzipPart(docxBufferOf(batch8NoCaption), "word/document.xml")).includes("图: 总体架构示意图")) {
     throw new Error("批次8断言失败:captionNumbering:false 时题注行应保留前缀原文");
   }
   console.log("[ok] docx 静态目录 + 题注编号:TOC 免更新/条目超链接/编号注入/孤立行/开关 断言通过");
 
-  const batch8Pdf = await convert(batch8Md, "pdf", { baseDir: FIXTURES_DIR, title: "批次8验收", warnings: [] });
+  const batch8Pdf = /** @type {ConvertArtifact} */ (
+    await convert(batch8Md, "pdf", { baseDir: FIXTURES_DIR, title: "批次8验收", warnings: [] })
+  );
+  const batch8Html = pdfHtmlOf(batch8Pdf);
   // 8b-4:PDF 题注 class + 前缀剥除(编号走 CSS counter 伪元素,不进文本节点)
-  if (!batch8Pdf.html.includes('<p class="fig-caption">总体架构示意图</p>')) {
+  if (!batch8Html.includes('<p class="fig-caption">总体架构示意图</p>')) {
     throw new Error("批次8断言失败:PDF 缺少 fig-caption 题注(class/前缀剥除)");
   }
-  if (!batch8Pdf.html.includes('<p class="tab-caption">参数说明表</p>')) {
+  if (!batch8Html.includes('<p class="tab-caption">参数说明表</p>')) {
     throw new Error("批次8断言失败:PDF 缺少 tab-caption 题注");
   }
   // 8b-5:题注 CSS counter(章节号 + 序数,h1 重置语义)
-  if (!batch8Pdf.html.includes(".fig-caption::before") || !batch8Pdf.html.includes('content: "图 " counter(h1c) "." counter(figc)')) {
+  if (!batch8Html.includes(".fig-caption::before") || !batch8Html.includes('content: "图 " counter(h1c) "." counter(figc)')) {
     throw new Error("批次8断言失败:PDF 缺少题注编号 CSS counter 规则");
   }
   // 8b-6:孤立前缀行不标记为题注(前无图/表)
-  if (batch8Pdf.html.includes('class="fig-caption">图:')) {
+  if (batch8Html.includes('class="fig-caption">图:')) {
     throw new Error("批次8断言失败:孤立「图:」行不应标记为 fig-caption");
   }
   // 8a-5:toc 关闭 → PDF 无目录
-  const batch8PdfNoToc = await convert(batch8Md, "pdf", { baseDir: FIXTURES_DIR, title: "批次8验收", warnings: [], toc: false });
-  if (batch8PdfNoToc.html.includes('class="toc"')) {
+  const batch8PdfNoToc = /** @type {ConvertArtifact} */ (
+    await convert(batch8Md, "pdf", { baseDir: FIXTURES_DIR, title: "批次8验收", warnings: [], toc: false })
+  );
+  if (pdfHtmlOf(batch8PdfNoToc).includes('class="toc"')) {
     throw new Error("批次8断言失败:toc:false 时 PDF 不应含目录");
   }
   console.log("[ok] PDF 题注 + 目录开关:fig/tab-caption、CSS counter、孤立行、toc 开关 断言通过");
@@ -138,15 +155,29 @@ export async function run() {
 
 见 [图](#fig:v) 与 [章节](#sec:s1)。
 `;
+  /** @type {(headingNumbering: boolean, captionNumbering: boolean) => Record<string, unknown>} */
   const typo = (headingNumbering, captionNumbering) => ({
     ...DEFAULT_TYPOGRAPHY,
     headingNumbering,
     captionNumbering,
   });
-  const bothFormats = async (context) => ({
-    docx: await unzipPart((await convert(explicitMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], ...context })).buffer, "word/document.xml"),
-    pdf: (await convert(explicitMd, "pdf", { baseDir: FIXTURES_DIR, title: "显式项契约", warnings: [], ...context })).html,
-  });
+  /**
+   * 同一 ConvertContext 覆盖下取双格式产物(docx 解包 XML + pdf HTML)。
+   * @param {Record<string, unknown>} context 追加到 ConvertContext 的显式项
+   * @returns {Promise<{ docx: string; pdf: string }>} 双格式断言面
+   */
+  const bothFormats = async (context) => {
+    const docxArtifact = /** @type {ConvertArtifact} */ (
+      await convert(explicitMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], ...context })
+    );
+    const pdfArtifact = /** @type {ConvertArtifact} */ (
+      await convert(explicitMd, "pdf", { baseDir: FIXTURES_DIR, title: "显式项契约", warnings: [], ...context })
+    );
+    return {
+      docx: await unzipPart(docxBufferOf(docxArtifact), "word/document.xml"),
+      pdf: pdfHtmlOf(pdfArtifact),
+    };
+  };
 
   // 组合 1:captionNumbering 显式关(typography 开)→ 两侧都不编号、label 原样保留
   const capOff = await bothFormats({ typography: typo(true, true), captionNumbering: false });
@@ -196,6 +227,6 @@ export async function run() {
   }
   console.log("[ok] 组合4 headingNumbering 显式开压过 typography(docx + pdf)");
 
-  const batch8PdfBin = await htmlToPdf(batch8Pdf.html, batch8Pdf.footerTemplate);
-  await saveArtifact("toc-caption", { docx: batch8Docx.buffer, pdf: batch8PdfBin });
+  const batch8PdfBin = await htmlToPdf(batch8Html, asPdfArtifact(batch8Pdf).footerTemplate);
+  await saveArtifact("toc-caption", { docx: docxBufferOf(batch8Docx), pdf: batch8PdfBin });
 }

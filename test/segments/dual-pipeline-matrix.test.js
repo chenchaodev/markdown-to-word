@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(21 行,含双侧提取器与来源锚点)。
  *
@@ -37,43 +38,105 @@ import { DEFAULT_KATEX_RESOURCE_LIMITS } from "../../dist/core/resource-limits.j
 import { ALLOWED_INLINE_TAGS } from "../../dist/core/markdown/html-whitelist.js";
 import { injectTocPageNumbers } from "../../dist/core/pdf/postprocess.js";
 import { unzipPart, zipContains } from "../common/docx-utils.js";
+import { asDocxArtifact, asPdfArtifact } from "../common/convert-helpers.js";
 import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
 
 const B = FIXTURES_DIR;
 
+/**
+ * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物)。
+ */
+/** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+
+/**
+ * convert() 的类型化别名:运行期就是 dist 的 convert(零行为差异),只把返回类型
+ * 对齐到 src 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind
+ * 被拓宽为 string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
+ * 入参保持宽松(本段按运行时事实传上下文,上下文契约由 core 自身类型守护)。
+ * @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<ConvertArtifact>}
+ */
+const convertTyped =
+  /** @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<ConvertArtifact>} */ (convert);
+
 // ---------- 断言小工具(失败信息带矩阵行 id,便于定位到 case) ----------
+/**
+ * @param {unknown} cond 判定条件
+ * @param {string} rowId 矩阵行 id(失败信息定位用)
+ * @param {string} msg 失败说明
+ * @returns {void}
+ */
 function must(cond, rowId, msg) {
   if (!cond) throw new Error(`[dual-matrix:${rowId}] ${msg}`);
 }
+/**
+ * @param {string} haystack 被统计文本
+ * @param {string} needle 子串
+ * @returns {number} 出现次数
+ */
 function countOf(haystack, needle) {
   return haystack.split(needle).length - 1;
 }
 
 // ---------- 双侧提取器(行内 docxExtract/pdfExtract 与实现一致) ----------
-/** docx 产物 → document.xml 文本 */
+/**
+ * docx 产物 → document.xml 文本
+ * @param {Buffer} buffer docx 产物字节(须先经 asDocxArtifact/docxBufferOf 收窄)
+ * @returns {Promise<string>} document.xml 文本
+ */
 async function docxXml(buffer) {
   return unzipPart(buffer, "word/document.xml");
 }
-/** docx 目录条目锚点(静态 TOC 条目 = 指向标题 slug 的 w:hyperlink) */
+/**
+ * docx 目录条目锚点(静态 TOC 条目 = 指向标题 slug 的 w:hyperlink)
+ * @param {string} xml document.xml 文本
+ * @returns {string[]} 标题 slug 锚点(排除 fig/tab/eq 题注锚点)
+ */
 function docxTocAnchors(xml) {
   return [...xml.matchAll(/<w:hyperlink w:history="1" w:anchor="([^"]+)"/g)]
     .map((m) => m[1])
+    .filter((a) => a !== undefined)
     .filter((a) => !/^(fig|tab|eq)-/.test(a));
 }
-/** docx 书签名(标题/题注/公式锚点) */
+/**
+ * docx 书签名(标题/题注/公式锚点)
+ * @param {string} xml document.xml 文本
+ * @returns {string[]} w:name 列表
+ */
 function docxBookmarks(xml) {
-  return [...xml.matchAll(/<w:bookmarkStart[^>]*w:name="([^"]+)"/g)].map((m) => m[1]);
+  return [...xml.matchAll(/<w:bookmarkStart[^>]*w:name="([^"]+)"/g)]
+    .map((m) => m[1])
+    .filter((a) => a !== undefined);
 }
-/** pdf 目录条目(h1-h3 → toc-lN) */
+/**
+ * pdf 目录条目(h1-h3 → toc-lN)
+ * @param {string} html pdf HTML 文档
+ * @returns {{level: number, id: string}[]} 目录条目
+ */
 function pdfTocItems(html) {
-  return [...html.matchAll(/<li class="toc-l(\d)"><a href="#([^"]+)"/g)].map((m) => ({
-    level: Number(m[1]),
-    id: m[2],
-  }));
+  /** @type {{level: number, id: string}[]} */
+  const items = [];
+  for (const m of html.matchAll(/<li class="toc-l(\d)"><a href="#([^"]+)"/g)) {
+    const level = m[1];
+    const id = m[2];
+    if (level !== undefined && id !== undefined) items.push({ level: Number(level), id });
+  }
+  return items;
 }
-/** pdf 正文标题层级与锚点 id */
+/**
+ * pdf 正文标题层级与锚点 id
+ * @param {string} html pdf HTML 文档
+ * @returns {{level: number, id: string}[]} 正文标题
+ */
 function pdfHeadingIds(html) {
-  return [...html.matchAll(/<h([1-6]) id="([^"]+)"/g)].map((m) => ({ level: Number(m[1]), id: m[2] }));
+  /** @type {{level: number, id: string}[]} */
+  const heads = [];
+  for (const m of html.matchAll(/<h([1-6]) id="([^"]+)"/g)) {
+    const level = m[1];
+    const id = m[2];
+    if (level !== undefined && id !== undefined) heads.push({ level: Number(level), id });
+  }
+  return heads;
 }
 
 // ---------- 夹具 ----------
@@ -293,7 +356,19 @@ const externalImageMd = "![外链图](https://example.com/a.png)\n";
 /** 无 h1 的单题注文档 */
 const noH1CaptionMd = "![图](g1-tiny.png)\n\n图: 无章节图\n";
 
-/** 计数守卫:统计取消检查点调用次数(密度差异的可执行度量) */
+/**
+ * 计数守卫:统计取消检查点调用次数(密度差异的可执行度量)。
+ * guard 只需实现渲染层实际调用的四个成员(race/remainingMs 原样转发即可,
+ * 本段只关心 throwIfCanceled 的调用密度)。
+ * @returns {{counter: {checks: number}, guard: {
+ *   signal: undefined,
+ *   canceled: () => boolean,
+ *   throwIfCanceled: () => void,
+ *   race: (p: Promise<unknown>) => Promise<unknown>,
+ *   remainingMs: (fallback: number) => number,
+ *   dispose: () => void,
+ * }}} 计数器与注入用 guard
+ */
 function countingGuard() {
   const counter = { checks: 0 };
   return {
@@ -304,12 +379,63 @@ function countingGuard() {
       throwIfCanceled() {
         counter.checks += 1;
       },
-      race: (p) => p,
-      remainingMs: (fallback) => fallback,
+      race: (/** @type {Promise<unknown>} */ p) => p,
+      remainingMs: (/** @type {number} */ fallback) => fallback,
       dispose() {},
     },
   };
 }
+
+/**
+ * 断言上下文:run() 组装的双侧产物与辅助提取结果(矩阵各行 verify 的入参)。
+ * 字段与 run() 内 ctx 对象逐项对应。
+ * @typedef {object} MatrixCtx
+ * @property {string} docxXmlText 主样例 document.xml 文本
+ * @property {string} pdfHtml 主样例 pdf HTML
+ * @property {{docxXml: string, pdfHtml: string, paperTwips: [number, number], pgMar: string, pageCss: string}} geometry 页面几何
+ * @property {string} whitelistDocxXml 白名单样例 document.xml
+ * @property {string} whitelistPdfHtml 白名单样例 HTML
+ * @property {{docxCount: number, pdfCount: number, hrDocxHasBreak: boolean, hrPdfHasBreak: boolean, hrPdf: string}} pageBreak 分页符与 hr 对照
+ * @property {string} tocDocxXml 深标题 document.xml
+ * @property {string} tocPdfHtml 深标题 HTML
+ * @property {{docxXml: string, pdfHtml: string}} emptyHeading 空文本标题样例
+ * @property {string} capDocxXml 题注样例 document.xml
+ * @property {string} capPdfHtml 题注样例 HTML
+ * @property {Warning[]} capDocxWarnings 题注样例 docx 警告
+ * @property {Warning[]} capPdfWarnings 题注样例 pdf 警告
+ * @property {{docxXml: string, pdfHtml: string}} labelOff captionNumbering 关闭对照
+ * @property {string} eqDocxXml 公式样例 document.xml
+ * @property {string} eqPdfHtml 公式样例 HTML
+ * @property {string} eqOffDocxXml equationNumbering 关闭对照 document.xml
+ * @property {string} eqOffPdfHtml equationNumbering 关闭对照 HTML
+ * @property {{docxBig: string, docxBigWarnings: Warning[], pdfBig: string, pdfSmall: string, docxExpand: string, pdfExpand: string, boundaryPdfNoDir: string, boundaryPdfNoDirWarnings: Warning[], boundaryPdfWithDir: string, boundaryDocxNoDir: string, boundaryDocxWithDir: string}} katex KaTeX 边界
+ * @property {{docxKnown: string, pdfKnown: string, docxUnknown: string, pdfUnknown: string, docxBroken: string, pdfBroken: string, docxBrokenWarnings: Warning[], pdfBrokenWarnings: Warning[]}} code 代码高亮
+ * @property {string} nsDocxXml 同名 label document.xml
+ * @property {string} nsPdfHtml 同名 label HTML
+ * @property {Warning[]} nsDocxWarnings 同名 label docx 警告
+ * @property {Warning[]} nsPdfWarnings 同名 label pdf 警告
+ * @property {{docxUntrusted: string, pdfUntrusted: string, docxColor: string, pdfColor: string}} degrade 公式降级
+ * @property {{docxHasMedia: boolean, docxHasSvg: boolean, pdfHasSvg: boolean, pdfHasBase64: boolean, docxFailed: string, pdfFailed: string, docxFailedWarnings: Warning[], pdfFailedWarnings: Warning[]}} mermaid mermaid 产物
+ * @property {{docxHasPart: boolean, docxHasReference: boolean, docxHasText: boolean, pdfHasPart: boolean, pdfHasSection: boolean, pdfHasItem: boolean, pdfHasBackref: boolean, pdfHasText: boolean}} footnote 脚注
+ * @property {{docxHasList: boolean, docxHasGlyph: boolean, pdfHasChecked: boolean, pdfHasUnchecked: boolean, pdfHasInput: boolean, pdfHasLabel: boolean}} task 任务列表
+ * @property {{docxEmbeds: boolean, pdfEmbeds: boolean, pdfEmbedsWithBase64Budget: boolean, pdfWarned: boolean}} budget 图片预算
+ * @property {{docxXml: string, pdfHtml: string}} heading 标题 id 取源
+ * @property {{staticDirtyFalse: boolean, staticHasDirtyTrue: boolean, fieldDirtyTrue: boolean, pdfHasPageSpan: boolean, pdfAfterInject: string}} tocPage 目录页码
+ * @property {{docxSmall: number, docxLarge: number, pdfSmall: number, pdfLarge: number}} cancel 取消检查点计数
+ * @property {{docxXml: string, pdfHtml: string, noH1Docx: string, noH1Pdf: string}} beforeH1 题注先于首个 h1
+ */
+
+/**
+ * 差异矩阵表的一行。
+ * @typedef {object} MatrixRow
+ * @property {string} id 稳定标识
+ * @property {"mustMatch" | "allowedDiff"} mode 判定类别
+ * @property {string} dimension 语义维度(人读)
+ * @property {string} docxExtract docx 侧提取方式
+ * @property {string} pdfExtract pdf 侧提取方式
+ * @property {string[]} anchors 来源锚点
+ * @property {(ctx: MatrixCtx) => Promise<void>} verify 执行断言
+ */
 
 /**
  * 差异矩阵表。行字段:
@@ -320,6 +446,7 @@ function countingGuard() {
  * - anchors:来源锚点(src/<文件>.ts:<行号>);
  * - verify:执行断言(入参 ctx 含已渲染好的双侧产物与辅助提取结果)。
  */
+/** @type {MatrixRow[]} */
 const MATRIX = [
   // ================= 必须一致 =================
   {
@@ -567,10 +694,12 @@ const MATRIX = [
       must(eqPdfHtml.includes('<span id="eq:energy">'), "equation-label-switch", "PDF 公式锚点缺失");
       must(eqPdfHtml.includes('href="#eq:energy">式 (1)<'), "equation-label-switch", "PDF 公式引用未替换为「式 (1)」");
       must(!eqPdfHtml.includes("{#eq:"), "equation-label-switch", "PDF label 标记行不应渲染");
-      for (const [name, text] of [
+      /** @type {[string, string][]} */
+      const offSamples = [
         ["docx", eqOffDocxXml],
         ["PDF", eqOffPdfHtml],
-      ]) {
+      ];
+      for (const [name, text] of offSamples) {
         must(!text.includes("式 (1)"), "equation-label-switch", `${name} 关开关后引用不应被编号替换`);
         must(!text.includes("式 (?)"), "equation-label-switch", `${name} 关开关后引用不应降级为占位`);
         must(!text.includes("{#eq:energy}"), "equation-label-switch", `${name} 关开关后 label 段不应渲染`);
@@ -918,8 +1047,16 @@ const MATRIX = [
   },
 ];
 
-/** 断言矩阵自身结构:每行齐备(判定类别/维度/双侧提取器/锚点/可执行断言),行 id 唯一 */
+/** 矩阵行必填的描述字段(守护用;显式元组类型使 row[key] 保持可索引) */
+/** @type {["dimension", "docxExtract", "pdfExtract"]} */
+const ROW_TEXT_FIELDS = ["dimension", "docxExtract", "pdfExtract"];
+
+/**
+ * 断言矩阵自身结构:每行齐备(判定类别/维度/双侧提取器/锚点/可执行断言),行 id 唯一。
+ * @returns {void}
+ */
 function assertMatrixShape() {
+  /** @type {Set<string>} */
   const ids = new Set();
   for (const row of MATRIX) {
     if (ids.has(row.id)) throw new Error(`[dual-matrix] 行 id 重复:${row.id}`);
@@ -927,7 +1064,7 @@ function assertMatrixShape() {
     if (row.mode !== "mustMatch" && row.mode !== "allowedDiff") {
       throw new Error(`[dual-matrix:${row.id}] mode 非法:${row.mode}`);
     }
-    for (const key of ["dimension", "docxExtract", "pdfExtract"]) {
+    for (const key of ROW_TEXT_FIELDS) {
       if (typeof row[key] !== "string" || row[key].length < 4) {
         throw new Error(`[dual-matrix:${row.id}] 缺少 ${key} 描述`);
       }
@@ -953,132 +1090,149 @@ export async function run() {
   const nullMermaid = { mermaidResolver: async () => null };
 
   // ---------- 1. frontmatter 剥离 ----------
-  const fmDocx = await convert(mainMd, "docx", { baseDir: B, warnings: [], ...img });
-  const fmPdf = await convert(mainMd, "pdf", { baseDir: B, title: "矩阵", warnings: [], ...img });
+  const fmDocx = asDocxArtifact(await convertTyped(mainMd, "docx", { baseDir: B, warnings: [], ...img }));
+  const fmPdf = asPdfArtifact(await convertTyped(mainMd, "pdf", { baseDir: B, title: "矩阵", warnings: [], ...img }));
 
   // ---------- 2. 页面几何(A5 + 四边互异,防属性错位) ----------
   const pageSetup = { paper: "A5", orientation: "portrait", marginTop: 18, marginRight: 12, marginBottom: 22, marginLeft: 16 };
-  const geoDocx = await convert("页面几何样本。\n", "docx", { baseDir: B, warnings: [], pageSetup });
-  const geoPdf = await convert("页面几何样本。\n", "pdf", { baseDir: B, title: "t", warnings: [], pageSetup });
+  const geoDocx = asDocxArtifact(await convertTyped("页面几何样本。\n", "docx", { baseDir: B, warnings: [], pageSetup }));
+  const geoPdf = asPdfArtifact(await convertTyped("页面几何样本。\n", "pdf", { baseDir: B, title: "t", warnings: [], pageSetup }));
 
   // ---------- 3. HTML 白名单 ----------
-  const wlDocx = await convert(whitelistMd, "docx", { baseDir: B, warnings: [] });
-  const wlPdf = await convert(whitelistMd, "pdf", { baseDir: B, title: "t", warnings: [] });
+  const wlDocx = asDocxArtifact(await convertTyped(whitelistMd, "docx", { baseDir: B, warnings: [] }));
+  const wlPdf = asPdfArtifact(await convertTyped(whitelistMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
 
   // ---------- 4. 显式分页符 / hr 对照 ----------
-  const pbDocx = await convert(pageBreakMd, "docx", { baseDir: B, warnings: [], toc: false });
-  const pbPdf = await convert(pageBreakMd, "pdf", { baseDir: B, title: "t", warnings: [], toc: false });
-  const hrDocx = await convert(hrMd, "docx", { baseDir: B, warnings: [], toc: false });
-  const hrPdf = await convert(hrMd, "pdf", { baseDir: B, title: "t", warnings: [], toc: false });
+  const pbDocx = asDocxArtifact(await convertTyped(pageBreakMd, "docx", { baseDir: B, warnings: [], toc: false }));
+  const pbPdf = asPdfArtifact(await convertTyped(pageBreakMd, "pdf", { baseDir: B, title: "t", warnings: [], toc: false }));
+  const hrDocx = asDocxArtifact(await convertTyped(hrMd, "docx", { baseDir: B, warnings: [], toc: false }));
+  const hrPdf = asPdfArtifact(await convertTyped(hrMd, "pdf", { baseDir: B, title: "t", warnings: [], toc: false }));
 
   // ---------- 5. 目录层级 ----------
-  const tocDocx = await convert(deepHeadingsMd, "docx", { baseDir: B, warnings: [] });
-  const tocPdf = await convert(deepHeadingsMd, "pdf", { baseDir: B, title: "t", warnings: [] });
+  const tocDocx = asDocxArtifact(await convertTyped(deepHeadingsMd, "docx", { baseDir: B, warnings: [] }));
+  const tocPdf = asPdfArtifact(await convertTyped(deepHeadingsMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
   // 标题文本被 label 剥空 → 两侧都回退为 section 锚点
-  const emptyHeadingDocx = await convert("# 一级\n\n## {#sec:only}\n\n正文。\n", "docx", { baseDir: B, warnings: [] });
-  const emptyHeadingPdf = await convert("# 一级\n\n## {#sec:only}\n\n正文。\n", "pdf", { baseDir: B, title: "t", warnings: [] });
+  const emptyHeadingDocx = asDocxArtifact(await convertTyped("# 一级\n\n## {#sec:only}\n\n正文。\n", "docx", { baseDir: B, warnings: [] }));
+  const emptyHeadingPdf = asPdfArtifact(await convertTyped("# 一级\n\n## {#sec:only}\n\n正文。\n", "pdf", { baseDir: B, title: "t", warnings: [] }));
 
   // ---------- 6-8. 题注编号 / label 剥离 / 交叉引用 ----------
+  /** @type {Warning[]} */
   const capDocxW = [];
+  /** @type {Warning[]} */
   const capPdfW = [];
-  const capDocx = await convert(captionMd, "docx", { baseDir: B, warnings: capDocxW, ...img });
-  const capPdf = await convert(captionMd, "pdf", { baseDir: B, title: "t", warnings: capPdfW, ...img });
+  const capDocx = asDocxArtifact(await convertTyped(captionMd, "docx", { baseDir: B, warnings: capDocxW, ...img }));
+  const capPdf = asPdfArtifact(await convertTyped(captionMd, "pdf", { baseDir: B, title: "t", warnings: capPdfW, ...img }));
   // captionNumbering 显式关闭:label 原样保留的对照(显式项契约见 toc-caption 段)
-  const labelOffDocx = await convert(captionLabelMd, "docx", { baseDir: B, warnings: [], captionNumbering: false, ...img });
-  const labelOffPdf = await convert(captionLabelMd, "pdf", { baseDir: B, title: "t", warnings: [], captionNumbering: false, ...img });
+  const labelOffDocx = asDocxArtifact(await convertTyped(captionLabelMd, "docx", { baseDir: B, warnings: [], captionNumbering: false, ...img }));
+  const labelOffPdf = asPdfArtifact(await convertTyped(captionLabelMd, "pdf", { baseDir: B, title: "t", warnings: [], captionNumbering: false, ...img }));
 
   // ---------- 9. 公式 label 与编号开关 ----------
-  const eqDocx = await convert(equationMd, "docx", { baseDir: B, warnings: [], katexDir: KATEX_DIR });
-  const eqPdf = await convert(equationMd, "pdf", { baseDir: B, title: "t", warnings: [], katexDir: KATEX_DIR });
-  const eqOffDocx = await convert(equationMd, "docx", { baseDir: B, warnings: [], katexDir: KATEX_DIR, equationNumbering: false });
-  const eqOffPdf = await convert(equationMd, "pdf", { baseDir: B, title: "t", warnings: [], katexDir: KATEX_DIR, equationNumbering: false });
+  const eqDocx = asDocxArtifact(await convertTyped(equationMd, "docx", { baseDir: B, warnings: [], katexDir: KATEX_DIR }));
+  const eqPdf = asPdfArtifact(await convertTyped(equationMd, "pdf", { baseDir: B, title: "t", warnings: [], katexDir: KATEX_DIR }));
+  const eqOffDocx = asDocxArtifact(await convertTyped(equationMd, "docx", { baseDir: B, warnings: [], katexDir: KATEX_DIR, equationNumbering: false }));
+  const eqOffPdf = asPdfArtifact(await convertTyped(equationMd, "pdf", { baseDir: B, title: "t", warnings: [], katexDir: KATEX_DIR, equationNumbering: false }));
 
   // ---------- 10. KaTeX 资源边界 ----------
   const bigRuleMd = "$$\\rule{500em}{1em}$$\n";
   const smallRuleMd = "$$\\rule{5em}{1em}$$\n";
   const expandMd = "$$\\def\\a{\\a}\\a$$\n";
+  /** @type {Warning[]} */
   const bigRuleW = [];
-  const bigRuleDocx = await convert(bigRuleMd, "docx", { baseDir: B, warnings: bigRuleW });
-  const bigRulePdf = await convert(bigRuleMd, "pdf", { baseDir: B, title: "t", warnings: [] });
-  const smallRulePdf = await convert(smallRuleMd, "pdf", { baseDir: B, title: "t", warnings: [] });
-  const expandDocx = await convert(expandMd, "docx", { baseDir: B, warnings: [] });
-  const expandPdf = await convert(expandMd, "pdf", { baseDir: B, title: "t", warnings: [] });
+  const bigRuleDocx = asDocxArtifact(await convertTyped(bigRuleMd, "docx", { baseDir: B, warnings: bigRuleW }));
+  const bigRulePdf = asPdfArtifact(await convertTyped(bigRuleMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
+  const smallRulePdf = asPdfArtifact(await convertTyped(smallRuleMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
+  const expandDocx = asDocxArtifact(await convertTyped(expandMd, "docx", { baseDir: B, warnings: [] }));
+  const expandPdf = asPdfArtifact(await convertTyped(expandMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
   // katexDir 边界:同一份含多类公式的样例,加/不加 katexDir 各跑一次
+  /** @type {Warning[]} */
   const boundaryPdfNoDirW = [];
-  const boundaryPdfNoDir = await convert(katexBoundaryMd, "pdf", { baseDir: B, title: "t", warnings: boundaryPdfNoDirW });
-  const boundaryPdfWithDir = await convert(katexBoundaryMd, "pdf", { baseDir: B, title: "t", warnings: [], katexDir: KATEX_DIR });
-  const boundaryDocxNoDir = await docxXml((await convert(katexBoundaryMd, "docx", { baseDir: B, warnings: [] })).buffer);
-  const boundaryDocxWithDir = await docxXml((await convert(katexBoundaryMd, "docx", { baseDir: B, warnings: [], katexDir: KATEX_DIR })).buffer);
+  const boundaryPdfNoDir = asPdfArtifact(await convertTyped(katexBoundaryMd, "pdf", { baseDir: B, title: "t", warnings: boundaryPdfNoDirW }));
+  const boundaryPdfWithDir = asPdfArtifact(await convertTyped(katexBoundaryMd, "pdf", { baseDir: B, title: "t", warnings: [], katexDir: KATEX_DIR }));
+  const boundaryDocxNoDir = await docxXml(asDocxArtifact(await convertTyped(katexBoundaryMd, "docx", { baseDir: B, warnings: [] })).buffer);
+  const boundaryDocxWithDir = await docxXml(asDocxArtifact(await convertTyped(katexBoundaryMd, "docx", { baseDir: B, warnings: [], katexDir: KATEX_DIR })).buffer);
 
   // ---------- 11. 代码高亮与降级警告 ----------
   const knownMd = "```ts\nconst x = 1; // note\n```\n";
   const unknownMd = "```nolangxyz\nconst unknown = 1;\n```\n";
-  const knownDocx = await convert(knownMd, "docx", { baseDir: B, warnings: [] });
-  const knownPdf = await convert(knownMd, "pdf", { baseDir: B, title: "t", warnings: [] });
-  const unknownDocx = await convert(unknownMd, "docx", { baseDir: B, warnings: [] });
-  const unknownPdf = await convert(unknownMd, "pdf", { baseDir: B, title: "t", warnings: [] });
+  const knownDocx = asDocxArtifact(await convertTyped(knownMd, "docx", { baseDir: B, warnings: [] }));
+  const knownPdf = asPdfArtifact(await convertTyped(knownMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
+  const unknownDocx = asDocxArtifact(await convertTyped(unknownMd, "docx", { baseDir: B, warnings: [] }));
+  const unknownPdf = asPdfArtifact(await convertTyped(unknownMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
   // 注册编译期即抛错的坏语言 → 触发「语言已知但高亮失败」降级(两侧同一句警告)
   const hljs = (await import("highlight.js/lib/common")).default;
   const brokenMd = "```broken\nif (a < b) {}\n```\n";
+  /** @type {Warning[]} */
   const brokenDocxW = [];
+  /** @type {Warning[]} */
   const brokenPdfW = [];
   let brokenDocxXml = "";
   let brokenPdfHtml = "";
-  hljs.registerLanguage("broken", () => ({ match: "x", begin: /y/ }));
+  // 放宽理由:故意注册结构不完整的假语言,触发「语言已知但高亮编译抛错」降级路径;
+  // hljs 的 LanguageFn 类型要求完整语法定义,而本段要的正是它不合法(经 unknown 中转,
+  // 避免误标为类型相容的正常注册)。
+  const brokenLanguage = /** @type {ReturnType<Parameters<typeof hljs.registerLanguage>[1]>} */ (
+    /** @type {unknown} */ ({ match: "x", begin: /y/ })
+  );
+  hljs.registerLanguage("broken", () => brokenLanguage);
   try {
-    brokenDocxXml = await docxXml((await convert(brokenMd, "docx", { baseDir: B, warnings: brokenDocxW })).buffer);
-    brokenPdfHtml = (await convert(brokenMd, "pdf", { baseDir: B, title: "t", warnings: brokenPdfW })).html;
+    brokenDocxXml = await docxXml(asDocxArtifact(await convertTyped(brokenMd, "docx", { baseDir: B, warnings: brokenDocxW })).buffer);
+    brokenPdfHtml = asPdfArtifact(await convertTyped(brokenMd, "pdf", { baseDir: B, title: "t", warnings: brokenPdfW })).html;
   } finally {
     hljs.unregisterLanguage("broken");
   }
 
   // ---------- 12. fig/tab 同名 label 边界 ----------
+  /** @type {Warning[]} */
   const nsDocxW = [];
+  /** @type {Warning[]} */
   const nsPdfW = [];
-  const nsDocx = await convert(sameLabelMd, "docx", { baseDir: B, warnings: nsDocxW, ...img });
-  const nsPdf = await convert(sameLabelMd, "pdf", { baseDir: B, title: "t", warnings: nsPdfW, ...img });
+  const nsDocx = asDocxArtifact(await convertTyped(sameLabelMd, "docx", { baseDir: B, warnings: nsDocxW, ...img }));
+  const nsPdf = asPdfArtifact(await convertTyped(sameLabelMd, "pdf", { baseDir: B, title: "t", warnings: nsPdfW, ...img }));
 
   // ---------- 13. 公式降级触发条件 ----------
   const untrustedMd = "$$\\includegraphics[width=1cm]{a.png}$$\n";
   const colorMd = "$$\\color{red}{x}$$\n";
-  const untrustedDocx = await convert(untrustedMd, "docx", { baseDir: B, warnings: [] });
-  const untrustedPdf = await convert(untrustedMd, "pdf", { baseDir: B, title: "t", warnings: [] });
-  const colorDocx = await convert(colorMd, "docx", { baseDir: B, warnings: [] });
-  const colorPdf = await convert(colorMd, "pdf", { baseDir: B, title: "t", warnings: [] });
+  const untrustedDocx = asDocxArtifact(await convertTyped(untrustedMd, "docx", { baseDir: B, warnings: [] }));
+  const untrustedPdf = asPdfArtifact(await convertTyped(untrustedMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
+  const colorDocx = asDocxArtifact(await convertTyped(colorMd, "docx", { baseDir: B, warnings: [] }));
+  const colorPdf = asPdfArtifact(await convertTyped(colorMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
 
   // ---------- 14. Mermaid ----------
   const mermaidOk = async () => ({ svg: '<svg data-mermaid="1"></svg>', png, width: 120, height: 60 });
-  const mermaidDocx = await convert(mermaidMd, "docx", { baseDir: B, warnings: [], mermaidResolver: mermaidOk });
-  const mermaidPdf = await convert(mermaidMd, "pdf", { baseDir: B, title: "t", warnings: [], mermaidResolver: mermaidOk });
+  const mermaidDocx = asDocxArtifact(await convertTyped(mermaidMd, "docx", { baseDir: B, warnings: [], mermaidResolver: mermaidOk }));
+  const mermaidPdf = asPdfArtifact(await convertTyped(mermaidMd, "pdf", { baseDir: B, title: "t", warnings: [], mermaidResolver: mermaidOk }));
+  /** @type {Warning[]} */
   const mermaidFailDocxW = [];
+  /** @type {Warning[]} */
   const mermaidFailPdfW = [];
-  const mermaidFailDocx = await convert(mermaidMd, "docx", { baseDir: B, warnings: mermaidFailDocxW, ...nullMermaid });
-  const mermaidFailPdf = await convert(mermaidMd, "pdf", { baseDir: B, title: "t", warnings: mermaidFailPdfW, ...nullMermaid });
+  const mermaidFailDocx = asDocxArtifact(await convertTyped(mermaidMd, "docx", { baseDir: B, warnings: mermaidFailDocxW, ...nullMermaid }));
+  const mermaidFailPdf = asPdfArtifact(await convertTyped(mermaidMd, "pdf", { baseDir: B, title: "t", warnings: mermaidFailPdfW, ...nullMermaid }));
 
   // ---------- 15. 脚注 ----------
-  const fnDocx = await convert(footnoteMd, "docx", { baseDir: B, warnings: [] });
-  const fnPdf = await convert(footnoteMd, "pdf", { baseDir: B, title: "t", warnings: [] });
+  const fnDocx = asDocxArtifact(await convertTyped(footnoteMd, "docx", { baseDir: B, warnings: [] }));
+  const fnPdf = asPdfArtifact(await convertTyped(footnoteMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
 
   // ---------- 16. 任务列表 ----------
-  const taskDocx = await convert(taskListMd, "docx", { baseDir: B, warnings: [] });
-  const taskPdf = await convert(taskListMd, "pdf", { baseDir: B, title: "t", warnings: [] });
+  const taskDocx = asDocxArtifact(await convertTyped(taskListMd, "docx", { baseDir: B, warnings: [] }));
+  const taskPdf = asPdfArtifact(await convertTyped(taskListMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
 
   // ---------- 17. 图片预算记账口径 ----------
   const rawPlusOne = { maxDocumentBytes: png.length + 1 };
   const base64PlusOne = { maxDocumentBytes: Math.ceil(png.length / 3) * 4 + 1 };
-  const budgetDocx = await convert(externalImageMd, "docx", { baseDir: B, warnings: [], imageResolver: async () => png, imageBudget: rawPlusOne });
+  const budgetDocx = asDocxArtifact(await convertTyped(externalImageMd, "docx", { baseDir: B, warnings: [], imageResolver: async () => png, imageBudget: rawPlusOne }));
+  /** @type {Warning[]} */
   const budgetPdfW = [];
-  const budgetPdf = await convert(externalImageMd, "pdf", { baseDir: B, title: "t", warnings: budgetPdfW, imageResolver: async () => png, imageBudget: rawPlusOne });
-  const budgetPdfOk = await convert(externalImageMd, "pdf", { baseDir: B, title: "t", warnings: [], imageResolver: async () => png, imageBudget: base64PlusOne });
+  const budgetPdf = asPdfArtifact(await convertTyped(externalImageMd, "pdf", { baseDir: B, title: "t", warnings: budgetPdfW, imageResolver: async () => png, imageBudget: rawPlusOne }));
+  const budgetPdfOk = asPdfArtifact(await convertTyped(externalImageMd, "pdf", { baseDir: B, title: "t", warnings: [], imageResolver: async () => png, imageBudget: base64PlusOne }));
 
   // ---------- 18. 标题 id 取源兜底 ----------
-  const headingDocx = await convert(headingLinkMd, "docx", { baseDir: B, warnings: [] });
-  const headingPdf = await convert(headingLinkMd, "pdf", { baseDir: B, title: "t", warnings: [] });
+  const headingDocx = asDocxArtifact(await convertTyped(headingLinkMd, "docx", { baseDir: B, warnings: [] }));
+  const headingPdf = asPdfArtifact(await convertTyped(headingLinkMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
 
   // ---------- 19. 目录页码 ----------
-  const tocStaticDocx = await convert(tocMd, "docx", { baseDir: B, warnings: [] });
-  const tocFieldDocx = await convert(tocMd, "docx", { baseDir: B, warnings: [], tocMode: "field" });
-  const tocPagePdf = await convert(tocMd, "pdf", { baseDir: B, title: "t", warnings: [] });
+  const tocStaticDocx = asDocxArtifact(await convertTyped(tocMd, "docx", { baseDir: B, warnings: [] }));
+  const tocFieldDocx = asDocxArtifact(await convertTyped(tocMd, "docx", { baseDir: B, warnings: [], tocMode: "field" }));
+  const tocPagePdf = asPdfArtifact(await convertTyped(tocMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
   // ---------- 20. 取消检查点密度 ----------
   const smallMd = "# 小文档\n\n一段。\n";
   const largeMd = Array.from({ length: 12 }, (_, i) => `## 标题 ${i + 1}\n\n段落 ${i + 1}。\n`).join("\n");
@@ -1092,12 +1246,17 @@ export async function run() {
   await renderPdfHtml(largeMd, { baseDir: B, guard: pdfLarge.guard, toc: false });
 
   // ---------- 21. 题注先于首个 h1 ----------
-  const beforeH1Docx = await convert(captionBeforeH1Md, "docx", { baseDir: B, warnings: [], ...img });
-  const beforeH1Pdf = await convert(captionBeforeH1Md, "pdf", { baseDir: B, title: "t", warnings: [], ...img });
-  const noH1Docx = await convert(noH1CaptionMd, "docx", { baseDir: B, warnings: [], ...img });
-  const noH1Pdf = await convert(noH1CaptionMd, "pdf", { baseDir: B, title: "t", warnings: [], ...img });
+  const beforeH1Docx = asDocxArtifact(await convertTyped(captionBeforeH1Md, "docx", { baseDir: B, warnings: [], ...img }));
+  const beforeH1Pdf = asPdfArtifact(await convertTyped(captionBeforeH1Md, "pdf", { baseDir: B, title: "t", warnings: [], ...img }));
+  const noH1Docx = asDocxArtifact(await convertTyped(noH1CaptionMd, "docx", { baseDir: B, warnings: [], ...img }));
+  const noH1Pdf = asPdfArtifact(await convertTyped(noH1CaptionMd, "pdf", { baseDir: B, title: "t", warnings: [], ...img }));
+
+  // 目录页码:两条 docx 路线需解包 zip + 调用纯函数,先取出再组装 ctx
+  const tocStaticXml = await docxXml(tocStaticDocx.buffer);
+  const tocFieldXml = await docxXml(tocFieldDocx.buffer);
 
   // ---------- 组装断言上下文(全部为已渲染好的双侧产物) ----------
+  /** @type {MatrixCtx} */
   const ctx = {
     docxXmlText: await docxXml(fmDocx.buffer),
     pdfHtml: fmPdf.html,
@@ -1204,8 +1363,13 @@ export async function run() {
       pdfWarned: budgetPdfW.some((w) => formatWarning(w).includes("图片加载失败")),
     },
     heading: { docxXml: await docxXml(headingDocx.buffer), pdfHtml: headingPdf.html },
-    // tocPage 需要解包 zip + 调用纯函数,在 ctx 组装后补齐(见下方)
-    tocPage: null,
+    tocPage: {
+      staticDirtyFalse: tocStaticXml.includes('w:dirty="false"'),
+      staticHasDirtyTrue: tocStaticXml.includes('w:dirty="true"'),
+      fieldDirtyTrue: tocFieldXml.includes('w:dirty="true"'),
+      pdfHasPageSpan: tocPagePdf.html.includes('<span class="toc-page">'),
+      pdfAfterInject: injectTocPageNumbers(tocPagePdf.html, { 一级: 2 }),
+    },
     cancel: {
       docxSmall: docxSmall.counter.checks,
       docxLarge: docxLarge.counter.checks,
@@ -1218,17 +1382,6 @@ export async function run() {
       noH1Docx: await docxXml(noH1Docx.buffer),
       noH1Pdf: noH1Pdf.html,
     },
-  };
-
-  // 目录页码:两条 docx 路线 + PDF 两遍回填(需解包 zip,故在 ctx 组装后补齐)
-  const tocStaticXml = await docxXml(tocStaticDocx.buffer);
-  const tocFieldXml = await docxXml(tocFieldDocx.buffer);
-  ctx.tocPage = {
-    staticDirtyFalse: tocStaticXml.includes('w:dirty="false"'),
-    staticHasDirtyTrue: tocStaticXml.includes('w:dirty="true"'),
-    fieldDirtyTrue: tocFieldXml.includes('w:dirty="true"'),
-    pdfHasPageSpan: tocPagePdf.html.includes('<span class="toc-page">'),
-    pdfAfterInject: injectTocPageNumbers(tocPagePdf.html, { 一级: 2 }),
   };
 
   for (const row of MATRIX) {

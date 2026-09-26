@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 视觉自查工具(`npm run ui:shots`):
  * 以离线 api 桩驱动 renderer 到四个关键舞台状态,逐状态截图到
@@ -17,12 +18,25 @@ const distIndex = path.join(root, "dist", "renderer", "index.html");
 const preload = path.join(__dirname, "visual-preload.cjs");
 const outDir = path.join(root, "output", "artifacts", "ui-v4");
 
+/**
+ * 样例文件绝对路径(供页面侧桩注入)
+ * @param {string[]} names 样例文件名
+ * @returns {string[]}
+ */
 const fixtures = (names) =>
   names.map((n) => path.join(root, "test", "fixtures", "acceptance", n));
 
+/** @param {number} ms @returns {Promise<void>} */
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 轮询等待页面表达式为真(初始化/状态迁移就绪;固定时长在冷启动下会抢拍)。 */
+/**
+ * 轮询等待页面表达式为真(初始化/状态迁移就绪;固定时长在冷启动下会抢拍)。
+ * @param {(code: string) => Promise<unknown>} exec 页面脚本执行器
+ * @param {string} expr 页面表达式
+ * @param {number} [timeout] 最长等待(ms)
+ * @param {string} [label] 超时文案里的定位标签
+ * @returns {Promise<void>}
+ */
 async function waitFor(exec, expr, timeout = 5000, label = expr) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeout) {
@@ -32,6 +46,12 @@ async function waitFor(exec, expr, timeout = 5000, label = expr) {
   throw new Error(`[ui:shots] timeout waiting for: ${label}`);
 }
 
+/**
+ * 截当前窗口画面落盘
+ * @param {import("electron").BrowserWindow} win 目标窗口
+ * @param {string} name 截图名(不含扩展名)
+ * @returns {Promise<void>}
+ */
 async function shot(win, name) {
   const image = await win.webContents.capturePage();
   const file = path.join(outDir, `${name}.png`);
@@ -57,6 +77,10 @@ async function main() {
   });
 
   await win.loadFile(distIndex);
+  /**
+   * @param {string} code 页面脚本源码
+   * @returns {Promise<unknown>} 页面返回值
+   */
   const exec = (code) => win.webContents.executeJavaScript(code, true);
   // 冻结动效:隐藏窗口里 CSS transition 时钟不推进,浮层 opacity 会冻在中间帧
   // (半透明穿帮);与 reduced-motion 同款兜底,保证截到的是落定终态
@@ -77,6 +101,10 @@ async function main() {
   await wait(300); // 入场动效落定
 
   // ① 空态 + 布局探针(sheet 垂直预算 / 列对齐;几何恒定回归用)
+  /**
+   * @param {string} sel CSS 选择器
+   * @returns {string} 量测表达式
+   */
   const probe = (sel) =>
     `(() => { const el = document.querySelector("${sel}"); ` +
     `if (!el) return null; const b = el.getBoundingClientRect(); ` +
@@ -125,6 +153,10 @@ async function main() {
   console.log(`[ui:shots] metrics-files ${metricsFiles}`);
 
   // ③b 转换中模拟:进度行出现 + 状态文案 → 断言动作栏/舞台几何恒定(防跳动回归)
+  /**
+   * @param {string} sel CSS 选择器
+   * @returns {string} 量测表达式
+   */
   const rectOf = (sel) =>
     `JSON.stringify((el => { const b = el.getBoundingClientRect(); ` +
     `return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; })` +

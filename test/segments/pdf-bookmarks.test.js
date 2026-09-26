@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * PDF 书签端到端(smoke 书签断言的独立化 + buildBookmarkTree 层级直测):
  * convert("pdf") 中间 html → htmlToPdf(printToPDF 链路,与主进程 renderPdf 对齐)
@@ -10,8 +11,21 @@ import { extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
+import { asPdfArtifact } from "../common/convert-helpers.js";
 
-/** 断言 PDF 大纲首条目:Title(中文)与 Dest[0] 页面 PDFRef(与 smoke assertOutline 同款) */
+/**
+ * 书签树节点(dist 编译产物无类型标注,层级形状由 buildBookmarkTree 实现约定;
+ * 测试侧显式声明以便按 children 逐层收窄)。
+ * @typedef {{ title: string, children?: BookmarkNode[] }} BookmarkNode
+ */
+
+/**
+ * 断言 PDF 大纲首条目:Title(中文)与 Dest[0] 页面 PDFRef(与 smoke assertOutline 同款)。
+ * @param {Uint8Array} pdfBytes PDF 字节
+ * @param {string} expectedTitle 期望的中文标题
+ * @param {string} label 失败标签
+ * @returns {Promise<void>} 无返回值(失败即抛)
+ */
 async function assertOutline(pdfBytes, expectedTitle, label) {
   const doc = await PDFDocument.load(pdfBytes);
   const outlinesRef = doc.catalog.get(PDFName.of("Outlines"));
@@ -56,22 +70,28 @@ export const fixtures = { main: md };
 
 /** PDF 书签端到端验收 */
 export async function run() {
-  const artifact = await convert(md, "pdf", {
-    baseDir: FIXTURES_DIR,
-    title: "书签验收",
-    warnings: [],
-  });
+  const artifact = asPdfArtifact(
+    await convert(md, "pdf", {
+      baseDir: FIXTURES_DIR,
+      title: "书签验收",
+      warnings: [],
+    }),
+  );
 
   // 1. 提取 + 建树:三级标题 → 扁平列表 → 嵌套树(h1 顶层,h2/h3 挂最近上级)
   const headings = extractHeadings(artifact.html);
   if (headings.length !== 4) throw new Error(`extractHeadings 数量异常: ${headings.length}`);
-  const tree = buildBookmarkTree(headings);
-  if (tree.length !== 1 || tree[0].title !== "书签一级标题") throw new Error("书签树:h1 未作顶层");
-  const second = tree[0].children?.[0];
+  const tree = /** @type {BookmarkNode[]} */ (buildBookmarkTree(headings));
+  const root = tree[0];
+  if (tree.length !== 1 || !root || root.title !== "书签一级标题") {
+    throw new Error("书签树:h1 未作顶层");
+  }
+  const second = root.children?.[0];
   if (!second || second.title !== "书签二级标题") throw new Error("书签树:h2 未挂 h1 下");
-  if (!second.children || second.children[0].title !== "三级子节") throw new Error("书签树:h3 未挂 h2 下");
+  const third = second.children?.[0];
+  if (!third || third.title !== "三级子节") throw new Error("书签树:h3 未挂 h2 下");
   // 第二页小节与 h1 同级(层级回退),非 h2 的子树
-  if (tree.length !== 1 || tree[0].children?.length !== 2) throw new Error("书签树:跨级后 h2 未回挂顶层");
+  if (tree.length !== 1 || root.children?.length !== 2) throw new Error("书签树:跨级后 h2 未回挂顶层");
   console.log("[ok] 书签树:多级标题嵌套 + 跨级回挂结构正确");
 
   // 2. 端到端:printToPDF 产物 → 注入 → 回读(中文标题 + Dest 页面引用)
@@ -111,8 +131,10 @@ export async function run() {
     doc.catalog.set(PDFName.of("Dests"), doc.context.register(dests));
     const reloaded = await PDFDocument.load(await doc.save());
     const dest = lookupNamedDest(reloaded, "a%zz");
+    // 取文本须在 instanceof 收窄之前(收窄后 dest 变 never)
+    const destText = dest?.toString();
     if (!(dest instanceof PDFArray)) {
-      throw new Error(`书签断言失败:非法百分号编码名应原样匹配(destKeyText catch),dest=${dest?.toString()}`);
+      throw new Error(`书签断言失败:非法百分号编码名应原样匹配(destKeyText catch),dest=${destText}`);
     }
     console.log("[ok] 书签:decodeURIComponent catch(非法 % 编码)原样返回并命中");
   }

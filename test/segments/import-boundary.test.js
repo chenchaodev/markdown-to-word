@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 依赖声明与 import 层向边界守护段(位于 test/segments/ = 跨域守护段;被测为
  * scripts/check-import-boundary.mjs 的判定逻辑 + 真实仓库的声明/产物事实,
@@ -59,12 +60,23 @@ const DECLARED_TRANSITIVE_DEPS = {
   "unist-util-visit": "5.1.0",
 };
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`import-boundary 断言失败:${msg}`);
 }
 
-/** 跑被测脚本的 CLI main():吞掉 console 输出,返回 { code, output } */
+/**
+ * 跑被测脚本的 CLI main():吞掉 console 输出,返回 { code, output }。
+ * @param {string[]} args CLI 参数
+ * @returns {Promise<{ code: unknown; output: string }>} 退出码与合并后的输出
+ */
 async function runCli(args) {
+  /** @type {string[]} */
   const lines = [];
   const originalLog = console.log;
   const originalError = console.error;
@@ -79,6 +91,13 @@ async function runCli(args) {
   }
 }
 
+/**
+ * 在目录下写入相对路径文件(自动建父目录)。
+ * @param {string} dir 基准目录
+ * @param {string} relative POSIX 风格相对路径
+ * @param {string} content 文件内容
+ * @returns {string} 落盘绝对路径
+ */
 function writeFileIn(dir, relative, content) {
   const target = path.join(dir, ...relative.split("/"));
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -86,7 +105,12 @@ function writeFileIn(dir, relative, content) {
   return target;
 }
 
-/** 沙盒:一份 package.json + 一棵 src 树;返回 { dir, srcDir, pkgPath } */
+/**
+ * 沙盒:一份 package.json + 一棵 src 树。
+ * @param {unknown} pkg 沙盒 package.json 内容
+ * @param {Record<string, string>} files 相对路径 → 文件内容
+ * @returns {{ dir: string; srcDir: string; pkgPath: string }} 沙盒路径三元组
+ */
 function createSandbox(pkg, files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-boundary-"));
   const srcDir = path.join(dir, "src");
@@ -96,7 +120,13 @@ function createSandbox(pkg, files) {
   return { dir, srcDir, pkgPath };
 }
 
-/** 失败路径的固定断言面:退出码 1 + 命中诊断 + 不回吐调用栈 */
+/**
+ * 失败路径的固定断言面:退出码 1 + 命中诊断 + 不回吐调用栈。
+ * @param {{ code: unknown; output: string }} result 子进程结果
+ * @param {RegExp} pattern 期望命中的诊断
+ * @param {string} label 用例标签
+ * @returns {void}
+ */
 function assertFailure(result, pattern, label) {
   assert(result.code === 1, `${label} 应以退出码 1 结束,实际 ${result.code};输出:${result.output}`);
   assert(pattern.test(result.output), `${label} 诊断未命中 ${pattern};输出:${result.output}`);
@@ -105,9 +135,17 @@ function assertFailure(result, pattern, label) {
 
 // ---- 独立复核用:与被测实现无共享代码的极简 import 抽取器 ----
 
-/** 抽出 { file → [{ spec, typeOnly }] };只认行首 import/export ... from 与行内 type 说明符 */
+/**
+ * 抽出 { file → [{ spec, typeOnly }] };只认行首 import/export ... from 与行内 type 说明符。
+ * @param {string} root 扫描根目录
+ * @param {string[]} extensions 计入的扩展名列表
+ * @returns {Map<string, { spec: string; typeOnly: boolean }[]>} 相对路径 → import 列表
+ */
 function scanImportsIndependently(root, extensions) {
-  const walk = (dir, out = []) => {
+  const walk = (
+    /** @type {string} */ dir,
+    /** @type {string[]} */ out = [],
+  ) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(abs, out);
@@ -119,9 +157,11 @@ function scanImportsIndependently(root, extensions) {
   for (const abs of walk(root)) {
     const file = path.relative(root, abs).split(path.sep).join("/");
     const text = fs.readFileSync(abs, "utf8");
+    /** @type {{ spec: string; typeOnly: boolean }[]} */
     const found = [];
     for (const m of text.matchAll(/(?:^|\n)[ \t]*(?:import|export)\s+(type\s+)?([^;]*?)\s*from\s*['"]([^'"]+)['"]/g)) {
-      const clause = m[2].trim();
+      // 三个捕获组在该正则下必然参与匹配,此处按非空断言语义收窄
+      const clause = /** @type {string} */ (m[2]).trim();
       const typeOnly =
         m[1] !== undefined ||
         (clause.startsWith("{") &&
@@ -131,14 +171,19 @@ function scanImportsIndependently(root, extensions) {
             .map((s) => s.trim())
             .filter((s) => s !== "")
             .every((s) => s === "type" || s.startsWith("type ")));
-      found.push({ spec: m[3], typeOnly });
+      found.push({ spec: /** @type {string} */ (m[3]), typeOnly });
     }
     byFile.set(file, found);
   }
   return byFile;
 }
 
-/** 该相对 specifier 解析后落在哪一层(与被测实现同义但独立实现) */
+/**
+ * 该相对 specifier 解析后落在哪一层(与被测实现同义但独立实现)。
+ * @param {string} file 文件相对路径
+ * @param {string} spec import 说明符
+ * @returns {string | undefined} 规范化路径的首段(层名)
+ */
 function layerOf(file, spec) {
   const joined = path.posix.normalize(path.posix.join(path.posix.dirname(file), spec));
   return joined.split("/")[0];
@@ -148,8 +193,9 @@ function layerOf(file, spec) {
 export const fixtures = null;
 
 export async function run() {
+  /** @type {string[]} */
   const sandboxes = [];
-  const track = (dir) => {
+  const track = (/** @type {string} */ dir) => {
     sandboxes.push(dir);
     return dir;
   };
@@ -175,7 +221,7 @@ export async function run() {
         PKG.scripts["check:boundary"] === "node scripts/check-import-boundary.mjs",
         `check:boundary 应指向 scripts/check-import-boundary.mjs,实际 ${String(PKG.scripts["check:boundary"])}`,
       );
-      const chain = PKG.scripts["verify:ci"].split("&&").map((s) => s.trim());
+      const chain = PKG.scripts["verify:ci"].split("&&").map((/** @type {string} */ s) => s.trim());
       const contractAt = chain.indexOf("npm run check:contract");
       const boundaryAt = chain.indexOf("npm run check:boundary");
       const buildAt = chain.indexOf("npm run build");
@@ -189,7 +235,7 @@ export async function run() {
       for (const { path: entryPath } of REQUIRED_ENTRIES) {
         const match = /^node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(entryPath);
         if (match === null) continue;
-        const owner = match[1];
+        const owner = /** @type {string} */ (match[1]);
         assert(
           owner in deps,
           `ASAR 生产依赖条目 ${entryPath} 的宿主包 ${owner} 不在 dependencies(devDependencies 的包不会进包,该判定形同虚设)`,
@@ -241,10 +287,12 @@ export async function run() {
       const distScan = scanImportsIndependently(DIST_DIR, [".js", ".cjs"]);
       assert(distScan.size > 0, "独立抽取器未扫到任何 dist 文件(需先 build)");
 
-      for (const [label, scan] of [
+      /** @type {[string, Map<string, { spec: string; typeOnly: boolean }[]>][]} */
+      const scans = [
         ["src", srcScan],
         ["dist", distScan],
-      ]) {
+      ];
+      for (const [label, scan] of scans) {
         for (const [file, imports] of scan) {
           for (const { spec, typeOnly } of imports) {
             const { kind } = classifySpecifier(spec);
@@ -307,7 +355,7 @@ export async function run() {
         const imports = srcScan.get(allow.file) ?? [];
         const hit = imports.find((i) => i.spec === allow.spec);
         assert(hit !== undefined, `放行条目 ${allow.file} → ${allow.spec} 在 src 中已不存在(请删除该条目)`);
-        assert(hit.typeOnly, `放行条目 ${allow.file} → ${allow.spec} 已不是 type-only(编译期不再擦除,应改判红)`);
+        assert(/** @type {{ typeOnly: boolean }} */ (hit).typeOnly, `放行条目 ${allow.file} → ${allow.spec} 已不是 type-only(编译期不再擦除,应改判红)`);
         assert(allow.note.includes("OPT-5.1"), `放行条目 ${allow.file} → ${allow.spec} 的注释须标注 OPT-5.1 收口项`);
       }
       // 规则表形态:四条层向断言都在
@@ -331,6 +379,7 @@ export async function run() {
 
     // ================= 4. 沙盒负向夹具:逐条制造漂移,断言精确诊断 =================
     {
+      /** @type {{ label: string; pkg: unknown; files: Record<string, string>; args?: string[]; pattern: RegExp }[]} */
       const cases = [
         {
           label: "运行时依赖只在 devDependencies(生产安装会缺件)",

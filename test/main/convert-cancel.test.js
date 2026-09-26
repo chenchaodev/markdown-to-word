@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 单文件/批量取消与时间上限贯穿验收(位于 test/main/ = 主进程层;被测
  * src/main/converter/single.ts、batch.ts 与 context.ts,经 dist 直连,electron 环境;
@@ -28,11 +29,21 @@ import { ConvertCanceledError } from "../../dist/main/converter/context.js";
 import { isConversionCanceled } from "../../dist/core/cancel.js";
 import { backupSettings } from "../common/settings.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`convert-cancel 断言失败:${msg}`);
 }
 
-/** 目录内的产物清单(断言取消后零产物) */
+/**
+ * 目录内的产物清单(断言取消后零产物)
+ * @param {string} dir 目录
+ * @returns {Promise<string[]>} 产物文件名列表
+ */
 async function artifactsOf(dir) {
   return (await fs.readdir(dir)).filter((name) => name.endsWith(".docx"));
 }
@@ -80,11 +91,12 @@ export async function run() {
     // 只可能来自渲染层守卫——signal/deadline 未透传 core 时本用例必然失败(会正常产出)。
     {
       const ctx = createConvertContext({ deadline: Date.now() - 1 });
+      /** @type {Error | undefined} */
       let error;
       try {
         await convertImpl(files[0], "docx", undefined, ctx);
       } catch (err) {
-        error = err;
+        error = /** @type {Error} */ (err);
       }
       assert(
         error instanceof ConvertCanceledError,
@@ -99,13 +111,14 @@ export async function run() {
     //         到达 core 入口检查点 → 仍归一为本层取消错误,且零产物 ----
     {
       const ctx = createConvertContext();
+      /** @type {Error | undefined} */
       let error;
       try {
-        await convertImpl(files[0], "docx", (stage) => {
+        await convertImpl(files[0], "docx", (/** @type {string} */ stage) => {
           if (stage === "render") ctx.cancel();
         }, ctx);
       } catch (err) {
-        error = err;
+        error = /** @type {Error} */ (err);
       }
       assert(
         error instanceof ConvertCanceledError,

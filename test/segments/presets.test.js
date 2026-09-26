@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * TEMPLATE_PRESETS / matchesPreset 契约单测:
  * - matchesPreset:预设与「自身数据构成的设置」自匹配;default 预设与 DEFAULT_SETTINGS
@@ -24,7 +25,12 @@ import {
   matchesPreset,
 } from "../../dist/core/settings/settings-defaults.js";
 
-/** 由预设排版 + 页面设置 + 完整交付链构成一份完整设置(其余字段取默认值) */
+/**
+ * 由预设排版 + 页面设置 + 完整交付链构成一份完整设置(其余字段取默认值)。
+ * @param {string} id 预设 id
+ * @param {Partial<typeof DEFAULT_SETTINGS>} [extra] 追加覆盖字段(微调场景)
+ * @returns {typeof DEFAULT_SETTINGS} 完整设置
+ */
 function settingsFromPreset(id, extra) {
   const preset = TEMPLATE_PRESETS.find((p) => p.id === id);
   if (!preset) throw new Error(`预设不存在: ${id}`);
@@ -44,12 +50,21 @@ function settingsFromPreset(id, extra) {
   };
 }
 
-/** 断言辅助:统一报错格式(与 slug 段同风格) */
+/**
+ * 断言辅助:统一报错格式(与 slug 段同风格)。
+ * @param {unknown} actual 实际值
+ * @param {unknown} expected 期望值
+ * @param {string} label 失败标签
+ * @returns {void}
+ */
 function assertEq(actual, expected, label) {
   if (actual !== expected) {
     throw new Error(`${label} 断言失败: ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
   }
 }
+
+/** 三语字典视图(LANGUAGES 的 code 为 string,需经 Record 视图按语言码取值) */
+const DICT_VIEW = /** @type {Record<string, Record<string, string>>} */ (DICT);
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -89,7 +104,10 @@ export async function run() {
     );
     // 三语字典均须有该键(渲染层 presetHintText 据此取当前语言说明)
     for (const { code } of LANGUAGES) {
-      const value = DICT[code][preset.hintI18nKey];
+      // 字典键来自 i18n 注册表(动态字符串),静态结构类型无法收窄 → 显式字典视图
+      const dict = DICT_VIEW[code];
+      if (!dict) throw new Error(`i18n 字典缺少语言 ${code}`);
+      const value = dict[preset.hintI18nKey];
       assertEq(
         typeof value === "string" && value.length > 0,
         true,
@@ -97,8 +115,9 @@ export async function run() {
       );
     }
     // zh 键值 = hint 回退原文(两处文案同源,任一处改动须同步,防 zh 显示与缺键回退漂移)
+    const zhDict = /** @type {Record<string, string>} */ (DICT.zh);
     assertEq(
-      DICT.zh[preset.hintI18nKey],
+      zhDict[preset.hintI18nKey],
       preset.hint,
       `zh.${preset.hintI18nKey} 应与预设 ${preset.id} 的 hint 逐字一致`,
     );

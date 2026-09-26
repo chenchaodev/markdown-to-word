@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * clean-artifacts 清理守卫段(位于 test/segments/ = 跨域守护段;被测为
  * scripts/clean-artifacts.mjs 的**进程级 CLI 语义**,纯 Node 子进程调用,不经 dist
@@ -50,6 +51,12 @@ const SANDBOX_PACKAGE = {
 /** 本段自建沙盒白名单:runClean 的唯一合法执行域 */
 const SANDBOXES = new Set();
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`clean-artifacts-gate 断言失败:${msg}`);
 }
@@ -64,6 +71,13 @@ function resolveNode() {
 
 const NODE = resolveNode();
 
+/**
+ * 在沙盒根下写入相对路径文件(自动建父目录)。
+ * @param {string} root 沙盒根目录
+ * @param {string} relative POSIX 风格相对路径
+ * @param {string} content 文件内容
+ * @returns {string} 落盘绝对路径
+ */
 function writeFileIn(root, relative, content) {
   const target = path.join(root, ...relative.split("/"));
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -81,6 +95,12 @@ function createSandbox() {
   return root;
 }
 
+/**
+ * 写 package.json(null 表示删除;字符串按原文写,其余按 JSON 序列化)。
+ * @param {string} root 沙盒根目录
+ * @param {unknown} value 对象 / 原始文本 / null(删除)
+ * @returns {void}
+ */
 function writePackageJson(root, value) {
   const target = path.join(root, "package.json");
   if (value === null) {
@@ -96,11 +116,15 @@ function writePackageJson(root, value) {
  * 只改 dist 一项是必须的 —— 改写 release 会先撞上打包配置对账(拿不到目标守卫),
  * 负向用例就会因「错误的原因失败」而蒙混过关。
  * 断言改写前后的差异只有那一行 —— 否则负向用例可能因夹具自身被改坏而假通过。
+ * @param {string} root 沙盒根目录
+ * @param {string} valueLiteral 写进常量的字符串字面量(含引号)
+ * @param {string} [fileName] 落地的脚本文件名
+ * @returns {string} 落地的脚本文件名
  */
 function writeRedirectedScript(root, valueLiteral, fileName = "clean-artifacts.redirect.mjs") {
   const matched = SCRIPT_SOURCE.match(TARGET_DIRS_RE);
   assert(matched !== null, "未定位到 TARGET_DIRS 常量行(生产脚本已改动?本段需同步)");
-  const [line] = matched;
+  const [line] = /** @type {RegExpMatchArray} */ (matched);
   const replacement = `const TARGET_DIRS = Object.freeze({ dist: ${valueLiteral}, release: 'release' });`;
   const redirected = SCRIPT_SOURCE.replace(line, replacement);
   assert(redirected !== SCRIPT_SOURCE, "常量改写未生效");
@@ -114,7 +138,11 @@ function writeRedirectedScript(root, valueLiteral, fileName = "clean-artifacts.r
   return fileName;
 }
 
-/** 沙盒夹具:dist 编译产物 + release 安装包 + 增量构建信息 + 受保护目录里的同名文件 */
+/**
+ * 沙盒夹具:dist 编译产物 + release 安装包 + 增量构建信息 + 受保护目录里的同名文件。
+ * @param {string} root 沙盒根目录
+ * @returns {void}
+ */
 function seedArtifacts(root) {
   writeFileIn(root, "dist/main/index.js", "export const main = 1;\n");
   writeFileIn(root, "dist/renderer/style/app.css", "body { margin: 0 }\n");
@@ -130,7 +158,14 @@ function seedArtifacts(root) {
   writeFileIn(root, "src/nested.tsbuildinfo", "{}\n");
 }
 
-/** 失败路径的固定断言面:退出码 1 + 命中诊断 + 输出已归一化(不回吐调用栈) */
+/**
+ * 失败路径的固定断言面:退出码 1 + 命中诊断 + 输出已归一化(不回吐调用栈)。
+ * @param {{ code: number | null; output: string }} result 子进程结果
+ * @param {RegExp} pattern 期望命中的诊断
+ * @param {string} label 用例标签
+ * @param {{ usage?: boolean }} [options] usage=true 时额外断言附带用法说明
+ * @returns {void}
+ */
 function assertFailure(result, pattern, label, { usage = false } = {}) {
   assert(result.code === 1, `${label} 应以退出码 1 结束,实际 ${result.code};输出:${result.output}`);
   assert(pattern.test(result.output), `${label} 诊断未命中 ${pattern};输出:${result.output}`);
@@ -140,7 +175,13 @@ function assertFailure(result, pattern, label, { usage = false } = {}) {
   assert(!/\n\s+at\s/.test(result.output), `${label} 诊断应已归一化,不得回吐调用栈:${result.output}`);
 }
 
-/** 在沙盒里执行清理脚本(只接受白名单沙盒) */
+/**
+ * 在沙盒里执行清理脚本(只接受白名单沙盒)。
+ * @param {string} root 沙盒根目录
+ * @param {string[]} args CLI 参数
+ * @param {string} [scriptName] 沙盒内脚本文件名
+ * @returns {{ code: number | null; output: string }} 退出码与合并后的输出
+ */
 function runClean(root, args, scriptName = "clean-artifacts.mjs") {
   assert(SANDBOXES.has(root), `只允许对本段自建的沙盒执行清理脚本,实际 ${root}`);
   const script = path.join(root, "scripts", scriptName);
@@ -150,7 +191,11 @@ function runClean(root, args, scriptName = "clean-artifacts.mjs") {
   return { code: result.status, output: `${result.stdout ?? ""}${result.stderr ?? ""}` };
 }
 
-/** 沙盒内关键夹具是否原样留存(用于「零删除」断言) */
+/**
+ * 沙盒内关键夹具是否原样留存(用于「零删除」断言)。
+ * @param {string} root 沙盒根目录
+ * @returns {string[]} 已消失的夹具相对路径(空数组 = 零删除)
+ */
 function fixtureIntact(root) {
   const kept = [
     "dist/main/index.js",
@@ -163,16 +208,27 @@ function fixtureIntact(root) {
   return kept.filter((relative) => !fs.existsSync(path.join(root, ...relative.split("/"))));
 }
 
+/**
+ * 断言沙盒零删除。
+ * @param {string} root 沙盒根目录
+ * @param {string} label 用例标签
+ * @returns {void}
+ */
 function assertFixtureIntact(root, label) {
   const missing = fixtureIntact(root);
   assert(missing.length === 0, `${label} 应零删除,但这些夹具消失了:${missing.join(",")}`);
 }
 
-/** 真实产物快照(段首/段尾比对,证明本段没碰真实 dist/release/增量缓存) */
+/**
+ * 真实产物快照(段首/段尾比对,证明本段没碰真实 dist/release/增量缓存)。
+ * @param {string} dir 目录绝对路径
+ * @returns {string} 「相对路径:字节数」串(目录不存在记为 "<absent>")
+ */
 function listTree(dir) {
   if (!fs.existsSync(dir)) return "<absent>";
+  /** @type {string[]} */
   const rows = [];
-  const walk = (current) => {
+  const walk = (/** @type {string} */ current) => {
     for (const entry of fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const abs = path.join(current, entry.name);
       if (entry.isDirectory()) walk(abs);
@@ -195,7 +251,11 @@ function snapshotRealOutputs() {
   });
 }
 
-/** 占住目标目录的子进程:Windows 下 CWD 被占用时递归删除必失败(EPERM) */
+/**
+ * 占住目标目录的子进程:Windows 下 CWD 被占用时递归删除必失败(EPERM)。
+ * @param {string} dir 要占住的目录
+ * @returns {{ ready: Promise<void>; release: () => void }} 就绪信号与释放句柄
+ */
 function holdDirectory(dir) {
   const child = spawn(NODE, ["-e", "setTimeout(() => {}, 15000)"], { cwd: dir, stdio: "ignore" });
   let released = false;
@@ -217,12 +277,14 @@ export const fixtures = null;
 
 export async function run() {
   const realBefore = snapshotRealOutputs();
+  /** @type {string[]} */
   const sandboxes = [];
   const create = () => {
     const root = createSandbox();
     sandboxes.push(root);
     return root;
   };
+  /** @type {Error | null} */
   let failure = null;
   try {
     // ---------- 0. 沙箱纪律:脚本逐字节一致 + 真实产物零改动 ----------
@@ -235,9 +297,10 @@ export async function run() {
       );
       const matched = SCRIPT_SOURCE.match(TARGET_DIRS_RE);
       assert(matched !== null, "未定位到 TARGET_DIRS 常量行(生产脚本已改动?本段需同步)");
+      const targetDirsLine = /** @type {RegExpMatchArray} */ (matched)[0];
       assert(
-        matched[0] === "const TARGET_DIRS = Object.freeze({ dist: 'dist', release: 'release' });",
-        `清理目标应只写死 dist/release 两个生成目录,实际 ${matched[0]}`,
+        targetDirsLine === "const TARGET_DIRS = Object.freeze({ dist: 'dist', release: 'release' });",
+        `清理目标应只写死 dist/release 两个生成目录,实际 ${targetDirsLine}`,
       );
       assert(/--target <dist\|release\|all>/.test(SCRIPT_SOURCE), "用法说明应声明只接受三个目标关键字");
     }
@@ -394,6 +457,7 @@ export async function run() {
       assert(anchored.output.includes("[ok] clean:dist 已删除:build-out"), `应报告被删的相对路径;实际 ${anchored.output}`);
 
       // value: 以沙盒根与项目外的兄弟目录为参数,产出写进常量行的字符串字面量
+      /** @type {{ label: string; value: (root: string, outside: string) => string; expect: RegExp; sentinels: string[] }[]} */
       const cases = [
         { label: "目标=src(受保护)", value: () => "'src'", expect: /受保护目录\(源码\/测试\/文档\/依赖\),拒绝删除/, sentinels: ["src/main/index.ts", "src/nested.tsbuildinfo"] },
         { label: "目标=docs(受保护)", value: () => "'docs'", expect: /受保护目录/, sentinels: ["docs/keep.md"] },
@@ -444,7 +508,7 @@ export async function run() {
           fs.symlinkSync(outside, path.join(root, "link-dist"), "junction");
         } catch (error) {
           junction = false;
-          console.log(`[skip] 联接点夹具创建失败(${error.code ?? "unknown"}),符号链接守卫未覆盖`);
+          console.log(`[skip] 联接点夹具创建失败(${/** @type {{ code?: string }} */ (error).code ?? "unknown"}),符号链接守卫未覆盖`);
         }
         if (junction) {
           writeRedirectedScript(root, "'link-dist'");
@@ -497,6 +561,7 @@ export async function run() {
     // ---------- 8. 生产配置契约(只读):真实 package.json 与 clean 链 ----------
     {
       const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+      /** @type {unknown[]} */
       const files = Array.isArray(pkg.build?.files) ? pkg.build.files : [];
       assert(
         files.some((pattern) => pattern === "dist/**" || (typeof pattern === "string" && pattern.startsWith("dist/"))),
@@ -510,7 +575,7 @@ export async function run() {
       console.log("[ok] clean-artifacts-gate:真实打包配置与 clean 链顺序(清理先于 build)符合契约");
     }
   } catch (error) {
-    failure = error;
+    failure = /** @type {Error} */ (error);
   } finally {
     // maxRetries/retryDelay 吸收 Windows 上短暂的 EBUSY(占用夹具的子进程刚被 kill 时);
     // 清理失败必须显式暴露,不能静默留在系统临时目录
@@ -521,7 +586,10 @@ export async function run() {
     try {
       assert(snapshotRealOutputs() === realBefore, "真实 dist/release/*.tsbuildinfo 被本段改动(清理脚本只应在沙盒内执行)");
     } catch (error) {
-      failure = failure === null ? error : new Error(`${failure.message}\n[附加]${error.message}`);
+      // 附加诊断:主失败优先,快照失败信息并入(两者皆按 Error 结构收窄后重抛原值)
+      const mainFailure = failure;
+      const snapshotFailure = /** @type {Error} */ (error);
+      failure = mainFailure === null ? snapshotFailure : new Error(`${mainFailure.message}\n[附加]${snapshotFailure.message}`);
     }
   }
   if (failure !== null) throw failure;

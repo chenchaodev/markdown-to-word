@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 设置持久化测试(src/main/persist/settings.ts 纯逻辑层;测试经 dist/main/persist/settings.js,未改动实现):
  * 实现事实(读源码确认):
@@ -41,6 +42,37 @@ import {
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 
+/**
+ * 形状校验夹具(合法完整对象):「可缺字段」声明为可选——旧文件兼容用例经 delete
+ * 去掉这些键来模拟旧档;取值声明为 unknown,因为同组用例也刻意塞非法值断言整文件拒绝。
+ */
+ /** @typedef {{
+ *   version: number,
+ *   format: string,
+ *   afterConvert: string,
+ *   breakBeforeH1: boolean,
+ *   toc?: unknown,
+ *   outputDir?: unknown,
+ *   equationNumbering?: unknown,
+ *   pdfCss?: unknown,
+ *   language?: unknown,
+ *   theme?: unknown,
+ *   pageSetup: {
+ *     paper: string,
+ *     orientation: string,
+ *     marginTop: number,
+ *     marginBottom: number,
+ *     marginLeft: number,
+ *     marginRight: number,
+ *   },
+ * }} ValidSettingsFixture */
+
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`settings 断言失败:${msg}`);
 }
@@ -52,7 +84,12 @@ export async function run() {
   const settingsFile = settingsJsonPath();
   // 备份真实 settings.json(如有),finally 恢复(settings.ts 无注入点,只能读写真实路径;公共助手)
   const { restore } = await backupSettingsFile();
-  const freshModule = () => freshSettingsModule("settings");
+  /**
+   * 取全新 settings 模块实例(动态 import 绕开模块级缓存)。
+   * @param {string} [tag] query 标签(仅排障可读性,实例唯一性由公共 helper 内部序号保证)
+   * @returns {Promise<typeof import("../../dist/main/persist/settings.js")>} 模块实例
+   */
+  const freshModule = (tag = "settings") => freshSettingsModule(tag);
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const mod = await freshModule();
@@ -95,7 +132,7 @@ export async function run() {
     assert(r2Partial.pageSetup.paper === "A5", "partial pageSetup patch 应应用已提供纸张");
     validatePageSetup(r2Partial.pageSetup);
 
-    const geometryWarnings = [];
+    const geometryWarnings = /** @type {string[]} */ ([]);
     const originalWarn = console.warn;
     console.warn = (...args) => geometryWarnings.push(args.join(" "));
     let r2Geometry;
@@ -316,11 +353,11 @@ export async function run() {
     // 依据(dist/main/persist/settings.ts isValidSettings):整文件形状校验——任一字段非法
     // → false(loadSettings 据此整体回退 DEFAULT_SETTINGS 引用);合法完整对象 → true。
     // typography/customPresets 不参与形状校验(loadSettings 单独 sanitize)。
-    const validSettings = {
+    const validSettings = /** @type {ValidSettingsFixture} */ ({
       version: 1, format: "pdf", afterConvert: "open", breakBeforeH1: true, toc: false,
       outputDir: "C:\\tmp\\out",
       pageSetup: { paper: "Letter", orientation: "landscape", marginTop: 12.5, marginBottom: 20, marginLeft: 30, marginRight: 40 },
-    };
+    });
     assert(mod.isValidSettings(validSettings) === true, "合法完整对象应通过形状校验(合法值保留)");
     // 旧文件兼容:缺 toc/outputDir 视为合法(loadSettings 兜底)
     const legacySettings = { ...validSettings };
@@ -410,7 +447,7 @@ export async function run() {
       }),
       "utf8",
     );
-    const loadGeometryWarnings = [];
+    const loadGeometryWarnings = /** @type {string[]} */ ([]);
     const originalLoadWarn = console.warn;
     console.warn = (...args) => loadGeometryWarnings.push(args.join(" "));
     let mGeometry;

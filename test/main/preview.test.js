@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 预览窗口主进程段(src/main/windows/preview.ts,经 dist,electron 环境):
  * 断言面:
@@ -16,11 +17,31 @@ import { pathToFileURL } from "node:url";
 import iconv from "iconv-lite";
 import { openPreviewWindow, previews, requestPreviewRefresh } from "../../dist/main/windows/preview.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`preview 断言失败:${msg}`);
 }
 
-/** 等待条件成立(轮询上限兜底,避免死等掩盖断言失败)。 */
+/**
+ * 登记表当前大小(经函数取值:前一次 `assert(size === N)` 会把 size 收窄成字面量,
+ * 而两次断言之间实现会增删登记项——直接再比较会误报「无交集」)。
+ * @param {{ size: number }} registry 登记表(previews)
+ * @returns {number} 当前大小
+ */
+const registrySize = (registry) => registry.size;
+
+/**
+ * 等待条件成立(轮询上限兜底,避免死等掩盖断言失败)。
+ * @param {() => boolean | Promise<boolean>} predicate 判定函数
+ * @param {string} label 等待目标(超时消息用)
+ * @param {number} [timeoutMs] 超时上限
+ * @returns {Promise<void>} 条件成立即返回
+ */
 async function waitFor(predicate, label, timeoutMs = 5000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -30,7 +51,10 @@ async function waitFor(predicate, label, timeoutMs = 5000) {
   throw new Error(`preview 断言失败:等待超时(${label})`);
 }
 
-/** 本进程全部临时 HTML(writeTempHtml 命名 m2w-{pid}-*)。 */
+/**
+ * 本进程全部临时 HTML(writeTempHtml 命名 m2w-{pid}-*)。
+ * @returns {Promise<string[]>} 文件名列表
+ */
 async function tempHtmlFiles() {
   const names = await fs.readdir(os.tmpdir());
   return names.filter((n) => n.startsWith(`m2w-${process.pid}-`) && n.endsWith(".html"));
@@ -40,12 +64,19 @@ async function tempHtmlFiles() {
  * 本段新增的临时 HTML(排除段起点就存在的文件)。
  * 逐段子进程隔离后本进程只有本段的临时文件(临时文件按 m2w-{pid}- 命名),基线集
  * 实际为空;仍按基线取差集,是为了断言只针对本段产物,不把"进程里别人的文件"算进失败面。
+ * @param {Set<string>} baseline 段起点已有的临时文件名
+ * @returns {Promise<string[]>} 本段新增的临时文件名
  */
 async function previewTempFiles(baseline) {
   return (await tempHtmlFiles()).filter((n) => !baseline.has(n));
 }
 
-/** 等待本段新增的临时 HTML 全部回收(窗口关闭路径的删除是 fire-and-forget,需轮询落定)。 */
+/**
+ * 等待本段新增的临时 HTML 全部回收(窗口关闭路径的删除是 fire-and-forget,需轮询落定)。
+ * @param {Set<string>} baseline 段起点已有的临时文件名
+ * @param {string} label 场景标签(消息用)
+ * @returns {Promise<void>} 全部回收即返回
+ */
 async function waitNoTempHtml(baseline, label) {
   const deadline = Date.now() + 3000;
   let left = await previewTempFiles(baseline);
@@ -63,7 +94,7 @@ export async function run() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "m2w-preview-"));
   const baseline = new Set(await tempHtmlFiles());
   const originalWarn = console.warn;
-  const warnings = [];
+  const warnings = /** @type {string[]} */ ([]);
   try {
     // ---- 1. 打开:GBK 编码 warning 必须进入主进程 warning sink ----
     const mdPath = path.join(dir, "gbk-preview.md");
@@ -92,14 +123,16 @@ export async function run() {
       afterRefresh.length === 1,
       `两次刷新后应只剩当前页一个临时 HTML(旧代须回收),实际 ${afterRefresh.join(",")}`,
     );
+    const [currentHtml] = afterRefresh;
+    assert(currentHtml !== undefined, "两次刷新后应恰好剩一个当前页临时 HTML");
     const shownUrl = entry.win.webContents.getURL();
     assert(
-      shownUrl === pathToFileURL(path.join(os.tmpdir(), afterRefresh[0])).href,
+      shownUrl === pathToFileURL(path.join(os.tmpdir(), currentHtml)).href,
       `展示页应为最新一代临时文件,实际 ${shownUrl}`,
     );
     // 旧页不得后到覆盖新页:代号只前进不回退,当前页句柄与展示文件一致
     assert(
-      (await fs.readFile(path.join(os.tmpdir(), afterRefresh[0]), "utf8")).includes("你好世界"),
+      (await fs.readFile(path.join(os.tmpdir(), currentHtml), "utf8")).includes("你好世界"),
       "当前页内容应来自最新一次渲染",
     );
     console.log("[ok] preview:并发刷新仅最新一代落地(旧代回收 + 展示页为最新)");
@@ -129,7 +162,7 @@ export async function run() {
     await pending; // 关闭后本次刷新必须安全结算(不抛、不复活)
     assert(closingEntry.closed, "窗口关闭后 entry 应标记 closed");
     assert(closingEntry.cleanup === null, "窗口关闭应释放并清空当前页清理句柄");
-    assert(previews.size === 0, `窗口关闭后应从 previews 注销,实际 ${previews.size}`);
+    assert(registrySize(previews) === 0, `窗口关闭后应从 previews 注销,实际 ${previews.size}`);
     await waitNoTempHtml(baseline, "窗口关闭后");
     // 关闭后再请求刷新:立即安全返回,不新建窗口/临时文件
     await requestPreviewRefresh(closingEntry);
@@ -144,8 +177,12 @@ export async function run() {
     const entry2 = [...previews].find((e) => e.mdPath === md2);
     assert(entry2, "第二个预览窗口应已登记");
     const origLoadFile = Object.getPrototypeOf(entry2.win).loadFile;
+    /** @type {(() => void) | undefined} */
     let releaseLoad;
-    Object.getPrototypeOf(entry2.win).loadFile = function patched(file, options) {
+    Object.getPrototypeOf(entry2.win).loadFile = function patched(
+      /** @type {string} */ file,
+      /** @type {unknown} */ options,
+    ) {
       if (String(file).includes(`m2w-${process.pid}-`)) {
         return new Promise((resolve, reject) => {
           releaseLoad = () => {
@@ -159,10 +196,11 @@ export async function run() {
     try {
       const hanging = requestPreviewRefresh(entry2);
       await waitFor(() => Promise.resolve(releaseLoad !== undefined), "loadFile 进入挂起态");
+      assert(releaseLoad !== undefined, "loadFile 应已进入挂起态并交出释放句柄");
       entry2.win.destroy(); // loadFile 未 settle 即关闭
       releaseLoad(); // 释放挂起:随后必须走「窗口已关」分支而非复活
       await hanging;
-      assert(entry2.closed && previews.size === 0, "关闭后应注销且不复活窗口");
+      assert(entry2.closed && registrySize(previews) === 0, "关闭后应注销且不复活窗口");
       await waitNoTempHtml(baseline, "挂起刷新收尾后");
     } finally {
       Object.getPrototypeOf(entry2.win).loadFile = origLoadFile;
@@ -177,7 +215,10 @@ export async function run() {
     const proto = Object.getPrototypeOf(entry2.win);
     const origLoad = proto.loadFile;
     let calls = 0;
-    proto.loadFile = function patched(file, options) {
+    proto.loadFile = function patched(
+      /** @type {string} */ file,
+      /** @type {unknown} */ options,
+    ) {
       calls += 1;
       if (calls !== 1) return origLoad.call(this, file, options);
       // 首次(打开时)加载延迟 400ms:让并发刷新有机会先完成,复现「初载后到」竞态
@@ -198,8 +239,10 @@ export async function run() {
       await refreshing;
       const left = await previewTempFiles(baseline);
       assert(left.length === 1, `竞态刷新后应只剩刷新页一个临时 HTML,实际 ${left.join(",")}`);
+      const [raceHtml] = left;
+      assert(raceHtml !== undefined, "竞态刷新后应恰好剩一个刷新页临时 HTML");
       assert(
-        entry3.win.webContents.getURL() === pathToFileURL(path.join(os.tmpdir(), left[0])).href,
+        entry3.win.webContents.getURL() === pathToFileURL(path.join(os.tmpdir(), raceHtml)).href,
         `展示页应为刷新后的页面(初载不得后到覆盖),实际 ${entry3.win.webContents.getURL()}`,
       );
       entry3.win.destroy();

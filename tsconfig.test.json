@@ -1,7 +1,15 @@
 {
-  // 测试树类型检查配置(技术债 E5):allowJs 纳入 test/*.js|mjs|cjs,checkJs 保持 false——
-  // 按文件头 `// @ts-check` 注释渐进启用(无注释的文件只解析不检查,不产生报错压力)。
-  // 渐进语义:新测试文件默认不标注;标注后即受 typecheck 门禁(本配置由 npm run typecheck 串联)。
+  // 测试树类型检查配置(技术债 E5):allowJs 纳入 test/*.js|mjs|cjs。
+  //
+  // checkJs 必须保持 false(勿翻):测试段刻意 import `../../dist/**/*.js` 跑**编译产物**
+  // (而非 src 源码),dist 是 tsc 产物、无类型标注;checkJs:true 会把全部 dist 拉进检查
+  // 范围并产生上千条无意义报错(2026-09-26 实测 1050 条,其中 test/ 自身仅 2 条)。
+  // 因此采用「逐文件 `// @ts-check`」语义:标注文件受 typecheck 门禁,被 import 的
+  // dist 只解析供类型推导、不检查。
+  //
+  // 当前状态(2026-09-26):test/ 下 108 个 js/mjs/cjs 全部标注完毕,tsc -p 本配置零报错。
+  // 新增测试文件必须带 `// @ts-check`(shebang 文件放在 shebang 之后);
+  // test/pending/ 为阶段 3 历史副本,不参与发现,故意不标注。
   // 不继承 emit 相关:rootDir 放宽到根(test 文件跨目录),noEmit 不产出产物。
   "extends": "./tsconfig.json",
   "compilerOptions": {

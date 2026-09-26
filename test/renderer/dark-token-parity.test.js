@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 深色令牌双块对等(dark token parity)。
  *
@@ -26,6 +27,11 @@ const cssPath = path.resolve(here, "..", "..", "src", "renderer", "style", "base
  * 提取「选择器 { … }」规则体并归一化为行数组。
  * marker 后做括号配对扫描(CSS token 值内无花括号,配对安全);
  * 剥掉所有 /* *\/ 注释、空行与首尾空白,得到可直接比较的 token 行序列。
+ */
+/**
+ * @param {string} src
+ * @param {string} marker
+ * @returns {string[]}
  */
 function extractRule(src, marker) {
   const at = src.indexOf(marker);

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 图片请求契约与缓存预算验收(位于 test/main/ = 主进程层;被测
  * src/main/services/image-downloader.ts,经 dist 直连,不起 Electron 窗口):
@@ -24,19 +25,44 @@ import { FIXTURES_DIR } from "../common/paths.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`image-request-budget 断言失败:${msg}`);
 }
 
-/** 测试用 resolver:本地 server 场景显式放行私网(默认拦截 127.0.0.1) */
+/** 本地测试 server 句柄 */
+/**
+ * @typedef {object} TestServer
+ * @property {http.Server} server 服务实例
+ * @property {number} port 实际监听端口
+ * @property {() => number} getCount 已处理请求数
+ */
+
+/**
+ * 测试用 resolver:本地 server 场景显式放行私网(默认拦截 127.0.0.1)
+ * @param {number} [timeoutMs] 单请求超时(毫秒)
+ * @param {Record<string, unknown>} [options] 追加 resolver 选项
+ * @returns {ReturnType<typeof createImageResolver>} 图片 resolver
+ */
 function localResolver(timeoutMs, options = {}) {
   return createImageResolver("", timeoutMs, { allowPrivateAddresses: true, ...options });
 }
 
-/** 启动本地 http server:固定 status + body 响应,getCount() 返回请求次数 */
+/**
+ * 启动本地 http server:固定 status + body 响应,getCount() 返回请求次数
+ * @param {number} status 响应状态码
+ * @param {string | Buffer} body 响应体
+ * @param {number} [delayMs] 响应前延迟(毫秒)
+ * @returns {Promise<TestServer>} 服务句柄
+ */
 function startServer(status, body, delayMs = 0) {
   let count = 0;
-  const server = http.createServer((req, res) => {
+  const server = http.createServer((_req, res) => {
     count += 1;
     setTimeout(() => {
       try {
@@ -48,13 +74,22 @@ function startServer(status, body, delayMs = 0) {
       }
     }, delayMs);
   });
-  return new Promise((resolve) => {
+  /** @type {Promise<TestServer>} */
+  const listening = new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
-      resolve({ server, port: server.address().port, getCount: () => count });
+      const address = server.address();
+      assert(typeof address === "object" && address !== null, "本地 server 应已绑定 TCP 端口");
+      resolve({ server, port: address.port, getCount: () => count });
     });
   });
+  return listening;
 }
 
+/**
+ * 关闭 server:closeAllConnections 强制断开 keep-alive 空闲连接,避免 close 回调挂起
+ * @param {http.Server} server 服务实例
+ * @returns {Promise<void>} close 回调落地即返回
+ */
 function closeServer(server) {
   return new Promise((resolve) => {
     server.close(() => resolve());
@@ -62,7 +97,11 @@ function closeServer(server) {
   });
 }
 
-/** 构造一个满足请求契约的 request(渲染层由 core/cancel.ts 注入,测试手工等价构造) */
+/**
+ * 构造一个满足请求契约的 request(渲染层由 core/cancel.ts 注入,测试手工等价构造)
+ * @param {{ maxBytes?: number, timeoutMs?: number, signal?: AbortSignal }} [options] 覆盖项
+ * @returns {{ signal: AbortSignal, maxBytes: number, timeoutMs: number }} 渲染层同形 request
+ */
 function requestOf({ maxBytes = MAX_RESPONSE_BYTES, timeoutMs = 5000, signal } = {}) {
   return { signal: signal ?? new AbortController().signal, maxBytes, timeoutMs };
 }
@@ -87,6 +126,7 @@ export async function run() {
     console.log("[ok] image-request-budget:本地图片 maxBytes 生效(stat 预检 + 读后复核)");
   }
 
+  /** @type {TestServer | null} */
   let srv = null;
   try {
     srv = await startServer(200, fixtureBytes);
@@ -133,7 +173,9 @@ export async function run() {
     // 再次请求它会重新发出网络请求(计数 +1);仍在预算内的 URL 不重新请求。
     {
       const resolver = localResolver();
-      const urls = Array.from({ length: 70 }, (_, i) => `http://127.0.0.1:${srv.port}/cache-${i}.png`);
+      // 端口取常量供下方闭包使用(let 的非空收窄在闭包内不成立)
+      const srvPort = srv.port;
+      const urls = Array.from({ length: 70 }, (_, i) => `http://127.0.0.1:${srvPort}/cache-${i}.png`);
       for (const u of urls) {
         const buf = await resolver(u, requestOf());
         assert(buf !== null, `缓存预算准备阶段下载失败:${u}`);

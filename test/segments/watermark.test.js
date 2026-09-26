@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 文字水印验收:
  * docx 断言(watermark text 进入 header XML / 浅灰配色 #999999 / 空 text 不生成水印头);
@@ -9,18 +10,36 @@ import { convert } from "../../dist/core/convert.js";
 import { DEFAULT_WATERMARK, DEFAULT_HEADER_FOOTER } from "../../dist/core/settings/settings-defaults.js";
 import { WATERMARK_GRAY, WATERMARK_INK } from "../../dist/core/style/colors.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`watermark 断言失败:${msg}`);
 }
 
+/**
+ * 取 docx 内的 header 部件名与其 XML 文本。
+ * @param {Buffer} buffer docx 字节
+ * @returns {Promise<{ names: string[], texts: string[] }>} header 部件名与内容
+ */
 async function headerXmls(buffer) {
   const zip = await JSZip.loadAsync(buffer);
   const names = Object.keys(zip.files).filter(
     (n) => n.startsWith("word/header") && n.endsWith(".xml"),
   );
+  /** @type {string[]} */
   const texts = [];
-  for (const name of names) texts.push(await zip.file(name).async("string"));
+  for (const name of names) {
+    // zip.file(name) 对已枚举出的 header 部件恒存在;缺失即 zip 结构异常,显式抛错
+    const entry = zip.file(name);
+    if (!entry) throw new Error(`header 部件缺失: ${name}`);
+    texts.push(await entry.async("string"));
+  }
   return { names, texts };
 }
 
@@ -39,7 +58,7 @@ export async function run() {
     headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
     watermark: wmGray,
   });
-  const grayHeaders = await headerXmls(grayDocx.buffer);
+  const grayHeaders = await headerXmls(docxBufferOf(grayDocx));
   const grayXml = grayHeaders.texts.join("\n");
   assert(grayHeaders.names.length > 0, "水印应生成 header part");
   assert(grayXml.includes("机密文档"), "水印文字应写入 header XML");
@@ -56,7 +75,7 @@ export async function run() {
     headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
     watermark: wmColor,
   });
-  const colorXml = (await headerXmls(colorDocx.buffer)).texts.join("\n");
+  const colorXml = (await headerXmls(docxBufferOf(colorDocx))).texts.join("\n");
   assert(colorXml.includes(WATERMARK_INK), `gray=false 应使用共享常量正文字色 ${WATERMARK_INK}`);
 
   // ---- 3. docx:空 text 不生成水印头(none 模式 + 空 text = 无任何 header) ----
@@ -66,17 +85,19 @@ export async function run() {
     headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
     watermark: { ...DEFAULT_WATERMARK, text: "" },
   });
-  assert((await headerXmls(emptyDocx.buffer)).names.length === 0, "空 text 不应生成任何 header part");
+  assert((await headerXmls(docxBufferOf(emptyDocx))).names.length === 0, "空 text 不应生成任何 header part");
 
   // ---- 4. docx:默认配置 text 为空(零渲染) ----
   assert(DEFAULT_WATERMARK.text === "", "默认 wateromark.text 应为空(关闭)");
 
   // ---- 5. pdf:html 含 .wm 覆盖层 + 旋转/不透明度 CSS ----
-  const pdfDoc = await convert(md, "pdf", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    watermark: wmGray,
-  });
+  const pdfDoc = asPdfArtifact(
+    await convert(md, "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      watermark: wmGray,
+    }),
+  );
   assert(pdfDoc.kind === "pdf", "pdf 分支产物类型");
   assert(pdfDoc.html.includes('class="wm"'), "PDF html 应含水印覆盖层元素");
   assert(pdfDoc.html.includes(">机密文档</div>"), "PDF 水印元素应含文字");
@@ -85,11 +106,13 @@ export async function run() {
   assert(pdfDoc.html.includes("opacity: 0.15"), "PDF 水印 CSS 应含不透明度");
 
   // ---- 6. pdf:空 text 无水印元素 ----
-  const pdfEmpty = await convert(md, "pdf", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    watermark: { ...DEFAULT_WATERMARK, text: "" },
-  });
+  const pdfEmpty = asPdfArtifact(
+    await convert(md, "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      watermark: { ...DEFAULT_WATERMARK, text: "" },
+    }),
+  );
   assert(!pdfEmpty.html.includes('class="wm"'), "空 text 的 PDF 不应含水印元素");
 
   console.log("[ok] watermark:docx 文字/配色/空 text 零渲染 + pdf 覆盖层/旋转/不透明度 断言通过");

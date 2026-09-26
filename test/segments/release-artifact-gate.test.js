@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * ASAR 与发布产物门禁(位于 test/segments/ = 跨域守护段;被测为 scripts/ 下的
  * 发布检查脚本,纯 Node 逻辑不经 dist 编译产物):
@@ -26,10 +27,64 @@ import { main as releaseMain } from "../../scripts/check-release-artifacts.mjs";
 const FIXTURE_VERSION = "9.9.9";
 const FIXTURE_PRODUCT = "FixtureApp";
 
+/**
+ * ASAR 夹具的可注入漂移项。
+ * @typedef {object} AsarFixtureOptions
+ * @property {string} [archiveVersion] 包内 package.json 版本
+ * @property {string[]} [skip] 跳过的必备条目 / 前缀文件名
+ * @property {Record<string, string>} [extraFiles] 额外写入的文件(相对 asar 源根)
+ * @property {string} [packageMain] 包内 main 指向
+ */
+
+/**
+ * 发布目录夹具事实(负向夹具 mutate 可见的部分)。
+ * @typedef {object} ReleaseFixtureFacts
+ * @property {string} releaseDir 发布目录
+ * @property {string} installerPath 安装包路径
+ * @property {string} installerName 安装包文件名
+ * @property {string} latestYml latest.yml 文本
+ * @property {string} version 夹具版本
+ */
+
+/**
+ * 发布目录夹具返回值(路径 + 测试侧独立摘要)。
+ * @typedef {object} ReleaseFixtureHandle
+ * @property {string} releaseDir 发布目录
+ * @property {string} installerPath 安装包路径
+ * @property {string} installerName 安装包文件名
+ * @property {string} pkgPath 夹具 package.json 路径
+ * @property {string} installerSha256 安装包 SHA-256
+ */
+
+/**
+ * ASAR 夹具返回值。
+ * @typedef {{asarPath: string, manifestPath: string, pkgPath: string, asarSrc: string}} AsarFixture
+ */
+
+/**
+ * 发布检查报告的落盘结构(scripts/check-release-artifacts.mjs 的 report 契约;
+ * JSON.parse 无类型,此处按契约声明以便断言可类型检查)。
+ * @typedef {object} ReleaseReport
+ * @property {string} version
+ * @property {{name: string, size: number, sha256: string}[]} artifacts
+ * @property {{version: string, path: string, size: number, sha512: string}} latestYml
+ */
+
+/**
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败说明
+ * @returns {asserts cond} 条件不成立即抛错(供后续行收窄)
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`release-artifact-gate 断言失败:${msg}`);
 }
 
+/**
+ * 在临时目录里执行 fn,结束后清理(Windows 上 EBUSY 风险由 force 兜底)。
+ * @template T
+ * @param {(dir: string) => Promise<T> | T} fn 夹具构建 + 断言
+ * @returns {Promise<T>} fn 的返回值
+ */
 async function withTempDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-release-gate-"));
   try {
@@ -39,8 +94,14 @@ async function withTempDir(fn) {
   }
 }
 
-/** 跑脚本 main():吞掉 console 输出,返回 { code, output } 供失败原因断言 */
+/**
+ * 跑脚本 main():吞掉 console 输出,返回 { code, output } 供失败原因断言。
+ * @template T
+ * @param {() => Promise<T> | T} fn 被测 main()
+ * @returns {Promise<{code: T, output: string}>} 退出码与合并后的输出
+ */
 async function runChecker(fn) {
+  /** @type {string[]} */
   const lines = [];
   const originalLog = console.log;
   const originalError = console.error;
@@ -55,6 +116,13 @@ async function runChecker(fn) {
   }
 }
 
+/**
+ * 在目录内写一个文件(自动建父目录)。
+ * @param {string} dir 目标目录
+ * @param {string} relative 相对路径(正斜杠)
+ * @param {string} content 文件内容
+ * @returns {string} 写入后的绝对路径
+ */
 function writeFileIn(dir, relative, content) {
   const target = path.join(dir, ...relative.split("/"));
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -62,8 +130,18 @@ function writeFileIn(dir, relative, content) {
   return target;
 }
 
-/** 与被测实现无关的 dist 清单计算(相对路径 + size + SHA-256,字典序) */
+/**
+ * 与被测实现无关的 dist 清单计算(相对路径 + size + SHA-256,字典序)。
+ * @param {string} distDir dist 根目录
+ * @returns {{path: string, size: number, sha256: string}[]} 清单条目
+ */
 function independentManifest(distDir) {
+  /**
+   * @param {string} base 相对路径基准目录
+   * @param {string} [dir] 当前遍历目录
+   * @param {string[]} [out] 累积的相对路径
+   * @returns {string[]} 相对路径列表
+   */
   const walk = (base, dir = base, out = []) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
@@ -81,7 +159,11 @@ function independentManifest(distDir) {
     });
 }
 
-/** 夹具 package.json:版本 + 目标名模板(发布检查据此推导期望文件名) */
+/**
+ * 夹具 package.json:版本 + 目标名模板(发布检查据此推导期望文件名)。
+ * @param {string} [version] 夹具版本
+ * @returns {{name: string, version: string, main: string, build: {productName: string, directories: {output: string}, nsis: {artifactName: string}}}} 夹具 package.json
+ */
 function fixturePackageJson(version = FIXTURE_VERSION) {
   return {
     name: "fixture-app",
@@ -95,6 +177,12 @@ function fixturePackageJson(version = FIXTURE_VERSION) {
   };
 }
 
+/**
+ * 写 JSON 文件(自动建父目录)。
+ * @param {string} filePath 目标路径
+ * @param {unknown} value 可序列化值
+ * @returns {void}
+ */
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -102,8 +190,16 @@ function writeJson(filePath, value) {
 
 /* ---------- ASAR 夹具 ---------- */
 
-/** 现打一个 app.asar:内含全部必备条目 + dist 清单,返回 { asarPath, manifestPath, pkgPath } */
-async function makeAsarFixture(tmp, { archiveVersion = FIXTURE_VERSION, skip = [], extraFiles = {}, packageMain = "dist/main/index.js" } = {}) {
+/**
+ * 现打一个 app.asar:内含全部必备条目 + dist 清单。
+ * @param {string} tmp 临时目录
+ * @param {AsarFixtureOptions} [options] 漂移注入
+ * @returns {Promise<AsarFixture>} 夹具路径集
+ */
+async function makeAsarFixture(
+  tmp,
+  { archiveVersion = FIXTURE_VERSION, skip = [], extraFiles = {}, packageMain = "dist/main/index.js" } = {},
+) {
   const asarSrc = path.join(tmp, "asar-src");
   writeJson(path.join(asarSrc, "package.json"), { name: "fixture-app", version: archiveVersion, main: packageMain });
   for (const { path: entryPath } of REQUIRED_ENTRIES) {
@@ -147,7 +243,12 @@ async function makeAsarFixture(tmp, { archiveVersion = FIXTURE_VERSION, skip = [
 
 /* ---------- release 夹具 ---------- */
 
-/** 造一份「当前版本齐全」的发布目录,mutate 用于注入漂移 */
+/**
+ * 造一份「当前版本齐全」的发布目录,mutate 用于注入漂移。
+ * @param {string} tmp 临时目录
+ * @param {{version?: string, mutate?: (fixture: ReleaseFixtureFacts) => void}} [options] 版本与漂移注入
+ * @returns {ReleaseFixtureHandle} 夹具路径与摘要
+ */
 function makeReleaseFixture(tmp, { version = FIXTURE_VERSION, mutate } = {}) {
   const releaseDir = path.join(tmp, "release");
   fs.mkdirSync(releaseDir, { recursive: true });
@@ -208,6 +309,7 @@ export async function run() {
   console.log("[ok] release-artifact-gate:ASAR 齐备夹具通过(结构 + 入口 + 资源 + 清单哈希核对)");
 
   // ---------- 2. ASAR 负向:缺/坏/旧/污染 一律非零退出 ----------
+  /** @type {{name: string, build: (tmp: string) => Promise<AsarFixture>, expect: RegExp}[]} */
   const asarCases = [
     {
       name: "asar 文件缺失",
@@ -322,7 +424,7 @@ export async function run() {
       releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", reportPath]),
     );
     assert(result.code === 0, `齐备的发布目录应通过,实际 ${result.code}\n${result.output}`);
-    const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+    const report = /** @type {ReleaseReport} */ (JSON.parse(fs.readFileSync(reportPath, "utf8")));
     assert(report.version === FIXTURE_VERSION, `报告版本应为 ${FIXTURE_VERSION},实际 ${report.version}`);
     const installerEntry = report.artifacts.find((entry) => entry.name === fixture.installerName);
     assert(installerEntry !== undefined, "报告应含安装包条目");
@@ -355,6 +457,7 @@ export async function run() {
   console.log("[ok] release-artifact-gate:发布产物通过,latest.yml 四项对齐,SHA-256 报告正确且可复现");
 
   // ---------- 5. release 负向:缺/坏/空/历史产物 一律非零退出 ----------
+  /** @type {{name: string, mutate: (fixture: ReleaseFixtureFacts) => void, expect: RegExp}[]} */
   const releaseCases = [
     {
       name: "缺当前版本安装包",
@@ -396,7 +499,7 @@ export async function run() {
       mutate: ({ releaseDir, latestYml }) =>
         fs.writeFileSync(
           path.join(releaseDir, "latest.yml"),
-          latestYml.replace(/( {4}size: )\d+/, (_match, prefix) => `${prefix}123`),
+          latestYml.replace(/( {4}size: )\d+/, (/** @type {string} */ _match, /** @type {string} */ prefix) => `${prefix}123`),
           "utf8",
         ),
       expect: /files\[0\]\.size\(123\)与实际安装包大小/,

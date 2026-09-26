@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 阶段 4 UX 缺口回归段(可观察行为 + 源契约双层断言):
  *
@@ -26,15 +27,28 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { installDomStub, fireListener, makeElement, makeKeyEvent } from "./dom-stub.js";
 
+/**
+ * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
+ * (cond 为假即抛,后续代码无须再判空)。
+ * @param {unknown} cond
+ * @param {string} msg
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`ui-interaction-guards 断言失败:${msg}`);
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
+/** @param {string} rel @returns {string} */
 const distUrl = (rel) => pathToFileURL(path.join(repoRoot, "dist", rel)).href;
 
-/** 取 index.html 中指定 id 的元素标签文本(源契约断言用)。 */
+/**
+ * 取 index.html 中指定 id 的元素标签文本(源契约断言用)。
+ * @param {string} html
+ * @param {string} id
+ * @returns {string}
+ */
 function tagOf(html, id) {
   const re = new RegExp(`<[^>]*id="${id}"[^>]*>`, "s");
   const m = re.exec(html);
@@ -44,6 +58,25 @@ function tagOf(html, id) {
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
 export const fixtures = null;
+
+/**
+ * 图标路径探针:showSummary 经 querySelector 取图标节点,只写 d 属性。
+ * @typedef {object} StubIconPath
+ * @property {Record<string, string>} attrs
+ * @property {(k: string, v: string) => void} setAttribute
+ */
+
+/**
+ * 取正则捕获组(缺失即断言失败,避免断言在 undefined 上静默失真)。
+ * @param {RegExpExecArray} match
+ * @param {number} index
+ * @returns {string}
+ */
+function capture(match, index) {
+  const value = match[index];
+  assert(value !== undefined, `正则第 ${index} 个捕获组缺失`);
+  return value;
+}
 
 export async function run() {
   // ---------- 源契约:动态节点不得挂 data-i18n ----------
@@ -76,8 +109,8 @@ export async function run() {
     const m = re.exec(indexHtml);
     assert(m, `index.html 应保留静态回退节点 ${key}`);
     assert(
-      m[1].trim() === i18n.DICT.zh[key],
-      `${key} 静态回退与 zh 字典不一致:回退=${m[1].trim()} 字典=${i18n.DICT.zh[key]}`,
+      capture(m, 1).trim() === i18n.DICT.zh[key],
+      `${key} 静态回退与 zh 字典不一致:回退=${capture(m, 1).trim()} 字典=${i18n.DICT.zh[key]}`,
     );
   }
 
@@ -105,7 +138,7 @@ export async function run() {
 
     const row = makeElement({ dataset: { index: "0" } });
     // 行目标对事件边界选择器「命中自身」(closest 返回自己),模拟真实 DOM
-    row.closest = (selector) => (selector.includes(".multi-item") ? row : null);
+    row.closest = (/** @type {string} */ selector) => (selector.includes(".multi-item") ? row : null);
 
     const multiList = dom.elementFor("multiList");
     const enterEvent = makeKeyEvent("Enter", row);
@@ -154,19 +187,26 @@ export async function run() {
 
     // (4) 取消态:中性、不挂 ok/fail
     const resultSummary = dom.elementFor("resultSummary");
-    const iconPath = { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+    // 图标路径探针:showSummary 只对 querySelector 结果写 d 属性,断言读回同一处
+    /** @type {StubIconPath} */
+    const iconPath = {
+      attrs: {},
+      setAttribute(k, v) { this.attrs[k] = v; },
+    };
     dom.elementFor("summaryIcon").querySelector = () => iconPath;
+    /** 取探针当前 d 属性(每次 showSummary 覆写,断言读回同一处)。 */
+    const iconD = () => iconPath.attrs.d;
 
     dialogs.showSummary({ kind: "canceled", title: "已取消" });
     assert(resultSummary.classList.contains("result-summary--canceled"), "取消态应挂 canceled 修饰类");
     assert(!resultSummary.classList.contains("result-summary--ok"), "取消态不得显示成功绿态");
     assert(!resultSummary.classList.contains("result-summary--fail"), "取消态不得显示失败红态");
-    assert(iconPath.attrs.d === "M6 12h12", `取消态图标应为中性横杠,实际 ${iconPath.attrs.d}`);
+    assert(iconD() === "M6 12h12", `取消态图标应为中性横杠,实际 ${iconD()}`);
 
     dialogs.showSummary({ kind: "ok", title: "完成" });
     assert(resultSummary.classList.contains("result-summary--ok"), "成功态应挂 ok 修饰类");
     assert(!resultSummary.classList.contains("result-summary--canceled"), "成功态不得残留 canceled 修饰类");
-    assert(iconPath.attrs.d === "M20 6L9 17l-5-5", "成功态图标应为对勾");
+    assert(iconD() === "M20 6L9 17l-5-5", "成功态图标应为对勾");
 
     dialogs.showSummary({ kind: "fail", title: "失败", error: "x" });
     assert(resultSummary.classList.contains("result-summary--fail"), "失败态应挂 fail 修饰类");
@@ -174,6 +214,10 @@ export async function run() {
 
     // (4) 批量弹窗标题按结果取语义
     const titleEl = dom.elementFor("batchDialogTitle");
+    /**
+     * @param {{ okCount?: number, failCount?: number, canceledCount?: number }} over
+     * @returns {{ items: unknown[], okCount: number, failCount: number, canceledCount: number }}
+     */
     const batchResult = (over) => ({
       items: [],
       okCount: 0,

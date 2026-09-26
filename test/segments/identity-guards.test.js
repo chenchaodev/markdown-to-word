@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 恒等断言守护段(已知双源全部纳入运行期守护;跨 src/core 与 src/renderer
  * 只读 import,经 dist 断言):
@@ -25,26 +26,47 @@ import { normalizeInlineHtml, parseInlineHtml } from "../../dist/core/docx/handl
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 import { ROOT } from "../common/paths.js";
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`identity-guards 断言失败:${msg}`);
 }
 
-/** i18n 模板插值(镜像 t() 的 ${name} 占位语义,仅测试用) */
+/**
+ * i18n 模板插值(镜像 t() 的 ${name} 占位语义,仅测试用)。
+ * @param {string} template 含 ${name} 占位的模板
+ * @param {Record<string, unknown>} [params] 插值参数
+ * @returns {string} 插值后的文案
+ */
 function interpolate(template, params = {}) {
   return template.replace(/\$\{(\w+)\}/g, (_, k) => String(params[k] ?? `\${${k}}`));
 }
 
-/** 键序无关的稳定序列化(对象比较用) */
+/**
+ * 键序无关的稳定序列化(对象比较用)。
+ * @param {unknown} value 待序列化值
+ * @returns {string | undefined} 稳定串(undefined 入参时 JSON.stringify 亦返回 undefined)
+ */
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
   if (value !== null && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stable(value[k])}`).join(",")}}`;
+    const obj = /** @type {Record<string, unknown>} */ (value);
+    return `{${Object.keys(obj).sort().map((k) => `${JSON.stringify(k)}:${stable(obj[k])}`).join(",")}}`;
   }
   return JSON.stringify(value);
 }
 
-/** 把白名单表达式按 micromark 方式拆为 html/text 节点流(docx 扫描器输入形态) */
+/**
+ * 把白名单表达式按 micromark 方式拆为 html/text 节点流(docx 扫描器输入形态)。
+ * @param {string} expr 行内 html 表达式
+ * @returns {{ type: string; value: string }[]} 节点流
+ */
 function splitHtmlNodes(expr) {
+  /** @type {{ type: string; value: string }[]} */
   const nodes = [];
   let last = 0;
   const tagRe = /<[^<>]*>/g; // 循环外持有 lastIndex 才能推进(字面量置于循环内会死循环)
@@ -57,9 +79,15 @@ function splitHtmlNodes(expr) {
   return nodes;
 }
 
-/** docx 侧扫描器对整串表达式的接受判定:normalize 后应合并出等于原串的 html 节点 */
+/**
+ * docx 侧扫描器对整串表达式的接受判定:normalize 后应合并出等于原串的 html 节点。
+ * @param {string} expr 行内 html 表达式
+ * @returns {boolean} 是否被接受
+ */
 function docxScannerAccepts(expr) {
-  return normalizeInlineHtml(splitHtmlNodes(expr)).some((n) => n.type === "html" && n.value === expr);
+  return normalizeInlineHtml(splitHtmlNodes(expr)).some(
+    (/** @type {{ type: string; value: string }} */ n) => n.type === "html" && n.value === expr,
+  );
 }
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
@@ -67,18 +95,24 @@ export const fixtures = null;
 
 export async function run() {
   // ================= (a) zh 文案恒等:STAGE_TEXT / formatRecentTime ↔ i18n 字典 zh =================
+  // 字典键在本段按 convert.stage.* / recent.time.* 动态拼接,故取 Record 视图
+  const DICT_ZH = /** @type {Record<string, string>} */ (DICT.zh);
   for (const [stage, text] of Object.entries(STAGE_TEXT)) {
     const key = `convert.stage.${stage}`;
     assert(
-      DICT.zh[key] === text,
-      `STAGE_TEXT.${stage}("${text}") 应与字典 ${key}("${DICT.zh[key]}")逐字相等`,
+      DICT_ZH[key] === text,
+      `STAGE_TEXT.${stage}("${text}") 应与字典 ${key}("${DICT_ZH[key]}")逐字相等`,
     );
   }
   // stageText:默认输出 = 字典 zh 值;translate 注入时键名契约 convert.stage.*
-  const fakeT = (key, params) => interpolate(DICT.zh[key] ?? `<<missing:${key}>>`, params);
+  const fakeT = (/** @type {string} */ key, /** @type {Record<string, unknown>} */ params) =>
+    interpolate(DICT_ZH[key] ?? `<<missing:${key}>>`, params);
   for (const stage of Object.keys(STAGE_TEXT)) {
-    assert(stageText(stage) === DICT.zh[`convert.stage.${stage}`], `stageText(${stage}) 默认输出应等于字典 zh 值`);
-    assert(stageText(stage, fakeT) === DICT.zh[`convert.stage.${stage}`], `stageText(${stage}) 注入翻译后应等于字典值`);
+    assert(stageText(stage) === DICT_ZH[`convert.stage.${stage}`], `stageText(${stage}) 默认输出应等于字典 zh 值`);
+    assert(
+      stageText(stage, fakeT) === DICT_ZH[`convert.stage.${stage}`],
+      `stageText(${stage}) 注入翻译后应等于字典值`,
+    );
   }
   assert(stageText("no-such-stage") === "no-such-stage", "未知阶段键应原样兜底");
 
@@ -94,7 +128,8 @@ export async function run() {
     const def = formatRecentTime(ts, now);
     const d = new Date(ts);
     const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    const expected = interpolate(DICT.zh[key], {
+    // 字典键缺失时原实现会在此抛错(模板非字符串),此处只做非空收窄,行为不变
+    const expected = interpolate(/** @type {string} */ (DICT_ZH[key]), {
       time,
       year: d.getFullYear(),
       month: d.getMonth() + 1,
@@ -110,9 +145,11 @@ export async function run() {
   const recentFilesSrc = await fs.readFile(path.join(ROOT, "src/renderer/ui/recent-files.ts"), "utf8");
   const m = /const MAX_RECENT_FILES = (\d+);/.exec(recentFilesSrc);
   assert(m !== null, "recent-files.ts 应存在 MAX_RECENT_FILES 常量声明(声明形态变更须同步本守护段)");
+  // 正则第 1 组必然参与匹配(上面已断言命中),此处按非空收窄
+  const rendererMaxRecent = Number(/** @type {RegExpExecArray} */ (m)[1]);
   assert(
-    Number(m[1]) === MAIN_MAX_RECENT_FILES,
-    `renderer MAX_RECENT_FILES(${m[1]}) 应与 main ui-state.ts(${MAIN_MAX_RECENT_FILES})恒等`,
+    rendererMaxRecent === MAIN_MAX_RECENT_FILES,
+    `renderer MAX_RECENT_FILES(${rendererMaxRecent}) 应与 main ui-state.ts(${MAIN_MAX_RECENT_FILES})恒等`,
   );
   console.log(`[ok] identity-guards:(b) MAX_RECENT_FILES 双侧恒等(${MAIN_MAX_RECENT_FILES}) 断言通过`);
 
@@ -218,7 +255,7 @@ export async function run() {
   // parseInlineHtml 对合法表达式的内容重建:文本项拼接 = 剥除全部标签后的纯文本
   for (const expr of validSamples) {
     const items = parseInlineHtml(expr);
-    const rebuilt = items.map((it) => ("break" in it ? "" : it.text)).join("");
+    const rebuilt = items.map((it) => ("break" in it ? "" : /** @type {{ text: string }} */ (it).text)).join("");
     assert(
       rebuilt === expr.replace(/<[^<>]*>/g, ""),
       `parseInlineHtml 文本重建应等于剥标签纯文本:${expr} → "${rebuilt}"`,

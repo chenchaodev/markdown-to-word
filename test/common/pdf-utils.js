@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * PDF 侧工具:printToPDF 封装(与主进程 renderPdf 链路对齐)。
  */
@@ -6,7 +7,11 @@ import os from "node:os";
 import path from "node:path";
 import { BrowserWindow } from "electron";
 
-/** printToPDF 工具:写临时 html → 隐藏窗口加载 → 打印 → 清理 */
+/** printToPDF 工具:写临时 html → 隐藏窗口加载 → 打印 → 清理
+ * @param {string} html 待打印的完整 HTML
+ * @param {string} footerTemplate 页脚模板(printToPDF 原样注入)
+ * @returns {Promise<Buffer>} PDF 字节
+ */
 export async function htmlToPdf(html, footerTemplate) {
   const htmlPath = path.join(os.tmpdir(), `m2w-accept-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
   const win = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, sandbox: true } });

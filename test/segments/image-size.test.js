@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 图片控制增强段:Pandoc 风格尾随尺寸属性 + figure 题注绑定。
  * 覆盖五类断言(零注册):
@@ -34,24 +35,76 @@ import {
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { asDocxArtifact, asPdfArtifact } from "../common/convert-helpers.js";
 
+/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/i18n.js").KeyedWarning} KeyedWarning */
+/** @typedef {import("../../src/core/markdown/image-size.js").ImageSizeAttrs} ImageSizeAttrs */
+/** @typedef {import("../../src/core/markdown/image-size.js").ParsedImageSizeAttrs} ParsedImageSizeAttrs */
+
+/**
+ * convert() 的类型化别名:运行期就是 dist 的 convert(零行为差异),只把返回类型
+ * 对齐到 src 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind
+ * 被拓宽为 string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
+ * 入参保持宽松(本段按运行时事实传上下文,上下文契约由 core 自身类型守护)。
+ * @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>}
+ */
+const convertTyped =
+  /** @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>} */ (
+    convert
+  );
+
+/**
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败说明
+ * @returns {asserts cond} 条件不成立即抛错(供后续行收窄)
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`image-size 断言失败:${msg}`);
 }
 
+/**
+ * 解析尺寸属性块:返回值按 src 契约标注——dist 无类型标注,attrs 被推断为 {},
+ * 直接取 width/height 会被判为不存在。
+ * @param {string} text 属性块文本
+ * @returns {ParsedImageSizeAttrs} 解析结果
+ */
+function parseSizeAttrs(text) {
+  return /** @type {ParsedImageSizeAttrs} */ (parseImageSizeAttrs(text));
+}
+
+/**
+ * 取 markdown 首段的 phrasing children(本段只判定「图片是否独立成段」)。
+ * @param {string} md markdown 源(单段样例)
+ * @returns {unknown[]} 首段 children
+ */
+function firstParagraphChildren(md) {
+  const first = parseMarkdown(md).children[0];
+  if (first === undefined || !("children" in first)) {
+    throw new Error(`image-size 断言失败:样例首块应为段落,实际 ${first === undefined ? "无内容" : first.type}`);
+  }
+  return /** @type {unknown[]} */ (first.children);
+}
+
 /** 内容区宽(px)契约值:A4 纵向默认边距(docx 与 pdf 各自换算链同源验证用) */
+// 放宽理由:DEFAULT_PAGE_SETUP 来自 dist(无类型标注)故 paper 拓宽为 string;
+// 默认值按 src 契约就是 "A4",此处按 PAPER_SIZES_MM 的键联合收窄。
 const CONTENT_WIDTH_MM =
-  PAPER_SIZES_MM[DEFAULT_PAGE_SETUP.paper].width -
+  PAPER_SIZES_MM[/** @type {keyof typeof PAPER_SIZES_MM} */ (DEFAULT_PAGE_SETUP.paper)].width -
   DEFAULT_PAGE_SETUP.marginLeft -
   DEFAULT_PAGE_SETUP.marginRight; // 146mm
 const DOCX_CONTENT_WIDTH_PX = twipsToPx(mmToTwips(CONTENT_WIDTH_MM)); // 8277/15 ≈ 551.8
 const PDF_CONTENT_WIDTH_PX = mmToPx(CONTENT_WIDTH_MM); // ≈ 551.81
 
-/** px → EMU(docx 库序列化契约:1px = 9525 EMU) */
+/**
+ * px → EMU(docx 库序列化契约:1px = 9525 EMU)。
+ * @param {number} px 像素值
+ * @returns {number} EMU 值
+ */
 const emu = (px) => px * 9525;
 
 /** 测试用 resolver:fixtures 目录下的本地图片可读,其余失败 */
-const resolver = async (src) => {
+const resolver = async (/** @type {string} */ src) => {
   if (src.startsWith("http")) return null;
   try {
     return await fs.readFile(path.resolve(FIXTURES_DIR, src));
@@ -66,47 +119,62 @@ export const fixtures = null;
 export async function run() {
   // ================= (a) 语法解析纯函数直测 =================
   // 合法:百分比 / 像素 / 组合 / 宽容空白 / 小数
-  assert(parseImageSizeAttrs("{width=50%}").attrs.width?.unit === "%", "{width=50%} 应解析为 %");
-  assert(parseImageSizeAttrs("{width=300}").attrs.width?.unit === "px", "{width=300} 应解析为 px");
-  const combo = parseImageSizeAttrs("{width=50% height=30%}");
+  assert(parseSizeAttrs("{width=50%}").attrs.width?.unit === "%", "{width=50%} 应解析为 %");
+  assert(parseSizeAttrs("{width=300}").attrs.width?.unit === "px", "{width=300} 应解析为 px");
+  const combo = parseSizeAttrs("{width=50% height=30%}");
   assert(combo.attrs.width?.value === 50 && combo.attrs.height?.value === 30, "组合属性应双维解析");
-  assert(parseImageSizeAttrs("{ width = 12.5 }").attrs.width?.value === 12.5, "空白与小数应容忍");
-  assert(parseImageSizeAttrs("{WIDTH=50%}").attrs.width?.value === 50, "键名大小写归一");
+  assert(parseSizeAttrs("{ width = 12.5 }").attrs.width?.value === 12.5, "空白与小数应容忍");
+  assert(parseSizeAttrs("{WIDTH=50%}").attrs.width?.value === 50, "键名大小写归一");
   // 非法:负数 / 非数值 / 超范围 / 零
   for (const bad of ["{width=-3}", "{height=abc}", "{width=150%}", "{width=0}", `{width=${IMAGE_SIZE_PX_MAX + 1}}`]) {
-    const parsed = parseImageSizeAttrs(bad);
+    const parsed = parseSizeAttrs(bad);
     assert(parsed.hasSizeKeys && Object.keys(parsed.attrs).length === 0, `${bad} 应判非法且无合法维度`);
     assert(parsed.invalid.length === 1, `${bad} 应产出一条 invalid 记录`);
   }
   assert(IMAGE_SIZE_PERCENT_MAX === 100, "百分比上限应为 100");
   // 边界:非属性块 / 无尺寸键花括号文本原样保留(hasSizeKeys=false 不剥除)
-  assert(!parseImageSizeAttrs("普通文本").hasSizeKeys, "普通文本不应识别为属性块");
-  assert(!parseImageSizeAttrs("{}").hasSizeKeys, "空花括号不应识别(hasSizeKeys=false)");
-  assert(!parseImageSizeAttrs("{foo=bar}").hasSizeKeys, "无尺寸键的花括号文本不应识别");
-  assert(parseImageSizeAttrs("{width=50% #id}").invalid.length === 0, "未知键静默忽略不告警");
+  assert(!parseSizeAttrs("普通文本").hasSizeKeys, "普通文本不应识别为属性块");
+  assert(!parseSizeAttrs("{}").hasSizeKeys, "空花括号不应识别(hasSizeKeys=false)");
+  assert(!parseSizeAttrs("{foo=bar}").hasSizeKeys, "无尺寸键的花括号文本不应识别");
+  assert(parseSizeAttrs("{width=50% #id}").invalid.length === 0, "未知键静默忽略不告警");
   // parseImageDim 边界直测
   assert(parseImageDim("99.9%")?.value === 99.9, "小数百分比应合法");
   assert(parseImageDim("-5") === null, "负数应非法");
   assert(parseImageDim("1e3") === null, "科学计数法应非法(词法不含 e)");
   // resolveImageDisplaySize:一维等比 / 两维不保持比例 / 百分比基准
-  const disp = resolveImageDisplaySize({ width: 800, height: 400 }, { width: { unit: "px", value: 200 } }, 500);
+  // (入参按 src 契约标注:dist 无类型标注,字面量对象会被推断为 {} 而拒绝多余属性)
+  const disp = /** @type {{width: number, height: number}} */ (
+    resolveImageDisplaySize(
+      /** @type {{width: number, height: number}} */ ({ width: 800, height: 400 }),
+      /** @type {ImageSizeAttrs} */ ({ width: { unit: "px", value: 200 } }),
+      500,
+    )
+  );
   assert(disp.width === 200 && disp.height === 100, "只给宽应按原图比例缩高");
-  const disp2 = resolveImageDisplaySize(
-    { width: 800, height: 400 },
-    { width: { unit: "px", value: 200 }, height: { unit: "px", value: 300 } },
-    500,
+  const disp2 = /** @type {{width: number, height: number}} */ (
+    resolveImageDisplaySize(
+      /** @type {{width: number, height: number}} */ ({ width: 800, height: 400 }),
+      /** @type {ImageSizeAttrs} */ ({ width: { unit: "px", value: 200 }, height: { unit: "px", value: 300 } }),
+      500,
+    )
   );
   assert(disp2.width === 200 && disp2.height === 300, "两维都给不保持比例(Pandoc 一致)");
-  const disp3 = resolveImageDisplaySize({ width: 800, height: 400 }, { height: { unit: "%", value: 20 } }, 500);
+  const disp3 = /** @type {{width: number, height: number}} */ (
+    resolveImageDisplaySize(
+      /** @type {{width: number, height: number}} */ ({ width: 800, height: 400 }),
+      /** @type {ImageSizeAttrs} */ ({ height: { unit: "%", value: 20 } }),
+      500,
+    )
+  );
   assert(disp3.height === 100 && disp3.width === 200, "百分比相对内容区宽 + 一维等比");
   // isFigureParagraph:独立成段图片(+尾随属性块)/ 非独立段落
-  const astFig = parseMarkdown("![a](x.png){width=50%}\n").children[0].children;
+  const astFig = firstParagraphChildren("![a](x.png){width=50%}\n");
   assert(isFigureParagraph(astFig) === true, "图片+尾随属性块应为 figure");
-  const astPlain = parseMarkdown("![a](x.png)\n").children[0].children;
+  const astPlain = firstParagraphChildren("![a](x.png)\n");
   assert(isFigureParagraph(astPlain) === true, "纯图片段落应为 figure");
-  const astText = parseMarkdown("前文 ![a](x.png)\n").children[0].children;
+  const astText = firstParagraphChildren("前文 ![a](x.png)\n");
   assert(isFigureParagraph(astText) === false, "图片前有文本不应为 figure");
-  const astTail = parseMarkdown("![a](x.png) 尾随文字\n").children[0].children;
+  const astTail = firstParagraphChildren("![a](x.png) 尾随文字\n");
   assert(isFigureParagraph(astTail) === false, "尾随普通文本不应为 figure");
   console.log("[ok] image-size:(a) 语法解析纯函数直测(词法/校验范围/等比与两维语义/figure 判定)断言通过");
 
@@ -123,6 +191,7 @@ export async function run() {
     "正文行内 ![内联](./g1-tiny.png){width=40%}",
     "",
   ].join("\n");
+  /** @type {Warning[]} */
   const docxWarnings = [];
   const buffer = await renderDocx(parseMarkdown(docxMd), { imageResolver: resolver, warnings: docxWarnings });
   const xml = await unzipPart(buffer, "word/document.xml");
@@ -149,6 +218,7 @@ export async function run() {
   console.log("[ok] image-size:(b2) docx figure 居中(w:jc center)+ 属性文本剥除断言通过");
 
   // ================= (c) pdf 产物断言 =================
+  /** @type {Warning[]} */
   const pdfWarnings = [];
   const pdfMd = [
     "![半宽](./g1-tiny.png){width=50%}",
@@ -164,7 +234,7 @@ export async function run() {
     "![素图](./g1-tiny.png)",
     "",
   ].join("\n");
-  const pdf = await convert(pdfMd, "pdf", { baseDir: FIXTURES_DIR, warnings: pdfWarnings });
+  const pdf = asPdfArtifact(await convertTyped(pdfMd, "pdf", { baseDir: FIXTURES_DIR, warnings: pdfWarnings }));
   // width 百分比原样注入(CSS 相对容器宽);两维 px 注入;height 百分比按内容宽换算 px
   assert(pdf.html.includes('style="width:50%"'), "pdf width 百分比应原样注入 style");
   assert(pdf.html.includes('style="width:300px;height:200px"'), "pdf 两维 px 应注入 style");
@@ -181,22 +251,44 @@ export async function run() {
   console.log("[ok] image-size:(c) pdf style 注入(%/px/height 换算)+ fig-image 类 + 属性剥除 断言通过");
 
   // ================= (d) 非法值警告断言(docx/pdf 双侧) =================
-  for (const fmt of ["docx", "pdf"]) {
+  /** @type {("docx" | "pdf")[]} */
+  const formats = ["docx", "pdf"];
+  for (const fmt of formats) {
+    /** @type {Warning[]} */
     const badWarnings = [];
     const artifact =
       fmt === "docx"
-        ? await convert("![坏图](./g1-tiny.png){width=-3}", "docx", { baseDir: FIXTURES_DIR, imageResolver: resolver, warnings: badWarnings })
-        : await convert("![坏图](./g1-tiny.png){width=-3}", "pdf", { baseDir: FIXTURES_DIR, imageResolver: resolver, warnings: badWarnings });
-    const hit = badWarnings.find((w) => typeof w === "object" && w.key === "warn.imageAttrInvalid");
+        ? asDocxArtifact(
+            await convertTyped("![坏图](./g1-tiny.png){width=-3}", "docx", {
+              baseDir: FIXTURES_DIR,
+              imageResolver: resolver,
+              warnings: badWarnings,
+            }),
+          )
+        : asPdfArtifact(
+            await convertTyped("![坏图](./g1-tiny.png){width=-3}", "pdf", {
+              baseDir: FIXTURES_DIR,
+              imageResolver: resolver,
+              warnings: badWarnings,
+            }),
+          );
+    const hit = badWarnings.find(
+      /**
+       * @param {Warning} w 警告条目
+       * @returns {w is KeyedWarning} 是否为目标 keyed 警告
+       */
+      (w) => typeof w === "object" && w.key === "warn.imageAttrInvalid",
+    );
     assert(hit !== undefined, `${fmt} 非法尺寸属性应产生 warn.imageAttrInvalid keyed 警告`);
-    assert(hit.params.src === "./g1-tiny.png" && hit.params.attr === "width=-3", `${fmt} 警告 params 应含 src 与原始键值对`);
+    assert(hit.params?.src === "./g1-tiny.png" && hit.params?.attr === "width=-3", `${fmt} 警告 params 应含 src 与原始键值对`);
     // zh 文案(fallback 口径)
     assert(formatWarning(hit) === "图片尺寸属性无效,已忽略: width=-3(./g1-tiny.png)", `${fmt} zh 文案应逐字匹配`);
     // en 字典命中(satisfies 全量锁定)
     setLanguage("en");
     assert(formatWarning(hit) === "Invalid image size attribute, ignored: width=-3 (./g1-tiny.png)", `${fmt} en 文案应逐字匹配`);
     setLanguage("zh");
-    if (fmt === "docx") {
+    // 分支按产物判别式而非 fmt:同一循环里产物与 fmt 一一对应,判别式同时完成类型收窄
+    if (artifact.kind === "docx") {
       const badXml = await unzipPart(artifact.buffer, "word/document.xml");
       // 降级:非法属性忽略后走默认 scaleToFit(1×1 不放大 → 9525 EMU)
       assert(badXml.includes('<wp:extent cx="9525" cy="9525"/>'), "docx 非法属性应回退默认尺寸(1×1 不放大)");
@@ -209,11 +301,18 @@ export async function run() {
 
   // (d2) 非法属性去重:同一 src 同一非法属性出现 N 次 → 双侧各只报 1 条
   // (docx/pdf 均经共享 i18n.pushWarningOnce,键 = key + JSON(params))
-  for (const fmt of ["docx", "pdf"]) {
+  for (const fmt of formats) {
+    /** @type {Warning[]} */
     const dupWarnings = [];
     const dupMd = "![坏图](./g1-tiny.png){width=-3}\n\n重复 ![坏图](./g1-tiny.png){width=-3}\n";
-    await convert(dupMd, fmt, { baseDir: FIXTURES_DIR, imageResolver: resolver, warnings: dupWarnings });
-    const dupCount = dupWarnings.filter((w) => typeof w === "object" && w.key === "warn.imageAttrInvalid").length;
+    await convertTyped(dupMd, fmt, { baseDir: FIXTURES_DIR, imageResolver: resolver, warnings: dupWarnings });
+    const dupCount = dupWarnings.filter(
+      /**
+       * @param {Warning} w 警告条目
+       * @returns {w is KeyedWarning} 是否为目标 keyed 警告
+       */
+      (w) => typeof w === "object" && w.key === "warn.imageAttrInvalid",
+    ).length;
     assert(dupCount === 1, `${fmt} 同一非法属性 ×2 应去重为 1 条,实际 ${dupCount}`);
   }
   console.log("[ok] image-size:(d2) 非法属性重复出现去重(docx/pdf 各 1 条,共享 pushWarningOnce)断言通过");
@@ -224,28 +323,32 @@ export async function run() {
     imageResolver: resolver,
     warnings: [],
   });
-  const plainXml = await unzipPart(plainDocx.buffer, "word/document.xml");
+  const plainXml = await unzipPart(plainDocx, "word/document.xml");
   assert(plainXml.includes('<wp:extent cx="9525" cy="9525"/>'), "无属性 1×1 小图不放大(回归)");
   const plainCenters = (plainXml.match(/<w:jc w:val="center"/g) || []).length;
   assert(plainCenters === 1, `仅独立成段图片段落居中(行内图片不受影响),实际 ${plainCenters}`);
-  const plainPdf = await convert("前文 ![内联](./g1-tiny.png) 后文", "pdf", { baseDir: FIXTURES_DIR, warnings: [] });
+  const plainPdf = asPdfArtifact(
+    await convertTyped("前文 ![内联](./g1-tiny.png) 后文", "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
+  );
   assert(!plainPdf.html.includes('class="fig-image"'), "pdf 行内图片段落不挂 fig-image(回归)");
   assert(!/<img[^>]*style=/i.test(plainPdf.html), "pdf 无属性图片无 style 注入(回归)");
   // 容器内图片不识别 figure(与 docx 侧只遍历顶层段落同契约)
   const listDocx = await renderDocx(parseMarkdown("- ![列表图](./g1-tiny.png)\n"), { imageResolver: resolver, warnings: [] });
-  const listXml = await unzipPart(listDocx.buffer, "word/document.xml");
+  const listXml = await unzipPart(listDocx, "word/document.xml");
   assert(!listXml.includes('<w:jc w:val="center"'), "docx 列表项内图片不居中(容器内不识别 figure)");
-  const listPdf = await convert("- ![列表图](./g1-tiny.png)\n", "pdf", { baseDir: FIXTURES_DIR, warnings: [] });
+  const listPdf = asPdfArtifact(
+    await convertTyped("- ![列表图](./g1-tiny.png)\n", "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
+  );
   assert(!listPdf.html.includes('class="fig-image"'), "pdf 列表项内图片不挂 fig-image(容器内不识别)");
   console.log("[ok] image-size:(e1) 无属性回归(scaleToFit 不变/行内不居中/无 style 注入)断言通过");
 
   // 题注绑定:独立成段图片后紧跟「图: xxx」前缀行 → 题注保持在图下方,编号机制不变
   const capMd = "# 章节\n\n![示意图](./g1-tiny.png)\n\n图: 示意图标题\n";
   const capDocx = await renderDocx(parseMarkdown(capMd), { imageResolver: resolver, warnings: [] });
-  const capXml = await unzipPart(capDocx.buffer, "word/document.xml");
+  const capXml = await unzipPart(capDocx, "word/document.xml");
   assert(capXml.includes(">图 1.1 示意图标题<"), "题注自动编号机制不变(h1 章节号.序数 + 题注文本)");
   assert(capXml.includes('<w:jc w:val="center"/>'), "figure 段落居中(题注绑定场景)");
-  const capPdf = await convert(capMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [] });
+  const capPdf = asPdfArtifact(await convertTyped(capMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [] }));
   assert(capPdf.html.includes('class="fig-image"'), "pdf figure 段落挂 fig-image(题注绑定场景)");
   assert(capPdf.html.includes("fig-caption") && capPdf.html.includes("示意图标题"), "pdf 题注识别不变(fig-caption + 题注文本)");
   console.log("[ok] image-size:(e2) figure 题注绑定(题注保持在图下方,编号机制不变,docx/pdf 对齐)断言通过");

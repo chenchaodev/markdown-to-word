@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * geometry gate 判定层(纯函数,零 DOM / 零 Electron / 零 IO):
  * 规格从 geometry-spec 单源引入,本文件只负责「样本 → findings → ok」的裁决:
@@ -42,13 +43,83 @@ export {
   extractHeightMediaConditions,
 } from "./geometry-spec.mjs";
 
-/** 矩形格式化(日志/失败定位用) */
+/* ---------- 判定层的类型契约(采样形状与 finding 形状;规格项类型单源在 geometry-spec) ---------- */
+
+/**
+ * @typedef {object} Rect 矩形(页面侧 getBoundingClientRect 结果,已保留两位小数)
+ * @property {number} left
+ * @property {number} top
+ * @property {number} right
+ * @property {number} bottom
+ * @property {number} width
+ * @property {number} height
+ */
+
+/**
+ * @typedef {object} NodeSample 单个节点的度量样本(选择器不存在时取值为 null)
+ * @property {Rect} rect
+ * @property {boolean} visible 可见(display/visibility/尺寸判据合成)
+ * @property {string} display
+ * @property {string | null} dataStage 舞台状态载体节点的 data-stage
+ * @property {number} [borderLeft] 左边线宽(内容盒换算用)
+ * @property {number} clientWidth
+ * @property {number} clientHeight
+ * @property {number} scrollWidth
+ * @property {number} scrollHeight
+ */
+
+/**
+ * @typedef {object} GeometrySample 单个场景的采样结果
+ * @property {string} id 场景 id(与 SCENARIOS 对齐)
+ * @property {{ width: number, height: number }} viewport 实际视口
+ * @property {Record<string, boolean>} [tiers] 媒体查询条件的匹配态(页面侧 matchMedia 读出)
+ * @property {{ scrollWidth: number, clientWidth: number, scrollHeight: number, clientHeight: number }} doc 文档滚动尺寸
+ * @property {Record<string, NodeSample | null>} nodes 节点度量表(键见 NODE_SELECTORS)
+ * @property {string | null} [error] 场景步骤失败原因(有则该场景几何判定跳过,本条显式记 finding)
+ */
+
+/**
+ * @typedef {object} Box 列轴比对用的盒(padding box 或 border box)
+ * @property {number} left
+ * @property {number} right
+ * @property {number} width
+ */
+
+/**
+ * @typedef {object} GeometryFinding 一条门禁 finding
+ * @property {string} rule 规则名(报告按此归类)
+ * @property {string} severity 严重级别(现只有 error)
+ * @property {string} scenario 场景 id
+ * @property {string | null} node 节点 key(与场景无关的规则为 null)
+ * @property {string} message 失败消息(须可定位:规则/场景/节点/数字)
+ * @property {string} [expected] 期望值(可读形态)
+ * @property {string} [actual] 实测值(可读形态)
+ * @property {string} [group] 所属恒定组 id(仅恒定组判定)
+ * @property {string} [axes] 参与比对的轴(仅恒定组判定)
+ */
+
+/**
+ * @typedef {object} GateOptions 门禁阈值与档位条件(缺省取规格单源默认值)
+ * @property {number} [tolPx] 容差(px)
+ * @property {number} [scrollBudgetPx] 紧凑档纵向滚动预算(px)
+ * @property {string[]} [mediaConditions] 需校验匹配态的媒体查询条件
+ */
+
+/** 矩形格式化(日志/失败定位用)
+ * @param {Rect | null | undefined} rect
+ * @returns {string}
+ */
 export function formatRect(rect) {
   if (rect === undefined || rect === null) return "(无)";
   return `[l=${rect.left} t=${rect.top} w=${rect.width} h=${rect.height}]`;
 }
 
-/** 两矩形的逐轴差值(px);返回 { max, prop }。axes 缺省比对四个几何轴 */
+/** 两矩形的逐轴差值(px);返回 { max, prop }。axes 缺省比对四个几何轴
+ * @param {Rect} a
+ * @param {Rect} b
+ * @param {("left" | "top" | "width" | "height")[]} [axes]
+ * @returns {{ max: number, prop: string }}
+ */
 export function rectDelta(a, b, axes = ["left", "top", "width", "height"]) {
   let max = 0;
   let prop = "";
@@ -65,41 +136,66 @@ export function rectDelta(a, b, axes = ["left", "top", "width", "height"]) {
 /**
  * 节点的"纸面盒"(padding box):rect.left + border 宽 → 内容左沿;clientWidth → 内容宽。
  * 列轴断言用 padding box 而非 border box,否则 .stage 的 1px 边线会让成员凭空左移 1px。
+ * @param {NodeSample} node 节点度量样本
+ * @returns {Box}
  */
 export function paddingBox(node) {
   const left = node.rect.left + (node.borderLeft ?? 0);
   return { left, right: left + node.clientWidth, width: node.clientWidth };
 }
 
-/** border box(视觉外沿):含自身边线,卡片/输入框类元素的列轴外沿语义 */
+/** border box(视觉外沿):含自身边线,卡片/输入框类元素的列轴外沿语义
+ * @param {NodeSample} node 节点度量样本
+ * @returns {Box}
+ */
 export function borderBox(node) {
   return { left: node.rect.left, right: node.rect.right, width: node.rect.width };
 }
 
-/** 按列组声明的 box 语义取盒(border = 视觉外沿,padding = 去自身边线后的内容盒) */
+/** 按列组声明的 box 语义取盒(border = 视觉外沿,padding = 去自身边线后的内容盒)
+ * @param {NodeSample} node 节点度量样本
+ * @param {"border" | "padding"} kind 列组声明的盒语义
+ * @returns {Box}
+ */
 export function nodeBox(node, kind) {
   return kind === "border" ? borderBox(node) : paddingBox(node);
 }
 
 /**
  * 门禁判定主入口(纯函数)。
- * @param {Array} samples 采样列表,每项 { id, viewport, tiers, doc, nodes, error? };
+ * @param {GeometrySample[]} samples 采样列表,每项 { id, viewport, tiers, doc, nodes, error? };
  *   nodes[key] = { rect, visible, display, dataStage, borderLeft, clientWidth, clientHeight,
  *                  scrollWidth, scrollHeight } | null(选择器不存在);
  *   tiers[条件] = matchMedia(条件).matches(页面侧读出,用于档位生效断言)
- * @param {object} options { tolPx, scrollBudgetPx, mediaConditions }
- * @returns {{ ok: boolean, findings: Array, stats: object, passedScenarios: string[] }}
+ * @param {GateOptions} [options] { tolPx, scrollBudgetPx, mediaConditions }
+ * @returns {{ ok: boolean, findings: GeometryFinding[], stats: object, passedScenarios: string[] }}
  */
 export function runGeometryGate(samples, options = {}) {
   const tolPx = options.tolPx ?? DEFAULT_TOL_PX;
   const scrollBudgetPx = options.scrollBudgetPx ?? DEFAULT_SCROLL_BUDGET_PX;
   const mediaConditions = options.mediaConditions ?? [];
+  /** @type {GeometryFinding[]} */
   const findings = [];
+  /**
+   * 登记一条 finding(所有判定失败与"显式跳过"都走这里,禁止静默通过)。
+   * @param {string} rule 规则名
+   * @param {string} scenario 场景 id
+   * @param {string | null} node 节点 key
+   * @param {string} message 失败消息
+   * @param {Pick<GeometryFinding, "expected" | "actual" | "group" | "axes">} [extra] 期望/实测等补充字段
+   * @returns {void}
+   */
   const add = (rule, scenario, node, message, extra = {}) => {
     findings.push({ rule, severity: "error", scenario, node, message, ...extra });
   };
   const byId = new Map(samples.map((s) => [s.id, s]));
-  const sel = (key) => NODE_SELECTORS[key] ?? key;
+  // NODE_SELECTORS 按字面量对象声明(键名写错即编译期报错);此处按 Record 索引是契约的一部分:
+  // 未登记的键回退为「键名即选择器」
+  /**
+   * @param {string} key 节点 key
+   * @returns {string} CSS 选择器
+   */
+  const sel = (key) => /** @type {Record<string, string>} */ (NODE_SELECTORS)[key] ?? key;
 
   for (const sc of SCENARIOS) {
     const sample = byId.get(sc.id);
@@ -301,7 +397,11 @@ export function runGeometryGate(samples, options = {}) {
       const paperNode = sample.nodes[PAPER_KEY];
       const paperBox =
         paperNode !== null && paperNode !== undefined && paperNode.visible ? paddingBox(paperNode) : null;
-      const refBox = group.ref === undefined ? null : nodeBox(sample.nodes[group.ref], group.box);
+      // 上方已校验 ref 节点在场且可见,此处取盒安全(ref === undefined 即无参照盒)
+      const refBox =
+        group.ref === undefined
+          ? null
+          : nodeBox(/** @type {NodeSample} */ (sample.nodes[group.ref]), group.box);
       let firstBox = null;
       let firstKey = null;
       for (const key of group.members) {
@@ -326,7 +426,8 @@ export function runGeometryGate(samples, options = {}) {
         const dLeft = Math.abs(box.left - target.left);
         const dWidth = Math.abs(box.width - target.width);
         if (dLeft > tolPx || dWidth > tolPx) {
-          const refKey = refBox !== null ? group.ref : firstKey;
+          // target 非空 ⇒ 或 refBox 非空(此时 group.ref 必已定义),或已记下首个可用成员 firstKey
+          const refKey = /** @type {string} */ (refBox !== null ? group.ref : firstKey);
           add(
             "column-drift",
             sc.id,

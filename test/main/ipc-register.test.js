@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * IPC 注册体段(src/main/ipc/register.ts:此前仅 smoke 兜底):
  * 可脱离真实窗口/对话框直测的 handler 逻辑(经 dist/main/ipc/register.js):
@@ -29,6 +30,12 @@ import { MAX_SCAN_DEPTH } from "../../dist/main/converter/paths.js";
 import { formatWarning, t } from "../../dist/core/i18n.js";
 import { beginWebContentsOperation, finishWebContentsOperation } from "../../dist/main/windows/web-contents-registry.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`ipc-register 断言失败:${msg}`);
 }
@@ -132,7 +139,7 @@ export async function run() {
     ]);
     assert(collected.files.length === 2, `目录递归应收 2 个 md(a/c),实际 ${JSON.stringify(collected.files)}`);
     assert(
-      collected.files.some((f) => f.endsWith("a.md")) && collected.files.some((f) => f.endsWith("c.markdown")),
+      collected.files.some((/** @type {string} */ f) => f.endsWith("a.md")) && collected.files.some((/** @type {string} */ f) => f.endsWith("c.markdown")),
       "递归结果应含 a.md 与 sub/c.markdown",
     );
     assert(
@@ -165,8 +172,8 @@ export async function run() {
     );
     assert(
       Array.isArray(budgeted.files) && budgeted.files.length > 0 &&
-        !budgeted.files.some((f) => f.endsWith("too-deep.md")) &&
-        budgeted.files.some((f) => f.endsWith("a.md")),
+        !budgeted.files.some((/** @type {string} */ f) => f.endsWith("too-deep.md")) &&
+        budgeted.files.some((/** @type {string} */ f) => f.endsWith("a.md")),
       // 触顶后停止收集,已扫到的文件照常返回(截断范围随 readdir 顺序,不断言具体数量)
       `超深文件不应被收集(既有 files 字段语义不变),实际 ${JSON.stringify(budgeted.files)}`,
     );
@@ -209,6 +216,7 @@ export async function run() {
     // ---- 5c. precheck 缺文件/读取失败:不静默空数组,返回单条可观察失败警告 ----
     // 契约仍为 PrecheckResult(警告数组 | busy):异常以失败警告承载,renderer
     // 走既有警告列表展示,用户可见且仍可选择继续转换(不扩联合类型)。
+    /** @type {string[]} */
     const logged = [];
     const originalError = console.error;
     console.error = (...args) => logged.push(args.map((a) => String(a)).join(" "));

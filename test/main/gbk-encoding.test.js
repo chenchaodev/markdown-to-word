@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * GBK 编码端到端(main 进程层;经 dist/main/converter/index.js,electron 环境):
  * 用 iconv-lite 写 GBK 编码的中文 markdown 文件 → convertImpl("docx") → 断言:
@@ -20,6 +21,12 @@ import { convertImpl } from "../../dist/main/converter/index.js";
 
 const GBK_MD = "# GBK 中文标题\n\n正文内容 你好世界\n";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`gbk-encoding 断言失败:${msg}`);
 }
@@ -44,7 +51,9 @@ export async function run() {
       `warnings 缺少 GBK 警告: ${JSON.stringify(result.warnings)}`,
     );
     const zip = await JSZip.loadAsync(await fs.readFile(result.outputPath));
-    const xml = await zip.file("word/document.xml").async("string");
+    const documentXml = zip.file("word/document.xml");
+    assert(documentXml !== null, "docx 产物应含 word/document.xml");
+    const xml = await documentXml.async("string");
     assert(xml.includes("中文标题"), "document.xml 缺少中文标题(GBK 解码乱码?)");
     assert(xml.includes("你好世界"), "document.xml 缺少正文中文(GBK 解码乱码?)");
     console.log(

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 合并取消传播验收(位于 test/main/ = 主进程层;被测 src/main/converter/merge.ts
  * 与 context.ts,经 dist 桶导出,electron 环境):
@@ -19,14 +20,32 @@ import { ConvertCanceledError } from "../../dist/main/converter/context.js";
 import { isConversionCanceled } from "../../dist/core/cancel.js";
 import { backupSettings } from "../common/settings.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`merge-cancel 断言失败:${msg}`);
 }
 
-/** 目录内的产物清单(断言取消后零产物) */
+/**
+ * 目录内的产物清单(断言取消后零产物)
+ * @param {string} dir 目录
+ * @returns {Promise<string[]>} 产物文件名列表
+ */
 async function artifactsOf(dir) {
   return (await fs.readdir(dir)).filter((name) => name.endsWith(".docx"));
 }
+
+/**
+ * 取布尔值(经函数取值:前一次 `assert(flag === false)` 会把该属性收窄成字面量,
+ * 而两次断言之间实现会改写它——直接再比较会误报「无交集」)。
+ * @param {boolean} value 布尔值
+ * @returns {boolean} 原值
+ */
+const liveFlag = (value) => value;
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -49,11 +68,12 @@ export async function run() {
     {
       const ctx = createConvertContext();
       ctx.cancel();
+      /** @type {Error | undefined} */
       let error;
       try {
         await mergeConvertImpl(files.slice(0, 3), "docx", undefined, ctx);
       } catch (err) {
-        error = err;
+        error = /** @type {Error} */ (err);
       }
       assert(error instanceof ConvertCanceledError, `预取消应抛 ConvertCanceledError,实际 ${error?.stack ?? error}`);
       assert(isConversionCanceled(error), "预取消错误的错误码应为 ERR_CONVERSION_CANCELLED");
@@ -67,16 +87,19 @@ export async function run() {
       assert(ctx.signal.aborted === false, "新建上下文的信号应为未取消");
       const pending = mergeConvertImpl(files, "docx", undefined, ctx);
       setTimeout(() => ctx.cancel(), 0);
+      /** @type {Error | undefined} */
       let error;
       try {
         await pending;
       } catch (err) {
-        error = err;
+        error = /** @type {Error} */ (err);
       }
       assert(isConversionCanceled(error), `途中取消应判定为取消(错误码单源),实际 ${error?.stack ?? error}`);
       assert((await artifactsOf(srcDir)).length === 0, "途中取消不应产出任何最终文件");
       // 取消后信号保持 aborted(供后续检查点与异步回调感知)
-      assert(ctx.signal.aborted === true, "取消后信号应保持 aborted");
+      // 经函数取值:上一条 `assert(aborted === false)` 已把该属性收窄成 false 字面量,
+      // 而两次断言之间 ctx.cancel() 会改写它
+      assert(liveFlag(ctx.signal.aborted) === true, "取消后信号应保持 aborted");
       console.log("[ok] merge-cancel:途中取消被识别为取消(不报失败)且零产物");
     }
 
@@ -94,11 +117,12 @@ export async function run() {
     // 「渲染层取消 → main 面取消」通路。
     {
       const ctx = createConvertContext({ deadline: Date.now() - 1 });
+      /** @type {Error | undefined} */
       let error;
       try {
         await mergeConvertImpl(files.slice(0, 3), "docx", undefined, ctx);
       } catch (err) {
-        error = err;
+        error = /** @type {Error} */ (err);
       }
       assert(error instanceof ConvertCanceledError, `过期 deadline 应归一为 ConvertCanceledError,实际 ${error?.stack ?? error}`);
       assert(isConversionCanceled(error), "过期 deadline 的错误码应为 ERR_CONVERSION_CANCELLED");

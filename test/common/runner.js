@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 测试段执行框架(逐段子进程隔离,正式口径见 docs/OPTIMIZATION-PLAN.md D-08):
  * - 段文件 = test/segments/、test/main/ 或 test/renderer/ 下 *.test.js,须导出 async function run()
@@ -43,14 +44,59 @@ const RESULT_FILE = "segment-result.json";
 /** 硬杀进程树后等待 exit 事件的上限(超过则按"已终止"记账并继续,留痕告警) */
 const KILL_GRACE_MS = 10000;
 
+/* ---------- 本文件契约类型(单一来源,消费方 import type 用) ---------- */
+
+/**
+ * @typedef {import("./case.js").CaseResult} CaseResult 单个 case 的结果(契约单源在 case.js)
+ */
+
+/**
+ * @typedef {object} SegmentDescriptor 段描述(发现阶段产出)
+ * @property {string} dir 段所在目录绝对路径
+ * @property {string} file 段文件名
+ * @property {string} name 段名(目录前缀 + 文件名,如 segments/basic-render.test.js)
+ */
+
+/**
+ * @typedef {object} SegmentRunResult 单段执行的原始结果(隔离模型与同进程回退模型共用形状)
+ * @property {boolean} ok
+ * @property {number} ms
+ * @property {unknown} [ret] 段 run() 返回值
+ * @property {unknown} [error] 段级错误(隔离模型恒为 Error;回退模型为段内抛出原值)
+ * @property {boolean} [timedOut]
+ */
+
+/**
+ * @typedef {object} SegmentResultEntry runAll 汇总的段结果项(报告与失败产物的事实来源)
+ * @property {string} file 段名
+ * @property {boolean} ok
+ * @property {number} ms
+ * @property {unknown} [error]
+ * @property {boolean} [timedOut]
+ * @property {CaseResult[]} [cases] 接入 case 契约的段才有
+ * @property {string} [failureDir] 失败产物目录(仅失败段落盘成功后有)
+ */
+
+/**
+ * @typedef {object} ChildExitInfo 子进程退出/硬杀记账信息(隔离模型 settle 的载荷)
+ * @property {number | null} code 退出码(null = 信号终止或启动失败)
+ * @property {string | null} signal 终止信号
+ * @property {boolean} timedOut 是否由硬超时触发
+ * @property {boolean} [unterminated] 硬杀后仍未退出(句柄被占用等)
+ * @property {Error} [spawnError] 子进程启动失败
+ */
+
 /**
  * 按传入目录顺序发现全部测试段文件(目录内按文件名排序);
  * 返回 { dir, file, name },name 带目录前缀(如 segments/basic-render.test.js),
  * 避免跨目录重名混淆,也便于阅读。
  * 设 M2W_ONLY 时按逗号分隔子串筛选(对完整段名做大小写不敏感的包含匹配),
  * 任一子串命中即保留;未设/空串 = 不过滤(默认全量)。
+ * @param {string[]} dirs 段目录绝对路径(按此顺序发现)
+ * @returns {Promise<SegmentDescriptor[]>}
  */
 export async function discoverSegments(dirs) {
+  /** @type {SegmentDescriptor[]} */
   const found = [];
   for (const dir of dirs) {
     const prefix = path.basename(dir);
@@ -85,7 +131,7 @@ export async function runSegment(fileUrl) {
 /**
  * case 级失败聚合为一条 Error:段内 case 不抛,段级失败由这里归一(栈替换为 case 明细,
  * 避免报告里出现 runner 内部帧淹没真实失败点)。
- * @param {{name: string, ok: boolean, ms: number, group?: string, message?: string}[]} cases
+ * @param {CaseResult[]} cases
  * @returns {Error}
  */
 export function caseFailureError(cases) {
@@ -102,11 +148,11 @@ export function caseFailureError(cases) {
  * 收集一段的 case 结果与产物快照(同进程与子进程宿主共用的同一判定):
  * 段 run() 回传优先;未回传则取本进程登记的 suite(防漏回传被静默判过)。
  * @param {unknown} ret 段 run() 返回值
- * @returns {{ cases: object[], artifacts: {name: string, buffers: Record<string, Buffer>}[] }}
+ * @returns {{ cases: CaseResult[], artifacts: {name: string, buffers: Record<string, Buffer>}[] }}
  */
 export function collectSegmentOutcome(ret) {
   const collected = drainSuites();
-  /** @type {{ cases?: object[], artifacts?: {name: string, buffers: Record<string, Buffer>}[] }} */
+  /** @type {{ cases?: CaseResult[], artifacts?: {name: string, buffers: Record<string, Buffer>}[] }} */
   const payload = /** @type {any} */ (ret) ?? {};
   return {
     cases: Array.isArray(payload.cases) ? payload.cases : collected.flatMap((h) => h.cases),
@@ -116,7 +162,7 @@ export function collectSegmentOutcome(ret) {
 
 /**
  * 判定一段的成败:段级抛错优先,否则有失败 case 即判失败(错误聚合为一条)。
- * @param {{cases: object[]}} outcome collectSegmentOutcome 的结果
+ * @param {{cases: CaseResult[]}} outcome collectSegmentOutcome 的结果
  * @param {unknown} [error] 段级错误(无则按 case 结果判定)
  * @returns {Error | undefined} 段级错误(通过则 undefined)
  */
@@ -132,7 +178,7 @@ export function segmentOutcomeError(outcome, error) {
  * @property {boolean} complete run() 是否已跑完(false = 段被硬终止,只有超时前进度)
  * @property {boolean} ok 段是否通过
  * @property {{message: string, stack?: string} | null} error 段级错误(已归一为可序列化形状)
- * @property {object[]} cases case 结果(形状与同进程一致,见 case.js CaseResult)
+ * @property {CaseResult[]} cases case 结果(形状与同进程一致,见 case.js CaseResult)
  * @property {{name: string, buffers: Record<string, string>}[]} artifacts 产物快照(base64;仅失败段带)
  */
 
@@ -213,7 +259,7 @@ export function reviveSegmentError(payload) {
  * 硬杀子进程及其派生进程:Windows 无进程组,`taskkill /T` 才能连带终止 Electron
  * 拉起的渲染/GPU 进程(否则渲染进程会变孤儿,句柄不释放 → 临时目录删不掉);
  * 其它平台用 SIGKILL。
- * @param {{pid?: number, kill(signal?: string): boolean}} child 子进程句柄
+ * @param {import("node:child_process").ChildProcess} child 子进程句柄
  */
 function killProcessTree(child) {
   if (typeof child.pid !== "number") return;
@@ -233,9 +279,9 @@ function killProcessTree(child) {
  * - 段崩溃(渲染进程崩溃/未捕获异常/硬 exit)→ 无回传或 complete=false,按崩溃归一;
  * - 超时 → 杀掉进程树,该段记 timeout 失败;回传文件里若有超时前已完成的 case
  *   (宿主经 case 进度钩子增量落盘),一并作为失败面证据。
- * @param {{dir: string, file: string, name: string}} s 段描述
+ * @param {SegmentDescriptor} s 段描述
  * @param {number} timeout 硬超时(ms);0/NaN 等无效值 = 不启用(等段自然结束)
- * @returns {Promise<{ ok: boolean, ms: number, ret?: unknown, error?: unknown, timedOut?: boolean }>}
+ * @returns {Promise<SegmentRunResult>}
  */
 async function runSegmentIsolated(s, timeout) {
   const start = Date.now();
@@ -257,28 +303,30 @@ async function runSegmentIsolated(s, timeout) {
   });
 
   const timeoutEnabled = timeout > 0 && Number.isFinite(timeout);
-  const exit = await new Promise((resolve) => {
-    /** @type {NodeJS.Timeout | undefined} */
-    let timer;
-    /** @type {NodeJS.Timeout | undefined} */
-    let graceTimer;
-    let timedOut = false;
-    const settle = (value) => {
-      clearTimeout(timer);
-      clearTimeout(graceTimer);
-      resolve(value);
-    };
-    if (timeoutEnabled) {
-      timer = setTimeout(() => {
-        timedOut = true;
-        killProcessTree(child);
-        // 兜底:极端情况下(句柄被占用等)进程没被终结,不再无限等 exit,继续记账
-        graceTimer = setTimeout(() => settle({ code: null, signal: "SIGKILL", timedOut, unterminated: true }), KILL_GRACE_MS);
-      }, timeout);
-    }
-    child.once("error", (error) => settle({ code: null, signal: null, timedOut, spawnError: error }));
-    child.once("exit", (code, signal) => settle({ code, signal, timedOut }));
-  });
+  const exit = await /** @type {Promise<ChildExitInfo>} */ (
+    new Promise((resolve) => {
+      /** @type {NodeJS.Timeout | undefined} */
+      let timer;
+      /** @type {NodeJS.Timeout | undefined} */
+      let graceTimer;
+      let timedOut = false;
+      const settle = (/** @type {ChildExitInfo} */ value) => {
+        clearTimeout(timer);
+        clearTimeout(graceTimer);
+        resolve(value);
+      };
+      if (timeoutEnabled) {
+        timer = setTimeout(() => {
+          timedOut = true;
+          killProcessTree(child);
+          // 兜底:极端情况下(句柄被占用等)进程没被终结,不再无限等 exit,继续记账
+          graceTimer = setTimeout(() => settle({ code: null, signal: "SIGKILL", timedOut, unterminated: true }), KILL_GRACE_MS);
+        }, timeout);
+      }
+      child.once("error", (error) => settle({ code: null, signal: null, timedOut, spawnError: error }));
+      child.once("exit", (code, signal) => settle({ code, signal, timedOut }));
+    })
+  );
 
   const payload = await readSegmentResult(resultPath);
   removeTempUserData(userDataDir);
@@ -344,12 +392,13 @@ async function runSegmentIsolated(s, timeout) {
  *   由 runAll 跑完全部段、入口打印结果后硬退出统一释放其资源。
  * - 段 promise 统一收敛为 `{ ret }`(正常)或 `{ error }`(段内抛错),故只有看门狗
  *   超时会走 reject 分支,`timedOut` 不再靠错误文案嗅探。
- * @param {{dir: string, file: string, name: string}} s 段描述
+ * @param {SegmentDescriptor} s 段描述
  * @param {number} timeout 看门狗超时(ms);0/NaN 等无效值 = 不启用
- * @returns {Promise<{ ok: boolean, ms: number, ret?: unknown, error?: unknown, timedOut?: boolean }>}
+ * @returns {Promise<SegmentRunResult>}
  */
 async function runSegmentWithWatchdog(s, timeout) {
   const start = Date.now();
+  /** @type {Promise<{ ret: unknown, error?: undefined } | { error: unknown, ret?: undefined }>} */
   const segmentPromise = runSegment(pathToFileURL(path.join(s.dir, s.file)).href).then(
     (ret) => ({ ret }),
     (error) => ({ error }),
@@ -384,7 +433,7 @@ async function runSegmentWithWatchdog(s, timeout) {
 
 /**
  * 失败日志正文:段名/耗时/超时标记 + case 明细(含失败消息、栈、附件引用)+ 段级错误。
- * @param {{file: string, ms: number, timedOut?: boolean, cases?: unknown[], error?: unknown}} r 段结果
+ * @param {{file: string, ms: number, timedOut?: boolean, cases?: CaseResult[], error?: unknown}} r 段结果
  * @returns {string}
  */
 function buildFailureLog(r) {
@@ -407,7 +456,7 @@ function buildFailureLog(r) {
         lines.push(`      消息: ${c.message ?? "未知失败"}`);
         // 栈首行通常是 "Error: <消息>",与上面的消息行重复,去掉只留调用帧
         const frames = typeof c.stack === "string" ? c.stack.split("\n") : [];
-        if (frames.length > 0 && c.message && frames[0].includes(c.message)) frames.shift();
+        if (frames.length > 0 && c.message && (frames[0] ?? "").includes(c.message)) frames.shift();
         if (frames.length > 0) {
           lines.push(...frames.map((line) => `      ${line}`));
         }
@@ -421,7 +470,7 @@ function buildFailureLog(r) {
 
 /**
  * case 汇总(仅统计接入 case 契约的段)。
- * @param {{cases?: unknown[]}[]} results 段结果
+ * @param {{cases?: CaseResult[]}[]} results 段结果
  * @returns {{ segments: number, passed: number, failed: number, total: number }}
  */
 export function summarizeCases(results) {
@@ -442,7 +491,7 @@ export function summarizeCases(results) {
 /**
  * case 级报告正文(入口打印):失败 case 显示「段名 › case 名: 消息」+ 附件/失败产物
  * 路径;每段显示通过数;末尾一行合计。无 case 契约的段 = 返回空串(旧段输出不变)。
- * @param {Awaited<ReturnType<typeof runAll>>["results"]} results 段结果
+ * @param {SegmentResultEntry[]} results 段结果
  * @returns {string} 多行报告;无 case 结果时为空串
  */
 export function formatCaseReport(results) {
@@ -450,9 +499,10 @@ export function formatCaseReport(results) {
   if (withCases.length === 0) return "";
   const lines = [];
   for (const r of withCases) {
-    const failed = r.cases.filter((c) => !c.ok).length;
-    lines.push(`[cases] ${r.file}: ${r.cases.length - failed} 通过 / ${failed} 失败`);
-    for (const c of r.cases) {
+    const cases = r.cases ?? []; // 上方 filter 已保证为非空数组
+    const failed = cases.filter((c) => !c.ok).length;
+    lines.push(`[cases] ${r.file}: ${cases.length - failed} 通过 / ${failed} 失败`);
+    for (const c of cases) {
       if (c.ok) continue;
       const title = c.group ? `${c.group} › ${c.name}` : c.name;
       lines.push(`  [case-fail] ${r.file} › ${title}: ${c.message ?? "未知失败"}`);
@@ -496,14 +546,17 @@ export function resolveIsolation(options = {}) {
  * cases?, failureDir? }。
  * @param {string[]} dirs 段目录(按此顺序发现)
  * @param {{ segmentTimeoutMs?: number, isolate?: boolean }} [options]
+ * @returns {Promise<{ results: SegmentResultEntry[], hung: boolean }>}
  */
 export async function runAll(dirs, options = {}) {
   const timeout = Number(options.segmentTimeoutMs ?? 0);
   const isolate = resolveIsolation(options);
+  /** @type {(s: SegmentDescriptor) => Promise<SegmentRunResult>} */
   const execute = isolate
-    ? (/** @type {{dir: string, file: string, name: string}} */ s) => runSegmentIsolated(s, timeout)
-    : runSegmentWithWatchdog;
+    ? (s) => runSegmentIsolated(s, timeout)
+    : (s) => runSegmentWithWatchdog(s, timeout);
   const segments = await discoverSegments(dirs);
+  /** @type {SegmentResultEntry[]} */
   const results = [];
   let hung = false;
   for (const s of segments) {
@@ -512,6 +565,7 @@ export async function runAll(dirs, options = {}) {
     // 隔离模型下宿主已在子进程内做完同一收集,此处 drain 只在同进程回退模型生效)
     const outcome = collectSegmentOutcome(r.ret);
     const error = r.error ?? segmentOutcomeError(outcome);
+    /** @type {SegmentResultEntry} */
     const entry = {
       file: s.name,
       ok: !error,

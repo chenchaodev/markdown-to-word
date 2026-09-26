@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 脚注 + 页眉页脚验收(补页眉/页脚内容断言):
  * 脚注 md → docx/pdf;断言 footnotes/footer/header 部件存在 + 页眉标题
@@ -11,6 +12,7 @@ import { FIXTURES_DIR } from "../common/paths.js";
 import { zipContains, unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:脚注 + 页眉页脚(frontmatter 触发页眉;重复引用 [^1] 两次 → 独立脚注 id;
  *  多段脚注定义),gen-fixtures 落盘为 acceptance/footnotes.md */
@@ -39,14 +41,16 @@ export const fixtures = { main: footnoteMd };
 
 /** 脚注 + 页眉页脚验收 */
 export async function run() {
-  const docxArtifact = await convert(footnoteMd, "docx", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-  });
+  const docxBuffer = docxBufferOf(
+    await convert(footnoteMd, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+    }),
+  );
   // docx 断言:footnotes.xml / footer1.xml 必须存在(metadata.title 存在 → header1.xml 也应存在)
-  const docxOk = zipContains(docxArtifact.buffer, "word/footnotes.xml");
-  const footerOk = zipContains(docxArtifact.buffer, "word/footer1.xml");
-  const headerOk = zipContains(docxArtifact.buffer, "word/header1.xml");
+  const docxOk = zipContains(docxBuffer, "word/footnotes.xml");
+  const footerOk = zipContains(docxBuffer, "word/footer1.xml");
+  const headerOk = zipContains(docxBuffer, "word/header1.xml");
   if (!docxOk || !footerOk || !headerOk) {
     throw new Error(
       `docx 部件断言失败: footnotes=${docxOk} footer=${footerOk} header=${headerOk}`,
@@ -56,8 +60,8 @@ export async function run() {
 
   // 重复引用共享同一脚注(样例 [^1] 引用两次 + [^2] 一次 = 3 个引用):
   // 正文恰 3 个 footnoteReference;footnotes.xml 恰 2 条内容脚注(id 1/2,无 id 3)
-  const footnotesXml = await unzipPart(docxArtifact.buffer, "word/footnotes.xml");
-  const refCount = ((await unzipPart(docxArtifact.buffer, "word/document.xml")).match(/<w:footnoteReference /g) || []).length;
+  const footnotesXml = await unzipPart(docxBuffer, "word/footnotes.xml");
+  const refCount = ((await unzipPart(docxBuffer, "word/document.xml")).match(/<w:footnoteReference /g) || []).length;
   if (refCount !== 3) {
     throw new Error(`B3 脚注共享断言失败:正文应有 3 个脚注引用(1+1+1),实际 ${refCount}`);
   }
@@ -71,7 +75,7 @@ export async function run() {
 
   // 页眉内容断言(renderHeader 实现事实:标题文本居中 + 7pt(14 half-points)灰 888888;
   // 标题取 metadata.title 优先,样例 frontmatter title=「脚注与页眉页脚验收」)
-  const headerXml = await unzipPart(docxArtifact.buffer, "word/header1.xml");
+  const headerXml = await unzipPart(docxBuffer, "word/header1.xml");
   if (!headerXml.includes("脚注与页眉页脚验收")) {
     throw new Error("页眉断言失败:header1.xml 缺少标题文本");
   }
@@ -85,7 +89,7 @@ export async function run() {
 
   // 页脚内容断言(renderFooter 实现事实:居中 + 「第 X 页 / 共 X 页」,
   // 页码为域结构 PAGE/NUMPAGES:fldChar begin + instrText + fldChar end)
-  const footerXml = await unzipPart(docxArtifact.buffer, "word/footer1.xml");
+  const footerXml = await unzipPart(docxBuffer, "word/footer1.xml");
   if (!footerXml.includes("第 ") || !footerXml.includes(" 页 / 共 ") || !footerXml.includes(" 页")) {
     throw new Error("页脚断言失败:footer1.xml 缺少「第 X 页 / 共 X 页」文案结构");
   }
@@ -100,11 +104,13 @@ export async function run() {
   }
   console.log("[ok] 页脚:第 X 页 / 共 X 页(PAGE/NUMPAGES 域)居中渲染");
 
-  const pdfArtifact = await convert(footnoteMd, "pdf", {
-    baseDir: FIXTURES_DIR,
-    title: "脚注与页眉页脚验收",
-    warnings: [],
-  });
+  const pdfArtifact = asPdfArtifact(
+    await convert(footnoteMd, "pdf", {
+      baseDir: FIXTURES_DIR,
+      title: "脚注与页眉页脚验收",
+      warnings: [],
+    }),
+  );
   // PDF 断言:脚注区结构(class="footnotes")与正文上标引用(footnote-ref)存在
   if (!pdfArtifact.html.includes('class="footnotes"') || !pdfArtifact.html.includes("footnote-ref")) {
     throw new Error("PDF 脚注结构断言失败:未找到 footnotes 区/上标引用");
@@ -120,5 +126,5 @@ export async function run() {
     throw new Error(`PDF 元数据断言失败: title=${pdfTitle} author=${pdfAuthor}`);
   }
   console.log(`[ok] PDF 元数据:title="${pdfTitle}" author="${pdfAuthor}" 读回一致`);
-  await saveArtifact("footnotes", { docx: docxArtifact.buffer, pdf: footnotePdfMeta });
+  await saveArtifact("footnotes", { docx: docxBuffer, pdf: footnotePdfMeta });
 }

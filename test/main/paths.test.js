@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 路径收集/输出首选路径解析验收(位于 test/main/ = 主进程层;src/main/converter/paths.ts
  * 经桶导出 converter.ts,测试经 dist/main/converter/index.js,electron 环境):
@@ -18,10 +19,23 @@ import path from "node:path";
 import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/converter/index.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`paths 断言失败:${msg}`);
 }
 
+/**
+ * 断言两个成员数组等价(长度相同且互相包含)。
+ * @param {readonly string[]} actual 实际值
+ * @param {readonly string[]} expected 期望值
+ * @param {string} msg 场景标签(消息用)
+ * @returns {void}
+ */
 function sameMembers(actual, expected, msg) {
   assert(
     actual.length === expected.length && expected.every((e) => actual.includes(e)),
@@ -87,6 +101,11 @@ export async function run() {
     // ---- 6. 排序:localeCompare sensitivity base(大小写不敏感)。
     // apple < Banana 可区分大小写敏感排序(后者 B(66) < a(97) 会颠倒);
     // sortdir < sub(全路径字典序,跨目录稳定) ----
+    /**
+     * 文件在收集结果中的下标(未收集到则为 -1)。
+     * @param {string} file 目标文件
+     * @returns {number} 下标
+     */
     const idx = (file) => tree.files.indexOf(file);
     assert(idx(f.sortApple) < idx(f.sortBanana), "排序:apple 应在 Banana 前(大小写不敏感)");
     assert(

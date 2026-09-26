@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 剪贴板临时 Markdown 源段(主体 src/main/services/temp-html.ts 纯 Node 层;末节经
  * dist/main/ipc/register.js 真实 handler 覆盖 IPC 接线):
@@ -24,10 +25,32 @@ import {
   writeTempMarkdown,
 } from "../../dist/main/services/temp-html.js";
 
+/**
+ * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`temp-markdown 断言失败:${msg}`);
 }
 
+/** 最近文件条目(跨进程契约单源) */
+/** @typedef {import("../../src/core/ipc-contract.js").RecentFile} RecentFile */
+
+/**
+ * 取待消费句柄数(经属性读取:前一次 `assert(pendingCount === N)` 会把它收窄成字面量,
+ * 而两次断言之间释放出口会改写它——直接再比较会误报「无交集」)。
+ * @param {{ pendingCount: number }} registry 临时源注册表
+ * @returns {number} 当前待消费句柄数
+ */
+const pendingCountOf = (registry) => registry.pendingCount;
+
+/**
+ * 目标路径当前是否存在。
+ * @param {string} target 路径
+ * @returns {Promise<boolean>} 存在即 true
+ */
 async function exists(target) {
   try {
     await fs.access(target);
@@ -37,7 +60,12 @@ async function exists(target) {
   }
 }
 
-/** 等待文件消失(handler 内释放是 fire-and-forget,需轮询落定)。 */
+/**
+ * 等待文件消失(handler 内释放是 fire-and-forget,需轮询落定)。
+ * @param {string} target 路径
+ * @param {string} label 场景标签(超时消息用)
+ * @returns {Promise<void>} 文件消失即返回
+ */
 async function waitGone(target, label) {
   const deadline = Date.now() + 3000;
   while (Date.now() < deadline) {
@@ -134,7 +162,7 @@ export async function run() {
     assert(!(await exists(a1.mdPath)), "同一消费方再次粘贴应先释放上一份临时源");
     assert(registry.pendingCount === 1, "替换后仍只应保留最新句柄");
     await registry.add(ownerB, b1);
-    assert(registry.pendingCount === 2, "不同消费方互不影响");
+    assert(pendingCountOf(registry) === 2, "不同消费方互不影响");
     console.log("[ok] temp-markdown:注册表 同消费方只留最新句柄(旧句柄即删)");
 
     // ---- 6. isTempSource:含已释放路径(最近文件过滤的唯一判定)----
@@ -151,13 +179,13 @@ export async function run() {
     assert(registry.pendingCount === 1, "按路径释放后应只剩另一个消费方的句柄");
     await registry.releaseOwner(ownerA); // 已释放过 → 空操作
     await registry.releaseOwner(ownerB);
-    assert(registry.pendingCount === 0, "按消费方释放后不应有存活句柄");
+    assert(pendingCountOf(registry) === 0, "按消费方释放后不应有存活句柄");
     assert(!(await exists(b1.mdPath)), "按消费方释放应删除其名下临时源");
     const c1 = await writeTempMarkdown("c1\n", { title: "丁", dir });
     written.push(c1);
     await registry.add("303", c1);
     await registry.releaseAll();
-    assert(registry.pendingCount === 0 && !(await exists(c1.mdPath)), "releaseAll 应清空并删除全部存活句柄");
+    assert(pendingCountOf(registry) === 0 && !(await exists(c1.mdPath)), "releaseAll 应清空并删除全部存活句柄");
     console.log("[ok] temp-markdown:注册表 按路径/按消费方/全量释放(含幂等与空操作)");
 
     // ---- 8. 进程单例与本段登记的临时源一并回收,专属子目录空后消失 ----
@@ -183,6 +211,10 @@ export async function run() {
       ipcMain.handle = originalHandle;
     }
     // 假 event:runWithCtx 读 sender.id,BrowserWindow.fromWebContents 需 getOwnerBrowserWindow
+    /**
+     * @param {number} id webContents id
+     * @returns {{ sender: { id: number, once: () => void, getOwnerBrowserWindow: () => null } }} 假 ipc event
+     */
     const event = (id) => ({ sender: { id, once: () => {}, getOwnerBrowserWindow: () => null } });
 
     clipboard.writeText("# 剪贴板标题\n\n正文段落。\n");
@@ -206,7 +238,7 @@ export async function run() {
     await fs.rm(read.mdPath, { force: true });
     const failed = await handlers.get(CH.convertSingle)(event(4242), read.mdPath, "docx");
     assert(failed.ok === false, `源缺失应转换失败,实际 ${JSON.stringify(failed)}`);
-    assert(clipboardTempSources.pendingCount === 0, "转换失败结局也应释放临时源");
+    assert(pendingCountOf(clipboardTempSources) === 0, "转换失败结局也应释放临时源");
     assert(clipboardTempSources.isTempSource(read.mdPath), "已释放路径仍应被识别为临时源");
     console.log("[ok] temp-markdown:convert:single 守卫不释放 / 失败结局释放");
 
@@ -226,10 +258,10 @@ export async function run() {
       const okTemp = await handlers.get(CH.convertSingle)(event(4243), tempSrc, "docx");
       assert(okTemp.ok === true, `临时源转换应成功,实际 ${JSON.stringify(okTemp)}`);
       await waitGone(tempSrc, "转换成功后释放的临时源");
-      assert(clipboardTempSources.pendingCount === 0, "成功后不应残留待消费句柄");
+      assert(pendingCountOf(clipboardTempSources) === 0, "成功后不应残留待消费句柄");
       const okPlain = await handlers.get(CH.convertSingle)(event(4243), plain, "docx");
       assert(okPlain.ok === true, `普通源转换应成功,实际 ${JSON.stringify(okPlain)}`);
-      const recent = loadUiState().recentFiles.map((entry) => entry.path);
+      const recent = loadUiState().recentFiles.map((/** @type {RecentFile} */ entry) => entry.path);
       assert(recent.includes(plain), `普通源应进最近文件(对照组),实际 ${JSON.stringify(recent)}`);
       assert(!recent.includes(tempSrc), `剪贴板临时源不应进最近文件,实际 ${JSON.stringify(recent)}`);
       // 退出兜底:will-quit 释放未消费句柄

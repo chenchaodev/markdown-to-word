@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 标题排版粒度验收:headingScale(标题字号缩放档位)+ headingSpacing(标题间距档位)。
  * 断言分层:
@@ -19,9 +20,16 @@ import {
 import { mergeSettingsWithDefaults } from "../../dist/renderer/settings/settings-logic.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
+import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 import fs from "node:fs/promises";
 
+/**
+ * 断言辅助。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {void}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`heading-scale 断言失败:${msg}`);
 }
@@ -85,7 +93,7 @@ export async function run() {
     warnings: [],
     typography: typo({ headingScale: "spacious", headingSpacing: "spacious" }),
   });
-  const spcDocument = await unzipPart(spcDocx.buffer, "word/document.xml");
+  const spcDocument = await unzipPart(docxBufferOf(spcDocx), "word/document.xml");
   assert(spcDocument.includes('<w:sz w:val="52"/>'), "spacious h1 标题 run 应含 w:sz=52(26pt×2)");
   assert(spcDocument.includes('<w:sz w:val="40"/>'), "spacious h2 标题 run 应含 w:sz=40(20pt×2)");
   assert(
@@ -93,25 +101,29 @@ export async function run() {
     "spacious h2 段前/段后应为 540/270 twips",
   );
   // 正文样式不受标题档位影响(styles.xml 默认字号仍为 bodySizePt×2 = 24)
-  const spcStyles = await unzipPart(spcDocx.buffer, "word/styles.xml");
+  const spcStyles = await unzipPart(docxBufferOf(spcDocx), "word/styles.xml");
   assert(spcStyles.includes('<w:sz w:val="24"/>'), "正文默认字号应保持 12pt×2=24,不受标题档位影响");
   console.log("[ok] heading-scale:docx 标题字号(w:sz)与段前段后(twips)按 spacious 档生效");
 
   // ================= 3. pdf CSS:font-size / margin 参数化 =================
-  const spcPdf = await convert(md, "pdf", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    typography: typo({ headingScale: "spacious", headingSpacing: "spacious" }),
-  });
+  const spcPdf = asPdfArtifact(
+    await convert(md, "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      typography: typo({ headingScale: "spacious", headingSpacing: "spacious" }),
+    }),
+  );
   assert(spcPdf.html.includes("h1 { font-size: 26pt;"), "pdf spacious h1 应为 font-size 26pt");
   assert(spcPdf.html.includes("margin: 0pt 0 18pt;"), "pdf spacious h1 margin 应为 0pt 0 18pt");
   assert(spcPdf.html.includes("h2 { font-size: 20pt;"), "pdf spacious h2 应为 font-size 20pt");
   // 默认(不传新字段,模拟旧配置)→ standard 档 = 升级前固定值
-  const legacyPdf = await convert(md, "pdf", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    typography: { ...DEFAULT_TYPOGRAPHY, headingScale: undefined, headingSpacing: undefined },
-  });
+  const legacyPdf = asPdfArtifact(
+    await convert(md, "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      typography: { ...DEFAULT_TYPOGRAPHY, headingScale: undefined, headingSpacing: undefined },
+    }),
+  );
   assert(legacyPdf.html.includes("h1 { font-size: 22pt;"), "缺省档位 pdf h1 应保持升级前 22pt(回归)");
   assert(legacyPdf.html.includes("h2 { font-size: 17pt;"), "缺省档位 pdf h2 应保持升级前 17pt(回归)");
   assert(legacyPdf.html.includes("h6 { font-size: 11pt;"), "缺省档位 pdf h6 应保持升级前 11pt(回归)");
@@ -126,17 +138,17 @@ export async function run() {
       warnings: [],
       typography: typo({ headingScale: scale }),
     });
-    const cmpDocument = await unzipPart(cmpDocx.buffer, "word/document.xml");
+    const cmpDocument = await unzipPart(docxBufferOf(cmpDocx), "word/document.xml");
     assert(
       cmpDocument.includes(`<w:sz w:val="${pt * 2}"/>`),
       `docx compact h${level} 应含 w:sz=${pt * 2}(同源换算 ${pt}pt×2)`,
     );
-    const cmpPdfHtml = (
+    const cmpPdfHtml = asPdfArtifact(
       await convert(md, "pdf", {
         baseDir: FIXTURES_DIR,
         warnings: [],
         typography: typo({ headingScale: scale }),
-      })
+      }),
     ).html;
     assert(
       cmpPdfHtml.includes(`h${level} { font-size: ${pt}pt;`),

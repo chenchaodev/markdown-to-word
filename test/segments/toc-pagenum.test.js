@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 目录页码(两遍法)测试:
  * - 纯逻辑:injectTocPageNumbers 将 slug→页码 注入目录条目(<span class="toc-page">N</span>);
@@ -13,6 +14,7 @@ import { pageNumbersForNames } from "../../dist/core/pdf/bookmarks.js";
 import { PDFDocument } from "pdf-lib";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { asPdfArtifact } from "../common/convert-helpers.js";
 
 const md = `# 第一章
 
@@ -28,6 +30,18 @@ const md = `# 第一章
 `;
 export const meta = { description: "目录页码(两遍法)测试:" };
 export const fixtures = { main: md };
+
+/**
+ * 取第 i 个标题的 id(调用方循环上界已保证下标在范围内)。
+ * @param {{ id: string }[]} headings 标题序列
+ * @param {number} i 下标
+ * @returns {string} 标题 id(slug)
+ */
+function headingIdAt(headings, i) {
+  const h = headings[i];
+  if (!h) throw new Error(`F7-② 断言失败:标题序列下标越界(${i}/${headings.length})`);
+  return h.id;
+}
 
 export async function run() {
   // 纯逻辑:injectTocPageNumbers 注入页码 span,且仅替换目录条目
@@ -81,15 +95,20 @@ export async function run() {
   }
 
   // 端到端两遍法:field 模式转换 → 第一遍打印 → /Dests 解析页码 → 注入一致
-  const art = await convert(md, "pdf", { baseDir: FIXTURES_DIR, title: "F7", warnings: [], tocMode: "field" });
+  const art = asPdfArtifact(
+    await convert(md, "pdf", { baseDir: FIXTURES_DIR, title: "F7", warnings: [], tocMode: "field" }),
+  );
   if (!art.html.includes('class="toc"')) throw new Error("F7-② 断言失败:field 模式应含目录");
   const pass1 = await htmlToPdf(art.html, art.footerTemplate);
   const doc = await PDFDocument.load(new Uint8Array(pass1));
   const headings = extractHeadings(art.html);
   if (headings.length === 0) throw new Error("F7-② 断言失败:未提取到标题");
-  const pageNumbers = pageNumbersForNames(
-    doc,
-    headings.map((h) => h.id),
+  // slug → 页码 映射(dist 为无类型标注的编译产物,测试侧显式字典视图)
+  const pageNumbers = /** @type {Record<string, number>} */ (
+    pageNumbersForNames(
+      doc,
+      headings.map((h) => h.id),
+    )
   );
   const pageCount = doc.getPageCount();
   for (const h of headings) {
@@ -99,7 +118,13 @@ export async function run() {
   }
   // 页码随文档顺序单调递增(后续标题页号不小于先前)
   for (let i = 1; i < headings.length; i++) {
-    if (pageNumbers[headings[i].id] < pageNumbers[headings[i - 1].id]) {
+    const cur = pageNumbers[headingIdAt(headings, i)];
+    const prev = pageNumbers[headingIdAt(headings, i - 1)];
+    // 上方循环已逐条断言页码非空,此处仅取回已验证值
+    if (cur == null || prev == null) {
+      throw new Error("F7-② 断言失败:页码顺序比较前标题页码缺失");
+    }
+    if (cur < prev) {
       throw new Error("F7-② 断言失败:页码顺序不符文档顺序(应单调递增)");
     }
   }

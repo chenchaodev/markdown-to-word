@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * geometry gate 页面侧探针:构造注入 renderer 执行的度量脚本(纯函数,零 DOM/零 Electron)。
  *
@@ -65,21 +66,30 @@ export function buildMeasureScript(selectorMap, mediaConditions = []) {
 /**
  * 解析度量脚本返回值(页面返回 JSON 字符串)。
  * 解析失败一律抛错(由驱动记 scenario-failed),不返回半成品样本。
+ * @param {unknown} raw 页面侧 executeJavaScript 的返回值
+ * @returns {{ nodes: Record<string, object | null>, viewport?: { width: number, height: number } }} 度量样本
  */
 export function parseMeasureScript(raw) {
   if (typeof raw !== 'string') {
     throw new Error(`度量脚本返回非字符串(实际 ${typeof raw});页面侧可能抛错`);
   }
+  /** @type {unknown} */
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    throw new Error(`度量脚本返回值不是合法 JSON:${err.message};返回片段 ${raw.slice(0, 200)}`);
+    throw new Error(
+      `度量脚本返回值不是合法 JSON:${err instanceof Error ? err.message : String(err)};返回片段 ${raw.slice(0, 200)}`,
+    );
   }
-  if (parsed === null || typeof parsed !== 'object' || parsed.nodes === undefined) {
+  if (parsed === null || typeof parsed !== 'object') {
     throw new Error(`度量脚本返回值缺少 nodes 字段:返回片段 ${String(raw).slice(0, 200)}`);
   }
-  return parsed;
+  const sample = /** @type {{ nodes?: unknown }} */ (parsed);
+  if (sample.nodes === undefined) {
+    throw new Error(`度量脚本返回值缺少 nodes 字段:返回片段 ${String(raw).slice(0, 200)}`);
+  }
+  return /** @type {{ nodes: Record<string, object | null>, viewport?: { width: number, height: number } }} */ (sample);
 }
 
 /**
@@ -87,6 +97,9 @@ export function parseMeasureScript(raw) {
  * 高度维度媒体查询在隐藏窗口 setContentSize 之后会滞后一帧以上才重算(实测约 1s),
  * 只等 innerWidth/innerHeight 会量到上一档布局(实测 880 档首个场景量到 960 档的
  * --tbh / 历史标题条高度 / 动作栏高度),故把档位匹配态一并作为落定判据。
+ * @param {[number, number]} viewport 目标视口 [宽, 高]
+ * @param {string[]} [mediaConditions] 需一并判定的媒体查询条件(来自 CSS 单源)
+ * @returns {string} 可直接交给 webContents.executeJavaScript 的表达式
  */
 export function buildViewportSettledScript(viewport, mediaConditions = []) {
   const checks = [

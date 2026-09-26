@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 阶段 4 视觉/无障碍契约守护段(纯静态断言,零 DOM / 零 Electron):
  *
@@ -20,17 +21,36 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
+ * (cond 为假即抛,后续代码无须再判空)。
+ * @param {unknown} cond
+ * @param {string} msg
+ * @returns {asserts cond}
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`ui-contract-guards 断言失败:${msg}`);
 }
 
+/**
+ * 取正则捕获组(缺失即断言失败,避免后续断言在 undefined 上静默失真)。
+ * @param {RegExpExecArray} match
+ * @param {number} index
+ * @returns {string}
+ */
+function capture(match, index) {
+  const value = match[index];
+  assert(value !== undefined, `正则第 ${index} 个捕获组缺失`);
+  return value;
+}
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
-const read = (...rel) => fs.readFileSync(path.join(repoRoot, ...rel), "utf8");
+const read = (/** @type {string[]} */ ...rel) => fs.readFileSync(path.join(repoRoot, ...rel), "utf8");
 
 const STYLE_DIR = ["src", "renderer", "style"];
 /** 去注释后再做规则/令牌解析:注释里出现的选择器与令牌名(如「见 .feed)」)不是声明 */
-const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "");
+const stripComments = (/** @type {string} */ css) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 const baseCss = stripComments(read(...STYLE_DIR, "base.css"));
 const dropCss = stripComments(read(...STYLE_DIR, "drop.css"));
 const dialogsCss = stripComments(read(...STYLE_DIR, "dialogs.css"));
@@ -39,11 +59,22 @@ const aboutHtml = read("src", "renderer", "about.html");
 
 /* ---------------- 颜色工具(WCAG 2.x 相对亮度 / 对比度 / alpha 合成) ---------------- */
 
+/**
+ * 颜色通道值。
+ * @typedef {{ r: number, g: number, b: number, a: number }} RgbColor
+ */
+
+/**
+ * 解析 #rgb/#rrggbb/rgb()/rgba() 为通道值(不可解析返回 null,由调用方按「缺色即红」处理)。
+ * @param {string} value
+ * @returns {RgbColor | null}
+ */
 function parseColor(value) {
   const v = value.trim().toLowerCase();
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(v);
   if (hex) {
-    const s = hex[1].length === 3 ? hex[1].replace(/./g, (c) => c + c) : hex[1];
+    const digits = capture(hex, 1);
+    const s = digits.length === 3 ? digits.replace(/./g, (c) => c + c) : digits;
     return {
       r: parseInt(s.slice(0, 2), 16),
       g: parseInt(s.slice(2, 4), 16),
@@ -53,7 +84,7 @@ function parseColor(value) {
   }
   const rgba = /^rgba?\(([^)]+)\)$/.exec(v);
   if (rgba) {
-    const parts = rgba[1].split(/[,/]/).map((p) => p.trim());
+    const parts = capture(rgba, 1).split(/[,/]/).map((/** @type {string} */ p) => p.trim());
     return {
       r: Number(parts[0]),
       g: Number(parts[1]),
@@ -64,11 +95,21 @@ function parseColor(value) {
   return null;
 }
 
+/**
+ * 单通道线性化(WCAG 2.x)。
+ * @param {number} v
+ * @returns {number}
+ */
 function channelLuminance(v) {
   const c = v / 255;
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 }
 
+/**
+ * 相对亮度。
+ * @param {RgbColor} color
+ * @returns {number}
+ */
 function relativeLuminance(color) {
   return (
     0.2126 * channelLuminance(color.r) +
@@ -78,6 +119,12 @@ function relativeLuminance(color) {
 }
 
 /** alpha 合成:半透明令牌(--acc-soft)落到不透明底(--card)上后的实际观感色 */
+/**
+ * alpha 合成:半透明令牌(--acc-soft)落到不透明底(--card)上后的实际观感色
+ * @param {RgbColor} fg
+ * @param {RgbColor} bg
+ * @returns {RgbColor}
+ */
 function over(fg, bg) {
   if (fg.a >= 1) return fg;
   return {
@@ -88,14 +135,38 @@ function over(fg, bg) {
   };
 }
 
+/**
+ * 两色对比度(WCAG 相对亮度公式);输入为 CSS 颜色文本,不可解析即断言失败。
+ * @param {string | undefined} fg
+ * @param {string | undefined} bg
+ * @returns {number}
+ */
 function contrast(fg, bg) {
-  const a = relativeLuminance(over(parseColor(fg), parseColor(bg)));
-  const b = relativeLuminance(parseColor(bg));
-  const [hi, lo] = a > b ? [a, b] : [b, a];
+  const a = relativeLuminance(over(colorOf(fg, "前景色"), colorOf(bg, "背景色")));
+  const b = relativeLuminance(colorOf(bg, "背景色"));
+  const hi = Math.max(a, b);
+  const lo = Math.min(a, b);
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/**
+ * 取可解析颜色(令牌缺失或格式不认识即断言失败,避免对比度计算静默失真)。
+ * @param {string | undefined} value
+ * @param {string} label
+ * @returns {RgbColor}
+ */
+function colorOf(value, label) {
+  const color = parseColor(value ?? "");
+  assert(color, `${label} 不是可解析颜色:${JSON.stringify(value)}`);
+  return color;
+}
+
 /** 取某个选择器块内的自定义属性(name → 原始值) */
+/**
+ * @param {string} css
+ * @param {string} selector
+ * @returns {Map<string, string>}
+ */
 function tokensIn(css, selector) {
   const at = css.indexOf(selector);
   assert(at >= 0, `样式表里找不到令牌块「${selector}」`);
@@ -113,14 +184,21 @@ function tokensIn(css, selector) {
     }
   }
   const body = css.slice(open + 1, end);
+  /** @type {Map<string, string>} */
   const map = new Map();
   for (const m of body.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
-    map.set(m[1], m[2].trim());
+    map.set(capture(m, 1), capture(m, 2).trim());
   }
   return map;
 }
 
 /** 取 @media 条件内某个选择器块的令牌(用于系统深色兜底块) */
+/**
+ * @param {string} css
+ * @param {string} mediaCondition
+ * @param {string} selector
+ * @returns {Map<string, string>}
+ */
 function tokensInMedia(css, mediaCondition, selector) {
   const at = css.indexOf(`@media ${mediaCondition}`);
   assert(at >= 0, `样式表里找不到媒体查询「@media ${mediaCondition}」`);
@@ -133,6 +211,11 @@ function tokensInMedia(css, mediaCondition, selector) {
 /* ---------------- 断言辅助 ---------------- */
 
 /** 取规则体:{选择器} { ... }(取第一个匹配块) */
+/**
+ * @param {string} css
+ * @param {string} selector
+ * @returns {string}
+ */
 function ruleBody(css, selector) {
   const at = css.indexOf(selector);
   assert(at >= 0, `找不到规则「${selector}」`);
@@ -148,8 +231,12 @@ function ruleBody(css, selector) {
   throw new Error(`规则「${selector}」缺少闭合花括号`);
 }
 
+/**
+ * @param {string} css
+ * @returns {Set<string>}
+ */
 function definedVarNames(css) {
-  return new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]));
+  return new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => capture(m, 1)));
 }
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
@@ -159,14 +246,16 @@ export async function run() {
   /* ---------- 1. 令牌完整性:引用了就得定义 ---------- */
   // 1a. 主窗三份样式:每个 var(--x) 要么在 base.css 定义,要么自带兜底值
   const baseVars = definedVarNames(baseCss);
-  for (const [name, css] of [
+  /** @type {[string, string][]} */
+  const STYLE_SOURCES = [
     ["base.css", baseCss],
     ["drop.css", dropCss],
     ["dialogs.css", dialogsCss],
-  ]) {
+  ];
+  for (const [name, css] of STYLE_SOURCES) {
     for (const m of css.matchAll(/var\((--[a-z0-9-]+)([^)]*)\)/g)) {
-      const [, token, rest] = m;
-      const hasFallback = rest.trim().startsWith(",");
+      const token = capture(m, 1);
+      const hasFallback = capture(m, 2).trim().startsWith(",");
       assert(
         baseVars.has(token) || hasFallback,
         `${name} 引用了未定义令牌 var(${token})${hasFallback ? "(虽有兜底值,但 base.css 仍应定义)" : ""}`,
@@ -177,7 +266,7 @@ export async function run() {
   const aboutStyleRaw = aboutHtml.slice(0, aboutHtml.indexOf("</style>"));
   const aboutStyle = stripComments(aboutStyleRaw);
   const aboutDefined = definedVarNames(aboutStyle);
-  const aboutUsed = new Set([...aboutStyle.matchAll(/var\((--[a-z0-9-]+)([^)]*)\)/g)].map((m) => m[1]));
+  const aboutUsed = new Set([...aboutStyle.matchAll(/var\((--[a-z0-9-]+)([^)]*)\)/g)].map((m) => capture(m, 1)));
   for (const token of aboutUsed) {
     assert(
       aboutDefined.has(token),
@@ -211,12 +300,14 @@ export async function run() {
     darkExplicit.get("--acc-ink") !== undefined && darkSystem.get("--acc-ink") !== undefined,
     "--acc-ink(朱砂文字色)必须在两处深色令牌块都定义",
   );
+  /** @type {[string, Map<string, string>][]} */
   const THEMES = [
     ["light", rootTokens],
     ["dark", darkExplicit],
     ["dark@system", darkSystem],
   ];
   // 关键配对:弱化文字对次级面/卡面、次文对卡面、朱砂文字对卡面/次级面/朱砂软底、成功色对卡面
+  /** @type {[string, string][]} */
   const PAIRS = [
     ["--mut", "--card-2"],
     ["--mut", "--card"],
@@ -238,7 +329,10 @@ export async function run() {
       );
     }
     // 朱砂文字落到 --acc-soft 软底上(错误块的真实底色):先合成再算
-    const softBg = over(parseColor(tokens.get("--acc-soft")), parseColor(tokens.get("--card")));
+    const softBg = over(
+      colorOf(tokens.get("--acc-soft"), `${themeName} --acc-soft`),
+      colorOf(tokens.get("--card"), `${themeName} --card`),
+    );
     const softHex = `#${[softBg.r, softBg.g, softBg.b].map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
     const softRatio = contrast(tokens.get("--acc-ink"), softHex);
     assert(
@@ -260,9 +354,10 @@ export async function run() {
   // 4b. 完成态是确定结果:静态圆点,不呼吸(呼吸会被读成「还没结束」)
   const okDot = /\.status--ok::before\s*\{([^}]*)\}/.exec(baseCss);
   assert(okDot, "找不到 .status--ok::before 规则");
+  const okDotBody = capture(okDot, 1);
   assert(
-    !/animation/.test(okDot[1]),
-    `.status--ok::before 不应带动画(完成态确定),实际:${okDot[1]}`,
+    !/animation/.test(okDotBody),
+    `.status--ok::before 不应带动画(完成态确定),实际:${okDotBody}`,
   );
   // 4c. 队列不再套卡壳(纸面上再嵌一张卡,层级多一层)
   const listcardBody = ruleBody(dropCss, ".listcard");
@@ -273,9 +368,10 @@ export async function run() {
   // 4d. 向导合并源行是三列(直接套主队列四列会把文件名挤进序号列)
   const wizardRow = /\.wizard-body \.mlist \.multi-item\s*\{([^}]*)\}/.exec(dialogsCss);
   assert(wizardRow, "dialogs.css 缺少 .wizard-body .mlist .multi-item 三列网格规则");
+  const wizardRowBody = capture(wizardRow, 1);
   assert(
-    /grid-template-columns:\s*22px minmax\(0, 1fr\) auto/.test(wizardRow[1]),
-    `向导源行应收敛为三列(序号 + 文件名 + 操作),实际:${wizardRow[1]}`,
+    /grid-template-columns:\s*22px minmax\(0, 1fr\) auto/.test(wizardRowBody),
+    `向导源行应收敛为三列(序号 + 文件名 + 操作),实际:${wizardRowBody}`,
   );
 
   /* ---------- 5. 无障碍静态契约(index.html) ---------- */
@@ -291,21 +387,24 @@ export async function run() {
     const selected = /aria-selected="(true|false)"/.exec(tag);
     const id = /\bid="([^"]+)"/.exec(tag);
     assert(controls && selected && id, `分组按钮缺 aria-controls/aria-selected/id:${tag}`);
+    const controlsId = capture(controls, 1);
+    const tabId = capture(id, 1);
     assert(
-      indexHtml.includes(`id="${controls[1]}"`),
-      `tab ${id[1]} 的 aria-controls="${controls[1]}"在页面上不存在对应面板`,
+      indexHtml.includes(`id="${controlsId}"`),
+      `tab ${tabId} 的 aria-controls="${controlsId}"在页面上不存在对应面板`,
     );
     assert(
-      indexHtml.includes(`aria-labelledby="${id[1]}"`),
-      `面板未通过 aria-labelledby 回指标签 ${id[1]}`,
+      indexHtml.includes(`aria-labelledby="${tabId}"`),
+      `面板未通过 aria-labelledby 回指标签 ${tabId}`,
     );
-    tabIds.add(id[1]);
+    tabIds.add(tabId);
   }
   assert(
     (indexHtml.match(/role="tabpanel"/g) ?? []).length === 6,
     "设置面板应恰有 6 个 role=tabpanel",
   );
   // 5b. 字段错误:就地可见 + 可被读屏关联
+  /** @type {[string, string | null][]} */
   const ERROR_NODES = [
     ["marginError", null], // 四格共享一条错误:不声明 aria-controls
     ["fontEastAsiaError", "fontEastAsia"],
@@ -317,16 +416,17 @@ export async function run() {
     const re = new RegExp(`<p id="${id}"[^>]*>`, "s");
     const m = re.exec(indexHtml);
     assert(m, `index.html 未找到字段错误节点 #${id}`);
-    assert(/\brole="alert"/.test(m[0]), `字段错误节点 #${id} 缺 role="alert"(错误须即时播报)`);
+    const errorTag = capture(m, 0);
+    assert(/\brole="alert"/.test(errorTag), `字段错误节点 #${id} 缺 role="alert"(错误须即时播报)`);
     if (controls === null) {
       assert(
-        !/aria-controls=/.test(m[0]),
+        !/aria-controls=/.test(errorTag),
         `#${id} 是共享型错误,不应声明 aria-controls(会假装指向某一个控件)`,
       );
       continue;
     }
     assert(
-      new RegExp(`aria-controls="${controls}"`).test(m[0]),
+      new RegExp(`aria-controls="${controls}"`).test(errorTag),
       `#${id} 应声明 aria-controls="${controls}"(showFieldError 靠它回标 aria-invalid)`,
     );
     assert(
@@ -336,46 +436,54 @@ export async function run() {
   }
   // 5c. 开关:标签与说明都是 span,必须显式关联(否则读屏只报「复选框」)
   for (const m of indexHtml.matchAll(/<input type="checkbox" id="([A-Za-z0-9]+)" class="switch-input"([^>]*)\/?>/g)) {
-    const [, id, attrs] = m;
-    const labelled = /aria-labelledby="([^"]+)"/.exec(attrs);
-    const described = /aria-describedby="([^"]+)"/.exec(attrs);
-    assert(labelled, `开关 #${id} 缺 aria-labelledby`);
-    assert(described, `开关 #${id} 缺 aria-describedby`);
-    for (const [kind, ref] of [["aria-labelledby", labelled[1]], ["aria-describedby", described[1]]]) {
+    const switchId = capture(m, 1);
+    const labelled = /aria-labelledby="([^"]+)"/.exec(capture(m, 2));
+    const described = /aria-describedby="([^"]+)"/.exec(capture(m, 2));
+    assert(labelled, `开关 #${switchId} 缺 aria-labelledby`);
+    assert(described, `开关 #${switchId} 缺 aria-describedby`);
+    for (const [kind, ref] of [
+      ["aria-labelledby", capture(labelled, 1)],
+      ["aria-describedby", capture(described, 1)],
+    ]) {
       assert(
         indexHtml.includes(`id="${ref}"`),
-        `开关 #${id} 的 ${kind}="${ref}"指向的元素不存在`,
+        `开关 #${switchId} 的 ${kind}="${ref}"指向的元素不存在`,
       );
     }
   }
   // 5d. 进度:进度条须有可读文本(纯百分比无信息量)并指向阶段播报位
   const track = /<div[^>]*id="progressTrack"[^>]*>/s.exec(indexHtml);
   assert(track, "index.html 未找到 #progressTrack");
-  assert(/\brole="progressbar"/.test(track[0]), "#progressTrack 缺 role=progressbar");
-  assert(/\baria-valuetext="/.test(track[0]), "#progressTrack 缺 aria-valuetext(百分比对读屏无信息量)");
+  const trackTag = capture(track, 0);
+  assert(/\brole="progressbar"/.test(trackTag), "#progressTrack 缺 role=progressbar");
+  assert(/\baria-valuetext="/.test(trackTag), "#progressTrack 缺 aria-valuetext(百分比对读屏无信息量)");
   assert(
-    /aria-describedby="status"/.test(track[0]),
+    /aria-describedby="status"/.test(trackTag),
     "#progressTrack 应经 aria-describedby 指向 #status(阶段文案播报位)",
   );
   // 5e. 状态行:错误走 alert(打断)、整句播报
   const status = /<p id="status"[^>]*>/.exec(indexHtml);
   assert(status, "index.html 未找到 #status");
-  assert(/\brole="status"/.test(status[0]), "#status 缺 role=status(setStatus 按语义切 alert)");
-  assert(/\baria-atomic="true"/.test(status[0]), "#status 缺 aria-atomic(整句播报,避免半截更新被漏读)");
+  const statusTag = capture(status, 0);
+  assert(/\brole="status"/.test(statusTag), "#status 缺 role=status(setStatus 按语义切 alert)");
+  assert(/\baria-atomic="true"/.test(statusTag), "#status 缺 aria-atomic(整句播报,避免半截更新被漏读)");
 
   /* ---------- 6. index.html / about.html 的 label[for] 与 id 自洽 ---------- */
-  for (const [name, html] of [
+  /** @type {[string, string][]} */
+  const PAGES = [
     ["index.html", indexHtml],
     ["about.html", aboutHtml],
-  ]) {
-    const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  ];
+  for (const [name, html] of PAGES) {
+    const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => capture(m, 1)));
     for (const m of html.matchAll(/\bfor="([^"]+)"/g)) {
-      assert(ids.has(m[1]), `${name} 的 label[for="${m[1]}"]没有对应控件(id 不存在)`);
+      const target = capture(m, 1);
+      assert(ids.has(target), `${name} 的 label[for="${target}"]没有对应控件(id 不存在)`);
     }
     // 引用完整性:aria-labelledby / describedby / controls 指向的 id 必须存在
     for (const attr of ["aria-labelledby", "aria-describedby", "aria-controls"]) {
       for (const m of html.matchAll(new RegExp(`${attr}="([^"]+)"`, "g"))) {
-        for (const ref of m[1].split(/\s+/).filter(Boolean)) {
+        for (const ref of capture(m, 1).split(/\s+/).filter(Boolean)) {
           assert(ids.has(ref), `${name} 的 ${attr}="${ref}"指向的元素不存在`);
         }
       }
@@ -394,7 +502,7 @@ export async function run() {
   const reduceBlock = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n {4}\}/.exec(aboutStyle);
   assert(reduceBlock, "about.html 缺降低动效块");
   assert(
-    /transition-duration:\s*0\.01ms\s*!important/.test(reduceBlock[1]),
+    /transition-duration:\s*0\.01ms\s*!important/.test(capture(reduceBlock, 1)),
     "about.html 的降动效块只关了钤印动画,未覆盖全局过渡(按钮/链接仍有动效)",
   );
   // 令牌与主窗同源:同名令牌值必须一致(冷灰纸 + 朱砂身份不得两窗分叉)

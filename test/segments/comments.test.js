@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 批注验收:行内 `[锚定文本]{批注=内容}` → docx 批注。
  * 断言 comments.xml 部件存在、commentRangeStart/End/Reference 结构、锚定文本
@@ -8,6 +9,7 @@ import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { zipContains, unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:正文/表格单元格批注 + rich 内容 + 既有语法回归(链接、{#eq:label}) */
 const commentMd = `# 批注测试
@@ -27,19 +29,21 @@ export const fixtures = { main: commentMd };
 
 /** 批注验收 */
 export async function run() {
-  const docxArtifact = await convert(commentMd, "docx", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-  });
+  const docxBuffer = docxBufferOf(
+    await convert(commentMd, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+    }),
+  );
   // docx 断言:comments.xml 部件必须存在(库对空容器也生成,有批注时必有内容)
-  const commentsOk = zipContains(docxArtifact.buffer, "word/comments.xml");
+  const commentsOk = zipContains(docxBuffer, "word/comments.xml");
   if (!commentsOk) {
     throw new Error("docx 部件断言失败: comments.xml 不存在");
   }
   console.log("[ok] docx 批注:comments.xml 部件存在");
 
   // 批注内容断言(comments.xml):文本 / rich 加粗 / 链接 / author 固定
-  const commentsXml = await unzipPart(docxArtifact.buffer, "word/comments.xml");
+  const commentsXml = await unzipPart(docxBuffer, "word/comments.xml");
   if (!commentsXml.includes("这是批注内容")) {
     throw new Error("批注内容断言失败: comments.xml 缺少批注内容文本");
   }
@@ -53,7 +57,7 @@ export async function run() {
   if (!commentsXml.includes("<w:hyperlink")) {
     throw new Error("批注 rich 断言失败: comments.xml 缺少超链接 run");
   }
-  const commentsRels = await unzipPart(docxArtifact.buffer, "word/_rels/comments.xml.rels");
+  const commentsRels = await unzipPart(docxBuffer, "word/_rels/comments.xml.rels");
   if (!commentsRels.includes('Target="https://example.com"')) {
     throw new Error("批注 rich 断言失败: comments.xml.rels 缺少链接目标");
   }
@@ -63,7 +67,7 @@ export async function run() {
   console.log("[ok] 批注内容:文本/加粗/链接/固定 author 存在");
 
   // 批注结构断言(document.xml):commentRangeStart/End/Reference + 锚定文本保留
-  const documentXml = await unzipPart(docxArtifact.buffer, "word/document.xml");
+  const documentXml = await unzipPart(docxBuffer, "word/document.xml");
   if (!documentXml.includes("<w:commentRangeStart")) {
     throw new Error("批注结构断言失败: document.xml 缺少 commentRangeStart");
   }
@@ -94,14 +98,16 @@ export async function run() {
   console.log(`[ok] 批注结构:${ids.length} 个批注 id 唯一,锚定文本保留,链接/{#eq:label} 回归通过`);
 
   // pdf 路线:markdown-it 不解析批注语法,原样输出
-  const pdfArtifact = await convert(commentMd, "pdf", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-  });
+  const pdfArtifact = asPdfArtifact(
+    await convert(commentMd, "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+    }),
+  );
   if (!pdfArtifact.html.includes("[锚定文本]{批注=这是批注内容}")) {
     throw new Error("pdf 原样断言失败: 批注语法被解析或丢失");
   }
   console.log("[ok] pdf 路线:批注语法原样输出(不解析)");
 
-  await saveArtifact("comments", { docx: docxArtifact.buffer });
+  await saveArtifact("comments", { docx: docxBuffer });
 }

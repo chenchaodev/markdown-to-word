@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * geometry gate 判定层回归与负探针(位于 test/segments/ = 跨域守护段;
  * 被测为 test/tools/geometry/ 下的纯判定层,不经 dist 编译产物、不启真实窗口):
@@ -26,13 +27,55 @@ import {
 import { buildViewportSettledScript, parseMeasureScript } from "../tools/geometry/geometry-page.mjs";
 import { ROOT } from "../common/paths.js";
 
+/** 场景表项(契约单源 geometry-spec) @typedef {typeof SCENARIOS[number]} Scenario */
+/** 门禁采样结果 @typedef {Parameters<typeof runGeometryGate>[0][number]} GeometrySample */
+/** 节点度量样本 @typedef {NonNullable<GeometrySample["nodes"][string]>} NodeSample */
+/** 门禁判定结果 @typedef {ReturnType<typeof runGeometryGate>} GateResult */
+/** 门禁阈值与档位条件 @typedef {NonNullable<Parameters<typeof runGeometryGate>[1]>} GateOptions */
+/** 布局盒(left/top/width/height) @typedef {{left: number, top: number, width: number, height: number}} LayoutBox */
+/**
+ * 标称布局(各视口档内部自洽,判定不依赖绝对值)。
+ * @typedef {object} NominalLayout
+ * @property {Scenario["viewport"]} viewport 场景视口
+ * @property {number} headerH 顶栏高
+ * @property {LayoutBox} wrap 舞台容器
+ * @property {LayoutBox} stage 纸面
+ * @property {LayoutBox} quickBar 快捷条
+ * @property {number} paperContentLeft 纸面内容盒左边
+ * @property {number} paperContentWidth 纸面内容盒宽
+ * @property {number} barTop 底部操作栏顶边
+ * @property {number} feedTop 固定消息槽顶边
+ * @property {number} histTop 历史槽顶边
+ * @property {number} barH 操作栏高
+ * @property {number} feedH 消息槽高
+ * @property {number} headH 历史槽高
+ */
+
+/**
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败说明
+ * @returns {asserts cond} 条件不成立即抛错(供后续行收窄)
+ */
 function assert(cond, msg) {
   if (!cond) throw new Error(`geometry-gate 断言失败:${msg}`);
 }
 
-/** 真实样式表里的高度档媒体查询(与门禁驱动同源同法) */
+/**
+ * 节点 key 是否已在选择器表登记(NODE_SELECTORS 是只读字面量表,动态 key 需显式查询)。
+ * @param {string} key 节点 key
+ * @returns {boolean} 是否登记
+ */
+function hasNodeSelector(key) {
+  return Object.hasOwn(NODE_SELECTORS, key);
+}
+
+/**
+ * 真实样式表里的高度档媒体查询(与门禁驱动同源同法)。
+ * @returns {string[]} 条件串(去重、保持出现序)
+ */
 function readMediaConditions() {
   const styleDir = path.join(ROOT, "src", "renderer", "style");
+  /** @type {string[]} */
   const conds = [];
   for (const file of fs.readdirSync(styleDir).filter((f) => f.endsWith(".css"))) {
     for (const cond of extractHeightMediaConditions(fs.readFileSync(path.join(styleDir, file), "utf8"))) {
@@ -44,7 +87,15 @@ function readMediaConditions() {
 
 const MEDIA_CONDITIONS = readMediaConditions();
 
-/** 合成一个节点度量:padding 盒由 rect + border 推出,滚动尺寸默认等于可视尺寸(即无溢出) */
+/**
+ * 合成一个节点度量:padding 盒由 rect + border 推出,滚动尺寸默认等于可视尺寸(即无溢出)。
+ * @param {number} left 左
+ * @param {number} top 上
+ * @param {number} width 宽
+ * @param {number} height 高
+ * @param {{borderLeft?: number, visible?: boolean, display?: string, dataStage?: string | null, scrollWidth?: number, scrollHeight?: number}} [extra] 覆盖项
+ * @returns {NodeSample} 节点度量
+ */
 function node(left, top, width, height, extra = {}) {
   const borderLeft = extra.borderLeft ?? 0;
   return {
@@ -64,6 +115,8 @@ function node(left, top, width, height, extra = {}) {
  * 各视口档的标称布局(内部自洽即可:舞台高度 = min(可用高, 设计高),纸面 760/591 宽,
  * 队列列 = 纸面内容盒内缩 14px,固定槽高度按档位取值)。
  * 取值贴近真实实测,便于失败信息里的数字可读;判定不依赖这些数字的绝对值。
+ * @param {Scenario["viewport"]} viewport 场景视口
+ * @returns {NominalLayout} 标称布局
  */
 function layoutFor(viewport) {
   const isTall = viewport[1] > 640;
@@ -102,11 +155,18 @@ function layoutFor(viewport) {
   };
 }
 
+/** @type {Map<string, NominalLayout>} */
 const LAYOUTS = new Map(SCENARIOS.map((sc) => [sc.viewport.join("x"), layoutFor(sc.viewport)]));
 
-/** 造一份"应当全绿"的场景采样 */
+/**
+ * 造一份"应当全绿"的场景采样。
+ * @param {Scenario} sc 场景表项
+ * @param {(sample: GeometrySample) => void} [mutate] 就地改写采样的钩子
+ * @returns {GeometrySample} 场景采样
+ */
 function sampleFor(sc, mutate = () => {}) {
   const L = LAYOUTS.get(sc.viewport.join("x"));
+  if (L === undefined) throw new Error(`geometry-gate 场景「${sc.id}」缺少标称布局`);
   const queueLeft = L.paperContentLeft + 14;
   const queueWidth = L.paperContentWidth - 28;
   const isEmpty = sc.expectStage === "empty";
@@ -136,6 +196,7 @@ function sampleFor(sc, mutate = () => {}) {
       ? node(queueLeft, L.stage.top + 49, queueWidth, 40, { visible: false, display: "none" })
       : node(queueLeft, L.stage.top + 49, queueWidth, 40),
   };
+  /** @type {GeometrySample} */
   const sample = {
     id: sc.id,
     viewport: { width: sc.viewport[0], height: sc.viewport[1] },
@@ -150,17 +211,26 @@ function sampleFor(sc, mutate = () => {}) {
   return sample;
 }
 
+/** @returns {GeometrySample[]} 全绿样本集(每个规格场景一份) */
 const cleanSamples = () => SCENARIOS.map((sc) => sampleFor(sc));
 
-/** 跑门禁并断言某条规则命中指定场景(不只看"判红",还看"因什么原因红") */
+/**
+ * 跑门禁并断言某条规则命中指定场景(不只看"判红",还看"因什么原因红")。
+ * @param {GeometrySample[]} samples 注入故障后的采样集
+ * @param {string} rule 期望命中的规则名
+ * @param {string | null} scenario 期望命中的场景 id(null = 不限场景)
+ * @param {GateOptions} [options] 门禁阈值覆盖
+ * @returns {GateResult} 门禁判定结果
+ */
 function expectRule(samples, rule, scenario, options = {}) {
   const result = runGeometryGate(samples, { mediaConditions: MEDIA_CONDITIONS, ...options });
   assert(result.ok === false, `注入「${rule}」故障后期禁仍判绿(门禁漏检)`);
   const hit = result.findings.filter((f) => f.rule === rule && (scenario === null || f.scenario === scenario));
-  assert(hit.length > 0, `注入「${rule}」故障后未命中该规则,实际命中:${result.findings.map((f) => `${f.rule}@${f.scenario}`).join(",") || "无"}`);
+  const first = hit[0];
+  assert(first !== undefined, `注入「${rule}」故障后未命中该规则,实际命中:${result.findings.map((f) => `${f.rule}@${f.scenario}`).join(",") || "无"}`);
   assert(
-    String(hit[0].message).length > 20,
-    `「${rule}」的失败信息须可定位(含规则/场景/节点/数字),实际:${hit[0].message}`,
+    String(first.message).length > 20,
+    `「${rule}」的失败信息须可定位(含规则/场景/节点/数字),实际:${first.message}`,
   );
   return result;
 }
@@ -168,12 +238,19 @@ function expectRule(samples, rule, scenario, options = {}) {
 /**
  * 改写某场景的某个节点度量(负探针的统一入口):
  * fn(node, nodes, key) 就地改度量;返回非 undefined 则整体替换该节点(如置 null 模拟选择器缺失)。
+ * @param {GeometrySample[]} samples 原采样集
+ * @param {string} scenarioId 目标场景 id
+ * @param {string} key 目标节点 key
+ * @param {(node: NodeSample, nodes: Record<string, NodeSample | null>, key: string) => NodeSample | null | undefined | void} fn 改写钩子
+ * @returns {GeometrySample[]} 改写后的采样集
  */
 function withNode(samples, scenarioId, key, fn) {
   return samples.map((s) => {
     if (s.id !== scenarioId) return s;
     const nodes = { ...s.nodes };
-    const replacement = fn(nodes[key], nodes, key);
+    // 放宽理由:样本已构造完成(nodes 全部为 NodeSample),Record 索引的
+    // null | undefined 只来自类型层面;「置 null 模拟选择器缺失」由返回值覆盖表达。
+    const replacement = fn(/** @type {NodeSample} */ (nodes[key]), nodes, key);
     if (replacement !== undefined) nodes[key] = replacement;
     return { ...s, nodes };
   });
@@ -190,7 +267,10 @@ export async function run() {
     `标称样本应全绿,实际命中:${green.findings.map((f) => `${f.rule}@${f.scenario}:${f.message}`).join(" | ")}`,
   );
   assert(green.findings.length === 0, "全绿样本不应产生任何 finding");
-  assert(green.stats.scenarios === SCENARIOS.length, "统计的场景数应与规格表一致");
+  // 放宽理由:门禁的 stats 声明为 object(判定层刻意不外泄内部结构),
+  // 此处只按契约读取 scenarios 计数。
+  const greenStats = /** @type {{ scenarios: number }} */ (green.stats);
+  assert(greenStats.scenarios === SCENARIOS.length, "统计的场景数应与规格表一致");
   assert(green.passedScenarios.length === SCENARIOS.length, "全部场景都应有有效采样");
 
   // ---------- 2. 负向:缺场景 / 场景步骤失败(不得静默跳过) ----------
@@ -215,9 +295,11 @@ export async function run() {
     "viewport-mismatch",
     "compact-multi-880",
   );
+  // 首个高度档条件(缺省 "" 只在样式表未抽出任何条件时兜底,本段末尾另有非空断言)
+  const [firstMediaCondition = ""] = MEDIA_CONDITIONS;
   expectRule(
     cleanSamples().map((s) =>
-      s.id === "compact-multi-880" ? { ...s, tiers: { ...s.tiers, [MEDIA_CONDITIONS[0]]: false } } : s,
+      s.id === "compact-multi-880" ? { ...s, tiers: { ...s.tiers, [firstMediaCondition]: false } } : s,
     ),
     "tier-mismatch",
     "compact-multi-880",
@@ -284,6 +366,7 @@ export async function run() {
   );
 
   // ---------- 7. 负向:阶段跳动(容差内放过、超阈值判红) ----------
+  /** @param {number} delta 位移量(px) */
   const jump = (delta) =>
     withNode(cleanSamples(), "converting-960", "stage", (n) => {
       n.rect = {
@@ -349,18 +432,19 @@ export async function run() {
   expectRule(cleanSamples(), "compact-scroll", "compact-multi-880", { scrollBudgetPx: -1 });
 
   // ---------- 9. 规格自洽:三张表互不悬空,且覆盖两档关键视口 ----------
+  /** @type {Set<string>} */
   const ids = new Set(SCENARIOS.map((sc) => sc.id));
   assert(ids.size === SCENARIOS.length, "场景 id 必须唯一");
   for (const sc of SCENARIOS) {
     for (const key of [...(sc.visible ?? []), ...(sc.present ?? [])]) {
-      assert(NODE_SELECTORS[key] !== undefined, `场景「${sc.id}」引用了未登记的测量节点 ${key}`);
+      assert(hasNodeSelector(key), `场景「${sc.id}」引用了未登记的测量节点 ${key}`);
     }
     for (const group of sc.columnAxis ?? []) {
       if (group.ref !== undefined) {
-        assert(NODE_SELECTORS[group.ref] !== undefined, `场景「${sc.id}」列组参照节点未登记:${group.ref}`);
+        assert(hasNodeSelector(group.ref), `场景「${sc.id}」列组参照节点未登记:${group.ref}`);
       }
       for (const key of group.members) {
-        assert(NODE_SELECTORS[key] !== undefined, `场景「${sc.id}」列组成员未登记:${key}`);
+        assert(hasNodeSelector(key), `场景「${sc.id}」列组成员未登记:${key}`);
       }
       assert(
         ["border", "padding"].includes(group.box),
@@ -369,14 +453,14 @@ export async function run() {
     }
   }
   for (const key of X_CLIP_KEYS) {
-    assert(NODE_SELECTORS[key] !== undefined, `水平裁切守护节点未登记:${key}`);
+    assert(hasNodeSelector(key), `水平裁切守护节点未登记:${key}`);
   }
   for (const slot of SLOT_INVARIANTS) {
-    assert(NODE_SELECTORS[slot.node] !== undefined, `固定槽节点未登记:${slot.node}`);
+    assert(hasNodeSelector(slot.node), `固定槽节点未登记:${slot.node}`);
     assert(slot.minHeight > 0 && slot.why.length > 0, `固定槽「${slot.node}」须给出下限与依据`);
   }
   for (const group of CONSTANT_GROUPS) {
-    assert(NODE_SELECTORS[group.node] !== undefined, `恒定组「${group.id}」节点未登记:${group.node}`);
+    assert(hasNodeSelector(group.node), `恒定组「${group.id}」节点未登记:${group.node}`);
     assert(ids.has(group.baseline), `恒定组「${group.id}」基准场景不存在:${group.baseline}`);
     for (const id of group.members) {
       assert(ids.has(id), `恒定组「${group.id}」成员场景不存在:${id}`);

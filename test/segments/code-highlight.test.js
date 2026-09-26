@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 代码块 docx 语法高亮段(实现 src/core/docx/handlers/code-highlight.ts,GitHub Light 色板):
  * 已知语言(hljs.getLanguage 命中)→ hljs.highlight HTML 解析为 TextRun 序列,
@@ -19,6 +20,13 @@ import { formatWarning } from "../../dist/core/i18n.js";
 import hljs from "highlight.js/lib/common";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { pdfHtmlOf } from "../common/convert-helpers.js";
+
+/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
+ *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
+ /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+ /** 色板条目契约取自 src 单源(HLJS_PALETTE: Record<string, HljsTokenStyle>) */
+ /** @typedef {import("../../src/core/style/hljs-palette.js").HljsTokenStyle} HljsTokenStyle */
 
 // 3 行 ts 代码:关键字/数字/注释(特殊字符)/函数名/内置类型/模板字符串
 const MD_TS =
@@ -116,8 +124,10 @@ export async function run() {
   // 依据(src/core/docx/handlers/code-highlight.ts):getLanguage 命中后 highlight 抛错(语言包
   // 异常)→ onFallback(lang) 回调 + null;renderCode 经回调上报 keyed 警告并降级等宽文本。
   // 触发方式与 basic-render pdf 侧一致(注册编译期即抛错的坏语言,用后注销)。
-  hljs.registerLanguage("broken", () => ({ match: "x", begin: /y/ }));
+  // 坏语言注册是本用例的触发手段(注册/编译期即抛错),按 hljs 的 Language 契约收窄夹具形状
+  hljs.registerLanguage("broken", () => /** @type {import("highlight.js").Language} */ ({ match: "x", begin: /y/ }));
   try {
+    /** @type {unknown[]} */
     const brokenWarnings = [];
     const brokenBuffer = await renderDocx(parseMarkdown("```broken\nif (a < b) {}\n```\n"), {
       warnings: brokenWarnings,
@@ -143,20 +153,22 @@ export async function run() {
   const { HLJS_PALETTE, buildHljsCss } = await import("../../dist/core/style/hljs-palette.js");
   const { convert } = await import("../../dist/core/convert.js");
   // 7a. docx 产物色值 ⊆ 色板(样例命中的 token 类逐一来自单源)
+  // 色板按 token 类名动态索引(契约单源:Record<string, HljsTokenStyle>,dist 侧为字面量对象)
+  const palette = /** @type {Record<string, HljsTokenStyle>} */ (HLJS_PALETTE);
   for (const cls of ["keyword", "string", "comment", "title", "built_in", "number"]) {
-    const color = HLJS_PALETTE[cls]?.color;
+    const color = palette[cls]?.color;
     if (!color) throw new Error(`code-highlight 断言失败:色板缺少 token 类 ${cls}`);
     if (!xml.includes(`<w:color w:val="${color}"/>`)) {
       throw new Error(`code-highlight 断言失败:docx 未落地单源色板 ${cls}=${color}`);
     }
   }
   // 7b. pdf 侧 .hljs-* CSS 由同一色板生成(buildHljsCss 产物逐条进模板)
-  const pdfArt = await convert(MD_TS, "pdf", { baseDir: "." });
+  const pdfArt = /** @type {ConvertArtifact} */ (await convert(MD_TS, "pdf", { baseDir: "." }));
   const hljsCss = buildHljsCss();
-  if (!pdfArt.html.includes(hljsCss)) {
+  if (!pdfHtmlOf(pdfArt).includes(hljsCss)) {
     throw new Error("code-highlight 断言失败:pdf 模板 CSS 应包含 buildHljsCss 单源生成产物");
   }
-  for (const [cls, style] of Object.entries(HLJS_PALETTE)) {
+  for (const [cls, style] of Object.entries(palette)) {
     if (style.color && !hljsCss.includes(`#${style.color.toLowerCase()}`)) {
       throw new Error(`code-highlight 断言失败:生成 CSS 缺少 ${cls} 色值 #${style.color.toLowerCase()}`);
     }
