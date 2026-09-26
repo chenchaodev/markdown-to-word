@@ -210,9 +210,22 @@ function describeImportFailure(name, err) {
   const rawMessage = /** @type {{ message?: unknown }} */ (err)?.message ?? err;
   // String(...) 的 split 结果恒至少一段,?? "" 只是满足定长元组索引的取值域
   const msg = String(rawMessage).split("\n")[0] ?? "";
-  const missingExport = msg.match(/does not provide an export named ['"]([^'"]+)['"]/i);
+  // Node 的缺导出报错形如:The requested module 'X' does not provide an export named 'Y'
+  // 该文案对**任意**模块都会抛,故必须先看 X 是谁 —— 否则任何模块缺导出都会被误报成
+  // 「electron-mock 缺命名导出」,把人指向完全错误的文件。实测踩过的坑:gate-probes 段导入
+  // scripts/gate-probes/judge.mjs 失败(它当时确实缺一个导出),却被报成「electron-mock 缺
+  // finalizeGate」,排查方向被整体带偏到无关文件。
+  const missingExport = msg.match(
+    /requested module ['"]([^'"]+)['"][^\n]*does not provide an export named ['"]([^'"]+)['"]/i,
+  );
   if (missingExport) {
-    return `${name}:段模块 import 失败——electron-mock 缺命名导出「${missingExport[1]}」(补进 test/tools/electron-mock.mjs;自动断言见 test/segments/electron-mock-coverage.test.js)`;
+    const moduleName = missingExport[1] ?? "?";
+    const exportName = missingExport[2] ?? "?";
+    // 仅当出错的模块确为 electron(经 electron-mock loader 解析)时,才归因到 electron-mock
+    if (/electron/i.test(moduleName)) {
+      return `${name}:段模块 import 失败——electron-mock 缺命名导出「${exportName}」(补进 test/tools/electron-mock.mjs;自动断言见 test/segments/electron-mock-coverage.test.js)`;
+    }
+    return `${name}:段模块 import 失败——模块 ${moduleName} 未导出「${exportName}」(该模块自身的导出问题,**不是** electron-mock;若它确应提供此导出请补齐,否则检查它的调用方)`;
   }
   if (/dist[\\/]/.test(msg)) {
     return `${name}:段模块 import 失败(段模块依赖 dist/ 编译产物,请先 npm run build):${msg}`;

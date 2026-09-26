@@ -217,7 +217,10 @@ export function runSmokeProcess({
  */
 export function describeSmokeCommand({ exePath, launcher, runtime = process.execPath, userDataDir }) {
   const command = launcher === undefined ? exePath : `${runtime} ${launcher}`;
-  const args = launcher === undefined ? [SMOKE_FLAG] : [launcher, SMOKE_FLAG];
+  // launcher 形态下 command 已含 launcher,args 不得再拼一遍 —— 否则可读形态会把启动器
+  // 显示两次(`electron.exe . . --smoke`)。本函数只产出「可读形态」供计划打印与失败诊断,
+  // 真正的 spawn 用自己的 command/args,故此处不影响实际启动行为。
+  const args = [SMOKE_FLAG];
   if (userDataDir !== undefined) args.push(userDataSwitch(userDataDir));
   return [command, ...args].join(' ');
 }
