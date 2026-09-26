@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * session 权限默认拒绝段(本批健壮性加固的跨域守护段;被测为
+ * session 权限默认拒绝段(位于 test/main/ = 被测主体为 src/main 的主进程层段;被测为
  * src/main/services/session-permissions.ts,经 dist/main/services/session-permissions.js,
  * electron 环境):
  *
@@ -17,6 +17,7 @@
  * 不在自动断言面:真实权限弹窗的端到端拒绝(Chromium 不提供程序化触发权限请求的
  * API,只能靠 GUI 手测;此处断言的是本进程注册的 handler 行为本身)。
  */
+import { session } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { applyDefaultDenyPermissions } from "../../dist/main/services/session-permissions.js";
@@ -117,11 +118,7 @@ export async function run() {
   console.log("[ok] session-permission-deny:重复应用幂等,仍为全拒");
 
   // ---- 4. 真实 Session + 启动路径接线 ----
-  // 4a. 对真实 Electron Session 应用不抛错(签名漂移挡在运行期,而非只靠编译期)。
-  //     刻意用动态 import 取 session:electron-mock-coverage 段的 test 侧绑定集合是
-  //     钉死常量,新增顶层 `import { session } from "electron"` 会要求同步改那个常量
-  //     (不在本段写入范围内);动态 import 同样拿到真实 Session 且不触碰钉死集合。
-  const { session } = await import("electron");
+  // 4a. 对真实 Electron Session 应用不抛错(签名漂移挡在运行期,而非只靠编译期)
   applyDefaultDenyPermissions(session.defaultSession);
   // 4b. 启动接线:index.ts 是应用入口(import 即触发单实例锁/建窗,无法在段内 import),
   //     故此处只静态核对接线仍在位——handler 全部注册了却没被启动路径调用,等于没开

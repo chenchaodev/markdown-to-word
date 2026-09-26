@@ -1,8 +1,8 @@
 // @ts-check
 /**
- * Mermaid 失败原因上屏段(本批健壮性加固的跨域守护段;被测为
+ * Mermaid 失败原因上屏段(位于 test/main/ = 被测主体为 src/main 的主进程层段;被测为
  * src/main/services/mermaid-service.ts + src/main/converter/{single,merge}.ts 的接线,
- * 经 dist/ 真实实现,electron 环境):
+ * core 侧 warning 通道仅作被断言的接收方;经 dist/ 真实实现,electron 环境):
  *
  * 问题:渲染失败原因此前只进 console(`[mermaid-service] render failed: …`),
  * UI 侧只能看到 core 依「返回 null」生成的 warn.mermaidEmpty

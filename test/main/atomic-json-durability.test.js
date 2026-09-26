@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 原子写耐久性段(位于 test/segments/ = 本批健壮性加固的跨域守护段;被测为
+ * 原子写耐久性段(位于 test/main/ = 被测主体为 src/main 的主进程层段;被测为
  * src/main/persist/atomic-json.ts,经 dist/main/persist/atomic-json.js,electron 环境):
  *
  * 为什么要有本段:断电/掉电场景下,只 writeFile 不 fsync 会留下 0 字节 settings.json,

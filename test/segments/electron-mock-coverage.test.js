@@ -40,7 +40,7 @@ const SRC_REQUIRED = [
 ];
 
 /** test/ 侧(生成器 import 链)被 mock 覆盖的 electron 运行时绑定 */
-const TEST_REQUIRED = ["BrowserWindow", "Menu", "app", "dialog", "ipcMain", "nativeTheme", "shell"];
+const TEST_REQUIRED = ["BrowserWindow", "Menu", "app", "dialog", "ipcMain", "nativeTheme", "session", "shell"];
 
 /**
  * 行首锚定的 import 语句。两个约束缺一不可:
