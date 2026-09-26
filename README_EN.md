@@ -133,12 +133,12 @@ npm run dist    # package the Windows NSIS installer into release/
 npm run typecheck    # TypeScript type check
 npm run lint         # ESLint
 npm run build        # build
-npm run test         # acceptance tests (62 zero-registration segments)
+npm run test         # acceptance tests (zero-registration, discovered by topic)
 npm run test:smoke   # Electron smoke test
 npm run test:all     # acceptance + smoke
 ```
 
-Test system: Zero-registration acceptance tests organized by content topic in `test/` (segments for rendering + pure logic, main for main process layer, 62 segments total). Static fixtures in `test/fixtures/`, output to `output/`.
+Test system: Zero-registration acceptance tests organized by content topic in `test/` (segments for rendering + pure logic, main for main process layer, renderer for UI layer). Static fixtures in `test/fixtures/`, output to `output/`. Segment count is whatever `npm run test` reports.
 
 ### Documentation
 
