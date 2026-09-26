@@ -7,7 +7,6 @@
   <a href="https://github.com/chenchaodev/markdown-to-word/releases/latest"><img src="https://img.shields.io/github/v/release/chenchaodev/markdown-to-word" alt="Latest release"></a>
   <a href="https://github.com/chenchaodev/markdown-to-word/releases"><img src="https://img.shields.io/github/downloads/chenchaodev/markdown-to-word/total" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License">
-  <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform">
 </p>
 
 <p align="center">
@@ -24,7 +23,7 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 
 > **[下载最新版安装包（MarkdownToWord-Setup-x.exe）](https://github.com/chenchaodev/markdown-to-word/releases/latest)**
 
-安装包为向导式安装，可选择安装目录；支持单文件、批量、合并三种转换模式，输出文件已存在时自动加序号，绝不覆盖。
+安装包为向导式安装，可选择安装目录。
 
 ### 功能特性
 
@@ -99,40 +98,26 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 ### 界面截图
 
 <p align="center">
-  <img src="docs/images/ui-main.jpg" alt="主界面（多文件）" width="80%">
-  <br><em>主界面：选择文件 → 选择格式 → 开始转换</em>
+  <img src="docs/images/ui-main.jpg" alt="主界面（多文件）" width="80%"><br>
+  <em>主界面：选择文件 → 选择格式 → 开始转换</em>
 </p>
-
 <p align="center">
-  <img src="docs/images/ui-empty.jpg" alt="空态主界面" width="48%">
-  &nbsp;
-  <img src="docs/images/ui-settings.jpg" alt="设置面板" width="48%">
-  <br><em>左：空态主界面　右：设置面板（6 组标签页）</em>
+  <img src="docs/images/ui-empty.jpg" alt="空态主界面" width="48%">&nbsp;
+  <img src="docs/images/ui-settings.jpg" alt="设置面板" width="48%"><br>
+  <em>左：空态主界面　右：设置面板（6 组标签页）</em>
 </p>
 
-### 快速开始（开发者）
+### 开发与打包
 
-环境要求：Node.js >= 22.13（国内网络请先设置 Electron 镜像，详见 [开发者手册](docs/DEV-GUIDE.md#环境)：`ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`）
+环境要求：Node.js >= 22.13。国内网络请先设 Electron 镜像，详见 [开发者手册](docs/DEV-GUIDE.md)。
 
 ```bash
-# 安装依赖
-npm install
-
-# 开发运行（构建 + 启动 Electron）
-npm run dev
-
-# 打包 Windows 安装包（NSIS，输出到 release/）
-npm run dist
+npm install        # 安装依赖
+npm run dev        # 构建 + 启动 Electron 开发态
+npm run dist       # 打包 Windows 安装包（NSIS，输出到 release/）
 ```
 
-### 技术栈
-
-- Electron 43 + Node.js >= 22.13 + TypeScript（ESM）
-- docx 9.x（Word 渲染）+ remark（解析）
-- markdown-it 14.3（PDF 渲染）+ Electron printToPDF
-- pdf-lib（PDF 书签/元数据）、KaTeX（公式）、Mermaid 11（图表）、highlight.js（代码高亮）
-
-### 开发
+技术栈：Electron 43 + TypeScript（ESM）；docx 9.x + remark（Word 渲染）、markdown-it 14.3 + Electron printToPDF（PDF 渲染）、KaTeX / Mermaid 11 / highlight.js / pdf-lib。
 
 ```bash
 npm run typecheck   # TypeScript 类型检查
@@ -140,36 +125,38 @@ npm run lint        # ESLint
 npm run build       # 构建
 npm run test        # 验收测试（零注册，按内容主题自动发现）
 npm run test:smoke  # Electron smoke 测试
-npm run test:coverage  # 覆盖率
 npm run test:all    # 验收 + smoke
 ```
 
-测试体系：`test/` 下按内容主题组织的零注册验收测试（segments 渲染层与纯逻辑 + main 主进程层 + renderer 界面层），静态样例在 `test/fixtures/`，产物输出到 `output/`。段数以 `npm run test` 的实际输出为准。
+测试体系：`test/` 下按内容主题零注册，分 `segments` / `main` / `renderer` 三层；样例在 `test/fixtures/`，产物在 `output/`。段数以 `npm run test` 的实际输出为准。
 
 ### 文档
 
+**面向用户**
+
 - [用户手册](docs/USER-GUIDE.md)：安装、操作、设置项、支持的 Markdown 语法、FAQ
-- [开发者手册](docs/DEV-GUIDE.md)：环境、命令、代码地图、验证基线
+- [官网单页](docs/index.html)：功能演示与下载入口（GitHub Pages）
 - [变更日志](docs/CHANGELOG.md)：版本演进历史
-- [路线图](docs/ROADMAP.md)：需求范围、选型、里程碑
-- [验收记录](docs/ACCEPTANCE.md)：批次验收清单与实测结果
+- [兼容性矩阵](docs/WPS-COMPAT.md)：Word / WPS 实测结论与图片取值边界
+
+**面向开发**
+
+- [文档索引](docs/README.md)：全部文档入口、目录结构与容量契约
+- [开发者手册](docs/DEV-GUIDE.md)：环境、命令、代码地图、验证基线
+- [路线图与候选区](docs/ROADMAP.md)：需求唯一入口、已排期、编号台账
+- [验收矩阵](docs/ACCEPTANCE.md)：验收清单与实测结果
 - [状态速查](docs/STATUS.md)：当前状态与打开事项
 - [研究结论](docs/RESEARCH.md) / [架构决策](docs/ADR.md)：技术事实与决策记录
+- [UI 规范](docs/design/ui-guidelines.md) / [设置信息架构](docs/design/settings-ia.md)：改界面前必读
+
+**参与**
+
+- [贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [行为准则](CODE_OF_CONDUCT.md)
 
 ### 反馈与支持
 
-问题反馈、功能建议与漏洞报告请走 [GitHub Issues](https://github.com/chenchaodev/markdown-to-word/issues)；源码、发布与更新见 [GitHub 仓库](https://github.com/chenchaodev/markdown-to-word)。
-
-### 关于作者
-
-本软件由 [chenchaodev](https://github.com/chenchaodev) 独立开发与维护，定位是「本地离线、中文排版可控」的 Markdown 转换工具。
+问题反馈、功能建议与漏洞报告请走 [GitHub Issues](https://github.com/chenchaodev/markdown-to-word/issues)。本软件由 [chenchaodev](https://github.com/chenchaodev) 独立开发与维护，定位是「本地离线、中文排版可控」的 Markdown 转换工具。
 
 ### 许可证
 
 [GPL-3.0](LICENSE)（GNU General Public License v3）：自由软件，允许使用、修改与再分发，但衍生作品必须以相同许可证开源。
-
----
-
-<p align="center">
-  由 <a href="https://github.com/chenchaodev">chenchaodev</a> 维护 · 基于 <a href="https://www.gnu.org/licenses/gpl-3.0.html">GPL-3.0</a> 开源
-</p>

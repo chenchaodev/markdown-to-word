@@ -110,24 +110,17 @@ Seven-step guided workflow that chains all features — no need to open settings
   <br><em>Left: empty state　Right: settings panel (6 tab groups)</em>
 </p>
 
-### Quick start (developers)
+### Development and packaging
 
-Requirements: Node.js >= 22.13 (in China, set the Electron mirror first — see [DEV-GUIDE](docs/DEV-GUIDE.md#环境): `ELECTRON_MIRROR` and `ELECTRON_BUILDER_BINARIES_MIRROR`)
+Requirements: Node.js >= 22.13. In China, set the Electron mirror first — see [DEV-GUIDE](docs/DEV-GUIDE.md).
 
 ```bash
-npm install
-npm run dev     # build + launch Electron
-npm run dist    # package the Windows NSIS installer into release/
+npm install        # install dependencies
+npm run dev        # build + launch Electron
+npm run dist       # package the Windows NSIS installer into release/
 ```
 
-### Tech stack
-
-- Electron 43 + Node.js >= 22.13 + TypeScript (ESM)
-- docx 9.x (Word rendering) + remark (parsing)
-- markdown-it 14.3 (PDF rendering) + Electron printToPDF
-- pdf-lib (PDF bookmarks/metadata), KaTeX (math), Mermaid 11 (diagrams), highlight.js (code highlighting)
-
-### Development
+Tech stack: Electron 43 + TypeScript (ESM); docx 9.x + remark (Word rendering), markdown-it 14.3 + Electron printToPDF (PDF rendering), KaTeX / Mermaid 11 / highlight.js / pdf-lib.
 
 ```bash
 npm run typecheck    # TypeScript type check
@@ -138,17 +131,30 @@ npm run test:smoke   # Electron smoke test
 npm run test:all     # acceptance + smoke
 ```
 
-Test system: Zero-registration acceptance tests organized by content topic in `test/` (segments for rendering + pure logic, main for main process layer, renderer for UI layer). Static fixtures in `test/fixtures/`, output to `output/`. Segment count is whatever `npm run test` reports.
+Test system: Zero-registration acceptance tests organized by content topic in `test/`, in three layers: `segments` / `main` / `renderer`. Fixtures in `test/fixtures/`, output to `output/`. Segment count is whatever `npm run test` reports.
 
 ### Documentation
 
+**For users**
+
 - [User Guide](docs/USER-GUIDE.md): Installation, operations, settings, supported Markdown syntax, FAQ
-- [Dev Guide](docs/DEV-GUIDE.md): Environment, commands, code map, verification baseline
+- [Website](docs/index.html): Feature tour and download entry (GitHub Pages)
 - [Changelog](docs/CHANGELOG.md): Version history
-- [Roadmap](docs/ROADMAP.md): Requirements, architecture, milestones
-- [Acceptance](docs/ACCEPTANCE.md): Batch acceptance checklists and test results
+- [Compatibility matrix](docs/WPS-COMPAT.md): Word / WPS findings and the image-source boundary
+
+**For developers**
+
+- [Docs index](docs/README.md): Entry point for every doc, directory layout, capacity contracts
+- [Dev Guide](docs/DEV-GUIDE.md): Environment, commands, code map, verification baseline
+- [Roadmap and candidate pool](docs/ROADMAP.md): Single entry for requirements, scheduled work, numbering ledger
+- [Acceptance matrix](docs/ACCEPTANCE.md): Acceptance checklists and test results
 - [Status](docs/STATUS.md): Current status and open items
 - [Research](docs/RESEARCH.md) / [ADR](docs/ADR.md): Technical findings and decisions
+- [UI guidelines](docs/design/ui-guidelines.md) / [Settings IA](docs/design/settings-ia.md): Read before touching the UI
+
+**Contributing**
+
+- [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
 
 ### License
 
