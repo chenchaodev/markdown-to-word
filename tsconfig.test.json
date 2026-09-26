@@ -7,7 +7,8 @@
   // 因此采用「逐文件 `// @ts-check`」语义:标注文件受 typecheck 门禁,被 import 的
   // dist 只解析供类型推导、不检查。
   //
-  // 当前状态(2026-09-26):test/ 下 108 个 js/mjs/cjs 全部标注完毕,tsc -p 本配置零报错。
+  // 达标口径:每个测试源文件都带 `// @ts-check` 标注;达标与否由 `npm run typecheck` 判定,
+  // 此处不记文件数(逐文件统计随增删漂移,写了必然陈旧)。
   // 新增测试文件必须带 `// @ts-check`(shebang 文件放在 shebang 之后);
   // test/pending/ 为阶段 3 历史副本,不参与发现,故意不标注。
   // 不继承 emit 相关:rootDir 放宽到根(test 文件跨目录),noEmit 不产出产物。
