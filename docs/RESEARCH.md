@@ -14,11 +14,11 @@
 - **结论**:① `TableOfContents("目录", { hyperlink, headingStyleRange: "1-3" })` 是 docx 9.x 官方路径,须配 `features: { updateFields: true }` → 8a = 开关化 + updateFields 联动。② **无 `ComplexField` 类**;行内域只能 `SimpleField(instruction, cachedValue?)`,**域指令空格是关键**(首尾各留一个)。③ 「图 1.1」章节号 = `图 { STYLEREF 1 \s }-{ SEQ 图 \* ARABIC \s 1 }`,须手插,styleId 写 `Heading1`(非 Word 内置 `1`);前提是标题编号为 `w:numPr` 自动编号(现有 5b 已满足)。④ **两路线必须二选一、8a/8b 同路线严禁混用**:更新路线(打开弹一次提示、改标题后 F9 同步;WPS 支持未背书需实测,Google Docs/LibreOffice 忽略 updateFields 显示空白)vs 免更新路线(`beginDirty:false` + cachedEntries,零提示但改标题后陈旧;页码无法精确,docx 无排版引擎 #885)。
 - **来源/验证**:@librarian lib-1 + lib-3,对照 docx 9.7.1 源码逐行实证;**关联**:`docs/archive/20260808-1142-docx域API调研.md`、docx issue #1212/#2673/#885。
 
-### 2026-08-06 21:27:25 批次 5 docx 标题编号 + 内部链接(已验证,勿回退)
+### 2026-08-06 21:27:25 docx 标题编号 + 内部链接(已验证,勿回退)
 - **结论**:① 标题编号用**段落级 numbering**:Paragraph 挂 `numbering: { reference: "md-heading", level: depth-1 }`,1 个 reference + 3-6 级 levels(text `%1`/`%1.%2`/`%1.%2.%3`,format `decimal`,indent `{ left: 360, hanging: 360 }`),**静态渲染、无需 F9**;heading + numbering + Bookmark 三层不冲突,不注入 ListParagraph 样式(9.7.1 实证)。② 「第一章 + 1.1」需 level 1/2 加 `isLegalNumberingStyle: true`(w:isLgl)。③ **9.7.1 无 `Hyperlink` 类**:内部链接 `InternalHyperlink({ anchor: docxBookmarkId(slug), children })`(参数名是 `anchor`),外链 `ExternalHyperlink({ link })`;链接样式需 `TextRun` 手动 color/underline。
 - **来源/验证**:@librarian(lib-1,本地 d.ts/cjs 逐行实证),产物解包核对 `w:numPr` / `w:bookmarkStart`;**关联**:`src/core/docx/{render,theme}.ts`、`docs/archive/20260806-2116-docx标题编号与内部链接调研.md`。
 
-### 2026-08-05 22:22:19 批次 4 docx 页眉页脚 + 页码(已验证,勿回退)
+### 2026-08-05 22:22:19 docx 页眉页脚 + 页码(已验证,勿回退)
 - **结论**:① `new Header({ children: (Paragraph|Table)[] })`,children 只收段落/表格、**不能放裸 TextRun**。② **挂载点只有 `sections[].headers/footers`**;首页不同用 `properties.titlePage: true` + `headers.first`。③ **9.x 无 `PageNumberFormat`(改名 `NumberFormat`)**;格式写 section `properties.page.pageNumbers.formatType`;「第 X 页 / 共 X 页」用 `PageNumber.CURRENT`/`TOTAL_PAGES` 放 `TextRun({ children })`。④ 合并场景单 section 渲染 → 页码连续;`TOTAL_PAGES` 含封面/目录,与 PDF `footerTemplate` 语义一致;页眉标题优先级 `metadata.title ?? options.title`。
 - **来源/验证**:@librarian(lib-3,对照 docx 9.7.1 源码验证);**关联**:`src/core/docx/render.ts`、`docs/archive/20260805-2210-页眉页脚页码调研.md`。
 
@@ -28,7 +28,7 @@
 
 ## PDF 管线
 
-### 2026-08-05 22:03:15 批次 4 书签实现 + 「点击不跳转」修复(已验证,勿回退)
+### 2026-08-05 22:03:15 书签实现 + 「点击不跳转」修复(已验证,勿回退)
 - **结论**:① **pdf-lib `PDFName.asString()` 返回内部编码**(`%`→`#25`),须先 `key.decodeText()` 再 `decodeURIComponent` 才得中文。② printToPDF 产物**无 /Names 名称树而是旧式直接 `/Dests` 字典**,须兼容两种。③ **`dict.lookup(key,type)` 在 key 缺失时抛 `UnexpectedObjectTypeError` 而非返回 undefined**(实测崩溃根因),须 `dict.get(key)` + 手动 `context.lookup(ref)`;`decodeText` 走 PDFDocEncoding 会把 UTF-8 中文解成乱码。④ 自研 `src/core/pdf/bookmarks.ts`:`lookupNamedDest` + `setOutline`(pageRefs 经 `catalog.Pages().traverse` 收集)+ `injectBookmarks`;标题 id 即命名目标名。⑤ pdf-lib 1.17.1,ESM 用包名导入勿碰 `pdf-lib/es/index.js`;中文标题必须 `PDFHexString.fromText`(UTF-16BE),issue #516。**教训**:断言须查 `Dest[0] instanceof PDFRef`,只查标题文本会漏过「全部回退首页」。
 - **来源/验证**:@librarian lib-1 marp-cli 样板 + 自查实测;**关联**:`src/core/pdf/{bookmarks,render}.ts`、`docs/archive/20260805-2151-pdf书签注入调研.md`。
 
@@ -38,7 +38,7 @@
 
 ## 双管线能力与契约口径
 
-### 2026-09-25 阶段 0 OPT-0.3 决策口径统一(supersede 台账,零行为变更)
+### 2026-09-25 决策口径统一(supersede 台账,零行为变更)
 - **结论**:裁决此前只落在优化计划里,本轮把 **D-02/D-03/D-08** 写进对应文档并登记取代关系(不改写历史 CHANGELOG/ADR)。①**D-02**:内置 `TEMPLATE_PRESETS` 携带完整交付链(typography+pageSetup+headerFooter+watermark+equationNumbering+breakBeforeH1);`CustomPreset` **只含 typography + pageSetup** → 「不入预设」徽标 = 仅指自定义预设;删除自定义预设后的回退路径也只还原这两组,与套用内置不同链。②**D-03**:图片校验顺序固定 原始 src → 词法根边界 → realpath → 规范根边界,单一来源 `core/markdown/precheck.ts`,main 侧复用;拒绝绝对路径/UNC/带协议 URL/越界 `..`/realpath 越界;**媒体类型与大小上限尚未实施**。③**D-08**:测试段逐子进程隔离(硬超时、资源回收、case 级报告、失败 artifact)。④**代码签名状态是独立单源事实**,见 `docs/SIGNATURE-STATUS.md`。
 - **来源/验证**:裁决原文已随 #07 撤除,快照 `docs/archive/20260926-211455-全库优化计划与执行台账.md`;回归断言 `test/main/{image-downloader,converter}.test.js`;口径落点 USER-GUIDE / WPS-COMPAT / ACCEPTANCE / ROADMAP / design。
 
@@ -46,27 +46,27 @@
 - **结论**:① **11.16.1 钉死**;ESM-only + dist 内 IIFE `mermaid.min.js`(3.5MB,file:// 直用规避模块 CORS),零 CDN;node_modules 约 120-130MB(asar 压缩 60-70%);Node 无 DOM 不能渲染。② 链路:单例隐藏 BrowserWindow(sandbox+contextIsolation、`backgroundThrottling:false`)→ `initialize({ securityLevel:'strict', fontFamily:'"Microsoft YaHei",sans-serif' })` → `mermaid.render`(内部串行队列)→ `document.fonts.ready` → **canvas 2x 光栅化** → `{ pngBuffer, widthPx, heightPx }`。③ docx 嵌 PNG 逻辑 1x 像素 2x(`transformation` 两值必须同时给),**不用 SVG 嵌入**(Word 2019+/M365 才渲染 + docx #3227);pdf 端 SVG 直接内联。④ 降级:`parse(suppressErrors)` 失败或超时/崩溃 → 输出等宽代码块原文 + warning(不中断)。⑤ `securityLevel:'strict'`(loose 有 CVSS 7.6 存储型 XSS 先例)+ CSP `default-src 'none'; img-src data:` 断网。⑥ 坑:maxTextSize 默认 50000;ELK 已拆包。⑦ 不做:mermaid-cli、Kroki(违反离线卖点)、resvg-js、jsdom。
 - **来源/验证**:@librarian lib-1 + @explorer exp-1;**关联**:`docs/archive/20260813-193532-mermaid集成方案.md`。
 
-### 2026-08-08 11:50:33 批次 8 管线勘察(TOC/题注编号现状事实)
+### 2026-08-08 11:50:33 管线勘察(TOC/题注编号现状事实)
 - **结论**:① docx 原生 TOC 域已存在(`\o "1-3" \h \z \u`,占位「右键 → 更新域 生成」),**无条件插入、无开关** → 8a = 开关化(`toc?: boolean`)+ 题注不得被 TOC 收集(需 `\b`)。② 章节编号是 **numbering 静态渲染非域**,打开 Word/WPS **无需 F9**;OOXML 引擎管理多级计数、**代码无计数器变量** → 题注拿不到当前章节号。③ 题注两路线:(a) STYLEREF+SEQ(需更新域);(b) 静态注入章节号 + SEQ 仅担图序号(免 F9,重排不自动更新)。④ **无 caption 语法**(mdast 无 figure/figcaption),题注需自定义识别 + 文档级计数 ctx;PDF 侧用 CSS counter 伪元素,目录 `buildTocHtml()` 从渲染后正文正则提取 h1-h3。⑤ 新增设置字段仿 `breakBeforeH1` 放 AppSettings 顶层,同步 SETTING_KEYS + sanitize + renderer 平行类型。
 - **来源/验证**:@explorer exp-1(验收 = 段文件零注册自动发现,docx 断言 zipContains + OOXML 片段匹配,PDF 断言 .html 字符串匹配);**关联**:`docs/archive/20260808-1123-批次8管线勘察.md`。
 
-### 2026-08-08 10:20:16 批次 6 公式链路(@librarian + 实测,勿回退)
+### 2026-08-08 10:20:16 公式链路(@librarian + 实测,勿回退)
 - **结论**:① docx@9.x 原生 OMML:Math/MathRun/MathFraction/MathRadical/MathSuperScript/MathSubScript/MathSubSuperScript/MathFunction/MathSum/MathIntegral/MathLimit/MathRoundBrackets,**无需注入原始 XML**。② KaTeX 字体:`katex.min.css` **必须与 fonts/ 同级**;`file://` 下 @font-face 相对路径可用,**data: URL 全失效** → 构建期复制 css + 21 个 woff2(~400KB,删 ttf/woff)。③ printToPDF 头号坑 = 字体时序,须 `executeJavaScript('document.fonts.ready')` 再打印;必须 `printBackground:true` + `print-color-adjust: exact`;display 公式超宽不换行。④ KaTeX `output:'mathml'` → 自研 walker → docx Math 树,覆盖 ~10 种节点,**无需自研 TeX 解析器**;未覆盖/报错 → TeX 源码等宽输出 + warning(红线兜底)。
 - **来源/验证**:@librarian lib-2;**关联**:`docs/archive/20260806-2229-批次6公式链路调研.md`。
 
-### 2026-08-05 22:22:19 批次 4 脚注(已验证)
+### 2026-08-05 22:22:19 脚注(已验证)
 - **结论**:① PDF 侧 `@mdit/plugin-footnote@^1.0.2`(peer ^14.2.0),锚点 footnote-N,重复引用编号 [2]/[2:1];**Chromium 不支持 `float: footnote`,脚注集中在内容末尾(非页脚)—— 通用行为差异,验收预期**。② docx 侧零新依赖:Document 级 `footnotes: Record<id, { children: Paragraph[] }>` + `FootnoteReferenceRun(id)`,**只挂 Document 级、不在 section 级**。③ 全局递增计数器统一编号(勿按文件重置),嵌套引用递归且共用计数器,重复引用按次数编号(与 markdown-it 对齐)。④ **语法不对称**:内联 `^[...]` 只有 PDF 支持,remark 侧无对应节点。
 - **来源/验证**:@librarian lib-2;**关联**:`src/core/{pdf,docx}/render.ts`、`docs/archive/20260805-2212-脚注实现调研.md`。
 
-### 2026-08-04 20:57:34 批次 3 批量/合并(已验证)
+### 2026-08-04 20:57:34 批量/合并(已验证)
 - **结论**:① 批量队列并发 2,失败不中断逐条汇总,跳过 runAfterConvert(防打开 N 个文件),进度 `batch:progress` { index, total, file, stage }。② `mergeMarkdowns(files:{content,baseDir}[])` 纯逻辑:首文件保留 frontmatter、后续剥离;图片相对路径 → 绝对(保留 title);`<!-- page-break -->` 拼接;空文件跳过;合并后走单文档渲染 → 封面/全局 TOC 自动成立。③ 输出 `{首文件名}-合并.{ext}`;imageResolver 跨文件共享(模块级 Map);`collectMarkdown` 递归收集(跳过点开头目录,seen 防符号链接循环)。**坑**:JSDoc 内 `**/*.md` 含 `*/` 提前终止注释 → 后续当代码解析(TS1109)。
 - **来源/验证**:自查 + fixer/designer 实现;**关联**:`src/core/pipeline/merge.ts`、`src/main/{index,preload.cts}`。
 
-### 2026-08-03 23:14:13 批次 2 spike 与实测(已验证,勿回退)
+### 2026-08-03 23:14:13 spike 与实测(已验证,勿回退)
 - **结论**:① **SimpleField 不行**(fldSimple 仅行内;ComplexField 已移除),用内置 `TableOfContents`;降级 `cachedEntries` 须自行注册 TOC1-9 样式,`length<=1` 会补空段落。② printToPDF **保留页内锚点为可点击链接(含跨页)**(Link 注释 + `/Dests`,非 /GoTo)→「无页码+锚点」目录成立。③ **分页空白页**:`break-before: page` 相邻不合并,分页符后紧跟 h1 产生空白页 → 无条件 `.page-break + h1 { break-before: auto; }`。④ **Electron 43 ESM 主入口**:顶层 `await app.whenReady()` 挂起不退出,必须 `.then()` 链;直调 `node_modules/.bin/electron.cmd`(npx 触发网络检查)。⑤ pdf 外链图:并发 3 下载 → data URL 内嵌,失败留原 URL + 警告;`createImageResolver` 带 10s AbortSignal + 同 URL 去重。
 - **来源/验证**:fix-5/7/8/9/10 终态结论 + 自查实测;**关联**:`src/core/{frontmatter,convert}.ts`。原文存档 `20260803-2311-批次2-spike与实现结论.md` 已于 2026-08-15 删除,结论以本条为准。
 
-### 2026-08-03 21:46:27 批次 1 docx/pdf 排版控制(已验证,勿回退)
+### 2026-08-03 21:46:27 docx/pdf 排版控制(已验证,勿回退)
 - **结论**:① landscape 时**库自动交换 width/height 写入 pgSz**,应传原始(纵向)值,手动交换会双重交换致宽高反。② 无 `IParagraphOptions.bookmarks`,标题书签用 `Bookmark` 组件包裹 runs。③ mdast `Data` 空接口,标题 id 需 `declare module "mdast"` 合并,消费端读 `node.data?.id`。④ markdown-it heading_open 的 `content` **恒为空**,纯文本在 `tokens[idx+1].content`。⑤ 原子写 = 临时文件 + rename(Windows 可覆盖),整文件形状校验失败整体回退默认。
 - **来源/验证**:自查 + fixer/designer 实现;**关联**:`src/core/{slug,parse,convert}.ts`、`src/main/persist/settings.ts`(旧路径见头部注记)。
 
@@ -75,17 +75,17 @@
 ### 2026-09-26 21:14:55 TS7 native 有语法错误时跳过全程序语义诊断(勿回退)
 - **结论**:程序内存在**任一语法错误**时 `tsc` **跳过语义诊断** → 「输出为空」可能是假绿,验收须**双编译器交叉**(TS7 CLI + TS6 API 探针)。`.js` 中 `!` 触发 TS8013,测试树禁用 `!`,改 `@returns {asserts cond}`。
 - **理由**:单编译器单次输出的「空」不足以判绿,与「第一轮过、第二轮挂」的假绿同族。
-- **来源/验证**:REF-001 阶段 0/7 实测(本文件全部 `2026-09-26 21:14:55` 条目同此出处,#14 承接自 campaign「待升 RESEARCH」段,台账快照 `docs/archive/20260926-211455-全库优化计划与执行台账.md`):注入语法错误后该轮只报语法错误,换 TS6 探针语义诊断复现;**关联**:`tsconfig.test.json`、`npm run typecheck`。
+- **来源/验证**:REF-001 实测(本文件全部 `2026-09-26 21:14:55` 条目同此出处,#14 承接自 campaign「待升 RESEARCH」段,台账快照 `docs/archive/20260926-211455-全库优化计划与执行台账.md`):注入语法错误后该轮只报语法错误,换 TS6 探针语义诊断复现;**关联**:`tsconfig.test.json`、`npm run typecheck`。
 
 ### 2026-09-26 21:14:55 eslint `maximumDefaultProjectFileMatchCount` 是性能护栏
 - **结论**:达上限整体报 `Too many files`,**再加任一 `.js/.mjs` 就把 lint 打成一片红**;本仓已由 200 提到 300。该上限只管解析成本、不表达类型正确性。
 - **理由**:撞上限时的红是噪声,会被误读为新增代码有类型问题。
-- **来源/验证**:REF-001 阶段 0/5 实测:新增 `.mjs` 前后各跑一次 `npm run lint` 对比;**关联**:`eslint.config.mjs`。
+- **来源/验证**:REF-001 实测:新增 `.mjs` 前后各跑一次 `npm run lint` 对比;**关联**:`eslint.config.mjs`。
 
 ### 2026-09-26 21:14:55 裸跑 build 不回收已删源输出,`clean:dist` 须删 `*.tsbuildinfo`
 - **结论**:tsc 增量**不回收已删/重命名源的输出**,而 `gen:dist-manifest` 只是快照、发现不了陈旧 → 判新鲜度须走 dist 链或先 `clean:dist`;`clean:dist` **必须连带删根目录 `*.tsbuildinfo`**,否则 clean 后 build 几乎不产出文件。
 - **理由**:「clean 了但 build 没产物」与「build 通过但含陈旧文件」两种假象都会让门禁失去判据。
-- **来源/验证**:REF-001 阶段 0 实测:删源文件后裸跑 build 仍留旧产物,`clean:dist` + build 后消失;**关联**:`package.json` 的 `clean:dist`/`build`/`gen:dist-manifest`。
+- **来源/验证**:REF-001 实测:删源文件后裸跑 build 仍留旧产物,`clean:dist` + build 后消失;**关联**:`package.json` 的 `clean:dist`/`build`/`gen:dist-manifest`。
 
 ### 2026-09-25 E5 双配置 typecheck 的 CI 顺序依赖(3.11.8 发版踩坑)
 - **结论**:test 树 typecheck 编译期 import `dist/**` → 全新工作区必须先 `npm run build` 再 typecheck,否则批量 TS2307 且未标注文件连带 TS7006;本地因常驻 dist 不复现。E5 按 `// @ts-check` 渐进启用(checkJs:false),相对路径 import `../../dist/...` 无法经 tsconfig paths 重映射 → 正解是**顺序修复**,不做路径改造。
@@ -99,11 +99,11 @@
 - **结论**:① **docx 9.7.1 不支持加密**(密码保护非 OOXML 标准,是 MS 专有 Agile/Standard Encryption;dist 搜 encrypt/password 零匹配)。② 替代 `officecrypto-tool 0.0.19`(ECMA-376 Agile AES-256/SHA-512,`officeCrypto.encrypt(buffer,{password})`,CJS 老库需验 ESM 默认导入);`office-crypto 0.1.0` 未完成;`ooxml-encryption` 仅 xlsx。③ **pdf-lib 1.17.1 不支持写加密**(仅 isEncrypted 检测 + ignoreEncryption),printToPDF 无加密选项 → 须 `qpdf`,顺序固定 printToPDF → 书签 → 元数据 → **加密最后一步**。**处置**:确认**不做**,留档备查。
 - **来源/验证**:@librarian lib-1;**关联**:`docs/archive/20260816-114520-文档加密调研.md`。
 
-### 2026-08-14 20:16:22 模板导入方案选型(批次 13)
+### 2026-08-14 20:16:22 模板导入方案选型
 - **决策**:**预设 JSON 导入/导出**(复用 `sanitizeCustomPresets`,零新依赖);CSS 模板覆盖次选。**关键事实**:预设 = 纯数值快照(typography+pageSetup),渲染只认最终字段;pdf CSS 全在 `template.ts` 字符串(需防用户 CSS 破坏 `.page-break`/`breakBeforeH1`);docx 不消费 CSS。**docx 深导入不做**:9.x 仅 `patchDocument`;docx4js 3.3.0 停更 + OOXML 逆映射工程量大。**格式** `{schemaVersion:1, presets:[{name,typography,pageSetup}]}`,同名覆盖、上限 10 截断。
 - **来源/验证**:@librarian lib-1 + @explorer exp-1;**关联**:`docs/archive/20260814-201622-模板导入方案.md`。
 
-### 2026-08-14 18:51:13 双方向探索方案(批次 12)
+### 2026-08-14 18:51:13 双方向探索方案
 - **结论**:方向 A 界面体验(用户已选)20 问题 + 12 候选,关键缺陷 = **拖放区点击=替换整表但文案声称追加**、**设置面板展开后转换按钮/进度被推出 640px 视口**、**模板预设埋在第二折叠面板**;本批做 Phase 0 速赢,C1 = 多文件态追加、单文件态更换。方向 B(存档):tsconfig 4 开关 + mermaid-service 降级测试(199 行 vs 34 行,最高回归风险)+ settings-panel 纯逻辑抽取。**工具链**:c8 12.x/nyc 18/eslint 10/knip 6 全要求 Node 20.19+(Node 18 已 2025-04 EOL,需锁 c8 10.1.3/eslint 9.39.x);eslint 10 起 flat config 唯一;depcheck 停维护(推荐 knip)。
 - **来源/验证**:@designer + @oracle + @librarian + @explorer;**关联**:`docs/archive/20260814-185113-双方向探索方案.md`。
 
@@ -125,7 +125,7 @@
 ### 2026-09-26 21:14:55 显式落盘顺序:内容 → 文件 fsync → rename → 父目录 fsync
 - **结论**:顺序固定;**缺文件 fsync 时断电可得 0 字节配置**,读回整文件回退默认 = 用户全部偏好**静默**归零(无提示无备份)。
 - **理由**:回退默认是静默的,原子写链上任何一环缺失都直接表现为用户偏好归零而非报错。
-- **来源/验证**:REF-001 阶段 3 实测:逐环去掉 fsync 模拟中断,读回得 0 字节/旧内容/新内容三态;**关联**:`src/main/persist/atomic-json.ts`。
+- **来源/验证**:REF-001 实测:逐环去掉 fsync 模拟中断,读回得 0 字节/旧内容/新内容三态;**关联**:`src/main/persist/atomic-json.ts`。
 
 ### 2026-09-26 21:30:00 Electron 门禁入口的三条失败路径(与直觉相反,勿回退)
 - **结论**:① **`app.quit()` 不吃 `process.exitCode`** —— 实测设 1 后调 `app.quit()` 真实退出码 **0**,抛错后同样 0 → **失败被判绿**;要显式码必须 `app.exit(code)`。纯 Node 脚本里 `process.exitCode` 正常,这条只针对 Electron 主进程。② **加载期抛错进程内无解**:ESM 主模块 loader 只打 `App threw an error during load`、**不退出**;且 ESM 在**任何求值之前**先完成模块图 linking,「静态 import 解析不到/缺导出」发生在守卫自己被加载之前 → 只能把入口静态导入面压到最小(node 内建 + electron + 守卫),业务依赖全动态 import;`M2W_ENTRY_LOAD_TIMEOUT_MS` 看门狗兜「载荷既不完成也不报错」。③ **`.then()` 回调内抛错只降级为 `UnhandledPromiseRejectionWarning`、进程照活**(Electron 不采用 Node 默认 `unhandled-rejections=throw`);`await app.whenReady()` 在 async 函数体内亦然,与「顶层 await 挂起」是两个坑。
@@ -133,19 +133,19 @@
 
 ### 2026-09-26 20:10:00 Windows/Electron 三条易踩实测事实
 - **结论**:① **打开的文件句柄不阻止删除**(libuv 用 `FILE_SHARE_DELETE`,`rmSync` 照样成功)→「开句柄造 EBUSY」在 Windows 上是**假的**,能稳定造「删不掉」的是**把 cwd 切进该子目录**(`process.chdir()` 必 EPERM,node 与 Electron 均实测)。② `Buffer.compare` 返回 -1/0/1 的 **memcmp 大小关系,不是首个差异下标**。③ **Electron asar 虚拟 fs 接管任何含 `.asar` 的路径**:`writeFileSync`/`openSync+writeSync`/`rename`/`copyFile` 一律抛 `Invalid package`,连读也走归档解析;测试须临时 `process.noAsar = true` 或交给纯 node 子进程。
-- **来源/验证**:2026-09-26 阶段 7 实测(node 与 Electron 双侧);**关联**:`test/common/temp-resource.js`(占用锚点改为切 cwd)、`test/common/assert.js`(`firstByteDiff` 不得复用 `Buffer.compare`)。**符合晋升全局 `ENV-GUIDE.md`「一、Windows 平台坑」条件,是否晋升由用户定。**
+- **来源/验证**:2026-09-26 实测(node 与 Electron 双侧);**关联**:`test/common/temp-resource.js`(占用锚点改为切 cwd)、`test/common/assert.js`(`firstByteDiff` 不得复用 `Buffer.compare`)。**符合晋升全局 `ENV-GUIDE.md`「一、Windows 平台坑」条件,是否晋升由用户定。**
 
-### 2026-08-08 12:16:09 批次 7 修复期踩坑(已验证,勿回退)
+### 2026-08-08 12:16:09 修复期踩坑(已验证,勿回退)
 - **结论**:① **每个转换入口必须独立复位 `cancelRequested`**(单文件 / 批量 `batchConvertImpl` 开头 / **合并自己函数开头**),缺失则二次转换被 `throwIfCanceled` 误判「已取消」。② **进度上报逐入口接线**,合并最初缺失 → 进度条停在 0%。③ **printToPDF 是原子调用不可中断**,取消检查点须放在**打印完成后落盘前**(取消则不产文件、不注书签、不报成功)。④ 取消分支依赖 handler 返回 `{ ok:false, canceled:true }`,否则弹「转换失败」。⑤ **smoke 自清理产物**(重名保护后残留旧产物不再被覆盖 → 断言因 (N) 序号变体失败),Windows EBUSY 容错跳过。
 - **来源/验证**:自查(用户实测反馈驱动),修复 `524cdf2`/`fd40480`/`f809c57`。
 
-### 2026-08-08 11:19:01 批次 7 体验优化(已验证,勿回退)
+### 2026-08-08 11:19:01 体验优化(已验证,勿回退)
 - **结论**:① **编码预检**:`TextDecoder("utf-8",{fatal:true})` 判定合法性,失败按 iconv-lite **gb18030** 解码(**gb18030 是 GBK 超集,GBK 无损**);UTF-8 BOM(EF BB BF)与 UTF-16LE BOM(FF FE)嗅探剥离;Node 原生不支持 GBK。② **重名加序号** `名 (2).ext` 绝不覆盖;Windows 路径 **>250 字符回落源目录并警告**(MAX_PATH)。③ `outputDir` 空串 = 源文件同目录,非空须绝对路径(相对视为非法),创建失败回落并警告。④ 取消链路:`convert:cancel` → 置标志 → 检查点抛 `ConvertCanceledError` → `{ ok:false, canceled:true }`;批量未开始项记 canceledCount。⑤ 批量后按 `afterConvert` **仅对首个成功项执行**。
 - **来源/验证**:自查(typecheck/build/验收全绿);**关联**:`src/core/encoding.ts`;原文存档 `20260808-1029`/`-1030`/`-1031` 三份调研。
 
 ## 渲染层与 UI
 
-### 2026-08-25 功能开发技术路线调研(F7 目录带页码 / F9 模板导入)
+### 2026-08-25 功能开发技术路线调研(目录带页码 / 模板导入)
 - **F9**:npm 无现成库读任意 .docx 套样式;Pandoc `reference-doc` 是部件级搬运,坑多(#1305 numId 断链 / #9522 settings 整搬损坏)→ **浅导入 v1**(jszip 读 styles.xml 关键 rPr → 映射 theme.ts/settings,3-5 天)。**F7**:Word TOC 域 + updateFields 打开必弹提示(不可关闭,docx #1212),WPS 可能不响应;docx 静态页码不可行(OOXML 无 page 实体)→ **混合路线**:pdf 两遍法静态页码(占位等高 + PDF.js 文本定位;Typora 单遍流做不到 = 独占差异化)+ docx 默认静态目录、opt-in 域目录(cachedEntries 预填防空白)。**已拍板**(2026-08-25):F7 混合、F9 浅导入 v1,决策记录见 `docs/adr/ADR-007-目录带页码混合路线.md` 与 `docs/adr/ADR-008-模板导入浅导入.md`(索引在 `docs/ADR.md`)。
 - **来源/验证**:@librarian + 用户拍板;**关联**:`docs/archive/20260825-182036-功能候选调研与迭代排期.md` 第六节。
 
@@ -218,27 +218,27 @@
 ### 2026-09-26 21:14:55 `pathToFileURL` 把 8.3 短路径的 `~` 编码成 `%7E`
 - **结论**:8.3 短路径里的 `~` 产出 `%7E`,Chromium 原样保留;配 `realpath` 展开短名后,期望值若用词法根比对**必然不等**。断言须按码族/两侧归一化后比较。
 - **理由**:只在 8.3 短名开启的机器上出现,断言却指向「路径策略不对」,排查方向会一路错到实现。
-- **来源/验证**:REF-001 阶段 7 Windows runner 实测:同文件短路径与 realpath 展开路径比较 `pathToFileURL(...).href` 与浏览器侧 URL;**关联**:`test/tools/geometry/*`。
+- **来源/验证**:REF-001 Windows runner 实测:同文件短路径与 realpath 展开路径比较 `pathToFileURL(...).href` 与浏览器侧 URL;**关联**:`test/tools/geometry/*`。
 
 ### 2026-09-26 21:14:55 测试段同进程连跑两遍的迟到覆盖(本批主因)
 - **结论**:同段一轮跑两遍(`npm test` 与 `test:coverage`)**第一遍过、第二遍挂** —— 根因是上一遍遗留异步写在本遍落盘,非本遍回归。已由 drain 修掉(见 Electron 一节);「同段一轮跑多遍」这一形态本身值得留档。
 - **理由**:症状(第二遍挂)与原因(第一遍的写)分处两遍,逐遍读断言只会得出「第二遍代码有问题」的错误结论。
-- **来源/验证**:REF-001 阶段 5/7 实测,修复 `48594f0`;修前双跑第二遍稳定失败、修后全绿;**关联**:`test/common/segment-host.mjs`、`npm run test:coverage`。
+- **来源/验证**:REF-001 实测,修复 `48594f0`;修前双跑第二遍稳定失败、修后全绿;**关联**:`test/common/segment-host.mjs`、`npm run test:coverage`。
 
 ### 2026-09-26 21:14:55 门禁探针里再跑一次真 c8 会静默少算覆盖率
 - **结论**:探针在沙盒里再跑真 c8 而**未覆盖 `NODE_V8_COVERAGE`**,子进程继承外层同一临时目录并在其 report 阶段清空 → **排在探针段之前的段的覆盖数据整段丢失**,探针自身全绿。修法:给子 c8 指定沙盒内 `NODE_V8_COVERAGE`;**不能用「改名去排序」绕过**(会让门禁依赖字母序)。
 - **理由**:少算发生在 report 阶段而非执行阶段,门禁输出看不出异常,只会让阈值判断失真。
-- **来源/验证**:REF-001 阶段 5 实测:探针段排最后时前若干段覆盖整段消失,覆盖该变量后复测;**关联**:`test/tools/` 覆盖率探针、`npm run test:coverage`(阈值单源在脚本内)。
+- **来源/验证**:REF-001 实测:探针段排最后时前若干段覆盖整段消失,覆盖该变量后复测;**关联**:`test/tools/` 覆盖率探针、`npm run test:coverage`(阈值单源在脚本内)。
 
 ### 2026-09-26 21:14:55 覆盖率阈值棘轮:降阈值/谎报 measured/只改基线都判红
 - **结论**:`floor`(85/80/85/85)+ `headroomPp`(5) 有牙:三种绕过手法都判红;低于门槛的正确动作是**补测试而非降阈值** —— 只有「阈值 + 实测 + 余量」互相约束才不可编。
 - **理由**:覆盖率数字本身可编,不加余量约束则降阈值与谎报都能过。
-- **来源/验证**:REF-001 阶段 5 实测:三种手法各跑一次门禁均 exit 非 0,补测试后转绿;**关联**:`test/tools/` 覆盖率门禁。
+- **来源/验证**:REF-001 实测:三种手法各跑一次门禁均 exit 非 0,补测试后转绿;**关联**:`test/tools/` 覆盖率门禁。
 
 ### 2026-09-26 21:14:55 跨 DPI 几何采样用 `--force-device-scale-factor` 模拟
 - **结论**:不改系统 DPI(需管理员且污染开发机),用 Electron 进程内 `--force-device-scale-factor`;页面实读 `devicePixelRatio` 与期望不符即判「未测量」并以**退出码 2** 结束;worker 报绿但退出码非 0 时**以退出码为准**(该规则在一次真实故障下拦下过假绿)。
 - **理由**:改系统 DPI 需管理员且污染开发机;「报告文本」与「退出码」双通道时只信报告会漏掉「没测到却报绿」。
-- **来源/验证**:REF-001 阶段 7 实测:期望 DPI 与页面实读不符时以退出码 2 结束而非报绿;**关联**:`test/tools/geometry/*`、`scripts/check-geometry.mjs`。
+- **来源/验证**:REF-001 实测:期望 DPI 与页面实读不符时以退出码 2 结束而非报绿;**关联**:`test/tools/geometry/*`、`scripts/check-geometry.mjs`。
 
 ## 供应链与发布
 
@@ -258,7 +258,7 @@
 ### 2026-09-26 21:14:55 `npm audit --omit=dev` 在刻意不装依赖的 job 里 dev 剪枝失效
 - **结论**:不装依赖的 job 里 dev 剪枝失效 → 纯构建期工具(xmldom/fast-uri/js-yaml/sharp)泄漏进生产树被判发布风险。判定层须以 **lockfile 的 dev 标记**为权威,job 补 `npm ci --ignore-scripts`。
 - **理由**:判据若取「装出来的树」而非 lockfile 声明的树,门禁结论依赖 job 的安装方式而非项目真实依赖面。
-- **来源/验证**:REF-001 阶段 0 实测:同 lockfile 装/不装 dev 两种 job 下 `npm audit --omit=dev` 输出对比,再用 lockfile dev 标记复判;**关联**:`.github/workflows/` 审计 job。
+- **来源/验证**:REF-001 实测:同 lockfile 装/不装 dev 两种 job 下 `npm audit --omit=dev` 输出对比,再用 lockfile dev 标记复判;**关联**:`.github/workflows/` 审计 job。
 
 ### 2026-09-26 21:14:55 CI 注入的 `PSModulePath` 污染使签名核对探测不可用
 - **结论**:污染使 PowerShell 5.1 加载不到 `Microsoft.PowerShell.Security` → 探测命令在 runner 不可用;失败须走 **`probe-unavailable` 三态**而非崩堆栈(混成二态会把「探测不了」误报成「探测为否」)。
@@ -268,19 +268,19 @@
 ### 2026-09-26 21:14:55 npmmirror 的 `npm audit` 端点实测 404
 - **结论**:须如实记为 `unavailable` 并由 OSV.dev 两阶段兜底,**全部源不可用时判红**,绝不把「扫不到」谎报成「无漏洞」(两者输出长得一样,不留三态等于给供应链结论开后门)。
 - **理由**:「不可用」与「无漏洞」在门禁输出里无法区分,不显式留三态就等于放行。
-- **来源/验证**:REF-001 阶段 0 实测:直接请求确认 404,全源不可用时确认判红;**关联**:`.github/workflows/` 审计步、OSV.dev 兜底。
+- **来源/验证**:REF-001 实测:直接请求确认 404,全源不可用时确认判红;**关联**:`.github/workflows/` 审计步、OSV.dev 兜底。
 
 ### 2026-09-26 21:14:55 包元数据缺 `license` 时的取值纪律
 - **结论**:字段优先;缺失时回落随包许可证物证(仓库小写 `license` 文件 / README 声明 / 远端 SPDX)并**记录来源与证据文件名**;仍无法识别才判红(**不猜测**)。SBOM(以 lockfile 为准)与许可证清单(以物证为准)可能对同一包给出不同取值,**这是有意的差异**。
 - **理由**:判定要可复核到具体文件,否则清单在审计时不可追溯;两份清单口径不同源于事实来源不同。
-- **来源/验证**:REF-001 阶段 6 实测:缺字段包走物证回落并核对记录含证据文件名,无任何可识别信息的包判红;**关联**:发布流水线许可证清单与 SBOM 步骤。
+- **来源/验证**:REF-001 实测:缺字段包走物证回落并核对记录含证据文件名,无任何可识别信息的包判红;**关联**:发布流水线许可证清单与 SBOM 步骤。
 
 ### 2026-09-26 21:14:55 自写 prerelease 版本比较器,刻意不引 semver
 - **结论**:该脚本在两条 workflow 的 `npm install` **之前**各跑一次,`import 'semver'` 恰在最需要它时 `ERR_MODULE_NOT_FOUND` = 门禁自我否定 → 自写零依赖比较器(门禁脚本的依赖前提必须早于门禁自身可用时刻)。
 - **理由**:门禁脚本的依赖前提必须早于门禁自身可用的时刻,否则最需要它的那次运行必然失败。
-- **来源/验证**:REF-001 阶段 6 实测:清空 `node_modules` 后仍可运行;**关联**:两条 workflow 版本一致性校验步、`package.json` version(三统一见 `AGENTS.md`)。
+- **来源/验证**:REF-001 实测:清空 `node_modules` 后仍可运行;**关联**:两条 workflow 版本一致性校验步、`package.json` version(三统一见 `AGENTS.md`)。
 
 ### 2026-09-26 21:14:55 NSIS 按用户模式与非交互安装:失败留下幽灵卸载条目
 - **结论**:安装目录不可硬写 `%ProgramFiles%`(实测 `UninstallString` 带 `/currentuser`);失败前若已写入卸载注册表项与开始菜单 `.lnk`,两者都指向不存在的 exe,会在「应用」里留下**无法卸载的幽灵条目** → 清理须按**前后快照差集**只清本次新增并点名具体键/路径(按模式清会误删用户既有残留)。
 - **理由**:按模式清会误删用户既有的其他安装残留;不按差集清则幽灵条目永久残留且用户无法自行移除。
-- **来源/验证**:REF-001 阶段 6 实测:写完注册表项后注入失败,差集只含本次残留、清理后无孤儿项;**关联**:NSIS 配置、真实装卸验收项见 campaign PLAN「人工验收」节。
+- **来源/验证**:REF-001 实测:写完注册表项后注入失败,差集只含本次残留、清理后无孤儿项;**关联**:NSIS 配置、真实装卸验收项见 campaign PLAN「人工验收」节。
