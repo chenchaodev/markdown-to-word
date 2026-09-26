@@ -1,71 +1,13 @@
 # 状态速查
 
-## 当前状态
+> **仪表盘,≤10 行。** 每会话入口:看「现在做到哪、接下来做什么」。规则:① 每次收尾**只改 3 行**「阶段」(含项落地数)/「当前项」/「更新时间」,「门禁」非空时改第 4 行;② 模式 3 **不写本文件**;③ **禁编年史**(历史进 `CHANGELOG.md`);④ 可运行数字不写,只写门禁命令;⑤ 大型重构期间本文件只留一行指针,进度在 `campaigns/<工作项ID>-<中文说明>/STATE.md`。
+> 已发布变更见 `CHANGELOG.md`;未实现项与已知限制见 `ROADMAP.md`;库事实与踩坑见 `RESEARCH.md`;命令与验证入口见 `DEV-GUIDE.md`。
 
-> 当前定位:3.13.0 已发版;封版期维持「暂停新功能开发,文档维护 + 技术债清理」(需求入口见 BACKLOG,确认后排 ROADMAP「当前待办」)。
-> 历史批次明细见 `docs/CHANGELOG.md` 与 git log;审计与调研证据链见 `docs/archive/`。
+- **活跃计划**:`campaigns/REF-001-全库优化收尾/`(阶段 0 · 文档结构整改)
 
-- 2026-09-26:**3.13.1 发版一度失败,根因查明并修复(待重打 tag)**:`main/settings.test.js` 在 CI 上**连续两次失败、两种不同错误**(一次 `rm` 撞 `EISDIR`、一次「合法文件字段应原样读取」判红),本机反复跑全绿。逐段核对 `[ok]` 进度后定位:同一段在 `verify:ci` 里跑两遍(`npm test` 与 `test:coverage`),**第一遍过、第二遍挂** —— 上一小节的异步写在下一小节覆写文件后**迟到落盘并覆盖它**。根因是 `loadSettings` 的迁移写是 `void` fire-and-forget,而测试用**固定预算轮询**「等够久」,到点放弃并不保证写已落盘。修法:写入器新增 `drain()`(队尾空事务即 drain,resolve 即代表队列含重试已结算,失败写不致死后等),`settings` 导出 `whenSettingsIdle()`,段内四处轮询全部改用它;**退出路径也 drain**,补上「队列里的写随进程丢失」这个真实产品缺口。变异验证:把 drain 改成不等待的立即 resolve → 段变红(报「drain 应等到重试成功为止,实际重试 0 次」),证明该断言钉住了「drain 必须等」这一关键性质
-  责任说明:上一条「rename 瞬时占用重试」把「快速失败、什么都不落盘」变成了「可能百毫秒后成功落盘」,**扩大了**迟到覆盖的窗口,是贡献因素之一;但根因是同步方式本身不成立(任何超过该预算的写都会触发同样覆盖),修 drain 同时消掉两者
-  发版状态:`v3.13.1` tag 已推送但两条流水线均 failure,**GitHub Release 未创建**;`3.13.0` 不受影响(此前已成功发布)
-
-- 2026-09-26:**公式三处修完(用户 WPS 目视反馈驱动)**:①列表项/引用块内的 `$\frac{1}{2}$` 此前显示为**原始 LaTeX 文本**(带红线波浪),根因是两个独立缺陷叠加 —— 渲染层的 `math` 分支被并入「静默降级组」;且 remark-math 把容器内公式节点 value 解析成带尾随 `$$` 的脏值(`"\frac{1}{2}\n$$"`),送进 KaTeX 必然失败。**只修前者仍会降级**,两者同修后容器内公式才真正走通 Office MathML 管线。②display `∑` 在 WPS 里显示为「方框 + 丢失被加数」:根因是 `m:nary` 的 `m:e`(操作数槽)**为空**、被加数漏成了兄弟节点 —— docx 库的 `MathSum.children` 语义就是被加数,原实现传了空数组。**该转换此前是不可达的死代码**(旧测试注明「已知不可达」),是上一条 display 公式按 display 模式渲染后才第一次真正执行,于是暴露出是错的。③配套:行内公式与 `∏` 的 `munderover` 回落路径实测**逐字节不变**,未扩大范围
-  过程记录:用户在 WPS 里指出方框在 `³√x`/`∑` 那条而非 `lim` 那条,**直接推翻了我先前「唯一缺字形字符(U+2061)」的假设** —— 据此撤销了已排给子代理的「数学 run 加字体」这项错误修复。产物层核验:空 `<m:e/>` 由 1 → 0、`</m:nary><m:r>` 由 1 → 0、容器内公式产真分式而非字面文本
-  子代理纠正了主会话的错误措辞:主会话说「改为传 base」,但代码里 `base` 是 `∑` 运算符本身,字面照做会让运算符显示两次且被加数丢失;子代理用变异实测证伪字面读法后按验收标准实施
-  待用户目视确认(自动断言只锁 OOXML 结构,验不了观感):WPS 打开落盘样例确认 ①方框消失 ②`∑` **没有变成两个** ③display 上下限确实排在上下方
-  遗留:`∑_{i=1}^{n}` 这类**以 ∑ 结尾、无被加数**的公式由「渲染成空基公式」改为「整式降级 + 警告」(空 `m:e` 正是方框成因、无法凭空造被加数,符合项目「能力失败→降级+留痕」既有降级线);行内 `∑` 仍是 `m:sSubSup` + 被加数作兄弟(Word 原生用 `m:nary`+`limLoc subSup`),如需对齐另立工作项
-
-- 2026-09-26:**三项遗留修完(发版后第一个迭代)**:①`texToDocxMath` 补 `displayMode` 入参(必填、无默认),display 公式的 `\sum`/`\lim` 上下限从右侧改为上下方(`m:nary`/`m:limLow`),行内公式**保持原样不变**成对断言;判定单源落在入参,真值来源是 mdast 节点类型(`math` 块级 / `inlineMath` 行内),传递链本就没丢信息。②**Electron 门禁入口失败路径修好** —— 实测三条:`app.quit()` 不吃 `process.exitCode`(抛错后真实退出码仍是 **0,失败被判绿**)、加载期抛错只打一句 load 错误且进程永不退出、`.then()` 回调抛错只降级为 warning 而进程照活;五个入口的失败路径收敛到 `test/common/entry-guard.mjs`(纯函数判定层 + 壳层,失败关闭),守卫断言见 `test/segments/entry-exit-guard.test.js`。③测试框架区分「选择面」与「发现面」两个语义(`M2W_ONLY` 顶层筛选词跨进程渗进段内,把段自测要发现的沙盒段滤空),契约单源在 `runner.js`,`M2W_ONLY=segments` 下段清单已独立核验与磁盘完全一致(未放宽也未漏跑)
-  过程记录:三条线并行派发,主会话**逐条独立核验而非采信** —— 用探针实测 display 双模式产物结构、真实起 Electron 验退出码三态、比对段清单双向差集;核验中纠正了自己两处错判(把 `M2W_ONLY=core` 说成全量、说几何门禁能验公式排版),也纠正了子代理一处编造的「顶层 await」前提
-  待用户判断:display 公式在 **Word/WPS 的实际视觉效果本机无法确认**(自动断言只锁 OOXML 结构标签,目视样例见 `output/artifacts/math-structures.docx`);`\int` 上下限两侧仍同形需另立工作项
-  其余遗留:`fixture-contract.test.js` 的冗余 env 补丁(纯可读性)、`session-persist-feedback` 段会摘掉兜底 unhandledRejection 监听
-
-- 2026-09-26:**3.13.0 发版完成,阶段 0-7 收口**:14 项人工验收全部通过(用户逐项确认);发版链经历**四轮「CI 红了 → 定位 → 修 → 重打 tag」**,四条根因全是「本机绿、远端红」,已全部修复并各补回归断言:
-  1. `supply-chain` job 刻意不装依赖 → `npm audit --omit=dev` 的 dev 剪枝失效,纯构建期工具(xmldom/fast-uri/js-yaml/sharp)泄漏进生产树 pass 被误判为发布风险(同因导致 khroma 许可证无从核对)。判定层改以 lockfile 的 dev 标记为权威判据,job 补 `npm ci --ignore-scripts`;四包升到同主版本内修复版
-  2. 三个段在 runner 上失败:错误码写死 `EPERM` 而 runner 给 `EBUSY`(同属「被占用」族,已改为断言码族)、缺导航提交等待(真竞态)、`pathToFileURL` 把 8.3 短路径的 `~` 编码成 `%7E` 而 Chromium 原样保留、`realpath` 展开 8.3 短名而期望值用词法根
-  3. 设置原子写:Windows 上 `rename` 覆盖正被读句柄占用的目标**必然 EPERM**(实测确定性,杀软/索引器/云同步随手一握即触发),原实现无重试,一次瞬时占用即丢整次写。已补有界退避重试(仅 EPERM/EBUSY/EACCES 族,真实故障不重试)
-  4. `check:signature` 探测命令在 runner 上不可用(CI 注入的 `PSModulePath` 污染使 5.1 加载不到 `Microsoft.PowerShell.Security`);顺带修「探测失败绕过三态逻辑直接崩原始堆栈」,单列 `probe-unavailable`
-  发布结果:CI `36230784906` 与 Release `36230788441` 均 success;GitHub Release 资产 `MarkdownToWord-Setup-3.13.0.exe` + `.blockmap` + `latest.yml` 命名含版本号且与 tag 一致;`git ls-remote --tags` 含 `v3.13.0`
-  遗留:①`texToDocxMath` 未传 `displayMode: true`,display 公式产出 `msubsup` 而非 `munderover`,排版保真待用户判断;②电子门禁自身失败路径(模块加载期抛错时只打日志并挂住、无非零退出码)未修;③`runner-report` 段在设 `M2W_ONLY` 时恒失败(`discoverSegments` 会过滤掉沙盒段),属隔离模型与该段自设筛选的固有冲突
-- 2026-09-26:**阶段 6 可执行部分完成，余两项待授权**:冒烟实现下沉到 `src/main/smoke.ts` → `dist/main/smoke.js` 随包分发,修复「打包产物跑不了 --smoke」阻塞缺口(dev-only 入口进不了 app.asar),解包产物冒烟**实跑首次转绿**(退出码 0 + 五条标记齐备);新增解包/安装冒烟脚本(安装脚本默认预演零副作用,`--execute` 才真实装卸并先打印系统改动警告);新增供应链门禁 `check:supply`(SCA 两级扫描 + 离线确定性 SBOM + 许可证/NOTICE,实测**生产树 0 漏洞**、含 dev 全树 16 条全为 dev-only);13 处 action 浮动 tag 固定到 40 位 commit SHA;新增 `docs/SIGNATURE-STATUS.md` 与 `check:signature`(3 个产物实测均 unsigned,与 D-04 声明一致);源文件重命名探针实测出真实边界(发布链因 `clean:dist` 免疫,裸跑 `build` 会留陈旧产物);`verify:ci` 105 段全绿 + `npm run dist` 整链通过;**待授权**:GitHub lane 实跑、真实安装/卸载
-- 2026-09-26:**阶段 5 完成，阶段 6 待开始**:传递依赖声明修正(jszip 移入 dependencies + 9 个 core 传递依赖钉版)与 `check:boundary` 导入门禁入 verify:ci(负向夹具 18→21);`logic.ts` 去 electron 依赖 + 跨层类型归位 core;PDF 目录改结构化标题数据(不再正则反解析);21 行双管线差异矩阵(必须一致 12 / 允许不同 9)+ 5 个 differential fixture;DOCX Ctx 拆为 config + 5 个可变状态子对象;测试段改逐段独立 Electron 子进程(硬超时杀进程树、userData 段级隔离、case 级报告、失败 artifact 落盘);fixture 改显式注册 + mock 边界守护(堵出 nativeTheme/webUtils 真实漂移);108 个测试源文件全量 `@ts-check`、清零 2053 条类型错误(新增 `convert-helpers.js` 判别式收窄 + `tscheck-coverage` 守护段);`verify:ci` 101 段全绿且 TS7 CLI 与 TS6 API 探针双侧零类型错误;隔离模型耗时 2.21x(90.2s vs 40.9s)
-- 2026-09-26:**阶段 4 自动断言完成，GUI 待用户**:提交 `499a6bc` 收口动态节点 i18n、向导重开/语言、复制/取消中性态、初始化 barrier、main 语言菜单标题栏同步、ARIA/视觉守卫；主会话 `verify:ci` 95 段全绿，geometry 12 场景/10 恒定组；真实窗口/读屏/深浅主题验收待用户
-- 2026-09-26:**阶段 3 完成，阶段 4 待开始**:提交 `3c429c8` 落地 core signal/deadline/稳定取消码、resolver/目录/批量/合并预算、KaTeX 资源上限、clipboard/preview/Mermaid 生命周期；主会话 `verify:ci` 90 段全绿；`test/pending/` 红测试已迁入 `test/segments/`，保留历史副本
-- 2026-09-26:**阶段 2B 完成，阶段 3 待开始**:提交 `fefbf19` 建立同目录临时文件、魔数校验、硬链接独占提交与 EEXIST 递增选名；无原子提交能力时安全失败，不退化直写；`verify:ci` 84 段全绿；D-03 媒体类型/大小预算转入阶段 3
-- 2026-09-26:**阶段 0-7 全部完成,`verify:ci` 在干净树上全绿**:117 段 + coverage + coverage-zero + fixtures + smoke + 几何门禁(12 场景/10 恒定组,容差 1px,跨 DPI 基线 108 单元)全过,失败取证零新增;覆盖率 92.81/89.03/93.10/92.81 越过 90/85/90/90 且阈值未下调。跨 DPI 像素基线完成,几何门禁参数化多缩放档位(本地三档 dpr 实测 2/1.25/1.5),但**默认档位定为 native 单档** —— CI runner 认不认 `--force-device-scale-factor` 无法本地验证,不认会以「未测量」exit 2 使 verify:ci 变红,故不设为默认。
-  本轮共 33 个提交,收尾时清掉一处**随提交进仓的类型错误**:`test/segments/gate-probes.test.js` 的 5 条 TS7006 (JSDoc typedef 在 TS 的 JS 模式下是文件作用域,各岛引用 contract 的类型未显式引入 → 静默退化为 any → 段内回调参数成隐式 any)。期间多个 lane 都观察到并归因为「别的 lane 在途文件」,故无人复查提交后的 typecheck —— 共享树并行下的典型竞态,由全量门禁自身拦下。
-- 2026-09-26:**阶段 7 完成(跨 DPI 基线除外)**:门禁反向对照探针(5 道门禁沙盒双向验证 + 假仓库元验证)、测试公共 helper(断言集 + 临时资源生命周期)、机器可读 smoke 报告、打包体积门禁(判重按包名+版本+谁要求哪个范围)、显式落盘与权限三通道与产物白名单与 Mermaid 原因上屏、界面打磨五项(修两处真缺陷:脉冲顶掉投影致 hover 抬升永久失效、复制反馈 live region 收不到变更致读屏不播报)。**并修两处「门禁自己会失效」的基础设施缺陷**:coverage 探针内嵌套 c8 复用并清空外层 `NODE_V8_COVERAGE` 目录,导致排在 `gate-probes.test.js` 之前的段覆盖数据整段丢失(实测 math.ts 86.15%→0%),已按沙盒内目录隔离修复(修复后组数字 91.63→92.81,找回的正是丢失部分);eslint 文件数达 200 零余量,已提至 300。覆盖率干净树实测 92.81/89.03/93.10/92.81 越过 90/85/90/90 且**阈值未下调**(实测低于门槛时补测试而非降阈值,floor+headroomPp 棘轮已验证对降阈值/谎报实测/只改基线三种手法均判红)
-- 2026-09-26:**真实安装/卸载实跑通过(用户授权后)**:静默安装 → 安装目录下 `--smoke` 退出码 0 且五条标记齐备 → 静默卸载 → 零残留(安装目录/开始菜单/HKCU+HKLM 卸载项/残留进程/临时 userData 逐项独立核验均为 0,不采信脚本自述)。过程中修正一处真实缺陷:安装目录原硬写 `C:\Program Files`,而本仓 NSIS 实为**按用户模式**,非交互环境必然被拦;且失败残留曾让 Windows「应用」出现**无法卸载的幽灵条目**(卸载器未生成却已写入卸载注册表项与开始菜单 `.lnk`,两者都指向不存在的 exe)。现安装目录按构建口径推导(按用户免提权),失败时按前后快照差集只清理本次新增残留并点名具体键/路径。另修掉一处既有测试危险默认值:替身执行器未注入删除器会回落到**真实** `reg delete`/`rmSync`(实测可删真实开始菜单路径),已改为记账替身
-- 2026-09-26:**修复双击「添加文件」弹出两个文件选择窗(用户手工验收发现)**:根因是 `openDialog` 只检查「现在能否发起选择」(转换/预检/模态)，不检查「上一个原生窗是否还在途」；双击是两次独立 click，各自通过守卫、各自 `await window.api.openMarkdowns()`，于是叠开两窗。现加模块级 single-flight 守卫，语义为**在途即忽略、不排队**（排队会把双击放大成两次选择，比叠窗更难收拾），并在 `finally` 释放，成功/用户取消/抛错三条路径都不卡死。与 `isConvertCommandBlocked()` 正交不互相替代；append/replace 语义与单/多文件态追加判定未动。回归测试保留了反向对照：改前产物上确实报「openMarkdowns 增量=2」
-- 2026-09-26:**题注交叉引用 label 改为按 kind 分域（用户拍板的语义变更）**:原先 fig/tab 共用单一命名空间，同名题注互相覆盖且先出现者的引用被判悬空；现由 `captionLabelKey()`（`src/core/markdown/cross-ref.ts`）构造带 kind 的键，docx/pdf 共用同一契约。行为影响：跨 kind 引用（`fig:a` 指向 tab 题注）判悬空，同 kind 内重名仍后写覆盖；双管线差异矩阵的 `xref-label-namespace` 行已按新语义重写
-- 2026-09-26:**阶段 1 实现完成，GUI 待用户**:提交 `a8aa428` 收口真实 IPC single-flight、关闭/取消竞态、预检异常可观察、renderer 命令/向导锁、设置失败草稿与 ui-state 反馈、批量/合并 after-convert 竞态；`verify:ci` 83 段全绿；阶段 1 仅保留用户 GUI 验收
-- 2026-09-26:**阶段 0 完成，阶段 1 执行中**:阶段 0 本地门禁与决策台账已通过 `verify:ci`（77 段、coverage、fixtures、smoke、geometry），提交 `eb372b4`；远端 GitHub lane 实跑证据后置，coverage/fixture/smoke 故意失败探针转入阶段 7；当前进入阶段 1 四项验收面，暂不推送远程
-- 2026-09-26:**阶段 0 门禁接入(几何/产物/指纹)**:新增稳定入口 `check:env`、`check:geometry`、`gen:dist-manifest`、`check:dist-manifest`、`check:asar`、`check:release`;`verify:ci` 链尾接入几何门禁(build 必在其前),`verify:release` 仍为 verify:ci + dist,dist 内部为 build → dist 清单 → electron-builder → 清单校验/ASAR 核对/发布目标核对(含 SHA-256 报告);契约自检新增「几何在链且在 build 后」「清单基线先于打包、产物核对后于打包」断言(负向夹具 8→18);CI/Release 在 `npm ci` 后落环境指纹(Node/npm/Electron/Chromium/字体/DPI),主 CI 与 Release 均以 `always` 上传几何报告/截图与发布留痕,Release 资产改为按当前版本点名上传(不再 `release/*.exe` 通配);本地 check:contract/selftest/typecheck/lint/几何门禁(12 场景 7 恒定组,exit 0)/dist 清单/环境指纹全绿;**远端 GitHub lane 尚未实跑**
-- 2026-09-26:**发布链补前置清理(`clean:dist`/`clean:release`)**:新增 `scripts/clean-artifacts.mjs`,只删 dist/release 两个生成目录 —— 目标写死并与 package.json 打包配置对账,带保护区/上跳段/符号链接/realpath 越界守卫,`--target` 只收 dist/release/all、不接受任意路径,`--dry-run` 可预演,删除失败给可操作提示;置于 dist 链 build 之前,契约断言清理必在、有序、目标不越界(负向夹具 13→18);**关键实测**:只删 dist/ 而保留根目录 `tsconfig.tsbuildinfo` 会让 tsc 判定全部最新、一个文件都不发出(clean 后 build 仅剩 8 个复制资源),故清理连带删除根目录 `*.tsbuildinfo`,配对后 clean build 产出 262 文件且必需入口齐全;残留探针实跑(注入残留 → 清单校验判红 → 移除转绿);本机整条 `npm run dist` 实跑 exit 0(清单 262 文件、asar 10633 个文件交叉核对通过、release 3.12.0 三件套无历史残留、SHA-256 报告已生成),`release/` 已只剩当前版本产物(原 0.5.1/1.0.0/2.1.0 历史产物按授权清除);守卫反例(`--target src`、缺 target、未知参数、打包配置已迁移)全部拒绝且零删除
-- 2026-09-25:**全库优化阶段 2A 完成并进入阶段 0 重启**:统一 Markdown 准备链、main/renderer 页面几何迁移与回滚、D-03 路径边界、merge 图片安全重定位已落地；`npm run verify:ci` 通过（72 段、coverage、fixtures、smoke）；OPT-2.3 输出原子提交与 D-03 媒体类型/大小预算仍未完成；阶段 3 红测试仍在 `test/pending/`，不计入实现；下一提交后从阶段 0 checklist 首个未满足项开始，暂不推送远程
-- 2026-09-25:**发版 3.12.0 完成**(离线隐私文案区隔 + 双管线差异注释随版;GUI 实测通过 3 项全勾,验收关闭;四源同号 package.json=lockfile=tag v3.12.0=CHANGELOG [3.12.0];本会话 typecheck/lint/build/70 段/smoke 全绿;Release run 36114674025 与 CI run 36114669244 均 success,资产 MarkdownToWord-Setup-3.12.0.exe + latest.yml 已核对)
-- 2026-09-25:**BACKLOG 晋升两项开发完成**:「离线隐私文案区隔」(关于页 `about.privacyNote` 说明行 + FAQ「离线与隐私」条目 + i18n 三语;文案如实保留两处联网例外,不写绝对「不联网」)与「双管线差异注释」(14 文件补差异/同步义务头注,纯注释零行为变更);typecheck/lint/build + 70 段 + smoke 全绿;GUI 实测通过(ACCEPTANCE「离线隐私文案区隔」3 项全勾关闭,随 3.12.0 发版)
-- 2026-09-25:**发版 3.11.8 完成**(维护版,src 零变更,E 批测试工程化与需求管道 backlog 重组随版;四源同号 package.json=lockfile=tag v3.11.8=CHANGELOG [3.11.8];本地 typecheck/lint/build/70 段/smoke 全绿;GitHub Release 资产 MarkdownToWord-Setup-3.11.8.exe + latest.yml,Release 四源门禁与 CI 均 success;踩坑:typecheck 依赖 dist 于构建前跑必挂,Release/CI 首跑双败,三处 workflow 改 build 先行,经用户确认将首推 tag 移至修复提交 d75fe3f 后发布成功,详见 RESEARCH 同日条目)
-- 2026-09-25:**需求管道重组:候选池升格项目 backlog,文件定名 `BACKLOG.md`(所有需求唯一入口)**:backlog 全文重写(功能新增/体验优化/架构优化·技术债/防御·安全分节,处置列标注待拍板/渐进执行中/暂缓/已明确不做,逐项业务价值+工作量;非任务备忘集中「维持人工·已知限制」节);ROADMAP 删处置小节(砍/记录不排期/暂不执行项/测试遗留/功能候选/候选池晋升/已知限制/维持人工不自动化)并入候选池,已完成历史保留;指针同步(RESEARCH/计划归档注记/runner/README);规则写入项目 AGENTS「流程」与全局 WORKFLOW-GUIDE 阶段 0/1(v1.9)
-- 2026-09-25:**技术债计划按文档规范归置,原 `docs/TECH-DEBT-PLAN.md` 撤档**:收官后按落盘规范分流——原文存 `docs/archive/20260925-130122-技术债处置计划.md`(头部归档注记含分流指针);结论入 RESEARCH(四路盘点条目「处置/关联」更新);内容入 ROADMAP(「已完成」批次压缩记录)与 BACKLOG(渐进两项/smoke 计数冻结/看门狗悬挂段隔离等处置记录,随同日需求管道重组单源化);索引与指针同步(docs/README 登记、runner.js 局限注释);本文件同步瘦身(已关闭打开事项与过期状态归 CHANGELOG/archive,保持 ≤80 行)
-- 2026-09-25:**技术债 E 批(测试体系增强)五项全部关闭,计划收官**:五项独立提交 `45d4b61`(E1 覆盖率门槛)→ `2f38fc8`(E4 自动扫描)→ `eb2d5e5`(E2 等待条件化,拍板「仅动等待,计数全保留」)→ `8186c86`(E3 看门狗试点)→ `ffae14e`(E5 `@ts-check` 渐进);每项独立验证全绿(E1 门禁正反向+70 段+smoke、E2 smoke×2、E3 悬挂探针+全量、E4 等价核对+新目录探针、E5 双配置 typecheck+双探针语义);**至此技术债计划 A-E 五批 24 项全部关闭,无剩余项(决策点 C4/E2 均已拍板)**,逐项记录见计划归档与 RESEARCH 同日条目
-- 2026-09-25:**发版 3.11.7 完成**(技术债 D 批六项结构重构随版发布;四源同号 package.json=lockfile=tag v3.11.7=CHANGELOG [3.11.7];typecheck/lint/build/70 段/smoke 全绿;GitHub Release 资产 MarkdownToWord-Setup-3.11.7.exe + latest.yml,Release 四源门禁与 CI 流水线均 success;发版内容仅对话框位置记忆一处用户可感知改进,其余为内部重构)
-- 2026-09-25:**技术债 D 批(结构重构)六项全部关闭**:六项独立提交 `fdd132f`(D5 段归位)→`9b57dee`(D6 对话框样板)→`07ee67a`(D4/C5 契约归位)→`fb4c70e`(D3 pdf 模板三拆)→`06a3bd2`(D2 settings 六组拆线)→`b3d7d83`(D1 向导三块拆分),每项 typecheck/lint/build/70 段/smoke 全绿;**GUI 实测已通过(2026-09-25,ACCEPTANCE 两处复测记录回写,无未关闭项)**
-
-## 验证基线
-
-- 已跑通:`npm run typecheck`、`npm run lint`、`npm run build`、`npx electron . --smoke`、`npm run test:coverage`(c8，core/main 自动产物口径；GUI renderer 编排层按人工验收边界排除，renderer 断言仍执行)
-- 验收脚本:`npm run test`(test/acceptance.mjs 自动发现 `segments/`(core 渲染与跨域守护)、`main/`(主进程层)与 `renderer/`(UI 层)下 `*.test.js`,当前 **77 段 = segments 53 + main 19 + renderer 5**;单段筛选 `M2W_ONLY='段名子串'`;新增测试=新建段文件零注册);main 侧行为已有 `main/converter.test.js` 断言,smoke 保留必须 Electron 的断言(printToPDF 产物/书签/renderer diag/设置持久化往返)
-- 恒等守护:`test/segments/identity-guards.test.js` 锁已知双源(zh 文案↔字典/MAX_RECENT_FILES/设置合并双侧/白名单扫描一致性)
-- 验收样例:`npm run gen:fixtures`(需先 build)按功能自动生成 `test/fixtures/acceptance/*.md`(GUI 人工实测直接拖入);`npm run check:fixtures` 漂移校验(EOL 归一化,.gitattributes 双保险;CI 门禁步骤);新增功能=测试段顶层加 `export const fixtures = { main: ... }`
-- smoke 自清理 output/smoke 临时产物(Windows 占用文件 EBUSY 容错跳过)
-- 打包:`npm run dist`(`clean:dist` + `clean:release` → build → dist 清单 → electron-builder NSIS → `check:dist-manifest`/`check:asar`/`check:release`);`clean:dist` 必须连带删根目录 `*.tsbuildinfo`,否则 tsc 增量缓存会让 clean 后的 build 不产出任何文件;清理只覆盖 dist/release 两个生成目录,`node scripts/clean-artifacts.mjs --target dist|release|all [--dry-run]` 可单独预演;验证链:--dir → asar list → win-unpacked 启动存活 → 静默安装/卸载(退出码 0);打包版 `--smoke` 不可用(asar 内只读);镜像环境变量见 DEV-GUIDE
-- 产物与布局门禁:`npm run check:geometry`(真实 Electron 窗口采样 renderer 几何,报告+截图落 `output/artifacts/ui-geometry/`,`verify:ci` 链尾一步);`npm run gen:dist-manifest`/`check:dist-manifest`(dist 规范化清单)、`check:asar`(app.asar 结构+与清单 SHA-256 交叉核对)、`check:release`(当前版本安装包/blockmap/latest.yml 一致性 + SHA-256 报告,拒绝历史产物残留);`npm run check:env`(Node/npm/Electron/Chromium/字体/DPI 指纹,探针缺值不阻断)
-- CI 门禁:.github/workflows/ci.yml(windows-latest Node 22.13 主门禁 + Node 22 稳定线 + verify:ci 全链含几何门禁 + `always` 上传环境指纹与几何报告/截图);release.yml 含 tag↔package.json↔lockfile 版本校验、verify:release 全链(含打包后产物核对)、`always` 上传诊断留痕,Release 资产按当前版本点名上传(安装包 + blockmap + latest.yml)
-
-## 铁律(勿回退)
-> 项目级硬约束(技术栈/镜像/字体/分页符/依赖钉死)已全部迁至项目 `AGENTS.md`「硬约束」节,以彼处为准。
-
-## 打开事项
-
-- (无未关闭项,2026-09-25 收尾回写。新打开项记于此,完成即勾选关闭)
+阶段      0 · 3/15 项落地
+当前项    #03 STATUS 重写为七字段仪表盘 · 已落地 · —
+门禁      node 字符计数 ≤1,200 通过 · 2026-09-26
+阻塞      v3.13.1 的 GitHub Release 尚未创建(产物与 tag 已在仓内);3.13.1 的公式方框/列表居中/引用块灰底三项待用户 WPS 目视复验(自动断言只锁 OOXML 结构);允许版本线内的依赖 patch/minor 升级待裁决
+验证基线   命令指针见 `DEV-GUIDE.md`「验证方式」节
+更新时间   2026-09-26
