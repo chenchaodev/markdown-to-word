@@ -6,17 +6,26 @@
  * 场景:empty(空态)/ single(单文件)/ multi(多文件)/ history(历史浮层展开),
  * 另附 compact-stress(880×620 最小窗口附近的几何恒定压力位)。
  * 前置:npm run build(dist/renderer 就绪)。
+ *
+ * 失败路径:走 test/common/entry-guard.mjs 的统一守卫 —— 抛错时打印阶段标签 + 原始堆栈
+ * 并以非零码退出。旧实现是 `app.quit() + process.exitCode = 1`,实测**退出码是 0**
+ * (quit 走自身退出路径,只设 exitCode 不生效),即截图工具失败会被读成成功。
+ * 本文件的静态导入面只有 node 内建 + electron + 守卫,无独立载荷(故无 load 阶段)。
  */
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { runEntry } from "../common/entry-guard.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..", "..");
 const distIndex = path.join(root, "dist", "renderer", "index.html");
 const preload = path.join(__dirname, "visual-preload.cjs");
 const outDir = path.join(root, "output", "artifacts", "ui-v4");
+
+/** 入口标识(诊断首行 `[entry:...]` 用) */
+const ENTRY = "visual-check";
 
 /**
  * 样例文件绝对路径(供页面侧桩注入)
@@ -216,11 +225,9 @@ async function main() {
   await shot(win, "7-halfscreen-empty");
 
   win.destroy();
-  app.quit();
+  return 0;
 }
 
-main().catch((err) => {
-  console.error("[ui:shots] FAILED:", err);
-  app.quit();
-  process.exitCode = 1;
-});
+// 截图成功也要显式退出码 0(app.quit 的退出码不受 process.exitCode 控制,实测恒为 0);
+// 任何抛错由壳层接住 → 打印诊断 + 非零退出,不再「打一行 FAILED 然后退出 0」。
+void runEntry({ entry: ENTRY, work: main });

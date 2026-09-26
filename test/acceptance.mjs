@@ -25,17 +25,27 @@
  * 消息」明细与通过数,失败段的日志与产物快照见 output/artifacts/failures/<段名>/。
  *
  * 用法: npm run test(需已 build;等价 npx electron test/acceptance.mjs)
+ *
+ * 失败路径:走 test/common/entry-guard.mjs 的统一守卫 —— 编排阶段抛错时打印阶段标签 +
+ * 原始堆栈并以非零码退出。旧实现是 `app.whenReady().then(async () => {...})` 且回调不带
+ * catch:回调内抛错只产生 UnhandledPromiseRejectionWarning(Electron 主进程把未处理拒绝
+ * 降级为 warn),进程继续活着 → 挂到 CI job 级超时,报出来的是「超时」而不是「验收失败」。
+ * userData 重定向必须在 app ready **之前**完成,故它留在模块顶层(静态导入 userdata.js);
+ * runner.js 走 load 阶段的动态 import,其加载失败可被捕获并带阶段标签。
  */
 import { app } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatCaseReport, resolveIsolation, runAll, summarizeCases } from "./common/runner.js";
+import { runEntry } from "./common/entry-guard.mjs";
 import { createTempUserData, redirectUserData, removeTempUserData } from "./common/userdata.js";
 
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
 const segmentsDir = path.join(testRoot, "segments");
 const mainDir = path.join(testRoot, "main");
 const rendererDir = path.join(testRoot, "renderer");
+
+/** 入口标识(诊断首行 `[entry:...]` 用) */
+const ENTRY = "acceptance";
 
 // 父进程自身也隔离 userData(它不跑段代码,仅编排;同进程回退模型下段会用到):
 // whenReady 前重定向到一次性临时目录,防止验收测试读写真实 %APPDATA% 下的用户数据。
@@ -56,19 +66,28 @@ function printStats(results, totalStart) {
   console.log(`[stats] 总耗时 ${totalSeconds}s | 最慢段: ${slowest}`);
 }
 
-/** 退出前冲干净 stdout/stderr:app.exit 立即终止进程,管道场景下未落盘输出会被截断 */
-async function flushOutput() {
-  for (const stream of [process.stdout, process.stderr]) {
-    if (stream.writableLength > 0) await new Promise((resolve) => stream.write("", resolve));
-  }
-}
-
 // 同进程回退模型下段会自持窗口(所有窗口关闭即退出,会在 printToPDF 窗口 destroy 后
-// 中断后续写盘);显式挂空监听保持进程存活,由末尾 app.quit() 收尾。
+// 中断后续写盘);显式挂空监听保持进程存活,由壳层的显式 app.exit(退出码)收尾。
 // 隔离模型下本进程不跑段代码、不建窗口,此监听无副作用(回退路径仍依赖它)。
 app.on("window-all-closed", () => {});
 
-void app.whenReady().then(async () => {
+/**
+ * 载荷加载阶段:编排器(runner.js)走动态 import,加载失败带「模块加载期」标签非零退出。
+ * @returns {Promise<typeof import("./common/runner.js")>} runner 模块命名空间
+ */
+async function loadPayload() {
+  return import("./common/runner.js");
+}
+
+/**
+ * 入口执行期(app ready 回调体):跑完全部段 → 打印段级/case 级报告 → 给出退出码。
+ * 退出码与冲刷由壳层统一收口,本函数只负责判定与收尾清理。
+ * @param {typeof import("./common/runner.js")} runner runner 模块
+ * @returns {Promise<number>} 退出码(0 全绿 / 1 有段失败或超时段)
+ */
+async function work(runner) {
+  const { formatCaseReport, resolveIsolation, runAll, summarizeCases } = runner;
+  await app.whenReady();
   const totalStart = Date.now();
   if (!resolveIsolation()) {
     console.warn("[warn] M2W_ACCEPTANCE_INPROC 已启用:回退到同进程顺序 + 看门狗模型(不隔离,仅供二分定位)");
@@ -102,20 +121,18 @@ void app.whenReady().then(async () => {
   // 隔离模型下超时段已被父进程硬杀,走下方常规失败分支
   if (hung) {
     console.error("[fail] 存在超时段(该段记失败,后续段已照常执行);结果打印完毕,进程硬退出以释放悬挂资源");
-    await flushOutput();
     removeTempUserData(tempUserData);
-    app.exit(1);
-    return;
+    return 1;
   }
   const failed = results.filter((r) => !r.ok);
   if (failed.length > 0) {
     console.error(`[fail] ${failed.length}/${results.length} 段失败`);
-    await flushOutput();
     removeTempUserData(tempUserData);
-    app.exit(1);
-    return;
+    return 1;
   }
   console.log(`[ok] 全部 ${results.length} 段通过`);
   removeTempUserData(tempUserData);
-  app.quit();
-});
+  return 0;
+}
+
+void runEntry({ entry: ENTRY, load: loadPayload, work });

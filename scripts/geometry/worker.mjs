@@ -8,6 +8,11 @@
  * 跑完 12 场景却不知道跑在什么缩放下,等于没测。
  *
  * 退出码:0 绿 / 1 红 / 2 未测量(未测量 ≠ 通过)。
+ *
+ * 本模块不是 Electron 入口:worker 角色由 scripts/check-geometry.mjs 以同一可执行文件派生
+ * (M2W_GEOMETRY_ROLE=worker),并被它以**动态 import** 加载。加载失败与本函数抛出的异常都
+ * 收敛到那个入口的失败路径守卫(阶段标签 + 原始堆栈 + 非零退出码,见 test/common/entry-guard.mjs);
+ * 本文件只负责给出 0/1/2 三种判定语义,退出逻辑不要在这里另抄一份。
  */
 import { app, BrowserWindow, screen } from "electron";
 import fs from "node:fs";

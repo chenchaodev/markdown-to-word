@@ -13,9 +13,18 @@
  * - 段内自持的 BrowserWindow **不**作为退出条件:段末 flush 后 app.exit 强退,
  *   故窗口与临时 HTML 的清理由各段自己负责(段末 destroy/dispose),
  *   不再依赖入口的 app.quit()(逐段独立进程后入口无窗口可关)。
+ *
+ * 失败路径:走 entry-guard.mjs 的统一守卫。旧实现是 `app.whenReady().then(runHostedSegment)`
+ * 且不带 catch:回调内抛错只产生 UnhandledPromiseRejectionWarning(Electron 主进程把未处理
+ * 拒绝降级为 warn,进程不死),段结果文件也不会写出 → 父进程只能等硬超时才收尸。现在这类失败
+ * 打印阶段标签 + 原始堆栈并以 ENTRY_EXIT.CRASH 非零退出,父进程立刻拿到「段崩溃 + 退出码 +
+ * 真实原因」。runner.js/case.js/userdata.js 仍是静态 import(userData 重定向必须在 ready 前
+ * 完成,且这三个是与父进程的契约面),故本入口无 load 阶段;段模块自身的加载失败仍由 runSegment
+ * 捕获成段级错误回传(诊断更细,不改这条通路)。
  */
 import { app } from "electron";
 import { pathToFileURL } from "node:url";
+import { flushOutput, runEntry } from "./entry-guard.mjs";
 import { setCaseProgressSink } from "./case.js";
 import {
   SEGMENT_FILE_ENV,
@@ -33,6 +42,9 @@ const EXIT_USAGE = 2;
 /** 结果回传失败的退出码 */
 const EXIT_REPORT = 3;
 
+/** 入口标识(诊断首行 `[entry:...]` 用) */
+const ENTRY = "segment-host";
+
 const segmentFile = process.env[SEGMENT_FILE_ENV];
 const resultPath = process.env[SEGMENT_RESULT_ENV];
 // 父进程没给目录(手工直跑本文件)时自建一个,退出时自己删:同样不碰真实 %APPDATA%
@@ -43,16 +55,10 @@ if (userDataDir) redirectUserData(app, userDataDir);
 app.on("window-all-closed", () => {});
 
 /**
- * 退出前把 stdout/stderr 冲干净:app.exit 立即终止进程,管道场景下未落盘的
- * 段内日志会被截断(空写回调 = 之前的写入已 flush)。
+ * 跑完一个段:执行 → 收集 case/快照 → 原子回传 → 给出退出码
+ * (冲刷与 app.exit 由壳层统一收口,本函数只给判定语义码)。
+ * @returns {Promise<number>} 退出码(0 段通过 / 1 段失败 / 3 结果回传失败)
  */
-async function flushOutput() {
-  for (const stream of [process.stdout, process.stderr]) {
-    if (stream.writableLength > 0) await new Promise((resolve) => stream.write("", resolve));
-  }
-}
-
-/** 跑完一个段:执行 → 收集 case/快照 → 原子回传 → 按结果退出 */
 async function runHostedSegment() {
   // 超时前进度:每个 case 结算即把当前结果落盘(complete=false),段被硬杀也不丢证据
   setCaseProgressSink((cases) => {
@@ -97,12 +103,10 @@ async function runHostedSegment() {
     console.error(`[fail] 结果回传失败: ${err instanceof Error ? err.message : err}`);
     await flushOutput();
     if (ownUserData) removeTempUserData(ownUserData);
-    app.exit(EXIT_REPORT);
-    return;
+    return EXIT_REPORT;
   }
-  await flushOutput();
   if (ownUserData) removeTempUserData(ownUserData);
-  app.exit(payload.ok ? 0 : 1);
+  return payload.ok ? 0 : 1;
 }
 
 if (!segmentFile || !resultPath) {
@@ -111,5 +115,9 @@ if (!segmentFile || !resultPath) {
   );
   app.exit(EXIT_USAGE);
 } else {
-  void app.whenReady().then(runHostedSegment);
+  // work 体内自行 await app.whenReady():userData 重定向与空监听必须在 ready 之前完成
+  void runEntry({
+    entry: ENTRY,
+    work: () => app.whenReady().then(runHostedSegment),
+  });
 }
