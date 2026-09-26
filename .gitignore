@@ -29,3 +29,7 @@ Thumbs.db
 # TypeScript 增量编译缓存(incremental)
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# 手工验收样例被转换时产物落在样例旁(应用默认输出目录),不入库
+test/fixtures/manual/*.docx
+test/fixtures/manual/*.pdf
