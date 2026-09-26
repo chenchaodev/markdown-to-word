@@ -331,13 +331,21 @@
 
 ## 8. 阶段 7：P2/P3 维护与可选提升
 
-- [ ] coverage/fixture/smoke 故意失败探针与报告（阶段 0 后置项）。
-- [ ] assertion helper/机器可读 smoke。
-- [ ] 临时资源 helper、ASAR/EXE 体积实测。
-- [ ] 允许版本线内 patch/minor。
-- [ ] prerelease、allowed path、fsync、权限 handler、Mermaid warning。
-- [ ] 完成态动画、复制状态、about 标题、初始焦点、队列/脉冲等 UI polish。
-- [ ] 跨 DPI 像素基线（后置）。
+- [x] coverage/fixture/smoke 故意失败探针与报告（阶段 0 后置项）：`scripts/check-gate-probes.mjs` 拆为 10 个岛（最大 462 行），5 道门禁各做「正向锚点 + 负向故障」双向验证，全部在系统临时区沙盒副本内进行、真实工作树零注入（前后内容指纹 + node_modules 哨兵双断言）。**元验证**：在假仓库副本里把 `check-build-fresh` 改成永远 exit 0 / 永远 exit 1，证明探针非空过且邻近健康门禁不受影响。
+- [x] assertion helper/机器可读 smoke：`test/common/assert.js`（8 条断言，失败消息必含实际值/期望值/差异位置）+ `scripts/smoke-report.mjs`（拆 5 模块）把「5 条文本标记 + 退出码」归一成 `output/artifacts/smoke-report.json`，dev 与解包产物两种来源同形状，判定口径零改动。
+- [x] 临时资源 helper、ASAR/EXE 体积实测：`test/common/temp-resource.js`（EBUSY 退避、删不掉必抛并点名）+ `scripts/pack-size.mjs`（拆 10 模块，10 个条目实测）。**判重按「包名+版本+谁要求哪个范围」**，本仓 katex 3 份 2 版本系 `^0.18.1`（项目）与 `^0.16.45`/`^0.16.0`（mermaid / micromark）范围互斥强制并存，**排除嵌套副本会让 micromark 解析到不满足 `^0.16.0` 的 0.18.1** —— 故合法并存不判红，判红看「可避免」。
+- [~] 允许版本线内 patch/minor：由全局 AGENTS.md「依赖升级分级」+ 本项目「勿回退」钉版承担；**未新增自动门禁**，因为可自动判定的部分（地板与 exact 钉版）已由 `check:contract` 覆盖，而「是否允许升到某 minor」本质是人工裁决，自动化只能给出地板不能给出许可。
+- [x] prerelease、allowed path、fsync、权限 handler、Mermaid warning：自写 20 余行 prerelease 比较器（**刻意不引 semver 包** —— 该脚本在两条 workflow 的 `npm install` 之前各跑一次，`import 'semver'` 恰好在最需要它时 `ERR_MODULE_NOT_FOUND`，门禁自我否定）；显式落盘（写内容 → 文件句柄 fsync → rename → 父目录 fsync，缺文件 fsync 时断电可得 0 字节 `settings.json` 而 `loadSettings` 整文件回退默认 → **用户全部偏好静默归零**）；权限三通道补齐并保持默认拒绝；产物白名单三收口（绑定真实产物/规范化后比对/有界增长）；Mermaid 失败原因经 core **既有** warning 通道上屏（零新 i18n key）。
+- [x] 完成态动画、复制状态、about 标题、初始焦点、队列/脉冲等 UI polish。**修真缺陷两处**：脉冲原直接动画按钮自身 `box-shadow`，与静置投影及 hover 抬升抢同一条声明 → 动画期间整条投影被顶掉、**hover 抬升永久失效**（改由 `::after` 承载光环）；复制反馈原为 `display:none→flex` 显隐互换且文本不变，`role="status"` 收不到内容变更 → **读屏基本不播报**（改常驻 sr-only live 区 + 先清空再写）。另修既有 bug：`row.title` 调 `t()` 未传参，按 `i18n.ts` 返回**原始模板**，悬停提示一直字面显示 `${path}`。
+- [ ] 跨 DPI 像素基线（后置）—— 计划标注「只在环境稳定后建立」，该前提已随 UI 打磨落地而满足，进行中。
+
+**本阶段拦下的两处真实基础设施缺陷（都是「门禁自己会失效」那一类）**：
+1. **覆盖率静默少算**：`gate-probes` 的 coverage 探针在沙盒里再跑一次真 c8，而 `node.env` 未覆盖 `NODE_V8_COVERAGE`，子进程继承外层 `test:coverage` 的同一临时目录并在其 report 阶段清空它 → **所有文件名排在 `gate-probes.test.js` 之前的段**，其 V8 覆盖数据整段丢失，而探针自身全绿。实测：同一运行下只跑 `formula` 段时 `math.ts` 为 86.15%/80%，加上 `gate-probes` 段即掉到 0%/0%。修法是给子 c8 指定沙盒内的 `NODE_V8_COVERAGE`；**不能用「给测试段改名去排序」绕过** —— 段名与执行顺序一旦成为覆盖是否被计入的前提，门禁就依赖字母序而非真实覆盖。修复后实测组数字由 91.63 升到 92.81，即找回的正是此前丢失的部分。
+2. **eslint 文件数零余量**：`maximumDefaultProjectFileMatchCount` 达 200（等于旧上限），再加任一 `.js/.mjs` 即整体报 `Too many files (>200)` 把 lint 打成一片红。已提到 300；该值只影响性能护栏，不放宽任何类型或规则门禁。
+
+**覆盖率门禁的实测与棘轮**：干净树实测 92.81 / 89.03 / 93.10 / 92.81，越过 90/85/90/90。阈值**未下调** —— 干净树实测低于 90 时正确动作是补测试（`handlers/math.ts`、`handlers/fallback.ts` 两个 0% 覆盖的 docx handler 补测 581 行，函数缺口归零），而非降阈值。`floor`(85/80/85/85) + `headroomPp`(5) 棘轮在真实仓库上验证有牙：降阈值、谎报 `measured`、只改基线不改命令，三种都判红。
+
+**阶段 7 门禁**：`verify:ci` 全绿（含 117 段）、覆盖率四项达标、供应链门禁 exit 0、几何门禁 12 场景/10 恒定组全绿。
 
 ## 9. 当前工作树残留处理
 
