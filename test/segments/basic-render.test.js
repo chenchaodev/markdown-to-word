@@ -545,12 +545,13 @@ export async function run() {
   }
   console.log("[ok] basic-render:脚注定义内 blockquote/thematicBreak 渲染断言通过");
 
-  // ---------- 列表项/引用块内不支持的块级内容降级渲染 + 警告(render.ts) ----------
-  // 依据(src/core/docx/render.ts):列表项内 display 公式/html/表格、引用块内代码块/
-  // display 公式/html/表格此前静默丢弃(内容丢失);B4 起按既有降级线转文本
-  // (公式 → TeX 源码等宽灰字 / 表格 → 逐行文本段落 / 代码块 → 等宽文本代码块 /
-  // 白名单外 html → 原样文本)+ keyed 警告(warn.unsupportedBlockInContainer,
-  // 经 warnDedup 按 类型+容器 去重)。
+  // ---------- 列表项/引用块内块级内容(公式正常成文,其余按降级线转文本) ----------
+  // 依据(src/core/docx/handlers/content.ts + equations.ts):列表项内 display 公式
+  // 走与顶层同一条 Office MathML 管线(居中、不编号,KaTeX 真解析失败才降级
+  // TeX 源码等宽灰字——公式结构断言见 segments/math-structures.test.js);html/表格、
+  // 引用块内代码块/html 此前静默丢弃(内容丢失),按既有降级线转文本
+  // (表格 → 逐行文本段落 / 代码块 → 等宽文本代码块 / 白名单外 html → 原样文本)
+  // + keyed 警告(warn.unsupportedBlockInContainer,经 warnDedup 按 类型+容器 去重)。
   /** @type {Warning[]} */
   const containerWarnings = [];
   const containerMd = [
@@ -581,12 +582,27 @@ export async function run() {
   ].join("\n");
   const containerBuffer = await renderDocx(parseMarkdown(containerMd), { warnings: containerWarnings });
   const containerXml = await unzipPart(containerBuffer, "word/document.xml");
-  // 降级产物断言:内容不丢失
-  if (!containerXml.includes("E = mc^2")) {
-    throw new Error("basic-render 断言失败:列表内 display 公式未降级为 TeX 源码文本(E = mc^2 缺失)");
+  // 列表内公式:成 Office MathML(E / = / m c 各自 MathRun),不降级为 TeX 源码文本
+  if (!containerXml.includes("<m:oMath>")) {
+    throw new Error("basic-render 断言失败:列表内 display 公式未渲染为 Office MathML(缺 <m:oMath>)");
   }
+  for (const [needle, label] of /** @type {[string, string][]} */ ([
+    ["<m:t>E</m:t>", "公式左侧 E"],
+    ["<m:t>=</m:t>", "公式等号"],
+    ["<m:t>m</m:t>", "公式 m"],
+    ["<m:sSup>", "公式上标结构 m:sSup"],
+    ["<m:sup><m:r><m:t>2</m:t></m:r></m:sup>", "公式上标 2"],
+  ])) {
+    if (!containerXml.includes(needle)) {
+      throw new Error(`basic-render 断言失败:列表内 display 公式缺少 ${label}(${needle})`);
+    }
+  }
+  if (containerXml.includes("E = mc^2")) {
+    throw new Error("basic-render 断言失败:列表内 display 公式仍以 TeX 源码文本成文(E = mc^2)");
+  }
+  // 容器内非公式内容仍走等宽灰字降级(此处由引用块内白名单外 html 提供)
   if (!containerXml.includes('<w:color w:val="888888"/>')) {
-    throw new Error("basic-render 断言失败:容器内公式/html 降级文本缺少等宽灰字(w:color 888888)");
+    throw new Error("basic-render 断言失败:容器内 html 降级文本缺少等宽灰字(w:color 888888)");
   }
   for (const row of ["a | b", "1 | 2"]) {
     if (!containerXml.includes(row)) {
@@ -603,7 +619,6 @@ export async function run() {
   /** @param {string} text 期望文案 */
   const expectContainerWarn = (text) => containerWarnings.some((w) => formatWarning(w) === text);
   for (const text of [
-    "公式 在列表内暂不支持,已降级为文本",
     "表格 在列表内暂不支持,已降级为文本",
     "代码块 在引用块内暂不支持,已降级为文本",
     "HTML 在引用块内暂不支持,已降级为文本",
@@ -612,7 +627,13 @@ export async function run() {
       throw new Error(`basic-render 断言失败:warnings 缺少容器降级警告「${text}」,warnings=${JSON.stringify(containerWarnings)}`);
     }
   }
-  console.log("[ok] basic-render:B4 容器内不支持块级降级渲染(公式/表格/代码块/html)+ 警告 断言通过");
+  // 公式既已正常渲染,不得再报「容器内暂不支持」(公式在容器内是被支持的)
+  if (containerWarnings.some((w) => formatWarning(w).startsWith("公式 在"))) {
+    throw new Error(
+      `basic-render 断言失败:列表内 display 公式正常渲染却仍报容器降级警告,warnings=${JSON.stringify(containerWarnings.map((w) => formatWarning(w)))}`,
+    );
+  }
+  console.log("[ok] basic-render:容器内 display 公式成 Office MathML + 表格/代码块/html 降级文本 + 警告 断言通过");
 
   // ---------- imageToDocx resolver memo 缓存(render.ts resolveImageCached) ----------
   // 同一图片 URL 在文档多处出现时只走一次 resolver(成功缓存);失败(null)不缓存,

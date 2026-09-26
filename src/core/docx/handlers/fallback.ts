@@ -1,6 +1,8 @@
 /**
  * 容器内降级渲染:列表项/引用块内不完整支持的块级内容的
  * 降级输出与警告。纯叶子模块(不依赖行内渲染簇)。
+ * 公式不在此列:容器内公式由 equations.ts renderContainerMath 正常渲染为
+ * Office MathML(仅 KaTeX 真解析失败才降级 TeX 源码,那是公式自身的兜底)。
  */
 import { PageBreak, Paragraph, TextRun } from "docx";
 import type { Html as MdHtml, Table as MdTable } from "mdast";
@@ -9,7 +11,7 @@ import { CODE_FONT, MUTED_TEXT_GRAY } from "../theme.js";
 import { collectPlainText } from "../../util/mdast-utils.js";
 import { isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
 import { renderInlineHtmlParagraph } from "./inline-html.js";
-import { warnDedup, type Ctx, type MdMath } from "../ctx.js";
+import { warnDedup, type Ctx } from "../ctx.js";
 
 /**
  * 容器内不支持块级的降级警告:blockType/container 为中文类别词
@@ -33,20 +35,17 @@ function fallbackTextParagraph(text: string): Paragraph {
 
 /**
  * 列表项/引用块内不完整支持的块级内容降级渲染(此前静默丢弃,内容丢失):
- * - 公式(math)→ TeX 源码等宽灰字 + 警告;
  * - html → 分页注释照常分页、白名单行内标签照常渲染,其余原样等宽文本 + 警告;
  * - 表格 → 逐行文本段落(单元格纯文本以「 | 」连接)+ 警告。
- * 代码块由调用方处理(列表内既有 renderCode 路径;引用块内补齐为同款)。
+ * 代码块由调用方处理(列表内既有 renderCode 路径;引用块内补齐为同款);
+ * 公式由 equations.ts renderContainerMath 正常渲染,不经本降级通道。
  */
 export async function renderContainerFallback(
-  node: MdMath | MdHtml | MdTable,
+  node: MdHtml | MdTable,
   ctx: Ctx,
   container: string,
 ): Promise<Paragraph[]> {
   switch (node.type) {
-    case "math":
-      warnDedup(ctx, unsupportedBlockWarning("公式", container));
-      return [fallbackTextParagraph(node.value)];
     case "html": {
       const value = node.value.trim();
       if (value === "<!-- page-break -->") {

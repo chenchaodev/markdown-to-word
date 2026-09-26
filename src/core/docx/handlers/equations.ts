@@ -1,8 +1,10 @@
 /**
  * docx 公式子系统:预扫期编号上下文 + 渲染期 display 公式——buildEquationContext
  * (由 prescan.ts 调用:全文连续编号 + 公式块后 {#eq:label} 段登记,label 段
- * 渲染期跳过)与 renderDisplayMath(经 handlers/math.ts 转 Office MathML;解析
- * 失败降级 TeX 源码 + formulaParseFailedWarning,降级公式同样占编号)。
+ * 渲染期跳过)、renderDisplayMath(顶层 display 公式)与 renderContainerMath
+ * (列表项/引用块内 display 公式);三者共用 mathBody 作为 TeX → 公式主体的唯一
+ * 转换点(经 handlers/math.ts 转 Office MathML;解析失败降级 TeX 源码 +
+ * formulaParseFailedWarning,降级公式同样占编号)。
  * 双管线对应:src/core/pdf/rules/equation.ts(eq_numbering 规则,其头注载明与
  * 本侧契约一致)。差异:本侧渲染 Office MathML、pdf 侧渲染 KaTeX HTML;编号同为
  * 免更新路线静态注入、仅顶层(容器内公式不计数不编号)。修改编号/label 登记/
@@ -17,7 +19,7 @@ import {
   TabStopType,
   TextRun,
 } from "docx";
-import type { ParagraphChild } from "docx";
+import type { IParagraphOptions, ParagraphChild } from "docx";
 import { collectPlainText } from "../../util/mdast-utils.js";
 import { EQ_LABEL_RE } from "../../markdown/cross-ref.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
@@ -90,6 +92,20 @@ function buildEquationContext(ast: Root, ctx: Ctx, numbering: boolean = true): E
 }
 
 /**
+ * mdast 块级 math 节点 → 公式主体元素(顶层与容器内共用的唯一转换点)。
+ * displayMode=true:mdast 块级 math 节点即 display 公式($$..$$),由调用方所在
+ * 位置决定排版而非 TeX 语义(行内公式走 content.ts 的 inlineMath 分支,传 false)。
+ * 解析失败/未覆盖节点 → TeX 源码等宽灰字 + 公式降级警告(整式降级,不混排),
+ * 内容不丢失;该兜底与「容器支不支持」无关,顶层与容器内同款。
+ */
+function mathBody(node: MdMath, ctx: Ctx): DocxMath | TextRun {
+  const result = texToDocxMath(node.value, true);
+  if (result.ok) return new DocxMath({ children: result.children });
+  ctx.warning.list?.push(formulaParseFailedWarning(node.value));
+  return new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY });
+}
+
+/**
  * display 公式渲染(eq 为 undefined 表示无编号信息——equationNumbering=false 时
  * buildEquationContext 不登记任何节点,每个公式都走此路径,并非不可达):
  * - 有编号:按「公式居中 + 编号右对齐」排版——center tab(50% 文本区宽)+
@@ -106,33 +122,15 @@ export function renderDisplayMath(
   eq: EquationInfo | undefined,
   textWidthTwips: number,
 ): Paragraph[] {
-  // displayMode=true:mdast 块级 math 节点即 display 公式($$..$$),由 render.ts
-  // case "math" 分派而来(行内公式走 content.ts 的 inlineMath 分支,传 false)。
-  const result = texToDocxMath(node.value, true);
   if (!eq) {
-    if (result.ok) {
-      return [
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [new DocxMath({ children: result.children })],
-        }),
-      ];
-    }
-    ctx.warning.list?.push(formulaParseFailedWarning(node.value));
     return [
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY })],
+        children: [mathBody(node, ctx)],
       }),
     ];
   }
-  if (!result.ok) {
-    ctx.warning.list?.push(formulaParseFailedWarning(node.value));
-  }
-  // 公式主体:解析成功 → docx Math;失败 → TeX 源码等宽灰字
-  const mathChild: DocxMath | TextRun = result.ok
-    ? new DocxMath({ children: result.children })
-    : new TextRun({ text: result.text, font: CODE_FONT, color: MUTED_TEXT_GRAY });
+  const mathChild = mathBody(node, ctx);
   // 制表位跳格:Tab 必须包在 TextRun 内(裸 <w:tab/> 是非法段落级元素,
   // WPS 实测会把公式段降级显示;TextRun({ children: [Tab] }) 输出
   // <w:r><w:tab/></w:r> 合法结构)。包后全部为 ParagraphChild,无需断言
@@ -154,6 +152,32 @@ export function renderDisplayMath(
         : equationRuns,
   });
   return [paragraph];
+}
+
+/**
+ * 容器内(列表项 / 引用块内)display 公式渲染。
+ * 与顶层同一条转换管线(texToDocxMath,displayMode=true),差别只在排版:
+ * 公式居中(与 pdf 侧 .katex-display 居中语义一致),**不编号、不排 5a 排版**
+ * ——编号仅限顶层(buildEquationContext 只扫顶层块,容器内公式不计数不编号,
+ * 与 pdf 侧 eq_numbering「仅顶层」契约对称)。
+ * 段落装饰(引用块的左缩进 + 底纹)由调用方经 paragraphProps 注入:装饰归容器
+ * 语义所有(content.ts renderBlockquote 与其内普通段落共用同一份),公式本身
+ * 不感知所在容器。
+ * 降级(KaTeX 真解析失败/未覆盖节点)仍为 TeX 源码等宽灰字 + 公式降级警告,
+ * 与顶层同款,不报「容器内暂不支持」。
+ */
+export function renderContainerMath(
+  node: MdMath,
+  ctx: Ctx,
+  paragraphProps: IParagraphOptions = {},
+): Paragraph[] {
+  return [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      ...paragraphProps,
+      children: [mathBody(node, ctx)],
+    }),
+  ];
 }
 
 export { buildEquationContext };

@@ -15,7 +15,8 @@
  *   → <m:rad>;MathSubScript({ children, subScript }) → <m:sSub>;
  *   MathSuperScript({ children, superScript }) → <m:sSup>;
  *   MathSubSuperScript({ children, subScript, superScript }) → <m:sSubSup>;
- *   MathSum({ children, subScript?, superScript? }) → <m:nary>(naryPr 内置 ∑);
+ *   MathSum({ children, subScript?, superScript? }) → <m:nary>(naryPr 内置 ∑,
+ *   children 即被加数 → <m:e>,**必填**:传空数组得 <m:e/> 空基,渲染器显示方框);
  *   MathLimitUpper({ children, limit }) → <m:limUpp>;MathLimitLower({ children, limit })
  *   → <m:limLow>。
  * - MathIntegral 实证不可用:accent 传空串 → naryPr 不产出 m:chr,运算符符号缺失,
@@ -170,11 +171,16 @@ function pushText(stack: MathMlNode[], text: string): void {
  * - 文本叶:mo / mi / mn / mtext(带属性降级)/ mspace(空)/ annotation(跳过,TeX 源注解)
  * - 结构:mfrac → MathFraction;msqrt → MathRadical;mroot → MathRadical(degree)
  * - 脚本:msub / msup / msubsup → MathSubScript / MathSuperScript / MathSubSuperScript
- * - 上下限:munderover(首子 mo 为 ∑)→ MathSum;mover → MathLimitUpper;
- *   munder → MathLimitLower
+ * - 上下限:munderover(首子 mo 为 ∑)→ MathSum(被加数由 operand 传入,见
+ *   walkChildren);mover → MathLimitUpper;munder → MathLimitLower
  * - 未覆盖(mtable / mglyph / mstyle / menclose / 未知)→ null
+ *
+ * operand:仅 munderover(∑)用得上——KaTeX 把被加数放在 <munderover> 的**下一个
+ * 兄弟节点**(`∑_{i=1}^{n} i` → `<mrow><munderover>…</munderover><mi>i</mi></mrow>`),
+ * 而 OOXML 的 m:e 正是被加数槽(docx 的 MathSum.children 即 m:e,见文件头)。
+ * 只有 walkChildren 有兄弟上下文,由它取下一兄弟传进来;其余节点忽略此参。
  */
-function walk(node: MathMlNode): MathComponent[] | null {
+function walk(node: MathMlNode, operand?: MathComponent[]): MathComponent[] | null {
   switch (node.name) {
     case "math":
     case "mrow":
@@ -207,7 +213,7 @@ function walk(node: MathMlNode): MathComponent[] | null {
         new MathSubSuperScript({ children: parts[0]!, subScript: parts[1]!, superScript: parts[2]! }), // msubsup 恒三子
       );
     case "munderover":
-      return munderoverToNary(node);
+      return munderoverToNary(node, operand ?? null);
     case "mover":
       return structured(node, (parts) => new MathLimitUpper({ children: parts[0]!, limit: parts[1]! })); // mover 恒两子
     case "munder":
@@ -228,9 +234,28 @@ function walkChildren(node: MathMlNode): MathComponent[] | null {
       pending = "";
     }
   };
-  for (const child of node.children) {
+  for (let i = 0; i < node.children.length; i++) {
+    const child = node.children[i]!;
     if (typeof child === "string") {
       pending += decodeEntities(child);
+      continue;
+    }
+    // n-ary 求和(∑):被加数是**紧邻的下一个兄弟节点**(KaTeX 的 munderover 只含
+    // 运算符与上下限)。取它当 m:e 并从本层消费掉,否则它会作为兄弟 run 漏到
+    // m:nary 之外,而 m:e 留空 → WPS 把整式显示成方框 □(docx MathSum.children
+    // 就是 m:e,必填,不能传空数组)。只消费一个兄弟:`∑_{i=1}^{n} i + j` 的
+    // `+ j` 必须仍留在本层,故不能把余下兄弟全吞。
+    if (isNarySum(child)) {
+      const operandNode = node.children[i + 1];
+      // 无被加数(公式以 ∑ 结尾)或下一兄弟是裸文本:无法构造合法 m:e → 整式降级
+      if (operandNode === undefined || typeof operandNode === "string") return null;
+      const operand = walk(operandNode);
+      if (operand === null) return null;
+      i++; // 消费被加数节点
+      const components = walk(child, operand);
+      if (components === null) return null;
+      flush();
+      out.push(...components);
       continue;
     }
     const components = walk(child);
@@ -240,6 +265,13 @@ function walkChildren(node: MathMlNode): MathComponent[] | null {
   }
   flush();
   return out;
+}
+
+/** munderover 且首子 mo 为 ∑(大运算符求和,走 MathSum/m:nary) */
+function isNarySum(node: MathMlNode): boolean {
+  if (node.name !== "munderover") return false;
+  const first = node.children[0];
+  return first !== undefined && typeof first !== "string" && moText(first) === "∑";
 }
 
 /** 文本叶节点(mo/mi/mn/mtext)内的文本段 → 单个 MathRun(空文本 → 无贡献) */
@@ -274,10 +306,14 @@ function structured(
 
 /**
  * munderover(极限在运算符上下,如 \sum_{i=1}^{n}):
- * 首子为 <mo>∑</mo> → MathSum(naryPr 内置 ∑,children 为空,操作数在兄弟节点);
- * 其余(积分 ∫ 等)→ MathSubSuperScript 回落(实证:MathIntegral 不产出运算符符号)。
+ * 首子为 <mo>∑</mo> → MathSum。**children 必须传被加数**(它就是 m:e,必填):
+ * 传空数组会产出 `<m:e/>` 空基,WPS 把整式显示成方框 □。被加数不在本节点的子
+ * 元素里(在下一个兄弟节点),由 walkChildren 取好经 operand 传入;取不到(公式
+ * 以 ∑ 结尾)→ 整式降级为 TeX 源码,不产出空 m:e。
+ * 其余(积分 ∫ 等)→ MathSubSuperScript 回落(实证:MathIntegral 不产出运算符符号),
+ * 沿用首子作 base 并忽略 operand(该形态的被加数同样在兄弟节点,保持既有行为)。
  */
-function munderoverToNary(node: MathMlNode): MathComponent[] | null {
+function munderoverToNary(node: MathMlNode, operand: MathComponent[] | null): MathComponent[] | null {
   const children = node.children;
   if (children.length !== 3 || typeof children[0] === "string") return null;
   const parts: (MathComponent[] | null)[] = children.map((child) =>
@@ -287,7 +323,8 @@ function munderoverToNary(node: MathMlNode): MathComponent[] | null {
   // children.length === 3 已前置校验且 null 已过滤,三元组断言精确
   const [base, sub, sup] = parts as [MathComponent[], MathComponent[], MathComponent[]];
   if (moText(children[0] as MathMlNode) === "∑") {
-    return [new MathSum({ children: [], subScript: sub, superScript: sup })];
+    if (operand === null) return null; // 无被加数:空 m:e 会显示方框,宁降级
+    return [new MathSum({ children: operand, subScript: sub, superScript: sup })];
   }
   return [new MathSubSuperScript({ children: base, subScript: sub, superScript: sup })];
 }

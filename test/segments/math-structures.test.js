@@ -2,9 +2,10 @@
 /**
  * docx 公式结构矩阵 + 容器内降级(被测:src/core/docx/handlers/math.ts
  * texToDocxMath / parseMathMl / walk / structured / textToRuns、
+ * src/core/docx/handlers/equations.ts renderDisplayMath / renderContainerMath /
+ * mathBody、
  * src/core/docx/handlers/fallback.ts renderContainerFallback /
  * fallbackTextParagraph / unsupportedBlockWarning、
- * src/core/docx/handlers/equations.ts renderDisplayMath、
  * src/core/docx/ctx.ts formulaParseFailedWarning、
  * src/core/resource-limits.ts hasUntrustedTexCommand、
  * src/core/docx/handlers/inline-html.ts renderInlineHtmlParagraph)。
@@ -32,13 +33,19 @@
  * display 公式 `$$..$$`(mdast `math` 节点)→ 大运算符上下限走 <munderover>/
  * <munder>(∑ → <m:nary>、\lim → <m:limLow>);同一 TeX 写在行内 `$..$`
  * (mdast `inlineMath` 节点)→ 走 <msubsup>/<m:sub>(<m:sSubSup>/<m:sSub>)。
+ * display ∑ 的 <m:e> 内必须是被加数(MathSum.children 即 m:e,必填;传空数组
+ * 得空基 → WPS 显示方框 □),另断「只消费紧邻一个兄弟」与「无被加数则整式降级」;
+ * 行内同 TeX 走 <msubsup>/<m:sSubSup>(<m:e> 装运算符本身,非空,形态不变)。
  * 判定单源在 texToDocxMath 的 displayMode 入参(真值来源 = mdast 节点类型),
  * 本段按「display 产 nary/limLow 且无 sSubSup」与「行内产 sSubSup/sSub 且无
  * nary/limLow」两侧成对断言。
  *
- * 第二部分:列表项 / 引用块内块级内容的降级(此前静默丢弃,内容丢失)。三条降级
- * 路径 + 三条「不该降级」的旁路全部钉在产物上:
- * - display 公式 → TeX 源码等宽灰字 + 「公式 在列表/引用块内暂不支持」;
+ * 第二部分:列表项 / 引用块内块级内容。
+ * 公式:容器内 display 公式走与顶层同一条 Office MathML 管线(分式成 <m:f>;
+ * displayMode 仍为 true;不编号、不排 5a 制表位),仅 KaTeX 真解析失败才降级
+ * TeX 源码等宽灰字 + 公式降级警告——该兜底是公式自身的能力降级,与
+ * 「容器支不支持」是两回事,单独钉住。
+ * html / 表格:三条降级路径 + 三条「不该降级」的旁路全部钉在产物上:
  * - 表格 → 逐行文本段落(单元格纯文本以「 | 」连接),不成 <w:tbl>;
  * - 非白名单 html → 原文(XML 转义)等宽灰字 + 「HTML 在…」;
  * - `<!-- page-break -->` → 照常分页,不产警告;
@@ -129,6 +136,57 @@ function expectWarningCount(warns, needle, count, label) {
 }
 
 /**
+ * 断言警告通道不含 needle(用于「已正常渲染,不得再报降级」的反向锁)。
+ * @param {string[]} warns 格式化后的警告文案
+ * @param {string} needle 禁止出现的文案片段
+ * @param {string} label 失败标签
+ */
+function expectNoWarning(warns, needle, label) {
+  const hit = warns.filter((text) => text.includes(needle));
+  if (hit.length > 0) {
+    throw new Error(
+      `docx 公式/容器降级断言失败:${label} —— 警告不应出现「${needle}」,实际 ${JSON.stringify(hit)}`,
+    );
+  }
+}
+
+/**
+ * 断言 needle 在文本中恰好出现 count 次(编号文本/结构计数口径)。
+ * @param {string} xml document.xml
+ * @param {string} needle 待计数的片段
+ * @param {number} count 期望次数
+ * @param {string} label 失败标签
+ */
+function expectCount(xml, needle, count, label) {
+  const hits = xml.split(needle).length - 1;
+  if (hits !== count) {
+    throw new Error(
+      `docx 公式/容器降级断言失败:${label} —— 「${needle}」应出现 ${count} 次,实际 ${hits} 次`,
+    );
+  }
+}
+
+/**
+ * 取包裹 needle 的最近一个 <w:p>…</w:p> 片段(段落级断言用:同文档其他段落的
+ * 属性不能干扰对公式段本身的判定)。needle 不在任何段落内 → 报错。
+ * @param {string} xml document.xml
+ * @param {string} needle 目标片段
+ * @returns {string} 该段落的完整 XML
+ */
+function paragraphContaining(xml, needle) {
+  const at = xml.indexOf(needle);
+  if (at === -1) {
+    throw new Error(`docx 公式/容器降级断言失败:段落片段定位失败,document.xml 不含 ${needle}`);
+  }
+  const start = xml.lastIndexOf("<w:p>", at);
+  const end = xml.indexOf("</w:p>", at);
+  if (start === -1 || end === -1) {
+    throw new Error(`docx 公式/容器降级断言失败:${needle} 不在 <w:p>…</w:p> 内`);
+  }
+  return xml.slice(start, end + "</w:p>".length);
+}
+
+/**
  * 断言某条 TeX 走「整式降级」:无 <m:oMath>(不混排)+ TeX 源码以等宽灰字成文
  * + 降级警告(警告文案含源码,便于定位)。
  * @param {"inline" | "display"} mode 公式位置(行内 / display 块)
@@ -203,29 +261,58 @@ export async function run() {
   // 行内模式同一 TeX 走 <msubsup>/<m:sub>(右侧)。两侧成对断言,任一侧被改成
   // 「一律 display」或「一律行内」都会立即变红。
   // ① display `$$ \sum_{i=1}^{n} i $$` → munderover → MathSum → <m:nary>
-  //   (naryPr 内置 ∑ 字符,children 为空 → <m:e/> 空基,操作数在兄弟节点)
+  //   (naryPr 内置 ∑ 字符;**children 必须是被加数** → <m:e>。被加数 i 由
+  //   walkChildren 从 munderover 的下一个兄弟节点取来并消费掉,见 math.ts
+  //   munderoverToNary 的注释。此前传空数组 → <m:e/> 空基 + 被加数漏成兄弟
+  //   run,WPS 整式显示方框 □,而只查 <m:nary> 查不出这个)
   const sumDisplay = await renderDocxXml("$$\n\\sum_{i=1}^{n} i\n$$\n");
   expectPresent(
     sumDisplay.xml,
     [
       "<m:nary>",
       '<m:chr m:val="∑"/>',
-      // 上下限在 naryPr 之后依次为 <m:sub>/<m:sup>(上下方排布的 OOXML 形态)
+      // 上下限在 naryPr 之后依次为 <m:sub>/<m:sup>(上下方排布的 OOXML 形态),
+      // 末位是被加数槽 <m:e>:被加数 i 必须在 m:e 内,不能是 m:nary 的兄弟节点
       '<m:naryPr><m:chr m:val="∑"/><m:limLoc m:val="undOvr"/></m:naryPr>' +
         "<m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub>" +
-        "<m:sup><m:r><m:t>n</m:t></m:r></m:sup>",
+        "<m:sup><m:r><m:t>n</m:t></m:r></m:sup>" +
+        "<m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary>",
     ],
-    "display ∑ 结构(MathSum/<m:nary>)",
+    "display ∑ 结构(MathSum/<m:nary> + <m:e> 被加数)",
   );
   expectAbsent(
     sumDisplay.xml,
-    ["<m:sSubSup>"],
-    "display ∑(上下限在上下方,不应退化成行内 <m:sSubSup>)",
+    ["<m:sSubSup>", "<m:e/>", "</m:nary><m:r>"],
+    "display ∑(不退回行内形态;<m:e> 不得为空;被加数不得漏成 m:nary 的兄弟 run)",
   );
-  console.log("[ok] docx 公式 display ∑ → <m:nary>(<m:chr ∑> + limLoc undOvr + <m:sub>/<m:sup>),无 <m:sSubSup>");
+  console.log(
+    "[ok] docx 公式 display ∑ → <m:nary>(<m:chr ∑> + limLoc undOvr + <m:sub>/<m:sup> + <m:e> 被加数 i),无 <m:e/>、无兄弟 run、无 <m:sSubSup>",
+  );
+
+  // ①b 只消费一个兄弟:`∑_{i=1}^{n} i = …` 的等号与分式必须仍留在 m:nary 之外
+  const sumThenMore = await renderDocxXml("$$\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n");
+  expectPresent(
+    sumThenMore.xml,
+    [
+      "<m:sup><m:r><m:t>n</m:t></m:r></m:sup><m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary>" +
+        '<m:r><m:t>=</m:t></m:r><m:f>',
+    ],
+    "display ∑ 只把紧邻的一个兄弟当被加数,后续项留在 m:nary 外",
+  );
+  console.log("[ok] docx 公式 display ∑ 后接等式/分式:被加数只取紧邻一项,其余留作兄弟");
+
+  // ①c 无被加数(公式以 ∑ 结尾)→ 无法构造合法 <m:e>,整式降级而非留空基
+  await assertFormulaDegraded(
+    "display",
+    "\\sum_{i=1}^{n}",
+    "\\sum_{i=1}^{n}",
+    "display ∑ 无被加数降级(不产空 <m:e/>)",
+  );
+  console.log("[ok] docx 公式 display ∑ 无被加数 → 整式降级为 TeX 源码(不产空 <m:e/> 显示方框)");
 
   // ② 行内 `$\sum_{i=1}^{n} i$` → msubsup → MathSubSuperScript → <m:sSubSup>
   //   (∑ 以 MathRun 文本进 base,上下限为兄弟节点)——行内形态保持不变
+  //   (行内是 m:sSubSup 而非 m:nary,<m:e> 装的是运算符本身、非空,不受本轮修正影响)
   const sumInline = await renderDocxXml("行内 $\\sum_{i=1}^{n} i$。\n");
   expectPresent(
     sumInline.xml,
@@ -276,28 +363,121 @@ export async function run() {
   await assertFormulaDegraded("display", "\\frac{1}{", "\\frac{1}{", "katex-error display 降级");
   console.log("[ok] docx 公式解析失败(katex-error)行内/display 双路径均整式降级 + 警告");
 
-  // ================= 第二部分:容器内块级内容降级 =================
+  // ================= 第二部分:容器内块级内容 =================
 
-  // ---------- 列表项内 display 公式 → TeX 源码等宽灰字 + 「公式 在列表内」警告 ----------
-  // renderList 命中 child.type === "math" → renderContainerFallback(child, ctx, "列表"):
-  // 警告文案里的容器词由调用方传入(列表 / 引用块),故两个容器分别断言。
+  // ---------- 容器内 display 公式 → Office MathML 分式(非 TeX 源码文本) ----------
+  // renderList / renderBlockquote 的 math 分支委托 equations.ts renderContainerMath,
+  // 与顶层 renderDisplayMath 共用 mathBody → texToDocxMath(displayMode=true)。
+  // 本组断言钉「真的成公式」:<m:oMath> + <m:f> 分子分母齐全,且 TeX 源码
+  // (`\frac{1}{2}`)不得以任何形态出现在产物里(此前走的正是这条降级文本路径)。
   const listMath = await renderDocxXml("- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n");
-  expectPresent(listMath.xml, [MONO_GRAY_FONT, MONO_GRAY_COLOR, "\\frac{1}{2}"], "列表内公式降级为 TeX 源码等宽灰字");
-  expectAbsent(listMath.xml, ["<m:oMath"], "列表内公式不转 Office MathML(容器内不编号不成公式)");
-  expectWarningCount(listMath.warns, `公式 在列表内${UNSUPPORTED_IN_CONTAINER}`, 1, "列表内公式警告");
-  console.log("[ok] docx 列表项内 display 公式 → TeX 源码等宽灰字 + 「公式 在列表内暂不支持」警告");
+  expectPresent(
+    listMath.xml,
+    [
+      "<m:oMath>",
+      "<m:f><m:num><m:r><m:t>1</m:t></m:r></m:num>" +
+        "<m:den><m:r><m:t>2</m:t></m:r></m:den></m:f>",
+      // 居中排版(与顶层无编号 display 公式、pdf 侧 .katex-display 同一语义)
+      '<w:jc w:val="center"/>',
+    ],
+    "列表内公式渲染为 Office MathML 分式",
+  );
+  expectAbsent(
+    listMath.xml,
+    ["\\frac{1}{2}", MONO_GRAY_FONT, MONO_GRAY_COLOR],
+    "列表内公式不得退化为 TeX 源码文本",
+  );
+  expectNoWarning(listMath.warns, UNSUPPORTED_IN_CONTAINER, "列表内公式正常渲染不应报「暂不支持」");
+  console.log("[ok] docx 列表项内 display 公式 → <m:oMath><m:f>(分子 1 / 分母 2),无 TeX 源码文本、无降级警告");
 
-  // ---------- 引用块内 display 公式 → 同款降级,容器词逐字为「引用块」 ----------
   const quoteMath = await renderDocxXml("> $$\n> \\frac{1}{2}\n> $$\n");
-  expectPresent(quoteMath.xml, [MONO_GRAY_FONT, MONO_GRAY_COLOR, "\\frac{1}{2}"], "引用块内公式降级");
-  expectAbsent(quoteMath.xml, ["<m:oMath"], "引用块内公式不转 Office MathML");
-  expectWarningCount(quoteMath.warns, `公式 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块内公式警告");
-  if (quoteMath.warns.some((text) => text.includes("公式 在列表内"))) {
+  expectPresent(
+    quoteMath.xml,
+    [
+      "<m:oMath>",
+      "<m:f><m:num><m:r><m:t>1</m:t></m:r></m:num>" +
+        "<m:den><m:r><m:t>2</m:t></m:r></m:den></m:f>",
+      // 沿用引用段落装饰(与同块普通段落同一份 QUOTE_PARAGRAPH_PROPS)
+      'w:fill="F2F2F2"',
+      'w:ind w:left="720"',
+      '<w:jc w:val="center"/>',
+    ],
+    "引用块内公式渲染为 Office MathML 分式",
+  );
+  expectAbsent(
+    quoteMath.xml,
+    ["\\frac{1}{2}", MONO_GRAY_FONT, MONO_GRAY_COLOR],
+    "引用块内公式不得退化为 TeX 源码文本",
+  );
+  expectNoWarning(quoteMath.warns, UNSUPPORTED_IN_CONTAINER, "引用块内公式正常渲染不应报「暂不支持」");
+  console.log("[ok] docx 引用块内 display 公式 → <m:oMath><m:f> + 引用段落底纹/缩进,无 TeX 源码文本");
+
+  // ---------- 容器内公式 displayMode 仍为 true(不随容器降级为行内) ----------
+  // mdast 块级 math 节点即 display 公式,真值来源是节点类型而非所在容器:
+  // 容器内 \sum_{i=1}^{n} 的大运算符上下限排在上下方(<m:nary> + limLoc undOvr),
+  // 与行内同 TeX 的 <m:sSubSup> 形态不同。若被误传 displayMode=false 即变红。
+  const listSum = await renderDocxXml("- 列表内求和\n\n  $$\n  \\sum_{i=1}^{n} i\n  $$\n");
+  expectPresent(
+    listSum.xml,
+    ["<m:nary>", '<m:chr m:val="∑"/>', '<m:limLoc m:val="undOvr"/>'],
+    "容器内公式 displayMode=true(∑ 走 <m:nary> 上下方排布)",
+  );
+  expectAbsent(listSum.xml, ["<m:sSubSup>"], "容器内 display 公式不应走行内 <m:sSubSup> 形态");
+  console.log("[ok] docx 容器内 display 公式 displayMode 仍为 true(<m:nary> + limLoc undOvr,无 <m:sSubSup>)");
+
+  // ---------- 容器内公式不编号(编号仅顶层;pdf 侧同一契约) ----------
+  // buildEquationContext 只扫顶层块,故容器内公式段:居中但无编号制表位
+  // (<w:tabs>)、无编号文本、不挂列表编号(<w:numPr>);同文档内的顶层公式仍
+  // 从 (1) 起编号,容器内公式不占号。断言逐段取「含 <m:oMath 的那个 <w:p>」,
+  // 避免被同列表项正文段自身的编号干扰。
+  const containerOnly = await renderDocxXml("- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n");
+  const formulaPara = paragraphContaining(containerOnly.xml, "<m:oMath>");
+  expectAbsent(
+    formulaPara,
+    ["<w:tabs>", "(1)", "<w:numPr>"],
+    "容器内公式段不编号(无制表位/无编号文本/不挂列表编号)",
+  );
+  expectPresent(formulaPara, ['<w:jc w:val="center"/>'], "容器内公式段居中");
+  const mixedNumbering = await renderDocxXml(
+    "顶层公式:\n\n$$\n\\frac{1}{2}\n$$\n\n- 列表项公式\n\n  $$\n  \\frac{3}{4}\n  $$\n",
+  );
+  expectCount(mixedNumbering.xml, "(1)", 1, "顶层公式仍编号 (1),容器内公式不占号");
+  expectAbsent(mixedNumbering.xml, ["(2)"], "容器内公式不占第二个编号");
+  console.log("[ok] docx 容器内公式不编号(公式段无 <w:tabs>/无编号文本/不挂 <w:numPr>;同文档顶层公式仍为 (1))");
+
+  // ---------- 容器内公式的解析失败兜底仍保留(与「容器支不支持」是两回事) ----------
+  // KaTeX 真解析失败(未覆盖节点 mtable / katex-error 未闭合分组)时,容器内
+  // 公式与顶层同款整式降级:TeX 源码等宽灰字 + 「公式解析失败,降级为 TeX 源码」,
+  // 不产 m:oMath;且**不得**报「容器内暂不支持」(公式本身是被支持的)。
+  const listDegrade = await renderDocxXml(
+    "- 列表内未覆盖节点\n\n  $$\n  \\begin{matrix}a & b\\\\c & d\\end{matrix}\n  $$\n",
+  );
+  expectPresent(
+    listDegrade.xml,
+    [MONO_GRAY_FONT, MONO_GRAY_COLOR, "\\begin{matrix}"],
+    "容器内公式解析失败仍降级为 TeX 源码等宽灰字",
+  );
+  expectAbsent(listDegrade.xml, ["<m:oMath"], "容器内公式降级不混排(不产 m:oMath)");
+  if (!listDegrade.warns.some((text) => text.includes(FORMULA_DEGRADED) && text.includes("\\begin{matrix}"))) {
     throw new Error(
-      `docx 公式/容器降级断言失败:引用块内公式的容器词不应为「列表」,实际 ${JSON.stringify(quoteMath.warns)}`,
+      `docx 公式/容器降级断言失败:列表内公式解析失败缺少公式降级警告,实际 ${JSON.stringify(listDegrade.warns)}`,
     );
   }
-  console.log("[ok] docx 引用块内 display 公式 → 同款降级 + 容器词逐字为「引用块」");
+  expectNoWarning(listDegrade.warns, UNSUPPORTED_IN_CONTAINER, "容器内公式解析失败不报「暂不支持」");
+
+  const quoteDegrade = await renderDocxXml("> $$\n> \\frac{1}{\n> $$\n");
+  expectPresent(
+    quoteDegrade.xml,
+    [MONO_GRAY_FONT, MONO_GRAY_COLOR, "\\frac{1}{"],
+    "引用块内公式 katex-error 仍降级为 TeX 源码等宽灰字",
+  );
+  expectAbsent(quoteDegrade.xml, ["<m:oMath"], "引用块内公式降级不混排(不产 m:oMath)");
+  if (!quoteDegrade.warns.some((text) => text.includes(FORMULA_DEGRADED) && text.includes("\\frac{1}{"))) {
+    throw new Error(
+      `docx 公式/容器降级断言失败:引用块内公式解析失败缺少公式降级警告,实际 ${JSON.stringify(quoteDegrade.warns)}`,
+    );
+  }
+  console.log("[ok] docx 容器内公式解析失败兜底仍保留:TeX 源码等宽灰字 + 公式降级警告(不报「暂不支持」)");
 
   // ---------- 容器内表格 → 逐行文本段落(单元格纯文本以「 | 」连接) ----------
   // 断言两行各自成段(而非一张真表格:无 <w:tbl>),单元格内容顺序与分隔符锁定。
@@ -390,14 +570,29 @@ export async function run() {
   // ================= 落盘样例(供人工在 Word/WPS 核对实际排版) =================
   // display ∑ 与行内 ∑ 成对入样例:上下方排布 vs 右侧排布只能目视确认,
   // 自动断言只覆盖 OOXML 结构,视觉效果留人工核对。
+  // 容器内公式也入样例:列表项与引用块内的 \frac{1}{2} 应目视确认为分式
+  // (自动断言已锁 <m:f>,WPS/Word 的实际排版效果仍需人眼确认)。
   const showcaseMd =
     "# 公式结构与容器降级\n\n$$\n\\sqrt[3]{x}\n$$\n\n$$\n\\sum_{i=1}^{n} i\n$$\n\n" +
     "行内对照 $\\sum_{i=1}^{n} i$、$\\lim_{x \\to 0} f(x)$。\n\n$$\n\\lim_{x \\to 0} f(x)\n$$\n\n" +
-    "$\\overline{AB}$、$\\underline{x}$、$\\pmod{n}$、$\\text{中文混排}$。\n\n- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n\n> $$\n> \\frac{1}{2}\n> $$\n\n> | 列一 | 列二 |\n> | --- | --- |\n> | 甲 | 乙 |\n";
+    "$\\overline{AB}$、$\\underline{x}$、$\\pmod{n}$、$\\text{中文混排}$。\n\n- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n\n" +
+    "> $$\n> \\frac{1}{2}\n> $$\n\n> | 列一 | 列二 |\n> | --- | --- |\n> | 甲 | 乙 |\n";
   const showcase = await renderDocxXml(showcaseMd);
   expectPresent(
     showcase.xml,
-    ["<m:rad>", "<m:limUpp>", "<m:limLow>", "<m:nary>", "<m:sSubSup>", "<m:t>中文混排</m:t>", "甲 | 乙"],
+    [
+      "<m:rad>",
+      "<m:limUpp>",
+      "<m:limLow>",
+      "<m:nary>",
+      "<m:sSubSup>",
+      "<m:t>中文混排</m:t>",
+      "甲 | 乙",
+      // 容器内两个分式(列表 + 引用块)也成公式
+      "<m:f>",
+      // display ∑ 的被加数在 <m:e> 内(样例即人工目视「∑ 处不该有方框」的核对材料)
+      '<m:sup><m:r><m:t>n</m:t></m:r></m:sup><m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary>',
+    ],
     "落盘样例",
   );
   await saveArtifact("math-structures", {

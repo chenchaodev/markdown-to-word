@@ -2,7 +2,9 @@
  * 行内/嵌套内容渲染簇:renderPhrasing / pushRuns 与脚注定义、列表、
  * 引用块渲染同模块——五者相互递归(段落行内 → 脚注定义 → 列表/引用块 → 段落行内),
  * 必须同处一模块才能保持依赖单向(render.ts → content.ts,不反向)。
- * 链接与图片分支分别委托 link-xref.ts / image-run.ts。
+ * 链接与图片分支分别委托 link-xref.ts / image-run.ts;容器内 display 公式
+ * 委托 equations.ts renderContainerMath(与顶层公式共用转换管线,故依赖方向
+ * content.ts → equations.ts,equations.ts 不反向依赖本模块)。
  */
 import {
   BorderStyle,
@@ -24,6 +26,7 @@ import { imageToDocx } from "./image-run.js";
 import { imageAttrInvalidWarning } from "../../image/image-warning.js";
 import { takeImageSizeAttrs } from "../../markdown/image-size.js";
 import { renderCode } from "./code-block.js";
+import { renderContainerMath } from "./equations.js";
 import { renderContainerFallback, unsupportedBlockWarning } from "./fallback.js";
 import { formulaParseFailedWarning, warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js";
 
@@ -198,8 +201,13 @@ export async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
       } else if (child.type === "blockquote") {
         result.push(...(await renderBlockquote(child, ctx)));
       }
-      // 列表项内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
-      else if (child.type === "math" || child.type === "html" || child.type === "table") {
+      // 列表项内 display 公式 → 与顶层同一条 Office MathML 管线(居中、不编号);
+      // 解析失败仍降级 TeX 源码等宽灰字 + 公式降级警告(见 renderContainerMath)
+      else if (child.type === "math") {
+        result.push(...renderContainerMath(child, ctx));
+      }
+      // 列表项内 html/表格此前静默丢弃 → 降级渲染 + 警告
+      else if (child.type === "html" || child.type === "table") {
         result.push(...(await renderContainerFallback(child, ctx, "列表")));
       }
     }
@@ -207,15 +215,21 @@ export async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
   return result;
 }
 
+/** 引用块段落装饰:左缩进 + 底纹。块内所有内容(普通段落、代码块、公式)共用同一份,
+ *  免得公式走 Office MathML 后与同块其他段落底纹/缩进不一致 */
+const QUOTE_PARAGRAPH_PROPS = {
+  indent: { left: 720 },
+  shading: { type: "clear", fill: QUOTE_BG_GRAY },
+} as const;
+
 export async function renderBlockquote(node: Blockquote, ctx: Ctx): Promise<Paragraph[]> {
   const paragraphs: Paragraph[] = [];
   for (const child of node.children) {
     if (child.type === "paragraph") {
       paragraphs.push(
         new Paragraph({
-          indent: { left: 720 },
+          ...QUOTE_PARAGRAPH_PROPS,
           children: await renderPhrasing(normalizeInlineHtml(child.children), ctx),
-          shading: { type: "clear", fill: QUOTE_BG_GRAY },
         }),
       );
     } else if (child.type === "blockquote") {
@@ -226,8 +240,12 @@ export async function renderBlockquote(node: Blockquote, ctx: Ctx): Promise<Para
       warnDedup(ctx, unsupportedBlockWarning("代码块", "引用块"));
       paragraphs.push(await renderCode(child, ctx));
     }
-      // 引用块内 display 公式/html/表格此前静默丢弃 → 降级渲染 + 警告
-    else if (child.type === "math" || child.type === "html" || child.type === "table") {
+      // 引用块内 display 公式 → 与顶层同一条 Office MathML 管线,并沿用引用段落装饰
+    else if (child.type === "math") {
+      paragraphs.push(...renderContainerMath(child, ctx, QUOTE_PARAGRAPH_PROPS));
+    }
+      // 引用块内 html/表格此前静默丢弃 → 降级渲染 + 警告
+    else if (child.type === "html" || child.type === "table") {
       paragraphs.push(...(await renderContainerFallback(child, ctx, "引用块")));
     }
   }

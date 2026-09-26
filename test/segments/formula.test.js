@@ -86,6 +86,47 @@ export async function run() {
   }
   console.log("[ok] PDF 公式:KaTeX 结构 + CSS 字体内联生效");
 
+  // ---------- 容器内(列表项 / 引用块内)公式在 PDF 侧无降级 ----------
+  // 双管线对照:docx 侧容器内公式由 equations.ts renderContainerMath 渲染为
+  // Office MathML;pdf 侧走 markdown-it 的 math_block 规则,容器内公式天然经
+  // 同一 KaTeX 渲染路径(无「容器支不支持」分支)。此处钉住该差异不是回归:
+  // 列表项/引用块内的 $$..$$ 必须产出 katex-display + mfrac,且不产
+  // katex-error、不报降级警告。
+  // 注:产物 HTML 里恒有 <annotation encoding="application/x-tex">\frac{1}{2}
+  // (KaTeX 无障碍注解,非可见文本),故不可用「不含 \frac{1}{2}」作断言。
+  const containerMd =
+    "- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n\n> $$\n> \\frac{1}{2}\n> $$\n";
+  /** @type {unknown[]} */
+  const containerWarnings = [];
+  const containerPdf = /** @type {ConvertArtifact} */ (
+    await convert(containerMd, "pdf", {
+      baseDir: FIXTURES_DIR,
+      title: "容器内公式",
+      warnings: containerWarnings,
+      katexDir,
+    })
+  );
+  const containerHtml = pdfHtmlOf(containerPdf);
+  for (const [needle, label] of /** @type {[string, string][]} */ ([
+    ["<li>", "列表项结构"],
+    ["<blockquote>", "引用块结构"],
+    ['<span class="katex-display">', "display 公式结构"],
+    ["<mfrac><mn>1</mn><mn>2</mn></mfrac>", "分式 MathML"],
+  ])) {
+    if (!containerHtml.includes(needle)) {
+      throw new Error(`公式断言失败:PDF 容器内公式缺少 ${label}(${needle})`);
+    }
+  }
+  if (containerHtml.includes("katex-error")) {
+    throw new Error("公式断言失败:PDF 容器内公式不应出现 katex-error(公式应正常渲染)");
+  }
+  if (containerWarnings.length > 0) {
+    throw new Error(
+      `公式断言失败:PDF 容器内公式正常渲染不应产生警告,实际 ${JSON.stringify(containerWarnings.map((w) => formatWarning(w)))}`,
+    );
+  }
+  console.log("[ok] PDF 容器内公式(列表项/引用块内)→ katex-display + mfrac 正常渲染,无 katex-error、零警告");
+
   // ---------- loadKatexCss 读取失败返回空串 + warnings 上报 ----------
   // 依据(dist/core/pdf/katex-css.ts):katexDir 无效时 readFileSync 抛错 → catch 返回 ""
   // 并经 warnings 通道上报 warn.katexCssLoadFailed(失败可见性,此前静默)。
