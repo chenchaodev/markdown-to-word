@@ -152,3 +152,4 @@
 6. **覆盖率分母排除 `dist/renderer/**` 整层** —— 94 个被测文件中 33 个低于单项阈值,恰是层向越界风险最高的 renderer 层被整层排除在分母外。
 7. **测试深导入 `dist/**` 内部产物的耦合面** —— 40+ 处直导内部模块路径,任何文件移动都要改测试 import(断言内容可零变化)。
 8. **`scripts/` 对 `dist/` 只引产物面、不引内部实现** —— 正面约束:`check-import-boundary.mjs` / `check-ci-contract.mjs` / `check-smoke-contract.mjs` 均按产物路径断言,这是 REF-019 提速可安全并行的前提。
+9. **错误归一的「单源」只到导出函数层,表达式本身仍有 6 处内联** —— #17 把 `errorMessage` 的实现上提到 `core/util/error-message.ts` 后,`main/ipc/logic.ts` 与 `renderer/state/pure.ts` 两份**重复定义**已消;但全库仍有 6 处直接内联同一表达式 `err instanceof Error ? err.message : String(err)`:`core/docx/handlers/code-block.ts:41`、`core/pdf/katex-css.ts:36`、`core/pdf/mermaid.ts:53`、`main/converter/batch.ts:112`、`main/services/mermaid-service.ts:284`、`main/smoke.ts:223`。**其中 `smoke.ts` 不宜改** —— 它自订「打包面纪律」(禁仓库相对路径字面量、资源走 `resource-dirs`),从 core 引入模块须先核这条纪律;其余 5 处是普通模块可直接 import。留白天裁决是否收敛,不在夜间扩范围。
