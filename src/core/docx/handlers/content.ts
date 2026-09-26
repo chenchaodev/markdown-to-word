@@ -27,6 +27,7 @@ import { imageAttrInvalidWarning } from "../../image/image-warning.js";
 import { takeImageSizeAttrs } from "../../markdown/image-size.js";
 import { renderCode } from "./code-block.js";
 import { renderContainerMath } from "./equations.js";
+import { listContentIndent } from "../numbering.js";
 import { renderContainerFallback, unsupportedBlockWarning } from "./fallback.js";
 import { formulaParseFailedWarning, warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js";
 
@@ -202,9 +203,15 @@ export async function renderList(node: List, ctx: Ctx): Promise<Paragraph[]> {
         result.push(...(await renderBlockquote(child, ctx)));
       }
       // 列表项内 display 公式 → 与顶层同一条 Office MathML 管线(居中、不编号);
-      // 解析失败仍降级 TeX 源码等宽灰字 + 公式降级警告(见 renderContainerMath)
+      // 解析失败仍降级 TeX 源码等宽灰字 + 公式降级警告(见 renderContainerMath)。
+      // 缩进对齐列表内容栏:公式段落不挂 numbering、拿不到编号定义里的 indent,
+      // 不自带的话 jc=center 会按整页文本宽居中,公式飘到列表栏之外(实测右移
+      // 约 3400 twips),视觉上不再属于该列表项。层级口径与上方 numbering 的
+      // level 取同一个 min(…,3),缩进值取自 numbering.ts 的单源。
       else if (child.type === "math") {
-        result.push(...renderContainerMath(child, ctx));
+        result.push(
+          ...renderContainerMath(child, ctx, { indent: { left: listContentIndent(Math.min(ctx.listLevel, 3)) } }),
+        );
       }
       // 列表项内 html/表格此前静默丢弃 → 降级渲染 + 警告
       else if (child.type === "html" || child.type === "table") {

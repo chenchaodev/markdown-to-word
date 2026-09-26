@@ -7,6 +7,13 @@
 import { AlignmentType } from "docx";
 import type { INumberingOptions } from "docx";
 
+/** 列表某层级**内容栏**的左缩进(twips)。编号定义与容器内 display 公式的缩进共用此单源:
+ *  列表项文字靠 numbering 的 indent 落到该栏,而公式段落不挂 numbering、只能自带
+ *  indent,两处各写一份 720 会随编号调整而漂移(表现为公式脱离列表栏、居中到整页)。 */
+export function listContentIndent(level: number): number {
+  return 720 * (level + 1);
+}
+
 /** 列表编号配置:bullet 与 decimal 各一套,0-3 级缩进(docx 9.x:Document 直接收 INumberingOptions) */
 export function numberingOptions(): INumberingOptions {
   const bulletText = ["•", "◦", "▪"];
@@ -18,7 +25,7 @@ export function numberingOptions(): INumberingOptions {
       alignment: AlignmentType.LEFT,
       style: {
         paragraph: {
-          indent: { left: 720 * (level + 1), hanging: 360 },
+          indent: { left: listContentIndent(level), hanging: 360 },
         },
       },
     }));

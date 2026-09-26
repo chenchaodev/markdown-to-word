@@ -401,7 +401,15 @@ export async function run() {
     "列表内公式不得退化为 TeX 源码文本",
   );
   expectNoWarning(listMath.warns, UNSUPPORTED_IN_CONTAINER, "列表内公式正常渲染不应报「暂不支持」");
-  console.log("[ok] docx 列表项内 display 公式 → <m:oMath><m:f>(分子 1 / 分母 2),无 TeX 源码文本、无降级警告");
+  // 公式必须自带列表内容栏的缩进:它不挂 numbering,拿不到编号定义里的 indent,
+  // 不自带则 jc=center 按整页文本宽居中、公式飘到列表栏之外。列表文字的缩进在
+  // numbering.xml 里(不在 document.xml),故此处命中即公式段落自身。
+  expectPresent(
+    listMath.xml,
+    ['<w:ind w:left="720"/>', 'w:jc w:val="center"'],
+    "列表内公式缩进对齐列表内容栏(与编号定义同源)",
+  );
+  console.log("[ok] docx 列表项内 display 公式 → <m:oMath><m:f>(分子 1 / 分母 2),无 TeX 源码文本、无降级警告,缩进对齐列表栏");
 
   const quoteMath = await renderDocxXml("> $$\n> \\frac{1}{2}\n> $$\n");
   expectPresent(
