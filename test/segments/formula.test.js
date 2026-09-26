@@ -3,7 +3,9 @@
  * 公式测试:
  * docx:KaTeX(MathML)→ docx Math 组件;OOXML 序列化名已实证(docx 9.7.1
  * index.cjs):Math 容器 → <m:oMath>,MathRun → <m:r><m:t>,分式 → <m:f>,
- * 上下标 → <m:sSubSup>,开方 → <m:rad>。
+ * 行内上下标 → <m:sSubSup>,开方 → <m:rad>,display 大运算符上下限(∑ 走
+ * MathSum)→ <m:nary>。display/行内由 mdast 节点类型(math / inlineMath)
+ * 决定并经 texToDocxMath 的 displayMode 入参传入,详见 segments/math-structures.test.js。
  * pdf:KaTeX HTML 渲染 + katex.min.css 内联(file:// 字体绝对化 + @font-face)。
  * 注意:remark-math(mathFlow)仅支持 $$..$$ / $..$,不支持 ```math 围栏
  * (围栏是 @mdit/plugin-katex 侧特性,属双格式语法不对称,验收用 $$ 块)。
@@ -60,12 +62,17 @@ export async function run() {
   for (const [needle, label] of /** @type {[string, string][]} */ ([
     ["<m:t>x</m:t>", "x 上标文本"],
     ["<m:f>", "分式 m:f"],
-    ["<m:sSubSup>", "上下标 m:sSubSup"],
+    // <m:sSubSup> 只可能来自行内 $a_i^j$ / $x^2$ 的普通上下标:display 侧的
+    // \sum_{i=1}^{n} 走 <m:nary>(见下一条断言),两者在同一文档内共存
+    ["<m:sSubSup>", "行内上下标 m:sSubSup"],
     ["<m:rad>", "开方 m:rad"],
+    // display 公式 \sum_{i=1}^{n}:上下限排在上下方(m:nary + m:limLoc undOvr)
+    ["<m:nary>", "display 求和 m:nary"],
+    ['<m:chr m:val="∑"/>', "display 求和 ∑ 字符(m:naryPr)"],
   ])) {
     if (!formulaDocument.includes(needle)) throw new Error(`公式断言失败:document.xml 缺少 ${label}(${needle})`);
   }
-  console.log("[ok] docx 公式:m:oMath 与 分式/上下标/开方 序列化齐全");
+  console.log("[ok] docx 公式:m:oMath 与 分式/行内上下标/开方/display 求和 序列化齐全");
 
   const formulaPdf = /** @type {ConvertArtifact} */ (await convert(formulaMd, "pdf", {
     baseDir: FIXTURES_DIR, title: "公式测试", warnings: [], katexDir,
@@ -165,11 +172,13 @@ export async function run() {
   }
   console.log("[ok] docx 公式降级:TeX 源码等宽灰字 + 无 oMath + warnings 警告 断言通过");
 
-  // ---------- munderover 非 ∑ 回落(munderoverToNary 252-264 / moText 267-274) ----------
-  // 依据(dist/core/docx/handlers/math.ts):display 模式 \prod / \bigcup 的 KaTeX MathML 产物为
+  // ---------- munderover 非 ∑ 回落(munderoverToNary / moText) ----------
+  // 依据(dist/core/docx/handlers/math.ts):display 模式(displayMode=true,经
+  // texToDocxMath 入参传入)\prod / \bigcup 的 KaTeX MathML 产物为
   // <munderover><mo>∏/⋃</mo>…</munderover>(仅 ∑ 走 MathSum);首子 mo 文本非 ∑ →
   // MathSubSuperScript 回落(base = mo 文本 run,sub/sup 为兄弟节点),不产出 <m:nary>。
-  // 实证序列化(2026-08-15):<m:sSubSup><m:e><m:r><m:t>∏</m:t></m:r></m:e><m:sub>…</m:sub><m:sup>…</m:sup>。
+  // 实证序列化:<m:sSubSup><m:e><m:r><m:t>∏</m:t></m:r></m:e><m:sub>…</m:sub><m:sup>…</m:sup>。
+  // (行内同 TeX 不产 munderover,走 msubsup → 同一 MathSubSuperScript 组件。)
   const fallbackMd = `# 非求和上下限
 
 $$

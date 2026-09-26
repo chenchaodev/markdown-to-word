@@ -106,7 +106,9 @@ export function renderDisplayMath(
   eq: EquationInfo | undefined,
   textWidthTwips: number,
 ): Paragraph[] {
-  const result = texToDocxMath(node.value);
+  // displayMode=true:mdast 块级 math 节点即 display 公式($$..$$),由 render.ts
+  // case "math" 分派而来(行内公式走 content.ts 的 inlineMath 分支,传 false)。
+  const result = texToDocxMath(node.value, true);
   if (!eq) {
     if (result.ok) {
       return [

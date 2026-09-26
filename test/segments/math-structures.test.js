@@ -15,7 +15,7 @@
  * 重构即假绿。
  *
  * 第一部分:公式结构映射与整式降级。覆盖面对照 KaTeX 0.18.1 的 MathML 产物
- * (displayMode 未开启时与开启时产物不同,本段逐条锁定当前口径):
+ * (displayMode 开启与否产物结构不同,本段逐条锁定两条路径):
  * - mroot(`\sqrt[3]{x}`)→ MathRadical(degree) → <m:rad><m:deg>;
  * - mover(`\overline{AB}`)→ MathLimitUpper → <m:limUpp>;munder(`\underline{x}`)
  *   → MathLimitLower → <m:limLow>;
@@ -28,10 +28,13 @@
  *   且外部引用绝不进产物(不产出 w:hyperlink);
  * - katex-error(throwOnError:false 下的解析失败产物)→ 整式降级。
  *
- * 已知不可达(不在断言范围):munderover / MathSum(<m:nary>)。texToDocxMath 调
- * katex.renderToString 时未传 displayMode,故 display 公式的 MathML 产物也是
- * inline 形态(∑ 走 <m:sSubSup> 而非 <m:underover>);本段以「有 <m:sSubSup> 且
- * 无 <m:nary>」把该现状锁住,一旦有人改传 displayMode 立即变红,提示同步复核该分支。
+ * displayMode 双路径(核心断言,两向都锁,防「一律改 display」的过度修复):
+ * display 公式 `$$..$$`(mdast `math` 节点)→ 大运算符上下限走 <munderover>/
+ * <munder>(∑ → <m:nary>、\lim → <m:limLow>);同一 TeX 写在行内 `$..$`
+ * (mdast `inlineMath` 节点)→ 走 <msubsup>/<m:sub>(<m:sSubSup>/<m:sSub>)。
+ * 判定单源在 texToDocxMath 的 displayMode 入参(真值来源 = mdast 节点类型),
+ * 本段按「display 产 nary/limLow 且无 sSubSup」与「行内产 sSubSup/sSub 且无
+ * nary/limLow」两侧成对断言。
  *
  * 第二部分:列表项 / 引用块内块级内容的降级(此前静默丢弃,内容丢失)。三条降级
  * 路径 + 三条「不该降级」的旁路全部钉在产物上:
@@ -195,11 +198,60 @@ export async function run() {
   expectAbsent(spacing.xml, [MONO_GRAY_COLOR, "<m:t>  </m:t>"], "mspace/mtext(不应降级且不吐空白 run)");
   console.log("[ok] docx 公式 mspace(\\pmod{n} 自闭合标签跳过)/mtext(\\text 中文成文,不降级)");
 
-  // ---------- display ∑:当前无 <m:nary>(MathSum 路径不可达,锁现状) ----------
-  const sum = await renderDocxXml("$$\n\\sum_{i=1}^{n} i\n$$\n");
-  expectPresent(sum.xml, ["<m:sSubSup>", "<m:t>∑</m:t>", "<m:t>i</m:t>", "<m:t>n</m:t>"], "display ∑ 结构");
-  expectAbsent(sum.xml, ["<m:nary"], "display ∑(未传 displayMode 时不应产出 MathSum)");
-  console.log("[ok] docx 公式 display ∑ → <m:sSubSup>(未传 displayMode,无 <m:nary>,锁现状)");
+  // ---------- displayMode 双路径:同一 TeX 在 display / 行内产出结构不同 ----------
+  // KaTeX 0.18.1 实证:display 模式大运算符上下限进 <munderover>/<munder>(上下方),
+  // 行内模式同一 TeX 走 <msubsup>/<m:sub>(右侧)。两侧成对断言,任一侧被改成
+  // 「一律 display」或「一律行内」都会立即变红。
+  // ① display `$$ \sum_{i=1}^{n} i $$` → munderover → MathSum → <m:nary>
+  //   (naryPr 内置 ∑ 字符,children 为空 → <m:e/> 空基,操作数在兄弟节点)
+  const sumDisplay = await renderDocxXml("$$\n\\sum_{i=1}^{n} i\n$$\n");
+  expectPresent(
+    sumDisplay.xml,
+    [
+      "<m:nary>",
+      '<m:chr m:val="∑"/>',
+      // 上下限在 naryPr 之后依次为 <m:sub>/<m:sup>(上下方排布的 OOXML 形态)
+      '<m:naryPr><m:chr m:val="∑"/><m:limLoc m:val="undOvr"/></m:naryPr>' +
+        "<m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub>" +
+        "<m:sup><m:r><m:t>n</m:t></m:r></m:sup>",
+    ],
+    "display ∑ 结构(MathSum/<m:nary>)",
+  );
+  expectAbsent(
+    sumDisplay.xml,
+    ["<m:sSubSup>"],
+    "display ∑(上下限在上下方,不应退化成行内 <m:sSubSup>)",
+  );
+  console.log("[ok] docx 公式 display ∑ → <m:nary>(<m:chr ∑> + limLoc undOvr + <m:sub>/<m:sup>),无 <m:sSubSup>");
+
+  // ② 行内 `$\sum_{i=1}^{n} i$` → msubsup → MathSubSuperScript → <m:sSubSup>
+  //   (∑ 以 MathRun 文本进 base,上下限为兄弟节点)——行内形态保持不变
+  const sumInline = await renderDocxXml("行内 $\\sum_{i=1}^{n} i$。\n");
+  expectPresent(
+    sumInline.xml,
+    [
+      "<m:sSubSup><m:sSubSupPr/><m:e><m:r><m:t>∑</m:t></m:r></m:e>" +
+        "<m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub>" +
+        "<m:sup><m:r><m:t>n</m:t></m:r></m:sup></m:sSubSup>",
+    ],
+    "行内 ∑ 结构(MathSubSuperScript/<m:sSubSup>)",
+  );
+  expectAbsent(
+    sumInline.xml,
+    ["<m:nary"],
+    "行内 ∑(上下限在右侧,不应被改成 display 的 <m:nary>)",
+  );
+  console.log("[ok] docx 公式行内 ∑ → <m:sSubSup>(∑ 进 base + <m:sub>/<m:sup>),无 <m:nary>");
+
+  // ③ 第二组判别式 \lim:display 侧 <munder> → MathLimitLower(<m:limLow>);
+  //   行内侧 <msub> → MathSubScript(<m:sSub>)。排除「只对 ∑ 特判」的实现。
+  const limDisplay = await renderDocxXml("$$\n\\lim_{x \\to 0} f(x)\n$$\n");
+  expectPresent(limDisplay.xml, ["<m:limLow>", "<m:lim><m:r><m:t>x</m:t></m:r>"], "display \\lim 结构");
+  expectAbsent(limDisplay.xml, ["<m:sSub>"], "display \\lim(应为 <m:limLow>,不应退化成行内 <m:sSub>)");
+  const limInline = await renderDocxXml("行内 $\\lim_{x \\to 0} f(x)$。\n");
+  expectPresent(limInline.xml, ["<m:sSub><m:sSubPr/>"], "行内 \\lim 结构");
+  expectAbsent(limInline.xml, ["<m:limLow>"], "行内 \\lim(应为 <m:sSub>,不应被改成 display 的 <m:limLow>)");
+  console.log("[ok] docx 公式 \\lim:display → <m:limLow>,行内 → <m:sSub>(非 ∑ 路径同样按 displayMode 分流)");
 
   // ---------- 未覆盖节点 → 整式降级(mtable / menclose / mstyle / mphantom) ----------
   // 逐个单式文档:断言「无 m:oMath」才说明整式降级(同文档混多式会互相干扰)。
@@ -336,12 +388,16 @@ export async function run() {
   console.log("[ok] docx 引用块内代码块 → 代码块样式成文 + 「代码块 在引用块内暂不支持」警告");
 
   // ================= 落盘样例(供人工在 Word/WPS 核对实际排版) =================
+  // display ∑ 与行内 ∑ 成对入样例:上下方排布 vs 右侧排布只能目视确认,
+  // 自动断言只覆盖 OOXML 结构,视觉效果留人工核对。
   const showcaseMd =
-    "# 公式结构与容器降级\n\n$$\n\\sqrt[3]{x}\n$$\n\n$\\overline{AB}$、$\\underline{x}$、$\\pmod{n}$、$\\text{中文混排}$。\n\n- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n\n> $$\n> \\frac{1}{2}\n> $$\n\n> | 列一 | 列二 |\n> | --- | --- |\n> | 甲 | 乙 |\n";
+    "# 公式结构与容器降级\n\n$$\n\\sqrt[3]{x}\n$$\n\n$$\n\\sum_{i=1}^{n} i\n$$\n\n" +
+    "行内对照 $\\sum_{i=1}^{n} i$、$\\lim_{x \\to 0} f(x)$。\n\n$$\n\\lim_{x \\to 0} f(x)\n$$\n\n" +
+    "$\\overline{AB}$、$\\underline{x}$、$\\pmod{n}$、$\\text{中文混排}$。\n\n- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n\n> $$\n> \\frac{1}{2}\n> $$\n\n> | 列一 | 列二 |\n> | --- | --- |\n> | 甲 | 乙 |\n";
   const showcase = await renderDocxXml(showcaseMd);
   expectPresent(
     showcase.xml,
-    ["<m:rad>", "<m:limUpp>", "<m:limLow>", "<m:t>中文混排</m:t>", "甲 | 乙"],
+    ["<m:rad>", "<m:limUpp>", "<m:limLow>", "<m:nary>", "<m:sSubSup>", "<m:t>中文混排</m:t>", "甲 | 乙"],
     "落盘样例",
   );
   await saveArtifact("math-structures", {

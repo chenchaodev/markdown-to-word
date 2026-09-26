@@ -73,9 +73,11 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       runs.push(new TextRun({ ...style, text: node.value, font: CODE_FONT, size: CODE_SIZE }));
       break;
     case "inlineMath": {
-      // 行内公式:KaTeX MathML → docx Math 组件,随所在段落自然继承 5a 排版;
-      // 降级(解析失败/未覆盖节点)→ TeX 源码等宽灰字 + 警告,内容不丢失
-      const result = texToDocxMath(node.value);
+      // 行内公式:displayMode=false(KaTeX 行内模式,大运算符上下限排布在右侧,
+      // 与 display 公式的上下方排布不同);KaTeX MathML → docx Math 组件,随所在
+      // 段落自然继承 5a 排版;降级(解析失败/未覆盖节点)→ TeX 源码等宽灰字 + 警告,
+      // 内容不丢失
+      const result = texToDocxMath(node.value, false);
       if (result.ok) {
         runs.push(new DocxMath({ children: result.children }));
       } else {

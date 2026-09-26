@@ -25,6 +25,10 @@
  * - output:"mathml" 产物为 <span class="katex"><math ...><semantics><mrow>…
  *   <annotation encoding="application/x-tex">源</annotation></semantics></math></span>;
  *   display 模式仅 math 加 display="block" 属性,不额外包 mstyle。
+ * - displayMode 改变大运算符的上下限排布位置(结构性差异,非样式差异):
+ *   display 下 \sum_{i=1}^{n} 为 <munderover>(→ MathSum/<m:nary>)、\lim_{x\to 0}
+ *   为 <munder>(→ MathLimitLower/<m:limLow>);行内下同一 TeX 为 <msubsup>/<m:sub>。
+ *   故 displayMode 必须按公式所在位置传入,见 texToDocxMath 的入参契约。
  * - 解析失败(throwOnError:false)产物为 <span class="katex-error" …>。
  * - 资源边界(maxExpand/maxSize/trust)取自 core/resource-limits.ts 单源,
  *   与 pdf 管线(@mdit/plugin-katex 转发同一份取值)一致:宏展开失控与外部
@@ -64,16 +68,26 @@ interface MathMlNode {
 
 /**
  * TeX 公式 → docx Math 组件数组。
+ *
+ * displayMode 决定 KaTeX 的排版模式,是本函数入参层面的唯一判定点(调用方只按
+ * 「公式位于何处」传值,不各自推断 TeX 语义):真值来源是 mdast 节点类型——
+ * `math`(块级,$$..$$)→ true,`inlineMath`(行内,$..$)→ false。
+ * 它会改变产出结构(见文件头 KaTeX 实证),故不可给默认值,必须由调用方显式传。
+ *
  * ok:false 时 text 为原 TeX 源码(整式降级,调用方渲染为等宽灰字并追加警告)。
  */
-export function texToDocxMath(tex: string): TexToDocxMathResult {
+export function texToDocxMath(tex: string, displayMode: boolean): TexToDocxMathResult {
   // 信任闸门:外部引用/HTML 扩展指令在不可信输入下整式降级(KaTeX trust=false
   // 只把这类命令渲染为红色文本,不报错,故在此显式拦截以与 pdf 管线同口径)
   if (hasUntrustedTexCommand(tex)) return { ok: false, text: tex };
   // 资源边界与错误模式取自单源(见 resource-limits.ts):throwOnError=false 时
   // 解析失败不抛异常,产物含 class="katex-error";maxExpand/maxSize 挡住宏展开
   // 失控与超大显式尺寸;trust=false 拒绝 \includegraphics/\href 等外部引用指令。
-  const html = katex.renderToString(tex, { output: "mathml", ...DEFAULT_KATEX_RESOURCE_LIMITS });
+  const html = katex.renderToString(tex, {
+    output: "mathml",
+    displayMode,
+    ...DEFAULT_KATEX_RESOURCE_LIMITS,
+  });
   if (html.includes('class="katex-error"')) return { ok: false, text: tex };
   // 结构异常(未闭合/子元素数量非预期等)一律整式降级,不抛错中断转换
   try {

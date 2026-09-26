@@ -228,13 +228,21 @@ export async function run() {
     }
     const untrusted = "\\includegraphics{https://example.com/x.png}{x}";
     const expansionBomb = "\\def\\loop{\\loop}\\loop";
+    // 两种排版模式都探:displayMode 不参与降级判定(信任闸门/资源上限在 KaTeX
+    // 调用之前/之后统一处理),但传 true 的路径不得因新参数而漏掉拦截。
     for (const tex of [untrusted, expansionBomb]) {
-      const result = texToDocxMath(tex);
-      if (result.ok) {
-        throw new Error(`core-resources 断言失败:恶意 TeX 未降级,tex=${tex}`);
-      }
-      if (result.text !== tex) {
-        throw new Error(`core-resources 断言失败:恶意 TeX 降级文本应保持原源,tex=${tex}`);
+      for (const displayMode of [false, true]) {
+        const result = texToDocxMath(tex, displayMode);
+        if (result.ok) {
+          throw new Error(
+            `core-resources 断言失败:恶意 TeX 未降级,tex=${tex},displayMode=${displayMode}`,
+          );
+        }
+        if (result.text !== tex) {
+          throw new Error(
+            `core-resources 断言失败:恶意 TeX 降级文本应保持原源,tex=${tex},displayMode=${displayMode}`,
+          );
+        }
       }
     }
     /** @type {unknown[]} */
@@ -266,7 +274,7 @@ export async function run() {
       throw new Error("core-resources 断言失败:超大但合法的 TeX 应正常产出 docx");
     }
     // 超大显式尺寸(\rule{500em})被 maxSize 压到上限,不报错也不丢内容
-    const capped = texToDocxMath("\\rule{500em}{1em}");
+    const capped = texToDocxMath("\\rule{500em}{1em}", false);
     if (!capped.ok && capped.text !== "\\rule{500em}{1em}") {
       throw new Error("core-resources 断言失败:降级时必须保持原 TeX 源码");
     }
