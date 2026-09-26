@@ -1,7 +1,8 @@
 /**
  * 事件域·选择与列表:
  * - 系统对话框选择(openDialog:替换 / 追加两语义)与拖放区点击/键盘入口
- *   (拖放区只对自身目标响应,内部控件冒泡不叠加第二个动作);
+ *   (拖放区只对自身目标响应,内部控件冒泡不叠加第二个动作;openDialog 单飞,
+ *   在途期间的重复调用一律忽略,双击/连点只出一个原生窗);
  * - 队列卡头侧动作(预览[单文件可见] / 追加 / 清空;旧单文件「移除」按钮退役,
  *   清空列表覆盖其语义);
  * - 多文件列表交互:点击委托(移除)、双击/回车预览、键盘 Alt+↑↓ 排序、
@@ -78,11 +79,27 @@ export function openPreviewFor(filePath: string): void {
 // 原模块级常量在模块加载期求值,语言切换后不更新 → 移到使用点直接 t()
 
 /**
+ * 原生文件对话框「在途」标记(模块级 single-flight):
+ * - true = 已有一次 openMarkdowns() 未决。此时任何新调用(按钮双击/连点、拖放区
+ *   click/keydown、Ctrl+O、「追加文件 / 继续添加」)一律**忽略**——一次选择意图
+ *   应对应一个原生窗;原生对话框是系统模态,叠开的第二层用户看不见也关不掉。
+ * - 忽略而非排队:排队会在用户选完第一窗后立刻又弹第二个窗,等于把双击放大成两次
+ *   选择,比叠窗更难收拾。
+ * - 与 isConvertCommandBlocked() 正交:那条锁看的是「能不能发起选择」(转换/预检/
+ *   模态),本标记看的是「上一个选择是否还在途」,两条都必须过,互不替代。
+ */
+let fileDialogInFlight = false;
+
+/**
  * 打开文件对话框;append=true 时与现有列表合并(「追加文件 / 继续添加」入口)。
  * 与转换命令同锁:转换中/预检中/模态或向导打开时不另开对话框(避免叠第二层模态)。
+ * 在途期间的后续调用直接忽略(单飞,见 fileDialogInFlight);守卫由 finally 释放,
+ * 成功 / 用户取消 / 抛错三条路径都不残留,异常不会把入口永久卡死。
  */
 export async function openDialog(append = false): Promise<void> {
   if (isConvertCommandBlocked()) return;
+  if (fileDialogInFlight) return; // 在途 → 忽略(不排队,见上方语义)
+  fileDialogInFlight = true;
   try {
     const paths = await window.api.openMarkdowns();
     if (paths.length === 0) return; // 用户取消,保持现状
@@ -99,6 +116,9 @@ export async function openDialog(append = false): Promise<void> {
   } catch (err) {
     const message = errorMessage(err);
     setError(t("dialog.openFailed", { error: message }));
+  } finally {
+    // 三条路径(成功 / 取消 return / 抛错)都经此释放,异常不会永久卡死入口
+    fileDialogInFlight = false;
   }
 }
 

@@ -5,6 +5,9 @@
  *   冒泡不得叠加第二个动作(打开文件对话框);
  * - Ctrl+Enter 连续触发 / 转换按钮重复点击只起一条预检链(预检只调一次 main);
  * - 预检进行中、模态(成书向导)打开时,快捷键与新转换命令统一阻断;
+ * - 文件对话框 single-flight:在途期间的后续调用(双击/连点、拖放区、追加入口)
+ *   一律忽略——openMarkdowns 只被调一次且不排队;成功 / 用户取消 / 抛错三条路径
+ *   都经 finally 释放锁(否则入口永久卡死,再也打不开文件窗);
  * - index.html 舞台容器角色不再声明为 button(容器内嵌交互元素)。
  * 用最小 DOM stub 动态载入真实 dist renderer 模块,不引入新依赖。
  */
@@ -216,6 +219,20 @@ export async function run() {
   /** 逐次返回新的未决 Promise,模拟主进程预检往返(用于观察 single-flight)。 */
   /** @type {Array<(result: unknown[]) => void>} */
   const pendingPrechecks = [];
+  /**
+   * 「在途窗口」模式开关:置 true 后 openMarkdowns 改为返回**未决** Promise,由测试显式
+   * 结算,用来制造「原生对话框已打开、尚未返回」的时间窗(不靠真实等待,也不用定时器)。
+   * 默认 false 保持同步 resolve([]),前序用例的同步计数断言不受影响。
+   */
+  let deferFileDialog = false;
+  /**
+   * 逐条记录未决的 openMarkdowns(按调用序),测试按序结算:
+   * resolve(paths)= 选中(空数组即用户取消);reject(err) = 打开失败。
+   * @type {Array<{ resolve: (paths: string[]) => void, reject: (err: unknown) => void }>}
+   */
+  const pendingDialogs = [];
+  /** 未决 openMarkdowns 条数(同上方计数读取理由:断言会把 length 收窄成字面量,须经函数取值)。 */
+  const pendingDialogCount = () => pendingDialogs.length;
   /** @param {string} id @returns {StubElement} */
   const elementFor = (id) => {
     let el = elements.get(id);
@@ -260,8 +277,16 @@ export async function run() {
       onBatchProgress: () => () => {},
       openMarkdowns: () => {
         openDialogCalls++;
-        return Promise.resolve([]);
+        if (!deferFileDialog) return Promise.resolve([]);
+        return new Promise((resolve, reject) => {
+          pendingDialogs.push({
+            resolve: (paths) => { resolve(paths); },
+            reject,
+          });
+        });
       },
+      // 队列渲染经 persistSessionFiles 落会话持久化(成功选择路径会走到)
+      uiStateSet: () => Promise.resolve({}),
       clipboardRead: () => Promise.resolve({ type: "empty" }),
       collectMarkdowns: () => Promise.resolve({ files: [], skipped: [] }),
     },
@@ -297,10 +322,14 @@ export async function run() {
     assert(clickOnDropZone && keydownOnDropZone, "拖放区应绑定 click/keydown 入口");
 
     // ① 容器自身目标:照常打开文件对话框
+    // openDialog 为单飞(见 ⑧):同一 tick 内的第二次调用按「在途」忽略,故两个入口
+    // 之间先 flush 让前一个对话框结算,各自证明独立可开(不靠并发时序区分入口)。
     clickOnDropZone(makeEvent({ target: dropZone }));
     assert(dialogCount() === 1, "点击拖放区自身应打开一次文件对话框");
+    await flush();
     keydownOnDropZone(makeEvent({ key: "Enter", target: dropZone }));
     assert(dialogCount() === 2, "拖放区自身 Enter 应打开一次文件对话框");
+    await flush();
 
     // ② 内部交互控件冒泡:不得叠加第二个动作(按钮/label、click 与 Enter/Space)
     for (const control of [innerButton, innerLabel]) {
@@ -370,7 +399,130 @@ export async function run() {
     await flush();
     assert(!flow.isConvertCommandBlocked(), "预检链结算后应释放命令锁");
 
-    console.log("[ok] command-entry-guard:事件边界/连续快捷键/预检与模态阻断断言通过");
+    // ⑧ 文件对话框 single-flight(在途守卫):一次选择意图 = 一个原生窗
+    //    制造在途窗口:openMarkdowns 改为未决 Promise,由本段显式结算(不靠真实等待)。
+    deferFileDialog = true;
+    const selectBtn = elementFor("selectBtn");
+    const appendFileBtn = elementFor("appendFileBtn");
+    /** 点「添加文件」按钮(走 openDialog(false) 入口)。 */
+    const clickSelectBtn = () => handlerOf(selectBtn, "click")(makeEvent({ target: selectBtn }));
+    /** 点「追加文件」按钮(走 openDialog(true) 入口)。 */
+    const clickAppendBtn = () =>
+      handlerOf(appendFileBtn, "click")(makeEvent({ target: appendFileBtn }));
+    /** 取出唯一一条未决对话框链(缺失即断言失败:说明守卫没拦住第二次调用)。 */
+    const takePendingDialog = () => {
+      const pending = pendingDialogs.shift();
+      assert(pending, "应恰有一条未决 openMarkdowns 链可结算(在途守卫未生效?)");
+      return pending;
+    };
+    const beforeFlight = dialogCount();
+
+    // ⑧-1 连点两次「添加文件」(双击 = 两次独立 click):只开一个原生窗
+    clickSelectBtn();
+    clickSelectBtn();
+    assert(
+      dialogCount() === beforeFlight + 1,
+      `连点两次「添加文件」只应开一个窗,实际 openMarkdowns 增量=${dialogCount() - beforeFlight}`,
+    );
+    assert(
+      pendingDialogCount() === 1,
+      "在途期间只应有一条未决 openMarkdowns(不得叠加第二个)",
+    );
+    // 忽略而非排队:首窗结算后不得补开第二次
+    takePendingDialog().resolve(["C:\\docs\\first.md"]); // 成功路径
+    await flush();
+    assert(
+      dialogCount() === beforeFlight + 1,
+      "被忽略的第二次点击不得在首窗结算后补开(语义是忽略,不是排队)",
+    );
+    assert(
+      state.selectedFiles.length === 1 && state.selectedFiles[0] === "C:\\docs\\first.md",
+      `成功选择应落库到单文件态,实际 ${JSON.stringify(state.selectedFiles)}`,
+    );
+    // 成功路径释放锁:再点能正常开窗
+    clickSelectBtn();
+    assert(dialogCount() === beforeFlight + 2, "成功路径后应可再次打开(锁已释放)");
+    takePendingDialog().resolve([]); // 用户取消(保持现状)
+    await flush();
+    assert(
+      state.selectedFiles.length === 1,
+      `用户取消不得改动现有列表,实际 ${JSON.stringify(state.selectedFiles)}`,
+    );
+
+    // ⑧-2 抛错路径:锁必须释放(异常不得把入口永久卡死)
+    clickSelectBtn();
+    assert(dialogCount() === beforeFlight + 3, "取消后应可再次打开(锁已释放)");
+    takePendingDialog().reject(new Error("open dialog failed"));
+    await flush();
+    clickSelectBtn();
+    assert(dialogCount() === beforeFlight + 4, "打开失败(抛错)后应可再次打开(锁已释放)");
+    takePendingDialog().resolve([]); // 收尾:取消,不留未决链
+    await flush();
+
+    // ⑧-3 拖放区入口与按钮入口在途互斥:点按钮后立刻点拖放区,不叠第二个窗
+    const beforeZoneExclusive = dialogCount();
+    clickSelectBtn();
+    clickOnDropZone(makeEvent({ target: dropZone })); // 拖放区 click
+    keydownOnDropZone(makeEvent({ key: "Enter", target: dropZone })); // 拖放区键盘
+    clickAppendBtn(); // 「追加文件 / 继续添加」入口
+    keydown(makeEvent({ key: "o", ctrlKey: true })); // Ctrl+O
+    assert(
+      dialogCount() === beforeZoneExclusive + 1,
+      "按钮在途期间,拖放区/追加/Ctrl+O 入口均不得叠开第二个原生窗",
+    );
+    assert(
+      pendingDialogCount() === 1,
+      "在途期间只应有一条未决 openMarkdowns",
+    );
+    takePendingDialog().resolve([]); // 取消收尾
+    await flush();
+
+    // ⑧-4 append/replace 两语义与单/多文件态追加判定未被守卫改动
+    //     多文件态拖放区点击 = 追加(与已有列表合并),按钮点击 = 更换
+    state.selectedFiles = ["C:\\docs\\first.md", "C:\\docs\\second.md"];
+    const beforeAppend = dialogCount();
+    clickOnDropZone(makeEvent({ target: dropZone }));
+    assert(dialogCount() === beforeAppend + 1, "多文件态拖放区点击应打开一次文件对话框");
+    takePendingDialog().resolve(["C:\\docs\\third.md"]);
+    await flush();
+    assert(
+      state.selectedFiles.length === 3 && state.selectedFiles.includes("C:\\docs\\third.md"),
+      `多文件态拖放区点击应走追加合并,实际 ${JSON.stringify(state.selectedFiles)}`,
+    );
+    const beforeReplace = dialogCount();
+    clickSelectBtn();
+    assert(dialogCount() === beforeReplace + 1, "「添加文件」按钮应打开一次文件对话框");
+    takePendingDialog().resolve(["C:\\docs\\only.md"]);
+    await flush();
+    assert(
+      state.selectedFiles.length === 1 && state.selectedFiles[0] === "C:\\docs\\only.md",
+      `「添加文件」按钮应走 replace 语义,实际 ${JSON.stringify(state.selectedFiles)}`,
+    );
+
+    // ⑧-5 既有命令锁语义不回归:转换中 / 模态打开期间仍不打开对话框
+    //     (守卫只加「在途」这一条,不得放宽 isConvertCommandBlocked)
+    const beforeBlocked = dialogCount();
+    state.mode = "single"; // 转换中
+    clickSelectBtn();
+    clickOnDropZone(makeEvent({ target: dropZone }));
+    assert(dialogCount() === beforeBlocked, "转换进行中不得打开文件对话框");
+    state.mode = null;
+    modalVisible = true; // 成书向导模态
+    clickSelectBtn();
+    clickAppendBtn();
+    assert(dialogCount() === beforeBlocked, "模态打开时不得打开文件对话框");
+    modalVisible = false;
+    assert(pendingDialogCount() === 0, "被阻断的调用不得留下未决链");
+    // 阻断解除后可正常开窗(且不留死锁)
+    clickSelectBtn();
+    assert(dialogCount() === beforeBlocked + 1, "锁解除后应可正常打开文件对话框");
+    takePendingDialog().resolve([]);
+    await flush();
+    deferFileDialog = false;
+
+    console.log(
+      "[ok] command-entry-guard:事件边界/连续快捷键/预检与模态阻断/文件对话框单飞断言通过",
+    );
   } finally {
     setGlobalSlot("document", originalDocument);
     setGlobalSlot("window", originalWindow);
