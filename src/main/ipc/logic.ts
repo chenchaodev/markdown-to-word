@@ -15,11 +15,12 @@ import type { ConvertWarning, KeyedWarning } from "../../core/i18n.js";
 import { mergePresets, parsePresetsFile } from "../persist/preset-file.js";
 import type { ConvertContext } from "../converter/index.js";
 import { stripMarkdownExt } from "../converter/paths.js";
+import { errorMessage } from "../../core/util/error-message.js";
 
-/** 错误归一:Error → message,其余 → String(err)(与 index.ts 原内联一致)。 */
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+// 错误归一的实现单源在 core/util/error-message.ts:此前本文件与 renderer 的
+// state/pure.ts 各留一份逐字相同的定义。上面的 import 供本模块内部使用,此处
+// re-export 以保持既有导入路径不变(register.ts / windows/preview.ts 均从此处取)。
+export { errorMessage };
 
 /** 版本比较:返回 -1/0/1 表示 a<b / a=b / a>b(仅 major.minor.patch,忽略 prerelease;
  * 段缺失按 0 补齐,非数字段按 0 计)。关于页更新提示与注册表版本比较共用。 */

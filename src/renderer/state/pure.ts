@@ -1,18 +1,17 @@
 /**
  * renderer 纯函数层(零 DOM 依赖,可 Node 直测):isMarkdown / baseName /
  * truncateMiddle / STAGE_TEXT / stageText / STAGE_PERCENT 等。
- * 本文件零 import(纯函数);utils.ts re-export 保持 renderer 内部 import 路径不变。
+ * 除 `errorMessage` 外本文件零 import(纯函数);该一个改为 re-export core 的实现单源
+ * (见下方说明)。`ui/dom-ops.ts` re-export 本文件以保持 renderer 内部导入路径不变。
  */
 export function isMarkdown(filePath: string): boolean {
   return /\.(md|markdown)$/i.test(filePath);
 }
 
-/**
- * 错误归一:Error → message,其余 → String(err)。原 renderer 六域 15 处内联拼写收敛于此。
- */
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+// 错误归一的实现单源在 core/util/error-message.ts:此前此处与 main 的 ipc/logic.ts
+// 各留一份逐字相同的定义(两边注释都写着「原…N 处内联拼写收敛于此」)。此处改为
+// re-export 以保持既有导入路径不变。
+export { errorMessage } from "../../core/util/error-message.js";
 
 export function baseName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
