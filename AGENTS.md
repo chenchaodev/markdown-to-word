@@ -1,36 +1,24 @@
 # markdown-to-word 项目约束
 
-## 硬约束(勿回退)
-- 技术栈:Node.js + TypeScript,ESM(`"type": "module"`),Node >= 22.13(勿回退;typescript-eslint 经 side-by-side 用 TS 6 API(`typescript` 别名 `@typescript/typescript6`),`tsc` 二进制仍为 TS 7(`@typescript/native` 别名))
-- npm 走国内镜像:项目 `.npmrc` 已配置 npmmirror,勿移除;install 失败先怀疑网络
-- 转换核心(docx 路线):`docx` 9.x + remark 自研渲染管线;pdf 路线:markdown-it + HTML 模板 + Electron `printToPDF`(勿回退到 md-to-pdf);选型结论见 `docs/ROADMAP.md`,实际验证事实记录于 `docs/RESEARCH.md`
-- GUI:Electron 43;安装/打包走镜像,本地开发经 `scripts/setup-env.ps1` 设 `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR` 用户级环境变量(写死勿回退;GitHub Actions 不需要);`.npmrc` 仅含 registry,勿在 .npmrc 写 electron 镜像键(npm 未知配置警告 + electron-builder 读不到)
-- 架构方向:转换核心 `src/core/` 与 GUI(`src/main/` + `src/renderer/`)分离,便于测试与复用(开发时细化)
-- docx 渲染必须走 `core/docx/theme.ts` 集中字体配置(中文 eastAsia),不允许散落硬编码
-- 显式分页符语法固定 `<!-- page-break -->`(不占 `---` 的 hr 语义);docx landscape 尺寸传原始(纵向)值,勿手动交换(docx 库自动交换)
-- 依赖钉死:markdown-it 14.3(勿升 15,@mdit/plugin-tasklist peer 冲突)、@mdit/plugin-tasklist、@mdit/plugin-footnote(1.0.2,peer 显式 markdown-it ^14.2.0)、highlight.js、electron-builder 26.15.3(勿用 27 alpha)
+> 规则见全局配置目录 `AGENTS.md`
 
-## UI 设计规范(指针,勿回退)
-- 网页与软件内界面(含「关于」窗口、renderer、GitHub Pages)须遵循既有设计文档:`docs/design/ui-guidelines.md`(renderer 权威规范)+ `docs/design/settings-ia.md`;新增/修改任何界面元素先读这两份,本文件不另写指引
-- 视觉身份:冷灰纸 + 朱砂红「排版付梓」隐喻;字体三角色固定(展示衬线只做标题/题字、UI 栈做正文、mono 做数据);签名元素(裁切线+钤印+直排)集中一处;朱砂仅用于「付印」语义;禁绕开 token 硬编码、禁大色块/装饰 emoji
+## 硬约束(勿回退)
+- 技术栈:Node.js + TypeScript,ESM,Node >= 22.13(勿回退;typescript-eslint 用 TS6 API,`typescript` 别名 `@typescript/typescript6`;`tsc` 为 TS7,`@typescript/native` 别名)
+- 镜像:`.npmrc` 已配 npmmirror 且仅含 registry(勿移除,勿加 electron 镜像键:npm 警告 + electron-builder 读不到);GUI Electron 43,本地开发经 `scripts/setup-env.ps1` 设 `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR` 用户级环境变量(写死勿回退,CI 不需要)
+- 核心依赖选型:docx 路线 = `docx` 9.x + remark 自研渲染管线;pdf 路线 = markdown-it + HTML 模板 + Electron `printToPDF`(勿回退 md-to-pdf);结论 `docs/ROADMAP.md` / 事实 `docs/RESEARCH.md`;钉死:markdown-it 14.3(勿升 15,tasklist peer 冲突)、@mdit/plugin-tasklist、@mdit/plugin-footnote 1.0.2、highlight.js、electron-builder 26.15.3(勿用 27 alpha)
+- 架构方向:转换核心 `src/core/` 与 GUI(`src/main/` + `src/renderer/`)分离(便于测试与复用)
+- 其他高风险配置:docx 字体必走 `src/core/docx/theme.ts` 集中配置(中文 eastAsia),禁散落硬编码;分页符固定 `<!-- page-break -->`(不占 `---` 的 hr 语义);landscape 传原始(纵向)值,勿手动交换(库自动交换)
+- UI 设计(勿回退):界面(网页/「关于」/renderer/GitHub Pages)先读 `docs/design/ui-guidelines.md`(renderer 权威)+ `docs/design/settings-ia.md`;视觉身份 = 冷灰纸 + 朱砂红「排版付梓」,字体三角色(展示衬线只做标题/题字、UI 栈做正文、mono 做数据),签名元素(裁切线+钤印+直排)集中一处,朱砂仅用于「付印」语义,禁绕开 token 硬编码、禁大色块/装饰 emoji
+- 文档分层:`docs/` 常驻 · `docs/campaigns/` 用完即删 · `docs/archive/` 只增不改;模式 2 禁写清单 → 全局配置目录 `CAMPAIGN-GUIDE.md` 1.2/1.3
 
 ## 规则
-- 提交策略:一次提交 = 一个可独立回退的逻辑单元;message 用 prefix 风格(`feat:` / `fix:` / `docs:` / `chore:` / `refactor:` / `perf:` / `test:`)
-- 提交前:过 typecheck / build,`git status` 只含本逻辑单元文件
-- 提交即固化:一次提交 = 一个可独立回退的逻辑单元;`docs/CHANGELOG.md` 平时提交不写(发版时按全局配置目录 `PUBLISH-GUIDE.md` 面向用户重写,不贴 commit 原文,小型/琐碎并入下次);实测状态变化同批更新验收记录与 `docs/STATUS.md` 阻塞行,收尾同步仪表盘;勿依赖「迭代完成」「会话切换」判断(见全局配置目录 `AGENTS.md`「提交与推送」)
-- pwsh 环境坑:commit message 用单引号包裹,避免内嵌 ASCII 双引号被拆包(已踩坑)
-  - 版本号三统一(1.0.0 起):package.json / git tag / CHANGELOG 同号(如 1.0.0 → tag v1.0.0 → CHANGELOG [1.0.0]);0.32.0 及以前为迭代序列 0.NN.M 与发布号 0.5.x 解耦的历史,勿回退
-  - 规划编号不进交付物:候选区里 B1–B11 一类的候选编号属规划阶段内部用语,晋升实现后须用描述性功能名(如 成书向导/剪贴板直转),不得写入代码注释/文件名/发版文档(`docs/CHANGELOG.md`/`docs/STATUS.md`/`docs/ACCEPTANCE.md`/`docs/ROADMAP.md` 小节标题);发版前做「规划编号→功能名」重命名,避免批次概念泄漏
-- 测试体系:`test/`(segments/ core 渲染与跨域守护 + main/ 主进程层 + renderer/ UI 层,镜像 src 三层,按内容主题零注册 + fixtures/ 静态样例 + common/ 工具),入口 `npm run test`(acceptance)、`test:smoke`、`test:all`;产物 `output/artifacts` + `output/smoke`;新增能力须补对应测试段,缺口清单见 ROADMAP
+- 提交:一次提交 = 一个可独立回退的逻辑单元;message 用 prefix(`feat:`、`fix:`、`docs:`、`chore:`、`refactor:`、`perf:`、`test:`);提交前过 typecheck/build,`git status` 只含本逻辑单元文件;`docs/CHANGELOG.md` 平时不写,发版按全局配置目录 `PUBLISH-GUIDE.md` 面向用户重写;实测状态变化同批更新 `docs/ACCEPTANCE.md` / `docs/STATUS.md` 阻塞行并同步仪表盘
+- 版本号三统一(1.0.0 起):package.json / git tag / `docs/CHANGELOG.md` 同号
+- 规划编号不进交付物:候选区 `B1`–`B11` 属规划内部用语,晋升后改用描述性功能名(如 成书向导/剪贴板直转),禁写入代码注释/文件名/`docs/CHANGELOG.md`/`docs/STATUS.md`/`docs/ACCEPTANCE.md`/`docs/ROADMAP.md` 小节标题;发版前做「编号→功能名」重命名
+- pwsh 坑:commit message 用单引号包裹(内嵌 ASCII 双引号会被拆包);跨项目通用坑(pwsh 引号/MAX_PATH/EBUSY/编码)见全局配置目录 `ENV-GUIDE.md`「一、Windows 平台坑」,本仓具体坑见 `docs/RESEARCH.md`
+- 测试体系:`test/` 镜像 `src/` 三层(segments/ · main/ · renderer/),按内容主题零注册;入口 `npm run test`(acceptance)/`test:smoke`/`test:all`;新增能力须补测试段,缺口见 `docs/ROADMAP.md`;核心路径改动跑对应测试段 + smoke,外围按影响面跑
+- 流程(全局配置目录 `WORKFLOW-PLAN.md`/`WORKFLOW-DELIVER.md` 阶段 0-8):文档驱动,规划即契约;排期先价值确认;**需求入口单源 = `docs/ROADMAP.md`「候选区」**(分类 + 价值/工作量 → 确认 → 移「已排期」);`docs/ACCEPTANCE.md` 只列人工 GUI 实测项,自动断言只留指针;代码结构与质量(注释/命名/契约单源/测试细则)见全局配置目录 `CODE-GUIDE.md`,改代码/重构/测试前先读
 
-## 流程(遵循全局配置目录 WORKFLOW-PLAN.md / WORKFLOW-DELIVER.md 阶段 0-8)
-- 文档驱动:需求/设计文档 → 规划文档(STATUS 顶部一条 + ACCEPTANCE 清单 + ROADMAP 变更)→ 开发前确认,规划即契约;开发中不反复更新,收尾统一同步
-- 排期先价值确认:高确定性直接规划;探索性先确认值得否,不值留候选池「已明确不做」区、不投调研预算(文档加密即此类:调研后确认不做)
-- **需求入口(候选区单源)**:所有新需求/候选/曾砍重提先登记 `docs/ROADMAP.md`「候选区」(分类 + 业务价值/工作量评估),经用户确认后移入「已排期」再开发;「候选区」只放已登记项,处置记录(不做/暂缓/已知限制)集中本节,不散写 `docs/STATUS.md`
-- ACCEPTANCE 只列人工 GUI 实测项,可自动断言项写「自动断言见 test/segments/X.test.js」指针,不重复描述
-- 同轮实测反馈的多个小修复合并为一个修复批次提交(仍保持逻辑单元独立),减少收尾往返
-- 回归守护:核心路径(转换/渲染/格式输出)改动跑对应测试段 + smoke;外围(设置/UI)按影响面跑受影响段
-- Windows 坑:跨项目通用坑(pwsh 引号/MAX_PATH/EBUSY/编码)见全局配置目录 `ENV-GUIDE.md`「一、Windows 平台坑」;本仓库具体坑见 `docs/RESEARCH.md`
-- 代码结构与质量(注释规范/命名/契约单源/测试体系等细则):见全局配置目录 `CODE-GUIDE.md`,写代码/重构/测试前先读
-
-- 版本:v1.6(改本文件时递增版本号,超限先瘦身)
+## 文件信息
+- **本文件容量** ≤2500 字符(砍除顺序见全局配置目录 `META-GUIDE.md` 四)
+- 版本:v1.7(2026-09-26)
