@@ -181,12 +181,23 @@ jobs:
               exit 1
             fi
           done
+          # 版本四源同源纪律的落地:tag 与 package.json 版本不符时响亮失败,
+          # 而不是静默用错版本号发布(发布规则见 PUBLISH-GUIDE.md)。
+          PKG_VERSION=$(node -e 'process.stdout.write(require("./package.json").version)')
+          if [ "$TAG_NAME" != "v$PKG_VERSION" ]; then
+            echo "::error::tag 与 package.json 版本不一致:tag=$TAG_NAME,package.json=v$PKG_VERSION(版本号须四源同源)"
+            exit 1
+          fi
           # release 标题固定为版本号(tag 名),不再沿用 commit 主题
-          TITLE="${{ github.ref_name }}"
+          TITLE="$TAG_NAME"
           if [ -n "$NOTES" ]; then
-            gh release create "${{ github.ref_name }}" $ASSETS --title "$TITLE" --notes "$NOTES"
+            gh release create "$TAG_NAME" $ASSETS --title "$TITLE" --notes "$NOTES"
           else
-            gh release create "${{ github.ref_name }}" $ASSETS --title "$TITLE" --generate-notes
+            gh release create "$TAG_NAME" $ASSETS --title "$TITLE" --generate-notes
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # tag 名只能经环境变量传入,不得直接插值进 shell 脚本体:
+          # 直接插值时,含引号/$( ) 的 tag 会被当作 shell 代码解析(zizmor 判 template-injection High)。
+          # 触发流是 push tags(需写权限才能建 tag),故利用前提是已有写权限,但仍按注入面消除。
+          TAG_NAME: ${{ github.ref_name }}
