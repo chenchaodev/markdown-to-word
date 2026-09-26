@@ -10,6 +10,9 @@ import { createDepthTracker } from "./shared.js";
  * 块 token 流中,顶层「含图片段落」或「表格」之后紧跟的、以「图:」/「表:」
  * (半角/全角冒号)开头的段落 → 标记为 fig-caption/tab-caption 并剥除前缀。
  * 编号由 CSS counter 伪元素渲染(不进文本节点,目录/书签不受影响)。
+ * 尾部 {#fig:label}/{#tab:label} 的剥离与登记在 rules/xref.ts(登记键按 kind
+ * 分命名空间,cross-ref.ts captionLabelKey 单源),本规则只负责前缀剥除与
+ * class 标记。
  * 容器深度限制(blockquote/list_item/table 单元格内不识别,与 docx 侧
  * 只遍历 ast.children 顶层一致);文档开头(首 h1 之前)的图题注在无 h1
  * 文档中按纯序数渲染,有 h1 文档中渲染为「图 0.N」(与 docx 侧「图 N」

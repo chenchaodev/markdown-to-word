@@ -10,6 +10,7 @@ import type MarkdownIt from "markdown-it";
 import {
   CROSS_REF_KINDS,
   CROSS_REF_HREF_RE,
+  captionLabelKey,
   stripSecLabelSuffix,
   type CrossRefKind,
 } from "../../markdown/cross-ref.js";
@@ -31,8 +32,9 @@ interface BlockScanToken extends LinkScanToken {
 
 /** 第一遍扫描登记结果:xref 引用替换阶段的查表(label → 静态编号文本)。 */
 interface XrefLabelTables {
-  /** 图/表题注 label → kind + 编号文本(caption_recognize 已设 class 的题注段) */
-  captionLabels: Map<string, { kind: "fig" | "tab"; numberText: string }>;
+  /** 题注 label → 编号文本(键 = captionLabelKey(kind, label):fig/tab 各占一个
+   *  命名空间,同名 label 互不覆盖;caption_recognize 已设 class 的题注段) */
+  captionLabels: Map<string, string>;
   /** 章节 label → 章节号文本(headingNumbering 开启且深度 ≤3 时登记) */
   headingLabels: Map<string, string>;
 }
@@ -47,7 +49,9 @@ interface XrefLabelTables {
  *   提示(经共享 pushWarningOnce 按 key + JSON(params) 去重,同 eq_numbering);
  * - 编号对象与登记(免更新路线,静态注入):
  *   - 图/表题注(caption_recognize 已设 fig-caption/tab-caption class):尾部
- *     {#fig:label}/{#tab:label} 剥离并登记;编号文本镜像模板 CSS ::before 显示
+ *     {#fig:label}/{#tab:label} 剥离并登记;登记键按 kind 分命名空间
+ *     (captionLabelKey 单源,同名 label 的 fig/tab 互不覆盖,引用侧只在本 kind
+ *     命名空间内查找 → 跨 kind 引用判悬空);编号文本镜像模板 CSS ::before 显示
  *     (headingNumbering && hasH1 → 「图 <h1c>.<figc>」,否则纯序数「图 <figc>」,
  *     序数按 class 计数、h1 处重置仅当 hasH1,与 template.ts 两分支一一对应);
  *     锚点 <span id="fig:label"> 注入题注段落开头(经 paragraph_open 渲染包装);
@@ -88,7 +92,7 @@ function scanXrefDefinitions(
 ): XrefLabelTables {
   const headingCounters = createHeadingCounters();
   const captionCounters = { fig: 0, tab: 0 };
-  const captionLabels = new Map<string, { kind: "fig" | "tab"; numberText: string }>();
+  const captionLabels = new Map<string, string>();
   const headingLabels = new Map<string, string>(); // label → 章节号文本
   const depth = createDepthTracker();
   for (let i = 0; i < tokens.length; i++) {
@@ -145,7 +149,9 @@ function scanXrefDefinitions(
         opts.headingNumbering && hasH1
           ? `${kind === "fig" ? "图" : "表"} ${headingCounters.h1}.${seq}`
           : `${kind === "fig" ? "图" : "表"} ${seq}`;
-      captionLabels.set(label, { kind, numberText });
+      // 键按 kind 分命名空间(captionLabelKey 单源,与 docx 侧同一函数):同名
+      // label 的 fig/tab 题注各登记各的,互不覆盖;同一 kind 内重名后写覆盖
+      captionLabels.set(captionLabelKey(kind, label), numberText);
       pOpen!.attrSet("data-xref-anchor", `${kind}:${label}`); // 契约:i-2 必为 paragraph_open(cls 命中亦证明其存在)
     }
   }
@@ -178,9 +184,8 @@ function replaceXrefLinks(
     if (kind === "sec") {
       numberText = headingLabels.get(label);
     } else {
-      const info = captionLabels.get(label);
-      // 登记时已限定 kind 与前缀一致(见上),此处防御性校验
-      if (info && info.kind === kind) numberText = info.numberText;
+      // 查表键含 kind(登记侧同上):跨 kind 引用查不到同名 label → 判悬空
+      numberText = captionLabels.get(captionLabelKey(kind, label));
     }
     if (numberText !== undefined) {
       if (textToken && textToken.content === def.defaultText) textToken.content = numberText;

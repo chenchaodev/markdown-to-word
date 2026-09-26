@@ -11,6 +11,10 @@
  * - 标题「## 标题 {#sec:label}」:label 不进标题文本/slug/TOC;章节号静态计数
  *   (h1 增→h2/h3 清零,h2 增→h3 清零;无 h1 从「1」起,前导未出现级跳过);
  *   renderDocx 预扫登记(引用先于目标标题出现也能命中);
+ * - 题注 label 查表键 = kind + label(单源 markdown/cross-ref.ts captionLabelKey,
+ *   docx/pdf 两侧共用):fig:x 与 tab:x 为两个键,同名 label 的图/表题注各登记
+ *   各的、互不覆盖;引用只在本 kind 命名空间内查找,跨 kind 判悬空(不跨 kind
+ *   命中);同一 kind 内 label 重名仍后写覆盖(先到先得语义不变);
  * - 引用 [图](#fig:label):文本恰为「图/表/章节」→ 替换为静态编号 +
  *   InternalHyperlink 跳书签(docx 库输出 <w:hyperlink w:history="1"
  *   w:anchor="...">、文本 <w:t xml:space="preserve">);非默认文本保持原样仍跳转;
@@ -20,7 +24,8 @@
  *
  * pdf 侧(与 docx 同一契约,实测):
  * - xref_recognize 一遍计数/剥离/登记,锚点 <span id="fig:label"> 注入题注段落
- *   开头、<span id="sec:label"> 注入标题开头;二遍链接替换:命中 → 默认文本
+ *   开头、<span id="sec:label"> 注入标题开头;登记键与 docx 侧同一 captionLabelKey
+ *   (kind 分命名空间);二遍链接替换:命中 → 默认文本
  *   替换为编号并保留 href,悬空 → 解包链接为纯文本占位(无 href 死链)+ 警告
  *   (按「前缀:label」去重);
  * - 编号镜像模板 CSS:headingNumbering && hasH1 → 「图 h1c.figc」;无 h1 时
@@ -368,6 +373,94 @@ export async function run() {
   if (/h1 \{ counter-reset:[^}]*figc/.test(hnOffCapHtml)) {
     throw new Error("B3 断言失败:pdf headingNumbering 关时不得存在 h1 级题注重置规则");
   }
+
+  // ============ 场景 I:题注 label 按 kind 分命名空间 ============
+  // 契约(src/core/markdown/cross-ref.ts captionLabelKey 为键单源,docx/pdf 两侧共用):
+  // 查表键 = kind + label → fig:a 与 tab:a 是两个键,同名 label 的图/表题注各登记
+  // 各的、互不覆盖;引用只在本 kind 命名空间内查找,跨 kind 必然判悬空。
+  // 同一 kind 内 label 重名仍后写覆盖(先到先得语义不随 kind 分域改变)。
+  const mdNs = `![图一](g1-tiny.png)
+
+图: 图一 {#fig:same}
+
+| A | B |
+| --- | --- |
+| 1 | 2 |
+
+表: 表一 {#tab:same}
+
+见 [图](#fig:same) 与 [表](#tab:same)。另见 [图](#fig:onlytab) 与 [表](#tab:onlyfig)。
+`;
+  /** @type {unknown[]} */
+  const nsW = [];
+  const nsD = /** @type {ConvertArtifact} */ (await convert(mdNs, "docx", { baseDir: B, warnings: nsW }));
+  const nsX = await unzipPart(docxBufferOf(nsD), "word/document.xml");
+  if (!nsX.includes('<w:bookmarkStart w:name="fig-same"') || !nsX.includes('<w:bookmarkStart w:name="tab-same"')) {
+    throw new Error("docx 同名 label:fig/tab 题注都应生成各自书签(互不覆盖)");
+  }
+  if (!nsX.includes('<w:hyperlink w:history="1" w:anchor="fig-same">') || !nsX.includes('<w:t xml:space="preserve">图 1</w:t>')) {
+    throw new Error("docx 同名 label:图引用应命中图题注(不判悬空)");
+  }
+  if (!nsX.includes('<w:hyperlink w:history="1" w:anchor="tab-same">') || !nsX.includes('<w:t xml:space="preserve">表 1</w:t>')) {
+    throw new Error("docx 同名 label:表引用应命中表题注(不判悬空)");
+  }
+  // 跨 kind 引用(label 只存在于另一 kind 的命名空间)→ 悬空
+  if (!nsX.includes('<w:t xml:space="preserve">图 (?)</w:t>') || !nsX.includes('<w:t xml:space="preserve">表 (?)</w:t>')) {
+    throw new Error("docx 跨 kind 引用应输出占位(不跨 kind 命中)");
+  }
+  for (const want of ["交叉引用未找到图 label: fig:onlytab", "交叉引用未找到表 label: tab:onlyfig"]) {
+    if (nsW.filter((w) => formatWarning(w) === want).length !== 1) {
+      throw new Error(`docx 跨 kind 悬空警告缺失或重复(${want})`);
+    }
+  }
+  if (nsW.some((w) => formatWarning(w).includes("same"))) {
+    throw new Error("docx 同名 label 的 fig/tab 引用不应产生悬空警告");
+  }
+  /** @type {unknown[]} */
+  const nsPW = [];
+  const nsP = /** @type {ConvertArtifact} */ (
+    await convert(mdNs, "pdf", { baseDir: B, title: "t", warnings: nsPW })
+  );
+  const nsHtml = pdfHtmlOf(nsP);
+  if (!nsHtml.includes('href="#fig:same">图 1<') || !nsHtml.includes('href="#tab:same">表 1<')) {
+    throw new Error("pdf 同名 label:图/表引用应各命中各的锚点(kind 分域)");
+  }
+  if (!nsHtml.includes("图 (?)") || !nsHtml.includes("表 (?)")) {
+    throw new Error("pdf 跨 kind 引用应输出占位");
+  }
+  if (nsHtml.includes('href="#fig:onlytab"') || nsHtml.includes('href="#tab:onlyfig"')) {
+    throw new Error("pdf 跨 kind 悬空引用不应保留死链 href");
+  }
+  for (const want of ["交叉引用未找到图 label: fig:onlytab", "交叉引用未找到表 label: tab:onlyfig"]) {
+    if (nsPW.filter((w) => formatWarning(w) === want).length !== 1) {
+      throw new Error(`pdf 跨 kind 悬空警告缺失或重复(${want})`);
+    }
+  }
+  // 同一 kind 内重名:后写覆盖(与 docx 同口径)
+  const mdDup = `![图一](g1-tiny.png)
+
+图: 图一 {#fig:dup}
+
+![图二](g1-tiny.png)
+
+图: 图二 {#fig:dup}
+
+见 [图](#fig:dup)。
+`;
+  /** @type {unknown[]} */
+  const dupW = [];
+  const dupD = /** @type {ConvertArtifact} */ (await convert(mdDup, "docx", { baseDir: B, warnings: dupW }));
+  const dupX = await unzipPart(docxBufferOf(dupD), "word/document.xml");
+  if (!dupX.includes('<w:hyperlink w:history="1" w:anchor="fig-dup">') || !dupX.includes('<w:t xml:space="preserve">图 2</w:t>')) {
+    throw new Error("docx 同 kind 重名 label:应后写覆盖(命中后一个题注编号 图 2)");
+  }
+  const dupP = /** @type {ConvertArtifact} */ (
+    await convert(mdDup, "pdf", { baseDir: B, title: "t", warnings: [] })
+  );
+  if (!pdfHtmlOf(dupP).includes('href="#fig:dup">图 2<')) {
+    throw new Error("pdf 同 kind 重名 label:应后写覆盖(与 docx 同口径 图 2)");
+  }
+  console.log("[ok] cross-ref:题注 label 按 kind 分命名空间(同名互不覆盖、跨 kind 悬空、同 kind 重名后写覆盖)断言通过");
 
   console.log("[ok] cross-ref:docx+pdf 题注/章节/公式交叉引用、悬空降级、开关与 8b 修复断言通过(12 条验收点)");
 }

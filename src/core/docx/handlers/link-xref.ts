@@ -13,7 +13,7 @@ import type { Link } from "mdast";
 import { LINK_COLOR } from "../theme.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
 import { collectPlainText } from "../../util/mdast-utils.js";
-import { CROSS_REF_KINDS, CROSS_REF_HREF_RE, EQ_REF_HREF_RE, type CrossRefKind } from "../../markdown/cross-ref.js";
+import { CROSS_REF_KINDS, CROSS_REF_HREF_RE, EQ_REF_HREF_RE, captionLabelKey, type CrossRefKind } from "../../markdown/cross-ref.js";
 import { crossRefNotFoundWarning } from "../../i18n.js";
 import { warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js";
 
@@ -65,6 +65,8 @@ export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: R
   // (与 #eq: 非「式/公式」行为一致);悬空 → 默认文本占位 + 警告,非约定
   // 文本保持原样不带链接(目标书签不存在,不生成死链;公式悬空非默认文本
   // 无警告的死链行为不复制,此处更安全)
+  // 题注 label 查表按 kind 分命名空间(captionLabelKey 单源):同名 label 的
+  // fig/tab 题注各命中各的,跨 kind 引用查不到即悬空
   const crossMatch = CROSS_REF_HREF_RE.exec(url);
   if (crossMatch) {
     const kind = crossMatch[1] as CrossRefKind;
@@ -79,10 +81,12 @@ export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: R
         anchor = docxBookmarkId(info.slug);
       }
     } else {
-      const info = ctx.xref.captionLabels.get(label);
-      // xref.captionLabels 登记时已限定 kind 与前缀一致(见 captions.ts),此处防御性校验
-      if (info && info.kind === kind) {
-        numberText = info.numberText;
+      // 题注查表按 kind 分命名空间(键 = captionLabelKey(kind, label),单源见
+      // cross-ref.ts):fig 引用查不到 tab 题注的同名 label,跨 kind 必判悬空,
+      // 故此处无需再对登记值做 kind 校验
+      const hit = ctx.xref.captionLabels.get(captionLabelKey(kind, label));
+      if (hit !== undefined) {
+        numberText = hit;
         anchor = docxBookmarkId(`${kind}-${label}`);
       }
     }

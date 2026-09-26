@@ -19,6 +19,21 @@ export const CROSS_REF_KINDS = {
 
 export type CrossRefKind = keyof typeof CROSS_REF_KINDS;
 
+/** 题注 kind:fig/tab 各占一个交叉引用命名空间(见 captionLabelKey) */
+export type CaptionKind = "fig" | "tab";
+
+/** 题注 label 查表键(kind 分命名空间):`${kind}:${label}`。
+ *  fig 与 tab 同名 label 各登记各的、互不覆盖;引用侧只在本 kind 命名空间内
+ *  查找,跨 kind 必然查不到 → 判悬空(不跨 kind 命中)。
+ *  同一 kind 内 label 重名仍为后写覆盖(先到先得语义不变)。
+ *  分隔符取 ":" 与引用 href(#fig:label)前缀写法一致,且 label 由 [\w-]+ 限定
+ *  不含 ":"(见 kindLabelRegex / CROSS_REF_HREF_RE),故拼接无歧义。
+ *  docx(ctx.xref.captionLabels)与 pdf(rules/xref.ts captionLabels)两侧共用
+ *  本函数,勿各写一份拼接逻辑。 */
+export function captionLabelKey(kind: CaptionKind, label: string): string {
+  return `${kind}:${label}`;
+}
+
 /** 标题行内 label 后缀({#sec:label};捕获组 1 = label)。
  *  parse.ts 提取 label、渲染侧剥离标题文本共用同一实例(剥离场景忽略捕获组,
  *  replace 行为与无捕获组版本逐字等价)。 */

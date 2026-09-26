@@ -13,7 +13,7 @@ import type { Node, Root, Paragraph as MdParagraph } from "mdast";
 import { AlignmentType, Paragraph, TextRun } from "docx";
 import type { ParagraphChild } from "docx";
 import { collectPlainText } from "../../util/mdast-utils.js";
-import { CAPTION_PREFIX_RE, kindLabelRegex } from "../../markdown/cross-ref.js";
+import { CAPTION_PREFIX_RE, captionLabelKey, kindLabelRegex } from "../../markdown/cross-ref.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
 import { wrapBookmark } from "./bookmark.js";
 import type { Ctx } from "../ctx.js";
@@ -30,14 +30,6 @@ interface CaptionInfo {
   /** 行内 label:{#fig:label}/{#tab:label} 尾部后缀;label 不渲染,
    *  仅登记供交叉引用跳转;无 label 时 undefined) */
   label?: string;
-}
-
-/** 题注 label 登记信息(交叉引用查表) */
-export interface CaptionLabelInfo {
-  /** 题注类型(fig/tab,与引用前缀一致) */
-  kind: "fig" | "tab";
-  /** 与题注显示一致的编号文本(「图 3.1」/「表 1」) */
-  numberText: string;
 }
 
 /** 节点子树是否含图片(链接内嵌图片 [![alt](u)](l) 也命中,递归) */
@@ -107,9 +99,11 @@ function buildCaptionContext(ast: Root, ctx: Ctx): Map<MdParagraph, CaptionInfo>
       label,
     };
     captions.set(node, info);
-    // label 登记(交叉引用查表,仿 equations labelIndex 模式):label → 类型 + 编号显示文本
+    // label 登记(交叉引用查表,仿 equations labelIndex 模式):键 = kind + label
+    // (captionLabelKey 单源,fig/tab 各占一个命名空间 → 同名 label 互不覆盖;
+    // 同一 kind 内重名仍后写覆盖,先到先得语义不变)→ 编号显示文本
     if (label !== undefined) {
-      ctx.xref.captionLabels.set(label, { kind: isFigure ? "fig" : "tab", numberText: captionNumberText(info) });
+      ctx.xref.captionLabels.set(captionLabelKey(isFigure ? "fig" : "tab", label), captionNumberText(info));
     }
   }
   return captions;

@@ -24,7 +24,6 @@ import type { TypographySettings } from "../settings/typography.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import type { ImageResolver } from "../image/image-resolver.js";
 import type { TocMode } from "../settings/settings-defaults.js";
-import type { CaptionLabelInfo } from "./handlers/captions.js";
 
 /** 单次图片解析结果:data 为 null 表示失败,error 保留原始抛错(成功时 error 不存在) */
 export interface ImageLoadResult {
@@ -64,8 +63,10 @@ export interface CtxConfig {
 export interface CtxXref {
   /** 公式 label → 编号查表(prescan 后挂入;行内公式交叉引用渲染用) */
   equationLabels?: Map<string, number>;
-  /** 题注 label → 编号文本(图/表交叉引用查表;buildCaptionContext 预扫时登记) */
-  captionLabels: Map<string, CaptionLabelInfo>;
+  /** 题注 label 查表:键 = captionLabelKey(kind, label)(fig/tab 各占一个命名
+   *  空间,同名 label 互不覆盖)→ 编号文本;buildCaptionContext 预扫时登记。
+   *  键的构造与命名空间语义单源 core/markdown/cross-ref.ts,勿在此另拼。 */
+  captionLabels: Map<string, string>;
   /** 章节 label → 章节号文本 + 标题书签 slug(章节交叉引用查表;prescan 登记) */
   headingLabels: Map<string, HeadingLabelInfo>;
   /** docx 书签 linkId 自增计数器(逐文档新建,保证文档内 bookmarkStart/End id 唯一) */

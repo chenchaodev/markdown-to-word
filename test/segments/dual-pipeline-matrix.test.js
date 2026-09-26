@@ -109,6 +109,19 @@ function docxBookmarks(xml) {
     .filter((a) => a !== undefined);
 }
 /**
+ * docx 内部超链接的内部片段(自 w:anchor 起到 </w:hyperlink> 止),用于把
+ * 「引用文本/编号」绑定到「跳转目标」,证明命中的是哪一条目标。
+ * @param {string} xml document.xml 文本
+ * @param {string} anchor w:anchor 目标名
+ * @returns {string} 片段文本(无该链接时为空串)
+ */
+function docxLinkBody(xml, anchor) {
+  const start = xml.indexOf(`w:anchor="${anchor}"`);
+  if (start < 0) return "";
+  const end = xml.indexOf("</w:hyperlink>", start);
+  return end < 0 ? "" : xml.slice(start, end);
+}
+/**
  * pdf 目录条目(h1-h3 → toc-lN)
  * @param {string} html pdf HTML 文档
  * @returns {{level: number, id: string}[]} 目录条目
@@ -321,7 +334,9 @@ $$
 
 见 [式](#eq:energy)。
 `;
-/** fig/tab 同名 label 边界(查表按 label 单一命名空间) */
+/** fig/tab 同名 label(查表键按 kind 分命名空间) + 跨 kind 引用必须悬空:
+ *  fig:same / tab:same 共存互不覆盖;fig:onlytab / tab:onlyfig 各自只存在于
+ *  另一 kind 的命名空间,按 fig/tab 引用均查不到 → 悬空 */
 const sameLabelMd = `![图一](g1-tiny.png)
 
 图: 图一 {#fig:same}
@@ -332,7 +347,28 @@ const sameLabelMd = `![图一](g1-tiny.png)
 
 表: 表一 {#tab:same}
 
-见 [图](#fig:same) 与 [表](#tab:same)。
+![图二](g1-tiny.png)
+
+图: 图二 {#fig:onlyfig}
+
+| C | D |
+| --- | --- |
+| 3 | 4 |
+
+表: 表二 {#tab:onlytab}
+
+见 [图](#fig:same) 与 [表](#tab:same)。另见 [图](#fig:onlytab) 与 [表](#tab:onlyfig)。
+`;
+/** 同一 kind 内 label 重名:后写覆盖(先到先得语义不变,与 kind 分域正交) */
+const dupLabelMd = `![图一](g1-tiny.png)
+
+图: 图一 {#fig:dup}
+
+![图二](g1-tiny.png)
+
+图: 图二 {#fig:dup}
+
+见 [图](#fig:dup)。
 `;
 /** 脚注 */
 const footnoteMd = "正文脚注[^a]。\n\n[^a]: 脚注内容。\n";
@@ -410,10 +446,13 @@ function countingGuard() {
  * @property {string} eqOffPdfHtml equationNumbering 关闭对照 HTML
  * @property {{docxBig: string, docxBigWarnings: Warning[], pdfBig: string, pdfSmall: string, docxExpand: string, pdfExpand: string, boundaryPdfNoDir: string, boundaryPdfNoDirWarnings: Warning[], boundaryPdfWithDir: string, boundaryDocxNoDir: string, boundaryDocxWithDir: string}} katex KaTeX 边界
  * @property {{docxKnown: string, pdfKnown: string, docxUnknown: string, pdfUnknown: string, docxBroken: string, pdfBroken: string, docxBrokenWarnings: Warning[], pdfBrokenWarnings: Warning[]}} code 代码高亮
- * @property {string} nsDocxXml 同名 label document.xml
- * @property {string} nsPdfHtml 同名 label HTML
+ * @property {string} nsDocxXml 同名 label(kind 分域)document.xml
+ * @property {string} nsPdfHtml 同名 label(kind 分域)HTML
  * @property {Warning[]} nsDocxWarnings 同名 label docx 警告
  * @property {Warning[]} nsPdfWarnings 同名 label pdf 警告
+ * @property {string} dupDocxXml 同 kind 重名 label document.xml
+ * @property {string} dupPdfHtml 同 kind 重名 label HTML
+ * @property {Warning[]} dupPdfWarnings 同 kind 重名 label pdf 警告
  * @property {{docxUntrusted: string, pdfUntrusted: string, docxColor: string, pdfColor: string}} degrade 公式降级
  * @property {{docxHasMedia: boolean, docxHasSvg: boolean, pdfHasSvg: boolean, pdfHasBase64: boolean, docxFailed: string, pdfFailed: string, docxFailedWarnings: Warning[], pdfFailedWarnings: Warning[]}} mermaid mermaid 产物
  * @property {{docxHasPart: boolean, docxHasReference: boolean, docxHasText: boolean, pdfHasPart: boolean, pdfHasSection: boolean, pdfHasItem: boolean, pdfHasBackref: boolean, pdfHasText: boolean}} footnote 脚注
@@ -789,34 +828,98 @@ const MATRIX = [
   {
     id: "xref-label-namespace",
     mode: "mustMatch",
-    dimension: "fig/tab 同名 label 判定(查表按 label 单一命名空间 + kind 防御校验,后写者覆盖)",
-    docxExtract: "同名时后出现的表题注覆盖图题注 → [图] 引用悬空、[表] 命中",
-    pdfExtract: "同名时同样口径:[图] 悬空(无死链)、[表] 命中",
+    dimension: "fig/tab 同名 label 判定(查表键按 kind 分命名空间,captionLabelKey 单源;同名互不覆盖、跨 kind 不命中)",
+    docxExtract: "同名 fig/tab 各命中各的书签编号;跨 kind 引用 → 占位 + keyed 警告;同 kind 重名 → 后写覆盖",
+    pdfExtract: "同名 fig/tab 各命中各的锚点编号;跨 kind 引用 → 占位无死链 + 同文案警告;同 kind 重名 → 后写覆盖",
     anchors: [
-      "src/core/docx/ctx.ts:119(captionLabels 单一命名空间)",
-      "src/core/docx/handlers/captions.ts:112(label → {kind, numberText})",
-      "src/core/pdf/rules/xref.ts:148(同名后写覆盖)与 183(kind 防御校验)",
+      "src/core/markdown/cross-ref.ts:33(captionLabelKey 键单源)",
+      "src/core/docx/ctx.ts:69(captionLabels 键 = kind + label)",
+      "src/core/docx/handlers/captions.ts:106(按 kind 登记)",
+      "src/core/docx/handlers/link-xref.ts:87(按 kind 查找)",
+      "src/core/pdf/rules/xref.ts:154(按 kind 登记)与 188(按 kind 查找)",
     ],
-    verify: async ({ nsDocxXml, nsPdfHtml, nsDocxWarnings, nsPdfWarnings }) => {
-      // 已知边界:captionLabels 以 label 为键(不分 fig:/tab: 前缀),后写覆盖,
-      // 引用侧按 kind 防御校验 → 同名 label 时先出现者悬空。两侧口径必须一致。
+    verify: async ({ nsDocxXml, nsPdfHtml, nsDocxWarnings, nsPdfWarnings, dupDocxXml, dupPdfHtml, dupPdfWarnings }) => {
+      // 查表键含 kind(fig:a / tab:a 为两个键)→ 同名 label 的 fig/tab 题注各登记
+      // 各的、互不覆盖,两侧引用各命中各的编号;跨 kind 引用查不到 → 悬空占位 +
+      // 警告(文案沿用既有 key「交叉引用未找到<类别> label: <kind>:<label>」)。
       const marks = docxBookmarks(nsDocxXml);
-      must(marks.includes("fig-same") && marks.includes("tab-same"), "xref-label-namespace", "两侧题注都应生成书签");
-      must(nsDocxXml.includes('<w:hyperlink w:history="1" w:anchor="tab-same">'), "xref-label-namespace", "docx 表引用应命中(后写者)");
-      must(nsDocxXml.includes("图 (?)"), "xref-label-namespace", "docx 图引用应判悬空(同名 label 被覆盖)");
-      must(nsPdfHtml.includes('href="#tab:same">表 1<'), "xref-label-namespace", "PDF 表引用应命中(后写者)");
-      must(nsPdfHtml.includes("图 (?)"), "xref-label-namespace", "PDF 图引用应判悬空(与 docx 同口径)");
-      must(!nsPdfHtml.includes('href="#fig:same"'), "xref-label-namespace", "PDF 悬空引用不应保留死链 href");
-      const want = "交叉引用未找到图 label: fig:same";
       must(
-        nsDocxWarnings.filter((w) => formatWarning(w) === want).length === 1,
+        marks.includes("fig-same") && marks.includes("tab-same"),
         "xref-label-namespace",
-        "docx 悬空图警告缺失",
+        "两侧题注都应生成书签",
       );
       must(
-        nsPdfWarnings.filter((w) => formatWarning(w) === want).length === 1,
+        docxLinkBody(nsDocxXml, "fig-same").includes("图 1"),
         "xref-label-namespace",
-        "PDF 悬空图警告缺失",
+        "docx 同名 label 的图引用应命中自己(kind 分域)",
+      );
+      must(
+        docxLinkBody(nsDocxXml, "tab-same").includes("表 1"),
+        "xref-label-namespace",
+        "docx 同名 label 的表引用应命中自己(不被图题注覆盖)",
+      );
+      must(
+        nsPdfHtml.includes('href="#fig:same">图 1<'),
+        "xref-label-namespace",
+        "PDF 同名 label 的图引用应命中自己(kind 分域)",
+      );
+      must(
+        nsPdfHtml.includes('href="#tab:same">表 1<'),
+        "xref-label-namespace",
+        "PDF 同名 label 的表引用应命中自己(不被图题注覆盖)",
+      );
+      // 跨 kind 引用:label 只存在于另一 kind 的命名空间 → 悬空
+      must(
+        !nsDocxWarnings.some((w) => formatWarning(w).includes("fig:same") || formatWarning(w).includes("tab:same")),
+        "xref-label-namespace",
+        "docx 同名 label 的引用不应产生悬空警告",
+      );
+      const crossWant = [
+        "交叉引用未找到图 label: fig:onlytab",
+        "交叉引用未找到表 label: tab:onlyfig",
+      ];
+      /** @type {[string, Warning[]][]} */
+      const crossSides = [["docx", nsDocxWarnings], ["PDF", nsPdfWarnings]];
+      for (const [name, warnings] of crossSides) {
+        for (const want of crossWant) {
+          must(
+            warnings.filter((w) => formatWarning(w) === want).length === 1,
+            "xref-label-namespace",
+            `${name} 跨 kind 引用应判悬空且各警告一次(${want})`,
+          );
+        }
+      }
+      must(
+        nsDocxXml.includes('<w:t xml:space="preserve">图 (?)</w:t>') &&
+          nsDocxXml.includes('<w:t xml:space="preserve">表 (?)</w:t>'),
+        "xref-label-namespace",
+        "docx 跨 kind 引用应输出占位文本",
+      );
+      must(
+        nsPdfHtml.includes("图 (?)") && nsPdfHtml.includes("表 (?)"),
+        "xref-label-namespace",
+        "PDF 跨 kind 引用应输出占位文本",
+      );
+      must(
+        !nsPdfHtml.includes('href="#fig:onlytab"') && !nsPdfHtml.includes('href="#tab:onlyfig"'),
+        "xref-label-namespace",
+        "PDF 跨 kind 悬空引用不应保留死链 href",
+      );
+      // 同一 kind 内重名:仍按既有规则后写覆盖(先到先得语义不随 kind 分域改变)
+      must(
+        docxLinkBody(dupDocxXml, "fig-dup").includes("图 2"),
+        "xref-label-namespace",
+        "docx 同 kind 重名应后写覆盖(命中后一个题注编号)",
+      );
+      must(
+        dupPdfHtml.includes('href="#fig:dup">图 2<'),
+        "xref-label-namespace",
+        "PDF 同 kind 重名应后写覆盖(与 docx 同口径)",
+      );
+      must(
+        dupPdfWarnings.length === 0,
+        "xref-label-namespace",
+        `PDF 同 kind 重名不应产生悬空警告(实际 ${dupPdfWarnings.length} 条)`,
       );
     },
   },
@@ -1181,13 +1284,17 @@ export async function run() {
     hljs.unregisterLanguage("broken");
   }
 
-  // ---------- 12. fig/tab 同名 label 边界 ----------
+  // ---------- 12. fig/tab 同名 label(kind 分命名空间)+ 同 kind 重名 ----------
   /** @type {Warning[]} */
   const nsDocxW = [];
   /** @type {Warning[]} */
   const nsPdfW = [];
   const nsDocx = asDocxArtifact(await convertTyped(sameLabelMd, "docx", { baseDir: B, warnings: nsDocxW, ...img }));
   const nsPdf = asPdfArtifact(await convertTyped(sameLabelMd, "pdf", { baseDir: B, title: "t", warnings: nsPdfW, ...img }));
+  /** @type {Warning[]} */
+  const dupPdfW = [];
+  const dupDocx = asDocxArtifact(await convertTyped(dupLabelMd, "docx", { baseDir: B, warnings: [], ...img }));
+  const dupPdf = asPdfArtifact(await convertTyped(dupLabelMd, "pdf", { baseDir: B, title: "t", warnings: dupPdfW, ...img }));
 
   // ---------- 13. 公式降级触发条件 ----------
   const untrustedMd = "$$\\includegraphics[width=1cm]{a.png}$$\n";
@@ -1322,6 +1429,9 @@ export async function run() {
     nsPdfHtml: nsPdf.html,
     nsDocxWarnings: nsDocxW,
     nsPdfWarnings: nsPdfW,
+    dupDocxXml: await docxXml(dupDocx.buffer),
+    dupPdfHtml: dupPdf.html,
+    dupPdfWarnings: dupPdfW,
     degrade: {
       docxUntrusted: await docxXml(untrustedDocx.buffer),
       pdfUntrusted: untrustedPdf.html,
