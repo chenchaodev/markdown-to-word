@@ -36,7 +36,7 @@
 | #03 | 0 | STATUS.md 重写 ≤1,200 | #01 | 容量达标 + 四路分流无残留 | `node -e "const n=[...require('fs').readFileSync('docs/STATUS.md','utf8')].length;console.log(n);if(n>1200)process.exit(1)"` |
 | #04 | 0 | ACCEPTANCE.md 重建 ≤6,000 | #03 | 容量达标 + 功能点无丢失 | `node -e "const n=[...require('fs').readFileSync('docs/ACCEPTANCE.md','utf8')].length;console.log(n);if(n>6000)process.exit(1)"` |
 | #05 | 0 | ROADMAP.md 重建 + 删 BACKLOG.md | #04 | 候选区覆盖全部未实现项 | 人工核对:逐条比对 BACKLOG 迁移前的每个候选行在 ROADMAP「候选区」或「已知限制」有落点 |
-| #06 | 0 | ADR.md 补齐 ≤8,000/≤15 条 | #05 | D-0N 全部有落点 | `node -e "const s=require('fs').readFileSync('docs/ADR.md','utf8');const n=[...s].length,c=(s.match(/^### /gm)||[]).length;console.log(n,c);if(n>8000\|\|c>15)process.exit(1)"` |
+| #06 | 0 | ADR.md 补齐 ≤8,000/≤15 条 | #05 | D-0N 全部有落点(ADR-009~015) | `node -e "const s=require('fs').readFileSync('docs/ADR.md','utf8');const n=[...s].length,c=(s.match(/^### 20/gm)||[]).length;console.log(n,c);if(n>8000\|\|c>15)process.exit(1)"` |
 | #07 | 0 | 阶段细节入 campaign + 删 OPTIMIZATION-* | #06 | 常驻层无阶段细节 | `ls docs/OPTIMIZATION-PLAN.md docs/OPTIMIZATION-CHECKLIST.md 2>&1 \| grep -c "No such file"` 输出为 `2` |
 | #08 | 0 | archive 44 份命名统一 + 删 docs/README 存档清单节 | #02 | 零断链 | `git status --short docs/archive/` 全部为 `R`(重命名)且无 `D`/`??` |
 | #09 | 0 | 代码/测试注释规划编号清洗 | #07 | 规划编号零残留 | `npm run typecheck && npm run lint && npm run test:smoke` |
