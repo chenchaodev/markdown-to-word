@@ -122,6 +122,7 @@ const dict = {
     "about.author": "作者",
     "about.repo": "GitHub 仓库",
     "about.license": "许可证",
+    "about.version": "版本",
     "about.open": "关于",
     "about.quickStart": "快速上手",
     "about.step1": "把 .md 文件拖入文稿台",

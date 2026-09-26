@@ -69,6 +69,17 @@ function makeClassList(initial = []) {
  * 元素 stub:记录监听器与子节点(向导控件由 h() 动态创建,不在 refs,需按 id 定位)。
  * className 与 classList 双向同步:动态外壳按 class 串建类,弹窗按 classList 显隐
  * (className 由下方 defineProperty 安装,故为可选)。
+ *
+ * ⚠️ **本 stub 是契约面,不是万能替身**:它是本段乃至整个 renderer 段最精简的一套
+ * 元素实现 —— 上面的 typedef 就是全部能力清单。往被测代码里新增任何 DOM 接口调用
+ * 之前,先确认本 stub 提供了该方法;缺了就地补,不要指望它兜底。
+ * 缺失是**静默的、且症状与改动完全无关**:真实踩过的坑是 renderer 侧给消息槽写了
+ * 一句 `removeAttribute("aria-busy")`,本 stub 无 removeAttribute → TypeError 抛在
+ * runMerge 的 finally 里 → 本段报出来的是「付印两格式应依次执行两次合并,实际 1 次」,
+ * 排查方向被整体带偏(第一反应是「付印链被改坏了」)。同理 querySelector 恒返回 null、
+ * querySelectorAll 恒返回空数组,focus() 是空操作(不写 document.activeElement)。
+ * 共享的 test/renderer/dom-stub.js 能力更全(并提供 trackFocus 焦点追踪),
+ * 需要更完整元素能力的新段优先用它。
  * @typedef {object} WizardStubElement
  * @property {string} id
  * @property {Record<string, string>} dataset

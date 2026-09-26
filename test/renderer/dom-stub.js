@@ -9,6 +9,13 @@
  *
  * 元素工厂接口保持与既有段兼容(listener 单类型单槽),另加本段需要的
  * children / attributes / remove / isConnected / fire 等钩子。
+ *
+ * 能力按需开启(默认关):
+ * - trackFocus:focus() 真的改写 document.activeElement(焦点落点/归还断言用)
+ *
+ * 按选择器取元素走**段内注入**:被测代码若在元素上调 querySelector(而非
+ * document 上调),由用例给该元素挂一个最小命中实现(见 StubElement.querySelector
+ * 的「段内可注入最小探针节点」注记),不在本 stub 里做全局选择器表。
  */
 
 /**
@@ -253,9 +260,22 @@ export function makeKeyEvent(key, target, extra = {}) {
 /**
  * 安装 stub:返回元素表、创建元素流水(window 供动态构建的模块追加节点)、
  * document/window 与 restore()。api 由调用方按用例补齐。
- * @param {{ api?: Record<string, unknown>, activeElement?: StubElement | null }} [options]
+ *
+ * ⚠️ 本 stub 是**契约面**:新增 DOM 接口调用前须确认本 stub(或段内自建 stub)
+ * 提供了该方法,否则会在段内抛错,并表现为一条与该改动毫不相干的断言失败
+ * (真实案例:某段元素 stub 无 removeAttribute,被测代码里的属性摘除抛
+ * TypeError,最终报出的是「付印应执行两次合并」)。已实现成员见 StubElement。
+ *
+ * @param {object} [options]
+ * @param {Record<string, unknown>} [options.api] preload 面按用例补齐
+ * @param {StubElement | null} [options.activeElement] 焦点初始落点
+ * @param {boolean} [options.trackFocus] 开启焦点追踪(见下),默认关
  */
-export function installDomStub({ api = {}, activeElement = null } = {}) {
+export function installDomStub({
+  api = {},
+  activeElement = null,
+  trackFocus = false,
+} = {}) {
   const originalDocument = globalSlot("document");
   const originalWindow = globalSlot("window");
   // 前序段可能已建 host(且未带 created 流水)——按需补齐,共享同一实例
@@ -271,26 +291,57 @@ export function installDomStub({ api = {}, activeElement = null } = {}) {
   host.created ??= [];
   setGlobalSlot("__m2wRendererDomStub", host);
 
+  /**
+   * 焦点落点:trackFocus 开启时是真的可变状态,focus() 会改写 document.activeElement,
+   * 焦点落点/归还类断言才有着落;默认关闭时 focus() 保持空操作(历史段只关心
+   * 「有没有调 focus」,不关心落到哪)。
+   */
+  let currentActive = /** @type {StubElement} */ (activeElement ?? host.elements.get("__active__") ?? null);
+
+  /**
+   * 给元素装上「真的落焦」的 focus()。跨段共享的元素表里可能已有前序段造的
+   * 元素(其 focus 是空操作),故对存量元素一并补装。
+   * ⚠️ 直接用导出的 makeElement 造的元素不在元素表里、拿不到这层装配 ——
+   * 段内自造的探针元素若也要参与焦点断言,须显式过一次本函数。
+   * @param {StubElement} el
+   * @returns {StubElement}
+   */
+  const withFocus = (el) => {
+    if (!trackFocus) return el;
+    el.focus = () => {
+      currentActive = el;
+    };
+    return el;
+  };
+
   /** @param {string} id @returns {StubElement} */
   const elementFor = (id) => {
     let el = host.elements.get(id);
     if (!el) {
-      el = makeElement({ id });
+      el = withFocus(makeElement({ id }));
       host.elements.set(id, el);
     }
     return el;
   };
 
   const createTracked = () => {
-    const el = makeElement();
+    const el = withFocus(makeElement());
     host.created.push(el);
     return el;
   };
 
+  // 存量元素(前序段所建)补装焦点追踪
+  for (const el of host.elements.values()) withFocus(el);
+
   /** @type {Map<string, (...args: unknown[]) => unknown>} */
   const documentListeners = new Map();
   const fakeDocument = {
-    activeElement: activeElement ?? elementFor("__active__"),
+    get activeElement() {
+      return currentActive;
+    },
+    set activeElement(el) {
+      currentActive = /** @type {StubElement} */ (el);
+    },
     documentElement: elementFor("__documentElement__"),
     body: elementFor("__body__"),
     getElementById: elementFor,
@@ -327,6 +378,7 @@ export function installDomStub({ api = {}, activeElement = null } = {}) {
     document: fakeDocument,
     window: fakeWindow,
     elementFor,
+    withFocus,
     documentListeners,
     restore() {
       setGlobalSlot("document", originalDocument);

@@ -9,10 +9,14 @@
  *     而不是 height:auto(几何恒定契约的一半;另一半在 geometry gate)。
  * (3) 对比度:按 WCAG 相对亮度公式实算两套主题的关键配对(弱化文字、朱砂文字、
  *     成功色),阈值 4.5:1 —— 改色即重算,不必等人工目检。
- * (4) 视觉债回归:脉冲只属主按钮、完成态不呼吸、队列无卡壳、向导源行三列网格。
+ * (4) 视觉债回归:脉冲只属主按钮且光环走伪元素、完成态不呼吸、队列无卡壳、
+ *     完成态收束只动 opacity/transform(不顶开固定消息槽)、队列忙碌态有可见
+ *     禁用表达且不另开色板、向导源行三列网格。
  * (5) 无障碍静态契约:设置 Tab 的 tablist/tab/tabpanel 双向关联、错误节点 role=alert
  *     + aria-controls、开关的 aria-labelledby/describedby、进度条 valuetext/describedby、
- *     状态行 role/aria-atomic、index.html 内所有 label[for] 均有对应 id。
+ *     状态行 role/aria-atomic、消息槽 aria-busy、复制播报位 #copyLive 的 live region
+ *     四要件、about 版本可见标签(不用应用名字符串顶替)、index.html 内所有
+ *     label[for] 均有对应 id。
  * (6) about 窗:自带令牌覆盖 = 自带引用、双来源深色(data-theme 优先 + 系统兜底)、
  *     降低动态效果全局块。
  * (7) geometry 规格:消息槽的高度区间与三档恒定组都在表里。
@@ -342,14 +346,46 @@ export async function run() {
   }
 
   /* ---------- 4. 视觉债回归 ---------- */
-  // 4a. 脉冲只属唯一付印主按钮(双脉冲:合并按钮也带光环 → 红不再专属付印)
+  // 4a. 脉冲只属唯一付印主按钮(双脉冲:合并按钮也带光环 → 红不再专属付印)。
+  // 光环挂在伪元素上而非按钮本体:动画按钮自身的 box-shadow 会与主按钮的静置
+  // 投影(0 5px 14px var(--acc-ring))及 hover 抬升投影抢同一条声明,动画期间
+  // 整条投影被顶掉(按钮看着在闪而不是在呼吸),hover 抬升也永久失效。
   assert(
-    /\.btn-primary\.pulse:not\(:disabled\)\s*\{[^}]*animation:\s*btn-pulse/.test(baseCss),
-    "脉冲引导应限定在 .btn-primary.pulse(主按钮),不得回到 .btn.pulse 全局",
+    /\.btn-primary\.pulse:not\(:disabled\)::after\s*\{[^}]*animation:\s*btn-pulse/.test(baseCss),
+    "脉冲光环应限定在 .btn-primary.pulse 的 ::after(主按钮),不得回到 .btn.pulse 全局",
   );
   assert(
     !/\.btn\.pulse[^-][^{]*\{[^}]*animation:\s*btn-pulse/.test(baseCss),
     "仍有 .btn.pulse 宽泛选择器带 btn-pulse 动画(次级按钮会被一起点亮)",
+  );
+  assert(
+    !/\.btn-primary\.pulse:not\(:disabled\)\s*\{[^}]*animation:/.test(baseCss),
+    "脉冲动画不得挂在按钮本体(会顶掉静置/hover 投影),应落在 ::after 伪元素",
+  );
+  const ringLayer = /\.btn-primary\.pulse:not\(:disabled\)::after\s*\{([^}]*)\}/.exec(baseCss);
+  assert(ringLayer, "找不到 .btn-primary.pulse:not(:disabled)::after 光环层规则");
+  const ringBody = capture(ringLayer, 1);
+  assert(
+    /pointer-events:\s*none/.test(ringBody),
+    `脉冲光环必须 pointer-events:none(不吃点击,脉冲不阻塞主按钮),实际:${ringBody}`,
+  );
+  // 4a-2. keyframes 同时动 opacity 与 box-shadow:一次性扩散淡出,不是原地呼吸
+  // (原地呼吸读起来像「还在加载」,与「已就绪、可点」的语义相反)
+  const ringFrames = /@keyframes btn-pulse\s*\{([\s\S]*?)\n\}/.exec(baseCss);
+  assert(ringFrames, "找不到 @keyframes btn-pulse");
+  const ringFramesBody = capture(ringFrames, 1);
+  assert(
+    /opacity:/.test(ringFramesBody) && /box-shadow:/.test(ringFramesBody),
+    `btn-pulse 应同时动 opacity 与 box-shadow(扩散并淡出),实际:${ringFramesBody}`,
+  );
+  // 4a-3. 降动效:光环是伪元素,必须一并点名,否则只关了按钮本体、环仍在扩散
+  const pulseReduce = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/.exec(baseCss);
+  assert(pulseReduce, "base.css 缺 prefers-reduced-motion 块");
+  const pulseReduceBody = capture(pulseReduce, 1);
+  assert(
+    /\.btn-primary\.pulse:not\(:disabled\)::after/.test(pulseReduceBody) &&
+      /animation:\s*none/.test(pulseReduceBody),
+    `降动效块应点名光环伪元素并置 animation:none(否则只关按钮本体),实际:${pulseReduceBody}`,
   );
   // 4b. 完成态是确定结果:静态圆点,不呼吸(呼吸会被读成「还没结束」)
   const okDot = /\.status--ok::before\s*\{([^}]*)\}/.exec(baseCss);
@@ -359,12 +395,54 @@ export async function run() {
     !/animation/.test(okDotBody),
     `.status--ok::before 不应带动画(完成态确定),实际:${okDotBody}`,
   );
+  // 4b-2. 完成态收束(res-beat):只动 opacity/transform —— 消息区是 --feed-h
+  // 锁高的固定槽,完成反馈一旦改写盒模型就会把槽顶开(几何恒定契约的另一半)
+  const resBeat = /\.result-summary\.res-beat\s*\{([^}]*)\}/.exec(dialogsCss);
+  assert(resBeat, "dialogs.css 缺少 .result-summary.res-beat 完成态收束规则");
+  const resBeatBody = capture(resBeat, 1);
+  assert(
+    /animation:\s*res-in/.test(resBeatBody),
+    `.result-summary.res-beat 应挂 res-in 动画,实际:${resBeatBody}`,
+  );
+  for (const boxProp of ["height", "padding", "margin", "top", "left"]) {
+    assert(
+      !new RegExp(`(?:^|;|\\s)${boxProp}\\s*:`).test(resBeatBody),
+      `.result-summary.res-beat 不得改写 ${boxProp}(固定消息槽会被顶开),实际:${resBeatBody}`,
+    );
+  }
+  const resInFrames = /@keyframes res-in\s*\{([\s\S]*?)\n\}/.exec(dialogsCss);
+  assert(resInFrames, "dialogs.css 缺少 @keyframes res-in");
+  const resInBody = capture(resInFrames, 1);
+  assert(
+    /opacity:/.test(resInBody) && !/transform|height|width|top|left/.test(resInBody),
+    `res-in 只应淡入(不得带动效位移或盒模型),实际:${resInBody}`,
+  );
   // 4c. 队列不再套卡壳(纸面上再嵌一张卡,层级多一层)
   const listcardBody = ruleBody(dropCss, ".listcard");
   assert(
     !/border(-radius)?\s*:/.test(listcardBody),
     `.listcard 不应再自带边线/圆角(队列行直接排在纸面上),实际:${listcardBody}`,
   );
+  // 4c-2. 队列忙碌态(转换中/预检持链):行必须给出「用不了」的可见表达,
+  // 复用既有 --mut/--line 语汇即可,不得为禁用态另开色板
+  for (const selector of [
+    ".mlist--busy .multi-item",
+    ".mlist--busy .multi-grip",
+  ]) {
+    const busyRule = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(
+      dropCss,
+    );
+    assert(busyRule, `drop.css 缺少忙碌态规则 ${selector}(转换中队列行须有可见的禁用表达)`);
+    const busyBody = capture(busyRule, 1);
+    assert(
+      /cursor:\s*default/.test(busyBody),
+      `${selector} 应撤掉 grab/pointer 光标(忙碌态不该像可拖),实际:${busyBody}`,
+    );
+    assert(
+      !/#[0-9a-f]{3,6}|rgba?\(/i.test(busyBody),
+      `${selector} 不得硬编码颜色(禁用态复用既有语义变量),实际:${busyBody}`,
+    );
+  }
   // 4d. 向导合并源行是三列(直接套主队列四列会把文件名挤进序号列)
   const wizardRow = /\.wizard-body \.mlist \.multi-item\s*\{([^}]*)\}/.exec(dialogsCss);
   assert(wizardRow, "dialogs.css 缺少 .wizard-body .mlist .multi-item 三列网格规则");
@@ -467,6 +545,47 @@ export async function run() {
   const statusTag = capture(status, 0);
   assert(/\brole="status"/.test(statusTag), "#status 缺 role=status(setStatus 按语义切 alert)");
   assert(/\baria-atomic="true"/.test(statusTag), "#status 缺 aria-atomic(整句播报,避免半截更新被漏读)");
+  // 5f. 消息槽:转换期间标 aria-busy(百分比之外的整体「正在转换」状态位)
+  const messageSlotTag = /<div[^>]*id="messageSlot"[^>]*>/s.exec(indexHtml);
+  assert(messageSlotTag, "index.html 未找到 #messageSlot");
+  assert(
+    /\baria-busy="/.test(capture(messageSlotTag, 0)),
+    "#messageSlot 应声明 aria-busy(showProgress/hideProgress 据此切换转换忙碌态)",
+  );
+  // 5g. 复制反馈的读屏播报位:常驻 live region(视觉隐藏但留在无障碍树内)
+  const copyLive = /<p[^>]*id="copyLive"[^>]*>/s.exec(indexHtml);
+  assert(copyLive, "index.html 未找到 #copyLive");
+  const copyLiveTag = capture(copyLive, 0);
+  assert(/\bclass="[^"]*\bsr-only\b/.test(copyLiveTag), "#copyLive 应挂 .sr-only(视觉隐藏不占位)");
+  assert(/\brole="status"/.test(copyLiveTag), "#copyLive 缺 role=status");
+  assert(/\baria-live="polite"/.test(copyLiveTag), "#copyLive 缺 aria-live=polite");
+  assert(/\baria-atomic="true"/.test(copyLiveTag), "#copyLive 缺 aria-atomic(整句播报)");
+  assert(
+    !/data-i18n=/.test(copyLiveTag),
+    "#copyLive 不得带 data-i18n(文案在写入时刻取自字典,静态回退应留空)",
+  );
+  // 5h. about 窗:版本必须有可见标签(含义不靠 tooltip 承担)
+  const aboutVerLabel = /<span[^>]*data-i18n="about\.version"[^>]*>/.exec(aboutHtml);
+  assert(aboutVerLabel, 'about.html 缺少 data-i18n="about.version" 的可见版本标签');
+  assert(
+    /about-ver-label/.test(capture(aboutVerLabel, 0)),
+    "版本标签应挂 .about-ver-label(与 mono 版本号构成「标签 → 取值」一对)",
+  );
+  // 版本徽标不得再借应用名字符串当说明:app.versionTitle 是应用名,不是版本标签。
+  // 断言取「调用/绑定形态」而非裸标识符 —— 注释里可以(且应该)记下这段判据。
+  assert(
+    !/data-i18n(?:-title)?="app\.versionTitle"/.test(aboutHtml),
+    "about 窗不应把 app.versionTitle 绑到任何节点(那是应用名字符串,当版本说明属语义错配)",
+  );
+  const aboutSource = read("src", "renderer", "about.ts");
+  assert(
+    !/t\(\s*"app\.versionTitle"/.test(aboutSource),
+    "about.ts 不应再取 app.versionTitle 作版本说明(应交给可见标签 about.version)",
+  );
+  assert(
+    /id="version"/.test(aboutHtml),
+    "about.html 应保留 #version 版本号节点(mono 数据层)",
+  );
 
   /* ---------- 6. index.html / about.html 的 label[for] 与 id 自洽 ---------- */
   /** @type {[string, string][]} */

@@ -9,7 +9,8 @@
  *   Promise.all(各自独立 void 启动 = 首屏先按默认设置绘制一帧);
  * - 隐藏根元素必须早于屏障 await,揭示必须落在 finally(任一路 reject 也不能白屏);
  * - 旧的「void loadSettings() / void initUiStateRestore()」各自启动写法不得复现;
- * - 事件绑定仍先于屏障(时序不变量,勿为防闪调换)。
+ * - 事件绑定仍先于屏障(时序不变量,勿为防闪调换);
+ * - 首屏焦点:揭示之后再落焦,且落在舞台容器(键盘用户的起点是主入口而非 body)。
  * 屏障的实际视觉效果(首屏不闪白/无设置跳变)属 GUI 实测面(ACCEPTANCE 清单)。
  */
 import fs from "node:fs";
@@ -76,5 +77,16 @@ export async function run() {
   assert(firstRunIdx > 0 && firstRunIdx < barrierIdx,
     "initFirstRunGuide()(同步装配)应早于屏障调用");
 
-  console.log("[ok] init-barrier:两路初始化汇合 Promise.all/隐藏先于 await/揭示在 finally/绑定时序不变量 断言通过");
+  // ---- 5. 首屏焦点:揭示之后再落焦,且落在舞台容器(主入口) ----
+  // 不落焦的代价:键盘用户的起点是 body,Tab 要先穿过标题栏与整条动作栏才到文稿台。
+  // 顺序也重要:屏障期间根元素 visibility:hidden,提前聚焦没有意义(且可能触发
+  // 浏览器把焦点滚回顶部),故必须落在揭示之后。
+  const focusIdx = SRC.indexOf("focusStageEntry();", revealIdx);
+  assert(focusIdx > revealIdx, "首屏焦点应落在屏障 finally 的揭示之后(根元素可见后再落焦)");
+  assert(
+    /function focusStageEntry\(\)[\s\S]*?dropZone\.focus\(\)/.test(SRC),
+    "首屏焦点应落在舞台容器 #dropZone(role=region + tabindex=0,文稿台是应用主入口)",
+  );
+
+  console.log("[ok] init-barrier:两路初始化汇合 Promise.all/隐藏先于 await/揭示在 finally/绑定时序不变量/首屏焦点 断言通过");
 }

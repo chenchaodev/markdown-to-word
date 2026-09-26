@@ -120,6 +120,7 @@ const dict = {
     "about.author": "Author",
     "about.repo": "GitHub Repository",
     "about.license": "License",
+    "about.version": "Version",
     "about.open": "About",
     "about.quickStart": "Quick Start",
     "about.step1": "Drag your .md files into the workspace",

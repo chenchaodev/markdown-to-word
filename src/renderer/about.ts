@@ -35,14 +35,12 @@ document.addEventListener("DOMContentLoaded", () => {
   applyStaticTexts();
 
   // Read version from query string → badge next to wordmark
+  // 版本号只管填徽标:含义由紧邻的可见标签承担(about.version),不再借
+  // app.versionTitle —— 那是应用名字符串(「Markdown 转换工具 vX」),
+  // 当版本标签是语义错配。
   const version = new URLSearchParams(location.search).get("v") ?? "";
   const versionEl = document.getElementById("version");
-  if (versionEl) {
-    versionEl.textContent = version ? `v${version}` : "";
-    // 徽标只显示版本号,含义靠 title 补全;与主窗标题栏 .tb-ver 用同一条字典键,
-    // 同一份数据在两处的说明口径不分叉
-    versionEl.title = version ? t("app.versionTitle", { version }) : "";
-  }
+  if (versionEl) versionEl.textContent = version ? `v${version}` : "";
 
   // Update status row (under version badge)
   const statusEl = document.getElementById("updateStatus");

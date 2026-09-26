@@ -556,7 +556,7 @@
   justify-content: flex-end;
 }
 
-/* 行内移除(破坏性操作红线:墨色描边系,不用红)
+/* 行内移除:破坏性操作红线 —— 墨色描边系,不用红。
  * 常驻可见但压低存在感,行被指向(悬停 / 键盘聚焦)时才完全显形:与最近列表
  * .rops 的「靠近才浮现」同一套交互语汇,又不学它把动作整个藏起来 ——
  * 队列的移除是高频动作,藏起来会丢可发现性。只动 opacity,行内布局不动 */
@@ -590,6 +590,38 @@
 .multi-remove:focus-visible {
   outline: 2px solid var(--acc);
   outline-offset: 2px;
+}
+
+/* ── 忙碌态(转换中 / 预检持链):队列行暂不可拖拽重排、不可双击预览 ──
+ * 事件层早有守卫(selection.ts 的 dblclick / dragstart / Alt+± / 移除均
+ * 先判 state.mode),本层只补「看得见的不能用」:动作栏按钮已经置灰,队列行
+ * 若仍给 grab 光标、悬停高亮与「双击预览」提示,用户会以为改得了顺序 ——
+ * 而改动对本次转换无效。禁用语汇全部复用既有 --mut / --line(与 .btn-ghost:disabled
+ * 同源),不新增 token;行仍可聚焦,键盘用户靠状态行与置灰按钮得到同一信息。 */
+.mlist--busy .multi-item {
+  cursor: default;
+}
+
+.mlist--busy .multi-item:hover {
+  background: transparent;
+}
+
+.mlist--busy .multi-grip {
+  color: var(--line);
+  cursor: default;
+}
+
+.mlist--busy .multi-item:hover .multi-grip {
+  color: var(--line);
+}
+
+.mlist--busy .multi-remove {
+  opacity: 0.3;
+}
+
+.mlist--busy .multi-item:hover .multi-remove,
+.mlist--busy .multi-item:focus-within .multi-remove {
+  opacity: 0.55; /* 忙碌态不再有「完全显形」档:行内动作此刻一律不可用 */
 }
 
 /* 批量/合并语义脚注:纸面上的凹陷条(--inset),仅 n≥2 显示 */

@@ -126,6 +126,7 @@ const dict = {
     "about.author": "作者",
     "about.repo": "GitHub リポジトリ",
     "about.license": "ライセンス",
+    "about.version": "バージョン",
     "about.open": "このアプリについて",
     "about.quickStart": "クイックスタート",
     "about.step1": "Markdown ファイルを文書台にドラッグ",

@@ -5,8 +5,9 @@
  * 不变量:data-stage(empty/single/multi)驱动 CSS 切换同一 .pane-files;
  * renderMultiList 覆盖 n≥1 全部情形(n=1 省略 grip/序号且不可拖拽);
  * 「预览」仅单文件可见,「清空列表」兼并单文件移除语义。
- * 操作按钮忙态 = 转换中(state.mode 单源)或命令锁持有中(预检,探针注入,
- * 与各入口点击守卫同源)。
+ * 动作按钮忙态 = 转换中(state.mode 单源)或命令锁持有中(预检,探针注入,
+ * 与各入口点击守卫同源);队列行的可拖/可预览与悬停提示读同一 busy
+ * (applyQueueBusy),按钮灰了就别让队列看着还能用。
  * 会话持久化(lastSessionFiles)只有一个写入点:renderQueue 内的 persistSessionFiles;
  * renderSelection 与 renderMultiList(排序/移除重排)都经它,同一次渲染不重复写盘,
  * 纯重渲染(语言切换等)内容未变亦不产生 mutation;写失败不静默(状态区提示 + 留痕)。
@@ -55,6 +56,7 @@ export function renderMultiList(): void {
 /** 队列渲染 + 会话持久化的唯一组合入口:
  *  - n≥1 渲染队列行,n=0 时 replaceChildren 清空(选择被清空的既有行为);
  *  - 排序 = 整行拖拽 + 键盘补偿(行聚焦后 Alt+↑/↓),预览 = 行双击(见 events/selection);
+ *  - 忙碌态由末尾 applyQueueBusy 统一落(可拖/可提示与 busy 无关的部分不重复判断);
  *  - 收尾经 persistSessionFiles 落一次会话持久化,两条渲染路径共用此单一写入点。 */
 function renderQueue(): void {
   const n = state.selectedFiles.length;
@@ -64,10 +66,11 @@ function renderQueue(): void {
       const li = document.createElement("li");
       li.className = "multi-item";
       const sortable = n >= 2;
+      // 可拖态不在此定稿:sortable 只是行形态的一半,另一半(非忙碌)由
+      // applyQueueBusy 统一落,避免同一属性两处判断
       li.draggable = sortable;
       li.dataset.index = String(index);
       li.tabIndex = 0; // 可聚焦:键盘 Alt+↑/↓ 排序的落点
-      li.title = `${filePath}\n${t("file.dblclickPreview")}`;
 
       if (sortable) {
         const grip = document.createElement("span");
@@ -96,6 +99,7 @@ function renderQueue(): void {
       return li;
     }),
   );
+  applyQueueBusy();
   persistSessionFiles();
 }
 
@@ -204,12 +208,38 @@ export function setCommandBusyProbe(probe: () => boolean): void {
   commandBusyProbe = probe;
 }
 
+/** 忙碌判定单一来源:转换中(state.mode)或命令锁持有中(预检,探针注入)。
+ *  动作按钮的置灰与队列行的禁用读同一条,避免「按钮灰了、队列还能拖」。 */
+function isBusy(): boolean {
+  return state.mode !== null || commandBusyProbe?.() === true;
+}
+
+/**
+ * 把忙碌态落到队列容器与已渲染的行(拖拽重排 / 双击预览的可供性表达):
+ *  - 容器挂 .mlist--busy,供 CSS 表达禁用语汇(光标、悬停高亮、grip 与行内
+ *    移除的淡出),复用既有 --mut / --line,不新增 token;
+ *  - 逐行置 draggable:忙碌时 draggable=false,浏览器根本不发起拖拽,
+ *    不必等 dragstart 再取消(行监听器的 state.mode 守卫仍在,两层互补:
+ *    监听器管「双击 / Alt+± / 移除」这些没有 draggable 属性的入口);
+ *  - 悬停提示同步收敛:忙碌态不再承诺「双击预览该行」,只留路径本身。
+ * 转换结束由 updateActionButtons 再调一次,两态自动来回。
+ */
+function applyQueueBusy(): void {
+  const busy = isBusy();
+  const sortable = state.selectedFiles.length >= 2;
+  multiList.classList.toggle("mlist--busy", busy);
+  multiList.querySelectorAll<HTMLElement>(".multi-item").forEach((row) => {
+    const path = state.selectedFiles[Number(row.dataset.index)] ?? "";
+    row.draggable = sortable && !busy;
+    row.title = busy ? path : t("file.dblclickPreview", { path });
+  });
+}
+
 export function updateActionButtons(): void {
   const n = state.selectedFiles.length;
   const multi = n >= 2;
   const single = n === 1;
-  // 忙 = 转换中(mode 单源)或命令锁持有中(预检)
-  const busy = state.mode !== null || commandBusyProbe?.() === true;
+  const busy = isBusy();
   convertBtn.classList.toggle("hidden", multi);
   batchBtn.classList.toggle("hidden", !multi);
   mergeBtn.classList.toggle("hidden", !multi);
@@ -227,6 +257,8 @@ export function updateActionButtons(): void {
   // 清空列表:empty 态随 pane 隐藏;转换中禁用防误清(监听内另有 mode 守卫)
   clearListBtn.disabled = busy;
   selectBtn.disabled = busy;
+  // 队列行与上列按钮同 busy:按钮灰了就别让队列看着还能拖/能预览
+  applyQueueBusy();
   // footer 快捷键提示随模式切换(多文件态提示批量语义)
   if (convertHint) {
     convertHint.textContent = multi ? t("hint.batch") : t("hint.single");

@@ -258,6 +258,14 @@
       gap: 10px;
     }
 
+    /* 版本标签:UI 栈 + 弱化色(标签是文字层,不是数据层),
+       与紧邻的 mono 版本号构成「标签 → 取值」一对 */
+    .about-ver-label {
+      font-family: var(--ff-ui);
+      font-size: 12px;
+      color: var(--mut);
+    }
+
     /* 版本徽标:数据层(mono),描边取控件档 --line-2 与主窗 .tb-ver 对齐,
        使其读作一枚有意为之的数据牌而不是纸面上的浅渍 */
     .about-ver {
@@ -480,12 +488,14 @@
     <!-- Vertical label -->
     <span class="vertical-label" aria-hidden="true">本地离线 · 真 docx</span>
 
-    <!-- Brand: wordmark + version badge。
+    <!-- Brand: wordmark + 版本标签 + 版本号。
          文档大纲:wordmark 是本页唯一的 h1(页面题字,展示衬线只做声音不做正文,
-         见 ui-guidelines §1.2),窗口 <title> 是它的文档名;版本号是紧随其后的
-         数据层(mono 徽标 + title 说明全称,与主窗标题栏 .tb-ver 同一口径) -->
+         见 ui-guidelines §1.2),窗口 <title> 是它的文档名。版本是紧随其后的数据层:
+         UI 栈的弱化标签「版本」+ mono 版本号,标签取自字典(about.version),
+         不靠 tooltip 承担含义。 -->
     <div class="about-brand">
       <h1 class="about-wordmark">MarkdownToWord</h1>
+      <span class="about-ver-label" data-i18n="about.version">版本</span>
       <span class="about-ver" id="version"></span>
     </div>
 
