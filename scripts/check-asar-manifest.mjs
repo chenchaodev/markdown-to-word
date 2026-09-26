@@ -44,6 +44,8 @@ export const EXPECTED_TOP_LEVEL = ['dist', 'node_modules', 'package.json'];
  */
 export const REQUIRED_ENTRIES = [
   { group: '主进程', path: 'dist/main/preload.cjs' },
+  // 冒烟入口随包分发:缺它则打包产物收到 --smoke 会在主进程动态 import 处失败
+  { group: '主进程', path: 'dist/main/smoke.js' },
   { group: 'renderer', path: 'dist/renderer/index.html' },
   { group: 'renderer', path: 'dist/renderer/renderer.js' },
   { group: 'renderer', path: 'dist/renderer/about.html' },
