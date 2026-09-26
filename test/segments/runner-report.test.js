@@ -18,6 +18,11 @@
  *    子进程退出后即被删除;模块/全局状态不跨段;
  * 8. M2W_ONLY 生效:筛选在父进程完成,子进程只跑被选中的段;
  * 9. 回退开关:isolate:false(M2W_ACCEPTANCE_INPROC 同款)切回同进程模型,判定与产物不变。
+ * 10. 选择面与发现面互不渗透(段内自跑的根因修复):顶层筛选词(M2W_ONLY)只决定
+ *     「harness 这一轮跑哪些顶层段」;本段作为顶层段被 M2W_ONLY 单段筛选跑时(隔离
+ *     模型下的常规调试姿势),段内自跑仍须发现并执行全部沙盒段 —— 即无论外层是否设过
+ *     筛选词,`discoverSegments([SANDBOX], { only: null })` 都返回全部沙盒段、显式
+ *     `only` 仍精确筛选、且段子进程 env 里不再带顶层筛选词。
  *
  * 模型自适应:同进程回退模型下不造崩溃/悬挂/状态隔离夹具(崩溃夹具的 process.exit 会
  * 带走整轮验收,悬挂夹具在同进程内无法被终止),只跑与模型无关的 case 契约/旧段/筛选断言。
@@ -28,7 +33,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../common/paths.js";
-import { formatCaseReport, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
+import { discoverSegments, formatCaseReport, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
 
 /** 临时段文件沙盒(仓库 output/ 下,gitignore 覆盖;不落 test/,免被 typecheck/lint 扫入) */
 const SANDBOX = path.join(ROOT, "output", "tmp", "runner-report-selftest");
@@ -268,7 +273,8 @@ function cleanupSandbox() {
 }
 
 /**
- * 临时设 M2W_ONLY 并在 finally 复原(筛选在父进程完成,子进程只跑选中的段)。
+ * 临时设 M2W_ONLY 并在 finally 复原:一处入口服务两种用途 —— 断言「环境变量筛选确实生效」
+ * (第 2/3 项),以及模拟「外层 harness 设了顶层筛选词」以验证段内发现面不受其影响(第 4 项)。
  * @template T
  * @param {string} only M2W_ONLY 取值
  * @param {() => Promise<T> | T} body 夹具主体
@@ -305,8 +311,11 @@ export async function run() {
   setupSandbox(isolating);
   try {
     /* ---------- 1. 隔离模型(默认):崩溃/悬挂只终结自身,其余段照常 ---------- */
+    // only: null = 本段显式声明「段内自跑不筛选」:顶层筛选词(外层 harness 的 M2W_ONLY)
+    // 属选择面,不得渗进本段的发见面,否则本段在 M2W_ONLY 单段调试下必然滤空沙盒段
     const { results, hung } = await runAll([SANDBOX], {
       segmentTimeoutMs: isolating ? ISOLATED_TIMEOUT_MS : INPROC_TIMEOUT_MS,
+      only: null,
     });
     const byFile = new Map(results.map((r) => [r.file, r]));
     const expected = isolating ? ALL_SEGS : BASE_SEGS;
@@ -516,6 +525,58 @@ export async function run() {
     }
     if (errorStack(resultOf(inprocByFile, LEGACY_SEG).error).includes("legacy 段故意抛错") !== true) {
       fail("同进程回退模型下旧段错误应原样上送");
+    }
+
+    /* ---------- 4. 选择面与发现面互不渗透(本段被 M2W_ONLY 单段筛选跑时仍能自跑) ---------- */
+    // 外层真实会出现的筛选词:它命中零个沙盒段(段名前缀是 runner-report-selftest/),
+    // 正是「本段在 M2W_ONLY=segments 下把沙盒段全滤空」那次的形态
+    const outerNeedle = "segments";
+    const baseline = await discoverSegments([SANDBOX], { only: null });
+    if (baseline.length !== expected.length) {
+      fail(`未设筛选词时发现面应含全部 ${expected.length} 个沙盒段,实际 ${baseline.length}`);
+    }
+    const underOuterFilter = await withOnly(outerNeedle, () => discoverSegments([SANDBOX], { only: null }));
+    const underOuterNames = underOuterFilter.map((s) => s.name);
+    if (underOuterNames.length !== expected.length || expected.some((name) => !underOuterNames.includes(name))) {
+      fail(
+        `外层设 M2W_ONLY=${outerNeedle} 时,段内显式 only:null 仍须发现全部 ${expected.length} 个沙盒段` +
+          `(实际 ${underOuterNames.join(", ") || "无"}):顶层选择面不得渗进段内发现面`,
+      );
+    }
+    // 反向:显式 only 仍须精确生效(不能因「不读环境变量」把筛选能力一并丢掉)
+    const explicitNeedle = isolating ? "state-b" : "cases-pass";
+    const explicitExpected = isolating ? STATE_B_SEG : PASS_SEG;
+    const explicitNames = await withOnly(outerNeedle, () =>
+      discoverSegments([SANDBOX], { only: explicitNeedle }),
+    );
+    if (explicitNames.length !== 1 || explicitNames[0]?.name !== explicitExpected) {
+      fail(
+        `段内显式 only=${explicitNeedle} 应只发现 ${explicitExpected},` +
+          `实际 ${explicitNames.map((s) => s.name).join(", ") || "无"}`,
+      );
+    }
+    // 执行面:外层有筛选词时,段内显式选择仍照常执行(只跑命中的那一段,不为覆盖面加时长)
+    const scoped = await withOnly(outerNeedle, () =>
+      runAll([SANDBOX], {
+        segmentTimeoutMs: isolating ? ISOLATED_TIMEOUT_MS : INPROC_TIMEOUT_MS,
+        only: explicitNeedle,
+      }),
+    );
+    const scopedResult = scoped.results.length === 1 ? at(scoped.results, 0) : null;
+    if (scopedResult === null || scopedResult.file !== explicitExpected || !scopedResult.ok) {
+      fail(
+        `段内显式 only=${explicitNeedle} 应正常执行 ${explicitExpected},实际 ` +
+          `${scoped.results.map((r) => r.file).join(", ") || "无"}:` +
+          `${scopedResult === null ? "未执行" : errorStack(scopedResult.error)}`,
+      );
+    }
+    // 边界:隔离模型下本段跑在自己的子进程里,env 不得再带顶层筛选词(结构上防同类漏筛;
+    // 同进程回退模型下本段与 harness 同进程,本就该看得到,故不判)
+    if (isolating && process.env.M2W_ONLY !== undefined) {
+      fail(
+        `段子进程不应继承顶层筛选词(实际 ${String(process.env.M2W_ONLY)}):` +
+          "顶层选择面只属顶层,否则段内自跑会被外层筛选词误伤",
+      );
     }
   } finally {
     removeSandboxFile(A_USERDATA_FILE);

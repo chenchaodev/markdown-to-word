@@ -3,9 +3,13 @@
  * 测试段执行框架(逐段子进程隔离,正式口径见 docs/OPTIMIZATION-PLAN.md D-08):
  * - 段文件 = test/segments/、test/main/ 或 test/renderer/ 下 *.test.js,须导出 async function run()
  * - 新增测试 = 新建段文件即可,零注册(入口按目录顺序自动发现)
- * - 单段筛选:设 M2W_ONLY=basic-render,mermaid 可只跑名称含任一子串的段
+ * - 单段筛选(选择面):设 M2W_ONLY=basic-render,mermaid 可只跑名称含任一子串的段
  *   (逗号分隔多个子串,大小写不敏感,匹配段名如 segments/basic-render.test.js;
  *   不设该变量时行为与全量运行完全一致)。筛选在**父进程**做,子进程只跑指定段。
+ * - 「选择」与「发现」是两个语义(见 resolveOnlySelection 的契约单源):M2W_ONLY 只
+ *   回答「harness 这一轮跑哪些**顶层**段」;段内自己 runAll/discoverSegments 要跑哪些段
+ *   由该调用显式声明(only 参数),不受外层筛选词影响 —— 否则段内自测(如本框架的
+ *   runner-report 自测段)会被外层筛选词滤空,且隔离模型下(M2W_ONLY 单段调试)恒红。
  * - 执行模型(默认):父进程为每段派生**独立 Electron 子进程**(test/common/segment-host.mjs),
  *   段内崩溃/悬挂/超时只终结该段(超时由父进程真杀进程树,非 race 后放弃),其余段照常跑完;
  *   每段独立 userData 目录(见 test/common/userdata.js),退出即清理,故段间零状态串扰。
@@ -35,6 +39,8 @@ const SEGMENT_HOST = fileURLToPath(new URL("./segment-host.mjs", import.meta.url
 export const SEGMENT_FILE_ENV = "M2W_SEGMENT_FILE";
 /** 父进程 → 子进程:结果回传文件绝对路径(宿主原子写,父进程读) */
 export const SEGMENT_RESULT_ENV = "M2W_SEGMENT_RESULT";
+/** 顶层段筛选词的环境变量名(选择面输入;段内发现面不消费,见 resolveOnlySelection) */
+export const ONLY_ENV = "M2W_ONLY";
 /** 回退开关:设 1/true 切回同进程模型(仅二分定位用,默认隔离) */
 export const INPROC_ENV = "M2W_ACCEPTANCE_INPROC";
 /** 每段 userData 目录名前缀(与段内业务临时目录 m2w-* 区分,便于识别残留) */
@@ -87,15 +93,33 @@ const KILL_GRACE_MS = 10000;
  */
 
 /**
+ * 段选择/段发现语义的解析单源(两个语义在此分开,调用点不再各打补丁):
+ * - `only` 未声明(undefined)→ 读环境变量 ONLY_ENV:顶层 harness 的默认行为
+ *   (这一轮 harness 跑哪些顶层段),亦即既有单段筛选用法;
+ * - `only` 显式为 null → **不筛选**:段内嵌套编排用它把「发现面」与外层「选择面」
+ *   隔开(段内自跑要跑哪些段由自己声明,不被外层筛选词误伤);
+ * - `only` 显式为字符串 → 用该词筛选(段内自跑要筛子集时直接给词,不必改环境变量)。
+ * 空串/纯空白视为不筛选(与「未设环境变量」同义)。
+ * @param {string | null | undefined} only 调用方声明的筛选词
+ * @returns {string | null} 生效的筛选词;null = 不筛选
+ */
+export function resolveOnlySelection(only) {
+  if (only === null) return null;
+  const raw = typeof only === "string" ? only : process.env[ONLY_ENV];
+  return raw?.trim() || null;
+}
+
+/**
  * 按传入目录顺序发现全部测试段文件(目录内按文件名排序);
  * 返回 { dir, file, name },name 带目录前缀(如 segments/basic-render.test.js),
  * 避免跨目录重名混淆,也便于阅读。
- * 设 M2W_ONLY 时按逗号分隔子串筛选(对完整段名做大小写不敏感的包含匹配),
- * 任一子串命中即保留;未设/空串 = 不过滤(默认全量)。
+ * only 的三态语义见 resolveOnlySelection:未声明=读 M2W_ONLY(顶层默认)/ null=不筛选
+ * (段内嵌套编排)/ 字符串=按词筛。筛选对完整段名做大小写不敏感的包含匹配。
  * @param {string[]} dirs 段目录绝对路径(按此顺序发现)
+ * @param {{ only?: string | null }} [options] 发现面的显式声明
  * @returns {Promise<SegmentDescriptor[]>}
  */
-export async function discoverSegments(dirs) {
+export async function discoverSegments(dirs, { only } = {}) {
   /** @type {SegmentDescriptor[]} */
   const found = [];
   for (const dir of dirs) {
@@ -105,9 +129,9 @@ export async function discoverSegments(dirs) {
       found.push({ dir, file: f, name: `${prefix}/${f}` });
     }
   }
-  const only = process.env.M2W_ONLY?.trim();
-  if (!only) return found;
-  const needles = only.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const selection = resolveOnlySelection(only);
+  if (selection === null) return found;
+  const needles = selection.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   if (needles.length === 0) return found;
   return found.filter((s) => needles.some((n) => s.name.toLowerCase().includes(n)));
 }
@@ -278,7 +302,8 @@ function killProcessTree(child) {
  * - 段内抛错 → 子进程回传 error,本段失败(其余段不受影响);
  * - 段崩溃(渲染进程崩溃/未捕获异常/硬 exit)→ 无回传或 complete=false,按崩溃归一;
  * - 超时 → 杀掉进程树,该段记 timeout 失败;回传文件里若有超时前已完成的 case
- *   (宿主经 case 进度钩子增量落盘),一并作为失败面证据。
+ *   (宿主经 case 进度钩子增量落盘),一并作为失败面证据;
+ * - 子进程 env 不含 ONLY_ENV(顶层筛选词只属顶层,段内发现面不消费它)。
  * @param {SegmentDescriptor} s 段描述
  * @param {number} timeout 硬超时(ms);0/NaN 等无效值 = 不启用(等段自然结束)
  * @returns {Promise<SegmentRunResult>}
@@ -289,17 +314,22 @@ async function runSegmentIsolated(s, timeout) {
   const resultPath = path.join(userDataDir, RESULT_FILE);
   // 段内 stdout/stderr 直接继承父进程:段内日志原样出现在总输出里,不经管道转码
   // (Windows 管道重编码会破坏中文与制表符),格式与同进程模型完全一致
+  // 顶层筛选词 ONLY_ENV 不下传:段清单已由 M2W_SEGMENT_FILE 单独决定,子进程再读到
+  // 它只会让「段内自跑」被外层筛选词误伤(发现面与选择面必须互不影响,见文件头)
+  /** @type {NodeJS.ProcessEnv} */
+  const childEnv = {
+    ...process.env,
+    [SEGMENT_FILE_ENV]: path.join(s.dir, s.file),
+    [SEGMENT_RESULT_ENV]: resultPath,
+    // 覆盖(而非透传)外层的同名变量:嵌套编排(如 runner 自测段内再跑子进程段)
+    // 时每段仍拿自己的新目录
+    [USER_DATA_ENV]: userDataDir,
+  };
+  delete childEnv[ONLY_ENV];
   const child = spawn(process.execPath, [SEGMENT_HOST], {
     stdio: ["ignore", "inherit", "inherit"],
     windowsHide: true,
-    env: {
-      ...process.env,
-      [SEGMENT_FILE_ENV]: path.join(s.dir, s.file),
-      [SEGMENT_RESULT_ENV]: resultPath,
-      // 覆盖(而非透传)外层的同名变量:嵌套编排(如 runner 自测段内再跑子进程段)
-      // 时每段仍拿自己的新目录
-      [USER_DATA_ENV]: userDataDir,
-    },
+    env: childEnv,
   });
 
   const timeoutEnabled = timeout > 0 && Number.isFinite(timeout);
@@ -537,6 +567,8 @@ export function resolveIsolation(options = {}) {
  * options.segmentTimeoutMs:单段硬超时(ms),由入口(acceptance.mjs)从环境变量
  * M2W_ACCEPTANCE_SEGMENT_TIMEOUT_MS 读入并传入;0 或 NaN 等无效值 = 不启用(等段自然结束)。
  * options.isolate:执行模型,默认取 resolveIsolation(子进程隔离;M2W_ACCEPTANCE_INPROC 可回退)。
+ * options.only:段选择的显式声明(三态语义见 resolveOnlySelection):未声明 = 顶层默认读
+ *   M2W_ONLY(既有单段筛选用法);null = 不筛选(段内嵌套编排跑全量);字符串 = 只跑命中段。
  * 某段失败/超时/崩溃 → 只终结该段(隔离模型下父进程真杀其进程树),**继续执行后续段**
  * (一次看全失败面);同进程回退模型下看门狗超时无法终止悬挂段,返回值 hung=true
  * 提示入口须硬退出释放资源。
@@ -545,7 +577,7 @@ export function resolveIsolation(options = {}) {
  * 返回 { results, hung };results 每项 = { file, ok, ms, error?, timedOut?,
  * cases?, failureDir? }。
  * @param {string[]} dirs 段目录(按此顺序发现)
- * @param {{ segmentTimeoutMs?: number, isolate?: boolean }} [options]
+ * @param {{ segmentTimeoutMs?: number, isolate?: boolean, only?: string | null }} [options]
  * @returns {Promise<{ results: SegmentResultEntry[], hung: boolean }>}
  */
 export async function runAll(dirs, options = {}) {
@@ -555,7 +587,7 @@ export async function runAll(dirs, options = {}) {
   const execute = isolate
     ? (s) => runSegmentIsolated(s, timeout)
     : (s) => runSegmentWithWatchdog(s, timeout);
-  const segments = await discoverSegments(dirs);
+  const segments = await discoverSegments(dirs, { only: options.only });
   /** @type {SegmentResultEntry[]} */
   const results = [];
   let hung = false;
