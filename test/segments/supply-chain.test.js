@@ -5,7 +5,9 @@
  * - sca-audit.mjs:npm audit(npmmirror 端点)两棵依赖树 + OSV 替代源;
  *   真实漏洞判红、扫描源不可用判 unavailable(绝不冒充「无漏洞」)、production/dev 区分
  * - gen-sbom.mjs:CycloneDX 1.6 SBOM 的离线确定性与 --check 漂移检测
- * - gen-licenses.mjs:licenses.json / NOTICE.md,未知许可证判红、copyleft 单列
+ * - gen-licenses.mjs:licenses.json / NOTICE.md,未知许可证判红、copyleft 单列;
+ *   多选一分支选定(决策只作用于生产依赖,前提不符即不生效)
+ * - collect-license-fulltext.mjs:按需收集生产依赖的许可证全文副本(逐字复制 + 缺项报出)
  * - check-supply-chain.mjs:三段编排与进程级 CLI 退出码
  *
  * 断言方式:临时目录里造沙盒 lockfile,注入假的 npm transport 与 OSV fetch(依赖注入
@@ -19,9 +21,10 @@ import os from "node:os";
 import path from "node:path";
 import { createCaseSuite } from "../common/case.js";
 import { ROOT } from "../common/paths.js";
-import { runSupplyChecks } from "../../scripts/supply/check-supply-chain.mjs";
+import { formatSupplyLog, runSupplyChecks } from "../../scripts/supply/check-supply-chain.mjs";
 import { diffSbom, generateSbom, toCycloneDxLicenses } from "../../scripts/supply/gen-sbom.mjs";
 import { generateLicenses } from "../../scripts/supply/gen-licenses.mjs";
+import { PACKAGE_FULLTEXT_STATUS, collectLicenseFulltext, formatFulltextLog } from "../../scripts/supply/collect-license-fulltext.mjs";
 import {
   STATUS_OK as SCA_OK,
   STATUS_UNAVAILABLE,
@@ -32,13 +35,22 @@ import {
   runScaScan,
 } from "../../scripts/supply/sca-audit.mjs";
 import {
+  DECISION_STATUS,
   classifyLicense,
+  createDecisionIndex,
   cvss3BaseScore,
+  loadLicenseDecisions,
   detectLicenseFromText,
   detectPackageLicense,
+  expressionIncludesBranch,
+  hashBuffer,
   listLicenseFiles,
+  parseVersionRange,
   resolveDepPath,
+  resolveObligationSummary,
   severityFromScore,
+  serializeJson,
+  versionSatisfies,
 } from "../../scripts/supply/supply-common.mjs";
 
 const suite = createCaseSuite();
@@ -143,6 +155,64 @@ function makePackageDir(dir, name, files = {}) {
   for (const [file, body] of Object.entries(files)) fs.writeFileSync(path.join(packageDir, file), body, "utf8");
   return packageDir;
 }
+
+/**
+ * 造一份「多选一许可」专用的沙盒 lockfile:两个**生产**多选一包 + 一个 dev-only 多选一包
+ * (与生产包同名、靠嵌套落在 dev 树里),用于验证「决策只作用于生产依赖」——
+ * 同名不同树是这里唯一能把「范围/表达式不符」与「范围不对」区分开的夹具。
+ * @param {string} dir 沙盒目录
+ * @returns {string} lockfile 绝对路径
+ */
+function makeDecisionLockfile(dir) {
+  /** @type {Record<string, any>} */
+  const packages = {
+    "": {
+      name: "sandbox-app",
+      version: "1.0.0",
+      license: "MIT",
+      dependencies: { "dom-pick": "^1.0.0", "zip-pick": "^2.0.0" },
+      devDependencies: { "dev-tool": "^3.0.0" },
+    },
+    "node_modules/dom-pick": { version: "1.4.2", license: "(MPL-2.0 OR Apache-2.0)" },
+    "node_modules/zip-pick": { version: "2.0.0", license: "(MIT OR GPL-3.0-or-later)" },
+    "node_modules/dev-tool": { version: "3.0.0", dev: true, license: "MIT", dependencies: { "dom-pick": "^9.0.0" } },
+    "node_modules/dev-tool/node_modules/dom-pick": { version: "9.9.9", dev: true, license: "(MPL-2.0 OR Apache-2.0)" },
+  };
+  const lockPath = path.join(dir, "package-lock.json");
+  fs.writeFileSync(lockPath, `${JSON.stringify({ name: "sandbox-app", version: "1.0.0", lockfileVersion: 3, requires: true, packages }, null, 2)}\n`, "utf8");
+  return lockPath;
+}
+
+/**
+ * 造一份沙盒决策清单(内存索引,不读仓库里真实的决策文件 —— 断言不得依赖本机依赖树)。
+ * @param {Array<Record<string, string>>} entries 决策记录
+ * @returns {ReturnType<typeof createDecisionIndex>} 决策索引
+ */
+function makeDecisions(entries) {
+  return createDecisionIndex(entries, { source: "(sandbox/license-decisions.json)", sha256: "sandbox-digest" });
+}
+
+/** 沙盒里两条生效决策(字段形状与仓库真实的 license-decisions.json 一致) */
+const SANDBOX_DECISIONS = [
+  {
+    name: "dom-pick",
+    versionRange: "*",
+    upstreamExpression: "(MPL-2.0 OR Apache-2.0)",
+    selectedBranch: "Apache-2.0",
+    rationale: "多选一取非 copyleft 分支",
+    decidedOn: "2026-09-26",
+    decidedBy: "用户 2026-09-26",
+  },
+  {
+    name: "zip-pick",
+    versionRange: "*",
+    upstreamExpression: "(MIT OR GPL-3.0-or-later)",
+    selectedBranch: "MIT",
+    rationale: "多选一取非 GPL 分支",
+    decidedOn: "2026-09-26",
+    decidedBy: "用户 2026-09-26",
+  },
+];
 
 /**
  * 取报告里某个组件的许可证条目。
@@ -300,6 +370,23 @@ const LICENSE_TEXT_BSD3 = `${LICENSE_TEXT_BSD_SHARED}
    without specific prior written permission.
 `;
 const LICENSE_TEXT_BSD2 = LICENSE_TEXT_BSD_SHARED;
+
+// MIT 正文 + BOM + CRLF:用来钉住「全文副本逐字节相同」,一旦经过字符串往返就会被改写
+const LICENSE_TEXT_MIT_BOM_CRLF = `\uFEFF${LICENSE_TEXT_MIT.replace(/\n/g, "\r\n")}`;
+
+/**
+ * 许可证全文收集的沙盒依赖:一个带许可证文件(带 BOM + CRLF,用于证明逐字复制)、一个
+ * 多选一包(带小写 licence 文件名)、一个完全没有许可证文件的包。
+ * @param {string} dir 沙盒目录
+ * @returns {string} lockfile 绝对路径
+ */
+function makeFulltextLockfile(dir) {
+  return makeFallbackLockfile(dir, [
+    { name: "text-lib", version: "1.0.0", license: "MIT" },
+    { name: "dual-lib", version: "2.0.0", license: "(MIT OR GPL-3.0-or-later)" },
+    { name: "silent-lib", version: "3.0.0", license: "MIT" },
+  ]);
+}
 
 /** npmmirror audit 端点不可用的真实响应(npm 打到 stdout 的那段 JSON) */
 const MIRROR_AUDIT_UNAVAILABLE = {
@@ -697,6 +784,234 @@ export async function run() {
       assert(/不做猜测/.test(cli.output) && /无法匹配任何已知许可证标记/.test(cli.output), "CLI 须保留「不猜测」口径的诊断");
     });
 
+    await suite.case("仓库决策清单:结构与可校验性(实跑读取,非沙盒)", async () => {
+      const repoDecisions = loadLicenseDecisions(path.join(ROOT, "scripts", "supply", "license-decisions.json"));
+      assert(repoDecisions.entries.length > 0, "仓库内必须有已拍板的多选一决策");
+      for (const decision of repoDecisions.entries) {
+        // createDecisionIndex 已校验字段完整性与「选定分支在上游声明里」;这里再钉住
+        // 「决策必须带理由/日期/决策人」的可审计底线:缺一项就查不出是谁、为何这么定
+        const auditFields = [decision.rationale, decision.decidedOn, decision.decidedBy];
+        for (const value of auditFields) {
+          assert(value.trim().length > 0, `决策 ${decision.name} 的理由/日期/决策人不得为空(决策必须可审计)`);
+        }
+        assert(/^\d{4}-\d{2}-\d{2}$/.test(decision.decidedOn), `决策 ${decision.name} 的日期格式应为 YYYY-MM-DD,实际 ${decision.decidedOn}`);
+        assert(resolveObligationSummary(decision.selectedBranch) !== null, `决策 ${decision.name} 选定的 ${decision.selectedBranch} 必须在义务摘要表里登记`);
+      }
+    });
+
+    await suite.case("多选一分支选定:有决策 → 输出选定分支且 needsReview 下降;无决策 → 仍并列待复核", async () => {
+      const dir = path.join(tmp, "license-decision");
+      fs.mkdirSync(dir, { recursive: true });
+      const lockPath = makeDecisionLockfile(dir);
+
+      // ① 生产多选一包有决策 → 记选定分支,上游原始声明不被改写,needsReview 下降
+      const decided = generateLicenses(lockPath, "package-lock.json", { decisions: makeDecisions(SANDBOX_DECISIONS) });
+      const dom = licenseEntryOf(decided.report, "dom-pick");
+      assert(dom.version === "1.4.2" && dom.isProductionDependency === true, "夹具里 dom-pick@1.4.2 应是生产依赖");
+      assert(dom.effectiveLicense === "Apache-2.0", `有决策时应输出选定分支,实际 ${JSON.stringify(dom)}`);
+      assert(dom.license === "(MPL-2.0 OR Apache-2.0)", "上游原始声明必须原样保留,不得被决策改写");
+      assert(dom.licenseGroup === "permissive" && dom.needsReview === false, "选定宽松分支后不再需要人工复核");
+      assert(dom.licenseDecision?.status === DECISION_STATUS.applied && dom.licenseDecision.decidedOn === "2026-09-26", "条目上须留决策痕迹(状态/日期)");
+      const zip = licenseEntryOf(decided.report, "zip-pick");
+      assert(zip.effectiveLicense === "MIT" && zip.needsReview === false, `zip-pick 应选定 MIT,实际 ${JSON.stringify(zip)}`);
+      assert(group(decided.report.groups, "permissive").join().includes("dom-pick@1.4.2"), "已决策的包应归入宽松许可分组");
+      assert(!group(decided.report.groups, "dualChoice").includes("dom-pick@1.4.2"), "已决策的包不得留在多选一分组里并列两个分支");
+      assert(decided.report.counts.decided === 2, `生效决策应为 2 条,实际 ${decided.report.counts.decided}`);
+      assert(decided.report.counts.needsReviewProduction === 0, `生产依赖待复核应降到 0,实际 ${decided.report.counts.needsReviewProduction}`);
+      assert(decided.report.counts.needsReview === 1 && decided.report.needsReview[0]?.startsWith("dom-pick@9.9.9") === true, `仅 dev 树的同名包应留在待复核清单,实际 ${JSON.stringify(decided.report.needsReview)}`);
+      assert(decided.report.licenseDecisions.source === "(sandbox/license-decisions.json)", "报告须记录决策清单来源,便于反查");
+
+      // ② 清单里没有该包 → 回到未决策态:并列双分支 + needsReview,绝不默认选一个
+      const undecided = generateLicenses(lockPath, "package-lock.json", { decisions: makeDecisions([]) });
+      const undecidedDom = licenseEntryOf(undecided.report, "dom-pick");
+      assert(undecidedDom.effectiveLicense === undefined, "无决策时不得凭空出现选定分支");
+      assert(undecidedDom.licenseGroup === "dualChoice" && undecidedDom.needsReview === true, "无决策时应保持 dualChoice 并需人工复核");
+      assert(undecidedDom.licenseDecision === undefined, "清单里没有该包时不应挂决策记录");
+      assert(undecided.report.counts.decided === 0 && undecided.report.needsReview.length === 3, `无决策时三项多选一都该待复核,实际 ${undecided.report.needsReview.length}`);
+      assert(group(undecided.report.groups, "dualChoice").length === 3, "三个多选一包应都在 dualChoice 分组里");
+      assert(undecided.report.licenseDecisions.applied.length === 0 && undecided.report.licenseDecisions.sha256 === "sandbox-digest", "决策汇总须如实留痕(零生效)");
+      assert(/\*\*dom-pick@1\.4\.2\*\* — 许可证:\(MPL-2\.0 OR Apache-2\.0\);生产依赖/.test(undecided.notice), "未决策时 NOTICE 应原样并列上游两个分支");
+    });
+
+    await suite.case("多选一分支选定:只作用于生产依赖,dev-only 同名包不受影响", async () => {
+      const dir = path.join(tmp, "license-decision-scope");
+      fs.mkdirSync(dir, { recursive: true });
+      const lockPath = makeDecisionLockfile(dir);
+      const { report } = generateLicenses(lockPath, "package-lock.json", { decisions: makeDecisions(SANDBOX_DECISIONS) });
+
+      const devEntry = report.packages.find((item) => item.name === "dom-pick" && item.version === "9.9.9");
+      assert(devEntry !== undefined && devEntry.isProductionDependency === false, "夹具里 dom-pick@9.9.9 应只在开发树");
+      assert(devEntry.effectiveLicense === undefined, "决策不得作用于仅开发依赖");
+      assert(devEntry.license === "(MPL-2.0 OR Apache-2.0)" && devEntry.licenseGroup === "dualChoice", "dev-only 的多选一包应保持并列双分支");
+      assert(devEntry.needsReview === true, "dev-only 未拍板仍应标记待复核(不随包分发,但不得被决策悄悄洗白)");
+      assert(devEntry.licenseDecision?.status === DECISION_STATUS.scopeExcluded, `dev-only 的决策状态应为 scope-excluded,实际 ${devEntry.licenseDecision?.status}`);
+      const notApplied = report.licenseDecisions.notApplied.find((item) => item.version === "9.9.9");
+      assert(notApplied?.status === DECISION_STATUS.scopeExcluded && notApplied.isProductionDependency === false, "未生效的决策须在报告里逐条留痕");
+      assert(report.counts.decided === 2 && report.counts.needsReviewProduction === 0 && report.counts.needsReviewDevelopment === 1, `计数须可解释,实际 ${JSON.stringify(report.counts)}`);
+    });
+
+    await suite.case("多选一分支选定:与上游现状不符(超范围/声明变了/包已下线)一律不生效", async () => {
+      const dir = path.join(tmp, "license-decision-stale");
+      fs.mkdirSync(dir, { recursive: true });
+      const lockPath = makeDecisionLockfile(dir);
+      const stale = makeDecisions([
+        { ...SANDBOX_DECISIONS[0], versionRange: "=1.0.0" },
+        // 上游声明已变(决策记录的是旧表达式):不得拿旧决定套新声明
+        { ...SANDBOX_DECISIONS[1], upstreamExpression: "(MIT OR ISC)" },
+        { name: "gone-pick", versionRange: "*", upstreamExpression: "(MIT OR GPL-3.0-or-later)", selectedBranch: "MIT", rationale: "陈旧记录", decidedOn: "2026-09-26", decidedBy: "用户 2026-09-26" },
+      ]);
+      const { report } = generateLicenses(lockPath, "package-lock.json", { decisions: stale });
+
+      assert(report.licenseDecisions.applied.length === 0, "前提对不上的决策一条都不该生效");
+      const statusOf = (/** @type {string} */ name, /** @type {string | null} */ version) =>
+        report.licenseDecisions.notApplied.find((item) => item.name === name && item.version === version)?.status;
+      assert(statusOf("dom-pick", "1.4.2") === DECISION_STATUS.outOfRange, `超范围应记 out-of-range,实际 ${statusOf("dom-pick", "1.4.2")}`);
+      assert(statusOf("zip-pick", "2.0.0") === DECISION_STATUS.expressionMismatch, `上游声明变了应记 expression-mismatch,实际 ${statusOf("zip-pick", "2.0.0")}`);
+      assert(statusOf("gone-pick", null) === DECISION_STATUS.notInTree, `包已下线应记 not-in-tree,实际 ${statusOf("gone-pick", null)}`);
+      for (const entry of report.packages) {
+        if (entry.licenseGroup !== "dualChoice") continue;
+        assert(entry.effectiveLicense === undefined, `${entry.name}@${entry.version} 决策未生效时不得出现选定分支`);
+        assert(entry.needsReview === true, `${entry.name}@${entry.version} 决策未生效时须保持待复核`);
+      }
+      assert(report.counts.needsReview === 3, `决策全不生效时待复核项应回到 3,实际 ${report.counts.needsReview}`);
+    });
+
+    await suite.case("NOTICE:同时保留「上游原始 A OR B」与「本项目选用 A」两行", async () => {
+      const dir = path.join(tmp, "license-decision-notice");
+      fs.mkdirSync(dir, { recursive: true });
+      const lockPath = makeDecisionLockfile(dir);
+      const { report, notice } = generateLicenses(lockPath, "package-lock.json", { decisions: makeDecisions(SANDBOX_DECISIONS) });
+
+      // 分组条目:显示选定分支 + 该分支义务摘要,且同一条里保留上游原始声明
+      const entryLine = notice.split("\n").find((line) => line.includes("**zip-pick@2.0.0**") && line.includes("许可证:"));
+      assert(entryLine !== undefined, "NOTICE 应列出已决策组件");
+      assert(/许可证:本项目选用 MIT/.test(entryLine), `分组条目应显示选定分支,实际:${entryLine}`);
+      assert(/义务:保留版权与许可声明并随分发附上许可全文/.test(entryLine), `分组条目应给出该分支的义务摘要,实际:${entryLine}`);
+      assert(/上游原始声明为 \(MIT OR GPL-3\.0-or-later\),本项目按决策选用 MIT/.test(entryLine), `分组条目须保留上游原始声明,实际:${entryLine}`);
+      assert(!/许可证:\(MIT OR GPL-3\.0-or-later\)/.test(entryLine), "已决策项不得再并列两个分支当许可证");
+
+      // 决策小节:逐条给出上游声明、选定分支、义务、日期与决策人
+      assert(/## 多选一许可的分支选定\(2\)/.test(notice), `NOTICE 应单列分支选定节,实际节标题:${notice.split("\n").filter((line) => line.startsWith("## ")).join(" / ")}`);
+      // 只在该节内取行:分组条目也含「上游原始声明为 …」,不加范围会拿错行(假通过)
+      const section = notice.split("## 多选一许可的分支选定")[1]?.split("\n## ")[0] ?? "";
+      const decisionLine = section.split("\n").find((line) => line.includes("**dom-pick@1.4.2**"));
+      assert(decisionLine !== undefined, `决策小节应逐条列出组件,实际小节:${section}`);
+      assert(/上游原始声明为 \(MPL-2\.0 OR Apache-2\.0\),本项目选用 Apache-2\.0/.test(decisionLine), `决策小节须同时给出上游声明与选定分支,实际:${decisionLine}`);
+      assert(/决策 2026-09-26\(用户 2026-09-26\)/.test(decisionLine), "决策小节须留决策日期与决策人");
+      assert(/理由:多选一取非 copyleft 分支/.test(decisionLine), "决策小节须留选定理由");
+      assert(notice.includes(`\`${report.licenseDecisions.source}\``), "NOTICE 头注须指明决策清单位置");
+    });
+
+    await suite.case("许可证全文按需收集:逐字落盘 + 记录来源/识别结果;取不到必须记 missing", async () => {
+      const dir = path.join(tmp, "license-fulltext");
+      fs.mkdirSync(dir, { recursive: true });
+      const lockPath = makeFulltextLockfile(dir);
+      makePackageDir(dir, "text-lib", { LICENSE: LICENSE_TEXT_MIT_BOM_CRLF });
+      makePackageDir(dir, "dual-lib", { licence: LICENSE_TEXT_MIT });
+      makePackageDir(dir, "silent-lib", { readme: "no license here" });
+      const outputDir = path.join(dir, "out");
+      const decisions = makeDecisions([
+        {
+          name: "dual-lib",
+          versionRange: "*",
+          upstreamExpression: "(MIT OR GPL-3.0-or-later)",
+          selectedBranch: "MIT",
+          rationale: "取非 GPL 分支",
+          decidedOn: "2026-09-26",
+          decidedBy: "用户 2026-09-26",
+        },
+      ]);
+      const report = collectLicenseFulltext({ lockPath, lockLabel: "package-lock.json", outputDir, decisions });
+
+      // 逐字落盘:BOM 与 CRLF 都必须原样保留(经过字符串往返的副本不能用来履行附全文义务)
+      const copied = path.join(outputDir, "licenses-fulltext", "text-lib@1.0.0", "LICENSE");
+      assert(fs.readFileSync(copied, "utf8") === LICENSE_TEXT_MIT_BOM_CRLF, "许可证全文须逐字复制(BOM/换行不得被改写)");
+      assert(fs.readFileSync(copied).equals(fs.readFileSync(path.join(dir, "node_modules", "text-lib", "LICENSE"))), "副本须与源文件逐字节相同");
+
+      // 清单记录:来自哪个包、哪个文件名、识别结果
+      assert(report.counts.production === 3 && report.counts.files === 2, `计数应可核对,实际 ${JSON.stringify(report.counts)}`);
+      const text = report.packages.find((item) => item.name === "text-lib");
+      const record = text?.files[0];
+      assert(record?.sourceFile === "LICENSE", `须记录来源文件名,实际 ${JSON.stringify(record)}`);
+      assert(record?.storedPath === "licenses-fulltext/text-lib@1.0.0/LICENSE", `须记录副本相对路径,实际 ${record?.storedPath}`);
+      assert(record?.sha256 === hashBuffer(Buffer.from(LICENSE_TEXT_MIT_BOM_CRLF, "utf8")), "须记录副本内容指纹");
+      assert(record?.detectedLicense === "MIT" && record?.match === "text" && record?.recognized === true, `须记录该文件的许可证识别结果,实际 ${JSON.stringify(record)}`);
+      const dual = report.packages.find((item) => item.name === "dual-lib");
+      assert(dual?.files[0]?.sourceFile === "licence" && dual?.effectiveLicense === "MIT" && dual?.obligations !== null, "多选一包须带上选定分支与义务摘要");
+
+      // 取不到许可证文件:显式记 missing 并报出,不得静默跳过
+      const silent = report.packages.find((item) => item.name === "silent-lib");
+      assert(silent?.status === PACKAGE_FULLTEXT_STATUS.missing && silent?.reasonCode === "no-license-file", `无许可证文件须记 missing/no-license-file,实际 ${JSON.stringify(silent)}`);
+      assert(silent?.files.length === 0 && report.missing.join() === "silent-lib@3.0.0", `缺项须进 missing 清单,实际 ${report.missing.join()}`);
+      // 名字像许可证但扩展名不在候选内(如 LICENSE.markdown):须报出,否则会被误读成
+      // 「上游没随包发许可」;但候选名规则不得顺手放宽(那会改变许可证识别层的判定口径)
+      makePackageDir(dir, "silent-lib", { "LICENSE.markdown": LICENSE_TEXT_MIT });
+      const withNearMiss = collectLicenseFulltext({ lockPath, lockLabel: "package-lock.json", outputDir, decisions });
+      const nearMiss = withNearMiss.packages.find((item) => item.name === "silent-lib");
+      assert(nearMiss?.status === PACKAGE_FULLTEXT_STATUS.missing, "候选名不认的文件不得被当成已收集");
+      assert(nearMiss?.unrecognizedNameFiles?.join() === "LICENSE.markdown", `须报出名字像许可证的文件,实际 ${JSON.stringify(nearMiss?.unrecognizedNameFiles)}`);
+      assert(/名字像许可证但扩展名不在候选内的文件:LICENSE\.markdown/.test(formatFulltextLog(withNearMiss).join("\n")), "日志须点名该文件,便于人工去取原文");
+      assert(report.status === "incomplete", "有缺项时整体状态应为 incomplete");
+      const log = formatFulltextLog(report).join("\n");
+      assert(/\[fulltext:missing\] silent-lib@3\.0\.0 — no-license-file/.test(log), `缺项须逐条报出,实际:${log}`);
+      assert(/全文收集不完整\(缺 1/.test(log), "须汇总报出不完整");
+
+      // 确定性:同一 lockfile + 同一安装树,两次产物逐字节相同(比对须在树稳定之后,
+      // 否则上面刻意加过文件的动作会让两次输入本就不同,断言会假失败)
+      const again = collectLicenseFulltext({ lockPath, lockLabel: "package-lock.json", outputDir, decisions });
+      assert(serializeJson(again) === serializeJson(withNearMiss), "两次收集的清单必须逐字节相同(不写时间戳)");
+
+      // 进程级 CLI:默认 exit 0 但必须报出缺项;--strict 下判红
+      const outCli = path.join(dir, "out-cli");
+      const cli = runCli(["scripts/supply/collect-license-fulltext.mjs", "--lock", lockPath, "--output-dir", outCli, "--decisions", "scripts/supply/license-decisions.json"]);
+      assert(cli.status === 0, `收集完成时应 exit 0(缺项已报出),实际 ${cli.status}:${cli.output}`);
+      assert(/\[fulltext:missing\] silent-lib@3\.0\.0/.test(cli.output), `CLI 须报出缺项,实际:${cli.output}`);
+      assert(fs.existsSync(path.join(outCli, "licenses-fulltext.json")), "CLI 应产出清单文件");
+      const strict = runCli(["scripts/supply/collect-license-fulltext.mjs", "--lock", lockPath, "--output-dir", outCli, "--strict"]);
+      assert(strict.status === 1 && /--strict/.test(strict.output), `--strict 下缺项应判红,实际 ${strict.status}:${strict.output}`);
+    });
+
+    await suite.case("多选一分支选定的判定口径(纯函数):范围/表达式/义务摘要/清单校验", async () => {
+      assert(versionSatisfies("3.4.13", ">=3.0.0 <4.0.0") === true, "3.4.13 应落在 >=3.0.0 <4.0.0 内");
+      assert(versionSatisfies("4.0.0", ">=3.0.0 <4.0.0") === false, "4.0.0 应超出该范围");
+      assert(versionSatisfies("3.4.13", "") === true && versionSatisfies("3.4.13", "*") === true, "空范围/* 表示任意版本");
+      assert(versionSatisfies("", ">=3.0.0") === false, "版本号缺失时不得判为满足范围");
+      let rangeError = "";
+      try {
+        parseVersionRange("^3.0.0");
+      } catch (error) {
+        rangeError = error instanceof Error ? error.message : String(error);
+      }
+      assert(/版本范围语法不认得/.test(rangeError), `范围语法错误须有可操作文案,实际:${rangeError}`);
+
+      assert(expressionIncludesBranch("(MIT OR GPL-3.0-or-later)", "MIT") === true, "应认得 MIT 分支");
+      assert(expressionIncludesBranch("MIT", "MIT-0.9") === false, "整词比对:MIT 不得命中 MIT-0.9");
+      assert(expressionIncludesBranch("(MPL-2.0 OR Apache-2.0)", "GPL-3.0") === false, "表达式外的分支不得被认作存在");
+
+      assert((resolveObligationSummary("Apache-2.0") ?? "").includes("NOTICE"), "Apache-2.0 义务摘要须含 NOTICE 要求");
+      assert((resolveObligationSummary("MIT") ?? "").length > 0, "MIT 应有义务摘要");
+      assert((resolveObligationSummary("GPL-3.0-or-later") ?? "").includes("对应源码"), "-or-later 变体应回落到基名的义务摘要");
+      assert(resolveObligationSummary("Nonexistent-1.0") === null, "未登记的许可证应返回 null,由调用方显式标注而不是编造义务");
+
+      const base = { name: "p", versionRange: "*", upstreamExpression: "(MIT OR GPL-3.0-or-later)", selectedBranch: "MIT", rationale: "r", decidedOn: "2026-09-26", decidedBy: "用户" };
+      assert(createDecisionIndex([base]).byName.size === 1, "合法决策应可索引");
+      /** @type {Array<{ label: string; broken: Record<string, string>; expected: RegExp }>} */
+      const brokenCases = [
+        { label: "缺字段", broken: { ...base, decidedBy: "" }, expected: /decidedBy 缺失或为空/ },
+        { label: "选定分支不在上游声明里", broken: { ...base, selectedBranch: "Apache-2.0" }, expected: /不在 upstreamExpression/ },
+        { label: "上游声明不是多选一", broken: { ...base, upstreamExpression: "MIT" }, expected: /不含 OR 分支/ },
+      ];
+      for (const item of brokenCases) {
+        let message = "";
+        try {
+          createDecisionIndex([item.broken]);
+        } catch (error) {
+          message = error instanceof Error ? error.message : String(error);
+        }
+        assert(item.expected.test(message), `${item.label} 的决策数据必须显式失败,实际:${message}`);
+      }
+    });
+
     await suite.case("许可证文件识别:候选名大小写不敏感、标记覆盖、SPDX 标签与不猜测", async () => {
       const dir = path.join(tmp, "license-detect");
       fs.mkdirSync(dir, { recursive: true });
@@ -840,6 +1155,11 @@ export async function run() {
         }
         const licensesReport = JSON.parse(fs.readFileSync(path.join(cleanOut, "licenses.json"), "utf8"));
         assert(licensesReport.status === "ok" && licensesReport.unknownLicense.length === 0, "全声明许可证时不应判红");
+        // 门禁日志须把决策口径说清:待复核按生产/开发拆分,决策逐条留痕
+        const gateLog = formatSupplyLog(ok.report).join("\n");
+        assert(/需人工复核 \d+\(生产 \d+ \/ 开发 \d+\)/.test(gateLog), `门禁日志应拆分待复核范围,实际:${gateLog}`);
+        assert(/多选一许可已选定:/.test(gateLog) || /分支选定决策未生效:/.test(gateLog), `门禁日志须留痕决策结论,实际:${gateLog}`);
+        assert(ok.report.sections.licenses.licenseDecisions !== undefined, "总报告须带上决策汇总");
 
         // --sbom-check:先过,再改 lockfile 即漂移
         const checked = await runSupplyChecks({

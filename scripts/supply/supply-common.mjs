@@ -343,6 +343,318 @@ export function detectPackageLicense(packageDir) {
   return { status: LICENSE_FILE_STATUS.unrecognized, license: null, evidence: null, match: null, files, unreadable };
 }
 
+/* ---------- semver 比较(决策版本范围与 SCA 修复版本共用单源) ---------- */
+
+/**
+ * 简化 semver 比较(仅 major.minor.patch,缺位按 0,非数字段按 0):
+ * 避免一个畸形版本字符串把整个扫描或范围判定打断。
+ * @param {string} a 左值
+ * @param {string} b 右值
+ * @returns {number} 比较结果(-1 / 0 / 1)
+ */
+export function compareSemver(a, b) {
+  const parse = (value) => String(value).split('-')[0].split('.').map((part) => (Number.isFinite(Number(part)) ? Number(part) : 0));
+  const left = parse(a);
+  const right = parse(b);
+  for (let i = 0; i < 3; i += 1) {
+    const l = left[i] ?? 0;
+    const r = right[i] ?? 0;
+    if (l !== r) return l < r ? -1 : 1;
+  }
+  return 0;
+}
+
+/* ---------- 多选一许可的分支选定决策 ---------- */
+
+// 为什么单列一层:「上游给的是 A OR B,本项目选哪一支」是人的决定,推导不出来,
+// 自动化替人选就等于替用户改了分发义务。故决定以机器可读清单落盘(可审计、可 diff、
+// 依赖升级后不会无声失效),分类层只负责校验清单与上游现状是否仍然对得上 ——
+// 对不上(包只在 dev 树 / 版本超出决策范围 / 上游表达式变了)一律**不生效**,
+// 回到未决策态(并列双分支 + needsReview),绝不静默默认选一个。
+// 决策只作用于生产依赖:仅开发依赖不随包分发,没有分发义务需要人拍板。
+
+/** 决策清单文件名(与本模块同目录) */
+export const LICENSE_DECISIONS_FILE = 'license-decisions.json';
+
+/** 决策清单 schema 版本 */
+export const LICENSE_DECISIONS_SCHEMA = 'm2w/license-decisions@1';
+
+/** 决策生效状态取值域(除 applied 外均表示「决策未生效」) */
+export const DECISION_STATUS = Object.freeze({
+  /** 决策与上游现状一致,已按选定分支归类 */
+  applied: 'applied',
+  /** 清单里没有这个包 → 未决策 */
+  noDecision: 'no-decision',
+  /** 有决策但该包只在开发树 → 决策不适用于 dev-only 依赖 */
+  scopeExcluded: 'scope-excluded',
+  /** 有决策但当前版本超出决策声明的版本范围 */
+  outOfRange: 'out-of-range',
+  /** 有决策但上游原始声明已变(表达式与决策记录不一致) */
+  expressionMismatch: 'expression-mismatch',
+  /** 清单里的包已不在依赖树中(陈旧决策记录,应删除或随新依赖重新拍板) */
+  notInTree: 'not-in-tree',
+});
+
+/**
+ * 决策清单里的一条决策。
+ * @typedef {object} LicenseDecision
+ * @property {string} name 包名
+ * @property {string} versionRange 适用版本范围(比较子句,空格或逗号分隔;空串 = 任意版本)
+ * @property {string} upstreamExpression 决策当时的上游原始多分支声明
+ * @property {string} selectedBranch 本项目选定的分支
+ * @property {string} rationale 选定理由
+ * @property {string} decidedOn 决策日期(YYYY-MM-DD)
+ * @property {string} decidedBy 决策人
+ */
+
+/**
+ * 决策生效的判定结果。
+ * @typedef {object} DecisionOutcome
+ * @property {string} status DECISION_STATUS 取值
+ * @property {LicenseDecision | null} decision 命中的决策(未命中为 null)
+ * @property {string | null} selectedBranch 选定分支(仅 applied 有)
+ * @property {string} note 人读说明
+ */
+
+/** 版本范围里允许的比较子句;不接受 ^ / ~ / 空格交集以外的语法(语法含糊不如显式失败) */
+const RANGE_TERM_RE = /^(>=|<=|>|<|=)?\s*(\d+(?:\.\d+)*)$/;
+
+/**
+ * 解析版本范围:逐个比较子句 → 判定式。空串 = 任意版本(决策对该包的任意版本生效)。
+ * 语法不认得就抛错(强制决策记录写成无歧义的形式),不猜。
+ * @param {string} range 版本范围
+ * @returns {Array<{ op: string; version: string }>} 比较子句
+ */
+export function parseVersionRange(range) {
+  const text = typeof range === 'string' ? range.trim() : '';
+  if (text === '' || text === '*') return [];
+  return text
+    .split(/[\s,]+/)
+    .filter((term) => term !== '')
+    .map((term) => {
+      const match = RANGE_TERM_RE.exec(term);
+      if (match === null) throw new Error(`版本范围语法不认得:${term}(只支持 >= > <= < = 与纯版本号,例:">=3.0.0 <4.0.0")`);
+      return { op: match[1] ?? '=', version: match[2] ?? '' };
+    });
+}
+
+/**
+ * 版本是否落在给定范围内。版本号本身缺失(lockfile 条目无 version)时一律判 false ——
+ * 无法确认范围的包不该被一条「看起来匹配」的决策放行。
+ * @param {string} version 实际版本
+ * @param {string} range 版本范围
+ * @returns {boolean} 是否满足全部比较子句
+ */
+export function versionSatisfies(version, range) {
+  const terms = parseVersionRange(range);
+  if (terms.length === 0) return true;
+  if (typeof version !== 'string' || version.trim() === '') return false;
+  return terms.every((term) => {
+    const result = compareSemver(version, term.version);
+    if (term.op === '>=') return result >= 0;
+    if (term.op === '>') return result > 0;
+    if (term.op === '<=') return result <= 0;
+    if (term.op === '<') return result < 0;
+    return result === 0;
+  });
+}
+
+/**
+ * 找首个左括号对应的右括号下标;不是成对包裹整式时返回 -1。
+ * @param {string} text 已确认以 `(` 开头
+ * @returns {number} 匹配右括号下标
+ */
+function closingParenIndex(text) {
+  let depth = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '(') depth += 1;
+    else if (text[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * SPDX 表达式归一:压缩空白 + 去掉包裹整式的冗余外层括号 + 去掉括号旁空白。
+ * 只做书写差异的归一,不改动分支本身 —— 决策记录与上游声明的等值判定必须
+ * 对「同一声明的不同写法」成立,对「换了分支」不成立。
+ * @param {string | null | undefined} expression 原始表达式
+ * @returns {string} 归一后的表达式
+ */
+export function normalizeSpdxExpression(expression) {
+  let text = typeof expression === 'string' ? expression.trim().replace(/\s+/g, ' ') : '';
+  for (;;) {
+    if (!text.startsWith('(') || !text.endsWith(')')) break;
+    if (closingParenIndex(text) !== text.length - 1) break;
+    text = text.slice(1, -1).trim();
+  }
+  return text.replace(/ *([()]) */g, '$1');
+}
+
+/**
+ * 表达式是否含某个分支(按归一后的整词比对,避免 MIT 命中 MIT-0.9 这类前缀误配)。
+ * @param {string} expression 原始表达式
+ * @param {string} branch 待查分支
+ * @returns {boolean} 是否含该分支
+ */
+export function expressionIncludesBranch(expression, branch) {
+  const wanted = normalizeSpdxExpression(branch).toLowerCase();
+  if (wanted === '') return false;
+  return normalizeSpdxExpression(expression)
+    .split(/[()]|\s+(?:OR|AND|WITH)\s+/i)
+    .some((token) => token.trim().toLowerCase() === wanted);
+}
+
+/**
+ * 许可证义务摘要单源(NOTICE 展示用):选中该分支就要按摘要履行分发义务。
+ * 认不出的标识符返回 null,由调用方显式标注「未登记」,不得编造义务。
+ * @type {Readonly<Record<string, string>>}
+ */
+export const LICENSE_OBLIGATION_SUMMARIES = Object.freeze({
+  MIT: '保留版权与许可声明并随分发附上许可全文;不得对软件本身施加附加限制',
+  'Apache-2.0': '保留版权与许可声明、标注对原文件的修改、随分发附上许可全文与上游 NOTICE(如有);含专利授权,专利诉讼可终止授权',
+  'MPL-2.0': '文件级 copyleft:对 MPL 覆盖的文件本身的修改须继续以 MPL 提供;分发二进制时须以可获取方式提供这些文件',
+  ISC: '保留版权与许可声明并随分发附上许可全文',
+  'BSD-2-Clause': '保留版权与许可声明并随分发附上许可全文',
+  'BSD-3-Clause': '保留版权与许可声明、随分发附上许可全文,不得用其名义为产品背书',
+  '0BSD': '可无条件使用与再分发;建议仍随包附上上游许可声明',
+  Unlicense: '公有领域奉献,可无附加条件使用',
+  'GPL-3.0': '强 copyleft:分发(含二进制)须以 GPL-3.0 提供完整对应源码',
+  'GPL-2.0': '强 copyleft:分发(含二进制)须以 GPL-2.0 提供完整对应源码',
+  'LGPL-3.0': '弱 copyleft:允许链接使用;对库本身的修改与再分发须以 LGPL-3.0 提供源码',
+  'LGPL-2.1': '弱 copyleft:允许链接使用;对库本身的修改与再分发须以 LGPL-2.1 提供源码',
+  'AGPL-3.0': '强 copyleft,且经网络提供服务亦触发源码提供义务',
+  'CDDL-1.0': '文件级 copyleft:以文件为粒度,未修改文件可保持原许可继续分发',
+});
+
+/**
+ * 取某个许可证标识的义务摘要:先精确匹配,再去掉 -or-later / -only / + 后缀按基名匹配。
+ * @param {string | null | undefined} license 许可证标识
+ * @returns {string | null} 义务摘要(未登记为 null)
+ */
+export function resolveObligationSummary(license) {
+  const text = typeof license === 'string' ? license.trim() : '';
+  if (text === '') return null;
+  const exact = LICENSE_OBLIGATION_SUMMARIES[text];
+  if (exact !== undefined) return exact;
+  const base = text.replace(/-(?:or-later|only)$/, '').replace(/\+$/, '');
+  return LICENSE_OBLIGATION_SUMMARIES[base] ?? null;
+}
+
+/**
+ * 决策清单(读文件 + 校验 + 索引 + 内容指纹;source/sha256 在内存构造时可为 null)。
+ * @typedef {object} LicenseDecisionIndex
+ * @property {string} schema
+ * @property {string | null} source 清单路径(记入报告,便于反查;内存构造时为 null)
+ * @property {string | null} sha256 清单内容指纹(内容不变则报告确定)
+ * @property {Map<string, LicenseDecision>} byName 包名 → 决策
+ * @property {LicenseDecision[]} entries 按包名排序的决策
+ */
+
+/**
+ * 校验并索引决策清单。字段缺失、schema 不符、选定分支不在上游声明里,一律抛错 ——
+ * 决策数据错了必须在生成报告前就炸掉,不能带着错数据出报告。
+ * @param {unknown} decisions 决策数组
+ * @param {{ source?: string | null; sha256?: string | null }} [meta] 来源与指纹(读文件时传入)
+ * @returns {LicenseDecisionIndex} 决策索引
+ */
+export function createDecisionIndex(decisions, { source = null, sha256 = null } = {}) {
+  if (!Array.isArray(decisions)) throw new Error('决策清单的 decisions 字段必须是数组');
+  /** @type {Map<string, LicenseDecision>} */
+  const byName = new Map();
+  for (const [index, raw] of decisions.entries()) {
+    const at = `decisions[${index}]`;
+    if (raw === null || typeof raw !== 'object') throw new Error(`${at} 必须是对象`);
+    const record = /** @type {Record<string, unknown>} */ (raw);
+    for (const field of ['name', 'versionRange', 'upstreamExpression', 'selectedBranch', 'rationale', 'decidedOn', 'decidedBy']) {
+      if (typeof record[field] !== 'string' || String(record[field]).trim() === '') {
+        throw new Error(`${at}.${field} 缺失或为空(决策必须逐条可审计:包名/版本范围/上游原始声明/选定分支/理由/日期/决策人)`);
+      }
+    }
+    const name = String(record.name).trim();
+    if (byName.has(name)) throw new Error(`决策清单里 ${name} 出现多条决策(同一包只能有一条,否则无法判定该采哪条)`);
+    const upstreamExpression = String(record.upstreamExpression).trim();
+    const selectedBranch = String(record.selectedBranch).trim();
+    if (!/\s+OR\s+/i.test(normalizeSpdxExpression(upstreamExpression))) {
+      throw new Error(`${at}(${name})的 upstreamExpression 不含 OR 分支:多选一决策只用于「上游给了 A OR B」的情形`);
+    }
+    if (!expressionIncludesBranch(upstreamExpression, selectedBranch)) {
+      throw new Error(`${at}(${name})的 selectedBranch「${selectedBranch}」不在 upstreamExpression「${upstreamExpression}」的分支里`);
+    }
+    byName.set(name, {
+      name,
+      versionRange: String(record.versionRange).trim(),
+      upstreamExpression,
+      selectedBranch,
+      rationale: String(record.rationale).trim(),
+      decidedOn: String(record.decidedOn).trim(),
+      decidedBy: String(record.decidedBy).trim(),
+    });
+  }
+  const entries = [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return { schema: LICENSE_DECISIONS_SCHEMA, source, sha256, byName, entries };
+}
+
+/**
+ * 读决策清单文件。文件缺失 / schema 不符 / 记录非法都显式抛错(不静默按「无决策」处理:
+ * 决策清单在而读不出来,等于悄悄丢掉了人的决定)。
+ *
+ * label 是记进产物的来源标识:必须由调用方给**相对路径**,否则产物里会留下本机绝对
+ * 路径,同输入在不同机器上就不可能逐字节一致。
+ * @param {string} filePath 决策清单绝对路径
+ * @param {string | null} [label] 产物里记录的来源标识(默认取该绝对路径)
+ * @returns {LicenseDecisionIndex} 决策索引
+ */
+export function loadLicenseDecisions(filePath, label = null) {
+  const parsed = readJson(filePath);
+  if (parsed === null || typeof parsed !== 'object' || /** @type {Record<string, unknown>} */ (parsed).schema !== LICENSE_DECISIONS_SCHEMA) {
+    throw new Error(`决策清单 schema 不符(期望 ${LICENSE_DECISIONS_SCHEMA}):${toPosix(filePath)}`);
+  }
+  return createDecisionIndex(/** @type {Record<string, unknown>} */ (parsed).decisions, {
+    source: label ?? toPosix(filePath),
+    sha256: hashBuffer(readFileSync(filePath)),
+  });
+}
+
+/** 决策未生效时的人读说明(报告与 CLI 共用同一口径) */
+function decisionNote(status, decision, version) {
+  if (status === DECISION_STATUS.applied) return `已按决策选用 ${/** @type {LicenseDecision} */ (decision).selectedBranch}`;
+  if (status === DECISION_STATUS.noDecision) return '决策清单中没有该包 → 保持上游并列声明并继续需人工复核';
+  if (status === DECISION_STATUS.scopeExcluded) return '决策只适用于生产依赖;该包仅在开发树,不随包分发,决策不生效';
+  if (status === DECISION_STATUS.outOfRange) {
+    return `当前版本 ${version} 超出决策声明的版本范围 ${/** @type {LicenseDecision} */ (decision).versionRange} → 决策不生效,需重新拍板`;
+  }
+  return `上游原始声明已变为「${/** @type {LicenseDecision} */ (decision).upstreamExpression}」之外的内容,与决策记录不一致 → 决策不生效,需重新拍板`;
+}
+
+/**
+ * 判定一条决策是否生效(纯函数:同样输入必得同样结论)。
+ *
+ * 顺序固定为「有没有决策 → 是否生产依赖 → 版本是否在范围内 → 上游声明是否仍一致」,
+ * 任一不满足即不生效,绝不默认选一个分支。
+ * @param {{ name: string; version: string; upstreamExpression: string | null; isProduction: boolean }} input 被判定的组件
+ * @param {LicenseDecisionIndex | null} decisions 决策索引(null = 未提供决策)
+ * @returns {DecisionOutcome} 生效结果
+ */
+export function resolveLicenseDecision({ name, version, upstreamExpression, isProduction }, decisions) {
+  const decision = decisions?.byName.get(name) ?? null;
+  if (decision === null) {
+    return { status: DECISION_STATUS.noDecision, decision: null, selectedBranch: null, note: decisionNote(DECISION_STATUS.noDecision, null, version) };
+  }
+  if (!isProduction) {
+    return { status: DECISION_STATUS.scopeExcluded, decision, selectedBranch: null, note: decisionNote(DECISION_STATUS.scopeExcluded, decision, version) };
+  }
+  if (!versionSatisfies(version, decision.versionRange)) {
+    return { status: DECISION_STATUS.outOfRange, decision, selectedBranch: null, note: decisionNote(DECISION_STATUS.outOfRange, decision, version) };
+  }
+  if (normalizeSpdxExpression(upstreamExpression) !== normalizeSpdxExpression(decision.upstreamExpression)) {
+    return { status: DECISION_STATUS.expressionMismatch, decision, selectedBranch: null, note: decisionNote(DECISION_STATUS.expressionMismatch, decision, version) };
+  }
+  return { status: DECISION_STATUS.applied, decision, selectedBranch: decision.selectedBranch, note: decisionNote(DECISION_STATUS.applied, decision, version) };
+}
+
 /* ---------- 严重度 ---------- */
 
 /**

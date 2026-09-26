@@ -7,7 +7,9 @@
 //
 // 三段的判定责任:
 //   - SBOM:生成(默认)或 --sbom-check 漂移校验;漂移即失败。
-//   - 许可证:未知/缺失许可证判红;copyleft 与多分支许可单列待人工复核(不阻断)。
+//   - 许可证:未知/缺失许可证判红;copyleft 与多分支许可单列待人工复核(不阻断);
+//     多选一分支若已有决策记录(license-decisions.json)且前提仍成立,按选定分支判定,
+//     并把「已选定/未生效」逐条打到日志里。
 //   - SCA:真实漏洞按 production 优先判红;扫描源不可用判红,且绝不表述为「无漏洞」。
 //
 // 用法:
@@ -40,7 +42,7 @@ export const SUPPLY_REPORT_SCHEMA = 'm2w/supply-report@1';
  * 三段检查的结论(总报告 sections)。
  * @typedef {object} SupplySections
  * @property {{ status: string; problem: string | null; [k: string]: any }} sbom
- * @property {{ status: string; problem: string | null; counts?: any; unknownLicense?: any[]; needsReview?: string[]; [k: string]: any }} licenses
+ * @property {{ status: string; problem: string | null; counts?: any; unknownLicense?: any[]; needsReview?: string[]; licenseDecisions?: { applied?: any[]; notApplied?: any[] }; [k: string]: any }} licenses
  * @property {{ status: string; problem: string | null; scanStatus?: string; sources?: any[]; blocking?: string[]; notes?: string[]; [k: string]: any }} sca
  */
 
@@ -138,6 +140,7 @@ export async function runSupplyChecks(options = {}) {
       counts: report.counts,
       unknownLicense: report.unknownLicense,
       needsReview: report.needsReview,
+      licenseDecisions: report.licenseDecisions,
     };
     if (report.status !== LICENSES_OK) {
       for (const entry of report.unknownLicense) {
@@ -211,8 +214,16 @@ export function formatSupplyLog(report) {
     lines.push(
       `[supply:ok] 许可证:${licenses.path} + ${licenses.noticePath}` +
         `(共 ${licenses.counts.total}:生产 ${licenses.counts.production} / 开发 ${licenses.counts.development};` +
-        `需人工复核 ${licenses.counts.needsReview})`,
+        `需人工复核 ${licenses.counts.needsReview}(生产 ${licenses.counts.needsReviewProduction} / 开发 ${licenses.counts.needsReviewDevelopment}))`,
     );
+    // 决策已生效/未生效都要在门禁日志里留痕:生效数是「人已拍板」的可核对口径,
+    // 未生效的每条都要能看到原因,否则「决策失效」在 CI 里是看不见的
+    for (const item of licenses.licenseDecisions?.applied ?? []) {
+      lines.push(`[supply:ok] 多选一许可已选定:${item.name}@${item.version} → ${item.selectedBranch}(上游声明 ${item.upstreamExpression};决策 ${item.decidedOn} ${item.decidedBy})`);
+    }
+    for (const item of licenses.licenseDecisions?.notApplied ?? []) {
+      lines.push(`[supply:warn] 分支选定决策未生效:${item.name}@${item.version ?? '(已不在依赖树)'} — ${item.status}:${item.note}`);
+    }
     for (const item of licenses.needsReview ?? []) lines.push(`[supply:warn] 需人工复核的许可证:${item}`);
   } else {
     for (const entry of licenses.unknownLicense ?? []) {

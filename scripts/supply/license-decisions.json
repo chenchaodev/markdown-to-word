@@ -1,0 +1,23 @@
+{
+  "schema": "m2w/license-decisions@1",
+  "decisions": [
+    {
+      "name": "dompurify",
+      "versionRange": ">=3.0.0 <4.0.0",
+      "upstreamExpression": "(MPL-2.0 OR Apache-2.0)",
+      "selectedBranch": "Apache-2.0",
+      "rationale": "多选一许可取非 GPL 分支:Apache-2.0 为宽松许可,无文件级 copyleft 与专利终止以外的额外约束,便于随包分发;MPL-2.0 的文件级 copyleft 义务虽可通过不改动其文件规避,但一旦升级/改动其源文件即触发,故选更省义务的一支。",
+      "decidedOn": "2026-09-26",
+      "decidedBy": "用户 2026-09-26"
+    },
+    {
+      "name": "jszip",
+      "versionRange": ">=3.0.0 <4.0.0",
+      "upstreamExpression": "(MIT OR GPL-3.0-or-later)",
+      "selectedBranch": "MIT",
+      "rationale": "多选一许可取非 GPL 分支:选 GPL-3.0-or-later 会把整个分发包拖入强 copyleft,与本项目的分发方式不相容;MIT 仅要求保留版权与许可声明并附上许可全文,义务最轻。",
+      "decidedOn": "2026-09-26",
+      "decidedBy": "用户 2026-09-26"
+    }
+  ]
+}

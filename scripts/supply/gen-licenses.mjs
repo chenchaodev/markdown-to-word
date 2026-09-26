@@ -17,17 +17,33 @@
 //   - 无声明/缺失许可证单列 unknownLicense 并**判红**:「没写许可证」不等于
 //     「可以随便用」,静默当 OK 会把一个无授权的包直接带进 GPL 分发包里。
 //
+// 多选一分支选定(人的决定,不是推导结论):决策落在
+// `scripts/supply/license-decisions.json`(逐条记包名/版本范围/上游原始声明/选定分支/
+// 理由/日期/决策人),本脚本只负责校验并应用 —— 决策只作用于**生产依赖**,且要求
+// 版本仍在决策声明的范围内、上游声明仍与决策记录一致;任一不满足即**不生效**,该组件
+// 保持「并列双分支 + needsReview」。清单里没有的包一律不得默认选一个分支。
+// 应用后:licenses.json 记 effectiveLicense(选定分支)并保留 license(上游原始声明
+// 不被改写),NOTICE 显示选定分支 + 该分支的义务摘要,并单列一节说明「上游原始声明为
+// A OR B,本项目选用 A」。
+//
+// 许可证全文不进本产物:内联全文需逐字校对且会随依赖升级腐化;按需收集用
+// `node scripts/supply/collect-license-fulltext.mjs`(见 NOTICE 末节与该脚本 --help)。
+//
 // 输出确定性:条目按 name@version 排序、对象键按固定顺序构造,同 lockfile + 同一已安装
-// 树必得逐字节相同的 licenses.json 与 NOTICE.md(报告内只记相对路径与文件名,不记
-// 绝对路径与时间戳)。
+// 树 + 同一决策清单必得逐字节相同的 licenses.json 与 NOTICE.md(报告内只记相对路径与
+// 文件名、决策清单内容指纹,不记绝对路径与时间戳)。
 //
 // 用法:
-//   node scripts/supply/gen-licenses.mjs [--lock <file>] [--output-dir <dir>] [--print]
+//   node scripts/supply/gen-licenses.mjs [--lock <file>] [--output-dir <dir>]
+//       [--decisions <file>] [--print]
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  DECISION_STATUS,
+  LICENSE_DECISIONS_FILE,
+  LICENSE_DECISIONS_SCHEMA,
   LICENSE_FILE_STATUS,
   LICENSE_GROUPS,
   LICENSE_GROUP_TITLES,
@@ -42,9 +58,12 @@ import {
   errorMessage,
   hashBuffer,
   isMainModule,
+  loadLicenseDecisions,
   lockComponents,
   parseSupplyArgs,
   readLockfile,
+  resolveLicenseDecision,
+  resolveObligationSummary,
   serializeJson,
   toPosix,
   writeJson,
@@ -58,6 +77,10 @@ export const LICENSES_SCHEMA = 'm2w/licenses@1';
 export const DEFAULT_LICENSES_FILE = 'licenses.json';
 export const DEFAULT_NOTICE_FILE = 'NOTICE.md';
 
+/** 决策清单默认位置(与本脚本同目录)与报告里记录用的标识(相对项目根) */
+export const DEFAULT_DECISIONS_PATH = fileURLToPath(new URL(LICENSE_DECISIONS_FILE, import.meta.url));
+export const DEFAULT_DECISIONS_LABEL = `scripts/supply/${LICENSE_DECISIONS_FILE}`;
+
 /** 报告状态:ok=无阻断项;policy-violation=存在未知/缺失许可证(判红) */
 export const STATUS_OK = 'ok';
 export const STATUS_POLICY_VIOLATION = 'policy-violation';
@@ -67,16 +90,58 @@ export const STATUS_POLICY_VIOLATION = 'policy-violation';
  * @typedef {object} LicenseEntry
  * @property {string} name 包名
  * @property {string} version 锁定版本
- * @property {string | null} license 许可证标识(两处都无可用依据时为 null)
+ * @property {string | null} license 上游原始许可证声明(不因决策被改写)
  * @property {string} licenseSource 取值来源(lockfile / package-file / none)
  * @property {string} [licenseEvidence] 证据文件名(仅 package-file 来源有)
- * @property {string} licenseGroup 所属分组
+ * @property {string} [effectiveLicense] 决策生效时的选定分支(否则无此字段)
+ * @property {LicenseDecisionRecord} [licenseDecision] 决策记录(仅该包在决策清单里有条目时有)
+ * @property {string} licenseGroup 所属分组(按有效许可归类:决策生效则按选定分支)
  * @property {'production' | 'development'} dependencyScope 依赖范围
  * @property {boolean} isProductionDependency 是否生产依赖
  * @property {boolean} optional 是否可选依赖
  * @property {boolean} direct 是否直接依赖
  * @property {boolean} needsReview 是否需人工复核
  * @property {string} lockPath lock 条目路径
+ */
+
+/**
+ * 组件上的决策记录(判定结果 + 决策原文要点)。
+ * @typedef {object} LicenseDecisionRecord
+ * @property {string} status 生效状态(DECISION_STATUS 取值)
+ * @property {string} note 人读说明
+ * @property {string} [versionRange] 决策声明的版本范围
+ * @property {string} [upstreamExpression] 决策记录里的上游原始声明
+ * @property {string} [selectedBranch] 决策选定的分支
+ * @property {string} [decidedOn] 决策日期
+ * @property {string} [decidedBy] 决策人
+ * @property {string} [rationale] 选定理由
+ */
+
+/**
+ * 决策汇总里的一条(licenses.json 的 licenseDecisions.applied / notApplied)。
+ * @typedef {object} LicenseDecisionSummary
+ * @property {string} name 包名
+ * @property {string | null} version 锁定版本(包已不在依赖树时为 null)
+ * @property {string} [dependencyScope] 依赖范围
+ * @property {boolean} [isProductionDependency] 是否生产依赖
+ * @property {string} status 生效状态(DECISION_STATUS 取值)
+ * @property {string} note 人读说明
+ * @property {string | null} upstreamExpression 该包当前的上游原始声明
+ * @property {string} [versionRange] 决策声明的版本范围
+ * @property {string} [selectedBranch] 决策选定的分支
+ * @property {string} [decidedOn] 决策日期
+ * @property {string} [decidedBy] 决策人
+ * @property {string} [rationale] 选定理由
+ */
+
+/**
+ * 决策清单在报告里的汇总(逐条可审计:生效的与没生效的都留痕)。
+ * @typedef {object} LicenseDecisionsSummary
+ * @property {string} schema
+ * @property {string} source 决策清单路径标识
+ * @property {string | null} sha256 决策清单内容指纹(未提供决策时为 null)
+ * @property {LicenseDecisionSummary[]} applied 已生效的决策
+ * @property {LicenseDecisionSummary[]} notApplied 未生效的决策(含包已不在依赖树的陈旧记录)
  */
 
 /**
@@ -98,8 +163,9 @@ export const STATUS_POLICY_VIOLATION = 'policy-violation';
  * @property {string} status ok / policy-violation
  * @property {{ name: string; version: string; license: string | null }} project
  * @property {{ lockfile: string; lockfileSha256: string }} source
- * @property {{ total: number; production: number; development: number; needsReview: number; unknownLicense: number; fromPackageFile: number }} counts
- * @property {Record<string, string[]>} groups 分组 → `name@version` 列表
+ * @property {{ total: number; production: number; development: number; needsReview: number; needsReviewProduction: number; needsReviewDevelopment: number; unknownLicense: number; fromPackageFile: number; decided: number; decisionNotApplied: number }} counts
+ * @property {LicenseDecisionsSummary} licenseDecisions 多选一分支选定汇总
+ * @property {Record<string, string[]>} groups 分组 → `name@version` 列表(按有效许可归类)
  * @property {string[]} needsReview 待人工复核项
  * @property {UnknownLicenseEntry[]} unknownLicense 无声明许可证项
  * @property {LicenseEntry[]} packages 逐组件明细
@@ -108,6 +174,7 @@ export const STATUS_POLICY_VIOLATION = 'policy-violation';
 const USAGE = `用法: node scripts/supply/gen-licenses.mjs [选项]
   --lock <file>        输入 lockfile(默认项目根的 package-lock.json)
   --output-dir <dir>   产物目录(默认 ${toPosix(SUPPLY_OUTPUT_DIR)})
+  --decisions <file>   多选一分支决策清单(默认 ${DEFAULT_DECISIONS_LABEL};仅生产依赖适用)
   --print              把 licenses.json 正文打到 stdout
   --help               显示本用法`;
 
@@ -167,11 +234,100 @@ function resolveComponentLicense(component, packagesRoot, detectLicense) {
 }
 
 /**
+ * 组件上的决策记录:生效状态 + 决策原文要点(逐条可审计)。
+ * @param {string} version 当前锁定版本
+ * @param {ReturnType<typeof resolveLicenseDecision>} outcome 决策判定结果
+ * @returns {LicenseDecisionRecord} 决策记录
+ */
+function decisionRecord(version, outcome) {
+  const decision = outcome.decision;
+  if (decision === null) {
+    return { status: outcome.status, note: outcome.note, observedVersion: version };
+  }
+  return {
+    status: outcome.status,
+    note: outcome.note,
+    observedVersion: version,
+    versionRange: decision.versionRange,
+    upstreamExpression: decision.upstreamExpression,
+    selectedBranch: decision.selectedBranch,
+    decidedOn: decision.decidedOn,
+    decidedBy: decision.decidedBy,
+    rationale: decision.rationale,
+  };
+}
+
+/**
+ * 决策汇总:已生效的与没生效的都要留痕,并把「清单里有但依赖树里已经没有」的陈旧记录
+ * 也报出来 —— 决策失效必须看得见,否则会随依赖下线无声腐烂。
+ * @param {LicenseEntry[]} packages 逐组件明细(已按 name@version 排序)
+ * @param {import('./supply-common.mjs').LicenseDecisionIndex | null} decisions 决策索引
+ * @param {string} decisionsLabel 决策清单的路径标识(记入报告)
+ * @returns {LicenseDecisionsSummary} 决策汇总
+ */
+function summarizeDecisions(packages, decisions, decisionsLabel) {
+  if (decisions === null) {
+    return { schema: LICENSE_DECISIONS_SCHEMA, source: decisionsLabel, sha256: null, applied: [], notApplied: [] };
+  }
+  const applied = [];
+  const notApplied = [];
+  const matched = new Set();
+  for (const entry of packages) {
+    const decision = entry.licenseDecision;
+    if (decision === undefined) continue;
+    matched.add(entry.name);
+    const record = {
+      name: entry.name,
+      version: entry.version,
+      dependencyScope: entry.dependencyScope,
+      isProductionDependency: entry.isProductionDependency,
+      status: decision.status,
+      note: decision.note,
+      upstreamExpression: entry.license,
+      ...(decision.versionRange === undefined ? {} : { versionRange: decision.versionRange }),
+      ...(decision.selectedBranch === undefined ? {} : { selectedBranch: decision.selectedBranch }),
+      ...(decision.decidedOn === undefined ? {} : { decidedOn: decision.decidedOn }),
+      ...(decision.decidedBy === undefined ? {} : { decidedBy: decision.decidedBy }),
+      ...(decision.rationale === undefined ? {} : { rationale: decision.rationale }),
+    };
+    if (decision.status === DECISION_STATUS.applied) applied.push(record);
+    else notApplied.push(record);
+  }
+  for (const decision of decisions.entries) {
+    if (matched.has(decision.name)) continue;
+    notApplied.push({
+      name: decision.name,
+      version: null,
+      status: DECISION_STATUS.notInTree,
+      note: '决策清单里的包已不在依赖树中(陈旧记录:应删除该条决策,或随新依赖重新拍板)',
+      upstreamExpression: null,
+      versionRange: decision.versionRange,
+      selectedBranch: decision.selectedBranch,
+      decidedOn: decision.decidedOn,
+      decidedBy: decision.decidedBy,
+      rationale: decision.rationale,
+    });
+  }
+  return { schema: decisions.schema, source: decisions.source ?? decisionsLabel, sha256: decisions.sha256, applied, notApplied };
+}
+
+/**
  * 构建许可证报告(packagesRoot 为空时是纯函数:只读 lockfile 字段)。
- * @param {{ lock: object; lockDigest: string; lockLabel: string; packagesRoot?: string | null; detectLicense?: (packageDir: string) => ReturnType<typeof detectPackageLicense> }} input 输入
+ *
+ * decisions 为 null 时不做任何分支选定(所有多选一表达式保持并列并进 needsReview),
+ * 这既是「决策清单读不出来就不生效」的兜底,也是纯函数测试的默认口径。
+ * @param {{ lock: object; lockDigest: string; lockLabel: string; packagesRoot?: string | null; detectLicense?: (packageDir: string) => ReturnType<typeof detectPackageLicense>; decisions?: import('./supply-common.mjs').LicenseDecisionIndex | null; decisionsLabel?: string }} input 输入
  * @returns {LicensesReport}
  */
-export function buildLicensesReport({ lock, lockDigest, lockLabel, packagesRoot = null, detectLicense = detectPackageLicense }) {
+export function buildLicensesReport({
+  lock,
+  lockDigest,
+  lockLabel,
+  packagesRoot = null,
+  detectLicense = detectPackageLicense,
+  decisions = null,
+  decisionsLabel = DEFAULT_DECISIONS_LABEL,
+}) {
   const { root, components } = lockComponents(lock);
   /** @type {Map<string, ReturnType<typeof resolveComponentLicense>>} */
   const resolutions = new Map();
@@ -179,13 +335,27 @@ export function buildLicensesReport({ lock, lockDigest, lockLabel, packagesRoot 
     .map((component) => {
       const resolved = resolveComponentLicense(component, packagesRoot, detectLicense);
       resolutions.set(component.lockPath, resolved);
-      const classified = classifyLicense(resolved.license);
+      const outcome = resolveLicenseDecision(
+        {
+          name: component.name,
+          version: component.version,
+          upstreamExpression: resolved.license,
+          isProduction: component.dependencyScope === SCOPE_PRODUCTION,
+        },
+        decisions,
+      );
+      // 有效许可:决策生效 → 选定分支;否则 → 上游声明(保持并列双分支)。
+      // 分类与 needsReview 一律按有效许可算,故未生效的决策不会悄悄把包「洗白」。
+      const effectiveLicense = outcome.selectedBranch ?? resolved.license;
+      const classified = classifyLicense(effectiveLicense);
       const entry = {
         name: component.name,
         version: component.version,
         license: resolved.license,
         licenseSource: resolved.source,
         ...(resolved.evidence === null ? {} : { licenseEvidence: resolved.evidence }),
+        ...(outcome.selectedBranch === null ? {} : { effectiveLicense: outcome.selectedBranch }),
+        ...(outcome.decision === null ? {} : { licenseDecision: decisionRecord(component.version, outcome) }),
         licenseGroup: classified.group,
         dependencyScope: component.dependencyScope,
         isProductionDependency: component.dependencyScope === SCOPE_PRODUCTION,
@@ -205,7 +375,7 @@ export function buildLicensesReport({ lock, lockDigest, lockLabel, packagesRoot 
 
   const needsReview = packages
     .filter((entry) => entry.needsReview && entry.licenseGroup !== 'unknown')
-    .map((entry) => `${entry.name}@${entry.version} (${entry.license},${LICENSE_GROUP_TITLES[entry.licenseGroup]})`);
+    .map((entry) => `${entry.name}@${entry.version} (${entry.effectiveLicense ?? entry.license},${LICENSE_GROUP_TITLES[entry.licenseGroup]})`);
   const unknownLicense = packages
     .filter((entry) => entry.licenseGroup === 'unknown')
     .map((entry) => {
@@ -222,6 +392,8 @@ export function buildLicensesReport({ lock, lockDigest, lockLabel, packagesRoot 
       };
     });
 
+  const licenseDecisions = summarizeDecisions(packages, decisions, decisionsLabel);
+
   const production = packages.filter((entry) => entry.isProductionDependency);
   return {
     schema: LICENSES_SCHEMA,
@@ -237,9 +409,16 @@ export function buildLicensesReport({ lock, lockDigest, lockLabel, packagesRoot 
       production: production.length,
       development: packages.length - production.length,
       needsReview: needsReview.length,
+      // 按依赖范围拆分:「生产依赖还有几项待复核」是发版前唯一要回答的问题,
+      // 合并成一个数字会让人分不清哪些是必须先处理的。
+      needsReviewProduction: packages.filter((entry) => entry.needsReview && entry.isProductionDependency && entry.licenseGroup !== 'unknown').length,
+      needsReviewDevelopment: packages.filter((entry) => entry.needsReview && !entry.isProductionDependency && entry.licenseGroup !== 'unknown').length,
       unknownLicense: unknownLicense.length,
       fromPackageFile: packages.filter((entry) => entry.licenseSource === LICENSE_SOURCE_PACKAGE_FILE).length,
+      decided: licenseDecisions.applied.length,
+      decisionNotApplied: licenseDecisions.notApplied.length,
     },
+    licenseDecisions,
     groups,
     needsReview,
     unknownLicense,
@@ -248,10 +427,11 @@ export function buildLicensesReport({ lock, lockDigest, lockLabel, packagesRoot 
 }
 
 /**
- * 渲染 NOTICE.md:按许可证分组列出三方组件与义务提示,人工复核项单列成节。
+ * 渲染 NOTICE.md:按许可证分组列出三方组件与义务提示,多选一已拍板的单列一节,
+ * 未拍板与 copyleft 单列为待人工复核。
  *
  * 只列声明与义务摘要,不内联各许可证全文 —— 内联全文需要逐字校对且会随依赖升级
- * 腐化;正式分发所需的许可证全文副本由发版流程另行收集(见文末提示)。
+ * 腐化;按需收集入口见文末「许可证全文」节。
  * @param {LicensesReport} report buildLicensesReport 的结果
  * @returns {string} NOTICE.md 正文
  */
@@ -267,6 +447,9 @@ export function renderNotice(report) {
   lines.push('- 「生产依赖」= 会进入发布包的运行时依赖;「仅开发依赖」= 只在构建与测试链路使用,不随包分发。');
   lines.push('- 「许可证」取值两级回落:先取 lockfile 的 license 字段;上游未写该字段时,取已安装包目录内');
   lines.push('  随包分发的许可证文件(此时条目后标注证据文件名,便于人工复核原文);两处都没有可用依据才记未知。');
+  lines.push(`- 上游给「A OR B」多选一时,本项目按 \`${report.licenseDecisions.source}\` 里逐条记录的决策`);
+  lines.push('  选定其中一支并只按该支承担义务(已选定者见下节);决策只适用于生产依赖,且仅在版本与上游声明');
+  lines.push('  仍与决策记录一致时生效 —— 未拍板的一律保持并列声明并留在待复核清单里,不默认选一个。');
   lines.push('');
   for (const group of LICENSE_GROUPS) {
     const entries = report.groups[group];
@@ -280,27 +463,77 @@ export function renderNotice(report) {
     }
     for (const key of entries) {
       const entry = byKey.get(key);
-      const license = entry.license ?? `未声明(${NOASSERTION})`;
       const scope = entry.isProductionDependency ? '生产依赖' : '仅开发依赖';
       const optional = entry.optional ? ',可选依赖' : '';
       const direct = entry.direct ? ',直接依赖' : ',传递依赖';
       const evidence = entry.licenseSource === LICENSE_SOURCE_PACKAGE_FILE ? `,许可证取自包内文件 ${entry.licenseEvidence}` : '';
-      lines.push(`- **${key}** — 许可证:${license};${scope}${optional}${direct}${evidence}`);
+      if (entry.effectiveLicense === undefined) {
+        const license = entry.license ?? `未声明(${NOASSERTION})`;
+        lines.push(`- **${key}** — 许可证:${license};${scope}${optional}${direct}${evidence}`);
+        continue;
+      }
+      // 已选定分支:显示选定分支(不并列两个分支),但上游原始声明必须原样留痕
+      const obligations = resolveObligationSummary(entry.effectiveLicense);
+      const obligationText = obligations === null ? `未登记(${entry.effectiveLicense} 的义务摘要需补进 supply-common 的 LICENSE_OBLIGATION_SUMMARIES)` : obligations;
+      lines.push(
+        `- **${key}** — 许可证:本项目选用 ${entry.effectiveLicense};${scope}${optional}${direct}${evidence};` +
+          `义务:${obligationText};上游原始声明为 ${entry.license},本项目按决策选用 ${entry.effectiveLicense}`,
+      );
+    }
+    lines.push('');
+  }
+  if (report.licenseDecisions.applied.length > 0) {
+    lines.push(`## 多选一许可的分支选定(${report.licenseDecisions.applied.length})`);
+    lines.push('');
+    lines.push('下列生产依赖的上游许可为多选一(含 OR),已由人明确选定分支:本项目只按选定分支承担分发义务,');
+    lines.push('上游原始声明一并保留在上一节条目里,不因选定而被抹掉。');
+    lines.push('');
+    for (const item of report.licenseDecisions.applied) {
+      const obligations = resolveObligationSummary(item.selectedBranch ?? null);
+      lines.push(
+        `- **${item.name}@${item.version}** — 上游原始声明为 ${item.upstreamExpression},本项目选用 ${item.selectedBranch};` +
+          `适用版本范围 ${item.versionRange};义务:${obligations === null ? '未登记' : obligations};` +
+          `决策 ${item.decidedOn}(${item.decidedBy});理由:${item.rationale}`,
+      );
+    }
+    lines.push('');
+  }
+  if (report.licenseDecisions.notApplied.length > 0) {
+    lines.push(`## 未生效的分支选定决策(${report.licenseDecisions.notApplied.length})`);
+    lines.push('');
+    lines.push('下列决策本次未生效(按未决策处理:并列双分支 + 待人工复核),需复核后修正决策清单或依赖:');
+    lines.push('');
+    for (const item of report.licenseDecisions.notApplied) {
+      const version = item.version === null ? '(已不在依赖树)' : item.version;
+      lines.push(`- **${item.name}@${version}** — ${item.status}:${item.note}`);
     }
     lines.push('');
   }
   if (report.needsReview.length > 0) {
     lines.push(`## 需人工复核的许可证(${report.needsReview.length})`);
     lines.push('');
-    lines.push('以下组件的许可证带有附加义务(copyleft 或多分支可选),分发前需人工确认合规方式:');
+    lines.push(`以下组件的许可证带有附加义务(copyleft 或多分支可选),其中生产依赖 ${report.counts.needsReviewProduction} 项、`);
+    lines.push(`仅开发依赖 ${report.counts.needsReviewDevelopment} 项(仅开发依赖不随包分发,可不阻塞发布);`);
+    lines.push('生产依赖的分发前需人工确认合规方式:');
     lines.push('');
     for (const item of report.needsReview) lines.push(`- ${item}`);
     lines.push('');
   }
   lines.push('## 许可证全文');
   lines.push('');
-  lines.push('本清单只列声明与义务摘要,不内联各许可证全文。正式分发所需的许可证全文副本需在发版时');
-  lines.push('按上表逐项收集并随安装包提供 —— 未随包提供全文的 copyleft 组件同样构成不合规。');
+  lines.push('本清单只列声明与义务摘要,不内联各许可证全文(内联需逐字校对且会随依赖升级腐化),');
+  lines.push('也不在每次 CI 里收集(收集结果与 lockfile 强相关,会变成一份需要同步维护的副本)。');
+  lines.push('');
+  lines.push('按需收集(发版 / 送审前手动跑一次即可):');
+  lines.push('');
+  lines.push('```sh');
+  lines.push('node scripts/supply/collect-license-fulltext.mjs');
+  lines.push('```');
+  lines.push('');
+  lines.push('产物落在 `output/artifacts/supply/licenses-fulltext/<包名>@<版本>/`(许可证文件原文逐字复制)');
+  lines.push('与 `output/artifacts/supply/licenses-fulltext.json`(逐文件记录来源包、来源文件名、哈希与识别结果;');
+  lines.push('取不到许可证文件的生产依赖会显式记为 missing 并报出,不会静默跳过)。');
+  lines.push('未随包提供全文的组件同样构成不合规 —— 尤其是 copyleft 与本项目选定的宽松分支(MIT/Apache-2.0 均要求附全文)。');
   lines.push('');
   return `${lines.join('\n')}`;
 }
@@ -310,20 +543,28 @@ export function renderNotice(report) {
  *
  * 安装树根目录取 lockfile 所在目录:node_modules 与 lockfile 同级,故 lock 条目路径
  * (`node_modules/a/node_modules/b`)直接拼在它下面就是包目录。
+ *
+ * 决策清单默认读仓库内的 `scripts/supply/license-decisions.json`;读不出来(文件缺失/
+ * 记录非法)直接抛错,不静默按「无决策」处理 —— 决策在而读不出等于悄悄丢了人的决定。
  * @param {string} lockPath lockfile 路径
  * @param {string} lockLabel 报告里记录的输入标识
- * @param {{ detectLicense?: (packageDir: string) => ReturnType<typeof detectPackageLicense> }} [options] 可注入识别器
+ * @param {{ detectLicense?: (packageDir: string) => ReturnType<typeof detectPackageLicense>; decisionsPath?: string | null; decisions?: import('./supply-common.mjs').LicenseDecisionIndex | null; decisionsLabel?: string }} [options] 可注入识别器与决策索引
  * @returns {{ report: LicensesReport; notice: string }}
  */
 export function generateLicenses(lockPath, lockLabel, options = {}) {
   // 先 readLockfile:它对「文件不存在」给的是带修复建议的文案,直接 readFileSync 只会抛裸 ENOENT
   const lock = readLockfile(lockPath);
   const text = readFileSync(lockPath, 'utf8');
+  const decisionsPath = options.decisionsPath === undefined ? DEFAULT_DECISIONS_PATH : options.decisionsPath;
+  const decisionsLabel = options.decisionsLabel ?? DEFAULT_DECISIONS_LABEL;
+  const decisions = options.decisions !== undefined ? options.decisions : decisionsPath === null ? null : loadLicenseDecisions(decisionsPath, decisionsLabel);
   const report = buildLicensesReport({
     lock,
     lockDigest: hashBuffer(Buffer.from(text, 'utf8')),
     lockLabel,
     packagesRoot: path.dirname(path.resolve(lockPath)),
+    decisions,
+    decisionsLabel,
     ...(options.detectLicense === undefined ? {} : { detectLicense: options.detectLicense }),
   });
   return { report, notice: renderNotice(report) };
@@ -333,7 +574,7 @@ export async function main(argv = []) {
   const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
   let options;
   try {
-    options = parseSupplyArgs(argv, { booleans: ['print', 'help'], values: ['lock', 'output-dir'], usage: USAGE });
+    options = parseSupplyArgs(argv, { booleans: ['print', 'help'], values: ['lock', 'output-dir', 'decisions'], usage: USAGE });
   } catch (error) {
     console.error(`[licenses:fail] ${errorMessage(error)}`);
     return 1;
@@ -349,10 +590,13 @@ export async function main(argv = []) {
 
   let report;
   let notice;
+  const decisionsPath = typeof options.decisions === 'string' ? path.resolve(projectRoot, options.decisions) : DEFAULT_DECISIONS_PATH;
+  // 产物里只记相对标识:绝对路径会随机器不同而变,破坏「同输入逐字节一致」
+  const decisionsLabel = typeof options.decisions === 'string' ? toPosix(options.decisions) : DEFAULT_DECISIONS_LABEL;
   try {
-    ({ report, notice } = generateLicenses(lockPath, lockLabel));
+    ({ report, notice } = generateLicenses(lockPath, lockLabel, { decisionsPath, decisionsLabel }));
   } catch (error) {
-    console.error(`[licenses:fail] 无法读取 lockfile:${errorMessage(error)}`);
+    console.error(`[licenses:fail] 无法生成许可证清单:${errorMessage(error)}`);
     return 1;
   }
 
@@ -365,9 +609,18 @@ export async function main(argv = []) {
     `[ok] 许可证清单已生成:${toPosix(path.relative(projectRoot, licensesPath))} + ` +
       `${toPosix(path.relative(projectRoot, noticePath))}(${report.counts.total} 个组件:` +
       `生产 ${report.counts.production} / 开发 ${report.counts.development};` +
-      `需人工复核 ${report.counts.needsReview};取自包内许可证文件 ${report.counts.fromPackageFile};` +
-      `未知/缺失 ${report.counts.unknownLicense})`,
+      `需人工复核 ${report.counts.needsReview}(生产 ${report.counts.needsReviewProduction} / 开发 ${report.counts.needsReviewDevelopment});` +
+      `取自包内许可证文件 ${report.counts.fromPackageFile};未知/缺失 ${report.counts.unknownLicense})`,
   );
+  for (const item of report.licenseDecisions.applied) {
+    console.log(`[ok] 多选一许可已选定:${item.name}@${item.version} → ${item.selectedBranch}(上游声明 ${item.upstreamExpression};决策 ${item.decidedOn} ${item.decidedBy})`);
+  }
+  for (const item of report.licenseDecisions.notApplied) {
+    console.error(
+      `[licenses:warn] 分支选定决策未生效:${item.name}@${item.version ?? '(已不在依赖树)'} — ${item.status}:${item.note};` +
+        '该组件按未决策处理(并列双分支 + 待人工复核),需复核决策清单或依赖版本',
+    );
+  }
 
   if (report.status !== STATUS_OK) {
     for (const entry of report.unknownLicense) {
@@ -384,7 +637,8 @@ export async function main(argv = []) {
   }
   if (report.needsReview.length > 0) {
     console.log(
-      `[warn] ${report.needsReview.length} 个组件带 copyleft/多分支许可,已单列待人工复核:` +
+      `[warn] ${report.needsReview.length} 个组件带 copyleft/多分支许可,已单列待人工复核(` +
+        `生产依赖 ${report.counts.needsReviewProduction} / 仅开发依赖 ${report.counts.needsReviewDevelopment}):` +
         `${report.needsReview.slice(0, 5).join(';')}${report.needsReview.length > 5 ? ' …' : ''}`,
     );
   }

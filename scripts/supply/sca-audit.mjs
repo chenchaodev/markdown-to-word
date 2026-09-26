@@ -25,6 +25,7 @@ import {
   BLOCKING_SEVERITIES,
   SEVERITY_ORDER,
   SUPPLY_OUTPUT_DIR,
+  compareSemver,
   cvss3BaseScore,
   errorMessage,
   isMainModule,
@@ -39,6 +40,10 @@ import {
   toPosix,
   writeJson,
 } from './supply-common.mjs';
+
+// semver 比较是跨段共享原语(决策版本范围也要用),单源在 supply-common;此处转出
+// 保持既有 import 路径可用。
+export { compareSemver };
 
 /** SCA 报告 schema 版本 */
 export const SCA_SCHEMA = 'm2w/sca-report@1';
@@ -400,25 +405,6 @@ export function describeOsvFix(vuln, currentVersion) {
   const higher = candidates.filter((candidate) => compareSemver(candidate, currentVersion) > 0).sort(compareSemver);
   if (higher.length === 0) return '暂无高于当前版本的修复版本';
   return `升级到 ${higher[0]}`;
-}
-
-/**
- * 简化 semver 比较(仅 major.minor.patch,缺位按 0,非数字段按 0):
- * 避免一个畸形版本字符串把整个扫描打断。
- * @param {string} a 左值
- * @param {string} b 右值
- * @returns {number} 比较结果
- */
-export function compareSemver(a, b) {
-  const parse = (value) => String(value).split('-')[0].split('.').map((part) => (Number.isFinite(Number(part)) ? Number(part) : 0));
-  const left = parse(a);
-  const right = parse(b);
-  for (let i = 0; i < 3; i += 1) {
-    const l = left[i] ?? 0;
-    const r = right[i] ?? 0;
-    if (l !== r) return l < r ? -1 : 1;
-  }
-  return 0;
 }
 
 /* ---------- 汇总与判定 ---------- */
