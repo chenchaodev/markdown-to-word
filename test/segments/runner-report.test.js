@@ -24,6 +24,13 @@
  *     筛选词,`discoverSegments([SANDBOX], { only: null })` 都返回全部沙盒段、显式
  *     `only` 仍精确筛选、且段子进程 env 里不再带顶层筛选词。
  *
+ * 二、并发面(与选择面同纪律:只属顶层编排):
+ * 11. 解析单源:未设 M2W_TEST_CONCURRENCY 时并发为 1(默认路径与旧串行逐字等价);
+ * 12. 非法值不得变成「无限并发」或 NaN 个 worker:0/负数/小数/空串/abc 一律回落 1,
+ *     超出段数的值夹取到段数(夹取只约束真正派生 worker 的池);
+ * 13. 段内嵌套 runAll 不消费外层并发变量:本段进程内查不到该变量,且在显式设上该变量的
+ *     前提下跑嵌套编排,派生的段宿主子进程 env 里同样查不到(否则夹具进程与外层池抢核)。
+ *
  * 模型自适应:同进程回退模型下不造崩溃/悬挂/状态隔离夹具(崩溃夹具的 process.exit 会
  * 带走整轮验收,悬挂夹具在同进程内无法被终止),只跑与模型无关的 case 契约/旧段/筛选断言。
  *
@@ -33,7 +40,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../common/paths.js";
-import { discoverSegments, formatCaseReport, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
+import { CONCURRENCY_ENV, ONLY_ENV, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
 
 /** 临时段文件沙盒(仓库 output/ 下,gitignore 覆盖;不落 test/,免被 typecheck/lint 扫入) */
 const SANDBOX = path.join(ROOT, "output", "tmp", "runner-report-selftest");
@@ -48,10 +55,11 @@ const HANG_SEG = "runner-report-selftest/hang.test.js";
 const LEGACY_SEG = "runner-report-selftest/legacy-fail.test.js";
 const STATE_A_SEG = "runner-report-selftest/state-a.test.js";
 const STATE_B_SEG = "runner-report-selftest/state-b.test.js";
-/** 目录内文件名排序 = 执行顺序(cases-pass 之后才是 crash/hang,其后才是 legacy 与 state-*) */
-const ALL_SEGS = [FAIL_SEG, PASS_SEG, CRASH_SEG, HANG_SEG, LEGACY_SEG, STATE_A_SEG, STATE_B_SEG];
+const ENV_SEG = "runner-report-selftest/env-report.test.js";
+/** 目录内文件名排序 = 执行顺序(cases-pass 之后才是 crash/env-report/hang,其后才是 legacy 与 state-*) */
+const ALL_SEGS = [FAIL_SEG, PASS_SEG, CRASH_SEG, ENV_SEG, HANG_SEG, LEGACY_SEG, STATE_A_SEG, STATE_B_SEG];
 /** 同进程回退模型下只造的三段(无崩溃/悬挂/状态隔离夹具,见 setupSandbox) */
-const BASE_SEGS = [FAIL_SEG, PASS_SEG, LEGACY_SEG];
+const BASE_SEGS = [FAIL_SEG, PASS_SEG, ENV_SEG, LEGACY_SEG];
 
 /** 隔离自测的单段超时:悬挂段要真被杀掉,其余段(仅导入+几行断言)须远快于此 */
 const ISOLATED_TIMEOUT_MS = 8000;
@@ -62,6 +70,8 @@ const SNAPSHOT_BYTES = "M2W-FAILURE-SNAPSHOT-BYTES";
 /** 沙盒内记录各段 userData 目录的文件名(段间隔离证据,由段自己写) */
 const A_USERDATA_FILE = "state-a-userdata.txt";
 const B_USERDATA_FILE = "state-b-userdata.txt";
+/** 沙盒内记录段宿主 env 里并发变量取值的文件名(嵌套编排不消费外层并发面的证据) */
+const CONCURRENCY_FILE = "env-report-concurrency.txt";
 
 /**
  * 段结果项(runAll 汇总项的类型;契约单源在 test/common/runner.js,此处按签名派生)。
@@ -193,6 +203,24 @@ function setupSandbox(isolating) {
     "legacy-fail.test.js",
     ["export async function run() {", '  throw new Error("legacy 段故意抛错");', "}", ""].join("\n"),
   );
+  // 并发面探针段:把「段宿主 env 里有没有外层并发变量」回报到沙盒,并自己先判一次红
+  // (夹具自查 + 外层断言双保险;两种执行模型下都成立,故不属隔离专属夹具)
+  writeSegment(
+    "env-report.test.js",
+    [
+      `import fs from "node:fs";`,
+      `import path from "node:path";`,
+      `import { fileURLToPath } from "node:url";`,
+      "",
+      "const sandbox = path.dirname(fileURLToPath(import.meta.url));",
+      "export async function run() {",
+      `  const raw = process.env["${CONCURRENCY_ENV}"];`,
+      `  fs.writeFileSync(path.join(sandbox, "${CONCURRENCY_FILE}"), raw === undefined ? "unset" : raw, "utf8");`,
+      `  if (raw !== undefined) throw new Error("段宿主 env 不该带外层并发变量:" + "${CONCURRENCY_ENV}=" + raw);`,
+      "}",
+      "",
+    ].join("\n"),
+  );
   if (!isolating) return;
   // 崩溃段:不回传结果即硬退(模拟渲染进程崩溃/段内进程级异常,父进程无完整结果可采信)
   writeSegment(
@@ -273,6 +301,26 @@ function cleanupSandbox() {
 }
 
 /**
+ * 临时设/删某个环境变量并在 finally 复原(唯一的改-复原实现,withOnly 与并发面断言共用)。
+ * @template T
+ * @param {string} key 环境变量名
+ * @param {string | undefined} value 取值(undefined = 删除该变量,模拟「未设」)
+ * @param {() => Promise<T> | T} body 夹具主体
+ * @returns {Promise<T>} body 的返回值
+ */
+async function withEnv(key, value, body) {
+  const previous = process.env[key];
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+  try {
+    return await body();
+  } finally {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  }
+}
+
+/**
  * 临时设 M2W_ONLY 并在 finally 复原:一处入口服务两种用途 —— 断言「环境变量筛选确实生效」
  * (第 2/3 项),以及模拟「外层 harness 设了顶层筛选词」以验证段内发现面不受其影响(第 4 项)。
  * @template T
@@ -281,14 +329,7 @@ function cleanupSandbox() {
  * @returns {Promise<T>} body 的返回值
  */
 async function withOnly(only, body) {
-  const previous = process.env.M2W_ONLY;
-  process.env.M2W_ONLY = only;
-  try {
-    return await body();
-  } finally {
-    if (previous === undefined) delete process.env.M2W_ONLY;
-    else process.env.M2W_ONLY = previous;
-  }
+  return await withEnv(ONLY_ENV, only, body);
 }
 
 /**
@@ -320,7 +361,7 @@ export async function run() {
     const byFile = new Map(results.map((r) => [r.file, r]));
     const expected = isolating ? ALL_SEGS : BASE_SEGS;
     const shouldFail = isolating ? [FAIL_SEG, CRASH_SEG, HANG_SEG, LEGACY_SEG] : [FAIL_SEG, LEGACY_SEG];
-    const shouldPass = isolating ? [PASS_SEG, STATE_A_SEG, STATE_B_SEG] : [PASS_SEG];
+    const shouldPass = isolating ? [PASS_SEG, ENV_SEG, STATE_A_SEG, STATE_B_SEG] : [PASS_SEG, ENV_SEG];
     if (isolating && hung) {
       fail("隔离模型下超时段已被硬杀,不应报 hung(否则父进程仍需硬退出释放悬挂资源)");
     }
@@ -572,15 +613,93 @@ export async function run() {
     }
     // 边界:隔离模型下本段跑在自己的子进程里,env 不得再带顶层筛选词(结构上防同类漏筛;
     // 同进程回退模型下本段与 harness 同进程,本就该看得到,故不判)
-    if (isolating && process.env.M2W_ONLY !== undefined) {
+    if (isolating && process.env[ONLY_ENV] !== undefined) {
       fail(
-        `段子进程不应继承顶层筛选词(实际 ${String(process.env.M2W_ONLY)}):` +
+        `段子进程不应继承顶层筛选词(实际 ${String(process.env[ONLY_ENV])}):` +
           "顶层选择面只属顶层,否则段内自跑会被外层筛选词误伤",
       );
+    }
+
+    /* ---------- 5. 并发面(与选择面同纪律:只属顶层编排) ---------- */
+    // 5.1 未设变量 → 1:默认路径与旧的逐字串行执行等价(段输出继承父进程,无段名前缀)
+    const unset = await withEnv(CONCURRENCY_ENV, undefined, () => resolveConcurrency());
+    if (unset !== 1) {
+      fail(`未设 ${CONCURRENCY_ENV} 时并发应解析为 1,实际 ${unset}(默认必须仍是串行)`);
+    }
+    // 5.2 非法值不得变成「无限并发」或 NaN 个 worker;超段数夹取到段数
+    const illegalEnv = ["0", "-3", "2.5", "abc", "", "   ", "Infinity"];
+    for (const raw of illegalEnv) {
+      const got = await withEnv(CONCURRENCY_ENV, raw, () => resolveConcurrency({ total: 4 }));
+      if (got !== 1) {
+        fail(`${CONCURRENCY_ENV}="${raw}" 是非法值,应回落到 1,实际 ${got}(不得变成无限并发)`);
+      }
+    }
+    /** @type {[string, number][]} */
+    const legalEnv = [
+      ["1", 1],
+      ["2", 2],
+      ["4", 4],
+      ["99", 4],
+    ];
+    for (const [raw, expected] of legalEnv) {
+      const got = await withEnv(CONCURRENCY_ENV, raw, () => resolveConcurrency({ total: 4 }));
+      if (got !== expected) {
+        fail(`${CONCURRENCY_ENV}="${raw}" 在 4 个段上应解析为 ${expected},实际 ${got}`);
+      }
+    }
+    // 显式入参走同一套规则(嵌套编排/测试注入不得绕过回落纪律)
+    /** @type {[number, number][]} */
+    const explicitCases = [
+      [0, 1],
+      [-3, 1],
+      [1.5, 1],
+      [Number.NaN, 1],
+      [2, 2],
+      [99, 4],
+    ];
+    for (const [given, expected] of explicitCases) {
+      const got = resolveConcurrency({ concurrency: given, total: 4 });
+      if (got !== expected) {
+        fail(`concurrency=${String(given)} 在 4 个段上应解析为 ${expected},实际 ${got}`);
+      }
+    }
+    // 5.3 段内嵌套 runAll 不消费外层并发变量(两道边界):
+    // (a) 本段自身(外层的段宿主)就查不到该变量;
+    // (b) 显式设上之后跑嵌套编排,派生的段宿主子进程 env 里同样查不到 —— 段内自跑派生的是
+    //     夹具进程(本段自己就会派生十余个二层 Electron 子进程),叠上外层池会与之抢核。
+    if (isolating && process.env[CONCURRENCY_ENV] !== undefined) {
+      fail(
+        `段宿主进程不应继承外层并发变量(实际 ${String(process.env[CONCURRENCY_ENV])}):` +
+          "并发面只属顶层编排",
+      );
+    }
+    // 同进程回退模型没有子进程 env 可剥(夹具与编排器同进程,本就共享 env),故不判这一条
+    if (isolating) {
+      const nestedEnv = await withEnv(CONCURRENCY_ENV, "4", () =>
+        runAll([SANDBOX], { segmentTimeoutMs: ISOLATED_TIMEOUT_MS, only: "env-report" }),
+      );
+      const nestedResult = nestedEnv.results.length === 1 ? at(nestedEnv.results, 0) : null;
+      if (nestedResult === null || nestedResult.file !== ENV_SEG || !nestedResult.ok) {
+        fail(
+          `显式设上 ${CONCURRENCY_ENV}=4 后跑嵌套编排,${ENV_SEG} 应仍正常执行,实际 ` +
+            `${nestedEnv.results.map((r) => r.file).join(", ") || "无"}:` +
+            `${nestedResult === null ? "未执行" : errorStack(nestedResult.error)}`,
+        );
+      }
+      const reported = fs.readFileSync(path.join(SANDBOX, CONCURRENCY_FILE), "utf8");
+      if (reported !== "unset") {
+        fail(
+          `段宿主子进程 env 里不该带外层并发变量(实际 ${CONCURRENCY_ENV}=${reported}):` +
+            "并发面只属顶层编排,否则段内夹具进程与外层并发池抢核",
+        );
+      }
+    } else {
+      console.log("[selftest] 同进程回退模型:跳过段宿主 env 边界断言(该模型无子进程 env,夹具与编排器同进程)");
     }
   } finally {
     removeSandboxFile(A_USERDATA_FILE);
     removeSandboxFile(B_USERDATA_FILE);
+    removeSandboxFile(CONCURRENCY_FILE);
     cleanupSandbox();
   }
 }

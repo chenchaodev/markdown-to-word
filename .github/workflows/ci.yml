@@ -80,8 +80,15 @@ jobs:
 
       # 统一门禁入口:build 必须先于 typecheck(测试树 import dist/ 编译产物)与几何门禁
       # (采样 dist/renderer),顺序与完整性由 scripts/check-ci-contract.mjs 断言守护
+      #
+      # 验收段并发档位:段间本就零状态串扰(每段独立 userData 目录),编排器内并发池
+      # 因此安全(见 ADR-017)。默认档位是 1(串行),这里显式开到 4 对齐 runner 的 vCPU
+      # 档(public 仓库标准 runner 为 4 核)。这一行是**唯一的提速开关**:删掉即回到
+      # 串行,不影响任何判定口径。独占段(gate-probes,工作树指纹敏感)不参与并发。
       - name: Verify (verify:ci)
         run: npm run verify:ci
+        env:
+          M2W_TEST_CONCURRENCY: 4
 
       # zizmor 审计(非阻断建议项,不进 verify:ci 链):GitHub Actions 安全审计器,补
       # SHA 固定后 Dependabot 漏洞告警失效这一段的空白(template-injection /
