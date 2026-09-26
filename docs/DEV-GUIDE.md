@@ -83,6 +83,9 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `file-list.ts`/`ui/`(`dialogs.ts`/`recent-files.ts`,bindRecentFilesEvents 范式)/`first-run-guide.ts`(首次启动引导)
   - `wizard/`:`book-wizard.ts`(向导外壳/导航/打开关闭+付印提交)/`wizard-steps.ts`(步骤渲染·版式四步:模板/封面/页眉页脚/水印)/`wizard-steps-delivery.ts`(步骤渲染·交付三步:合并源/目录/付印+当前步渲染)/`wizard-fields.ts`(字段校验绑定+共用 DOM/radio 零件)/`wizard-runtime.ts`(草稿/容器/步序单例,防环)/`wizard-state.ts`(向导状态管理纯 reducer)
 - `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/gen-fixtures.mjs 与 smoke/(薄转调,实现见 `src/main/smoke.ts`));`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)、`scripts/check-build-fresh.mjs`(构建新鲜度守卫)
+  - **沙箱副本闭包**(守护见 `test/segments/contract-single-source.test.js` (e) 节,判定原语在 `test/common/copy-closure.js`):部分段会把生产脚本**逐字节复制**进系统临时区的沙盒再执行(如 `install-smoke` 复制 5 个 scripts/** 与 `test/common/userdata.js`)。因沙盒内无 `node_modules` 且只复制被点名的文件,副本必须满足三条:① 只允许 `node:` 内建依赖(裸包名必失败);② 相对 import 的目标必须**同在副本集合内**;③ 不得有死副本(无同集合入边且未登记为沙盒入口者判红)。副本集合由**代码里的复制调用扫出**(`copyFileSync`/`copyFile`/`cpSync`),不硬编码文件名 —— 新增复制点会被自动纳入。
+  - **入口登记需人工同步**:`SANDBOX_ENTRY_EVIDENCE` 登记那些「被复制但沙盒内由测试直接执行、因而没有上游 import」的副本。漏登记**判红**而非静默放过(刻意取舍),故新增/删除沙箱复制点时必须同步该表。登记需附「提及它 + 带执行类调用」的行作为证据,否则视为无证据。
+  - **已知覆盖边界**:运行时拼装的复制列表、多层别名链、跨目录整树复制**解析不出**,只登记不判红。若将来用「运行时拼装列表」复制 JS 模块,本守护不会自动纳入,需人工扩 `resolveCopySource` 或新增复制机制 scope。
 
 ## 测试体系(按内容主题零注册,新增=新建段文件)
 - 目录组织标准(test 树镜像 src 三层,按被测主体归属;目录内按内容主题命名):`test/segments/` = core 渲染主题与跨层契约/恒等守护段 /`test/main/` = 主进程层主题段 /`test/renderer/` = UI 层主题段(纯函数/状态机/CSS 令牌恒等)
