@@ -459,11 +459,13 @@ const dict = {
     "warn.imageAttrInvalid": "图片尺寸属性无效,已忽略: ${attr}(${src})",
     "warn.headerLogoLoadFailed": "页眉 logo 加载失败,已忽略: ${src}",
     "warn.unlabeledCodeBlock": "代码块未标注语言,可能无法正确高亮排版",
-    // 转换预检「AI 静默丢内容」四类:tag/line/snippet 为推送期的源码原文
+    // 转换预检「AI 静默丢内容」四类:tag/lineText/snippet 为推送期的源码原文,
+    // lineNo 为行号(number);两者的键名不共用,避免同名异型
     "warn.unsupportedMathDelimiter": "`\\(` / `\\[` 不是本工具支持的公式定界符,会按普通文字印出而不渲染公式;请改用 `$…$`(行内)或 `$$…$$`(独立成行)",
     "warn.htmlTagNotAllowed": "HTML 标签 <${tag}> 不在支持范围内,其内容会被丢弃;请改用 Markdown 语法或纯文本",
     "warn.unpairedMathDelimiter": "公式定界符 $ 未配对(疑似:${snippet});未配对的 $ 会按普通文字印出,请补齐闭合的 $",
-    "warn.tableLikeNotParsed": "这段形似表格但未按表格排版(首行:${line});请在首行下补一行分隔行(如 | --- | --- |)",
+    "warn.unclosedCodeFence": "代码围栏没有闭合(第 ${lineNo} 行开始):之后的内容会被整段当成代码而不显示;请补上收尾的三个反引号",
+    "warn.tableLikeNotParsed": "这段形似表格但未按表格排版(首行:${lineText});请在首行下补一行分隔行(如 | --- | --- |)",
     // 目录扫描预算触顶:kind 为触顶维度(条目数/层级)、limit 为对应上限值;
     // 值与 pathScanLimitWarning 的 fallback 逐字一致(默认值等价)
     "warn.pathScanLimit": "目录扫描达到${kind}上限(${limit}),已停止收集剩余内容",

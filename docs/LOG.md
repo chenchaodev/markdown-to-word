@@ -26,6 +26,7 @@
 | REQ-041 | 三处已统一到 `dual-extract`（cross-ref / eq-numbering / 差异矩阵）。**残余两段零命中**：`heading-links.test.js:69` 与 `toc-caption.test.js:74,85` 仍是裸字符串断言，收口方式与 eq-numbering 同款 |
 | REQ-054 | 面向用户文档（README / index.html / USER-GUIDE / DEV-GUIDE）久未更新，与实际功能脱节。用户 2026-09-27 指示刷新，但要求先做 REQ-053 把文档体系迁到 v8.2 —— 否则紧接着要改的正是这两份文件 |
 | REQ-058 | 项目 `AGENTS.md` 的「文件信息」节自定容量上限 ≤2500 字符，实际已约 3.9k（本次迁移前 3875，迁移后 3893），**超限 55% 且早已越线**。该节同时写着处置次序「先并入既有条目 → 再指向全局规则 → 仍超则提请扩容」：前两步只能靠删项目级约束（那是加严项，不可删）与加指针（已做尽），故第三步「提请扩容」是唯一出口 —— 需用户决定是把上限提到实际量级，还是先做一轮条目合并 |
+| REQ-059 | 告警 `params.kind` 一名两义且**翻译口径相反**：`warn.crossRefNotFound` 的 `kind` 是中文类别词（图/表/章节，来自 `CROSS_REF_KINDS.kindName`，en/ja 刻意省略该占位符），`warn.pathScanLimit` 的 `kind` 是触顶维度（条目数/层级，en/ja 保留占位符）。同名同型故不会崩，但将来有人照后者的口径给前者补翻译，会把中文类别词硬塞进英文界面。候选改法 = 前者改名 `kindName` 与 `CROSS_REF_KINDS.kindName` 对齐；因要动 `src/core/i18n.ts`（不在本轮可写范围）且属既有代码面，本轮只报不改（2026-09-27） |
 
 ### 待拍板 —— 已决定推迟，触发条件到了重新拿出来
 

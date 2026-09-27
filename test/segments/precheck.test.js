@@ -148,6 +148,7 @@ export async function run() {
     "warn.unsupportedMathDelimiter",
     "warn.htmlTagNotAllowed",
     "warn.unpairedMathDelimiter",
+    "warn.unclosedCodeFence",
     "warn.tableLikeNotParsed",
   ]);
   /**
@@ -226,6 +227,61 @@ export async function run() {
   expectSilentLoss("③反向:同段两个候选配成对", "见 $A 与 $B", []);
   expectSilentLoss("③反向:裸 $ 符号", "价格 $ 与符号 $ 单独", []);
 
+  // 10b) ③ 的另一半:代码围栏未闭合(CommonMark 配对规则的行级扫描)
+  /**
+   * 断言一段 markdown 的 ③ 围栏告警起始行号恰为 expected(空数组 = 不报)。
+   * @param {string} label 用例名(进失败消息)
+   * @param {string} md markdown 源码
+   * @param {number[]} expected 期望的起始行号(1-based)
+   */
+  const expectFenceLines = (label, md, expected) => {
+    const actual = silentLoss(md)
+      .filter((w) => w.key === "warn.unclosedCodeFence")
+      .map((w) => w.params.lineNo);
+    if (actual.length !== expected.length || expected.some((lineNo, i) => actual[i] !== lineNo)) {
+      throw new Error(`${label}:期望行号 [${expected.join(",")}],实际 [${actual.join(",")}]`);
+    }
+    console.log(`[ok] precheck:${label}`);
+  };
+  // 正向:未闭合围栏(remark 会把后文吞成代码块,是最伤的一类)
+  expectFenceLines("③围栏正向:缺陷原样(带 info 串)", "正常段落\n\n```js\nconst a = 1;\n", [3]);
+  expectSilentLoss(
+    "③围栏正向:缺陷原样只出围栏一条",
+    "正常段落\n\n```js\nconst a = 1;\n",
+    ["warn.unclosedCodeFence"],
+  );
+  expectFenceLines("③围栏正向:不带 info 串", "```\nplain\n", [1]);
+  expectFenceLines("③围栏正向:~~~ 未闭合", "~~~python\ncode\n", [1]);
+  expectFenceLines("③围栏正向:长围栏 4 反引号", "````js\ncode\n", [1]);
+  expectFenceLines("③围栏正向:第二个未闭合只报第二个", "```js\na\n```\n\n```py\nb\n", [5]);
+  expectFenceLines("③围栏正向:引用块内未闭合", "> 引用\n> ```js\n> code\n", [2]);
+  // 反向:配对规则
+  expectFenceLines("③围栏反向:成对反引号围栏", "```js\ncode\n```\n", []);
+  expectFenceLines("③围栏反向:成对波浪号围栏", "~~~python\ncode\n~~~\n", []);
+  expectFenceLines("③围栏反向:成对围栏带尾随空白", "```js\ncode\n```   \n", []);
+  expectFenceLines("③围栏反向:引用块内成对围栏", "> ```js\n> code\n> ```\n", []);
+  expectFenceLines("③围栏反向:长度不足的闭合行(仍报)", "```js\ncode\n``\n", [1]);
+  expectFenceLines("③围栏反向:不同字符互闭合(仍报)", "```js\ncode\n~~~\n", [1]);
+  expectFenceLines("③围栏反向:反向不同字符(仍报)", "~~~\ncode\n```\n", [1]);
+  expectFenceLines("③围栏反向:缩进 4 空格的缩进代码块", "正文\n\n    ```\n    code\n    ```\n", []);
+  expectFenceLines("③围栏反向:info string 含反引号", "正文\n\n```js `code`\n更多\n\n更多\n", []);
+  expectFenceLines("③围栏反向:围栏内的 ``` 不开新围栏", "````\n```\ncode\n````\n", []);
+  expectFenceLines("③围栏反向:HTML 块内的 ```(块内容非围栏)", "<div>\n```js\ncode\n</div>\n", []);
+  // 围栏内的 |、<table>、$、\( 仍被掩码,不进其它三类
+  expectSilentLoss(
+    "③围栏反向:围栏内素材不进其它三类",
+    "```js\na | b | c\n<table><tr><td>x</td></tr></table>\necho $FOO\n\\(x\\)\n",
+    ["warn.unclosedCodeFence"],
+  );
+  expectSilentLoss(
+    "③围栏反向:闭合围栏后正常表格照报",
+    "```js\ncode\n```\n\n| 列1 | 列2 |\n| 数据1 | 数据2 |\n",
+    ["warn.tableLikeNotParsed"],
+  );
+  // 已知放过:围栏未闭合但所在块(引用/列表项)先于文末结束 —— 后文照常排版,不算整段消失
+  expectFenceLines("③围栏已知放过:引用块先结束", "> 引用\n> ```js\n> code\n\n正常段落\n", []);
+  expectFenceLines("③围栏已知放过:列表项先结束", "- 项目\n  ```js\n  code\n\n正常段落\n", []);
+
   // 11) ④ 形似表格却未解析成表(连续候选行 + 行首/行尾紧邻 | + 段内竖线数齐)
   expectSilentLoss("④正向:缺分隔行的两列表", "| 列1 | 列2 |\n| 数据1 | 数据2 |", [
     "warn.tableLikeNotParsed",
@@ -234,8 +290,8 @@ export async function run() {
     "warn.tableLikeNotParsed",
   ]);
   const tableWarning = silentLoss("| 列1 | 列2 |\n| 数据1 | 数据2 |")[0];
-  if (tableWarning.params.line !== "| 列1 | 列2 |") {
-    throw new Error(`④应回显首行,实际 ${JSON.stringify(tableWarning.params)}`);
+  if (tableWarning.params.lineText !== "| 列1 | 列2 |") {
+    throw new Error(`④应回显首行内容(params.lineText),实际 ${JSON.stringify(tableWarning.params)}`);
   }
   expectSilentLoss("④反向:正常 gfm 表格", "| a | b |\n| --- | --- |\n| 1 | 2 |", []);
   expectSilentLoss("④反向:无首尾竖线的真表格", "a | b\n--- | ---\n1 | 2", []);
@@ -249,15 +305,15 @@ export async function run() {
   // 11b) ④ 的两条收紧(缺陷复算:散文并列比较句被当伪表格,修复后不再命中):
   //   边框紧邻(行首或行尾挨 |)+ 段内竖线数齐。逐条用回显行断言(不只断条数)。
   /**
-   * 断言一段 markdown 的 ④ 告警回显行恰为 expectedLines(空数组 = 不报)。
+   * 断言一段 markdown 的 ④ 告警回显行内容恰为 expectedLines(空数组 = 不报)。
    * @param {string} label 用例名(进失败消息)
    * @param {string} md markdown 源码
-   * @param {string[]} expectedLines 期望回显的首行序列
+   * @param {string[]} expectedLines 期望回显的首行内容序列(params.lineText)
    */
   const expectTableLikeLines = (label, md, expectedLines) => {
     const actual = silentLoss(md)
       .filter((w) => w.key === "warn.tableLikeNotParsed")
-      .map((w) => w.params.line);
+      .map((w) => w.params.lineText);
     if (actual.length !== expectedLines.length || expectedLines.some((line, i) => actual[i] !== line)) {
       throw new Error(`${label}:期望回显 [${expectedLines.join(" / ")}],实际 [${actual.join(" / ")}]`);
     }

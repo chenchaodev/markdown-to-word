@@ -38,6 +38,12 @@ const REMOTE_RE = /^(https?:|data:|blob:)/i;
 
 /** 行内代码/围栏/HTML/公式/表格节点:其覆盖的源码区间不参与静默丢内容判定 */
 const MASKED_SOURCE_NODES = new Set(["code", "inlineCode", "html", "math", "inlineMath", "table"]);
+/**
+ * 围栏判定专用的「原文节点」集合:HTML 块与公式块里的 ``` 是块内容,不是围栏。
+ * 刻意**不含** code/inlineCode —— remark 给未闭合围栏建的 code 节点恰好从围栏行
+ * 开始,拿它当掩码会把要检的那一行自己挡掉。
+ */
+const RAW_TEXT_SOURCE_NODES = new Set(["html", "math", "inlineMath"]);
 
 /**
  * ① 不被支持的公式定界符(AI 的 LaTeX 习惯形态):本工具只认 $…$ / $$…$$
@@ -73,6 +79,15 @@ const TABLE_LIKE_MIN_PIPES = 2;
 /** ④ 段内竖线数相同的连续子段至少这么长才算一段伪表格(单行、以及列数不齐的散文都不算) */
 const TABLE_LIKE_MIN_LINES = 2;
 
+/* ---- ③ 代码围栏未闭合(CommonMark 配对规则的行级扫描) ---- */
+
+/** 围栏开启行:缩进 ≤3 空格,其后连续 3+ 个反引号或 3+ 个波浪号 */
+const FENCE_OPEN_RE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
+/** 围栏闭合行:同种标记,其后只允许空白(有 info string 即不算闭合) */
+const FENCE_CLOSE_RE = /^( {0,3})(`{3,}|~{3,})[ \t]*$/;
+/** 引用块标记:`>` 前至多 3 空格,其后至多 1 个空白;逐层剥离 */
+const QUOTE_PREFIX_RE = /^ {0,3}>[ \t]?/;
+
 /* ================= 静默丢内容告警构造(本模块自持,不进 i18n.ts 逻辑层) ================= */
 
 /** ① 告警:不报定界符实例(全文一条),报出来也没法逐个改 —— 关键是让用户知道该改什么 */
@@ -101,12 +116,25 @@ function unpairedMathDelimiterWarning(snippet: string): KeyedWarning {
   };
 }
 
-/** ④ 告警:line 为形似表格段落的**首行**(整段只报一次,不逐行刷屏) */
-function tableLikeNotParsedWarning(line: string): KeyedWarning {
+/**
+ * ③ 告警:lineNo 为未闭合围栏的**起始行号**(number,1-based,用户据此定位)。
+ * 键名带类型语义(…No = 行号),与 ④ 的 lineText(行内容,string)不共用 `line` ——
+ * 同一键在两条告警上异型会让渲染层按字符串/按数字使用时踩雷。
+ */
+function unclosedCodeFenceWarning(lineNo: number): KeyedWarning {
+  return {
+    key: "warn.unclosedCodeFence",
+    params: { lineNo },
+    fallback: `代码围栏没有闭合(第 ${lineNo} 行开始):之后的内容会被整段当成代码而不显示;请补上收尾的三个反引号`,
+  };
+}
+
+/** ④ 告警:lineText 为形似表格段落的**首行内容**(string,整段只报一次,不逐行刷屏) */
+function tableLikeNotParsedWarning(lineText: string): KeyedWarning {
   return {
     key: "warn.tableLikeNotParsed",
-    params: { line },
-    fallback: `这段形似表格但未按表格排版(首行:${line});请在首行下补一行分隔行(如 | --- | --- |)`,
+    params: { lineText },
+    fallback: `这段形似表格但未按表格排版(首行:${lineText});请在首行下补一行分隔行(如 | --- | --- |)`,
   };
 }
 
@@ -149,6 +177,8 @@ export function precheckMarkdown(
   const warnings: ConvertWarning[] = [];
   // 静默丢内容四类的中间产物:掩码区间(源码偏移)/白名单外标签/未配对 $ 片段
   const ranges: SourceRange[] = [];
+  // 围栏判定另用一份窄掩码(仅 HTML/公式块):见 RAW_TEXT_SOURCE_NODES 的理由
+  const rawTextRanges: SourceRange[] = [];
   const disallowedTags = new Set<string>();
   const unpairedMath: string[] = [];
   const unpairedMathSeen = new Set<string>();
@@ -159,7 +189,10 @@ export function precheckMarkdown(
     if (!node || typeof node.type !== "string") return;
     // 掩码区间先于各分支登记:分支里的提前 return(如远程图片)不得让区间漏登记
     const range = nodeRange(node);
-    if (range && MASKED_SOURCE_NODES.has(node.type)) ranges.push(range);
+    if (range) {
+      if (RAW_TEXT_SOURCE_NODES.has(node.type)) rawTextRanges.push(range);
+      if (MASKED_SOURCE_NODES.has(node.type)) ranges.push(range);
+    }
     if (node.type === "image") {
       const url: string = node.url ?? "";
       if (!url || REMOTE_RE.test(url)) return;
@@ -196,13 +229,17 @@ export function precheckMarkdown(
     }
   }
 
-  // 静默丢内容四类:排在既有检查之后,顺序 ①②③④ 即告警在确认框里的顺序
+  // 静默丢内容检查:排在既有检查之后,顺序即告警在确认框里的顺序(①②③围栏③$④)
+  // 围栏判定先跑:未闭合围栏会扩大掩码,故其前后各构建一次(前一次只用窄掩码)
+  const lines = splitSourceLines(content);
+  const fenceStarts = findUnclosedCodeFences(lines, buildMaskedRanges(rawTextRanges), ranges);
   const masked = buildMaskedRanges(ranges);
   if (hasUnsupportedMathDelimiter(content, masked)) warnings.push(unsupportedMathDelimiterWarning());
   for (const tag of [...disallowedTags].sort()) warnings.push(htmlTagNotAllowedWarning(tag));
+  for (const start of fenceStarts) warnings.push(unclosedCodeFenceWarning(start + 1));
   for (const snippet of unpairedMath) warnings.push(unpairedMathDelimiterWarning(snippet));
-  for (const line of findTableLikeNotParsed(splitSourceLines(content), masked)) {
-    warnings.push(tableLikeNotParsedWarning(line));
+  for (const lineText of findTableLikeNotParsed(lines, masked)) {
+    warnings.push(tableLikeNotParsedWarning(lineText));
   }
   return warnings;
 }
@@ -391,6 +428,104 @@ function splitSourceLines(source: string): SourceLine[] {
   }
   lines.push({ text: source.slice(cursor), start: cursor });
   return lines;
+}
+
+/**
+ * ③ 代码围栏未闭合:按 CommonMark 的围栏配对规则做**行级扫描**,不从 mdast 反推 ——
+ * 未闭合围栏被 remark 吞成 code 节点到文末,从 AST 看不出「本该有闭合」。
+ * 围栏内的一切行只用于找闭合行,不参与围栏开启判定(否则内容里的 ``` 会被误当新围栏);
+ * 报出的未闭合围栏整段并入掩码,故其内的 |、<table>、$、\( 不进其它三类检查。
+ * 落在掩码区内的行(HTML 块等)不参与判定 —— 块内的 ``` 是块内容,不是围栏。
+ * @returns 未闭合围栏的起始行下标(0-based);至多一个(未闭合即吞到文末)
+ */
+function findUnclosedCodeFences(
+  lines: readonly SourceLine[],
+  masked: MaskedRanges,
+  ranges: SourceRange[],
+): number[] {
+  const unclosed: number[] = [];
+  let open: FenceOpen | null = null;
+  let openStart = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    if (masked.contains(line.start)) continue;
+    const marker = stripQuoteMarkers(line.text);
+    if (open !== null) {
+      if (fenceCloses(marker.text, open)) {
+        open = null;
+        openStart = -1;
+      } else if (marker.text.trim() !== "" && leavesFenceBlock(marker, open)) {
+        // 容器块(引用/列表项)先于文末结束:围栏只吞掉了自己那一块,后文照常排版,
+        // 不属「整段消失」,故放过(零误报优先;代价见 findTableLikeNotParsed 同款取舍)
+        open = null;
+        openStart = -1;
+      }
+      continue;
+    }
+    const candidate = fenceOpenOf(marker);
+    if (candidate === null) continue;
+    open = candidate;
+    openStart = index;
+  }
+  if (open !== null && openStart >= 0) {
+    unclosed.push(openStart);
+    const last = lines[lines.length - 1]!;
+    ranges.push({ start: lines[openStart]!.start, end: last.start + last.text.length });
+  }
+  return unclosed;
+}
+
+/** 围栏开启行的标记特征 + 它所在块的上下文 */
+interface FenceOpen {
+  /** 标记字符(反引号或波浪号);不同字符互不闭合 */
+  char: string;
+  /** 标记长度;闭合行不得短于开启行 */
+  length: number;
+  /** 开启行的引用块层级 */
+  depth: number;
+  /** 开启行去掉引用前缀后的缩进列数(列表项内的围栏为 >0) */
+  indent: number;
+}
+
+/** 去掉逐层引用块标记后的行:内容 / 缩进列数 / 引用层级(非引用行原样) */
+function stripQuoteMarkers(line: string): LineMarker {
+  let rest = line;
+  let depth = 0;
+  for (let match = QUOTE_PREFIX_RE.exec(rest); match; match = QUOTE_PREFIX_RE.exec(rest)) {
+    rest = rest.slice(match[0].length);
+    depth += 1;
+  }
+  return { text: rest, indent: rest.length - rest.trimStart().length, depth };
+}
+
+/** 该行是否已离开围栏所在的块(引用层级变浅,或缩进退回块外) */
+function leavesFenceBlock(marker: LineMarker, open: FenceOpen): boolean {
+  return marker.depth < open.depth || marker.indent < open.indent;
+}
+
+/** 去掉引用标记后的行内容及其位置特征 */
+interface LineMarker {
+  text: string;
+  indent: number;
+  depth: number;
+}
+
+/** 该行是否为围栏开启行;反引号围栏的 info string 含反引号时只是普通文本,不算围栏 */
+function fenceOpenOf(marker: LineMarker): FenceOpen | null {
+  const match = FENCE_OPEN_RE.exec(marker.text);
+  if (!match) return null;
+  const fence = match[2]!;
+  const char = fence.charAt(0);
+  if (char === "`" && match[3]!.includes("`")) return null;
+  return { char, length: fence.length, depth: marker.depth, indent: marker.indent };
+}
+
+/** 该行是否闭合给定围栏(同种标记 + 长度不短于开启行 + 其后无 info string) */
+function fenceCloses(text: string, open: FenceOpen): boolean {
+  const match = FENCE_CLOSE_RE.exec(text);
+  if (!match) return false;
+  const fence = match[2]!;
+  return fence.charAt(0) === open.char && fence.length >= open.length;
 }
 
 /**
