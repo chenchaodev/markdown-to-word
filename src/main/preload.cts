@@ -26,6 +26,10 @@ import type {
 } from "../core/ipc-contract.js";
 import type { AppSettings } from "../core/settings/settings-defaults.js";
 import type { DocMetadata } from "../core/pipeline/frontmatter.js";
+// preload 暴露面的类型单源在 core(此前是本文件内的 `typeof api` 推导,导致 renderer
+// 只能反向 type-only import 本文件 —— 全库唯一一条 renderer→main 依赖,靠门禁的
+// REVERSE_TYPE_ALLOWLIST 放行了近一年)。形状见 core/preload-api.ts。
+import type { PreloadApi } from "../core/preload-api.js";
 
 /** IPC channel 名镜像(与 src/main/ipc/channels.ts IPC_CHANNELS 逐键同值,勿单侧改动)。 */
 const CH = {
@@ -66,10 +70,13 @@ const CH = {
   aboutCheckUpdate: "about:check-update",
 } as const;
 
-// api 对象提为具名 const,实现即契约——renderer.ts 的 window.api 类型由
-// PreloadApi 推导(preload 改签名时 renderer 调用点编译期暴露,不再手工第三镜像);
+// api 对象提为具名 const,以 core/preload-api.ts 的 PreloadApi 标注——形状单源在 core,
+// preload 与 renderer 两侧同源引用(此前 renderer 只能反向 type-only import 本文件,
+// 是全库唯一一条 renderer→main 依赖,靠门禁放行表挂了近一年)。
+// 标注后:api 多一个方法 → tsc 报多余属性;方法签名不符 → tsc 报错;键集两向另由下方
+// 断言锁死(preload 改签名时 renderer 调用点仍编译期暴露,不再手工第三镜像)。
 // channel 名恒等测试(ipc-channels.test.js)保留。
-const api = {
+const api: PreloadApi = {
   /** 拖放取路径:File.path 已随 Electron 32+ 移除,须经 webUtils 解析(勿回退) */
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   /** 多选文件对话框,返回所选文件路径数组;空数组 = 用户取消。 */
@@ -162,5 +169,18 @@ const api = {
 
 contextBridge.exposeInMainWorld("api", api);
 
-/** preload 暴露面类型单源:renderer.ts 经 `import type` 推导 window.api 形状。 */
-export type PreloadApi = typeof api;
+/**
+ * 键集**双向**断言:把 `PreloadApi = typeof api` 推导所独有的、构造上不可能漂移的那道
+ * 保护补回到手写类型上。`const api: PreloadApi = {...}` 的对象字面量多余属性检查只能抓
+ * 「api 有而类型没有」;从 api 删方法而类型里留着时 tsc 是沉默的,renderer 会到运行期才炸。
+ * 下面两条把另一个方向也锁死,故本文件与 core/preload-api.ts 的键集**恒等**,任一侧增删
+ * 键都会在此编译失败(报错信息即缺失键名)。
+ */
+type ApiKeysMissingInType = Exclude<keyof typeof api, keyof PreloadApi> extends never
+  ? true
+  : ["api 有而 PreloadApi 未声明的键", Exclude<keyof typeof api, keyof PreloadApi>];
+type TypeKeysMissingInApi = Exclude<keyof PreloadApi, keyof typeof api> extends never
+  ? true
+  : ["PreloadApi 声明了但 api 未实现的键", Exclude<keyof PreloadApi, keyof typeof api>];
+const _assertApiKeysMatch: [ApiKeysMissingInType, TypeKeysMissingInApi] = [true, true];
+void _assertApiKeysMatch;

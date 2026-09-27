@@ -64,6 +64,11 @@
       "reason": "纯类型契约单源(全部导出为 interface/type)。判定依据:编译产物 dist/core/ipc-contract.js 只有 `export {};`(node -e 打印产物 + guard 用 isEmptyModuleArtifact 核对);而带 source map 的覆盖率报告把整个 .ts 源记成未覆盖 —— 实测 statements 0/186、functions 0/1,即「无可执行语句」被记成「零覆盖」。它不是死代码,也没有可补的测试:main/ipc-channels 等段测的是它的消费面。"
     },
     {
+      "file": "src/core/preload-api.ts",
+      "category": "empty-module",
+      "reason": "preload 暴露面类型单源(唯一导出为 `export type PreloadApi`)。判定依据:已实测编译产物 dist/core/preload-api.js 恰为 1 行 `export {};`(cat 直读产物核对),与 isEmptyModuleArtifact 的判据一致;未登记会以 0/0 记 0% 混进分母。它不是死代码:src/main/preload.cts 用它标注 api 对象并在文件末尾做键集双向断言,src/renderer/renderer.ts 用它声明 window.api 形状,两侧消费面的编译期校验由 tsc 与 segments/import-boundary 承担,无可补的运行时测试。REF-025 #03 引入 —— 此前该形状是 preload.cts 内 `typeof api` 的推导结果,renderer 只能反向 type-only import main/preload.cjs(全库唯一一条 renderer→main 依赖,靠门禁放行表挂了近一年)。本模块的覆盖率实测数字待下次 test:coverage 刷新后回填,当前覆盖率产物早于本次改动、尚无该条目,故不填未经核实的数字。"
+    },
+    {
       "file": "src/core/image/image-resolver.ts",
       "category": "empty-module",
       "reason": "图片解析回调的类型契约(interface + type alias,零运行时代码)。判定依据:产物 dist/core/image/image-resolver.js 只有 `export {};`;覆盖率报告记 statements 0/33、functions 0/1。解析能力本身由 core/cancel 与 main/image-downloader 的段覆盖,与本类型模块无关。"

@@ -43,7 +43,7 @@
     "test:smoke": "node scripts/check-build-fresh.mjs && electron . --smoke",
     "ui:shots": "electron test/tools/visual-check.mjs",
     "icons": "node scripts/svg-to-ico.mjs",
-    "test:coverage": "npm run build && c8 --reporter=text --reporter=json-summary --all --include=\"dist/**\" --exclude=\"dist/renderer/**\" --exclude=\"dist/core/ipc-contract.js\" --exclude=\"dist/core/image/image-resolver.js\" --exclude=\"dist/core/markdown/mermaid.js\" --exclude=\"dist/main/ipc/types.js\" --exclude=\"dist/main/index.js\" --exclude=\"dist/main/preload.cjs\" --check-coverage --statements=90 --branches=85 --functions=90 --lines=90 electron test/acceptance.mjs",
+    "test:coverage": "npm run build && c8 --reporter=text --reporter=json-summary --all --include=\"dist/**\" --exclude=\"dist/renderer/**\" --exclude=\"dist/core/ipc-contract.js\" --exclude=\"dist/core/image/image-resolver.js\" --exclude=\"dist/core/markdown/mermaid.js\" --exclude=\"dist/core/preload-api.js\" --exclude=\"dist/main/ipc/types.js\" --exclude=\"dist/main/index.js\" --exclude=\"dist/main/preload.cjs\" --check-coverage --statements=90 --branches=85 --functions=90 --lines=90 electron test/acceptance.mjs",
     "check:coverage-zero": "node scripts/gate-probes/coverage-gate.mjs --zero",
     "report:coverage-renderer": "node scripts/renderer-coverage-report.mjs",
     "check:gates": "node scripts/check-gate-probes.mjs",

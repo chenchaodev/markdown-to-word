@@ -9,7 +9,7 @@
  *   层向规则、core 的 node: 内建白名单;
  * - dist 产物侧:dist/**\/*.{js,cjs} 的同一套判定。产物侧多两处真实差异 ——
  *   CommonJS 产物(preload.cjs)走 require 而非 import、type-only 已被编译期
- *   擦除(所以 renderer→preload 的放行条目在产物侧必须「不命中也不报错」)。
+ *   擦除(所以指向 main 的反向引用在产物侧天然不出现 —— 产物侧看不到,只能靠 src 侧断言)。
  *
  * 三层断言:
  * 1. 声明事实(读文本,不调被测实现):jszip 必须在 dependencies 且不在
@@ -33,7 +33,6 @@ import {
   FLAVORS,
   HOST_PROVIDED_RUNTIME,
   LAYER_RULES,
-  REVERSE_TYPE_ALLOWLIST,
   RESOURCE_ONLY_DEPENDENCIES,
   analyze,
   classifySpecifier,
@@ -267,9 +266,6 @@ export async function run() {
         (line) => line.startsWith("未使用声明") && !line.includes("已登记"),
       );
       assert(unregistered.length === 0, `存在未登记的未使用声明:${unregistered.join(" | ")}`);
-      // 放行条目必须都被真实命中(否则 allowlist 已失效,注释会骗人)
-      const stale = srcResult.info.filter((line) => line.startsWith("放行条目已失效"));
-      assert(stale.length === 0, `放行条目已失效但仍在表内:${stale.join(" | ")}`);
 
       assert(fs.existsSync(DIST_DIR), "缺少 dist 产物(本段需在 build 之后运行)");
       const distResult = analyze(DIST_DIR, PKG, FLAVORS.dist);
@@ -277,7 +273,7 @@ export async function run() {
         distResult.problems.length === 0,
         `dist 产物侧应零 problem,实际 ${distResult.problems.length} 项:${distResult.problems.slice(0, 5).join(" | ")}`,
       );
-      console.log("[ok] import-boundary:真实 src 与 dist 产物双侧零 problem(放行条目在两侧都被正确处理)");
+      console.log("[ok] import-boundary:真实 src 与 dist 产物双侧零 problem");
     }
 
     // ================= 3. 独立复核:测试自带抽取器重算四条不变量 =================
@@ -294,7 +290,7 @@ export async function run() {
       ];
       for (const [label, scan] of scans) {
         for (const [file, imports] of scan) {
-          for (const { spec, typeOnly } of imports) {
+          for (const { spec } of imports) {
             const { kind } = classifySpecifier(spec);
             // 层向 1:core 不碰宿主
             if (file.startsWith("core/")) {
@@ -316,11 +312,15 @@ export async function run() {
                 );
               }
             }
-            // 层向 4:renderer 不反向依赖 main(仅 type-only 的放行条目例外)
+            // 层向 4:renderer 不反向依赖 main —— 绝对禁止,无放行例外
+            // (REF-025 #03 起:PreloadApi 抽到 core/preload-api.ts 后,原先唯一那条
+            //  type-only 放行条目已随放行机制一起删除,本断言不再需要例外分支)
             if (file.startsWith("renderer/") && kind === "relative" && layerOf(file, spec) === "main") {
-              const allowed =
-                typeOnly && REVERSE_TYPE_ALLOWLIST.some((a) => a.spec === spec && a.file.startsWith("renderer/"));
-              assert(allowed, `${label}:${file} 不得 import main 层 ${spec}(type-only 放行表:${REVERSE_TYPE_ALLOWLIST.map((a) => a.spec).join(",")})`);
+              assert(
+                false,
+                `${label}:${file} 不得 import main 层 ${spec}(renderer→main 已无任何放行例外;`
+                  + `window.api 类型单源在 core/preload-api.ts)`,
+              );
             }
             // 层向 5:preload 不上跳引用 main
             if (file === "main/preload.cts" || file === "main/preload.cjs") {
@@ -354,15 +354,19 @@ export async function run() {
         `src 运行时 import 的包未在 dependencies 声明:${[...missing].sort().join(",")}(传递依赖偶然就位)`,
       );
 
-      // 放行条目在 src 里必须真实存在且为 type-only(否则它已名存实亡)
-      for (const allow of REVERSE_TYPE_ALLOWLIST) {
-        const imports = srcScan.get(allow.file) ?? [];
-        const hit = imports.find((i) => i.spec === allow.spec);
-        assert(hit !== undefined, `放行条目 ${allow.file} → ${allow.spec} 在 src 中已不存在(请删除该条目)`);
-        assert(/** @type {{ typeOnly: boolean }} */ (hit).typeOnly, `放行条目 ${allow.file} → ${allow.spec} 已不是 type-only(编译期不再擦除,应改判红)`);
-        assert(allow.note.includes("层向收口项(反向 type-only 依赖待收敛)"), `放行条目 ${allow.file} → ${allow.spec} 的注释须标注这是层向收口项(反向 type-only 依赖待收敛)`);
+      // REF-025 #03 补充断言:renderer 侧不得残留任何指向 main 层的相对 import。
+      // 放行机制已整体删除,故这里改成直接查事实(原先靠 allowlist 空转代替)。
+      for (const [file, imports] of srcScan) {
+        if (!file.startsWith("renderer/")) continue;
+        for (const i of imports) {
+          const kind = classifySpecifier(i.spec).kind;
+          assert(
+            !(kind === "relative" && layerOf(file, i.spec) === "main"),
+            `renderer 侧仍有指向 main 层的 import:${file} → ${i.spec}`,
+          );
+        }
       }
-      // 规则表形态:六条层向断言都在
+      // 规则表形态:七条层向断言都在
       for (const id of [
         "core-no-host",
         "core-no-upward",
@@ -374,19 +378,7 @@ export async function run() {
       ]) {
         assert(LAYER_RULES.some((r) => r.id === id), `层向规则表缺 ${id}`);
       }
-      // 沙盒基线:放行条目失效不报错(条目对应文件不在沙盒里)
-      {
-        const sb = createSandbox({ dependencies: { docx: "9.0.0" } }, { "core/a.ts": 'import { x } from "docx";\nexport { x };\n' });
-        track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assert(result.code === 0, `放行条目失效时不应报错,实际 ${result.code}:${result.output}`);
-        assert(
-          result.output.includes("放行条目已失效"),
-          `失效的放行条目应作为提示输出(便于择机删除),实际:${result.output}`,
-        );
-        assert(!result.output.includes("[boundary:fail]"), `失效条目不得产生 fail 行:${result.output}`);
-      }
-      console.log("[ok] import-boundary:独立抽取器复核通过(core 禁宿主/禁上跳、renderer 禁 main、main 禁 renderer、preload 禁上跳、生产依赖覆盖、放行条目有效性)");
+      console.log("[ok] import-boundary:独立抽取器复核通过(core 禁宿主/禁上跳、renderer 禁 main、main 禁 renderer、preload 禁上跳、生产依赖覆盖)");
     }
 
     // ================= 4. 沙盒负向夹具:逐条制造漂移,断言精确诊断 =================
@@ -442,7 +434,7 @@ export async function run() {
           pattern: /renderer\/renderer\.ts:import「\.\.\/main\/ipc\/channels\.js」违反层向规则 renderer-no-main/,
         },
         {
-          label: "renderer type-only import main 且不在放行表(反向依赖收窄后无人放行)",
+          label: "renderer type-only import main(绝对禁止:放行机制已删除,type-only 不例外)",
           pkg: { dependencies: { docx: "9.0.0" } },
           files: { "renderer/state/state.ts": 'import type { A } from "../../main/ipc/types.js";\nexport type { A };\n' },
           pattern: /renderer\/state\/state\.ts:type-only import「\.\.\/\.\.\/main\/ipc\/types\.js」违反层向规则 renderer-no-main/,
@@ -498,7 +490,8 @@ export async function run() {
             "core/pipeline/parse.ts": 'import { unified } from "unified";\nimport type { Node } from "mdast";\nexport { unified };\n',
             "core/pdf/katex-css.ts": 'import fs from "node:fs";\nexport { fs };\n',
             "main/index.ts": 'import { app } from "electron";\nimport { x } from "../core/pipeline/parse.js";\nexport { app, x };\n',
-            "renderer/renderer.ts": 'import type { PreloadApi } from "../main/preload.cjs";\nexport type { PreloadApi };\n',
+            // renderer 取 preload 类型改从 core 取(REF-025 #03),不再是指向 main 的反向引用
+            "renderer/renderer.ts": 'import type { PreloadApi } from "../core/preload-api.js";\nexport type { PreloadApi };\n',
             "renderer/state/state.ts": 'import { x } from "../dom/refs.js";\nexport { x };\n',
           },
         );
@@ -506,10 +499,23 @@ export async function run() {
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assert(result.code === 0, `合法沙盒应零退出,实际 ${result.code}:${result.output}`);
         assert(!result.output.includes("[boundary:fail]"), `合法沙盒不得有 fail 行:${result.output}`);
-        // 白名单文件用 node: 内建不报;放行条目被命中也不报
+        // 白名单文件用 node: 内建不报
         assert(result.output.includes("import 边界自检通过"), `合法沙盒应给出通过结论:${result.output}`);
       }
-      // 5b. 同一放行条目改成运行时 import → 必须立刻判红(证明放行是 type-only 限定而非按文件放行)
+      // 5b. renderer 反向 type-only 引 main → 必须判红。
+      // (REF-025 #03:放行机制已整体删除,原先这条是唯一的放行条目、判绿。
+      //  现在 renderer→main 是**绝对**禁止 —— type-only 也不例外,因为编译期擦除
+      //  只能证明产物无此依赖,不能证明层向本身合理。)
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "renderer/renderer.ts": 'import type { PreloadApi } from "../main/preload.cjs";\nexport type { PreloadApi };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(result, /renderer\/renderer\.ts:type-only import「\.\.\/main\/preload\.cjs」违反层向规则 renderer-no-main/, "renderer 反向 type-only 引 main");
+      }
+      // 5b-2. 同一方向改成运行时 import → 同样判红(证明规则不因 type-only 而放松)
       {
         const sb = createSandbox(
           { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
@@ -517,7 +523,7 @@ export async function run() {
         );
         track(sb.dir);
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assertFailure(result, /renderer\/renderer\.ts:import「\.\.\/main\/preload\.cjs」违反层向规则 renderer-no-main/, "放行条目被改成运行时 import");
+        assertFailure(result, /renderer\/renderer\.ts:import「\.\.\/main\/preload\.cjs」违反层向规则 renderer-no-main/, "renderer 反向运行时引 main");
       }
       // 5c. 未知 devDependency 的 @types 缺失时,type-only 判定不被 devDependencies 段掩盖
       {
@@ -600,7 +606,7 @@ export async function run() {
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assert(result.code === 0, `基础层引 core 应放行,实际 ${result.code}:${result.output}`);
       }
-      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / 放行条目仅对 type-only 生效 / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / 合法 smoke 依赖图不误伤)");
+      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / renderer→main 绝对禁止(含 type-only) / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / 合法 smoke 依赖图不误伤)");
     }
 
     // ================= 6. 规则原语的单元断言(判定链的接缝) =================

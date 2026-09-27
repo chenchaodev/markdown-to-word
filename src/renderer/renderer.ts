@@ -22,12 +22,13 @@ import { initFirstRunGuide } from "./ui/first-run-guide.js";
 import { t } from "../core/i18n.js";
 
 /**
- * window.api 类型由 preload 实现推导(PreloadApi = typeof api,单源
- * src/main/preload.cjs),不再手工镜像约 80 行 declare global——preload 改签名时
- * renderer 调用点编译期暴露;channel 名恒等测试(ipc-channels.test.js)保留。
- * NodeNext 下 .cjs 说明符解析到 .cts 源文件;import type 编译期擦除。
+ * window.api 类型单源在 core(PreloadApi,src/core/preload-api.ts),preload 以它标注
+ * 实现对象、renderer 从它取用,两侧同源——不再手工镜像约 80 行 declare global,
+ * 也不再反向 type-only import main/preload.cjs(那曾是全库唯一一条 renderer→main
+ * 依赖,靠门禁的 REVERSE_TYPE_ALLOWLIST 放行了近一年)。preload 改签名时 renderer
+ * 调用点编译期暴露;channel 名恒等测试(ipc-channels.test.js)保留。
  */
-import type { PreloadApi } from "../main/preload.cjs";
+import type { PreloadApi } from "../core/preload-api.js";
 
 declare global {
   interface Window {

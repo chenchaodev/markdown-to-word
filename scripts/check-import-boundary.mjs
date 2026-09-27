@@ -79,21 +79,6 @@ export const CORE_NODE_BUILTIN_FILES = Object.freeze([
 ]);
 
 /**
- * type-only 反向依赖放行表(精确到 文件 × specifier × 仅 type-only)。
- * 命中的违规不判红;条目失效(该 import 已不存在)也不判红,只在输出里记一笔,
- * 便于择机删除,而不是让门禁反过来逼着人保留一条注释。
- */
-export const REVERSE_TYPE_ALLOWLIST = Object.freeze([
-  {
-    file: 'renderer/renderer.ts',
-    spec: '../main/preload.cjs',
-    note: '层向收口项(反向 type-only 依赖待收敛):window.api 的类型单源在 preload(见 src/main/preload.cts 头注),'
-      + 'renderer 经 import type 取 PreloadApi 推导全局声明;编译期擦除,产物无此依赖。'
-      + '收口方向:把 PreloadApi 抽到 core 侧共享契约模块,renderer 与 preload 同源引用。',
-  },
-]);
-
-/**
  * 层向规则。scope 匹配相对路径;forbid 语义:
  *   bare:<包名>     —— 该 bare specifier 不得出现在此范围内
  *   layer:<层,层>   —— 不得 import 解析后落在这些层下的模块
@@ -287,7 +272,7 @@ function ruleHits(rule, entry) {
 }
 
 /**
- * 边界判定。返回 { problems, info };info 只作提示(未使用声明、已失效的放行条目),
+ * 边界判定。返回 { problems, info };info 只作提示(未使用声明),
  * 不参与 exit code。
  * @param root 被扫描源码子树
  * @param pkg package.json 解析结果
@@ -302,7 +287,6 @@ export function analyze(
   const info = [];
   const runtimeUsed = new Set();
   const typeOnlyUsed = new Set();
-  const allowlistUsed = new Set(REVERSE_TYPE_ALLOWLIST.map(() => false));
 
   for (const { abs, file } of listSourceFiles(root, extensions)) {
     for (const found of collectImports(abs, { cjs })) {
@@ -351,15 +335,6 @@ export function analyze(
       for (const rule of LAYER_RULES) {
         if (!scopeMatches(rule.scope, file)) continue;
         if (!ruleHits(rule, entry)) continue;
-        // 放行表按去扩展名匹配文件:改扩展名(.ts → .mts)不该让门禁误判红,
-        // 真正的收口动作(删掉这条 import)才会让条目自然失效。
-        const allowIndex = REVERSE_TYPE_ALLOWLIST.findIndex(
-          (item) => stripExtension(item.file) === stripExtension(file) && item.spec === entry.spec,
-        );
-        if (allowIndex !== -1 && entry.typeOnly) {
-          allowlistUsed[allowIndex] = true;
-          continue;
-        }
         const kindText = entry.typeOnly ? 'type-only ' : '';
         problems.push(
           `${file}:${kindText}import「${entry.spec}」违反层向规则 ${rule.id} —— ${rule.reason}`,
@@ -381,10 +356,6 @@ export function analyze(
           : `未使用声明:dependencies「${name}」不经 import(已登记:${reason})`,
       );
     }
-
-    REVERSE_TYPE_ALLOWLIST.forEach((item, index) => {
-      if (!allowlistUsed[index]) info.push(`放行条目已失效:${item.file} → ${item.spec}(不再命中任何违规,请删除该条目)`);
-    });
   }
 
   return { problems, info };
