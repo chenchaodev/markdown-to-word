@@ -340,27 +340,78 @@ let precheckResolve: ((ok: boolean) => void) | null = null;
 let precheckPromise: Promise<boolean> | null = null;
 
 /**
+ * 预检报告的一组:一个源文件 + 它的全部告警。
+ * 逐文件预检(convert-flow 的 withPrecheck 链)按此形状上送,故每条告警都能说清
+ * 「来自哪个文件」——多文件场景下这层归属是报告的全部价值所在(此前是扁平列表,
+ * 合并时无法判断哪份稿子的围栏没闭合)。
+ */
+export interface PrecheckWarningGroup {
+  /** 源文件绝对路径(IPC 边界处的原值;界面只展示文件名,完整路径挂 title) */
+  path: string;
+  /** 该文件的告警(顺序与主进程返回一致) */
+  warnings: ConvertWarning[];
+}
+
+/** 一条告警行(与既有形态同款:朱砂警示符 + 文字)。 */
+function renderPrecheckItem(warning: ConvertWarning): HTMLLIElement {
+  const li = document.createElement("li");
+  li.className = "precheck-item";
+  const icon = document.createElement("span");
+  icon.className = "precheck-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "!";
+  const text = document.createElement("span");
+  text.className = "precheck-text";
+  text.textContent = formatWarning(warning);
+  li.append(icon, text);
+  return li;
+}
+
+/**
+ * 分组标题的显示名:默认只给文件名(弹窗 520px,全路径会挤掉告警正文;完整路径挂
+ * title 供悬停)。**同名文件例外**:两个分组显示同一个名字就等于没分组,此时这些
+ * 分组一律回退全路径,保证每组可区分。
+ */
+function precheckGroupLabels(groups: PrecheckWarningGroup[]): string[] {
+  const names = groups.map((group) => baseName(group.path));
+  const duplicated = new Set(names.filter((name) => names.indexOf(name) !== names.lastIndexOf(name)));
+  return groups.map((group, index) =>
+    duplicated.has(names[index] ?? "") ? group.path : (names[index] ?? ""),
+  );
+}
+
+/**
  * 展示预检报告;返回单实例 Promise<boolean>:用户点「继续转换」= true,「取消」= false。
  * 重复调用复用现有 Promise,防止后一次覆盖 resolver 令前一次永久悬挂。
+ * 单文件(只有一组)时按扁平列表渲染——分组标题只服务于「多文件」这一种场景,
+ * 单文件不额外多出一行标识(与引入分组前的形态逐字一致)。
  */
-export function showPrecheckDialog(warnings: ConvertWarning[]): Promise<boolean> {
+export function showPrecheckDialog(groups: PrecheckWarningGroup[]): Promise<boolean> {
   if (precheckPromise !== null) return precheckPromise;
-  precheckList.replaceChildren(
-    ...warnings.map((warning) => {
-      const li = document.createElement("li");
-      li.className = "precheck-item";
-      const icon = document.createElement("span");
-      icon.className = "precheck-icon";
-      icon.setAttribute("aria-hidden", "true");
-      icon.textContent = "!";
-      const text = document.createElement("span");
-      text.className = "precheck-text";
-      text.textContent = formatWarning(warning);
-      li.append(icon, text);
-      return li;
-    }),
-  );
-  precheckDialogDesc.textContent = t("precheck.desc", { count: warnings.length });
+  const total = groups.reduce((sum, group) => sum + group.warnings.length, 0);
+  if (groups.length <= 1) {
+    precheckList.replaceChildren(...groups.flatMap((group) => group.warnings.map(renderPrecheckItem)));
+  } else {
+    const labels = precheckGroupLabels(groups);
+    precheckList.replaceChildren(
+      ...groups.map((group, index) => {
+        const li = document.createElement("li");
+        li.className = "precheck-group";
+        // 标题用 h3(dialog 标题是 h2):读屏按标题层级播报,用户能听出「下面这组属于
+        // 哪个文件」,而视觉上靠 mono + 弱化色 + 无警示符,不会被误读成又一条告警
+        const title = document.createElement("h3");
+        title.className = "precheck-group-title";
+        title.textContent = labels[index] ?? "";
+        title.title = group.path; // 截断展示,悬停看完整路径
+        const items = document.createElement("ul");
+        items.className = "precheck-group-items";
+        items.replaceChildren(...group.warnings.map(renderPrecheckItem));
+        li.append(title, items);
+        return li;
+      }),
+    );
+  }
+  precheckDialogDesc.textContent = t("precheck.desc", { count: total });
   precheckDialog.classList.remove("hidden");
   rememberFocusOrigin(); // 记下发起转换的那个动作,关闭后回到它
   precheckContinue.focus();

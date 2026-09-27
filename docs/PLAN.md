@@ -21,12 +21,11 @@
 
 ## 完成标准
 
-- [x] 五类告警各有断言（本文件原写「四类」，第 ③ 类含围栏与 `$` 两件事）：`\(` `\)` `\[` `\]` 定界符 · 白名单外块级 HTML 标签 · 代码围栏未闭合 · `$` 不配对 · 形似表格却未解析成表（报首行内容）；共 82 条断言，见 `test/segments/precheck.test.js`
+- [x] 五类告警各有断言（本文件原写「四类」，第 ③ 类含围栏与 `$` 两件事）：`\(` `\)` `\[` `\]` 定界符 · 白名单外块级 HTML 标签 · 代码围栏未闭合 · `$` 不配对 · 形似表格却未解析成表（报首行内容）；共 82 条断言，见 `test/segments/precheck.test.js`。**且预检已覆盖全部转换入口**（单文件 / 批量 / 成书向导付印 / 剪贴板直转 / 最近记录重转）—— 用户实测发现向导付印走 `withPrecheck([])` 只借锁不发预检，合并时前文件的未闭合围栏会吞掉后文件；已把预检收口进三个命令函数并加守护断言「调用点不得再出现 withPrecheck」；**通道名单零新增**（`test/main/ipc-channels.test.js` 断言不改即通过）
 - [x] **零误报是硬要求**：正文里的 `价格 $5 与 50$`、行内代码 / 围栏内的 `\(` 与 `<table>`、**白名单内的 14 个行内标签**、正常的 `$x^2$` 与 `$$…$$` 公式、正常表格，一律不报；且**既有三类检查（图片缺失 / 未标语言代码块 / 悬空交叉引用）的行为逐条不变**。已独立复算：散文并列比较句（`本章讨论 A | B | C 三者` 两行）不误报，而三类正向用例（无分隔行伪表格 / 仅行尾带竖线 / 与散文混排）仍命中且只报伪表格那一段
-- [x] 触达路径零新增：沿用既有 `convert:precheck` 通道与 `showPrecheckDialog` 模态确认框，`src/main/ipc/channels.ts` 名单不变（`test/main/ipc-channels.test.js` 断言不改即通过）
-- [x] 文案三语言齐全（`zh.ts` 键集唯一事实源 · `en.ts` `satisfies` 全量 · `ja.ts` Partial），i18n 注册表恒等段仍绿
-- [x] 门禁全绿：`npm run typecheck` + `npm run lint` + `npm run test`（118 段无一由绿转红）+ `npm run test:smoke` + `npm run check:docs`；另跑 `check:boundary` 确认 core 的 `node:` 内建白名单仍限 5 个文件
-- [ ] 人工实测（GUI）：拿含 `\(x\)` 与 `<table>` 的文件走转换前确认框，确认逐条列出且确认后能正常转换。**注**：`ui:shots` 只拍主窗口七态、不覆盖该对话框，只能人工确认；该项未做前本步不算收口
+- [x] 文案三语言齐全（`zh.ts` 键集唯一事实源 · `en.ts` `satisfies` 全量 · `ja.ts` Partial），i18n 注册表恒等段仍绿；多文件报告按文件分组（单文件时不出现分组标题）
+- [x] 门禁全绿：`npm run typecheck` + `npm run lint` + `npm run test`（**119** 段，新增 `renderer/precheck-multi-file.test.js`，无一由绿转红）+ `npm run test:smoke` + `npm run check:docs`；另跑 `check:boundary` 确认 core 的 `node:` 内建白名单仍限 5 个文件
+- [ ] 人工实测（GUI）：**①** 单文件 `ai-precheck-manual.md` 确认框 6 条、**②** `ai-precheck-fence.md` 1 条（第 7 行围栏）、**③** 成书向导付印两个文件（前一份带未闭合围栏）必须弹报告且两份内容都进产物、**④** 批量两文件各一处告警时报告按文件分组。**注**：`ui:shots` 只拍主窗口七态、不覆盖该对话框，只能人工确认；该项未做前本步不算收口
 
 ## 修复项复测
 

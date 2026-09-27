@@ -9,12 +9,16 @@
  *   按钮置灰;窗口 unload 时退订两个订阅(主进程侧 IPC 通道卫生)。
  * document 上两个 keydown(本域快捷键 / dialogs-events 的 Esc)互不重叠,
  * 顺序无行为影响。
+ *
+ * 本域**只调 runConvert / runBatch / runMerge 裸命令**:预检与命令锁由那三个
+ * 函数内部收口(convert-flow 的 precheckedCommand),入口再自带 withPrecheck
+ * 会双跑预检、连弹两次报告。
  */
 import { batchBtn, cancelBtn, convertBtn, mergeBtn } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
 import { baseName, STAGE_PERCENT, stageText } from "../../state/pure.js";
 import { setError, setProgress, setStatus, translate } from "../../ui/dom-ops.js";
-import { isConvertCommandBlocked, runBatch, runConvert, runMerge, withPrecheck } from "../convert-flow.js";
+import { isConvertCommandBlocked, runBatch, runConvert, runMerge } from "../convert-flow.js";
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n.js";
 
@@ -28,19 +32,20 @@ export function bindConvertActionsEvents(): void {
       setError(t("file.selectFirst"));
       return;
     }
-    void withPrecheck([filePath], () => runConvert(filePath, state.selectedFormat));
+    // 预检与命令锁由 runConvert 内部收口(入口只管选中态与格式)
+    void runConvert(filePath, state.selectedFormat);
   });
 
   // 批量转换按钮(≥2 个文件时可见)
   batchBtn.addEventListener("click", () => {
     if (isConvertCommandBlocked() || state.selectedFiles.length < 2) return;
-    void withPrecheck(state.selectedFiles, () => runBatch());
+    void runBatch(); // 预检由 runBatch 内部收口(逐文件预检 + 报告决策)
   });
 
   // 合并转换按钮(≥2 个文件时可见)
   mergeBtn.addEventListener("click", () => {
     if (isConvertCommandBlocked() || state.selectedFiles.length < 2) return;
-    void withPrecheck(state.selectedFiles, () => runMerge());
+    void runMerge(); // 预检由 runMerge 内部收口
   });
 
   // 取消当前转换(单文件 / 批量 / 合并;主进程在检查点终止并返回 canceled)
@@ -95,9 +100,9 @@ export function bindConvertActionsEvents(): void {
       if (isConvertCommandBlocked()) return;
       event.preventDefault();
       if (state.selectedFiles.length === 1) {
-        void withPrecheck([state.selectedFiles[0]!], () => runConvert(state.selectedFiles[0]!, state.selectedFormat)); // 上行已守卫 length === 1
+        void runConvert(state.selectedFiles[0]!, state.selectedFormat); // 上行已守卫 length === 1
       } else if (state.selectedFiles.length >= 2) {
-        void withPrecheck(state.selectedFiles, () => runBatch());
+        void runBatch(); // 同上:预检在 runBatch 内部
       }
     } else if (key === "o") {
       if (isConvertCommandBlocked()) return;

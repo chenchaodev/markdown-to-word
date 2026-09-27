@@ -238,6 +238,22 @@ export async function run() {
   // 计数经读取函数取值:断言函数的类型收窄会把变量锁在上一次比较的字面量上,
   // 而该计数由被测回调在断言之间递增。
   const precheckCount = () => precheckCalls;
+  /**
+   * 结算 n 次逐文件预检(每次都按无告警放行,模拟「预检通过 → 静默继续」)。
+   * 预检是**逐个文件**发起的,故必须结算一条、等下一条请求落地、再结算下一条 ——
+   * 一次性把 n 条 resolver 全调掉测不到「每个源文件各查一次」。
+   * @param {number} count 预期的预检条数
+   * @returns {Promise<void>}
+   */
+  async function settlePrechecks(count) {
+    for (let i = 0; i < count; i++) {
+      await flush();
+      const settle = pendingPrechecks.shift();
+      assert(settle, `第 ${i + 1} 条预检请求未发出(预检条数与预期不符?)`);
+      settle([]);
+    }
+    await flush();
+  }
   /** @type {Map<string, (...args: unknown[]) => unknown>} */
   const docListeners = new Map();
   const body = makeElement();
@@ -429,13 +445,18 @@ export async function run() {
     assert(step() === 7, "应可推进到最后一步(付印入口)");
     const precheckBeforeFinish = precheckCalls;
     handlerOf(finishBtn, "click")();
-    await flush();
+    // 付印(合并)现与工具栏合并同一条防线:逐源文件预检。无告警即静默放行;
+    // 两种格式复用同一轮预检(链内覆盖集),故整条付印只应发出 2 次预检 IPC。
+    await settlePrechecks(2);
     assert(mergeCount() === 2, `付印两格式应依次执行两次合并,实际 ${mergeCalls.length} 次`);
     assert(
       mergeCalls[0] === "docx" && mergeCalls[1] === "pdf",
       `付印格式序应为 docx→pdf,实际 ${mergeCalls}`,
     );
-    assert(precheckCount() === precheckBeforeFinish, "付印链经 withPrecheck 持链,空文件列表不发预检 IPC");
+    assert(
+      precheckCount() === precheckBeforeFinish + 2,
+      `付印应逐源文件各预检一次(2 文件 = 2 次 IPC,两格式不重复查),实际 ${precheckCount() - precheckBeforeFinish} 次`,
+    );
     assert(!flow.isConvertCommandBlocked(), "付印链结算后命令锁应释放");
     assert(overlay.classList.contains("hidden"), "付印后向导应关闭");
 
@@ -454,7 +475,7 @@ export async function run() {
     assert(!overlay.classList.contains("hidden"), "受阻时向导保持打开");
     state.mode = null;
     handlerOf(finishBtn2, "click")(); // 结算后付印生效(单格式 docx,草稿已被 open 重置)
-    await flush();
+    await settlePrechecks(2); // 合并前的逐文件预检(无告警即静默放行)
     assert(mergeCount() === mergesBeforeBlocked + 1, "结算后付印应恢复");
     assert(mergeCalls.at(-1) === "docx", "单格式付印按草稿格式执行");
     assert(overlay.classList.contains("hidden"), "付印后向导应关闭");
@@ -469,7 +490,7 @@ export async function run() {
     const finishBtn3 = findById(overlay, "wizardFinish");
     assert(finishBtn3, "向导应构建 finish 控件");
     handlerOf(finishBtn3, "click")();
-    await flush();
+    await settlePrechecks(2);
     assert(
       mergeCalls.length === mergesBeforeModal + 1,
       `完成弹窗在前台时第二次格式转换应被统一守卫拦下,实际新增 ${mergeCalls.length - mergesBeforeModal} 次`,

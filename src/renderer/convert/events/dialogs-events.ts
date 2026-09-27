@@ -42,7 +42,7 @@ import {
   showDialogError,
 } from "../../ui/dialogs.js";
 import { applySelection } from "../file-list.js";
-import { isConvertCommandBlocked, runBatch, withPrecheck } from "../convert-flow.js";
+import { isConvertCommandBlocked, runBatch } from "../convert-flow.js";
 import { closeSettingsDrawer, isSettingsDrawerOpen } from "../../settings/settings-drawer.js";
 import { closeBookWizard } from "../../wizard/book-wizard.js";
 import { closePresetSaveDialog } from "../../settings/settings-preset-actions.js";
@@ -112,7 +112,7 @@ export function bindDialogEvents(): void {
     if (failed.length === 0) return;
     hideBatchDialog();
     applySelection(failed);
-    void withPrecheck(failed, () => runBatch(failed, state.lastBatchFormat));
+    void runBatch(failed, state.lastBatchFormat); // 预检由 runBatch 内部收口(只查重试的这一批)
   });
 
   // 批量弹窗「复制全部路径」:成功项输出路径换行拼接复制到剪贴板
