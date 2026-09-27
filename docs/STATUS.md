@@ -8,6 +8,6 @@
 阶段      6/6 项落地
 当前项    待实测
 门禁      `check:contract:selftest` · `check:contract` · `check:archive-index` · `check:docs` 2026-09-27 全绿(指针门禁:项目模式通过,58 文件 0 错误,豁免点名 6 项;脚手架全量拷贝重测 12 文件 0 错误)
-阻塞      <无> · 2026-09-27
+阻塞      A-059 待实测(REF-028 收尾;三条人工项见 `docs/ACCEPTANCE.md`「当前待测」) · 2026-09-27
 验证基线   命令指针见 `docs/DEV-GUIDE.md`「验证基线」节(完整 `verify:ci` 的 build/typecheck/coverage/smoke/geometry 段本轮未跑:`src/` 与 `test/` 未触碰)
 更新时间   2026-09-27(REF-028 `#01`–`#06` 实施完成,待实测)

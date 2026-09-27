@@ -9,16 +9,14 @@
 
 ## 当前待测（≤5 项；实测通过即移入 `docs/CHANGELOG.md` 并清空）
 
-当前无待测项
+- [ ] **A-059**(REF-028)抽 `docs/research/` 任一域文件,与搬移前 `RESEARCH.md` 对应 `##` 块逐字比对:结论、关键数值、验证方式、`关联` 字段**均未改写**(只允许重定位)。
+- [ ] **A-059**(REF-028)跑 `npm run check:docs`:输出「项目模式通过」且 0 错误;核对「容量契约豁免」点名的 6 项与合并表逐条对得上(`docs/ROADMAP.md`、`docs/ACCEPTANCE.md`、`docs/CHANGELOG.md` + `acceptance/`·`research/`·`adr/` 三个目录级 glob)。
+- [ ] **A-059**(REF-028)打开 `docs/archive/INDEX.md`,**从「分流去向」非 `—` 的行里**抽 3 条,按该列能定位到 `docs/research/` 或 `docs/adr/` 的具体条目。表内约 20/50 行为 `—`(该原文未被任何常驻条目**按名**引用)—— 那是诚实标注,不是缺口;**禁止**用主题词相似度补这些行,弱匹配等于造假指针。
 
 - 断言见 `math-structures.test.js`、`dual-pipeline-matrix.test.js`、`geometry-gate.test.js`
 
 > **收口后**保留节标题 + 「当前无待测项」行,**勿删整节**(否则下方断言指针丢失)。
-
-<!-- REF-028 待测项(外迁落地后清空,清空时保留本注释外的节结构) -->
-1. 抽 `docs/research/` 任一域文件,与搬移前 `RESEARCH.md` 对应 `##` 块逐字比对:结论、关键数值、验证方式、`关联` 字段**均未改写**(只允许重定位)。
-2. 跑 `npm run check:docs`:输出「项目模式通过」且 0 错误;核对「容量契约豁免」点名的 6 项与合并表逐条对得上(`docs/ROADMAP.md`、`docs/ACCEPTANCE.md`、`docs/CHANGELOG.md` + `acceptance/`·`research/`·`adr/` 三个目录级 glob)。
-3. 打开 `docs/archive/INDEX.md`,**从「分流去向」非 `—` 的行里**抽 3 条,按该列能定位到 `docs/research/` 或 `docs/adr/` 的具体条目。表内约 20/50 行为 `—`(该原文未被任何常驻条目**按名**引用)—— 那是诚实标注,不是缺口;**禁止**用主题词相似度补这些行,弱匹配等于造假指针。
+> **待测项必须写在这一节里,不许藏进 HTML 注释** —— 注释在渲染后不可见,而发版前置第 1 项只读本节是否为空;藏起来等于让该前置假通过。
 
 ## 覆盖矩阵（未闭环项）
 
