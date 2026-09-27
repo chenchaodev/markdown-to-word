@@ -3,7 +3,7 @@
 > 只记录「换会话仍会用上、且别处查不到」的坑/勿回退事实/库事实。已实施且细节见 CHANGELOG 的条目不再重复;选型见 [ADR.md](ADR.md)。原文存档:docs/archive/。
 > **路径迁移注记(2026-08-24)**:目录结构重组(2026-08-23,提交 6f3d72a~9909d74)前历史条目「关联」字段中的扁平路径已失效——对照关系:`src/settings.ts`→`src/main/persist/settings.ts`、`src/index.ts`→`src/main/`(拆 windows/ipc/menu/converter/persist/services)、`src/renderer.ts`→`src/renderer/renderer.ts`+六功能域、`src/core/{i18n-dict}.ts`→`src/core/i18n/`、core 根级散文件→`pipeline/markdown/image/settings/util/` 子域。时间戳记录按规约不改写原文。
 > **分节注记(2026-09-26)**:条目按技术主题分组、组内时间倒序;一条未删未合并,只做分组与压缩,压缩处保留结论/关键数值/验证方式 + `docs/archive/` 原文链接。
-> **条目级外迁注记(2026-09-27)**:条目正文按技术主题域拆到 `research/`,一个域一个文件,**整块原样搬移、禁改写**;本文件只留索引与上述规则注记。写新条目 = 在对应域文件里追加,并把该域行与速查行同步进本文件。超限 → 整份域文件移入 `archive/`,本文件留一行指针。
+> **条目级外迁注记(2026-09-27)**:条目正文按主题域拆到 `research/`,一域一文件,**整块原样搬移、禁改写**;本文件只留索引、规则注记与「最近记录」;超限 → 整份域文件移入 `archive/`,本文件留一行指针。
 
 ## 主题域索引
 
@@ -18,6 +18,41 @@
 | 代码结构与架构 | 三层分离已收敛;契约重复是主要技术债并已逐项归位 | [research/代码结构与架构.md](research/代码结构与架构.md) |
 | 测试与门禁 | win32 子进程退出码高位值是 NTSTATUS 异常码;覆盖率跨环境有 ±0.01pp 抖动 | [research/测试与门禁.md](research/测试与门禁.md) |
 | 供应链与发布 | asar 头按目录分层嵌套不可子串搜;审计三态不可谎报「无漏洞」 | [research/供应链与发布.md](research/供应链与发布.md) |
+
+## 最近记录
+
+> **挑选规则**:按条目 `### YYYY-MM-DD HH:mm:ss` 标题的时间戳取**最近 10 条**,同时间戳按域文件名字典序;**脚本从 `research/*.md` 抽取,标题行与 `**结论**` 整段逐字摘录,不手工重打、不改写**;其余字段(理由、来源/验证)只留在域文件。
+> **维护**:新条目落地时**在对应域文件追加**,并把该条同步进本节;本节只留最近 10 条,更早的以 `research/` 域文件为准。
+
+### 2026-09-27 08:48:38 层向门禁的覆盖与已知盲区
+- **结论**:`scripts/check-import-boundary.mjs` 现有 **8 条**层向规则 —— `core-no-host` / `core-no-upward` / `renderer-no-main` / `preload-no-main` / `main-no-renderer` / `smoke-no-outside-src` / `renderer-foundation-no-feature-dep` / `core-pdf-no-fs`。**已知盲区**:`resolveLayer` 返回的是**顶层**目录,故 `layer:` 形态表达不了 renderer **内部**的边(内部路径首段恒为 `renderer`);要约束内部方向只能用相对说明符前缀,故另加了 `prefix:` 形态并把它从单前缀放宽为逗号列表。另:`builtin:` 形态是必需的 —— `classifySpecifier` 把 `node:*` 归为 `kind: 'builtin'` 而非 `'bare'`,`bare:` 匹配不到,而我们需要**按能力**区分(`core/pdf` 里 `node:path`/`node:url` 纯字符串运算可放行,`node:fs` 真 IO 要禁)
+
+### 2026-09-27 08:48:38 PDF 侧 override 注册顺序的真实机制(修正一处流传的错误描述)
+- **结论**:`src/core/pdf/render.ts` 的四条 `md.core.ruler.push` 用的是**互异**规则名(`caption_recognize` / `eq_numbering` / `figure_recognize` / `xref_recognize`),因此它们**按 push 先后依次执行,不存在「后注册覆盖先注册」**。真实不变量是:**label 登记类规则必须先于 `xref_recognize` 注册**(xref 靠解析 `[...](#eq:label)` 定位目标,而 label 由 caption/figure/equation 三条在渲染期登记)。`html_whitelist` 走 `md.inline.ruler.before`,属 inline 阶段,不参与该顺序关系。若哪天两条用了同名,语义会静默翻转成「后者覆盖前者」
+
+### 2026-09-27 08:48:38 双管线状态传播模型相反
+- **结论**:docx 侧 ctx 逐块下传,PDF 侧走 `override*Rule` 顺序注册;「同一语义两端行为一致」**无机制保证**,只靠差异矩阵锁定(`dual-pipeline-matrix` 21 行 × `must()`,当前口径「必须一致 12 / 允许不同 9」)
+
+### 2026-09-27 08:48:38 renderer 实际中心 hub 是 `state/utils.ts` 而非 store
+- **结论**:`src/renderer/state/` 名为 state,实为 **DOM 工具箱**(`utils.ts` 18 导出),被 `convert/` / `settings/` / `ui/` / `wizard/` 共 14 处全量导入;真正的 store 与纯函数只占同目录另两文件
+
+### 2026-09-27 08:48:38 覆盖率分母排除 `dist/renderer/**` 整层,且该层数字**取不到**
+- **结论**:`test:coverage` 排除整层 `dist/renderer/**`(30 个文件),而它是层向越界风险最高的一层。**追加事实**:c8 的 `--exclude` 在**数据收集阶段**就经 `entryFilter` 把该层滤掉(见 `c8/lib/report.js` 的 `shouldInstrument`),故主产物 `coverage-summary.json` 里该层条目是 **0 个** —— 不是「数字为 0」而是**数字不存在**,没有任何工具能把它「暴露出来」。要真拿到需另跑一遍纳入该层的 c8(独立 reports-dir、不带 `--check-coverage`),代价是 CI 每次多一遍 Electron 全量跑
+
+### 2026-09-27 08:48:38 测试深导入 `dist/**` 内部产物的耦合面
+- **结论**:40+ 处测试直导内部模块路径(如 `dist/core/pipeline/precheck.js`),任何文件移动都要改测试 import,而**断言内容可零变化**。REF-025 #07 实测:把策略从 `pipeline/precheck.ts` 迁到 `markdown/image-path-policy.ts` 一个文件,就牵动 30+ 个测试文件的导入与调用点(含 101 处调用改名)
+
+### 2026-09-27 08:48:38 错误归一的「单源」只到导出函数层
+- **结论**:#17 把 `errorMessage` 的实现上提到 `core/util/error-message.ts` 后,`main/ipc/logic.ts` 与 `renderer/state/pure.ts` 两份**重复定义**已消;但全库仍有 6 处表达式层内联(未走该单源)
+
+### 2026-09-27 08:48:38 c8 的覆盖率数字会因文件拆分而漂移
+- **结论**:按文件 `pct` 求平均会让大小文件等权,数字随文件拆分而漂移;正确聚合是逐文件 `sum(covered)/sum(total)` 后再算百分比。本仓四项基线(statements/branches/functions/lines)在阶段 3 后为 93.07/89.07/93.59/93.07,与上一轮的 93.06/89.08/93.59/93.06 相比 statements/lines +0.01、branch −0.01,落在**跨环境抖动**的 ±0.01pp 内
+
+### 2026-09-26 23:35:00 win32 上「子进程退出码」大于 0x7fffffff 时它是 NTSTATUS 异常码
+- **结论**:Windows 上进程被异常终止时,父进程拿到的「退出码」不是退出码,而是 **NTSTATUS 异常码**:判据是值 `> 0x7fffffff`(32 位高位置 1);`0xC0000005` = `STATUS_ACCESS_VIOLATION`(3221225477,访问冲突)、`0xC0000409` = `STATUS_STACK_BUFFER_OVERRUN`、`0xC0000374` = `STATUS_HEAP_CORRUPTION`、`0xC0000135/0138/0139/0142` = DLL 缺失/导出序号缺失/入口点缺失/DLL 初始化失败。`0x7fffffff` 及以下仍是普通退出码(0–255)。只印十进制等于丢掉唯一线索 —— 2026-09-26 那次 runner-only 失败就是这样:两轮复发各只拿到「实际 3221225477」一个数字,无法判断是段自身崩了还是宿主被外部终止。已加 `describeChildExitCode()` 标注(未收录的高位值只标「疑似异常终止」而不猜)
+
+### 2026-09-26 23:20:00 「等固定时长」不是同步:fire-and-forget 写必须用 drain(勿回退)
+- **结论**:① 迁移写是 **`void` fire-and-forget**(`void writeSettingsJson.enqueue(...)`),**外部无法通过「等够久」确认落盘** —— 放弃等待后写仍可能**迟到落盘并覆盖等待期的新写入**;真实故障:等 100ms 到点放弃 → 下一小节覆写 → 上一小节结果迟到落盘盖掉它 → 读到陈旧内容判红。② **正解是 drain**:写入器暴露 `drain()`(队尾空事务),resolve 即代表此前所有写(含重试)已结算;单次写失败不截断队列,故有失败写时同样 resolve;测试 `await` 它取代固定预算轮询,**退出路径也必须 drain**(否则未落盘的写随进程丢掉 = 真实产品缺口)。③ **rename 重试是放大效应非成因**:重试把「快速失败」变成「可能百毫秒后成功落盘」,**扩大**迟到覆盖窗口;根因仍是同步方式本身不成立。
 
 ## 主题域子条目速查
 
