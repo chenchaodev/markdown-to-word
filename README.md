@@ -21,16 +21,18 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 
 普通用户无需配置环境，直接下载安装包即可：
 
-> **[下载最新版安装包（MarkdownToWord-Setup-x.exe）](https://github.com/chenchaodev/markdown-to-word/releases/latest)**
+> **[下载最新版安装包（文件名形如 `MarkdownToWord-Setup-版本号.exe`）](https://github.com/chenchaodev/markdown-to-word/releases/latest)**
 
-安装包为向导式安装，可选择安装目录。
+安装包为向导式安装，可选择安装目录；按当前用户模式安装，无需管理员权限。
+
+安装包未做代码签名，Windows 可能提示「未知发布者」或 SmartScreen「已保护你的电脑」，点「更多信息」→「仍要运行」即可继续（事实与风险见 [安装包签名状态](docs/SIGNATURE-STATUS.md)）。
 
 ### 功能特性
 
 #### 核心转换
 
 - **双格式输出**：Word (.docx) / PDF (.pdf) 一致渲染，所见即所得
-- **三种模式**：单文件 / 批量（每个文件一个文档）/ 合并（多文件合为一个文档）
+- **三种模式**：单文件 / 批量（每个文件一个文档）/ 合并（多文件合为一个文档；某份文件有未闭合的代码围栏时直接阻止合并并指出是哪个文件第几行，单文件与批量不受此限）
 - **剪贴板直转**：主界面空态「粘贴 Markdown 转换」按钮，直接读取剪贴板文本转换；剪贴板是文件路径时复用拖入队列
 
 #### 排版控制
@@ -38,18 +40,18 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 - **中文字体字号**：西文/中文字体独立设置，正文字号 8-24pt
 - **行距缩进**：1.0-2.5 倍行距，首行缩进 2 字符
 - **纸张设置**：A4/A3/A5/Letter/Legal，纵向/横向，边距 0-1000mm
-- **目录模式**：静态目录（默认）或 Word 域目录（带真实页码）；PDF 始终带页码
+- **目录模式**：静态目录（默认）或 Word 域目录（带真实页码）；PDF 的页码由页脚模板渲染，页脚关闭就没有页码
 - **标题排版**：标题字号缩放/间距三档（紧凑/标准/舒展），docx 与 PDF 一致
 
 #### 自动编号
 
 - **章节编号**：标题自动生成「1 / 1.1 / 1.1.1」编号
-- **题注编号**：图/表自动编号（全文连续）
+- **题注编号**：图/表自动编号（开启章节编号时按章编号，形如「图 1.1」；关闭章节编号时全文连续），图与表各有独立的标签空间
 - **公式编号**：独立公式块自动编号，行内公式不编号
 
 #### 学术功能
 
-- **公式支持**：docx 原生 OMML / PDF KaTeX 渲染
+- **公式支持**：docx 原生 OMML / PDF KaTeX 渲染；公式里的 `\href` / `\includegraphics` 等外部引用与图片指令不写入产物，只按源码显示
 - **交叉引用**：公式/图/表/章节交叉引用跳转
 - **Mermaid 图表**：`mermaid` 围栏代码块渲染为图表（docx 嵌入图片 / PDF 矢量渲染）
 
@@ -67,26 +69,30 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 
 #### 智能处理
 
-- **AI 清理前置**：转换前自动规整智能引号、破折号、列表空格与空行
+- **AI 清理**：默认关闭，开启后分两档 ——「保守规整」规整智能引号/破折号/列表标记后的空格/多余空行，「结构改写」清掉裸数字引用标记（`[1]`、`【4】`）、全部 emoji，并把标题层级上移补齐；总开关关闭时两档置灰
 - **Obsidian 兼容**：自动转换 `[[双链]]` / `![[嵌入]]` 为标准 Markdown
-- **转换预检**：转换前扫描缺失图片、悬空引用、未标语言代码块
+- **转换预检**：转换前列出可能影响排版的问题并让你确认：缺失或越界的本地图片、悬空的公式/图/表/章节交叉引用、未标语言的代码块、不被支持的公式定界符 `\(x\)`（只认 `$…$` 与 `$$…$$`）、支持范围外的 HTML 块级标签（如 `<table>`，内容会整块丢弃）、未闭合的代码围栏、未配对的 `$`、形似表格却没排成表格的行
+- **预检覆盖四条路径**：单文件 / 批量 / 成书向导付印 / 剪贴板直转与最近记录的「重新转换」都会预检；一次转多个文件时按文件分组列出
 - **编码兼容**：自动识别 UTF-8/UTF-16/GBK，无需手动处理
 
 #### 模板预设
 
-- **内置预设**：默认/学术论文/商务简报/公文/长文阅读/极简
+- **内置预设**：默认/学术论文/商务简报/中文公文/中文长文/中文极简
 - **预设覆盖**：页眉页脚/水印/公式编号/H1 前分页等
 - **导入导出**：JSON 格式，支持导入/导出自定义预设
 - **Word 模板导入**：解包 .docx 提取字体与页面设置
 
 #### 界面体验
 
-- **响应式布局**：最小宽度 640，四档断点（舒适/紧凑/窄窗/矮窗）
+- **响应式布局**：窗口按四档断点重排（舒适/紧凑/窄窗/矮窗）
 - **暗色模式**：跟随系统/浅色/深色三态切换
 - **多语言界面**：中文/English/日本語三语切换
 - **首次引导**：首次启动出现「选预设 → 向导 → 转换」引导路径
-- **最近转换**：转换后显示最近记录，单击加载/双击重转
+- **最近转换**：转换后显示最近记录，单击条目加载到列表、点行尾的重新转换按钮直接重转
 - **实时预览**：转换前可预览源文件，跟随文件刷新
+- **快捷键**：`Ctrl+Enter` 转换 · `Ctrl+O` 添加文件
+- **可取消的进度**：转换过程中可随时取消，并按读取文件 / 解析 Markdown / 处理图片与图表 / 准备公式样式 / 渲染文档 / 写入 PDF 等阶段显示进度
+- **产物直达**：转换完成后可打开文件、打开所在文件夹、复制输出路径
 - **更新提示**：关于窗口自动检查 GitHub 最新版本
 
 #### 可靠性
@@ -106,6 +112,11 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
   <img src="docs/images/ui-settings.jpg" alt="设置面板" width="48%"><br>
   <em>左：空态主界面　右：设置面板（6 组标签页）</em>
 </p>
+<p align="center">
+  <img src="docs/images/ui-complete.jpg" alt="转换完成弹窗" width="48%">&nbsp;
+  <img src="docs/images/ui-about.jpg" alt="关于窗口" width="48%"><br>
+  <em>左：转换完成（打开文件 / 打开文件夹 / 复制路径）　右：关于窗口（版本与更新检查）</em>
+</p>
 
 ### 开发与打包
 
@@ -117,16 +128,9 @@ npm run dev        # 构建 + 启动 Electron 开发态
 npm run dist       # 打包 Windows 安装包（NSIS，输出到 release/）
 ```
 
-技术栈：Electron 43 + TypeScript（ESM）；docx 9.x + remark（Word 渲染）、markdown-it 14.3 + Electron printToPDF（PDF 渲染）、KaTeX / Mermaid 11 / highlight.js / pdf-lib。
+技术栈：Electron 43 + TypeScript（ESM）；docx 9.x + remark（remark-gfm 表格/删除线、remark-math 公式，Word 渲染）、jszip（解包 .docx 模板）、markdown-it 14.3 + Electron printToPDF（PDF 渲染）、iconv-lite（GBK 等编码识别）、KaTeX / Mermaid 11 / highlight.js / pdf-lib。
 
-```bash
-npm run typecheck   # TypeScript 类型检查
-npm run lint        # ESLint
-npm run build       # 构建
-npm run test        # 验收测试（零注册，按内容主题自动发现）
-npm run test:smoke  # Electron smoke 测试
-npm run test:all    # 验收 + smoke
-```
+验证与打包命令的完整清单见 [开发者手册](docs/DEV-GUIDE.md) 的「命令」节（`npm run typecheck` / `lint` / `build` / `test` / `test:smoke` 等）。
 
 测试体系：`test/` 下按内容主题零注册，分 `segments` / `main` / `renderer` 三层；样例在 `test/fixtures/`，产物在 `output/`。段数以 `npm run test` 的实际输出为准。
 

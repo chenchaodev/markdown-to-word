@@ -3,97 +3,138 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
 <title>MarkdownToWord — Markdown to Word / PDF</title>
+<script>document.documentElement.classList.add('js')</script>
 <style>
 /* ===== Reset & Base ===== */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+html{
+  scroll-behavior:smooth;
+  -webkit-text-size-adjust:100%;
+  /* 顶栏常驻，锚点跳转时给标题留出让位 */
+  scroll-padding-top:calc(var(--bar-h) + 20px);
+}
 body{
-  font-family:'Segoe UI','PingFang SC','Microsoft YaHei','Noto Sans SC',system-ui,sans-serif;
-  line-height:1.7;
-  color:#1e2126;
-  background:#f1f1ee;
-  overflow-x:hidden;
+  font-family:var(--font-ui);
+  line-height:1.75;
+  color:var(--ink);
+  background:var(--canvas);
 }
 img{display:block;max-width:100%;height:auto}
 a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:var(--r-sheet)}
+code{font-family:var(--font-mono);font-size:.9em;background:var(--inset);
+  border:1px solid var(--line);border-radius:var(--r-sheet);padding:.05em .3em}
 
-/* ===== Color Tokens ===== */
+/* ===== Design Tokens（docs/design/ui-guidelines.md §1 取值，不另写字面量） ===== */
 :root{
-  /* Light palette */
-  --canvas:#f1f1ee;
+  /* 三套字体角色：展示衬线只做声音，UI 栈做正文，mono 做数据 */
+  --font-display:"Source Han Serif SC","Noto Serif SC","Songti SC",SimSun,Georgia,serif;
+  --font-ui:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Segoe UI",system-ui,sans-serif;
+  --font-mono:"Cascadia Code","JetBrains Mono",Consolas,monospace;
+
+  --canvas:#f1f1ee;   /* 冷灰纸 */
   --card:#fbfbf9;
+  --card-2:#f3f3ef;
+  --inset:#ebebe6;
+  --tb:#f7f7f4;      /* 顶栏 */
+  --line:#e2e2dc;    /* 分区发丝线 */
+  --line-2:#cccdc5;
   --ink:#1e2126;
-  --secondary:#494e58;
-  --muted:#71767f;
-  --hairline:#e2e2dc;
-  /* Accent */
-  --accent:#b5301c;
-  --accent-hover:#c23d1e;
-  --accent-active:#d5542f;
-  /* Surfaces */
-  --hero-bg:#15181d;
-  --hero-card:#1c2027;
-  --hero-ink:#e9e7e1;
-  --hero-muted:#878e99;
-  --hero-hairline:#2a2f38;
-  /* Spacing scale */
+  --ink-2:#494e58;
+  --mut:#71767f;
+  --acc:#b5301c;     /* 朱砂：仅付印语义 */
+  --acc-h:#982512;
+  --acc-ring:rgba(181,48,28,.30);
+  --seal-ring:rgba(255,255,255,.28);
+  --shadow-card:0 1px 2px rgba(24,25,28,.05),0 2px 6px rgba(24,25,28,.04);
+
+  /* 形状 */
+  --r-sheet:3px;  --r-card:10px;  --r-btn:8px;
+
+  /* 动效预算（§4.3：hover ≤150ms，transition ≤260ms） */
+  --dur:240ms;
+  --dur-hover:140ms;
+
+  /* 间距 */
   --space-xs:0.375rem;
   --space-sm:0.75rem;
   --space-md:1.25rem;
   --space-lg:2rem;
   --space-xl:3.5rem;
   --space-2xl:5.5rem;
-  /* Layout */
-  --max-w:1120px;
-  --radius:10px;
-  --radius-lg:16px;
+
+  /* 布局 */
+  --bar-h:52px;
+  --max-w:1080px;
+  --measure:640px;
 }
 @media(prefers-color-scheme:dark){
   :root{
     --canvas:#15181d;
     --card:#1c2027;
+    --card-2:#232830;
+    --inset:#111419;
+    --tb:#191d23;
+    --line:#2a2f38;
+    --line-2:#3b424e;
     --ink:#e9e7e1;
-    --secondary:#b8bcc4;
-    --muted:#878e99;
-    --hairline:#2a2f38;
-    --accent:#c23d1e;
-    --accent-hover:#d5542f;
-    --accent-active:#e06840;
-    --hero-bg:#111419;
-    --hero-card:#15181d;
+    --ink-2:#b8bcc4;
+    --mut:#878e99;
+    --acc:#c23d1e;
+    --acc-h:#d5542f;
+    --acc-ring:rgba(205,69,38,.38);
+    --shadow-card:0 1px 2px rgba(0,0,0,.40),0 2px 6px rgba(0,0,0,.30);
   }
 }
 
-/* ===== Typography ===== */
-h1{font-size:clamp(2rem,5vw,3.2rem);font-weight:700;letter-spacing:-0.02em;line-height:1.15}
-h2{font-size:clamp(1.35rem,3vw,1.85rem);font-weight:700;letter-spacing:-0.01em;line-height:1.25}
-h3{font-size:1.05rem;font-weight:600;line-height:1.35}
+/* ===== Typography（serif 只做标题/题字，正文一律 UI 栈） ===== */
+h1{font-family:var(--font-display);font-size:clamp(1.75rem,5.4vw,3.25rem);
+   font-weight:600;letter-spacing:.02em;line-height:1.2}
+h2{font-family:var(--font-display);font-size:clamp(1.4rem,3vw,1.9rem);
+   font-weight:600;letter-spacing:.02em;line-height:1.3}
+h3{font-size:1.02rem;font-weight:600;line-height:1.5;letter-spacing:.01em}
 
 /* ===== Utility ===== */
 .container{width:100%;max-width:var(--max-w);margin:0 auto;padding:0 var(--space-lg)}
 @media(max-width:640px){.container{padding:0 var(--space-md)}}
 
-/* ===== Language Toggle ===== */
-.lang-toggle{
-  position:fixed;top:var(--space-md);right:var(--space-md);z-index:100;
-  display:flex;align-items:center;gap:0;
-  background:var(--card);border:1px solid var(--hairline);
-  border-radius:999px;overflow:hidden;
-  box-shadow:0 2px 12px rgba(0,0,0,.08);
-  transition:box-shadow .2s;
+/* ===== 顶栏：品牌 + 目录（四个锚点入口）+ 语言 ===== */
+.topbar{position:sticky;top:0;z-index:50;background:var(--tb);border-bottom:1px solid var(--line)}
+.topbar.stuck{box-shadow:0 6px 18px rgba(20,21,26,.06)}
+.topbar-inner{display:grid;grid-template-columns:auto 1fr auto;align-items:center;
+  gap:var(--space-md);height:var(--bar-h)}
+.brand{font-family:var(--font-display);font-size:1rem;font-weight:600;letter-spacing:.05em;white-space:nowrap}
+.brand i{font-style:normal;color:var(--ink-2)}
+.toc{display:flex;align-items:center;justify-content:center;gap:clamp(10px,2vw,22px);min-width:0;overflow:hidden}
+.toc a{display:inline-flex;align-items:baseline;gap:6px;white-space:nowrap;padding:3px 0;
+  border-bottom:1px solid transparent;font-size:.8rem;color:var(--ink-2);
+  transition:color var(--dur-hover) ease,border-color var(--dur-hover) ease}
+.toc a .tn{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;color:var(--ink-2)}
+.toc a:hover{color:var(--ink)}
+.toc a[aria-current="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+/* 窄档：只留编号，标签交给 aria-label —— 目录不折行、不横向溢出。
+   !important 是必须的：双语 display 规则（html[data-active-lang] [data-lang].inline）
+   特异性 (0,3,1) 高于本条，窄档隐藏会被它压掉。 */
+@media(max-width:860px){
+  .toc a .lbl{display:none !important}
+  .toc{justify-content:space-evenly}
+  .toc a{justify-content:center;min-width:44px}
+  .toc a .tn{font-size:.8rem}
+  .brand{font-size:.9rem}
 }
-.lang-toggle:hover{box-shadow:0 4px 20px rgba(0,0,0,.12)}
-.lang-btn{
-  border:none;background:transparent;cursor:pointer;
-  padding:0.45rem 0.7rem;font-size:0.95rem;line-height:1;
-  color:var(--muted);transition:background .15s,color .15s;
-  position:relative;
-}
-.lang-btn[aria-pressed="true"]{
-  background:var(--accent);color:#fff;font-weight:600;
-}
-.lang-sep{width:1px;height:1.1rem;background:var(--hairline);flex-shrink:0}
+@media(max-width:420px){.brand{display:none}.topbar-inner{grid-template-columns:1fr auto}}
+
+/* ===== 语言分段（§2 seg：选中 = 纸面浮起 + 加粗，不占朱砂） ===== */
+.lang-toggle{display:flex;align-items:center;background:var(--inset);
+  border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.lang-btn{border:none;background:transparent;cursor:pointer;padding:5px 11px;
+  font-family:var(--font-ui);font-size:.8rem;line-height:1;color:var(--ink-2);
+  transition:background var(--dur-hover) ease,color var(--dur-hover) ease}
+.lang-btn[aria-pressed="true"]{background:var(--card);color:var(--ink);font-weight:600;
+  box-shadow:0 1px 2px rgba(24,25,28,.06)}
+.lang-sep{width:1px;height:1.1rem;background:var(--line);flex-shrink:0}
 
 /* ===== Bilingual Block ===== */
 [data-lang="zh"]{display:none}
@@ -122,206 +163,190 @@ html[data-active-lang="en"] [data-lang="en"].grid{display:grid}
 html[data-active-lang="zh"] [data-lang="zh"].table-row{display:table-row}
 html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
 
-/* ===== Hero ===== */
-.hero{
-  background:var(--hero-bg);
-  color:var(--hero-ink);
-  padding:var(--space-2xl) 0 calc(var(--space-2xl) - 1rem);
-  position:relative;
-  overflow:hidden;
+/* ===== Hero：一张「待印文稿」，签名元素（裁切线 + 直排 + 钤印）只落在这一处 ===== */
+.hero{padding:var(--space-2xl) 0;position:relative}
+.hero-inner{position:relative}
+.sheet{position:relative;width:100%;background:var(--card);
+  border:1px solid var(--line-2);border-radius:var(--r-sheet);
+  box-shadow:var(--shadow-card),0 18px 44px rgba(20,21,26,.07);
+  padding:clamp(28px,4.4vw,52px);
+  display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-md)}
+.cm{position:absolute;width:16px;height:16px;color:var(--line-2);pointer-events:none}
+.cm::before,.cm::after{content:"";position:absolute;background:currentColor}
+.cm::before{width:16px;height:1px;top:0;left:0}
+.cm::after{width:1px;height:16px;top:0;left:0}
+.cm.tl{top:-9px;left:-9px}
+.cm.tr{top:-9px;right:-9px;transform:scaleX(-1)}
+.cm.bl{bottom:-9px;left:-9px;transform:scaleY(-1)}
+.cm.br{bottom:-9px;right:-9px;transform:scale(-1)}
+.hero-sign{position:absolute;right:clamp(28px,4.4vw,52px);top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:16px;pointer-events:none}
+.hs-text{writing-mode:vertical-rl;font-family:var(--font-display);
+  font-size:.95rem;letter-spacing:.42em;color:var(--ink-2)}
+.hs-seal{width:28px;height:28px;border-radius:6px;background:var(--acc);color:#fff;
+  display:grid;place-items:center;font-family:var(--font-display);font-size:16px;line-height:1;
+  transform:rotate(-5deg);box-shadow:inset 0 0 0 1.5px var(--seal-ring),0 3px 8px var(--acc-ring)}
+@media(max-width:860px){
+  .hero-sign{position:static;transform:none;flex-direction:row;align-items:center;
+    gap:12px;margin-top:var(--space-xs)}
+  .hs-text{writing-mode:horizontal-tb;letter-spacing:.26em;font-size:.85rem}
 }
-.hero::before{
-  content:'';position:absolute;top:0;left:0;width:10px;height:100%;
-  background:linear-gradient(180deg,var(--accent),var(--accent-active));
-}
-.hero::after{
-  content:'';position:absolute;top:-40%;right:-10%;width:500px;height:500px;
-  background:radial-gradient(circle,rgba(181,48,28,.12) 0%,transparent 70%);
-  pointer-events:none;
-}
-.hero-inner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-lg)}
-.hero-badge{
-  display:inline-flex;align-items:center;gap:var(--space-xs);
-  padding:0.3rem 0.85rem;border-radius:999px;
-  background:rgba(255,255,255,.06);border:1px solid var(--hero-hairline);
-  font-size:0.8rem;color:var(--hero-muted);letter-spacing:0.03em;
-}
-.hero-badge svg{width:14px;height:14px;fill:var(--accent)}
-.hero h1 span{color:var(--accent-active)}
-.hero-tagline{
-  font-size:clamp(1rem,2.2vw,1.2rem);
-  color:var(--hero-muted);line-height:1.65;
-  max-width:640px;
-}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:4px 12px;border-radius:999px;
+  background:var(--card-2);border:1px solid var(--line);
+  font-family:var(--font-mono);font-size:.74rem;letter-spacing:.1em;color:var(--ink-2)}
+.hero-badge svg{width:13px;height:13px;fill:var(--ink-2)}
+.hero h1{margin:0}
+.hero h1 .wm-2{color:var(--ink-2);border-bottom:1px solid var(--line-2);
+  padding-bottom:.05em;margin-left:.06em;letter-spacing:.06em}
+.hero-tagline{font-size:clamp(1rem,1.6vw,1.1rem);color:var(--ink-2);line-height:1.8;
+  max-width:var(--measure)}
 .hero-actions{display:flex;flex-wrap:wrap;gap:var(--space-sm);margin-top:var(--space-xs)}
-.btn{
-  display:inline-flex;align-items:center;gap:0.5rem;
-  padding:0.75rem 1.6rem;border-radius:var(--radius);
-  font-size:0.95rem;font-weight:600;
-  transition:all .2s;cursor:pointer;border:none;
-}
-.btn-primary{
-  background:var(--accent);color:#fff;
-  box-shadow:0 2px 12px rgba(181,48,28,.3);
-}
-.btn-primary:hover{background:var(--accent-hover);box-shadow:0 4px 20px rgba(181,48,28,.4);transform:translateY(-1px)}
+.btn{display:inline-flex;align-items:center;gap:.5rem;height:40px;padding:0 1.5rem;
+  border-radius:var(--r-btn);border:1px solid transparent;cursor:pointer;
+  font-family:var(--font-ui);font-size:.92rem;font-weight:600;
+  transition:background var(--dur-hover) ease,border-color var(--dur-hover) ease,
+             color var(--dur-hover) ease,box-shadow var(--dur-hover) ease,
+             transform var(--dur-hover) ease}
+.btn svg{width:16px;height:16px;fill:currentColor}
+/* 付印语义：唯一下载主动作 */
+.btn-primary{background:var(--acc);color:#fff;box-shadow:0 2px 12px var(--acc-ring)}
+.btn-primary:hover{background:var(--acc-h);box-shadow:0 4px 18px var(--acc-ring);transform:translateY(-1px)}
 .btn-primary:active{transform:translateY(0)}
-.btn-primary svg{width:16px;height:16px;fill:currentColor}
-.btn-ghost{
-  background:rgba(255,255,255,.06);
-  border:1px solid var(--hero-hairline);
-  color:var(--hero-ink);
-}
-.btn-ghost:hover{background:rgba(255,255,255,.1);border-color:#444}
-.btn-ghost svg{width:16px;height:16px;fill:currentColor;opacity:.7}
+.btn-ghost{background:var(--card);border-color:var(--line-2);color:var(--ink)}
+.btn-ghost:hover{background:var(--card-2);border-color:var(--mut);color:var(--ink)}
 
-/* ===== Section Base ===== */
+/* ===== Section ===== */
 .section{padding:var(--space-2xl) 0}
-.section-label{
-  display:inline-block;font-size:0.78rem;font-weight:600;
-  letter-spacing:0.08em;text-transform:uppercase;
-  color:var(--accent);margin-bottom:var(--space-sm);
-}
+/* kicker 走 mono 弱化档，替代原先的朱砂小标题 */
+.kicker{font-family:var(--font-mono);font-size:.75rem;font-weight:600;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--ink-2);margin-bottom:var(--space-sm)}
 .section-title{margin-bottom:var(--space-lg)}
-.section-desc{color:var(--secondary);max-width:600px;margin-bottom:var(--space-xl)}
+.section-desc{color:var(--ink-2);max-width:var(--measure);margin-top:var(--space-md)}
 
-/* ===== Feature Cards ===== */
-.features-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
-  gap:var(--space-md);
-}
+/* ===== Feature Cards（hover 仅边线加深，纸面不抬升） ===== */
+.features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:var(--space-md)}
 @media(max-width:640px){.features-grid{grid-template-columns:1fr}}
-.feature-card{
-  background:var(--card);
-  border:1px solid var(--hairline);
-  border-radius:var(--radius-lg);
-  padding:var(--space-lg);
-  transition:border-color .2s,box-shadow .2s;
-  position:relative;
-}
-.feature-card:hover{
-  border-color:var(--accent);
-  box-shadow:0 4px 24px rgba(181,48,28,.08);
-}
-.feature-icon{
-  width:44px;height:44px;border-radius:10px;
+.feature-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);
+  padding:var(--space-lg);position:relative;
+  transition:border-color var(--dur-hover) ease}
+.feature-card:hover{border-color:var(--line-2)}
+.feature-icon{width:40px;height:40px;border-radius:var(--r-btn);
   display:flex;align-items:center;justify-content:center;
-  background:rgba(181,48,28,.07);margin-bottom:var(--space-md);
-}
-.feature-icon svg{width:22px;height:22px;fill:var(--accent)}
-.feature-card h3{margin-bottom:var(--space-xs);color:var(--ink)}
-.feature-card p{color:var(--secondary);font-size:0.92rem;line-height:1.65}
+  background:var(--inset);border:1px solid var(--line);margin-bottom:var(--space-md)}
+.feature-icon svg{width:20px;height:20px;fill:var(--ink-2)}
+.feature-card h3{margin-bottom:6px;color:var(--ink)}
+.feature-card p{color:var(--ink-2);font-size:.9rem;line-height:1.8}
+
+/* ===== More Capabilities（发丝线清单，取代原先的深色块 + 朱砂加号） ===== */
+.more{border-top:1px solid var(--line)}
+.more-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:var(--space-md) var(--space-lg);margin-top:var(--space-lg)}
+@media(max-width:640px){.more-grid{grid-template-columns:1fr}}
+.more-item{border-left:1px solid var(--line);padding-left:var(--space-md);
+  color:var(--ink-2);font-size:.92rem;line-height:1.8}
+.more-item strong{color:var(--ink);font-weight:600}
 
 /* ===== Screenshots ===== */
-.screenshots{background:var(--card);border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline)}
-.ss-main{
-  border-radius:var(--radius-lg);overflow:hidden;
-  border:1px solid var(--hairline);
-  box-shadow:0 8px 40px rgba(0,0,0,.08);
-  margin-bottom:var(--space-lg);
-}
-.ss-row{
-  display:grid;grid-template-columns:1fr 1fr;gap:var(--space-md);
-}
+.screens{background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ss-main,.ss-item{background:var(--canvas);border:1px solid var(--line);
+  border-radius:var(--r-sheet);overflow:hidden}
+.ss-main{margin-bottom:var(--space-lg)}
+.ss-row{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-md)}
+.ss-row+.ss-row{margin-top:var(--space-md)}
 @media(max-width:640px){.ss-row{grid-template-columns:1fr}}
-.ss-item{
-  border-radius:var(--radius);overflow:hidden;
-  border:1px solid var(--hairline);
-  box-shadow:0 4px 20px rgba(0,0,0,.06);
-}
-.ss-caption{
-  text-align:center;padding:var(--space-sm) 0;
-  font-size:0.82rem;color:var(--muted);font-style:italic;
-}
+.ss-caption{text-align:center;padding:10px 14px;font-size:.8rem;line-height:1.7;color:var(--ink-2)}
 
-/* ===== Tech Stack ===== */
-.tech-bar{
-  display:flex;flex-wrap:wrap;gap:var(--space-sm);
-  margin-top:var(--space-md);
-}
-.tech-tag{
-  display:inline-flex;align-items:center;gap:0.35rem;
-  padding:0.4rem 0.9rem;border-radius:999px;
-  background:var(--card);border:1px solid var(--hairline);
-  font-size:0.82rem;color:var(--secondary);
-  font-family:'Cascadia Code','Fira Code',monospace;
-  letter-spacing:0.01em;
-}
-.tech-tag::before{
-  content:'';width:6px;height:6px;border-radius:50%;
-  background:var(--accent);flex-shrink:0;
-}
+/* ===== Tech Stack（mono 数据档；去掉装饰性朱砂圆点） ===== */
+.tech-bar{display:flex;flex-wrap:wrap;gap:var(--space-sm);margin-top:var(--space-md)}
+.tech-tag{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:999px;
+  background:var(--card);border:1px solid var(--line);color:var(--ink-2);
+  font-family:var(--font-mono);font-size:.78rem;letter-spacing:.02em}
 
 /* ===== Footer ===== */
-.footer{
-  padding:var(--space-xl) 0 var(--space-lg);
-  border-top:1px solid var(--hairline);
-  color:var(--muted);font-size:0.85rem;
-}
-.footer-inner{
-  display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:var(--space-md);
-}
+.footer{padding:var(--space-xl) 0 var(--space-lg);border-top:1px solid var(--line);
+  color:var(--ink-2);font-size:.84rem}
+.footer-inner{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;
+  gap:var(--space-md)}
 .footer-links{display:flex;gap:var(--space-lg)}
-.footer-links a{color:var(--secondary);transition:color .15s}
-.footer-links a:hover{color:var(--accent)}
-.footer-copy{color:var(--muted)}
+.footer-links a{color:var(--ink-2);transition:color var(--dur-hover) ease}
+.footer-links a:hover{color:var(--ink)}
+.footer-copy{color:var(--ink-2)}
 
-/* ===== Subtle Animations ===== */
-@keyframes fadeUp{
-  from{opacity:0;transform:translateY(20px)}
-  to{opacity:1;transform:translateY(0)}
+/* ===== 揭示动效（统一一套机制；.js 才设初始隐藏态，无 JS 时页面完整可见） ===== */
+html.js .reveal{opacity:0;transform:translateY(18px);
+  transition:opacity var(--dur) ease-out,transform var(--dur) ease-out;
+  transition-delay:var(--d,0ms)}
+html.js .reveal.is-in{opacity:1;transform:none}
+
+/* ===== 降动效（§4.3：关键帧须为终态，不留残留与跳变） ===== */
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{
+    transition-duration:1ms !important;
+    transition-delay:0s !important;
+    animation-duration:1ms !important;
+    animation-iteration-count:1 !important;
+    scroll-behavior:auto !important;
+  }
+  html.js .reveal{opacity:1 !important;transform:none !important}
 }
-.hero-badge{animation:fadeUp .6s ease-out both}
-.hero h1{animation:fadeUp .6s .1s ease-out both}
-.hero-tagline{animation:fadeUp .6s .2s ease-out both}
-.hero-actions{animation:fadeUp .6s .3s ease-out both}
-.feature-card{animation:fadeUp .5s ease-out both}
-.feature-card:nth-child(1){animation-delay:.05s}
-.feature-card:nth-child(2){animation-delay:.1s}
-.feature-card:nth-child(3){animation-delay:.15s}
-.feature-card:nth-child(4){animation-delay:.2s}
-.feature-card:nth-child(5){animation-delay:.25s}
-.feature-card:nth-child(6){animation-delay:.3s}
-
-/* ===== Scroll reveal via IntersectionObserver ===== */
-.reveal{opacity:0;transform:translateY(24px);transition:opacity .55s ease-out,transform .55s ease-out}
-.reveal.visible{opacity:1;transform:translateY(0)}
 </style>
 </head>
-<body>
+<body id="top">
 
-<!-- Language Toggle -->
-<nav class="lang-toggle" aria-label="Language">
-  <button class="lang-btn" data-set-lang="zh" aria-pressed="true" title="中文">CN</button>
-  <span class="lang-sep" aria-hidden="true"></span>
-  <button class="lang-btn" data-set-lang="en" aria-pressed="false" title="English">EN</button>
-</nav>
+<!-- ===== 顶栏：品牌 · 目录（四锚点入口）· 语言 ===== -->
+<header class="topbar" id="topbar">
+  <div class="container topbar-inner">
+    <a class="brand" href="#top">Markdown<i>ToWord</i></a>
+    <nav class="toc" aria-label="Section">
+      <a href="#features" aria-label="功能特性 / Features" title="功能特性 / Features"><span class="tn">01</span><span class="lbl inline" data-lang="zh">功能特性</span><span class="lbl inline" data-lang="en">Features</span></a>
+      <a href="#more" aria-label="更多能力 / More Capabilities" title="更多能力 / More Capabilities"><span class="tn">02</span><span class="lbl inline" data-lang="zh">更多能力</span><span class="lbl inline" data-lang="en">More</span></a>
+      <a href="#screenshots" aria-label="界面预览 / Screenshots" title="界面预览 / Screenshots"><span class="tn">03</span><span class="lbl inline" data-lang="zh">界面预览</span><span class="lbl inline" data-lang="en">Screenshots</span></a>
+      <a href="#tech" aria-label="技术栈 / Tech Stack" title="技术栈 / Tech Stack"><span class="tn">04</span><span class="lbl inline" data-lang="zh">技术栈</span><span class="lbl inline" data-lang="en">Tech</span></a>
+    </nav>
+    <div class="lang-toggle" role="group" aria-label="Language">
+      <button class="lang-btn" data-set-lang="zh" aria-pressed="true" title="中文">CN</button>
+      <span class="lang-sep" aria-hidden="true"></span>
+      <button class="lang-btn" data-set-lang="en" aria-pressed="false" title="English">EN</button>
+    </div>
+  </div>
+</header>
 
-<!-- ===== Hero ===== -->
+<!-- ===== Hero：一张待印文稿（签名元素集中于此） ===== -->
 <header class="hero">
   <div class="container hero-inner">
-    <span class="hero-badge">
-      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-      <span class="inline" data-lang="zh">Windows 桌面应用</span>
-      <span class="inline" data-lang="en">Windows Desktop App</span>
-    </span>
-    <h1>Markdown<span>ToWord</span></h1>
-    <p class="hero-tagline">
-      <span class="inline" data-lang="zh">Markdown 转 Word / PDF 的本地桌面工具。文件不上传，离线可用；输出真正的 .docx 文档，中文排版可控。支持剪贴板直转、七步成书向导、AI 清理、Obsidian 兼容。</span>
-      <span class="inline" data-lang="en">A local desktop tool that converts Markdown to Word / PDF. No uploads, fully offline. Produces real .docx files with controllable Chinese typesetting. Supports clipboard convert, book wizard, AI cleanup, and Obsidian compatibility.</span>
-    </p>
-    <div class="hero-actions">
-      <a href="https://github.com/chenchaodev/markdown-to-word/releases/latest" class="btn btn-primary">
-        <svg viewBox="0 0 24 24"><path d="M12 16l-6-6h4V4h4v6h4l-6 6z"/><path d="M4 20h16v-2H4v2z"/></svg>
-        <span class="inline" data-lang="zh">下载安装包</span>
-        <span class="inline" data-lang="en">Download Installer</span>
-      </a>
-      <a href="https://github.com/chenchaodev/markdown-to-word" class="btn btn-ghost">
-        <svg viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0012 2z"/></svg>
-        <span class="inline" data-lang="zh">在 GitHub 查看</span>
-        <span class="inline" data-lang="en">View on GitHub</span>
-      </a>
+    <div class="sheet">
+      <i class="cm tl" aria-hidden="true"></i><i class="cm tr" aria-hidden="true"></i>
+      <i class="cm bl" aria-hidden="true"></i><i class="cm br" aria-hidden="true"></i>
+
+      <span class="hero-badge reveal" style="--d:0ms">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        <span class="inline" data-lang="zh">Windows 桌面应用</span>
+        <span class="inline" data-lang="en">Windows Desktop App</span>
+      </span>
+      <h1 class="reveal" style="--d:60ms">Markdown<span class="wm-2">ToWord</span></h1>
+      <p class="hero-tagline reveal" style="--d:120ms">
+        <span class="inline" data-lang="zh">Markdown 转 Word / PDF 的本地桌面工具。文件不上传，离线可用；输出真正的 .docx 文档，中文排版可控。支持剪贴板直转、七步成书向导、AI 清理、Obsidian 兼容。</span>
+        <span class="inline" data-lang="en">A local desktop tool that converts Markdown to Word / PDF. No uploads, fully offline. Produces real .docx files with controllable Chinese typesetting. Supports clipboard convert, book wizard, AI cleanup, and Obsidian compatibility.</span>
+      </p>
+      <div class="hero-actions reveal" style="--d:180ms">
+        <a href="https://github.com/chenchaodev/markdown-to-word/releases/latest" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16l-6-6h4V4h4v6h4l-6 6z"/><path d="M4 20h16v-2H4v2z"/></svg>
+          <span class="inline" data-lang="zh">下载安装包</span>
+          <span class="inline" data-lang="en">Download Installer</span>
+        </a>
+        <a href="https://github.com/chenchaodev/markdown-to-word" class="btn btn-ghost">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0012 2z"/></svg>
+          <span class="inline" data-lang="zh">在 GitHub 查看</span>
+          <span class="inline" data-lang="en">View on GitHub</span>
+        </a>
+      </div>
+
+      <aside class="hero-sign" aria-hidden="true">
+        <span class="hs-text">落笔 · 排版 · 成书</span>
+        <span class="hs-seal">梓</span>
+      </aside>
     </div>
   </div>
 </header>
@@ -329,7 +354,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
 <!-- ===== Features ===== -->
 <section class="section" id="features">
   <div class="container">
-    <span class="section-label reveal">
+    <span class="kicker reveal">
       <span class="inline" data-lang="zh">功能特性</span>
       <span class="inline" data-lang="en">Features</span>
     </span>
@@ -340,7 +365,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
     <div class="features-grid">
 
       <!-- Card 1: Offline -->
-      <div class="feature-card reveal">
+      <div class="feature-card reveal" style="--d:0ms">
         <div class="feature-icon">
           <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
         </div>
@@ -355,7 +380,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
       </div>
 
       <!-- Card 2: Real docx -->
-      <div class="feature-card reveal">
+      <div class="feature-card reveal" style="--d:45ms">
         <div class="feature-icon">
           <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15.01V17h2v-2h2v-2h-2v-2H8v2H6v2h2z"/></svg>
         </div>
@@ -370,7 +395,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
       </div>
 
       <!-- Card 3: Chinese typesetting -->
-      <div class="feature-card reveal">
+      <div class="feature-card reveal" style="--d:90ms">
         <div class="feature-icon">
           <svg viewBox="0 0 24 24"><path d="M3 5h2v14H3V5zm4 0h1v14H7V5zm3 0h3v14h-3V5zm5 0h1v14h-1V5zm3 0h4v14h-4V5z"/></svg>
         </div>
@@ -385,7 +410,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
       </div>
 
       <!-- Card 4: Batch & Merge -->
-      <div class="feature-card reveal">
+      <div class="feature-card reveal" style="--d:135ms">
         <div class="feature-icon">
           <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
         </div>
@@ -400,7 +425,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
       </div>
 
       <!-- Card 5: Book Wizard + Clipboard -->
-      <div class="feature-card reveal">
+      <div class="feature-card reveal" style="--d:180ms">
         <div class="feature-icon">
           <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
         </div>
@@ -415,7 +440,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
       </div>
 
       <!-- Card 6: AI cleanup + Obsidian + Template import -->
-      <div class="feature-card reveal">
+      <div class="feature-card reveal" style="--d:225ms">
         <div class="feature-icon">
           <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>
         </div>
@@ -424,8 +449,8 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
           <span class="inline" data-lang="en">Smart Compat & Template Import</span>
         </h3>
         <p>
-          <span class="inline" data-lang="zh">转换前 AI 自动规整智能引号、破折号、列表空格。自动转换 Obsidian 双链与嵌入。导入 Word 模板提取字体与页面设置。</span>
-          <span class="inline" data-lang="en">AI auto-normalizes smart quotes, em-dashes, and list spacing before conversion. Converts Obsidian wikilinks and embeds automatically. Import Word templates to extract fonts and page settings.</span>
+          <span class="inline" data-lang="zh">AI 清理默认关闭，可分「保守规整」「结构改写」两档开启，清理裸数字引用标记、emoji 与标题层级错位。自动转换 Obsidian 双链与嵌入。导入 Word 模板提取字体与页面设置。</span>
+          <span class="inline" data-lang="en">AI cleanup is off by default and offers two levels — conservative tidy-up and structural rewrite — stripping bare numeric citations, emoji and mis-leveled headings. Obsidian wikilinks and embeds convert automatically. Import Word templates to extract fonts and page settings.</span>
         </p>
       </div>
 
@@ -434,95 +459,65 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
 </section>
 
 <!-- ===== More Capabilities ===== -->
-<section class="section" id="more" style="background:var(--hero-bg);color:var(--hero-ink);padding:var(--space-xl) 0 var(--space-2xl)">
+<section class="section more" id="more">
   <div class="container">
-    <span class="section-label reveal" style="color:var(--accent-active)">
+    <span class="kicker reveal">
       <span class="inline" data-lang="zh">更多能力</span>
       <span class="inline" data-lang="en">More Capabilities</span>
     </span>
-    <h2 class="section-title reveal" style="color:var(--hero-ink)">
+    <h2 class="section-title reveal">
       <span class="inline" data-lang="zh">持续打磨的细节</span>
       <span class="inline" data-lang="en">Refined Details</span>
     </h2>
-    <div class="more-grid reveal" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--space-sm) var(--space-lg);margin-top:var(--space-lg)">
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>学术排版</strong> · 公式（OMML/KaTeX）编号与交叉引用、图/表/章节引用跳转</span>
-          <span class="inline" data-lang="en"><strong>Academic</strong> · Numbered equations (OMML/KaTeX) with cross-references, figure/table/section jumps</span>
-        </div>
+    <div class="more-grid reveal">
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>学术排版</strong> · 公式（OMML/KaTeX）编号与交叉引用、图/表/章节引用跳转</span>
+        <span class="inline" data-lang="en"><strong>Academic</strong> · Numbered equations (OMML/KaTeX) with cross-references, figure/table/section jumps</span>
       </div>
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>文字水印</strong> · 控制文字、旋转角度、不透明度；Word 旋转置底、PDF 固定覆盖层</span>
-          <span class="inline" data-lang="en"><strong>Watermark</strong> · Custom text, rotation, opacity; Word uses rotated baseline, PDF uses fixed overlay</span>
-        </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>文字水印</strong> · 控制文字、旋转角度、不透明度；Word 旋转置底、PDF 固定覆盖层</span>
+        <span class="inline" data-lang="en"><strong>Watermark</strong> · Custom text, rotation, opacity; Word uses rotated baseline, PDF uses fixed overlay</span>
       </div>
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>转换预检</strong> · 转换前自动体检缺失本地图片、悬空交叉引用、未标注语言代码块</span>
-          <span class="inline" data-lang="en"><strong>Pre-check</strong> · Auto-checks for missing local images, dangling cross-references, unlabeled code blocks</span>
-        </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>转换预检</strong> · 转换前逐项体检：缺失的本地图片、悬空交叉引用、未标注语言的代码块、不被支持的公式定界符（<code>\(</code>、<code>\[</code>）、未配对的 <code>$</code>、未闭合的代码围栏、白名单外的 HTML 标签、未按表格排版的形似表格段落</span>
+        <span class="inline" data-lang="en"><strong>Pre-check</strong> · Item-by-item scan before converting: missing local images, dangling cross-references, unlabeled code blocks, unsupported math delimiters (<code>\(</code>, <code>\[</code>), unpaired <code>$</code>, unclosed code fences, HTML tags outside the whitelist, table-like paragraphs not parsed as tables</span>
       </div>
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>目录带页码</strong> · 静态/域两种模式，Word 与 PDF 均可生成带真实页码的目录</span>
-          <span class="inline" data-lang="en"><strong>TOC with Page Numbers</strong> · Static or field mode; Word and PDF both generate TOC with real page numbers</span>
-        </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>目录带页码</strong> · 目录可选静态目录或 Word 域目录：域目录在 Word 更新域后带真实页码，静态目录为免更新的纯超链接；PDF 目录页码在打印时注入</span>
+        <span class="inline" data-lang="en"><strong>TOC with Page Numbers</strong> · Choose a static TOC or a Word field TOC: the field TOC shows real page numbers after Word updates fields, the static TOC stays hyperlinked and needs no update; PDF TOC page numbers are injected at print time</span>
       </div>
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>暗色模式</strong> · 跟随系统 / 浅色 / 深色三态切换</span>
-          <span class="inline" data-lang="en"><strong>Dark Mode</strong> · Follow system / light / dark three-state toggle</span>
-        </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>暗色模式</strong> · 跟随系统 / 浅色 / 深色三态切换</span>
+        <span class="inline" data-lang="en"><strong>Dark Mode</strong> · Follow system / light / dark three-state toggle</span>
       </div>
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>多语言界面</strong> · 中文 / English / 日本語三语切换</span>
-          <span class="inline" data-lang="en"><strong>Multi-language</strong> · Chinese / English / Japanese UI</span>
-        </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>多语言界面</strong> · 中文 / English / 日本語三语切换</span>
+        <span class="inline" data-lang="en"><strong>Multi-language</strong> · Chinese / English / Japanese UI</span>
       </div>
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>模板预设</strong> · 内置多套排版预设，支持 JSON 导入导出，自定义 PDF CSS</span>
-          <span class="inline" data-lang="en"><strong>Template Presets</strong> · Built-in layout presets, JSON import/export, custom PDF CSS</span>
-        </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>模板预设</strong> · 内置多套排版预设，支持 JSON 导入导出，自定义 PDF CSS</span>
+        <span class="inline" data-lang="en"><strong>Template Presets</strong> · Built-in layout presets, JSON import/export, custom PDF CSS</span>
       </div>
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>实时预览</strong> · 转换前可预览源文件，跟随文件刷新；最近转换记录一键重转</span>
-          <span class="inline" data-lang="en"><strong>Live Preview</strong> · Preview source before conversion, auto-refresh; recent conversions with one-click re-convert</span>
-        </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>转换前预览</strong> · 转换前可打开预览窗口（与 PDF 同排版），窗口重新获得焦点时若源文件已改动则自动重排；最近转换记录一键重转</span>
+        <span class="inline" data-lang="en"><strong>Preview Before Converting</strong> · Open a preview window laid out like the PDF; it re-renders on focus when the source file has changed. Recent conversions can be re-converted in one click</span>
       </div>
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>首次引导</strong> · 首次启动出现选预设→向导→转换引导路径，可跳过</span>
-          <span class="inline" data-lang="en"><strong>First Launch Guide</strong> · Onboarding path: pick preset → wizard → convert; skippable</span>
-        </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>首次引导</strong> · 首次启动出现选预设→向导→转换引导路径，可跳过</span>
+        <span class="inline" data-lang="en"><strong>First Launch Guide</strong> · Onboarding path: pick preset → wizard → convert; skippable</span>
       </div>
-      <div class="more-item" style="display:flex;gap:var(--space-sm);align-items:flex-start">
-        <span style="color:var(--accent-active);font-weight:700;flex-shrink:0">+</span>
-        <div>
-          <span class="inline" data-lang="zh"><strong>更新提示</strong> · 关于窗口自动检查 GitHub 最新版本，发现新版本可一键下载</span>
-          <span class="inline" data-lang="en"><strong>Update Notification</strong> · About window auto-checks GitHub for latest version, one-click download</span>
-        </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>更新提示</strong> · 关于窗口自动检查 GitHub 最新版本，发现新版本可一键下载</span>
+        <span class="inline" data-lang="en"><strong>Update Notification</strong> · About window auto-checks GitHub for latest version, one-click download</span>
       </div>
     </div>
   </div>
 </section>
 
 <!-- ===== Screenshots ===== -->
-<section class="section screenshots" id="screenshots">
+<section class="section screens" id="screenshots">
   <div class="container">
-    <span class="section-label reveal">
+    <span class="kicker reveal">
       <span class="inline" data-lang="zh">界面预览</span>
       <span class="inline" data-lang="en">Screenshots</span>
     </span>
@@ -553,7 +548,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
         </p>
       </div>
     </div>
-    <div class="ss-row" style="margin-top:var(--space-md)">
+    <div class="ss-row">
       <div class="ss-item reveal">
         <img src="images/ui-about.jpg" alt="About window with update notification">
         <p class="ss-caption">
@@ -575,7 +570,7 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
 <!-- ===== Tech Stack ===== -->
 <section class="section" id="tech">
   <div class="container">
-    <span class="section-label reveal">
+    <span class="kicker reveal">
       <span class="inline" data-lang="zh">技术栈</span>
       <span class="inline" data-lang="en">Tech Stack</span>
     </span>
@@ -590,8 +585,12 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
       <span class="tech-tag">Mermaid 11</span>
       <span class="tech-tag">highlight.js</span>
       <span class="tech-tag">pdf-lib</span>
-      <span class="tech-tag">AI Cleanup</span>
+      <span class="tech-tag">JSZip</span>
     </div>
+    <p class="section-desc">
+      <span class="inline" data-lang="zh">安装包未做代码签名：Windows 可能弹出「已保护你的电脑」提示，选「更多信息 → 仍要运行」即可。请只从 GitHub Releases 官方页下载，并用随发布公布的 SHA-256 校验值比对安装包。</span>
+      <span class="inline" data-lang="en">The installer is not code-signed, so Windows may show a “Windows protected your PC” prompt — choose “More info → Run anyway”. Download only from the official GitHub Releases page, and verify the installer against the SHA-256 checksum published with the release.</span>
+    </p>
   </div>
 </section>
 
@@ -630,20 +629,44 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
   });
 
   /* --- Scroll Reveal --- */
+  var reveals = document.querySelectorAll('.reveal');
+  function showAll(){ reveals.forEach(function(el){ el.classList.add('is-in'); }); }
   if('IntersectionObserver' in window){
-    var reveals = document.querySelectorAll('.reveal');
     var obs = new IntersectionObserver(function(entries){
       entries.forEach(function(e){
         if(e.isIntersecting){
-          e.target.classList.add('visible');
+          e.target.classList.add('is-in');
           obs.unobserve(e.target);
         }
       });
     }, {threshold:0.12, rootMargin:'0px 0px -40px 0px'});
     reveals.forEach(function(el){ obs.observe(el); });
   } else {
-    // Fallback: show everything
-    document.querySelectorAll('.reveal').forEach(function(el){ el.classList.add('visible'); });
+    showAll();
+  }
+
+  /* --- 顶栏：滚出投影 --- */
+  var bar = document.getElementById('topbar');
+  window.addEventListener('scroll', function(){
+    bar.classList.toggle('stuck', window.scrollY > 4);
+  }, {passive:true});
+
+  /* --- 目录：跟随当前区块 --- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var targets = links.map(function(a){ return document.getElementById(a.hash.slice(1)); });
+  function setCurrent(i){
+    links.forEach(function(a, n){
+      if(n === i){ a.setAttribute('aria-current','true'); }
+      else{ a.removeAttribute('aria-current'); }
+    });
+  }
+  if('IntersectionObserver' in window){
+    var spy = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting) setCurrent(targets.indexOf(e.target));
+      });
+    }, {rootMargin:'-45% 0px -50% 0px', threshold:0});
+    targets.forEach(function(t){ if(t) spy.observe(t); });
   }
 })();
 </script>
