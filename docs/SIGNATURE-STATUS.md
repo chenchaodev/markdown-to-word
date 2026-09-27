@@ -2,7 +2,7 @@
 
 > 本文件是**签名状态的声明侧单源**（事实侧由 `scripts/check-signature-status.mjs` 在发布链上核对）。
 > 二者不一致即判红，由 `test/segments/signature-status.test.js` 断言两者措辞一致。
-> 裁决出处：`docs/ADR.md` ADR-013 发布供应链与「现阶段明确不签名」。
+> 裁决出处：[adr-013](adr/adr-013-发布供应链与明确不签名.md) 发布供应链与「现阶段明确不签名」。
 
 ## 当前状态：**未签名（unsigned）**
 
@@ -56,7 +56,7 @@ Get-AuthenticodeSignature -LiteralPath "release\MarkdownToWord-Setup-<版本>.ex
 
 ## 相关
 
-- 裁决：ADR-013 发布供应链与「现阶段明确不签名」（`docs/ADR.md`）
-- 待办状态：`docs/ROADMAP.md` 候选区 REF-015「代码签名」(处置：暂缓)
+- 裁决：[adr-013](adr/adr-013-发布供应链与明确不签名.md) 发布供应链与「现阶段明确不签名」
+- 待办状态：台账 `REQ-050`（原 REF-015）「代码签名」(处置：暂缓,见 [LOG.md](LOG.md)「暂缓」表)
 - 事实核对脚本：`scripts/check-signature-status.mjs`
 - 守护测试：`test/segments/signature-status.test.js`

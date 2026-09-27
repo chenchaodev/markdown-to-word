@@ -121,7 +121,7 @@ export function docxBufferOf(artifact) {
  *
  * 为什么需要:core 的 pdf 渲染路径不 import node:fs,其两次读(图片路径边界的
  * realpathSync、KaTeX CSS 读取)必须由调用方经 `ConvertContext.fs` 注入,
- * 否则 convert 在 pdf 分支**抛错**(刻意不静默降级 —— 那会让 ADR-012 的符号链接
+ * 否则 convert 在 pdf 分支**抛错**(刻意不静默降级 —— 那会让 adr-012 的符号链接
  * 逃逸防线变成可静默关闭的开关)。
  *
  * 为什么是共享包装而不是各段自己传:全树有 20+ 个段直接调 convert 渲染 pdf,

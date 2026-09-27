@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 安装包签名状态守护段(现阶段明确不接入代码签名,口径见 docs/ADR.md 的 ADR-013;位于 test/segments/ = 跨域守护段)。
+ * 安装包签名状态守护段(现阶段明确不接入代码签名,口径见 docs/adr/adr-013-发布供应链与明确不签名.md;位于 test/segments/ = 跨域守护段)。
  *
  * 该裁决是「暂不签名,未签名作为明确风险保留」。风险被如实告知的前提是三处一致:
  *   1) 打包配置确实没有证书(否则「未签名」是假话);
@@ -142,7 +142,7 @@ export async function run() {
   }
   assert(
     pkg.build?.forceCodeSigning === undefined,
-    "build.forceCodeSigning 不得为 true:ADR-013 选择「披露」而非「无证书即发版失败」,置 true 会让发布链直接失败",
+    "build.forceCodeSigning 不得为 true:adr-013 选择「披露」而非「无证书即发版失败」,置 true 会让发布链直接失败",
   );
   console.log("[ok] signature-status:打包配置无证书且未设 forceCodeSigning");
 
@@ -153,7 +153,7 @@ export async function run() {
   );
   const doc = readRepoText("docs", "SIGNATURE-STATUS.md");
   assert(/当前状态[：:]\s*\*\*未签名/.test(doc), "SIGNATURE-STATUS.md 必须声明当前状态为未签名");
-  assert(doc.includes("ADR-013"), "SIGNATURE-STATUS.md 必须引用裁决出处 ADR-013");
+  assert(doc.includes("adr-013"), "SIGNATURE-STATUS.md 必须引用裁决出处 adr-013");
   assert(
     doc.includes("forceCodeSigning") && doc.includes("有意不采用"),
     "SIGNATURE-STATUS.md 必须写明为何有意不采用 forceCodeSigning(防后续被当缺陷「修复」)",

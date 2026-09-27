@@ -1,6 +1,6 @@
 /**
  * markdown → PDF 渲染管线(markdown-it → HTML 模板 → 主进程 printToPDF)。
- * 调研结论见 docs/RESEARCH.md:
+ * 调研结论见 docs/archive/(技术事实层):
  * - markdown-it 核心内置表格/删除线;任务列表用 @mdit/plugin-tasklist
  * - highlight.js 走 lib/common ESM 子集;printToPDF 需 printBackground: true 才有代码底色
  * - 图片统一转 file:// URL(markdown-it 原样输出绝对路径会解析失败)
@@ -76,7 +76,7 @@ import {
  * 两次读」,新增用途必须显式改这个接口,而不是顺手拿到整个 fs。
  */
 export interface PdfFsCapabilities {
-  /** 同步 realpath:图片路径边界的符号链接/junction 逃逸判定(ADR-012)。
+  /** 同步 realpath:图片路径边界的符号链接/junction 逃逸判定(adr-012)。
    *  不得降级为恒等映射 —— 那等于取消逃逸防线。 */
   realpathSync: (candidate: string) => string;
   /** 读 UTF-8 文本文件:当前仅用于 katex.min.css。 */
@@ -129,7 +129,7 @@ export interface RenderPdfHtmlOptions {
    *  读取的 read 一律由 main 层经此注入,使「core 的 pdf 渲染路径不做文件 IO」
    *  成为门禁可断言的不变量(规则 core-pdf-no-fs)。
    *  设为必填而非可选:可选会让「忘注入」静默退化成「图片边界不判定」——
-   *  那等于把 ADR-012 的符号链接逃逸防线变成可静默关闭的开关。 */
+   *  那等于把 adr-012 的符号链接逃逸防线变成可静默关闭的开关。 */
   fs: PdfFsCapabilities;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏保持
    *  原代码块渲染,行为不变) */

@@ -58,7 +58,7 @@ if (!existsSync(gatePath)) {
 
 let status = 0;
 try {
-  // cwd = 项目仓:门禁据此判「项目模式」(探测判据 = cwd 下存在 docs/ROADMAP.md),
+  // cwd = 项目仓:门禁据此判「项目模式」(探测判据 = cwd 下存在 docs/REQ.md),
   // 站在配置仓里跑则只跑配置模式。参数原样透传,本仓调用时可不带参。
   execFileSync(process.execPath, [gatePath, ...process.argv.slice(2)], { cwd: projectRoot, stdio: 'inherit' });
 } catch (error) {

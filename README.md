@@ -141,13 +141,12 @@ npm run test:all    # 验收 + smoke
 
 **面向开发**
 
-- [文档索引](docs/README.md)：全部文档入口、目录结构与容量契约
+- [工作项号台账](docs/REQ.md)：号与状态的唯一分配源、历史工作项可查
+- [工作日志](docs/LOG.md)：想做但没做的（待拍板 / 暂缓 / 不做，含原因与触发条件）
 - [开发者手册](docs/DEV-GUIDE.md)：环境、命令、代码地图、验证基线
-- [路线图与候选区](docs/ROADMAP.md)：需求唯一入口、已排期、编号台账
-- [验收矩阵](docs/ACCEPTANCE.md)：验收清单与实测结果
-- [状态速查](docs/STATUS.md)：当前状态与打开事项
-- [研究结论](docs/RESEARCH.md) / [架构决策](docs/ADR.md)：技术事实与决策记录
+- [架构决策](docs/adr/)：为什么这么设计（一决策一文件，含状态与取代关系）
 - [UI 规范](docs/design/ui-guidelines.md) / [设置信息架构](docs/design/settings-ia.md)：改界面前必读
+- [安装包签名状态](docs/SIGNATURE-STATUS.md)：未签名的事实、风险与缓解手段
 
 **参与**
 

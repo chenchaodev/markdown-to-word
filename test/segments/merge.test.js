@@ -95,7 +95,7 @@ export async function run() {
   }
   console.log("[ok] merge:括号配对 URL(绝对原样保留/相对重定位)断言通过");
 
-  // 用户绝对/UNC/file URL 不属于 merge 内部可改写范围,必须原样保留给图片信任边界(ADR-012)拒绝。
+  // 用户绝对/UNC/file URL 不属于 merge 内部可改写范围,必须原样保留给图片信任边界(adr-012)拒绝。
   const absoluteImage = path.resolve(FIXTURES_DIR, "absolute.png").replace(/\\/g, "/");
   const externalSources = mergeMarkdowns([{
     content: `![absolute](${absoluteImage})\n\n![unc](//server/share/image.png)\n\n![file](file:///C:/temp/image.png)`,
@@ -106,7 +106,7 @@ export async function run() {
       throw new Error(`merge 断言失败:用户绝对/UNC/file URL 应原样保留:${source}\n${externalSources}`);
     }
   }
-  console.log("[ok] merge:用户绝对/UNC/file URL 原样保留(交给 图片信任边界(ADR-012) 拒绝)断言通过");
+  console.log("[ok] merge:用户绝对/UNC/file URL 原样保留(交给 图片信任边界(adr-012) 拒绝)断言通过");
 
   // ---------- 首文件 frontmatter 保护与 body trim ----------
   const leadingFrontmatter = "  ---\r\ntitle: [[原始标题]]\r\ncover: ![front](front.png)\r\n  ---\r\n\r\n  ![body](body.png)\r\n";

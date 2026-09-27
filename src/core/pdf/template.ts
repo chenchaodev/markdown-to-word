@@ -24,7 +24,7 @@ export const PDF_FOOTER_TEMPLATE =
 /**
   * 空 chrome 模板:displayHeaderFooter 常开(页脚机制依赖),无页眉/无页脚时
   * 以空 span 占位——与既有 headerTemplate:"<span></span>" 同构,不破坏现有
-  * margins=0 + @page 边距机制(RESEARCH.md 实测口径)。
+  * margins=0 + @page 边距机制(技术事实层实测口径)。
   */
 export const PDF_EMPTY_CHROME_TEMPLATE = "<span></span>";
 

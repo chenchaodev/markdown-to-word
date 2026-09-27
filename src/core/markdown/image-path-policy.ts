@@ -1,9 +1,9 @@
 /**
- * 本地图片可信路径边界(ADR-012 图片信任边界的**策略单源**)。
+ * 本地图片可信路径边界(adr-012 图片信任边界的**策略单源**)。
  *
  * 校验顺序固定为:原始 src → 词法根边界 → realpath → 规范根边界。调用方若执行
  * 文件 IO,应在 IO 后再次 resolve 并比较规范路径,防止校验与读取之间
- * symlink/junction 被替换(ADR-012 要求的 TOCTOU 防线)。
+ * symlink/junction 被替换(adr-012 要求的 TOCTOU 防线)。
  *
  * 为什么独立成模块(REF-025 #07):本模块**不导入任何 node:fs / node:fs/promises**,
  * realpath 由调用方注入。`node:path` 是唯一外部依赖,且只做纯字符串运算
@@ -168,7 +168,7 @@ export function createLocalImagePathPolicy(options: LocalImagePathPolicyOptions)
         return {
           filePath: null,
           error: new Error(
-            "createLocalImagePathPolicy:调用方未注入 realpath,无法执行异步边界校验(见 ADR-012)",
+            "createLocalImagePathPolicy:调用方未注入 realpath,无法执行异步边界校验(见 adr-012)",
           ),
         };
       }

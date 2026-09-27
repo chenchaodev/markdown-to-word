@@ -24,7 +24,7 @@ const INDEX_REL = 'archive/INDEX.md';
 const USAGE = '用法: node scripts/gen-archive-index.mjs [--check]';
 
 /** 不进「分流去向」检索的 docs/ 一级子目录(posix 相对 docs/) */
-const HOST_EXCLUDE_DIRS = new Set(['archive', 'campaigns']);
+const HOST_EXCLUDE_DIRS = new Set(['archive', 'large']);
 
 /** 归档文件名里不登记进表的两个文件:本索引自身与该目录说明页 */
 const ARCHIVE_EXCLUDED = new Set(['INDEX.md', 'README.md']);

@@ -76,7 +76,7 @@ export interface ConvertContext {
    *  (图片边界 realpathSync、KaTeX CSS 读取)由 main 层经此提供。
    *  此处**可选**是因为 ConvertContext 由 docx 与 pdf 共用,docx 路线不消费它;
    *  但 pdf 分支会强校验(缺则抛错),故不存在「忘注入 → 边界静默不判定」的降级
-   *  —— 那等于把 ADR-012 的符号链接逃逸防线变成可静默关闭的开关。 */
+   *  —— 那等于把 adr-012 的符号链接逃逸防线变成可静默关闭的开关。 */
   fs?: PdfFsCapabilities;
   /** 文档标题(pdf 用 <title>) */
   title?: string;
@@ -199,7 +199,7 @@ export async function convert(
       // renderPdfHtml 保留为仅取 html 的薄封装)。
       // pdf 分支强校验宿主能力(REF-025 #07):core 的 pdf 渲染路径不 import node:fs,
       // 两次读必须由 main 注入。缺能力时**抛错**而非降级 —— 若静默跳过 realpath,
-      // 图片的符号链接逃逸防线(ADR-012)就变成可静默关闭的开关。
+      // 图片的符号链接逃逸防线(adr-012)就变成可静默关闭的开关。
       if (!context.fs) {
         throw new Error(
           "convert(pdf):调用方未注入 ConvertContext.fs(宿主文件系统能力)"

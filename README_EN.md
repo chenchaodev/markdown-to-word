@@ -144,13 +144,12 @@ Test system: Zero-registration acceptance tests organized by content topic in `t
 
 **For developers**
 
-- [Docs index](docs/README.md): Entry point for every doc, directory layout, capacity contracts
+- [Work item ledger](docs/REQ.md): the single source for work item numbers and status
+- [Work log](docs/LOG.md): wanted but not done (pending / deferred / rejected, with reasons)
 - [Dev Guide](docs/DEV-GUIDE.md): Environment, commands, code map, verification baseline
-- [Roadmap and candidate pool](docs/ROADMAP.md): Single entry for requirements, scheduled work, numbering ledger
-- [Acceptance matrix](docs/ACCEPTANCE.md): Acceptance checklists and test results
-- [Status](docs/STATUS.md): Current status and open items
-- [Research](docs/RESEARCH.md) / [ADR](docs/ADR.md): Technical findings and decisions
+- [Architecture decisions](docs/adr/): why it is designed this way (one decision per file)
 - [UI guidelines](docs/design/ui-guidelines.md) / [Settings IA](docs/design/settings-ia.md): Read before touching the UI
+- [Installer signature status](docs/SIGNATURE-STATUS.md): unsigned facts, risks and mitigations
 
 **Contributing**
 
