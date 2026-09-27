@@ -247,18 +247,21 @@ function topLevelScriptNames(name) {
 // import 层向(纯文本判定,不依赖 dist,故须早于 build —— 构建之后才发现
 // 传递依赖漏声明,已经白跑一次)与 action 引用固定(同理由:纯文本、可离线,
 // 排在 build 之后等于让 workflow 漂移白跑一次构建才被拦下);文档侧两道门禁同理由
-// 排在 build 之前 —— check:docs(全局配置仓的指针/容量契约门禁薄包装)与
-// check:archive-index(归档索引与目录实际内容一致性)都只判定文本,离线、零耗时。
-// 但要认清两者的覆盖差异:check:docs 在 **CI 上扫描范围为空**(workflow 不装也不克隆
-// 全局配置仓,载体不可达时它打印一行提示后 exit 0 —— 预期跳过,判红等于让 CI 必红),
-// 真正在 CI 上生效的是 check:archive-index。
+// 排在 build 之前 —— check:archive-index(归档索引与目录实际内容一致性)只判定文本,
+// 离线、零耗时。
+//
+// **check:docs 已于 2026-09-27 移出本链**(它曾被列为必备步骤,前提是它能在 CI 上生效,
+// 而该前提不成立):它只是全局配置仓那份指针/容量契约门禁的薄包装,载体在配置仓,
+// 而 workflow 不装也不克隆该目录 ⇒ CI 上扫描范围恒为空,载体不可达时打印一行提示后
+// `exit 0`。留在链上等于给「文档正在被 CI 检查」的假象,实则从未校验过任何东西。
+// 它在本地确实抓过真问题(断链、失效小节名指针、已废指针),故**保留为本地检查**:
+// 提交前手动 `npm run check:docs`。文档侧在 CI 上真正生效的是 check:archive-index。
 // build 产出 dist/ 编译产物,测试与 fixture 校验都跑 dist;check:geometry 收尾(采样
 // dist/renderer,须在 build 之后、且是链内最后一步)。
 const REQUIRED_CI_STEPS = [
   'check:contract',
   'check:boundary',
   'check:pinned-actions',
-  'check:docs',
   'check:archive-index',
   'build',
   'typecheck',
