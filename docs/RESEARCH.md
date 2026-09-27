@@ -299,3 +299,43 @@
 - **结论**:安装目录不可硬写 `%ProgramFiles%`(实测 `UninstallString` 带 `/currentuser`);失败前若已写入卸载注册表项与开始菜单 `.lnk`,两者都指向不存在的 exe,会在「应用」里留下**无法卸载的幽灵条目** → 清理须按**前后快照差集**只清本次新增并点名具体键/路径(按模式清会误删用户既有残留)。
 - **理由**:按模式清会误删用户既有的其他安装残留;不按差集清则幽灵条目永久残留且用户无法自行移除。
 - **来源/验证**:REF-001 实测:写完注册表项后注入失败,差集只含本次残留、清理后无孤儿项;**关联**:NSIS 配置、真实装卸验收项见 campaign PLAN「人工验收」节。
+
+### 2026-09-27 08:48:38 层向门禁的覆盖与已知盲区
+- **结论**:`scripts/check-import-boundary.mjs` 现有 **8 条**层向规则 —— `core-no-host` / `core-no-upward` / `renderer-no-main` / `preload-no-main` / `main-no-renderer` / `smoke-no-outside-src` / `renderer-foundation-no-feature-dep` / `core-pdf-no-fs`。**已知盲区**:`resolveLayer` 返回的是**顶层**目录,故 `layer:` 形态表达不了 renderer **内部**的边(内部路径首段恒为 `renderer`);要约束内部方向只能用相对说明符前缀,故另加了 `prefix:` 形态并把它从单前缀放宽为逗号列表。另:`builtin:` 形态是必需的 —— `classifySpecifier` 把 `node:*` 归为 `kind: 'builtin'` 而非 `'bare'`,`bare:` 匹配不到,而我们需要**按能力**区分(`core/pdf` 里 `node:path`/`node:url` 纯字符串运算可放行,`node:fs` 真 IO 要禁)
+- **理由**:门禁只查**直接**导入、不查传递依赖。故「core 的 pdf 渲染路径不做文件 IO」这类不变量必须靠**逐文件**禁 `node:fs` 才成立,不能靠推理传递闭包。
+- **来源/验证**:REF-025 #04 / #13 / #20 / #07 实测;手工沙盒双向验证(负向退出 1、边界退出 0);**关联**:ADR-018、`docs/ROADMAP.md` REF-025
+
+### 2026-09-27 08:48:38 PDF 侧 override 注册顺序的真实机制(修正一处流传的错误描述)
+- **结论**:`src/core/pdf/render.ts` 的四条 `md.core.ruler.push` 用的是**互异**规则名(`caption_recognize` / `eq_numbering` / `figure_recognize` / `xref_recognize`),因此它们**按 push 先后依次执行,不存在「后注册覆盖先注册」**。真实不变量是:**label 登记类规则必须先于 `xref_recognize` 注册**(xref 靠解析 `[...](#eq:label)` 定位目标,而 label 由 caption/figure/equation 三条在渲染期登记)。`html_whitelist` 走 `md.inline.ruler.before`,属 inline 阶段,不参与该顺序关系。若哪天两条用了同名,语义会静默翻转成「后者覆盖前者」
+- **理由**:此前 campaign 与评审原文都把它描述成「靠后注册覆盖先注册,顺序即优先级」。这个描述对 markdown-it 一般成立、对这四条**不成立**,照它推理会得出错误的改动安全性判断。现已在源码写清机制与不变量,并点出 `figure_recognize` 由 `overrideImageRule` 在更晚处注册 —— 调整顺序时图题注引用那条必须用差异矩阵复核,不能凭读代码断定
+- **来源/验证**:REF-025 #09 轻半版实施前逐条核实 `rules/*` 的 push 名;**关联**:差异矩阵 `test/segments/dual-pipeline-matrix.test.js`
+
+### 2026-09-27 08:48:38 双管线状态传播模型相反
+- **结论**:docx 侧 ctx 逐块下传,PDF 侧走 `override*Rule` 顺序注册;「同一语义两端行为一致」**无机制保证**,只靠差异矩阵锁定(`dual-pipeline-matrix` 21 行 × `must()`,当前口径「必须一致 12 / 允许不同 9」)
+- **理由**:两种传播模型的可观测行为等价但失效模式不同 —— ctx 漏传字段是静默降级,override 顺序错是「能跑但结果不同」。这也是 #09 的顺序不变量值得写进源码的原因
+- **来源/验证**:REF-025 只读结构审计;**关联**:ADR-001(非对称转换管线)、`docs/ROADMAP.md` REF-008
+
+### 2026-09-27 08:48:38 renderer 实际中心 hub 是 `state/utils.ts` 而非 store
+- **结论**:`src/renderer/state/` 名为 state,实为 **DOM 工具箱**(`utils.ts` 18 导出),被 `convert/` / `settings/` / `ui/` / `wizard/` 共 14 处全量导入;真正的 store 与纯函数只占同目录另两文件
+- **理由**:目录名与内容不符会误导分层判断 —— 按名以为 `state/` 是数据层、实则它是最重的 DOM 依赖方。这也是 #13 最终只约束 `dom/` 与 `state/` 两个基础层的原因(实测这两个在全部 29 条目录边中**无任何出边**)
+- **来源/验证**:REF-025 审计 + #13 实施前全量目录边统计;**关联**:`renderer-foundation-no-feature-dep` 规则
+
+### 2026-09-27 08:48:38 覆盖率分母排除 `dist/renderer/**` 整层,且该层数字**取不到**
+- **结论**:`test:coverage` 排除整层 `dist/renderer/**`(30 个文件),而它是层向越界风险最高的一层。**追加事实**:c8 的 `--exclude` 在**数据收集阶段**就经 `entryFilter` 把该层滤掉(见 `c8/lib/report.js` 的 `shouldInstrument`),故主产物 `coverage-summary.json` 里该层条目是 **0 个** —— 不是「数字为 0」而是**数字不存在**,没有任何工具能把它「暴露出来」。要真拿到需另跑一遍纳入该层的 c8(独立 reports-dir、不带 `--check-coverage`),代价是 CI 每次多一遍 Electron 全量跑
+- **理由**:这解释了为何「只加一个报告器」的方案不可行 —— 报告器只能读到产物,产物里没有那层。已落地 `scripts/renderer-coverage-report.mjs`(只读、恒退出 0、聚合用 `sum(covered)/sum(total)` 而非文件 pct 求平均,否则数字会随文件拆分漂移),首行横幅标注「被排除层 · 不参与主门禁阈值判定」
+- **来源/验证**:REF-025 #21 实测现存产物 95 个条目、该层 0 个;c8 12 源码查证;**关联**:`docs/ROADMAP.md` REF-006
+
+### 2026-09-27 08:48:38 测试深导入 `dist/**` 内部产物的耦合面
+- **结论**:40+ 处测试直导内部模块路径(如 `dist/core/pipeline/precheck.js`),任何文件移动都要改测试 import,而**断言内容可零变化**。REF-025 #07 实测:把策略从 `pipeline/precheck.ts` 迁到 `markdown/image-path-policy.ts` 一个文件,就牵动 30+ 个测试文件的导入与调用点(含 101 处调用改名)
+- **理由**:这是刻意的取舍 —— 测试直接打产物面才能覆盖真实编译结果(含 source map 回映),代价是移动文件时的机械 churn。`scripts/` 侧则相反:只引产物面、不引内部实现,这是 REF-019 提速能安全并行的前提
+- **来源/验证**:REF-025 #07 实测;**关联**:`test/common/convert-helpers.js` 的共享包装(`convertWithFs`)正是为把这类 churn 收敛到一处
+
+### 2026-09-27 08:48:38 错误归一的「单源」只到导出函数层
+- **结论**:#17 把 `errorMessage` 的实现上提到 `core/util/error-message.ts` 后,`main/ipc/logic.ts` 与 `renderer/state/pure.ts` 两份**重复定义**已消;但全库仍有 6 处表达式层内联(未走该单源)
+- **理由**:上提到函数层解决的是「同一实现写两遍」,表达式内联是另一类重复(短小、各自贴合上下文),两者不应混为一谈
+- **来源/验证**:REF-025 #17;**关联**:`core/util/error-message.ts`
+
+### 2026-09-27 08:48:38 c8 的覆盖率数字会因文件拆分而漂移
+- **结论**:按文件 `pct` 求平均会让大小文件等权,数字随文件拆分而漂移;正确聚合是逐文件 `sum(covered)/sum(total)` 后再算百分比。本仓四项基线(statements/branches/functions/lines)在阶段 3 后为 93.07/89.07/93.59/93.07,与上一轮的 93.06/89.08/93.59/93.06 相比 statements/lines +0.01、branch −0.01,落在**跨环境抖动**的 ±0.01pp 内
+- **理由**:因此判据是「**无方向性下降** + 差异落在抖动内」而非逐位相同 —— 逐位相同会把环境噪声误报成回归
+- **来源/验证**:REF-025 阶段 3 门禁实测;**关联**:`scripts/gate-probes/coverage-baseline.json`、`docs/ROADMAP.md` REF-018

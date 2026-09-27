@@ -6,8 +6,9 @@
  * 控件形态沿用既有令牌类(.mm-grid / .stepper / .segmented / .switch-input / .path-chip)。
  * 另含步骤渲染与外壳共用的零件:DOM 构造 h、开关行 swRow、目录/Logo 选择、
  * radio 构造与取值回填小工具、步骤用设置类型别名。
- * 依赖方向:本模块 → core / state / settings-panel / settings-logic(单向),
- * 不反向引用步骤渲染与外壳(两岛均单向 import 本模块)。
+ * 依赖方向:本模块 → core / state / settings-save / settings-logic(单向);
+ * 写路径(persistSettings)自 REF-025 #10 起取自 settings-save 而非 settings-panel,
+ * 故本模块不再经设置面板。不反向引用步骤渲染与外壳(两岛均单向 import 本模块)。
  */
 import { t } from "../../core/i18n.js";
 import { MARGIN_MAX_MM, type AppSettings } from "../../core/settings/settings-defaults.js";
