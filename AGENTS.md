@@ -17,7 +17,7 @@
 - 规划编号不进交付物:工作项号只许出现在 `docs/REQ.md`;晋升后一律改用描述性功能名(如 成书向导/剪贴板直转),禁写入代码注释/文件名/小节标题
 - pwsh 坑:commit message 用单引号包裹(内嵌 ASCII 双引号会被拆包);跨项目通用坑(pwsh 引号/MAX_PATH/EBUSY/编码)见全局配置目录 `ENV-GUIDE.md`「一、Windows 平台坑」,本仓具体坑见 `docs/archive/` 技术事实层
 - 测试体系:`test/` 镜像 `src/` 三层(segments/ · main/ · renderer/),按内容主题零注册;入口 `npm run test`(acceptance)/`test:smoke`/`test:all`;新增能力须补测试段;核心路径改动跑对应测试段 + smoke,外围按影响面跑
-- 流程(全局配置目录 `WORKFLOW.md` 路径判定):**工作项号与状态的唯一分配源 = `docs/REQ.md`**;想做没做的看 `docs/LOG.md`「待拍板」(开工前扫一眼);正在做的看 `docs/PLAN.md`(单任务)或 `docs/large/NN-*.md`(大型需求);人工 GUI 实测项写进完成标准,自动断言只留测试文件指针;代码结构与质量见全局配置目录 `CODE-GUIDE.md`,改代码/重构/测试前先读
+- 流程(全局配置目录 `WORKFLOW.md` 路径判定):**需求清单与状态的唯一分配源 = `docs/REQ.md`**;判断依据与被否决方案看 `docs/LOG.md`「判断依据」(开工前扫一眼);正在做的看 `docs/PLAN.md`(单任务)或 `docs/large/NN-*.md`(大型需求);人工 GUI 实测项写进完成标准,自动断言只留测试文件指针;代码结构与质量见全局配置目录 `CODE-GUIDE.md`,改代码/重构/测试前先读
 
 ## 文件信息
 - **本文件容量** ≤2500 字符(先并入既有条目 → 再指向全局规则 → 仍超则提请扩容)

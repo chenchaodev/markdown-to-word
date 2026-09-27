@@ -142,7 +142,7 @@ npm run test:all    # 验收 + smoke
 **面向开发**
 
 - [工作项号台账](docs/REQ.md)：号与状态的唯一分配源、历史工作项可查
-- [工作日志](docs/LOG.md)：想做但没做的（待拍板 / 暂缓 / 不做，含原因与触发条件）
+- [工作日志](docs/LOG.md)：每条需求为什么待拍板、为什么被否决（含触发条件）
 - [开发者手册](docs/DEV-GUIDE.md)：环境、命令、代码地图、验证基线
 - [架构决策](docs/adr/)：为什么这么设计（一决策一文件，含状态与取代关系）
 - [UI 规范](docs/design/ui-guidelines.md) / [设置信息架构](docs/design/settings-ia.md)：改界面前必读
