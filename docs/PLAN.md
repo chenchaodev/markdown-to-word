@@ -1,4 +1,4 @@
-# AI 清理 · 步 02 · 设置面板分档开关
+# AI 清理 · 步 03 · 转换前检测「AI 静默丢内容」
 
 > 开工只需读这三处：相关 ADR 给约束，验证基线给命令（命令本体在 `docs/DEV-GUIDE.md`，本文件只留指针），下一步是要动的那个动作。
 
@@ -6,27 +6,27 @@
 
 开工时把相关 ADR 的「一句话结论」抄进来，目的是让结论进入上下文；抄完即可，ADR 原文不动。
 
-- `docs/adr/adr-021`：AI 清理开关分档为「总开关 + 保守规整 / 结构改写两组子开关」；`AiCleanupOptions` 的 per-rule 开关在生产侧首次真正传参；两档默认**开**（随总开关）；关掉「结构改写」= 回到本需求前的产物；**检测告警不归它管辖**（步 03 另走 precheck 通路）
-- `docs/adr/adr-018`：core 的 pdf 渲染路径不做文件 IO（本步不新增 core 文件，无需改门禁白名单）
+- `docs/adr/adr-021`：**检测告警不归 AI 清理的档位开关管辖** —— 它是「体检」而非「改写」，即使用户关掉 AI 清理总开关，告警照样出现
+- `docs/adr/adr-018`：core 的 pdf 渲染路径不做文件 IO；`precheck.ts` 已在 `check-import-boundary.mjs` 的 `CORE_NODE_BUILTIN_FILES` 白名单里，本步**不得**让 core 新增 `node:` 内建依赖
 
 **验证基线**：见 [DEV-GUIDE.md](DEV-GUIDE.md)「验证基线」—— 命令只存那一处，本文件不复制；其中 `check:docs` 不在 `verify:ci` 链里，提交前本地手动跑。
 
 ## 目标
 
-用户在设置面板「排版」组展开 AI 清理，能分别关掉「保守规整」（引号/破折号/列表/空行）与「结构改写」（清引用标记/去 emoji/重整标题）——其中「结构改写」会删内容、必须可单独关；关掉「结构改写」后转换产物与本需求前逐字节一致。
+用户转换一份 AI 生成的 Markdown 时，在转换前的确认框里被逐条告知「这里可能被静默丢掉」：ChatGPT 常见的 `\(x\)` 定界符公式、`<table>` 这类白名单外的块级标签、未闭合的代码围栏、不配对的 `$`、以及像表格却没被解析成表的行 —— 用户据此回去改，不会在付印后才发现公式和表格没了。
 
 ## 下一步
 
-在 `src/core/settings/settings-defaults.ts` 的 `AppSettings` 加两个字段 `aiCleanupTidy` / `aiCleanupRewrite`（默认皆 `true`）并进 `DEFAULT_SETTINGS`，改完跑 `npm run typecheck`。
+在 `src/core/pipeline/precheck.ts` 的 `checkMarkdown`（现有三类检查之外）新增四类检查并返回 `ConvertWarning[]`，文案键按 `warn.*` 族加进 `src/core/i18n/{zh,en,ja}.ts`，改完跑 `npm run typecheck`。
 
 ## 完成标准
 
-- [x] 两个档位开关在设置面板「转换」组可见、可切、**置灰跟随总开关**（总开关关时子开关不可操作，且子开关开着也不生效 —— 不允许子开关绕过总开关）；控件 id 与既有约定一致；自动断言见 `test/renderer/ui-interaction-guards.test.js` 与 `test/renderer/ui-contract-guards.test.js`
-- [x] 生产链真正传参：`preprocess.ts` 的 `aiCleanupOptions` 按两档扇出六个 per-rule 开关；「总开关开 + 结构改写关」时 `[1]` / emoji / 标题层级三类痕迹均原样保留（断言见 `test/main/preprocess.test.js`）
-- [x] 持久化四路径齐全：类型、`DEFAULT_SETTINGS`、`persist/settings.ts` 的键白名单 / 类型校验 / 反序列化回填 / 合并分支；旧 settings 文件缺这两个字段时走 `DEFAULT_SETTINGS` 兜底而不报错；预设导出再导入后档位不丢（断言见 `test/main/settings.test.js`）
-- [x] 三语言文案：`core/i18n/zh.ts`（键集唯一事实源）· `en.ts`（`satisfies` 全量）· `ja.ts`（Partial）；`ru.ts` 在本仓已不存在（ko/fr/ru 早裁撤），无需处理；i18n 注册表恒等段仍绿
-- [x] 门禁全绿：`npm run typecheck` + `npm run lint` + `npm run test`（118 段无一由绿转红）+ `npm run test:smoke` + `npm run check:docs` + `npm run ui:shots`
-- [ ] 人工实测（GUI）：三档组合 —— 只开总开关（两档默认开）· 总开关开+结构改写关 · 全关。**注**：`ui:shots` 拍的是主窗口七态，脚本内无 settings / drawer 字样，**不覆盖本步的面板**，故面板只能人工确认；该项未做前本步不算收口
+- [x] 四类检查各有断言：`\(` `\)` `\[` `\]` 定界符 · 白名单外块级 HTML 标签 · 代码围栏未闭合 · `$` 不配对 · 形似表格却未解析成表；自动断言见 `test/segments/precheck.test.js`
+- [x] **零误报是硬要求**：正文里的 `价格 $5 与 50$`、行内代码 / 围栏内的 `\(` 与 `<table>`、**白名单内的 14 个行内标签**、正常的 `$x^2$` 与 `$$…$$` 公式、正常表格，一律不报；且**既有三类检查（图片缺失 / 未标语言代码块 / 悬空交叉引用）的行为逐条不变**。已独立复算：散文并列比较句（`本章讨论 A | B | C 三者` 两行）不误报，而三类正向用例（无分隔行伪表格 / 仅行尾带竖线 / 与散文混排）仍命中且只报伪表格那一段
+- [x] 触达路径零新增：沿用既有 `convert:precheck` 通道与 `showPrecheckDialog` 模态确认框，`src/main/ipc/channels.ts` 名单不变（`test/main/ipc-channels.test.js` 断言不改即通过）
+- [x] 文案三语言齐全（`zh.ts` 键集唯一事实源 · `en.ts` `satisfies` 全量 · `ja.ts` Partial），i18n 注册表恒等段仍绿
+- [x] 门禁全绿：`npm run typecheck` + `npm run lint` + `npm run test`（118 段无一由绿转红）+ `npm run test:smoke` + `npm run check:docs`；另跑 `check:boundary` 确认 core 的 `node:` 内建白名单仍限 5 个文件
+- [ ] 人工实测（GUI）：拿含 `\(x\)` 与 `<table>` 的文件走转换前确认框，确认逐条列出且确认后能正常转换。**注**：`ui:shots` 只拍主窗口七态、不覆盖该对话框，只能人工确认；该项未做前本步不算收口
 
 ## 修复项复测
 
@@ -34,4 +34,4 @@
 
 ---
 
-> 填写提示：**本文件是骨架，拷进项目后立即删除**；开工时按需新建（新建的那份没有首行版本行）。任务做完时直接删掉这份，不要留档。**别把本文件与 `docs/large/01-AI清理细化.md` 搞混**：本文件是步 #02 的当前状态、做完就删；`docs/large/01-AI清理细化.md` 是整个大型需求、收尾才删。
+> 填写提示：**本文件是骨架，拷进项目后立即删除**；开工时按需新建（新建的那份没有首行版本行）。任务做完时直接删掉这份，不要留档。**别把本文件与 `docs/large/01-AI清理细化.md` 搞混**：本文件是步 #03 的当前状态、做完就删；`docs/large/01-AI清理细化.md` 是整个大型需求、收尾才删。

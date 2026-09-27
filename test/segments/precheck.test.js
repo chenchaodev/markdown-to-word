@@ -1,11 +1,15 @@
 // @ts-check
 /**
  * 转换预检核心逻辑断言:本地图片可信边界/缺失 / 悬空交叉引用 / 未标注语言代码块;
+ * 「AI 静默丢内容」四类(不被支持的公式定界符 / 白名单外 HTML 标签 / `$` 不配对 /
+ * 形似表格却未解析成表);文案三语言齐备。
  * 注入 exists 与 realpathSync 模拟文件系统及链接越界,不依赖真实磁盘与 Electron。
  * 单源:dist/core/pipeline/precheck.js(precheckMarkdown)。
  */
 import path from "node:path";
 import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
+import { DICT } from "../../dist/core/i18n/index.js";
+import { formatWarning } from "../../dist/core/i18n.js";
 
 const existsAll = () => true;
 const existsNone = () => false;
@@ -134,4 +138,213 @@ export async function run() {
     throw new Error("已标注语言不应报");
   }
   console.log("[ok] precheck:已标注语言代码块不报");
+
+  /* ================= AI 静默丢内容四类 =================
+   * 零误报优先于覆盖率:每类都成对断言(正向必报 / 反向必不报),
+   * 反向清单覆盖 i18n 与 PLAN 点名的全部「不得触发」写法。 */
+
+  /** 四类新检查的 key(既有三类不在内):断言只筛这四个,便于定位 */
+  const SILENT_LOSS_KEYS = new Set([
+    "warn.unsupportedMathDelimiter",
+    "warn.htmlTagNotAllowed",
+    "warn.unpairedMathDelimiter",
+    "warn.tableLikeNotParsed",
+  ]);
+  /**
+   * 预检一段 markdown,只取四类新检查的告警 key(保持出现顺序)。
+   * @param {string} md markdown 源码
+   * @returns {any[]} 命中的 keyed 告警
+   */
+  const silentLoss = (md) =>
+    precheckMarkdown(md, "/tmp", { exists: existsAll, realpathSync: realpathIdentity }).filter(
+      (w) => typeof w === "object" && SILENT_LOSS_KEYS.has(w.key),
+    );
+  /**
+   * 断言一段 markdown 的四类新检查告警恰为 expected(逐条比对;反向用例传 [])。
+   * @param {string} label 用例名(进失败消息)
+   * @param {string} md markdown 源码
+   * @param {string[]} expected 期望的告警 key 序列
+   */
+  const expectSilentLoss = (label, md, expected) => {
+    const actual = silentLoss(md).map((w) => w.key);
+    if (actual.length !== expected.length || expected.some((key, i) => actual[i] !== key)) {
+      throw new Error(`${label}:期望 [${expected.join(",")}],实际 [${actual.join(",")}]`);
+    }
+    console.log(`[ok] precheck:${label}`);
+  };
+
+  // 8) ① 不被支持的公式定界符 \( \) \[ \](本工具只认 $…$ / $$…$$)
+  expectSilentLoss("①正向:行内 \\(x\\)", "行内 \\(x\\) 公式", ["warn.unsupportedMathDelimiter"]);
+  expectSilentLoss("①正向:独立 \\[ y \\]", "独立 \\[ y \\] 公式", ["warn.unsupportedMathDelimiter"]);
+  expectSilentLoss("①反向:已转义 \\\\(x\\\\)", "已转义 \\\\(x\\\\) 写法", []);
+  expectSilentLoss("①反向:行内代码内", "`\\(x\\)` 与 `\\[y\\]`", []);
+  expectSilentLoss("①反向:围栏内", "```\n\\(x\\) 与 \\[y\\]\n```", []);
+  expectSilentLoss("①反向:正常公式", "正常 $x^2$ 与 $$a+b$$", []);
+  expectSilentLoss("①反向:公式节点内反斜杠", "$\\left(x\\right)$ 与 $f\\left(y\\right)$", []);
+  expectSilentLoss("①反向:孤立闭侧(Windows 路径形态)", "路径 C:\\Users\\doc\\) 结尾", []);
+  expectSilentLoss("①反向:中文括注形态", "见 \\(草稿\\) 目录", []);
+  expectSilentLoss("①反向:跨行不成对", "\\(x\ny\\)", []);
+
+  // 9) ② 白名单外的块级/行内 HTML 标签(报出标签名本身)
+  expectSilentLoss("②正向:块级 table", "<table><tr><td>x</td></tr></table>\n\n段落", [
+    "warn.htmlTagNotAllowed",
+    "warn.htmlTagNotAllowed",
+    "warn.htmlTagNotAllowed",
+  ]);
+  expectSilentLoss("②正向:段落内 div", "段落里的 <div>块</div> 标签", ["warn.htmlTagNotAllowed"]);
+  const tagWarning = silentLoss("<table><tr><td>x</td></tr></table>")[0];
+  if (tagWarning.params.tag !== "table") {
+    throw new Error(`②应报出具体标签名,实际 ${JSON.stringify(tagWarning.params)}`);
+  }
+  // 白名单内 14 个行内标签逐个不报
+  expectSilentLoss(
+    "②反向:白名单 14 个行内标签",
+    "a <strong>b</strong> <em>c</em> <i>d</i> <u>e</u> <s>f</s> <del>g</del> <code>h</code>"
+      + " <kbd>i</kbd> <sub>j</sub> <sup>k</sup> <mark>l</mark> <br> <span>m</span> <b>n</b>",
+    [],
+  );
+  expectSilentLoss("②反向:白名单标签带属性", '这是 <strong class="x">粗</strong> 与 <span style="c">红</span>', []);
+  expectSilentLoss("②反向:HTML 注释", "<!-- page-break -->\n\n段落", []);
+  expectSilentLoss("②反向:围栏内", "```html\n<table><tr><td>x</td></tr></table>\n```", []);
+  expectSilentLoss("②反向:行内代码内", "`<table>` 与 `<div>` 不报", []);
+
+  // 10) ③ `$` 不配对
+  expectSilentLoss("③正向:行内未闭合", "公式 $x^2 未闭合", ["warn.unpairedMathDelimiter"]);
+  expectSilentLoss("③正向:独立未闭合", "公式 $$x+1 未闭合", ["warn.unpairedMathDelimiter"]);
+  expectSilentLoss("③正向:两段各一处", "甲 $x^2 未闭合\n\n乙 $y_1 未闭合", [
+    "warn.unpairedMathDelimiter",
+    "warn.unpairedMathDelimiter",
+  ]);
+  expectSilentLoss("③反向:正常行内与独立公式", "正常 $x^2$ 与 $$a+b$$", []);
+  expectSilentLoss("③反向:价格 $5 与 50$", "价格 $5 与 50$", []);
+  expectSilentLoss("③反向:单个货币 $5", "花 $5 美元", []);
+  expectSilentLoss("③反向:两个货币金额", "预算 $100 与 $200", []);
+  expectSilentLoss("③反向:已转义货币", "价格 \\$5 与 \\$50", []);
+  expectSilentLoss("③反向:行内代码内", "命令 `$HOME` 与 `$x`", []);
+  expectSilentLoss("③反向:围栏内", "```bash\necho $FOO $BAR\n```", []);
+  expectSilentLoss("③反向:散文货币(无 TeX 信号)", "单价$USD 起,预算$EUR", []);
+  expectSilentLoss("③反向:同段两个候选配成对", "见 $A 与 $B", []);
+  expectSilentLoss("③反向:裸 $ 符号", "价格 $ 与符号 $ 单独", []);
+
+  // 11) ④ 形似表格却未解析成表(连续候选行 + 行首/行尾紧邻 | + 段内竖线数齐)
+  expectSilentLoss("④正向:缺分隔行的两列表", "| 列1 | 列2 |\n| 数据1 | 数据2 |", [
+    "warn.tableLikeNotParsed",
+  ]);
+  expectSilentLoss("④正向:真表格后跟伪表格", "| a | b |\n| --- | --- |\n| 1 | 2 |\n\n| x | y |\n| 3 | 4 |", [
+    "warn.tableLikeNotParsed",
+  ]);
+  const tableWarning = silentLoss("| 列1 | 列2 |\n| 数据1 | 数据2 |")[0];
+  if (tableWarning.params.line !== "| 列1 | 列2 |") {
+    throw new Error(`④应回显首行,实际 ${JSON.stringify(tableWarning.params)}`);
+  }
+  expectSilentLoss("④反向:正常 gfm 表格", "| a | b |\n| --- | --- |\n| 1 | 2 |", []);
+  expectSilentLoss("④反向:无首尾竖线的真表格", "a | b\n--- | ---\n1 | 2", []);
+  expectSilentLoss("④反向:引用块内真表格", "> | a | b |\n> | --- | --- |\n> | 1 | 2 |", []);
+  expectSilentLoss("④反向:围栏内", "```\n| a | b |\n| --- | --- |\n```", []);
+  expectSilentLoss("④反向:行内代码内", "`| a | b |` 与 `| x | y |`", []);
+  expectSilentLoss("④反向:单行裸 |", "这是 a | b 的普通句子", []);
+  expectSilentLoss("④反向:每行一个 | 的散文", "注意 a | b\n以及 c | d", []);
+  expectSilentLoss("④反向:单行三个 |", "排序键 a | b | c", []);
+
+  // 11b) ④ 的两条收紧(缺陷复算:散文并列比较句被当伪表格,修复后不再命中):
+  //   边框紧邻(行首或行尾挨 |)+ 段内竖线数齐。逐条用回显行断言(不只断条数)。
+  /**
+   * 断言一段 markdown 的 ④ 告警回显行恰为 expectedLines(空数组 = 不报)。
+   * @param {string} label 用例名(进失败消息)
+   * @param {string} md markdown 源码
+   * @param {string[]} expectedLines 期望回显的首行序列
+   */
+  const expectTableLikeLines = (label, md, expectedLines) => {
+    const actual = silentLoss(md)
+      .filter((w) => w.key === "warn.tableLikeNotParsed")
+      .map((w) => w.params.line);
+    if (actual.length !== expectedLines.length || expectedLines.some((line, i) => actual[i] !== line)) {
+      throw new Error(`${label}:期望回显 [${expectedLines.join(" / ")}],实际 [${actual.join(" / ")}]`);
+    }
+    console.log(`[ok] precheck:${label}`);
+  };
+  // 收紧后必须仍然命中的正向用例
+  expectTableLikeLines("④收紧后正向:只有行尾带竖线的两行", "列1 | 列2 |\n数据1 | 数据2 |", ["列1 | 列2 |"]);
+  expectTableLikeLines(
+    "④收紧后正向:部分缺分隔行的混排",
+    "| 列1 | 列2 |\n| --- |\n| 数据1 |",
+    ["| 列1 | 列2 |"],
+  );
+  // 收紧针对的散文误报:两端都不挨竖线 / 列数不齐
+  expectTableLikeLines(
+    "④收紧后反向:散文并列比较句(缺陷原样)",
+    "本章讨论 A | B | C 三者\n以及 D | E | F 三者",
+    [],
+  );
+  expectTableLikeLines("④收紧后反向:两端都不挨竖线", "A | B | C 三者\nD | E | F 三者", []);
+  expectTableLikeLines("④收紧后反向:列数不齐", "A | B | C 三者\nD | E", []);
+  // 散文段与真伪表格混排:只报真伪表格那一段,回显行是伪表格首行
+  expectTableLikeLines(
+    "④收紧后反向:散文与伪表格混排(比较句)",
+    "本章讨论 A | B | C 三者\n以及 D | E | F 三者\n\n| 列1 | 列2 |\n| 数据1 | 数据2 |",
+    ["| 列1 | 列2 |"],
+  );
+  expectTableLikeLines(
+    "④收紧后反向:散文与伪表格混排(两端不挨)",
+    "A | B | C 三者\nD | E | F 三者\n\n| x | y |\n| 3 | 4 |",
+    ["| x | y |"],
+  );
+  expectTableLikeLines(
+    "④收紧后反向:散文与伪表格混排(列数不齐)",
+    "A | B | C 三者\nD | E\n\n| x | y |\n| 3 | 4 |",
+    ["| x | y |"],
+  );
+  // 已知漏报(收紧的代价,登记在此防无声漂移):两端无竖线的两列伪表格 / 缺格的参差表
+  expectTableLikeLines("④收紧后已知漏报:两端无竖线的两列表", "列1 | 列2\n数据1 | 数据2", []);
+  expectTableLikeLines("④收紧后已知漏报:缺格的参差表", "| 列1 | 列2 |\n| 数据1 |\n| 数据2 | 数据2 |", []);
+
+  // 12) 四类共存:告警顺序即 ①②③④,且不吞掉既有三类检查
+  const combined = precheckMarkdown(
+    "![缺图](./missing.png)\n\n行内 \\(x\\) 与 <table><tr><td>c</td></tr></table>\n\n"
+      + "公式 $x^2 未闭合\n\n| 列1 | 列2 |\n| 数据1 | 数据2 |",
+    "/tmp",
+    { exists: existsNone, realpathSync: realpathIdentity },
+  );
+  const combinedKeys = combined.map((w) => w.key);
+  const expectedCombined = [
+    "warn.imageNotFound",
+    "warn.unsupportedMathDelimiter",
+    "warn.htmlTagNotAllowed",
+    "warn.htmlTagNotAllowed",
+    "warn.htmlTagNotAllowed",
+    "warn.unpairedMathDelimiter",
+    "warn.tableLikeNotParsed",
+  ];
+  if (
+    combinedKeys.length !== expectedCombined.length
+    || expectedCombined.some((key, i) => combinedKeys[i] !== key)
+  ) {
+    throw new Error(`四类共存顺序断言失败:期望 [${expectedCombined.join(",")}],实际 [${combinedKeys.join(",")}]`);
+  }
+  console.log("[ok] precheck:四类共存顺序 ①②③④ 且不吞既有检查");
+
+  // 13) 四类文案三语言齐备,且 en/ja 不是中文原文(回退链不得静默吞掉译文)
+  // 字典按语言码动态索引(键是字面量联合),故先取 Record 视图
+  const DICT_VIEW = /** @type {Record<string, Record<string, string>>} */ (/** @type {unknown} */ (DICT));
+  const ZH_DICT = /** @type {Record<string, string>} */ (DICT_VIEW.zh);
+  for (const key of SILENT_LOSS_KEYS) {
+    for (const code of ["zh", "en", "ja"]) {
+      const text = DICT_VIEW[code]?.[key];
+      if (typeof text !== "string" || text.trim() === "") {
+        throw new Error(`${code}.${key} 缺文案`);
+      }
+      if (code !== "zh" && text === ZH_DICT[key]) {
+        throw new Error(`${code}.${key} 沿用了中文原文`);
+      }
+    }
+  }
+  const rendered = formatWarning({
+    key: "warn.htmlTagNotAllowed",
+    params: { tag: "table" },
+    fallback: "兜底",
+  });
+  if (!rendered.includes("<table>")) {
+    throw new Error(`标签名未插值进文案: ${rendered}`);
+  }
+  console.log("[ok] precheck:四类文案三语言齐备 + 标签名插值上屏");
 }

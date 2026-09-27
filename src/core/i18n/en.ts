@@ -461,6 +461,13 @@ const dict = {
     "warn.imageAttrInvalid": "Invalid image size attribute, ignored: ${attr} (${src})",
     "warn.headerLogoLoadFailed": "Failed to load header logo, ignored: ${src}",
     "warn.unlabeledCodeBlock": "Code block has no language tag; highlighting may be incorrect",
+    // 转换预检「AI 静默丢内容」四类:tag/line/snippet 为推送期的源码原文(不译,同
+    // warn.unsupportedBlockInContainer 口径);文案须写清后果(按普通文字印出/内容被丢弃)
+    // 与改法($…$ / Markdown 语法 / 补分隔行)
+    "warn.unsupportedMathDelimiter": "`\\(` / `\\[` are not equation delimiters this tool supports: they print as plain text and no equation is rendered. Use `$…$` (inline) or `$$…$$` (on its own line)",
+    "warn.htmlTagNotAllowed": "HTML tag <${tag}> is outside the supported list and its content will be dropped. Use Markdown syntax or plain text instead",
+    "warn.unpairedMathDelimiter": "Equation delimiter $ is unpaired (near: ${snippet}); an unpaired $ prints as plain text — add the closing $",
+    "warn.tableLikeNotParsed": "This looks like a table but was not laid out as one (first line: ${line}); add a delimiter row under the first line (e.g. | --- | --- |)",
     // kind 为推送期的中文类别词(条目数/层级,来自 pathScanLimitWarning 调用侧),
     // 文案保留插值以便定位触顶维度(同 warn.unsupportedBlockInContainer 口径)
     "warn.pathScanLimit": "Directory scan limit reached (${kind}: ${limit}), stopped collecting the remaining content",
