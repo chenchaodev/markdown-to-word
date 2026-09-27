@@ -26,6 +26,8 @@ const FIXTURE_SCRIPTS = {
   'check:contract': 'node scripts/check-ci-contract.mjs',
   'check:boundary': 'node scripts/check-import-boundary.mjs',
   'check:pinned-actions': 'node scripts/check-pinned-actions.mjs',
+  'check:docs': 'node scripts/check-docs.mjs',
+  'check:archive-index': 'node scripts/gen-archive-index.mjs --check',
   'check:env': 'node scripts/print-env-fingerprint.mjs',
   'check:geometry': 'electron scripts/check-geometry.mjs',
   'gen:dist-manifest': 'node scripts/check-dist-manifest.mjs',
@@ -45,7 +47,8 @@ const FIXTURE_SCRIPTS = {
     'npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest ' +
     '&& electron-builder && npm run check:dist-manifest && npm run check:asar && npm run check:release',
   'verify:ci':
-    'npm run check:contract && npm run check:boundary && npm run check:pinned-actions && npm run build && npm run typecheck && npm run lint ' +
+    'npm run check:contract && npm run check:boundary && npm run check:pinned-actions && npm run check:docs && npm run check:archive-index ' +
+    '&& npm run build && npm run typecheck && npm run lint ' +
     '&& npm run test:coverage && npm run check:fixtures && npm run test:smoke && npm run check:geometry',
   'verify:release': 'npm run verify:ci && npm run dist',
 };
@@ -61,6 +64,8 @@ const FIXTURE_PLACEHOLDERS = [
   'scripts/check-release-artifacts.mjs',
   'scripts/check-import-boundary.mjs',
   'scripts/check-pinned-actions.mjs',
+  'scripts/check-docs.mjs',
+  'scripts/gen-archive-index.mjs',
   'scripts/clean-artifacts.mjs',
   'scripts/print-env-fingerprint.mjs',
 ];

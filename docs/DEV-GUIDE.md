@@ -6,7 +6,7 @@
 - Electron 二进制镜像(本地开发勿回退,装 electron/打包前设置):经 `scripts/setup-env.ps1` 一次性写入**用户级环境变量** `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`(GitHub Actions 不需要);勿在 `.npmrc` 写这两个键——npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`,electron-builder 读不到
   - `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`
   - `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`
-- 依赖钉死与全部「勿回退」约束见项目 `AGENTS.md`「硬约束」节;钉死理由清单见 `docs/RESEARCH.md`「依赖钉死策略」
+- 依赖钉死与全部「勿回退」约束见项目 `AGENTS.md`「硬约束」节;钉死理由清单见 [`research/依赖与工具链.md`](research/依赖与工具链.md) 的「审计整改记录(依赖钉死策略清单)」条
 
 ## 命令
 | 命令 | 用途 |
@@ -28,7 +28,7 @@
 
 ## 本地打包注意事项
 
-`npm run dist`(electron-builder NSIS)在本机实测踩到三类坑,根因与完整解法见 `docs/RESEARCH.md`「Windows 本地打包踩坑」:
+`npm run dist`(electron-builder NSIS)在本机实测踩到三类坑,根因与完整解法见 [`research/供应链与发布.md`](research/供应链与发布.md) 的「Windows 本地打包踩坑(长路径)」与「G5 打包坑」条:
 
 - **Defender 重命名 EPERM**:electron 解压到 `win-unpacked.tmp` 后被 Windows Defender 实时扫描锁文件句柄,`rename .tmp → win-unpacked` 失败。绕过:用 `--config.electronDist=<node_modules/electron/dist>` 直接喂 npm install 已解压的 electron 发行目录,electron-builder 改为 copy(非解压后 rename)。
 - **长路径 / OneDrive 锁**:项目在 `Documents\opencode\...`(OneDrive 同步)时,即便建 junction 也仍解析真实路径写入,重命名同样失败且路径过长。绕过:用 `--config.directories.output=<非 OneDrive 短路径>` 重定向输出(如 `C:\m2w-out`,路径依环境而定)。
@@ -102,4 +102,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(提交前置 → 全局配置目录 `WORKFLOW-DELIVER.md` 阶段 5「前置核对」;发布/打包产物属对外动作 → 全局配置目录 `AGENTS.md` 安全底线 3)
 - 类型/构建/门禁命令清单见本文件「命令」节;覆盖率、fixture、smoke、几何与产物门禁的接入点见 `package.json` 脚本(`verify:ci` / `verify:release` / `dist`)
 - 验收测试段明细见 `test/segments/`、`test/main/` 与 `test/renderer/`;恒等守护与边界守护段清单见本文件「测试体系」节
+- `check:docs` —— 指针门禁 + 容量契约(`scripts/check-docs.mjs` 薄包装,调全局配置目录的 `tools/check-pointers.mjs`,项目侧不持有第二份逻辑;门禁路径取 `M2W_GLOBAL_CONFIG`(配置仓根目录)或默认 `~/.config/opencode`;载体不可达时打印一行提示后 exit 0,**故 CI 上的跳过是预期行为** —— workflow 不装也不克隆配置仓)
+- `check:archive-index` —— 归档索引与目录实际内容一致性(`docs/archive/INDEX.md` 须由脚本生成,本门禁逐字节比对,漂移 exit 1)
+- `gen:archive-index` —— 新增归档原文后重新生成 `docs/archive/INDEX.md`(不手工登记行)
 - docx/PDF 验收样例固定含中英混排,生成后人工打开检查中文渲染

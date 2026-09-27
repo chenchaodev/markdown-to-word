@@ -246,13 +246,20 @@ function topLevelScriptNames(name) {
 // CI 门禁必备步骤(顺序即依赖顺序):check:contract 之后立刻核对依赖声明与
 // import 层向(纯文本判定,不依赖 dist,故须早于 build —— 构建之后才发现
 // 传递依赖漏声明,已经白跑一次)与 action 引用固定(同理由:纯文本、可离线,
-// 排在 build 之后等于让 workflow 漂移白跑一次构建才被拦下);build 产出 dist/
-// 编译产物,测试与 fixture 校验都跑 dist;check:geometry 收尾(采样
+// 排在 build 之后等于让 workflow 漂移白跑一次构建才被拦下);文档侧两道门禁同理由
+// 排在 build 之前 —— check:docs(全局配置仓的指针/容量契约门禁薄包装)与
+// check:archive-index(归档索引与目录实际内容一致性)都只判定文本,离线、零耗时。
+// 但要认清两者的覆盖差异:check:docs 在 **CI 上扫描范围为空**(workflow 不装也不克隆
+// 全局配置仓,载体不可达时它打印一行提示后 exit 0 —— 预期跳过,判红等于让 CI 必红),
+// 真正在 CI 上生效的是 check:archive-index。
+// build 产出 dist/ 编译产物,测试与 fixture 校验都跑 dist;check:geometry 收尾(采样
 // dist/renderer,须在 build 之后、且是链内最后一步)。
 const REQUIRED_CI_STEPS = [
   'check:contract',
   'check:boundary',
   'check:pinned-actions',
+  'check:docs',
+  'check:archive-index',
   'build',
   'typecheck',
   'lint',

@@ -11,3 +11,7 @@ test/fixtures/**/*.md text eol=lf
 test/fixtures/**/*.css text eol=lf
 test/fixtures/**/*.json text eol=lf
 test/fixtures/**/*.png binary
+
+# EOL 策略(同 TEST-1 的道理):归档索引是「脚本生成 + 逐字节比对」的产物,生成器
+# 落盘 LF;autocrlf 下 checkout 转 CRLF 会让 check:archive-index 在 CI 上恒红。
+docs/archive/INDEX.md text eol=lf
