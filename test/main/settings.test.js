@@ -17,6 +17,8 @@
  * - loadSettings:JSON parse 失败 / 非 pageSetup 形状非法(isValidSettings)→ 返回 DEFAULT_SETTINGS 引用
  *   (静默不写盘);pageSetup 非法只迁移该块并保留其它字段;旧文件(缺 toc/outputDir/typography)
  *   → 其余字段保留 + 兜底默认,不崩溃
+ * - AI 清理两档(aiCleanupTidy/aiCleanupRewrite,adr-021):键白名单 / 非布尔回退默认 /
+ *   落盘往返 / 预设导入(只写 customPresets)不丢档位 / 旧文件缺键字段级兜底默认
  * - settingsFilePath = app.getPath("userData")/settings.json(无注入点)→ 测试备份真实文件、
  *   finally 恢复;模块级 settingsCache 惰性缓存 → 每场景用 query-string 动态 import 取
  *   全新模块实例(实证:Node ESM 同文件不同 query = 独立实例,缓存按 URL 键;
@@ -200,8 +202,8 @@ export async function run() {
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
-    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter", "watermark", "aiCleanup", "obsidianCompat", "obsidianAttachmentFolder"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 19 键(页眉页脚自定义 headerFooter + 文字水印 watermark + 目录带页码(adr-007) tocMode + AI 清理 aiCleanup + Obsidian 兼容 obsidianCompat/obsidianAttachmentFolder)");
+    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter", "watermark", "aiCleanup", "aiCleanupTidy", "aiCleanupRewrite", "obsidianCompat", "obsidianAttachmentFolder"];
+    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 21 键(页眉页脚自定义 headerFooter + 文字水印 watermark + 目录带页码(adr-007) tocMode + AI 清理总开关 aiCleanup 与两个分档 aiCleanupTidy/aiCleanupRewrite(adr-021) + Obsidian 兼容 obsidianCompat/obsidianAttachmentFolder)");
     for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));
@@ -224,6 +226,66 @@ export async function run() {
     assert(r9g.theme === "system", "theme 枚举外值(blue)应回退默认 system");
     const r9h = await mod.updateSettings({ theme: 123 });
     assert(r9h.theme === "system", "theme 非字符串应回退默认 system");
+
+    // ---- 5d. AI 清理两档(adr-021):合法保留 / 非布尔回退默认 / 落盘往返 /
+    //          预设导入(只写 customPresets)不丢档位 / 旧文件缺键兜底默认 ----
+    const rTier = await mod.updateSettings({ aiCleanup: true, aiCleanupTidy: false, aiCleanupRewrite: false });
+    assert(
+      rTier.aiCleanupTidy === false && rTier.aiCleanupRewrite === false,
+      "两档合法的 false 应保留(结构改写可单独关)",
+    );
+    const tierDisk = JSON.parse(await fs.readFile(settingsFile, "utf8"));
+    assert(
+      tierDisk.aiCleanupTidy === false && tierDisk.aiCleanupRewrite === false,
+      "两档应写入 settings.json(键白名单已含)",
+    );
+    // 预设导入只经 updateSettings({ customPresets })(见 ipc/register.ts 导入分支),
+    // 档位不属任何预设 → 导入既不改写也不丢值
+    const afterPresetImport = await mod.updateSettings({
+      customPresets: [{
+        name: "我的模板",
+        typography: { ...DEFAULT_TYPOGRAPHY, bodySizePt: 13 },
+        pageSetup: { ...DEFAULT_PAGE_SETUP, paper: "A3" },
+      }],
+    });
+    assert(
+      afterPresetImport.aiCleanupTidy === false && afterPresetImport.aiCleanupRewrite === false,
+      "导入预设不得丢失 AI 清理两档(两档不入预设)",
+    );
+    const rTierBad = await mod.updateSettings({ aiCleanupTidy: "yes", aiCleanupRewrite: 1 });
+    assert(
+      rTierBad.aiCleanupTidy === true && rTierBad.aiCleanupRewrite === true,
+      "两档非布尔应回退默认(默认皆开)",
+    );
+    // 旧 settings.json 缺这两个键 → 字段级兜底默认,不整体回退、不报错
+    await fs.writeFile(
+      settingsFile,
+      JSON.stringify({
+        version: 1, format: "docx", afterConvert: "none", breakBeforeH1: false,
+        pageSetup: { paper: "A4", orientation: "portrait", marginTop: 20, marginBottom: 20, marginLeft: 30, marginRight: 30 },
+      }),
+      "utf8",
+    );
+    const mLegacyTier = await freshModule("settings-legacy-ai-tiers");
+    const legacyTier = mLegacyTier.loadSettings();
+    assert(
+      legacyTier.aiCleanupTidy === true && legacyTier.aiCleanupRewrite === true,
+      "旧 settings.json 缺两档时应兜底默认(开),不得报错或整体回退",
+    );
+    assert(
+      legacyTier.format === "docx" && legacyTier.pageSetup.paper === "A4",
+      "旧文件缺两档不应牵连其它字段",
+    );
+    // 形状校验:两档存在但非布尔 → 整文件判非法(与 aiCleanup 同一口径)
+    assert(
+      mLegacyTier.isValidSettings({ ...legacyTier, aiCleanupTidy: "yes" }) === false,
+      "aiCleanupTidy 非布尔应使 isValidSettings 判非法",
+    );
+    assert(
+      mLegacyTier.isValidSettings({ ...legacyTier, aiCleanupRewrite: 0 }) === false,
+      "aiCleanupRewrite 非布尔应使 isValidSettings 判非法",
+    );
+    console.log("[ok] settings:AI 清理两档 合法保留/非布尔回退/落盘往返/预设导入不丢/旧文件缺键兜底 断言通过");
 
     // ---- 6. 损坏 settings.json(JSON parse 失败)→ DEFAULT_SETTINGS,静默不写盘 ----
     await fs.writeFile(settingsFile, "{broken json!!", "utf8");

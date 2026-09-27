@@ -23,6 +23,9 @@
  *     - 汇总条取消态既不挂 ok 也不挂 fail,图标为中性横杠;
  *     - 批量弹窗标题按结果取语义(失败 / 全取消 / 完成),不恒写「完成」。
  * (5) 转换忙碌态:showProgress/hideProgress 切换消息槽 aria-busy。
+ * (6) AI 清理两个分档(保守规整 / 结构改写):置灰跟随总开关 —— 关闭时控件
+ *     disabled 且出现可见说明行(不只靠颜色),重新打开后恢复各自上次的选择;
+ *     源契约侧锁定「分档落在 05 转换组、排在总开关之下、初始态即 disabled」。
  *
  * DOM 侧用最小 stub 直接驱动 dist renderer 模块(与 convert-command-lock 段同一套
  * 元素表约定);源码契约侧只断言「某元素的 data-i18n 缺席」这类静态事实。
@@ -394,6 +397,88 @@ export async function run() {
       "settings-panel 应导出三个动态节点同步函数(单一来源)",
     );
 
+    // (6) AI 清理两个分档:置灰跟随总开关(行为)+ 落在转换组总开关之下(源契约)
+    //     可用性不只靠颜色:控件 disabled(移出焦点序)+ 一行可见文字说明。
+    assert(
+      typeof panel.syncAiCleanupTierAvailability === "function",
+      "settings-panel 应导出 syncAiCleanupTierAvailability(分档可用性单一来源)",
+    );
+    const aiCleanupEl = dom.elementFor("aiCleanup");
+    const tidyEl = dom.elementFor("aiCleanupTidy");
+    const rewriteEl = dom.elementFor("aiCleanupRewrite");
+    const lockedEl = dom.elementFor("aiCleanupTiersLocked");
+    // 读当前置灰态(经取值再断言:直接比较 checked/disabled 会与前一条断言的
+    // 类型收窄打架,读一次值可同时避开收窄与 stub 初值两个坑)
+    const tierDisabled = () => [tidyEl.disabled === true, rewriteEl.disabled === true];
+    // 先摆成「未置灰」,确保后续断言测的是本函数而不是 stub 初值
+    lockedEl.classList.add("hidden");
+    aiCleanupEl.checked = false;
+    panel.syncAiCleanupTierAvailability();
+    assert(
+      tierDisabled().every(Boolean),
+      `总开关关闭时两个分档都应置灰(不可操作),实际 ${JSON.stringify(tierDisabled())}`,
+    );
+    assert(
+      !lockedEl.classList.contains("hidden"),
+      "总开关关闭时应出现可见的置灰说明(可用性不只靠颜色表达)",
+    );
+    // 重新打开总开关:两个分档恢复可操作,各自上次的选择原样保留
+    tidyEl.checked = false;
+    rewriteEl.checked = true;
+    aiCleanupEl.checked = true;
+    panel.syncAiCleanupTierAvailability();
+    assert(
+      tierDisabled().every((flag) => !flag),
+      `总开关重新打开后两个分档应恢复可操作,实际 ${JSON.stringify(tierDisabled())}`,
+    );
+    assert(lockedEl.classList.contains("hidden"), "总开关打开后置灰说明应消失");
+    assert(
+      tidyEl.checked === false && rewriteEl.checked === true,
+      "重新打开总开关后,两个分档应保留各自上次的选择(不重置)",
+    );
+
+    // 源契约:两个分档落在 05 转换组(既有 aiCleanup 那一项之下),且在 DOM 顺序上
+    // 紧随总开关 —— 层级从属不能只靠 class,排错了用户就读成平级功能。
+    const convertSection = /<section[^>]*data-group="convert"[\s\S]*?<\/section>/.exec(indexHtml);
+    assert(convertSection, "index.html 未找到 data-group=\"convert\" 的转换组面板");
+    const convertHtml = convertSection?.[0] ?? "";
+    for (const id of ["aiCleanupTidy", "aiCleanupRewrite", "aiCleanupTiersLocked"]) {
+      assert(
+        convertHtml.includes(`id="${id}"`),
+        `#${id} 应落在 05 转换组内(AI 清理的细分项,不是别的分组的平级功能)`,
+      );
+    }
+    assert(
+      convertHtml.indexOf('id="aiCleanupTidy"') > convertHtml.indexOf('id="aiCleanup"'),
+      "分档控件在 DOM 上应排在总开关 aiCleanup 之后",
+    );
+    assert(
+      /<input type="checkbox" id="aiCleanupTidy" class="switch-input"[^>]*\bdisabled\b/.test(convertHtml) &&
+        /<input type="checkbox" id="aiCleanupRewrite" class="switch-input"[^>]*\bdisabled\b/.test(convertHtml),
+      "两个分档的初始态应随总开关默认关(静态 HTML 即带 disabled,不靠 JS 补)",
+    );
+    // 接线:总开关切换与回填两条路径都要重算分档可用性
+    const convertBindingsSource = fs.readFileSync(
+      path.join(repoRoot, "src", "renderer", "settings", "settings-bindings-convert.ts"),
+      "utf8",
+    );
+    assert(
+      /aiCleanupInput\.addEventListener[\s\S]{0,320}?syncAiCleanupTierAvailability\(\)/.test(
+        convertBindingsSource,
+      ),
+      "总开关 change 接线里必须同步分档可用性(否则关掉总开关后分档仍可点)",
+    );
+    const panelSource = fs.readFileSync(
+      path.join(repoRoot, "src", "renderer", "settings", "settings-panel.ts"),
+      "utf8",
+    );
+    assert(
+      /aiCleanupInput\.checked = v\.aiCleanup;[\s\S]{0,400}?syncAiCleanupTierAvailability\(\)/.test(
+        panelSource,
+      ),
+      "回填路径(applySettingsToControls)必须同步分档可用性(加载/恢复默认后置灰态正确)",
+    );
+
     const appBindingsSource = fs.readFileSync(
       path.join(repoRoot, "src", "renderer", "settings", "settings-bindings-app.ts"),
       "utf8",
@@ -420,7 +505,7 @@ export async function run() {
       "批量条目取消图标应为 --mut 弱化色",
     );
 
-    console.log("[ok] ui-interaction-guards:队列行键盘边界与忙碌两态 / 动态节点不被覆盖 / 复制反馈复位与读屏播报 / 完成态收束重放 / 取消中性态与批量标题 / aria-busy 断言通过");
+    console.log("[ok] ui-interaction-guards:队列行键盘边界与忙碌两态 / 动态节点不被覆盖 / 复制反馈复位与读屏播报 / 完成态收束重放 / 取消中性态与批量标题 / aria-busy / AI 清理分档置灰跟随总开关 断言通过");
   } finally {
     dom.restore();
   }

@@ -59,6 +59,9 @@ export const equationNumberingInput = document.getElementById(
   "equationNumbering",
 ) as HTMLInputElement;
 export const aiCleanupInput = document.getElementById("aiCleanup") as HTMLInputElement;
+export const aiCleanupTidyInput = document.getElementById("aiCleanupTidy") as HTMLInputElement;
+export const aiCleanupRewriteInput = document.getElementById("aiCleanupRewrite") as HTMLInputElement;
+export const aiCleanupTiersLocked = document.getElementById("aiCleanupTiersLocked");
 export const obsidianCompatInput = document.getElementById("obsidianCompat") as HTMLInputElement;
 export const obsidianAttachmentFolderInput = document.getElementById("obsidianAttachmentFolder") as HTMLInputElement;
 export const afterConvertInputs = document.querySelectorAll<HTMLInputElement>(

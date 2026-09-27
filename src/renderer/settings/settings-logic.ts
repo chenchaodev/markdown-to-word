@@ -207,6 +207,10 @@ export function mergeSettingsWithDefaults(
     pdfCss: source.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
     // theme 缺失(旧 settings.json)→ "system"(显式 null/undefined 同样兜底)
     theme: source.theme ?? DEFAULT_SETTINGS.theme,
+    // AI 清理两档:缺键(旧 settings.json)/显式 undefined → 兜底默认(与 main 侧
+    // loadSettings 字段级兜底同语义,双侧防御)
+    aiCleanupTidy: source.aiCleanupTidy ?? DEFAULT_SETTINGS.aiCleanupTidy,
+    aiCleanupRewrite: source.aiCleanupRewrite ?? DEFAULT_SETTINGS.aiCleanupRewrite,
   };
   // migration 是 main→renderer 的瞬时提示，不进入 renderer 设置状态或后续 patch。
   delete merged.migration;
@@ -348,6 +352,10 @@ export interface SettingsControlValues {
   tocMode: string;
   equationNumbering: boolean;
   aiCleanup: boolean;
+  /** AI 清理「保守规整」档 */
+  aiCleanupTidy: boolean;
+  /** AI 清理「结构改写」档 */
+  aiCleanupRewrite: boolean;
   obsidianCompat: boolean;
   obsidianAttachmentFolder: string;
   afterConvert: string;
@@ -394,6 +402,8 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     tocMode: settings.tocMode,
     equationNumbering: settings.equationNumbering,
     aiCleanup: settings.aiCleanup,
+    aiCleanupTidy: settings.aiCleanupTidy,
+    aiCleanupRewrite: settings.aiCleanupRewrite,
     obsidianCompat: settings.obsidianCompat,
     obsidianAttachmentFolder: settings.obsidianAttachmentFolder,
     afterConvert: settings.afterConvert,

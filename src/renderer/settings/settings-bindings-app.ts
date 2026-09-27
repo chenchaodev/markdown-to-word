@@ -34,6 +34,8 @@ export function bindAppGroup(): void {
     state.settings.tocMode = d.tocMode;
     state.settings.equationNumbering = d.equationNumbering;
     state.settings.aiCleanup = d.aiCleanup;
+    state.settings.aiCleanupTidy = d.aiCleanupTidy;
+    state.settings.aiCleanupRewrite = d.aiCleanupRewrite;
     state.settings.obsidianCompat = d.obsidianCompat;
     state.settings.obsidianAttachmentFolder = d.obsidianAttachmentFolder;
     state.settings.afterConvert = d.afterConvert;
@@ -52,6 +54,8 @@ export function bindAppGroup(): void {
       tocMode: state.settings.tocMode,
       equationNumbering: state.settings.equationNumbering,
       aiCleanup: state.settings.aiCleanup,
+      aiCleanupTidy: state.settings.aiCleanupTidy,
+      aiCleanupRewrite: state.settings.aiCleanupRewrite,
       obsidianCompat: state.settings.obsidianCompat,
       obsidianAttachmentFolder: state.settings.obsidianAttachmentFolder,
       afterConvert: state.settings.afterConvert,

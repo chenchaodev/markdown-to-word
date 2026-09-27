@@ -10,7 +10,7 @@ import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { parseFrontmatter, type DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { decodeMarkdown } from "../../core/util/encoding.js";
-import { cleanupMarkdown } from "../../core/markdown/ai-cleanup.js";
+import { cleanupMarkdown, type AiCleanupOptions } from "../../core/markdown/ai-cleanup.js";
 import { normalizeObsidian } from "../../core/markdown/obsidian.js";
 
 /** 准备结果：markdown 保留完整 frontmatter，body/metadata 是其解析契约。 */
@@ -55,7 +55,8 @@ async function readSourceBytes(filePath: string): Promise<Buffer> {
  * 对原始 markdown 做转换前规整。
  * 顺序：先解析并隔离 frontmatter，再只对正文执行 Obsidian 语法归一与 AI 清理，
  * 最后原样拼回 frontmatter。两开关独立，仅启用项生效；均未启用时正文与 frontmatter
- * 均保持解码后的原文。
+ * 均保持解码后的原文。AI 清理总开关之下还有两个档位开关（保守规整 / 结构改写），
+ * 总开关关闭时整段跳过——档位只是总开关内的分档，不绕过它（见 aiCleanupOptions）。
  */
 export function preprocessMarkdown(md: string, settings: AppSettings): string {
   const parsed = splitFrontmatter(md);
@@ -79,6 +80,26 @@ function splitFrontmatter(md: string): SplitMarkdown {
   };
 }
 
+/**
+ * 两个档位开关 → 六个 per-rule 布尔(AI 清理的档位映射单源,勿在别处重拼):
+ * - 保守规整(aiCleanupTidy)= 引号破折号归一 / 列表标记补空格 / 行尾空白与空行折叠
+ * - 结构改写(aiCleanupRewrite)= 清裸数字引用标记 / 去 emoji / 重整标题层级
+ * 纯函数(只读设置、不碰 IO),导出供直测断言「cleanupMarkdown 实际收到的 options」。
+ * 注:本函数不含总开关判定 —— 总开关关闭时 preprocessBody 整段跳过,子档位不构成旁路。
+ */
+export function aiCleanupOptions(
+  settings: Pick<AppSettings, "aiCleanupTidy" | "aiCleanupRewrite">,
+): AiCleanupOptions {
+  return {
+    normalizeQuotes: settings.aiCleanupTidy,
+    fixListMarkers: settings.aiCleanupTidy,
+    trimBlankLines: settings.aiCleanupTidy,
+    stripCitationMarkers: settings.aiCleanupRewrite,
+    stripEmoji: settings.aiCleanupRewrite,
+    fixHeadingLevels: settings.aiCleanupRewrite,
+  };
+}
+
 /** 只处理正文,避免把 frontmatter 的 metadata 送进 Obsidian/AI 规则。 */
 function preprocessBody(body: string, settings: AppSettings): string {
   let out = body;
@@ -86,7 +107,7 @@ function preprocessBody(body: string, settings: AppSettings): string {
     out = normalizeObsidian(out, { attachmentFolder: settings.obsidianAttachmentFolder });
   }
   if (settings.aiCleanup) {
-    out = cleanupMarkdown(out);
+    out = cleanupMarkdown(out, aiCleanupOptions(settings));
   }
   return out;
 }

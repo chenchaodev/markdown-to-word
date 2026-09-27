@@ -79,6 +79,8 @@ const SETTING_KEYS = [
   "headerFooter",
   "watermark",
   "aiCleanup",
+  "aiCleanupTidy",
+  "aiCleanupRewrite",
   "obsidianCompat",
   "obsidianAttachmentFolder",
 ] as const;
@@ -178,6 +180,8 @@ export function isValidSettings(value: unknown): value is AppSettings {
   if ("theme" in s && !isOneOf(s.theme, THEMES)) return false;
   // 新增开关为可选字段(旧 settings.json 缺省视为合法,loadSettings 兜底默认)
   if ("aiCleanup" in s && typeof s.aiCleanup !== "boolean") return false;
+  if ("aiCleanupTidy" in s && typeof s.aiCleanupTidy !== "boolean") return false;
+  if ("aiCleanupRewrite" in s && typeof s.aiCleanupRewrite !== "boolean") return false;
   if ("obsidianCompat" in s && typeof s.obsidianCompat !== "boolean") return false;
   if ("obsidianAttachmentFolder" in s && typeof s.obsidianAttachmentFolder !== "string") return false;
   // pageSetup 整块交由 core correctPageSetup 迁移：非法 paper/orientation/几何只
@@ -243,6 +247,15 @@ export function loadSettings(): AppSettings {
         watermark: sanitizeWatermark(parsed.watermark),
         // 旧 settings.json 缺字段 → 兜底默认(与 toc/theme 同先例)
         aiCleanup: typeof parsed.aiCleanup === "boolean" ? parsed.aiCleanup : DEFAULT_SETTINGS.aiCleanup,
+        // AI 清理两档:旧 settings.json 缺键 → 兜底默认(默认皆开,随总开关生效)
+        aiCleanupTidy:
+          typeof parsed.aiCleanupTidy === "boolean"
+            ? parsed.aiCleanupTidy
+            : DEFAULT_SETTINGS.aiCleanupTidy,
+        aiCleanupRewrite:
+          typeof parsed.aiCleanupRewrite === "boolean"
+            ? parsed.aiCleanupRewrite
+            : DEFAULT_SETTINGS.aiCleanupRewrite,
         obsidianCompat:
           typeof parsed.obsidianCompat === "boolean"
             ? parsed.obsidianCompat
@@ -364,6 +377,16 @@ function sanitizePatch(patch: unknown, current: AppSettings): Partial<AppSetting
       case "aiCleanup":
         out.aiCleanup =
           typeof src.aiCleanup === "boolean" ? src.aiCleanup : DEFAULT_SETTINGS.aiCleanup;
+        break;
+      case "aiCleanupTidy":
+        out.aiCleanupTidy =
+          typeof src.aiCleanupTidy === "boolean" ? src.aiCleanupTidy : DEFAULT_SETTINGS.aiCleanupTidy;
+        break;
+      case "aiCleanupRewrite":
+        out.aiCleanupRewrite =
+          typeof src.aiCleanupRewrite === "boolean"
+            ? src.aiCleanupRewrite
+            : DEFAULT_SETTINGS.aiCleanupRewrite;
         break;
       case "obsidianCompat":
         out.obsidianCompat =

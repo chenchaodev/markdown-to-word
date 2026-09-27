@@ -1070,6 +1070,14 @@ svg.ic {
   outline-offset: 2px;
 }
 
+/* 开关置灰态(AI 清理两个分档随总开关灰禁):禁用语汇与 .btn-ghost:disabled 同款
+   (降透明 + not-allowed 光标),不另开色板、不改底色(底色仍留 --line-2,
+   以免与「已开启=关」的常态混淆)。可用性另有可见说明行承担,不靠本条独自表达。 */
+.switch-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* ---- 4.4 输入件 ---- */
 .setting-input,
 .setting-number,

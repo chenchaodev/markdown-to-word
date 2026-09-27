@@ -211,6 +211,18 @@ export interface AppSettings {
   watermark: WatermarkSettings;
    /** AI 清理:转换前自动规整 AI 生成的 Markdown(智能引号/破折号/列表格式/空行) */
   aiCleanup: boolean;
+  /**
+   * AI 清理「保守规整」档(默认开,随总开关生效):引号破折号归一 / 列表标记补空格 /
+   * 行尾空白与空行折叠——三条规则零语义损失。总开关关闭时整档不生效(preprocess
+   * 整段跳过),本字段不构成绕过总开关的旁路。
+   */
+  aiCleanupTidy: boolean;
+  /**
+   * AI 清理「结构改写」档(默认开,随总开关生效):清裸数字引用标记 / 去 emoji /
+   * 重整标题层级——其中两条删除正文内容、一条改写全文结构,故可单独关闭;
+   * 关闭后转换产物与该档引入前逐字节一致。
+   */
+  aiCleanupRewrite: boolean;
   /** Obsidian 兼容:将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接 */
   obsidianCompat: boolean;
   /** Obsidian 附件子文件夹名(用于解析 ![[图片]] 路径前缀) */
@@ -245,6 +257,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   headerFooter: { ...DEFAULT_HEADER_FOOTER },
   watermark: { ...DEFAULT_WATERMARK },
   aiCleanup: false,
+  aiCleanupTidy: true,
+  aiCleanupRewrite: true,
   obsidianCompat: false,
   obsidianAttachmentFolder: "Attachments",
 };

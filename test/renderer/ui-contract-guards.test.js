@@ -11,7 +11,7 @@
  *     成功色),阈值 4.5:1 —— 改色即重算,不必等人工目检。
  * (4) 视觉债回归:脉冲只属主按钮且光环走伪元素、完成态不呼吸、队列无卡壳、
  *     完成态收束只动 opacity/transform(不顶开固定消息槽)、队列忙碌态有可见
- *     禁用表达且不另开色板、向导源行三列网格。
+ *     禁用表达且不另开色板、开关置灰态复用既有禁用语汇、向导源行三列网格。
  * (5) 无障碍静态契约:设置 Tab 的 tablist/tab/tabpanel 双向关联、错误节点 role=alert
  *     + aria-controls、开关的 aria-labelledby/describedby、进度条 valuetext/describedby、
  *     状态行 role/aria-atomic、消息槽 aria-busy、复制播报位 #copyLive 的 live region
@@ -450,6 +450,28 @@ export async function run() {
   assert(
     /grid-template-columns:\s*22px minmax\(0, 1fr\) auto/.test(wizardRowBody),
     `向导源行应收敛为三列(序号 + 文件名 + 操作),实际:${wizardRowBody}`,
+  );
+  // 4e. 开关置灰态(AI 清理两档随总开关灰禁):须有可见的不可用表达,且复用
+  //     既有禁用语汇(--mut/透明/not-allowed),不得为置灰另开色板或硬编码颜色。
+  //     背景色刻意不动:留 --line-2 才不会与「已开启=关」的常态混淆。
+  const switchDisabled = /\.switch-input:disabled\s*\{([^}]*)\}/.exec(baseCss);
+  assert(switchDisabled, "base.css 缺少 .switch-input:disabled 规则(置灰开关将与常态开关无法区分)");
+  const switchDisabledBody = capture(switchDisabled, 1);
+  assert(
+    /cursor:\s*not-allowed/.test(switchDisabledBody),
+    `.switch-input:disabled 应给出 not-allowed 光标(禁用语汇与 .btn-ghost:disabled 同款),实际:${switchDisabledBody}`,
+  );
+  assert(
+    /opacity:\s*0?\.\d+/.test(switchDisabledBody),
+    `.switch-input:disabled 应降透明表达不可用,实际:${switchDisabledBody}`,
+  );
+  assert(
+    !/#[0-9a-f]{3,6}|rgba?\(/i.test(switchDisabledBody),
+    `.switch-input:disabled 不得硬编码颜色(禁用态复用既有语义变量),实际:${switchDisabledBody}`,
+  );
+  assert(
+    !/background(-color)?\s*:/.test(switchDisabledBody),
+    `.switch-input:disabled 不应改底色(留 --line-2,免与「已开启=关」的常态混淆),实际:${switchDisabledBody}`,
   );
 
   /* ---------- 5. 无障碍静态契约(index.html) ---------- */

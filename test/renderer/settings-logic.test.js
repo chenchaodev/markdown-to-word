@@ -277,7 +277,23 @@ export async function run() {
     (/** @type {string} */ message) => { mergePageError = message; },
   );
   assert(typeof mergePageError === "string", "merge 发现非法几何时应上送可见错误");
-  console.log("[ok] mergeSettingsWithDefaults:完整透传/显式字段保留/缺字段默认兜底/部分字段合并/theme 兜底/非法几何回退 断言通过");
+  // AI 清理两档:旧档缺键 / 显式 undefined → 兜底默认(与 main 侧 loadSettings 同语义)
+  assert(
+    mergeSettingsWithDefaults({}).aiCleanupTidy === true &&
+      mergeSettingsWithDefaults({}).aiCleanupRewrite === true,
+    "缺两档 → 默认(开,与 main 侧字段级兜底一致)",
+  );
+  assert(
+    mergeSettingsWithDefaults({ aiCleanupTidy: undefined, aiCleanupRewrite: false })
+      .aiCleanupTidy === true,
+    "显式 undefined 的档位应兜底默认,不得把 undefined 带进设置状态",
+  );
+  assert(
+    mergeSettingsWithDefaults({ aiCleanupTidy: false, aiCleanupRewrite: false })
+      .aiCleanupRewrite === false,
+    "显式 false 的档位应保留(不得被默认覆盖)",
+  );
+  console.log("[ok] mergeSettingsWithDefaults:完整透传/显式字段保留/缺字段默认兜底/部分字段合并/theme 兜底/AI 清理两档兜底/非法几何回退 断言通过");
 
   // ---------- normalizePageSetup(复用 core validatePageSetup 的 renderer 输入防线) ----------
   const validPage = normalizePageSetup({
@@ -716,6 +732,21 @@ export async function run() {
   assert(emptyDirCv.theme === "system", "theme 默认映射为 system");
   const darkCv = settingsToControlValues({ ...DEFAULT_SETTINGS, theme: "dark" });
   assert(darkCv.theme === "dark", "theme=dark 应原样映射");
+  // AI 清理两档:两个档位各自映射,互不影响(回填层不得把两档并成一个值)
+  const tierOnCv = settingsToControlValues(DEFAULT_SETTINGS);
+  assert(
+    tierOnCv.aiCleanupTidy === true && tierOnCv.aiCleanupRewrite === true,
+    "两档默认(开)应分别映射为 true",
+  );
+  const tierOffCv = settingsToControlValues({
+    ...DEFAULT_SETTINGS,
+    aiCleanupTidy: false,
+    aiCleanupRewrite: true,
+  });
+  assert(
+    tierOffCv.aiCleanupTidy === false && tierOffCv.aiCleanupRewrite === true,
+    "只关保守规整档时,结构改写档应仍为 true",
+  );
   console.log("[ok] settingsToControlValues:全字段映射/数值转字符串/align 判定/输出目录文案/theme 映射 断言通过");
 
   // ---------- applyThemeOn(data-theme 属性应用,DOM 无关直测) ----------

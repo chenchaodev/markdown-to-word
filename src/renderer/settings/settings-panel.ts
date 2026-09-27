@@ -39,6 +39,9 @@ import {
   completeDialogSuppressInput,
   equationNumberingInput,
   aiCleanupInput,
+  aiCleanupTidyInput,
+  aiCleanupRewriteInput,
+  aiCleanupTiersLocked,
   obsidianCompatInput,
   obsidianAttachmentFolderInput,
   firstLineIndentInput,
@@ -238,6 +241,10 @@ export function applySettingsToControls(): void {
   tocModeSelect.value = v.tocMode;
   equationNumberingInput.checked = v.equationNumbering;
   aiCleanupInput.checked = v.aiCleanup;
+  aiCleanupTidyInput.checked = v.aiCleanupTidy;
+  aiCleanupRewriteInput.checked = v.aiCleanupRewrite;
+  // 分档置灰跟随总开关(回填与总开关切换共用同一函数,单一来源)
+  syncAiCleanupTierAvailability();
   obsidianCompatInput.checked = v.obsidianCompat;
   obsidianAttachmentFolderInput.value = v.obsidianAttachmentFolder;
   afterConvertInputs.forEach(
@@ -338,6 +345,20 @@ export function syncHeaderCustomVisibility(): void {
   headerCustomFields.classList.toggle("show", custom);
   // inert 随折叠同步:收起态字段不可聚焦(键盘/焦点陷阱不落入不可见区)
   headerCustomFields.inert = !custom;
+}
+
+/**
+ * AI 清理两个分档的可用性:总开关关闭时置灰(disabled)+ 显式说明行。
+ * 与 .cond 折叠容器的既定语义不同 —— 这里刻意**灰禁而非整块移除**:
+ * 分档位置与上次选择要留在原处,总开关重新打开即恢复原选择(不移除即不丢值)。
+ * 可用性不只靠颜色表达:disabled 移出焦点序(键盘/读屏都会跳过),
+ * 另有一行可见文字说明「需先开启总开关」。回填与总开关切换共用本函数。
+ */
+export function syncAiCleanupTierAvailability(): void {
+  const enabled = aiCleanupInput.checked;
+  aiCleanupTidyInput.disabled = !enabled;
+  aiCleanupRewriteInput.disabled = !enabled;
+  aiCleanupTiersLocked?.classList.toggle("hidden", enabled);
 }
 
 /** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 seg 选中值)。 */

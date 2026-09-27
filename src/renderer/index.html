@@ -785,6 +785,27 @@
               </span>
               <input type="checkbox" id="aiCleanup" class="switch-input" aria-labelledby="aiCleanupLabel" aria-describedby="aiCleanupDesc" />
             </div>
+            <!-- AI 清理的两个分档:用 .cond 凹陷容器(左轨 + 凹陷底)表达「从属于上方总开关」
+                 的层级,恒展开 —— 启用与否由 disabled 表达而非整块移除
+                 (见 settings-panel.syncAiCleanupTierAvailability)。
+                 初始态随 aiCleanup 默认关:两个分档 disabled + 置灰说明行可见。 -->
+            <div id="aiCleanupTiers" class="cond show"><div><div class="cond-in">
+              <div class="sw-row">
+                <span>
+                  <span class="row-l" id="aiCleanupTidyLabel" data-i18n="settings.aiCleanupTidy">保守规整</span>
+                  <span class="row-sub" id="aiCleanupTidyDesc" style="display: block" data-i18n="settings.aiCleanupTidyDesc">统一引号与破折号、补齐列表标记后的空格、清理行尾空白与多余空行（不改内容）</span>
+                </span>
+                <input type="checkbox" id="aiCleanupTidy" class="switch-input" aria-labelledby="aiCleanupTidyLabel" aria-describedby="aiCleanupTidyDesc" disabled />
+              </div>
+              <div class="sw-row">
+                <span>
+                  <span class="row-l" id="aiCleanupRewriteLabel" data-i18n="settings.aiCleanupRewrite">结构改写</span>
+                  <span class="row-sub" id="aiCleanupRewriteDesc" style="display: block" data-i18n="settings.aiCleanupRewriteDesc">删除 [1] 式引用标记与 emoji、统一标题层级（会改动正文内容）</span>
+                </span>
+                <input type="checkbox" id="aiCleanupRewrite" class="switch-input" aria-labelledby="aiCleanupRewriteLabel" aria-describedby="aiCleanupRewriteDesc" disabled />
+              </div>
+              <p class="scope-note" id="aiCleanupTiersLocked" data-i18n="settings.aiCleanupTiersLocked">两个分档需先开启上方「AI 清理」才生效</p>
+            </div></div></div>
             <div class="sw-row">
               <span>
                 <span class="row-l" id="obsidianCompatLabel" data-i18n="settings.obsidianCompat">Obsidian 兼容</span>
