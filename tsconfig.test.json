@@ -10,7 +10,7 @@
   // 达标口径:每个测试源文件都带 `// @ts-check` 标注;达标与否由 `npm run typecheck` 判定,
   // 此处不记文件数(逐文件统计随增删漂移,写了必然陈旧)。
   // 新增测试文件必须带 `// @ts-check`(shebang 文件放在 shebang 之后);
-  // test/pending/ 为阶段 3 历史副本,不参与发现,故意不标注。
+  // 无豁免目录(原 test/pending/ 阶段 3 历史副本已于 2026-09-27 删除)。
   // 不继承 emit 相关:rootDir 放宽到根(test 文件跨目录),noEmit 不产出产物。
   "extends": "./tsconfig.json",
   "compilerOptions": {

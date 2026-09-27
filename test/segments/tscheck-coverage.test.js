@@ -7,8 +7,9 @@
  * 1) `test/` 下每个 js/mjs/cjs 源文件都必须带 `// @ts-check` 注释 —— 这是本项目
  *    唯一的「测试代码受 typecheck 门禁」机制(checkJs 必须保持 false,否则被 import
  *    的 dist 编译产物会被拉进检查范围产生上千条无意义报错)。
- * 2) `test/pending/` 是阶段 3 历史副本,不参与测试发现,故意豁免;豁免必须显式存在,
- *    一旦该目录被清空或改名,本段判红提醒同步更新豁免清单。
+ * 2) 豁免目录清单(EXEMPT_DIRS)非空时,每个豁免目录必须真实存在且非空 —— 防止
+ *    「显式豁免」变成掩盖漂移的免罪符。2026-09-27 起该清单为空(原 `test/pending/`
+ *    阶段 3 历史副本已删),此条自动跳过,防静默零覆盖的责任落在第 1 项的文件数下限断言。
  * 3) `tsconfig.test.json` 必须仍是 `checkJs: false` 且写明原因 —— 防止后续有人
  *    「顺手修正」把 dist 编译产物拖进类型检查。
  *
@@ -20,8 +21,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
 
-/** 不参与类型门禁的显式豁免目录(相对 test/)。 */
-const EXEMPT_DIRS = ["pending"];
+/**
+ * 不参与类型门禁的显式豁免目录(相对 test/)。
+ * 2026-09-27:`test/pending/` 阶段 3 历史副本已删(其断言已由
+ * `test/segments/core-resources.test.js` 覆盖),豁免清单清空。
+ * 留空数组是合法状态:此时唯一的防「静默零覆盖」下限断言是上面第 1 项的
+ * `guarded >= 100`(walker 失效仍会红),不依赖豁免目录存在。
+ */
+/** @type {string[]} */
+const EXEMPT_DIRS = [];
 
 const TEST_DIR = path.join(ROOT, "test");
 
@@ -116,12 +124,19 @@ export async function run() {
   console.log(`[ok] tscheck-coverage:${guarded} 个测试源文件全部带 @ts-check 标注`);
 
   // ---- 2. 豁免目录必须真实存在(显式豁免不得变成掩盖漂移的免罪符)----
-  for (const d of EXEMPT_DIRS) {
-    const abs = path.join(TEST_DIR, d);
-    assert(fs.existsSync(abs), `豁免目录 test/${d} 已不存在,请同步更新 EXEMPT_DIRS 与 tsconfig.test.json 头注`);
+  // 清单非空时:每个豁免目录必须真实存在,且至少含 1 个文件(否则豁免白拿)。
+  // 清单为空时:合法状态(2026-09-27 起无豁免目录),跳过这两条;
+  //   此时防「静默零覆盖」的责任落在第 1 项的 `guarded >= 100` 下限断言上。
+  if (EXEMPT_DIRS.length > 0) {
+    for (const d of EXEMPT_DIRS) {
+      const abs = path.join(TEST_DIR, d);
+      assert(fs.existsSync(abs), `豁免目录 test/${d} 已不存在,请同步更新 EXEMPT_DIRS 与 tsconfig.test.json 头注`);
+    }
+    assert(exempt > 0, "豁免目录应至少含 1 个历史副本文件");
+    console.log(`[ok] tscheck-coverage:豁免目录真实存在(${EXEMPT_DIRS.join(", ")},${exempt} 个文件)`);
+  } else {
+    console.log("[ok] tscheck-coverage:无豁免目录(全部测试源文件均受 @ts-check 门禁)");
   }
-  assert(exempt > 0, "豁免目录应至少含 1 个历史副本文件");
-  console.log(`[ok] tscheck-coverage:豁免目录真实存在(${EXEMPT_DIRS.join(", ")},${exempt} 个文件)`);
 
   // ---- 3. checkJs 必须保持 false,且头注写明 dist 原因(防被顺手"修正")----
   const tsconfigTest = fs.readFileSync(path.join(ROOT, "tsconfig.test.json"), "utf8");

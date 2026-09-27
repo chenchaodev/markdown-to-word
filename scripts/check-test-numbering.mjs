@@ -17,10 +17,11 @@
 // ---- 扫描面(与测试发现面一致,不多不少)----
 //   test/segments/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
 //   test/common/**/*.js · test/tools/**/*.{js,mjs}
-// 排除 test/pending(阶段 3 历史副本区,故意不参与测试发现,见
-// test/segments/tscheck-coverage.test.js:24 的 EXEMPT_DIRS)与 test/fixtures(被测样例
-// 数据本身,不是断言)。排除写成显式清单:将来有人把扫描面扩到整个 test/ 时,这两个
-// 目录必须仍然在外,而不是靠「它们恰好不在目标里」蒙对。
+// 排除 test/fixtures(被测样例数据本身,不是断言)。排除写成显式清单:将来有人把
+// 扫描面扩到整个 test/ 时,该目录必须仍然在外,而不是靠「它恰好不在目标里」蒙对。
+// (2026-09-27:原清单里的 test/pending —— 阶段 3 历史副本区 —— 已删除,断言由
+// test/segments/core-resources.test.js 覆盖,故本门禁与 tscheck-coverage 的
+// EXEMPT_DIRS 一并去掉了它。)
 //
 // ---- 匹配规则:只在字符串字面量内部命中 ----
 // 字母表:ASCII 编号 \b(?:B1[0-3]|B[1-9]|F[1-9]|C[1-4]|D-\d{2}|OPT-\d+(?:\.\d+)?|D[1-5])\b
@@ -77,7 +78,7 @@ export const SCAN_TARGETS = Object.freeze([
 ]);
 
 /** 显式排除目录(仓库相对 POSIX 路径;前缀匹配)。理由见文件头「扫描面」。 */
-export const EXCLUDED_DIRS = Object.freeze(['test/pending', 'test/fixtures']);
+export const EXCLUDED_DIRS = Object.freeze(['test/fixtures']);
 
 /**
  * 扫描文件数下限:walker 静默失效(目录改名/权限)会退化成「零文件全过」,那是假通过。
@@ -302,7 +303,7 @@ export function collectStringLiterals(text) {
 
 // ---- 扫描与判定 ----
 
-/** 排除前缀判定(带 / 边界,避免 test/pendingX 误判) */
+/** 排除前缀判定(带 / 边界,避免 test/fixturesX 误判) */
 function isExcluded(rel) {
   return EXCLUDED_DIRS.some((dir) => rel === dir || rel.startsWith(`${dir}/`));
 }
