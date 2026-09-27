@@ -574,6 +574,12 @@ svg.ic {
   display: flex;
   align-items: center;
   gap: 9px;
+  /* 状态行是一行字的语汇,永远不参与压缩:.feed 是锁高固定槽(base.css .feed),
+     槽内出现更高的项(结果汇总卡 / 跳过列表)时,可压缩的 flex 项会被挤到
+     min-height 再由 overflow:hidden 把文字裁掉(错误态更明显 —— .status--error
+     把 white-space 放回 normal,长文本会折成多行块,被压后只剩中间一条)。
+     flex: none 让它要么完整占住自己那行、要么让 .feed 起内滚动条(既有机制)。 */
+  flex: none;
   min-height: 20px;
   font-size: 13px;
   color: var(--ink-2);

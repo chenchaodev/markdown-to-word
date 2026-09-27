@@ -67,6 +67,17 @@ const dict = {
     "convert.merge.failed": "合并失败:${error}",
     "convert.merge.failedTitle": "合并失败",
     "convert.merge.nameSuffix": "${name}-合并",
+    // 合并被未闭合围栏阻断(用户 2026-09-27 定):只报第一个出问题的文件,
+    // 避免把一长串文件名塞进对话框;file/lineNo 由渲染层按告警的 blocksMerge 信号填
+    "convert.merge.blockedUnclosedFence": "合并转换已阻止:${file} 第 ${lineNo} 行的代码围栏没有闭合 —— 合并后本文件剩余部分与后续所有文件都会变成一个代码块。请先修好该文件再合并。",
+    // 阻断详报只讲第一个出问题的文件(见上条注释);这句补足「不止一个」的事实,
+    // 让用户知道修完一个还得接着修,不必再合并试一次才发现
+    "convert.merge.blockedUnclosedFenceMore": "另有 ${count} 个文件也有未闭合的代码围栏,修好后同样会阻断合并。",
+    // 阻断在预检段就发生了,转换根本没开始 —— 故标题与状态行都不能说「失败」。
+    // 状态行是一行字的语汇,只给短句(长文本只进下方汇总卡,两处同长文本既冗余
+    // 又会互相挤掉对方的行);count = 带阻断告警的文件总数。
+    "convert.merge.blockedTitle": "合并未执行",
+    "convert.merge.blockedStatus": "合并未执行:${count} 个文件有未闭合的代码围栏,详见下方说明",
     "convert.canceling": "正在取消…",
     "convert.cancelFailed": "取消失败,请重试",
     "convert.start": "开始转换",
@@ -464,7 +475,7 @@ const dict = {
     "warn.unsupportedMathDelimiter": "`\\(` / `\\[` 不是本工具支持的公式定界符,会按普通文字印出而不渲染公式;请改用 `$…$`(行内)或 `$$…$$`(独立成行)",
     "warn.htmlTagNotAllowed": "HTML 标签 <${tag}> 不在支持范围内,其内容会被丢弃;请改用 Markdown 语法或纯文本",
     "warn.unpairedMathDelimiter": "公式定界符 $ 未配对(疑似:${snippet});未配对的 $ 会按普通文字印出,请补齐闭合的 $",
-    "warn.unclosedCodeFence": "代码围栏没有闭合(第 ${lineNo} 行开始):之后的内容会被整段当成代码而不显示;请补上收尾的三个反引号",
+    "warn.unclosedCodeFence": "代码围栏没有闭合(第 ${lineNo} 行开始):它之后的内容会被整段当作一个代码块显示 —— 标题、表格、公式都会变成代码文本。请补上收尾的围栏。",
     "warn.tableLikeNotParsed": "这段形似表格但未按表格排版(首行:${lineText});请在首行下补一行分隔行(如 | --- | --- |)",
     // 目录扫描预算触顶:kind 为触顶维度(条目数/层级)、limit 为对应上限值;
     // 值与 pathScanLimitWarning 的 fallback 逐字一致(默认值等价)

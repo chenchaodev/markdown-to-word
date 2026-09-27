@@ -9,7 +9,7 @@
 import path from "node:path";
 import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
 import { DICT } from "../../dist/core/i18n/index.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning, setLanguage } from "../../dist/core/i18n.js";
 
 const existsAll = () => true;
 const existsNone = () => false;
@@ -403,4 +403,98 @@ export async function run() {
     throw new Error(`标签名未插值进文案: ${rendered}`);
   }
   console.log("[ok] precheck:四类文案三语言齐备 + 标签名插值上屏");
+
+  /* ================= 合并阻断信号 blocksMerge(用户 2026-09-27 定) ================= */
+  const runPrecheck = (/** @type {string} */ md) =>
+    precheckMarkdown(md, "/tmp", { exists: existsAll, realpathSync: realpathIdentity });
+
+  // 14) 只有未闭合围栏带 blocksMerge === true(合并时它会跨越文件边界吞掉后续文件)
+  const fenceSignal = silentLoss("正常段落\n\n```js\nconst a = 1;\n")[0];
+  if (fenceSignal === undefined || fenceSignal.blocksMerge !== true) {
+    throw new Error(`未闭合围栏告警应带 blocksMerge === true,实际 ${JSON.stringify(fenceSignal)}`);
+  }
+  // 其余四类 + 既有三类一律不带:用 `in` 判存在性(只断 undefined 会漏掉 blocksMerge:false)
+  /** @type {Array<[string, string]>} */
+  const noSignalCases = [
+    ["①反斜杠定界符", "行内 \\(x\\) 公式"],
+    ["②白名单外 HTML", "段落里的 <div>块</div> 标签"],
+    ["③$ 不配对", "公式 $x^2 未闭合"],
+    ["④伪表格", "| 列1 | 列2 |\n| 数据1 | 数据2 |"],
+    ["既有三类", "![图](./missing.png)\n\n```\nplain\n```\n\n见 [章节](#sec:ghost)。"],
+  ];
+  for (const [label, md] of noSignalCases) {
+    const warnings = runPrecheck(md);
+    if (warnings.length === 0) {
+      throw new Error(`${label} 用例本身没有产出告警,断言失去意义`);
+    }
+    for (const w of warnings) {
+      if (typeof w === "object" && "blocksMerge" in w) {
+        throw new Error(`${label} 告警不应带 blocksMerge:${JSON.stringify(w)}`);
+      }
+    }
+  }
+  console.log("[ok] precheck:blocksMerge 只在未闭合围栏上为 true,其余七类均无该键");
+
+  // 15) 合并阻断文案键三语言齐备 + 占位符集合一致(file/lineNo)+ 后果说清「代码块」
+  const BLOCK_KEY = "convert.merge.blockedUnclosedFence";
+  const placeholders = (/** @type {unknown} */ s) =>
+    [...String(s).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
+  const expectPh = "file,lineNo";
+  for (const code of ["zh", "en", "ja"]) {
+    const text = DICT_VIEW[code]?.[BLOCK_KEY];
+    if (typeof text !== "string" || text.trim() === "") {
+      throw new Error(`${code}.${BLOCK_KEY} 缺文案`);
+    }
+    if (placeholders(text) !== expectPh) {
+      throw new Error(`${code}.${BLOCK_KEY} 占位符应为 [${expectPh}],实际 [${placeholders(text)}]`);
+    }
+    if (code !== "zh" && text === ZH_DICT[BLOCK_KEY]) {
+      throw new Error(`${code}.${BLOCK_KEY} 沿用了中文原文`);
+    }
+  }
+  // 三语言都要点出「会变成一个代码块」这个后果(逐语言各自的说法,不做跨语言同词断言)
+  /** @type {Array<[string, string]>} */
+  const BLOCK_FACT = [["zh", "代码块"], ["en", "code block"], ["ja", "コードブロック"]];
+  for (const [code, mustMention] of BLOCK_FACT) {
+    if (!(DICT_VIEW[code]?.[BLOCK_KEY] ?? "").includes(mustMention)) {
+      throw new Error(`${code}.${BLOCK_KEY} 未点出「变成代码块」的后果`);
+    }
+  }
+  console.log("[ok] precheck:合并阻断文案键三语言齐备 + 占位符 [file,lineNo] 一致 + 后果说清");
+
+  // 16) 未闭合围栏文案:插值正确,且不得再出现「内容不显示」这类与事实相反的说法
+  //     (旧文案写的是「不显示」,用户按那句理解成「该消失却还在」——GUI 实测反馈)
+  const fenceWarning = runPrecheck("正常段落\n\n```js\nconst a = 1;\n").find(
+    (w) => typeof w === "object" && w.key === "warn.unclosedCodeFence",
+  );
+  /** @type {Array<[string, string]>} */
+  const fenceTexts = [];
+  // 各语言「行号 + 3」的说法(验证 3 被插值在行号位上,而非文中随便出现个数字)
+  /** @type {Array<[string, string]>} */
+  const LINE_NO_ANCHOR = [["zh", "第 3 行"], ["en", "line 3"], ["ja", "3 行目"]];
+  for (const [code] of LINE_NO_ANCHOR) {
+    setLanguage(/** @type {"zh" | "en" | "ja"} */ (code));
+    fenceTexts.push([code, formatWarning(fenceWarning)]);
+  }
+  setLanguage("zh"); // 段内共享语言状态,先复位再断言,避免失败时污染后续段
+  // 逐语言「与事实相反」的说法:内容照样显示,只是变成代码块
+  /** @type {Array<[string, string]>} */
+  const BANNED = [["zh", "不显示"], ["en", "will not appear"], ["ja", "表示されません"]];
+  for (const [code, banned] of BANNED) {
+    const text = fenceTexts.find(([c]) => c === code)?.[1] ?? "";
+    if (text.includes(banned)) {
+      throw new Error(`${code} 围栏文案仍含与事实相反的说法「${banned}」:${text}`);
+    }
+  }
+  for (const [code, text] of fenceTexts) {
+    if (text.includes("${")) {
+      throw new Error(`${code} 围栏文案未完成插值:${text}`);
+    }
+    // 行号须落在「行号该在的位置」上,而不只是文中出现个 3(逐语言各自的行号说法)
+    const anchor = LINE_NO_ANCHOR.find(([c]) => c === code)?.[1] ?? "";
+    if (!text.includes(anchor)) {
+      throw new Error(`${code} 围栏文案未把 3 插值成行号(${anchor}):${text}`);
+    }
+  }
+  console.log("[ok] precheck:围栏文案三语言插值正确 + 无「不显示」类反事实措辞");
 }

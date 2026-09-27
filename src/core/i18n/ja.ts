@@ -66,6 +66,13 @@ const dict = {
     "convert.merge.failed": "結合に失敗しました:${error}",
     "convert.merge.failedTitle": "結合失敗",
     "convert.merge.nameSuffix": "${name}-結合",
+    // 閉じられていないフェンスにより結合をブロック(ユーザー決定 2026-09-27):
+    // 問題のあるファイルは最初の 1 件のみ報告する。file/lineNo は renderer が
+    // 警告の blocksMerge シグナルから渡す
+    "convert.merge.blockedUnclosedFence": "結合変換をブロックしました:${file} の ${lineNo} 行目にあるコードフェンスが閉じられていません — 結合すると、このファイルの残りと以降のすべてのファイルが 1 つのコードブロックになります。先にそのファイルを修正してください。",
+    "convert.merge.blockedUnclosedFenceMore": "ほかに ${count} 件のファイルにも閉じていないコードフェンスがあり、修正するまで結合はブロックされます。",
+    "convert.merge.blockedTitle": "結合は未実行",
+    "convert.merge.blockedStatus": "結合は未実行です:${count} 件のファイルに閉じていないコードフェンスがあります(詳細は下参照)",
     "convert.canceling": "キャンセル中…",
     "convert.cancelFailed": "キャンセルに失敗しました。再試行してください",
     "convert.start": "変換開始",
@@ -460,7 +467,7 @@ const dict = {
     "warn.unsupportedMathDelimiter": "`\\(` / `\\[` はこのツールがサポートする数式デリミタではありません。プレーンテキストとして印刷され数式はレンダリングされません。`$…$`(インライン)または `$$…$$`(独立した行)を使用してください",
     "warn.htmlTagNotAllowed": "HTML タグ <${tag}> はサポート範囲外のため、その内容は破棄されます。Markdown 記法またはプレーンテキストを使用してください",
     "warn.unpairedMathDelimiter": "数式デリミタ $ が対応していません(該当箇所: ${snippet});閉じられていない $ はプレーンテキストとして印刷されます。閉じ側の $ を補ってください",
-    "warn.unclosedCodeFence": "コードフェンスが閉じられていません(${lineNo} 行目から開始):それ以降の内容がコードとして扱われ出力されません。閉じ側の 3 つのバッククォートを追加してください",
+    "warn.unclosedCodeFence": "コードフェンスが閉じられていません(${lineNo} 行目から開始):それ以降の内容が 1 つのコードブロックとして表示されます — 見出し・表・数式もコードテキストになります。閉じ側のフェンスを追加してください。",
     "warn.tableLikeNotParsed": "表のように見えますが表として組版されていません(先頭行: ${lineText});先頭行の下に区切り行(例: | --- | --- |)を追加してください",
     // kind は推送期の中国語カテゴリ語(条目数/层级)のためプレースホルダーを保持
     // (en と同じ口径で、触頂した次元を特定できる情報を落とさない)

@@ -65,6 +65,13 @@ const dict = {
     "convert.merge.failed": "Merge failed: ${error}",
     "convert.merge.failedTitle": "Merge failed",
     "convert.merge.nameSuffix": "${name}-merged",
+    // merge blocked by an unclosed fence (user decision 2026-09-27): report only the
+    // first offending file; file/lineNo are filled by the renderer from the warning's
+    // blocksMerge signal
+    "convert.merge.blockedUnclosedFence": "Merge blocked: the code fence at line ${lineNo} of ${file} is never closed — after merging, the rest of that file and every file after it would be turned into a single code block. Fix that file first, then merge.",
+    "convert.merge.blockedUnclosedFenceMore": "Another ${count} file(s) also have an unclosed code fence and will block the merge until fixed.",
+    "convert.merge.blockedTitle": "Merge not run",
+    "convert.merge.blockedStatus": "Merge not run: ${count} file(s) have an unclosed code fence — see the details below",
     "convert.canceling": "Canceling…",
     "convert.cancelFailed": "Cancel failed, please retry",
     "convert.start": "Start Conversion",
@@ -468,7 +475,7 @@ const dict = {
     "warn.unsupportedMathDelimiter": "`\\(` / `\\[` are not equation delimiters this tool supports: they print as plain text and no equation is rendered. Use `$…$` (inline) or `$$…$$` (on its own line)",
     "warn.htmlTagNotAllowed": "HTML tag <${tag}> is outside the supported list and its content will be dropped. Use Markdown syntax or plain text instead",
     "warn.unpairedMathDelimiter": "Equation delimiter $ is unpaired (near: ${snippet}); an unpaired $ prints as plain text — add the closing $",
-    "warn.unclosedCodeFence": "Code fence is never closed (it starts at line ${lineNo}): everything after it is treated as code and will not appear in the output — add the closing three backticks",
+    "warn.unclosedCodeFence": "Code fence is never closed (it starts at line ${lineNo}): everything after it is shown as a single code block — headings, tables and equations turn into code text. Add the closing fence.",
     "warn.tableLikeNotParsed": "This looks like a table but was not laid out as one (first line: ${lineText}); add a delimiter row under the first line (e.g. | --- | --- |)",
     // kind 为推送期的中文类别词(条目数/层级,来自 pathScanLimitWarning 调用侧),
     // 文案保留插值以便定位触顶维度(同 warn.unsupportedBlockInContainer 口径)

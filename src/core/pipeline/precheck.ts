@@ -120,12 +120,17 @@ function unpairedMathDelimiterWarning(snippet: string): KeyedWarning {
  * ③ 告警:lineNo 为未闭合围栏的**起始行号**(number,1-based,用户据此定位)。
  * 键名带类型语义(…No = 行号),与 ④ 的 lineText(行内容,string)不共用 `line` ——
  * 同一键在两条告警上异型会让渲染层按字符串/按数字使用时踩雷。
+ * blocksMerge:五类里唯一会连带吞掉**别的文件**的一类(合并时跨越文件边界),
+ * 故带该信号让合并流程阻断(字段语义见 core/i18n.ts 的 KeyedWarning)。
+ * 措辞只说事实:内容照样显示,只是变成一个代码块 —— 早前写成「不显示」是错的,
+ * 用户按那句理解会以为「该消失却还在」(GUI 实测 2026-09-27 反馈)。
  */
 function unclosedCodeFenceWarning(lineNo: number): KeyedWarning {
   return {
     key: "warn.unclosedCodeFence",
     params: { lineNo },
-    fallback: `代码围栏没有闭合(第 ${lineNo} 行开始):之后的内容会被整段当成代码而不显示;请补上收尾的三个反引号`,
+    fallback: `代码围栏没有闭合(第 ${lineNo} 行开始):它之后的内容会被整段当作一个代码块显示 —— 标题、表格、公式都会变成代码文本。请补上收尾的围栏。`,
+    blocksMerge: true,
   };
 }
 

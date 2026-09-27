@@ -20,6 +20,7 @@ import {
 } from "../ui/dom-ops.js";
 import { actionableError, baseName, errorMessage } from "../state/pure.js";
 import {
+  precheckFileLabels,
   showBatchDialog,
   showCompleteDialog,
   showPrecheckDialog,
@@ -28,6 +29,7 @@ import {
 } from "../ui/dialogs.js";
 import { setCommandBusyProbe, updateActionButtons } from "./file-list.js";
 import { t } from "../../core/i18n.js";
+import { formatWarning, type ConvertWarning, type KeyedWarning } from "../../core/i18n.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 
 /** 错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
@@ -88,14 +90,42 @@ function isBusyResult(value: unknown): value is OperationBusyResult {
   return typeof value === "object" && value !== null && "busy" in value && value.busy === true;
 }
 
+/** 合并阻断信息:由预检链判定,交合并入口按其既有失败路径呈现。 */
+export interface MergeBlockReport {
+  /** 命中阻断的源文件(展示用文件名,与合并其余文案一致) */
+  file: string;
+  /** 未闭合围栏的起始行号(取自告警 params;告警没带则为 null) */
+  lineNo: string | number | null;
+  /** 除首个之外还有几个文件同样带阻断告警(0 = 只有这一个) */
+  moreFiles: number;
+}
+
+/**
+ * 预检处置口径。判别联合:只有 kind="merge" 会因 blocksMerge 告警阻断,且
+ * **必须**同时给出呈现回调(阻断是合并专属的失败形态,单文件/批量没有对应物);
+ * single/batch 不接受该回调 —— 它们永不阻断,给了即为误用。
+ */
+type PrecheckPolicy =
+  | { kind: "single" | "batch" }
+  | { kind: "merge"; onBlocked: (report: MergeBlockReport) => void };
+
+/** blocksMerge 信号:字面量 true 才是阻断信号(字符串告警与无该键的告警一律不算)。 */
+function isMergeBlocking(warning: ConvertWarning): warning is KeyedWarning {
+  return typeof warning !== "string" && warning.blocksMerge === true;
+}
+
 /**
  * 逐文件预检并汇总告警(按源文件分组,报告里能看出每条来自哪份稿子);
  * 无告警静默放行,有告警弹报告对话框。返回是否放行。
- * 口径(三种不放行,均沿用既有语义):预检返回 busy → 提示并中止;
- * 用户点「取消」→ 中止;报告决策期间出现别的转换/模态 → 中止。
+ * 口径(不放行的几种,均沿用既有语义):预检返回 busy → 提示并中止;用户点「取消」
+ * → 中止;报告决策期间出现别的转换/模态 → 中止;**合并命中 blocksMerge → 走
+ * onBlocked 呈现阻断并中止**(不弹报告框:那个框的「继续转换」对阻断是假按钮)。
  * 逐文件预检抛错 → 该文件跳过(不阻断主流程,见 catch 注记)。
  */
-async function confirmPrecheck(filePaths: readonly string[]): Promise<boolean> {
+async function confirmPrecheck(
+  filePaths: readonly string[],
+  policy: PrecheckPolicy,
+): Promise<boolean> {
   const groups: PrecheckWarningGroup[] = [];
   for (const filePath of filePaths) {
     try {
@@ -110,6 +140,26 @@ async function confirmPrecheck(filePaths: readonly string[]): Promise<boolean> {
     }
   }
   if (groups.length === 0) return true;
+  if (policy.kind === "merge") {
+    // 只详报第一个出问题的文件(避免把一长串文件名塞进状态行),其余只给个数
+    const blocking = groups.flatMap((group) =>
+      group.warnings.filter(isMergeBlocking).map((warning) => ({ group, warning })),
+    );
+    const first = blocking[0];
+    if (first !== undefined) {
+      // 显示名与报告弹窗同一判据(同名回退全路径):候选集取**本次预检的全部源文件**
+      // —— 同名的干净孪生文件同样会让「intro.md」指代不明,而阻断是硬阻断、用户
+      // 没有「点继续」这条路可走,指代不清就得来回试错。
+      const labels = precheckFileLabels(filePaths);
+      const firstIndex = filePaths.indexOf(first.group.path);
+      policy.onBlocked({
+        file: labels[firstIndex] ?? baseName(first.group.path),
+        lineNo: first.warning.params?.lineNo ?? null,
+        moreFiles: new Set(blocking.slice(1).map((hit) => hit.group.path)).size,
+      });
+      return false;
+    }
+  }
   if (!(await showPrecheckDialog(groups))) return false;
   // 决策等待期间可能已进入转换或新模态打开:续作与其他入口共用同一前置校验
   return !isBackgroundCommandBlocked();
@@ -119,16 +169,19 @@ async function confirmPrecheck(filePaths: readonly string[]): Promise<boolean> {
  * 转换前预检 + renderer command single-flight。逐文件聚合告警,无问题静默继续;
  * 有问题弹报告对话。预检/用户决策/实际 action 视为同一命令,重复点击不启动第二条链。
  * 返回的 Promise 必定结算(取消/忙碌/决策后受阻/异常均收敛),调用方 void 启动即可。
+ * @param policy 处置口径;缺省按 single(不阻断)。成书向导只借锁、传空文件列表,
+ *   故不传该参;真正的转换一律经 precheckedCommand 显式传自己的 kind。
  */
 export function withPrecheck(
   filePaths: string[],
   action: () => void | Promise<void>,
+  policy: PrecheckPolicy = { kind: "single" },
 ): Promise<void> {
   if (activePrecheck !== null) return activePrecheck.promise;
   if (isBackgroundCommandBlocked()) return Promise.resolve();
 
   const token = Symbol("precheck-command");
-  const operation = runPrecheckChain(token, filePaths, action);
+  const operation = runPrecheckChain(token, filePaths, action, policy);
   // ⚠️ 登记顺序:链体的**第一个语句必须含 await**(现为 confirmPrecheck)。
   // 链体在第一个 await 处挂起后本行才执行,故 activePrecheck 一定先于链内任何
   // 动作生效。若日后把链体改成同步起步,本行的登记会晚于链内动作,出现
@@ -147,9 +200,10 @@ async function runPrecheckChain(
   token: symbol,
   filePaths: string[],
   action: () => void | Promise<void>,
+  policy: PrecheckPolicy,
 ): Promise<void> {
   try {
-    if (!(await confirmPrecheck(filePaths))) return;
+    if (!(await confirmPrecheck(filePaths, policy))) return;
     // action 的首个同步段会置 state.mode;先释放预检锁,让受控 action 通过统一守卫。
     // 覆盖集在本段交接给 action(action 期间非 null,供链内续作免重复预检)。
     const covered = new Set(filePaths);
@@ -175,17 +229,19 @@ async function runPrecheckChain(
  * 登记(内层链释放不掉 → 命令锁悬挂,界面此后不再响应任何命令)。
  * @param filePaths 本次转换的源文件
  * @param action 受控执行段(首个同步段即置 state.mode)
+ * @param policy 处置口径(决定 blocksMerge 告警是否阻断本次命令)
  */
 async function precheckedCommand(
   filePaths: string[],
   action: () => Promise<void>,
+  policy: PrecheckPolicy,
 ): Promise<void> {
   const covered = chainCovered;
-  if (covered === null) return withPrecheck(filePaths, action);
+  if (covered === null) return withPrecheck(filePaths, action, policy);
   const pending = filePaths.filter((filePath) => !covered.has(filePath));
   for (const filePath of pending) covered.add(filePath);
   if (pending.length > 0) {
-    if (!(await confirmPrecheck(pending))) return;
+    if (!(await confirmPrecheck(pending, policy))) return;
     // 补检期间(此处有 await,而外层链的锁已交给 action)若有别的命令起链,
     // 统一守卫拦下本次续作,避免两条命令并发。
     if (isBackgroundCommandBlocked()) return;
@@ -201,7 +257,9 @@ async function precheckedCommand(
  * @param format 目标格式
  */
 export function runConvert(filePath: string, format: "docx" | "pdf"): Promise<void> {
-  return precheckedCommand([filePath], () => runConvertAction(filePath, format));
+  return precheckedCommand([filePath], () => runConvertAction(filePath, format), {
+    kind: "single", // 单文件里未闭合围栏只影响本文件,维持「警告 + 可继续」
+  });
 }
 
 /**
@@ -269,7 +327,9 @@ export function runBatch(files?: string[], format?: "docx" | "pdf"): Promise<voi
   const targets = files ?? state.selectedFiles;
   // 主入口(不传文件)沿用「≥2 个文件」规则;重试失败项入口允许单个失败文件单独重转
   if (targets.length < (files === undefined ? 2 : 1)) return Promise.resolve();
-  return precheckedCommand(targets, () => runBatchConvert(targets, format));
+  return precheckedCommand(targets, () => runBatchConvert(targets, format), {
+    kind: "batch", // 批量每份各自成文,围栏不跨文件,维持「警告 + 可继续」
+  });
 }
 
 /**
@@ -345,7 +405,40 @@ export function runMerge(
 ): Promise<void> {
   const files = opts?.files ?? state.selectedFiles;
   if (files.length < 2) return Promise.resolve();
-  return precheckedCommand(files, () => runMergeConvert(files, opts));
+  return precheckedCommand(files, () => runMergeConvert(files, opts), {
+    kind: "merge", // 合并跨文件:未闭合围栏会吞掉后续所有文件,故直接阻断
+    onBlocked: reportMergeBlocked,
+  });
+}
+
+/**
+ * 合并阻断的呈现:完全复用合并既有的失败路径(状态行 setError + 汇总条
+ * showSummary fail),不新造模态 —— 阻断没有可决策的动作,弹一个带「继续转换」
+ * 按钮的框反而是假的。
+ * 两处各说一半、长文本只出现一次(用户实测 2026-09-27):状态行是一行字的语汇,
+ * 只放短句(几个文件);完整长文本(哪个文件 / 第几行 / 后果 / 还有几个)进汇总卡。
+ * 两处同长文本既冗余,又各自撑成多行、把 96px 固定槽里的对方挤出可视区(裁切根因,
+ * 见 base.css .status--error 的 white-space:normal 与 .status 缺 flex:none)。
+ * 标题用「未执行」而非既有的「合并失败」:这次转换根本没开始(预检段就被拦下),
+ * 说「失败」会让人以为转换跑过。真正的失败(拿 result.error 那条)仍用旧标题。
+ * 阻断发生在预检段(state.mode 尚未置位、进度条未起),故这里无需任何收尾:
+ * 预检链的 finally 会释放命令锁,按钮随之恢复可用(不留「永久忙碌」)。
+ */
+function reportMergeBlocked(report: MergeBlockReport): void {
+  const detail = formatWarning({
+    key: "convert.merge.blockedUnclosedFence",
+    params: { file: report.file, lineNo: report.lineNo ?? "?" },
+    // 兜底文案只在「当前语言与 en 都缺该键」时露出,与 core 的 fallback 同角色
+    fallback: `合并转换已阻止:${report.file} 第 ${report.lineNo ?? "?"} 行的代码围栏没有闭合 —— 合并后本文件剩余部分与后续所有文件都会变成一个代码块。请先修好该文件再合并。`,
+  });
+  const error =
+    report.moreFiles > 0
+      ? `${detail} ${t("convert.merge.blockedUnclosedFenceMore", { count: report.moreFiles })}`
+      : detail;
+  // 短句的 count = 带阻断告警的文件总数(含详报的那个);卡片里的「另有 N 个」是
+  // 「除首个之外」的同一组事实,两个数不要混用
+  setError(t("convert.merge.blockedStatus", { count: report.moreFiles + 1 }));
+  showSummary({ kind: "fail", title: t("convert.merge.blockedTitle"), error });
 }
 
 /**

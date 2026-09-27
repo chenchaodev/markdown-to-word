@@ -368,15 +368,20 @@ function renderPrecheckItem(warning: ConvertWarning): HTMLLIElement {
 }
 
 /**
- * 分组标题的显示名:默认只给文件名(弹窗 520px,全路径会挤掉告警正文;完整路径挂
- * title 供悬停)。**同名文件例外**:两个分组显示同一个名字就等于没分组,此时这些
- * 分组一律回退全路径,保证每组可区分。
+ * 预检相关的**文件显示名**:默认只给文件名(界面窄,全路径会挤掉正文;完整路径由
+ * 载体挂 title 或落在可滚动区)。**同名文件例外**:候选集里出现重名时这些文件一律
+ * 回退全路径 —— 两个条目显示同一个名字等于没区分,用户照着名字找不到自己那份稿。
+ *
+ * 判据单源:报告弹窗的分组标题(groups 的 path 列表)与合并阻断信息
+ * (本次预检的 filePaths 列表)共用本函数,两处口径不得分叉。
+ * @param paths 候选源文件路径(顺序即返回顺序)
+ * @returns 与入参等长的显示名列表
  */
-function precheckGroupLabels(groups: PrecheckWarningGroup[]): string[] {
-  const names = groups.map((group) => baseName(group.path));
+export function precheckFileLabels(paths: readonly string[]): string[] {
+  const names = paths.map((path) => baseName(path));
   const duplicated = new Set(names.filter((name) => names.indexOf(name) !== names.lastIndexOf(name)));
-  return groups.map((group, index) =>
-    duplicated.has(names[index] ?? "") ? group.path : (names[index] ?? ""),
+  return paths.map((path, index) =>
+    duplicated.has(names[index] ?? "") ? path : (names[index] ?? ""),
   );
 }
 
@@ -392,7 +397,7 @@ export function showPrecheckDialog(groups: PrecheckWarningGroup[]): Promise<bool
   if (groups.length <= 1) {
     precheckList.replaceChildren(...groups.flatMap((group) => group.warnings.map(renderPrecheckItem)));
   } else {
-    const labels = precheckGroupLabels(groups);
+    const labels = precheckFileLabels(groups.map((group) => group.path));
     precheckList.replaceChildren(
       ...groups.map((group, index) => {
         const li = document.createElement("li");
