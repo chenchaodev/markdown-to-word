@@ -29,6 +29,12 @@ const HOST_EXCLUDE_DIRS = new Set(['archive', 'large']);
 /** 归档文件名里不登记进表的两个文件:本索引自身与该目录说明页 */
 const ARCHIVE_EXCLUDED = new Set(['INDEX.md', 'README.md']);
 
+/**
+ * 形态豁免:全局配置目录 `AGENTS.md` 六的文档体系表行里,`user-guide-vX.Y.md` 是唯一
+ * 不由时间戳命名的归档专用名(用户指南按大版本归档),故它不受形态断言约束。
+ */
+const NAME_FORM_EXEMPT_RE = /^user-guide-v\d+\.\d+\.md$/;
+
 /** 归档文件名形态:`YYYYMMDD-HHmmss-<工作项ID>-<主题>`(工作项ID 可缺省) */
 const TIMESTAMP_PREFIX_RE = /^\d{8}-\d{6}-/;
 /** 工作项号:用户需求 REQ-NNN / 技术债 REF-NNN */
@@ -70,6 +76,30 @@ function listArchiveFiles() {
   return readdirSync(archiveDir, { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith('.md') && !ARCHIVE_EXCLUDED.has(e.name))
     .map((e) => e.name)
+    .sort();
+}
+
+/**
+ * docs/archive/ 下全部 *.md 文件名(**含**本索引与说明页)。形态断言要用它而不是
+ * `listArchiveFiles()` 的结果:枚举已把 ARCHIVE_EXCLUDED 滤掉,若断言复用枚举结果,
+ * 「塞一份形态不对的特例文件」就会静默混过门禁,而本目录本来就存过一批历史偏差命名。
+ * @returns {string[]} 文件名(不含目录)
+ */
+function listArchiveDirMd() {
+  return readdirSync(archiveDir, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.md'))
+    .map((e) => e.name);
+}
+
+/**
+ * 归档原文文件名形态断言:非豁免文件必须匹配 `TIMESTAMP_PREFIX_RE`。
+ * 放在目录枚举门禁里(而不是只写进 README 约定)是因为本目录的历史偏差命名正是
+ * 「靠散文约定慢慢滑过来」的产物 —— 偏差只有当场变红才拦得住。
+ * @returns {string[]} 不合规文件名(空数组 = 通过)
+ */
+function findOffFormNames() {
+  return listArchiveDirMd()
+    .filter((name) => !ARCHIVE_EXCLUDED.has(name) && !NAME_FORM_EXEMPT_RE.test(name) && !TIMESTAMP_PREFIX_RE.test(name))
     .sort();
 }
 
@@ -147,6 +177,16 @@ function main(argv) {
     return 1;
   }
   const check = argv.includes('--check');
+  // 形态断言排在生成/比对之前:不合规时宁可不写索引 —— 写出去的表会把偏差固化成「已登记」
+  const offForm = findOffFormNames();
+  if (offForm.length > 0) {
+    console.error(
+      `[gen-archive-index:fail] docs/archive/ 下 ${offForm.length} 份文件名不符合 \`YYYYMMDD-HHMMSS-<主题>.md\` 形态(豁免仅 ${[...ARCHIVE_EXCLUDED].join(' / ')} 与 user-guide-vX.Y.md):`,
+    );
+    for (const name of offForm) console.error(`  ${name}`);
+    console.error('[gen-archive-index:fail] 改成 6 位时间戳后重跑(原名只到分钟,秒位无信息就补 `00`);改名走 `git mv` 以保历史可追,改完跑 `npm run gen:archive-index`');
+    return 1;
+  }
   const fileNames = listArchiveFiles();
   const findHost = makeHostIndex();
   const want = buildIndex(fileNames, findHost);

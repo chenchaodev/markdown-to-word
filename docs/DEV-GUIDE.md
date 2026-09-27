@@ -8,7 +8,7 @@
 - Electron 二进制镜像(本地开发勿回退,装 electron/打包前设置):经 `scripts/setup-env.ps1` 一次性写入**用户级环境变量** `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`(GitHub Actions 不需要);勿在 `.npmrc` 写这两个键——npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`,electron-builder 读不到
   - `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`
   - `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`
-- 依赖钉死与全部「勿回退」约束见项目 `AGENTS.md`「硬约束」节;钉死理由清单见 [`archive/20260927-1706-事实-依赖与工具链.md`](archive/20260927-1706-事实-依赖与工具链.md) 的「审计整改记录(依赖钉死策略清单)」条
+- 依赖钉死与全部「勿回退」约束见项目 `AGENTS.md`「硬约束」节;钉死理由清单见 [`archive/20260927-170600-事实-依赖与工具链.md`](archive/20260927-170600-事实-依赖与工具链.md) 的「审计整改记录(依赖钉死策略清单)」条
 
 ## 命令
 | 命令 | 用途 |
@@ -30,7 +30,7 @@
 
 ## 本地打包注意事项
 
-`npm run dist`(electron-builder NSIS)在本机实测踩到三类坑,根因与完整解法见 [`archive/20260927-1706-事实-供应链与发布.md`](archive/20260927-1706-事实-供应链与发布.md) 的「Windows 本地打包踩坑(长路径)」与「G5 打包坑」条:
+`npm run dist`(electron-builder NSIS)在本机实测踩到三类坑,根因与完整解法见 [`archive/20260927-170600-事实-供应链与发布.md`](archive/20260927-170600-事实-供应链与发布.md) 的「Windows 本地打包踩坑(长路径)」与「G5 打包坑」条:
 
 - **Defender 重命名 EPERM**:electron 解压到 `win-unpacked.tmp` 后被 Windows Defender 实时扫描锁文件句柄,`rename .tmp → win-unpacked` 失败。绕过:用 `--config.electronDist=<node_modules/electron/dist>` 直接喂 npm install 已解压的 electron 发行目录,electron-builder 改为 copy(非解压后 rename)。
 - **长路径 / OneDrive 锁**:项目在 `Documents\opencode\...`(OneDrive 同步)时,即便建 junction 也仍解析真实路径写入,重命名同样失败且路径过长。绕过:用 `--config.directories.output=<非 OneDrive 短路径>` 重定向输出(如 `C:\m2w-out`,路径依环境而定)。
