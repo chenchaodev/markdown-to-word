@@ -15,7 +15,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
-import { convert } from "../../dist/core/convert.js";
 import { formatWarning, setLanguage } from "../../dist/core/i18n.js";
 import {
   parseImageSizeAttrs,
@@ -35,7 +34,7 @@ import {
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { asDocxArtifact, asPdfArtifact } from "../common/convert-helpers.js";
+import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
 /** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
 /** @typedef {import("../../src/core/i18n.js").KeyedWarning} KeyedWarning */
@@ -43,7 +42,8 @@ import { asDocxArtifact, asPdfArtifact } from "../common/convert-helpers.js";
 /** @typedef {import("../../src/core/markdown/image-size.js").ParsedImageSizeAttrs} ParsedImageSizeAttrs */
 
 /**
- * convert() 的类型化别名:运行期就是 dist 的 convert(零行为差异),只把返回类型
+ * convert 的类型化别名:运行期是共享包装 convertWithFs(= dist 的 convert 注入宿主文件
+ * 系统能力 fs,REF-025 #07 起 pdf 渲染路径不再自带 node:fs),渲染行为不变,只把返回类型
  * 对齐到 src 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind
  * 被拓宽为 string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
  * 入参保持宽松(本段按运行时事实传上下文,上下文契约由 core 自身类型守护)。
@@ -51,7 +51,7 @@ import { asDocxArtifact, asPdfArtifact } from "../common/convert-helpers.js";
  */
 const convertTyped =
   /** @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>} */ (
-    convert
+    convertWithFs
   );
 
 /**

@@ -7,7 +7,6 @@
  * 不依赖真打印;另断言 webp logo 降级警告与 keyed 警告工厂。
  */
 import JSZip from "jszip";
-import { convert } from "../../dist/core/convert.js";
 import { DEFAULT_HEADER_FOOTER } from "../../dist/core/settings/settings-defaults.js";
 import {
   buildPdfHeaderTemplate,
@@ -16,7 +15,7 @@ import {
 } from "../../dist/core/pdf/template.js";
 import { headerLogoLoadFailedWarning } from "../../dist/core/image/image-warning.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
@@ -101,7 +100,7 @@ export async function run() {
     headerMode: "custom",
     headerText: "机密文档 · 内部资料",
   };
-  const customDocx = /** @type {ConvertArtifact} */ (await convert(md, "docx", {
+  const customDocx = /** @type {ConvertArtifact} */ (await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     title: "标题占位",
@@ -115,7 +114,7 @@ export async function run() {
   assert(!customXml.includes("标题占位"), "custom 模式不应再显示文档标题");
 
   // ---- 2. docx leftRight:右对齐制表位(TabStopType.RIGHT),非居中 ----
-  const lrDocx = /** @type {ConvertArtifact} */ (await convert(md, "docx", {
+  const lrDocx = /** @type {ConvertArtifact} */ (await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     title: "标题占位",
@@ -126,7 +125,7 @@ export async function run() {
   assert(!lrXml.includes('w:jc w:val="center"'), "leftRight 布局不应居中");
 
   // ---- 3. docx logo:png 数据 → w:drawing + media part;webp → 警告降级 ----
-  const logoDocx = /** @type {ConvertArtifact} */ (await convert(md, "docx", {
+  const logoDocx = /** @type {ConvertArtifact} */ (await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     title: "标题占位",
@@ -142,7 +141,7 @@ export async function run() {
   );
   /** @type {unknown[]} */
   const webpWarnings = [];
-  const webpDocx = /** @type {ConvertArtifact} */ (await convert(md, "docx", {
+  const webpDocx = /** @type {ConvertArtifact} */ (await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: webpWarnings,
     title: "标题占位",
@@ -157,7 +156,7 @@ export async function run() {
   );
 
   // ---- 4. docx none:无页眉部件 ----
-  const noneDocx = /** @type {ConvertArtifact} */ (await convert(md, "docx", {
+  const noneDocx = /** @type {ConvertArtifact} */ (await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     title: "标题占位",
@@ -167,7 +166,7 @@ export async function run() {
   assert(noneHeaders.names.length === 0, "none 模式不应生成任何 header part");
 
   // ---- 5. docx footerEnabled=false:无页脚部件 ----
-  const noFooterDocx = /** @type {ConvertArtifact} */ (await convert(md, "docx", {
+  const noFooterDocx = /** @type {ConvertArtifact} */ (await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     title: "标题占位",
@@ -176,7 +175,7 @@ export async function run() {
   assert((await footerNames(docxBufferOf(noFooterDocx))).length === 0, "footerEnabled=false 不应生成 footer part");
 
   // ---- 6. default 行为回归:标题居中 + 页码页脚存在 ----
-  const defDocx = /** @type {ConvertArtifact} */ (await convert(md, "docx", {
+  const defDocx = /** @type {ConvertArtifact} */ (await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     title: "回归标题",
@@ -189,7 +188,7 @@ export async function run() {
   assert((await footerNames(docxBufferOf(defDocx))).length > 0, "默认应有页码页脚 part");
 
   // ---- 7. pdf 模板:custom 渲染文字/logo/布局,default 与 none 空模板 ----
-  const customPdf = /** @type {ConvertArtifact} */ (await convert(md, "pdf", {
+  const customPdf = /** @type {ConvertArtifact} */ (await convertWithFs(md, "pdf", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     headerFooter: hfCustom,
@@ -211,7 +210,7 @@ export async function run() {
   assert(defHf === PDF_EMPTY_CHROME_TEMPLATE, "default 模式 PDF 维持现状(空页眉模板)");
   const noneHf = buildPdfHeaderTemplate({ ...DEFAULT_HEADER_FOOTER, headerMode: "none" });
   assert(noneHf === PDF_EMPTY_CHROME_TEMPLATE, "none 模式 PDF 空页眉模板");
-  const noFooterPdf = /** @type {ConvertArtifact} */ (await convert(md, "pdf", {
+  const noFooterPdf = /** @type {ConvertArtifact} */ (await convertWithFs(md, "pdf", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     headerFooter: { ...DEFAULT_HEADER_FOOTER, footerEnabled: false },

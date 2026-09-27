@@ -8,12 +8,11 @@
  * w:val="yellow"、strike → <w:strike/>、underline → <w:u w:val="single"/>、
  * 换行 → <w:br/>(TextRun break: 1)。
  */
-import { convert } from "../../dist/core/convert.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:白名单标签 + 危险样例(gen-fixtures 落盘为 acceptance/raw-html.md) */
 const htmlMd = `# 白名单测试
@@ -36,7 +35,7 @@ export const fixtures = { main: htmlMd, cross: crossMd };
 
 export async function run() {
   const htmlDocx = docxBufferOf(
-    await convert(htmlMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
+    await convertWithFs(htmlMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
   );
   const htmlDocument = await unzipPart(htmlDocx, "word/document.xml");
   /** @type {[string, string][]} 断言表 [XML 片段, 中文标签] */
@@ -72,7 +71,7 @@ export async function run() {
   // 注:转义仅作用于标签字符(< > & "),标签内文本(如 alert(1)、块级)按转义语义
   // 保留为可见文本,故断言"标签被转义"(&lt;script&gt; / &lt;div)而非文本消失。
   const htmlPdf = asPdfArtifact(
-    await convert(htmlMd, "pdf", { baseDir: FIXTURES_DIR, title: "白名单测试", warnings: [] }),
+    await convertWithFs(htmlMd, "pdf", { baseDir: FIXTURES_DIR, title: "白名单测试", warnings: [] }),
   );
   /** @type {[string, string][]} 断言表 [HTML 片段, 中文标签] */
   const htmlPdfChecks = [
@@ -110,7 +109,7 @@ export async function run() {
   // 闭标签 html 节点)整体丢弃、内容文本(险)不残留;而「<strong>乙</strong></div>」
   // 白名单整串合并先行 → 乙 保留为粗体运行,孤立危险闭标签丢弃。
   const crossDocument = await unzipPart(
-    docxBufferOf(await convert(crossMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })),
+    docxBufferOf(await convertWithFs(crossMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })),
     "word/document.xml",
   );
   if (crossDocument.includes("</div>")) {
@@ -128,7 +127,7 @@ export async function run() {
   console.log("[ok] docx 交叉边界:危险段整体丢弃(无 </div> 残留/文本不残留)+ 白名单整串保留 + 行首 html 块渲染");
 
   const crossPdf = asPdfArtifact(
-    await convert(crossMd, "pdf", { baseDir: FIXTURES_DIR, title: "交叉边界测试", warnings: [] }),
+    await convertWithFs(crossMd, "pdf", { baseDir: FIXTURES_DIR, title: "交叉边界测试", warnings: [] }),
   );
   if (!crossPdf.html.includes("<strong>行首粗体</strong>")) {
     throw new Error("交叉边界断言失败:PDF 行首白名单 html_block 应原样输出");

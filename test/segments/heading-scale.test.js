@@ -10,7 +10,6 @@
  * - 旧配置缺字段回归:headingScale/headingSpacing 缺失或非法 → 默认 standard 档
  *   (main sanitizeTypography 钳制 + renderer mergeSettingsWithDefaults 兜底双侧断言)。
  */
-import { convert } from "../../dist/core/convert.js";
 import {
   DEFAULT_TYPOGRAPHY,
   headingFontSizePt,
@@ -20,7 +19,7 @@ import {
 import { mergeSettingsWithDefaults } from "../../dist/renderer/settings/settings-logic.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 import fs from "node:fs/promises";
 
@@ -88,7 +87,7 @@ export async function run() {
 
   // ================= 2. docx 产物:标题 run w:sz + 段前段后 twips =================
   // spacious 档:h1 26pt→52 half-points,h2 20pt→40;h2 段前/后 540/270 twips
-  const spcDocx = await convert(md, "docx", {
+  const spcDocx = await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     typography: typo({ headingScale: "spacious", headingSpacing: "spacious" }),
@@ -107,7 +106,7 @@ export async function run() {
 
   // ================= 3. pdf CSS:font-size / margin 参数化 =================
   const spcPdf = asPdfArtifact(
-    await convert(md, "pdf", {
+    await convertWithFs(md, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       typography: typo({ headingScale: "spacious", headingSpacing: "spacious" }),
@@ -118,7 +117,7 @@ export async function run() {
   assert(spcPdf.html.includes("h2 { font-size: 20pt;"), "pdf spacious h2 应为 font-size 20pt");
   // 默认(不传新字段,模拟旧配置)→ standard 档 = 升级前固定值
   const legacyPdf = asPdfArtifact(
-    await convert(md, "pdf", {
+    await convertWithFs(md, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       typography: { ...DEFAULT_TYPOGRAPHY, headingScale: undefined, headingSpacing: undefined },
@@ -133,7 +132,7 @@ export async function run() {
   const scale = "compact";
   for (const level of [1, 2, 3]) {
     const pt = headingFontSizePt(12, scale, level);
-    const cmpDocx = await convert(md, "docx", {
+    const cmpDocx = await convertWithFs(md, "docx", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       typography: typo({ headingScale: scale }),
@@ -144,7 +143,7 @@ export async function run() {
       `docx compact h${level} 应含 w:sz=${pt * 2}(同源换算 ${pt}pt×2)`,
     );
     const cmpPdfHtml = asPdfArtifact(
-      await convert(md, "pdf", {
+      await convertWithFs(md, "pdf", {
         baseDir: FIXTURES_DIR,
         warnings: [],
         typography: typo({ headingScale: scale }),

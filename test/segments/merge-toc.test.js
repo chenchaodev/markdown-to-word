@@ -8,7 +8,6 @@
  *   且后文件(经 page-break 起新页)标题页码严格大于前文件(PDF)
  * 复用 mergeMarkdowns → convert 一次;TOC 覆盖与页码由既有机制保障,本段防止回归。
  */
-import { convert } from "../../dist/core/convert.js";
 import { mergeMarkdowns } from "../../dist/core/pipeline/merge.js";
 import { extractHeadings, injectTocPageNumbers } from "../../dist/core/pdf/postprocess.js";
 import { renderPdfDocument } from "../../dist/core/pdf/render.js";
@@ -17,7 +16,7 @@ import { unzipPart } from "../common/docx-utils.js";
 import { PDFDocument } from "pdf-lib";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf, HOST_FS } from "../common/convert-helpers.js";
 
 const fileA = `# 第一章 A
 
@@ -75,7 +74,7 @@ export async function run() {
   }
 
   // docx:合并产物含总目录且覆盖两个文件全部标题
-  const docx = await convert(mergedMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: true });
+  const docx = await convertWithFs(mergedMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: true });
   const docXml = await unzipPart(docxBufferOf(docx), "word/document.xml");
   if (!docXml.includes("TOC")) throw new Error("合并总目录 断言失败:合并 docx 缺少 TOC 指令");
   for (const t of ALL_TITLES) {
@@ -85,7 +84,7 @@ export async function run() {
 
   // pdf:合并产物总目录(artifact.html)覆盖两个文件全部标题
   const pdfArt = asPdfArtifact(
-    await convert(mergedMd, "pdf", {
+    await convertWithFs(mergedMd, "pdf", {
       baseDir: FIXTURES_DIR,
       title: "合并样例",
       warnings: [],
@@ -137,6 +136,7 @@ export async function run() {
       baseDir: FIXTURES_DIR,
       title: "合并样例",
       toc: true,
+      fs: HOST_FS,
     });
     if (JSON.stringify(headings.map((h) => h.text)) !== JSON.stringify(ALL_TITLES)) {
       throw new Error(

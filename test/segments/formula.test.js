@@ -11,7 +11,6 @@
  * (围栏是 @mdit/plugin-katex 侧特性,属双格式语法不对称,验收用 $$ 块)。
  * JS 模板字符串内 TeX 反斜杠须双写(\\frac)。
  */
-import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { loadKatexCss } from "../../dist/core/pdf/katex-css.js";
 import { unzipPart } from "../common/docx-utils.js";
@@ -19,7 +18,7 @@ import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import path from "node:path";
 import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
-import { asPdfArtifact, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
@@ -53,7 +52,7 @@ export const fixtures = { main: formulaMd, degrade: degradeMd };
 export async function run() {
   const katexDir = KATEX_DIR;
   const formulaDocx = /** @type {ConvertArtifact} */ (
-    await convert(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], katexDir })
+    await convertWithFs(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], katexDir })
   );
   const formulaDocument = await unzipPart(docxBufferOf(formulaDocx), "word/document.xml");
   if (!formulaDocument.includes("<m:oMath")) {
@@ -74,7 +73,7 @@ export async function run() {
   }
   console.log("[ok] docx 公式:m:oMath 与 分式/行内上下标/开方/display 求和 序列化齐全");
 
-  const formulaPdf = /** @type {ConvertArtifact} */ (await convert(formulaMd, "pdf", {
+  const formulaPdf = /** @type {ConvertArtifact} */ (await convertWithFs(formulaMd, "pdf", {
     baseDir: FIXTURES_DIR, title: "公式测试", warnings: [], katexDir,
   }));
   const formulaHtml = pdfHtmlOf(formulaPdf);
@@ -99,7 +98,7 @@ export async function run() {
   /** @type {unknown[]} */
   const containerWarnings = [];
   const containerPdf = /** @type {ConvertArtifact} */ (
-    await convert(containerMd, "pdf", {
+    await convertWithFs(containerMd, "pdf", {
       baseDir: FIXTURES_DIR,
       title: "容器内公式",
       warnings: containerWarnings,
@@ -133,7 +132,7 @@ export async function run() {
   // renderPdfHtml 不抛错;公式仍渲染为 KaTeX HTML(仅缺字体样式)。
   /** @type {unknown[]} */
   const badKatexWarnings = [];
-  const badKatexPdf = /** @type {ConvertArtifact} */ (await convert(formulaMd, "pdf", {
+  const badKatexPdf = /** @type {ConvertArtifact} */ (await convertWithFs(formulaMd, "pdf", {
     baseDir: FIXTURES_DIR,
     title: "公式测试",
     warnings: badKatexWarnings,
@@ -185,7 +184,7 @@ export async function run() {
   /** @type {unknown[]} */
   const degradeWarnings = [];
   const degradeDocx = /** @type {ConvertArtifact} */ (
-    await convert(degradeMd, "docx", { baseDir: FIXTURES_DIR, warnings: degradeWarnings })
+    await convertWithFs(degradeMd, "docx", { baseDir: FIXTURES_DIR, warnings: degradeWarnings })
   );
   const degradeDocument = await unzipPart(docxBufferOf(degradeDocx), "word/document.xml");
   // 断言:降级 TeX 源码以等宽灰字出现在 document.xml(样式 needle 已实证:color 888888)
@@ -231,7 +230,7 @@ $$
 $$
 `;
   const fallbackDocx = /** @type {ConvertArtifact} */ (
-    await convert(fallbackMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
+    await convertWithFs(fallbackMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const fallbackDocument = await unzipPart(docxBufferOf(fallbackDocx), "word/document.xml");
   // 回落结构:MathSubSuperScript 而非 MathSum(无 m:nary)

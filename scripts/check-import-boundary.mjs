@@ -65,17 +65,26 @@ export const RESOURCE_ONLY_DEPENDENCIES = Object.freeze({
 
 /**
  * core 内允许 import node: 内建模块的文件(其余 core 文件一律判红)。
- * 逐个列文件而不是放行「某一组模块」:这四个文件各自因具体原因需要
- * 文件系统/URL 能力(合并目录探测、KaTeX css 落盘解析、预检 realpath、
- * pdf 图片 file:// 解析),新增一个即代表 core 又漏了宿主依赖面。
+ * 逐个列文件而不是放行「某一组模块」:这五个文件各自因具体原因需要
+ * 文件系统/URL 能力,新增一个即代表 core 又漏了宿主依赖面。
  * 书写 .ts 源文件名,匹配时按去扩展名比较(见 stripExtension),使同一份白名单
  * 同时约束 src 源与其编译产物 dist/*.js。
+ *
+ * 读这份表时请分清两类能力(REF-025 #07 之后):
+ * - **真做 IO**:precheck.ts(node:fs 存在性/realpath)、katex-css.ts(node:path 拼装 +
+ *   读取经注入,已不含 node:fs);
+ * - **纯字符串运算**:image.ts(node:url 转 file://)、merge.ts(node:path)、
+ *   image-path-policy.ts(node:path 的 resolve/relative/isAbsolute/sep/win32/posix)。
+ *   后者一个字节磁盘都不碰。image-path-policy.ts 的 node:path 是**刻意保留**的 ——
+ *   其中 path.relative 与 path.win32/posix 是符号链接逃逸判定(ADR-012)的承重逻辑,
+ *   自己实现一份就是制造安全漏洞,故宁可留白名单也不摘。
  */
 export const CORE_NODE_BUILTIN_FILES = Object.freeze([
   'core/pipeline/precheck.ts',
   'core/pdf/katex-css.ts',
   'core/pdf/rules/image.ts',
   'core/pipeline/merge.ts',
+  'core/markdown/image-path-policy.ts',
 ]);
 
 /**
@@ -137,6 +146,17 @@ export const LAYER_RULES = Object.freeze([
     // 依赖,这两条不变量就名存实亡(比如 refs 里塞进设置项判断)。
     forbid: 'prefix:../convert/,../settings/,../ui/,../wizard/',
     reason: 'renderer 基础层(dom/ 元素映射、state/ 纯函数核与 store)是所有功能模块的共同底座,不得反向依赖任何功能目录;唯一合法的向上引用是 ../../core/(跨进程契约单源)',
+  },
+  {
+    id: 'core-pdf-no-fs',
+    scope: 'core-pdf',
+    // 只禁 node:fs / node:fs/promises 这两个真做 IO 的内建;node:path 与 node:url
+    // 在 core/pdf 里是纯字符串运算(file:// 拼装、字体路径绝对化),继续按
+    // CORE_NODE_BUILTIN_FILES 的既有口径放行。
+    forbid: 'builtin:node:fs,node:fs/promises',
+    reason: 'core 的 pdf 渲染路径不做文件 IO:其两次读(图片路径边界的 realpathSync、'
+      + 'KaTeX CSS 读取)经 RenderPdfHtmlOptions.fs 由 main 注入(REF-025 #07),'
+      + '故 core/pdf/** 不得直接 import node:fs',
   },
 ]);
 
@@ -245,6 +265,8 @@ function scopeMatches(scope, file) {
   if (scope === 'renderer-foundation') {
     return file.startsWith('renderer/dom/') || file.startsWith('renderer/state/');
   }
+  // core 的 pdf 子树:scope 按 src 顶层目录匹配,故 core/pdf/** 需单列形态
+  if (scope === 'core-pdf') return file.startsWith('core/pdf/');
   return file === scope || file.startsWith(`${scope}/`);
 }
 
@@ -267,6 +289,15 @@ function ruleHits(rule, entry) {
     if (entry.kind !== 'relative') return false;
     const prefixes = rule.forbid.slice('prefix:'.length).split(',').map((p) => p.trim()).filter(Boolean);
     return prefixes.some((p) => entry.spec.startsWith(p));
+  }
+  if (rule.forbid.startsWith('builtin:')) {
+    // node: 内建的精确名单(逗号分隔)。需要它是因为 classifySpecifier 把 node:*
+    // 归为 kind 'builtin' 而非 'bare',故 bare: 形态匹配不到 —— 而我们需要的正是
+    // **按能力** 区分:core/pdf 里 node:path/node:url 纯字符串运算可以放行(见
+    // CORE_NODE_BUILTIN_FILES),node:fs 却是真 IO,故要单独一条规则禁。
+    if (entry.kind !== 'builtin') return false;
+    const names = rule.forbid.slice('builtin:'.length).split(',').map((p) => p.trim()).filter(Boolean);
+    return names.includes(entry.spec);
   }
   throw new Error(`未知的层向规则形态:${rule.forbid}`);
 }
@@ -409,6 +440,7 @@ export async function main(argv = []) {
       + `core 不依赖宿主且不反向依赖 GUI 两层;renderer 不反向依赖 main;main 不反向依赖 renderer;preload 不上跳引用 main;`
       + `smoke 不逃出 src/;`
       + `renderer 基础层(dom/state)不反向依赖功能目录;`
+      + `core 的 pdf 渲染路径不 import node:fs(能力经入参注入);`
       + `core 的 node: 内建白名单限 ${CORE_NODE_BUILTIN_FILES.length} 个文件`,
   );
   return 0;

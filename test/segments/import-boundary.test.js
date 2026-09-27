@@ -366,7 +366,7 @@ export async function run() {
           );
         }
       }
-      // 规则表形态:七条层向断言都在
+      // 规则表形态:八条层向断言都在
       for (const id of [
         "core-no-host",
         "core-no-upward",
@@ -375,6 +375,7 @@ export async function run() {
         "main-no-renderer",
         "smoke-no-outside-src",
         "renderer-foundation-no-feature-dep",
+        "core-pdf-no-fs",
       ]) {
         assert(LAYER_RULES.some((r) => r.id === id), `层向规则表缺 ${id}`);
       }
@@ -488,7 +489,9 @@ export async function run() {
           },
           {
             "core/pipeline/parse.ts": 'import { unified } from "unified";\nimport type { Node } from "mdast";\nexport { unified };\n',
-            "core/pdf/katex-css.ts": 'import fs from "node:fs";\nexport { fs };\n',
+            // core/pdf 只碰 node:path(纯字符串运算);node:fs 已由规则 core-pdf-no-fs 禁止
+            // (REF-025 #07:两次读改为经 RenderPdfHtmlOptions.fs 注入)
+            "core/pdf/katex-css.ts": 'import path from "node:path";\nexport { path };\n',
             "main/index.ts": 'import { app } from "electron";\nimport { x } from "../core/pipeline/parse.js";\nexport { app, x };\n',
             // renderer 取 preload 类型改从 core 取(REF-025 #03),不再是指向 main 的反向引用
             "renderer/renderer.ts": 'import type { PreloadApi } from "../core/preload-api.js";\nexport type { PreloadApi };\n',
@@ -605,6 +608,56 @@ export async function run() {
         track(sb.dir);
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assert(result.code === 0, `基础层引 core 应放行,实际 ${result.code}:${result.output}`);
+      }
+      // 5i. core/pdf 直接 import node:fs 必须判红(REF-025 #07 的新规则 core-pdf-no-fs)。
+      // 此前 core/pdf/katex-css.ts 直接引 readFileSync,使「core 的 pdf 渲染路径不做
+      // 文件 IO」只能是约定;能力改为经 RenderPdfHtmlOptions.fs 注入后,这条可门禁强制。
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "core/pdf/katex-css.ts": 'import { readFileSync } from "node:fs";\nexport { readFileSync };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /core\/pdf\/katex-css\.ts:import「node:fs」违反层向规则 core-pdf-no-fs/,
+          "core/pdf 直接 import node:fs",
+        );
+      }
+      // 5j. node:fs/promises 同样判红。夹具刻意用**白名单内**的文件名
+      // (core/pdf/katex-css.ts):若用未登记的文件,它会被「core 未登记 node:」那条
+      // 规则先判红,本规则是否生效就被掩盖了。
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "core/pdf/katex-css.ts": 'import { readFile } from "node:fs/promises";\nexport { readFile };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /core\/pdf\/katex-css\.ts:import「node:fs\/promises」违反层向规则 core-pdf-no-fs/,
+          "core/pdf 直接 import node:fs/promises",
+        );
+      }
+      // 5k. 边界:core/pdf 里的 node:url / node:path 是纯字符串运算(转 file://、
+      // 字体路径绝对化),不得被 core-pdf-no-fs 误伤 —— 这条规则只禁「真做 IO」的
+      // node:fs 与 node:fs/promises,不按前缀一刀切。
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          {
+            "core/pdf/rules/image.ts": 'import { pathToFileURL } from "node:url";\nexport { pathToFileURL };\n',
+            "core/pdf/katex-css.ts": 'import path from "node:path";\nexport { path };\n',
+          },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(
+          result.code === 0,
+          `core/pdf 的 node:url / node:path 是纯字符串运算,应放行,实际 ${result.code}:${result.output}`,
+        );
       }
       console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / renderer→main 绝对禁止(含 type-only) / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / 合法 smoke 依赖图不误伤)");
     }

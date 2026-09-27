@@ -8,12 +8,11 @@
  *   (规避 Chromium 打印 bug):input 元素与 label 包裹一并移除(实现实证,
  *   输出形如 <li class="task-list-item">☑ 已完成</li>,详见 src/core/pdf/render.ts)。
  */
-import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
@@ -33,7 +32,7 @@ export const fixtures = { main: taskMd };
 export async function run() {
   // ---------- docx ----------
   const docxArtifact = /** @type {ConvertArtifact} */ (
-    await convert(taskMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
+    await convertWithFs(taskMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const documentXml = await unzipPart(docxBufferOf(docxArtifact), "word/document.xml");
   // 列表项文本:[x]/[ ] 标记已被 remark-gfm 剥除(断言「已完成」「待办」渲染)
@@ -54,7 +53,7 @@ export async function run() {
   console.log("[ok] docx 任务列表:[x]/[ ] 标记剥除、按普通列表项渲染、无 checkbox 字形");
 
   // ---------- pdf ----------
-  const pdfArtifact = /** @type {ConvertArtifact} */ (await convert(taskMd, "pdf", {
+  const pdfArtifact = /** @type {ConvertArtifact} */ (await convertWithFs(taskMd, "pdf", {
     baseDir: FIXTURES_DIR,
     title: "任务列表测试",
     warnings: [],

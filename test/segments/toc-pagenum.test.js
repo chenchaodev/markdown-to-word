@@ -8,13 +8,12 @@
  *   → 第二遍注入页码 span,且页码随文档顺序单调递增、在页范围内
  * 复用既有 /Dests 命名目标解析(与书签大纲同源),免 pdfjs 文本匹配。
  */
-import { convert } from "../../dist/core/convert.js";
 import { injectTocPageNumbers, extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { pageNumbersForNames } from "../../dist/core/pdf/bookmarks.js";
 import { PDFDocument } from "pdf-lib";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
 const md = `# 第一章
 
@@ -96,7 +95,7 @@ export async function run() {
 
   // 端到端两遍法:field 模式转换 → 第一遍打印 → /Dests 解析页码 → 注入一致
   const art = asPdfArtifact(
-    await convert(md, "pdf", { baseDir: FIXTURES_DIR, title: "目录带页码样例", warnings: [], tocMode: "field" }),
+    await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, title: "目录带页码样例", warnings: [], tocMode: "field" }),
   );
   if (!art.html.includes('class="toc"')) throw new Error("目录带页码(ADR-007) 断言失败:field 模式应含目录");
   const pass1 = await htmlToPdf(art.html, art.footerTemplate);

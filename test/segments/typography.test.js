@@ -4,12 +4,11 @@
  * 双格式共用同一 typography 契约;docx 断言字号/字体/对齐/标题编号关闭,
  * pdf 断言模板 CSS 参数化;双格式产物落盘。
  */
-import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:排版设置正文(字号/行距/缩进/对齐,gen-fixtures 落盘为 acceptance/typography.md) */
 const typoMd = `# 排版设置测试
@@ -38,7 +37,7 @@ export async function run() {
   // 正文段落两端对齐;headingNumbering=false → 全文无编号引用
   // (md 无列表,故 w:numPr 全缺即可稳定断言标题编号已关闭)
   const typoDocx = docxBufferOf(
-    await convert(typoMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], typography }),
+    await convertWithFs(typoMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], typography }),
   );
   const typoStyles = await unzipPart(typoDocx, "word/styles.xml");
   const typoDocument = await unzipPart(typoDocx, "word/document.xml");
@@ -69,7 +68,7 @@ export async function run() {
 
   // pdf:模板 CSS 参数化断言(renderPdfHtml 产物字符串,不依赖 printToPDF)
   const typoPdf = asPdfArtifact(
-    await convert(typoMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [], typography }),
+    await convertWithFs(typoMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [], typography }),
   );
   /** @type {[string, string][]} [CSS 片段, 中文标签] */
   const typoChecks = [

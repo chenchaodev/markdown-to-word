@@ -10,7 +10,6 @@
  * 取消错误码单源 core/cancel.ts(ERR_CONVERSION_CANCELLED),main 层同码,
  * 故此处只断言 code 不做跨进程区分。
  */
-import { convert } from "../../dist/core/convert.js";
 import { texToDocxMath } from "../../dist/core/docx/handlers/math.js";
 import {
   DEFAULT_IMAGE_RESOURCE_BUDGET,
@@ -21,7 +20,7 @@ import {
 import { replaceMermaidPlaceholders } from "../../dist/core/pdf/mermaid.js";
 import { createCancellationGuard } from "../../dist/core/cancel.js";
 import { unzipPart } from "../common/docx-utils.js";
-import { docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+import { docxBufferOf, convertWithFs, pdfHtmlOf } from "../common/convert-helpers.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
@@ -56,7 +55,7 @@ export async function run() {
     controller.abort(new Error("cancelled-before-convert"));
     let resolverCalls = 0;
     await assertCancelled(
-      convert("![图](x.png)", "docx", {
+      convertWithFs("![图](x.png)", "docx", {
         baseDir: ".",
         signal: controller.signal,
         imageResolver: async () => {
@@ -77,7 +76,7 @@ export async function run() {
     /** @type {string[]} */
     const stages = [];
     await assertCancelled(
-      convert("# 标题", "pdf", {
+      convertWithFs("# 标题", "pdf", {
         baseDir: ".",
         deadline: Date.now() - 1,
         onStage: (/** @type {string} */ stage) => stages.push(stage),
@@ -94,7 +93,7 @@ export async function run() {
   {
     /** @type {string[]} */
     const stages = [];
-    const artifact = /** @type {ConvertArtifact} */ (await convert("# 标题\n\n正文\n", "pdf", {
+    const artifact = /** @type {ConvertArtifact} */ (await convertWithFs("# 标题\n\n正文\n", "pdf", {
       baseDir: ".",
       deadline: Date.now() + 60_000,
       onStage: (/** @type {string} */ stage) => stages.push(stage),
@@ -109,7 +108,7 @@ export async function run() {
     }
     // docx 侧同样:未到期 deadline 不影响渲染
     const docx = /** @type {ConvertArtifact} */ (
-      await convert("# 标题\n\n正文\n", "docx", { baseDir: ".", deadline: Date.now() + 60_000 })
+      await convertWithFs("# 标题\n\n正文\n", "docx", { baseDir: ".", deadline: Date.now() + 60_000 })
     );
     if (docx.kind !== "docx" || docxBufferOf(docx).length === 0) {
       throw new Error("core-resources 断言失败:未到期 deadline 下 DOCX 应正常产出");
@@ -122,7 +121,7 @@ export async function run() {
     const controller = new AbortController();
     /** @type {AbortSignal | undefined} */
     let requestSignal;
-    const pending = convert("![图](x.png)", "docx", {
+    const pending = convertWithFs("![图](x.png)", "docx", {
       baseDir: ".",
       signal: controller.signal,
       imageResolver: (
@@ -147,7 +146,7 @@ export async function run() {
     const controller = new AbortController();
     /** @type {unknown[]} */
     const warnings = [];
-    const pending = convert("![图](x.png)\n\n![图2](y.png)", "docx", {
+    const pending = convertWithFs("![图](x.png)\n\n![图2](y.png)", "docx", {
       baseDir: ".",
       signal: controller.signal,
       warnings,
@@ -178,7 +177,7 @@ export async function run() {
     const controller = new AbortController();
     /** @type {string[]} */
     const stages = [];
-    const pending = convert("![图](x.png)\n\n正文\n", "pdf", {
+    const pending = convertWithFs("![图](x.png)\n\n正文\n", "pdf", {
       baseDir: ".",
       signal: controller.signal,
       onStage: (/** @type {string} */ stage) => {
@@ -248,14 +247,14 @@ export async function run() {
     /** @type {unknown[]} */
     const warnings = [];
     const docx = /** @type {ConvertArtifact} */ (
-      await convert(`$$\n${untrusted}\n$$`, "docx", { baseDir: ".", warnings })
+      await convertWithFs(`$$\n${untrusted}\n$$`, "docx", { baseDir: ".", warnings })
     );
     const xml = await unzipPart(docxBufferOf(docx), "word/document.xml");
     if (xml.includes("<m:oMath") || !xml.includes("includegraphics")) {
       throw new Error("core-resources 断言失败:docx 恶意 TeX 应降级为源码且不产出 oMath");
     }
     const pdf = /** @type {ConvertArtifact} */ (
-      await convert(`$$\n${untrusted}\n$$`, "pdf", { baseDir: ".", warnings: [] })
+      await convertWithFs(`$$\n${untrusted}\n$$`, "pdf", { baseDir: ".", warnings: [] })
     );
     if (!pdfHtmlOf(pdf).includes("katex-error")) {
       throw new Error("core-resources 断言失败:PDF 不可信 TeX 未产生 katex-error 降级");
@@ -268,7 +267,7 @@ export async function run() {
     // 200 项求和:公式很大但合法,maxSize 只约束显式尺寸不约束公式宽度 → 正常渲染
     const bigTex = Array.from({ length: 200 }, (_, i) => `x_{${i}}`).join("+");
     const docx = /** @type {ConvertArtifact} */ (
-      await convert(`$$\n${bigTex}\n$$`, "docx", { baseDir: ".", warnings: [] })
+      await convertWithFs(`$$\n${bigTex}\n$$`, "docx", { baseDir: ".", warnings: [] })
     );
     if (docx.kind !== "docx" || docxBufferOf(docx).length === 0) {
       throw new Error("core-resources 断言失败:超大但合法的 TeX 应正常产出 docx");

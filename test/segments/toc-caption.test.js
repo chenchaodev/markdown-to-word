@@ -12,13 +12,12 @@
  * (不再借 typography 绕道),显式值优先于 typography,两侧口径一致——四组合
  * 断言见本段末(双格式 × 显式开/关两个方向)。
  */
-import { convert } from "../../dist/core/convert.js";
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
@@ -62,7 +61,7 @@ export const fixtures = { main: mainMd };
 
 export async function run() {
   const mainDocx = /** @type {ConvertArtifact} */ (
-    await convert(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
+    await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const docxXml = await unzipPart(docxBufferOf(mainDocx), "word/document.xml");
   // 8a-1:TOC 域指令仍在(w:sdt > w:instrText TOC \o "1-3" \h)
@@ -77,7 +76,7 @@ export async function run() {
   }
   // field 模式 → beginDirty:true(Word/WPS 打开弹更新提示并注入真实页码),条目仍指向书签
   const fieldToc = /** @type {ConvertArtifact} */ (
-    await convert(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], tocMode: "field" })
+    await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], tocMode: "field" })
   );
   const fieldDoc = await unzipPart(docxBufferOf(fieldToc), "word/document.xml");
   if (!fieldDoc.includes('w:dirty="true"')) {
@@ -96,13 +95,13 @@ export async function run() {
   }
   // 8a-4:toc 关闭 → docx 无 TOC 指令
   const noToc = /** @type {ConvertArtifact} */ (
-    await convert(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: false })
+    await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: false })
   );
   if ((await unzipPart(docxBufferOf(noToc), "word/document.xml")).includes("TOC")) {
     throw new Error("断言失败:toc:false 时 document.xml 不应含 TOC 指令");
   }
   // 8b-3:captionNumbering 显式关闭(不再借 typography 绕道)→ 题注行按普通段落(原文保留)
-  const noCaption = /** @type {ConvertArtifact} */ (await convert(mainMd, "docx", {
+  const noCaption = /** @type {ConvertArtifact} */ (await convertWithFs(mainMd, "docx", {
     baseDir: FIXTURES_DIR, warnings: [],
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: true },
     captionNumbering: false,
@@ -113,7 +112,7 @@ export async function run() {
   console.log("[ok] docx 静态目录 + 题注编号:TOC 免更新/条目超链接/编号注入/孤立行/开关 断言通过");
 
   const mainPdf = /** @type {ConvertArtifact} */ (
-    await convert(mainMd, "pdf", { baseDir: FIXTURES_DIR, title: "题注与目录验收", warnings: [] })
+    await convertWithFs(mainMd, "pdf", { baseDir: FIXTURES_DIR, title: "题注与目录验收", warnings: [] })
   );
   const mainHtml = pdfHtmlOf(mainPdf);
   // 8b-4:PDF 题注 class + 前缀剥除(编号走 CSS counter 伪元素,不进文本节点)
@@ -133,7 +132,7 @@ export async function run() {
   }
   // 8a-5:toc 关闭 → PDF 无目录
   const pdfNoToc = /** @type {ConvertArtifact} */ (
-    await convert(mainMd, "pdf", { baseDir: FIXTURES_DIR, title: "题注与目录验收", warnings: [], toc: false })
+    await convertWithFs(mainMd, "pdf", { baseDir: FIXTURES_DIR, title: "题注与目录验收", warnings: [], toc: false })
   );
   if (pdfHtmlOf(pdfNoToc).includes('class="toc"')) {
     throw new Error("断言失败:toc:false 时 PDF 不应含目录");
@@ -168,10 +167,10 @@ export async function run() {
    */
   const bothFormats = async (context) => {
     const docxArtifact = /** @type {ConvertArtifact} */ (
-      await convert(explicitMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], ...context })
+      await convertWithFs(explicitMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], ...context })
     );
     const pdfArtifact = /** @type {ConvertArtifact} */ (
-      await convert(explicitMd, "pdf", { baseDir: FIXTURES_DIR, title: "显式项契约", warnings: [], ...context })
+      await convertWithFs(explicitMd, "pdf", { baseDir: FIXTURES_DIR, title: "显式项契约", warnings: [], ...context })
     );
     return {
       docx: await unzipPart(docxBufferOf(docxArtifact), "word/document.xml"),

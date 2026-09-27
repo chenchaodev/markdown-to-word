@@ -23,7 +23,7 @@ import { renderPdfHtml } from "../../dist/core/pdf/render.js";
 import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { injectTocPageNumbers } from "../../dist/core/pdf/postprocess.js";
 import { unzipPart, zipContains } from "./docx-utils.js";
-import { asDocxArtifact, asPdfArtifact } from "./convert-helpers.js";
+import { asDocxArtifact, asPdfArtifact, HOST_FS } from "./convert-helpers.js";
 import { FIXTURES_DIR, KATEX_DIR } from "./paths.js";
 import { countOf, docxXml } from "./dual-extract.js";
 import {
@@ -57,14 +57,20 @@ const B = FIXTURES_DIR;
 /** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
 
 /**
- * convert() 的类型化别名:运行期就是 dist 的 convert(零行为差异),只把返回类型
- * 对齐到 src 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind
- * 被拓宽为 string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
+ * convert() 的类型化别名 + 宿主能力注入点:运行期就是 dist 的 convert 加一次
+ * `{ fs: HOST_FS, ...context }` 展开(零渲染行为差异),只把返回类型对齐到 src
+ * 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind 被拓宽为
+ * string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
  * 入参保持宽松(本文件按运行时事实传上下文,上下文契约由 core 自身类型守护)。
- * @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<ConvertArtifact>}
+ *
+ * 宿主文件系统能力(REF-025 #07)在此统一注入:core 的 pdf 渲染路径不 import
+ * node:fs,每次调用都要显式带上。放在包装层而非 30+ 个调用点,是为了让「pdf 渲染
+ * 必须注入能力」这条约束只有一个可漏的点,且新增调用点自动继承。展开顺序在后,
+ * 故显式传 fs 的调用点仍可覆盖它。
  */
-const convertTyped =
-  /** @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<ConvertArtifact>} */ (convert);
+const convertTyped = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
+  (md, format, context) => convert(md, format, { fs: HOST_FS, ...context })
+);
 
 /**
  * 计数守卫:统计取消检查点调用次数(密度差异的可执行度量)。
@@ -302,8 +308,8 @@ export async function buildMatrixCtx() {
   const pdfLarge = countingGuard();
   await renderDocx(parseMarkdown(smallMd), { guard: docxSmall.guard, toc: false });
   await renderDocx(parseMarkdown(largeMd), { guard: docxLarge.guard, toc: false });
-  await renderPdfHtml(smallMd, { baseDir: B, guard: pdfSmall.guard, toc: false });
-  await renderPdfHtml(largeMd, { baseDir: B, guard: pdfLarge.guard, toc: false });
+  await renderPdfHtml(smallMd, { baseDir: B, guard: pdfSmall.guard, toc: false, fs: HOST_FS });
+  await renderPdfHtml(largeMd, { baseDir: B, guard: pdfLarge.guard, toc: false, fs: HOST_FS });
 
   // ---------- 21. 题注先于首个 h1 ----------
   const beforeH1Docx = asDocxArtifact(await convertTyped(captionBeforeH1Md, "docx", { baseDir: B, warnings: [], ...img }));

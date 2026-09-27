@@ -6,11 +6,10 @@
  * 不依赖真打印。另断言默认配置下 watermark.text 为空(零渲染)。
  */
 import JSZip from "jszip";
-import { convert } from "../../dist/core/convert.js";
 import { DEFAULT_WATERMARK, DEFAULT_HEADER_FOOTER } from "../../dist/core/settings/settings-defaults.js";
 import { WATERMARK_GRAY, WATERMARK_INK } from "../../dist/core/style/colors.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 /**
  * 断言辅助。
@@ -51,7 +50,7 @@ export const fixtures = null;
 export async function run() {
   // ---- 1. docx:水印文字进入 header XML(gray=true → #999999) ----
   const wmGray = { ...DEFAULT_WATERMARK, text: "机密文档", angle: 45, opacity: 0.15, gray: true };
-  const grayDocx = await convert(md, "docx", {
+  const grayDocx = await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     title: "标题占位",
@@ -69,7 +68,7 @@ export async function run() {
 
   // ---- 2. docx:gray=false → 正文字色 #1F2328 ----
   const wmColor = { ...DEFAULT_WATERMARK, text: "彩色水印", gray: false };
-  const colorDocx = await convert(md, "docx", {
+  const colorDocx = await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
@@ -79,7 +78,7 @@ export async function run() {
   assert(colorXml.includes(WATERMARK_INK), `gray=false 应使用共享常量正文字色 ${WATERMARK_INK}`);
 
   // ---- 3. docx:空 text 不生成水印头(none 模式 + 空 text = 无任何 header) ----
-  const emptyDocx = await convert(md, "docx", {
+  const emptyDocx = await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
@@ -92,7 +91,7 @@ export async function run() {
 
   // ---- 5. pdf:html 含 .wm 覆盖层 + 旋转/不透明度 CSS ----
   const pdfDoc = asPdfArtifact(
-    await convert(md, "pdf", {
+    await convertWithFs(md, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       watermark: wmGray,
@@ -107,7 +106,7 @@ export async function run() {
 
   // ---- 6. pdf:空 text 无水印元素 ----
   const pdfEmpty = asPdfArtifact(
-    await convert(md, "pdf", {
+    await convertWithFs(md, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       watermark: { ...DEFAULT_WATERMARK, text: "" },

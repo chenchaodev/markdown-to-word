@@ -5,13 +5,12 @@
  * → extractHeadings + buildBookmarkTree → injectBookmarks → PDFDocument 回读:
  * Outlines 存在、中文标题(PDFHexString 解码)、Dest[0] 为页面 PDFRef(防「全部回退首页」回归)。
  */
-import { convert } from "../../dist/core/convert.js";
 import { buildBookmarkTree, injectBookmarks, lookupNamedDest } from "../../dist/core/pdf/bookmarks.js";
 import { extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
-import { asPdfArtifact } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
 /**
  * 书签树节点(dist 编译产物无类型标注,层级形状由 buildBookmarkTree 实现约定;
@@ -71,7 +70,7 @@ export const fixtures = { main: md };
 /** PDF 书签端到端验收 */
 export async function run() {
   const artifact = asPdfArtifact(
-    await convert(md, "pdf", {
+    await convertWithFs(md, "pdf", {
       baseDir: FIXTURES_DIR,
       title: "书签验收",
       warnings: [],

@@ -5,14 +5,13 @@
  * (居中 7pt 灰 888888)/页脚页码域(PAGE/NUMPAGES)内容,PDF 侧断言脚注区
  * 结构与 setPdfMetadata 回读;PDF 走 printToPDF → setPdfMetadata 全链路。
  */
-import { convert } from "../../dist/core/convert.js";
 import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
 import { PDFDocument } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { zipContains, unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:脚注 + 页眉页脚(frontmatter 触发页眉;重复引用 [^1] 两次 → 独立脚注 id;
  *  多段脚注定义),gen-fixtures 落盘为 acceptance/footnotes.md */
@@ -42,7 +41,7 @@ export const fixtures = { main: footnoteMd };
 /** 脚注 + 页眉页脚验收 */
 export async function run() {
   const docxBuffer = docxBufferOf(
-    await convert(footnoteMd, "docx", {
+    await convertWithFs(footnoteMd, "docx", {
       baseDir: FIXTURES_DIR,
       warnings: [],
     }),
@@ -105,7 +104,7 @@ export async function run() {
   console.log("[ok] 页脚:第 X 页 / 共 X 页(PAGE/NUMPAGES 域)居中渲染");
 
   const pdfArtifact = asPdfArtifact(
-    await convert(footnoteMd, "pdf", {
+    await convertWithFs(footnoteMd, "pdf", {
       baseDir: FIXTURES_DIR,
       title: "脚注与页眉页脚验收",
       warnings: [],

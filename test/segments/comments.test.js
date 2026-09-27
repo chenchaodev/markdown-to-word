@@ -5,11 +5,10 @@
  * 保留、批注内容(含 rich 加粗/链接)存在、多批注 id 唯一、author 固定;
  * 表格单元格内批注生效;链接与 {#eq:label} 语法不受影响;pdf 路线原样输出。
  */
-import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { zipContains, unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:正文/表格单元格批注 + rich 内容 + 既有语法回归(链接、{#eq:label}) */
 const commentMd = `# 批注测试
@@ -30,7 +29,7 @@ export const fixtures = { main: commentMd };
 /** 批注验收 */
 export async function run() {
   const docxBuffer = docxBufferOf(
-    await convert(commentMd, "docx", {
+    await convertWithFs(commentMd, "docx", {
       baseDir: FIXTURES_DIR,
       warnings: [],
     }),
@@ -99,7 +98,7 @@ export async function run() {
 
   // pdf 路线:markdown-it 不解析批注语法,原样输出
   const pdfArtifact = asPdfArtifact(
-    await convert(commentMd, "pdf", {
+    await convertWithFs(commentMd, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings: [],
     }),

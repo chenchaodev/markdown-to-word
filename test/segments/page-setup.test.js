@@ -14,7 +14,6 @@
  * - src/core/pdf/template-css.ts buildTemplateCss:
  *   @page { size: ${paper}${" landscape"}; margin: ${top}mm ${right}mm ${bottom}mm ${left}mm; }
  */
-import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
@@ -26,7 +25,7 @@ import {
   correctPageSetup,
   validatePageSetup,
 } from "../../dist/core/settings/settings-defaults.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 const md = `页面设置验收:纸张与边距参数化。\n`;
 
@@ -71,7 +70,7 @@ export async function run() {
   let lastPdf;
   for (const [paper, [w, h]] of Object.entries(PAPERS_TWIPS)) {
     const pageSetup = { paper, orientation: "portrait", ...M1 };
-    lastDocx = await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup });
+    lastDocx = await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup });
     const xml = await unzipPart(docxBufferOf(lastDocx), "word/document.xml");
     const pgSz = `<w:pgSz w:w="${w}" w:h="${h}" w:orient="portrait"`;
     if (!xml.includes(pgSz)) {
@@ -81,7 +80,7 @@ export async function run() {
       throw new Error(`页面设置断言失败:${paper} 缺少 ${M1_PGMAR}(边距 20/40/30/15 mm → twips)`);
     }
     lastPdf = asPdfArtifact(
-      await convert(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], pageSetup }),
+      await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], pageSetup }),
     );
     const pageCss = `size: ${paper}; ${M1_PDF}`;
     if (!lastPdf.html.includes(pageCss)) {
@@ -92,14 +91,14 @@ export async function run() {
 
   // 2. 边距参数化(第二组 = Word 默认 25/25/32/32 mm → 1417/1814 twips,输出须不同)
   const pageSetup2 = { paper: "A4", orientation: "portrait", marginTop: 25, marginBottom: 25, marginLeft: 32, marginRight: 32 };
-  const docx2 = await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup: pageSetup2 });
+  const docx2 = await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup: pageSetup2 });
   const xml2 = await unzipPart(docxBufferOf(docx2), "word/document.xml");
   const pgMar2 = '<w:pgMar w:top="1417" w:right="1814" w:bottom="1417" w:left="1814"';
   if (!xml2.includes(pgMar2)) {
     throw new Error(`页面设置断言失败:边距 25/32 mm 缺少 ${pgMar2}`);
   }
   const pdf2 = asPdfArtifact(
-    await convert(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], pageSetup: pageSetup2 }),
+    await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], pageSetup: pageSetup2 }),
   );
   if (!pdf2.html.includes("margin: 25mm 32mm 25mm 32mm;")) {
     throw new Error("页面设置断言失败:PDF 模板缺少默认边距 margin: 25mm 32mm 25mm 32mm;");
@@ -112,7 +111,7 @@ export async function run() {
     if (!size) throw new Error(`页面设置断言失败:纸张尺寸表缺少 ${paper}`);
     const [w, h] = size;
     const pageSetup = { paper, orientation: "landscape", ...M1 };
-    lastDocx = await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup });
+    lastDocx = await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup });
     const xml = await unzipPart(docxBufferOf(lastDocx), "word/document.xml");
     const pgSz = `<w:pgSz w:w="${h}" w:h="${w}" w:orient="landscape"`;
     if (!xml.includes(pgSz)) {
@@ -122,7 +121,7 @@ export async function run() {
       throw new Error(`页面设置断言失败:${paper} landscape 缺少 ${M1_PGMAR}`);
     }
     lastPdf = asPdfArtifact(
-      await convert(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], pageSetup }),
+      await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], pageSetup }),
     );
     const pageCss = `size: ${paper} landscape; ${M1_PDF}`;
     if (!lastPdf.html.includes(pageCss)) {
@@ -328,10 +327,10 @@ export async function run() {
   const zeroContentCase = invalidPageSetups.find(({ name }) => name === "内容区为零");
   if (!zeroContentCase) throw new Error("页面几何 validator 用例缺少「内容区为零」项");
   const invalidRenderSetup = zeroContentCase.value;
-  for (const format of ["docx", "pdf"]) {
+  for (const format of /** @type {("docx" | "pdf")[]} */ (["docx", "pdf"])) {
     let rejected = false;
     try {
-      await convert(md, format, {
+      await convertWithFs(md, format, {
         baseDir: FIXTURES_DIR,
         warnings: [],
         pageSetup: invalidRenderSetup,
@@ -344,9 +343,9 @@ export async function run() {
   console.log("[ok] 页面几何 validator:docx/pdf 独立渲染边界一致拒绝断言通过");
 
   const invalidPaperErrors = [];
-  for (const format of ["docx", "pdf"]) {
+  for (const format of /** @type {("docx" | "pdf")[]} */ (["docx", "pdf"])) {
     try {
-      await convert(md, format, {
+      await convertWithFs(md, format, {
         baseDir: FIXTURES_DIR,
         warnings: [],
         pageSetup: { ...DEFAULT_PAGE_SETUP, paper: "A6" },
@@ -368,7 +367,7 @@ export async function run() {
   // 4. 分页符产物(pdf 侧中间 html):
   //    <!-- page-break --> → <div class="page-break"></div>
   const pbArtifact = asPdfArtifact(
-    await convert(pbMd, "pdf", {
+    await convertWithFs(pbMd, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       pageSetup: { paper: "A4", orientation: "portrait", marginTop: 25, marginBottom: 25, marginLeft: 32, marginRight: 32 },

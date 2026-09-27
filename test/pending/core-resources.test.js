@@ -4,10 +4,10 @@
  * - docx 渲染中的 resolver 取消可中断等待,完成后 convert 仍以取消失败退出;
  * - KaTeX 双管线共享 maxExpand/maxSize/trust 上限,不可信/宏展开失控公式有界降级。
  */
-import { convert } from "../../dist/core/convert.js";
 import { texToDocxMath } from "../../dist/core/docx/handlers/math.js";
 import { DEFAULT_KATEX_RESOURCE_LIMITS } from "../../dist/core/resource-limits.js";
 import { unzipPart } from "../common/docx-utils.js";
+import { convertWithFs } from "../common/convert-helpers.js";
 
 async function assertCancelled(promise, label) {
   let error;
@@ -28,7 +28,7 @@ export async function run() {
     controller.abort(new Error("cancelled-before-convert"));
     let resolverCalls = 0;
     await assertCancelled(
-      convert("![图](x.png)", "docx", {
+      convertWithFs("![图](x.png)", "docx", {
         baseDir: ".",
         signal: controller.signal,
         imageResolver: async () => {
@@ -48,7 +48,7 @@ export async function run() {
   {
     const stages = [];
     await assertCancelled(
-      convert("# 标题", "pdf", {
+      convertWithFs("# 标题", "pdf", {
         baseDir: ".",
         deadline: Date.now() - 1,
         onStage: (stage) => stages.push(stage),
@@ -65,7 +65,7 @@ export async function run() {
   {
     const controller = new AbortController();
     let requestSignal;
-    const pending = convert("![图](x.png)", "docx", {
+    const pending = convertWithFs("![图](x.png)", "docx", {
       baseDir: ".",
       signal: controller.signal,
       imageResolver: (_src, request) => {
@@ -105,12 +105,12 @@ export async function run() {
       }
     }
     const warnings = [];
-    const docx = await convert(`$$\n${untrusted}\n$$`, "docx", { baseDir: ".", warnings });
+    const docx = await convertWithFs(`$$\n${untrusted}\n$$`, "docx", { baseDir: ".", warnings });
     const xml = await unzipPart(docx.buffer, "word/document.xml");
     if (xml.includes("<m:oMath") || !xml.includes("includegraphics")) {
       throw new Error("core-resources 断言失败:docx 恶意 TeX 应降级为源码且不产出 oMath");
     }
-    const pdf = await convert(`$$\n${untrusted}\n$$`, "pdf", { baseDir: ".", warnings: [] });
+    const pdf = await convertWithFs(`$$\n${untrusted}\n$$`, "pdf", { baseDir: ".", warnings: [] });
     if (!pdf.html.includes("katex-error")) {
       throw new Error("core-resources 断言失败:PDF 不可信 TeX 未产生 katex-error 降级");
     }

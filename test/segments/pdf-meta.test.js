@@ -5,12 +5,11 @@
  * 断言章节编号 counter CSS;setPdfMetadata 后 PDFDocument 回读 title/author 一致。
  * 本段不落盘产物(与原段 4 一致)。
  */
-import { convert } from "../../dist/core/convert.js";
 import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
 import { PDFDocument } from "pdf-lib";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
-import { asPdfArtifact } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
 /** 主样例:frontmatter 元数据 + 章节编号 + 分页(gen-fixtures 落盘为 acceptance/pdf-meta.md) */
 const pdfMetaMd = `---
@@ -33,7 +32,7 @@ export const fixtures = { main: pdfMetaMd };
 /** PDF 章节编号 + 元数据验收 */
 export async function run() {
   const pdfArtifact = asPdfArtifact(
-    await convert(pdfMetaMd, "pdf", {
+    await convertWithFs(pdfMetaMd, "pdf", {
       baseDir: FIXTURES_DIR,
       title: "脚注与页眉页脚验收",
       warnings: [],

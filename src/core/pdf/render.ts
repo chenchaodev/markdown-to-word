@@ -69,6 +69,20 @@ import {
   type ImageResourceBudget,
 } from "../resource-limits.js";
 
+/**
+ * core 的 pdf 渲染路径所需的宿主文件系统能力(REF-025 #07 注入契约)。
+ *
+ * 刻意只声明两个函数、不暴露 fs 模块本身:能力面收窄到「本渲染路径确实需要的
+ * 两次读」,新增用途必须显式改这个接口,而不是顺手拿到整个 fs。
+ */
+export interface PdfFsCapabilities {
+  /** 同步 realpath:图片路径边界的符号链接/junction 逃逸判定(ADR-012)。
+   *  不得降级为恒等映射 —— 那等于取消逃逸防线。 */
+  realpathSync: (candidate: string) => string;
+  /** 读 UTF-8 文本文件:当前仅用于 katex.min.css。 */
+  readTextFile: (file: string) => string;
+}
+
 export interface RenderPdfHtmlOptions {
   /** markdown 文件所在目录,相对路径图片以此为基准 */
   baseDir: string;
@@ -110,6 +124,13 @@ export interface RenderPdfHtmlOptions {
    *  为 file:// 绝对路径,公式字体样式生效;不传则公式渲染为 KaTeX HTML
    *  但无字体样式,公式仍显示(缺字形美观度)) */
   katexDir?: string;
+  /** 宿主文件系统能力(REF-025 #07 注入点,**必填**)。
+   *  core/pdf 子树不 import node:fs:图片路径边界的 realpathSync 与 KaTeX CSS
+   *  读取的 read 一律由 main 层经此注入,使「core 的 pdf 渲染路径不做文件 IO」
+   *  成为门禁可断言的不变量(规则 core-pdf-no-fs)。
+   *  设为必填而非可选:可选会让「忘注入」静默退化成「图片边界不判定」——
+   *  那等于把 ADR-012 的符号链接逃逸防线变成可静默关闭的开关。 */
+  fs: PdfFsCapabilities;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏保持
    *  原代码块渲染,行为不变) */
   mermaidResolver?: MermaidResolver;
@@ -299,7 +320,7 @@ export async function renderPdfDocument(
   // 正文内容区宽(px,96dpi)= 内容区 mm ÷ 25.4 × 96(landscape 视觉宽度为
   // 纸高,与 docx 侧 textWidthTwips 同口径);height 百分比属性换算基准
   const contentWidthPx = mmToPx(pageGeometry.contentWidthMm);
-  overrideImageRule(md, options.baseDir, localImageSrcs, contentWidthPx);
+  overrideImageRule(md, options.baseDir, localImageSrcs, contentWidthPx, options.fs.realpathSync);
   // 独立成段图片段落挂 fig-image 类(模板 CSS 居中),与 docx 侧同契约
   overrideFigureRule(md);
   // 表格列宽(分隔行 dash 比例)——源码行与 token.map 同源行号,
@@ -345,7 +366,9 @@ export async function renderPdfDocument(
       captionNumbering,
       /<h1[\s>]/i.test(bodyHtml),
     ) + (options.pdfCss ? `\n${options.pdfCss}` : ""),
-    options.katexDir ? loadKatexCss(options.katexDir, warnings) : "",
+    options.katexDir
+      ? loadKatexCss(options.katexDir, warnings, { read: options.fs.readTextFile })
+      : "",
     options.watermark,
   );
   return { html, headings };

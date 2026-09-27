@@ -20,6 +20,7 @@
  */
 import { buildTocHtml, checkLocalImages, embedExternalImages, extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { renderPdfDocument } from "../../dist/core/pdf/render.js";
+import { HOST_FS } from "../common/convert-helpers.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 
@@ -495,7 +496,7 @@ export async function run() {
       "## 尾随 <b>行内 HTML</b>",
       "",
     ].join("\n");
-    const { html, headings } = await renderPdfDocument(md, { baseDir: FIXTURES_DIR, title: "结构化标题", toc: true });
+    const { html, headings } = await renderPdfDocument(md, { baseDir: FIXTURES_DIR, title: "结构化标题", toc: true, fs: HOST_FS });
     // h1 层级正确 + 文本剥行内标签、实体解码(与旧 HTML 反解析口径逐字一致)
     const first = headings[0];
     if (!first || first.level !== 1 || first.text !== "章一" || first.id !== "章一") {

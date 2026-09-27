@@ -25,9 +25,9 @@ import { PDFDict, PDFDocument, PDFHexString, PDFName } from "pdf-lib";
 import { BrowserWindow, shell } from "electron";
 import { loadSettings, updateSettings } from "../../dist/main/persist/settings.js";
 import { renderPdf } from "../../dist/main/converter/single.js";
-import { convert } from "../../dist/core/convert.js";
 import { backupSettings } from "../common/settings.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { convertWithFs } from "../common/convert-helpers.js";
 import {
   batchConvertImpl,
   buildConvertContext,
@@ -607,7 +607,7 @@ export async function run() {
     // 大纲标题若随之变化即证明编排层取的是结构化数据(缺失时才回退兼容层)。
     {
       const structuredMd = "# 结构化甲\n\n正文一。\n\n## 结构化乙\n\n正文二。\n";
-      const artifact = await convert(structuredMd, "pdf", {
+      const artifact = await convertWithFs(structuredMd, "pdf", {
         baseDir: dir,
         title: "结构化标题",
         warnings: [],

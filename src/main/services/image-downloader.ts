@@ -19,6 +19,7 @@
  *   网络位置做内网探测;策略经 ALLOW_PRIVATE_ADDRESSES 常量与 per-resolver 选项
  *   可放宽(测试本地 server 场景显式传入 allowPrivateAddresses:true)。
  */
+import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import dns from "node:dns/promises";
@@ -26,7 +27,7 @@ import net from "node:net";
 // 契约单源:ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
 import type { ImageResolver, ImageResolverRequest } from "../../core/image/image-resolver.js";
 // 契约单源:本地图片可信边界与 precheck/PDF 规则共用 core/pipeline/precheck.ts 策略
-import { createLocalImagePathPolicy } from "../../core/pipeline/precheck.js";
+import { createLocalImagePathPolicy } from "../../core/markdown/image-path-policy.js";
 
 const HTTP_TIMEOUT_MS = 10_000;
 
@@ -131,7 +132,13 @@ export function createImageResolver(
   const localImagePolicy = createLocalImagePathPolicy({
     baseDir,
     trustedRoots: options.trustedRoots,
-    realpath: options.realpath,
+    // 能力默认值归**持有 fs 的这一层**,不塞进 core(REF-025 #07):策略模块不再自带
+    // `?? realpath` 的 node:fs 默认值,故默认在这里补齐 —— 与改动前的取值来源完全
+    // 相同(node:fs/promises.realpath),两个生产调用方(context.ts / preview.ts)都不
+    // 显式传 realpath,若不在此兜底,异步边界校验会从「正常工作」变成「抛错」。
+    realpath: options.realpath ?? fs.realpath,
+    // 本下载器只走异步 resolve,但策略的 realpathSync 是必填;同样在本层补齐。
+    realpathSync,
   });
   const cache = new Map<string, Promise<Buffer | null>>();
   const cachedBytes = new Map<string, number>(); // 仅成功结算条目;在途条目不入账

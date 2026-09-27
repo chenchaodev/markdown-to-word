@@ -11,12 +11,11 @@
  * 触发条件:仅 frontmatter(parseFrontmatter 的 metadata.title);context.title 不触发
  * (convert.js 对 docx/pdf 均只传 options.metadata)。无 frontmatter → 双格式无封面。
  */
-import { convert } from "../../dist/core/convert.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:frontmatter 封面验收(gen-fixtures 落盘为 acceptance/cover.md) */
 const coverMd = `---
@@ -33,7 +32,7 @@ export const meta = { description: "封面页测试(双格式,新段):" };
 export const fixtures = { main: coverMd };
 
 export async function run() {
-  const coverDocx = await convert(coverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
+  const coverDocx = await convertWithFs(coverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const coverDocument = await unzipPart(docxBufferOf(coverDocx), "word/document.xml");
   // 断言 1:封面标题居中加粗 22pt(44 half-points,docx 库 size = pt × 2)
   /** @type {[string, string][]} 断言表 [XML 片段, 中文标签] */
@@ -64,7 +63,7 @@ export async function run() {
   console.log("[ok] docx 封面:标题 44/加粗/居中 + author/date 灰字 + 分页符 断言通过");
 
   const coverPdf = asPdfArtifact(
-    await convert(coverMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
+    await convertWithFs(coverMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
   );
   // 断言 4:cover HTML 结构 + author/date 行(metaLine = [author, date].join(" · "))
   if (!coverPdf.html.includes('<div class="cover">')) {
@@ -92,13 +91,13 @@ export async function run() {
   // 注意:封面标记用 author/date 灰字(808080)+ 作者文本——不可用 w:sz=44 判别,
   // 正文 h1(standard 档 22pt)同样产出 44 half-points 的标题 run
   const noCoverMd = "# 无封面标题\n\n正文内容。";
-  const noCoverDocx = await convert(noCoverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
+  const noCoverDocx = await convertWithFs(noCoverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const noCoverDocument = await unzipPart(docxBufferOf(noCoverDocx), "word/document.xml");
   if (noCoverDocument.includes('<w:color w:val="808080"/>') || noCoverDocument.includes("测试作者")) {
     throw new Error("封面断言失败:无 frontmatter 时 docx 不应产出封面(作者灰字/作者文本)");
   }
   const noCoverPdf = asPdfArtifact(
-    await convert(noCoverMd, "pdf", { title: "无封面标题", baseDir: FIXTURES_DIR, warnings: [] }),
+    await convertWithFs(noCoverMd, "pdf", { title: "无封面标题", baseDir: FIXTURES_DIR, warnings: [] }),
   );
   if (noCoverPdf.html.includes('class="cover"')) {
     throw new Error("封面断言失败:无 frontmatter 时 PDF 不应产出封面(class=cover)");
@@ -106,5 +105,5 @@ export async function run() {
   console.log("[ok] 封面反例:无 frontmatter 双格式均无封面(context.title 不触发)");
 
   const coverPdfBin = await htmlToPdf(coverPdf.html, coverPdf.footerTemplate);
-  await saveArtifact("cover", { docx: coverDocx.buffer, pdf: coverPdfBin });
+  await saveArtifact("cover", { docx: docxBufferOf(coverDocx), pdf: coverPdfBin });
 }

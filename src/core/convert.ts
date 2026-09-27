@@ -28,7 +28,7 @@ import type { DocMetadata } from "./pipeline/frontmatter.js";
 import type { TypographySettings } from "./settings/typography.js";
 import type { ConvertWarning } from "./i18n.js";
 import { renderDocx } from "./docx/render.js";
-import { renderPdfDocument } from "./pdf/render.js";
+import { renderPdfDocument, type PdfFsCapabilities } from "./pdf/render.js";
 // PdfHeading 契约单源在 pdf/bookmarks.ts(docx 侧无对应物:目录由 Word 域生成)
 import type { PdfHeading } from "./pdf/bookmarks.js";
 import {
@@ -72,6 +72,12 @@ export interface ConvertContext {
   /** 图片解析回调(契约单源 core/image-resolver.ts):返回 null 表示跳过该图
    *  (缺失检查并入此失败路径,单次 IO);exists 轻量存在性通道可选 */
   imageResolver?: ImageResolver;
+  /** 宿主文件系统能力(REF-025 #07 注入点):pdf 渲染路径不做文件 IO,其两次读
+   *  (图片边界 realpathSync、KaTeX CSS 读取)由 main 层经此提供。
+   *  此处**可选**是因为 ConvertContext 由 docx 与 pdf 共用,docx 路线不消费它;
+   *  但 pdf 分支会强校验(缺则抛错),故不存在「忘注入 → 边界静默不判定」的降级
+   *  —— 那等于把 ADR-012 的符号链接逃逸防线变成可静默关闭的开关。 */
+  fs?: PdfFsCapabilities;
   /** 文档标题(pdf 用 <title>) */
   title?: string;
   /** 显式文档元数据(封面用);优先于 frontmatter 解析出的 metadata(覆盖语义) */
@@ -191,8 +197,18 @@ export async function convert(
       // 书签树注入与 metadata 解析统一消费,不再对成品 HTML 做正则反解析
       // (PDF 目录/页码改走结构化数据,不再对成品 HTML 做正则反解析;
       // renderPdfHtml 保留为仅取 html 的薄封装)。
+      // pdf 分支强校验宿主能力(REF-025 #07):core 的 pdf 渲染路径不 import node:fs,
+      // 两次读必须由 main 注入。缺能力时**抛错**而非降级 —— 若静默跳过 realpath,
+      // 图片的符号链接逃逸防线(ADR-012)就变成可静默关闭的开关。
+      if (!context.fs) {
+        throw new Error(
+          "convert(pdf):调用方未注入 ConvertContext.fs(宿主文件系统能力)"
+          + "—— core 的 pdf 渲染路径不做文件 IO,图片边界校验与 KaTeX CSS 读取都依赖它",
+        );
+      }
       const { html, headings } = await renderPdfDocument(body, {
         baseDir: context.baseDir,
+        fs: context.fs,
         title: context.title,
         metadata,
         warnings,

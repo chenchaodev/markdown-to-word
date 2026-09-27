@@ -6,7 +6,6 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { convert } from "../../dist/core/convert.js";
 import { mergeMarkdowns } from "../../dist/core/pipeline/merge.js";
 import { injectBookmarks, buildBookmarkTree } from "../../dist/core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
@@ -14,7 +13,7 @@ import { extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
 /**
  * 递归收集目录下全部 .md(含子目录)。
@@ -51,7 +50,7 @@ export async function run() {
   );
   const mergedMd = mergeMarkdowns(inputs);
   const mergedArtifact = asPdfArtifact(
-    await convert(mergedMd, "pdf", {
+    await convertWithFs(mergedMd, "pdf", {
       baseDir: manualDir,
       title: "产品白皮书",
       warnings: [],

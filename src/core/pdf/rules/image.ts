@@ -12,7 +12,7 @@
 import { pathToFileURL } from "node:url";
 import type MarkdownIt from "markdown-it";
 import { parseImageSizeAttrs, type ImageDim } from "../../markdown/image-size.js";
-import { createLocalImagePathPolicy } from "../../pipeline/precheck.js";
+import { createLocalImagePathPolicy } from "../../markdown/image-path-policy.js";
 import { imageAttrInvalidWarning } from "../../image/image-warning.js";
 import { createDepthTracker } from "./shared.js";
 import { pushWarningOnce, type ConvertWarning } from "../../i18n.js";
@@ -37,10 +37,11 @@ export function overrideImageRule(
   baseDir: string,
   localSrcs: string[],
   contentWidthPx: number,
+  realpathSync: (candidate: string) => string,
 ): void {
     const defaultRule = md.renderer.rules.image;
     if (!defaultRule) return; // markdown-it 内置 image 规则,理论不可达
-    const localImagePolicy = createLocalImagePathPolicy({ baseDir });
+    const localImagePolicy = createLocalImagePathPolicy({ baseDir, realpathSync });
     // 非法属性警告去重(共享 pushWarningOnce 键口径,与 docx ctx.warning.warnedKeys 同源;
     // 集合生命周期 = 单次渲染,md 实例每次 renderPdfHtml 新建)
     const warnedKeys = new Set<string>();

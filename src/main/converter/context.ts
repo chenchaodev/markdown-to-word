@@ -6,6 +6,7 @@
  * - buildConvertContext:settings → core convert() 上下文映射收敛
  * 依赖方向:single/batch/merge 反向 import 本模块,本模块不依赖三者(无环)。
  */
+import { readFileSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertContext as CoreConvertContext } from "../../core/convert.js";
@@ -184,6 +185,10 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
   const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...options.settings.watermark };
   return {
     baseDir: options.baseDir,
+    // 宿主文件系统能力(REF-025 #07):core 的 pdf 渲染路径自己不 import node:fs,
+    // 其两次读(图片边界 realpathSync、KaTeX CSS 读取)由此注入。能力面刻意收窄到
+    // 这两个函数而非整个 fs 模块 —— 新增用途必须显式改 PdfFsCapabilities。
+    fs: { realpathSync, readTextFile: (file) => readFileSync(file, "utf8") },
     // 取消与时间上限透传(core 渲染层据此在阶段边界与异步回调处退出)
     signal: options.convert?.signal,
     deadline: options.convert?.deadline,

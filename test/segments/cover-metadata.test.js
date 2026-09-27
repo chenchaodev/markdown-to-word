@@ -5,10 +5,9 @@
  * - 给定 frontmatter title 与 context.metadata.title 不同 → 产物封面用 metadata.title;
  * - 不传 metadata → 回落 frontmatter(既有行为不变)。
  */
-import { convert } from "../../dist/core/convert.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 const md = `---
 title: frontmatter标题
@@ -26,7 +25,7 @@ export const fixtures = null;
 
 export async function run() {
   // 断言 1:context.metadata 覆盖 frontmatter(docx)
-  const docx = await convert(md, "docx", {
+  const docx = await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     metadata: { title: "向导标题", author: "向导作者", date: "2026-09-09" },
@@ -41,7 +40,7 @@ export async function run() {
 
   // 断言 2:context.metadata 覆盖 frontmatter(pdf)
   const pdf = asPdfArtifact(
-    await convert(md, "pdf", {
+    await convertWithFs(md, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       metadata: { title: "向导标题", author: "向导作者", date: "2026-09-09" },
@@ -56,7 +55,7 @@ export async function run() {
   console.log("[ok] PDF:context.metadata 覆盖 frontmatter 封面");
 
   // 断言 3(回归):不传 metadata → 回落 frontmatter
-  const docxFb = await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
+  const docxFb = await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const docFb = await unzipPart(docxBufferOf(docxFb), "word/document.xml");
   if (!docFb.includes("frontmatter标题")) {
     throw new Error("不传 metadata 时应回落 frontmatter title");

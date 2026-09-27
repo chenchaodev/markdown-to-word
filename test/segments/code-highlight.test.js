@@ -20,7 +20,7 @@ import { formatWarning } from "../../dist/core/i18n.js";
 import hljs from "highlight.js/lib/common";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { pdfHtmlOf } from "../common/convert-helpers.js";
+import { convertWithFs, pdfHtmlOf } from "../common/convert-helpers.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
@@ -151,7 +151,6 @@ export async function run() {
 
   // ---- 7. 色板单源:docx 与 pdf 同取 HLJS_PALETTE(消除双源) ----
   const { HLJS_PALETTE, buildHljsCss } = await import("../../dist/core/style/hljs-palette.js");
-  const { convert } = await import("../../dist/core/convert.js");
   // 7a. docx 产物色值 ⊆ 色板(样例命中的 token 类逐一来自单源)
   // 色板按 token 类名动态索引(契约单源:Record<string, HljsTokenStyle>,dist 侧为字面量对象)
   const palette = /** @type {Record<string, HljsTokenStyle>} */ (HLJS_PALETTE);
@@ -163,7 +162,7 @@ export async function run() {
     }
   }
   // 7b. pdf 侧 .hljs-* CSS 由同一色板生成(buildHljsCss 产物逐条进模板)
-  const pdfArt = /** @type {ConvertArtifact} */ (await convert(MD_TS, "pdf", { baseDir: "." }));
+  const pdfArt = /** @type {ConvertArtifact} */ (await convertWithFs(MD_TS, "pdf", { baseDir: "." }));
   const hljsCss = buildHljsCss();
   if (!pdfHtmlOf(pdfArt).includes(hljsCss)) {
     throw new Error("code-highlight 断言失败:pdf 模板 CSS 应包含 buildHljsCss 单源生成产物");

@@ -25,17 +25,17 @@
  *   内容经 markdown-it escapeHtml,如 --> 呈 --&gt;)。
  * - 非 mermaid 围栏(如 js)不被 mermaid 分支劫持,docx 文本 / pdf hljs 高亮。
  */
-import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart, zipContains } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { asDocxArtifact, asPdfArtifact } from "../common/convert-helpers.js";
+import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
 /** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
 
 /**
- * convert() 的类型化别名:运行期就是 dist 的 convert(零行为差异),只把返回类型
+ * convert 的类型化别名:运行期是共享包装 convertWithFs(= dist 的 convert 注入宿主文件
+ * 系统能力 fs,REF-025 #07 起 pdf 渲染路径不再自带 node:fs),渲染行为不变,只把返回类型
  * 对齐到 src 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind
  * 被拓宽为 string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
  * 入参保持宽松(本段按运行时事实传上下文,上下文契约由 core 自身类型守护)。
@@ -43,7 +43,7 @@ import { asDocxArtifact, asPdfArtifact } from "../common/convert-helpers.js";
  */
 const convertTyped =
   /** @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>} */ (
-    convert
+    convertWithFs
   );
 
 // 1x1 真实 PNG 魔数头(docx 不校验内容,unzipPart 只读 xml,media 存在性用 zipContains)

@@ -1,4 +1,6 @@
 // @ts-check
+import { readFileSync, realpathSync } from "node:fs";
+import { convert } from "../../dist/core/convert.js";
 /**
  * 产物收窄 helper(测试树共享)。
  *
@@ -28,6 +30,22 @@
 /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 /** @typedef {import("../../src/core/convert.js").DocxArtifact} DocxArtifact */
 /** @typedef {import("../../src/core/convert.js").PdfArtifact} PdfArtifact */
+/** @typedef {import("../../src/core/pdf/render.js").PdfFsCapabilities} PdfFsCapabilities */
+
+/**
+ * 测试侧的宿主文件系统能力(REF-025 #07 注入点)。
+ *
+ * core 的 pdf 渲染路径不 import node:fs —— 其两次读(图片路径边界的 realpathSync、
+ * KaTeX CSS 读取)必须由调用方注入。生产侧由 main/converter/context.ts 从 node:fs
+ * 构造;测试侧用真磁盘实现,这样夹具里的真实文件与符号链接行为与生产一致
+ * (测试夹具本就是磁盘上的真文件,用假的 realpath 反而不测真东西)。
+ *
+ * 单源放本文件而非各段自建:能力契约与 src 的 PdfFsCapabilities 同源,改一处即全树生效。
+ */
+export const HOST_FS = /** @type {PdfFsCapabilities} */ ({
+  realpathSync: (candidate) => realpathSync(candidate),
+  readTextFile: (file) => readFileSync(file, "utf8"),
+});
 
 /**
  * 读取判别字段(仅取字符串形态,供错误信息使用)。
@@ -97,3 +115,25 @@ export function pdfHtmlOf(artifact) {
 export function docxBufferOf(artifact) {
   return asDocxArtifact(artifact).buffer;
 }
+
+/**
+ * convert() + 宿主文件系统能力注入(REF-025 #07)。
+ *
+ * 为什么需要:core 的 pdf 渲染路径不 import node:fs,其两次读(图片路径边界的
+ * realpathSync、KaTeX CSS 读取)必须由调用方经 `ConvertContext.fs` 注入,
+ * 否则 convert 在 pdf 分支**抛错**(刻意不静默降级 —— 那会让 ADR-012 的符号链接
+ * 逃逸防线变成可静默关闭的开关)。
+ *
+ * 为什么是共享包装而不是各段自己传:全树有 20+ 个段直接调 convert 渲染 pdf,
+ * 逐个调用点加 `fs:` 字段既重复又易漏。集中在此后,新增调用点只要用了本函数
+ * 就自动合规。展开顺序在后,显式传 fs 的调用点仍可覆盖。
+ *
+ * @param {string} md markdown 源
+ * @param {"docx" | "pdf"} format 目标格式
+ * @param {Record<string, unknown>} context 转换上下文
+ * @returns {Promise<ConvertArtifact>} 产物(判别式收窄请用 asDocxArtifact / asPdfArtifact)
+ */
+export const convertWithFs =
+  /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
+    (md, format, context) => convert(md, format, { fs: HOST_FS, ...context })
+  );

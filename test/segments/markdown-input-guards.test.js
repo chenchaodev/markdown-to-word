@@ -24,12 +24,11 @@
 /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 /** @typedef {import("../../src/core/i18n.js").ConvertWarning} ConvertWarning */
 
-import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { unzipPart, zipContains } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
 import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
 
 // 本段只断言输入守卫的产物形态,不产出人工实测样例(公式常规渲染由
@@ -51,7 +50,7 @@ async function renderPdf(md, title) {
   /** @type {ConvertWarning[]} */
   const warnings = [];
   const artifact = /** @type {ConvertArtifact} */ (
-    await convert(md, "pdf", { baseDir: FIXTURES_DIR, title, warnings, katexDir: KATEX_DIR })
+    await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, title, warnings, katexDir: KATEX_DIR })
   );
   return { html: pdfHtmlOf(artifact), warns: warnings.map((w) => formatWarning(w)) };
 }
@@ -63,7 +62,7 @@ async function renderPdf(md, title) {
  */
 async function renderDocxParts(md) {
   const artifact = /** @type {ConvertArtifact} */ (
-    await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
+    await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const buffer = docxBufferOf(artifact);
   return {
@@ -215,7 +214,7 @@ export async function run() {
 
   // ================= 落盘产物(供人工核对) =================
   const pdfArtifact = /** @type {ConvertArtifact} */ (
-    await convert("$$\nE = mc^2\n$$\n\n行内 $\\href{http://example.com/a}{y}$。\n", "pdf", {
+    await convertWithFs("$$\nE = mc^2\n$$\n\n行内 $\\href{http://example.com/a}{y}$。\n", "pdf", {
       baseDir: FIXTURES_DIR,
       title: "输入守卫",
       warnings: [],
