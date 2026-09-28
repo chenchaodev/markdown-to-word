@@ -14,6 +14,9 @@
 import type { Node } from "mdast";
 import { parseFrontmatter } from "../pipeline/frontmatter.js";
 import { parseMarkdown } from "../pipeline/parse.js";
+import { mergeSourceRanges, type SourceRange } from "./source-ranges.js";
+// 仅类型导入(编译期擦除):档位映射只读设置形状,不引入运行时依赖。
+import type { AppSettings } from "../settings/settings-defaults.js";
 
 export interface AiCleanupOptions {
   /** 归一智能引号(''"" → ''"") 与 en dash(– → —)，默认开 */
@@ -30,9 +33,25 @@ export interface AiCleanupOptions {
   fixHeadingLevels?: boolean;
 }
 
-interface SourceRange {
-  start: number;
-  end: number;
+/**
+ * 两个档位开关 → 六个 per-rule 布尔(AI 清理的档位映射单源,勿在别处重拼):
+ * - 保守规整(aiCleanup.tidy)= 引号破折号归一 / 列表标记补空格 / 行尾空白与空行折叠
+ * - 结构改写(aiCleanup.rewrite)= 清裸数字引用标记 / 去 emoji / 重整标题层级
+ * 纯函数(只读设置、不碰 IO),导出供直测断言「cleanupMarkdown 实际收到的 options」。
+ * 入参只声明两个档位(Pick 而非整个块)——类型上即表达「本函数不判总开关」:
+ * 总开关关闭时 preprocessBody 整段跳过,档位不构成旁路。
+ */
+export function aiCleanupOptions(
+  settings: Pick<AppSettings["aiCleanup"], "tidy" | "rewrite">,
+): AiCleanupOptions {
+  return {
+    normalizeQuotes: settings.tidy,
+    fixListMarkers: settings.tidy,
+    trimBlankLines: settings.tidy,
+    stripCitationMarkers: settings.rewrite,
+    stripEmoji: settings.rewrite,
+    fixHeadingLevels: settings.rewrite,
+  };
 }
 
 export function cleanupMarkdown(md: string, options: AiCleanupOptions = {}): string {
@@ -217,7 +236,7 @@ function collectProtectedMarkdownRanges(md: string): SourceRange[] {
   for (let index = 0; index < md.length; index++) {
     if (md[index] === "\\") ranges.push({ start: index, end: Math.min(index + 2, md.length) });
   }
-  return mergeRanges(ranges);
+  return mergeSourceRanges(ranges);
 }
 
 function visitProtectedNodes(node: Node, md: string, ranges: SourceRange[]): void {
@@ -270,22 +289,6 @@ function extendHtmlCodeRange(md: string, range: SourceRange, ranges: SourceRange
   closing.lastIndex = range.end;
   const match = closing.exec(md);
   if (match) ranges.push({ start: range.start, end: match.index + match[0].length });
-}
-
-function mergeRanges(ranges: readonly SourceRange[]): SourceRange[] {
-  const sorted = ranges
-    .filter((range) => range.end > range.start)
-    .sort((left, right) => left.start - right.start || left.end - right.end);
-  const merged: SourceRange[] = [];
-  for (const range of sorted) {
-    const previous = merged[merged.length - 1];
-    if (previous && range.start <= previous.end) {
-      previous.end = Math.max(previous.end, range.end);
-    } else {
-      merged.push({ ...range });
-    }
-  }
-  return merged;
 }
 
 function maskProtectedRanges(

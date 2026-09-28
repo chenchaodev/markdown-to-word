@@ -10,7 +10,7 @@ import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { parseFrontmatter, type DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { decodeMarkdown } from "../../core/util/encoding.js";
-import { cleanupMarkdown, type AiCleanupOptions } from "../../core/markdown/ai-cleanup.js";
+import { aiCleanupOptions, cleanupMarkdown } from "../../core/markdown/ai-cleanup.js";
 import { normalizeObsidian } from "../../core/markdown/obsidian.js";
 
 /** 准备结果：markdown 保留完整 frontmatter，body/metadata 是其解析契约。 */
@@ -78,27 +78,6 @@ function splitFrontmatter(md: string): SplitMarkdown {
     frontmatter: md.slice(0, md.length - parsed.body.length),
     body: parsed.body,
     metadata: parsed.metadata,
-  };
-}
-
-/**
- * 两个档位开关 → 六个 per-rule 布尔(AI 清理的档位映射单源,勿在别处重拼):
- * - 保守规整(aiCleanup.tidy)= 引号破折号归一 / 列表标记补空格 / 行尾空白与空行折叠
- * - 结构改写(aiCleanup.rewrite)= 清裸数字引用标记 / 去 emoji / 重整标题层级
- * 纯函数(只读设置、不碰 IO),导出供直测断言「cleanupMarkdown 实际收到的 options」。
- * 入参只声明两个档位(Pick 而非整个块)——类型上即表达「本函数不判总开关」:
- * 总开关关闭时 preprocessBody 整段跳过,档位不构成旁路。
- */
-export function aiCleanupOptions(
-  settings: Pick<AppSettings["aiCleanup"], "tidy" | "rewrite">,
-): AiCleanupOptions {
-  return {
-    normalizeQuotes: settings.tidy,
-    fixListMarkers: settings.tidy,
-    trimBlankLines: settings.tidy,
-    stripCitationMarkers: settings.rewrite,
-    stripEmoji: settings.rewrite,
-    fixHeadingLevels: settings.rewrite,
   };
 }
 

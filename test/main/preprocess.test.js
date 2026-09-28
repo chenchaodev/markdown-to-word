@@ -11,11 +11,12 @@ import path from "node:path";
 import iconv from "iconv-lite";
 import { DEFAULT_SETTINGS } from "../../dist/core/settings/settings-defaults.js";
 import {
-  aiCleanupOptions,
   prepareMarkdown,
   prepareMarkdownText,
   preprocessMarkdown,
 } from "../../dist/main/converter/preprocess.js";
+// 档位 → per-rule 的映射已下沉 core,故从新落点断言(总开关/产物仍经 main 侧断言)。
+import { aiCleanupOptions } from "../../dist/core/markdown/ai-cleanup.js";
 import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
 
 /**

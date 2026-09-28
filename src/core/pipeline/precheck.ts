@@ -18,6 +18,12 @@ import { visit } from "unist-util-visit";
 import { parseMarkdown } from "./parse.js";
 import { createLocalImagePathPolicy } from "../markdown/image-path-policy.js";
 import { ALLOWED_INLINE_TAGS } from "../markdown/html-whitelist.js";
+import {
+  createSourceRangeQuery,
+  mergeSourceRanges,
+  type SourceRange,
+  type SourceRangeQuery,
+} from "../markdown/source-ranges.js";
 import type { ConvertWarning, KeyedWarning } from "../i18n.js";
 import { crossRefNotFoundWarning, unlabeledCodeBlockWarning } from "../i18n.js";
 import { imageNotFoundWarning } from "../image/image-warning.js";
@@ -251,21 +257,13 @@ export function precheckMarkdown(
 
 /* ================= 静默丢内容四类的判定实现(纯函数,零 IO) ================= */
 
-/** 源码字节区间(半开),取自 mdast 节点的权威 position */
-interface SourceRange {
-  start: number;
-  end: number;
-}
-
 /** mdast 节点的 position 形状(只取本模块用到的偏移字段) */
 interface PositionedNode {
   position?: { start: { offset?: number | null }; end: { offset?: number | null } } | null;
 }
 
 /** 掩码区间查询:offset 是否落在任一「不参与判定」的区间内 */
-interface MaskedRanges {
-  contains: (offset: number) => boolean;
-}
+type MaskedRanges = SourceRangeQuery;
 
 /** 节点覆盖的源码区间;无 position 或非正向区间返回 null */
 function nodeRange(node: PositionedNode): SourceRange | null {
@@ -276,38 +274,14 @@ function nodeRange(node: PositionedNode): SourceRange | null {
 }
 
 /**
- * 合并区间并给出二分查询。合并逻辑在此另写一份而非复用 markdown/ai-cleanup.ts:
+ * 合并区间并给出二分查询(合并与 offset 查询本身已归位到 markdown/source-ranges.ts)。
+ * 节点→区间的收集与 masking 仍在本模块自持,且**刻意不复用** ai-cleanup.ts 的那份:
  * 那边的保护区把「反斜杠 + 下一字符」整段当不可改写(转义是**保护对象**),
- * 而本模块的 \( 检测恰恰要看转义形态 —— 共用一份会把要检的信号一起掩掉。
+ * 而本模块的 \( 检测恰恰要看转义形态 —— 共用会把要检的信号一起掩掉。
+ * 决定与完整理由见 docs/adr/adr-025-区间判据不合并.md。
  */
 function buildMaskedRanges(ranges: readonly SourceRange[]): MaskedRanges {
-  const sorted = [...ranges]
-    .filter((range) => range.end > range.start)
-    .sort((left, right) => left.start - right.start || left.end - right.end);
-  const merged: SourceRange[] = [];
-  for (const range of sorted) {
-    const previous = merged[merged.length - 1];
-    if (previous && range.start <= previous.end) previous.end = Math.max(previous.end, range.end);
-    else merged.push({ ...range });
-  }
-  return {
-    contains(offset: number): boolean {
-      let low = 0;
-      let high = merged.length - 1;
-      let hit = -1;
-      while (low <= high) {
-        const mid = (low + high) >> 1;
-        if (merged[mid]!.start <= offset) {
-          hit = mid;
-          low = mid + 1;
-        } else {
-          high = mid - 1;
-        }
-      }
-      const range = hit < 0 ? undefined : merged[hit];
-      return range !== undefined && offset < range.end;
-    },
-  };
+  return createSourceRangeQuery(mergeSourceRanges(ranges));
 }
 
 /** 从 index 起连续反斜杠的右端(不含) */
