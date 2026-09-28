@@ -132,8 +132,25 @@ export function buildStepToc(): HTMLElement {
     h("option", { value: "field", dataset: { i18n: "wizard.toc.modeField" }, text: t("wizard.toc.modeField") }),
   ]) as HTMLSelectElement;
 
+  const modeField = h("div", { class: "wz-field" }, [
+    h("label", { class: "wz-label", dataset: { i18n: "wizard.toc.mode" }, text: t("wizard.toc.mode") }),
+    h("span", { class: "sel-wrap" }, [modeSelect]),
+  ]);
+
+  /**
+   * 目录模式下拉随总开关整块收起(与设置抽屉 04 组同源门控,口径见 settings-ia
+   * §3 第 1 条):toc 关掉后模式根本不成立,留一个可点的下拉等于让用户选一个
+   * 不生效的模式;灰禁会留下「能点却没反应」的假可供性,故走 .hidden 整块移除
+   * (display:none 已把控件移出焦点序与无障碍树,无需 inert)。收起不动
+   * select.value —— 重新打开总开关即恢复上次选择。回填与开关切换共用本函数。
+   */
+  const syncTocModeVisibility = (): void => {
+    modeField.classList.toggle("hidden", !tocSwitch.checked);
+  };
+
   tocSwitch.addEventListener("change", () => {
     state.settings.toc = tocSwitch.checked;
+    syncTocModeVisibility();
     persistSettings({ toc: tocSwitch.checked });
   });
   modeSelect.addEventListener("change", () => {
@@ -143,6 +160,8 @@ export function buildStepToc(): HTMLElement {
 
   tocSwitch.checked = state.settings.toc;
   modeSelect.value = state.settings.tocMode;
+  // 初始回填即按设置算一次显隐(向导外关过自动目录时不该还摆着模式下拉)
+  syncTocModeVisibility();
 
   /* 编号开关区:章节/题注/公式编号 + H1 前分页(与设置抽屉 04 组同源) */
   const numberingTitle = h("div", { class: "sub-label", dataset: { i18n: "settings.groupNumbering" }, text: t("settings.groupNumbering") });
@@ -173,10 +192,7 @@ export function buildStepToc(): HTMLElement {
       ]),
       tocSwitch,
     ]),
-    h("div", { class: "wz-field" }, [
-      h("label", { class: "wz-label", dataset: { i18n: "wizard.toc.mode" }, text: t("wizard.toc.mode") }),
-      h("span", { class: "sel-wrap" }, [modeSelect]),
-    ]),
+    modeField,
     numberingTitle,
     numRows,
   ]);
