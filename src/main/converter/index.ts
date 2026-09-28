@@ -4,7 +4,10 @@
  * 模块划分与依赖方向(单向无环):
  * - context.ts:取消语义(ConvertContext/createConvertContext/ConvertCanceledError/
  *   throwIfCanceled)+ getImageResolver 缓存 + buildConvertContext 映射收敛
- * - single.ts:convertImpl + renderPdf + runAfterConvert(batch/merge 复用后两者)
+ * - output-skeleton.ts:emitConvertedArtifact(单文件/合并共用的输出骨架,消费点 2 处)
+ *   + renderPdf + runAfterConvert(同模块是避免 single ↔ output-skeleton 成环的必要条件)
+ * - single.ts:convertImpl(参数校验 + 读取 md;渲染之后交给骨架,转出 renderPdf/
+ *   runAfterConvert 供 batch/测试的导入面零改动)
  * - batch.ts:batchConvertImpl(并发 2 池)
  * - merge.ts:mergeConvertImpl(多文件合并单次转换)
  * - paths.ts:resolveOutputPath(首选路径,不做存在性探测) / collectMarkdownPaths / filterExistingPaths

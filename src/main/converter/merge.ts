@@ -6,7 +6,6 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { convert } from "../../core/convert.js";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import type { ConvertResult } from "../../core/ipc-contract.js";
@@ -16,20 +15,15 @@ export type { ConvertResult } from "../../core/ipc-contract.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
 import { mergeMarkdowns } from "../../core/pipeline/merge.js";
-import { renderMermaidStrict } from "../services/mermaid-service.js";
 import { loadSettings } from "../persist/settings.js";
 import {
-  buildConvertContext,
-  ConvertCanceledError,
   createConvertContext,
-  getImageResolver,
   throwIfCanceled,
   type ConvertContext,
 } from "./context.js";
-import { isConversionCanceled } from "../../core/cancel.js";
 import { stripMarkdownExt } from "./paths.js";
-import { persistArtifact, runAfterConvert } from "./single.js";
 import { prepareMarkdown } from "./preprocess.js";
+import { emitConvertedArtifact } from "./output-skeleton.js";
 
 /** 合并源文件数上限:超限直接拒绝,不静默截断(截断会让用户以为全文已合并) */
 // 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
@@ -99,7 +93,7 @@ function commonBaseDir(dirs: string[]): string {
 
 /**
  * 合并转换:读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片相对公共 baseDir 重定位)→ 单次 convert。
- * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;导出后行为由本函数触发一次
+ * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;导出后行为由输出骨架在本路径触发一次
  * (单输出,与单文件一致),落盘后仍有最终取消检查。
  * 任一步失败直接抛(调用方 catch 为 { ok:false, error };取消抛 ConvertCanceledError)。
  * 进度经 onProgress 上报(与单文件同构;pdf 细分
@@ -148,6 +142,10 @@ export async function mergeConvertImpl(
     };
   });
   throwIfCanceled(ctx); // 读取完成后再查一次:长批次读取期间用户可能已取消
+  // ↑ 刻意留在合并侧,不进输出骨架:单文件没有「长批次读取」这个窗口,并进去要么删掉
+  //   一道真实防护,要么在单文件造假闸门(一个永不触发的检查看起来像防护,还会骗过
+  //   后续维护者)。本闸门被误删时 test/main/merge-cancel.test.js 第 5 个用例会红。
+  //   理由见 docs/adr/adr-029-main侧输出骨架抽函数.md 决定要点一。
   const inputs = preparedInputs.map(({ content, baseDir }) => ({ content, baseDir }));
   for (const input of preparedInputs) warnings.push(...input.warnings);
   // 合并文档的逻辑解析 baseDir 取所有输入目录的公共祖先;允许读取的根
@@ -156,52 +154,20 @@ export async function mergeConvertImpl(
   const trustedRoots = [...new Set(inputs.map((input) => path.resolve(input.baseDir)))];
   const md = mergeMarkdowns(inputs, { outputBaseDir: mergeBaseDir });
   const baseName = stripMarkdownExt(path.basename(firstFile));
-  // 进度分阶段:与 convertImpl 同构——docx 粗粒度 render,pdf 由 onStage 细分
-  if (format === "docx") onProgress?.("render");
-  let artifact: Awaited<ReturnType<typeof convert>>;
-  try {
-    artifact = await convert(
-      md,
-      format,
-      await buildConvertContext({
-        baseDir: mergeBaseDir,
-        // 取消与时间上限透传 core:合并渲染(整篇单次 convert)可被中途取消
-        convert: ctx,
-        title: baseName,
-        metadata,
-        warnings,
-        settings,
-        imageResolver: getImageResolver(mergeBaseDir, { trustedRoots }),
-        katexDir,
-        mermaidResolver: renderMermaidStrict, // 同单文件:严格模式,失败原因经 core warning 通道上屏
-        ...(format === "pdf" ? { onStage: (stage: string) => onProgress?.(stage) } : {}),
-      }),
-    );
-  } catch (err) {
-    // 渲染期取消归一为本层 ConvertCanceledError:main 面的取消判定(IPC 取消分支
-    // 与调用方 catch)只认本层类型,不归一会把「用户取消」上报为转换失败
-    if (isConversionCanceled(err)) throw new ConvertCanceledError();
-    throw err;
-  }
-  throwIfCanceled(ctx);
-  const { outputPath, warnings: outWarnings } = await persistArtifact(
-    artifact,
-    firstFile,
-    format,
-    settings.outputDir,
-    ctx,
-    onProgress,
-    `${baseName}-合并`,
+  // 渲染 → 落盘 → 导出后行为:与单文件共用输出骨架。合并只有单个产物,骨架内的
+  // 副作用闸门在本路径恒真(skipAfterConvert 的唯一写入者是 batchConvertImpl,
+  // 而 batch 只调 convertImpl、从不调 mergeConvertImpl),故导出后行为无条件触发
+  // 一次,与单文件同构;最终取消检查也由骨架在「产物已落盘 → 打开产物」的窗口承担。
+  const { outputPath } = await emitConvertedArtifact(
+    {
+      markdown: md,
+      sourcePath: firstFile,
+      baseDir: mergeBaseDir,
+      trustedRoots,
+      baseName: `${baseName}-合并`,
+      metadata,
+    },
+    { format, settings, ctx, warnings, katexDir, onProgress },
   );
-  warnings.push(...outWarnings);
-  // 副作用所有权:合并只有单个产物,由本函数无条件触发一次(与单文件同构)。
-  // 此处不判 skipAfterConvert:该字段的唯一写入者是 batch.ts 的 batchConvertImpl,
-  // 而 batch 只调 convertImpl、从不调 mergeConvertImpl;合并路径的 ctx 出自无参
-  // createConvertContext,其返回值不含该字段 ⇒ 此处恒为 undefined。
-  // 最终取消检查落在「产物已落盘 → 打开产物」的最后窗口:此处取消(用户取消或
-  // 关窗放弃)则抛 ConvertCanceledError,调用方回「已取消」,绝不打开产物——
-  // 与 convertImpl 的闸门位置对齐(勿只依赖落盘前的检查点)。
-  throwIfCanceled(ctx);
-  await runAfterConvert(settings.afterConvert, outputPath, ctx);
-  return { ok: true, outputPath, warnings };
+  return { ok: true, outputPath, warnings }; // warnings 与调用方共享同一数组,骨架已并入落盘 warning
 }
