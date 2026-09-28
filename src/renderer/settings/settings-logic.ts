@@ -2,9 +2,10 @@
  * 设置面板纯逻辑层:自 settings-panel.ts 抽出的零 DOM 依赖纯函数——不触碰
  * document/window/dom.ts 导出、不依赖模块级 DOM 状态,可直接 Node 单测。
  * 依赖仅 core/settings-defaults(契约/常量/硬编码预设,纯模块)。
- * 行为与抽取前逐一对应(settings-panel.ts 仅改 import 路径,零行为改动)。
- * 另抽 applySettingsToControls 的匹配/回填计算、预设保存/删除数据变换、
- * 设置对象与控件值互转、输入校验/钳制——settings-panel.ts 仅保留 DOM 赋值与事件绑定。
+ * 另抽预设匹配/保存删除数据变换、输入校验/钳制、动态展示文案——
+ * settings-panel.ts 仅保留 DOM 赋值与事件绑定。
+ * 「设置对象 → 控件回填值」的映射不在本层:它已归声明表
+ * (settings-controls-table.ts,同样零 DOM),类型从 AppSettings 派生。
  */
 import {
   DEFAULT_SETTINGS,
@@ -332,104 +333,12 @@ export function validateNumberRange(value: number, min: number, max: number): bo
   return Number.isFinite(value) && value >= min && value <= max;
 }
 
-/* ---------- 设置对象 → 控件回填值映射(applySettingsToControls 纯计算抽取) ---------- */
-/** 边距字段键(与 dom.ts marginInputs 键集一致)。 */
+/** 边距字段键(向导与设置面板共用;与 index.html 的四格输入一一对应)。 */
 export type MarginField = "marginTop" | "marginBottom" | "marginLeft" | "marginRight";
 
-/** 设置 → 控件回填值(纯计算;DOM 赋值留在 settings-panel.ts)。 */
-export interface SettingsControlValues {
-  paper: string;
-  orientation: string;
-  margins: Record<MarginField, string>;
-  fontAscii: string;
-  fontEastAsia: string;
-  bodySizePt: string;
-  lineSpacing: string;
-  headingScale: string;
-  headingSpacing: string;
-  firstLineIndent: boolean;
-  /** 对齐方式枚举(radio 组 name="align",left/justify) */
-  align: AppSettings["typography"]["align"];
-  headingNumbering: boolean;
-  captionNumbering: boolean;
-  breakBeforeH1: boolean;
-  toc: boolean;
-  tocMode: string;
-  equationNumbering: boolean;
-  // 这五项刻意保持平铺:它们一一对应 index.html 里五个平级控件的 id
-  // (aiCleanup / aiCleanupTidy / aiCleanupRewrite / obsidianCompat /
-  // obsidianAttachmentFolder),回填是按控件逐个赋值,分组只存在于设置对象侧。
-  aiCleanup: boolean;
-  /** AI 清理「保守规整」档 */
-  aiCleanupTidy: boolean;
-  /** AI 清理「结构改写」档 */
-  aiCleanupRewrite: boolean;
-  obsidianCompat: boolean;
-  obsidianAttachmentFolder: string;
-  afterConvert: string;
-  format: string;
-  outputDirText: string;
-  language: string;
-  theme: string;
-  /** 页眉页脚 */
-  headerMode: AppSettings["headerFooter"]["headerMode"];
-  headerText: string;
-  headerLayout: AppSettings["headerFooter"]["headerLayout"];
-  footerEnabled: boolean;
-  headerLogoPath: string;
-  /** 文字水印 */
-  watermarkText: string;
-  watermarkAngle: string;
-  watermarkOpacity: string;
-  watermarkGray: boolean;
-}
-
-/** 设置对象 → 控件回填值(数值字段转字符串,与 DOM value 赋值一致)。 */
-export function settingsToControlValues(settings: AppSettings): SettingsControlValues {
-  return {
-    paper: settings.pageSetup.paper,
-    orientation: settings.pageSetup.orientation,
-    margins: {
-      marginTop: String(settings.pageSetup.marginTop),
-      marginBottom: String(settings.pageSetup.marginBottom),
-      marginLeft: String(settings.pageSetup.marginLeft),
-      marginRight: String(settings.pageSetup.marginRight),
-    },
-    fontAscii: settings.typography.fontAscii,
-    fontEastAsia: settings.typography.fontEastAsia,
-    bodySizePt: String(settings.typography.bodySizePt),
-    lineSpacing: String(settings.typography.lineSpacing),
-    headingScale: settings.typography.headingScale,
-    headingSpacing: settings.typography.headingSpacing,
-    firstLineIndent: settings.typography.firstLineIndent,
-    align: settings.typography.align,
-    headingNumbering: settings.typography.headingNumbering,
-    captionNumbering: settings.typography.captionNumbering,
-    breakBeforeH1: settings.breakBeforeH1,
-    toc: settings.toc,
-    tocMode: settings.tocMode,
-    equationNumbering: settings.equationNumbering,
-    aiCleanup: settings.aiCleanup.enabled,
-    aiCleanupTidy: settings.aiCleanup.tidy,
-    aiCleanupRewrite: settings.aiCleanup.rewrite,
-    obsidianCompat: settings.obsidian.compat,
-    obsidianAttachmentFolder: settings.obsidian.attachmentFolder,
-    afterConvert: settings.afterConvert,
-    format: settings.format,
-    outputDirText: outputDirDisplayText(settings.outputDir),
-    language: settings.language,
-    theme: settings.theme,
-    headerMode: settings.headerFooter.headerMode,
-    headerText: settings.headerFooter.headerText,
-    headerLayout: settings.headerFooter.headerLayout,
-    footerEnabled: settings.headerFooter.footerEnabled,
-    headerLogoPath: settings.headerFooter.headerLogoPath,
-    watermarkText: settings.watermark.text,
-    watermarkAngle: String(settings.watermark.angle),
-    watermarkOpacity: String(settings.watermark.opacity),
-    watermarkGray: settings.watermark.gray,
-  };
-}
+/* 设置 → 控件回填值的类型与映射已移入声明表(从 AppSettings 派生,不再是手抄副本):
+ * 键集与值的类型都出自 settings-controls-table 的条目本身,故新增控件只加一条表条目。 */
+export { settingsToControlValues, type SettingsControlValues } from "./settings-controls-table.js";
 
 /**
  * 页眉 logo 路径 → 回显文件名:取末段路径段(兼容 / 与 \ 分隔),

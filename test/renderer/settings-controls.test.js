@@ -28,6 +28,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { installDomStub, makeElement, makeClassList, fireListener } from "./dom-stub.js";
+// 单向读几何规格(纯规格文件,不反向依赖生产侧:见 assertTableContract 的注)
+import {
+  DRAWER_CONTROL_KEYS,
+  DRAWER_GROUP_BY_KEY,
+} from "../tools/geometry/geometry-spec.mjs";
 
 /**
  * 断言失败即抛错;声明为断言函数使类型收窄。
@@ -177,6 +182,27 @@ export const fixtures = null;
 const PROBE = process.env.M2W_PROBE ?? "";
 
 /**
+ * 声明表的一行(dist 编译产物,无类型标注;形状与生产侧 ControlRow 一一对应)。
+ * @typedef {object} ControlRow
+ * @property {string} key 控件键
+ * @property {string} kind 形态:value / chip / derived
+ * @property {string} group 所属抽屉组("mirror" = 抽屉外镜像与顶栏控件)
+ * @property {string} reset 复位处置:reset / preserve / derived
+ * @property {string | null} block 顶层块(派生键为 null)
+ * @property {string[]} ids 元素 id 集合
+ * @property {string[]} radioNames radio 组名集合
+ */
+
+/**
+ * 登记在生产侧声明表里的一条「设置值驱动的显隐/文案」效果(dist 无类型标注)。
+ * @typedef {object} ValueDrivenEffect
+ * @property {string} id 效果键
+ * @property {string[]} sources 驱动源(设置控件键)
+ * @property {{ target: string; effect: string }[]} sites 落点展示位与处置形态
+ * @property {string} where 实现落点
+ */
+
+/**
  * 逐控件用例。
  * @typedef {object} Control
  * @property {string} name 控件名(index.html id 或 radio 组 name)
@@ -252,6 +278,7 @@ export async function run() {
 
   const { mergeSettingsWithDefaults, outputDirDisplayText, headerLogoDisplayName } =
     await import(dist("renderer/settings/settings-logic.js"));
+  const table = await import(dist("renderer/settings/settings-controls-table.js"));
   const { state } = await import(dist("renderer/state/state.js"));
   // t / setLanguage 在 i18n 逻辑层(core/i18n.js);注册表 index.js 只有 DICT/LANGUAGES
   const i18n = await import(dist("core/i18n.js"));
@@ -872,11 +899,175 @@ export async function run() {
     refsSource = refsSource.replace('input[name="paper"]', 'input[name="paperr"]');
   }
   assertRefContract(refsSource, indexHtml);
+  assertTableContract(table, controls, indexHtml, DEFAULT_SETTINGS);
 
   dom.restore();
   console.log(
-    `[ok] settings-controls:${controls.length} 个控件逐条 hydrate/bind/reset 通过 + 3 个手写门控双向(change/回填)通过 + 控件 id 交叉校验与 radio 组零命中守护通过`,
+    `[ok] settings-controls:${controls.length} 个控件逐条 hydrate/bind/reset 通过 + 3 个手写门控双向(change/回填)通过 + 控件 id 交叉校验与 radio 组零命中守护通过 + 声明表与几何规格交叉校验通过`,
   );
+}
+
+/**
+ * 声明表与四份既有事实的交叉校验 —— 步 03 的两条硬判据落在这里。
+ *
+ * 双向判据一:「每个控件都有表条目」且「每个表条目的控件 id 都在 index.html 里」。
+ * 双向判据二:声明表的**抽屉内**控件键集合与 test/tools/geometry/geometry-spec.mjs 的
+ * DRAWER_CONTROL_KEYS 一致(差额 3 个抽屉外镜像/顶栏控件按分工归本判据的 id 侧校验)。
+ *
+ * ⚠️ 几何规格**不得** import 生产侧的声明表 —— 那会给纯规格文件加一条 build 顺序依赖,
+ * 而「判定逻辑可在无 Electron 环境下完整验证」是它的刻意设计。故本段反向读它。
+ *
+ * @param {any} table 生产侧声明表模块(dist 编译产物,无类型标注)
+ * @param {Control[]} controls 逐控件基线表
+ * @param {string} indexHtml index.html 源码
+ * @param {Record<string, unknown>} defaults DEFAULT_SETTINGS(dist 编译产物)
+ * @returns {void} 有偏差即抛
+ */
+function assertTableContract(table, controls, indexHtml, defaults) {
+  /** @type {ControlRow[]} */
+  const rows = table.controlTable();
+  /** @type {Map<string, ControlRow>} */
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const htmlIds = new Set(
+    parseTags(indexHtml).filter((t) => t.attrs.id).map((t) => t.attrs.id),
+  );
+  const htmlRadioNames = new Set(
+    parseTags(indexHtml)
+      .filter((t) => t.tag === "input" && t.attrs.name)
+      .map((t) => /** @type {string} */ (t.attrs.name)),
+  );
+
+  // 判据一 · 正向:每个控件(逐控件基线表)都必须有表条目。
+  // 镜像控件(quickOutputDir 是 outputDir chip 的镜像展示位)也算有表条目,
+  // 但不要求自己是独立条目 —— 判据是「有表条目覆盖」,不是「必须独立成条」。
+  const covered = new Set();
+  for (const row of rows) {
+    covered.add(row.key);
+    for (const id of row.ids) covered.add(id);
+    for (const name of row.radioNames) covered.add(name);
+  }
+  for (const c of controls) {
+    assert(
+      covered.has(c.name),
+      `控件 ${c.name} 在声明表里没有条目(新增控件的成本判据:1 个表条目 + 1 个 HTML 控件)`,
+    );
+  }
+
+  // 判据一 · 反向:每个表条目的 id / radio 组名都必须在 index.html 里(拼错即红)
+  for (const row of rows) {
+    for (const id of row.ids) {
+      assert(htmlIds.has(id), `声明表条目 ${row.key} 引用了 index.html 中不存在的 id "${id}"`);
+    }
+    for (const name of row.radioNames) {
+      assert(
+        htmlRadioNames.has(name),
+        `声明表条目 ${row.key} 的 radio 组名 input[name="${name}"] 在 index.html 命中 0 个元素`,
+      );
+    }
+  }
+
+  // 判据二:抽屉内控件键集合 ⇄ 几何规格。
+  // 抽屉外 3 个(quickPreset / quickOutputDir 镜像 / format 顶栏)不在 DRAWER_GROUPS 内,
+  // 声明表里以 group="mirror" 标出,故两边天然错开而不是靠手写差额名单。
+  const declaredDrawerKeys = new Set(
+    rows.filter((r) => r.group !== "mirror").map((r) => r.key),
+  );
+  const specDrawerKeys = new Set(DRAWER_CONTROL_KEYS);
+  const onlyInTable = [...declaredDrawerKeys].filter((k) => !specDrawerKeys.has(k));
+  const onlyInSpec = [...specDrawerKeys].filter((k) => !declaredDrawerKeys.has(k));
+  assert(
+    onlyInTable.length === 0 && onlyInSpec.length === 0,
+    `声明表与几何规格的抽屉内控件键集合不一致:仅表里有 ${JSON.stringify(onlyInTable)},仅规格里有 ${JSON.stringify(onlyInSpec)}`,
+  );
+  // 组归属也要一致(几何门禁按组判位置,组错了位置判据就整体失效)
+  for (const row of rows) {
+    if (row.group === "mirror") continue;
+    assert(
+      DRAWER_GROUP_BY_KEY.get(row.key) === row.group,
+      `声明表条目 ${row.key} 的组归属 ${row.group} 与几何规格 ${DRAWER_GROUP_BY_KEY.get(row.key)} 不一致`,
+    );
+  }
+
+  // 复位口径:「有控件的块 ∪ 无控件键」必须等于 AppSettings 的全部顶层键 ——
+  // 抽屉「恢复默认」的白名单是复位的真源,不能靠"表里没有它就算保留"。
+  const topKeys = new Set(Object.keys(defaults));
+  const coveredBlocks = new Set([...table.declaredBlockKeys(), ...table.KEYS_WITHOUT_CONTROL]);
+  for (const key of topKeys) {
+    assert(
+      coveredBlocks.has(key),
+      `顶层键 ${key} 既不在声明表的块里、也不在无控件键清单里(复位口径漏登记)`,
+    );
+  }
+  for (const key of coveredBlocks) {
+    assert(topKeys.has(key), `声明表登记了顶层键 ${key},但 DEFAULT_SETTINGS 里没有它`);
+  }
+  // 刻意保留集双向一致:表里标 preserve 的条目 + 无控件键 = PRESERVED_KEYS。
+  // 逐控件基线用**设置键**名,声明表用控件键,故经 block 换算(派生键无块)。
+  const preservedBlocks = new Set(
+    rows.filter((r) => r.reset === "preserve").map((r) => r.block ?? r.key),
+  );
+  const tablePreserved = new Set([...preservedBlocks, ...table.KEYS_WITHOUT_CONTROL]);
+  for (const key of tablePreserved) {
+    assert(
+      PRESERVED_KEYS.includes(key),
+      `声明表把 ${key} 标为刻意保留,但逐控件基线的保留集里没有它(保留口径漂移)`,
+    );
+  }
+  for (const key of PRESERVED_KEYS) {
+    assert(
+      tablePreserved.has(key),
+      `逐控件基线把 ${key} 列为保留字段,声明表里却没有登记为保留(现登记 ${JSON.stringify([...tablePreserved])})`,
+    );
+  }
+  // 复位集(标 reset 的条目)与保留集必须互补:一个控件不能两头都算,也不能两头都不算
+  for (const row of rows) {
+    if (row.reset === "derived") continue;
+    assert(
+      PRESERVED_KEYS.includes(row.block ?? "") === (row.reset === "preserve"),
+      `控件 ${row.key} 的复位口径(${row.reset})与它的设置块 ${row.block} 在保留集里的归属不一致`,
+    );
+  }
+
+  // 依赖登记:门控与「设置值驱动的显隐」两处都不得漏,且引用的 id 必须真实存在。
+  for (const gate of table.CONTROL_GATES) {
+    assert(
+      byKey.has(gate.master),
+      `门控 ${gate.id} 的主控 ${gate.master} 不在声明表里`,
+    );
+    for (const dep of gate.dependents) {
+      assert(byKey.has(dep), `门控 ${gate.id} 的从属项 ${dep} 不在声明表里`);
+    }
+  }
+  const effectTargets = new Set(
+    table.VALUE_DRIVEN_EFFECTS.flatMap(
+      (/** @type {ValueDrivenEffect} */ e) => e.sites.map((s) => s.target),
+    ),
+  );
+  // 这 6 个落点就是「设置值 → 控件显隐/文案」的全部站点(5 处 + 预设提示),
+  // 逐个点名以免新增站点时靠"记得登记"。
+  for (const target of [
+    "templatePresetHint",
+    "outputDirValue",
+    "quickOutputDir",
+    "pdfCssStatus",
+    "pdfCssClearBtn",
+    "headerLogoClear",
+    "presetDeleteBtn",
+    "drawerSubtitle",
+  ]) {
+    assert(
+      effectTargets.has(target),
+      `展示位 ${target} 受设置值驱动,但未登记在 VALUE_DRIVEN_EFFECTS 里`,
+    );
+  }
+  for (const effect of table.VALUE_DRIVEN_EFFECTS) {
+    for (const source of effect.sources) {
+      assert(byKey.has(source), `设置值驱动效果 ${effect.id} 的来源 ${source} 不在声明表里`);
+    }
+    for (const site of effect.sites) {
+      assert(htmlIds.has(site.target), `设置值驱动效果 ${effect.id} 的落点 ${site.target} 不在 index.html 里`);
+    }
+  }
 }
 
 /**

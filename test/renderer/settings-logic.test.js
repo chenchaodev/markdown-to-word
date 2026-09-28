@@ -17,7 +17,10 @@
  *   resolvePresetHint(回填 hint 计算)、outputDirDisplayText(输出目录占位文案)、
  *   buildCustomPresetEntry(另存为预设快照)、removeCustomPresetByName(按名删除保序)、
  *   parseMarginValue(边距输入解析+钳制)、validateNumberRange(字号/行距范围校验)、
- *   settingsToControlValues(设置对象 → 控件回填值映射)
+ *   settingsToControlValues(设置对象 → 控件回填值映射;表驱动,类型从 AppSettings 派生,
+ *     path-chip 的展示文本不入此映射)。注:dist 是编译产物(无类型标注),故本段按
+ *     运行期取值断言 —— 回显值的**类型派生**由 src 侧 typecheck 守(声明表逐条 read
+ *     的返回类型即映射值的类型),此段另加一条键集断言兜住"漏登记一条"。
  * - 预设名/说明三语化:presetHintText(内置走 hintI18nKey 字典,缺键/未配键回退 hint 原文)、
  *   presetDisplayName(内置走 i18nKey,自定义走 name,缺键回退 name)、
  *   resolvePresetHint 三语命中 + 自定义/「已微调」分支可达与复位、
@@ -46,6 +49,7 @@ import {
   clampMargin,
   customPresetNameFromId,
   customPresetToTemplate,
+  headerLogoDisplayName,
   mergePendingSavePatch,
   mergeSettingsWithDefaults,
   normalizePageSetup,
@@ -78,6 +82,18 @@ const preset = (name) => ({ name, typography: {}, pageSetup: {} });
 
 /** 合并后的完整设置(dist 编译产物无类型标注,取 mergeSettingsWithDefaults 的返回形状)。 */
 /** @typedef {ReturnType<typeof mergeSettingsWithDefaults>} AppSettings */
+
+/**
+ * 取控件回填值映射。dist 无类型标注,故在此只声明"取值形状"这一层:
+ * 开关与分档为 boolean,其余(文本/数值/枚举档/path-chip 之外的一切)为 string。
+ * 键集与逐键类型在 src 侧由声明表派生并过 typecheck —— 此处不复制那份形状,
+ * 免得测试里再养一份手抄副本(那正是本次要消掉的债)。
+ * @param {AppSettings} settings
+ * @returns {Record<string, string | boolean>}
+ */
+function controlValues(settings) {
+  return /** @type {Record<string, string | boolean>} */ (settingsToControlValues(settings));
+}
 
 /**
  * 取指定语言的字典表(dist DICT 为三语字面量对象,动态语言码访问在此收敛)。
@@ -444,7 +460,7 @@ export async function run() {
     onFailure: () => {},
   });
   // 成功路径:apply 收到 main 权威值(下方断言即校验其字段与控件映射)
-  const successControls = settingsToControlValues(/** @type {AppSettings} */ (successApplied));
+  const successControls = controlValues(/** @type {AppSettings} */ (successApplied));
   assert(
     successSave === "saved" && successApplied?.format === "pdf" &&
       successControls.format === "pdf" && successApplied.theme === "dark",
@@ -723,41 +739,56 @@ export async function run() {
     afterConvert: "open",
     outputDir: "C:\\out",
   };
-  const cv = settingsToControlValues(customSettings);
+  const cv = controlValues(customSettings);
   assert(cv.paper === "A3" && cv.orientation === "landscape", "paper/orientation 映射");
+  // 边距四条各自成条目(不再聚成 margins 子表):控件与键一一对应,
+  // 故回填值映射也是一条控件一个键
   assert(
-    cv.margins.marginTop === "30.5" &&
-      cv.margins.marginBottom === String(DEFAULT_SETTINGS.pageSetup.marginBottom),
-    "边距转字符串",
+    cv.marginTop === "30.5" &&
+      cv.marginBottom === String(DEFAULT_SETTINGS.pageSetup.marginBottom) &&
+      cv.marginLeft === String(DEFAULT_SETTINGS.pageSetup.marginLeft) &&
+      cv.marginRight === String(DEFAULT_SETTINGS.pageSetup.marginRight),
+    "四条边距转字符串",
   );
   assert(cv.bodySizePt === "14" && cv.lineSpacing === "1.25", "字号/行距转字符串");
   assert(cv.align === "justify", "align=justify → 枚举原样映射");
   assert(cv.afterConvert === "open" && cv.format === "pdf", "afterConvert/format 映射");
   assert(cv.equationNumbering === true, "equationNumbering 映射(默认 true)");
-  assert(cv.outputDirText === "C:\\out", "非空输出目录原样");
-  const eqOffCv = settingsToControlValues({
+  assert(cv.pdfCss === DEFAULT_SETTINGS.pdfCss, "pdfCss 映射(回填曾绕过回显类型直读 settings)");
+  const eqOffCv = controlValues({
     ...DEFAULT_SETTINGS,
     equationNumbering: false,
   });
   assert(eqOffCv.equationNumbering === false, "equationNumbering=false 应映射为 false");
-  const leftCv = settingsToControlValues({
+  const leftCv = controlValues({
     ...DEFAULT_SETTINGS,
     typography: { ...DEFAULT_SETTINGS.typography, align: "left" },
   });
   assert(leftCv.align === "left", "align=left → 枚举原样映射");
-  const emptyDirCv = settingsToControlValues(DEFAULT_SETTINGS);
-  assert(emptyDirCv.outputDirText === "与源文件相同目录", "空输出目录 → 占位文案");
+  const emptyDirCv = controlValues(DEFAULT_SETTINGS);
+  // 输出目录与页眉 logo 不在此映射里:它们是 path-chip,展示文本(占位文案 / 文件名)
+  // 不是设置值本身,原先的 outputDirText / headerLogoPath 两个字段是回填根本不消费的死字段
+  assert(
+    !("outputDir" in emptyDirCv) && !("headerLogoPath" in emptyDirCv),
+    "path-chip 不应进回显值映射(此前的两个死字段已随派生消失)",
+  );
+  assert(outputDirDisplayText("C:\\out") === "C:\\out", "非空输出目录原样");
+  assert(outputDirDisplayText("") === "与源文件相同目录", "空输出目录 → 占位文案");
+  assert(
+    headerLogoDisplayName("C:\\img\\logo.png") === "logo.png" && headerLogoDisplayName("") === "",
+    "logo 路径 → 文件名(与两个分隔符)",
+  );
   // theme 映射(默认 system / 显式 dark)
   assert(emptyDirCv.theme === "system", "theme 默认映射为 system");
-  const darkCv = settingsToControlValues({ ...DEFAULT_SETTINGS, theme: "dark" });
+  const darkCv = controlValues({ ...DEFAULT_SETTINGS, theme: "dark" });
   assert(darkCv.theme === "dark", "theme=dark 应原样映射");
   // AI 清理两档:两个档位各自映射,互不影响(回填层不得把两档并成一个值)
-  const tierOnCv = settingsToControlValues(DEFAULT_SETTINGS);
+  const tierOnCv = controlValues(DEFAULT_SETTINGS);
   assert(
     tierOnCv.aiCleanup === false && tierOnCv.aiCleanupTidy === true && tierOnCv.aiCleanupRewrite === true,
     "总开关默认关、两档默认开应分别映射",
   );
-  const tierOffCv = settingsToControlValues({
+  const tierOffCv = controlValues({
     ...DEFAULT_SETTINGS,
     aiCleanup: { enabled: true, tidy: false, rewrite: true },
     obsidian: { compat: true, attachmentFolder: "Assets" },
@@ -770,7 +801,25 @@ export async function run() {
     tierOffCv.obsidianCompat === true && tierOffCv.obsidianAttachmentFolder === "Assets",
     "obsidian 两字段应从分组对象映射到各自的平级控件值",
   );
-  console.log("[ok] settingsToControlValues:全字段映射/数值转字符串/align 判定/输出目录文案/theme 映射 断言通过");
+  // 派生类型是真的派生:从 AppSettings 加一个字段而不进声明表,下面这行即编译报错
+  // (逐条 read 的返回类型即映射值的类型,故错值/漏键都被 typecheck 判掉)
+  // 键集逐条对账:每条声明的值控件都必须在此映射里有一个键,且不多不少 ——
+  // 漏一条(忘记声明)与多一条(声明了却没进映射)都判红
+  const table = await import("../../dist/renderer/settings/settings-controls-table.js");
+  // dist 为编译产物、元素可空推断出 undefined,故整表取形状一次(放宽理由同 controlValues)
+  const tableRows = /** @type {{ kind: string; key: string }[]} */ (table.controlTable());
+  const declaredValueKeys = tableRows
+    .filter((r) => r.kind === "value")
+    .map((r) => r.key)
+    .sort();
+  const mappedKeys = Object.keys(emptyDirCv).sort();
+  assert(
+    JSON.stringify(declaredValueKeys) === JSON.stringify(mappedKeys),
+    `回显值映射的键集应与声明表的值控件条目一致:多 ${JSON.stringify(mappedKeys.filter((k) => !declaredValueKeys.includes(k)))},少 ${JSON.stringify(declaredValueKeys.filter((k) => !mappedKeys.includes(k)))}`,
+  );
+  console.log(
+    `[ok] settingsToControlValues:全字段映射/数值转字符串/align 判定/pdfCss 纳入/path-chip 不入/theme 映射/键集与声明表一致 断言通过`,
+  );
 
   // ---------- applyThemeOn(data-theme 属性应用,DOM 无关直测) ----------
   /**

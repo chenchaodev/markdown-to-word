@@ -4,17 +4,18 @@
  * settings-bindings.ts 六组分组文件(单向依赖本模块),自定义预设弹窗/保存/删除/
  * 导入导出见 settings-preset-actions.ts(单向依赖本模块)——两者均不被本模块反向引用。
  * 抽屉开合/焦点/副标题写入见 settings-drawer.ts(本模块单向依赖之)。
- * 依赖方向:本模块 → core/settings-defaults、dom.ts、state.ts、settings-drawer;
- * 不反向引用 renderer.ts 的私有符号。
+ * 依赖方向:本模块 → core/settings-defaults、dom.ts、state.ts、settings-drawer、
+ * settings-controls-table;不反向引用 renderer.ts 的私有符号。
  * 组合根 renderer.ts 调用:init 处 bindSettingsEvents() 后再 loadSettings()
  * (时序与拆分前一致:事件绑定先于回填)。
+ * 控件回填由声明表(settings-controls-table)驱动,本模块只提供「按声明里的定位
+ * 取元素」这一接缝 —— 键、id、组、复位口径的单源都在表里。
  * 快速参数条(主界面)为抽屉的高频镜像——模板预设 select 与输出目录 chip 在回填/
  * 选项重建处双写;paper/orientation 分段为同名 radio 组自动成组,无需显式镜像。
  */
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
-  type PageSetup,
 } from "../../core/settings/settings-defaults.js";
 import { htmlLangOf } from "../../core/i18n.js";
 import {
@@ -26,47 +27,26 @@ import {
   resolvePresetSelection,
   allPresets,
   applyThemeOn,
-  settingsToControlValues,
 } from "./settings-logic.js";
+import {
+  CONTROL_ENTRIES,
+  hydrateControls,
+  type ControlDom,
+  type GateId,
+} from "./settings-controls-table.js";
 import { persistSettings, registerSettingsSaveHooks } from "./settings-save.js";
 import {
-  afterConvertInputs,
-  alignInputs,
-  bodySizePtInput,
-  breakBeforeH1Input,
-  captionNumberingInput,
   checkedRadioValue,
   completeDialogSuppressInput,
-  equationNumberingInput,
   aiCleanupInput,
   aiCleanupTidyInput,
   aiCleanupRewriteInput,
   aiCleanupTiersLocked,
-  obsidianCompatInput,
-  obsidianAttachmentFolderInput,
-  firstLineIndentInput,
-  fontAsciiInput,
-  fontEastAsiaInput,
-  formatInputs,
-  footerEnabledInput,
   headerCustomFields,
-  headerLayoutInputs,
   headerLogoClearBtn,
   headerLogoStatus,
   headerModeInputs,
-  headerTextInput,
-  watermarkTextInput,
-  watermarkAngleInput,
-  watermarkOpacityInput,
-  watermarkGrayInput,
-  headingNumberingInput,
-  headingScaleInputs,
-  headingSpacingInputs,
   languageSelect,
-  lineSpacingInput,
-  lineSpacingValue,
-  marginInputs,
-  orientationInputs,
   outputDirValue,
   paperInputs,
   pdfCssClearBtn,
@@ -78,7 +58,6 @@ import {
   statusEl,
   templatePresetHint,
   templatePresetSelect,
-  themeInputs,
   tocInput,
   tocModeSelect,
 } from "../dom/refs.js";
@@ -188,42 +167,46 @@ export async function loadSettings(): Promise<void> {
   state.selectedFormat = state.settings.format; // 转换格式与设置保持一致
 }
 
+/* ---------- 声明表 → DOM 的接缝 ---------- */
+/** 声明表不碰 DOM(保持可 Node 直测),元素在装配处按「声明里的定位」取来。
+ *  id 与 radio 组名的单源是声明表,此处不重述任何一个 —— 新增控件因此不必再动
+ *  dom/refs;refs 留给手写接线(事件绑定、门控、动态文案)。 */
+const controlDom: ControlDom = {
+  element: (id) => {
+    const el = document.getElementById(id);
+    // 控件 id 与 index.html 的偏差在设置控件段已被交叉校验判掉;运行期再错要响,
+    // 不能静默把值写到 null 上(那会呈现为"回填没生效"这种查不到源的故障)
+    if (!el) throw new Error(`设置控件 #${id} 在 DOM 中不存在(声明表与 index.html 不一致)`);
+    return el;
+  },
+  radioGroup: (name) => document.querySelectorAll<HTMLInputElement>(`input[name="${name}"]`),
+};
+
+/** 三个手写门控的同步函数:键集 = 声明表登记的门控 id(少登记一个门控即多一个
+ *  必填槽,编译期红);回填时逐个调用,不把依赖做成声明式。 */
+const GATE_SYNCERS: Record<GateId, () => void> = {
+  headerCustomVisibility: syncHeaderCustomVisibility,
+  aiCleanupTierAvailability: syncAiCleanupTierAvailability,
+  tocModeVisibility: syncTocModeVisibility,
+};
+
 /** 将内存设置回填到所有控件(仅赋值,不触发 change 事件)。
- *  值计算(设置 → 控件值映射/预设匹配/hint)在 settings-logic,本函数只做 DOM 赋值;
- *  末尾刷新抽屉副标题(「预设名 · 纸张」随回填实时更新)。 */
+ *  值控件由声明表驱动(键 → 控件 → 值的映射与 seg 分段组的按值勾选都在表里);
+ *  派生键、门控、动态展示位、抽屉副标题各按自己的机制在后段处理 ——
+ *  它们都不是「控件值 = 设置值」的直连关系,故不进表驱动那一段。 */
 export function applySettingsToControls(): void {
-  const v = settingsToControlValues(state.settings);
-  // 纸张/方向/标题档位/页眉模式与布局为 seg 分段(radio 组),
-  // 回填按值勾选对应档(与 alignInputs/themeInputs 同款);
-  // name 全文档成组——快速参数条同名镜像分段一并勾选,零额外代码
-  paperInputs.forEach((input) => (input.checked = input.value === v.paper));
-  orientationInputs.forEach(
-    (input) => (input.checked = input.value === v.orientation),
-  );
-  (
-    Object.keys(marginInputs) as (keyof PageSetup & keyof typeof marginInputs)[]
-  ).forEach((key) => {
-    marginInputs[key].value = v.margins[key];
-  });
-  fontAsciiInput.value = v.fontAscii;
-  fontEastAsiaInput.value = v.fontEastAsia;
-  bodySizePtInput.value = v.bodySizePt;
-  lineSpacingInput.value = v.lineSpacing;
-  if (lineSpacingValue) lineSpacingValue.textContent = v.lineSpacing; // 滑杆 mono 回显同步
-  headingScaleInputs.forEach(
-    (input) => (input.checked = input.value === v.headingScale),
-  );
-  headingSpacingInputs.forEach(
-    (input) => (input.checked = input.value === v.headingSpacing),
-  );
-  firstLineIndentInput.checked = v.firstLineIndent;
-  // 对齐方式 radio 组回填(按值勾选对应档)
-  alignInputs.forEach((input) => (input.checked = input.value === v.align));
-  headingNumberingInput.checked = v.headingNumbering;
-  captionNumberingInput.checked = v.captionNumbering;
-  // 模板预设:优先保持当前选中(值与设置一致时不弹回——自定义预设与硬编码预设
-  // 值全等时不被 find 抢走),否则回退全局匹配;无匹配回退「默认」并提示已进入自定义模式。
-  // 抽屉 select 与快速参数条镜像 select 同步同值
+  hydrateControls(state.settings, controlDom);
+  syncPresetSelection();
+  for (const syncGate of Object.values(GATE_SYNCERS)) syncGate();
+  refreshDynamicSettingsText();
+  updateDrawerMeta(composeDrawerMetaText());
+}
+
+/** 模板预设 select 回填(派生键:值是「当前设置匹配哪个预设」的结论,不是设置字段)。
+ *  优先保持当前选中(其值与设置一致时不被弹回——自定义预设与硬编码预设值全等时
+ *  find 会抢走),否则回退全局匹配;无匹配回退「默认」。抽屉 select 与快速参数条
+ *  镜像 select 同步同值;仅自定义预设可删(选中项以 custom: 前缀标识)。 */
+function syncPresetSelection(): void {
   const matchedPresetId = resolvePresetSelection(
     state.settings.customPresets,
     state.settings,
@@ -231,57 +214,7 @@ export function applySettingsToControls(): void {
   );
   templatePresetSelect.value = matchedPresetId;
   quickPresetSelect.value = matchedPresetId;
-  // 仅自定义预设可删(选中项以 custom: 前缀标识)
-  presetDeleteBtn.classList.toggle(
-    "hidden",
-    !templatePresetSelect.value.startsWith("custom:"),
-  );
-  breakBeforeH1Input.checked = v.breakBeforeH1;
-  tocInput.checked = v.toc;
-  tocModeSelect.value = v.tocMode;
-  // 模式下拉的显隐跟随总开关(回填与总开关切换共用同一函数,单一来源)
-  syncTocModeVisibility();
-  equationNumberingInput.checked = v.equationNumbering;
-  aiCleanupInput.checked = v.aiCleanup;
-  aiCleanupTidyInput.checked = v.aiCleanupTidy;
-  aiCleanupRewriteInput.checked = v.aiCleanupRewrite;
-  // 分档置灰跟随总开关(回填与总开关切换共用同一函数,单一来源)
-  syncAiCleanupTierAvailability();
-  obsidianCompatInput.checked = v.obsidianCompat;
-  obsidianAttachmentFolderInput.value = v.obsidianAttachmentFolder;
-  afterConvertInputs.forEach(
-    (input) => (input.checked = input.value === v.afterConvert),
-  );
-  formatInputs.forEach(
-    (input) => (input.checked = input.value === v.format),
-  );
-  // i18n:界面语言 select 回填(选项由 LANGUAGES 动态生成于 rebuildLanguageOptions)
-  languageSelect.value = v.language;
-  // 外观主题 radio 回填(system/light/dark)
-  themeInputs.forEach(
-    (input) => (input.checked = input.value === v.theme),
-  );
-  // 动态状态节点(输出目录 / PDF CSS / Logo / 预设提示)统一走 refreshDynamicSettingsText
-  pdfCssTextInput.value = state.settings.pdfCss;
-  // 页眉页脚回填:模式/文字/布局/页脚开关 + logo 文件名回显与清除按钮可见性
-  headerModeInputs.forEach(
-    (input) => (input.checked = input.value === v.headerMode),
-  );
-  headerTextInput.value = v.headerText;
-  headerLayoutInputs.forEach(
-    (input) => (input.checked = input.value === v.headerLayout),
-  );
-  footerEnabledInput.checked = v.footerEnabled;
-  syncHeaderCustomVisibility();
-  // 文字水印回填:文字/角度/不透明度/浅灰
-  watermarkTextInput.value = v.watermarkText;
-  watermarkAngleInput.value = v.watermarkAngle;
-  watermarkOpacityInput.value = v.watermarkOpacity;
-  watermarkGrayInput.checked = v.watermarkGray;
-  // 动态状态节点:预设提示 + 输出目录 + PDF CSS + Logo(单一来源,见下节)
-  refreshDynamicSettingsText();
-  // 抽屉副标题随回填刷新(「预设名 · 纸张」)
-  updateDrawerMeta(composeDrawerMetaText());
+  presetDeleteBtn.classList.toggle("hidden", !matchedPresetId.startsWith("custom:"));
 }
 
 /* ---------- 动态状态节点(内容来自设置状态,index.html 中不带 data-i18n) ----------
@@ -332,9 +265,10 @@ export function refreshDynamicSettingsText(): void {
   // 单行省略时完整文案经 title 悬浮可见(与 textContent 同步)
   templatePresetHint.title = hint;
   templatePresetHint.classList.toggle("template-hint--custom", isCustom);
-  syncOutputDirDisplay(state.settings.outputDir);
-  syncPdfCssState(state.settings.pdfCss);
-  syncHeaderLogoDisplay(state.settings.headerFooter.headerLogoPath);
+  // 三处动态展示位取各自声明条目的读侧(键路径单源在声明表,不在这里重述)
+  syncOutputDirDisplay(CONTROL_ENTRIES.outputDir.read(state.settings));
+  syncPdfCssState(CONTROL_ENTRIES.pdfCss.read(state.settings));
+  syncHeaderLogoDisplay(CONTROL_ENTRIES.headerLogoPath.read(state.settings));
 }
 
 /**
