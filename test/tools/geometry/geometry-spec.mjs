@@ -1,10 +1,11 @@
 // @ts-check
 /**
  * geometry gate 规格单源(零 DOM / 零 Electron / 零 IO):测量节点表、场景表(视口/驱动步骤/
- * 必需节点/截图名)、恒定断言组、固定槽下限、容差与滚动预算默认值,以及高度维度媒体查询的
- * 抽取与求值。判定规则在 geometry-core,页面侧探针在 geometry-page。
+ * 必需节点/截图名)、设置抽屉的分组与控件清单及门控表、恒定断言组、固定槽下限、容差与
+ * 滚动预算默认值,以及高度维度媒体查询的抽取与求值。判定规则在 geometry-core,
+ * 页面侧探针在 geometry-page。
  *
- * 契约/常量单源:驱动(采样)与判定(裁决)共用本表,新增测量点或场景只改这里。
+ * 契约/常量单源:驱动(采样)与判定(裁决)共用本表,新增测量点、场景或抽屉控件只改这里。
  */
 
 /* ---------- 规格表项的类型契约(判定层与驱动脚本共同消费) ---------- */
@@ -32,6 +33,11 @@
  * @property {string[]} [visible] 必需在场且可见的节点 key
  * @property {string[]} [present] 必需在场的节点 key(允许隐藏)
  * @property {ColumnAxis[]} columnAxis 列轴断言组
+ * @property {string} [drawerTab] 期望激活的抽屉分组(缺省 = 该场景不参与抽屉判定)
+ * @property {Record<string, boolean | string>} [drawerMasters] 本场景驱动后的抽屉主控档位。
+ *   既用于生成驱动步骤、也作为合成「应当全绿」样本的基线;**判定层不读它** —— 门禁的可见性
+ *   预期一律由样本实测到的主控态反推,故这里写错档位时门禁会在真实窗口跑出与声明相反的
+ *   可见性而判红,不会因为声明自洽而假绿。
  */
 
 /**
@@ -125,10 +131,356 @@ const COMMON_PRESENT = [
   "dropCore",
 ];
 
+/* ══════════════ 设置抽屉:分组 · 控件清单 · 门控 · 场景 ══════════════
+   抽屉是全部设置控件的家,而既有几何门禁只测主窗舞台 —— 步 03 要做表驱动重构、
+   其退出条件写着「控件位置与可见性不得变化」,却没有任何探测器看着抽屉。故本节
+   把抽屉接进同一条链内门禁。判据是**结构不变式**(存在/组归属/组内顺序/无裁切/门控显隐),
+   不是像素快照:快照会因平台、主题、字体与缩放档假红,而结构不变式在任何机器上都成立。 */
+
+/**
+ * @typedef {object} DrawerControl 抽屉值控件项(定位二选一:id 控件用 id,radio 分段用组名)
+ * @property {string} [key] 控件键;缺省取 id ?? name。键名取**设置键**(path-chip 等
+ *   「元素 id 与设置键不同名」的控件用 key 显式对齐),便于与 settings-ia.md、
+ *   settings-bindings-* 逐条对照。
+ * @property {string} [id] 元素 id 定位
+ * @property {string} [name] radio 组名定位(分段控件无 id)
+ */
+
+/**
+ * @typedef {object} DrawerCondition 条件从属项(主控不满足即**整块收起**)
+ * @property {string} control 从属控件键
+ * @property {string} master 主控控件键
+ * @property {"switch" | "radio"} masterKind 主控形态
+ * @property {boolean | string} [on] 主控处于何态时从属项可见(switch 取 true,radio 取档位值)
+ * @property {string} why 契约说明(失败消息引用)
+ */
+
+/**
+ * @typedef {object} DrawerTier 灰禁从属项(主控关时 **disabled 但不移除**)
+ * @property {string} control 从属控件键
+ * @property {string} master 主控控件键
+ * @property {string} why 契约说明
+ */
+
+/** 抽屉结构节点选择器(开合入口 / 遮罩 / 两个 overflow-x:hidden 滚动区 / 当前激活面板) */
+export const DRAWER_SELECTORS = {
+  open: "#settingsOpenBtn", // 顶栏齿轮:抽屉唯一打开入口
+  shell: "#settingsDrawer", // 遮罩容器(带 .hidden 工具类,关闭态即整块不可见)
+  panels: "#settingsDrawer .settings-panels", // 右侧面板区(overflow-y:auto + overflow-x:hidden)
+  tabs: "#settingsDrawer .settings-tabs", // 左侧竖向导航(overflow-y:auto + overflow-x:hidden)
+  activePanel: "#settingsDrawer .settings-panels > .sec.active", // 当前激活面板(判 tab 是否真的切到位)
+};
+/**
+ * 抽屉内的水平裁切守护容器:scrollWidth 超过 clientWidth 即内容被裁掉而不可见。
+ * 抽屉是 position:fixed 浮层,其溢出**不进**文档 scrollWidth,故全局
+ * horizontal-overflow 规则看不见它,必须逐容器显式守护。
+ */
+export const DRAWER_CLIP_KEYS = ["panels", "tabs"];
+
+/**
+ * 抽屉六组(= index.html 的 data-group 面板取值;同值的 tab 按钮另有 6 枚,
+ * 即每个取值出现 2 次 = 1 枚 tab + 1 个 panel)。组序即 IA 的决策序。
+ */
+export const DRAWER_GROUPS = ["preset", "typography", "headerwatermark", "numbering", "convert", "app"];
+
+/**
+ * 抽屉值控件清单单源:组 → 组内控件的**声明顺序**(= index.html 内的出现顺序,
+ * 判定即比它 —— 这条直接对应步 03 的退出条件「控件位置不得变化」)。
+ *
+ * 选择器一律以 #settingsDrawer 为作用域:`paper` / `orientation` 在顶栏快速参数条
+ * (#quickBar)里各有一份镜像副本(document 级同名 radio 分组,点任一侧互斥同步),
+ * 不加作用域会量到快速参数条那一侧、把抽屉的排版组判成「不存在」。
+ * @type {Record<string, DrawerControl[]>}
+ */
+export const DRAWER_CONTROLS = {
+  preset: [{ id: "templatePreset" }],
+  typography: [
+    { name: "paper" },
+    { name: "orientation" },
+    { id: "marginTop" },
+    { id: "marginBottom" },
+    { id: "marginLeft" },
+    { id: "marginRight" },
+    { id: "fontEastAsia" },
+    { id: "fontAscii" },
+    { id: "bodySizePt" },
+    { id: "lineSpacing" },
+    { name: "headingScale" },
+    { name: "headingSpacing" },
+    { id: "firstLineIndent" },
+    { name: "align" },
+  ],
+  headerwatermark: [
+    { name: "headerMode" },
+    { id: "headerText" },
+    { key: "headerLogoPath", id: "headerLogoStatus" }, // 值载体是 path-chip,不是选择按钮
+    { name: "headerLayout" },
+    { id: "footerEnabled" },
+    { id: "watermarkText" },
+    { id: "watermarkAngle" },
+    { id: "watermarkOpacity" },
+    { id: "watermarkGray" },
+  ],
+  numbering: [
+    { id: "headingNumbering" },
+    { id: "captionNumbering" },
+    { id: "equationNumbering" },
+    { id: "toc" },
+    { id: "tocMode" },
+    { id: "breakBeforeH1" },
+  ],
+  convert: [
+    { id: "aiCleanup" },
+    { id: "aiCleanupTidy" },
+    { id: "aiCleanupRewrite" },
+    { id: "obsidianCompat" },
+    { id: "obsidianAttachmentFolder" },
+    { key: "outputDir", id: "outputDirValue" }, // 值载体是 path-chip
+    { name: "afterConvert" },
+    { key: "pdfCss", id: "pdfCssText" },
+  ],
+  app: [{ name: "theme" }, { id: "languageSelect" }],
+};
+
+/**
+ * 取分组的控件清单(未登记即抛错:分组名写错必须在**构造规格时**炸掉,
+ * 而不是留一个空数组、再被判定层的「零命中」规则误报成选择器问题)。
+ * @param {string} group 分组
+ * @returns {DrawerControl[]} 组内控件(声明顺序)
+ */
+export function drawerGroupControls(group) {
+  const list = DRAWER_CONTROLS[group];
+  if (list === undefined) throw new Error(`抽屉分组未登记于 DRAWER_CONTROLS:${group}`);
+  return list;
+}
+
+/** 控件键扁平序(组序 × 组内声明序):组内顺序判据比的就是这串序的实测文档序 */
+export const DRAWER_CONTROL_KEYS = DRAWER_GROUPS.flatMap((group) => drawerGroupControls(group).map(drawerControlKey));
+
+/** 控件键 → 该控件所属组(判定层做组归属比对时取声明值) */
+export const DRAWER_GROUP_BY_KEY = new Map(
+  DRAWER_GROUPS.flatMap((group) => drawerGroupControls(group).map((control) => [drawerControlKey(control), group])),
+);
+
+/**
+ * 条件从属项(主控不满足即整块收起,IA §3 规则 1 的两级形态):
+ * 凹陷容器 `.cond` 收起用 grid-template-rows:0fr + visibility:hidden,
+ * 单控件条件子行走 .hidden 工具类。两者对判定层都是「rect 归零 / 不可见」。
+ * @type {DrawerCondition[]}
+ */
+export const DRAWER_CONDITIONS = [
+  {
+    control: "tocMode",
+    master: "toc",
+    masterKind: "switch",
+    on: true,
+    why: "目录模式是 toc 的条件子行:toc 关时 .hidden 整块移除(不灰禁,摆一个选了也不生效的下拉是骗人)",
+  },
+  {
+    control: "headerText",
+    master: "headerMode",
+    masterKind: "radio",
+    on: "custom",
+    why: "自定义页眉文字在 #headerCustomFields 凹陷容器内,仅 headerMode=custom 展开",
+  },
+  {
+    control: "headerLogoPath",
+    master: "headerMode",
+    masterKind: "radio",
+    on: "custom",
+    why: "页眉图片 chip 与文字/布局同处一个凹陷容器,随 headerMode=custom 一同展开",
+  },
+  {
+    control: "headerLayout",
+    master: "headerMode",
+    masterKind: "radio",
+    on: "custom",
+    why: "页眉布局与文字/图片同处一个凹陷容器,随 headerMode=custom 一同展开",
+  },
+  {
+    control: "footerEnabled",
+    master: "headerMode",
+    masterKind: "radio",
+    on: "custom",
+    why: "自定义页脚开关在凹陷容器内且仅自定义模式生效(默认模式的固定页码页脚不受它控制)",
+  },
+];
+
+/**
+ * 灰禁从属项(主控关时 **disabled 但不移除**):IA §3 规则 1 的唯一例外。
+ * 用灰禁而非收起是因为收起会丢掉用户上次的选择、且每次开关总开关都造成布局位移;
+ * 代价是它**保持可见**,故可用性判据是 disabled 态而不是可见性 —— 把这两条混成一条
+ * 会让门禁逼实现去改 IA 已拍板的行为。
+ * @type {DrawerTier[]}
+ */
+export const DRAWER_DISABLED_TIERS = [
+  {
+    control: "aiCleanupTidy",
+    master: "aiCleanup",
+    why: "AI 清理分档:总开关关时置灰 + 保留一行可见说明,不移除",
+  },
+  {
+    control: "aiCleanupRewrite",
+    master: "aiCleanup",
+    why: "AI 清理分档:总开关关时置灰 + 保留一行可见说明,不移除",
+  },
+];
+
+/**
+ * 抽屉三个主控的出厂默认档(core/settings/settings-defaults.ts 的镜像)。
+ * 只服务于**合成样本**与阅读规格时的默认预期;判定层不读本表(见 Scenario.drawerMasters
+ * 那条注:门禁的预期由样本实测反推)。
+ * toc 的出厂值是**开**(见 settings-defaults 的 `toc: true`)—— 照直觉写成 false 会让
+ * 「关态」场景的驱动步骤变成「再点一次打开」,于是关态与开态两场景拍到同一张脸。
+ */
+export const DRAWER_MASTER_DEFAULTS = { toc: true, aiCleanup: false, headerMode: "default" };
+
+/**
+ * 同一「视觉行」的判定带宽(px):抽屉里的多字段网格(四边边距的 mm-grid)把两个输入并排放在
+ * 一行,实测顶沿**完全相同**;而相邻行的间距实测 ≥ 20px。故组内顺序按「视觉行 + 左沿」判,
+ * 带宽只用来吸收亚像素与居中对齐抖动,取 4px —— 远小于行距,不会把相邻两行并成一行。
+ *
+ * 为什么不按 DOM 序判:04 组的 `tocMode` 下拉在 DOM 里排在 `toc` 开关**之前**(开关是
+ * .sw-row 这条 flex 行的最后一个子元素、居右),但视觉上开关在上、下拉在下 —— 步 03 的退出
+ * 条件写的是「控件**位置**不得变化」,故判据是视觉位置,DOM 序是实现细节。
+ */
+export const DRAWER_ROW_BAND_PX = 4;
+
+/**
+ * 控件键:缺省取 id ?? name(key 显式给出时以它为准)。
+ * @param {DrawerControl} control 控件项
+ * @returns {string} 控件键
+ */
+export function drawerControlKey(control) {
+  const key = control.key ?? control.id ?? control.name;
+  if (key === undefined) {
+    throw new Error("抽屉控件项未给出定位:须声明 id 或 name 之一(定位形态由 geometry-gate 段逐条校验)");
+  }
+  return key;
+}
+
+/**
+ * 控件在抽屉内的 CSS 选择器(一律带 #settingsDrawer 作用域,理由见 DRAWER_CONTROLS 注)。
+ * @param {DrawerControl} control 控件项
+ * @returns {string} CSS 选择器
+ */
+export function drawerControlSelector(control) {
+  if (control.name !== undefined) return `${DRAWER_SELECTORS.shell} input[name="${control.name}"]`;
+  if (control.id !== undefined) return `${DRAWER_SELECTORS.shell} [id="${control.id}"]`;
+  throw new Error(
+    `抽屉控件「${control.key ?? "?"}」未给出定位:须声明 id 或 name 之一(定位形态由 geometry-gate 段逐条校验)`,
+  );
+}
+
+/**
+ * 取控件项(按键反查;未登记即抛错,而不是回退成「键名即选择器」——
+ * 抽屉的定位形态有 id / radio 组名两套,回退会把拼错的键变成一个静默落空的选择器)。
+ * @param {string} key 控件键
+ * @returns {DrawerControl} 控件项
+ */
+export function drawerControl(key) {
+  for (const group of DRAWER_GROUPS) {
+    const hit = drawerGroupControls(group).find((control) => drawerControlKey(control) === key);
+    if (hit !== undefined) return hit;
+  }
+  throw new Error(`抽屉控件键未登记于 DRAWER_CONTROLS:${key}`);
+}
+
+/** 分组 tab 按钮选择器(tab 按钮与面板同以 data-group 命名,id 前缀 settingsTab-)
+ * @param {string} group 分组
+ * @returns {string} CSS 选择器
+ */
+export function drawerTabSelector(group) {
+  if (!DRAWER_GROUPS.includes(group)) throw new Error(`抽屉分组未登记于 DRAWER_GROUPS:${group}`);
+  return `#settingsTab-${group}`;
+}
+
+/**
+ * 主控档位切换的驱动步骤。值表达的是「点击**之后**主控应处的档位」,故布尔值即
+ * 「点一次开关」(场景按序推进且每个主控只切一次,故点位恒为出厂默认关 → 开);
+ * radio 档位值则点组内该 value 的成员。
+ * @param {string} master 主控控件键
+ * @param {boolean | string} value 点击后应处的档位
+ * @returns {{ op: string, selector: string }} 声明式驱动指令
+ */
+export function drawerMasterStep(master, value) {
+  const base = drawerControlSelector(drawerControl(master));
+  const selector = typeof value === "boolean" ? base : `${base}[value="${String(value)}"]`;
+  return { op: "click", selector };
+}
+
+/** 页面侧抽屉度量脚本的探针参数(选择器全部来自本表,页面侧不再拼选择器) */
+export function drawerProbeSpec() {
+  return {
+    shell: DRAWER_SELECTORS.shell,
+    activePanel: DRAWER_SELECTORS.activePanel,
+    controls: DRAWER_CONTROL_KEYS.map((key) => [key, drawerControlSelector(drawerControl(key))]),
+    panels: DRAWER_CLIP_KEYS.map((key) => [key, /** @type {Record<string, string>} */ (DRAWER_SELECTORS)[key] ?? key]),
+  };
+}
+
+/**
+ * 抽屉场景项:通用场景之上补「激活分组 + 主控档位」,驱动步骤由主控档位生成。
+ * 写成工厂而非让 9 条场景各写一遍 steps:抽屉开合与 tab 切法只有这一种,
+ * 复制到每条场景里等于把驱动配方散成 9 份副本,改一处要改九处。
+ * @param {string} id 场景 id
+ * @param {string} group 激活分组
+ * @param {Record<string, boolean | string>} masters 主控档位(空对象 = 全部保持出厂默认)
+ * @param {string} shot 截图名后缀
+ * @returns {Scenario} 场景表项
+ */
+function drawerScenario(id, group, masters, shot) {
+  return {
+    id,
+    viewport: VIEWPORT_BASE,
+    expectStage: "empty",
+    shot,
+    drawerTab: group,
+    drawerMasters: masters,
+    steps: [
+      { op: "click", selector: DRAWER_SELECTORS.open },
+      { op: "click", selector: drawerTabSelector(group) },
+      ...Object.entries(masters).map(([master, value]) => drawerMasterStep(master, value)),
+    ],
+    // 抽屉是 fixed 浮层,开合不得改写主窗舞台几何 —— 顺带把公共可见节点判据带上,
+    // 这条不变量正是「抽屉接进来没把主窗顶歪」的守护
+    visible: [...COMMON_VISIBLE],
+    present: COMMON_PRESENT,
+    columnAxis: [], // 抽屉有独立的列轴语义,不在主窗纸面列轴断言里凑数
+  };
+}
+
+/**
+ * 抽屉场景序列(接在主窗场景之后):六个分组各一态以覆盖全部控件的可见性,
+ * 另加三组「门控开/关」对照 —— 页眉自定义折叠、AI 清理分档灰禁、目录模式收起各测两个方向,
+ * 只测关闭侧等于放行「打开总开关后从属项仍然不出现」这种最常见的实现漏项。
+ * 截图名用「8-drawer-<分组>」而不带序号:与 visual-check 的 ui:shots 同一命名,
+ * 交叉核对两份产物时不必在序号与分组名之间做 mental map;门控专属的三态带档位后缀。
+ */
+const DRAWER_SCENARIOS = [
+  drawerScenario("drawer-preset-960", "preset", {}, "8-drawer-preset"),
+  drawerScenario("drawer-typography-960", "typography", {}, "8-drawer-typography"),
+  drawerScenario("drawer-headerwatermark-960", "headerwatermark", {}, "8-drawer-headerwatermark"),
+  drawerScenario(
+    "drawer-headerwatermark-custom-960",
+    "headerwatermark",
+    { headerMode: "custom" },
+    "8-drawer-headerwatermark-custom",
+  ),
+  // 04 组:toc 出厂即开,故「关态」是基准场景、「开态」是点一次关掉
+  drawerScenario("drawer-numbering-960", "numbering", {}, "8-drawer-numbering"),
+  drawerScenario("drawer-numbering-toc-960", "numbering", { toc: false }, "8-drawer-numbering-toc-off"),
+  drawerScenario("drawer-convert-960", "convert", {}, "8-drawer-convert"),
+  drawerScenario("drawer-convert-ai-960", "convert", { aiCleanup: true }, "8-drawer-convert-ai-on"),
+  drawerScenario("drawer-app-960", "app", {}, "8-drawer-app"),
+];
+
 /**
  * 场景表(顺序即驱动顺序,单窗口逐步推进,复刻 visual-check 的场景序列):
  * steps 为声明式驱动指令,由 scripts/check-geometry.mjs 解释执行;
  * 视口变化由驱动自动 setContentSize(不必写 resize 步骤),实际视口与规格不符即判失败。
+ * 前 12 条是主窗舞台,后 9 条是设置抽屉(接在末尾:抽屉要驱动开关改设置态,
+ * 放前面会让既有主窗场景量到被改过的设置)。
  * @type {Scenario[]}
  */
 export const SCENARIOS = [
@@ -259,6 +611,7 @@ export const SCENARIOS = [
     present: COMMON_PRESENT,
     columnAxis: [],
   },
+  ...DRAWER_SCENARIOS,
 ];
 
 const STATES_960 = [

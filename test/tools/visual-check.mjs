@@ -1,22 +1,26 @@
 // @ts-check
 /**
  * 视觉自查工具(`npm run ui:shots`):
- * 以离线 api 桩驱动 renderer 到四个关键舞台状态,逐状态截图到
+ * 以离线 api 桩驱动 renderer 到各关键界面状态,逐状态截图到
  * output/artifacts/ui-v4/,供人工/代理目检布局一致性(不参与 CI 门禁)。
  * 场景:empty(空态)/ single(单文件)/ multi(多文件)/ history(历史浮层展开),
- * 另附 compact-stress(880×620 最小窗口附近的几何恒定压力位)。
+ * 另附 compact-stress(880×620 最小窗口附近的几何恒定压力位)与设置抽屉的六个分组。
+ * 抽屉逐组截图是刻意的:全部设置控件都住在抽屉里,而在此之前 ui:shots 一张抽屉都没有 ——
+ * 控件位置或可见性出了问题,主窗那几张永远拍不到。
  * 前置:npm run build(dist/renderer 就绪)。
  *
  * 失败路径:走 test/common/entry-guard.mjs 的统一守卫 —— 抛错时打印阶段标签 + 原始堆栈
  * 并以非零码退出。旧实现是 `app.quit() + process.exitCode = 1`,实测**退出码是 0**
  * (quit 走自身退出路径,只设 exitCode 不生效),即截图工具失败会被读成成功。
- * 本文件的静态导入面只有 node 内建 + electron + 守卫,无独立载荷(故无 load 阶段)。
+ * 本文件的静态导入面只有 node 内建 + electron + 守卫 + 规格单源,无独立载荷(故无 load 阶段)。
  */
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { runEntry } from "../common/entry-guard.mjs";
+// 抽屉分组序与选择器取自几何门禁的规格单源:两处各抄一份清单,改 IA 组序就会漏改其中一处
+import { DRAWER_GROUPS, DRAWER_SELECTORS, drawerTabSelector } from "./geometry/geometry-spec.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..", "..");
@@ -223,6 +227,31 @@ async function main() {
   );
   await wait(300);
   await shot(win, "7-halfscreen-empty");
+
+  // ⑧ 设置抽屉:全部设置控件都住在这里,主窗那几张永远拍不到它们。
+  // 先回到基准尺寸 —— 抽屉在 640×560 的半屏档里是唯一能看的形态,拍出来的图对目检没用
+  win.setSize(960, 680);
+  await wait(400);
+  await exec(`document.querySelector(${JSON.stringify(DRAWER_SELECTORS.open)}).click();`);
+  await waitFor(
+    exec,
+    `!document.querySelector(${JSON.stringify(DRAWER_SELECTORS.shell)}).classList.contains("hidden")`,
+    5000,
+    "drawer open",
+  );
+  await wait(300); // 抽屉入场动效落定
+  // 逐组 tab 截图:分组序取自规格单源,故新增一组 IA 分组时这里自动跟上
+  for (const [index, group] of DRAWER_GROUPS.entries()) {
+    const tab = drawerTabSelector(group);
+    await exec(`document.querySelector(${JSON.stringify(tab)}).click();`);
+    // 面板切换是同步重排(与上面 histToggle 的等待同量),不再等状态迁移标志
+    await wait(250);
+    await shot(win, `8-drawer-${group}`);
+    const active = await exec(
+      `document.querySelector(${JSON.stringify(DRAWER_SELECTORS.activePanel)})?.dataset.group ?? "(无激活面板)"`,
+    );
+    console.log(`[ui:shots] drawer tab ${index + 1}/${DRAWER_GROUPS.length} ${group} → active=${String(active)}`);
+  }
 
   win.destroy();
   return 0;

@@ -2,9 +2,10 @@
  * 几何门禁(几何 + 跨 DPI 缩放档位):在真实 Electron 窗口里按规格场景采样 renderer 几何,
  * 交由纯判定层(geometry-core)裁决,并按多个设备缩放档位各跑一遍,失败非零退出。
  *
- * 用途:把「视口容纳 / 水平溢出 / 固定槽占位 / 阶段跳动 / 紧凑档免滚动 / 列轴对齐」
- * 这类此前只能靠人工目检的布局不变量变成可执行门禁,截图与机器可读 JSON 报告同时留存
- * (报告供 CI artifact 与代理排障,截图供目检复核);跨 DPI 档位让同一套 12 场景 × 10 恒定组
+ * 用途:把「视口容纳 / 水平溢出 / 固定槽占位 / 阶段跳动 / 紧凑档免滚动 / 列轴对齐 /
+ * 设置抽屉的控件存在·组归属·组内顺序·无裁切·门控显隐」这类此前只能靠人工目检的布局
+ * 不变量变成可执行门禁,截图与机器可读 JSON 报告同时留存
+ * (报告供 CI artifact 与代理排障,截图供目检复核);跨 DPI 档位让同一套规格场景 × 恒定组
  * 在 125% / 150% 等缩放下也各跑一遍,并对关键槽位与舞台几何做档位间像素 diff。
  *
  * 复用 visual-check 的场景序列与 preload(同一套离线 api 桩与驱动手法),
@@ -14,14 +15,17 @@
  *   编排(默认,electron scripts/check-geometry.mjs):先跑判定层自检,再按
  *     M2W_GEOMETRY_SCALES 逐档起 worker 子进程(同一可执行文件 + 本脚本),收各档报告、
  *     算跨 DPI 像素基线与 diff、落一份总报告。
- *   worker(内部):M2W_GEOMETRY_ROLE=worker + M2W_GEOMETRY_SCALE_FACTOR=<档位>,只跑该档 12 场景。
+ *   worker(内部):M2W_GEOMETRY_ROLE=worker + M2W_GEOMETRY_SCALE_FACTOR=<档位>,
+ *     只跑该档的规格场景(场景表单源在 test/tools/geometry/geometry-spec.mjs,
+ *     含主窗舞台与设置抽屉两组场景;场景数 / 恒定组数 / 抽屉覆盖数见各档
+ *     report.json 的 geometry.stats —— 数字不写进注释,改场景表就变了)。
  *
  * 文件布局(判定口径只出现在判定层;依赖方向单向:入口 → 编排/worker → 驱动 → 判定):
  *   scripts/geometry/judge-scale.mjs     判定层:缩放档位解析、缩放生效裁决、单档状态语义
  *   scripts/geometry/judge-cross-dpi.mjs 判定层:跨 DPI 像素基线与 diff、总判定与退出码
  *   scripts/geometry/selftest.mjs        判定层自检(锚点 + 负向探针)
  *   scripts/geometry/driver.mjs          驱动层:路径/配置、页面探针、视口落定与取整补偿
- *   scripts/geometry/worker.mjs          worker 角色:单档 12 场景采样与裁决
+ *   scripts/geometry/worker.mjs          worker 角色:单档规格场景采样与裁决
  *   scripts/geometry/orchestrator.mjs    编排角色:多档位串行、基线汇总、总报告与退出码
  *   本文件                              入口:角色分派、自检门与退出码收尾
  * 判定层零 Electron / 零 fs:缩放与像素基线判定可脱离窗口独立验证(selftest.mjs 逐条断言)。

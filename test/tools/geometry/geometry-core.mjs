@@ -5,11 +5,13 @@
  *   1) 视口容纳、响应式档位生效、舞台状态生效、必需节点在场/可见;
  *   2) 水平溢出与 overflow-x:hidden 容器内的内容裁切;
  *   3) 紧凑/半屏档免滚动、固定槽不塌陷、列轴对齐与越界;
- *   4) 恒定断言组(阶段跳动)。
+ *   4) 恒定断言组(阶段跳动);
+ *   5) 设置抽屉:控件存在/可见/组归属/组内顺序/无裁切/门控显隐与分档可用性。
  *
  * 失败语义:缺场景 / 场景步骤失败 / 缺选择器 / 必需节点不可见 / 视口不匹配 /
  * 响应式档位未生效 / 舞台状态不匹配 / 水平溢出 / 水平裁切 / 槽塌陷 / 槽越界(撑高) /
- * 阶段跳动超阈值 / 紧凑档纵向滚动 / 列轴漂移,一律记 error 并使 ok=false;
+ * 阶段跳动超阈值 / 紧凑档纵向滚动 / 列轴漂移 / 抽屉未开 / 抽屉 tab 未切到位 /
+ * 抽屉控件缺失、错组、乱序、门控反向、分档可用性反向,一律记 error 并使 ok=false;
  * 任何"跳过"都必须以 finding 形式显式出现,禁止静默通过。
  *
  * 判定全部为纯函数,采样由外部注入 —— 真实窗口采样见 scripts/check-geometry.mjs,
@@ -20,6 +22,13 @@ import {
   CONSTANT_GROUPS,
   DEFAULT_SCROLL_BUDGET_PX,
   DEFAULT_TOL_PX,
+  DRAWER_CLIP_KEYS,
+  DRAWER_CONDITIONS,
+  DRAWER_CONTROL_KEYS,
+  DRAWER_DISABLED_TIERS,
+  DRAWER_GROUP_BY_KEY,
+  DRAWER_ROW_BAND_PX,
+  DRAWER_SELECTORS,
   NODE_SELECTORS,
   PAPER_KEY,
   SCENARIOS,
@@ -27,6 +36,8 @@ import {
   SLOT_INVARIANTS,
   STAGE_KEY,
   X_CLIP_KEYS,
+  drawerControl,
+  drawerControlSelector,
   evaluateMediaCondition,
 } from "./geometry-spec.mjs";
 
@@ -35,10 +46,26 @@ export {
   CONSTANT_GROUPS,
   DEFAULT_SCROLL_BUDGET_PX,
   DEFAULT_TOL_PX,
+  DRAWER_CLIP_KEYS,
+  DRAWER_CONDITIONS,
+  DRAWER_CONTROL_KEYS,
+  DRAWER_CONTROLS,
+  DRAWER_DISABLED_TIERS,
+  DRAWER_GROUPS,
+  DRAWER_GROUP_BY_KEY,
+  DRAWER_MASTER_DEFAULTS,
+  DRAWER_ROW_BAND_PX,
+  DRAWER_SELECTORS,
   NODE_SELECTORS,
   SCENARIOS,
   SLOT_INVARIANTS,
   X_CLIP_KEYS,
+  drawerControl,
+  drawerControlKey,
+  drawerControlSelector,
+  drawerGroupControls,
+  drawerProbeSpec,
+  drawerTabSelector,
   evaluateMediaCondition,
   extractHeightMediaConditions,
 } from "./geometry-spec.mjs";
@@ -69,12 +96,36 @@ export {
  */
 
 /**
+ * @typedef {object} DrawerControlSample 单个抽屉控件的度量样本
+ * @property {boolean} found 抽屉内是否查到该控件
+ * @property {string | null} [group] 控件最近祖先的 data-group(实测组归属)
+ * @property {boolean} [disabled] 控件是否 disabled(灰禁判据)
+ * @property {boolean | null} [checked] 开关勾选态 / radio 组有无选中;非勾选控件为 null
+ * @property {string | null} [value] radio 组选中档位;非 radio 组为 null
+ * @property {Rect} [rect]
+ * @property {boolean} [visible] 可见(display/visibility/尺寸判据合成)
+ * @property {string} [display]
+ * @property {number} [clientWidth]
+ * @property {number} [scrollWidth]
+ */
+
+/**
+ * @typedef {object} DrawerSample 设置抽屉的度量样本
+ * @property {number} measured 查到的控件数(0 = 扫描面整体失效,判红而不是静默绿)
+ * @property {boolean} shellVisible 抽屉遮罩是否可见
+ * @property {string | null} activeGroup 当前激活面板的 data-group
+ * @property {Record<string, DrawerControlSample>} controls 控件度量表(键见 DRAWER_CONTROL_KEYS)
+ * @property {Record<string, NodeSample | null>} panels overflow-x:hidden 容器度量表
+ */
+
+/**
  * @typedef {object} GeometrySample 单个场景的采样结果
  * @property {string} id 场景 id(与 SCENARIOS 对齐)
  * @property {{ width: number, height: number }} viewport 实际视口
  * @property {Record<string, boolean>} [tiers] 媒体查询条件的匹配态(页面侧 matchMedia 读出)
  * @property {{ scrollWidth: number, clientWidth: number, scrollHeight: number, clientHeight: number }} doc 文档滚动尺寸
  * @property {Record<string, NodeSample | null>} nodes 节点度量表(键见 NODE_SELECTORS)
+ * @property {DrawerSample} [drawer] 抽屉度量(仅场景声明 drawerTab 时参与判定)
  * @property {string | null} [error] 场景步骤失败原因(有则该场景几何判定跳过,本条显式记 finding)
  */
 
@@ -159,6 +210,233 @@ export function borderBox(node) {
  */
 export function nodeBox(node, kind) {
   return kind === "border" ? borderBox(node) : paddingBox(node);
+}
+
+/**
+ * 主控是否处于「从属项应当可见 / 可用」的档位。
+ * 读的是**样本实测**的主控态(checked / value),不是规格里声明的档位 —— 声明写错会让
+ * 门禁自洽而假绿,实测才是被测对象。返回 null 表示主控样本不可用(不可判定)。
+ * @param {DrawerControlSample | undefined} master 主控样本
+ * @param {{ masterKind: "switch" | "radio", on?: boolean | string }} cond 条件声明
+ * @returns {boolean | null} null = 主控不可判定
+ */
+export function masterSatisfied(master, cond) {
+  if (master === undefined || master.found !== true) return null;
+  return cond.masterKind === "switch" ? master.checked === true : master.value === cond.on;
+}
+
+/**
+ * 抽屉单场景判定(纯函数)。判据是结构不变式而非像素快照:存在且可见、组归属、
+ * 组内顺序、无水平裁切、门控显隐、灰禁分档可用性。
+ *
+ * 「应当可见」= 所属分组是激活分组 × 其条件从属项被主控满足,两者都取自样本实测;
+ * 因此删掉任一手写同步函数(页眉自定义折叠 / 目录模式收起 / AI 清理分档灰禁)都会立刻
+ * 判红,而不会因为「门控表自洽」而放行。
+ * @param {import("./geometry-spec.mjs").Scenario} sc 场景表项(须声明 drawerTab)
+ * @param {GeometrySample} sample 该场景的采样
+ * @param {number} tolPx 容差(px)
+ * @param {(rule: string, node: string | null, message: string, extra?: Pick<GeometryFinding, "expected" | "actual">) => void} add finding 登记
+ * @returns {void}
+ */
+function judgeDrawerScenario(sc, sample, tolPx, add) {
+  const label = `场景「${sc.id}」`;
+  // 结构节点表按字面量对象声明(键名写错即编译期报错);按 Record 索引与既有 sel() 同理
+  /** @param {string} key @returns {string} */
+  const drawerSel = (key) => /** @type {Record<string, string>} */ (DRAWER_SELECTORS)[key] ?? key;
+  const drawer = sample.drawer;
+  if (drawer === undefined || drawer === null) {
+    add(
+      "selector-missing",
+      "drawer",
+      `${label}度量样本没有 drawer 段(页面侧度量脚本未采集抽屉);抽屉判据已跳过,本条已显式记录`,
+    );
+    return;
+  }
+  // 抽屉没开时量到的是「面板 display:none 下的零尺寸节点」,继续判只会刷出一屏
+  // 不可见噪声掩盖根因,故先拦并给一条可定位的 finding
+  if (!drawer.shellVisible) {
+    add("drawer-closed", "drawer", `${label}抽屉处于关闭态(${drawerSel("shell")} 不可见),抽屉判据已跳过`);
+    return;
+  }
+  if (!(drawer.measured > 0)) {
+    add(
+      "selector-missing",
+      "drawer",
+      `${label}抽屉控件清单一个节点都没量到(实测 measured=0):扫描面整体失效,` +
+        `禁止按「无控件即无问题」静默通过;检查 ${drawerSel("shell")} 与各控件选择器`,
+    );
+    return;
+  }
+  if (drawer.activeGroup !== sc.drawerTab) {
+    add(
+      "drawer-tab-mismatch",
+      DRAWER_SELECTORS.activePanel,
+      `${label}抽屉当前激活分组为 ${String(drawer.activeGroup)},规格要求 "${sc.drawerTab}";` +
+        `场景未按预期切到该组,量到的是上一组的面板`,
+      { expected: String(sc.drawerTab), actual: String(drawer.activeGroup) },
+    );
+  }
+
+  // 条件从属项的「主控是否满足」先算一遍:主控缺样本时可见性预期落空,故集中在此处
+  // 一次性报错,而不是在每个从属控件上重复同一条噪声
+  /** @type {Map<string, boolean | null>} */
+  const satisfied = new Map();
+  for (const cond of DRAWER_CONDITIONS) {
+    const state = masterSatisfied(drawer.controls[cond.master], cond);
+    satisfied.set(cond.control, state);
+    if (state === null) {
+      add(
+        "drawer-master-unreadable",
+        cond.master,
+        `${label}条件从属项 ${cond.control} 的主控 ${cond.master} 在抽屉内不可读,` +
+          `该从属项可见性不可判定(本条已显式记录);${cond.why}`,
+      );
+    }
+  }
+  /** @type {Map<string, boolean | null>} 灰禁从属项 → 总开关是否已开(null = 不可判定) */
+  const tierMasterOn = new Map();
+  for (const tier of DRAWER_DISABLED_TIERS) {
+    const on = masterSatisfied(drawer.controls[tier.master], { masterKind: "switch" });
+    tierMasterOn.set(tier.control, on);
+    if (on === null) {
+      add(
+        "drawer-master-unreadable",
+        tier.master,
+        `${label}灰禁从属项 ${tier.control} 的主控 ${tier.master} 在抽屉内不可读,可用性不可判定(本条已显式记录);${tier.why}`,
+      );
+    }
+  }
+
+  const vw = sample.viewport.width;
+  for (const key of DRAWER_CONTROL_KEYS) {
+    const control = drawer.controls[key];
+    if (control === undefined || control.found !== true) {
+      add("selector-missing", key, `${label}抽屉控件 ${key}(${drawerControlSelector(drawerControl(key))} 不在抽屉内)`);
+      continue;
+    }
+    const declared = DRAWER_GROUP_BY_KEY.get(key);
+    if (control.group !== declared) {
+      add(
+        "drawer-group-mismatch",
+        key,
+        `${label}抽屉控件 ${key} 落在 data-group="${String(control.group)}" 面板内,规格声明为 "${String(declared)}";` +
+          `控件归组错位会让 Tab 与面板的对应关系失真`,
+        { expected: String(declared), actual: String(control.group) },
+      );
+    }
+    const condOn = satisfied.get(key);
+    const inActive = declared === sc.drawerTab;
+    const expectVisible = inActive && (condOn ?? true);
+    if (expectVisible && control.visible !== true) {
+      add(
+        "selector-hidden",
+        key,
+        `${label}抽屉控件 ${key} 应在场可见却不可见(display=${String(control.display)},rect=${formatRect(control.rect)})`,
+      );
+    }
+    if (!expectVisible && control.visible === true) {
+      add(
+        "drawer-gate-inverted",
+        key,
+        `${label}抽屉控件 ${key} 应当不可见却可见:${
+          inActive
+            ? `条件从属项被主控收起(主控实测态未满足展开条件;见 ${DRAWER_CONDITIONS.find((c) => c.control === key)?.why ?? "门控表未登记"})`
+            : `其所属分组 "${String(declared)}" 不是本场景激活的 "${String(sc.drawerTab)}"(非激活面板应整块 display:none)`
+        };面板切换或门控同步失效`,
+      );
+    }
+    // 抽屉是 fixed 浮层,溢出不进文档 scrollWidth,水平容纳只能逐控件对视口判
+    if (control.visible === true && control.rect !== undefined) {
+      const { left, right } = control.rect;
+      if (left < -tolPx || right > vw + tolPx) {
+        add(
+          "viewport-overflow",
+          key,
+          `${label}抽屉控件 ${key} 越出视口(左 ${left} 右 ${right},视口宽 ${vw},rect=${formatRect(control.rect)})`,
+          { expected: `[0, ${vw}]`, actual: `[${left}, ${right}]` },
+        );
+      }
+    }
+    for (const tier of DRAWER_DISABLED_TIERS) {
+      if (tier.control !== key) continue;
+      // 总开关开着 → 分档可用;关着 → 灰禁但**不移除**(IA §3 规则 1 的唯一例外)
+      const masterOn = tierMasterOn.get(tier.control) ?? null;
+      if (masterOn === null) continue; // 不可判定已由 drawer-master-unreadable 记过
+      const expectDisabled = !masterOn;
+      if (control.disabled !== expectDisabled) {
+        add(
+          "drawer-tier-availability",
+          key,
+          `${label}抽屉分档 ${key} 的可用性与总开关 ${tier.master} 不匹配:总开关 ${String(masterOn)} 时应当 ` +
+            `${expectDisabled ? "disabled(灰禁,不移除)" : "可用"},实测 disabled=${String(control.disabled)};${tier.why}`,
+          { expected: `disabled=${String(expectDisabled)}`, actual: `disabled=${String(control.disabled)}` },
+        );
+      }
+    }
+  }
+
+  // 组内顺序:声明序(组序 × 组内序)须与**视觉序**同序(自上而下,同一行自左而右)。
+  // 判视觉序而非 DOM 序的理由见 DRAWER_ROW_BAND_PX 的注;只取可见控件 —— 收起态的控件
+  // 位置无意义,其顺序由对应的「展开态」场景判(几何门禁为每个门控都排了开/关两态)。
+  const byVisual = DRAWER_CONTROL_KEYS.flatMap((key) => {
+    const control = drawer.controls[key];
+    return control !== undefined && control.found === true && control.visible === true && control.rect !== undefined
+      ? [{ key, rect: control.rect }]
+      : [];
+  }).sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
+  // 行聚簇:顶沿相差在带宽内的归入同一行(网格并排的输入实测顶沿完全相同),否则起新行
+  /** @type {Map<string, { row: number, left: number }>} */
+  const position = new Map();
+  let rowTop = null;
+  let row = -1;
+  for (const item of byVisual) {
+    if (rowTop === null || item.rect.top - rowTop > DRAWER_ROW_BAND_PX) {
+      row += 1;
+      rowTop = item.rect.top;
+    }
+    position.set(item.key, { row, left: item.rect.left });
+  }
+  /** @type {string | null} */
+  let prevKey = null;
+  /** @type {{ row: number, left: number } | null} */
+  let prevPos = null;
+  for (const key of DRAWER_CONTROL_KEYS) {
+    const pos = position.get(key);
+    if (pos === undefined) continue;
+    if (prevPos !== null && (pos.row < prevPos.row || (pos.row === prevPos.row && pos.left <= prevPos.left))) {
+      add(
+        "drawer-order-mismatch",
+        key,
+        `${label}抽屉控件组内顺序与声明不一致:${String(prevKey)} 位于第 ${prevPos.row + 1} 行左沿 ${prevPos.left},` +
+          `而 ${key} 位于第 ${pos.row + 1} 行左沿 ${pos.left};控件位置不得变化(步 03 的退出条件)`,
+        {
+          expected: `${String(prevKey)} 在 ${key} 之前`,
+          actual: `row ${prevPos.row + 1}/${pos.row + 1},left ${prevPos.left}/${pos.left}`,
+        },
+      );
+    }
+    prevKey = key;
+    prevPos = pos;
+  }
+
+  // 抽屉内水平裁切:面板区与 tab 导航都是 overflow-x:hidden
+  for (const key of DRAWER_CLIP_KEYS) {
+    const panel = drawer.panels[key];
+    if (panel === null || panel === undefined) {
+      add("selector-missing", key, `${label}抽屉滚动容器 ${key}(${drawerSel(key)})不存在`);
+      continue;
+    }
+    const over = panel.scrollWidth - panel.clientWidth;
+    if (over > tolPx) {
+      add(
+        "horizontal-clip",
+        key,
+        `${label}${drawerSel(key)} 内有 ${over}px 内容被裁切(overflow-x:hidden,` +
+          `scrollWidth=${panel.scrollWidth} > clientWidth=${panel.clientWidth})`,
+        { expected: `scrollWidth<=clientWidth+${tolPx}`, actual: String(over) },
+      );
+    }
+  }
 }
 
 /**
@@ -442,6 +720,13 @@ export function runGeometryGate(samples, options = {}) {
         }
       }
     }
+
+    // 设置抽屉:控件存在/可见/组归属/组内顺序/无裁切/门控显隐与分档可用性
+    if (sc.drawerTab !== undefined) {
+      judgeDrawerScenario(sc, sample, tolPx, (rule, node, message, extra) =>
+        add(rule, sc.id, node, message, extra ?? {}),
+      );
+    }
   }
 
   // 恒定断言组:逐轴比对,超容差即"跳动"
@@ -506,6 +791,9 @@ export function runGeometryGate(samples, options = {}) {
       tolPx,
       scrollBudgetPx,
       mediaConditions: mediaConditions.length,
+      /** 参与抽屉判定的场景数与被抽屉判据覆盖的控件数(步 03-0 的护栏规模,报告里可见) */
+      drawerScenarios: SCENARIOS.filter((s) => s.drawerTab !== undefined).length,
+      drawerControls: DRAWER_CONTROL_KEYS.length,
     },
     /** 供日志打印:已采样且无步骤失败的场景 id */
     passedScenarios: SCENARIOS.map((s) => s.id).filter((id) => {

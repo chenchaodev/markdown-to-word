@@ -50,7 +50,7 @@ function runWorkerProcess({ request, label, reportPath: workerReportPath, shotDi
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
-    // 实时转发子进程输出并加档位前缀:长跑(每档 12 场景)无输出会让人以为卡死
+    // 实时转发子进程输出并加档位前缀:长跑(每档 全量场景)无输出会让人以为卡死
     forward(child.stdout, label, false);
     forward(child.stderr, label, true);
     let timedOut = false;
@@ -291,7 +291,7 @@ export async function runOrchestrator(scales) {
     },
     findings: runs.flatMap((run) => (run.geometry?.findings ?? []).map((finding) => ({ scale: run.label, ...finding }))),
     // 基线档(系统当前缩放,缺失时取首个实测档)的完整采样明细内联在此;
-    // 各档明细在各自报告里(总报告不重复内联多份 12 场景采样)
+    // 各档明细在各自报告里(总报告不重复内联多份 全量场景采样)
     baseline:
       baselineRun === null
         ? null

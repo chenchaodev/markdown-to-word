@@ -2,27 +2,36 @@
 /**
  * geometry gate 页面侧探针:构造注入 renderer 执行的度量脚本(纯函数,零 DOM/零 Electron)。
  *
- * 一次注入量全部受测节点(选择器表来自 geometry-core 单源)+ 响应式档位状态,返回 JSON 字符串:
- * 视口、档位(matchMedia)、文档滚动尺寸、舞台状态、每个节点的 rect/可见性/盒/滚动尺寸。
+ * 一次注入量全部受测节点(选择器表来自 geometry-spec 单源)+ 响应式档位状态 + 设置抽屉的
+ * 控件清单,返回 JSON 字符串:视口、档位(matchMedia)、文档滚动尺寸、舞台状态、每个节点的
+ * rect/可见性/盒/滚动尺寸,以及抽屉控件的存在性/文档序/所属分组/门控态。
  * 取不到的选择器显式返回 null —— 由判定层记 selector-missing error,不在页面侧静默吞掉。
  */
 import { evaluateMediaCondition } from "./geometry-core.mjs";
+import { drawerProbeSpec } from "./geometry-spec.mjs";
 
 /** 数值归一:保留两位小数,避免亚像素抖动淹没 JSON 差异 */
 const ROUND_FN = 'const r2 = (n) => Math.round(n * 100) / 100;';
 
 /**
  * 构造度量脚本源码。
+ *
+ * 抽屉段**无条件**随行采集(参数取默认值):worker 只构建一次度量脚本供全部场景复用,
+ * 按场景重建脚本就得改 worker 的采样循环(不在本门禁的可写面内),而抽屉那点度量很便宜
+ * —— 每个控件一次 getBoundingClientRect。抽屉是否参与判定由判定层按场景的 drawerTab 决定。
  * @param {Record<string,string>} selectorMap key → CSS 选择器(geometry-core.NODE_SELECTORS)
  * @param {string[]} mediaConditions 需读出匹配态的媒体查询条件(来自 CSS 单源)
+ * @param {object} [drawerSpec] 抽屉探针参数(缺省取规格单源 drawerProbeSpec)
  * @returns {string} 可直接交给 webContents.executeJavaScript 的表达式
  */
-export function buildMeasureScript(selectorMap, mediaConditions = []) {
+export function buildMeasureScript(selectorMap, mediaConditions = [], drawerSpec = drawerProbeSpec()) {
   const spec = JSON.stringify(selectorMap);
   const conds = JSON.stringify(mediaConditions);
+  const drawerSpecJson = JSON.stringify(drawerSpec);
   return `(() => {
   const SPEC = ${spec};
   const CONDS = ${conds};
+  const DRAWER = ${drawerSpecJson};
   ${ROUND_FN}
   const measure = (el) => {
     const b = el.getBoundingClientRect();
@@ -44,6 +53,44 @@ export function buildMeasureScript(selectorMap, mediaConditions = []) {
     const el = document.querySelector(SPEC[key]);
     nodes[key] = el === null ? null : measure(el);
   }
+  const drawer = (() => {
+    const out = { measured: 0, shellVisible: false, activeGroup: null, controls: {}, panels: {} };
+    const shell = document.querySelector(DRAWER.shell);
+    if (shell === null) return out;
+    const shellBox = shell.getBoundingClientRect();
+    out.shellVisible = getComputedStyle(shell).display !== 'none' && shellBox.width > 0 && shellBox.height > 0;
+    const active = document.querySelector(DRAWER.activePanel);
+    out.activeGroup = active === null ? null : (active.getAttribute('data-group') || null);
+    const resolved = [];
+    for (const entry of DRAWER.controls) {
+      const members = Array.from(document.querySelectorAll(entry[1]));
+      if (members.length === 0) { out.controls[entry[0]] = { found: false }; continue; }
+      resolved.push([entry[0], members]);
+    }
+    for (const entry of resolved) {
+      const members = entry[1];
+      const el = members[0];
+      const type = el.getAttribute('type') || '';
+      const hit = type === 'radio' ? members.find((m) => m.checked === true) : undefined;
+      const groupEl = el.closest('[data-group]');
+      out.measured += 1;
+      out.controls[entry[0]] = {
+        found: true,
+        group: groupEl === null ? null : (groupEl.getAttribute('data-group') || null),
+        disabled: el.disabled === true,
+        // radio 组记「组内有无选中 + 选中档位」:门控判据要读主控当前在哪一档,
+        // 只看首个成员会把「checked 落在别的成员上」读成未选中
+        checked: type === 'checkbox' ? el.checked === true : (type === 'radio' ? hit !== undefined : null),
+        value: type === 'radio' ? (hit === undefined ? null : String(hit.value)) : null,
+        ...measure(el),
+      };
+    }
+    for (const entry of DRAWER.panels) {
+      const el = document.querySelector(entry[1]);
+      out.panels[entry[0]] = el === null ? null : measure(el);
+    }
+    return out;
+  })();
   const de = document.documentElement;
   const tiers = {};
   for (const cond of CONDS) tiers[cond] = window.matchMedia(cond).matches;
@@ -59,6 +106,7 @@ export function buildMeasureScript(selectorMap, mediaConditions = []) {
       bodyScrollWidth: document.body.scrollWidth,
     },
     nodes,
+    drawer,
   });
 })()`;
 }
@@ -67,7 +115,7 @@ export function buildMeasureScript(selectorMap, mediaConditions = []) {
  * 解析度量脚本返回值(页面返回 JSON 字符串)。
  * 解析失败一律抛错(由驱动记 scenario-failed),不返回半成品样本。
  * @param {unknown} raw 页面侧 executeJavaScript 的返回值
- * @returns {{ nodes: Record<string, object | null>, viewport?: { width: number, height: number } }} 度量样本
+ * @returns {{ nodes: Record<string, object | null>, drawer?: object, viewport?: { width: number, height: number } }} 度量样本
  */
 export function parseMeasureScript(raw) {
   if (typeof raw !== 'string') {
@@ -89,7 +137,7 @@ export function parseMeasureScript(raw) {
   if (sample.nodes === undefined) {
     throw new Error(`度量脚本返回值缺少 nodes 字段:返回片段 ${String(raw).slice(0, 200)}`);
   }
-  return /** @type {{ nodes: Record<string, object | null>, viewport?: { width: number, height: number } }} */ (sample);
+  return /** @type {{ nodes: Record<string, object | null>, drawer?: object, viewport?: { width: number, height: number } }} */ (sample);
 }
 
 /**

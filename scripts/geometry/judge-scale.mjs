@@ -37,7 +37,7 @@
  * @property {number | null} [displayScaleFactor] Electron 报告的显示器缩放
  * @property {object[]} [findings] 判定层产出的几何 finding
  * @property {number | null} [viewportMaxDeltaPx] 实测视口与规格视口的最大轴向偏差
- * @property {object[]} [samples] 该档 12 场景采样明细
+ * @property {object[]} [samples] 该档 全量场景采样明细
  */
 
 /* ══════════════ §1 缩放档位解析(纯函数)══════════════ */

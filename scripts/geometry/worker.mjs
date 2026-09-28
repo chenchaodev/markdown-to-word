@@ -5,7 +5,7 @@
  * 一档一进程的原因:设备缩放因子由 Chromium 的 --force-device-scale-factor 在启动早期读取,
  * 同进程内改不动;该开关是**进程内模拟**手段,不改系统 DPI 设置(改用户环境需授权,门禁不得做)。
  * 防假绿第一道:加载后立刻读页面实读 devicePixelRatio,与期望因子不符就整档记「未测量」——
- * 跑完 12 场景却不知道跑在什么缩放下,等于没测。
+ * 跑完 全量场景却不知道跑在什么缩放下,等于没测。
  *
  * 退出码:0 绿 / 1 红 / 2 未测量(未测量 ≠ 通过)。
  *
@@ -41,10 +41,10 @@ import {
   writeReport,
 } from "./driver.mjs";
 
-/* ══════════════ §7 worker 角色:在指定缩放档位下采 12 场景并裁决 ═══════════════ */
+/* ══════════════ §7 worker 角色:在指定缩放档位下采 全量场景并裁决 ═══════════════ */
 
 /**
- * worker 角色:在指定缩放档位下采 12 场景样本并裁决。
+ * worker 角色:在指定缩放档位下采 全量场景样本并裁决。
  * @returns {Promise<number>} 退出码(0 绿 / 1 红 / 2 未测量)
  */
 export async function runWorker() {
@@ -95,7 +95,7 @@ export async function runWorker() {
   await exec(buildFreezeAnimationScript());
 
   // 缩放生效核验(防假绿第一道):页面实读 devicePixelRatio 与期望因子不符 → 本档不跑场景,
-  // 直接记「未测量」。跑完 12 场景却不知道跑在什么缩放下,等于没测。
+  // 直接记「未测量」。跑完 全量场景却不知道跑在什么缩放下,等于没测。
   const bootReadings = [Number(await exec("window.devicePixelRatio"))];
   const bootEffect = measureScaleEffect({
     request,
