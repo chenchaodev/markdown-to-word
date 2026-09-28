@@ -20,6 +20,7 @@ import { createConvertContext, mergeConvertImpl } from "../../dist/main/converte
 import { ConvertCanceledError } from "../../dist/main/converter/context.js";
 import { isConversionCanceled } from "../../dist/core/cancel.js";
 import { backupSettings } from "../common/settings.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -174,6 +175,7 @@ export async function run() {
     }
   } finally {
     await restoreSettings();
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

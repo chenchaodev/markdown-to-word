@@ -16,6 +16,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /* 类型取自 src(真接口所在):dist 不产 .d.ts,interface 在 JS 里被擦除,
    从 dist 推断只会拿到 defaultJsonWriterDeps 的字面量形状(缺可选依赖面字段),
@@ -296,6 +297,7 @@ export async function run() {
       console.log("[ok] atomic-json:drain(等队列落盘/穿过重试/失败写不致死等)");
     }
   } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

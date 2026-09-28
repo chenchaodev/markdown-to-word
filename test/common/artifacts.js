@@ -7,6 +7,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ARTIFACTS_DIR, repoRelative, segmentFailureDir } from "./paths.js";
+import { removeTree } from "./temp-resource.js";
 
 /**
  * @typedef {object} ArtifactBuffers 产物 buffer 集合
@@ -59,7 +60,11 @@ export async function saveArtifact(name, buffers) {
  */
 export async function saveFailureArtifacts(segmentName, { log, buffers = [] }) {
   const dir = segmentFailureDir(segmentName);
-  await fs.rm(dir, { recursive: true, force: true });
+  // 清空上一轮残留走 removeTree(退避重试 + 删后复查):该段目录可能仍被上一轮的
+  // 失败进程句柄占用,裸 fs.rm 遇到 EBUSY/EPERM 会把「落盘失败证据」变成「无处落盘」。
+  // 删不掉仍即抛 —— 覆盖写不得静默发生在半清的目录上。
+  const outcome = removeTree(dir);
+  if (!outcome.ok) throw new Error(`失败产物目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
   await fs.mkdir(dir, { recursive: true });
   const logPath = path.join(dir, "failure.log");
   await fs.writeFile(logPath, log, "utf8");

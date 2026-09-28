@@ -40,6 +40,7 @@ import { backupSettings } from "../common/settings.js";
 import { asDocxArtifact } from "../common/convert-helpers.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
 /** @typedef {import("../../src/core/i18n.js").KeyedWarning} KeyedWarning */
@@ -176,6 +177,7 @@ export async function run() {
   } finally {
     await backup.restore().catch(() => undefined);
     disposeMermaidService();
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

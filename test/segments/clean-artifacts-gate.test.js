@@ -37,6 +37,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 
 const SCRIPT_SOURCE = fs.readFileSync(path.join(ROOT, "scripts", "clean-artifacts.mjs"), "utf8");
 const SCRIPT_SHA256 = createHash("sha256").update(SCRIPT_SOURCE).digest("hex");
@@ -611,10 +612,12 @@ export async function run() {
   } catch (error) {
     failure = /** @type {Error} */ (error);
   } finally {
-    // maxRetries/retryDelay 吸收 Windows 上短暂的 EBUSY(占用夹具的子进程刚被 kill 时);
+    // 走 removeTree:退避重试 + 删后复查。retryDelay 仍取 200(高于助手默认 100)——
+    // 本段的沙盒子进程刚被 kill,Windows 上句柄释放是秒级起跳的,退避基数给足;
     // 清理失败必须显式暴露,不能静默留在系统临时目录
     for (const root of sandboxes) {
-      fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      const outcome = removeTree(root, { retryDelay: 200 });
+      if (!outcome.ok) throw new Error(`沙盒清理失败:${root}:${outcome.error?.message ?? "删除后目录仍存在"}`);
     }
     // 安全网:本段绝不允许改动真实产物(段首/段尾快照必须逐字节一致)
     try {

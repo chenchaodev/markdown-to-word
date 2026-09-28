@@ -56,6 +56,7 @@
     "check:boundary": "node scripts/check-import-boundary.mjs",
     "check:transform-dispatch": "node scripts/check-transform-dispatch.mjs",
     "check:test-numbering": "node scripts/check-test-numbering.mjs",
+    "check:temp-cleanup": "node scripts/check-temp-cleanup.mjs",
     "check:pinned-actions": "node scripts/check-pinned-actions.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "check:archive-index": "node scripts/gen-archive-index.mjs --check",

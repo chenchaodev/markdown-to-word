@@ -22,6 +22,7 @@ import {
   normalizeOutputPath,
   OUTPUT_ALLOWLIST_MAX_ENTRIES,
 } from "../../dist/main/ipc/output-allowlist.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -153,6 +154,7 @@ export async function run() {
       `[ok] output-allowlist:条目有界(默认上限 ${OUTPUT_ALLOWLIST_MAX_ENTRIES}/测试用 3,超出淘汰最旧,重复登记刷新次序)`,
     );
   } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

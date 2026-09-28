@@ -33,6 +33,7 @@ import {
   mergeConvertImpl,
 } from "../../dist/main/converter/index.js";
 import { backupSettings } from "../common/settings.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /** 记录到的 shell 副作用(动作 + 被作用的产物路径) */
 /** @typedef {{ action: "open" | "show-in-folder", path: string }} ShellCall */
@@ -425,6 +426,7 @@ export async function run() {
     console.log("[ok] after-convert:合并失败零副作用");
   } finally {
     await restoreSettings.restore();
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

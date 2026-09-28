@@ -18,6 +18,7 @@ import { updateSettings } from "../../dist/main/persist/settings.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { backupSettings } from "../common/settings.js";
 import { convertImpl } from "../../dist/main/converter/index.js";
+import { removeTree } from "../common/temp-resource.js";
 
 const GBK_MD = "# GBK 中文标题\n\n正文内容 你好世界\n";
 
@@ -47,7 +48,10 @@ export async function run() {
     const result = await convertImpl(gbkMd, "docx");
     // 警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
     assert(
-      result.warnings.some((w) => formatWarning(w).includes("已按 GBK 编码读取")),
+      // 这里标 any 而非 unknown:formatWarning(w) 形参是具体类型,unknown 传不进去。
+      // 根因是 dist 产物无 .d.ts(见 REQ-089),真正的修法是让 build 出声明文件,
+      // 不是在测试里猜一个类型 —— 猜错反而让这处断言失去类型保护。
+      result.warnings.some((/** @type {any} */ w) => formatWarning(w).includes("已按 GBK 编码读取")),
       `warnings 缺少 GBK 警告: ${JSON.stringify(result.warnings)}`,
     );
     const zip = await JSZip.loadAsync(await fs.readFile(result.outputPath));
@@ -62,6 +66,7 @@ export async function run() {
   } finally {
     // 恢复设置文件 + 模块级缓存;原本无文件则删除,不污染用户设置
     await restoreSettings.restore();
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

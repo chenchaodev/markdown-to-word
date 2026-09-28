@@ -29,6 +29,7 @@ import { IPC_CHANNELS as CH } from "../../dist/main/ipc/channels.js";
 import { MAX_SCAN_DEPTH } from "../../dist/main/converter/paths.js";
 import { formatWarning, t } from "../../dist/core/i18n.js";
 import { beginWebContentsOperation, finishWebContentsOperation } from "../../dist/main/windows/web-contents-registry.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -246,7 +247,8 @@ export async function run() {
       "precheck 非字符串入参应返回空数组",
     );
   } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(tmpDir);
   }
 
   // ---- 6. settings/ui-state/appVersion 转发直调 ----

@@ -32,6 +32,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 import {
   buildSmokeReport,
   buildNotRunReport,
@@ -1338,7 +1339,10 @@ export async function run() {
   } finally {
     Reflect.set(process, "noAsar", previousNoAsar);
     for (const dir of sandboxes) {
-      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      // 走 removeTree(退避重试 + 删后复查):沙盒里刚跑过解包/打包子进程,Windows 上
+      // 句柄释放有延迟;删不掉仍即抛,不得静默残留在系统临时区
+      const outcome = removeTree(dir, { retryDelay: 200 });
+      if (!outcome.ok) throw new Error(`沙盒清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
     }
   }
 }

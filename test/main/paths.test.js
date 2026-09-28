@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/converter/index.js";
 import { formatWarning } from "../../dist/core/i18n.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -235,6 +236,7 @@ export async function run() {
     assert(badOut.outputPath.endsWith("sample.docx"), "mkdir 失败:回落文件名错误");
     console.log("[ok] paths:resolveOutputPath mkdir 失败回落(输出目录不可用→源目录+警告)");
   } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

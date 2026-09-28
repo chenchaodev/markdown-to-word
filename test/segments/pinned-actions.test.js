@@ -29,6 +29,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 import {
   BASELINE_SCHEMA,
   DEFAULT_BASELINE,
@@ -554,8 +555,11 @@ export async function run() {
       console.log("[ok] pinned-actions:真实仓库 CLI 复跑通过(14 处引用 / 基线一致)");
     }
   } finally {
+    // 走 removeTree(退避重试 + 删后复查):沙盒里刚跑过 CLI 子进程,Windows 上句柄释放
+    // 有延迟;删不掉仍即抛,不得静默残留在系统临时区
     for (const dir of sandboxes) {
-      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      const outcome = removeTree(dir, { retryDelay: 200 });
+      if (!outcome.ok) throw new Error(`沙盒清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
     }
   }
 }

@@ -23,6 +23,7 @@ import {
   main as asarMain,
 } from "../../scripts/check-asar-manifest.mjs";
 import { main as releaseMain } from "../../scripts/check-release-artifacts.mjs";
+import { removeTree } from "../common/temp-resource.js";
 
 const FIXTURE_VERSION = "9.9.9";
 const FIXTURE_PRODUCT = "FixtureApp";
@@ -80,7 +81,9 @@ function assert(cond, msg) {
 }
 
 /**
- * 在临时目录里执行 fn,结束后清理(Windows 上 EBUSY 风险由 force 兜底)。
+ * 在临时目录里执行 fn,结束后清理。
+ * 清理走 removeTree(带 EBUSY/EPERM 退避重试与删后复查,原注释的「force 兜底」由
+ * 助手的重试 + 复查真正兑现);删不掉仍即抛 —— 「删不掉就抛」是本段原有的失败语义。
  * @template T
  * @param {(dir: string) => Promise<T> | T} fn 夹具构建 + 断言
  * @returns {Promise<T>} fn 的返回值
@@ -90,7 +93,8 @@ async function withTempDir(fn) {
   try {
     return await fn(dir);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    const outcome = removeTree(dir);
+    if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
   }
 }
 

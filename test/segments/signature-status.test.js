@@ -19,6 +19,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 import {
   buildEntry,
   classifyAuthenticode,
@@ -129,7 +130,9 @@ export async function run() {
     assert(collectExeFiles(path.join(sandbox, "no-such-dir")).length === 0, "目录不存在应返回空数组而非抛错");
     console.log("[ok] signature-status:exe 收集锚点(递归/排除非 exe/缺目录不抛)");
   } finally {
-    fs.rmSync(sandbox, { recursive: true, force: true });
+    // 删不掉即抛:沙箱残留不得静默留在系统临时区(助手只吸收 Windows 上的瞬时占用)
+    const outcome = removeTree(sandbox);
+    if (!outcome.ok) throw new Error(`临时目录清理失败:${sandbox}:${outcome.error?.message ?? "删除后目录仍存在"}`);
   }
 
   // ---- 3. 打包配置确实无证书(否则「未签名」是假话)----

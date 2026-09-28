@@ -23,6 +23,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /** @typedef {import("../../src/main/persist/atomic-json.js").JsonWriterDeps} JsonWriterDeps */
 /** @typedef {import("../../src/main/persist/atomic-json.js").DurableFileHandle} DurableFileHandle */
@@ -287,6 +288,7 @@ export async function run() {
       `[ok] atomic-json-durability:默认 syncDir 可运行(平台 ${process.platform},不支持目录 fsync 时降级为空操作)`,
     );
   } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

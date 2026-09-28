@@ -24,6 +24,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { ARTIFACT_TEMP_PREFIX, commitArtifact } from "../../dist/main/converter/artifact-writer.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -326,6 +327,7 @@ export async function run() {
     );
     console.log("[ok] artifact-commit:正常路径(真实 fs.link 原子提交,内容一致/无 temp 残留)");
   } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

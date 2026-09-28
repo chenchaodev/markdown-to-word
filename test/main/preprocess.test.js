@@ -18,6 +18,7 @@ import {
 // 档位 → per-rule 的映射已下沉 core,故从新落点断言(总开关/产物仍经 main 侧断言)。
 import { aiCleanupOptions } from "../../dist/core/markdown/ai-cleanup.js";
 import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -164,6 +165,7 @@ export async function run() {
     assert(bothOnOut !== tidyOnlyOut, "结构改写开关必须真的改变产物(否则传参是死的)");
     console.log("[ok] preprocess:总开关开 + 结构改写关 → 产物与结构改写档引入前逐字节一致(总开关关/两档全关的零改动对照)");
   } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

@@ -32,6 +32,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../common/paths.js";
 import { createAsserter } from "../common/assert.js";
 import { createCaseSuite } from "../common/case.js";
+import { removeTree } from "../common/temp-resource.js";
 import {
   DEFAULT_LOAD_WATCHDOG_MS,
   ENTRY_EXIT,
@@ -500,7 +501,10 @@ export async function run() {
       assertIncludes(result.output, "PROBE_ESCAPE_BOOM", "须含原始错误消息");
     });
   } finally {
-    fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    // 走 removeTree(退避重试 + 删后复查):scratch 里的探针段刚被 spawn 完就退,
+    // Windows 上句柄释放有延迟;删不掉仍即抛,不得静默残留在系统临时区
+    const outcome = removeTree(scratch, { retryDelay: 200 });
+    if (!outcome.ok) throw new Error(`临时目录清理失败:${scratch}:${outcome.error?.message ?? "删除后目录仍存在"}`);
   }
 
   console.log(

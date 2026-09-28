@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import iconv from "iconv-lite";
 import { openPreviewWindow, previews, requestPreviewRefresh } from "../../dist/main/windows/preview.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -312,6 +313,7 @@ export async function run() {
     console.warn = originalWarn;
     for (const e of [...previews]) e.win.destroy();
     await waitNoTempHtml(baseline, "段末");
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }

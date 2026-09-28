@@ -28,6 +28,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 import {
   CORE_NODE_BUILTIN_FILES,
   FLAVORS,
@@ -699,8 +700,11 @@ export async function run() {
       console.log("[ok] import-boundary:规则原语断言通过(specifier 归类 / type-only 判定 / CJS require 抽取)");
     }
   } finally {
+    // 走 removeTree(退避重试 + 删后复查):沙盒里刚写过 dist 副本,Windows 上句柄释放
+    // 有延迟;删不掉仍即抛,不得静默残留在系统临时区
     for (const dir of sandboxes) {
-      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      const outcome = removeTree(dir, { retryDelay: 200 });
+      if (!outcome.ok) throw new Error(`沙盒清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
     }
   }
 }

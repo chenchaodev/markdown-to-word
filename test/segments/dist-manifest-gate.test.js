@@ -24,6 +24,7 @@ import {
 import { evaluateFreshness, main as buildFreshMain } from "../../scripts/check-build-fresh.mjs";
 import { copyRenderer } from "../../scripts/copy-renderer.mjs";
 import { ROOT } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /**
  * 清单结构视图:被测的 scripts/check-dist-manifest.mjs 为无类型标注的 JS,
@@ -44,6 +45,8 @@ function assert(cond, msg) {
 
 /**
  * 临时目录 + 兜底清理:测试对象是夹具,finally 保证不留残留(支持异步回调)。
+ * 清理走 removeTree(带 EBUSY/EPERM 退避重试与删后复查);删不掉仍即抛 ——
+ * 「删不掉就抛」是本段原有的失败语义,助手只负责吸收 Windows 上的瞬时占用。
  * @param {(dir: string) => unknown} fn 在临时目录上执行的夹具逻辑
  * @returns {Promise<unknown>} fn 的返回值(透传)
  */
@@ -52,7 +55,8 @@ async function withTempDir(fn) {
   try {
     return await fn(dir);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    const outcome = removeTree(dir);
+    if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
   }
 }
 
@@ -220,7 +224,9 @@ export async function run() {
         name: "dist 目录为空",
         arrange: (target) => {
           for (const sub of ["core", "main", "renderer"]) {
-            fs.rmSync(path.join(target, sub), { recursive: true, force: true });
+            // 负向夹具的「破坏动作」,不是清理:删不掉必须显式抛,否则空 dist 造不出来
+            const outcome = removeTree(path.join(target, sub));
+            if (!outcome.ok) throw new Error(`负向夹具删子目录失败:${sub}:${outcome.error?.message ?? "目录仍存在"}`);
           }
         },
         expect: /dist 目录为空/,
@@ -245,7 +251,8 @@ export async function run() {
           `${testCase.name} 应以非零码且原因匹配 ${testCase.expect} 失败,实际 exit ${result.code}\n${result.output}`,
         );
       } finally {
-        fs.rmSync(caseTmp, { recursive: true, force: true });
+        const outcome = removeTree(caseTmp);
+        if (!outcome.ok) throw new Error(`临时目录清理失败:${caseTmp}:${outcome.error?.message ?? "删除后目录仍存在"}`);
       }
     }
     console.log(`[ok] dist-manifest-gate:${negative.length} 条负向夹具全部被拦截(stale/缺失/篡改/坏清单/空 dist)`);

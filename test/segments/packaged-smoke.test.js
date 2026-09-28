@@ -41,6 +41,7 @@ import {
 } from "../../dist/main/smoke.js";
 import * as devSmokeEntry from "../tools/smoke/smoke.mjs";
 import { ROOT } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /** 编译产物路径(冒烟实现;build.files 收 dist/** → 天然随包) */
 const SMOKE_JS = path.join(ROOT, "dist", "main", "smoke.js");
@@ -85,19 +86,6 @@ function collectSpecifiers(code) {
     if (m[1] !== undefined) found.push(m[1]);
   }
   return found;
-}
-
-/**
- * 临时目录清理(Electron fs 层同样管着 os.tmpdir 下的文件,失败即判红:残留不该静默)。
- * @param {string} dir 目录绝对路径
- * @returns {Promise<void>} 清理完成
- */
-async function removeDir(dir) {
-  try {
-    await fs.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-  } catch (err) {
-    throw new Error(`临时目录清理失败:${dir}(${err instanceof Error ? err.message : String(err)})`);
-  }
 }
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
@@ -280,8 +268,10 @@ export async function run() {
         degradedBytes.subarray(0, 5).toString("latin1") === "%PDF-",
         `缺 katex 资源时 pdf 产物仍应落盘且魔数正确,实际:${degradedBytes.subarray(0, 8).toString("latin1")}`,
       );
+      // 参数标 unknown 而非 any:来源是 dist 产物(无 .d.ts),类型本就未知,而这里
+      // 紧跟着 typeof 收窄 + 显式 cast,用 unknown 能让 tsc 继续帮我盯住误用。
       const katexWarnings = (degraded.warnings ?? []).filter(
-        (w) => typeof w !== "string" && /** @type {{ key?: string }} */ (w).key === KATEX_WARNING_KEY,
+        (/** @type {unknown} */ w) => typeof w !== "string" && /** @type {{ key?: string }} */ (w).key === KATEX_WARNING_KEY,
       );
       assert(
         katexWarnings.length === 1,
@@ -308,7 +298,7 @@ export async function run() {
       );
       const healthy = await convertImpl(sampleMd, "pdf", undefined, undefined, okKatexDir);
       const healthyKatexWarnings = (healthy.warnings ?? []).filter(
-        (w) => typeof w !== "string" && /** @type {{ key?: string }} */ (w).key === KATEX_WARNING_KEY,
+        (/** @type {unknown} */ w) => typeof w !== "string" && /** @type {{ key?: string }} */ (w).key === KATEX_WARNING_KEY,
       );
       assert(
         healthyKatexWarnings.length === 0,
@@ -322,7 +312,10 @@ export async function run() {
         `[ok] packaged-smoke:4 降级契约成立(缺 katex 资源:产物仍出 + ${KATEX_WARNING_KEY} 警告 + 降级留痕行,非致命;资源在位无警告无留痕)`,
       );
     } finally {
-      await removeDir(dir);
+      // Electron fs 层同样管着 os.tmpdir 下的目录,失败即判红:残留不该静默。
+      // 本段原先本地重复实现了一份 removeDir,现统一到 removeTree(退避重试 + 删后复查)
+      const outcome = removeTree(dir, { retryDelay: 200 });
+      if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
     }
   }
 }

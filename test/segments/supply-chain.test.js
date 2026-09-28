@@ -21,6 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import { createCaseSuite } from "../common/case.js";
 import { ROOT } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 import { formatSupplyLog, runSupplyChecks } from "../../scripts/supply/check-supply-chain.mjs";
 import { diffSbom, generateSbom, toCycloneDxLicenses } from "../../scripts/supply/gen-sbom.mjs";
 import { generateLicenses } from "../../scripts/supply/gen-licenses.mjs";
@@ -82,6 +83,8 @@ function group(groups, key) {
 
 /**
  * 临时目录 + 兜底清理(测试对象是夹具,finally 保证不留残留)。
+ * 清理走 removeTree(带 EBUSY/EPERM 退避重试与删后复查);删不掉仍即抛 ——
+ * 「删不掉就抛」是本段原有的失败语义,助手只负责吸收 Windows 上的瞬时占用。
  * @param {(dir: string) => unknown} fn 在临时目录上执行的夹具逻辑
  * @returns {Promise<unknown>} fn 的返回值(透传)
  */
@@ -90,7 +93,8 @@ async function withTempDir(fn) {
   try {
     return await fn(dir);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    const outcome = removeTree(dir);
+    if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
   }
 }
 
@@ -902,7 +906,8 @@ export async function run() {
         const other = generateSbom(otherLock, "package-lock.json");
         assert(other.document.serialNumber !== first.document.serialNumber, "lockfile 变更后 serialNumber 必须变化");
       } finally {
-        fs.rmSync(otherDir, { recursive: true, force: true });
+        const outcome = removeTree(otherDir);
+        if (!outcome.ok) throw new Error(`临时目录清理失败:${otherDir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
       }
       // 缺声明许可证的包在 SBOM 里必须显式 NOASSERTION,不得静默省略 licenses
       const noLicense = first.document.components.find((item) => item.name === "no-license");

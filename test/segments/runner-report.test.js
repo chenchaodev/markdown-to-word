@@ -43,6 +43,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../common/paths.js";
+import { removeTree } from "../common/temp-resource.js";
 import { CONCURRENCY_ENV, ONLY_ENV, describeChildExitCode, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
 
 /** 沙盒目录名前缀(mkdtemp 在其后附 6 位随机后缀;尾部短横线便于识别残留目录) */
@@ -331,9 +332,15 @@ function setupSandbox(isolating) {
 }
 
 function cleanupSandbox() {
-  fs.rmSync(SANDBOX, { recursive: true, force: true });
+  // 删不掉即抛:本段自建的沙盒与失败产物目录必须清空,否则下一轮的目录判定被上一轮
+  // 的残留带偏(段自测里「目录隔离」类断言直接依赖这里真的删掉了)。助手只吸收
+  // Windows 上的瞬时占用,失败仍按原语义暴露。
+  const outcome = removeTree(SANDBOX);
+  if (!outcome.ok) throw new Error(`沙盒清理失败:${SANDBOX}:${outcome.error?.message ?? "删除后目录仍存在"}`);
   for (const name of ALL_SEGS) {
-    fs.rmSync(segmentFailureDir(name), { recursive: true, force: true });
+    const dir = segmentFailureDir(name);
+    const each = removeTree(dir);
+    if (!each.ok) throw new Error(`失败产物目录清理失败:${dir}:${each.error?.message ?? "删除后目录仍存在"}`);
   }
 }
 

@@ -24,6 +24,7 @@ import {
   ClipboardTempRegistry,
   writeTempMarkdown,
 } from "../../dist/main/services/temp-html.js";
+import { removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -80,7 +81,8 @@ export const fixtures = null;
 
 export async function run() {
   const dir = clipboardTempDir();
-  await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+  removeTree(dir);
   const registry = new ClipboardTempRegistry();
   const written = [];
   try {
@@ -276,14 +278,16 @@ export async function run() {
       app.emit("will-quit");
       await waitGone(leftover, "will-quit 释放的未消费临时源");
     } finally {
-      await fs.rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+      // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+      removeTree(workDir);
     }
     console.log("[ok] temp-markdown:成功释放 + 不进最近文件 + will-quit 释放未消费源");
   } finally {
     await registry.releaseAll();
     await clipboardTempSources.releaseAll();
     for (const source of written) await source.release().catch(() => undefined);
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
   // 全部释放后专属子目录应被回收(无 %TEMP% 残留目录)
   assert(!(await exists(dir)), `全部释放后专属子目录应被回收:${dir}`);

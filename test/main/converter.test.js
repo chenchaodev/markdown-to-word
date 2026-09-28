@@ -40,6 +40,7 @@ import {
   getImageResolver,
   mergeConvertImpl,
 } from "../../dist/main/converter/index.js";
+import { removeTree } from "../common/temp-resource.js";
 
 // 样例迁 fixtures 体系(静态文件直接放 test/fixtures/main/,不接 gen-fixtures
 // 生成器——check:fixtures 只覆盖 segments 段导出的 acceptance fixtures 对象)
@@ -748,6 +749,7 @@ export async function run() {
   } finally {
     // 恢复设置文件 + 模块级缓存(updateSettings 双写);原本无文件则删除,不污染用户设置
     await restoreSettings.restore();
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
+    removeTree(dir);
   }
 }
