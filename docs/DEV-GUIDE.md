@@ -113,7 +113,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `index.ts`:组合根;`menu.ts`:应用菜单;`smoke.ts`:**冒烟唯一实现**(编译进 `dist/main/smoke.js` 随包分发,故解包产物也能跑 `--smoke`;`test/tools/smoke/smoke.mjs` 仅为 dev 侧薄转调,勿在两处各写一份)
   - `windows/`:main-window.ts/preview.ts(预览窗+尺寸记忆)/title-bar-overlay.ts(Windows 标题栏 overlay 配色与高度常量单源)/web-contents-registry.ts(ctxByWebContents 注册表,窗口层不反向依赖 IPC 层)
   - `ipc/`:channels.ts(channel 名单源+恒等测试守护)/register.ts(handler 注册,导入类 handler 走 importFileViaDialog 模板)/logic.ts(纯逻辑)/output-allowlist.ts(shell 打开产物的会话级白名单,renderer 触达宿主文件系统的唯一入口)/types.ts(只做 re-export,剪贴板契约声明在 `core/ipc-contract.ts`)
-  - `converter/`:index.ts(编排)/single.ts/batch.ts/merge.ts/paths.ts(扩展名判定单源)/context.ts(buildConvertContext)/preprocess.ts(解码→frontmatter 隔离→Obsidian/AI 预处理→原样拼回,所有入口共用的准备编排)/artifact-writer.ts(产物提交:同目录唯一临时文件 + 硬链接独占提交,单文件/批量/合并共用)
+  - `converter/`:index.ts(编排)/single.ts(参数校验+读取 md,渲染之后交给骨架)/output-skeleton.ts(单文件与合并共用的输出骨架 `emitConvertedArtifact`,含 `renderPdf`/`runAfterConvert`;同模块是为避免 single↔skeleton 成环)/batch.ts/merge.ts/paths.ts(扩展名判定单源)/context.ts(buildConvertContext)/preprocess.ts(解码→frontmatter 隔离→Obsidian/AI 预处理→原样拼回,所有入口共用的准备编排)/artifact-writer.ts(产物提交:同目录唯一临时文件 + 硬链接独占提交,单文件/批量/合并共用)
   - `persist/`:settings.ts/ui-state.ts/atomic-json.ts(原子写)/preset-file.ts(设置与预设文件的纯形状校验 + 预设解析/合并)
   - `services/`:image-downloader.ts(外链下载:私网拦截+20MB 上限,`allowPrivateAddresses` 可放宽)/mermaid-service.ts/temp-html.ts(randomUUID+'wx')/resource-dirs.ts/web-hardening.ts(窗口导航加固)/session-permissions.ts(session 权限默认拒绝收口)
   - `preload.cts`:contextBridge 白名单暴露 `window.api`(编译为 CJS;暴露面类型取 `core/preload-api.ts`)
