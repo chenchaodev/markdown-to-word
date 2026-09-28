@@ -8,6 +8,7 @@
  *   ERR_CONVERSION_CANCELLED),使 IPC 取消分支与调用方 catch 仍判定为「已取消」
  *   而非「转换失败」;
  * - 取消后不产出任何最终文件(无半成品)。
+ * - 读取完成后的取消闸门不被绕过:取消被拦在正文合并之前,不进入渲染。
  * 运行时样例与产物放 os.tmpdir() 独立目录,finally 整体删除;settings 经
  * backupSettings 备份/恢复(与 converter.test.js 同款卫生)。
  */
@@ -128,6 +129,48 @@ export async function run() {
       assert(isConversionCanceled(error), "过期 deadline 的错误码应为 ERR_CONVERSION_CANCELLED");
       assert((await artifactsOf(srcDir)).length === 1, "过期 deadline 不应新增产物(前一条用例的产物仍在)");
       console.log("[ok] merge-cancel:过期 deadline 经 core 渲染层取消并归一为本层取消错误");
+    }
+
+    // ---- 5. 读取完成后的取消闸门:取消不得越过正文合并 ----
+    // 「mergeMarkdowns 未被调用」无模块打桩可断言(全仓 ESM、无注入点),
+    // 故取机械等价面:merge.ts 在 mergeMarkdowns 之后才报 render 阶段,
+    // 阶段序列含 render 即等价于已进入合并正文,断言其不含 render 即可。
+    // 取消的发出点选在 read 报点(读取开始前):读取完成到该闸门之间是同步区间
+    // (mapWithConcurrency 的 await 之后无任何让出点),故「已取消」标志只可能
+    // 在此之前置位——这正是该闸门要守的窗口;若改用定时器,定时器必落在读取
+    // 开始之前(被入口闸门拦下)或读取完成之后(已越过闸门),守不到这一道。
+    {
+      const ctx = createConvertContext();
+      /** @type {string[]} */
+      const stages = [];
+      let canceled = false;
+      /**
+       * 记录阶段并发出取消(参数显式标注:被测声明在 dist 产物上,类型不从 src 推导)。
+       * @param {string} stage 阶段名
+       */
+      const recordStage = (stage) => {
+        stages.push(stage);
+        if (!canceled) {
+          canceled = true;
+          ctx.cancel();
+        }
+      };
+      const pending = mergeConvertImpl(files, "docx", recordStage, ctx);
+      /** @type {Error | undefined} */
+      let error;
+      try {
+        await pending;
+      } catch (err) {
+        error = /** @type {Error} */ (err);
+      }
+      assert(canceled, "取消须在 read 报点发出,否则本用例守不到读取后的闸门");
+      assert(error instanceof ConvertCanceledError, `读取后取消应抛 ConvertCanceledError,实际 ${error?.stack ?? error}`);
+      assert((await artifactsOf(srcDir)).length === 1, "读取后取消不应新增产物(前一条用例的产物仍在)");
+      assert(
+        !stages.includes("render"),
+        `读取后取消不应报出 render 阶段(等价于未进入正文合并),实际阶段序列 ${JSON.stringify(stages)}`,
+      );
+      console.log(`[ok] merge-cancel:读取后取消被拦在正文合并之前(阶段序列 ${JSON.stringify(stages)})`);
     }
   } finally {
     await restoreSettings();
