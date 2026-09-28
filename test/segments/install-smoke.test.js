@@ -56,6 +56,25 @@ const FIXTURE_PRODUCT = "FixtureApp";
 const FIXTURE_VERSION = "9.9.9";
 /** 冒烟入口在 asar 内的相对路径(能力缺口预检的判定对象) */
 const SMOKE_ENTRY = "dist/main/smoke.js";
+/**
+ * 桩的「存活信标」延迟(ms):桩在自己启动后延迟这么久才把信标文件写出来。
+ *
+ * 它必须**晚于**桩收到的硬超时(第 3 段传 --timeout 1500),这样「信标出现」才等价于
+ * 「桩与它派生的孙进程都活过了硬超时」—— 即进程树没被连带硬杀。判定侧的观察窗口由它
+ * 推导(见 BEACON_WATCH_MARGIN_MS),不另写一个对不上的魔数。
+ */
+const STUB_BEACON_DELAY_MS = 3000;
+/**
+ * 存活信标观察窗口相对 STUB_BEACON_DELAY_MS 的余量(ms):覆盖「桩的解释器冷启动」。
+ *
+ * 桩由 runScript 内部 spawn,故桩的启动不早于 runScript 的起点,信标最晚出现在
+ * 「起点 + STUB_BEACON_DELAY_MS」;桩自己还要先起一遍 node 才能跑到那行 setTimeout,
+ * 故再留一段余量。实测本机起一个同构桩(写 pid 文件 + 派生一个 node -e 孙进程)的耗时
+ * p50≈80ms、max≈170ms(30 次采样),CI 上按 3~4 倍放大仍远小于该余量。
+ * 余量只影响「观察得全不全」,不影响判定:通过路径的耗时上界 = 起点 + 窗口,
+ * 判红路径一旦看见信标立即返回(不烧满预算)。
+ */
+const BEACON_WATCH_MARGIN_MS = 600;
 /** 沙盒内逐字节复制的脚本(生产实现不得被改写) */
 const SANDBOX_SCRIPTS = [
   "check-unpacked-smoke.mjs",
@@ -84,7 +103,7 @@ if (beacon !== "") {
       // 沙盒清理竞态:忽略
     }
     child.kill();
-  }, 3000);
+  }, ${STUB_BEACON_DELAY_MS});
 }
 if (tracePath !== "") {
   appendFileSync(
@@ -369,17 +388,30 @@ function isAlive(pid) {
 }
 
 /**
- * 轮询等待某路径消失。
- * @param {string} target 目标路径
- * @param {number} timeoutMs 等待上限
- * @returns {Promise<boolean>} true = 已消失
+ * 观察「存活信标」在整段窗口内始终不存在(一旦出现立即返回 false)。
+ *
+ * 为什么不能「轮询等它消失」(旧实现如此):信标是**只写一次**的存活证据 —— 桩写出后再
+ * 没有任何人删它。于是「等消失」必然在第一次探测就成立(文件此刻本来就不存在),预算一次
+ * 都不会被消耗,观察窗口实际只剩「判定脚本返回的那一瞬间」。实测(2026-09-29,本机 5 次):
+ * 该等待恒 0~1ms 返回,而检查时点约 2.07s,比信标最晚可能出现的时点(≈3.1s)**早约 1s**,
+ * 也就是进程树没被连带硬杀、孙进程照样会跑到点写信标,这条断言仍会绿 —— 预算从哪来无关,
+ * 观察窗口压根没覆盖到。
+ *
+ * 正确口径:窗口必须覆盖信标最晚可能出现的时点,期间一旦出现即判红。上界从
+ * STUB_BEACON_DELAY_MS + BEACON_WATCH_MARGIN_MS 推导(见两处常量注),不是猜的数;
+ * 轮询 200ms 与 fs.existsSync 的开销可忽略,故窗口内每 200ms 就看一眼。
+ *
+ * @param {string} beacon 信标路径
+ * @param {number} launchedAt 桩被启动那一刻(Date.now())
+ * @returns {Promise<{ absent: boolean; elapsedMs: number }>} absent = 窗口结束时信标始终不存在
  */
-async function waitAbsent(target, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (fs.existsSync(target) && Date.now() < deadline) {
+async function watchBeaconAbsent(beacon, launchedAt) {
+  const windowEnd = launchedAt + STUB_BEACON_DELAY_MS + BEACON_WATCH_MARGIN_MS;
+  while (Date.now() < windowEnd) {
+    if (fs.existsSync(beacon)) return { absent: false, elapsedMs: Date.now() - launchedAt };
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  return !fs.existsSync(target);
+  return { absent: !fs.existsSync(beacon), elapsedMs: Date.now() - launchedAt };
 }
 
 /**
@@ -735,6 +767,8 @@ export async function run() {
       const scratch = path.join(root, "scratch");
       const pidFile = path.join(root, "stub.pid");
       const beacon = path.join(root, "grandchild-beacon.txt");
+      // 观察窗口的起点取「桩被启动」这一刻(= 判定脚本被 spawn 的时刻,桩只会更晚启动)
+      const launchedAt = Date.now();
       const result = runScript(
         root,
         "check-unpacked-smoke.mjs",
@@ -759,7 +793,11 @@ export async function run() {
       assert(scratchIsClean(scratch), "超时路径同样不得残留一次性 userData");
       if (process.platform === "win32") {
         // 孙进程存活信标:Windows 无进程组,只有 taskkill /T 才连它一起收掉
-        assert(await waitAbsent(beacon, 8000), "超时后孙进程仍在跑(进程树未连带硬杀,会留孤儿)");
+        const watch = await watchBeaconAbsent(beacon, launchedAt);
+        assert(
+          watch.absent,
+          `超时后孙进程仍在跑(进程树未连带硬杀,会留孤儿):存活信标在启动后 ${watch.elapsedMs}ms 出现:${beacon}`,
+        );
         console.log("[ok] install-smoke:超时判红,桩与其派生的孙进程均被连带硬杀(无孤儿进程)");
       } else {
         await new Promise((resolve) => setTimeout(resolve, 4000));
