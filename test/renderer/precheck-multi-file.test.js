@@ -21,6 +21,13 @@
  *     同样带 blocksMerge 的围栏告警在它们那里仍然只弹报告、可点继续。
  * (10) 阻断信息的文件名与报告弹窗同一判据:默认文件名,本次预检的文件里出现同名
  *     就回退全路径(含同名的干净文件);名字互不相同则不因「多文件」退化成全路径。
+ * (11) 抛异常路径(convert / convertBatch / convertMerge 各自 reject):此前本段
+ *     零覆盖(桩一律 resolve),三个 catch 分支摘掉 setError/showSummary 一条断言
+ *     都不会红;catch 收进 reportFailure 后单点爆炸半径 1 → 3,故逐条钉住 ——
+ *     状态行(可操作化之后)、汇总卡 fail 态 + 本流程 failedTitle、卡片错误区给
+ *     原始错误文本、命令锁释放、state.mode 归位(以「下一条命令仍能发起」为证)。
+ *     批量另有 lastBatchResult 归 null 的清理;另用 EBUSY 单独钉「可操作化」那一层
+ *     (单文件/合并改写、批量按既有口径刻意透传)。
  *
  * 焦点陷阱与关闭后焦点回归由 focus-return-guards 段守(预检弹窗两条断言已在其中),
  * 本段不重复;组头标签用 createElement 记名后逐节点断言。
@@ -722,7 +729,219 @@ export async function run() {
       return { ok: true, outputPath: `out.${format}`, warnings: [] };
     };
 
-    /* ---------- 20. 阻断用到的两个新键:三语言齐备 + 占位符集合一致 ---------- */
+    /* ---------- 20. 抛错路径:三条流程的 catch 收在同一个 reportFailure ---------- */
+    // 三条流程的 catch 已收口到 convert-flow 的 reportFailure(单点爆炸半径 1 → 3),
+    // 但此前 test/renderer 无一处让 convert* 抛错 → 三个 catch 分支零行为覆盖:
+    // 摘掉 reportFailure 里的 setError / showSummary 一条断言都不会红。
+    // 下列三例钉住「用户看得见什么」;差异只在文案 key(与批量独有的清理)。
+    //
+    // 用例 20 的错误文本「IPC 断了」不含任何被 actionableError 识别的错误码,
+    // 故可操作化前后同形 —— 状态行/卡片的「可操作化」那一层由 23 用例单独钉。
+    /** 汇总卡 kind 的可观察代理:showSummary 写的是三态互斥的修饰类。 */
+    const summaryKind = () =>
+      ["ok", "fail", "canceled"].find((kind) =>
+        elementFor("resultSummary").classList.contains(`result-summary--${kind}`),
+      ) ?? "none";
+    /**
+     * 汇总卡归中性(每个失败用例前清一次):卡片是常驻的,上一条用例留下的
+     * kind/文案会**替我们把断言蒙混过去** —— 归零后「kind 必须是 fail」才真的
+     * 在断言本次 catch 写了 fail,而不是恰好继承来的。
+     */
+    const resetSummaryCard = () => {
+      const card = elementFor("resultSummary");
+      for (const kind of ["ok", "fail", "canceled"]) {
+        card.classList.remove(`result-summary--${kind}`);
+      }
+      elementFor("summaryText").textContent = "";
+      elementFor("summaryError").textContent = "";
+    };
+    /**
+     * 一条流程抛错后的失败呈现共核(三条流程结构共用,差异只经实参传入):
+     * 状态行文案 / 卡片 kind / 卡片标题 / 卡片错误文案 / 命令锁释放 / mode 归位。
+     * @param label 用例标签(失败消息前缀)
+     * @param statusKey 该流程的状态行 i18n key
+     * @param titleKey 该流程的汇总卡标题 i18n key
+     * @param presentedError 该流程应当呈现的错误文案(可操作化之后)
+     */
+    const assertThrownFailure = (
+      /** @type {string} */ label,
+      /** @type {string} */ statusKey,
+      /** @type {string} */ titleKey,
+      /** @type {string} */ presentedError,
+    ) => {
+      assert(
+        statusLine() === i18nApi.t(statusKey, { error: presentedError }),
+        `${label}:状态行应是本流程的失败文案(${statusKey}),实际 ${JSON.stringify(statusLine())}`,
+      );
+      assert(summaryKind() === "fail", `${label}:汇总卡 kind 应为 fail,实际 ${summaryKind()}`);
+      assert(
+        cardTitle() === i18n.DICT.zh[titleKey],
+        `${label}:卡片标题应恰为 ${titleKey},实际 ${JSON.stringify(cardTitle())}`,
+      );
+      assert(
+        cardError() === presentedError,
+        `${label}:卡片错误区应给出呈现用错误文案,实际 ${JSON.stringify(cardError())}`,
+      );
+      assert(
+        elementFor("summaryError").classList.contains("hidden") === false,
+        `${label}:卡片有错误文案时错误区应可见`,
+      );
+      assert(!flow.isConvertCommandBlocked(), `${label}:失败后命令锁必须释放(锁住即界面卡死)`);
+      assert(state.mode === null, `${label}:失败后应归位转换态,实际 mode=${state.mode}`);
+    };
+
+    precheckPaths.length = 0;
+    resetSummaryCard();
+    usePrecheck(async () => []); // 无告警:直接进转换,不弹报告框
+    /** @type {any} */ (globalThis.window).api.convert = async () => {
+      throw new Error("IPC 断了");
+    };
+    state.selectedFiles = [mergeFiles[0]];
+    await flow.runConvert(mergeFiles[0], "docx");
+    assertThrownFailure("单文件", "convert.failed.status", "convert.failed.title", "IPC 断了");
+    // 命令锁释放的行为证据:紧接着再发一条命令,应能真的走到 IPC
+    const convertsBeforeRetry = convertCount();
+    /** @type {any} */ (globalThis.window).api.convert = async (
+      /** @type {string} */ filePath,
+      /** @type {string} */ format,
+    ) => {
+      convertCalls.push({ filePath, format });
+      return { ok: true, outputPath: "out.docx", warnings: [] };
+    };
+    precheckPaths.length = 0;
+    await flow.runConvert(mergeFiles[0], "docx");
+    assert(
+      convertCount() === convertsBeforeRetry + 1,
+      `单文件失败后下一条命令仍应能发起(锁已释放),实际新增 ${convertCount() - convertsBeforeRetry} 次`,
+    );
+
+    /* ---------- 21. 批量:convertBatch 抛错(含 lastBatchResult 清理) ---------- */
+    precheckPaths.length = 0;
+    resetSummaryCard();
+    /** @type {any} */ (globalThis.window).api.convertBatch = async () => {
+      throw new Error("IPC 断了");
+    };
+    // 批量窗的「重试失败项」等入口读 lastBatchResult:抛错后留陈旧结果会让用户
+    // 重试到上一轮的失败项,故 catch 里必须清空(批量独有,另两条流程无此字段)。
+    state.lastBatchResult = {
+      ok: true,
+      items: [{ file: "C:\\work\\stale.md", ok: false, error: "上一轮的失败" }],
+      okCount: 0,
+      failCount: 1,
+      canceledCount: 0,
+    };
+    state.selectedFiles = mergeFiles;
+    await flow.runBatch();
+    assertThrownFailure("批量", "convert.batch.failed", "convert.batch.failedTitle", "IPC 断了");
+    assert(
+      state.lastBatchResult === null,
+      `批量抛错后应清空 lastBatchResult,实际 ${JSON.stringify(state.lastBatchResult)}`,
+    );
+    const batchesBeforeRetry = batchCount();
+    /** @type {any} */ (globalThis.window).api.convertBatch = async (
+      /** @type {string[]} */ files,
+      /** @type {string} */ format,
+    ) => {
+      batchCalls.push({ files, format });
+      return {
+        items: files.map((file) => ({ file, ok: true })),
+        okCount: files.length,
+        failCount: 0,
+        canceledCount: 0,
+        canceled: false,
+      };
+    };
+    precheckPaths.length = 0;
+    await flow.runBatch();
+    assert(
+      batchCount() === batchesBeforeRetry + 1,
+      `批量失败后下一条命令仍应能发起(锁已释放),实际新增 ${batchCount() - batchesBeforeRetry} 次`,
+    );
+    dialogs.hideBatchDialog(); // 成功路径的结果窗是模态,后续用例需干净态
+    state.selectedFiles = [];
+
+    /* ---------- 22. 合并:convertMerge 抛错 ---------- */
+    precheckPaths.length = 0;
+    resetSummaryCard();
+    /** @type {any} */ (globalThis.window).api.convertMerge = async () => {
+      throw new Error("IPC 断了");
+    };
+    await flow.runMerge({ files: mergeFiles, format: "docx" });
+    assertThrownFailure("合并", "convert.merge.failed", "convert.merge.failedTitle", "IPC 断了");
+    const mergesBeforeRetry = mergeCount();
+    /** @type {any} */ (globalThis.window).api.convertMerge = async (
+      /** @type {string[]} */ files,
+      /** @type {string} */ format,
+    ) => {
+      mergeCalls.push({ files, format });
+      return { ok: true, outputPath: `out.${format}`, warnings: [] };
+    };
+    precheckPaths.length = 0;
+    await flow.runMerge({ files: mergeFiles, format: "docx" });
+    assert(
+      mergeCount() === mergesBeforeRetry + 1,
+      `合并失败后下一条命令仍应能发起(锁已释放),实际新增 ${mergeCount() - mergesBeforeRetry} 次`,
+    );
+
+    /* ---------- 23. 可操作化口径:单文件/合并改写,批量原样透传 ---------- */
+    // 20-22 的错误文本不含任何被 actionableError 识别的错误码,故那一层是
+    // 「原样透传」也照样绿 —— 换一条会被识别的错误把这一层单独钉住。
+    // 批量是**刻意**不走的(见 BATCH_FAILURE 注记:批量窗逐条展示 main 产出的
+    // 原始 error,状态行若单独改写就会与弹窗里那条对不上),故此处断言其透传。
+    const busyText = i18nApi.t("error.fileBusy");
+    const busyMessage = "EBUSY: resource busy or locked";
+    precheckPaths.length = 0;
+    resetSummaryCard();
+    /** @type {any} */ (globalThis.window).api.convert = async () => {
+      throw new Error(busyMessage);
+    };
+    state.selectedFiles = [mergeFiles[0]];
+    await flow.runConvert(mergeFiles[0], "docx");
+    assertThrownFailure("单文件可操作化", "convert.failed.status", "convert.failed.title", busyText);
+    assert(
+      !cardError().includes("EBUSY"),
+      `单文件的错误码应被换成可操作文案,实际 ${JSON.stringify(cardError())}`,
+    );
+    precheckPaths.length = 0;
+    resetSummaryCard();
+    /** @type {any} */ (globalThis.window).api.convertMerge = async () => {
+      throw new Error(busyMessage);
+    };
+    await flow.runMerge({ files: mergeFiles, format: "docx" });
+    assertThrownFailure("合并可操作化", "convert.merge.failed", "convert.merge.failedTitle", busyText);
+    precheckPaths.length = 0;
+    resetSummaryCard();
+    /** @type {any} */ (globalThis.window).api.convertBatch = async () => {
+      throw new Error(busyMessage);
+    };
+    state.selectedFiles = mergeFiles;
+    await flow.runBatch();
+    assertThrownFailure("批量可操作化", "convert.batch.failed", "convert.batch.failedTitle", busyMessage);
+    assert(
+      cardError() === busyMessage,
+      `批量刻意不过 displayError(与批量窗逐条展示的原始 error 对齐),实际 ${JSON.stringify(cardError())}`,
+    );
+    // 收尾复位桩与状态:留下抛错桩会成为后面段的隐形地雷(同进程共用 window.api)
+    /** @type {any} */ (globalThis.window).api.convert = async () => ({
+      ok: true,
+      outputPath: "out.docx",
+      warnings: [],
+    });
+    /** @type {any} */ (globalThis.window).api.convertBatch = async () => ({
+      items: [],
+      okCount: 0,
+      failCount: 0,
+      canceledCount: 0,
+      canceled: false,
+    });
+    /** @type {any} */ (globalThis.window).api.convertMerge = async (
+      /** @type {string[]} */ _files,
+      /** @type {string} */ format,
+    ) => ({ ok: true, outputPath: `out.${format}`, warnings: [] });
+    usePendingPrecheck();
+    state.selectedFiles = [];
+
+    /* ---------- 24. 阻断用到的两个新键:三语言齐备 + 占位符集合一致 ---------- */
     const NEW_KEYS = ["convert.merge.blockedTitle", "convert.merge.blockedStatus"];
     /** 取占位符集合并排序(占位符须三语言一致,与 i18n-registry 段同款口径)。 */
     const placeholders = (/** @type {unknown} */ text) =>
@@ -765,7 +984,7 @@ export async function run() {
     }
     i18nApi.setLanguage("zh"); // 语言是模块级状态,复位避免污染后续段
 
-    /* ---------- 21. 守护:裁切修复的两条 flex:none 不得被摘掉(源契约) ---------- */
+    /* ---------- 25. 守护:裁切修复的两条 flex:none 不得被摘掉(源契约) ---------- */
     // 固定槽 .feed 里的两项都不可压缩:可压缩项被更高的一项挤扁后,自己的
     // overflow:hidden 会把文字裁成一条(用户截图里「上半截被切」的机制)。
     // Node stub 测不到布局,故按源文本锁定这两条声明。
@@ -791,7 +1010,7 @@ export async function run() {
       `.feed .result-summary 必须 flex:none(卡片高于槽时交给槽内滚动,而不是被压扁),实际规则体:${cardRule?.[1]}`,
     );
 
-    /* ---------- 22. 守护:调用点不再自带 withPrecheck(预检只在命令函数内部) ---------- */
+    /* ---------- 26. 守护:调用点不再自带 withPrecheck(预检只在命令函数内部) ---------- */
     // 预检收口在 convert-flow 的三个命令函数里;入口再包一层就会双跑预检、
     // 连弹两次报告。唯一例外是成书向导:它用 withPrecheck([]) 借锁把
     // 「付印 docx+pdf」当一条命令,预检本身由 runMerge 内部提供。
@@ -830,7 +1049,7 @@ export async function run() {
     }
 
     console.log(
-      "[ok] precheck-multi-file:合并/批量/单文件/粘贴直转逐文件预检(按序·每文件一次) + 决策门(确认前不转换/取消即中止) + 报告按文件分组(h3 组头/单组扁平/同名回退全路径) + 预检异常不阻断 + busy 中止 + 预检期单实例 + 合并遇 blocksMerge 阻断(不弹框·不转换·界面恢复·多文件补「另有 N 个」·向导付印同阻·同名回退全路径) + 单文件/批量不被波及 + 调用点不再自带 withPrecheck 断言通过",
+      "[ok] precheck-multi-file:合并/批量/单文件/粘贴直转逐文件预检(按序·每文件一次) + 决策门(确认前不转换/取消即中止) + 报告按文件分组(h3 组头/单组扁平/同名回退全路径) + 预检异常不阻断 + busy 中止 + 预检期单实例 + 合并遇 blocksMerge 阻断(不弹框·不转换·界面恢复·多文件补「另有 N 个」·向导付印同阻·同名回退全路径) + 单文件/批量不被波及 + 抛错路径(单文件/批量/合并:状态行·卡片 fail 态+failedTitle·原始错误·命令锁释放·mode 归位·批量清 lastBatchResult·可操作化口径) + 调用点不再自带 withPrecheck 断言通过",
     );
   } finally {
     dom.restore();

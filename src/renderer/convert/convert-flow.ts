@@ -8,7 +8,7 @@
  */
 import { statusEl } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import type { OperationBusyResult } from "../../core/ipc-contract.js";
+import type { ConvertMode, ConvertResult, OperationBusyResult } from "../../core/ipc-contract.js";
 import {
   hideProgress,
   setError,
@@ -29,7 +29,7 @@ import {
 } from "../ui/dialogs.js";
 import { setCommandBusyProbe, updateActionButtons } from "./file-list.js";
 import { t } from "../../core/i18n.js";
-import { formatWarning, type ConvertWarning, type KeyedWarning } from "../../core/i18n.js";
+import { formatWarning, type ConvertWarning, type I18nKey, type KeyedWarning } from "../../core/i18n.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 
 /** 错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
@@ -249,6 +249,145 @@ async function precheckedCommand(
   await action();
 }
 
+/* ---------- 受控执行段的共享编排层 ---------- */
+/**
+ * 三条转换流程(单文件 / 批量 / 合并)的受控执行段骨架在此收口:开场置转换态 →
+ * 结果呈现 → 失败提示 → 收尾复位。各流程的差异一律走实参(mode 值、i18n key、
+ * count、失败文件名),本层不为某条流程开分支。
+ *
+ * 不变量:本层全部同步、**零 await**。受控执行段的首个同步段必须即置 state.mode
+ * —— 预检链恰在调用 action 之前释放预检锁(见 precheckedCommand),靠这段同步
+ * 前缀把锁交接成 mode;中途一旦让出微任务就留下「无锁且无 mode」的空档,外部
+ * 命令会插进来并发转换。故本层任一函数一旦需要 await,就是收错了边界。
+ */
+
+/** 开场:置转换态(命令锁的另一半)+ 按钮忙态 + 状态行阶段文案 + 进度条起。 */
+function beginControlledRun(mode: ConvertMode, stage: string): void {
+  state.mode = mode;
+  updateActionButtons(); // 禁用选择入口与转换按钮,防止重复点击
+  setStatus(stage);
+  setStatusTone("busy");
+  showProgress();
+}
+
+/** 收尾:清转换态(按钮随之解锁)+ 收进度条。三条流程同序同项,故只此一处。 */
+function endControlledRun(): void {
+  state.mode = null;
+  hideProgress();
+  updateActionButtons();
+}
+
+/**
+ * 失败呈现口径:三流程同构(错误归一 → 状态行红字 + 汇总卡 fail),差异只在文案
+ * key 与「给用户看的错误」怎么取。
+ */
+interface FailureCopy {
+  /** 状态行文案(参数 { error }) */
+  statusKey: I18nKey;
+  /** 汇总卡标题 */
+  titleKey: I18nKey;
+  /** 呈现用错误文案的取法 */
+  errorText: (message: string) => string;
+}
+
+/** 抛错路径的呈现:与「返回了失败结果」走同一副骨架。 */
+function reportFailure(err: unknown, copy: FailureCopy): void {
+  const error = copy.errorText(errorMessage(err));
+  setError(t(copy.statusKey, { error }));
+  showSummary({ kind: "fail", title: t(copy.titleKey), error });
+}
+
+/**
+ * 单文件 / 合并的结果口径:两者的 IPC 返回同一契约(ConvertResult),四态判定与
+ * 呈现骨架逐字相同,故共用一副,差异只有文案 key。
+ */
+interface FileConvertCopy extends FailureCopy {
+  canceledTitle: I18nKey;
+  doneStatus: I18nKey;
+  doneTitle: I18nKey;
+}
+
+/**
+ * 单文件与合并共有的结果呈现:busy / 取消 / 成功 / 失败四态(判据沿用既有段)。
+ * @param result convert / convertMerge 的返回(同一契约)
+ * @param copy 本流程的文案口径
+ * @param failFileName 失败弹窗的「哪个文件」。取 thunk 而非字符串是因合并读的是
+ *   state.selectedFiles,须与既有口径同刻取值(转换期间选中项可能已变)。
+ */
+function presentFileConvert(
+  result: ConvertResult | OperationBusyResult,
+  copy: FileConvertCopy,
+  failFileName: () => string,
+): void {
+  if (isBusyResult(result)) {
+    setError(result.error);
+  } else if (result.canceled) {
+    setStatus(t("common.canceled"));
+    setStatusTone("");
+    showSummary({ kind: "canceled", title: t(copy.canceledTitle) });
+  } else if (result.ok) {
+    const outputPath = result.outputPath ?? "";
+    setProgress(100);
+    setStatus(t(copy.doneStatus, { outputPath }));
+    setStatusTone("ok");
+    statusEl.title = outputPath; // 长路径悬停可看完整
+    showSummary({
+      kind: "ok",
+      title: t(copy.doneTitle),
+      outputPath,
+      warnings: result.warnings,
+    });
+    // 勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
+    if (!state.suppressCompleteDialog) {
+      showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
+    }
+    void state.recentRefreshHandler?.(); // 成功后刷新最近转换区块(经 state 回调,不再 import recent-files)
+  } else {
+    const error = copy.errorText(result.error ?? t("common.unknownError"));
+    setError(t(copy.statusKey, { error }));
+    showSummary({ kind: "fail", title: t(copy.titleKey), error });
+    // 勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
+    if (!state.suppressCompleteDialog) {
+      showCompleteDialog("", error, failFileName()); // 失败弹窗:错误三要素
+    }
+  }
+}
+
+/** 单文件文案口径。 */
+const SINGLE_COPY: FileConvertCopy = {
+  canceledTitle: "convert.canceled.title",
+  doneStatus: "convert.done.status",
+  doneTitle: "convert.done.title",
+  statusKey: "convert.failed.status",
+  titleKey: "convert.failed.title",
+  errorText: displayError,
+};
+
+/** 合并文案口径。 */
+const MERGE_COPY: FileConvertCopy = {
+  canceledTitle: "convert.merge.canceledTitle",
+  doneStatus: "convert.merge.done",
+  doneTitle: "convert.merge.doneTitle",
+  statusKey: "convert.merge.failed",
+  titleKey: "convert.merge.failedTitle",
+  errorText: displayError,
+};
+
+/**
+ * 批量失败口径:错误文案透传原始 message(不过 displayError)—— 批量弹窗逐条展示的
+ * 也是 main 产出的原始 error,状态行若单独改写就会与弹窗里那条对不上。
+ */
+const BATCH_FAILURE: FailureCopy = {
+  statusKey: "convert.batch.failed",
+  titleKey: "convert.batch.failedTitle",
+  errorText: (message) => message,
+};
+
+/** 合并失败弹窗的「哪个文件」:报成品名后缀(入口已守卫 ≥ 2 个,首项必存在)。 */
+function mergeFailFileName(): string {
+  return t("convert.merge.nameSuffix", { name: baseName(state.selectedFiles[0]!) });
+}
+
 /**
  * 单文件转换:先预检这一个源文件(与批量/合并同一道防线),再转换。
  * 预检收口在本函数内部 —— 故任何入口(转换按钮 / 快捷键 / 粘贴直转 / 最近记录
@@ -263,57 +402,18 @@ export function runConvert(filePath: string, format: "docx" | "pdf"): Promise<vo
 }
 
 /**
- * 单文件转换的受控执行段:首个同步段即置 state.mode(理由同 runBatchConvert)。
+ * 单文件转换的受控执行段:骨架取共享编排层,本段只留单文件特有的一步 IPC 与
+ * 失败弹窗的文件名。首个同步段即置 state.mode,理由见 beginControlledRun。
  */
 async function runConvertAction(filePath: string, format: "docx" | "pdf"): Promise<void> {
-  state.mode = "single";
-  updateActionButtons(); // 禁用选择入口与转换按钮,防止重复点击
-  setStatus(t("convert.stage.converting"));
-  setStatusTone("busy");
-  showProgress();
+  beginControlledRun("single", t("convert.stage.converting"));
   try {
     const result = await window.api.convert(filePath, format);
-    if (isBusyResult(result)) {
-      setError(result.error);
-    } else if (result.canceled) {
-      setStatus(t("common.canceled"));
-      setStatusTone("");
-      showSummary({ kind: "canceled", title: t("convert.canceled.title") });
-    } else if (result.ok) {
-      const outputPath = result.outputPath ?? "";
-      setProgress(100);
-      setStatus(t("convert.done.status", { outputPath }));
-      setStatusTone("ok");
-      statusEl.title = outputPath; // 长路径悬停可看完整
-      showSummary({
-        kind: "ok",
-        title: t("convert.done.title"),
-        outputPath,
-        warnings: result.warnings,
-      });
-      // 用户勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
-      if (!state.suppressCompleteDialog) {
-        showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
-      }
-      void state.recentRefreshHandler?.(); // 成功后刷新最近转换区块(经 state 回调,不再 import recent-files)
-    } else {
-      const error = displayError(result.error ?? t("common.unknownError"));
-      setError(t("convert.failed.status", { error }));
-      showSummary({ kind: "fail", title: t("convert.failed.title"), error });
-      // 用户勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
-      if (!state.suppressCompleteDialog) {
-        showCompleteDialog("", error, baseName(filePath)); // 失败弹窗:错误三要素
-      }
-    }
+    presentFileConvert(result, SINGLE_COPY, () => baseName(filePath));
   } catch (err) {
-    const message = errorMessage(err);
-    const error = displayError(message);
-    setError(t("convert.failed.status", { error }));
-    showSummary({ kind: "fail", title: t("convert.failed.title"), error });
+    reportFailure(err, SINGLE_COPY);
   } finally {
-    state.mode = null;
-    hideProgress();
-    updateActionButtons();
+    endControlledRun();
   }
 }
 
@@ -333,18 +433,14 @@ export function runBatch(files?: string[], format?: "docx" | "pdf"): Promise<voi
 }
 
 /**
- * 批量转换的受控执行段:首个同步段即置 state.mode。
- * 不得在本段开头插入任何 await —— 预检链恰在调用 action 之前释放预检锁,靠这段
- * 同步前缀把锁交接成 mode,中间一旦让出微任务就会留下「无锁且无 mode」的空档。
+ * 批量转换的受控执行段:骨架同共享编排层;批量特有的三态归类与「成败均弹」的
+ * 批量窗留在本段内 —— 它们不是共用骨架的变体,收进共享层只会把分类逻辑与
+ * 逐条结果塞进参数表。首个同步段即置 state.mode,理由见 beginControlledRun。
  */
 async function runBatchConvert(targets: string[], format?: "docx" | "pdf"): Promise<void> {
   const fmt = format ?? state.selectedFormat;
   state.lastBatchFormat = fmt; // 重试失败项按原格式重转
-  state.mode = "batch";
-  updateActionButtons();
-  setStatus(t("convert.batch.stage", { count: targets.length }));
-  setStatusTone("busy");
-  showProgress();
+  beginControlledRun("batch", t("convert.batch.stage", { count: targets.length }));
   try {
     const result = await window.api.convertBatch(targets, fmt);
     if ("busy" in result) {
@@ -384,13 +480,9 @@ async function runBatchConvert(targets: string[], format?: "docx" | "pdf"): Prom
     void state.recentRefreshHandler?.(); // 批量结束刷新(主进程已记录成功项;经 state 回调)
   } catch (err) {
     state.lastBatchResult = null;
-    const message = errorMessage(err);
-    setError(t("convert.batch.failed", { error: message }));
-    showSummary({ kind: "fail", title: t("convert.batch.failedTitle"), error: message });
+    reportFailure(err, BATCH_FAILURE);
   } finally {
-    state.mode = null;
-    hideProgress();
-    updateActionButtons();
+    endControlledRun();
   }
 }
 
@@ -442,7 +534,8 @@ function reportMergeBlocked(report: MergeBlockReport): void {
 }
 
 /**
- * 合并转换的受控执行段:首个同步段即置 state.mode(理由同 runBatchConvert)。
+ * 合并转换的受控执行段:骨架同共享编排层;本段只留合并特有的 metadata 透传与
+ * 失败弹窗的成品名后缀。首个同步段即置 state.mode,理由见 beginControlledRun。
  */
 async function runMergeConvert(
   files: string[],
@@ -450,63 +543,18 @@ async function runMergeConvert(
 ): Promise<void> {
   const format = opts?.format ?? state.selectedFormat;
   const metadata = opts?.metadata;
-  state.mode = "merge";
-  updateActionButtons();
-  setStatus(t("convert.merge.stage"));
-  setStatusTone("busy");
-  showProgress();
+  beginControlledRun("merge", t("convert.merge.stage"));
   try {
     const result = await window.api.convertMerge(
       files,
       format,
       metadata ? { metadata } : undefined,
     );
-    if (isBusyResult(result)) {
-      setError(result.error);
-    } else if (result.canceled) {
-      setStatus(t("common.canceled"));
-      setStatusTone("");
-      showSummary({ kind: "canceled", title: t("convert.merge.canceledTitle") });
-    } else if (result.ok) {
-      const outputPath = result.outputPath ?? "";
-      setProgress(100);
-      setStatus(t("convert.merge.done", { outputPath }));
-      setStatusTone("ok");
-      statusEl.title = outputPath;
-      showSummary({
-        kind: "ok",
-        title: t("convert.merge.doneTitle"),
-        outputPath,
-        warnings: result.warnings,
-      });
-      // 勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
-      if (!state.suppressCompleteDialog) {
-        showCompleteDialog(outputPath);
-      }
-      void state.recentRefreshHandler?.(); // 成功后刷新最近转换区块(经 state 回调,不再 import recent-files)
-    } else {
-      const error = displayError(result.error ?? t("common.unknownError"));
-      setError(t("convert.merge.failed", { error }));
-      showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error });
-      // 勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
-      // 入口已守卫 selectedFiles.length ≥ 2,首项必存在
-      if (!state.suppressCompleteDialog) {
-        showCompleteDialog(
-          "",
-          error,
-          t("convert.merge.nameSuffix", { name: baseName(state.selectedFiles[0]!) }),
-        );
-      }
-    }
+    presentFileConvert(result, MERGE_COPY, mergeFailFileName);
   } catch (err) {
-    const message = errorMessage(err);
-    const error = displayError(message);
-    setError(t("convert.merge.failed", { error }));
-    showSummary({ kind: "fail", title: t("convert.merge.failedTitle"), error });
+    reportFailure(err, MERGE_COPY);
   } finally {
-    state.mode = null;
-    hideProgress();
-    updateActionButtons();
+    endControlledRun();
   }
 }
 
