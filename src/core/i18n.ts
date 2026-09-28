@@ -61,14 +61,17 @@ export function formatWarning(w: ConvertWarning): string {
 
 /**
  * 交叉引用未找到警告构造(docx/pdf 渲染共用单一来源):
- * kind 为中文类别词(图/表/章节,来自两侧 CROSS_REF_KINDS.kindName),
- * ref 为「前缀:label」串;en 及其余语言文案省略 kind 参数避免中英混排(见各字典注释)。
+ * kindName 为中文类别词(图/表/章节,来自两侧 CROSS_REF_KINDS.kindName),
+ * ref 为「前缀:label」串;en 及其余语言文案省略该占位符避免中英混排(见各字典注释)。
+ * 参数名刻意叫 kindName 而非 kind:`warn.pathScanLimit` 的 kind 是**触顶维度**
+ * (条目数/层级,en/ja 保留占位符),两者同名同型却不同义,照后者的口径给前者补翻译
+ * 会把中文类别词硬塞进英文界面(见 adr-023)。
  */
-export function crossRefNotFoundWarning(kind: string, ref: string): KeyedWarning {
+export function crossRefNotFoundWarning(kindName: string, ref: string): KeyedWarning {
   return {
     key: "warn.crossRefNotFound",
-    params: { kind, ref },
-    fallback: `交叉引用未找到${kind} label: ${ref}`,
+    params: { kindName, ref },
+    fallback: `交叉引用未找到${kindName} label: ${ref}`,
   };
 }
 

@@ -283,7 +283,7 @@ const dict = {
     "settings.groupNumbering": "番号と目次",
     "settings.groupConvert": "変換",
     "settings.captionNumbering": "図/表キャプション自動番号",
-    "settings.captionNumberingDesc": "図表の下に「図 1-1」形式の番号を付与",
+    "settings.captionNumberingDesc": "図表の下に「図 1.1」形式の番号を付与",
     "settings.captionNumberingHint": "(「図: タイトル」接頭辞行を認識)",
     "settings.equationNumbering": "数式番号",
     "settings.equationNumberingDesc": "数式の右側に「(1)」形式の番号を付与",
@@ -469,8 +469,9 @@ const dict = {
     "warn.unpairedMathDelimiter": "数式デリミタ $ が対応していません(該当箇所: ${snippet});閉じられていない $ はプレーンテキストとして印刷されます。閉じ側の $ を補ってください",
     "warn.unclosedCodeFence": "コードフェンスが閉じられていません(${lineNo} 行目から開始):それ以降の内容が 1 つのコードブロックとして表示されます — 見出し・表・数式もコードテキストになります。閉じ側のフェンスを追加してください。",
     "warn.tableLikeNotParsed": "表のように見えますが表として組版されていません(先頭行: ${lineText});先頭行の下に区切り行(例: | --- | --- |)を追加してください",
-    // kind は推送期の中国語カテゴリ語(条目数/层级)のためプレースホルダーを保持
-    // (en と同じ口径で、触頂した次元を特定できる情報を落とさない)
+    // kind は**触頂した次元**(条目数/层级,来自 pathScanLimitWarning 调用侧)であって中国語カテゴリ語ではない
+    // —— 前者は warn.crossRefNotFound の kindName と別物。プレースホルダーを保持するのは
+    // 触頂した次元を特定できる情報を落とさないため(en と同じ口径)
     "warn.pathScanLimit": "ディレクトリ走査が上限 (${kind}: ${limit}) に達し、残りの収集を停止しました",
 
     /* ---------- エラー(生成時にローカライズ) ---------- */

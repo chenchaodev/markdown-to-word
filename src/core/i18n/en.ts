@@ -286,7 +286,7 @@ const dict = {
     "settings.groupNumbering": "Numbering & TOC",
     "settings.groupConvert": "Convert",
     "settings.captionNumbering": "Auto-number figure/table captions",
-    "settings.captionNumberingDesc": "\"Figure 1-1\" style numbering below figures and tables",
+    "settings.captionNumberingDesc": "\"Figure 1.1\" style numbering below figures and tables",
     "settings.captionNumberingHint": "(recognizes lines prefixed with \"Figure: title\")",
     "settings.equationNumbering": "Equation numbering",
     "settings.equationNumberingDesc": "Equations numbered \"(1)\" on the right",
@@ -477,8 +477,9 @@ const dict = {
     "warn.unpairedMathDelimiter": "Equation delimiter $ is unpaired (near: ${snippet}); an unpaired $ prints as plain text — add the closing $",
     "warn.unclosedCodeFence": "Code fence is never closed (it starts at line ${lineNo}): everything after it is shown as a single code block — headings, tables and equations turn into code text. Add the closing fence.",
     "warn.tableLikeNotParsed": "This looks like a table but was not laid out as one (first line: ${lineText}); add a delimiter row under the first line (e.g. | --- | --- |)",
-    // kind 为推送期的中文类别词(条目数/层级,来自 pathScanLimitWarning 调用侧),
-    // 文案保留插值以便定位触顶维度(同 warn.unsupportedBlockInContainer 口径)
+    // kind 是**触顶维度**(条目数/层级,来自 pathScanLimitWarning 调用侧),不是中文类别词
+    // —— 后者是 warn.crossRefNotFound 的 kindName,两者别混;文案保留插值以便定位维度
+    // (同 warn.unsupportedBlockInContainer 口径)
     "warn.pathScanLimit": "Directory scan limit reached (${kind}: ${limit}), stopped collecting the remaining content",
 
     /* ---------- Errors (localized at throw time: message reaches GUI via a one-shot string channel) ---------- */
