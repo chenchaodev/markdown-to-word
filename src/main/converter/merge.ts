@@ -97,7 +97,7 @@ function commonBaseDir(dirs: string[]): string {
 /**
  * 合并转换:读全部文件 → mergeMarkdowns(首文件 frontmatter 保留、后续剥离、图片相对公共 baseDir 重定位)→ 单次 convert。
  * 输出与 files[0] 同目录,`{basename}-合并.{ext}`;导出后行为由本函数触发一次
- * (单输出,与单文件一致;批量调用方经 skipAfterConvert 让位),落盘后仍有最终取消检查。
+ * (单输出,与单文件一致),落盘后仍有最终取消检查。
  * 任一步失败直接抛(调用方 catch 为 { ok:false, error };取消抛 ConvertCanceledError)。
  * 进度经 onProgress 上报(与单文件同构;pdf 细分
  * parse/inline/mermaid/katex/print,docx 保持 read/render/done)。
@@ -191,13 +191,14 @@ export async function mergeConvertImpl(
     `${baseName}-合并`,
   );
   warnings.push(...outWarnings);
-  // 副作用所有权:合并只有单个产物,由本函数触发一次(与单文件同构;批量调用方
-  // 经 skipAfterConvert 让位)。最终取消检查落在「产物已落盘 → 打开产物」的最后
-  // 窗口:此处取消(用户取消或关窗放弃)则抛 ConvertCanceledError,调用方回「已取消」,
-  // 绝不打开产物——与 convertImpl 的闸门位置对齐(勿只依赖落盘前的检查点)。
-  if (!ctx.skipAfterConvert) {
-    throwIfCanceled(ctx);
-    await runAfterConvert(settings.afterConvert, outputPath, ctx);
-  }
+  // 副作用所有权:合并只有单个产物,由本函数无条件触发一次(与单文件同构)。
+  // 此处不判 skipAfterConvert:该字段的唯一写入者是 batch.ts 的 batchConvertImpl,
+  // 而 batch 只调 convertImpl、从不调 mergeConvertImpl;合并路径的 ctx 出自无参
+  // createConvertContext,其返回值不含该字段 ⇒ 此处恒为 undefined。
+  // 最终取消检查落在「产物已落盘 → 打开产物」的最后窗口:此处取消(用户取消或
+  // 关窗放弃)则抛 ConvertCanceledError,调用方回「已取消」,绝不打开产物——
+  // 与 convertImpl 的闸门位置对齐(勿只依赖落盘前的检查点)。
+  throwIfCanceled(ctx);
+  await runAfterConvert(settings.afterConvert, outputPath, ctx);
   return { ok: true, outputPath, warnings };
 }
