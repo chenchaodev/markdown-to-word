@@ -113,19 +113,72 @@ export const DEFAULT_HEADER_FOOTER: HeaderFooterSettings = {
 
 /* ---------- 文字水印 ---------- */
 /**
+ * 水印旋转角度的符号约定与取值(单源,双管线共用)。
+ *
+ * ## 约定:settings 里的 angle 一律是 **CSS `rotate()` 语义**(正 = 顺时针)。
+ * 这是本项目两侧载体里唯一可判定的那个(Chromium/CSS 规范恒定),故取它为口径;
+ * docx 侧的 DML `a:xfrm/@rot` 由 {@link watermarkDmlRotation} 单点换算,
+ * **两侧都不得在各自的渲染层再取负** —— 那正是本常量要消灭的形态。
+ *
+ * ## 取值:315 = 中文出版惯例的「左下 → 右上」(等价于逆时针 45°)。
+ * pdf 侧 CSS 正值顺时针,故 315 让文字自左下升向右上;docx 侧同号经
+ * {@link watermarkDmlRotation} 落到 `rot`,两侧同向。
+ *
+ * ## ⚠️ 未决(需人工渲染一次):docx 侧的实际视觉方向。
+ * `docx` 库只把 `rotation` 原样写进 `rot`(ST_Angle,60000 度分之一,不取负),
+ * 代码里查不到方向;旧注释曾写「正值 = 逆时针」,与代码不符,已删(adr-030 6-B1)。
+ * 判据:导出 45° 的 docx,看文字往哪边倾。
+ * **若确认 docx 侧方向相反,只改 {@link WATERMARK_DML_ROTATION_SIGN} 一个常量**
+ * (两侧同向翻转,pdf 侧不受影响),不要在任一侧渲染层各写一份取负。
+ */
+export const WATERMARK_ANGLE_SIGN = "css-positive-clockwise" as const;
+
+/** 水印默认角度(度):315 = 逆时针 45° = 左下 → 右上(中文出版惯例) */
+export const DEFAULT_WATERMARK_ANGLE = 315;
+
+/**
+ * docx 侧 DML `a:xfrm/@rot` 相对 settings angle 的符号系数。
+ *
+ * 现状取 1(与 settings 同号),依据是**两侧同号**的裁决:docx 侧方向无法从代码
+ * 断定,与其猜一个符号,不如让两侧在同一个符号下取同一个角度 —— 此时即便 docx
+ * 侧视觉方向与预期相反,缺陷也只表现为「两侧都朝另一侧倾」,而不是「一侧对
+ * 一侧错」那种更难察觉的分裂。
+ *
+ * 人工渲染确认 docx 侧反向时,把这里改成 -1 即完成修正(见
+ * {@link WATERMARK_ANGLE_SIGN} 的未决说明);这是全链路唯一的翻转点。
+ */
+export const WATERMARK_DML_ROTATION_SIGN = 1;
+
+/** DML `ST_Angle` 单位:60000 度分之一 */
+const DML_ANGLE_UNITS_PER_DEGREE = 60_000;
+
+/**
+ * 水印角度 → docx 侧 DML `a:xfrm/@rot` 原始值(60000 度分之一)。
+ *
+ * 唯一允许做符号/单位换算的地方(见 {@link WATERMARK_ANGLE_SIGN}):docx 渲染层
+ * 直接把返回值交给 docx 库,不再自行换算。
+ *
+ * @param angle settings 里的角度(度,CSS 语义:正 = 顺时针)
+ * @returns DML rot 属性值
+ */
+export function watermarkDmlRotation(angle: number): number {
+  return Math.round(angle * WATERMARK_DML_ROTATION_SIGN * DML_ANGLE_UNITS_PER_DEGREE);
+}
+
+/**
  * 文字水印设置:与页眉页脚同组,文档外壳层装饰。
  * 内置 TEMPLATE_PRESETS 现可携带 watermark,作为「选预设即完整交付链」的一部分
  * (预设目录与其比较逻辑见同目录 presets.ts,它在 preset 定义时消费本对象);
  * 用户预设(CustomPreset)有意保持仅 typography+pageSetup 不变。
  * - text 空串 = 不启用(零渲染)
- * - angle 旋转角度(度,0–360),经典观感默认 45
- * - opacity 不透明度(0–1),浅色不干扰正文
+ * - angle 旋转角度(度,0–360),口径与取值见 {@link WATERMARK_ANGLE_SIGN}
+ * - opacity 不透明度(0–1),浅色不干扰正文;**双管线两侧均真消费**
  * - gray 浅灰经典观感(否则沿用正文字色)
  */
 export interface WatermarkSettings {
   /** 水印文字(空串 = 不启用) */
   text: string;
-  /** 旋转角度(度,0–360) */
+  /** 旋转角度(度,0–360;正 = 顺时针,见 WATERMARK_ANGLE_SIGN) */
   angle: number;
   /** 不透明度(0–1) */
   opacity: number;
@@ -135,7 +188,7 @@ export interface WatermarkSettings {
 
 export const DEFAULT_WATERMARK: WatermarkSettings = {
   text: "",
-  angle: 45,
+  angle: DEFAULT_WATERMARK_ANGLE,
   opacity: 0.15,
   gray: true,
 };

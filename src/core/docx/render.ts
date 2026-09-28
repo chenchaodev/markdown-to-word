@@ -42,77 +42,52 @@ import { renderHeading } from "./handlers/heading.js";
 import { renderTable } from "./handlers/table.js";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,此处解环)
 import {
-  DEFAULT_HEADER_FOOTER,
-  DEFAULT_PAGE_SETUP,
-  DEFAULT_WATERMARK,
   mmToTwips,
   PAPER_SIZES_MM,
   twipsToPx,
   validatePageSetup,
   type HeaderFooterSettings,
-  type PageSetup,
-  type WatermarkSettings,
+  type TocMode,
 } from "../settings/settings-defaults.js";
-import type { DocMetadata } from "../pipeline/frontmatter.js";
-import type { TypographySettings } from "../settings/typography.js";
-import { DEFAULT_TYPOGRAPHY } from "../settings/typography.js";
+// 双管线渲染选项的共有字段与默认值解析单源(adr-030 6-D1/6-D2)
+import {
+  resolveHeaderFooter,
+  resolveRenderSwitches,
+  resolveTocMode,
+  type SharedRenderOptions,
+} from "../settings/render-options.js";
 import { isAllowedInlineHtml } from "../markdown/html-whitelist.js";
 import { isFigureParagraph } from "../markdown/image-size.js";
 import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
 import { headingNumberingOptions, numberingOptions } from "./numbering.js";
-import type { ConvertWarning } from "../i18n.js";
 import {
   unrecognizedImageWarning,
   webpSkippedWarning,
 } from "../image/image-warning.js";
-import type { MermaidResolver } from "../markdown/mermaid.js";
-import type { TocMode } from "../settings/settings-defaults.js";
-import type { ImageResolver } from "../image/image-resolver.js";
 // 取消与资源预算:守卫由 convert 层构造并注入(signal/deadline 单源),
 // 图片 resolver 在此包上请求契约(信号/单请求时限/单图与文档字节预算)。
-import { createCancellationGuard, createGuardedImageResolver, type CancellationGuard } from "../cancel.js";
-import { ImageBudgetLedger, resolveImageBudget, type ImageResourceBudget } from "../resource-limits.js";
+import { createCancellationGuard, createGuardedImageResolver } from "../cancel.js";
+import { ImageBudgetLedger, resolveImageBudget } from "../resource-limits.js";
 
-export interface RenderOptions {
-  imageResolver?: ImageResolver;
-  /** 取消守卫(convert 层构造:signal/deadline 单源);缺省新建无外部取消的守卫。
-   *  块级渲染循环与图片请求均经此检查取消,取消后立即退出而非跑完整篇。 */
-  guard?: CancellationGuard;
-  /** 图片资源预算覆盖(缺省取 core/resource-limits.ts 默认值) */
-  imageBudget?: ImageResourceBudget;
-  /** frontmatter 元数据(metadata.title 存在时渲染封面页) */
-  metadata?: DocMetadata;
-  /** 文档标题(docx 页眉用;优先级低于 metadata.title) */
-  title?: string;
-  /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;webp 降级等;
-   *  元素为 ConvertWarning,keyed 警告经显示层 formatWarning 按语言格式化) */
-  warnings?: ConvertWarning[];
-  /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
-  pageSetup?: PageSetup;
-  /** 排版设置(缺省 DEFAULT_TYPOGRAPHY):字号/字体/行距/缩进/对齐/标题编号 */
-  typography?: TypographySettings;
-  /** 一级标题前分页(默认关) */
-  breakBeforeH1?: boolean;
-  /** 标题章节自动编号(h1-h3 挂 numbering;显式传值优先,否则取 typography.headingNumbering) */
-  headingNumbering?: boolean;
-  /** 自动生成目录页(默认开;开时 docx 插入静态目录:打开即见、可点击跳转、无页码、免更新域) */
-  toc?: boolean;
+/**
+ * docx 渲染选项 = 双管线共有字段(SharedRenderOptions)+ 本侧独有条目。
+ *
+ * 共有字段不在此重复声明(adr-030 决定要点三的 6-D2):改一个共有开关的语义只需改
+ * settings/render-options.ts 一处,两侧 JSDoc 不会互相说谎。默认值解析也在那里
+ * 统一做(6-D1)——光有类型单源不解决漏传,类型系统对可选字段没有默认值检查。
+ *
+ * 独有条目(tocMode/headerFooter/headerLogo)是 docx 侧载体专属,故不在共有契约里;
+ * 反向也不强迫 docx 声明 pdf-only 字段(那会让类型承诺它不消费的东西)。
+ */
+export interface RenderOptions extends SharedRenderOptions {
   /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码) */
   tocMode?: TocMode;
-  /** 公式编号开关(默认开;关时 display 公式不编号、{#eq:label} 段原样渲染、引用保持原文本) */
-  equationNumbering?: boolean;
-  /** 图/表题注自动编号(默认开,取 typography.captionNumbering;显式传值优先) */
-  captionNumbering?: boolean;
-  /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
-  mermaidResolver?: MermaidResolver;
   /** 页眉页脚配置(缺省 DEFAULT_HEADER_FOOTER = 现状行为:标题页眉+页码页脚) */
   headerFooter?: HeaderFooterSettings;
   /** 页眉 logo 已读数据(main 层读文件后注入,core 零 IO;仅 headerMode=custom 消费;
- *  webp/null 魔数降级为无 logo + keyed 警告) */
+   *  webp/null 魔数降级为无 logo + keyed 警告) */
   headerLogo?: HeaderLogoData;
-  /** 文字水印(缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
-  watermark?: WatermarkSettings;
 }
 
 /** 支持的块级节点类型(mdast 中 image 属 PhrasingContent,在段落内处理;
@@ -131,9 +106,10 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   // 入口检查点:预取消/过期 deadline 在建 ctx、预扫之前短路,不启动任何 resolver
   const guard = options.guard ?? createCancellationGuard();
   guard.throwIfCanceled();
-  const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
+  // 开关默认值解析单源(6-D1):一次解析,下游全字段必填
+  const switches = resolveRenderSwitches(options);
+  const { typography, pageSetup } = switches;
   // 页面几何提前计算:contentWidthPx 注入 Ctx.config,图片尺寸属性百分比换算用
-  const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
   const geometry = validatePageSetup(pageSetup);
   const paper = PAPER_SIZES_MM[pageSetup.paper];
   const landscape = pageSetup.orientation === "landscape";
@@ -147,12 +123,12 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     listLevel: 0,
     config: {
       typography,
-      breakBeforeH1: options.breakBeforeH1 ?? false,
-      headingNumbering: options.headingNumbering ?? typography.headingNumbering,
-      captionNumbering: options.captionNumbering ?? typography.captionNumbering,
-      toc: options.toc ?? true,
-      tocMode: options.tocMode ?? "static",
-      equationNumbering: options.equationNumbering ?? true,
+      breakBeforeH1: switches.breakBeforeH1,
+      headingNumbering: switches.headingNumbering,
+      captionNumbering: switches.captionNumbering,
+      toc: switches.toc,
+      tocMode: resolveTocMode(options.tocMode),
+      equationNumbering: switches.equationNumbering,
       contentWidthPx: twipsToPx(textWidthTwips),
     },
     xref: {
@@ -189,10 +165,9 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   };
   // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
   const title = options.metadata?.title ?? options.title;
-  // 页眉页脚配置归一化:缺省字段补 DEFAULT_HEADER_FOOTER(= 现状行为)
-  const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...options.headerFooter };
-  // 水印配置归一化(缺省字段补 DEFAULT_WATERMARK;text 空串视为关闭)
-  const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...options.watermark };
+  // 页眉页脚与水印的默认字段补全也在单源(convert 层此前另有一份,两处会漂移)
+  const headerFooter = resolveHeaderFooter(options.headerFooter);
+  const watermark = switches.watermark;
   // custom 模式 logo 魔数降级:webp 不支持 docx 内嵌、未知魔数不伪装——均降级为
   // 无 logo + keyed 警告(复用正文图片同款文案,src = 设置的 logo 路径)
   let headerLogo = options.headerLogo;

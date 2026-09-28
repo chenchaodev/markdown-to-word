@@ -13,7 +13,7 @@ import type { Link } from "mdast";
 import { LINK_COLOR } from "../theme.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
 import { collectPlainText } from "../../util/mdast-utils.js";
-import { CROSS_REF_KINDS, CROSS_REF_HREF_RE, EQ_REF_HREF_RE, captionLabelKey, type CrossRefKind } from "../../markdown/cross-ref.js";
+import { CROSS_REF_KINDS, CROSS_REF_HREF_RE, EQ_REF_HREF_RE, captionLabelKey, crossRefNumberText, isCrossRefDefaultText, type CrossRefHrefKind } from "../../markdown/cross-ref.js";
 import { crossRefNotFoundWarning } from "../../i18n.js";
 import { warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js";
 
@@ -34,19 +34,21 @@ export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: R
   if (eqMatch) {
     const label = eqMatch[1]!; // 正则含捕获组且已匹配,组必存在
     const n = ctx.xref.equationLabels?.get(label);
-    if (text === "式" || text === "公式") {
+    // 公式的默认文本集与编号形态取自 CROSS_REF_KINDS.eq(单源,见 cross-ref.ts 6-D3)
+    if (isCrossRefDefaultText("eq", text)) {
       if (n !== undefined) {
         runs.push(
           new InternalHyperlink({
             anchor: docxBookmarkId(`eq-${label}`),
-            children: [new TextRun({ text: `${text} (${n})`, color: LINK_COLOR, underline: {}, ...style })],
+            children: [new TextRun({ text: crossRefNumberText("eq", String(n), text), color: LINK_COLOR, underline: {}, ...style })],
           }),
         );
       } else {
-        // 与图/表/章节悬空同一文案族(「交叉引用未找到<类别> label: <ref>」);
-        // pdf 侧同场景文案不同(「引用未定义的公式标签: eq:<label>」),用独立 key
-        warnDedup(ctx, crossRefNotFoundWarning("公式", label));
-        runs.push(new TextRun({ text: `${text} (?)`, ...style }));
+        // 悬空文案同属 CROSS_REF_KINDS 族(「交叉引用未找到<类别> label: <ref>」);
+        // pdf 侧同场景文案不同(「引用未定义的公式标签: eq:<label>」,历史差异),
+        // 用独立 key —— 差异是矩阵锁住的既定项,勿单侧抹平
+        warnDedup(ctx, crossRefNotFoundWarning(CROSS_REF_KINDS.eq.kindName, label));
+        runs.push(new TextRun({ text: `${text} ${CROSS_REF_KINDS.eq.danglingText}`, ...style }));
       }
       return;
     }
@@ -69,7 +71,8 @@ export function pushLinkRuns(runs: InlineChild[], node: Link, ctx: Ctx, style: R
   // fig/tab 题注各命中各的,跨 kind 引用查不到即悬空
   const crossMatch = CROSS_REF_HREF_RE.exec(url);
   if (crossMatch) {
-    const kind = crossMatch[1] as CrossRefKind;
+    // 正则只匹配 fig/tab/sec(eq 走上面的独立分支),故收窄到题注/章节三类
+    const kind = crossMatch[1] as CrossRefHrefKind;
     const label = crossMatch[2]!; // 正则第二捕获组已匹配,组必存在
     const def = CROSS_REF_KINDS[kind];
     let numberText: string | undefined;

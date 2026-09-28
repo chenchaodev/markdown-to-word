@@ -16,7 +16,16 @@ import { createDepthTracker } from "./shared.js";
  * 容器深度限制(blockquote/list_item/table 单元格内不识别,与 docx 侧
  * 只遍历 ast.children 顶层一致);文档开头(首 h1 之前)的图题注在无 h1
  * 文档中按纯序数渲染,有 h1 文档中渲染为「图 0.N」(与 docx 侧「图 N」
- * 的差异为 CSS counter 无法条件输出的罕见边界,验收清单已标注)。
+ * 的差异见下)。
+ *
+ * 关于这条差异的成因(adr-030 6-C4 更正,此前此处归因错误):**不是**「CSS
+ * counter 无法条件输出的平台限制」—— 题注编号文本虽是 JS 生成的静态字符串,
+ * 本可按「有无前置 h1」条件输出,载体完全支持。**真根因是决策重复**:章节号
+ * 门控(docx 侧 `chapter > 0` 才给章节号)与显示态编号(css counter 由
+ * h1c/figc 共同产生)分属两侧各一次决策,本侧那次没有复制「首 h1 前不输出
+ * 章节号」这条规则,于是同一语义在两侧得出不同结果。按错误的归因去优化
+ * (例如试图让 counter 支持条件输出)不会有任何收益。修法是让两侧共用同一个
+ * 门控判定,不是绕开 counter。
  */
 export function overrideCaptionRule(md: MarkdownIt): void {
   md.core.ruler.push("caption_recognize", (state) => {

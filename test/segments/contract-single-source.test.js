@@ -140,16 +140,30 @@ export async function run() {
   }
   console.log("[ok] contract:CROSS_REF_KINDS docx/pdf 两侧与单源同一对象 断言通过");
 
-  // ---- 契约形状:fig/tab/sec 三类,文案与占位 ----
+  // ---- 契约形状:fig/tab/sec/eq 四类,文案与占位 ----
+  // eq 于 adr-030 6-D3 并入本表(此前公式的默认文本集与悬空文案在两侧各写一份,
+  // 是本表唯一未覆盖的引用种类);其编号带括号包裹,故多一个 numberSuffix 字段。
   for (const [kind, def] of Object.entries(CROSS_REF_KINDS)) {
     if (typeof def.defaultText !== "string" || typeof def.danglingText !== "string" || typeof def.kindName !== "string") {
       throw new Error(`contract 断言失败:CROSS_REF_KINDS.${kind} 缺 defaultText/danglingText/kindName`);
     }
+    if (!Array.isArray(def.defaultTexts) || def.defaultTexts.length === 0) {
+      throw new Error(`contract 断言失败:CROSS_REF_KINDS.${kind} 缺 defaultTexts(默认文本集)`);
+    }
+    if (!def.defaultTexts.includes(def.defaultText)) {
+      throw new Error(`contract 断言失败:CROSS_REF_KINDS.${kind} 的 defaultTexts 应含 defaultText`);
+    }
   }
-  if (Object.keys(CROSS_REF_KINDS).sort().join(",") !== "fig,sec,tab") {
-    throw new Error("contract 断言失败:CROSS_REF_KINDS 应恰为 fig/sec/tab 三类");
+  if (Object.keys(CROSS_REF_KINDS).sort().join(",") !== "eq,fig,sec,tab") {
+    throw new Error("contract 断言失败:CROSS_REF_KINDS 应恰为 eq/fig/sec/tab 四类");
   }
-  console.log("[ok] contract:CROSS_REF_KINDS 形状(fig/tab/sec + 文案字段) 断言通过");
+  if (CROSS_REF_KINDS.eq.numberSuffix !== " (") {
+    throw new Error(`contract 断言失败:CROSS_REF_KINDS.eq.numberSuffix 应为「 (」,实际 ${CROSS_REF_KINDS.eq.numberSuffix}`);
+  }
+  if ("numberSuffix" in CROSS_REF_KINDS.fig || "numberSuffix" in CROSS_REF_KINDS.tab || "numberSuffix" in CROSS_REF_KINDS.sec) {
+    throw new Error("contract 断言失败:numberSuffix 是 eq 独有条目,其余三类不应带该字段");
+  }
+  console.log("[ok] contract:CROSS_REF_KINDS 形状(eq/fig/sec/tab + 文案字段 + 默认文本集) 断言通过");
 
   // ---- SEC_LABEL_RE:label 提取(parse.ts 场景)与尾部匹配 ----
   const m = SEC_LABEL_RE.exec("第三章 结果 {#sec:results}");

@@ -12,7 +12,7 @@ import {
   CROSS_REF_HREF_RE,
   captionLabelKey,
   stripSecLabelSuffix,
-  type CrossRefKind,
+  type CrossRefHrefKind,
 } from "../../markdown/cross-ref.js";
 import {
   bumpHeadingCounter,
@@ -177,7 +177,8 @@ function replaceXrefLinks(
 ): void {
   const warnedKeys = new Set<string>();
   forEachRefLink(tokens, CROSS_REF_HREF_RE, ({ labels, textToken }) => {
-    const kind = labels[0] as CrossRefKind;
+    // 正则只匹配 fig/tab/sec(eq 走 eq_numbering 规则自己的引用替换)
+    const kind = labels[0] as CrossRefHrefKind;
     const label = labels[1]!; // 捕获组结构保证
     const def = CROSS_REF_KINDS[kind];
     let numberText: string | undefined;

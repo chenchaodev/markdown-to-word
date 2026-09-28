@@ -8,9 +8,13 @@
  * (与本侧 renderTocPage 同开关、同取 h1-h3 标题)。字号/灰度对齐点见下方
  * 常量区与 template.ts 内联注(如页眉页脚 7pt / #888888);修改
  * 封面/页眉页脚/水印的外观或开关须同步核对 src/core/pdf/template.ts。
+ * 水印的角度口径与不透明度两侧已对齐(adr-030 6-B1/6-B2):角度单源在
+ * settings-defaults 的 WATERMARK_ANGLE_SIGN / watermarkDmlRotation,本文件
+ * 只消费换算结果;不透明度两侧均真消费(本侧走 w14:textFill/w14:alpha)。
  */
 import {
   AlignmentType,
+  BuilderElement,
   Drawing,
   Footer,
   Header,
@@ -30,6 +34,7 @@ import { WATERMARK_GRAY, WATERMARK_INK } from "../style/colors.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import { imageSizeFromBuffer } from "../image/image-type.js";
 import type { TocMode, WatermarkSettings } from "../settings/settings-defaults.js";
+import { watermarkDmlRotation } from "../settings/settings-defaults.js";
 
 /* ---------- chrome 版面常量(字号单位 half-points = pt × 2) ---------- */
 
@@ -251,18 +256,79 @@ export function renderFooter(): Footer {
  * - 无边框:不设置 outline/solidFill → DML 默认无描边
  * - 页面居中:wp:positionH/positionV relativeFrom="page" align="center"
  * - 置底:behindDocument=true
- * - 不透明度:由浅灰配色近似(Run 无 opacity 字段)
+ * - 旋转:rot 取自 watermarkDmlRotation(角度口径与 pdf 侧同源单点,勿在此取负)
+ * - 不透明度:经 w14:textFill/w14:alpha 真消费 watermark.opacity(见 WatermarkTextRun)
  */
+
+/** w14:alpha 的单位:100000 = 100% */
+const W14_ALPHA_FULL_SCALE = 100_000;
+
+/**
+ * 构造 w14 命名空间下的元素(docx 库未暴露文字填充选项,只能自建)。
+ * 属性名含前缀且须写成 {key,value} 载荷,故与普通元素分开走这个薄封装。
+ */
+function w14El(
+  name: string,
+  attributes?: Record<string, string | number>,
+  children?: BuilderElement[],
+): BuilderElement {
+  const entries = Object.entries(attributes ?? {});
+  return new BuilderElement({
+    name,
+    // 属性为空时不传:空对象会产出一个无属性的 NextAttributeComponent
+    ...(entries.length > 0
+      ? { attributes: Object.fromEntries(entries.map(([k, v]) => [k, { key: k, value: v }])) }
+      : {}),
+    ...(children ? { children } : {}),
+  });
+}
+
+/**
+ * 带透明度填充的水印文字 run。
+ *
+ * 为什么不能靠调浅灰色「近似」:不透明度是独立于取色的一维,配色只能拟合某一个
+ * 取值,用户把 opacity 调大或 gray 切 false 时就对不上 —— 那与「完全不消费该设置」
+ * 是同一类失效,只是更隐蔽。
+ *
+ * 表达方式:WordprocessingML 里文字透明度的标准字段是 `w14:textFill`(2010 扩展),
+ * 其 `w14:solidFill/w14:srgbClr` 下挂 `w14:alpha`(百分比千分比);docx 9.x 未暴露
+ * 该选项,故用 BuilderElement 自建并挂进 RunProperties(库内该字段是 protected,
+ * 子类内可见 —— 这是不走 ImportedXmlComponent 的原因:后者会绕开 run 属性的构造,
+ * 且实测产出的元素名丢失)。
+ *
+ * `w:color` 仍同时保留:它是 w14 不可读时的回退,保证无 w14 支持的消费者仍有配色。
+ */
+class WatermarkTextRun extends TextRun {
+  constructor(options: ConstructorParameters<typeof TextRun>[0], opacity: number) {
+    super(options);
+    const color = String((options as { color?: string }).color ?? "000000");
+    const alpha = Math.round(Math.min(1, Math.max(0, opacity)) * W14_ALPHA_FULL_SCALE);
+    this.properties.push(
+      w14El("w14:textFill", undefined, [
+        w14El("w14:solidFill", undefined, [
+          w14El("w14:srgbClr", { "w14:val": color }, [
+            w14El("w14:alpha", { "w14:val": alpha }),
+          ]),
+        ]),
+      ]),
+    );
+  }
+}
+
 let watermarkShapeSeq = 0;
 export function renderWatermarkParagraph(watermark: WatermarkSettings): Paragraph {
   const color = watermark.gray ? WATERMARK_GRAY : WATERMARK_INK;
-  const run = new TextRun({ text: watermark.text, size: 144, color, bold: true });
+  const run = new WatermarkTextRun(
+    { text: watermark.text, size: 144, color, bold: true },
+    watermark.opacity,
+  );
   const contentPara = new Paragraph({ alignment: AlignmentType.CENTER, children: [run] });
   // 600pt × 200pt → EMU (1pt = 12700 EMU)
   const widthEmu = 7_620_000;
   const heightEmu = 2_540_000;
-  // DML rotation: 60000ths of a degree; 正值 = 逆时针; 经典对角水印(左下→右上) = +angle
-  const rotEmu = watermark.angle * 60_000;
+  // 旋转量的符号与单位换算单源在 settings-defaults(watermarkDmlRotation):
+  // 两侧同号,docx 侧方向待人工渲染确认时只改那一个常量,勿在此处取负
+  const rot = watermarkDmlRotation(watermark.angle);
   const seq = watermarkShapeSeq++;
   const drawing = new Drawing(
     {
@@ -270,7 +336,7 @@ export function renderWatermarkParagraph(watermark: WatermarkSettings): Paragrap
       transformation: {
         pixels: { x: 800, y: 267 },
         emus: { x: widthEmu, y: heightEmu },
-        rotation: rotEmu,
+        rotation: rot,
       },
       data: {
         children: [contentPara],

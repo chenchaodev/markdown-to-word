@@ -42,6 +42,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { app } from "electron";
 import {
   DEFAULT_PAGE_SETUP,
+  DEFAULT_WATERMARK,
   validatePageSetup,
 } from "../../dist/core/settings/settings-defaults.js";
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
@@ -703,7 +704,8 @@ export async function run() {
     assert(JSON.stringify(fellBack.customPresets) === "[]", "customPresets 非数组应兜底 []");
     assert(fellBack.language === "zh", `语言裁撤值应字段级兜底默认语言,实际 ${fellBack.language}`);
     assert(
-      fellBack.headerFooter.headerMode === "default" && fellBack.watermark.angle === 45,
+      fellBack.headerFooter.headerMode === "default" &&
+        fellBack.watermark.angle === DEFAULT_WATERMARK.angle,
       "headerFooter / watermark 应逐字段兜底默认",
     );
     await mFallback.whenSettingsIdle();

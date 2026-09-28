@@ -26,28 +26,17 @@ import { tasklist } from "@mdit/plugin-tasklist";
 import { katex } from "@mdit/plugin-katex";
 import hljs from "highlight.js/lib/common";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,此处解环)
-import {
-  DEFAULT_PAGE_SETUP,
-  mmToPx,
-  validatePageSetup,
-  type PageSetup,
-} from "../settings/settings-defaults.js";
-import type { DocMetadata } from "../pipeline/frontmatter.js";
-import type { TypographySettings } from "../settings/typography.js";
-import { DEFAULT_TYPOGRAPHY } from "../settings/typography.js";
+import { mmToPx, validatePageSetup } from "../settings/settings-defaults.js";
+// 双管线渲染选项的共有字段与默认值解析单源(adr-030 6-D1/6-D2)
+import { resolveRenderSwitches, type SharedRenderOptions } from "../settings/render-options.js";
 import type { ConvertWarning } from "../i18n.js";
 import { highlightFallbackWarning } from "../i18n.js";
-import type { MermaidResolver } from "../markdown/mermaid.js";
 import { buildCoverHtml, buildTemplate } from "./template.js";
 import { buildTemplateCss } from "./template-css.js";
 import { loadKatexCss } from "./katex-css.js";
-import type { WatermarkSettings } from "../settings/settings-defaults.js";
 import { buildTocHtml, checkLocalImages, embedExternalImages, type ImageStageOptions } from "./postprocess.js";
 // 目录/书签共享的标题结构单源(见 pdf/bookmarks.ts);结构化标题由 rules/heading-id.ts 产出
 import type { PdfHeading } from "./bookmarks.js";
-// 契约单源:ImageResolver 类型收敛 core 共享模块(仅类型导入;
-// 原 re-export 无外部消费者,已清理移除)
-import type { ImageResolver } from "../image/image-resolver.js";
 import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
 // 渲染规则:按 rule 类别分文件,共享工具单源 rules/shared.ts
@@ -61,12 +50,11 @@ import { overrideHeadingIdRule } from "./rules/heading-id.js";
 import { replaceMermaidPlaceholders } from "./mermaid.js";
 // 取消与资源预算:守卫由 convert 层构造并注入(signal/deadline 单源),
 // 各阶段边界设检查点;公式与图片预算取值单源 core/resource-limits.ts。
-import { createCancellationGuard, type CancellationGuard } from "../cancel.js";
+import { createCancellationGuard } from "../cancel.js";
 import {
   DEFAULT_KATEX_RESOURCE_LIMITS,
   hasUntrustedTexCommand,
   resolveImageBudget,
-  type ImageResourceBudget,
 } from "../resource-limits.js";
 
 /**
@@ -83,39 +71,19 @@ export interface PdfFsCapabilities {
   readTextFile: (file: string) => string;
 }
 
-export interface RenderPdfHtmlOptions {
+/**
+ * pdf 渲染选项 = 双管线共有字段(SharedRenderOptions)+ 本侧独有条目。
+ *
+ * 共有字段不在此重复声明(adr-030 决定要点三的 6-D2):改一个共有开关的语义只需改
+ * settings/render-options.ts 一处。默认值解析也在那里统一做(6-D1)——本侧此前把
+ * `options.X ?? 默认` 散在本文件三处、另有两处在 convert 层,逐处字面量正是
+ * 6-B2/6-B3 两处失效得以藏身的直接原因。
+ *
+ * 独有条目(baseDir/pdfCss/katexDir/fs/onStage)是 pdf 侧载体专属,不在共有契约里。
+ */
+export interface RenderPdfHtmlOptions extends SharedRenderOptions {
   /** markdown 文件所在目录,相对路径图片以此为基准 */
   baseDir: string;
-  /** frontmatter 元数据(metadata.title 存在时渲染封面页,标题优先级高于 options.title) */
-  metadata?: DocMetadata;
-  /** 警告收集(图片加载失败统一文案 imageLoadFailedWarning;缺失本地图/外链下载失败同构;
-   * 元素为 ConvertWarning,keyed 警告经显示层 formatWarning 按语言格式化) */
-  warnings?: ConvertWarning[];
-  /** 外链图片下载注入(主进程提供;失败返回 null) */
-  imageResolver?: ImageResolver;
-  /** 取消守卫(convert 层构造:signal/deadline 单源);缺省新建无外部取消的守卫。
-   *  parse / inline / mermaid / katex 各阶段边界设检查点,取消后不再进入下一阶段。 */
-  guard?: CancellationGuard;
-  /** 图片资源预算覆盖(缺省取 core/resource-limits.ts 默认值) */
-  imageBudget?: ImageResourceBudget;
-  /** 页面 <title>,缺省取文件名(不含扩展名) */
-  title?: string;
-  /** 页面设置(缺省 DEFAULT_PAGE_SETUP) */
-  pageSetup?: PageSetup;
-  /** 排版设置(缺省 DEFAULT_TYPOGRAPHY):模板 CSS body 字体/字号/行距 + 缩进/对齐 */
-  typography?: TypographySettings;
-  /** 一级标题前分页(默认关) */
-  breakBeforeH1?: boolean;
-  /** 标题章节编号(1 / 1.1 / 1.1.1,与 docx 侧 decimal 编号语义一致;
-   *  显式传值优先,否则取 typography.headingNumbering;默认开) */
-  headingNumbering?: boolean;
-  /** 图/表题注自动编号(默认开,取 typography.captionNumbering;显式传值优先) */
-  captionNumbering?: boolean;
-  /** 自动生成目录页(默认开;开时正文含标题则插入静态目录) */
-  toc?: boolean;
-  /** 公式编号开关(默认开;关时 eq_numbering 规则仍注册但只隐藏 label 段——
-   *  公式不编号、label 不登记、引用保持原文本) */
-  equationNumbering?: boolean;
   /** 用户自定义样式 CSS(模板导入·CSS 覆盖 pdf 路线;追加到默认模板
    *  CSS 之后,同一 <style> 内后声明覆盖默认样式;缺省/空串不注入) */
   pdfCss?: string;
@@ -131,11 +99,6 @@ export interface RenderPdfHtmlOptions {
    *  设为必填而非可选:可选会让「忘注入」静默退化成「图片边界不判定」——
    *  那等于把 adr-012 的符号链接逃逸防线变成可静默关闭的开关。 */
   fs: PdfFsCapabilities;
-  /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏保持
-   *  原代码块渲染,行为不变) */
-  mermaidResolver?: MermaidResolver;
-  /** 文字水印(缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
-  watermark?: WatermarkSettings;
   /** 渲染子阶段上报:parse(markdown-it 渲染)/ inline(图片检查
    *  与外链内嵌)/ mermaid(占位替换)/ katex(KaTeX 样式装载)四个阶段键,
    *  经 main/converter.ts 的 onProgress 通道转发为 convert:progress;
@@ -299,14 +262,11 @@ export async function renderPdfDocument(
     signal: guard.signal,
     ...resolveImageBudget(options.imageBudget),
   };
-  const pageSetup = options.pageSetup ?? DEFAULT_PAGE_SETUP;
+  // 开关默认值解析单源(6-D1):一次解析,下游全字段必填
+  const switches = resolveRenderSwitches(options);
+  const { pageSetup, typography, headingNumbering, captionNumbering, equationNumbering } = switches;
   // 必须在任何纸张尺寸/内容区计算前执行；与 DOCX 侧共用同一错误契约。
   const pageGeometry = validatePageSetup(pageSetup);
-  const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
-  // 两个编号开关提前计算:core 规则(xref_recognize)与模板 CSS 共用同一取值
-  const headingNumbering = options.headingNumbering ?? typography.headingNumbering;
-  const captionNumbering = options.captionNumbering ?? typography.captionNumbering;
-  const equationNumbering = options.equationNumbering ?? true;
   // warnings 提前创建——buildMarkdownIt 的 highlight 回调需经此上报高亮降级警告
   const warnings: ConvertWarning[] = options.warnings ?? [];
   const md = buildMarkdownIt(
@@ -349,7 +309,7 @@ export async function renderPdfDocument(
   // 无封面或无目录时返回空串,拼接自然退化为 cover+body / toc+body / body。
   // toc 开关(默认开):关闭时不生成目录页(docx 侧同开关,双格式一致);
   // 目录条目取同一次渲染产出的结构化标题(层级口径同 docx 侧 prescan tocEntries)
-  const tocHtml = (options.toc ?? true) ? buildTocHtml(headings) : "";
+  const tocHtml = switches.toc ? buildTocHtml(headings) : "";
   const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyWithMermaid;
   const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings, imageStage);
   guard.throwIfCanceled();
@@ -360,7 +320,7 @@ export async function renderPdfDocument(
     // 用户 CSS 追加到默认 CSS 末尾(同一 <style> 内后声明覆盖默认样式)
     buildTemplateCss(
       pageSetup,
-      options.breakBeforeH1 ?? false,
+      switches.breakBeforeH1,
       typography,
       headingNumbering,
       captionNumbering,
@@ -369,7 +329,7 @@ export async function renderPdfDocument(
     options.katexDir
       ? loadKatexCss(options.katexDir, warnings, { read: options.fs.readTextFile })
       : "",
-    options.watermark,
+    switches.watermark,
   );
   return { html, headings };
 }

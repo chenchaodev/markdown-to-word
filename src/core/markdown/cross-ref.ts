@@ -1,23 +1,74 @@
 /**
- * 交叉引用契约单源:fig/tab/sec 三类引用的类型常量与章节 label({#sec:label})
+ * 交叉引用契约单源:fig/tab/sec/eq 四类引用的类型常量与章节 label({#sec:label})
  * 正则族收敛于此,docx/pdf 两侧渲染共用,消除原两份平行定义的人肉同步。
  * 纯模块:零导入,无运行时依赖。
  */
 
 /**
- * 交叉引用类型常量:fig/tab/sec 三类引用集中定义。
+ * 交叉引用类型常量:fig/tab/sec/eq 四类引用集中定义。
  * - label 前缀:行内链接 #<prefix>:<label> 匹配([\w-]+);
  * - defaultText:引用文本恰为此文本时替换为编号(其他文本保持原样仍跳转);
  * - danglingText:查表未命中时默认文本的占位;
  * - kindName:悬空警告文案用(「交叉引用未找到<kindName> label: <prefix>:<label>」)。
+ * - defaultTexts:该 kind 全部被视作「默认文本」的写法(eq 接受「式」与「公式」两种);
+ *   fig/tab/sec 只有一个,故与 defaultText 同值。**只给一组渲染层消费**,
+ *   免得各侧再写一份 `text === "式" || text === "公式"`。
+ *
+ * eq 此前游离在这张表之外(docx link-xref.ts 与 pdf equation.ts 各判一次
+ * 「式」/「公式」,悬空文案也各写一份),故本表此前不覆盖公式 —— 见 adr-030 6-D3。
+ * 公式的编号文本形态与其他三类不同(「式 (N)」而非「图 1.1」),故用 numberSuffix
+ * 表达括号包裹;该字段是 eq 独有条目,其余三类不带。
  */
 export const CROSS_REF_KINDS = {
-  fig: { defaultText: "图", danglingText: "图 (?)", kindName: "图" },
-  tab: { defaultText: "表", danglingText: "表 (?)", kindName: "表" },
-  sec: { defaultText: "章节", danglingText: "(?)", kindName: "章节" },
+  fig: { defaultText: "图", defaultTexts: ["图"], danglingText: "图 (?)", kindName: "图" },
+  tab: { defaultText: "表", defaultTexts: ["表"], danglingText: "表 (?)", kindName: "表" },
+  sec: { defaultText: "章节", defaultTexts: ["章节"], danglingText: "(?)", kindName: "章节" },
+  eq: {
+    defaultText: "式",
+    defaultTexts: ["式", "公式"],
+    danglingText: "(?)",
+    kindName: "公式",
+    /** 编号括号包裹:「式 (3)」;其余 kind 的编号文本不带括号,故不带此字段。 */
+    numberSuffix: " (",
+  },
 } as const;
 
 export type CrossRefKind = keyof typeof CROSS_REF_KINDS;
+
+/**
+ * `CROSS_REF_HREF_RE` 实际匹配的 kind(fig/tab/sec)。
+ *
+ * 与 {@link CrossRefKind} 分开声明的原因:6-D3 把 eq 并入本表后,后者多出 eq,
+ * 而 href 正则**不含 eq**(公式引用走 `EQ_REF_HREF_RE` 与独立的编号/占位形态)。
+ * 若让调用方把正则捕获组直接断言成 CrossRefKind,tsc 就拦不住「拿 eq 去查题注
+ * 命名空间」这类误用 —— 故单源声明这个更窄的集合。
+ */
+export type CrossRefHrefKind = Exclude<CrossRefKind, "eq">;
+
+/**
+ * 引用文本是否该被替换成编号(该 kind 的默认文本之一)。
+ *
+ * eq 接受「式」与「公式」两种写法,其余 kind 只有一种;两侧渲染层经此单点判定,
+ * 不再各写一份 `text === "式" || text === "公式"`(adr-030 6-D3)。
+ */
+export function isCrossRefDefaultText(kind: CrossRefKind, text: string): boolean {
+  return (CROSS_REF_KINDS[kind].defaultTexts as readonly string[]).includes(text);
+}
+
+/**
+ * 该 kind 的编号文本(引用文本 → 编号的替换结果)。
+ *
+ * fig/tab/sec 直接给编号文本;eq 的编号带括号包裹(「式 (3)」)—— 该差异由表里的
+ * numberSuffix 表达,两侧渲染层不再各拼一次。
+ *
+ * @param kind 引用种类
+ * @param numberText 查表命中的编号文本
+ * @param refText 引用原文(命中默认文本时以其为前缀,故 eq 保留「式」/「公式」写法)
+ */
+export function crossRefNumberText(kind: CrossRefKind, numberText: string, refText: string): string {
+  const suffix = "numberSuffix" in CROSS_REF_KINDS[kind] ? CROSS_REF_KINDS[kind].numberSuffix : undefined;
+  return suffix === undefined ? numberText : `${refText}${suffix}${numberText})`;
+}
 
 /** 题注 kind:fig/tab 各占一个交叉引用命名空间(见 captionLabelKey) */
 export type CaptionKind = "fig" | "tab";

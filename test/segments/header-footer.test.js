@@ -202,14 +202,22 @@ export async function run() {
   assert(customHeader.includes("#888888"), "PDF 页眉灰度应与 docx MUTED_TEXT_GRAY 一致(#888888)");
   assert(customHeader.includes("data:image/png;base64,"), "PDF logo 应内嵌为 data URI");
   assert(customPdfArtifact.footerTemplate === PDF_FOOTER_TEMPLATE, "默认页脚模板不变");
-  const lrPdf = buildPdfHeaderTemplate({ ...hfCustom, headerLayout: "leftRight" }, { data: PNG_1X1, extension: "png" });
+  const lrPdf = buildPdfHeaderTemplate({ ...hfCustom, headerLayout: "leftRight" }, undefined, { data: PNG_1X1, extension: "png" });
   assert(lrPdf.includes("float:left") && lrPdf.includes("float:right"), "leftRight 布局应为 float 左右分栏");
-  const lrNoLogo = buildPdfHeaderTemplate({ ...hfCustom, headerLayout: "leftRight" });
+  const lrNoLogo = buildPdfHeaderTemplate({ ...hfCustom, headerLayout: "leftRight" }, undefined);
   assert(lrNoLogo.includes("text-align:left"), "leftRight 无 logo 时文字应靠左");
-  const defHf = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER);
-  assert(defHf === PDF_EMPTY_CHROME_TEMPLATE, "default 模式 PDF 维持现状(空页眉模板)");
-  const noneHf = buildPdfHeaderTemplate({ ...DEFAULT_HEADER_FOOTER, headerMode: "none" });
-  assert(noneHf === PDF_EMPTY_CHROME_TEMPLATE, "none 模式 PDF 空页眉模板");
+  // default 模式:自 adr-030 6-B3 起与 docx 侧统一为「文档标题居中页眉」
+  // (此前为空模板,标题只进页面 title —— 即 pdf 侧的页眉功能整体静默失效)
+  const defHf = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, "回归标题");
+  assert(defHf.includes("回归标题"), "default 模式 PDF 页眉应含文档标题(与 docx 侧同口径)");
+  assert(defHf.includes("text-align:center"), "default 模式 PDF 页眉应居中");
+  assert(defHf.includes("font-size:7pt"), "default 模式 PDF 页眉字号应与 docx 对齐(7pt)");
+  const defNoTitle = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, undefined);
+  assert(defNoTitle === PDF_EMPTY_CHROME_TEMPLATE, "default 模式无标题时应为空模板(与 docx 侧不装配页眉同口径)");
+  const defBlankTitle = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, "   ");
+  assert(defBlankTitle === PDF_EMPTY_CHROME_TEMPLATE, "default 模式标题仅空白时应为空模板");
+  const noneHf = buildPdfHeaderTemplate({ ...DEFAULT_HEADER_FOOTER, headerMode: "none" }, "回归标题");
+  assert(noneHf === PDF_EMPTY_CHROME_TEMPLATE, "none 模式 PDF 空页眉模板(无标题也不装配)");
   const noFooterPdf = /** @type {ConvertArtifact} */ (await convertWithFs(md, "pdf", {
     baseDir: FIXTURES_DIR,
     warnings: [],

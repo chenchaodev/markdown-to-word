@@ -2,7 +2,7 @@
  * pdf 公式编号规则:eq_numbering core 规则 + math_block 渲染包装单源。
  */
 import type MarkdownIt from "markdown-it";
-import { EQ_LABEL_RE, EQ_REF_HREF_RE } from "../../markdown/cross-ref.js";
+import { EQ_LABEL_RE, EQ_REF_HREF_RE, crossRefNumberText, isCrossRefDefaultText } from "../../markdown/cross-ref.js";
 import { pushWarningOnce } from "../../i18n.js";
 import { createDepthTracker, forEachRefLink } from "./shared.js";
 
@@ -90,10 +90,11 @@ export function overrideEquationRule(md: MarkdownIt, numbering: boolean = true):
           fallback: `引用未定义的公式标签: eq:${label}`,
         });
       }
-      // 仅默认文本「式」/「公式」替换为「式 (N)」(未知 label 占位 ?);
+      // 仅默认文本集内的写法(「式」/「公式」)替换为「式 (N)」(未知 label 占位 ?);
+      // 判定与编号形态取自 CROSS_REF_KINDS.eq 单源(见 cross-ref.ts 6-D3)。
       // eq 引用恒保留链接结构(与 xref 悬空解包不同)
-      if (textToken && (textToken.content === "式" || textToken.content === "公式")) {
-        textToken.content = `${textToken.content} (${num ?? "?"})`;
+      if (textToken && isCrossRefDefaultText("eq", textToken.content)) {
+        textToken.content = crossRefNumberText("eq", String(num ?? "?"), textToken.content);
       }
       return false;
     });

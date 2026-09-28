@@ -46,11 +46,11 @@ import type { ImageResolver } from "./image/image-resolver.js";
 // 已清):下游(main/测试)一律直连 settings-defaults 取类型与默认值。
 import type { ConvertFormat, PageSetup, TocMode } from "./settings/settings-defaults.js";
 import {
-  DEFAULT_HEADER_FOOTER,
-  DEFAULT_WATERMARK,
   type HeaderFooterSettings,
   type WatermarkSettings,
 } from "./settings/settings-defaults.js";
+// 渲染选项默认值解析单源(adr-030 6-D1):convert 层与两侧渲染层共用同一份
+import { resolveHeaderFooter, resolveRenderSwitches, resolveTocMode } from "./settings/render-options.js";
 // 取消契约单源:signal/deadline → CancellationGuard,两条渲染管线共用同一守卫
 import { createCancellationGuard } from "./cancel.js";
 import type { ImageResourceBudget } from "./resource-limits.js";
@@ -167,7 +167,7 @@ export interface PdfArtifact {
   kind: "pdf";
   /** 完整 HTML 文档,落盘临时文件后 loadFile + printToPDF */
   html: string;
-  /** printToPDF 的 headerTemplate(default/none = 空模板,custom = 文字 + logo) */
+  /** printToPDF 的 headerTemplate(default=文档标题居中 / custom=文字 + logo / none=空模板) */
   headerTemplate: string;
   /** printToPDF 的 footerTemplate(页码;footerEnabled=false 时为空模板) */
   footerTemplate: string;
@@ -204,10 +204,10 @@ export async function convert(
     // 显式 metadata(context.metadata)优先于 frontmatter 解析出的 metadata:
     // 向导封面覆盖 frontmatter 即走此路径;未传则回落 frontmatter(回归不变)
     const metadata = context.metadata ?? parsedMetadata;
-    // 页眉页脚配置归一化:以 DEFAULT_HEADER_FOOTER 为基准补缺失字段,docx 与 pdf 共用同一份取值
-    const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...context.headerFooter };
-    // 水印配置归一化(缺省字段补默认;text 空串视为关闭,由渲染层判定零渲染)
-    const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...context.watermark };
+    // 页眉页脚/水印/目录模式的默认字段补全统一走 settings/render-options(6-D1):
+    // 本层与两侧渲染层此前各有一份 `{ ...DEFAULT_X, ...x }`,默认值漂移无从发现
+    const headerFooter: HeaderFooterSettings = resolveHeaderFooter(context.headerFooter);
+    const watermark: WatermarkSettings = resolveRenderSwitches(context).watermark;
     // Mermaid 渲染回调与取消竞速(隐藏窗口服务不配合取消时也能退出);
     // 未注入 resolver 时保持 undefined(docx 侧按普通代码块渲染)
     const injectedMermaid = context.mermaidResolver;
@@ -261,9 +261,12 @@ export async function convert(
         headings,
         // 页眉模板按配置构造(logo data URI 内嵌);页脚开关关闭时空模板占位
         // (displayHeaderFooter 常开,机制不变,见 PDF_EMPTY_CHROME_TEMPLATE 注释)
-        headerTemplate: buildPdfHeaderTemplate(headerFooter, context.headerLogo),
+        // 页眉标题与 renderPdfDocument 的 <title> 同源(frontmatter metadata.title
+        // 优先、其次文件名),default 模式据此出「文档标题居中页眉」——与 docx 侧
+        // headers.ts 的 default 分支同口径(adr-030 6-B3)
+        headerTemplate: buildPdfHeaderTemplate(headerFooter, metadata?.title ?? context.title, context.headerLogo),
         footerTemplate: headerFooter.footerEnabled ? PDF_FOOTER_TEMPLATE : PDF_EMPTY_CHROME_TEMPLATE,
-        tocMode: context.tocMode ?? "static",
+        tocMode: resolveTocMode(context.tocMode),
         metadata,
       };
     }
