@@ -137,7 +137,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - **同模块多段口径**:同一被测模块可按内容主题拆多段,文件名带主题后缀,不要求一段覆盖模块全部行为(例:`test/main/atomic-json.test.js` 断言落盘/队列/失败清理,`test/main/atomic-json-durability.test.js` 断言 fsync 时点与耐久性)。
   - **段目录以三目录为全集**,`test/` 下无第四个段目录(原 `test/pending/` 暂存区已删除,其断言由 `test/segments/core-resources.test.js` 覆盖;三目录恒等这条口径的判据与该目录的存废记在 `scripts/check-test-numbering.mjs` 头注)。新增段一律进三目录之一,勿另开暂存区 —— 另开就会出现「三目录恒等」与实际并存的误读。
 - 静态样例入 `test/fixtures/`(acceptance/ 生成 + manual/ 手工);产物 `output/artifacts` + `output/smoke`(可清理重建,smoke 自清理)
-- 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`i18n/ru.ts` 刻意缺失 `warn.katexCssLoadFailed` 一键作为回退链测试夹具,补译须同步改测试**
+- 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`ru` 是已裁撤语言,`i18n-registry.test.js` 拿它当「裁撤回归守卫」的样例(`isLanguage("ru") === false`),回加该语言会撞红这条断言**
 - 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(EOL 归一化,`.gitattributes` 双保险;CI 门禁步骤)
 
 ## 验证基线
