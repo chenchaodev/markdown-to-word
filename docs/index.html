@@ -124,7 +124,11 @@ h3{font-size:1.02rem;font-weight:600;line-height:1.5;letter-spacing:.01em}
   .toc a .tn{font-size:.8rem}
   .brand{font-size:.9rem}
 }
-@media(max-width:420px){.brand{display:none}.topbar-inner{grid-template-columns:1fr auto}}
+/* 420px 原本够用，但实测「四个编号 + 语言组 + 品牌字标 + 两侧内边距」共需 318px，
+   品牌字标（nowrap，154px）在 421–549px 之间会把 .toc 挤到 97–217px，而 .toc 是
+   overflow:hidden ——「04 技术栈」入口被整条裁掉。阈值按实测下限上抬到 560px。
+   品牌字标让位是可接受的：字号可变的 hero h1 已在首屏重复同一名称。 */
+@media(max-width:560px){.brand{display:none}.topbar-inner{grid-template-columns:1fr auto}}
 
 /* ===== 语言分段（§2 seg：选中 = 纸面浮起 + 加粗，不占朱砂） ===== */
 .lang-toggle{display:flex;align-items:center;background:var(--inset);
