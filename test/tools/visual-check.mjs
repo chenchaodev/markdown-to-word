@@ -4,7 +4,8 @@
  * 以离线 api 桩驱动 renderer 到各关键界面状态,逐状态截图到
  * output/artifacts/ui-v4/,供人工/代理目检布局一致性(不参与 CI 门禁)。
  * 场景:empty(空态)/ single(单文件)/ multi(多文件)/ history(历史浮层展开),
- * 另附 compact-stress(880×620 最小窗口附近的几何恒定压力位)与设置抽屉的六个分组。
+ * 另附 compact-stress(880×620 最小窗口附近的几何恒定压力位)、设置抽屉的六个分组、
+ * 转换完成态(走真实 convert 链)与关于窗(独立窗口 + 独立 preload 桩)。
  * 抽屉逐组截图是刻意的:全部设置控件都住在抽屉里,而在此之前 ui:shots 一张抽屉都没有 ——
  * 控件位置或可见性出了问题,主窗那几张永远拍不到。
  * 前置:npm run build(dist/renderer 就绪)。
@@ -25,8 +26,39 @@ import { DRAWER_GROUPS, DRAWER_SELECTORS, drawerTabSelector } from "./geometry/g
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..", "..");
 const distIndex = path.join(root, "dist", "renderer", "index.html");
+const distAbout = path.join(root, "dist", "renderer", "about.html");
 const preload = path.join(__dirname, "visual-preload.cjs");
+const aboutPreload = path.join(__dirname, "visual-about-preload.cjs");
 const outDir = path.join(root, "output", "artifacts", "ui-v4");
+
+/**
+ * 关于窗尺寸(与 src/main/menu.ts showAboutDialog 的 W/H 同值)。
+ * 抄一份而不是 import:menu.ts 的 showAboutDialog 未导出,且它连带 getMainWindow /
+ * ipcMain / nativeTheme,为一个截图工具把 main 侧模块树拖进来不划算。
+ * 改窗尺寸时两边一起改。
+ */
+const ABOUT_W = 500;
+const ABOUT_H = 560;
+
+/**
+ * 关于窗原生底色:固定取浅色值,不读 nativeTheme。
+ * 为什么固定:内容随 @media (prefers-color-scheme) 走系统深浅,而 CI 与各人机器
+ * 的系统主题不一致 —— 跟着系统走,同一份代码今天拍出浅色明天拍出深色,截图失去
+ * 回归价值(这正是 menu.ts 那里刻意读 nativeTheme 的反面:那边要跟内容同源,
+ * 这里要可复现)。这里改成固定浅色,内容侧也一并强制浅色(见 ABOUT_FORCE_LIGHT),
+ * 两者必须同态,否则会出现浅底深字的穿帮。
+ * 改法:要拍深色态就把本值与 ABOUT_FORCE_LIGHT 同时翻成 dark 一套。
+ */
+const ABOUT_BG = "#F1F1EE";
+
+/**
+ * 注入 about 页的强制浅色脚本。
+ * about.html 的深色令牌挂在 @media (prefers-color-scheme: dark) 下的
+ * `html:not([data-theme="light"])` 选择器上,故写 <html data-theme="light">
+ * 即让整条媒体查询失配 —— 用页面自带的显式浅色通道,不新造机制。
+ * @type {string}
+ */
+const ABOUT_FORCE_LIGHT = `document.documentElement.setAttribute("data-theme", "light");`;
 
 /** 入口标识(诊断首行 `[entry:...]` 用) */
 const ENTRY = "visual-check";
@@ -253,7 +285,115 @@ async function main() {
     console.log(`[ui:shots] drawer tab ${index + 1}/${DRAWER_GROUPS.length} ${group} → active=${String(active)}`);
   }
 
+  // ⑨ 转换完成态:走真实的 convert 链(预检 → convert 桩 → 状态行 / 汇总条 / 警告区),
+  // 不像 3b 那样纯注入 DOM —— 完成态的布局全部由页面自己按 ConvertResult 渲染,
+  // 注入假结构只能证明「我写的那段 HTML 好看」,证明不了真链路好看。
+  await exec(`document.getElementById("drawerCloseBtn").click();`);
+  await waitFor(
+    exec,
+    `document.getElementById("settingsDrawer").classList.contains("hidden")`,
+    5000,
+    "drawer closed",
+  );
+  // 回到文件态:完成态要有选中文件,先清空重选一个(单文件走 convert 而非 convertBatch)
+  await exec(
+    `window.__vc.setNextOpen(${JSON.stringify(fixtures(["basic-render.md"]))});` +
+      `document.getElementById("selectBtn").click();`,
+  );
+  await waitFor(
+    exec,
+    `document.getElementById("dropZone").dataset.stage === "single"`,
+    5000,
+    "stage=single (convert done)",
+  );
+  // 桩值形状按 core/ipc-contract.ts 的 ConvertResult;带一条 keyed 告警是为了让
+  // 汇总条的折叠警告区(固定消息槽内滚动)也进画面 —— 空警告区拍不出布局问题
+  const outputPath = path.join(root, "output", "artifacts", "ui-v4", "basic-render.docx");
+  await exec(
+    `window.__vc.setNextConvert(${JSON.stringify({
+      ok: true,
+      outputPath,
+      warnings: [
+        {
+          key: "warn.imageNotFound",
+          params: { src: "images/配图-01.png" },
+          fallback: "图片文件不存在: images/配图-01.png",
+        },
+      ],
+    })});` + `document.getElementById("convertBtn").click();`,
+  );
+  // 完成判据取汇总条自身:类与路径同时到位才算渲染完(showSummary 是同步的,
+  // 但 res-beat 重挂会触发一次重排,留一拍余量)
+  await waitFor(
+    exec,
+    `document.getElementById("resultSummary").classList.contains("result-summary--ok") && ` +
+      `document.getElementById("summaryPath").textContent === ${JSON.stringify(outputPath)}`,
+    5000,
+    "summary ok",
+  );
+  await wait(300);
+  console.log(
+    `[ui:shots] convert-done stage ${await exec(rectOf(".stage"))} | bar ${await exec(rectOf(".actionbar"))}`,
+  );
+  await shot(win, "9-convert-done");
+
   win.destroy();
+
+  // ⑩ 关于窗:独立 BrowserWindow + 独立 preload 桩(见 visual-about-preload.cjs)。
+  // 不走 menu.ts 的 showAboutDialog:它要 getMainWindow / ipcMain / nativeTheme,
+  // 截图工具没有 main 侧上下文,且其底色读宿主深浅(不可复现,见 ABOUT_BG 注记)。
+  // 这里只复刻「同一份 dist 产物 + 同一套 webPreferences 口径」这一层。
+  const about = new BrowserWindow({
+    show: false,
+    width: ABOUT_W,
+    height: ABOUT_H,
+    resizable: false,
+    backgroundColor: ABOUT_BG,
+    webPreferences: {
+      preload: aboutPreload,
+      // 与 menu.ts 同口径(勿改成 false):桩走 contextBridge,与真实 about 窗一致
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false, // 隐藏窗口仍正常出帧:capturePage 拿最新画面
+    },
+  });
+  await about.loadFile(distAbout, { query: { v: "0.0.0-visual" } });
+  /**
+   * @param {string} code 页面脚本源码
+   * @returns {Promise<unknown>} 页面返回值
+   */
+  const aboutExec = (code) => about.webContents.executeJavaScript(code, true);
+  // 冻结动效:钤印 stampIn 是 animation + backwards 填充,隐藏窗口里时钟不推进时
+  // 会冻在 opacity:0 的首帧(印章整块看不见),与主窗同一兜底口径。
+  // 另注 delay 归零:钤印有 280ms 延迟 + both 填充,只压 duration 的话延迟期仍按
+  // 首帧填 backwards,拍到的还是一枚没落下的空章。
+  await aboutExec(
+    `const s = document.createElement("style");` +
+      `s.id = "vc-freeze";` +
+      `s.textContent = "*,*::before,*::after{transition-duration:0.01ms!important;` +
+      `animation-duration:0.01ms!important;animation-delay:0s!important}";` +
+      `document.head.appendChild(s);` +
+      ABOUT_FORCE_LIGHT,
+  );
+  // 就绪判据:版本徽标回填(读 query.v)+ 更新状态行离开 checking 态
+  // (checkUpdate 桩返回 latest → 落 --latest 类);两者齐了画面才是终态
+  await waitFor(
+    aboutExec,
+    `document.getElementById("version").textContent.length > 0 && ` +
+      `document.getElementById("updateStatus").className.includes("update-status--latest")`,
+    5000,
+    "about ready",
+  );
+  await wait(300); // 入场动效落定
+  await shot(about, "10-about");
+  // 断言外链确实被桩拦下(而非真开了浏览器):about 加载完自己不发外链,
+  // 故这里主动点一次仓库链接,确认走的是桩而不是 shell.openExternal
+  await aboutExec(`document.getElementById("repoLink").click();`);
+  const openedUrls = await aboutExec(`JSON.stringify(window.__vcAbout.openedUrls())`);
+  console.log(`[ui:shots] about openExternal stubbed ${openedUrls}`);
+  about.destroy();
+
   return 0;
 }
 

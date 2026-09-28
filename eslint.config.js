@@ -65,8 +65,10 @@ export default tseslint.config(
     },
   },
   {
-    // Electron 预加载脚本为 CJS,必须 require("electron"),放行 require 导入(与 lang-bootstrap.js 同属非 tsc 编入的 renderer 脚本)
-    files: ["src/renderer/about-preload.cjs"],
+    // CJS 预加载脚本必须 require(...),放行 require 导入。两类都在此集中登记,勿在文件里就地 eslint-disable:
+    // ① src/renderer/about-preload.cjs —— Electron 预加载,与 lang-bootstrap.js 同属非 tsc 编入的 renderer 脚本
+    // ② test/tools/visual-about-preload.cjs —— 截图工具的 about 窗桩,contextIsolation+sandbox 口径与真实 about 窗一致故同样为 CJS
+    files: ["src/renderer/about-preload.cjs", "test/tools/visual-about-preload.cjs"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },
