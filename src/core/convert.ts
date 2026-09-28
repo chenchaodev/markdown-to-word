@@ -18,8 +18,9 @@
  * - mermaid:docx 内嵌 PNG(2x);pdf 内联 SVG(矢量)。→ mermaid.test.js
  * - 目录:docx 静态目录(打开即见、可点击跳转、无页码);pdf 目录同开关。
  *   → toc-caption.test.js
- * - 编号开关(headingNumbering / captionNumbering):本层只透传显式项,
- *   默认值由两侧 render 的 `options.X ?? typography.X` 解析(见两字段 JSDoc)。
+ * - 编号开关(headingNumbering / captionNumbering):本层只透传显式项,两侧 render
+ *   按 `options.X ?? typography.X` 解析(见两字段 JSDoc);两字段在生产侧零注入,
+ *   实际生效的只有 typography.X 与 render 构造默认两档。
  * - 脚注:docx 写 footnotes.xml 部件;pdf 渲染为 HTML 脚注。→ footnotes.test.js
  */
 import { parseMarkdown } from "./pipeline/parse.js";
@@ -65,9 +66,11 @@ export interface ConvertContext {
   /**
    * 绝对截止时间(epoch ms):到期即按取消处理;已过期者在 convert 入口即短路,
    * 不启动任何 resolver。与 signal 任一触发均取消。
+   * 生产零注入 / 仅测试注入:生产侧无参构造(`logic.ts` 的 `deps.createContext()`),
+   * 故该字段在真实转换里恒为 undefined、截止时间机制目前只有测试在用。
    */
   deadline?: number;
-  /** 图片资源预算覆盖(缺省取 core/resource-limits.ts 默认值) */
+  /** 图片资源预算覆盖(缺省取 core/resource-limits.ts 默认值);生产零注入 / 仅测试注入 */
   imageBudget?: ImageResourceBudget;
   /** 图片解析回调(契约单源 core/image-resolver.ts):返回 null 表示跳过该图
    *  (缺失检查并入此失败路径,单次 IO);exists 轻量存在性通道可选 */
@@ -97,7 +100,8 @@ export interface ConvertContext {
   tocMode?: TocMode;
   /**
    * 标题章节自动编号显式项(透传 docx/pdf 双管线)。
-   * 优先级契约:显式项 > typography.headingNumbering > 各 render 的构造默认;
+   * 生产零注入 / 仅测试注入:唯一注入者是测试,生产侧恒不传,故该档实际从不参与
+   * 取值——在用的只有 typography.headingNumbering > 各 render 的构造默认两档。
    * 默认值的解析留在两侧 render(renderDocx / renderPdfHtml 内的
    * `options.X ?? typography.X`),本层只做原样透传,不做归一化——这样
    * 「谁解析默认」只有一处实现,两侧 render 的默认口径不会因本层新增字段而漂移。
@@ -106,7 +110,8 @@ export interface ConvertContext {
   headingNumbering?: boolean;
   /**
    * 图/表题注自动编号显式项(透传 docx/pdf 双管线)。
-   * 优先级契约同 headingNumbering:显式项 > typography.captionNumbering > render 构造默认。
+   * 生产零注入 / 仅测试注入:同 headingNumbering,在用的是
+   * typography.captionNumbering > render 构造默认两档。
    */
   captionNumbering?: boolean;
   /** 公式编号开关(默认开;docx/pdf 双格式同开关,关时公式不编号、label 段原样渲染、引用保持原文本) */
