@@ -29,6 +29,8 @@
  * (7) 目录模式下拉 tocMode:随自动目录开关整块移除(隐藏而非灰禁)—— 关闭时
  *     不可见也不可交互,重新打开恢复上次选择;源契约侧锁定总开关 change 与回填
  *     两条路径都重算显隐,且 .hidden 保住 !important(压得过行内 display:block)。
+ *     (6)(7) 的「两条接线路径都重算」此前是源码正则,已改为行为断言并迁至
+ *     settings-controls 段;本段保留对**同步函数本身**与 .hidden 契约的守护。
  *
  * DOM 侧用最小 stub 直接驱动 dist renderer 模块(与 convert-command-lock 段同一套
  * 元素表约定);源码契约侧只断言「某元素的 data-i18n 缺席」这类静态事实。
@@ -460,27 +462,9 @@ export async function run() {
         /<input type="checkbox" id="aiCleanupRewrite" class="switch-input"[^>]*\bdisabled\b/.test(convertHtml),
       "两个分档的初始态应随总开关默认关(静态 HTML 即带 disabled,不靠 JS 补)",
     );
-    // 接线:总开关切换与回填两条路径都要重算分档可用性
-    const convertBindingsSource = fs.readFileSync(
-      path.join(repoRoot, "src", "renderer", "settings", "settings-bindings-convert.ts"),
-      "utf8",
-    );
-    assert(
-      /aiCleanupInput\.addEventListener[\s\S]{0,320}?syncAiCleanupTierAvailability\(\)/.test(
-        convertBindingsSource,
-      ),
-      "总开关 change 接线里必须同步分档可用性(否则关掉总开关后分档仍可点)",
-    );
-    const panelSource = fs.readFileSync(
-      path.join(repoRoot, "src", "renderer", "settings", "settings-panel.ts"),
-      "utf8",
-    );
-    assert(
-      /aiCleanupInput\.checked = v\.aiCleanup;[\s\S]{0,400}?syncAiCleanupTierAvailability\(\)/.test(
-        panelSource,
-      ),
-      "回填路径(applySettingsToControls)必须同步分档可用性(加载/恢复默认后置灰态正确)",
-    );
+    // 「总开关 change 与回填两条路径都重算分档可用性」此前由两条源码正则守护;
+    // 已改为**行为断言**(真跑 change 事件与 applySettingsToControls 后读置灰态),
+    // 落在 settings-controls 段(逐控件基线 + 3 个手写门控双向),正则本身不再作护栏。
 
     // (7) 目录模式下拉 tocMode:随自动目录开关整块移除(行为)+ 两处接线齐全(源契约)
     //     灰禁会留下一个可点、但不生效的下拉(用户能选一个不会生效的模式),
@@ -515,22 +499,9 @@ export async function run() {
       "展开后目录模式应仍是收起前那次选择(不重置)",
     );
 
-    // 源契约:两条接线路径(总开关 change / 回填)都要重算显隐,否则关掉自动目录
-    // 后下拉仍在,或加载 / 恢复默认后显隐与设置不一致
-    const numberingBindingsSource = fs.readFileSync(
-      path.join(repoRoot, "src", "renderer", "settings", "settings-bindings-numbering.ts"),
-      "utf8",
-    );
-    assert(
-      /tocInput\.addEventListener\("change", \(\) => \{[\s\S]{0,400}?syncTocModeVisibility\(\)/.test(
-        numberingBindingsSource,
-      ),
-      "自动目录开关的 change 接线里必须同步模式下拉的显隐(否则关掉后下拉仍可交互)",
-    );
-    assert(
-      /tocModeSelect\.value = v\.tocMode;[\s\S]{0,200}?syncTocModeVisibility\(\)/.test(panelSource),
-      "回填路径(applySettingsToControls)必须同步模式下拉的显隐(加载 / 恢复默认后显隐与设置一致)",
-    );
+    // 「两条接线路径(总开关 change / 回填)都重算显隐」此前由两条源码正则守护;
+    // 已改为**行为断言**(真跑 toc change 与 applySettingsToControls 后读 .hidden),
+    // 落在 settings-controls 段,正则本身不再作护栏。
     // 收起靠 .hidden 工具类压过 index.html 给该 select 的行内 `display: block`;
     // 那条 !important 一旦被摘掉,门控会静默失效(行内样式赢),故在此锁住
     const baseCss = fs.readFileSync(

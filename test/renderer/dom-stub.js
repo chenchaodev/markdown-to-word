@@ -12,10 +12,14 @@
  *
  * 能力按需开启(默认关):
  * - trackFocus:focus() 真的改写 document.activeElement(焦点落点/归还断言用)
+ * - elementProps:按 id 覆盖元素初始字段(段可从 index.html 解析出真实属性回填)
+ * - selectorGroups:document.querySelectorAll 的选择器 → 元素表(radio 组成组靠它;
+ *   未登记的选择器仍返回空数组,与历史段一致)
  *
- * 按选择器取元素走**段内注入**:被测代码若在元素上调 querySelector(而非
+ * 按选择器取元素走**段内注入**:被测代码若在**元素上**调 querySelector(而非
  * document 上调),由用例给该元素挂一个最小命中实现(见 StubElement.querySelector
  * 的「段内可注入最小探针节点」注记),不在本 stub 里做全局选择器表。
+ * document 级选择器走上面的 selectorGroups。
  */
 
 /**
@@ -58,7 +62,7 @@ export function setGlobalSlot(name, value) {
  * @param {string[]} [initial]
  * @returns {StubClassList}
  */
-function makeClassList(initial = ["hidden"]) {
+export function makeClassList(initial = ["hidden"]) {
   const values = new Set(initial);
   return {
     add: (/** @type {string[]} */ ...names) => names.forEach((n) => values.add(n)),
@@ -106,6 +110,8 @@ function makeClassList(initial = ["hidden"]) {
  * @property {boolean} disabled
  * @property {boolean} hidden
  * @property {boolean} isConnected
+ * // inert(可聚焦性摘除):被测代码按折叠态写这个布尔;stub 不预置,由用例或被测代码赋值
+ * @property {boolean} [inert]
  * // 勾选态:开关类控件由被测模块按需赋值(stub 不预置,故为可选)
  * @property {boolean} [checked]
  * @property {(type: string, fn: (...args: unknown[]) => unknown) => void} addEventListener
@@ -125,6 +131,13 @@ function makeClassList(initial = ["hidden"]) {
  * @property {(selector: string) => StubNode | null} closest
  * @property {(node: StubNode) => boolean} contains
  * @property {() => { top: number; height: number }} getBoundingClientRect
+ * // 数值型 input 的 number 视图:空串/非数值按浏览器语义给 NaN(不是 0),
+ * // 被测代码靠它区分「空输入」与「真填了 0」(settings-bindings 的钳制分支)
+ * @property {number} valueAsNumber
+ * // select 的选中项集合:默认按 value 在子节点里推导(回填后读到的即当前选中项);
+ * // 段内显式赋值即接管(既有段按「dom stub 未提供该成员」写的注入写法仍有效)
+ * @property {StubNode[]} selectedOptions
+ * @property {(event: { type: string }) => boolean} dispatchEvent
  * @property {Map<string, (...args: unknown[]) => unknown>} listener
  * @property {Map<string, (...args: unknown[]) => unknown>} listeners
  * @property {Map<string, string>} attributes
@@ -154,6 +167,12 @@ export function makeElement(props = {}) {
   const listeners = new Map();
   /** @type {Map<string, string>} */
   const attributes = new Map();
+  /** 段内注入的 selectedOptions;未注入时按 value 在子节点里推导。 */
+  /** @type {StubNode[] | null} */
+  let selectedOverride = null;
+  // 标注 any 断开自引用推断:getter 里读 el.value / el.children 会让 TS 无法定出
+  // el 的类型(它在自己的初始化式里被引用);末尾再 cast 回 StubElement。
+  /** @type {any} */
   const el = {
     classList: makeClassList(),
     dataset: {},
@@ -190,6 +209,32 @@ export function makeElement(props = {}) {
     closest() { return null; },
     contains() { return false; },
     getBoundingClientRect() { return { top: 0, height: 0 }; },
+    get valueAsNumber() {
+      // 与浏览器一致:value 恒为字符串(此处 String() 归一,容忍用例写入数字);
+      // 空串与非数值都是 NaN(Number("") 会给 0,那会让「清空后输入」被读成 0,
+      // 钳制分支就错了)
+      const raw = String(el.value);
+      return raw.trim() === "" || Number.isNaN(Number(raw)) ? Number.NaN : Number(raw);
+    },
+    get selectedOptions() {
+      if (selectedOverride) return selectedOverride;
+      const value = el.value;
+      if (value === "") return [];
+      return el.children.filter(
+        (/** @type {StubNode} */ node) =>
+          typeof node === "object" &&
+          node !== null &&
+          /** @type {{ value?: unknown }} */ (node).value === value,
+      );
+    },
+    set selectedOptions(/** @type {StubNode[]} */ list) { selectedOverride = list; },
+    /** 被测代码造事件派发自身(如 stepper 经 change 走既有校验/持久化链路);
+     *  命中已登记监听器即调用,语义等价于浏览器在同元素上派发该类型事件。 */
+    dispatchEvent(/** @type {{ type: string }} */ event) {
+      const fn = listeners.get(event.type);
+      if (typeof fn === "function") fn(event);
+      return true;
+    },
     get listener() { return listeners; },
     get listeners() { return listeners; },
     get attributes() { return attributes; },
@@ -270,11 +315,19 @@ export function makeKeyEvent(key, target, extra = {}) {
  * @param {Record<string, unknown>} [options.api] preload 面按用例补齐
  * @param {StubElement | null} [options.activeElement] 焦点初始落点
  * @param {boolean} [options.trackFocus] 开启焦点追踪(见下),默认关
+ * @param {(id: string) => (Partial<StubElement> | undefined)} [options.elementProps]
+ *   元素**首次创建**时的初始字段覆盖(如从 index.html 解析出的 classList/checked);
+ *   已存在的元素不再改写(跨段共享的元素表里前序段建的实例保持原样)
+ * @param {Record<string, StubElement[]>} [options.selectorGroups]
+ *   document.querySelectorAll 的选择器 → 命中元素。未登记的选择器仍返回空数组,
+ *   与历史段行为一致(故既有段不受影响)
  */
 export function installDomStub({
   api = {},
   activeElement = null,
   trackFocus = false,
+  elementProps = undefined,
+  selectorGroups = undefined,
 } = {}) {
   const originalDocument = globalSlot("document");
   const originalWindow = globalSlot("window");
@@ -318,7 +371,7 @@ export function installDomStub({
   const elementFor = (id) => {
     let el = host.elements.get(id);
     if (!el) {
-      el = withFocus(makeElement({ id }));
+      el = withFocus(makeElement({ id, ...(elementProps?.(id) ?? {}) }));
       host.elements.set(id, el);
     }
     return el;
@@ -332,6 +385,8 @@ export function installDomStub({
 
   // 存量元素(前序段所建)补装焦点追踪
   for (const el of host.elements.values()) withFocus(el);
+  // 选择器组里的元素不在元素表内(无 id 的 radio),同样补装焦点追踪
+  for (const group of Object.values(selectorGroups ?? {})) for (const el of group) withFocus(el);
 
   /** @type {Map<string, (...args: unknown[]) => unknown>} */
   const documentListeners = new Map();
@@ -346,7 +401,7 @@ export function installDomStub({
     body: elementFor("__body__"),
     getElementById: elementFor,
     querySelector: () => null,
-    querySelectorAll: () => [],
+    querySelectorAll: (/** @type {string} */ selector) => selectorGroups?.[selector] ?? [],
     createElement: createTracked,
     createElementNS: createTracked,
     addEventListener(/** @type {string} */ type, /** @type {(...args: unknown[]) => unknown} */ fn) {
