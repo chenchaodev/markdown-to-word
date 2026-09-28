@@ -277,21 +277,27 @@ export async function run() {
     (/** @type {string} */ message) => { mergePageError = message; },
   );
   assert(typeof mergePageError === "string", "merge 发现非法几何时应上送可见错误");
-  // AI 清理两档:旧档缺键 / 显式 undefined → 兜底默认(与 main 侧 loadSettings 同语义)
+  // AI 清理两档:旧档缺整块 / 块内缺字段 → 兜底默认(与 main 侧 loadSettings 同语义)
   assert(
-    mergeSettingsWithDefaults({}).aiCleanupTidy === true &&
-      mergeSettingsWithDefaults({}).aiCleanupRewrite === true,
-    "缺两档 → 默认(开,与 main 侧字段级兜底一致)",
+    JSON.stringify(mergeSettingsWithDefaults({}).aiCleanup) ===
+      JSON.stringify({ enabled: false, tidy: true, rewrite: true }),
+    "缺整块 → 默认(两档开、总开关关,与 main 侧字段级兜底一致)",
   );
   assert(
-    mergeSettingsWithDefaults({ aiCleanupTidy: undefined, aiCleanupRewrite: false })
-      .aiCleanupTidy === true,
-    "显式 undefined 的档位应兜底默认,不得把 undefined 带进设置状态",
+    mergeSettingsWithDefaults({ aiCleanup: { enabled: true } }).aiCleanup.tidy === true,
+    "块内缺字段 → 该字段兜底默认,不得把 undefined 带进设置状态",
   );
   assert(
-    mergeSettingsWithDefaults({ aiCleanupTidy: false, aiCleanupRewrite: false })
-      .aiCleanupRewrite === false,
+    mergeSettingsWithDefaults({ aiCleanup: { tidy: false, rewrite: false } }).aiCleanup.enabled ===
+      false &&
+      mergeSettingsWithDefaults({ aiCleanup: { tidy: false, rewrite: false } }).aiCleanup.rewrite ===
+        false,
     "显式 false 的档位应保留(不得被默认覆盖)",
+  );
+  assert(
+    JSON.stringify(mergeSettingsWithDefaults({}).obsidian) ===
+      JSON.stringify({ compat: false, attachmentFolder: "Attachments" }),
+    "缺 obsidian 整块 → 默认(与 main 侧字段级兜底一致)",
   );
   console.log("[ok] mergeSettingsWithDefaults:完整透传/显式字段保留/缺字段默认兜底/部分字段合并/theme 兜底/AI 清理两档兜底/非法几何回退 断言通过");
 
@@ -470,7 +476,20 @@ export async function run() {
     reeditMerged.theme === "light",
     `同一字段的再次编辑应以最新值为准,实际 ${String(reeditMerged.theme)}`,
   );
-  console.log("[ok] mergePendingSavePatch:草稿并入提交/块级深合并/最新编辑优先断言通过");
+  // 渲染前变换两组同为块级：草稿里改过的档位不得被下一次只带部分字段的提交挤掉
+  const blockMerged = mergePendingSavePatch(
+    { aiCleanup: { enabled: true, tidy: false, rewrite: false }, obsidian: { compat: true, attachmentFolder: "A" } },
+    { aiCleanup: { rewrite: true }, obsidian: { attachmentFolder: "B" } },
+  );
+  assert(
+    JSON.stringify(blockMerged.aiCleanup) === JSON.stringify({ enabled: true, tidy: false, rewrite: true }),
+    `aiCleanup 块应逐字段合并,实际 ${JSON.stringify(blockMerged.aiCleanup)}`,
+  );
+  assert(
+    JSON.stringify(blockMerged.obsidian) === JSON.stringify({ compat: true, attachmentFolder: "B" }),
+    `obsidian 块应逐字段合并,实际 ${JSON.stringify(blockMerged.obsidian)}`,
+  );
+  console.log("[ok] mergePendingSavePatch:草稿并入提交/块级深合并(含 aiCleanup/obsidian)/最新编辑优先断言通过");
 
   /** @type {string[][]} */
   const runtimeEffects = [];
@@ -735,17 +754,21 @@ export async function run() {
   // AI 清理两档:两个档位各自映射,互不影响(回填层不得把两档并成一个值)
   const tierOnCv = settingsToControlValues(DEFAULT_SETTINGS);
   assert(
-    tierOnCv.aiCleanupTidy === true && tierOnCv.aiCleanupRewrite === true,
-    "两档默认(开)应分别映射为 true",
+    tierOnCv.aiCleanup === false && tierOnCv.aiCleanupTidy === true && tierOnCv.aiCleanupRewrite === true,
+    "总开关默认关、两档默认开应分别映射",
   );
   const tierOffCv = settingsToControlValues({
     ...DEFAULT_SETTINGS,
-    aiCleanupTidy: false,
-    aiCleanupRewrite: true,
+    aiCleanup: { enabled: true, tidy: false, rewrite: true },
+    obsidian: { compat: true, attachmentFolder: "Assets" },
   });
   assert(
-    tierOffCv.aiCleanupTidy === false && tierOffCv.aiCleanupRewrite === true,
-    "只关保守规整档时,结构改写档应仍为 true",
+    tierOffCv.aiCleanup === true && tierOffCv.aiCleanupTidy === false && tierOffCv.aiCleanupRewrite === true,
+    "只关保守规整档时,总开关与结构改写档应不受影响",
+  );
+  assert(
+    tierOffCv.obsidianCompat === true && tierOffCv.obsidianAttachmentFolder === "Assets",
+    "obsidian 两字段应从分组对象映射到各自的平级控件值",
   );
   console.log("[ok] settingsToControlValues:全字段映射/数值转字符串/align 判定/输出目录文案/theme 映射 断言通过");
 

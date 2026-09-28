@@ -207,10 +207,11 @@ export function mergeSettingsWithDefaults(
     pdfCss: source.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
     // theme 缺失(旧 settings.json)→ "system"(显式 null/undefined 同样兜底)
     theme: source.theme ?? DEFAULT_SETTINGS.theme,
-    // AI 清理两档:缺键(旧 settings.json)/显式 undefined → 兜底默认(与 main 侧
-    // loadSettings 字段级兜底同语义,双侧防御)
-    aiCleanupTidy: source.aiCleanupTidy ?? DEFAULT_SETTINGS.aiCleanupTidy,
-    aiCleanupRewrite: source.aiCleanupRewrite ?? DEFAULT_SETTINGS.aiCleanupRewrite,
+    // 渲染前变换两块逐字段深合并(同 headerFooter/watermark 先例):旧 settings.json
+    // 缺整块或缺单字段均按默认兜底,与 main 侧 sanitizeAiCleanup/sanitizeObsidian
+    // 字段级兜底同语义(双侧防御)
+    aiCleanup: { ...DEFAULT_SETTINGS.aiCleanup, ...source.aiCleanup },
+    obsidian: { ...DEFAULT_SETTINGS.obsidian, ...source.obsidian },
   };
   // migration 是 main→renderer 的瞬时提示，不进入 renderer 设置状态或后续 patch。
   delete merged.migration;
@@ -277,6 +278,10 @@ export function mergePendingSavePatch(
   if (headerFooter) merged.headerFooter = headerFooter;
   const watermark = mergeBlock(pending.watermark, next.watermark);
   if (watermark) merged.watermark = watermark;
+  const aiCleanup = mergeBlock(pending.aiCleanup, next.aiCleanup);
+  if (aiCleanup) merged.aiCleanup = aiCleanup;
+  const obsidian = mergeBlock(pending.obsidian, next.obsidian);
+  if (obsidian) merged.obsidian = obsidian;
   return merged;
 }
 
@@ -351,6 +356,9 @@ export interface SettingsControlValues {
   toc: boolean;
   tocMode: string;
   equationNumbering: boolean;
+  // 这五项刻意保持平铺:它们一一对应 index.html 里五个平级控件的 id
+  // (aiCleanup / aiCleanupTidy / aiCleanupRewrite / obsidianCompat /
+  // obsidianAttachmentFolder),回填是按控件逐个赋值,分组只存在于设置对象侧。
   aiCleanup: boolean;
   /** AI 清理「保守规整」档 */
   aiCleanupTidy: boolean;
@@ -401,11 +409,11 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
     toc: settings.toc,
     tocMode: settings.tocMode,
     equationNumbering: settings.equationNumbering,
-    aiCleanup: settings.aiCleanup,
-    aiCleanupTidy: settings.aiCleanupTidy,
-    aiCleanupRewrite: settings.aiCleanupRewrite,
-    obsidianCompat: settings.obsidianCompat,
-    obsidianAttachmentFolder: settings.obsidianAttachmentFolder,
+    aiCleanup: settings.aiCleanup.enabled,
+    aiCleanupTidy: settings.aiCleanup.tidy,
+    aiCleanupRewrite: settings.aiCleanup.rewrite,
+    obsidianCompat: settings.obsidian.compat,
+    obsidianAttachmentFolder: settings.obsidian.attachmentFolder,
     afterConvert: settings.afterConvert,
     format: settings.format,
     outputDirText: outputDirDisplayText(settings.outputDir),

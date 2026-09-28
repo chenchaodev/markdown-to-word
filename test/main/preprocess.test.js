@@ -42,9 +42,8 @@ export async function run() {
     );
     const settings = {
       ...DEFAULT_SETTINGS,
-      aiCleanup: true,
-      obsidianCompat: true,
-      obsidianAttachmentFolder: "Attachments",
+      aiCleanup: { ...DEFAULT_SETTINGS.aiCleanup, enabled: true },
+      obsidian: { compat: true, attachmentFolder: "Attachments" },
     };
     const prepared = /** @type {import("../../src/main/converter/preprocess.js").PreparedMarkdown} */ (
       await prepareMarkdown(mdPath, settings)
@@ -99,13 +98,11 @@ export async function run() {
      */
     const tierSettings = (tidy, rewrite) => ({
       ...DEFAULT_SETTINGS,
-      aiCleanup: true,
-      aiCleanupTidy: tidy,
-      aiCleanupRewrite: rewrite,
+      aiCleanup: { ...DEFAULT_SETTINGS.aiCleanup, enabled: true, tidy, rewrite },
     });
 
     // (1) 映射:两档 → 六个 per-rule 布尔(分类断言,逐字段)
-    const tidyOnlyOpts = aiCleanupOptions({ aiCleanupTidy: true, aiCleanupRewrite: false });
+    const tidyOnlyOpts = aiCleanupOptions({ tidy: true, rewrite: false });
     assert(
       tidyOnlyOpts.normalizeQuotes === true &&
         tidyOnlyOpts.fixListMarkers === true &&
@@ -118,7 +115,7 @@ export async function run() {
         tidyOnlyOpts.fixHeadingLevels === false,
       "结构改写档关闭时,引用标记/emoji/标题层级三条规则必须为 false",
     );
-    const rewriteOnlyOpts = aiCleanupOptions({ aiCleanupTidy: false, aiCleanupRewrite: true });
+    const rewriteOnlyOpts = aiCleanupOptions({ tidy: false, rewrite: true });
     assert(
       rewriteOnlyOpts.normalizeQuotes === false &&
         rewriteOnlyOpts.fixListMarkers === false &&
@@ -150,9 +147,7 @@ export async function run() {
     // 总开关关 → 整段跳过,即便两档皆开也不生效(子开关不得绕过总开关)
     const masterOffOut = preprocessMarkdown(tierMd, {
       ...DEFAULT_SETTINGS,
-      aiCleanup: false,
-      aiCleanupTidy: true,
-      aiCleanupRewrite: true,
+      aiCleanup: { enabled: false, tidy: true, rewrite: true },
     });
     assert(
       masterOffOut === tierMd,

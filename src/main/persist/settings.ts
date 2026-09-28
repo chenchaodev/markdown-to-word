@@ -37,10 +37,14 @@ import type {
 import { correctPageSetup } from "../../core/settings/settings-defaults.js";
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_AI_CLEANUP,
   DEFAULT_HEADER_FOOTER,
+  DEFAULT_OBSIDIAN,
   DEFAULT_WATERMARK,
+  type AiCleanupSettings,
   type AppSettings,
   type HeaderFooterSettings,
+  type ObsidianSettings,
   type WatermarkSettings,
 } from "../../core/settings/settings-defaults.js";
 import { isLanguage } from "../../core/i18n.js";
@@ -79,11 +83,55 @@ const SETTING_KEYS = [
   "headerFooter",
   "watermark",
   "aiCleanup",
+  "obsidian",
+] as const;
+
+/**
+ * 分组前的旧平铺键(只列改名的 4 个:旧的 aiCleanup 布尔与新键同名,被新对象
+ * 直接覆盖,不会搭车)。它们只在迁移取值时被读,不得留在内存对象或
+ * settings.json 里 —— loadSettings/persistedSettings 都是整对象展开,
+ * 不显式剔除就会每次写盘原样带回,文件永远收敛不到新形状。
+ */
+const LEGACY_TRANSFORM_KEYS = [
   "aiCleanupTidy",
   "aiCleanupRewrite",
   "obsidianCompat",
   "obsidianAttachmentFolder",
 ] as const;
+
+/** 旧形状平铺键的取值(仅供迁移补位,不落盘);缺项即"该旧键没写过"。 */
+interface LegacyTransformFlags {
+  enabled?: unknown;
+  tidy?: unknown;
+  rewrite?: unknown;
+  compat?: unknown;
+  attachmentFolder?: unknown;
+}
+
+const NO_LEGACY_TRANSFORM_FLAGS: LegacyTransformFlags = {};
+
+/**
+ * 从任意落盘对象里取旧形状取值(读入能力保留一个版本,adr-024 决定要点四)。
+ * 旧 aiCleanup 是布尔总开关、新 aiCleanup 是对象:按类型区分而非按名字区分,
+ * 所以同一个键名两种形状都能读。
+ */
+function readLegacyTransformFlags(source: object): LegacyTransformFlags {
+  const record = source as Record<string, unknown>;
+  return {
+    enabled: typeof record.aiCleanup === "boolean" ? record.aiCleanup : undefined,
+    tidy: record.aiCleanupTidy,
+    rewrite: record.aiCleanupRewrite,
+    compat: record.obsidianCompat,
+    attachmentFolder: record.obsidianAttachmentFolder,
+  };
+}
+
+/** 剔除旧平铺键(就地改传入的浅拷贝,不改调用方对象)。 */
+function stripLegacyTransformKeys(settings: AppSettings): AppSettings {
+  const target = { ...settings } as AppSettings & Record<string, unknown>;
+  for (const key of LEGACY_TRANSFORM_KEYS) delete target[key];
+  return target;
+}
 
 /** 模块级内存缓存:惰性加载(首次 loadSettings 读盘,之后读缓存) */
 let settingsCache: AppSettings | null = null;
@@ -95,7 +143,7 @@ const writeSettingsJson = createJsonWriter();
 function persistedSettings(settings: AppSettings): AppSettings {
   const persisted = { ...settings };
   delete persisted.migration;
-  return persisted;
+  return stripLegacyTransformKeys(persisted);
 }
 
 function warnPageSetupCorrection(
@@ -150,6 +198,45 @@ function isValidOutputDir(value: unknown): value is string {
   return typeof value === "string" && (value === "" || path.isAbsolute(value));
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 分组块的字段类型表:形状校验一处声明,字段名不各写一遍。 */
+const AI_CLEANUP_BOOLEAN_FIELDS = ["enabled", "tidy", "rewrite"] as const;
+const OBSIDIAN_FIELD_TYPES: readonly (readonly [string, "boolean" | "string"])[] = [
+  ["compat", "boolean"],
+  ["attachmentFolder", "string"],
+];
+
+/**
+ * 块内字段类型校验:字段缺省合法(旧 settings.json 缺字段交由加载兜底补默认,
+ * 与 toc/theme 可选字段同一口径),存在则须为声明类型。同类型字段表与
+ * 混合类型表各走一个重载,避免调用点重复展开成 if 链。
+ */
+function hasTypesOf(
+  source: Record<string, unknown>,
+  fields: readonly string[],
+  type: "boolean" | "string",
+): boolean;
+function hasTypesOf(
+  source: Record<string, unknown>,
+  fields: readonly (readonly [string, "boolean" | "string"])[],
+): boolean;
+function hasTypesOf(
+  source: Record<string, unknown>,
+  fields: readonly (string | readonly [string, "boolean" | "string"])[],
+  type?: "boolean" | "string",
+): boolean {
+  for (const field of fields) {
+    const [key, fieldType] = typeof field === "string" ? [field, type] : field;
+    if (key === undefined) continue;
+    if (!(key in source)) continue;
+    if (typeof source[key] !== fieldType) return false;
+  }
+  return true;
+}
+
 /**
  * 整文件形状校验:非 pageSetup 字段任一非法即视为损坏,整体回退默认；
  * pageSetup 非法交由 core correctPageSetup 做字段级迁移。
@@ -179,7 +266,20 @@ export function isValidSettings(value: unknown): value is AppSettings {
   // theme 缺失(旧 settings.json)视为合法,loadSettings 兜底为 "system";存在则须枚举内值
   if ("theme" in s && !isOneOf(s.theme, THEMES)) return false;
   // 新增开关为可选字段(旧 settings.json 缺省视为合法,loadSettings 兜底默认)
-  if ("aiCleanup" in s && typeof s.aiCleanup !== "boolean") return false;
+  // 分组后的两块同样参与整文件形状校验(adr-024 决定要点一:不得因分组而把
+  // 「任一字段非法 → 整文件回退」放宽成字段级兜底)。两种形状都放行:
+  // 新形状是对象,旧形状是平铺 boolean/字符串(迁移读入,见 readLegacyTransformFlags)。
+  if ("aiCleanup" in s) {
+    // 旧形状 = 布尔总开关;新形状 = 对象(块内三个字段存在则须 boolean,缺字段合法)
+    if (typeof s.aiCleanup === "boolean") {
+      // 旧形状,合法
+    } else if (isPlainObject(s.aiCleanup) && hasTypesOf(s.aiCleanup, AI_CLEANUP_BOOLEAN_FIELDS, "boolean")) {
+      // 新形状,合法
+    } else return false;
+  }
+  if ("obsidian" in s && (!isPlainObject(s.obsidian) || !hasTypesOf(s.obsidian, OBSIDIAN_FIELD_TYPES))) {
+    return false;
+  }
   if ("aiCleanupTidy" in s && typeof s.aiCleanupTidy !== "boolean") return false;
   if ("aiCleanupRewrite" in s && typeof s.aiCleanupRewrite !== "boolean") return false;
   if ("obsidianCompat" in s && typeof s.obsidianCompat !== "boolean") return false;
@@ -201,6 +301,8 @@ export function loadSettings(): AppSettings {
     const raw = readFileSync(settingsFilePath(), "utf8");
     const parsed: unknown = JSON.parse(raw);
     if (isValidSettings(parsed)) {
+      // 旧形状取值(分组前的平铺键):只用于补位,不进最终对象
+      const legacy = readLegacyTransformFlags(parsed);
       // pageSetup 由 core 唯一纯策略纠正；其它旧字段仍按原策略逐项兜底。
       const pageSetupCorrection = correctPageSetup(parsed.pageSetup);
       warnPageSetupCorrection(pageSetupCorrection, "load");
@@ -220,7 +322,7 @@ export function loadSettings(): AppSettings {
           }
         : undefined;
       loaded = {
-        ...parsed,
+        ...stripLegacyTransformKeys(parsed),
         pageSetup: pageSetupCorrection.pageSetup,
         ...(migration ? { migration } : {}),
         outputDir: isValidOutputDir(parsed.outputDir) ? parsed.outputDir : "",
@@ -245,25 +347,10 @@ export function loadSettings(): AppSettings {
         headerFooter: sanitizeHeaderFooter(parsed.headerFooter),
         // watermark 同 headerFooter 先例(整文件形状校验不查;字段级兜底)
         watermark: sanitizeWatermark(parsed.watermark),
-        // 旧 settings.json 缺字段 → 兜底默认(与 toc/theme 同先例)
-        aiCleanup: typeof parsed.aiCleanup === "boolean" ? parsed.aiCleanup : DEFAULT_SETTINGS.aiCleanup,
-        // AI 清理两档:旧 settings.json 缺键 → 兜底默认(默认皆开,随总开关生效)
-        aiCleanupTidy:
-          typeof parsed.aiCleanupTidy === "boolean"
-            ? parsed.aiCleanupTidy
-            : DEFAULT_SETTINGS.aiCleanupTidy,
-        aiCleanupRewrite:
-          typeof parsed.aiCleanupRewrite === "boolean"
-            ? parsed.aiCleanupRewrite
-            : DEFAULT_SETTINGS.aiCleanupRewrite,
-        obsidianCompat:
-          typeof parsed.obsidianCompat === "boolean"
-            ? parsed.obsidianCompat
-            : DEFAULT_SETTINGS.obsidianCompat,
-        obsidianAttachmentFolder:
-          typeof parsed.obsidianAttachmentFolder === "string"
-            ? parsed.obsidianAttachmentFolder
-            : DEFAULT_SETTINGS.obsidianAttachmentFolder,
+        // 旧 settings.json 缺整块/缺字段 → 逐字段兜底默认(与 headerFooter/watermark
+        // 同先例);旧平铺键在对应新字段缺位时补位(迁移,读入能力保留一个版本)
+        aiCleanup: sanitizeAiCleanup(parsed.aiCleanup, legacy),
+        obsidian: sanitizeObsidian(parsed.obsidian, legacy),
       };
       if (!migration) delete loaded.migration;
       if (migration) schedulePageSetupMigration(loaded, migration);
@@ -375,30 +462,10 @@ function sanitizePatch(patch: unknown, current: AppSettings): Partial<AppSetting
         out.watermark = sanitizeWatermark(src.watermark);
         break;
       case "aiCleanup":
-        out.aiCleanup =
-          typeof src.aiCleanup === "boolean" ? src.aiCleanup : DEFAULT_SETTINGS.aiCleanup;
+        out.aiCleanup = sanitizeAiCleanup(src.aiCleanup);
         break;
-      case "aiCleanupTidy":
-        out.aiCleanupTidy =
-          typeof src.aiCleanupTidy === "boolean" ? src.aiCleanupTidy : DEFAULT_SETTINGS.aiCleanupTidy;
-        break;
-      case "aiCleanupRewrite":
-        out.aiCleanupRewrite =
-          typeof src.aiCleanupRewrite === "boolean"
-            ? src.aiCleanupRewrite
-            : DEFAULT_SETTINGS.aiCleanupRewrite;
-        break;
-      case "obsidianCompat":
-        out.obsidianCompat =
-          typeof src.obsidianCompat === "boolean"
-            ? src.obsidianCompat
-            : DEFAULT_SETTINGS.obsidianCompat;
-        break;
-      case "obsidianAttachmentFolder":
-        out.obsidianAttachmentFolder =
-          typeof src.obsidianAttachmentFolder === "string"
-            ? src.obsidianAttachmentFolder
-            : DEFAULT_SETTINGS.obsidianAttachmentFolder;
+      case "obsidian":
+        out.obsidian = sanitizeObsidian(src.obsidian);
         break;
     }
   }
@@ -439,6 +506,44 @@ function sanitizeWatermark(value: unknown): WatermarkSettings {
   if (isFiniteNumber(src.angle)) out.angle = Math.min(360, Math.max(0, src.angle));
   if (isFiniteNumber(src.opacity)) out.opacity = Math.min(1, Math.max(0, src.opacity));
   if (typeof src.gray === "boolean") out.gray = src.gray;
+  return out;
+}
+
+/**
+ * aiCleanup 分组块逐字段兜底(仿 sanitizeHeaderFooter/sanitizeWatermark:非对象/数组/null
+ * → 打底值,逐字段 if 覆盖、从不 delete)。打底值是 DEFAULT_AI_CLEANUP 而非 current ——
+ * 分组前这三个平铺键在 sanitizePatch 里各自回退默认,改用 current 会让「非法值回退」
+ * 静默变成「保留旧值」,与 headerFooter/watermark 的块级先例也相反。
+ * legacy 旧平铺键只在对应新字段**缺失或非法**时补位(分组前的文件迁移);
+ * 新键与旧键同时存在时**一律以新键为准** —— 新键是本版本写出的权威形状,
+ * 旧键只补缺,手改文件同时写两套时不会让旧值盖掉新值。
+ */
+function sanitizeAiCleanup(
+  value: unknown,
+  legacy: LegacyTransformFlags = NO_LEGACY_TRANSFORM_FLAGS,
+): AiCleanupSettings {
+  const src = isPlainObject(value) ? value : {};
+  const out: AiCleanupSettings = { ...DEFAULT_AI_CLEANUP };
+  if (typeof src.enabled === "boolean") out.enabled = src.enabled;
+  else if (typeof legacy.enabled === "boolean") out.enabled = legacy.enabled;
+  if (typeof src.tidy === "boolean") out.tidy = src.tidy;
+  else if (typeof legacy.tidy === "boolean") out.tidy = legacy.tidy;
+  if (typeof src.rewrite === "boolean") out.rewrite = src.rewrite;
+  else if (typeof legacy.rewrite === "boolean") out.rewrite = legacy.rewrite;
+  return out;
+}
+
+/** obsidian 分组块逐字段兜底(仿 sanitizeAiCleanup;旧键名 obsidianCompat/obsidianAttachmentFolder)。 */
+function sanitizeObsidian(
+  value: unknown,
+  legacy: LegacyTransformFlags = NO_LEGACY_TRANSFORM_FLAGS,
+): ObsidianSettings {
+  const src = isPlainObject(value) ? value : {};
+  const out: ObsidianSettings = { ...DEFAULT_OBSIDIAN };
+  if (typeof src.compat === "boolean") out.compat = src.compat;
+  else if (typeof legacy.compat === "boolean") out.compat = legacy.compat;
+  if (typeof src.attachmentFolder === "string") out.attachmentFolder = src.attachmentFolder;
+  else if (typeof legacy.attachmentFolder === "string") out.attachmentFolder = legacy.attachmentFolder;
   return out;
 }
 

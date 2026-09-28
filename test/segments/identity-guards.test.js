@@ -169,7 +169,8 @@ export async function run() {
     const mainLoaded = mod.loadSettings(); // 全新模块实例,直读磁盘
     const merged1 = mergeSettingsWithDefaults(legacyRaw);
     const sampledKeys = ["version", "format", "afterConvert", "breakBeforeH1", "toc", "equationNumbering",
-      "outputDir", "pdfCss", "language", "theme", "pageSetup", "typography", "customPresets", "headerFooter"];
+      "outputDir", "pdfCss", "language", "theme", "pageSetup", "typography", "customPresets", "headerFooter",
+      "aiCleanup", "obsidian"];
     for (const k of sampledKeys) {
       assert(
         stable(mainLoaded[k]) === stable(merged1[k]),

@@ -22,7 +22,7 @@
 ## 完成标准
 
 - [ ] 新旧两种形状的 `settings.json` 都能正确读入；分组键的校验口径与迁移前等价（整文件拒绝与字段兜底两处都在）—— 自动断言见 `test/main/settings.test.js`
-- [ ] 迁移前后同一份 markdown 的 docx 与 pdf 产物一致：docx 解出 `word/document.xml` 比内容（仓库既有约定，zip 容器跨次运行的字节稳定性未经验证），pdf 比原始字节 —— 自动断言见 `test/main/preprocess.test.js` 与 `test/segments/ai-cleanup.test.js`
+- [ ] 迁移前后同一份 markdown 的 docx 与 pdf 产物一致，两侧都取「内容」而非「整文件字节」：docx 解出 `word/document.xml`（zip 容器），pdf 取逐页内容流。**pdf 侧不能比整文件字节** —— 实测同一份 HTML 连续两次 `printToPDF` 整文件字节必不同（Skia 把临时 HTML 文件名写进 Info 的 `/Title`，另有 `/CreationDate` 与 `/ModDate`），而页内容流不含这三者 —— 自动断言见 `test/main/converter.test.js`
 - [ ] 双重门控三者各自独立可验：总开关单独关 → 整段跳过；某一档单独关 → 对应 per-rule 全 false；6 个 per-rule 全 false → 产物零改动
 - [ ] 该类设置在全仓只被枚举 2 处（变换分派 + 核心侧阶段契约），不再有第三个 mapper；`core/convert.ts` 对这批设置的引用数从 0 变为「有，且只经一个入口」
 - [ ] `SourceRange` 与区间合并逻辑在源码内只有一份定义（`core/markdown/source-ranges.ts`）；节点集合与 masking 两侧保持独立，不合并（理由见 adr-025）

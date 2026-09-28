@@ -136,6 +136,51 @@ export const DEFAULT_WATERMARK: WatermarkSettings = {
   gray: true,
 };
 
+/* ---------- 渲染前变换(分组,不参与预设) ---------- */
+/**
+ * AI 清理设置:转换前自动规整 AI 生成的 Markdown。
+ * 三层门控各自独立(见 main/converter/preprocess.ts):enabled 是总开关,
+ * tidy / rewrite 是它之下两个档位,档位只是分档不是旁路 —— 总开关关闭时
+ * preprocessBody 整段跳过,本对象里的档位值不生效。
+ */
+export interface AiCleanupSettings {
+  /** 总开关(默认关):关闭则 AI 清理整段跳过,产物与该能力引入前一致 */
+  enabled: boolean;
+  /**
+   * 「保守规整」档(默认开,随总开关生效):引号破折号归一 / 列表标记补空格 /
+   * 行尾空白与空行折叠——三条规则零语义损失。
+   */
+  tidy: boolean;
+  /**
+   * 「结构改写」档(默认开,随总开关生效):清裸数字引用标记 / 去 emoji /
+   * 重整标题层级——其中两条删除正文内容、一条改写全文结构,故可单独关闭;
+   * 关闭后转换产物与该档引入前一致。
+   */
+  rewrite: boolean;
+}
+
+export const DEFAULT_AI_CLEANUP: AiCleanupSettings = {
+  enabled: false,
+  tidy: true,
+  rewrite: true,
+};
+
+/**
+ * Obsidian 兼容设置:![[嵌入]] 的附件路径前缀依赖 compat 打开,
+ * 分组后「单独设了目录名而兼容关着」这个死值关系由对象形状本身表达。
+ */
+export interface ObsidianSettings {
+  /** 是否启用:将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接 */
+  compat: boolean;
+  /** 附件子文件夹名(用于解析 ![[图片]] 路径前缀) */
+  attachmentFolder: string;
+}
+
+export const DEFAULT_OBSIDIAN: ObsidianSettings = {
+  compat: false,
+  attachmentFolder: "Attachments",
+};
+
 /** 默认页面设置:近似 Word 默认(A4 纵向,上下 25mm 左右 32mm)。 */
 export const DEFAULT_PAGE_SETUP: PageSetup = {
   paper: "A4",
@@ -209,24 +254,10 @@ export interface AppSettings {
   headerFooter: HeaderFooterSettings;
    /** 文字水印(与页眉页脚同组「不入预设」;空 text = 不启用) */
   watermark: WatermarkSettings;
-   /** AI 清理:转换前自动规整 AI 生成的 Markdown(智能引号/破折号/列表格式/空行) */
-  aiCleanup: boolean;
-  /**
-   * AI 清理「保守规整」档(默认开,随总开关生效):引号破折号归一 / 列表标记补空格 /
-   * 行尾空白与空行折叠——三条规则零语义损失。总开关关闭时整档不生效(preprocess
-   * 整段跳过),本字段不构成绕过总开关的旁路。
-   */
-  aiCleanupTidy: boolean;
-  /**
-   * AI 清理「结构改写」档(默认开,随总开关生效):清裸数字引用标记 / 去 emoji /
-   * 重整标题层级——其中两条删除正文内容、一条改写全文结构,故可单独关闭;
-   * 关闭后转换产物与该档引入前逐字节一致。
-   */
-  aiCleanupRewrite: boolean;
-  /** Obsidian 兼容:将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接 */
-  obsidianCompat: boolean;
-  /** Obsidian 附件子文件夹名(用于解析 ![[图片]] 路径前缀) */
-  obsidianAttachmentFolder: string;
+   /** AI 清理(不入预设):总开关 + 两个档位,见 AiCleanupSettings */
+  aiCleanup: AiCleanupSettings;
+  /** Obsidian 兼容(不入预设):双链归一开关 + 附件目录名,见 ObsidianSettings */
+  obsidian: ObsidianSettings;
 }
 
 /** 自定义模板预设:名称 + 排版/页面设置快照(套用逻辑与硬编码预设一致)。 */
@@ -257,11 +288,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
   headerFooter: { ...DEFAULT_HEADER_FOOTER },
   watermark: { ...DEFAULT_WATERMARK },
-  aiCleanup: false,
-  aiCleanupTidy: true,
-  aiCleanupRewrite: true,
-  obsidianCompat: false,
-  obsidianAttachmentFolder: "Attachments",
+  aiCleanup: { ...DEFAULT_AI_CLEANUP },
+  obsidian: { ...DEFAULT_OBSIDIAN },
 };
 
 /** 页面边距钳制范围(mm,与主进程 sanitizePageSetup 一致) */

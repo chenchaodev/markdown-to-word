@@ -64,31 +64,32 @@ export function bindConvertGroup(): void {
 
   aiCleanupInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;
-    state.settings.aiCleanup = aiCleanupInput.checked;
+    state.settings.aiCleanup.enabled = aiCleanupInput.checked;
     // 总开关一动即重算分档可用性(灰禁/说明行),两个分档的值不受影响
     syncAiCleanupTierAvailability();
-    persistSettings({ aiCleanup: state.settings.aiCleanup });
+    persistSettings({ aiCleanup: { ...state.settings.aiCleanup } });
   });
   // 两个分档:各自独立持久化(总开关关闭时控件 disabled,浏览器不再派发 change)
+  // 整块写回(块内其余字段带当前值),不做「只写被改的那个子字段」的局部 patch
   aiCleanupTidyInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;
-    state.settings.aiCleanupTidy = aiCleanupTidyInput.checked;
-    persistSettings({ aiCleanupTidy: state.settings.aiCleanupTidy });
+    state.settings.aiCleanup.tidy = aiCleanupTidyInput.checked;
+    persistSettings({ aiCleanup: { ...state.settings.aiCleanup } });
   });
   aiCleanupRewriteInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;
-    state.settings.aiCleanupRewrite = aiCleanupRewriteInput.checked;
-    persistSettings({ aiCleanupRewrite: state.settings.aiCleanupRewrite });
+    state.settings.aiCleanup.rewrite = aiCleanupRewriteInput.checked;
+    persistSettings({ aiCleanup: { ...state.settings.aiCleanup } });
   });
   obsidianCompatInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;
-    state.settings.obsidianCompat = obsidianCompatInput.checked;
-    persistSettings({ obsidianCompat: state.settings.obsidianCompat });
+    state.settings.obsidian.compat = obsidianCompatInput.checked;
+    persistSettings({ obsidian: { ...state.settings.obsidian } });
   });
   obsidianAttachmentFolderInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;
-    state.settings.obsidianAttachmentFolder = obsidianAttachmentFolderInput.value.trim();
-    persistSettings({ obsidianAttachmentFolder: state.settings.obsidianAttachmentFolder });
+    state.settings.obsidian.attachmentFolder = obsidianAttachmentFolderInput.value.trim();
+    persistSettings({ obsidian: { ...state.settings.obsidian } });
   });
 
   afterConvertInputs.forEach((input) => {

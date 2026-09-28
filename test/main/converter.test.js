@@ -21,11 +21,13 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import iconv from "iconv-lite";
-import { PDFDict, PDFDocument, PDFHexString, PDFName } from "pdf-lib";
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream } from "pdf-lib";
 import { BrowserWindow, shell } from "electron";
 import { loadSettings, updateSettings } from "../../dist/main/persist/settings.js";
 import { renderPdf } from "../../dist/main/converter/single.js";
-import { backupSettings } from "../common/settings.js";
+import { DEFAULT_SETTINGS } from "../../dist/core/settings/settings-defaults.js";
+import { backupSettings, backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
+import { createAsserter } from "../common/assert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { convertWithFs } from "../common/convert-helpers.js";
 import {
@@ -59,6 +61,9 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`converter 断言失败:${msg}`);
 }
 
+// 逐字节比对取公共断言集(本段自带的 assert 只判真假,给不出首个差异字节)
+const { assertBytes } = createAsserter("converter");
+
 /**
  * 合并转换(经 dist 跑实现;返回形状按跨进程契约取——实现层失败直接抛错,
  * error 字段由 ipc 层补,直调恒为成功分支,读它只为失败信息留全上下文)。
@@ -90,6 +95,27 @@ const entryText = async (zip, entryPath) => {
  * @returns {number} 当前长度
  */
 const sizeOf = (arr) => arr.length;
+
+/**
+ * 取 PDF 逐页内容流(解码后)的 base64 串 —— 页面内容即排版结果本身。
+ * 为何不比整文件字节:实测同一份 HTML 连续两次 printToPDF 的整文件字节**必不同**
+ * (Skia 把临时 HTML 的文件名写进 Info 的 /Title,另有 /CreationDate 与 /ModDate,
+ * 三者都随运行时刻变化);页内容流不含这三者,是 pdf 侧可逐字节比的那部分,
+ * 与 docx 侧「解出 word/document.xml 比内容」同一口径。
+ * @param {Buffer} pdfBytes PDF 字节
+ * @returns {Promise<string[]>} 逐页内容流(base64)
+ */
+const pageContentStreams = async (pdfBytes) => {
+  const doc = await PDFDocument.load(new Uint8Array(pdfBytes));
+  return doc.getPages().map((page) => {
+    const contents = page.node.Contents();
+    const streams = contents instanceof PDFArray ? contents.asArray() : [contents];
+    return streams
+      .filter((stream) => stream instanceof PDFRawStream)
+      .map((stream) => Buffer.from(stream.getContents()).toString("base64"))
+      .join("|");
+  });
+};
 
 /**
  * 读回 PDF 大纲标题序列(遍历 First/Next 兄弟链并就地递归;h2/h3 为子节点)
@@ -218,7 +244,7 @@ export async function run() {
     console.log(`[ok] converter:merge ${path.basename(mergeResult.outputPath)} (frontmatter/图片/标题正确)`);
 
     // ---- 3b. 跨目录 Obsidian/frontmatter/page-break/warning 顺序回归 ----
-    await updateSettings({ obsidianCompat: true, aiCleanup: false, toc: false, breakBeforeH1: false });
+    await updateSettings({ obsidian: { compat: true, attachmentFolder: "Attachments" }, aiCleanup: { enabled: false, tidy: false, rewrite: false }, toc: false, breakBeforeH1: false });
     const crossRootA = path.join(dir, "cross-a");
     const crossRootB = path.join(dir, "cross-b");
     const obsidianA = path.join(crossRootA, "obsidian-a.md");
@@ -255,6 +281,88 @@ export async function run() {
     assert(crossPdfBytes.subarray(0, 4).toString("ascii") === "%PDF", "跨目录 PDF 产物缺少 PDF magic");
     assert(/\/Subtype\s*\/Image/.test(crossPdfBytes.toString("latin1")), "跨目录 PDF 产物缺少真实图片对象");
     console.log("[ok] converter:跨目录 Obsidian 图片真实嵌入 docx/pdf");
+
+    // ---- 3c. 分组迁移的产物等价(adr-024 决定要点四):旧平铺形状经 loadSettings
+    //     迁移后,同一份 markdown 的 docx/pdf 产物必须与手写等价新形状完全一致。
+    //     判据落在产物而非设置对象 —— 设置相等只说明输入相同,真正要守的是
+    //     「存量用户升级后拿到的文档与升级前一致」。两侧各自真跑一遍渲染:
+    //     左侧 = 旧 settings.json 走全新模块实例的 loadSettings(迁移路径),
+    //     右侧 = 等值新形状对象(直给)。
+    //     docx 是 zip 容器,跨次运行的字节稳定性未经验证 → 按仓库既有约定解出
+    //     word/document.xml 比内容;pdf 同样不比整文件字节(见 pageContentStreams
+    //     头注:Skia 每次运行都改 /Title 与时间戳),改比逐页内容流。
+    {
+      const { restore: restoreSettingsFile } = await backupSettingsFile();
+      try {
+        const legacyShape = {
+          version: 1, format: "docx", afterConvert: "none", breakBeforeH1: false,
+          outputDir: "", toc: true, tocMode: "static", equationNumbering: true,
+          pageSetup: { ...DEFAULT_SETTINGS.pageSetup },
+          typography: { ...DEFAULT_SETTINGS.typography },
+          pdfCss: "", language: "zh", theme: "system", customPresets: [],
+          // 分组前的平铺五键:aiCleanup 当时是布尔总开关
+          aiCleanup: true, aiCleanupTidy: true, aiCleanupRewrite: false,
+          obsidianCompat: true, obsidianAttachmentFolder: "Attachments",
+        };
+        const legacyExpected = {
+          aiCleanup: { enabled: true, tidy: true, rewrite: false },
+          obsidian: { compat: true, attachmentFolder: "Attachments" },
+        };
+        await fs.mkdir(path.dirname(settingsJsonPath()), { recursive: true });
+        await fs.writeFile(settingsJsonPath(), JSON.stringify(legacyShape), "utf8");
+        const legacyModule = await freshSettingsModule("migrate-legacy-shape");
+        const migrated = legacyModule.loadSettings();
+        assert(
+          JSON.stringify(migrated.aiCleanup) === JSON.stringify(legacyExpected.aiCleanup),
+          `旧平铺三键迁移后的 aiCleanup 应等值,实际 ${JSON.stringify(migrated.aiCleanup)}`,
+        );
+        assert(
+          JSON.stringify(migrated.obsidian) === JSON.stringify(legacyExpected.obsidian),
+          `旧平铺两键迁移后的 obsidian 应等值,实际 ${JSON.stringify(migrated.obsidian)}`,
+        );
+        // 旧键不得留在内存对象里(否则经整对象展开搭车回写,文件永远收敛不到新形状)
+        assert(
+          !("aiCleanupTidy" in migrated) && !("aiCleanupRewrite" in migrated) &&
+            !("obsidianCompat" in migrated) && !("obsidianAttachmentFolder" in migrated),
+          "迁移后不应残留旧平铺键",
+        );
+
+        const equivMd = path.join(dir, "migrate-equivalence.md");
+        await fs.mkdir(path.join(dir, "Attachments"), { recursive: true });
+        await fs.writeFile(path.join(dir, "Attachments", "fig.png"), png1px);
+        // 夹具同时含两条变换链的输入特征:Obsidian 双链/附件嵌入 + AI 清理三档痕迹
+        await fs.writeFile(
+          equivMd,
+          "---\ntitle: 迁移等价\n---\n\n## 小节 🎉\n\n正文见[1]与 “引号”   \n\n[[双链]]与 ![[fig.png]]\n\n-项一\n",
+          "utf8",
+        );
+        const explicitShape = { ...DEFAULT_SETTINGS, ...legacyExpected };
+        // settingsSnapshot 直给,两次转换都不经模块级缓存 → 不污染本段后续场景
+        const legacyDocx = await convertImpl(equivMd, "docx", undefined, undefined, undefined, migrated);
+        const explicitDocx = await convertImpl(equivMd, "docx", undefined, undefined, undefined, explicitShape);
+        const legacyXml = await entryText(await JSZip.loadAsync(await fs.readFile(legacyDocx.outputPath)), "word/document.xml");
+        const explicitXml = await entryText(await JSZip.loadAsync(await fs.readFile(explicitDocx.outputPath)), "word/document.xml");
+        assertBytes(Buffer.from(legacyXml, "utf8"), Buffer.from(explicitXml, "utf8"), "迁移前后 docx 的 word/document.xml");
+        const legacyPdf = await convertImpl(equivMd, "pdf", undefined, undefined, undefined, migrated);
+        const explicitPdf = await convertImpl(equivMd, "pdf", undefined, undefined, undefined, explicitShape);
+        const legacyStreams = await pageContentStreams(await fs.readFile(legacyPdf.outputPath));
+        const explicitStreams = await pageContentStreams(await fs.readFile(explicitPdf.outputPath));
+        assert(
+          legacyStreams.length > 0 && legacyStreams.length === explicitStreams.length,
+          `迁移前后 pdf 页数应一致,实际 ${legacyStreams.length}/${explicitStreams.length}`,
+        );
+        for (const [i, streams] of legacyStreams.entries()) {
+          assertBytes(
+            Buffer.from(streams, "base64"),
+            Buffer.from(explicitStreams[i] ?? "", "base64"),
+            `迁移前后 pdf 第 ${i + 1} 页内容流`,
+          );
+        }
+        console.log("[ok] converter:分组迁移前后同一份 markdown 的 docx/pdf 产物一致");
+      } finally {
+        await restoreSettingsFile();
+      }
+    }
 
     const boundaryInput = path.join(crossRootA, "boundary.md");
     const outsideImage = path.join(dir, "outside.png");
@@ -583,7 +691,7 @@ export async function run() {
     // 大纲标题序列 = h1-h3(h4 不进目录/书签)。
     // 注:pdf-lib save 默认打包对象流,产物字节里 grep 不到 "/Outlines",须经
     // PDFDocument 回读 catalog(与 pdf-bookmarks 段同款做法)。
-    await updateSettings({ obsidianCompat: false, aiCleanup: true, toc: true, tocMode: "field" });
+    await updateSettings({ obsidian: { compat: false, attachmentFolder: "Attachments" }, aiCleanup: { enabled: true, tidy: true, rewrite: true }, toc: true, tocMode: "field" });
     const fieldMd = path.join(dir, "field-toc.md");
     await fs.writeFile(
       fieldMd,

@@ -83,32 +83,33 @@ function splitFrontmatter(md: string): SplitMarkdown {
 
 /**
  * 两个档位开关 → 六个 per-rule 布尔(AI 清理的档位映射单源,勿在别处重拼):
- * - 保守规整(aiCleanupTidy)= 引号破折号归一 / 列表标记补空格 / 行尾空白与空行折叠
- * - 结构改写(aiCleanupRewrite)= 清裸数字引用标记 / 去 emoji / 重整标题层级
+ * - 保守规整(aiCleanup.tidy)= 引号破折号归一 / 列表标记补空格 / 行尾空白与空行折叠
+ * - 结构改写(aiCleanup.rewrite)= 清裸数字引用标记 / 去 emoji / 重整标题层级
  * 纯函数(只读设置、不碰 IO),导出供直测断言「cleanupMarkdown 实际收到的 options」。
- * 注:本函数不含总开关判定 —— 总开关关闭时 preprocessBody 整段跳过,子档位不构成旁路。
+ * 入参只声明两个档位(Pick 而非整个块)——类型上即表达「本函数不判总开关」:
+ * 总开关关闭时 preprocessBody 整段跳过,档位不构成旁路。
  */
 export function aiCleanupOptions(
-  settings: Pick<AppSettings, "aiCleanupTidy" | "aiCleanupRewrite">,
+  settings: Pick<AppSettings["aiCleanup"], "tidy" | "rewrite">,
 ): AiCleanupOptions {
   return {
-    normalizeQuotes: settings.aiCleanupTidy,
-    fixListMarkers: settings.aiCleanupTidy,
-    trimBlankLines: settings.aiCleanupTidy,
-    stripCitationMarkers: settings.aiCleanupRewrite,
-    stripEmoji: settings.aiCleanupRewrite,
-    fixHeadingLevels: settings.aiCleanupRewrite,
+    normalizeQuotes: settings.tidy,
+    fixListMarkers: settings.tidy,
+    trimBlankLines: settings.tidy,
+    stripCitationMarkers: settings.rewrite,
+    stripEmoji: settings.rewrite,
+    fixHeadingLevels: settings.rewrite,
   };
 }
 
 /** 只处理正文,避免把 frontmatter 的 metadata 送进 Obsidian/AI 规则。 */
 function preprocessBody(body: string, settings: AppSettings): string {
   let out = body;
-  if (settings.obsidianCompat) {
-    out = normalizeObsidian(out, { attachmentFolder: settings.obsidianAttachmentFolder });
+  if (settings.obsidian.compat) {
+    out = normalizeObsidian(out, { attachmentFolder: settings.obsidian.attachmentFolder });
   }
-  if (settings.aiCleanup) {
-    out = cleanupMarkdown(out, aiCleanupOptions(settings));
+  if (settings.aiCleanup.enabled) {
+    out = cleanupMarkdown(out, aiCleanupOptions(settings.aiCleanup));
   }
   return out;
 }

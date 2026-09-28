@@ -33,11 +33,8 @@ export function bindAppGroup(): void {
     state.settings.toc = d.toc;
     state.settings.tocMode = d.tocMode;
     state.settings.equationNumbering = d.equationNumbering;
-    state.settings.aiCleanup = d.aiCleanup;
-    state.settings.aiCleanupTidy = d.aiCleanupTidy;
-    state.settings.aiCleanupRewrite = d.aiCleanupRewrite;
-    state.settings.obsidianCompat = d.obsidianCompat;
-    state.settings.obsidianAttachmentFolder = d.obsidianAttachmentFolder;
+    state.settings.aiCleanup = { ...d.aiCleanup };
+    state.settings.obsidian = { ...d.obsidian };
     state.settings.afterConvert = d.afterConvert;
     state.settings.outputDir = d.outputDir;
     state.settings.pdfCss = d.pdfCss;
@@ -53,11 +50,8 @@ export function bindAppGroup(): void {
       toc: state.settings.toc,
       tocMode: state.settings.tocMode,
       equationNumbering: state.settings.equationNumbering,
-      aiCleanup: state.settings.aiCleanup,
-      aiCleanupTidy: state.settings.aiCleanupTidy,
-      aiCleanupRewrite: state.settings.aiCleanupRewrite,
-      obsidianCompat: state.settings.obsidianCompat,
-      obsidianAttachmentFolder: state.settings.obsidianAttachmentFolder,
+      aiCleanup: { ...state.settings.aiCleanup },
+      obsidian: { ...state.settings.obsidian },
       afterConvert: state.settings.afterConvert,
       outputDir: state.settings.outputDir,
       pdfCss: state.settings.pdfCss,

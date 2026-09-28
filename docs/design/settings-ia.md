@@ -67,11 +67,11 @@
 5. **H1 前分页** breakBeforeH1（switch）——最粗粒度的结构效果，收尾。
 
 ### 05 转换（合并原 09 AI/Obsidian + 07 输出；**两种预设都不含**，组头挂「不入预设」角标）
-1. **AI 清理** aiCleanup（switch + 说明）——转换前清理 AI 生成的 Markdown。凹陷子块内含两个分档（总开关关闭时灰禁，见 §3 规则 1 的唯一例外）：
-   - **保守规整** aiCleanupTidy（switch）——统一引号与破折号、补齐列表标记后的空格、清理行尾空白与多余空行；不改内容。
-   - **结构改写** aiCleanupRewrite（switch）——删除 `[1]` 式引用标记与 emoji、统一标题层级；**会改动正文内容**，故与前者分档而非合并成一个开关。
-2. **Obsidian 兼容** obsidianCompat（switch + 说明）——将 `[[双链]]`、`![[嵌入]]` 转为标准 Markdown 链接。
-3. **Obsidian 附件子文件夹** obsidianAttachmentFolder（文本）——与上面两项同族，收尾清理设置。
+1. **AI 清理** aiCleanup.enabled（switch + 说明）——转换前清理 AI 生成的 Markdown。凹陷子块内含两个分档（总开关关闭时灰禁，见 §3 规则 1 的唯一例外）：
+   - **保守规整** aiCleanup.tidy（switch）——统一引号与破折号、补齐列表标记后的空格、清理行尾空白与多余空行；不改内容。
+   - **结构改写** aiCleanup.rewrite（switch）——删除 `[1]` 式引用标记与 emoji、统一标题层级；**会改动正文内容**，故与前者分档而非合并成一个开关。
+2. **Obsidian 兼容** obsidian.compat（switch + 说明）——将 `[[双链]]`、`![[嵌入]]` 转为标准 Markdown 链接。
+3. **Obsidian 附件子文件夹** obsidian.attachmentFolder（文本）——与上面两项同族，收尾清理设置。
 4. **输出目录** outputDir（path-chip + 更改…；说明「留空则保存到源文件所在目录」）。
 5. **导出后行为** afterConvert（seg：无操作/打开所在文件夹/打开文件）——先定去哪，再定之后干嘛。
 6. **PDF 自定义 CSS** pdfCss（textarea，挂「仅 PDF」角标）——生成期才起作用的原始样式，沉底。
@@ -121,7 +121,7 @@
 | 03 高级 · 章节/题注/公式编号 | 3 项 | 04 编号与目录 · 1–3 | 聚合出折叠层，成组 |
 | 03 高级 · 自动目录 | toc | 04 · 第 4 | 编号之后；下挂 tocMode |
 | 03 高级 · H1 前分页 | breakBeforeH1 | 04 · 第 5 | **走出折叠层** |
-| 09 AI/Obsidian | aiCleanup/obsidianCompat/obsidianAttachmentFolder | 05 转换 · 1–3 | 合并入转换组，置顶 |
+| 09 AI/Obsidian | aiCleanup/obsidianCompat/obsidianAttachmentFolder | 05 转换 · 1–3 | 合并入转换组，置顶；键名随后按 adr-024 收敛为 `aiCleanup` / `obsidian` 两块 |
 | 07 输出 · PDF CSS | pdfCss | 05 转换 · 第 6 | 挂「仅 PDF」角标 |
 | 08 应用 · 主题 / 语言 | theme / language | 06 应用 | 不变；两种预设都不含，组头挂「不入预设」 |
 | 04 应用 · 完成后弹窗 | （契约已删） | — | 场景被 afterConvert 覆盖，移除 |

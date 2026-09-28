@@ -158,7 +158,7 @@ export async function run() {
       /** @type {Error | undefined} */
       let error;
       try {
-        await prepareMarkdown(big, { obsidianCompat: false, aiCleanup: false, obsidianAttachmentFolder: "" });
+        await prepareMarkdown(big, { obsidian: { compat: false, attachmentFolder: "" }, aiCleanup: { enabled: false, tidy: false, rewrite: false } });
       } catch (err) {
         error = /** @type {Error} */ (err);
       }
@@ -166,7 +166,7 @@ export async function run() {
       // 正常文件不受影响
       const small = path.join(dir, "small.md");
       await fs.writeFile(small, "# 小\n\n正文\n", "utf8");
-      const prepared = await prepareMarkdown(small, { obsidianCompat: false, aiCleanup: false, obsidianAttachmentFolder: "" });
+      const prepared = await prepareMarkdown(small, { obsidian: { compat: false, attachmentFolder: "" }, aiCleanup: { enabled: false, tidy: false, rewrite: false } });
       assert(prepared.markdown.includes("# 小"), "正常文件应正常准备");
       console.log(`[ok] input-budget:prepareMarkdown 单文件上限 ${MAX_SOURCE_FILE_BYTES} 生效(拒绝不截断)`);
     }

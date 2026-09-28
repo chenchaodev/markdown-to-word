@@ -17,8 +17,11 @@
  * - loadSettings:JSON parse 失败 / 非 pageSetup 形状非法(isValidSettings)→ 返回 DEFAULT_SETTINGS 引用
  *   (静默不写盘);pageSetup 非法只迁移该块并保留其它字段;旧文件(缺 toc/outputDir/typography)
  *   → 其余字段保留 + 兜底默认,不崩溃
- * - AI 清理两档(aiCleanupTidy/aiCleanupRewrite,adr-021):键白名单 / 非布尔回退默认 /
- *   落盘往返 / 预设导入(只写 customPresets)不丢档位 / 旧文件缺键字段级兜底默认
+ * - 渲染前变换两组(aiCleanup:总开关+两档,adr-021;obsidian:兼容+附件目录;adr-024 分组):
+ *   键白名单 / 块内非布尔逐字段回退默认 / 落盘往返 /
+ *   预设导入(只写 customPresets)不丢档位 / 旧文件缺整块字段级兜底默认
+ * - 旧形状迁移(adr-024 决定要点四):旧平铺五键 → 新嵌套两块取值等值、旧键不残留
+ *   且不随写盘回写、新旧同存以新键为准、新旧两形状都能读入、部分新形状逐字段兜底
  * - settingsFilePath = app.getPath("userData")/settings.json(无注入点)→ 测试备份真实文件、
  *   finally 恢复;模块级 settingsCache 惰性缓存 → 每场景用 query-string 动态 import 取
  *   全新模块实例(实证:Node ESM 同文件不同 query = 独立实例,缓存按 URL 键;
@@ -202,8 +205,8 @@ export async function run() {
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
-    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter", "watermark", "aiCleanup", "aiCleanupTidy", "aiCleanupRewrite", "obsidianCompat", "obsidianAttachmentFolder"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 21 键(页眉页脚自定义 headerFooter + 文字水印 watermark + 目录带页码(adr-007) tocMode + AI 清理总开关 aiCleanup 与两个分档 aiCleanupTidy/aiCleanupRewrite(adr-021) + Obsidian 兼容 obsidianCompat/obsidianAttachmentFolder)");
+    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter", "watermark", "aiCleanup", "obsidian"];
+    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 18 键(页眉页脚 headerFooter + 文字水印 watermark + 目录带页码(adr-007) tocMode + 渲染前变换两组 aiCleanup(总开关+两档,adr-021)与 obsidian(兼容+附件目录),adr-024 分组)");
     for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));
@@ -227,17 +230,17 @@ export async function run() {
     const r9h = await mod.updateSettings({ theme: 123 });
     assert(r9h.theme === "system", "theme 非字符串应回退默认 system");
 
-    // ---- 5d. AI 清理两档(adr-021):合法保留 / 非布尔回退默认 / 落盘往返 /
-    //          预设导入(只写 customPresets)不丢档位 / 旧文件缺键兜底默认 ----
-    const rTier = await mod.updateSettings({ aiCleanup: true, aiCleanupTidy: false, aiCleanupRewrite: false });
+    // ---- 5d. 渲染前变换两组(adr-021 两档 + adr-024 分组):合法保留 / 非布尔回退默认 /
+    //          落盘往返 / 预设导入(只写 customPresets)不丢档位 / 旧文件缺键兜底默认 ----
+    const rTier = await mod.updateSettings({ aiCleanup: { enabled: true, tidy: false, rewrite: false } });
     assert(
-      rTier.aiCleanupTidy === false && rTier.aiCleanupRewrite === false,
+      rTier.aiCleanup.tidy === false && rTier.aiCleanup.rewrite === false,
       "两档合法的 false 应保留(结构改写可单独关)",
     );
     const tierDisk = JSON.parse(await fs.readFile(settingsFile, "utf8"));
     assert(
-      tierDisk.aiCleanupTidy === false && tierDisk.aiCleanupRewrite === false,
-      "两档应写入 settings.json(键白名单已含)",
+      JSON.stringify(tierDisk.aiCleanup) === JSON.stringify({ enabled: true, tidy: false, rewrite: false }),
+      `AI 清理整块应写入 settings.json(键白名单已含),实际 ${JSON.stringify(tierDisk.aiCleanup)}`,
     );
     // 预设导入只经 updateSettings({ customPresets })(见 ipc/register.ts 导入分支),
     // 档位不属任何预设 → 导入既不改写也不丢值
@@ -249,15 +252,20 @@ export async function run() {
       }],
     });
     assert(
-      afterPresetImport.aiCleanupTidy === false && afterPresetImport.aiCleanupRewrite === false,
+      afterPresetImport.aiCleanup.tidy === false && afterPresetImport.aiCleanup.rewrite === false,
       "导入预设不得丢失 AI 清理两档(两档不入预设)",
     );
-    const rTierBad = await mod.updateSettings({ aiCleanupTidy: "yes", aiCleanupRewrite: 1 });
+    const rTierBad = await mod.updateSettings({ aiCleanup: { enabled: "yes", tidy: 1 } });
     assert(
-      rTierBad.aiCleanupTidy === true && rTierBad.aiCleanupRewrite === true,
-      "两档非布尔应回退默认(默认皆开)",
+      JSON.stringify(rTierBad.aiCleanup) === JSON.stringify({ enabled: false, tidy: true, rewrite: true }),
+      `块内非布尔应逐字段回退默认(总开关关、两档开),实际 ${JSON.stringify(rTierBad.aiCleanup)}`,
     );
-    // 旧 settings.json 缺这两个键 → 字段级兜底默认,不整体回退、不报错
+    const rObsidianBad = await mod.updateSettings({ obsidian: { compat: "yes", attachmentFolder: 3 } });
+    assert(
+      JSON.stringify(rObsidianBad.obsidian) === JSON.stringify({ compat: false, attachmentFolder: "Attachments" }),
+      `obsidian 块内非布尔/非字符串应逐字段回退默认,实际 ${JSON.stringify(rObsidianBad.obsidian)}`,
+    );
+    // 旧 settings.json 缺这两组键 → 字段级兜底默认,不整体回退、不报错
     await fs.writeFile(
       settingsFile,
       JSON.stringify({
@@ -269,23 +277,134 @@ export async function run() {
     const mLegacyTier = await freshModule("settings-legacy-ai-tiers");
     const legacyTier = mLegacyTier.loadSettings();
     assert(
-      legacyTier.aiCleanupTidy === true && legacyTier.aiCleanupRewrite === true,
-      "旧 settings.json 缺两档时应兜底默认(开),不得报错或整体回退",
+      JSON.stringify(legacyTier.aiCleanup) === JSON.stringify({ enabled: false, tidy: true, rewrite: true }),
+      `旧 settings.json 缺 aiCleanup 整块时应兜底默认,实际 ${JSON.stringify(legacyTier.aiCleanup)}`,
+    );
+    assert(
+      legacyTier.obsidian.compat === false && legacyTier.obsidian.attachmentFolder === "Attachments",
+      `旧 settings.json 缺 obsidian 整块时应兜底默认,实际 ${JSON.stringify(legacyTier.obsidian)}`,
     );
     assert(
       legacyTier.format === "docx" && legacyTier.pageSetup.paper === "A4",
-      "旧文件缺两档不应牵连其它字段",
+      "旧文件缺两组不应牵连其它字段",
     );
-    // 形状校验:两档存在但非布尔 → 整文件判非法(与 aiCleanup 同一口径)
+    // 形状校验:分组块存在但字段类型非法 → 整文件判非法(adr-024 决定要点一:分组
+    // 不得把「任一字段非法 → 整文件回退」静默放宽成字段级兜底)
+    assert(
+      mLegacyTier.isValidSettings({ ...legacyTier, aiCleanup: { ...legacyTier.aiCleanup, tidy: "yes" } }) === false,
+      "aiCleanup.tidy 非布尔应使 isValidSettings 判非法",
+    );
+    assert(
+      mLegacyTier.isValidSettings({ ...legacyTier, obsidian: { ...legacyTier.obsidian, attachmentFolder: 3 } }) === false,
+      "obsidian.attachmentFolder 非字符串应使 isValidSettings 判非法",
+    );
+    assert(
+      mLegacyTier.isValidSettings({ ...legacyTier, aiCleanup: "on" }) === false,
+      "aiCleanup 既非对象也非旧布尔形状应判非法",
+    );
+    assert(
+      mLegacyTier.isValidSettings({ ...legacyTier, obsidian: false }) === false,
+      "obsidian 非对象应判非法",
+    );
+    // 旧平铺形状(分组前)仍判合法 —— 迁移读入能力保留一个版本
+    assert(
+      mLegacyTier.isValidSettings({ ...legacyTier, aiCleanup: true, aiCleanupTidy: true, aiCleanupRewrite: false, obsidianCompat: true, obsidianAttachmentFolder: "Assets" }) === true,
+      "旧平铺形状应仍判合法(迁移读入路径不得被形状校验挡在门外)",
+    );
+    // 旧平铺键类型非法 → 整文件判非法(与分组前同一口径,不得因改名而放宽)
     assert(
       mLegacyTier.isValidSettings({ ...legacyTier, aiCleanupTidy: "yes" }) === false,
-      "aiCleanupTidy 非布尔应使 isValidSettings 判非法",
+      "旧 aiCleanupTidy 非布尔应使 isValidSettings 判非法",
     );
     assert(
-      mLegacyTier.isValidSettings({ ...legacyTier, aiCleanupRewrite: 0 }) === false,
-      "aiCleanupRewrite 非布尔应使 isValidSettings 判非法",
+      mLegacyTier.isValidSettings({ ...legacyTier, obsidianAttachmentFolder: 7 }) === false,
+      "旧 obsidianAttachmentFolder 非字符串应使 isValidSettings 判非法",
     );
-    console.log("[ok] settings:AI 清理两档 合法保留/非布尔回退/落盘往返/预设导入不丢/旧文件缺键兜底 断言通过");
+    console.log("[ok] settings:渲染前变换两组 合法保留/块内非布尔回退/落盘往返/预设导入不丢/旧文件缺键兜底/新旧两形状形状校验 断言通过");
+
+    // ---- 5e. 旧平铺形状 → 新嵌套形状的迁移(adr-024 决定要点四):取值等值迁移、
+    //          旧键不残留、新键优先于同存的旧键、两形状都能读入 ----
+    {
+      const legacyShapeRaw = {
+        version: 1, format: "docx", afterConvert: "none", breakBeforeH1: false,
+        outputDir: "", toc: true, tocMode: "static", equationNumbering: true,
+        pageSetup: { ...DEFAULT_PAGE_SETUP },
+        aiCleanup: true, aiCleanupTidy: true, aiCleanupRewrite: false,
+        obsidianCompat: true, obsidianAttachmentFolder: "Assets",
+      };
+      await fs.writeFile(settingsFile, JSON.stringify(legacyShapeRaw), "utf8");
+      const mLegacyShape = await freshModule("settings-legacy-shape");
+      const migrated = mLegacyShape.loadSettings();
+      assert(
+        JSON.stringify(migrated.aiCleanup) === JSON.stringify({ enabled: true, tidy: true, rewrite: false }),
+        `旧平铺五键应迁移为等值新对象,实际 ${JSON.stringify(migrated.aiCleanup)}`,
+      );
+      assert(
+        JSON.stringify(migrated.obsidian) === JSON.stringify({ compat: true, attachmentFolder: "Assets" }),
+        `旧 obsidian 两键应迁移为等值新对象,实际 ${JSON.stringify(migrated.obsidian)}`,
+      );
+      assert(
+        !("aiCleanupTidy" in migrated) && !("aiCleanupRewrite" in migrated) &&
+          !("obsidianCompat" in migrated) && !("obsidianAttachmentFolder" in migrated),
+        "迁移结果不得残留旧平铺键(否则搭车回写、文件收敛不到新形状)",
+      );
+      // 旧键不得被写回 settings.json(迁移是单向收敛,不是双写)
+      await mLegacyShape.updateSettings({ toc: false });
+      const afterLegacyWrite = JSON.parse(await fs.readFile(settingsFile, "utf8"));
+      assert(
+        !("aiCleanupTidy" in afterLegacyWrite) && !("obsidianCompat" in afterLegacyWrite),
+        `旧平铺键不应随写盘回写,实际键集 ${JSON.stringify(Object.keys(afterLegacyWrite))}`,
+      );
+      assert(
+        JSON.stringify(afterLegacyWrite.aiCleanup) === JSON.stringify({ enabled: true, tidy: true, rewrite: false }),
+        "旧文件迁移后的取值应在写盘后保持不变",
+      );
+      // 新键与旧键同存 → 以新键为准(新键是本版本写出的权威形状)
+      await fs.writeFile(
+        settingsFile,
+        JSON.stringify({
+          ...legacyShapeRaw,
+          aiCleanup: { enabled: false, tidy: false, rewrite: true },
+          obsidian: { compat: false, attachmentFolder: "New" },
+        }),
+        "utf8",
+      );
+      const mBoth = await freshModule("settings-both-shapes");
+      const both = mBoth.loadSettings();
+      assert(
+        JSON.stringify(both.aiCleanup) === JSON.stringify({ enabled: false, tidy: false, rewrite: true }) &&
+          JSON.stringify(both.obsidian) === JSON.stringify({ compat: false, attachmentFolder: "New" }),
+        `新旧两形状同存时应以新键为准,实际 ${JSON.stringify(both.aiCleanup)}/${JSON.stringify(both.obsidian)}`,
+      );
+      // 新形状原样接受(不做任何改写)
+      await fs.writeFile(
+        settingsFile,
+        JSON.stringify({ ...legacyShapeRaw, aiCleanup: { enabled: true, tidy: false, rewrite: true }, obsidian: { compat: true, attachmentFolder: "Z" } }),
+        "utf8",
+      );
+      const mNewShape = await freshModule("settings-new-shape");
+      const newShape = mNewShape.loadSettings();
+      assert(
+        JSON.stringify(newShape.aiCleanup) === JSON.stringify({ enabled: true, tidy: false, rewrite: true }) &&
+          JSON.stringify(newShape.obsidian) === JSON.stringify({ compat: true, attachmentFolder: "Z" }),
+        "纯新形状应原样读入",
+      );
+      // 部分字段的新形状 → 缺位字段按默认补(字段级兜底,不整文件回退);
+      // 此处 aiCleanup 被新对象整体覆盖,旧的布尔总开关随之消失,故 enabled 走默认
+      await fs.writeFile(
+        settingsFile,
+        JSON.stringify({ ...legacyShapeRaw, aiCleanup: { rewrite: true }, obsidian: { compat: true } }),
+        "utf8",
+      );
+      const mPartial = await freshModule("settings-partial-new-shape");
+      const partial = mPartial.loadSettings();
+      assert(
+        JSON.stringify(partial.aiCleanup) === JSON.stringify({ enabled: false, tidy: true, rewrite: true }) &&
+          JSON.stringify(partial.obsidian) === JSON.stringify({ compat: true, attachmentFolder: "Assets" }),
+        `新形状缺字段应逐字段兜底(缺位用旧键/默认补),实际 ${JSON.stringify(partial.aiCleanup)}/${JSON.stringify(partial.obsidian)}`,
+      );
+      console.log("[ok] settings:旧平铺形状 → 新嵌套形状迁移(等值取值/旧键不残留/新键优先/两形状可读/缺字段兜底)断言通过");
+    }
 
     // ---- 6. 损坏 settings.json(JSON parse 失败)→ DEFAULT_SETTINGS,静默不写盘 ----
     await fs.writeFile(settingsFile, "{broken json!!", "utf8");
