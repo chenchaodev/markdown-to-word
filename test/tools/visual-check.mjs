@@ -337,8 +337,6 @@ async function main() {
   );
   await shot(win, "9-convert-done");
 
-  win.destroy();
-
   // ⑩ 关于窗:独立 BrowserWindow + 独立 preload 桩(见 visual-about-preload.cjs)。
   // 不走 menu.ts 的 showAboutDialog:它要 getMainWindow / ipcMain / nativeTheme,
   // 截图工具没有 main 侧上下文,且其底色读宿主深浅(不可复现,见 ABOUT_BG 注记)。
@@ -393,6 +391,10 @@ async function main() {
   const openedUrls = await aboutExec(`JSON.stringify(window.__vcAbout.openedUrls())`);
   console.log(`[ui:shots] about openExternal stubbed ${openedUrls}`);
   about.destroy();
+  // 主窗必须**最后**销毁:Windows 上 Electron 最后一个窗口关闭即触发
+  // window-all-closed → 应用退出,此时再建关于窗会与退出竞态,
+  // 表现为 loadFile 报 ERR_FAILED(-2)(产物与路径均正常,易误判成构建问题)
+  win.destroy();
 
   return 0;
 }
