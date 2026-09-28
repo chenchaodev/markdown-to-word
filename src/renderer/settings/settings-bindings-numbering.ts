@@ -15,7 +15,7 @@ import {
   tocModeSelect,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { persistSettings, persistTypography } from "./settings-panel.js";
+import { persistSettings, persistTypography, syncTocModeVisibility } from "./settings-panel.js";
 
 /** 编号与目录组全部控件接线(bindSettingsEvents 编排调用)。 */
 export function bindNumberingGroup(): void {
@@ -28,6 +28,8 @@ export function bindNumberingGroup(): void {
   tocInput.addEventListener("change", () => {
     if (state.hydratingSettings) return;
     state.settings.toc = tocInput.checked;
+    // 总开关一动即重算模式下拉的显隐(整块移除,非灰禁);tocMode 的值不受影响
+    syncTocModeVisibility();
     persistSettings({ toc: state.settings.toc });
   });
 

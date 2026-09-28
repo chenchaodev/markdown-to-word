@@ -26,6 +26,9 @@
  * (6) AI 清理两个分档(保守规整 / 结构改写):置灰跟随总开关 —— 关闭时控件
  *     disabled 且出现可见说明行(不只靠颜色),重新打开后恢复各自上次的选择;
  *     源契约侧锁定「分档落在 05 转换组、排在总开关之下、初始态即 disabled」。
+ * (7) 目录模式下拉 tocMode:随自动目录开关整块移除(隐藏而非灰禁)—— 关闭时
+ *     不可见也不可交互,重新打开恢复上次选择;源契约侧锁定总开关 change 与回填
+ *     两条路径都重算显隐,且 .hidden 保住 !important(压得过行内 display:block)。
  *
  * DOM 侧用最小 stub 直接驱动 dist renderer 模块(与 convert-command-lock 段同一套
  * 元素表约定);源码契约侧只断言「某元素的 data-i18n 缺席」这类静态事实。
@@ -479,6 +482,66 @@ export async function run() {
       "回填路径(applySettingsToControls)必须同步分档可用性(加载/恢复默认后置灰态正确)",
     );
 
+    // (7) 目录模式下拉 tocMode:随自动目录开关整块移除(行为)+ 两处接线齐全(源契约)
+    //     灰禁会留下一个可点、但不生效的下拉(用户能选一个不会生效的模式),
+    //     故按 settings-ia §3 走「模式不满足即整块移除」那一路。
+    assert(
+      typeof panel.syncTocModeVisibility === "function",
+      "settings-panel 应导出 syncTocModeVisibility(目录下拉显隐单一来源)",
+    );
+    const tocEl = dom.elementFor("toc");
+    const tocModeEl = dom.elementFor("tocMode");
+    // stub 元素的 classList 初值带 hidden,先摘掉以免正态断言测的是 stub 而非本函数
+    tocModeEl.classList.remove("hidden");
+    tocModeEl.value = "field";
+    tocEl.checked = false;
+    panel.syncTocModeVisibility();
+    assert(
+      tocModeEl.classList.contains("hidden"),
+      "自动目录关闭时目录模式下拉应整块移除(display:none ⇒ 既不可见也不可聚焦/交互)",
+    );
+    assert(
+      tocModeEl.value === "field",
+      "收起不得丢掉上次选的目录模式(重新打开自动目录即恢复)",
+    );
+    tocEl.checked = true;
+    panel.syncTocModeVisibility();
+    assert(
+      !tocModeEl.classList.contains("hidden"),
+      "自动目录开启后目录模式下拉应重新出现",
+    );
+    assert(
+      tocModeEl.value === "field",
+      "展开后目录模式应仍是收起前那次选择(不重置)",
+    );
+
+    // 源契约:两条接线路径(总开关 change / 回填)都要重算显隐,否则关掉自动目录
+    // 后下拉仍在,或加载 / 恢复默认后显隐与设置不一致
+    const numberingBindingsSource = fs.readFileSync(
+      path.join(repoRoot, "src", "renderer", "settings", "settings-bindings-numbering.ts"),
+      "utf8",
+    );
+    assert(
+      /tocInput\.addEventListener\("change", \(\) => \{[\s\S]{0,400}?syncTocModeVisibility\(\)/.test(
+        numberingBindingsSource,
+      ),
+      "自动目录开关的 change 接线里必须同步模式下拉的显隐(否则关掉后下拉仍可交互)",
+    );
+    assert(
+      /tocModeSelect\.value = v\.tocMode;[\s\S]{0,200}?syncTocModeVisibility\(\)/.test(panelSource),
+      "回填路径(applySettingsToControls)必须同步模式下拉的显隐(加载 / 恢复默认后显隐与设置一致)",
+    );
+    // 收起靠 .hidden 工具类压过 index.html 给该 select 的行内 `display: block`;
+    // 那条 !important 一旦被摘掉,门控会静默失效(行内样式赢),故在此锁住
+    const baseCss = fs.readFileSync(
+      path.join(repoRoot, "src", "renderer", "style", "base.css"),
+      "utf8",
+    );
+    assert(
+      /\.hidden\s*\{[^}]*display:\s*none\s*!important/.test(baseCss),
+      ".hidden 必须带 !important —— tocMode 的行内 display:block 优先级高于普通类规则,摘掉后收起门控会静默失效",
+    );
+
     const appBindingsSource = fs.readFileSync(
       path.join(repoRoot, "src", "renderer", "settings", "settings-bindings-app.ts"),
       "utf8",
@@ -505,7 +568,7 @@ export async function run() {
       "批量条目取消图标应为 --mut 弱化色",
     );
 
-    console.log("[ok] ui-interaction-guards:队列行键盘边界与忙碌两态 / 动态节点不被覆盖 / 复制反馈复位与读屏播报 / 完成态收束重放 / 取消中性态与批量标题 / aria-busy / AI 清理分档置灰跟随总开关 断言通过");
+    console.log("[ok] ui-interaction-guards:队列行键盘边界与忙碌两态 / 动态节点不被覆盖 / 复制反馈复位与读屏播报 / 完成态收束重放 / 取消中性态与批量标题 / aria-busy / AI 清理分档置灰跟随总开关 / 目录模式下拉随总开关收起 断言通过");
   } finally {
     dom.restore();
   }

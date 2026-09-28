@@ -239,6 +239,8 @@ export function applySettingsToControls(): void {
   breakBeforeH1Input.checked = v.breakBeforeH1;
   tocInput.checked = v.toc;
   tocModeSelect.value = v.tocMode;
+  // 模式下拉的显隐跟随总开关(回填与总开关切换共用同一函数,单一来源)
+  syncTocModeVisibility();
   equationNumberingInput.checked = v.equationNumbering;
   aiCleanupInput.checked = v.aiCleanup;
   aiCleanupTidyInput.checked = v.aiCleanupTidy;
@@ -359,6 +361,20 @@ export function syncAiCleanupTierAvailability(): void {
   aiCleanupTidyInput.disabled = !enabled;
   aiCleanupRewriteInput.disabled = !enabled;
   aiCleanupTiersLocked?.classList.toggle("hidden", enabled);
+}
+
+/**
+ * 目录模式下拉的显隐:仅 toc 开启时可见(设置抽屉 04 组),关闭时**整块移除**
+ * 而非灰禁 —— 模式不满足就摆一个可点的下拉,用户能选一个不会生效的模式。
+ * 走 .hidden 工具类而非直接切 style.display:index.html 给该 select 留了行内
+ * `display: block`,而 .hidden 带 !important(见 base.css 注释),压得住它;
+ * 反过来在 TS 里写 display 字面量等于把展示决策复制一份到逻辑层,违反
+ * 「走 CSS 单一来源」。display:none 已把控件移出焦点序与无障碍树,无需 inert。
+ * 隐藏不动 select.value —— toc 重新打开时恢复上次选择(与分档灰禁同理由)。
+ * 回填与总开关切换共用本函数(单一来源)。
+ */
+export function syncTocModeVisibility(): void {
+  tocModeSelect.classList.toggle("hidden", !tocInput.checked);
 }
 
 /** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 seg 选中值)。 */
