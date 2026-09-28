@@ -4,6 +4,7 @@
 
 ## 相关 ADR
 
+- `docs/adr/adr-027`：**窄契约携带主开关**（取代 adr-026 的决定要点一）。`aiCleanup` 侧契约带 `enabled`，否则主开关判定只能留在 main 侧、main 仍枚举变换键 → 枚举点变三处，正是 adr-026 要消灭的东西。**两层各守各的**：`aiCleanupOptions`（档位映射）的入参**仍不含** `enabled`（adr-024 要点二的类型层延续），而分派函数的契约可以带。三重门控仍是三处
 - `docs/adr/adr-026`：**阶段契约落在 core 的分派点** —— 分派函数与窄契约类型都进 `core/markdown/`，main 侧退化为 IO / frontmatter 薄壳。**窄契约里没有总开关**（`aiCleanup` 只含 `tidy` / `rewrite`）。**退出条件已取反**：该守的不是「`core/convert.ts` 引用了变换设置」，而是「渲染层不得枚举变换类设置」，且要接成门禁并自证会红。**同时更正 adr-024 备选方案第 3 条的适用范围**（那条否决写宽了，理由描述的是 `prepareMarkdown` 而非 `preprocessBody`）
 - `docs/adr/adr-024`：**分组键的校验口径必须与今天等价**（`isValidSettings` 整文件拒绝 + 加载兜底两处都要补，照抄 sanitizer 范式会静默放宽成字段级兜底）· **双重门控不得压成一层**（三处门控是 adr-021 写死的不变式）· **档位是派生量，映射表不得上浮** · **迁移双向可逆** · **新落点不得 import 任何 `node:*`**
 - `docs/adr/adr-025`：**区间判据不合一** —— 只归位真正逐字相同的 `SourceRange` 与合并循环；节点集合收集、两套 masking、两处切行口径保持独立。理由是两侧对反斜杠转义的角色相反（AI 清理拿它当保护对象，预检恰要看它），以及预检的第二个节点集合刻意不含 `code`/`inlineCode`
