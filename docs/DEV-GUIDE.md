@@ -48,7 +48,7 @@
 | 覆盖率 | `test:coverage` `check:coverage-zero` | `verify:ci` 链 |
 | renderer 覆盖率报告 | `report:coverage-renderer` | 仅本地手动 |
 | 冒烟 | `test:smoke` | `verify:ci` 链 |
-| 几何 | `check:geometry` | `verify:ci` 链 |
+| 几何 | `check:geometry` | `verify:ci` 链。判据是**结构不变式**而非像素快照（后者会因平台/主题/字体差异假红）：主窗舞台的槽位/视口/响应式档位，**外加设置抽屉的 40 个控件**（存在且可见 · 组归属 · 组内视觉序 · 无水平裁切/越界 · 三种门控形态的收起与灰禁双向）。选择器与控件清单的单源在 `test/tools/geometry/geometry-spec.mjs` |
 | 工程契约 / 层向 / 引用固定 / 段编号 / 阶段契约枚举点 | `check:contract` `check:contract:selftest` `check:boundary` `check:pinned-actions` `check:test-numbering` `check:transform-dispatch` | `verify:ci` 链;其中 `check:contract` 与 `check:pinned-actions` 在两个 workflow 里另有 `npm ci` 之前的 fail-fast 步骤(同一入口,非第二份清单)。`check:transform-dispatch` 守的**取反不变量**:渲染层与 main 转换层薄壳不得枚举渲染前变换类设置,且该类设置的枚举点恰 2 处且都在 `core/markdown/`(见 `docs/adr/adr-026` 与 `adr-027`) |
 | 归档索引 | `check:archive-index` | `verify:ci` 链 |
 | 归档索引(重生成) | `gen:archive-index` | 仅本地手动 |
