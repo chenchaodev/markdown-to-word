@@ -18,8 +18,9 @@
  * - mermaid:docx 内嵌 PNG(2x);pdf 内联 SVG(矢量)。→ mermaid.test.js
  * - 目录:docx 静态目录(打开即见、可点击跳转、无页码);pdf 目录同开关。
  *   → toc-caption.test.js
- * - 编号开关(headingNumbering / captionNumbering):本层只透传显式项,两侧 render
- *   按 `options.X ?? typography.X` 解析(见两字段 JSDoc);两字段在生产侧零注入,
+ * - 编号开关(headingNumbering / captionNumbering):**不在生产 ConvertContext 里**,
+ *   它们连同 imageBudget 收在第 4 参 ConvertTestOverrides(生产零写入者,见该类型注释)。
+ *   本层只透传显式项,两侧 render 按 `options.X ?? typography.X` 解析(见两字段 JSDoc);
  *   实际生效的只有 typography.X 与 render 构造默认两档。
  * - 脚注:docx 写 footnotes.xml 部件;pdf 渲染为 HTML 脚注。→ footnotes.test.js
  */
@@ -85,8 +86,6 @@ export interface ConvertContext {
    * 故该字段在真实转换里恒为 undefined、截止时间机制目前只有测试在用。
    */
   deadline?: number;
-  /** 图片资源预算覆盖(缺省取 core/resource-limits.ts 默认值);生产零注入 / 仅测试注入 */
-  imageBudget?: ImageResourceBudget;
   /** 图片解析回调(契约单源 core/image-resolver.ts):返回 null 表示跳过该图
    *  (缺失检查并入此失败路径,单次 IO);exists 轻量存在性通道可选 */
   imageResolver?: ImageResolver;
@@ -113,22 +112,6 @@ export interface ConvertContext {
   toc?: boolean;
   /** 目录模式(static=免更新静态目录 / field=Word 域目录带真实页码;docx 生效) */
   tocMode?: TocMode;
-  /**
-   * 标题章节自动编号显式项(透传 docx/pdf 双管线)。
-   * 生产零注入 / 仅测试注入:唯一注入者是测试,生产侧恒不传,故该档实际从不参与
-   * 取值——在用的只有 typography.headingNumbering > 各 render 的构造默认两档。
-   * 默认值的解析留在两侧 render(renderDocx / renderPdfHtml 内的
-   * `options.X ?? typography.X`),本层只做原样透传,不做归一化——这样
-   * 「谁解析默认」只有一处实现,两侧 render 的默认口径不会因本层新增字段而漂移。
-   * 不传时行为与既有调用方(只给 typography)完全一致。
-   */
-  headingNumbering?: boolean;
-  /**
-   * 图/表题注自动编号显式项(透传 docx/pdf 双管线)。
-   * 生产零注入 / 仅测试注入:同 headingNumbering,在用的是
-   * typography.captionNumbering > render 构造默认两档。
-   */
-  captionNumbering?: boolean;
   /** 公式编号开关(默认开;docx/pdf 双格式同开关,关时公式不编号、label 段原样渲染、引用保持原文本) */
   equationNumbering?: boolean;
   /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
@@ -150,6 +133,28 @@ export interface ConvertContext {
    * stage 键原样兜底(renderer 的 stageText 对未知键透传)。
    */
   onStage?: (stage: string) => void;
+}
+
+/**
+ * 仅测试注入的上下文覆盖项(生产零写入者)。
+ *
+ * 为什么它们不在 `ConvertContext` 里(adr-028 决定要点五):生产侧无任何写入者
+ * —— 编号在用的是 `typography.headingNumbering` / `captionNumbering`,图片预算在用的是
+ * `core/resource-limits.ts` 的默认值。生产类型宣告支持某字段而生产侧无人写它,就是
+ * 「类型谎言」:读代码的人会以为调它能生效。独立成第 4 参后,「生产不传」由签名本身
+ * 表达,测试要注入必须显式走这一参。
+ *
+ * 默认值的解析仍在两侧 render(`options.X ?? typography.X` / `resolveImageBudget`),
+ * 本层只做原样透传,不做归一化 —— 这样「谁解析默认」只有一处实现,两侧 render 的
+ * 默认口径不会因本层新增字段而漂移。不传时行为与只给 typography 的既有调用方完全一致。
+ */
+export interface ConvertTestOverrides {
+  /** 标题章节自动编号显式项(压过 typography.headingNumbering,透传 docx/pdf 双管线) */
+  headingNumbering?: boolean;
+  /** 图/表题注自动编号显式项(压过 typography.captionNumbering,透传 docx/pdf 双管线) */
+  captionNumbering?: boolean;
+  /** 图片资源预算覆盖(缺省取 core/resource-limits.ts 默认值) */
+  imageBudget?: ImageResourceBudget;
 }
 
 export interface DocxArtifact {
@@ -184,6 +189,7 @@ export async function convert(
   md: PreprocessedMarkdown,
   format: ConvertFormat,
   context: ConvertContext,
+  testOverrides?: ConvertTestOverrides,
 ): Promise<ConvertArtifact> {
   // 取消守卫单一来源:signal/deadline 收敛为一个信号,两条管线共用;
   // 入口检查点在任何解析/渲染之前——预取消与已过期 deadline 不启动任何 resolver。
@@ -234,14 +240,14 @@ export async function convert(
         warnings,
         imageResolver: context.imageResolver,
         guard,
-        imageBudget: context.imageBudget,
+        imageBudget: testOverrides?.imageBudget,
         pageSetup: context.pageSetup,
         typography: context.typography,
         breakBeforeH1: context.breakBeforeH1,
         toc: context.toc,
         // 编号显式项原样透传:默认值解析在 renderPdfDocument 内(options.X ?? typography.X)
-        headingNumbering: context.headingNumbering,
-        captionNumbering: context.captionNumbering,
+        headingNumbering: testOverrides?.headingNumbering,
+        captionNumbering: testOverrides?.captionNumbering,
         equationNumbering: context.equationNumbering,
         katexDir: context.katexDir,
         pdfCss: context.pdfCss,
@@ -270,7 +276,7 @@ export async function convert(
       buffer: await renderDocx(ast, {
         imageResolver: context.imageResolver,
         guard,
-        imageBudget: context.imageBudget,
+        imageBudget: testOverrides?.imageBudget,
         metadata,
         warnings,
         pageSetup: context.pageSetup,
@@ -279,8 +285,8 @@ export async function convert(
         toc: context.toc,
         tocMode: context.tocMode,
         // 编号显式项原样透传:默认值解析在 renderDocx 内(options.X ?? typography.X)
-        headingNumbering: context.headingNumbering,
-        captionNumbering: context.captionNumbering,
+        headingNumbering: testOverrides?.headingNumbering,
+        captionNumbering: testOverrides?.captionNumbering,
         equationNumbering: context.equationNumbering,
         title: context.title,
         mermaidResolver,

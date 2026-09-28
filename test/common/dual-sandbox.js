@@ -63,13 +63,17 @@ const B = FIXTURES_DIR;
  * string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
  * 入参保持宽松(本文件按运行时事实传上下文,上下文契约由 core 自身类型守护)。
  *
+ * 第 4 参是 core 的 `ConvertTestOverrides`(captionNumbering / imageBudget 这三项
+ * 生产零写入者,故不在生产 ConvertContext 里,见 core/convert.ts)。矩阵里对
+ * 「显式项压过 typography」与「图片预算」的断言只能从这里注入。
+ *
  * 宿主文件系统能力(REF-025 #07)在此统一注入:core 的 pdf 渲染路径不 import
  * node:fs,每次调用都要显式带上。放在包装层而非 30+ 个调用点,是为了让「pdf 渲染
  * 必须注入能力」这条约束只有一个可漏的点,且新增调用点自动继承。展开顺序在后,
  * 故显式传 fs 的调用点仍可覆盖它。
  */
-const convertTyped = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
-  (md, format, context) => convert(md, format, { fs: HOST_FS, ...context })
+const convertTyped = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>, overrides?: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
+  (md, format, context, overrides) => convert(md, format, { fs: HOST_FS, ...context }, overrides)
 );
 
 /**
@@ -184,9 +188,10 @@ export async function buildMatrixCtx() {
   const capPdfW = [];
   const capDocx = asDocxArtifact(await convertTyped(captionMd, "docx", { baseDir: B, warnings: capDocxW, ...img }));
   const capPdf = asPdfArtifact(await convertTyped(captionMd, "pdf", { baseDir: B, title: "t", warnings: capPdfW, ...img }));
-  // captionNumbering 显式关闭:label 原样保留的对照(显式项契约见 toc-caption 段)
-  const labelOffDocx = asDocxArtifact(await convertTyped(captionLabelMd, "docx", { baseDir: B, warnings: [], captionNumbering: false, ...img }));
-  const labelOffPdf = asPdfArtifact(await convertTyped(captionLabelMd, "pdf", { baseDir: B, title: "t", warnings: [], captionNumbering: false, ...img }));
+  // captionNumbering 显式关闭:label 原样保留的对照(显式项契约见 toc-caption 段;
+  // 该项生产零注入,只能经 convert 的第 4 参 ConvertTestOverrides 传入)
+  const labelOffDocx = asDocxArtifact(await convertTyped(captionLabelMd, "docx", { baseDir: B, warnings: [], ...img }, { captionNumbering: false }));
+  const labelOffPdf = asPdfArtifact(await convertTyped(captionLabelMd, "pdf", { baseDir: B, title: "t", warnings: [], ...img }, { captionNumbering: false }));
 
   // ---------- 9. 公式 label 与编号开关 ----------
   const eqDocx = asDocxArtifact(await convertTyped(equationMd, "docx", { baseDir: B, warnings: [], katexDir: KATEX_DIR }));
@@ -282,14 +287,14 @@ export async function buildMatrixCtx() {
   const taskDocx = asDocxArtifact(await convertTyped(taskListMd, "docx", { baseDir: B, warnings: [] }));
   const taskPdf = asPdfArtifact(await convertTyped(taskListMd, "pdf", { baseDir: B, title: "t", warnings: [] }));
 
-  // ---------- 17. 图片预算记账口径 ----------
+  // ---------- 17. 图片预算记账口径(预算覆盖生产零注入,经第 4 参注入) ----------
   const rawPlusOne = { maxDocumentBytes: png.length + 1 };
   const base64PlusOne = { maxDocumentBytes: Math.ceil(png.length / 3) * 4 + 1 };
-  const budgetDocx = asDocxArtifact(await convertTyped(externalImageMd, "docx", { baseDir: B, warnings: [], imageResolver: async () => png, imageBudget: rawPlusOne }));
+  const budgetDocx = asDocxArtifact(await convertTyped(externalImageMd, "docx", { baseDir: B, warnings: [], imageResolver: async () => png }, { imageBudget: rawPlusOne }));
   /** @type {Warning[]} */
   const budgetPdfW = [];
-  const budgetPdf = asPdfArtifact(await convertTyped(externalImageMd, "pdf", { baseDir: B, title: "t", warnings: budgetPdfW, imageResolver: async () => png, imageBudget: rawPlusOne }));
-  const budgetPdfOk = asPdfArtifact(await convertTyped(externalImageMd, "pdf", { baseDir: B, title: "t", warnings: [], imageResolver: async () => png, imageBudget: base64PlusOne }));
+  const budgetPdf = asPdfArtifact(await convertTyped(externalImageMd, "pdf", { baseDir: B, title: "t", warnings: budgetPdfW, imageResolver: async () => png }, { imageBudget: rawPlusOne }));
+  const budgetPdfOk = asPdfArtifact(await convertTyped(externalImageMd, "pdf", { baseDir: B, title: "t", warnings: [], imageResolver: async () => png }, { imageBudget: base64PlusOne }));
 
   // ---------- 18. 标题 id 取源兜底 ----------
   const headingDocx = asDocxArtifact(await convertTyped(headingLinkMd, "docx", { baseDir: B, warnings: [] }));

@@ -12,6 +12,10 @@ export { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
 // 仅类型导入(编译期擦除,不引入运行时依赖):Language 契约定义于 i18n.ts,
 // 消费方从 i18n 导入(原 re-export 无消费者,清理移除)
 import type { Language } from "../i18n.js";
+// 格式版本参数单源于 settings-schema.ts(不升位,理由见该文件 CURRENT_SETTINGS_VERSION):
+// AppSettings.version 与 DEFAULT_SETTINGS.version 都由它派生,值不可能与校验口径漂移。
+import { CURRENT_SETTINGS_VERSION, type SettingsVersion } from "./settings-schema.js";
+export { CURRENT_SETTINGS_VERSION } from "./settings-schema.js";
 
 /** 转换格式 */
 export type ConvertFormat = "docx" | "pdf";
@@ -224,7 +228,7 @@ export function mmToPx(mm: number): number {
  * - typography 字段类型定义于 typography.ts(convert 上下文契约)
  */
 export interface AppSettings {
-  version: 1;
+  version: SettingsVersion;
   format: ConvertFormat;
   pageSetup: PageSetup;
   typography: TypographySettings;
@@ -272,7 +276,7 @@ export interface CustomPreset {
 export const MAX_CUSTOM_PRESETS = 10;
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  version: 1,
+  version: CURRENT_SETTINGS_VERSION,
   format: "docx",
   pageSetup: { ...DEFAULT_PAGE_SETUP },
   typography: { ...DEFAULT_TYPOGRAPHY },

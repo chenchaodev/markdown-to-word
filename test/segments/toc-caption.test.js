@@ -8,20 +8,37 @@
  * 图/表独立计数、h1 处重置;孤立前缀行(前无图/表)按普通段落。
  * 注意:题注行与图/表之间须空行(图:无空行会并入图所在段落;表:无空行会被
  * GFM 表格规则吞成表格行)。
- * 显式项契约:captionNumbering / headingNumbering 走 ConvertContext 显式字段
- * (不再借 typography 绕道),显式值优先于 typography,两侧口径一致——四组合
- * 断言见本段末(双格式 × 显式开/关两个方向)。
+ * 显式项契约:captionNumbering / headingNumbering 走 convert() 的第 4 参
+ * ConvertTestOverrides(生产零写入者,故不在生产 ConvertContext 里,见 src/core/convert.ts),
+ * 显式值优先于 typography,两侧口径一致——四组合断言见本段末(双格式 × 显式开/关两个方向)。
  */
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
+import { convert } from "../../dist/core/convert.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+import { HOST_FS, asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
  /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+
+/**
+ * convert() + 宿主文件系统能力 + 第 4 参显式项覆盖。
+ * 与 convert-helpers 的 convertWithFs 同构,只多一个 overrides 实参 —— 本段要断言
+ * 「显式项压过 typography」,而 headingNumbering / captionNumbering / imageBudget
+ * 生产零写入者(不在生产 ConvertContext 里),只能走 convert 的第 4 参
+ * ConvertTestOverrides(见 src/core/convert.ts)。
+ * @param {string} md markdown 源
+ * @param {"docx" | "pdf"} format 目标格式
+ * @param {Record<string, unknown>} context 转换上下文
+ * @param {Record<string, unknown>} overrides 显式项覆盖
+ * @returns {Promise<ConvertArtifact>} 产物
+ */
+const convertWithOverrides = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>, overrides: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
+  (md, format, context, overrides) => convert(md, format, { fs: HOST_FS, ...context }, overrides)
+);
 
 /** 主样例:TOC + 题注(含孤立题注/缺失图片),gen-fixtures 落盘为 acceptance/toc-caption.md */
 const mainMd = `# 第一章
@@ -101,11 +118,10 @@ export async function run() {
     throw new Error("断言失败:toc:false 时 document.xml 不应含 TOC 指令");
   }
   // 8b-3:captionNumbering 显式关闭(不再借 typography 绕道)→ 题注行按普通段落(原文保留)
-  const noCaption = /** @type {ConvertArtifact} */ (await convertWithFs(mainMd, "docx", {
+  const noCaption = /** @type {ConvertArtifact} */ (await convertWithOverrides(mainMd, "docx", {
     baseDir: FIXTURES_DIR, warnings: [],
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: true },
-    captionNumbering: false,
-  }));
+  }, { captionNumbering: false }));
   if (!(await unzipPart(docxBufferOf(noCaption), "word/document.xml")).includes("图: 总体架构示意图")) {
     throw new Error("断言失败:captionNumbering:false 时题注行应保留前缀原文");
   }
@@ -161,16 +177,19 @@ export async function run() {
     captionNumbering,
   });
   /**
-   * 同一 ConvertContext 覆盖下取双格式产物(docx 解包 XML + pdf HTML)。
-   * @param {Record<string, unknown>} context 追加到 ConvertContext 的显式项
+   * 同一设置上下文 + 同一显式项覆盖下取双格式产物(docx 解包 XML + pdf HTML)。
+   * `overrides` 是 convert() 的第 4 参 ConvertTestOverrides,与上下文分开传 ——
+   * 生产 ConvertContext 不含这三个字段,借它传会在类型层就被判红。
+   * @param {Record<string, unknown>} context 追加到 ConvertContext 的设置
+   * @param {Record<string, unknown>} overrides 显式项覆盖(headingNumbering / captionNumbering)
    * @returns {Promise<{ docx: string; pdf: string }>} 双格式断言面
    */
-  const bothFormats = async (context) => {
+  const bothFormats = async (context, overrides) => {
     const docxArtifact = /** @type {ConvertArtifact} */ (
-      await convertWithFs(explicitMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], ...context })
+      await convertWithOverrides(explicitMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], ...context }, overrides)
     );
     const pdfArtifact = /** @type {ConvertArtifact} */ (
-      await convertWithFs(explicitMd, "pdf", { baseDir: FIXTURES_DIR, title: "显式项契约", warnings: [], ...context })
+      await convertWithOverrides(explicitMd, "pdf", { baseDir: FIXTURES_DIR, title: "显式项契约", warnings: [], ...context }, overrides)
     );
     return {
       docx: await unzipPart(docxBufferOf(docxArtifact), "word/document.xml"),
@@ -179,7 +198,7 @@ export async function run() {
   };
 
   // 组合 1:captionNumbering 显式关(typography 开)→ 两侧都不编号、label 原样保留
-  const capOff = await bothFormats({ typography: typo(true, true), captionNumbering: false });
+  const capOff = await bothFormats({ typography: typo(true, true) }, { captionNumbering: false });
   if (!capOff.docx.includes("图: 样例图 {#fig:v}")) {
     throw new Error("显式项断言失败:docx captionNumbering:false 应压过 typography(题注行保留前缀与 label)");
   }
@@ -194,7 +213,7 @@ export async function run() {
   // 组合 2:captionNumbering 显式开(typography 关)→ 两侧都编号
   // 注:typography 的 headingNumbering 同为 false,故 docx 章节号为 null(题注无
   // 章节前缀「图 1」);本组合只验证题注编号被显式打开,不涉及章节号口径。
-  const capOn = await bothFormats({ typography: typo(false, false), captionNumbering: true });
+  const capOn = await bothFormats({ typography: typo(false, false) }, { captionNumbering: true });
   if (!capOn.docx.includes('<w:t xml:space="preserve">图 1 样例图</w:t>')) {
     throw new Error("显式项断言失败:docx captionNumbering:true 应压过 typography(注入「图 1」编号)");
   }
@@ -207,7 +226,7 @@ export async function run() {
   console.log("[ok] 组合2 captionNumbering 显式开压过 typography(docx + pdf)");
 
   // 组合 3:headingNumbering 显式关(typography 开)→ 章节引用双侧均悬空「(?)」
-  const hnOff = await bothFormats({ typography: typo(true, true), headingNumbering: false });
+  const hnOff = await bothFormats({ typography: typo(true, true) }, { headingNumbering: false });
   if (!hnOff.docx.includes('<w:t xml:space="preserve">(?)</w:t>')) {
     throw new Error("显式项断言失败:docx headingNumbering:false 应压过 typography(章节引用悬空)");
   }
@@ -217,7 +236,7 @@ export async function run() {
   console.log("[ok] 组合3 headingNumbering 显式关压过 typography(docx + pdf)");
 
   // 组合 4:headingNumbering 显式开(typography 关)→ 章节引用双侧均命中编号
-  const hnOn = await bothFormats({ typography: typo(false, false), headingNumbering: true });
+  const hnOn = await bothFormats({ typography: typo(false, false) }, { headingNumbering: true });
   if (!hnOn.docx.includes('<w:hyperlink w:history="1" w:anchor="甲">')) {
     throw new Error("显式项断言失败:docx headingNumbering:true 应压过 typography(章节引用跳标题书签)");
   }

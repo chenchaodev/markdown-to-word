@@ -149,6 +149,15 @@ export async function resolveHeaderLogo(
  * resource-dirs.ts)经 electron app.getAppPath() 计算(保证 dev/打包一致),
  * 本 helper 不依赖 electron app,convertImpl 可脱离 Electron 直测(docx 走 MathML
  * 本就不需要 katexDir)。
+ *
+ * 设置字段的映射按**类别成组**(页面几何 / 排版 / 文档结构开关 / pdf 专用 / 文档外壳),
+ * 每组在返回字面量里连续成段;「生产有的」与「仅测试注入的」在
+ * `TEST_ONLY_CONTEXT_KEYS` 注释与字面量末段已分开点名,后者刻意不接进来。
+ *
+ * 为什么不用「遍历一张表 + 展开」:下游(main 各入口与测试)打的是 dist 产物,dist 无
+ * 类型标注,展开一个推导不出成员的值会让这些调用点**丢掉全部字段类型**(按字段取值即
+ * 报 TS2339)。故分组以字面量分段表达,「加了不该加的字段」由测试真跑一次
+ * `buildConvertContext` 并断言产物键集来守(见 test/main/settings.test.js 7e)。
  */
 export interface BuildConvertContextOptions {
   /** markdown 文件所在目录(图片相对路径基准) */
@@ -177,6 +186,17 @@ export interface BuildConvertContextOptions {
   onStage?: (stage: string) => void;
 }
 
+/**
+ * 生产侧「设置 → 上下文」映射按类别成组(见 buildConvertContext 的字面量分组)。
+ * 刻意**不在此**的三项:headingNumbering / captionNumbering / imageBudget ——
+ * 它们生产零写入者,接进生产映射就造出「设了也不生效」的假开关。
+ */
+export const TEST_ONLY_CONTEXT_KEYS: readonly string[] = [
+  "headingNumbering",
+  "captionNumbering",
+  "imageBudget",
+];
+
 export async function buildConvertContext(options: BuildConvertContextOptions): Promise<CoreConvertContext> {
   // 页眉页脚配置归一化(缺字段补默认 = 现状行为)+ logo 文件读取(失败降级)
   const headerFooter: HeaderFooterSettings = { ...DEFAULT_HEADER_FOOTER, ...options.settings.headerFooter };
@@ -184,6 +204,7 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
   // 水印配置归一化(缺字段补默认 = 不启用)
   const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...options.settings.watermark };
   return {
+    // —— 宿主与运行时能力(与 settings 无关)——
     baseDir: options.baseDir,
     // 宿主文件系统能力(REF-025 #07):core 的 pdf 渲染路径自己不 import node:fs,
     // 其两次读(图片边界 realpathSync、KaTeX CSS 读取)由此注入。能力面刻意收窄到
@@ -195,19 +216,31 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
     title: options.title,
     metadata: options.metadata,
     warnings: options.warnings,
-    pageSetup: options.settings.pageSetup,
-    typography: options.settings.typography,
-    breakBeforeH1: options.settings.breakBeforeH1,
-    toc: options.settings.toc,
-    tocMode: options.settings.tocMode,
-    equationNumbering: options.settings.equationNumbering,
-    pdfCss: options.settings.pdfCss,
     imageResolver: options.imageResolver,
     katexDir: options.katexDir,
     mermaidResolver: options.mermaidResolver,
     onStage: options.onStage,
+
+    // —— 设置映射,按类别成组(键名与 core 同名 → 直通)——
+    // 类别一 · 页面几何
+    pageSetup: options.settings.pageSetup,
+    // 类别二 · 排版
+    typography: options.settings.typography,
+    // 类别三 · 文档结构开关(分页 / 目录 / 编号:双管线同名同义,故成组)
+    breakBeforeH1: options.settings.breakBeforeH1,
+    toc: options.settings.toc,
+    tocMode: options.settings.tocMode,
+    equationNumbering: options.settings.equationNumbering,
+    // 类别四 · pdf 专用
+    pdfCss: options.settings.pdfCss,
+    // 类别五 · 文档外壳(需先归一化;logo 由 main 读文件后注入,core 零 IO)
     headerFooter,
     headerLogo,
     watermark,
+
+    // ⚠️ 刻意**不在此**的三项:headingNumbering / captionNumbering / imageBudget。
+    // 它们生产零写入者(在用的是 typography 的同名字段与 resource-limits 默认预算),
+    // 接进生产映射就造出「设了也不生效」的假开关 —— 正是步 01 刚清掉的静默失效。
+    // 它们由 core convert() 的第 4 参 ConvertTestOverrides 承接(见 core/convert.ts)。
   };
 }

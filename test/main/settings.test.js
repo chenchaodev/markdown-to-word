@@ -45,6 +45,13 @@ import {
   validatePageSetup,
 } from "../../dist/core/settings/settings-defaults.js";
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
+import {
+  CURRENT_SETTINGS_VERSION,
+  LEGACY_TRANSFORM_KEYS,
+  PERSISTED_KEYS,
+  SETTINGS_SCHEMA,
+  SHAPE_CHECKED_ENTRIES,
+} from "../../dist/core/settings/settings-schema.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 
 /**
@@ -201,13 +208,26 @@ export async function run() {
     const r8c = await mod.updateSettings({ tocMode: "bogus" });
     assert(r8c.tocMode === "static", "非法 tocMode 应回退默认 static");
 
-    // ---- 5. sanitizePatch 白名单:未知键过滤 + SETTING_KEYS 键核对 ----
+    // ---- 5. sanitizePatch 白名单:未知键过滤 + 键集合同构(schema 表为准) ----
+    // 原先这里是 18 个键名的全量硬编码副本;改为遍历 schema 表断言,键集合同构由
+    // 「表派生」保证,不再需要在测试里复写一遍键名(键名一改这里就漏)。
     const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
-    const settingKeys = ["version", "format", "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "afterConvert", "outputDir", "customPresets", "pdfCss", "language", "theme", "headerFooter", "watermark", "aiCleanup", "obsidian"];
-    assert(Object.keys(mod.DEFAULT_SETTINGS).length === settingKeys.length, "DEFAULT_SETTINGS 应为 18 键(页眉页脚 headerFooter + 文字水印 watermark + 目录带页码(adr-007) tocMode + 渲染前变换两组 aiCleanup(总开关+两档,adr-021)与 obsidian(兼容+附件目录),adr-024 分组)");
-    for (const k of settingKeys) assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
+    const persistedKeys = SETTINGS_SCHEMA.filter((e) => e.role === "persisted").map((e) => e.key);
+    assert(
+      Object.keys(mod.DEFAULT_SETTINGS).length === persistedKeys.length + 1,
+      "DEFAULT_SETTINGS 应为「表内持久化键 + version」这么多键",
+    );
+    for (const k of persistedKeys) {
+      assert(k in mod.DEFAULT_SETTINGS, `DEFAULT_SETTINGS 缺少键 ${k}`);
+      assert(PERSISTED_KEYS.includes(k), `落盘白名单缺少键 ${k}`);
+    }
+    assert(PERSISTED_KEYS.includes("version"), "落盘白名单应含 version(格式版本参数)");
+    assert(
+      LEGACY_TRANSFORM_KEYS.every((k) => !PERSISTED_KEYS.includes(k) && !(k in mod.DEFAULT_SETTINGS)),
+      "旧平铺键不得进落盘白名单,也不得出现在 DEFAULT_SETTINGS",
+    );
     // 持久化文件同样不含未知键
     const persisted = JSON.parse(await fs.readFile(settingsFile, "utf8"));
     assert(!("evil" in persisted) && !("xss" in persisted), "写盘内容不应含白名单外键");
@@ -579,6 +599,142 @@ export async function run() {
       assert(mod.isValidSettings(bad) === false, `${label} 应判定形状非法(整文件回退)`);
     }
     console.log("[ok] settings:isValidSettings 直测(合法保留/旧文件兼容/任一非法整文件回退)断言通过");
+
+    // ---- 7d. 逐键语义表(4-0 护栏):21 键 × 三轴,期望值手写、independently of schema ----
+    // 本表是「现状复刻」的钉子:schema 里任何一档写错(把 language/pageSetup 改成整文件
+    // 拒绝,或把 aiCleanup 改成字段级兜底)都会在这里红 —— 而不是在下游某条用例上
+    // 表现为「行为悄悄变了」。因此期望值**不得**从 schema 派生。
+    // bad = 该键的「非法值」样例;expectReject = 注入它是否应整文件拒绝。
+    const KEY_SEMANTICS = [
+      { key: "format", role: "persisted", optional: false, invalid: "reject-whole-file", bad: "html" },
+      { key: "pageSetup", role: "persisted", optional: true, invalid: "repair-block", bad: { paper: "B5" } },
+      { key: "typography", role: "persisted", optional: true, invalid: "fallback-field", bad: "not-an-object" },
+      { key: "breakBeforeH1", role: "persisted", optional: false, invalid: "reject-whole-file", bad: "yes" },
+      { key: "toc", role: "persisted", optional: true, invalid: "reject-whole-file", bad: "yes" },
+      { key: "tocMode", role: "persisted", optional: true, invalid: "reject-whole-file", bad: "bogus" },
+      { key: "equationNumbering", role: "persisted", optional: true, invalid: "reject-whole-file", bad: "yes" },
+      { key: "afterConvert", role: "persisted", optional: false, invalid: "reject-whole-file", bad: "email" },
+      { key: "outputDir", role: "persisted", optional: true, invalid: "reject-whole-file", bad: "relative/dir" },
+      { key: "customPresets", role: "persisted", optional: true, invalid: "fallback-field", bad: "not-an-array" },
+      { key: "pdfCss", role: "persisted", optional: true, invalid: "reject-whole-file", bad: 123 },
+      { key: "language", role: "persisted", optional: true, invalid: "fallback-field", bad: "ko" },
+      { key: "theme", role: "persisted", optional: true, invalid: "reject-whole-file", bad: "blue" },
+      { key: "headerFooter", role: "persisted", optional: true, invalid: "fallback-field", bad: "not-an-object" },
+      { key: "watermark", role: "persisted", optional: true, invalid: "fallback-field", bad: "not-an-object" },
+      { key: "aiCleanup", role: "persisted", optional: true, invalid: "reject-whole-file", bad: "on" },
+      { key: "obsidian", role: "persisted", optional: true, invalid: "reject-whole-file", bad: false },
+      { key: "aiCleanupTidy", role: "legacy-migration", optional: true, invalid: "reject-whole-file", bad: "yes" },
+      { key: "aiCleanupRewrite", role: "legacy-migration", optional: true, invalid: "reject-whole-file", bad: "yes" },
+      { key: "obsidianCompat", role: "legacy-migration", optional: true, invalid: "reject-whole-file", bad: "yes" },
+      { key: "obsidianAttachmentFolder", role: "legacy-migration", optional: true, invalid: "reject-whole-file", bad: 7 },
+    ];
+    assert(
+      SETTINGS_SCHEMA.length === KEY_SEMANTICS.length,
+      `schema 表应有 ${KEY_SEMANTICS.length} 条(17 落盘键 + 4 旧形状键;version 已移出被校验集合),实际 ${SETTINGS_SCHEMA.length}`,
+    );
+    // 逐键扫描用的宽松副本(逐键 delete 任意键,故不套 ValidSettingsFixture 的定长形状)
+    const perKeyBase = /** @type {Record<string, unknown>} */ ({ ...validSettings });
+    for (const expected of KEY_SEMANTICS) {
+      const entry = SETTINGS_SCHEMA.find((e) => e.key === expected.key);
+      assert(entry !== undefined, `schema 表缺少键 ${expected.key}`);
+      // 轴 1:角色(落盘 / 仅迁移期校验)
+      assert(entry.role === expected.role, `${expected.key} 的角色应为 ${expected.role},实际 ${entry.role}`);
+      // 轴 2:缺失是否合法
+      assert(entry.optional === expected.optional, `${expected.key} 的「缺失是否合法」应为 ${expected.optional},实际 ${entry.optional}`);
+      // 轴 3:非法时处置(三档,单选)
+      assert(entry.invalid === expected.invalid, `${expected.key} 的处置档应为 ${expected.invalid},实际 ${entry.invalid}`);
+      // 轴 2 的可观察面:缺该键时整文件校验的判定
+      const missing = { ...perKeyBase };
+      delete missing[expected.key];
+      assert(
+        mod.isValidSettings(missing) === expected.optional,
+        `${expected.key} 缺失时应${expected.optional ? "合法(交加载兜底)" : "判非法(整文件回退)"},实际 ${mod.isValidSettings(missing)}`,
+      );
+      // 轴 3 的可观察面:注入非法值时整文件校验的判定
+      const expectReject = expected.invalid === "reject-whole-file";
+      const withBad = { ...perKeyBase, [expected.key]: expected.bad };
+      assert(
+        mod.isValidSettings(withBad) === !expectReject,
+        `${expected.key} 注入非法值应${expectReject ? "整文件拒绝" : "不整文件拒绝(走兜底档)"},实际 ${mod.isValidSettings(withBad)}`,
+      );
+      // 推导不变式:处置档 = reject-whole-file ⇔ 该键参与整文件形状校验
+      assert(
+        SHAPE_CHECKED_ENTRIES.includes(entry) === expectReject,
+        `${expected.key} 是否参与形状校验应与其处置档一致(消费点不得另设白名单)`,
+      );
+    }
+    // version 已移出被校验键集合,但仍按声明的格式版本判定(不升位)
+    assert(CURRENT_SETTINGS_VERSION === 1, "settings.json 格式版本应保持 1(adr-028 决定要点二:不升位)");
+    assert(
+      !SETTINGS_SCHEMA.some((e) => e.key === "version"),
+      "version 不应是表内条目(表不得被版本号选取,否则 schema 被自身校验)",
+    );
+    assert(mod.isValidSettings({ ...validSettings, version: 2 }) === false, "version 非当前格式版本应整文件拒绝");
+    assert(mod.isValidSettings({ ...validSettings, version: 1 }) === true, "version 为当前格式版本应通过");
+    const noVersion = { ...perKeyBase };
+    delete noVersion.version;
+    assert(mod.isValidSettings(noVersion) === false, "缺 version 应整文件拒绝(格式版本是必填参)");
+    // 六个「不整文件拒绝」键的加载兜底:逐键兜底而非整文件回退,其它设置原样保留。
+    // 一次落盘覆盖六键(pageSetup 由 core 纠正、其余五键由 sanitizer 兜底)。
+    await fs.writeFile(
+      settingsFile,
+      JSON.stringify({
+        ...validSettings,
+        pageSetup: { paper: "B5", orientation: "sideways", marginTop: "abc" },
+        typography: "not-an-object",
+        customPresets: "not-an-array",
+        language: "ko",
+        headerFooter: "not-an-object",
+        watermark: "not-an-object",
+      }),
+      "utf8",
+    );
+    const mFallback = await freshModule("settings-per-key-fallback");
+    const fellBack = mFallback.loadSettings();
+    assert(fellBack !== mFallback.DEFAULT_SETTINGS, "六键非法应进入逐键兜底,而不是整文件回退 DEFAULT_SETTINGS");
+    assert(fellBack.format === validSettings.format, "逐键兜底不得牵连其它设置(format 应原样保留)");
+    assert(fellBack.toc === validSettings.toc, "逐键兜底不得牵连其它设置(toc 应原样保留)");
+    assert(fellBack.pageSetup.paper === DEFAULT_PAGE_SETUP.paper, `pageSetup 应整块纠正,实际 ${JSON.stringify(fellBack.pageSetup)}`);
+    validatePageSetup(fellBack.pageSetup);
+    assert(
+      fellBack.typography.bodySizePt === DEFAULT_TYPOGRAPHY.bodySizePt,
+      "typography 应整块兜底为默认",
+    );
+    assert(JSON.stringify(fellBack.customPresets) === "[]", "customPresets 非数组应兜底 []");
+    assert(fellBack.language === "zh", `语言裁撤值应字段级兜底默认语言,实际 ${fellBack.language}`);
+    assert(
+      fellBack.headerFooter.headerMode === "default" && fellBack.watermark.angle === 45,
+      "headerFooter / watermark 应逐字段兜底默认",
+    );
+    await mFallback.whenSettingsIdle();
+    console.log(`[ok] settings:逐键语义表 ${KEY_SEMANTICS.length} 键 × 三轴(角色/缺失合法/处置档)+ version 参数断言通过`);
+
+    // ---- 7e. 4-4 映射面:生产侧不得把 3 个仅测试注入的上下文字段接进来 ----
+    // 护栏不是「比对一份声明」,而是真的跑一次 buildConvertContext 看产物:
+    // 那三项生产零写入者,接进生产映射就成了「设了也不生效」的假开关(步 01 刚清掉的
+    // 那类静默失效)。它们由 core convert() 的第 4 参 ConvertTestOverrides 承接。
+    const { buildConvertContext, TEST_ONLY_CONTEXT_KEYS } = await import(
+      "../../dist/main/converter/context.js"
+    );
+    const builtCtx = await buildConvertContext({
+      baseDir: ".",
+      title: "设置 schema 护栏",
+      settings: fellBack,
+      imageResolver: async () => null,
+    });
+    for (const testOnly of TEST_ONLY_CONTEXT_KEYS) {
+      assert(
+        !(testOnly in builtCtx),
+        `${testOnly} 生产零注入,不得出现在 buildConvertContext 产出的上下文里`,
+      );
+    }
+    for (const k of [
+      "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering",
+      "pdfCss", "headerFooter", "watermark",
+    ]) {
+      assert(k in builtCtx, `生产上下文应映射设置键 ${k}`);
+    }
+    console.log(`[ok] settings:生产上下文映射不含 ${TEST_ONLY_CONTEXT_KEYS.length} 个仅测试注入字段`);
 
     // ---- 8. 旧 settings.json 兼容(缺 toc/outputDir/typography)→ 其余保留 + 兜底默认 ----
     await fs.writeFile(
