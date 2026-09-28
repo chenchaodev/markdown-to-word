@@ -30,6 +30,7 @@ export interface KatexResourceLimits {
  * 上游改默认后本项目静默失去边界);trust=false 拒绝外部引用指令;
  * throwOnError=false 保证不可信/畸形公式只降级不中断转换。
  */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const DEFAULT_KATEX_RESOURCE_LIMITS: KatexResourceLimits = Object.freeze({
   maxExpand: 1000,
   maxSize: 10,
@@ -52,6 +53,7 @@ export interface ImageResourceBudget {
 }
 
 /** 图片预算默认值:正常文档远低于此,仅用于挡住失控输入(超大响应/图片海文档) */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const DEFAULT_IMAGE_RESOURCE_BUDGET: ImageResourceBudget = Object.freeze({
   requestTimeoutMs: 10_000,
   maxImageBytes: 20 * 1024 * 1024,

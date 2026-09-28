@@ -19,6 +19,7 @@ import { convertImpl, runAfterConvert } from "./single.js";
  * (截断会让用户以为全部文件都已转换)。
  * 提示文案 i18n 化列入后续字典维护项(与产物提交器的错误文案同口径)。
  */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_BATCH_FILES = 500;
 
 /**

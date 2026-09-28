@@ -237,6 +237,7 @@ export interface CustomPreset {
 }
 
 /** 自定义预设数量上限(超出截断,保留先保存的条目)。 */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_CUSTOM_PRESETS = 10;
 
 export const DEFAULT_SETTINGS: AppSettings = {

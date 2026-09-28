@@ -29,18 +29,23 @@ import type { ImageResolver, ImageResolverRequest } from "../../core/image/image
 // 契约单源:本地图片可信边界与 precheck/PDF 规则共用 core/pipeline/precheck.ts 策略
 import { createLocalImagePathPolicy } from "../../core/markdown/image-path-policy.js";
 
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 const HTTP_TIMEOUT_MS = 10_000;
 
 /** 响应体大小上限:20MB,远超正常文档图片需求,防恶意大响应耗尽内存。
  *  请求带 maxBytes 时以请求值为准(渲染层预算单源 core/resource-limits.ts)。 */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
 
 /** 重定向跟随上限:防重定向循环拖住转换。 */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 const MAX_REDIRECTS = 5;
 
 /** 下载缓存条目上限:超出后按插入顺序淘汰最早条目(在途条目不淘汰,其等待者仍持有同一 Promise)。 */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_CACHE_ENTRIES = 64;
 /** 下载缓存字节上限:超出后同样按插入顺序淘汰,防长会话多目录共用实例时字节单调增长。 */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_CACHE_BYTES = 32 * 1024 * 1024;
 
 /**

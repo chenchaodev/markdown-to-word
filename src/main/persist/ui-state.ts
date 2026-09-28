@@ -40,6 +40,7 @@ export const DEFAULT_UI_STATE: UiState = {
 };
 
 /** 最近文件上限(与 renderer 的 recent-files.ts 展示截断一致;renderer 侧同名常量须与本值恒等,由测试守护;改此值须双侧同步)。 */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_RECENT_FILES = 10;
 
 /** 显示器工作区(与 Electron Display.workArea 同形状,便于无 Electron 直测)。 */

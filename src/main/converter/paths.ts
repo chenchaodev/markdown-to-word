@@ -12,8 +12,10 @@ import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { ConvertWarning, KeyedWarning } from "../../core/i18n.js";
 
 /** 目录递归深度上限:超出层级的子目录不再展开(异常深的树不拖垮会话) */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_SCAN_DEPTH = 32;
 /** 单次收集的目录条目上限:超大目录树按上限截断并上报 */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_SCAN_ENTRIES = 20_000;
 
 /** 扫描预算触顶警告:kind 为触顶维度(条目数/层级),limit 为对应上限值 */

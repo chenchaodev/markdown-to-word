@@ -32,10 +32,13 @@ import { persistArtifact, runAfterConvert } from "./single.js";
 import { prepareMarkdown } from "./preprocess.js";
 
 /** 合并源文件数上限:超限直接拒绝,不静默截断(截断会让用户以为全文已合并) */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_MERGE_FILES = 200;
 /** 合并源总体积上限:合并后整篇进内存渲染,总量无界会拖垮会话(错误文案 i18n 化列入后续字典维护项) */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_MERGE_TOTAL_BYTES = 128 * 1024 * 1024;
 /** 合并阶段读盘并发上限(有界并发,非 Promise.all 全开) */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MERGE_READ_CONCURRENCY = 4;
 
 /**

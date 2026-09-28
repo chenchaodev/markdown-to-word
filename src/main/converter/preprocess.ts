@@ -27,6 +27,7 @@ export interface PreparedMarkdown {
  * 单个 markdown 源文件的体积上限：整篇进内存做 AST/HTML 渲染，超过此量级
  * 单文件即可拖垮会话（批量与合并另有总量上限）。32MB 远超正常文档。
  */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_SOURCE_FILE_BYTES = 32 * 1024 * 1024;
 
 /** 读源文件字节：读前 stat 与读后长度双检，任一超限即拒绝。 */

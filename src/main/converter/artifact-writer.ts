@@ -33,6 +33,7 @@ export const ARTIFACT_TEMP_PREFIX = ".m2w-tmp-";
 const TEMP_NAME_ATTEMPTS = 3;
 
 /** 重名序号探测上限:超过视为异常环境(如外部进程批量造同名文件),抛错而非无限找名 */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 const MAX_NAME_ATTEMPTS = 1000;
 
 /**

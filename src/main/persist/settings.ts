@@ -444,4 +444,5 @@ function sanitizeWatermark(value: unknown): WatermarkSettings {
 
 /* ---------- PDF 样式 CSS 导入(对话框/文件 IO 在 ipc/register.ts) ---------- */
 /** PDF 自定义 CSS 导入大小上限(字节;超出拒绝导入,防误选大文件拖垮 settings.json)。 */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 export const MAX_PDF_CSS_BYTES = 100 * 1024;

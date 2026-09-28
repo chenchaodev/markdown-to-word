@@ -33,6 +33,7 @@ import { hardenWebContents } from "./web-hardening.js";
 import { writeTempHtml } from "./temp-html.js";
 
 /** 单次渲染超时(含首次预热外的脚本解析;超时按渲染失败降级) */
+// 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 const RENDER_TIMEOUT_MS = 15_000;
 
 /** 隐藏窗口的一次「会话」:窗口 + 其页面临时 HTML 清理 + 创建时代号。 */
