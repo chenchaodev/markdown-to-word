@@ -54,6 +54,21 @@ import {
 import { createCancellationGuard } from "./cancel.js";
 import type { ImageResourceBudget } from "./resource-limits.js";
 
+/**
+ * 已完成「渲染前变换」的 markdown —— 阶段产物的类型名,单一声明点。
+ *
+ * 阶段顺序:**先变换后渲染**。本文件的入参必须是已跑过
+ * `core/markdown/preprocess-body.ts`(渲染前变换的分派点)的正文,本文件只做
+ * 「解析 → 渲染」,不再改写内容 —— 变换类设置对渲染层不可见,它们在阶段分派处
+ * 就已消费完毕。
+ *
+ * 底座刻意是 `string` 而非品牌类型:生产侧三个入口恒真(都先准备再调本函数),
+ * 而多个测试段直接给原始 markdown 调本函数。品牌化会让那些测试里的断言变成
+ * 谎言(见 adr-026 对三个「品牌化」形状的否决)。别名的价值是给这个阶段一个可
+ * grep 的锚点;施加强制力留给真正需要的那天,届时只改这一处声明,调用点意图不变。
+ */
+export type PreprocessedMarkdown = string;
+
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */
   baseDir: string;
@@ -166,7 +181,7 @@ export interface PdfArtifact {
 export type ConvertArtifact = DocxArtifact | PdfArtifact;
 
 export async function convert(
-  md: string,
+  md: PreprocessedMarkdown,
   format: ConvertFormat,
   context: ConvertContext,
 ): Promise<ConvertArtifact> {

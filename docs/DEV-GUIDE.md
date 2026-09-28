@@ -49,7 +49,7 @@
 | renderer 覆盖率报告 | `report:coverage-renderer` | 仅本地手动 |
 | 冒烟 | `test:smoke` | `verify:ci` 链 |
 | 几何 | `check:geometry` | `verify:ci` 链 |
-| 工程契约 / 层向 / 引用固定 / 段编号 | `check:contract` `check:contract:selftest` `check:boundary` `check:pinned-actions` `check:test-numbering` | `verify:ci` 链;其中 `check:contract` 与 `check:pinned-actions` 在两个 workflow 里另有 `npm ci` 之前的 fail-fast 步骤(同一入口,非第二份清单) |
+| 工程契约 / 层向 / 引用固定 / 段编号 / 阶段契约枚举点 | `check:contract` `check:contract:selftest` `check:boundary` `check:pinned-actions` `check:test-numbering` `check:transform-dispatch` | `verify:ci` 链;其中 `check:contract` 与 `check:pinned-actions` 在两个 workflow 里另有 `npm ci` 之前的 fail-fast 步骤(同一入口,非第二份清单)。`check:transform-dispatch` 守的**取反不变量**:渲染层与 main 转换层薄壳不得枚举渲染前变换类设置,且该类设置的枚举点恰 2 处且都在 `core/markdown/`(见 `docs/adr/adr-026` 与 `adr-027`) |
 | 归档索引 | `check:archive-index` | `verify:ci` 链 |
 | 归档索引(重生成) | `gen:archive-index` | 仅本地手动 |
 | 文档指针 | `check:docs` | 仅本地手动 —— 门禁载体在全局配置目录,workflow 不装也不克隆,留在链上等于「以为被查过」 |
