@@ -935,7 +935,7 @@ const MATRIX = [
       // default 模式:两侧同出「文档标题居中」(adr-030 6-B3 关闭的失效点)
       must(chromeDocx.default.includes("文档标题"), "header-footer-modes", "docx default 页眉应含文档标题");
       must(chromeDocx.default.includes('<w:jc w:val="center"/>'), "header-footer-modes", "docx default 页眉应居中");
-      must(chromePdf.default.header.includes("文档标题"), "header-footer-modes", "PDF default 页眉应含文档标题(6-B3 已统一)");
+      must(chromePdf.default.header.includes("文档标题"), "header-footer-modes", "PDF default 页眉应含文档标题(已与 docx 侧统一)");
       must(chromePdf.default.header.includes("text-align:center"), "header-footer-modes", "PDF default 页眉应居中");
       // custom 模式:两侧同出自定义文字
       must(chromeDocx.custom.includes("页眉文字"), "header-footer-modes", "docx custom 页眉应含自定义文字");
@@ -954,7 +954,7 @@ const MATRIX = [
     id: "watermark",
     mode: "mustMatch",
     dimension:
-      "文字水印四要素(文字 / 配色 / 旋转角度 / 不透明度):两侧同口径;不透明度两侧均真消费(6-B2),角度同号(6-B1)",
+      "文字水印四要素(文字 / 配色 / 旋转角度 / 不透明度):两侧同口径;不透明度两侧均真消费,角度同号",
     docxExtract: "header part 的 wps:wsp 文字 + w:color + a:xfrm/@rot + w14:textFill/w14:alpha",
     pdfExtract: ".wm 覆盖层的文字 + color + transform rotate() + opacity",
     anchors: [
