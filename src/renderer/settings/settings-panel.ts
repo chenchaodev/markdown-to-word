@@ -8,8 +8,9 @@
  * settings-controls-table;不反向引用 renderer.ts 的私有符号。
  * 组合根 renderer.ts 调用:init 处 bindSettingsEvents() 后再 loadSettings()
  * (时序与拆分前一致:事件绑定先于回填)。
- * 控件回填由声明表(settings-controls-table)驱动,本模块只提供「按声明里的定位
- * 取元素」这一接缝 —— 键、id、组、复位口径的单源都在表里。
+ * 控件回填与 change 接线由声明表(settings-controls-table)驱动,本模块只提供
+ * 「按声明里的定位取元素」与「落值通道」两处接缝 —— 键、id、组、读侧、写侧、
+ * 复位口径的单源都在表里。
  * 快速参数条(主界面)为抽屉的高频镜像——模板预设 select 与输出目录 chip 在回填/
  * 选项重建处双写;paper/orientation 分段为同名 radio 组自动成组,无需显式镜像。
  */
@@ -32,7 +33,9 @@ import {
   CONTROL_ENTRIES,
   hydrateControls,
   type ControlDom,
+  type ControlHandle,
   type GateId,
+  type WriteContext,
 } from "./settings-controls-table.js";
 import { persistSettings, registerSettingsSaveHooks } from "./settings-save.js";
 import {
@@ -168,10 +171,15 @@ export async function loadSettings(): Promise<void> {
 }
 
 /* ---------- 声明表 → DOM 的接缝 ---------- */
-/** 声明表不碰 DOM(保持可 Node 直测),元素在装配处按「声明里的定位」取来。
- *  id 与 radio 组名的单源是声明表,此处不重述任何一个 —— 新增控件因此不必再动
- *  dom/refs;refs 留给手写接线(事件绑定、门控、动态文案)。 */
-const controlDom: ControlDom = {
+/**
+ * 声明表不碰 DOM(保持可 Node 直测),元素在装配处按「声明里的定位」取来。
+ * id 与 radio 组名的单源是声明表,此处不重述任何一个 —— 新增控件因此不必再动
+ * dom/refs;refs 留给手写接线(动作按钮、门控、动态文案)。
+ *
+ * 回填(hydrateControls)与 change 订阅(bindControlGroup)共用这一个接缝,
+ * 故全表只有**一处** DOM 定位,不会出现「回填按声明走、绑定按 refs 走」的错位。
+ */
+export const controlDom: ControlDom = {
   element: (id) => {
     const el = document.getElementById(id);
     // 控件 id 与 index.html 的偏差在设置控件段已被交叉校验判掉;运行期再错要响,
@@ -180,14 +188,49 @@ const controlDom: ControlDom = {
     return el;
   },
   radioGroup: (name) => document.querySelectorAll<HTMLInputElement>(`input[name="${name}"]`),
+  onChange: (id, handler) => {
+    const el = controlDom.element(id);
+    el.addEventListener("change", () => handler(controlHandle(el)));
+  },
+  onRadioChange: (name, handler) => {
+    // 全文档同名成组:快速参数条里的镜像分段自动纳入订阅,此处零额外代码
+    for (const input of document.querySelectorAll<HTMLInputElement>(`input[name="${name}"]`)) {
+      input.addEventListener("change", () => handler(controlHandle(input)));
+    }
+  },
 };
 
+/** 元素 → 结构化控制面(本模块是唯一知道 DOM 类型的地方:声明表与写侧钩子
+ *  只见 value / checked / valueAsNumber 与一次回写)。valueAsNumber 的 NaN 语义
+ *  由浏览器提供(空串与非数值给 NaN 而非 0,钳制分支靠它区分「空输入」)。 */
+function controlHandle(
+  el: HTMLElement & { value?: string; checked?: boolean; valueAsNumber?: number },
+): ControlHandle {
+  return {
+    get value() { return el.value ?? ""; },
+    get checked() { return el.checked === true; },
+    get valueAsNumber() { return el.valueAsNumber ?? Number.NaN; },
+    setValue: (value: string) => { el.value = value; },
+  };
+}
+
 /** 三个手写门控的同步函数:键集 = 声明表登记的门控 id(少登记一个门控即多一个
- *  必填槽,编译期红);回填时逐个调用,不把依赖做成声明式。 */
-const GATE_SYNCERS: Record<GateId, () => void> = {
+ *  必填槽,编译期红);回填时逐个调用、change 侧按登记的 master 反查调用,
+ * 两条路径共用这一份映射,不把依赖做成声明式。 */
+export const GATE_SYNCERS: Record<GateId, () => void> = {
   headerCustomVisibility: syncHeaderCustomVisibility,
   aiCleanupTierAvailability: syncAiCleanupTierAvailability,
   tocModeVisibility: syncTocModeVisibility,
+};
+
+/** 写侧落值通道(声明表不 import state / persist —— 由本模块注入,依赖方向保持单向)。
+ *  settings 按函数读:落权威值时 state.settings 会被整体换成新对象,持引用会写回旧对象。 */
+export const settingsWriteContext: WriteContext = {
+  settings: () => state.settings,
+  hydrating: () => state.hydratingSettings,
+  persist: (patch) => { persistSettings(patch); },
+  syncGate: (id) => { GATE_SYNCERS[id](); },
+  setSelectedFormat: (format) => { state.selectedFormat = format; },
 };
 
 /** 将内存设置回填到所有控件(仅赋值,不触发 change 事件)。
@@ -205,8 +248,10 @@ export function applySettingsToControls(): void {
 /** 模板预设 select 回填(派生键:值是「当前设置匹配哪个预设」的结论,不是设置字段)。
  *  优先保持当前选中(其值与设置一致时不被弹回——自定义预设与硬编码预设值全等时
  *  find 会抢走),否则回退全局匹配;无匹配回退「默认」。抽屉 select 与快速参数条
- *  镜像 select 同步同值;仅自定义预设可删(选中项以 custom: 前缀标识)。 */
-function syncPresetSelection(): void {
+ *  镜像 select 同步同值;仅自定义预设可删(选中项以 custom: 前缀标识)。
+ *  导出:声明表把这条登记为「派生键可删性」效果,设置控件段据此逐条点名
+ *  (where 字段指向的必须是真实存在的导出,不能只是一段注释里的名字)。 */
+export function syncPresetSelection(): void {
   const matchedPresetId = resolvePresetSelection(
     state.settings.customPresets,
     state.settings,
@@ -311,8 +356,10 @@ export function syncTocModeVisibility(): void {
   tocModeSelect.classList.toggle("hidden", !tocInput.checked);
 }
 
-/** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 seg 选中值)。 */
-function composeDrawerMetaText(): string {
+/** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 seg 选中值)。
+ *  导出:声明表把它登记为「抽屉副标题合成」效果的实现落点,设置控件段逐条点名
+ *  (同 syncPresetSelection 的理由:where 指向的必须是真实导出)。 */
+export function composeDrawerMetaText(): string {
   const presetName = templatePresetSelect.selectedOptions[0]?.textContent ?? "";
   return `${presetName} · ${checkedRadioValue(paperInputs)}`;
 }
@@ -337,26 +384,10 @@ registerSettingsSaveHooks({
  * 单纯 `export … from` 只再导出、不产生局部绑定。 */
 export { persistSettings };
 
-/* ---------- 分组整体写回(六组绑定共用的持久化路径,单源本模块) ---------- */
-/** 页面尺寸相关字段(纸张/方向/边距)整体写回。 */
-export function persistPageSetup(): void {
-  persistSettings({ pageSetup: { ...state.settings.pageSetup } });
-}
-
-/** 排版相关字段(字体/字号/行距/段落样式)整体写回。 */
-export function persistTypography(): void {
-  persistSettings({ typography: { ...state.settings.typography } });
-}
-
-/** 页眉页脚字段整体写回。 */
-export function persistHeaderFooter(): void {
-  persistSettings({ headerFooter: { ...state.settings.headerFooter } });
-}
-
-/** 文字水印字段整体写回。 */
-export function persistWatermark(): void {
-  persistSettings({ watermark: { ...state.settings.watermark } });
-}
+/* 整块写回(六组绑定共用)原先是 persistPageSetup / persistTypography /
+ * persistHeaderFooter / persistWatermark 四个手写函数,现已由声明表的
+ * bindControlGroup 按条目的顶层块统一产出 payload(键集与赋值同源),
+ * 故此处不再留第二份「哪个块整块写回」的手写名单。 */
 
 /* ---------- 预设选项重建 ---------- */
 /* 纯逻辑(预设映射/名校验/上限判断/名称解析)收敛于 settings-logic.ts,

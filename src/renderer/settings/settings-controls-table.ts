@@ -1,16 +1,17 @@
 /**
  * 设置控件声明表(纯数据 + 纯函数,**零 DOM**):一条声明同时给出
- * 「设置键 → 控件定位 → 所属组 → 读设置 → 转控件值 → 复位处置」,
- * hydrate 由本表驱动,bind / reset 从同一张表取读侧与复位口径 ——
- * 新增一个控件的 renderer 侧改动因此收敛为「1 个表条目 + 1 个 HTML 控件」。
+ * 「设置键 → 控件定位 → 所属组 → 读设置 → 写设置 → 转控件值 → 复位处置」,
+ * hydrate / bind / reset 三件事都由本表驱动 —— 新增一个控件的 renderer 侧改动
+ * 因此收敛为「1 个表条目 + 1 个 HTML 控件」。
  *
  * 为什么零 DOM:本表的下游有一层纯逻辑(回显值映射 settingsToControlValues)在
  * 无 Electron 环境直测,声明表若 import dom/refs 就把 DOM 拉进那条链,纯层即死。
  * 元素由装配处(settings-panel)按「定位」经 ControlDom 注入 —— 本表只说
- * 「要哪个 id / 哪个 radio 组名」,不说去哪里拿。
+ * 「要哪个 id / 哪个 radio 组名」,不说去哪里拿。change 订阅走同一个接缝。
  *
- * 键路径不经手写字符串:每条的 read 是一个吃 AppSettings 的取值器,
- * 键名拼错或类型不符在 tsc 期即报错("typography.align" 这类串编译器看不见)。
+ * 键路径不经手写字符串:每条只声明「顶层块 + 块内字段名」,读写两半由
+ * readPath / writePath 从同一条路径生成(键名拼错或类型不符在 tsc 期即报错;
+ * "typography.align" 这类串编译器看不见,且读侧与写侧也不可能各自漂移)。
  *
  * 形态分四类,各有各的表达,不合成一套通用描述:值控件(开关 / 文本 / 数值 /
  * 枚举档)· path-chip(可写控件与展示位分离,可带双写镜像)· 派生键(不落
@@ -18,7 +19,9 @@
  * 用不上的可选字段,编译器也就再也指不出「这条少声明了复位处置」。
  *
  * 依赖(3 个手写门控 + 设置值驱动的显隐 / 双写 / 文案合成)刻意**只登记事实、
- * 不做声明式**:见 CONTROL_GATES 与 VALUE_DRIVEN_EFFECTS 的说明。
+ * 不做声明式**:见 CONTROL_GATES 与 VALUE_DRIVEN_EFFECTS 的说明。门控的判定与
+ * 实现仍是手写同步函数,本表只登记「谁驱动谁」—— change 侧据此反查调用,
+ * 回填侧据此逐个调用,两条路径共用同一份登记。
  */
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
 
@@ -47,7 +50,7 @@ export type ResetPolicy = "reset" | "preserve" | "derived";
  */
 export type ValueForm = "switch" | "text" | "number" | "radio" | "select";
 
-/** 顶层块键(整块写回的定位)。字面量受 keyof AppSettings 约束:块名拼错在 tsc 期报错。 */
+/** 顶层块键(整块写回与复位的定位)。字面量受 keyof AppSettings 约束:块名拼错在 tsc 期报错。 */
 export type BlockKey = keyof AppSettings & string;
 
 /** 控件定位:单元素控件按 id,seg 分段按 document 级 radio 组名。 */
@@ -55,7 +58,53 @@ export type ControlLocator =
   | { readonly by: "id"; readonly id: string }
   | { readonly by: "radio"; readonly name: string };
 
-/** 值控件:读设置 → 转控件值 → 回填控件。 */
+/**
+ * 顶层块的块内字段名(标量块没有字段,故为 never —— 在标量块上写 path 即 tsc 报错)。
+ */
+type BlockField<K extends BlockKey> = AppSettings[K] extends infer B
+  ? B extends object
+    ? keyof B & string
+    : never
+  : never;
+
+/** 键路径的值类型:path 缺省即「块自身」(标量顶层键),否则为块内字段的值。 */
+type PathValue<K extends BlockKey, P> = [P] extends [never]
+  ? AppSettings[K]
+  : P extends keyof NonNullable<AppSettings[K]> & string
+    ? NonNullable<AppSettings[K]>[P]
+    : never;
+
+/**
+ * 键路径的读侧(全表唯一的属性读点)。
+ * cast 只把「泛型索引访问」落成一次属性读:块名与字段名在调用处已受
+ * BlockKey / BlockField 收窄,值的类型由 PathValue 从这两者算出,故这里不丢检查。
+ */
+function readPath<K extends BlockKey, P extends BlockField<K>>(
+  settings: AppSettings,
+  block: K,
+  path: P | undefined,
+): PathValue<K, P> {
+  if (path === undefined) return settings[block] as PathValue<K, P>;
+  const target = settings[block] as unknown as Record<string, unknown>;
+  return target[path] as PathValue<K, P>;
+}
+
+/** 键路径的写侧(全表唯一的属性写点,与 readPath 同一条路径)。 */
+function writePath<K extends BlockKey, P extends BlockField<K>>(
+  settings: AppSettings,
+  block: K,
+  path: P | undefined,
+  value: PathValue<K, P>,
+): void {
+  if (path === undefined) {
+    (settings as unknown as Record<string, unknown>)[block] = value;
+    return;
+  }
+  const target = settings[block] as unknown as Record<string, unknown>;
+  target[path] = value;
+}
+
+/** 值控件:读设置 / 写设置 / 转控件值 / 回填控件。 */
 export interface ValueEntry<F extends ValueForm, V, C> {
   readonly kind: "value";
   readonly form: F;
@@ -65,6 +114,8 @@ export interface ValueEntry<F extends ValueForm, V, C> {
   readonly locator: ControlLocator;
   /** 设置取值:参数类型即 AppSettings,键路径的类型错误在这一步暴露。 */
   readonly read: (settings: AppSettings) => V;
+  /** 写回设置:与 read 同一条键路径(两者由同一处声明生成,不可能指向不同字段)。 */
+  readonly write: (settings: AppSettings, value: V) => void;
   /** 控件回填值(数值转字符串等控件语义就地声明,不另立一份映射表)。 */
   readonly controlValue: (settings: AppSettings) => C;
   /**
@@ -109,19 +160,40 @@ export interface DerivedEntry {
 /** 三类条目的并集(按 kind 判别)。 */
 export type ControlEntry = ValueEntry<ValueForm, unknown, unknown> | ChipEntry | DerivedEntry;
 
-/** 值控件条目(工厂):保住 read / toControl 的具体类型 ——
+/** 值控件条目(工厂):保住 read / write / toControl 的具体类型 ——
  *  整表用 satisfies 注解会把类型擦成 unknown,派生映射就无从谈起。 */
-function valueEntry<F extends ValueForm, V, C>(spec: {
-  readonly form: F;
-  readonly group: ControlGroup;
-  readonly reset: ResetPolicy;
-  readonly block: BlockKey;
-  readonly locator: ControlLocator;
-  readonly read: (settings: AppSettings) => V;
-  readonly toControl: (value: V) => C;
-  readonly echo?: readonly string[];
-}): ValueEntry<F, V, C> {
-  return { kind: "value", ...spec, controlValue: (settings) => spec.toControl(spec.read(settings)) };
+function valueEntry<F extends ValueForm, K extends BlockKey, P extends BlockField<K> = never, C = PathValue<K, P>>(
+  spec: {
+    readonly form: F;
+    readonly group: ControlGroup;
+    readonly reset: ResetPolicy;
+    readonly block: K;
+    /** 块内字段名;缺省表示该块是标量顶层键(键即块名)。 */
+    readonly path?: P;
+    readonly locator: ControlLocator;
+    /** 控件回填值转换(数值转字符串等控件语义);缺省即恒等。 */
+    readonly toControl?: (value: PathValue<K, P>) => C;
+    readonly echo?: readonly string[];
+  },
+): ValueEntry<F, PathValue<K, P>, C> {
+  const toControl =
+    spec.toControl ?? ((value: PathValue<K, P>) => value as unknown as C);
+  const read = (settings: AppSettings): PathValue<K, P> =>
+    readPath(settings, spec.block, spec.path);
+  return {
+    kind: "value",
+    form: spec.form,
+    group: spec.group,
+    reset: spec.reset,
+    block: spec.block,
+    locator: spec.locator,
+    echo: spec.echo,
+    read,
+    write: (settings, value) => {
+      writePath(settings, spec.block, spec.path, value);
+    },
+    controlValue: (settings) => toControl(read(settings)),
+  };
 }
 
 function chipEntry(spec: {
@@ -150,86 +222,70 @@ export const CONTROL_ENTRIES = {
   templatePreset: derivedEntry({ group: "preset", locator: { by: "id", id: "templatePreset" } }),
   // 02 排版
   paper: valueEntry({
-    form: "radio", group: "typography", reset: "reset", block: "pageSetup",
+    form: "radio", group: "typography", reset: "reset", block: "pageSetup", path: "paper",
     locator: { by: "radio", name: "paper" },
-    read: (s) => s.pageSetup.paper, toControl: (v) => v,
   }),
   orientation: valueEntry({
-    form: "radio", group: "typography", reset: "reset", block: "pageSetup",
+    form: "radio", group: "typography", reset: "reset", block: "pageSetup", path: "orientation",
     locator: { by: "radio", name: "orientation" },
-    read: (s) => s.pageSetup.orientation, toControl: (v) => v,
   }),
   marginTop: valueEntry({
-    form: "number", group: "typography", reset: "reset", block: "pageSetup",
-    locator: { by: "id", id: "marginTop" },
-    read: (s) => s.pageSetup.marginTop, toControl: (v) => String(v),
+    form: "number", group: "typography", reset: "reset", block: "pageSetup", path: "marginTop",
+    toControl: String, locator: { by: "id", id: "marginTop" },
   }),
   marginBottom: valueEntry({
-    form: "number", group: "typography", reset: "reset", block: "pageSetup",
-    locator: { by: "id", id: "marginBottom" },
-    read: (s) => s.pageSetup.marginBottom, toControl: (v) => String(v),
+    form: "number", group: "typography", reset: "reset", block: "pageSetup", path: "marginBottom",
+    toControl: String, locator: { by: "id", id: "marginBottom" },
   }),
   marginLeft: valueEntry({
-    form: "number", group: "typography", reset: "reset", block: "pageSetup",
-    locator: { by: "id", id: "marginLeft" },
-    read: (s) => s.pageSetup.marginLeft, toControl: (v) => String(v),
+    form: "number", group: "typography", reset: "reset", block: "pageSetup", path: "marginLeft",
+    toControl: String, locator: { by: "id", id: "marginLeft" },
   }),
   marginRight: valueEntry({
-    form: "number", group: "typography", reset: "reset", block: "pageSetup",
-    locator: { by: "id", id: "marginRight" },
-    read: (s) => s.pageSetup.marginRight, toControl: (v) => String(v),
+    form: "number", group: "typography", reset: "reset", block: "pageSetup", path: "marginRight",
+    toControl: String, locator: { by: "id", id: "marginRight" },
   }),
   fontEastAsia: valueEntry({
-    form: "text", group: "typography", reset: "reset", block: "typography",
+    form: "text", group: "typography", reset: "reset", block: "typography", path: "fontEastAsia",
     locator: { by: "id", id: "fontEastAsia" },
-    read: (s) => s.typography.fontEastAsia, toControl: (v) => v,
   }),
   fontAscii: valueEntry({
-    form: "text", group: "typography", reset: "reset", block: "typography",
+    form: "text", group: "typography", reset: "reset", block: "typography", path: "fontAscii",
     locator: { by: "id", id: "fontAscii" },
-    read: (s) => s.typography.fontAscii, toControl: (v) => v,
   }),
   bodySizePt: valueEntry({
-    form: "number", group: "typography", reset: "reset", block: "typography",
-    locator: { by: "id", id: "bodySizePt" },
-    read: (s) => s.typography.bodySizePt, toControl: (v) => String(v),
+    form: "number", group: "typography", reset: "reset", block: "typography", path: "bodySizePt",
+    toControl: String, locator: { by: "id", id: "bodySizePt" },
   }),
   lineSpacing: valueEntry({
-    form: "number", group: "typography", reset: "reset", block: "typography",
-    locator: { by: "id", id: "lineSpacing" },
-    read: (s) => s.typography.lineSpacing, toControl: (v) => String(v),
+    form: "number", group: "typography", reset: "reset", block: "typography", path: "lineSpacing",
+    toControl: String, locator: { by: "id", id: "lineSpacing" },
     echo: ["lineSpacingValue"],
   }),
   headingScale: valueEntry({
-    form: "radio", group: "typography", reset: "reset", block: "typography",
+    form: "radio", group: "typography", reset: "reset", block: "typography", path: "headingScale",
     locator: { by: "radio", name: "headingScale" },
-    read: (s) => s.typography.headingScale, toControl: (v) => v,
   }),
   headingSpacing: valueEntry({
-    form: "radio", group: "typography", reset: "reset", block: "typography",
+    form: "radio", group: "typography", reset: "reset", block: "typography", path: "headingSpacing",
     locator: { by: "radio", name: "headingSpacing" },
-    read: (s) => s.typography.headingSpacing, toControl: (v) => v,
   }),
   firstLineIndent: valueEntry({
-    form: "switch", group: "typography", reset: "reset", block: "typography",
+    form: "switch", group: "typography", reset: "reset", block: "typography", path: "firstLineIndent",
     locator: { by: "id", id: "firstLineIndent" },
-    read: (s) => s.typography.firstLineIndent, toControl: (v) => v,
   }),
   align: valueEntry({
-    form: "radio", group: "typography", reset: "reset", block: "typography",
+    form: "radio", group: "typography", reset: "reset", block: "typography", path: "align",
     locator: { by: "radio", name: "align" },
-    read: (s) => s.typography.align, toControl: (v) => v,
   }),
   // 03 页眉页脚与水印
   headerMode: valueEntry({
-    form: "radio", group: "headerwatermark", reset: "reset", block: "headerFooter",
+    form: "radio", group: "headerwatermark", reset: "reset", block: "headerFooter", path: "headerMode",
     locator: { by: "radio", name: "headerMode" },
-    read: (s) => s.headerFooter.headerMode, toControl: (v) => v,
   }),
   headerText: valueEntry({
-    form: "text", group: "headerwatermark", reset: "reset", block: "headerFooter",
+    form: "text", group: "headerwatermark", reset: "reset", block: "headerFooter", path: "headerText",
     locator: { by: "id", id: "headerText" },
-    read: (s) => s.headerFooter.headerText, toControl: (v) => v,
   }),
   headerLogoPath: chipEntry({
     group: "headerwatermark", reset: "reset", block: "headerFooter",
@@ -237,91 +293,74 @@ export const CONTROL_ENTRIES = {
     read: (s) => s.headerFooter.headerLogoPath,
   }),
   headerLayout: valueEntry({
-    form: "radio", group: "headerwatermark", reset: "reset", block: "headerFooter",
+    form: "radio", group: "headerwatermark", reset: "reset", block: "headerFooter", path: "headerLayout",
     locator: { by: "radio", name: "headerLayout" },
-    read: (s) => s.headerFooter.headerLayout, toControl: (v) => v,
   }),
   footerEnabled: valueEntry({
-    form: "switch", group: "headerwatermark", reset: "reset", block: "headerFooter",
+    form: "switch", group: "headerwatermark", reset: "reset", block: "headerFooter", path: "footerEnabled",
     locator: { by: "id", id: "footerEnabled" },
-    read: (s) => s.headerFooter.footerEnabled, toControl: (v) => v,
   }),
   watermarkText: valueEntry({
-    form: "text", group: "headerwatermark", reset: "reset", block: "watermark",
+    form: "text", group: "headerwatermark", reset: "reset", block: "watermark", path: "text",
     locator: { by: "id", id: "watermarkText" },
-    read: (s) => s.watermark.text, toControl: (v) => v,
   }),
   watermarkAngle: valueEntry({
-    form: "number", group: "headerwatermark", reset: "reset", block: "watermark",
-    locator: { by: "id", id: "watermarkAngle" },
-    read: (s) => s.watermark.angle, toControl: (v) => String(v),
+    form: "number", group: "headerwatermark", reset: "reset", block: "watermark", path: "angle",
+    toControl: String, locator: { by: "id", id: "watermarkAngle" },
   }),
   watermarkOpacity: valueEntry({
-    form: "number", group: "headerwatermark", reset: "reset", block: "watermark",
-    locator: { by: "id", id: "watermarkOpacity" },
-    read: (s) => s.watermark.opacity, toControl: (v) => String(v),
+    form: "number", group: "headerwatermark", reset: "reset", block: "watermark", path: "opacity",
+    toControl: String, locator: { by: "id", id: "watermarkOpacity" },
   }),
   watermarkGray: valueEntry({
-    form: "switch", group: "headerwatermark", reset: "reset", block: "watermark",
+    form: "switch", group: "headerwatermark", reset: "reset", block: "watermark", path: "gray",
     locator: { by: "id", id: "watermarkGray" },
-    read: (s) => s.watermark.gray, toControl: (v) => v,
   }),
   // 04 编号与目录
   headingNumbering: valueEntry({
-    form: "switch", group: "numbering", reset: "reset", block: "typography",
+    form: "switch", group: "numbering", reset: "reset", block: "typography", path: "headingNumbering",
     locator: { by: "id", id: "headingNumbering" },
-    read: (s) => s.typography.headingNumbering, toControl: (v) => v,
   }),
   captionNumbering: valueEntry({
-    form: "switch", group: "numbering", reset: "reset", block: "typography",
+    form: "switch", group: "numbering", reset: "reset", block: "typography", path: "captionNumbering",
     locator: { by: "id", id: "captionNumbering" },
-    read: (s) => s.typography.captionNumbering, toControl: (v) => v,
   }),
   equationNumbering: valueEntry({
     form: "switch", group: "numbering", reset: "reset", block: "equationNumbering",
     locator: { by: "id", id: "equationNumbering" },
-    read: (s) => s.equationNumbering, toControl: (v) => v,
   }),
   toc: valueEntry({
     form: "switch", group: "numbering", reset: "reset", block: "toc",
     locator: { by: "id", id: "toc" },
-    read: (s) => s.toc, toControl: (v) => v,
   }),
   tocMode: valueEntry({
     form: "select", group: "numbering", reset: "reset", block: "tocMode",
     locator: { by: "id", id: "tocMode" },
-    read: (s) => s.tocMode, toControl: (v) => v,
   }),
   breakBeforeH1: valueEntry({
     form: "switch", group: "numbering", reset: "reset", block: "breakBeforeH1",
     locator: { by: "id", id: "breakBeforeH1" },
-    read: (s) => s.breakBeforeH1, toControl: (v) => v,
   }),
   // 05 转换
   aiCleanup: valueEntry({
-    form: "switch", group: "convert", reset: "reset", block: "aiCleanup",
+    form: "switch", group: "convert", reset: "reset", block: "aiCleanup", path: "enabled",
     locator: { by: "id", id: "aiCleanup" },
-    read: (s) => s.aiCleanup.enabled, toControl: (v) => v,
   }),
   aiCleanupTidy: valueEntry({
-    form: "switch", group: "convert", reset: "reset", block: "aiCleanup",
+    form: "switch", group: "convert", reset: "reset", block: "aiCleanup", path: "tidy",
     locator: { by: "id", id: "aiCleanupTidy" },
-    read: (s) => s.aiCleanup.tidy, toControl: (v) => v,
   }),
   aiCleanupRewrite: valueEntry({
-    form: "switch", group: "convert", reset: "reset", block: "aiCleanup",
+    form: "switch", group: "convert", reset: "reset", block: "aiCleanup", path: "rewrite",
     locator: { by: "id", id: "aiCleanupRewrite" },
-    read: (s) => s.aiCleanup.rewrite, toControl: (v) => v,
   }),
   obsidianCompat: valueEntry({
-    form: "switch", group: "convert", reset: "reset", block: "obsidian",
+    form: "switch", group: "convert", reset: "reset", block: "obsidian", path: "compat",
     locator: { by: "id", id: "obsidianCompat" },
-    read: (s) => s.obsidian.compat, toControl: (v) => v,
   }),
   obsidianAttachmentFolder: valueEntry({
-    form: "text", group: "convert", reset: "reset", block: "obsidian",
+    form: "text", group: "convert", reset: "reset", block: "obsidian", path: "attachmentFolder",
     locator: { by: "id", id: "obsidianAttachmentFolder" },
-    read: (s) => s.obsidian.attachmentFolder, toControl: (v) => v,
   }),
   outputDir: chipEntry({
     group: "convert", reset: "reset", block: "outputDir",
@@ -332,30 +371,25 @@ export const CONTROL_ENTRIES = {
   afterConvert: valueEntry({
     form: "radio", group: "convert", reset: "reset", block: "afterConvert",
     locator: { by: "radio", name: "afterConvert" },
-    read: (s) => s.afterConvert, toControl: (v) => v,
   }),
   pdfCss: valueEntry({
     form: "text", group: "convert", reset: "reset", block: "pdfCss",
     locator: { by: "id", id: "pdfCssText" },
-    read: (s) => s.pdfCss, toControl: (v) => v,
   }),
   // 06 应用(theme / language 属刻意保留集,见 reset 字段)
   theme: valueEntry({
     form: "radio", group: "app", reset: "preserve", block: "theme",
     locator: { by: "radio", name: "theme" },
-    read: (s) => s.theme, toControl: (v) => v,
   }),
   languageSelect: valueEntry({
     form: "select", group: "app", reset: "preserve", block: "language",
     locator: { by: "id", id: "languageSelect" },
-    read: (s) => s.language, toControl: (v) => v,
   }),
   // 抽屉外:快速参数条的两处镜像 + 顶栏格式分段
   quickPreset: derivedEntry({ group: "mirror", locator: { by: "id", id: "quickPreset" } }),
   format: valueEntry({
     form: "radio", group: "mirror", reset: "preserve", block: "format",
     locator: { by: "radio", name: "format" },
-    read: (s) => s.format, toControl: (v) => v,
   }),
 } as const;
 
@@ -387,6 +421,18 @@ export function declaredBlockKeys(): readonly BlockKey[] {
   const blocks = new Set<BlockKey>();
   for (const entry of Object.values(CONTROL_ENTRIES)) {
     if (entry.kind !== "derived") blocks.add(entry.block);
+  }
+  return [...blocks];
+}
+
+/**
+ * 抽屉「恢复默认」的复位集:由条目的 reset 字段**算**出来,而不是另抄一份名单。
+ * 「表里没有它」因此不再等于「它被保留」——保留与否是每条显式声明的。
+ */
+export function resetBlockKeys(): readonly BlockKey[] {
+  const blocks = new Set<BlockKey>();
+  for (const entry of Object.values(CONTROL_ENTRIES)) {
+    if (entry.kind !== "derived" && entry.reset === "reset") blocks.add(entry.block);
   }
   return [...blocks];
 }
@@ -423,17 +469,36 @@ export function settingsToControlValues(settings: AppSettings): SettingsControlV
   return values as SettingsControlValues;
 }
 
-/* ---------- 回填(表驱动;DOM 由装配处注入) ---------- */
+/* ---------- 回填与 change 订阅(表驱动;DOM 与落值通道均由装配处注入) ---------- */
 
 /** seg 分段组:document 级同名 radio 成组,故按组名而非单个元素定位。 */
 export interface RadioGroup {
   forEach(visit: (input: { readonly value: string; checked: boolean }) => void): void;
 }
 
+/**
+ * 控件的结构化读侧:本表与写侧钩子只见这一面,不见 DOM 类型
+ * (「唯一知道 DOM 类型的地方」是装配处,见 settings-panel.controlHandle)。
+ */
+export interface ControlHandle {
+  /** 字符串位(input / select / textarea / radio 的 value)。 */
+  readonly value: string;
+  /** 勾选位(只有 checkbox 形态的 input 有)。 */
+  readonly checked: boolean;
+  /** 数值视图(与浏览器一致:空串与非数值给 NaN 而非 0,钳制分支靠它区分「空输入」)。 */
+  readonly valueAsNumber: number;
+  /** 回写字符串位(钳制后回显)。 */
+  setValue(value: string): void;
+}
+
 /** 控件的 DOM 供给(依赖注入):本表只说"要哪个 id / 哪个组名",不说去哪里拿。 */
 export interface ControlDom {
   element(id: string): HTMLElement;
   radioGroup(name: string): RadioGroup;
+  /** 订阅单元素控件的 change(装配处把元素包成 ControlHandle 递进来)。 */
+  onChange(id: string, handler: (control: ControlHandle) => void): void;
+  /** 订阅同名 seg 分段组(组内每个成员各挂一个;非选中者由本表前置过滤)。 */
+  onRadioChange(name: string, handler: (control: ControlHandle) => void): void;
 }
 
 /** 字符串位的写入面:input / select / textarea / output 都有 value。 */
@@ -448,10 +513,14 @@ type CheckableElement = HTMLElement & { checked: boolean };
  * chip 展示位、派生键、门控与动态文案不在此:它们不是"控件值 = 设置值",各有落点。
  */
 export function hydrateControls(settings: AppSettings, dom: ControlDom): void {
-  for (const entry of Object.values(CONTROL_ENTRIES)) {
-    if (entry.kind !== "value") continue;
+  for (const raw of Object.values(CONTROL_ENTRIES)) {
+    if (raw.kind !== "value") continue;
+    // 取成宽形态:整表遍历时 TS 只知道这是「某个」值控件,值类型是所有条目的并集,
+    // 落到勾选位 / 字符串位需要按 form 收窄(收窄的正当性由每条的 form 声明保证:
+    // switch 只可能是 boolean,其余是字符串语义)。
+    const entry = raw as ValueEntry<ValueForm, unknown, unknown>;
+    const value = entry.controlValue(settings);
     if (entry.locator.by === "radio") {
-      const value = entry.controlValue(settings);
       dom.radioGroup(entry.locator.name).forEach((input) => {
         input.checked = input.value === value;
       });
@@ -459,15 +528,195 @@ export function hydrateControls(settings: AppSettings, dom: ControlDom): void {
     }
     const id = entry.locator.id;
     if (entry.form === "switch") {
-      (dom.element(id) as CheckableElement).checked = entry.controlValue(settings);
+      (dom.element(id) as CheckableElement).checked = value === true;
       continue;
     }
-    (dom.element(id) as WritableElement).value = entry.controlValue(settings);
-    for (const echoId of entry.echo ?? []) dom.element(echoId).textContent = entry.controlValue(settings);
+    (dom.element(id) as WritableElement).value = String(value);
+    for (const echoId of entry.echo ?? []) dom.element(echoId).textContent = String(value);
   }
 }
 
-/* ---------- 依赖登记(显式例外;刻意不做成第二套声明式依赖语言) ---------- */
+/* ---------- change 接线(表驱动) ---------- */
+
+/**
+ * 写侧钩子:通用落值之外**必须自己做**的那一步。三类都走这一套挂法,不再各自发明接法:
+ *  - 钳制 / 校验 / 错误回显(边距、字体、字号、行距、水印角度与不透明度)——
+ *    合法区间与提示文案是该控件自己的口径,不是样板;
+ *  - 运行时副作用(外观主题、界面语言、顶栏格式的镜像态);
+ *  - 动作落点同步(PDF CSS 的状态行与清除按钮)。
+ * 三段的分工固定:ctx 给落值通道与门控、control 给读侧、write 落值
+ * (写设置 + 整块持久化 + 重算本控件驱动的门控)。回填期判定由驱动统一做,
+ * 故钩子体直接从「读控件」开始。
+ */
+export type WriteHook = (
+  ctx: WriteContext,
+  control: ControlHandle,
+  write: (value: unknown) => void,
+) => void;
+
+/**
+ * 声明了写侧钩子的控件键(通用落值之外还有别的事要做的那几条)。
+ * 键集受 ControlKey 约束:表里没有的键写在这里即 tsc 报错;反过来,
+ * 编排根的钩子表类型是本清单的全量 Record,少一个实现即编译期红。
+ */
+export const HOOKED_WRITE_KEYS = [
+  // 钳制 / 校验 / 错误回显
+  "marginTop", "marginBottom", "marginLeft", "marginRight",
+  "fontEastAsia", "fontAscii", "bodySizePt", "lineSpacing",
+  "watermarkAngle", "watermarkOpacity",
+  // 运行时副作用与动作落点同步
+  "format", "theme", "languageSelect", "pdfCss",
+] as const satisfies readonly ControlKey[];
+
+/** 有写侧钩子的控件键。 */
+export type HookedWriteKey = (typeof HOOKED_WRITE_KEYS)[number];
+
+/** 某条目所属的组(按清单反推某键归哪一组,故组归属只有一处声明)。 */
+type GroupOf<K extends ControlKey> = (typeof CONTROL_ENTRIES)[K]["group"];
+
+/** 某组自己的那几条写侧钩子(多写/漏写都在 tsc 期报错)。 */
+export type WriteHooksOf<G extends ControlGroup> = {
+  readonly [K in HookedWriteKey as GroupOf<K> extends G ? K : never]: WriteHook;
+};
+
+/** 全量钩子表(编排根据此判「表里声明的钩子都有实现」)。 */
+export type WriteHookRegistry = WriteHooksOf<ControlGroup>;
+
+const HOOKED_WRITE_KEY_SET: ReadonlySet<string> = new Set<string>(HOOKED_WRITE_KEYS);
+
+/**
+ * 落值通道(依赖注入):本表不 import state / persist —— 装配处注入,
+ * 依赖方向保持单向(settings-* → 本表,反之不成立)。
+ */
+export interface WriteContext {
+  /**
+   * 内存设置的**当前**对象:落权威值时 state.settings 会被整体换成新对象,
+   * 故按函数读而不持引用(持引用会让写回落到已被丢弃的旧对象上)。
+   */
+  readonly settings: () => AppSettings;
+  /** 回填期标志:回填与整体套用期间控件只赋值不落值。 */
+  readonly hydrating: () => boolean;
+  /** 持久化通道(装配处的唯一写路径)。 */
+  readonly persist: (patch: Partial<AppSettings>) => void;
+  /** 手写门控同步(依赖例外:表登记「谁驱动谁」,判定与实现仍在装配处)。 */
+  readonly syncGate: (id: GateId) => void;
+  /** 顶栏格式的镜像态(转换时读它;settings 之外唯一需要写侧通知的旁支)。 */
+  readonly setSelectedFormat: (format: AppSettings["format"]) => void;
+}
+
+/** 整块写回 payload:块是对象则带上整块当前值(不做「只写被改的那个子字段」的局部 patch)。 */
+function blockPatch(settings: AppSettings, block: BlockKey): Partial<AppSettings> {
+  const value: unknown = settings[block];
+  return {
+    [block]: typeof value === "object" && value !== null ? { ...(value as object) } : value,
+  } as Partial<AppSettings>;
+}
+
+/** 一次落值:写设置 → 整块持久化 → 重算本控件驱动的门控。 */
+function commitWrite(
+  entry: ValueEntry<ValueForm, unknown, unknown>,
+  key: string,
+  ctx: WriteContext,
+  value: unknown,
+): void {
+  const settings = ctx.settings();
+  entry.write(settings, value);
+  ctx.persist(blockPatch(settings, entry.block));
+  // 门控的 change 侧接缝:按登记的「主控」反查 —— 依赖方向单一且已在 CONTROL_GATES
+  // 登记过 master,故不在条目上再登记第二遍(回填侧调的也是同一批同步函数)。
+  for (const gate of CONTROL_GATES) {
+    if (gate.master === key) ctx.syncGate(gate.id);
+  }
+}
+
+/** 控件读侧 → 落值(通用路径):勾选位 / 字符串位 / 数值视图 / seg 分段组的选中值。 */
+function controlValueOf(
+  entry: ValueEntry<ValueForm, unknown, unknown>,
+  control: ControlHandle,
+): unknown {
+  if (entry.locator.by === "radio") return control.value;
+  if (entry.form === "switch") return control.checked;
+  if (entry.form === "number") return control.valueAsNumber;
+  return control.value;
+}
+
+/** 一次 change 的落地:回填期只读不写;有钩子交给钩子,否则走通用两行。 */
+function deliver(
+  key: string,
+  entry: ValueEntry<ValueForm, unknown, unknown>,
+  control: ControlHandle,
+  ctx: WriteContext,
+  hook: WriteHook | undefined,
+): void {
+  if (ctx.hydrating()) return;
+  const write = (value: unknown): void => { commitWrite(entry, key, ctx, value); };
+  if (hook) {
+    hook(ctx, control, write);
+    return;
+  }
+  write(controlValueOf(entry, control));
+}
+
+/**
+ * 某一组值控件的 change 接线(各分组绑定文件经 bindSettingsEvents 编排调用)。
+ * 「新增一个开关」从此只是往 CONTROL_ENTRIES 加一条:定位、读侧、落值、整块写回
+ * 与门控联动都在这里按声明走完,分组文件不必再逐字写一遍监听体。
+ */
+export function bindControlGroup(
+  group: ControlGroup,
+  dom: ControlDom,
+  ctx: WriteContext,
+  hooks: Partial<WriteHookRegistry>,
+): void {
+  const registry = hooks as Partial<Record<string, WriteHook>>;
+  for (const [key, entry] of Object.entries(CONTROL_ENTRIES)) {
+    if (entry.kind !== "value" || entry.group !== group) continue;
+    const target = entry as ValueEntry<ValueForm, unknown, unknown>;
+    const hook = registry[key];
+    // 声明了钩子却没给实现:宁可响,也不静默走通用路径(那会让钳制整段失效且不报错)
+    if (HOOKED_WRITE_KEY_SET.has(key) && typeof hook !== "function") {
+      throw new Error(`控件 ${key} 在 HOOKED_WRITE_KEYS 里声明了写侧钩子,却没有提供实现`);
+    }
+    if (target.locator.by === "radio") {
+      dom.onRadioChange(target.locator.name, (control) => {
+        // seg 分段组:组内每个成员的 change 都会派发,只有被选中的那一个才该落值
+        // (这条前置是语义,不是样板冗余)
+        if (!control.checked) return;
+        deliver(key, target, control, ctx, hook);
+      });
+      continue;
+    }
+    const id = target.locator.id;
+    dom.onChange(id, (control) => { deliver(key, target, control, ctx, hook); });
+  }
+}
+
+/* ---------- 复位(表驱动:复位集与白名单同源) ---------- */
+
+/**
+ * 抽屉「恢复默认」:按复位集把内存设置复位到默认,并返回**同一键集**的持久化 payload。
+ * 赋值与 payload 由同一处循环产出,故两者不会再分叉成两份手写镜像(原先是
+ * 13 条赋值 + 一份 13 字段 patch 各写一遍)。
+ * 对象块换新对象(不与 defaults 共享引用),标量块直赋 —— 与旧接线逐字一致。
+ */
+export function resetSettingsToDefaults(
+  settings: AppSettings,
+  defaults: AppSettings,
+): Partial<AppSettings> {
+  /** @param {unknown} value @returns {unknown} */
+  const copy = (value: unknown): unknown =>
+    typeof value === "object" && value !== null ? { ...(value as object) } : value;
+  const writable = settings as unknown as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  for (const block of resetBlockKeys()) {
+    const value: unknown = defaults[block];
+    writable[block] = copy(value);
+    patch[block] = copy(value);
+  }
+  return patch as Partial<AppSettings>;
+}
+
+/* ---------- 依赖登记(显式例外;刻意不做第二套声明式依赖语言) ---------- */
 
 /** 门控的收起形态:整块移除(IA §3 规则 1 的条件字段)或灰禁不移除(分档类从属项的唯一例外)。 */
 export type GateForm = "collapse" | "disable";
@@ -490,6 +739,9 @@ export interface ControlGate {
  * 只登记"谁驱动谁 + 收起形态",不登记判定与实现:依赖是少数情况,
  * 把它声明式化只会让表里长出第二套 mini 语言(见 docs/large/01 步 03 高风险点 1)。
  * 收起形态是 IA 拍板的,不是实现细节 —— 条件字段整块移除、分档灰禁不移除。
+ *
+ * master 同时是 change 侧的接缝:主控控件落值后由 bindControlGroup 按它反查同步函数
+ * (回填侧则逐个调用 GATE_SYNCERS),两条路径共用这一份登记,不会只接上一半。
  */
 export const CONTROL_GATES = [
   {
@@ -535,6 +787,9 @@ export interface ValueDrivenEffect {
  * 输出目录双写(抽屉 chip + 快速参数条镜像)· 抽屉副标题合成。
  * 与门控同理只登记事实;一处不漏由设置控件段的交叉校验兜住
  * (每个落点 id 必须在 index.html 里,且必须出现在本表内)。
+ *
+ * 其中只有 **pdfCssState** 有 change 侧落点(文本域改动即时改状态行与清除钮);
+ * 其余 5 条分别由动作入口(选目录 / 选 logo / 选预设)或整体回填驱动,故不在写侧接线。
  */
 export const VALUE_DRIVEN_EFFECTS = [
   {
@@ -581,6 +836,9 @@ export const VALUE_DRIVEN_EFFECTS = [
   },
 ] as const satisfies readonly ValueDrivenEffect[];
 
+/** 设置值驱动效果键并集。 */
+export type ValueDrivenEffectId = (typeof VALUE_DRIVEN_EFFECTS)[number]["id"];
+
 /* ---------- 扁平视图(跨源对照的唯一读法) ---------- */
 
 /** 声明表的一行扁平视图:键 + 形态 + 组 + 复位处置 + 顶层块 + 全部 DOM 标识。 */
@@ -595,6 +853,8 @@ export interface ControlRow {
   readonly ids: readonly string[];
   /** document 级 radio 组名(seg 分段定位)。 */
   readonly radioNames: readonly string[];
+  /** 是否声明了写侧钩子(通用落值之外还有别的事要做)。 */
+  readonly hooked: boolean;
 }
 
 /**
@@ -617,6 +877,7 @@ export function controlTable(): readonly ControlRow[] {
           block: entry.block,
           ids,
           radioNames: entry.locator.by === "radio" ? [entry.locator.name] : [],
+          hooked: HOOKED_WRITE_KEY_SET.has(key),
         };
       }
       case "chip":
@@ -628,6 +889,7 @@ export function controlTable(): readonly ControlRow[] {
           block: entry.block,
           ids: [entry.display, ...entry.mirrors, ...entry.write],
           radioNames: [],
+          hooked: false,
         };
       case "derived":
         return {
@@ -638,6 +900,7 @@ export function controlTable(): readonly ControlRow[] {
           block: null,
           ids: [entry.locator.id],
           radioNames: [],
+          hooked: false,
         };
     }
   });

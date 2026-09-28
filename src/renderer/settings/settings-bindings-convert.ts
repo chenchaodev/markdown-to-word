@@ -1,40 +1,39 @@
 /**
- * 转换组(Tab「转 换」)接线:输出格式(主窗分段,语义属本组的快速参数条镜像)/
- * 转换后行为/AI 清理(含其下两个分档)/Obsidian 兼容与附件目录/PDF 自定义 CSS 文本域与导入清除/
- * 输出目录选择与复位(抽屉与快速参数条两处入口共用同一写入路径)。
- * 分组口径 = index.html 六组 Tab 的 data-group=convert;拆自
- * settings-bindings.ts(纯搬移零行为改动),编排入口在 settings-bindings。
+ * 转换组(Tab「转 换」)接线:AI 清理(含其下两个分档)/Obsidian 兼容与附件目录/
+ * 转换后行为/PDF 自定义 CSS(导入与清除)/输出目录选择与复位。
+ *
+ * 域内 change 监听由声明表统一接线;本文件只留表接不了的部分:
+ *  - PDF CSS 的导入 / 清除、输出目录的「更改…」/「恢复默认」:动作按钮,不是值控件;
+ *  - 一个写侧钩子:PDF CSS 的状态行与清除钮是**设置值驱动的展示位**,change 侧
+ *    同样要同步(其余 5 处展示位由动作入口或整体回填驱动,见表的 VALUE_DRIVEN_EFFECTS)。
+ * 分组口径 = index.html 六组 Tab 的 data-group=convert。
+ * 顶栏格式分段(group=mirror,抽屉外)在编排根 settings-bindings.ts 接线。
  */
-import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import { t } from "../../core/i18n.js";
 import {
-  afterConvertInputs,
-  aiCleanupInput,
-  aiCleanupTidyInput,
-  aiCleanupRewriteInput,
-  formatInputs,
-  obsidianAttachmentFolderInput,
-  obsidianCompatInput,
   outputDirPick,
   outputDirReset,
   pdfCssClearBtn,
   pdfCssImportBtn,
-  pdfCssTextInput,
   quickOutputPickBtn,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError } from "../ui/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
 import {
+  bindControlGroup,
+  type WriteHook,
+  type WriteHooksOf,
+} from "./settings-controls-table.js";
+import {
   clearPdfCss,
+  controlDom,
   importPdfCss,
   persistSettings,
-  syncAiCleanupTierAvailability,
+  settingsWriteContext,
   syncOutputDirDisplay,
   syncPdfCssState,
 } from "./settings-panel.js";
-
-type AfterConvert = AppSettings["afterConvert"];
 
 /** 打开目录选择对话框(抽屉「更改…」与快速参数条「更改…」共用);取消无动作。 */
 async function pickOutputDir(): Promise<void> {
@@ -50,68 +49,25 @@ async function pickOutputDir(): Promise<void> {
   }
 }
 
+/** PDF 自定义 CSS:状态行与清除按钮是设置值驱动的展示位,change 侧同样要同步
+ *  (其余 5 处展示位由动作入口或整体回填驱动,见表的 VALUE_DRIVEN_EFFECTS)。 */
+const pdfCssHook: WriteHook = (_ctx, control, write) => {
+  write(control.value);
+  syncPdfCssState(control.value); // 状态行与清除按钮显隐单源
+};
+
+/** 本组声明了写侧钩子的条目(键集由表反推,多写/漏写即 tsc 报错)。 */
+export const convertWriteHooks: WriteHooksOf<"convert"> = {
+  pdfCss: pdfCssHook,
+};
+
 /** 转换组全部控件接线(bindSettingsEvents 编排调用)。 */
-export function bindConvertGroup(): void {
-  // 格式选择:记录当前选中格式(转换时使用),并持久化到设置
-  formatInputs.forEach((input) => {
-    input.addEventListener("change", () => {
-      if (!input.checked || state.hydratingSettings) return;
-      state.selectedFormat = input.value as "docx" | "pdf";
-      state.settings.format = state.selectedFormat;
-      persistSettings({ format: state.selectedFormat });
-    });
-  });
-
-  aiCleanupInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.aiCleanup.enabled = aiCleanupInput.checked;
-    // 总开关一动即重算分档可用性(灰禁/说明行),两个分档的值不受影响
-    syncAiCleanupTierAvailability();
-    persistSettings({ aiCleanup: { ...state.settings.aiCleanup } });
-  });
-  // 两个分档:各自独立持久化(总开关关闭时控件 disabled,浏览器不再派发 change)
-  // 整块写回(块内其余字段带当前值),不做「只写被改的那个子字段」的局部 patch
-  aiCleanupTidyInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.aiCleanup.tidy = aiCleanupTidyInput.checked;
-    persistSettings({ aiCleanup: { ...state.settings.aiCleanup } });
-  });
-  aiCleanupRewriteInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.aiCleanup.rewrite = aiCleanupRewriteInput.checked;
-    persistSettings({ aiCleanup: { ...state.settings.aiCleanup } });
-  });
-  obsidianCompatInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.obsidian.compat = obsidianCompatInput.checked;
-    persistSettings({ obsidian: { ...state.settings.obsidian } });
-  });
-  obsidianAttachmentFolderInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.obsidian.attachmentFolder = obsidianAttachmentFolderInput.value.trim();
-    persistSettings({ obsidian: { ...state.settings.obsidian } });
-  });
-
-  afterConvertInputs.forEach((input) => {
-    input.addEventListener("change", () => {
-      if (!input.checked || state.hydratingSettings) return;
-      state.settings.afterConvert = input.value as AfterConvert;
-      persistSettings({ afterConvert: state.settings.afterConvert });
-    });
-  });
+export function bindConvertGroup(hooks: WriteHooksOf<"convert">): void {
+  bindControlGroup("convert", controlDom, settingsWriteContext, hooks);
 
   // PDF 样式 CSS 导入 / 清除(IIFE + void,规避 no-misused-promises)
   pdfCssImportBtn.addEventListener("click", () => void importPdfCss());
   pdfCssClearBtn.addEventListener("click", clearPdfCss);
-
-  // PDF 自定义 CSS 文本域(与导入/清除同写
-  // settings.pdfCss,状态行与清除按钮可见性同步回填逻辑)
-  pdfCssTextInput.addEventListener("change", () => {
-    if (state.hydratingSettings) return;
-    state.settings.pdfCss = pdfCssTextInput.value;
-    persistSettings({ pdfCss: pdfCssTextInput.value });
-    syncPdfCssState(pdfCssTextInput.value); // 状态行与清除按钮显隐单源
-  });
 
   // 输出目录选择 / 恢复默认(空串 = 与源文件相同目录);
   // 抽屉与快速参数条两处入口共享 pickOutputDir / syncOutputDirDisplay

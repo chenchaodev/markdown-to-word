@@ -1,42 +1,60 @@
 /**
- * 设置控件事件绑定编排(组合根 init 处调用):按 index.html 六组 Tab 依次接线,
- * 各组实现在同名分组文件(纯搬移拆分,零行为改动):
- * - settings-bindings-preset.ts     预 设(含 applyTemplatePreset 跨模块契约)
- * - settings-bindings-typography.ts 排 版(纸张/边距/字体/字号/行距/档位/对齐)
- * - settings-bindings-headerwatermark.ts 页眉页脚与水印
- * - settings-bindings-numbering.ts  编号与目录
- * - settings-bindings-convert.ts    转 换(格式/输出目录/AI 清理/PDF CSS)
- * - settings-bindings-app.ts        应 用(恢复默认/语言/主题)
- * 各组监听器相互独立,调用顺序无行为含义;控件 id/name 不在本链路触碰
- * (HTML/refs 零改动,契约由 refs.ts 类型导出在编译期守卫)。
+ * 设置控件事件绑定编排(组合根 init 处调用):按 index.html 六组 Tab 依次接线。
+ * 各组的**值控件 change 监听**由声明表统一接线(键路径、读侧、落值、整块写回与
+ * 门控联动都在表里),各分组文件只留表接不了的部分:
+ * - settings-bindings-preset.ts     预 设(派生 select 套用 + 弹窗 / 导入导出)
+ * - settings-bindings-typography.ts 排 版(六处钳制钩子 + 字号 stepper + 滑杆回显)
+ * - settings-bindings-headerwatermark.ts 页眉页脚与水印(水印两处钳制 + logo 动作钮)
+ * - settings-bindings-numbering.ts  编号与目录(全组走通用落值,无自定义钩子)
+ * - settings-bindings-convert.ts    转 换(PDF CSS 展示位钩子 + 导入清除 / 目录动作钮)
+ * - settings-bindings-app.ts        应 用(主题 / 语言钩子 + 抽屉「恢复默认」)
+ * 钩子表由各组按声明表反推出的键集自行声明(少一个实现即编译期红,多写也红),
+ * 本文件只负责把它们交给各组的接线入口。
  *
  * 加载/回填/持久化单源 settings-panel.ts、预设弹窗与导入导出单源
  * settings-preset-actions.ts(均不反向依赖本模块)。保留的非分组接线:
  * - #quickBar 位于拖放区内部,click/keydown 整体阻断冒泡,防止操作参数时
  *   误触发拖放区「点击=选择文件」语义(阻断不影响控件自身交互)。
  *
- * 快速参数条(主界面)镜像接线(分散归组,单列仅作索引):
- * - 预设 select 两处(#templatePreset / #quickPreset)共用 applyTemplatePreset(preset 组);
- * - 输出目录两处 chips 由 setOutputDirDisplay 同写,「更改…」两钮共用 pickOutputDir(convert 组);
- * - paper/orientation 镜像分段为同名 radio 组,change 绑定经 paperInputs/
- *   orientationInputs 全文档查询自动覆盖(typography 组,零额外代码)。
+ * 快速参数条(主界面)镜像接线:预设 select 两处共用 applyTemplatePreset(preset 组);
+ * 输出目录两处 chips 由同步函数同写、两处「更改…」共用 pickOutputDir(convert 组);
+ * paper/orientation 镜像分段为同名 radio 组,表接线的全文档成组查询自动覆盖
+ * (typography 组,零额外代码);顶栏格式分段(group=mirror)在本文件接线。
  */
+import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import { quickBar } from "../dom/refs.js";
+import { bindControlGroup, type WriteHook } from "./settings-controls-table.js";
+import { controlDom, settingsWriteContext } from "./settings-panel.js";
 import { bindPresetGroup } from "./settings-bindings-preset.js";
-import { bindTypographyGroup } from "./settings-bindings-typography.js";
-import { bindHeaderWatermarkGroup } from "./settings-bindings-headerwatermark.js";
+import { bindTypographyGroup, typographyWriteHooks } from "./settings-bindings-typography.js";
+import {
+  bindHeaderWatermarkGroup,
+  headerWatermarkWriteHooks,
+} from "./settings-bindings-headerwatermark.js";
 import { bindNumberingGroup } from "./settings-bindings-numbering.js";
-import { bindConvertGroup } from "./settings-bindings-convert.js";
-import { bindAppGroup } from "./settings-bindings-app.js";
+import { bindConvertGroup, convertWriteHooks } from "./settings-bindings-convert.js";
+import { bindAppGroup, appWriteHooks } from "./settings-bindings-app.js";
+
+/** 顶栏格式分段(抽屉外,group=mirror)的写侧钩子:转换时读的是 selectedFormat,
+ *  它与 settings.format 双写,故落值前先同步镜像态。 */
+const formatHook: WriteHook = (ctx, control, write) => {
+  const format = control.value as AppSettings["format"];
+  ctx.setSelectedFormat(format);
+  write(format);
+};
 
 /** 设置事件绑定入口(任一控件变更即时生效并持久化;须先于 loadSettings 回填)。 */
 export function bindSettingsEvents(): void {
   bindPresetGroup();
-  bindTypographyGroup();
-  bindHeaderWatermarkGroup();
+  bindTypographyGroup(typographyWriteHooks);
+  bindHeaderWatermarkGroup(headerWatermarkWriteHooks);
   bindNumberingGroup();
-  bindConvertGroup();
-  bindAppGroup();
+  bindConvertGroup(convertWriteHooks);
+  bindAppGroup(appWriteHooks);
+
+  /* ---------- 抽屉外镜像与顶栏控件 ---------- */
+  // 顶栏格式分段:同一套落值通道,只是主控在抽屉外
+  bindControlGroup("mirror", controlDom, settingsWriteContext, { format: formatHook });
 
   /* ---------- 快速参数条冒泡守卫 ----------
    * #quickBar 位于拖放区(#dropZone 点击/键盘 = 选择文件)内部:

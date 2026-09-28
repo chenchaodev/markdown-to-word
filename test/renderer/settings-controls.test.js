@@ -177,6 +177,19 @@ export const fixtures = null;
  *                     → 期望红在「radio 组零命中守护」(模拟静默空转);
  *   - control-expect :<控件名> 把某个控件的**期望值**改错(断言逻辑不动)
  *                     → 期望红在该控件的逐条 hydrate 断言上。
+ *   - unhook:<id>    :把某个值控件的 change 监听**摘掉**(只改输入:移除该元素上登记的
+ *                     监听器,断言逻辑不动)
+ *                     → 期望红在该控件的逐条 bind 断言(表里有条目 ≠ 真的挂了监听)。
+ *   - mislabel       :把某个条目的 reset 口径**误标**成 reset(theme 改为 reset)
+ *                     → 期望红在「保留集双向一致」断言。
+ *   - drop-entry     :从表里删掉一条条目(tocMode)
+ *                     → 期望红在「控件在声明表里没有条目」。
+ *   - drop-reset     :给设置契约加一个没有表条目的顶层键(新增设置忘登记的事故形态)
+ *                     → 期望红在「顶层键既不在声明表的块里、也不在无控件键清单里」
+ *                     (复位块覆盖判据)。
+ *   - unregister-gate:把 tocModeVisibility 这条门控从 CONTROL_GATES 登记里摘掉
+ *                     → 期望红在「关掉自动目录:change 路径应同步收起目录下拉」
+ *                     (门控的 change 侧接缝按登记反查,摘掉即静默不生效)。
  * 用法:M2W_ONLY=settings-controls M2W_PROBE=ref-id npm run test
  */
 const PROBE = process.env.M2W_PROBE ?? "";
@@ -191,6 +204,7 @@ const PROBE = process.env.M2W_PROBE ?? "";
  * @property {string | null} block 顶层块(派生键为 null)
  * @property {string[]} ids 元素 id 集合
  * @property {string[]} radioNames radio 组名集合
+ * @property {boolean} hooked 是否声明了写侧钩子
  */
 
 /**
@@ -328,6 +342,14 @@ export async function run() {
   state.settings = structuredClone(BASE);
   panel.rebuildPresetOptions();
   bindings.bindSettingsEvents();
+
+  // 负探针 · unhook:<控件 id>:**摘掉**某个值控件的 change 监听(只改输入:把该元素上
+  // 登记的监听器移除,断言逻辑一行不动)。表驱动收敛后「表里有条目」与「真的挂了监听」
+  // 是两件事 —— 这条探针证明逐控件 bind 断言测的是后者:摘掉后该控件的 drive 必然红。
+  if (PROBE.startsWith("unhook:")) {
+    const target = PROBE.slice("unhook:".length);
+    el(target).removeEventListener("change");
+  }
 
   /* ---------- 逐控件表(43 个值控件) ---------- */
   /** @type {Control[]} */
@@ -869,6 +891,10 @@ export async function run() {
   // 5b-change) 总开关 change 接线也重算可用性
   el("aiCleanup").checked = true;
   fireListener(el("aiCleanup"), "change");
+  // 同步判一次(不等落盘往返):change 侧的门控调用必须当场发生 —— 异步的落权威值
+  // 回填也会重算门控,只判 await flush 之后的状态会被它掩盖掉(change 侧漏接线照样绿)
+  assert(!tierDisabled().some(Boolean), "重开总开关:分档应**当场**恢复可操作(change 路径,未等落盘往返)");
+  assert(lockedEl.classList.contains("hidden"), "重开总开关:置灰说明行应当场消失(change 路径,未等落盘往返)");
   await flush();
   assert(!tierDisabled().some(Boolean), "重开总开关:分档应恢复可操作(change 路径)");
   assert(lockedEl.classList.contains("hidden"), "重开总开关:置灰说明行应消失");
@@ -883,8 +909,18 @@ export async function run() {
   panel.applySettingsToControls();
   assert(!tocModeEl.classList.contains("hidden"), "自动目录回开:目录下拉应重新出现");
   // 5c-change) toc change 接线也重算显隐
+  // 负探针 unregister-gate:把「目录模式可见性」这条门控**从登记里摘掉**(只改输入:
+  // splice 掉 CONTROL_GATES 里的那一条,断言逻辑一行不动)—— 门控的 change 侧接缝
+  // 正是按这份登记反查的,摘掉后 change 路径不再重算显隐。期望红在下面这条断言。
+  if (PROBE === "unregister-gate") {
+    const at = table.CONTROL_GATES.findIndex((/** @type {{ id: string }} */ g) => g.id === "tocModeVisibility");
+    assert(at >= 0, "负探针 unregister-gate:CONTROL_GATES 里找不到 tocModeVisibility");
+    table.CONTROL_GATES.splice(at, 1);
+  }
   el("toc").checked = false;
   fireListener(el("toc"), "change");
+  // 同 5b:当场判一次,不等落盘往返(否则落权威值回填的重算会掩盖 change 侧漏接线)
+  assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应**当场**收起目录下拉(未等落盘往返)");
   await flush();
   assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应同步收起目录下拉");
 
@@ -899,11 +935,29 @@ export async function run() {
     refsSource = refsSource.replace('input[name="paper"]', 'input[name="paperr"]');
   }
   assertRefContract(refsSource, indexHtml);
-  assertTableContract(table, controls, indexHtml, DEFAULT_SETTINGS);
+
+  // 负探针 · mislabel:把 theme 的复位口径**误标**成 reset(只改输入:直接改 dist 产物里
+  // 的表条目,断言逻辑一行不动)。theme 属应用偏好,抽屉「恢复默认」刻意保留 ——
+  // 误标后它会被算进复位集,期望红在「保留集双向一致」与「复位集 ⊆ 顶层键 − 保留集」。
+  if (PROBE === "mislabel") {
+    table.CONTROL_ENTRIES.theme.reset = "reset";
+  }
+  // 负探针 · drop-entry:从表里**删掉**一条 reset 条目(tocMode 独占 tocMode 块)。
+  // 期望红在「控件在声明表里没有条目」。
+  if (PROBE === "drop-entry") {
+    delete table.CONTROL_ENTRIES.tocMode;
+  }
+  // 负探针 · drop-reset:给设置契约加一个**没有表条目**的顶层键(只改输入:往传给校验
+  // 函数的 defaults 副本里塞一个新键,断言逻辑一行不动)—— 这正是「新增一项设置却忘了
+  // 在表里登记」的事故形态。期望红在「顶层键既不在声明表的块里、也不在无控件键清单里
+  // (复位口径漏登记)」,即复位块覆盖判据。
+  const defaultsForContract =
+    PROBE === "drop-reset" ? { ...DEFAULT_SETTINGS, 未登记的新键: true } : DEFAULT_SETTINGS;
+  assertTableContract(table, controls, indexHtml, defaultsForContract, panel);
 
   dom.restore();
   console.log(
-    `[ok] settings-controls:${controls.length} 个控件逐条 hydrate/bind/reset 通过 + 3 个手写门控双向(change/回填)通过 + 控件 id 交叉校验与 radio 组零命中守护通过 + 声明表与几何规格交叉校验通过`,
+    `[ok] settings-controls:${controls.length} 个控件逐条 hydrate/bind/reset 通过 + 3 个手写门控双向(change/回填,change 侧当场判)通过 + 控件 id 交叉校验与 radio 组零命中守护通过 + 声明表与几何规格交叉校验通过 + 声明表写侧对称(每个可写条目都被 drive 过)与钩子/门控/效果登记覆盖通过`,
   );
 }
 
@@ -914,6 +968,12 @@ export async function run() {
  * 双向判据二:声明表的**抽屉内**控件键集合与 test/tools/geometry/geometry-spec.mjs 的
  * DRAWER_CONTROL_KEYS 一致(差额 3 个抽屉外镜像/顶栏控件按分工归本判据的 id 侧校验)。
  *
+ * 判据一之外还有一条**写侧**的对称校验:声明表里每个可写(值控件)条目都必须
+ * 真的挂了 change 监听 —— 由「逐控件 drive → 断言 state.settings 被写」反推,
+ * 而不是再写一条文本正则(表里有条目但没人挂监听,只有这条会红)。
+ * 另附:钩子表覆盖(声明了钩子的键必有实现)、门控与设置值驱动效果的落点一处不少
+ * 且 where 指向的函数真实存在。
+ *
  * ⚠️ 几何规格**不得** import 生产侧的声明表 —— 那会给纯规格文件加一条 build 顺序依赖,
  * 而「判定逻辑可在无 Electron 环境下完整验证」是它的刻意设计。故本段反向读它。
  *
@@ -921,9 +981,10 @@ export async function run() {
  * @param {Control[]} controls 逐控件基线表
  * @param {string} indexHtml index.html 源码
  * @param {Record<string, unknown>} defaults DEFAULT_SETTINGS(dist 编译产物)
+ * @param {any} panel 生产侧 settings-panel 模块(门控/效果的实现落点核对)
  * @returns {void} 有偏差即抛
  */
-function assertTableContract(table, controls, indexHtml, defaults) {
+function assertTableContract(table, controls, indexHtml, defaults, panel) {
   /** @type {ControlRow[]} */
   const rows = table.controlTable();
   /** @type {Map<string, ControlRow>} */
@@ -964,6 +1025,39 @@ function assertTableContract(table, controls, indexHtml, defaults) {
         `声明表条目 ${row.key} 的 radio 组名 input[name="${name}"] 在 index.html 命中 0 个元素`,
       );
     }
+  }
+
+  // 判据一 · 写侧对称:每个**值控件**条目都必须被逐控件基线 drive 过一次。
+  // 逐控件 drive 走的是真 change 事件,并断言 state.settings 被写 + 走了持久化通道
+  // (见上文第 2 段),故这条等值于「表里每个可写条目都真的挂了监听」——
+  // 只声明不挂监听(漏接线)会红在这一条,而不是静默通过。
+  const drivenNames = new Set(controls.map((c) => c.name));
+  for (const row of rows) {
+    if (row.kind !== "value") continue;
+    assert(
+      drivenNames.has(row.key),
+      `值控件 ${row.key} 在声明表里可写,但逐控件基线里没有对应条目(它的 change 监听没人验证过,可能压根没挂)`,
+    );
+  }
+  // 钩子表覆盖:声明了写侧钩子的键必有实现(缺一个即编译期红;这里再判一次运行期,
+  // 因为「声明了钩子却静默走通用路径」会让钳制整段失效且运行期无任何症状)。
+  const hookedKeys = table.HOOKED_WRITE_KEYS;
+  assert(
+    Array.isArray(hookedKeys) && hookedKeys.length > 0,
+    "声明表应登记写侧钩子键(HOOKED_WRITE_KEYS),否则钳制类控件无挂载口径",
+  );
+  for (const row of rows) {
+    const declared = hookedKeys.includes(/** @type {string} */ (row.key));
+    assert(
+      declared === (row.hooked === true),
+      `控件 ${row.key} 的「需写侧钩子」登记与扁平视图的 hooked 标记不一致`,
+    );
+  }
+  // 扁平视图的 hooked 标记本身由 HOOKED_WRITE_KEYS 派生(controlTable 内部),
+  // 故上一条等价于「表里没有的键不会被标成需钩子」;这里再确保每个声明的键都在表内。
+  const rowKeys = new Set(rows.map((r) => r.key));
+  for (const key of hookedKeys) {
+    assert(rowKeys.has(/** @type {string} */ (key)), `HOOKED_WRITE_KEYS 里的 ${key} 不在声明表中`);
   }
 
   // 判据二:抽屉内控件键集合 ⇄ 几何规格。
@@ -1027,23 +1121,60 @@ function assertTableContract(table, controls, indexHtml, defaults) {
       `控件 ${row.key} 的复位口径(${row.reset})与它的设置块 ${row.block} 在保留集里的归属不一致`,
     );
   }
+  // 复位集本身也判一次:表算出的 resetBlockKeys 必须恰好是「全部顶层键 − 保留集」。
+  // 这条是 reset 表驱动的判据(抽屉 payload 的键集由它生成),漏一个块即复位不到默认。
+  const resetBlocks = new Set(table.resetBlockKeys());
+  const expectedReset = new Set([...topKeys].filter((k) => !PRESERVED_KEYS.includes(k)));
+  for (const key of expectedReset) {
+    assert(
+      resetBlocks.has(/** @type {string} */ (key)),
+      `顶层键 ${key} 既不在保留集也不在复位集(抽屉「恢复默认」将漏掉它)`,
+    );
+  }
+  for (const key of resetBlocks) {
+    assert(
+      expectedReset.has(/** @type {string} */ (key)),
+      `声明表把 ${key} 算进复位集,但它属保留集(theme/language/customPresets/version 刻意不重置)`,
+    );
+  }
 
   // 依赖登记:门控与「设置值驱动的显隐」两处都不得漏,且引用的 id 必须真实存在。
+  // 3 个手写门控逐个点名(IA 拍板的三种形态:条件字段整块移除 ×2 + 分档灰禁 ×1)。
   for (const gate of table.CONTROL_GATES) {
     assert(
       byKey.has(gate.master),
       `门控 ${gate.id} 的主控 ${gate.master} 不在声明表里`,
     );
+    // 主控必须可写(它是「主控一动即重算从属项」的那一侧),否则门控在 change 侧无处触发
+    assert(
+      byKey.get(gate.master)?.kind === "value",
+      `门控 ${gate.id} 的主控 ${gate.master} 不是可写值控件(门控的 change 侧接不上)`,
+    );
     for (const dep of gate.dependents) {
       assert(byKey.has(dep), `门控 ${gate.id} 的从属项 ${dep} 不在声明表里`);
     }
+  }
+  for (const gateId of ["headerCustomVisibility", "aiCleanupTierAvailability", "tocModeVisibility"]) {
+    assert(
+      table.CONTROL_GATES.some((/** @type {{ id: string }} */ g) => g.id === gateId),
+      `手写门控 ${gateId} 未登记在 CONTROL_GATES 里(新增门控必须登记,否则同步函数无处挂载)`,
+    );
+  }
+  // 门控的「实现落点」必须是 settings-panel 上真实存在的导出 —— 登记不能只是一段
+  // 注释里的名字(函数改名/漏导出时这里即红)。
+  for (const gate of table.CONTROL_GATES) {
+    const fn = gate.where.split(".").pop();
+    assert(
+      typeof panel[/** @type {string} */ (fn)] === "function",
+      `门控 ${gate.id} 的实现落点 ${gate.where} 在 settings-panel 上不存在`,
+    );
   }
   const effectTargets = new Set(
     table.VALUE_DRIVEN_EFFECTS.flatMap(
       (/** @type {ValueDrivenEffect} */ e) => e.sites.map((s) => s.target),
     ),
   );
-  // 这 6 个落点就是「设置值 → 控件显隐/文案」的全部站点(5 处 + 预设提示),
+  // 这 8 个落点就是「设置值 → 控件显隐/文案」的全部站点(6 条效果),
   // 逐个点名以免新增站点时靠"记得登记"。
   for (const target of [
     "templatePresetHint",
@@ -1067,6 +1198,25 @@ function assertTableContract(table, controls, indexHtml, defaults) {
     for (const site of effect.sites) {
       assert(htmlIds.has(site.target), `设置值驱动效果 ${effect.id} 的落点 ${site.target} 不在 index.html 里`);
     }
+    // 效果 id 逐个点名:少登记一条即红(登记是"显式例外"的载体,靠漏写不算登记)
+    const fn = effect.where.split(".").pop();
+    assert(
+      typeof panel[/** @type {string} */ (fn)] === "function",
+      `设置值驱动效果 ${effect.id} 的实现落点 ${effect.where} 在 settings-panel 上不存在`,
+    );
+  }
+  for (const effectId of [
+    "presetDeletable",
+    "presetHint",
+    "pdfCssState",
+    "headerLogoState",
+    "outputDirChips",
+    "drawerSubtitle",
+  ]) {
+    assert(
+      table.VALUE_DRIVEN_EFFECTS.some((/** @type {{ id: string }} */ e) => e.id === effectId),
+      `设置值驱动效果 ${effectId} 未登记在 VALUE_DRIVEN_EFFECTS 里`,
+    );
   }
 }
 
