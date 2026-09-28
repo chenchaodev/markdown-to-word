@@ -122,7 +122,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - 关于窗:`about.html`/`about.ts`/`about-preload.cjs`
   - `renderer.ts`:组合根;`dom/refs.ts`:DOM 引用
   - `state/`:pure.ts(纯函数含 errorMessage()/STAGE_TEXT)/state.ts(批量契约类型自 main 单源导入 + renderer 唯一 store)
-  - `settings/`:settings-panel.ts(加载/回填/持久化写回+分组 persist 单源)/settings-save.ts(写路径单源 + 跨模块共享的失败重试台账)/settings-preset-actions.ts(预设弹窗/保存/删除/导入导出)/settings-logic.ts(纯函数直测)/settings-drawer.ts + `settings-bindings.ts` 与 `settings-bindings-{preset,typography,headerwatermark,numbering,convert,app}.ts`(按 `index.html` 的 `data-group` 同口径接线,控件 id/name 零触碰)
+  - `settings/`:settings-controls-table.ts(**设置声明表**:键→控件→读/写→复位处置→依赖登记,零 DOM 纯数据,回显类型由它从 `AppSettings` 派生)/settings-panel.ts(加载/回填/持久化写回+分组 persist 单源;`controlDom` 是声明表↔DOM 的唯一接缝)/settings-save.ts(写路径单源 + 跨模块共享的失败重试台账)/settings-preset-actions.ts(预设弹窗/保存/删除/导入导出)/settings-logic.ts(纯函数直测)/settings-drawer.ts + `settings-bindings.ts` 与 `settings-bindings-{preset,typography,headerwatermark,numbering,convert,app}.ts`(按 `index.html` 的 `data-group` 同口径接线,控件 id/name 零触碰)
   - `convert/`:convert-flow.ts + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)+ `file-list.ts`
   - `ui/`(dialogs.ts/dom-ops.ts(DOM 操作原语 + translate 注入适配)/recent-files.ts(bindRecentFilesEvents 范式)/toast.ts/first-run-guide.ts(首启引导))
   - `wizard/`:book-wizard.ts(向导外壳/导航/打开关闭+付印提交)/wizard-steps.ts(步骤渲染·版式步:模板/封面/页眉页脚/水印)/wizard-steps-delivery.ts(步骤渲染·交付步:合并源/目录/付印+当前步渲染)/wizard-fields.ts(字段校验绑定+共用 DOM/radio 零件)/wizard-runtime.ts(草稿/容器/步序单例,防环)/wizard-state.ts(向导状态管理纯 reducer)
