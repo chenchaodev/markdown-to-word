@@ -143,6 +143,12 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 ## 验证基线
 > **本节是验证基线的单一出处**;`docs/PLAN.md` 与 `docs/large/NN-短标题.md` 的「验证基线」指针只回指本节,不在那里复述命令。
 
+- **验证分两档**(命令与门禁类别见本文件「命令」「门禁接入点」两节,此处只定节奏):
+  - **开发回路**(每次改完):`typecheck` + `lint` · 改动面所属的验收段(`M2W_ONLY` 按**段名**筛)· 本轮改动到的纯文本门禁(`check:docs` 等)
+  - **提交前**(每个提交跑一次):上面那套 **+ `npm run test` 全量**
+- **开发回路不得省全量的两种情形**:① 动了共享测试设施(`test/common/**` · `test/tools/**` · `scripts/**` · 门禁脚本 · `package.json`)—— 跨段污染只有全量暴露 ② 影响面判不出来(改动落在「命令」节任何一条都覆盖不到的位置)—— 此时当轮就跑,不留到提交前
+- **筛段不会静默假通过**:筛选词命中 0 个段即判红(`test/common/runner.js` 的段筛选三态契约),故「只跑受影响段」不存在「筛选词拼错 → 打印全部 0 段通过 → 退出 0」的失效形态
+- 全量验收在链内的唯一一次是 `verify:ci` 的 `test:coverage`(见 [adr-016](adr/adr-016-门禁链内全量验收只跑一遍.md)),本条不与它重复;发版前的全套走 `verify:release`,不由本条覆盖
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(提交前置 → 全局配置目录 `WORKFLOW.md`「六、收尾」;发布/打包产物属对外动作 → 全局配置目录 `AGENTS.md` 安全底线 3)
 - 类型/构建/门禁命令清单见本文件「命令」节;每条 `npm run *` 的门禁类别与接入点(`verify:ci` 链 / `verify:release` 链 / 仅某个 CI workflow job / 仅本地手动)见本文件「门禁接入点」表
 - 验收测试段明细见 `test/segments/`、`test/main/` 与 `test/renderer/`;恒等守护与边界守护段清单见本文件「测试体系」节
