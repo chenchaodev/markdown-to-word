@@ -13,6 +13,7 @@ import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { docxBufferOf } from "../common/convert-helpers.js";
+import { docxTocAnchors } from "../common/dual-extract.js";
 
 /** 主样例:标题编号 + 内部锚点/外部链接 + h1-h6(gen-fixtures 落盘为 acceptance/heading-links.md) */
 const linkMd = `---
@@ -65,9 +66,16 @@ export async function run() {
   if (!numberingXml.includes('w:lvlText w:val="%1"/>') || !numberingXml.includes('w:lvlText w:val="%1.%2"/>')) {
     throw new Error("标题编号断言失败:numbering.xml 缺少多级 text 模板");
   }
-  // 内部链接:document.xml 含 w:hyperlink w:anchor 指向标题书签
-  if (!documentXml.includes('w:hyperlink') || !documentXml.includes('w:anchor="二级标题"')) {
-    throw new Error("内部链接断言失败:document.xml 缺少 w:hyperlink w:anchor");
+  // 内部链接:document.xml 含 w:hyperlink w:anchor 指向标题书签。
+  // 取事实走 dual-extract 的 docxTocAnchors(内部锚点 = <w:hyperlink w:history="1" w:anchor="…">),
+  // 口径与目录条目、交叉引用段一致(实读:本段产物的 4 条内部 w:hyperlink 全部带 w:history="1")。
+  const internalAnchors = docxTocAnchors(documentXml);
+  // 拆成两条:「存在指向锚点的内部超链接元素」与「其中一条指向该标题书签」是两件事
+  if (internalAnchors.length === 0) {
+    throw new Error("内部链接断言失败:document.xml 缺少 w:hyperlink w:anchor 内部超链接元素");
+  }
+  if (!internalAnchors.includes("二级标题")) {
+    throw new Error(`内部链接断言失败:无指向标题书签的 w:anchor(实得:${internalAnchors.join(",")})`);
   }
   // 外链(ExternalHyperlink 实现事实):URL 只进 rels(document.xml 经 r:id 引用,
   // 关系 Id 为 docx 库随机生成,须动态比对);关系类型 hyperlink + TargetMode External

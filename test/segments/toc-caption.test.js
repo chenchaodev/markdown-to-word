@@ -19,6 +19,7 @@ import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { HOST_FS, asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+import { docxTocAnchors } from "../common/dual-extract.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
@@ -87,9 +88,12 @@ export async function run() {
   if (!docxXml.includes('w:dirty="false"') || docxXml.includes('w:dirty="true"')) {
     throw new Error("断言失败:静态目录 dirty 属性应为 false(免更新路线)");
   }
-  // 8a-3:cachedEntries 静态条目 → 目录内超链接指向标题书签(w:hyperlink 带 w:history 属性)
-  if (!docxXml.includes('w:anchor="第一章"')) {
-    throw new Error("断言失败:静态目录条目缺少指向标题书签的超链接");
+  // 8a-3:cachedEntries 静态条目 → 目录内超链接指向标题书签(w:hyperlink 带 w:history 属性,
+  // 提取口径见 test/common/dual-extract.js 的 docxTocAnchors:目录条目 = 内部锚点
+  // <w:hyperlink w:history="1" w:anchor="…">,并排除 fig/tab/eq- 题注锚点)
+  const mainTocAnchors = docxTocAnchors(docxXml);
+  if (!mainTocAnchors.includes("第一章")) {
+    throw new Error(`断言失败:静态目录条目缺少指向标题书签的超链接(实得:${mainTocAnchors.join(",")})`);
   }
   // field 模式 → beginDirty:true(Word/WPS 打开弹更新提示并注入真实页码),条目仍指向书签
   const fieldToc = /** @type {ConvertArtifact} */ (
@@ -99,7 +103,7 @@ export async function run() {
   if (!fieldDoc.includes('w:dirty="true"')) {
     throw new Error("目录带页码(adr-007)断言失败:field 模式目录 dirty 属性应为 true(触发 Word 更新域)");
   }
-  if (!fieldDoc.includes('w:anchor="第一章"')) {
+  if (!docxTocAnchors(fieldDoc).includes("第一章")) {
     throw new Error("目录带页码(adr-007)断言失败:field 模式目录条目仍应指向标题书签");
   }
   // 8b-1:静态编号注入(章节号 + 章节内序数,图/表独立、h1 重置)
