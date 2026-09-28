@@ -22,11 +22,11 @@
 
 不超过 5 条，逐条可划掉；每条都要能被「跑命令」或「人工实测」验证。引用测试的地方只写断言所在的测试文件路径。
 
-- [ ] 1-1 护栏**自证有效**：临时移除 `src/main/converter/merge.ts:147` 的 `throwIfCanceled` 时新测试变红，装回后转绿
+- [ ] 1-1 护栏**自证有效**：取消落在「读取完成、`mergeMarkdowns` 之前」窗口时，测试断言抛 `ConvertCanceledError` + 零产物落盘 + **`onProgress` 阶段序列不含 `render`**（该序列是「未越过 `mergeMarkdowns`」的机械等价面 —— `merge.ts:157` 的 `render` 报点位于 `:154` 之后；全仓 ESM 无模块打桩设施、`merge.ts:18` 对 `mergeMarkdowns` 是静态 import 且无注入点，故不可直接 spy）。临时移除 `merge.ts:147` 的 `throwIfCanceled` 时该测试必须变红，装回后转绿（自动断言见 `test/main/merge-cancel.test.js`）
 - [ ] 1-2 删掉 `merge.ts:198` 的恒真分支（`if (!ctx.skipAfterConvert)`）并纠正 `merge.ts:100` 那句错误注释；恒真性的取证结论写进提交说明
 - [ ] 1-3 新增的目录模式门控同步函数生效：`toc` 关闭时 `tocMode` 控件不可交互（自动断言见 `test/renderer/` 下对应段）；`docs/design/settings-ia.md` 的 §2 / §3.1 / §4 三处门控描述互相一致，且 §4 表中 F7 的「已实现」状态已回填
 - [ ] 1-4 `ConvertContext` 的 JSDoc 不再声称任何生产中不存在的档位（`headingNumbering` / `captionNumbering` / `imageBudget` 三字段逐条标注「生产 / 测试」）
-- [ ] 1-5 方案清单里的 12 个模块级限额常量旁各有一行「刻意非用户可配」注释（清单见 [large/01](large/01-设置契约与主管线收敛.md) 步 01 的 1-5 段）
+- [ ] 1-5 方案 1-5 段的 12 个条目**逐行展开出的全部限额常量**旁各有一行「刻意非用户可配」注释（清单见 [large/01](large/01-设置契约与主管线收敛.md) 步 01 的 1-5 段；**实测展开为 19 个常量行** —— 「12 条」是条目数，其中合并/限额/预算三类被合并计数；`artifact-writer.ts` 的实际路径是 `src/main/converter/artifact-writer.ts`）
 
 ## 修复项复测
 
