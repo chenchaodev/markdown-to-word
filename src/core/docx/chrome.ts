@@ -29,6 +29,7 @@ import {
   TabStopType,
   VerticalAnchor,
 } from "docx";
+import type { IRunOptions } from "docx";
 import { MUTED_TEXT_GRAY, SECONDARY_TEXT_GRAY } from "./theme.js";
 import { WATERMARK_GRAY, WATERMARK_INK } from "../style/colors.js";
 import type { DocMetadata } from "../pipeline/frontmatter.js";
@@ -256,13 +257,15 @@ export function renderFooter(): Footer {
  * - 无填充/无描边:**显式**声明 `outline: { type: "noFill" }`(docx 库的 ShapeProperties
  *   收到 outline 后才写出 `<a:noFill/>` 与 `<a:ln><a:noFill/></a:ln>`)。
  *   早先版本靠「不设置 outline → DML 默认无描边」,那是继承渲染器的默认形状格式,
- *   不是声明 —— 用户实测导出页面上多出一条**与水印同向旋转的红线**(旋转随
- *   `a:xfrm rot` 作用于整个形状,与描边来自默认格式一致)。改动前后的
- *   `<wps:spPr>` 逐字可比对这段注释,勿改回「靠默认值」。
+ *   不是声明。改动前后的 `<wps:spPr>` 逐字可比对这段注释,勿改回「靠默认值」。
+ *   ⚠️ 补上这两处声明**并未消掉**用户实测到的那条红线(已在真实产物里核实这两处
+ *   确实生效),故「红线来自形状默认描边」这个归因**已被证伪**;显式声明本身仍然
+ *   正确(不依赖渲染器默认值),但别把它当那条红线的修复凭据。
  * - 页面居中:wp:positionH/positionV relativeFrom="page" align="center"
  * - 置底:behindDocument=true
  * - 旋转:rot 取自 watermarkDmlRotation(角度口径与 pdf 侧同源单点,勿在此取负)
  * - 不透明度:经 w14:textFill/w14:alpha 真消费 watermark.opacity(见 WatermarkTextRun)
+ * - 不参与校对:run 带 `<w:noProof/>`(见 WatermarkTextRun 的理由与未证实的部分)
  */
 
 /** w14:alpha 的量程:0–100000(语义见 WatermarkTextRun 的反转说明) */
@@ -323,11 +326,34 @@ function w14El(
  * ⚠️ 上面只管**文字**填充。形状 `spPr` 的无填充/无描边是另一个载体,靠
  * renderWatermarkParagraph 的 `outline: { type: "noFill" }` 声明 —— 两者互不替代,
  * 不要因为「已经设过 textFill」就以为形状侧的默认格式也被覆盖了。
+ *
+ * ─────────────────────────────────────────────────────────────
+ * 为什么 run 带 `noProof: true`(不参与拼写/语法校对)
+ * ─────────────────────────────────────────────────────────────
+ * **独立成立的理由**:水印是装饰性内容、不是正文。它既不是用户写的字,也不该被校对
+ * ——与外观、透明度、形状设置都无关,这是「装饰性内容」的固有属性。
+ *
+ * **来自用户实测的观察(因果尚未证实,勿当结论)**:开 水印 导出后页面上有一条
+ * **与水印同向的细红线**。解包用户那份产物核实过:全包扫描红色字面量零命中、
+ * header1.xml 里没有 `<w:u>` 也没有 `<w:pBdr>`、产物里没有 theme1.xml ——
+ * 即**文档内不存在能画出那条线的任何声明**,故判定它是渲染器自己加的标记。
+ * 「渲染器侧的校对标记」是与全部证据相容的假设,**但未确认**:需用户在
+ * Word/WPS 里关掉校对(工具 → 拼写和语法检查)后重导出,看红线是否消失。
+ *
+ * 维护须知:补这个标记**不代表那条红线的成因已查明**。若关闭校对后红线仍在,
+ * 说明成因另有其物,本行只当「装饰内容不参与校对」的正确性保留,别拿它当修复凭据。
+ *
+ * 写法:走 docx 库自带的 `noProof` 字段(它写 `<w:noProof/>` 到 rPr),
+ * **不要**自己 `push` BuilderElement —— 那是给库未暴露的选项用的兜底手段,
+ * 库有的字段一律交给库,元素次序(rPr 内子元素顺序敏感)由它负责。
  */
 class WatermarkTextRun extends TextRun {
-  constructor(options: ConstructorParameters<typeof TextRun>[0], opacity: number) {
-    super(options);
-    const color = String((options as { color?: string }).color ?? "000000");
+  // 入参取 IRunOptions(库的导出类型)而非 ConstructorParameters<typeof TextRun>[0]:
+  // 后者是 `IRunOptions | string` 联合类型,展开会报 TS2698,且本类的调用点本来就只传对象。
+  constructor(options: IRunOptions, opacity: number) {
+    // noProof 走 super(options) 这条路(= 库的 run 字段),不是 push 出来的裸元素
+    super({ ...options, noProof: true });
+    const color = String(options.color ?? "000000");
     // 取反映射:见上方「刻意偏离规范」的说明(0 = 全不透明,100000 = 全透明)
     const alpha = Math.round((1 - Math.min(1, Math.max(0, opacity))) * W14_ALPHA_FULL_SCALE);
     this.properties.push(

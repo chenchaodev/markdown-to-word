@@ -6,8 +6,10 @@
  * pdf 断言(html 含 .wm 覆盖层元素与旋转/不透明度 CSS / 空 text 无水印元素);
  * 不依赖真打印。另断言默认配置下 watermark.text 为空(零渲染)。
  *
- * 另断言形状 spPr 显式声明无填充/无描边:省略即继承渲染器默认形状格式,
- * 用户实测表现为一条与水印同向的红线(断言落在 spPr 本体,不靠整篇 includes)。
+ * 另断言形状 spPr 显式声明无填充/无描边(断言落在 spPr 本体,不靠整篇 includes),
+ * 以及水印 run 带 <w:noProof/>(装饰内容不参与拼写/语法校对,断言落在 run 的 rPr 本体)。
+ * 两者都不依赖整篇 includes:前者守「不继承渲染器默认形状格式」,后者守「装饰内容
+ * 不被校对」—— 均与用户实测那条红线的成因无关(该归因已被 1c/1d 注释记为证伪/未证实)。
  *
  * 角度与不透明度两项自 adr-030 6-B1/6-B2 起两侧对齐:docx 侧不再靠调浅灰近似
  * 不透明度,也不再在渲染层自带取负 —— 故此处断言的是「消费单源换算的结果」,
@@ -86,6 +88,21 @@ function alphaOf(xml) {
   return Number(m[1]);
 }
 
+/**
+ * 取水印文字 run 的 <w:rPr> 片段(先收窄到 w:txbxContent,再取其中第一个 w:rPr)。
+ * 收窄的理由与 spPrOf 同源:整篇 includes 分不清「水印 run 上有」与「别处恰好有」,
+ * 而本段守护的正是「标记落在水印 run 的 rPr 上」这一点。
+ * @param {string} xml header XML 文本
+ * @returns {string} 水印 run 的 rPr 元素片段
+ */
+function watermarkRunRPrOf(xml) {
+  const txbx = /<w:txbxContent>[\s\S]*?<\/w:txbxContent>/.exec(xml);
+  if (!txbx) throw new Error("header XML 中未找到 <w:txbxContent>(水印文本框不存在或结构已变)");
+  const m = /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(txbx[0]);
+  if (!m) throw new Error(`水印文本框内未找到 <w:rPr>,实际: ${txbx[0]}`);
+  return m[0];
+}
+
 const md = "# 水印测试\n\n本文档用于人工实测文字水印。\n";
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
@@ -138,19 +155,43 @@ export async function run() {
   );
 
   // ---- 1c. docx:形状显式「无填充 + 无描边」(不带就是继承渲染器默认形状格式) ----
-  // 回归背景:用户实测导出页面上有一条**与水印同向的红线**。根因是 <wps:spPr>
-  // 既没写 <a:noFill/>(填充)也没写 <a:ln>(描边) —— 形状于是继承渲染器的默认形状
-  // 格式,水印本身是「无填充无边框」的产物,靠继承默认值本身就是错的。
-  // 断言落在 spPr 本体:两个声明都是 DrawingML 本体(无 wps: 前缀),<wps:spPr>
-  // 只是容器 —— 若把 <a:noFill/> 误写成 <wps:noFill/>,下面的断言应当判红。
+  // 背景:水印形状本来就不该有填充与描边,靠「省略即无」是继承渲染器的默认形状格式,
+  // 不是声明 —— 故显式写出。断言落在 spPr 本体:两个声明都是 DrawingML 本体
+  // (无 wps: 前缀),<wps:spPr> 只是容器 —— 若把 <a:noFill/> 误写成 <wps:noFill/>,
+  // 下面的断言应当判红。
+  //
+  // ⚠️ 勿把这两条当成「用户实测那条红线」的修复凭据:该声明在真实产物里**确实生效**
+  // (解包核实 <a:noFill/> 与 <a:ln><a:noFill/></a:ln> 都在),而红线**依旧**,
+  // 即「红线来自形状默认描边」这个归因已被证伪(见 1d)。两条断言守的是
+  // 「不依赖渲染器默认值」这一条不变式,与红线的成因无关。
   const graySpPr = spPrOf(grayXml);
   assert(
     /<a:noFill\s*\/>/.test(graySpPr),
-    `形状 spPr 应显式声明无填充 <a:noFill/>;缺了它就会继承渲染器默认形状格式(用户实测表现为一条与水印同向的红线),实际: ${graySpPr}`,
+    `形状 spPr 应显式声明无填充 <a:noFill/>(不依赖渲染器默认形状格式),实际: ${graySpPr}`,
   );
   assert(
     /<a:ln\b[^>]*>\s*<a:noFill\s*\/>\s*<\/a:ln>/.test(graySpPr),
-    `形状 spPr 应显式声明无描边 <a:ln><a:noFill/></a:ln>;缺了它就会继承渲染器默认形状格式(用户实测表现为一条与水印同向的红线),实际: ${graySpPr}`,
+    `形状 spPr 应显式声明无描边 <a:ln><a:noFill/></a:ln>(不依赖渲染器默认形状格式),实际: ${graySpPr}`,
+  );
+
+  // ---- 1d. docx:水印 run 标记为「不参与拼写/语法校对」(<w:noProof/>) ----
+  // 水印是**装饰内容,不是正文**,本就不该被校对 —— 这一条独立成立,与外观/透明度/
+  // 形状设置都无关。
+  //
+  // 背景(观察,非结论):用户实测导出页面上有一条与水印同向的细红线。解包用户那份
+  // 产物核实过 —— 全包无红色字面量、无 <w:u>、无 <w:pBdr>、无 theme1.xml,即文档内
+  // 不存在能画出那条线的声明,故判定它是渲染器自加的标记。「渲染器侧的校对标记」是与
+  // 全部证据相容但**尚未证实**的假设(需用户关掉校对后复验),所以本断言守护的是
+  // 「装饰内容不参与校对」这个可独立验证的声明式行为,不是「红线已被修掉」。
+  //
+  // 断言取 rPr 本体(先收窄到 w:txbxContent 再取 w:rPr):整篇 includes 分不清标记落在
+  // 水印 run 上还是别处。正则要求**裸** <w:noProof/> —— 库对 noProof:false 产出的是
+  // <w:noProof w:val="false"/>,带上 w:val 形态会被下面的断言判红(那正是「标记被显式关掉」
+  // 的失败形态)。
+  const grayRunRPr = watermarkRunRPrOf(grayXml);
+  assert(
+    /<w:noProof\s*\/>/.test(grayRunRPr),
+    `水印是装饰内容,不该被拼写/语法校对标记 —— 缺了 <w:noProof/> 会被渲染器标记;水印 run 的 rPr 应含裸 <w:noProof/>(带 w:val 形态即 noProof 被显式关掉),实际: ${grayRunRPr}`,
   );
 
   // ---- 2. docx:gray=false → 正文字色 #1F2328 ----
@@ -262,6 +303,6 @@ export async function run() {
   assert(!pdfEmpty.html.includes('class="wm"'), "空 text 的 PDF 不应含水印元素");
 
   console.log(
-    "[ok] watermark:角度单点(315/同号) + docx 文字/配色/rot 换算/w14:alpha 不透明度(取反语义,端点锁方向)/形状显式无填充无描边(不继承默认形状格式)/空 text 零渲染 + pdf 覆盖层/旋转/不透明度 断言通过",
+    "[ok] watermark:角度单点(315/同号) + docx 文字/配色/rot 换算/w14:alpha 不透明度(取反语义,端点锁方向)/形状显式无填充无描边(不继承默认形状格式)/水印 run 带 <w:noProof/>(装饰内容不参与校对)/空 text 零渲染 + pdf 覆盖层/旋转/不透明度 断言通过",
   );
 }
