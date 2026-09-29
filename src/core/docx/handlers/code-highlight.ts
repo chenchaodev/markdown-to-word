@@ -7,7 +7,7 @@
  */
 import hljs from "highlight.js/lib/common";
 import { TextRun } from "docx";
-import { CODE_FONT, CODE_SIZE } from "../theme.js";
+import { CODE_FONT } from "../theme.js";
 import { HLJS_PALETTE, type HljsTokenStyle } from "../../style/hljs-palette.js";
 // 实体解码单源:统一用 core/utils.ts decodeEntities,删除本模块私有实现。
 // 语义差异核实结论:hljs 输出实体域仅为 &lt;/&gt;/&quot;/&#x27;/&amp;(转义 & < > " '),
@@ -23,12 +23,12 @@ import { decodeEntities } from "../../util/text-escape.js";
  */
 const SPAN_RE = /<span class="hljs-([a-z0-9_ -]+)">|<\/span>|([^<]+)/g;
 
-function makeRun(text: string, cls: string | undefined): TextRun {
+function makeRun(text: string, cls: string | undefined, size: number): TextRun {
   const style: HljsTokenStyle | undefined = cls ? HLJS_PALETTE[cls.split(/\s+/)[0]!] : undefined; // split 恒返回至少一个元素,[0] 必存在
   return new TextRun({
     text,
     font: CODE_FONT,
-    size: CODE_SIZE,
+    size,
     ...(style?.color ? { color: style.color } : {}),
     ...(style?.italics ? { italics: true } : {}),
     ...(style?.bold ? { bold: true } : {}),
@@ -42,10 +42,13 @@ function makeRun(text: string, cls: string | undefined): TextRun {
  * onFallback 为可选回调,仅在「语言已知但高亮失败」(hljs.highlight 抛错 /
  * 解析异常 / 完整性校验失败)时以语言名调用——无语言/未知语言的正常降级不回调;
  * 调用方(renderCode)经此上报 warn.highlightFallback 警告。纯模块不持有 warnings。
+ * sizeHalfPoints 为代码块字号(half-points),由调用方按正文字号推导后传入 ——
+ * 本模块不读用户设置,只做无状态的高亮与 run 拼装(与等宽兜底路径同一取值)。
  */
 export function highlightCodeRuns(
   code: string,
   lang: string | undefined,
+  sizeHalfPoints: number,
   onFallback?: (lang: string) => void,
 ): TextRun[] | null {
   if (!lang || !hljs.getLanguage(lang)) return null;
@@ -90,9 +93,9 @@ export function highlightCodeRuns(
     linePieces.forEach((pieces, i) => {
       if (i > 0) runs.push(new TextRun({ text: "", break: 1 }));
       if (pieces.length === 0) {
-        runs.push(makeRun("", undefined));
+        runs.push(makeRun("", undefined, sizeHalfPoints));
       } else {
-        for (const p of pieces) runs.push(makeRun(p.text, p.cls));
+        for (const p of pieces) runs.push(makeRun(p.text, p.cls, sizeHalfPoints));
       }
     });
     return runs;

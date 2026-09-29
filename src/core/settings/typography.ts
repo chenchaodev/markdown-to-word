@@ -116,6 +116,64 @@ export function headingSpacingTwips(
   return { before: Math.round(pt.before * 20), after: Math.round(pt.after * 20) };
 }
 
+/** 题注比正文小的级差(pt) */
+export const CAPTION_SIZE_OFFSET_PT = 1;
+
+/** 题注字号下限(pt):正文再小也要看得清,不再逐级缩小 */
+export const CAPTION_MIN_SIZE_PT = 8;
+
+/**
+ * 题注字号(pt):正文小一级、下限 8pt。
+ * 推导单源 —— 原先 docx 侧内联 `Math.max(8, bodySizePt-1)` 而 pdf 侧模板固定
+ * 10pt(不随正文),同输入不同输出;两侧现同读本函数,比例调整只在此一处。
+ */
+export function captionFontSizePt(bodySizePt: number): number {
+  return Math.max(CAPTION_MIN_SIZE_PT, bodySizePt - CAPTION_SIZE_OFFSET_PT);
+}
+
+/**
+ * 代码字号相对正文的缩放系数(取自 pdf 模板既有观感的比值,勿就近取整):
+ * - 行内代码 0.9 = 原模板 `0.9em` 相对正文的比;
+ * - 代码块 0.79 ≈ 原模板固定 9.5pt ÷ 12pt 基准。
+ * **两者刻意不同** —— 行内代码嵌在正文行里、代码块整块独立排布,同号会糊成一片;
+ * 这是观感裁决,不是待收口的重复,勿并成一个系数。
+ */
+export const INLINE_CODE_SCALE = 0.9;
+export const CODE_BLOCK_SCALE = 0.79;
+
+/**
+ * 比例推导结果取 1 位小数:让默认 12pt 档精确复现 pdf 侧既有字面量
+ * (0.9×12 = 10.8 → 10.8pt;0.79×12 = 9.48 → 9.5pt),避免「统一推导」本身
+ * 制造出两侧各取整的可见差;docx 侧随后经 ptToHalfPoints 取整,该精度下
+ * 不引入额外漂移(9.48 与 9.5 同取整到 19 half-points)。
+ */
+function derivedSizePt(raw: number): number {
+  return Math.round(raw * 10) / 10;
+}
+
+/**
+ * 行内代码字号(pt):正文 × INLINE_CODE_SCALE。
+ * 刻意**不随所在标题字号缩放**(取正文而非 em 上下文),与 docx 侧「标题里的行内
+ * 代码保持自身小号」旧观感一致;标题内行内代码因此不再被标题字号放大。
+ */
+export function inlineCodeFontSizePt(bodySizePt: number): number {
+  return derivedSizePt(bodySizePt * INLINE_CODE_SCALE);
+}
+
+/** 代码块字号(pt):正文 × CODE_BLOCK_SCALE */
+export function codeBlockFontSizePt(bodySizePt: number): number {
+  return derivedSizePt(bodySizePt * CODE_BLOCK_SCALE);
+}
+
+/**
+ * pt → docx half-points(OOXML w:sz / w:szCs 的单位)。
+ * 单位换算归本模块,与 headingSpacingTwips 同惯例 —— 推导(pt)与载体单位
+ * (half-points / twips)分层,渲染层只做取整不做推导。
+ */
+export function ptToHalfPoints(sizePt: number): number {
+  return Math.round(sizePt * 2);
+}
+
 export const DEFAULT_TYPOGRAPHY: TypographySettings = {
   fontAscii: "Calibri",
   fontEastAsia: "微软雅黑",

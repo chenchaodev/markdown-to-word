@@ -13,6 +13,7 @@ import type { Node, Root, Paragraph as MdParagraph } from "mdast";
 import { AlignmentType, Paragraph, TextRun } from "docx";
 import type { ParagraphChild } from "docx";
 import { collectPlainText } from "../../util/mdast-utils.js";
+import { captionFontSizePt, ptToHalfPoints } from "../../settings/typography.js";
 import { CAPTION_PREFIX_RE, captionLabelKey, kindLabelRegex } from "../../markdown/cross-ref.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
 import { wrapBookmark } from "./bookmark.js";
@@ -117,11 +118,12 @@ function captionNumberText(caption: CaptionInfo): string {
   return `${prefix}${chapter}${caption.index}`;
 }
 
-/** 题注段落:居中、比正文小一号(≥8pt)、无首行缩进;文本 = 自动编号 + 题注文本 */
+/** 题注段落:居中、比正文小一号(≥8pt,推导单源 core/settings/typography.ts
+ *  captionFontSizePt)、无首行缩进;文本 = 自动编号 + 题注文本 */
 function renderCaptionParagraph(caption: CaptionInfo, ctx: Ctx): Paragraph {
   const label = captionNumberText(caption);
-  const size = Math.max(8, ctx.config.typography.bodySizePt - 1);
-  const textRun = new TextRun({ text: caption.text === "" ? label : `${label} ${caption.text}`, size: size * 2 });
+  const size = ptToHalfPoints(captionFontSizePt(ctx.config.typography.bodySizePt));
+  const textRun = new TextRun({ text: caption.text === "" ? label : `${label} ${caption.text}`, size });
   let children: ParagraphChild[] = [textRun];
   // label 书签:题注带 {#fig:label}/{#tab:label} 时包
   // fig-<label>/tab-<label> 书签,供交叉引用 InternalHyperlink 跳转;id 由

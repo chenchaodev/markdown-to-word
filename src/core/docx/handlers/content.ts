@@ -17,7 +17,8 @@ import {
   TextRun,
 } from "docx";
 import type { Blockquote, FootnoteDefinition, List, ListItem, PhrasingContent } from "mdast";
-import { CODE_FONT, CODE_SIZE, MUTED_TEXT_GRAY, QUOTE_BG_GRAY, RULE_GRAY } from "../theme.js";
+import { CODE_FONT, MUTED_TEXT_GRAY, QUOTE_BG_GRAY, RULE_GRAY } from "../theme.js";
+import { inlineCodeFontSizePt, ptToHalfPoints } from "../../settings/typography.js";
 import { texToDocxMath } from "./math.js";
 import { isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
 import { inlineHtmlItemsToRuns, normalizeInlineHtml, parseInlineHtml } from "./inline-html.js";
@@ -72,9 +73,17 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
       for (const child of node.children) await pushRuns(runs, child, ctx, { ...style, strike: true });
       break;
     case "inlineCode":
-      // code 默认值写在 style 展开之后——标题场景 style.size 为标题字号,
-      // 行内代码保持自身小号等宽(CODE_SIZE 权威),不随所在标题放大
-      runs.push(new TextRun({ ...style, text: node.value, font: CODE_FONT, size: CODE_SIZE }));
+      // code 字号写在 style 展开之后——标题场景 style.size 为标题字号,
+      // 行内代码取自身按正文字号推导的字号(正文 × INLINE_CODE_SCALE,单源
+      // core/settings/typography.ts),不随所在标题放大;与代码块刻意不同号
+      runs.push(
+        new TextRun({
+          ...style,
+          text: node.value,
+          font: CODE_FONT,
+          size: ptToHalfPoints(inlineCodeFontSizePt(ctx.config.typography.bodySizePt)),
+        }),
+      );
       break;
     case "inlineMath": {
       // 行内公式:displayMode=false(KaTeX 行内模式,大运算符上下限排布在右侧,

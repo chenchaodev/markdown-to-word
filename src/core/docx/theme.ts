@@ -8,8 +8,10 @@
 /** 代码块 / 行内代码的等宽字体 */
 export const CODE_FONT = "Consolas";
 
-/** 代码字号:20 half-points = 10pt */
-export const CODE_SIZE = 20;
+/** 注:代码字号不在此处 —— 行内(正文 ×0.9)与代码块(正文 ×0.79)是两个不同值,
+ *  单个常量表达不了;且取值随用户正文字号变化,与本模块「只收与用户设置无关的
+ *  固定样式常量」的定位相悖。故与正文一同由 core/settings/typography.ts 的
+ *  inlineCodeFontSizePt / codeBlockFontSizePt 推导。 */
 
 /** 链接蓝色 */
 export const LINK_COLOR = "0563C1";

@@ -10,15 +10,16 @@
  *   零 CJK 字体名硬编码(微软雅黑/宋体等只允许出现在 typography/settings 层)
  * - 产物级:renderDocx 产物 styles.xml 的 w:eastAsia 与集中配置一致;
  *   document.xml 中代码字体/链接色/引用底纹/分隔线灰与 theme 常量一致
+ *   (代码「字号」是例外:它随正文字号变化,不在 theme 固定常量面内,改为比对
+ *    core/settings/typography.ts 的推导值)
  * (即「值来自集中配置」的端到端证据链:配置 → 渲染注入 → XML 落地)
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { convert } from "../../dist/core/convert.js";
-import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
+import { DEFAULT_TYPOGRAPHY, inlineCodeFontSizePt, ptToHalfPoints } from "../../dist/core/settings/typography.js";
 import {
   CODE_FONT,
-  CODE_SIZE,
   LINK_COLOR,
   MUTED_TEXT_GRAY,
   QUOTE_BG_GRAY,
@@ -63,7 +64,6 @@ export async function run() {
   // ---- 1. theme 固定样式常量齐全且非空(集中配置载体存在) ----
   const constants = {
     CODE_FONT,
-    CODE_SIZE,
     LINK_COLOR,
     MUTED_TEXT_GRAY,
     SECONDARY_TEXT_GRAY,
@@ -73,7 +73,7 @@ export async function run() {
   for (const [name, value] of Object.entries(constants)) {
     assert(value !== undefined && `${value}`.length > 0, `theme 常量 ${name} 不应缺失或为空`);
   }
-  console.log("[ok] theme-fonts:theme.ts 固定样式常量齐全且非空(7 项)");
+  console.log(`[ok] theme-fonts:theme.ts 固定样式常量齐全且非空(${Object.keys(constants).length} 项)`);
 
   // ---- 2. eastAsia 单源:DEFAULT_TYPOGRAPHY 集中配置 + docx 渲染层零硬编码 ----
   assert(
@@ -110,13 +110,19 @@ export async function run() {
   const documentXml = await unzipPart(artifact, "word/document.xml");
   // 代码字体:CODE_FONT=Consolas(code-block/code-highlight 经 theme 引用)
   assert(documentXml.includes('w:eastAsia="Consolas"'), "document.xml 缺少 Consolas(CODE_FONT 未落地)");
-  // 代码字号:CODE_SIZE=20 half-points
-  assert(documentXml.includes('<w:sz w:val="20"/>'), "document.xml 缺少 w:sz val=20(CODE_SIZE 未落地)");
+  // 代码字号:不再由 theme 常量给定,改随正文字号推导(单源
+  // core/settings/typography.ts 的 inlineCodeFontSizePt),故此处比对推导值 ——
+  // 比例本身的正确性由 dual-pipeline-matrix 的 derived-font-sizes 行在两个字号档锁定
+  const inlineCodeHalfPoints = ptToHalfPoints(inlineCodeFontSizePt(DEFAULT_TYPOGRAPHY.bodySizePt));
+  assert(
+    documentXml.includes(`<w:sz w:val="${inlineCodeHalfPoints}"/>`),
+    `document.xml 缺少 w:sz val=${inlineCodeHalfPoints}(行内代码字号未按正文推导落地)`,
+  );
   // 链接色:LINK_COLOR=0563C1(link-xref 经 theme 引用)
   assert(documentXml.includes(LINK_COLOR), `document.xml 缺少链接色 ${LINK_COLOR}(LINK_COLOR 未落地)`);
   // 引用块底纹:QUOTE_BG_GRAY=F2F2F2(content 经 theme 引用)
   assert(documentXml.includes(QUOTE_BG_GRAY), `document.xml 缺少引用底纹 ${QUOTE_BG_GRAY}(QUOTE_BG_GRAY 未落地)`);
   // 分隔线灰:RULE_GRAY=999999(thematicBreak 底边框)
   assert(documentXml.includes(RULE_GRAY), `document.xml 缺少分隔线灰 ${RULE_GRAY}(RULE_GRAY 未落地)`);
-  console.log("[ok] theme-fonts:document.xml 消费点落地(CODE_FONT/CODE_SIZE/LINK_COLOR/QUOTE_BG_GRAY/RULE_GRAY)");
+  console.log("[ok] theme-fonts:document.xml 消费点落地(CODE_FONT/行内代码字号推导/LINK_COLOR/QUOTE_BG_GRAY/RULE_GRAY)");
 }

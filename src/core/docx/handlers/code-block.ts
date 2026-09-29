@@ -5,7 +5,8 @@
 import { ImageRun, Paragraph, TextRun } from "docx";
 import type { IParagraphOptions } from "docx";
 import type { Code } from "mdast";
-import { CODE_FONT, CODE_SIZE } from "../theme.js";
+import { CODE_FONT } from "../theme.js";
+import { codeBlockFontSizePt, ptToHalfPoints } from "../../settings/typography.js";
 import { highlightCodeRuns } from "./code-highlight.js";
 import { highlightFallbackWarning, mermaidEmptyWarning, mermaidFailedWarning } from "../../i18n.js";
 import { scaleToFit } from "./image-run.js";
@@ -42,9 +43,12 @@ export async function renderCode(
       ctx.warning.list?.push(mermaidFailedWarning(reason));
     }
   }
+  // 代码块字号:由正文字号推导(单源 codeBlockFontSizePt),highlights 路径与
+  // 等宽兜底路径共用同一取值 —— 两条路径曾各读 theme 常量,故换算只在此处做一次
+  const size = ptToHalfPoints(codeBlockFontSizePt(ctx.config.typography.bodySizePt));
   // 语言已知但高亮失败(hljs 抛错/解析校验失败)→ 上报降级警告
   // (无语言/未知语言的正常降级不警告);warnDedup 按语言去重
-  const highlighted = highlightCodeRuns(node.value, node.lang ?? undefined, (lang) => {
+  const highlighted = highlightCodeRuns(node.value, node.lang ?? undefined, size, (lang) => {
     warnDedup(ctx, highlightFallbackWarning(lang));
   });
   if (highlighted) {
@@ -58,7 +62,7 @@ export async function renderCode(
   const lines = node.value.split("\n");
   const children: TextRun[] = [];
   lines.forEach((line, i) => {
-    children.push(new TextRun({ text: line, font: CODE_FONT, size: CODE_SIZE }));
+    children.push(new TextRun({ text: line, font: CODE_FONT, size }));
     if (i < lines.length - 1) children.push(new TextRun({ text: "", break: 1 }));
   });
   return new Paragraph({

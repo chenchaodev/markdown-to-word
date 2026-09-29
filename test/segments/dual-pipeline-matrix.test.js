@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(25 行)。
+ * 双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(26 行)。
  *
  * 做法:把散落各段的「双管线差异」注释收敛为一张表——每行一个语义维度,声明判定
  * 类别、双侧提取方式与来源锚点,并在同一次运行里真的跑出双侧产物做断言
@@ -33,9 +33,9 @@
  * 与沙箱「一份 markdown 跑一次双侧」的通用形状不同,塞进去只会把沙箱参数
  * 膨胀成一堆按行命名的可选字段。
  *
- * 超 ~500 行的例外(仅指下方的 MATRIX 行定义表):25 行 × (维度 + 双侧提取方式 + 锚点
+ * 超 ~500 行的例外(仅指下方的 MATRIX 行定义表):26 行 × (维度 + 双侧提取方式 + 锚点
  * + verify 判定)天然是一张宽表,拆成两个文件会让「行数统计 / 形状守护 / 逐行实跑」三处
- * 逻辑分家,反而更难保证 25 行都实跑。其余职责(提取器 / 样例 / 装配)已全部下沉。
+ * 逻辑分家,反而更难保证 26 行都实跑。其余职责(提取器 / 样例 / 装配)已全部下沉。
  *
  * 判定类别:
  * - mustMatch:双侧语义必须一致(载体可不同:docx 是 OOXML,PDF 是 HTML/CSS);
@@ -97,6 +97,10 @@ import { MATRIX_ROW_IDS } from "./dual-pipeline-decision-ledger.test.js";
  * @typedef {MatrixCtx & {
  *   typo: { docxXml: string, stylesXml: string, pdfHtml: string },
  *   typoDefault: { docxXml: string, stylesXml: string, pdfHtml: string },
+ *   derivedSizes: {
+ *     nonDefault: { docxXml: string, pdfHtml: string },
+ *     def: { docxXml: string, pdfHtml: string },
+ *   },
  *   pageBreakH1: { on: { docxXml: string, pdfHtml: string }, off: { docxXml: string, pdfHtml: string } },
  *   chromeDocx: { default: string, custom: string, none: string, defaultFooter: string },
  *   chromePdf: {
@@ -114,7 +118,7 @@ import { MATRIX_ROW_IDS } from "./dual-pipeline-decision-ledger.test.js";
  * }} MatrixCtxExtended
  */
 
-export const meta = { description: "双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(25 行,覆盖 8 个双管线键,含双侧提取器与经存在性校验的来源锚点)。" };
+export const meta = { description: "双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(26 行,覆盖 8 个双管线键,含双侧提取器与经存在性校验的来源锚点)。" };
 // 场景导出(gen-fixtures 落盘为 acceptance/dual-pipeline-matrix*.md):样例字面量在
 // dual-samples.js,契约声明留在段层(生成器只认段文件的导出)。
 export const fixtures = {
@@ -147,6 +151,47 @@ function must(cond, rowId, msg) {
  * @property {string[]} anchors 来源锚点
  * @property {(ctx: MatrixCtxExtended) => Promise<void>} verify 执行断言
  */
+
+/**
+ * 提取 docx 里「显式带 w:sz 的 run」→ 「run 文本 → 字号(half-points)」。
+ *
+ * 为什么不能用裸字符串断言:行内代码与题注在默认 12pt 档恰好同为 22 half-points
+ * (10.8pt 与 11pt 都被 OOXML 的半磅粒度取整到同一值),只看 `<w:sz w:val=..>` 判不出
+ * 「哪一个字号属于谁」。绑定到 run 文本后,每处取值都能单独锁定。
+ *
+ * 本地定义而非入 test/common/dual-extract.js:该模块由多段共用,加导出等于让本次
+ * 改动扩散到本泳道之外;此断言只服务本行的三个取值点,局部定义更贴边界。
+ *
+ * @param {string} xml document.xml 文本
+ * @param {string} text 目标 run 的文本内容
+ * @returns {number[]} 该文本所有显式 run 的字号(half-points);无则空数组
+ */
+function docxRunSizes(xml, text) {
+  const sizes = [];
+  for (const m of xml.matchAll(/<w:r>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g)) {
+    const run = m[0];
+    const sz = /<w:sz w:val="(\d+)"\/>/.exec(run);
+    if (!sz) continue;
+    const body = [...run.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((x) => x[1]).join("");
+    if (body === text) sizes.push(Number(sz[1]));
+  }
+  return sizes;
+}
+
+/**
+ * 提取 pdf 模板 CSS 里某选择器的 font-size 值(pt)。
+ * @param {string} html pdf HTML 文档(内嵌 <style>)
+ * @param {string} selector 目标选择器串
+ * @returns {string | null} font-size 的值(取不到返回 null)
+ */
+function pdfRuleFontSizePt(html, selector) {
+  const start = html.indexOf(`${selector} {`);
+  if (start < 0) return null;
+  const end = html.indexOf("}", start);
+  if (end < 0) return null;
+  const m = /font-size:\s*([\d.]+)pt/.exec(html.slice(start, end));
+  return m && m[1] !== undefined ? m[1] : null;
+}
 
 /**
  * 差异矩阵表。行字段:
@@ -191,7 +236,7 @@ const MATRIX = [
     pdfExtract: "模板 CSS `@page { size: …; margin: …mm …mm …mm …mm }`",
     anchors: [
       "src/core/docx/render.ts:231(纸张 twips + 四边距 twips)",
-      "src/core/pdf/template-css.ts:59(@page size/margin)",
+      "src/core/pdf/template-css.ts:68(@page size/margin)",
       "src/core/settings/settings-defaults.ts:428(validatePageSetup 几何门禁,两侧共用)",
     ],
     verify: async ({ geometry }) => {
@@ -234,7 +279,7 @@ const MATRIX = [
       "src/core/docx/render.ts:328(trim 后精确匹配 → PageBreak)",
       "src/core/docx/handlers/fallback.ts:63(行内 html 路径同判定)",
       "src/core/pdf/rules/html.ts:75(注释 → 分页 div)",
-      "src/core/pdf/template-css.ts:60(break-before: page)",
+      "src/core/pdf/template-css.ts:69(break-before: page)",
     ],
     verify: async ({ pageBreak }) => {
       must(pageBreak.docxCount === 1, "explicit-page-break", `docx 分页符数量应为 1,实际 ${pageBreak.docxCount}`);
@@ -301,9 +346,9 @@ const MATRIX = [
     docxExtract: "题注段静态编号文本「图 1.1 …」「图 2.1 …」",
     pdfExtract: "xref 替换出的编号文本 + 模板 CSS counter 规则(显示态编号走伪元素)",
     anchors: [
-      "src/core/docx/handlers/captions.ts:74(章节号/序数分配)",
-      "src/core/docx/handlers/captions.ts:114(captionNumberText 单源)",
-      "src/core/pdf/template-css.ts:192(counter-increment)与 194(h1 重置)",
+      "src/core/docx/handlers/captions.ts:75(章节号/序数分配)",
+      "src/core/docx/handlers/captions.ts:115(captionNumberText 单源)",
+      "src/core/pdf/template-css.ts:202(counter-increment)与 205(h1 重置)",
       "src/core/pdf/rules/xref.ts:144(编号文本与 CSS counter 同源)",
     ],
     verify: async ({ capDocxXml, capPdfHtml }) => {
@@ -339,7 +384,7 @@ const MATRIX = [
     docxExtract: "书签 fig-<label>/tab-<label> + 文本无 `{#fig:` 残留;开关关闭 → 无书签、label 原样",
     pdfExtract: "锚点 <span id=\"fig:label\"> + 文本无 `{#fig:` 残留;开关关闭 → 无锚点、无编号 CSS",
     anchors: [
-      "src/core/docx/handlers/captions.ts:97(剥离 + 登记)",
+      "src/core/docx/handlers/captions.ts:92(剥离 + 登记)",
       "src/core/pdf/rules/xref.ts:140(stripTrailingLabel 剥离 + 登记)",
       "src/core/markdown/cross-ref.ts:95(kindLabelRegex 单源)",
     ],
@@ -506,7 +551,7 @@ const MATRIX = [
     anchors: [
       "src/core/markdown/cross-ref.ts:33(captionLabelKey 键单源)",
       "src/core/docx/ctx.ts:69(captionLabels 键 = kind + label)",
-      "src/core/docx/handlers/captions.ts:106(按 kind 登记)",
+      "src/core/docx/handlers/captions.ts:107(按 kind 登记)",
       "src/core/docx/handlers/link-xref.ts:90(按 kind 查找)",
       "src/core/pdf/rules/xref.ts:154(按 kind 登记)与 188(按 kind 查找)",
     ],
@@ -662,7 +707,7 @@ const MATRIX = [
     anchors: [
       "src/core/docx/render.ts:261(footnotes 部件,空则不生成)",
       "src/core/pdf/render.ts:164(@mdit/plugin-footnote)",
-      "src/core/pdf/template-css.ts:150(脚注区样式;Chromium 无 float: footnote)",
+      "src/core/pdf/template-css.ts:160(脚注区样式;Chromium 无 float: footnote)",
     ],
     verify: async ({ footnote }) => {
       must(footnote.docxHasPart, "footnote-implementation", "docx 缺少 footnotes.xml 部件");
@@ -791,8 +836,8 @@ const MATRIX = [
     docxExtract: "题注静态文本(首图无章节前缀)",
     pdfExtract: "CSS counter 分支(含 h1c 的 ::before 规则,首 h1 前章节号按 0 计)",
     anchors: [
-      "src/core/docx/handlers/captions.ts:96(chapter>0 才给章节号)",
-      "src/core/pdf/template-css.ts:197(hasH1 分支含 h1c)",
+      "src/core/docx/handlers/captions.ts:97(chapter>0 才给章节号)",
+      "src/core/pdf/template-css.ts:205(hasH1 分支含 h1c)",
       "src/core/pdf/rules/caption.ts:30(该边界在规则头注声明为已接受差异)",
     ],
     verify: async ({ beforeH1 }) => {
@@ -828,10 +873,10 @@ const MATRIX = [
     docxExtract: "styles.xml docDefaults rFonts(ascii/eastAsia)+sz;正文段 w:jc + w:spacing/@w:line + w:ind/@w:firstLineChars",
     pdfExtract: "模板 CSS body font-family/font-size/line-height;`p { text-indent: 2em }` / `p { text-align: justify }`",
     anchors: [
-      "src/core/settings/typography.ts:119(DEFAULT_TYPOGRAPHY 单源)",
+      "src/core/settings/typography.ts:177(DEFAULT_TYPOGRAPHY 单源)",
       "src/core/docx/render.ts:223(排版注入 docDefaults run)",
       "src/core/docx/handlers/inline-html.ts:26(正文段 jc/spacing/indent)",
-      "src/core/pdf/template-css.ts:70(body 字体/字号/行距)",
+      "src/core/pdf/template-css.ts:79(body 字体/字号/行距)",
     ],
     verify: async ({ typo, typoDefault }) => {
       // 显式取值:两侧都读到设置值(而非恰好等于默认,故用非默认 typography)
@@ -886,6 +931,100 @@ const MATRIX = [
     },
   },
   {
+    id: "derived-font-sizes",
+    mode: "mustMatch",
+    dimension:
+      "题注 / 行内代码 / 代码块字号(三条都从正文字号推导:题注 = 正文 - 1(下限 8pt)、行内代码 = 正文 × 0.9、代码块 = 正文 × 0.79;行内与代码块刻意不同号,两侧同步)",
+    docxExtract: "document.xml 三处 run 的 w:sz(题注 / 行内代码 / 代码块,按 run 文本绑定)",
+    pdfExtract: "模板 CSS `.fig-caption, .tab-caption` / `code` / `pre.hljs code` 三条规则的 font-size",
+    anchors: [
+      "src/core/settings/typography.ts:130(captionFontSizePt 推导单源)",
+      "src/core/settings/typography.ts:141(行内代码 / 代码块两个比例)",
+      "src/core/docx/handlers/captions.ts:125(题注经 ptToHalfPoints 落地)",
+      "src/core/docx/handlers/content.ts:84(行内代码字号)",
+      "src/core/docx/handlers/code-block.ts:48(代码块字号,高亮与等宽兜底共用)",
+      "src/core/pdf/template-css.ts:64(三处字号从 typography 推导)",
+    ],
+    verify: async ({ derivedSizes }) => {
+      const { nonDefault, def } = derivedSizes;
+      // ---- 非默认 20pt 档:证明三处都「读了设置」而非恰好等于默认 ----
+      // docx 记 half-points(半磅粒度,故 15.8pt 的代码块取整为 16pt = 32)
+      must(
+        docxRunSizes(nonDefault.docxXml, "inline code").join() === "36",
+        "derived-font-sizes",
+        `docx 行内代码字号应为 20pt × 0.9 = 18pt = 36 half-points(实际 ${docxRunSizes(nonDefault.docxXml, "inline code")})`,
+      );
+      must(
+        docxRunSizes(nonDefault.docxXml, "const").join() === "32" &&
+          docxRunSizes(nonDefault.docxXml, "plain fence").join() === "32",
+        "derived-font-sizes",
+        "docx 代码块字号应为 20pt × 0.79 = 15.8pt → 32 half-points,且高亮路径与等宽兜底路径同号",
+      );
+      must(
+        docxRunSizes(nonDefault.docxXml, "表 1 样例表").join() === "38",
+        "derived-font-sizes",
+        `docx 题注字号应为 20pt - 1 = 19pt = 38 half-points(实际 ${docxRunSizes(nonDefault.docxXml, "表 1 样例表")})`,
+      );
+      must(
+        pdfRuleFontSizePt(nonDefault.pdfHtml, "code") === "18",
+        "derived-font-sizes",
+        `PDF 行内代码 font-size 应为 18pt(实际 ${pdfRuleFontSizePt(nonDefault.pdfHtml, "code")})`,
+      );
+      must(
+        pdfRuleFontSizePt(nonDefault.pdfHtml, "pre.hljs code") === "15.8",
+        "derived-font-sizes",
+        `PDF 代码块 font-size 应为 15.8pt(实际 ${pdfRuleFontSizePt(nonDefault.pdfHtml, "pre.hljs code")})`,
+      );
+      must(
+        pdfRuleFontSizePt(nonDefault.pdfHtml, ".fig-caption, .tab-caption") === "19",
+        "derived-font-sizes",
+        `PDF 题注 font-size 应为 19pt(实际 ${pdfRuleFontSizePt(nonDefault.pdfHtml, ".fig-caption, .tab-caption")})`,
+      );
+      // ---- 默认 12pt 档:锁「pdf 侧代码字号不变、题注取 docx 侧语义」这个预期结果 ----
+      // 判据是**计算值**而非 CSS 文本形态:行内代码 10.8pt = 旧 `0.9em` 在 12pt 正文下的
+      // 解析值,代码块 9.5pt = 旧字面量 —— 即「统一推导」未改动 pdf 代码观感;
+      // 题注 10pt → 11pt 是本次裁决明确要的用户可见变化。
+      must(
+        pdfRuleFontSizePt(def.pdfHtml, "code") === "10.8",
+        "derived-font-sizes",
+        `PDF 行内代码默认档计算值应仍为 0.9 × 12 = 10.8pt(实际 ${pdfRuleFontSizePt(def.pdfHtml, "code")})`,
+      );
+      must(
+        pdfRuleFontSizePt(def.pdfHtml, "pre.hljs code") === "9.5",
+        "derived-font-sizes",
+        `PDF 代码块默认档计算值应仍为 9.5pt(实际 ${pdfRuleFontSizePt(def.pdfHtml, "pre.hljs code")})`,
+      );
+      must(
+        pdfRuleFontSizePt(def.pdfHtml, ".fig-caption, .tab-caption") === "11",
+        "derived-font-sizes",
+        `PDF 题注默认档应为 11pt(取 docx 侧 Math.max(8, 12-1) 语义;实际 ${pdfRuleFontSizePt(def.pdfHtml, ".fig-caption, .tab-caption")})`,
+      );
+      // 「旧字面量不得回流」只能在**源码**上判,不能判产物文本:默认档推导结果恰好
+      // 就是 9.5pt(0.79×12 → 9.5),产物里根本区分不出「推导出的 9.5」与「写死的 9.5」。
+      // 故此处扫源码:三处字号必须由三个推导变量插值,且 ratio 不得内联。
+      const cssSrc = sourceLines("src/core/pdf/template-css.ts").join("\n");
+      for (const needle of [
+        "const captionSize = captionFontSizePt(",
+        "const inlineCodeSize = inlineCodeFontSizePt(",
+        "const codeBlockSize = codeBlockFontSizePt(",
+        "font-size: ${captionSize}pt",
+        "font-size: ${inlineCodeSize}pt",
+        "font-size: ${codeBlockSize}pt",
+      ]) {
+        must(
+          cssSrc.includes(needle),
+          "derived-font-sizes",
+          `template-css.ts 缺少「经推导」的写法:${needle}(字号不得回落到裸字面量)`,
+        );
+      }
+      must(
+        !cssSrc.includes("font-size: 0.9em"),
+        "derived-font-sizes",
+        "template-css.ts 不应再有行内代码的裸字面量 0.9em",
+      );
+    },
+  },
+  {
     id: "break-before-h1",
     mode: "mustMatch",
     dimension: "一级标题前分页(同一开关 → 两侧 h1 之前都换页;关闭时两侧都不换)",
@@ -893,7 +1032,7 @@ const MATRIX = [
     pdfExtract: "模板 CSS `h1 { break-before: page; }`(首个 h1 除外)",
     anchors: [
       "src/core/docx/handlers/heading.ts:49(pageBreakBefore 仅 depth===1)",
-      "src/core/pdf/template-css.ts:163(h1 break-before + 首 h1 豁免)",
+      "src/core/pdf/template-css.ts:173(h1 break-before + 首 h1 豁免)",
       "src/core/settings/render-options.ts:94(breakBeforeH1 默认值解析)",
     ],
     verify: async ({ pageBreakH1 }) => {
@@ -1159,6 +1298,42 @@ async function buildExtendedCtx() {
   // 对照侧的 styles.xml 也要取:默认字号 12pt 与默认字体同样要从样式表读
   const typoDefaultStyles = await docxParts(typoDefaultDocx.buffer, "styles");
 
+  // ---- 题注 / 行内代码 / 代码块字号:同一「从正文字号推导」语义的两个字号档 ----
+  // 取 20pt(而非 15pt)是为了让三处取值两两不同(19/18/15.8),任一处比例写错
+  // 都会被下面那组互斥断言抓到;样例必须同时含行内代码、带语言的围栏(高亮路径)、
+  // 无语言围栏(等宽兜底路径)与一个表题注(docx 题注识别对象为表格或含图段落)。
+  const derivedMd = [
+    "正文含 `inline code`。",
+    "",
+    "```js",
+    "const x = 1;",
+    "```",
+    "",
+    "```",
+    "plain fence",
+    "```",
+    "",
+    "| a | b |",
+    "| - | - |",
+    "| 1 | 2 |",
+    "",
+    "表: 样例表",
+    "",
+  ].join("\n");
+  const derivedTypography = { ...DEFAULT_TYPOGRAPHY, bodySizePt: 20 };
+  const derivedDocx = asDocxArtifact(
+    await convertTyped(derivedMd, "docx", { baseDir: B, warnings: [], toc: false, typography: derivedTypography }),
+  );
+  const derivedPdf = asPdfArtifact(
+    await convertTyped(derivedMd, "pdf", { baseDir: B, title: "t", warnings: [], typography: derivedTypography }),
+  );
+  const derivedDefaultDocx = asDocxArtifact(
+    await convertTyped(derivedMd, "docx", { baseDir: B, warnings: [], toc: false }),
+  );
+  const derivedDefaultPdf = asPdfArtifact(
+    await convertTyped(derivedMd, "pdf", { baseDir: B, title: "t", warnings: [] }),
+  );
+
   // ---- 一级标题前分页:开关开/关对照 ----
   const brkMd = "# 第一章\n\n正文。\n\n## 小节\n\n正文。\n";
   const brkOnDocx = asDocxArtifact(await convertTyped(brkMd, "docx", { baseDir: B, warnings: [], breakBeforeH1: true }));
@@ -1227,6 +1402,10 @@ async function buildExtendedCtx() {
       stylesXml: typoDefaultStyles,
       pdfHtml: typoDefaultPdf.html,
     },
+    derivedSizes: {
+      nonDefault: { docxXml: await docxXmlOf(derivedDocx.buffer), pdfHtml: derivedPdf.html },
+      def: { docxXml: await docxXmlOf(derivedDefaultDocx.buffer), pdfHtml: derivedDefaultPdf.html },
+    },
     pageBreakH1: {
       on: { docxXml: await docxXmlOf(brkOnDocx.buffer), pdfHtml: brkOnPdf.html },
       off: { docxXml: await docxXmlOf(brkOffDocx.buffer), pdfHtml: brkOffPdf.html },
@@ -1261,7 +1440,7 @@ export async function run() {
   // 解包 / 提取后作为各行 verify 的入参 —— 禁止只列元数据不验证。
   const ctx = await buildMatrixCtx();
   // 6-C2 新增四行的产物(排版 / h1 分页 / 页眉页脚 / 水印)在此并入同一 ctx,
-  // 使 25 行走同一条「逐行实跑」通路,不另开一条只跑新行的旁路。
+  // 使 26 行走同一条「逐行实跑」通路,不另开一条只跑新行的旁路。
   const full = /** @type {MatrixCtxExtended} */ (Object.assign(ctx, await buildExtendedCtx()));
   for (const row of MATRIX) {
     await row.verify(full);

@@ -5,8 +5,11 @@
  * render.ts 编排两者。
  */
 import {
+  captionFontSizePt,
+  codeBlockFontSizePt,
   headingFontSizePt,
   headingSpacingPt,
+  inlineCodeFontSizePt,
   type TypographySettings,
 } from "../settings/typography.js";
 import { validatePageSetup, type PageSetup } from "../settings/settings-defaults.js";
@@ -55,6 +58,12 @@ export function buildTemplateCss(
   validatePageSetup(pageSetup);
   const size = pageSetup.paper + (pageSetup.orientation === "landscape" ? " landscape" : "");
   const { marginTop, marginRight, marginBottom, marginLeft } = pageSetup;
+  // 题注/代码字号一律从正文字号推导(单源 core/settings/typography.ts,与 docx 侧
+  // 同函数);此前本文件持三处字面量(题注 10pt / 行内 0.9em / 代码块 9.5pt),
+  // 题注那处不随正文变化 → 同一份设置在两侧排出不同字号。
+  const captionSize = captionFontSizePt(typography.bodySizePt);
+  const inlineCodeSize = inlineCodeFontSizePt(typography.bodySizePt);
+  const codeBlockSize = codeBlockFontSizePt(typography.bodySizePt);
   return `
   @page { size: ${size}; margin: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm; }
   .page-break { break-before: page; height: 0; }
@@ -103,10 +112,11 @@ ${buildHeadingRules(typography)}
   a { color: #0969da; text-decoration: none; }
   hr { border: none; border-top: 1px solid #d0d7de; margin: 18px 0; }
 
-  /* 行内代码与代码块 */
+  /* 行内代码与代码块:字号取自正文字号推导(core/settings/typography.ts,docx 侧
+     同函数)。行内代码取正文而非 em 上下文 —— 标题内的行内代码不随标题放大 */
   code {
     font-family: Consolas, "Cascadia Mono", monospace;
-    font-size: 0.9em; background: #f6f8fa; padding: 2px 5px; border-radius: 4px;
+    font-size: ${inlineCodeSize}pt; background: #f6f8fa; padding: 2px 5px; border-radius: 4px;
     overflow-wrap: break-word; /* 长行内代码换行而非溢出页边 */
   }
   pre.hljs {
@@ -114,7 +124,7 @@ ${buildHeadingRules(typography)}
     padding: 12px 14px; overflow: hidden; break-inside: avoid;
   }
   pre.hljs code {
-    background: none; padding: 0; font-size: 9.5pt; line-height: 1.5;
+    background: none; padding: 0; font-size: ${codeBlockSize}pt; line-height: 1.5;
     white-space: pre-wrap; word-break: break-word; /* 长代码行折行,避免打印裁切 */
   }
 
@@ -186,7 +196,7 @@ ${captionNumbering ? `
   /* 题注编号:图/表题注居中小一号,编号经 ::before 伪元素(不进文本节点,
      书签/目录不受影响);章节号 = 最近 h1,图/表序在 h1 处重置(与 docx 侧
      SEQ \s 1 语义一致)。文档无 h1 时退化为纯序数(全文档连续,与 docx 对齐) */
-  .fig-caption, .tab-caption { text-align: center; font-size: 10pt; margin: 4px 0 12px; break-inside: avoid; }
+  .fig-caption, .tab-caption { text-align: center; font-size: ${captionSize}pt; margin: 4px 0 12px; break-inside: avoid; }
   /* 图/表序自增(遗留修复:此前缺 counter-increment,序数恒为 0,
      所有题注显示「图 N.0」;编号文本与 xref_recognize 登记同源,勿漂移) */
   .fig-caption { counter-increment: figc; }
