@@ -4,24 +4,56 @@
 // 使界面可离线驱动到各舞台状态;window.__vc 暴露测试控制面(下一次对话框返回值等)。
 "use strict";
 
+/**
+ * 构造固定时间戳(epoch ms)。
+ * 用本地时间分量而非写死数字:页面侧的 formatRecentTime 全程走 getHours/getDate 等本地取值,
+ * 故「2024-03-15 14:30 本地」在任何时区都渲染成同一串字 —— 换台机器跑 ui:shots 也一致。
+ * @param {number} year 年 @param {number} month 月(0 起) @param {number} day 日
+ * @param {number} hour 时 @param {number} minute 分
+ * @returns {number}
+ */
+const at = (year, month, day, hour, minute) =>
+  new Date(year, month, day, hour, minute, 0, 0).getTime();
+
+/**
+ * 最近列表的三条记录(时间戳一律取 2024 年的固定值)。
+ *
+ * 为什么必须固定:ts 会被渲染成历史面板里逐行的时间文案,文案里的「分钟」直接来自 ts。
+ * 早先这里写的是 `Date.now() - 偏移`,于是 4-history-open.png 里的分钟数字逐次运行都在变,
+ * 同一份代码每隔一分钟就换一份哈希 —— 基线工具的产物不确定,目检结论也就无法跨轮比较。
+ * 冻结时钟没选:桩与页面同世界,覆 Date 会连带影响 renderer 里所有读时钟的代码(污染面大),
+ * 而固定 ts 只改这一个夹具输入。
+ *
+ * 为什么取「固定年」而不是「今天 14:30」这种相对写法:formatRecentTime 的四个分支里,
+ * 「今天/昨天/M月D日」三支都由页面真实的 now(= Date.now(),页面传 undefined 走默认)参与判定,
+ * 固定 ts 钉不住分支 —— 分支跟着**运行当天**走,26 小时前那条甚至会随运行时刻在
+ * 「昨天 HH:mm」与「M月D日」之间来回跳。只有跨年分支「2024年3月15日」既不含 HH:mm
+ * 也不看运行日,是唯一能被 ts 单独钉死的输出,故三条一律落 2024 年。
+ *
+ * 代价(已知取舍):基线里不再出现「今天/昨天」前缀,行内只剩一种定长日期文案。
+ * 那两个分支的文案逻辑由单测覆盖(注入 now 断言,见 test/renderer/renderer-pure.test.js
+ * 与 test/segments/identity-guards.test.js),视觉基线要的只是一个宽度量级相当的定长串。
+ * 日后若要让基线重新拍到「今天/昨天」,必须连 now 一起钉(桩里把 Date.now 覆成常量),
+ * 只固定 ts 做不到 —— 那是另一个取舍,不在本轮。
+ */
 const recentBase = () => [
   {
     path: "C:\\demo\\季度报告.md",
     name: "季度报告.md",
     format: "docx",
-    ts: Date.now() - 1000 * 60 * 42,
+    ts: at(2024, 2, 15, 14, 30),
   },
   {
     path: "C:\\demo\\产品说明书.md",
     name: "产品说明书.md",
     format: "pdf",
-    ts: Date.now() - 1000 * 60 * 60 * 26,
+    ts: at(2024, 2, 14, 9, 12),
   },
   {
     path: "C:\\demo\\会议纪要.md",
     name: "会议纪要.md",
     format: "docx",
-    ts: Date.now() - 1000 * 60 * 60 * 24 * 3,
+    ts: at(2024, 2, 12, 18, 40),
   },
 ];
 

@@ -10,6 +10,16 @@
  * 控件位置或可见性出了问题,主窗那几张永远拍不到。
  * 前置:npm run build(dist/renderer 就绪)。
  *
+ * 落定纪律:截图前的等待一律是状态表达式(`settle` / `resizeWin` / `shot` 内的画面稳定判据),
+ * 不用固定时长。固定时长只在「恰好够长」时成立,抢拍(截到未落定旧帧、settle 不足时截出与
+ * 上一张字节相同的帧)就从这里来;状态表达式表达的是「过渡已落定」这件事本身。
+ * 三道判据分层:页面侧(无 running 动画 + 画面指纹跨帧/跨轮不变)· 视口侧(视口确实换档)·
+ * 合成器侧(连续两次 capturePage 字节一致才落盘)。
+ *
+ * 已知项(接受不修,登记备查):10-about.png 存在两个稳定变体(同一份代码、两个字节集),
+ * 成因是关于窗首帧的光栅化竞态 —— 三道判据答的是「这一帧是否落定」,答不出「首帧光栅化到哪一层」;
+ * 已落盘基线同样双峰,故非任何一轮改动引入,登记为已知不复现项,不再当抢拍排查。
+ *
  * 失败路径:走 test/common/entry-guard.mjs 的统一守卫 —— 抛错时打印阶段标签 + 原始堆栈
  * 并以非零码退出。旧实现是 `app.quit() + process.exitCode = 1`,实测**退出码是 0**
  * (quit 走自身退出路径,只设 exitCode 不生效),即截图工具失败会被读成成功。
@@ -92,16 +102,182 @@ async function waitFor(exec, expr, timeout = 5000, label = expr) {
 }
 
 /**
- * 截当前窗口画面落盘
+ * 冻结动效的注入样式(主窗与关于窗共用一份单源)。
+ * 改用状态判据后样式仍必须冻结:判据只回答「此刻还有没有东西在动」,答不出「这一帧是不是终态」。
+ * 而只压 duration 不压循环次数,`infinite` 动画会以 0.01ms 为一步无限循环
+ * (base.css 的 btn-pulse 光环 / status-breathe 圆点 / rot 指示环),每帧落在哪个相位随机 ——
+ * 画面永远「在动」,落定判据永不成立,截图也永不可复现。故循环次数一并钉成 1:跑一遍即落定并停在终态。
+ * delay 归零同理:about 的 stamp-in 是 280ms 延迟 + both 填充,不归零就停在 opacity:0 的首帧(空章);
+ * 主窗的 `transition: visibility 0s linear 0.22s`(settings.css)也因而不拖尾。
+ * duration 留 0.01ms 而非 0:0 会把带 delay 的动画整段跳过,拿不到「跑完」的终态。
+ * @type {string}
+ */
+const FREEZE_CSS =
+  "*,*::before,*::after{" +
+  "transition-duration:0.01ms!important;transition-delay:0s!important;" +
+  "animation-duration:0.01ms!important;animation-delay:0s!important;" +
+  "animation-iteration-count:1!important}";
+
+/** 单帧等待的兜底上限(ms):隐藏/被遮挡窗口里 rAF 可能不触发,兜底只防死锁,不参与任何判定 */
+const FRAME_GUARD_MS = 250;
+
+/** 落定所需的连续成立轮数:取 2 而非 1 —— 一轮成立只说明「此刻没在动」,说明不了「刚才那次变更走完了」 */
+const SETTLE_STABLE_ROUNDS = 2;
+
+/** 截图前允许的最大采样次数:连续两次字节一致才算落定,超限即显式失败(不落盘一张未定的帧) */
+const SHOT_STABLE_ATTEMPTS = 8;
+
+/**
+ * 页面侧单轮「过渡已落定」采样(settle 的判据单源;在页面上下文求值,故为字符串)。
+ * 一轮同时给三样:
+ *   running —— document.getAnimations() 里 playState==="running" 的条数(含伪元素动画)。
+ *              CSS transition/animation 播完即从该表消失,故它是「过渡已落定」的直接可测形态;
+ *   stable  —— 相邻两帧的画面指纹是否相同(过渡在跑时 rect/opacity/transform 每帧都在变);
+ *   fp      —— 本轮指纹,供调用方跨轮比较(相邻两轮 fp 相同才记一次稳定)。
+ * 为什么不能一进来就采样:样式重算之前 transition 尚未被创建,此刻 getAnimations() 必然为空 ——
+ * 那正是抢拍发生的空档。故先强制重算,再连过两帧。
+ */
+const PAGE_SETTLE_SAMPLE = `(async () => {
+  const nextFrame = () => new Promise((resolve) => {
+    let done = false;
+    const go = () => { if (!done) { done = true; resolve(); } };
+    requestAnimationFrame(go);
+    setTimeout(go, ${FRAME_GUARD_MS});
+  });
+  const fingerprint = () => {
+    const parts = [window.innerWidth + "x" + window.innerHeight + "@" +
+      document.documentElement.scrollWidth + "x" + document.documentElement.scrollHeight];
+    for (const el of document.querySelectorAll("body *")) {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) continue;
+      parts.push(b.left.toFixed(1) + "," + b.top.toFixed(1) + "," +
+        b.width.toFixed(1) + "," + b.height.toFixed(1));
+      const cs = getComputedStyle(el);
+      if (cs.opacity !== "1") parts.push("o" + cs.opacity);
+      if (cs.transform !== "none") parts.push("t" + cs.transform);
+    }
+    return parts.join(";");
+  };
+  void document.documentElement.offsetHeight;
+  await nextFrame();
+  const fpA = fingerprint();
+  await nextFrame();
+  const fpB = fingerprint();
+  const running = document.getAnimations().filter((a) => a.playState === "running");
+  return JSON.stringify({
+    running: running.length,
+    stable: fpA === fpB,
+    fp: fpB,
+    who: running.length > 0 ? running[0].constructor.name : ""
+  });
+})()`;
+
+/**
+ * 等「过渡已落定」:无 running 动画 + 本轮两帧指纹一致 + 与上一轮指纹一致,连续 SETTLE_STABLE_ROUNDS 轮成立。
+ * 这是固定时长的替代品(固定时长只在恰好够长时成立,抢拍即由此而来),判据表达的是状态本身。
+ * @param {(code: string) => Promise<unknown>} exec 页面脚本执行器
+ * @param {string} label 定位标签(日志 + 超时文案)
+ * @param {number} [timeout] 最长等待(ms)
+ * @returns {Promise<void>}
+ */
+async function settle(exec, label, timeout = 5000) {
+  const t0 = Date.now();
+  let stable = 0;
+  /** @type {string | null} */
+  let lastFp = null;
+  let last = "无采样";
+  while (Date.now() - t0 < timeout) {
+    const sample = JSON.parse(String(await exec(PAGE_SETTLE_SAMPLE)));
+    last = `running=${sample.running} stable=${sample.stable} who=${sample.who}`;
+    if (sample.running === 0 && sample.stable === true && sample.fp === lastFp) {
+      stable += 1;
+      if (stable >= SETTLE_STABLE_ROUNDS) {
+        console.log(`[ui:shots] settle ${label} ${Date.now() - t0}ms (${stable} 轮)`);
+        return;
+      }
+    } else {
+      stable = 0;
+    }
+    lastFp = sample.fp;
+  }
+  throw new Error(`[ui:shots] settle timeout: ${label} (${last})`);
+}
+
+/**
+ * 注入动效冻结样式(幂等,同一窗口重复调用不叠加)
+ * @param {(code: string) => Promise<unknown>} exec 页面脚本执行器
+ * @returns {Promise<void>}
+ */
+async function freezeMotion(exec) {
+  await exec(
+    `(() => { if (document.getElementById("vc-freeze")) return;` +
+      `const s = document.createElement("style");` +
+      `s.id = "vc-freeze";` +
+      `s.textContent = ${JSON.stringify(FREEZE_CSS)};` +
+      `document.head.appendChild(s); })()`,
+  );
+}
+
+/**
+ * 改窗宽高,并等视口**真的**换档且重排落定。
+ * 为什么不是固定时长:setSize 到视口更新之间隔着窗口管理器与重排,时长只能猜。
+ * 判据只断言「视口确实变了」并把实测值打进日志 —— setSize 给的是窗口尺寸,内容视口受窗框影响,
+ * 各机器不等(且截图尺寸随视口走),故不写死期望像素值。
+ * @param {import("electron").BrowserWindow} win 目标窗口
+ * @param {(code: string) => Promise<unknown>} exec 页面脚本执行器
+ * @param {number} w 目标窗宽
+ * @param {number} h 目标窗高
+ * @param {string} label 定位标签
+ * @returns {Promise<void>}
+ */
+async function resizeWin(win, exec, w, h, label) {
+  const vp = `window.innerWidth + "x" + window.innerHeight`;
+  const before = String(await exec(vp));
+  win.setSize(w, h);
+  await waitFor(exec, `(${vp}) !== ${JSON.stringify(before)}`, 5000, `${label} 视口换档`);
+  await settle(exec, `${label} 视口重排`);
+  console.log(`[ui:shots] ${label} viewport ${before} -> ${String(await exec(vp))} (setSize ${w}x${h})`);
+}
+
+/** 已落盘截图的字节,用于「两张图字节相同」告警(未落定旧帧的可测征兆) @type {Map<string, Buffer>} */
+const writtenShots = new Map();
+
+/**
+ * 截当前窗口画面落盘。
+ * 落盘判据:连续两次 capturePage 的 PNG 字节完全一致 —— 画面还在动(动效未落定 / 合成器尚未提交
+ * 新帧)时两次采样必然不同,字节相等即「这一帧已定」。这道判据管的是合成器侧,与 settle 的页面侧互补。
+ * 不再无条件写盘:超限仍未定则显式失败,宁可不产出,也不产出一张未落定的帧冒充通过。
  * @param {import("electron").BrowserWindow} win 目标窗口
  * @param {string} name 截图名(不含扩展名)
  * @returns {Promise<void>}
  */
 async function shot(win, name) {
-  const image = await win.webContents.capturePage();
   const file = path.join(outDir, `${name}.png`);
-  fs.writeFileSync(file, image.toPNG());
-  console.log(`[ui:shots] ${name}.png (${image.getSize().width}x${image.getSize().height})`);
+  /** @type {Buffer | null} */
+  let prev = null;
+  for (let i = 1; i <= SHOT_STABLE_ATTEMPTS; i++) {
+    const image = await win.webContents.capturePage();
+    const png = image.toPNG();
+    if (prev !== null && png.equals(prev)) {
+      fs.writeFileSync(file, png);
+      const same = [...writtenShots].find(([, buf]) => buf.equals(png));
+      if (same !== undefined) {
+        console.log(
+          `[ui:shots] WARN ${name}.png 与 ${same[0]}.png 字节完全相同 —— ` +
+            `两个不同状态拍出同一帧,查是不是某一态没真生效(而不是本次未落定)`,
+        );
+      }
+      writtenShots.set(name, png);
+      console.log(
+        `[ui:shots] ${name}.png (${image.getSize().width}x${image.getSize().height}) settled@${i}`,
+      );
+      return;
+    }
+    prev = png;
+  }
+  throw new Error(
+    `[ui:shots] ${name}: 连续 ${SHOT_STABLE_ATTEMPTS} 次 capturePage 画面仍在变(未落定),不落盘`,
+  );
 }
 
 async function main() {
@@ -128,13 +304,8 @@ async function main() {
    */
   const exec = (code) => win.webContents.executeJavaScript(code, true);
   // 冻结动效:隐藏窗口里 CSS transition 时钟不推进,浮层 opacity 会冻在中间帧
-  // (半透明穿帮);与 reduced-motion 同款兜底,保证截到的是落定终态
-  await exec(
-    `const s = document.createElement("style");` +
-      `s.id = "vc-freeze";` +
-      `s.textContent = "*,*::before,*::after{transition-duration:0.01ms!important;animation-duration:0.01ms!important}";` +
-      `document.head.appendChild(s);`,
-  );
+  // (半透明穿帮);与 reduced-motion 同款兜底,保证截到的是落定终态(样式单源见 FREEZE_CSS)
+  await freezeMotion(exec);
   // 就绪判定:i18n 静态文案已应用(版本徽章回填)+ 历史条完成首渲染
   await waitFor(
     exec,
@@ -143,7 +314,8 @@ async function main() {
     5000,
     "init ready",
   );
-  await wait(300); // 入场动效落定
+  // 落定判据:无 running 动画 + 画面指纹跨帧跨轮不变(入场动效走完、画面定格)
+  await settle(exec, "init 入场动效");
 
   // ① 空态 + 布局探针(sheet 垂直预算 / 列对齐;几何恒定回归用)
   /**
@@ -172,7 +344,7 @@ async function main() {
     5000,
     "stage=single",
   );
-  await wait(300);
+  await settle(exec, "stage=single 入场动效");
   await shot(win, "2-single");
 
   // ③ 多文件:追加 2 个文件(n=3)→ 等待舞台迁移
@@ -187,7 +359,7 @@ async function main() {
     5000,
     "stage=multi",
   );
-  await wait(300);
+  await settle(exec, "stage=multi 入场动效");
   await shot(win, "3-multi");
 
   // 布局探针:文件态关键盒(列对齐回归用)
@@ -212,7 +384,15 @@ async function main() {
     `document.getElementById("progressArea").classList.remove("hidden");` +
       `document.getElementById("status").textContent = "正在转换 basic-render.md …";`,
   );
-  await wait(300);
+  // 判据取注入结果本身(这一步是纯注入,没有迁移标志可等):进度区已可见 + 状态行文案已就位
+  await waitFor(
+    exec,
+    `!document.getElementById("progressArea").classList.contains("hidden") && ` +
+      `document.getElementById("status").textContent.length > 0`,
+    5000,
+    "progress shown",
+  );
+  await settle(exec, "转换中布局落定");
   const stageAfter = await exec(rectOf(".stage"));
   const barAfter = await exec(rectOf(".actionbar"));
   console.log(
@@ -223,18 +403,37 @@ async function main() {
     `document.getElementById("progressArea").classList.add("hidden");` +
       `document.getElementById("status").textContent = "";`,
   );
-  await wait(200);
+  // 判据取收起态本身:hidden 类已回到节点上,再等重排落定
+  await waitFor(
+    exec,
+    `document.getElementById("progressArea").classList.contains("hidden")`,
+    5000,
+    "progress hidden",
+  );
+  await settle(exec, "进度区收起落定");
 
   // ④ 历史浮出面板展开(有文件态默认收起,手动展开)
   await exec(`document.getElementById("histToggle").click();`);
-  await wait(350);
+  // 判据取面板自身的状态载体 aria-expanded(与 recent-files.ts 写的是同一处),不靠等时长
+  await waitFor(
+    exec,
+    `document.getElementById("histToggle").getAttribute("aria-expanded") === "true"`,
+    5000,
+    "history open",
+  );
+  await settle(exec, "历史浮层展开落定");
   await shot(win, "4-history-open");
   await exec(`document.getElementById("histToggle").click();`);
-  await wait(250);
+  await waitFor(
+    exec,
+    `document.getElementById("histToggle").getAttribute("aria-expanded") === "false"`,
+    5000,
+    "history closed",
+  );
+  await settle(exec, "历史浮层收起落定");
 
   // ⑤ 几何恒定压力位:收缩到最小窗附近(880×620),验证免滚动与列对齐
-  win.setSize(880, 620);
-  await wait(400);
+  await resizeWin(win, exec, 880, 620, "compact-stress");
   await shot(win, "5-compact-stress");
   const diag = await exec(
     `JSON.stringify({ scrollH: document.querySelector(".stage-wrap").scrollHeight, ` +
@@ -243,8 +442,7 @@ async function main() {
   console.log(`[ui:shots] stage-wrap ${diag}`);
 
   // ⑥ 半屏档(640×560 最小窗):参数条折两行 + 纸面容器完整性
-  win.setSize(640, 560);
-  await wait(400);
+  await resizeWin(win, exec, 640, 560, "halfscreen");
   await shot(win, "6-halfscreen");
 
   // ⑦ 半屏空态:折行下裁切线仍严格贴容器四角
@@ -257,13 +455,12 @@ async function main() {
     5000,
     "stage=empty",
   );
-  await wait(300);
+  await settle(exec, "stage=empty 入场动效");
   await shot(win, "7-halfscreen-empty");
 
   // ⑧ 设置抽屉:全部设置控件都住在这里,主窗那几张永远拍不到它们。
   // 先回到基准尺寸 —— 抽屉在 640×560 的半屏档里是唯一能看的形态,拍出来的图对目检没用
-  win.setSize(960, 680);
-  await wait(400);
+  await resizeWin(win, exec, 960, 680, "back-to-baseline");
   await exec(`document.querySelector(${JSON.stringify(DRAWER_SELECTORS.open)}).click();`);
   await waitFor(
     exec,
@@ -271,13 +468,20 @@ async function main() {
     5000,
     "drawer open",
   );
-  await wait(300); // 抽屉入场动效落定
+  await settle(exec, "抽屉入场动效");
   // 逐组 tab 截图:分组序取自规格单源,故新增一组 IA 分组时这里自动跟上
   for (const [index, group] of DRAWER_GROUPS.entries()) {
     const tab = drawerTabSelector(group);
     await exec(`document.querySelector(${JSON.stringify(tab)}).click();`);
-    // 面板切换是同步重排(与上面 histToggle 的等待同量),不再等状态迁移标志
-    await wait(250);
+    // 判据取面板自身:激活分组必须真的切到本组(此前是「同步重排,等一拍」的手测假设,抢拍就在这一拍)
+    await waitFor(
+      exec,
+      `document.querySelector(${JSON.stringify(DRAWER_SELECTORS.activePanel)})?.dataset.group === ` +
+        `${JSON.stringify(group)}`,
+      5000,
+      `drawer tab ${group}`,
+    );
+    await settle(exec, `drawer ${group} 面板落定`);
     await shot(win, `8-drawer-${group}`);
     const active = await exec(
       `document.querySelector(${JSON.stringify(DRAWER_SELECTORS.activePanel)})?.dataset.group ?? "(无激活面板)"`,
@@ -331,7 +535,7 @@ async function main() {
     5000,
     "summary ok",
   );
-  await wait(300);
+  await settle(exec, "完成态汇总条落定");
   console.log(
     `[ui:shots] convert-done stage ${await exec(rectOf(".stage"))} | bar ${await exec(rectOf(".actionbar"))}`,
   );
@@ -365,15 +569,9 @@ async function main() {
   // 冻结动效:钤印 stampIn 是 animation + backwards 填充,隐藏窗口里时钟不推进时
   // 会冻在 opacity:0 的首帧(印章整块看不见),与主窗同一兜底口径。
   // 另注 delay 归零:钤印有 280ms 延迟 + both 填充,只压 duration 的话延迟期仍按
-  // 首帧填 backwards,拍到的还是一枚没落下的空章。
-  await aboutExec(
-    `const s = document.createElement("style");` +
-      `s.id = "vc-freeze";` +
-      `s.textContent = "*,*::before,*::after{transition-duration:0.01ms!important;` +
-      `animation-duration:0.01ms!important;animation-delay:0s!important}";` +
-      `document.head.appendChild(s);` +
-      ABOUT_FORCE_LIGHT,
-  );
+  // 首帧填 backwards,拍到的还是一枚没落下的空章(样式单源见 FREEZE_CSS)。
+  await freezeMotion(aboutExec);
+  await aboutExec(ABOUT_FORCE_LIGHT);
   // 就绪判据:版本徽标回填(读 query.v)+ 更新状态行离开 checking 态
   // (checkUpdate 桩返回 latest → 落 --latest 类);两者齐了画面才是终态
   await waitFor(
@@ -383,7 +581,7 @@ async function main() {
     5000,
     "about ready",
   );
-  await wait(300); // 入场动效落定
+  await settle(aboutExec, "about 入场动效");
   await shot(about, "10-about");
   // 断言外链确实被桩拦下(而非真开了浏览器):about 加载完自己不发外链,
   // 故这里主动点一次仓库链接,确认走的是桩而不是 shell.openExternal
