@@ -34,13 +34,25 @@
  *
  * ## 机制:新键必须进这张表
  *
- * 矩阵接进门禁那件**本轮不做**(用户 2026-09-29 裁决,另立 REQ-084),所以
- * 这里靠一条可执行断言兜底:`assertLedgerCoversMatrixKeys` 断言「台账登记的键
- * 不少于矩阵已覆盖的键」。它是**单向的**(表 ⊇ 矩阵),故意不反向要求「矩阵覆盖
- * 表里的每一项」—— 后者会把台账里正当的 `carrier-forced` 项(本就不需要矩阵行)
- * 变成误报。这条断言防的是最可能的漏登记方向:有人加了矩阵行却没在台账登记。
+ * 三层,各断一个方向,单侧失守不会静默:
  *
- * 真正的强制登记要等 REQ-084(键级门禁探针),那时新键会在门禁里直接判红。
+ * 1. **键登记表**(`DUAL_PIPELINE_KEYS`,本文件内):段自己声明「哪些设置项是双管线
+ *    共有键」。它取代了原先只存在于矩阵段头注释里的那份名单 —— 注释不可判,改注释
+ *    不会让任何东西变红。
+ * 2. **矩阵行 `covers` 字段**(dual-pipeline-matrix.test.js 内):每行声明自己覆盖哪
+ *    几个键。矩阵段的 `assertMatrixShape` 与本表**双向**交叉核对(见该文件头注)。
+ * 3. **阴性自检**(`scripts/check-gate-probes.mjs` 的 `dual-matrix` 门禁探针):往沙盒
+ *    工程副本里删一处 `covers` 标记 / 塞一个未登记的键,断言验收段真的判红 ——
+ *    证明第 2 层不是恒真断言。
+ *
+ * 与 45 项决策台账的关系:那份表登记的是**决策项**(值/推导/排序三类),本表登记的是
+ * **设置键**(两侧渲染入口共有的那几个)。两者不是同一维度,故分表而非合并 ——
+ * 合并会逼着每个键在「决策项」里凑一条,而多数键(如 `toc`)的取值并无决策分叉。
+ *
+ * **登记表是手工维护的,这一点必须写明**:它守的是「已登记的键不被遗忘」,**不是**
+ * 「键的完备性」。有人往 `SharedRenderOptions` 加了新字段却没登记进本表,两层机制
+ * (本表的键集合 + 矩阵行的 `covers` 字段)全绿。把完备性也变成可判需要从 core 反向
+ * 枚举键集合(与本段「台账是登记工具,不是发现工具」的口径冲突),本轮不做。
  */
 
 /**
@@ -518,15 +530,112 @@ export const DECISION_LEDGER = [
 ];
 
 /**
+ * 双管线**键登记表**:段自己声明「哪些设置项属于 docx ↔ pdf 必须对齐的键」。
+ *
+ * ## 为什么要这张表(以及它取代了什么)
+ *
+ * 矩阵补行之前,「哪些设置项是双管线共有键」这个名单**只存在于矩阵段文件头的注释里**。
+ * 注释不可判:改它不会让任何东西变红,新加一个键而忘了改注释(或者反过来,注释里多写
+ * 一个键)都无人察觉。本表把那份名单变成可判数据,并与矩阵行的 `covers` 字段**双向交叉
+ * 核对**(见下方 assertKeyCoverageRegistered 的头注)。
+ *
+ * ## 「键」的口径
+ *
+ * 一个设置项进表的条件是:**同一个设置在两条管线上都有可观察的行为**(不论两侧行为
+ * 一致还是有意的差异)。只在一侧生效的设置项(如 pdf 侧的 `pdfCss` / `katexDir`)
+ * 不进表 —— 它们没有「对齐」这回事。
+ *
+ * 注意其中两个键在类型上**不是** `SharedRenderOptions` 的共有字段
+ * (`render-options.ts:46` 明确把 `tocMode` / `headerFooter` 列为 docx 侧独有条目):
+ * 它们由 `convert` 层解析后透传给两侧(`convert.ts:267` 按 headerFooter 造 pdf 页眉
+ * 模板、`DEFAULT_TOC_MODE` 经 convert 进 PdfArtifact)。即「键」判的是**行为覆盖面**,
+ * 不是类型声明位置 —— 按类型声明位置筛会漏掉这两个。
+ *
+ * ## 表的边界:哪些键**刻意不在**表内
+ *
+ * 共有渲染契约(`render-options.ts` 的 `SharedRenderOptions` /
+ * `ResolvedRenderSwitches`)里还有 `headingNumbering` 与 `captionNumbering` 两个开关,
+ * 本表**刻意不收**:
+ * - `captionNumbering` 的开/关双侧口径已由 caption-label-strip 行实跑断言
+ *   (关开关后两侧同口径原样保留 label),按「已被现有行顺带锁住」处理;
+ * - `headingNumbering` 在矩阵里**没有**对应行(章节号的有意差异由
+ *   caption-before-first-h1 行覆盖的是 h1c 计数器的边界,不是这个开关本身)。
+ *   收它进来会让「每个键至少被一行覆盖」当场判红,而补那行是新增矩阵行的活,
+ *   不属本轮(登记字段化)范围 —— 故显式登记为**已知缺口**,而不是让它看起来
+ *   「表已完备」。
+ *
+ * ## 这张表抓不到什么(必须照实说)
+ *
+ * 它是**手工登记**的,故只守「已登记的键不被遗忘」,**不守「键的完备性」**:
+ * 有人往 `SharedRenderOptions` / `ResolvedRenderSwitches` 加了新字段却没往本表登记,
+ * 两层机制(本表的键集合 + 矩阵行的 `covers` 字段)全绿。把完备性变成可判需要从 core
+ * 反向枚举键集合并与本表求差集,那是「发现工具」,与本段「台账是登记工具,不是发现
+ * 工具」的口径冲突(45 项决策条目同理:它们来自一次人工枚举)。本轮明确不做。
+ *
+ * @typedef {object} DualPipelineKey
+ * @property {string} id 键名(与两侧实现里的设置字段同名)
+ * @property {string} semantic 语义(人读)
+ * @property {string} [note] 归类补充说明(为什么它在表内 / 口径例外)
+ */
+
+/** @type {readonly DualPipelineKey[]} */
+export const DUAL_PIPELINE_KEYS = [
+  {
+    id: "pageSetup",
+    semantic: "纸张 / 方向 / 四边距",
+    note: "两侧同读同一份 validatePageSetup 几何门禁;page-geometry 行以 A5 + 四边互异实跑。",
+  },
+  {
+    id: "toc",
+    semantic: "是否自动生成目录",
+    note: "toc-levels 行锁层级口径,另与 tocMode 组成一对(见下条)。",
+  },
+  {
+    id: "tocMode",
+    semantic: "目录模式(static / field)",
+    note: "口径例外:类型上属 docx 侧独有条目(render-options.ts:46),但经 convert 解析后"
+      + "进 PdfArtifact 驱动 pdf 两遍法,故按行为覆盖面进表。",
+  },
+  {
+    id: "equationNumbering",
+    semantic: "公式编号开关",
+    note: "equation-label-switch 行断言开启时编号连续 + 关闭时两侧同口径不编号。",
+  },
+  {
+    id: "typography",
+    semantic: "正文字体 / 字号 / 行距 / 缩进 / 对齐(及题注、代码字号推导)",
+    note: "本键补行时长期零覆盖,由 body-typography 与 derived-font-sizes 两行共同覆盖;"
+      + "单行不足以锁全(前者不锁推导字号,后者不锁对齐与缩进)。",
+  },
+  {
+    id: "breakBeforeH1",
+    semantic: "一级标题前分页",
+    note: "本键补行时长期零覆盖;现由 break-before-h1 行以开/关两侧对照实跑。",
+  },
+  {
+    id: "headerFooter",
+    semantic: "页眉模式 / 页眉文字 / 页脚开关与页码",
+    note: "口径例外:类型上属 docx 侧独有条目,但 convert.ts:267 据此造 pdf 页眉页脚模板。"
+      + "已确认的失效点(页眉 default 模式在 pdf 侧整体静默出空页眉)正在此键上。",
+  },
+  {
+    id: "watermark",
+    semantic: "文字水印的文字 / 配色 / 角度 / 不透明度",
+    note: "本键补行时长期零覆盖。已确认的两处失效正在此键上:角度两侧符号约定相反、"
+      + "不透明度在 docx 侧零消费。",
+  },
+];
+
+/**
  * 差异矩阵的**全部行 id**(单源在此;矩阵段反向断言自己的行集合与之逐字相同)。
  *
  * 机制:矩阵段与本台账互为对方的漏登记探测器 ——
  * - 矩阵段断言「我的行集合 == MATRIX_ROW_IDS」:矩阵加了行而没登记进本表 → 判红;
  * - 本段断言「对照表与行集合逐字相同,且每个非 null 指向命中真实条目」。
  *
- * 两侧各断一个方向,单侧失守不会静默。这不等价于 键级门禁(那管的是
- * 「新增双管线**键**」而非「新增矩阵行」),但它让「加行必须想一次台账」成立,
- * 且不新增任何门禁(矩阵接线仍待 REQ-084)。
+ * 两侧各断一个方向,单侧失守不会静默。这管的是「新增矩阵**行**」;
+ * 「新增双管线**键**」由 DUAL_PIPELINE_KEYS + 矩阵行 `covers` 字段那一对负责
+ * (见 assertKeyCoverageRegistered),两层不互相替代。
  */
 export const MATRIX_ROW_IDS = [
  "frontmatter-strip",
@@ -645,13 +754,95 @@ export function ledgerBucketCounts() {
  return counts;
 }
 
+/**
+ * 双管线键覆盖的**结构守护**:键集合本身合法,且每个键至少被一行矩阵行覆盖。
+ *
+ * ## 形状为什么是「段级键集合 + 逐行 covers 标注」这一对
+ *
+ * 这道门的真实目的不是「跑矩阵」,是**防将来忘写** —— 有人加了新维度 / 新双管线键,却
+ * 忘了加对应矩阵行。故判据必须能回答「**段自己声明的键,是不是每一项都至少被一行覆盖
+ * 到**」。两个方向合起来才答得了,单有一侧都不够:
+ *
+ * - **只有逐行 `covers`** → 只答得了「这行覆盖了啥」,答不了「有没有键没人管」。新加一
+ *   个键而没加行时,旧行一句不多一句不少,全绿 —— 正是要防的那种忘写。
+ * - **只有段级键集合** → 答得了「有没有键没人管」,但答不了「这行声称覆盖的是不是真覆
+ *   盖了」:`covers` 里写一个早已不存在的行 id,无人察觉。
+ * - **两者交叉**(本设计)→ 段级声明「应覆盖哪些键」(DUAL_PIPELINE_KEYS),逐行声明「我覆
+ *   盖哪些键」(行内 `covers` 字段),本函数断两条:① 每个声明的键至少被一行命中;② covers
+ *   里的键都在声明集合内。新键漏行、covers 写未声明的键,各自判红。
+ *
+ * `coversByRow` 由矩阵段传入(它拥有 MATRIX 行),故本函数**不反向依赖**矩阵段 ——
+ * 依赖方向与 MATRIX_ROW_IDS 相同(矩阵段 → 本段)。
+ *
+ * ## 抓不到什么(诚实写出来,是 ADR 后果行的素材)
+ *
+ * 1. **完备性**:键集合手工登记。新增一个 core 共有字段而没往 DUAL_PIPELINE_KEYS 登记 ⇒
+ *    本函数与矩阵段全绿。要判完备需从 core 反向枚举键集合求差集,那是「发现工具」,与本段
+ *    「台账是登记工具」的口径冲突,本轮明确不做。
+ * 2. **覆盖的深度**:`covers: ["watermark"]` 只表示「该键有可执行断言入口」,不表示断言
+ *    触及该键的每个子项。逐子项完备性不可判。
+ * 3. **断言的有效性**:一行可声明覆盖某键却把 `verify` 写成恒真 —— 形状守护管不到,那属
+ *    各行自身的断言质量(由各行实跑与门禁探针的负向负责)。
+ *
+ * @param {Record<string, readonly string[]>} coversByRow 矩阵行 id → 该行声明覆盖的键集合
+ * @returns {void}
+ */
+export function assertKeyCoverageRegistered(coversByRow) {
+ /** @type {Set<string>} */
+ const keyIds = new Set();
+ for (const key of DUAL_PIPELINE_KEYS) {
+  if (keyIds.has(key.id)) throw new Error(`[dual-ledger] 双管线键 id 重复:${key.id}`);
+  keyIds.add(key.id);
+  if (typeof key.semantic !== "string" || key.semantic.length < 2) {
+  throw new Error(`[dual-ledger:key:${key.id}] 键缺语义描述`);
+  }
+ }
+ // 方向一:每个声明的键至少被一行 covers 命中(新键漏行在此判红)
+ /** @type {Map<string, string[]>} */
+ const hitRows = new Map([...keyIds].map((id) => [id, []]));
+ for (const [row, keys] of Object.entries(coversByRow)) {
+  if (!Array.isArray(keys)) {
+  throw new Error(`[dual-ledger] 矩阵行 ${row} 的 covers 不是数组(键覆盖字段缺失或写错形态)`);
+  }
+  for (const key of keys) {
+  if (!keyIds.has(key)) {
+  // 方向二:covers 里出现未声明的键(登记漂移 / 拼错 / 行凭空声明)在此判红
+  throw new Error(`[dual-ledger] 矩阵行 ${row} 声明覆盖未登记的键:${key}`);
+  }
+  hitRows.get(key)?.push(row);
+  }
+ }
+ const uncovered = [...keyIds].filter((id) => (hitRows.get(id) ?? []).length === 0);
+ if (uncovered.length > 0) {
+  throw new Error(
+  `[dual-ledger] 双管线键无任何矩阵行覆盖:${uncovered.join(",")}`
+  + "(新增双管线键必须补矩阵行,或在 DUAL_PIPELINE_KEYS 里显式登记为不需矩阵行)",
+  );
+ }
+}
+
+/**
+ * 键 → 覆盖它的矩阵行数(供段内打印核对;不是断言阈值)。
+ * @param {Record<string, readonly string[]>} coversByRow 矩阵行 id → 该行声明覆盖的键集合
+ * @returns {Record<string, number>} 键 id → 覆盖它的行数
+ */
+export function keyCoverageCounts(coversByRow) {
+ /** @type {Record<string, number>} */
+ const counts = {};
+ for (const key of DUAL_PIPELINE_KEYS) counts[key.id] = 0;
+ for (const keys of Object.values(coversByRow)) {
+  for (const key of keys) counts[key] = (counts[key] ?? 0) + 1;
+ }
+ return counts;
+}
+
 export const meta = {
- description: "双管线决策项台账:45 项逐条归四档 + 台账覆盖矩阵键的结构守护",
+ description: "双管线决策项台账:45 项逐条归四档 + 8 个双管线键的覆盖登记与结构守护",
 };
 // 本段无验收样例:断言对象是台账数据与其结构,不涉及任何 markdown 产物
 export const fixtures = null;
 
-/** 验收段入口:形状守护 + 分布打印(覆盖守护已并入 assertLedgerShape)。 */
+/** 验收段入口:形状守护 + 分布打印(键覆盖守护由矩阵段调 assertKeyCoverageRegistered 触发)。 */
 export async function run() {
  assertLedgerShape();
  const counts = ledgerBucketCounts();
@@ -661,4 +852,8 @@ export async function run() {
  + ` / 设置项失效 ${counts["setting-void"]} / 已被矩阵锁住 ${counts["matrix-locked"]})`,
  );
  console.log(`[ok] dual-pipeline-ledger:矩阵 ${MATRIX_ROW_IDS.length} 行全部完成登记归类`);
+ console.log(
+ `[ok] dual-pipeline-ledger:${DUAL_PIPELINE_KEYS.length} 个双管线键已登记`
+ + "(逐键覆盖数由矩阵段的 assertKeyCoverageRegistered 核对)",
+ );
 }

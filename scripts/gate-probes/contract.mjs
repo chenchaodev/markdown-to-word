@@ -46,7 +46,14 @@ export const PROTECTED_PATHS = [
 ];
 
 /** 可选门禁 id(顺序即执行顺序) */
-export const GATE_IDS = Object.freeze(["fixtures", "coverage", "dist-manifest", "build-fresh", "smoke"]);
+export const GATE_IDS = Object.freeze([
+  "fixtures",
+  "coverage",
+  "dist-manifest",
+  "dual-matrix",
+  "build-fresh",
+  "smoke",
+]);
 
 /** 门禁 id → 元信息(npm 脚本名与真实命令行,报告里照实登记) */
 export const GATE_META = Object.freeze({
@@ -64,6 +71,11 @@ export const GATE_META = Object.freeze({
     title: "dist 清单门禁",
     npmScript: "check:dist-manifest",
     command: "node scripts/check-dist-manifest.mjs --check",
+  },
+  "dual-matrix": {
+    title: "双管线矩阵键覆盖登记门禁",
+    npmScript: "M2W_ONLY=dual-pipeline-matrix(验收段内)",
+    command: "M2W_ONLY=dual-pipeline-matrix electron test/acceptance.mjs",
   },
   "build-fresh": {
     title: "构建新鲜度门禁(test:smoke 前置)",

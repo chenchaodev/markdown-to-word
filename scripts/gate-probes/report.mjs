@@ -8,6 +8,7 @@ import { GATE_IDS, NODE_TIMEOUT_MS, REPORT_RELATIVE, REPORT_SCHEMA, ROOT, SMOKE_
 import { probeBuildFresh, probeSmoke } from "./gates/app.mjs";
 import { probeCoverage } from "./gates/coverage.mjs";
 import { probeDistManifest } from "./gates/dist-manifest.mjs";
+import { probeDualMatrix } from "./gates/dual-matrix.mjs";
 import { probeFixtures } from "./gates/fixtures.mjs";
 import { buildSandbox, createTreeSandbox, describeChangedFiles, diffProtectedTree, removeSandbox, snapshotProtectedTree } from "./sandbox.mjs";
 
@@ -47,7 +48,10 @@ export async function runGateProbes(options = {}) {
   let buildNote;
 
   const needsTreeSandbox =
-    selected.includes("fixtures") || selected.includes("build-fresh") || selected.includes("smoke");
+    selected.includes("fixtures")
+    || selected.includes("dual-matrix")
+    || selected.includes("build-fresh")
+    || selected.includes("smoke");
   if (needsTreeSandbox) {
     ctx.sandbox = createTreeSandbox();
     try {
@@ -74,6 +78,7 @@ export async function runGateProbes(options = {}) {
       if (id === "fixtures") gate = await probeFixtures(ctx);
       else if (id === "coverage") gate = await probeCoverage(ctx);
       else if (id === "dist-manifest") gate = await probeDistManifest(ctx);
+      else if (id === "dual-matrix") gate = await probeDualMatrix(ctx);
       else if (id === "build-fresh") gate = await probeBuildFresh(ctx);
       else gate = await probeSmoke(ctx);
       gates.push(gate);

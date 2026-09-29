@@ -21,8 +21,8 @@
  *
  * 筛选(与探针脚本同一条口径,便于开发迭代提速):M2W_GATE_PROBES_ONLY=fixtures,dist-manifest
  * 只跑指定门禁;M2W_GATE_PROBES_SKIP=smoke 跳过冒烟(它会在沙盒里真启一次 Electron)。
- * 全量耗时以几十秒计(一次工程副本复制 + 一次沙盒内构建 + 两次冒烟启动 + 若干 c8 运行),
- * 在段默认硬超时内,无需额外调参。
+ * 全量耗时以几十秒计(一次工程副本复制 + 一次沙盒内构建 + 两次冒烟启动 + 双管线矩阵段
+ * 三遍 Electron 启动 + 若干 c8 运行),在段默认硬超时内,无需额外调参。
  * 多 agent 并发写同一工作区时,工作树指纹项会因外部改动误判红;此时可显式设
  * M2W_GATE_PROBES_ALLOW_CONCURRENT=1 把该项降级为 advisory(变化文件照实登记,
  * 门禁判定不受影响)。默认不设 = 严格判红。
@@ -41,6 +41,7 @@ const GATE_LABELS = {
   fixtures: "fixtures 漂移",
   coverage: "coverage 阈值",
   "dist-manifest": "dist 清单",
+  "dual-matrix": "双管线矩阵键覆盖",
   "build-fresh": "构建新鲜度",
   smoke: "smoke 冒烟",
 };

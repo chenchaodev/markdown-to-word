@@ -6,10 +6,16 @@
  * 类别、双侧提取方式与来源锚点,并在同一次运行里真的跑出双侧产物做断言
  * (禁止只列元数据不验证);行结构本身也受守护(缺判定类别/双侧提取器/锚点/断言即报错)。
  *
- * 覆盖的 8 个双管线键:前 21 行只覆盖其中 4 个 —— 6-C2 补的 4 行把另外 4 个
- * 零覆盖键纳入契约(正文字体/字号/行距/缩进/对齐 · 一级标题前分页 · 页眉页脚 ·
- * 水印),其中页眉页脚与水印两行覆盖的正是 6-B2/6-B3 确认失效的两个键:
- * 那两处失效能长期静默,正因为它们落在矩阵零覆盖区,补行本身就是堵那个洞。
+ * 覆盖登记(可判):每行有 `covers` 字段声明它覆盖哪些**双管线键**,与台账的
+ * DUAL_PIPELINE_KEYS(pageSetup / toc / tocMode / equationNumbering / typography /
+ * breakBeforeH1 / headerFooter / watermark)双向交叉核对 ——
+ * 「每个键至少被一行覆盖」与「covers 里的键都已登记」两个方向各自判红。
+ * 这道门防的是**将来忘写**:补行之前,typography / breakBeforeH1 / headerFooter /
+ * watermark 四个键**零覆盖**,而其中两处已确认的「设置项在一侧静默失效」
+ * (水印不透明度在 docx 侧零消费、页眉 default 模式在 pdf 侧整体静默)恰好落在这片零覆盖区
+ * —— 能静默那么久,正因为「有没有被覆盖」此前只存在于下面这段注释里,不可判。
+ * 形状理由与「抓不到什么」(完备性 / 覆盖深度 / 断言有效性)写在台账
+ * assertKeyCoverageRegistered 的头注,不在这两处各写一份。
  *
  * 表格常量为什么放测试侧(而非 core 纯模块):
  * 1) 矩阵是**测试契约**(判定类别 + 提取器 + 锚点),提取器依赖测试夹具与产物
@@ -50,8 +56,13 @@
  * —— 「有字段但零约束」比没有字段更误导。行号指向注释行本身不算失败(注释
  * 常常正是解释该决策的位置),指向越界/空行才判红。
  *
- * 矩阵**不接门禁**(用户 2026-09-29 裁决,另立 REQ-084):回归靠
- * `M2W_ONLY=dual-pipeline-matrix` 手动筛段或全量测试带,故本段不新增门禁探针。
+ * 键覆盖登记**接门禁探针**(`check:gates` 的 `dual-matrix` 一项,见
+ * `scripts/gate-probes/contract.mjs` 的 GATE_IDS 与 `gates/dual-matrix.mjs`):
+ * 判据是本段的 `assertMatrixShape`(其中含键覆盖交叉核对),探针在系统临时目录的
+ * 工程副本里注入两类故障 —— 删掉一行 `covers` 标记、给某行塞一个未登记的键 ——
+ * 断言本段真的判红,即证明这道登记不是恒真断言。探针**不在** `verify:ci` 链内
+ * (`check:gates` 是阴性自检,由 `test/segments/gate-probes.test.js` 在链内实跑),
+ * 而本段本身随全量验收段在链内跑。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -72,9 +83,9 @@ import { buildMatrixCtx } from "../common/dual-sandbox.js";
 import { captionBeforeH1Md, captionLabelMd, deepHeadingsMd, katexBoundaryMd, mainMd } from "../common/dual-samples.js";
 import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../common/convert-helpers.js";
 import { FIXTURES_DIR, ROOT } from "../common/paths.js";
-// 台账侧声明的矩阵行 id(本段在 assertMatrixShape 里反向断言行集合与之逐字相同,
-// 见 dual-pipeline-decision-ledger.test.js 的机制说明)
-import { MATRIX_ROW_IDS } from "./dual-pipeline-decision-ledger.test.js";
+// 台账侧声明的矩阵行 id 与双管线键集合(本段在 assertMatrixShape 里反向断言行集合与
+// covers 覆盖与之逐字相符,见 dual-pipeline-decision-ledger.test.js 的机制说明)
+import { MATRIX_ROW_IDS, assertKeyCoverageRegistered, keyCoverageCounts } from "./dual-pipeline-decision-ledger.test.js";
 
 /**
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物)。
@@ -118,7 +129,7 @@ import { MATRIX_ROW_IDS } from "./dual-pipeline-decision-ledger.test.js";
  * }} MatrixCtxExtended
  */
 
-export const meta = { description: "双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(26 行,覆盖 8 个双管线键,含双侧提取器与经存在性校验的来源锚点)。" };
+export const meta = { description: "双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(26 行,键覆盖登记覆盖 8 个双管线键,含双侧提取器与经存在性校验的来源锚点)。" };
 // 场景导出(gen-fixtures 落盘为 acceptance/dual-pipeline-matrix*.md):样例字面量在
 // dual-samples.js,契约声明留在段层(生成器只认段文件的导出)。
 export const fixtures = {
@@ -146,6 +157,8 @@ function must(cond, rowId, msg) {
  * @property {string} id 稳定标识
  * @property {"mustMatch" | "allowedDiff"} mode 判定类别
  * @property {string} dimension 语义维度(人读)
+ * @property {string[]} covers 本行覆盖的**双管线键** id 集合(可判;空数组 = 本行不覆盖
+ *   任何设置键,如「只在一侧生效的 pdf 专属设置」或「纯语义维度」行)
  * @property {string} docxExtract docx 侧提取方式
  * @property {string} pdfExtract pdf 侧提取方式
  * @property {string[]} anchors 来源锚点
@@ -198,6 +211,8 @@ function pdfRuleFontSizePt(html, selector) {
  * - id:稳定标识(失败信息按此定位到 case);
  * - mode:"mustMatch" | "allowedDiff";
  * - dimension:语义维度(人读);
+ * - covers:本行覆盖的双管线键 id 列表(**可判字段**,与台账 DUAL_PIPELINE_KEYS 交叉核对;
+ *   不覆盖任何设置键的行写 `covers: []`,不允许省略该字段);
  * - docxExtract / pdfExtract:双侧提取方式描述;
  * - anchors:来源锚点(src/<文件>.ts:<行号>);
  * - verify:执行断言(入参 ctx 含已渲染好的双侧产物与辅助提取结果)。
@@ -208,6 +223,7 @@ const MATRIX = [
   {
     id: "frontmatter-strip",
     mode: "mustMatch",
+    covers: [],
     dimension: "frontmatter 剥离(共用 parseFrontmatter,渲染只作用于 body)",
     docxExtract: "document.xml 无 `title:`/`author:` 原文行;metadata.title 走封面",
     pdfExtract: "HTML 无 `title:`/`author:` 原文行;metadata.title 走封面",
@@ -231,6 +247,7 @@ const MATRIX = [
   {
     id: "page-geometry",
     mode: "mustMatch",
+    covers: ["pageSetup"],
     dimension: "页面几何(同一 pageSetup → 同一纸张与四边距,docx 记 twips / pdf 记 mm)",
     docxExtract: "w:pgSz(w/h/orient) + w:pgMar(top/right/bottom/left)",
     pdfExtract: "模板 CSS `@page { size: …; margin: …mm …mm …mm …mm }`",
@@ -249,6 +266,7 @@ const MATRIX = [
   {
     id: "html-whitelist",
     mode: "mustMatch",
+    covers: [],
     dimension: "内联 HTML 白名单集合(同一 ALLOWED_INLINE_TAGS;白名单外两侧都不渲染为富文本)",
     docxExtract: "白名单标签 → 对应 run 属性(bold / vertAlign);白名单外 → 整段丢弃",
     pdfExtract: "白名单标签 → 原样输出标签;白名单外 → 转义为文本",
@@ -272,6 +290,7 @@ const MATRIX = [
   {
     id: "explicit-page-break",
     mode: "mustMatch",
+    covers: [],
     dimension: "显式分页符 `<!-- page-break -->`(独占语义,两侧各产生一个分页;`---` 保持 hr)",
     docxExtract: "count(<w:br w:type=\"page\"/>)",
     pdfExtract: "count(<div class=\"page-break\">) 与 <hr>",
@@ -292,6 +311,7 @@ const MATRIX = [
   {
     id: "toc-levels",
     mode: "mustMatch",
+    covers: ["toc"],
     dimension: "目录层级 h1-h3(h4-h6 有 id 也不进目录;标题文本为空时两侧同回退为 section 锚点)",
     docxExtract: "TOC 静态条目 w:anchor(标题 slug) vs 标题书签 w:name",
     pdfExtract: "toc-l1..3 条目 <li class=\"toc-lN\"> vs <hN id=…>",
@@ -342,6 +362,7 @@ const MATRIX = [
   {
     id: "caption-numbering",
     mode: "mustMatch",
+    covers: [],
     dimension: "题注编号与 h1 重置(章节号 + 章内序数,图/表独立计数,h1 处重置)",
     docxExtract: "题注段静态编号文本「图 1.1 …」「图 2.1 …」",
     pdfExtract: "xref 替换出的编号文本 + 模板 CSS counter 规则(显示态编号走伪元素)",
@@ -380,6 +401,7 @@ const MATRIX = [
   {
     id: "caption-label-strip",
     mode: "mustMatch",
+    covers: [],
     dimension: "题注 label 剥离({#fig:label}/{#tab:label} 不渲染,只登记为跳转锚点;开关关闭时两侧同口径原样保留)",
     docxExtract: "书签 fig-<label>/tab-<label> + 文本无 `{#fig:` 残留;开关关闭 → 无书签、label 原样",
     pdfExtract: "锚点 <span id=\"fig:label\"> + 文本无 `{#fig:` 残留;开关关闭 → 无锚点、无编号 CSS",
@@ -408,6 +430,7 @@ const MATRIX = [
   {
     id: "crossref-text-dangling",
     mode: "mustMatch",
+    covers: [],
     dimension: "交叉引用文案与悬空降级(默认文本→编号;悬空→占位文案 + 同一条去重警告)",
     docxExtract: "hyperlink anchor + 编号文本;悬空 → 「图 (?)」纯文本 + 警告",
     pdfExtract: "href + 编号文本;悬空 → 占位纯文本(无死链 href)+ 警告",
@@ -432,6 +455,7 @@ const MATRIX = [
   {
     id: "equation-label-switch",
     mode: "mustMatch",
+    covers: ["equationNumbering"],
     dimension: "公式 label 与编号开关(编号连续、label 登记为锚点、关开关后不编号且引用保持原文本)",
     docxExtract: "编号静态文本 (N) + 书签 eq-<label> + 引用「式 (1)」",
     pdfExtract: "class=\"eq-num\">(N) + 锚点 id=\"eq:<label>\" + 引用 href 文本",
@@ -466,6 +490,7 @@ const MATRIX = [
   {
     id: "katex-limits",
     mode: "mustMatch",
+    covers: [],
     dimension: "KaTeX 资源边界(同一份 maxExpand/maxSize/trust/throwOnError;超边界不放行、不中断转换)",
     docxExtract: "失控/未覆盖公式 → 整式降级(等宽灰字 + 警告,无 m:oMath)",
     pdfExtract: "失控公式 → katex-error;超 maxSize 的显式尺寸被钳到 10em",
@@ -509,6 +534,7 @@ const MATRIX = [
   {
     id: "code-highlight",
     mode: "mustMatch",
+    covers: [],
     dimension: "代码高亮与降级警告(同一 hljs 单例 + 同一色板;未知语言与抛错两侧都降级且警告同文案)",
     docxExtract: "已知语言 → <w:color …>;未知/失败 → 无 color + keyed 警告",
     pdfExtract: "已知语言 → pre.hljs + language-* class;未知/失败 → 无高亮 span + 同文案警告",
@@ -545,6 +571,7 @@ const MATRIX = [
   {
     id: "xref-label-namespace",
     mode: "mustMatch",
+    covers: [],
     dimension: "fig/tab 同名 label 判定(查表键按 kind 分命名空间,captionLabelKey 单源;同名互不覆盖、跨 kind 不命中)",
     docxExtract: "同名 fig/tab 各命中各的书签编号;跨 kind 引用 → 占位 + keyed 警告;同 kind 重名 → 后写覆盖",
     pdfExtract: "同名 fig/tab 各命中各的锚点编号;跨 kind 引用 → 占位无死链 + 同文案警告;同 kind 重名 → 后写覆盖",
@@ -645,6 +672,7 @@ const MATRIX = [
   {
     id: "formula-degrade-trigger",
     mode: "allowedDiff",
+    covers: [],
     dimension: "公式降级触发条件(docx 靠 MathML 产物是否全覆盖 + 信任闸门;pdf 靠 hasUntrustedTexCommand 预拦截 + KaTeX 自身错误产物)",
     docxExtract: "不可信命令与未覆盖结构 → 等宽灰字 + 警告(无 katex-error 标记)",
     pdfExtract: "不可信命令 → katex-error(标题含「不受信任」);未覆盖结构 → 正常渲染",
@@ -670,6 +698,7 @@ const MATRIX = [
   {
     id: "mermaid-carrier",
     mode: "allowedDiff",
+    covers: [],
     dimension: "Mermaid 产物(docx 内嵌 PNG;pdf 内联 SVG 矢量;失败两侧都降级为代码块 + 同文案警告)",
     docxExtract: "word/media/ 部件;失败 → 等宽原文 + 警告",
     pdfExtract: "<div class=\"mermaid-svg\">…</div>;失败 → pre.mermaid-fallback + 警告",
@@ -701,6 +730,7 @@ const MATRIX = [
   {
     id: "footnote-implementation",
     mode: "allowedDiff",
+    covers: [],
     dimension: "脚注实现(docx 写 footnotes.xml 部件 + 引用标记;pdf 渲染为文档流末尾的 HTML 脚注区)",
     docxExtract: "word/footnotes.xml 部件 + w:footnoteReference",
     pdfExtract: "section.footnotes + li.footnote-item + 回链锚点",
@@ -723,6 +753,7 @@ const MATRIX = [
   {
     id: "tasklist-rendering",
     mode: "allowedDiff",
+    covers: [],
     dimension: "任务列表呈现(docx 剥除标记按普通项目符号;pdf 渲染 ☑/☐ 字符规避打印 bug)",
     docxExtract: "ListParagraph + w:numPr,无 checkbox 字形",
     pdfExtract: "li.task-list-item + ☑/☐ 字符,无 input/label 残留",
@@ -741,6 +772,7 @@ const MATRIX = [
   {
     id: "image-budget-accounting",
     mode: "allowedDiff",
+    covers: [],
     dimension: "图片预算记账口径(docx 计原始字节;pdf 外链计 base64 内联字节,含 4/3 膨胀)",
     docxExtract: "同一 maxDocumentBytes 下是否产出 word/media/ 部件",
     pdfExtract: "同一 maxDocumentBytes 下是否产出 data: URL",
@@ -759,6 +791,7 @@ const MATRIX = [
   {
     id: "heading-id-fallback",
     mode: "allowedDiff",
+    covers: [],
     dimension: "标题 id 取源兜底(docx 无兜底:collectPlainText 纯文本;pdf 兜底:heading_open 的下一个 inline token 原文)",
     docxExtract: "标题书签名(纯文本 slug)",
     pdfExtract: "hN 的 id(保留 markdown 标记中的字母数字,如链接目标)",
@@ -785,6 +818,7 @@ const MATRIX = [
   {
     id: "toc-page-numbers",
     mode: "allowedDiff",
+    covers: ["toc", "tocMode"],
     dimension: "目录页码(docx static 无页码 / field 为 Word 域;pdf 两遍法在打印后回填 toc-page)",
     docxExtract: "TOC 域 w:dirty 属性(static=false / field=true)",
     pdfExtract: "core 产物无 toc-page;injectTocPageNumbers 回填后才有",
@@ -804,6 +838,7 @@ const MATRIX = [
   {
     id: "cancel-checkpoint-density",
     mode: "allowedDiff",
+    covers: [],
     dimension: "取消检查点密度(docx 逐块复查;pdf 只在 parse/inline/mermaid/katex 阶段边界复查)",
     docxExtract: "注入计数守卫统计 throwIfCanceled 次数(随块数增长)",
     pdfExtract: "同法统计(与文档规模无关的常数)",
@@ -832,6 +867,7 @@ const MATRIX = [
   {
     id: "caption-before-first-h1",
     mode: "allowedDiff",
+    covers: [],
     dimension: "题注先于首个 h1(docx 章节号为 null → 纯序数「图 1」;pdf 含 h1 文档走 h1c 计数器,首 h1 前显示为「图 0.1」)",
     docxExtract: "题注静态文本(首图无章节前缀)",
     pdfExtract: "CSS counter 分支(含 h1c 的 ::before 规则,首 h1 前章节号按 0 计)",
@@ -868,6 +904,7 @@ const MATRIX = [
   {
     id: "body-typography",
     mode: "mustMatch",
+    covers: ["typography"],
     dimension:
       "正文字体/字号/行距/缩进/对齐(同一 typography 设置 → 同一组排版;docx 记 twips/half-points,pdf 记 pt/倍数)",
     docxExtract: "styles.xml docDefaults rFonts(ascii/eastAsia)+sz;正文段 w:jc + w:spacing/@w:line + w:ind/@w:firstLineChars",
@@ -933,6 +970,7 @@ const MATRIX = [
   {
     id: "derived-font-sizes",
     mode: "mustMatch",
+    covers: ["typography"],
     dimension:
       "题注 / 行内代码 / 代码块字号(三条都从正文字号推导:题注 = 正文 - 1(下限 8pt)、行内代码 = 正文 × 0.9、代码块 = 正文 × 0.79;行内与代码块刻意不同号,两侧同步)",
     docxExtract: "document.xml 三处 run 的 w:sz(题注 / 行内代码 / 代码块,按 run 文本绑定)",
@@ -1027,6 +1065,7 @@ const MATRIX = [
   {
     id: "break-before-h1",
     mode: "mustMatch",
+    covers: ["breakBeforeH1"],
     dimension: "一级标题前分页(同一开关 → 两侧 h1 之前都换页;关闭时两侧都不换)",
     docxExtract: "HeadingLevel.HEADING_1 段落的 pPr 含 <w:pageBreakBefore/>",
     pdfExtract: "模板 CSS `h1 { break-before: page; }`(首个 h1 除外)",
@@ -1061,6 +1100,7 @@ const MATRIX = [
   {
     id: "header-footer-modes",
     mode: "mustMatch",
+    covers: ["headerFooter"],
     dimension:
       "页眉页脚三模式(default=文档标题居中 / custom=自定义文字(+logo) / none=无页眉;页脚=第 X 页/共 X 页,受 footerEnabled 开关)",
     docxExtract: "word/header*.xml 的文字与 w:jc;word/footer*.xml 的页码域",
@@ -1092,6 +1132,7 @@ const MATRIX = [
   {
     id: "watermark",
     mode: "mustMatch",
+    covers: ["watermark"],
     dimension:
       "文字水印四要素(文字 / 配色 / 旋转角度 / 不透明度):两侧同口径;不透明度两侧均真消费,角度同号",
     docxExtract: "header part 的 wps:wsp 文字 + w:color + a:xfrm/@rot + w14:textFill/w14:alpha",
@@ -1174,9 +1215,8 @@ function sourceLines(relPath) {
 }
 
 /**
- * 断言矩阵自身结构:每行齐备(判定类别/维度/双侧提取器/锚点/可执行断言),行 id 唯一,
- * 且**每条锚点的行号在源文件里真实存在**(6-C3:此前只校验格式,实测 25.8% 指向
- * 空行或纯注释、1 条越界 —— 有字段但零约束比没有字段更误导)。
+ * 断言矩阵自身结构:每行齐备(判定类别 / 维度 / 键覆盖 / 双侧提取器 / 锚点 / 可执行断言),
+ * 行 id 唯一,每条锚点的行号在源文件里真实存在,且**段声明的每个双管线键至少被一行覆盖**。
  * @returns {void}
  */
 function assertMatrixShape() {
@@ -1187,6 +1227,12 @@ function assertMatrixShape() {
     ids.add(row.id);
     if (row.mode !== "mustMatch" && row.mode !== "allowedDiff") {
       throw new Error(`[dual-matrix:${row.id}] mode 非法:${row.mode}`);
+    }
+    // covers 必须**显式存在**(空数组合法):省字段与写 `[]` 语义不同 —— 前者是
+    // 「没想过这一行覆盖哪些键」,那正是要防的忘写。判据放在行内而非只靠台账侧,
+    // 是为了让漏写当场在矩阵段红(台账侧只拿到已存在的字段,看不到「本该有却没有」)。
+    if (!Array.isArray(row.covers)) {
+      throw new Error(`[dual-matrix:${row.id}] 缺少 covers 字段(不覆盖任何键请显式写 covers: [])`);
     }
     for (const key of ROW_TEXT_FIELDS) {
       if (typeof row[key] !== "string" || row[key].length < 4) {
@@ -1223,7 +1269,7 @@ function assertMatrixShape() {
     }
   }
   // 反向守护:本段的行集合必须与台账登记的 MATRIX_ROW_IDS 逐字相同
-  // (6-A 的「让下一次有人加键时有地方登记」机制:加了矩阵行却没在台账归类即判红;
+  // (「让下一次有人加键时有地方登记」机制:加了矩阵行却没在台账归类即判红;
   //  台账那一侧反向断另一方向,单侧失守不会静默)
   const declared = [...MATRIX_ROW_IDS].sort();
   const actualRowIds = [...ids].sort();
@@ -1235,6 +1281,12 @@ function assertMatrixShape() {
       + `(未登记:${missing.join(",") || "无"};台账中多余:${extra.join(",") || "无"})`,
     );
   }
+  // 键覆盖交叉核对:本段的 covers 与台账的 DUAL_PIPELINE_KEYS 逐字相符(判定实现与
+  // 「抓不到什么」的完整说明在台账的 assertKeyCoverageRegistered 头注里 —— 不在此复制)
+  /** @type {Record<string, readonly string[]>} */
+  const coversByRow = {};
+  for (const row of MATRIX) coversByRow[row.id] = row.covers;
+  assertKeyCoverageRegistered(coversByRow);
 }
 
 /* ---------- 6-C2 新增四行的产物装配(见文件头「为何在段内装配」) ---------- */
@@ -1450,5 +1502,14 @@ export async function run() {
   const diffCount = MATRIX.length - mustCount;
   console.log(
     `[ok] dual-pipeline-matrix:${MATRIX.length} 行全部实跑通过(必须一致 ${mustCount} / 允许不同 ${diffCount})`,
+  );
+  // 逐键覆盖行数(可判登记的人读回显;数字本身不是断言,断言在 assertMatrixShape 里)
+  /** @type {Record<string, readonly string[]>} */
+  const coversByRow = {};
+  for (const row of MATRIX) coversByRow[row.id] = row.covers;
+  const perKey = keyCoverageCounts(coversByRow);
+  console.log(
+    `[ok] dual-pipeline-matrix:${Object.keys(perKey).length} 个双管线键逐键覆盖行数 `
+    + Object.entries(perKey).map(([key, n]) => `${key}=${String(n)}`).join(" "),
   );
 }
