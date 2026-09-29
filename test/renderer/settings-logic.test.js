@@ -14,6 +14,7 @@
  * - resolvePresetSelection:当前选中自定义预设且值=硬编码预设值时
  *   不被弹回;选中项不匹配/已删除 → 回退全局匹配;无匹配 → default;硬编码选中保持
  * - mergeSettingsWithDefaults(loadSettings 防御性合并)、
+ *   cloneDefaultSettings(默认设置深拷贝工厂:6 组与单例互非引用、两次调用互非引用)、
  *   resolvePresetHint(回填 hint 计算)、outputDirDisplayText(输出目录占位文案)、
  *   buildCustomPresetEntry(另存为预设快照)、removeCustomPresetByName(按名删除保序)、
  *   parseMarginValue(边距输入解析+钳制)、validateNumberRange(字号/行距范围校验)、
@@ -37,6 +38,7 @@ import { setLanguage, t } from "../../dist/core/i18n.js";
 import {
   DEFAULT_SETTINGS,
   MAX_CUSTOM_PRESETS,
+  cloneDefaultSettings,
   correctPageSetup,
 } from "../../dist/core/settings/settings-defaults.js";
 import { TEMPLATE_PRESETS } from "../../dist/core/settings/presets.js";
@@ -238,6 +240,44 @@ export async function run() {
     "硬编码选中且与设置一致 → 保持",
   );
   console.log("[ok] resolvePresetSelection:选中保持(不弹回)/回退全局匹配/已删回退/无匹配 default/硬编码保持 断言通过");
+
+  // ---------- cloneDefaultSettings(默认设置深拷贝工厂) ----------
+  // 判据落在**引用身份**而非取值:工厂一旦退回「返回 DEFAULT_SETTINGS 本身」或
+  // 只展开顶层键不换分组块,下面两条立刻红,而「与默认值等值」那条仍绿 ——
+  // 正是这类改坏只能靠引用断言才看得见的原因。
+  {
+    const GROUP_KEYS = [
+      "pageSetup",
+      "typography",
+      "headerFooter",
+      "watermark",
+      "aiCleanup",
+      "obsidian",
+    ];
+    const defaultsView = /** @type {Record<string, unknown>} */ (DEFAULT_SETTINGS);
+    const cloned = cloneDefaultSettings();
+    const clonedView = /** @type {Record<string, unknown>} */ (cloned);
+    for (const group of GROUP_KEYS) {
+      assert(
+        clonedView[group] !== defaultsView[group],
+        `${group} 应为新建对象,不得与 DEFAULT_SETTINGS 共用引用`,
+      );
+    }
+    const again = cloneDefaultSettings();
+    const againView = /** @type {Record<string, unknown>} */ (again);
+    for (const group of GROUP_KEYS) {
+      assert(againView[group] !== clonedView[group], `两次调用的 ${group} 互非同一引用`);
+    }
+    assert(
+      JSON.stringify(cloned) === JSON.stringify(DEFAULT_SETTINGS),
+      "工厂应产出与 DEFAULT_SETTINGS 等值的设置(逐字段对拍)",
+    );
+    assert(
+      cloned.customPresets !== DEFAULT_SETTINGS.customPresets,
+      "customPresets 数组也应换新(默认恒空,但数组引用同属单例面)",
+    );
+  }
+  console.log("[ok] cloneDefaultSettings:6 组与单例互非引用/两次调用互非引用/与默认值等值 断言通过");
 
   // ---------- mergeSettingsWithDefaults(loadSettings 防御性合并) ----------
   assert(

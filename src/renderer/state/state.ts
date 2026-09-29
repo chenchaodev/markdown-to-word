@@ -4,7 +4,7 @@
  * 批量契约类型(BatchItem/BatchProgressInfo/BatchResult)单源 core/ipc-contract.ts,
  * 本模块 re-export 保持既有导入路径(编译期擦除,无运行时依赖)。
  */
-import { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
+import { cloneDefaultSettings } from "../../core/settings/settings-defaults.js";
 import type { BatchItem, BatchProgressInfo, BatchResult, ConvertProgressPayload } from "../../core/ipc-contract.js";
 
 /* ---------- 批量 / 合并契约类型 ---------- */
@@ -40,12 +40,13 @@ export const state = {
   /** 拖拽排序状态:源项下标 / 是否插到悬停项之后(-1 表示未在拖拽中)。 */
   dragIndex: -1,
   dragDropAfter: false,
-  /** 当前设置的内存态(乐观更新,持久化走 settingsSet) */
-  settings: {
-    ...DEFAULT_SETTINGS,
-    pageSetup: { ...DEFAULT_SETTINGS.pageSetup },
-    typography: { ...DEFAULT_SETTINGS.typography },
-  } as AppSettings,
+  /**
+   * 当前设置的内存态(乐观更新,持久化走 settingsSet)。
+   * 初值走 core 的 cloneDefaultSettings() 工厂而非展开 DEFAULT_SETTINGS:
+   * 展开只换顶层键,6 个分组块仍与单例共用引用,首次 load 到达前那段窗口里的
+   * 就地改写会污染全局单例(工厂口径与理由见 core/settings/settings-defaults.ts)。
+   */
+  settings: cloneDefaultSettings(),
   /** 回填控件期间置位,避免回填触发 change 事件写回 */
   hydratingSettings: false,
   /** 弹窗对应输出文件路径(供「打开所在文件夹 / 打开文件」按钮使用) */

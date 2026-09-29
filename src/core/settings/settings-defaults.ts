@@ -349,6 +349,31 @@ export const DEFAULT_SETTINGS: AppSettings = {
   obsidian: { ...DEFAULT_OBSIDIAN },
 };
 
+/**
+ * 默认设置的深拷贝工厂:6 个分组块全部是新对象,改返回值不动 {@link DEFAULT_SETTINGS}。
+ *
+ * 为什么需要:`...DEFAULT_SETTINGS` 只换掉顶层键,分组块仍与单例共用引用。
+ * renderer 初始 state 复用默认值的那段窗口(settings 首次 load 到达前,
+ * 向导预览 / 控件回填会就地改写分组块)里,任何一次就地赋值都会污染全局单例,
+ * 之后所有拿 DEFAULT_SETTINGS 兜底的路径都读到脏值。load 之后的
+ * mergeSettingsWithDefaults 已逐字段新造对象,不受此影响 —— 这里补的是加载前那一段。
+ *
+ * customPresets 一并换新数组(默认恒为空数组,但数组引用同属单例面);数组元素是
+ * 预设快照,按引用带出即可,深拷元素不在本工厂职责内。
+ */
+export function cloneDefaultSettings(): AppSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    pageSetup: { ...DEFAULT_SETTINGS.pageSetup },
+    typography: { ...DEFAULT_SETTINGS.typography },
+    headerFooter: { ...DEFAULT_SETTINGS.headerFooter },
+    watermark: { ...DEFAULT_SETTINGS.watermark },
+    aiCleanup: { ...DEFAULT_SETTINGS.aiCleanup },
+    obsidian: { ...DEFAULT_SETTINGS.obsidian },
+    customPresets: [...DEFAULT_SETTINGS.customPresets],
+  };
+}
+
 /** 页面边距钳制范围(mm,与主进程 sanitizePageSetup 一致) */
 export const MARGIN_MIN_MM = 0;
 export const MARGIN_MAX_MM = 1000;

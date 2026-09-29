@@ -48,17 +48,15 @@ export async function run() {
   try {
     const i18n = await import(distUrl("core/i18n/index.js")); // DICT / 语言注册表
     const { setLanguage } = await import(distUrl("core/i18n.js")); // 语言状态切换
-    const { DEFAULT_SETTINGS } = await import(distUrl("core/settings/settings-defaults.js"));
+    const { cloneDefaultSettings } = await import(
+      distUrl("core/settings/settings-defaults.js")
+    );
     const { state } = await import(distUrl("renderer/state/state.js"));
     const bookWizard = await import(distUrl("renderer/wizard/book-wizard.js"));
 
-    state.settings = {
-      ...DEFAULT_SETTINGS,
-      pageSetup: { ...DEFAULT_SETTINGS.pageSetup },
-      typography: { ...DEFAULT_SETTINGS.typography },
-      headerFooter: { ...DEFAULT_SETTINGS.headerFooter },
-      watermark: { ...DEFAULT_SETTINGS.watermark },
-    };
+    // 与生产(renderer/state/state.ts 初始 state)共用同一个工厂:此前这里手写的
+    // 4 组展开与生产的 2 组展开不同形,生产新增分组时本段会静默漏掉一块。
+    state.settings = cloneDefaultSettings();
     state.selectedFiles = [];
     state.mode = null;
 
