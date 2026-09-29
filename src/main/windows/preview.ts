@@ -61,7 +61,11 @@ async function renderPreviewHtml(mdPath: string): Promise<string> {
   }
   const baseName = baseNameFromMdPath(mdPath);
   const artifact = await convert(
-    prepared.markdown,
+    // 交准备阶段的阶段产物(body 已剥离 frontmatter + metadata 已解析)。
+    // **metadata 交在第 1 参而非 context.metadata**:后者是向导封面的**显式覆盖项**,
+    // 预览从不设封面,故此处不传是既有的正确行为;而 frontmatter 的 title 本来就
+    // 经此路径进入 <title> 与页眉模板(改动前由 convert 内部那次解析提供)。
+    { body: prepared.body, metadata: prepared.metadata },
     "pdf",
     await buildConvertContext({
       baseDir: path.dirname(mdPath),

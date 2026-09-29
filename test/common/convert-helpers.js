@@ -1,6 +1,7 @@
 // @ts-check
 import { readFileSync, realpathSync } from "node:fs";
 import { convert } from "../../dist/core/convert.js";
+import { parseFrontmatter } from "../../dist/core/pipeline/frontmatter.js";
 /**
  * 产物收窄 helper(测试树共享)。
  *
@@ -28,6 +29,7 @@ import { convert } from "../../dist/core/convert.js";
  */
 
 /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../src/core/convert.js").PreprocessedMarkdown} PreprocessedMarkdown */
 /** @typedef {import("../../src/core/convert.js").DocxArtifact} DocxArtifact */
 /** @typedef {import("../../src/core/convert.js").PdfArtifact} PdfArtifact */
 /** @typedef {import("../../src/core/pdf/render.js").PdfFsCapabilities} PdfFsCapabilities */
@@ -128,6 +130,9 @@ export function docxBufferOf(artifact) {
  * 逐个调用点加 `fs:` 字段既重复又易漏。集中在此后,新增调用点只要用了本函数
  * 就自动合规。展开顺序在后,显式传 fs 的调用点仍可覆盖。
  *
+ * 第 1 参仍是**裸 markdown 字符串**而非阶段产物:frontmatter 隔离在包装内做
+ * (`prepareForConvert`),调用点无一处需要知道 core 的入参形状。
+ *
  * @param {string} md markdown 源
  * @param {"docx" | "pdf"} format 目标格式
  * @param {Record<string, unknown>} context 转换上下文
@@ -135,5 +140,25 @@ export function docxBufferOf(artifact) {
  */
 export const convertWithFs =
   /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
-    (md, format, context) => convert(md, format, { fs: HOST_FS, ...context })
+    (md, format, context) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context })
   );
+
+/**
+ * 裸 markdown → core `PreprocessedMarkdown` 阶段产物(frontmatter 隔离 + 解析)。
+ *
+ * 为什么需要:core 的 `convert` 第 1 参不是裸字符串,而是 `{ body, metadata }` ——
+ * frontmatter 的隔离与解析在**上游准备阶段**完成一次即交下来,core 不再自己解析
+ * (同一次转换只解析一次,判据见 `test/segments/frontmatter-once.test.js`)。
+ * 测试侧按裸字符串写样例,就得在调用点前补这一步。
+ *
+ * 用 core 的 `parseFrontmatter`(单源)而非测试自写拆分:与生产
+ * `main/converter/preprocess.ts` 的 `splitFrontmatter` 走同一实现,
+ * 「测试断言的 frontmatter 语义」与「生产渲染链的」不会各走一套。
+ *
+ * @param {string} md 裸 markdown 源(可带 frontmatter)
+ * @returns {PreprocessedMarkdown} convert() 第 1 参
+ */
+export function prepareForConvert(md) {
+  const { metadata, body } = parseFrontmatter(md);
+  return { body, metadata };
+}

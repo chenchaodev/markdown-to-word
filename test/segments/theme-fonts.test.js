@@ -28,7 +28,7 @@ import {
 } from "../../dist/core/docx/theme.js";
 import { FIXTURES_DIR, ROOT } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
-import { docxBufferOf } from "../common/convert-helpers.js";
+import { docxBufferOf, prepareForConvert } from "../common/convert-helpers.js";
 
 /**
  * 断言辅助。
@@ -93,7 +93,7 @@ export async function run() {
   // ---- 3. 产物级:styles.xml eastAsia 与集中配置一致 ----
   // 不传 typography → renderDocx 回落 DEFAULT_TYPOGRAPHY(render.ts:options.typography ?? DEFAULT_TYPOGRAPHY)
   const artifact = docxBufferOf(
-    await convert(sampleMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
+    await convert(prepareForConvert(sampleMd), "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
   );
   const stylesXml = await unzipPart(artifact, "word/styles.xml");
   assert(

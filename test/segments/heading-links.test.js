@@ -12,7 +12,7 @@ import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { docxBufferOf } from "../common/convert-helpers.js";
+import { docxBufferOf, prepareForConvert } from "../common/convert-helpers.js";
 import { docxTocAnchors } from "../common/dual-extract.js";
 
 /** 主样例:标题编号 + 内部锚点/外部链接 + h1-h6(gen-fixtures 落盘为 acceptance/heading-links.md) */
@@ -45,7 +45,7 @@ export const fixtures = { main: linkMd };
 /** 标题编号 + 内部/外部链接验收 */
 export async function run() {
   const linkDocx = docxBufferOf(
-    await convert(linkMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
+    await convert(prepareForConvert(linkMd), "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
   );
   const numberingXml = await unzipPart(linkDocx, "word/numbering.xml");
   const documentXml = await unzipPart(linkDocx, "word/document.xml");

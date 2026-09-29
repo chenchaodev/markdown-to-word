@@ -24,6 +24,7 @@ import http from "node:http";
 import { createImageResolver } from "../../dist/main/services/image-downloader.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { prepareForConvert } from "../common/convert-helpers.js";
 import { saveArtifact } from "../common/artifacts.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
@@ -307,7 +308,7 @@ export async function run() {
   // checkLocalImages,均走本 resolver 返回 null → 警告统一为「图片加载失败: <src>」。
   const { convert } = await import("../../dist/core/convert.js");
   const wMissing = /** @type {import("../../src/core/i18n.js").ConvertWarning[]} */ ([]);
-  await convert("![缺图](missing-xxx.png)", "docx", {
+  await convert(prepareForConvert("![缺图](missing-xxx.png)"), "docx", {
     baseDir: FIXTURES_DIR,
     imageResolver: createImageResolver(FIXTURES_DIR),
     warnings: wMissing,
@@ -316,7 +317,7 @@ export async function run() {
     throw new Error("image-downloader 断言失败:缺失本地图片应产生统一「图片加载失败:」警告");
   }
   const wOk = /** @type {import("../../src/core/i18n.js").ConvertWarning[]} */ ([]);
-  await convert("![有图](./g1-tiny.png)", "docx", {
+  await convert(prepareForConvert("![有图](./g1-tiny.png)"), "docx", {
     baseDir: FIXTURES_DIR,
     imageResolver: createImageResolver(FIXTURES_DIR),
     warnings: wOk,

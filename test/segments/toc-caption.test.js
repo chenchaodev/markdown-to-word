@@ -18,7 +18,7 @@ import { unzipPart } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
-import { HOST_FS, asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
+import { HOST_FS, asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf, prepareForConvert } from "../common/convert-helpers.js";
 import { docxTocAnchors } from "../common/dual-extract.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
@@ -31,6 +31,10 @@ import { docxTocAnchors } from "../common/dual-extract.js";
  * 「显式项压过 typography」,而 headingNumbering / captionNumbering / imageBudget
  * 生产零写入者(不在生产 ConvertContext 里),只能走 convert 的第 4 参
  * ConvertTestOverrides(见 src/core/convert.ts)。
+ *
+ * 第 1 参仍是裸 markdown 字符串:frontmatter 隔离经 `prepareForConvert` 在包装内做
+ * (core 的 convert 第 1 参是 `{ body, metadata }` 阶段产物,不再自己解析 frontmatter)。
+ *
  * @param {string} md markdown 源
  * @param {"docx" | "pdf"} format 目标格式
  * @param {Record<string, unknown>} context 转换上下文
@@ -38,7 +42,7 @@ import { docxTocAnchors } from "../common/dual-extract.js";
  * @returns {Promise<ConvertArtifact>} 产物
  */
 const convertWithOverrides = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>, overrides: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
-  (md, format, context, overrides) => convert(md, format, { fs: HOST_FS, ...context }, overrides)
+  (md, format, context, overrides) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context }, overrides)
 );
 
 /** 主样例:TOC + 题注(含孤立题注/缺失图片),gen-fixtures 落盘为 acceptance/toc-caption.md */

@@ -25,7 +25,6 @@
  * - 脚注:docx 写 footnotes.xml 部件;pdf 渲染为 HTML 脚注。→ footnotes.test.js
  */
 import { parseMarkdown } from "./pipeline/parse.js";
-import { parseFrontmatter } from "./pipeline/frontmatter.js";
 import type { DocMetadata } from "./pipeline/frontmatter.js";
 import type { TypographySettings } from "./settings/typography.js";
 import type { ConvertWarning } from "./i18n.js";
@@ -56,19 +55,33 @@ import { createCancellationGuard } from "./cancel.js";
 import type { ImageResourceBudget } from "./resource-limits.js";
 
 /**
- * 已完成「渲染前变换」的 markdown —— 阶段产物的类型名,单一声明点。
+ * 已完成「frontmatter 隔离 + 渲染前变换」的 markdown —— 阶段产物的类型名,单一声明点。
  *
  * 阶段顺序:**先变换后渲染**。本文件的入参必须是已跑过
  * `core/markdown/preprocess-body.ts`(渲染前变换的分派点)的正文,本文件只做
  * 「解析 → 渲染」,不再改写内容 —— 变换类设置对渲染层不可见,它们在阶段分派处
  * 就已消费完毕。
  *
- * 底座刻意是 `string` 而非品牌类型:生产侧三个入口恒真(都先准备再调本函数),
- * 而多个测试段直接给原始 markdown 调本函数。品牌化会让那些测试里的断言变成
- * 谎言(见 adr-026 对三个「品牌化」形状的否决)。别名的价值是给这个阶段一个可
- * grep 的锚点;施加强制力留给真正需要的那天,届时只改这一处声明,调用点意图不变。
+ * **为什么是 `{ body, metadata }` 而不是裸字符串**:frontmatter 的隔离与解析在
+ * 上游准备阶段(`main/converter/preprocess.ts` 的 `prepareMarkdown`)已经做过一次,
+ * 那次结果连同正文一起作为阶段产物传下来。底座若仍是裸字符串,本层就不得不
+ * **为了拿 metadata 再解析一遍**——同一次转换 frontmatter 被解析两次,且没有任何
+ * 一处能断言「只解析一次」(裸字符串里看不出它带没带 frontmatter)。结构化入参把
+ * 「body 已剥离、metadata 已解析」写进类型,重复解析在编译期就不可能发生。
+ *
+ * 底座刻意是**普通 interface 而非品牌类型**:生产侧入口恒真(都先准备再调本函数),
+ * 而多个测试段直接构造本对象调本函数。品牌化会让那些测试里的断言变成谎言
+ * (见 adr-026 对三个「品牌化」形状的否决)。
  */
-export type PreprocessedMarkdown = string;
+export interface PreprocessedMarkdown {
+  /** 去除 frontmatter 后的正文(两条渲染管线都只消费它) */
+  body: string;
+  /**
+   * 上游已解析出的 frontmatter 元数据(缺省=源文档无 frontmatter)。
+   * `ConvertContext.metadata` 是**显式覆盖项**(向导封面),优先于本字段。
+   */
+  metadata?: DocMetadata;
+}
 
 export interface ConvertContext {
   /** markdown 文件所在目录(图片相对路径基准) */
@@ -97,7 +110,7 @@ export interface ConvertContext {
   fs?: PdfFsCapabilities;
   /** 文档标题(pdf 用 <title>) */
   title?: string;
-  /** 显式文档元数据(封面用);优先于 frontmatter 解析出的 metadata(覆盖语义) */
+  /** 显式文档元数据(封面用);优先于阶段产物已解析出的 frontmatter metadata(覆盖语义) */
   metadata?: DocMetadata;
   /** 警告收集器(可选):转换中发现的非致命问题(如缺失图片)追加至此;
    *  元素为 ConvertWarning(keyed 警告经显示层 formatWarning 按语言格式化) */
@@ -199,11 +212,12 @@ export async function convert(
     // 注意:context.warnings 缺省时退化为局部空数组,收集到的警告在调用结束后被丢弃;
     // 需要拿到警告的调用方必须显式传入 context.warnings 数组。
     const warnings = context.warnings ?? [];
-    // 先剥离 frontmatter:解析与渲染均只作用于正文(body)
-    const { metadata: parsedMetadata, body } = parseFrontmatter(md);
-    // 显式 metadata(context.metadata)优先于 frontmatter 解析出的 metadata:
+    // frontmatter 已在上游准备阶段隔离并解析(见 PreprocessedMarkdown):本层只取用,
+    // **不再解析第二次** —— 裸字符串入参时代这里有一次重复的解析调用。
+    const body = md.body;
+    // 显式 metadata(context.metadata)优先于阶段产物携带的 frontmatter metadata:
     // 向导封面覆盖 frontmatter 即走此路径;未传则回落 frontmatter(回归不变)
-    const metadata = context.metadata ?? parsedMetadata;
+    const metadata = context.metadata ?? md.metadata;
     // 页眉页脚/水印/目录模式的默认字段补全统一走 settings/render-options(6-D1):
     // 本层与两侧渲染层此前各有一份 `{ ...DEFAULT_X, ...x }`,默认值漂移无从发现
     const headerFooter: HeaderFooterSettings = resolveHeaderFooter(context.headerFooter);

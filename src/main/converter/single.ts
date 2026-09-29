@@ -53,8 +53,14 @@ export async function convertImpl(
   const prepared = await prepareMarkdown(filePath, settings, warnings, "warn.gbkEncoding");
   // 渲染 → 落盘 → 导出后行为:与合并共用输出骨架。本函数是「单文件转换」这个副作用
   // 的拥有者,是否让位由 ctx.skipAfterConvert 表达(骨架读该标志,批量构造该标志)。
+  // 交的是准备阶段的**阶段产物**(body 已剥离 frontmatter + metadata 已解析),
+  // core 不再自己解析 frontmatter —— 同一次转换 frontmatter 只解析一次。
   return emitConvertedArtifact(
-    { markdown: prepared.markdown, sourcePath: filePath, baseDir: path.dirname(filePath) },
+    {
+      markdown: { body: prepared.body, metadata: prepared.metadata },
+      sourcePath: filePath,
+      baseDir: path.dirname(filePath),
+    },
     { format, settings, ctx, warnings, katexDir, onProgress },
   );
 }

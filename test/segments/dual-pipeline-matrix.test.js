@@ -70,7 +70,7 @@ import { WATERMARK_GRAY } from "../../dist/core/style/colors.js";
 import { docxBookmarks, docxLinkBody, docxTocAnchors, pdfHeadingIds, pdfLinkBody, pdfTocItems } from "../common/dual-extract.js";
 import { buildMatrixCtx } from "../common/dual-sandbox.js";
 import { captionBeforeH1Md, captionLabelMd, deepHeadingsMd, katexBoundaryMd, mainMd } from "../common/dual-samples.js";
-import { asDocxArtifact, asPdfArtifact, HOST_FS } from "../common/convert-helpers.js";
+import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../common/convert-helpers.js";
 import { FIXTURES_DIR, ROOT } from "../common/paths.js";
 // 台账侧声明的矩阵行 id(本段在 assertMatrixShape 里反向断言行集合与之逐字相同,
 // 见 dual-pipeline-decision-ledger.test.js 的机制说明)
@@ -1242,7 +1242,7 @@ function assertMatrixShape() {
 /** convert() 的类型化包装:注入宿主文件系统能力(与 dual-sandbox 同款,零渲染差异) */
 const convertTyped =
   /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
-    (md, format, context) => convert(md, format, { fs: HOST_FS, ...context })
+    (md, format, context) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context })
   );
 
 /**

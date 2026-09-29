@@ -42,7 +42,7 @@ import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { docxBufferOf, pdfHtmlOf, HOST_FS } from "../common/convert-helpers.js";
+import { docxBufferOf, pdfHtmlOf, HOST_FS, prepareForConvert } from "../common/convert-helpers.js";
 // 「命中哪一条」的读法单源:docx 读链接体、pdf 读 <a> 体(见 test/common/dual-extract.js)。
 // 只看「锚点是否存在」判不出命中了哪一条 —— 同名 label(fig:same / tab:same)下必须把
 // 链接体内的编号文本与跳转目标绑在一起看,故两段(本段与 dual-pipeline-matrix 段)都调它,
@@ -58,10 +58,13 @@ import { docxLinkBody, pdfLinkBody } from "../common/dual-extract.js";
  * 其两次读(图片边界 realpathSync、KaTeX CSS 读取)必须由调用方注入,否则 convert
  * 在 pdf 分支直接抛错。集中在此包装而非 19 个调用点逐个传参。
  *
+ * 第 1 参仍是裸 markdown 字符串:frontmatter 隔离经 `prepareForConvert` 在包装内做
+ * (core 的 convert 第 1 参是 `{ body, metadata }` 阶段产物,不再自己解析 frontmatter)。
+ *
  * @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>}
  */
 const convertInjected = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
-  (md, format, context) => convert(md, format, { fs: HOST_FS, ...context })
+  (md, format, context) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context })
 );
 
 /** 警告收集器:元素为 ConvertWarning(string 或 KeyedWarning),dist 产物无类型导出,

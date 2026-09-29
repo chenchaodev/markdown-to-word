@@ -23,7 +23,7 @@ import { renderPdfHtml } from "../../dist/core/pdf/render.js";
 import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { injectTocPageNumbers } from "../../dist/core/pdf/postprocess.js";
 import { unzipPart, zipContains } from "./docx-utils.js";
-import { asDocxArtifact, asPdfArtifact, HOST_FS } from "./convert-helpers.js";
+import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "./convert-helpers.js";
 import { FIXTURES_DIR, KATEX_DIR } from "./paths.js";
 import { countOf, docxXml } from "./dual-extract.js";
 import {
@@ -71,9 +71,13 @@ const B = FIXTURES_DIR;
  * node:fs,每次调用都要显式带上。放在包装层而非 30+ 个调用点,是为了让「pdf 渲染
  * 必须注入能力」这条约束只有一个可漏的点,且新增调用点自动继承。展开顺序在后,
  * 故显式传 fs 的调用点仍可覆盖它。
+ *
+ * 第 1 参仍是裸 markdown 字符串:frontmatter 隔离经 `prepareForConvert` 在包装内做
+ * (core 的 convert 第 1 参是 `{ body, metadata }` 阶段产物,不再自己解析 frontmatter),
+ * 故下面 60+ 个调用点无一需要知道那个形状。
  */
 const convertTyped = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>, overrides?: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
-  (md, format, context, overrides) => convert(md, format, { fs: HOST_FS, ...context }, overrides)
+  (md, format, context, overrides) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context }, overrides)
 );
 
 /**

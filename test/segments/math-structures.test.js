@@ -60,7 +60,7 @@ import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
-import { docxBufferOf } from "../common/convert-helpers.js";
+import { docxBufferOf, prepareForConvert } from "../common/convert-helpers.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 
 // 本段只断言公式结构与容器内降级的产物形态,不产出人工实测样例(公式常规渲染与
@@ -86,7 +86,7 @@ async function renderDocxXml(md, extra) {
   /** @type {ConvertWarning[]} */
   const warnings = [];
   const artifact = /** @type {ConvertArtifact} */ (
-    await convert(md, "docx", { baseDir: FIXTURES_DIR, warnings, ...extra })
+    await convert(prepareForConvert(md), "docx", { baseDir: FIXTURES_DIR, warnings, ...extra })
   );
   return {
     xml: await unzipPart(docxBufferOf(artifact), "word/document.xml"),
@@ -809,7 +809,7 @@ export async function run() {
   await saveArtifact("math-structures", {
     docx: docxBufferOf(
       /** @type {ConvertArtifact} */ (
-        await convert(showcaseMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
+        await convert(prepareForConvert(showcaseMd), "docx", { baseDir: FIXTURES_DIR, warnings: [] })
       ),
     ),
   });

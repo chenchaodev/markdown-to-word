@@ -20,7 +20,7 @@ import path from "node:path";
 import { BrowserWindow, shell } from "electron";
 import { convert } from "../../core/convert.js";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
-import type { PdfArtifact } from "../../core/convert.js";
+import type { PdfArtifact, PreprocessedMarkdown } from "../../core/convert.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { buildBookmarkTree, injectBookmarks, pageNumbersForNames, type PdfHeading } from "../../core/pdf/bookmarks.js";
@@ -45,8 +45,14 @@ import { resolveOutputPath, stripMarkdownExt } from "./paths.js";
 
 /** 骨架的文档面入参:一段 markdown + 来源路径 + 可选基名 + 解析基准目录/可信根 */
 export interface OutputSkeletonDoc {
-  /** 一段 markdown(合并侧已完成 N→1 的塌缩;骨架内部看不到几个文件进来) */
-  markdown: string;
+  /**
+   * 一段 markdown 的**阶段产物**(合并侧已完成 N→1 的塌缩;骨架内部看不到几个文件进来)。
+   *
+   * 形状是 core 的 `PreprocessedMarkdown`(body 已去 frontmatter + metadata 已解析),
+   * 不是裸字符串:core 的 `convert` 不再自己解析 frontmatter(否则同一次转换解析两次),
+   * 两个消费点都必须把准备阶段的解析结果交下来。
+   */
+  markdown: PreprocessedMarkdown;
   /** 来源路径(合并取首个源文件):定文档标题基名与产物落盘目录 */
   sourcePath: string;
   /** 相对路径的解析基准目录(单文件=源文件目录;合并=各输入目录的公共祖先) */

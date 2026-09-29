@@ -16,6 +16,7 @@ import fs from "node:fs/promises";
 import { app } from "electron";
 import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { prepareForConvert } from "../common/convert-helpers.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
 
 /**
@@ -129,7 +130,7 @@ export async function run() {
     // 悬空交叉引用重复出现 N 次 → 仅 1 条 KeyedWarning(docx render.ts warnDedup)
     /** @type {KeyedWarning[]} */
     const dedupWarnings = [];
-    await convert("[图](#fig:x)\n\n[图](#fig:x)\n\n[图](#fig:x)\n\n正文", "docx", {
+    await convert(prepareForConvert("[图](#fig:x)\n\n[图](#fig:x)\n\n[图](#fig:x)\n\n正文"), "docx", {
       baseDir: FIXTURES_DIR,
       warnings: dedupWarnings,
     });

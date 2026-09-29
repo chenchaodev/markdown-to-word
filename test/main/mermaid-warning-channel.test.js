@@ -37,7 +37,7 @@ import { convertImpl, createConvertContext } from "../../dist/main/converter/ind
 import { getKatexDir } from "../../dist/main/services/resource-dirs.js";
 import { updateSettings } from "../../dist/main/persist/settings.js";
 import { backupSettings } from "../common/settings.js";
-import { asDocxArtifact } from "../common/convert-helpers.js";
+import { asDocxArtifact, prepareForConvert } from "../common/convert-helpers.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { removeTree } from "../common/temp-resource.js";
@@ -96,7 +96,7 @@ export async function run() {
     /** @type {Warning[]} */
     const strictWarnings = [];
     const strictDocx = asDocxArtifact(
-      await convert(MD_BAD_MERMAID, "docx", {
+      await convert(prepareForConvert(MD_BAD_MERMAID), "docx", {
         baseDir: FIXTURES_DIR,
         warnings: strictWarnings,
         mermaidResolver: renderMermaidStrict,
@@ -121,7 +121,7 @@ export async function run() {
     // ---- 3. 对照组:同一份文档走只降级模式 → 同一通道,但只有无原因的 warn.mermaidEmpty ----
     /** @type {Warning[]} */
     const looseWarnings = [];
-    await convert(MD_BAD_MERMAID, "docx", {
+    await convert(prepareForConvert(MD_BAD_MERMAID), "docx", {
       baseDir: FIXTURES_DIR,
       warnings: looseWarnings,
       mermaidResolver: renderMermaid,

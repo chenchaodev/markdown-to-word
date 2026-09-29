@@ -15,6 +15,11 @@ export type { ConvertResult } from "../../core/ipc-contract.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
 import { mergeMarkdowns } from "../../core/pipeline/merge.js";
+// 合并结果的 frontmatter 隔离:core convert 不再自己解析(见 core/convert.ts 的
+// PreprocessedMarkdown),而 mergeMarkdowns 按设计**保留首文件 frontmatter 原样**,
+// 故这一处补上解析,产出与改动前 convert 内部那次 parseFrontmatter 逐字等价的结果。
+// 刻意不在本步改 mergeMarkdowns 的返回形状(那会牵动 core 合并纯逻辑与其测试段)。
+import { parseFrontmatter } from "../../core/pipeline/frontmatter.js";
 import { loadSettings } from "../persist/settings.js";
 import {
   createConvertContext,
@@ -153,6 +158,9 @@ export async function mergeConvertImpl(
   const mergeBaseDir = commonBaseDir(inputs.map((input) => input.baseDir));
   const trustedRoots = [...new Set(inputs.map((input) => path.resolve(input.baseDir)))];
   const md = mergeMarkdowns(inputs, { outputBaseDir: mergeBaseDir });
+  // 合并结果保留首文件 frontmatter(见 merge.ts 头注),此处解析一次交成阶段产物:
+  // 正文渲染只作用于 body,封面/PDF Info 只消费 metadata。
+  const mergedFrontmatter = parseFrontmatter(md);
   const baseName = stripMarkdownExt(path.basename(firstFile));
   // 渲染 → 落盘 → 导出后行为:与单文件共用输出骨架。合并只有单个产物,骨架内的
   // 副作用闸门在本路径恒真(skipAfterConvert 的唯一写入者是 batchConvertImpl,
@@ -160,7 +168,7 @@ export async function mergeConvertImpl(
   // 一次,与单文件同构;最终取消检查也由骨架在「产物已落盘 → 打开产物」的窗口承担。
   const { outputPath } = await emitConvertedArtifact(
     {
-      markdown: md,
+      markdown: { body: mergedFrontmatter.body, metadata: mergedFrontmatter.metadata },
       sourcePath: firstFile,
       baseDir: mergeBaseDir,
       trustedRoots,
