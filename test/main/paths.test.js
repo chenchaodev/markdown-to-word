@@ -20,7 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/converter/index.js";
 import { formatWarning } from "../../dist/core/i18n.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -207,7 +207,7 @@ export async function run() {
       path.basename(takenOnce.outputPath) === "taken.docx" && takenOnce.outputPath === takenTwice.outputPath,
       `存在性探测回归:已存在同名文件时仍应返回首选路径,实际 ${takenOnce.outputPath} / ${takenTwice.outputPath}`,
     );
-    await fs.rm(takenName, { force: true });
+    removeFile(takenName);
     console.log("[ok] paths:resolveOutputPath 不做存在性探测(首选路径交由提交器独占创建)");
 
     // ---- 9. 超长路径(候选 >250):回落源目录 + 一条「输出路径过长」警告,文件名不截断;

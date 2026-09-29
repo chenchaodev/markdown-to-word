@@ -24,7 +24,7 @@ import {
   ClipboardTempRegistry,
   writeTempMarkdown,
 } from "../../dist/main/services/temp-html.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -237,7 +237,7 @@ export async function run() {
     assert(rejected.ok === false, "非法 format 应被守卫拒绝");
     assert(clipboardTempSources.pendingCount === 1, "守卫拒绝不应释放临时源");
     // 失败结局(源已删):finally 仍释放
-    await fs.rm(read.mdPath, { force: true });
+    removeFile(read.mdPath);
     const failed = await handlers.get(CH.convertSingle)(event(4242), read.mdPath, "docx");
     assert(failed.ok === false, `源缺失应转换失败,实际 ${JSON.stringify(failed)}`);
     assert(pendingCountOf(clipboardTempSources) === 0, "转换失败结局也应释放临时源");
@@ -254,7 +254,9 @@ export async function run() {
       await clipboardTempSources.add("777", {
         mdPath: tempSrc,
         release: async () => {
-          await fs.rm(tempSrc, { force: true });
+          // 释放临时源:删不掉即抛(原写法 fs.rm force 同语义),不得静默留在系统临时区
+          const outcome = removeFile(tempSrc);
+          if (!outcome.ok) throw new Error(`临时源释放失败:${tempSrc}:${outcome.error?.message ?? "删除后文件仍存在"}`);
         },
       });
       const okTemp = await handlers.get(CH.convertSingle)(event(4243), tempSrc, "docx");
@@ -272,7 +274,9 @@ export async function run() {
       await clipboardTempSources.add("888", {
         mdPath: leftover,
         release: async () => {
-          await fs.rm(leftover, { force: true });
+          // 同上:释放失败即抛
+          const outcome = removeFile(leftover);
+          if (!outcome.ok) throw new Error(`临时源释放失败:${leftover}:${outcome.error?.message ?? "删除后文件仍存在"}`);
         },
       });
       app.emit("will-quit");

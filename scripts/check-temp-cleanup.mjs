@@ -45,6 +45,27 @@
 // 「看起来是重复」把它清掉),输出里与实命中分开计数。新增条目必须在 `why` 里写明
 // 「为什么这不是沙盒目录清理」——没有依据的条目等于把门禁关掉。
 //
+// ---- 第二条规则:调用点的可选参数用法 ----
+// 第一条规则守「删除动作的形态」(裸写 vs 走助手);本条守**助手自己**被怎么调用。
+// 缺口:`removeTree` / `removeFile` 的第二实参是 `{ maxRetries, retryDelay }`,而调用点
+// 传什么一直无人校验 —— 传错只在运行期以「段莫名判红」的形式暴露,且极难归因。
+// 已实测的三类真实错误用法(Node v24.18.0,Windows):
+//   1. **非对象**(`removeTree(dir, 5)` / `removeTree(dir, "x")`):`options.maxRetries` 取到
+//      undefined,`??` 兜底成默认值 —— 调用点「以为」覆盖了重试,实则静默用默认,无任何报错。
+//   2. **非法值**(`maxRetries: -1` / `NaN` / `Infinity`):Node 的 `validateRmOptionsSync`
+//      抛 `ERR_OUT_OF_RANGE`(实测:非递归与递归两种形态都抛),段当场红但错误消息指向
+//      助手内部,看不出是哪个调用点传错。
+//   3. **未知键**(`{ maxRetries: 5, force: true }` / 拼错的 `maxRetry`):静默忽略,
+//      与「没传」不可区分 —— 属于「以为生效实则没生效」,同第 1 类。
+// 故本条判定:**凡出现第二实参,必须是对象字面量;其键只能是 maxRetries / retryDelay;
+// 键的值必须是非负有限数字字面量。** 第二实参缺省(`removeTree(dir)`)是合法且推荐的写法。
+//
+// 为何不要求「不传非空对象」:`{ retryDelay: 200 }` 是全树既有且正当的用法(Windows 句柄
+// 释放慢的段主动调大退避基数),判红会误伤 8 处真调用点。规则只卡**形状与取值**。
+//
+// 为何不查「传了 options 却被门禁白名单掩盖」:白名单按「文件 × 首参」放行**删除动作**,
+// 与第二实参的取值正交 —— 一个被白名单放行的删除点仍会被本规则独立判红。两条规则不互相遮掩。
+//
 // ---- 正面锚点(防空门禁)----
 // 规则写错会表现为「恒绿」,而恒绿是这类文本门禁最危险的失效形态(没人会去看一个
 // 总是 exit 0 的脚本)。故本脚本内建 SELF_PROBE:把某个**已收口**的调用点在收口**之前**
@@ -53,6 +74,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { blankComments } from '../test/common/copy-closure.js';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const USAGE = '用法: node scripts/check-temp-cleanup.mjs [--help]';
@@ -103,6 +125,48 @@ const RECURSIVE_RE = /\brecursive\b/;
 /** 首参形态:取实参里第一个顶层标识符(去掉可选的 `path.join(...)` 包裹后仍取其首段) */
 const FIRST_ARG_RE = /^\s*(?:[A-Za-z_$][\w$]*\s*\.\s*)?([A-Za-z_$][\w$]*)/;
 
+// ---- 第二条规则的判定原语(助手调用点的可选参数用法)----
+
+/** 助手名(removeTree = 目录 / removeFile = 单文件);两者共用同一套重试语义,故同规则 */
+export const HELPER_NAMES = Object.freeze(['removeTree', 'removeFile']);
+
+/**
+ * 助手调用点:`<接收者>.`removeTree|removeFile(` + 配平的实参。
+ * 与 DELETE_CALL_RE 同构(同样的 lookbehind 与 ARGS 配平),区别只在被匹配的标识符。
+ */
+export const HELPER_CALL_RE = new RegExp(
+  String.raw`(?<![\w$.])(?:[A-Za-z_$][\w$]*\s*\.\s*)?(?:removeTree|removeFile)\s*\(` + ARGS + String.raw`\)`,
+  'g',
+);
+
+/** 助手允许的选项键(与 temp-resource.js 的 RemoveOptions 单一来源一致) */
+export const HELPER_OPTION_KEYS = Object.freeze(['maxRetries', 'retryDelay']);
+
+/** 合法的取值形态:非负有限数字字面量(整数或小数均可,不含负号/NaN/Infinity/变量) */
+const HELPER_OPTION_VALUE_RE = /^\d+(?:\.\d+)?$/;
+
+/**
+ * 按顶层逗号切分实参(实参可含嵌套的 ()/[]/{}),用于取「第二实参」。
+ * @param {string} args 实参原文(不含外层括号)
+ * @returns {string[]} 顶层实参
+ */
+function splitTopLevelArgs(args) {
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < args.length; i += 1) {
+    const ch = args[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+    else if (ch === ')' || ch === ']' || ch === '}') depth -= 1;
+    else if (ch === ',' && depth === 0) {
+      out.push(args.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(args.slice(start));
+  return out;
+}
+
 // ---- 白名单(逐条写明依据;按内容匹配,不按行号)----
 
 /**
@@ -123,16 +187,6 @@ const FIRST_ARG_RE = /^\s*(?:[A-Za-z_$][\w$]*\s*\.\s*)?([A-Za-z_$][\w$]*)/;
  * @property {string} why 依据:为什么这不是沙盒目录清理
  * @property {boolean} [cold] true = 按设计不在扫描面内,零命中是预期(输出里分开计数)
  */
-
-/**
- * 首参落在给定名单里(空名单 = 不限)。
- * @param {string[]} names 允许的首参标识符
- * @returns {(hit: DeleteHit) => boolean}
- */
-function firstArgIn(names) {
-  if (names.length === 0) return () => true;
-  return (hit) => names.includes(hit.firstArg);
-}
 
 /** @type {readonly AllowEntry[]} */
 export const ALLOWLIST = Object.freeze([
@@ -160,29 +214,6 @@ export const ALLOWLIST = Object.freeze([
       + 'node 不同的**刻意绕行**:L343 是段内沙盒删除、L349 是往沙盒注入的判定脚本源码里那行'
       + '`require("fs").rmSync(…)`(用纯 node 子进程删,绕开 asar 虚拟 fs)、L816 是沙盒里的'
       + 'release 目录。三者都不是「测试树的临时目录清理」,收口会改掉被绕行的语义。',
-  },
-  {
-    id: 'settings-single-target-swap',
-    file: 'test/main/settings.test.js',
-    match: firstArgIn(['settingsFile']),
-    why: '单目标删除,不是目录树清理:settings.json 是**产物文件**,测试刻意把它在文件与目录'
-      + '之间来回替换来触发 rename 失败(L920 先 mkdir 成目录),`recursive: true` 只是让'
-      + '同一处调用在两种形态下都能工作。同段的沙盒目录(`dir`)已收口。',
-  },
-  {
-    id: 'ui-state-single-target-swap',
-    file: 'test/main/ui-state.test.js',
-    match: firstArgIn(['uiFile']),
-    why: '同 settings:ui-state.json 是产物文件,同样被刻意换成目录以触发写失败,'
-      + '`recursive: true` 是防御性写法,不是目录树清理。',
-  },
-  {
-    id: 'output-allowlist-single-target-swap',
-    file: 'test/main/output-allowlist.test.js',
-    match: firstArgIn(['artifact']),
-    why: '单目标删除,不是目录树清理:`artifact` 是产物文件路径,测试刻意先删文件、再 mkdir 成'
-      + '同名目录,以证明白名单的「同名目录被顶替」也拒 —— 那个目录只有一层,删它不需要'
-      + '退避重试,套 removeTree 属错配。同段的沙盒目录(`dir`)已收口。',
   },
   {
     id: 'input-budget-selfloop-junction-async-only',
@@ -224,19 +255,13 @@ export const ALLOWLIST = Object.freeze([
       + '被测的是写入器的退避策略,给桩加重试或吞错会改掉断言对象。本段的沙盒目录已收口。',
   },
   {
-    id: 'atomic-json-durability-stubbed-epcodes',
-    file: 'test/main/atomic-json-durability.test.js',
-    match: () => false,
-    cold: true,
-    why: '同 atomic-json:注入的 EPERM/EBUSY 是桩,不是真删;断言的是 fsync 耐久性。'
-      + '本段的沙盒目录已收口。',
-  },
-  {
     id: 'renderer-pure-error-code-literals',
-    file: 'test/segments/renderer-pure.test.js',
+    file: 'test/renderer/renderer-pure.test.js',
     match: () => false,
     cold: true,
-    why: 'L183 的 EPERM/EBUSY 是**错误码字面量**(渲染层纯函数的失败分支断言),不是删除动作。',
+    why: 'L183 的 EBUSY / L198 的 EPERM 是**错误码字面量**(渲染层纯函数 actionableError 的'
+      + '失败分支断言),不是删除动作。段位随三目录归属调整从 segments/ 迁到 renderer/,'
+      + '本条随之改路径 —— 白名单按文件内容匹配,路径写错会让条目静默失效。',
   },
   {
     id: 'artifact-commit-error-code-literals',
@@ -255,6 +280,32 @@ export const ALLOWLIST = Object.freeze([
       + '会抛 `Path is a directory`,故按 unlinkSync → rmdirSync → 纯 node 子进程三级降级,'
       + '且三条都**非递归**(只摘链接,绝不碰真实 node_modules 目录)。scripts/ 整体不在本门禁'
       + '扫描面内(那里 rmSync 是被测语义本身),登记为按设计零命中。',
+  },
+]);
+
+/**
+ * 第二条规则(助手调用点选项用法)的白名单。与 ALLOWLIST 分开而非合并:
+ * 两条规则的命中对象形状不同(删除动作 vs 选项用法),合并会逼出「match 同时判两种形状」的
+ * 耦合判定,反而更难读。**豁免必须写明「为什么这个调用点就是要传错参数」**。
+ * @typedef {object} OptionAllowEntry
+ * @property {string} id 条目 id
+ * @property {string} file 生效文件;null = 不限文件
+ * @property {(hit: OptionHit) => boolean} match 内容判定
+ * @property {string} why 依据
+ * @property {boolean} [cold] true = 按设计零命中
+ */
+
+/** @type {readonly OptionAllowEntry[]} */
+export const OPTION_ALLOWLIST = Object.freeze([
+  {
+    id: 'test-common-helpers-illegal-retry-probe',
+    file: 'test/segments/test-common-helpers.test.js',
+    // 刻意给 removeTree 喂非法与极小重试参数:证明「失败如实上报」而非吞掉
+    match: (hit) => hit.args.includes('maxRetries: -1'),
+    why: 'L344 **刻意**传 `maxRetries: -1`:`fs.rmSync` 的 validateRmOptionsSync 必抛 '
+      + 'ERR_OUT_OF_RANGE(本机实测),该段据此确定性证明 removeTree 把失败上报而非当成功。'
+      + '这正是本规则要卡的那类取值 —— 但**被测对象是助手的行为**,不是调用点的正确写法,'
+      + '故豁免。L369 的 `{ maxRetries: 1, retryDelay: 10 }` 形态合法,本就不需要豁免。',
   },
 ]);
 
@@ -291,6 +342,36 @@ export const SELF_PROBE = Object.freeze([
 ]);
 
 /**
+ * 第二条规则(助手调用点选项用法)的自检探针,形态与 SELF_PROBE 同构:
+ * `before` 是**错误用法**(必须被判红),`after` 是**正确用法**(必须判绿)。
+ * 四条各覆盖一类真实错法(见文件头「第二条规则」),其中「未提供第二实参」那条是反向锚点:
+ * 缺省是最推荐、也是全树最常见的写法,若被判红则规则过宽。
+ * @type {readonly { id: string; before: string; after: string }[]}
+ */
+export const OPTION_PROBE = Object.freeze([
+  {
+    id: 'option-non-object-second-arg',
+    before: '    removeTree(dir, 5);',
+    after: '    removeTree(dir, { maxRetries: 5 });',
+  },
+  {
+    id: 'option-illegal-retry-value',
+    before: '    removeTree(dir, { maxRetries: -1 });',
+    after: '    removeTree(dir, { maxRetries: 1, retryDelay: 10 });',
+  },
+  {
+    id: 'option-unknown-key',
+    before: '    removeTree(dir, { maxRetries: 5, force: true });',
+    after: '    removeFile(artifact, { maxRetries: 5, retryDelay: 200 });',
+  },
+  {
+    id: 'option-omitted-second-arg-is-legal',
+    before: '    removeFile(artifact, "x");',
+    after: '    removeTree(dir);\n    removeFile(artifact);',
+  },
+]);
+
+/**
  * 对一段源码文本跑判定(纯函数,供 analyze 与 SELF_PROBE 共用 —— 两者必须走同一条路径,
  * 否则探针验的就不是真规则)。
  * @param {string} text 源码文本
@@ -314,6 +395,90 @@ export function scanText(text, file = '<probe>') {
         firstArg: FIRST_ARG_RE.exec(args)?.[1] ?? '<复杂实参>',
         lineSource: text.split('\n')[text.slice(0, offset).split('\n').length - 1] ?? '',
       });
+    }
+  }
+  return hits.sort((a, b) => a.line - b.line);
+}
+
+/**
+ * @typedef {object} OptionHit 一处助手调用点的选项用法问题
+ * @property {string} file 仓库相对 POSIX 路径
+ * @property {number} line 行号(1 起)
+ * @property {string} callee 助手名(removeTree / removeFile)
+ * @property {string} args 第二实参原文
+ * @property {string} reason 违规原因(人可读,直接进失败输出)
+ * @property {string} lineSource 命中所在源码行
+ */
+
+/** 助手自身的定义形态(`export function removeTree(target, options = {})`):
+ *  第二实参是**形参默认值**,不是调用点传值 —— 判红等于要求助手不能用默认参数。 */
+const HELPER_DEF_RE = new RegExp(
+  String.raw`\bfunction\s+(?:removeTree|removeFile)\s*\(`,
+);
+
+/**
+ * 对一段源码文本跑「助手调用点选项用法」判定(纯函数,供 analyze 与 SELF_PROBE 共用)。
+ * 只看**第二实参**:缺省即合法(用助手默认重试参数),传了就必须是形状与取值都合法的对象。
+ *
+ * 与第一条规则的两点刻意不同(都不是随手写的):
+ * 1. **抹注释**(复用 test/common/copy-closure.js 的 blankComments,等长故行号不变):
+ *    第一条规则的「不剥注释」是为保守多报 —— 误报能被人一眼看见;而本条若不抹注释,任何
+ *    JSDoc 里写一句 `removeTree(dir, { retryDelay: 200 })` 的说明都会被判红,那是**真误报**
+ *    (注释不是调用点),且会逼着人把文档改丑来讨好门禁。
+ * 2. **跳过助手自身的定义**:形参默认值 `options = {}` 不是调用点传值。
+ * 字符串仍不抹(与第一条规则一致):往沙盒注入的脚本源码里若藏着违规调用,宁可多报。
+ * @param {string} text 源码文本
+ * @param {string} file 仅用于回填的仓库相对路径
+ * @returns {OptionHit[]}
+ */
+export function scanOptionText(text, file = '<probe>') {
+  /** @type {OptionHit[]} */
+  const hits = [];
+  const code = blankComments(text);
+  const lines = code.split('\n');
+  HELPER_CALL_RE.lastIndex = 0;
+  for (const m of code.matchAll(HELPER_CALL_RE)) {
+    const offset = m.index ?? 0;
+    // 定义处跳过:`function removeTree(` 之后紧跟的 `(` 才是本正则锚定的那个
+    if (HELPER_DEF_RE.test(code.slice(Math.max(0, offset - 40), offset + 12))) continue;
+    const inner = m[0].slice(m[0].indexOf('(') + 1, m[0].lastIndexOf(')'));
+    const params = splitTopLevelArgs(inner);
+    if (params.length < 2) continue; // 只传目标路径 = 用默认参数,合法
+    const raw = params[1].trim();
+    const line = code.slice(0, offset).split('\n').length;
+    /** @type {(reason: string) => OptionHit} */
+    const makeHit = (reason) => ({
+      file,
+      line,
+      callee: m[0].slice(0, m[0].indexOf('(')).trim().replace(/\s+/g, ''),
+      args: raw.replace(/\s+/g, ' ').trim(),
+      reason,
+      lineSource: lines[line - 1] ?? '',
+    });
+
+    // 规则 1:第二实参必须是对象字面量(变量/数字/字符串/展开一律判红 —— 见文件头三类错误用法)
+    if (!raw.startsWith('{')) {
+      hits.push(makeHit(`第二实参必须是对象字面量 { maxRetries?, retryDelay? },实际是 ${raw}`));
+      continue;
+    }
+    // 规则 2/3:逐键校验键名与取值(顶层逗号已切开,剩余的逗号都在嵌套里)
+    for (const rawProp of splitTopLevelArgs(raw.slice(1, raw.lastIndexOf('}')))) {
+      const prop = rawProp.trim();
+      if (prop === '') continue;
+      const colon = prop.indexOf(':');
+      if (colon === -1) {
+        hits.push(makeHit(`选项键必须写成「键: 值」形式,实际是 ${prop}(省略值 = 恒为 undefined)`));
+        continue;
+      }
+      const key = prop.slice(0, colon).trim();
+      const value = prop.slice(colon + 1).trim();
+      if (!HELPER_OPTION_KEYS.includes(key)) {
+        hits.push(makeHit(`未知选项键 ${key}(助手只接受 ${HELPER_OPTION_KEYS.join(' / ')};未知键被静默忽略)`));
+        continue;
+      }
+      if (!HELPER_OPTION_VALUE_RE.test(value)) {
+        hits.push(makeHit(`${key} 的取值必须是非负有限数字字面量,实际是 ${value}(负数/NaN 会让 Node 抛 ERR_OUT_OF_RANGE)`));
+      }
     }
   }
   return hits.sort((a, b) => a.line - b.line);
@@ -372,17 +537,21 @@ export function scanFile(rel) {
 
 /**
  * 全树判定。allowCold 是白名单统计(按设计零命中的条目数),只作输出,不参与 exit code。
- * @returns {{ problems: DeleteHit[], allowHits: number, allowCold: number, files: number, staleAllow: string[], deleteCalls: number }}
+ * @returns {{ problems: DeleteHit[], optionProblems: OptionHit[], allowHits: number, allowCold: number, files: number, staleAllow: string[], deleteCalls: number, helperCalls: number }}
  */
 export function analyze() {
   const files = listScanFiles();
   /** @type {DeleteHit[]} */
   const problems = [];
+  /** @type {OptionHit[]} */
+  const optionProblems = [];
   const allowUsed = new Set();
   let deleteCalls = 0;
+  let helperCalls = 0;
 
   for (const rel of files) {
-    for (const hit of scanFile(rel)) {
+    const text = readFileSync(path.join(projectRoot, ...rel.split('/')), 'utf8');
+    for (const hit of scanText(text, rel)) {
       deleteCalls += 1;
       const index = ALLOWLIST.findIndex(
         (entry) => (entry.file === null || entry.file === hit.file) && entry.match(hit),
@@ -393,14 +562,25 @@ export function analyze() {
       }
       problems.push(hit);
     }
+    // 第二条规则:助手调用点的可选参数用法。白名单只放行删除动作,不豁免本条 ——
+    // 「被白名单放行的删除点仍须传对助手的参数」正是本条存在的意义。
+    for (const hit of scanOptionText(text, rel)) {
+      helperCalls += 1;
+      const allowed = OPTION_ALLOWLIST.some(
+        (entry) => (entry.file === null || entry.file === hit.file) && entry.match(hit),
+      );
+      if (!allowed) optionProblems.push(hit);
+    }
   }
 
   return {
     problems,
+    optionProblems,
     allowHits: allowUsed.size,
     allowCold: ALLOWLIST.filter((entry) => entry.cold === true).length,
     files: files.length,
     deleteCalls,
+    helperCalls,
     staleAllow: ALLOWLIST.filter((entry, index) => !allowUsed.has(index) && entry.cold !== true).map((entry) => entry.id),
   };
 }
@@ -408,10 +588,11 @@ export function analyze() {
 /**
  * 自检探针:对每个条目断言「收口前形态被命中 / 收口后形态不被命中」。
  * 探针不过即 exit 1(规则本身坏了,后面所有判定都不可信)。
+ * OPTION_PROBE 走第二条规则的判定器(否则探针验的就不是真规则)。
  * @returns {{ id: string, ok: boolean, detail: string }[]}
  */
 export function runSelfProbe() {
-  return SELF_PROBE.map((probe) => {
+  const deleteProbes = SELF_PROBE.map((probe) => {
     const beforeHits = scanText(probe.before);
     const afterHits = scanText(probe.after);
     // 第 4 条是反向锚点:语义相反(期望 before 不命中 / after 命中)
@@ -426,6 +607,18 @@ export function runSelfProbe() {
         + `${inverted ? '(反向锚点:期望前者 0、后者 >0)' : '(期望前者 >0、后者 0)'}`,
     };
   });
+  const optionProbes = OPTION_PROBE.map((probe) => {
+    const beforeHits = scanOptionText(probe.before);
+    const afterHits = scanOptionText(probe.after);
+    const ok = beforeHits.length > 0 && afterHits.length === 0;
+    return {
+      id: probe.id,
+      ok,
+      detail: `错误用法形态命中 ${beforeHits.length} 处 / 正确用法形态命中 ${afterHits.length} 处`
+        + `${ok ? '' : `(期望前者 >0、后者 0)${beforeHits.length === 0 ? ' —— 规则漏判' : ''}${afterHits.length > 0 ? ' —— 规则误判' : ''}`}`,
+    };
+  });
+  return [...deleteProbes, ...optionProbes];
 }
 
 export async function main(argv = []) {
@@ -488,10 +681,27 @@ export async function main(argv = []) {
     return 1;
   }
 
+  if (result.optionProblems.length > 0) {
+    for (const hit of result.optionProblems) {
+      console.error(`[temp-cleanup:fail] ${hit.file}:${hit.line} → ${hit.callee} 的选项用法:${hit.reason}`);
+    }
+    console.error(
+      `[temp-cleanup:fail] 助手调用点的可选参数用法不合规,共 ${result.optionProblems.length} 项`
+      + `(扫描 ${result.helperCalls} 处带选项的助手调用)`,
+    );
+    console.error(
+      '[temp-cleanup:fail] removeTree / removeFile 的第二实参:要么**省略**(用默认重试参数,'
+      + '推荐),要么写成只含 `maxRetries` / `retryDelay` 的对象字面量且取非负有限数字字面量。'
+      + '非对象、未知键(被静默忽略)、负数/NaN(Node 抛 ERR_OUT_OF_RANGE)三类都是「以为生效实则没生效」,'
+      + '只能在这里判红。按内容匹配,勿按行号豁免。',
+    );
+    return 1;
+  }
+
   console.log(
     `[ok] 测试树临时目录清理扫描通过:扫描 ${result.files} 个文件 / ${result.deleteCalls} 处目录删除,`
     + `无裸写;白名单 ${ALLOWLIST.length} 条(本次命中 ${result.allowHits} 条,按设计零命中 ${result.allowCold} 条);`
-    + `自检探针 ${probe.length} 条全过`,
+    + `助手调用点选项用法 ${result.helperCalls} 处全合规;自检探针 ${probe.length} 条全过`,
   );
   return 0;
 }

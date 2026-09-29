@@ -10,6 +10,7 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadSettings, updateSettings } from "../../dist/main/persist/settings.js";
+import { removeFile } from "./temp-resource.js";
 
 /** settings.json 磁盘路径(settings.ts 无注入点,测试直改磁盘时共用)。 */
 export function settingsJsonPath() {
@@ -33,8 +34,13 @@ export async function backupSettingsFile() {
   return {
     orig,
     restore: async function restore() {
-      if (orig === null) await fs.rm(settingsFile, { force: true });
-      else await fs.writeFile(settingsFile, orig, "utf8");
+      // 走 removeFile(退避重试 + 删后复查)。此处**必须**判 outcome.ok 再抛:「原本没有
+      // settings.json」要恢复成「仍然没有」,删不掉若静默,下一段会读到本段留下的**真实用户
+      // 设置** —— 那是跨段污染且无任何报错,比段判红危险得多。
+      if (orig === null) {
+        const outcome = removeFile(settingsFile);
+        if (!outcome.ok) throw new Error(`settings.json 恢复删除失败:${settingsFile}:${outcome.error?.message ?? "删除后文件仍存在"}`);
+      } else await fs.writeFile(settingsFile, orig, "utf8");
     },
   };
 }
@@ -64,7 +70,11 @@ export async function backupSettings() {
     orig,
     restore: async function restore() {
       await updateSettings(orig);
-      if (!hadFile) await fs.rm(settingsFile, { force: true });
+      // 同 backupSettingsFile.restore:删除失败必须显式抛,不得静默留下跨段污染的真实用户设置
+      if (!hadFile) {
+        const outcome = removeFile(settingsFile);
+        if (!outcome.ok) throw new Error(`settings.json 恢复删除失败:${settingsFile}:${outcome.error?.message ?? "删除后文件仍存在"}`);
+      }
     },
   };
 }

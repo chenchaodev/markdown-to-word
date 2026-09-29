@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { writeTempHtml } from "../../dist/main/services/temp-html.js";
+import { removeFile } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -55,7 +56,7 @@ export async function run() {
     await cleanup(); // 幂等:第二次调用不抛(fs.rm force)
     console.log("[ok] temp-html:cleanup 删除 + 幂等 断言通过");
   } finally {
-    await fs.rm(htmlPath, { force: true }).catch(() => undefined); // 兜底清理,防断言失败残留
+    removeFile(htmlPath); // 兜底清理,防断言失败残留(助手不抛,删不掉也不阻断段结果)
   }
 
   // ---- 3. 并发唯一性:25 次并发写入 → 路径互不相同、全部存在、全部可清理 ----

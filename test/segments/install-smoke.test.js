@@ -48,6 +48,7 @@ import path from "node:path";
 import { defaultInstallDir, runInstallFlow, startMenuTraces } from "../../scripts/check-install-smoke.mjs";
 import { SMOKE_MARKERS } from "../../scripts/smoke-proc.mjs";
 import { ROOT } from "../common/paths.js";
+import { removeFile } from "../common/temp-resource.js";
 
 /** 沙盒名前缀(临时目录,便于识别残留) */
 const SANDBOX_PREFIX = "m2w-install-smoke-";
@@ -802,7 +803,7 @@ export async function run() {
       } else {
         await new Promise((resolve) => setTimeout(resolve, 4000));
         assert(fs.existsSync(beacon), "非 win32 平台 SIGKILL 不含后代进程,孙进程存活属预期");
-        fs.rmSync(beacon, { force: true });
+        removeFile(beacon); // 活下来的一次性信标文件:走 removeFile(退避重试 + 删后复查)
         console.log("[skip] install-smoke:进程树连带硬杀断言仅在 win32 覆盖(本平台 SIGKILL 不含后代进程)");
       }
       console.log("[ok] install-smoke:超时判红(硬超时生效、不留孤儿进程、userData 已清)");

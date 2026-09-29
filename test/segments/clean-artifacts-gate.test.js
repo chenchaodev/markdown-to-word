@@ -37,7 +37,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 
 const SCRIPT_SOURCE = fs.readFileSync(path.join(ROOT, "scripts", "clean-artifacts.mjs"), "utf8");
 const SCRIPT_SHA256 = createHash("sha256").update(SCRIPT_SOURCE).digest("hex");
@@ -106,7 +106,7 @@ function createSandbox() {
 function writePackageJson(root, value) {
   const target = path.join(root, "package.json");
   if (value === null) {
-    fs.rmSync(target, { force: true });
+    removeFile(target); // 夹具的「删 package.json」也是单文件删除,走助手(退避重试 + 删后复查)
     return;
   }
   const text = typeof value === "string" ? value : `${JSON.stringify(value, null, 2)}\n`;

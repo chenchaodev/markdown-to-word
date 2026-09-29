@@ -43,7 +43,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../common/paths.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 import { CONCURRENCY_ENV, ONLY_ENV, describeChildExitCode, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
 
 /** 沙盒目录名前缀(mkdtemp 在其后附 6 位随机后缀;尾部短横线便于识别残留目录) */
@@ -176,7 +176,11 @@ function writeSegment(name, source) {
  * @returns {void}
  */
 function removeSandboxFile(name) {
-  fs.rmSync(path.join(SANDBOX, name), { force: true });
+  const target = path.join(SANDBOX, name);
+  const outcome = removeFile(target);
+  // 原写法是 `fs.rmSync(target, { force: true })` —— 删不掉即抛。保持该语义:
+  // 沙盒文件残留会被下一轮当成「本轮产物」读走(理由同 cleanupSandbox)
+  if (!outcome.ok) throw new Error(`沙盒文件清理失败:${target}:${outcome.error?.message ?? "删除后文件仍存在"}`);
 }
 
 /**

@@ -23,7 +23,7 @@ import {
   main as asarMain,
 } from "../../scripts/check-asar-manifest.mjs";
 import { main as releaseMain } from "../../scripts/check-release-artifacts.mjs";
-import { removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 
 const FIXTURE_VERSION = "9.9.9";
 const FIXTURE_PRODUCT = "FixtureApp";
@@ -319,7 +319,7 @@ export async function run() {
       name: "asar 文件缺失",
       build: async (tmp) => {
         const fixture = await makeAsarFixture(tmp);
-        fs.rmSync(fixture.asarPath, { force: true });
+        removeFile(fixture.asarPath);
         return fixture;
       },
       expect: /找不到 app\.asar/,
@@ -379,7 +379,7 @@ export async function run() {
       name: "dist 清单缺失(未纳入发布链)",
       build: async (tmp) => {
         const fixture = await makeAsarFixture(tmp);
-        fs.rmSync(fixture.manifestPath, { force: true });
+        removeFile(fixture.manifestPath);
         return fixture;
       },
       expect: /缺少 dist 清单/,
@@ -411,7 +411,7 @@ export async function run() {
   // ---------- 3. ASAR 显式放行:--skip-manifest 放行但留痕 ----------
   await withTempDir(async (tmp) => {
     const { asarPath, pkgPath, manifestPath } = await makeAsarFixture(tmp);
-    fs.rmSync(manifestPath, { force: true });
+    removeFile(manifestPath);
     const skipped = await runChecker(() =>
       asarMain(["--asar", asarPath, "--pkg", pkgPath, "--manifest", manifestPath, "--skip-manifest"]),
     );
@@ -465,7 +465,7 @@ export async function run() {
   const releaseCases = [
     {
       name: "缺当前版本安装包",
-      mutate: ({ installerPath }) => fs.rmSync(installerPath, { force: true }),
+      mutate: ({ installerPath }) => removeFile(installerPath),
       expect: /缺少当前版本安装包/,
     },
     {
@@ -475,12 +475,12 @@ export async function run() {
     },
     {
       name: "缺 blockmap(自动更新通道依赖)",
-      mutate: ({ releaseDir, installerName }) => fs.rmSync(path.join(releaseDir, `${installerName}.blockmap`), { force: true }),
+      mutate: ({ releaseDir, installerName }) => removeFile(path.join(releaseDir, `${installerName}.blockmap`)),
       expect: /缺少安装包差分索引/,
     },
     {
       name: "latest.yml 缺失",
-      mutate: ({ releaseDir }) => fs.rmSync(path.join(releaseDir, "latest.yml"), { force: true }),
+      mutate: ({ releaseDir }) => removeFile(path.join(releaseDir, "latest.yml")),
       expect: /缺少 latest\.yml/,
     },
     {

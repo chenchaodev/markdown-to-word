@@ -24,7 +24,7 @@ import {
 import { evaluateFreshness, main as buildFreshMain } from "../../scripts/check-build-fresh.mjs";
 import { copyRenderer } from "../../scripts/copy-renderer.mjs";
 import { ROOT } from "../common/paths.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /**
  * 清单结构视图:被测的 scripts/check-dist-manifest.mjs 为无类型标注的 JS,
@@ -196,7 +196,7 @@ export async function run() {
       },
       {
         name: "缺失(本次构建未产出的文件)",
-        arrange: (target) => fs.rmSync(path.join(target, "core", "convert.js")),
+        arrange: (target) => removeFile(path.join(target, "core", "convert.js")),
         expect: /缺失.*core\/convert\.js/,
       },
       {
@@ -283,7 +283,7 @@ export async function run() {
         realParsed.files.some((entry) => entry.path.startsWith("renderer/style/")),
       "真实清单应含主进程入口、renderer 入口与样式表",
     );
-    fs.rmSync(manifestPath, { force: true });
+    removeFile(manifestPath);
     // 进程级退出码契约:Electron 宿主下用 ELECTRON_RUN_AS_NODE 走真实 CLI
     const cli = spawnSync(
       process.execPath,
@@ -363,7 +363,7 @@ export async function run() {
     assert(report.removed.includes("style/base.css"), `陈旧文件应记入报告,实际 ${JSON.stringify(report.removed)}`);
 
     // 源端删掉引导脚本后重跑:目标端旧副本应被对称清掉
-    fs.rmSync(path.join(srcDir, "lang-bootstrap.js"));
+    removeFile(path.join(srcDir, "lang-bootstrap.js"));
     copyRenderer({ srcDir, outDir });
     assert(!fs.existsSync(path.join(outDir, "lang-bootstrap.js")), "源端已删的引导脚本应同步清理");
     assert(fs.existsSync(path.join(outDir, "state", "pure.js")), "重跑仍不得误删编译产物");

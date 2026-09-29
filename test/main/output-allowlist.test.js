@@ -22,7 +22,7 @@ import {
   normalizeOutputPath,
   OUTPUT_ALLOWLIST_MAX_ENTRIES,
 } from "../../dist/main/ipc/output-allowlist.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -62,12 +62,14 @@ export async function run() {
 
     // 登记后被删除:成员判定仍在,但打开前复验必须拒(否则给「等它再出现」留窗口)
     assert(allowlist.has(artifact), "删除前应仍是白名单成员");
-    await fs.rm(artifact);
+    removeFile(artifact);
     assert(allowlist.resolveOpenable(artifact) === null, "登记后被删除的路径不得放行");
     // 登记后被换成目录:同样不得放行(防「同名目录被顶替」)
     await fs.mkdir(artifact);
     assert(allowlist.resolveOpenable(artifact) === null, "登记后被换成目录的路径不得放行");
-    await fs.rm(artifact, { recursive: true, force: true });
+    // 上一行刚把 artifact **换成目录**,故此处是目录树删除,走 removeTree(非 removeFile)
+    const outcome70 = removeTree(artifact);
+    if (!outcome70.ok) throw new Error(`同名目录清理失败:${artifact}:${outcome70.error?.message ?? ""}`);
     console.log("[ok] output-allowlist:绑定真实产物(未生成/目录/已删除/被换目录均拒)");
 
     // ---- 2. 路径规范化:绕开写法拒,等价写法仍放行 ----

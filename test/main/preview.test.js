@@ -17,7 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import iconv from "iconv-lite";
 import { openPreviewWindow, previews, requestPreviewRefresh } from "../../dist/main/windows/preview.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -192,7 +192,7 @@ export async function run() {
     console.log("[ok] preview:并发刷新仅最新一代落地(旧代回收 + 展示页为最新)");
 
     // ---- 3. 失败刷新不影响既有页面(错误页不吞掉当前临时文件) ----
-    await fs.rm(mdPath);
+    removeFile(mdPath);
     await requestPreviewRefresh(entry);
     assert(
       (await previewTempFiles(baseline)).length === 1,

@@ -32,7 +32,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 import {
   buildSmokeReport,
   buildNotRunReport,
@@ -802,7 +802,7 @@ export async function run() {
       Reflect.deleteProperty(asarFiles, "node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2");
       Reflect.deleteProperty(asarFiles, "node_modules/katex/dist/fonts/KaTeX_Math-Italic.woff2");
       const box2 = createReleaseSandbox({ root: sb2, asarFiles });
-      fs.rmSync(box2.installerPath);
+      removeFile(box2.installerPath);
       const measured2 = measure({ unpackedDir: box2.unpackedDir, releaseDir: box2.releaseDir });
       assert(measured2.ok, "无安装包的沙盒仍应可实测(便携形态)");
       /** @type {Record<string, number>} */

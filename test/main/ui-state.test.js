@@ -10,6 +10,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /** 最近文件条目(跨进程契约单源;本段经动态 import 拿产物实例,类型按契约取) */
 /** @typedef {import("../../src/core/ipc-contract.js").RecentFile} RecentFile */
@@ -326,7 +327,7 @@ export async function run() {
 
     // ---- 11. 写失败可观察:不更新缓存、不吞错误,且后续 mutation 仍可恢复 ----
     // 目标路径暂替换为目录,避免依赖 Windows 权限/文件锁的非确定性。
-    await fs.rm(uiFile, { force: true });
+    removeFile(uiFile); // 此处 uiFile 是**文件**(删完才 mkdir 成目录)
     await fs.mkdir(uiFile, { recursive: true });
     const mFail = await freshModule();
     let failureObserved = false;
@@ -337,7 +338,8 @@ export async function run() {
     }
     assert(failureObserved, "ui-state 写失败必须向调用方抛出,不得静默成功");
     assert(mFail.loadUiState().lastOpenDir !== "C:\\should-not-commit", "ui-state 写失败不得更新缓存");
-    await fs.rm(uiFile, { recursive: true, force: true });
+    const outcome340 = removeTree(uiFile); // 此处已是**目录**,走 removeTree
+    if (!outcome340.ok) throw new Error(`ui-state 目录替换还原失败:${uiFile}:${outcome340.error?.message ?? ""}`);
     await mFail.saveUiState({ lastOpenDir: "C:\\recovered" });
     assert(mFail.loadUiState().lastOpenDir === "C:\\recovered", "ui-state 写失败后队列应继续处理下一次 mutation");
     // 恢复后重启读盘:拿到恢复成功的那次写(失败尝试未污染磁盘)
@@ -357,7 +359,10 @@ export async function run() {
       assert(backup !== null, "hadFile 为真时 backup 不应为空");
       await fs.writeFile(uiFile, backup, "utf8");
     } else {
-      await fs.rm(uiFile, { force: true });
+      // 恢复路径:删不掉必须显式抛 —— 静默留下 ui-state.json 会污染下一段
+      // (它读的是**真实**用户状态,无注入点)。原写法 fs.rm force 也是抛,保持该语义
+      const restored = removeFile(uiFile);
+      if (!restored.ok) throw new Error(`ui-state.json 恢复删除失败:${uiFile}:${restored.error?.message ?? "删除后文件仍存在"}`);
     }
   }
 }

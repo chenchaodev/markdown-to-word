@@ -38,7 +38,7 @@
  *   恢复写入后全新实例(重启)读盘逐字段一致
  */
 import fs from "node:fs/promises";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { app } from "electron";
 import {
   DEFAULT_PAGE_SETUP,
@@ -54,6 +54,7 @@ import {
   SHAPE_CHECKED_ENTRIES,
 } from "../../dist/core/settings/settings-schema.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
+import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /**
  * 形状校验夹具(合法完整对象):「可缺字段」声明为可选——旧文件兼容用例经 delete
@@ -535,7 +536,9 @@ export async function run() {
     );
     const mMigrationFailure = await freshModule("settings-migration-failure");
     mMigrationFailure.loadSettings();
-    rmSync(settingsFile, { force: true });
+    // 下面两步是「把 settings.json 这个单目标在文件与目录之间来回换」,两次删除形态不同:
+    // 这里删的是**文件**(走 removeFile,不配 recursive),L546 删的是**目录**(走 removeTree)。
+    removeFile(settingsFile);
     mkdirSync(settingsFile);
     // 排空后该次写已结算(失败也在 catch 里置位),无需轮询。
     await mMigrationFailure.whenSettingsIdle();
@@ -543,7 +546,9 @@ export async function run() {
       mMigrationFailure.loadSettings().migration?.persistence === "failed",
       "迁移写失败时 cache 必须记录 failed 状态",
     );
-    rmSync(settingsFile, { recursive: true, force: true });
+    // 此处 settingsFile 已被换成**目录**(上面 mkdirSync),故走 removeTree(目录树删除)
+    const outcome546 = removeTree(settingsFile);
+    if (!outcome546.ok) throw new Error(`settings 目录替换还原失败:${settingsFile}:${outcome546.error?.message ?? ""}`);
     console.log("[ok] settings:非法 pageSetup 字段迁移/其它设置保留/结构化 warning/固化/队列状态断言通过");
 
     // ---- 7c. isValidSettings 直测(导出纯函数,不依赖磁盘 IO) ----
@@ -907,7 +912,7 @@ export async function run() {
     // ---- 10b. 写失败可观察:不更新缓存、不吞错误,且后续 mutation 仍可恢复 ----
     // settingsFilePath 固定走 userData/settings.json;将该目标暂时替换为目录,
     // 触发 rename 失败,不依赖平台特定的权限/锁定行为。
-    await fs.rm(settingsFile, { force: true });
+    removeFile(settingsFile); // 此处 settingsFile 是**文件**(删完才 mkdir 成目录)
     await fs.mkdir(settingsFile, { recursive: true });
     const mFail = await freshModule("settings-failure");
     let failureObserved = false;
@@ -918,7 +923,8 @@ export async function run() {
     }
     assert(failureObserved, "settings 写失败必须向调用方抛出,不得静默成功");
     assert(mFail.loadSettings().format !== "pdf", "settings 写失败不得更新缓存");
-    await fs.rm(settingsFile, { recursive: true, force: true });
+    const outcome921 = removeTree(settingsFile); // 此处已是**目录**,走 removeTree
+    if (!outcome921.ok) throw new Error(`settings 目录替换还原失败:${settingsFile}:${outcome921.error?.message ?? ""}`);
     await mFail.updateSettings({ format: "pdf" });
     assert(mFail.loadSettings().format === "pdf", "settings 写失败后队列应继续处理下一次 mutation");
     // 恢复写入后重启读盘:拿到的是恢复成功的那次写(失败尝试未污染磁盘)

@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { BrowserWindow } from "electron";
+import { removeFile } from "./temp-resource.js";
 
 /** printToPDF 工具:写临时 html → 隐藏窗口加载 → 打印 → 清理
  * @param {string} html 待打印的完整 HTML
@@ -30,7 +31,10 @@ export async function htmlToPdf(html, footerTemplate) {
     });
   } finally {
     win.destroy();
-    await fs.rm(htmlPath, { force: true });
+    // 走 removeFile:窗口刚销毁、Windows 上 HTML 句柄可能尚未释放(EBUSY/EPERM),
+    // 助手带退避重试 + 删后复查,删不掉即抛(不静默留在系统临时区)
+    const outcome = removeFile(htmlPath);
+    if (!outcome.ok) throw new Error(`临时 PDF HTML 清理失败:${htmlPath}:${outcome.error?.message ?? ""}`);
   }
   return output;
 }

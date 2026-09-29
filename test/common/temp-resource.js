@@ -7,7 +7,7 @@
  *    main 6),前缀各不相同但**语义相同**——都是「一次性沙盒目录」;另有
  *    test/common/userdata.js 的 createTempUserData(runner/宿主用)与 scripts/smoke-proc.mjs
  *    的 createUserData(已复用 userdata.js 的清理语义);
- * 2) 删:四种写法并存,差别只在重试参数与失败处理:
+ * 2) 删:四种写法并存,差别只在重试参数与失败处理(**本波已收口,枚举留作改动前的现状记录**):
  *    - `{ recursive: true, force: true }`(无重试)——supply-chain / signature-status /
  *      dist-manifest-gate / release-artifact-gate,test/main 六个段;
  *    - `{ ..., maxRetries: 5, retryDelay: 200 }` 包在 finally——import-boundary /
@@ -16,6 +16,8 @@
  *    - `await fs.rm(...).catch(() => undefined)`——test/main 若干段。
  *    前两种在 Windows 上「进程刚退出、句柄未释放 → EBUSY/EPERM」时会直接抛,把段判成失败;
  *    后两种把删不掉的目录静默留在系统临时区,谁也看不出。
+ *    收口后目录删除走 removeTree、单文件删除走 removeFile(共用 removePath 内核),
+ *    裸写只剩白名单登记的几类刻意保留 —— 由 scripts/check-temp-cleanup.mjs 守住。
  * 3) 注册:无处可寻——段崩了/忘了 finally 时没有任何清单能报出「谁留下了什么」。
  * 本文件把三件事合成一处:`createTempResource` 建的每个目录都进模块级注册表,
  * `cleanupTempResources` 与进程 `exit` 钩子都能兜底,删不掉**显式抛错**(含路径与原始错误),
@@ -29,8 +31,8 @@
  *   该脚本按相对路径 import `../test/common/userdata.js` —— 若 userdata.js 新增对同目录
  *   其它模块的 import,沙盒里那份副本会解析失败,install-smoke 段当场红。故 userdata.js 必须
  *   保持零内部依赖(它的 EBUSY 重试参数与本文件一致属刻意重复,见上条 2 的枚举)。
- * - 只做**目录**资源:现存散点全是目录;为「临时文件」单开一类只会多一条分支,
- *   段的实际写法是「临时目录 + 段内写文件」。
+ * - `removeTree` 仍只吃**目录**(单文件走 removeFile):两者虽共用内核,但 `recursive: true` 是
+ *   目录语义的一部分,去掉它会让「这是目录清理」这一层信息在调用点消失。
  * - 不做「清理失败后再 spawn 纯 node 子进程删除」的兜底:那招只为绕开 Electron 把 `.asar`
  *   路径交给 asar 虚拟 fs 的坑,只对含 .asar 的沙盒有意义(install-smoke 段自己保留该兜底)。
  *
@@ -51,6 +53,17 @@ export const REMOVE_MAX_RETRIES = 5;
 
 /** 删除重试的退避基数(ms),重试总等待随次数线性增长 */
 export const REMOVE_RETRY_DELAY = 100;
+
+/*
+ * ⚠️ 已实测的事实(2026-09-29,本机 Node v24.18.0 + Windows):**同步 `fs.rmSync` 不消费
+ * `maxRetries` / `retryDelay`** —— 那两个参数只被 `internal/fs/rimraf` 的重试循环使用,而
+ * rimraf 只服务**异步** `fs.rm`;同步路径直接进 `binding.rmSync`,实测对「子进程占用 cwd」
+ * 造成的 EPERM 在 1ms 内即抛(给到 maxRetries:10/retryDelay:250 本应重试 13.75s 并成功)。
+ * 故本模块的「退避重试」实际靠的是 **删后复查 + 调用方显式判 `outcome.ok` 后重试**,
+ * 而不是 fs 的参数。参数仍照传:① 语义显式、便于对照;② 换回异步实现或 fs 修正行为时自动生效;
+ * ③ `test-common-helpers` 段的注入式失败锚点正是靠 `maxRetries: -1` 触发 ERR_OUT_OF_RANGE。
+ * **不要**据此认为「传了参数就有退避」—— 真正的兜底是复查与调用方的重试策略。
+ */
 
 /**
  * @typedef {object} TempResource 一个已注册的临时资源
@@ -89,6 +102,34 @@ function toError(value) {
 }
 
 /**
+ * 删除内核(removeTree 与 removeFile 的**唯一**实现):EBUSY/EPERM 退避重试 + 删后复查。
+ * 两者只差 `recursive` 这一个标志 —— 「同一套重试语义」由这一处保证,不在调用点各补一遍重试。
+ * 不抛错,返回结果对象 —— 「暴露还是忽略」是调用方的策略决定(本模块的策略是抛)。
+ * @param {string} target 目标路径(不存在即视为删除成功)
+ * @param {{ maxRetries?: number; retryDelay?: number }} options 重试参数覆盖
+ * @param {boolean} recursive true=目录树删除(removeTree),false=单文件删除(removeFile)
+ * @returns {RemoveOutcome}
+ */
+function removePath(target, options, recursive) {
+  if (!fs.existsSync(target)) return { target, existed: false, ok: true };
+  const maxRetries = options.maxRetries ?? REMOVE_MAX_RETRIES;
+  const retryDelay = options.retryDelay ?? REMOVE_RETRY_DELAY;
+  /** @type {Error | undefined} */
+  let error;
+  try {
+    fs.rmSync(target, { recursive, force: true, maxRetries, retryDelay });
+  } catch (err) {
+    error = toError(err);
+  }
+  // force:true 只吞 ENOENT,其余错误(EBUSY/EPERM)在重试耗尽后仍会抛;这里再复查一次存在性,
+  // 把「抛了但目标还在」与「抛了且已消失」区分开,避免误报清理失败
+  if (fs.existsSync(target)) {
+    return { target, existed: true, error: error ?? new Error(`删除后${recursive ? "目录" : "文件"}仍存在`) };
+  }
+  return { target, existed: true, ok: true };
+}
+
+/**
  * 删除一棵目录树:带 EBUSY 退避重试,删除后**复查是否真的消失**。
  * 不抛错,返回结果对象 —— 「暴露还是忽略」是调用方的策略决定(本模块的策略是抛)。
  * @param {string} target 目标目录(不存在即视为删除成功)
@@ -96,22 +137,19 @@ function toError(value) {
  * @returns {RemoveOutcome}
  */
 export function removeTree(target, options = {}) {
-  if (!fs.existsSync(target)) return { target, existed: false, ok: true };
-  const maxRetries = options.maxRetries ?? REMOVE_MAX_RETRIES;
-  const retryDelay = options.retryDelay ?? REMOVE_RETRY_DELAY;
-  /** @type {Error | undefined} */
-  let error;
-  try {
-    fs.rmSync(target, { recursive: true, force: true, maxRetries, retryDelay });
-  } catch (err) {
-    error = toError(err);
-  }
-  // force:true 只吞 ENOENT,其余错误(EBUSY/EPERM)在重试耗尽后仍会抛;这里再复查一次存在性,
-  // 把「抛了但目录还在」与「抛了且已消失」区分开,避免误报清理失败
-  if (fs.existsSync(target)) {
-    return { target, existed: true, error: error ?? new Error("删除后目录仍存在") };
-  }
-  return { target, existed: true, ok: true };
+  return removePath(target, options, true);
+}
+
+/**
+ * 删除单个文件(产物文件 / 夹具文件 / 临时 HTML、清单、日志):与 removeTree **共用同一套**
+ * EBUSY/EPERM 退避重试与删后复查语义(同一个 removePath 内核),只是不传 `recursive` ——
+ * 单文件删除套 `recursive: true` 会把「这是文件」伪装成「这是目录树」,语义失真。
+ * @param {string} target 目标文件(不存在即视为删除成功)
+ * @param {{ maxRetries?: number; retryDelay?: number }} [options] 重试参数覆盖
+ * @returns {RemoveOutcome}
+ */
+export function removeFile(target, options = {}) {
+  return removePath(target, options, false);
 }
 
 /**
