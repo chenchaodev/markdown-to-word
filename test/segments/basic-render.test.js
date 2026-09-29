@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
 import { formatWarning } from "../../dist/core/i18n.js";
+import { DEFAULT_TYPOGRAPHY, codeBlockFontSizePt, ptToHalfPoints } from "../../dist/core/settings/typography.js";
 import hljs from "highlight.js/lib/common";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";
@@ -142,20 +143,26 @@ export async function run() {
 
   // ---------- 补充断言:代码块 / 引用块 / 列表 / 表格表头(实现 src/core/docx/render.ts) ----------
   // 代码块(renderCode):```ts 已知语言 → hljs 语法高亮(code-highlight.ts,GitHub Light
-  // 色板),每个 token 一个 TextRun(字体 CODE_FONT=Consolas、字号 CODE_SIZE=20
-  // half-points=10pt → w:sz/w:szCs val="20"),行间 <w:br/> run;无语言/未知语言
+  // 色板),每个 token 一个 TextRun(字体 CODE_FONT=Consolas、字号随正文字号推导,
+  // 见下方断言),行间 <w:br/> run;无语言/未知语言
   // 降级为等宽文本原样输出。function 关键字 → keyword 类 → CF222E。
   if (!documentXml.includes('<w:color w:val="CF222E"/>')) {
     throw new Error('basic-render 断言失败:代码块 function 关键字未着色(<w:color w:val="CF222E"/>)');
   }
-  // 高亮 run 结构:Consolas + w:sz val=20(10pt)的 rPr 片段(每个代码 run 均带)
+  // 高亮 run 结构:Consolas + 随正文推导的 w:sz(每个代码 run 均带)。
+  // 代码「字号」不再是 theme 的固定常量 —— 它随正文字号变化,单源在
+  // core/settings/typography.ts 的 codeBlockFontSizePt,故此处比对推导值而非写死数字;
+  // 比例本身的正确性由 dual-pipeline-matrix 的 derived-font-sizes 行在两个字号档锁定。
+  const codeBlockHalfPoints = ptToHalfPoints(codeBlockFontSizePt(DEFAULT_TYPOGRAPHY.bodySizePt));
   if (
     !documentXml.includes(
       '<w:rFonts w:ascii="Consolas" w:cs="Consolas" w:eastAsia="Consolas" w:hAnsi="Consolas"/>' +
-        '<w:sz w:val="20"/><w:szCs w:val="20"/>',
+        `<w:sz w:val="${codeBlockHalfPoints}"/><w:szCs w:val="${codeBlockHalfPoints}"/>`,
     )
   ) {
-    throw new Error("basic-render 断言失败:代码块 run 缺少 Consolas + w:sz val=20(10pt)");
+    throw new Error(
+      `basic-render 断言失败:代码块 run 缺少 Consolas + w:sz val=${codeBlockHalfPoints}(代码块字号未按正文推导落地)`,
+    );
   }
   // 高亮拆分后文本片段仍完整(模板字符串被拆为 string 段 `Hello, / subst 段 ${name} /
   // 默认段,不再整行单 run):逐片段断言,保证文本内容不丢失
