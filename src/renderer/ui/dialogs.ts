@@ -1,6 +1,7 @@
 /**
  * renderer 结果展示:常驻汇总条(成功/失败/取消三态 + 打开引导 + 可折叠警告)、
  * 转换完成弹窗(单文件/合并)、批量结果汇总弹窗与逐条渲染。只经 state.ts 读写状态。
+ * 模态关闭的唯一收尾入口 afterModalClosed 见文件末「模态关闭后的统一收尾」。
  */
 import {
   batchDialog,
@@ -46,6 +47,7 @@ import {
   restoreFocusOrigin,
   trapFocus,
 } from "./dom-ops.js";
+import { updateActionButtons } from "../convert/file-list.js";
 import { batchSuccessPaths } from "../state/pure.js";
 import { formatWarning, t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";
@@ -207,6 +209,7 @@ export function hideCompleteDialog(): void {
   completeDialogTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
   completeDialogTrap = null;
   completeDialog.classList.add("hidden");
+  afterModalClosed(); // 必须重算(见文件末「模态关闭后的统一收尾」);且在归还焦点之前
   restoreFocusOrigin(focusActionButton); // 焦点还给触发元素;失效则退到主操作钮
 }
 
@@ -264,6 +267,7 @@ export function hideBatchDialog(): void {
   batchDialogTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
   batchDialogTrap = null;
   batchDialog.classList.add("hidden");
+  afterModalClosed(); // 必须重算(见文件末「模态关闭后的统一收尾」);且在归还焦点之前
   restoreFocusOrigin(focusActionButton);
 }
 
@@ -433,6 +437,7 @@ function releasePrecheck(): void {
   precheckTrap?.();
   precheckTrap = null;
   precheckDialog.classList.add("hidden");
+  afterModalClosed(); // 必须重算(见文件末「模态关闭后的统一收尾」);且在归还焦点之前
   restoreFocusOrigin(focusActionButton);
 }
 
@@ -462,3 +467,30 @@ window.addEventListener("unload", () => {
   precheckResolve = null;
   precheckPromise = null;
 });
+
+/* ---------- 模态关闭后的统一收尾(遮罩显隐改变的唯一重算入口) ---------- */
+/**
+ * 遮罩显隐一变就重算动作按钮可用性。**所有**关闭路径必经本函数。
+ *
+ * 为什么关闭路径必须重算(真实卡死,用户实测 2026-09-29:批量转换完成后转换/批量/
+ * 合并/追加文件/清空/选择六枚按钮永久灰态,界面像卡死):动作按钮的忙态判据
+ * isBusy() → isConvertCommandBlocked() → isModalCommandBlocked() 是**纯 DOM 派生**
+ * 的 —— 它读 `.dialog-overlay:not(.hidden)`,不读任何 JS 状态,故「弹窗开着」这件事
+ * 只有 DOM 知道。而结果弹窗(showBatchDialog / showCompleteDialog)在受控执行段的
+ * `endControlledRun()` **之前**打开,那次收尾重算读到的正是「弹窗还开着」,于是按钮
+ * 停在灰态;此后若再无路径重算,用户关掉弹窗也回不来 —— 灰态被永久钉死。
+ * 反过来也成立:打开弹窗同样是一次显隐变化,同样该重算(否则「看着能点、点了没反应」)。
+ * 本函数幂等(只是重写 disabled / 显隐 / 提示文案),重复调用无副作用。
+ *
+ * 顺序要求:必须在 `restoreFocusOrigin` **之前**调用 —— 归还焦点要靠
+ * isFocusableTarget / focusActionButton 挑一个「未 disabled」的主操作钮,按钮还停在
+ * 灰态时它们会跳过全部候选,把焦点丢给舞台容器。
+ *
+ * 覆盖面对照:本模块三条关闭路径(完成 / 批量 / 预检报告)已经接上。dialogs 之外
+ * 自带遮罩的模块(settings 的「另存为预设」presetSaveDialog、wizard 的成书向导
+ * bookWizard,两者同样是 .dialog-overlay)也必须调本函数 —— 它们的 closeXxx 不在本
+ * 模块内,漏调就是同一个坑(向导的「付印」转换结束即复现)。
+ */
+export function afterModalClosed(): void {
+  updateActionButtons();
+}

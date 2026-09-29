@@ -30,6 +30,7 @@ import {
   trapFocus,
 } from "../ui/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
+import { afterModalClosed } from "../ui/dialogs.js";
 import {
   applySettingsToControls,
   persistSettings,
@@ -60,6 +61,7 @@ export function closePresetSaveDialog(): void {
   presetSaveTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
   presetSaveTrap = null;
   presetSaveDialog.classList.add("hidden");
+  afterModalClosed(); // 遮罩显隐一变即重算动作按钮(见 dialogs.afterModalClosed)
   restoreFocusOrigin(); // 焦点还给触发按钮,便于键盘继续操作
 }
 

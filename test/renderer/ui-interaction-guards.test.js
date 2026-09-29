@@ -9,6 +9,9 @@
  *     - 拖放区自身的键盘入口对行目标必须完全无动作。
  * (1b) 队列行忙碌两态(假可供性):转换中不可拖拽(draggable=false)、
  *     不可双击预览、悬停提示收敛为纯路径、容器挂忙碌类;结束后全部恢复。
+ * (1c) 模态关闭后动作按钮必须重算(用户实测 2026-09-29:批量转换完成后转换/批量/
+ *     合并/追加/清空/选择六枚按钮永久灰态,界面像卡死):弹窗开 → 六枚全灰,
+ *     关闭该弹窗 → 六枚全恢复。覆盖批量 / 完成 / 预检报告三条真实关闭路径。
  * (2) 动态状态节点不被 applyStaticTexts 覆盖
  *     - index.html 中输出目录双 chip / Logo / PDF CSS / 预设提示一律不带
  *       data-i18n(带了就等于被字典默认值覆盖真实值);
@@ -55,6 +58,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
 /** @param {string} rel @returns {string} */
 const distUrl = (rel) => pathToFileURL(path.join(repoRoot, "dist", rel)).href;
+
+/** 冲刷微任务与已就绪的宏任务,让未 await 的命令链(void 启动)跑完。 */
+async function flush() {
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 /**
  * 取 index.html 中指定 id 的元素标签文本(源契约断言用)。
@@ -130,11 +138,26 @@ export async function run() {
   // ---------- DOM 行为 ----------
   let openMarkdownsCalls = 0;
   let openPreviewCalls = 0;
+  // (1c) 要驱动真实转换链(预检 → 转换 → 结果弹窗),故补三个转换面 IPC 桩。
+  // 预检默认无告警(静默放行);需要报告弹窗的小节把 precheckWarnings 置上。
+  /** @type {string[]} */
+  let precheckWarnings = [];
   const dom = installDomStub({
     api: {
       openMarkdowns: async () => { openMarkdownsCalls++; return []; },
       openPreview: async () => { openPreviewCalls++; return { ok: true }; },
       uiStateSet: async () => ({}),
+      precheck: async () => precheckWarnings,
+      convert: async () => ({ ok: true, outputPath: "C:\\out\\a.docx", warnings: [] }),
+      convertBatch: async () => ({
+        items: [
+          { file: "C:\\docs\\a.md", ok: true, outputPath: "C:\\out\\a.docx", warnings: [] },
+          { file: "C:\\docs\\b.md", ok: true, outputPath: "C:\\out\\b.docx", warnings: [] },
+        ],
+        okCount: 2,
+        failCount: 0,
+        canceledCount: 0,
+      }),
     },
   });
 
@@ -245,6 +268,128 @@ export async function run() {
       openPreviewCalls === previewsBeforeBusy + 1,
       `转换结束双击队列行应恢复预览,实际 openPreview 增量 ${openPreviewCalls - previewsBeforeBusy}`,
     );
+    // ---- (1c) 模态关闭后动作按钮必须重算(用户实测 2026-09-29:批量转换完成后
+    //      转换/批量/合并/追加/清空/选择六枚按钮永久灰态,界面像卡死)----
+    // 根因是判据纯 DOM 派生:isBusy → isConvertCommandBlocked →
+    // isModalCommandBlocked 读 ".dialog-overlay:not(.hidden)"。结果弹窗在
+    // endControlledRun 的 updateActionButtons() **之前**打开,那一版按钮态就是
+    // 「弹窗开着」的灰态;关闭路径若不重算,按钮永远停在这一版(此后无任何路径
+    // 再调 updateActionButtons)。故此处跑真实转换,再逐条关闭路径取按钮态。
+    //
+    // 段内把模态判定接上真实语义:stub 的 document.querySelector 恒返 null,那样
+    // 「弹窗开着」这一态压根不成立(修复前按钮也不会灰,断言就测不到这个坑)。
+    // 经 any 断开 stub 的声明形状(它把 querySelector 声明为 () => null,见 dom-stub
+    // 契约注记:选择器表按需开启);这里不扩 stub 契约面,覆写只在本段内生效。
+    /** @type {any} */
+    const fakeDoc = dom.document;
+    const MODAL_IDS = ["completeDialog", "precheckDialog", "batchDialog", "presetSaveDialog"];
+    fakeDoc.querySelector = (/** @type {string} */ selector) => {
+      if (!selector.includes("dialog-overlay")) return null;
+      return MODAL_IDS.map((id) => dom.elementFor(id)).find((el) => !el.classList.contains("hidden")) ?? null;
+    };
+    // 六枚动作按钮的置灰判据同源(isBusy),故按同一组断言读
+    const ACTION_BTN_IDS = [
+      "convertBtn",
+      "batchBtn",
+      "mergeBtn",
+      "appendFileBtn",
+      "clearListBtn",
+      "selectBtn",
+    ];
+    /**
+     * 本判据该管的几枚:忙碌之外还有一条「可见性」判据 —— 单文件态只亮转换、
+     * 多文件态只亮批量/合并,被隐藏的那一枚(disabled 随之而来)不属 busy。
+     * @param {number} fileCount 当前选中文件数
+     * @returns {string[]}
+     */
+    const expectedEnabled = (fileCount) =>
+      ACTION_BTN_IDS.filter((id) => {
+        if (id === "convertBtn") return fileCount === 1;
+        if (id === "batchBtn" || id === "mergeBtn") return fileCount >= 2;
+        return true;
+      });
+    /** 忙碌之外仍灰着的动作按钮 id(经函数取值:断言的类型收窄会把数组长度锁死)。 */
+    const stillGreyed = () =>
+      expectedEnabled(state.selectedFiles.length).filter((id) => dom.elementFor(id).disabled === true);
+    /** 此刻仍可点的动作按钮 id(与 stillGreyed 互为反面,失败文案更可读)。 */
+    const notGreyedYet = () => ACTION_BTN_IDS.filter((id) => dom.elementFor(id).disabled !== true);
+    /** 从干净态起算:四个遮罩全部复位为隐藏(前序小节 showCompleteDialog 后未关闭)。 */
+    const hideAllModals = () => {
+      for (const id of MODAL_IDS) dom.elementFor(id).classList.add("hidden");
+    };
+    const flow = await import(distUrl("renderer/convert/convert-flow.js"));
+    hideAllModals();
+    state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
+    state.mode = null;
+    state.suppressCompleteDialog = false;
+
+    // ① 批量:真实 runBatch 走到「弹窗先开、endControlledRun 后置灰」那一刻
+    precheckWarnings = [];
+    await flow.runBatch();
+    assert(
+      !dom.elementFor("batchDialog").classList.contains("hidden"),
+      "批量转换完成后应弹出批量汇总弹窗(本小节前提)",
+    );
+    assert(
+      notGreyedYet().length === 0,
+      `弹窗可见期间六枚动作按钮应全部置灰(转换中/模态同源),实际未置灰=${JSON.stringify(notGreyedYet())}`,
+    );
+    // 确定 / 点遮罩 / Esc 三种关闭方式都经 hideBatchDialog,这里直接调该唯一关闭函数
+    dialogs.hideBatchDialog();
+    assert(
+      stillGreyed().length === 0,
+      `关闭批量弹窗后动作按钮必须重算为可用(多文件态 convertBtn 由 n!==1 单独置灰),实际仍灰=${JSON.stringify(stillGreyed())}`,
+    );
+
+    // ② 单文件完成弹窗:与批量同一根因(弹窗在收尾重算之前打开);单文件态下
+    //    六枚按钮都该可用,这一条把 convertBtn 也纳入判据
+    state.selectedFiles = ["C:\\docs\\a.md"];
+    await flow.runConvert("C:\\docs\\a.md", "docx");
+    assert(
+      !dom.elementFor("completeDialog").classList.contains("hidden"),
+      "单文件转换成功后应弹出完成弹窗(本小节前提)",
+    );
+    assert(
+      notGreyedYet().length === 0,
+      `完成弹窗可见期间六枚动作按钮应全部置灰,实际未置灰=${JSON.stringify(notGreyedYet())}`,
+    );
+    dialogs.hideCompleteDialog();
+    assert(
+      stillGreyed().length === 0,
+      `关闭完成弹窗后六枚动作按钮必须重算为可用,实际仍灰=${JSON.stringify(stillGreyed())}`,
+    );
+
+    // ③ 预检报告弹窗:关掉报告后链内续作转换并弹完成窗,关掉完成窗才回到可用态
+    //    (报告期按钮灰是命令锁而非模态,这一条守的是关闭链整体不再留残态)
+    hideAllModals();
+    state.mode = null;
+    precheckWarnings = ["围栏未闭合"];
+    const pendingConvert = flow.runConvert("C:\\docs\\a.md", "docx"); // 不 await:先关报告
+    await flush();
+    assert(
+      !dom.elementFor("precheckDialog").classList.contains("hidden"),
+      "预检有告警时应弹出报告对话框(本小节前提)",
+    );
+    assert(
+      notGreyedYet().length === 0,
+      `预检报告决策期间六枚动作按钮应全部置灰(命令锁持有中),实际未置灰=${JSON.stringify(notGreyedYet())}`,
+    );
+    dialogs.closePrecheckDialog(true); // 「继续转换」→ 链内续作
+    await pendingConvert;
+    assert(
+      !dom.elementFor("completeDialog").classList.contains("hidden"),
+      "预检放行后应完成转换并弹完成窗(本小节前提)",
+    );
+    dialogs.hideCompleteDialog();
+    assert(
+      stillGreyed().length === 0,
+      `预检 → 转换 → 关闭完成弹窗后六枚动作按钮必须重算为可用,实际仍灰=${JSON.stringify(stillGreyed())}`,
+    );
+    precheckWarnings = [];
+    hideAllModals(); // 收尾:不留可见模态,后续小节从干净态起算
+    state.selectedFiles = ["a.md", "b.md"];
+    state.mode = null;
+
     // 收尾复位,不影响后续小节
     state.selectedFiles = ["a.md", "b.md"];
     state.mode = null;
@@ -539,7 +684,7 @@ export async function run() {
       "批量条目取消图标应为 --mut 弱化色",
     );
 
-    console.log("[ok] ui-interaction-guards:队列行键盘边界与忙碌两态 / 动态节点不被覆盖 / 复制反馈复位与读屏播报 / 完成态收束重放 / 取消中性态与批量标题 / aria-busy / AI 清理分档置灰跟随总开关 / 目录模式下拉随总开关收起 断言通过");
+    console.log("[ok] ui-interaction-guards:队列行键盘边界与忙碌两态 / 模态关闭后动作按钮重算 / 动态节点不被覆盖 / 复制反馈复位与读屏播报 / 完成态收束重放 / 取消中性态与批量标题 / aria-busy / AI 清理分档置灰跟随总开关 / 目录模式下拉随总开关收起 断言通过");
   } finally {
     dom.restore();
   }

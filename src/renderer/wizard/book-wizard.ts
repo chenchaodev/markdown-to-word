@@ -28,6 +28,7 @@ import { t, applyStaticTexts } from "../../core/i18n.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { state } from "../state/state.js";
 import { trapFocus } from "../ui/dom-ops.js";
+import { afterModalClosed } from "../ui/dialogs.js";
 import {
   isBackgroundCommandBlocked,
   isConvertCommandBlocked,
@@ -264,6 +265,10 @@ export function closeBookWizard(): void {
   wizardEl.classList.add("hidden");
   releaseTrap?.();
   releaseTrap = null;
+  // 向导也是 .dialog-overlay,同属 isModalCommandBlocked 的判据面:遮罩显隐一变
+  // 就得重算动作按钮,否则按钮停在「向导开着时算出的」那个态(向导内增删源文件
+  // 即可触发,已在真机复现)
+  afterModalClosed();
   // 焦点归还触发按钮(与 closeSettingsDrawer 同模式)
   const btn = triggerBtn;
   triggerBtn = null;

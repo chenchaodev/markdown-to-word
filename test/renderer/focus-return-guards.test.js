@@ -74,6 +74,7 @@ export async function run() {
     const dialogs = await import(distUrl("renderer/ui/dialogs.js"));
     const drawer = await import(distUrl("renderer/settings/settings-drawer.js"));
     const presetActions = await import(distUrl("renderer/settings/settings-preset-actions.js"));
+    const { state } = await import(distUrl("renderer/state/state.js"));
     const { batchDialogOk, completeDialogOk, precheckContinue, presetNameInput } =
       await import(distUrl("renderer/dom/refs.js"));
     const el = (/** @type {string} */ id) => dom.elementFor(id);
@@ -86,6 +87,12 @@ export async function run() {
     for (let i = 0; i < 8; i += 1) dialogs.hideCompleteDialog();
 
     // ---- 1. 完成弹窗:开 → 焦点落默认操作钮;关 → 回触发元素 ----
+    // 选中数按各条用例的触发按钮给:关闭弹窗时 dialogs 会重算动作按钮可用性
+    // (isBusy 的判据含「恰好一个文件」与「≥2 个文件」两条可见性规则),归还焦点
+    // 只落在**未 disabled**的候选上 —— 选中数不给对,期望的触发按钮就是灰的,
+    // 焦点按浏览器语义压根落不上去(此前本段靠「弹窗开着却零选中」这个够不到
+    // 的前提才成立:真实流程里完成/批量弹窗必在有选中项时打开)。
+    state.selectedFiles = ["C:\\docs\\a.md"];
     el("convertBtn").classList.remove("hidden");
     dom.document.activeElement = el("convertBtn");
     dialogs.showCompleteDialog("C:\\out\\a.docx");
@@ -100,6 +107,7 @@ export async function run() {
     );
 
     // ---- 2. 批量弹窗:同链,触发元素换成批量钮 ----
+    state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
     el("batchBtn").classList.remove("hidden");
     dom.document.activeElement = el("batchBtn");
     dialogs.showBatchDialog(batchResult(2));
@@ -114,6 +122,7 @@ export async function run() {
     );
 
     // ---- 3. 预检弹窗:焦点落「继续转换」(肯定动作),关闭回发起转换的元素 ----
+    state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
     el("mergeBtn").classList.remove("hidden");
     dom.document.activeElement = el("mergeBtn");
     const decided = dialogs.showPrecheckDialog([]);
@@ -179,6 +188,9 @@ export async function run() {
     const trigger = el("convertBtn");
     dom.document.activeElement = trigger;
     trigger.disabled = true;
+    // 兜底落点 #batchBtn 要既可见又可用:多文件态(≥2)正是批量/合并接棒、转换钮
+    // 单独置灰的那一档,选中数按此给(关闭时的重算会照这条规则落 disabled)
+    state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
     dialogs.showCompleteDialog("C:\\out\\b.docx");
     dialogs.hideCompleteDialog();
     const landed = dom.document.activeElement;
