@@ -977,16 +977,21 @@ const MATRIX = [
         "docx 水印 rot 应等于 watermarkDmlRotation 的换算结果(单一来源)",
       );
       must(wm.pdfHtml.includes(`rotate(${angle}deg)`), "watermark", `PDF 水印应旋转 ${angle}deg(与 docx 同号)`);
-      // 不透明度:两侧均真消费(6-B2 —— docx 侧此前零消费)
+      // 不透明度:两侧均真消费(docx 侧此前零消费)
       must(
         wm.docxHeaderXml.includes("<w14:textFill>"),
         "watermark",
         "docx 水印应产出 w14:textFill(不透明度真消费,而非靠配色近似)",
       );
+      // alpha 是**取反**映射:该字段在真实渲染器里是透明度,不是不透明度。
+      // 本行的 opacity 取 0.4 而非 0.5 —— 中点在两种语义下同为 50000,断言会
+      // 结构上查不出方向反转(见 watermark 段的端点锁方向断言)
       must(
-        wm.docxHeaderXml.includes(`<w14:alpha w14:val="${Math.round(wm.settings.opacity * 100_000)}"/>`),
+        wm.docxHeaderXml.includes(
+          `<w14:alpha w14:val="${Math.round((1 - wm.settings.opacity) * 100_000)}"/>`,
+        ),
         "watermark",
-        `docx 水印 alpha 应为 opacity × 100000(= ${Math.round(wm.settings.opacity * 100_000)})`,
+        `docx 水印 alpha 应为 (1 − opacity) × 100000(= ${Math.round((1 - wm.settings.opacity) * 100_000)};若得 ${Math.round(wm.settings.opacity * 100_000)} 即映射被改回字面读法)`,
       );
       must(
         wm.pdfHtml.includes(`opacity: ${wm.settings.opacity}`),

@@ -6,9 +6,17 @@
  * pdf 断言(html 含 .wm 覆盖层元素与旋转/不透明度 CSS / 空 text 无水印元素);
  * 不依赖真打印。另断言默认配置下 watermark.text 为空(零渲染)。
  *
+ * 另断言形状 spPr 显式声明无填充/无描边:省略即继承渲染器默认形状格式,
+ * 用户实测表现为一条与水印同向的红线(断言落在 spPr 本体,不靠整篇 includes)。
+ *
  * 角度与不透明度两项自 adr-030 6-B1/6-B2 起两侧对齐:docx 侧不再靠调浅灰近似
  * 不透明度,也不再在渲染层自带取负 —— 故此处断言的是「消费单源换算的结果」,
  * 而不是某个硬编码的 rot 值。
+ *
+ * 水印不透明度的**方向**由 5c 的两个端点(opacity 0 / 1)锁定:真实 Word/WPS 把
+ * w14:alpha 当「透明度」消费,故 alpha = (1 − opacity) × 100000,与规范字面读法
+ * 相反(依据是用户实测三档,详见 chrome.ts 的 WatermarkTextRun 注释)。
+ * 中点 0.5 两语义同值、查不出反转,故端点不可省。
  */
 import JSZip from "jszip";
 import {
@@ -51,6 +59,31 @@ async function headerXmls(buffer) {
     texts.push(await entry.async("string"));
   }
   return { names, texts };
+}
+
+/**
+ * 取 header XML 里水印形状的 <wps:spPr> 片段。
+ * 断言要落在 spPr 本体(而非整篇 includes):整篇匹配分不清「显式声明」
+ * 与「恰好出现在别处」,这两种必须区分 —— 本段守护的就是这一点。
+ * @param {string} xml header XML 文本
+ * @returns {string} spPr 元素片段
+ */
+function spPrOf(xml) {
+  const m = /<wps:spPr\b[\s\S]*?<\/wps:spPr>/.exec(xml);
+  if (!m) throw new Error("header XML 中未找到 <wps:spPr>(水印形状不存在或结构已变)");
+  return m[0];
+}
+
+/**
+ * 取 header XML 里 w14:alpha 的数值。
+ * 断言改用取正则比 includes(字面串)更稳,也让失败消息能报出实际值。
+ * @param {string} xml header XML 文本
+ * @returns {number} alpha 值
+ */
+function alphaOf(xml) {
+  const m = /<w14:alpha w14:val="(\d+)"\/>/.exec(xml);
+  if (!m) throw new Error("header XML 中未找到 w14:alpha(水印未产出 w14 文字填充)");
+  return Number(m[1]);
 }
 
 const md = "# 水印测试\n\n本文档用于人工实测文字水印。\n";
@@ -96,9 +129,28 @@ export async function run() {
   assert(grayXml.includes('anchor="ctr"'), "DML wps:bodyPr 应垂直居中(anchor=ctr)");
   // ---- 1b. docx:不透明度真消费(6-B2 —— 此前靠浅灰配色近似,设置项静默失效) ----
   assert(grayXml.includes("<w14:textFill>"), "docx 水印应产出 w14:textFill(文字透明度载体)");
+  // 方向:真实渲染器把 w14:alpha 当「透明度」消费(0=全不透明,100000=全透明),
+  // 故 alpha = (1 − opacity) × 100000,不是字面读法的 opacity × 100000。
+  // 依据与维护须知见 src/core/docx/chrome.ts 的 WatermarkTextRun 注释。
   assert(
-    grayXml.includes('<w14:alpha w14:val="15000"/>'),
-    "docx 水印 alpha 应等于 opacity 0.15 × 100000 = 15000",
+    alphaOf(grayXml) === 85_000,
+    `docx 水印 alpha 应等于 (1 − opacity 0.15) × 100000 = 85000(近不透明),实际 ${alphaOf(grayXml)}`,
+  );
+
+  // ---- 1c. docx:形状显式「无填充 + 无描边」(不带就是继承渲染器默认形状格式) ----
+  // 回归背景:用户实测导出页面上有一条**与水印同向的红线**。根因是 <wps:spPr>
+  // 既没写 <a:noFill/>(填充)也没写 <a:ln>(描边) —— 形状于是继承渲染器的默认形状
+  // 格式,水印本身是「无填充无边框」的产物,靠继承默认值本身就是错的。
+  // 断言落在 spPr 本体:两个声明都是 DrawingML 本体(无 wps: 前缀),<wps:spPr>
+  // 只是容器 —— 若把 <a:noFill/> 误写成 <wps:noFill/>,下面的断言应当判红。
+  const graySpPr = spPrOf(grayXml);
+  assert(
+    /<a:noFill\s*\/>/.test(graySpPr),
+    `形状 spPr 应显式声明无填充 <a:noFill/>;缺了它就会继承渲染器默认形状格式(用户实测表现为一条与水印同向的红线),实际: ${graySpPr}`,
+  );
+  assert(
+    /<a:ln\b[^>]*>\s*<a:noFill\s*\/>\s*<\/a:ln>/.test(graySpPr),
+    `形状 spPr 应显式声明无描边 <a:ln><a:noFill/></a:ln>;缺了它就会继承渲染器默认形状格式(用户实测表现为一条与水印同向的红线),实际: ${graySpPr}`,
   );
 
   // ---- 2. docx:gray=false → 正文字色 #1F2328 ----
@@ -145,6 +197,11 @@ export async function run() {
   // ---- 5b. 两侧不透明度同值可执行对齐(6-B2 的核心断言) ----
   // 取一个非默认 opacity,证明两侧都消费同一个设置值:docx 走 w14:alpha
   // (千分比),pdf 走 CSS opacity(0–1),换算关系写在断言里。
+  //
+  // ⚠️ 中点是**两种语义给出同一数值**的那一档:0.5 取反与否都是 50000。
+  // 所以「只断言中点」在结构上就查不出语义反转 —— 上一版反转 bug 正是这样漏过去的
+  // (断言写死 50000,而按字面读法实现也产出 50000,测试永远绿)。
+  // 方向只能由 5c 的两个**端点**锁死。
   const wmHalf = { ...DEFAULT_WATERMARK, text: "半透明", angle: DEFAULT_WATERMARK_ANGLE, opacity: 0.5, gray: true };
   const halfDocx = await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
@@ -153,25 +210,46 @@ export async function run() {
     watermark: wmHalf,
   });
   const halfXml = (await headerXmls(docxBufferOf(halfDocx))).texts.join("\n");
-  assert(halfXml.includes('<w14:alpha w14:val="50000"/>'), "docx opacity=0.5 应写 w14:alpha=50000");
+  assert(
+    alphaOf(halfXml) === 50_000,
+    `docx opacity=0.5 应写 w14:alpha=50000(半透明;注意该值取反与否相同,不是方向证据),实际 ${alphaOf(halfXml)}`,
+  );
   const halfPdf = asPdfArtifact(await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], watermark: wmHalf }));
   assert(halfPdf.html.includes("opacity: 0.5"), "PDF opacity=0.5 应写 CSS opacity: 0.5");
 
-  // ---- 5c. 不透明度极值:0 与 1 都不得被钳掉或写坏 ----
-  const wmZero = { ...DEFAULT_WATERMARK, text: "全透", angle: DEFAULT_WATERMARK_ANGLE, opacity: 0, gray: true };
-  const zeroXml = (
-    await headerXmls(
-      docxBufferOf(
-        await convertWithFs(md, "docx", {
-          baseDir: FIXTURES_DIR,
-          warnings: [],
-          headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
-          watermark: wmZero,
-        }),
-      ),
-    )
-  ).texts.join("\n");
-  assert(zeroXml.includes('<w14:alpha w14:val="0"/>'), "docx opacity=0 应写 w14:alpha=0(全透明)");
+  // ---- 5c. 不透明度端点:方向锁(反转回归的唯一守护点) ----
+  // 真实渲染器把 w14:alpha 当「透明度」消费(0 = 全不透明,100000 = 全透明),
+  // 故映射为 alpha = (1 − opacity) × 100000。断言按这个方向书写:
+  //   opacity 0   → alpha 100000 → 水印全透明(看不见)
+  //   opacity 0.5 → alpha 50000  → 半透明(中点,两语义同值,查不出反转)
+  //   opacity 1   → alpha 0     → 水印全不透明(最实)
+  // 若有人把 chrome.ts 的映射改回字面读法(去掉取反),端点两档会得到 0 / 100000,
+  // 与下面断言正好互换 —— 即反转回归必然让本段判红。
+  /**
+   * @param {string} text 水印文字
+   * @param {number} opacity 不透明度设置值
+   * @returns {Promise<string>} 该配置下 header XML
+   */
+  const headerXmlFor = async (text, opacity) => {
+    const artifact = await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
+      watermark: { ...DEFAULT_WATERMARK, text, angle: DEFAULT_WATERMARK_ANGLE, opacity, gray: true },
+    });
+    return (await headerXmls(docxBufferOf(artifact))).texts.join("\n");
+  };
+
+  const zeroXml = await headerXmlFor("全透", 0);
+  assert(
+    alphaOf(zeroXml) === 100_000,
+    `docx opacity=0 应写 w14:alpha=100000(全透明=看不见);若得 0 即映射被改回字面读法,实际 ${alphaOf(zeroXml)}`,
+  );
+  const opaqueXml = await headerXmlFor("全实", 1);
+  assert(
+    alphaOf(opaqueXml) === 0,
+    `docx opacity=1 应写 w14:alpha=0(全不透明=最实);若得 100000 即映射被改回字面读法,实际 ${alphaOf(opaqueXml)}`,
+  );
 
   // ---- 6. pdf:空 text 无水印元素 ----
   const pdfEmpty = asPdfArtifact(
@@ -184,6 +262,6 @@ export async function run() {
   assert(!pdfEmpty.html.includes('class="wm"'), "空 text 的 PDF 不应含水印元素");
 
   console.log(
-    "[ok] watermark:角度单点(315/同号) + docx 文字/配色/rot 换算/w14:alpha 不透明度/空 text 零渲染 + pdf 覆盖层/旋转/不透明度 断言通过",
+    "[ok] watermark:角度单点(315/同号) + docx 文字/配色/rot 换算/w14:alpha 不透明度(取反语义,端点锁方向)/形状显式无填充无描边(不继承默认形状格式)/空 text 零渲染 + pdf 覆盖层/旋转/不透明度 断言通过",
   );
 }

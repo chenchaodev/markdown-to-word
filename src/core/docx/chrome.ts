@@ -251,16 +251,21 @@ export function renderFooter(): Footer {
  *
  * 结构:Paragraph > Run > Drawing > wp:anchor(behindDoc) > a:graphic >
  *   a:graphicData(wps) > wps:wsp > wps:txbx > w:txbxContent > content
- *   + wps:bodyPr(anchor=ctr) + wps:spPr > a:xfrm(rot)
+ *   + wps:bodyPr(anchor=ctr) + wps:spPr > a:xfrm(rot) + a:noFill + a:ln/a:noFill
  *
- * - 无边框:不设置 outline/solidFill → DML 默认无描边
+ * - 无填充/无描边:**显式**声明 `outline: { type: "noFill" }`(docx 库的 ShapeProperties
+ *   收到 outline 后才写出 `<a:noFill/>` 与 `<a:ln><a:noFill/></a:ln>`)。
+ *   早先版本靠「不设置 outline → DML 默认无描边」,那是继承渲染器的默认形状格式,
+ *   不是声明 —— 用户实测导出页面上多出一条**与水印同向旋转的红线**(旋转随
+ *   `a:xfrm rot` 作用于整个形状,与描边来自默认格式一致)。改动前后的
+ *   `<wps:spPr>` 逐字可比对这段注释,勿改回「靠默认值」。
  * - 页面居中:wp:positionH/positionV relativeFrom="page" align="center"
  * - 置底:behindDocument=true
  * - 旋转:rot 取自 watermarkDmlRotation(角度口径与 pdf 侧同源单点,勿在此取负)
  * - 不透明度:经 w14:textFill/w14:alpha 真消费 watermark.opacity(见 WatermarkTextRun)
  */
 
-/** w14:alpha 的单位:100000 = 100% */
+/** w14:alpha 的量程:0–100000(语义见 WatermarkTextRun 的反转说明) */
 const W14_ALPHA_FULL_SCALE = 100_000;
 
 /**
@@ -297,12 +302,34 @@ function w14El(
  * 且实测产出的元素名丢失)。
  *
  * `w:color` 仍同时保留:它是 w14 不可读时的回退,保证无 w14 支持的消费者仍有配色。
+ *
+ * ─────────────────────────────────────────────────────────────
+ * ⚠️ 下面 alpha 的映射是**基于用户实测的刻意偏离规范**,不是笔误,勿"修正"回去
+ * ─────────────────────────────────────────────────────────────
+ * 两种读法方向相反,依据是实测而非规范文档:
+ * - 字面读法(ECMA-376 / DrawingML 的 alpha:该值是**不透明度**,100000 = 全不透明):
+ *   alpha = opacity × 100000,opacity 越大越不透明。
+ * - 实测(用户在真实 Word/WPS 里把设置面板的「不透明度」拉到三档 0.2 / 0.5 / 0.8
+ *   肉眼对比导出结果):**值越大,水印文字越浅** —— 与字面读法完全相反。
+ *   即真实渲染器把该字段当**透明度**消费(0 = 全不透明,100000 = 全透明)。
+ * 现象的两侧都无歧义:按字面读法实现时,用户看到的是「不透明度调大反而变淡」。
+ * 故此处取 alpha = (1 − opacity) × 100000,与渲染器实际行为对齐;pdf 侧走 CSS
+ * opacity(语义就是 0–1 不透明度),不受影响,故 PDF 侧刻意不改。
+ *
+ * 维护须知:**要改回字面读法(去掉取反),必须先请用户在 Word/WPS 里重新确认三档表现**,
+ * 不要仅凭规范文档判断 —— 本行的反正是踩过一次"按文档读 → 用户实测相反"的坑才加的,
+ * 撤掉它等于把那个 bug 原样放回去。
+ *
+ * ⚠️ 上面只管**文字**填充。形状 `spPr` 的无填充/无描边是另一个载体,靠
+ * renderWatermarkParagraph 的 `outline: { type: "noFill" }` 声明 —— 两者互不替代,
+ * 不要因为「已经设过 textFill」就以为形状侧的默认格式也被覆盖了。
  */
 class WatermarkTextRun extends TextRun {
   constructor(options: ConstructorParameters<typeof TextRun>[0], opacity: number) {
     super(options);
     const color = String((options as { color?: string }).color ?? "000000");
-    const alpha = Math.round(Math.min(1, Math.max(0, opacity)) * W14_ALPHA_FULL_SCALE);
+    // 取反映射:见上方「刻意偏离规范」的说明(0 = 全不透明,100000 = 全透明)
+    const alpha = Math.round((1 - Math.min(1, Math.max(0, opacity))) * W14_ALPHA_FULL_SCALE);
     this.properties.push(
       w14El("w14:textFill", undefined, [
         w14El("w14:solidFill", undefined, [
@@ -355,6 +382,10 @@ export function renderWatermarkParagraph(watermark: WatermarkSettings): Paragrap
         margins: { top: 0, bottom: 0, left: 0, right: 0 },
       },
       docProperties: { title: `watermark-${seq}`, name: `Watermark${seq}` },
+      // 显式「无填充 + 无描边」:省略即继承渲染器默认形状格式(用户实测是一条与
+      // 水印同向的红线)。注意 noFill/无描边的元素名没有 wps: 前缀 —— <wps:spPr>
+      // 只是容器,本体是 DrawingML 的 <a:noFill/> / <a:ln>。
+      outline: { type: "noFill" },
     },
   );
   return new Paragraph({ children: [new Run({ children: [drawing] })] });
