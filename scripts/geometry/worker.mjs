@@ -17,10 +17,18 @@
 import { app, BrowserWindow, screen } from "electron";
 import fs from "node:fs";
 import path from "node:path";
-import { NODE_SELECTORS, SCENARIOS, runGeometryGate } from "../../test/tools/geometry/geometry-core.mjs";
 import {
+  CSS_TOKEN_RULES,
+  NODE_SELECTORS,
+  SCENARIOS,
+  judgeCssTokens,
+  runGeometryGate,
+} from "../../test/tools/geometry/geometry-core.mjs";
+import {
+  buildCssTokenScript,
   buildFreezeAnimationScript,
   buildMeasureScript,
+  parseCssTokenScript,
 } from "../../test/tools/geometry/geometry-page.mjs";
 import { classifyScaleRun, measureScaleEffect, parseScales, scaleLabel, scaleRequestText } from "./judge-scale.mjs";
 import {
@@ -189,6 +197,37 @@ export async function runWorker() {
     );
   }
 
+  // CSS 令牌恒等(取消态不得被读成成功绿 / 失败红):在**场景循环之后**、窗口销毁之前跑一次。
+  // 放这里而不是混进场景采样:它与视口/档位无关(同一套 CSS 算一次即够),而探针要短暂往
+  // 真实锚点旁边插合成节点 —— 插在场景循环里会污染同批布局测量,放在循环外就没有这个面。
+  // 探针自身用完即摘;判红不影响几何样本,两类 finding 合并进同一份报告。
+  const tokenVerdict = await (async () => {
+    try {
+      const readings = parseCssTokenScript(await exec(buildCssTokenScript(CSS_TOKEN_RULES)));
+      return judgeCssTokens(readings);
+    } catch (err) {
+      // 探针崩了**显式判红**,不许降级成「跳过」(静默跳过正是这批判据迁出来的病根)
+      const reason = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        findings: [
+          {
+            rule: "css-token/probe-failed",
+            severity: "error",
+            scenario: "css-token-identity",
+            node: null,
+            message: `CSS 令牌恒等探针执行失败:${reason};本批判据未测量(≠ 通过)`,
+          },
+        ],
+        stats: { rules: CSS_TOKEN_RULES.length, readings: 0, findings: 1 },
+      };
+    }
+  })();
+  console.log(
+    `[geo] CSS 令牌恒等:${tokenVerdict.stats.rules} 条判据 / ${tokenVerdict.stats.readings} 条读数 ` +
+      `${tokenVerdict.ok ? "通过" : `判红(${tokenVerdict.stats.findings} 项)`}`,
+  );
+
   win.destroy();
 
   const result = runGeometryGate(samples, {
@@ -196,6 +235,8 @@ export async function runWorker() {
     scrollBudgetPx: config.scrollBudgetPx,
     mediaConditions,
   });
+  // 令牌 finding 并入总 findings:退出码与报告只有一条出口,不另开分支(避免「几何绿就算过」)
+  const allFindings = [...result.findings, ...tokenVerdict.findings];
   const dprReadings = samples
     .map((sample) => sample.devicePixelRatio)
     .filter((value) => typeof value === "number" && Number.isFinite(value));
@@ -208,7 +249,7 @@ export async function runWorker() {
     reason: null,
     measuredDevicePixelRatios: dprReadings,
     displayScaleFactor,
-    findings: result.findings,
+    findings: allFindings,
     viewportMaxDeltaPx: maxDeltaPx,
   });
   writeReport(reportFile, {
@@ -226,7 +267,14 @@ export async function runWorker() {
     status: verdict.status,
     ok: verdict.status === "measured",
     reason: verdict.reason,
-    geometry: { ok: result.ok, stats: result.stats, findings: result.findings },
+    geometry: {
+      ok: result.ok && tokenVerdict.ok,
+      stats: result.stats,
+      findings: result.findings,
+      // 令牌恒等单列一段(不混进 geometry.stats):它与场景/视口无关,统计口径不同,
+      // 混在一起会让「场景数/恒定组数」这类既有数字的含义被污染
+      cssToken: { ok: tokenVerdict.ok, stats: tokenVerdict.stats, findings: tokenVerdict.findings },
+    },
     reclassified: verdict.reclassified,
     viewport: {
       maxAbsDeltaPx: maxDeltaPx,
@@ -238,12 +286,13 @@ export async function runWorker() {
     samples,
   });
 
-  for (const f of result.findings) {
+  for (const f of allFindings) {
     console.error(`[geo:fail] ${f.rule} | ${f.scenario} | ${f.node ?? "-"} | ${f.message}`);
   }
   if (verdict.status === "measured") {
     console.log(
       `[geo:ok] 档位 ${label} 几何门禁通过:${result.stats.scenarios} 场景 / ${result.stats.groups} 恒定组 / ` +
+        `${tokenVerdict.stats.rules} 令牌恒等判据 / ` +
         `容差 ${config.tolPx}px / 紧凑滚动预算 ${config.scrollBudgetPx}px;报告 ${path.relative(root, reportFile)}`,
     );
     return 0;
@@ -253,7 +302,7 @@ export async function runWorker() {
     return 2;
   }
   console.error(
-    `[geo:fail] 档位 ${label} 几何门禁失败:共 ${result.findings.length} 项` +
+    `[geo:fail] 档位 ${label} 几何门禁失败:共 ${allFindings.length} 项` +
       `(报告 ${path.relative(root, reportFile)},截图目录 ${path.relative(root, shotDir)})`,
   );
   return 1;

@@ -20,6 +20,7 @@
  */
 import {
   CONSTANT_GROUPS,
+  CSS_TOKEN_RULES,
   DEFAULT_SCROLL_BUDGET_PX,
   DEFAULT_TOL_PX,
   DRAWER_CLIP_KEYS,
@@ -44,6 +45,7 @@ import {
 // 规格单源再导出:消费方(驱动脚本 / 测试段)只需从 geometry-core 引入即可拿到全部契约
 export {
   CONSTANT_GROUPS,
+  CSS_TOKEN_RULES,
   DEFAULT_SCROLL_BUDGET_PX,
   DEFAULT_TOL_PX,
   DRAWER_CLIP_KEYS,
@@ -134,6 +136,17 @@ export {
  * @property {number} left
  * @property {number} right
  * @property {number} width
+ */
+
+/**
+ * @typedef {object} CssTokenReading 单条令牌恒等判据的页面读数(页面侧探针产出)
+ * @property {string} name 规则 id(对齐 CSS_TOKEN_RULES.name)
+ * @property {string} property 被读色的 CSS 属性
+ * @property {boolean} mountFound 真实锚点是否在页面上找到(false = 挂载面已漂移,判红)
+ * @property {boolean} [targetFound] 被读色节点是否取到(false = 读数不可信,判红;合成宿主恒为 true)
+ * @property {{ base: string, ok: string, fail: string, canceled: string }} colors 四态计算色
+ * @property {string} expected 中性令牌的实算色(取消态须落在它上面)
+ * @property {{ token: string, color: string }[]} forbidden 语义对立令牌的实算色(逐根点名)
  */
 
 /**
@@ -800,5 +813,151 @@ export function runGeometryGate(samples, options = {}) {
       const s = byId.get(id);
       return s !== undefined && !s.error;
     }),
+  };
+}
+
+/* ══════════════ CSS 令牌恒等判定(取消态不得被读成成功绿 / 失败红) ══════════════
+   纯函数,零 DOM / 零 Electron / 零 IO:输入页面侧探针的读数,输出 findings。
+   与几何判定并列而非混入 runGeometryGate:它**不依赖任何场景样本**(与视口/档位无关),
+   单独一个 worker 级读数即可裁决,故不塞进「按 SCENARIOS 逐条遍历」的主体里。 */
+
+/**
+ * 令牌恒等判定主入口(纯函数)。
+ *
+ * 每条规则同时要求三条成立,任一不成立即记 finding:
+ *   A 三态互斥 —— canceled 既不等于 ok 也不等于 fail(ok===fail 也一并记,那说明
+ *     成功/失败两态压根没分开,配色契约整体失效);
+ *   B 中性区间 —— canceled 等于 expectedToken 的实算色;
+ *   C 语义对立 —— canceled 不等于 forbiddenTokens 里任何一根的实算色。
+ *
+ * **防恒真**:C 与 A 看似重复(成功绿既是 ok 态色也是 forbidden 色),但 C 是**逐根点名**,
+ * 独立于三态 —— 若某天 ok/fail 态类名被改掉、A 因「三态两两不等」而侥幸通过,C 仍会
+ * 按令牌名逮住「取消态被读成 --ok」。两条都在,恒真要同时骗过它们才算骗过。
+ *
+ * @param {CssTokenReading[]} readings 页面侧探针读数
+ * @returns {{ ok: boolean, findings: GeometryFinding[], stats: object }} 裁决结果
+ */
+export function judgeCssTokens(readings) {
+  /** @type {GeometryFinding[]} */
+  const findings = [];
+  /**
+   * @param {string} rule 规则名
+   * @param {string} message 失败消息
+   * @param {string} [expected] 期望值
+   * @param {string} [actual] 实测值
+   * @returns {void}
+   */
+  const add = (rule, message, expected, actual) => {
+    findings.push({
+      rule: `css-token/${rule}`,
+      severity: "error",
+      // 与场景无关的规则:scenario 记 null,报告里据此知道它不挂在任何场景下
+      scenario: "css-token-identity",
+      node: null,
+      message,
+      ...(expected === undefined ? {} : { expected }),
+      ...(actual === undefined ? {} : { actual }),
+    });
+  };
+
+  const byName = new Map(readings.map((r) => [r.name, r]));
+  // 表里有、读数里没有 = 探针漏项;读数里有、表里没有 = 表与探针漂移。两者都显式记 finding,
+  // 禁止「少跑几条也判绿」—— 那正是这批判据从源文本正则迁出来的原因(旧判据恒真)。
+  for (const rule of CSS_TOKEN_RULES) {
+    const reading = byName.get(rule.name);
+    if (reading === undefined) {
+      add(rule.name, `令牌恒等判据「${rule.name}」没有读数(页面侧探针漏项);禁止少跑判据后判绿`);
+      continue;
+    }
+    if (!reading.mountFound || reading.targetFound === false) {
+      add(
+        rule.name,
+        `令牌恒等判据「${rule.name}」的目标节点在页面上取不到(锚点或被读色节点缺失,读数不可信);` +
+          `不得以空串读数继续判色`,
+        `锚点与被读色节点均存在`,
+        reading.targetFound === false ? `被读色节点缺失(${rule.name})` : `锚点缺失(${rule.name})`,
+      );
+      continue;
+    }
+    const c = reading.colors;
+    // 读数为空串 = 探针失效(取不到节点 / 属性名写错),不是「三态恰好同色」。
+    // 不先拦掉它,空串会让下面 A-1/A-2/A-3 全部「命中」,把探针的错读成三条配色回归,
+    // 报告把人引向完全错误的方向;先拦成一条明确的探针失败。
+    const blankStates = /** @type {const} */ (["base", "ok", "fail", "canceled"]).filter(
+      (s) => c[s].trim() === "" || reading.expected.trim() === "",
+    );
+    if (blankStates.length > 0) {
+      add(
+        rule.name,
+        `令牌恒等判据「${rule.name}」读到空读数(${blankStates.join("/")});` +
+          `探针未取到计算色(节点缺失或属性名非 dashed),本条按探针失效判红,不得当作配色回归`,
+      );
+      continue;
+    }
+    // A 三态互斥
+    if (c.canceled === c.ok) {
+      add(
+        rule.name,
+        `${rule.why};取消态被读成成功态同色(${reading.property} 实算相同)`,
+        `canceled ≠ ok(${c.ok})`,
+        `canceled = ok = ${c.canceled}`,
+      );
+    }
+    if (c.canceled === c.fail) {
+      add(
+        rule.name,
+        `${rule.why};取消态被读成失败态同色(${reading.property} 实算相同)`,
+        `canceled ≠ fail(${c.fail})`,
+        `canceled = fail = ${c.canceled}`,
+      );
+    }
+    if (c.ok === c.fail) {
+      add(
+        rule.name,
+        `${rule.why};成功态与失败态算出同一个颜色(配色语义未分开,后续比对都失去意义)`,
+        `ok ≠ fail`,
+        `ok = fail = ${c.ok}`,
+      );
+    }
+    // B 中性区间
+    if (c.canceled !== reading.expected) {
+      add(
+        rule.name,
+        `${rule.why};取消态未落在中性区间(${reading.property} 不是中性令牌的实算色)`,
+        reading.expected,
+        c.canceled,
+      );
+    }
+    // C 语义对立(逐根点名)
+    for (const item of reading.forbidden) {
+      if (c.canceled === item.color) {
+        add(
+          rule.name,
+          `${rule.why};取消态被读成 ${item.token}(语义对立色)的实算色`,
+          `canceled ≠ ${item.token}(${item.color})`,
+          c.canceled,
+        );
+      }
+    }
+  }
+  for (const reading of readings) {
+    if (!CSS_TOKEN_RULES.some((rule) => rule.name === reading.name)) {
+      add(
+        reading.name,
+        `令牌恒等读数「${reading.name}」不在 CSS_TOKEN_RULES 表里(规格与探针漂移)`,
+        "读数项均登记在案",
+        "存在未登记读数",
+      );
+    }
+  }
+
+  return {
+    ok: findings.length === 0,
+    findings,
+    stats: {
+      rules: CSS_TOKEN_RULES.length,
+      readings: readings.length,
+      findings: findings.length,
+    },
   };
 }

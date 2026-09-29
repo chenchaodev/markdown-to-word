@@ -171,3 +171,128 @@ export function buildFreezeAnimationScript() {
     'document.head.appendChild(s);'
   );
 }
+
+/**
+ * 构造 CSS 令牌恒等探针脚本(取消态不得被读成成功绿 / 失败红)。
+ *
+ * 两种宿主(见 CSS_TOKEN_RULE.hostSelector / host):
+ *   - **真实节点**:规则给了 hostSelector 就直接在它身上切态修饰类,读它的计算色,读完
+ *     把类名原样复原。量到的就是用户眼前那个元素,不存在「替身与真身不等价」的问题。
+ *   - **合成节点**:线上此刻不存在该节点时(批量条目静止态下一条都没有),按真实类名造一个
+ *     插到锚点旁边(继承祖先上下文与线上一致),读完即摘。
+ *
+ * 两条踩过的坑(改动本函数前先读):
+ *   ① `getPropertyValue` **只认 dashed 属性名**:传 "borderTopColor" 静默返回空串,不报错
+ *     —— 判据会读到 "" 然后一路判红,看起来像配色坏了,实则是探针写错了。故 spec 里
+ *     property 一律写 dashed。
+ *   ② `document.createElement("svg")` 造的是 **HTML 命名空间**元素,不参与
+ *     `.result-summary--ok .result-summary-icon` 这套类规则(实测替身量到绿、真图标量不到)。
+ *     故图标那条必须走真实节点,不能造替身。
+ *
+ * 令牌实算色**过一遍浏览器**取(临时节点 color:var(--x) 后读 getComputedStyle),不直接读
+ * getPropertyValue 的字面量 —— `--line` 浅色档写 #e2e2dc、深色档写 #2a2f38,字面量既比不过
+ * border-top-color 的 rgb() 形态,也不随 data-theme / prefers-color-scheme 变。
+ * @param {import("./geometry-spec.mjs").CssTokenRule[]} rules 令牌恒等判据表(单源)
+ * @returns {string} 可直接交给 webContents.executeJavaScript 的表达式
+ */
+export function buildCssTokenScript(rules) {
+  const spec = JSON.stringify(rules);
+  return `(() => {
+  const RULES = ${spec};
+  const tokenColor = (token) => {
+    const probe = document.createElement('span');
+    probe.style.setProperty('color', 'var(' + token + ')');
+    probe.style.setProperty('position', 'absolute');
+    probe.style.setProperty('left', '-9999px');
+    document.body.appendChild(probe);
+    const v = getComputedStyle(probe).color;
+    probe.remove();
+    return v;
+  };
+  const out = [];
+  for (const rule of RULES) {
+    const host = rule.hostSelector === undefined
+      ? document.createElement(rule.host.tag)
+      : document.querySelector(rule.hostSelector);
+    const mountFound = document.querySelector(rule.mount) !== null;
+    if (rule.hostSelector === undefined) {
+      host.className = rule.host.baseClass;
+      const anchor = document.querySelector(rule.mount);
+      if (anchor !== null && anchor.parentNode !== null) {
+        anchor.parentNode.insertBefore(host, anchor.nextSibling);
+      } else {
+        document.body.appendChild(host);
+      }
+    }
+    // 真实宿主可能被改过类名(线上 hidden 等),切态前先把它当时的类名存下来作复原基线
+    const baseClassName = host.className;
+    const target = rule.targetSelector !== undefined
+      ? document.querySelector(rule.targetSelector)
+      : (rule.target === undefined
+        ? host
+        : (() => {
+            const t = document.createElement(rule.target.tag);
+            t.className = rule.target.baseClass;
+            host.appendChild(t);
+            return t;
+          })());
+    const colors = {};
+    if (target === null) {
+      // 被读色节点取不到:不猜不留空,交判定层记 finding(见 judgeCssTokens 的 readings 守卫)
+      out.push({
+        name: rule.name,
+        property: rule.property,
+        mountFound: false,
+        targetFound: false,
+        colors: { base: '', ok: '', fail: '', canceled: '' },
+        expected: tokenColor(rule.expectedToken),
+        forbidden: rule.forbiddenTokens.map((token) => ({ token, color: tokenColor(token) })),
+      });
+      if (rule.hostSelector === undefined) host.remove();
+      continue;
+    }
+    for (const state of ['base', 'ok', 'fail', 'canceled']) {
+      host.className = baseClassName;
+      if (state !== 'base' && rule.states[state] !== undefined) host.classList.add(rule.states[state]);
+      colors[state] = getComputedStyle(target).getPropertyValue(rule.property).trim();
+    }
+    // 复原:真实宿主把类名还原,合成宿主整棵摘掉 —— 探针不得给后续测量留痕
+    if (rule.hostSelector === undefined) host.remove();
+    else host.className = baseClassName;
+    out.push({
+      name: rule.name,
+      property: rule.property,
+      mountFound,
+      targetFound: true,
+      colors,
+      expected: tokenColor(rule.expectedToken),
+      forbidden: rule.forbiddenTokens.map((token) => ({ token, color: tokenColor(token) })),
+    });
+  }
+  return JSON.stringify(out);
+})()`;
+}
+
+/**
+ * 解析令牌恒等探针返回值(页面返回 JSON 字符串)。
+ * @param {unknown} raw 页面侧 executeJavaScript 的返回值
+ * @returns {import("./geometry-core.mjs").CssTokenReading[]} 令牌读数(判定层输入)
+ */
+export function parseCssTokenScript(raw) {
+  if (typeof raw !== "string") {
+    throw new Error(`令牌恒等探针返回非字符串(实际 ${typeof raw});页面侧可能抛错`);
+  }
+  /** @type {unknown} */
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `令牌恒等探针返回值不是合法 JSON:${err instanceof Error ? err.message : String(err)};返回片段 ${raw.slice(0, 200)}`,
+    );
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`令牌恒等探针返回值不是数组;返回片段 ${String(raw).slice(0, 200)}`);
+  }
+  return /** @type {import("./geometry-core.mjs").CssTokenReading[]} */ (parsed);
+}

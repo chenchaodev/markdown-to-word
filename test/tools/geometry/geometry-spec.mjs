@@ -2,8 +2,8 @@
 /**
  * geometry gate 规格单源(零 DOM / 零 Electron / 零 IO):测量节点表、场景表(视口/驱动步骤/
  * 必需节点/截图名)、设置抽屉的分组与控件清单及门控表、恒定断言组、固定槽下限、容差与
- * 滚动预算默认值,以及高度维度媒体查询的抽取与求值。判定规则在 geometry-core,
- * 页面侧探针在 geometry-page。
+ * 滚动预算默认值、CSS 令牌恒等表,以及高度维度媒体查询的抽取与求值。
+ * 判定规则在 geometry-core,页面侧探针在 geometry-page。
  *
  * 契约/常量单源:驱动(采样)与判定(裁决)共用本表,新增测量点、场景或抽屉控件只改这里。
  */
@@ -778,3 +778,123 @@ export function evaluateMediaCondition(condition, viewport) {
   const actual = m[2] === "width" ? viewport.width : viewport.height;
   return m[1] === "max" ? actual <= bound : actual >= bound;
 }
+
+/* ══════════════ CSS 令牌恒等(取消态不得被读成成功绿 / 失败红) ══════════════
+   判据形态:**浏览器实算色**,不是样式表文本。这三条断言此前是 ui-interaction-guards
+   段里三条读 dialogs.css 的正则,现已迁到本门禁。迁动的理由是原判据有两处硬伤:
+     ① 源文本形态 —— 正则只确认「声明块里出现过那几个字符」,看不到浏览器最终算出什么;
+     ② 恒真 —— 把 border-color 改成任何另一根中性色令牌(哪怕同样是发丝线)它照样绿,
+        而真正的契约是「取消态不得被读成成功绿 / 失败红」,不是「必须恰好是 --line」。
+   迁到这里后判据是:按真实类名把节点摆到 成功 / 失败 / 取消 三个态,读 getComputedStyle
+   的**计算色**,判定层要求三条同时成立:
+     A. 三态互不相等(取消态若被读成成功绿/失败红,即 canceled===ok 或 canceled===fail);
+     B. 取消态落在中性区间(等于 expectedToken 的实算色);
+     C. 取消态不等于任何 forbiddenTokens 的实算色(语义对立面,逐根点名比)。
+
+   为什么并在本门禁(职责由「几何」扩到「CSS 令牌恒等」):本门禁已在链内
+   (verify:ci 末环)、已在真实 Electron 窗口里跑,且已有同类「结构不变式」判据
+   (抽屉控件门控面)。另起一个门禁会多一次 Electron 冷启动,而这一条要的就是
+   「真实窗口 + 真实级联」—— 与几何门禁的运行面完全重合。代价是本门禁不再纯几何,
+   故在 scripts/check-geometry.mjs 的文件头写明扩展理由与边界。
+
+   本表**只守配色契约**,不守「取消时是否真的挂上了取消类名」—— 那是 dialogs.ts 的行为,
+   由 ui-interaction-guards 段的取消态行为断言负责。两者互补不重叠:那边验「类名挂对了」,
+   这边验「挂对之后浏览器算出来的颜色是中性而非成功/失败色」。 */
+
+/**
+ * @typedef {object} CssTokenNodeRule 被读色节点的构造说明
+ * @property {string} tag 标签名
+ * @property {string} baseClass 基础类名(不加任何态修饰类时的形态)
+ */
+
+/**
+ * @typedef {object} CssTokenRule CSS 令牌恒等判据一项
+ * @property {string} name 规则 id(报告里按此归类)
+ * @property {string} mount 真实锚点选择器(合成节点插到它的**下一个兄弟位**;宿主为真实节点时
+ *   它同时就是「在谁身上切态」的选择器)
+ * @property {string} [hostSelector] 用**线上真实节点**当宿主(切态时只增删态修饰类,
+ *   原有类名原样保留,读完复原);缺省则按 host 合成一个
+ * @property {CssTokenNodeRule} [host] 合成宿主的构造(缺省 hostSelector 时必填)
+ * @property {string} [targetSelector] 被读色节点已存在于线上时用选择器取(缺省则按 target 合成)
+ * @property {CssTokenNodeRule} [target] 被读色的节点(缺省 = 宿主自身)
+ * @property {string} property 读取的 CSS 属性(**dashed 形态**,如 border-top-color:
+ *   getPropertyValue 只认 dashed,传 camelCase 静默返回空串)
+ * @property {{ ok: string, fail: string, canceled: string }} states 三态各自的修饰类名
+ * @property {string} expectedToken 取消态须落在的中性令牌(判据 B)
+ * @property {string[]} forbiddenTokens 取消态不得等于的令牌(成功绿 / 失败红,判据 C)
+ * @property {string} why 契约说明(失败消息引用)
+ * @property {string} whyReal 选真实节点而非合成的理由(写进头注,防下任「顺手改成合成」)
+ */
+
+/**
+ * 取消态配色恒等表。
+ *
+ * 比对的是「令牌实算色相等与否」,不是字面色值:主题换色(data-theme /
+ * prefers-color-scheme 各有一套令牌值)时两侧会一起变,字面量比法会假红。
+ * 令牌实算色由页面侧探针**过一遍浏览器**取得(临时节点 color:var(--x) 后读
+ * getComputedStyle),故 --line 写成 #e2e2dc 还是 rgb(226,226,220) 都比得动。
+ *
+ * 前两条用**线上真实节点**(#resultSummary / 其内真图标)而非合成节点:真图标是 SVG
+ * 命名空间元素,实测用 document.createElement("svg") 造的 HTML 命名空间替身**不参与
+ * 同一套类规则**,量到的不是用户看到的东西 —— 替身量绿、真图标不绿,判据就成摆设。
+ * 第三条用合成节点是因为批量条目在静止态下一条都不存在(要真跑一次批量转换才有),
+ * 且它本就是纯 HTML 元素(li/span),合成与真实同构。
+ * @type {CssTokenRule[]}
+ */
+export const CSS_TOKEN_RULES = [
+  {
+    name: "canceled-summary-neutral-border",
+    mount: "#resultSummary",
+    hostSelector: "#resultSummary",
+    property: "border-top-color",
+    states: {
+      ok: "result-summary--ok",
+      fail: "result-summary--fail",
+      canceled: "result-summary--canceled",
+    },
+    expectedToken: "--line",
+    forbiddenTokens: ["--ok-soft", "--acc-ring"],
+    why: "取消态汇总条边框须为中性发丝线,不得沿用成功绿 / 失败红(取消不是成功也不是失败)",
+    whyReal: "线上 #resultSummary 就是被读色的节点本身,合成替身没有任何额外信息量",
+  },
+  {
+    name: "canceled-muted-icon",
+    mount: "#resultSummary",
+    hostSelector: "#resultSummary",
+    targetSelector: "#summaryIcon",
+    property: "color",
+    states: {
+      ok: "result-summary--ok",
+      fail: "result-summary--fail",
+      canceled: "result-summary--canceled",
+    },
+    expectedToken: "--mut",
+    forbiddenTokens: ["--ok", "--acc"],
+    why: "取消态图标须为 --mut 弱化色,不得读成成功绿 / 失败红",
+    whyReal: "真图标是 SVG 命名空间元素:HTML 命名空间的同名替身不参与这套类规则,量它等于量了个不存在的东西",
+  },
+  {
+    name: "canceled-batch-item-muted-icon",
+    mount: "#batchResultList",
+    host: { tag: "li", baseClass: "batch-item" },
+    target: { tag: "span", baseClass: "batch-item-icon" },
+    property: "color",
+    states: {
+      ok: "batch-item--success",
+      fail: "batch-item--fail",
+      canceled: "batch-item--canceled",
+    },
+    expectedToken: "--mut",
+    forbiddenTokens: ["--ok", "--acc"],
+    why: "批量条目取消图标须为 --mut 弱化色,不得读成成功绿 / 失败红",
+    whyReal: "静止态下一个批量条目都不存在(要真跑一次批量转换才有),且 li/span 与真实同构",
+  },
+];
+
+/**
+ * 令牌恒等规则 id 单源:门禁报告与统计按此列出已跑的判据项,避免「表加了项但没人报」。
+ * @type {string[]}
+ */
+export const CSS_TOKEN_RULE_IDS = CSS_TOKEN_RULES.map((rule) => rule.name);
+
+

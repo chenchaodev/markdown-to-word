@@ -8,6 +8,28 @@
  * (报告供 CI artifact 与代理排障,截图供目检复核);跨 DPI 档位让同一套规格场景 × 恒定组
  * 在 125% / 150% 等缩放下也各跑一遍,并对关键槽位与舞台几何做档位间像素 diff。
  *
+ * ═══ 职责扩展:本门禁**不再纯几何**,另含「CSS 令牌恒等」 ═══
+ * 除上述几何不变量外,本门禁还裁决**取消态不得被读成成功绿 / 失败红**(CSS 令牌恒等)。
+ * 扩展理由(三条,缺一就不该并进来):
+ *   ① 运行面完全重合 —— 这条要的就是「真实 Electron 窗口 + 真实级联」,与几何门禁的
+ *      运行面一字不差;另起一个门禁只会多一次 Electron 冷启动与一份重复的窗口管理代码。
+ *   ② 已在链内 —— verify:ci 末环即本门禁,并进来即自动获得 CI 覆盖,不必再改链。
+ *   ③ 迁移的是一批**恒真**判据 —— 那三条判据此前是 ui-interaction-guards 段里读
+ *      dialogs.css 的正则:它只确认「声明块里出现过那几个字符」(源文本形态,看不到浏览器
+ *      算出什么),且把 border-color 改成任何另一根中性色令牌它照样绿(恒真)。真正的契约是
+ *      「取消态不得被读成成功绿 / 失败红」,那只能用 getComputedStyle 的计算色回答。
+ * 扩展的代价与边界(**下任勿越界使用本门禁**):
+ *   - 本门禁的名字、报告文件名与 report.json 的 `geometry` 段名**都还叫 geometry**,
+ *     而它们现在也承载 cssToken 段。改名会动 verify:ci、消费方与历史报告契约,属另一次
+ *     独立决策,不在本次扩展内;看到 `geometry.cssToken` 不要当成命名错误。
+ *   - 判据单源是 test/tools/geometry/geometry-spec.mjs 的 CSS_TOKEN_RULES;**新增令牌判据
+ *     只改那一张表**,不要在 worker / 判定层内联颜色或选择器。
+ *   - 本门禁**只适合**「必须由浏览器级联裁决」的判据:纯 DOM 结构类断言放 renderer 测试段,
+ *     视觉排版类判断放目检工具(visual-check)。判据若与视口/档位无关,它会按 worker 级
+ *     每档跑一次(不随场景逐条跑)—— 这是刻意的:省掉与视口无关时的重复采样。
+ *   - 探针失败一律**显式判红**(css-token/probe-failed),不降级为「跳过」。这批判据正是
+ *     从「静默通过」的病根上迁出来的,不能再开一个静默跳过的口子。
+ *
  * 复用 visual-check 的场景序列与 preload(同一套离线 api 桩与驱动手法),
  * 故本门禁与目检工具对同一批界面状态给出一致结论;差别只在"是否裁决并退出码"。
  *
@@ -26,9 +48,13 @@
  *   scripts/geometry/selftest.mjs        判定层自检(锚点 + 负向探针)
  *   scripts/geometry/driver.mjs          驱动层:路径/配置、页面探针、视口落定与取整补偿
  *   scripts/geometry/worker.mjs          worker 角色:单档规格场景采样与裁决
+ *                                       (含 CSS 令牌恒等探针的执行与并档)
  *   scripts/geometry/orchestrator.mjs    编排角色:多档位串行、基线汇总、总报告与退出码
  *   本文件                              入口:角色分派、自检门与退出码收尾
  * 判定层零 Electron / 零 fs:缩放与像素基线判定可脱离窗口独立验证(selftest.mjs 逐条断言)。
+ * CSS 令牌恒等一条的三处各归其位(依赖方向同上,未新增层):
+ *   判据表 geometry-spec.CSS_TOKEN_RULES · 页面探针 geometry-page.buildCssTokenScript ·
+ *   纯判定 geometry-core.judgeCssTokens(负向探针见 test/segments/geometry-gate.test.js)。
  *
  * 阈值口径(单 DPI 与跨 DPI 分开,缩放只增不改):
  * - 单 DPI 判定(容差 1px、固定槽区间、舞台/动作栏恒定、紧凑档滚动预算 1px)在

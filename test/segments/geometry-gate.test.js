@@ -11,6 +11,8 @@
  * - 规格自洽:场景/节点/恒定组/抽屉四张表互相引用不得悬空,880×620 与 640×560 档必须各有场景,
  *   抽屉分组与控件清单须与 index.html 的 data-group 面板对得上;
  * - 媒体查询:从真实样式表抽出的高度档条件可被求值器覆盖,未覆盖写法显式抛错而非忽略。
+ * - CSS 令牌恒等:取消态配色判定的正负探针(取消态被读成成功绿/失败红、掉出中性区间、
+ *   成功失败同色、读数漏项/漂移/目标缺失 —— 均须判红并命中预期规则名)。
  *
  * 真实窗口采样链路(隐藏窗口 resize 后响应式档位重排滞后约 1s,故按布局稳定窗口采样)
  * 由 `electron scripts/check-geometry.mjs` 承担,本段只锁判定语义,两者互不依赖。
@@ -19,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   CONSTANT_GROUPS,
+  CSS_TOKEN_RULES,
   DRAWER_CLIP_KEYS,
   DRAWER_CONDITIONS,
   DRAWER_CONTROLS,
@@ -38,6 +41,7 @@ import {
   drawerGroupControls,
   evaluateMediaCondition,
   extractHeightMediaConditions,
+  judgeCssTokens,
   runGeometryGate,
 } from "../tools/geometry/geometry-core.mjs";
 import { buildViewportSettledScript, parseMeasureScript } from "../tools/geometry/geometry-page.mjs";
@@ -1011,9 +1015,137 @@ export async function run() {
     }
   }
 
+  // ---------- CSS 令牌恒等判定层(正 + 负探针) ----------
+  // 这批判据此前是读 dialogs.css 的正则(源文本形态 + 恒真),已迁到 check:geometry。
+  // 真实窗口那一侧由 check:geometry 验,本段锁的是**判定语义**:同样的读数,判定层必须
+  // 「绿则全绿、红则按规则名命中」—— 少了这层,判定逻辑的回归只能靠起窗口才发现。
+  /** @param {string} name @returns {import("../tools/geometry/geometry-core.mjs").CssTokenReading} */
+  const cssTokenGood = (name) => ({
+    name,
+    property: "border-top-color",
+    mountFound: true,
+    targetFound: true,
+    colors: {
+      base: "rgb(200, 200, 200)",
+      ok: "rgba(47, 125, 79, 0.12)",
+      fail: "rgba(181, 48, 28, 0.3)",
+      canceled: "rgb(226, 226, 220)",
+    },
+    expected: "rgb(226, 226, 220)",
+    forbidden: [
+      { token: "--ok-soft", color: "rgba(47, 125, 79, 0.12)" },
+      { token: "--acc-ring", color: "rgba(181, 48, 28, 0.3)" },
+    ],
+  });
+  /** 依规格表逐项造读数:表加项而样本漏项,正向样本自己就先判红(不靠人记得同步) */
+  const cssTokenAllGood = () =>
+    CSS_TOKEN_RULES.map((rule) => cssTokenGood(String(rule.name)));
+  // 正向:三态互不相等 + 取消态落在中性区间 → 零 finding
+  const goodToken = judgeCssTokens(cssTokenAllGood());
+  assert(
+    goodToken.ok && goodToken.findings.length === 0,
+    `令牌恒等正向样本应零 finding,实际 ${JSON.stringify(goodToken.findings)}`,
+  );
+
+  /**
+   * 负探针:注入一种故障,断言判红**且命中那一条具体判据**。
+   *
+   * 为什么断言消息而不只是规则名(踩过的坑):同一规则名下有多条独立判据(A 三态互斥的
+   * 三条 / B 中性区间 / C 逐根点名),关掉其中一条后别的照样会产 finding —— 只查规则名
+   * 时,「关掉一条判据」被邻条掩盖,负探针恒绿,等于白写。逐条点名消息才关得住。
+   *
+   * 每次都注入**全表**读数(只坏一项),免得漏项 guard 抢先报错、掩盖真正的故障原因。
+   * @param {string} why 故障名
+   * @param {(r: ReturnType<typeof cssTokenGood>) => void} inject 故障注入
+   * @param {string} expectRule 期望命中的规则名
+   * @param {string} expectMessage 期望命中的**那一条判据**的消息片段
+   * @returns {void}
+   */
+  const tokenProbe = (why, inject, expectRule, expectMessage) => {
+    const readings = cssTokenAllGood();
+    const target = readings.find((r) => r.name === expectRule);
+    assert(target !== undefined, `负探针「${why}」指定的规则 ${expectRule} 不在规格表里`);
+    inject(target);
+    const got = judgeCssTokens(readings);
+    assert(!got.ok, `令牌恒等负探针「${why}」应判红,却判绿(恒真)`);
+    assert(
+      got.findings.some((f) => f.rule.includes(expectRule) && f.message.includes(expectMessage)),
+      `令牌恒等负探针「${why}」未命中预期判据「${expectMessage}」,实际 ` +
+        `${JSON.stringify(got.findings.map((f) => f.message))}`,
+    );
+  };
+  const firstRule = cssTokenAllGood()[0];
+  assert(firstRule !== undefined, "CSS_TOKEN_RULES 为空:令牌恒等判据整体缺失(不得因无判据而判绿)");
+  const firstRuleName = String(firstRule.name);
+  tokenProbe(
+    "取消态被读成成功态同色",
+    (r) => { r.colors.canceled = r.colors.ok; },
+    firstRuleName,
+    "取消态被读成成功态同色",
+  );
+  tokenProbe(
+    "取消态被读成失败态同色",
+    (r) => { r.colors.canceled = r.colors.fail; },
+    firstRuleName,
+    "取消态被读成失败态同色",
+  );
+  tokenProbe(
+    "成功态与失败态同色",
+    (r) => { r.colors.fail = r.colors.ok; },
+    firstRuleName,
+    "成功态与失败态算出同一个颜色",
+  );
+  tokenProbe(
+    "取消态掉出中性区间",
+    (r) => { r.colors.canceled = "rgb(1, 2, 3)"; },
+    firstRuleName,
+    "取消态未落在中性区间",
+  );
+  tokenProbe(
+    "取消态等于语义对立令牌色",
+    (r) => { r.colors.canceled = "rgba(47, 125, 79, 0.12)"; },
+    firstRuleName,
+    "被读成 --ok-soft",
+  );
+  // 探针漏项/漂移:少一条读数也必须判红,不许「少跑判据也判绿」(这正是迁移的病根)
+  assert(
+    !judgeCssTokens(cssTokenAllGood().slice(1)).ok,
+    "令牌恒等判定在读数漏项时必须判红(漏项不得静默通过)",
+  );
+  /** @type {import("../tools/geometry/geometry-core.mjs").CssTokenReading[]} */
+  const driftedReadings = cssTokenAllGood().map((r, i) =>
+    i === 0 ? { ...r, name: "not-in-spec" } : r,
+  );
+  const drifted = judgeCssTokens(driftedReadings);
+  assert(
+    !drifted.ok && drifted.findings.some((f) => f.rule.includes("not-in-spec")),
+    "读数项不在 CSS_TOKEN_RULES 表里时必须判红(规格与探针漂移)",
+  );
+  // 目标节点取不到:空串读数不得继续参与判色
+  /** @type {import("../tools/geometry/geometry-core.mjs").CssTokenReading[]} */
+  const noTargetReadings = cssTokenAllGood().map((r) => ({ ...r, targetFound: false }));
+  assert(
+    !judgeCssTokens(noTargetReadings).ok,
+    "被读色节点缺失时必须判红(空串读数不可信)",
+  );
+  // 空串读数(探针拿到空值)本身也必须判红,不得因「三态全等」而被当成一致通过
+  /** @type {import("../tools/geometry/geometry-core.mjs").CssTokenReading[]} */
+  const blankReadings = cssTokenAllGood().map((r, i) =>
+    i === 0
+      ? { ...r, colors: { base: "", ok: "", fail: "", canceled: "" }, expected: "" }
+      : r,
+  );
+  const blankResult = judgeCssTokens(blankReadings);
+  assert(!blankResult.ok, "读数为空串时必须判红(探针失效不得伪装成三态一致)");
+  assert(
+    blankResult.findings.some((f) => f.message.includes("读到空读数")),
+    `空串读数应报「读到空读数」(探针失效),实际 ${JSON.stringify(blankResult.findings.map((f) => f.message))}`,
+  );
+
   console.log(
     `[ok] geometry-gate:判定层正负探针通过(场景 ${SCENARIOS.length} / 恒定组 ${CONSTANT_GROUPS.length} / ` +
       `高度档 ${MEDIA_CONDITIONS.length} 条;抽屉 ${DRAWER_CONTROL_KEYS.length} 控件 / ` +
-      `${SCENARIOS.filter((sc) => sc.drawerTab !== undefined).length} 场景,负向故障均按规则命中)`,
+      `${SCENARIOS.filter((sc) => sc.drawerTab !== undefined).length} 场景,负向故障均按规则命中;` +
+      `CSS 令牌恒等 ${CSS_TOKEN_RULES.length} 项正负探针通过)`,
   );
 }
