@@ -1162,6 +1162,30 @@ textarea.tin,
   padding-right: 28px;
 }
 
+/* 竖排字段里的 sel-wrap(column flex 的直接子项):align-items 默认 stretch 会把
+   wrapper 拉满行宽,而自绘箭头锚在 wrapper 的 right:11px —— 于是箭头飘到行右端,
+   离真正的 select 框几百像素;箭头是 pointer-events:none 的纯装饰,点击穿透到
+   wrapper(非 select)故毫无反应。行式容器(.row / .qb-field)不受影响,那两处
+   wrapper 按内容收缩、箭头本来就在框内(「界面语言」「快速参数条·预设」即本条样板)。
+   交叉轴改回 flex-start 即恢复收缩,箭头随之回到框内右端。 */
+.setting-field > .sel-wrap {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+/* 竖排字段的 sel 宽度:下限 240px 容纳最长内置预设名。取值依据(三语最长者实测
+   @13px var(--font-ui)):`preset.officialCn` 英文 "Chinese official document" 161px
+   → 加 padding-left 10 + padding-right 28 = 199px 为硬下限,240px 再留约 20% 余量
+   吸收非 Windows 平台回退字体的字宽差;其余内置项(次长 "Chinese long-form" 116px、
+   日文「中国語ミニマル」91px、中文「学术论文」52px)均远在限内,不截断。
+   max-width 收在字段内,自定义超长名撑到字段宽即止(原生下拉浮层仍按最长项自适应,
+   完整名可读)。高度仍走 .setting-select 的 height:32px 一档,不另立高度。 */
+.setting-field > .sel-wrap > .setting-select {
+  min-width: 240px;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
