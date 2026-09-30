@@ -49,5 +49,5 @@
 - `gates/` 对 `test/{segments,main,renderer,common}/` 的 import 面归零（只剩 `test/fixtures/` 只读数据）。这条规则可由 `check-import-boundary.mjs` 机械判定，判红机制零新建 —— `test/segments/import-boundary.test.js:560` 已在造假源码喂给 boundary 判红，模式现成。
 - `test/tools/` 消失后，「两个 geometry」「`test/tools/` 是杂物抽屉」在结构上不再存在。
 - 新增顶层 `shared/` 会改变 `build.files` 白名单的覆盖面：现状只断言 asar **产出后**的顶层三项，**没有断言白名单里的项与实际目录一致**。「显式白名单」这个正确选择因此只做了一半，本决定顺带要求补这一条断言。
-- 一次性改动面很大（约 70 个文件位置），必须每步独立成提交才能逐步回滚。步序与泳道见 [REQ-110 的 `PLAN.md`](../PLAN.md)。
+- 一次性改动面很大（约 70 个文件位置），必须每步独立成提交才能逐步回滚。步序与泳道原在临时载体 `PLAN.md`，REQ-110 收尾时已删（当前态见 `docs/REQ.md` 的 REQ-110 行，历史见 git）。
 - `test/common/` 19 个文件里只有 3 个真跨树，其余 16 个零跨界证据留测试树 —— 本决定**不做主观再切分**，避免把「整齐」误当成收益。

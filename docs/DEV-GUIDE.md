@@ -5,11 +5,11 @@
 ## 环境
 - Node >= 22.13(ESM;typescript-eslint 经 side-by-side 用 TS 6 API,`tsc` 二进制仍为 TS 7——package.json 中 `typescript` 别名 `@typescript/typescript6`,`@typescript/native` 别名真实 TS 7;勿回退)
 - npm 源:npmmirror(见根 `.npmrc`,仅含 registry,勿回退)
-- Electron 二进制镜像(本地开发勿回退,装 electron/打包前设置):经 `scripts/setup-env.ps1` 一次性写入**用户级环境变量** `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`(GitHub Actions 不需要);勿在 `.npmrc` 写这两个键——npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`,electron-builder 读不到
+- Electron 二进制镜像(本地开发勿回退,装 electron/打包前设置):经 `dev/setup-env.ps1` 一次性写入**用户级环境变量** `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`(GitHub Actions 不需要);勿在 `.npmrc` 写这两个键——npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`,electron-builder 读不到
   - `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`
   - `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`
 - 依赖钉死与全部「勿回退」约束见项目 `AGENTS.md`「硬约束」节;钉死理由清单见 [`evidence/20260927-170600-事实-依赖与工具链.md`](evidence/20260927-170600-事实-依赖与工具链.md) 的「审计整改记录(依赖钉死策略清单)」条
-- 本地跑 `npm install` 前先跑一次 `scripts/setup-env.ps1`(写 Electron 镜像环境变量);CI 走官方 registry,不需要该步骤
+- 本地跑 `npm install` 前先跑一次 `dev/setup-env.ps1`(写 Electron 镜像环境变量);CI 走官方 registry,不需要该步骤
 
 ## 命令
 日常主路径的命令(门禁类别与接入点见下一张「门禁接入点」表,`package.json` scripts 为唯一单源):
@@ -18,10 +18,10 @@
 | ---- | ---- |
 | `npm install` | 安装依赖。运行时与构建期依赖(含 `typescript` / `@types/node` / `electron` / `electron-builder`)全在 `dependencies` + `devDependencies`,一次装齐,无「先单独装某几个包」的前置步骤 |
 | `npm run typecheck` | TS 类型检查(主树 `tsc --noEmit` + 测试树 `tsconfig.test.json` 按 `// @ts-check` 渐进,TS 7) |
-| `npm run lint` | ESLint 10 flat 检查 `src/ test/ scripts/`(typescript-eslint 类型感知规则,side-by-side TS 6 API) |
+| `npm run lint` | ESLint 10 flat 检查 `src/ test/ gates/ build/ dev/`(typescript-eslint 类型感知规则,side-by-side TS 6 API) |
 | `npm run build` | 构建 core 到 `dist/`(`tsc` + copy-renderer) |
 | `npm run dev` | 开发启动 = `build` 后**直接**起 Electron,**不带**构建新鲜度守卫 |
-| `npm run start` | 启动 Electron,但**先跑 `scripts/check-build-fresh.mjs` 校验构建新鲜度** —— 只改了源码没重建时,守卫先拦下(`test:smoke` 用的是同一个守卫) |
+| `npm run start` | 启动 Electron,但**先跑 `gates/smoke/check-build-fresh.mjs` 校验构建新鲜度** —— 只改了源码没重建时,守卫先拦下(`test:smoke` 用的是同一个守卫) |
 | `npm run dist` | electron-builder 打包 NSIS 安装包(输出 `release/`;链内含产物核对,见「门禁接入点」) |
 | `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`,自动发现 `segments/`、`main/` 与 `renderer/` 下 `*.test.js`;需先 build;新增测试=新建段文件零注册) |
 | `npm run test:smoke` | 冒烟自测(`electron . --smoke`,前置构建新鲜度守卫) |
@@ -29,7 +29,7 @@
 | `npm run test:all` | 验收 + 冒烟 |
 | `npm run gen:fixtures` | 验收样例生成器(需先 build) |
 | `npm run check:fixtures` | fixtures 漂移校验(幂等,exit 0/1;CI 门禁步骤) |
-| `npm run icons` | SVG 图标转 ICO(`scripts/svg-to-ico.mjs`) |
+| `npm run icons` | SVG 图标转 ICO(`build/svg-to-ico.mjs`) |
 | `npm run check:docs` | 文档指针门禁(**载体在全局配置目录,CI 不装 ⇒ 不在 `verify:ci` 链里,提交前本地手动跑**;载体不可达时打印「跳过」后 exit 0,看到那行即表示本轮一个指针都没查) |
 
 > 冒烟只有 `npm run test:smoke` 一个入口。绕过 npm 直接 `npx electron . --smoke` 会跳过构建新鲜度守卫、拿旧产物跑,故本文件不列该写法。
@@ -48,7 +48,7 @@
 | 覆盖率 | `test:coverage` `check:coverage-zero` | `verify:ci` 链 |
 | renderer 覆盖率报告 | `report:coverage-renderer` | 仅本地手动 |
 | 冒烟 | `test:smoke` | `verify:ci` 链 |
-| 几何 | `check:geometry` | `verify:ci` 链。判据是**结构不变式**而非像素快照（后者会因平台/主题/字体差异假红）：主窗舞台的槽位/视口/响应式档位，**外加设置抽屉的 40 个控件**（存在且可见 · 组归属 · 组内视觉序 · 无水平裁切/越界 · 三种门控形态的收起与灰禁双向）。选择器与控件清单的单源在 `test/tools/geometry/geometry-spec.mjs` |
+| 几何 | `check:geometry` | `verify:ci` 链。判据是**结构不变式**而非像素快照（后者会因平台/主题/字体差异假红）：主窗舞台的槽位/视口/响应式档位，**外加设置抽屉的 40 个控件**（存在且可见 · 组归属 · 组内视觉序 · 无水平裁切/越界 · 三种门控形态的收起与灰禁双向）。选择器与控件清单的单源在 `shared/geometry/geometry-spec.mjs` |
 | 工程契约 / 层向 / 引用固定 / 段编号 / 阶段契约枚举点 | `check:contract` `check:contract:selftest` `check:boundary` `check:pinned-actions` `check:test-numbering` `check:transform-dispatch` | `verify:ci` 链;其中 `check:contract` 与 `check:pinned-actions` 在两个 workflow 里另有 `npm ci` 之前的 fail-fast 步骤(同一入口,非第二份清单)。`check:transform-dispatch` 守的**取反不变量**:渲染层与 main 转换层薄壳不得枚举渲染前变换类设置,且该类设置的枚举点恰 2 处且都在 `core/markdown/`(见 `docs/adr/adr-026` 与 `adr-027`) |
 | 归档索引 | `check:archive-index` | `verify:ci` 链 |
 | 归档索引(重生成) | `gen:archive-index` | 仅本地手动 |
@@ -59,7 +59,7 @@
 | 包体 | `check:pack-size` | 仅本地手动(需真实安装包实测;判定逻辑由 `test/segments/observability.test.js` 在链内以沙盒覆盖) |
 | 冒烟报告 | `check:smoke-report` | 仅本地手动(判定逻辑同上,由 `test/segments/observability.test.js` 在链内覆盖) |
 | 阴性探针 | `check:gates` | 仅本地手动 —— 同一模块由 `test/segments/gate-probes.test.js` 在链内实跑 |
-| GUI 视觉自查 | `ui:shots` | 仅本地手动(`test/tools/visual-check.mjs`)。**发版前需重跑** —— 它的产出 `output/artifacts/ui-v4/` 是 `docs/images/ui-*.jpg` 的来源,界面一改那批图就过期;README / 官网首页 / 用户指南都靠它们展示 |
+| GUI 视觉自查 | `ui:shots` | 仅本地手动(`dev/visual-check.mjs`)。**发版前需重跑** —— 它的产出 `output/artifacts/ui-v4/` 是 `docs/images/ui-*.jpg` 的来源,界面一改那批图就过期;README / 官网首页 / 用户指南都靠它们展示 |
 | 安装烟测 | `check:install-smoke` | 仅本地手动,默认预演模式零系统副作用;真实装卸须显式 `--execute`(沙盒内的进程级行为由 `test/segments/install-smoke.test.js` 在链内覆盖) |
 | 打包产物核对 | `gen:dist-manifest` `check:dist-manifest` `check:asar` `check:release` `check:signature` `check:unpacked-smoke` | `verify:release` 链(`dist` 内部) |
 | 图标资源 | `icons` | 仅本地手动 |
@@ -71,7 +71,7 @@
 
 - **Defender 重命名 EPERM**:electron 解压到 `win-unpacked.tmp` 后被 Windows Defender 实时扫描锁文件句柄,`rename .tmp → win-unpacked` 失败。绕过:用 `--config.electronDist=<node_modules/electron/dist>` 直接喂 npm install 已解压的 electron 发行目录,electron-builder 改为 copy(非解压后 rename)。
 - **长路径 / OneDrive 锁**:项目在 `Documents\opencode\...`(OneDrive 同步)时,即便建 junction 也仍解析真实路径写入,重命名同样失败且路径过长。绕过:用 `--config.directories.output=<非 OneDrive 短路径>` 重定向输出(如 `C:\m2w-out`,路径依环境而定)。
-- **镜像 env**:`.npmrc` 不写 electron 镜像键(npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`)。本地开发先跑一次 `scripts/setup-env.ps1` 写入用户级环境变量;或构建前显式 `$env:ELECTRON_BUILDER_BINARIES_MIRROR`(及 `ELECTRON_MIRROR`),否则 electron-builder 回退 GitHub 下载超时。
+- **镜像 env**:`.npmrc` 不写 electron 镜像键(npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`)。本地开发先跑一次 `dev/setup-env.ps1` 写入用户级环境变量;或构建前显式 `$env:ELECTRON_BUILDER_BINARIES_MIRROR`(及 `ELECTRON_MIRROR`),否则 electron-builder 回退 GitHub 下载超时。
 
 完整命令示例:
 
@@ -126,8 +126,8 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `convert/`:convert-flow.ts + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)+ `file-list.ts`
   - `ui/`(dialogs.ts/dom-ops.ts(DOM 操作原语 + translate 注入适配)/recent-files.ts(bindRecentFilesEvents 范式)/toast.ts/first-run-guide.ts(首启引导))
   - `wizard/`:book-wizard.ts(向导外壳/导航/打开关闭+付印提交)/wizard-steps.ts(步骤渲染·版式步:模板/封面/页眉页脚/水印)/wizard-steps-delivery.ts(步骤渲染·交付步:合并源/目录/付印+当前步渲染)/wizard-fields.ts(字段校验绑定+共用 DOM/radio 零件)/wizard-runtime.ts(草稿/容器/步序单例,防环)/wizard-state.ts(向导状态管理纯 reducer)
-- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/(gen-fixtures.mjs 样例生成 / visual-check.mjs 视觉自查 / electron-mock*.mjs 桩 / geometry/ / smoke/ 薄转调,冒烟实现见 `src/main/smoke.ts`));`scripts/copy-renderer.mjs`(静态资源拷贝)、`scripts/svg-to-ico.mjs`(图标)、`scripts/check-build-fresh.mjs`(构建新鲜度守卫,`start` 与 `test:smoke` 前置)
-  - **沙箱副本闭包**(守护见 `test/segments/contract-single-source.test.js` (e) 节,判定原语 `auditCopySet` 在 `test/common/copy-closure-audit.js`):部分段会把生产脚本**逐字节复制**进系统临时区的沙盒再执行(如 `install-smoke` 复制 scripts/** 与 `test/common/userdata.js`)。因沙盒内无 `node_modules` 且只复制被点名的文件,副本必须满足三条:① 只允许 `node:` 内建依赖(裸包名必失败);② 相对 import 的目标必须**同在副本集合内**;③ 不得有死副本(无同集合入边且未登记为沙盒入口者判红)。副本集合由**代码里的复制调用扫出**(`copyFileSync`/`copyFile`/`cpSync`),不硬编码文件名 —— 新增复制点会被自动纳入。
+- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/(smoke/ 薄转调,冒烟实现见 `src/main/smoke.ts`);样例生成器 `gates/fixtures/gen-fixtures.mjs`、视觉自查 `dev/visual-check.mjs`、electron 桩 `test/common/electron-mock*.mjs`、几何判定层 `shared/geometry/` 均已按归属迁出 test/);`build/copy-renderer.mjs`(静态资源拷贝)、`build/svg-to-ico.mjs`(图标)、`gates/smoke/check-build-fresh.mjs`(构建新鲜度守卫,`start` 与 `test:smoke` 前置)
+  - **沙箱副本闭包**(守护见 `test/segments/contract-single-source.test.js` (e) 节,判定原语 `auditCopySet` 在 `test/common/copy-closure-audit.js`):部分段会把生产脚本**逐字节复制**进系统临时区的沙盒再执行(如 `install-smoke` 复制 gates/artifacts 与 gates/smoke 的 5 份脚本、shared/paths.js 与 shared/userdata.js)。因沙盒内无 `node_modules` 且只复制被点名的文件,副本必须满足三条:① 只允许 `node:` 内建依赖(裸包名必失败);② 相对 import 的目标必须**同在副本集合内**;③ 不得有死副本(无同集合入边且未登记为沙盒入口者判红)。副本集合由**代码里的复制调用扫出**(`copyFileSync`/`copyFile`/`cpSync`),不硬编码文件名 —— 新增复制点会被自动纳入。
   - **入口登记需人工同步**:`SANDBOX_ENTRY_EVIDENCE`(同在 `test/common/copy-closure-audit.js`)登记那些「被复制但沙盒内由测试直接执行、因而没有上游 import」的副本。漏登记**判红**而非静默放过(刻意取舍),故新增/删除沙箱复制点时必须同步该表。登记需附「提及它 + 带执行类调用」的行作为证据,否则视为无证据。
   - **已知覆盖边界**:运行时拼装的复制列表、多层别名链、跨目录整树复制**解析不出**,只登记不判红。若将来用「运行时拼装列表」复制 JS 模块,本守护不会自动纳入,需人工扩 `resolveCopySource` 或新增复制机制 scope。
 
@@ -135,7 +135,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - 目录组织标准(test 树镜像 src 三层,按被测主体归属;目录内按内容主题命名):`test/segments/` = core 渲染主题与跨层契约/恒等守护段 /`test/main/` = 主进程层主题段 /`test/renderer/` = UI 层主题段(纯函数/状态机/CSS 令牌恒等)
   - **归属判例(跨层段)**:归属看**被测主体**,断言穿过别层不改变归属 —— 被测主体在 `src/main`、core 仅作被断言的接收方时,段归 `test/main/`(例:`test/main/mermaid-warning-channel.test.js` 测 main 侧渲染服务与 converter 接线,core 的 warning 通道是被断言对象)。
   - **同模块多段口径**:同一被测模块可按内容主题拆多段,文件名带主题后缀,不要求一段覆盖模块全部行为(例:`test/main/atomic-json.test.js` 断言落盘/队列/失败清理,`test/main/atomic-json-durability.test.js` 断言 fsync 时点与耐久性)。
-  - **段目录以三目录为全集**,`test/` 下无第四个段目录(原 `test/pending/` 暂存区已删除,其断言由 `test/segments/core-resources.test.js` 覆盖;三目录恒等这条口径的判据与该目录的存废记在 `scripts/check-test-numbering.mjs` 头注)。新增段一律进三目录之一,勿另开暂存区 —— 另开就会出现「三目录恒等」与实际并存的误读。
+  - **段目录以三目录为全集**,`test/` 下无第四个段目录(原 `test/pending/` 暂存区已删除,其断言由 `test/segments/core-resources.test.js` 覆盖;三目录恒等这条口径的判据与该目录的存废记在 `gates/repo/check-test-numbering.mjs` 头注)。新增段一律进三目录之一,勿另开暂存区 —— 另开就会出现「三目录恒等」与实际并存的误读。
 - 静态样例入 `test/fixtures/`(acceptance/ 生成 + manual/ 手工);产物 `output/artifacts` + `output/smoke`(可清理重建,smoke 自清理)
 - 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`ru` 是已裁撤语言,`i18n-registry.test.js` 拿它当「裁撤回归守卫」的样例(`isLanguage("ru") === false`),回加该语言会撞红这条断言**
 - 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(EOL 归一化,`.gitattributes` 双保险;CI 门禁步骤)
@@ -146,7 +146,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - **验证分两档**(命令与门禁类别见本文件「命令」「门禁接入点」两节,此处只定节奏):
   - **开发回路**(每次改完):`typecheck` + `lint` · 改动面所属的验收段(`M2W_ONLY` 按**段名**筛)· 本轮改动到的纯文本门禁(`check:docs` 等)
   - **提交前**(每个提交跑一次):上面那套 **+ `npm run test` 全量**
-- **开发回路不得省全量的两种情形**:① 动了共享测试设施(`test/common/**` · `test/tools/**` · `scripts/**` · 门禁脚本 · `package.json`)—— 跨段污染只有全量暴露 ② 影响面判不出来(改动落在「命令」节任何一条都覆盖不到的位置)—— 此时当轮就跑,不留到提交前
+- **开发回路不得省全量的两种情形**:① 动了共享测试设施(`test/common/**` · `test/tools/**` · `gates/**` · `build/**` · `dev/**` · 门禁脚本 · `package.json`)—— 跨段污染只有全量暴露 ② 影响面判不出来(改动落在「命令」节任何一条都覆盖不到的位置)—— 此时当轮就跑,不留到提交前
 - **筛段不会静默假通过**:筛选词命中 0 个段即判红(`test/common/runner.js` 的段筛选三态契约),故「只跑受影响段」不存在「筛选词拼错 → 打印全部 0 段通过 → 退出 0」的失效形态
 - 全量验收在链内的唯一一次是 `verify:ci` 的 `test:coverage`(见 [adr-016](adr/adr-016-门禁链内全量验收只跑一遍.md)),本条不与它重复;发版前的全套走 `verify:release`,不由本条覆盖
 - **`verify:ci` 只由主会话在推送前跑一次,子代理一律不跑** —— 它把十余步门禁串成一条,多条并行泳道会让同一串门禁被各跑一遍,耗时翻倍且没有新增结论。子代理跑的是上面「开发回路」那一档(定向门禁 + 受影响验收段),并在交回时**明确写出「未跑 verify:ci」**,不默认它绿。下面第 2 条「动了共享测试设施当轮就跑全量」对子代理仍然成立,但那里的「全量」指**受影响段**,链级 `verify:ci` 由主会话在推送前统一兜底 —— 收尾判完成仍以 `verify:ci` 全绿为准,子代理的自证不能替代它
@@ -154,7 +154,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(提交前置 → 全局配置目录 `WORKFLOW.md`「六、收尾」;发布/打包产物属对外动作 → 全局配置目录 `AGENTS.md` 安全底线 3)
 - 类型/构建/门禁命令清单见本文件「命令」节;每条 `npm run *` 的门禁类别与接入点(`verify:ci` 链 / `verify:release` 链 / 仅某个 CI workflow job / 仅本地手动)见本文件「门禁接入点」表
 - 验收测试段明细见 `test/segments/`、`test/main/` 与 `test/renderer/`;恒等守护与边界守护段清单见本文件「测试体系」节
-- `check:docs` —— 指针门禁(`scripts/check-docs.mjs` 薄包装,调全局配置目录的 `tools/check-pointers.mjs`,项目侧不持有第二份逻辑;**项目模式探针是 `docs/REQ.md`**,命中后扫描根 md + 整个 `docs/`(`docs/evidence/` 整棵除外);检查项 = 存在性 / 小节名 / 无引号小节 / 遗留文档名 + **台账一致性**(R1–R7 台账内不变量 + 表格结构判据,见下两条)+ **载体形态判据 C1–C6**;门禁路径取 `M2W_GLOBAL_CONFIG`(配置仓根目录)或默认 `~/.config/opencode`;载体不可达时打印一行提示后 exit 0,**故 CI 上的跳过是预期行为** —— workflow 不装也不克隆配置仓;**不在 `verify:ci` 链里**,提交前本地手动跑)
+- `check:docs` —— 指针门禁(`gates/repo/check-docs.mjs` 薄包装,调全局配置目录的 `tools/check-pointers.mjs`,项目侧不持有第二份逻辑;**项目模式探针是 `docs/REQ.md`**,命中后扫描根 md + 整个 `docs/`(`docs/evidence/` 整棵除外);检查项 = 存在性 / 小节名 / 无引号小节 / 遗留文档名 + **台账一致性**(R1–R7 台账内不变量 + 表格结构判据,见下两条)+ **载体形态判据 C1–C6**;门禁路径取 `M2W_GLOBAL_CONFIG`(配置仓根目录)或默认 `~/.config/opencode`;载体不可达时打印一行提示后 exit 0,**故 CI 上的跳过是预期行为** —— workflow 不装也不克隆配置仓;**不在 `verify:ci` 链里**,提交前本地手动跑)
 - **载体形态判据 C1–C6**(判据本体在配置仓 `tools/check-pointers.mjs`,本仓只承接不复制;C# 与迁移计划 §1.5 的 R8/L1/G3/G4/G5/G7 一一对应):C1 `REQ.md` 标题列 ≤20 字 · C2 判断依据列 ≤200 字(`已完成` 行 ≤100)· C3 `LESSONS.md` 单条 ≤100 字且总条数 ≤30、空主题节不留 · C4 `adr/` 背景行非空 · C5 `evidence/` 头部「结论去向」四选一(`升 adr/ADR-0NN` 可带真实序号 / `落 REQ.md 行` / `落 LESSONS.md` / `未升`)· C6 上述去向与真实载体的**双向对账**。**六条已全部转判红**,违反进 `errors`、退出码非零(判据转红的决定见全局配置目录 `docs/adr/ADR-005-载体形态判据转判红.md`);仍**只出声**的三类判据 =「是违规吗」而不是「是问题吗」:**载体不可达 / 零覆盖**(是「没查」不是「查了没问题」)· 列数守卫 C0(错位行不参与判定属解析失败)· 解析盲区自报。输出里带「零覆盖」字样的那行是提醒,不是通过
 - **台账表格结构判据**(`checkTableShape()`,判据本体同在配置仓;**只对表头含「号」且含「状态」的表块生效**,故不误伤其它表格与模板骨架):台账表块必须严格是「表头 → 分隔行 → 数据行」三段紧邻 —— ① 表头下一行不是分隔行 ⇒ 判红并点名「数据行被插到了表头与分隔行之间」② 分隔行与首行数据行**原始行号不连号** ⇒ 判红(表内夹了空行,Markdown 在空行处断表,后面的行不再属于本表)③ **空节(只有表头+分隔)判 0 错**,0 行是合法态。**排在 C1/C2 之前跑** —— 表坏时 C1/C2 读到的行列数都是解析器的误读,报出来只会误导;它也**不改 `tableBlocks()` 对空行的宽容**(那条是为免误报,拆掉会让 R4 报「号段缺行」假红),两者刻意解耦。**已知缺口:空行夹在表头与分隔行之间仍判绿**(判据只比「分隔行→首行数据行」,不回看「表头→分隔行」),边界与补法记在那份 ADR-006 的「实测的覆盖边界」表里。形状规则的人读载体是**全局配置目录 `templates/docs-init/REQ.md` 与本文件 `docs/REQ.md` 规则节里的「表形状是硬约束」那条**(同名同措辞,按规则名指、不按序号指 —— 两份文件的规则条数本来就不一样,按序号指会指错)(模板只对以后新初始化的项目生效,存量项目靠上面这条判据兜底),决定见全局配置目录 `docs/adr/ADR-006-台账表形状不变量.md`(这两条配置仓路径**不被任何档判存在性** —— 带 `/` 的跨仓引用两档都放行,改路径时自己核)
 - **V1–V6 负探针**(判据转判红前必跑,证明它们真会红而不是恒绿):V1 造 21 字标题判红 / 20 字判绿 · V2 造 201 字判断依据判红 · V3 `LESSONS.md` 第 31 条、单条 101 字、空主题节各判红一次 · V4 删一份 ADR 的背景行判红 · V5 删一份 `evidence/` 头部判红 · V6 存量清空后本门禁仍全绿。**V7 判定为不可达、不再列入**:它要证「非终态行的『为什么停在这』不得为空」,而模板占位行原文写着「空表示无阻塞」—— **空是模板自己定的合法态**,规则 5 只规定上限、未要求非空;加该判据属新增规则且与模板占位文本冲突,故不新增(整格缺失改由列数守卫 C0 + 号段连续性抓住)
