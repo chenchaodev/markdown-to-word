@@ -52,6 +52,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
+import { expandChainScriptNames, topLevelScriptNames } from './chain-expand.mjs';
 import { auditPackWhitelist, topLevel } from './repo-manifest.mjs';
 
 /**
@@ -234,42 +235,24 @@ export function checkContract(ctx = {}) {
   }
 
   // ---- 门禁链展开:script → 有序的子 script 名 + 叶子命令 ----
+  //
+  // 链解析本身在 gates/repo/chain-expand.mjs(全仓单源,见该文件头注:此前 5 份独立实现
+  // 里那几份扁平的只认单层,链一旦拆出子脚本就看不见内层门禁而无人判红)。此处只做两件事:
+  // 选语义(递归全展开 vs 顶层不递归)、把「成环 / 未定义」两类结构问题转成本门禁的诊断文案。
+  // 两种语义并存是有判据依赖的,不是重复:递归视图给「成员与顺序」类断言(链内必备步骤、
+  // 全量验收段恰跑一遍),顶层视图给「形态」类断言(verify:release 恰为 verify:ci + dist
+  // —— 递归化会放过「发布自行重排并复制内层步骤」这种真实漂移)。
 
-  /** 展开 `a && npm run b && c` 形态的 script,返回递归后的子 script 执行序(用于断言步骤与顺序) */
-  function expandScript(name, stack = []) {
-    if (stack.includes(name)) {
-      fail(`scripts.${name} 存在自引用链:${[...stack, name].join(' -> ')}`);
-      return [];
-    }
-    const body = scripts[name];
-    if (body === undefined) {
-      fail(`scripts.${name} 未在 package.json 中定义`);
-      return [];
-    }
-    const names = [];
-    for (const part of body.split('&&')) {
-      const segment = part.trim();
-      const nested = /^npm run ([\w:.-]+)$/.exec(segment);
-      if (nested === null) continue;
-      names.push(nested[1], ...expandScript(nested[1], [...stack, name]));
-    }
-    return names;
-  }
-
-  /** script 顶层直接调用的子 script 名(不递归):用于断言「发布只复用 verify:ci 链」这类形态约束 */
-  function topLevelScriptNames(name) {
-    const body = scripts[name];
-    if (body === undefined) {
-      fail(`scripts.${name} 未在 package.json 中定义`);
-      return [];
-    }
-    return body
-      .split('&&')
-      .map((part) => part.trim())
-      .flatMap((segment) => {
-        const nested = /^npm run ([\w:.-]+)$/.exec(segment);
-        return nested === null ? [] : [nested[1]];
-      });
+  /**
+   * 递归展开一条链,返回子 script 名执行序;成环与未定义在此转成契约诊断。
+   * @param {string} name 链根 script 名
+   * @returns {string[]} 子 script 名执行序(不含 name 自身)
+   */
+  function expandScript(name) {
+    return expandChainScriptNames(scripts, name, {
+      onMissing: (missing) => fail(`scripts.${missing} 未在 package.json 中定义`),
+      onCycle: (path) => fail(`scripts.${path[0]} 存在自引用链:${path.join(' -> ')}`),
+    });
   }
 
   // CI 门禁必备步骤(顺序即依赖顺序):check:contract 之后立刻核对依赖声明与
@@ -367,9 +350,15 @@ export function checkContract(ctx = {}) {
 
   // verify:release 只允许「复用 verify:ci + 追加 dist」两种形态:发布若自行拼装
   // 子集命令(coverage/fixture/smoke 任一缺失即等于绕过门禁),此处即拦截。
-  const releaseTopLevel = topLevelScriptNames('verify:release');
-  if (releaseTopLevel.join(',') !== 'verify:ci,dist') {
-    fail(`verify:release 须恰为 verify:ci + dist(复用同一门禁链,不维护第二份清单),当前:${releaseTopLevel.join(' -> ') || '空'}`);
+  // **这一格刻意用顶层视图而非递归视图**:判据要问的是「发布链的顶层形态是不是那两笔」,
+  // 递归展开会把它变成「展开后成员相同」,于是「verify:release 自行把 verify:ci 的内层
+  // 步骤复制一份再排一遍」这种真实漂移会被放行 —— 正是这条断言要拦的东西。
+  const releaseTopLevel = topLevelScriptNames(scripts, 'verify:release');
+  if (releaseTopLevel.missing) {
+    fail('scripts.verify:release 未在 package.json 中定义');
+  }
+  if (releaseTopLevel.names.join(',') !== 'verify:ci,dist') {
+    fail(`verify:release 须恰为 verify:ci + dist(复用同一门禁链,不维护第二份清单),当前:${releaseTopLevel.names.join(' -> ') || '空'}`);
   }
 
   // ---- dist 链形态:先清理、再构建、清单基线在打包前、产物核对在打包后 ----
@@ -488,21 +477,12 @@ function summaryLine(ctx = {}) {
   const readText = ctx.readText ?? ((relativePath) => readFileSync(join(root, relativePath), 'utf8'));
   const pkg = JSON.parse(readText('package.json'));
   const scripts = pkg.scripts ?? {};
-  /** @param {string} name @returns {string[]} */
-  const topLevelScriptNames = (name) =>
-    (scripts[name] ?? '')
-      .split('&&')
-      .map((part) => part.trim())
-      .flatMap((segment) => {
-        const nested = /^npm run ([\w:.-]+)$/.exec(segment);
-        return nested === null ? [] : [nested[1]];
-      });
   const floor = /^>=\s*v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(pkg.engines?.node ?? '');
   const floorStr = floor === null ? '未登记' : floor[1];
   const nodeVersion = /** @type {string} */ (ctx.deps?.nodeVersion ?? process.versions.node);
   return (
     `[ok] 工程契约自检通过:Node 地板 ${floorStr}(engines/lockfile/CI/Release 口径一致,当前 ${nodeVersion});` +
-    `verify:ci 链 ${topLevelScriptNames('verify:ci').join(' -> ')};verify:release = verify:ci + dist;` +
+    `verify:ci 链 ${topLevelScriptNames(scripts, 'verify:ci').names.join(' -> ')};verify:release = verify:ci + dist;` +
     `dist 链 先清 dist/release 再构建、清单基线先于打包、产物核对后于打包;清理目标限定 dist/release;被引用脚本均存在;` +
     `打包白名单只覆盖交付面(编译输出树 + 包清单)且引用的顶层面均存在`
   );

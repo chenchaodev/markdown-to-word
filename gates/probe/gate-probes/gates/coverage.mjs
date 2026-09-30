@@ -15,6 +15,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runProcess } from "../../../smoke/smoke-proc.mjs";
+import { walkChain } from "../../../repo/chain-expand.mjs";
 import { ROOT, SANDBOX_PREFIX } from "../contract.mjs";
 import { finalizeGate, judgeCase } from "../judge.mjs";
 import { resolveNode, tokenizeCommand } from "../proc.mjs";
@@ -29,11 +30,15 @@ import { writeFileIn } from "../sandbox.mjs";
  */
 export function parseCoverageScript() {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
-  const script = pkg.scripts?.["test:coverage"] ?? "";
-  const c8Part = script
-    .split("&&")
-    .map((part) => part.trim())
-    .find((part) => /^c8\b/.test(part));
+  const scripts = /** @type {Record<string, string>} */ (pkg.scripts ?? {});
+  // 切段与递归展开由 gates/repo/chain-expand.mjs 独家提供(全仓单源)。此前这里是裸
+  // `split("&&")`:只认单层,一旦 `test:coverage` 把 c8 半段包进子脚本就找不到它,而
+  // 找不到时本函数返回 ok:false —— 那一档的失败文案会指向「配置漂移」,把人引向错误的排查方向。
+  // 改用叶子命令序列(深度优先 = 真实执行序)后,内层半段照样被取到。
+  /** @type {string[]} */
+  const leaves = [];
+  walkChain(scripts, "test:coverage", { onLeaf: (leaf) => leaves.push(leaf.text) });
+  const c8Part = leaves.find((part) => /^c8\b/.test(part));
   if (c8Part === undefined) {
     return { flags: [], program: [], ok: false, reason: "package.json 的 test:coverage 里找不到 c8 调用", configFiles: [] };
   }

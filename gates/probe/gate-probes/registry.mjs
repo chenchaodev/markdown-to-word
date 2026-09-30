@@ -29,6 +29,7 @@
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { ROOT } from "../../../shared/paths.js";
+import { walkChain } from "../../repo/chain-expand.mjs";
 import { GATE_IDS } from "./contract.mjs";
 import { auditJudgmentRef, makeCtx, problem, runGateCli, topLevelSelfExecutions } from "./protocol.mjs";
 
@@ -236,9 +237,9 @@ export const GATE_REGISTRY = Object.freeze(
         {
           kind: "selftest",
           ref: "gates/probe/check-coverage-zero.selftest.mjs",
-          why: "自检脚本造合成 coverage-summary.json,逐条注入「0% 文件未登记豁免 / 豁免已失效 / 基线文件缺失」并断言判红",
+          why: "自检脚本造合成 coverage-summary.json 与基线,逐条注入「0% 文件未登记豁免 / 豁免已失效 / 基线文件缺失 / 基线可解析但结构损坏」并断言判红",
         },
-        { kind: "segment", ref: "test/segments/coverage-gate.test.js", why: "验收段直接 import 判定本体,覆盖静态面(参数向量 / 阈值锚定 / 豁免自洽)与动态面" },
+        { kind: "segment", ref: "test/segments/coverage-gate.test.js", why: "验收段直接 import 判定本体,覆盖静态面(参数向量 / 阈值锚定 / 豁免自洽 / 结构诊断单一来源);动态面须紧跟 test:coverage 取覆盖率数据,故由 selftest 守护而非本段" },
       ],
     },
     coverage: {
@@ -696,29 +697,24 @@ export function discoverInvocations(ctx) {
     hit.onWorkflow = hit.onWorkflow || onWorkflow;
   };
 
-  // ① npm script 链:递归展开 CHAIN_ROOTS 的 `npm run`,顺带记下正文里裸调的仓内脚本文件
-  /** @param {string} name @param {string} chain @param {Set<string>} seen 防自引用链死循环 @returns {void} */
-  const expand = (name, chain, seen) => {
-    const body = scripts[name];
-    if (body === undefined) return;
-    note("npm", name, `chain:${chain}`, true, false);
-    for (const part of body.split("&&")) {
-      const segment = part.trim();
-      const nested = /^npm run (?:-{1,2}[\w-]+ )*([\w:.-]+)$/.exec(segment);
-      if (nested !== null) {
-        const child = /** @type {string} */ (nested[1]);
-        const nextChain = `${chain}>${child}`;
-        if (seen.has(nextChain)) continue;
-        seen.add(nextChain);
-        expand(child, nextChain, seen);
-        continue;
-      }
-      for (const m of segment.matchAll(/(?:^|\s)(?:node|electron)\s+([\w./'-]+\.(?:mjs|cjs|js|cts))/g)) {
-        note("file", /** @type {string} */ (m[1]).replaceAll("\\", "/"), `script:${name}`, true, false);
-      }
-    }
-  };
-  for (const root of CHAIN_ROOTS) expand(root, root, new Set());
+  // ① npm script 链:递归展开 CHAIN_ROOTS 的 `npm run`,顺带记下正文里裸调的仓内脚本文件。
+  // 展开与切段由 gates/repo/chain-expand.mjs 独家提供(全仓单源,见该文件头注:此前本文件
+  // 与 check-ci-contract.mjs 各写一份递归实现、另有两份扁平 split('&&'),链一旦拆出子脚本
+  // 扁平那几份就看不见内层调用点)。此处只保留本门禁特有的两件事:调用点归类与来源标注。
+  for (const root of CHAIN_ROOTS) {
+    walkChain(scripts, root, {
+      onEnter: (node) => {
+        // 未定义的 script 不构成调用点(链解析器已另行回报 missing,判定面不在本函数)
+        if (!node.defined) return;
+        note("npm", node.name, `chain:${node.path.join(">")}`, true, false);
+      },
+      onLeaf: (leaf) => {
+        for (const m of leaf.text.matchAll(/(?:^|\s)(?:node|electron)\s+([\w./'-]+\.(?:mjs|cjs|js|cts))/g)) {
+          note("file", /** @type {string} */ (m[1]).replaceAll("\\", "/"), `script:${leaf.script}`, true, false);
+        }
+      },
+    });
+  }
 
   // ② workflow:`npm run` 与裸调的 `node <file>` 都算调用点
   const workflowDir = path.join(ctx.root, ...WORKFLOWS_DIR.split("/"));

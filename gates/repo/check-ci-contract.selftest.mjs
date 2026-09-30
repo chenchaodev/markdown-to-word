@@ -4,17 +4,23 @@
 // 误删,配置漂移(Node 口径、门禁链缩水、build/typecheck 与几何门禁乱序、依赖声明/
 // 层向门禁与 action 引用固定门禁被移出或排到构建之后、全量验收段被移出/改成裸跑/
 // 被加回重复跑、前置清理被移出/乱序、清理目标越界、产物核对被移出
-// 或排到打包之前、脚本缺失)就会静默放行
+// 或排到打包之前、脚本缺失、链被拆成子脚本后内层门禁漏登记)就会静默放行
 // 发布,没有任何其他检查能发现。此处用
 // 临时夹具逐条制造漂移,断言自检脚本
 // 确实以非零码拒绝,并断言未漂移时通过。纯 fs + 子进程,无产物:临时目录
 // 写在系统临时目录并在 finally 清理(测试对象是夹具,不是本仓库文件)。
+//
+// 链解析本身在 gates/repo/chain-expand.mjs(全仓单源);本文件除夹具外另有一段
+// **直锚点**:直接对展开器求值,钉住「递归视图看得见内层 / 顶层视图不递归 /
+// 成环与悬空引用必被回报 / 菱形依赖不算环 / 叶子命令序 = 执行序」。那一段不是可选的:
+// 上面每条夹具断言的诊断全都经它产出,展开器一旦恒绿,夹具就只是在验证「什么都没报」。
 
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
+import { expandChainScriptNames, topLevelScriptNames, walkChain } from './chain-expand.mjs';
 import { scanTopLevel, topLevel } from './repo-manifest.mjs';
 
 const projectRoot = ROOT;
@@ -146,12 +152,13 @@ function createFixture(mutate) {
     writeFileIn(dir, placeholder, '// fixture\n');
   }
   copyFileSync(checkerPath, join(dir, 'gates', 'repo', 'check-ci-contract.mjs'));
-  // 被测门禁从 shared/paths.js 取项目根(ADR-040),并从 repo-manifest.mjs 派生顶层(ADR-037);
-  // 夹具内不带这两份的话,夹具会因 ERR_MODULE_NOT_FOUND 失败,而不是因被注入的漂移失败
-  // (那会让负向夹具假通过)。
+  // 被测门禁从 shared/paths.js 取项目根(ADR-040),并从 repo-manifest.mjs 派生顶层(ADR-037),
+  // 链展开走 gates/repo/chain-expand.mjs(全仓单源);夹具内不带这三份的话,夹具会因
+  // ERR_MODULE_NOT_FOUND 失败,而不是因被注入的漂移失败(那会让负向夹具假通过)。
   mkdirSync(join(dir, 'shared'), { recursive: true });
   copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
   copyFileSync(join(projectRoot, 'gates', 'repo', 'repo-manifest.mjs'), join(dir, 'gates', 'repo', 'repo-manifest.mjs'));
+  copyFileSync(join(projectRoot, 'gates', 'repo', 'chain-expand.mjs'), join(dir, 'gates', 'repo', 'chain-expand.mjs'));
 
   // mutate 既可改内存中的 manifest(经下方回写落盘),也可直接改 workflow 文件
   mutate({ dir, pkg, lock });
@@ -466,6 +473,61 @@ const CASES = [
     mutate: () => {},
     expect: null,
   },
+  /* ---- 链解析单源化(REQ-111):两种语义都必须守住,否则「拆链」是一次静默降级 ----
+   *
+   * 下面四条是**回归护栏**,不是新判据:它们钉住的是「递归视图看得见内层、顶层视图看不见
+   * 内层」这组既有语义。若有人把两者合并成一个函数,前两条会红(顶层视图开始递归)或
+   * 后两条会红(递归视图退化成单层)—— 那正是本次收敛要防的退化方向。 */
+  {
+    // 拆链实测(正向):把链首三步包进子脚本,递归视图必须照样看得见每个内层门禁。
+    // 收敛前此处用的是本文件内联的扁平 split,只看顶层 ⇒ 三个必备步骤全部「消失」⇒ 判红。
+    name: 'verify:ci 把契约/边界/action 三步包进子脚本 → 仍通过(递归展开看得见内层)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci:head'] =
+        'npm run check:contract && npm run check:boundary && npm run check:pinned-actions';
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace(
+        'npm run check:contract && npm run check:boundary && npm run check:pinned-actions &&',
+        'npm run verify:ci:head &&',
+      );
+    },
+    expect: null,
+  },
+  {
+    // 拆链实测(负向):内层漏掉一道 → 递归视图仍须点名它。判据只许精确不许放松:
+    // 若展开退化成单层,这条会因「恰好没报错」而变红(报的是别的漂移或干脆通过)。
+    name: '子脚本里少一道门禁(拆链后内层漏 boundary)→ 判红',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci:head'] = 'npm run check:contract && npm run check:pinned-actions';
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace(
+        'npm run check:contract && npm run check:boundary && npm run check:pinned-actions &&',
+        'npm run verify:ci:head &&',
+      );
+    },
+    expect: /verify:ci 缺少门禁步骤 check:boundary/,
+  },
+  {
+    // 顶层视图的**非递归**语义:verify:release 自己复制一份内层步骤(成员齐全、顺序正确)
+    // 仍须判红 —— 那正是「不维护第二份清单」这条断言要拦的漂移。递归化会放过它。
+    name: 'verify:release 自行复制内层步骤(成员齐全)→ 判红(顶层形态断言,不得递归化)',
+    mutate: ({ pkg }) => {
+      // 内层步骤用展开器取(不另写一份切段):夹具自己复制一份链解析,就成了第 6 份实现,
+      // 而它漂移时上面的断言会以「夹具构造错」的形式失败,而不是以「判据失守」的形式。
+      const inner = expandChainScriptNames(pkg.scripts, 'verify:ci')
+        .map((name) => `npm run ${name}`)
+        .join(' && ');
+      pkg.scripts['verify:release'] = `${inner} && npm run dist`;
+    },
+    expect: /verify:release 须恰为 verify:ci \+ dist/,
+  },
+  {
+    // 重复项必须如实计出:同一个子脚本被两处调用时展开结果里出现两次。
+    // 若展开器顺手去重,「全量验收段恰跑一遍」那条计数断言会自欺(被调两次记成一次)。
+    name: '同一子脚本被调两次 → 计数断言看得见两次(展开不得去重)',
+    mutate: ({ pkg }) => {
+      pkg.scripts['verify:ci'] = pkg.scripts['verify:ci'].replace(' && npm run test:coverage', ' && npm run test:coverage && npm run test:coverage');
+    },
+    expect: /verify:ci 全量验收只保留插桩那一遍/,
+  },
 ];
 
 const failures = [];
@@ -492,6 +554,112 @@ for (const testCase of CASES) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+/* ================= 链展开器的直锚点(展开层本身必须有自检) =================
+ *
+ * 上面的夹具证明「链解析**用到**的地方真会判红」;这一段直接对展开器求值,证明它自己不会恒绿
+ * —— 恒绿的展开器会让上面每一条夹具都失去意义(它们断言的诊断全都来自展开结果)。
+ * 三条,分别对应展开器的三项能力:
+ *   ① 递归视图看得见内层(嵌套两层仍被展开)—— 单层实现必红;
+ *   ② 顶层视图**不**递归(只返回一层)—— 与 ① 是一对,少任一条语义就有一半判据失效;
+ *   ③ 成环不挂死且被回报 —— 静默跳过 = 恒绿。
+ * 外加两条把「收敛」这件事本身钉住:菱形依赖(两父调同一子)不得被当成环,未定义 script 必须回报。
+ */
+const expandFailures = [];
+
+/** 断言辅助(失败项收集口径与上面一致) */
+function checkExpander(condition, message) {
+  if (!condition) expandFailures.push(message);
+}
+
+/** 三层链:a → b → c,外加一个叶子命令与一个 npm 开关形态的调用 */
+const EXPAND_SCRIPTS = {
+  a: 'npm run b && echo step-a',
+  b: 'npm run --silent c',
+  c: 'echo step-c',
+  // 菱形:a 与 d 都调 b。b 不是环,两次出现都要如实计出(去重会让计数类断言自欺)。
+  d: 'npm run b',
+  // 真环:loop → loop2 → loop。
+  loop: 'npm run loop2',
+  loop2: 'npm run loop',
+  // 悬空引用:调用了不存在的脚本。
+  dangling: 'npm run nowhere',
+};
+
+const expanded = expandChainScriptNames(EXPAND_SCRIPTS, 'a');
+// 深度优先:a 的段序是 b、echo step-a ⇒ 先收 b,再收 b 的后代 c,最后叶子不参与。
+checkExpander(
+  expanded.join(',') === 'b,c',
+  `递归展开失守「嵌套两层」:a → b → c 期望 b,c,实际 ${expanded.join(',') || '空'}`,
+);
+// npm 开关形态(`npm run --silent c`)必须被认出来 —— 窄的正则会让它在链上凭空消失。
+checkExpander(
+  expanded.includes('c'),
+  `递归展开失守:脚本名前的 npm 开关(--silent)让内层调用消失(实际 ${expanded.join(',') || '空'})`,
+);
+
+// 顶层视图:同一份 scripts,a 的顶层只有 b(不递归到 c)。
+const aTopLevel = topLevelScriptNames(EXPAND_SCRIPTS, 'a');
+checkExpander(
+  aTopLevel.names.join(',') === 'b' && !aTopLevel.missing,
+  `顶层视图失守「不递归」:a 的顶层子 script 期望恰为 b,实际 ${aTopLevel.names.join(',') || '空'}(missing=${String(aTopLevel.missing)})`,
+);
+checkExpander(
+  !aTopLevel.names.includes('c'),
+  `顶层视图失守:它递归到了内层(c)—— 「verify:release 恰为 verify:ci + dist」那条形态断言会被架空`,
+);
+// 未定义 script 由 missing 回报,而不是静默给空数组(判红权在调用方,但事实必须传出去)。
+checkExpander(
+  topLevelScriptNames(EXPAND_SCRIPTS, 'nope').missing,
+  '顶层视图失守:未定义的 script 未被 missing 回报(静默空数组 = 恒绿)',
+);
+
+// 成环:必须终止并回报环路径(a → b → a 那样的首尾同名序列)。
+/** @type {string[][]} */
+const cycles = [];
+/** @type {string[]} */
+const missingSeen = [];
+expandChainScriptNames(EXPAND_SCRIPTS, 'loop', {
+  onCycle: (path) => cycles.push(path),
+  onMissing: (name) => missingSeen.push(name),
+});
+checkExpander(
+  cycles.length === 1 && cycles[0]?.join('>') === 'loop>loop2>loop',
+  `成环保护失守:期望回报 1 条环路径 loop>loop2>loop,实际 ${cycles.length} 条:${cycles.map((p) => p.join('>')).join(' | ') || '无'}(未挂死,但环没被看见 = 恒绿)`,
+);
+// 悬空引用必须回报 missing,而不是当作叶子命令或静默跳过。
+expandChainScriptNames(EXPAND_SCRIPTS, 'dangling', { onMissing: (name) => missingSeen.push(name) });
+checkExpander(
+  missingSeen.includes('nowhere'),
+  `未定义 script 未被回报(实际回报 ${missingSeen.join(',') || '无'})—— 调用方会以为链是空的`,
+);
+
+// 菱形不是环:a → b 与 d → b,两次出现都要计出。
+/** @type {string[][]} */
+const diamondCycles = [];
+const diamond = expandChainScriptNames(EXPAND_SCRIPTS, 'd', { onCycle: (p) => diamondCycles.push(p) });
+checkExpander(
+  diamond.join(',') === 'b,c' && diamondCycles.length === 0,
+  `菱形依赖失守:d → b → c 期望 b,c 且零环,实际 ${diamond.join(',') || '空'}(环 ${diamondCycles.length} 条)`,
+);
+
+// 叶子命令序列 = 深度优先的真实执行序(探针取 c8 参数向量走的就是这条路径)。
+/** @type {string[]} */
+const leaves = [];
+walkChain(EXPAND_SCRIPTS, 'a', { onLeaf: (leaf) => leaves.push(leaf.text) });
+checkExpander(
+  leaves.join(' | ') === 'echo step-c | echo step-a',
+  `叶子命令序失守:期望 "echo step-c | echo step-a"(深度优先 = 执行序),实际 "${leaves.join(' | ')}"`,
+);
+
+if (expandFailures.length > 0) {
+  for (const failure of expandFailures) console.error(`[contract-selftest:fail] ${failure}`);
+  console.error(`[contract-selftest:fail] 链展开器直锚点失败,共 ${expandFailures.length} 项`);
+  process.exit(1);
+}
+console.log(
+  `[ok] contract-selftest:链展开器直锚点(递归两层 / 顶层不递归 / 成环与悬空回报 / 菱形非环 / 叶子执行序)全部通过`,
+);
 
 /* ================= 顶层派生的双向锚点(ADR-037 后果:派生层本身必须有自检) =================
  *
@@ -672,4 +840,7 @@ if (manifestFailures.length > 0) {
   console.error(`[contract-selftest:fail] 顶层派生锚点失败,共 ${manifestFailures.length} 项`);
   process.exit(1);
 }
-console.log(`[ok] contract-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截);顶层派生锚点全部通过`);
+console.log(
+  `[ok] contract-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截);`
+  + '链展开器直锚点与顶层派生锚点全部通过',
+);
