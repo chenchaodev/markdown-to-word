@@ -91,7 +91,8 @@
       "dist/**",
       "!dist/**/*.map",
       "package.json",
-      "!node_modules/highlight.js/styles/**"
+      "!node_modules/highlight.js/styles/**",
+      "!node_modules/**/*.map"
     ],
     "win": {
       "target": [
@@ -110,6 +111,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "license": "LICENSE",
       "artifactName": "${productName}-Setup-${version}.${ext}"
     }
   },
