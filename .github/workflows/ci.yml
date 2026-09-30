@@ -72,7 +72,11 @@ jobs:
       # 位置是**正确性要求**:必须排在 `npm ci` 之后 —— npm ci 会整个删掉 node_modules,
       # 提前恢复的缓存会被抹掉。
       # 失效有两道,故无需自研失效逻辑:① key 带 lockfile 哈希,依赖图一变即自然失效;
-      # ② ESLint 自身按文件元数据 + config 哈希二次失效(--cache-strategy 默认 metadata)。
+      # ② ESLint 自身按**文件内容哈希** + config 哈希二次失效(--cache-strategy content)。
+      # ②**不能留在默认的 metadata**:它按 mtime+size 判失效,而 actions/checkout 每次都
+      # 改写全部源文件的 mtime ⇒ 恢复回来的条目**全部**被判为已变,缓存等于没接(实测:
+      # 同一情形 44.32s,与无缓存的 51.52s 只差噪声量级;改 content 后 3.62s)。判据是内容
+      # 而非 mtime,所以内容真变了照样失效 —— 结构上不可能重放陈旧结果。
       # 缓存目录与 lint 脚本的 --cache-location 一致(node_modules/.cache/eslint/),
       # 且落在既有 node_modules/ 忽略规则内,不需要额外 .gitignore 条目。
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
