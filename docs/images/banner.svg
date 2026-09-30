@@ -1,28 +1,146 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MarkdownToWord · 仓库宣传图 banner (1280×640)
+  视觉规范来源：docs/design/ui-guidelines.md（§1.1 色板 · §1.2 字体三角色 · §4 红线）
+  取值全部取自 token，无绕开 token 的硬编码配色。
+  字体鲁棒性：直排逐字独立成格（换字体不改变占位）；横排文字左对齐并留 ≥40% 余量，
+              不使用 textLength / 不靠字宽对齐 / 不依赖精确字形测量。
+  兼容性：无任何外部资源引用，无图片元素、无外部 HTML 容器、无样式表导入、无 CSS 滤镜、
+          字体一律走系统栈（不内嵌字形）。唯一的 url() 引用是文档内部片段 url(#paper)。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640"
+     role="img" aria-label="MarkdownToWord — 把 Markdown 排成能付印的 Word / PDF">
+  <title>MarkdownToWord</title>
+
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#15181d"/>
-      <stop offset="1" stop-color="#1c2027"/>
+    <!-- 纸面：取 token canvas 冷灰纸的极轻明度起伏（注释内不得出现连续两个连字符，XML 不合法） -->
+    <linearGradient id="paper" x1="0.1" y1="0" x2="0.45" y2="1">
+      <stop offset="0" stop-color="#F4F4F1"/>
+      <stop offset="1" stop-color="#E7E7E1"/>
     </linearGradient>
-    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#c23d1e"/>
-      <stop offset="1" stop-color="#d5542f"/>
-    </linearGradient>
+
+    <!-- 字体三角色（栈与 ui-guidelines §1.2 逐项一致，末尾补一个同类别名兜底） -->
+    <style>
+      .serif { font-family: 'Source Han Serif SC','Noto Serif SC','Songti SC',SimSun,Georgia,serif; }
+      .ui    { font-family: 'Microsoft YaHei UI','Microsoft YaHei','PingFang SC','Segoe UI',system-ui,sans-serif; }
+      .mono  { font-family: 'Cascadia Code','JetBrains Mono',Consolas,'DejaVu Sans Mono',monospace; }
+    </style>
   </defs>
-  <rect width="1280" height="640" fill="url(#bg)"/>
-  <rect x="0" y="0" width="14" height="640" fill="url(#acc)"/>
-  <text x="96" y="250" fill="#f3f3ef" font-size="86" font-weight="700" letter-spacing="1">Markdown<tspan fill="#d5542f">ToWord</tspan></text>
-  <text x="98" y="320" fill="#b8bcc4" font-size="34">Markdown → Word / PDF · 本地离线 · 真 docx 中文排版</text>
-  <text x="98" y="372" fill="#878e99" font-size="30">Local-first Markdown to real .docx / .pdf converter</text>
-  <g font-size="24" font-family="'Cascadia Code', monospace">
-    <rect x="98" y="430" rx="8" width="150" height="52" fill="#232830" stroke="#3b424e"/>
-    <text x="173" y="463" fill="#e9e7e1" text-anchor="middle">GPL-3.0</text>
-    <rect x="266" y="430" rx="8" width="150" height="52" fill="#232830" stroke="#3b424e"/>
-    <text x="341" y="463" fill="#e9e7e1" text-anchor="middle">Electron</text>
-    <rect x="434" y="430" rx="8" width="200" height="52" fill="#232830" stroke="#3b424e"/>
-    <text x="534" y="463" fill="#e9e7e1" text-anchor="middle">Offline</text>
-    <rect x="652" y="430" rx="8" width="210" height="52" fill="#232830" stroke="#3b424e"/>
-    <text x="757" y="463" fill="#e9e7e1" text-anchor="middle">Windows</text>
+
+  <!-- ============ 纸面 ============ -->
+  <rect width="1280" height="640" fill="url(#paper)"/>
+  <rect x="26" y="26" width="1228" height="588" rx="4" fill="none"
+        stroke="#CCCDC5" stroke-opacity="0.45"/>
+
+  <!-- ============ 左栏：题字与能力 ============ -->
+  <g id="left-column">
+    <!-- 数据 mono：平台事实 + 多语言（README 与 README_EN 共用本图，故多语言上提一行） -->
+    <text class="mono" x="80" y="118" font-size="18" letter-spacing="2.2" fill="#71767F">OFFLINE · GPL-3.0 · 简体中文 / 繁體中文 / English</text>
+
+    <!-- 展示衬线：只做声音，不做正文。分两行错落，上小下大 -->
+    <text class="serif" x="80" y="206" font-size="44" letter-spacing="0.6" fill="#494E58">Markdown</text>
+    <text class="serif" x="78" y="336" font-size="112" fill="#1E2126">To Word</text>
+
+    <!-- 印线：一道短墨条，不做分割大色块 -->
+    <rect x="80" y="380" width="58" height="3" fill="#494E58"/>
+
+    <!-- 界面 UI：一行主张 + 英文对照 + 两行能力清单，全部左对齐、留足横向余量 -->
+    <text class="ui" x="80" y="436" font-size="29" fill="#1E2126">把 Markdown 排成能付印的 Word / PDF</text>
+    <text class="ui" x="80" y="472" font-size="21" fill="#71767F">Typeset Markdown into Word / PDF you can print.</text>
+    <text class="ui" x="80" y="512" font-size="23" fill="#71767F">双管线 · 预设模板 · 目录页码 · 水印页眉</text>
+    <text class="ui" x="80" y="550" font-size="23" fill="#71767F">Mermaid · LaTeX · 图片题注交叉引用 · 成书向导</text>
   </g>
-  <text x="98" y="560" fill="#71767f" font-size="24">文件不上传 · 离线可用 · 中文排版可控 · WPS 兼容</text>
+
+  <!-- ============ 右栏：一张待印文稿（签名元素集中于此） ============ -->
+  <g id="paper-sheet">
+    <!-- 版心双界栏：直排题字夹在两条发丝线之间 -->
+    <line x1="764" y1="98" x2="764" y2="544" stroke="#DCDCD4" stroke-width="1"/>
+    <line x1="830" y1="98" x2="830" y2="544" stroke="#DCDCD4" stroke-width="1"/>
+
+    <!-- 直排「落笔 · 排版 · 成书」：逐字独立成格，换字体只改字形不改占位 -->
+    <g class="serif" font-size="32" fill="#494E58" text-anchor="middle">
+      <text x="797" y="137">落</text>
+      <text x="797" y="193">笔</text>
+      <text x="797" y="304">排</text>
+      <text x="797" y="360">版</text>
+      <text x="797" y="471">成</text>
+      <text x="797" y="527">书</text>
+    </g>
+    <g class="serif" font-size="14" fill="#C4C5BC" text-anchor="middle">
+      <text x="797" y="242">·</text>
+      <text x="797" y="410">·</text>
+    </g>
+
+    <!-- 底下那张纸（微旋，只露一条边，说明「成叠」） -->
+    <g transform="rotate(-2.5 1038 339)">
+      <rect x="880" y="116" width="316" height="446" fill="#EBEBE6" stroke="#E2E2DC"/>
+    </g>
+
+    <!-- 纸面投影：四层递增偏移的实心矩形叠出柔边，替代 filter（规避渲染器差异） -->
+    <rect x="903" y="113" width="316" height="446" fill="#1E2126" opacity="0.045"/>
+    <rect x="899" y="108" width="316" height="446" fill="#1E2126" opacity="0.032"/>
+    <rect x="896" y="104" width="316" height="446" fill="#1E2126" opacity="0.022"/>
+    <rect x="892" y="98"  width="316" height="446" fill="#1E2126" opacity="0.014"/>
+
+    <!-- 正面纸：取 token card 纸面 + token line-2 描边 -->
+    <rect x="892" y="98" width="316" height="446" fill="#FBFBF9" stroke="#CCCDC5"/>
+
+    <!-- 四角裁切线（签名元素之一）：L 形标记，落在版心外侧 -->
+    <g fill="none" stroke="#B4B5AB" stroke-width="1.5">
+      <path d="M879 98 V85 H892"/><path d="M1208 85 H1221 V98"/>
+      <path d="M879 544 V557 H892"/><path d="M1208 557 H1221 V544"/>
+    </g>
+
+    <!-- 纸面内容：标题块 -->
+    <rect x="920" y="151" width="120" height="11" rx="2" fill="#262A31"/>
+    <rect x="920" y="172" width="84" height="6" rx="3" fill="#4A4F59"/>
+
+    <!-- 纸面内容：正文行（首行加重，模拟段落） -->
+    <rect x="920" y="206" width="232" height="5" rx="2.5" fill="#D5D5CD"/>
+    <rect x="920" y="222" width="206" height="5" rx="2.5" fill="#E6E6E0"/>
+    <rect x="920" y="238" width="244" height="5" rx="2.5" fill="#E6E6E0"/>
+    <rect x="920" y="254" width="164" height="5" rx="2.5" fill="#E6E6E0"/>
+    <rect x="920" y="274" width="224" height="5" rx="2.5" fill="#D5D5CD"/>
+    <rect x="920" y="290" width="190" height="5" rx="2.5" fill="#E6E6E0"/>
+    <rect x="920" y="306" width="232" height="5" rx="2.5" fill="#E6E6E0"/>
+
+    <!-- 纸面内容：图（取 token inset 凹陷面 + 两个节点，指向 Mermaid / 题注交叉引用） -->
+    <rect x="920" y="326" width="260" height="68" rx="3" fill="#EBEBE6" stroke="#E2E2DC"/>
+    <line x1="1000" y1="361" x2="1056" y2="361" stroke="#CCCDC5" stroke-width="1.5"/>
+    <rect x="946" y="350" width="54" height="22" rx="4" fill="#F1F1EE" stroke="#CCCDC5"/>
+    <rect x="1056" y="350" width="54" height="22" rx="4" fill="#F1F1EE" stroke="#CCCDC5"/>
+
+    <!-- 纸面内容：题注（mono 数据角色） -->
+    <text class="mono" x="920" y="408" font-size="13" letter-spacing="0.6" fill="#71767F">Fig. 1</text>
+
+    <!-- 纸面内容：目录带页码（点导线 + 等宽页码） -->
+    <rect x="1008" y="436" width="54" height="6" rx="3" fill="#4A4F59"/>
+    <g fill="#E6E6E0">
+      <rect x="1008" y="458" width="104" height="5" rx="2.5"/>
+      <rect x="1008" y="476" width="88" height="5" rx="2.5"/>
+      <rect x="1008" y="494" width="112" height="5" rx="2.5"/>
+    </g>
+    <g stroke="#D5D5CD" stroke-width="1" stroke-dasharray="2 4">
+      <line x1="1118" y1="460" x2="1162" y2="460"/>
+      <line x1="1118" y1="478" x2="1162" y2="478"/>
+      <line x1="1118" y1="496" x2="1162" y2="496"/>
+    </g>
+    <g class="mono" font-size="12" fill="#71767F" text-anchor="end">
+      <text x="1180" y="464">1</text>
+      <text x="1180" y="482">2</text>
+      <text x="1180" y="500">3</text>
+    </g>
+
+    <!-- 纸面内容：钤印（签名元素之二；全图唯一的朱砂） -->
+    <g id="seal">
+      <rect x="920" y="442" width="54" height="54" rx="3" fill="#B5301C"/>
+      <rect x="927" y="449" width="40" height="40" rx="1" fill="none"
+            stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="2"/>
+      <text class="serif" x="947" y="481" font-size="34" fill="#FBFBF9" text-anchor="middle">梓</text>
+    </g>
+
+    <!-- 纸面内容：页脚页码 -->
+    <line x1="920" y1="512" x2="1180" y2="512" stroke="#E2E2DC" stroke-width="1"/>
+    <text class="mono" x="1050" y="530" font-size="12" fill="#878E99" text-anchor="end">- 1 -</text>
+  </g>
 </svg>
