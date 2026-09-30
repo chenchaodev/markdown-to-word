@@ -29,9 +29,9 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { expandArtifactName } from './check-release-artifacts.mjs';
 import { isMainModule, parseArgs, toPosix } from './check-dist-manifest.mjs';
+import { ROOT } from '../shared/paths.js';
 import {
   collectSmokeProblems,
   createUserData,
@@ -44,7 +44,7 @@ import {
   SMOKE_FLAG,
 } from './smoke-proc.mjs';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 
 /** 发布产物目录默认值(build.directories.output 为准,取不到时回退) */
 const DEFAULT_RELEASE_DIR = 'release';

@@ -2,12 +2,12 @@
 // 报告 schema 与落盘路径、被保护路径清单、沙盒复制清单、门禁 id 与元信息,以及跨文件
 // 传递的数据形状(JSDoc typedef)。本文件只出常量与类型:零逻辑、零 IO、可直读。
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT } from "../../shared/paths.js";
 
 /* ---------- 契约常量(单一来源;报告与摘要都从这里取) ---------- */
 
-/** 项目根(scripts/ 的上一级) */
-export const ROOT = fileURLToPath(new URL("../..", import.meta.url));
+/** 项目根(单一来源在 shared/paths.js;此处转出是探针各 island 的既有取法) */
+export { ROOT };
 
 /** 报告 schema 版本:字段不兼容变更时递增 */
 export const REPORT_SCHEMA = "m2w/gate-probes@1";
@@ -23,23 +23,37 @@ export const SANDBOX_PREFIX = "m2w-gate-probes-";
 export const NODE_TIMEOUT_MS = 120_000;
 export const SMOKE_TIMEOUT_MS = 240_000;
 
-/** 工程副本需要复制的路径(段模块与门禁脚本按自身位置推导项目根,故须整树复制) */
+/**
+ * 工程副本需要复制的路径(段模块与门禁脚本按自身位置推导项目根,故须整树复制)。
+ *
+ * `shared` 必须在清单内:项目根单源是 `shared/paths.js`,而沙盒内执行的
+ * `scripts/copy-renderer.mjs`(经 buildSandbox)与 `test/tools/gen-fixtures.mjs`
+ * → `test/common/paths.js`(经 probeFixtures)都会 import 它。缺它 ⇒ 沙盒内构建
+ * 以「资源拷贝 exit 1」失败,而该失败原先只降级成装饰性 advisory(见 report.mjs)。
+ */
 export const TREE_MIRROR_PATHS = [
   "src",
   "test",
   "dist",
   "scripts",
+  "shared",
   "package.json",
   "tsconfig.json",
   "tsconfig.test.json",
 ];
 
-/** 真实工作树的被保护路径(探针前后逐字节比对) */
+/**
+ * 真实工作树的被保护路径(探针前后逐字节比对)。
+ *
+ * `shared` 同样必须在清单内:它是新的顶层目录,漏掉它等于「真实工作树零注入」这条
+ * 承诺不覆盖它 —— 沙盒脚本若把根指回真实工作树并写进 shared/,指纹将看不出变化。
+ */
 export const PROTECTED_PATHS = [
   "src",
   "test",
   "dist",
   "scripts",
+  "shared",
   "output",
   "package.json",
   "package-lock.json",

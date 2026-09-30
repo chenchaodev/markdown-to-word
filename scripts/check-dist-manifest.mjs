@@ -22,6 +22,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ROOT } from '../shared/paths.js';
 
 /** 清单 schema 版本:格式不兼容变更时递增,校验模式遇到不匹配即拒绝(不静默重生成) */
 export const MANIFEST_SCHEMA = 'm2w/dist-manifest@1';
@@ -264,7 +265,7 @@ export async function main(argv = []) {
     return 0;
   }
 
-  const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+  const projectRoot = ROOT;
   const distDir = path.resolve(projectRoot, options.dist ?? DEFAULT_DIST_DIR);
   const manifestPath = path.resolve(projectRoot, options.output ?? DEFAULT_MANIFEST_PATH);
 

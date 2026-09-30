@@ -34,10 +34,10 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { isMainModule, parseArgs } from './check-dist-manifest.mjs';
+import { ROOT } from '../shared/paths.js';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 const USAGE = '用法: node scripts/check-transform-dispatch.mjs [--src <dir>] [--help]';
 
 /** 渲染前变换类设置的键组名(本门禁的判定词表;新增变换键组时在此登记) */

@@ -26,6 +26,10 @@ export async function probeDistManifest(ctx) {
   const scriptName = "check-dist-manifest.mjs";
   fs.mkdirSync(path.join(sandbox, "scripts"), { recursive: true });
   fs.copyFileSync(path.join(ROOT, "scripts", scriptName), path.join(sandbox, "scripts", scriptName));
+  // 被复制的门禁脚本从 shared/paths.js 取项目根(ADR-040),沙盒内必须带一份,
+  // 否则探针会以「脚本起不来」失败 —— 那是夹具缺陷,不是门禁结论。
+  fs.mkdirSync(path.join(sandbox, "shared"), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, "shared", "paths.js"), path.join(sandbox, "shared", "paths.js"));
   const manifestInput = {
     "main/index.js": "export const main = 1;\n",
     "core/convert.js": "export const convert = 1;\n",

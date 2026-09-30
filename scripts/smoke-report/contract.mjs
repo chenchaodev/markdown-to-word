@@ -1,7 +1,7 @@
-import { fileURLToPath } from 'node:url';
+import { ROOT as projectRoot } from '../../shared/paths.js';
 
-/** 仓库根(报告与摘要只允许相对路径,故一切定位都从这里出发) */
-export const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
+/** 仓库根(单一来源在 shared/paths.js;报告与摘要只允许相对路径,故一切定位都从这里出发) */
+export { projectRoot };
 
 // 冒烟报告的契约常量层:schema 版本、状态与退出码、非致命降级标记清单、默认落点,
 // 以及全模块共用的 JSDoc 类型契约(各层用 `@typedef {import('./contract.mjs').X} X` 引用,

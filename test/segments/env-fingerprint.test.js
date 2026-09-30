@@ -5,6 +5,8 @@
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { ROOT } from "../common/paths.js";
 import {
   collectEnvironmentFingerprint,
   formatFingerprintJson,
@@ -186,7 +188,7 @@ export async function run() {
   assert.throws(() => parseCliOptions(["--format=yaml"]), /requires either json or text/);
   assert.throws(() => parseCliOptions(["--json", "--text"]), /specified more than once/);
 
-  const landingPage = await readFile(new URL("../../docs/index.html", import.meta.url), "utf8");
+  const landingPage = await readFile(path.join(ROOT, "docs", "index.html"), "utf8");
   assert.match(landingPage, /Node\.js ≥ 22\.13/);
   assert.doesNotMatch(landingPage, /Node\.js ≥ 20\.19/);
 

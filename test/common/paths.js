@@ -3,22 +3,18 @@
  * 测试路径常量:输入(fixtures,入仓可版本化)与产物(artifacts/smoke,gitignore)分离。
  */
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import {
+  ARTIFACTS_DIR,
+  FAILURES_DIR,
+  FIXTURES_DIR,
+  ROOT,
+  SMOKE_DIR,
+} from "../../shared/paths.js";
 
-/** 项目根目录 */
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-
-/** 测试输入样例(静态文件,随仓库维护) */
-export const FIXTURES_DIR = path.join(ROOT, "test", "fixtures");
-
-/** 验收断言产物(按主题命名,无编号) */
-export const ARTIFACTS_DIR = path.join(ROOT, "output", "artifacts");
-
-/** smoke 临时产物(运行时自清理) */
-export const SMOKE_DIR = path.join(ROOT, "output", "smoke");
-
-/** 失败段专属产物(失败日志 + 该段 buffer 快照;与成功路径产物目录分离,互不覆盖) */
-export const FAILURES_DIR = path.join(ARTIFACTS_DIR, "failures");
+// 路径常量的单一来源在 shared/paths.js(项目根自算全仓只许在那里发生一次)。
+// 本文件保留同名再导出,是测试树的历史入口:约 40 个段经 `../common/paths.js` 取值,
+// 改导入路径属纯机械 churn 且无收益,故维持转出面不变。
+export { ARTIFACTS_DIR, FAILURES_DIR, FIXTURES_DIR, ROOT, SMOKE_DIR };
 
 /**
  * 某失败段的产物目录:段名 → 目录名(段名 segments/utils.test.js → segments_utils)。

@@ -54,8 +54,9 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { ROOT } from '../shared/paths.js';
 
-const projectRoot = path.resolve(import.meta.dirname, '..');
+const projectRoot = ROOT;
 const USAGE = '用法: node scripts/check-test-numbering.mjs [--help]';
 
 /**

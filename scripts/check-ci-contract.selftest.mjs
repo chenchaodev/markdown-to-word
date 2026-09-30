@@ -14,9 +14,9 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from '../shared/paths.js';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 const checkerPath = join(projectRoot, 'scripts', 'check-ci-contract.mjs');
 
 const FLOOR = '22.13.0';
@@ -110,6 +110,10 @@ function createFixture(mutate) {
   writeFileIn(dir, '.github/workflows/release.yml', workflow('verify:release'));
   for (const placeholder of FIXTURE_PLACEHOLDERS) writeFileIn(dir, placeholder, '// fixture\n');
   copyFileSync(checkerPath, join(dir, 'scripts', 'check-ci-contract.mjs'));
+  // 被测门禁从 shared/paths.js 取项目根(ADR-040);夹具内不带一份的话,夹具会因
+  // ERR_MODULE_NOT_FOUND 失败,而不是因被注入的漂移失败(那会让负向夹具假通过)。
+  mkdirSync(join(dir, 'shared'), { recursive: true });
+  copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
 
   // mutate 既可改内存中的 manifest(经下方回写落盘),也可直接改 workflow 文件
   mutate({ dir, pkg, lock });

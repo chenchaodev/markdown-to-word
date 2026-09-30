@@ -15,11 +15,11 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { isMainModule, parseArgs } from './check-dist-manifest.mjs';
+import { ROOT } from '../shared/paths.js';
 
 // 项目根(scripts/ 的上一级)
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 
 /**
  * 递归收集 dir 下所有文件的最大 mtime(毫秒时间戳);无文件返回 null。

@@ -30,10 +30,10 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { isMainModule, parseArgs } from './check-dist-manifest.mjs';
+import { ROOT } from '../shared/paths.js';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 const USAGE =
   '用法: node scripts/check-pinned-actions.mjs [--workflows <dir>] [--baseline <file>] [--no-baseline]';
 

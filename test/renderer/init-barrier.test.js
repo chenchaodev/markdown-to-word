@@ -15,10 +15,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT } from "../common/paths.js";
 
 const SRC = fs.readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "renderer", "renderer.ts"),
+  path.join(ROOT, "src", "renderer", "renderer.ts"),
   "utf8",
 );
 

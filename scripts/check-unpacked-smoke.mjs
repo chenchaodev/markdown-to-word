@@ -24,8 +24,8 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { isMainModule, parseArgs, toPosix } from './check-dist-manifest.mjs';
+import { ROOT } from '../shared/paths.js';
 import {
   asarContainsEntry,
   collectSmokeProblems,
@@ -40,7 +40,7 @@ import {
   SMOKE_FLAG,
 } from './smoke-proc.mjs';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 
 /** 打开发布产物的默认目录(取自 build.directories.output,与 check-release-artifacts 同源) */
 const DEFAULT_RELEASE_DIR = 'release';

@@ -6,9 +6,9 @@ import sharp from "sharp";
 import pngToIco from "png-to-ico";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT } from "../shared/paths.js";
 
-const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const root = ROOT;
 const svgPath = path.join(root, "build", "icon.svg");
 const icoPath = path.join(root, "build", "icon.ico");
 

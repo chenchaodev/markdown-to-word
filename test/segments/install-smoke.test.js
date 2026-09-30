@@ -227,6 +227,11 @@ function createSandbox({ smokeEntryInAsar = true, installer = true, perMachine =
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.copyFileSync(path.join(ROOT, "scripts", name), target);
   }
+  // 沙盒内那 4 个脚本都 import 项目根单源 shared/paths.js(ADR-040),故必须逐字节带一份进去,
+  // 否则沙盒里 ERR_MODULE_NOT_FOUND,整段以「脚本起不来」的形式红,而不是被测语义的红。
+  const sharedModule = path.join(root, "shared", "paths.js");
+  fs.mkdirSync(path.dirname(sharedModule), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, "shared", "paths.js"), sharedModule);
   // smoke-proc.mjs 复用 test/common/userdata.js 的清理语义,沙盒内也放一份逐字节副本
   const userDataModule = path.join(root, "test", "common", "userdata.js");
   fs.mkdirSync(path.dirname(userDataModule), { recursive: true });

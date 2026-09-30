@@ -29,12 +29,13 @@
 // 源码子树(--src)与依赖声明(--package)分开指定:编译产物(dist/)与仓库根的
 // package.json 是一对,但两者不同层;合成一个根目录参数会逼着脚本去猜声明在哪。
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { isMainModule, parseArgs } from './check-dist-manifest.mjs';
+import { lexSource } from '../test/common/copy-closure.js';
+import { ROOT } from '../shared/paths.js';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 const USAGE =
   '用法: node scripts/check-import-boundary.mjs [--src <dir>] [--package <file>] [--flavor src|dist]';
 
@@ -159,6 +160,73 @@ export const LAYER_RULES = Object.freeze([
       + '故 core/pdf/** 不得直接 import node:fs',
   },
 ]);
+
+// ---- 规则 no-self-computed-root:项目根的单一来源 ----
+
+/**
+ * 全仓唯一允许自算项目根的文件。改它的位置必须同步改这里(两处互为对方的校验)。
+ * 它按「自身位于 <root>/shared/」这一固定深度取根,故深度只在这一处出现。
+ */
+export const ROOT_SOURCE_FILE = 'shared/paths.js';
+
+/**
+ * ⚠ 本文件曾有一张 `ROOT_COMPUTE_EXEMPT_FILES` 豁免表(9 条),已按 ADR-040 **整表删除**。
+ * 那 9 条全部是「被逐字节复制进沙盒、而沙盒不含 shared/」的脚本,如今 7 处复制点都补了
+ * `shared/paths.js`,故它们改为 import 单源,不再需要豁免。
+ * 删表后本规则对全仓**零豁免**(门禁自身 `ROOT_COMPUTE_SELF_EXEMPT` 除外,那是规则定义处)。
+ * 不要再把豁免表加回来:若某个脚本将来又需要自算根,正确做法是给它所在的沙盒补复制点。
+ */
+
+/**
+ * 自算项目根的四种写法(逐字匹配源码文本,故门禁与实现无共享代码):
+ *   1. url-up         —— 用 URL 构造器在 import.meta.url 上跳一级或多级
+ *   2. dirname-resolve —— 同一写法的 import.meta.dirname 形态
+ *   3. dirname-chain  —— path.resolve 套 path.dirname 套 fileURLToPath 的连写形态
+ *   4. fileurl-up     —— fileURLToPath 取到本文件路径后再手工上跳的变体
+ * 覆盖 3/4 是因为它们与 1/2 语义完全相同,却躲过前两条正则 —— 规则若只认字面写法,
+ * 等于给出「换个写法就绕过门禁」的提示。
+ *
+ * 本表刻意不写可读的写法示例:字面示例会被本规则扫到门禁自己(见 ROOT_COMPUTE_SELF_EXEMPT)。
+ */
+export const ROOT_COMPUTE_PATTERNS = Object.freeze([
+  { id: 'url-up', re: /new\s+URL\(\s*(['"])\.\.(?:\/|\\|['"])/ },
+  { id: 'dirname-resolve', re: /import\.meta\.dirname\s*,\s*(['"])\.\.(?:\/|\\|['"])/ },
+  { id: 'dirname-chain', re: /path\.resolve\(\s*path\.dirname\(\s*fileURLToPath\(\s*import\.meta\.url/ },
+  { id: 'fileurl-up', re: /fileURLToPath\(\s*import\.meta\.url\s*\)\s*\)\s*,\s*(['"])\.\.(?:\/|\\|['"])/ },
+]);
+
+/**
+ * 门禁自身对这条规则的豁免:规则表与自检样例里必然出现被判红的字面写法。
+ *
+ * 与「沙盒副本豁免」性质不同,这一条豁免的是**规则的定义处**而非某个实现文件 ——
+ * 去掉它,门禁会因自己的正则表判红自己,而那既无信息量、也会让人误以为规则坏了。
+ */
+export const ROOT_COMPUTE_SELF_EXEMPT = 'scripts/check-import-boundary.mjs';
+
+/**
+ * 扫一个文件里的自算根写法,返回带行号的命中项。
+ *
+ * 判据只认「自算根」这一语义,不认 import 单源:从 shared/paths.js import ROOT 是正确写法,
+ * 同一文件里若另有自算行仍判红(那行本身就是 depth-coupled 的)。
+ * @param {string} text 源码文本
+ * @returns {{ line: number, id: string }[]} 命中项(行号从 1 起,按出现序)
+ */
+export function findRootComputes(text) {
+  /** @type {Map<number, string>} 行号 → 命中的规则 id(同一行只报一次,取首个命中的) */
+  const hits = new Map();
+  // 先抹注释再匹配(复用 copy-closure 的 lexSource,等长故行号不变):文档里为了说明
+  // 「历史上长这样」而引用的写法不是可执行代码,判红它只会逼人把注释改写得更含糊。
+  const lines = lexSource(text).code.split('\n');
+  for (const pattern of ROOT_COMPUTE_PATTERNS) {
+    for (let i = 0; i < lines.length; i += 1) {
+      if (hits.has(i + 1)) continue;
+      if (pattern.re.test(lines[i] ?? '')) hits.set(i + 1, pattern.id);
+    }
+  }
+  return [...hits.entries()]
+    .map(([line, id]) => ({ line, id }))
+    .sort((a, b) => a.line - b.line);
+}
 
 // ---- 源码文本 → import 事实 ----
 
@@ -320,6 +388,13 @@ export function analyze(
   const typeOnlyUsed = new Set();
 
   for (const { abs, file } of listSourceFiles(root, extensions)) {
+    // 规则 no-self-computed-root:与 import 无关,按文件判一次(它看的是路径表达式而非 import)
+    for (const hit of findRootComputes(readFileSync(abs, 'utf8'))) {
+      problems.push(
+        `${file}:${hit.line} 自算项目根(${hit.id})—— 项目根的单一来源是 ${ROOT_SOURCE_FILE},`
+          + '请 import 它;按目录层级上跳的写法在目录改层级时会静默指错位置,而门禁查不出这种错',
+      );
+    }
     for (const found of collectImports(abs, { cjs })) {
       const entry = { ...found, file };
       if (entry.kind === 'bare' && entry.packageName !== null) {
@@ -392,6 +467,93 @@ export function analyze(
   return { problems, info };
 }
 
+/**
+ * 规则 no-self-computed-root 的扫描面:仓库里会执行代码的三个子树。
+ *
+ * 刻意独立于 --src/--flavor:那条参数管的是「被编译的产物形态」,而自算根是**源码布局**问题,
+ * 在 src 侧根本不存在(TS 产物里 import.meta.url 已被擦除)。故本扫描固定锚在真实仓库上,
+ * 沙盒调用(--src 指向临时目录)也照跑 —— 判的是本仓纪律,不是夹具内容。
+ */
+export const ROOT_COMPUTE_SCAN_DIRS = Object.freeze(['scripts', 'test', 'shared']);
+
+/** 参与本扫描的扩展名(与门禁自身所在树一致) */
+const ROOT_COMPUTE_EXTENSIONS = Object.freeze(['.js', '.mjs', '.cjs']);
+
+/**
+ * 扫三个子树的全部源文件,返回自算项目根的判红清单(已扣除单源与规则定义处两处豁免)。
+ * @param {string} root 仓库根绝对路径
+ * @returns {string[]} 判红文案(每条含仓库相对路径与行号)
+ */
+export function analyzeRootComputes(root) {
+  const problems = [];
+  for (const dir of ROOT_COMPUTE_SCAN_DIRS) {
+    const abs = path.resolve(root, dir);
+    if (!existsSync(abs)) continue;
+    for (const { abs: fileAbs, file } of listSourceFiles(abs, ROOT_COMPUTE_EXTENSIONS)) {
+      const rel = `${dir}/${file}`;
+      // 单源自身:算自算是它的职责,豁免
+      if (rel === ROOT_SOURCE_FILE) continue;
+      // 规则定义处:正则表与自检样例含字面写法,豁免(理由见 ROOT_COMPUTE_SELF_EXEMPT)
+      if (rel === ROOT_COMPUTE_SELF_EXEMPT) continue;
+      for (const hit of findRootComputes(readFileSync(fileAbs, 'utf8'))) {
+        problems.push(
+          `${rel}:${hit.line} 自算项目根(${hit.id})—— 项目根的单一来源是 ${ROOT_SOURCE_FILE},`
+            + '请 import 它;按目录层级上跳的写法在目录改层级时会静默指错位置,而门禁查不出这种错',
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * 规则 no-self-computed-root 的自检(纯判定层,不碰真实仓库之外的东西)。
+ *
+ * 为何需要:一条「按正则扫文本」的规则最危险的失效形态是**恒绿**(写错却什么都不报)。
+ * 故此处在门禁自身的运行里固定两个方向的锚点 —— 造出自算样例必须命中、已收口的真实代码
+ * 必须不命中 —— 任一方向失守即 exit 1。样例是内联字符串,不落盘、不进版本控制。
+ *
+ * 放在门禁本体而非测试段:test/segments/import-boundary.test.js 不在本泳道的可写范围,
+ * 而没有自检的规则等于没有规则。
+ * @param {string} root 仓库根绝对路径
+ * @returns {string[]} 自检问题清单(空数组 = 两个方向都符合预期)
+ */
+export function selfCheckRootComputes(root) {
+  const problems = [];
+  // 造坏样例:四种写法各一,外加一个「该判绿」的对照(已收口写法)
+  const cases = [
+    { name: 'new URL 上跳', text: "const r = fileURLToPath(new URL('..', import.meta.url));\n", expect: 1 },
+    { name: 'new URL 两级上跳', text: 'const r = fileURLToPath(new URL("../..", import.meta.url));\n', expect: 1 },
+    { name: 'dirname + resolve', text: "const r = path.resolve(import.meta.dirname, '..');\n", expect: 1 },
+    { name: 'dirname 连写链', text: 'const r = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");\n', expect: 1 },
+    { name: 'fileURLToPath 变体', text: 'const r = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../x");\n', expect: 1 },
+    { name: '已收口写法(应判绿)', text: "import { ROOT } from '../shared/paths.js';\nconst r = ROOT;\n", expect: 0 },
+  ];
+  for (const testCase of cases) {
+    const hits = findRootComputes(testCase.text);
+    if (hits.length !== testCase.expect) {
+      problems.push(
+        `自算根规则自检失守「${testCase.name}」:期望命中 ${testCase.expect} 处,实际 ${hits.length} 处`
+        + '(规则恒绿或恒红都是失效)',
+      );
+    }
+  }
+  // 反向锚点:真实仓库当前必须零命中(证明规则没把已收口的代码误判红)
+  const real = analyzeRootComputes(root);
+  if (real.length > 0) {
+    problems.push(`自算根规则自检失守:真实仓库应零自算写法,实际 ${real.length} 处:${real.slice(0, 3).join(' | ')}`);
+  }
+  // 两处豁免的存在性:单源与规则定义处。拼错路径会让豁免静默失效(规则恒红)或
+  // 恒绿(豁免了不该豁免的文件),两种都是失效,故在此钉住。
+  // ADR-040 删表后不再有「沙盒副本豁免」,故此处只校验这两处。
+  for (const [rel, what] of [[ROOT_SOURCE_FILE, '项目根单源'], [ROOT_COMPUTE_SELF_EXEMPT, '规则定义处']]) {
+    if (!existsSync(path.resolve(root, rel))) {
+      problems.push(`自算根规则自检失守:${what}不存在:${rel}(豁免将静默失效)`);
+    }
+  }
+  return problems;
+}
+
 export async function main(argv = []) {
   let options;
   try {
@@ -427,10 +589,24 @@ export async function main(argv = []) {
     console.error(`[boundary:fail] 扫描失败:${error.message}`);
     return 1;
   }
+  // 规则 no-self-computed-root:固定锚在真实仓库,与 --src/--flavor 无关(理由见 ROOT_COMPUTE_SCAN_DIRS)
+  let rootComputeProblems;
+  try {
+    rootComputeProblems = analyzeRootComputes(projectRoot);
+    const selfCheckProblems = selfCheckRootComputes(projectRoot);
+    if (selfCheckProblems.length > 0) {
+      for (const problem of selfCheckProblems) console.error(`[boundary:fail] ${problem}`);
+      return 1;
+    }
+  } catch (error) {
+    console.error(`[boundary:fail] 项目根单源扫描失败:${error.message}`);
+    return 1;
+  }
   for (const line of result.info) console.log(`[info] boundary:${line}`);
-  if (result.problems.length > 0) {
-    for (const problem of result.problems) console.error(`[boundary:fail] ${problem}`);
-    console.error(`[boundary:fail] 依赖声明与 import 层向自检失败,共 ${result.problems.length} 项`);
+  const allProblems = [...result.problems, ...rootComputeProblems];
+  if (allProblems.length > 0) {
+    for (const problem of allProblems) console.error(`[boundary:fail] ${problem}`);
+    console.error(`[boundary:fail] 依赖声明与 import 层向自检失败,共 ${allProblems.length} 项`);
     return 1;
   }
   const scopeText = flavor === 'src' ? 'src' : 'dist 产物';
@@ -441,7 +617,8 @@ export async function main(argv = []) {
       + `smoke 不逃出 src/;`
       + `renderer 基础层(dom/state)不反向依赖功能目录;`
       + `core 的 pdf 渲染路径不 import node:fs(能力经入参注入);`
-      + `core 的 node: 内建白名单限 ${CORE_NODE_BUILTIN_FILES.length} 个文件`,
+      + `core 的 node: 内建白名单限 ${CORE_NODE_BUILTIN_FILES.length} 个文件;`
+      + `项目根单源为 ${ROOT_SOURCE_FILE}(零豁免,ADR-040)`,
   );
   return 0;
 }

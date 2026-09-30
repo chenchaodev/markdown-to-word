@@ -31,8 +31,9 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ROOT } from '../shared/paths.js';
 
-const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
+const PROJECT_ROOT = ROOT;
 
 /**
  * 清理目标常量(删除目标的单一来源)。与 package.json 打包配置的一致性由

@@ -19,7 +19,6 @@
 
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   SUPPLY_OUTPUT_DIR,
   errorMessage,
@@ -34,6 +33,7 @@ import {
 import { diffSbom, generateSbom } from './gen-sbom.mjs';
 import { DEFAULT_LICENSES_FILE, DEFAULT_NOTICE_FILE, STATUS_OK as LICENSES_OK, generateLicenses } from './gen-licenses.mjs';
 import { STATUS_OK as SCA_OK, runScaScan } from './sca-audit.mjs';
+import { ROOT } from '../../shared/paths.js';
 
 /** 总报告 schema 版本 */
 export const SUPPLY_REPORT_SCHEMA = 'm2w/supply-report@1';
@@ -268,7 +268,7 @@ export function countProblems(report) {
 }
 
 export async function main(argv = []) {
-  const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const projectRoot = ROOT;
   let options;
   try {
     options = parseSupplyArgs(argv, {

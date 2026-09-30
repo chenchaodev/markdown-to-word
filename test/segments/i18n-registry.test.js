@@ -15,7 +15,9 @@
  * (g) preset.hint*:预设说明键三语齐备 + 无插值占位符 + t() 逐语言命中
  */
 import fs from "node:fs/promises";
+import path from "node:path";
 import { app } from "electron";
+import { ROOT } from "../common/paths.js";
 import { DICT, LANGUAGES, htmlLangOf, isLanguage } from "../../dist/core/i18n/index.js";
 import {
   setLanguage,
@@ -184,7 +186,7 @@ export async function run() {
   // htmlLangOf 经 mirrorLanguage 持久化为 m2w.htmlLang);此断言防回退到
   // 硬编码映射的旧实现(zh/en 之外的语言会失效)。
   const bootstrapSrc = await fs.readFile(
-    new URL("../../src/renderer/lang-bootstrap.js", import.meta.url),
+    path.join(ROOT, "src", "renderer", "lang-bootstrap.js"),
     "utf8",
   );
   assert(

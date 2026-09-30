@@ -11,8 +11,9 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ROOT } from '../shared/paths.js';
 
-const PROJECT_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const PROJECT_ROOT = ROOT;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const ELECTRON_MARKER = "__M2W_ENV_FINGERPRINT__";
 const FONT_EXTENSIONS = new Set([".fon", ".otc", ".otf", ".pfb", ".ttc", ".ttf", ".woff", ".woff2"]);

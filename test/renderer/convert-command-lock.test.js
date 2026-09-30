@@ -8,7 +8,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { ROOT } from "../common/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 
 /**
@@ -224,15 +225,15 @@ export async function run() {
 
   try {
     const testUrl = pathToFileURL(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dist/renderer/convert/convert-flow.js"),
+      path.join(ROOT, "dist/renderer/convert/convert-flow.js"),
     );
     const flow = await import(testUrl.href);
     const dialogsUrl = pathToFileURL(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dist/renderer/ui/dialogs.js"),
+      path.join(ROOT, "dist/renderer/ui/dialogs.js"),
     );
     const dialogs = await import(dialogsUrl.href);
     const stateUrl = pathToFileURL(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dist/renderer/state/state.js"),
+      path.join(ROOT, "dist/renderer/state/state.js"),
     );
     const { state } = await import(stateUrl.href);
 
@@ -256,7 +257,7 @@ export async function run() {
     modalVisible = false;
 
     const eventsUrl = pathToFileURL(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dist/renderer/convert/events/convert-actions.js"),
+      path.join(ROOT, "dist/renderer/convert/events/convert-actions.js"),
     );
     await import(eventsUrl.href);
     state.mode = "single";
@@ -301,7 +302,7 @@ export async function run() {
     assert((await dialogPromise7) === true, "结算后的下一次预检同样可正常放行");
 
     const eventsSource = fs.readFileSync(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../src/renderer/convert/events/dialogs-events.ts"),
+      path.join(ROOT, "src/renderer/convert/events/dialogs-events.ts"),
       "utf8",
     );
     assert(

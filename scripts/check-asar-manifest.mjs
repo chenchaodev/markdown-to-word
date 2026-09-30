@@ -32,8 +32,8 @@
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { hashBuffer, isMainModule, parseArgs, parseManifest, toPosix } from './check-dist-manifest.mjs';
+import { ROOT } from '../shared/paths.js';
 
 const require = createRequire(import.meta.url);
 
@@ -176,7 +176,7 @@ export async function main(argv = []) {
     return 0;
   }
 
-  const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+  const projectRoot = ROOT;
   const asarPath = path.resolve(projectRoot, options.asar ?? DEFAULT_ASAR_PATH);
   const pkgPath = path.resolve(projectRoot, options.pkg ?? DEFAULT_PKG_PATH);
   const problems = [];

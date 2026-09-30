@@ -24,10 +24,10 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { isMainModule, parseArgs } from './check-dist-manifest.mjs';
+import { ROOT } from '../shared/paths.js';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 const USAGE = '用法: node scripts/renderer-coverage-report.mjs [--report-dir <dir>] [--json]';
 
 /** c8 报告目录默认值(与 node_modules/c8/lib/parse-args.js 的 reports-dir default 同源) */

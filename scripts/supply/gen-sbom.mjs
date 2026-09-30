@@ -18,7 +18,7 @@
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from '../../shared/paths.js';
 import {
   NOASSERTION,
   SCOPE_DEVELOPMENT,
@@ -302,7 +302,7 @@ export function generateSbom(lockPath, lockLabel) {
 }
 
 export async function main(argv = []) {
-  const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const projectRoot = ROOT;
   let options;
   try {
     options = parseSupplyArgs(argv, { booleans: ['check', 'print', 'help'], values: ['lock', 'output'], usage: USAGE });

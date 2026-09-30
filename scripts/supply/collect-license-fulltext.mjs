@@ -32,7 +32,6 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   LICENSE_FILE_EXTENSIONS,
   LICENSE_FILE_STATUS,
@@ -57,6 +56,7 @@ import {
   writeJson,
 } from './supply-common.mjs';
 import { DEFAULT_DECISIONS_LABEL, DEFAULT_DECISIONS_PATH } from './gen-licenses.mjs';
+import { ROOT } from '../../shared/paths.js';
 
 /** 全文清单 schema 版本 */
 export const FULLTEXT_SCHEMA = 'm2w/license-fulltext@1';
@@ -466,7 +466,7 @@ export function formatFulltextLog(report) {
 }
 
 export async function main(argv = []) {
-  const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const projectRoot = ROOT;
   let options;
   try {
     options = parseSupplyArgs(argv, {

@@ -15,6 +15,14 @@
  * 4. 打包配置对账:build.files 未覆盖 dist/、build.directories.output 不是 release、
  *    build 缺失、package.json 不可读 —— 拒绝执行(对账先于任何删除,dist 与 release
  *    都不得被动过);
+ *    ⚠ ADR-040 之后「package.json 非法 JSON」这一格的**诊断来源**变了(安全属性未变):
+ *    clean-artifacts.mjs 改为 import shared/paths.js,而 .js 模块的 ESM 解析要求 Node
+ *    先读最近的 package.json 的 "type" 字段 —— 于是 package.json 语法坏掉时,Node 在
+ *    **加载期**就抛 `Invalid package config`,脚本体根本没跑到 readPackageJson()。
+ *    此前沙盒里只有 clean-artifacts.mjs 一个文件(.mjs 不查 package.json),故不会提前炸。
+ *    结论:拒绝执行(exit 1)与零删除两条**不变**,变的只是谁先报错;该格断言因此放宽为
+ *    「诊断须指向 package.json」。脚本自身 readPackageJson() 的兜底路径仍由
+ *    「package.json 缺失」那格覆盖(缺文件时 Node 不抛,脚本自己读到 ENOENT)。
  * 5. 目标守卫可达性:生产常量把目标写死为 dist/release,故受保护目录/上跳段/绝对
  *    路径/空路径段/非目录/联接点这些删除级守卫在 CLI 上**无法被真实参数触达**。
  *    本段用「只改 TARGET_DIRS 一行」的沙盒夹具把目标重定向到恶意值来触达它们,
@@ -93,6 +101,10 @@ function createSandbox() {
   SANDBOXES.add(root);
   fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
   fs.writeFileSync(path.join(root, "scripts", "clean-artifacts.mjs"), SCRIPT_SOURCE, "utf8");
+  // 被测脚本从 shared/paths.js 取项目根(ADR-040),沙盒内必须带一份。注意这里是
+  // writeFileSync 而非 copyFileSync —— 副本闭包门禁的复制点扫描器**看不见**本沙盒,
+  // 所以「忘了带 shared/」不会被 relative-outside-copy-set 抓到,只能靠本段运行时红兜。
+  writeFileIn(root, "shared/paths.js", fs.readFileSync(path.join(ROOT, "shared", "paths.js"), "utf8"));
   writePackageJson(root, SANDBOX_PACKAGE);
   return root;
 }
@@ -165,16 +177,20 @@ function seedArtifacts(root) {
  * @param {{ code: number | null; output: string }} result 子进程结果
  * @param {RegExp} pattern 期望命中的诊断
  * @param {string} label 用例标签
- * @param {{ usage?: boolean }} [options] usage=true 时额外断言附带用法说明
+ * @param {{ usage?: boolean, allowStack?: boolean }} [options] usage=true 时额外断言附带用法说明;
+ *   allowStack=true 时豁免「不得回吐调用栈」—— 仅供「Node 加载期就失败、脚本体没跑到」的用例
+ *   (见文件头第 4 点的 ADR-040 注),那种栈是 Node 抛的,不是本脚本未归一化的诊断
  * @returns {void}
  */
-function assertFailure(result, pattern, label, { usage = false } = {}) {
+function assertFailure(result, pattern, label, { usage = false, allowStack = false } = {}) {
   assert(result.code === 1, `${label} 应以退出码 1 结束,实际 ${result.code};输出:${result.output}`);
   assert(pattern.test(result.output), `${label} 诊断未命中 ${pattern};输出:${result.output}`);
   if (usage) {
     assert(result.output.includes(USAGE_HINT), `${label} 应附带用法说明;输出:${result.output}`);
   }
-  assert(!/\n\s+at\s/.test(result.output), `${label} 诊断应已归一化,不得回吐调用栈:${result.output}`);
+  if (!allowStack) {
+    assert(!/\n\s+at\s/.test(result.output), `${label} 诊断应已归一化,不得回吐调用栈:${result.output}`);
+  }
 }
 
 /**
@@ -462,7 +478,9 @@ export async function run() {
         { label: "无 build 段", pkg: { type: "module" }, pattern: /build\.files 未覆盖 dist\//, args: ["--target", "dist"] },
         { label: "输出目录已迁移", pkg: { build: { files: ["dist/**"], directories: { output: "out" } } }, pattern: /directories\.output\(out\)与清理目标 release 不一致/, args: ["--target", "release"] },
         { label: "输出目录缺失", pkg: { build: { files: ["dist/**"] } }, pattern: /directories\.output\(undefined\)与清理目标 release 不一致/, args: ["--target", "all"] },
-        { label: "package.json 非法 JSON", pkg: "{ not json", pattern: /package\.json 不可读/, args: ["--target", "all"] },
+        // package.json 非法 JSON:诊断来源在 ADR-040 之后变了(见下方长注),但**拒绝执行 + 零删除**
+        // 这条安全属性不变,故断言放宽到「诊断须指向 package.json」。
+        { label: "package.json 非法 JSON", pkg: "{ not json", pattern: /Invalid package config|package\.json 不可读/, args: ["--target", "all"], allowStack: true },
         { label: "package.json 缺失", pkg: null, pattern: /package\.json 不可读/, args: ["--target", "all"] },
       ];
       for (const item of cases) {
@@ -470,7 +488,8 @@ export async function run() {
         seedArtifacts(root);
         writePackageJson(root, item.pkg);
         const result = runClean(root, item.args);
-        assertFailure(result, item.pattern, item.label);
+        // 非法 JSON 那格由 Node 在加载期抛错(栈是 Node 的,非本脚本未归一化的诊断),故豁免栈断言
+        assertFailure(result, item.pattern, item.label, { allowStack: item.allowStack === true });
         assertFixtureIntact(root, item.label);
       }
       console.log(`[ok] clean-artifacts-gate:${cases.length} 类打包配置不一致均拒绝执行且零删除`);

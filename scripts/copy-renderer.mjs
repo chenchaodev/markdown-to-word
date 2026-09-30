@@ -13,10 +13,10 @@
 // scripts/check-dist-manifest.mjs(清单比对)承担。
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { isMainModule, parseArgs } from "./check-dist-manifest.mjs";
+import { ROOT } from "../shared/paths.js";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const root = ROOT;
 const DEFAULT_SRC_DIR = path.join(root, "src", "renderer");
 const DEFAULT_OUT_DIR = path.join(root, "dist", "renderer");
 

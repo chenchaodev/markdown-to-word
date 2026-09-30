@@ -20,7 +20,7 @@
 //       [--osv-endpoint <url>] [--no-osv] [--no-npm-audit] [--output <file>] [--print]
 
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from '../../shared/paths.js';
 import {
   BLOCKING_SEVERITIES,
   SEVERITY_ORDER,
@@ -726,7 +726,7 @@ export function formatScaLog(report) {
 }
 
 export async function main(argv = []) {
-  const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const projectRoot = ROOT;
   let options;
   try {
     options = parseSupplyArgs(argv, {

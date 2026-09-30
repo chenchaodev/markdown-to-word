@@ -60,6 +60,19 @@ export async function runGateProbes(options = {}) {
         build.clean ? "(干净)" : `(存在类型错误文件:${build.errorFiles.join(",") || "未取到文件名"})`
       }`;
       if (build.caveat !== undefined) findings.push({ id: "sandbox-build-caveat", severity: "advisory", summary: build.caveat, evidence: "沙盒内构建未走 npm run build 的批处理垫片,改为直接调用同一编译器入口" });
+      // 沙盒构建不干净必须 blocking:dist 形态是 fixtures / dual-matrix / build-fresh / smoke
+      // 四道门禁的输入底座,构建脏了它们的结论一律不可信。此前只登记 caveat(且 caveat 是
+      // 「没走 npm 垫片」这类中性说明),clean === false 从不被检查 —— 于是「资源拷贝 exit 1」
+      // 只以 [warn] 出现在进度行里,直到探针的 fault 用例失败才暴露。
+      if (build.clean === false) {
+        findings.push({
+          id: "sandbox-build-dirty",
+          severity: "blocking",
+          summary: `沙盒内构建不干净(存在类型错误文件:${build.errorFiles.join(",") || "未取到文件名"});`
+            + "依赖 dist 形态的门禁结论不可信",
+          evidence: `编译器 exit ${String(build.compilerExitCode)}、资源拷贝 exit ${String(build.rendererExitCode)}`,
+        });
+      }
       log(`[gate-probes] 沙盒已就绪(${buildNote})`);
     } catch (error) {
       findings.push({

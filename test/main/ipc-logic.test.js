@@ -25,7 +25,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT } from "../common/paths.js";
 import {
   baseNameFromMdPath,
   buildPresetsExportPayload,
@@ -374,7 +374,7 @@ export async function run() {
   // ---------- 依赖边界:logic.js 运行时依赖图(含传递)零 electron ----------
   // 纯逻辑层若(直接或经传递依赖)import electron,本段在纯 Node 下就无法直连产物;
   // electron 触点必须经 deps 注入(runConvertTask)或留在 register.ts 薄壳。
-  const distRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dist");
+  const distRoot = path.join(ROOT, "dist");
   const electronImportRe = /(?:from|import|require\()\s*["']([^"']+)["']/g;
   const seen = new Set();
   const queue = [path.join(distRoot, "main", "ipc", "logic.js")];

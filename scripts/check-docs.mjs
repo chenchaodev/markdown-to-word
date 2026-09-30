@@ -28,9 +28,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from '../shared/paths.js';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 
 /**
  * 门禁路径解析:`M2W_GLOBAL_CONFIG` 指向**配置仓根目录**(不是门禁文件本身),

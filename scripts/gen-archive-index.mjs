@@ -15,9 +15,9 @@
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from '../shared/paths.js';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = ROOT;
 const docsDir = path.join(projectRoot, 'docs');
 const evidenceDir = path.join(docsDir, 'evidence');
 const INDEX_REL = 'evidence/INDEX.md';

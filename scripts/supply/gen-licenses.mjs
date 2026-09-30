@@ -41,6 +41,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ROOT } from '../../shared/paths.js';
 import {
   DECISION_STATUS,
   LICENSE_DECISIONS_FILE,
@@ -582,7 +583,7 @@ export function generateLicenses(lockPath, lockLabel, options = {}) {
 }
 
 export async function main(argv = []) {
-  const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const projectRoot = ROOT;
   let options;
   try {
     options = parseSupplyArgs(argv, { booleans: ['print', 'help'], values: ['lock', 'output-dir', 'decisions'], usage: USAGE });

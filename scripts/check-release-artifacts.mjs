@@ -19,8 +19,8 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { hashFile, isMainModule, parseArgs, toPosix, writeFileAtomic } from './check-dist-manifest.mjs';
+import { ROOT } from '../shared/paths.js';
 
 export const REPORT_SCHEMA = 'm2w/release-artifacts@1';
 export const LATEST_YML = 'latest.yml';
@@ -136,7 +136,7 @@ export async function main(argv = []) {
     return 0;
   }
 
-  const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+  const projectRoot = ROOT;
   const pkgPath = path.resolve(projectRoot, options.pkg ?? 'package.json');
   if (!existsSync(pkgPath)) {
     console.error(`[release:fail] package.json 不存在:${pkgPath}`);
