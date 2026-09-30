@@ -1,6 +1,6 @@
 # 验收样例
 
-由 `test/tools/gen-fixtures.mjs` 从测试段命名导出自动生成(勿手改),
+由 `gates/fixtures/gen-fixtures.mjs` 从测试段命名导出自动生成(勿手改),
 供 GUI 人工实测直接拖入。重新生成:`npm run gen:fixtures`;校验:`npm run check:fixtures`。
 
 | 文件 | 功能/场景 | 对应测试段 |

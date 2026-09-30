@@ -39,7 +39,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
 const distUrl = (/** @type {string} */ rel) => pathToFileURL(path.join(repoRoot, "dist", rel)).href;
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 /**

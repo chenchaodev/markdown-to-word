@@ -3,7 +3,7 @@
  * 打包产物冒烟契约段(跨域守护,住 test/segments/):守护「解包/安装产物能以 --smoke
  * 自证健康」这条发布链路的**契约面**,不启动真实可执行文件(进程级判定由
  * test/segments/install-smoke.test.js 在沙盒里覆盖,真实产物由
- * scripts/check-unpacked-smoke.mjs / check-install-smoke.mjs 取证)。
+ * gates/artifacts/check-unpacked-smoke.mjs / check-install-smoke.mjs 取证)。
  *
  * 为什么要有本段:冒烟入口一度是 dev-only 设施(源码在 test/tools/,build.files 只收
  * dist/**),打包产物收到 --smoke 必以退出码 1 结束,而源码与 dist 全绿 —— 只有把
@@ -11,7 +11,7 @@
  *
  * 覆盖:
  * 1. 诊断标记恒等:src/main/smoke.ts 的标记常量(SMOKE_MARKER)与发布侧判定清单
- *    (scripts/smoke-proc.mjs 的 SMOKE_MARKERS)逐条恒等,且标记字面量真的出现在编译
+ *    (gates/smoke/smoke-proc.mjs 的 SMOKE_MARKERS)逐条恒等,且标记字面量真的出现在编译
  *    产物里(常量没被改名/摇掉);并用真实判定函数 collectSmokeProblems 锁「退出码
  *    0 + 五条标记 = 通过 / 非零 = 判红」这条判定口径。
  * 2. 单一实现:冒烟逻辑只有 src/main/smoke.ts 一份 —— dev 侧入口
@@ -31,7 +31,7 @@ import { statSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { collectSmokeProblems, SMOKE_MARKERS } from "../../scripts/smoke-proc.mjs";
+import { collectSmokeProblems, SMOKE_MARKERS } from "../../gates/smoke/smoke-proc.mjs";
 import { convertImpl } from "../../dist/main/converter/index.js";
 import {
   SMOKE_MARKER,
@@ -88,7 +88,7 @@ function collectSpecifiers(code) {
   return found;
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {

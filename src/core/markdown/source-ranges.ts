@@ -8,7 +8,7 @@
  * 见 docs/adr/adr-025-区间判据不合并.md。
  *
  * 本模块不得引入任何 node:* 内建:core 侧内建白名单是逐文件的
- * (scripts/check-import-boundary.mjs 的 CORE_NODE_BUILTIN_FILES),新文件不在名单内。
+ * (gates/repo/check-import-boundary.mjs 的 CORE_NODE_BUILTIN_FILES),新文件不在名单内。
  */
 
 /** 源码字节区间(半开):取自 mdast 节点的权威 position 或按字符推算的下标。 */

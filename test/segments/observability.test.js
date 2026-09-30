@@ -3,7 +3,7 @@
  * 可观测性守护段(跨域守护,住 test/segments/):覆盖两项「让 CI 能结构化消费 / 能
  * 定量拦住」的发布侧可观测能力,纯 Node 逻辑,不启 Electron、不碰真实产物:
  *
- * 1. 机器可读冒烟报告(scripts/smoke-report.mjs)
+ * 1. 机器可读冒烟报告(gates/smoke/smoke-report.mjs)
  *    - 判定口径不许漂:报告的「通过/失败」必须与既有契约 collectSmokeProblems
  *      (发布侧检查同款)逐条一致,报告只是把结论结构化,不是另立一套标准;
  *    - 负向必须点名:缺标记 → status=fail 且 missingMarkers 逐条列出 label,
@@ -15,7 +15,7 @@
  *    - 产物可复现:报告内不得出现绝对路径或时间戳,同输入两次构造字节相同;
  *      降级标记字面量与 src/main/smoke.ts 编译产物恒等(漂移即判红)。
  *
- * 2. 打包体积实测与回归门禁(scripts/pack-size.mjs + scripts/pack-size.baseline.json)
+ * 2. 打包体积实测与回归门禁(gates/artifacts/pack-size.mjs + gates/artifacts/pack-size.baseline.json)
  *    - 正向:沙盒 release 布局(合成 asar,按真实 asar 头部格式手写)实测出的字节与
  *      基线逐条相等 → pass,各字段数值精确;
  *    - 负向逐条命中:单项超阈值(点名是哪个子项 + 容许增长字节数)、异常缩小、
@@ -45,7 +45,7 @@ import {
   renderSmokeSummary,
   REPORT_STATUS,
   SMOKE_REPORT_SCHEMA,
-} from "../../scripts/smoke-report.mjs";
+} from "../../gates/smoke/smoke-report.mjs";
 import {
   BASELINE_SCHEMA,
   buildReport as buildPackSizeReport,
@@ -60,8 +60,8 @@ import {
   readAsarTree,
   satisfiesRange,
   STATUS,
-} from "../../scripts/pack-size.mjs";
-import { SMOKE_MARKERS, collectSmokeProblems } from "../../scripts/smoke-proc.mjs";
+} from "../../gates/artifacts/pack-size.mjs";
+import { SMOKE_MARKERS, collectSmokeProblems } from "../../gates/smoke/smoke-proc.mjs";
 import { SMOKE_MARKER as IMPLEMENTED_SMOKE_MARKER } from "../../dist/main/smoke.js";
 
 /** 沙盒临时目录名前缀(与其它段的 m2w-* 区分,便于识别残留) */
@@ -353,7 +353,7 @@ function assertNoVolatileFields(report, label) {
   );
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
@@ -856,7 +856,7 @@ export async function run() {
     // 字节记账:可回收只算「可避免的同包名同版本副本」;跨版本同名同大小文件**不计入**
     // 任何可回收口径(0.16 与 0.18 之间那些文件同名同大小但内容不同,不是冗余)。
     {
-      /** @type {(asarFiles: Record<string, number | string>) => { sb: string, box: ReturnType<typeof createReleaseSandbox>, measurement: import("../../scripts/pack-size/contract.mjs").PackSizeMeasurement, verdict: import("../../scripts/pack-size/contract.mjs").PackSizeVerdict, report: import("../../scripts/pack-size/contract.mjs").PackSizeReport }} */
+      /** @type {(asarFiles: Record<string, number | string>) => { sb: string, box: ReturnType<typeof createReleaseSandbox>, measurement: import("../../gates/artifacts/pack-size/contract.mjs").PackSizeMeasurement, verdict: import("../../gates/artifacts/pack-size/contract.mjs").PackSizeVerdict, report: import("../../gates/artifacts/pack-size/contract.mjs").PackSizeReport }} */
       const gate = (asarFiles) => {
         const sb = track(fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX)));
         const box = createReleaseSandbox({ root: sb, asarFiles });
@@ -880,9 +880,9 @@ export async function run() {
       };
       /**
        * 取某个包名的判重结论。
-       * @param {import("../../scripts/pack-size/contract.mjs").PackSizeReport} report 报告
+       * @param {import("../../gates/artifacts/pack-size/contract.mjs").PackSizeReport} report 报告
        * @param {string} name 包名
-       * @returns {import("../../scripts/pack-size/contract.mjs").PackSizeDuplicateFinding} 该包名的结论
+       * @returns {import("../../gates/artifacts/pack-size/contract.mjs").PackSizeDuplicateFinding} 该包名的结论
        */
       const findingOf = (report, name) => {
         const finding = report.duplicates?.findings.find((item) => item.name === name);
@@ -1228,7 +1228,7 @@ export async function run() {
       }
       // 真实基线文件在仓库里、且当前产物实测通过「无体积问题」这一层判定
       const repoBaseline = parseBaseline(
-        JSON.parse(fs.readFileSync(path.join(ROOT, "scripts", "pack-size.baseline.json"), "utf8")),
+        JSON.parse(fs.readFileSync(path.join(ROOT, "gates", "artifacts", "pack-size.baseline.json"), "utf8")),
       );
       assert(repoBaseline.problems.length === 0, `仓库基线自身应合规:${repoBaseline.problems.join(" | ")}`);
       assert(

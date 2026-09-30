@@ -3,7 +3,7 @@
  *
  * 背景:`window.api` 的类型此前由 `src/main/preload.cts` 内的 `typeof api` 推导,
  * renderer 只能 `import type { PreloadApi } from "../main/preload.cjs"` 取用 ——
- * 那是全库唯一一条 renderer→main 的反向依赖,靠 `scripts/check-import-boundary.mjs`
+ * 那是全库唯一一条 renderer→main 的反向依赖,靠 `gates/repo/check-import-boundary.mjs`
  * 的 `REVERSE_TYPE_ALLOWLIST` 放行(该条目自 2026-09-25 挂了近一年)。
  * 收口办法:把形状显式声明在此处(core 侧无 Electron 依赖),preload 用它标注
  * `const api: PreloadApi`,renderer 也从 core 取 —— 两侧同源,反向依赖消失。

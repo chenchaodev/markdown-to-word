@@ -965,7 +965,7 @@ export async function run() {
  * 声明表与四份既有事实的交叉校验 —— 步 03 的两条硬判据落在这里。
  *
  * 双向判据一:「每个控件都有表条目」且「每个表条目的控件 id 都在 index.html 里」。
- * 双向判据二:声明表的**抽屉内**控件键集合与 test/tools/geometry/geometry-spec.mjs 的
+ * 双向判据二:声明表的**抽屉内**控件键集合与 shared/geometry/geometry-spec.mjs 的
  * DRAWER_CONTROL_KEYS 一致(差额 3 个抽屉外镜像/顶栏控件按分工归本判据的 id 侧校验)。
  *
  * 判据一之外还有一条**写侧**的对称校验:声明表里每个可写(值控件)条目都必须

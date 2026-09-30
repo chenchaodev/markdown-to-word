@@ -121,7 +121,7 @@ function dictText(code, key) {
   return langDict(code)[key];
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 /** renderer 纯函数单测(纯 Node 段,零 Electron API) */

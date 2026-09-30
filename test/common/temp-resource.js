@@ -5,7 +5,7 @@
  * 收敛的重复面(盘点结论,含刻意不收的部分):
  * 1) 建:24 处 `mkdtemp(Sync)(path.join(os.tmpdir(), "m2w-xxx-"))`(本轮盘点:segments 18 +
  *    main 6),前缀各不相同但**语义相同**——都是「一次性沙盒目录」;另有
- *    test/common/userdata.js 的 createTempUserData(runner/宿主用)与 scripts/smoke-proc.mjs
+ *    test/common/userdata.js 的 createTempUserData(runner/宿主用)与 gates/smoke/smoke-proc.mjs
  *    的 createUserData(已复用 userdata.js 的清理语义);
  * 2) 删:四种写法并存,差别只在重试参数与失败处理(**本波已收口,枚举留作改动前的现状记录**):
  *    - `{ recursive: true, force: true }`(无重试)——supply-chain / signature-status /
@@ -17,7 +17,7 @@
  *    前两种在 Windows 上「进程刚退出、句柄未释放 → EBUSY/EPERM」时会直接抛,把段判成失败;
  *    后两种把删不掉的目录静默留在系统临时区,谁也看不出。
  *    收口后目录删除走 removeTree、单文件删除走 removeFile(共用 removePath 内核),
- *    裸写只剩白名单登记的几类刻意保留 —— 由 scripts/check-temp-cleanup.mjs 守住。
+ *    裸写只剩白名单登记的几类刻意保留 —— 由 gates/repo/check-temp-cleanup.mjs 守住。
  * 3) 注册:无处可寻——段崩了/忘了 finally 时没有任何清单能报出「谁留下了什么」。
  * 本文件把三件事合成一处:`createTempResource` 建的每个目录都进模块级注册表,
  * `cleanupTempResources` 与进程 `exit` 钩子都能兜底,删不掉**显式抛错**(含路径与原始错误),
@@ -27,7 +27,7 @@
  * - `test/common/userdata.js` 的 `createTempUserData` / `removeTempUserData`:**不并入**。
  *   它是「Electron userData 重定向」契约(USER_DATA_ENV 注入 + ready 前重定向),生命周期归
  *   runner 的父子进程协议管,且清理语义刻意宽松(隔离靠"每段目录唯一",不靠删成功)。
- *   更硬的约束:install-smoke 段把 **userdata.js** 逐字节复制进沙盒后跑 scripts/smoke-proc.mjs,
+ *   更硬的约束:install-smoke 段把 **userdata.js** 逐字节复制进沙盒后跑 gates/smoke/smoke-proc.mjs,
  *   该脚本按相对路径 import `../test/common/userdata.js` —— 若 userdata.js 新增对同目录
  *   其它模块的 import,沙盒里那份副本会解析失败,install-smoke 段当场红。故 userdata.js 必须
  *   保持零内部依赖(它的 EBUSY 重试参数与本文件一致属刻意重复,见上条 2 的枚举)。

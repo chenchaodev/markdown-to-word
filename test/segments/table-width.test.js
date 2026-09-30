@@ -53,7 +53,7 @@ const CONTENT_WIDTH_MM =
   DEFAULT_PAGE_SETUP.marginRight; // 146mm
 const TOTAL_DXA = Math.round(twipsToPx(mmToTwips(CONTENT_WIDTH_MM)) * 15); // 8277
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 供应链门禁段(位于 test/segments/ = 跨域守护段;被测为 scripts/supply/ 下的
+ * 供应链门禁段(位于 test/segments/ = 跨域守护段;被测为 gates/supply/supply/ 下的
  * SCA / SBOM / 许可证脚本,纯 Node 逻辑,不经 dist 编译产物):
  * - sca-audit.mjs:npm audit(npmmirror 端点)两棵依赖树 + OSV 替代源;
  *   真实漏洞判红、扫描源不可用判 unavailable(绝不冒充「无漏洞」)、production/dev 区分
@@ -23,10 +23,10 @@ import { createCaseSuite } from "../common/case.js";
 import { ROOT } from "../common/paths.js";
 import { removeTree } from "../common/temp-resource.js";
 import { closeTestServer, listenFetchablePort } from "../common/http-server.js";
-import { formatSupplyLog, runSupplyChecks } from "../../scripts/supply/check-supply-chain.mjs";
-import { diffSbom, generateSbom, toCycloneDxLicenses } from "../../scripts/supply/gen-sbom.mjs";
-import { generateLicenses } from "../../scripts/supply/gen-licenses.mjs";
-import { PACKAGE_FULLTEXT_STATUS, collectLicenseFulltext, formatFulltextLog } from "../../scripts/supply/collect-license-fulltext.mjs";
+import { formatSupplyLog, runSupplyChecks } from "../../gates/supply/supply/check-supply-chain.mjs";
+import { diffSbom, generateSbom, toCycloneDxLicenses } from "../../gates/supply/supply/gen-sbom.mjs";
+import { generateLicenses } from "../../gates/supply/supply/gen-licenses.mjs";
+import { PACKAGE_FULLTEXT_STATUS, collectLicenseFulltext, formatFulltextLog } from "../../gates/supply/supply/collect-license-fulltext.mjs";
 import {
   STATUS_OK as SCA_OK,
   STATUS_UNAVAILABLE,
@@ -35,7 +35,7 @@ import {
   formatScaLog,
   parseAuditPayload,
   runScaScan,
-} from "../../scripts/supply/sca-audit.mjs";
+} from "../../gates/supply/supply/sca-audit.mjs";
 import {
   DECISION_STATUS,
   LICENSE_FILE_EXTENSIONS,
@@ -57,7 +57,7 @@ import {
   severityFromScore,
   serializeJson,
   versionSatisfies,
-} from "../../scripts/supply/supply-common.mjs";
+} from "../../gates/supply/supply/supply-common.mjs";
 
 const suite = createCaseSuite();
 
@@ -750,7 +750,7 @@ function runCliAsync(args) {
   });
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
@@ -1027,14 +1027,14 @@ export async function run() {
       assert(report.counts.fromPackageFile === 3, `取自包内文件的组件应为 3 个,实际 ${report.counts.fromPackageFile}`);
 
       // 进程级 CLI:同一沙盒下 unknown 段判红,文案点名包名与原因
-      const cli = runCli(["scripts/supply/gen-licenses.mjs", "--lock", lockPath, "--output-dir", path.join(dir, "out")]);
+      const cli = runCli(["gates/supply/supply/gen-licenses.mjs", "--lock", lockPath, "--output-dir", path.join(dir, "out")]);
       assert(cli.status === 1, `认不出的组件存在时 CLI 须 exit 1,实际 ${cli.status}`);
       assert(/许可证缺失:mystery-lib@6\.0\.0\(生产依赖\)/.test(cli.output), `CLI 须点名认不出的包,实际:${cli.output}`);
       assert(/不做猜测/.test(cli.output) && /无法匹配任何已知许可证标记/.test(cli.output), "CLI 须保留「不猜测」口径的诊断");
     });
 
     await suite.case("仓库决策清单:结构与可校验性(实跑读取,非沙盒)", async () => {
-      const repoDecisions = loadLicenseDecisions(path.join(ROOT, "scripts", "supply", "license-decisions.json"));
+      const repoDecisions = loadLicenseDecisions(path.join(ROOT, "gates", "supply", "supply", "license-decisions.json"));
       assert(repoDecisions.entries.length > 0, "仓库内必须有已拍板的多选一决策");
       for (const decision of repoDecisions.entries) {
         // createDecisionIndex 已校验字段完整性与「选定分支在上游声明里」;这里再钉住
@@ -1212,11 +1212,11 @@ export async function run() {
 
       // 进程级 CLI:默认 exit 0 但必须报出缺项;--strict 下判红
       const outCli = path.join(dir, "out-cli");
-      const cli = runCli(["scripts/supply/collect-license-fulltext.mjs", "--lock", lockPath, "--output-dir", outCli, "--decisions", "scripts/supply/license-decisions.json"]);
+      const cli = runCli(["gates/supply/supply/collect-license-fulltext.mjs", "--lock", lockPath, "--output-dir", outCli, "--decisions", "gates/supply/supply/license-decisions.json"]);
       assert(cli.status === 0, `收集完成时应 exit 0(缺项已报出),实际 ${cli.status}:${cli.output}`);
       assert(/\[fulltext:missing\] silent-lib@3\.0\.0/.test(cli.output), `CLI 须报出缺项,实际:${cli.output}`);
       assert(fs.existsSync(path.join(outCli, "licenses-fulltext.json")), "CLI 应产出清单文件");
-      const strict = runCli(["scripts/supply/collect-license-fulltext.mjs", "--lock", lockPath, "--output-dir", outCli, "--strict"]);
+      const strict = runCli(["gates/supply/supply/collect-license-fulltext.mjs", "--lock", lockPath, "--output-dir", outCli, "--strict"]);
       assert(strict.status === 1 && /--strict/.test(strict.output), `--strict 下缺项应判红,实际 ${strict.status}:${strict.output}`);
     });
 
@@ -1528,10 +1528,10 @@ export async function run() {
         message = error instanceof Error ? error.message : String(error);
       }
       assert(/lockfile 不存在/.test(message) && /npm install/.test(message), `缺 lockfile 的提示须可操作,实际:${message}`);
-      const cli = runCli(["scripts/supply/check-supply-chain.mjs", "--lock", missingLock, "--output-dir", path.join(dir, "out"), "--no-osv", "--no-npm-audit"]);
+      const cli = runCli(["gates/supply/supply/check-supply-chain.mjs", "--lock", missingLock, "--output-dir", path.join(dir, "out"), "--no-osv", "--no-npm-audit"]);
       assert(cli.status === 1, `缺 lockfile 时 CLI 须非零退出,实际 ${cli.status}`);
       assert(/lockfile 不存在/.test(cli.output), `CLI 输出须说明缺 lockfile,实际:${cli.output}`);
-      const badOption = runCli(["scripts/supply/gen-sbom.mjs", "--lockk", lockPath]);
+      const badOption = runCli(["gates/supply/supply/gen-sbom.mjs", "--lockk", lockPath]);
       assert(badOption.status === 1 && /无法识别的选项/.test(badOption.output), `参数写错须失败并给出用法,实际 ${badOption.status}:${badOption.output}`);
       // 没有任何扫描源可用(等于「没扫」)也必须判红,不得当成通过
       const noSource = await runScaScan({ lockPath, registry: "https://registry.npmmirror.com", allowOsv: false, allowNpmAudit: false });
@@ -1626,7 +1626,7 @@ export async function run() {
       const stub = await startStubOsv({});
       try {
         const okRun = await runCliAsync([
-          "scripts/supply/check-supply-chain.mjs",
+          "gates/supply/supply/check-supply-chain.mjs",
           "--lock", cliLock,
           "--output-dir", outDir,
           "--no-npm-audit",
@@ -1640,7 +1640,7 @@ export async function run() {
       // 未知许可证 → exit 1 且文案点名(另建沙盒,勿覆盖上面那份齐备的 lockfile)
       const dirty = sandbox("cli-dirty");
       const dirtyRun = runCli([
-        "scripts/supply/check-supply-chain.mjs",
+        "gates/supply/supply/check-supply-chain.mjs",
         "--lock", dirty.lockPath,
         "--output-dir", path.join(dirty.dir, "out"),
         "--no-osv",
@@ -1651,7 +1651,7 @@ export async function run() {
       assert(/这不等于「无漏洞」/.test(dirtyRun.output), "零扫描源时 CLI 须明确「不等于无漏洞」");
       // 沙盒缺 SBOM 产物 + --sbom-check → 非零且可操作
       const missingSbom = runCli([
-        "scripts/supply/check-supply-chain.mjs",
+        "gates/supply/supply/check-supply-chain.mjs",
         "--lock", cliLock,
         "--output-dir", path.join(cliDir, "empty-out"),
         "--no-osv",
@@ -1661,14 +1661,14 @@ export async function run() {
       assert(missingSbom.status === 1 && /缺少已生成的/.test(missingSbom.output), `--sbom-check 缺产物须失败,实际 ${missingSbom.status}:${missingSbom.output}`);
       // gen-sbom CLI:生成 → --check 通过
       const sbomOut = path.join(cliDir, "sbom.json");
-      const gen = runCli(["scripts/supply/gen-sbom.mjs", "--lock", cliLock, "--output", sbomOut]);
+      const gen = runCli(["gates/supply/supply/gen-sbom.mjs", "--lock", cliLock, "--output", sbomOut]);
       assert(gen.status === 0, `gen-sbom 应 exit 0,实际 ${gen.status}:${gen.output}`);
-      const check = runCli(["scripts/supply/gen-sbom.mjs", "--lock", cliLock, "--output", sbomOut, "--check"]);
+      const check = runCli(["gates/supply/supply/gen-sbom.mjs", "--lock", cliLock, "--output", sbomOut, "--check"]);
       assert(check.status === 0, `gen-sbom --check 应 exit 0,实际 ${check.status}:${check.output}`);
-      const licensesRun = runCli(["scripts/supply/gen-licenses.mjs", "--lock", cliLock, "--output-dir", path.join(cliDir, "lic")]);
+      const licensesRun = runCli(["gates/supply/supply/gen-licenses.mjs", "--lock", cliLock, "--output-dir", path.join(cliDir, "lic")]);
       assert(licensesRun.status === 0, `许可证齐备时 gen-licenses 应 exit 0,实际 ${licensesRun.status}:${licensesRun.output}`);
       // 直接跑 SBOM 缺 lockfile 的路径
-      const noLock = runCli(["scripts/supply/gen-sbom.mjs", "--lock", path.join(cliDir, "absent.json"), "--output", path.join(cliDir, "x.json")]);
+      const noLock = runCli(["gates/supply/supply/gen-sbom.mjs", "--lock", path.join(cliDir, "absent.json"), "--output", path.join(cliDir, "x.json")]);
       assert(noLock.status === 1 && /lockfile 不存在/.test(noLock.output), `缺 lockfile 时 gen-sbom 须非零退出,实际 ${noLock.status}:${noLock.output}`);
     });
   });

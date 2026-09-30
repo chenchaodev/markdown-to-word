@@ -14,7 +14,7 @@
  * 抽屉控件缺失、错组、乱序、门控反向、分档可用性反向,一律记 error 并使 ok=false;
  * 任何"跳过"都必须以 finding 形式显式出现,禁止静默通过。
  *
- * 判定全部为纯函数,采样由外部注入 —— 真实窗口采样见 scripts/check-geometry.mjs,
+ * 判定全部为纯函数,采样由外部注入 —— 真实窗口采样见 gates/geometry/check-geometry.mjs,
  * 合成样本负探针见 test/segments/geometry-gate.test.js。故门禁判定不依赖人工目检,
  * 判定逻辑本身可在无 Electron 环境下完整验证。
  */

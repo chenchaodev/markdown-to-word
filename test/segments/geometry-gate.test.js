@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * geometry gate 判定层回归与负探针(位于 test/segments/ = 跨域守护段;
- * 被测为 test/tools/geometry/ 下的纯判定层,不经 dist 编译产物、不启真实窗口):
+ * 被测为 shared/geometry/ 下的纯判定层,不经 dist 编译产物、不启真实窗口):
  * - 正向:按规格合成一整套"应当全绿"的采样样本,门禁判定必须零 finding;
  * - 负向:逐类注入故障(缺场景 / 缺选择器 / 必需节点不可见 / 视口不匹配 / 响应式档位未生效 /
  *   舞台状态不匹配 / 水平溢出 / 水平裁切 / 紧凑档滚动 / 固定槽塌陷 / 列轴漂移 / 阶段跳动 /
@@ -15,7 +15,7 @@
  *   成功失败同色、读数漏项/漂移/目标缺失 —— 均须判红并命中预期规则名)。
  *
  * 真实窗口采样链路(隐藏窗口 resize 后响应式档位重排滞后约 1s,故按布局稳定窗口采样)
- * 由 `electron scripts/check-geometry.mjs` 承担,本段只锁判定语义,两者互不依赖。
+ * 由 `electron gates/geometry/check-geometry.mjs` 承担,本段只锁判定语义,两者互不依赖。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -481,7 +481,7 @@ function withDrawer(samples, scenarioId, fn) {
   });
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {

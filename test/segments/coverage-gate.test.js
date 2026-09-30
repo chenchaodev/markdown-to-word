@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * coverage 门禁基线守护段(位于 test/segments/;被测为 package.json 的 test:coverage 参数
- * 向量与 scripts/gate-probes/coverage-baseline.json 的一致性,以及豁免清单与真实编译
+ * 向量与 gates/probe/gate-probes/coverage-baseline.json 的一致性,以及豁免清单与真实编译
  * 产物/测试引用面的自洽性 —— 不测任何业务能力)。
  *
  * 为什么要有这一段:`--all` 打开后,「不可达文件」(新增且从未被 import 的死代码,应当
@@ -20,14 +20,14 @@
  *    runtime-entry 的产物必须仍未被任何测试 import(它现在可被单测了 → 豁免失效 → 判红);
  * 4. 清单外的新空模块判红(不登记就会以「0/0 记 0%」的形式悄悄进报告拉低分母)。
  *
- * 「清单外的新 0% 文件」这一面(动态数据)由 `node scripts/gate-probes/coverage-gate.mjs
+ * 「清单外的新 0% 文件」这一面(动态数据)由 `node gates/probe/gate-probes/coverage-gate.mjs
  * --zero` 承担,必须紧跟 test:coverage 执行(覆盖率数据是那一次运行的产物),故不放本段。
  *
  * 先红后绿:本段在主会话把新参数向量与干净树实测值登记进基线之前**应当是红的**,红的原因
  * 就是待办清单本身(缺 --all / measured 未登记 / 豁免未进 --exclude),不是误报。
  */
 import { createCaseSuite } from "../common/case.js";
-import { BASELINE_RELATIVE, METRICS, auditStatic, loadBaseline } from "../../scripts/gate-probes/coverage-gate.mjs";
+import { BASELINE_RELATIVE, METRICS, auditStatic, loadBaseline } from "../../gates/probe/gate-probes/coverage-gate.mjs";
 
 /**
  * 判断一条问题属于哪类(按文本特征;未识别的归入「其它」,并在段末断言「无未识别分类」,
@@ -49,7 +49,7 @@ function classify(problem) {
   return "其它";
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头):本段断言的是门禁
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头):本段断言的是门禁
 // 配置与基线的一致性,产物是报告与基线文件,不是可供 GUI 拖入实测的 md 样例。
 export const fixtures = null;
 

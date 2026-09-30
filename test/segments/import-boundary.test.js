@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * 依赖声明与 import 层向边界守护段(位于 test/segments/ = 跨域守护段;被测为
- * scripts/check-import-boundary.mjs 的判定逻辑 + 真实仓库的声明/产物事实,
+ * gates/repo/check-import-boundary.mjs 的判定逻辑 + 真实仓库的声明/产物事实,
  * 纯 Node 逻辑,不启 Electron):
  *
  * 双侧复核(同一套规则分别落在两侧,任一侧漂移都要红):
@@ -42,8 +42,8 @@ import {
   isTypeOnlyClause,
   main as boundaryMain,
   selfCheckTreeLayout,
-} from "../../scripts/check-import-boundary.mjs";
-import { REQUIRED_ENTRIES } from "../../scripts/check-asar-manifest.mjs";
+} from "../../gates/repo/check-import-boundary.mjs";
+import { REQUIRED_ENTRIES } from "../../gates/artifacts/check-asar-manifest.mjs";
 
 const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 const SRC_DIR = path.join(ROOT, "src");
@@ -191,7 +191,7 @@ function layerOf(file, spec) {
   return joined.split("/")[0];
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
@@ -220,8 +220,8 @@ export async function run() {
       // 门禁接入:check:boundary 已定义,且紧随 check:contract(早于 build)
       assert(typeof PKG.scripts["check:boundary"] === "string", "package.json 缺 check:boundary script");
       assert(
-        PKG.scripts["check:boundary"] === "node scripts/check-import-boundary.mjs",
-        `check:boundary 应指向 scripts/check-import-boundary.mjs,实际 ${String(PKG.scripts["check:boundary"])}`,
+        PKG.scripts["check:boundary"] === "node gates/repo/check-import-boundary.mjs",
+        `check:boundary 应指向 gates/repo/check-import-boundary.mjs,实际 ${String(PKG.scripts["check:boundary"])}`,
       );
       const chain = PKG.scripts["verify:ci"].split("&&").map((/** @type {string} */ s) => s.trim());
       const contractAt = chain.indexOf("npm run check:contract");
@@ -705,7 +705,7 @@ export async function run() {
     // ================= (7) 树边界规则(ADR-038/043):allow-list,三棵树各自的双向锚点 =================
     // 判据形态是 allow-list(允许面外一律判红),与 LAYER_RULES 的 deny-list 语义相反。
     // 三棵树缺一不可 —— selfCheckTreeLayout 要求 scope 目录齐备,否则规则形同虚设会判红,
-    // 所以每个沙盒都先铺齐 scripts/ test/ shared/ 三棵空树,再只往目标树里放违规文件。
+    // 所以每个沙盒都先铺齐 gates/ test/ shared/ 三棵空树,再只往目标树里放违规文件。
     {
       /**
        * 铺一棵三树齐备的沙盒,返回根目录(树扫描锚在 projectRoot,而本段验的是原语,
@@ -715,7 +715,7 @@ export async function run() {
        */
       const treeSandbox = (files) => {
         const sb = createSandbox({ dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } }, {});
-        for (const dir of ["scripts", "test", "shared"]) writeFileIn(sb.dir, `${dir}/.keep`, "");
+        for (const dir of ["gates", "test", "shared"]) writeFileIn(sb.dir, `${dir}/.keep`, "");
         for (const [relative, content] of Object.entries(files)) writeFileIn(sb.dir, relative, content);
         track(sb.dir);
         return sb;
@@ -723,10 +723,10 @@ export async function run() {
 
       // 7a. gates-stay-in-gates:门禁树引 test/ 下非夹具 → 判红并点名文件:行号:规则 id
       {
-        const sb = treeSandbox({ "scripts/g.mjs": 'import { x } from "../test/common/thing.js";\nexport { x };\n' });
+        const sb = treeSandbox({ "gates/g.mjs": 'import { x } from "../test/common/thing.js";\nexport { x };\n' });
         const problems = analyzeTreeBoundaries(sb.dir);
         assert(
-          problems.some((p) => /scripts\/g\.mjs:1:/.test(p) && /违反树边界规则 gates-stay-in-gates/.test(p)),
+          problems.some((p) => /gates\/g\.mjs:1:/.test(p) && /违反树边界规则 gates-stay-in-gates/.test(p)),
           `门禁树引 test/ 应判红并点名行号+规则 id,实际:${JSON.stringify(problems)}`,
         );
       }
@@ -754,7 +754,7 @@ export async function run() {
       // 7d. 路径段安全:引 test/fixtures-old/ 必须判红 —— 若按 startsWith 匹配会被
       // 允许面 test/fixtures 误放行(这正是把「只写 test/ 就放行整棵测试树」的洞补上)
       {
-        const sb = treeSandbox({ "scripts/g.mjs": 'import { x } from "../test/fixtures-old/thing.js";\nexport { x };\n' });
+        const sb = treeSandbox({ "gates/g.mjs": 'import { x } from "../test/fixtures-old/thing.js";\nexport { x };\n' });
         const problems = analyzeTreeBoundaries(sb.dir);
         assert(
           problems.some((p) => /fixtures-old/.test(p) && /违反树边界规则 gates-stay-in-gates/.test(p)),
@@ -762,29 +762,29 @@ export async function run() {
         );
       }
 
-      // 7e. 正向:四类合法跨树引用一条都不许误伤 ——
+      // 7e. 正向:合法跨树引用一条都不许误伤 ——
       //   shared 树内互依 + node: 内建放行(零**跨树**出边,不是零 import);
-      //   测试树引 shared/ 门禁树/ dist 编译产物/ 自身 test/ 均合法
+      //   测试树引 shared/ 门禁树/ dist 编译产物/ 产物生产树(build · dev)/ 自身 test/ 均合法
       {
         const sb = treeSandbox({
           "shared/s.mjs":
             'import path from "node:path";\nimport { y } from "./other.mjs";\nexport default [path, y];\n',
           "test/t.js":
-            'import { a } from "../shared/s.mjs";\nimport { b } from "../scripts/g.mjs";\nimport { c } from "../dist/core/thing.js";\nimport { d } from "./other.js";\nexport default [a, b, c, d];\n',
-          "scripts/g.mjs": 'import { p } from "../shared/paths.js";\nexport { p };\n',
+            'import { a } from "../shared/s.mjs";\nimport { b } from "../gates/g.mjs";\nimport { c } from "../dist/core/thing.js";\nimport { e } from "../build/copy-renderer.mjs";\nimport { f } from "../dev/print-env-fingerprint.mjs";\nimport { d } from "./other.js";\nexport default [a, b, c, e, f, d];\n',
+          "gates/g.mjs": 'import { p } from "../shared/paths.js";\nexport { p };\n',
           "shared/other.mjs": "export const y = 1;\n",
         });
         const problems = analyzeTreeBoundaries(sb.dir);
         assert(
           problems.length === 0,
-          `四类合法跨树引用不得误伤,实际判红:${JSON.stringify(problems)}`,
+          `合法跨树引用不得误伤,实际判红:${JSON.stringify(problems)}`,
         );
       }
 
       // 7f. 判据写法自检:三棵树缺一即判红 —— 「扫不到就等于没规则」是最危险的失效形态
       {
         const sb = createSandbox({ dependencies: {}, devDependencies: {} }, {});
-        writeFileIn(sb.dir, "scripts/.keep", "");
+        writeFileIn(sb.dir, "gates/.keep", "");
         track(sb.dir);
         const layoutProblems = selfCheckTreeLayout(sb.dir);
         assert(

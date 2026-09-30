@@ -65,7 +65,7 @@ const parse = (text) => /** @type {ParsePresetsResult} */ (parsePresetsFile(text
 const merge = (existing, incoming) =>
   /** @type {MergePresetsResult} */ (mergePresets(existing, incoming));
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 /** 预设导入/导出纯函数直测(纯 Node 段,零 Electron API) */

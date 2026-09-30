@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 门禁故意失败探针段(位于 test/segments/ = 跨域守护段;被测为 scripts/check-gate-probes.mjs
+ * 门禁故意失败探针段(位于 test/segments/ = 跨域守护段;被测为 gates/probe/check-gate-probes.mjs
  * 所探测的各道门禁本身,而非任何业务能力):
  *
  * 为什么要有这一段:仓库的 coverage 阈值、fixtures 漂移、构建新鲜度、dist 清单、smoke
@@ -14,10 +14,10 @@
  *   具体诊断关键字的负向探针(只看退出码会让「因错误原因失败」蒙混过关);
  * - 锚点不绿 = 沙盒不可信,负向结论不成立 → 判红并写明不可信原因;
  * - 真实工作树零注入:探针只在系统临时目录的工程副本里注入故障,并断言真实
- *   src/test/dist/scripts/output/package*.json 指纹未变、node_modules 哨兵完好。
+ *   src/test/dist/gates/build/dev/output/package*.json 指纹未变、node_modules 哨兵完好。
  *
  * 本段刻意不实现第二套判定逻辑(避免两套口径漂移):判定、报告与摘要全部由
- * scripts/check-gate-probes.mjs 单源产出,本段只做 case 化呈现与门禁级断言。
+ * gates/probe/check-gate-probes.mjs 单源产出,本段只做 case 化呈现与门禁级断言。
  *
  * 筛选(与探针脚本同一条口径,便于开发迭代提速):M2W_GATE_PROBES_ONLY=fixtures,dist-manifest
  * 只跑指定门禁;M2W_GATE_PROBES_SKIP=smoke 跳过冒烟(它会在沙盒里真启一次 Electron)。
@@ -29,7 +29,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { REPORT_RELATIVE, formatSummary, isReportPassing, resolveGateSelection, runGateProbes } from "../../scripts/check-gate-probes.mjs";
+import { REPORT_RELATIVE, formatSummary, isReportPassing, resolveGateSelection, runGateProbes } from "../../gates/probe/check-gate-probes.mjs";
 import { createCaseSuite } from "../common/case.js";
 import { ROOT } from "../common/paths.js";
 
@@ -52,7 +52,7 @@ const GATE_LABELS = {
  */
 const KIND_LABELS = { anchor: "锚点", fault: "负向", blindspot: "盲区观测" };
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头):本段断言的是门禁
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头):本段断言的是门禁
 // 自身的行为,产物是机器可读报告,不是可供 GUI 拖入实测的 md 样例。
 export const fixtures = null;
 
@@ -146,7 +146,16 @@ export async function run() {
       const parsed = JSON.parse(text);
       if (parsed.schema !== "m2w/gate-probes@1") throw new Error(`报告 schema 不符:${String(parsed.schema)}`);
       if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text)) throw new Error("报告含时间戳,不可复现");
-      if (/[A-Za-z]:[\\/]/.test(text)) throw new Error("报告含绝对路径,不可跨机比对");
+      // 绝对路径只认**解码后**的字符串(键与值都扫)。裸文本匹配会把 JSON 转义误当盘符:
+      // `load:"static"` 序列化成 `load:\"static\"` 后含 `d:\`,与 `C:\` 同形却不是路径。
+      const decoded = [];
+      (function collect(v) {
+        if (typeof v === "string") decoded.push(v);
+        else if (Array.isArray(v)) v.forEach(collect);
+        else if (v && typeof v === "object") for (const k of Object.keys(v)) { decoded.push(k); collect(v[k]); }
+      })(parsed);
+      const absolute = decoded.find((s) => /[A-Za-z]:[\\/]/.test(s));
+      if (absolute !== undefined) throw new Error(`报告含绝对路径,不可跨机比对:${absolute.slice(0, 80)}`);
       if (!Array.isArray(parsed.gates) || parsed.gates.length !== report.gates.length) {
         throw new Error("报告里的门禁条目数与本次运行不一致");
       }

@@ -57,7 +57,7 @@
  * 常常正是解释该决策的位置),指向越界/空行才判红。
  *
  * 键覆盖登记**接门禁探针**(`check:gates` 的 `dual-matrix` 一项,见
- * `scripts/gate-probes/contract.mjs` 的 GATE_IDS 与 `gates/dual-matrix.mjs`):
+ * `gates/probe/gate-probes/contract.mjs` 的 GATE_IDS 与 `gates/dual-matrix.mjs`):
  * 判据是本段的 `assertMatrixShape`(其中含键覆盖交叉核对),探针在系统临时目录的
  * 工程副本里注入两类故障 —— 删掉一行 `covers` 标记、给某行塞一个未登记的键 ——
  * 断言本段真的判红,即证明这道登记不是恒真断言。探针**不在** `verify:ci` 链内

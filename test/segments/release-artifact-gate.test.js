@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * ASAR 与发布产物门禁(位于 test/segments/ = 跨域守护段;被测为 scripts/ 下的
+ * ASAR 与发布产物门禁(位于 test/segments/ = 跨域守护段;被测为 gates/artifacts 下的
  * 发布检查脚本,纯 Node 逻辑不经 dist 编译产物):
  * - check-asar-manifest.mjs:app.asar 的结构(顶层白名单)、入口与 KaTeX/Mermaid 资源
  *   锁定、包内 package.json 版本锁定,以及与 clean dist 清单的逐项哈希核对
@@ -21,8 +21,8 @@ import {
   REQUIRED_PREFIXES,
   loadAsar,
   main as asarMain,
-} from "../../scripts/check-asar-manifest.mjs";
-import { main as releaseMain } from "../../scripts/check-release-artifacts.mjs";
+} from "../../gates/artifacts/check-asar-manifest.mjs";
+import { main as releaseMain } from "../../gates/artifacts/check-release-artifacts.mjs";
 import { removeFile, removeTree } from "../common/temp-resource.js";
 
 const FIXTURE_VERSION = "9.9.9";
@@ -63,7 +63,7 @@ const FIXTURE_PRODUCT = "FixtureApp";
  */
 
 /**
- * 发布检查报告的落盘结构(scripts/check-release-artifacts.mjs 的 report 契约;
+ * 发布检查报告的落盘结构(gates/artifacts/check-release-artifacts.mjs 的 report 契约;
  * JSON.parse 无类型,此处按契约声明以便断言可类型检查)。
  * @typedef {object} ReleaseReport
  * @property {string} version
@@ -280,7 +280,7 @@ function makeReleaseFixture(tmp, { version = FIXTURE_VERSION, mutate } = {}) {
   return { releaseDir, installerPath, installerName, pkgPath, installerSha256: createHash("sha256").update(content).digest("hex") };
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {

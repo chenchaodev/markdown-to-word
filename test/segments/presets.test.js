@@ -65,7 +65,7 @@ function assertEq(actual, expected, label) {
 /** 三语字典视图(LANGUAGES 的 code 为 string,需经 Record 视图按语言码取值) */
 const DICT_VIEW = /** @type {Record<string, Record<string, string>>} */ (DICT);
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 /** TEMPLATE_PRESETS / matchesPreset 契约单测 */

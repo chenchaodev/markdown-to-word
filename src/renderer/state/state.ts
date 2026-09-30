@@ -17,7 +17,7 @@ export type { ConvertProgressPayload };
  * (renderer 各模块仍从 state.js 取用,编译期擦除无运行时依赖);
  * preload.cts 同样从 core import type——renderer→main 反向依赖**只剩 1 条已登记项**:
  * `src/renderer/renderer.ts` 的 `import type { PreloadApi }`,放行见
- * `scripts/check-import-boundary.mjs` 的 `REVERSE_TYPE_ALLOWLIST`;收口见 campaign REF-025 计划项 #03。
+ * `gates/repo/check-import-boundary.mjs` 的 `REVERSE_TYPE_ALLOWLIST`;收口见 campaign REF-025 计划项 #03。
  */
 export type { BatchItem, BatchProgressInfo, BatchResult };
 

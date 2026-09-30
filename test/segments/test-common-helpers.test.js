@@ -46,7 +46,7 @@ import {
   withTempResource,
 } from "../common/temp-resource.js";
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 const suite = createCaseSuite();
@@ -464,7 +464,7 @@ export async function run() {
       const holder = await holdDirUntilSelfExit(held);
       try {
         // 下面两个 150 必须相等(耗时下界 = 退避基数);门禁要求选项取值写成数字字面量
-        // (见 scripts/check-temp-cleanup.mjs 的第二条规则),故调用点与断言各自写死
+        // (见 gates/repo/check-temp-cleanup.mjs 的第二条规则),故调用点与断言各自写死
         const startedAt = Date.now();
         const outcome = removeTree(resource.path, { maxRetries: 20, retryDelay: 150 });
         const elapsed = Date.now() - startedAt;

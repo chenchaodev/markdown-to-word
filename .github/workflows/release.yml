@@ -56,11 +56,11 @@ jobs:
 
       # Node 口径与门禁链自检:与依赖安装解耦,版本/命令漂移时在 npm ci 之前即 fail fast
       - name: Check engineering contract
-        run: node scripts/check-ci-contract.mjs
+        run: node gates/repo/check-ci-contract.mjs
 
       # action 引用固定门禁(与 ci.yml 同入口同写法,同样在 npm ci 之前 fail fast):
       # 校验本仓每处 uses: 确为 40 位 commit SHA + 「# vX.Y.Z」版本注释,且
-      # SHA/版本与 scripts/pinned-actions.baseline.json 一致。固定 SHA 后 Dependabot
+      # SHA/版本与 gates/repo/pinned-actions.baseline.json 一致。固定 SHA 后 Dependabot
       # 漏洞告警失效(版本更新 PR 仍有效),这道门禁是对该代价的补偿面;
       # 纯文本 + JSON 离线可跑,也在 verify:release 链内(经 verify:ci)执行。
       - name: Check action pinning (check:pinned-actions)
@@ -118,8 +118,8 @@ jobs:
       # dist 清单 → electron-builder → 清单校验/ASAR 核对/发布目标核对(含 SHA-256 报告),
       # 复用 ci.yml 同一条链,发布不再维护第二份缩水命令清单,
       # tag 无法绕过 geometry/coverage/fixture/smoke 门禁。
-      # 清理只删 dist/ 与 release/ 两个生成目录,路径守卫在 scripts/clean-artifacts.mjs,
-      # 链形态由 scripts/check-ci-contract.mjs 断言(勿把清理扩散到其它目录)。
+      # 清理只删 dist/ 与 release/ 两个生成目录,路径守卫在 build/clean-artifacts.mjs,
+      # 链形态由 gates/repo/check-ci-contract.mjs 断言(勿把清理扩散到其它目录)。
       # electron-builder 打包 NSIS 安装包(产物 release/MarkdownToWord-Setup-<版本>.exe
       # + .blockmap + latest.yml;确切文件名由 package.json build.nsis.artifactName 展开)
       - name: Verify & package (verify:release)

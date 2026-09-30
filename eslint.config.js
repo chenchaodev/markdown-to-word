@@ -36,12 +36,12 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        // 批次 15 第 5 项:lint 范围扩到 test/scripts。tsconfig.json 无 allowJs,
+        // 批次 15 第 5 项:lint 范围扩到 test/门禁树。tsconfig.json 无 allowJs,
         // .js/.mjs 不进 TS program(projectService 报「not found by the project service」),
         // 经 allowDefaultProject 放行(typescript-eslint 官方方案,不改 tsconfig 结构)。
         // 清单来源:defaultProjectGlobs 运行时扫描(文件头注释),新目录零登记。
         projectService: {
-          allowDefaultProject: defaultProjectGlobs(["src", "test", "scripts", "shared"]),
+          allowDefaultProject: defaultProjectGlobs(["src", "test", "gates", "build", "dev", "shared"]),
           // 阶段 0 新增几何/产物/指纹脚本与测试后默认项目文件数超过 100；
           // 提高上限是为保持零登记 lint 覆盖，不是放宽类型门禁。
           // 2026-09 续提:阶段 5-7 拆分与新增脚本后该数已达 200(恰好等于旧上限,
@@ -67,8 +67,8 @@ export default tseslint.config(
   {
     // CJS 预加载脚本必须 require(...),放行 require 导入。两类都在此集中登记,勿在文件里就地 eslint-disable:
     // ① src/renderer/about-preload.cjs —— Electron 预加载,与 lang-bootstrap.js 同属非 tsc 编入的 renderer 脚本
-    // ② test/tools/visual-about-preload.cjs —— 截图工具的 about 窗桩,contextIsolation+sandbox 口径与真实 about 窗一致故同样为 CJS
-    files: ["src/renderer/about-preload.cjs", "test/tools/visual-about-preload.cjs"],
+    // ② dev/visual-about-preload.cjs —— 截图工具的 about 窗桩,contextIsolation+sandbox 口径与真实 about 窗一致故同样为 CJS
+    files: ["src/renderer/about-preload.cjs", "dev/visual-about-preload.cjs"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },

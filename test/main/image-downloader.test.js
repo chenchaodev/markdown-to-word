@@ -79,7 +79,7 @@ async function startServer(status, body, delayMs = 0) {
   return { server, port, getCount: () => count };
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {

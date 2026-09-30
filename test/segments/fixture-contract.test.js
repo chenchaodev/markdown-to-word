@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * 验收样例生成器契约守护段(位于 test/segments/ = 跨域守护段;被测为
- * test/tools/gen-fixtures.mjs 的显式契约与扫描范围,纯 Node,不依赖 dist):
+ * gates/fixtures/gen-fixtures.mjs 的显式契约与扫描范围,纯 Node,不依赖 dist):
  *
  * 生成器从测试段导出 fixtures 落盘验收样例。旧实现用正则预筛源码里有
  * `export const fixtures` 才 import,副作用型/改名的导出会被静默漏掉,漏掉的段
@@ -32,7 +32,7 @@ import {
   listCandidateSegments,
   planFixtureOutputs,
   validateSegmentContract,
-} from "../tools/gen-fixtures.mjs";
+} from "../../gates/fixtures/gen-fixtures.mjs";
 import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 
 /** 段目录硬编码残留:acceptance.mjs 若再写 `path.join(testRoot, "…")` 字面量,就是第二份清单 */
@@ -57,7 +57,7 @@ function assert(cond, msg) {
  */
 const seg = (baseName) => ({ baseName });
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {

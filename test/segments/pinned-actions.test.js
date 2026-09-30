@@ -1,14 +1,14 @@
 // @ts-check
 /**
  * action 引用固定门禁守护段(位于 test/segments/ = 跨域守护段;被测为
- * scripts/check-pinned-actions.mjs 的判定逻辑 + 真实仓库的 workflow 事实,
+ * gates/repo/check-pinned-actions.mjs 的判定逻辑 + 真实仓库的 workflow 事实,
  * 纯 Node 逻辑,不启 Electron):
  *
  * 为什么要有这道门禁(SHA 固定的补偿面):
  *   Dependabot 的版本更新 PR 对「固定到 40 位 commit SHA」有效,但**漏洞告警对
  *   SHA 固定无效** —— 固定后 Dependabot 不再解析 action 依赖图,被引用版本出已知
  *   漏洞时仓库收不到告警。本段守护的补偿面是「引用卫生 + 版本基线」:前者保证引用
- *   确为 40 位 SHA 且带版本注释,后者保证 SHA/版本与 scripts/pinned-actions.baseline.json
+ *   确为 40 位 SHA 且带版本注释,后者保证 SHA/版本与 gates/repo/pinned-actions.baseline.json
  *   一致(换 action 版本必须同 PR 改基线,升级因此在 diff 里可见、可 review)。
  *   本段**不**守护漏洞本身:那由 CI 里非阻断的 zizmor 审计承担(见 workflows),
  *   本地门禁离线可跑,不查任何漏洞库。
@@ -42,7 +42,7 @@ import {
   main as pinnedMain,
   parseBaseline,
   parseUses,
-} from "../../scripts/check-pinned-actions.mjs";
+} from "../../gates/repo/check-pinned-actions.mjs";
 
 const WORKFLOWS_DIR = path.join(ROOT, ...DEFAULT_WORKFLOWS.split("/"));
 const BASELINE_PATH = path.join(ROOT, ...DEFAULT_BASELINE.split("/"));
@@ -187,7 +187,7 @@ function baselineFor(...repos) {
   return goodBaseline(actions);
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
@@ -247,10 +247,10 @@ export async function run() {
       }
 
       // 门禁接入:脚本存在、指向正确、已入 verify:ci 且早于 build
-      assert(fs.existsSync(path.join(ROOT, "scripts", "check-pinned-actions.mjs")), "缺少 scripts/check-pinned-actions.mjs");
+      assert(fs.existsSync(path.join(ROOT, "gates", "repo", "check-pinned-actions.mjs")), "缺少 gates/repo/check-pinned-actions.mjs");
       assert(
-        PKG.scripts["check:pinned-actions"] === "node scripts/check-pinned-actions.mjs",
-        `check:pinned-actions 应指向 scripts/check-pinned-actions.mjs,实际 ${String(PKG.scripts["check:pinned-actions"])}`,
+        PKG.scripts["check:pinned-actions"] === "node gates/repo/check-pinned-actions.mjs",
+        `check:pinned-actions 应指向 gates/repo/check-pinned-actions.mjs,实际 ${String(PKG.scripts["check:pinned-actions"])}`,
       );
       const chain = PKG.scripts["verify:ci"].split("&&").map((/** @type {string} */ s) => s.trim());
       const pinnedAt = chain.indexOf("npm run check:pinned-actions");

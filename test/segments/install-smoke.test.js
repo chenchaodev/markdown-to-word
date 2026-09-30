@@ -1,8 +1,8 @@
 // @ts-check
 /**
  * 打包产物启动/安装/卸载 smoke 段(位于 test/segments/ = 跨域守护段;被测为
- * scripts/check-unpacked-smoke.mjs 与 scripts/check-install-smoke.mjs 的**进程级
- * CLI 语义**与 scripts/smoke-proc.mjs 的判定面,纯 Node 子进程调用,不经 dist
+ * gates/artifacts/check-unpacked-smoke.mjs 与 gates/artifacts/check-install-smoke.mjs 的**进程级
+ * CLI 语义**与 gates/smoke/smoke-proc.mjs 的判定面,纯 Node 子进程调用,不经 dist
  * 编译产物、不启 Electron GUI):
  *
  * 覆盖(对应验收清单):
@@ -27,8 +27,8 @@
  *
  * 沙箱纪律(硬约束):被测脚本的项目根由脚本自身位置推导(读 package.json、按
  * build.directories.output 找 release),故把生产脚本**逐字节原样**复制到临时沙盒的
- * scripts/(连同 import 依赖 check-dist-manifest.mjs / check-release-artifacts.mjs /
- * smoke-proc.mjs 与 test/common/userdata.js)后再执行 —— 沙盒外不存在可达的真实项目根,
+ * gates/artifacts 与 gates/smoke/(连同 import 依赖 check-dist-manifest.mjs / check-release-artifacts.mjs /
+ * smoke-proc.mjs 与 shared/userdata.js)后再执行 —— 沙盒外不存在可达的真实项目根,
  * 沙盒内不存在被改写的实现。段首/段尾对真实 release/ 做指纹比对,确保真实产物零改动。
  *
  * 「可执行文件」怎么在沙盒里可执行:解包目录里的 .exe 只能是假字节(无法真跑),故用
@@ -45,8 +45,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { defaultInstallDir, runInstallFlow, startMenuTraces } from "../../scripts/check-install-smoke.mjs";
-import { SMOKE_MARKERS } from "../../scripts/smoke-proc.mjs";
+import { defaultInstallDir, runInstallFlow, startMenuTraces } from "../../gates/artifacts/check-install-smoke.mjs";
+import { SMOKE_MARKERS } from "../../gates/smoke/smoke-proc.mjs";
 import { ROOT } from "../common/paths.js";
 import { removeFile } from "../common/temp-resource.js";
 
@@ -76,14 +76,27 @@ const STUB_BEACON_DELAY_MS = 3000;
  * 判红路径一旦看见信标立即返回(不烧满预算)。
  */
 const BEACON_WATCH_MARGIN_MS = 600;
-/** 沙盒内逐字节复制的脚本(生产实现不得被改写) */
-const SANDBOX_SCRIPTS = [
+/**
+ * 沙盒内逐字节复制的脚本(生产实现不得被改写),按门禁树的断言域分两组。
+ *
+ * 分两组而非一张平表:复制点写成 `path.join(ROOT, "<字面目录>", name)` 是**副本闭包门禁
+ * 静态可解析**的形态(见 shared/copy-closure.js 的 resolveCopySource:字面量段 + 单层
+ * for-of 别名可求值)。写成平表后 `...rel.split("/")` 之类展开对它是不可见的,复制点会
+ * 悄悄退化成「未静态解析」登记项,副本集合随之漏掉这 5 份 —— 死副本判红会误报,
+ * 且该门禁自身的覆盖面被无声缩小。故字面目录必须留在源码里。
+ */
+const SANDBOX_ARTIFACT_SCRIPTS = [
   "check-unpacked-smoke.mjs",
   "check-install-smoke.mjs",
-  "smoke-proc.mjs",
   "check-dist-manifest.mjs",
   "check-release-artifacts.mjs",
 ];
+const SANDBOX_SMOKE_SCRIPTS = ["smoke-proc.mjs"];
+/** 沙盒内复制的全部脚本与其落点目录(逐字节一致性子进程断言用) */
+const SANDBOX_SCRIPT_GROUPS = /** @type {[readonly string[], string][]} */ ([
+  [SANDBOX_ARTIFACT_SCRIPTS, "gates/artifacts"],
+  [SANDBOX_SMOKE_SCRIPTS, "gates/smoke"],
+]);
 /** 桩脚本:假可执行文件的替身,行为由 M2W_STUB_MODE 驱动 */
 const STUB_SOURCE = `// 沙盒桩:扮演「被启动的应用」,行为由 M2W_STUB_MODE 决定。
 import { appendFileSync, writeFileSync } from "node:fs";
@@ -195,7 +208,7 @@ function writeFileIn(root, relative, content) {
  *
  * 为什么不能用「直接写一段 JSON 文本」当假 asar:asar 头部是定长二进制前缀 + 嵌套目录树
  * ({"files":{"dist":{"files":{"main":{"files":{"smoke.js":{…}}}}}}),路径按目录分层存放、
- * 不以拼接字符串出现。scripts/smoke-proc.mjs 的 asarContainsEntry 按真实格式解析(拼接路径
+ * 不以拼接字符串出现。gates/smoke/smoke-proc.mjs 的 asarContainsEntry 按真实格式解析(拼接路径
  * 子串搜索必然假阴性),故夹具必须同构,否则测试验证的是一个不存在的格式。
  *
  * 实测头布局:[u32=4][u32=jsonLen+8][u32=jsonLen+4][u32=jsonLen][JSON…]
@@ -222,10 +235,15 @@ function makeAsarBytes(entryRelative) {
 
 function createSandbox({ smokeEntryInAsar = true, installer = true, perMachine = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX));
-  for (const name of SANDBOX_SCRIPTS) {
-    const target = path.join(root, "scripts", name);
+  for (const artifactScript of SANDBOX_ARTIFACT_SCRIPTS) {
+    const target = path.join(root, "gates", "artifacts", artifactScript);
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(path.join(ROOT, "scripts", name), target);
+    fs.copyFileSync(path.join(ROOT, "gates", "artifacts", artifactScript), target);
+  }
+  for (const smokeScript of SANDBOX_SMOKE_SCRIPTS) {
+    const target = path.join(root, "gates", "smoke", smokeScript);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, "gates", "smoke", smokeScript), target);
   }
   // 沙盒内那 4 个脚本都 import 项目根单源 shared/paths.js(ADR-040),故必须逐字节带一份进去,
   // 否则沙盒里 ERR_MODULE_NOT_FOUND,整段以「脚本起不来」的形式红,而不是被测语义的红。
@@ -301,14 +319,17 @@ function mergeChildEnv(overrides) {
 /**
  * 在沙盒内执行检查脚本。
  * @param {string} root 沙盒根
- * @param {string} scriptName scripts/ 下的脚本名
+ * @param {string} scriptName 脚本文件名(沙盒内落点目录与生产布局一致:artifacts 树或 smoke 树)
  * @param {string[]} args CLI 参数
  * @param {Record<string, string>} [env] 子进程环境覆盖
  * @returns {{ code: number | null; output: string; ms: number }} 退出码/合并输出/耗时
  */
 function runScript(root, scriptName, args, env = {}) {
   const started = Date.now();
-  const result = spawnSync(NODE, [path.join(root, "scripts", scriptName), ...args], {
+  const rel = SANDBOX_SMOKE_SCRIPTS.includes(scriptName)
+    ? path.join("gates", "smoke", scriptName)
+    : path.join("gates", "artifacts", scriptName);
+  const result = spawnSync(NODE, [path.join(root, rel), ...args], {
     cwd: root,
     encoding: "utf8",
     timeout: 120_000,
@@ -466,7 +487,7 @@ async function withCapturedOutput(fn) {
 /**
  * execute 路径的替身结果(默认「退出码 0 + 空输出」)。
  * @param {string} [output] 输出正文
- * @returns {import("../../scripts/smoke-proc.mjs").ProcessRunResult} 结果
+ * @returns {import("../../gates/smoke/smoke-proc.mjs").ProcessRunResult} 结果
  */
 function okResult(output = "") {
   return { code: 0, signal: null, timedOut: false, output };
@@ -477,9 +498,9 @@ function okResult(output = "") {
  * @param {object} spec 参数
  * @param {string} spec.installDir 假安装目录
  * @param {string} spec.scratchRoot 临时根
- * @param {import("../../scripts/smoke-proc.mjs").ProcessRunResult} [spec.launchResult] 启动步骤预置结果
- * @param {import("../../scripts/smoke-proc.mjs").ProcessRunResult} [spec.installResult] 安装步骤预置结果
- * @param {import("../../scripts/smoke-proc.mjs").ProcessRunResult} [spec.uninstallResult] 卸载步骤预置结果
+ * @param {import("../../gates/smoke/smoke-proc.mjs").ProcessRunResult} [spec.launchResult] 启动步骤预置结果
+ * @param {import("../../gates/smoke/smoke-proc.mjs").ProcessRunResult} [spec.installResult] 安装步骤预置结果
+ * @param {import("../../gates/smoke/smoke-proc.mjs").ProcessRunResult} [spec.uninstallResult] 卸载步骤预置结果
  * @param {string[]} [spec.registryAfter] 卸载后仍存在的注册表键(默认空 = 已清理干净)
  * @param {boolean} [spec.perMachine] 构建口径(默认 false = 按用户安装)
  * @returns {Promise<{ code: number; calls: string[]; launchCalls: { userDataDir: string; existedDuring: boolean }[]; deletedKeys: string[]; removedPaths: string[] }>} 结果
@@ -582,8 +603,8 @@ const FIXTURE_PRE_EXISTING_KEY =
  * @param {boolean} [spec.writesResidue] 安装命令是否写注册表项 + 开始菜单快捷方式(默认 false)
  * @param {boolean} [spec.uninstallLeavesResidue] 卸载命令是否把注册表/快捷方式留下(默认 false)
  * @param {boolean} [spec.canDelete] 删除类操作是否成功(默认 true;false = 模拟删不掉)
- * @param {import("../../scripts/smoke-proc.mjs").ProcessRunResult} [spec.installResult] 安装结果
- * @param {import("../../scripts/smoke-proc.mjs").ProcessRunResult} [spec.launchResult] 启动结果
+ * @param {import("../../gates/smoke/smoke-proc.mjs").ProcessRunResult} [spec.installResult] 安装结果
+ * @param {import("../../gates/smoke/smoke-proc.mjs").ProcessRunResult} [spec.launchResult] 启动结果
  * @returns {Promise<{ code: number; registry: Set<string>; traces: Set<string>; deletedKeys: string[]; removedPaths: string[]; launchCalls: number }>} 运行后状态
  */
 async function runInstallExecuteWithFakeSystem({
@@ -667,7 +688,7 @@ async function runInstallExecuteWithFakeSystem({
   return { code, registry, traces, deletedKeys, removedPaths, launchCalls: launched };
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
@@ -681,13 +702,15 @@ export async function run() {
     {
       const root = createSandbox();
       sandboxes.push(root);
-      for (const name of SANDBOX_SCRIPTS) {
-        const copy = path.join(root, "scripts", name);
-        const original = path.join(ROOT, "scripts", name);
-        assert(
-          fs.readFileSync(copy).equals(fs.readFileSync(original)),
-          `沙盒副本应与生产脚本逐字节一致(否则测的不是被测实现):${name}`,
-        );
+      for (const [names, dir] of SANDBOX_SCRIPT_GROUPS) {
+        for (const name of names) {
+          const copy = path.join(root, ...dir.split("/"), name);
+          const original = path.join(ROOT, ...dir.split("/"), name);
+          assert(
+            fs.readFileSync(copy).equals(fs.readFileSync(original)),
+            `沙盒副本应与生产脚本逐字节一致(否则测的不是被测实现):${dir}/${name}`,
+          );
+        }
       }
       // 标记清单自检:非空且全部取自 smoke 输出的 [smoke] 前缀,否则「缺哪几条」断言失去意义
       assert(SMOKE_MARKERS.length === 5, `诊断标记应为 5 条,实际 ${SMOKE_MARKERS.length}`);

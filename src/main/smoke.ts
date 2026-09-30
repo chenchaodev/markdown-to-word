@@ -9,7 +9,7 @@
  * 纯逻辑断言(重名保护/批量汇总/merge docx/取消链路/设置注入/分页符产物)由
  * test/segments|main 承担,本模块不触碰设置注入与取消语义。
  *
- * 为什么落在 src/(而非 test/tools/):本模块要在**打包产物**里也能跑起来
+ * 为什么落在 src/(而非 test/):本模块要在**打包产物**里也能跑起来
  * —— 发布侧检查以 --smoke 启动真实可执行文件并断言诊断标记,入口必须随包分发。
  * build.files 只收 dist/** 与 package.json,故实现必须进 src 编译面(编译产物
  * dist/main/smoke.js 天然在包内);反向约束见本文件末「打包面纪律」。
@@ -31,7 +31,7 @@
  * 3. 不得把 dev-only 代码引入本模块的依赖图(test/ 不可 import,test 侧只做薄转调)。
  *
  * 机械化程度(REF-025 #20 勘察结论):第 1、3 条中「**依赖图不得逃出 src/**」这半已由
- * `scripts/check-import-boundary.mjs` 的层向规则 `smoke-no-outside-src` 机械断言
+ * `gates/repo/check-import-boundary.mjs` 的层向规则 `smoke-no-outside-src` 机械断言
  * (scope 按文件划层,forbid 用既有的 `prefix:../../` 形态,未扩展门禁词汇;因
  * `resolveLayer` 不锚定 src 根,`layer:` 形态抓不到向上逃逸)。
  * **仍未机械化的**:第 1 条中「不得出现仓库相对路径**字符串字面量**」与第 2 条
@@ -52,7 +52,7 @@ import { loadSettings, updateSettings } from "./persist/settings.js";
 import { loadUiState, saveUiState } from "./persist/ui-state.js";
 
 /**
- * 诊断标记契约:发布侧检查(scripts/smoke-proc.mjs 的 SMOKE_MARKERS)按这些字符串
+ * 诊断标记契约:发布侧检查(gates/smoke/smoke-proc.mjs 的 SMOKE_MARKERS)按这些字符串
  * 断言产物输出,故逐字稳定;新增标记须同步该清单,漂移由
  * test/segments/packaged-smoke.test.js 断言恒等。
  */
@@ -108,7 +108,7 @@ export function resolveSmokeOutDir({ isPackaged, appPath, tempDir }: SmokeOutDir
 /**
  * pdf 转换的降级描述(纯函数,便于直测):公式样式资源缺失属**非致命降级** ——
  * 产物照出、pdf 转换与书签主标记照打,仅在此追加一行留痕;无降级返回空串(不打该行)。
- * 缺 katex 资源本身由 scripts/check-asar-manifest.mjs 的包内条目断言兜底,此处只保证
+ * 缺 katex 资源本身由 gates/artifacts/check-asar-manifest.mjs 的包内条目断言兜底,此处只保证
  * 降级可见、不静默。
  * @param warnings pdf 转换返回的警告通道
  * @returns 降级行(无降级为空串)

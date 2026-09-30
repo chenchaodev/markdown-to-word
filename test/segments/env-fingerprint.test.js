@@ -13,10 +13,10 @@ import {
   formatFingerprintText,
   parseCliOptions,
   runCommand,
-} from "../../scripts/print-env-fingerprint.mjs";
+} from "../../gates/repo/print-env-fingerprint.mjs";
 
 /**
- * 构造探针结果(与 scripts/print-env-fingerprint.mjs 的 result() 同形)。
+ * 构造探针结果(与 gates/repo/print-env-fingerprint.mjs 的 result() 同形)。
  * @param {string} status 探针状态(ok / partial / unavailable)
  * @param {unknown} value 探针值(各探针异构:字符串 / 版本对象 / 字体信息等)
  * @param {string} source 探针来源(诊断与报告文案)
@@ -82,7 +82,7 @@ const positiveProbes = {
   }, "Windows AppliedDPI registry value"),
 };
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {

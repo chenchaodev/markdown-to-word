@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * electron mock 边界静态守护段(位于 test/segments/ = 跨域守护段;被测为
- * test/tools/electron-mock.mjs 的命名导出集合与 src 的 electron 具名 import 事实,
+ * test/common/electron-mock.mjs 的命名导出集合与 src 的 electron 具名 import 事实,
  * 纯 Node/纯 Electron 皆可跑,不依赖 dist):
  *
  * 为什么要有本段:electron 包是 CJS,命名导入会抛 SyntaxError,故 gen-fixtures 用
@@ -132,7 +132,7 @@ function scanTree(root, extensions) {
   return { required, byFile, namespaceFiles };
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
@@ -168,7 +168,7 @@ export async function run() {
   }
 
   // ---- 2. src 侧:具名 import 集合钉死 + mock 全覆盖 ----
-  const mock = await import("../tools/electron-mock.mjs");
+  const mock = await import("../common/electron-mock.mjs");
   const mockExports = new Set(Object.keys(mock));
   assert(mockExports.size > 0, "electron-mock 未导出任何命名成员(mock 失效?)");
 
@@ -183,7 +183,7 @@ export async function run() {
     const missing = srcNames.filter((n) => !mockExports.has(n));
     assert(
       missing.length === 0,
-      `electron-mock 缺少 src 用到的命名导出:${missing.join(",")}(补进 test/tools/electron-mock.mjs;否则依赖它的段在纯 Node 下 import 失败)`,
+      `electron-mock 缺少 src 用到的命名导出:${missing.join(",")}(补进 test/common/electron-mock.mjs;否则依赖它的段在纯 Node 下 import 失败)`,
     );
     console.log(`[ok] electron-mock-coverage:src 侧 ${srcNames.length} 个 electron 绑定全部被 mock 覆盖`);
   }

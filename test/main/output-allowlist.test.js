@@ -35,7 +35,7 @@ function assert(cond, msg) {
 }
 
 export const meta = { description: "shell 产物白名单:绑定真实产物/路径规范化/条目有界" };
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {

@@ -41,7 +41,7 @@
  *    不会让任何东西变红。
  * 2. **矩阵行 `covers` 字段**(dual-pipeline-matrix.test.js 内):每行声明自己覆盖哪
  *    几个键。矩阵段的 `assertMatrixShape` 与本表**双向**交叉核对(见该文件头注)。
- * 3. **阴性自检**(`scripts/check-gate-probes.mjs` 的 `dual-matrix` 门禁探针):往沙盒
+ * 3. **阴性自检**(`gates/probe/check-gate-probes.mjs` 的 `dual-matrix` 门禁探针):往沙盒
  *    工程副本里删一处 `covers` 标记 / 塞一个未登记的键,断言验收段真的判红 ——
  *    证明第 2 层不是恒真断言。
  *

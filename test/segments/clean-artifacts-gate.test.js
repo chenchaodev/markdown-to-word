@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * clean-artifacts 清理守卫段(位于 test/segments/ = 跨域守护段;被测为
- * scripts/clean-artifacts.mjs 的**进程级 CLI 语义**,纯 Node 子进程调用,不经 dist
+ * build/clean-artifacts.mjs 的**进程级 CLI 语义**,纯 Node 子进程调用,不经 dist
  * 编译产物、不启 Electron、不触发 electron-builder):
  *
  * 覆盖(按风险从高到低):
@@ -28,10 +28,10 @@
  *    本段用「只改 TARGET_DIRS 一行」的沙盒夹具把目标重定向到恶意值来触达它们,
  *    并用「重定向到普通目录应真删」的正向锚点证明夹具本身是忠实通路(否则负向
  *    用例可能只是「脚本根本跑不起来」);改写后除该常量行外与生产脚本逐字节一致。
- *    ⚠ 受保护段是**从实际顶层派生**的(ADR-037,scripts/repo-manifest.mjs),故沙盒的顶层
+ *    ⚠ 受保护段是**从实际顶层派生**的(ADR-037,gates/repo/repo-manifest.mjs),故沙盒的顶层
  *    内容决定保护集:本段 seedArtifacts 种下的源码 / 文档 / 依赖三棵树都进保护集,而
  *    「重定向到普通目录」那个正向锚点用的目录是裸目录(无代码 / 无文档 / 无声明指向),
- *    按派生口径不进保护集 —— 这条边界由 scripts/check-ci-contract.selftest.mjs 的顶层派生
+ *    按派生口径不进保护集 —— 这条边界由 gates/repo/check-ci-contract.selftest.mjs 的顶层派生
  *    锚点钉住,别在本段私自改口径。
  * 6. 删除失败:占用目标目录(Windows CWD 占用)复现「删不掉」错误码族
  *    (EPERM/EBUSY/EACCES 随争用时机不同),断言非零退出 + 可操作诊断
@@ -39,7 +39,7 @@
  *    他进程 CWD,故该用例仅在 win32 执行,平台未复现时显式记 skip。
  *
  * 沙箱纪律(硬约束):被测脚本的 PROJECT_ROOT 由脚本自身位置推导,所以一切执行都在
- * os.tmpdir() 下的临时沙盒里进行 —— 把生产脚本**原样复制**到沙盒的 scripts/ 后调用,
+ * os.tmpdir() 下的临时沙盒里进行 —— 把生产脚本**原样复制**到沙盒的 build/ 后调用,
  * 沙盒外不存在任何可达的真实项目根。runClean() 只接受本段自建的沙盒路径,并在
  * 段首/段尾对真实 dist/、release/ 与根目录 *.tsbuildinfo 做快照比对,确保真实产物
  * 零改动(测试自身若误删真实产物会立即判红)。
@@ -52,12 +52,12 @@ import path from "node:path";
 import { ROOT } from "../common/paths.js";
 import { removeFile, removeTree } from "../common/temp-resource.js";
 
-const SCRIPT_SOURCE = fs.readFileSync(path.join(ROOT, "scripts", "clean-artifacts.mjs"), "utf8");
+const SCRIPT_SOURCE = fs.readFileSync(path.join(ROOT, "build", "clean-artifacts.mjs"), "utf8");
 const SCRIPT_SHA256 = createHash("sha256").update(SCRIPT_SOURCE).digest("hex");
 /** 清理目标常量行(删除目标的单一来源);守卫可达性夹具只改这一行 */
 const TARGET_DIRS_RE = /const TARGET_DIRS = Object\.freeze\(\{[^}]*\}\);/;
 const SANDBOX_PREFIX = "m2w-clean-gate-";
-const USAGE_HINT = "用法: node scripts/clean-artifacts.mjs";
+const USAGE_HINT = "用法: node build/clean-artifacts.mjs";
 /**
  * 沙盒 package.json:与脚本对账逻辑一致的最小合法形状,且**形状与生产同构** ——
  * 顶层派生的包清单识别靠「JSON 里同时有 name 与 scripts」这两个键(新增声明文件零登记的
@@ -112,14 +112,14 @@ function writeFileIn(root, relative, content) {
 function createSandbox() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX));
   SANDBOXES.add(root);
-  fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
-  fs.writeFileSync(path.join(root, "scripts", "clean-artifacts.mjs"), SCRIPT_SOURCE, "utf8");
-  // 被测脚本从 shared/paths.js 取项目根(ADR-040),并从 scripts/repo-manifest.mjs 派生顶层删除
+  fs.mkdirSync(path.join(root, "build"), { recursive: true });
+  fs.writeFileSync(path.join(root, "build", "clean-artifacts.mjs"), SCRIPT_SOURCE, "utf8");
+  // 被测脚本从 shared/paths.js 取项目根(ADR-040),并从 gates/repo/repo-manifest.mjs 派生顶层删除
   // 保护区(ADR-037),沙盒内必须各带一份。注意这里是 writeFileSync 而非 copyFileSync ——
   // 副本闭包门禁的复制点扫描器**看不见**本沙盒,所以「忘了带」不会被 relative-outside-copy-set
   // 抓到,只能靠本段运行时红兜。
   writeFileIn(root, "shared/paths.js", fs.readFileSync(path.join(ROOT, "shared", "paths.js"), "utf8"));
-  writeFileIn(root, "scripts/repo-manifest.mjs", fs.readFileSync(path.join(ROOT, "scripts", "repo-manifest.mjs"), "utf8"));
+  writeFileIn(root, "gates/repo/repo-manifest.mjs", fs.readFileSync(path.join(ROOT, "gates", "repo", "repo-manifest.mjs"), "utf8"));
   writePackageJson(root, SANDBOX_PACKAGE);
   return root;
 }
@@ -158,7 +158,7 @@ function writeRedirectedScript(root, valueLiteral, fileName = "clean-artifacts.r
   const redirected = SCRIPT_SOURCE.replace(line, replacement);
   assert(redirected !== SCRIPT_SOURCE, "常量改写未生效");
   assert(redirected.replace(replacement, line) === SCRIPT_SOURCE, "除 TARGET_DIRS 行外脚本应逐字节不变");
-  const target = path.join(root, "scripts", fileName);
+  const target = path.join(root, "build", fileName);
   fs.writeFileSync(target, redirected, "utf8");
   // 夹具自身先过语法门:改写出错也会以退出码 1 结束,若不校验就会让「因错误原因失败」
   // 的负向用例蒙混过关(诊断文案不匹配也拦不住这种「假通过」以外的读解困难)。
@@ -217,7 +217,7 @@ function assertFailure(result, pattern, label, { usage = false, allowStack = fal
  */
 function runClean(root, args, scriptName = "clean-artifacts.mjs") {
   assert(SANDBOXES.has(root), `只允许对本段自建的沙盒执行清理脚本,实际 ${root}`);
-  const script = path.join(root, "scripts", scriptName);
+  const script = path.join(root, "build", scriptName);
   assert(fs.existsSync(script), `沙盒内缺少脚本副本:${script}`);
   const result = spawnSync(NODE, [script, ...args], { cwd: root, encoding: "utf8", timeout: 60_000 });
   assert(result.error === undefined, `子进程启动失败:${result.error?.message ?? "未知错误"}`);
@@ -335,7 +335,7 @@ function holdDirectory(dir) {
   };
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
@@ -353,7 +353,7 @@ export async function run() {
     // ---------- 0. 沙箱纪律:脚本逐字节一致 + 真实产物零改动 ----------
     {
       const root = create();
-      const copy = path.join(root, "scripts", "clean-artifacts.mjs");
+      const copy = path.join(root, "build", "clean-artifacts.mjs");
       assert(
         createHash("sha256").update(fs.readFileSync(copy)).digest("hex") === SCRIPT_SHA256,
         "沙盒脚本副本应与生产脚本逐字节一致(否则测的不是被测实现)",
@@ -637,8 +637,8 @@ export async function run() {
         `真实 package.json build.files 应覆盖 dist/(实际 ${JSON.stringify(files)}),否则清理守卫会拒绝执行`,
       );
       assert(pkg.build?.directories?.output === "release", `真实输出目录应为 release,实际 ${String(pkg.build?.directories?.output)}`);
-      assert(pkg.scripts["clean:dist"] === "node scripts/clean-artifacts.mjs --target dist", `clean:dist 应走守卫脚本,实际 ${pkg.scripts["clean:dist"]}`);
-      assert(pkg.scripts["clean:release"] === "node scripts/clean-artifacts.mjs --target release", `clean:release 应走守卫脚本,实际 ${pkg.scripts["clean:release"]}`);
+      assert(pkg.scripts["clean:dist"] === "node build/clean-artifacts.mjs --target dist", `clean:dist 应走守卫脚本,实际 ${pkg.scripts["clean:dist"]}`);
+      assert(pkg.scripts["clean:release"] === "node build/clean-artifacts.mjs --target release", `clean:release 应走守卫脚本,实际 ${pkg.scripts["clean:release"]}`);
       const distChain = pkg.scripts.dist;
       assert(/npm run clean:dist && npm run clean:release && npm run build/.test(distChain), `dist 链应先清理后构建,实际 ${distChain}`);
       console.log("[ok] clean-artifacts-gate:真实打包配置与 clean 链顺序(清理先于 build)符合契约");

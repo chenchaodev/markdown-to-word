@@ -90,7 +90,7 @@ const preset = (name, typography = {}, pageSetup = {}) =>
 const importPresets = (text, existing) =>
   /** @type {ImportPresetsMergeResult} */ (importPresetsFromText(text, existing));
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 /** 主进程 IPC 纯逻辑直测(纯 Node 段,零 Electron API) */

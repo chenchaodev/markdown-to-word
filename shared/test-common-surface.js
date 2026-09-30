@@ -9,7 +9,7 @@
  *
  * ---- 收口了什么(此前同一份知识散在 4 处,其中 2 处逐字相同)----
  * 1. **段目录集合**(测试发现面):test/acceptance.mjs 交给 runner 的三目录 ·
- *    test/tools/gen-fixtures.mjs 的扫描目录 —— 现为同一数组对象 SEGMENT_DIRS,恒等由
+ *    gates/fixtures/gen-fixtures.mjs 的扫描目录 —— 现为同一数组对象 SEGMENT_DIRS,恒等由
  *    「同一对象」保证,不再靠两处各写一份再比对文本。
  * 2. **扫描面与 walker**:扫描目标 / 排除目录 / 扫描文件数下限 / 递归列目录 —— 原先
  *    check-test-numbering.mjs 与 check-temp-cleanup.mjs 各持一份逐字相同的副本(70 行 diff

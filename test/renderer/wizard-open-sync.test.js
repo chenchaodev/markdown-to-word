@@ -33,7 +33,7 @@ const repoRoot = path.resolve(here, "..", "..");
 /** @param {string} rel @returns {string} */
 const distUrl = (rel) => pathToFileURL(path.join(repoRoot, "dist", rel)).href;
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {

@@ -69,7 +69,7 @@ const LOG_TAIL_LIMIT = 200 * 1024;
 /**
  * 必须独占槽位的段(整轮先以并发 1 单独跑完,不与其余段并发),硬编码不做配置化。
  * 匹配口径与 M2W_ONLY 一致(对完整段名做大小写不敏感的包含匹配),故段在目录间移动不失效。
- * - `gate-probes` 独占的原因:该段断言「真实工作树内容指纹前后未变」,而 scripts/gate-probes/
+ * - `gate-probes` 独占的原因:该段断言「真实工作树内容指纹前后未变」,而 gates/probe/gate-probes/
  *   contract.mjs 的 PROTECTED_PATHS 含 `output`;同一轮里约 20 个段绿跑时都会经 saveArtifact
  *   写 output/artifacts/*.docx|pdf(runner 自测段还会建删 output/tmp/),它 14 秒的探针窗口内
  *   `output/` 几乎必然变动 → **确定性自判红**,不是 flake。故必须独占,且不得用「加开关把它

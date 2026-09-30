@@ -142,7 +142,7 @@ const renderViolations = (violations) =>
   violations.map((v) => `${v.rel}:${v.line} 「${v.spec}」→ ${v.detail}`).join("; ");
 
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 
@@ -326,9 +326,14 @@ export async function run() {
     "specifier 抽取/分类锚点(注释行不算、字符串里的 // 不误判、行号对齐原文本)",
   );
   assertEq(
-    resolveRelativeSpecifier("scripts/smoke-proc.mjs", "../test/common/userdata.js"),
-    "test/common/userdata.js",
-    "相对解析锚点:上跳一级",
+    resolveRelativeSpecifier("build/clean-artifacts.mjs", "../shared/paths.js"),
+    "shared/paths.js",
+    "相对解析锚点:上跳一级(取 build/clean-artifacts.mjs → ../shared/paths.js 这条真实 import)",
+  );
+  assertEq(
+    resolveRelativeSpecifier("gates/smoke/smoke-proc.mjs", "../../shared/userdata.js"),
+    "shared/userdata.js",
+    "相对解析锚点:上跳两级(子树深度变了也不能解析错)",
   );
   assertEq(
     resolveRelativeSpecifier("test/common/userdata.js", "./temp-resource.js"),
@@ -370,7 +375,7 @@ export async function run() {
   // 1. 扫出被逐字节复制进沙箱的文件:事实源 = 代码里的复制调用(不硬编码任何文件名)
   //    扫描面含 shared:项目根单源 shared/paths.js 如今被 6 处复制点复制进沙盒
   //    (ADR-040),漏了它会让这些副本判「源文件不可读」(texts 里查不到)。
-  const sources = listJsSources(repoRoot, ["test", "scripts", "shared"]);
+  const sources = listJsSources(repoRoot, ["test", "gates", "build", "dev", "shared"]);
   const scan = scanCopySites(sources);
   /** 仓库相对 POSIX 路径 → 文本 */
   const texts = new Map(sources.map((f) => [f.path, f.text]));

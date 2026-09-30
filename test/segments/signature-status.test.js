@@ -30,7 +30,7 @@ import {
   collectExeFiles,
   compareStatus,
   EXPECTED_SIGNATURE_STATUS,
-} from "../../scripts/check-signature-status.mjs";
+} from "../../gates/artifacts/check-signature-status.mjs";
 
 /**
  * 断言辅助。

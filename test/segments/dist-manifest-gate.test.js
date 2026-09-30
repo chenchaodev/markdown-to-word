@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * dist 构建边界与清单门禁(位于 test/segments/ = 跨域守护段;被测为 scripts/ 下的
+ * dist 构建边界与清单门禁(位于 test/segments/ = 跨域守护段;被测为 gates/artifacts 与 build/ 下的
  * 构建/发布门禁脚本,纯 Node 逻辑不经 dist 编译产物):
  * - check-dist-manifest.mjs:clean dist 的规范化清单(相对路径 + size + SHA-256),
  *   以及三类漂移检测(stale 残留 / 缺失 / 内容被改写);CLI --dist/--output/--check/--print
@@ -20,14 +20,14 @@ import {
   MANIFEST_SCHEMA,
   main as distManifestMain,
   parseManifest,
-} from "../../scripts/check-dist-manifest.mjs";
-import { evaluateFreshness, main as buildFreshMain } from "../../scripts/check-build-fresh.mjs";
-import { copyRenderer } from "../../scripts/copy-renderer.mjs";
+} from "../../gates/artifacts/check-dist-manifest.mjs";
+import { evaluateFreshness, main as buildFreshMain } from "../../gates/smoke/check-build-fresh.mjs";
+import { copyRenderer } from "../../build/copy-renderer.mjs";
 import { ROOT } from "../common/paths.js";
 import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /**
- * 清单结构视图:被测的 scripts/check-dist-manifest.mjs 为无类型标注的 JS,
+ * 清单结构视图:被测的 gates/artifacts/check-dist-manifest.mjs 为无类型标注的 JS,
  * parseManifest 直接返回 JSON.parse 结果(推为 any),故测试侧显式声明所断言的形状。
  * @typedef {{ path: string; size: number; sha256: string }} ManifestEntry
  * @typedef {{ schema: string; fileCount: number; totalSize: number; files: ManifestEntry[] }} Manifest
@@ -140,7 +140,7 @@ function independentManifest(distDir) {
     });
 }
 
-// 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
@@ -287,13 +287,13 @@ export async function run() {
     // 进程级退出码契约:Electron 宿主下用 ELECTRON_RUN_AS_NODE 走真实 CLI
     const cli = spawnSync(
       process.execPath,
-      ["scripts/check-dist-manifest.mjs", "--dist", realDist, "--output", manifestPath],
+      ["gates/artifacts/check-dist-manifest.mjs", "--dist", realDist, "--output", manifestPath],
       { cwd: ROOT, encoding: "utf8", windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
     );
     assert(cli.status === 0, `CLI 生成模式应 exit 0,实际 ${cli.status}:${cli.stdout}${cli.stderr}`);
     const cliCheck = spawnSync(
       process.execPath,
-      ["scripts/check-dist-manifest.mjs", "--dist", realDist, "--output", manifestPath, "--check"],
+      ["gates/artifacts/check-dist-manifest.mjs", "--dist", realDist, "--output", manifestPath, "--check"],
       { cwd: ROOT, encoding: "utf8", windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
     );
     assert(cliCheck.status === 0, `CLI 校验模式应 exit 0,实际 ${cliCheck.status}:${cliCheck.stdout}${cliCheck.stderr}`);

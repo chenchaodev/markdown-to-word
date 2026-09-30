@@ -49,36 +49,36 @@ export const COPY_MECHANISMS = [
  */
 export const SANDBOX_ENTRY_EVIDENCE = [
   {
-    rel: "scripts/check-unpacked-smoke.mjs",
+    rel: "gates/artifacts/check-unpacked-smoke.mjs",
     via: "test/segments/install-smoke.test.js",
     how: "runScript(root, \"check-unpacked-smoke.mjs\", …) 在沙盒内执行",
   },
   {
-    rel: "scripts/check-install-smoke.mjs",
+    rel: "gates/artifacts/check-install-smoke.mjs",
     via: "test/segments/install-smoke.test.js",
     how: "runScript(root, \"check-install-smoke.mjs\", …) 在沙盒内执行",
   },
   {
-    rel: "scripts/check-ci-contract.mjs",
-    via: "scripts/check-ci-contract.selftest.mjs",
-    how: "spawnSync(process.execPath, ['scripts/check-ci-contract.mjs']) 在夹具内执行",
+    rel: "gates/repo/check-ci-contract.mjs",
+    via: "gates/repo/check-ci-contract.selftest.mjs",
+    how: "spawnSync(process.execPath, ['gates/repo/check-ci-contract.mjs']) 在夹具内执行",
   },
   // 以下三条随各自的 *.selftest.mjs 复制点新增而登记(门禁脚本原样拷进夹具后由 runChecker
   // 以 spawnSync 执行)。它们与其他登记项同形:副本无上游 import,存在的意义就是被当入口跑。
   {
-    rel: "scripts/check-temp-cleanup.mjs",
-    via: "scripts/check-temp-cleanup.selftest.mjs",
-    how: "runChecker → spawnSync(process.execPath, ['<夹具>/scripts/check-temp-cleanup.mjs']) 在夹具内执行",
+    rel: "gates/repo/check-temp-cleanup.mjs",
+    via: "gates/repo/check-temp-cleanup.selftest.mjs",
+    how: "runChecker → spawnSync(process.execPath, ['<夹具>/gates/repo/check-temp-cleanup.mjs']) 在夹具内执行",
   },
   {
-    rel: "scripts/check-test-numbering.mjs",
-    via: "scripts/check-test-numbering.selftest.mjs",
-    how: "runChecker → spawnSync(process.execPath, ['<夹具>/scripts/check-test-numbering.mjs']) 在夹具内执行",
+    rel: "gates/repo/check-test-numbering.mjs",
+    via: "gates/repo/check-test-numbering.selftest.mjs",
+    how: "runChecker → spawnSync(process.execPath, ['<夹具>/gates/repo/check-test-numbering.mjs']) 在夹具内执行",
   },
   {
-    rel: "scripts/gen-archive-index.mjs",
-    via: "scripts/gen-archive-index.selftest.mjs",
-    how: "runGenerator → spawnSync(process.execPath, ['<夹具>/scripts/gen-archive-index.mjs']) 在夹具内执行",
+    rel: "gates/repo/gen-archive-index.mjs",
+    via: "gates/repo/gen-archive-index.selftest.mjs",
+    how: "runGenerator → spawnSync(process.execPath, ['<夹具>/gates/repo/gen-archive-index.mjs']) 在夹具内执行",
   },
 ];
 
@@ -216,7 +216,7 @@ function collectLoopEnv(text) {
  * 扫出「被逐字节复制进沙箱」的仓库文件(事实源 = 代码里的复制调用,不硬编码任何文件名)。
  * 解析不出的复制点只登记:静态求值不可能覆盖所有写法(运行时拼装的列表、多层别名),
  * 把它们判红会让守护变成「必须改解析器」的负担;但必须登记并打印,否则等于没看见。
- * @param {import("../../shared/copy-closure.js").SourceFile[]} files 待扫描源文件(调用方给全 test/ 与 scripts/)
+ * @param {import("../../shared/copy-closure.js").SourceFile[]} files 待扫描源文件(调用方给全 test/ 与 gates/)
  * @returns {ScanResult}
  */
 export function scanCopySites(files) {

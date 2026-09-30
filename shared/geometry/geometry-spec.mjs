@@ -477,7 +477,7 @@ const DRAWER_SCENARIOS = [
 
 /**
  * 场景表(顺序即驱动顺序,单窗口逐步推进,复刻 visual-check 的场景序列):
- * steps 为声明式驱动指令,由 scripts/check-geometry.mjs 解释执行;
+ * steps 为声明式驱动指令,由 gates/geometry/check-geometry.mjs 解释执行;
  * 视口变化由驱动自动 setContentSize(不必写 resize 步骤),实际视口与规格不符即判失败。
  * 前 12 条是主窗舞台,后 9 条是设置抽屉(接在末尾:抽屉要驱动开关改设置态,
  * 放前面会让既有主窗场景量到被改过的设置)。
@@ -795,7 +795,7 @@ export function evaluateMediaCondition(condition, viewport) {
    (verify:ci 末环)、已在真实 Electron 窗口里跑,且已有同类「结构不变式」判据
    (抽屉控件门控面)。另起一个门禁会多一次 Electron 冷启动,而这一条要的就是
    「真实窗口 + 真实级联」—— 与几何门禁的运行面完全重合。代价是本门禁不再纯几何,
-   故在 scripts/check-geometry.mjs 的文件头写明扩展理由与边界。
+   故在 gates/geometry/check-geometry.mjs 的文件头写明扩展理由与边界。
 
    本表**只守配色契约**,不守「取消时是否真的挂上了取消类名」—— 那是 dialogs.ts 的行为,
    由 ui-interaction-guards 段的取消态行为断言负责。两者互补不重叠:那边验「类名挂对了」,
