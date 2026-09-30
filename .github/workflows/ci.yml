@@ -77,13 +77,16 @@ jobs:
       # 改写全部源文件的 mtime ⇒ 恢复回来的条目**全部**被判为已变,缓存等于没接(实测:
       # 同一情形 44.32s,与无缓存的 51.52s 只差噪声量级;改 content 后 3.62s)。判据是内容
       # 而非 mtime,所以内容真变了照样失效 —— 结构上不可能重放陈旧结果。
+      # **刻意不配 restore-keys**:前缀回落会在依赖换代时恢复**上一代**缓存,而 ESLint 的
+      # config 哈希只覆盖配置文本、不覆盖依赖版本 ⇒ 换 ESLint/插件版本时可能重放旧诊断。
+      # lint 缓存没有 npm 缓存那种「宁可先用旧的」需求(依赖一变本就该全量跑一次),
+      # 故只认精确 key。依赖变更后第一次 CI 会全量,那是应有代价。
       # 缓存目录与 lint 脚本的 --cache-location 一致(node_modules/.cache/eslint/),
       # 且落在既有 node_modules/ 忽略规则内,不需要额外 .gitignore 条目。
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: node_modules/.cache
           key: ${{ runner.os }}-m2w-lint-${{ hashFiles('package-lock.json') }}
-          restore-keys: ${{ runner.os }}-m2w-lint-
 
       # 环境指纹(Node/npm/Electron/Chromium/字体/DPI):几何与渲染类失败高度依赖
       # 宿主环境,不落指纹就只能靠猜。同时写成文件,失败时随诊断 artifact 留存。
