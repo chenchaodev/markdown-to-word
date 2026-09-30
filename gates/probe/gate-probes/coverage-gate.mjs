@@ -15,7 +15,9 @@
 //   --exclude)、阈值与基线逐项一致、阈值落在 [floor, measured] 锚定区间、豁免条目
 //   与真实编译产物/测试引用面一致;
 // - 动态面(auditZeroFiles):读本次覆盖率运行的 coverage/coverage-summary.json
-//   (reporter 先于阈值判定执行,即使门禁红也会落盘),逐文件核对 0% 集合 ⊆ 豁免清单。
+//   (reporter 先于阈值判定执行,即使门禁红也会落盘),逐文件核对 0% 集合 ⊆ 豁免清单,
+//   并回传 loadBaseline 的结构诊断(基线能解析但结构损坏时判红并点名是哪个字段不对 ——
+//   结构诊断只此一个来源,静态面不在任何 npm script 上,不能指望它兜底)。
 //   必须紧跟 test:coverage 执行(见 --zero 用法),故不放在验收段里。
 
 import fs from "node:fs";
@@ -37,6 +39,12 @@ export const EXEMPTION_CATEGORIES = Object.freeze(["empty-module", "runtime-entr
 
 /** 理由最短字数:低于此值视为「没写理由」,判红(同 SEGMENT_EXEMPTIONS 的自检取向) */
 const MIN_REASON_LENGTH = 20;
+
+/**
+ * 动态面回传基线结构诊断时的前缀:把「基线结构坏了」与「0% 集合与清单不一致」两类问题
+ * 在输出里分开(后者照旧以「0% 覆盖文件未登记豁免」「豁免条目 …」开头,两者互不冒充)。
+ */
+const BASELINE_SHAPE_PREFIX = "基线结构损坏:";
 
 /**
  * 源码文件 → 编译产物相对路径(src/ 前缀换成 dist/,扩展名 .ts→.js / .cts→.cjs / .mts→.mjs)。
@@ -359,16 +367,26 @@ function listArtifacts(distDir) {
  * 不可用(实测 19%~28% 的文件低于当前阈值,逐文件判定会要求先补齐几十个文件),故用
  * 显式的 0% 集合核对来替代。
  *
+ * 顺带回传基线的**结构**诊断:基线能 JSON.parse 但结构损坏时,loadBaseline 的 problems
+ * (逐条指名是哪个字段不对)原样并入本面 problems。理由:`--zero` 是唯一挂在 npm script 上的
+ * 判定面,结构诊断只挂在静态面(不在任何 script 里)等于没有 —— 那条路径上这道门禁会恒绿。
+ *
  * 必须在 test:coverage 之后立即执行:c8 的 reporter 先于阈值判定执行,即使门禁红,
  * coverage/coverage-summary.json 也会落盘。
  * @param {string} [root] 仓库根
  * @returns {{ problems: string[], zeroFiles: string[], total: Record<string, number> }} 审计结果
  */
 export function auditZeroFiles(root = ROOT) {
-  /** @type {string[]} */
-  const problems = [];
   const { baseline, problems: baselineProblems } = loadBaseline(root);
   if (baseline === null) return { problems: baselineProblems, zeroFiles: [], total: {} };
+  // loadBaseline 的 problems 是基线**结构**诊断的唯一来源(结构校验逻辑不在别处复制第二套),
+  // 这里只负责别把它丢掉:基线缺文件 / 不可解析在上面已判红,而「能解析但结构损坏」(schema
+  // 字段被改、某段缺失、字段类型不对)此前在这一行之后被静默丢弃 —— `--zero` 于是恒绿,
+  // 是一条只在「有人恰好手改坏基线」时才生效的静默放宽。完整诊断虽在静态面也报,但静态面
+  // 不挂在任何 npm script 上(日常跑的面只有 `--zero`),故此面必须自己点名,且必须沿用
+  // loadBaseline 的原文(它逐条指名是哪个字段/哪条不变量不对,不是笼统的「基线坏了」)。
+  /** @type {string[]} */
+  const problems = baselineProblems.map((problem) => `${BASELINE_SHAPE_PREFIX}${problem}`);
   const summaryPath = path.join(root, SUMMARY_RELATIVE);
   if (!fs.existsSync(summaryPath)) {
     return {

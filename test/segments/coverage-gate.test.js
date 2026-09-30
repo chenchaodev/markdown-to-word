@@ -22,6 +22,10 @@
  *
  * 「清单外的新 0% 文件」这一面(动态数据)由 `node gates/probe/gate-probes/coverage-gate.mjs
  * --zero` 承担,必须紧跟 test:coverage 执行(覆盖率数据是那一次运行的产物),故不放本段。
+ * 该面同时**回传基线的结构诊断**(基线能解析但字段被改时判红并点名是哪个字段不对,
+ * 因为它是唯一挂在 npm script 上的判定面,结构诊断只挂在静态面等于没有);它的回归守护
+ * 是 `npm run check:coverage-zero:selftest`(合成基线 + 合成 coverage JSON 的负向夹具),
+ * 本段不复制那套夹具,只在真实基线上确认结构诊断仍只有一处实现。
  *
  * 先红后绿:本段在主会话把新参数向量与干净树实测值登记进基线之前**应当是红的**,红的原因
  * 就是待办清单本身(缺 --all / measured 未登记 / 豁免未进 --exclude),不是误报。
@@ -112,6 +116,17 @@ export async function run() {
   await suite.case("所有问题都已归入上述分类(无未识别的新问题类型)", () => {
     const unknown = allProblems.filter((p) => classify(p) === "其它");
     if (unknown.length > 0) throw new Error(`以下问题未归类,须在 classify() 里补分类:${unknown.join(";")}`);
+  });
+
+  // 结构诊断只此一处实现:动态面 auditZeroFiles 直接复用 loadBaseline 的 problems(不另造
+  // 第二套结构校验,见 gates/probe/check-coverage-zero.selftest.mjs 的负向夹具)。若有人在
+  // auditStatic 里另写一份结构校验,这里会红 —— 同一条不变量有两个权威判定时,改一处忘
+  // 另一处必然漂移,而漂移的方向通常是「少判一条」。
+  await suite.case("静态面的基线结构问题逐条来自 loadBaseline(结构诊断只有一处实现)", () => {
+    const stray = allProblems.filter((p) => classify(p) === "baselineShape" && !shapeProblems.includes(p));
+    if (stray.length > 0) {
+      throw new Error(`以下结构诊断不在 loadBaseline() 的输出里(疑似第二套结构校验;结构诊断须只有一处实现):${stray.join(";")}`);
+    }
   });
 
   const failures = suite.failures;

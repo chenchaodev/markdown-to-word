@@ -7,6 +7,12 @@
 // 若它被改成恒绿(判据写错 / 集合比较反了 / 豁免失效方向漏了),没有任何其他检查能发现:
 // c8 自己只看四个阈值,而 c8 的 --per-file 实测不可用(94 个文件里 33 个低于阈值)。
 //
+// 第二类恒绿形态是「基线能解析但结构损坏」:结构诊断由 loadBaseline 独家产出,而动态面此前
+// 只在基线**整个读不出来**时回传它 —— 于是手改坏基线(字段改名 / 类型改成字符串 / 整段删掉)
+// 时 `--zero` 照常判绿,完整诊断只落在 `--static` / `--all` 面上,而那两面不在任何 npm script
+// 里。夹具对此有三格:两种漂移形态各一条负向 + 一条「结构合法但阈值数值越界仍判绿」的反向
+// 锚点(证明红的是「结构不对」,不是「动过基线就红」)。
+//
 // 夹具口径(**刻意不复制门禁本体**):
 //   - 判定面用 `auditZeroFiles(root)` 直调 —— 它就是 CLI 的全部判定内容(main() 只做
 //     「打印 + 按 problems.length 出 0/1」),且 root 是入参,合成 coverage JSON 与基线
@@ -127,6 +133,24 @@ function writeConsistentSummary(dir) {
   });
 }
 
+/**
+ * 覆写夹具基线,在副本上注入改动(原 FIXTURE_BASELINE 不被就地改写,多条用例可并存)。
+ *
+ * 本文件里它的主用途是注入「能 JSON.parse 但结构损坏」的漂移,这类漂移的失效形态是**静默
+ * 放宽**:loadBaseline 的结构诊断(逐条指名哪个字段不对)此前在 auditZeroFiles 里只在
+ * `baseline === null` 时才被回传,于是「字段被改」这一整类(手改基线 / 生成器改坏 schema)
+ * 路径上 `--zero` 恒绿;完整诊断只在 `--static` / `--all` 面上可见,而那两面不在任何
+ * npm script 里。mutate 保持结构完好的调用则是反向锚点(证明没有一律判红)。
+ * @param {string} dir 夹具根
+ * @param {(baseline: Record<string, any>) => void} mutate 在副本上改动
+ * @returns {void}
+ */
+function rewriteBaseline(dir, mutate) {
+  const next = structuredClone(FIXTURE_BASELINE);
+  mutate(next);
+  writeFileIn(dir, BASELINE_RELATIVE, next);
+}
+
 // 每条负向夹具须命中一个真实的静默放宽形态,而非人造噪声。
 const CASES = [
   {
@@ -217,6 +241,64 @@ const CASES = [
       rmSync(join(made, ...BASELINE_RELATIVE.split('/')));
       return made;
     },
+  },
+  {
+    // 静默放宽(基线可解析、字段类型被改):loadBaseline 已指名 headroomPp 不是 ≥0 的数值,
+    // 动态面必须把这条原文带出来。判红文案要指名字段,不是笼统的「基线损坏」——
+    // 没人看得懂的诊断等于没有诊断,下一个人只会再改一次。
+    name: '基线能解析但字段类型被改(headroomPp 成了字符串)→ 判红并点名该字段',
+    expect: /基线结构损坏:headroomPp 必须是 ≥0 的数值/,
+    create: () =>
+      createFixture((dir) => {
+        writeConsistentSummary(dir);
+        rewriteBaseline(dir, (baseline) => {
+          baseline.headroomPp = '4';
+        });
+      }),
+  },
+  {
+    // 同一类漂移的另一种形态:整段被改名(不是类型错、不是缺值)。两个形态都要红 ——
+    // 只挡住其中一种的「部分修复」仍然是恒绿退化。
+    name: '基线能解析但整段被改名(thresholds → threshold)→ 判红并点名缺的段',
+    expect: /基线结构损坏:基线缺 thresholds 段/,
+    create: () =>
+      createFixture((dir) => {
+        writeConsistentSummary(dir);
+        rewriteBaseline(dir, (baseline) => {
+          baseline.threshold = baseline.thresholds;
+          delete baseline.thresholds;
+        });
+      }),
+  },
+  {
+    // 这一条的红不止一条:exemptions 不是数组时清单被读成空集,于是两条已登记的 0% 文件
+    // 同时以「未登记豁免」的下游症状出现。结构诊断仍必须点名根因(exemptions 不是数组),
+    // 否则修的人会去追 0% 文件、而真正的病因在基线里。
+    name: '基线能解析但豁免清单不是数组 → 判红并点名根因(不只报下游的「未登记豁免」症状)',
+    expect: /基线结构损坏:基线缺 exemptions 数组/,
+    create: () =>
+      createFixture((dir) => {
+        writeConsistentSummary(dir);
+        rewriteBaseline(dir, (baseline) => {
+          baseline.exemptions = { 'src/core/empty.ts': 'empty-module' };
+        });
+      }),
+  },
+  {
+    // 同格反向锚点:上面的红必须来自「结构不对」,而不是「只要动过基线就红」。这里把
+    // 阈值压到远低于 floor、headroomPp 归零 —— 结构(类型/存在性)依然合法,越界的**数值**
+    // 判据是静态面的判定义务(动态面读不到 package.json 参数向量,也不该读)。
+    // 若这条红,说明结构诊断被换成了另一套判据,或被放宽成了「与基线不一致即红」。
+    name: '反向锚点:基线结构合法但阈值数值越界(那是静态面的判定义务)→ 判绿',
+    expect: null,
+    create: () =>
+      createFixture((dir) => {
+        writeConsistentSummary(dir);
+        rewriteBaseline(dir, (baseline) => {
+          baseline.headroomPp = 0;
+          baseline.thresholds = { statements: 0, branches: 0, functions: 0, lines: 0 };
+        });
+      }),
   },
   {
     // 面边界:静态面才有 dist/ 与 package.json 参数向量的判定义务;动态面跑在没有 dist 的
