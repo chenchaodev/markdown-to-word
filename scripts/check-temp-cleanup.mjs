@@ -243,8 +243,10 @@ export const ALLOWLIST = Object.freeze([
     file: 'test/segments/test-common-helpers.test.js',
     match: () => false,
     cold: true,
-    why: 'L344/L369 **刻意**给 removeTree 喂非法与极小重试参数(maxRetries:-1 / maxRetries:1),'
-      + '以证明「失败如实上报」而不是吞掉。本段是助手的行为断言,不是清理动作。',
+    why: '`test-common-helpers.test.js` **刻意**给 removeTree 喂非法与极小重试参数'
+      + '(maxRetries:-1 / maxRetries:1),以证明「失败如实上报」而不是吞掉。'
+      + '本段是助手的行为断言,不是清理动作。'
+      + '(按内容指认而非写行号:该段增删用例会整体下移,行号必然漂移。)',
   },
   {
     id: 'atomic-json-stubbed-epcodes',
@@ -302,10 +304,15 @@ export const OPTION_ALLOWLIST = Object.freeze([
     file: 'test/segments/test-common-helpers.test.js',
     // 刻意给 removeTree 喂非法与极小重试参数:证明「失败如实上报」而非吞掉
     match: (hit) => hit.args.includes('maxRetries: -1'),
-    why: 'L344 **刻意**传 `maxRetries: -1`:`fs.rmSync` 的 validateRmOptionsSync 必抛 '
-      + 'ERR_OUT_OF_RANGE(本机实测),该段据此确定性证明 removeTree 把失败上报而非当成功。'
+    // ⚠️ 这里**刻意不写行号** —— 上一版写的是 `L344`/`L369`,而那条锚点所在的段每次
+    // 增删用例都会整体下移(2026-09-30 实测移到 L394/L419),注释就指向了别的行。
+    // 本仓反复吃亏于「按行号写的指针」,而本规则的 `match` **本来就按内容匹配**,
+    // 故 `why` 也该按内容指认,而不是抄一个必然漂移的行号。
+    why: '`test-common-helpers.test.js` 里那条 `maxRetries: -1` 调用**刻意**传非法值:'
+      + '`fs.rmSync` 的 validateRmOptionsSync 必抛 ERR_OUT_OF_RANGE(本机实测),'
+      + '该段据此确定性证明 removeTree 把失败上报而非当成功。'
       + '这正是本规则要卡的那类取值 —— 但**被测对象是助手的行为**,不是调用点的正确写法,'
-      + '故豁免。L369 的 `{ maxRetries: 1, retryDelay: 10 }` 形态合法,本就不需要豁免。',
+      + '故豁免。同段那条 `{ maxRetries: 1, retryDelay: 10 }` 形态合法,本就不需要豁免。',
   },
 ]);
 
