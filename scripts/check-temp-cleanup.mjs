@@ -15,13 +15,15 @@
 //   node scripts/check-temp-cleanup.mjs
 //   node scripts/check-temp-cleanup.mjs --help
 //
-// ---- 扫描面(显式清单,与测试发现面一致,不多也不少)----
+// ---- 扫描面(单一来源:test/common/test-common-surface.js)----
 //   test/segments/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
 //   test/common/**/*.js · test/tools/**/*.{js,mjs}
 // 排除 test/fixtures(被测样例数据本身,不是清理动作)。
 // **不扫 scripts/**:那里是生产/门禁脚本,rmSync 是被测语义本身(clean-artifacts 的
 // 保护区、gate-probes/sandbox.mjs 的 junction 摘除),不是「临时目录清理」。
 // scripts/gate-probes/sandbox.mjs 的 removeJunction 因此登记为按设计不在扫描面的条目。
+// 清单与 walker(递归列目录)都从单源取,本文件不再自持一份:同一份清单写两遍的代价是
+// 「新增测试子目录要改 N 处,漏改的那处扫不到且静默恒绿」。
 //
 // ---- 匹配规则:调用形 + 选项形 ----
 // 形如 `<可选接收者>.rm|rmSync|rmdir|rmdirSync(<实参>)` 且实参里出现 `recursive`。
@@ -72,31 +74,19 @@
 // 的源码形态冻结在文件里,用同一套判定器跑一遍,断言它必须被命中;同时断言收口**之后**
 // 的形态不再被命中。探针跑不通即 exit 1 —— 探针是规则本身的回归测试,不是装饰。
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { lexSource } from '../test/common/copy-closure.js';
+import {
+  checkSurfaceEquality,
+  formatSurfaceMismatch,
+  judgeScanFloor,
+  listScanFiles,
+} from '../test/common/test-common-surface.js';
 import { ROOT } from '../shared/paths.js';
 
 const projectRoot = ROOT;
 const USAGE = '用法: node scripts/check-temp-cleanup.mjs [--help]';
-
-/** 扫描目标:目录 + 该目录下的文件判定(见文件头「扫描面」) */
-export const SCAN_TARGETS = Object.freeze([
-  { dir: 'test/segments', accept: (name) => name.endsWith('.test.js') },
-  { dir: 'test/main', accept: (name) => name.endsWith('.test.js') },
-  { dir: 'test/renderer', accept: (name) => name.endsWith('.test.js') },
-  { dir: 'test/common', accept: (name) => name.endsWith('.js') },
-  { dir: 'test/tools', accept: (name) => /\.(js|mjs)$/.test(name) },
-]);
-
-/** 显式排除目录(仓库相对 POSIX 路径;前缀匹配)。理由见文件头「扫描面」。 */
-export const EXCLUDED_DIRS = Object.freeze(['test/fixtures']);
-
-/**
- * 扫描文件数下限:walker 静默失效(目录改名/权限)会退化成「零文件全过」,那是假通过。
- * 留一半余量。
- */
-export const MIN_SCAN_FILES = 50;
 
 /** 诊断片段的最大长度(超长截断,避免刷屏) */
 const SNIPPET_MAX = 88;
@@ -494,41 +484,6 @@ export function scanOptionText(text, file = '<probe>') {
 
 // ---- 扫描与判定 ----
 
-/** 排除前缀判定(带 / 边界,避免 test/fixturesX 误判) */
-function isExcluded(rel) {
-  return EXCLUDED_DIRS.some((dir) => rel === dir || rel.startsWith(`${dir}/`));
-}
-
-/**
- * 递归列出该目录下参与扫描的文件(仓库相对 POSIX 路径,已排序)。
- * @param {string} relDir 仓库相对目录
- * @returns {string[]} 文件相对路径
- */
-function listScannableFiles(relDir) {
-  const out = [];
-  const walk = (rel) => {
-    for (const entry of readdirSync(path.join(projectRoot, rel), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const child = `${rel}/${entry.name}`;
-      if (isExcluded(child)) continue;
-      if (entry.isDirectory()) walk(child);
-      else if (!entry.name.startsWith('.')) out.push(child);
-    }
-  };
-  walk(relDir);
-  return out;
-}
-
-/** 收集参与扫描的文件清单(按 SCAN_TARGETS 判定扩展名) */
-export function listScanFiles() {
-  const files = [];
-  for (const target of SCAN_TARGETS) {
-    for (const rel of listScannableFiles(target.dir)) {
-      if (target.accept(path.posix.basename(rel))) files.push(rel);
-    }
-  }
-  return files.sort((a, b) => a.localeCompare(b));
-}
-
 /** 诊断片段:压掉换行与多余空白,超长截断 */
 function snippet(args) {
   return args.length > SNIPPET_MAX ? `${args.slice(0, SNIPPET_MAX)}…` : args;
@@ -548,7 +503,7 @@ export function scanFile(rel) {
  * @returns {{ problems: DeleteHit[], optionProblems: OptionHit[], allowHits: number, allowCold: number, files: number, staleAllow: string[], deleteCalls: number, helperCalls: number }}
  */
 export function analyze() {
-  const files = listScanFiles();
+  const files = listScanFiles(projectRoot);
   /** @type {DeleteHit[]} */
   const problems = [];
   /** @type {OptionHit[]} */
@@ -650,6 +605,18 @@ export async function main(argv = []) {
     return 1;
   }
 
+  // 判据 1:扫描面**等式**(声明目录集合 == 磁盘上真实存在的测试子目录)。先于 analyze 跑 ——
+  // 漏登记的目录会让 analyze 抛 ENOENT,那时只剩一句「扫描失败」,看不出是哪个目录漏了。
+  const surface = checkSurfaceEquality(projectRoot);
+  if (!surface.ok) {
+    console.error(
+      `[temp-cleanup:fail] 扫描面等式不成立:${formatSurfaceMismatch(surface)}`
+      + '(声明数必须等于实测数:新增测试子目录须登记进 test/common/test-common-surface.js 的 '
+      + 'SCAN_TARGETS,或按「它不是测试代码」的理由登记进 EXCLUDED_DIRS;下界判据管不到漏目录)',
+    );
+    return 1;
+  }
+
   let result;
   try {
     result = analyze();
@@ -658,11 +625,10 @@ export async function main(argv = []) {
     return 1;
   }
 
-  if (result.files < MIN_SCAN_FILES) {
-    console.error(
-      `[temp-cleanup:fail] 只扫到 ${result.files} 个文件(下限 ${MIN_SCAN_FILES}):扫描面或 walker 失效,`
-      + '此时「零命中」是假通过,须先修扫描面',
-    );
+  // 判据 2:扫描文件数**下限**(walker 整体失效的兜底,与上面的等式分工见单源文件头)
+  const floor = judgeScanFloor(result.files);
+  if (!floor.ok) {
+    console.error(`[temp-cleanup:fail] ${floor.text}`);
     return 1;
   }
 

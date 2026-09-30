@@ -10,8 +10,10 @@
  * 无样例写 `fixtures = null`,都不写即判红。
  *
  * 四层断言:
- * 1. 目录范围恒等:生成器扫描的三目录 == test/acceptance.mjs 交给 runAll 的三目录
- *    (文本抽自 acceptance.mjs,不用被测实现证明被测实现);三者与文件系统一致;
+ * 1. 段目录集合单源:生成器与 test/acceptance.mjs 读的是**同一个数组对象**(单一来源在
+ *    test/common/test-common-surface.js),恒等不再靠「两处各写一份 + 抽文本比对」;
+ *    守的是「acceptance 确实拿这份数组喂 runner,且没有第二份硬编码目录清单」;三者
+ *    与文件系统一致;
  * 2. 发现一致:生成器列出的段名集合 == runner 的 discoverSegments 同目录结果
  *    (临时摘掉 M2W_ONLY,免得单段筛选把断言本身筛没);
  * 3. 豁免白名单自检:每条须写理由,且不得指向已不存在的段;
@@ -31,9 +33,12 @@ import {
   planFixtureOutputs,
   validateSegmentContract,
 } from "../tools/gen-fixtures.mjs";
+import { SEGMENT_DIRS } from "../common/test-common-surface.js";
 
-/** 从 test/acceptance.mjs 抽「交给 runner 的段目录」(path.join(testRoot, "…")) */
-const ACCEPTANCE_DIR_RE = /path\.join\(testRoot,\s*"([^"]+)"\)/g;
+/** 段目录硬编码残留:acceptance.mjs 若再写 `path.join(testRoot, "…")` 字面量,就是第二份清单 */
+const HARDCODED_DIR_RE = /path\.join\(testRoot,\s*"([^"]+)"\)/g;
+/** acceptance.mjs 里「由 SEGMENT_DIRS 派生出段目录数组」的那一行 */
+const DERIVED_DIRS_RE = /const\s+([A-Za-z_$][\w$]*)\s*=\s*SEGMENT_DIRS\.map\(/;
 
 /**
  * 断言辅助。
@@ -56,15 +61,28 @@ const seg = (baseName) => ({ baseName });
 export const fixtures = null;
 
 export async function run() {
-  // ================= 1. 目录范围恒等 =================
+  // ================= 1. 段目录集合单源(同一数组对象)+ 与文件系统一致 =================
   const discovered = listCandidateSegments();
   {
     const acceptanceSrc = fs.readFileSync(path.join(ROOT, "test", "acceptance.mjs"), "utf8");
-    const acceptanceDirs = [...acceptanceSrc.matchAll(ACCEPTANCE_DIR_RE)].map((m) => m[1]);
-    assert(acceptanceDirs.length > 0, "未能从 test/acceptance.mjs 抽到段目录(正则失配?请同步本段)");
+    // 恒等的第一半:生成器与验收入口读同一个数组对象(ESM live binding,同一模块必然同一引用)。
     assert(
-      [...FIXTURE_SEGMENT_DIRS].sort().join(",") === [...acceptanceDirs].sort().join(","),
-      `生成器扫描目录必须与 acceptance 交给 runner 的目录集合恒等(增减目录须同改两处):gen-fixtures=${FIXTURE_SEGMENT_DIRS.join(",")} acceptance=${acceptanceDirs.join(",")}`,
+      FIXTURE_SEGMENT_DIRS === SEGMENT_DIRS,
+      `生成器与验收入口的段目录必须是同一个数组对象(单一来源 test/common/test-common-surface.js):`
+        + `gen-fixtures=${JSON.stringify(FIXTURE_SEGMENT_DIRS)} single-source=${JSON.stringify(SEGMENT_DIRS)}`,
+    );
+    // 恒等的第二半:acceptance 确实拿这份数组喂 runner,且没有第二份硬编码目录清单。
+    // (只看「同一对象」不够 —— acceptance 可以 import 之后不传给 runAll,那恒等形同虚设。)
+    const hardcoded = [...acceptanceSrc.matchAll(HARDCODED_DIR_RE)].map((m) => m[1]);
+    assert(
+      hardcoded.length === 0,
+      `acceptance.mjs 不得硬编码段目录(那是第二份清单):${hardcoded.join(", ")}——段目录集合的单一来源是 test/common/test-common-surface.js 的 SEGMENT_DIRS`,
+    );
+    const derivedName = DERIVED_DIRS_RE.exec(acceptanceSrc)?.[1] ?? "";
+    assert(derivedName !== "", "acceptance.mjs 须由 SEGMENT_DIRS.map(…) 派生出交给 runAll 的段目录数组");
+    assert(
+      new RegExp(`runAll\\(\\s*${derivedName}\\b`).test(acceptanceSrc),
+      `acceptance.mjs 的 runAll 实参须是派生的 ${derivedName}(当前未找到;等于「import 了却没喂 runner」)`,
     );
     for (const relDir of FIXTURE_SEGMENT_DIRS) {
       const dir = path.join(ROOT, "test", relDir);
@@ -80,7 +98,7 @@ export async function run() {
         `${relDir} 目录内的段文件与生成器发现结果不一致:磁盘=${onDisk.join(",")} 生成器=${found.join(",")}`,
       );
     }
-    console.log(`[ok] fixture-contract:扫描目录与 acceptance 恒等(${FIXTURE_SEGMENT_DIRS.join(",")}),三目录段文件全部纳入`);
+    console.log(`[ok] fixture-contract:段目录单源(同一数组对象)+ acceptance 喂 runner + 与文件系统一致(${FIXTURE_SEGMENT_DIRS.join(",")})`);
   }
 
   // ================= 2. 与 runner 的段发现一致 =================

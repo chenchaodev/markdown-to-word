@@ -2,9 +2,10 @@
 // @ts-check
 /**
  * 验收 md 样例生成器(纯 Node,无 Electron 依赖):
- * 扫描 test/segments、test/main、test/renderer 下的 *.test.js(目录集合与
- * test/acceptance.mjs 交给 runner 的三目录恒等,由 test/segments/fixture-contract.test.js
- * 断言锁住),**逐个动态 import 后读显式契约**——不预筛源码、不解析注释:
+ * 扫描 test/segments、test/main、test/renderer 下的 *.test.js(目录集合的单一来源是
+ * test/common/test-common-surface.js 的 SEGMENT_DIRS,与 test/acceptance.mjs 交给 runner
+ * 的三目录是**同一数组对象**,恒等断言见 test/segments/fixture-contract.test.js),
+ * **逐个动态 import 后读显式契约**——不预筛源码、不解析注释:
  * - `fixtures`:key=场景名,value=md 字符串;不产出样例的段显式写 `fixtures = null`;
  * - `meta.description`:README 索引文案(显式字段,取代「取文件头 JSDoc 首行」)。
  * 落盘 test/fixtures/acceptance/<段基名>[-<场景>].md,复制 md 中引用的本地图片
@@ -24,15 +25,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT, FIXTURES_DIR } from "../common/paths.js";
+import { SEGMENT_DIRS } from "../common/test-common-surface.js";
 
 const ACCEPTANCE_DIR = path.join(FIXTURES_DIR, "acceptance");
 const CHECK = process.argv.includes("--check");
 
 /**
- * 候选测试段目录(与 test/acceptance.mjs 交给 runAll 的三目录同一集合)。
- * 增删扫描目录必须同步改两处,否则 test/segments/fixture-contract.test.js 判红。
+ * 候选测试段目录(= test/acceptance.mjs 交给 runAll 的同一份数组,单一来源在
+ * test/common/test-common-surface.js 的 SEGMENT_DIRS)。
+ * 恒等由「同一对象」保证,不再需要两处各写一份 + 文本比对;真正的守门断言在
+ * test/segments/fixture-contract.test.js(它守的是「acceptance 确实拿这份数组喂 runner」)。
  */
-export const FIXTURE_SEGMENT_DIRS = ["segments", "main", "renderer"];
+export const FIXTURE_SEGMENT_DIRS = SEGMENT_DIRS;
 
 /**
  * import 豁免白名单:仅登记「纯 Node 下确实无法 import」的段。当前为空——全部段在

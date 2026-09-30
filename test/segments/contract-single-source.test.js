@@ -25,6 +25,9 @@
  *   - test/common/copy-closure.js:纯文本层(剥注释 / 抽 specifier / 分类 / 相对解析 / 表达式求值);
  *   - test/common/copy-closure-audit.js:扫描 + 审计层(复制点提取 / 闭包审计 / 入口登记抽查);
  *   依赖方向单向:本段 → 审计层 → 文本层。目录遍历与读文件只在本段(它已有 fs/path)。
+ * - 测试扫描面单源(test/common/test-common-surface.js)与它的两条完整性判据,见文件末 (f) 节:
+ *   段目录集合与门禁扫描面同源;完整性判据是**等式**(声明目录集合 == 磁盘上真实存在的
+ *   测试子目录)+ **下限**(walker 整体失效兜底)两条,各管一件事,双向锚点在本段内。
  *
  * ---- 沙盒副本闭包 · 已知覆盖边界(不是「已完全覆盖」,改判定前先读这段)----
  * 静态求值只认写在源码里的形状。以下三类复制源**解析不出**,只登记、不判红:
@@ -58,6 +61,7 @@
  * 纯断言段,无产物输出。
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   CROSS_REF_KINDS,
@@ -80,6 +84,15 @@ import {
   lexSource,
   resolveRelativeSpecifier,
 } from "../common/copy-closure.js";
+import { removeTree } from "../common/temp-resource.js";
+import {
+  MIN_SCAN_FILES,
+  SCAN_TARGETS,
+  checkSurfaceEquality,
+  formatSurfaceMismatch,
+  judgeScanFloor,
+  listScanFiles,
+} from "../common/test-common-surface.js";
 
 /**
  * 抽 specifier 的固定入口:code 与掩码必须同源于一次 lexSource,故合成一个返回元组。
@@ -160,6 +173,29 @@ function listJsSources(root, relDirs) {
   };
   for (const relDir of relDirs) walk(path.join(root, ...relDir.split("/")), relDir);
   return files;
+}
+
+/**
+ * 造一棵最小夹具测试树:给定的 test/ 子目录,每个目录下 filesPerDir 个文件。
+ * 文件名按 SCAN_TARGETS 里该目录的 accept 谓词挑(不写死扩展名)—— 谓词改了夹具自动跟着变,
+ * 不会造出一个「谓词已经不收这种扩展名」的假树(那会让等式夹具测不到真东西)。
+ * @param {string[]} dirs 仓库相对目录(如 `test/perf`)
+ * @param {number} filesPerDir 每个目录下的文件数
+ * @returns {string} 夹具根绝对路径
+ */
+function makeFixtureTree(dirs, filesPerDir = 1) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-surface-"));
+  for (const rel of dirs) {
+    const target = SCAN_TARGETS.find((t) => t.dir === rel);
+    const matched = target === undefined ? undefined : ["case-0.test.js", "case-0.js", "case-0.mjs"].find((n) => target.accept(n));
+    const name = matched ?? "case-0.test.js";
+    for (let i = 0; i < filesPerDir; i += 1) {
+      const abs = path.join(root, ...rel.split("/"), name.replace("case-0", `case-${i}`));
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, "export const x = 1;\n", "utf8");
+    }
+  }
+  return root;
 }
 
 export async function run() {
@@ -499,4 +535,103 @@ export async function run() {
   console.log(
     `[ok] contract:沙箱副本闭包(${copiedRels.length} 个副本 / ${audit.edges.length} 条相对入边:${audit.edges.map((e) => `${e.from} → ${e.to}`).join("; ")} / 沙盒入口登记 ${SANDBOX_ENTRY_EVIDENCE.length} 项:${SANDBOX_ENTRY_EVIDENCE.map((e) => `${e.rel}[${e.how}]`).join(" | ")}) 断言通过`,
   );
+
+  // ================= (f) 测试扫描面单源:等式 + 下限,两条判据各管一件事 =================
+  // 等式判据最大的失败形态是**恒绿**,故必须双向证明:
+  //   正向 —— 正常仓库下等式成立、文件数满足下限;
+  //   负向 —— 造「声明 5 个、磁盘上 6 个」与「声明 5 个、只建成 4 个」的夹具树,断言判红
+  //           **并点名差异目录**;负向 A 还额外断言「文件数远超下限时下限仍判绿」,证明
+  //           下限替代不了等式(这正是改判据的理由);
+  //   下限 —— 反向:目录集合与磁盘一致、但文件数塌到下限以下时,只有下限能抓(等式抓不到)。
+  {
+    /** @type {string[]} 夹具根,末尾统一清理(不留残:临时目录残留在系统临时区谁也看不出) */
+    const sandboxes = [];
+    try {
+      // 1. 正向:真实仓库等式成立 + 满足下限(否则下面所有负向夹具的「绿」都没意义)
+      const real = checkSurfaceEquality(repoRoot);
+      assertEq(real.ok, true, `真实仓库的扫描面等式须成立:${formatSurfaceMismatch(real)}`);
+      // 声明面恰好是那三个段目录 + common + tools(fixtures 虽有源文件,但按显式理由排除)
+      assertEq(
+        real.declared.join(","),
+        "test/common,test/main,test/renderer,test/segments,test/tools",
+        "声明面(单一来源)应恰为这 5 个目录",
+      );
+      assert(
+        !real.measured.includes("test/fixtures"),
+        `排除清单里的 test/fixtures 不得出现在实测面(它是样例数据):${real.measured.join(", ")}`,
+      );
+      const realFiles = listScanFiles(repoRoot).length;
+      assertEq(
+        judgeScanFloor(realFiles).ok,
+        true,
+        `真实仓库扫描文件数须满足下限(实测 ${realFiles},下限 ${MIN_SCAN_FILES})`,
+      );
+      console.log(`[ok] contract:扫描面等式正向(真实仓库声明 ${real.declared.length} 个 == 实测 ${real.measured.length} 个,扫描 ${realFiles} 个文件 ≥ 下限 ${MIN_SCAN_FILES})`);
+
+      // 2. 正向对照:声明 5 个 / 磁盘 5 个 → 等式成立(否则下面的负向可能只是「恒红」)
+      const aligned = makeFixtureTree(SCAN_TARGETS.map((t) => t.dir), 1);
+      sandboxes.push(aligned);
+      const alignedResult = checkSurfaceEquality(aligned);
+      assertEq(alignedResult.ok, true, `声明与磁盘一致的夹具树应判绿:${formatSurfaceMismatch(alignedResult)}`);
+
+      // 3. 负向 A(本泳道要修的真缺陷):磁盘 6 个、声明 5 个 —— 漏扫一个测试子目录
+      const leaky = makeFixtureTree([...SCAN_TARGETS.map((t) => t.dir), "test/perf"], 20);
+      sandboxes.push(leaky);
+      const leakyResult = checkSurfaceEquality(leaky);
+      assertEq(leakyResult.ok, false, "声明 5 个、磁盘 6 个时等式必须判红(漏扫的目录正是这条要抓的)");
+      assertEq(leakyResult.extra.join(","), "test/perf", "须点名那个漏登记的目录");
+      assertEq(leakyResult.missing.length, 0, "这一侧不该有缺失目录");
+      const leakyText = formatSurfaceMismatch(leakyResult);
+      assert(leakyText.includes("test/perf"), `诊断须点名 test/perf,实际:${leakyText}`);
+      // 关键对照:同一个夹具树的文件数远超下限 → 下限判据**照样绿**。这就是「下限不是
+      // 唯一判据」的实证:只保留下限,这个漏扫会静默通过。
+      const leakyFiles = listScanFiles(leaky).length;
+      assert(
+        leakyFiles > MIN_SCAN_FILES,
+        `对照前提:漏扫夹具的文件数应远超下限(实际 ${leakyFiles},下限 ${MIN_SCAN_FILES}),否则证明不了下限抓不到漏扫`,
+      );
+      assertEq(judgeScanFloor(leakyFiles).ok, true, "下限判据对「漏一个子目录」必须无能为力(它只管 walker 整体失效)");
+      console.log(`[ok] contract:扫描面等式负向(声明 5 / 实测 6 → 判红并点名 test/perf;同树下 ${leakyFiles} 个文件远超下限,下限判绿 —— 证明下限替代不了等式)`);
+
+      // 4. 负向 B:声明 5 个、磁盘只建成 4 个 —— 登记过的目录被删/改名,声明成了空头支票
+      const short = makeFixtureTree(["test/segments", "test/main", "test/renderer", "test/common"], 1);
+      sandboxes.push(short);
+      const shortResult = checkSurfaceEquality(short);
+      assertEq(shortResult.ok, false, "声明 5 个、磁盘 4 个时等式必须判红");
+      assertEq(shortResult.missing.join(","), "test/tools", "须点名磁盘上已经没有测试源文件的那个目录");
+      assertEq(shortResult.extra.length, 0, "这一侧不该有多出目录");
+      assert(
+        formatSurfaceMismatch(shortResult).includes("test/tools"),
+        `诊断须点名 test/tools,实际:${formatSurfaceMismatch(shortResult)}`,
+      );
+      console.log("[ok] contract:扫描面等式负向(声明 5 / 实测 4 → 判红并点名 test/tools)");
+
+      // 5. 下限的分工:目录集合与磁盘一致、但文件数塌到下限以下 —— 等式判绿,只有下限判红
+      const collapsed = makeFixtureTree(SCAN_TARGETS.map((t) => t.dir), 1);
+      sandboxes.push(collapsed);
+      assertEq(
+        checkSurfaceEquality(collapsed).ok,
+        true,
+        "walker 整体失效时目录集合仍与磁盘一致(等式理应判绿 —— 它管不了文件数)",
+      );
+      assertEq(
+        judgeScanFloor(listScanFiles(collapsed).length).ok,
+        false,
+        "walker 整体失效(文件数塌到下限以下)必须由下限判红",
+      );
+      assertEq(judgeScanFloor(MIN_SCAN_FILES - 1).ok, false, "下限 -1 个文件必须判红");
+      assertEq(judgeScanFloor(MIN_SCAN_FILES).ok, true, "恰好等于下限应判绿(下界不是排他)");
+      const floorText = judgeScanFloor(10).ok ? "" : judgeScanFloor(10).text;
+      assert(
+        (floorText ?? "").includes(`下限 ${MIN_SCAN_FILES}`),
+        `下限诊断须写明下限值,实际:${floorText}`,
+      );
+      console.log(`[ok] contract:下限判据分工(等式绿 / 下限红;下限 ${MIN_SCAN_FILES} 处为界,文案含下限值)`);
+    } finally {
+      for (const dir of sandboxes) {
+        const outcome = removeTree(dir, { retryDelay: 200 });
+        if (!outcome.ok) throw new Error(`contract 夹具清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
+      }
+    }
+  }
 }

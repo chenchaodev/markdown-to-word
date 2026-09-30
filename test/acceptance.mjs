@@ -15,6 +15,7 @@
  * segment-host.mjs,编排见 test/common/runner.js),段内崩溃/悬挂/超时只终结该段,
  * 父进程跑完全部段后汇总;每段独立 userData 目录,退出即清理(见 test/common/userdata.js)。
  * 设 M2W_ACCEPTANCE_INPROC=1 可切回旧的同进程顺序 + 看门狗模型(仅供二分定位)。
+ * 段目录集合取自 test/common/test-common-surface.js 的 SEGMENT_DIRS(单一来源)。
  *
  * 单段筛选(开发迭代提速):设环境变量 M2W_ONLY=子串[,子串...] 只跑段名
  * 含任一子串的段(大小写不敏感,如 M2W_ONLY=basic-render 或 M2W_ONLY=mermaid,pdf-meta);
@@ -36,13 +37,17 @@
 import { app } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SEGMENT_DIRS } from "./common/test-common-surface.js";
 import { decideZeroSegmentRun, runEntry } from "./common/entry-guard.mjs";
 import { createTempUserData, redirectUserData, removeTempUserData } from "./common/userdata.js";
 
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
-const segmentsDir = path.join(testRoot, "segments");
-const mainDir = path.join(testRoot, "main");
-const rendererDir = path.join(testRoot, "renderer");
+/**
+ * 段目录集合:单一来源在 test/common/test-common-surface.js(SEGMENT_DIRS),与验收样例
+ * 生成器读同一份数组对象 —— 不再各写一份目录字面量,故「验收跑的段」与「生成样例的段」
+ * 不可能漂移(恒等断言见 test/segments/fixture-contract.test.js)。
+ */
+const segmentDirs = SEGMENT_DIRS.map((name) => path.join(testRoot, name));
 
 /** 入口标识(诊断首行 `[entry:...]` 用) */
 const ENTRY = "acceptance";
@@ -92,7 +97,7 @@ async function work(runner) {
   if (!resolveIsolation()) {
     console.warn("[warn] M2W_ACCEPTANCE_INPROC 已启用:回退到同进程顺序 + 看门狗模型(不隔离,仅供二分定位)");
   }
-  const { results, hung } = await runAll([segmentsDir, mainDir, rendererDir], {
+  const { results, hung } = await runAll(segmentDirs, {
     segmentTimeoutMs: Number(
       process.env.M2W_ACCEPTANCE_SEGMENT_TIMEOUT_MS ?? 180000,
     ),

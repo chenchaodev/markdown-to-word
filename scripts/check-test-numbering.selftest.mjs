@@ -6,8 +6,11 @@
 // 断言门禁确实以非零码拒绝,并断言未漂移时通过。
 //
 // **不修改被测门禁本体**:夹具 = 把门禁脚本原样拷进临时目录的 scripts/(它的 projectRoot
-// 由 import.meta.dirname 推导,故拷贝后扫描面自动指向夹具根),配一棵最小测试树。
-// 真实仓库只被**读**(baseline 那一条跑真实 test/ 树)。
+// 由 import.meta.dirname 推导,故拷贝后扫描面自动指向夹具根),连同它的仓内依赖
+// test/common/test-common-surface.js(测试扫描面单源,零仓内依赖)与 shared/paths.js 一起拷贝,
+// 配一棵最小测试树。真实仓库只被**读**(baseline 那一条跑真实 test/ 树)。
+// 少拷一个的代价不是「夹具少测一条」而是「门禁在沙盒里直接起不来」:相对 import 解析不到,
+// 那条守护段 test/segments/contract-single-source.test.js 的副本闭包判定会先把它拦下。
 
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,13 +20,16 @@ import { ROOT } from '../shared/paths.js';
 
 const projectRoot = ROOT;
 const checkerPath = join(projectRoot, 'scripts', 'check-test-numbering.mjs');
+/** 门禁的仓内 import(测试扫描面单源,零仓内依赖),须随门禁一起拷进夹具 */
+const surfacePath = join(projectRoot, 'test', 'common', 'test-common-surface.js');
 
 /** 干净底板内容:不含任何规划编号字面量 */
 const CLEAN = "export const value = 'clean';\n";
 
 /**
- * 夹具的扫描面底板:五个目标目录各若干文件,合计 50 = MIN_SCAN_FILES 下限。
- * 目录全部必须存在(walker 对不存在的目录会抛 ENOENT,那测不到任何判定)。
+ * 夹具的扫描面底板:五个目标目录各若干文件,合计 50 —— 加上随门禁拷进来的
+ * test-common-surface.js 一个,共 51(下限 50,留一个余量)。
+ * 目录全部必须存在(等式判据与 walker 都按目录走,缺目录测不到任何判定)。
  */
 const BASE_SHAPE = Object.freeze({
   'test/segments': 16,
@@ -44,9 +50,12 @@ function createFixture(mutate, shape = BASE_SHAPE) {
   const dir = mkdtempSync(join(tmpdir(), 'm2w-test-numbering-selftest-'));
   mkdirSync(join(dir, 'scripts'), { recursive: true });
   copyFileSync(checkerPath, join(dir, 'scripts', 'check-test-numbering.mjs'));
-  // 被测门禁从 shared/paths.js 取项目根(ADR-040),夹具内必须带一份
+  // 被测门禁从 shared/paths.js 取项目根(ADR-040),从 test/common/test-common-surface.js
+  // 取扫描面单源,两者都是它的仓内依赖,必须一起带进夹具
   mkdirSync(join(dir, 'shared'), { recursive: true });
   copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
+  mkdirSync(join(dir, 'test', 'common'), { recursive: true });
+  copyFileSync(surfacePath, join(dir, 'test', 'common', 'test-common-surface.js'));
   for (const [target, count] of Object.entries(shape)) {
     const ext = target === 'test/tools' ? '.mjs' : target === 'test/common' ? '.js' : '.test.js';
     for (let i = 0; i < count; i += 1) writeUnder(dir, `${target}/case-${i}${ext}`);
@@ -124,10 +133,20 @@ const CASES = [
     expect: /→ D-02 →/,
   },
   {
-    // 防空过:walker 静默失效会退化成「零文件全过」,那是假通过
+    // 扫描面**等式**的负向夹具:磁盘上多出一个未登记的测试子目录。文件数仍在下限之上,
+    // 所以这条判红只可能来自等式 —— 它正是「下限替代不了等式」的端到端实证。
+    name: '扫描面多出一个未登记的测试子目录(等式判红并点名)',
+    mutate: (dir) => writeUnder(dir, 'test/perf/case-0.test.js'),
+    expect: /扫描面等式不成立:.*多出\(磁盘上有测试源文件但未登记进扫描面\):test\/perf/,
+  },
+  {
+    // 防空过:walker 静默失效会退化成「零文件全过」,那是假通过。
+    // 合成文件 10 + 随门禁拷进来的 test-common-surface.js 1 = 11。
+    // 期望写成与具体数字无关的形态(下限判据只承诺「低于下限即红」,不承诺某个夹具形状
+    // 恰好是几 —— 门禁多带一个依赖进来时,这条断言不该跟着改)。
     name: '扫描面塌缩(文件数掉到下限以下)',
     shape: { 'test/segments': 4, 'test/main': 2, 'test/renderer': 2, 'test/common': 1, 'test/tools': 1 },
-    expect: /只扫到 10 个文件\(下限 50\):扫描面或 walker 失效/,
+    expect: /只扫到 \d+ 个文件\(下限 50\):扫描面或 walker 失效/,
   },
   {
     name: '未知参数(不得静默按默认扫描面跑一遍报绿)',
