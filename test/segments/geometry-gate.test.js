@@ -43,8 +43,8 @@ import {
   extractHeightMediaConditions,
   judgeCssTokens,
   runGeometryGate,
-} from "../tools/geometry/geometry-core.mjs";
-import { buildViewportSettledScript, parseMeasureScript } from "../tools/geometry/geometry-page.mjs";
+} from "../../shared/geometry/geometry-core.mjs";
+import { buildViewportSettledScript, parseMeasureScript } from "../../shared/geometry/geometry-page.mjs";
 import { ROOT } from "../common/paths.js";
 
 /** 场景表项(契约单源 geometry-spec) @typedef {typeof SCENARIOS[number]} Scenario */
@@ -1019,7 +1019,7 @@ export async function run() {
   // 这批判据此前是读 dialogs.css 的正则(源文本形态 + 恒真),已迁到 check:geometry。
   // 真实窗口那一侧由 check:geometry 验,本段锁的是**判定语义**:同样的读数,判定层必须
   // 「绿则全绿、红则按规则名命中」—— 少了这层,判定逻辑的回归只能靠起窗口才发现。
-  /** @param {string} name @returns {import("../tools/geometry/geometry-core.mjs").CssTokenReading} */
+  /** @param {string} name @returns {import("../../shared/geometry/geometry-core.mjs").CssTokenReading} */
   const cssTokenGood = (name) => ({
     name,
     property: "border-top-color",
@@ -1112,7 +1112,7 @@ export async function run() {
     !judgeCssTokens(cssTokenAllGood().slice(1)).ok,
     "令牌恒等判定在读数漏项时必须判红(漏项不得静默通过)",
   );
-  /** @type {import("../tools/geometry/geometry-core.mjs").CssTokenReading[]} */
+  /** @type {import("../../shared/geometry/geometry-core.mjs").CssTokenReading[]} */
   const driftedReadings = cssTokenAllGood().map((r, i) =>
     i === 0 ? { ...r, name: "not-in-spec" } : r,
   );
@@ -1122,14 +1122,14 @@ export async function run() {
     "读数项不在 CSS_TOKEN_RULES 表里时必须判红(规格与探针漂移)",
   );
   // 目标节点取不到:空串读数不得继续参与判色
-  /** @type {import("../tools/geometry/geometry-core.mjs").CssTokenReading[]} */
+  /** @type {import("../../shared/geometry/geometry-core.mjs").CssTokenReading[]} */
   const noTargetReadings = cssTokenAllGood().map((r) => ({ ...r, targetFound: false }));
   assert(
     !judgeCssTokens(noTargetReadings).ok,
     "被读色节点缺失时必须判红(空串读数不可信)",
   );
   // 空串读数(探针拿到空值)本身也必须判红,不得因「三态全等」而被当成一致通过
-  /** @type {import("../tools/geometry/geometry-core.mjs").CssTokenReading[]} */
+  /** @type {import("../../shared/geometry/geometry-core.mjs").CssTokenReading[]} */
   const blankReadings = cssTokenAllGood().map((r, i) =>
     i === 0
       ? { ...r, colors: { base: "", ok: "", fail: "", canceled: "" }, expected: "" }

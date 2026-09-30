@@ -32,7 +32,7 @@ import { installDomStub, makeElement, makeClassList, fireListener } from "./dom-
 import {
   DRAWER_CONTROL_KEYS,
   DRAWER_GROUP_BY_KEY,
-} from "../tools/geometry/geometry-spec.mjs";
+} from "../../shared/geometry/geometry-spec.mjs";
 
 /**
  * 断言失败即抛错;声明为断言函数使类型收窄。

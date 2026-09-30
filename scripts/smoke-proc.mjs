@@ -22,7 +22,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { removeTempUserData } from '../test/common/userdata.js';
+import { removeTempUserData } from '../shared/userdata.js';
 
 /** 冒烟开关(应用主进程据此切到 smoke 分支,跑完诊断自行退出) */
 export const SMOKE_FLAG = '--smoke';

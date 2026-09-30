@@ -59,7 +59,7 @@ import {
   formatSurfaceMismatch,
   judgeScanFloor,
   listScanFiles,
-} from '../test/common/test-common-surface.js';
+} from '../shared/test-common-surface.js';
 import { ROOT } from '../shared/paths.js';
 
 const projectRoot = ROOT;
@@ -395,7 +395,7 @@ export async function main(argv = []) {
   if (!surface.ok) {
     console.error(
       `[numbering:fail] 扫描面等式不成立:${formatSurfaceMismatch(surface)}`
-      + '(声明数必须等于实测数:新增测试子目录须登记进 test/common/test-common-surface.js 的 '
+      + '(声明数必须等于实测数:新增测试子目录须登记进 shared/test-common-surface.js 的 '
       + 'SCAN_TARGETS,或按「它不是测试代码」的理由登记进 EXCLUDED_DIRS;下界判据管不到漏目录)',
     );
     return 1;

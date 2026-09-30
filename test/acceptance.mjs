@@ -37,9 +37,9 @@
 import { app } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SEGMENT_DIRS } from "./common/test-common-surface.js";
-import { decideZeroSegmentRun, runEntry } from "./common/entry-guard.mjs";
-import { createTempUserData, redirectUserData, removeTempUserData } from "./common/userdata.js";
+import { SEGMENT_DIRS } from "../shared/test-common-surface.js";
+import { decideZeroSegmentRun, runEntry } from "../shared/entry-guard.mjs";
+import { createTempUserData, redirectUserData, removeTempUserData } from "../shared/userdata.js";
 
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
 /**

@@ -233,9 +233,9 @@ function createSandbox({ smokeEntryInAsar = true, installer = true, perMachine =
   fs.mkdirSync(path.dirname(sharedModule), { recursive: true });
   fs.copyFileSync(path.join(ROOT, "shared", "paths.js"), sharedModule);
   // smoke-proc.mjs 复用 test/common/userdata.js 的清理语义,沙盒内也放一份逐字节副本
-  const userDataModule = path.join(root, "test", "common", "userdata.js");
+  const userDataModule = path.join(root, "shared", "userdata.js");
   fs.mkdirSync(path.dirname(userDataModule), { recursive: true });
-  fs.copyFileSync(path.join(ROOT, "test", "common", "userdata.js"), userDataModule);
+  fs.copyFileSync(path.join(ROOT, "shared", "userdata.js"), userDataModule);
 
   writeFileIn(
     root,

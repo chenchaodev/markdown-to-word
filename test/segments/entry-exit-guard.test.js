@@ -41,7 +41,7 @@ import {
   decideEntryExit,
   decideZeroSegmentRun,
   runEntry,
-} from "../common/entry-guard.mjs";
+} from "../../shared/entry-guard.mjs";
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -51,7 +51,7 @@ const suite = createCaseSuite();
 const { assert, assertEq, assertIncludes } = createAsserter("entry-exit-guard");
 
 /** 被测模块的 file URL(临时入口脚本按绝对路径 import 它,故放系统临时区也能解析 electron) */
-const GUARD_URL = pathToFileURL(path.join(ROOT, "test", "common", "entry-guard.mjs")).href;
+const GUARD_URL = pathToFileURL(path.join(ROOT, "shared", "entry-guard.mjs")).href;
 
 /** 确定性诊断用的假环境(注入以便纯函数不读 process) */
 const FAKE_ENV = { node: "0.0.0-probe", electron: "0.0.0-probe" };

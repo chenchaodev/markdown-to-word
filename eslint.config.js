@@ -41,7 +41,7 @@ export default tseslint.config(
         // 经 allowDefaultProject 放行(typescript-eslint 官方方案,不改 tsconfig 结构)。
         // 清单来源:defaultProjectGlobs 运行时扫描(文件头注释),新目录零登记。
         projectService: {
-          allowDefaultProject: defaultProjectGlobs(["src", "test", "scripts"]),
+          allowDefaultProject: defaultProjectGlobs(["src", "test", "scripts", "shared"]),
           // 阶段 0 新增几何/产物/指纹脚本与测试后默认项目文件数超过 100；
           // 提高上限是为保持零登记 lint 覆盖，不是放宽类型门禁。
           // 2026-09 续提:阶段 5-7 拆分与新增脚本后该数已达 200(恰好等于旧上限,

@@ -76,13 +76,13 @@
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { lexSource } from '../test/common/copy-closure.js';
+import { lexSource } from '../shared/copy-closure.js';
 import {
   checkSurfaceEquality,
   formatSurfaceMismatch,
   judgeScanFloor,
   listScanFiles,
-} from '../test/common/test-common-surface.js';
+} from '../shared/test-common-surface.js';
 import { ROOT } from '../shared/paths.js';
 
 const projectRoot = ROOT;
@@ -191,7 +191,7 @@ export const ALLOWLIST = Object.freeze([
   },
   {
     id: 'userdata-deliberate-duplicate',
-    file: 'test/common/userdata.js',
+    file: 'shared/userdata.js',
     match: (hit) => hit.callee === 'fs.rmSync' && hit.firstArg === 'dir',
     why: '**刻意的重复**:userdata.js 必须保持零内部依赖 —— install-smoke 段把它逐字节复制进'
       + '沙盒,由 scripts/smoke-proc.mjs 按相对路径 import,若它 import 同目录的 temp-resource.js,'
@@ -611,7 +611,7 @@ export async function main(argv = []) {
   if (!surface.ok) {
     console.error(
       `[temp-cleanup:fail] 扫描面等式不成立:${formatSurfaceMismatch(surface)}`
-      + '(声明数必须等于实测数:新增测试子目录须登记进 test/common/test-common-surface.js 的 '
+      + '(声明数必须等于实测数:新增测试子目录须登记进 shared/test-common-surface.js 的 '
       + 'SCAN_TARGETS,或按「它不是测试代码」的理由登记进 EXCLUDED_DIRS;下界判据管不到漏目录)',
     );
     return 1;

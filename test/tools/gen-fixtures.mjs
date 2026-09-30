@@ -25,7 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT, FIXTURES_DIR } from "../common/paths.js";
-import { SEGMENT_DIRS } from "../common/test-common-surface.js";
+import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 
 const ACCEPTANCE_DIR = path.join(FIXTURES_DIR, "acceptance");
 const CHECK = process.argv.includes("--check");

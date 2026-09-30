@@ -24,7 +24,7 @@
  */
 import { app } from "electron";
 import { pathToFileURL } from "node:url";
-import { flushOutput, runEntry } from "./entry-guard.mjs";
+import { flushOutput, runEntry } from "../../shared/entry-guard.mjs";
 import { setCaseProgressSink } from "./case.js";
 import {
   SEGMENT_FILE_ENV,
@@ -35,7 +35,7 @@ import {
   segmentOutcomeError,
   writeSegmentResult,
 } from "./runner.js";
-import { createTempUserData, redirectUserData, removeTempUserData, USER_DATA_ENV } from "./userdata.js";
+import { createTempUserData, redirectUserData, removeTempUserData, USER_DATA_ENV } from "../../shared/userdata.js";
 
 /** 缺环境变量(被误当普通段直接跑)时的退出码,与"段失败(1)"区分 */
 const EXIT_USAGE = 2;

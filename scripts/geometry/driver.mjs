@@ -23,10 +23,10 @@ import {
   SLOT_INVARIANTS,
   evaluateMediaCondition,
   extractHeightMediaConditions,
-} from "../../test/tools/geometry/geometry-core.mjs";
+} from "../../shared/geometry/geometry-core.mjs";
 // 舞台/纸面/滚动容器 key 判定层只内部使用、未再导出,这三项直接取规格单源
-import { PAPER_KEY, SCROLL_KEY, STAGE_KEY } from "../../test/tools/geometry/geometry-spec.mjs";
-import { parseMeasureScript } from "../../test/tools/geometry/geometry-page.mjs";
+import { PAPER_KEY, SCROLL_KEY, STAGE_KEY } from "../../shared/geometry/geometry-spec.mjs";
+import { parseMeasureScript } from "../../shared/geometry/geometry-page.mjs";
 import { DEFAULT_CROSS_DPI_TOL_PX } from "./judge-cross-dpi.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -77,7 +77,16 @@ export const config = {
   settleMs: envNumber("M2W_GEOMETRY_SETTLE_MS", 250),
   stableAfterResizeMs: envNumber("M2W_GEOMETRY_STABLE_RESIZE_MS", 1500),
   stableAfterStepMs: envNumber("M2W_GEOMETRY_STABLE_STEP_MS", 250),
-  maxWaitMs: envNumber("M2W_GEOMETRY_MAX_WAIT_MS", 15000),
+  // 落定等待上限。**默认 15000 → 2000 是止血,不是修好**(2026-10-01,打点实测):
+  // 21/21 场景从未收敛,全部跑满上限,落定一项占该门禁总耗时 97.4%(实测 316682ms /
+  // 325030ms),而单轮 executeJavaScript 实测仅约 6ms —— 即 15s 全花在 96 次 wait(150)
+  // 的轮询上,不是采样成本。根因是收敛判据(整棵采样树 JSON.stringify 逐字节相等,
+  // 经 r2() 只留两位小数 = 要求 0.01px 相等)比判定层严 100 倍(判定容差 tolPx=1),
+  // 任何亚像素抖动都让它永不成立。**2000ms 下采样仍未落定,门禁是在未落定的布局上判绿** ——
+  // 今天恰好不炸是因为振荡幅度在 1px 容差内,振荡一旦变大即转为 flaky 且根因被掩盖。
+  // 正解是定位振荡字段后修判据(收敛用与判定同一把尺,或只比判定实际读取的面),
+  // 到时本值应回退或删除。M2W_GEOMETRY_MAX_WAIT_MS 可临时覆盖。
+  maxWaitMs: envNumber("M2W_GEOMETRY_MAX_WAIT_MS", 2000),
   viewportSettleMs: envNumber("M2W_GEOMETRY_VIEWPORT_SETTLE_MS", 10000),
   // 视口取整补偿次数上限(负数/小数归零):补偿只是把驱动取整误差压回容差,不是无限重试
   viewportCompensations: Math.max(0, Math.trunc(envNumber("M2W_GEOMETRY_VIEWPORT_COMPENSATIONS", 2))),

@@ -25,9 +25,9 @@ import { ROOT } from '../shared/paths.js';
 const projectRoot = ROOT;
 const checkerPath = join(projectRoot, 'scripts', 'check-temp-cleanup.mjs');
 /** 门禁的仓内 import(纯文本层,零 node: 依赖),须随门禁一起拷进夹具 */
-const copyClosurePath = join(projectRoot, 'test', 'common', 'copy-closure.js');
+const copyClosurePath = join(projectRoot, 'shared', 'copy-closure.js');
 /** 门禁的仓内 import(测试扫描面单源,只依赖 node: 内建),须随门禁一起拷进夹具 */
-const surfacePath = join(projectRoot, 'test', 'common', 'test-common-surface.js');
+const surfacePath = join(projectRoot, 'shared', 'test-common-surface.js');
 
 /** 干净底板内容:不含任何删除调用 */
 const CLEAN = "export const value = 'clean';\n";
@@ -41,7 +41,7 @@ const BASE_SHAPE = Object.freeze({
   'test/segments': 16,
   'test/main': 11,
   'test/renderer': 11,
-  'test/common': 5,
+  'test/common': 7,
   'test/tools': 6,
 });
 
@@ -83,9 +83,9 @@ function createFixture(mutate, shape = BASE_SHAPE) {
   mkdirSync(join(dir, 'shared'), { recursive: true });
   copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
   mkdirSync(join(dir, 'test', 'common'), { recursive: true });
-  copyFileSync(copyClosurePath, join(dir, 'test', 'common', 'copy-closure.js'));
+  copyFileSync(copyClosurePath, join(dir, 'shared', 'copy-closure.js'));
   // 扫描面单源同样随门禁拷进来(它零 node: 依赖之外的仓内依赖,拷这一份就够)
-  copyFileSync(surfacePath, join(dir, 'test', 'common', 'test-common-surface.js'));
+  copyFileSync(surfacePath, join(dir, 'shared', 'test-common-surface.js'));
   for (const [target, count] of Object.entries(shape)) {
     const ext = target === 'test/tools' ? '.mjs' : target === 'test/common' ? '.js' : '.test.js';
     for (let i = 0; i < count; i += 1) writeUnder(dir, `${target}/case-${i}${ext}`);

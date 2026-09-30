@@ -659,7 +659,7 @@ export async function run() {
   }
 
   /* ---------- 8. geometry 规格:固定槽锁高已登记 ---------- */
-  const { CONSTANT_GROUPS, SLOT_INVARIANTS } = await import("../tools/geometry/geometry-spec.mjs");
+  const { CONSTANT_GROUPS, SLOT_INVARIANTS } = await import("../../shared/geometry/geometry-spec.mjs");
   const feedSlot = SLOT_INVARIANTS.find((s) => s.node === "feed");
   assert(feedSlot, "geometry 规格缺少消息区固定槽不变量");
   assert(feedSlot.minHeight > 30, "消息区固定槽下限过松(30px 拦不住塌陷)");

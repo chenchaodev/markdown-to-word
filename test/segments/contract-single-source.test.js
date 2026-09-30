@@ -83,7 +83,7 @@ import {
   collectSpecifiers,
   lexSource,
   resolveRelativeSpecifier,
-} from "../common/copy-closure.js";
+} from "../../shared/copy-closure.js";
 import { removeTree } from "../common/temp-resource.js";
 import {
   MIN_SCAN_FILES,
@@ -92,7 +92,7 @@ import {
   formatSurfaceMismatch,
   judgeScanFloor,
   listScanFiles,
-} from "../common/test-common-surface.js";
+} from "../../shared/test-common-surface.js";
 
 /**
  * 抽 specifier 的固定入口:code 与掩码必须同源于一次 lexSource,故合成一个返回元组。
@@ -151,10 +151,10 @@ export const fixtures = null;
  * 遍历与读文件留在段内(它已有 fs/path):判定层 test/common/copy-closure.js 刻意零 I/O 依赖。
  * @param {string} root 仓库根绝对路径
  * @param {string[]} relDirs 相对目录数组
- * @returns {import("../common/copy-closure.js").SourceFile[]}
+ * @returns {import("../../shared/copy-closure.js").SourceFile[]}
  */
 function listJsSources(root, relDirs) {
-  /** @type {import("../common/copy-closure.js").SourceFile[]} */
+  /** @type {import("../../shared/copy-closure.js").SourceFile[]} */
   const files = [];
   /**
    * @param {string} absDir 绝对目录
@@ -526,11 +526,13 @@ export async function run() {
   );
   const entryProblems = auditEntryEvidence(scan.copies, texts, SANDBOX_ENTRY_EVIDENCE);
   assertEq(entryProblems.length, 0, `沙盒入口登记失效:${entryProblems.join("; ")}`);
-  // 入边必须真实存在(否则「闭合」可能是空集自洽):既要求总体有边,也要求测试树内的副本确有入边
+  // 入边必须真实存在(否则「闭合」可能是空集自洽):既要求总体有边,也要求有边指向
+  // shared/ 下的副本 —— 那些是 ADR-040 起必须随门禁带进沙盒的跨树机制,若没有任何边
+  // 指向它们,「复制 shared/」这件事就没有对象、闭包判定也就无从证明。
   assert(audit.edges.length >= 1, "副本之间应存在相对 import 入边(全 0 说明提取或判定失效)");
   assert(
-    audit.edges.some((e) => e.to.startsWith("test/")),
-    `应有指向 test/ 下副本的相对入边(实测边:${audit.edges.map((e) => `${e.from} → ${e.to}`).join("; ") || "无"})`,
+    audit.edges.some((e) => e.to.startsWith("shared/")),
+    `应有指向 shared/ 下副本的相对入边(实测边:${audit.edges.map((e) => `${e.from} → ${e.to}`).join("; ") || "无"})`,
   );
   console.log(
     `[ok] contract:沙箱副本闭包(${copiedRels.length} 个副本 / ${audit.edges.length} 条相对入边:${audit.edges.map((e) => `${e.from} → ${e.to}`).join("; ")} / 沙盒入口登记 ${SANDBOX_ENTRY_EVIDENCE.length} 项:${SANDBOX_ENTRY_EVIDENCE.map((e) => `${e.rel}[${e.how}]`).join(" | ")}) 断言通过`,

@@ -24,7 +24,7 @@ import {
   resolveCopySource,
   resolveRelativeSpecifier,
   skipQuoted,
-} from "./copy-closure.js";
+} from "../../shared/copy-closure.js";
 
 /** 复制机制与判定范围(本层单源;新增复制形态时在此登记,勿散落在解析器里) */
 export const COPY_MECHANISMS = [
@@ -216,7 +216,7 @@ function collectLoopEnv(text) {
  * 扫出「被逐字节复制进沙箱」的仓库文件(事实源 = 代码里的复制调用,不硬编码任何文件名)。
  * 解析不出的复制点只登记:静态求值不可能覆盖所有写法(运行时拼装的列表、多层别名),
  * 把它们判红会让守护变成「必须改解析器」的负担;但必须登记并打印,否则等于没看见。
- * @param {import("./copy-closure.js").SourceFile[]} files 待扫描源文件(调用方给全 test/ 与 scripts/)
+ * @param {import("../../shared/copy-closure.js").SourceFile[]} files 待扫描源文件(调用方给全 test/ 与 scripts/)
  * @returns {ScanResult}
  */
 export function scanCopySites(files) {

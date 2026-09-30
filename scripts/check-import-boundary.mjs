@@ -32,7 +32,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { isMainModule, parseArgs } from './check-dist-manifest.mjs';
-import { lexSource } from '../test/common/copy-closure.js';
+import { lexSource } from '../shared/copy-closure.js';
 import { ROOT } from '../shared/paths.js';
 
 const projectRoot = ROOT;
@@ -554,6 +554,163 @@ export function selfCheckRootComputes(root) {
   return problems;
 }
 
+// ===== 树边界规则(ADR-038 / ADR-043)=====
+
+/**
+ * 逻辑树名 → 实际目录名。规则表按**逻辑名**书写、判定时才换实际目录名,
+ * 树改名(如 scripts/ → gates/)只改这一行,避免改名漏改诊断文案里的路径。
+ * @type {Readonly<Record<string, string>>}
+ */
+export const TREE_DIRS = Object.freeze({ gates: 'scripts', test: 'test', shared: 'shared' });
+
+/** 允许面里可用、但**不是树**的字面前缀(编译产物目录,没有对应的顶层目录规则)。 */
+export const TREE_BOUNDARY_LITERAL_PREFIXES = Object.freeze(['dist']);
+
+/**
+ * 树边界规则表,判据形态是 **allow-list**(允许面之外一律判红),
+ * 与 LAYER_RULES 的 deny-list 语义相反,故分表不合并 —— 同一张表里放两种
+ * 语义相反的判据会产生读法歧义。
+ *
+ * 为什么必须是 allow-list:deny-list 要逐个枚举 test/ 下的子目录,而新增任何
+ * 子目录都不在枚举内 —— 那就退化成一次「枚举已知」,新目录静默放行。allow-list
+ * 让新目标默认非法,无需登记即被拦。
+ */
+export const TREE_RULES = Object.freeze([
+  {
+    id: 'gates-stay-in-gates',
+    scope: 'gates',
+    reason: '门禁树只许引用门禁树自身、共享机制层,以及测试树的夹具数据(只读)',
+    allow: Object.freeze(['gates', 'shared', 'test/fixtures']),
+  },
+  {
+    id: 'test-stay-in-test',
+    scope: 'test',
+    reason: '测试树可引编译产物(dist)、共享机制层,以及门禁树的驱动器级纯静态函数',
+    allow: Object.freeze(['test', 'dist', 'shared', 'gates']),
+  },
+  {
+    id: 'shared-no-out-edge',
+    scope: 'shared',
+    reason: '共享机制层的「零出边」精确为**零跨树出边**:树内互依与 node: 内建放行',
+    allow: Object.freeze(['shared']),
+  },
+]);
+
+const TREE_SCAN_EXTENSIONS = Object.freeze(['.js', '.mjs', '.cjs']);
+
+/**
+ * 把允许面元素(逻辑树名)解析成实际的仓库相对前缀。
+ * 首段是已登记树名则换成实际目录名,否则按字面前缀处理。
+ * @param {string} element 允许面元素,如 'gates' / 'test/fixtures' / 'dist'
+ * @returns {string} 实际的仓库相对 POSIX 前缀
+ */
+function resolveAllowedPrefix(element) {
+  const segments = element.split('/');
+  const [head, ...rest] = segments;
+  const actualHead = Object.hasOwn(TREE_DIRS, head) ? TREE_DIRS[head] : head;
+  return [actualHead, ...rest].join('/');
+}
+
+/**
+ * 抽一个文件里全部**相对说明符** import 及其行号。
+ * 复用既有三条正则,另用 `d` 标志取捕获组的精确下标换算行号 —— 不用 indexOf
+ * 反推:文档字符串里含相同引号字符时 indexOf 会算错位置,而那恰是要处理的形态。
+ * 多行 import(`import {\n a\n} from 'x'`)的行号取 from 那一行,故按 spec 位置算。
+ * @param {string} text 已抹注释的源码文本
+ * @returns {{ spec: string, line: number }[]}
+ */
+function collectRelativeImportsWithLine(text) {
+  /** @param {number} index 字符下标 → 行号(从 1 起) */
+  const lineAt = (index) => {
+    let line = 1;
+    for (let i = 0; i < index && i < text.length; i += 1) {
+      if (text.charCodeAt(i) === 10) line += 1;
+    }
+    return line;
+  };
+  /** @type {{ spec: string, line: number }[]} */
+  const out = [];
+  /** @param {RegExp} re @param {number} groupIndex 捕获组号 */
+  const scan = (re, groupIndex) => {
+    // 只剥 sticky(y 会把扫描锚在 lastIndex 上,与整段扫描不符);保留 g —— matchAll 要求它
+    const withIndex = new RegExp(re.source, `${re.flags.replace(/y/g, '')}d`);
+    for (const match of text.matchAll(withIndex)) {
+      const range = match.indices[groupIndex];
+      if (range == null) continue;
+      out.push({ spec: match[groupIndex], line: lineAt(range[0]) });
+    }
+  };
+  scan(FROM_RE, 4);
+  scan(SIDE_EFFECT_RE, 2);
+  scan(REQUIRE_RE, 1);
+  return out;
+}
+
+/**
+ * 扫三棵树的跨树 import,返回判红项。
+ *
+ * 喂 `lexSource(...).code`(已抹注释):文档/注释里为说明「历史上长这样」而写的
+ * specifier 不是可执行依赖,判红它只会逼人把注释改写得更含糊。cjs 一并覆盖,
+ * 免得 .cjs 的 require() 走另一条判据。
+ * @param {string} root 被扫描仓库的根(锚在 --package 所在仓库,见 main)
+ * @returns {string[]} 判红项(空数组 = 通过)
+ */
+export function analyzeTreeBoundaries(root) {
+  /** @type {string[]} */
+  const problems = [];
+  for (const rule of TREE_RULES) {
+    const scopeDir = TREE_DIRS[rule.scope];
+    const scopeRoot = path.join(root, scopeDir);
+    if (!existsSync(scopeRoot)) continue;
+    const allowed = rule.allow.map(resolveAllowedPrefix);
+    for (const { abs, file } of listSourceFiles(scopeRoot, TREE_SCAN_EXTENSIONS)) {
+      const relPath = `${scopeDir}/${file}`;
+      const { code } = lexSource(readFileSync(abs, 'utf8'));
+      for (const { spec, line } of collectRelativeImportsWithLine(code)) {
+        if (classifySpecifier(spec).kind !== 'relative') continue;
+        const target = path.posix.normalize(path.posix.join(path.posix.dirname(relPath), spec));
+        // 按**路径段**比而非 startsWith:否则 test/fixtures-old/ 会被 test/fixtures 放行
+        const ok = allowed.some((prefix) => target === prefix || target.startsWith(`${prefix}/`));
+        if (ok) continue;
+        problems.push(
+          `${relPath}:${line}:import「${spec}」(解析为 ${target})越出 ${scopeDir}/ 的允许面`
+            + `(只许 ${allowed.join('、')});违反树边界规则 ${rule.id}`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * 树边界规则的存在性自检:「扫不到就等于没规则」是这类判据最危险的失效形态,
+ * 故每次 check:boundary 都验三棵树齐备、规则表覆盖完整、允许元素的首段不是拼错的树名。
+ * @param {string} root 被扫描仓库的根
+ * @returns {string[]} 自检问题(空数组 = 通过)
+ */
+export function selfCheckTreeLayout(root) {
+  /** @type {string[]} */
+  const problems = [];
+  const known = [...Object.keys(TREE_DIRS), ...TREE_BOUNDARY_LITERAL_PREFIXES];
+  for (const rule of TREE_RULES) {
+    const scopeDir = TREE_DIRS[rule.scope];
+    if (!existsSync(path.join(root, scopeDir))) {
+      problems.push(`树边界规则自检失守:${rule.id} 的 scope 目录不存在:${scopeDir}/(规则形同虚设)`);
+    }
+    for (const element of rule.allow) {
+      const head = element.split('/')[0] ?? '';
+      if (!known.includes(head)) {
+        problems.push(
+          `树边界规则自检失守:${rule.id} 的允许元素「${element}」首段既不是已登记树名`
+            + `(${Object.keys(TREE_DIRS).join('/')})也不是字面前缀(${TREE_BOUNDARY_LITERAL_PREFIXES.join('/')})`
+            + '—— 拼错的树名会退化成字面量、整条规则恒绿',
+        );
+      }
+    }
+  }
+  return problems;
+}
+
 export async function main(argv = []) {
   let options;
   try {
@@ -602,8 +759,24 @@ export async function main(argv = []) {
     console.error(`[boundary:fail] 项目根单源扫描失败:${error.message}`);
     return 1;
   }
+  // 规则 gates-stay-in-gates / test-stay-in-test / shared-no-out-edge:与 --src/--flavor 无关,
+  // 固定锚在真实仓库(理由同 ROOT_COMPUTE_SCAN_DIRS):树边界守的是**本仓的三棵树**,
+  // 而 --src/--package 描述的是「某个子树的某次局部扫描」—— 沙盒只铺 src/ 一棵树,
+  // 让它参与树边界判定会因「缺 test/ 与 shared/」而恒红,反而掩盖 src 层的真实诊断。
+  let treeBoundaryProblems;
+  try {
+    treeBoundaryProblems = analyzeTreeBoundaries(projectRoot);
+    const layoutProblems = selfCheckTreeLayout(projectRoot);
+    if (layoutProblems.length > 0) {
+      for (const problem of layoutProblems) console.error(`[boundary:fail] ${problem}`);
+      return 1;
+    }
+  } catch (error) {
+    console.error(`[boundary:fail] 树边界扫描失败:${error.message}`);
+    return 1;
+  }
   for (const line of result.info) console.log(`[info] boundary:${line}`);
-  const allProblems = [...result.problems, ...rootComputeProblems];
+  const allProblems = [...result.problems, ...rootComputeProblems, ...treeBoundaryProblems];
   if (allProblems.length > 0) {
     for (const problem of allProblems) console.error(`[boundary:fail] ${problem}`);
     console.error(`[boundary:fail] 依赖声明与 import 层向自检失败,共 ${allProblems.length} 项`);
@@ -618,7 +791,9 @@ export async function main(argv = []) {
       + `renderer 基础层(dom/state)不反向依赖功能目录;`
       + `core 的 pdf 渲染路径不 import node:fs(能力经入参注入);`
       + `core 的 node: 内建白名单限 ${CORE_NODE_BUILTIN_FILES.length} 个文件;`
-      + `项目根单源为 ${ROOT_SOURCE_FILE}(零豁免,ADR-040)`,
+      + `项目根单源为 ${ROOT_SOURCE_FILE}(零豁免,ADR-040);`
+      + `树边界(ADR-038/043)按实际目录名:`
+      + TREE_RULES.map((rule) => `${TREE_DIRS[rule.scope]}→${rule.allow.map(resolveAllowedPrefix).join('/')}`).join(';'),
   );
   return 0;
 }

@@ -21,7 +21,7 @@ import { ROOT } from '../shared/paths.js';
 const projectRoot = ROOT;
 const checkerPath = join(projectRoot, 'scripts', 'check-test-numbering.mjs');
 /** 门禁的仓内 import(测试扫描面单源,零仓内依赖),须随门禁一起拷进夹具 */
-const surfacePath = join(projectRoot, 'test', 'common', 'test-common-surface.js');
+const surfacePath = join(projectRoot, 'shared', 'test-common-surface.js');
 
 /** 干净底板内容:不含任何规划编号字面量 */
 const CLEAN = "export const value = 'clean';\n";
@@ -55,7 +55,7 @@ function createFixture(mutate, shape = BASE_SHAPE) {
   mkdirSync(join(dir, 'shared'), { recursive: true });
   copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
   mkdirSync(join(dir, 'test', 'common'), { recursive: true });
-  copyFileSync(surfacePath, join(dir, 'test', 'common', 'test-common-surface.js'));
+  copyFileSync(surfacePath, join(dir, 'shared', 'test-common-surface.js'));
   for (const [target, count] of Object.entries(shape)) {
     const ext = target === 'test/tools' ? '.mjs' : target === 'test/common' ? '.js' : '.test.js';
     for (let i = 0; i < count; i += 1) writeUnder(dir, `${target}/case-${i}${ext}`);

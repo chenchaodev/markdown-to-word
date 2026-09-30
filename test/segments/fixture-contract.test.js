@@ -33,7 +33,7 @@ import {
   planFixtureOutputs,
   validateSegmentContract,
 } from "../tools/gen-fixtures.mjs";
-import { SEGMENT_DIRS } from "../common/test-common-surface.js";
+import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 
 /** 段目录硬编码残留:acceptance.mjs 若再写 `path.join(testRoot, "…")` 字面量,就是第二份清单 */
 const HARDCODED_DIR_RE = /path\.join\(testRoot,\s*"([^"]+)"\)/g;

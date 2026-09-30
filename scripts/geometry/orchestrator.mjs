@@ -10,7 +10,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { CONSTANT_GROUPS, SCENARIOS } from "../../test/tools/geometry/geometry-core.mjs";
+import { CONSTANT_GROUPS, SCENARIOS } from "../../shared/geometry/geometry-core.mjs";
 import { EXIT_CODE_SEMANTICS, buildCrossDpiBaseline, decideGateOutcome, diffCrossDpi } from "./judge-cross-dpi.mjs";
 import { scaleLabel, scaleRequestText } from "./judge-scale.mjs";
 import { CROSS_DPI_NODES, config, entryScriptPath, reportPath, reportSpecs, root, writeReport } from "./driver.mjs";

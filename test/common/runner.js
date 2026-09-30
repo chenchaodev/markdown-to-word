@@ -37,7 +37,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { saveFailureArtifacts } from "./artifacts.js";
 import { drainSuites } from "./case.js";
 import { repoRelative } from "./paths.js";
-import { createTempUserData, removeTempUserData, USER_DATA_ENV } from "./userdata.js";
+import { createTempUserData, removeTempUserData, USER_DATA_ENV } from "../../shared/userdata.js";
 
 /** 段子进程宿主入口(父进程与宿主共用同一 Electron 可执行文件,一次只跑一个段) */
 const SEGMENT_HOST = fileURLToPath(new URL("./segment-host.mjs", import.meta.url));

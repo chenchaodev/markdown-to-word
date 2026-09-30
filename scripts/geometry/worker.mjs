@@ -23,13 +23,13 @@ import {
   SCENARIOS,
   judgeCssTokens,
   runGeometryGate,
-} from "../../test/tools/geometry/geometry-core.mjs";
+} from "../../shared/geometry/geometry-core.mjs";
 import {
   buildCssTokenScript,
   buildFreezeAnimationScript,
   buildMeasureScript,
   parseCssTokenScript,
-} from "../../test/tools/geometry/geometry-page.mjs";
+} from "../../shared/geometry/geometry-page.mjs";
 import { classifyScaleRun, measureScaleEffect, parseScales, scaleLabel, scaleRequestText } from "./judge-scale.mjs";
 import {
   OPS,

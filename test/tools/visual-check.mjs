@@ -36,9 +36,9 @@ import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { runEntry } from "../common/entry-guard.mjs";
+import { runEntry } from "../../shared/entry-guard.mjs";
 // 抽屉分组序与选择器取自几何门禁的规格单源:两处各抄一份清单,改 IA 组序就会漏改其中一处
-import { DRAWER_GROUPS, DRAWER_SELECTORS, drawerTabSelector } from "./geometry/geometry-spec.mjs";
+import { DRAWER_GROUPS, DRAWER_SELECTORS, drawerTabSelector } from "../../shared/geometry/geometry-spec.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..", "..");
