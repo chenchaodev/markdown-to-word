@@ -169,7 +169,8 @@ Test system: Zero-registration acceptance tests organized by content topic in `t
 **For developers**
 
 - [Work item ledger](docs/REQ.md): the single source for work item numbers and status
-- [Work log](docs/LOG.md): wanted but not done (pending / deferred / rejected, with reasons)
+- [Requirements ledger](docs/REQ.md): every item with its state, **why it is parked here**, and when to revisit (incl. rejected reasons and triggers)
+- [Lessons](docs/LESSONS.md): reusable lessons that span work items (the kind you would hit in another project too)
 - [Dev Guide](docs/DEV-GUIDE.md): Environment, commands, code map, verification baseline
 - [Architecture decisions](docs/adr/): why it is designed this way (one decision per file)
 - [UI guidelines](docs/design/ui-guidelines.md) / [Settings IA](docs/design/settings-ia.md): Read before touching the UI

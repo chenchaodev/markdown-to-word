@@ -1,4 +1,4 @@
-# adr-019 · preload 暴露面类型单源归 core
+# ADR-019 · preload 暴露面类型单源归 core
 
 | 项 | 值 |
 |---|---|
@@ -6,6 +6,12 @@
 | 日期 | 2026-09-27 |
 
 > 取号与字段骨架见 [README.md](README.md)（一决策一文件，号不复用；本文件不改动正文，只由新文件声明取代关系）。
+
+## 背景
+
+触发事实是全库唯一一条 renderer→main 依赖（原文「理由」行）：`renderer/renderer.ts` 只能 `import type { PreloadApi } from "../main/preload.cjs"`，靠门禁的 `REVERSE_TYPE_ALLOWLIST` 放行表挂了近一年 —— 而该表自己的注释就写着「层向收口项（反向 type-only 依赖待收敛）」与「收口方向：把 PreloadApi 抽到 core 侧共享契约模块」。本条即执行该注释写明的收口方向，收口后 renderer 不再依赖 main 的任何东西。手写类型相对推导类型的安全性取舍靠 `preload.cts` 末尾的键集双向断言补上，把「从实现删方法而类型里留着时 tsc 沉默」这个方向锁在编译期。来源：REF-025 #03。
+
+## 决定
 
 ### 2026-09-27 08:48:38 preload 暴露面类型单源归 core,renderer→main 反向依赖清零(ADR-019)
 - 决策:`window.api` 的类型单源从 `src/main/preload.cts` 内的 `typeof api` 推导,改为 core 侧显式声明的 `core/preload-api.ts`。`preload.cts` 以 `const api: PreloadApi` 标注实现对象并在文件末尾做键集双向断言,`renderer.ts` 从 core 取用类型。`check-import-boundary.mjs` 的 `REVERSE_TYPE_ALLOWLIST` 放行机制**整体删除**(非只删条目),`renderer-no-main` 由此从「带一条 type-only 放行例外」变为**绝对**规则

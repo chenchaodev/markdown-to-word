@@ -57,6 +57,6 @@ Get-AuthenticodeSignature -LiteralPath "release\MarkdownToWord-Setup-<版本>.ex
 ## 相关
 
 - 裁决：[adr-013](adr/adr-013-发布供应链与明确不签名.md) 发布供应链与「现阶段明确不签名」
-- 待办状态：台账 `REQ-050`（原 REF-015）「代码签名」(状态：待拍板,触发条件见 [LOG.md](LOG.md)「判断依据」)
+- 待办状态：台账 `REQ-050`（原 REF-015）「代码签名」(状态：待拍板,触发条件见 [REQ.md](REQ.md)「判断依据」)
 - 事实核对脚本：`scripts/check-signature-status.mjs`
 - 守护测试：`test/segments/signature-status.test.js`

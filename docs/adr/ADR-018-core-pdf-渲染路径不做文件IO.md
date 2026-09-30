@@ -1,4 +1,4 @@
-# adr-018 · core 的 pdf 渲染路径不做文件 IO
+# ADR-018 · core 的 pdf 渲染路径不做文件 IO
 
 | 项 | 值 |
 |---|---|
@@ -6,6 +6,12 @@
 | 日期 | 2026-09-27 |
 
 > 取号与字段骨架见 [README.md](README.md)（一决策一文件，号不复用；本文件不改动正文，只由新文件声明取代关系）。
+
+## 背景
+
+触发事实是两条传递依赖（原文「理由」行）：`core/pdf/render.ts` → `pdf/rules/image.ts` → `pipeline/precheck.ts` → `node:fs`，使 core 的纯 PDF 渲染路径依赖文件系统；`core/pdf/katex-css.ts` 自身还直连 `readFileSync`。两者都是 ADR-012 图片信任边界的执行点 —— 改掉之后「core 的 pdf 渲染路径不做文件 IO」才成为门禁可断言的不变量，这比「白名单少几条」更耐久。能力面只声明这两个函数、不暴露整个 `fs` 模块，新增用途必须显式改接口。来源：REF-025 #07（用户裁决：做 B 且连带 `katex-css`）。
+
+## 决定
 
 ### 2026-09-27 08:48:38 core 的 pdf 渲染路径不做文件 IO,能力经入参注入(ADR-018)
 - 决策:`core/pdf/**` 不得直接 import `node:fs` 与 `node:fs/promises`。其仅有的两次读 —— 图片路径边界的 `realpathSync`(同步)与 KaTeX CSS 的文本读取 —— 改由 main 经 `RenderPdfHtmlOptions.fs`(类型 `PdfFsCapabilities`)注入;`core/convert.ts` 负责从 `ConvertContext.fs` 透传,并在 pdf 分支**强校验**(缺则抛错)。能力面只声明这两个函数,**不暴露整个 `fs` 模块**,新增用途必须显式改接口。门禁新增规则 `core-pdf-no-fs` 锁死这条

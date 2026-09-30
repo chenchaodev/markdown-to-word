@@ -1,11 +1,11 @@
-// docs/archive/INDEX.md 生成器(零依赖,幂等;--check 内存重生成逐字节比对)。
+// docs/evidence/INDEX.md 生成器(零依赖,幂等;--check 内存重生成逐字节比对)。
 //
 // 为什么索引必须由脚本生成:全局配置目录 `AGENTS.md`「落盘格式」节要求「索引须由脚本
 // 生成(门禁校验同步)」。手工登记时新增一份归档原文要动三处(加文件、加行、判定「分流
 // 去向」列),漏掉任何一处都不报错 —— 索引只会在几周后有人追一个点不开的指针时才暴露。
 // 改成「目录枚举生成 + 门禁校验」后,漂移是 CI 上的硬失败。
 //
-// 「分流去向」列只用**一条机械可复现判据**:除 `docs/archive/**` 与 `docs/campaigns/**`
+// 「分流去向」列只用**一条机械可复现判据**:除 `docs/evidence/**` 与 `docs/campaigns/**`
 // 外的全部 `docs/**/*.md` 里有没有出现本文件名(带反引号或裸名均可);命中则取排序最靠前
 // 的宿主文件,填可点相对链接;无命中填 `—`。一条判据 = 结果可复现 = 链接可点。
 //
@@ -19,12 +19,12 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 const docsDir = path.join(projectRoot, 'docs');
-const archiveDir = path.join(docsDir, 'archive');
-const INDEX_REL = 'archive/INDEX.md';
+const evidenceDir = path.join(docsDir, 'evidence');
+const INDEX_REL = 'evidence/INDEX.md';
 const USAGE = '用法: node scripts/gen-archive-index.mjs [--check]';
 
 /** 不进「分流去向」检索的 docs/ 一级子目录(posix 相对 docs/) */
-const HOST_EXCLUDE_DIRS = new Set(['archive', 'large']);
+const HOST_EXCLUDE_DIRS = new Set(['evidence', 'large']);
 
 /** 归档文件名里不登记进表的两个文件:本索引自身与该目录说明页 */
 const ARCHIVE_EXCLUDED = new Set(['INDEX.md', 'README.md']);
@@ -69,24 +69,24 @@ function makeHostIndex() {
 }
 
 /**
- * 归档原文清单:docs/archive/ 下 *.md,排除 INDEX.md 与 README.md,按文件名升序。
+ * 归档原文清单:docs/evidence/ 下 *.md,排除 INDEX.md 与 README.md,按文件名升序。
  * @returns {string[]} 文件名(不含目录)
  */
 function listArchiveFiles() {
-  return readdirSync(archiveDir, { withFileTypes: true })
+  return readdirSync(evidenceDir, { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith('.md') && !ARCHIVE_EXCLUDED.has(e.name))
     .map((e) => e.name)
     .sort();
 }
 
 /**
- * docs/archive/ 下全部 *.md 文件名(**含**本索引与说明页)。形态断言要用它而不是
+ * docs/evidence/ 下全部 *.md 文件名(**含**本索引与说明页)。形态断言要用它而不是
  * `listArchiveFiles()` 的结果:枚举已把 ARCHIVE_EXCLUDED 滤掉,若断言复用枚举结果,
  * 「塞一份形态不对的特例文件」就会静默混过门禁,而本目录本来就存过一批历史偏差命名。
  * @returns {string[]} 文件名(不含目录)
  */
 function listArchiveDirMd() {
-  return readdirSync(archiveDir, { withFileTypes: true })
+  return readdirSync(evidenceDir, { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith('.md'))
     .map((e) => e.name);
 }
@@ -122,9 +122,9 @@ function topicOf(fileName) {
  */
 function buildIndex(fileNames, findHost) {
   const header = [
-    '# archive/ 索引（生成式）',
+    '# evidence/ 索引（生成式）',
     '',
-    '> **本表由脚本生成,不手工登记**;来源 = `docs/archive/` 目录枚举(排除本文件与 `README.md`)。新增归档原文后重新生成(`npm run gen:archive-index`),不要手改本表;同步由 `npm run check:archive-index` 校验。',
+    '> **本表由脚本生成,不手工登记**;来源 = `docs/evidence/` 目录枚举(排除本文件与 `README.md`)。新增归档原文后重新生成(`npm run gen:archive-index`),不要手改本表;同步由 `npm run check:archive-index` 校验。',
     '> **回捞路径 = 本表「分流去向」列 → 对应结论条目**:先在本表定位原文文件,再按同行「分流去向」打开升格后的条目,条目里的 `**来源/验证**` 字段会指回本文件。',
     '> 「分流去向」两种形态:`按名引用` = 结论条目在**关联字段里点名了本文件**,故可按名反查;`—` = 本原文**未被任何常驻条目按名引用**(结论或已被后续条目以其他措辞吸收,或原文自足、无独立结论可升格),此时回捞靠本表的主题列 + 关键词检索,不存在可点直链。**禁止**用主题词相似度给 `—` 的行补指针 —— 那类指针不可复现,索引就退化成手写表。',
     '',
@@ -181,7 +181,7 @@ function main(argv) {
   const offForm = findOffFormNames();
   if (offForm.length > 0) {
     console.error(
-      `[gen-archive-index:fail] docs/archive/ 下 ${offForm.length} 份文件名不符合 \`YYYYMMDD-HHMMSS-<主题>.md\` 形态(豁免仅 ${[...ARCHIVE_EXCLUDED].join(' / ')} 与 user-guide-vX.Y.md):`,
+      `[gen-archive-index:fail] docs/evidence/ 下 ${offForm.length} 份文件名不符合 \`YYYYMMDD-HHMMSS-<主题>.md\` 形态(豁免仅 ${[...ARCHIVE_EXCLUDED].join(' / ')} 与 user-guide-vX.Y.md):`,
     );
     for (const name of offForm) console.error(`  ${name}`);
     console.error('[gen-archive-index:fail] 改成 6 位时间戳后重跑(原名只到分钟,秒位无信息就补 `00`);改名走 `git mv` 以保历史可追,改完跑 `npm run gen:archive-index`');
