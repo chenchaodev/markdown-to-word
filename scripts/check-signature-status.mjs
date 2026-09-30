@@ -16,10 +16,13 @@
 // probe-unavailable。它与 indeterminate 分开报,避免把「取不到事实」误导成
 // 「签名状态异常」;同样判红 —— 取不到事实不得当作未签名放行。
 //
-// 声明来源:本脚本内的 EXPECTED_SIGNATURE_STATUS(ADR-013)。文档侧由
-// docs/SIGNATURE-STATUS.md 记录同一事实,test/segments/signature-status.test.js
-// 断言两者措辞一致 + 打包配置确实无证书 + 用户文档仍保留 SmartScreen 披露,
-// 三者共同构成「未签名被如实告知、不伪装为已签名」的守护。
+// 声明来源:本脚本内的 EXPECTED_SIGNATURE_STATUS(ADR-013)。它是**事实侧基准**,也是唯一的源。
+// test/segments/signature-status.test.js 断言它为 unsigned + 打包配置确实无证书 +
+// 用户文档仍保留 SmartScreen 披露,三者共同构成「未签名被如实告知、不伪装为已签名」的守护。
+// 「签名状态一旦变更须同批改哪三处」的耦合规则见
+// docs/adr/adr-013-发布供应链与明确不签名.md 的「实施约束」节 ——
+// 原独立状态文件 docs/SIGNATURE-STATUS.md 已于 2026-09-30 撤销(它只复述本 ADR 与用户文档,
+// 且被守护测试当成了「防文档被编辑」的锚点,而非断言真实属性)。
 //
 // 用法:
 //   node scripts/check-signature-status.mjs [--release <dir>] [--json] [--help]
@@ -75,7 +78,7 @@ export function compareStatus(actual, expected) {
   }
   return {
     ok: false,
-    reason: `签名状态与声明不一致:声明 ${expected},实测 ${actual}。若确为有意变更签名状态,须同步更新 scripts/check-signature-status.mjs 的 EXPECTED_SIGNATURE_STATUS 与 docs/SIGNATURE-STATUS.md`,
+    reason: `签名状态与声明不一致:声明 ${expected},实测 ${actual}。若确为有意变更签名状态,须同步更新 scripts/check-signature-status.mjs 的 EXPECTED_SIGNATURE_STATUS 与 docs/adr/adr-013-发布供应链与明确不签名.md 的「当前状态」表(耦合规则见该 ADR 的「实施约束」节)`,
   };
 }
 

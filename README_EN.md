@@ -26,7 +26,7 @@ No environment setup needed for end users — just grab the installer:
 
 The installer is wizard-based and lets you choose the install directory. It installs for the current user, so **no administrator rights are needed**. Existing outputs are never overwritten — a duplicate output name gets a numeric suffix instead.
 
-> The installer is not code-signed, so Windows may show an "Unknown publisher" or a SmartScreen "protected your PC" prompt the first time you run it. That is expected — go to "More info" → "Run anyway" to continue. Download only from the official Releases page linked above; the details are in [Installer signature status](docs/SIGNATURE-STATUS.md).
+> The installer is not code-signed, so Windows may show an "Unknown publisher" or a SmartScreen "protected your PC" prompt the first time you run it. That is expected — go to "More info" → "Run anyway" to continue. Download only from the official Releases page linked above; the details are in [Release supply chain and "explicitly unsigned for now"](docs/adr/adr-013-发布供应链与明确不签名.md).
 
 ### Features
 
@@ -174,7 +174,6 @@ Test system: Zero-registration acceptance tests organized by content topic in `t
 - [Dev Guide](docs/DEV-GUIDE.md): Environment, commands, code map, verification baseline
 - [Architecture decisions](docs/adr/): why it is designed this way (one decision per file)
 - [UI guidelines](docs/design/ui-guidelines.md) / [Settings IA](docs/design/settings-ia.md): Read before touching the UI
-- [Installer signature status](docs/SIGNATURE-STATUS.md): unsigned facts, risks and mitigations
 
 **Contributing**
 

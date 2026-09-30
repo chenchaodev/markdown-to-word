@@ -2,11 +2,15 @@
 /**
  * 安装包签名状态守护段(现阶段明确不接入代码签名,口径见 docs/adr/adr-013-发布供应链与明确不签名.md;位于 test/segments/ = 跨域守护段)。
  *
- * 该裁决是「暂不签名,未签名作为明确风险保留」。风险被如实告知的前提是三处一致:
+ * 该裁决是「暂不签名,未签名作为明确风险保留」。风险被如实告知的前提是**两处**一致:
  *   1) 打包配置确实没有证书(否则「未签名」是假话);
- *   2) `docs/SIGNATURE-STATUS.md` 声明的状态 == `scripts/check-signature-status.mjs`
- *      的 `EXPECTED_SIGNATURE_STATUS`(声明侧与事实侧的判定基准必须同源);
- *   3) 用户文档仍保留 SmartScreen / 未签名披露(否则用户侧无任何提示)。
+ *   2) 用户文档仍保留 SmartScreen / 未签名披露(否则用户侧无任何提示)。
+ *
+ * 2026-09-30 删去原第 3 处(`docs/SIGNATURE-STATUS.md` 声明 == 脚本常量)。理由:
+ * 那一段只断言**文档里含有某几个 token**,防的是文档被编辑而不是产品出问题 —— 而上面
+ * 两段已经断言真实属性。独立状态文件同批撤销,「三处同改」耦合规则移入
+ * `docs/adr/adr-013-发布供应链与明确不签名.md` 的「实施约束」节。
+ * **产物完全不变**:删掉它之后没有任何用户可观察的行为发生变化,这正是它冗余的依据。
  *
  * 本段同时对签名状态**三态词汇**做纯逻辑锚点。刻意不用二值:Authenticode 的
  * `NotTrusted`(有签名但证书链不受信)与 `NotSigned`(真的没签名)语义相反,
@@ -149,22 +153,15 @@ export async function run() {
   );
   console.log("[ok] signature-status:打包配置无证书且未设 forceCodeSigning");
 
-  // ---- 4. 声明侧文档与事实侧常量同源 ----
+  // ---- 4. 事实侧基准常量(声明侧的「三处同改」耦合规则已移入 adr-013)----
+  // 刻意**保留**这一条: 它断言的是事实侧的源(常量),不是文档措辞。
+  // 若有人把常量翻成 signed,发布链会拿它与真实 exe 比对而红 —— 那是难以定位的失败,
+  // 这里先给一句清楚的。
   assert(
     EXPECTED_SIGNATURE_STATUS === "unsigned",
     `脚本声明状态应为 unsigned,实际 ${String(EXPECTED_SIGNATURE_STATUS)}`,
   );
-  const doc = readRepoText("docs", "SIGNATURE-STATUS.md");
-  assert(/当前状态[：:]\s*\*\*未签名/.test(doc), "SIGNATURE-STATUS.md 必须声明当前状态为未签名");
-  assert(doc.includes("adr-013"), "SIGNATURE-STATUS.md 必须引用裁决出处 adr-013");
-  assert(
-    doc.includes("forceCodeSigning") && doc.includes("有意不采用"),
-    "SIGNATURE-STATUS.md 必须写明为何有意不采用 forceCodeSigning(防后续被当缺陷「修复」)",
-  );
-  for (const token of ["SHA-256", "SmartScreen", "check-signature-status.mjs", "更新规则"]) {
-    assert(doc.includes(token), `SIGNATURE-STATUS.md 缺少必需内容:${token}`);
-  }
-  console.log("[ok] signature-status:声明文档与脚本常量同源且含缓解手段/更新规则");
+  console.log("[ok] signature-status:事实侧基准常量为 unsigned");
 
   // ---- 5. 用户文档仍保留未签名披露(用户侧唯一提示面)----
   const guide = readRepoText("docs", "USER-GUIDE.md");
@@ -175,7 +172,7 @@ export async function run() {
   );
   console.log("[ok] signature-status:用户文档保留 SmartScreen 与未签名披露");
 
-  console.log("[ok] signature-status:门禁通过(配置/声明/用户文档三处一致,声明为 unsigned)");
+  console.log("[ok] signature-status:门禁通过(配置无证书/基准常量为 unsigned/用户文档保留披露,两处一致)");
 }
 
 export const fixtures = null;

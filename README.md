@@ -25,7 +25,7 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 
 安装包为向导式安装，可选择安装目录；按当前用户模式安装，无需管理员权限。
 
-安装包未做代码签名，Windows 可能提示「未知发布者」或 SmartScreen「已保护你的电脑」，点「更多信息」→「仍要运行」即可继续（事实与风险见 [安装包签名状态](docs/SIGNATURE-STATUS.md)）。
+安装包未做代码签名，Windows 可能提示「未知发布者」或 SmartScreen「已保护你的电脑」，点「更多信息」→「仍要运行」即可继续（事实与风险见 [发布供应链与「现阶段明确不签名」](docs/adr/adr-013-发布供应链与明确不签名.md)）。
 
 ### 功能特性
 
@@ -151,7 +151,6 @@ npm run dist       # 打包 Windows 安装包（NSIS，输出到 release/）
 - [开发者手册](docs/DEV-GUIDE.md)：环境、命令、代码地图、验证基线
 - [架构决策](docs/adr/)：为什么这么设计（一决策一文件，含状态与取代关系）
 - [UI 规范](docs/design/ui-guidelines.md) / [设置信息架构](docs/design/settings-ia.md)：改界面前必读
-- [安装包签名状态](docs/SIGNATURE-STATUS.md)：未签名的事实、风险与缓解手段
 
 **参与**
 

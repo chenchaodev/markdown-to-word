@@ -386,7 +386,7 @@ A: 见下方「[反馈与联系](#反馈与联系)」：在 [GitHub Issues](http
 ## 已知限制
 
 - **仅支持 Windows**：当前只发布 Windows 桌面版，无 macOS / Linux 构建。
-- **安装包未签名**：安装包当前不做代码签名，Windows SmartScreen 可能提示「已保护你的电脑」，只从 GitHub Releases 官方页面下载即可放心安装；签名状态的完整记录、风险与缓解手段、以及状态变更时的同步修改清单，一律以 [`SIGNATURE-STATUS.md`](SIGNATURE-STATUS.md) 为准（本手册不重复转述）。
+- **安装包未签名**：安装包当前不做代码签名，Windows SmartScreen 可能提示「已保护你的电脑」，只从 GitHub Releases 官方页面下载即可放心安装；签名状态的完整记录、风险与缓解手段、以及状态变更时的同步修改清单，一律以 [发布供应链与「现阶段明确不签名」](adr/adr-013-发布供应链与明确不签名.md) 为准（本手册不重复转述）。
 - **内联 HTML 仅白名单，块级 HTML 整块丢弃**：Markdown 中的内联 HTML 仅允许白名单内的无属性标签（`strong` `b` `em` `i` `u` `s` `del` `code` `kbd` `sub` `sup` `mark` `br` `span`），带属性的标签或白名单外的标签会被忽略；块级 HTML（如 `<div>` 这类整块结构）不支持，该块内容会被整块丢弃。复杂排版请改用原生 Markdown 语法。
 - **合并源有规模上限**：一次合并的源文件个数与总体积都有上限，超限直接拒绝而非静默截断（常量与理由见 `src/main/converter/merge.ts` 顶部注释）。
 - **单文档图片有规模上限**：单文档的图片张数与图片总体积都有上限，超限的图片按失败处理并给出警告（预算定义见 `src/core/resource-limits.ts`）。

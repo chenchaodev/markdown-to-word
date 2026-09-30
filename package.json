@@ -33,7 +33,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "lint": "eslint src/ test/ scripts/ --cache --cache-location node_modules/.cache/eslint/.eslintcache",
+    "lint": "eslint src/ test/ scripts/ --cache --cache-strategy content --cache-location node_modules/.cache/eslint/.eslintcache",
     "build": "tsc && node scripts/copy-renderer.mjs",
     "dev": "npm run build && electron .",
     "start": "node scripts/check-build-fresh.mjs && electron .",

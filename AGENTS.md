@@ -9,7 +9,7 @@
 - 架构方向:转换核心 `src/core/` 与 GUI(`src/main/` + `src/renderer/`)分离(便于测试与复用)
 - 其他高风险配置:docx 字体必走 `src/core/docx/theme.ts` 集中配置(中文 eastAsia),禁散落硬编码;分页符固定 `<!-- page-break -->`(不占 `---` 的 hr 语义);landscape 传原始(纵向)值,勿手动交换(库自动交换)
 - UI 设计(勿回退):界面(网页/「关于」/renderer/GitHub Pages)先读 `docs/design/ui-guidelines.md`(renderer 权威)+ `docs/design/settings-ia.md`;视觉身份 = 冷灰纸 + 朱砂红「排版付梓」,字体三角色(展示衬线只做标题/题字、UI 栈做正文、mono 做数据),签名元素(裁切线+钤印+直排)集中一处,朱砂仅用于「付印」语义,禁绕开 token 硬编码、禁大色块/装饰 emoji
-- 项目层文档载体(全局 `docs/` 体系之外):`docs/design/`(UI 规范 + 设置信息架构)、`docs/WPS-COMPAT.md`、`docs/SIGNATURE-STATUS.md`
+- 项目层文档载体(全局 `docs/` 体系之外):`docs/design/`(UI 规范 + 设置信息架构)、`docs/WPS-COMPAT.md`;签名声明的「三处同改」耦合规则在 `docs/adr/adr-013-发布供应链与明确不签名.md` 的「实施约束」节(原独立状态文件已撤销,勿再新建)
 - 文档载体(勿回退):`docs/REQ.md` 按状态分**四节**且**「为什么停在这」与号同行**(拆到第二个文件必然漂移)· `docs/adr/ADR-0NN-*.md`(**大写**、一决策一文件、旧条不改动只标取代)· `docs/evidence/`(只增不改的长分析原文,**禁改正文**,头部必带「结论去向」四选一)· `docs/LESSONS.md`(挂不到任何工作项号的可复用教训,按主题不按号)· `docs/PLAN.md`(小型单任务 / 大型需求加三节,收尾即删);**旧日志载体 LOG.md 与 `docs/large/` 已取消** —— 依据见配置仓 `ADR-004`,本仓落地见 `docs/adr/ADR-034`
 
 ## 规则
