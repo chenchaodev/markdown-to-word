@@ -31,25 +31,45 @@ const MAX_RESOLVED_ALTS = 64;
  */
 
 /**
- * 把注释抹成空格(等长:行号列号都保持),字符串与模板原样保留。
+ * @typedef {object} LexResult 词法扫描结果
+ * @property {string} code 抹掉注释之后的文本(与入参等长,行号列号不变)
+ * @property {Uint8Array} inString 与入参等长的掩码:下标 i 为 1 表示「i 处于某个字符串
+ *   字面量的内部」(不含两侧的引号本身 —— 引号是词法记号,不是字面量内容)
+ */
+
+/**
+ * 词法扫描:抹注释 + 标出「哪些下标在字符串内」。
  *
  * 为何要状态机而不是正则:正则分不清 `//` 是注释还是字符串里的 `https://`,抹错一处就会
  * 让后面的引号配对错位,凭空造出「看起来像 import」的假阳性。本实现覆盖行注释 / 块注释 /
  * 三种字符串;模板按整串跳过(不递归扫 `${}` 内的表达式)—— 对「找 import specifier」这个
  * 用途足够,边界写在这里备查。
+ *
+ * 为何要同时产出 inString:真 import 的 specifier 引号是**词法记号**,而文档串里
+ * `require("fs")` 的那对引号在**字符串内部** —— 两者在「抹注释、留字符串」的文本上
+ * 完全同形,只靠正则分不出来。状态机本来就知道每个下标是否在字符串内,此前没输出这份
+ * 知识,故由本函数一并产出,交给 collectSpecifiers 按词法位置判定。
+ *
+ * ⚠ 掩码最大的失效形态是「恒为 1」(什么都抹 → 闭包门禁恒绿)。故 inString 只标记**严格
+ * 内部**,两侧引号恒为 0:真 import 的引号下标因此判 0,能被抽到。
+ *
  * @param {string} text 源文本
- * @returns {string} 等长的「只剩代码」文本
+ * @returns {LexResult} code 与 inString
  */
-export function blankComments(text) {
+export function lexSource(text) {
   // 按 UTF-16 码元切分(不是码点):后面的跳过逻辑都按 text 的下标走,两者必须同坐标系,
   // 否则源码里一个 emoji 就会让「抹注释」错位
   const out = text.split("");
+  const inString = new Uint8Array(text.length);
   let prev = ""; // 上一个有意义的代码字符(用于区分正则字面量与除号)
   let i = 0;
   while (i < text.length) {
     const ch = text[i] ?? "";
     if (ch === '"' || ch === "'" || ch === "`") {
-      i = skipQuoted(text, i);
+      const end = skipQuoted(text, i);
+      // 只标严格内部(排除两侧引号):引号是记号,判 0 才能让真 import 被 collectSpecifiers 抽到
+      for (let k = i + 1; k < end - 1; k += 1) inString[k] = 1;
+      i = end;
       prev = ch;
       continue;
     }
@@ -79,8 +99,16 @@ export function blankComments(text) {
     if (!/\s/.test(ch)) prev = ch;
     i += 1;
   }
-  return out.join("");
+  return { code: out.join(""), inString };
 }
+
+/**
+ * ⚠ 这里曾有一个 `blankComments(text) -> string` 的窄视图(lexSource 的 code 字段),
+ * 已**从导出里删除**,只留 `lexSource` 一条入口。
+ * 为何必须删而不是「留着没人调用」:窄视图不产出 inString 掩码,调用方若图省事改用它,
+ * 就会绕过 ADR-041 的判据 —— 文档串里的 `require("fs")` 会被抽成真依赖,副本闭包门禁恒绿。
+ * 留着同义窄视图 = 留着恒绿退化的入口。需要「只要代码文本」的地方写 `lexSource(text).code`。
+ */
 
 /**
  * 跳过一段引号字符串/模板(处理转义;模板不递归扫 `${}`)。
@@ -145,19 +173,45 @@ const SPECIFIER_PATTERNS = [
 ];
 
 /**
- * 抽取一段代码里的全部模块 specifier 及其行号(行号基于**原文本**,故先 blankComments)。
- * @param {string} code blankComments 之后的等长文本
+ * 抽取一段代码里的全部模块 specifier 及其行号(行号基于**原文本**,故先过 lexSource)。
+ *
+ * `inString` 是**必填**:它决定某次匹配是「真 import」还是「文档串里写的 import 形状」。
+ * 故意不给默认值 —— 「忘了传掩码就退回旧行为」正是掩码恒绿(闭包门禁失效)的入口,
+ * 让漏传在调用点直接抛错,比静默退化成假绿好。
+ *
+ * 判据落在**引号下标**上(inString[引号位置] === 0 才收):真 import 的引号是词法记号,
+ * 掩码判 0;文档串内部的引号判 1,故被排除。
+ * @param {string} code lexSource 之后的等长文本
+ * @param {Uint8Array} inString lexSource 产出的等长掩码(1 = 该下标在字符串字面量内部)
  * @returns {{ line: number; kind: string; spec: string }[]} specifier 列表
  */
-export function collectSpecifiers(code) {
+export function collectSpecifiers(code, inString) {
+  if (inString === undefined || inString === null || typeof inString.length !== "number") {
+    throw new TypeError(
+      "collectSpecifiers(code, inString):inString 必填。请传 lexSource(text).inString —— "
+      + "缺它会让文档串里的 require(\"x\") 被当成真依赖(即本函数退回恒绿)",
+    );
+  }
+  if (inString.length !== code.length) {
+    throw new RangeError(
+      `collectSpecifiers:inString 长度 ${inString.length} 与 code 长度 ${code.length} 不一致`
+      + "(掩码须与 code 同源于一次 lexSource 调用)",
+    );
+  }
   /** @type {{ line: number; kind: string; spec: string }[]} */
   const found = [];
   const seen = new Set();
   for (const { kind, re } of SPECIFIER_PATTERNS) {
-    for (const m of code.matchAll(re)) {
+    // d 标志(hasIndices)取捕获组 1(引号)的精确下标:用 indexOf 反推会在 spec 内含
+    // 相同引号字符时算错位置,而这恰好是文档串的常见形态。
+    const indexed = new RegExp(re.source, `${re.flags.replace(/[gy]/g, "")}dg`);
+    for (const m of code.matchAll(indexed)) {
       const spec = m[2];
       const index = m.index;
       if (spec === undefined || index === undefined) continue;
+      const quoteAt = m.indices?.[1]?.[0];
+      // 引号下标落在字符串内部 → 这是文档串里写的 import 形状,不是真依赖
+      if (quoteAt !== undefined && inString[quoteAt] === 1) continue;
       const line = code.slice(0, index).split("\n").length;
       const key = `${line} ${spec}`;
       if (seen.has(key)) continue;

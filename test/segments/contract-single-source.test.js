@@ -37,11 +37,28 @@
  * COPY_MECHANISMS scope;在此之前,这类复制点只出现在 scanCopySites() 的
  * unresolved / treeMirrors 登记里(本段的 [ok] 行会打印数量)。
  *
+ * 4) **正则字面量里的 import 形状**(2026-09-30 登记):字符串掩码把「引号是词法记号」与
+ *    「引号在字符串内部」区分开了(文档串里的 `require("fs")` 不再被抽成裸包名依赖),
+ *    但 lexSource 对正则字面量走 skipRegex、**不**把其中内容标为字符串内部。于是形如
+ *    `/import "x"/` 的正则若出现在某个副本里,仍会被抽成 specifier 而判红。
+ *    为何不修:正则里出现完整的 import 语句形状在真实代码里极罕见(至今 0 例),而正确
+ *    处理需要区分「除号」与「正则起始」在更多上下文里的歧义,收益远小于误伤风险。
+ *    后果:这类写法会被判红(保守方向 —— 假红而非假绿)。真出现时人工改写该正则即可。
+ *
+ * 5) **`writeFileSync` 写出的脚本副本,复制点扫描器看不见**(2026-09-30 登记,ADR-040):
+ *    scanCopySites 只认 `copyFileSync`/`copyFile`/`cpSync` 三个机制(COPY_MECHANISMS)。
+ *    `test/segments/clean-artifacts-gate.test.js` 把 `clean-artifacts.mjs` 的源码用
+ *    **writeFileSync** 写进沙盒(还要按用例改写其中一行),故它**不在副本集合里**。
+ *    后果:该沙盒若漏写 `shared/paths.js`,`relative-outside-copy-set` **结构上抓不到**
+ *    (它压根不在 copies 里),per-via 断言同样覆盖不到(同样因为不在 copies 里)。
+ *    唯一的兜底是 `test:coverage` 运行时红(脚本起不来 ⇒ 段失败)。
+ *    为何保留 writeFileSync:该段需要对副本**逐字节改写一行**再跑,copyFileSync 做不到。
+ *    真要根治需给审计层新增「源码写出」复制机制,届时本条与 ADR-040 的 per-via 断言一并覆盖。
+ *
  * 纯断言段,无产物输出。
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   CROSS_REF_KINDS,
   SEC_LABEL_RE,
@@ -53,17 +70,31 @@ import {
   SANDBOX_ENTRY_EVIDENCE,
   auditCopySet,
   auditEntryEvidence,
+  auditViaCoverage,
   scanCopySites,
 } from "../common/copy-closure-audit.js";
 import {
   JS_SOURCE_RE,
-  blankComments,
   classifySpecifier,
   collectSpecifiers,
+  lexSource,
   resolveRelativeSpecifier,
 } from "../common/copy-closure.js";
 
-const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+/**
+ * 抽 specifier 的固定入口:code 与掩码必须同源于一次 lexSource,故合成一个返回元组。
+ * 写成 `collectSpecifiers(...lexOf(text))` 是为了让「掩码必填」在调用点一眼可见 ——
+ * 漏传会直接抛错,不会退回不判引号来处的旧行为。
+ * @param {string} text 源文本
+ * @returns {[string, Uint8Array]} (code, inString)
+ */
+const lexOf = (text) => {
+  const { code, inString } = lexSource(text);
+  return [code, inString];
+};
+import { ROOT } from "../common/paths.js";
+
+const repoRoot = ROOT;
 const srcRoot = path.join(repoRoot, "src");
 /** @param {string} rel 相对 src 的 POSIX 路径 */
 const readSrc = (rel) => fs.readFileSync(path.join(srcRoot, rel), "utf8");
@@ -252,7 +283,7 @@ export async function run() {
     "const legacy = require(\"./legacy.cjs\");", // 6 CJS 相对
     "import 'side-effect-only.mjs';", // 7 副作用导入
   ].join("\n");
-  const syntheticSpecs = collectSpecifiers(blankComments(synthetic));
+  const syntheticSpecs = collectSpecifiers(...lexOf(synthetic));
   assertEq(
     syntheticSpecs.map((s) => `${s.line}:${classifySpecifier(s.spec)}`).join(","),
     "3:node,4:relative,5:relative,6:relative,7:bare",
@@ -269,10 +300,41 @@ export async function run() {
     "相对解析锚点:同目录",
   );
   assertEq(resolveRelativeSpecifier("a.mjs", "../outside.mjs"), "../outside.mjs", "相对解析锚点:越出仓库根须保留上行前缀");
-  console.log("[ok] contract:副本闭包判定原语锚点(specifier 抽取/分类/相对解析) 断言通过");
+
+  // 0b. 字符串掩码锚点(修 check-temp-cleanup.mjs 那条假阳性的判据)。
+  //     起因:白名单的 why 字段用文档串记了历史写法 require("fs").rmSync(…),在
+  //     「抹注释、留字符串」的文本上与真 import 完全同形,被抽成裸包名依赖 → 闭包门禁判红。
+  //     掩码把「引号是词法记号」与「引号在字符串内部」区分开,以下两条锚点守这个区分。
+  //
+  //     正向锚点:文档串里的 import/require 形状必须一个都抽不到。
+  {
+    const docOnly = [
+      `const doc = 'require("fs").rmSync(…)';`,
+      `const doc2 = "…改从 './x.js' 取值…";`,
+      `const doc3 = \`import { a } from "./y.js";\`;`,
+    ].join("\n");
+    assertEq(
+      collectSpecifiers(...lexOf(docOnly)).length,
+      0,
+      "掩码正向锚点:文档串里的 import/require 形状不得被抽成 specifier(否则副本闭包门禁会被自家注释判红)",
+    );
+  }
+  //     同区域共存的负向锚点:掩码只排「字符串内部」,不能把整行/整块一起抹掉 ——
+  //     同一段文本里既有诱饵又有真 import 时,必须恰好抽到真 import 那一个。
+  //     这条是「掩码恒为 true」的探针:若掩码失效成全 1,这里会抽到 0 而非 1。
+  {
+    const mixed = ['const doc = \'require("fs")\';', 'import x from "./real.mjs";'].join("\n");
+    const mixedSpecs = collectSpecifiers(...lexOf(mixed));
+    assertEq(mixedSpecs.length, 1, "掩码负向锚点:同块内诱饵与真 import 共存时,须恰好抽到真 import 那一个");
+    assertEq(mixedSpecs[0]?.spec, "./real.mjs", "掩码负向锚点:抽到的必须是真 import 的 specifier");
+    assertEq(classifySpecifier(mixedSpecs[0]?.spec ?? ""), "relative", "掩码负向锚点:真 import 仍按原口径分类为 relative");
+  }
+  console.log("[ok] contract:副本闭包判定原语锚点(specifier 抽取/分类/相对解析/字符串掩码) 断言通过");
 
   // 1. 扫出被逐字节复制进沙箱的文件:事实源 = 代码里的复制调用(不硬编码任何文件名)
-  const sources = listJsSources(repoRoot, ["test", "scripts"]);
+  //    扫描面含 shared:项目根单源 shared/paths.js 如今被 6 处复制点复制进沙盒
+  //    (ADR-040),漏了它会让这些副本判「源文件不可读」(texts 里查不到)。
+  const sources = listJsSources(repoRoot, ["test", "scripts", "shared"]);
   const scan = scanCopySites(sources);
   /** 仓库相对 POSIX 路径 → 文本 */
   const texts = new Map(sources.map((f) => [f.path, f.text]));
@@ -294,7 +356,7 @@ export async function run() {
   // 2. 负向锚点:给某个「当前零依赖」的副本注入一句相对 import,同一套判定必须判红并点名行号
   //    (夹具对象由扫描结果挑,不写死文件名 —— 守护对象将来会变,判定不能跟着变)
   const dependencyFree = scan.copies.find((c) =>
-    collectSpecifiers(blankComments(texts.get(c.rel) ?? "")).every((s) => classifySpecifier(s.spec) === "node"),
+    collectSpecifiers(...lexOf(texts.get(c.rel) ?? "")).every((s) => classifySpecifier(s.spec) === "node"),
   );
   assert(dependencyFree !== undefined, `负向夹具缺失:应至少有一个「只依赖 node: 内建」的副本(实际副本 ${copiedRels.length} 个)`);
   const fixture = /** @type {import("../common/copy-closure-audit.js").CopySite} */ (dependencyFree);
@@ -342,8 +404,7 @@ export async function run() {
     injectedTexts,
     [{ rel: "test/common/not-copied-anymore.mjs", via: fixture.via, how: "自测夹具:构造一条过期登记" }],
   );
-  assertEq(staleEntry.length, 1, "登记项不在副本集合内时必须报失效");
-  // 入口证据的负向锚点:只有「提及」没有「执行」的复制点文件不算数
+  assertEq(staleEntry.length, 1, "登记项不在副本集合内时必须报失效");  // 入口证据的负向锚点:只有「提及」没有「执行」的复制点文件不算数
   // (否则复制点上方拼路径的那一行、或段自身对它的 import,都能把死副本洗白)
   const mentionOnly = auditEntryEvidence(
     [fixture],
@@ -356,9 +417,72 @@ export async function run() {
   assertEq(mentionOnly.length, 1, "复制行之外只有「提及」而无执行类调用时,入口登记必须报失效");
   console.log("[ok] contract:副本闭包负向锚点(相对越界/裸包名/死副本判红,入口登记对照不误杀/过期登记与无执行证据判失效) 断言通过");
 
+  // 2b. per-via 断言的双向锚点(ADR-040 核心防护)。
+  //     auditCopySet 的 relSet 是**所有复制点副本的并集**,所以「A 复制点带了 shared/paths.js」
+  //     会让全局变绿,而「B 复制点忘了带」看不出来。本断言按 via 分组逐个查。
+  //     正向:某个 via 复制了依赖脚本、也复制了 shared/paths.js → 判绿。
+  {
+    const scriptText = `import { ROOT } from "../shared/paths.js";\nexport const r = ROOT;\n`;
+    const okCopies = [
+      { rel: "scripts/probe.mjs", via: "scripts/probe.selftest.mjs", line: 1 },
+      { rel: "shared/paths.js", via: "scripts/probe.selftest.mjs", line: 2 },
+    ];
+    const okTexts = new Map([
+      ["scripts/probe.mjs", scriptText],
+      ["shared/paths.js", "export const ROOT = 1;\n"],
+      ["scripts/probe.selftest.mjs", "copyFileSync(...)"],
+    ]);
+    assertEq(
+      auditViaCoverage(okCopies, okTexts).length,
+      0,
+      "per-via 正向锚点:复制点既复制了依赖脚本也复制了 shared/paths.js,须判绿",
+    );
+  }
+  //     负向:A 复制点带齐了 shared/paths.js、B 复制点漏了 —— 全局并集因此被「填满」而判绿,
+  //     但 B 的沙盒实际会断。这才是 auditCopySet 真正的 fail-open 形态(ADR-040 背景一),
+  //     也正是本断言存在的理由。per-via 必须只点名 B。
+  {
+    const scriptText = `import { ROOT } from "../shared/paths.js";\nexport const r = ROOT;\n`;
+    // A:复制了 scripts/probe-a.mjs 与 shared/paths.js(带齐);B:只复制了 scripts/probe-b.mjs(漏带)
+    const twoViaCopies = [
+      { rel: "scripts/probe-a.mjs", via: "scripts/a.selftest.mjs", line: 1 },
+      { rel: "shared/paths.js", via: "scripts/a.selftest.mjs", line: 2 },
+      { rel: "scripts/probe-b.mjs", via: "scripts/b.selftest.mjs", line: 1 },
+    ];
+    const twoViaTexts = new Map([
+      ["scripts/probe-a.mjs", scriptText],
+      ["scripts/probe-b.mjs", scriptText],
+      ["shared/paths.js", "export const ROOT = 1;\n"],
+      ["scripts/a.selftest.mjs", "copyFileSync(...)"],
+      ["scripts/b.selftest.mjs", "copyFileSync(...)"],
+    ]);
+    // 关键对照:全局并集口径对同一份数据**判绿** —— A 已把 shared/paths.js 放进并集,
+    // 于是 B 的漏带被完全掩盖。这条对照若哪天不再为绿,说明 auditCopySet 已改成真
+    // per-sandbox,届时本断言可退役(断言会失败提醒你)。
+    const unionGreen = auditCopySet(twoViaCopies, twoViaTexts);
+    assertEq(
+      unionGreen.violations.length,
+      0,
+      "对照:全局并集口径对「A 带齐 / B 漏带」判绿 —— 这正是 auditCopySet 的 fail-open,也是 per-via 断言要补的洞",
+    );
+    // per-via 必须抓到,且只点名漏带的那个 via(A 不该被牵连)
+    const gaps = auditViaCoverage(twoViaCopies, twoViaTexts);
+    assertEq(gaps.length, 1, "per-via 负向锚点:A 带齐 / B 漏带时,须恰好判一条红");
+    assertEq(gaps[0]?.via, "scripts/b.selftest.mjs", "per-via 负向锚点:须点名漏带的那个复制点 B");
+    assertEq(gaps[0]?.missing, "shared/paths.js", "per-via 负向锚点:须点名缺的那个文件");
+    assertEq(gaps[0]?.neededBy, "scripts/probe-b.mjs", "per-via 负向锚点:须点名需要它的那个副本");
+  }
+  console.log("[ok] contract:per-via 覆盖断言双向锚点(带齐判绿/漏带判红并点名 via) 断言通过");
+
   // 3. 真实文件树:副本集合必须闭合,且入口登记必须仍然有效
   const audit = auditCopySet(scan.copies, texts, SANDBOX_ENTRY_EVIDENCE);
   assertEq(audit.violations.length, 0, `沙箱副本 import 闭包违规:${renderViolations(audit.violations)}`);
+  const viaGaps = auditViaCoverage(scan.copies, texts);
+  assertEq(
+    viaGaps.length,
+    0,
+    `沙箱复制点漏带项目根单源(每个 via 各自检查):${viaGaps.map((g) => `${g.via} 缺 ${g.missing}(${g.neededBy} 需要它)`).join("; ")}`,
+  );
   assertEq(
     audit.orphans.length,
     0,

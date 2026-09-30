@@ -18,9 +18,9 @@
  */
 import {
   JS_SOURCE_RE,
-  blankComments,
   classifySpecifier,
   collectSpecifiers,
+  lexSource,
   resolveCopySource,
   resolveRelativeSpecifier,
   skipQuoted,
@@ -62,6 +62,23 @@ export const SANDBOX_ENTRY_EVIDENCE = [
     rel: "scripts/check-ci-contract.mjs",
     via: "scripts/check-ci-contract.selftest.mjs",
     how: "spawnSync(process.execPath, ['scripts/check-ci-contract.mjs']) 在夹具内执行",
+  },
+  // 以下三条随各自的 *.selftest.mjs 复制点新增而登记(门禁脚本原样拷进夹具后由 runChecker
+  // 以 spawnSync 执行)。它们与其他登记项同形:副本无上游 import,存在的意义就是被当入口跑。
+  {
+    rel: "scripts/check-temp-cleanup.mjs",
+    via: "scripts/check-temp-cleanup.selftest.mjs",
+    how: "runChecker → spawnSync(process.execPath, ['<夹具>/scripts/check-temp-cleanup.mjs']) 在夹具内执行",
+  },
+  {
+    rel: "scripts/check-test-numbering.mjs",
+    via: "scripts/check-test-numbering.selftest.mjs",
+    how: "runChecker → spawnSync(process.execPath, ['<夹具>/scripts/check-test-numbering.mjs']) 在夹具内执行",
+  },
+  {
+    rel: "scripts/gen-archive-index.mjs",
+    via: "scripts/gen-archive-index.selftest.mjs",
+    how: "runGenerator → spawnSync(process.execPath, ['<夹具>/scripts/gen-archive-index.mjs']) 在夹具内执行",
   },
 ];
 
@@ -210,7 +227,7 @@ export function scanCopySites(files) {
   /** @type {UnresolvedSite[]} */
   const treeMirrors = [];
   for (const file of files) {
-    const code = blankComments(file.text);
+    const code = lexSource(file.text).code;
     const constEnv = collectConstEnv(file.text);
     const loopEnv = collectLoopEnv(file.text);
     for (const mechanism of COPY_MECHANISMS) {
@@ -260,6 +277,68 @@ export function scanCopySites(files) {
  */
 
 /**
+ * @typedef {object} ViaCoverageGap 某个复制点漏带依赖的判红项
+ * @property {string} via 复制点所在文件(仓库相对 POSIX 路径)
+ * @property {string} missing 该复制点没复制、但其副本需要的仓库相对路径
+ * @property {string} neededBy 依赖它的副本
+ * @property {string} detail 人可读说明
+ */
+
+/** 项目根单源(ADR-040):副本若 import 它,复制点就必须把它一起带进沙盒 */
+export const ROOT_SOURCE_RELATIVE = "shared/paths.js";
+
+/**
+ * per-`via` 断言:每个复制点各自检查「我复制的脚本需要的依赖,我有没有都复制」。
+ *
+ * 为何必须有这条:`auditCopySet` 的 relSet 是**所有复制点副本的并集**,不是 per-sandbox。
+ * 于是只要**任意一个**复制点复制了 `shared/paths.js`,全局就绿 —— 另外 6 个沙盒全断它也
+ * 看不见(ADR-040 背景一)。本函数把 fail-open 收成近似 fail-closed:按 `via` 分组后逐组查。
+ *
+ * 明确的取舍:本断言按 `via` 分组,**不是**真正的 per-sandbox 分组(同一个 via 若复制多份
+ * 到不同沙盒,仍只看它复制过什么)。真正的 per-sandbox 分组要重设数据模型,ADR-040 明确不做。
+ *
+ * @param {CopySite[]} copies 副本清单(须带 via)
+ * @param {Map<string, string>} texts 仓库相对路径 → 文本
+ * @returns {ViaCoverageGap[]} 判红项(空数组 = 每个复制点都带齐了它复制的脚本所需依赖)
+ */
+export function auditViaCoverage(copies, texts) {
+  /** @type {ViaCoverageGap[]} */
+  const gaps = [];
+  // 按 via 分组:同一个复制点复制的所有副本
+  /** @type {Map<string, Set<string>>} */
+  const byVia = new Map();
+  for (const copy of copies) {
+    let group = byVia.get(copy.via);
+    if (group === undefined) {
+      group = new Set();
+      byVia.set(copy.via, group);
+    }
+    group.add(copy.rel);
+  }
+  for (const [via, rels] of byVia) {
+    const copiedHere = new Set(rels);
+    for (const rel of rels) {
+      const text = texts.get(rel);
+      if (text === undefined) continue;
+      // 该副本是否 import 项目根单源
+      const { code, inString } = lexSource(text);
+      const needs = collectSpecifiers(code, inString).some((s) => s.spec.endsWith(ROOT_SOURCE_RELATIVE));
+      if (!needs) continue;
+      if (copiedHere.has(ROOT_SOURCE_RELATIVE)) continue;
+      gaps.push({
+        via,
+        missing: ROOT_SOURCE_RELATIVE,
+        neededBy: rel,
+        detail: `${via} 复制了 ${rel},而后者 import ${ROOT_SOURCE_RELATIVE};`
+          + `但该复制点的复制集合里没有它 —— 全局并集判不出这种「某个沙盒单独漏带」,`
+          + "沙盒运行时会 ERR_MODULE_NOT_FOUND",
+      });
+    }
+  }
+  return gaps;
+}
+
+/**
  * 审计副本集合的 import 闭包:
  * 1) 只允许 `node:` 内建 —— 逐文件复制的沙盒里没有 node_modules,裸包名必然解析失败;
  * 2) 相对 specifier 的目标必须同在副本集合内 —— 复制点只复制被点名的文件;
@@ -292,7 +371,10 @@ export function auditCopySet(copies, texts, entryEvidence = []) {
       });
       continue;
     }
-    for (const { line, spec } of collectSpecifiers(blankComments(text))) {
+    // 掩码与 code 同源于一次 lexSource:文档串里写的 require("x") 引号判「在字符串内」而被排除,
+    // 真 import 的引号是词法记号判 0,故仍被抽到(漏传掩码会在这里抛错,不会静默恒绿)
+    const { code, inString } = lexSource(text);
+    for (const { line, spec } of collectSpecifiers(code, inString)) {
       const cls = classifySpecifier(spec);
       if (cls === "node") continue;
       if (cls === "bare") {
@@ -387,7 +469,7 @@ export function findEntryExecutionLines(viaText, copy) {
   const base = copy.rel.slice(copy.rel.lastIndexOf("/") + 1);
   /** @type {number[]} */
   const lines = [];
-  blankComments(viaText)
+  lexSource(viaText).code
     .split("\n")
     .forEach((line, i) => {
       const row = i + 1;
