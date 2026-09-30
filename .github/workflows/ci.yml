@@ -110,32 +110,6 @@ jobs:
         env:
           M2W_TEST_CONCURRENCY: 4
 
-      # zizmor 审计(非阻断建议项,不进 verify:ci 链):GitHub Actions 安全审计器,补
-      # SHA 固定后 Dependabot 漏洞告警失效这一段的空白(template-injection /
-      # excessive-permissions / artipacked / cache-poisoning / known-vulnerable-actions)。
-      # 刻意不阻断:本仓现状经实跑有既有发现项(tag 触发的 ref_name 模板展开、发布 job
-      # 的 contents: write 权限、诊断 artifact 上传),未逐条评估前把审计器接成硬门禁
-      # 只会天天报红、逼人加 --no-fix 豁免,反而让真问题被噪声淹没。硬判定仍归
-      # check:pinned-actions(引用卫生 + 版本基线,exit 非零即阻断)。
-      # 源:与 npm ci 同决策,CI 走官方源(GitHub runner 访问官方源最快;本地装工具时
-      # 走国内镜像 —— 清华源实测无此包,阿里云源有)。版本钉死(升级须同 PR 复核发现差异)。
-      - name: Advisory actions audit (zizmor, non-blocking)
-        if: always()
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -uo pipefail
-          ZIZMOR_VERSION="1.30.1"
-          python -m pip install --disable-pip-version-check --quiet "zizmor==${ZIZMOR_VERSION}" \
-            || { echo "::warning::zizmor 安装失败(本步骤为非阻断建议项,跳过 action 审计)"; exit 0; }
-          ZIZMOR="$(python -c "import os,sysconfig;print(os.path.join(sysconfig.get_path('scripts'),'zizmor.exe'))")"
-          if [ ! -x "$ZIZMOR" ]; then ZIZMOR=zizmor; fi
-          echo "::notice::zizmor $($ZIZMOR --version) 审计 .github/workflows(非阻断建议项)"
-          "$ZIZMOR" --no-progress --format plain .github/workflows
-          rc=$?
-          echo "::notice::zizmor 退出码 ${rc}(0=无发现;14=有发现;其它=审计器自身出错)。本步骤不阻断流水线,发现项须人工评估后处理"
-          exit 0
-
       # 诊断留存:always 语义保证门禁判红时报告与截图仍可下载(几何门禁失败时
       # 逐场景 finding 在报告里,FAILED 截图在同目录)
       - name: Upload diagnostics
@@ -188,6 +162,45 @@ jobs:
       # 绝不把「扫不到」谎报成「无漏洞」。
       - name: Supply chain gate (check:supply)
         run: npm run check:supply -- --registry=https://registry.npmjs.org
+
+      # zizmor 审计(非阻断建议项,不进 verify:ci 链):GitHub Actions 安全审计器,补
+      # SHA 固定后 Dependabot 漏洞告警失效这一段的空白(template-injection /
+      # excessive-permissions / artipacked / cache-poisoning / known-vulnerable-actions)。
+      # 刻意不阻断:本仓现状经实跑有既有发现项(tag 触发的 ref_name 模板展开、发布 job
+      # 的 contents: write 权限、诊断 artifact 上传),未逐条评估前把审计器接成硬门禁
+      # 只会天天报红、逼人加 --no-fix 豁免,反而让真问题被噪声淹没。硬判定仍归
+      # check:pinned-actions(引用卫生 + 版本基线,exit 非零即阻断)。
+      # 源:与 npm ci 同决策,CI 走官方源(GitHub runner 访问官方源最快;本地装工具时
+      # 走国内镜像 —— 清华源实测无此包,阿里云源有)。版本钉死(升级须同 PR 复核发现差异)。
+      #
+      # 位置:原挂在主 job 尾部(实测该步 34.7s,占主 job 墙钟约 6%)。挪到本 job 是因为
+      # **它是纯建议项,不在关键路径上就不该占关键路径** —— 三个 job 本就并行,本 job
+      # 实测 56s,加这步仍远低于主 job,故不产生新关键路径。
+      # 选本 job 而非另开一个:另开要新增 checkout + setup-node + upload-artifact 三处
+      # `uses:`,会撞 test/segments/pinned-actions.test.js 的 `uses.length === 14` 断言
+      # 判红 —— 为 35s 改一处门禁断言不值得。合并则 uses: 数不变、零连带判红。
+      # 选本 job 而非 node-lts:那个 job 跑 test:smoke(**真起 Electron**),而本 job 经
+      # `npm ci --ignore-scripts` 装依赖、不下载 electron/sharp 原生二进制。往 Electron
+      # 密集的 job 里塞纯计算步骤等于制造 ADR-017 实测过的那类争抢(`sum(段耗时)` 恒涨
+      # 约 2.7 倍且与核数无关),本 job 不起 Electron 故无此干扰。
+      # always() 保留:check:supply 判红时审计报告仍要产出,否则门禁失败恰是最需要看
+      # 审计的时候反而没有报告。
+      - name: Advisory actions audit (zizmor, non-blocking)
+        if: always()
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          ZIZMOR_VERSION="1.30.1"
+          python -m pip install --disable-pip-version-check --quiet "zizmor==${ZIZMOR_VERSION}" \
+            || { echo "::warning::zizmor 安装失败(本步骤为非阻断建议项,跳过 action 审计)"; exit 0; }
+          ZIZMOR="$(python -c "import os,sysconfig;print(os.path.join(sysconfig.get_path('scripts'),'zizmor.exe'))")"
+          if [ ! -x "$ZIZMOR" ]; then ZIZMOR=zizmor; fi
+          echo "::notice::zizmor $($ZIZMOR --version) 审计 .github/workflows(非阻断建议项)"
+          "$ZIZMOR" --no-progress --format plain .github/workflows
+          rc=$?
+          echo "::notice::zizmor 退出码 ${rc}(0=无发现;14=有发现;其它=审计器自身出错)。本步骤不阻断流水线,发现项须人工评估后处理"
+          exit 0
 
       # 诊断留存:SBOM / licenses.json / NOTICE.md / sca-report.json / supply-report.json
       - name: Upload supply artifacts
