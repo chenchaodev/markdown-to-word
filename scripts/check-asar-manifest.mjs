@@ -2,19 +2,25 @@
 //
 // 用途:安装包里的 app.asar 是唯一「实际交付给用户」的代码形态,源码树与 dist
 // 通过并不代表交付物正确——files 配错、node_modules 未随包、打包用了旧 dist、
-// 入口文件被改名都会只在这里暴露。本脚本按四层锁定交付物:
+// 入口文件被改名都会只在这里暴露。本脚本按五层锁定交付物:
 //   1. 归档本身可用:存在、非空、可被 @electron/asar 解析;
 //   2. 结构:顶层只允许 dist / node_modules / package.json(挡住误打包的脚本、
 //      夹具、密钥等本不该进包的文件);
-//   3. 入口与资源:package.json(版本须等于仓库版本)、主进程入口、renderer 入口、
+//   3. 排除项:dist 下不得出现任何 .map —— build.files 用一条覆盖 dist 全树的
+//      负向 glob(排除 dist 下全部 .map)把构建期 sourcemap 挡在包外(覆盖率映射
+//      与本地调试仍读 dist/ 原文件,tsconfig 的 sourceMap 照开;交付物既不需要
+//      它们,也不该带出内部源码路径);
+//   4. 入口与资源:package.json(版本须等于仓库版本)、主进程入口、renderer 入口、
 //      core 入口、KaTeX(pdf 公式字体/css)与 Mermaid(IIFE 产物)资源必须在包内;
 //      另含「devDependencies 中的生产包不得出现在 ASAR 生产依赖判定」的自检:
 //      见 REQUIRED_ENTRIES 里 jszip 那条 —— 只有声明进 dependencies 的包才会被
 //      electron-builder 收进 node_modules,故「包内有没有」与「该不该有」分属两
 //      道门:本脚本只管「声明了的必须在包内」,「该不该声明」由
 //      scripts/check-import-boundary.mjs 判定,两者不可互相替代;
-//   4. 内容:与 clean build 的 dist 清单逐项核对(路径 + 大小 + SHA-256),
-//      证明「打进去的 dist 就是刚构建的那份 clean dist」。
+//   5. 内容:与 clean build 的 dist 清单逐项核对(路径 + 大小 + SHA-256),
+//      证明「打进去的 dist 就是刚构建的那份 clean dist」。清单收的是 dist/
+//      全量(含 .map),故第 3 层被有意排除的 .map 条目在逐项核对时跳过 ——
+//      否则它们会被误报成「包内缺失」,淹没真正的问题。
 //
 // 依赖:复用 electron-builder 已带的 @electron/asar(不新增依赖),只走其公开 API
 // (getRawHeader 取归档清单、extractFile 取条目内容),不自行解析 asar 二进制格式:
@@ -70,6 +76,30 @@ export const REQUIRED_ENTRIES = [
 
 /** 前缀类要求:atLeast 1 个匹配文件(样式表按目录分文件,锁文件名会误报) */
 export const REQUIRED_PREFIXES = [{ group: 'renderer 样式', prefix: 'dist/renderer/style/', suffix: '.css', atLeast: 1 }];
+
+/**
+ * 包内禁止出现的 dist 侧文件后缀。package.json 的 build.files 用一条覆盖 dist
+ * 全树的负向 glob(排除 dist 下全部 .map)把构建期 sourcemap 挡在包外:dist/
+ * 目录本身仍留 .map(覆盖率门禁 c8 靠它把覆盖率映射回 .ts,本地调试也要用),
+ * 排除只发生在「打进安装包」这一层。
+ */
+export const FORBIDDEN_DIST_SUFFIXES = ['.map'];
+
+/**
+ * 是否为「有意排除出包」的 dist 产物(与 FORBIDDEN_DIST_SUFFIXES 同一事实源,
+ * 写成函数是为了让排除清单与包内禁止清单不可能各自漂移)。
+ * 判定输入既接受包内路径(dist/…)也接受 dist 清单里的相对路径(…)。
+ */
+export function isExcludedDistArtifact(entryPath) {
+  return FORBIDDEN_DIST_SUFFIXES.some((suffix) => entryPath.endsWith(suffix));
+}
+
+/** 包内违反排除规则的 dist 条目(POSIX 路径,字典序) */
+export function findForbiddenDistEntries(files) {
+  return [...files.keys()]
+    .filter((entry) => entry.startsWith('dist/') && isExcludedDistArtifact(entry))
+    .sort();
+}
 
 /**
  * 载入 @electron/asar(electron-builder 的传递依赖,随 node_modules 就位)。
@@ -201,7 +231,14 @@ export async function main(argv = []) {
     if (!topLevel.has(name)) problems.push(`包内缺少顶层项:${name}`);
   }
 
-  // ---- 3. 入口与资源 ----
+  // ---- 3. 排除项(dist 下不得有 .map)----
+  const forbidden = findForbiddenDistEntries(files);
+  for (const entry of forbidden.slice(0, 10)) {
+    problems.push(`包内出现禁止随包分发的文件:${entry}(build.files 应以负向模式排除 dist 下的 ${FORBIDDEN_DIST_SUFFIXES.join('/')})`);
+  }
+  if (forbidden.length > 10) problems.push(`包内禁止文件另有 ${forbidden.length - 10} 项未逐一列出`);
+
+  // ---- 4. 入口与资源 ----
   const mainEntry = typeof pkg.main === 'string' ? pkg.main : '';
   if (mainEntry === '') {
     problems.push('仓库 package.json 缺少 main 入口字段,无法定位主进程入口');
@@ -226,8 +263,9 @@ export async function main(argv = []) {
     problems.push(`包内 package.json main(${archivePkg.main})与仓库 main(${mainEntry})不一致`);
   }
 
-  // ---- 4. 与 clean dist 清单逐项核对 ----
+  // ---- 5. 与 clean dist 清单逐项核对 ----
   let checkedFiles = 0;
+  let skippedExcluded = 0;
   if (options['skip-manifest']) {
     console.log('[warn] asar:已跳过 dist 清单交叉核对(--skip-manifest),无法证明包内容来自本次 clean build');
   } else {
@@ -247,6 +285,13 @@ export async function main(argv = []) {
       if (manifest !== undefined) {
         const mismatched = [];
         for (const entry of manifest.files) {
+          // 清单收的是 dist/ 全量(含 .map),而 build.files 有意把 .map 排除出包:
+          // 这些条目「包内没有」是预期结果,判它们缺失会把真正的问题淹掉。
+          // 反向(包内多出 .map)由第 3 层的禁止条目断言单独负责,不留缺口。
+          if (isExcludedDistArtifact(entry.path)) {
+            skippedExcluded += 1;
+            continue;
+          }
           const archivePath = `dist/${entry.path}`;
           const archivedSize = files.get(archivePath);
           if (archivedSize === undefined) {
@@ -270,7 +315,7 @@ export async function main(argv = []) {
           problems.push(`包内 dist 与清单不一致:${item}`);
         }
         if (mismatched.length > 10) problems.push(`包内 dist 与清单不一致另有 ${mismatched.length - 10} 项未逐一列出`);
-        checkedFiles = manifest.files.length;
+        checkedFiles = manifest.files.length - skippedExcluded;
       }
     }
   }
@@ -283,7 +328,7 @@ export async function main(argv = []) {
   console.log(
     `[ok] app.asar 核对通过(${toPosix(path.relative(projectRoot, asarPath))}:` +
       `${files.size} 个文件,顶层 ${EXPECTED_TOP_LEVEL.join('/')};包内版本 ${String(archivePkg.version)};` +
-      `主进程入口 ${mainEntry};KaTeX/Mermaid 资源在位` +
+      `主进程入口 ${mainEntry};KaTeX/Mermaid 资源在位;dist 下无 ${FORBIDDEN_DIST_SUFFIXES.join('/')} 文件` +
       `${options['skip-manifest'] ? ';清单交叉核对已跳过' : `;已与 dist 清单核对 ${checkedFiles} 个文件`})`,
   );
   return 0;

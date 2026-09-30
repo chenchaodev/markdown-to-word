@@ -89,6 +89,7 @@
     },
     "files": [
       "dist/**",
+      "!dist/**/*.map",
       "package.json",
       "!node_modules/highlight.js/styles/**"
     ],
