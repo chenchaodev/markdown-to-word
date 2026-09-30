@@ -59,7 +59,7 @@
 | 包体 | `check:pack-size` | 仅本地手动(需真实安装包实测;判定逻辑由 `test/segments/observability.test.js` 在链内以沙盒覆盖) |
 | 冒烟报告 | `check:smoke-report` | 仅本地手动(判定逻辑同上,由 `test/segments/observability.test.js` 在链内覆盖) |
 | 阴性探针 | `check:gates` | 仅本地手动 —— 同一模块由 `test/segments/gate-probes.test.js` 在链内实跑 |
-| GUI 视觉自查 | `ui:shots` | 仅本地手动(`test/tools/visual-check.mjs`) |
+| GUI 视觉自查 | `ui:shots` | 仅本地手动(`test/tools/visual-check.mjs`)。**发版前需重跑** —— 它的产出 `output/artifacts/ui-v4/` 是 `docs/images/ui-*.jpg` 的来源,界面一改那批图就过期;README / 官网首页 / 用户指南都靠它们展示 |
 | 安装烟测 | `check:install-smoke` | 仅本地手动,默认预演模式零系统副作用;真实装卸须显式 `--execute`(沙盒内的进程级行为由 `test/segments/install-smoke.test.js` 在链内覆盖) |
 | 打包产物核对 | `gen:dist-manifest` `check:dist-manifest` `check:asar` `check:release` `check:signature` `check:unpacked-smoke` | `verify:release` 链(`dist` 内部) |
 | 图标资源 | `icons` | 仅本地手动 |
