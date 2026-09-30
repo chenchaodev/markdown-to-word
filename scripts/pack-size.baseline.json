@@ -44,7 +44,14 @@
     "baseline.json 同纪律)。",
     "",
     "首次基线不与历史比较:本表建立之前的体积无人负责,那段时间的膨胀只能靠本次实测",
-    "登记为事实。"
+    "登记为事实。",
+    "",
+    "2026-09-30 重取过一次(REQ-109):sourcemap 排除范围从 dist 侧扩到全包(ADR-036),",
+    "重打后 asarMermaid 由约 83 MiB 降到约 28 MiB —— 它的 276 个 .map 独占约 55 MiB,",
+    "asarNodeModules 同步大降。这是一次**有意**的缩小,但仍越过了 maxShrinkRatio 的 50%",
+    "上限而被判红,文案写的是「体积异常缩小:多半是资源没进包,须核对 build.files」——",
+    "与事实正好相反。故按上面的维护方式人工把新值登记进来,**不是**去动阈值:阈值是门禁",
+    "的宽严,基线是事实,为了让门禁继续抓「意外缩小」才更新后者。"
   ],
   "thresholds": {
     "maxRelativeGrowth": 0.2,
@@ -60,15 +67,15 @@
     }
   },
   "items": {
-    "appAsar": 170991912,
+    "appAsar": 90684255,
     "unpackedExe": 225947136,
-    "unpackedTotal": 488562570,
-    "installer": 125606383,
-    "asarNodeModules": 167271087,
+    "unpackedTotal": 408254913,
+    "installer": 113692497,
+    "asarNodeModules": 87724021,
     "asarKatex": 4013499,
     "asarKatexDist": 2967611,
     "asarKatexFonts": 1076572,
-    "asarMermaid": 86947952,
-    "asarDist": 1712618
+    "asarMermaid": 29219623,
+    "asarDist": 1298703
   }
 }
