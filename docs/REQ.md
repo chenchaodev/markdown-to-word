@@ -51,7 +51,7 @@
 | REQ-095 | 覆盖率阈值三处冗余 | 待拍板 | 2026-09-29 从 REQ-042 拆出（不成因相关）。阈值向量 90/85/90/90 抄在三处：package.json、coverage-baseline.json、contract.mjs 的 GATE_META —— 违反单一来源不复制，coverage-gate.mjs 会判红不一致，改一处必红另两处。未实测：收紧前须重测 measured，成本一轮全量。 | 下次要动覆盖率阈值或覆盖率门禁时先收拢单源 | 无 |
 | REQ-096 | ESLint 缓存陈旧假阳性 | 待拍板 | 波次 1 泳道 1a 发现：lint 带 --cache 时对 settings-logic.test.js 报 defined but never used，而该文件 258/266 行在用；不带 cache 零输出，删缓存即恢复绿 ⇒ 缓存陈旧不是代码问题。单独立号而非并进 REQ-056（一正一反）。成因未诊断。用户裁决 2026-09-30：先查真因，调查前不得改 lint 脚本。 | 下次因 lint 假阳性被卡、或决定给缓存加失效策略时 | 无 |
 | REQ-099 | about 截图双变体竞态 | 待拍板 | 波次 1 泳道 1d 范围外发现：ui:shots 的 10-about.png 有两个变体，差在印章文字边缘抗锯齿。根因已定位为首帧光栅化竞态，非 settle 不足也非内容差异；基线同样双峰 ⇒ 非本轮引入。用户裁决 2026-09-30 暂不做：唯一能触发它的场景是让 ui:shots 进像素级比对，那件事还没发生；两种修法都会改变全部产物的光栅形态，属视觉决策。 | 将来要让 ui:shots 产物进入像素级比对（而非目视自查）时 | 无 |
-| REQ-100 | 另两处自建 server 同病核查 | 待拍板 | 波次 1 泳道 1e 抛回：REQ-057 的 bad-port 缺陷是环境级的，1e 只修了被指派那段。2026-09-30 实测：全仓仅 3 段用 listen(0)，image-request-budget 段零 fetch 不暴露；supply-chain 段 1 处 fetch + 1 处 listen(0)，是否打自己 server 未确认 ⇒ 待办只剩这一件。若同病应抽共用助手。 | supply-chain 或新段确认同病 / 第三个 listen(0) 段出现 | 无 |
+| REQ-100 | 三段同病 · 抽共用助手 | 已完成 | 查真因结论**三处全部同病**（证据是实测非读码）：600 次 `listen(0)` 采样 8 次命中 blocked（≈1.3%）· 绑 6697 复现「请求数 0」· 对照组 9230 返回 ok。端口均被真实 `fetch` 消费，无一是本进程自取自用。抽 `test/common/http-server.js`，三份名单与重试循环收成一份，净减 61 行。 | 下次换 Node 运行时需重扫 blocked 名单 | test/common/http-server.js |
 
 ## 在办
 
