@@ -42,13 +42,13 @@
 
 | 步 | 工作项 | 目标 | 可写文件（不重叠） | 退出条件 | 门禁 | 结果 |
 |---|---|---|---|---|---|---|
-| #00 | REQ-110 | 三份 ADR 落盘（决策已被四条核实钉死，先立后动） | `docs/adr/ADR-037*` `ADR-038*` `ADR-039*` | 三份齐备且互相无矛盾 | `npm run check:docs` | 未开始 |
-| #01 | REQ-110 | 根路径收口单源 + 禁自算门禁 | 新建 `shared/paths.js`；改 import 的 26 处；`scripts/check-import-boundary.mjs` | 全仓零自算；新规则对造坏样例判红 | `npm run check:boundary` | 未开始 |
-| #02 | REQ-110 | 补 4 项门禁自检缺口（可与 #01 并行） | 4 个新 `scripts/*.selftest.mjs`；`package.json` | 每个 selftest 对造坏样例判红，接进链后仍绿 | `npm run verify:ci` | 未开始 |
-| #03 | REQ-110 | 顶层清单派生，`clean-artifacts` 转 fail-closed | 新建 `gates/manifest.mjs`；`scripts/clean-artifacts.mjs`；`scripts/gate-probes/contract.mjs`；其余枚举点 | 新增顶层目录 0 处静默降级 | `npm run verify:ci` | 未开始 |
-| #04 | REQ-110 | 扫描面合并单源；下限语义改等式 | `scripts/check-test-numbering.mjs`；`scripts/check-temp-cleanup.mjs`；`test/acceptance.mjs`；`test/tools/gen-fixtures.mjs` | 声明数 ≠ 实测数即红 | `npm run verify:ci` | 未开始 |
-| #05 | REQ-110 | 建 `shared/` 层，迁入跨树纯机制 | 新建 `shared/`（迁入 `entry-guard` / `copy-closure` / `userdata` / `geometry-{core,spec,page}` 等）；改 9 条跨树 import | 跨树边归零 | `npm run check:boundary` | 未开始 |
-| #06 | REQ-110 | 边界规则升 5 条 | `scripts/check-import-boundary.mjs`；其 selftest | 造假源码被判红 | `npm run check:boundary` | 未开始 |
+| #00 | REQ-110 | 三份 ADR 落盘（决策已被四条核实钉死，先立后动） | `docs/adr/ADR-037*` `ADR-038*` `ADR-039*` | 三份齐备且互相无矛盾 | `npm run check:docs` | 通过 2026-10-01 |
+| #01 | REQ-110 | 根路径收口单源 + 禁自算门禁 | 新建 `shared/paths.js`；改 import 的 26 处；`scripts/check-import-boundary.mjs` | 全仓零自算；新规则对造坏样例判红 | `npm run check:boundary` | 通过 2026-10-01 |
+| #02 | REQ-110 | 补 4 项门禁自检缺口（可与 #01 并行） | 4 个新 `scripts/*.selftest.mjs`；`package.json` | 每个 selftest 对造坏样例判红，接进链后仍绿 | `npm run verify:ci` | 通过 2026-10-01 |
+| #03 | REQ-110 | 顶层清单派生，`clean-artifacts` 转 fail-closed | 新建 `gates/manifest.mjs`；`scripts/clean-artifacts.mjs`；`scripts/gate-probes/contract.mjs`；其余枚举点 | 新增顶层目录 0 处静默降级 | `npm run verify:ci` | 通过 2026-10-01 |
+| #04 | REQ-110 | 扫描面合并单源；下限语义改等式 | `scripts/check-test-numbering.mjs`；`scripts/check-temp-cleanup.mjs`；`test/acceptance.mjs`；`test/tools/gen-fixtures.mjs` | 声明数 ≠ 实测数即红 | `npm run verify:ci` | 通过 2026-10-01 |
+| #05 | REQ-110 | 建 `shared/` 层，迁入跨树纯机制 | 新建 `shared/`（迁入 `entry-guard` / `copy-closure` / `userdata` / `geometry-{core,spec,page}` 等）；改 9 条跨树 import | 跨树边归零 | `npm run check:boundary` | 通过 2026-10-01 |
+| #06 | REQ-110 | 边界规则升 5 条 | `scripts/check-import-boundary.mjs`；其 selftest | 造假源码被判红 | `npm run check:boundary` | 通过 2026-10-01 |
 | #07 | REQ-110 | 目录重组：`scripts/` → `gates/` `build/` `dev/` | 见 #05 迁入后的空目录；门禁按域分子目录 | 顶层无 `scripts/`，语义按判据归位 | `npm run verify:ci` | 未开始 |
 | #08 | REQ-110 | 门禁统一 `check(ctx)` 协议 + 探针必填化 | 各门禁实现；`scripts/gate-probes/` | 缺探针即红 | `npm run verify:ci` | 未开始 |
 
