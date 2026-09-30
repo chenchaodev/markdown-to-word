@@ -55,7 +55,7 @@ export const GATE_IDS = Object.freeze([
   "smoke",
 ]);
 
-/** 门禁 id → 元信息(npm 脚本名与真实命令行,报告里照实登记) */
+/** 门禁 id → 元信息(npm 脚本名与命令登记,报告里照实登记) */
 export const GATE_META = Object.freeze({
   fixtures: {
     title: "fixtures 漂移门禁",
@@ -65,7 +65,12 @@ export const GATE_META = Object.freeze({
   coverage: {
     title: "coverage 阈值门禁",
     npmScript: "test:coverage",
-    command: "c8 --check-coverage --statements=90 --branches=85 --functions=90 --lines=90 <program>",
+    // 刻意不抄 c8 参数向量(含四个阈值):本字段的唯一去向是报告展示 —— judge.mjs 原样
+    // 抄进 report.json,无任何判定读它。抄一份就多一处会静默过期、且过期后无人判红的
+    // 文本(实测:阈值调到 1 时本字段仍显示 90,而门禁判红来自别处)。真实向量由
+    // gates/coverage.mjs 的 parseCoverageScript() 在运行时从 package.json 读出,
+    // 并写进该门禁的 note 与 findings.evidence,故信息并未丢失。
+    command: "c8 <参数向量取自 package.json 的 test:coverage,见本门禁 note> <program>",
   },
   "dist-manifest": {
     title: "dist 清单门禁",

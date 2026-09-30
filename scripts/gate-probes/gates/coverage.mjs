@@ -3,6 +3,14 @@
 // 关键设计:参数向量**取自 package.json 的 test:coverage 原文**(只把被测程序换成沙盒里
 // 的极小 harness),这样「阈值被人调低 / --check-coverage 被删」这类配置漂移会被负向探针
 // 当场抓住,而不是被探针自己的参数掩盖。
+//
+// 这里**刻意不写死**四个阈值(也不从别处推导期望值):期望的是「部分覆盖必须 exit 非 0」
+// 这一**性质**,不是某个数字。写死数字会让探针在阈值被人改动时仍绿(=恒真断言);
+// 改成从 package.json 推导期望值同样恒真(门禁与自己一致,漂移看不见)。真正判红的是
+// 拿**真实参数向量**去跑一个**人造的低覆盖**,故对任意阈值取值都成立。
+// 实测(负探针):四项全调到 1 → 本门禁 fault 案 exit 0、判红;只把 statements 调到 89 →
+// 本门禁**仍绿**(沙盒里那点覆盖率仍高于 89),此时由 coverage-gate.mjs 静态面的
+// 「与基线 thresholds 不一致」判红。两层职责不同,缺一不可。
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -16,7 +24,7 @@ import { writeFileIn } from "../sandbox.mjs";
  * 解析 package.json 的 `test:coverage`,取出 c8 参数向量与被测程序。
  * 探针用**真实参数向量**(只把被测程序换成沙盒里的极小 harness),这样「阈值被人调低/
  * `--check-coverage` 被删」这类配置漂移会被负向探针当场抓住,而不是被探针自己的
- * 参数掩盖。
+ * 参数掩盖。参见文件头注:本函数是阈值向量的**唯一读取点**,故本仓不存在第二份阈值来源。
  * @returns {{ flags: string[], program: string[], ok: boolean, reason?: string, configFiles: string[] }} 解析结果
  */
 export function parseCoverageScript() {

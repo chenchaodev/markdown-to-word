@@ -3,7 +3,8 @@
 // 存在的理由:`test:coverage` 用 `--exclude="dist/renderer/**"` 把整层 renderer 排除在
 // 覆盖率门禁之外(它恰是层向越界风险最高的一层,静态断言又进不了分母),于是这层在
 // 门禁上「不可见」。本脚本只把那层的**实测数字**摆出来,让人能看见,不因此改动任何
-// 判定:四项阈值(90/85/90/90)与 include/exclude 全部原样,主门禁的红绿与本脚本无关。
+// 判定:四项阈值与 include/exclude 全部原样取自 `test:coverage`(本仓唯一阈值来源,此处
+// 不转抄数值 —— 转抄即多一处会静默过期且无人判红的文本),主门禁的红绿与本脚本无关。
 //
 // 事实前提(c8 12 实测自 node_modules/c8/lib/report.js,非猜测):
 //   - `--reporter=json-summary` 且未指定 `--report-dir` 时,产物落在 c8 的默认报告目录
