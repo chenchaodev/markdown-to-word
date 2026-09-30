@@ -63,7 +63,7 @@
 | 安装烟测 | `check:install-smoke` | 仅本地手动,默认预演模式零系统副作用;真实装卸须显式 `--execute`(沙盒内的进程级行为由 `test/segments/install-smoke.test.js` 在链内覆盖) |
 | 打包产物核对 | `gen:dist-manifest` `check:dist-manifest` `check:asar` `check:release` `check:signature` `check:unpacked-smoke` | `verify:release` 链(`dist` 内部) |
 | 图标资源 | `icons` | 仅本地手动 |
-| 聚合入口 | `verify:ci` `verify:release` `dist` | 本地手动 + `ci.yml` 主 job(`verify:ci`)/ `release.yml` 的 release job(`verify:release`);`dist` 是后二者内部的打包步 |
+| 聚合入口 | `verify:ci` `verify:release` `dist` | **`verify:ci` 仅主会话在推送前跑一次,子代理一律不跑**(见下「验证基线」节的对应两条);`verify:release` / `dist` 主会话手动。CI 侧:`ci.yml` 主 job(`verify:ci`)/ `release.yml` 的 release job(`verify:release`);`dist` 是后二者内部的打包步 |
 
 ## 本地打包注意事项
 
@@ -149,6 +149,8 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - **开发回路不得省全量的两种情形**:① 动了共享测试设施(`test/common/**` · `test/tools/**` · `scripts/**` · 门禁脚本 · `package.json`)—— 跨段污染只有全量暴露 ② 影响面判不出来(改动落在「命令」节任何一条都覆盖不到的位置)—— 此时当轮就跑,不留到提交前
 - **筛段不会静默假通过**:筛选词命中 0 个段即判红(`test/common/runner.js` 的段筛选三态契约),故「只跑受影响段」不存在「筛选词拼错 → 打印全部 0 段通过 → 退出 0」的失效形态
 - 全量验收在链内的唯一一次是 `verify:ci` 的 `test:coverage`(见 [adr-016](adr/adr-016-门禁链内全量验收只跑一遍.md)),本条不与它重复;发版前的全套走 `verify:release`,不由本条覆盖
+- **`verify:ci` 只由主会话在推送前跑一次,子代理一律不跑** —— 它把十余步门禁串成一条,多条并行泳道会让同一串门禁被各跑一遍,耗时翻倍且没有新增结论。子代理跑的是上面「开发回路」那一档(定向门禁 + 受影响验收段),并在交回时**明确写出「未跑 verify:ci」**,不默认它绿。下面第 2 条「动了共享测试设施当轮就跑全量」对子代理仍然成立,但那里的「全量」指**受影响段**,链级 `verify:ci` 由主会话在推送前统一兜底 —— 收尾判完成仍以 `verify:ci` 全绿为准,子代理的自证不能替代它
+- **失败后不得重跑整条链去「看是不是还红」** —— 它是 `&&` 串联,退出码只说明有一步非零,不说明是哪一步;而 `test:coverage`(build + c8 + electron)是链内最贵的一步,它已经把逐段结论打出来了。定位办法按代价从低到高:① 首次运行就把输出重定向落盘,失败时 grep 该文件,只跑这一次整链 ② 从便宜的一端逐个单跑(`check:*` 纯文本门禁 → 段级 `M2W_ONLY` 筛选 → 才轮到 `test:coverage`) ③ 确认是哪一步后才决定要不要重跑整链。反复整链重跑是最贵且信息量最低的做法
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(提交前置 → 全局配置目录 `WORKFLOW.md`「六、收尾」;发布/打包产物属对外动作 → 全局配置目录 `AGENTS.md` 安全底线 3)
 - 类型/构建/门禁命令清单见本文件「命令」节;每条 `npm run *` 的门禁类别与接入点(`verify:ci` 链 / `verify:release` 链 / 仅某个 CI workflow job / 仅本地手动)见本文件「门禁接入点」表
 - 验收测试段明细见 `test/segments/`、`test/main/` 与 `test/renderer/`;恒等守护与边界守护段清单见本文件「测试体系」节
