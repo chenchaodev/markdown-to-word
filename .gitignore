@@ -2,9 +2,8 @@
 node_modules/
 dist/
 release/
-release2/
 
-# 转换产物(样例输出)
+# 门禁报告与沙盒(验收段产物、冒烟日志、供应链产物;非用户转换产物)
 output/
 
 # 测试覆盖率产物(c8)
