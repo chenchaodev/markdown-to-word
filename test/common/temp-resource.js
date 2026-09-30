@@ -59,10 +59,13 @@ export const REMOVE_RETRY_DELAY = 100;
  * `maxRetries` / `retryDelay`** —— 那两个参数只被 `internal/fs/rimraf` 的重试循环使用,而
  * rimraf 只服务**异步** `fs.rm`;同步路径直接进 `binding.rmSync`,实测对「子进程占用 cwd」
  * 造成的 EPERM 在 1ms 内即抛(给到 maxRetries:10/retryDelay:250 本应重试 13.75s 并成功)。
- * 故本模块的「退避重试」实际靠的是 **删后复查 + 调用方显式判 `outcome.ok` 后重试**,
- * 而不是 fs 的参数。参数仍照传:① 语义显式、便于对照;② 换回异步实现或 fs 修正行为时自动生效;
- * ③ `test-common-helpers` 段的注入式失败锚点正是靠 `maxRetries: -1` 触发 ERR_OUT_OF_RANGE。
- * **不要**据此认为「传了参数就有退避」—— 真正的兜底是复查与调用方的重试策略。
+ * 故退避**由本模块自己的循环负责**(见 removePath),参数仍照传:① 语义显式、便于对照;
+ * ② 换回异步实现或 fs 修正行为时自动生效;③ `test-common-helpers` 段的注入式失败锚点正是靠
+ * `maxRetries: -1` 触发 ERR_OUT_OF_RANGE —— 所以**第一次调用必须把参数原样交给 fs**
+ * (不能自己先校验,否则这条锚点失效)。
+ *
+ * 退避与「删后复查」**缺一不可,二者治的不是同一类失败**:退避治「先等等再试」(句柄尚未释放,
+ * 立刻重试仍是同一个错),复查治「删了但没删掉」(抛了错而目标仍在,或压根没抛却还在)。
  */
 
 /**
@@ -102,7 +105,45 @@ function toError(value) {
 }
 
 /**
- * 删除内核(removeTree 与 removeFile 的**唯一**实现):EBUSY/EPERM 退避重试 + 删后复查。
+ * 可重试的争用错误码(Windows 口径):「非空目录且被进程占用」时码位在 EPERM/EBUSY/EACCES
+ * 间浮动,树删除中途还可能撞上 ENOTEMPTY/ENOTDIR。参数校验错(`ERR_OUT_OF_RANGE` 等)与
+ * 「路径不存在」刻意**不在**其中:重试它们只会把真因拖成慢失败。
+ */
+const CONTENTION_ERROR_CODES = new Set([
+  "EBUSY",
+  "EPERM",
+  "EACCES",
+  "ENOTEMPTY",
+  "ENOTDIR",
+]);
+
+/**
+ * 判定一个错误是否属于「等一会儿再试可能就成」的争用族。
+ * @param {Error} error 已归一化的错误
+ * @returns {boolean}
+ */
+function isContentionError(error) {
+  const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+  return typeof code === "string" && CONTENTION_ERROR_CODES.has(code);
+}
+
+/** Atomics.wait 的目标缓冲(懒建:导入本模块不产生副作用) */
+let waitBuffer;
+
+/**
+ * 同步等待。removePath 是同步 API,不能靠 setTimeout/await —— 改异步会波及全部调用点。
+ * `Atomics.wait` 在 Node 主线程可用(只有浏览器主线程禁用),这正是选它的唯一原因。
+ * @param {number} ms 等待毫秒(非正数直接返回)
+ * @returns {void}
+ */
+function sleepSync(ms) {
+  if (!(ms > 0)) return;
+  waitBuffer ??= new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+  Atomics.wait(waitBuffer, 0, 0, ms);
+}
+
+/**
+ * 删除内核(removeTree 与 removeFile 的**唯一**实现):争用类错误的退避重试 + 删后复查。
  * 两者只差 `recursive` 这一个标志 —— 「同一套重试语义」由这一处保证,不在调用点各补一遍重试。
  * 不抛错,返回结果对象 —— 「暴露还是忽略」是调用方的策略决定(本模块的策略是抛)。
  * @param {string} target 目标路径(不存在即视为删除成功)
@@ -114,12 +155,23 @@ function removePath(target, options, recursive) {
   if (!fs.existsSync(target)) return { target, existed: false, ok: true };
   const maxRetries = options.maxRetries ?? REMOVE_MAX_RETRIES;
   const retryDelay = options.retryDelay ?? REMOVE_RETRY_DELAY;
+  // 预算只认「正整数」:非法取值(负数/NaN/Infinity)会被下面第一次 fs.rmSync 的
+  // validateRmOptionsSync 抛掉,流不到这里;再收一道是为了不给「非有限数」留下死循环
+  const retryBudget = Number.isInteger(maxRetries) && maxRetries > 0 ? maxRetries : 0;
   /** @type {Error | undefined} */
   let error;
-  try {
-    fs.rmSync(target, { recursive, force: true, maxRetries, retryDelay });
-  } catch (err) {
-    error = toError(err);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fs.rmSync(target, { recursive, force: true, maxRetries, retryDelay });
+      error = undefined;
+      break;
+    } catch (err) {
+      error = toError(err);
+      // 只有争用类错误才值得再等:参数校验错(ERR_OUT_OF_RANGE 等)重试多少次都是同一个错,
+      // 拖成慢失败只会掩盖真因
+      if (attempt >= retryBudget || !isContentionError(error)) break;
+      sleepSync(retryDelay * (attempt + 1));
+    }
   }
   // force:true 只吞 ENOENT,其余错误(EBUSY/EPERM)在重试耗尽后仍会抛;这里再复查一次存在性,
   // 把「抛了但目标还在」与「抛了且已消失」区分开,避免误报清理失败

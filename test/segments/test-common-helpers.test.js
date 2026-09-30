@@ -12,12 +12,15 @@
  *   cleanupTempResources 汇总点名),而不是像 test/main 若干段那样 `.catch(() => undefined)`
  *   把删不掉的目录留在系统临时区。
  *
- * 「删不掉」怎么造(两条独立锚点,互不依赖):
+ * 「删不掉」怎么造(三条锚点,互不依赖):
  * 1) 注入式:给 removeTree 传非法重试参数(maxRetries:-1),Node 必抛 ERR_OUT_OF_RANGE,
  *    目录必然还在 —— 跨平台确定性地证明「失败被上报、没有被当成成功」;
  * 2) 真实占用(仅 win32,本项目目标平台):把本进程 cwd 切进资源内的子目录,Windows 上
  *    「非空目录且被进程占用」时删除其父目录必 EPERM —— 这正是段里真实会遇到的情形
- *    (刚退出的 Electron 子进程句柄未释放)。POSIX 无此语义,故该半段按平台跳过并留痕。
+ *    (刚退出的 Electron 子进程句柄未释放)。POSIX 无此语义,故该半段按平台跳过并留痕;
+ * 3) 退避真的在重试(仅 win32):占位子进程**自己**在数百毫秒后退出,于是删除必然
+ *    「先失败、占用解除后才成功」。断言总耗时跨过至少一次 retryDelay —— 只断言「最终成功」
+ *    是恒绿的(靠删后复查也能成功),抓不到「有没有真等」这件事。
  *
  * 防假通过两处:
  * 1) 「系统临时区前缀计数基线」在 run() 入口取,段末比对 —— helper 真的漏了目录,计数会涨,
@@ -25,6 +28,7 @@
  * 2) 段末用目录存在性逐条复查本段建过的每个资源(沿用 install-smoke 段的手法:清理成功的
  *    判据是「目录真的不见了」,不是「没抛错」)。
  */
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -117,6 +121,52 @@ function occupyDir(dir) {
 /** 释放目录占用(幂等:未占用时什么都不做) */
 function releaseOccupancy() {
   occupancy?.release();
+}
+
+/** 退避锚点里占位子进程的存活时长(ms):须大于「一次退避」,否则夹具退化成「本来就删得掉」 */
+const HOLDER_LIFETIME_MS = 800;
+
+/**
+ * 占位子进程的脚本:占住 cwd 的同时**自己**在 HOLDER_LIFETIME_MS 后退出。
+ * 自退(而非由父进程在 rm 之后才 kill)才能造出「先失败、占用解除后才成功」——
+ * 父进程没有任何夹具能在两次 rm 之间插进去释放占用(removePath 是同步 API)。
+ * @returns {string} `-e` 脚本源码
+ */
+function holderScript() {
+  return `process.stdout.write("ready\\n");setTimeout(() => process.exit(0), ${HOLDER_LIFETIME_MS});`;
+}
+
+/**
+ * 起一个占住 dir 的子进程并等它真的就绪(就绪信号到达即证明 cwd 已被它持有)。
+ * @param {string} dir 要占住的目录
+ * @returns {Promise<{ release(): void }>} 释放句柄(幂等)
+ */
+function holdDirUntilSelfExit(dir) {
+  const child = spawn(process.execPath, ["-e", holderScript()], {
+    cwd: dir,
+    stdio: ["ignore", "pipe", "ignore"],
+    windowsHide: true,
+    // 段跑在 Electron 里(process.execPath 是 electron.exe),该变量让它按 node 解释执行
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+  });
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    child.kill();
+  };
+  return new Promise((resolve, reject) => {
+    // 就绪前就退出/报错 = 夹具没搭起来:必须判红而不是干等(段默认无超时,干等会挂住整轮)
+    child.once("error", (err) => {
+      release();
+      reject(new Error(`占位子进程启动失败:${err.message}`));
+    });
+    child.once("exit", (code) => {
+      release();
+      reject(new Error(`占位子进程在就绪前退出(码 ${code}),夹具没搭起来`));
+    });
+    child.stdout?.once("data", () => resolve({ release }));
+  });
 }
 
 /**
@@ -397,6 +447,41 @@ export async function run() {
         "兜底清理后不应仍挂在注册表",
       );
       console.log("[ok] test-common-helpers:Windows 占用(单条抛/汇总抛/保留注册项/解除后收干净)");
+    });
+
+    await suite.case("退避真的在重试:占用型 EPERM 靠等待化解(不是靠删后复查)", async () => {
+      const resource = track(createTempResource({ prefix: SELFTEST_PREFIX, label: "退避沙盒" }));
+      if (process.platform !== "win32") {
+        // POSIX 上「进程 cwd 占用」不阻止 unlink,造不出「先失败后成功」;跳过并留痕
+        console.log("[skip] test-common-helpers:退避锚点仅 win32 有效(当前 POSIX)");
+        cleanupTempResources();
+        assertEq(pendingTempResources().length, 0, "跳过分支同样不得残留");
+        return;
+      }
+      const held = path.join(resource.path, "cwd-held");
+      fs.mkdirSync(held, { recursive: true });
+      fs.writeFileSync(path.join(held, "x.bin"), "M2W", "utf8");
+      const holder = await holdDirUntilSelfExit(held);
+      try {
+        // 下面两个 150 必须相等(耗时下界 = 退避基数);门禁要求选项取值写成数字字面量
+        // (见 scripts/check-temp-cleanup.mjs 的第二条规则),故调用点与断言各自写死
+        const startedAt = Date.now();
+        const outcome = removeTree(resource.path, { maxRetries: 20, retryDelay: 150 });
+        const elapsed = Date.now() - startedAt;
+        assertEq(outcome.ok, true, `占用解除后应最终删掉,实际:${outcome.error?.message ?? "未给 ok"}`);
+        assert(
+          elapsed >= 150,
+          `删除总耗时须跨过至少一次退避(≥150ms),实际 ${elapsed}ms —— 不跨过即说明没等就重试;`
+            + "只断言「成功」抓不到这一点(删后复查同样能成功)",
+        );
+        assertEq(fs.existsSync(resource.path), false, "删除成功的判据是目录真的不见了");
+        console.log(
+          `[ok] test-common-helpers:退避重试(占位子进程 ${HOLDER_LIFETIME_MS}ms 后自解,`
+            + `删除耗时 ${elapsed}ms ≥ 退避 150ms)`,
+        );
+      } finally {
+        holder.release();
+      }
     });
 
     await suite.case("withTempResource:主体失败与清理失败同时发生时两条都在消息里", async () => {
