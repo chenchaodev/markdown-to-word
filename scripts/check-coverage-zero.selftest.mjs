@@ -1,0 +1,309 @@
+// 覆盖率零覆盖面门禁(coverage-gate.mjs --zero)自身的回归守护(负向夹具)。
+//
+// `npm run check:coverage-zero` 是 verify:ci 链里**唯一**执行者只有一处的那道动态面:
+// c8 的 json-summary 与 scripts/gate-probes/coverage-baseline.json 的零覆盖模块清单必须一致。
+// 它的失效形态全是「静默放宽」——`--all` 打开后全局百分比会把「清单外的新 0% 文件」按体量
+// 摊薄(一个 20 行的新死代码在 ~1.8 万条语句里只值 0.1pp),而这道门禁正是为堵这个洞而存在。
+// 若它被改成恒绿(判据写错 / 集合比较反了 / 豁免失效方向漏了),没有任何其他检查能发现:
+// c8 自己只看四个阈值,而 c8 的 --per-file 实测不可用(94 个文件里 33 个低于阈值)。
+//
+// 夹具口径(**刻意不复制门禁本体**):
+//   - 判定面用 `auditZeroFiles(root)` 直调 —— 它就是 CLI 的全部判定内容(main() 只做
+//     「打印 + 按 problems.length 出 0/1」),且 root 是入参,合成 coverage JSON 与基线
+//     可以整棵树放在系统临时目录里造。
+//   - **不使用 copyFileSync**:凡是把仓内文件逐字节复制进沙盒的调用点,都在
+//     test/common/copy-closure-audit.js 的扫描面里(死副本判红 + 沙盒入口登记)。新增复制点
+//     必须同步那张登记表,而 test/** 不在本自检的可写范围 ⇒ 走函数级夹具,不走复制夹具。
+//   - 真实仓库只被**读**:末尾一条用例把真门禁当子进程跑一遍,验 CLI 适配层(参数路由 →
+//     动态面 → 退出码 → 诊断行)在真实数据上的表现。
+//
+// ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则系统
+// 临时区会堆满夹具树。
+
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ROOT } from '../shared/paths.js';
+import { auditZeroFiles, BASELINE_RELATIVE, SUMMARY_RELATIVE } from './gate-probes/coverage-gate.mjs';
+
+const projectRoot = ROOT;
+const gatePath = join(projectRoot, 'scripts', 'gate-probes', 'coverage-gate.mjs');
+
+/**
+ * 合成基线:结构必须过 loadBaseline 的全部校验(否则夹具会因「基线不成形」判红,而不是因
+ * 被注入的 0% 形态判红 —— 那会让负向夹具测不到任何东西)。字段值一律无关紧要:动态面只读
+ * `exemptions[].file`,阈值段在这里只是「不让结构校验先炸」的填充。
+ */
+const FIXTURE_BASELINE = {
+  baselineSchema: 1,
+  note: ['合成基线:仅供本自检的动态面夹具使用,不对应真实仓库的任何阈值或豁免。'],
+  headroomPp: 4,
+  floor: { statements: 85, branches: 80, functions: 85, lines: 85 },
+  measured: { statements: 93, branches: 88, functions: 93, lines: 93 },
+  thresholds: { statements: 90, branches: 85, functions: 90, lines: 90 },
+  requireFlags: ['--all', '--check-coverage'],
+  requireExcludesInFlag: false,
+  exemptions: [
+    {
+      file: 'src/core/empty.ts',
+      category: 'empty-module',
+      reason: '合成豁免:纯类型模块,编译产物只有 export {};,夹具用来占住「已登记的 0% 文件」这一格。',
+    },
+    {
+      file: 'src/main/entry.ts',
+      category: 'runtime-entry',
+      reason: '合成豁免:运行时入口,import 即触发启动副作用,夹具用来占住「豁免失效方向」这一格。',
+    },
+  ],
+};
+
+/**
+ * 造一条 c8 json-summary 的文件条目(键用夹具根下的绝对路径,与 c8 真实产物同形态)。
+ * @param {string} root 夹具根
+ * @param {string} rel 仓库相对路径
+ * @param {Record<string, [number, number]>} counts 指标名 → [covered, total]
+ * @returns {Record<string, unknown>} summary 条目
+ */
+function summaryEntry(root, rel, counts) {
+  /** @type {Record<string, unknown>} */
+  const metrics = {};
+  for (const [name, [covered, total]] of Object.entries(counts)) {
+    metrics[name] = { total, covered, skipped: 0, pct: total === 0 ? 100 : Number(((covered / total) * 100).toFixed(2)) };
+  }
+  return { [join(root, ...rel.split('/'))]: metrics };
+}
+
+/** 与真实 c8 json-summary 同形的 total 行(动态面跳过它,只用来让夹具不显得残缺) */
+const FIXTURE_TOTAL = {
+  total: {
+    lines: { total: 18453, covered: 17185, skipped: 0, pct: 93.12 },
+    statements: { total: 18453, covered: 17185, skipped: 0, pct: 93.12 },
+    functions: { total: 602, covered: 560, skipped: 0, pct: 93.02 },
+    branches: { total: 3227, covered: 2859, skipped: 0, pct: 88.59 },
+  },
+};
+
+/**
+ * 造夹具:整棵 coverage/ + 基线都落在系统临时目录;再由 mutate 打上待判形态。
+ * @param {(dir: string) => void} mutate 注入漂移(抛异常时本函数自己清理后重抛)
+ * @returns {string} 夹具根
+ */
+function createFixture(mutate) {
+  const dir = mkdtempSync(join(tmpdir(), 'm2w-coverage-zero-selftest-'));
+  try {
+    mkdirSync(join(dir, ...BASELINE_RELATIVE.split('/').slice(0, -1)), { recursive: true });
+    mkdirSync(join(dir, ...SUMMARY_RELATIVE.split('/').slice(0, -1)), { recursive: true });
+    writeFileSync(join(dir, ...BASELINE_RELATIVE.split('/')), `${JSON.stringify(FIXTURE_BASELINE, null, 2)}\n`, 'utf8');
+    writeFileIn(dir, SUMMARY_RELATIVE, { ...FIXTURE_TOTAL });
+    mutate(dir);
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
+  return dir;
+}
+
+/**
+ * 写夹具内的文件(JSON 自动序列化)。
+ * @param {string} dir 夹具根
+ * @param {string} relative 仓库相对 POSIX 路径
+ * @param {unknown} content 字符串或可 JSON 序列化的值
+ * @returns {void}
+ */
+function writeFileIn(dir, relative, content) {
+  const target = join(dir, ...relative.split('/'));
+  mkdirSync(join(target, '..'), { recursive: true });
+  writeFileSync(target, typeof content === 'string' ? content : `${JSON.stringify(content, null, 2)}\n`, 'utf8');
+}
+
+/** 「已登记豁免的 0% 文件」:两条豁免各一条,外加一条已覆盖文件 —— 判红时不该红 */
+function writeConsistentSummary(dir) {
+  writeFileIn(dir, SUMMARY_RELATIVE, {
+    ...summaryEntry(dir, 'src/core/empty.ts', { statements: [0, 186], functions: [0, 1], branches: [0, 0], lines: [0, 186] }),
+    ...summaryEntry(dir, 'src/main/entry.ts', { statements: [0, 83], functions: [0, 6], branches: [0, 12], lines: [0, 83] }),
+    ...summaryEntry(dir, 'src/core/math.ts', { statements: [40, 42], functions: [6, 6], branches: [9, 10], lines: [40, 42] }),
+    ...FIXTURE_TOTAL,
+  });
+}
+
+// 每条负向夹具须命中一个真实的静默放宽形态,而非人造噪声。
+const CASES = [
+  {
+    name: '夹具基线一致(0% 文件全部已登记豁免)→ 通过',
+    expect: null,
+    create: () => createFixture(writeConsistentSummary),
+  },
+  {
+    // 本门禁存在的全部理由:清单外的 0% 文件被全局百分比摊薄后无声无息。
+    name: '清单外新增 0% 死代码 → 判红并点名该文件与 covered/total',
+    expect: /0% 覆盖文件未登记豁免:src\/core\/new-dead\.ts\(statements 0\/12, functions 0\/3\)/,
+    create: () =>
+      createFixture((dir) => {
+        writeConsistentSummary(dir);
+        const merged = JSON.parse(readSummaryIn(dir));
+        writeFileIn(dir, SUMMARY_RELATIVE, {
+          ...merged,
+          ...summaryEntry(dir, 'src/core/new-dead.ts', { statements: [0, 12], functions: [0, 3], branches: [0, 0], lines: [0, 12] }),
+        });
+      }),
+  },
+  {
+    // 反向锚点:若 0% 判定只看 statements,「语句有覆盖但函数一个没跑到」这类文件会被放过
+    name: '语句有覆盖但函数全未覆盖 → 仍判零覆盖并判红(两个方向都要算)',
+    expect: /0% 覆盖文件未登记豁免:src\/core\/cold-fns\.ts\(statements 5\/5, functions 0\/2\)/,
+    create: () =>
+      createFixture((dir) => {
+        writeConsistentSummary(dir);
+        const merged = JSON.parse(readSummaryIn(dir));
+        writeFileIn(dir, SUMMARY_RELATIVE, {
+          ...merged,
+          ...summaryEntry(dir, 'src/core/cold-fns.ts', { statements: [5, 5], functions: [0, 2], branches: [0, 0], lines: [5, 5] }),
+        });
+      }),
+  },
+  {
+    // 反向锚点:0/0 的纯类型模块在 c8 口径下是「无可执行语句」,不是「零覆盖」。
+    // 若判据写成 `covered === 0` 而漏掉 `total > 0`,每个空模块都会被当成待补测试的死代码。
+    name: '0/0 文件(空模块)不计入零覆盖集合 → 通过',
+    expect: null,
+    create: () =>
+      createFixture((dir) => {
+        writeConsistentSummary(dir);
+        const merged = JSON.parse(readSummaryIn(dir));
+        writeFileIn(dir, SUMMARY_RELATIVE, {
+          ...merged,
+          ...summaryEntry(dir, 'src/core/types-only.ts', { statements: [0, 0], functions: [0, 0], branches: [0, 0], lines: [0, 0] }),
+        });
+      }),
+  },
+  {
+    // 豁免失效方向:文件其实已被覆盖却仍留在清单里 = 永久盲区(清单成了免检通道)
+    name: '豁免条目本次已被覆盖却仍留在清单里 → 判红(豁免失效,清单不得变成免检通道)',
+    expect: /豁免条目 src\/core\/empty\.ts 本次已被覆盖却仍留在清单里/,
+    create: () =>
+      createFixture((dir) => {
+        writeConsistentSummary(dir);
+        const merged = JSON.parse(readSummaryIn(dir));
+        // 同一条豁免的 0% 记录改成「已覆盖」:正向不再报未登记,反向必须报失效
+        writeFileIn(dir, SUMMARY_RELATIVE, {
+          ...merged,
+          ...summaryEntry(dir, 'src/core/empty.ts', { statements: [186, 186], functions: [1, 1], branches: [0, 0], lines: [186, 186] }),
+        });
+      }),
+  },
+  {
+    // 本门禁的前提:必须紧跟 test:coverage。数据源不在 ⇒ 判红并说清为什么(而不是当成「零个 0% 文件」)
+    name: '未紧跟 test:coverage(缺 coverage-summary.json)→ 判红并点名数据源与前提',
+    expect: /未找到 coverage\/coverage-summary\.json\(本检查必须紧跟 test:coverage 执行/,
+    create: () => {
+      const made = createFixture(writeConsistentSummary);
+      rmSync(join(made, ...SUMMARY_RELATIVE.split('/')));
+      // 目录仍在、文件不在 —— 与「整个 coverage/ 都没生成」区分开
+      mkdirSync(join(made, ...SUMMARY_RELATIVE.split('/').slice(0, -1)), { recursive: true });
+      return made;
+    },
+  },
+  {
+    name: 'coverage-summary.json 不是合法 JSON → 判红并点名解析失败原因',
+    expect: /coverage\/coverage-summary\.json 不是合法 JSON/,
+    create: () => createFixture((dir) => writeFileIn(dir, SUMMARY_RELATIVE, '{ not json')),
+  },
+  {
+    name: '基线文件不存在 → 判红(清单是单一登记处,缺它等于无人看守)',
+    expect: /基线文件不存在:scripts\/gate-probes\/coverage-baseline\.json/,
+    create: () => {
+      const made = createFixture(writeConsistentSummary);
+      rmSync(join(made, ...BASELINE_RELATIVE.split('/')));
+      return made;
+    },
+  },
+  {
+    // 面边界:静态面才有 dist/ 与 package.json 参数向量的判定义务;动态面跑在没有 dist 的
+    // 夹具里也必须绿。若这条红,说明 `--zero` 被改成顺带跑静态面(或读 dist),两个面的职责混了。
+    name: '夹具里没有 dist/ → 动态面不判红(--zero 不越界跑静态面)',
+    expect: null,
+    create: () => createFixture(writeConsistentSummary),
+  },
+];
+
+/** 读回夹具内刚写下的 summary 原文(合并新条目时复用已写好的那批) */
+function readSummaryIn(dir) {
+  return readFileSync(join(dir, ...SUMMARY_RELATIVE.split('/')), 'utf8');
+}
+
+const failures = [];
+for (const testCase of CASES) {
+  /** @type {string | undefined} */
+  let dir;
+  try {
+    dir = testCase.create();
+    const result = auditZeroFiles(dir);
+    const joined = result.problems.join('\n');
+    if (testCase.expect === null) {
+      if (result.problems.length === 0) {
+        console.log(
+          `[ok] coverage-zero-selftest:${testCase.name}(0% 集合 ${result.zeroFiles.length} 个,判定面通过)`,
+        );
+      } else {
+        failures.push(`${testCase.name}:期望通过,实际 ${result.problems.length} 项问题\n${joined}`);
+      }
+      continue;
+    }
+    if (testCase.expect.test(joined)) {
+      console.log(`[ok] coverage-zero-selftest:${testCase.name}(漂移被拦截,${result.problems.length} 项问题)`);
+    } else {
+      failures.push(`${testCase.name}:期望诊断匹配 ${testCase.expect},实际\n${joined || '(无任何诊断 —— 门禁在此形态上恒绿了)'}`);
+    }
+  } catch (error) {
+    failures.push(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/* ---------- 真实仓库:CLI 适配层(参数路由 → 动态面 → 退出码 → 诊断行) ---------- */
+
+/**
+ * 把真门禁当子进程跑一遍。
+ *
+ * 期望值按数据源在不在分成两支,**两支都是确定性断言,没有「跳过」**:
+ * 本门禁的契约就是「必须紧跟 test:coverage 执行」—— 数据在则判绿;数据不在则按契约判红
+ * 并点名数据源缺失(干净检出里 coverage/ 是 gitignore 的生成物,此时正是后一种)。
+ */
+function checkRealRepo() {
+  const result = spawnSync(process.execPath, [gatePath, '--zero'], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  const output = `${result.stdout}${result.stderr}`;
+  if (existsSync(join(projectRoot, ...SUMMARY_RELATIVE.split('/')))) {
+    const problems = [];
+    if (result.status !== 0) problems.push(`期望 exit 0,实际 ${String(result.status)}`);
+    if (!/动态面:0% 文件 \d+ 个/.test(output)) problems.push('缺动态面结论行(0% 文件计数与实测值)');
+    if (!/覆盖率门禁基线自检通过/.test(output)) problems.push('缺通过结论行');
+    if (problems.length > 0) return `真实仓库当前未漂移:${problems.join(';')}\n--- 输出 ---\n${output}`;
+  } else {
+    const problems = [];
+    if (result.status === 0) problems.push(`数据源缺失却判绿(期望非 0),实际 ${String(result.status)}`);
+    if (!/未找到 coverage\/coverage-summary\.json/.test(output)) problems.push('未点名缺失的数据源');
+    if (problems.length > 0) return `真实仓库无覆盖率数据:${problems.join(';')}\n--- 输出 ---\n${output}`;
+  }
+  return null;
+}
+
+const realProblem = checkRealRepo();
+if (realProblem === null) {
+  const dataState = existsSync(join(projectRoot, ...SUMMARY_RELATIVE.split('/'))) ? '有本次覆盖率数据' : '无(按契约判红并点名数据源)';
+  console.log(`[ok] coverage-zero-selftest:真实仓库 CLI 适配层(${dataState})断言通过`);
+} else {
+  failures.push(realProblem);
+}
+
+if (failures.length > 0) {
+  for (const failure of failures) console.error(`[coverage-zero-selftest:fail] ${failure}`);
+  console.error(`[coverage-zero-selftest:fail] 覆盖率零覆盖门禁回归守护失败,共 ${failures.length}/${CASES.length + 1} 条`);
+  process.exit(1);
+}
+console.log(`[ok] coverage-zero-selftest:${CASES.length + 1} 条夹具全部符合预期(一致判绿 / 静默放宽被拦截且点名)`);
