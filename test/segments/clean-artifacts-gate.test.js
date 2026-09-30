@@ -28,6 +28,11 @@
  *    本段用「只改 TARGET_DIRS 一行」的沙盒夹具把目标重定向到恶意值来触达它们,
  *    并用「重定向到普通目录应真删」的正向锚点证明夹具本身是忠实通路(否则负向
  *    用例可能只是「脚本根本跑不起来」);改写后除该常量行外与生产脚本逐字节一致。
+ *    ⚠ 受保护段是**从实际顶层派生**的(ADR-037,scripts/repo-manifest.mjs),故沙盒的顶层
+ *    内容决定保护集:本段 seedArtifacts 种下的源码 / 文档 / 依赖三棵树都进保护集,而
+ *    「重定向到普通目录」那个正向锚点用的目录是裸目录(无代码 / 无文档 / 无声明指向),
+ *    按派生口径不进保护集 —— 这条边界由 scripts/check-ci-contract.selftest.mjs 的顶层派生
+ *    锚点钉住,别在本段私自改口径。
  * 6. 删除失败:占用目标目录(Windows CWD 占用)复现「删不掉」错误码族
  *    (EPERM/EBUSY/EACCES 随争用时机不同),断言非零退出 + 可操作诊断
  *    (不带调用栈)、码位属占用族、目标仍在、释放占用后重试成功。POSIX 允许删除
@@ -53,8 +58,16 @@ const SCRIPT_SHA256 = createHash("sha256").update(SCRIPT_SOURCE).digest("hex");
 const TARGET_DIRS_RE = /const TARGET_DIRS = Object\.freeze\(\{[^}]*\}\);/;
 const SANDBOX_PREFIX = "m2w-clean-gate-";
 const USAGE_HINT = "用法: node scripts/clean-artifacts.mjs";
-/** 沙盒 package.json:与脚本对账逻辑一致的最小合法形状 */
+/**
+ * 沙盒 package.json:与脚本对账逻辑一致的最小合法形状,且**形状与生产同构** ——
+ * 顶层派生的包清单识别靠「JSON 里同时有 name 与 scripts」这两个键(新增声明文件零登记的
+ * 代价就是认键而非认文件名),少了它们派生认不出这是包清单,于是「打包白名单声明的产物目录」
+ * 那一半丢失,连 dist 自己的清理目标都会被保护集拒掉。
+ */
 const SANDBOX_PACKAGE = {
+  name: "sandbox",
+  version: "0.0.0",
+  scripts: {},
   type: "module",
   build: { files: ["dist/**"], directories: { output: "release" } },
 };
@@ -101,10 +114,12 @@ function createSandbox() {
   SANDBOXES.add(root);
   fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
   fs.writeFileSync(path.join(root, "scripts", "clean-artifacts.mjs"), SCRIPT_SOURCE, "utf8");
-  // 被测脚本从 shared/paths.js 取项目根(ADR-040),沙盒内必须带一份。注意这里是
-  // writeFileSync 而非 copyFileSync —— 副本闭包门禁的复制点扫描器**看不见**本沙盒,
-  // 所以「忘了带 shared/」不会被 relative-outside-copy-set 抓到,只能靠本段运行时红兜。
+  // 被测脚本从 shared/paths.js 取项目根(ADR-040),并从 scripts/repo-manifest.mjs 派生顶层删除
+  // 保护区(ADR-037),沙盒内必须各带一份。注意这里是 writeFileSync 而非 copyFileSync ——
+  // 副本闭包门禁的复制点扫描器**看不见**本沙盒,所以「忘了带」不会被 relative-outside-copy-set
+  // 抓到,只能靠本段运行时红兜。
   writeFileIn(root, "shared/paths.js", fs.readFileSync(path.join(ROOT, "shared", "paths.js"), "utf8"));
+  writeFileIn(root, "scripts/repo-manifest.mjs", fs.readFileSync(path.join(ROOT, "scripts", "repo-manifest.mjs"), "utf8"));
   writePackageJson(root, SANDBOX_PACKAGE);
   return root;
 }

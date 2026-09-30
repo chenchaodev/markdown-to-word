@@ -13,8 +13,8 @@
  *   - 目标目录写死在此,并与 package.json 的打包配置对账(build.files 是否覆盖 dist、
  *     build.directories.output 是否为 release);配置迁移后不一致即拒绝,防止拿着
  *     过期常量删错树;
- *   - 目标必须是项目根内的相对子目录,任一路径段命中保护区(src/test/docs/node_modules/…)
- *     或含 `..` 即拒绝(例如 main 被误改成 src/ 时不会删到源码);
+ *   - 目标必须是项目根内的相对子目录,任一路径段命中保护区(保护区从实际顶层派生,见
+ *     protectedPathSegments)或含 `..` 即拒绝(例如 main 被误改成 src/ 时不会删到源码);
  *   - 目标不存在 → 幂等跳过;目标是符号链接/联接点、非目录,或 realpath 越出项目根
  *     → 拒绝删除并说明原因;
  *   - 删除失败(Windows 常见 EBUSY/EPERM:应用或预览窗口未退出、IDE 索引、杀毒扫描)
@@ -32,6 +32,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync,
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT } from '../shared/paths.js';
+import { topLevel } from './repo-manifest.mjs';
 
 const PROJECT_ROOT = ROOT;
 
@@ -43,19 +44,28 @@ const PROJECT_ROOT = ROOT;
 const TARGET_DIRS = Object.freeze({ dist: 'dist', release: 'release' });
 const BUILD_INFO_RE = /^[A-Za-z0-9._-]+\.tsbuildinfo$/;
 
-/** 受保护路径段:源码/测试/脚本/文档/依赖/工具链,绝不可能是构建输出,命中即拒绝删除 */
-const PROTECTED_SEGMENTS = new Set([
-  'src',
-  'test',
-  'tests',
-  'scripts',
-  'docs',
-  'node_modules',
-  '.git',
-  '.github',
-  'output',
-  'public',
-]);
+/**
+ * 受保护路径段:**从实际顶层派生**(scripts/repo-manifest.mjs 的
+ * manifest.cleanProtectedSegments,ADR-037),此前是手写枚举。
+ *
+ * 派生口径:顶层条目里「被声明指向的树 / 有代码 / 有文档 / 顶层声明文件 / 隐藏项」全量入保护集,
+ * 减去「打包配置声明为产物的那几个目录」。于是新增一个源码树 / 门禁树 / 文档树时保护集
+ * 自动跟进,不必靠人记得往这张表里加一行。
+ *
+ * 边界(必须说清,否则会把它当唯一的删除防线):派生集**不含**「既无代码也无文档、无声明指向」的
+ * 裸目录(素材目录、临时壳)。这是有意的 —— 门禁段 clean-artifacts-gate 的守卫可达性夹具要
+ * 造一个普通顶层目录并证明它「可删」,若裸目录一律进保护集,那条正向锚点会被自己的派生判死。
+ * 真正保证「删不掉」的是本文件另外两道**封闭**闸门:`--target` 只接受 dist/release/all 三个
+ * 关键字,且目标取自冻结的 TARGET_DIRS、不来自调用方;再由 assertMatchesBuildConfig 把它钉死在
+ * package.json 上。两者正交,改派生口径前先读这两处。
+ */
+let protectedSegments = null;
+
+/** 派生一次并缓存(删除路径守卫每次调用都要问,不该每次重扫顶层) */
+function protectedPathSegments() {
+  protectedSegments ??= new Set(topLevel(PROJECT_ROOT).cleanProtectedSegments);
+  return protectedSegments;
+}
 
 const USAGE = `用法: node scripts/clean-artifacts.mjs --target <dist|release|all> [--dry-run]
   --target dist     清理 dist/(tsc 输出目录,package.json build.files 收的就是它)
@@ -132,7 +142,7 @@ function resolveTarget(label, relative) {
   for (const segment of posix.split('/')) {
     if (segment === '' || segment === '.') throw new Error(`${label} 目标含空路径段:${relative}`);
     if (segment === '..') throw new Error(`${label} 目标含上跳段(..),拒绝:${relative}`);
-    if (PROTECTED_SEGMENTS.has(segment)) {
+    if (protectedPathSegments().has(segment)) {
       throw new Error(`${label} 目标落在受保护目录(源码/测试/文档/依赖),拒绝删除:${relative}`);
     }
   }

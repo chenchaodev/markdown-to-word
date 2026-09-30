@@ -20,6 +20,9 @@
 //     清单(基线)→ electron-builder → 产物核对(dist 清单校验 / app.asar 核对 /
 //     发布目标核对),即「从干净目录打出,再核对刚打出的那份包」;
 //   - 清理目标白名单:clean:* 只能指向 dist/release/all(删除不可逆,不许扩散到其它目录);
+//   - 打包白名单与实际顶层一致(build.files 引用的顶层面必须真实存在、编译输出树必须被正向
+//     模式覆盖、正向模式不得覆盖非交付面)—— 此前只断言了 asar 产出**之后**的顶层三项,
+//     白名单本身没人核对,「显式白名单」这个正确选择只做了一半;
 //   - verify:release 复用 verify:ci 链并只追加 dist(发布不维护第二份缩水清单,
 //     故几何门禁与产物核对无法被 tag 绕过)。
 // 该脚本在 verify:ci 首步与两条 workflow 的依赖安装之前各跑一次:
@@ -31,6 +34,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../shared/paths.js';
+import { auditPackWhitelist, topLevel } from './repo-manifest.mjs';
 
 const projectRoot = ROOT;
 
@@ -408,6 +412,43 @@ for (const [owner, text] of referencingTexts) {
   }
 }
 
+// ---- 打包白名单与实际顶层一致(补的是「白名单本身没人核对」这一格)----
+// 事实由 scripts/repo-manifest.mjs 从实际顶层派生(它不知道本门禁的存在),判据在此:
+//   1. 白名单必须显式存在 —— 不给 files 时 electron-builder 走自己的默认集(几乎打包整个
+//      工作树),那等于「显式白名单」这个选择被悄悄撤回;
+//   2. **正向**模式引用的顶层必须真实存在(目录改名/迁移后忘了跟白名单,打进包的是漏的);
+//      取反模式不要求目标存在 —— 排除模式没有对象可排除时判红是噪声,而干净检出里安装树
+//      本来就不存在(CI 的 fail-fast 那一步甚至跑在依赖安装之前),那条判据会变成恒红;
+//   3. 编译输出树必须被正向模式覆盖,否则打进包的是空的;
+//   4. 反向:正向模式只许覆盖交付面(编译输出树 + 包清单),覆盖到源码树 / 验收树 / 机制树 /
+//      文档树就是误打包(夹具、脚本、内部文档会随安装包发出去)。
+const manifest = topLevel(projectRoot);
+const packFiles = pkg.build?.files;
+if (!Array.isArray(packFiles)) {
+  fail(`package.json build.files 必须是显式白名单数组(实际 ${JSON.stringify(packFiles ?? null)});缺它会让打包退回 electron-builder 默认集`);
+} else {
+  const pack = auditPackWhitelist(manifest, packFiles);
+  for (const reference of pack.references) {
+    if (reference.negated || reference.exists) continue;
+    fail(`build.files 引用的顶层不存在:${reference.segment}(模式 ${reference.pattern});目录改名/迁移后须同步白名单`);
+  }
+  if (!pack.buildOutputCovered) {
+    fail(
+      `build.files 未覆盖编译输出树 ${String(pack.buildOutput)}(白名单 ${JSON.stringify(packFiles)}) —— 打包产物将不含代码`,
+    );
+  }
+  // 交付面 = 编译输出树 + 包清单。取不到包清单名时交付面只有编译输出树,此时任何正向模式
+  // 都判红(拿不到单源就说明配置已经不成形,不该静默放行)。
+  const delivery = new Set([...manifest.buildOutputNames, ...(manifest.manifestName === null ? [] : [manifest.manifestName])]);
+  for (const reference of pack.references) {
+    if (reference.negated || delivery.has(reference.segment)) continue;
+    fail(
+      `build.files 的正向模式 ${reference.pattern} 覆盖了非交付面 ${reference.segment}(类别 ${String(reference.category)}) —— ` +
+        `交付面只许编译输出树与包清单,误打包会把源码/夹具/内部文档随安装包发出去`,
+    );
+  }
+}
+
 // ---- 输出 ----
 
 if (problems.length > 0) {
@@ -418,5 +459,6 @@ if (problems.length > 0) {
 console.log(
   `[ok] 工程契约自检通过:Node 地板 ${floorStr}(engines/lockfile/CI/Release 口径一致,当前 ${process.versions.node});` +
     `verify:ci 链 ${topLevelScriptNames('verify:ci').join(' -> ')};verify:release = verify:ci + dist;` +
-    `dist 链 先清 dist/release 再构建、清单基线先于打包、产物核对后于打包;清理目标限定 dist/release;被引用脚本均存在`,
+    `dist 链 先清 dist/release 再构建、清单基线先于打包、产物核对后于打包;清理目标限定 dist/release;被引用脚本均存在;` +
+    `打包白名单只覆盖交付面(编译输出树 + 包清单)且引用的顶层面均存在`,
 );

@@ -15,11 +15,20 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ROOT } from '../shared/paths.js';
+import { scanTopLevel, topLevel } from './repo-manifest.mjs';
 
 const projectRoot = ROOT;
 const checkerPath = join(projectRoot, 'scripts', 'check-ci-contract.mjs');
+/** 被测门禁自身的仓库相对路径(复制点要排除它:它由 copyFileSync 逐字节落盘,不是占位文件) */
+const CHECKER_RELATIVE = join('scripts', 'check-ci-contract.mjs');
 
 const FLOOR = '22.13.0';
+
+/** 夹具内的编译配置:声明输出目录(打包白名单对账要靠它认出「交付面」)。与真实仓库同构。 */
+const FIXTURE_TSCONFIG = {
+  compilerOptions: { outDir: 'dist', target: 'ES2022' },
+  include: ['test'],
+};
 
 /** 夹具基线:与真实仓库同构的门禁链(verify:ci 全步含几何门禁 + verify:release 追加 dist) */
 const FIXTURE_SCRIPTS = {
@@ -53,22 +62,28 @@ const FIXTURE_SCRIPTS = {
   'verify:release': 'npm run verify:ci && npm run dist',
 };
 
-/** 夹具内被 script 引用的占位文件(内容无关,只需存在) */
-const FIXTURE_PLACEHOLDERS = [
-  'test/acceptance.mjs',
-  'test/tools/gen-fixtures.mjs',
-  'scripts/check-build-fresh.mjs',
-  'scripts/check-geometry.mjs',
-  'scripts/check-dist-manifest.mjs',
-  'scripts/check-asar-manifest.mjs',
-  'scripts/check-release-artifacts.mjs',
-  'scripts/check-import-boundary.mjs',
-  'scripts/check-pinned-actions.mjs',
-  'scripts/check-docs.mjs',
-  'scripts/gen-archive-index.mjs',
-  'scripts/clean-artifacts.mjs',
-  'scripts/print-env-fingerprint.mjs',
-];
+/**
+ * 夹具内被 script / workflow 引用的占位文件:**从 FIXTURE_SCRIPTS 的命令正文派生**,不再手写。
+ *
+ * 派生口径与门禁自身的「被引用脚本文件存在性」那条断言同一条规则(命令正文里的代码文件路径),
+ * 因此「哪些文件必须存在」这件事只登记一次:往 FIXTURE_SCRIPTS 加一条引用到
+ * `scripts/xxx.mjs` 的命令,占位文件自动跟上,漏登记会让门禁因 `引用的文件不存在` 判红 ——
+ * 而那正是夹具想测的形态。
+ * @param {Record<string, string>} scripts 夹具的 npm scripts
+ * @returns {string[]} 仓库相对 POSIX 路径(已排序)
+ */
+export function deriveFixturePlaceholders(scripts) {
+  const tokenRe = /(?:^|\s)([\w.\\/'-]+\.(?:mjs|cjs|js|cts))(?=\s|$)/g;
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const body of Object.values(scripts)) {
+    for (const m of body.matchAll(tokenRe)) {
+      const rel = m[1].replaceAll('\\', '/');
+      if (rel !== CHECKER_RELATIVE) found.add(rel);
+    }
+  }
+  return [...found].sort();
+}
 
 function writeFileIn(dir, relative, content) {
   const target = join(dir, relative);
@@ -76,10 +91,24 @@ function writeFileIn(dir, relative, content) {
   writeFileSync(target, content, 'utf8');
 }
 
+/** 在夹具内建一个目录(空目录也算「存在」:存在性断言看的是路径在不在) */
+function makeDirIn(dir, relative) {
+  mkdirSync(join(dir, relative), { recursive: true });
+}
+
 /** 造一份完整夹具,再由 mutate 打上漂移;返回夹具根目录 */
 function createFixture(mutate) {
   const dir = mkdtempSync(join(tmpdir(), 'm2w-contract-selftest-'));
-  const pkg = { name: 'fixture', version: '1.0.0', engines: { node: `>=${FLOOR}` }, scripts: { ...FIXTURE_SCRIPTS } };
+  const pkg = {
+    name: 'fixture',
+    version: '1.0.0',
+    engines: { node: `>=${FLOOR}` },
+    scripts: { ...FIXTURE_SCRIPTS },
+    // 打包白名单:与真实仓库同构(显式白名单 + 交付面只有编译输出树与包清单)。少了它,
+    // 「白名单引用的顶层面是否真实存在」那条断言在夹具里恒真空过 —— 恒过的断言等于没有。
+    // 取反项刻意指向一个不存在的顶层:排除模式对「没有对象」不判红(见门禁里的判据 2)。
+    build: { files: ['dist/**', 'package.json', '!deps-tree/**/*.map'], directories: { output: 'release' } },
+  };
   const lock = {
     name: 'fixture',
     version: '1.0.0',
@@ -108,12 +137,21 @@ function createFixture(mutate) {
   writeFileIn(dir, 'package-lock.json', `${JSON.stringify(lock, null, 2)}\n`);
   writeFileIn(dir, '.github/workflows/ci.yml', workflow('verify:ci'));
   writeFileIn(dir, '.github/workflows/release.yml', workflow('verify:release'));
-  for (const placeholder of FIXTURE_PLACEHOLDERS) writeFileIn(dir, placeholder, '// fixture\n');
+  writeFileIn(dir, 'tsconfig.json', `${JSON.stringify(FIXTURE_TSCONFIG, null, 2)}\n`);
+  // 白名单正向引用的交付面在夹具里必须真实存在,否则「引用了不存在的顶层」那条断言恒红、
+  // 基线用例反而变红。安装树只出现在取反模式里,故不必存在(它是随构建安装的)。
+  makeDirIn(dir, 'dist');
+  makeDirIn(dir, 'release');
+  for (const placeholder of deriveFixturePlaceholders(FIXTURE_SCRIPTS)) {
+    writeFileIn(dir, placeholder, '// fixture\n');
+  }
   copyFileSync(checkerPath, join(dir, 'scripts', 'check-ci-contract.mjs'));
-  // 被测门禁从 shared/paths.js 取项目根(ADR-040);夹具内不带一份的话,夹具会因
-  // ERR_MODULE_NOT_FOUND 失败,而不是因被注入的漂移失败(那会让负向夹具假通过)。
+  // 被测门禁从 shared/paths.js 取项目根(ADR-040),并从 repo-manifest.mjs 派生顶层(ADR-037);
+  // 夹具内不带这两份的话,夹具会因 ERR_MODULE_NOT_FOUND 失败,而不是因被注入的漂移失败
+  // (那会让负向夹具假通过)。
   mkdirSync(join(dir, 'shared'), { recursive: true });
   copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
+  copyFileSync(join(projectRoot, 'scripts', 'repo-manifest.mjs'), join(dir, 'scripts', 'repo-manifest.mjs'));
 
   // mutate 既可改内存中的 manifest(经下方回写落盘),也可直接改 workflow 文件
   mutate({ dir, pkg, lock });
@@ -386,6 +424,48 @@ const CASES = [
     mutate: ({ dir }) => setWorkflowLanes(dir, FLOOR, ['22.13.0+build.5']),
     expect: /是不受支持的写法/,
   },
+  // ---- 打包白名单与实际顶层一致(此前只断言 asar 产出后的顶层三项,白名单本身无人核对)----
+  {
+    name: '白名单引用了不存在的顶层(目录迁移后忘了跟白名单)',
+    mutate: ({ pkg }) => {
+      pkg.build.files = ['dist/**', 'package.json', 'gone-tree/**'];
+    },
+    expect: /build\.files 引用的顶层不存在:gone-tree/,
+  },
+  {
+    name: '白名单正向模式覆盖了源码树(源码/夹具随安装包发出去)',
+    mutate: ({ pkg }) => {
+      pkg.build.files = ['dist/**', 'package.json', 'test/**'];
+    },
+    expect: /覆盖了非交付面 test\(类别 source\)/,
+  },
+  {
+    name: '白名单正向模式覆盖了新增的顶层目录(派生判据须点名它,而不是靠人记得加断言)',
+    mutate: ({ dir, pkg }) => {
+      writeFileIn(dir, 'extra-tree/tool.mjs', 'export const t = 1;\n');
+      pkg.build.files = ['dist/**', 'package.json', 'extra-tree/**'];
+    },
+    expect: /覆盖了非交付面 extra-tree/,
+  },
+  {
+    name: '白名单漏掉编译输出树(包是空的)',
+    mutate: ({ pkg }) => {
+      pkg.build.files = ['package.json'];
+    },
+    expect: /未覆盖编译输出树 dist/,
+  },
+  {
+    name: 'build.files 缺失(打包退回 electron-builder 默认集,等于撤回显式白名单)',
+    mutate: ({ pkg }) => {
+      delete pkg.build;
+    },
+    expect: /build\.files 必须是显式白名单数组/,
+  },
+  {
+    name: '取反模式指向不存在的顶层 → 通过(排除模式没有对象时不判红;干净检出里安装树本来就不存在)',
+    mutate: () => {},
+    expect: null,
+  },
 ];
 
 const failures = [];
@@ -413,9 +493,183 @@ for (const testCase of CASES) {
   }
 }
 
+/* ================= 顶层派生的双向锚点(ADR-037 后果:派生层本身必须有自检) =================
+ *
+ * 上面的夹具证明「派生结果**用到**的地方真会判红」;这一段证明「派生这一层自己不会恒绿」。三条:
+ *   ① 改名不改类别 —— 造一棵**全部用任意名**的顶层目录树,断言类别仍落在同一档。若判据里混进
+ *      任何具体目录名(哪怕只是 if (name === '…')),这一条必红。这比「源码里不许出现目录名」的
+ *      文本扫描更硬:它直接证明名字不参与判定。
+ *   ② 新增顶层目录自动进保护集与镜像集 —— 「零处需要手改」的可执行版本:断言点名那个新目录。
+ *      同时钉住一处**有意的边界**(既无代码也无文档、无声明指向的裸目录不进保护集),否则将来
+ *      有人「顺手收紧」时不会知道 clean-artifacts-gate 的正向锚点依赖这条边界。
+ *   ③ 真实仓库上只断言关系(不写具体名字 —— 写名字就是新造一处枚举)。
+ */
+
+const manifestFailures = [];
+
+/** 断言辅助(失败项收集口径与上面的夹具一致) */
+function checkAnchor(condition, message) {
+  if (!condition) manifestFailures.push(message);
+}
+
+/**
+ * 任意名的合成顶层树:顶层名与本仓真实名字**刻意不同**,故「类别由内容决定」这件事一旦被破坏,
+ * 下面的断言会立刻红。
+ */
+const SYNTHETIC_TOP_LEVEL = {
+  // 声明面:包清单(靠 name+scripts 认出)、锁文件(靠 lockfileVersion)、两份编译配置、忽略声明
+  'pkg-manifest.json': `${JSON.stringify({ name: 'synthetic', version: '1.0.0', scripts: { s: 'node gamma/gate.mjs' }, build: { files: ['omega/**', 'pkg-manifest.json'], directories: { output: 'zeta' } } }, null, 2)}\n`,
+  'lock-a.json': `${JSON.stringify({ name: 'synthetic', version: '1.0.0', lockfileVersion: 3 }, null, 2)}\n`,
+  'tsconfig.json': `${JSON.stringify({ compilerOptions: { outDir: 'omega', rootDir: 'alpha' }, include: ['alpha'] }, null, 2)}\n`,
+  'tsconfig.aux.json': `${JSON.stringify({ extends: './tsconfig.json', compilerOptions: { noEmit: true, rootDir: '.' }, include: ['beta'] }, null, 2)}\n`,
+  '.gitignore': 'theta/\nzeta/\niota/\n',
+  // 内容面:每棵树一个不同的形态
+  'alpha/impl.ts': 'export const a = 1;\n',
+  'omega/impl.js': 'export const w = 1;\n',
+  'beta/case.mjs': 'export const b = 1;\n',
+  'gamma/gate.mjs': 'export const g = 1;\n',
+  'delta/mech.js': 'export const d = 1;\n',
+  'epsilon/REQ.md': '# req\n',
+  'epsilon/PLAN.md': '# plan\n',
+  'epsilon/adr/one.md': '# adr\n',
+  'zeta/Setup.exe': 'stub\n',
+  'zeta/latest.yml': 'a: 1\n',
+  'iota/report.json': '{}\n',
+  'theta/.package-lock.json': '{ "lockfileVersion": 3 }\n',
+  'theta/pkg-a/package.json': '{ "name": "pkg-a" }\n',
+  'theta/pkg-a/index.js': 'module.exports = 1;\n',
+  'eta/tool.mjs': 'export const e = 1;\n',
+  'kappa/note.txt': 'note\n',
+  '.vcsdir/state.yml': 'a: 1\n',
+};
+
+/** 合成树里每个顶层名 → 期望类别(期望值本身不含任何本仓真实目录名) */
+const SYNTHETIC_EXPECTED = {
+  '.gitignore': 'vcs',
+  '.vcsdir': 'vcs',
+  alpha: 'source',
+  beta: 'verify',
+  delta: 'shared',
+  eta: 'shared',
+  epsilon: 'doc',
+  gamma: 'verify',
+  iota: 'artifact',
+  kappa: 'other',
+  'lock-a.json': 'config',
+  'pkg-manifest.json': 'config',
+  theta: 'deps',
+  'tsconfig.aux.json': 'config',
+  'tsconfig.json': 'config',
+  omega: 'build',
+  zeta: 'artifact',
+};
+
+const syntheticRoot = mkdtempSync(join(tmpdir(), 'm2w-manifest-selftest-'));
+try {
+  for (const [relative, content] of Object.entries(SYNTHETIC_TOP_LEVEL)) {
+    writeFileIn(syntheticRoot, relative, content);
+  }
+  const synthetic = scanTopLevel(syntheticRoot);
+  const actual = synthetic.entries.map((entry) => `${entry.name}=${entry.category}`).join(',');
+  const expected = Object.keys(SYNTHETIC_EXPECTED)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => `${name}=${SYNTHETIC_EXPECTED[name]}`)
+    .join(',');
+  checkAnchor(
+    actual === expected,
+    `顶层分类派生失守「改名不改类别」:合成树(全部任意名)实际 ${actual},期望 ${expected}`,
+  );
+  console.log(
+    `[ok] contract-selftest:顶层分类派生(任意名合成树 ${synthetic.entries.length} 个顶层,类别与名字无关) 断言通过`,
+  );
+
+  // ② 新增顶层目录自动跟进(负向锚点的对象就叫 eta)
+  checkAnchor(
+    synthetic.mirrorPaths.includes('eta'),
+    `新增顶层目录 eta 未自动进镜像集(实际 ${synthetic.mirrorPaths.join(',')})—— 「零处手改」失效`,
+  );
+  checkAnchor(
+    synthetic.cleanProtectedSegments.includes('eta'),
+    `新增顶层目录 eta 未自动进删除保护区(实际 ${synthetic.cleanProtectedSegments.join(',')})`,
+  );
+  checkAnchor(
+    !synthetic.cleanProtectedSegments.includes('kappa') && !synthetic.mirrorPaths.includes('kappa'),
+    '裸目录 kappa(无代码/无文档/无声明)不该进保护集与镜像集 —— clean-artifacts-gate 的守卫可达性正向锚点依赖这条边界',
+  );
+  // 交付面与安装树:输出树必须整树镜像(测试 import 产物),锁文件不镜像但受保护
+  checkAnchor(synthetic.mirrorPaths.includes('omega'), '编译输出树 omega 应整树进镜像集(测试 import 的是产物)');
+  checkAnchor(
+    !synthetic.mirrorPaths.includes('lock-a.json') && synthetic.cleanProtectedSegments.includes('lock-a.json'),
+    '锁文件不该进镜像集(依赖是联接挂入的),但应在删除保护区里',
+  );
+  checkAnchor(
+    !synthetic.cleanProtectedSegments.includes('omega') && !synthetic.cleanProtectedSegments.includes('zeta'),
+    '声明为产物的目录(编译输出树 / 打包输出目录)不该出现在删除保护区里,否则清理脚本会拒绝自己的目标',
+  );
+  console.log('[ok] contract-selftest:新增顶层目录自动进镜像集与删除保护区(含「裸目录不进」这条有意边界) 断言通过');
+} finally {
+  rmSync(syntheticRoot, { recursive: true, force: true });
+}
+
+// 占位文件清单的派生:自身也必须有锚点(否则「派生恒为空」会静默放过)
+const derivedPlaceholders = deriveFixturePlaceholders(FIXTURE_SCRIPTS);
+checkAnchor(derivedPlaceholders.length > 0, '占位文件派生为空(抽取规则失效,夹具会因「引用的文件不存在」误红)');
+checkAnchor(
+  derivedPlaceholders.includes('scripts/clean-artifacts.mjs') && !derivedPlaceholders.includes(CHECKER_RELATIVE),
+  `占位文件派生失守:应含一条门禁脚本、不含被逐字节复制的被测门禁本身(实际 ${derivedPlaceholders.join(',')})`,
+);
+const placeholderProbe = deriveFixturePlaceholders({
+  ...FIXTURE_SCRIPTS,
+  'check:probe': 'node scripts/extra-gate.mjs && echo done',
+});
+checkAnchor(
+  placeholderProbe.includes('scripts/extra-gate.mjs') && placeholderProbe.length === derivedPlaceholders.length + 1,
+  `占位文件派生失守:新增一条引用后应恰好多出一个占位(实际 ${placeholderProbe.join(',')})`,
+);
+console.log(
+  `[ok] contract-selftest:夹具占位文件从命令正文派生(${derivedPlaceholders.length} 个,新增引用自动跟上) 断言通过`,
+);
+
+// ③ 真实仓库:只断言关系,不写具体名字
+const real = topLevel(projectRoot);
+checkAnchor(new Set(real.mirrorPaths).size === real.mirrorPaths.length, '镜像集有重复项');
+checkAnchor(
+  real.mirrorPaths.every((name) => real.names.includes(name)),
+  `镜像集含不存在的顶层:${real.mirrorPaths.filter((name) => !real.names.includes(name)).join(',')}`,
+);
+checkAnchor(
+  real.protectedTreePaths.length >= real.mirrorPaths.length &&
+    real.mirrorPaths.every((name) => real.protectedTreePaths.includes(name)),
+  '指纹集应覆盖镜像集(沙盒带过去的每个面都要能看出「真实工作树被写过」)',
+);
+checkAnchor(
+  real.buildOutputNames.every((name) => real.mirrorPaths.includes(name)),
+  '编译输出树不在镜像集里 —— 沙盒内测试 import 的是产物,不带过去必然失败',
+);
+checkAnchor(
+  real.cleanProtectedSegments.every(
+    (name) => !real.buildOutputNames.includes(name) && !real.packOutputNames.includes(name),
+  ),
+  '删除保护区与「声明为产物的目录」相交(清理脚本会拒绝自己的目标)',
+);
+checkAnchor(real.manifestName !== null, '认不出包清单(声明识别的键失效)');
+checkAnchor(real.lockfileName !== null, '认不出锁文件(声明识别的键失效)');
+checkAnchor(
+  real.entries.every((entry) => entry.reason !== ''),
+  '有顶层条目没有判定依据(诊断会退化成「未知」)',
+);
+console.log(
+  `[ok] contract-selftest:真实仓库顶层派生的关系不变量(${real.entries.length} 个顶层,类别 ${[...new Set(real.entries.map((e) => e.category))].sort().join('/')}) 断言通过`,
+);
+
 if (failures.length > 0) {
   for (const failure of failures) console.error(`[contract-selftest:fail] ${failure}`);
-  console.error(`[contract-selftest:fail] 契约自检回归守护失败,共 ${failures.length}/${CASES.length} 条`);
+  console.error(`[contract-selftest:fail] 契约自检回归守护失败,共 ${failures.length}/${CASES.length} 条夹具`);
   process.exit(1);
 }
-console.log(`[ok] contract-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);
+if (manifestFailures.length > 0) {
+  for (const failure of manifestFailures) console.error(`[contract-selftest:fail] ${failure}`);
+  console.error(`[contract-selftest:fail] 顶层派生锚点失败,共 ${manifestFailures.length} 项`);
+  process.exit(1);
+}
+console.log(`[ok] contract-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截);顶层派生锚点全部通过`);
