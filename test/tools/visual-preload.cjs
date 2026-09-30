@@ -5,6 +5,15 @@
 "use strict";
 
 /**
+ * 仓库根目录(桩要读 package.json 的版本号、导入 dist 产物的默认设置)。
+ * 用 node:path 的动态 import 而非 require:本文件不在 eslint 的 CJS 放行名单里
+ * (放行的只有同为 CJS 的 visual-about-preload.cjs,见 eslint.config.js),
+ * 写 require() 会被 no-require-imports 拦下。动态 import 在 CJS 里同样合法。
+ * @type {Promise<{ join: (...parts: string[]) => string; resolve: (...parts: string[]) => string }>}
+ */
+const pathMod = import("node:path");
+
+/**
  * 构造固定时间戳(epoch ms)。
  * 用本地时间分量而非写死数字:页面侧的 formatRecentTime 全程走 getHours/getDate 等本地取值,
  * 故「2024-03-15 14:30 本地」在任何时区都渲染成同一串字 —— 换台机器跑 ui:shots 也一致。
@@ -88,11 +97,76 @@ async function takeConvert() {
   return value;
 }
 
+/* ---------- 版本号与默认设置:取真实值而非桩值 ---------- */
+
+/** 仓库根目录(懒解析一次):本文件同时服务主窗,取值只发生在截图开始后,不在注入关键路径上。 @type {Promise<string> | null} */
+let rootPromise = null;
+
+/**
+ * 解析仓库根目录并缓存。
+ * @returns {Promise<string>}
+ */
+function repoRoot() {
+  if (rootPromise === null) {
+    rootPromise = pathMod.then((p) => p.resolve(__dirname, "..", ".."));
+  }
+  return rootPromise;
+}
+
+/**
+ * 版本号读仓库 package.json 的真实值,不写死字面量。
+ * 为什么:这份桩的产物直接进 README / 官网当产品图。原先的 `0.0.0-visual` 有两处问题:
+ * 一是那不是任何用户见得到的版本号;二是它比真实版本串长得多,about 窗 420px 的卡片
+ * 装不下,版本芯片会被裁掉一截。读 package.json 则「发版改号 → 图上版本自动跟着变」。
+ * @returns {Promise<string>}
+ */
+async function appVersion() {
+  const root = await repoRoot();
+  const [{ createRequire }, { pathToFileURL }] = await Promise.all([
+    import("node:module"),
+    import("node:url"),
+  ]);
+  // 基准传 package.json 自身:createRequire 以该文件为解析起点,避免再拼相对层级
+  const req = createRequire(pathToFileURL(`${root}/package.json`).href);
+  const pkg = req("./package.json");
+  return typeof pkg.version === "string" ? pkg.version : "0.0.0";
+}
+
+/** 默认设置模块(编译产物)的 ESM 动态导入,只导入一次。 @type {Promise<{ cloneDefaultSettings: () => unknown }> | null} */
+let defaultsModule = null;
+
+/**
+ * 取一份**全新的**默认设置对象。
+ * 为什么用 cloneDefaultSettings() 而不是直接递 DEFAULT_SETTINGS:后者是模块级单例,
+ * 而 renderer 在 settings 首次 load 到达前会就地改写分组块(见该工厂自身的注释),
+ * 桩把单例递出去等于让截图过程污染这份全局默认,后续场景读到的将是脏值。
+ * 为什么这样就不出红色告警条:页面侧 mergeSettingsWithDefaults 只在 pageSetup 结构非法时
+ * 提示「检测到不合法的页面设置结构设置」,而旧桩返回 {} 恰好落进这个分支。本函数给出的形状
+ * 与 main 侧 loadSettings()「无 settings.json 时返回默认值」一致,故走的是与线上一致的
+ * 兜底路径,红条不再出现。
+ * @returns {Promise<unknown>}
+ */
+async function defaultSettings() {
+  const root = await repoRoot();
+  if (defaultsModule === null) {
+    const [{ pathToFileURL }, p] = await Promise.all([import("node:url"), pathMod]);
+    // dist 是 ESM 产物,CJS 侧 require 不了,只能动态 import;
+    // 且必须传 file URL —— Windows 上裸盘符路径不是合法 URL。
+    defaultsModule = import(
+      /* @vite-ignore */ pathToFileURL(
+        p.join(root, "dist", "core", "settings", "settings-defaults.js"),
+      ).href
+    );
+  }
+  const mod = await defaultsModule;
+  return mod.cloneDefaultSettings();
+}
+
 const api = new Proxy(
   {
-    appVersion: async () => "0.0.0-visual",
-    getVersion: async () => "0.0.0-visual",
-    settingsGet: async () => ({}),
+    appVersion: appVersion,
+    getVersion: appVersion,
+    settingsGet: defaultSettings,
     /** @param {unknown} patch 设置补丁 @returns {Promise<unknown>} */
     settingsSet: async (patch) => patch,
     uiStateGet: async () => uiState(),

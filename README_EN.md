@@ -117,7 +117,7 @@ A guided, step-by-step workflow that chains all features together — no need to
 
 <p align="center">
   <img src="docs/images/ui-main.jpg" alt="Main window (multiple files)" width="80%">
-  <br><em>Main window: pick files → pick format → convert</em>
+  <br><em>Main window: pick files → pick format → batch convert / merge convert</em>
 </p>
 
 <p align="center">
@@ -130,7 +130,7 @@ A guided, step-by-step workflow that chains all features together — no need to
 <p align="center">
   <img src="docs/images/ui-complete.jpg" alt="Conversion complete dialog" width="48%">
   &nbsp;
-  <img src="docs/images/ui-about.jpg" alt="About window" width="48%">
+  <img src="docs/images/ui-about.jpg" alt="About window" width="30%">
   <br><em>Left: conversion complete (open file / open folder / copy path)　Right: about window (version and update check)</em>
 </p>
 

@@ -105,7 +105,7 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 
 <p align="center">
   <img src="docs/images/ui-main.jpg" alt="主界面（多文件）" width="80%"><br>
-  <em>主界面：选择文件 → 选择格式 → 开始转换</em>
+  <em>主界面：选择文件 → 选择格式 → 批量转换 / 合并转换</em>
 </p>
 <p align="center">
   <img src="docs/images/ui-empty.jpg" alt="空态主界面" width="48%">&nbsp;
@@ -114,7 +114,7 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 </p>
 <p align="center">
   <img src="docs/images/ui-complete.jpg" alt="转换完成弹窗" width="48%">&nbsp;
-  <img src="docs/images/ui-about.jpg" alt="关于窗口" width="48%"><br>
+  <img src="docs/images/ui-about.jpg" alt="关于窗口" width="30%"><br>
   <em>左：转换完成（打开文件 / 打开文件夹 / 复制路径）　右：关于窗口（版本与更新检查）</em>
 </p>
 

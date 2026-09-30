@@ -20,6 +20,13 @@
  * 成因是关于窗首帧的光栅化竞态 —— 三道判据答的是「这一帧是否落定」,答不出「首帧光栅化到哪一层」;
  * 已落盘基线同样双峰,故非任何一轮改动引入,登记为已知不复现项,不再当抢拍排查。
  *
+ * 产物要直接进 README / 官网当产品图,故三处「会印到画面上」的桩值取真实/安全值,
+ * 不取便于辨认的测试字面量:版本号读 package.json(本文件的 APP_VERSION —— 主窗桩
+ * 自读同一字段,about 桩因 sandbox+CSP 读不到 node 内建,改由这里 additionalArguments 递入,
+ * 全程只有这一个读取点)、完成态输出路径用样例路径而非本机工作区绝对路径
+ * (SHOT_OUTPUT_PATH,避免把 C:\Users\<用户名>\… 印进公开仓库的图片)、
+ * 更新检查桩造「有可用更新」态(见 visual-about-preload.cjs 的 availableUpdate)。
+ *
  * 失败路径:走 test/common/entry-guard.mjs 的统一守卫 —— 抛错时打印阶段标签 + 原始堆栈
  * 并以非零码退出。旧实现是 `app.quit() + process.exitCode = 1`,实测**退出码是 0**
  * (quit 走自身退出路径,只设 exitCode 不生效),即截图工具失败会被读成成功。
@@ -40,6 +47,30 @@ const distAbout = path.join(root, "dist", "renderer", "about.html");
 const preload = path.join(__dirname, "visual-preload.cjs");
 const aboutPreload = path.join(__dirname, "visual-about-preload.cjs");
 const outDir = path.join(root, "output", "artifacts", "ui-v4");
+
+/**
+ * 仓库真实版本号(取自 package.json)。
+ * 为什么读真值而不写死字面量:本工具的产物直接进 README / 官网当产品图,写死的
+ * `0.0.0-visual` 既不是用户见得到的版本,又比真实版本串长 —— about 窗 420px 的卡片
+ * 装不下,版本芯片会被裁掉一截。读 package.json 则「发版改号 → 图上版本自动跟着变」。
+ * 与两个 preload 桩(visual-preload.cjs / visual-about-preload.cjs)读的是同一个字段,
+ * 三处同源;本文件是 ESM,故直接 import JSON,不必绕 CJS 的 createRequire。
+ * @type {string}
+ */
+const APP_VERSION = JSON.parse(
+  fs.readFileSync(path.join(root, "package.json"), "utf8"),
+).version;
+
+/**
+ * 完成态截图里展示的输出路径 —— **刻意不含本机工作区路径**。
+ * 为什么:这张图会进 README / 官网。原实现用 path.join(root, …) 拼真实绝对路径,
+ * 于是 `C:\Users\<用户名>\Documents\Workspace\…` 这样的本机目录结构被原样印进
+ * 公开仓库的图片里(隐私泄露,且图上出现一长串无用路径也干扰观感)。
+ * 这里改用与历史桩一致的 C:\demo\ 风格样例路径 —— 它只说明「输出到某目录」这回事,
+ * 不泄露任何本机信息。文件名沿用被转换的源文件名,保持画面自洽。
+ * @type {string}
+ */
+const SHOT_OUTPUT_PATH = "C:\\demo\\季度报告.docx";
 
 /**
  * 关于窗尺寸(与 src/main/menu.ts showAboutDialog 的 W/H 同值)。
@@ -512,7 +543,7 @@ async function main() {
   );
   // 桩值形状按 core/ipc-contract.ts 的 ConvertResult;带一条 keyed 告警是为了让
   // 汇总条的折叠警告区(固定消息槽内滚动)也进画面 —— 空警告区拍不出布局问题
-  const outputPath = path.join(root, "output", "artifacts", "ui-v4", "basic-render.docx");
+  const outputPath = SHOT_OUTPUT_PATH;
   await exec(
     `window.__vc.setNextConvert(${JSON.stringify({
       ok: true,
@@ -558,9 +589,13 @@ async function main() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false, // 隐藏窗口仍正常出帧:capturePage 拿最新画面
+      // 版本号递给桩:about 窗 sandbox:true + about.html 的 `script-src 'self'` CSP
+      // 下,桩内既 require 不到 node 内建、也被 CSP 拦掉动态 import(两者均实测失败),
+      // 故 package.json 的唯一读取点留在本文件(普通 Node ESM),经 additionalArguments 递进去。
+      additionalArguments: [`--m2w-version=${APP_VERSION}`],
     },
   });
-  await about.loadFile(distAbout, { query: { v: "0.0.0-visual" } });
+  await about.loadFile(distAbout, { query: { v: APP_VERSION } });
   /**
    * @param {string} code 页面脚本源码
    * @returns {Promise<unknown>} 页面返回值
@@ -572,12 +607,13 @@ async function main() {
   // 首帧填 backwards,拍到的还是一枚没落下的空章(样式单源见 FREEZE_CSS)。
   await freezeMotion(aboutExec);
   await aboutExec(ABOUT_FORCE_LIGHT);
-  // 就绪判据:版本徽标回填(读 query.v)+ 更新状态行离开 checking 态
-  // (checkUpdate 桩返回 latest → 落 --latest 类);两者齐了画面才是终态
+  // 就绪判据:版本徽标回填(读 query.v 的真实版本号)+ 更新状态行离开 checking 态
+  // (checkUpdate 桩返回 available → 落 --available 类并显示下载按钮);
+  // 两者齐了画面才是终态。判据取状态类名而非等时长,理由同主窗 settle 那套。
   await waitFor(
     aboutExec,
     `document.getElementById("version").textContent.length > 0 && ` +
-      `document.getElementById("updateStatus").className.includes("update-status--latest")`,
+      `document.getElementById("updateStatus").className.includes("update-status--available")`,
     5000,
     "about ready",
   );
