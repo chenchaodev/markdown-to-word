@@ -6,10 +6,10 @@
 //   1. 归档本身可用:存在、非空、可被 @electron/asar 解析;
 //   2. 结构:顶层只允许 dist / node_modules / package.json(挡住误打包的脚本、
 //      夹具、密钥等本不该进包的文件);
-//   3. 排除项:dist 下不得出现任何 .map —— build.files 用一条覆盖 dist 全树的
-//      负向 glob(排除 dist 下全部 .map)把构建期 sourcemap 挡在包外(覆盖率映射
-//      与本地调试仍读 dist/ 原文件,tsconfig 的 sourceMap 照开;交付物既不需要
-//      它们,也不该带出内部源码路径);
+//   3. 排除项:全包不得出现任何 .map —— build.files 用两条负向 glob(dist 与
+//      node_modules 各一条)把 sourcemap 挡在包外(覆盖率映射与本地调试仍读 dist/
+//      原文件,tsconfig 的 sourceMap 照开;交付物既不需要它们,也不该带出内部
+//      源码路径与依赖的调试残留);
 //   4. 入口与资源:package.json(版本须等于仓库版本)、主进程入口、renderer 入口、
 //      core 入口、KaTeX(pdf 公式字体/css)与 Mermaid(IIFE 产物)资源必须在包内;
 //      另含「devDependencies 中的生产包不得出现在 ASAR 生产依赖判定」的自检:
@@ -78,27 +78,28 @@ export const REQUIRED_ENTRIES = [
 export const REQUIRED_PREFIXES = [{ group: 'renderer 样式', prefix: 'dist/renderer/style/', suffix: '.css', atLeast: 1 }];
 
 /**
- * 包内禁止出现的 dist 侧文件后缀。package.json 的 build.files 用一条覆盖 dist
- * 全树的负向 glob(排除 dist 下全部 .map)把构建期 sourcemap 挡在包外:dist/
- * 目录本身仍留 .map(覆盖率门禁 c8 靠它把覆盖率映射回 .ts,本地调试也要用),
- * 排除只发生在「打进安装包」这一层。
+ * 包内禁止出现的文件后缀(全包,不分区)。package.json 的 build.files 用两条负向
+ * glob(dist 与 node_modules 各一条)把 sourcemap 挡在包外。
+ *
+ * 为什么两处都要挡:dist/ 侧的 .map 是本仓 tsc 产物(覆盖率门禁 c8 靠它把覆盖率映射
+ * 回 .ts,本地调试也要用,故 dist/ 目录本身仍留着);node_modules 侧的 .map 是各依赖
+ * 随包分发的调试残留,实测占现存包 .map 总量的绝大多数。两者都只在「打进安装包」
+ * 这一层被排除。
  */
-export const FORBIDDEN_DIST_SUFFIXES = ['.map'];
+export const FORBIDDEN_ARCHIVE_SUFFIXES = ['.map'];
 
 /**
- * 是否为「有意排除出包」的 dist 产物(与 FORBIDDEN_DIST_SUFFIXES 同一事实源,
+ * 是否为「有意排除出包」的产物(与 FORBIDDEN_ARCHIVE_SUFFIXES 同一事实源,
  * 写成函数是为了让排除清单与包内禁止清单不可能各自漂移)。
  * 判定输入既接受包内路径(dist/…)也接受 dist 清单里的相对路径(…)。
  */
 export function isExcludedDistArtifact(entryPath) {
-  return FORBIDDEN_DIST_SUFFIXES.some((suffix) => entryPath.endsWith(suffix));
+  return FORBIDDEN_ARCHIVE_SUFFIXES.some((suffix) => entryPath.endsWith(suffix));
 }
 
-/** 包内违反排除规则的 dist 条目(POSIX 路径,字典序) */
+/** 包内违反排除规则的条目(POSIX 路径,字典序);不限顶层目录 —— node_modules 侧同样算违规 */
 export function findForbiddenDistEntries(files) {
-  return [...files.keys()]
-    .filter((entry) => entry.startsWith('dist/') && isExcludedDistArtifact(entry))
-    .sort();
+  return [...files.keys()].filter((entry) => isExcludedDistArtifact(entry)).sort();
 }
 
 /**
@@ -231,10 +232,10 @@ export async function main(argv = []) {
     if (!topLevel.has(name)) problems.push(`包内缺少顶层项:${name}`);
   }
 
-  // ---- 3. 排除项(dist 下不得有 .map)----
+  // ---- 3. 排除项(全包不得有 .map)----
   const forbidden = findForbiddenDistEntries(files);
   for (const entry of forbidden.slice(0, 10)) {
-    problems.push(`包内出现禁止随包分发的文件:${entry}(build.files 应以负向模式排除 dist 下的 ${FORBIDDEN_DIST_SUFFIXES.join('/')})`);
+    problems.push(`包内出现禁止随包分发的文件:${entry}(build.files 应以负向模式排除全包 ${FORBIDDEN_ARCHIVE_SUFFIXES.join('/')} 文件)`);
   }
   if (forbidden.length > 10) problems.push(`包内禁止文件另有 ${forbidden.length - 10} 项未逐一列出`);
 
@@ -309,7 +310,12 @@ export async function main(argv = []) {
           }
         }
         const expectedInAsar = new Set(manifest.files.map((entry) => `dist/${entry.path}`));
-        const extra = [...files.keys()].filter((entry) => entry.startsWith('dist/') && !expectedInAsar.has(entry));
+        // 去重:排除类条目一律不判「包内多余」。清单覆盖 dist/ 且本就已收 .map,
+        // 但陈旧 .map(源文件改名后残留、清单里没有)会同时命中第 3 层与这里,
+        // 同一个文件刷两遍会让人以为是两个问题。让第 3 层独占这类条目。
+        const extra = [...files.keys()].filter(
+          (entry) => entry.startsWith('dist/') && !expectedInAsar.has(entry) && !isExcludedDistArtifact(entry),
+        );
         for (const entry of extra) mismatched.push(`${entry}(包内多余,清单未记录)`);
         for (const item of mismatched.slice(0, 10)) {
           problems.push(`包内 dist 与清单不一致:${item}`);
@@ -328,7 +334,7 @@ export async function main(argv = []) {
   console.log(
     `[ok] app.asar 核对通过(${toPosix(path.relative(projectRoot, asarPath))}:` +
       `${files.size} 个文件,顶层 ${EXPECTED_TOP_LEVEL.join('/')};包内版本 ${String(archivePkg.version)};` +
-      `主进程入口 ${mainEntry};KaTeX/Mermaid 资源在位;dist 下无 ${FORBIDDEN_DIST_SUFFIXES.join('/')} 文件` +
+      `主进程入口 ${mainEntry};KaTeX/Mermaid 资源在位;包内无 ${FORBIDDEN_ARCHIVE_SUFFIXES.join('/')} 文件` +
       `${options['skip-manifest'] ? ';清单交叉核对已跳过' : `;已与 dist 清单核对 ${checkedFiles} 个文件`})`,
   );
   return 0;
