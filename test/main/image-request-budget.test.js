@@ -11,6 +11,8 @@
  * 与 image-downloader.test.js 分工:该段守既有读取/SSRF/超时语义,本段只守
  * 请求契约与缓存预算(共用同一 dist 实现,断言不重复)。
  * http server 生命周期 try/finally 保证清理(closeAllConnections 防 keep-alive 挂起)。
+ * 端口口径:本段的计数类断言读 server 侧计数器,前提是 fetch 真把请求拨出去了,故
+ *   listen(0) 须避开 fetch 建连前就拒绝的 bad port 名单(共用助手,见 test/common/http-server.js)。
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -22,8 +24,12 @@ import {
   MAX_RESPONSE_BYTES,
 } from "../../dist/main/services/image-downloader.js";
 import { FIXTURES_DIR } from "../common/paths.js";
+import { closeTestServer, listenFetchablePort } from "../common/http-server.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
+
+/** 本段断言消息前缀(共用助手的失败消息按段定位用) */
+const LABEL = "image-request-budget 断言失败";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -55,12 +61,13 @@ function localResolver(timeoutMs, options = {}) {
 
 /**
  * 启动本地 http server:固定 status + body 响应,getCount() 返回请求次数
+ * 端口为 `listen(0)` 随机分配并避开 fetch 拒连名单(共用助手 `listenFetchablePort`)。
  * @param {number} status 响应状态码
  * @param {string | Buffer} body 响应体
  * @param {number} [delayMs] 响应前延迟(毫秒)
  * @returns {Promise<TestServer>} 服务句柄
  */
-function startServer(status, body, delayMs = 0) {
+async function startServer(status, body, delayMs = 0) {
   let count = 0;
   const server = http.createServer((_req, res) => {
     count += 1;
@@ -74,27 +81,8 @@ function startServer(status, body, delayMs = 0) {
       }
     }, delayMs);
   });
-  /** @type {Promise<TestServer>} */
-  const listening = new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      assert(typeof address === "object" && address !== null, "本地 server 应已绑定 TCP 端口");
-      resolve({ server, port: address.port, getCount: () => count });
-    });
-  });
-  return listening;
-}
-
-/**
- * 关闭 server:closeAllConnections 强制断开 keep-alive 空闲连接,避免 close 回调挂起
- * @param {http.Server} server 服务实例
- * @returns {Promise<void>} close 回调落地即返回
- */
-function closeServer(server) {
-  return new Promise((resolve) => {
-    server.close(() => resolve());
-    server.closeAllConnections?.();
-  });
+  const port = await listenFetchablePort(server, LABEL);
+  return { server, port, getCount: () => count };
 }
 
 /**
@@ -148,7 +136,7 @@ export async function run() {
         assert(timedOut === null, "request.timeoutMs 应中止慢响应并返回 null");
         assert(slow.getCount() === 1, `超时场景应已发出 1 次请求,实际 ${slow.getCount()}`);
       } finally {
-        await closeServer(slow.server);
+        await closeTestServer(slow.server);
       }
       console.log("[ok] image-request-budget:外链 maxBytes 与 request.timeoutMs 生效");
     }
@@ -189,7 +177,7 @@ export async function run() {
       console.log(`[ok] image-request-budget:成功缓存按条目上限淘汰(70 个 URL 后最早条目重新下载)`);
     }
   } finally {
-    if (srv) await closeServer(srv.server);
+    if (srv) await closeTestServer(srv.server);
   }
 
   // ================= 5. 预算常量口径(默认上限与缓存预算钉死) =================

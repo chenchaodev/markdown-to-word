@@ -16,7 +16,8 @@
  * 无法低成本自动化,未覆盖原因见验收报告。
  * http server 生命周期 try/finally 保证清理(closeAllConnections 防 keep-alive 挂起)。
  * 端口口径:startServer 一律 listen(0) 随机端口,故须避开 fetch 建连前就拒绝的
- *   「bad port」名单(见 FETCH_BLOCKED_PORTS)——否则计数类断言会以「实际 0」形态偶发红。
+ *   「bad port」名单 —— 否则计数类断言会以「实际 0」形态偶发红。名单与重试逻辑
+ *   单一来源在 test/common/http-server.js(与另两处自建 server 的段共用)。
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -26,26 +27,12 @@ import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { prepareForConvert } from "../common/convert-helpers.js";
 import { saveArtifact } from "../common/artifacts.js";
+import { closeTestServer, listenFetchablePort } from "../common/http-server.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
 
-/**
- * `fetch` 在**拨号之前**就拒绝的端口(WHATWG Fetch 的 bad port 名单;Node 的全局 fetch
- * 据此拒连,抛 `TypeError: fetch failed`,cause 为 `bad port`)。
- * 本段拿它做什么:startServer 一律 `listen(0)` 让 OS 随机分配端口,本机实测该分配会落到
- * 1~65535 全域而非只在高端区;一旦命中本名单,`fetch` 连一个包都不发 → resolver 按契约归 null
- * → server 侧 `getCount()` 恒为 0 → 计数类断言偶发红,且**不缩短任何等待也无重试可加**。
- * 名单为本机实测扫描 1..65535 得出(逐端口 `fetch` 判定 cause 是否为 `bad port`,非名单端口
- * 落到 ECONNREFUSED);换运行时若名单变了,重扫即可 —— 名单多一项只多一次重试,不会误判红。
- */
-const FETCH_BLOCKED_PORTS = new Set([
-  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123,
-  135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993,
-  995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080,
-]);
-
-/** 命中 blocked 名单时的重 listen(0) 次数上限:OS 连发不可 fetch 的端口属异常,超限即判红(不静默放过) */
-const MAX_PORT_ATTEMPTS = 16;
+/** 本段断言消息前缀(共用助手的失败消息按段定位用) */
+const LABEL = "image-downloader 断言失败";
 
 /**
  * 测试用 http resolver:本地 server 场景显式放行私网(默认拦截 127.0.0.1)。
@@ -66,14 +53,14 @@ function localResolver(timeoutMs) {
 
 /**
  * 启动本地 http server:固定 status + body 响应(delayMs 可选,响应前延迟),getCount() 返回请求次数
- * 端口为 `listen(0)` 随机分配:命中 FETCH_BLOCKED_PORTS 时关掉重 listen(0),直到拿到 fetch 真会
- * 拨过去的端口 —— 计数类断言读的是 server 侧计数器,前提是请求真发出去了(口径依据见该常量注释)。
+ * 端口为 `listen(0)` 随机分配并避开 fetch 拒连名单(共用助手 `listenFetchablePort`)——
+ * 计数类断言读的是 server 侧计数器,前提是请求真发出去了(口径依据见 test/common/http-server.js)。
  * @param {number} status 响应状态码
  * @param {string | Buffer} body 响应体
  * @param {number} [delayMs] 响应前延迟(毫秒)
  * @returns {Promise<TestServer>} 服务句柄
  */
-function startServer(status, body, delayMs = 0) {
+async function startServer(status, body, delayMs = 0) {
   let count = 0;
   const server = http.createServer((_req, res) => {
     count += 1;
@@ -88,44 +75,8 @@ function startServer(status, body, delayMs = 0) {
       }
     }, delayMs);
   });
-  /** @type {Promise<TestServer>} */
-  const listening = new Promise((resolve, reject) => {
-    /** @param {number} attempt 已重试次数(0 = 首次 listen) */
-    const listen = (attempt) => {
-      server.listen(0, "127.0.0.1", () => {
-        const address = server.address();
-        if (typeof address !== "object" || address === null) {
-          reject(new Error("image-downloader 断言失败:本地 server 应已绑定 TCP 端口"));
-          return;
-        }
-        if (FETCH_BLOCKED_PORTS.has(address.port)) {
-          server.close(() => {
-            if (attempt + 1 >= MAX_PORT_ATTEMPTS) {
-              reject(new Error(`image-downloader 断言失败:连续 ${MAX_PORT_ATTEMPTS} 次随机端口都落在 fetch 拒连名单内`));
-              return;
-            }
-            listen(attempt + 1);
-          });
-          return;
-        }
-        resolve({ server, port: address.port, getCount: () => count });
-      });
-    };
-    listen(0);
-  });
-  return listening;
-}
-
-/**
- * 关闭 server:closeAllConnections 强制断开 undici keep-alive 空闲连接,避免 close 回调挂起
- * @param {http.Server} server 服务实例
- * @returns {Promise<void>} close 回调落地即返回
- */
-function closeServer(server) {
-  return new Promise((resolve) => {
-    server.close(() => resolve());
-    server.closeAllConnections?.();
-  });
+  const port = await listenFetchablePort(server, LABEL);
+  return { server, port, getCount: () => count };
 }
 
 // 显式声明本段无验收样例(契约见 test/tools/gen-fixtures.mjs 文件头)
@@ -291,9 +242,9 @@ export async function run() {
       throw new Error(`image-downloader 断言失败:新实例应新增 1 次请求,实际 ${srv200.getCount()}(端口 ${port})`);
     }
   } finally {
-    if (srv200) await closeServer(srv200.server);
-    if (srv404) await closeServer(srv404.server);
-    if (srvSlow) await closeServer(srvSlow.server);
+    if (srv200) await closeTestServer(srv200.server);
+    if (srv404) await closeTestServer(srv404.server);
+    if (srvSlow) await closeTestServer(srvSlow.server);
   }
 
   // ---- 断言 9:连接拒绝(server 已关闭)→ null(opt-in 放行私网,排除拦截干扰,

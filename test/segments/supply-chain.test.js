@@ -22,6 +22,7 @@ import path from "node:path";
 import { createCaseSuite } from "../common/case.js";
 import { ROOT } from "../common/paths.js";
 import { removeTree } from "../common/temp-resource.js";
+import { closeTestServer, listenFetchablePort } from "../common/http-server.js";
 import { formatSupplyLog, runSupplyChecks } from "../../scripts/supply/check-supply-chain.mjs";
 import { diffSbom, generateSbom, toCycloneDxLicenses } from "../../scripts/supply/gen-sbom.mjs";
 import { generateLicenses } from "../../scripts/supply/gen-licenses.mjs";
@@ -697,15 +698,14 @@ async function startStubOsv(hits) {
     }
     res.writeHead(404).end();
   });
-  await new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => resolve(undefined));
-  });
-  const address = server.address();
-  const port = typeof address === "object" && address !== null ? address.port : 0;
+  // 端口须避开 fetch 建连前就拒绝的 bad port 名单:下方「SCA 段应真的向 OSV 发过批量查询」
+  // 这条断言读的是本 server 的 requests 计数,而 fetchImpl(默认全局 fetch)命中名单时
+  // 连一个包都不发,计数恒空 → 偶发红(共用助手,见 test/common/http-server.js)
+  const port = await listenFetchablePort(server, "supply-chain 桩 OSV");
   return {
     endpoint: `http://127.0.0.1:${port}`,
     requests,
-    close: () => new Promise((resolve) => server.close(() => resolve(undefined))),
+    close: () => closeTestServer(server),
   };
 }
 
