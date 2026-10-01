@@ -373,8 +373,27 @@ export function findRootComputes(text, options = {}) {
 
 // ---- 源码文本 → import 事实 ----
 
-/** `import/export ... from 'spec'`(含 `import type` 与行内 `type` 说明符) */
-const FROM_RE = /(^|\n)[ \t]*(?:import|export)\s+(type\s+)?([\s\S]*?)\s*from\s*['"]([^'"]+)['"]/g;
+/**
+ * `import/export ... from 'spec'`(含 `import type` 与行内 `type` 说明符)
+ *
+ * 惰性跨度原为 `[\s\S]*?`(无界、可跨行)。跨行本身是必需的 —— 多行 import 语句
+ * (`import {\n a,\n b\n} from 'x'`)必须能匹配,所以不能改成 `[^'"\n]`。
+ * 但无界带来了两个代价:
+ *   1. 性能:行首锚 `(^|\n)` 使每个行首都成为起点候选,而对**没有 `from`** 的
+ *      import/export 行,引擎要一路扫到文件末尾才放弃 ⇒ 单次匹配代价 O(文件剩余长度)。
+ *      实测 233 文件 / 3.59MB,`FROM_RE` 的 matchAll 独占 analyzeTreeBoundaries 的 89%。
+ *   2. 正确性:跨度能吞掉引号,于是「`import 'side-effect'` 之后的另一条 import」的
+ *      `from` 会被接上,或字符串字面量里的伪 import 语句会被当真实 import 命中。
+ * 改为 `[^'"]*?` 后两者同时解决:**有效 ES 模块语法在 `import` 关键字与 `from` 之间
+ * 不含引号**(specifier 的引号在 `from` 之后),该约束不漏任何真实 import,仍支持跨行。
+ *
+ * 行为等价性已按门禁真实输入(`lexSource` 抹注释后的 `code`)对全量 233 文件实测:
+ * 新增命中 0 处、移除 8 处;其中 6 处为裸 specifier(`electron`/`node:fs`/`jszip`),
+ * 本就在 `analyzeTreeBoundaries` 的 `classifySpecifier(...)!=='relative'` 处被过滤,
+ * 移除是 no-op;余 2 处是夹具字符串里的伪 import(相对路径但非真实依赖),属原实现的
+ * 假阳性。故该改动只减噪、不改判定。
+ */
+const FROM_RE = /(^|\n)[ \t]*(?:import|export)\s+(type\s+)?([^'"]*?)\s*from\s*['"]([^'"]+)['"]/g;
 /** 副作用导入 `import 'spec'` */
 const SIDE_EFFECT_RE = /(^|\n)[ \t]*import\s+['"]([^'"]+)['"]/g;
 /** CJS 产物里的 `require('spec')`(preload.cjs 等 tsc 编译为 CommonJS 的输出) */
@@ -623,11 +642,60 @@ export const ROOT_COMPUTE_SCAN_DIRS = Object.freeze(['gates', 'build', 'dev', 't
 const ROOT_COMPUTE_EXTENSIONS = Object.freeze(['.js', '.mjs', '.cjs']);
 
 /**
+ * 全仓扫描结果的进程内记忆化(按 root 分键)。
+ *
+ * 起因:`main()` 除 `--src` 目标外,还会无条件做三次**固定锚在真实仓库**的全仓扫描
+ * (`analyzeRootComputes` / `selfCheckRootComputes` / `analyzeTreeBoundaries`),
+ * 每次重读 ROOT_COMPUTE_SCAN_DIRS 与 TREE_SCAN_DIRS 下的全部源文件(实测 233 文件 / 3.59MB)。
+ * 门禁每进程只跑一次 `main()`,这些扫描各只一次;但验收段 `import-boundary.test.js` 的
+ * 25 次 `runCli` 会各跑一遍 —— 25 × 约 3.2s ≈ 80s,占该段 84.6s 的 99%(其余断言合计 <1s)。
+ *
+ * **分键必须是 root 绝对路径**:同一进程里 `analyzeTreeBoundaries` 还会被验收段以 6 个
+ * 不同沙盒目录为 root 调用(`import-boundary.test.js` 第 7 组),沙盒各有独立 mkdtemp 路径,
+ * 按 root 分键即可各扫各的、互不串味;无 key 的话会命中错误的缓存结果。
+ *
+ * **生效前提:两次调用之间 root 下的文件未被改动。** 逐条核对当前调用方均满足:
+ *   - 门禁自身:单进程一次 `main()`,期间只读;
+ *   - 验收段:25 次 `runCli` 的沙盒一律 `fs.mkdtempSync(os.tmpdir())`,写入只落沙盒,
+ *     仓库不被触碰;第 7 组的 6 个沙盒各自写入后**只调用一次**。
+ * 若将来出现「先扫 → 改 root 下文件 → 再扫」的调用方,必须先调 `resetScanCache()`
+ * (缓存只按 root 分键,分不出内容是否变过)。
+ */
+const scanCache = new Map();
+
+/** 清空全仓扫描缓存。调用方若在两次扫描之间改动过 root 下的文件,必须先调它。 */
+export function resetScanCache() {
+  scanCache.clear();
+}
+
+/**
+ * 按 root 记忆化的全仓扫描包装。
+ * @template T
+ * @param {string} kind 缓存用途标签(仅供排查时辨识)
+ * @param {string} root 仓库根绝对路径(分键)
+ * @param {() => T} run 真正的扫描动作
+ * @returns {T}
+ */
+function memoizedByRoot(kind, root, run) {
+  const key = kind + "\u0001" + path.resolve(root);
+  const hit = scanCache.get(key);
+  if (hit !== undefined) return /** @type {T} */ (hit);
+  const value = run();
+  scanCache.set(key, value);
+  return value;
+}
+
+/**
  * 扫三个子树的全部源文件,返回自算项目根的判红清单(已扣除单源与规则定义处两处豁免)。
  * @param {string} root 仓库根绝对路径
  * @returns {string[]} 判红文案(每条含仓库相对路径与行号)
  */
 export function analyzeRootComputes(root) {
+  return memoizedByRoot("root-computes", root, () => analyzeRootComputesUncached(root));
+}
+
+/** `analyzeRootComputes` 的未记忆化本体(见上方 scanCache 的生效前提)。 */
+function analyzeRootComputesUncached(root) {
   const problems = [];
   for (const dir of ROOT_COMPUTE_SCAN_DIRS) {
     const abs = path.resolve(root, dir);
@@ -880,6 +948,11 @@ function collectRelativeImportsWithLine(text) {
  * @returns {string[]} 判红项(空数组 = 通过)
  */
 export function analyzeTreeBoundaries(root) {
+  return memoizedByRoot("tree-boundaries", root, () => analyzeTreeBoundariesUncached(root));
+}
+
+/** `analyzeTreeBoundaries` 的未记忆化本体(见上方 scanCache 的生效前提)。 */
+function analyzeTreeBoundariesUncached(root) {
   /** @type {string[]} */
   const problems = [];
   for (const rule of TREE_RULES) {
