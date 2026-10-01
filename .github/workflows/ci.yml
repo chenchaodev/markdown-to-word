@@ -81,12 +81,20 @@ jobs:
       # config 哈希只覆盖配置文本、不覆盖依赖版本 ⇒ 换 ESLint/插件版本时可能重放旧诊断。
       # lint 缓存没有 npm 缓存那种「宁可先用旧的」需求(依赖一变本就该全量跑一次),
       # 故只认精确 key。依赖变更后第一次 CI 会全量,那是应有代价。
+      #
+      # **key 带 `-v2` 版本段(2026-10-01 加)**:actions/cache 在 primary key 精确命中时
+      # **不重新写入**,所以一旦某次写入的体积偏小,它会被后续每一轮原样 restore、自我复制
+      # 永不自愈。实测该 key 跨 5 轮 CI 体积恒为 11789 B(一字节未变),而本机同一份缓存
+      # 稳定在 ~178KB —— 与「坏种子冻结」一致。加版本段即换一个新 key,强制重新写入;
+      # 若新体积回到 180KB 量级,说明此前的确是一颗坏种子,本段即修复。
+      # **将来若再遇「体积恒定不变」,先查是不是又落进同一个形状**(换版本段,而不是去改
+      # 缓存 path 或删缓存 —— 后者换不掉已冻结的种子)。
       # 缓存目录与 lint 脚本的 --cache-location 一致(node_modules/.cache/eslint/),
       # 且落在既有 node_modules/ 忽略规则内,不需要额外 .gitignore 条目。
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: node_modules/.cache
-          key: ${{ runner.os }}-m2w-lint-${{ hashFiles('package-lock.json') }}
+          key: ${{ runner.os }}-m2w-lint-v2-${{ hashFiles('package-lock.json') }}
 
       # 环境指纹(Node/npm/Electron/Chromium/字体/DPI):几何与渲染类失败高度依赖
       # 宿主环境,不落指纹就只能靠猜。同时写成文件,失败时随诊断 artifact 留存。
