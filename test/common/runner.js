@@ -10,17 +10,9 @@
  *   回答「harness 这一轮跑哪些**顶层**段」;段内自己 runAll/discoverSegments 要跑哪些段
  *   由该调用显式声明(only 参数),不受外层筛选词影响 —— 否则段内自测(如本框架的
  *   runner-report 自测段)会被外层筛选词滤空,且隔离模型下(M2W_ONLY 单段调试)恒红。
- * - 执行模型(默认):父进程为每段派生**独立子进程,一次一段**。宿主默认是**纯 node**
- *   (test/common/segment-host-node.mjs + 仓内 electron-mock),命中 opt-out 名单的段走
- *   **Electron** 宿主(test/common/segment-host.mjs),名单与逐条根因见
- *   ELECTRON_HOST_SEGMENTS。选 node 为默认是因为纯 node 每段省一次 Chromium 启动
- *   (固定成本,与段体量无关),而需真实渲染/真实宿主对象的段只占少数。
- *   两种宿主同契约(段结果、退出码语义 0/1/2/3、case 进度钩子共用本文件同一批函数),
- *   故隔离语义一条未动:段内崩溃/悬挂/超时只终结该段(超时由父进程真杀进程树,非 race
- *   后放弃),其余段照常跑完;每段独立 userData 目录(见 test/common/userdata.js),
- *   退出即清理,故段间零状态串扰。
- * - 宿主诊断开关 M2W_SEG_HOST=electron:强制**全段**走 Electron 宿主(含 opt-out 名单内
- *   的段),用于「同段两档对照」的二分定位,不作为配置面(见 SEG_HOST_ENV 注释)。
+ * - 执行模型(默认):父进程为每段派生**独立 Electron 子进程**(test/common/segment-host.mjs),
+ *   段内崩溃/悬挂/超时只终结该段(超时由父进程真杀进程树,非 race 后放弃),其余段照常跑完;
+ *   每段独立 userData 目录(见 test/common/userdata.js),退出即清理,故段间零状态串扰。
  * - 并发(零状态串扰的另一面收益):设 M2W_TEST_CONCURRENCY=n 让编排器用 n 个槽位并发跑段
  *   (默认 1 = 与旧串行路径逐字等价,见 resolveConcurrency)。并发 > 1 时段输出改走管道、
  *   逐行加「[段名] 」前缀(见 createPrefixedForwarder 的两条硬约束),失败段的原始输出并进
@@ -47,101 +39,8 @@ import { drainSuites } from "./case.js";
 import { repoRelative } from "./paths.js";
 import { createTempUserData, removeTempUserData, USER_DATA_ENV } from "../../shared/userdata.js";
 
-/** Electron 段宿主入口(父进程与宿主共用同一 Electron 可执行文件,一次只跑一个段) */
+/** 段子进程宿主入口(父进程与宿主共用同一 Electron 可执行文件,一次只跑一个段) */
 const SEGMENT_HOST = fileURLToPath(new URL("./segment-host.mjs", import.meta.url));
-/**
- * 纯 node 段宿主入口(默认宿主,与 segment-host.mjs 同契约):段结果、退出码语义、
- * case 进度钩子共用本文件同一批函数,故两种宿主的结果可直接对照(可比的唯一前提)。
- */
-const SEGMENT_HOST_NODE = fileURLToPath(new URL("./segment-host-node.mjs", import.meta.url));
-/**
- * 宿主选择开关(**只作诊断的反向强制**;不设即按 opt-out 名单分派)的环境变量名。
- *
- * 为什么保留它:宿主是「同段跑两遍取对照」的唯一手段 —— 怀疑某段的失败来自宿主而非段本身
- * 时,把它设成 electron 让全段走另一条宿主再跑一遍,即可二分定位。它是取证工具,不是配置面:
- * 取完对照就该清掉,故**不作为「让某段换宿主」的常规入口**(那会让默认行为依赖环境变量,
- * CI 与本机的执行模型就可能不是同一个)。
- */
-const SEG_HOST_ENV = "M2W_SEG_HOST";
-
-/**
- * 必须走 Electron 宿主的段(opt-out 名单):键 = 段名全名(目录前缀 + 文件名),值 = 根因。
- *
- * 默认宿主是纯 node(见 resolveSegmentHost);本表是**唯一**的例外清单,每条都写明
- * 「缺哪个能力 / 为什么 mock 给不了」—— 名单的价值全在根因可复核,只列段名等于让下一个人
- * 重新踩一遍 125 段实测。
- *
- * 口径三条:
- * - **键是段名全名,精确匹配**(不用 EXCLUSIVE_SEGMENTS 那套子串包含):包含匹配在本仓有
- *   真实歧义(`merge` 同时命中 merge-toc/merge-cancel,`converter` 同时命中
- *   converter-after-convert),会把「opt-out 一段」变成「opt-out 两段」,后者直接静默少跑
- *   一条本该走 node 的段。精确匹配没有这个面。
- * - **根因分三类**:① 需真实渲染(Chromium 出 PDF/PNG,mock 只能返空 Buffer)② 需真实宿主
- *   对象(窗口/会话/菜单/剪贴板/显示器,mock 是空实现,补它等于把断言改成断言 mock 自己)
- *   ③ 段测的就是宿主自身(它断言的正是「段宿主怎么起进程、怎么杀超时」)。
- * - **表是数据不是注释**:resolveSegmentHost 与下面的存活性自检读同一份,根因跟着名单走,
- *   不会出现「名单判了 Electron、自检却按另一份理由报红」。
- *
- * 名单腐化由 assertOptOutListAlive 当场抓住(见该函数),不靠人记:段改名/删除后本表某条
- * 匹配不到任何已发现段,整轮判红并点名。反向(新段需要真 Electron 却漏登记)不靠自检 ——
- * 漏登记的段会在 node 宿主下失败,而失败面就是它自己的能力缺口,不会静默通过。
- */
-const ELECTRON_HOST_SEGMENTS = Object.freeze({
-  "segments/footnotes.test.js": "需真实 printToPDF 出可解析的 PDF(Chromium 渲染,mock 返空 Buffer)",
-  "segments/merge-toc.test.js": "需真实 printToPDF 出可解析的 PDF(合并后目录页码要读真 xref)",
-  "segments/merge.test.js": "需真实 printToPDF 出可解析的 PDF(合并产物的页码/书签断言)",
-  "segments/pdf-bookmarks.test.js": "需真实 printToPDF 出可解析的 PDF(书签注入读真 xref)",
-  "segments/pdf-meta.test.js": "需真实 printToPDF 出可解析的 PDF(读真元数据)",
-  "segments/toc-pagenum.test.js": "需真实 printToPDF 出可解析的 PDF(目录页码要真排版结果)",
-  "segments/packaged-smoke.test.js": "需真实 printToPDF:冒烟打印链路要走 webContents.executeJavaScript",
-  "main/converter.test.js": "需真实 printToPDF:合并转换的 PDF 产出要走 webContents.executeJavaScript",
-  "main/mermaid-service.test.js": "需真实渲染引擎出 PNG(mock 无 Chromium,renderMermaid 直接返 null)",
-  "main/mermaid-warning-channel.test.js": "需真实渲染引擎 + 真实窗口(w.isDestroyed/executeJavaScript)",
-  "main/ipc-register.test.js": "需真实 Menu 对象:断言的是「改语言后应用菜单被重建」,mock 补方法即断言 mock",
-  "main/operation-single-flight.test.js": "需真实窗口(w.isDestroyed)与真实 PDF 产出共同决定占用窗口期",
-  "main/window-close-abort.test.js": "需真实窗口(w.isDestroyed)才能观察到关窗中止的真实时序",
-  "main/preview.test.js": "需真实显示器(screen.getAllDisplays)与真实窗口:GBK 预览落位按真实屏幕算",
-  "main/session-permission-deny.test.js": "需真实 session(fromPartition 要返真 session 才能装权限处理器)",
-  "main/temp-markdown.test.js": "需真实系统剪贴板(clipboard.readBuffer 读真 GBK 字节,mock 恒空)",
-});
-
-/**
- * 段名 → 宿主可执行入口:默认纯 node,命中 opt-out 名单走 Electron。
- *
- * 默认取快的那条(纯 node 每段省一次 Chromium 启动),例外只有名单里那几条。
- * @param {string} name 段名(目录前缀 + 文件名)
- * @returns {typeof SEGMENT_HOST | typeof SEGMENT_HOST_NODE} 宿主入口绝对路径
- */
-function resolveSegmentHost(name) {
-  // 反向诊断开关优先于名单:它要的就是「全段走另一条宿主」的对照效果,包括名单内的段。
-  if (process.env[SEG_HOST_ENV]?.trim().toLowerCase() === "electron") return SEGMENT_HOST;
-  return Object.hasOwn(ELECTRON_HOST_SEGMENTS, name) ? SEGMENT_HOST : SEGMENT_HOST_NODE;
-}
-
-/**
- * opt-out 名单存活性自检:每条登记都必须命中一个已发现的段,否则整轮判红。
- *
- * 为什么必须自动抓:名单的失效形态是**静默**的 —— 段改名或删除后,本表那一条再也匹配不到
- * 任何段,而该段(改名后的)会因不在名单里被派到 node 宿主,于是「一条过期登记 + 一个没登记
- * 的段」互相抵消,全绿但迁移面比声明的小。这类漂移不靠人记得住。
- *
- * 只在**顶层未筛选**的轮次跑:筛选轮(M2W_ONLY)本就只发现部分段,段内嵌套编排
- * (runner-report 的沙盒段)发现面更是与本表无关,两者跑自检都会假红。判据取「父进程自身
- * 不是段宿主」(即顶层编排器),与 runSegmentIsolated 里覆盖采集那处同一口径。
- * @param {string[]} discoveredNames 本轮已发现的段名
- */
-function assertOptOutListAlive(discoveredNames) {
-  if (process.env[SEGMENT_FILE_ENV] !== undefined) return; // 段内嵌套编排:发现面与本表无关
-  if (resolveOnlySelection(undefined) !== null) return; // 筛选轮:发现面是子集,跑了必假红
-  const found = new Set(discoveredNames);
-  const stale = Object.keys(ELECTRON_HOST_SEGMENTS).filter((name) => !found.has(name));
-  if (stale.length === 0) return;
-  throw new Error(
-    `opt-out 名单有 ${stale.length} 条匹配不到任何已发现段(段改名/删除后本表未同步):` +
-      `${stale.join(", ")}。要么改回本表的键,要么把该行删掉 —— ` +
-      "留着的后果是该段被派到 node 宿主,而它正是需要 Electron 的那段。",
-  );
-}
 /** 父进程 → 子进程:待跑段文件绝对路径 */
 export const SEGMENT_FILE_ENV = "M2W_SEGMENT_FILE";
 /** 父进程 → 子进程:结果回传文件绝对路径(宿主原子写,父进程读) */
@@ -500,15 +399,7 @@ async function runSegmentIsolated(s, timeout, { captureLog = false } = {}) {
   // 段的覆盖采集不受影响。若将来新增的嵌套编排会执行 dist/**,必须在此显式保留采集 ——
   // 否则是静默少算覆盖率(比崩溃更难发现)。
   if (process.env[SEGMENT_FILE_ENV] !== undefined) delete childEnv[COVERAGE_ENV];
-  // 宿主选择:纯 node 宿主是默认(每段省一次 Chromium 启动),命中 opt-out 名单的段走 Electron。
-  // 两种宿主都用**同一个** electron.exe —— 纯 node 那档靠 ELECTRON_RUN_AS_NODE 让它以
-  // node 语义跑 ESM 宿主入口,而不是另找 node 可执行文件:Windows 上 node 可执行文件不在
-  // PATH、且 npx/electron 的解析结果会随调用姿势变,复用同一 execPath 才让「宿主」成为
-  // 唯一变量(否则两档的差异里混着「换了个 node 版本」)。该变量只对**启动那一刻**有意义,
-  // 宿主进程启动后自己摘掉,段内 spawn 仍是 Electron 语义(见 segment-host-node.mjs)。
-  const hostEntry = resolveSegmentHost(s.name);
-  if (hostEntry === SEGMENT_HOST_NODE) childEnv.ELECTRON_RUN_AS_NODE = "1";
-  const child = spawn(process.execPath, [hostEntry], {
+  const child = spawn(process.execPath, [SEGMENT_HOST], {
     stdio: ["ignore", captureLog ? "pipe" : "inherit", captureLog ? "pipe" : "inherit"],
     windowsHide: true,
     env: childEnv,
@@ -967,9 +858,6 @@ export async function runAll(dirs, options = {}) {
   const timeout = Number(options.segmentTimeoutMs ?? 0);
   const isolate = resolveIsolation(options);
   const segments = await discoverSegments(dirs, { only: options.only });
-  // 发现面刚拿到就查名单存活性:放在这里(而非逐段派发时)才能在跑任何段之前整轮判红,
-  // 也才拿得到「本轮到底发现了哪些段」这份完整事实来判条目是否过期。
-  assertOptOutListAlive(segments.map((s) => s.name));
   // 解析两次是刻意的:夹取只该约束「真正派生 worker 的地方」(池内 worker 数 = min(并发, 段数)),
   // 而输出模式跟的是**请求的档位** —— 设了并发就一律走管道转发,于是「M2W_TEST_CONCURRENCY=4 +
   // 单段筛选」这种最常见的本地复现姿势也验得到读端 utf8 解码(否则该模式只在全量轮次出现,

@@ -11,20 +11,8 @@
  * ——新增/删除导出前先跑该段,别等 check:fixtures 报运行期错误。
  */
 export const app = {
-  // userData 必须落到真实目录:段内 settings/ui-state 直读 `app.getPath("userData")`
-  // 再 path.join(..., "settings.json"),而此处若返回空串,join 的结果就是 **cwd 相对路径**
-  // —— 同一目录被多个进程/多段共享,一段写下的设置成为下一段的起点(实测读 settings 的段
-  // 成批失败,且失败点看起来像"设置没生效",与真因毫无关联)。故由调用方经环境变量注入
-  // 一次性目录(键名与 shared/userdata.js 的 USER_DATA_ENV 同源)。
-  // 未设该变量时返回空串 —— 与本文件改造前逐字一致,gen-fixtures 走的仍是这条老路径。
-  getPath: (/** @type {string} */ name) =>
-    name === "userData" ? (process.env.M2W_SEGMENT_USER_DATA ?? "") : "",
+  getPath: () => "",
   getAppPath: () => "",
-  // 补 no-op:shared/userdata.js 的 redirectUserData 走 app.setPath("userData", dir)。
-  // 纯 node 下没有 electron 的路径注册表可写(写入也不会被 getPath 读回,故真值仍由
-  // 上面的 getPath 从环境变量给出),但**方法必须存在** —— shared/userdata.js 拿到的是
-  // electron app 的同形状替身,缺方法会让整条 userData 重定向路径抛 TypeError。
-  setPath: () => {},
   whenReady: async () => {},
   on: () => {},
   once: () => {},
