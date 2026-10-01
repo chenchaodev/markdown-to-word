@@ -588,17 +588,32 @@ export function scanTopLevel(root = ROOT) {
   const lockRole = findRole(decl.roles, "lockfile");
 
   const mirrorPaths = [
-    ...entries.filter((entry) => MIRROR_TREE_CATEGORIES.has(entry.category)).map((entry) => entry.name),
-    // 声明文件按**文件粒度**进镜像:沙盒内要跑构建,就得能解析编译器配置与包清单。
-    // 锁文件不带 —— 依赖是目录联接挂入的,离线构建读不到它。
-    ...entries.filter((entry) => entry.configRole === "tsconfig" || entry.configRole === "manifest").map((entry) => entry.name),
+    ...new Set([
+      ...entries.filter((entry) => MIRROR_TREE_CATEGORIES.has(entry.category)).map((entry) => entry.name),
+      // 声明文件按**文件粒度**进镜像:沙盒内要跑构建,就得能解析编译器配置与包清单。
+      // 锁文件不带 —— 依赖是目录联接挂入的,离线构建读不到它。
+      ...entries.filter((entry) => entry.configRole === "tsconfig" || entry.configRole === "manifest").map((entry) => entry.name),
+      // 编译输出树按**声明**并入(ADR-042:`readdir` 告诉不了你「dist 是产物」):它是「沙盒
+      // **应当**具备」的一项**义务**,不是「此刻磁盘有什么」。本门禁的两个调用点都排在
+      // `build` 之前,那一刻它定义上不存在 —— 按存在性过滤会让 fixtures / dual-matrix
+      // 这两个**不调 buildSandbox** 的探针 import 不到产物。
+      // 只并 buildOutputNames、**不并** packOutputNames:打包输出目录是终端产物,沙盒内
+      // 不跑 electron-builder,带过去纯属浪费。
+      // `new Set` 是必需而非洁癖:`dist` 存在时它已由第一段(BUILD 类别)进入,再并一次就
+      // 重复,而「镜像集有重复项」那条锚点会立刻红。
+      ...buildOutputNames,
+    ]),
   ].sort((a, b) => a.localeCompare(b));
 
   // 「声明为产物」的顶层:编译输出树 ∪ 打包输出目录 ∪ 打包白名单**正向**引用的顶层,再限于是目录
   // (保护集防的是删除一个目录;顶层文件本来就不可能被递归删除,留着它不影响任何判定)。
   const cleanable = new Set(
     [...buildOutputNames, ...packOutputNames, ...decl.packTopLevel.positive].filter(
-      (name) => byName.get(name)?.isDirectory === true,
+      // 「已知是顶层**文件**」才剔除(如 build.files 里的 package.json);「此刻不存在」
+      // (如干净检出上的 dist)按**声明**保留 —— 与上方注释声明的意图一致。
+      // 原来的 `=== true` 把「是文件」与「不存在」用同一个判断合并了,那是存在性过滤
+      // 冒充语义过滤,与 mirrorPaths 那处同根。
+      (name) => byName.get(name)?.isDirectory !== false,
     ),
   );
   const cleanProtectedSegments = entries

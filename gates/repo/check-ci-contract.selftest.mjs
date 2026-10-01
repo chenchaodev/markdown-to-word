@@ -781,6 +781,36 @@ try {
   );
   // 交付面与安装树:输出树必须整树镜像(测试 import 产物),锁文件不镜像但受保护
   checkAnchor(synthetic.mirrorPaths.includes('omega'), '编译输出树 omega 应整树进镜像集(测试 import 的是产物)');
+
+  // 上面那条锚点测不到「已存在」以外的情形 —— 合成树里 omega/ 是在盘的,而真实干净检出上
+  // 它定义上不存在(本门禁两个调用点都排在 build 之前)。11e5c4c(按存在性过滤交付面)与
+  // 4832c09(只改 buildOutputNames 不改 mirrorPaths)两次逃逸正是从这个缺口过去的。
+  // 这里用一棵**声明了编译输出树、但磁盘上没有它**的树把该形态钉住;派生而非复制定义,
+  // 免得两棵树日后漂移。
+  const cleanCheckoutRoot = mkdtempSync(join(tmpdir(), 'm2w-manifest-clean-'));
+  try {
+    const absentOnDisk = new Set(['omega', 'zeta']); // omega = tsconfig outDir;zeta = 打包输出目录
+    for (const [relative, content] of Object.entries(SYNTHETIC_TOP_LEVEL)) {
+      if (absentOnDisk.has(relative.split('/')[0])) continue;
+      writeFileIn(cleanCheckoutRoot, relative, content);
+    }
+    const cleanCheckout = scanTopLevel(cleanCheckoutRoot);
+    const declaredAbsentStillMirrored =
+      !cleanCheckout.names.includes('omega') && cleanCheckout.mirrorPaths.includes('omega');
+    checkAnchor(
+      declaredAbsentStillMirrored,
+      '声明为编译输出树但此刻磁盘上不存在时仍须进镜像集 —— 否则 fixtures / dual-matrix 这两个' +
+        `不调 buildSandbox 的探针在干净检出上 import 不到产物(names=${cleanCheckout.names.join(',')}` +
+        ` mirrorPaths=${cleanCheckout.mirrorPaths.join(',')})`,
+    );
+    // 打印挂在真实结果上:checkAnchor 只收集不抛,无条件打印「断言通过」会在锚点失败时
+    // 也打出来 —— 一条会撒谎的通过记录比没有更坏。
+    if (declaredAbsentStillMirrored) {
+      console.log('[ok] contract-selftest:声明存在但磁盘不存在的编译输出树仍进镜像集(干净检出语义) 断言通过');
+    }
+  } finally {
+    rmSync(cleanCheckoutRoot, { recursive: true, force: true });
+  }
   checkAnchor(
     !synthetic.mirrorPaths.includes('lock-a.json') && synthetic.cleanProtectedSegments.includes('lock-a.json'),
     '锁文件不该进镜像集(依赖是联接挂入的),但应在删除保护区里',
@@ -817,8 +847,12 @@ console.log(
 const real = topLevel(projectRoot);
 checkAnchor(new Set(real.mirrorPaths).size === real.mirrorPaths.length, '镜像集有重复项');
 checkAnchor(
-  real.mirrorPaths.every((name) => real.names.includes(name)),
-  `镜像集含不存在的顶层:${real.mirrorPaths.filter((name) => !real.names.includes(name)).join(',')}`,
+  // 豁免集恰好是「单源声明为编译输出树的那一个名字」——它按 ADR-042 由 tsconfig outDir
+  // 声明并入镜像集,而干净检出上它定义上不存在(本门禁两个调用点都排在 build 之前)。
+  // 这不是放宽判据,是同一条意图(镜像集不得含拼错的路径)在新口径下的重述。
+  real.mirrorPaths.every((name) => real.names.includes(name) || real.buildOutputNames.includes(name)),
+  `镜像集含既不存在、也未声明为编译输出树的顶层(拼错路径才会命中):` +
+    `${real.mirrorPaths.filter((name) => !real.names.includes(name) && !real.buildOutputNames.includes(name)).join(',')}`,
 );
 checkAnchor(
   real.protectedTreePaths.length >= real.mirrorPaths.length &&
