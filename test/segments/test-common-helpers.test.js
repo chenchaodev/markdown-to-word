@@ -20,7 +20,10 @@
  *    (刚退出的 Electron 子进程句柄未释放)。POSIX 无此语义,故该半段按平台跳过并留痕;
  * 3) 退避真的在重试(仅 win32):占位子进程**自己**在数百毫秒后退出,于是删除必然
  *    「先失败、占用解除后才成功」。断言总耗时跨过至少一次 retryDelay —— 只断言「最终成功」
- *    是恒绿的(靠删后复查也能成功),抓不到「有没有真等」这件事。
+ *    是恒绿的(靠删后复查也能成功),抓不到「有没有真等」这件事;
+ * 4) 释放占用后的**有界等待**(仅 win32):本进程 cwd 已切回、但占位子进程还活着 ——
+ *    「释放动作已返回 ≠ Windows 已放掉句柄」。这条守的是 releaseOccupancy 之后第一次
+ *    兜底清理的等待窗口(见 RELEASE_SETTLE_BUDGET_MS 的实测依据)。
  *
  * 防假通过三处:
  * 1) 「系统临时区前缀目录集合基线」在 run() 入口取,段末逐项比对 —— helper 真的漏了目录,
@@ -154,22 +157,84 @@ function releaseOccupancy() {
 const HOLDER_LIFETIME_MS = 800;
 
 /**
- * 占位子进程的脚本:占住 cwd 的同时**自己**在 HOLDER_LIFETIME_MS 后退出。
+ * 「延迟释放」锚点里占位子进程的存活时长(ms)。
+ *
+ * **取值被两侧夹住,不是随手取的**(两侧都是 `cleanupTempResources` 一次调用的真实形态):
+ * - 下界:一次调用的默认重试预算 = 5×6/2×100 = **1500ms**(线性退避 100+200+…+500)。存活时长
+ *   必须**超过**它,否则第一次调用就删得掉,「释放后需要等」这件事根本不会发生,锚点退化成恒绿。
+ * - 上界:有界等待的第二次调用在约 2500ms 处就会成功。存活时长必须**低于**它,否则第一次调用
+ *   就够、有界等待那一半又变成恒绿。
+ * 取 2200ms:距下界 700ms、距上界约 300ms,两侧都不贴边(Windows 上 rmSync 本身耗时会让实际
+ * 时刻略晚于名义值,贴下界会偶发变成「第一次就成功」)。
+ */
+const SLOW_RELEASE_HOLDER_MS = 2200;
+
+/**
+ * 释放占用后兜底清理的**有界等待**预算(ms)。
+ *
+ * 这是**上界,不是估计值** —— 取值依据分两侧:
+ * - 下界有据:一次 `cleanupTempResources()` 的重试预算 1500ms,在 CI 上**被证明不足**(该 case
+ *   耗时 4562ms,整段都在这次调用的退避里空转,最终仍抛「临时资源清理失败」)。任何小于该窗口
+ *   的等待都是零效果,所以不能只把常数调小一档了事。
+ * - 上界有据:本机实测(node 与 Electron 主进程,见 docs/evidence 的本条结论)在**健康**机器上
+ *   「chdir 释放 → 可删」延迟 p99 = 2ms、最大 2ms —— 第一次调用即成功,本预算一分钱不花,
+ *   它只在「真的会失败」时被消耗。故取 10000ms(约为已知不足的 1500ms 的 6.7 倍):
+ *   真卡死的目录仍会在本预算内判红,不会退化成无限等。
+ * ⚠️ 失败那台机器上的真实释放窗口**未被实测**(样本量 1),故只能取整成一个远大于下界的上界;
+ * 若日后实测到更大窗口,调大本常数即可,机制无需改。
+ */
+const RELEASE_SETTLE_BUDGET_MS = 10000;
+
+/**
+ * 释放占用后的兜底清理:**有界等待**直到删掉或预算用尽(至少调用一次)。
+ *
+ * 为何需要:`releaseOccupancy()` 是同步 `process.chdir`,它返回只说明「本进程不再把该目录
+ * 当 cwd」,**不代表 Windows 已经放掉句柄**;紧接着的那一次兜底清理只有 1500ms 重试预算,
+ * CI 上被证明不够(见 RELEASE_SETTLE_BUDGET_MS)。
+ *
+ * 为何**反复调用**是合法的:靠的正是「删除失败时资源保留在注册表」这条既有设计(见下面
+ * 「Windows 真实占用」case 里「删除失败时资源须保留在注册表(可被后续重试/兜底寻址)」那条断言)——
+ * 失败项不被摘除,所以下一次调用仍能寻址到它并再试一次。**本函数用的是这条意图,不是绕开它**;
+ * 反过来,任何「失败即清空注册表」的改法都会推翻那条断言,故不采用。
+ * @param {number} budgetMs 有界等待预算(ms);至少调用一次,预算只约束**额外**重试
+ * @returns {{ removed: string[] }} 已清理的路径(与 cleanupTempResources 同形)
+ */
+function cleanupWithinBudget(budgetMs = RELEASE_SETTLE_BUDGET_MS) {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    try {
+      return cleanupTempResources();
+    } catch (error) {
+      if (Date.now() >= deadline) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `${reason}\n[另] 释放占用后的有界等待已用尽(${budgetMs}ms):占用未真正解除,`
+            + "或该目录确实删不掉(本等待有界,不会无限重试)",
+        );
+      }
+    }
+  }
+}
+
+/**
+ * 占位子进程的脚本:占住 cwd 的同时**自己**在 lifetimeMs 后退出。
  * 自退(而非由父进程在 rm 之后才 kill)才能造出「先失败、占用解除后才成功」——
  * 父进程没有任何夹具能在两次 rm 之间插进去释放占用(removePath 是同步 API)。
+ * @param {number} lifetimeMs 存活时长(ms)
  * @returns {string} `-e` 脚本源码
  */
-function holderScript() {
-  return `process.stdout.write("ready\\n");setTimeout(() => process.exit(0), ${HOLDER_LIFETIME_MS});`;
+function holderScript(lifetimeMs) {
+  return `process.stdout.write("ready\\n");setTimeout(() => process.exit(0), ${lifetimeMs});`;
 }
 
 /**
  * 起一个占住 dir 的子进程并等它真的就绪(就绪信号到达即证明 cwd 已被它持有)。
  * @param {string} dir 要占住的目录
+ * @param {number} [lifetimeMs] 存活时长(ms);缺省 HOLDER_LIFETIME_MS
  * @returns {Promise<{ release(): void }>} 释放句柄(幂等)
  */
-function holdDirUntilSelfExit(dir) {
-  const child = spawn(process.execPath, ["-e", holderScript()], {
+function holdDirUntilSelfExit(dir, lifetimeMs = HOLDER_LIFETIME_MS) {
+  const child = spawn(process.execPath, ["-e", holderScript(lifetimeMs)], {
     cwd: dir,
     stdio: ["ignore", "pipe", "ignore"],
     windowsHide: true,
@@ -461,6 +526,17 @@ export async function run() {
         assertFailureCarries(thrown, ["占用沙盒", stuck.path, "临时资源清理失败"], "removeResource 须抛且点名路径");
         const reported = await captureAssertionFailure(() => cleanupTempResources());
         assertFailureCarries(reported, ["占用沙盒", stuck.path, "不得静默残留"], "兜底清理须点名删不掉的资源");
+        // 形态一「占用未释放」:有界等待同样必须失败 —— 它不是「无脑重试到成功」。
+        // 预算给 1ms 是刻意的:只证明「至少调用一次、且失败后按预算收手」,不让这条断言
+        // 把段的时间预算押在等待上。两条断言分开写:第一条是行为(失败且仍点名该资源),
+        // 第二条是诊断质量(失败消息须说明「有界等待已用尽」,否则排障时看不出等过、等到哪)。
+        const bounded = await captureAssertionFailure(() => cleanupWithinBudget(1));
+        assertFailureCarries(
+          bounded,
+          ["占用沙盒", stuck.path],
+          "占用未释放时有界等待也必须失败(不得把删不掉的目录当成已清理)",
+        );
+        assertIncludes(bounded.message, "有界等待已用尽", "有界等待耗尽时的消息须说明等过且等到哪");
         assert(
           !reported.message.includes(leaky.path),
           "能删掉的资源不该出现在失败清单里(失败清单只列真失败项)",
@@ -474,7 +550,7 @@ export async function run() {
       } finally {
         releaseOccupancy();
       }
-      const retried = cleanupTempResources();
+      const retried = cleanupWithinBudget();
       assertIncludes(retried.removed.join(","), stuck.path, "占用解除后兜底清理应能删掉它");
       assertEq(fs.existsSync(stuck.path), false, "兜底清理成功后目录应消失");
       assert(
@@ -482,6 +558,50 @@ export async function run() {
         "兜底清理后不应仍挂在注册表",
       );
       console.log("[ok] test-common-helpers:Windows 占用(单条抛/汇总抛/保留注册项/解除后收干净)");
+    });
+
+    // 这一条是 REQ-136 的现场那条失败的**守门 case**:CI 上 :477 那一次「释放后立刻重试」
+    // 把 1500ms 默认预算耗尽仍失败 → 目录留在注册表 → 后续两个 case 的兜底清理都再撞一次、
+    // 再抛同一条消息(3 条失败同源)。本 case 用「本进程 cwd 已切回 + 占位子进程还活着」
+    // 造出同一形态,并断言有界等待能等到句柄真放掉。
+    await suite.case("释放占用后的有界等待:一次立即重试不够,有界等待等到句柄真放掉", async () => {
+      const resource = track(createTempResource({ prefix: SELFTEST_PREFIX, label: "延迟释放沙盒" }));
+      if (process.platform !== "win32") {
+        console.log("[skip] test-common-helpers:延迟释放锚点仅 win32 有效(当前 POSIX)");
+        cleanupTempResources();
+        assertEq(pendingTempResources().length, 0, "跳过分支同样不得残留");
+        return;
+      }
+      const held = path.join(resource.path, "cwd-held");
+      occupyDir(resource.path);
+      // 占位子进程活过「一次默认重试预算」(SLOW_RELEASE_HOLDER_MS 的下界说明):本进程 cwd
+      // 切回之后,删除仍会因它持有的句柄而失败 —— 即「释放动作已返回 ≠ 句柄已放掉」。
+      const holder = await holdDirUntilSelfExit(held, SLOW_RELEASE_HOLDER_MS);
+      try {
+        releaseOccupancy();
+        const startedAt = Date.now();
+        const cleaned = cleanupWithinBudget();
+        const elapsed = Date.now() - startedAt;
+        assertIncludes(cleaned.removed.join(","), resource.path, "有界等待应最终删掉它");
+        assertEq(fs.existsSync(resource.path), false, "有界等待成功后目录应消失");
+        assert(
+          !pendingTempResources().some((r) => r.path === resource.path),
+          "有界等待成功后应从注册表注销(不留给后续 case 撞第二次)",
+        );
+        // 有界:预算内没耗尽就返回。守护「不是无限重试」—— 若 cleanupWithinBudget 退化成死循环,
+        // 这里永远到不了;而预算耗尽时它会带着「有界等待已用尽」抛错,由上面的断言接住。
+        assert(
+          elapsed < RELEASE_SETTLE_BUDGET_MS,
+          `有界等待须在预算(${RELEASE_SETTLE_BUDGET_MS}ms)内返回,实际 ${elapsed}ms`,
+        );
+        console.log(
+          `[ok] test-common-helpers:释放占用后的有界等待(占位子进程 ${SLOW_RELEASE_HOLDER_MS}ms 后自解,`
+            + `有界等待耗时 ${elapsed}ms < 预算 ${RELEASE_SETTLE_BUDGET_MS}ms)`,
+        );
+      } finally {
+        holder.release();
+        releaseOccupancy();
+      }
     });
 
     await suite.case("退避真的在重试:占用型 EPERM 靠等待化解(不是靠删后复查)", async () => {
@@ -541,7 +661,7 @@ export async function run() {
           releaseOccupancy();
         }
       }
-      cleanupTempResources();
+      cleanupWithinBudget();
       assertEq(pendingTempResources().length, 0, "该 case 收尾后注册表应清空");
       console.log("[ok] test-common-helpers:主体失败 + 清理失败双留痕");
     });
@@ -585,7 +705,7 @@ export async function run() {
     // 前面的 case 故意留下的占用先释放,再让兜底清理收尾:否则本 case 带着占用判红,
     // 就分不清是「漏清理」还是「故意占用」
     releaseOccupancy();
-    const removed = cleanupTempResources();
+    const removed = cleanupWithinBudget();
     assert(Array.isArray(removed.removed), "兜底清理应返回已清理清单");
     assertEq(pendingTempResources().length, 0, "段末注册表应为空");
     for (const dir of created) {
