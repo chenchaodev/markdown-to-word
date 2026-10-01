@@ -99,15 +99,18 @@ jobs:
       #
       # 缓存目录与 lint 脚本的 --cache-location 一致(node_modules/.cache/eslint/),
       # 且落在既有 node_modules/ 忽略规则内,不需要额外 .gitignore 条目。
-      # ==== A/B 实验(2026-10-01,临时):lint 缓存在 CI 上到底有没有用 ====
-      # 「有必要做缓存吗」的答案从未被实测过:此前只有本机三档(冷 67s / 热 3s),
-      # 而本机 16 核 vs CI 4 核 不可比 —— 拿「CI 43s < 本机冷 67s」推出「缓存生效」
+      # ==== A/B 实验(2026-10-01,进行中):lint 缓存在 CI 上到底有没有用 ====
+      # 「有必要做缓存吗」从未被 CI 实测过。此前只有本机三档(冷 67s / 热 3s),而
+      # 本机 16 核 vs CI 4 核 不可比 —— 拿「CI 43s < 本机冷 67s」推出「缓存生效」
       # 是跨机器比较,正是本轮反复犯错的那个动作。
-      # 已知一臂:run 36839073854(v2 key,缓存开启)= lint 43s。
-      # 本臂:同代码、关掉缓存 → 若仍 ≈43s 则缓存无用可删;若远大于 43s 则缓存必需。
-      # 判完请连同上面那段注释一并恢复/定稿。
+      #
+      # **第一轮 A/B(各 n=1)未决**:缓存开 lint 43s、缓存关 lint 26s,看似省 17s;
+      # 但同轮、与缓存无关的 test:coverage 也快了 25s(144→119s)⇒ 那一轮 runner 整体
+      # 就是快,**效应量与波动同阶,n=1 分不开**。故改为交替两臂取多样本,并用同轮的
+      # test:coverage 作归一控制。
+      #
+      # **本臂 = 缓存开**(if: false 已移除)。判读见证据文件。
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        if: false # TEMP-AB: 见上方注释
         with:
           path: node_modules/.cache
           key: ${{ runner.os }}-m2w-lint-v2-${{ hashFiles('package-lock.json') }}
