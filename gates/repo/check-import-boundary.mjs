@@ -295,6 +295,23 @@ function collectDepthHits({ code, inString, depth, isCjs, origins, literalChain 
 }
 
 /** 收集一个文件里的 origin 变量名(声明右侧含 ORIGIN_SOURCE 者) */
+
+/**
+ * ⚠ origin 传播**只做一层**:拿已收进来的 origin 变量再赋一次值,不会被收成新 origin,故
+ * 「二次赋值」形态不判红 —— `const a = path.join(here,'..'); path.join(a,'..')` 判绿。
+ *
+ * 唯一的可判红构造是把两跳合并进一次调用(`path.join(here,'..','..')`),故自验须造
+ * relPath 深 2 且两跳各 ups1 的文件:同一文件里合并写法判红、二次赋值写法判绿,两者对照
+ * 才是这个盲区的完整证据。
+ *
+ * 有意不补,三条理由:① 传递闭包原型跑遍全树(含 `src/`)的真实代码零活样本,按 ADR-042,
+ * 零违规的规则等于拿维护成本换零收益;② 传播会丢掉「中间变量是目录还是文件路径」的语义,
+ * 给未来合法代码造假阳性 —— `const a = path.join(here,'..','x')` 里的 a 是**带下钻段的目录**,
+ * 其后的 `path.join(a,'..')` 并不落在根,而朴素传播会累计成 ups2 === depth 判红;③ 本仓
+ * 不存在「为绕门禁而写两跳」的动机。
+ *
+ * 将来若要补,先要解决的是中间变量的语义(下钻段该不该从 ups 里扣掉),不是加一行传播。
+ */
 function collectOrigins(code, inString) {
   const origins = new Set();
   for (const m of code.matchAll(ORIGIN_DECL_RE)) {
