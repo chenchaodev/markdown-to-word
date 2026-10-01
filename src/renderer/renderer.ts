@@ -19,6 +19,8 @@ import {
   refreshRecentFiles,
 } from "./ui/recent-files.js";
 import { initFirstRunGuide } from "./ui/first-run-guide.js";
+import { setError } from "./ui/dom-ops.js";
+import { errorMessage } from "../core/util/error-message.js";
 import { t } from "../core/i18n.js";
 
 /**
@@ -37,6 +39,17 @@ declare global {
 }
 
 /* ---------- 启动屏障 ---------- */
+/**
+ * 版本号取不到时徽标的可见文案。
+ *
+ * 为什么是字面量而不是字典键:成功路径的 `v${version}` 前缀同样是字面量(`v` 是
+ * 「版本」这一记号而非语言相关的词),失败态沿用同一记号族即 `v?` —— 问号是
+ * 「未知」的通用写法,故无需按语言分译,也就不必给三份字典各加一个键。
+ * **刻意不用 `v0.0.0` / `vunknown` 之类的假版本号**:那会把「取不到」伪装成
+ * 「取到了」,比空白更难排查(用户会拿一个错版本号去报 bug)。
+ */
+const VERSION_UNAVAILABLE = "v?";
+
 /**
  * 首屏防闪:设置回填与 UI 状态恢复都是跨进程异步回填,若各自独立 await,
  * 浏览器会先按「默认设置 + 空会话」绘制一帧,用户看到白闪 + 设置跳变。
@@ -127,11 +140,28 @@ void runInitBarrier();
 // 转换成功后刷新最近区块的回调接线(convert-flow 经 state 调用,
 // 不再 import recent-files,打破 recent-files ↔ convert-flow 的 ESM 环)
 state.recentRefreshHandler = refreshRecentFiles;
-// 标题区版本号(失败静默,不阻塞界面);title 走字典(语言切换后
-// 下次 getVersion 调用时更新;此处为启动一次性调用,与原行为一致)
-void window.api.getVersion().then((version) => {
-  const el = document.getElementById("appVersion");
-  if (!el) return;
-  el.textContent = `v${version}`;
-  el.title = t("app.versionTitle", { version });
-});
+// 标题区版本号。不阻塞界面,但**失败不许静默**:取不到版本号时徽标恒空、只留一条
+// unhandled rejection,不报任何错 —— 这正是上一轮把一处断链放大成「门禁等 5s 无解释」
+// 的原因(几何门禁的 `init ready` 用 && 串了版本号,这一路静默失败即让门禁超时)。
+// 故 reject 分支:① 徽标写入 `v?` —— 与成功路径同族的语言中立记号(成功路径的 `v` 前缀
+// 本就是字面量),**不回填假版本号**(假版本号会把「取不到」伪装成「取到了」,比空白更难
+// 排查);② 错误经本仓既有通道 setError 上报(状态行 role=alert,与其他 renderer 失败路径
+// 同一入口,不新造一套);③ 徽标 title 带上原因,悬停即可定位。
+// 文案用既有键 common.unknownError(新增专用键要动 src/core/i18n 三份字典,不在本次范围)。
+void window.api.getVersion().then(
+  (version) => {
+    const el = document.getElementById("appVersion");
+    if (!el) return;
+    el.textContent = `v${version}`;
+    el.title = t("app.versionTitle", { version });
+  },
+  (err: unknown) => {
+    const reason = errorMessage(err);
+    const el = document.getElementById("appVersion");
+    if (el) {
+      el.textContent = VERSION_UNAVAILABLE;
+      el.title = `${t("common.unknownError")}:${reason}`;
+    }
+    setError(`${t("common.unknownError")}:${reason}`);
+  },
+);

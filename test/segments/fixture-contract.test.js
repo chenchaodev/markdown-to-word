@@ -19,17 +19,24 @@
  * 3. 豁免白名单自检:每条须写理由,且不得指向已不存在的段;
  * 4. 契约判定函数的逐条失败模式 + 正向锚点(合成模块对象,不写临时文件进 test/:
  *    临时段文件会被生成器与 lint/typecheck 扫到,残留即是事故)。
+ * 5. 图片夹具字节基线:覆盖面到**全部**图片夹具(磁盘派生)+ 漂移/未登记/残留三类判红
+ *    逐条点名文件 + 全部一致的正向锚点。守的是「夹具漂移必须在 --check 里可见」——
+ *    旧实现只逐字节比对被样例引用到的图片,未被引用的夹具与「源副本同时被改」都在
+ *    判据之外,曾因此把夹具漂移误判成代码回归(见 gates/fixtures/gen-fixtures.mjs 文件头)。
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT } from "../common/paths.js";
+import { ROOT, FIXTURES_DIR } from "../common/paths.js";
 import { discoverSegments } from "../common/runner.js";
 import {
   FIXTURE_SEGMENT_DIRS,
+  IMAGE_DIGEST_BASELINE,
   SEGMENT_EXEMPTIONS,
+  auditImageDigests,
   buildReadme,
   findOutputNameCollisions,
   listCandidateSegments,
+  listImageFixtures,
   planFixtureOutputs,
   validateSegmentContract,
 } from "../../gates/fixtures/gen-fixtures.mjs";
@@ -226,5 +233,88 @@ export async function run() {
     assert(readme.includes("多场景描述\\|带竖线"), "描述中的竖线须转义,否则撑坏 Markdown 表格");
     assert(readme.trimEnd().endsWith("| multi-b.md | 多场景描述\\|带竖线(场景:b) | test/segments/multi.test.js |"), `README 行序应随 entries 顺序:\n${readme}`);
     console.log("[ok] fixture-contract:产物命名 / 撞车判定 / README 索引生成均符合契约");
+  }
+
+  // ================= 6. 图片夹具字节基线(覆盖面 + 三类判红 + 正向锚点) =================
+  {
+    const found = listImageFixtures();
+    assert(found.length > 0, "磁盘上未发现任何图片夹具(夹具树被搬走或派生逻辑失效?)");
+    // 覆盖面判据是磁盘派生:基线与实测必须**完全同集**,两侧多一张都判红。
+    // 这条同时挡住「新增夹具忘记登记」(实测多)与「夹具删了基线没清」(基线多)——
+    // 后者是恒绿失效形态,故与漂移同级判红而非放行。
+    const baselineKeys = Object.keys(IMAGE_DIGEST_BASELINE).sort();
+    const foundKeys = found.map((f) => f.rel);
+    assert(
+      baselineKeys.join(",") === foundKeys.join(","),
+      `图片夹具基线与磁盘实测不同集(新增夹具须跑 --print-image-baseline 登记;删除/改名须清基线):\n`
+        + `  基线(${baselineKeys.length})=${baselineKeys.join(",")}\n`
+        + `  实测(${foundKeys.length})=${foundKeys.join(",")}`,
+    );
+    // 覆盖面必须大于「生成器会复制的那些图片」——否则就退回旧失效形态。
+    // 判据从磁盘派生:生成器只把**被生成样例引用到**的图复制进 acceptance/,
+    // 故「在夹具树上、但在 acceptance/ 里没有对应副本」的即旧判据看不见的那批。
+    const acceptanceDir = path.join(FIXTURES_DIR, "acceptance");
+    const copied = new Set(
+      fs
+        .readdirSync(acceptanceDir, { withFileTypes: true, recursive: true })
+        .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".png"))
+        // parentPath 是 Node 22 起 Dirent 上的规范字段;此处只取目录部分拼回绝对路径
+        .map((e) => path.relative(acceptanceDir, path.join(e.parentPath, e.name)).split(path.sep).join("/")),
+    );
+    const uncoveredByCopy = foundKeys.filter((rel) => !copied.has(rel));
+    assert(
+      uncoveredByCopy.length > 0,
+      `图片夹具覆盖面看起来仍只含生成器会复制的那些图片(${foundKeys.join(",")})——`
+        + "基线必须覆盖全部夹具(含未被任何样例引用的),否则夹具漂移仍不可见",
+    );
+    // 正向锚点(反向锚点 = 全部一致时判绿):真实仓库当前必须零问题
+    const clean = auditImageDigests(found, IMAGE_DIGEST_BASELINE);
+    assert(
+      clean.length === 0,
+      `真实仓库的图片夹具与基线不一致(请确认是有意改动并重新登记,或回滚夹具):\n  ${clean.join("\n  ")}`,
+    );
+
+    // 负向一:漂移必须判红且点名该文件。逐个夹具都试一遍——
+    // 只试一张就可能恰好挑中「本来就被比对」的那张,盖不住覆盖面判据的漏洞。
+    for (const f of found) {
+      const drifted = auditImageDigests(
+        [{ rel: f.rel, sha256: "0".repeat(64) }],
+        { [f.rel]: f.sha256 },
+      );
+      assert(drifted.length === 1, `${f.rel}: 字节漂移应恰判红一条,实际 ${drifted.length} 条:${drifted.join(" | ")}`);
+      // 上方已断言 length === 1,取首项落到具名变量(免去逐处索引收窄)
+      const only = /** @type {string} */ (drifted[0]);
+      assert(
+        only.startsWith(`${f.rel}:`) && only.includes("字节漂移"),
+        `${f.rel}: 漂移诊断须点名该文件并说明是字节漂移,实际 ${only}`,
+      );
+      // 诊断要能定位到具体哪张图:摘要前缀进文案,便于人眼比对
+      assert(
+        only.includes(f.sha256.slice(0, 12)),
+        `${f.rel}: 漂移诊断应含实测摘要前缀便于定位,实际 ${only}`,
+      );
+    }
+
+    // 负向二:磁盘上有、基线里没有(新增夹具漏登记)→ 判红并点名
+    const unregistered = auditImageDigests([{ rel: "new-fixture.png", sha256: "a".repeat(64) }], {});
+    assert(unregistered.length === 1, `新增图片夹具未登记基线应恰判红一条,实际 ${unregistered.join(" | ")}`);
+    const unregisteredOnly = /** @type {string} */ (unregistered[0]);
+    assert(
+      unregisteredOnly.startsWith("new-fixture.png:") && unregisteredOnly.includes("未登记"),
+      `新增图片夹具未登记基线应判红并点名,实际 ${unregisteredOnly}`,
+    );
+
+    // 负向三:基线里有、磁盘上没有(夹具删除/改名后残留)→ 判红(恒绿失效形态)
+    const stale = auditImageDigests([], { "gone.png": "b".repeat(64) });
+    assert(stale.length === 1, `基线残留应恰判红一条,实际 ${stale.join(" | ")}`);
+    const staleOnly = /** @type {string} */ (stale[0]);
+    assert(
+      staleOnly.startsWith("gone.png:") && staleOnly.includes("已不存在"),
+      `基线残留的图片夹具应判红(否则删夹具后基线恒绿),实际 ${staleOnly}`,
+    );
+
+    console.log(
+      `[ok] fixture-contract:图片夹具字节基线 ${foundKeys.length} 张全覆盖 + 漂移/未登记/残留三类判红点名 + 全部一致判绿`,
+    );
   }
 }
