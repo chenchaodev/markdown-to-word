@@ -18,10 +18,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT } from "../common/paths.js";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const cssPath = path.resolve(here, "..", "..", "src", "renderer", "style", "base.css");
+const cssPath = path.join(ROOT, "src", "renderer", "style", "base.css");
 
 /**
  * 提取「选择器 { … }」规则体并归一化为行数组。

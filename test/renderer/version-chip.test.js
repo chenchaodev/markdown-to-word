@@ -37,7 +37,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
  * @returns {string} file:// URL
  */
 const url = (abs) => pathToFileURL(abs).href;
-const DIST_RENDERER = path.resolve(here, "../../dist/renderer");
+const DIST_RENDERER = path.join(ROOT, "dist", "renderer");
 const DOM_STUB = path.resolve(here, "./dom-stub.js");
 
 /**

@@ -23,7 +23,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT } from "../common/paths.js";
 
 /**
  * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
@@ -48,9 +48,7 @@ function capture(match, index) {
   return value;
 }
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "..", "..");
-const read = (/** @type {string[]} */ ...rel) => fs.readFileSync(path.join(repoRoot, ...rel), "utf8");
+const read = (/** @type {string[]} */ ...rel) => fs.readFileSync(path.join(ROOT, ...rel), "utf8");
 
 const STYLE_DIR = ["src", "renderer", "style"];
 /** 去注释后再做规则/令牌解析:注释里出现的选择器与令牌名(如「见 .feed)」)不是声明 */

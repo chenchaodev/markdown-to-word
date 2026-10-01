@@ -34,7 +34,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { ROOT } from "../common/paths.js";
 import { installDomStub, fireListener, makeElement } from "./dom-stub.js";
 
 /**
@@ -79,9 +80,8 @@ const unpairedMath = () => ({
 export const fixtures = null;
 
 export async function run() {
-  const here = path.dirname(fileURLToPath(import.meta.url));
   /** @param {string} rel @returns {string} */
-  const distUrl = (rel) => pathToFileURL(path.resolve(here, "../../dist/renderer", rel)).href;
+  const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", "renderer", rel)).href;
 
   /** 预检请求的源文件序列(断言「每文件一次」的唯一依据)。 */
   /** @type {string[]} */
@@ -184,10 +184,10 @@ export async function run() {
   try {
     const flow = await import(distUrl("convert/convert-flow.js"));
     const dialogs = await import(distUrl("ui/dialogs.js"));
-    const i18n = await import(pathToFileURL(path.resolve(here, "../../dist/core/i18n/index.js")).href);
+    const i18n = await import(pathToFileURL(path.join(ROOT, "dist", "core", "i18n", "index.js")).href);
     // t / setLanguage 不在 i18n/index.js 的导出面上,按 i18n-registry 段的同款从
     // core/i18n.js 取(注册表面只出 DICT / LANGUAGES / isLanguage / htmlLangOf)
-    const i18nApi = await import(pathToFileURL(path.resolve(here, "../../dist/core/i18n.js")).href);
+    const i18nApi = await import(pathToFileURL(path.join(ROOT, "dist", "core", "i18n.js")).href);
     const { state } = await import(distUrl("state/state.js"));
     // 结果弹窗会把「模态可见」置起来挡住后续用例;本段只关心预检门
     state.suppressCompleteDialog = true;
@@ -991,7 +991,7 @@ export async function run() {
     const statusRule = /\n\.status \{([^}]*)\}/.exec(
       // 去注释后判定:注释里提到 flex:none(说明「为什么加」)不算声明
       fs
-        .readFileSync(path.resolve(here, "../../src/renderer/style/base.css"), "utf8")
+        .readFileSync(path.join(ROOT, "src", "renderer", "style", "base.css"), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, ""),
     );
     assert(statusRule, "base.css 应有 .status 规则");
@@ -1001,7 +1001,7 @@ export async function run() {
     );
     const cardRule = /\n\.feed \.result-summary \{([^}]*)\}/.exec(
       fs
-        .readFileSync(path.resolve(here, "../../src/renderer/style/dialogs.css"), "utf8")
+        .readFileSync(path.join(ROOT, "src", "renderer", "style", "dialogs.css"), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, ""),
     );
     assert(cardRule, "dialogs.css 应有 .feed .result-summary 规则");
@@ -1014,7 +1014,7 @@ export async function run() {
     // 预检收口在 convert-flow 的三个命令函数里;入口再包一层就会双跑预检、
     // 连弹两次报告。唯一例外是成书向导:它用 withPrecheck([]) 借锁把
     // 「付印 docx+pdf」当一条命令,预检本身由 runMerge 内部提供。
-    const srcRoot = path.resolve(here, "../../src/renderer");
+    const srcRoot = path.join(ROOT, "src", "renderer");
     /** @type {string[]} */
     const wrapCallers = [];
     const walk = (/** @type {string} */ dir) => {

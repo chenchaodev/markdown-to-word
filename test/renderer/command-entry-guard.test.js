@@ -13,7 +13,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { ROOT } from "../common/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 
 /**
@@ -299,9 +300,8 @@ export async function run() {
   });
 
   try {
-    const here = path.dirname(fileURLToPath(import.meta.url));
     /** @param {string} rel @returns {string} */
-    const distUrl = (rel) => pathToFileURL(path.resolve(here, "../../dist/renderer", rel)).href;
+    const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", "renderer", rel)).href;
     const flow = await import(distUrl("convert/convert-flow.js"));
     const { state } = await import(distUrl("state/state.js"));
     const selection = await import(distUrl("convert/events/selection.js"));
@@ -340,7 +340,7 @@ export async function run() {
     assert(dialogCount() === 2, "内部控件 click/Enter/Space 冒泡不得再打开文件对话框");
 
     // ③ 容器角色:role=button 会与内部交互元素语义冲突,应为 region
-    const html = fs.readFileSync(path.resolve(here, "../../src/renderer/index.html"), "utf8");
+    const html = fs.readFileSync(path.join(ROOT, "src", "renderer", "index.html"), "utf8");
     const dropZoneTag = html.match(/<div\s[^>]*id="dropZone"[\s\S]*?>/)?.[0] ?? "";
     assert(dropZoneTag.includes('role="region"'), "拖放区容器应声明 role=region");
     assert(!dropZoneTag.includes('role="button"'), "拖放区容器不应再声明 role=button");

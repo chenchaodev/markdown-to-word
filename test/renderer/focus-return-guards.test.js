@@ -18,7 +18,8 @@
  * 探针(stub 契约:选择器命中由用例给,不在 stub 里做全局表)。
  */
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { ROOT } from "../common/paths.js";
 import { installDomStub, makeElement } from "./dom-stub.js";
 
 /**
@@ -35,9 +36,7 @@ function assert(cond, msg) {
 /** 取元素 id(失败消息用)。 */
 const idOf = (/** @type {{ id?: string }} */ el) => `#${el?.id ?? "?"}`;
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "..", "..");
-const distUrl = (/** @type {string} */ rel) => pathToFileURL(path.join(repoRoot, "dist", rel)).href;
+const distUrl = (/** @type {string} */ rel) => pathToFileURL(path.join(ROOT, "dist", rel)).href;
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;

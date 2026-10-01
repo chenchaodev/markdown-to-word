@@ -14,7 +14,8 @@
  * 用最小 DOM stub 驱动 dist 向导模块(元素工厂与 dom-stub.js 同款)。
  */
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { ROOT } from "../common/paths.js";
 import { fireListener, installDomStub } from "./dom-stub.js";
 
 /**
@@ -28,10 +29,8 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`wizard-open-sync 断言失败:${msg}`);
 }
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "..", "..");
 /** @param {string} rel @returns {string} */
-const distUrl = (rel) => pathToFileURL(path.join(repoRoot, "dist", rel)).href;
+const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", rel)).href;
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;

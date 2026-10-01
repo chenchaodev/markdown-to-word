@@ -11,7 +11,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { ROOT } from "../common/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 
 /**
@@ -339,9 +340,8 @@ export async function run() {
   });
 
   try {
-    const here = path.dirname(fileURLToPath(import.meta.url));
     /** @param {string} rel @returns {string} */
-    const distUrl = (rel) => pathToFileURL(path.resolve(here, "../../dist/renderer", rel)).href;
+    const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", "renderer", rel)).href;
     const flow = await import(distUrl("convert/convert-flow.js"));
     const { state } = await import(distUrl("state/state.js"));
     const runtime = await import(distUrl("wizard/wizard-runtime.js"));
@@ -501,7 +501,7 @@ export async function run() {
 
     // ---- 8. 付印链持链口径固定:整条链经 withPrecheck 单一 flight,两格式之间复检统一守卫 ----
     const wizardSource = fs.readFileSync(
-      path.resolve(here, "../../src/renderer/wizard/book-wizard.ts"),
+      path.join(ROOT, "src", "renderer", "wizard", "book-wizard.ts"),
       "utf8",
     );
     const finishBody = wizardSource.slice(wizardSource.indexOf("async function finishWizard"));

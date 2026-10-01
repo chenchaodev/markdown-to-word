@@ -40,7 +40,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { ROOT } from "../common/paths.js";
 import { installDomStub, fireListener, makeElement, makeKeyEvent } from "./dom-stub.js";
 
 /**
@@ -54,10 +55,8 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`ui-interaction-guards 断言失败:${msg}`);
 }
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "..", "..");
 /** @param {string} rel @returns {string} */
-const distUrl = (rel) => pathToFileURL(path.join(repoRoot, "dist", rel)).href;
+const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", rel)).href;
 
 /** 冲刷微任务与已就绪的宏任务,让未 await 的命令链(void 启动)跑完。 */
 async function flush() {
@@ -213,7 +212,7 @@ function parseElementTree(html) {
 
 export async function run() {
   // ---------- 源契约:动态节点不得挂 data-i18n ----------
-  const indexHtml = fs.readFileSync(path.join(repoRoot, "src", "renderer", "index.html"), "utf8");
+  const indexHtml = fs.readFileSync(path.join(ROOT, "src", "renderer", "index.html"), "utf8");
   const DYNAMIC_IDS = [
     "quickOutputDir",
     "outputDirValue",

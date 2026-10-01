@@ -26,7 +26,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
+import { ROOT } from "../common/paths.js";
 import { installDomStub, makeElement, makeClassList, fireListener } from "./dom-stub.js";
 // 单向读几何规格(纯规格文件,不反向依赖生产侧:见 assertTableContract 的注)
 import {
@@ -159,10 +160,8 @@ const BASE = {
   obsidian: { compat: true, attachmentFolder: "att" },
 };
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "..", "..");
 /** @param {string} rel @returns {string} */
-const distUrl = (rel) => pathToFileURL(path.join(repoRoot, "dist", rel)).href;
+const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", rel)).href;
 
 // 显式声明本段无验收样例
 export const fixtures = null;
@@ -234,7 +233,7 @@ const PROBE = process.env.M2W_PROBE ?? "";
  */
 
 export async function run() {
-  const indexHtml = fs.readFileSync(path.join(repoRoot, "src", "renderer", "index.html"), "utf8");
+  const indexHtml = fs.readFileSync(path.join(ROOT, "src", "renderer", "index.html"), "utf8");
   const tags = parseTags(indexHtml);
   const drawerOffset = tags.find((t) => t.attrs.id === "settingsDrawer")?.offset ?? Infinity;
 
@@ -928,7 +927,7 @@ export async function run() {
   /* ---------- 6) 控件 id 交叉校验 + radio 组零命中守护 ---------- */
   // =========================================================================
   // 负探针:只改坏 refs 源码(断言逻辑不动),用来自证下面这条护栏真会变红
-  let refsSource = fs.readFileSync(path.join(repoRoot, "src", "renderer", "dom", "refs.ts"), "utf8");
+  let refsSource = fs.readFileSync(path.join(ROOT, "src", "renderer", "dom", "refs.ts"), "utf8");
   if (PROBE === "ref-id") {
     refsSource = refsSource.replace('getElementById("toc")', 'getElementById("tocTypo_typo")');
   } else if (PROBE === "ref-radio") {
