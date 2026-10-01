@@ -30,6 +30,10 @@ export async function probeDistManifest(ctx) {
   // 否则探针会以「脚本起不来」失败 —— 那是夹具缺陷,不是门禁结论。
   fs.mkdirSync(path.join(sandbox, "shared"), { recursive: true });
   fs.copyFileSync(path.join(ROOT, "shared", "paths.js"), path.join(sandbox, "shared", "paths.js"));
+  // CLI 解析与文件哈希已下沉到 shared/(ADR-049),被测脚本直接依赖这两个模块,同样要带一份。
+  for (const mechanism of ["cli.mjs", "fsx.mjs"]) {
+    fs.copyFileSync(path.join(ROOT, "shared", mechanism), path.join(sandbox, "shared", mechanism));
+  }
   const manifestInput = {
     "main/index.js": "export const main = 1;\n",
     "core/convert.js": "export const convert = 1;\n",
@@ -43,14 +47,10 @@ export async function probeDistManifest(ctx) {
    * @param {string[]} args CLI 参数
    * @returns {Promise<import("../../../smoke/smoke-proc.mjs").ProcessRunResult>} 运行结果
    */
-  const runScript = (args) =>
-    runProcess({
-      command: node.command,
-      args: [path.join(sandbox, "gates", "artifacts", scriptName), ...args],
-      cwd: sandbox,
-      env: node.env,
-      timeoutMs: ctx.timeoutMs,
-    });
+  // 刻意写成单行且脚本名用字面量(而非上方的 scriptName 变量):副本闭包门禁的沙盒入口
+  // 登记抽查(test/common/copy-closure-audit.js 的 findEntryExecutionLines)要求「复制行之外
+  // 有一行**同时**出现该文件名与执行类调用词」—— 走变量或拆行都认不出,该副本会被判成死副本。
+  const runScript = (args) => runProcess({ command: node.command, args: [path.join(sandbox, "gates", "artifacts", "check-dist-manifest.mjs"), ...args], cwd: sandbox, env: node.env, timeoutMs: ctx.timeoutMs });
 
   /** @type {ProbeCase[]} */
   const cases = [];

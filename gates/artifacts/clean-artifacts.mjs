@@ -25,14 +25,18 @@
  * 判定全部最新而一个文件都不发出(实测 clean 后 build 只剩 8 个复制资源),空 dist 还会
  * 被清单当作合法基线。该文件是 tsc 生成的构建信息,按名字模式限定、不递归。
  *
- * 用法: node build/clean-artifacts.mjs --target <dist|release|all> [--dry-run]
+ * 为什么住在 gates/artifacts/(ADR-049):本脚本断言仓库状态(与 package.json 打包配置对账、
+ * 有专属守护段、在 verify:release 链内),按 ADR-038「层按断言对象分」属门禁树。原先住在
+ * build/(不产生断言的产物生产树),那一层定位对它不成立。
+ *
+ * 用法: node gates/artifacts/clean-artifacts.mjs --target <dist|release|all> [--dry-run]
  */
 
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ROOT } from '../shared/paths.js';
-import { topLevel } from '../gates/repo/repo-manifest.mjs';
+import { ROOT } from '../../shared/paths.js';
+import { topLevel } from '../repo/repo-manifest.mjs';
 
 const PROJECT_ROOT = ROOT;
 
@@ -67,7 +71,7 @@ function protectedPathSegments() {
   return protectedSegments;
 }
 
-const USAGE = `用法: node build/clean-artifacts.mjs --target <dist|release|all> [--dry-run]
+const USAGE = `用法: node gates/artifacts/clean-artifacts.mjs --target <dist|release|all> [--dry-run]
   --target dist     清理 dist/(tsc 输出目录,package.json build.files 收的就是它)
   --target release  清理 release/(package.json build.directories.output)
   --target all      两者都清理
@@ -75,7 +79,7 @@ const USAGE = `用法: node build/clean-artifacts.mjs --target <dist|release|all
   --help            显示本用法`;
 
 /**
- * 极简参数解析(不复用 check-dist-manifest 的 parseArgs:那处的错误文案会带出本脚本
+ * 极简参数解析(不复用 shared/cli.mjs 的 parseArgs:那处的错误文案会带出本脚本
  * 无关的用法说明)。未知选项/缺取值都显式失败 —— 清理脚本的参数写错时必须报错,
  * 不能被静默忽略后按默认目标删东西。
  */

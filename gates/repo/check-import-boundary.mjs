@@ -31,7 +31,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { isMainModule, parseArgs } from '../artifacts/check-dist-manifest.mjs';
+import { isMainModule, parseArgs } from '../../shared/cli.mjs';
 import { lexSource, skipQuoted } from '../../shared/copy-closure.js';
 import { ROOT } from '../../shared/paths.js';
 

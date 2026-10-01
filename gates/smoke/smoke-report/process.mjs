@@ -7,12 +7,12 @@
 // 「已接受例外」:repoRelative 与 readProductName 是本门禁自带的 8 行小工具(相对路径化与
 // productName 读取);它们与 pack-size 门禁里的同名小工具刻意各持一份 —— 两个独立门禁互不
 // 依赖,跨门禁共用工具反而会把耦合引进发布链;真正需要单源的转义/路径归一仍走
-// check-dist-manifest.mjs 的 toPosix。
+// shared/fsx.mjs 的 toPosix。
 
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { listExeNames } from '../smoke-proc.mjs';
-import { toPosix } from '../../artifacts/check-dist-manifest.mjs';
+import { toPosix } from '../../../shared/fsx.mjs';
 import { projectRoot } from './contract.mjs';
 
 /**

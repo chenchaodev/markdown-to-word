@@ -6,7 +6,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { parseArgs } from '../check-dist-manifest.mjs';
+import { parseArgs } from '../../../shared/cli.mjs';
 import { measure } from './measure.mjs';
 import { evaluate, parseBaseline } from './baseline.mjs';
 import { buildReport, renderSummary } from './report.mjs';

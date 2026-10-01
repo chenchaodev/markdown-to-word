@@ -368,10 +368,10 @@ export const GATE_REGISTRY = Object.freeze(
       id: "clean",
       title: "清理目标白名单门禁",
       npmScripts: ["clean:dist", "clean:release"],
-      command: "node build/clean-artifacts.mjs --target dist|release",
-      modulePath: "build/clean-artifacts.mjs",
+      command: "node gates/artifacts/clean-artifacts.mjs --target dist|release",
+      modulePath: "gates/artifacts/clean-artifacts.mjs",
       access: "chain",
-      judgment: { module: "build/clean-artifacts.mjs", export: "main", shaped: "退出码(0 = 通过)" },
+      judgment: { module: "gates/artifacts/clean-artifacts.mjs", export: "main", shaped: "退出码(0 = 通过)" },
       judgmentNote: "判定体尚未抽成注入式纯函数;探针走进程级调用",
       probes: [
         {

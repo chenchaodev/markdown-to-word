@@ -27,9 +27,10 @@
  *
  * 沙箱纪律(硬约束):被测脚本的项目根由脚本自身位置推导(读 package.json、按
  * build.directories.output 找 release),故把生产脚本**逐字节原样**复制到临时沙盒的
- * gates/artifacts 与 gates/smoke/(连同 import 依赖 check-dist-manifest.mjs / check-release-artifacts.mjs /
- * smoke-proc.mjs 与 shared/userdata.js)后再执行 —— 沙盒外不存在可达的真实项目根,
- * 沙盒内不存在被改写的实现。段首/段尾对真实 release/ 做指纹比对,确保真实产物零改动。
+ * gates/artifacts 与 gates/smoke/(连同 import 依赖 check-release-artifacts.mjs /
+ * smoke-proc.mjs 与 shared/ 下的 paths.js · userdata.js · cli.mjs · fsx.mjs)后再执行 ——
+ * 沙盒外不存在可达的真实项目根,沙盒内不存在被改写的实现。
+ * 段首/段尾对真实 release/ 做指纹比对,确保真实产物零改动。
  *
  * 「可执行文件」怎么在沙盒里可执行:解包目录里的 .exe 只能是假字节(无法真跑),故用
  * --launcher + --launcher-runtime 把「启动目标」换成 Node 跑的桩脚本,参数与真启动
@@ -88,10 +89,11 @@ const BEACON_WATCH_MARGIN_MS = 600;
 const SANDBOX_ARTIFACT_SCRIPTS = [
   "check-unpacked-smoke.mjs",
   "check-install-smoke.mjs",
-  "check-dist-manifest.mjs",
   "check-release-artifacts.mjs",
 ];
 const SANDBOX_SMOKE_SCRIPTS = ["smoke-proc.mjs"];
+/** 沙盒内复制的共享机制模块(ADR-049:CLI 解析与文件哈希已从 check-dist-manifest.mjs 下沉到 shared/) */
+const SANDBOX_SHARED_MECHANISMS = ["cli.mjs", "fsx.mjs"];
 /** 沙盒内复制的全部脚本与其落点目录(逐字节一致性子进程断言用) */
 const SANDBOX_SCRIPT_GROUPS = /** @type {[readonly string[], string][]} */ ([
   [SANDBOX_ARTIFACT_SCRIPTS, "gates/artifacts"],
@@ -245,11 +247,18 @@ function createSandbox({ smokeEntryInAsar = true, installer = true, perMachine =
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.copyFileSync(path.join(ROOT, "gates", "smoke", smokeScript), target);
   }
-  // 沙盒内那 4 个脚本都 import 项目根单源 shared/paths.js(ADR-040),故必须逐字节带一份进去,
+  // 沙盒内那 3 个脚本都 import 项目根单源 shared/paths.js(ADR-040),故必须逐字节带一份进去,
   // 否则沙盒里 ERR_MODULE_NOT_FOUND,整段以「脚本起不来」的形式红,而不是被测语义的红。
   const sharedModule = path.join(root, "shared", "paths.js");
   fs.mkdirSync(path.dirname(sharedModule), { recursive: true });
   fs.copyFileSync(path.join(ROOT, "shared", "paths.js"), sharedModule);
+  // CLI 参数解析与文件哈希原语(ADR-049)已下沉到 shared/,那 3 个脚本直接依赖这两个模块,
+  // 故同样必须逐字节带一份 —— 漏带的表现与上面 shared/paths.js 漏带完全相同。
+  for (const mechanism of SANDBOX_SHARED_MECHANISMS) {
+    const target = path.join(root, "shared", mechanism);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, "shared", mechanism), target);
+  }
   // smoke-proc.mjs 复用 test/common/userdata.js 的清理语义,沙盒内也放一份逐字节副本
   const userDataModule = path.join(root, "shared", "userdata.js");
   fs.mkdirSync(path.dirname(userDataModule), { recursive: true });

@@ -33,7 +33,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { isMainModule, parseArgs } from './check-dist-manifest.mjs';
+import { isMainModule, parseArgs } from '../../shared/cli.mjs';
 
 export const EXPECTED_SIGNATURE_STATUS = 'unsigned';
 export const DEFAULT_RELEASE_DIR = 'release';

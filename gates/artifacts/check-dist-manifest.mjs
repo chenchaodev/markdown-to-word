@@ -15,14 +15,20 @@
 //   node gates/artifacts/check-dist-manifest.mjs --check [--dist <dir>] [--output <file>]
 //       校验模式:与 --output 处既有清单逐项比对,不写盘
 //
-// 本文件同时是 release 侧检查脚本的共享原语单源(文件哈希、CLI 参数解析、
-// 主模块判定),避免各检查脚本复制一份;新增共享原语加在这里。
+// 本文件**不再**是共享原语的单源:CLI 参数解析与主模块判定在 shared/cli.mjs,
+// 文件哈希/原子写/POSIX 路径归一在 shared/fsx.mjs(ADR-049)。这 6 个符号在此**继续 re-export**,
+// 是为了让既有调用方的 import 路径不必一次性改完;新增代码一律直接引 shared/ 那两个模块。
 
-import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isMainModule, parseArgs } from '../../shared/cli.mjs';
+import { hashFile, toPosix, writeFileAtomic } from '../../shared/fsx.mjs';
 import { ROOT } from '../../shared/paths.js';
+
+// 过渡期 re-export:本文件曾是这 6 个符号的唯一定义处,仓内既有调用方全从这里取。
+// 保留转发而非要求全部改 import,是为了把「机制下沉」与「调用方迁移」拆成可独立回退的两步。
+export { isMainModule, parseArgs } from '../../shared/cli.mjs';
+export { hashBuffer, hashFile, toPosix, writeFileAtomic } from '../../shared/fsx.mjs';
 
 /** 清单 schema 版本:格式不兼容变更时递增,校验模式遇到不匹配即拒绝(不静默重生成) */
 export const MANIFEST_SCHEMA = 'm2w/dist-manifest@1';
@@ -34,99 +40,20 @@ export const DEFAULT_MANIFEST_PATH = path.join('output', 'artifacts', 'dist-mani
 /** 单次报告的明细上限:超出只报计数,避免脏 dist 刷屏淹没根因 */
 const MAX_REPORTED = 10;
 
+/**
+ * 本门禁自己的用法文案。
+ *
+ * 为什么归本文件而不留在 shared/cli.mjs(ADR-049 下沉时的收尾):用法文案描述的是**某一个
+ * 脚本的参数表**,机制层写死它等于让所有复用方在参数写错时看到一段与自身无关的说明 ——
+ * 这正是下沉前本文件私有 `USAGE` 造成的既有缺陷(`clean-artifacts.mjs` 曾为此另写一份
+ * parseArgs)。故 `shared/cli.mjs` 的 `parseArgs` 收 `usage` 可选入参,由调用方各传各的。
+ */
 const USAGE = `用法: node gates/artifacts/check-dist-manifest.mjs [选项]
   --dist <dir>     待检查的构建产物目录(默认 dist)
   --output <file>  清单落盘路径(默认 output/artifacts/dist-manifest.json)
   --check          校验模式:与既有清单比对,不写盘(清单缺失/损坏即失败)
   --print          生成模式下把清单正文打到 stdout
   --help           显示本用法`;
-
-/* ---------- 共享原语 ---------- */
-
-/** 路径分隔符统一为 POSIX:清单要跨平台逐字节一致,Windows 上不得出现反斜杠 */
-export function toPosix(relativePath) {
-  return relativePath.split(path.sep).join('/');
-}
-
-/** Buffer 哈希(hex);用于 asar 内条目等内存态内容 */
-export function hashBuffer(buffer, algorithm = 'sha256') {
-  return createHash(algorithm).update(buffer).digest('hex');
-}
-
-/**
- * 文件流式哈希:安装包上百 MB、dist 内条目也可能不小,
- * 整体读入内存不可取(见 release 检查对 app.asar/安装包的用法)。
- * outputEncoding:hex 用于清单/报告;base64 用于与 latest.yml 的 sha512 比对。
- */
-export function hashFile(filePath, algorithm = 'sha256', outputEncoding = 'hex') {
-  return new Promise((resolve, reject) => {
-    const hash = createHash(algorithm);
-    const stream = createReadStream(filePath);
-    stream.on('error', reject);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolve(hash.digest(outputEncoding)));
-  });
-}
-
-/**
- * 极简 CLI 解析:支持 `--key value` 与 `--key=value`,布尔开关只接受 `--key`。
- * 未知选项直接报错退出——检查脚本的参数写错时必须显式失败,
- * 不能被静默忽略后按默认值跑出「假通过」。
- */
-export function parseArgs(argv, { booleans = [], values = [] } = {}) {
-  const options = {};
-  for (const name of booleans) options[name] = false;
-  for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i];
-    if (!token.startsWith('--')) {
-      throw new Error(`无法识别的参数:${token}(${USAGE})`);
-    }
-    const eq = token.indexOf('=');
-    const name = eq === -1 ? token.slice(2) : token.slice(2, eq);
-    if (booleans.includes(name)) {
-      if (eq !== -1) throw new Error(`--${name} 是开关,不接受取值`);
-      options[name] = true;
-      continue;
-    }
-    if (!values.includes(name)) {
-      throw new Error(`无法识别的选项:--${name}(${USAGE})`);
-    }
-    const value = eq === -1 ? argv[(i += 1)] : token.slice(eq + 1);
-    if (value === undefined) throw new Error(`选项 --${name} 缺少取值`);
-    options[name] = value;
-  }
-  return options;
-}
-
-/** 是否以脚本方式直接执行(被其他脚本 import 时不触发 CLI 行为) */
-export function isMainModule(metaUrl) {
-  const entry = process.argv[1];
-  if (entry === undefined) return false;
-  try {
-    const a = path.resolve(entry);
-    const b = fileURLToPath(metaUrl);
-    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
-  } catch {
-    return false;
-  }
-}
-
-/** 原子写文件:先写临时文件再 rename,避免中断留下半截清单/报告被误当成有效产物 */
-export function writeFileAtomic(targetPath, content) {
-  mkdirSync(path.dirname(targetPath), { recursive: true });
-  const temporary = `${targetPath}.tmp`;
-  try {
-    writeFileSync(temporary, content, 'utf8');
-    renameSync(temporary, targetPath);
-  } catch (error) {
-    try {
-      unlinkSync(temporary);
-    } catch {
-      // 临时文件不存在或已清理,不影响主流程
-    }
-    throw error;
-  }
-}
 
 /* ---------- dist 清单 ---------- */
 
@@ -255,7 +182,7 @@ export function describeRoot(distDir, projectRoot) {
 export async function main(argv = []) {
   let options;
   try {
-    options = parseArgs(argv, { booleans: ['check', 'print', 'help'], values: ['dist', 'output'] });
+    options = parseArgs(argv, { booleans: ['check', 'print', 'help'], values: ['dist', 'output'], usage: USAGE });
   } catch (error) {
     console.error(`[dist-manifest:fail] ${error.message}`);
     return 1;

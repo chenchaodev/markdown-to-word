@@ -2,7 +2,7 @@
 // 刻意不含任何判定语义:叶子层,判定层与装配层都可依赖它,反向不成立。
 
 import path from 'node:path';
-import { toPosix } from '../check-dist-manifest.mjs';
+import { toPosix } from '../../../shared/fsx.mjs';
 import { ROOT as projectRoot } from '../../../shared/paths.js';
 
 /** 仓库根(单一来源在 shared/paths.js;报告与摘要只允许相对路径,故一切定位都从这里出发) */

@@ -16,7 +16,7 @@
 // 用法:
 //   node gates/smoke/smoke-report.mjs [--source unpacked|dev] [选项]
 // 完整选项与退出码说明见 `node gates/smoke/smoke-report.mjs --help`。
-import { isMainModule } from '../artifacts/check-dist-manifest.mjs';
+import { isMainModule } from '../../shared/cli.mjs';
 
 // 契约与常量
 export {

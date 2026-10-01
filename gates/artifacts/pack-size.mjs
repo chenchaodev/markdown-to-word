@@ -19,7 +19,7 @@
 //   node gates/artifacts/pack-size.mjs [选项]
 //   node gates/artifacts/pack-size.mjs --print-measurements   # 只打印实测值(人工据此手改基线)
 // 完整选项见 `node gates/artifacts/pack-size.mjs --help`。
-import { isMainModule } from './check-dist-manifest.mjs';
+import { isMainModule } from '../../shared/cli.mjs';
 
 // 契约与常量
 export {

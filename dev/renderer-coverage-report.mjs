@@ -27,7 +27,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { isMainModule, parseArgs } from '../gates/artifacts/check-dist-manifest.mjs';
+import { isMainModule, parseArgs } from '../shared/cli.mjs';
 import { ROOT } from '../shared/paths.js';
 
 const projectRoot = ROOT;

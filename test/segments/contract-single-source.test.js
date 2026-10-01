@@ -326,14 +326,19 @@ export async function run() {
     "specifier 抽取/分类锚点(注释行不算、字符串里的 // 不误判、行号对齐原文本)",
   );
   assertEq(
-    resolveRelativeSpecifier("build/clean-artifacts.mjs", "../shared/paths.js"),
+    resolveRelativeSpecifier("gates/artifacts/clean-artifacts.mjs", "../../shared/paths.js"),
     "shared/paths.js",
-    "相对解析锚点:上跳一级(取 build/clean-artifacts.mjs → ../shared/paths.js 这条真实 import)",
+    "相对解析锚点:上跳两级(取 gates/artifacts/clean-artifacts.mjs → ../../shared/paths.js 这条真实 import)",
   );
   assertEq(
-    resolveRelativeSpecifier("gates/smoke/smoke-proc.mjs", "../../shared/userdata.js"),
-    "shared/userdata.js",
-    "相对解析锚点:上跳两级(子树深度变了也不能解析错)",
+    resolveRelativeSpecifier("build/copy-renderer.mjs", "../shared/cli.mjs"),
+    "shared/cli.mjs",
+    "相对解析锚点:上跳一级(取 build/copy-renderer.mjs → ../shared/cli.mjs 这条真实 import)",
+  );
+  assertEq(
+    resolveRelativeSpecifier("gates/smoke/smoke-report/process.mjs", "../../../shared/fsx.mjs"),
+    "shared/fsx.mjs",
+    "相对解析锚点:上跳三级(子树深度变了也不能解析错)",
   );
   assertEq(
     resolveRelativeSpecifier("test/common/userdata.js", "./temp-resource.js"),

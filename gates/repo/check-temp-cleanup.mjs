@@ -19,8 +19,8 @@
 //   test/segments/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
 //   test/common/**/*.js · test/tools/**/*.{js,mjs}
 // 排除 test/fixtures(被测样例数据本身,不是清理动作)。
-// **不扫 gates/ build/ dev/**:那里是生产/门禁脚本,rmSync 是被测语义本身(clean-artifacts 的
-// 保护区、gate-probes/sandbox.mjs 的 junction 摘除),不是「临时目录清理」。
+// **不扫 gates/ build/ dev/**:那里是生产/门禁脚本,rmSync 是被测语义本身(gates/artifacts/
+// clean-artifacts.mjs 的保护区、gate-probes/sandbox.mjs 的 junction 摘除),不是「临时目录清理」。
 // gates/probe/gate-probes/sandbox.mjs 的 removeJunction 因此登记为按设计不在扫描面的条目。
 // 清单与 walker(递归列目录)都从单源取,本文件不再自持一份:同一份清单写两遍的代价是
 // 「新增测试子目录要改 N 处,漏改的那处扫不到且静默恒绿」。

@@ -19,7 +19,8 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { hashFile, isMainModule, parseArgs, toPosix, writeFileAtomic } from './check-dist-manifest.mjs';
+import { isMainModule, parseArgs } from '../../shared/cli.mjs';
+import { hashFile, toPosix, writeFileAtomic } from '../../shared/fsx.mjs';
 import { ROOT } from '../../shared/paths.js';
 
 export const REPORT_SCHEMA = 'm2w/release-artifacts@1';

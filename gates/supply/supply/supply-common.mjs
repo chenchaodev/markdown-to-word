@@ -6,13 +6,14 @@
 // 各脚本复制一份,就会出现「SBOM 说 232 个生产组件、许可证清单说 231 个」这种
 // 无法从产物反查的漂移,故集中在此,各脚本 import 消费。
 //
-// 复用既有单源:文件哈希/原子写/主模块判定取自 gates/artifacts/check-dist-manifest.mjs,
+// 复用既有单源:文件哈希/原子写取自 shared/fsx.mjs、主模块判定取自 shared/cli.mjs,
 // 子进程执行取自 gates/repo/print-env-fingerprint.mjs(含超时与 Windows .cmd 处理),
 // 不再另造一份。
 
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { hashBuffer, isMainModule, toPosix, writeFileAtomic } from '../../artifacts/check-dist-manifest.mjs';
+import { isMainModule } from '../../../shared/cli.mjs';
+import { hashBuffer, toPosix, writeFileAtomic } from '../../../shared/fsx.mjs';
 import { runCommand } from '../../repo/print-env-fingerprint.mjs';
 
 export { hashBuffer, isMainModule, runCommand, toPosix, writeFileAtomic };
@@ -1112,7 +1113,7 @@ export function readJson(filePath) {
 }
 
 /**
- * 供应链脚本专用 CLI 解析:与 check-dist-manifest 的 parseArgs 行为一致
+ * 供应链脚本专用 CLI 解析:与 shared/cli.mjs 的 parseArgs 行为一致
  * (未知选项显式失败,开关不接受取值),但 usage 文案由调用方按脚本自身传入 ——
  * 共享原语里的 USAGE 是写死的 dist 清单文案,复用到别的脚本会给出错误指引。
  * @param {string[]} argv 进程参数

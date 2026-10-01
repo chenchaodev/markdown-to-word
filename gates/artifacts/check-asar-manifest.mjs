@@ -32,7 +32,9 @@
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { hashBuffer, isMainModule, parseArgs, parseManifest, toPosix } from './check-dist-manifest.mjs';
+import { isMainModule, parseArgs } from '../../shared/cli.mjs';
+import { hashBuffer, toPosix } from '../../shared/fsx.mjs';
+import { parseManifest } from './check-dist-manifest.mjs';
 import { ROOT } from '../../shared/paths.js';
 
 const require = createRequire(import.meta.url);

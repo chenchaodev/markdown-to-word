@@ -6,7 +6,7 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { parseArgs } from '../../artifacts/check-dist-manifest.mjs';
+import { parseArgs } from '../../../shared/cli.mjs';
 import { DEFAULT_SMOKE_TIMEOUT_MS, createUserData, describeSmokeCommand, disposeUserData, outputTail, runSmokeProcess } from '../smoke-proc.mjs';
 import {
   DEFAULT_RELEASE_DIR,

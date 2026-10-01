@@ -41,9 +41,6 @@
 | REQ-021 | 代码高亮主题切换 | 待拍板 | 2026-08-16 当初否决：仅 pdf 有意义，打印需求趋零（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-045 | CLI 转正 | 待拍板 | 2026-08-16 当初否决：无用户需求，调试可走脚本或直调 core。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-140 | coverage 探针注释失真 | 待拍板 | 既有失真。`gates/coverage.mjs` 三处（`:85`/`:218`/`:250`）称「参数向量未开 `--all`」，实测向量含它 ⇒ blindspot case exit 1；`:250` 的 evidence 称「exit 0」亦不成立。判不改：修它要重写该 case 的判据与 evidence 归属，属独立设计题；它为 informational，不影响门禁 | 要动 coverage 探针的 blindspot case 判据或 evidence 归属时 | 无 |
-| REQ-142 | 测试树按被测主体分四目录 | 待拍板 | `test/segments/` 75 段里 17 段实测引 `gates/`+`shared/`（被测主体是门禁非 core），而 `segments` 是执行单元名非被测主体；`test/tools/` 只剩 15 行死文件，唯一消费者是锁它的那条断言。方案：`segments/`→`core/`+`gates/`、删 `test/tools/`、段目录判据由「三目录枚举」改「镜像一棵被断言的树」并补自检 | REQ-142 落地后 `test/main/` 与 `test/gates/` 使 REQ-143 的撞名更刺眼，可提前重看 | docs/evidence/20261001-233000-测试树按被测主体分四目录.md |
-| REQ-143 | 夹具区三子目录改名与散落文件归位 | 待拍板 | `test/fixtures/` 三子目录各按不同轴命名（生成器流程/使用方式/消费者名），根目录另散落两个 png 桩；`acceptance/` 由门禁生成、被 `gates/geometry/driver.mjs:87` 与 `dev/visual-check.mjs:118` 硬编码消费，即门禁产物寄放测试树。方案：三处改名，边界规则零改动 | REQ-142 落地后撞名加剧，可提前重看第 2 步 | docs/evidence/20261001-234000-夹具区三子目录改名与散落文件归位.md |
-| REQ-144 | build 与 dev 合并为tools | 待拍板 | ADR-038 称这两棵树「不 assert 故不治理」，但 `clean-artifacts.mjs` 断言打包配置、有守护段、在发布链内；两树另有 3 条对 `gates/` 的出边零判据，根因是 `check-dist-manifest.mjs` 被 25 处当 CLI 工具库用。方案：工具函数下沉 `shared/`、`clean-artifacts` 入 `gates/`、合并为 `tools/` 并补边界规则 | 顶层目录数成为困扰时；或这两棵树的出边恒绿被质疑时 | docs/evidence/20261001-235000-顶层合并build-dev为tools.md |
 | REQ-141 | c8 dump 临时目录无自动清理 | 待拍板 | `.c8-tmp/` 是 c8 的 V8 dump 中间态（与报告分居两处，见 ADR-048），单次实测 200+ 文件约 134M —— 与迁移前的 `coverage/tmp` 同一缺口，只换了位置。`clean-artifacts.mjs` 的 `--target` 不含它，`check:temp-cleanup` 只扫源码，故无自动清理点。判不并入 REQ-139：清理策略要改清理器取值域 | 磁盘占用不可接受时，或 clean-artifacts 扩充 target 取值域时 | docs/adr/ADR-048-覆盖率产物并入output单源.md |
 
 
@@ -53,6 +50,10 @@
 
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
+| REQ-142 | 测试树按被测主体分四目录 | 在办 | `test/segments/` 75 段里 17 段实测引 `gates/`+`shared/`（被测主体是门禁非 core），而 `segments` 是执行单元名非被测主体；`test/tools/` 只剩 15 行死文件，唯一消费者是锁它的那条断言。方案：`segments/`→`core/`+`gates/`、删 `test/tools/`、段目录判据由「三目录枚举」改「镜像一棵被断言的树」并补自检 | REQ-142 落地后 `test/main/` 与 `test/gates/` 使 REQ-143 的撞名更刺眼，可提前重看 | docs/evidence/20261001-233000-测试树按被测主体分四目录.md |
+| REQ-143 | 夹具区三子目录改名与散落文件归位 | 在办 | `test/fixtures/` 三子目录各按不同轴命名（生成器流程/使用方式/消费者名），根目录另散落两个 png 桩；`acceptance/` 由门禁生成、被 `gates/geometry/driver.mjs:87` 与 `dev/visual-check.mjs:118` 硬编码消费，即门禁产物寄放测试树。方案：三处改名，边界规则零改动 | REQ-142 落地后撞名加剧，可提前重看第 2 步 | docs/evidence/20261001-234000-夹具区三子目录改名与散落文件归位.md |
+| REQ-144 | build 与 dev 合并为tools | 在办 | ADR-038 称这两棵树「不 assert 故不治理」，但 `clean-artifacts.mjs` 断言打包配置、有守护段、在发布链内；两树另有 3 条对 `gates/` 的出边零判据，根因是 `check-dist-manifest.mjs` 被 25 处当 CLI 工具库用。方案：工具函数下沉 `shared/`、`clean-artifacts` 入 `gates/`、合并为 `tools/` 并补边界规则 | 顶层目录数成为困扰时；或这两棵树的出边恒绿被质疑时 | docs/evidence/20261001-235000-顶层合并build-dev为tools.md |
+
 ## 已完成
 
 > 行数按状态筛 `docs/REQ.md` 可得（**行数是会变的数字，不抄进文档**）。

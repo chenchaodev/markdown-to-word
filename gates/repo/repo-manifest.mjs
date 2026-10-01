@@ -18,7 +18,7 @@
  *    两个方向的锚点:真实仓库上跑既有门禁 = 正向;任意名样例 + 新增顶层目录 = 反向。
  * 3. **未知条目归 `other`,不保护也不镜像。** 进保护集的只有「被声明指向的树 / 有代码 / 有文档 /
  *    顶层声明文件」。「删不掉」的保证不来自这个集合,而来自清理脚本那边**封闭的删除目标白名单**
- *    (见 build/clean-artifacts.mjs 的 TARGET_DIRS 与 assertMatchesBuildConfig)—— 两者正交,
+ *    (见 gates/artifacts/clean-artifacts.mjs 的 TARGET_DIRS 与 assertMatchesBuildConfig)—— 两者正交,
  *    不要把「保护集」当成唯一的删除防线。
  *
  * 类别词表与 ADR-037 写的 7 类对应关系(实现多出 3 类,理由见各项注释):

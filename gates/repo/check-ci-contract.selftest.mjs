@@ -49,8 +49,8 @@ const FIXTURE_SCRIPTS = {
   'check:dist-manifest': 'node gates/artifacts/check-dist-manifest.mjs --check',
   'check:asar': 'node gates/artifacts/check-asar-manifest.mjs',
   'check:release': 'node gates/artifacts/check-release-artifacts.mjs',
-  'clean:dist': 'node build/clean-artifacts.mjs --target dist',
-  'clean:release': 'node build/clean-artifacts.mjs --target release',
+  'clean:dist': 'node gates/artifacts/clean-artifacts.mjs --target dist',
+  'clean:release': 'node gates/artifacts/clean-artifacts.mjs --target release',
   build: 'tsc',
   typecheck: 'tsc --noEmit',
   lint: 'eslint src/',
@@ -305,14 +305,14 @@ const CASES = [
   {
     name: '清理目标越出白名单(试图删源码/文档目录)',
     mutate: ({ pkg }) => {
-      pkg.scripts['clean:dist'] = 'node build/clean-artifacts.mjs --target src';
+      pkg.scripts['clean:dist'] = 'node gates/artifacts/clean-artifacts.mjs --target src';
     },
     expect: /清理目标 src 不在白名单\(dist\/release\/all\)内/,
   },
   {
     name: 'clean 脚本未显式指定目标(隐式删除风险)',
     mutate: ({ pkg }) => {
-      pkg.scripts['clean:release'] = 'node build/clean-artifacts.mjs';
+      pkg.scripts['clean:release'] = 'node gates/artifacts/clean-artifacts.mjs';
     },
     expect: /scripts\.clean:release 未用 --target 显式指定清理目标/,
   },
@@ -854,7 +854,7 @@ try {
 const derivedPlaceholders = deriveFixturePlaceholders(FIXTURE_SCRIPTS);
 checkAnchor(derivedPlaceholders.length > 0, '占位文件派生为空(抽取规则失效,夹具会因「引用的文件不存在」误红)');
 checkAnchor(
-  derivedPlaceholders.includes('build/clean-artifacts.mjs') && !derivedPlaceholders.includes(CHECKER_RELATIVE),
+  derivedPlaceholders.includes('gates/artifacts/clean-artifacts.mjs') && !derivedPlaceholders.includes(CHECKER_RELATIVE),
   `占位文件派生失守:应含一条门禁脚本、不含被逐字节复制的被测门禁本身(实际 ${derivedPlaceholders.join(',')})`,
 );
 const placeholderProbe = deriveFixturePlaceholders({

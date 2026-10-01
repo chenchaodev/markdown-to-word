@@ -63,6 +63,13 @@ export const SANDBOX_ENTRY_EVIDENCE = [
     via: "gates/repo/check-ci-contract.selftest.mjs",
     how: "spawnSync(process.execPath, ['gates/repo/check-ci-contract.mjs']) 在夹具内执行",
   },
+  {
+    // ADR-049 后 CLI 原语下沉 shared/,沙盒内没有任何脚本再 import 本副本,
+    // 但它仍是该探针的**被测对象**(逐字节副本跑的就是它),故按入口登记而非删掉复制点。
+    rel: "gates/artifacts/check-dist-manifest.mjs",
+    via: "gates/probe/gate-probes/gates/dist-manifest.mjs",
+    how: "runScript(...) 在沙盒内以子进程执行该副本(门禁探针的被测对象)",
+  },
   // 以下三条随各自的 *.selftest.mjs 复制点新增而登记(门禁脚本原样拷进夹具后由 runChecker
   // 以 spawnSync 执行)。它们与其他登记项同形:副本无上游 import,存在的意义就是被当入口跑。
   {

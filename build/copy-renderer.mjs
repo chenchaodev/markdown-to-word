@@ -13,7 +13,7 @@
 // gates/artifacts/check-dist-manifest.mjs(清单比对)承担。
 import fs from "node:fs";
 import path from "node:path";
-import { isMainModule, parseArgs } from "../gates/artifacts/check-dist-manifest.mjs";
+import { isMainModule, parseArgs } from "../shared/cli.mjs";
 import { ROOT } from "../shared/paths.js";
 
 const root = ROOT;

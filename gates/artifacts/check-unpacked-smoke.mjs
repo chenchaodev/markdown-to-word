@@ -24,7 +24,8 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { isMainModule, parseArgs, toPosix } from './check-dist-manifest.mjs';
+import { isMainModule, parseArgs } from '../../shared/cli.mjs';
+import { toPosix } from '../../shared/fsx.mjs';
 import { ROOT } from '../../shared/paths.js';
 import {
   asarContainsEntry,
