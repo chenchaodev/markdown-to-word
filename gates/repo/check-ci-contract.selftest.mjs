@@ -803,10 +803,36 @@ try {
         `不调 buildSandbox 的探针在干净检出上 import 不到产物(names=${cleanCheckout.names.join(',')}` +
         ` mirrorPaths=${cleanCheckout.mirrorPaths.join(',')})`,
     );
+    // 同一形态下「删除保护区」那条不变量也要有牙齿,且不能靠「集合恰好是空的」蒙过去。
+    //
+    // 只断言「产物名不在保护区」在这棵树上**恒真**(cleanProtectedSegments 出自 readdir,
+    // 而 omega/zeta 按构造不在盘 ⇒ 该集**不可能**有它们 —— 这正是上面 REQ-128 那段说的
+    // 空洞为真,换个位置重犯不算修好)。所以改成**对照**断言:同一个派生函数、同一棵树,
+    // 「在盘的普通树 eta 进保护集」与「不在盘的产物名不进保护集」必须同时成立。
+    //
+    // 牙齿在哪:若派生出错让保护集恒为空(分类判据整条失效),或把 `cleanable` 的构成写坏
+    // (如误把 build.files 正向首段里的顶层文件也当产物),本条立刻红 —— 前者丢掉 eta,
+    // 后者会让在盘形态那条(以及 fileForm 反例树那条)红。
+    const declaredAbsentCleanlySplit =
+      cleanCheckout.cleanProtectedSegments.includes('eta') &&
+      [...cleanCheckout.buildOutputNames, ...cleanCheckout.packOutputNames].every(
+        (name) => !cleanCheckout.cleanProtectedSegments.includes(name),
+      );
+    checkAnchor(
+      declaredAbsentCleanlySplit,
+      '干净检出形态下删除保护区的判定失守「在盘的普通树进、声明为产物但不在盘的树不进」:'
+        + `eta 在保护集=${cleanCheckout.cleanProtectedSegments.includes('eta')},`
+        + `buildOutput=${cleanCheckout.buildOutputNames.join(',') || '空'},`
+        + `packOutput=${cleanCheckout.packOutputNames.join(',') || '空'},`
+        + `cleanProtectedSegments=${cleanCheckout.cleanProtectedSegments.join(',') || '空'}`,
+    );
     // 打印挂在真实结果上:checkAnchor 只收集不抛,无条件打印「断言通过」会在锚点失败时
     // 也打出来 —— 一条会撒谎的通过记录比没有更坏。
-    if (declaredAbsentStillMirrored) {
-      console.log('[ok] contract-selftest:声明存在但磁盘不存在的编译输出树仍进镜像集(干净检出语义) 断言通过');
+    if (declaredAbsentStillMirrored && declaredAbsentCleanlySplit) {
+      console.log(
+        '[ok] contract-selftest:声明存在但磁盘不存在的编译输出树仍进镜像集、且与在盘的普通树'
+          + '在删除保护区上分野(干净检出语义,该形态下断言真被求值) 断言通过',
+      );
     }
   } finally {
     rmSync(cleanCheckoutRoot, { recursive: true, force: true });
@@ -863,16 +889,106 @@ checkAnchor(
   real.buildOutputNames.every((name) => real.mirrorPaths.includes(name)),
   '编译输出树不在镜像集里 —— 沙盒内测试 import 的是产物,不带过去必然失败',
 );
-// 「两个集合不相交」从**声明侧**断言:声明的产物集合含「此刻不存在」的编译输出树,干净检出上
-// 同样有它。原写法从 cleanProtectedSegments(磁盘派生)侧迭代,那条 .every() 在 dist 压根不在
-// 该集里时**空洞为真** —— 它只在本地(dist 已 build)才真正被求值,而 CI 才是它唯一该有牙齿的
-// 地方。方向换了,断言强度不降(不相交从任一侧断言等价),但干净检出上真的被求值了。
+/* ---- 「删除保护区 ∩ 声明为产物的顶层名 = ∅」这条不变量在 CI 上的**可判红性**(REQ-128)
+ *
+ * 先说清旧写法的失效形态:断言的迭代方向虽然已经从「磁盘侧」换成「声明侧」,**被检查的集合
+ * 仍是磁盘派生的**(`cleanProtectedSegments` 出自 `scanTopLevel` 的 `readdirSync(root)`)。
+ * CI 上本门禁排在 build 之前(`ci.yml` 的 fail-fast 裸调在 `npm ci` 之前,`verify:ci` 第 1 步
+ * 在 build 之前),dist / release 不在盘 ⇒ 那个交集**定义上为空** ⇒ `.every()` 恒真。方向换了
+ * 而集合来源没换,空洞为真只是换了张脸。
+ *
+ * 结论:这条不变量**不能**只在真实仓库上断言 —— 它的可判反例要求「声明为产物的名字此刻在盘
+ * 且在盘上是顶层**文件**」,真实仓库形态上恒不成立。于是拆成两半,两半在 CI 上都有牙齿:
+ *
+ *   ① 声明侧恒被求值(真实仓库,**不枚举磁盘**):域由 D1 钉住非空;D2/D3 只走声明 —— 改
+ *      tsconfig 的 `outDir` 或 package.json 的 `directories.output` 就能撞红,与 dist 在不在盘无关。
+ *   ② 派生侧真能产出该交集(合成树,见下方 fileFormRoot):`cleanable` 的「是文件则剔除」那道
+ *      过滤(`repo-manifest.mjs` 的 `isDirectory !== false`)会把这种名字放回保护区。它是 ① 那条
+ *      `.every()` 的**可判反例证明**:派生若退化成「恒不含声明为产物的名字」,它立刻红,而那条
+ *      `.every()` 也就真的成了同义反复。
+ */
+const realDeclaredArtifacts = [...real.buildOutputNames, ...real.packOutputNames];
+// D1:**两个**声明各自非空、无重复,且并起来无重复 —— 下面每条声明侧 `.every()` 的域都由它保证
+// 非空,否则那些又空洞为真。只查并集是不够的:`packOutputNames` 还在时并集非空,而
+// `buildOutputNames` 空了(声明识别的 outDir 键失效)照样恒过 —— 那正是要拦的漂移。
 checkAnchor(
-  [...real.buildOutputNames, ...real.packOutputNames].every(
-    (name) => !real.cleanProtectedSegments.includes(name),
-  ),
+  real.buildOutputNames.length > 0 &&
+    real.packOutputNames.length > 0 &&
+    new Set(realDeclaredArtifacts).size === realDeclaredArtifacts.length,
+  `声明为产物的顶层名派生为空或有重复(编译输出树 ${real.buildOutputNames.join(',') || '空'} /`
+    + `打包输出目录 ${real.packOutputNames.join(',') || '空'})—— 下面的声明侧不相交断言会空洞为真`,
+);
+// D2:两个声明各指一个顶层。撞名让「清理目标」与「打包输出」两处定义分叉,而下游只认其中一处。
+checkAnchor(
+  real.buildOutputNames.every((name) => !real.packOutputNames.includes(name)),
+  '编译输出树与打包输出目录声明为同一个顶层(都是 '
+    + `${real.buildOutputNames.filter((name) => real.packOutputNames.includes(name)).join(',')})—— `
+    + '清理目标与打包输出两处定义分叉',
+);
+// D3:产物名不得撞包清单 / 锁文件 / 验收产物根 —— 这三类都被强制拉进保护区或镜像集
+// (`artifactRoots` 那道 `||`、锁文件按文件粒度进指纹集),撞名等于让清理脚本拒绝自己的目标。
+const realArtifactCollisions = realDeclaredArtifacts.filter(
+  (name) => name === real.manifestName || name === real.lockfileName || real.artifactRootNames.includes(name),
+);
+checkAnchor(
+  realArtifactCollisions.length === 0,
+  `声明为产物的顶层与「包清单 / 锁文件 / 验收产物根」相交:${realArtifactCollisions.join(',')}`,
+);
+checkAnchor(
+  realDeclaredArtifacts.every((name) => !real.cleanProtectedSegments.includes(name)),
   '删除保护区与「声明为产物的目录」相交(清理脚本会拒绝自己的目标)',
 );
+
+// ② 派生侧的可判反例:一棵**声明为产物的名字在盘上是顶层文件**的合成树。
+//
+// 为什么必须现造而不是靠真实仓库:真实形态上 dist/release 恒是目录(或不在盘),`cleanable` 的
+// 「是文件则剔除」过滤在这两种情形下都不会把它们放回保护区 ⇒ 上面那条 `.every()` 在真实仓库上
+// 恒真。此树里 outDir 声明指向 `notes.md`(一个已存在的顶层 Markdown 文件),类别判定把它归为
+// `doc`(受保护),而它是文件 ⇒ 不进 `cleanable` ⇒ 落进删除保护区。两道过滤**同时**被点到,
+// 所以这棵树正是那条不变量的反例,而不是同义反复。
+const fileFormRoot = mkdtempSync(join(tmpdir(), 'm2w-manifest-fileform-'));
+try {
+  const fileFormManifest = {
+    name: 'fileform',
+    version: '1.0.0',
+    scripts: {},
+    build: { files: ['notes.md'], directories: { output: 'out' } },
+  };
+  writeFileIn(fileFormRoot, 'pkg.json', `${JSON.stringify(fileFormManifest, null, 2)}\n`);
+  writeFileIn(fileFormRoot, 'lock.json', `${JSON.stringify({ name: 'fileform', lockfileVersion: 3 }, null, 2)}\n`);
+  writeFileIn(
+    fileFormRoot,
+    'tsconfig.json',
+    `${JSON.stringify({ compilerOptions: { outDir: 'notes.md', rootDir: 'src' }, include: ['src'] }, null, 2)}\n`,
+  );
+  writeFileIn(fileFormRoot, 'src/impl.ts', 'export const a = 1;\n');
+  writeFileIn(fileFormRoot, 'notes.md', '# notes\n');
+  const fileForm = scanTopLevel(fileFormRoot);
+  const declaredNameIsTopLevelFile =
+    fileForm.buildOutputNames.join(',') === 'notes.md' && fileForm.names.includes('notes.md');
+  checkAnchor(
+    declaredNameIsTopLevelFile,
+    `「声明为产物的名字在盘上是顶层文件」这棵反例树没搭成:声明派生出 `
+      + `${fileForm.buildOutputNames.join(',') || '空'},顶层有 ${fileForm.names.join(',')} —— `
+      + '下面那条可达性锚点在别的形态上求值,等于没测',
+  );
+  const fileFormCollides = fileForm.cleanProtectedSegments.includes('notes.md');
+  checkAnchor(
+    fileFormCollides,
+    '派生退化「声明为产物的名字恒不进删除保护区」:产物名同时是一个已存在的顶层**文件**时,'
+      + '`cleanable` 的「是文件则剔除」过滤必须把它放回保护区,否则真实仓库上'
+      + '「保护区 ∩ 声明为产物 = ∅」那条断言退化成同义反复(实际 cleanProtectedSegments='
+      + `${fileForm.cleanProtectedSegments.join(',') || '空'})`,
+  );
+  if (declaredNameIsTopLevelFile && fileFormCollides) {
+    console.log(
+      '[ok] contract-selftest:删除保护区与「声明为产物的顶层名」不相交 —— 反例树(产物名 = 顶层文件)'
+        + '证明该不变量在 CI 上可判红,真实仓库上恒绿不是空洞为真',
+    );
+  }
+} finally {
+  rmSync(fileFormRoot, { recursive: true, force: true });
+}
 checkAnchor(real.manifestName !== null, '认不出包清单(声明识别的键失效)');
 checkAnchor(real.lockfileName !== null, '认不出锁文件(声明识别的键失效)');
 checkAnchor(
