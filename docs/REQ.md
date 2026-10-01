@@ -10,9 +10,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-138 |
-]),正则 2217→62ms。等价实测:新增 0、移除 8(6 处裸 spec 本被过滤、2 处夹具假阳性)⇒ 只减噪不改判定。 | 段内工作树不变已核实(夹具写 os.tmpdir()) | docs/evidence/20261001-002034-verifyci耗时诊断.md |
-| 下一个可用号 | REQ-139 |
+| 已用最大号 | REQ-144 |
+| 下一个可用号 | REQ-145 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -41,6 +40,11 @@
 | REQ-020 | 批量重命名 | 待拍板 | 2026-08-16 当初否决：边缘便利（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-021 | 代码高亮主题切换 | 待拍板 | 2026-08-16 当初否决：仅 pdf 有意义，打印需求趋零（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-045 | CLI 转正 | 待拍板 | 2026-08-16 当初否决：无用户需求，调试可走脚本或直调 core。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
+| REQ-140 | coverage 探针注释失真 | 待拍板 | 既有失真。`gates/coverage.mjs` 三处（`:85`/`:218`/`:250`）称「参数向量未开 `--all`」，实测向量含它 ⇒ blindspot case exit 1；`:250` 的 evidence 称「exit 0」亦不成立。判不改：修它要重写该 case 的判据与 evidence 归属，属独立设计题；它为 informational，不影响门禁 | 要动 coverage 探针的 blindspot case 判据或 evidence 归属时 | 无 |
+| REQ-142 | 测试树按被测主体分四目录 | 待拍板 | `test/segments/` 75 段里 17 段实测引 `gates/`+`shared/`（被测主体是门禁非 core），而 `segments` 是执行单元名非被测主体；`test/tools/` 只剩 15 行死文件，唯一消费者是锁它的那条断言。方案：`segments/`→`core/`+`gates/`、删 `test/tools/`、段目录判据由「三目录枚举」改「镜像一棵被断言的树」并补自检 | REQ-142 落地后 `test/main/` 与 `test/gates/` 使 REQ-143 的撞名更刺眼，可提前重看 | docs/evidence/20261001-233000-测试树按被测主体分四目录.md |
+| REQ-143 | 夹具区三子目录改名与散落文件归位 | 待拍板 | `test/fixtures/` 三子目录各按不同轴命名（生成器流程/使用方式/消费者名），根目录另散落两个 png 桩；`acceptance/` 由门禁生成、被 `gates/geometry/driver.mjs:87` 与 `dev/visual-check.mjs:118` 硬编码消费，即门禁产物寄放测试树。方案：三处改名，边界规则零改动 | REQ-142 落地后撞名加剧，可提前重看第 2 步 | docs/evidence/20261001-234000-夹具区三子目录改名与散落文件归位.md |
+| REQ-144 | build 与 dev 合并为tools | 待拍板 | ADR-038 称这两棵树「不 assert 故不治理」，但 `clean-artifacts.mjs` 断言打包配置、有守护段、在发布链内；两树另有 3 条对 `gates/` 的出边零判据，根因是 `check-dist-manifest.mjs` 被 25 处当 CLI 工具库用。方案：工具函数下沉 `shared/`、`clean-artifacts` 入 `gates/`、合并为 `tools/` 并补边界规则 | 顶层目录数成为困扰时；或这两棵树的出边恒绿被质疑时 | docs/evidence/20261001-235000-顶层合并build-dev为tools.md |
+| REQ-141 | c8 dump 临时目录无自动清理 | 待拍板 | `.c8-tmp/` 是 c8 的 V8 dump 中间态（与报告分居两处，见 ADR-048），单次实测 200+ 文件约 134M —— 与迁移前的 `coverage/tmp` 同一缺口，只换了位置。`clean-artifacts.mjs` 的 `--target` 不含它，`check:temp-cleanup` 只扫源码，故无自动清理点。判不并入 REQ-139：清理策略要改清理器取值域 | 磁盘占用不可接受时，或 clean-artifacts 扩充 target 取值域时 | docs/adr/ADR-048-覆盖率产物并入output单源.md |
 
 
 ## 在办
@@ -148,6 +152,7 @@
 | REQ-127 | driver 顶层自执行 | 已完成 | `mediaConditions` 由顶层自执行改为惰性 + 记忆化函数;实测 import 期读盘 0 次、首次调用 1 次、二次仍 1 次 | 无 | 无 |
 | REQ-121 | 收口 16 处自算根 | 已完成 | 16 处「上跳到仓库根」改为经 `test/common/paths.js` 门面 import `ROOT`(9 个文件),另清 `version-chip.test.js` 1 处。零门禁变更 | 无 | docs/adr/ADR-040-沙盒复制集纳入shared并删除根路径豁免表.md |
 | REQ-138 | CHANGELOG 写法正式化 | 已完成 | 两轮才定对:内容标准第一轮判错(误删长期约束),改判「有意义且别处查不到」;语体否掉文言腔。35 版改写 + 37 个 Release 逐字同步 + 六类判据进 `check-changelog` | 门禁抓到新违规面时 | docs/adr/ADR-047-CHANGELOG语体正式化与门禁.md · docs/evidence/20261001-203000-CHANGELOG与Release版本对账.md |
+| REQ-139 | 覆盖率产物并入 output 单源 | 已完成 | 报告落 `output/coverage/`、dump 落 `.c8-tmp/`；静态面新增取值比对判据。第一版只改 reports-dir，引入确定性假红。两轮全链全绿、指标零漂移 | 无 | docs/adr/ADR-048-覆盖率产物并入output单源.md |
 
 ## 已作废
 
