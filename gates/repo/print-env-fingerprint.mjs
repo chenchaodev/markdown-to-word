@@ -5,9 +5,8 @@
  * JSON schemaVersion 固定为 1；探针失败保留 null/unavailable 并写入 diagnostics。
  * 文本为固定顺序的 key=value；无时间戳、主机名或绝对路径。--strict 使诊断返回非零码。
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import fs from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -438,81 +437,6 @@ Options:
   -h, --help          Show this help
 `;
 
-/* ---- 启动地板测量(临时,env 开关;REQ-133 拍板后连同本段一并删除)---- */
-
-/**
- * 量「每段启动成本」的三档对照,各取中位。
- *
- * 为什么必须在本机之外再量一次:验收段地板是「把纯逻辑段迁到纯 node 宿主」这类
- * 提速方案的**唯一收益输入**,而本机 16 核与 runner 4 vCPU 不可外推(REQ-055 已实测)。
- *
- * 为什么不能用「轮次外单独起 Electron」那套测法:它量的是「独立启动一个 Electron
- * 二进制」,不是「段在编排器里的成本」。实测该法在本机高估约 4.2 倍(得 598ms,而
- * 真实轮次内最快的段只要 143ms)。故本函数按真实口径:起子进程 → 跑最小段体 → 等退出。
- *
- * 选的锚点段 `test/renderer/init-barrier.test.js` 只 import node 内建与 paths.js,
- * **不依赖 dist/** —— 故本函数可放在 build 之前的那一步(环境指纹)里跑。
- *
- * 观测项,量不到不抛错:它是数据来源,不是判定。
- * @param {number} samples 每档采样次数
- * @returns {{ node: number, segnode: number, segel: number }} 三档中位(ms)
- */
-function measureStartupFloor(samples) {
-  const electron = path.join(ROOT, "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
-  const segment = path.join(ROOT, "test", "renderer", "init-barrier.test.js");
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-floor-"));
-  // 纯 node 侧的段宿主:注册 mock loader 后 import 段并调 run()
-  const nodeSegmentHost = path.join(scratch, "seg-node.mjs");
-  fs.writeFileSync(
-    nodeSegmentHost,
-    [
-      'import { register } from "node:module";',
-      `register(${JSON.stringify(path.join(ROOT, "test", "common", "electron-mock-loader.mjs"))});`,
-      `const mod = await import(${JSON.stringify(segment)});`,
-      "await mod.run();",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  /**
-   * @param {() => void} once
-   * @returns {number} 中位耗时(ms)
-   */
-  const medianOf = (once) => {
-    const all = [];
-    for (let i = 0; i < samples; i += 1) {
-      const start = Date.now();
-      once();
-      all.push(Date.now() - start);
-    }
-    all.sort((a, b) => a - b);
-    return all[Math.floor(all.length / 2)] ?? 0;
-  };
-  try {
-    return {
-      node: medianOf(() => spawnSync(process.execPath, ["-e", ""], { stdio: "ignore", windowsHide: true })),
-      segnode: medianOf(() =>
-        spawnSync(process.execPath, [nodeSegmentHost], { stdio: "ignore", windowsHide: true, timeout: 120_000 }),
-      ),
-      segel: medianOf(() =>
-        spawnSync(electron, [path.join(ROOT, "test", "common", "segment-host.mjs")], {
-          stdio: "ignore",
-          windowsHide: true,
-          timeout: 120_000,
-          env: {
-            ...process.env,
-            M2W_SEGMENT_FILE: segment,
-            M2W_SEGMENT_RESULT: path.join(scratch, "r.json"),
-            M2W_SEGMENT_USER_DATA: path.join(scratch, "ud"),
-          },
-        }),
-      ),
-    };
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 3 });
-  }
-}
-
 export async function runCli(args, streams = {}) {
   const { stderr = process.stderr, stdout = process.stdout } = streams;
   try {
@@ -523,18 +447,6 @@ export async function runCli(args, streams = {}) {
     }
     const fingerprint = await collectEnvironmentFingerprint();
     stdout.write(options.format === "json" ? formatFingerprintJson(fingerprint) : formatFingerprintText(fingerprint));
-    // 启动地板(env 开关;观测项,量不到只记警告不抛错)
-    const samples = Number(process.env.M2W_MEASURE_FLOOR_SAMPLES ?? 0);
-    if (samples > 0) {
-      try {
-        const floor = measureStartupFloor(samples);
-        stdout.write(
-          `[floor] n=${samples} node=${floor.node}ms segnode=${floor.segnode}ms segel=${floor.segel}ms (REQ-133 临时观测,勿当门禁)\n`,
-        );
-      } catch (error) {
-        stderr.write(`[floor] 测量失败(不影响判定):${errorMessage(error)}\n`);
-      }
-    }
     if (options.strict && fingerprint.diagnostics.length > 0) {
       stderr.write(`Environment fingerprint is incomplete: ${fingerprint.diagnostics.length} diagnostic(s).\n`);
       return 1;
