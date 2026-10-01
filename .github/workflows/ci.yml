@@ -118,14 +118,25 @@ jobs:
       # 统一门禁入口:build 必须先于 typecheck(测试树 import dist/ 编译产物)与几何门禁
       # (采样 dist/renderer),顺序与完整性由 gates/repo/check-ci-contract.mjs 断言守护
       #
-      # 验收段并发档位:段间本就零状态串扰(每段独立 userData 目录),编排器内并发池
-      # 因此安全(见 ADR-017)。默认档位是 1(串行),这里显式开到 4 对齐 runner 的 vCPU
-      # 档(public 仓库标准 runner 为 4 核)。这一行是**唯一的提速开关**:删掉即回到
-      # 串行,不影响任何判定口径。独占段(gate-probes,工作树指纹敏感)不参与并发。
+      # 验收段并发档位(2026-10-01 临时实验:1 → 量串行的真实代价,判完恢复 4)
+      #
+      # 背景:并发 4 换来的加速有代价 —— 三条间歇判红(run 36815393411 / 36836273547 /
+      # 36841674591)全部发生在并发 4 下,且都不是确定性失败(6 绿 3 红,红的两条自出现起
+      # 8 轮未复现)。已知 runner-report 段内嵌套编排**拿不到并发档**
+      # (`runner.js` 对子进程 `delete childEnv[CONCURRENCY_ENV]`,回落串行),所以它的
+      # 0xC0000005 来自**段外**竞争;而 test-common-helpers 的 EPERM 若与 runner-report
+      # 的 `taskkill /T /F` 有关,那段间干扰**结构上必须**有并发才成立。
+      #
+      # 本实验量的是「串行档真实要多久」—— 若代价小,降档换稳定性是划算的;若代价大,
+      # 则应改为定点修那两处竞态而不是降档。**先量再判,不要凭直觉选一边。**
+      #
+      # 原本的说明(恢复 4 时保留):段间本就零状态串扰(每段独立 userData 目录),编排器
+      # 内并发池因此安全(见 ADR-017)。默认档位是 1(串行),显式开到 4 是为对齐 runner 的
+      # vCPU 档(public 仓库标准 runner 为 4 核)。独占段(gate-probes)不参与并发。
       - name: Verify (verify:ci)
         run: npm run verify:ci
         env:
-          M2W_TEST_CONCURRENCY: 4
+          M2W_TEST_CONCURRENCY: 1
 
       # 诊断留存:always 语义保证门禁判红时报告与截图仍可下载(几何门禁失败时
       # 逐场景 finding 在报告里,FAILED 截图在同目录)
