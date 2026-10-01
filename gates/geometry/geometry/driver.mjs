@@ -115,16 +115,12 @@ export const config = {
   settleMs: envNumber("M2W_GEOMETRY_SETTLE_MS", 250),
   stableAfterResizeMs: envNumber("M2W_GEOMETRY_STABLE_RESIZE_MS", 1500),
   stableAfterStepMs: envNumber("M2W_GEOMETRY_STABLE_STEP_MS", 250),
-  // 落定等待上限。**默认 15000 → 2000 是止血,不是修好**(2026-10-01,打点实测):
-  // 21/21 场景从未收敛,全部跑满上限,落定一项占该门禁总耗时 97.4%(实测 316682ms /
-  // 325030ms),而单轮 executeJavaScript 实测仅约 6ms —— 即 15s 全花在 96 次 wait(150)
-  // 的轮询上,不是采样成本。根因是收敛判据(整棵采样树 JSON.stringify 逐字节相等,
-  // 经 r2() 只留两位小数 = 要求 0.01px 相等)比判定层严 100 倍(判定容差 tolPx=1),
-  // 任何亚像素抖动都让它永不成立。**2000ms 下采样仍未落定,门禁是在未落定的布局上判绿** ——
-  // 今天恰好不炸是因为振荡幅度在 1px 容差内,振荡一旦变大即转为 flaky 且根因被掩盖。
-  // 正解是定位振荡字段后修判据(收敛用与判定同一把尺,或只比判定实际读取的面),
-  // 到时本值应回退或删除。M2W_GEOMETRY_MAX_WAIT_MS 可临时覆盖。
-  maxWaitMs: envNumber("M2W_GEOMETRY_MAX_WAIT_MS", 2000),
+  // 落定等待上限:只在判据仍不收敛时兜底(超时返回最后一次采样,由判定层的
+  // 恒定/越界断言暴露残留不稳定)。**默认值不小于稳定窗**,否则稳定窗本身失去意义。
+  // 注意:2026-10-01 曾因误判根因而把它从 15000 下调到 2000(见 measureStable 处的
+  // 判据缺陷说明),该缺陷修好后已恢复 15000 —— 下限由「>= max(stableAfterStepMs,
+  // stableAfterResizeMs)」保证,故今后调小它不会掩盖不收敛。
+  maxWaitMs: envNumber("M2W_GEOMETRY_MAX_WAIT_MS", 15000),
   viewportSettleMs: envNumber("M2W_GEOMETRY_VIEWPORT_SETTLE_MS", 10000),
   // 视口取整补偿次数上限(负数/小数归零):补偿只是把驱动取整误差压回容差,不是无限重试
   viewportCompensations: Math.max(0, Math.trunc(envNumber("M2W_GEOMETRY_VIEWPORT_COMPENSATIONS", 2))),
@@ -249,16 +245,22 @@ export const OPS = {
 export async function measureStable(exec, measureSource, minStableMs, maxWaitMs) {
   const t0 = Date.now();
   let prev = null;
-  let prevAt = 0;
+  let changedAt = 0;
   for (;;) {
     const cur = parseMeasureScript(await exec(measureSource));
     const now = Date.now();
-    if (prev !== null && JSON.stringify(cur) === JSON.stringify(prev) && now - prevAt >= minStableMs) {
-      return cur;
+    if (prev !== null && JSON.stringify(cur) === JSON.stringify(prev)) {
+      // 收敛窗自「值最后一次变化」起算,不是自「上一次轮询」起算。
+      // 原实现每轮无条件重置 prevAt,量到的恒是两次轮询的间距(约 150ms 步长),
+      // 而稳定窗是 250ms/1500ms ⇒ 判据在数学上永不成立,每个场景必然睡满
+      // maxWaitMs 再返回最后一次采样(实测 21×15s=315s,与整步 323s 吻合)。
+      // 即该门禁自写下起就从未在稳定态下判定过。
+      if (now - changedAt >= minStableMs) return cur;
+    } else {
+      changedAt = now;
     }
     if (now - t0 >= maxWaitMs) return cur;
     prev = cur;
-    prevAt = now;
     await wait(150);
   }
 }

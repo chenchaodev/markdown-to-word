@@ -86,8 +86,7 @@
  *   M2W_GEOMETRY_SETTLE_MS   场景驱动后的起跳等待 ms(默认 250)
  *   M2W_GEOMETRY_STABLE_RESIZE_MS  resize 后的最小布局稳定窗口 ms(默认 1500,覆盖档位切换重排)
  *   M2W_GEOMETRY_STABLE_STEP_MS    交互驱动后的最小布局稳定窗口 ms(默认 250)
- *   M2W_GEOMETRY_MAX_WAIT_MS       单场景落定等待上限 ms(默认 2000;此前 15000 是止血性
- *                                  下调,根因未修,见 gates/geometry/geometry/driver.mjs 该项的注释)
+ *   M2W_GEOMETRY_MAX_WAIT_MS       单场景落定等待上限 ms(默认 15000;只在判据仍不收敛时兜底)
  *   M2W_GEOMETRY_VIEWPORT_SETTLE_MS 视口落定等待上限 ms(默认 10000)
  *   M2W_GEOMETRY_VIEWPORT_COMPENSATIONS 视口取整补偿最大额外次数(默认 2)
  * 退出码:0 全绿 / 1 实测红灯 / 2 有档位未测量(未测量 ≠ 通过)/ 4 入口自身崩溃
