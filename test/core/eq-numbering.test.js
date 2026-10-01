@@ -21,7 +21,7 @@ import { docxLinkBody, pdfLinkBody } from "../common/dual-extract.js";
  /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
 
-/** 主样例:公式编号 + 交叉引用(含行内公式/悬空引用),gen-fixtures 落盘为 acceptance/eq-numbering.md */
+/** 主样例:公式编号 + 交叉引用(含行内公式/悬空引用),gen-fixtures 落盘为 docs/eq-numbering.md */
 const mainMd = `# 公式编号测试
 
 正文含行内公式 $a + b$,不参与编号。

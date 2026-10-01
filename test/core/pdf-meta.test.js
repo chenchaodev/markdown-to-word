@@ -11,7 +11,7 @@ import { FIXTURES_DIR } from "../common/paths.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
-/** 主样例:frontmatter 元数据 + 章节编号 + 分页(gen-fixtures 落盘为 acceptance/pdf-meta.md) */
+/** 主样例:frontmatter 元数据 + 章节编号 + 分页(gen-fixtures 落盘为 docs/pdf-meta.md) */
 const pdfMetaMd = `---
 title: 脚注与页眉页脚验收
 author: 测试

@@ -24,7 +24,7 @@ import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
  /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 
-/** 主样例:行内/分式/上下标/开方公式(gen-fixtures 落盘为 acceptance/formula.md) */
+/** 主样例:行内/分式/上下标/开方公式(gen-fixtures 落盘为 docs/formula.md) */
 const formulaMd = `# 公式测试
 
 行内公式 $x^2$ 与分式 $\\frac{1}{2}$、上下标 $a_i^j$。
@@ -39,7 +39,7 @@ $$
 \\sqrt{a^2 + b^2}
 $$
 `;
-/** 降级场景:解析失败的公式 → TeX 源码等宽灰字 + 警告(落盘为 acceptance/formula-degrade.md) */
+/** 降级场景:解析失败的公式 → TeX 源码等宽灰字 + 警告(落盘为 docs/formula-degrade.md) */
 const degradeMd = `# 公式降级
 
 行内公式 $\\frac{1}{$ 与独立公式:

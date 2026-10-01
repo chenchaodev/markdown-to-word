@@ -29,7 +29,7 @@ import { prepareForConvert } from "../common/convert-helpers.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { closeTestServer, listenFetchablePort } from "../common/http-server.js";
 
-const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
+const PNG_PATH = path.join(FIXTURES_DIR, "input", "g1-tiny.png");
 
 /** 本段断言消息前缀(共用助手的失败消息按段定位用) */
 const LABEL = "image-downloader 断言失败";
@@ -87,7 +87,7 @@ export async function run() {
 
   // ---- 断言 1:本地相对路径 path.resolve(baseDir, src) ----
   const local = createImageResolver(FIXTURES_DIR);
-  const rel = await local("./g1-tiny.png");
+  const rel = await local("./input/g1-tiny.png");
   if (!rel || !rel.equals(fixtureBytes)) {
     throw new Error("image-downloader 断言失败:本地相对路径未读到与 fixture 一致的 Buffer");
   }
@@ -103,21 +103,21 @@ export async function run() {
   // ---- 断言 2b:显式可信根内相对路径(含 ..)允许,未授予同一根则拒绝 ----
   const nestedBase = path.join(FIXTURES_DIR, "nested-source");
   const untrustedNested = createImageResolver(nestedBase);
-  if ((await untrustedNested("../g1-tiny.png")) !== null) {
+  if ((await untrustedNested("../input/g1-tiny.png")) !== null) {
     throw new Error("image-downloader 断言失败:未显式授予的父目录不应成为可信根");
   }
   const trustedNested = createImageResolver(nestedBase, undefined, { trustedRoots: [FIXTURES_DIR] });
-  const trustedRelative = await trustedNested("../g1-tiny.png");
+  const trustedRelative = await trustedNested("../input/g1-tiny.png");
   if (!trustedRelative || !trustedRelative.equals(fixtureBytes)) {
     throw new Error("image-downloader 断言失败:显式可信根内相对路径未读到 fixture");
   }
 
   // ---- 断言 2c:可移植模拟 symlink/junction 越界(realpath 目标离开源根即拒绝) ----
-  const insideCandidate = path.join(FIXTURES_DIR, "g1-tiny.png");
+  const insideCandidate = path.join(FIXTURES_DIR, "input", "g1-tiny.png");
   const linkedResolver = createImageResolver(FIXTURES_DIR, undefined, {
     realpath: async (/** @type {string} */ candidate) => (candidate === insideCandidate ? path.join(path.dirname(FIXTURES_DIR), "outside.png") : candidate),
   });
-  if ((await linkedResolver("./g1-tiny.png")) !== null) {
+  if ((await linkedResolver("./input/g1-tiny.png")) !== null) {
     throw new Error("image-downloader 断言失败:realpath 指向源根外的链接目标应拒绝");
   }
 
@@ -130,7 +130,7 @@ export async function run() {
       return candidateRealpathCalls === 1 ? candidate : path.join(path.dirname(FIXTURES_DIR), "outside.png");
     },
   });
-  if ((await swappedResolver("./g1-tiny.png")) !== null || candidateRealpathCalls < 2) {
+  if ((await swappedResolver("./input/g1-tiny.png")) !== null || candidateRealpathCalls < 2) {
     throw new Error("image-downloader 断言失败:读取后链接目标变化未触发二次边界校验");
   }
 
@@ -146,7 +146,7 @@ export async function run() {
 
   // ---- 断言 4b:exists 轻量存在性通道(本地 fs.access,免整读) ----
   // 存在 → true;缺失(ENOENT)→ false;data: 等非本地路径退回完整解析(null → false)。
-  if ((await local.exists("./g1-tiny.png")) !== true) {
+  if ((await local.exists("./input/g1-tiny.png")) !== true) {
     throw new Error("image-downloader 断言失败:exists 对存在的本地图片应返回 true");
   }
   if ((await local.exists(PNG_PATH)) !== false) {
@@ -268,7 +268,7 @@ export async function run() {
     throw new Error("image-downloader 断言失败:缺失本地图片应产生统一「图片加载失败:」警告");
   }
   const wOk = /** @type {import("../../src/core/i18n.js").ConvertWarning[]} */ ([]);
-  await convert(prepareForConvert("![有图](./g1-tiny.png)"), "docx", {
+  await convert(prepareForConvert("![有图](./input/g1-tiny.png)"), "docx", {
     baseDir: FIXTURES_DIR,
     imageResolver: createImageResolver(FIXTURES_DIR),
     warnings: wOk,

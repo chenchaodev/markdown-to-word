@@ -10,7 +10,7 @@ import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
-/** 主样例:排版设置正文(字号/行距/缩进/对齐,gen-fixtures 落盘为 acceptance/typography.md) */
+/** 主样例:排版设置正文(字号/行距/缩进/对齐,gen-fixtures 落盘为 docs/typography.md) */
 const typoMd = `# 排版设置测试
 
 第一段正文,验证字号/行距/缩进/对齐等排版设置生效。

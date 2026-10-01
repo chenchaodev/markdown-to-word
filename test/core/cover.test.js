@@ -17,7 +17,7 @@ import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
-/** 主样例:frontmatter 封面验收(gen-fixtures 落盘为 acceptance/cover.md) */
+/** 主样例:frontmatter 封面验收(gen-fixtures 落盘为 docs/cover.md) */
 const coverMd = `---
 title: 封面验收文档
 author: 测试作者

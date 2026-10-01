@@ -1,6 +1,6 @@
 # 甲
 
-![样例图](g1-tiny.png)
+![样例图](input/g1-tiny.png)
 
 图: 样例图 {#fig:alpha}
 

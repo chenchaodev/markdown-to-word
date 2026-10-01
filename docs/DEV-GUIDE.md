@@ -138,7 +138,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - **归属判例(跨层段)**:归属看**被测主体**,断言穿过别层不改变归属 —— 被测主体在 `src/main`、core 仅作被断言的接收方时,段归 `test/main/`(例:`test/main/mermaid-warning-channel.test.js` 测 main 侧渲染服务与 converter 接线,core 的 warning 通道是被断言对象)。
   - **同模块多段口径**:同一被测模块可按内容主题拆多段,文件名带主题后缀,不要求一段覆盖模块全部行为(例:`test/main/atomic-json.test.js` 断言落盘/队列/失败清理,`test/main/atomic-json-durability.test.js` 断言 fsync 时点与耐久性)。
   - **段目录须镜像一棵被断言的树**(判据:段目录名必须是顶层某棵树的目录名 —— `core`/`main`/`renderer` 对应 `src/` 的三个子目录,`gates` 对应顶层 `gates/`;`common` `fixtures` `acceptance` 三个 harness/数据区名被显式排除)。这条替代了早先的「三目录恒等」表述:新增被断言的树配同名段目录即可,不必改判据文字;新增杂物抽屉(如 `test/pending/`,历史上真存在过的暂存区,其存废断言由 `test/core/core-resources.test.js` 覆盖)因顶层找不到同名树而判红。判据实现与判红文案在 `shared/test-common-surface.js` 的 `checkSegmentMirrors`,由 `gates/repo/check-test-numbering.mjs` 与 `check-temp-cleanup.mjs` 各自 fail closed;漏登记的测试子目录由同一单源的「扫描面等式」另管,两条各管一件事。
-- 静态样例入 `test/fixtures/`(acceptance/ 生成 + manual/ 手工);产物 `output/artifacts` + `output/smoke`(可清理重建,smoke 自清理)
+- 静态样例入 `test/fixtures/`,三个子目录**一律按内容命名**:`docs/`(生成器落盘的渲染输入样例文档)+ `input/`(最小输入桩:最小 md 与图像桩)+ `manual/`(人工目检长文档)。**不按「谁生成」或「被谁读」命名** —— 「生成 vs 手工」这个区分由生成器落盘的 README 首行「勿手改」+ `check:fixtures` 漂移门禁表达,不再占一条命名轴;改名见 [ADR-052](adr/ADR-052-夹具区按内容命名并归位输入桩.md)。产物 `output/artifacts` + `output/smoke`(可清理重建,smoke 自清理)
 - 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`ru` 是已裁撤语言,`i18n-registry.test.js` 拿它当「裁撤回归守卫」的样例(`isLanguage("ru") === false`),回加该语言会撞红这条断言**
 - 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(EOL 归一化,`.gitattributes` 双保险;CI 门禁步骤)
 

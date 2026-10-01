@@ -45,7 +45,7 @@ const convertWithOverrides = /** @type {(md: string, format: "docx" | "pdf", con
   (md, format, context, overrides) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context }, overrides)
 );
 
-/** 主样例:TOC + 题注(含孤立题注/缺失图片),gen-fixtures 落盘为 acceptance/toc-caption.md */
+/** 主样例:TOC + 题注(含孤立题注/缺失图片),gen-fixtures 落盘为 docs/toc-caption.md */
 const mainMd = `# 第一章
 
 图: 第一章的图(孤立题注,前无图 → 普通段落)
@@ -172,7 +172,7 @@ export async function run() {
   // 两侧各断言一次(共 8 条断言)。
   const explicitMd = `# 甲 {#sec:s1}
 
-![样例图](g1-tiny.png)
+![样例图](input/g1-tiny.png)
 
 图: 样例图 {#fig:v}
 

@@ -155,7 +155,7 @@ function countingGuard() {
  * @returns {Promise<MatrixCtx>} 矩阵各行 verify 的入参(字段与 MatrixCtx 逐项对应)
  */
 export async function buildMatrixCtx() {
-  const png = await fs.readFile(path.join(B, "g1-tiny.png"));
+  const png = await fs.readFile(path.join(B, "input", "g1-tiny.png"));
   const img = { imageResolver: async () => png };
   const nullMermaid = { mermaidResolver: async () => null };
 

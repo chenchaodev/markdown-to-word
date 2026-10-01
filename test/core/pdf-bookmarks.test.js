@@ -45,7 +45,7 @@ async function assertOutline(pdfBytes, expectedTitle, label) {
   }
 }
 
-/** 主样例:多级标题 + 显式分页(书签层级/跨级回挂,gen-fixtures 落盘为 acceptance/pdf-bookmarks.md) */
+/** 主样例:多级标题 + 显式分页(书签层级/跨级回挂,gen-fixtures 落盘为 docs/pdf-bookmarks.md) */
 const md = `# 书签一级标题
 
 正文一。

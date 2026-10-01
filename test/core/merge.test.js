@@ -32,7 +32,7 @@ async function collectMarkdown(dir) {
 }
 
 /** 主样例:括号 URL 合并输出(mergeMarkdowns 运行值;真实合并验收样例为 manual/ 目录
- *  多文件,见段头注释),gen-fixtures 落盘为 acceptance/merge.md。
+ *  多文件,见段头注释),gen-fixtures 落盘为 docs/merge.md。
  *  注意:mergeMarkdowns 会把相对图片引用按合并 baseDir 重定位为相对引用(管线特性),直接导出不会把本机绝对路径写进 fixture;my(1).png 本不存在,用于演示缺失图片 warning。 */
 const bracketInput = [
   { content: "![a](https://example.com/a(b).png)\n\n![b](./my(1).png)", baseDir: FIXTURES_DIR },

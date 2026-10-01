@@ -14,14 +14,14 @@ import { saveArtifact } from "../common/artifacts.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
-/** 主样例:白名单标签 + 危险样例(gen-fixtures 落盘为 acceptance/raw-html.md) */
+/** 主样例:白名单标签 + 危险样例(gen-fixtures 落盘为 docs/raw-html.md) */
 const htmlMd = `# 白名单测试
 
 <strong>粗体</strong> 与 <em>斜体</em>、<code>code()</code>、x<sub>1</sub> 和 y<sup>2</sup>、<u>下划线</u>、<s>删除线</s>、<mark>高亮</mark>、<span>普通</span>、<strong>粗<em>斜</em></strong>。<br>换行后内容。
 
 <script>alert(1)</script>、<div class="x">块级</div>、<strong class="y">带属性</strong>
 `;
-/** 交叉边界场景:行首白名单块 + 危险段交错(落盘为 acceptance/raw-html-cross.md) */
+/** 交叉边界场景:行首白名单块 + 危险段交错(落盘为 docs/raw-html-cross.md) */
 const crossMd = `# 交叉边界测试
 
 <strong>行首粗体</strong>

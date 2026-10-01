@@ -40,9 +40,9 @@ function hello(name: string): string {
 
 ## 图片与分割线
 
-![测试图片](./g1-tiny.png)
+![测试图片](./input/g1-tiny.png)
 
-![大图](./img-800x400.png)
+![大图](./input/img-800x400.png)
 
 ---
 

@@ -14,7 +14,7 @@ import { saveArtifact } from "../common/artifacts.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
 
 /** 主样例:脚注 + 页眉页脚(frontmatter 触发页眉;重复引用 [^1] 两次 → 独立脚注 id;
- *  多段脚注定义),gen-fixtures 落盘为 acceptance/footnotes.md */
+ *  多段脚注定义),gen-fixtures 落盘为 docs/footnotes.md */
 const footnoteMd = `---
 title: 脚注与页眉页脚验收
 author: 测试

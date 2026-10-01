@@ -182,13 +182,13 @@ export async function run() {
   // 样例:g1-tiny.png 为 1×1 图。{width=200} → 200×200(一维等比);
   // {width=50%} → round(0.5×内容区宽) 见方;{width=300 height=100} → 两维按给定值。
   const docxMd = [
-    "![宽二百](./g1-tiny.png){width=200}",
+    "![宽二百](./input/g1-tiny.png){width=200}",
     "",
-    "![半宽](./g1-tiny.png){width=50%}",
+    "![半宽](./input/g1-tiny.png){width=50%}",
     "",
-    "![两维](./g1-tiny.png){width=300 height=100}",
+    "![两维](./input/g1-tiny.png){width=300 height=100}",
     "",
-    "正文行内 ![内联](./g1-tiny.png){width=40%}",
+    "正文行内 ![内联](./input/g1-tiny.png){width=40%}",
     "",
   ].join("\n");
   /** @type {Warning[]} */
@@ -221,17 +221,17 @@ export async function run() {
   /** @type {Warning[]} */
   const pdfWarnings = [];
   const pdfMd = [
-    "![半宽](./g1-tiny.png){width=50%}",
+    "![半宽](./input/g1-tiny.png){width=50%}",
     "",
-    "![两维](./g1-tiny.png){width=300 height=200}",
+    "![两维](./input/g1-tiny.png){width=300 height=200}",
     "",
-    "![高三成](./g1-tiny.png){height=30%}",
+    "![高三成](./input/g1-tiny.png){height=30%}",
     "",
-    "正文行内 ![内联](./g1-tiny.png){width=40%}",
+    "正文行内 ![内联](./input/g1-tiny.png){width=40%}",
     "",
     "无属性独立图:",
     "",
-    "![素图](./g1-tiny.png)",
+    "![素图](./input/g1-tiny.png)",
     "",
   ].join("\n");
   const pdf = asPdfArtifact(await convertTyped(pdfMd, "pdf", { baseDir: FIXTURES_DIR, warnings: pdfWarnings }));
@@ -259,14 +259,14 @@ export async function run() {
     const artifact =
       fmt === "docx"
         ? asDocxArtifact(
-            await convertTyped("![坏图](./g1-tiny.png){width=-3}", "docx", {
+            await convertTyped("![坏图](./input/g1-tiny.png){width=-3}", "docx", {
               baseDir: FIXTURES_DIR,
               imageResolver: resolver,
               warnings: badWarnings,
             }),
           )
         : asPdfArtifact(
-            await convertTyped("![坏图](./g1-tiny.png){width=-3}", "pdf", {
+            await convertTyped("![坏图](./input/g1-tiny.png){width=-3}", "pdf", {
               baseDir: FIXTURES_DIR,
               imageResolver: resolver,
               warnings: badWarnings,
@@ -280,12 +280,12 @@ export async function run() {
       (w) => typeof w === "object" && w.key === "warn.imageAttrInvalid",
     );
     assert(hit !== undefined, `${fmt} 非法尺寸属性应产生 warn.imageAttrInvalid keyed 警告`);
-    assert(hit.params?.src === "./g1-tiny.png" && hit.params?.attr === "width=-3", `${fmt} 警告 params 应含 src 与原始键值对`);
+    assert(hit.params?.src === "./input/g1-tiny.png" && hit.params?.attr === "width=-3", `${fmt} 警告 params 应含 src 与原始键值对`);
     // zh 文案(fallback 口径)
-    assert(formatWarning(hit) === "图片尺寸属性无效,已忽略: width=-3(./g1-tiny.png)", `${fmt} zh 文案应逐字匹配`);
+    assert(formatWarning(hit) === "图片尺寸属性无效,已忽略: width=-3(./input/g1-tiny.png)", `${fmt} zh 文案应逐字匹配`);
     // en 字典命中(satisfies 全量锁定)
     setLanguage("en");
-    assert(formatWarning(hit) === "Invalid image size attribute, ignored: width=-3 (./g1-tiny.png)", `${fmt} en 文案应逐字匹配`);
+    assert(formatWarning(hit) === "Invalid image size attribute, ignored: width=-3 (./input/g1-tiny.png)", `${fmt} en 文案应逐字匹配`);
     setLanguage("zh");
     // 分支按产物判别式而非 fmt:同一循环里产物与 fmt 一一对应,判别式同时完成类型收窄
     if (artifact.kind === "docx") {
@@ -304,7 +304,7 @@ export async function run() {
   for (const fmt of formats) {
     /** @type {Warning[]} */
     const dupWarnings = [];
-    const dupMd = "![坏图](./g1-tiny.png){width=-3}\n\n重复 ![坏图](./g1-tiny.png){width=-3}\n";
+    const dupMd = "![坏图](./input/g1-tiny.png){width=-3}\n\n重复 ![坏图](./input/g1-tiny.png){width=-3}\n";
     await convertTyped(dupMd, fmt, { baseDir: FIXTURES_DIR, imageResolver: resolver, warnings: dupWarnings });
     const dupCount = dupWarnings.filter(
       /**
@@ -319,7 +319,7 @@ export async function run() {
 
   // ================= (e) 无属性回归 + 题注绑定 =================
   // 无属性:行内图片不居中、尺寸走原 scaleToFit(1×1 不放大);独立成段图片居中(figure 语义)
-  const plainDocx = await renderDocx(parseMarkdown("前文 ![内联](./g1-tiny.png) 后文\n\n![独图](./g1-tiny.png)\n"), {
+  const plainDocx = await renderDocx(parseMarkdown("前文 ![内联](./input/g1-tiny.png) 后文\n\n![独图](./input/g1-tiny.png)\n"), {
     imageResolver: resolver,
     warnings: [],
   });
@@ -328,22 +328,22 @@ export async function run() {
   const plainCenters = (plainXml.match(/<w:jc w:val="center"/g) || []).length;
   assert(plainCenters === 1, `仅独立成段图片段落居中(行内图片不受影响),实际 ${plainCenters}`);
   const plainPdf = asPdfArtifact(
-    await convertTyped("前文 ![内联](./g1-tiny.png) 后文", "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
+    await convertTyped("前文 ![内联](./input/g1-tiny.png) 后文", "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
   );
   assert(!plainPdf.html.includes('class="fig-image"'), "pdf 行内图片段落不挂 fig-image(回归)");
   assert(!/<img[^>]*style=/i.test(plainPdf.html), "pdf 无属性图片无 style 注入(回归)");
   // 容器内图片不识别 figure(与 docx 侧只遍历顶层段落同契约)
-  const listDocx = await renderDocx(parseMarkdown("- ![列表图](./g1-tiny.png)\n"), { imageResolver: resolver, warnings: [] });
+  const listDocx = await renderDocx(parseMarkdown("- ![列表图](./input/g1-tiny.png)\n"), { imageResolver: resolver, warnings: [] });
   const listXml = await unzipPart(listDocx, "word/document.xml");
   assert(!listXml.includes('<w:jc w:val="center"'), "docx 列表项内图片不居中(容器内不识别 figure)");
   const listPdf = asPdfArtifact(
-    await convertTyped("- ![列表图](./g1-tiny.png)\n", "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
+    await convertTyped("- ![列表图](./input/g1-tiny.png)\n", "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
   );
   assert(!listPdf.html.includes('class="fig-image"'), "pdf 列表项内图片不挂 fig-image(容器内不识别)");
   console.log("[ok] image-size:(e1) 无属性回归(scaleToFit 不变/行内不居中/无 style 注入)断言通过");
 
   // 题注绑定:独立成段图片后紧跟「图: xxx」前缀行 → 题注保持在图下方,编号机制不变
-  const capMd = "# 章节\n\n![示意图](./g1-tiny.png)\n\n图: 示意图标题\n";
+  const capMd = "# 章节\n\n![示意图](./input/g1-tiny.png)\n\n图: 示意图标题\n";
   const capDocx = await renderDocx(parseMarkdown(capMd), { imageResolver: resolver, warnings: [] });
   const capXml = await unzipPart(capDocx, "word/document.xml");
   assert(capXml.includes(">图 1.1 示意图标题<"), "题注自动编号机制不变(h1 章节号.序数 + 题注文本)");

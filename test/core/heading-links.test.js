@@ -15,7 +15,7 @@ import { saveArtifact } from "../common/artifacts.js";
 import { docxBufferOf, prepareForConvert } from "../common/convert-helpers.js";
 import { docxTocAnchors } from "../common/dual-extract.js";
 
-/** 主样例:标题编号 + 内部锚点/外部链接 + h1-h6(gen-fixtures 落盘为 acceptance/heading-links.md) */
+/** 主样例:标题编号 + 内部锚点/外部链接 + h1-h6(gen-fixtures 落盘为 docs/heading-links.md) */
 const linkMd = `---
 title: 标题编号与链接测试
 ---

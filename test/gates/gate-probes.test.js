@@ -251,7 +251,7 @@ export async function run() {
       { why: "覆盖率分数(斜杠两侧是数字)", text: "statements 0/186, functions 0/1", hit: false },
       { why: "段数比", text: "1/1 段失败", hit: false },
       { why: "c8 参数向量", text: "--include=dist/**", hit: false },
-      { why: "冒号后接相对路径(不是绝对路径)", text: "未破坏:acceptance/ 与段导出重新生成的内容一致", hit: false },
+      { why: "冒号后接相对路径(不是绝对路径)", text: "未破坏:docs/ 与段导出重新生成的内容一致", hit: false },
     ];
     for (const { why, text, hit } of FIXTURES) {
       await suite.case(`${hit ? "正向" : "负向"}:${why}`, () => {

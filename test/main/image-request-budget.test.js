@@ -26,7 +26,7 @@ import {
 import { FIXTURES_DIR } from "../common/paths.js";
 import { closeTestServer, listenFetchablePort } from "../common/http-server.js";
 
-const PNG_PATH = path.join(FIXTURES_DIR, "g1-tiny.png");
+const PNG_PATH = path.join(FIXTURES_DIR, "input", "g1-tiny.png");
 
 /** 本段断言消息前缀(共用助手的失败消息按段定位用) */
 const LABEL = "image-request-budget 断言失败";
@@ -103,13 +103,13 @@ export async function run() {
   // ================= 1. 本地路径:maxBytes 超出即中止(不返回内容) =================
   {
     const resolver = createImageResolver(FIXTURES_DIR);
-    const ok = await resolver("./g1-tiny.png", requestOf({ maxBytes: fixtureBytes.length }));
+    const ok = await resolver("./input/g1-tiny.png", requestOf({ maxBytes: fixtureBytes.length }));
     assert(ok && ok.equals(fixtureBytes), "maxBytes 恰等于文件大小时应正常读取");
     // 上限比文件小 1 字节 → 归 null(统一「图片加载失败」通道,不是「文件不存在」)
-    const rejected = await resolver("./g1-tiny.png", requestOf({ maxBytes: fixtureBytes.length - 1 }));
+    const rejected = await resolver("./input/g1-tiny.png", requestOf({ maxBytes: fixtureBytes.length - 1 }));
     assert(rejected === null, `超单图预算的本地图片应返回 null,实际 ${rejected?.length ?? rejected}`);
     // 缺省 request 时行为不变(用实例级默认上限)
-    const noRequest = await resolver("./g1-tiny.png");
+    const noRequest = await resolver("./input/g1-tiny.png");
     assert(noRequest && noRequest.equals(fixtureBytes), "未传 request 时本地读取应保持原行为");
     console.log("[ok] image-request-budget:本地图片 maxBytes 生效(stat 预检 + 读后复核)");
   }

@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * 基础渲染段:全要素中英混排样例 → docx + pdf。
- * 来源:scripts/g1-verify.mjs 全文(样例 md 原样保留;图片引用改为 FIXTURES_DIR 下
+ * 来源:scripts/g1-verify.mjs 全文(样例 md 原样保留;图片引用改为 FIXTURES_DIR/input 下
  * g1-tiny.png,imageResolver 基准目录用 FIXTURES_DIR;原无断言,补 buffer/表格/粗体断言)。
  * 补充断言(中优先级缺口):代码块 docx 序列化(hljs 高亮/Consolas/10pt/逐行 w:br)、
  * 代码块 pdf hljs 高亮(language-ts 围栏 + token 类 span)、引用块(左缩进 720 + 灰底
@@ -37,7 +37,7 @@ const convertTyped =
     convertWithFs
   );
 
-// 全要素中英混排样例(md 字符串原样保留;图片引用 ./g1-tiny.png,由 imageResolver 基准到 FIXTURES_DIR)
+// 全要素中英混排样例(md 字符串原样保留;图片引用 ./input/g1-tiny.png,由 imageResolver 基准到 FIXTURES_DIR)
 const markdown = `# G1 验证文档 中文标题
 
 这是第一段,包含中文与 English mixed text,还有 **粗体内容** 和 *斜体内容*,以及 \`inline code\`。
@@ -80,9 +80,9 @@ function hello(name: string): string {
 
 ## 图片与分割线
 
-![测试图片](./g1-tiny.png)
+![测试图片](./input/g1-tiny.png)
 
-![大图](./img-800x400.png)
+![大图](./input/img-800x400.png)
 
 ---
 
@@ -90,8 +90,8 @@ function hello(name: string): string {
 `;
 
 export const meta = { description: "基础渲染段:全要素中英混排样例 → docx + pdf。" };
-// 主样例导出(gen-fixtures 落盘为 acceptance/basic-render.md;样例内 ./g1-tiny.png
-// 与 ./img-800x400.png 由生成器复制到 acceptance/ 下,引用路径不改写)
+// 主样例导出(gen-fixtures 落盘为 docs/basic-render.md;样例内 ./input/g1-tiny.png
+// 与 ./input/img-800x400.png 由生成器复制到 docs/ 下,引用路径不改写)
 export const fixtures = { main: markdown };
 
 /**
@@ -390,7 +390,7 @@ export async function run() {
   // ---------- PDF 本地图片边界:拒绝 src 改写为越界 file:// ----------
   // overrideImageRule 与 resolver/precheck 共用词法 + realpath 边界策略。绝对路径即使
   // 指向现存 fixture 也不得交给 Chromium;../ 越出 baseDir 时同样置为 about:blank。
-  const absolutePdfSrc = pathToFileURL(path.join(FIXTURES_DIR, "g1-tiny.png")).href.replace(/^file:\/\/\//, "/");
+  const absolutePdfSrc = pathToFileURL(path.join(FIXTURES_DIR, "input", "g1-tiny.png")).href.replace(/^file:\/\/\//, "/");
   const absoluteBoundaryPdf = asPdfArtifact(
     await convertTyped(`![越界](${absolutePdfSrc})`, "pdf", {
       baseDir: FIXTURES_DIR,
@@ -398,7 +398,7 @@ export async function run() {
       warnings: [],
     }),
   );
-  if (absoluteBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "g1-tiny.png")).href)) {
+  if (absoluteBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "input", "g1-tiny.png")).href)) {
     throw new Error("basic-render 断言失败:PDF 绝对本地图片路径被改写为 file URL");
   }
   if (absoluteBoundaryPdf.html.includes("g1-tiny.png")) {
@@ -406,13 +406,13 @@ export async function run() {
   }
   const nestedBaseDir = path.join(FIXTURES_DIR, "nested-source");
   const traversalBoundaryPdf = asPdfArtifact(
-    await convertTyped("![越界](../g1-tiny.png)", "pdf", {
+    await convertTyped("![越界](../input/g1-tiny.png)", "pdf", {
       baseDir: nestedBaseDir,
       imageResolver: async () => null,
       warnings: [],
     }),
   );
-  if (traversalBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "g1-tiny.png")).href)) {
+  if (traversalBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "input", "g1-tiny.png")).href)) {
     throw new Error("basic-render 断言失败:PDF .. 越界图片被改写为 file URL");
   }
   if (!absoluteBoundaryPdf.html.includes('src="about:blank"') || !traversalBoundaryPdf.html.includes('src="about:blank"')) {
@@ -646,7 +646,7 @@ export async function run() {
   // 同一图片 URL 在文档多处出现时只走一次 resolver(成功缓存);失败(null)不缓存,
   // 同一缺失 URL 第二次出现重新解析(重试语义,与 main 侧 image-downloader 缓存口径一致)。
   {
-    const png = await fs.readFile(path.join(FIXTURES_DIR, "g1-tiny.png"));
+    const png = await fs.readFile(path.join(FIXTURES_DIR, "input", "g1-tiny.png"));
     const memoMd = ["# memo", "", "![图A](./memo-a.png)", "", "![图B](./memo-a.png)", "", "![缺1](./memo-miss.png)", "", "![缺2](./memo-miss.png)", ""].join("\n");
     /** @type {string[]} */
     const calls = [];

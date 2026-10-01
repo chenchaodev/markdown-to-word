@@ -11,7 +11,7 @@ author: 测试作者
 
 ## 二级标题 {#sec:mid}
 
-![样例图](g1-tiny.png)
+![样例图](input/g1-tiny.png)
 
 图: 样例图 {#fig:alpha}
 
@@ -50,6 +50,6 @@ const x = 1;
 
 # 第二章
 
-![章二图](g1-tiny.png)
+![章二图](input/g1-tiny.png)
 
 图: 章二图 {#fig:gamma}

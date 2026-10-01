@@ -26,9 +26,9 @@ export async function probeFixtures(ctx) {
     runProcess({ command: node.command, args: [script, "--check"], cwd: ctx.sandbox, env: node.env, timeoutMs: ctx.timeoutMs });
 
   const anchor = await runCheck();
-  const acceptanceDir = path.join(ctx.sandbox, "test", "fixtures", "acceptance");
+  const docsDir = path.join(ctx.sandbox, "test", "fixtures", "docs");
   const target = fs
-    .readdirSync(acceptanceDir)
+    .readdirSync(docsDir)
     .filter((name) => name.endsWith(".md") && name !== "README.md")
     .sort()[0];
   if (target === undefined) {
@@ -48,13 +48,13 @@ export async function probeFixtures(ctx) {
           diagnosticHits: [],
           missingKeywords: ["沙盒内存在可破坏的 fixture(.md)"],
           forbiddenHits: [],
-          note: "沙盒内 test/fixtures/acceptance/ 下找不到可破坏的 .md,无法注入故障 —— 本门禁未被验证",
+          note: "沙盒内 test/fixtures/docs/ 下找不到可破坏的 .md,无法注入故障 —— 本门禁未被验证",
         },
       ],
       note: "前提缺失,门禁未被验证(不等于通过)",
     });
   }
-  const targetPath = path.join(acceptanceDir, target);
+  const targetPath = path.join(docsDir, target);
   const original = fs.readFileSync(targetPath);
   /** @type {ProbeCase[]} */
   const cases = [
@@ -62,7 +62,7 @@ export async function probeFixtures(ctx) {
       {
         id: "anchor",
         kind: "anchor",
-        description: "未破坏:acceptance/ 与段导出重新生成的内容一致",
+        description: "未破坏:docs/ 与段导出重新生成的内容一致",
         expect: "zero",
         expectKeywords: ["--check 通过"],
         forbiddenKeywords: ["[check] 失败", "--check 失败"],
@@ -80,7 +80,7 @@ export async function probeFixtures(ctx) {
           id: "fault-content-drift",
           kind: "fault",
           description: "改一个 fixture 的内容(末行追加一行)",
-          fault: `test/fixtures/acceptance/${target}:末行追加注释行`,
+          fault: `test/fixtures/docs/${target}:末行追加注释行`,
           expect: "nonzero",
           expectKeywords: [`[check] ${target}:`, "内容不一致", "首处差异第", "[gen-fixtures] --check 失败"],
         },
@@ -100,7 +100,7 @@ export async function probeFixtures(ctx) {
           id: "fault-missing",
           kind: "fault",
           description: "删一个 fixture",
-          fault: `删除 test/fixtures/acceptance/${target}`,
+          fault: `删除 test/fixtures/docs/${target}`,
           expect: "nonzero",
           expectKeywords: [`[check] ${target}:`, "缺失(应生成)", "[gen-fixtures] --check 失败"],
         },

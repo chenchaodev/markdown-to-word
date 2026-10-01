@@ -4,7 +4,7 @@
 
 ## 第 2 节 {#sec:c2}
 
-![图一](g1-tiny.png)
+![图一](input/g1-tiny.png)
 
 图: 图一 {#fig:a}
 
@@ -14,7 +14,7 @@
 
 表: 表一 {#tab:t}
 
-![图二](g1-tiny.png)
+![图二](input/g1-tiny.png)
 
 图: 图二 {#fig:b}
 

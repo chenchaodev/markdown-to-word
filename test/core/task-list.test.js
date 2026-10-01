@@ -18,7 +18,7 @@ import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
  /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 
-/** 主样例:GFM 任务列表(已完成/待办/普通项,gen-fixtures 落盘为 acceptance/task-list.md) */
+/** 主样例:GFM 任务列表(已完成/待办/普通项,gen-fixtures 落盘为 docs/task-list.md) */
 const taskMd = `# 任务列表测试
 
 - [x] 已完成

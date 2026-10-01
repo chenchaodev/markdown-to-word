@@ -29,7 +29,7 @@ import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-he
 
 const md = `页面设置验收:纸张与边距参数化。\n`;
 
-/** 分页符样例(<!-- page-break --> 显式分页,落盘为 acceptance/page-setup-pagebreak.md) */
+/** 分页符样例(<!-- page-break --> 显式分页,落盘为 docs/page-setup-pagebreak.md) */
 const pbMd = `# 分页符标题\n\n<!-- page-break -->\n\n第二页正文\n`;
 
 export const meta = { description: "页面设置验收(中优先级缺口:非 A4 纸张 + 边距值):" };

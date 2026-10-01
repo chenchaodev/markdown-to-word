@@ -8,16 +8,16 @@
  * **逐个动态 import 后读显式契约**——不预筛源码、不解析注释:
  * - `fixtures`:key=场景名,value=md 字符串;不产出样例的段显式写 `fixtures = null`;
  * - `meta.description`:README 索引文案(显式字段,取代「取文件头 JSDoc 首行」)。
- * 落盘 test/fixtures/acceptance/<段基名>[-<场景>].md,复制 md 中引用的本地图片
+ * 落盘 test/fixtures/docs/<段基名>[-<场景>].md,复制 md 中引用的本地图片
  * (引用路径不改写,GUI 按 md 所在目录解析),最后生成 README.md 索引。
  * 幂等:同一输入重复生成结果逐字节一致。
  *
  * 图片夹具另有**字节基线**判据(与「复制」正交,两条都要过):
- * - 「复制」只覆盖**被生成样例引用到**的图片(源 ↔ acceptance/ 副本),回答的是
+ * - 「复制」只覆盖**被生成样例引用到**的图片(源 ↔ docs/ 副本),回答的是
  *   「生成产物是否新鲜」;
  * - 「基线」覆盖 test/fixtures 下**全部**图片夹具(磁盘派生,见 listImageFixtures),
  *   回答的是「夹具本身有没有漂移」。两者的失效面互补:未被任何样例引用的夹具
- *   (manual/images/、main/ 下的图)从前者眼里根本不存在,而**源与副本同时被改**
+ *   (manual/images/、input/ 下的图)从前者眼里根本不存在,而**源与副本同时被改**
  *   (如批量截断、重新导出)时后者恒绿 —— 曾发生的真实误判正是后者:
  *   全部图片夹具各少一字节时 `--check` 判绿,而 image-size / basic-render 两段判红,
  *   排查一度指向代码回归。覆盖面张数由 `--check` 输出给出,不在注释里写死
@@ -41,7 +41,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT, FIXTURES_DIR } from "../../shared/paths.js";
 import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 
-const ACCEPTANCE_DIR = path.join(FIXTURES_DIR, "acceptance");
+const GENERATED_DOCS_DIR = path.join(FIXTURES_DIR, "docs");
 const CHECK = process.argv.includes("--check");
 const PRINT_IMAGE_BASELINE = process.argv.includes("--print-image-baseline");
 
@@ -76,7 +76,7 @@ const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".web
  * 为什么需要它(与上方 imageCopies 正交,不是重复):
  * imageCopies 只比对**被生成样例引用到**的图片,回答「生成产物新鲜吗」;
  * 本表比对**全部**图片夹具的字节,回答「夹具本身漂移了吗」。二者失效面互补:
- *   - 未被任何样例引用的夹具(manual/images/、main/ 下的图)在前者眼里不存在;
+ *   - 未被任何样例引用的夹具(manual/images/、input/ 下的图)在前者眼里不存在;
  *   - 源与副本**同时**被改(批量截断 / 重新导出)时后者恒绿。
  * 真实误判即后者:图片夹具各少一字节,`--check` 判绿而 image-size / basic-render 判红,
  * 排查一度指向代码回归。故覆盖面必须到「全部图片夹具」,且比对判据是字节不是尺寸。
@@ -87,15 +87,15 @@ const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".web
  * @type {Record<string, string>}
  */
 export const IMAGE_DIGEST_BASELINE = {
-  "g1-tiny.png": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
-  "img-800x400.png": "50892cbdeb429f404ab9712c53025b0f1955c38ea60d1e1b9b769ea46e150aef",
-  "main/g4-preview.png": "497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581",
+  "input/g1-tiny.png": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+  "input/g4-preview.png": "497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581",
+  "input/img-800x400.png": "50892cbdeb429f404ab9712c53025b0f1955c38ea60d1e1b9b769ea46e150aef",
   "manual/images/chart.png": "05e41780382ce8e3dea2b3095a3c44164580a151d8a2bedb9367812af6566824",
   "manual/images/logo.png": "56bf36d0e8da47eee5a7c63405a2c5e7ecc1dface59a94824cf521d223a0b4ce",
 };
 
 /**
- * 列出 test/fixtures 下**全部**图片夹具(递归,排除 acceptance/ 生成目录),键为 POSIX 相对路径。
+ * 列出 test/fixtures 下**全部**图片夹具(递归,排除 docs/ 生成目录),键为 POSIX 相对路径。
  *
  * 覆盖面判据是「磁盘上有什么」而非手写清单:新增图片夹具自动进入比对范围,
  * 漏改一处不会退化成「扫不到」(那与本条要治的病同型)。IO 全部经入参注入根目录,
@@ -111,8 +111,8 @@ export function listImageFixtures(root = FIXTURES_DIR) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
       const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-      // acceptance/ 是本生成器的产物目录,不是夹具源(它自己的图片由 imageCopies 比对)
-      if (rel === path.basename(ACCEPTANCE_DIR)) continue;
+      // docs/ 是本生成器的产物目录,不是夹具源(它自己的图片由 imageCopies 比对)
+      if (rel === path.basename(GENERATED_DOCS_DIR)) continue;
       if (entry.isDirectory()) {
         walk(abs, rel);
         continue;
@@ -488,7 +488,7 @@ export async function main() {
         const src = path.resolve(FIXTURES_DIR, ref);
         if (!src.startsWith(FIXTURES_DIR + path.sep)) continue; // 防跳出 fixtures
         if (!fs.existsSync(src) || !fs.statSync(src).isFile()) continue;
-        const dest = path.join(ACCEPTANCE_DIR, ref);
+        const dest = path.join(GENERATED_DOCS_DIR, ref);
         if (!imageCopies.some((c) => c.dest === dest)) imageCopies.push({ src, dest });
       }
     }
@@ -511,7 +511,7 @@ export async function main() {
     };
     for (const e of entries) {
       for (const o of e.outputs) {
-        const file = path.join(ACCEPTANCE_DIR, o.name);
+        const file = path.join(GENERATED_DOCS_DIR, o.name);
         if (!fs.existsSync(file)) {
           report(o.name, " 缺失(应生成)");
           continue;
@@ -525,7 +525,7 @@ export async function main() {
         }
       }
     }
-    const readmeFile = path.join(ACCEPTANCE_DIR, "README.md");
+    const readmeFile = path.join(GENERATED_DOCS_DIR, "README.md");
     if (!fs.existsSync(readmeFile)) {
       report("README.md", " 缺失(应生成)");
     } else {
@@ -536,18 +536,18 @@ export async function main() {
     }
     for (const c of imageCopies) {
       if (!fs.existsSync(c.dest)) {
-        report(path.relative(ACCEPTANCE_DIR, c.dest), " 图片缺失(应复制)");
+        report(path.relative(GENERATED_DOCS_DIR, c.dest), " 图片缺失(应复制)");
         continue;
       }
       if (!fs.readFileSync(c.src).equals(fs.readFileSync(c.dest))) {
-        report(path.relative(ACCEPTANCE_DIR, c.dest), " 图片与源文件字节不一致");
+        report(path.relative(GENERATED_DOCS_DIR, c.dest), " 图片与源文件字节不一致");
       }
     }
     // 全部图片夹具的字节基线(覆盖面大于上面的复制清单,两者互补;判红逐条点名文件)
     const imageProblems = auditImageDigests(listImageFixtures(), IMAGE_DIGEST_BASELINE);
     for (const p of imageProblems) report("图片夹具", ` ${p}`);
     if (!ok) {
-      console.error("[gen-fixtures] --check 失败:acceptance/ 与生成内容存在差异,或图片夹具字节漂移");
+      console.error("[gen-fixtures] --check 失败:docs/ 与生成内容存在差异,或图片夹具字节漂移");
       process.exit(1);
     }
     const exemptNote = exemptSkipped > 0 ? ` + ${exemptSkipped} 段按白名单豁免` : "";
@@ -558,7 +558,7 @@ export async function main() {
   }
 
   // ---- 落盘 ----
-  fs.mkdirSync(ACCEPTANCE_DIR, { recursive: true });
+  fs.mkdirSync(GENERATED_DOCS_DIR, { recursive: true });
   for (const e of entries) {
     for (const o of e.outputs) {
       // 守卫(2026-08-24 CI 踩坑):fixture 含本机绝对路径 → 其他检出路径重新生成必漂移
@@ -568,14 +568,14 @@ export async function main() {
         console.error(`[gen-fixtures] 拒绝落盘:${o.name} 含仓库绝对路径(${ROOT})——请在测试段导出前还原为相对引用`);
         process.exit(1);
       }
-      fs.writeFileSync(path.join(ACCEPTANCE_DIR, o.name), o.content, "utf8");
+      fs.writeFileSync(path.join(GENERATED_DOCS_DIR, o.name), o.content, "utf8");
     }
   }
   for (const c of imageCopies) {
     fs.mkdirSync(path.dirname(c.dest), { recursive: true });
     fs.copyFileSync(c.src, c.dest);
   }
-  fs.writeFileSync(path.join(ACCEPTANCE_DIR, "README.md"), readme, "utf8");
+  fs.writeFileSync(path.join(GENERATED_DOCS_DIR, "README.md"), readme, "utf8");
 
   const exemptNote = exemptSkipped > 0 ? `,${exemptSkipped} 段按白名单豁免` : "";
   console.log(`[gen-fixtures] 扫描 ${segments.length} 个测试段(契约齐备),${entries.length} 段含 fixtures 导出${exemptNote}`);
@@ -585,10 +585,10 @@ export async function main() {
     }
   }
   for (const c of imageCopies) {
-    console.log(`  + 图片 ${path.relative(ACCEPTANCE_DIR, c.dest)} (${fs.statSync(c.src).size} 字节)`);
+    console.log(`  + 图片 ${path.relative(GENERATED_DOCS_DIR, c.dest)} (${fs.statSync(c.src).size} 字节)`);
   }
   console.log(`  + README.md (${entries.length} 行索引)`);
-  console.log(`[gen-fixtures] 完成:${path.relative(ROOT, ACCEPTANCE_DIR)}/`);
+  console.log(`[gen-fixtures] 完成:${path.relative(ROOT, GENERATED_DOCS_DIR)}/`);
 }
 
 // 仅 CLI 直跑时执行;被测试段 import 复用纯函数时不得触发任何副作用

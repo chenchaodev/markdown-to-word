@@ -130,7 +130,7 @@ import { MATRIX_ROW_IDS, assertKeyCoverageRegistered, keyCoverageCounts } from "
  */
 
 export const meta = { description: "双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(26 行,键覆盖登记覆盖 8 个双管线键,含双侧提取器与经存在性校验的来源锚点)。" };
-// 场景导出(gen-fixtures 落盘为 acceptance/dual-pipeline-matrix*.md):样例字面量在
+// 场景导出(gen-fixtures 落盘为 docs/dual-pipeline-matrix*.md):样例字面量在
 // dual-samples.js,契约声明留在段层(生成器只认段文件的导出)。
 export const fixtures = {
   main: mainMd,

@@ -251,15 +251,15 @@ export async function run() {
         + `  实测(${foundKeys.length})=${foundKeys.join(",")}`,
     );
     // 覆盖面必须大于「生成器会复制的那些图片」——否则就退回旧失效形态。
-    // 判据从磁盘派生:生成器只把**被生成样例引用到**的图复制进 acceptance/,
-    // 故「在夹具树上、但在 acceptance/ 里没有对应副本」的即旧判据看不见的那批。
-    const acceptanceDir = path.join(FIXTURES_DIR, "acceptance");
+    // 判据从磁盘派生:生成器只把**被生成样例引用到**的图复制进 docs/,
+    // 故「在夹具树上、但在 docs/ 里没有对应副本」的即旧判据看不见的那批。
+    const docsDir = path.join(FIXTURES_DIR, "docs");
     const copied = new Set(
       fs
-        .readdirSync(acceptanceDir, { withFileTypes: true, recursive: true })
+        .readdirSync(docsDir, { withFileTypes: true, recursive: true })
         .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".png"))
         // parentPath 是 Node 22 起 Dirent 上的规范字段;此处只取目录部分拼回绝对路径
-        .map((e) => path.relative(acceptanceDir, path.join(e.parentPath, e.name)).split(path.sep).join("/")),
+        .map((e) => path.relative(docsDir, path.join(e.parentPath, e.name)).split(path.sep).join("/")),
     );
     const uncoveredByCopy = foundKeys.filter((rel) => !copied.has(rel));
     assert(

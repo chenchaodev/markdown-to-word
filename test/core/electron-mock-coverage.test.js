@@ -21,6 +21,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "../common/paths.js";
+import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 
 /** src 侧被 mock 覆盖的 electron 运行时绑定(新增/删除用法须同步改本常量与 electron-mock.mjs) */
 const SRC_REQUIRED = [
@@ -190,7 +191,7 @@ export async function run() {
 
   // ---- 3. test/ 侧:生成器会 import 的段与共享 helper 同样全覆盖 ----
   {
-    const roots = ["common", "segments", "main", "renderer"].map((d) => path.join(ROOT, "test", d));
+    const roots = [...SEGMENT_DIRS, "common"].map((d) => path.join(ROOT, "test", d));
     /** @type {{ required: Set<string>, namespaceFiles: string[] }} */
     const merged = { required: new Set(), namespaceFiles: [] };
     for (const dir of roots) {

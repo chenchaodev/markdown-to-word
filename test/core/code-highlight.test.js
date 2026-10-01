@@ -37,7 +37,7 @@ const MD_PLAIN = "```\nconst plain = 1;\n```\n";
 const MD_UNKNOWN = "```nolangxyz\nconst unknown = 1;\n```\n";
 
 export const meta = { description: "代码块 docx 语法高亮段(实现 src/core/docx/handlers/code-highlight.ts,GitHub Light 色板):" };
-// 场景样例导出(gen-fixtures 落盘为 acceptance/code-highlight[-plain|-unknown].md)
+// 场景样例导出(gen-fixtures 落盘为 docs/code-highlight[-plain|-unknown].md)
 export const fixtures = {
   main: MD_TS,
   plain: MD_PLAIN,

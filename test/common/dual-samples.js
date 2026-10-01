@@ -27,7 +27,7 @@ author: 测试作者
 
 ## 二级标题 {#sec:mid}
 
-![样例图](g1-tiny.png)
+![样例图](input/g1-tiny.png)
 
 图: 样例图 {#fig:alpha}
 
@@ -66,7 +66,7 @@ const x = 1;
 
 # 第二章
 
-![章二图](g1-tiny.png)
+![章二图](input/g1-tiny.png)
 
 图: 章二图 {#fig:gamma}
 `;
@@ -88,13 +88,13 @@ export const deepHeadingsMd = `# 一级
 `;
 
 /** 题注先于首个 h1(docx 章节号 null → 纯序数;pdf h1c 计数器仍为 0) */
-export const captionBeforeH1Md = `![章前图](g1-tiny.png)
+export const captionBeforeH1Md = `![章前图](input/g1-tiny.png)
 
 图: 章前图
 
 # 第一章
 
-![章内图](g1-tiny.png)
+![章内图](input/g1-tiny.png)
 
 图: 章内图
 `;
@@ -102,7 +102,7 @@ export const captionBeforeH1Md = `![章前图](g1-tiny.png)
 /** 题注 label(captionNumbering 关闭时的 label 原样保留对照样例) */
 export const captionLabelMd = `# 甲
 
-![样例图](g1-tiny.png)
+![样例图](input/g1-tiny.png)
 
 图: 样例图 {#fig:alpha}
 
@@ -155,7 +155,7 @@ export const hrMd = "第一段\n\n---\n\n第二段\n";
 /** 题注编号(图/表独立计数 + h1 重置 + 引用编号) */
 export const captionMd = `# 第一章
 
-![样例图](g1-tiny.png)
+![样例图](input/g1-tiny.png)
 
 图: 样例图 {#fig:alpha}
 
@@ -169,7 +169,7 @@ export const captionMd = `# 第一章
 
 # 第二章
 
-![章二图](g1-tiny.png)
+![章二图](input/g1-tiny.png)
 
 图: 章二图 {#fig:gamma}
 `;
@@ -187,7 +187,7 @@ $$
 /** fig/tab 同名 label(查表键按 kind 分命名空间) + 跨 kind 引用必须悬空:
  *  fig:same / tab:same 共存互不覆盖;fig:onlytab / tab:onlyfig 各自只存在于
  *  另一 kind 的命名空间,按 fig/tab 引用均查不到 → 悬空 */
-export const sameLabelMd = `![图一](g1-tiny.png)
+export const sameLabelMd = `![图一](input/g1-tiny.png)
 
 图: 图一 {#fig:same}
 
@@ -197,7 +197,7 @@ export const sameLabelMd = `![图一](g1-tiny.png)
 
 表: 表一 {#tab:same}
 
-![图二](g1-tiny.png)
+![图二](input/g1-tiny.png)
 
 图: 图二 {#fig:onlyfig}
 
@@ -210,11 +210,11 @@ export const sameLabelMd = `![图一](g1-tiny.png)
 见 [图](#fig:same) 与 [表](#tab:same)。另见 [图](#fig:onlytab) 与 [表](#tab:onlyfig)。
 `;
 /** 同一 kind 内 label 重名:后写覆盖(先到先得语义不变,与 kind 分域正交) */
-export const dupLabelMd = `![图一](g1-tiny.png)
+export const dupLabelMd = `![图一](input/g1-tiny.png)
 
 图: 图一 {#fig:dup}
 
-![图二](g1-tiny.png)
+![图二](input/g1-tiny.png)
 
 图: 图二 {#fig:dup}
 
@@ -240,4 +240,4 @@ export const mermaidMd = "```mermaid\ngraph TD;\nA-->B;\n```\n";
 /** 外链图片(图片预算记账口径探针) */
 export const externalImageMd = "![外链图](https://example.com/a.png)\n";
 /** 无 h1 的单题注文档 */
-export const noH1CaptionMd = "![图](g1-tiny.png)\n\n图: 无章节图\n";
+export const noH1CaptionMd = "![图](input/g1-tiny.png)\n\n图: 无章节图\n";

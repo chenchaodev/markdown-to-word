@@ -105,7 +105,7 @@ export async function run() {
   /** @type {BrowserWindow | null} */
   let win = null;
   try {
-    const sample = await fs.readFile(path.join(FIXTURES_DIR, "main", "converter-sample.md"), "utf8");
+    const sample = await fs.readFile(path.join(FIXTURES_DIR, "input", "converter-sample.md"), "utf8");
     const md = path.join(dir, "single-flight.md");
     const precheckMd = path.join(dir, "precheck.md");
     await fs.writeFile(md, sample, "utf8");

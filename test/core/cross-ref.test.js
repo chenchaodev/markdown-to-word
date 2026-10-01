@@ -80,7 +80,7 @@ export const fixtures = { main: `# 第一章 {#sec:c1}
 
 ## 第 2 节 {#sec:c2}
 
-![图一](g1-tiny.png)
+![图一](input/g1-tiny.png)
 
 图: 图一 {#fig:a}
 
@@ -90,7 +90,7 @@ export const fixtures = { main: `# 第一章 {#sec:c1}
 
 表: 表一 {#tab:t}
 
-![图二](g1-tiny.png)
+![图二](input/g1-tiny.png)
 
 图: 图二 {#fig:b}
 
@@ -105,7 +105,7 @@ $$
 
 /** 题注/章节交叉引用(docx + pdf) */
 export async function run() {
-  const MD = fixtures.main; // 主样例来自命名导出(gen-fixtures 落盘为 acceptance/cross-ref.md)
+  const MD = fixtures.main; // 主样例来自命名导出(gen-fixtures 落盘为 docs/cross-ref.md)
   // ============ 场景 A:主样例(h1 + 图/表/章节/公式 + 悬空) ============
   /** @type {unknown[]} */
   const warnings = [];
@@ -198,11 +198,11 @@ export async function run() {
   // ============ 场景 C:题注交换顺序 → 引用编号跟随 ============
   const mdOrder1 = `# 甲
 
-![A](g1-tiny.png)
+![A](input/g1-tiny.png)
 
 图: 图甲 {#fig:a}
 
-![B](g1-tiny.png)
+![B](input/g1-tiny.png)
 
 图: 图乙 {#fig:b}
 
@@ -210,11 +210,11 @@ export async function run() {
 `;
   const mdOrder2 = `# 甲
 
-![B](g1-tiny.png)
+![B](input/g1-tiny.png)
 
 图: 图乙 {#fig:b}
 
-![A](g1-tiny.png)
+![A](input/g1-tiny.png)
 
 图: 图甲 {#fig:a}
 
@@ -262,7 +262,7 @@ export async function run() {
   }
 
   // ============ 场景 E:captionNumbering 关 → label 原样保留不登记 ============
-  const mdCapOff = `![图一](g1-tiny.png)
+  const mdCapOff = `![图一](input/g1-tiny.png)
 
 图: 图一 {#fig:a}
 `;
@@ -321,7 +321,7 @@ export async function run() {
   // 依据(src/core/docx/handlers/captions.ts):chapter = headingNumbering && chapter>0 ? chapter : null;
   // 无 h1 时 chapter 恒 0 → null → 编号无章节前缀「图 1」;题注文本剥离 label 后为空 →
   // renderCaptionParagraph 仅渲染编号文本(无尾随空格)。
-  const mdNoH1Cap = `![图一](g1-tiny.png)
+  const mdNoH1Cap = `![图一](input/g1-tiny.png)
 
 图: 图甲
 `;
@@ -334,7 +334,7 @@ export async function run() {
   }
   const mdEmptyCap = `# 章
 
-![图一](g1-tiny.png)
+![图一](input/g1-tiny.png)
 
 图: {#fig:a}
 `;
@@ -355,13 +355,13 @@ export async function run() {
   // 与 pdf 侧(仅 isNumbered 时重置)及 captions.ts 注释本意对齐。
   const mdCapContinuous = `# 第一章
 
-![图一](g1-tiny.png)
+![图一](input/g1-tiny.png)
 
 图: 甲图
 
 # 第二章
 
-![图二](g1-tiny.png)
+![图二](input/g1-tiny.png)
 
 图: 乙图
 `;
@@ -398,7 +398,7 @@ export async function run() {
   // 查表键 = kind + label → fig:a 与 tab:a 是两个键,同名 label 的图/表题注各登记
   // 各的、互不覆盖;引用只在本 kind 命名空间内查找,跨 kind 必然判悬空。
   // 同一 kind 内 label 重名仍后写覆盖(先到先得语义不随 kind 分域改变)。
-  const mdNs = `![图一](g1-tiny.png)
+  const mdNs = `![图一](input/g1-tiny.png)
 
 图: 图一 {#fig:same}
 
@@ -456,11 +456,11 @@ export async function run() {
     }
   }
   // 同一 kind 内重名:后写覆盖(与 docx 同口径)
-  const mdDup = `![图一](g1-tiny.png)
+  const mdDup = `![图一](input/g1-tiny.png)
 
 图: 图一 {#fig:dup}
 
-![图二](g1-tiny.png)
+![图二](input/g1-tiny.png)
 
 图: 图二 {#fig:dup}
 

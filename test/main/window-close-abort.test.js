@@ -262,7 +262,7 @@ export async function run() {
   const realShowMessageBox = dialog.showMessageBox;
   const dialogCalls = [];
   try {
-    const sample = await fs.readFile(path.join(FIXTURES_DIR, "main", "converter-sample.md"), "utf8");
+    const sample = await fs.readFile(path.join(FIXTURES_DIR, "input", "converter-sample.md"), "utf8");
     const md = path.join(dir, "close-abort.md");
     await fs.writeFile(md, sample, "utf8");
     await updateSettings({ outputDir: "", afterConvert: "none" });
