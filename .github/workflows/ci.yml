@@ -110,24 +110,6 @@ jobs:
         env:
           M2W_TEST_CONCURRENCY: 4
 
-      # 验收段「每段启动成本」的本机实测(临时测量,非门禁:continue-on-error 语义)。
-      #
-      # 为什么需要它:验收段地板此前只在本机量过,而本机 16 核 vs runner 4 vCPU
-      # 不可外推(REQ-055 已实测)。地板是「把纯逻辑段迁到纯 node 宿主」这类提速
-      # 方案的唯一收益输入,本机值不能当 CI 值用。
-      #
-      # 为什么不能用「轮次外单独起 Electron」那套测法:它量的是「独立启动一个
-      # Electron 二进制」,不是「段在编排器里的成本」—— 实测该法在本机高估约
-      # 4.2 倍(得 598ms,而真实轮次内最快的段只要 143ms)。本脚本按真实口径起
-      # 子进程、跑最小段体、等它退出,三档对照:裸 node / node+mock 跑段 /
-      # electron+段宿主跑同一条段。
-      #
-      # `continue-on-error: true`:这是观测不是判定,量不到不该让门禁变红。
-      # 排期:REQ-133 拍板后本步连同 dev/measure-segment-floor.mjs 一并删除。
-      - name: Measure segment startup floor (advisory, REQ-133)
-        continue-on-error: true
-        run: node dev/measure-segment-floor.mjs 5
-
       # 诊断留存:always 语义保证门禁判红时报告与截图仍可下载(几何门禁失败时
       # 逐场景 finding 在报告里,FAILED 截图在同目录)
       - name: Upload diagnostics
