@@ -2,11 +2,22 @@
 // 视觉自查工具 · preload:
 // contextIsolation 关闭后与页面同世界,先于 renderer.js 注入 window.api 桩,
 // 使界面可离线驱动到各舞台状态;window.__vc 暴露测试控制面(下一次对话框返回值等)。
+//
+// 路径纪律(ADR-040):**本文件不含任何自算项目根**。根由拉起窗口的一方经
+// webPreferences.additionalArguments 递入(见下方 ROOT_ARG_PREFIX 与 repoRoot 的注释)。
+// 姊妹桩(visual-about-preload.cjs)由拉起方按 __dirname 取同目录兄弟 —— 那是「与本文件同级」
+// 的相对定位,不是项目根,不受该约束;本桩自身已无任何 __dirname 取法。
 "use strict";
 
 /**
- * 仓库根目录(桩要读 package.json 的版本号、导入 dist 产物的默认设置)。
- * 用 node:path 的动态 import 而非 require:本文件不在 eslint 的 CJS 放行名单里
+ * 注入项目根的旗标前缀(ADR-040)。注入方两处共用这一个前缀,本桩只认这一种写法。
+ * @type {string}
+ */
+const ROOT_ARG_PREFIX = "--m2w-root=";
+
+/**
+ * node:path 的动态 import(桩要拼 dist 产物路径、并把注入的根 resolve 成绝对路径)。
+ * 用动态 import 而非 require:本文件不在 eslint 的 CJS 放行名单里
  * (放行的只有同为 CJS 的 visual-about-preload.cjs,见 eslint.config.js),
  * 写 require() 会被 no-require-imports 拦下。动态 import 在 CJS 里同样合法。
  * @type {Promise<{ join: (...parts: string[]) => string; resolve: (...parts: string[]) => string }>}
@@ -99,23 +110,50 @@ async function takeConvert() {
 
 /* ---------- 版本号与默认设置:取真实值而非桩值 ---------- */
 
-/** 仓库根目录(懒解析一次):本文件同时服务主窗,取值只发生在截图开始后,不在注入关键路径上。 @type {Promise<string> | null} */
+/**
+ * 注入的项目根(ADR-040:根只有一个来源 `shared/paths.js`,且本桩不自算)。
+ *
+ * 由拉起窗口的一方经 `webPreferences.additionalArguments` 递入 `--m2w-root=<绝对路径>`,
+ * 与 about 桩收 `--m2w-version=` 同一条通道。已知注入方两处,两处都必须递:
+ *   - `gates/geometry/geometry/worker.mjs`(几何门禁 `npm run check:geometry`)
+ *   - `dev/visual-check.mjs`(视觉自查 `npm run ui:shots`)
+ *
+ * 为什么不自算:本桩是 CJS 且跑在 sandbox preload 里,静态 import 不了 ESM 单源,动态
+ * import 本地文件又可能被 sandbox 的 CSP 拦下 —— 但**这不是让桩自算根的理由**。
+ * 自算(按 `__dirname` 上跳固定层数)与本文件所在目录的**深度**耦合,深度是类型检查与
+ * import 图都发现不了的一类耦合:#07 把它从 `test/tools/`(深 2 层)搬到 `dev/`(深 1 层)时
+ * 漏改层数,根算到了仓库的父目录,`createRequire` 随即 MODULE_NOT_FOUND,版本号永为空,
+ * 几何门禁与视觉自查的 `init ready` 等待条件(用 `&&` 串了版本号)因此必然超时,
+ * 一次实跑挂了 45 分钟。注入把「深度」从这份桩里彻底去掉:搬目录不再需要改任何东西。
+ * @type {Promise<string> | null}
+ */
 let rootPromise = null;
 
 /**
- * 解析仓库根目录并缓存。
+ * 解析注入的项目根并缓存(懒解析一次:取值只发生在截图开始后,不在注入关键路径上)。
  *
- * ⚠ 上跳层数与本文件所在目录的深度耦合:本桩是 CommonJS 且跑在 sandbox preload 里,
- * 不能静态 import ESM 单源(ADR-040 那条 `shared/paths.js` 的路子在此不适用),
- * 动态 import 本地文件又可能被 sandbox 的 CSP 拦下。故此处只能自算,改目录时必须
- * 同步改层数 —— #07 把它从 `test/tools/`(深 2 层)搬到 `dev/`(深 1 层)时漏改,
- * 根算到了仓库的父目录,`createRequire` 随即 MODULE_NOT_FOUND,版本号永为空,
- * 几何门禁与视觉自查的 `init ready` 等待条件(用 `&&` 串了版本号)因此必然超时。
+ * 缺失即**显式判红**并指名注入方,绝不静默退回自算根 —— 静默退回等于把上面那个 bug
+ * 原样埋回去,而且更难查(能跑通、只是根错)。
  * @returns {Promise<string>}
  */
 function repoRoot() {
   if (rootPromise === null) {
-    rootPromise = pathMod.then((p) => p.resolve(__dirname, ".."));
+    rootPromise = pathMod.then((p) => {
+      const injected =
+        typeof process !== "undefined" && Array.isArray(process.argv)
+          ? process.argv.find((arg) => arg.startsWith(ROOT_ARG_PREFIX))
+          : undefined;
+      const value = injected === undefined ? "" : injected.slice(ROOT_ARG_PREFIX.length).trim();
+      if (value === "") {
+        throw new Error(
+          "项目根未注入:本 preload 不自算仓库根(ADR-040 的根单源是 shared/paths.js)。" +
+            "请在拉起本桩的 BrowserWindow 的 webPreferences.additionalArguments 里递入 " +
+            `${ROOT_ARG_PREFIX}<绝对路径> —— 已知注入方为 gates/geometry/geometry/worker.mjs` +
+            "(npm run check:geometry)与 dev/visual-check.mjs(npm run ui:shots),两处都需递。",
+        );
+      }
+      return p.resolve(value);
+    });
   }
   return rootPromise;
 }

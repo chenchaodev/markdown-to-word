@@ -36,6 +36,12 @@ export { root };
 export const entryScriptPath = path.join(ROOT, "gates", "geometry", "check-geometry.mjs");
 export const distIndex = path.join(root, "dist", "renderer", "index.html");
 export const preload = path.join(root, "dev", "visual-preload.cjs");
+/**
+ * 递进 preload 的项目根旗标(ADR-040):桩不自算根,根只能由注入方给。
+ * 通道取 additionalArguments(与 dev/visual-about-preload.cjs 的 --m2w-version 同款),
+ * 两个注入方(本门禁 worker 与 dev/visual-check.mjs)共用这一个前缀,桩侧只认这一种写法。
+ */
+export const ROOT_ARGUMENT = `--m2w-root=${root}`;
 const styleDir = path.join(root, "src", "renderer", "style");
 export const outDir = path.join(root, "output", "artifacts", "ui-geometry");
 
@@ -43,6 +49,39 @@ export const reportPath = path.resolve(
   root,
   process.env.M2W_GEOMETRY_REPORT ?? path.join("output", "artifacts", "ui-geometry", "report.json"),
 );
+
+/**
+ * 路径常量的存活性清单:**只列在断言时点必然已存在**的那些。
+ *
+ * 为什么用存活性而不是 import 规则(ADR-043 自己点名的失效形态):全仓根锚定路径拼接里
+ * 只有约四分之一是纯字面量,其余含变量。任何「谁可以引谁」的静态规则只能看见那四分之一,
+ * 剩下的只要把字面量换成变量就绕过门禁 —— 规则与被守对象不对齐。存活性锚在**常量声明**上,
+ * 判的是「路径悬空 = 那一行必坏」,与写法无关,绕不掉;代价是覆盖面受「必须预先存在」限制。
+ *
+ * 刻意**不**断言的两类(断言它们会让门禁在正常流程下判红):
+ *   - `distIndex`:构建产物。缺它时 worker 的 distIndex 前置检查已给出「先执行 npm run build」
+ *     这条可执行修复动作;在此报「悬空」会把一条可操作提示降级成一个路径名。
+ *   - `outDir` / `reportPath`:本门禁自己要写的产出,写之前不存在是合法的。
+ */
+export const LIVENESS_PATHS = Object.freeze([
+  { name: "root", target: root },
+  { name: "entryScriptPath", target: entryScriptPath },
+  { name: "preload", target: preload },
+  { name: "styleDir", target: styleDir },
+]);
+
+/**
+ * 校验 {@link LIVENESS_PATHS} 里的路径是否都还在磁盘上。
+ *
+ * 判红形态指名到**常量名**:路径悬空时消费它的那一行必坏,而调用方看到的是拼好的绝对
+ * 路径,无从知道是哪个常量声明错了 —— 故这里把常量名与路径一起交回判定面。
+ * @param {(p: string) => boolean} [exists] 存在性探针(注入以便负向夹具不必改动真实磁盘)
+ * @returns {{ ok: boolean, dangling: { name: string, target: string }[] }} 悬空清单
+ */
+export function checkPathLiveness(exists = fs.existsSync) {
+  const dangling = LIVENESS_PATHS.filter((item) => !exists(item.target)).map(({ name, target }) => ({ name, target }));
+  return { ok: dangling.length === 0, dangling };
+}
 
 const fixtures = (names) =>
   names.map((n) => path.join(root, "test", "fixtures", "acceptance", n));
@@ -132,7 +171,23 @@ function readMediaConditions() {
   return conds;
 }
 
-export const mediaConditions = readMediaConditions();
+/**
+ * 高度维度媒体查询条件(懒解析 + 记忆化):从 renderer 样式表实读,不硬编码档位断点。
+ *
+ * 为什么不是模块顶层的 `export const mediaConditions = readMediaConditions()`:
+ * 那会让「import 本模块」等价于「立刻读一次磁盘」—— 样式目录一旦不在(裁剪检出、单测只
+ * 加载判定层、门禁自检模式),`import driver.mjs` 直接炸,而调用方连是哪一步炸的看不到。
+ * 这正是 REQ-118 要在另三道门禁上消灭的形态,几何驱动上同样成立(REQ-127)。
+ * 记忆化保住「整轮只读一次盘」:落定判据与档位断言在一次运行里要读几十次。
+ * @returns {string[]} 条件串(去重、保持出现序)
+ */
+let mediaConditionsCache = null;
+
+/** @returns {string[]} 高度维度媒体查询条件(首次调用时读盘,此后复用) */
+export function mediaConditions() {
+  if (mediaConditionsCache === null) mediaConditionsCache = readMediaConditions();
+  return mediaConditionsCache;
+}
 
 export const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -216,7 +271,7 @@ export async function measureStable(exec, measureSource, minStableMs, maxWaitMs)
  * @returns {string} 表达式
  */
 function buildViewportProbe(viewport) {
-  const tierChecks = mediaConditions.map(
+  const tierChecks = mediaConditions().map(
     (cond) =>
       `window.matchMedia(${JSON.stringify(cond)}).matches === ` +
       JSON.stringify(evaluateMediaCondition(cond, { width: viewport[0], height: viewport[1] })),
@@ -282,7 +337,7 @@ export async function settleViewport(win, exec, viewport) {
     if (!probe.tiersOk) {
       throw new Error(
         `视口 ${viewport.join("×")} 落定后响应式档位仍不匹配(实读 ${probe.vw}×${probe.vh},` +
-          `档位条件 ${JSON.stringify(mediaConditions)});高度档未生效时量到的是上一档布局`,
+          `档位条件 ${JSON.stringify(mediaConditions())});高度档未生效时量到的是上一档布局`,
       );
     }
     requestW = viewport[0] + (viewport[0] - probe.vw);
@@ -327,5 +382,5 @@ export function writeReport(file, report) {
 
 /** 规格与配置的公共部分(总报告与各档报告共用同一份,便于交叉核对) */
 export function reportSpecs() {
-  return { scenarios: SCENARIOS, constantGroups: CONSTANT_GROUPS, selectors: NODE_SELECTORS, mediaConditions };
+  return { scenarios: SCENARIOS, constantGroups: CONSTANT_GROUPS, selectors: NODE_SELECTORS, mediaConditions: mediaConditions() };
 }

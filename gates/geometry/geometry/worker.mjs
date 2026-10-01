@@ -33,6 +33,7 @@ import {
 import { classifyScaleRun, measureScaleEffect, parseScales, scaleLabel, scaleRequestText } from "./judge-scale.mjs";
 import {
   OPS,
+  ROOT_ARGUMENT,
   config,
   distIndex,
   measureStable,
@@ -91,6 +92,11 @@ export async function runWorker() {
     height: SCENARIOS[0].viewport[1],
     webPreferences: {
       preload,
+      // 项目根由本层注入(ADR-040:根只有 shared/paths.js 一个来源,且桩不自算):
+      // preload 跑在 sandbox 里、又是 CJS,拿不到 ESM 单源,自算则与目录深度耦合
+      // ——#07 把它从 test/tools/ 搬到 dev/ 时就因此算成了仓库的父目录。
+      // 通道与 dev/visual-about-preload.cjs 的版本号同款(additionalArguments 递旗标)。
+      additionalArguments: [ROOT_ARGUMENT],
       contextIsolation: false,
       nodeIntegration: false,
       sandbox: false,
@@ -149,7 +155,7 @@ export async function runWorker() {
     "init ready",
   );
 
-  const measureSource = buildMeasureScript(NODE_SELECTORS, mediaConditions);
+  const measureSource = buildMeasureScript(NODE_SELECTORS, mediaConditions());
   const samples = [];
   const settles = [];
   let current = null; // 首个场景也走 setContentSize,保证视口口径与规格一致
@@ -233,7 +239,7 @@ export async function runWorker() {
   const result = runGeometryGate(samples, {
     tolPx: config.tolPx,
     scrollBudgetPx: config.scrollBudgetPx,
-    mediaConditions,
+    mediaConditions: mediaConditions(),
   });
   // 令牌 finding 并入总 findings:退出码与报告只有一条出口,不另开分支(避免「几何绿就算过」)
   const allFindings = [...result.findings, ...tokenVerdict.findings];

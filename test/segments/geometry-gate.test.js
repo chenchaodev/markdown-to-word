@@ -45,6 +45,7 @@ import {
   runGeometryGate,
 } from "../../shared/geometry/geometry-core.mjs";
 import { buildViewportSettledScript, parseMeasureScript } from "../../shared/geometry/geometry-page.mjs";
+import { LIVENESS_PATHS, checkPathLiveness, mediaConditions } from "../../gates/geometry/geometry/driver.mjs";
 import { ROOT } from "../common/paths.js";
 
 /** 场景表项(契约单源 geometry-spec) @typedef {typeof SCENARIOS[number]} Scenario */
@@ -1142,10 +1143,71 @@ export async function run() {
     `空串读数应报「读到空读数」(探针失效),实际 ${JSON.stringify(blankResult.findings.map((f) => f.message))}`,
   );
 
+  // ---------- 12. 路径常量存活性(正锚点 + 负向夹具) ----------
+  // 判据在门禁入口(见 gates/geometry/check-geometry.mjs 的 runLivenessGate),本段锁它的语义。
+  // 为什么要它:全仓根锚定路径拼接里只有约四分之一是纯字面量,任何「谁可以引谁」的静态
+  // import 规则只能看见那四分之一,换个写法就绕过(ADR-043 点名的失效形态);存活性锚在
+  // 常量声明上,抓的是真实失效 —— 路径悬空时消费它的那一行必坏。
+  // (1) 反向锚点:真实仓库里清单上的常量必须全部在位(清单为空 = 断言恒绿,必须先钉住)
+  const firstEntry = LIVENESS_PATHS[0];
+  assert(firstEntry !== undefined, "存活性清单为空:断言会恒绿,等于没有门禁");
+  const realLiveness = checkPathLiveness();
+  assert(
+    realLiveness.ok,
+    `真实仓库的存活性清单应全部在位,实际悬空:${JSON.stringify(realLiveness.dangling)}`,
+  );
+  // 清单里的每项都必须真的指向 root 之下的路径(防止有人把产出目录塞进清单,
+  // 那样门禁会在正常流程下判红 —— 断言覆盖面必须只含「必然已存在」的常量)
+  for (const item of LIVENESS_PATHS) {
+    assert(
+      path.isAbsolute(item.target) && item.target.startsWith(ROOT),
+      `存活性清单项 ${item.name} 未锚定在项目根之下:${item.target}`,
+    );
+  }
+  // (2) 负向夹具:造一个悬空常量,必须判红**且指名是哪个常量**
+  // 用注入的探针伪造悬空,不动真实磁盘(夹具不得污染工作树)
+  const danglingName = firstEntry.name;
+  const danglingTarget = firstEntry.target;
+  const injected = checkPathLiveness((p) => p !== danglingTarget);
+  assert(!injected.ok, `造出悬空常量 ${danglingName} 后仍判绿(存活性门禁漏检)`);
+  const named = injected.dangling[0];
+  assert(
+    injected.dangling.length === 1 && named !== undefined && named.name === danglingName,
+    `悬空清单须指名常量 ${danglingName},实际 ${JSON.stringify(injected.dangling)}`,
+  );
+  assert(
+    named.target === danglingTarget,
+    "悬空项须带出该常量的绝对路径(否则定位不到是哪个路径没了)",
+  );
+  // (3) 多项同时悬空要逐项点名,不得只报第一项(漏报的那项仍会在后面炸出无关面孔)
+  const twoDangling = checkPathLiveness((p) => !LIVENESS_PATHS.slice(0, 2).some((item) => item.target === p));
+  assert(
+    !twoDangling.ok && twoDangling.dangling.length === 2,
+    `两项同时悬空时应逐项点名,实际 ${JSON.stringify(twoDangling.dangling)}`,
+  );
+  // (4) 惰性化回归:import 本模块不得触发读盘(REQ-127)。
+  // 判据是「导出的 mediaConditions 是函数」——顶层自执行若回来,它会变回顶层常量。
+  assert(
+    typeof mediaConditions === "function",
+    `mediaConditions 应为惰性函数(REQ-127),实际 ${typeof mediaConditions}`,
+  );
+  // 惰性求值 + 记忆化:两次调用返回同一份(整轮只读一次盘),且内容与本段自读的一致
+  const firstRead = mediaConditions();
+  const secondRead = mediaConditions();
+  assert(
+    firstRead === secondRead,
+    "mediaConditions 未记忆化:落定判据每轮读几十次盘",
+  );
+  assert(
+    firstRead.join("|") === MEDIA_CONDITIONS.join("|"),
+    "driver 的 mediaConditions 与本段自读结果不一致(两处读法已漂移)",
+  );
+
   console.log(
     `[ok] geometry-gate:判定层正负探针通过(场景 ${SCENARIOS.length} / 恒定组 ${CONSTANT_GROUPS.length} / ` +
       `高度档 ${MEDIA_CONDITIONS.length} 条;抽屉 ${DRAWER_CONTROL_KEYS.length} 控件 / ` +
       `${SCENARIOS.filter((sc) => sc.drawerTab !== undefined).length} 场景,负向故障均按规则命中;` +
-      `CSS 令牌恒等 ${CSS_TOKEN_RULES.length} 项正负探针通过)`,
+      `CSS 令牌恒等 ${CSS_TOKEN_RULES.length} 项正负探针通过;` +
+      `路径常量存活性 ${LIVENESS_PATHS.length} 项在位,负向夹具判红并点名)`,
   );
 }

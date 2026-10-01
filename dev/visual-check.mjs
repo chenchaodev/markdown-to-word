@@ -49,6 +49,9 @@ const distAbout = path.join(root, "dist", "renderer", "about.html");
 const preload = path.join(__dirname, "visual-preload.cjs");
 const aboutPreload = path.join(__dirname, "visual-about-preload.cjs");
 const outDir = path.join(root, "output", "artifacts", "ui-v4");
+// 递进主窗桩的项目根(ADR-040):桩不自算根 —— 它是 CJS 且跑在 sandbox 里,自算与目录
+// 深度耦合。旗标前缀与几何门禁 worker.mjs 共用同一条 additionalArguments 通道(桩只认一种)。
+const ROOT_ARGUMENT = `--m2w-root=${root}`;
 
 /**
  * 仓库真实版本号(取自 package.json)。
@@ -323,6 +326,7 @@ async function main() {
     height: 680,
     webPreferences: {
       preload,
+      additionalArguments: [ROOT_ARGUMENT],
       contextIsolation: false,
       nodeIntegration: false,
       sandbox: false,

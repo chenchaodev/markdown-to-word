@@ -106,6 +106,7 @@ const ENTRY = "check-geometry";
  * @property {import("./geometry/worker.mjs").runWorker} runWorker
  * @property {import("./geometry/orchestrator.mjs").runOrchestrator} runOrchestrator
  * @property {import("./geometry/driver.mjs").config} config
+ * @property {import("./geometry/driver.mjs").checkPathLiveness} checkPathLiveness
  * @property {import("./geometry/judge-scale.mjs").parseScales} parseScales
  */
 
@@ -130,6 +131,7 @@ async function loadPayload() {
     runWorker: worker.runWorker,
     runOrchestrator: orchestrator.runOrchestrator,
     config: driver.config,
+    checkPathLiveness: driver.checkPathLiveness,
     parseScales: judgeScale.parseScales,
   };
 }
@@ -160,7 +162,39 @@ function runSelfTestGate({ runScaleSelfTest, config }) {
 }
 
 /**
- * 入口执行期:角色分派 + 自检门 + 编排。抛错由壳层接住(阶段「入口执行期」,非零退出)。
+ * 路径常量存活性门:常量指向的路径悬空即判红,并**指名是哪个常量**。
+ *
+ * 为什么放在门禁入口而不是判定层自检(`selftest.mjs`):那条自检声明了「纯函数、零 fs」,
+ * 而存活性必须读磁盘。入口本来就做 IO 并产出 `[geo:fail]` / 退出码,是这件事的归位。
+ *
+ * 为什么值得单独一道门:驱动层的路径常量全靠 `shared/paths.js` 的根拼出来,一旦某段目录
+ * 改名或搬移,消费它的那一行会在**很久之后**、以一个与根因无关的面孔炸出来(上一轮
+ * `init ready` 超时 45 分钟就是这种形态:真实病因是根算错,暴露面却是等待超时)。
+ * 路径悬空是**当场可判**的,不必等它绕一圈变成超时。
+ *
+ * 覆盖面按构造受限:只断言「在断言时点必然已存在」的常量(清单见 driver.LIVENESS_PATHS),
+ * `distIndex` / `outDir` / `reportPath` 这些写之前合法地不存在的产出不在其中。
+ * @param {GeometryPayload} payload 载荷绑定
+ * @returns {number} 0 = 全部在位
+ */
+function runLivenessGate({ checkPathLiveness }) {
+  const { ok, dangling } = checkPathLiveness();
+  if (ok) {
+    console.log("[geo:liveness] 路径常量存活性通过:入口脚本 / preload 桩 / 样式表目录均在位");
+    return 0;
+  }
+  for (const item of dangling) {
+    console.error(`[geo:fail] 路径常量悬空 ${item.name}:${item.target}(该常量指向的路径在磁盘上不存在)`);
+  }
+  console.error(
+    `[geo:fail] 路径常量存活性不通过,门禁不启动(共 ${dangling.length} 项悬空):` +
+      "路径悬空时消费该常量的那一行必坏,且暴露面通常与根因无关,故在此当场判红",
+  );
+  return 1;
+}
+
+/**
+ * 入口执行期:角色分派 + 存活性门 + 自检门 + 编排。抛错由壳层接住(阶段「入口执行期」,非零退出)。
  * @param {GeometryPayload} payload 载荷绑定
  * @returns {Promise<number>} 退出码(0 绿 / 1 红灯 / 2 未测量)
  */
@@ -171,6 +205,8 @@ async function work(payload) {
         `(直接 node 运行会因取不到 app/BrowserWindow 而失败)`,
     );
   }
+  // 存活性门先于角色分派:两个角色都依赖这批路径常量,任一悬空都先判红再谈跑什么。
+  if (runLivenessGate(payload) !== 0) return 1;
   // worker 角色必须**先于** app ready 跑完自身编排(app.commandLine 追加
   // force-device-scale-factor 只在 Chromium 启动早期生效),故不进 ready 回调
   if (process.env.M2W_GEOMETRY_ROLE === "worker") return payload.runWorker();
