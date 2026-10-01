@@ -50,7 +50,7 @@
 // 本脚本不校验具体产物内容(那是各段测试、smoke 与几何门禁的职责)。
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
 import { expandChainScriptNames, topLevelScriptNames } from './chain-expand.mjs';
 import { auditPackWhitelist, topLevel } from './repo-manifest.mjs';
@@ -442,8 +442,16 @@ export function checkContract(ctx = {}) {
     fail(`package.json build.files 必须是显式白名单数组(实际 ${JSON.stringify(packFiles ?? null)});缺它会让打包退回 electron-builder 默认集`);
   } else {
     const pack = auditPackWhitelist(manifest, packFiles);
+    // 交付面 = 编译输出树 + 包清单。取不到包清单名时交付面只有编译输出树,此时任何正向模式
+    // 都判红(拿不到单源就说明配置已经不成形,不该静默放行)。
+    const delivery = new Set([...manifest.buildOutputNames, ...(manifest.manifestName === null ? [] : [manifest.manifestName])]);
     for (const reference of pack.references) {
-      if (reference.negated || reference.exists) continue;
+      // 交付面豁免存在性:它由 `build` / 打包步骤产出,而本门禁的两个调用点都排在 `build`
+      // 之前(ci.yml 的 fail-fast 裸调、verify:ci 第 1 步),断言它存在等于断言一个定义上
+      // 不成立的事实 —— 那会让该判据在每次干净检出上恒红,与白名单写对写错无关。
+      // 「目录改名后忘了跟白名单」这条防线由下面那条交付面判据完整接住:
+      // 改名的段既不在声明的交付面里、其正向模式就会被判红。
+      if (reference.negated || reference.exists || delivery.has(reference.segment)) continue;
       fail(`build.files 引用的顶层不存在:${reference.segment}(模式 ${reference.pattern});目录改名/迁移后须同步白名单`);
     }
     if (!pack.buildOutputCovered) {
@@ -451,9 +459,6 @@ export function checkContract(ctx = {}) {
         `build.files 未覆盖编译输出树 ${String(pack.buildOutput)}(白名单 ${JSON.stringify(packFiles)}) —— 打包产物将不含代码`,
       );
     }
-    // 交付面 = 编译输出树 + 包清单。取不到包清单名时交付面只有编译输出树,此时任何正向模式
-    // 都判红(拿不到单源就说明配置已经不成形,不该静默放行)。
-    const delivery = new Set([...manifest.buildOutputNames, ...(manifest.manifestName === null ? [] : [manifest.manifestName])]);
     for (const reference of pack.references) {
       if (reference.negated || delivery.has(reference.segment)) continue;
       fail(
@@ -504,4 +509,13 @@ export function main(ctx = {}) {
   return 0;
 }
 
-process.exitCode = main();
+// 入口守卫:仅当本文件**就是被执行的入口**时才跑 CLI。写法与
+// gates/probe/gate-probes/coverage-gate.mjs 同形(全仓先例),不另创写法。
+//
+// 为什么必须有守卫:顶层自执行会把「import 这个模块」变成「把契约门禁真跑一遍」,
+// 副作用是**改掉宿主进程的 exitCode**(verify:ci 链首步的进程退出码由调用方脚本决定,
+// 一段无关的 import 就能把它改成 1)。守卫之后本模块可被安全 import,注册表因此能
+// 登记它并真 import 出判定本体 checkContract。
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === join(ROOT, 'gates', 'repo', 'check-ci-contract.mjs')) {
+  process.exitCode = main();
+}

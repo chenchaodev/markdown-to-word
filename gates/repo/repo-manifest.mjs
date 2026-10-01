@@ -566,10 +566,24 @@ export function scanTopLevel(root = ROOT) {
   });
 
   const byName = new Map(entries.map((entry) => [entry.name, entry]));
-  /** @param {string | null} name @returns {string | null} 存在才认 */
-  const existing = (name) => (name !== null && byName.has(name) ? name : null);
-  const buildOutputNames = /** @type {string[]} */ ([existing(decl.buildOutput)].filter((name) => name !== null));
-  const packOutputNames = /** @type {string[]} */ ([existing(decl.packOutput)].filter((name) => name !== null));
+  /**
+   * 编译输出树取**声明**(tsconfig `outDir` 的首段),**不按磁盘存在性过滤**。
+   *
+   * 为什么不能按存在性过滤:本门禁的两个调用点 —— `ci.yml` 的 fail-fast 裸调(第 55 行,
+   * 排在 `npm ci` 之前)与 `verify:ci` 的第 1 步(排在 `build` 之前)—— 那刻编译输出树
+   * 定义上不存在。按存在性过滤会让「交付面」集合恒缺编译输出树,于是 `build.files` 里
+   * 正当的 `dist/**` 反被判成「覆盖了非交付面」,该判据在**每一次**干净检出上恒红,
+   * 与白名单写对写错无关(这正是泳道 #03 引入的回归)。
+   *
+   * 声明本身已是单源(tsconfig `outDir`),它过期(目录改名/迁移)时由交付面判据判红,
+   * 不该按存在性把它藏起来 —— 藏起来等于把「改名后忘了跟白名单」这条防线一并关掉。
+   *
+   * @param {string | null} name 声明名
+   * @returns {string[]} 非 null 即单元素数组
+   */
+  const declared = (name) => (name === null ? [] : [name]);
+  const buildOutputNames = /** @type {string[]} */ (declared(decl.buildOutput));
+  const packOutputNames = /** @type {string[]} */ (declared(decl.packOutput));
   const manifestName = findRole(decl.roles, "manifest");
   const lockRole = findRole(decl.roles, "lockfile");
 

@@ -144,8 +144,10 @@ function createFixture(mutate) {
   writeFileIn(dir, '.github/workflows/ci.yml', workflow('verify:ci'));
   writeFileIn(dir, '.github/workflows/release.yml', workflow('verify:release'));
   writeFileIn(dir, 'tsconfig.json', `${JSON.stringify(FIXTURE_TSCONFIG, null, 2)}\n`);
-  // 白名单正向引用的交付面在夹具里必须真实存在,否则「引用了不存在的顶层」那条断言恒红、
-  // 基线用例反而变红。安装树只出现在取反模式里,故不必存在(它是随构建安装的)。
+  // 交付面在夹具里仍建出来,好让「改名后忘了跟白名单」那条负向用例有对照物;
+  // 但它**不再必须存在** —— 干净检出那刻编译输出树尚未构建,而本门禁的两个调用点都排在
+  // `build` 之前。回归守卫见下方「干净检出:编译输出树尚未构建 → 判绿」那条用例。
+  // 安装树只出现在取反模式里,故不必存在(它是随构建安装的)。
   makeDirIn(dir, 'dist');
   makeDirIn(dir, 'release');
   for (const placeholder of deriveFixturePlaceholders(FIXTURE_SCRIPTS)) {
@@ -438,6 +440,19 @@ const CASES = [
       pkg.build.files = ['dist/**', 'package.json', 'gone-tree/**'];
     },
     expect: /build\.files 引用的顶层不存在:gone-tree/,
+  },
+  {
+    // 回归守卫:干净检出里编译输出树尚未构建,而本门禁的两个调用点(`ci.yml` 的 fail-fast
+    // 裸调、`verify:ci` 第 1 步)都排在 `build` 之前 ⇒ 交付面必须豁免存在性。
+    // 泳道 #03 引入该判据时正是踩了这个坑:它按磁盘存在性过滤「声明的」编译输出树,
+    // 于是交付面集合恒缺它、`dist/**` 反被判成「覆盖了非交付面」,该判据在每次干净
+    // 检出上恒红。上面那条 `gone-tree` 用例证明改名防线**不**因这次豁免而失效 ——
+    // 非交付面的不存在仍然判红。
+    name: '干净检出:编译输出树尚未构建 → 判绿(交付面豁免存在性)',
+    mutate: ({ dir }) => {
+      rmSync(join(dir, 'dist'), { recursive: true, force: true });
+    },
+    expect: null,
   },
   {
     name: '白名单正向模式覆盖了源码树(源码/夹具随安装包发出去)',
