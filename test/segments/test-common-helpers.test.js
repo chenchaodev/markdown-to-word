@@ -22,11 +22,15 @@
  *    「先失败、占用解除后才成功」。断言总耗时跨过至少一次 retryDelay —— 只断言「最终成功」
  *    是恒绿的(靠删后复查也能成功),抓不到「有没有真等」这件事。
  *
- * 防假通过两处:
- * 1) 「系统临时区前缀计数基线」在 run() 入口取,段末比对 —— helper 真的漏了目录,计数会涨,
- *    而不是靠「注册表为空」自说自话;
+ * 防假通过三处:
+ * 1) 「系统临时区前缀目录集合基线」在 run() 入口取,段末逐项比对 —— helper 真的漏了目录,
+ *    集合会多出一项,而不是靠「注册表为空」自说自话;前缀**带本进程 pid**,故这个口径是
+ *    本段自己那一份,不会被同机并发的另一套验收顶歪(见 SELFTEST_PREFIX 处的理由);
  * 2) 段末用目录存在性逐条复查本段建过的每个资源(沿用 install-smoke 段的手法:清理成功的
- *    判据是「目录真的不见了」,不是「没抛错」)。
+ *    判据是「目录真的不见了」,不是「没抛错」);
+ * 3) 前缀集合口径自身**不许恒真**:段末先故意在系统临时区留一个同前缀目录(且**不经注册表**),
+ *    断言集合必须变大 —— 否则「集合回到基线」就抓不到「helper 建了却没登记/没删」的目录,
+ *    而那正是这条外部可见口径存在的唯一理由(`created` 名单复查覆盖不到那类)。
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -67,8 +71,20 @@ const {
   assertOccurrences,
 } = createAsserter("test-common-helpers");
 
-/** 本段自用前缀(与 TEMP_PREFIX 区分,便于段末按前缀统计系统临时区) */
-const SELFTEST_PREFIX = "m2w-selftest-";
+/**
+ * 本段自用前缀(与 TEMP_PREFIX 区分,便于段末按前缀统计系统临时区)。
+ *
+ * **前缀带本进程 pid**:段末的前缀计数是「系统临时区里本段目录数」这条外部可见口径,
+ * 而系统临时区是**跨进程共享**的 —— 前缀若是常量,同机并发的另一套验收(或任何别的进程)
+ * 建同前缀目录就会把本段的入口基线与段末计数一起顶歪,判出一个与被测件无关的红。
+ * (runner-report 段早为同类问题把沙盒改成 mkdtemp 唯一目录,见其 L66 注释「两套验收
+ * 同时跑」是已知场景;这里是对同一问题的前缀侧等价处理。)
+ *
+ * pid 在活进程集合内唯一,故本段与任何并发跑的其它进程**前缀不重叠**,计数即本段自己那一份。
+ * 上一轮崩在临时区的同 pid 残留若真存在,会同时落在入口基线与段末计数里(两侧相等仍判绿),
+ * 与本改动前的行为一致 —— 不引入新的失效形态。
+ */
+const SELFTEST_PREFIX = `m2w-selftest-${process.pid}-`;
 
 /** 本段建过的所有资源路径:段末逐条复查「目录真的不见了」 */
 /** @type {string[]} */
@@ -89,12 +105,23 @@ function track(resource) {
 }
 
 /**
- * 系统临时区里本段前缀的目录数(外部可见口径:helper 漏删会体现在这里)。
+ * 系统临时区里本段前缀的目录名(外部可见口径:helper 漏删会体现在这里)。
+ *
+ * 只取**本段前缀**(带 pid,见 SELFTEST_PREFIX)⇒ 与同机并发的其它验收互不干扰;
+ * 但它仍是「查文件系统」而非「查注册表」,故 helper 建了却没登记进 `created`、也没删掉的
+ * 目录照样出现在这里 —— 这正是它相对 `created` 名单复查的独有价值。
+ *
+ * 返回**名字集合**而非计数:计数相等可以把「漏删一个 + 入口基线里另一个消失」互相抵消,
+ * 集合相等不能;且判红时能直接点名是哪几个目录(计数只能报一个差值)。
+ * 段末另有一条负向锚点证明它不是恒真(见 run() 末的「前缀集合口径非恒真」case)。
  * @param {string} prefix 目录名前缀
- * @returns {number}
+ * @returns {string[]} 目录名(已排序,便于逐项比对与报错定位)
  */
-function countTempDirs(prefix) {
-  return fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(prefix)).length;
+function listTempDirs(prefix) {
+  return fs
+    .readdirSync(os.tmpdir())
+    .filter((name) => name.startsWith(prefix))
+    .sort();
 }
 
 /**
@@ -184,9 +211,17 @@ function assertFailureCarries(outcome, required, what) {
 }
 
 export async function run() {
-  /** 入口基线:本段跑完后系统临时区里本段前缀的目录数必须回到这个值 */
-  const tempDirBaseline = countTempDirs(SELFTEST_PREFIX);
-  console.log(`[ok] test-common-helpers:系统临时区 ${SELFTEST_PREFIX}* 基线 ${tempDirBaseline}`);
+  /**
+   * 入口基线:本段跑完后系统临时区里本段前缀的目录名集合必须回到这个值
+   * (前缀带 pid ⇒ 只数本段自己那一份,不被同机并发的另一套验收顶歪)。
+   * 比**集合**而非计数:入口就存在的同 pid 残留(上一轮崩在本进程 pid 上的极端情形)不该
+   * 让本段判红,但也不能被「本段漏删一个」抵消掉 —— 集合逐项相等两件事都不放过。
+   */
+  const tempDirBaseline = listTempDirs(SELFTEST_PREFIX);
+  console.log(
+    `[ok] test-common-helpers:系统临时区 ${SELFTEST_PREFIX}* 基线 ${tempDirBaseline.length} 个`
+    + (tempDirBaseline.length > 0 ? `(${tempDirBaseline.join(",")})` : ""),
+  );
 
   /* ================= 一、断言集 ================= */
   await suite.describe("公共断言集", async () => {
@@ -519,6 +554,33 @@ export async function run() {
   });
 
   /* ================= 三、段末残留复查(清理可验证) ================= */
+  await suite.case("前缀集合口径非恒真:未登记的本段前缀目录必须被系统临时区口径看见", async () => {
+    // 这条守的是段末那条「集合回到基线」的**有效性**:若 listTempDirs 恒返回基线,
+    // 段末断言就成了恒绿。而「helper 建了目录却既没登记进 `created` 也没删掉」正是
+    // `created` 名单复查覆盖不到、只有这条外部口径能覆盖的失效模式 —— 故必须用
+    // **不经注册表**的裸 mkdtemp 造夹具,走一遍「集合变大 → 删掉 → 集合回落」。
+    const before = listTempDirs(SELFTEST_PREFIX);
+    // 刻意不进注册表、不进 created:这正是「helper 漏登记且漏删」的形态
+    const unregistered = fs.mkdtempSync(path.join(os.tmpdir(), SELFTEST_PREFIX));
+    const grown = listTempDirs(SELFTEST_PREFIX);
+    try {
+      assert(
+        grown.length === before.length + 1 && grown.includes(path.basename(unregistered)),
+        `系统临时区里多一个本段前缀目录时,前缀集合必须看见它(否则段末「回到基线」是恒真断言):`
+          + `前 ${before.length} 项 → 现 ${grown.length} 项 ${grown.join(",")}`,
+      );
+    } finally {
+      const outcome = removeTree(unregistered);
+      assertEq(outcome.ok, true, `夹具目录清理失败:${outcome.error?.message ?? "删除后目录仍存在"}`);
+    }
+    assertSameItems(
+      listTempDirs(SELFTEST_PREFIX),
+      before,
+      "夹具目录删掉后系统临时区的前缀集合应回到原值",
+    );
+    console.log("[ok] test-common-helpers:前缀集合口径非恒真(未登记目录 → 集合变大 → 删掉 → 回落)");
+  });
+
   await suite.case("段末无临时资源残留:注册表空 + 每个目录都不在了 + 系统临时区回到基线", async () => {
     // 前面的 case 故意留下的占用先释放,再让兜底清理收尾:否则本 case 带着占用判红,
     // 就分不清是「漏清理」还是「故意占用」
@@ -529,9 +591,17 @@ export async function run() {
     for (const dir of created) {
       assertEq(fs.existsSync(dir), false, `临时资源残留:${dir}`);
     }
-    assertEq(countTempDirs(SELFTEST_PREFIX), tempDirBaseline, "系统临时区里本段前缀目录数应回到入口基线");
+    // 集合逐项相等(而非计数相等):漏删一个与入口基线里另一个消失不能互相抵消,
+    // 且判红时直接点名是哪几个目录 —— 这段判红的唯一下一步动作就是「看哪个目录没删掉」
+    // (CI 上靠它定位),只报一个差值等于没给。
+    assertSameItems(
+      listTempDirs(SELFTEST_PREFIX),
+      tempDirBaseline,
+      `系统临时区里本段前缀目录集合未回到入口基线(基线 ${tempDirBaseline.length} 项)`
+        + ` —— 残留即漏清理;当前 ${listTempDirs(SELFTEST_PREFIX).join(",")}`,
+    );
     console.log(
-      `[ok] test-common-helpers:段末无残留(注册表空 / ${created.length} 个目录均已删除 / 临时区计数回到 ${tempDirBaseline})`,
+      `[ok] test-common-helpers:段末无残留(注册表空 / ${created.length} 个目录均已删除 / 临时区前缀集合回到基线 ${tempDirBaseline.length} 项)`,
     );
   });
 
