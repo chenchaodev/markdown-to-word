@@ -281,7 +281,7 @@ export async function buildSandbox(root, timeoutMs) {
   }
   const renderer = await runProcess({
     command: node.command,
-    args: [path.join(root, "build", "copy-renderer.mjs")],
+    args: [path.join(root, "tools", "copy-renderer.mjs")],
     cwd: root,
     env: node.env,
     timeoutMs,

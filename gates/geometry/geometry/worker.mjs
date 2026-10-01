@@ -94,8 +94,8 @@ export async function runWorker() {
       preload,
       // 项目根由本层注入(ADR-040:根只有 shared/paths.js 一个来源,且桩不自算):
       // preload 跑在 sandbox 里、又是 CJS,拿不到 ESM 单源,自算则与目录深度耦合
-      // ——#07 把它从 test/tools/ 搬到 dev/ 时就因此算成了仓库的父目录。
-      // 通道与 dev/visual-about-preload.cjs 的版本号同款(additionalArguments 递旗标)。
+      // ——#07 把它从 test/tools/ 搬到顶层时就因此算成了仓库的父目录。
+      // 通道与 tools/visual-about-preload.cjs 的版本号同款(additionalArguments 递旗标)。
       additionalArguments: [ROOT_ARGUMENT],
       contextIsolation: false,
       nodeIntegration: false,

@@ -14,7 +14,7 @@
  *   具体诊断关键字的负向探针(只看退出码会让「因错误原因失败」蒙混过关);
  * - 锚点不绿 = 沙盒不可信,负向结论不成立 → 判红并写明不可信原因;
  * - 真实工作树零注入:探针只在系统临时目录的工程副本里注入故障,并断言真实
- *   src/test/dist/gates/build/dev/output/package*.json 指纹未变、node_modules 哨兵完好。
+ *   src/test/dist/gates/tools/output/package*.json 指纹未变、node_modules 哨兵完好。
  *
  * 本段刻意不实现第二套判定逻辑(避免两套口径漂移):判定、报告与摘要全部由
  * gates/probe/check-gate-probes.mjs 单源产出,本段只做 case 化呈现与门禁级断言。

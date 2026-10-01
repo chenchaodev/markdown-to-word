@@ -42,7 +42,7 @@ import { DRAWER_GROUPS, DRAWER_SELECTORS, drawerTabSelector } from "../shared/ge
 import { ROOT } from "../shared/paths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// 工程根取单源(ADR-040):上跳层数与目录深度耦合,#07 把它搬到 dev/ 时正是因此算错成仓库父目录
+// 工程根取单源(ADR-040):上跳层数与目录深度耦合,#07 把它搬到顶层时正是因此算错成仓库父目录
 const root = ROOT;
 const distIndex = path.join(root, "dist", "renderer", "index.html");
 const distAbout = path.join(root, "dist", "renderer", "about.html");

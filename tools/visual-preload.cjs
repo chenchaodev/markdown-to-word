@@ -116,12 +116,12 @@ async function takeConvert() {
  * 由拉起窗口的一方经 `webPreferences.additionalArguments` 递入 `--m2w-root=<绝对路径>`,
  * 与 about 桩收 `--m2w-version=` 同一条通道。已知注入方两处,两处都必须递:
  *   - `gates/geometry/geometry/worker.mjs`(几何门禁 `npm run check:geometry`)
- *   - `dev/visual-check.mjs`(视觉自查 `npm run ui:shots`)
+ *   - `tools/visual-check.mjs`(视觉自查 `npm run ui:shots`)
  *
  * 为什么不自算:本桩是 CJS 且跑在 sandbox preload 里,静态 import 不了 ESM 单源,动态
  * import 本地文件又可能被 sandbox 的 CSP 拦下 —— 但**这不是让桩自算根的理由**。
  * 自算(按 `__dirname` 上跳固定层数)与本文件所在目录的**深度**耦合,深度是类型检查与
- * import 图都发现不了的一类耦合:#07 把它从 `test/tools/`(深 2 层)搬到 `dev/`(深 1 层)时
+ * import 图都发现不了的一类耦合:#07 把它从 `test/tools/`(深 2 层)搬到顶层(深 1 层)时
  * 漏改层数,根算到了仓库的父目录,`createRequire` 随即 MODULE_NOT_FOUND,版本号永为空,
  * 几何门禁与视觉自查的 `init ready` 等待条件(用 `&&` 串了版本号)因此必然超时,
  * 一次实跑挂了 45 分钟。注入把「深度」从这份桩里彻底去掉:搬目录不再需要改任何东西。
@@ -149,7 +149,7 @@ function repoRoot() {
           "项目根未注入:本 preload 不自算仓库根(ADR-040 的根单源是 shared/paths.js)。" +
             "请在拉起本桩的 BrowserWindow 的 webPreferences.additionalArguments 里递入 " +
             `${ROOT_ARG_PREFIX}<绝对路径> —— 已知注入方为 gates/geometry/geometry/worker.mjs` +
-            "(npm run check:geometry)与 dev/visual-check.mjs(npm run ui:shots),两处都需递。",
+            "(npm run check:geometry)与 tools/visual-check.mjs(npm run ui:shots),两处都需递。",
         );
       }
       return p.resolve(value);

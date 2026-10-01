@@ -702,10 +702,10 @@ export async function run() {
       console.log("[ok] import-boundary:规则原语断言通过(specifier 归类 / type-only 判定 / CJS require 抽取)");
     }
 
-    // ================= (7) 树边界规则(ADR-038/043):allow-list,三棵树各自的双向锚点 =================
+    // ================= (7) 树边界规则(ADR-038/043/050):allow-list,四棵树各自的双向锚点 =================
     // 判据形态是 allow-list(允许面外一律判红),与 LAYER_RULES 的 deny-list 语义相反。
-    // 三棵树缺一不可 —— selfCheckTreeLayout 要求 scope 目录齐备,否则规则形同虚设会判红,
-    // 所以每个沙盒都先铺齐 gates/ test/ shared/ 三棵空树,再只往目标树里放违规文件。
+    // 各棵树缺一不可 —— selfCheckTreeLayout 要求 scope 目录齐备,否则规则形同虚设会判红,
+    // 所以每个沙盒都先铺齐 gates/ test/ shared/ tools/ 四棵空树,再只往目标树里放违规文件。
     {
       /**
        * 铺一棵三树齐备的沙盒,返回根目录(树扫描锚在 projectRoot,而本段验的是原语,
@@ -715,7 +715,7 @@ export async function run() {
        */
       const treeSandbox = (files) => {
         const sb = createSandbox({ dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } }, {});
-        for (const dir of ["gates", "test", "shared"]) writeFileIn(sb.dir, `${dir}/.keep`, "");
+        for (const dir of ["gates", "test", "shared", "tools"]) writeFileIn(sb.dir, `${dir}/.keep`, "");
         for (const [relative, content] of Object.entries(files)) writeFileIn(sb.dir, relative, content);
         track(sb.dir);
         return sb;
@@ -764,13 +764,13 @@ export async function run() {
 
       // 7e. 正向:合法跨树引用一条都不许误伤 ——
       //   shared 树内互依 + node: 内建放行(零**跨树**出边,不是零 import);
-      //   测试树引 shared/ 门禁树/ dist 编译产物/ 产物生产树(build · dev)/ 自身 test/ 均合法
+      //   测试树引 shared/ 门禁树/ dist 编译产物/ 工具树 tools/ 自身 test/ 均合法
       {
         const sb = treeSandbox({
           "shared/s.mjs":
             'import path from "node:path";\nimport { y } from "./other.mjs";\nexport default [path, y];\n',
           "test/t.js":
-            'import { a } from "../shared/s.mjs";\nimport { b } from "../gates/g.mjs";\nimport { c } from "../dist/core/thing.js";\nimport { e } from "../build/copy-renderer.mjs";\nimport { f } from "../dev/print-env-fingerprint.mjs";\nimport { d } from "./other.js";\nexport default [a, b, c, e, f, d];\n',
+            'import { a } from "../shared/s.mjs";\nimport { b } from "../gates/g.mjs";\nimport { c } from "../dist/core/thing.js";\nimport { e } from "../tools/copy-renderer.mjs";\nimport { d } from "./other.js";\nexport default [a, b, c, e, d];\n',
           "gates/g.mjs": 'import { p } from "../shared/paths.js";\nexport { p };\n',
           "shared/other.mjs": "export const y = 1;\n",
         });
@@ -781,7 +781,45 @@ export async function run() {
         );
       }
 
-      // 7f. 判据写法自检:三棵树缺一即判红 —— 「扫不到就等于没规则」是最危险的失效形态
+      // 7f. tools-stay-in-tools 负向锚点之一:工具树引测试树 → 判红。
+      // 合并前 `tools/` 属 TREE_BOUNDARY_LITERAL_PREFIXES,压根没有规则扫它 —— 这条恒绿。
+      {
+        const sb = treeSandbox({ "tools/t.mjs": 'import { x } from "../test/common/thing.js";\nexport { x };\n' });
+        const problems = analyzeTreeBoundaries(sb.dir);
+        assert(
+          problems.some((p) => /tools\/t\.mjs:1:/.test(p) && /违反树边界规则 tools-stay-in-tools/.test(p)),
+          `工具树引 test/ 应判红并点名行号+规则 id,实际:${JSON.stringify(problems)}`,
+        );
+      }
+
+      // 7g. tools-stay-in-tools 负向锚点之二:工具树引产品源码 → 判红。
+      // 与 7f 分开是因为两个目标树的失败原因不同(越过测试树 vs 越过全部树),
+      // 合成一条会让「规则写了但 allow 面写错」退化成看不出是哪一侧漏放行。
+      {
+        const sb = treeSandbox({ "tools/t.mjs": 'import { x } from "../src/core/thing.js";\nexport { x };\n' });
+        const problems = analyzeTreeBoundaries(sb.dir);
+        assert(
+          problems.some((p) => /tools\/t\.mjs:1:/.test(p) && /违反树边界规则 tools-stay-in-tools/.test(p)),
+          `工具树引 src/ 应判红并点名行号+规则 id,实际:${JSON.stringify(problems)}`,
+        );
+      }
+
+      // 7h. tools 正向锚点:工具树引 shared/ 与自身均合法(合并后 tools 的出边只有这两类,
+      // 若它们哪天被判红则规则面与实际布局脱节,说明 allow 面写窄了)
+      {
+        const sb = treeSandbox({
+          "tools/copy-renderer.mjs":
+            'import { isMainModule } from "../shared/cli.mjs";\nimport { ROOT } from "../shared/paths.js";\nexport { isMainModule, ROOT };\n',
+          "tools/icon.svg": "<svg/>\n",
+        });
+        const problems = analyzeTreeBoundaries(sb.dir);
+        assert(
+          problems.length === 0,
+          `工具树引 shared/ 与自身不得误伤,实际判红:${JSON.stringify(problems)}`,
+        );
+      }
+
+      // 7i. 判据写法自检:各棵树缺一即判红 —— 「扫不到就等于没规则」是最危险的失效形态
       {
         const sb = createSandbox({ dependencies: {}, devDependencies: {} }, {});
         writeFileIn(sb.dir, "gates/.keep", "");
@@ -792,7 +830,7 @@ export async function run() {
           `缺 test/ 与 shared/ 时自检必须判红(否则树边界规则形同虚设),实际:${JSON.stringify(layoutProblems)}`,
         );
       }
-      console.log("[ok] import-boundary:树边界规则断言通过(三规则负向判红 / 四类合法引用零误伤 / 缺树自检判红)");
+      console.log("[ok] import-boundary:树边界规则断言通过(四规则负向判红 / 五类合法引用零误伤 / 缺树自检判红)");
     }
   } finally {
     // 走 removeTree(退避重试 + 删后复查):沙盒里刚写过 dist 副本,Windows 上句柄释放

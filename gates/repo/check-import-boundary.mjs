@@ -653,7 +653,7 @@ export function analyze(
  * 在 src 侧根本不存在(TS 产物里 import.meta.url 已被擦除)。故本扫描固定锚在真实仓库上,
  * 沙盒调用(--src 指向临时目录)也照跑 —— 判的是本仓纪律,不是夹具内容。
  */
-export const ROOT_COMPUTE_SCAN_DIRS = Object.freeze(['gates', 'build', 'dev', 'test', 'shared']);
+export const ROOT_COMPUTE_SCAN_DIRS = Object.freeze(['gates', 'tools', 'test', 'shared']);
 
 /** 参与本扫描的扩展名(与门禁自身所在树一致) */
 const ROOT_COMPUTE_EXTENSIONS = Object.freeze(['.js', '.mjs', '.cjs']);
@@ -783,7 +783,7 @@ export function selfCheckRootComputes(root) {
     // ---- 形态四:.cjs 隐式 __dirname(无声明句,靠 isCjs 特判;depth 1 → ups 1)----
     {
       name: '.cjs 隐式 __dirname',
-      relPath: 'dev/x.cjs',
+      relPath: 'tools/x.cjs',
       text: 'const out = path.resolve(__dirname, "..", "out");\n',
       expect: 1,
     },
@@ -863,17 +863,16 @@ export function selfCheckRootComputes(root) {
  * 树改名(逻辑名 gates ↔ 实际目录名)只改这一行,避免改名漏改诊断文案里的路径。
  * @type {Readonly<Record<string, string>>}
  */
-export const TREE_DIRS = Object.freeze({ gates: 'gates', test: 'test', shared: 'shared' });
+export const TREE_DIRS = Object.freeze({ gates: 'gates', test: 'test', shared: 'shared', tools: 'tools' });
 
 /**
  * 允许面里可用、但**没有对应顶层目录规则**的字面前缀。
  *
- * `dist` 是编译产物目录;`build` / `dev` 是门禁树按断言域分列出去的两棵产物生产树
- * (不 assert 任何东西,故不建边界规则)—— 它们与 `dist` 同形:**被引用,不治理**。
- * 登记在此而不是给它们各写一条规则:那两条规则的允许面会与 `test-stay-in-test`
- * 逐字重复,而「不被治理」正是它们当前的定位(REO-110 泳道 #07 的目标形态)。
+ * `dist` 是编译产物目录 —— 它与 ADR-044 当年一并归入本组的 `build/` `dev/` **并不同形**:
+ * `dist` 是输出(可被引用,自身无出边),而那两棵是有出边的代码树。ADR-050 把两棵树
+ * 合并为受管树 `tools/` 后,本组只剩真同形的 `dist`,判据名与内容重新对齐。
  */
-export const TREE_BOUNDARY_LITERAL_PREFIXES = Object.freeze(['dist', 'build', 'dev']);
+export const TREE_BOUNDARY_LITERAL_PREFIXES = Object.freeze(['dist']);
 
 /**
  * 树边界规则表,判据形态是 **allow-list**(允许面之外一律判红),
@@ -894,8 +893,14 @@ export const TREE_RULES = Object.freeze([
   {
     id: 'test-stay-in-test',
     scope: 'test',
-    reason: '测试树可引编译产物(dist)、产物生产树(build/dev)、共享机制层,以及门禁树的驱动器级纯静态函数',
-    allow: Object.freeze(['test', 'dist', 'build', 'dev', 'shared', 'gates']),
+    reason: '测试树可引编译产物(dist)、工具树(tools)、共享机制层,以及门禁树的驱动器级纯静态函数',
+    allow: Object.freeze(['test', 'dist', 'tools', 'shared', 'gates']),
+  },
+  {
+    id: 'tools-stay-in-tools',
+    scope: 'tools',
+    reason: '工具树零跨树出边(ADR-050):只许引用自身与共享机制层',
+    allow: Object.freeze(['tools', 'shared']),
   },
   {
     id: 'shared-no-out-edge',
@@ -998,7 +1003,7 @@ function analyzeTreeBoundariesUncached(root) {
 
 /**
  * 树边界规则的存在性自检:「扫不到就等于没规则」是这类判据最危险的失效形态,
- * 故每次 check:boundary 都验三棵树齐备、规则表覆盖完整、允许元素的首段不是拼错的树名。
+ * 故每次 check:boundary 都验各棵树齐备、规则表覆盖完整、允许元素的首段不是拼错的树名。
  * @param {string} root 被扫描仓库的根
  * @returns {string[]} 自检问题(空数组 = 通过)
  */

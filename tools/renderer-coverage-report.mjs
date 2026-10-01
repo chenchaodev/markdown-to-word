@@ -23,7 +23,7 @@
 // 聚合口径:逐文件 sum(covered)/sum(total) 后再算百分比,而非对文件的 pct 求平均 ——
 // 后者会让小文件与大文件等权,数字随文件拆分方式漂移,不可比。
 //
-// 用法:node dev/renderer-coverage-report.mjs [--report-dir <dir>] [--json]
+// 用法:node tools/renderer-coverage-report.mjs [--report-dir <dir>] [--json]
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -31,7 +31,7 @@ import { isMainModule, parseArgs } from '../shared/cli.mjs';
 import { ROOT } from '../shared/paths.js';
 
 const projectRoot = ROOT;
-const USAGE = '用法: node dev/renderer-coverage-report.mjs [--report-dir <dir>] [--json]';
+const USAGE = '用法: node tools/renderer-coverage-report.mjs [--report-dir <dir>] [--json]';
 
 /**
  * 默认报告目录 = 本仓显式登记的 c8 产物落点(`test:coverage` 的 `--reports-dir`),与

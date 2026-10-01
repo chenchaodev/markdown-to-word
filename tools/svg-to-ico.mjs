@@ -1,6 +1,6 @@
 /**
- * SVG → ICO:读取 build/icon.svg,渲染多尺寸 PNG,合成 build/icon.ico。
- * 用法:node build/svg-to-ico.mjs(需先 build,无依赖构建)。
+ * SVG → ICO:读取 tools/icon.svg,渲染多尺寸 PNG,合成 tools/icon.ico。
+ * 用法:node tools/svg-to-ico.mjs(需先 build,无依赖构建)。
  */
 import sharp from "sharp";
 import pngToIco from "png-to-ico";
@@ -9,8 +9,8 @@ import path from "node:path";
 import { ROOT } from "../shared/paths.js";
 
 const root = ROOT;
-const svgPath = path.join(root, "build", "icon.svg");
-const icoPath = path.join(root, "build", "icon.ico");
+const svgPath = path.join(root, "tools", "icon.svg");
+const icoPath = path.join(root, "tools", "icon.ico");
 
 const svg = await fs.readFile(svgPath);
 // density 提高 SVG 矢量渲染精度(默认 72dpi,放大后边缘毛糙)

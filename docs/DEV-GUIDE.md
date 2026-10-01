@@ -5,11 +5,11 @@
 ## 环境
 - Node >= 22.13(ESM;typescript-eslint 经 side-by-side 用 TS 6 API,`tsc` 二进制仍为 TS 7——package.json 中 `typescript` 别名 `@typescript/typescript6`,`@typescript/native` 别名真实 TS 7;勿回退)
 - npm 源:npmmirror(见根 `.npmrc`,仅含 registry,勿回退)
-- Electron 二进制镜像(本地开发勿回退,装 electron/打包前设置):经 `dev/setup-env.ps1` 一次性写入**用户级环境变量** `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`(GitHub Actions 不需要);勿在 `.npmrc` 写这两个键——npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`,electron-builder 读不到
+- Electron 二进制镜像(本地开发勿回退,装 electron/打包前设置):经 `tools/setup-env.ps1` 一次性写入**用户级环境变量** `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR`(GitHub Actions 不需要);勿在 `.npmrc` 写这两个键——npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`,electron-builder 读不到
   - `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`
   - `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`
 - 依赖钉死与全部「勿回退」约束见项目 `AGENTS.md`「硬约束」节;钉死理由清单见 [`evidence/20260927-170600-事实-依赖与工具链.md`](evidence/20260927-170600-事实-依赖与工具链.md) 的「审计整改记录(依赖钉死策略清单)」条
-- 本地跑 `npm install` 前先跑一次 `dev/setup-env.ps1`(写 Electron 镜像环境变量);CI 走官方 registry,不需要该步骤
+- 本地跑 `npm install` 前先跑一次 `tools/setup-env.ps1`(写 Electron 镜像环境变量);CI 走官方 registry,不需要该步骤
 
 ## 命令
 日常主路径的命令(门禁类别与接入点见下一张「门禁接入点」表,`package.json` scripts 为唯一单源):
@@ -18,7 +18,7 @@
 | ---- | ---- |
 | `npm install` | 安装依赖。运行时与构建期依赖(含 `typescript` / `@types/node` / `electron` / `electron-builder`)全在 `dependencies` + `devDependencies`,一次装齐,无「先单独装某几个包」的前置步骤 |
 | `npm run typecheck` | TS 类型检查(主树 `tsc --noEmit` + 测试树 `tsconfig.test.json` 按 `// @ts-check` 渐进,TS 7) |
-| `npm run lint` | ESLint 10 flat 检查 `src/ test/ gates/ build/ dev/`(typescript-eslint 类型感知规则,side-by-side TS 6 API) |
+| `npm run lint` | ESLint 10 flat 检查 `src/ test/ gates/ tools/`(typescript-eslint 类型感知规则,side-by-side TS 6 API) |
 | `npm run build` | 构建 core 到 `dist/`(`tsc` + copy-renderer) |
 | `npm run dev` | 开发启动 = `build` 后**直接**起 Electron,**不带**构建新鲜度守卫 |
 | `npm run start` | 启动 Electron,但**先跑 `gates/smoke/check-build-fresh.mjs` 校验构建新鲜度** —— 只改了源码没重建时,守卫先拦下(`test:smoke` 用的是同一个守卫) |
@@ -29,7 +29,7 @@
 | `npm run test:all` | 验收 + 冒烟 |
 | `npm run gen:fixtures` | 验收样例生成器(需先 build) |
 | `npm run check:fixtures` | fixtures 漂移校验(幂等,exit 0/1;CI 门禁步骤) |
-| `npm run icons` | SVG 图标转 ICO(`build/svg-to-ico.mjs`) |
+| `npm run icons` | SVG 图标转 ICO(`tools/svg-to-ico.mjs`) |
 | `npm run check:docs` | 文档指针门禁(**载体在全局配置目录,CI 不装 ⇒ 不在 `verify:ci` 链里,提交前本地手动跑**;载体不可达时打印「跳过」后 exit 0,看到那行即表示本轮一个指针都没查) |
 
 > 冒烟只有 `npm run test:smoke` 一个入口。绕过 npm 直接 `npx electron . --smoke` 会跳过构建新鲜度守卫、拿旧产物跑,故本文件不列该写法。
@@ -60,7 +60,7 @@
 | 包体 | `check:pack-size` | 仅本地手动(需真实安装包实测;判定逻辑由 `test/segments/observability.test.js` 在链内以沙盒覆盖) |
 | 冒烟报告 | `check:smoke-report` | 仅本地手动(判定逻辑同上,由 `test/segments/observability.test.js` 在链内覆盖) |
 | 阴性探针 | `check:gates` | 仅本地手动 —— 同一模块由 `test/segments/gate-probes.test.js` 在链内实跑 |
-| GUI 视觉自查 | `ui:shots` | 仅本地手动(`dev/visual-check.mjs`)。**发版前需重跑** —— 它的产出 `output/artifacts/ui-v4/` 是 `docs/images/ui-*.jpg` 的来源,界面一改那批图就过期;README / 官网首页 / 用户指南都靠它们展示 |
+| GUI 视觉自查 | `ui:shots` | 仅本地手动(`tools/visual-check.mjs`)。**发版前需重跑** —— 它的产出 `output/artifacts/ui-v4/` 是 `docs/images/ui-*.jpg` 的来源,界面一改那批图就过期;README / 官网首页 / 用户指南都靠它们展示 |
 | 安装烟测 | `check:install-smoke` | 仅本地手动,默认预演模式零系统副作用;真实装卸须显式 `--execute`(沙盒内的进程级行为由 `test/segments/install-smoke.test.js` 在链内覆盖) |
 | 打包产物核对 | `gen:dist-manifest` `check:dist-manifest` `check:asar` `check:release` `check:signature` `check:unpacked-smoke` | `verify:release` 链(`dist` 内部) |
 | 图标资源 | `icons` | 仅本地手动 |
@@ -72,7 +72,7 @@
 
 - **Defender 重命名 EPERM**:electron 解压到 `win-unpacked.tmp` 后被 Windows Defender 实时扫描锁文件句柄,`rename .tmp → win-unpacked` 失败。绕过:用 `--config.electronDist=<node_modules/electron/dist>` 直接喂 npm install 已解压的 electron 发行目录,electron-builder 改为 copy(非解压后 rename)。
 - **长路径 / OneDrive 锁**:项目在 `Documents\opencode\...`(OneDrive 同步)时,即便建 junction 也仍解析真实路径写入,重命名同样失败且路径过长。绕过:用 `--config.directories.output=<非 OneDrive 短路径>` 重定向输出(如 `C:\m2w-out`,路径依环境而定)。
-- **镜像 env**:`.npmrc` 不写 electron 镜像键(npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`)。本地开发先跑一次 `dev/setup-env.ps1` 写入用户级环境变量;或构建前显式 `$env:ELECTRON_BUILDER_BINARIES_MIRROR`(及 `ELECTRON_MIRROR`),否则 electron-builder 回退 GitHub 下载超时。
+- **镜像 env**:`.npmrc` 不写 electron 镜像键(npm 不识别会警告,且 `electron_builder_binaries_mirror` 不会被转发成 `ELECTRON_BUILDER_BINARIES_MIRROR`)。本地开发先跑一次 `tools/setup-env.ps1` 写入用户级环境变量;或构建前显式 `$env:ELECTRON_BUILDER_BINARIES_MIRROR`(及 `ELECTRON_MIRROR`),否则 electron-builder 回退 GitHub 下载超时。
 
 完整命令示例:
 
@@ -127,10 +127,11 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `convert/`:convert-flow.ts + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)+ `file-list.ts`
   - `ui/`(dialogs.ts/dom-ops.ts(DOM 操作原语 + translate 注入适配)/recent-files.ts(bindRecentFilesEvents 范式)/toast.ts/first-run-guide.ts(首启引导))
   - `wizard/`:book-wizard.ts(向导外壳/导航/打开关闭+付印提交)/wizard-steps.ts(步骤渲染·版式步:模板/封面/页眉页脚/水印)/wizard-steps-delivery.ts(步骤渲染·交付步:合并源/目录/付印+当前步渲染)/wizard-fields.ts(字段校验绑定+共用 DOM/radio 零件)/wizard-runtime.ts(草稿/容器/步序单例,防环)/wizard-state.ts(向导状态管理纯 reducer)
-- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/(smoke/ 薄转调,冒烟实现见 `src/main/smoke.ts`);样例生成器 `gates/fixtures/gen-fixtures.mjs`、视觉自查 `dev/visual-check.mjs`、electron 桩 `test/common/electron-mock*.mjs`、几何判定层 `shared/geometry/` 均已按归属迁出 test/);`build/copy-renderer.mjs`(静态资源拷贝)、`build/svg-to-ico.mjs`(图标)、`gates/smoke/check-build-fresh.mjs`(构建新鲜度守卫,`start` 与 `test:smoke` 前置)
+- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/(smoke/ 薄转调,冒烟实现见 `src/main/smoke.ts`);样例生成器 `gates/fixtures/gen-fixtures.mjs`、视觉自查 `tools/visual-check.mjs`、electron 桩 `test/common/electron-mock*.mjs`、几何判定层 `shared/geometry/` 均已按归属迁出 test/);`gates/smoke/check-build-fresh.mjs`(构建新鲜度守卫,`start` 与 `test:smoke` 前置)
   - **沙箱副本闭包**(守护见 `test/segments/contract-single-source.test.js` (e) 节,判定原语 `auditCopySet` 在 `test/common/copy-closure-audit.js`):部分段会把生产脚本**逐字节复制**进系统临时区的沙盒再执行(如 `install-smoke` 复制 gates/artifacts 与 gates/smoke 的 5 份脚本、shared/paths.js 与 shared/userdata.js)。因沙盒内无 `node_modules` 且只复制被点名的文件,副本必须满足三条:① 只允许 `node:` 内建依赖(裸包名必失败);② 相对 import 的目标必须**同在副本集合内**;③ 不得有死副本(无同集合入边且未登记为沙盒入口者判红)。副本集合由**代码里的复制调用扫出**(`copyFileSync`/`copyFile`/`cpSync`),不硬编码文件名 —— 新增复制点会被自动纳入。
   - **入口登记需人工同步**:`SANDBOX_ENTRY_EVIDENCE`(同在 `test/common/copy-closure-audit.js`)登记那些「被复制但沙盒内由测试直接执行、因而没有上游 import」的副本。漏登记**判红**而非静默放过(刻意取舍),故新增/删除沙箱复制点时必须同步该表。登记需附「提及它 + 带执行类调用」的行作为证据,否则视为无证据。
   - **已知覆盖边界**:运行时拼装的复制列表、多层别名链、跨目录整树复制**解析不出**,只登记不判红。若将来用「运行时拼装列表」复制 JS 模块,本守护不会自动纳入,需人工扩 `resolveCopySource` 或新增复制机制 scope。
+- `tools/`:工具树(七个文件平铺,无子目录;`build/` 与 `dev/` 于 ADR-050 合并而成;`tools-stay-in-tools` 边界规则判它零跨树出边,只许引 `shared/` 与自身):`copy-renderer.mjs`(静态资源拷贝,`build` 步骤)/`svg-to-ico.mjs`(SVG → ICO,`icons` 步骤,读同目录 `icon.svg` 写 `icon.ico`)/`visual-check.mjs`(视觉自查,`ui:shots`)/`visual-preload.cjs` 与 `visual-about-preload.cjs`(上面那个工具的两个窗桩;项目根经 `--m2w-root=` 注入,桩不自算)/`renderer-coverage-report.mjs`(被 c8 排除层的只读覆盖率报告)/`setup-env.ps1`(一次性写 Electron 镜像环境变量)。目录名**不表达**「是否在 CI/release 链内」——该信号在 `package.json` scripts 与上一张「门禁接入点」表两处。
 
 ## 测试体系(按内容主题零注册,新增=新建段文件)
 - 目录组织标准(test 树镜像 src 三层,按被测主体归属;目录内按内容主题命名):`test/segments/` = core 渲染主题与跨层契约/恒等守护段 /`test/main/` = 主进程层主题段 /`test/renderer/` = UI 层主题段(纯函数/状态机/CSS 令牌恒等)
@@ -147,7 +148,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - **验证分两档**(命令与门禁类别见本文件「命令」「门禁接入点」两节,此处只定节奏):
   - **开发回路**(每次改完):`typecheck` + `lint` · 改动面所属的验收段(`M2W_ONLY` 按**段名**筛)· 本轮改动到的纯文本门禁(`check:docs` 等)
   - **提交前**(每个提交跑一次):上面那套 **+ `npm run test` 全量**
-- **开发回路不得省全量的两种情形**:① 动了共享测试设施(`test/common/**` · `test/tools/**` · `gates/**` · `build/**` · `dev/**` · 门禁脚本 · `package.json`)—— 跨段污染只有全量暴露 ② 影响面判不出来(改动落在「命令」节任何一条都覆盖不到的位置)—— 此时当轮就跑,不留到提交前
+- **开发回路不得省全量的两种情形**:① 动了共享测试设施(`test/common/**` · `test/tools/**` · `gates/**` · `tools/**` · 门禁脚本 · `package.json`)—— 跨段污染只有全量暴露 ② 影响面判不出来(改动落在「命令」节任何一条都覆盖不到的位置)—— 此时当轮就跑,不留到提交前
 - **筛段不会静默假通过**:筛选词命中 0 个段即判红(`test/common/runner.js` 的段筛选三态契约),故「只跑受影响段」不存在「筛选词拼错 → 打印全部 0 段通过 → 退出 0」的失效形态
 - 全量验收在链内的唯一一次是 `verify:ci` 的 `test:coverage`(见 [adr-016](adr/adr-016-门禁链内全量验收只跑一遍.md)),本条不与它重复;发版前的全套走 `verify:release`,不由本条覆盖
 - **`verify:ci` 只由主会话在推送前跑一次,子代理一律不跑** —— 它把十余步门禁串成一条,多条并行泳道会让同一串门禁被各跑一遍,耗时翻倍且没有新增结论。子代理跑的是上面「开发回路」那一档(定向门禁 + 受影响验收段),并在交回时**明确写出「未跑 verify:ci」**,不默认它绿。下面第 2 条「动了共享测试设施当轮就跑全量」对子代理仍然成立,但那里的「全量」指**受影响段**,链级 `verify:ci` 由主会话在推送前统一兜底 —— 收尾判完成仍以 `verify:ci` 全绿为准,子代理的自证不能替代它

@@ -2,7 +2,7 @@
 /**
  * 门禁/测试入口的失败路径守卫(五个 Electron 入口共用**一份**实现,判定层纯函数 + 壳层薄):
  *   gates/geometry/check-geometry.mjs(几何门禁,兼 worker 角色)、gates/geometry/geometry/worker.mjs(角色体)、
- *   dev/visual-check.mjs(视觉自查)、test/acceptance.mjs(验收父进程)、
+ *   tools/visual-check.mjs(视觉自查)、test/acceptance.mjs(验收父进程)、
  *   test/common/segment-host.mjs(段子进程宿主)。
  *
  * 为什么需要它(Electron 43 + ESM 主入口,以下三条均为本机实测事实,非推断):
@@ -25,7 +25,7 @@
  * feedback 段会),本守卫装的兜底监听会被摘掉,此后回到 Electron 默认的 warn+挂住 ——
  * 真实失败仍由壳层的 try/catch 覆盖,兜底监听只是纵深防御。
  *
- * 依赖方向:本模块属 test/common(测试与门禁的公共底座,受 typecheck 门禁),gates/ 与 dev/ 侧
+ * 依赖方向:本模块属 test/common(测试与门禁的公共底座,受 typecheck 门禁),gates/ 与 tools/ 侧
  * 入口反向引用它 —— 与既有 `gates/geometry/geometry/worker.mjs → shared/geometry/*` 同向。
  *
  * 用法(壳层永不 reject:任何失败都以非零退出码收场,不会退化成 unhandled rejection 黑洞):

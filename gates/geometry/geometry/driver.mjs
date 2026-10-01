@@ -35,11 +35,11 @@ export { root };
 /** 入口脚本绝对路径:worker 子进程拉起的就是它。亦按根拼,不按本文件位置回退 */
 export const entryScriptPath = path.join(ROOT, "gates", "geometry", "check-geometry.mjs");
 export const distIndex = path.join(root, "dist", "renderer", "index.html");
-export const preload = path.join(root, "dev", "visual-preload.cjs");
+export const preload = path.join(root, "tools", "visual-preload.cjs");
 /**
  * 递进 preload 的项目根旗标(ADR-040):桩不自算根,根只能由注入方给。
- * 通道取 additionalArguments(与 dev/visual-about-preload.cjs 的 --m2w-version 同款),
- * 两个注入方(本门禁 worker 与 dev/visual-check.mjs)共用这一个前缀,桩侧只认这一种写法。
+ * 通道取 additionalArguments(与 tools/visual-about-preload.cjs 的 --m2w-version 同款),
+ * 两个注入方(本门禁 worker 与 tools/visual-check.mjs)共用这一个前缀,桩侧只认这一种写法。
  */
 export const ROOT_ARGUMENT = `--m2w-root=${root}`;
 const styleDir = path.join(root, "src", "renderer", "style");

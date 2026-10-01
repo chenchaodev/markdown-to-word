@@ -27,7 +27,7 @@
  *
  * 为什么住在 gates/artifacts/(ADR-049):本脚本断言仓库状态(与 package.json 打包配置对账、
  * 有专属守护段、在 verify:release 链内),按 ADR-038「层按断言对象分」属门禁树。原先住在
- * build/(不产生断言的产物生产树),那一层定位对它不成立。
+ * build/(不产生断言的产物生产树,ADR-050 已与 dev/ 合并为 tools/),那一层定位对它不成立。
  *
  * 用法: node gates/artifacts/clean-artifacts.mjs --target <dist|release|all> [--dry-run]
  */

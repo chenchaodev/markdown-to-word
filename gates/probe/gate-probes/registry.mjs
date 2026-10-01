@@ -49,14 +49,14 @@ export const AGGREGATOR_SCRIPTS = Object.freeze(["verify:ci", "verify:release", 
  * 理由缺失等于把一道真门禁悄悄挪进豁免,而那正是本注册表要防的失效形态。
  */
 export const TOOLCHAIN_SCRIPTS = Object.freeze({
-  build: "tsc + 资源拷贝:判定体是 TypeScript 编译器与 build/copy-renderer.mjs,本仓不持有判据",
+  build: "tsc + 资源拷贝:判定体是 TypeScript 编译器与 tools/copy-renderer.mjs,本仓不持有判据",
   typecheck: "tsc --noEmit 两份配置:判定体是编译器,本仓不持有判据",
   lint: "eslint:判定体是 ESLint 规则集,本仓不持有判据",
 });
 
 /** 第三方工具的文件级步骤(同上) */
 export const TOOLCHAIN_FILES = Object.freeze({
-  "build/copy-renderer.mjs": "静态资源拷贝:无判据,只搬运 renderer 资产",
+  "tools/copy-renderer.mjs": "静态资源拷贝:无判据,只搬运 renderer 资产",
   "test/acceptance.mjs": "验收段入口:由各段自证,段内断言即判据(段本身不在本注册表口径内)",
 });
 

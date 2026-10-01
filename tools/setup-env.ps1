@@ -1,7 +1,7 @@
 # 一次性设置 Electron 镜像为用户级环境变量（本地开发用，GitHub Actions 不需要）
 #
 # 用法（PowerShell）：
-#   powershell -ExecutionPolicy Bypass -File dev/setup-env.ps1
+#   powershell -ExecutionPolicy Bypass -File tools/setup-env.ps1
 #
 # 说明：
 # - 不要在根 .npmrc 写 electron_mirror / electron_builder_binaries_mirror：

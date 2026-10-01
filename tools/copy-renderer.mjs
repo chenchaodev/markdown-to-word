@@ -111,7 +111,7 @@ function main(argv) {
     return 1;
   }
   if (options.help) {
-    console.log("用法: node build/copy-renderer.mjs [--src <dir>] [--out <dir>]");
+    console.log("用法: node tools/copy-renderer.mjs [--src <dir>] [--out <dir>]");
     return 0;
   }
   const srcDir = path.resolve(root, options.src ?? DEFAULT_SRC_DIR);

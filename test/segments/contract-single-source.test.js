@@ -331,9 +331,9 @@ export async function run() {
     "相对解析锚点:上跳两级(取 gates/artifacts/clean-artifacts.mjs → ../../shared/paths.js 这条真实 import)",
   );
   assertEq(
-    resolveRelativeSpecifier("build/copy-renderer.mjs", "../shared/cli.mjs"),
+    resolveRelativeSpecifier("tools/copy-renderer.mjs", "../shared/cli.mjs"),
     "shared/cli.mjs",
-    "相对解析锚点:上跳一级(取 build/copy-renderer.mjs → ../shared/cli.mjs 这条真实 import)",
+    "相对解析锚点:上跳一级(取 tools/copy-renderer.mjs → ../shared/cli.mjs 这条真实 import)",
   );
   assertEq(
     resolveRelativeSpecifier("gates/smoke/smoke-report/process.mjs", "../../../shared/fsx.mjs"),
@@ -380,7 +380,7 @@ export async function run() {
   // 1. 扫出被逐字节复制进沙箱的文件:事实源 = 代码里的复制调用(不硬编码任何文件名)
   //    扫描面含 shared:项目根单源 shared/paths.js 如今被 6 处复制点复制进沙盒
   //    (ADR-040),漏了它会让这些副本判「源文件不可读」(texts 里查不到)。
-  const sources = listJsSources(repoRoot, ["test", "gates", "build", "dev", "shared"]);
+  const sources = listJsSources(repoRoot, ["test", "gates", "tools", "shared"]);
   const scan = scanCopySites(sources);
   /** 仓库相对 POSIX 路径 → 文本 */
   const texts = new Map(sources.map((f) => [f.path, f.text]));

@@ -4,7 +4,7 @@
 
 ## 硬约束(勿回退)
 - 技术栈:Node.js + TypeScript,ESM,Node >= 22.13(勿回退;typescript-eslint 用 TS6 API,`typescript` 别名 `@typescript/typescript6`;`tsc` 为 TS7,`@typescript/native` 别名)
-- 镜像:根 `.npmrc` 仅含 registry,勿加 electron 镜像键(npm 警告 + electron-builder 读不到);GUI Electron 43,本地开发经 `dev/setup-env.ps1` 设 `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR` 用户级环境变量(写死勿回退,CI 不需要)
+- 镜像:根 `.npmrc` 仅含 registry,勿加 electron 镜像键(npm 警告 + electron-builder 读不到);GUI Electron 43,本地开发经 `tools/setup-env.ps1` 设 `ELECTRON_MIRROR` 与 `ELECTRON_BUILDER_BINARIES_MIRROR` 用户级环境变量(写死勿回退,CI 不需要)
 - 核心依赖选型:docx 路线 = `docx` 9.x + remark 自研渲染管线;pdf 路线 = markdown-it + HTML 模板 + Electron `printToPDF`(勿回退 md-to-pdf);事实与踩坑见 `docs/evidence/` 技术事实层;钉死:markdown-it 14.3(勿升 15,tasklist peer 冲突)、@mdit/plugin-tasklist、@mdit/plugin-footnote 1.0.2、highlight.js、electron-builder 26.15.3(勿用 27 alpha)
 - 架构方向:转换核心 `src/core/` 与 GUI(`src/main/` + `src/renderer/`)分离(便于测试与复用)
 - 其他高风险配置:docx 字体必走 `src/core/docx/theme.ts` 集中配置(中文 eastAsia),禁散落硬编码;分页符固定 `<!-- page-break -->`(不占 `---` 的 hr 语义);landscape 传原始(纵向)值,勿手动交换(库自动交换)
