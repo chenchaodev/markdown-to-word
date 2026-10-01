@@ -95,5 +95,5 @@
 | [20261001-002034-verifyci耗时诊断.md](20261001-002034-verifyci耗时诊断.md) | — | verifyci耗时诊断 | [REQ.md](../REQ.md) |
 | [20261001-050000-测试效率CI实测.md](20261001-050000-测试效率CI实测.md) | — | 测试效率CI实测 | [REQ.md](../REQ.md) |
 | [20261001-120000-门禁锚点与src耦合诊断.md](20261001-120000-门禁锚点与src耦合诊断.md) | — | 门禁锚点与src耦合诊断 | [REQ.md](../REQ.md) |
-| [20261001-160000-test-common-helpers-EPERM现场取证.md](20261001-160000-test-common-helpers-EPERM现场取证.md) | — | test-common-helpers-EPERM现场取证 | — |
+| [20261001-160000-test-common-helpers-EPERM现场取证.md](20261001-160000-test-common-helpers-EPERM现场取证.md) | — | test-common-helpers-EPERM现场取证 | [REQ.md](../REQ.md) |
 | [20261001-203000-CHANGELOG与Release版本对账.md](20261001-203000-CHANGELOG与Release版本对账.md) | — | CHANGELOG与Release版本对账 | [REQ.md](../REQ.md) |
