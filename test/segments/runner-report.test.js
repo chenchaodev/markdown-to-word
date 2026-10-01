@@ -13,8 +13,7 @@
  * 4. 旧段兼容:未接入 case 契约的段抛错仍记段级失败(error.stack 原样、结果无 cases 键);
  * 5. 崩溃/悬挂隔离:硬崩段(未回传即退出)与悬挂段(永不 settle)只终结自身,
  *    其后的段照常执行,整轮不产出 hung(超时后父进程真杀进程树,无残留悬挂段);
- * 6. 超时前进度:悬挂段超时前进度已结算的 case 经回传保留在失败日志/段结果里(夹具在进入悬挂态
- *    前先写 ready 标记,超时判定以「桩自报 ready」为前提,不再靠「预算够不够跑完启动」推断);
+ * 6. 超时前进度:悬挂段超时前进度已结算的 case 经回传保留在失败日志/段结果里;
  * 7. 段间状态隔离 + userData:每段独立 userData 目录(互不可见),且前一段目录在其
  *    子进程退出后即被删除;模块/全局状态不跨段;
  * 8. M2W_ONLY 生效:筛选在父进程完成,子进程只跑被选中的段;
@@ -100,25 +99,10 @@ const ALL_SEGS = [FAIL_SEG, PASS_SEG, CRASH_SEG, ENV_SEG, HANG_SEG, LEGACY_SEG, 
 /** 同进程回退模型下只造的三段(无崩溃/悬挂/状态隔离夹具,见 setupSandbox) */
 const BASE_SEGS = [FAIL_SEG, PASS_SEG, ENV_SEG, LEGACY_SEG];
 
-/**
- * 隔离自测的单段硬超时**上限**:不跑悬挂夹具的嵌套编排(单段筛选那几轮、回退模型)都用它;
- * 跑悬挂夹具的那一轮用实测推导出的预算(见 deriveHangBudgetMs),本值在那一轮退化为封顶 ——
- * 即本机确实慢到推导预算够不着时,自动落回本值,那一轮的行为与「固定 8s」逐字一致。
- */
+/** 隔离自测的单段超时:悬挂段要真被杀掉,其余段(仅导入+几行断言)须远快于此 */
 const ISOLATED_TIMEOUT_MS = 8000;
 /** 同进程回退模型的自测超时(只跑三段无悬挂的段;留余量防机器慢时误判) */
 const INPROC_TIMEOUT_MS = 5000;
-/**
- * 悬挂段等待预算的余量倍数:预算 = 实测同型段耗时 × 本倍数。
- * 用倍数而非绝对毫秒,是因为「够不够跑完」只在本机成立 —— 绝对值换个机器就可能不成立,
- * 而倍数把这个判据挪到「同一次运行里实测到的冷启动成本」上,本机与 CI 同一条公式。
- */
-const BOOT_BUDGET_FACTOR = 8;
-/**
- * 悬挂段等待预算的下限:与 BOOT_BUDGET_FACTOR 配套,保证「预算 ≥ 倍数 × 实测」在探针极快时
- * 仍成立(实测 ≤ 下限/倍数 时由下限兜住,倍数关系不失效)。
- */
-const MIN_BOOT_BUDGET_MS = BOOT_BUDGET_FACTOR * 250;
 
 const SNAPSHOT_BYTES = "M2W-FAILURE-SNAPSHOT-BYTES";
 /** 沙盒内记录各段 userData 目录的文件名(段间隔离证据,由段自己写) */
@@ -126,8 +110,6 @@ const A_USERDATA_FILE = "state-a-userdata.txt";
 const B_USERDATA_FILE = "state-b-userdata.txt";
 /** 沙盒内记录段宿主 env 里并发变量取值的文件名(嵌套编排不消费外层并发面的证据) */
 const CONCURRENCY_FILE = "env-report-concurrency.txt";
-/** 沙盒内悬挂夹具自报「已进入永不 settle 的悬挂态」的文件名(硬超时判定的可观测前提) */
-const HANG_READY_FILE = "hang-ready.txt";
 
 /**
  * 段结果项(runAll 汇总项的类型;契约单源在 test/common/runner.js,此处按签名派生)。
@@ -293,25 +275,16 @@ function setupSandbox(isolating) {
       "",
     ].join("\n"),
   );
-  // 悬挂段:先结算两个 case(验证超时前进度回传),再在写完 ready 标记后永不 settle
+  // 悬挂段:先结算两个 case(验证超时前进度回传),再永不 settle
   writeSegment(
     "hang.test.js",
     [
-      `import fs from "node:fs";`,
-      `import path from "node:path";`,
-      `import { fileURLToPath } from "node:url";`,
       `import { createCaseSuite } from "${CASE_MODULE}";`,
-      "",
-      `const sandbox = path.dirname(fileURLToPath(import.meta.url));`,
       "",
       "export async function run() {",
       "  const suite = createCaseSuite();",
       '  await suite.case("超时前的 case 1", () => {});',
       '  await suite.case("超时前的 case 2", () => {});',
-      // ready 标记必须落在「进入悬挂态」那一行之前:父进程据此判定桩确实挂住了,
-      // 于是「这段是否真悬挂」不再靠「预算是否够跑完启动」间接推断(那是换一个机器就可能
-      // 不成立的时长判据)。标记走文件而非 stdout:串行轮次段输出是继承父进程的,父进程读不到。
-      `  fs.writeFileSync(path.join(sandbox, "${HANG_READY_FILE}"), "ready", "utf8");`,
       '  console.log("[selftest] hang 段:进入永不 settle 的悬挂态");',
       "  await new Promise(() => {});",
       "}",
@@ -360,46 +333,6 @@ function setupSandbox(isolating) {
       "",
     ].join("\n"),
   );
-}
-
-/**
- * 悬挂段的等待预算 = 「实测同型段的冷启动成本 × 余量倍数」,夹在下限与原上限之间。
- *
- * 为什么必须实测而不是拍一个更小的毫秒数:悬挂夹具要被硬超时杀掉,判据是「桩挂住了、
- * 父进程跑满预算才真杀它」。若预算只是个更小的绝对值,「预算够不够让桩走到悬挂态」就成了一条
- * 只在本机成立的时长判据 —— 换台更慢的机器(CI runner)就可能「桩还没挂住就被杀」,而症状会
- * 伪装成「超时前进度丢了」,判红原因与被测行为无关(同类坑见 docs/evidence/20261001-002034
- * 第十二节 `measureStable`:判据在本机成立、在 CI 数学上不可满足)。
- *
- * 可达性:预算恒 ≥ BOOT_BUDGET_FACTOR × probeMs,而 probeMs 是**同一次运行、同一嵌套编排口径**
- * 下实测出来的同型段耗时(同样冷启 Electron、同样 import case 契约模块、同样跑几个 case),
- * 故余量是「相对本机的倍数」而非「绝对时长」,本机与 CI 同一条公式成立。两条边界让它不会
- * 反而变危险:探针极快时由下限兜住(倍数关系不失效),探针慢到 8 × probeMs ≥ 上限时预算
- * 自动等于原值,那一轮与改动前逐字一致。
- * @returns {Promise<{ probeMs: number, budgetMs: number }>} 实测探针耗时与推导出的预算
- */
-async function deriveHangBudgetMs() {
-  // 探针用 cases-pass:与悬挂夹具同型(同 import、同量级的 case),故它的耗时可作悬挂夹具
-  // 走到悬挂态所需时间的上界估计。放在主 runAll 之前跑,是本段第一个嵌套子进程 ——
-  // 最冷的一次,测出的值偏大 ⇒ 预算偏保守。
-  const probe = await runAll([SANDBOX], { only: "cases-pass", segmentTimeoutMs: ISOLATED_TIMEOUT_MS });
-  const probeResult = probe.results.length === 1 ? at(probe.results, 0) : null;
-  // 探针段必须真的跑通:否则 probeMs 反映的是失败/超时(可能远小于启动成本),拿它推预算会
-  // 把预算压到「刚够跑完探针」的程度,余量论证直接失效,故这里直接判红而不是照用。
-  if (probeResult === null || probeResult.file !== PASS_SEG || !probeResult.ok) {
-    fail(
-      `同型探针段未正常跑通,预算无从推导(实际 ${
-        probe.results.map((r) => `${r.file}:${r.ok ? "ok" : errorStack(r.error) || String(r.error)}`).join(", ") || "无"
-      })`,
-    );
-  }
-  const probeMs = probeResult.ms;
-  const budgetMs = Math.min(ISOLATED_TIMEOUT_MS, Math.max(MIN_BOOT_BUDGET_MS, probeMs * BOOT_BUDGET_FACTOR));
-  console.log(
-    `[selftest] 悬挂段等待预算:实测同型探针段 ${probeMs}ms × ${BOOT_BUDGET_FACTOR} → ` +
-      `预算 ${budgetMs}ms(下限 ${MIN_BOOT_BUDGET_MS}ms,上限 ${ISOLATED_TIMEOUT_MS}ms)`,
-  );
-  return { probeMs, budgetMs };
 }
 
 function cleanupSandbox() {
@@ -467,12 +400,10 @@ export async function run() {
   setupSandbox(isolating);
   try {
     /* ---------- 1. 隔离模型(默认):崩溃/悬挂只终结自身,其余段照常 ---------- */
-    // 悬挂夹具的等待预算先实测同型段再推导(仅隔离模型有悬挂夹具;回退模型用原值)
-    const hang = isolating ? await deriveHangBudgetMs() : { probeMs: 0, budgetMs: INPROC_TIMEOUT_MS };
     // only: null = 本段显式声明「段内自跑不筛选」:顶层筛选词(外层 harness 的 M2W_ONLY)
     // 属选择面,不得渗进本段的发见面,否则本段在 M2W_ONLY 单段调试下必然滤空沙盒段
     const { results, hung } = await runAll([SANDBOX], {
-      segmentTimeoutMs: isolating ? hang.budgetMs : INPROC_TIMEOUT_MS,
+      segmentTimeoutMs: isolating ? ISOLATED_TIMEOUT_MS : INPROC_TIMEOUT_MS,
       only: null,
     });
     const byFile = new Map(results.map((r) => [r.file, r]));
@@ -512,15 +443,6 @@ export async function run() {
         fail("崩溃段失败日志应含段级错误(异常退出)");
       }
       const hangResult = resultOf(byFile, HANG_SEG);
-      // 超时判定以「桩自报 ready」为前提,而不是靠「预算够不够跑完启动」间接推断:
-      // 标记缺失 = 预算耗尽时桩还没走到悬挂态,此时下面「超时前进度」那几条断言全都无意义,
-      // 须先把病因(预算是多少 / 实测同型段多少 / 悬挂段实耗多少)说清楚,别让它伪装成 case 丢失。
-      if (!fs.existsSync(path.join(SANDBOX, HANG_READY_FILE))) {
-        fail(
-          `悬挂夹具未上报 ready(预算耗尽前未进入悬挂态,超时前进度断言不适用):` +
-            `预算 ${hang.budgetMs}ms,实测同型探针段 ${hang.probeMs}ms,悬挂段实耗 ${hangResult.ms}ms`,
-        );
-      }
       if (hangResult.timedOut !== true) {
         fail(`悬挂段应标 timedOut,实际 ${JSON.stringify(hangResult.timedOut)}`);
       }
@@ -853,7 +775,6 @@ export async function run() {
     removeSandboxFile(A_USERDATA_FILE);
     removeSandboxFile(B_USERDATA_FILE);
     removeSandboxFile(CONCURRENCY_FILE);
-    removeSandboxFile(HANG_READY_FILE);
     cleanupSandbox();
   }
 }

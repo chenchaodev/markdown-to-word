@@ -158,14 +158,12 @@ function writeRedirectedScript(root, valueLiteral, fileName = "clean-artifacts.r
   const redirected = SCRIPT_SOURCE.replace(line, replacement);
   assert(redirected !== SCRIPT_SOURCE, "常量改写未生效");
   assert(redirected.replace(replacement, line) === SCRIPT_SOURCE, "除 TARGET_DIRS 行外脚本应逐字节不变");
-  fs.writeFileSync(path.join(root, "build", fileName), redirected, "utf8");
-  // 这里不再跑 `node --check`:改写产物紧接着就被 runClean 真跑,而本段每一处改写的落点都
-  // 带运行期断言,语法错必然判红,额外的语法门只是多一次 Node 冷启动。
-  // ① 负向用例(受保护目录 / 上跳段 / 绝对路径 / 空路径段 / 非目录 / 符号链接)走 assertFailure:
-  //    它要求退出码 1 **且** 输出命中领域诊断正则。语法错时 ESM 在解析阶段就抛,脚本体一行都
-  //    跑不到,输出只会是 Node 的 SyntaxError 与调用栈 —— 领域正则一条都命中不了,连
-  //    「不得回吐调用栈」那条也会拦下。所以「因错误原因失败」已被诊断正则挡住,不会蒙混过关。
-  // ② 正向锚点要求退出码 0 且目标目录真被删;语法错只会得到退出码 1,同样判红。
+  const target = path.join(root, "build", fileName);
+  fs.writeFileSync(target, redirected, "utf8");
+  // 夹具自身先过语法门:改写出错也会以退出码 1 结束,若不校验就会让「因错误原因失败」
+  // 的负向用例蒙混过关(诊断文案不匹配也拦不住这种「假通过」以外的读解困难)。
+  const checked = spawnSync(NODE, ["--check", target], { encoding: "utf8", timeout: 30_000 });
+  assert(checked.status === 0, `改写后的夹具脚本语法非法(${fileName}):${checked.stderr}`);
   return fileName;
 }
 
