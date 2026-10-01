@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 供应链门禁段(位于 test/segments/ = 跨域守护段;被测为 gates/supply/supply/ 下的
+ * 供应链门禁段(位于 test/core/ = 跨域守护段;被测为 gates/supply/supply/ 下的
  * SCA / SBOM / 许可证脚本,纯 Node 逻辑,不经 dist 编译产物):
  * - sca-audit.mjs:npm audit(npmmirror 端点)两棵依赖树 + OSV 替代源;
  *   真实漏洞判红、扫描源不可用判 unavailable(绝不冒充「无漏洞」)、production/dev 区分

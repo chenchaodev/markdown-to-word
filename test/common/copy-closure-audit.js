@@ -12,7 +12,7 @@
  * 下层,不 import 任何 node: 内建模块(零 I/O:不读文件、不遍历目录,只吃字符串)。
  * 目录遍历与读文件留在守护段(它已有 fs/path)。
  *
- * ⚠ 已知覆盖边界与行数口径:见守护段 test/segments/contract-single-source.test.js 的文件头
+ * ⚠ 已知覆盖边界与行数口径:见守护段 test/gates/contract-single-source.test.js 的文件头
  *   「沙盒副本闭包 · 已知覆盖边界」小节 —— 那里是唯一权威处(动态列表 / 多层别名 / 整树复制
  *   三类复制源只登记不判红),本文件不重复,避免两份说法漂移。
  */
@@ -50,12 +50,12 @@ export const COPY_MECHANISMS = [
 export const SANDBOX_ENTRY_EVIDENCE = [
   {
     rel: "gates/artifacts/check-unpacked-smoke.mjs",
-    via: "test/segments/install-smoke.test.js",
+    via: "test/gates/install-smoke.test.js",
     how: "runScript(root, \"check-unpacked-smoke.mjs\", …) 在沙盒内执行",
   },
   {
     rel: "gates/artifacts/check-install-smoke.mjs",
-    via: "test/segments/install-smoke.test.js",
+    via: "test/gates/install-smoke.test.js",
     how: "runScript(root, \"check-install-smoke.mjs\", …) 在沙盒内执行",
   },
   {

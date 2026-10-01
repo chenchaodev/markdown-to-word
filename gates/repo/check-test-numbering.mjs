@@ -14,14 +14,23 @@
 //   node gates/repo/check-test-numbering.mjs
 //   node gates/repo/check-test-numbering.mjs --help
 //
-// ---- 扫描面(单一来源:test/common/test-common-surface.js)----
-//   test/segments/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
-//   test/common/**/*.js · test/tools/**/*.{js,mjs}
+// ---- 扫描面(单一来源:shared/test-common-surface.js)----
+//   test/core/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
+//   test/gates/**/*.test.js · test/common/**/*.js
 // 排除 test/fixtures(被测样例数据本身,不是断言)。排除写成显式清单:将来有人把
 // 扫描面扩到整个 test/ 时,该目录必须仍然在外,而不是靠「它恰好不在目标里」蒙对。
 // 清单与 walker(递归列目录)都从单源取,本文件不再自持一份:同一份清单写两遍的代价是
 // 「新增测试子目录要改 N 处,漏改的那处扫不到且静默恒绿」。
 // test/fixtures 之外,单源里也没有登记其他排除项。
+//
+// ---- 段目录的判据:镜像一棵被断言的树(不是「恰好四个目录」)----
+// 段目录名是**被测主体**的名字,不是执行单元的名字:每个段目录必须与顶层一棵被断言的树
+// 同名(core→src/core、main→src/main、renderer→src/renderer、gates→gates/**)。该判据
+// 由 checkSegmentMirrors 机械判定(判据 1b),它取代早先的「三目录恒等」表述:
+//   - 新增被断言的树 ⇒ 配一个同名段目录,天然满足,不必改任何判据文字;
+//   - 新增杂物抽屉(如 test/pending/)⇒ 顶层没有同名树,判红并点名。
+// 枚举退化成「随手加一行」是这棵树反复在治的失效形态,镜像判据把它挡在机械层,不依赖
+// 「记得同步文档」。common / fixtures / acceptance 三个名字被显式排除在镜像面外。
 //
 // ---- 匹配规则:只在字符串字面量内部命中 ----
 // 字母表:ASCII 编号 \b(?:B1[0-3]|B[1-9]|F[1-9]|C[1-4]|D-\d{2}|OPT-\d+(?:\.\d+)?|D[1-5])\b
@@ -55,7 +64,9 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
+  checkSegmentMirrors,
   checkSurfaceEquality,
+  formatMirrorMismatch,
   formatSurfaceMismatch,
   judgeScanFloor,
   listScanFiles,
@@ -113,7 +124,7 @@ export const ALLOWLIST = Object.freeze([
     match: (hit) => hit.token === 'B5' && /(?:paper|枚举外值)/.test(`${hit.lineSource} ${hit.literal}`),
     why: 'B5 与 JIS 纸型同形:此处的 B5 是 pageSetup 的纸型取值(`paper: "B5"` 输入值、'
       + '「paper 枚举外值(B5)应回退默认」这类断言消息),不是规划编号。实测该形态跨文件出现'
-      + '(test/main/settings.test.js 与 test/segments/page-setup.test.js 各若干处),故按内容'
+      + '(test/main/settings.test.js 与 test/core/page-setup.test.js 各若干处),故按内容'
       + '特征(所在行/字面量含 paper 或「枚举外值」+ 编号恰为 B5)放行而不按文件登记;同一文件里'
       + '不带 paper 语义的 B5/B13 仍照报。',
   },
@@ -127,7 +138,7 @@ export const ALLOWLIST = Object.freeze([
   },
   {
     id: 'cross-ref-scenario-labels-in-comments',
-    file: 'test/segments/cross-ref.test.js',
+    file: 'test/core/cross-ref.test.js',
     // 注释不在扫描面内,故本条永不命中;登记它是为了把「这些 B* 是该文件自述用的场景
     // 序号,不是规划编号」写进门禁,防止有人按「看起来是编号」把它们清掉而破坏文件自述。
     match: () => false,
@@ -397,6 +408,18 @@ export async function main(argv = []) {
       `[numbering:fail] 扫描面等式不成立:${formatSurfaceMismatch(surface)}`
       + '(声明数必须等于实测数:新增测试子目录须登记进 shared/test-common-surface.js 的 '
       + 'SCAN_TARGETS,或按「它不是测试代码」的理由登记进 EXCLUDED_DIRS;下界判据管不到漏目录)',
+    );
+    return 1;
+  }
+
+  // 判据 1b:段目录**镜像一棵被断言的树**。等式管「声明与磁盘一致」,这条管「声明本身
+  // 合法」—— 两边都齐了才谈得上扫全:枚举里混进一个不镜像任何树的目录(如暂存区),
+  // 等式与下限都会照样判绿。
+  const mirror = checkSegmentMirrors(projectRoot);
+  if (!mirror.ok) {
+    console.error(
+      `[numbering:fail] 段目录镜像判据不成立:${formatMirrorMismatch(mirror)}`
+      + '(段目录须与顶层一棵被断言的树同名;新增被断言的树配同名段目录,勿另开暂存区)',
     );
     return 1;
   }

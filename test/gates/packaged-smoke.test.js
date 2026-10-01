@@ -1,11 +1,11 @@
 // @ts-check
 /**
- * 打包产物冒烟契约段(跨域守护,住 test/segments/):守护「解包/安装产物能以 --smoke
+ * 打包产物冒烟契约段(住 test/gates/ = 跨域守护段):守护「解包/安装产物能以 --smoke
  * 自证健康」这条发布链路的**契约面**,不启动真实可执行文件(进程级判定由
- * test/segments/install-smoke.test.js 在沙盒里覆盖,真实产物由
+ * test/gates/install-smoke.test.js 在沙盒里覆盖,真实产物由
  * gates/artifacts/check-unpacked-smoke.mjs / check-install-smoke.mjs 取证)。
  *
- * 为什么要有本段:冒烟入口一度是 dev-only 设施(源码在 test/tools/,build.files 只收
+ * 为什么要有本段:冒烟入口一度是 dev-only 设施(源码在 test/ 下,build.files 只收
  * dist/**),打包产物收到 --smoke 必以退出码 1 结束,而源码与 dist 全绿 —— 只有把
  * 「入口随包 + 判定面一致 + 不夹带 dev 代码」写成断言,这类静默回归才拦得住。
  *
@@ -14,9 +14,8 @@
  *    (gates/smoke/smoke-proc.mjs 的 SMOKE_MARKERS)逐条恒等,且标记字面量真的出现在编译
  *    产物里(常量没被改名/摇掉);并用真实判定函数 collectSmokeProblems 锁「退出码
  *    0 + 五条标记 = 通过 / 非零 = 判红」这条判定口径。
- * 2. 单一实现:冒烟逻辑只有 src/main/smoke.ts 一份 —— dev 侧入口
- *    (test/tools/smoke/smoke.mjs)只做转调(runSmoke 同一函数对象 + 无实现痕迹),
- *    主进程 --smoke 分支直连 dist/main/smoke.js(不再经 test/ 路径),单实例锁豁免仍在。
+ * 2. 单一实现:冒烟逻辑只有 src/main/smoke.ts 一份,主进程 --smoke 分支直连
+ *    dist/main/smoke.js(编译产物恒在包内,不经 test/ 路径),单实例锁豁免仍在。
  * 3. 打包面纪律:编译产物内不得出现 test/ 路径引用与仓库相对定位(import.meta.url /
  *    上跳 import);package.json build.files 只收 dist/** 与 package.json,不得夹带 test/**;
  *    冒烟产物目录按 app 形态解析(dev → <应用根>/output/smoke,打包 → 系统临时目录一次性
@@ -37,9 +36,7 @@ import {
   SMOKE_MARKER,
   describePdfDegradation,
   resolveSmokeOutDir,
-  runSmoke,
 } from "../../dist/main/smoke.js";
-import * as devSmokeEntry from "../tools/smoke/smoke.mjs";
 import { ROOT } from "../common/paths.js";
 import { removeTree } from "../common/temp-resource.js";
 
@@ -47,8 +44,6 @@ import { removeTree } from "../common/temp-resource.js";
 const SMOKE_JS = path.join(ROOT, "dist", "main", "smoke.js");
 /** 源码路径 */
 const SMOKE_TS = path.join(ROOT, "src", "main", "smoke.ts");
-/** dev 侧薄封装入口 */
-const DEV_ENTRY = path.join(ROOT, "test", "tools", "smoke", "smoke.mjs");
 /** 降级断言专用的一次性目录名前缀(与段内业务临时目录 m2w-* 区分) */
 const SANDBOX_PREFIX = "m2w-packaged-smoke-";
 /** 公式样式缺失的警告键(pdf 渲染层上报,与 src/main/smoke.ts 的判定同源) */
@@ -142,38 +137,17 @@ export async function run() {
     );
   }
 
-  // ================= 2. 单一实现(dev 侧薄封装 + 主进程直连) =================
+  // ================= 2. 单一实现(主进程直连 + 实现唯一出处) =================
   {
-    assert(
-      devSmokeEntry.runSmoke === runSmoke,
-      "dev 侧入口 test/tools/smoke/smoke.mjs 应直接转调 dist/main/smoke.js 的同一 runSmoke(不得各留一份实现)",
-    );
-    assert(
-      Object.keys(devSmokeEntry).length === 1,
-      `dev 侧入口只应转调 runSmoke 一个出口,实际:${Object.keys(devSmokeEntry).join(", ")}`,
-    );
-    const entryCode = stripJsComments(await fs.readFile(DEV_ENTRY, "utf8"));
-    // 薄封装结构断言:只 import/转调,不含任何冒烟实现痕迹
-    for (const forbidden of ["console.log", "convertImpl", "executeJavaScript", "PDFDocument", "updateSettings"]) {
-      assert(
-        !entryCode.includes(forbidden),
-        `dev 侧入口只应转调实现,不应含「${forbidden}」等实现痕迹(否则逻辑两份,必然漂移)`,
-      );
-    }
-    const entrySpecs = collectSpecifiers(entryCode);
-    assert(
-      entrySpecs.length === 1 && /dist\/main\/smoke\.js$/.test(entrySpecs[0] ?? ""),
-      `dev 侧入口只应 import dist/main/smoke.js 一个模块,实际:${JSON.stringify(entrySpecs)}`,
-    );
-    // 主进程 --smoke 分支:直连 dist/main/smoke.js,不再经 test/ 路径(dev-only 路径进不了包)
+    // 主进程 --smoke 分支:直连 dist/main/smoke.js,不经任何 test/ 路径(dev-only 路径进不了包)
     const indexCode = stripJsComments(await fs.readFile(path.join(ROOT, "src", "main", "index.ts"), "utf8"));
     assert(
       indexCode.includes('import("./smoke.js")'),
       "src/main/index.ts 的 --smoke 分支应动态 import ./smoke.js(编译产物恒在包内)",
     );
     assert(
-      !indexCode.includes("test/tools/smoke"),
-      "src/main/index.ts 不得再引用 test/tools/smoke 路径(打包产物内不存在该路径)",
+      !/test\//.test(indexCode),
+      `src/main/index.ts 不得引用任何 test/ 路径(打包产物内不存在该路径),命中:${JSON.stringify(indexCode.match(/.{0,40}test\/.{0,40}/)?.[0] ?? "")}`,
     );
     assert(
       /!SMOKE\s*&&\s*!app\.requestSingleInstanceLock\(\)/.test(indexCode),
@@ -183,13 +157,13 @@ export async function run() {
       indexCode.includes("app.exit(1)"),
       "冒烟失败路径须以 app.exit(1) 结束(确定性退出码)",
     );
-    // 单一实现的另一面:src 侧不得残留第二份实现(旧实现文件已退化为薄封装)
+    // 单一实现的另一面:src 侧不得残留第二份实现
     const smokeSource = await fs.readFile(SMOKE_TS, "utf8");
     assert(
       smokeSource.includes("export async function runSmoke"),
       "冒烟实现的唯一出处应为 src/main/smoke.ts 的 runSmoke",
     );
-    console.log("[ok] packaged-smoke:2 冒烟实现单一(dev 入口薄转调同一 runSmoke,主进程直连 dist/main/smoke.js)");
+    console.log("[ok] packaged-smoke:2 冒烟实现单一(主进程直连 dist/main/smoke.js,实现唯一出处 src/main/smoke.ts)");
   }
 
   // ================= 3. 打包面纪律(产物不含 test/ 路径与仓库相对定位) =================

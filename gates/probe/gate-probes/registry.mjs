@@ -3,7 +3,7 @@
 // 为什么要有这一层(REQ-110):此前同一道门禁有两种自检载体、两套写法 ——
 //   ① 进程级 CLI(`node gates/**/check-xxx.mjs`),
 //   ② 沙盒探针(`gate-probes/gates/*.mjs` + contract.mjs 的 GATE_IDS/GATE_META 登记),
-//   ③ 验收测试段(`test/segments/*-gate.test.js` + `*.selftest.mjs`,直接 import 门禁模块),
+//   ③ 验收测试段(`test/core/*-gate.test.js` + `*.selftest.mjs`,直接 import 门禁模块),
 // 而**没有任何一处登记「哪道门禁有探针、探针在哪」**。后果是双向的:
 //   - 往门禁链里加一道新门禁,「它没有探针」这件事**不会**被任何人发现(所有门禁的正常路径
 //     都是绿的,没人去看它们会不会红);
@@ -126,7 +126,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/import-boundary.test.js",
+          ref: "test/gates/import-boundary.test.js",
           why: "段内造沙盒负向夹具逐条制造漂移(裸包名未声明、反向层向、越层相对路径等),断言非零退出且命中对应诊断,并有正向锚点证明夹具通路有效",
         },
       ],
@@ -222,7 +222,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/pinned-actions.test.js",
+          ref: "test/gates/pinned-actions.test.js",
           why: "段内沙盒负向夹具逐条制造漂移(浮动 tag / 缺版本注释 / 注释与基线不符 / SHA 非法 / 未登记 action / 陈旧基线条目 / 扫不到 uses:),断言非零退出且命中诊断,并有正向锚点",
         },
       ],
@@ -266,7 +266,7 @@ export const GATE_REGISTRY = Object.freeze(
           ref: "gates/probe/check-coverage-zero.selftest.mjs",
           why: "自检脚本造合成 coverage-summary.json 与基线,逐条注入「0% 文件未登记豁免 / 豁免已失效 / 基线文件缺失 / 基线可解析但结构损坏」并断言判红",
         },
-        { kind: "segment", ref: "test/segments/coverage-gate.test.js", why: "验收段直接 import 判定本体,覆盖静态面(参数向量 / 阈值锚定 / 豁免自洽 / 结构诊断单一来源);动态面须紧跟 test:coverage 取覆盖率数据,故由 selftest 守护而非本段" },
+        { kind: "segment", ref: "test/gates/coverage-gate.test.js", why: "验收段直接 import 判定本体,覆盖静态面(参数向量 / 阈值锚定 / 豁免自洽 / 结构诊断单一来源);动态面须紧跟 test:coverage 取覆盖率数据,故由 selftest 守护而非本段" },
       ],
     },
     coverage: {
@@ -320,7 +320,7 @@ export const GATE_REGISTRY = Object.freeze(
           ref: "build-fresh",
           why: "沙盒探针把一个源码文件的 mtime 推到产物之后,断言门禁判红并给出「请先运行 npm run build」",
         },
-        { kind: "segment", ref: "test/segments/dist-manifest-gate.test.js", why: "验收段对 evaluateFreshness 做纯函数直测,不依赖真实仓库时间" },
+        { kind: "segment", ref: "test/gates/dist-manifest-gate.test.js", why: "验收段对 evaluateFreshness 做纯函数直测,不依赖真实仓库时间" },
       ],
     },
     smoke: {
@@ -344,7 +344,7 @@ export const GATE_REGISTRY = Object.freeze(
           ref: "smoke",
           why: "沙盒探针在副本里真启一次 Electron 冒烟:锚点断言 exit 0 且五条标记齐备,负向用 append 覆写桩掉转换核心,断言非 0 且缺 convert ok 标记",
         },
-        { kind: "segment", ref: "test/segments/packaged-smoke.test.js", why: "验收段锁「退出码 0 + 五条标记 = 通过 / 非零 = 判红」这条判定口径与标记恒等" },
+        { kind: "segment", ref: "test/gates/packaged-smoke.test.js", why: "验收段锁「退出码 0 + 五条标记 = 通过 / 非零 = 判红」这条判定口径与标记恒等" },
       ],
     },
     geometry: {
@@ -359,7 +359,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/geometry-gate.test.js",
+          ref: "test/gates/geometry-gate.test.js",
           why: "验收段按规格合成「应当全绿」的样本后,逐类注入二十余种故障(缺场景 / 不可见 / 视口不匹配 / 档位未生效 / 溢出 / 裁切 / 抽屉错组乱序门控反向 …),断言**失败的规则名与场景**都命中",
         },
       ],
@@ -376,7 +376,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/clean-artifacts-gate.test.js",
+          ref: "test/core/clean-artifacts-gate.test.js",
           why: "验收段以进程级 CLI 语义逐条断言:合法目标预演/删除/幂等、连根 *.tsbuildinfo 只删同名普通文件、越界 target 与缺参一律非零且零删除、目标被占用时的错误码族,并用「只改 TARGET_DIRS 一行」的夹具触达 CLI 上不可触达的删除级守卫",
         },
       ],
@@ -395,7 +395,7 @@ export const GATE_REGISTRY = Object.freeze(
           ref: "dist-manifest",
           why: "沙盒探针在副本里制造 stale 残留 / 缺失 / 内容改写三类漂移,断言门禁逐类判红",
         },
-        { kind: "segment", ref: "test/segments/dist-manifest-gate.test.js", why: "验收段在临时目录造正负夹具,断言退出码与失败原因,并用真实 dist 走一遍生成 → 校验" },
+        { kind: "segment", ref: "test/gates/dist-manifest-gate.test.js", why: "验收段在临时目录造正负夹具,断言退出码与失败原因,并用真实 dist 走一遍生成 → 校验" },
       ],
     },
     asar: {
@@ -409,7 +409,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/release-artifact-gate.test.js",
+          ref: "test/gates/release-artifact-gate.test.js",
           why: "验收段用 @electron/asar 现打夹具包,逐条注入顶层白名单越界 / 必需条目缺失 / KaTeX 与 Mermaid 资源缺失 / 包内版本不一致,断言非零退出且命中对应诊断",
         },
       ],
@@ -425,7 +425,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/release-artifact-gate.test.js",
+          ref: "test/gates/release-artifact-gate.test.js",
           why: "验收段用假字节安装包造夹具,逐条注入非当前版本产物 / latest.yml 的 version/path/size/sha512 漂移,断言非零退出且命中诊断",
         },
       ],
@@ -442,7 +442,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/signature-status.test.js",
+          ref: "test/gates/signature-status.test.js",
           why: "验收段用合成输入做三态词汇的正负锚点(NotTrusted 不得被读成「未签名」),再用于真实打包配置与用户文档的一致性核对",
         },
       ],
@@ -459,7 +459,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/install-smoke.test.js",
+          ref: "test/gates/install-smoke.test.js",
           why: "验收段在沙盒里造解包树与安装包假字节,以进程级调用逐条注入缺失冒烟入口 / 冒烟判红 / 日志留痕等漂移并断言非零退出",
         },
       ],
@@ -477,7 +477,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/env-fingerprint.test.js",
+          ref: "test/gates/env-fingerprint.test.js",
           why: "验收段以合成输入造出与本模块同形的探针结果,断言渲染层的降级/判红判定会抓错(命令探测失败不得被渲染成「一切正常」)",
         },
       ],
@@ -493,7 +493,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/supply-chain.test.js",
+          ref: "test/gates/supply-chain.test.js",
           why: "验收段在临时目录造沙盒 lockfile,注入假的 npm transport 与 OSV fetch,断言真实漏洞判红、扫描源不可用判 unavailable(绝不冒充「无漏洞」)、production/dev 区分正确",
         },
       ],
@@ -522,7 +522,7 @@ export const GATE_REGISTRY = Object.freeze(
           ref: "registry",
           why: "探针对**合成的**注册表逐条注入故障(抽掉一道门禁的探针 / 让新出现的调用点无人登记 / 让判定本体指针指向不存在的导出 / 让探针指向不存在的载体 / 改错接入点),断言本门禁逐条判红 —— 即「注册表自己证明自己不是恒绿」",
         },
-        { kind: "segment", ref: "test/segments/gate-registry-gate.test.js", why: "验收段直接 import 判定本体,对每条判据逐条做正负夹具" },
+        { kind: "segment", ref: "test/gates/gate-registry-gate.test.js", why: "验收段直接 import 判定本体,对每条判据逐条做正负夹具" },
       ],
     },
     docs: {
@@ -562,7 +562,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/install-smoke.test.js",
+          ref: "test/gates/install-smoke.test.js",
           why: "验收段在沙盒里覆盖进程级行为:预演零副作用、显式执行路径、卸载残留清理、失败不留半装状态",
         },
       ],
@@ -576,7 +576,7 @@ export const GATE_REGISTRY = Object.freeze(
       access: "local",
       judgment: { module: "gates/artifacts/pack-size.mjs", export: "evaluate", shaped: "体积判定结果" },
       judgmentNote: "需真实安装包实测;判定逻辑由验收段在链内以沙盒覆盖",
-      probes: [{ kind: "segment", ref: "test/segments/observability.test.js", why: "验收段以沙盒覆盖体积判定(含重复文件归类与跨版本同名文件判定)" }],
+      probes: [{ kind: "segment", ref: "test/gates/observability.test.js", why: "验收段以沙盒覆盖体积判定(含重复文件归类与跨版本同名文件判定)" }],
     },
     "smoke-report": {
       id: "smoke-report",
@@ -586,7 +586,7 @@ export const GATE_REGISTRY = Object.freeze(
       modulePath: "gates/smoke/smoke-report.mjs",
       access: "local",
       judgment: { module: "gates/smoke/smoke-report.mjs", export: "main", shaped: "退出码(0 = 通过)" },
-      probes: [{ kind: "segment", ref: "test/segments/observability.test.js", why: "验收段以沙盒覆盖冒烟报告的解析与脱敏判定" }],
+      probes: [{ kind: "segment", ref: "test/gates/observability.test.js", why: "验收段以沙盒覆盖冒烟报告的解析与脱敏判定" }],
     },
     sbom: {
       id: "sbom",
@@ -599,7 +599,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/supply-chain.test.js",
+          ref: "test/gates/supply-chain.test.js",
           why: "验收段断言 CycloneDX 1.6 SBOM 的离线确定性与 --check 漂移检测(同一 lockfile 两次生成逐字节相同,改动即漂移)",
         },
       ],
@@ -615,7 +615,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/supply-chain.test.js",
+          ref: "test/gates/supply-chain.test.js",
           why: "验收段注入假的 npm audit 输出与 OSV 响应,断言漏洞条目归一、扫描源不可用判 unavailable 而非「无漏洞」",
         },
       ],
@@ -631,7 +631,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/supply-chain.test.js",
+          ref: "test/gates/supply-chain.test.js",
           why: "验收段断言未知许可证判红、copyleft 单列、多选一分支只在生产依赖上生效",
         },
       ],
@@ -647,7 +647,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/segments/supply-chain.test.js",
+          ref: "test/gates/supply-chain.test.js",
           why: "验收段断言逐字复制生产依赖的许可证全文副本,缺项报出且状态记 incomplete(不冒充齐全)",
         },
       ],
@@ -657,9 +657,9 @@ export const GATE_REGISTRY = Object.freeze(
       title: "双管线矩阵键覆盖登记门禁",
       npmScripts: [],
       command: "M2W_ONLY=dual-pipeline-matrix electron test/acceptance.mjs",
-      modulePath: "test/segments/dual-pipeline-matrix.test.js",
+      modulePath: "test/core/dual-pipeline-matrix.test.js",
       access: "local",
-      judgment: { module: "test/segments/dual-pipeline-matrix.test.js", export: "run", shaped: "段结果(段内 assertMatrixShape 为判据面)" },
+      judgment: { module: "test/core/dual-pipeline-matrix.test.js", export: "run", shaped: "段结果(段内 assertMatrixShape 为判据面)" },
       judgmentNote:
         "不是 npm script,而是验收段内的一道门禁(由 M2W_ONLY 单独跑)。判据面是矩阵段自己的 assertMatrixShape"
         + "(含与台账 DUAL_PIPELINE_KEYS 的双向交叉核对),必须真跑 Electron 段 —— 该断言与 26 行 verify 同在段内 run() 里。",

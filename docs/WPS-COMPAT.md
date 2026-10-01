@@ -76,7 +76,7 @@
 > - **一律拒绝**:绝对路径(`C:\...`)、UNC(`\\server\share\...`)、`file://` 及其他带协议 URL、越界 `..`(含 realpath 后指向源目录外的符号链接/junction)。
 > - **拒绝的表现**:不读取、不嵌入、不进 rels;产出「图片加载失败」警告,其余内容照常转换,预检报告同步列出。
 > - **校验顺序**(core `precheck.ts` 单一策略源,main 侧 `image-downloader.ts` 复用):原始 src → 词法根边界 → realpath → 规范根边界。
-> - **媒体类型与体积**:按魔数白名单判定类型(不认扩展名),并受单文件体积上限约束;数值与校验顺序见 `src/core/resource-limits.ts`,回归依据 `test/segments/image-type.test.js`。不符者不嵌入,按「图片加载失败」告警。
+> - **媒体类型与体积**:按魔数白名单判定类型(不认扩展名),并受单文件体积上限约束;数值与校验顺序见 `src/core/resource-limits.ts`,回归依据 `test/core/image-type.test.js`。不符者不嵌入,按「图片加载失败」告警。
 > - **回归依据**:自动断言见 `test/main/image-downloader.test.js`(绝对/UNC/可信根/realpath 越界)与 `test/main/converter.test.js`(用户绝对路径图片不得进入产物 rels)。
 
 ## 问题记录

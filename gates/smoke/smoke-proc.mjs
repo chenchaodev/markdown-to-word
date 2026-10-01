@@ -16,7 +16,7 @@
 //
 // 判定口径说明:冒烟实现已下沉到 src/main/smoke.ts → dist/main/smoke.js(2026-09),
 // 编译产物在 build.files 的 dist/** 白名单内,故随包分发。此前 dev-only 的
-// test/tools/smoke/smoke.mjs 进不了 app.asar,打包产物跑 --smoke 必然失败,现缺口已填。
+// 薄封装入口(源码在 test/ 下)进不了 app.asar,打包产物跑 --smoke 必然失败,现缺口已填。
 // 本文件只负责判定与取证,不放水。
 
 import { spawn, spawnSync } from 'node:child_process';

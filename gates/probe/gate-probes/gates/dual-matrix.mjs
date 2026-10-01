@@ -9,7 +9,7 @@
 // 那是比多花 2.7s 更坏的选择(判定口径必须单源)。
 //
 // 沙盒 = 工程副本(与 fixtures 门禁同一份,见 report.mjs 的 needsTreeSandbox):故障注入
-// 只改副本里的 test/segments/dual-pipeline-matrix.test.js,真实工作树零触碰。
+// 只改副本里的 test/core/dual-pipeline-matrix.test.js,真实工作树零触碰。
 import fs from "node:fs";
 import path from "node:path";
 import { createUserData, disposeUserData, runProcess, userDataEnv, userDataSwitch } from "../../../smoke/smoke-proc.mjs";
@@ -18,7 +18,7 @@ import { finalizeGate, judgeCase } from "../judge.mjs";
 import { resolveElectron } from "../proc.mjs";
 
 /** 被注入故障的段文件(仓库相对;沙盒内改它,真实工作树不碰) */
-const SEGMENT_RELATIVE = "test/segments/dual-pipeline-matrix.test.js";
+const SEGMENT_RELATIVE = "test/core/dual-pipeline-matrix.test.js";
 
 /**
  * 双管线矩阵键覆盖登记门禁探针。

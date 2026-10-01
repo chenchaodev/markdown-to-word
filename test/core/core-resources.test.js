@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * core 取消与资源预算契约(test/segments = src/core 渲染层主题段,经 dist 断言):
+ * core 取消与资源预算契约(test/core = src/core 渲染层主题段,经 dist 断言):
  * - ConvertContext 预取消/过期 deadline 使用独立错误码,且不启动 resolver;
  * - 正向 deadline(未到期)不误伤:转换正常完成;
  * - docx 渲染中的 resolver 取消可中断等待,完成后 convert 仍以取消失败退出;

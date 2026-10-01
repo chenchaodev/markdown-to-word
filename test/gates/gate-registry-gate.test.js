@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 门禁注册表段(位于 test/segments/ = 跨域守护段;被测为
+ * 门禁注册表段(位于 test/core/ = 跨域守护段;被测为
  * gates/probe/gate-probes/registry.mjs 的判定本体 `checkGateRegistry(ctx)` 与
  * gates/probe/gate-probes/protocol.mjs 的驱动器协议):
  *
@@ -273,7 +273,7 @@ export async function run() {
     await suite.case("探针指向不存在的载体 → probe-missing", () => {
       expectCode(
         codesOf((r) => {
-          r.boundary.probes = [{ kind: "segment", ref: "test/segments/does-not-exist.test.js", why: "指向不存在的段,应当判红" }];
+          r.boundary.probes = [{ kind: "segment", ref: "test/core/does-not-exist.test.js", why: "指向不存在的段,应当判红" }];
         }),
         "probe-missing",
       );
@@ -458,7 +458,7 @@ export async function run() {
     await suite.case("探针没写理由 → probe-reason-missing", () => {
       expectCode(
         codesOf((r) => {
-          r["pinned-actions"].probes = [{ kind: "segment", ref: "test/segments/pinned-actions.test.js", why: "" }];
+          r["pinned-actions"].probes = [{ kind: "segment", ref: "test/gates/pinned-actions.test.js", why: "" }];
         }),
         "probe-reason-missing",
       );

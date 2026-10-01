@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * clean-artifacts 清理守卫段(位于 test/segments/ = 跨域守护段;被测为
+ * clean-artifacts 清理守卫段(位于 test/core/ = 跨域守护段;被测为
  * gates/artifacts/clean-artifacts.mjs 的**进程级 CLI 语义**,纯 Node 子进程调用,不经 dist
  * 编译产物、不启 Electron、不触发 electron-builder):
  *

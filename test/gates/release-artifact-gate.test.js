@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * ASAR 与发布产物门禁(位于 test/segments/ = 跨域守护段;被测为 gates/artifacts 下的
+ * ASAR 与发布产物门禁(位于 test/core/ = 跨域守护段;被测为 gates/artifacts 下的
  * 发布检查脚本,纯 Node 逻辑不经 dist 编译产物):
  * - check-asar-manifest.mjs:app.asar 的结构(顶层白名单)、入口与 KaTeX/Mermaid 资源
  *   锁定、包内 package.json 版本锁定,以及与 clean dist 清单的逐项哈希核对

@@ -7,11 +7,11 @@
 //
 // **不修改被测门禁本体**:夹具 = 把门禁脚本原样拷进临时目录的 gates/repo/(它的 projectRoot
 // 由 import.meta.dirname 推导,故拷贝后扫描面自动指向夹具根),连同它的仓内依赖
-// test/common/copy-closure.js(lexSource,零 I/O 纯文本层)与
-// test/common/test-common-surface.js(测试扫描面单源,零仓内依赖)一起拷贝,配一棵最小测试树。
+// shared/copy-closure.js(lexSource,零 I/O 纯文本层)与
+// shared/test-common-surface.js(测试扫描面单源,零仓内依赖)一起拷贝,配一棵最小测试树。
 // 真实仓库只被**读**(baseline 那一条跑真实 test/ 树)。
 // 少拷一个的代价不是「夹具少测一条」而是「门禁在沙盒里直接起不来」:相对 import 解析不到,
-// 那条守护段 test/segments/contract-single-source.test.js 的副本闭包判定会先把它拦下。
+// 那条守护段 test/gates/contract-single-source.test.js 的副本闭包判定会先把它拦下。
 //
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则
 // 系统临时区会堆满夹具树。
@@ -21,6 +21,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
+import { SEGMENT_DIRS } from '../../shared/test-common-surface.js';
 
 const projectRoot = ROOT;
 const checkerPath = join(projectRoot, 'gates', 'repo', 'check-temp-cleanup.mjs');
@@ -33,16 +34,19 @@ const surfacePath = join(projectRoot, 'shared', 'test-common-surface.js');
 const CLEAN = "export const value = 'clean';\n";
 
 /**
- * 夹具的扫描面底板:五个目标目录各若干文件,合计 49 —— 加上随门禁拷进来的
- * copy-closure.js 与 test-common-surface.js 两个文件,恰好 50 = 扫描文件数下限。
+ * 夹具的扫描面底板:四个目标目录各若干文件,合计 55(下限 50,留五个余量)。
  * 目录全部必须存在(等式判据与 walker 都按目录走,缺目录测不到任何判定)。
+ * 段目录的配额随第五个目标目录(段目录之外的杂物抽屉,已取消)重分配到 core 与 gates
+ * (按实测的 58 : 17 段数比),
+ * main / renderer / common 保持原值 —— common 是等式之外唯一的非段目录,配额压太低
+ * 会让「walker 整体失效」那条负向夹具的前提变得不可靠。
  */
 const BASE_SHAPE = Object.freeze({
-  'test/segments': 16,
+  'test/core': 22,
   'test/main': 11,
   'test/renderer': 11,
+  'test/gates': 5,
   'test/common': 7,
-  'test/tools': 6,
 });
 
 /** 合法形态的助手调用与单文件删除(第一条与第二条规则都不得判红) */
@@ -86,8 +90,10 @@ function createFixture(mutate, shape = BASE_SHAPE) {
   copyFileSync(copyClosurePath, join(dir, 'shared', 'copy-closure.js'));
   // 扫描面单源同样随门禁拷进来(它零 node: 依赖之外的仓内依赖,拷这一份就够)
   copyFileSync(surfacePath, join(dir, 'shared', 'test-common-surface.js'));
+  // 段目录镜像判据的判定对象是**顶层**的同名树,夹具不把它们造出来就等于该判据恒红
+  for (const name of SEGMENT_DIRS) mkdirSync(join(dir, name), { recursive: true });
   for (const [target, count] of Object.entries(shape)) {
-    const ext = target === 'test/tools' ? '.mjs' : target === 'test/common' ? '.js' : '.test.js';
+    const ext = target === 'test/common' ? '.js' : '.test.js';
     for (let i = 0; i < count; i += 1) writeUnder(dir, `${target}/case-${i}${ext}`);
   }
   // mutate 抛异常时调用方拿不到 dir,其 finally 清不到 → 在这里兜住(临时产物不留残)
@@ -124,7 +130,7 @@ const CASES = [
   {
     // 反向锚点:合法形态若被判红,门禁会逼着人把测试改丑来讨好它
     name: '合法形态(助手两参对象 / 单参省略 / 单文件删除不配 recursive)不报 → 通过',
-    mutate: (dir) => writeUnder(dir, 'test/segments/case-0.test.js', LEGAL_FORMS),
+    mutate: (dir) => writeUnder(dir, 'test/core/case-0.test.js', LEGAL_FORMS),
     expect: null,
   },
   {
@@ -139,8 +145,8 @@ const CASES = [
   },
   {
     name: '裸写递归删除(收口面被穿透)',
-    mutate: (dir) => writeUnder(dir, 'test/segments/case-1.test.js', "} finally {\n  fs.rmSync(dir, { recursive: true, force: true });\n}\n"),
-    expect: /test\/segments\/case-1\.test\.js:2 → fs\.rmSync\(dir, \{ recursive: true, force: true \}\)/,
+    mutate: (dir) => writeUnder(dir, 'test/core/case-1.test.js', "} finally {\n  fs.rmSync(dir, { recursive: true, force: true });\n}\n"),
+    expect: /test\/core\/case-1\.test\.js:2 → fs\.rmSync\(dir, \{ recursive: true, force: true \}\)/,
   },
   {
     name: '吞错的裸写递归删除(await fs.rm + .catch)',
@@ -150,17 +156,17 @@ const CASES = [
   {
     // 第二条规则的三类真实错用法(门禁文件头「第二条规则」节列的实测结论)
     name: '第二实参非对象(以为覆盖了重试,实则静默用默认)',
-    mutate: (dir) => writeUnder(dir, 'test/segments/case-2.test.js', 'removeTree(dir, 5);\n'),
+    mutate: (dir) => writeUnder(dir, 'test/core/case-2.test.js', 'removeTree(dir, 5);\n'),
     expect: /removeTree 的选项用法:第二实参必须是对象字面量 \{ maxRetries\?, retryDelay\? \},实际是 5/,
   },
   {
     name: '第二实参非法取值(负数会让 Node 抛 ERR_OUT_OF_RANGE)',
-    mutate: (dir) => writeUnder(dir, 'test/segments/case-3.test.js', 'removeTree(dir, { maxRetries: -1 });\n'),
+    mutate: (dir) => writeUnder(dir, 'test/core/case-3.test.js', 'removeTree(dir, { maxRetries: -1 });\n'),
     expect: /maxRetries 的取值必须是非负有限数字字面量,实际是 -1/,
   },
   {
     name: '第二实参未知键(被 Node 静默忽略,与「没传」不可区分)',
-    mutate: (dir) => writeUnder(dir, 'test/segments/case-4.test.js', 'removeTree(dir, { maxRetries: 5, force: true });\n'),
+    mutate: (dir) => writeUnder(dir, 'test/core/case-4.test.js', 'removeTree(dir, { maxRetries: 5, force: true });\n'),
     expect: /未知选项键 force\(助手只接受 maxRetries \/ retryDelay;未知键被静默忽略\)/,
   },
   {
@@ -171,12 +177,19 @@ const CASES = [
     expect: /扫描面等式不成立:.*多出\(磁盘上有测试源文件但未登记进扫描面\):test\/perf/,
   },
   {
+    // 段目录**镜像**判据的负向夹具:抽掉顶层的 renderer/ 这棵树(test/renderer 仍在,
+    // 文件数与等式都照常满足)⇒ 只有镜像判据拦得住。这条证明该判据不是恒绿装饰。
+    name: '段目录不镜像任何顶层树(镜像判红并点名)',
+    mutate: (dir) => rmSync(join(dir, 'renderer'), { recursive: true, force: true }),
+    expect: /段目录镜像判据不成立:.*test\/renderer\(顶层没有可镜像的 renderer\//,
+  },
+  {
     // 防空过:walker 静默失效会退化成「零文件全过」,那是假通过。
-    // 合成文件 10 + 随门禁拷进来的 copy-closure.js 与 test-common-surface.js 两个 = 12。
+    // 合成文件 10(段目录与 common 各自的 shape 计数),远低于下限 50。
     // 期望写成与具体数字无关的形态(下限判据只承诺「低于下限即红」,不承诺某个夹具形状
     // 恰好是几 —— 门禁多带一个依赖进来时,这条断言不该跟着改)。
     name: '扫描面塌缩(文件数掉到下限以下)',
-    shape: { 'test/segments': 4, 'test/main': 2, 'test/renderer': 2, 'test/common': 1, 'test/tools': 1 },
+    shape: { 'test/core': 4, 'test/main': 2, 'test/renderer': 2, 'test/gates': 1, 'test/common': 1 },
     expect: /只扫到 \d+ 个文件\(下限 50\):扫描面或 walker 失效/,
   },
   {

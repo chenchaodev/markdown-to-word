@@ -14,7 +14,7 @@
  *
  * 本层被上层与守护段共用的符号(JS_SOURCE_RE、SourceFile)刻意放在这里,避免出现第二份定义。
  *
- * ⚠ 已知覆盖边界与行数口径:见守护段 test/segments/contract-single-source.test.js 的文件头
+ * ⚠ 已知覆盖边界与行数口径:见守护段 test/gates/contract-single-source.test.js 的文件头
  *   「沙盒副本闭包 · 已知覆盖边界」小节 —— 那里是唯一权威处,本文件不重复,避免两份说法漂移。
  */
 

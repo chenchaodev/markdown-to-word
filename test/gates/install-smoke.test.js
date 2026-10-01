@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 打包产物启动/安装/卸载 smoke 段(位于 test/segments/ = 跨域守护段;被测为
+ * 打包产物启动/安装/卸载 smoke 段(位于 test/core/ = 跨域守护段;被测为
  * gates/artifacts/check-unpacked-smoke.mjs 与 gates/artifacts/check-install-smoke.mjs 的**进程级
  * CLI 语义**与 gates/smoke/smoke-proc.mjs 的判定面,纯 Node 子进程调用,不经 dist
  * 编译产物、不启 Electron GUI):

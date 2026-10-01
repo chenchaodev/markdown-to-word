@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * coverage 门禁基线守护段(位于 test/segments/;被测为 package.json 的 test:coverage 参数
+ * coverage 门禁基线守护段(位于 test/core/;被测为 package.json 的 test:coverage 参数
  * 向量与 gates/probe/gate-probes/coverage-baseline.json 的一致性,以及豁免清单与真实编译
  * 产物/测试引用面的自洽性 —— 不测任何业务能力)。
  *

@@ -15,9 +15,9 @@
 //   node gates/repo/check-temp-cleanup.mjs
 //   node gates/repo/check-temp-cleanup.mjs --help
 //
-// ---- 扫描面(单一来源:test/common/test-common-surface.js)----
-//   test/segments/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
-//   test/common/**/*.js · test/tools/**/*.{js,mjs}
+// ---- 扫描面(单一来源:shared/test-common-surface.js)----
+//   test/core/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
+//   test/gates/**/*.test.js · test/common/**/*.js
 // 排除 test/fixtures(被测样例数据本身,不是清理动作)。
 // **不扫 gates/ tools/**:那里是生产/门禁脚本,rmSync 是被测语义本身(gates/artifacts/
 // clean-artifacts.mjs 的保护区、gate-probes/sandbox.mjs 的 junction 摘除),不是「临时目录清理」。
@@ -78,7 +78,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { lexSource } from '../../shared/copy-closure.js';
 import {
+  checkSegmentMirrors,
   checkSurfaceEquality,
+  formatMirrorMismatch,
   formatSurfaceMismatch,
   judgeScanFloor,
   listScanFiles,
@@ -199,7 +201,7 @@ export const ALLOWLIST = Object.freeze([
   },
   {
     id: 'install-smoke-electron-fs-bypass',
-    file: 'test/segments/install-smoke.test.js',
+    file: 'test/gates/install-smoke.test.js',
     match: () => true,
     why: '本文件整体归另一条工作线管,且它的删除面是 Electron fs 层对「指向目录的链接」判定与'
       + 'node 不同的**刻意绕行**:L343 是段内沙盒删除、L349 是往沙盒注入的判定脚本源码里那行'
@@ -222,7 +224,7 @@ export const ALLOWLIST = Object.freeze([
   },
   {
     id: 'clean-artifacts-occupied-fixture',
-    file: 'test/segments/clean-artifacts-gate.test.js',
+    file: 'test/core/clean-artifacts-gate.test.js',
     match: () => false,
     cold: true,
     why: 'L555-592 段**刻意**用 CWD 占用夹具复现「删不掉」:断言错误码属 EPERM/EBUSY/EACCES 族、'
@@ -231,7 +233,7 @@ export const ALLOWLIST = Object.freeze([
   },
   {
     id: 'test-common-helpers-illegal-retry-params',
-    file: 'test/segments/test-common-helpers.test.js',
+    file: 'test/core/test-common-helpers.test.js',
     match: () => false,
     cold: true,
     why: '`test-common-helpers.test.js` **刻意**给 removeTree 喂非法与极小重试参数'
@@ -253,7 +255,7 @@ export const ALLOWLIST = Object.freeze([
     match: () => false,
     cold: true,
     why: 'L183 的 EBUSY / L198 的 EPERM 是**错误码字面量**(渲染层纯函数 actionableError 的'
-      + '失败分支断言),不是删除动作。段位随三目录归属调整从 segments/ 迁到 renderer/,'
+      + '失败分支断言),不是删除动作。段位随被测主体归属调整迁到 renderer/,'
       + '本条随之改路径 —— 白名单按文件内容匹配,路径写错会让条目静默失效。',
   },
   {
@@ -292,7 +294,7 @@ export const ALLOWLIST = Object.freeze([
 export const OPTION_ALLOWLIST = Object.freeze([
   {
     id: 'test-common-helpers-illegal-retry-probe',
-    file: 'test/segments/test-common-helpers.test.js',
+    file: 'test/core/test-common-helpers.test.js',
     // 刻意给 removeTree 喂非法与极小重试参数:证明「失败如实上报」而非吞掉
     match: (hit) => hit.args.includes('maxRetries: -1'),
     // ⚠️ 这里**刻意不写行号** —— 上一版写的是 `L344`/`L369`,而那条锚点所在的段每次
@@ -613,6 +615,18 @@ export async function main(argv = []) {
       `[temp-cleanup:fail] 扫描面等式不成立:${formatSurfaceMismatch(surface)}`
       + '(声明数必须等于实测数:新增测试子目录须登记进 shared/test-common-surface.js 的 '
       + 'SCAN_TARGETS,或按「它不是测试代码」的理由登记进 EXCLUDED_DIRS;下界判据管不到漏目录)',
+    );
+    return 1;
+  }
+
+  // 段目录**镜像一棵被断言的树**(与 check-test-numbering.mjs 同判据同文案单源):
+  // 等式管「声明与磁盘一致」,这条管「声明本身合法」—— 枚举里混进一个不镜像任何树的
+  // 目录(如暂存区)时,等式与下限都会照样判绿,只有这条拦得住。
+  const mirror = checkSegmentMirrors(projectRoot);
+  if (!mirror.ok) {
+    console.error(
+      `[temp-cleanup:fail] 段目录镜像判据不成立:${formatMirrorMismatch(mirror)}`
+      + '(段目录须与顶层一棵被断言的树同名;新增被断言的树配同名段目录,勿另开暂存区)',
     );
     return 1;
   }

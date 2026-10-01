@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 验收样例生成器契约守护段(位于 test/segments/ = 跨域守护段;被测为
+ * 验收样例生成器契约守护段(位于 test/core/ = 跨域守护段;被测为
  * gates/fixtures/gen-fixtures.mjs 的显式契约与扫描范围,纯 Node,不依赖 dist):
  *
  * 生成器从测试段导出 fixtures 落盘验收样例。旧实现用正则预筛源码里有
@@ -203,7 +203,7 @@ export async function run() {
     assert(mainOutput.content === "m", "产物内容应与 fixtures 键一一对应");
 
     const collide = [
-      { relDir: "segments", baseName: "dup", outputs: [{ name: "dup.md", key: "main" }] },
+      { relDir: "core", baseName: "dup", outputs: [{ name: "dup.md", key: "main" }] },
       { relDir: "main", baseName: "dup", outputs: [{ name: "dup.md", key: "main" }] },
     ];
     assert(
@@ -211,15 +211,15 @@ export async function run() {
       "跨目录同名段的同名产物必须判红(否则互相覆盖、静默丢样例)",
     );
     const noCollide = [
-      { relDir: "segments", baseName: "dup", outputs: [{ name: "dup-main.md", key: "main" }] },
+      { relDir: "core", baseName: "dup", outputs: [{ name: "dup-main.md", key: "main" }] },
       { relDir: "main", baseName: "dup", outputs: [{ name: "dup-x.md", key: "x" }] },
     ];
     assert(findOutputNameCollisions(noCollide).length === 0, "不同名产物不应误报撞车");
 
     const readme = buildReadme([
-      { relDir: "segments", baseName: "solo", description: "单场景描述", outputs: [{ name: "solo.md", key: "main" }] },
+      { relDir: "core", baseName: "solo", description: "单场景描述", outputs: [{ name: "solo.md", key: "main" }] },
       {
-        relDir: "segments",
+        relDir: "core",
         baseName: "multi",
         description: "多场景描述|带竖线",
         outputs: [
@@ -228,10 +228,10 @@ export async function run() {
         ],
       },
     ]);
-    assert(readme.includes("| solo.md | 单场景描述 | test/segments/solo.test.js |"), `单场景行未按显式描述生成:\n${readme}`);
+    assert(readme.includes("| solo.md | 单场景描述 | test/core/solo.test.js |"), `单场景行未按显式描述生成:\n${readme}`);
     assert(readme.includes("(场景:a)") && readme.includes("(场景:b)"), "多场景行应追加场景键名消歧");
     assert(readme.includes("多场景描述\\|带竖线"), "描述中的竖线须转义,否则撑坏 Markdown 表格");
-    assert(readme.trimEnd().endsWith("| multi-b.md | 多场景描述\\|带竖线(场景:b) | test/segments/multi.test.js |"), `README 行序应随 entries 顺序:\n${readme}`);
+    assert(readme.trimEnd().endsWith("| multi-b.md | 多场景描述\\|带竖线(场景:b) | test/core/multi.test.js |"), `README 行序应随 entries 顺序:\n${readme}`);
     console.log("[ok] fixture-contract:产物命名 / 撞车判定 / README 索引生成均符合契约");
   }
 

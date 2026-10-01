@@ -8,7 +8,7 @@
  * 刻意不 import ROOT。
  *
  * ---- 收口了什么(此前同一份知识散在 4 处,其中 2 处逐字相同)----
- * 1. **段目录集合**(测试发现面):test/acceptance.mjs 交给 runner 的三目录 ·
+ * 1. **段目录集合**(测试发现面):test/acceptance.mjs 交给 runner 的段目录 ·
  *    gates/fixtures/gen-fixtures.mjs 的扫描目录 —— 现为同一数组对象 SEGMENT_DIRS,恒等由
  *    「同一对象」保证,不再靠两处各写一份再比对文本。
  * 2. **扫描面与 walker**:扫描目标 / 排除目录 / 扫描文件数下限 / 递归列目录 —— 原先
@@ -25,10 +25,11 @@
  *   若整体扫不到文件,目录集合仍与磁盘一致,等式照样成立,也替代不了下限。两条各管一件事。
  *
  * ---- 为何目录集合仍是一份手写枚举,而不是从磁盘派生 ----
- * 每个目录的**文件判定**不同(段目录只收 *.test.js,common 收 *.js,tools 收 *.js|.mjs),
- * 磁盘上读不出「这个目录该按哪种谓词扫」;而派生真正要防的那类漏(多一个目录没登记),
- * 等式判据已经覆盖 —— 它判红并点名那个目录。故此处收敛的是「同一份知识只有一处」,
- * 不是把枚举换成猜测。
+ * 每个目录的**文件判定**不同(段目录只收 *.test.js,common 收 *.js),磁盘上读不出
+ * 「这个目录该按哪种谓词扫」;而派生真正要防的那类漏(多一个目录没登记),等式判据已经覆盖
+ * —— 它判红并点名那个目录。故此处收敛的是「同一份知识只有一处」,不是把枚举换成猜测。
+ * 枚举退化成「随手加一行」的风险由**镜像判据**(checkSegmentMirrors)兜住:段目录名必须
+ * 镜像一棵顶层真实存在的树,于是「随手加一行」的最可能形态(开一个杂物抽屉)判红。
  */
 import { readdirSync } from "node:fs";
 import path from "node:path";
@@ -37,9 +38,20 @@ import path from "node:path";
  * 段目录(测试发现面):test/ 下的段目录,「验收跑哪些段」的唯一声明。
  * 同一数组既交给 runner 做段发现(acceptance.mjs),也作为门禁扫描面的前几个目标派生
  * —— 从同一处派生,才能保证「验收发现的段」与「门禁扫的段」永远同集合。
+ *
+ * 判据不是「恰好这三个」,而是**每个段目录都镜像一棵顶层被断言的树**(见
+ * checkSegmentMirrors):core→src/core、main→src/main、renderer→src/renderer、
+ * gates→gates/**。故新增段目录不必改本文件,新增**被断言的树**才要。
  * @type {readonly string[]}
  */
-export const SEGMENT_DIRS = Object.freeze(["segments", "main", "renderer"]);
+export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates"]);
+
+/**
+ * 不得作为段目录的名字(它们是 harness / 数据区 / 入口,不是被断言的树)。
+ * 显式列出而非「顶层没有同名树就放行」——否则把段塞进 test/common 也能过镜像判据。
+ * @type {readonly string[]}
+ */
+const NON_MIRROR_DIR_NAMES = Object.freeze(["common", "fixtures", "acceptance"]);
 
 /** 段文件判定(与 test/common/runner.js 的 discoverSegments 同口径:只收 *.test.js) */
 const isSegmentFile = (/** @type {string} */ name) => name.endsWith(".test.js");
@@ -53,7 +65,6 @@ const isSegmentFile = (/** @type {string} */ name) => name.endsWith(".test.js");
 export const SCAN_TARGETS = Object.freeze([
   ...SEGMENT_DIRS.map((name) => ({ dir: `test/${name}`, accept: isSegmentFile })),
   { dir: "test/common", accept: (/** @type {string} */ name) => name.endsWith(".js") },
-  { dir: "test/tools", accept: (/** @type {string} */ name) => /\.(js|mjs)$/.test(name) },
 ]);
 
 /** 显式排除目录(仓库相对 POSIX 路径;前缀匹配)。test/fixtures 是被测样例数据本身,不是断言。 */
@@ -174,6 +185,99 @@ export function formatSurfaceMismatch(surface) {
   if (surface.extra.length > 0) parts.push(`多出(磁盘上有测试源文件但未登记进扫描面):${surface.extra.join(", ")}`);
   if (surface.missing.length > 0) parts.push(`缺失(已登记但磁盘上无测试源文件):${surface.missing.join(", ")}`);
   return parts.join(";");
+}
+
+/**
+ * @typedef {object} MirrorJudgement 段目录镜像判据的结果
+ * @property {string[]} offenders 违规段目录(test/ 相对路径)
+ * @property {string[]} reasons 逐条违规的原因(与 offenders 同序)
+ * @property {boolean} ok 是否每个段目录都镜像一棵顶层被断言的树
+ */
+
+/**
+ * 顶层不参与镜像判定的目录:自身就是判据对象(test)、依赖树(装不装依赖不该改判据结论)、
+ * 以及点目录(VCS 元数据)。
+ */
+const MIRROR_SCAN_SKIP = Object.freeze(new Set(["test", "node_modules"]));
+
+/**
+ * 收集可镜像的目录名:顶层目录自身 + 顶层目录的直接子目录。
+ *
+ * 两层的由来:四对镜像里 `test/gates/` 镜像的是**顶层树自身**(`gates/`),
+ * `test/core|main|renderer/` 镜像的是 `src/` 的直接子目录 —— 故「顶层或其下一层」正是
+ * 「一棵被断言的树里那个被断言的目录名」。再多一层就成了「仓库里某处有个同名文件夹」,
+ * 判据会松到抓不住抽屉。
+ * @param {string} root 仓库根绝对路径(调用方注入)
+ * @returns {Set<string>} 目录名集合
+ */
+function collectMirrorCandidateNames(root) {
+  /** @type {Set<string>} */
+  const names = new Set();
+  /** @param {string} abs @param {string} name */
+  const addDir = (abs, name) => {
+    names.add(name);
+    for (const child of readdirSync(abs, { withFileTypes: true })) {
+      if (child.isDirectory()) names.add(child.name);
+    }
+  };
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith(".") || MIRROR_SCAN_SKIP.has(entry.name)) continue;
+    addDir(path.join(root, entry.name), entry.name);
+  }
+  return names;
+}
+
+/**
+ * 段目录镜像判据:每个段目录名必须是**顶层一棵被断言的树**里的那个目录名。
+ *
+ * 为何要有这条(它是「段目录集合」那份枚举的护栏):判据的意图是「不许开杂物抽屉」,
+ * 早先写成「三目录为全集」时,新增第四个段目录必须同时改判据表述 —— 漏改就出现
+ * 「三目录恒等」与实际并存的误读,改了就等于给抽屉发许可证。改成镜像判据后:
+ *   - 新增被断言的树(如 `gates/**` ⇒ `test/gates/`)天然满足,不必改任何文字;
+ *   - 新增杂物抽屉(如 `test/pending/`)因顶层找不到同名树而判红。
+ * 故枚举退化的最可能形态被机械拦住,不靠「记得同步文档」。
+ *
+ * 第二个名字:段目录不得占用 harness / 数据区 / 入口的名字(common · fixtures · acceptance)——
+ * 那三个不是被断言的树,把段塞进去等于让镜像判据形同虚设。
+ *
+ * @param {string} root 仓库根绝对路径(调用方注入)
+ * @param {readonly string[]} [segmentDirs] 段目录名;默认取 SEGMENT_DIRS(负向夹具注入替身)
+ * @returns {MirrorJudgement}
+ */
+export function checkSegmentMirrors(root, segmentDirs = SEGMENT_DIRS) {
+  /** @type {string[]} */
+  const offenders = [];
+  /** @type {string[]} */
+  const reasons = [];
+  const candidates = collectMirrorCandidateNames(root);
+  for (const name of segmentDirs) {
+    const head = name.split("/")[0] ?? name;
+    if (NON_MIRROR_DIR_NAMES.includes(head)) {
+      offenders.push(`test/${name}`);
+      reasons.push(`「${head}」是 harness/数据区/入口名,不是被断言的树`);
+      continue;
+    }
+    if (!candidates.has(head)) {
+      offenders.push(`test/${name}`);
+      reasons.push(
+        `顶层没有可镜像的 ${head}/(顶层既无 ${head}/ 目录,也无任一棵顶层树下的 ${head}/ 子目录;`
+        + "段目录须按被测主体归属,勿另开暂存区)",
+      );
+    }
+  }
+  return { offenders, reasons, ok: offenders.length === 0 };
+}
+
+/**
+ * 镜像判据失败的诊断文案(单一来源:两个门禁都从这里取)。
+ * @param {MirrorJudgement} mirror checkSegmentMirrors 的返回值
+ * @returns {string}
+ */
+export function formatMirrorMismatch(mirror) {
+  return mirror.offenders
+    .map((dir, index) => `${dir}(${mirror.reasons[index] ?? "不镜像任何顶层树"})`)
+    .join(";");
 }
 
 /**

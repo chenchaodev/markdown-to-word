@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 测试树 `@ts-check` 覆盖率守护段(位于 test/segments/ = 跨域守护段;纯 Node 逻辑,
+ * 测试树 `@ts-check` 覆盖率守护段(位于 test/core/ = 跨域守护段;纯 Node 逻辑,
  * 不启 Electron):
  *
  * 守护的契约(见 tsconfig.test.json 头注):
@@ -24,7 +24,7 @@ import { ROOT } from "../common/paths.js";
 /**
  * 不参与类型门禁的显式豁免目录(相对 test/)。
  * 2026-09-27:`test/pending/` 阶段 3 历史副本已删(其断言已由
- * `test/segments/core-resources.test.js` 覆盖),豁免清单清空。
+ * `test/core/core-resources.test.js` 覆盖),豁免清单清空。
  * 留空数组是合法状态:此时唯一的防「静默零覆盖」下限断言是上面第 1 项的
  * `guarded >= 100`(walker 失效仍会红),不依赖豁免目录存在。
  */

@@ -24,7 +24,7 @@
  *   assertEq(actual, expected, "标题层级数");
  *
  * 依赖方向单向:本文件零 import(只用 node 内置 Buffer/global),可被任意段与
- * test/tools 下的工具直接引用,不会把 dist / 产物解析链拖进轻量场景。
+ * 工具脚本直接引用,不会把 dist / 产物解析链拖进轻量场景。
  */
 
 /** 失败消息里单个值的最大预览长度(超长截断并附总长,防把整份 document.xml 灌进日志) */

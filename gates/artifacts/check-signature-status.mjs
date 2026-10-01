@@ -17,7 +17,7 @@
 // 「签名状态异常」;同样判红 —— 取不到事实不得当作未签名放行。
 //
 // 声明来源:本脚本内的 EXPECTED_SIGNATURE_STATUS(ADR-013)。它是**事实侧基准**,也是唯一的源。
-// test/segments/signature-status.test.js 断言它为 unsigned + 打包配置确实无证书 +
+// test/gates/signature-status.test.js 断言它为 unsigned + 打包配置确实无证书 +
 // 用户文档仍保留 SmartScreen 披露,三者共同构成「未签名被如实告知、不伪装为已签名」的守护。
 // 「签名状态一旦变更须同批改哪三处」的耦合规则见
 // docs/adr/adr-013-发布供应链与明确不签名.md 的「实施约束」节 ——

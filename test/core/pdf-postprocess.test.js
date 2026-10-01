@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * PDF 渲染后处理直测(test/segments = src/core 渲染层主题段,经 dist 断言,
+ * PDF 渲染后处理直测(test/core = src/core 渲染层主题段,经 dist 断言,
  * 零 Electron 依赖——被测纯函数不经 printToPDF):
  * - embedExternalImages / checkLocalImages 纯函数直测(零 Electron 依赖,直接 import dist):
  *   worker 抛错 / 空结果 → 保留原 URL + 统一警告(图片加载失败: <src>);

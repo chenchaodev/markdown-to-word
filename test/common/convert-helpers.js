@@ -148,7 +148,7 @@ export const convertWithFs =
  *
  * 为什么需要:core 的 `convert` 第 1 参不是裸字符串,而是 `{ body, metadata }` ——
  * frontmatter 的隔离与解析在**上游准备阶段**完成一次即交下来,core 不再自己解析
- * (同一次转换只解析一次,判据见 `test/segments/frontmatter-once.test.js`)。
+ * (同一次转换只解析一次,判据见 `test/core/frontmatter-once.test.js`)。
  * 测试侧按裸字符串写样例,就得在调用点前补这一步。
  *
  * 用 core 的 `parseFrontmatter`(单源)而非测试自写拆分:与生产

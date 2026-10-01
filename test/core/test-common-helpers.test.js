@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 测试公共 helper 自测段(位于 test/segments/ = 跨域守护段;纯 Node,不依赖 dist):
+ * 测试公共 helper 自测段(位于 test/core/ = 跨域守护段;纯 Node,不依赖 dist):
  * 被测件是 test/common/assert.js(公共断言集)与 test/common/temp-resource.js(临时资源生命周期)。
  *
  * 为何值得有这一段:两个 helper 本身是「判定别的段对不对」的工具,一旦它们自身静默失真

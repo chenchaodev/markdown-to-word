@@ -43,9 +43,9 @@ import { createTempUserData, redirectUserData, removeTempUserData } from "../sha
 
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
 /**
- * 段目录集合:单一来源在 test/common/test-common-surface.js(SEGMENT_DIRS),与验收样例
+ * 段目录集合:单一来源在 shared/test-common-surface.js(SEGMENT_DIRS),与验收样例
  * 生成器读同一份数组对象 —— 不再各写一份目录字面量,故「验收跑的段」与「生成样例的段」
- * 不可能漂移(恒等断言见 test/segments/fixture-contract.test.js)。
+ * 不可能漂移(恒等断言见 test/gates/fixture-contract.test.js)。
  */
 const segmentDirs = SEGMENT_DIRS.map((name) => path.join(testRoot, name));
 

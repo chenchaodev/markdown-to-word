@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 可观测性守护段(跨域守护,住 test/segments/):覆盖两项「让 CI 能结构化消费 / 能
+ * 可观测性守护段(跨域守护,住 test/core/):覆盖两项「让 CI 能结构化消费 / 能
  * 定量拦住」的发布侧可观测能力,纯 Node 逻辑,不启 Electron、不碰真实产物:
  *
  * 1. 机器可读冒烟报告(gates/smoke/smoke-report.mjs)

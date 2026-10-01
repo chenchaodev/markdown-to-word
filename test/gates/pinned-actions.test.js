@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * action 引用固定门禁守护段(位于 test/segments/ = 跨域守护段;被测为
+ * action 引用固定门禁守护段(位于 test/core/ = 跨域守护段;被测为
  * gates/repo/check-pinned-actions.mjs 的判定逻辑 + 真实仓库的 workflow 事实,
  * 纯 Node 逻辑,不启 Electron):
  *

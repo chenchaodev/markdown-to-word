@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * electron mock 边界静态守护段(位于 test/segments/ = 跨域守护段;被测为
+ * electron mock 边界静态守护段(位于 test/core/ = 跨域守护段;被测为
  * test/common/electron-mock.mjs 的命名导出集合与 src 的 electron 具名 import 事实,
  * 纯 Node/纯 Electron 皆可跑,不依赖 dist):
  *

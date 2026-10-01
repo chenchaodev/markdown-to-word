@@ -23,7 +23,7 @@
 | `npm run dev` | 开发启动 = `build` 后**直接**起 Electron,**不带**构建新鲜度守卫 |
 | `npm run start` | 启动 Electron,但**先跑 `gates/smoke/check-build-fresh.mjs` 校验构建新鲜度** —— 只改了源码没重建时,守卫先拦下(`test:smoke` 用的是同一个守卫) |
 | `npm run dist` | electron-builder 打包 NSIS 安装包(输出 `release/`;链内含产物核对,见「门禁接入点」) |
-| `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`,自动发现 `segments/`、`main/` 与 `renderer/` 下 `*.test.js`;需先 build;新增测试=新建段文件零注册) |
+| `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`,自动发现 `core/`、`main/`、`renderer/` 与 `gates/` 下 `*.test.js`;需先 build;新增测试=新建段文件零注册) |
 | `npm run test:smoke` | 冒烟自测(`electron . --smoke`,前置构建新鲜度守卫) |
 | `npm run test:coverage` | c8 覆盖率报告(自动验证的 core/main 产物;GUI renderer 编排层按测试边界排除,renderer 断言仍由 acceptance 执行) |
 | `npm run test:all` | 验收 + 冒烟 |
@@ -56,12 +56,12 @@
 | 变更日志口径 | `check:changelog` `check:changelog:selftest` | `verify:ci` 链(排在 `check:docs:selftest` 之后、`build` 之前)。判据只扫 `docs/CHANGELOG.md` 的**版本条目区**(`## [待发版]` 起至文末),**六类**:禁内部工程词 · 禁第二人称「你」· 禁内部编号(`REQ-0NN` 与 commit hash)· 禁文言虚词 · 禁装饰性副词(实义限定放行)· 禁载体维护指纹词。**头部不扫** —— 头部是写反例的地方;另带防空过判据(锚点缺失 / 条目区无版本条目 / 路径不可读均判红)。**枚举词不可凭直觉增补**:实测「盖」在「覆盖 / 遮盖 / 涵盖」里是高频正当用词、「概」唯一命中是「概览」,裸字判红即 100% 误报 ⇒ 两者都带**字级成词护栏**。「仅」当前在真实语料上 21/21 走实义限定放行分支,**行为等价于不判红**,提供的是对未来的保护而非已发生的保护(该说明写在门禁文件头,勿把它当成已验证有效)。**已知不覆盖**:比喻、调侃、句法层文言腔、术语一名 —— 无封闭词表可枚举,靠人写(裁决见 `docs/adr/ADR-047-CHANGELOG语体正式化与门禁.md`) |
 | 环境指纹 | `check:env` | 仅 `ci.yml` 主 job 与 `release.yml` 的指纹步骤(不进任何链) |
 | 供应链 | `check:supply` | 仅 `ci.yml` 的 `supply-chain` job 与 `release.yml` 的供应链步骤 —— 需联网查 advisory 库,刻意不并入本地链(否则「代码有问题」与「网络抖动」共用一个退出码) |
-| 供应链子步骤的独立入口 | `gen:sbom` `check:sbom` `gen:licenses` `check:sca` `collect:license-fulltext`(按需收集许可证全文副本) | 判定入口是 `check:supply`(它 import 同一批模块);这五条是同批模块的独立 CLI 入口,离线部分由 `test/segments/supply-chain.test.js` 在链内覆盖 |
-| 包体 | `check:pack-size` | 仅本地手动(需真实安装包实测;判定逻辑由 `test/segments/observability.test.js` 在链内以沙盒覆盖) |
-| 冒烟报告 | `check:smoke-report` | 仅本地手动(判定逻辑同上,由 `test/segments/observability.test.js` 在链内覆盖) |
-| 阴性探针 | `check:gates` | 仅本地手动 —— 同一模块由 `test/segments/gate-probes.test.js` 在链内实跑 |
+| 供应链子步骤的独立入口 | `gen:sbom` `check:sbom` `gen:licenses` `check:sca` `collect:license-fulltext`(按需收集许可证全文副本) | 判定入口是 `check:supply`(它 import 同一批模块);这五条是同批模块的独立 CLI 入口,离线部分由 `test/gates/supply-chain.test.js` 在链内覆盖 |
+| 包体 | `check:pack-size` | 仅本地手动(需真实安装包实测;判定逻辑由 `test/gates/observability.test.js` 在链内以沙盒覆盖) |
+| 冒烟报告 | `check:smoke-report` | 仅本地手动(判定逻辑同上,由 `test/gates/observability.test.js` 在链内覆盖) |
+| 阴性探针 | `check:gates` | 仅本地手动 —— 同一模块由 `test/gates/gate-probes.test.js` 在链内实跑 |
 | GUI 视觉自查 | `ui:shots` | 仅本地手动(`tools/visual-check.mjs`)。**发版前需重跑** —— 它的产出 `output/artifacts/ui-v4/` 是 `docs/images/ui-*.jpg` 的来源,界面一改那批图就过期;README / 官网首页 / 用户指南都靠它们展示 |
-| 安装烟测 | `check:install-smoke` | 仅本地手动,默认预演模式零系统副作用;真实装卸须显式 `--execute`(沙盒内的进程级行为由 `test/segments/install-smoke.test.js` 在链内覆盖) |
+| 安装烟测 | `check:install-smoke` | 仅本地手动,默认预演模式零系统副作用;真实装卸须显式 `--execute`(沙盒内的进程级行为由 `test/gates/install-smoke.test.js` 在链内覆盖) |
 | 打包产物核对 | `gen:dist-manifest` `check:dist-manifest` `check:asar` `check:release` `check:signature` `check:unpacked-smoke` | `verify:release` 链(`dist` 内部) |
 | 图标资源 | `icons` | 仅本地手动 |
 | 聚合入口 | `verify:ci` `verify:release` `dist` | **`verify:ci` 仅主会话在推送前跑一次,子代理一律不跑**(见下「验证基线」节的对应两条);`verify:release` / `dist` 主会话手动。CI 侧:`ci.yml` 主 job(`verify:ci`)/ `release.yml` 的 release job(`verify:release`);`dist` 是后二者内部的打包步 |
@@ -111,7 +111,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `docx/`:render.ts(编排器)/theme.ts(字体集中配置,eastAsia 勿散落硬编码)/ctx.ts(渲染上下文,选项构造时解析默认)/headers.ts(section 页眉装配)/chrome.ts(封面/目录/页眉页脚)/prescan.ts/numbering.ts(编号配置)/template-import.ts(模板浅导入,零 IO)/handlers/(节点处理器:heading/table/captions/equations/code-block/code-highlight/image-run/link-xref/inline-html/fallback/content/math/bookmark)
   - `pdf/`:render.ts(编排器)/template.ts(HTML 组装+页眉页脚 chrome+CSP/sanitize 防护)/template-css.ts(文档模板 CSS 生成)/katex-css.ts(KaTeX CSS 加载,唯一 fs 注入点)/postprocess.ts/metadata.ts/bookmarks.ts(pdf-lib 书签注入)/mermaid.ts/rules/(markdown-it 规则覆盖:caption/equation/xref/html/image/table/heading-id/shared)
 - `src/main/`:Electron 主进程
-  - `index.ts`:组合根;`menu.ts`:应用菜单;`smoke.ts`:**冒烟唯一实现**(编译进 `dist/main/smoke.js` 随包分发,故解包产物也能跑 `--smoke`;`test/tools/smoke/smoke.mjs` 仅为 dev 侧薄转调,勿在两处各写一份)
+  - `index.ts`:组合根;`menu.ts`:应用菜单;`smoke.ts`:**冒烟唯一实现**(编译进 `dist/main/smoke.js` 随包分发,故解包产物也能跑 `--smoke`;主进程 `--smoke` 分支直连该编译产物,仓内不留第二份实现或 dev 侧转调入口)
   - `windows/`:main-window.ts/preview.ts(预览窗+尺寸记忆)/title-bar-overlay.ts(Windows 标题栏 overlay 配色与高度常量单源)/web-contents-registry.ts(ctxByWebContents 注册表,窗口层不反向依赖 IPC 层)
   - `ipc/`:channels.ts(channel 名单源+恒等测试守护)/register.ts(handler 注册,导入类 handler 走 importFileViaDialog 模板)/logic.ts(纯逻辑)/output-allowlist.ts(shell 打开产物的会话级白名单,renderer 触达宿主文件系统的唯一入口)/types.ts(只做 re-export,剪贴板契约声明在 `core/ipc-contract.ts`)
   - `converter/`:index.ts(编排)/single.ts(参数校验+读取 md,渲染之后交给骨架)/output-skeleton.ts(单文件与合并共用的输出骨架 `emitConvertedArtifact`,含 `renderPdf`/`runAfterConvert`;同模块是为避免 single↔skeleton 成环)/batch.ts/merge.ts/paths.ts(扩展名判定单源)/context.ts(buildConvertContext)/preprocess.ts(解码→frontmatter 隔离→Obsidian/AI 预处理→原样拼回,所有入口共用的准备编排)/artifact-writer.ts(产物提交:同目录唯一临时文件 + 硬链接独占提交,单文件/批量/合并共用)
@@ -127,17 +127,17 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `convert/`:convert-flow.ts + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)+ `file-list.ts`
   - `ui/`(dialogs.ts/dom-ops.ts(DOM 操作原语 + translate 注入适配)/recent-files.ts(bindRecentFilesEvents 范式)/toast.ts/first-run-guide.ts(首启引导))
   - `wizard/`:book-wizard.ts(向导外壳/导航/打开关闭+付印提交)/wizard-steps.ts(步骤渲染·版式步:模板/封面/页眉页脚/水印)/wizard-steps-delivery.ts(步骤渲染·交付步:合并源/目录/付印+当前步渲染)/wizard-fields.ts(字段校验绑定+共用 DOM/radio 零件)/wizard-runtime.ts(草稿/容器/步序单例,防环)/wizard-state.ts(向导状态管理纯 reducer)
-- `test/`:验收测试体系(acceptance.mjs 入口 + common/ 工具 + segments/(core 渲染与跨域守护)+ main/(主进程层)+ renderer/(UI 层)按内容主题的测试段 + fixtures/ 静态样例数据 + tools/(smoke/ 薄转调,冒烟实现见 `src/main/smoke.ts`);样例生成器 `gates/fixtures/gen-fixtures.mjs`、视觉自查 `tools/visual-check.mjs`、electron 桩 `test/common/electron-mock*.mjs`、几何判定层 `shared/geometry/` 均已按归属迁出 test/);`gates/smoke/check-build-fresh.mjs`(构建新鲜度守卫,`start` 与 `test:smoke` 前置)
-  - **沙箱副本闭包**(守护见 `test/segments/contract-single-source.test.js` (e) 节,判定原语 `auditCopySet` 在 `test/common/copy-closure-audit.js`):部分段会把生产脚本**逐字节复制**进系统临时区的沙盒再执行(如 `install-smoke` 复制 gates/artifacts 与 gates/smoke 的 5 份脚本、shared/paths.js 与 shared/userdata.js)。因沙盒内无 `node_modules` 且只复制被点名的文件,副本必须满足三条:① 只允许 `node:` 内建依赖(裸包名必失败);② 相对 import 的目标必须**同在副本集合内**;③ 不得有死副本(无同集合入边且未登记为沙盒入口者判红)。副本集合由**代码里的复制调用扫出**(`copyFileSync`/`copyFile`/`cpSync`),不硬编码文件名 —— 新增复制点会被自动纳入。
+- `test/`:验收测试体系(acceptance.mjs 入口 + common/ harness + **四个段目录按被测主体归属**:`core/`(src/core 渲染主题)+ `main/`(主进程层)+ `renderer/`(UI 层)+ `gates/`(门禁树 `gates/**` 与机制层 `shared/**` 的守护段)+ fixtures/ 静态样例数据;样例生成器 `gates/fixtures/gen-fixtures.mjs`、视觉自查 `tools/visual-check.mjs`、electron 桩 `test/common/electron-mock*.mjs`、几何判定层 `shared/geometry/` 均已按归属迁出 test/);`gates/smoke/check-build-fresh.mjs`(构建新鲜度守卫,`start` 与 `test:smoke` 前置)
+  - **沙箱副本闭包**(守护见 `test/gates/contract-single-source.test.js` (e) 节,判定原语 `auditCopySet` 在 `test/common/copy-closure-audit.js`):部分段会把生产脚本**逐字节复制**进系统临时区的沙盒再执行(如 `install-smoke` 复制 gates/artifacts 与 gates/smoke 的 5 份脚本、shared/paths.js 与 shared/userdata.js)。因沙盒内无 `node_modules` 且只复制被点名的文件,副本必须满足三条:① 只允许 `node:` 内建依赖(裸包名必失败);② 相对 import 的目标必须**同在副本集合内**;③ 不得有死副本(无同集合入边且未登记为沙盒入口者判红)。副本集合由**代码里的复制调用扫出**(`copyFileSync`/`copyFile`/`cpSync`),不硬编码文件名 —— 新增复制点会被自动纳入。
   - **入口登记需人工同步**:`SANDBOX_ENTRY_EVIDENCE`(同在 `test/common/copy-closure-audit.js`)登记那些「被复制但沙盒内由测试直接执行、因而没有上游 import」的副本。漏登记**判红**而非静默放过(刻意取舍),故新增/删除沙箱复制点时必须同步该表。登记需附「提及它 + 带执行类调用」的行作为证据,否则视为无证据。
   - **已知覆盖边界**:运行时拼装的复制列表、多层别名链、跨目录整树复制**解析不出**,只登记不判红。若将来用「运行时拼装列表」复制 JS 模块,本守护不会自动纳入,需人工扩 `resolveCopySource` 或新增复制机制 scope。
 - `tools/`:工具树(七个文件平铺,无子目录;`build/` 与 `dev/` 于 ADR-050 合并而成;`tools-stay-in-tools` 边界规则判它零跨树出边,只许引 `shared/` 与自身):`copy-renderer.mjs`(静态资源拷贝,`build` 步骤)/`svg-to-ico.mjs`(SVG → ICO,`icons` 步骤,读同目录 `icon.svg` 写 `icon.ico`)/`visual-check.mjs`(视觉自查,`ui:shots`)/`visual-preload.cjs` 与 `visual-about-preload.cjs`(上面那个工具的两个窗桩;项目根经 `--m2w-root=` 注入,桩不自算)/`renderer-coverage-report.mjs`(被 c8 排除层的只读覆盖率报告)/`setup-env.ps1`(一次性写 Electron 镜像环境变量)。目录名**不表达**「是否在 CI/release 链内」——该信号在 `package.json` scripts 与上一张「门禁接入点」表两处。
 
 ## 测试体系(按内容主题零注册,新增=新建段文件)
-- 目录组织标准(test 树镜像 src 三层,按被测主体归属;目录内按内容主题命名):`test/segments/` = core 渲染主题与跨层契约/恒等守护段 /`test/main/` = 主进程层主题段 /`test/renderer/` = UI 层主题段(纯函数/状态机/CSS 令牌恒等)
+- 目录组织标准(段目录**镜像一棵被断言的树**,按被测主体归属;目录内按内容主题命名):`test/core/` = `src/core` 渲染主题段 /`test/main/` = `src/main` 主进程层主题段 /`test/renderer/` = `src/renderer` UI 层主题段(纯函数/状态机/CSS 令牌恒等)/ `test/gates/` = `gates/**` 门禁树与 `shared/**` 机制层的契约/恒等守护段(跨域守护段)
   - **归属判例(跨层段)**:归属看**被测主体**,断言穿过别层不改变归属 —— 被测主体在 `src/main`、core 仅作被断言的接收方时,段归 `test/main/`(例:`test/main/mermaid-warning-channel.test.js` 测 main 侧渲染服务与 converter 接线,core 的 warning 通道是被断言对象)。
   - **同模块多段口径**:同一被测模块可按内容主题拆多段,文件名带主题后缀,不要求一段覆盖模块全部行为(例:`test/main/atomic-json.test.js` 断言落盘/队列/失败清理,`test/main/atomic-json-durability.test.js` 断言 fsync 时点与耐久性)。
-  - **段目录以三目录为全集**,`test/` 下无第四个段目录(原 `test/pending/` 暂存区已删除,其断言由 `test/segments/core-resources.test.js` 覆盖;三目录恒等这条口径的判据与该目录的存废记在 `gates/repo/check-test-numbering.mjs` 头注)。新增段一律进三目录之一,勿另开暂存区 —— 另开就会出现「三目录恒等」与实际并存的误读。
+  - **段目录须镜像一棵被断言的树**(判据:段目录名必须是顶层某棵树的目录名 —— `core`/`main`/`renderer` 对应 `src/` 的三个子目录,`gates` 对应顶层 `gates/`;`common` `fixtures` `acceptance` 三个 harness/数据区名被显式排除)。这条替代了早先的「三目录恒等」表述:新增被断言的树配同名段目录即可,不必改判据文字;新增杂物抽屉(如 `test/pending/`,历史上真存在过的暂存区,其存废断言由 `test/core/core-resources.test.js` 覆盖)因顶层找不到同名树而判红。判据实现与判红文案在 `shared/test-common-surface.js` 的 `checkSegmentMirrors`,由 `gates/repo/check-test-numbering.mjs` 与 `check-temp-cleanup.mjs` 各自 fail closed;漏登记的测试子目录由同一单源的「扫描面等式」另管,两条各管一件事。
 - 静态样例入 `test/fixtures/`(acceptance/ 生成 + manual/ 手工);产物 `output/artifacts` + `output/smoke`(可清理重建,smoke 自清理)
 - 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`ru` 是已裁撤语言,`i18n-registry.test.js` 拿它当「裁撤回归守卫」的样例(`isLanguage("ru") === false`),回加该语言会撞红这条断言**
 - 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(EOL 归一化,`.gitattributes` 双保险;CI 门禁步骤)
@@ -148,14 +148,14 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - **验证分两档**(命令与门禁类别见本文件「命令」「门禁接入点」两节,此处只定节奏):
   - **开发回路**(每次改完):`typecheck` + `lint` · 改动面所属的验收段(`M2W_ONLY` 按**段名**筛)· 本轮改动到的纯文本门禁(`check:docs` 等)
   - **提交前**(每个提交跑一次):上面那套 **+ `npm run test` 全量**
-- **开发回路不得省全量的两种情形**:① 动了共享测试设施(`test/common/**` · `test/tools/**` · `gates/**` · `tools/**` · 门禁脚本 · `package.json`)—— 跨段污染只有全量暴露 ② 影响面判不出来(改动落在「命令」节任何一条都覆盖不到的位置)—— 此时当轮就跑,不留到提交前
+- **开发回路不得省全量的两种情形**:① 动了共享测试设施(`test/**` · `gates/**` · `tools/**` · 门禁脚本 · `package.json`)—— 跨段污染只有全量暴露 ② 影响面判不出来(改动落在「命令」节任何一条都覆盖不到的位置)—— 此时当轮就跑,不留到提交前
 - **筛段不会静默假通过**:筛选词命中 0 个段即判红(`test/common/runner.js` 的段筛选三态契约),故「只跑受影响段」不存在「筛选词拼错 → 打印全部 0 段通过 → 退出 0」的失效形态
 - 全量验收在链内的唯一一次是 `verify:ci` 的 `test:coverage`(见 [adr-016](adr/adr-016-门禁链内全量验收只跑一遍.md)),本条不与它重复;发版前的全套走 `verify:release`,不由本条覆盖
 - **`verify:ci` 只由主会话在推送前跑一次,子代理一律不跑** —— 它把十余步门禁串成一条,多条并行泳道会让同一串门禁被各跑一遍,耗时翻倍且没有新增结论。子代理跑的是上面「开发回路」那一档(定向门禁 + 受影响验收段),并在交回时**明确写出「未跑 verify:ci」**,不默认它绿。下面第 2 条「动了共享测试设施当轮就跑全量」对子代理仍然成立,但那里的「全量」指**受影响段**,链级 `verify:ci` 由主会话在推送前统一兜底 —— 收尾判完成仍以 `verify:ci` 全绿为准,子代理的自证不能替代它
 - **失败后不得重跑整条链去「看是不是还红」** —— 它是 `&&` 串联,退出码只说明有一步非零,不说明是哪一步;而 `test:coverage`(build + c8 + electron)是链内最贵的一步,它已经把逐段结论打出来了。定位办法按代价从低到高:① 首次运行就把输出重定向落盘,失败时 grep 该文件,只跑这一次整链 ② 从便宜的一端逐个单跑(`check:*` 纯文本门禁 → 段级 `M2W_ONLY` 筛选 → 才轮到 `test:coverage`) ③ 确认是哪一步后才决定要不要重跑整链。反复整链重跑是最贵且信息量最低的做法
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(提交前置 → 全局配置目录 `WORKFLOW.md`「六、收尾」;发布/打包产物属对外动作 → 全局配置目录 `AGENTS.md` 安全底线 3)
 - 类型/构建/门禁命令清单见本文件「命令」节;每条 `npm run *` 的门禁类别与接入点(`verify:ci` 链 / `verify:release` 链 / 仅某个 CI workflow job / 仅本地手动)见本文件「门禁接入点」表
-- 验收测试段明细见 `test/segments/`、`test/main/` 与 `test/renderer/`;恒等守护与边界守护段清单见本文件「测试体系」节
+- 验收测试段明细见 `test/core/`、`test/main/`、`test/renderer/` 与 `test/gates/`;恒等守护与边界守护段清单见本文件「测试体系」节
 - `check:docs` —— 指针门禁(`gates/repo/check-docs.mjs` 薄包装,调全局配置目录的 `tools/check-pointers.mjs`,项目侧不持有第二份逻辑;**项目模式探针是 `docs/REQ.md`**,命中后扫描根 md + 整个 `docs/`(`docs/evidence/` 整棵除外);检查项 = 存在性 / 小节名 / 无引号小节 / 遗留文档名 + **台账一致性**(R1–R7 台账内不变量 + 表格结构判据,见下两条)+ **载体形态判据 C1–C6**;门禁路径取 `M2W_GLOBAL_CONFIG`(配置仓根目录)或默认 `~/.config/opencode`;载体不可达时打印一行提示后 exit 0,**故 CI 上的跳过是预期行为** —— workflow 不装也不克隆配置仓;**不在 `verify:ci` 链里**,提交前本地手动跑)
 - **载体形态判据 C1–C6**(判据本体在配置仓 `tools/check-pointers.mjs`,本仓只承接不复制;C# 与迁移计划 §1.5 的 R8/L1/G3/G4/G5/G7 一一对应):C1 `REQ.md` 标题列 ≤20 字 · C2 判断依据列 ≤200 字(`已完成` 行 ≤100)· C3 `LESSONS.md` 单条 ≤100 字且总条数 ≤30、空主题节不留 · C4 `adr/` 背景行非空 · C5 `evidence/` 头部「结论去向」四选一(`升 adr/ADR-0NN` 可带真实序号 / `落 REQ.md 行` / `落 LESSONS.md` / `未升`)· C6 上述去向与真实载体的**双向对账**。**六条已全部转判红**,违反进 `errors`、退出码非零(判据转红的决定见全局配置目录 `docs/adr/ADR-005-载体形态判据转判红.md`);仍**只出声**的三类判据 =「是违规吗」而不是「是问题吗」:**载体不可达 / 零覆盖**(是「没查」不是「查了没问题」)· 列数守卫 C0(错位行不参与判定属解析失败)· 解析盲区自报。输出里带「零覆盖」字样的那行是提醒,不是通过
 - **台账表格结构判据**(`checkTableShape()`,判据本体同在配置仓;**只对表头含「号」且含「状态」的表块生效**,故不误伤其它表格与模板骨架):台账表块必须严格是「表头 → 分隔行 → 数据行」三段紧邻 —— ① 表头下一行不是分隔行 ⇒ 判红并点名「数据行被插到了表头与分隔行之间」② 分隔行与首行数据行**原始行号不连号** ⇒ 判红(表内夹了空行,Markdown 在空行处断表,后面的行不再属于本表)③ **空节(只有表头+分隔)判 0 错**,0 行是合法态。**排在 C1/C2 之前跑** —— 表坏时 C1/C2 读到的行列数都是解析器的误读,报出来只会误导;它也**不改 `tableBlocks()` 对空行的宽容**(那条是为免误报,拆掉会让 R4 报「号段缺行」假红),两者刻意解耦。**已知缺口:空行夹在表头与分隔行之间仍判绿**(判据只比「分隔行→首行数据行」,不回看「表头→分隔行」),边界与补法记在那份 ADR-006 的「实测的覆盖边界」表里。形状规则的人读载体是**全局配置目录 `templates/docs-init/REQ.md` 与本文件 `docs/REQ.md` 规则节里的「表形状是硬约束」那条**(同名同措辞,按规则名指、不按序号指 —— 两份文件的规则条数本来就不一样,按序号指会指错)(模板只对以后新初始化的项目生效,存量项目靠上面这条判据兜底),决定见全局配置目录 `docs/adr/ADR-006-台账表形状不变量.md`(这两条配置仓路径**不被任何档判存在性** —— 带 `/` 的跨仓引用两档都放行,改路径时自己核)

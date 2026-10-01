@@ -59,4 +59,22 @@
 
 ## 修复项复测
 
-(交付后回填)
+| 步 | 提交 | 状态 |
+| --- | --- | --- |
+| 1 REQ-144①② | `63dfe59` | ✅ 已验证 |
+| 2 REQ-144③ | `09d03ff` | ✅ 已验证 |
+| — 台账 | `3ae911b` | REQ-144 转已完成 |
+| 3 REQ-142 | (fix-3 运行中) | ⏳ |
+| 4 REQ-143 | 未开始 | ⏳ |
+| 收尾 | — | ⏳ 全量 `npm run test` 未跑 |
+
+### 已交付的复核结论(主会话独立验证,不采信子代理自证)
+
+- **步 1 抓到一处子代理引入的层级缺陷并当轮修掉**:`shared/cli.mjs` 里 `CLI_USAGE` 写死 dist 清单门禁的 `--help` 文案,还被 `parseArgs` 拼进所有调用方的报错 —— 机制层知道了某门禁的参数表,且比下沉前更糟(原先是 `check-dist-manifest.mjs` 的**私有** `const`,单使用者)。改为 `parseArgs` 收可选 `usage`、各门禁各传各的。顺带发现 `clean-artifacts.mjs` 早前正因此另写了一份 `parseArgs`,现已并回共享实现。
+- **步 2 的树边界规则独立复核**:造沙盒跑 `analyzeTreeBoundaries`,三条负例(`tools/` 引 `test/` `src/` `gates/`)全部判红并点名规则 id 与行号,正向样本(引 `shared/`)零误伤,`selfCheckTreeLayout` 返回空 ⇒ 规则真会判红,非恒绿断言。
+- **步 2 查出的清单外硬编码**(漏改会静默失效):`gates/geometry/geometry/driver.mjs` 的 preload 运行时常量 · `gates/probe/gate-probes/sandbox.mjs` 的运行时 argv · `test/segments/contract-single-source.test.js` 的 `listJsSources` 扫描面 · `AGENTS.md` 与 `CONTRIBUTING.md` 各一处 `setup-env.ps1` 活路径。
+- **`check-import-boundary` 只判方向不判存在性**:步 1 实施中 `gates/artifacts/pack-size/{cli,util}.mjs` 相对深度写错(方向合法、模块不存在),靠逐个 `import()` 才抓住。步 2 移动全部 7 个文件时同样逐个验了可解析性。
+
+### 已知未覆盖
+
+- `npm run ui:shots` 未实跑(需 GUI + dist 产物)。`tools/visual-check.mjs` 的可解析性以「相对 specifier 逐条 resolve + 零 `../gates/` 出边」等效证明;它在真 Electron 下的启动路径未被覆盖 —— `shared/entry-guard.mjs` 只能在真 Electron 主进程加载,纯 node 下 import 必失败,与本次移动无关。

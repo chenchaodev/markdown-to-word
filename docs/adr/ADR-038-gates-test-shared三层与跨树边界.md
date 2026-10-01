@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 部分被 [ADR-043](ADR-043-树边界规则allowlist与shared零跨树出边.md) 取代（**只把表中 `shared/**` 的「无（零出边）」精确为「零跨树出边」**；三层划分 · 其余四条规则 · `test/fixtures/` 只读数据一条不动）；另「不产生断言的产物生产与人工目检分列 `build/` 与 `dev/`」一句中 `clean-artifacts` 的归属部分被 [ADR-049](ADR-049-工具函数下沉shared与clean-artifacts归位.md) 取代（它断言打包配置，已归 `gates/artifacts/`），同一句的两树分列本身部分被 [ADR-050](ADR-050-顶层build与dev合并为tools.md) 取代（`build/` 与 `dev/` 合并为受管树 `tools/`）—— **正文表格内容按规矩未改动** |
+| 状态 | 部分被 [ADR-043](ADR-043-树边界规则allowlist与shared零跨树出边.md) 取代（**只把表中 `shared/**` 的「无（零出边）」精确为「零跨树出边」**；三层划分 · 其余四条规则 · `test/fixtures/` 只读数据一条不动）；另「不产生断言的产物生产与人工目检分列 `build/` 与 `dev/`」一句中 `clean-artifacts` 的归属部分被 [ADR-049](ADR-049-工具函数下沉shared与clean-artifacts归位.md) 取代（它断言打包配置，已归 `gates/artifacts/`），同一句的两树分列本身部分被 [ADR-050](ADR-050-顶层build与dev合并为tools.md) 取代（`build/` 与 `dev/` 合并为受管树 `tools/`）；决定节第二段「`test/tools/` 整个取消，每个文件按 ADR-039 的跨树 import 事实归位」由 [ADR-051](ADR-051-段目录按被测主体镜像.md) **达成目标态**（该目录已整目录删除；同段「三目录保持扁平」一句部分被其取代 —— `test/segments/` 拆为 `test/core/` 与 `test/gates/`，四段目录仍保持扁平）—— **正文表格内容按规矩未改动** |
 | 日期 | 2026-09-30 |
 | 取代 | 无 |
 | 关联 | [ADR-037](ADR-037-顶层与扫描面一律派生.md) · [ADR-039](ADR-039-门禁自检判据与探针必填.md) · [REQ-110](../REQ.md) |

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 门禁故意失败探针段(位于 test/segments/ = 跨域守护段;被测为 gates/probe/check-gate-probes.mjs
+ * 门禁故意失败探针段(位于 test/core/ = 跨域守护段;被测为 gates/probe/check-gate-probes.mjs
  * 所探测的各道门禁本身,而非任何业务能力):
  *
  * 为什么要有这一段:仓库的 coverage 阈值、fixtures 漂移、构建新鲜度、dist 清单、smoke

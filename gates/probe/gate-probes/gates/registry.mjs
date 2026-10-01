@@ -3,7 +3,7 @@
 // 判据面 = 判定本体 `checkGateRegistry(ctx)` 本身(可注入纯函数),三种驱动器消费同一份:
 //   CLI     —— node gates/probe/gate-probes/registry.mjs(以及 check:gates 的第一步)
 //   探针    —— 本文件
-//   验收段  —— test/segments/gate-registry-gate.test.js
+//   验收段  —— test/gates/gate-registry-gate.test.js
 //
 // **为什么这个探针不跑真实注册表**:真实注册表当前是好的,跑它只会得到「零问题」—— 那是恒真断言,
 // 证明不了本门禁在被破坏时会红。所以本探针对**合成的**注册表逐条注入故障:
@@ -182,10 +182,10 @@ export async function probeRegistry(ctx) {
   faultCase(
     "fault-probe-carrier-missing",
     "把探针指向一个不存在的自检脚本 / 验收段",
-    "boundary 门禁的段探针 ref 指向 test/segments/does-not-exist.test.js",
+    "boundary 门禁的段探针 ref 指向 test/core/does-not-exist.test.js",
     () => {
       const registry = synth(real);
-      registry.boundary.probes = [{ kind: "segment", ref: "test/segments/does-not-exist.test.js", why: "指向不存在的段" }];
+      registry.boundary.probes = [{ kind: "segment", ref: "test/core/does-not-exist.test.js", why: "指向不存在的段" }];
       return { registry };
     },
     "probe-missing",
@@ -373,7 +373,7 @@ export async function probeRegistry(ctx) {
     "pinned-actions 的段探针清空 why",
     () => {
       const registry = synth(real);
-      registry["pinned-actions"].probes = [{ kind: "segment", ref: "test/segments/pinned-actions.test.js", why: "" }];
+      registry["pinned-actions"].probes = [{ kind: "segment", ref: "test/gates/pinned-actions.test.js", why: "" }];
       return { registry };
     },
     "probe-reason-missing",

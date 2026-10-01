@@ -2,9 +2,9 @@
 // @ts-check
 /**
  * 验收 md 样例生成器(纯 Node,无 Electron 依赖):
- * 扫描 test/segments、test/main、test/renderer 下的 *.test.js(目录集合的单一来源是
- * test/common/test-common-surface.js 的 SEGMENT_DIRS,与 test/acceptance.mjs 交给 runner
- * 的三目录是**同一数组对象**,恒等断言见 test/segments/fixture-contract.test.js),
+ * 扫描 test/core、test/main、test/renderer、test/gates 下的 *.test.js(目录集合的单一来源是
+ * shared/test-common-surface.js 的 SEGMENT_DIRS,与 test/acceptance.mjs 交给 runner
+ * 的段目录是**同一数组对象**,恒等断言见 test/gates/fixture-contract.test.js),
  * **逐个动态 import 后读显式契约**——不预筛源码、不解析注释:
  * - `fixtures`:key=场景名,value=md 字符串;不产出样例的段显式写 `fixtures = null`;
  * - `meta.description`:README 索引文案(显式字段,取代「取文件头 JSDoc 首行」)。
@@ -49,13 +49,13 @@ const PRINT_IMAGE_BASELINE = process.argv.includes("--print-image-baseline");
  * 候选测试段目录(= test/acceptance.mjs 交给 runAll 的同一份数组,单一来源在
  * test/common/test-common-surface.js 的 SEGMENT_DIRS)。
  * 恒等由「同一对象」保证,不再需要两处各写一份 + 文本比对;真正的守门断言在
- * test/segments/fixture-contract.test.js(它守的是「acceptance 确实拿这份数组喂 runner」)。
+ * test/gates/fixture-contract.test.js(它守的是「acceptance 确实拿这份数组喂 runner」)。
  */
 export const FIXTURE_SEGMENT_DIRS = SEGMENT_DIRS;
 
 /**
  * import 豁免白名单:仅登记「纯 Node 下确实无法 import」的段。当前为空——全部段在
- * 纯 Node + electron-mock 下均可 import(mock 覆盖由 test/segments/electron-mock-coverage.test.js
+ * 纯 Node + electron-mock 下均可 import(mock 覆盖由 test/core/electron-mock-coverage.test.js
  * 静态守护)。确需豁免时按 { segment, reason } 登记并写明理由:理由为空、段名已不存在
  * (改名/删除后残留)、或该段已能正常 import(豁免失效)均判红,防白名单沦为永久盲区。
  * @type {{segment: string, reason: string}[]}
@@ -360,7 +360,7 @@ function describeImportFailure(name, err) {
     const exportName = missingExport[2] ?? "?";
     // 仅当出错的模块确为 electron(经 electron-mock loader 解析)时,才归因到 electron-mock
     if (/electron/i.test(moduleName)) {
-      return `${name}:段模块 import 失败——electron-mock 缺命名导出「${exportName}」(补进 test/common/electron-mock.mjs;自动断言见 test/segments/electron-mock-coverage.test.js)`;
+      return `${name}:段模块 import 失败——electron-mock 缺命名导出「${exportName}」(补进 test/common/electron-mock.mjs;自动断言见 test/core/electron-mock-coverage.test.js)`;
     }
     return `${name}:段模块 import 失败——模块 ${moduleName} 未导出「${exportName}」(该模块自身的导出问题,**不是** electron-mock;若它确应提供此导出请补齐,否则检查它的调用方)`;
   }

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * geometry gate 判定层回归与负探针(位于 test/segments/ = 跨域守护段;
+ * geometry gate 判定层回归与负探针(位于 test/core/ = 跨域守护段;
  * 被测为 shared/geometry/ 下的纯判定层,不经 dist 编译产物、不启真实窗口):
  * - 正向:按规格合成一整套"应当全绿"的采样样本,门禁判定必须零 finding;
  * - 负向:逐类注入故障(缺场景 / 缺选择器 / 必需节点不可见 / 视口不匹配 / 响应式档位未生效 /

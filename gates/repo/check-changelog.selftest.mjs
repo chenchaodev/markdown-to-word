@@ -8,7 +8,7 @@
 // 由 shared/paths.js 推导,故拷贝后扫描面自动指向夹具根),连同它的仓内依赖 shared/paths.js
 // 一起拷贝,再放一份夹具 CHANGELOG。真实仓库只被**读**(baseline 那一条跑真实 docs/CHANGELOG.md)。
 // 少拷一个的代价不是「夹具少测一条」而是「门禁在沙盒里直接起不来」:相对 import 解析不到,
-// 那条守护段 test/segments/contract-single-source.test.js 的副本闭包判定会先把它拦下。
+// 那条守护段 test/gates/contract-single-source.test.js 的副本闭包判定会先把它拦下。
 //
 // 每条负向夹具须命中一个真实漂移形态,而非人造噪声 —— 依据见各夹具的 why 注释。
 

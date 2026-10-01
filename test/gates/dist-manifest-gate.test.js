@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * dist 构建边界与清单门禁(位于 test/segments/ = 跨域守护段;被测为 gates/artifacts 与 tools/ 下的
+ * dist 构建边界与清单门禁(位于 test/core/ = 跨域守护段;被测为 gates/artifacts 与 tools/ 下的
  * 构建/发布门禁脚本,纯 Node 逻辑不经 dist 编译产物):
  * - check-dist-manifest.mjs:clean dist 的规范化清单(相对路径 + size + SHA-256),
  *   以及三类漂移检测(stale 残留 / 缺失 / 内容被改写);CLI --dist/--output/--check/--print

@@ -54,7 +54,7 @@
  * 判定层零 Electron / 零 fs:缩放与像素基线判定可脱离窗口独立验证(selftest.mjs 逐条断言)。
  * CSS 令牌恒等一条的三处各归其位(依赖方向同上,未新增层):
  *   判据表 geometry-spec.CSS_TOKEN_RULES · 页面探针 geometry-page.buildCssTokenScript ·
- *   纯判定 geometry-core.judgeCssTokens(负向探针见 test/segments/geometry-gate.test.js)。
+ *   纯判定 geometry-core.judgeCssTokens(负向探针见 test/gates/geometry-gate.test.js)。
  *
  * 阈值口径(单 DPI 与跨 DPI 分开,缩放只增不改):
  * - 单 DPI 判定(容差 1px、固定槽区间、舞台/动作栏恒定、紧凑档滚动预算 1px)在

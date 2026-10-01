@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 依赖声明与 import 层向边界守护段(位于 test/segments/ = 跨域守护段;被测为
+ * 依赖声明与 import 层向边界守护段(位于 test/core/ = 跨域守护段;被测为
  * gates/repo/check-import-boundary.mjs 的判定逻辑 + 真实仓库的声明/产物事实,
  * 纯 Node 逻辑,不启 Electron):
  *

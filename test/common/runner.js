@@ -1,10 +1,10 @@
 // @ts-check
 /**
  * 测试段执行框架(逐段子进程隔离,正式口径见 docs/adr/adr-015-测试工程化与范围纳入.md):
- * - 段文件 = test/segments/、test/main/ 或 test/renderer/ 下 *.test.js,须导出 async function run()
+ * - 段文件 = test/core/、test/main/、test/renderer/ 或 test/gates/ 下 *.test.js,须导出 async function run()
  * - 新增测试 = 新建段文件即可,零注册(入口按目录顺序自动发现)
  * - 单段筛选(选择面):设 M2W_ONLY=basic-render,mermaid 可只跑名称含任一子串的段
- *   (逗号分隔多个子串,大小写不敏感,匹配段名如 segments/basic-render.test.js;
+ *   (逗号分隔多个子串,大小写不敏感,匹配段名如 core/basic-render.test.js;
  *   不设该变量时行为与全量运行完全一致)。筛选在**父进程**做,子进程只跑指定段。
  * - 「选择」与「发现」是两个语义(见 resolveOnlySelection 的契约单源):M2W_ONLY 只
  *   回答「harness 这一轮跑哪些**顶层**段」;段内自己 runAll/discoverSegments 要跑哪些段
@@ -590,7 +590,7 @@ function drainPipes(streams) {
  * 1. **读端必须显式 `setEncoding("utf8")`**(由调用方在挂 data 之前做):管道只搬字节,
  *    损坏发生在读端 —— 不设编码时 Node 按 latin1 解码,会把 UTF-8 中文打成乱码,且事后
  *    无法修复。制表符不受影响:它是单字节,任何编码都不动它。仓库现成反例见
- *    test/segments/entry-exit-guard.test.js(Electron 子进程 + pipe + setEncoding("utf8")
+ *    test/gates/entry-exit-guard.test.js(Electron 子进程 + pipe + setEncoding("utf8")
  *    + 断言中文输出,长期为绿)。
  * 2. **只按 "\n" 切行做前缀,不得碰 "\t" 与 "\r"**:列对齐类输出里制表符有语义;行拆分器
  *    保留半行余量(chunk 边界不与行边界对齐,不能按 chunk 直接加前缀),进程退出时 flush

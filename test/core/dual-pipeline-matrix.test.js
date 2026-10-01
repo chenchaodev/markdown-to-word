@@ -61,7 +61,7 @@
  * 判据是本段的 `assertMatrixShape`(其中含键覆盖交叉核对),探针在系统临时目录的
  * 工程副本里注入两类故障 —— 删掉一行 `covers` 标记、给某行塞一个未登记的键 ——
  * 断言本段真的判红,即证明这道登记不是恒真断言。探针**不在** `verify:ci` 链内
- * (`check:gates` 是阴性自检,由 `test/segments/gate-probes.test.js` 在链内实跑),
+ * (`check:gates` 是阴性自检,由 `test/gates/gate-probes.test.js` 在链内实跑),
  * 而本段本身随全量验收段在链内跑。
  */
 import fs from "node:fs";

@@ -203,7 +203,7 @@ jobs:
       # **它是纯建议项,不在关键路径上就不该占关键路径** —— 三个 job 本就并行,本 job
       # 实测 56s,加这步仍远低于主 job,故不产生新关键路径。
       # 选本 job 而非另开一个:另开要新增 checkout + setup-node + upload-artifact 三处
-      # `uses:`,会撞 test/segments/pinned-actions.test.js 的 `uses.length === 14` 断言
+      # `uses:`,会撞 test/gates/pinned-actions.test.js 的 `uses.length === 14` 断言
       # 判红 —— 为 35s 改一处门禁断言不值得。合并则 uses: 数不变、零连带判红。
       # 选本 job 而非 node-lts:那个 job 跑 test:smoke(**真起 Electron**),而本 job 经
       # `npm ci --ignore-scripts` 装依赖、不下载 electron/sharp 原生二进制。往 Electron

@@ -7,7 +7,7 @@
  *
  * 边界契约:本文件的命名导出集合必须覆盖 src/main、src/core 对 electron 的全部
  * 具名 import(type-only 说明符已被编译期擦除,不需要 mock)。缺项会让依赖该模块的
- * 测试段在纯 Node 下 import 失败,静态守护见 test/segments/electron-mock-coverage.test.js
+ * 测试段在纯 Node 下 import 失败,静态守护见 test/core/electron-mock-coverage.test.js
  * ——新增/删除导出前先跑该段,别等 check:fixtures 报运行期错误。
  */
 export const app = {
