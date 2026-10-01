@@ -82,7 +82,8 @@ export function parseCoverageScript(root = ROOT) {
  * - 锚点:被加载的模块全覆盖 → exit 0;
  * - 负向:被加载的模块只覆盖一部分 → 低于阈值 → exit 非 0 且报「不满足阈值」;
  * - 负向:dist/renderer/ 下被加载但零覆盖的模块**不应**进报告 → 证明 --exclude 仍生效;
- * - 盲区(只观测):从未被 import 的模块不进报告(参数向量未开 --all)→ 如实登记。
+ * - 盲区(只观测):放入一个从未被 import 的模块,看门禁是否仍放行 —— 该观测现**恒为 exit 1**,
+ *   原因见下方 `blindspot-unloaded-file` 处注释(参数向量里有 `--all`,不是「未开」)。
  * @param {object} ctx 探针上下文
  * @param {number} ctx.timeoutMs 硬超时
  * @returns {Promise<GateProbeResult>} 门禁结果
@@ -215,7 +216,16 @@ export async function probeCoverage(ctx) {
       ),
     );
 
-    // 盲区观测:从未被 import 的模块不进报告(参数向量未开 --all)→ 只登记不判定
+    // 盲区观测:放入一个从未被 import 的模块,看门禁是否仍放行 → 只登记不判定。
+    //
+    // 为什么它恒为 exit 1(沙盒内实测,非推断):参数向量里**有** `--all`,而 `--include=dist/**`
+    // 把 probe-unloaded.mjs 纳入匹配范围 ⇒ 未加载模块以 0% 进报告,拉低 total 至阈值以下,
+    // c8 非零退出。实测报告含 `probe-unloaded.mjs | 0 | 0 | 0 | 0` 与
+    // 「does not meet global threshold (90%)」。
+    //
+    // ⇒ 本 case **不再观测到它想观测的盲区**(「未加载模块不进报告」),而是以 note 以
+    // 「观测结果:exit 0」开头为前提的 finding 分支因此恒不触发。这条观测已失去检测力,
+    // 把它改成真正的盲区观测(去掉 --all 后比对、或换观测面)属独立设计题,未做。
     writeFileIn(sandbox, "dist/probe-target.mjs", targetSource(true));
     writeFileIn(sandbox, "dist/probe-unloaded.mjs", 'export function neverImported() { return "unloaded"; }\n');
     const unloaded = await runC8();
@@ -232,7 +242,7 @@ export async function probeCoverage(ctx) {
         unloaded,
         unloaded.code === 0
           ? "观测结果:exit 0 —— 该模块未进入覆盖率报告,门禁对它无感知"
-          : `观测结果:exit ${String(unloaded.code)} —— 门禁能看见未加载模块(与预期相反,须复核参数向量)`,
+          : `观测结果:exit ${String(unloaded.code)} —— 未加载模块以 0% 进报告拉低 total(--all + --include 的必然结果,不是参数向量异常)`,
       ),
     );
   } finally {
@@ -247,7 +257,7 @@ export async function probeCoverage(ctx) {
       id: "coverage-unloaded-file-blind",
       severity: "advisory",
       summary:
-        "coverage 门禁只统计被加载过的文件(参数向量未开 --all):新增但从未被 import 的模块不计入覆盖率,门禁对它等于空过",
+        "coverage 门禁只统计被加载过的文件(本条前提在当前向量下不成立 —— `--all` 已开,本分支恒不触发):新增但从未被 import 的模块不计入覆盖率,门禁对它等于空过",
       evidence: `以 package.json 的真实参数向量(${parsed.flags.join(" ")})放入 dist/probe-unloaded.mjs 后 c8 仍 exit 0,报告里无该文件`,
     });
   }
