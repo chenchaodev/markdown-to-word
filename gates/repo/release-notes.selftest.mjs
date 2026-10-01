@@ -1,0 +1,123 @@
+// @ts-check
+/**
+ * Release notes 抽取器的自检(验证判据本身会判红,不是跑一遍就算)。
+ *
+ * 收录判据(ADR-039):门禁自检缺不缺用**两条可 grep 的事实**判,不用主观归属 ——
+ * 本文件的存在理由是 extractNotes 的失效形态是**静默取到错的内容**,而错内容在
+ * 发布之前不可见(它只在 GitHub Release 页面出现),故必须能在链内证伪。
+ *
+ * 覆盖两侧:
+ *   正向 —— 版本号逐字命中时取到该节正文;`###` 子标题留在正文内
+ *   负向 —— ① 本次版本节缺失时**不得**回退到上一版(这正是线上缺陷的形态)
+ *          ② `[待发版]` 不是版本节,不被任何版本号命中
+ *          ③ `3.16.2` 不得误匹配 `3.16.20`
+ *          ④ 节存在但正文为空 → hasSection 真、body 空(与「节不存在」区分)
+ *          ⑤ 版本节末尾的下一个 `## ` 正确截断,不吞掉下一版
+ */
+import { extractNotes, inspectReleaseNotes } from './release-notes.mjs';
+
+/** CHANGELOG 夹具:形态取自真实文件的三种关键状态 */
+const MD = [
+  '## [待发版]',
+  '',
+  '## [3.16.2] - 2026-10-02',
+  '',
+  '本次发布不含功能变更，应用的界面与导出结果与上一版一致。',
+  '',
+  '## [3.16.1] - 2026-10-01',
+  '',
+  '### 修复',
+  '',
+  '- 修复了一些问题。',
+  '',
+  '## [3.16.20] - 2026-10-03',
+  '',
+  '### 改进',
+  '',
+  '- 另一个版本的内容。',
+  '',
+].join('\n');
+
+let failed = 0;
+/**
+ * 断言。
+ * @param {boolean} cond 条件
+ * @param {string} msg 失败文案
+ */
+function assert(cond, msg) {
+  if (cond) return;
+  failed += 1;
+  console.error(`[fail] release-notes-selftest: ${msg}`);
+}
+
+// ---- 正向:逐字命中取到该节正文 ----
+assert(
+  extractNotes(MD, '3.16.2') === '本次发布不含功能变更，应用的界面与导出结果与上一版一致。',
+  `3.16.2 应取到本节正文,实际:${JSON.stringify(extractNotes(MD, '3.16.2'))}`,
+);
+
+// ---- 负向①:本次版本节缺失时不得回退到上一版(线上缺陷形态) ----
+assert(
+  extractNotes(MD, '3.17.0') === '',
+  `缺失版本必须返回空串而不是上一版内容,实际:${JSON.stringify(extractNotes(MD, '3.17.0'))}`,
+);
+
+// ---- 负向②:`[待发版]` 不是版本节,任何版本号都命中不到它 ----
+assert(
+  extractNotes(MD, '待发版') === '',
+  '`[待发版]` 不该被当作版本节命中',
+);
+assert(
+  !inspectReleaseNotes(MD, '待发版').hasSection,
+  '`[待发版]` 不该被 inspectReleaseNotes 认作版本节',
+);
+
+// ---- 负向③:不得误匹配前缀相同的更长版本号 ----
+assert(
+  extractNotes(MD, '3.16.2') !== extractNotes(MD, '3.16.20'),
+  '3.16.2 与 3.16.20 必须取到各自的节',
+);
+assert(
+  extractNotes(MD, '3.16.20') === '### 改进\n\n- 另一个版本的内容。',
+  `3.16.20 应取到自己的节,实际:${JSON.stringify(extractNotes(MD, '3.16.20'))}`,
+);
+
+// ---- 负向④:节存在但正文为空 → hasSection 真、body 空(与「节不存在」区分) ----
+{
+  const empty = ['## [4.0.0] - 2026-11-01', '', '## [3.9.0] - 2026-10-01', '', '### 修复', '', '- 旧内容。', ''].join('\n');
+  const r = inspectReleaseNotes(empty, '4.0.0');
+  assert(r.hasSection, '空节仍应算「节存在」');
+  assert(r.body === '', `空节 body 应为空,实际:${JSON.stringify(r.body)}`);
+  const missing = inspectReleaseNotes(empty, '4.0.1');
+  assert(!missing.hasSection, '不存在的版本 hasSection 应为假');
+  assert(missing.body === '', '不存在的版本 body 应为空');
+}
+
+// ---- 负向⑤:下一个 `## ` 正确截断,不吞掉下一版 ----
+assert(
+  !extractNotes(MD, '3.16.1').includes('另一个版本'),
+  '3.16.1 的正文不得吞进 3.16.20 的内容',
+);
+
+// ---- 输入边界:非字符串 / 空串 ----
+assert(extractNotes('', '3.16.2') === '', '空 CHANGELOG 应返回空串');
+assert(extractNotes(MD, '') === '', '空版本号应返回空串');
+assert(extractNotes(MD, 'v3.16.2') === '', '版本号带 v 前缀不该被命中(调用方负责剥前缀)');
+
+if (failed > 0) {
+  console.error(`[fail] release-notes-selftest: ${failed} 条断言失败`);
+  process.exit(1);
+}
+console.log('[ok] release-notes-selftest:9 条断言通过(正向取到本节 / 缺失不回退上一版 / 待发版非版本节 / 版本号前缀不误匹配 / 空节与缺节可区分 / 截断正确)');
+
+// ---- 变异测试:证明静态面判据自己不会恒绿 ----
+// 刻意由本文件 import 调起(而不是给变异脚本单开一条 npm script):链上「一个 script 串
+// 两个载体」的形态不被门禁注册表判据接受,而变异脚本与行为自检本就是一件事的两面 ——
+// 变异脚本改坏 release.yml 后,静态面判据必须真判红,才说明静态面那五条不是摆设。
+const { runMutationTest } = await import('./release-notes.mutation-test.mjs');
+const mutated = runMutationTest();
+if (mutated > 0) {
+  console.error(`[fail] release-notes-selftest:变异测试 ${mutated} 项未达预期(静态面判据可能恒绿)`);
+  process.exit(1);
+}
+console.log('[ok] release-notes-selftest:变异测试通过(五条静态面判据逐条改坏均真判红)');

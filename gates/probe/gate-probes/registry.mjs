@@ -76,6 +76,7 @@ export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   "check:coverage-zero:selftest": "gates/probe/check-coverage-zero.selftest.mjs",
   "check:docs:selftest": "gates/repo/check-docs.selftest.mjs",
   "check:changelog:selftest": "gates/repo/check-changelog.selftest.mjs",
+  "check:release-notes:selftest": "gates/repo/release-notes.selftest.mjs",
 });
 
 /* ---------- 门禁注册表 ---------- */
@@ -208,6 +209,39 @@ export const GATE_REGISTRY = Object.freeze(
           kind: "selftest",
           ref: "gates/repo/check-changelog.selftest.mjs",
           why: "自检脚本把门禁原样拷进临时仓并造夹具 CHANGELOG,逐条注入三类禁词(逐词覆盖枚举)、问候语假阳性、纯数字/纯字母 hash 假阳性、头部禁词(须判绿)、锚点改名 / 条目区清空 / 路径不存在(扫描面塌缩须判红),断言逐条判红判绿",
+        },
+      ],
+    },
+    "release-notes": {
+      id: "release-notes",
+      title: "Release notes 抽取契约门禁",
+      npmScripts: ["check:release-notes"],
+      command: "node gates/repo/check-release-notes.mjs",
+      modulePath: "gates/repo/check-release-notes.mjs",
+      access: "chain",
+      judgment: {
+        module: "gates/repo/check-release-notes.mjs",
+        export: "checkReleaseNotesContract",
+        shaped: "string[]",
+      },
+      judgmentNote:
+        "判定本体是纯文本扫描(读 .github/workflows/release.yml):抽取必须走单源模块 "
+        + "`gates/repo/release-notes.mjs` 的 `extractNotes(…, pkg.version)`,不得内联自造正则;"
+        + "空 notes 必须 exit 1,不得回退 `--generate-notes`(那是 commit 列表)。"
+        + "为何需要:原实现取「第一个带日期的版本头」,而 `## [待发版]` 后无日期匹配不上,"
+        + "正则穿透到**上一版** ⇒ 走逃生阀(本次无用户可见变化,`[待发版]` 留空)的发版,"
+        + "Release 页面显示上一版条目。实测 3.16.2 发布出的是 3.16.1 的条目 —— 那是关于本版的"
+        + "**错误陈述**,且只在发布后可见、发布前不可见,故必须能在链内证伪(见 REQ-145)。",
+      probes: [
+        {
+          kind: "selftest",
+          ref: "gates/repo/release-notes.selftest.mjs",
+          why: "自检覆盖抽取实现本身的行为两侧:正向取到本节正文;负向断言本次版本节缺失时**不得回退上一版**(线上缺陷形态)、`[待发版]` 不被任何版本号命中、3.16.2 不误匹配 3.16.20、空节与节不存在可区分、下一个 `## ` 正确截断",
+        },
+        {
+          kind: "selftest",
+          ref: "gates/repo/release-notes.mutation-test.mjs",
+          why: "变异测试(由 check:release-notes:selftest 一并调起):逐条改坏 release.yml(重引入 --generate-notes / 整块删掉失败分支 / 去掉 pkg.version 实参 / 去掉模块引用 / 去掉 extractNotes 调用),证明静态面五条判据各自会真判红 —— 只跑正向时,「目标被整块删除反而报绿」的判据会一直绿着",
         },
       ],
     },

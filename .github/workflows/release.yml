@@ -165,8 +165,12 @@ jobs:
           retention-days: 14
 
       # 自动生成 Release 并上传安装包、差分索引与更新元数据。
-      # notes 取自 docs/CHANGELOG.md 最新版本条目(发版时人工整理的功能汇总,准确反映本次变更);
-      # 提取为空(未写 CHANGELOG)时回退 --generate-notes(commit 列表)。
+      # notes 由 gates/repo/release-notes.mjs 抽取,**按 package.json 的版本号定位**
+      # `## [<该版本>]` 那一节 —— 不能用「取第一个版本节」:本次版本的条目若尚未写入
+      # CHANGELOG(发版纪律允许「本次无用户可感知变化」,此时 [待发版] 天然为空),
+      # 正则会落到**上一版**节,Release 页面便显示上一版内容。实测 3.16.2 曾发布出
+      # 3.16.1 的条目 —— 那是一句关于本版的错误陈述,比不写更糟。
+      # 抽不到对应节即响亮失败(下方已核),不静默回退 --generate-notes(那是 commit 列表)。
       # 资产按当前版本点名上传,不用 release/*.exe 通配:release 是累积目录,
       # 通配会把历史版本的安装包一起发出去,自动更新通道也会拿到错误的最新包。
       # 文件名由 package.json 的 artifactName 模板展开,与 check:release 核对的是同一份产物。
@@ -174,11 +178,13 @@ jobs:
       - name: Create GitHub Release
         shell: bash
         run: |
-          NOTES=$(node -e "
-            const fs = require('fs');
-            const md = fs.readFileSync('docs/CHANGELOG.md', 'utf8');
-            const m = md.match(/## \[[^\]]+\] - [^\n]+\n([\s\S]*?)(?=\n## \[|\$)/);
-            process.stdout.write(m ? m[1].trim() : '');
+          NOTES=$(node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            import { createRequire } from 'node:module';
+            const require_ = createRequire(process.cwd() + '/');
+            const pkg = require_('./package.json');
+            const { extractNotes } = await import('./gates/repo/release-notes.mjs');
+            process.stdout.write(extractNotes(readFileSync('docs/CHANGELOG.md', 'utf8'), pkg.version));
           ")
           INSTALLER=$(node -e 'const p = require("./package.json"); process.stdout.write(p.build.nsis.artifactName.replace("${productName}", p.build.productName).replace("${version}", p.version).replace("${ext}", "exe"))')
           ASSETS="release/${INSTALLER} release/${INSTALLER}.blockmap release/latest.yml"
@@ -197,11 +203,15 @@ jobs:
           fi
           # release 标题固定为版本号(tag 名),不再沿用 commit 主题
           TITLE="$TAG_NAME"
-          if [ -n "$NOTES" ]; then
-            gh release create "$TAG_NAME" $ASSETS --title "$TITLE" --notes "$NOTES"
-          else
-            gh release create "$TAG_NAME" $ASSETS --title "$TITLE" --generate-notes
+          # notes 抽不到 = CHANGELOG 里没有本次版本的条目。这是发版流程漏步(标题行
+          # 与正文都没写),不是「本次无变更」—— 后者仍应写一行说明,否则 Release 页面
+          # 会是空的。故响亮失败,而不是回退 --generate-notes(那是 commit 列表,
+          # 指南已把直接贴 commit 原文列为反模式)。
+          if [ -z "$NOTES" ]; then
+            echo "::error::CHANGELOG.md 没有 \`## [$PKG_VERSION]\` 的条目正文,拒绝发布空 notes(若本次确无用户可感知变化,也需写一行说明)"
+            exit 1
           fi
+          gh release create "$TAG_NAME" $ASSETS --title "$TITLE" --notes "$NOTES"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # tag 名只能经环境变量传入,不得直接插值进 shell 脚本体:
