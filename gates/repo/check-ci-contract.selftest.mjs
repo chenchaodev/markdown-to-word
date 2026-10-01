@@ -863,9 +863,13 @@ checkAnchor(
   real.buildOutputNames.every((name) => real.mirrorPaths.includes(name)),
   '编译输出树不在镜像集里 —— 沙盒内测试 import 的是产物,不带过去必然失败',
 );
+// 「两个集合不相交」从**声明侧**断言:声明的产物集合含「此刻不存在」的编译输出树,干净检出上
+// 同样有它。原写法从 cleanProtectedSegments(磁盘派生)侧迭代,那条 .every() 在 dist 压根不在
+// 该集里时**空洞为真** —— 它只在本地(dist 已 build)才真正被求值,而 CI 才是它唯一该有牙齿的
+// 地方。方向换了,断言强度不降(不相交从任一侧断言等价),但干净检出上真的被求值了。
 checkAnchor(
-  real.cleanProtectedSegments.every(
-    (name) => !real.buildOutputNames.includes(name) && !real.packOutputNames.includes(name),
+  [...real.buildOutputNames, ...real.packOutputNames].every(
+    (name) => !real.cleanProtectedSegments.includes(name),
   ),
   '删除保护区与「声明为产物的目录」相交(清理脚本会拒绝自己的目标)',
 );

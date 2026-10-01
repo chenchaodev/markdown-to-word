@@ -46,8 +46,8 @@
 | REQ-045 | CLI 转正 | 待拍板 | 2026-08-16 当初否决：无用户需求，调试可走脚本或直调 core。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-051 | 自动更新 | 待拍板 | 2026-08-16 当初否决：反噬离线隐私（维持砍）；签名已单拆为 REQ-050。2026-09-29 用户裁决恢复为待拍板。 | 随时 | docs/adr/ADR-013-发布供应链与明确不签名.md |
 | REQ-124 | 自算根判据覆盖两语句式 | 待拍板 | REQ-121 只收口存量,判据本身仍只认链式单表达式。补齐须一并处理 4 个绕过面:多行连写 `path.join`、`.cjs` 隐式 `__dirname`、二次赋值、字符串字面量未遮罩(ADR-041 有 `lexSource(...).inString` 先例)。判据须抓「耦合」不抓「巧合」:`上跳数==深度` 会漏掉「没算到根但搬一次错一次」的写法 | 想让 ADR-040 的零自算根规则覆盖两语句式形态时 | 无 |
-| REQ-125 | src 未纳入自算根扫描面 | 待拍板 | `ROOT_COMPUTE_SCAN_DIRS` 不含 `src`、扩展名不含 `.ts`,故 `src/main/menu.ts:47` 与 `src/main/windows/main-window.ts:32` 在自算目录基准却无人看守。产物侧理由(`import.meta.url` 已被擦除)只对 `dist` 成立、对 `.ts` 源不成立。这是 REQ-121 同一个洞的上游版本 | 想把源侧纳入零自算根治理时 | 无 |
-| REQ-128 | 删除保护区锚点在 CI 上恒绿 | 待拍板 | `selftest` 那条「删除保护区与声明产物不相交」用 `.every()` 迭代 `cleanProtectedSegments`(磁盘派生),而干净检出上 `dist` 压根不在该集里 ⇒ `.every()` 空洞为真。它只在本地(`dist` 已 build)才真正被求值,**CI 才是它唯一该有牙齿的地方**。本地实测 `dist in cleanProtected? false` 佐证 | 想让这条锚点在干净检出上真的有牙齿时 | 无 |
+| REQ-125 | src 深度耦合的修法 | 待拍板 | 前提已证伪:那 4 行解析到 `src/`/`dist/` 内、**不是仓库根**,不属 ADR-040 违规(上跳数==深度是「落在根」的精确判定)。且 `src/` **不能** import `shared/paths.js`:`build.files` 与 asar `EXPECTED_TOP_LEVEL` 都不含 `shared/`、无 `.d.ts` ⇒ 打进包即崩。剩下的是 `src/` 深度耦合,正确修法是既有 `app.getAppPath()` | 想让 src 的深度耦合有守护时 | 无 |
+| REQ-128 | 删除保护区锚点疑似恒真 | 待拍板 | 已把迭代方向改为从**声明侧**断言(干净检出上 `dist` 也在集里,不再空洞为真),但**两次反向验证都未能让它变红**:①退回 `cleanable` 的 `!== false`→`=== true`(本地 dist 在盘,两者同结果);②把 `buildOutputNames` 从 `cleanable` 来源里整个删掉(dist 在盘,理应落进保护区)—— 仍 EXIT=0。`release`(artifact 类别)结构上进不了保护区;`dist`(build 类别)那半边疑似构造保证恒真。真实覆盖在 `clean-artifacts-gate.test.js:528`,故不删断言,但恒真性未证 | 想确认这条锚点究竟能不能触发时 | 无 |
 
 
 
