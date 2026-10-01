@@ -11,6 +11,13 @@
 // 实测(负探针):四项全调到 1 → 本门禁 fault 案 exit 0、判红;只把 statements 调到 89 →
 // 本门禁**仍绿**(沙盒里那点覆盖率仍高于 89),此时由 coverage-gate.mjs 静态面的
 // 「与基线 thresholds 不一致」判红。两层职责不同,缺一不可。
+//
+// ⚠ 本仓特有的坑(ADR-048「覆盖率产物并入 output 单源」):下面 parseCoverageScript 的 flag
+// 收集是「**连续以 `--` 开头的 token,遇首个非 `--` 即停**」。故带值的选项**必须写成等号
+// 形态**(`--reports-dir=output/coverage`)。写成空格分隔(`--reports-dir output/coverage`)
+// 会让收集在第二个 token 处中断,其后的 `--check-coverage` 与四个阈值全部丢失,而
+// coverage-gate.mjs 静态面的 ① requireFlags 与 ② 阈值比对会**同时**判红且都不提真正的
+// 病因(少了一个 flag)—— 排查会被引向阈值。该 ADR 已点名这条,改参数向量时勿改回空格形态。
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,10 +33,16 @@ import { writeFileIn } from "../sandbox.mjs";
  * 探针用**真实参数向量**(只把被测程序换成沙盒里的极小 harness),这样「阈值被人调低/
  * `--check-coverage` 被删」这类配置漂移会被负向探针当场抓住,而不是被探针自己的
  * 参数掩盖。参见文件头注:本函数是阈值向量的**唯一读取点**,故本仓不存在第二份阈值来源。
+ * @param {string} [root] 读 package.json 与探测 c8 配置文件用的根目录(缺省为真实仓库根)。
+ *   **可注入是为了让静态面那条新判据能被负向夹具测到**:coverage-gate.mjs 的
+ *   auditStatic(root) 要核「`--reports-dir` 取值 == SUMMARY_RELATIVE 的目录部分」,而取值
+ *   只存在于 package.json 里 —— root 写死真仓库时,夹具根造出的「取值不符」根本读不到,
+ *   这条判据会退化成恒绿断言(夹具测不出红)。configFiles 的探测同样走这个 root,否则夹具
+ *   根会去读真仓库里不存在的 c8 配置文件。
  * @returns {{ flags: string[], program: string[], ok: boolean, reason?: string, configFiles: string[] }} 解析结果
  */
-export function parseCoverageScript() {
-  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+export function parseCoverageScript(root = ROOT) {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const scripts = /** @type {Record<string, string>} */ (pkg.scripts ?? {});
   // 切段与递归展开由 gates/repo/chain-expand.mjs 独家提供(全仓单源)。此前这里是裸
   // `split("&&")`:只认单层,一旦 `test:coverage` 把 c8 半段包进子脚本就找不到它,而
@@ -53,7 +66,7 @@ export function parseCoverageScript() {
   const program = tokens.slice(index);
   /** @type {string[]} */
   const configFiles = [".c8rc", ".c8rc.json", ".c8rc.yml", ".c8rc.yaml", ".nycrc", ".nycrc.json"].filter((name) =>
-    fs.existsSync(path.join(ROOT, name)),
+    fs.existsSync(path.join(root, name)),
   );
   if (typeof pkg.c8 === "object" || typeof pkg.nyc === "object") configFiles.push("package.json#c8");
   if (program.length === 0) {

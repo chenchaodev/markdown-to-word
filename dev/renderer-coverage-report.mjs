@@ -7,8 +7,11 @@
 // 不转抄数值 —— 转抄即多一处会静默过期且无人判红的文本),主门禁的红绿与本脚本无关。
 //
 // 事实前提(c8 12 实测自 node_modules/c8/lib/report.js,非猜测):
-//   - `--reporter=json-summary` 且未指定 `--report-dir` 时,产物落在 c8 的默认报告目录
-//     `./coverage`(parse-args.js 的 reports-dir default),文件名 `coverage-summary.json`;
+//   - `--reporter=json-summary` 的产物落在 `--reports-dir` 指向的目录,文件名
+//     `coverage-summary.json`。本仓的落点是 `test:coverage` **显式**登记的
+//     `--reports-dir=output/coverage`(不是 c8 的 reports-dir 默认值),故下面的
+//     DEFAULT_REPORT_DIR 认的是本仓约定而非工具默认值 —— 两者的同步关系由
+//     package.json 的 test:coverage 那一处登记维持;
 //   - `--include`/`--exclude` 经 test-exclude 变成 report.js 的 `entryFilter`,**在覆盖率
 //     数据收集阶段**就把被排除的脚本滤掉;`--all` 补 0% 文件时的 filter 同样过
 //     shouldInstrument。故 `test:coverage` 产出的 summary 里**根本没有 dist/renderer 的
@@ -30,8 +33,13 @@ import { ROOT } from '../shared/paths.js';
 const projectRoot = ROOT;
 const USAGE = '用法: node dev/renderer-coverage-report.mjs [--report-dir <dir>] [--json]';
 
-/** c8 报告目录默认值(与 node_modules/c8/lib/parse-args.js 的 reports-dir default 同源) */
-const DEFAULT_REPORT_DIR = 'coverage';
+/**
+ * 默认报告目录 = 本仓显式登记的 c8 产物落点(`test:coverage` 的 `--reports-dir`),与
+ * package.json 的 test:coverage 同步;不再取 c8 的 reports-dir 默认值(那不是本仓约定,
+ * 换 c8 版本就可能变)。同一落点由 coverage-gate.mjs 的 SUMMARY_RELATIVE 读,两侧一致
+ * 由该门禁静态面判红。
+ */
+const DEFAULT_REPORT_DIR = 'output/coverage';
 /** json-summary 报告文件名(c8 --reporter=json-summary 的固定产物名) */
 const SUMMARY_FILE = 'coverage-summary.json';
 /** 被排除的那一层:c8 收到的 --exclude 值,与 test:coverage 参数向量逐字一致 */

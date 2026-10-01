@@ -19,6 +19,10 @@
  *    empty-module 的产物必须仍是空模块(有人给它加了可执行语句却仍挂着空模块豁免 → 判红);
  *    runtime-entry 的产物必须仍未被任何测试 import(它现在可被单测了 → 豁免失效 → 判红);
  * 4. 清单外的新空模块判红(不登记就会以「0/0 记 0%」的形式悄悄进报告拉低分母)。
+ * 5. 产物落点两侧一致:c8 写哪(`test:coverage` 的 `--reports-dir` 取值)必须与 gate 读哪
+ *    (`SUMMARY_RELATIVE` 的目录部分)逐字相同 —— 只登记 flag 存在时,「存在但取值错」
+ *    会让静态面全绿而动态面只报一句「未找到 coverage-summary.json」。这一组有正反双向
+ *    夹具(在临时根里造 package.json,故静态面读参数向量的那一步必须可注入 root)。
  *
  * 「清单外的新 0% 文件」这一面(动态数据)由 `node gates/probe/gate-probes/coverage-gate.mjs
  * --zero` 承担,必须紧跟 test:coverage 执行(覆盖率数据是那一次运行的产物),故不放本段。
@@ -44,6 +48,7 @@ import { withTempResource } from "../common/temp-resource.js";
 import {
   BASELINE_RELATIVE,
   BASELINE_SHAPE_PREFIX,
+  EXPECTED_REPORTS_DIR,
   METRICS,
   SUMMARY_RELATIVE,
   aggregateProblems,
@@ -62,6 +67,10 @@ function classify(problem) {
   if (problem.includes("参数向量缺必需项")) return "flags";
   if (problem.includes("基线 thresholds.") || problem.includes("与基线 thresholds.")) return "thresholdsMatch";
   if (problem.includes("参数向量缺 --") && METRICS.some((m) => problem.includes(`--${m}`))) return "thresholdsMatch";
+  // 产物落点(c8 写哪 vs gate 读哪)必须排在「含基线二字」那条**之前**:该判据的文案要同时
+  // 指名两侧取值,不能被判成结构诊断 —— 那会让「静态面的结构问题只来自 loadBaseline」那条
+  // 恒等断言把一条真实的配置漂移误判成第二套结构校验。
+  if (problem.includes("--reports-dir")) return "reportsDir";
   if (problem.includes("未登记(阈值没有锚点") || problem.includes("measured.") || problem.includes("低于基线 floor") || problem.includes("高于干净树实测") || problem.includes("超过基线 headroomPp")) {
     return "anchors";
   }
@@ -97,6 +106,12 @@ export async function run() {
       const own = allProblems.filter((p) => classify(p) === "excludesInFlag");
       if (own.length > 0) throw new Error(own.join(";"));
     });
+    // 正向锚点走真实工作树:真参数向量里的 --reports-dir 与 SUMMARY_RELATIVE 的目录部分
+    // 此刻是一致的,这条判据在真实面上必须绿(下面的负向夹具只证它会红,不证它此刻不红)。
+    await suite.case("c8 产物落点与 gate 读取端一致(--reports-dir 取值 == SUMMARY_RELATIVE 的目录部分)", () => {
+      const own = allProblems.filter((p) => classify(p) === "reportsDir");
+      if (own.length > 0) throw new Error(own.join(";"));
+    });
   });
 
   await suite.describe("阈值锚定", async () => {
@@ -110,7 +125,7 @@ export async function run() {
         throw new Error(
           `measured.${unrecorded.join("/")} 未登记 —— 阈值失去锚点等于没人看守。` +
             "登记方式:在**干净树**上跑 `npm run test:coverage`(接线后),从 stdout 的 All files 行" +
-            "或 coverage/coverage-summary.json 的 total.*.pct 取四个数,填进基线后重跑本段",
+            "或 output/coverage/coverage-summary.json 的 total.*.pct 取四个数,填进基线后重跑本段",
         );
       }
     });
@@ -263,6 +278,131 @@ export async function run() {
       if (realBoth.distinctCount !== realBoth.lines.length) {
         throw new Error(`真实工作树上无结构诊断却发生了去重:${realBoth.distinctCount} != ${realBoth.lines.length}`);
       }
+    });
+  });
+
+  await suite.describe("产物落点(c8 写哪 vs gate 读哪)", async () => {
+    // 合成基线:结构必须过 loadBaseline 的全部校验(否则夹具会因「基线不成形」判红而不是因
+    // 被注入的落点漂移判红,那样测不到任何东西)。requireFlags 含**两个**落点 flag,让每一格
+    // 负向夹具都只缺/只错自己那一个,分不清是谁在报就等于没测。
+    const REPORTS_DIR_BASELINE = {
+      baselineSchema: 1,
+      note: ["合成基线:仅供本段产物落点判据的夹具使用,不对应真实仓库的任何阈值或豁免。"],
+      headroomPp: 4,
+      floor: { statements: 85, branches: 80, functions: 85, lines: 85 },
+      measured: { statements: 93, branches: 88, functions: 93, lines: 93 },
+      thresholds: { statements: 90, branches: 85, functions: 90, lines: 90 },
+      requireFlags: ["--all", "--check-coverage", "--reports-dir", "--temp-directory"],
+      requireExcludesInFlag: false,
+      exemptions: [],
+    };
+    /**
+     * 在一次性夹具根上造一份可被 auditStatic 读的仓(合成 package.json + 合成基线 + 空 dist/),
+     * 跑一次静态面并把 problems 交给 `assert`。夹具根的生命周期完全由 withTempResource 管
+     * (建 → 判定 → 清理,抛错也清),故 `assert` 必须在回调内同步抛,不能把路径带出来再用。
+     * @param {string} c8Flags 夹具里 c8 后的参数向量原文(逐字决定本段造哪种漂移)
+     * @param {(problems: string[]) => void} assert 在夹具根上的判定(抛错即该 case 失败)
+     * @returns {Promise<void>}
+     */
+    async function onReportsDirFixture(c8Flags, assert) {
+      await withTempResource({ prefix: "m2w-covgate-reportsdir-", label: "coverage-gate 产物落点判据夹具" }, (resource) => {
+        const baselinePath = path.join(resource.path, ...BASELINE_RELATIVE.split("/"));
+        mkdirSync(path.dirname(baselinePath), { recursive: true });
+        writeFileSync(baselinePath, `${JSON.stringify(REPORTS_DIR_BASELINE, null, 2)}\n`, "utf8");
+        // 静态面要 dist/ 在场才肯核对豁免形态;本段不测那一面,给个空目录让它别出声
+        mkdirSync(path.join(resource.path, "dist"), { recursive: true });
+        writeFileSync(
+          path.join(resource.path, "package.json"),
+          `${JSON.stringify({ name: "covgate-reportsdir-fixture", version: "0.0.0", type: "module", scripts: { "test:coverage": `c8 ${c8Flags} node harness.mjs` } }, null, 2)}\n`,
+          "utf8",
+        );
+        assert(auditStatic(resource.path).problems);
+        return resource;
+      });
+    }
+    /** 夹具里与落点无关、必须齐的 flag(阈值要与合成基线逐项相同,否则 ② 会先出声) */
+    const OTHER_FLAGS = "--all --check-coverage --statements=90 --branches=85 --functions=90 --lines=90";
+    /** 夹具里的「健康」--temp-directory 取值。它**只是被 ① 守存在性**,不比对取值(见下面两格) */
+    const HEALTHY_TEMP_DIR = "--temp-directory=.c8-tmp";
+
+    // 正向锚点:取值一致时静态面**零问题**。逐字取期望目录,不在这里另写一份字面量 ——
+    // 写死等于把「两侧一致」这件事在测试里又登记一次,而那条正是本判据要抓的漂移。
+    await suite.case("反向锚点:--reports-dir 取值与 SUMMARY_RELATIVE 的目录一致 → 静态面零问题", async () => {
+      await onReportsDirFixture(`${OTHER_FLAGS} --reports-dir=${EXPECTED_REPORTS_DIR} ${HEALTHY_TEMP_DIR}`, (problems) => {
+        if (problems.length > 0) {
+          throw new Error(`取值一致却判红(本判据在一致形态上恒红 = 比对基准取错,疑为 Windows 反斜杠口径):${problems.join(";")}`);
+        }
+      });
+    });
+
+    // 负向:flag 在、取值错。只存在而无取值比对时,这条会绿 —— 那正是 ADR 备选方案 4 判否的形态。
+    await suite.case("负向:--reports-dir 取值与读取端不一致 → 判红并同时指名该 flag 与两侧取值", async () => {
+      await onReportsDirFixture(`${OTHER_FLAGS} --reports-dir=output/cov ${HEALTHY_TEMP_DIR}`, (problems) => {
+        const named = problems.filter(
+          (p) => p.includes("--reports-dir=output/cov") && p.includes(EXPECTED_REPORTS_DIR),
+        );
+        if (named.length === 0) {
+          throw new Error(
+            `夹具未造出落点漂移的诊断(期望一条同时指名 --reports-dir=output/cov 与 ${EXPECTED_REPORTS_DIR} 的条目),` +
+              `实际:${problems.join(";") || "(零问题 —— 本判据在取值不符时恒绿,是恒绿断言)"}`,
+          );
+        }
+      });
+    });
+
+    // 负向:整个 flag 都没传。「没传」与「传错」是两种病因,文案必须各自可辨,
+    // 且都出现:① 说「缺必需项」(不指名期望目录),本判据指名 gate 期望的目录。
+    await suite.case("负向:整个 --reports-dir 都没传 → ① 与本判据各自指名(缺必需项 + 期望目录)", async () => {
+      await onReportsDirFixture(`${OTHER_FLAGS} ${HEALTHY_TEMP_DIR}`, (problems) => {
+        if (!problems.some((p) => p.includes("参数向量缺必需项 --reports-dir"))) {
+          throw new Error(`① 未报「缺必需项 --reports-dir」(收紧面失守):${problems.join(";") || "(零问题)"}`);
+        }
+        const named = problems.filter((p) => p.includes("--reports-dir") && p.includes(EXPECTED_REPORTS_DIR) && p.includes("未设"));
+        if (named.length === 0) {
+          throw new Error(
+            `本判据未报「未设 --reports-dir 且 gate 期望 ${EXPECTED_REPORTS_DIR}」,实际:${problems.join(";") || "(零问题 —— 缺 flag 时本判据恒绿)"}`,
+          );
+        }
+      });
+    });
+
+    // 负向:整个 --temp-directory 都没传。它与 --reports-dir 的守卫强度**刻意不同**
+    // (只守存在性、无取值比对,理由见 coverage-gate.mjs 的 ① 与基线 note),所以这格必须
+    // 钉住两件事:① 指名该 flag;③ 对它**一声不吭**。少了后半句,下一个人就能「顺手补上
+    // 取值比对」而不被任何东西拦下 —— 而那只会造出一处无人判红、必然静默过期的登记文本。
+    await suite.case("负向:整个 --temp-directory 都没传 → ① 指名该 flag,取值判据刻意不参与", async () => {
+      await onReportsDirFixture(`${OTHER_FLAGS} --reports-dir=${EXPECTED_REPORTS_DIR}`, (problems) => {
+        if (!problems.some((p) => p.includes("参数向量缺必需项 --temp-directory"))) {
+          throw new Error(
+            `① 未报「缺必需项 --temp-directory」(收紧面失守;删掉它只会让 dump 悄悄回到 output/coverage/tmp/ 并在下一轮以「工作树被改动」假红暴露):` +
+              `${problems.join(";") || "(零问题 —— requireFlags 没把它登记进去,或 ① 漏报)"}`,
+          );
+        }
+        const leaked = problems.filter((p) => p.includes("--temp-directory") && !p.includes("参数向量缺必需项"));
+        if (leaked.length > 0) {
+          throw new Error(
+            `取值判据对 --temp-directory 出声了(它无 gate 侧对应物,刻意只守存在性;若确要加取值比对,` +
+              `请一并改判据、基线 note 与本夹具,别让它悄悄长出来):${leaked.join(";")}`,
+          );
+        }
+      });
+    });
+
+    // 守卫强度不对称的正向锚点:--temp-directory 取**任意**取值都判绿,只要它在。
+    // 这一格是上一格的对偶(证明「不比对取值」是设计而非漏写);它同时让「顺手补取值比对」
+    // 必须先改测试 —— 即必须有人 consciously 决策,而不是无人在意地带过去。
+    await suite.case("反向锚点:--temp-directory 取值任意但存在 → 静态面零问题(只守存在性是设计)", async () => {
+      await onReportsDirFixture(
+        `${OTHER_FLAGS} --reports-dir=${EXPECTED_REPORTS_DIR} --temp-directory=${EXPECTED_REPORTS_DIR}/dump`,
+        (problems) => {
+          if (problems.length > 0) {
+            throw new Error(
+              `--temp-directory 只该守存在性,却因取值被判红(若这是有意的,说明守卫强度已改成对称,` +
+                `请同步改判据注释与基线 note):${problems.join(";")}`,
+            );
+          }
+        },
+      );
     });
   });
 

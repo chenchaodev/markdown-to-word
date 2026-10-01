@@ -5,7 +5,7 @@
     "存在的理由:`--all` 打开后,「不可达文件」与「结构性不可测文件」混进同一个百分比 —— 前者(新增且从未被 import 的死代码)应当被抓,后者(Electron 入口、纯类型模块)不该让所有代码一起降分。平均值同时掩盖两者,是本门禁最大的盲区。",
     "本表把后者逐条显式列出来(每条写明为何无法单测,并给出可复算的判定依据),让前者无处藏身:清单外的新 0% 文件由 `node gates/probe/gate-probes/coverage-gate.mjs --zero` 显式判红;清单本身也被守护(条目字段缺失/理由为空/文件已不存在/分类与真实产物形态不符/豁免已失效/新增空模块未登记,任一情况都判红)。",
     "维护顺序(勿跳步):① 在**干净树**上跑重测命令拿到实测值 → ② 人工确认阈值 → ③ 把 measured 与 thresholds 一起写回本表 → ④ package.json 的 test:coverage 阈值须与本表 thresholds 逐项相同。",
-    "重测命令就是 `npm run test:coverage` 本身(它的 c8 参数向量在本仓唯一的阈值来源;此处刻意不转抄,转抄即多一处会静默过期且无人判红的文本)。实测值同时出现在 stdout 的 All files 行与 coverage/coverage-summary.json 的 total.*.pct。",
+    "重测命令就是 `npm run test:coverage` 本身(它的 c8 参数向量在本仓唯一的阈值来源;此处刻意不转抄,转抄即多一处会静默过期且无人判红的文本)。实测值同时出现在 stdout 的 All files 行与 output/coverage/coverage-summary.json 的 total.*.pct(产物落点由 test:coverage 的 --reports-dir 显式登记,与 coverage-gate.mjs 的 SUMMARY_RELATIVE 目录部分逐字相同 —— 该一致性由静态面判红,故此处不复述取值)。",
     "不要为了变绿而单下调 thresholds:thresholds 必须落在 [floor, measured] 区间内,且不得低于 measured − headroomPp。headroomPp 是「阈值允许比上一次干净树实测低多少」的显式余量(阈值本来就该低于实测值,否则门禁在干净树上也会红)。这条规则拦的是静默降级:实测值是独立测出来的、不会跟着阈值走,阈值一降就超余量 → 判红;要合法下调,必须先在干净树重测并把 measured 一起改(于是「实测值掉了几个点」本身变成 diff 里可见的回归),或者去改 floor(更显眼)。",
     "measured 为 null 表示「尚未在干净树登记实测值」,此时门禁判红(阈值失去锚点,等于没人看守)。",
     "headroomPp 的取法:取「干净树实测 − 拟定阈值」在四个指标上的**最大值**,向上取整到整数(它只界定「允许的余量」,不影响阈值严格度本身)。上一版干净树实测算出的 5(最大差距在 branches,4.03pp,上取整 5)已随 measured 刷新按公式重算为 4(最大差距 3.59pp);**每次刷新 measured 后须按同一公式重算**,否则余量会与实测漂移脱钩。余量取值属**人工裁决**,不是门禁能自动推导的量,故不挂在任何工作项下。",
@@ -13,7 +13,8 @@
     "为什么不用 c8 的 --per-file(它看起来正好能堵「平均值稀释」):实测 94 个文件里有 33 个低于任一现阈值(最低的 src/core/image/image-type.ts 54.7%、src/main/smoke.ts 44.9%),--per-file 会要求先补齐几十个文件才能过,不是可落地的收紧手段,故改用显式的 0% 集合核对。",
     "别把本表当生成物:阈值与豁免的取舍是人的判断,故意不做 --write 自动重生成,免得一次自动重写把收紧面悄悄放宽(同 gates/repo/pinned-actions.baseline.json 的取向)。",
     "阈值漂移由两层独立看守,职责不同、缺一不可(负探针实测,勿合并成一层):① 本表的静态面(逐项核对 package.json 参数向量与 thresholds)能抓**任何**幅度漂移,含 90→89 这种微调;② 探针 gates/coverage.mjs 拿真实参数向量跑人造低覆盖,只在阈值被调到**低过沙盒自身覆盖率**时才红(实测四项全调 1 才红,单调 statements=89 仍绿)。故「探针绿」不等于「阈值没被改过」,微调漂移归本表静态面管。",
-    "本表 thresholds 与 package.json 的向量是**有意的双处登记**,不是该被合并的冗余:静态面靠比对两者判红,若把本表改成从 package.json 推导,这条比对即恒真、漂移永远抓不到(恒真断言)。本表的 measured / thresholds / floor / headroomPp 与 exemptions 同理,都是独立锚点。"
+    "本表 thresholds 与 package.json 的向量是**有意的双处登记**,不是该被合并的冗余:静态面靠比对两者判红,若把本表改成从 package.json 推导,这条比对即恒真、漂移永远抓不到(恒真断言)。本表的 measured / thresholds / floor / headroomPp 与 exemptions 同理,都是独立锚点。",
+    "requireFlags 里两个落点 flag 的**守卫强度刻意不对称,勿顺手补齐**:--reports-dir 除存在性外还被静态面比对取值(与 coverage-gate.mjs 的 SUMMARY_RELATIVE 目录部分逐字相同),因为 gate 侧有对应物、两侧漂移会让动态面只报「找不到 summary」;--temp-directory **只守存在性**,因为 gate 侧没有任何对应物(c8 的 V8 dump 目录不参与本门禁的读取),没有可与之比对的值。删掉 --temp-directory 不会让任何 coverage 门禁判红 —— dump 只是悄悄回到 output/coverage/tmp/,要等下一轮 test:coverage 里门禁探针段以「工作树被改动」的假红暴露,而那条报错完全不提 c8(见 ADR-048 关键约束二)。故存在性是这里唯一兜得住的手段;**它必须用相对路径**(绝对路径会让沙盒内那次 c8 与外层共用目录,子 c8 在报告阶段清空它,外层覆盖数据整段丢失)。"
   ],
   "headroomPp": 4,
   "floor": {
@@ -55,6 +56,8 @@
     "--check-coverage",
     "--reporter=text",
     "--reporter=json-summary",
+    "--reports-dir",
+    "--temp-directory",
     "--include=dist/**",
     "--exclude=dist/renderer/**"
   ],

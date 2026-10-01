@@ -12,9 +12,10 @@
 // 两个审计面:
 // - 静态面(auditStatic):不需要覆盖率数据,可在验收段里跑 —— 核对 package.json 的
 //   test:coverage 参数向量(必须含 --all / --check-coverage / 四个阈值 / 豁免对应的
-//   --exclude)、阈值与基线逐项一致、阈值落在 [floor, measured] 锚定区间、豁免条目
+//   --exclude)、阈值与基线逐项一致、c8 的产物落点(--reports-dir 取值)与本文件读取端
+//   (SUMMARY_RELATIVE 的目录部分)逐字一致、阈值落在 [floor, measured] 锚定区间、豁免条目
 //   与真实编译产物/测试引用面一致;
-// - 动态面(auditZeroFiles):读本次覆盖率运行的 coverage/coverage-summary.json
+// - 动态面(auditZeroFiles):读本次覆盖率运行的 output/coverage/coverage-summary.json
 //   (reporter 先于阈值判定执行,即使门禁红也会落盘),逐文件核对 0% 集合 ⊆ 豁免清单,
 //   并回传 loadBaseline 的结构诊断(基线能解析但结构损坏时判红并点名是哪个字段不对 ——
 //   结构诊断只此一个来源,静态面不在任何 npm script 上,不能指望它兜底)。
@@ -28,8 +29,24 @@ import { parseCoverageScript } from "./gates/coverage.mjs";
 /** 覆盖率基线文件(仓库相对;阈值与豁免的唯一登记处) */
 export const BASELINE_RELATIVE = "gates/probe/gate-probes/coverage-baseline.json";
 
-/** c8 json-summary 产物(动态面唯一数据源) */
-export const SUMMARY_RELATIVE = "coverage/coverage-summary.json";
+/**
+ * c8 json-summary 产物(动态面唯一数据源)
+ *
+ * 目录部分同时是静态面 ③ 那条判据的**比对基准**:c8 往哪写由 package.json 的
+ * `--reports-dir` 决定,gate 从哪读由本常量决定,两侧一致才谈得上「读得到」。
+ * 落点是本仓显式约定(不是 c8 的 reports-dir 默认值),见 ADR-048。
+ */
+export const SUMMARY_RELATIVE = "output/coverage/coverage-summary.json";
+
+/**
+ * `--reports-dir` 的期望取值:即 SUMMARY_RELATIVE 的目录部分。
+ *
+ * 为什么用 `slice(0, lastIndexOf("/"))` 而不是 `path.dirname`:本仓的仓库相对路径一律是
+ * POSIX 形态,而 `path.dirname` 在 Windows 上返回反斜杠分隔的串 —— 拿它当比对基准会把
+ * 真值判成不一致(判据在 Windows 上恒红,而在 CI 的 Linux 上恒绿)。分隔符单一形态是
+ * 刻意的:两侧登记的值本就该逐字相同。
+ */
+export const EXPECTED_REPORTS_DIR = SUMMARY_RELATIVE.slice(0, SUMMARY_RELATIVE.lastIndexOf("/"));
 
 /** 四个覆盖率指标(与 c8 的 --statements/--branches/--functions/--lines 一一对应) */
 export const METRICS = Object.freeze(["statements", "branches", "functions", "lines"]);
@@ -213,7 +230,7 @@ function findTestImportsOf(root, artifactRelative) {
 export function auditStatic(root = ROOT) {
   const { baseline, problems } = loadBaseline(root);
   if (baseline === null) return { problems, detail: {} };
-  const parsed = parseCoverageScript();
+  const parsed = parseCoverageScript(root);
   if (!parsed.ok) {
     problems.push(`无法从 package.json 解析 test:coverage 的 c8 参数向量:${parsed.reason ?? "解析失败"}`);
     return { problems, detail: { flags: parsed.flags } };
@@ -221,6 +238,13 @@ export function auditStatic(root = ROOT) {
   const flags = parsed.flags;
 
   // ① 必需 flag:缺任何一个都判红(--all 缺失 = 盲区回归;--check-coverage 缺失 = 门禁空过)
+  //
+  // 本面只守**存在性**;取值比对只对 `--reports-dir` 做(见 ③)。`--temp-directory` 刻意
+  // **不比对取值**,这不是遗漏而是取舍:gate 侧没有任何对应物(c8 的 V8 dump 目录不参与本
+  // 门禁的读取),没有第二个登记处可比 —— 造一个「期望 dump 目录」常量只为让比对有对象,
+  // 只会多一处可漂移的文本。存在性已足够兜住它:删掉该 flag 不会让任何 coverage 门禁判红,
+  // dump 只是悄悄回到 output/coverage/tmp/,要等下一轮 test:coverage 里门禁探针段以
+  // 「工作树被改动」的假红暴露,而那条报错完全不提 c8。
   for (const required of baseline.requireFlags ?? []) {
     const name = required.replace(/^--/, "").split("=")[0] ?? "";
     if (flagValue(flags, name) === null) {
@@ -243,7 +267,34 @@ export function auditStatic(root = ROOT) {
       problems.push(`--${metric} 实为 ${actual},与基线 thresholds.${metric} = ${expected} 不一致(阈值只能改基线,不能只改一处)`);
     }
   }
-  // ③ 阈值锚定:floor ≤ thresholds ≤ measured,且 thresholds ≥ measured − headroomPp
+  // ③ 产物落点:c8 写哪(--reports-dir 的取值)必须与 gate 读哪(SUMMARY_RELATIVE 的目录
+  // 部分)逐字相同。
+  //
+  // 为什么 ① 只登记「flag 存在」不够:flag 在而取值错(如 output/cov)时静态面全绿,动态面
+  // 只报一句「未找到 …/coverage-summary.json」—— 指向路径而不是指向配置,排查会被带偏。
+  // 这条判据核的是**两侧登记的值一致**(双处登记,故意不做互相推导:推导即恒真,漂移抓不到)。
+  //
+  // 缺该 flag 也要在这里报一次而不只靠 ①:① 的文案只说「缺必需项」,不指名 gate 期望的
+  // 目录,两种病因(没传 / 传错)得在同一条文案里各自可辨。
+  //
+  // ⚠ **本判据只覆盖 `--reports-dir`,不覆盖 `--temp-directory`,这是刻意的守卫强度不对称**
+  // (理由见 ① 上方那段):dump 落点没有 gate 侧对应物,拿什么比?而它的存在性由 ① 兜住。
+  // 别看到「两个落点 flag 只判一个」就顺手补上取值比对 —— 那只能造出一处会静默过期、
+  // 无人判红的登记文本,并且让人误以为 dump 落点也有两侧锚点。
+  const reportsDir = flagValue(flags, "reports-dir");
+  if (reportsDir === null) {
+    problems.push(
+      `test:coverage 未设 --reports-dir(c8 会退回自己的默认落点),而 gate 从 ${EXPECTED_REPORTS_DIR}/ 读产物;` +
+        "两侧必须一致:落点由本仓显式登记,不依赖工具默认值",
+    );
+  } else if (reportsDir !== EXPECTED_REPORTS_DIR) {
+    problems.push(
+      `--reports-dir=${reportsDir},与 gate 读取端 SUMMARY_RELATIVE 的目录 ${EXPECTED_REPORTS_DIR} 不一致` +
+        "(c8 写一处、gate 读另一处 ⇒ 动态面只会报「未找到 coverage-summary.json」;" +
+        "两侧是双处登记,只能同时改,不许把任一侧改成从另一侧推导)",
+    );
+  }
+  // ④ 阈值锚定:floor ≤ thresholds ≤ measured,且 thresholds ≥ measured − headroomPp
   //
   // 为什么是「不得低于 measured − headroomPp」而不是「不得低于 measured」:阈值本来
   // 就该低于实测值(否则门禁在干净树上也会红),两者之间允许一段显式登记的余量
@@ -277,7 +328,7 @@ export function auditStatic(root = ROOT) {
       );
     }
   }
-  // ④ 豁免条目:字段完整 + 分类与真实产物形态自洽 + 真的还没被测
+  // ⑤ 豁免条目:字段完整 + 分类与真实产物形态自洽 + 真的还没被测
   const exemptions = Array.isArray(baseline.exemptions) ? baseline.exemptions : [];
   const distDir = path.join(root, "dist");
   if (!fs.existsSync(distDir)) {
@@ -329,7 +380,7 @@ export function auditStatic(root = ROOT) {
       }
     }
   }
-  // ⑤ 清单外的新空模块:不登记就会以「0/0 记 0%」的形式悄悄进报告拉低分母
+  // ⑥ 清单外的新空模块:不登记就会以「0/0 记 0%」的形式悄悄进报告拉低分母
   // (listArtifacts 返回的是**仓库相对**路径,故拼 root 而不是 distDir)
   for (const artifact of listArtifacts(distDir)) {
     if (artifactToSrc[artifact] !== undefined) continue;
@@ -339,7 +390,7 @@ export function auditStatic(root = ROOT) {
         "要么登记 category=empty-module 并写明理由,要么确认它确实有可执行语句",
     );
   }
-  // ⑥ 豁免必须真的在 --exclude 里(否则它们会进报告,结构性不可测文件照样拖低全仓)
+  // ⑦ 豁免必须真的在 --exclude 里(否则它们会进报告,结构性不可测文件照样拖低全仓)
   if (baseline.requireExcludesInFlag === true) {
     const excludeValues = flags
       .filter((flag) => flag.startsWith("--exclude="))
@@ -397,7 +448,7 @@ function listArtifacts(distDir) {
  * 判定面,结构诊断只挂在静态面(不在任何 script 里)等于没有 —— 那条路径上这道门禁会恒绿。
  *
  * 必须在 test:coverage 之后立即执行:c8 的 reporter 先于阈值判定执行,即使门禁红,
- * coverage/coverage-summary.json 也会落盘。
+ * output/coverage/coverage-summary.json 也会落盘。
  * @param {string} [root] 仓库根
  * @returns {{ problems: string[], zeroFiles: string[], total: Record<string, number> }} 审计结果
  */

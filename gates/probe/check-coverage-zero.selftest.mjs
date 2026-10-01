@@ -37,6 +37,17 @@ const projectRoot = ROOT;
 const gatePath = join(projectRoot, 'gates', 'probe', 'gate-probes', 'coverage-gate.mjs');
 
 /**
+ * SUMMARY_RELATIVE 派生的正则片段:夹具的期望文案要断言的就是这个路径。
+ *
+ * 为什么从常量派生而不写死字面量:门禁的产物落点是本仓显式约定(`test:coverage` 的
+ * `--reports-dir` + `SUMMARY_RELATIVE`,两侧一致性由静态面判红),把它在这里抄第二份
+ * 就等于造一处「会静默过期且无人判红」的文本 —— 落点一改,这些夹具会因为匹配不到而
+ * **假红**(报「门禁在此形态上恒绿了」,而门禁其实只是换了路径)。派生即自动跟随。
+ * 位置在 CASES 之前:CASES 里的 `expect` 是模块加载期求值的,声明晚了会撞 TDZ。
+ */
+const SUMMARY_PATTERN = SUMMARY_RELATIVE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
  * 合成基线:结构必须过 loadBaseline 的全部校验(否则夹具会因「基线不成形」判红,而不是因
  * 被注入的 0% 形态判红 —— 那会让负向夹具测不到任何东西)。字段值一律无关紧要:动态面只读
  * `exemptions[].file`,阈值段在这里只是「不让结构校验先炸」的填充。
@@ -91,7 +102,8 @@ const FIXTURE_TOTAL = {
 };
 
 /**
- * 造夹具:整棵 coverage/ + 基线都落在系统临时目录;再由 mutate 打上待判形态。
+ * 造夹具:整棵产物目录(SUMMARY_RELATIVE 那棵树)+ 基线都落在系统临时目录;再由 mutate
+ * 打上待判形态。
  * @param {(dir: string) => void} mutate 注入漂移(抛异常时本函数自己清理后重抛)
  * @returns {string} 夹具根
  */
@@ -219,18 +231,18 @@ const CASES = [
   {
     // 本门禁的前提:必须紧跟 test:coverage。数据源不在 ⇒ 判红并说清为什么(而不是当成「零个 0% 文件」)
     name: '未紧跟 test:coverage(缺 coverage-summary.json)→ 判红并点名数据源与前提',
-    expect: /未找到 coverage\/coverage-summary\.json\(本检查必须紧跟 test:coverage 执行/,
+    expect: new RegExp(`未找到 ${SUMMARY_PATTERN}\\(本检查必须紧跟 test:coverage 执行`),
     create: () => {
       const made = createFixture(writeConsistentSummary);
       rmSync(join(made, ...SUMMARY_RELATIVE.split('/')));
-      // 目录仍在、文件不在 —— 与「整个 coverage/ 都没生成」区分开
+      // 目录仍在、文件不在 —— 与「整个产物目录都没生成」区分开
       mkdirSync(join(made, ...SUMMARY_RELATIVE.split('/').slice(0, -1)), { recursive: true });
       return made;
     },
   },
   {
     name: 'coverage-summary.json 不是合法 JSON → 判红并点名解析失败原因',
-    expect: /coverage\/coverage-summary\.json 不是合法 JSON/,
+    expect: new RegExp(`${SUMMARY_PATTERN} 不是合法 JSON`),
     create: () => createFixture((dir) => writeFileIn(dir, SUMMARY_RELATIVE, '{ not json')),
   },
   {
@@ -351,7 +363,7 @@ for (const testCase of CASES) {
  *
  * 期望值按数据源在不在分成两支,**两支都是确定性断言,没有「跳过」**:
  * 本门禁的契约就是「必须紧跟 test:coverage 执行」—— 数据在则判绿;数据不在则按契约判红
- * 并点名数据源缺失(干净检出里 coverage/ 是 gitignore 的生成物,此时正是后一种)。
+ * 并点名数据源缺失(干净检出里产物目录是 gitignore 的生成物,此时正是后一种)。
  */
 function checkRealRepo() {
   const result = spawnSync(process.execPath, [gatePath, '--zero'], {
@@ -369,7 +381,7 @@ function checkRealRepo() {
   } else {
     const problems = [];
     if (result.status === 0) problems.push(`数据源缺失却判绿(期望非 0),实际 ${String(result.status)}`);
-    if (!/未找到 coverage\/coverage-summary\.json/.test(output)) problems.push('未点名缺失的数据源');
+    if (!new RegExp(`未找到 ${SUMMARY_PATTERN}`).test(output)) problems.push('未点名缺失的数据源');
     if (problems.length > 0) return `真实仓库无覆盖率数据:${problems.join(';')}\n--- 输出 ---\n${output}`;
   }
   return null;

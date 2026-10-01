@@ -30,7 +30,7 @@ function defaultProjectGlobs(roots) {
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "output/**", "release/**", "coverage/**", "node_modules/**"],
+    ignores: ["dist/**", "output/**", "release/**", "node_modules/**"],
   },
   tseslint.configs.recommended,
   {

@@ -5,9 +5,14 @@ release/
 
 # 门禁报告与沙盒(验收段产物、冒烟日志、供应链产物;非用户转换产物)
 output/
+# ↑ c8 的**报告**也落在这里(由 test:coverage 的 --reports-dir 显式登记为 output/coverage),
+#   故不再单开 coverage/ 条目 —— 那条在合并前是 c8 的 reports-dir 默认落点,不是本仓约定。
+#   能进本节的前提是「一次性在末尾写完」:子进程每退出一次就写一次的中间态不能进。
 
-# 测试覆盖率产物(c8)
-coverage/
+# c8 的 V8 dump 临时目录(由 test:coverage 的 --temp-directory 显式登记)
+# 必须在 output/ 保护区**之外**:dump 边跑边写,落进 output/ 会与门禁探针的工作树零注入
+# 指纹窗口必然重叠(探针段判 protected-tree-mutated,且报错完全不提 c8)。
+.c8-tmp/
 
 # 日志
 *.log
