@@ -13,6 +13,9 @@
  * 4. 旧段兼容:未接入 case 契约的段抛错仍记段级失败(error.stack 原样、结果无 cases 键);
  * 5. 崩溃/悬挂隔离:硬崩段(未回传即退出)与悬挂段(永不 settle)只终结自身,
  *    其后的段照常执行,整轮不产出 hung(超时后父进程真杀进程树,无残留悬挂段);
+ *    崩溃夹具的退出码是端到端锚点(父进程原样上报子进程退出码),为此它硬退前**先让出一轮
+ *    事件循环、且让出后永不返回** —— 同步硬退会在 Windows 上偶发被 0xC0000005 顶掉,
+ *    详见 setupSandbox 处注释;
  * 6. 超时前进度:悬挂段超时前进度已结算的 case 经回传保留在失败日志/段结果里;
  * 7. 段间状态隔离 + userData:每段独立 userData 目录(互不可见),且前一段目录在其
  *    子进程退出后即被删除;模块/全局状态不跨段;
@@ -265,12 +268,26 @@ function setupSandbox(isolating) {
   );
   if (!isolating) return;
   // 崩溃段:不回传结果即硬退(模拟渲染进程崩溃/段内进程级异常,父进程无完整结果可采信)
+  //
+  // 为什么硬退前要先让出一轮事件循环、且让出后**永不返回**(REQ-135 的修复,勿当无用代码删掉):
+  // 段是 Electron 主进程,在 `app.whenReady()` 的**分发尚未收尾**时被同步 `process.exit()` 打断,
+  // Windows 上会以 `0xC0000005 STATUS_ACCESS_VIOLATION`(偶发 `0x80000003` STATUS_BREAKPOINT)
+  // 取代真实退出码 —— 父进程只看到 3221225477,「段崩溃应上报退出码 7」这条断言便以与被测行为
+  // 无关的方式判红(CI 间歇复现,见 docs/REQ.md REQ-135)。
+  // 本机实测(真实 test/common/segment-host.mjs + 本夹具,提高并发以放大):
+  // 同步硬退 17/150 拿不到 7;让一轮且永不返回则 0/150 与 0/200。让**轮数**而非毫秒是关键 ——
+  // 轮数随已完成工作量伸缩,而 CI 的并发负载正是把失败率推高的那个变量。
+  // 「永不返回」这半句同样不可省:让出后 `process.exit` 不再同步生效,若 run() 正常返回,
+  // 宿主会写回 complete=true 并 app.exit(0),段被判通过 —— 夹具等于废了(实测退出码 0)。
+  // 永不返回则宿主拿不到结果,只等到真实退出码 7,夹具本意与断言强度均未变。
   writeSegment(
     "crash.test.js",
     [
       "export async function run() {",
       '  console.log("[selftest] crash 段:硬退,模拟段崩溃");',
+      "  await new Promise((resolve) => setImmediate(resolve));",
       "  process.exit(7);",
+      "  await new Promise(() => {});",
       "}",
       "",
     ].join("\n"),

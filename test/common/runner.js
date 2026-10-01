@@ -392,12 +392,16 @@ async function runSegmentIsolated(s, timeout, { captureLog = false } = {}) {
   delete childEnv[ONLY_ENV];
   delete childEnv[CONCURRENCY_ENV];
   // 覆盖采集环境不下传给**嵌套编排**的子进程(段内自跑派生的是夹具进程,不执行 dist/**,
-  // 对覆盖汇总零贡献)。原因不是省时间而是稳定性:c8 的覆盖写手挂在被测进程的退出路径上,
-  // 活着的 Electron 主进程硬退(app.exit / process.exit)时回写覆盖会在 Windows runner 上
-  // 以 0xC0000005 访问冲突**取代真实退出码**,于是「段崩溃应上报退出码」这类断言会以与
-  // 被测行为无关的方式判红。判据取「父进程自身是段宿主」(M2W_SEGMENT_FILE 存在),故顶层
-  // 段的覆盖采集不受影响。若将来新增的嵌套编排会执行 dist/**,必须在此显式保留采集 ——
+  // 对覆盖汇总零贡献)。判据取「父进程自身是段宿主」(M2W_SEGMENT_FILE 存在),故顶层段的
+  // 覆盖采集不受影响。若将来新增的嵌套编排会执行 dist/**,必须在此显式保留采集 ——
   // 否则是静默少算覆盖率(比崩溃更难发现)。
+  //
+  // 稳定性理由(REQ-135 实测修正):此处曾把「子进程退出码被 0xC0000005 顶掉」归因于 c8 覆盖
+  // 写手挂在退出路径上。本机合成探针已**证伪**该归因 —— 同样的活 Electron 主进程硬退,
+  // 插桩与不插桩的异常率在噪声内(各 100 轮:插桩 4/60+3/60,不插桩 2/60;高负载 12 并发
+  // 100 轮不插桩 8/100)。真因是**硬退时机**:在 `app.whenReady()` 分发尚未收尾时同步
+  // `process.exit()`,让出一轮事件循环即 0/120。剥离覆盖对本症状**不是**修复,保留它的理由
+  // 只剩「夹具进程对覆盖汇总零贡献」这一条(本身成立)。别再拿它当退出码断言的保护伞。
   if (process.env[SEGMENT_FILE_ENV] !== undefined) delete childEnv[COVERAGE_ENV];
   const child = spawn(process.execPath, [SEGMENT_HOST], {
     stdio: ["ignore", captureLog ? "pipe" : "inherit", captureLog ? "pipe" : "inherit"],
