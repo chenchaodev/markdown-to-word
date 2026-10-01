@@ -26,6 +26,18 @@ const USAGE = '用法: node gates/repo/gen-archive-index.mjs [--check]';
 /** 不进「分流去向」检索的 docs/ 一级子目录(posix 相对 docs/) */
 const HOST_EXCLUDE_DIRS = new Set(['evidence', 'large']);
 
+/**
+ * 同理排除的**文件**:`PLAN.md` 按设计是临时载体,完成标准逐条划完即删。
+ *
+ * 索引是永久的(只增不删的一层),「分流去向」列若解析到 `PLAN.md`,任务收尾那一刻
+ * 就会留下一条指向已删文件的指针,且 `check:archive-index` 会在删除后判红(生成器
+ * 重新解析到 `REQ.md` 而表里还写着 PLAN.md)。**危害方向是双向的**:既产出死指针,
+ * 又让索引内容取决于「此刻有没有临时文件存在」——那是不可复现的派生量。
+ * 真实触发:单任务 PLAN.md 的抬头按惯例链到本轮 evidence 文件,该链接曾被解析成
+ * 分流去向,顶掉同文件在 `REQ.md` 分析列里的常驻引用。
+ */
+const HOST_EXCLUDE_FILES = new Set(['PLAN.md']);
+
 /** 归档文件名里不登记进表的两个文件:本索引自身与该目录说明页 */
 const ARCHIVE_EXCLUDED = new Set(['INDEX.md', 'README.md']);
 
@@ -52,7 +64,7 @@ function listHostFiles() {
       if (entry.isDirectory()) {
         if (rel === '' && HOST_EXCLUDE_DIRS.has(entry.name)) continue;
         walk(path.join(dir, entry.name), childRel);
-      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      } else if (entry.isFile() && entry.name.endsWith('.md') && !HOST_EXCLUDE_FILES.has(entry.name)) {
         found.push(childRel);
       }
     }
