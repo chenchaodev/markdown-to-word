@@ -92,8 +92,19 @@ jobs:
       # 宿主环境,不落指纹就只能靠猜。同时写成文件,失败时随诊断 artifact 留存。
       # 探针取不到值时以 unavailable/partial 记入 diagnostics 且不阻断(默认非 --strict),
       # 仅脚本本身无法运行时才失败。
+      # 环境指纹 + (临时)验收段启动地板测量。
+      #
+      # 为什么塞在这一步:它已登记在门禁注册表,而 gate-registry 判「workflow 裸调
+      # 也是一条真实调用路径」—— 新加一个 workflow 步骤就得给它判定本体与探针,
+      # 为一次性观测建一套门禁不划算。塞进已有步骤零注册表成本。env 开关使平时
+      # 白付的 ~20s 不存在(不设 M2W_MEASURE_FLOOR_SAMPLES 即整段跳过)。
+      #
+      # 排期:REQ-133 拍板后连同 print-env-fingerprint.mjs 里那段 measureStartupFloor
+      # 与本 env 一并删除。
       - name: Record environment fingerprint
         shell: bash
+        env:
+          M2W_MEASURE_FLOOR_SAMPLES: 5
         run: |
           mkdir -p output/artifacts
           npm run --silent check:env | tee output/artifacts/env-fingerprint.txt
