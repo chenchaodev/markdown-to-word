@@ -27,11 +27,30 @@
  * 是 `npm run check:coverage-zero:selftest`(合成基线 + 合成 coverage JSON 的负向夹具),
  * 本段不复制那套夹具,只在真实基线上确认结构诊断仍只有一处实现。
  *
+ * 第五组断言是 **`--all` 面的聚合计数**(REQ-123):两个面读的是同一份 `loadBaseline`,
+ * 基线结构损坏时同一条病因会被两面各报一次(`X` 与 `基线结构损坏:X`)⇒ 呈现两行都保留
+ * (删一行会让人以为只有一个面在报,而那正是这道结构诊断当初的盲区),但 `共 N 项` 只计一次。
+ * 判据面是 coverage-gate.mjs 导出的 `aggregateProblems`(纯函数),夹具用**合成基线**造出
+ * 结构损坏,并逐条核对「静态面原文 X 在动态面确有 `基线结构损坏:X`」——先证明重复真实存在,
+ * 再证明计数把它收了。
+ *
  * 先红后绿:本段在主会话把新参数向量与干净树实测值登记进基线之前**应当是红的**,红的原因
  * 就是待办清单本身(缺 --all / measured 未登记 / 豁免未进 --exclude),不是误报。
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { createCaseSuite } from "../common/case.js";
-import { BASELINE_RELATIVE, METRICS, auditStatic, loadBaseline } from "../../gates/probe/gate-probes/coverage-gate.mjs";
+import { withTempResource } from "../common/temp-resource.js";
+import {
+  BASELINE_RELATIVE,
+  BASELINE_SHAPE_PREFIX,
+  METRICS,
+  SUMMARY_RELATIVE,
+  aggregateProblems,
+  auditStatic,
+  auditZeroFiles,
+  loadBaseline,
+} from "../../gates/probe/gate-probes/coverage-gate.mjs";
 
 /**
  * 判断一条问题属于哪类(按文本特征;未识别的归入「其它」,并在段末断言「无未识别分类」,
@@ -127,6 +146,124 @@ export async function run() {
     if (stray.length > 0) {
       throw new Error(`以下结构诊断不在 loadBaseline() 的输出里(疑似第二套结构校验;结构诊断须只有一处实现):${stray.join(";")}`);
     }
+  });
+
+  await suite.describe("--all 面的聚合计数(同一病因只计一次)", async () => {
+    // 夹具用合成基线,不碰真实基线文件(段内只读真实仓是本段的既有纪律;覆盖写不得发生)。
+    // 形态照 loadBaseline 的最小合法集填(除被注入的那一处),让「结构诊断」是唯一病因。
+    const SYNTHETIC_BASELINE = {
+      baselineSchema: 1,
+      note: ["合成基线:仅供本段 --all 聚合计数夹具使用,不对应真实仓库的任何阈值或豁免。"],
+      headroomPp: 4,
+      floor: { statements: 85, branches: 80, functions: 85, lines: 85 },
+      measured: { statements: 93, branches: 88, functions: 93, lines: 93 },
+      thresholds: { statements: 90, branches: 85, functions: 90, lines: 90 },
+      requireFlags: ["--all", "--check-coverage"],
+      requireExcludesInFlag: false,
+      exemptions: [],
+    };
+    /**
+     * 在一次性夹具根上跑一次审计并把结果交给 `assert` 判定。夹具根的生命周期完全由
+     * withTempResource 管(建 → 判定 → 清理,抛错也清),故 `assert` 必须在回调内同步抛,
+     * 不能把路径带出来再用 —— 出来时目录已经被删了。
+     * @param {(baseline: Record<string, unknown>) => void} mutate 基线注入(结构损坏)
+     * @param {(root: string) => void} assert 在夹具根上的判定(抛错即该 case 失败)
+     * @returns {Promise<void>}
+     */
+    async function onFixture(mutate, assert) {
+      await withTempResource({ prefix: "m2w-covgate-all-", label: "coverage-gate --all 聚合计数夹具" }, (resource) => {
+        const baseline = structuredClone(SYNTHETIC_BASELINE);
+        mutate(baseline);
+        const baselinePath = path.join(resource.path, ...BASELINE_RELATIVE.split("/"));
+        mkdirSync(path.dirname(baselinePath), { recursive: true });
+        writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
+        // 动态面必须有摘要才走得完(否则它会在结构诊断之前就短路成「未找到 coverage-summary」)
+        const summaryPath = path.join(resource.path, ...SUMMARY_RELATIVE.split("/"));
+        mkdirSync(path.dirname(summaryPath), { recursive: true });
+        writeFileSync(summaryPath, `${JSON.stringify({ total: {} }, null, 2)}\n`, "utf8");
+        assert(resource.path);
+        return resource;
+      });
+    }
+
+    await suite.case("结构损坏时 --all 的计数不含重复(呈现两行都保留)", async () => {
+      await onFixture(
+        (b) => {
+          b.headroomPp = "4";
+        },
+        (root) => {
+          const staticProblems = loadBaseline(root).problems;
+          if (staticProblems.length === 0) {
+            throw new Error("夹具未造出结构诊断(headroomPp 改成字符串后 loadBaseline 仍零问题),本夹具测不到任何东西");
+          }
+          const zeroProblems = auditZeroFiles(root).problems;
+          // 先证明「重复」真实存在:静态面每条原文在动态面都有一条带前缀的同名条目。
+          // 若这条红了,说明结构诊断没被动态面回传,聚合去重就无从谈起(那是另一条判据的事)。
+          const prefixed = zeroProblems
+            .filter((p) => p.startsWith(BASELINE_SHAPE_PREFIX))
+            .map((p) => p.slice(BASELINE_SHAPE_PREFIX.length));
+          const missing = staticProblems.filter((p) => !prefixed.includes(p));
+          if (missing.length > 0) {
+            throw new Error(`动态面未回传这些结构诊断(去重键的另一半不存在):${missing.join(";")}`);
+          }
+          const aggregated = aggregateProblems(staticProblems, zeroProblems);
+          // 呈现两行都保留(一行无前缀 + 一行带前缀),这是刻意不删的
+          const expectedLines = staticProblems.length + zeroProblems.length;
+          if (aggregated.lines.length !== expectedLines) {
+            throw new Error(`呈现行数被改动:应为 ${expectedLines} 行(静态 ${staticProblems.length} + 动态 ${zeroProblems.length}),实际 ${aggregated.lines.length}`);
+          }
+          // 计数:动态面那批带前缀的条目与静态面同源,不该被计第二次
+          const expectedCount = staticProblems.length + (zeroProblems.length - prefixed.length);
+          if (aggregated.distinctCount !== expectedCount) {
+            throw new Error(`共 N 项 的计数应把同一病因只算一次:期望 ${expectedCount},实际 ${aggregated.distinctCount}(呈现 ${aggregated.lines.length} 行)`);
+          }
+          if (aggregated.distinctCount >= aggregated.lines.length) {
+            throw new Error(`计数没有收掉任何重复(${aggregated.distinctCount} >= ${aggregated.lines.length}),去重形同恒等`);
+          }
+        },
+      );
+    });
+
+    await suite.case("反向锚点:健康基线与单一面时计数逐条不变(去重不得误伤正常条目)", async () => {
+      await onFixture(
+        () => {
+          /* 不注入任何结构损坏 */
+        },
+        (root) => {
+          const staticProblems = loadBaseline(root).problems;
+          if (staticProblems.length > 0) throw new Error(`夹具意外带结构诊断:${staticProblems.join(";")}`);
+          // 动态面此时不会报任何结构问题(夹具里的摘要为空对象,0% 集合与空豁免清单一致)
+          const zeroProblems = auditZeroFiles(root).problems;
+          const both = aggregateProblems(staticProblems, zeroProblems);
+          if (both.distinctCount !== both.lines.length) {
+            throw new Error(`无结构诊断时不该去重:呈现 ${both.lines.length} 行,计数 ${both.distinctCount}`);
+          }
+          // 单一面(--zero / --static 各自单跑):聚合必须逐字透传该面的清单
+          const onlyZero = aggregateProblems(undefined, zeroProblems);
+          if (onlyZero.lines.join("\n") !== zeroProblems.join("\n") || onlyZero.distinctCount !== zeroProblems.length) {
+            throw new Error("单一面聚合改变了动态面清单(缺省面必须原样透传)");
+          }
+          const onlyStatic = aggregateProblems(staticProblems, undefined);
+          if (onlyStatic.lines.join("\n") !== staticProblems.join("\n") || onlyStatic.distinctCount !== staticProblems.length) {
+            throw new Error("单一面聚合改变了静态面清单(缺省面必须原样透传)");
+          }
+        },
+      );
+      // 两面各自独有的诊断不被误合(去重键是「剥前缀后的全文」,不是子串包含)
+      const mixed = aggregateProblems(["阈值锚定:branches 未登记"], [`${BASELINE_SHAPE_PREFIX}headroomPp 必须是 ≥0 的数值`]);
+      if (mixed.distinctCount !== 2) {
+        throw new Error(`两面各自独有的诊断被误合为一条:期望 2,实际 ${mixed.distinctCount}`);
+      }
+      // 真实工作树:基线结构健康 ⇒ 两面聚合不得发生任何去重
+      const realStatic = loadBaseline().problems;
+      if (realStatic.length > 0) {
+        throw new Error(`真实基线当前带结构诊断(${realStatic.join(";")}),本锚点在真实面上不可判定`);
+      }
+      const realBoth = aggregateProblems(auditStatic().problems, auditZeroFiles().problems);
+      if (realBoth.distinctCount !== realBoth.lines.length) {
+        throw new Error(`真实工作树上无结构诊断却发生了去重:${realBoth.distinctCount} != ${realBoth.lines.length}`);
+      }
+    });
   });
 
   const failures = suite.failures;

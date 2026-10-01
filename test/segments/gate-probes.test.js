@@ -33,6 +33,64 @@ import { REPORT_RELATIVE, formatSummary, isReportPassing, resolveGateSelection, 
 import { createCaseSuite } from "../common/case.js";
 import { ROOT } from "../common/paths.js";
 
+/* ---- 「报告不含绝对路径」判据(纯函数,判据面与呈现面分开)---- */
+
+/**
+ * URL 片段(`scheme://…`):含 `/`,但它不是本机路径,判红即误伤。
+ *
+ * 为什么必须先摘掉再判 —— 实测:摘掉与否,`https://registry.npmjs.org/npm` 的判定结果不同,
+ * 且**两条形态都中招**:`scheme:` 的末字母 + `:` 正好构成盘符形态(`s:/`),而 `//` 之后
+ * 紧跟的 host 首段又落在 POSIX 形态的 token 起点上。不摘就是三条必红的假阳性。
+ * `file:///tmp/…`(三斜杠)、`--registry=https://a.b/c`(前缀夹带)同理,均有负向夹具钉住。
+ */
+const URL_FRAGMENT_RE = /[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`)\]},;]*/g;
+
+/** Windows 盘符形态(`C:\…` / `c:/…`)—— 原有判据,只匹配盘符这一个切面 */
+const WINDOWS_ABSOLUTE_RE = /[A-Za-z]:[\\/]/;
+
+/**
+ * POSIX 绝对路径形态:`/` 落在 token 起点(串首,或空白 / 引号 / 括号 / 逗号 / 分号 / `:` / `=`
+ * 之后),且紧随一个非空白字符。
+ *
+ * 三个细节都是实测出来的,收窄或放宽任一条都会让判据重新漏人或重新误伤:
+ *   - `token 起点`限定:否则 `dist/renderer/index.html`、`evidence/INDEX.md` 这类仓库相对
+ *     路径(报告里到处都是)全部判红,判据当场失去可用性;
+ *   - `(?!\/)`:否则 `//` 判红;
+ *   - `\S`:否则中文句子里当分隔号用的「自检脚本 / 验收段」判红。
+ *
+ * **日期形态(`2026/10/01`)是被这一条排除的,不另设掩码**:日期的每个 `/` 前面都是数字段,
+ * 而数字不在上面的起点字符集里 ⇒ 三个日期形态实测均不命中(裸形态、带时间、夹在中文句中)。
+ * 曾试过加一条日期掩码,实测它对判定结果**无任何影响**(掩码摘掉的文本本来就不命中),
+ * 留着只会让下一个人误以为日期是靠那条掩码挡住的、进而放松起点限定 —— 故按「恒真断言等于
+ * 没有断言」删掉。日期的排除力由下面三条负向夹具钉住(把起点限定放宽成「含 `/` 即判红」时
+ * 它们立刻变红)。
+ */
+const POSIX_ABSOLUTE_RE = /(?:^|[\s"'`([{,;:=])\/(?!\/)\S/;
+
+/**
+ * 一段文本里是否含绝对路径(Windows 盘符形态或 POSIX 形态)。
+ *
+ * URL 先摘除、POSIX 判据认起点,两头收住两类「含 `/` 却不是路径」的形态 —— 这是本判据
+ * 精确性的关键:上一版只认盘符,于是 POSIX 绝对路径(`/home/runner/…`,Linux CI 上最常见的
+ * 形态)整条漏掉,该判据只在 Windows 上有效;而直接补一条「含 `/` 即判红」又会把 URL 与日期
+ * 一起误伤。两类误报形态各有负向夹具(见 run() 内的判据面夹具组),删掉任一处收紧即变红。
+ * @param {string} text 已解码的单个字符串(键或值)
+ * @returns {boolean} true = 含绝对路径
+ */
+export function containsAbsolutePath(text) {
+  const masked = text.replace(URL_FRAGMENT_RE, " ");
+  return WINDOWS_ABSOLUTE_RE.test(masked) || POSIX_ABSOLUTE_RE.test(masked);
+}
+
+/**
+ * 在已解码的字符串集合里找第一条含绝对路径的。
+ * @param {string[]} decoded 已解码的字符串(键与值都收)
+ * @returns {string | undefined} 命中的字符串(undefined = 干净)
+ */
+export function findAbsolutePath(decoded) {
+  return decoded.find((s) => containsAbsolutePath(s));
+}
+
 /**
  * 门禁 id → case 名前缀(报告与 case 名对齐,失败时一眼定位)。
  * @type {Record<string, string>}
@@ -154,11 +212,67 @@ export async function run() {
         else if (Array.isArray(v)) v.forEach(collect);
         else if (v && typeof v === "object") for (const k of Object.keys(v)) { decoded.push(k); collect(v[k]); }
       })(parsed);
-      const absolute = decoded.find((s) => /[A-Za-z]:[\\/]/.test(s));
+      const absolute = findAbsolutePath(decoded);
       if (absolute !== undefined) throw new Error(`报告含绝对路径,不可跨机比对:${absolute.slice(0, 80)}`);
       if (!Array.isArray(parsed.gates) || parsed.gates.length !== report.gates.length) {
         throw new Error("报告里的门禁条目数与本次运行不一致");
       }
+    });
+  });
+
+  // 判据面自身的夹具组:本段对报告的「无绝对路径」判据是本仓唯一实现,若它退化成恒绿
+  // (比如有人把 POSIX 形态整条删掉、或把起点限定放宽成「含 / 即判红」),**报告本身干净时
+  // 不会有任何症状** —— 上面的 case 只会继续绿。故判据必须在自己的组里被正负夹具钉住。
+  await suite.describe("报告绝对路径判据(判据面自身的正负夹具)", async () => {
+    /** @type {{ why: string, text: string, hit: boolean }[]} */
+    const FIXTURES = [
+      // 正向:两种绝对路径形态都判红(盘符是原有切面,POSIX 是本轮补的那一面)
+      { why: "Windows 盘符形态", text: "C:\\Users\\chenc\\docs\\notes.md", hit: true },
+      { why: "Windows 盘符形态(正斜杠)", text: "载体:C:/Users/chenc/.config/opencode/tools/check-pointers.mjs", hit: true },
+      { why: "POSIX 绝对路径(Linux CI 的检出目录)", text: "/home/runner/work/markdown-to-word/gates", hit: true },
+      { why: "POSIX 绝对路径夹在句中", text: "报告路径 /var/folders/zz/T/report.json 已落盘", hit: true },
+      { why: "POSIX 绝对路径紧跟冒号", text: "沙盒:/tmp/m2w-probe/report.json", hit: true },
+      { why: "路径里恰好有一段日期(日期摘除不得吃掉前导斜杠)", text: "/var/log/2026/10/01/run.log", hit: true },
+      // 负向:URL —— 含 `/` 但不是本机路径
+      { why: "URL(https)", text: "https://registry.npmjs.org/npm", hit: false },
+      { why: "URL(带 = 前缀)", text: "--registry=https://registry.npmjs.org/npm", hit: false },
+      { why: "URL(file:// 三斜杠)", text: "file:///tmp/gate-probes/report.json", hit: false },
+      { why: "URL(夹在句中,后面还有真相对路径)", text: "见 https://example.com/x 与 dist/renderer/index.html", hit: false },
+      // 负向:日期形态
+      { why: "日期形态(裸)", text: "2026/10/01", hit: false },
+      { why: "日期形态(夹在句中)", text: "基线更新于 2026/10/01 的实测值", hit: false },
+      { why: "日期形态(带时间)", text: "2026/10/01T09:30 那一版", hit: false },
+      { why: "日期形态(多个日期并列)", text: "见 2026/10/01 与 2026/11/02 两条记录", hit: false },
+      // 负向:仓库相对路径与「当分隔号用的斜杠」—— 上一版按盘符匹配时天然不碰,
+      // 补 POSIX 形态后它们是最大的误伤面,必须逐条钉住
+      { why: "仓库相对路径", text: "dist/renderer/index.html", hit: false },
+      { why: "仓库相对路径(gates 树)", text: "gates/probe/gate-probes/registry.mjs", hit: false },
+      { why: "中文句里的分隔斜杠", text: "把探针指向一个不存在的自检脚本 / 验收段", hit: false },
+      { why: "覆盖率分数(斜杠两侧是数字)", text: "statements 0/186, functions 0/1", hit: false },
+      { why: "段数比", text: "1/1 段失败", hit: false },
+      { why: "c8 参数向量", text: "--include=dist/**", hit: false },
+      { why: "冒号后接相对路径(不是绝对路径)", text: "未破坏:acceptance/ 与段导出重新生成的内容一致", hit: false },
+    ];
+    for (const { why, text, hit } of FIXTURES) {
+      await suite.case(`${hit ? "正向" : "负向"}:${why}`, () => {
+        const got = containsAbsolutePath(text);
+        if (got === hit) return;
+        throw new Error(
+          `判据与预期不符:期望 ${hit ? "判红" : "不误伤"},实际 ${got ? "判红" : "放过"}。样本:${text}`,
+        );
+      });
+    }
+    // 夹具组自身的完整性:三类形态(Windows / POSIX / URL / 日期)各须至少有一条,否则
+    // 有人整类删掉夹具时本组仍绿(夹具数量是唯一线索,判红必须靠内容而不是靠数量)。
+    await suite.case("夹具覆盖两类绝对路径与两类误报形态", () => {
+      const positives = FIXTURES.filter((f) => f.hit);
+      const negatives = FIXTURES.filter((f) => !f.hit);
+      const missing = [];
+      if (!positives.some((f) => /[A-Za-z]:[\\/]/.test(f.text))) missing.push("Windows 盘符形态缺正向夹具");
+      if (!positives.some((f) => f.text.includes("/") && !/[A-Za-z]:[\\/]/.test(f.text))) missing.push("POSIX 形态缺正向夹具");
+      if (!negatives.some((f) => f.text.includes("://"))) missing.push("URL 形态缺负向夹具");
+      if (!negatives.some((f) => /\d{4}\/\d{2}\/\d{2}/.test(f.text))) missing.push("日期形态缺负向夹具");
+      if (missing.length > 0) throw new Error(missing.join(";"));
     });
   });
 

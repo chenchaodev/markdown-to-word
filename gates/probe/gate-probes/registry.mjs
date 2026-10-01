@@ -98,14 +98,13 @@ export const GATE_REGISTRY = Object.freeze(
         module: "gates/repo/check-ci-contract.mjs",
         export: "checkContract",
         shaped: "string[]",
-        // 本模块顶层有一行 `process.exitCode = main()`:import 它等于把契约门禁真跑一遍
-        // (只读、约 10ms,但会改宿主进程的 exitCode)⇒ 不 import,走加严静态链。
-        load: "static",
       },
       judgmentNote:
         "判定本体已抽成可注入纯函数(根 / 读文本 / 存在性 / 宿主 Node 版本全经 ctx)。"
         + "这是唯一一条**两条调用路径都跑**的门禁:verify:ci 链首步 + 两条 workflow 在 npm ci 之前的裸调 fail-fast。"
-        + "链序约束的是驱动器不是机制,故探针在夹具仓上求值它即可,不必处在链首那个时刻。",
+        + "链序约束的是驱动器不是机制,故探针在夹具仓上求值它即可,不必处在链首那个时刻。"
+        + "REQ-118:本模块已改为 `process.argv[1]` 入口守卫(与 coverage-gate.mjs 同形),import 无副作用,"
+        + "故指针走默认的真 import 档 —— 拿到的是函数对象,不再是静态文本里那个名字。",
       probes: [
         {
           kind: "selftest",
@@ -211,11 +210,11 @@ export const GATE_REGISTRY = Object.freeze(
         module: "gates/repo/gen-archive-index.mjs",
         export: "main",
         shaped: "退出码(0 = 通过)",
-        // 本模块顶层 `process.exitCode = main(...)` 且默认是**生成**模式 ⇒ import 它会重写
-        // docs/evidence/INDEX.md。段内只读断言绝不能有这种副作用 ⇒ 不 import。
-        load: "static",
       },
-      judgmentNote: "判定体尚未抽成注入式纯函数,指针暂取 CLI 的 main(判定与呈现仍在同一函数内);探针走进程级调用,不依赖该指针",
+      judgmentNote:
+        "判定体尚未抽成注入式纯函数,指针暂取 CLI 的 main(判定与呈现仍在同一函数内);探针走进程级调用,不依赖该指针。"
+        + "REQ-118:本模块已改为 `process.argv[1]` 入口守卫,import 不再重写 docs/evidence/INDEX.md"
+        + "(默认是**生成**模式,顶层自执行等于「import 即改工作树」)⇒ 指针走默认的真 import 档。",
       probes: [
         {
           kind: "selftest",
@@ -509,15 +508,12 @@ export const GATE_REGISTRY = Object.freeze(
         module: "gates/repo/check-docs.mjs",
         export: "main",
         shaped: "退出码(0 = 通过 / 载体不可达而跳过)",
-        // ⚠ 这条是段硬超时的**唯一根因**(2026-10-01 实测):本模块顶层 `process.exitCode = main(...)`,
-        // 而 main 用 `execFileSync(process.execPath, …)` 调全局门禁。验收跑在 Electron 里,
-        // `process.execPath` 是 electron.exe ⇒ import 这一个模块会起一个**永不退出的 GUI 进程**,
-        // 验收段被框架硬终止(同一批判据纯 Node 下 1.2s 跑完)。⇒ 绝不能 import。
-        load: "static",
       },
       judgmentNote:
         "判定体在全局配置仓的 tools/check-pointers.mjs,本仓是薄包装(不持有第二份逻辑);载体不可达时打印「未判定」并 exit 0,故它刻意不在任何链上。"
-        + "指针声明 load:\"static\" 的理由见该字段注(import 会经 process.execPath 起 Electron GUI 进程)",
+        + "REQ-118:本模块已改为 `process.argv[1]` 入口守卫 —— 它此前是段硬超时的**唯一根因**(顶层自执行经 "
+        + "`execFileSync(process.execPath, …)` 在 Electron 里起 electron.exe GUI 进程,永不退出)。"
+        + "守卫之后 import 无副作用,指针走默认的真 import 档。",
       probes: [
         {
           kind: "selftest",

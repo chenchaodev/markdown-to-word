@@ -43,8 +43,33 @@ const MIN_REASON_LENGTH = 20;
 /**
  * 动态面回传基线结构诊断时的前缀:把「基线结构坏了」与「0% 集合与清单不一致」两类问题
  * 在输出里分开(后者照旧以「0% 覆盖文件未登记豁免」「豁免条目 …」开头,两者互不冒充)。
+ *
+ * 导出供验收段构造跨面夹具复用(REQ-123):该前缀只标「哪一面报的」,不是病因的一部分,
+ * 聚合去重与夹具都必须按同一份前缀字面量走,不许在段里另写一份。
  */
-const BASELINE_SHAPE_PREFIX = "基线结构损坏:";
+export const BASELINE_SHAPE_PREFIX = "基线结构损坏:";
+
+/**
+ * 跨面聚合:呈现**逐行全保留**,计数按「同一底层问题只计一次」去重(REQ-123)。
+ *
+ * 为什么两行都保留却只报一次:静态面与动态面读的是同一份 `loadBaseline` 结构校验,
+ * 基线损坏时同一条病因会被两面各报一次(`X` 与 `基线结构损坏:X`)。删掉一行会让人以为
+ * 「只有一个面在报」,而那正是这道结构诊断当初只挂一面时的盲区;但 `共 N 项` 是给人
+ * 判断「有几件事要修」的计数,把同一病因计两次会让人多修一遍。故**呈现不动、只改计数**。
+ *
+ * 去重键 = 去掉 `基线_SHAPE_PREFIX` 后的正文:该前缀只标明「哪一面报的」,剥掉后两面
+ * 的同一条病因落到同一个键上。两面各自独有的诊断(参数向量 / 阈值锚定 vs 0% 集合核对)
+ * 正文不同,不会被误合。
+ * @param {...(string[] | undefined)} faces 各判定面的问题清单(不跑的面传 undefined)
+ * @returns {{ lines: string[], distinctCount: number }} 呈现行(全保留)与去重后的计数
+ */
+export function aggregateProblems(...faces) {
+  const lines = faces.flatMap((face) => face ?? []);
+  const keys = new Set(
+    lines.map((line) => (line.startsWith(BASELINE_SHAPE_PREFIX) ? line.slice(BASELINE_SHAPE_PREFIX.length) : line)),
+  );
+  return { lines, distinctCount: keys.size };
+}
 
 /**
  * 源码文件 → 编译产物相对路径(src/ 前缀换成 dist/,扩展名 .ts→.js / .cts→.cjs / .mts→.mjs)。
@@ -451,24 +476,28 @@ export function auditZeroFiles(root = ROOT) {
 export async function main(argv = []) {
   const runStatic = argv.includes("--all") || !argv.includes("--zero");
   const runZero = argv.includes("--all") || argv.includes("--zero");
-  /** @type {string[]} */
-  const problems = [];
+  /** @type {string[] | undefined} */
+  let staticProblems;
+  /** @type {string[] | undefined} */
+  let zeroProblems;
   if (runStatic) {
     const staticAudit = auditStatic(ROOT);
-    problems.push(...staticAudit.problems);
+    staticProblems = staticAudit.problems;
     console.log(`[coverage-gate] 静态面:${staticAudit.problems.length === 0 ? "通过" : `${staticAudit.problems.length} 项问题`}`);
   }
   if (runZero) {
     const zeroAudit = auditZeroFiles(ROOT);
-    problems.push(...zeroAudit.problems);
+    zeroProblems = zeroAudit.problems;
     console.log(
       `[coverage-gate] 动态面:0% 文件 ${zeroAudit.zeroFiles.length} 个${zeroAudit.zeroFiles.length > 0 ? `(${zeroAudit.zeroFiles.join(", ")})` : ""}` +
         `${Object.keys(zeroAudit.total).length > 0 ? `;实测 ${METRICS.map((m) => `${m} ${zeroAudit.total[m]}%`).join(" ")}` : ""}`,
     );
   }
-  for (const problem of problems) console.error(`[coverage-gate:fail] ${problem}`);
-  if (problems.length > 0) {
-    console.error(`[coverage-gate:fail] 共 ${problems.length} 项(基线:${BASELINE_RELATIVE})`);
+  // 聚合口径见 aggregateProblems:呈现逐行全保留,`共 N 项` 按同一底层问题去重(REQ-123)
+  const { lines, distinctCount } = aggregateProblems(staticProblems, zeroProblems);
+  for (const problem of lines) console.error(`[coverage-gate:fail] ${problem}`);
+  if (lines.length > 0) {
+    console.error(`[coverage-gate:fail] 共 ${distinctCount} 项(基线:${BASELINE_RELATIVE})`);
     return 1;
   }
   console.log("[coverage-gate] 覆盖率门禁基线自检通过");

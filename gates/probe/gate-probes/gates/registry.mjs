@@ -23,6 +23,7 @@ import {
   checkGateRegistry,
   discoverInvocations,
 } from "../registry.mjs";
+import { ROOT } from "../contract.mjs";
 import { finalizeGate, judgeCase } from "../judge.mjs";
 import { makeCtx } from "../protocol.mjs";
 
@@ -41,10 +42,14 @@ function cloneEntry(entry) {
  * 同一份判定」的含义 —— 若这里改成跑 CLI,验的就会是「CLI 会不会红」而不是「判定本体会不会红」。
  * @param {Readonly<Record<string, any>>} registry 合成注册表
  * @param {Map<string, any> | null} invocations 合成发现结果(null = 用真实发现)
+ * @param {Partial<import("../protocol.mjs").GateCtx>} [overrides] 判定注入面覆盖
  * @returns {{ code: number, output: string, codes: string[] }} 结果
  */
-function runRegistry(registry, invocations = null) {
-  const problems = checkGateRegistry(invocations === null ? { deps: { registry } } : { deps: { registry, invocations } });
+function runRegistry(registry, invocations = null, overrides = {}) {
+  const problems = checkGateRegistry({
+    ...overrides,
+    deps: { registry, ...(invocations === null ? {} : { invocations }) },
+  });
   return {
     code: problems.length === 0 ? 0 : 1,
     output: problems.map((p) => `${p.code}: ${p.message}`).join("\n"),
@@ -62,6 +67,46 @@ function synth(real) {
   const out = {};
   for (const [id, entry] of Object.entries(real)) out[id] = cloneEntry(entry);
   return out;
+}
+
+/**
+ * `judgment-load-mismatch` 负向夹具的**被测主体**:一段合成的模块源码。
+ *
+ * 为什么必须合成、而不是指着一个真实模块(2026-10-01,REQ-118 之后):REQ-118 把三道门禁的
+ * 顶层自执行全去掉了,全仓**不再有任何自执行模块** ⇒ 「去掉 load」这种注入拿不到被测主体,
+ * 判定返回零问题 —— 那正是恒绿。反方向(新增一个永久自执行的夹具模块)同样不可取:等于把
+ * REQ-118 刚消灭的东西请回来,并让门禁从此挂着一个「已知坏」的常驻模块,`judgment-load-mismatch`
+ * 的存在意义会被它反噬。故夹具经 `readText` / `exists` 注入面喂这段文本,仓内**不存在**该文件。
+ *
+ * `process.exitCode = main();` 必须顶格(`topLevelSelfExecutions` 只认行首无缩进的语句),
+ * 这正是它与函数体内的同名调用之间的全部差别。
+ */
+const SELF_EXECUTING_MODULE_REL = "gates/probe/gate-probes/synthetic-self-executing-probe.mjs";
+const SELF_EXECUTING_MODULE_TEXT = ["export function main() {", "  return 0;", "}", "process.exitCode = main();", ""].join("\n");
+
+/** 可安全 import 的合成模块:顶层**没有**自执行痕迹(反向方向用它,证明判据不只单向成立) */
+const IMPORTABLE_MODULE_REL = "gates/probe/gate-probes/synthetic-importable-probe.mjs";
+const IMPORTABLE_MODULE_TEXT = ["export function main() {", "  return 0;", "}", ""].join("\n");
+
+/**
+ * 造一份判定注入面:给定的**仓内并不存在**的模块相对路径读到合成源码、判定为存在;
+ * 其余相对路径一律走真实根。于是夹具结论只取决于合成文本,与任何真实文件的状态解耦
+ * (把哪份真实文件改成自执行或去掉自执行,这条夹具的结论都不变)。
+ *
+ * 不收 `deps`:合成注册表由 runRegistry 统一注入,这里只负责「模块文本从哪来」这一件事。
+ * @param {Record<string, string>} modules 仓库相对路径 → 合成源码
+ * @returns {Partial<import("../protocol.mjs").GateCtx>} 判定注入面覆盖(不含 deps)
+ */
+function ctxWithSyntheticModules(modules) {
+  const real = makeCtx({ root: ROOT });
+  // makeCtx 的两个 IO 原语在 GateCtx 里声明为可选,这里取回时收窄成必调用的形态
+  const realRead = /** @type {(relative: string) => string} */ (real.readText);
+  const realExists = /** @type {(relative: string) => boolean} */ (real.exists);
+  return {
+    root: ROOT,
+    readText: (/** @type {string} */ relative) => (modules[relative] === undefined ? realRead(relative) : modules[relative]),
+    exists: (/** @type {string} */ relative) => modules[relative] !== undefined || realExists(relative),
+  };
 }
 
 /**
@@ -98,12 +143,12 @@ export async function probeRegistry(ctx) {
    * @param {string} id 探针 id
    * @param {string} description 做了什么
    * @param {string} fault 注入的故障
-   * @param {() => { registry: Record<string, any>, invocations?: Map<string, any> | null }} build 故障夹具工厂
+   * @param {() => { registry: Record<string, any>, invocations?: Map<string, any> | null, overrides?: Partial<import("../protocol.mjs").GateCtx> }} build 故障夹具工厂
    * @param {string} expectedCode 期望命中的 code
    */
   const faultCase = (id, description, fault, build, expectedCode) => {
     const built = build();
-    const result = runRegistry(built.registry, built.invocations ?? null);
+    const result = runRegistry(built.registry, built.invocations ?? null, built.overrides ?? {});
     cases.push(
       judgeCase(
         {
@@ -225,14 +270,33 @@ export async function probeRegistry(ctx) {
   );
 
   // ---- 负向 6c:load 声明与顶层自执行事实不符 → judgment-load-mismatch ----
+  // 被测主体是**合成模块文本**(见 SELF_EXECUTING_MODULE_*),仓内不存在该文件。
+  // 曾经指过真实的 gates/repo/check-docs.mjs —— REQ-118 给它加了入口守卫之后,全仓再无自执行
+  // 模块,那条注入就退化成「零问题」= 恒绿(2026-10-01 实测)。合成主体让结论与真实文件解耦。
   faultCase(
     "fault-judgment-load-mismatch",
     "让一个顶层自执行的模块谎报成可安全 import(段内 import 它会挂死)",
-    "docs 门禁去掉 load:\"static\"(而该模块顶层会 execFileSync 起 Electron GUI 进程)",
+    "把 docs 门禁的判定指针改指一份顶层自执行的合成模块,且不声明 load:\"static\"",
     () => {
       const registry = synth(real);
-      registry.docs.judgment = { module: "gates/repo/check-docs.mjs", export: "main", shaped: "退出码" };
-      return { registry };
+      registry.docs.judgment = { module: SELF_EXECUTING_MODULE_REL, export: "main", shaped: "退出码" };
+      return { registry, overrides: ctxWithSyntheticModules({ [SELF_EXECUTING_MODULE_REL]: SELF_EXECUTING_MODULE_TEXT }) };
+    },
+    "judgment-load-mismatch",
+  );
+
+  // ---- 负向 6d:同一判据的反向(可安全 import 的模块谎报 static)→ judgment-load-mismatch ----
+  // 单向成立的判据等于半个判据:只挡「谎报可 import」而不管「谎报 static」的话,后者会让
+  // `load: "static"` 白丢一次真 import 证据(protocol.mjs 的 load 字段注里写的就是这个代价)。
+  // 被测主体同样是合成文本(顶层**没有**自执行痕迹),与 6c 一起证明该判据双向成立。
+  faultCase(
+    "fault-judgment-load-mismatch-reverse",
+    "让一个可安全 import 的模块谎报成 static(白丢一次真 import 证据)",
+    "把 docs 门禁的判定指针改指一份顶层干净(可安全 import)的合成模块,却声明 load:\"static\"",
+    () => {
+      const registry = synth(real);
+      registry.docs.judgment = { module: IMPORTABLE_MODULE_REL, export: "main", shaped: "退出码", load: "static" };
+      return { registry, overrides: ctxWithSyntheticModules({ [IMPORTABLE_MODULE_REL]: IMPORTABLE_MODULE_TEXT }) };
     },
     "judgment-load-mismatch",
   );

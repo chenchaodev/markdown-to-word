@@ -56,6 +56,44 @@ function synth(mutate) {
 }
 
 /**
+ * `judgment-load-mismatch` 负向夹具的**被测主体**:一段合成的模块源码。
+ *
+ * 为什么必须合成、而不是指着一个真实模块(2026-10-01,REQ-118 之后):REQ-118 给三道门禁加了
+ * 入口守卫、顶层不再自执行,全仓**已无任何自执行模块** ⇒ 「去掉 load」那种注入拿不到被测
+ * 主体,判定返回零问题 —— 那正是恒绿(2026-10-01 实测:本 case 就是这样变红的)。反方向
+ * (新增一个永久自执行的夹具模块文件)同样不可取:等于把 REQ-118 刚消灭的东西请回来,并让门禁
+ * 从此挂着一个「已知坏」的常驻模块。故夹具经 `readText` / `exists` 注入面喂合成文本,仓内
+ * **不存在**这两个文件,结论与任何真实文件的状态解耦。
+ *
+ * `process.exitCode = main();` 必须顶格 —— `topLevelSelfExecutions` 只认行首无缩进的语句,
+ * 这正是它与函数体内的同名调用之间的全部差别。
+ */
+const SELF_EXECUTING_MODULE_REL = "gates/probe/gate-probes/synthetic-self-executing-probe.mjs";
+const SELF_EXECUTING_MODULE_TEXT = ["export function main() {", "  return 0;", "}", "process.exitCode = main();", ""].join("\n");
+
+/** 可安全 import 的合成模块:顶层**没有**自执行痕迹(反向方向用它,证明判据双向成立) */
+const IMPORTABLE_MODULE_REL = "gates/probe/gate-probes/synthetic-importable-probe.mjs";
+const IMPORTABLE_MODULE_TEXT = ["export function main() {", "  return 0;", "}", ""].join("\n");
+
+/**
+ * 造一份判定注入面:给定的**仓内并不存在**的模块相对路径读到合成源码、判定为存在;
+ * 其余相对路径一律走真实根(调用点发现面要读真实的 package.json 与 workflow)。
+ * @param {Record<string, string>} modules 仓库相对路径 → 合成源码
+ * @returns {import("../../gates/probe/gate-probes/protocol.mjs").GateCtx} 判定注入面
+ */
+function ctxWithSyntheticModules(modules) {
+  const real = makeCtx({ root: ROOT });
+  // makeCtx 的两个 IO 原语在 GateCtx 里声明为可选,这里取回时收窄成必调用的形态
+  const realRead = /** @type {(relative: string) => string} */ (real.readText);
+  const realExists = /** @type {(relative: string) => boolean} */ (real.exists);
+  return {
+    root: ROOT,
+    readText: (/** @type {string} */ relative) => (modules[relative] === undefined ? realRead(relative) : modules[relative]),
+    exists: (/** @type {string} */ relative) => modules[relative] !== undefined || realExists(relative),
+  };
+}
+
+/**
  * 在合成注册表上求值,返回命中的 code 列表。
  * @param {(registry: Record<string, any>) => void} mutate 故障注入
  * @returns {string[]} 命中的 code
@@ -324,27 +362,52 @@ export async function run() {
       }
     });
 
-    await suite.case("load 声明与顶层自执行事实不符 → judgment-load-mismatch", () => {
-      // 正向:顶层会自执行的模块谎报成可安全 import —— 段内 import 它会经 process.execPath
-      // 起 Electron GUI 进程(2026-10-01 段硬超时的根因),必须在门禁层就拦住
-      expectCode(
-        codesOf((r) => {
-          r.docs.judgment = { module: "gates/repo/check-docs.mjs", export: "main", shaped: "退出码" };
-        }),
-        "judgment-load-mismatch",
-      );
-      // 反向:可安全 import 的模块谎报 static ⇒ 白丢一次真 import 证据,同样判红
-      expectCode(
-        codesOf((r) => {
-          r["pinned-actions"].judgment = {
-            module: "gates/repo/check-pinned-actions.mjs",
-            export: "analyze",
-            shaped: "{ problems }",
-            load: "static",
-          };
-        }),
-        "judgment-load-mismatch",
-      );
+    await suite.case("load 声明与顶层自执行事实不符 → judgment-load-mismatch(自执行模块谎报可 import)", () => {
+      // 正向:顶层会自执行的模块谎报成可安全 import —— import 它可能经 process.execPath 起 GUI
+      // 进程(2026-10-01 段硬超时的根因),必须在门禁层就拦住。
+      // 被测主体是**合成模块文本**(仓内不存在该文件),不是某个恰好在自执行的真实模块:
+      // REQ-118 之后全仓已无自执行模块,指真实文件会让本夹具退化成恒绿(见夹具头注)。
+      const codes = checkGateRegistry({
+        ...ctxWithSyntheticModules({ [SELF_EXECUTING_MODULE_REL]: SELF_EXECUTING_MODULE_TEXT }),
+        deps: { registry: synth((r) => {
+          r.docs.judgment = { module: SELF_EXECUTING_MODULE_REL, export: "main", shaped: "退出码" };
+        }) },
+      }).map((item) => item.code);
+      expectCode(codes, "judgment-load-mismatch");
+      // 合成主体本身是判红的**唯一**来源:同一个指针配同一段文本、声明成 static(即与事实相符)
+      // 就必须不报 load 不匹配 —— 否则这条判据在退化成「凡是 static 指针就红」时也会照样绿。
+      const agreeCodes = checkGateRegistry({
+        ...ctxWithSyntheticModules({ [SELF_EXECUTING_MODULE_REL]: SELF_EXECUTING_MODULE_TEXT }),
+        deps: { registry: synth((r) => {
+          r.docs.judgment = { module: SELF_EXECUTING_MODULE_REL, export: "main", shaped: "退出码", load: "static" };
+        }) },
+      }).map((item) => item.code);
+      if (agreeCodes.includes("judgment-load-mismatch")) {
+        throw new Error(`声明与事实相符(顶层确实自执行 + 已声明 static)却仍报 load 不匹配:${agreeCodes.join(",")}`);
+      }
+    });
+
+    await suite.case("load 声明与顶层自执行事实不符 → judgment-load-mismatch(可 import 模块谎报 static)", () => {
+      // 反向:可安全 import 的模块谎报 static ⇒ 白丢一次真 import 证据,同样判红。
+      // 单向成立的判据等于半个判据,故两个方向都必须有夹具。被测主体同样是合成文本(顶层干净)。
+      const codes = checkGateRegistry({
+        ...ctxWithSyntheticModules({ [IMPORTABLE_MODULE_REL]: IMPORTABLE_MODULE_TEXT }),
+        deps: { registry: synth((r) => {
+          r.docs.judgment = { module: IMPORTABLE_MODULE_REL, export: "main", shaped: "退出码", load: "static" };
+        }) },
+      }).map((item) => item.code);
+      expectCode(codes, "judgment-load-mismatch");
+      // 反向锚点:同一段「顶层干净」文本不声明 static(即与事实相符)就不该报 —— 证明这条
+      // 判据比对的是「声明 vs 事实」,不是「凡是 load 字段就红」。
+      const agreeCodes = checkGateRegistry({
+        ...ctxWithSyntheticModules({ [IMPORTABLE_MODULE_REL]: IMPORTABLE_MODULE_TEXT }),
+        deps: { registry: synth((r) => {
+          r.docs.judgment = { module: IMPORTABLE_MODULE_REL, export: "main", shaped: "退出码" };
+        }) },
+      }).map((item) => item.code);
+      if (agreeCodes.includes("judgment-load-mismatch")) {
+        throw new Error(`声明与事实相符(顶层不自执行 + 未声明 static)却仍报 load 不匹配:${agreeCodes.join(",")}`);
+      }
     });
 
     await suite.case("判定本体指针指向不存在的模块 → judgment-module-missing", () => {

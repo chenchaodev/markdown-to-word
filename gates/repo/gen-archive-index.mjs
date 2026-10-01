@@ -220,4 +220,14 @@ export function main(argv) {
   return 0;
 }
 
-process.exitCode = main(process.argv.slice(2));
+// 入口守卫:仅当本文件**就是被执行的入口**时才跑 CLI。写法与
+// gates/probe/gate-probes/coverage-gate.mjs 同形(全仓先例),不另创写法。
+//
+// 为什么必须有守卫(不是「整洁」问题,是危险):本模块**默认是生成模式**,
+// 顶层自执行意味着「import 这个模块」= 「重写 docs/evidence/INDEX.md」。
+// 任何只想读一下它导出的判定函数的驱动器(门禁注册表 / 验收段)都会顺手改掉工作树文件,
+// 且这种写入极难归因(没人显式跑过它)。守卫之后 import 无副作用,注册表因此能登记它
+// 并真 import 出 main。
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.join(projectRoot, 'gates', 'repo', 'gen-archive-index.mjs')) {
+  process.exitCode = main(process.argv.slice(2));
+}

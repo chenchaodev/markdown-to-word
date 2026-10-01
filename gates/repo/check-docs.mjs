@@ -51,8 +51,8 @@ function resolveGatePath() {
  * CLI 主体(判定体 = 委托执行全局指针门禁并原样传出退出码;本函数只做解析与呈现)。
  *
  * 导出成 `main(argv) -> number` 而不是顶层 `process.exit`,是为了让门禁注册表
- * (gates/probe/gate-probes/registry.mjs)能把它登记为判定本体指针并静态核对 ——
- * 进程级 CLI 与其它驱动器消费的是同一个入口。
+ * (gates/probe/gate-probes/registry.mjs)能把它登记为判定本体指针并**真 import** 解析 ——
+ * 进程级 CLI 与其它驱动器消费的是同一个入口,判定只有一份。
  * @param {string[]} [argv] 透传给全局门禁的参数(本仓调用时可不带参)
  * @returns {number} 退出码(0 = 通过,或载体不可达而跳过)
  */
@@ -85,4 +85,14 @@ export function main(argv = []) {
   }
 }
 
-process.exitCode = main(process.argv.slice(2));
+// 入口守卫:仅当本文件**就是被执行的入口**时才跑 CLI。写法与
+// gates/probe/gate-probes/coverage-gate.mjs 同形(全仓先例),不另创写法。
+//
+// 为什么必须有守卫(不是「整洁」问题,是危险):main 内部用
+// `execFileSync(process.execPath, …)` 调全局门禁,而验收段跑在 **Electron** 里,
+// `process.execPath` 此时是 electron.exe ⇒ 顶层自执行会在 import 本模块的那一刻起一个
+// **永不退出的 GUI 进程**(2026-10-01 实测:段被框架硬终止,同一批判据纯 Node 下 1.2s 跑完)。
+// 守卫之后本模块可被安全 import,注册表因此能登记它并真 import 出判定函数。
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.join(projectRoot, 'gates', 'repo', 'check-docs.mjs')) {
+  process.exitCode = main(process.argv.slice(2));
+}
