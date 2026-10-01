@@ -32,7 +32,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { isMainModule, parseArgs } from '../artifacts/check-dist-manifest.mjs';
-import { lexSource } from '../../shared/copy-closure.js';
+import { lexSource, skipQuoted } from '../../shared/copy-closure.js';
 import { ROOT } from '../../shared/paths.js';
 
 const projectRoot = ROOT;
@@ -196,6 +196,122 @@ export const ROOT_COMPUTE_PATTERNS = Object.freeze([
 ]);
 
 /**
+ * 上跳基准的「origin」表达式:把本文件位置取出来的三种写法。
+ * 覆盖 `path.dirname(fileURLToPath(import.meta.url))` / `import.meta.dirname` /
+ * `.cjs` 的隐式 `__dirname`(后者没有声明,故由 isCjs 单独特判)。
+ */
+const ORIGIN_SOURCE = /fileURLToPath\s*\(\s*import\.meta\.url|import\.meta\.dirname|\b__dirname\b/;
+
+/** 声明一个 origin 变量:`const here = …dirname(…)…;`(let/var 同样算) */
+const ORIGIN_DECL_RE = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;]*);/g;
+
+/**
+ * 以某个 origin 变量为基准的 path 调用:path.join(here, …) / path.resolve(here, …)。
+ * 只抓「origin 紧邻首个实参」这一形态 —— origin 被包一层再传进来不是本规则要管的形态
+ * (那属于参数传递而非自算根,判红它只会逼人改函数签名)。
+ */
+const ORIGIN_BASE_CALL_RE = /path\.(?:join|resolve)\s*\(\s*([A-Za-z_$][\w$]*)\s*(,|[\s)])/g;
+
+/**
+ * 纯字面量的多行连写链(无变量):path.join(\n  path.dirname(fileURLToPath(import.meta.url)),\n  '..', …
+ * 单独一条是因为它没有 origin 变量可收集,两步法(收变量名 → 查基准)看不见它。
+ */
+const LITERAL_CHAIN_RE = /path\.(?:join|resolve)\s*\(\s*path\.dirname\s*\(\s*fileURLToPath\s*\(\s*import\.meta\.url\s*\)\s*\)\s*,/g;
+
+/** 单个实参里的上跳段数:`'..'` → 1,`'../../dist'` → 2 */
+function countUps(argText) {
+  const quoted = /(['"])((?:\\.|(?!\1)[^\\])*)\1/g;
+  let ups = 0;
+  for (const m of argText.matchAll(quoted)) {
+    for (const seg of (m[2] ?? '').split(/[/\\]/)) if (seg === '..') ups += 1;
+  }
+  return ups;
+}
+
+/** 取 `path.xxx(` 的括号配平范围(跳过引号内的括号),返回实参文本;未配平返回 null */
+function callArgs(code, openAt) {
+  let depth = 0;
+  for (let i = openAt; i < code.length; i += 1) {
+    const ch = code[i];
+    if (ch === '"' || ch === "'" || ch === '`') { i = skipQuoted(code, i) - 1; continue; }
+    if (ch === '(') depth += 1;
+    else if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) return code.slice(openAt + 1, i);
+    }
+  }
+  return null;
+}
+
+/** 该下标是否落在字符串字面量内部(ADR-041 先例:合成夹具串里的写法不是可执行代码) */
+function insideString(inString, index) {
+  return inString[index] === 1;
+}
+
+/**
+ * 深度判据的共享实现:origin 基准 / 字面量连写链两类,均要求 `ups === depth`。
+ *
+ * 语义是「**上跳基准落在仓库根**」,不是「解析结果落在仓库根」:命中的一批里绝大多数
+ * 是上跳到根**再下钻**(如 `path.join(here, '..', '..', 'dist', 'main')`),措辞必须
+ * 区分这两者,否则下一个人会拿 `../../dist/...` 当反例。
+ *
+ * `ups >= 1` 是硬守卫:深度 0 的文件(仓库根下的顶层文件)上 `path.join(__dirname, 'x')`
+ * 的 ups 与 depth 都是 0,若无此守卫会被判红,而它并没有自算根。
+ */
+function collectDepthHits({ code, inString, depth, isCjs, origins, literalChain }) {
+  /** @type {{ line: number, id: string }[]} */
+  const hits = [];
+  /** @param {number} index @returns {number} */
+  const lineAt = (index) => {
+    let line = 1;
+    for (let i = 0; i < index && i < code.length; i += 1) if (code.charCodeAt(i) === 10) line += 1;
+    return line;
+  };
+
+  if (literalChain) {
+    for (const m of code.matchAll(LITERAL_CHAIN_RE)) {
+      const start = m.index ?? 0;
+      if (insideString(inString, start)) continue;
+      const args = callArgs(code, code.indexOf('(', start));
+      if (args === null) continue;
+      const ups = countUps(args);
+      if (ups >= 1 && ups === depth) hits.push({ line: lineAt(start), id: 'literal-chain-up' });
+    }
+  }
+
+  for (const m of code.matchAll(ORIGIN_BASE_CALL_RE)) {
+    const start = m.index ?? 0;
+    const base = m[1];
+    // .cjs 的隐式 __dirname 没有声明句,靠 isCjs 特判收进来(否则这条形态恰好漏掉)
+    if (!origins.has(base) && !(isCjs && base === '__dirname')) continue;
+    if (insideString(inString, start)) continue;
+    const args = callArgs(code, code.indexOf('(', start));
+    if (args === null) continue;
+    const ups = countUps(args);
+    if (ups >= 1 && ups === depth) hits.push({ line: lineAt(start), id: 'origin-base-up' });
+  }
+
+  return hits;
+}
+
+/** 收集一个文件里的 origin 变量名(声明右侧含 ORIGIN_SOURCE 者) */
+function collectOrigins(code, inString) {
+  const origins = new Set();
+  for (const m of code.matchAll(ORIGIN_DECL_RE)) {
+    const start = m.index ?? 0;
+    if (insideString(inString, start)) continue;
+    if (ORIGIN_SOURCE.test(m[2] ?? '')) origins.add(m[1]);
+  }
+  return origins;
+}
+
+/** 文件相对仓库根的深度:`src/main/menu.ts` → 2。供 ups === depth 判据用 */
+export function fileDepth(relPath) {
+  const slash = relPath.lastIndexOf('/');
+  return slash < 0 ? 0 : relPath.slice(0, slash).split('/').length;
+}
+
+/**
  * 门禁自身对这条规则的豁免:规则表与自检样例里必然出现被判红的字面写法。
  *
  * 与「沙盒副本豁免」性质不同,这一条豁免的是**规则的定义处**而非某个实现文件 ——
@@ -208,21 +324,48 @@ export const ROOT_COMPUTE_SELF_EXEMPT = 'gates/repo/check-import-boundary.mjs';
  *
  * 判据只认「自算根」这一语义,不认 import 单源:从 shared/paths.js import ROOT 是正确写法,
  * 同一文件里若另有自算行仍判红(那行本身就是 depth-coupled 的)。
+ *
+ * ⚠ `options` 是**可选**的,省略时行为与既有四条正则逐字相同 —— 沙盒侧(--src 指向临时目录)
+ * 调本函数拿到的必须是同一个答案:那里没有「文件相对仓库根的深度」可言(夹具文件的深度是
+ * 夹具自己的,与真实仓库无关),多传一个猜测的 depth 只会让它得到不同的、无人解释的结果。
+ * 深度判据只在调用方能给出真实 relPath 时才生效。
+ *
  * @param {string} text 源码文本
+ * @param {{ relPath?: string }} [options] relPath 为该文件的仓库相对 POSIX 路径;
+ *   传了才追加深度判据(origin 基准 / 字面量连写链)
  * @returns {{ line: number, id: string }[]} 命中项(行号从 1 起,按出现序)
  */
-export function findRootComputes(text) {
+export function findRootComputes(text, options = {}) {
   /** @type {Map<number, string>} 行号 → 命中的规则 id(同一行只报一次,取首个命中的) */
   const hits = new Map();
   // 先抹注释再匹配(复用 copy-closure 的 lexSource,等长故行号不变):文档里为了说明
   // 「历史上长这样」而引用的写法不是可执行代码,判红它只会逼人把注释改写得更含糊。
-  const lines = lexSource(text).code.split('\n');
+  // inString 一并取用:注释抹了但字符串留着,而合成夹具(test/segments/runner-report.test.js
+  // 那类)里的写法是**字符串字面量内部的内容**,判红它必误伤 —— ADR-041 已有同款先例。
+  const lexed = lexSource(text);
+  const lines = lexed.code.split('\n');
   for (const pattern of ROOT_COMPUTE_PATTERNS) {
     for (let i = 0; i < lines.length; i += 1) {
       if (hits.has(i + 1)) continue;
       if (pattern.re.test(lines[i] ?? '')) hits.set(i + 1, pattern.id);
     }
   }
+
+  // 深度判据:仅在调用方给出真实 relPath 时追加(理由见 @param options)
+  if (options.relPath !== undefined) {
+    const depth = fileDepth(options.relPath);
+    for (const hit of collectDepthHits({
+      code: lexed.code,
+      inString: lexed.inString,
+      depth,
+      isCjs: /\.cjs$/.test(options.relPath),
+      origins: collectOrigins(lexed.code, lexed.inString),
+      literalChain: true,
+    })) {
+      if (!hits.has(hit.line)) hits.set(hit.line, hit.id);
+    }
+  }
+
   return [...hits.entries()]
     .map(([line, id]) => ({ line, id }))
     .sort((a, b) => a.line - b.line);
@@ -495,9 +638,9 @@ export function analyzeRootComputes(root) {
       if (rel === ROOT_SOURCE_FILE) continue;
       // 规则定义处:正则表与自检样例含字面写法,豁免(理由见 ROOT_COMPUTE_SELF_EXEMPT)
       if (rel === ROOT_COMPUTE_SELF_EXEMPT) continue;
-      for (const hit of findRootComputes(readFileSync(fileAbs, 'utf8'))) {
+      for (const hit of findRootComputes(readFileSync(fileAbs, 'utf8'), { relPath: rel })) {
         problems.push(
-          `${rel}:${hit.line} 自算项目根(${hit.id})—— 项目根的单一来源是 ${ROOT_SOURCE_FILE},`
+          `${rel}:${hit.line} 自算项目根(${hit.id})—— 上跳基准落在仓库根,而项目根的单一来源是 ${ROOT_SOURCE_FILE},`
             + '请 import 它;按目录层级上跳的写法在目录改层级时会静默指错位置,而门禁查不出这种错',
         );
       }
@@ -520,21 +663,95 @@ export function analyzeRootComputes(root) {
  */
 export function selfCheckRootComputes(root) {
   const problems = [];
-  // 造坏样例:四种写法各一,外加一个「该判绿」的对照(已收口写法)
+  // 造坏样例:四种语法形态各一,外加若干「该判绿」的对照。
+  // 样例是 (relPath, text) 形式 —— relPath 不是装饰:深度判据要靠它算 ups === depth,
+  // 只给文本不给路径的话深度恒为 0,深度判据就成了恒绿(正是本函数要防的失效形态)。
+  // depth 与 ups 必须相等才判红,故坏样例的 relPath 深度与上跳数逐条对齐。
   const cases = [
-    { name: 'new URL 上跳', text: "const r = fileURLToPath(new URL('..', import.meta.url));\n", expect: 1 },
-    { name: 'new URL 两级上跳', text: 'const r = fileURLToPath(new URL("../..", import.meta.url));\n', expect: 1 },
-    { name: 'dirname + resolve', text: "const r = path.resolve(import.meta.dirname, '..');\n", expect: 1 },
-    { name: 'dirname 连写链', text: 'const r = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");\n', expect: 1 },
-    { name: 'fileURLToPath 变体', text: 'const r = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../x");\n', expect: 1 },
-    { name: '已收口写法(应判绿)', text: "import { ROOT } from '../../shared/paths.js';\nconst r = ROOT;\n", expect: 0 },
+    // ---- 形态一:链式单表达式(既有四条正则,不依赖 depth)----
+    { name: 'new URL 上跳', relPath: 'gates/x.mjs', text: "const r = fileURLToPath(new URL('..', import.meta.url));\n", expect: 1 },
+    { name: 'new URL 两级上跳', relPath: 'gates/x.mjs', text: 'const r = fileURLToPath(new URL("../..", import.meta.url));\n', expect: 1 },
+    { name: 'dirname + resolve', relPath: 'gates/x.mjs', text: "const r = path.resolve(import.meta.dirname, '..');\n", expect: 1 },
+    { name: 'dirname 连写链', relPath: 'gates/x.mjs', text: 'const r = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");\n', expect: 1 },
+    { name: 'fileURLToPath 变体', relPath: 'gates/x.mjs', text: 'const r = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../x");\n', expect: 1 },
+    // ---- 形态二:两语句式(origin 存进变量再上跳;depth 2 → ups 2)----
+    {
+      name: '两语句式(变量中转)',
+      relPath: 'test/main/x.test.js',
+      text: 'const here = path.dirname(fileURLToPath(import.meta.url));\n'
+        + 'const root = path.resolve(here, "..", "..");\n',
+      expect: 1,
+    },
+    // ---- 形态三:多行连写链、无变量(纯字面量正则;depth 2 → ups 2)----
+    {
+      name: '多行连写链(无变量)',
+      relPath: 'test/main/x.test.js',
+      text: 'const distMain = path.join(\n'
+        + '  path.dirname(fileURLToPath(import.meta.url)),\n'
+        + '  "..",\n'
+        + '  "..",\n'
+        + '  "dist",\n'
+        + '  "main",\n'
+        + ');\n',
+      expect: 1,
+    },
+    // ---- 形态四:.cjs 隐式 __dirname(无声明句,靠 isCjs 特判;depth 1 → ups 1)----
+    {
+      name: '.cjs 隐式 __dirname',
+      relPath: 'dev/x.cjs',
+      text: 'const out = path.resolve(__dirname, "..", "out");\n',
+      expect: 1,
+    },
+    // ---- 判绿对照 ----
+    {
+      name: '已收口写法(应判绿)',
+      relPath: 'test/main/x.test.js',
+      text: "import { ROOT } from '../common/paths.js';\nconst r = ROOT;\n",
+      expect: 0,
+    },
+    {
+      // ups !== depth:上跳落在 src/ 内而非仓库根,不是本规则要管的形态(ADR-040 只管根)
+      name: 'ups 不等于 depth(落在包内,应判绿)',
+      relPath: 'src/main/windows/x.ts',
+      text: 'const here = path.dirname(fileURLToPath(import.meta.url));\n'
+        + 'const p = path.resolve(here, "..", "preload.cjs");\n',
+      expect: 0,
+    },
+    {
+      // ups >= 1 守卫:深度 0 的顶层文件上,origin 变量被用作 path 基准但不带任何 ".."。
+      // origin 必须是**声明出来的**那个变量(此处 .mjs 无隐式 __dirname,否则 collectOrigins
+      // 收不到它,本夹具会因「基准压根不存在」而恒绿 —— 测不到 ups>=1 这一分支)。
+      // 去掉守卫后 ups(0) === depth(0) 成立 → 变红,故本夹具对守卫有牙齿。
+      name: '深度 0 且 ups 0(应判绿)',
+      relPath: 'x.mjs',
+      text: 'const here = path.dirname(fileURLToPath(import.meta.url));\n'
+        + 'const p = path.join(here, "x");\n',
+      expect: 0,
+    },
+    {
+      // 字符串遮罩:合成夹具串里的写法不是可执行代码(ADR-041 先例)。
+      // 两个刻意的写法约束,少任一条本夹具就恒绿且无牙齿(两次都实测踩到):
+      // ① 不用 `const f = [ ... ]` 包裹 —— ORIGIN_DECL_RE 的 `[^;]*` 会从外层声明一路吞到
+      //    串内第一个分号,把内层 origin 声明整个吞掉,collectOrigins 收不到它;
+      //    改用 push 到已声明数组,每行独立成句,串内声明能被正则独立匹配。
+      // ② 外层串用单引号、内层 ".." 用双引号 —— 若外层是双引号则内层须写成 \"..\",
+      //    而 callArgs 的括号配平按词法跳过引号,遇到 \" 这种转义引号会算错配平范围,
+      //    切出的实参不完整 → countUps 少数一个 → ups !== depth 恒不成立(实测 countUps 得 1)。
+      // 去掉遮罩后 ups(2) === depth(2) 成立 → 变红,故本夹具对遮罩有牙齿。
+      name: '字符串字面量内的写法(应判绿)',
+      relPath: 'test/segments/x.test.js',
+      text: 'const lines = [];\n'
+        + 'lines.push(\'const sandbox = path.dirname(fileURLToPath(import.meta.url));\');\n'
+        + 'lines.push(\'const root = path.resolve(sandbox, "..", "..", "dist");\');\n',
+      expect: 0,
+    },
   ];
   for (const testCase of cases) {
-    const hits = findRootComputes(testCase.text);
+    const hits = findRootComputes(testCase.text, { relPath: testCase.relPath });
     if (hits.length !== testCase.expect) {
       problems.push(
         `自算根规则自检失守「${testCase.name}」:期望命中 ${testCase.expect} 处,实际 ${hits.length} 处`
-        + '(规则恒绿或恒红都是失效)',
+        + `(规则恒绿或恒红都是失效)`,
       );
     }
   }

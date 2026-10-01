@@ -13,17 +13,11 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { IPC_CHANNELS } from "../../dist/main/ipc/channels.js";
 import { assert, createCaseSuite } from "../common/case.js";
+import { ROOT } from "../common/paths.js";
 
-const distMain = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-  "dist",
-  "main",
-);
+const distMain = path.join(ROOT, "dist", "main");
 
 /**
  * 提取 preload 源码里的 CH 镜像对象键值(产物结构变化时明确报错)
