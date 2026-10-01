@@ -51,8 +51,7 @@
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
 | REQ-142 | 测试树按被测主体分四目录 | 在办 | `test/segments/` 75 段里 17 段实测引 `gates/`+`shared/`（被测主体是门禁非 core），而 `segments` 是执行单元名非被测主体；`test/tools/` 只剩 15 行死文件，唯一消费者是锁它的那条断言。方案：`segments/`→`core/`+`gates/`、删 `test/tools/`、段目录判据由「三目录枚举」改「镜像一棵被断言的树」并补自检 | REQ-142 落地后 `test/main/` 与 `test/gates/` 使 REQ-143 的撞名更刺眼，可提前重看 | docs/evidence/20261001-233000-测试树按被测主体分四目录.md |
-| REQ-143 | 夹具区三子目录改名与散落文件归位 | 在办 | `test/fixtures/` 三子目录各按不同轴命名（生成器流程/使用方式/消费者名），根目录另散落两个 png 桩；`acceptance/` 由门禁生成、被 `gates/geometry/driver.mjs:87` 与 `dev/visual-check.mjs:118` 硬编码消费，即门禁产物寄放测试树。方案：三处改名，边界规则零改动 | REQ-142 落地后撞名加剧，可提前重看第 2 步 | docs/evidence/20261001-234000-夹具区三子目录改名与散落文件归位.md |
-| REQ-144 | build 与 dev 合并为tools | 在办 | ADR-038 称这两棵树「不 assert 故不治理」，但 `clean-artifacts.mjs` 断言打包配置、有守护段、在发布链内；两树另有 3 条对 `gates/` 的出边零判据，根因是 `check-dist-manifest.mjs` 被 25 处当 CLI 工具库用。方案：工具函数下沉 `shared/`、`clean-artifacts` 入 `gates/`、合并为 `tools/` 并补边界规则 | 顶层目录数成为困扰时；或这两棵树的出边恒绿被质疑时 | docs/evidence/20261001-235000-顶层合并build-dev为tools.md |
+| REQ-143 | 夹具区三子目录改名与散落文件归位 | 在办 | `test/fixtures/` 三子目录各按不同轴命名（生成器流程/使用方式/消费者名），根目录另散落两个 png 桩；`acceptance/` 由门禁生成、被 `gates/geometry/driver.mjs:87` 与 `tools/visual-check.mjs:118` 硬编码消费，即门禁产物寄放测试树。方案：三处改名，边界规则零改动 | REQ-142 落地后撞名加剧，可提前重看第 2 步 | docs/evidence/20261001-234000-夹具区三子目录改名与散落文件归位.md |
 
 ## 已完成
 
@@ -61,6 +60,7 @@
 
 | 号 | 标题 | 状态 | 为什么停在这（≤100 字） | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
+| REQ-144 | build 与 dev 合并为tools | 已完成 | 顶层六棵→五棵。工具函数下沉 `shared/`、`clean-artifacts` 入 `gates/`、两树合并为 `tools/` 并补 `tools-stay-in-tools`;三条负例实跑判红 | 需把顶层再减一棵树时 | docs/adr/ADR-049-工具函数下沉shared与clean-artifacts归位.md · docs/adr/ADR-050-顶层build与dev合并为tools.md |
 | REQ-124 | 自算根判据覆盖两语句式 | 已完成 | 交付物已在 `654da05` 落地:三面(多行连写 / `.cjs` 隐式 `__dirname` / 字符串遮罩)实测均由真门禁判红。唯一真缺口「二次赋值」零活样本,有意不补(见 ADR-046) | 要补「二次赋值」时(须先解决中间变量语义,否则造假阳性) | docs/adr/ADR-046-零自算根判据覆盖三种形态并登记二次赋值盲区.md |
 | REQ-135 | 崩溃夹具退出码被顶掉 | 已完成 | 真因是**硬退时机**:分发未收尾时同步 `process.exit()` 会被 `0xC0000005` 取代退出码(原「覆盖写手」归因已证伪)。修法=先让一轮事件循环+让出后永不返回。断言未削弱,29/29 绿 | CI 侧需轮次确认 | docs/evidence/20261001-050000-测试效率CI实测.md |
 | REQ-136 | 临时目录 EPERM 判红 | 已完成 | A=前缀计数跨进程共享(前缀带 pid + 段末集合逐项相等)。B 真因由 CI 现场 `failure.log` 定位:三条同源,缺陷是「释放占用后**零间隔**跟一次清理」而预算仅 1500ms;改走有界等待 | CI 再现时看是否耗尽(消息含「有界等待已用尽」);耗尽则是 runner 释放窗口 > 10s,调大常数即可,机制无需改 | docs/evidence/20261001-160000-test-common-helpers-EPERM现场取证.md |
