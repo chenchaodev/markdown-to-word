@@ -53,6 +53,7 @@
 | 归档索引 | `check:archive-index` | `verify:ci` 链 |
 | 归档索引(重生成) | `gen:archive-index` | 仅本地手动 |
 | 文档指针 | `check:docs` | 仅本地手动 —— 门禁载体在全局配置目录,workflow 不装也不克隆,留在链上等于「以为被查过」 |
+| 变更日志口径 | `check:changelog` `check:changelog:selftest` | `verify:ci` 链(排在 `check:docs:selftest` 之后、`build` 之前)。判据只扫 `docs/CHANGELOG.md` 的**版本条目区**(`## [待发版]` 起至文末),**六类**:禁内部工程词 · 禁第二人称「你」· 禁内部编号(`REQ-0NN` 与 commit hash)· 禁文言虚词 · 禁装饰性副词(实义限定放行)· 禁载体维护指纹词。**头部不扫** —— 头部是写反例的地方;另带防空过判据(锚点缺失 / 条目区无版本条目 / 路径不可读均判红)。**枚举词不可凭直觉增补**:实测「盖」在「覆盖 / 遮盖 / 涵盖」里是高频正当用词、「概」唯一命中是「概览」,裸字判红即 100% 误报 ⇒ 两者都带**字级成词护栏**。「仅」当前在真实语料上 21/21 走实义限定放行分支,**行为等价于不判红**,提供的是对未来的保护而非已发生的保护(该说明写在门禁文件头,勿把它当成已验证有效)。**已知不覆盖**:比喻、调侃、句法层文言腔、术语一名 —— 无封闭词表可枚举,靠人写(裁决见 `docs/adr/ADR-047-CHANGELOG语体正式化与门禁.md`) |
 | 环境指纹 | `check:env` | 仅 `ci.yml` 主 job 与 `release.yml` 的指纹步骤(不进任何链) |
 | 供应链 | `check:supply` | 仅 `ci.yml` 的 `supply-chain` job 与 `release.yml` 的供应链步骤 —— 需联网查 advisory 库,刻意不并入本地链(否则「代码有问题」与「网络抖动」共用一个退出码) |
 | 供应链子步骤的独立入口 | `gen:sbom` `check:sbom` `gen:licenses` `check:sca` `collect:license-fulltext`(按需收集许可证全文副本) | 判定入口是 `check:supply`(它 import 同一批模块);这五条是同批模块的独立 CLI 入口,离线部分由 `test/segments/supply-chain.test.js` 在链内覆盖 |

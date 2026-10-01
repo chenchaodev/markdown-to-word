@@ -75,6 +75,7 @@ export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   "check:archive-index:selftest": "gates/repo/gen-archive-index.selftest.mjs",
   "check:coverage-zero:selftest": "gates/probe/check-coverage-zero.selftest.mjs",
   "check:docs:selftest": "gates/repo/check-docs.selftest.mjs",
+  "check:changelog:selftest": "gates/repo/check-changelog.selftest.mjs",
 });
 
 /* ---------- 门禁注册表 ---------- */
@@ -180,6 +181,33 @@ export const GATE_REGISTRY = Object.freeze(
           kind: "external",
           ref: "runSelfProbe",
           why: "门禁自身在每次 CLI 执行前先跑一组 SELF_PROBE 夹具(收口前形态必须命中、收口后形态必须不命中),探针不过即 exit 1 —— 常驻的规则自检,不依赖自检脚本被记得运行",
+        },
+      ],
+    },
+    "check-changelog": {
+      id: "check-changelog",
+      title: "CHANGELOG 面向用户的口径门禁",
+      npmScripts: ["check:changelog"],
+      command: "node gates/repo/check-changelog.mjs",
+      modulePath: "gates/repo/check-changelog.mjs",
+      access: "chain",
+      judgment: {
+        module: "gates/repo/check-changelog.mjs",
+        export: "analyze",
+        shaped: "{ problems, allowHits, allowCold, staleAllow, region }",
+      },
+      judgmentNote:
+        "判定本体是纯文本扫描:扫描面 = docs/CHANGELOG.md 的版本条目区(首个 `## [待发版]` 行起到文件末;"
+        + "**头部不扫** —— 头部是要写反例的地方,连头部一起扫会逼着人把口径说明改成绕口令)。"
+        + "三类判据(禁内部工程词 / 禁第二人称 / 禁内部编号)之外另有扫描面下界判据:"
+        + "锚点缺失或条目区为空一律判红,防「扫不到任何东西所以恒绿」。"
+        + "链序:排在 check:docs:selftest 之后、build 之前 —— 文档类判据集中在文档段内,且要在 tsc/测试之前红。"
+        + "本模块已按 `process.argv[1]` 入口守卫(与 coverage-gate.mjs 同形),import 无副作用,故指针走默认的真 import 档。",
+      probes: [
+        {
+          kind: "selftest",
+          ref: "gates/repo/check-changelog.selftest.mjs",
+          why: "自检脚本把门禁原样拷进临时仓并造夹具 CHANGELOG,逐条注入三类禁词(逐词覆盖枚举)、问候语假阳性、纯数字/纯字母 hash 假阳性、头部禁词(须判绿)、锚点改名 / 条目区清空 / 路径不存在(扫描面塌缩须判红),断言逐条判红判绿",
         },
       ],
     },

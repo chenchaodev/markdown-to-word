@@ -80,6 +80,11 @@ export const SANDBOX_ENTRY_EVIDENCE = [
     via: "gates/repo/gen-archive-index.selftest.mjs",
     how: "runGenerator → spawnSync(process.execPath, ['<夹具>/gates/repo/gen-archive-index.mjs']) 在夹具内执行",
   },
+  {
+    rel: "gates/repo/check-changelog.mjs",
+    via: "gates/repo/check-changelog.selftest.mjs",
+    how: "runChecker → spawnSync(process.execPath, ['<夹具>/gates/repo/check-changelog.mjs']) 在夹具内执行",
+  },
 ];
 
 /**
