@@ -52,7 +52,6 @@
 
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-145 | Release notes 按版本号定位 | 已完成 | 抽取判据由「取第一个版本节」改为按 `pkg.version` 定位;空 notes 从回退 commit 列表改为 `exit 1`。3.16.2 已发布,页面 notes 手工更正为正确条目(不动 tag) | CHANGELOG 章节形态再变时(抽取只认 `## [x.y.z]` 版本节) | docs/evidence/20261002-000000-Release-notes误取上一版.md |
 
 ## 已完成
 
@@ -161,6 +160,7 @@
 | REQ-146 | 扫描面漏 common 的 mjs | 已完成 | 扫描面谓词只收 `.js`，`test/common` 下三个 `.mjs` 落在两道文本门禁外；改为收 `.js` 与 `.mjs` 并同步三处复述字面量。四条门禁命令全绿 | 无 | docs/evidence/20261002-101500-门禁扫描面mjs盲区.md |
 | REQ-147 | docs 自检夹具判定随环境分化 | 已完成 | 真机夹具在无配置仓的机器上退化为「验证跳过分支」，判定随环境分化；改用合成 home 并收紧判别式为必须已判定，宿主环境不再影响结论 | 无 | docs/evidence/20261002-102000-docs自检夹具判定随环境分化.md |
 | REQ-148 | 上游迁移残留指针改指 | 已完成 | 四处指针改指 `DOC-SYSTEM.md`（§二 ×2 · §五 ② · §七），AGENTS.md 升 v2.2。check:docs 实测 0 错误，新小节名全部解析成功 | 上游再迁载体位置时 | docs/evidence/20261002-103000-上游DOC-SYSTEM迁移下游指针盘点.md |
+| REQ-145 | Release notes 按版本号定位 | 已完成 |  抽取判据由「取第一个版本节」改为按 `pkg.version` 定位;空 notes 改 `exit 1`。3.16.2 已发布,页面 notes 手工更正(不动 tag) | CHANGELOG 章节形态再变时(抽取只认 `## [x.y.z]` 版本节) | docs/evidence/20261002-000000-Release-notes误取上一版.md |
 
 ## 已作废
 
