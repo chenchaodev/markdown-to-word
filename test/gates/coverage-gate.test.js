@@ -381,7 +381,7 @@ export async function run() {
         const leaked = problems.filter((p) => p.includes("--temp-directory") && !p.includes("参数向量缺必需项"));
         if (leaked.length > 0) {
           throw new Error(
-            `取值判据对 --temp-directory 出声了(它无 gate 侧对应物,刻意只守存在性;若确要加取值比对,` +
+            `取值判据对 --temp-directory 出声了(它刻意只守存在性:取值比对在清理器侧且判不了本面的漂移;若确要加取值比对,` +
               `请一并改判据、基线 note 与本夹具,别让它悄悄长出来):${leaked.join(";")}`,
           );
         }

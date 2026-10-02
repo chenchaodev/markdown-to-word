@@ -240,9 +240,24 @@ export function auditStatic(root = ROOT) {
   // ① 必需 flag:缺任何一个都判红(--all 缺失 = 盲区回归;--check-coverage 缺失 = 门禁空过)
   //
   // 本面只守**存在性**;取值比对只对 `--reports-dir` 做(见 ③)。`--temp-directory` 刻意
-  // **不比对取值**,这不是遗漏而是取舍:gate 侧没有任何对应物(c8 的 V8 dump 目录不参与本
-  // 门禁的读取),没有第二个登记处可比 —— 造一个「期望 dump 目录」常量只为让比对有对象,
-  // 只会多一处可漂移的文本。存在性已足够兜住它:删掉该 flag 不会让任何 coverage 门禁判红,
+  // **不比对取值**,这不是遗漏而是取舍。
+  //
+  // 「没有可比的对象」这条理由**曾经成立、现已不成立**,别再沿用:dump 落点如今有 gate 侧
+  // 对应物 —— gates/artifacts/clean-artifacts.mjs 的 assertMatchesCoverageConfig() 逐字比对
+  // package.json scripts.test:coverage 里 `--temp-directory=` 的取值与冻结常量
+  // COVERAGE_TEMP_DIRS(.c8-tmp),不一致即抛错拒绝执行(调用点在 cleanCoverageTemp(),
+  // 随布尔开关 --coverage-temp 一起走)。仍不在本面比对,理由换成下列三条**当下成立**的:
+  //   ① 那是另一条链,关注点正交。它守「清理动作删得对不对」,判红点在 rm;本面守「c8 写哪、
+  //      gate 读哪」,判红点在阈值与产物读取。同一处配置漂移在两条链上表现不同,不是同一
+  //      个判据的两个视角。
+  //   ② 它兜不住本面要兜的东西。该断言只在显式执行 `--coverage-temp` 时才跑,而那个开关
+  //      **无 npm script**、不在 verify:ci / verify:release 链、也没有验收段覆盖它 ——
+  //      常年不跑的东西不能当「本面漏了取值比对」的兜底。
+  //   ③ 本面不读 dump 目录:它的取值不参与本面任何判据,在此补比对等于**新造第二处 `.c8-tmp`
+  //      登记**(清理器常量之外)。两处跨文件、互不推导,谁也判不了谁漂移 —— 那正是本文件
+  //      多处注释反对的「双处登记漂移抓不到」型登记文本。
+  //
+  // 存在性已足够兜住它:删掉该 flag 不会让任何 coverage 门禁判红,
   // dump 只是悄悄回到 output/coverage/tmp/,要等下一轮 test:coverage 里门禁探针段以
   // 「工作树被改动」的假红暴露,而那条报错完全不提 c8。
   for (const required of baseline.requireFlags ?? []) {
@@ -278,9 +293,11 @@ export function auditStatic(root = ROOT) {
   // 目录,两种病因(没传 / 传错)得在同一条文案里各自可辨。
   //
   // ⚠ **本判据只覆盖 `--reports-dir`,不覆盖 `--temp-directory`,这是刻意的守卫强度不对称**
-  // (理由见 ① 上方那段):dump 落点没有 gate 侧对应物,拿什么比?而它的存在性由 ① 兜住。
+  // (理由见 ① 上方那段;要点:清理器里那份落点对账是另一条链、常年不跑,且本面不读 dump 目录,
+  // 在此加取值比对只会多造一处跨文件、无人对读的登记)。存在性由 ① 兜住。
   // 别看到「两个落点 flag 只判一个」就顺手补上取值比对 —— 那只能造出一处会静默过期、
-  // 无人判红的登记文本,并且让人误以为 dump 落点也有两侧锚点。
+  // 无人判红的登记文本(清理器那份常量在另一条链上,判不了这里的漂移),并且会让人误以为
+  // dump 落点在**本门禁链**上也有两侧锚点 —— 它那份在清理链上,且不参与本门禁任何判据。
   const reportsDir = flagValue(flags, "reports-dir");
   if (reportsDir === null) {
     problems.push(

@@ -14,7 +14,7 @@
     "别把本表当生成物:阈值与豁免的取舍是人的判断,故意不做 --write 自动重生成,免得一次自动重写把收紧面悄悄放宽(同 gates/repo/pinned-actions.baseline.json 的取向)。",
     "阈值漂移由两层独立看守,职责不同、缺一不可(负探针实测,勿合并成一层):① 本表的静态面(逐项核对 package.json 参数向量与 thresholds)能抓**任何**幅度漂移,含 90→89 这种微调;② 探针 gates/coverage.mjs 拿真实参数向量跑人造低覆盖,只在阈值被调到**低过沙盒自身覆盖率**时才红(实测四项全调 1 才红,单调 statements=89 仍绿)。故「探针绿」不等于「阈值没被改过」,微调漂移归本表静态面管。",
     "本表 thresholds 与 package.json 的向量是**有意的双处登记**,不是该被合并的冗余:静态面靠比对两者判红,若把本表改成从 package.json 推导,这条比对即恒真、漂移永远抓不到(恒真断言)。本表的 measured / thresholds / floor / headroomPp 与 exemptions 同理,都是独立锚点。",
-    "requireFlags 里两个落点 flag 的**守卫强度刻意不对称,勿顺手补齐**:--reports-dir 除存在性外还被静态面比对取值(与 coverage-gate.mjs 的 SUMMARY_RELATIVE 目录部分逐字相同),因为 gate 侧有对应物、两侧漂移会让动态面只报「找不到 summary」;--temp-directory **只守存在性**,因为 gate 侧没有任何对应物(c8 的 V8 dump 目录不参与本门禁的读取),没有可与之比对的值。删掉 --temp-directory 不会让任何 coverage 门禁判红 —— dump 只是悄悄回到 output/coverage/tmp/,要等下一轮 test:coverage 里门禁探针段以「工作树被改动」的假红暴露,而那条报错完全不提 c8(见 ADR-048 关键约束二)。故存在性是这里唯一兜得住的手段;**它必须用相对路径**(绝对路径会让沙盒内那次 c8 与外层共用目录,子 c8 在报告阶段清空它,外层覆盖数据整段丢失)。"
+    "requireFlags 里两个落点 flag 的**守卫强度刻意不对称,勿顺手补齐**:--reports-dir 除存在性外还被静态面比对取值(与 coverage-gate.mjs 的 SUMMARY_RELATIVE 目录部分逐字相同),因为 gate 侧有对应物、两侧漂移会让动态面只报「找不到 summary」;--temp-directory **只守存在性**:取值比对由清理器的 assertMatchesCoverageConfig 承担(逐字对 COVERAGE_TEMP_DIRS),但那是**删除前的安全闸**、只在显式 --coverage-temp 时才跑,判不了本面的漂移;本面不读 dump 目录,在此加取值比对只会多造一处跨文件、无人对读的登记(见 ADR-059)。删掉 --temp-directory 不会让任何 coverage 门禁判红 —— dump 只是悄悄回到 output/coverage/tmp/,要等下一轮 test:coverage 里门禁探针段以「工作树被改动」的假红暴露,而那条报错完全不提 c8(见 ADR-048 关键约束二)。故存在性是这里唯一兜得住的手段;**它必须用相对路径**(绝对路径会让沙盒内那次 c8 与外层共用目录,子 c8 在报告阶段清空它,外层覆盖数据整段丢失)。"
   ],
   "headroomPp": 4,
   "floor": {
