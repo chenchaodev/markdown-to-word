@@ -70,6 +70,46 @@ function synth(real) {
 }
 
 /**
+ * 「声明可达但实际没人调」这条负向夹具的**注入载体 id**。
+ *
+ * 为什么是 `install-smoke` 而不是别的 `access: "local"` 门禁:这条注入的判红**完全依赖载体此刻
+ * 不在链上**(谎报 chain 而事实是 local)。载体必须选一条「结构上永远不会被挂上链」的门禁 ——
+ * install-smoke 跑的是真实装卸流程(有系统副作用、慢、依赖真实包源),进 verify:ci 属于要裁决的
+ * 架构改动,不会顺手发生;它也只有一条 npm script,接入点代表脚本没有歧义。
+ * **不要换回 `docs`**:ADR-054 决定六已把 `check:docs` 真挂进 verify:ci,那次换载体之前以它为
+ * 载体的注入就是空操作 ⇒ 夹具恒绿(门禁全绿里看不出差别)。换载体不配前置断言,同样的坑会再踩一次。
+ */
+const ACCESS_MISMATCH_CARRIER = "install-smoke";
+
+/**
+ * 负向夹具的**注入载体前置断言**:载体此刻必须仍是「仅本地手动」且其接入点脚本确实不在链上。
+ *
+ * 为什么这条比「换一个载体」本身更重要:载体一旦被挂上链,注入就退化成空操作,判定返回零问题 ——
+ * 那是恒绿(恒真断言那一族),门禁全绿里看不出与「真的判红了」的区别。故载体一旦不再满足前提,
+ * 必须立刻判红并给出可分辨的诊断,而不是让夹具带着失效的载体继续报绿。
+ * @param {Readonly<Record<string, any>>} real 真实注册表
+ * @param {Map<string, any>} invocations 真实调用点发现结果
+ * @returns {string | null} 载体仍可用返回 null;已不可用返回可分辨的诊断文案
+ */
+function accessMismatchCarrierProblem(real, invocations) {
+  const entry = real[ACCESS_MISMATCH_CARRIER];
+  // 与段文件同形:载体不存在本身是要报的问题,不是可压掉的类型细节 —— 否则换载体
+  // 改了名而这里没跟上时,这里是抛异常,那边是给诊断,同一条件两种失败形态。
+  if (entry === undefined) {
+    return `注入载体门禁 ${ACCESS_MISMATCH_CARRIER} 在注册表里不存在 —— 换载体时若改了名而这里没跟上,夹具会静默恒绿`;
+  }
+  const accessScript = entry.npmScripts[0];
+  const hit = invocations.get(`npm:${accessScript}`);
+  if (entry.access !== "local") {
+    return `门禁 ${ACCESS_MISMATCH_CARRIER} 的 access 已是「${String(entry.access)}」而非 local —— 注入载体必须是「仅本地手动」的门禁,否则「谎报成 chain」与事实相符,注入退化为空操作`;
+  }
+  if (hit !== undefined && hit.onChain) {
+    return `门禁 ${ACCESS_MISMATCH_CARRIER} 的接入点 npm run ${accessScript} 已上链(onChain=true,来源 ${[...hit.sources].join(",")})—— 把它谎报成 chain 与事实相符,注入退化为空操作`;
+  }
+  return null;
+}
+
+/**
  * `judgment-load-mismatch` 负向夹具的**被测主体**:一段合成的模块源码。
  *
  * 为什么必须合成、而不是指着一个真实模块(2026-10-01,REQ-118 之后):REQ-118 把三道门禁的
@@ -145,8 +185,29 @@ export async function probeRegistry(ctx) {
    * @param {string} fault 注入的故障
    * @param {() => { registry: Record<string, any>, invocations?: Map<string, any> | null, overrides?: Partial<import("../protocol.mjs").GateCtx> }} build 故障夹具工厂
    * @param {string} expectedCode 期望命中的 code
+   * @param {() => string | null} [precondition] 注入前的载体前置断言:返回诊断文案即立刻判红(不再注入)
    */
-  const faultCase = (id, description, fault, build, expectedCode) => {
+  const faultCase = (id, description, fault, build, expectedCode, precondition = () => null) => {
+    const carrierProblem = precondition();
+    if (carrierProblem !== null) {
+      // 载体失效时**不注入**:注入了也只是空操作(恒绿)。此处主动判红,并把「载体已不是 local」
+      // 这条可分辨的诊断摆到报告里 —— 否则门禁全绿里看不出「这条夹具已经证明不了任何事」。
+      cases.push(
+        judgeCase(
+          {
+            id,
+            kind: "fault",
+            description,
+            fault,
+            expect: "nonzero",
+            expectKeywords: [expectedCode],
+          },
+          { code: 1, signal: null, timedOut: false, output: carrierProblem },
+          `注入载体前置断言不通过,夹具会恒绿:${carrierProblem}`,
+        ),
+      );
+      return;
+    }
     const built = build();
     const result = runRegistry(built.registry, built.invocations ?? null, built.overrides ?? {});
     cases.push(
@@ -331,13 +392,14 @@ export async function probeRegistry(ctx) {
   faultCase(
     "fault-access-declared-unreachable",
     "把「仅本地手动」的门禁谎报成在链上,而它的 script 根本不在链上",
-    "docs 门禁的 access 改成 chain(而 check:docs 不在任何链上)",
+    `${ACCESS_MISMATCH_CARRIER} 门禁的 access 改成 chain(而 ${String(real[ACCESS_MISMATCH_CARRIER].npmScripts[0])} 不在任何链上)`,
     () => {
       const registry = synth(real);
-      registry.docs.access = "chain";
+      registry[ACCESS_MISMATCH_CARRIER].access = "chain";
       return { registry };
     },
     "access-mismatch",
+    () => accessMismatchCarrierProblem(real, realInvocations),
   );
 
   // ---- 负向 9b:声明本地但实际被链调 → access-mismatch(本地检查被悄悄挪进链) ----

@@ -115,6 +115,44 @@ function expectCode(codes, expected) {
   }
 }
 
+/**
+ * 「声明可达但实际没人调」这条负向夹具的**注入载体 id**。
+ *
+ * 为什么是 `install-smoke`:这条注入的判红**完全依赖载体此刻不在链上**(谎报 chain 而事实是
+ * local)。载体必须选一条「结构上永远不会被挂上链」的门禁 —— install-smoke 跑的是真实装卸流程
+ * (系统副作用、慢、依赖真实包源),进 verify:ci 属于要裁决的架构改动,不会顺手发生;它也只有
+ * 一条 npm script,接入点代表脚本无歧义。**不要换回 `docs`**:ADR-054 决定六已把 `check:docs`
+ * 真挂进 verify:ci,换载体之前以它为载体的注入就是空操作 ⇒ 夹具恒绿。
+ */
+const ACCESS_MISMATCH_CARRIER = "install-smoke";
+
+/**
+ * 负向夹具的**注入载体前置断言**:载体此刻必须仍是「仅本地手动」且其接入点脚本确实不在链上。
+ *
+ * 为什么这条比「换一个载体」本身更重要:载体一旦被挂上链,注入就退化成空操作,判定返回零问题 ——
+ * 那是恒绿(恒真断言那一族),门禁全绿里看不出与「真的判红了」的区别。故载体一旦不再满足前提,
+ * 必须立刻判红并给出可分辨的诊断,而不是让夹具带着失效的载体继续报绿。
+ * @param {import("../../gates/probe/gate-probes/protocol.mjs").GateCtx} ctx 判定注入面
+ * @returns {string | null} 载体仍可用返回 null;已不可用返回可分辨的诊断文案
+ */
+function accessMismatchCarrierProblem(ctx) {
+  const entry = GATE_REGISTRY[ACCESS_MISMATCH_CARRIER];
+  // 载体不存在本身就是要报的问题,不是可以压掉的类型细节:换载体时若改了名而这里
+  // 没跟上,夹具会退化成「找不到 entry 就什么也不做」⇒ 静默恒绿。
+  if (entry === undefined) {
+    return `注入载体门禁 ${ACCESS_MISMATCH_CARRIER} 在注册表里不存在 —— 换载体时若改了名而这里没跟上,夹具会静默恒绿`;
+  }
+  const accessScript = entry.npmScripts[0];
+  const hit = discoverInvocations(ctx).get(`npm:${accessScript}`);
+  if (entry.access !== "local") {
+    return `门禁 ${ACCESS_MISMATCH_CARRIER} 的 access 已是「${String(entry.access)}」而非 local —— 注入载体必须是「仅本地手动」的门禁,否则「谎报成 chain」与事实相符,注入退化为空操作`;
+  }
+  if (hit !== undefined && hit.onChain) {
+    return `门禁 ${ACCESS_MISMATCH_CARRIER} 的接入点 npm run ${accessScript} 已上链(onChain=true,来源 ${[...hit.sources].join(",")})—— 把它谎报成 chain 与事实相符,注入退化为空操作`;
+  }
+  return null;
+}
+
 export async function run() {
   const suite = createCaseSuite();
   const ctx = makeCtx({ root: ROOT });
@@ -429,9 +467,15 @@ export async function run() {
     });
 
     await suite.case("声明可达但实际没人调 → access-mismatch", () => {
+      // 前置断言:载体此刻必须仍是 local 且不在链上。载体失效时注入就是空操作(恒绿),
+      // 而门禁全绿里看不出「这条夹具已经证明不了任何事」—— 故先判红并给出可分辨诊断。
+      const carrierProblem = accessMismatchCarrierProblem(ctx);
+      if (carrierProblem !== null) {
+        throw new Error(`注入载体前置断言不通过,夹具会恒绿:${carrierProblem}`);
+      }
       expectCode(
         codesOf((r) => {
-          r.docs.access = "chain";
+          r[ACCESS_MISMATCH_CARRIER].access = "chain";
         }),
         "access-mismatch",
       );
