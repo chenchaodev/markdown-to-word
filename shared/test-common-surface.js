@@ -25,7 +25,7 @@
  *   若整体扫不到文件,目录集合仍与磁盘一致,等式照样成立,也替代不了下限。两条各管一件事。
  *
  * ---- 为何目录集合仍是一份手写枚举,而不是从磁盘派生 ----
- * 每个目录的**文件判定**不同(段目录只收 *.test.js,common 收 *.js),磁盘上读不出
+ * 每个目录的**文件判定**不同(段目录只收 *.test.js,common 收 *.js 与 *.mjs),磁盘上读不出
  * 「这个目录该按哪种谓词扫」;而派生真正要防的那类漏(多一个目录没登记),等式判据已经覆盖
  * —— 它判红并点名那个目录。故此处收敛的是「同一份知识只有一处」,不是把枚举换成猜测。
  * 枚举退化成「随手加一行」的风险由**镜像判据**(checkSegmentMirrors)兜住:段目录名必须
@@ -64,7 +64,13 @@ const isSegmentFile = (/** @type {string} */ name) => name.endsWith(".test.js");
  */
 export const SCAN_TARGETS = Object.freeze([
   ...SEGMENT_DIRS.map((name) => ({ dir: `test/${name}`, accept: isSegmentFile })),
-  { dir: "test/common", accept: (/** @type {string} */ name) => name.endsWith(".js") },
+  // test/common 下 harness 与桩件的实际载体是 .mjs(ESM 显式扩展名),只收 .js 会让它们
+  // 落在这两道文本门禁的扫描面之外 —— 同一批文件在 tsc / eslint 口径里却要被当作源文件
+  // 逐个校验。谓词只收 .js 会造成「别的门禁看得见、这两道看不见」的非对称盲区,故此处
+  // 必须与三处口径对齐:本文件 SOURCE_FILE_RE(实测面)、test/core/tscheck-coverage.test.js
+  // 的 SOURCE_EXT_RE(@ts-check 覆盖面)、eslint.config.js 的 NON_PROGRAM_EXTS
+  // (allowDefaultProject 生成 glob 的纳入集)。
+  { dir: "test/common", accept: (/** @type {string} */ name) => /\.(?:js|mjs)$/.test(name) },
 ]);
 
 /** 显式排除目录(仓库相对 POSIX 路径;前缀匹配)。test/fixtures 是被测样例数据本身,不是断言。 */

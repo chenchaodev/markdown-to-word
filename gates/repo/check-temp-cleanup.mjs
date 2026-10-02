@@ -17,7 +17,7 @@
 //
 // ---- 扫描面(单一来源:shared/test-common-surface.js)----
 //   test/core/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
-//   test/gates/**/*.test.js · test/common/**/*.js
+//   test/gates/**/*.test.js · test/common/**/*.{js,mjs}
 // 排除 test/fixtures(被测样例数据本身,不是清理动作)。
 // **不扫 gates/ tools/**:那里是生产/门禁脚本,rmSync 是被测语义本身(gates/artifacts/
 // clean-artifacts.mjs 的保护区、gate-probes/sandbox.mjs 的 junction 摘除),不是「临时目录清理」。

@@ -16,7 +16,7 @@
 //
 // ---- 扫描面(单一来源:shared/test-common-surface.js)----
 //   test/core/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
-//   test/gates/**/*.test.js · test/common/**/*.js
+//   test/gates/**/*.test.js · test/common/**/*.{js,mjs}
 // 排除 test/fixtures(被测样例数据本身,不是断言)。排除写成显式清单:将来有人把
 // 扫描面扩到整个 test/ 时,该目录必须仍然在外,而不是靠「它恰好不在目标里」蒙对。
 // 清单与 walker(递归列目录)都从单源取,本文件不再自持一份:同一份清单写两遍的代价是

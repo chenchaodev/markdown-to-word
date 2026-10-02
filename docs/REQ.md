@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-145 |
-| 下一个可用号 | REQ-146 |
+| 已用最大号 | REQ-146 |
+| 下一个可用号 | REQ-147 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -158,6 +158,7 @@
 | REQ-121 | 收口 16 处自算根 | 已完成 | 16 处「上跳到仓库根」改为经 `test/common/paths.js` 门面 import `ROOT`(9 个文件),另清 `version-chip.test.js` 1 处。零门禁变更 | 无 | docs/adr/ADR-040-沙盒复制集纳入shared并删除根路径豁免表.md |
 | REQ-138 | CHANGELOG 写法正式化 | 已完成 | 两轮才定对:内容标准第一轮判错(误删长期约束),改判「有意义且别处查不到」;语体否掉文言腔。35 版改写 + 37 个 Release 逐字同步 + 六类判据进 `check-changelog` | 门禁抓到新违规面时 | docs/adr/ADR-047-CHANGELOG语体正式化与门禁.md · docs/evidence/20261001-203000-CHANGELOG与Release版本对账.md |
 | REQ-139 | 覆盖率产物并入 output 单源 | 已完成 | 报告落 `output/coverage/`、dump 落 `.c8-tmp/`；静态面新增取值比对判据。第一版只改 reports-dir，引入确定性假红。两轮全链全绿、指标零漂移 | 无 | docs/adr/ADR-048-覆盖率产物并入output单源.md |
+| REQ-146 | 扫描面漏 common 的 mjs | 已完成 | 扫描面谓词只收 `.js`，`test/common` 下三个 `.mjs` 落在两道文本门禁外；改为收 `.js` 与 `.mjs` 并同步三处复述字面量。四条门禁命令全绿 | 无 | docs/evidence/20261002-101500-门禁扫描面mjs盲区.md |
 
 ## 已作废
 
