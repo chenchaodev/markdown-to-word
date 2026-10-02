@@ -724,12 +724,24 @@ const SYNTHETIC_TOP_LEVEL = {
   'eta/tool.mjs': 'export const e = 1;\n',
   'kappa/note.txt': 'note\n',
   '.vcsdir/state.yml': 'a: 1\n',
+  // 两个**对抗**隐藏目录,给 hidden 早退加两枚**诊断钉**:内容各自命中一条「若 hidden 不短路
+  // 就会改判」的判据 —— `.hidden-deps` 带锁文件标记(泄漏时判成 deps)、`.hidden-code` 带代码
+  // (泄漏时判成 shared)。
+  //
+  // 刻意说清它们**不是**覆盖主力:`.gitignore` / `.vcsdir` 在「hidden 不再早退」的任何变异下
+  // 已经会红(实测三次注入均 exit 1,`.gitignore` 每次都变 other)。加这两个是为了让报错**指名
+  // 漏的是哪条内容判据** —— 否则只看到 `.gitignore=other`,得自己反推是 deps 还是 shared 那条
+  // 判据泄漏了。它们守的是可诊断性,不是「有没有人看守」。
+  '.hidden-deps/.package-lock.json': '{ "lockfileVersion": 3 }\n',
+  '.hidden-code/impl.ts': 'export const h = 1;\n',
 };
 
 /** 合成树里每个顶层名 → 期望类别(期望值本身不含任何本仓真实目录名) */
 const SYNTHETIC_EXPECTED = {
   '.gitignore': 'vcs',
   '.vcsdir': 'vcs',
+  '.hidden-code': 'vcs',
+  '.hidden-deps': 'vcs',
   alpha: 'source',
   beta: 'verify',
   delta: 'shared',

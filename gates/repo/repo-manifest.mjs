@@ -81,6 +81,15 @@ const LOCKFILE_MARKER = "lockfileVersion";
 const PROBE_ENTRY_BUDGET = 400;
 /** 内容探针的最大深度 */
 const PROBE_MAX_DEPTH = 3;
+/**
+ * 「什么都没探到」的剖面(缺目录 / 不可读 / 不探针三种情形的共同出口)。
+ *
+ * 冻结是因为它会被 `scanTopLevel` 直接交给 `classifyProfile`:那份纯函数不写它,
+ * 一旦某个调用点就地造一个字面量,「探针没跑」与「探针跑了但三项皆 false」就再也分不开,
+ * 而那正是本条要保留的可区分性。
+ * @type {Readonly<{ hasCode: boolean, docMajority: boolean, hasLockfileMarker: boolean }>}
+ */
+const NO_PROFILE = Object.freeze({ hasCode: false, docMajority: false, hasLockfileMarker: false });
 
 /* ---------- 纯函数:内容剖面 → 类别(判据单源,不含条目名) ---------- */
 
@@ -437,7 +446,7 @@ function probeDirectChildren(absDir) {
   try {
     names = readdirSync(absDir);
   } catch {
-    return { hasCode: false, docMajority: false, hasLockfileMarker: false };
+    return NO_PROFILE;
   }
   let hasCode = false;
   let directDoc = 0;
@@ -545,11 +554,19 @@ export function scanTopLevel(root = ROOT) {
   /** @type {TopEntry[]} */
   const entries = raw.map((entry) => {
     const isDir = entry.isDirectory;
-    const direct = isDir ? probeDirectChildren(path.join(root, entry.name)) : { hasCode: false, docMajority: false, hasLockfileMarker: false };
-    const hasCode = isDir ? direct.hasCode || probeHasCodeDeep(path.join(root, entry.name)) : CODE_EXTENSIONS.has(path.extname(entry.name));
+    // 隐藏项**不探内容**:`classifyProfile` 首行即 `if (p.hidden) return VCS`,三项探针的结果
+    // 读出来也必被丢弃 —— 而 `.c8-tmp` 这类 dump 目录有 200+ 个 json / 上百 MB,逐个
+    // readFileSync + JSON.parse 是纯白付(本仓实测 topLevel() cold 4.2s → 0.1s)。
+    // 判据一个字没改,只是不替它算它不要的东西:任何未来的点目录都自动免疫,不认目录名。
+    const hidden = entry.name.startsWith(".");
+    const probe = isDir && !hidden;
+    const direct = probe ? probeDirectChildren(path.join(root, entry.name)) : NO_PROFILE;
+    const hasCode = probe
+      ? direct.hasCode || probeHasCodeDeep(path.join(root, entry.name))
+      : CODE_EXTENSIONS.has(path.extname(entry.name));
     const classified = classifyProfile({
       isDirectory: isDir,
-      hidden: entry.name.startsWith("."),
+      hidden,
       hasCode,
       docMajority: direct.docMajority,
       hasLockfileMarker: direct.hasLockfileMarker,
