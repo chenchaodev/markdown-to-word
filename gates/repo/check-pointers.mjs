@@ -82,8 +82,37 @@
 //
 // **份数不写死**:随文档增删而变,运行时数出来、汇总行报出(与 `EXCLUDE_DIRS` 的份数同一处置)。
 //
+// ---- 未匹配形态的路径引用只分类、不判定(ADR-057 决定一/二/三) ----
+// `REF_FORMS` 三条正则的**首字符集**是 `[A-Za-z0-9_一-龥]`,于是落在它之外的引用**既不判存在性、
+// 也不进代码扩展名那档的分类计数** ⇒ 写坏的指针**完全隐形**。实测:`` `·撤销跨仓死指针.md` `` ·
+// `` `-foo.md` `` · `` `foo bar.md` `` 三者一条都不匹配、静默通过。ADR-057 触发事件就是本会话写
+// ADR-056 的链接时连踩两次同一个错,而门禁只在第二次(补上前缀、真的成了一条坏链)才响。
+//
+// **为什么不扩 `REF_FORMS` 的首字符集**:那是改**判定覆盖面** —— 扩进来的每一条都开始参与判红,而本仓
+// 文档里这类内容绝大多数**本来就不是路径**(ADR-057 备选方案表已逐条否决:放宽到「除空白与标点外任意
+// 字符」会凭空造出一批假红)。本档治的是「**看不见**」,不是「判得不准」。
+//
+// **为什么只出声、不判红**:它没有可判红的基准 —— 一条落在形态外的串既可能是写坏的指针,也可能是命名
+// 形态的说明或通配写法(`` `ADR-040-*.md` `` · `` `\.md` `` 这类规则文本里的记号),
+// **正则给不出这个区别**。数进来只是出声,漏掉才是问题,故口径宁可偏宽(ADR-057 后果 2 已认领这份代价)。
+// 偏宽由**名字侧不设字符白名单**实现(含空格、`·`、通配一律收下),而不是把扩展名族也放宽 ——
+// 扩展名族取的是**仓内真实存在的那些**,`settings.watermarkNote` 这类字段名因此不在这族里。
+//
+// **与代码扩展名档的差别必须在措辞里保留**:那一档守护的是「**主动摘掉、且有裁决有记录**」的形态
+// (ADR-055 就摆在那里),本档守护的是「**没人摘、也没人记**」的漏。形式上相邻(都在 `REF_FORMS` 旁边、
+// 都只分类不判定),成因完全不同。
+//
+// **零覆盖必须出声**(决定二):这一族一条都没有时,结论行**仍须出现该族**,措辞是「零覆盖」而不是
+// 「未判 0 处」—— 后者会把「没有东西要查」说成「有东西但没查」。
+//
+// **为什么本档不解析**:与代码扩展名档逐字同一处置。在本档调 `resolveRef` 会把几百次分类灌进
+// 「引用解析 … 判定 N 处」那个计数,而那个数的口径是「判定档解析过多少处」,被分类灌进来后它就不再是
+// 自己声称的那个量。**为一个分类计数去污染一个已判定的自报数字,比不解析更坏。**
+//
+// **份数不写死**:随文档增删而变,运行时数出来、汇总行报出。
+//
 // ---- 零覆盖必须出声(实施约束 6) ----
-// 「跨仓路径判定 0 处」「代码扩展名引用判定 0 处」与「载体形态零覆盖」一律进结论行的
+// 「跨仓路径判定 0 处」「代码扩展名引用判定 0 处」「未匹配形态的路径引用判定 0 处」与「载体形态零覆盖」一律进结论行的
 // `覆盖:不全(...)`。本门禁从不说「0 错误」而不说覆盖 —— 「触发 0 处 = 零覆盖,不是『查过没问题』」。
 //
 // ---- 不做 ----
@@ -695,6 +724,166 @@ export function classifyCodeRefs(files, readFile) {
   return { stats };
 }
 
+// ---------------------- 未匹配形态的路径引用(只分类,不判定;ADR-057 决定一/二/三)
+//
+// **这一族守护的是「正则没匹配上」,与代码扩展名那档的「主动摘除」不同**:代码扩展名档是**有裁决、
+// 有记录**的决定(ADR-055 决定一 —— 那份 ADR 就摆在那里);本族没有任何人摘过它,是 `REF_FORMS` 三条
+// 正则的**首字符集** `[A-Za-z0-9_一-龥]` 把写坏的指针挡在判定面之外。ADR-057 背景里那份实测表就是它:
+// `` `·撤销跨仓死指针.md` `` · `` `-foo.md` `` · `` `foo bar.md` `` 三者**一条都不匹配**,静默通过。
+// 两族形式上相邻(都在 `REF_FORMS` 旁边、都只分类不判定),**成因完全不同**,故文件头与结论行分两处措辞。
+//
+// **为什么不扩 `REF_FORMS` 的首字符集**:那是改**判定覆盖面** —— 扩进来的每一条都会开始参与判红,而
+// 本仓文档里那些内容绝大多数**本来就不是路径**(ADR-057 备选方案表已逐条否决:把首字符集放宽到「除空白
+// 与标点外任意字符」会凭空造出一批假红)。本档要解决的是「看不见」,不是「判得不准」。
+//
+// **为什么只出声、不判红**:它没有可判红的基准 —— 一条落在形态外的串既可能是写坏的指针,也可能是命名
+// 形态的说明或通配写法(`` `ADR-040-*.md` `` · `` `\.md` `` 这类规则文本里的记号),
+// **正则给不出这个区别**。数进来只是出声,漏掉才是问题,故口径宁可偏宽(ADR-057 后果 2 已认领这份代价)。
+// 偏宽由**名字侧不设字符白名单**实现(含空格、`·`、通配一律收下),而不是把扩展名族也放宽 ——
+// 扩展名族取的是**仓内真实存在的那些**,`settings.watermarkNote` 这类字段名因此不在这族里。
+//
+// **为什么不解析**:与代码扩展名档逐字同一处置 —— 在这里调 `resolveRef` 会把几百次分类灌进
+// 「引用解析 … 判定 N 处」那个计数,而那个数的口径是「判定档解析过多少处」,被分类灌进来后它就不再是
+// 自己声称的那个量。**为一个分类计数去污染一个已判定的自报数字,比不解析更坏。**
+
+/**
+ * 「像路径」的扩展名族 —— **仓内真实存在的那些**,不是随手挑四个。
+ *
+ * 取数命令(增删本族前重跑,别凭印象):`git ls-files --cached --others --exclude-standard | sed "s/.*\///" | sed -n "s/.*\.\([A-Za-z0-9]\+\)$/\1/p" | sort -u`
+ *
+ * **为什么 `.md` 必须在册**:本族存在的理由正是「写坏的 `.md` 指针隐形」(ADR-057 触发事件就是一次
+ * 漏了文件名前缀的 `.md` 链接)。
+ * **为什么图像扩展名也在册**:它们同样是**路径**,同样落在 `REF_FORMS` 判定面之外。
+ * **点文件类扩展名(`gitignore` · `npmrc` · `gitkeep` · `gitattributes`)也照实测留在册里**:它们在
+ * 本族判据下**永远命中不到**(`.gitignore` 的「名字」部分是空的,`unmatchedExt` 直接拒)—— 删掉它们
+ * 只会让这张表与上面那条取数命令的输出**不再逐字相等**,而那处不等没有任何门禁会提醒。
+ * **按长度降序、同长按字典序不是正确性必需**(收尾的反引号/右括号把扩展名锚死),沿用 `CODE_REF_EXTS`
+ * 同一处置:让「读到哪一个分支」与「读到的那个串」始终一致。
+ */
+const PATHLIKE_EXTS = [
+  'gitattributes', 'gitignore', 'gitkeep', 'npmrc',
+  'html', 'json',
+  'cjs', 'css', 'cts', 'ico', 'jpg', 'mjs', 'png', 'ps1', 'svg', 'yml',
+  'js', 'md', 'ts',
+];
+
+/** 扩展名交替(供两条候选正则拼装)。 */
+const PATHLIKE_TAIL = `(?:${PATHLIKE_EXTS.join('|')})`;
+
+/**
+ * 反引号形态的候选:**内容一律收下**,收尾是扩展名族之一即算一个候选。
+ *
+ * ⚠️ **名字部分刻意收得极宽(含空格、`·`、标点)** —— 那正是本族存在的理由。判「这是不是一个路径」的
+ * 工作交给后面的 `unmatchedExt`,而那个判据只问「去掉 `../`/`./` 前缀后是否形如 `名字.扩展名`」,
+ * 不问名字由什么字符组成。`[^`]` 而不是 `[^`\s]`:ADR-057 背景实测的漏法里就有 `` `foo bar.md` ``。
+ * 内容里**排除反引号**是为了不把两个反引号跨度之间的正文吃进来。
+ */
+const UNMATCHED_TICK_RE = new RegExp('`([^`]*\\.' + PATHLIKE_TAIL + ')`', 'gu');
+
+/**
+ * markdown 链接形态的候选(`](目标)`),尾部结构与 `REF_FORMS` 第 3 条同形(允许 `#锚点` 与 `"标题"`)。
+ *
+ * **内容里同时排除反引号**:`` [文字](见 `foo.md`) `` 这类嵌套写法若被本条吃下,同一份内容会被反引号
+ * 形态与链接形态**各数一次** —— 两个族的计数之和就会大于去重后的总数,那正是本族最不能出的错
+ * (与代码扩展名档重复计数的同类问题)。
+ */
+const UNMATCHED_LINK_RE = new RegExp('\\]\\(\\s*([^()`]*\\.' + PATHLIKE_TAIL + ')(?:#[^)\\s]*)?(?:\\s+"[^"]*")?\\s*\\)', 'gu');
+
+/** 去掉 `../` `./` 前缀(ADR-057 决定三的第一步);前缀可以叠写(`../../x.md`),故用 `+`。 */
+function stripDotSlashPrefix(s) {
+  return s.replace(/^(?:\.{1,2}\/)+/, '');
+}
+
+/**
+ * 「像路径」的判定(ADR-057 决定三的判据本体):去掉 `../` / `./` 前缀后**形如 `名字.扩展名`**,
+ * 且扩展名落在 `PATHLIKE_EXTS` 里(仓内真实存在的那一族)。
+ *
+ * **判据只落在这里一处**,两条候选正则里的 `PATHLIKE_TAIL` 是它的**预筛**(只为不把整行正文当候选),
+ * 不是第二处事实源:调本函数时即便绕开预筛(直接传串进来),判定结果也一样。
+ *
+ * **名字部分必须非空** —— `.gitignore` / `.npmrc` 这类点文件名是 `名字` 为空的形态,不是「名字.扩展名」。
+ * 名字里是什么字符**一律不问**(见 `UNMATCHED_TICK_RE` 的说明:那正是本族要抓的面)。
+ *
+ * @param {string} token 去掉反引号/链接括号后的内容
+ * @returns {string|null} 扩展名;不像路径则 `null`
+ */
+export function unmatchedExt(token) {
+  const t = stripDotSlashPrefix(token);
+  const dot = t.lastIndexOf('.');
+  if (dot <= 0) return null;
+  if (!t.slice(0, dot).trim()) return null;
+  const ext = t.slice(dot + 1);
+  return PATHLIKE_EXTS.includes(ext) ? ext : null;
+}
+
+/**
+ * 本行里**已被 `REF_FORMS` 认出来**的引用串 —— 这些不在本族的对象内。
+ *
+ * **取 `REF_FORMS` 的实跑结果,而不是把它的路径核心再抄一份判「像不像它匹配得上」**:抄一份就是第二处
+ * 「`REF_FORMS` 认什么」的事实源,改判定面时只改一处就会静默分叉 —— 那正是本文件头两处「改一处波及两处」
+ * 已经记过一次的坑。故本族对判定面的认知**只能**来自 `REF_FORMS` 自己跑一遍。
+ *
+ * @param {string} line 已遮罩围栏的一行
+ * @returns {Set<string>} 被 `REF_FORMS` 三条形态认出来的引用串
+ */
+function judgedRefTokens(line) {
+  const judged = new Set();
+  for (const { re } of REF_FORMS) {
+    re.lastIndex = 0;
+    for (const m of line.matchAll(re)) judged.add(m[1]);
+  }
+  return judged;
+}
+
+/**
+ * 未匹配形态的路径引用 —— **只分类,不做判定**(措辞骨架与前两族平行)。
+ *
+ * 分类口径 = 「落在 `REF_FORMS` 三条形态之外、但形态上像路径」:`REF_FORMS` 认出来的跳过(它们在判定面
+ * 内,不是「看不见」的那一族),剩下按反引号形态与链接形态收候选,再用 `unmatchedExt` 判形态。
+ *
+ * ⚠️ **与代码扩展名档去重(逐字比对 `CODE_REF_RE`,不另写一份「它会数什么」)**:那两条判据面在结构上相邻
+ * (`` `x.mjs` `` 只可能被其中一档数),而同一个数在两族各出现一次会让结论行自相矛盾。
+ * 只能对**反引号形态**做这次去重 —— `CODE_REF_RE` 本就只认反引号,链接形态它一条都不数,
+ * 给链接形态也套一遍会把本该由本族数的形态漏掉。
+ *
+ * 扫描面与跳过面逐字沿用判定档:`maskFencedLines` + `isHistoricalLine`。**`docs/adr/` 不豁免**。
+ *
+ * @param files    本仓扫描范围
+ * @param readFile 读本仓文件(rel → 文本)
+ * @returns `{ stats }`;`stats.classified` = 分类处数,`stats.byExt` = 按扩展名分项。**恒不产出判红**。
+ */
+export function classifyUnmatchedPathRefs(files, readFile) {
+  const stats = { files: files.length, classified: 0, byExt: {} };
+  for (const file of files) {
+    for (const line of maskFencedLines(readFile(file))) {
+      if (!line) continue;
+      if (isHistoricalLine(line)) continue;
+      const judged = judgedRefTokens(line);
+      const bump = (ext) => {
+        stats.classified += 1;
+        stats.byExt[ext] = (stats.byExt[ext] ?? 0) + 1;
+      };
+      UNMATCHED_TICK_RE.lastIndex = 0;
+      for (const m of line.matchAll(UNMATCHED_TICK_RE)) {
+        if (judged.has(m[1])) continue; // 判定面内,不是本族对象
+        // 去重:已被代码扩展名档数过的形态本档跳过。测的是**整段命中文本**(含反引号),
+        // 因为那条判据的正则把反引号写进了模式里,只喂内容会判不出它收不收这一条。
+        CODE_REF_RE.lastIndex = 0;
+        if (CODE_REF_RE.test(m[0])) continue;
+        const ext = unmatchedExt(m[1]);
+        if (ext !== null) bump(ext);
+      }
+      UNMATCHED_LINK_RE.lastIndex = 0;
+      for (const m of line.matchAll(UNMATCHED_LINK_RE)) {
+        if (judged.has(m[1])) continue;
+        const ext = unmatchedExt(m[1]);
+        if (ext !== null) bump(ext);
+      }
+    }
+  }
+  return { stats };
+}
+
 // --------------------------------- 台账一致性:工作项号台账的台账内不变量
 //
 // 判据 R1–R7(全部为**台账内**不变量,只需读 `docs/REQ.md` 一个文件):
@@ -1191,11 +1380,13 @@ export function checkLedger(text) {
  * `DOC-SYSTEM.md` 之间仍有一道 T2 对读机制守着;**本仓这份与全局文档之间没有机器保证** ——
  * 那是本条已知且已认领的缺口(改全局文档的三个数字时,本仓这三处要同步改)。
  */
-const TITLE_LIMIT = 20;
+// → 导出是为了让测试段引用它们。另一份上游门禁也导出了同三个。
+// 段里若内联字面量,上限一改就会把测试让成失效夹具(本会话已因此红 4 条)。
+export const TITLE_LIMIT = 30;
 
 /** 「已完成」节的判断依据上限(≤100),其余节 ≤200(`REQ-RULES.md` 规则 5)。 */
-const WHY_LIMIT_DONE = 100;
-const WHY_LIMIT = 200;
+export const WHY_LIMIT_DONE = 150;
+export const WHY_LIMIT = 250;
 
 /**
  * 载体形态判据的清单 + 各自现在管什么(分母 = `CARRIER_RULES.length`)。**现为五条**。
@@ -1601,6 +1792,11 @@ export function main() {
   // 它的解析次数会灌进下面「引用解析 … 判定 N 处」那个计数,而那个计数的口径是判定档的解析量。
   const codeRefs = classifyCodeRefs(files, readFile);
 
+  // 未匹配形态的路径引用:**只分类,不判定**(ADR-057 决定一/二/三)。⚠️ 与代码扩展名档逐字同一处置:
+  // **不调 `resolveRef`** —— 解析次数会灌进下面那个「判定 N 处」计数。顺序在代码扩展名档**之后**是
+  // 刻意的:去重要逐字比对 `CODE_REF_RE`,而那条正则对象在本文件里只此一处消费者。
+  const unmatchedRefs = classifyUnmatchedPathRefs(files, readFile);
+
   const pErrors = [
     ...checkExistence(root, files, readFile, ledgerSkip),
     ...checkSections(root, files, readFile, ledgerSkip),
@@ -1649,6 +1845,26 @@ export function main() {
         : ''),
   );
 
+  // 未匹配形态的路径引用:措辞骨架与前两族平行,**零覆盖另用一句**(ADR-057 决定二)。
+  // 与代码扩展名档的差别必须在这一行看得见:那一档守护的是「主动摘除且有裁决」,本档守护的是
+  // 「**正则压根没匹配上**」—— 前者归零说明没人写这种引用,后者归零说明**没人看得见写坏的指针**。
+  const unmatchedByExt = PATHLIKE_EXTS
+    .filter((ext) => unmatchedRefs.stats.byExt[ext])
+    .map((ext) => `.${ext} ${unmatchedRefs.stats.byExt[ext]} 处`)
+    .join(' · ');
+  console.log(
+    `  · 未匹配形态的路径引用(只分类,未判):检查 ${unmatchedRefs.stats.files} 份 · 分类 ${unmatchedRefs.stats.classified} 处`
+      + (unmatchedByExt ? `(${unmatchedByExt})` : '')
+      + ` · **判定 0 处 · 未判,非「查过没问题」**`
+      + ' —— 这些内容形如「名字.扩展名」却落在 `REF_FORMS` 三条形态之外(首字符/名字里的字符不在允许集内),'
+      + '连存在性都不判;扩 `REF_FORMS` 会改判定覆盖面并凭空造出假红(ADR-057 决定一),故只分类自报'
+      + ' · 口径宁可偏宽(名字侧不设字符白名单:含空格、`·`、通配 `*-*.md` 都会被数进来),漏掉才是问题(ADR-057 后果 2)'
+      + (unmatchedRefs.stats.classified === 0
+        ? ' ⇒ **零覆盖(扫描面内一条未匹配形态的路径引用都没有)** —— 本档归零既可能是「没人写这种写法」,'
+          + '也可能是这一族的形态正则被改窄/删掉;两种都要看得见'
+        : ''),
+  );
+
   console.log(
     `  · 存在性 / 小节名 / 无引号小节:检查 ${files.length} 份(`
       + (excludedDirs.length ? '**不含**下列按前缀整棵豁免的目录)' : '整棵豁免的目录 0 个)'),
@@ -1694,8 +1910,8 @@ export function main() {
     : '已排除 0 个文件';
   console.log(
     pErrors.length === 0
-      ? `项目模式通过:扫描 ${files.length} 个文件,0 错误(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径与代码扩展名引用只分类未判);${excludedNote}`
-      : `项目模式失败:${pErrors.length} 错误 / 扫描 ${files.length} 个文件(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径与代码扩展名引用只分类未判);${excludedNote}`,
+      ? `项目模式通过:扫描 ${files.length} 个文件,0 错误(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径、代码扩展名引用与未匹配形态的路径引用只分类未判);${excludedNote}`
+      : `项目模式失败:${pErrors.length} 错误 / 扫描 ${files.length} 个文件(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径、代码扩展名引用与未匹配形态的路径引用只分类未判);${excludedNote}`,
   );
   // ⚠️ **错误条数必须在打印之后、`pErrors` 追加载体形态错误之后再取** ——
   // `pErrors` 是**先打印、后追加**的:载体形态判据的 errors 在 `runCarrierChecks` 之后才 push 进来。
@@ -1728,6 +1944,14 @@ export function main() {
     codeRefs.stats.classified === 0
       ? '代码扩展名引用零覆盖(形态 0 处 · 判定 0 处,未判,非「查过没问题」)'
       : `代码扩展名引用未判(分类 ${codeRefs.stats.classified} 处 · 判定 0 处,判红基准需人工裁决「文件真的搬走了」与「文档记的是决策史」)`,
+  );
+  // ⚠️ **未匹配形态的 gap 恒进,零命中也进**(ADR-057 决定二,与前两族同一规格)。
+  // **零命中时措辞必须是「零覆盖」而不是「未判 N 处」**:零覆盖说的是「这一族在本仓没有对象」,
+  // 写成「未判 0 处」会把「没有东西要查」说成「有东西但没查」—— 那是把零覆盖**反向误读**成更糟的形态。
+  gaps.push(
+    unmatchedRefs.stats.classified === 0
+      ? '未匹配形态的路径引用零覆盖(形态 0 处 · 判定 0 处,未判,非「查过没问题」)'
+      : `未匹配形态的路径引用未判(分类 ${unmatchedRefs.stats.classified} 处 · 判定 0 处,这些内容落在 REF_FORMS 三条形态之外,连存在性都不判)`,
   );
   if (carrier.examined === 0) gaps.push(`载体形态 ${carrierIds} 零覆盖`);
 
