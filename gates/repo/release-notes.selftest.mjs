@@ -117,7 +117,11 @@ console.log('[ok] release-notes-selftest:9 条断言通过(正向取到本节 / 
 const { runMutationTest } = await import('./release-notes.mutation-test.mjs');
 const mutated = runMutationTest();
 if (mutated > 0) {
-  console.error(`[fail] release-notes-selftest:变异测试 ${mutated} 项未达预期(静态面判据可能恒绿)`);
+  // 这里**不能**替逐项原因下结论:失败项可能是「变异脚本与 release.yml 不同步」,
+  // 也可能是「判据恒绿」,两者排查方向相反。逐项 [fail] 行已各自点名该查哪一侧,
+  // 本行只负责汇总并指路 —— 上一次 CI 恒红时,本行无条件断言「判据可能恒绿」,
+  // 把排查从真正的原因引到了另一侧。
+  console.error(`[fail] release-notes-selftest:变异测试 ${mutated} 项未达预期(逐项原因见上方 [fail] 行:「变异未生效」查变异脚本的匹配模式,「已写入但判据未判红」查 check-release-notes.mjs)`);
   process.exit(1);
 }
 console.log('[ok] release-notes-selftest:变异测试通过(五条静态面判据逐条改坏均真判红)');

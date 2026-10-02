@@ -29,7 +29,10 @@ const MUTATIONS = [
   },
   {
     name: '② 整块删掉「空 NOTES ⇒ exit 1」分支',
-    mutate: (t) => t.replace(/ *if \[ -z "\$NOTES" \]; then[\s\S]*?exit 1\s*\n\s*fi\n/, ''),
+    // 行尾必须写成 EOL 无关:ci job 跑在 Windows runner 上(core.autocrlf=true),
+    // 检出的 release.yml 是 CRLF,字面 \n 匹配不上会让本条变异「未生效」而恒红。
+    // 只加 \r?,不加 \s* —— 后者会跨空行把不该删的块一起吞掉,变异就失去意义。
+    mutate: (t) => t.replace(/ *if \[ -z "\$NOTES" \]; then[\s\S]*?exit 1\s*\r?\n\s*fi\r?\n/, ''),
   },
   {
     name: '③ 去掉 pkg.version 实参(退回取第一个版本节)',
@@ -38,7 +41,9 @@ const MUTATIONS = [
   {
     name: '④ 去掉对抽取模块的引用(退回内联自造)',
     // 必须全局替换:注释行里也出现该路径,只替换首个匹配删掉的是注释,判据仍绿。
-    mutate: (t) => t.replace(/.*release-notes\.mjs.*\n/g, ''),
+    // 行尾必须写成 EOL 无关:ci job 跑在 Windows runner 上(core.autocrlf=true),
+    // 检出的 release.yml 是 CRLF,字面 \n 匹配不上会让本条变异「未生效」而恒红。
+    mutate: (t) => t.replace(/.*release-notes\.mjs.*\r?\n/g, ''),
   },
   {
     name: '⑤ 去掉 extractNotes 调用',
@@ -55,17 +60,34 @@ export function runMutationTest() {
   let bad = 0;
   for (const m of MUTATIONS) {
     const mutated = m.mutate(original);
+    // 下面两条 [fail] 的排查方向**相反**,措辞必须各自点名要查哪一侧:
+    //   · 目标串没匹配上 → 本脚本的匹配模式与 release.yml 不同步(查 MUTATIONS);
+    //   · 已改坏却没判红 → 判据失效(查 check-release-notes.mjs)。
+    // 二者原共用同一句「变异未生效/未被判红」,读者在 CI 输出里无从分辨,只能回去
+    // 比对 MUTATIONS 表 —— 上一次 CI 恒红命中的是前者,却被顺着文案读成「静态面
+    // 判据恒绿」,把排查引到了错误的一侧。
     if (mutated === original) {
       bad += 1;
-      console.error(`[fail] 变异未生效(字符串没匹配上):${m.name}`);
+      console.error(`[fail] 变异未生效:脚本与目标文件不同步,MUTATIONS 的目标串没匹配上 → 查本脚本:${m.name}`);
       continue;
     }
     writeFileSync(TARGET, mutated, 'utf8');
-    const problems = checkReleaseNotesContract();
-    writeFileSync(TARGET, original, 'utf8');
+    // 还原必须挂在 finally 上:判据函数一旦抛错,写在它下面的写回就不会执行,
+    // release.yml 会被**永久**留在被改坏的状态。而这一污染是**静默**的 —— 本轮跑
+    // 完退出码非零、CI 报错,没人知道工作树脏了,下次 git status 只看到该文件有
+    // 一条 diff,极易被当成有意改动一并提交进仓。
+    // try 起点紧贴「已写坏」这一步:本函数开头的 readFileSync 若抛错(TARGET 不存在),
+    // 此时还没动过工作树,无需也不该还原,故不把它圈进 try。
+    /** @type {string[]} */
+    let problems = [];
+    try {
+      problems = checkReleaseNotesContract();
+    } finally {
+      writeFileSync(TARGET, original, 'utf8');
+    }
     if (problems.length === 0) {
       bad += 1;
-      console.error(`[fail] 变异未被判红:${m.name}`);
+      console.error(`[fail] 变异已被写入但判据未判红 → 查 check-release-notes.mjs(不是本脚本的问题):${m.name}`);
     } else {
       console.log(`[ok] ${m.name} → 判红 ${problems.length} 条`);
       for (const p of problems) console.log(`       ${p}`);

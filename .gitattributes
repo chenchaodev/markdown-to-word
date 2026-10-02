@@ -6,12 +6,31 @@
 # EOL 策略(审计 TEST-1):gen-fixtures 生成器落盘 LF,Windows autocrlf 下 checkout
 # 会把文本产物转成 CRLF,导致 check:fixtures 逐字节比对全部误报。
 # 将 test/fixtures/ 下文件固定 EOL,checkout 后保持与生成器输出一致:
-#   文本类(.md/.css/.json)→ eol=lf;二进制(.png)→ binary(不入 EOL 归一)。
+#   文本类(.md/.css/.json)→ eol=lf;图片类→ binary(不入 EOL 归一)。
 test/fixtures/**/*.md text eol=lf
 test/fixtures/**/*.css text eol=lf
 test/fixtures/**/*.json text eol=lf
+
+# 图片夹具(IMAGE_DIGEST_BASELINE / imageCopies)是「读字节 → Buffer.equals」裸比对,
+# 链路上没有任何 EOL 归一,所以图片必须整类钉 binary:漏掉一种,它就被上面的
+# `* text=auto` 当文本做 CRLF 归一,src 与 dest 的归一行为一旦不一致即逐字节误红,
+# 而那一格没有负向覆盖,红与不红都没有回归护栏。
+# 扩展名清单的源是 gates/fixtures/gen-fixtures.mjs 的 IMAGE_EXTENSIONS(闭集,新增格式
+# 只需在该处登记一行):那边加了扩展名而这里没跟上,就会静默退回文本归一。
 test/fixtures/**/*.png binary
+test/fixtures/**/*.jpg binary
+test/fixtures/**/*.jpeg binary
+test/fixtures/**/*.gif binary
+test/fixtures/**/*.bmp binary
+test/fixtures/**/*.webp binary
+test/fixtures/**/*.svg binary
 
 # EOL 策略(同 TEST-1 的道理):归档索引是「脚本生成 + 逐字节比对」的产物,生成器
 # 落盘 LF;autocrlf 下 checkout 转 CRLF 会让 check:archive-index 在 CI 上恒红。
 docs/evidence/INDEX.md text eol=lf
+
+# EOL 策略(同 TEST-1 的道理):门禁按文本解析 workflow yml,而 release-notes 变异
+# 测试的两条判据对行尾敏感(CRLF 下匹配不上 ⇒ 变异「未生效」,CI 上恒红)。
+# Windows runner 的 autocrlf=true 会把检出转成 CRLF,而门禁读的是文本语义,
+# EOL 不该由各端 autocrlf 决定。
+.github/workflows/*.yml text eol=lf
