@@ -130,9 +130,12 @@ export async function run() {
       const rejected = await resolver(smallLimitUrl, requestOf({ maxBytes: fixtureBytes.length - 1 }));
       assert(rejected === null, `超单图预算的外链图片应返回 null,实际 ${rejected?.length ?? rejected}`);
       // 请求时限:慢响应 + 极短 request.timeoutMs → 中止返回 null
-      const slow = await startServer(200, fixtureBytes, 300);
+      // 响应延迟必须明显长于请求级时限,否则时限不会触发、这段测不到东西。
+      // 时限不能定在 30ms 那一档:断言「请求已发出」靠的是服务端收到请求（计数在到达时增）,
+      // 而 TCP 连接 + 写请求 + accept 必须在时限前完成 —— CI 容器一乱就可能为 0。给派发留 1s、响应放到 3s。
+      const slow = await startServer(200, fixtureBytes, 3000);
       try {
-        const timedOut = await localResolver()(slow.port ? `http://127.0.0.1:${slow.port}/slow.png` : "", requestOf({ timeoutMs: 30 }));
+        const timedOut = await localResolver()(slow.port ? `http://127.0.0.1:${slow.port}/slow.png` : "", requestOf({ timeoutMs: 1000 }));
         assert(timedOut === null, "request.timeoutMs 应中止慢响应并返回 null");
         assert(slow.getCount() === 1, `超时场景应已发出 1 次请求,实际 ${slow.getCount()}`);
       } finally {
