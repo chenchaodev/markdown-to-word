@@ -1,6 +1,6 @@
 // CHANGELOG 内容口径门禁(纯文本判定,无产物、幂等,exit 0/1)。
 //
-// 守护的契约(全局 AGENTS.md「文档体系」写入判据 ②):`docs/CHANGELOG.md` 的 `[待发版]` 段
+// 守护的契约(全局配置目录 `DOC-SYSTEM.md` §五 写入判据 ②):`docs/CHANGELOG.md` 的 `[待发版]` 段
 // **只许写用户在界面 / 文档 / 行为上可观察到的变化**,且**不含任何内部编号**(REQ-0NN、
 // commit hash)。这两条口径此前**没有任何机器判据**:门禁链上守着测试树的编号
 // (check-test-numbering.mjs)与删除动作(check-temp-cleanup.mjs),而面向人的那一份

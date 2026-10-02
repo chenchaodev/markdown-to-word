@@ -44,7 +44,6 @@
 | REQ-045 | CLI 转正 | 待拍板 | 2026-08-16 当初否决：无用户需求，调试可走脚本或直调 core。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-140 | coverage 探针注释失真 | 待拍板 | 既有失真。`gates/coverage.mjs` 三处（`:85`/`:218`/`:250`）称「参数向量未开 `--all`」，实测向量含它 ⇒ blindspot case exit 1；`:250` 的 evidence 称「exit 0」亦不成立。判不改：修它要重写该 case 的判据与 evidence 归属，属独立设计题；它为 informational，不影响门禁 | 要动 coverage 探针的 blindspot case 判据或 evidence 归属时 | 无 |
 | REQ-141 | c8 dump 临时目录无自动清理 | 待拍板 | `.c8-tmp/` 是 c8 的 V8 dump 中间态（与报告分居两处，见 ADR-048），单次实测 200+ 文件约 134M —— 与迁移前的 `coverage/tmp` 同一缺口，只换了位置。`clean-artifacts.mjs` 的 `--target` 不含它，`check:temp-cleanup` 只扫源码，故无自动清理点。判不并入 REQ-139：清理策略要改清理器取值域 | 磁盘占用不可接受时，或 clean-artifacts 扩充 target 取值域时 | docs/adr/ADR-048-覆盖率产物并入output单源.md |
-| REQ-148 | 上游迁移残留指针改指 | 未开工 | 上游载体表迁至配置仓 `DOC-SYSTEM.md`，本仓 3 处指针仍指 `AGENTS.md` 六节/七节：`AGENTS.md:13`（高）· `CONTRIBUTING.md:51`（中）· 两处门禁注释（低，纯注释零行为影响）。用户裁决 2026-10-02 做前三项；**不做**第 4 项（`docs/REQ.md` 表头字数括注）—— 判据本体是门禁常量，不读表头括注 | 上游再迁载体位置时 | docs/evidence/20261002-103000-上游DOC-SYSTEM迁移下游指针盘点.md |
 
 
 ## 在办
@@ -161,6 +160,7 @@
 | REQ-139 | 覆盖率产物并入 output 单源 | 已完成 | 报告落 `output/coverage/`、dump 落 `.c8-tmp/`；静态面新增取值比对判据。第一版只改 reports-dir，引入确定性假红。两轮全链全绿、指标零漂移 | 无 | docs/adr/ADR-048-覆盖率产物并入output单源.md |
 | REQ-146 | 扫描面漏 common 的 mjs | 已完成 | 扫描面谓词只收 `.js`，`test/common` 下三个 `.mjs` 落在两道文本门禁外；改为收 `.js` 与 `.mjs` 并同步三处复述字面量。四条门禁命令全绿 | 无 | docs/evidence/20261002-101500-门禁扫描面mjs盲区.md |
 | REQ-147 | docs 自检夹具判定随环境分化 | 已完成 | 真机夹具在无配置仓的机器上退化为「验证跳过分支」，判定随环境分化；改用合成 home 并收紧判别式为必须已判定，宿主环境不再影响结论 | 无 | docs/evidence/20261002-102000-docs自检夹具判定随环境分化.md |
+| REQ-148 | 上游迁移残留指针改指 | 已完成 | 四处指针改指 `DOC-SYSTEM.md`（§二 ×2 · §五 ② · §七），AGENTS.md 升 v2.2。check:docs 实测 0 错误，新小节名全部解析成功 | 上游再迁载体位置时 | docs/evidence/20261002-103000-上游DOC-SYSTEM迁移下游指针盘点.md |
 
 ## 已作废
 

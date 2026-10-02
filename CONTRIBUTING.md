@@ -48,7 +48,7 @@ npm run typecheck    # TypeScript 类型检查
 
 **示例**：`perf: 缓存 docx 主题解析结果`
 
-提交前请确保本地通过 `npm run typecheck`、`npm run lint`、`npm run build`（提交纪律的完整口径见全局配置目录 `AGENTS.md` 第七节；`git status` 只含本逻辑单元的文件是同一条纪律的 git 侧）。
+提交前请确保本地通过 `npm run typecheck`、`npm run lint`、`npm run build`（提交纪律的完整口径见全局配置目录 `DOC-SYSTEM.md` §七 提交与发版；`git status` 只含本逻辑单元的文件是同一条纪律的 git 侧）。
 
 ## 分支与 PR 流程
 

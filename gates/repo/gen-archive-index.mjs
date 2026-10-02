@@ -42,7 +42,7 @@ const HOST_EXCLUDE_FILES = new Set(['PLAN.md']);
 const ARCHIVE_EXCLUDED = new Set(['INDEX.md', 'README.md']);
 
 /**
- * 形态豁免:全局配置目录 `AGENTS.md` 六的文档体系表行里,`user-guide-vX.Y.md` 是唯一
+ * 形态豁免:全局配置目录 `DOC-SYSTEM.md` §二 载体表行里,`user-guide-vX.Y.md` 是唯一
  * 不由时间戳命名的归档专用名(用户指南按大版本归档),故它不受形态断言约束。
  */
 const NAME_FORM_EXEMPT_RE = /^user-guide-v\d+\.\d+\.md$/;
