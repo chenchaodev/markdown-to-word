@@ -43,7 +43,6 @@
     "test:smoke": "node gates/smoke/check-build-fresh.mjs && electron . --smoke",
     "ui:shots": "electron tools/visual-check.mjs",
     "icons": "node tools/svg-to-ico.mjs",
-    "test:only": "electron test/acceptance.mjs",
     "test:coverage": "npm run build && c8 --reporter=text --reporter=json-summary --reports-dir=output/coverage --temp-directory=.c8-tmp --all --include=\"dist/**\" --exclude=\"dist/renderer/**\" --exclude=\"dist/core/ipc-contract.js\" --exclude=\"dist/core/image/image-resolver.js\" --exclude=\"dist/core/markdown/mermaid.js\" --exclude=\"dist/core/preload-api.js\" --exclude=\"dist/main/ipc/types.js\" --exclude=\"dist/main/index.js\" --exclude=\"dist/main/preload.cjs\" --check-coverage --statements=90 --branches=85 --functions=90 --lines=90 electron test/acceptance.mjs",
     "check:coverage-zero": "node gates/probe/gate-probes/coverage-gate.mjs --zero",
     "check:coverage-zero:selftest": "node gates/probe/check-coverage-zero.selftest.mjs",

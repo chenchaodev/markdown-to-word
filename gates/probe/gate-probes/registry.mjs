@@ -662,6 +662,13 @@ export const GATE_REGISTRY = Object.freeze(
       modulePath: "gates/supply/supply/gen-licenses.mjs",
       access: "local",
       judgment: { module: "gates/supply/supply/gen-licenses.mjs", export: "buildLicensesReport", shaped: "许可证报告" },
+      judgmentNote:
+        "**为何没有配套的 `check:licenses`**(与 `check:sbom` / `check:fixtures` / `check:dist-manifest` 等成对门禁不同,"
+        + "这是有意设计而非漏项):许可证清单是**幂等生成** —— `gen-licenses.mjs` 产物不含时间戳,同一 lockfile 两次生成逐字节相同,"
+        + "而本仓对这类生成物的漂移判定是 `--check` 逐字节比对式(`gen-sbom.mjs --check` / `gen-archive-index.mjs --check`),"
+        + "licenses 侧没有可比对的基线文件。清单本身要不要成立的判定(未知许可证判红、copyleft 单列、多选一决策)"
+        + "由 `check:supply` 包住 —— 它 import 同一批模块(见 `check-supply-chain.mjs` 的 `generateLicenses` 调用面),"
+        + "故再单开一个 `check:licenses` 只会是同一判据的第二个入口。",
       probes: [
         {
           kind: "segment",
