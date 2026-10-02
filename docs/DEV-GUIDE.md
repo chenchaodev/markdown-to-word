@@ -90,59 +90,59 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 > 只跑一个段:`M2W_ONLY=<段名> npm test`(`npm test` 自带 `npm run build`,故测的仍是当轮新产物;段名取自上面「测试体系」各段目录下的段文件)。
 
 ## 架构(设计决策,勿随意偏离)
-- 分层:转换核心 `src/core/` 纯逻辑、常态零 IO 可测试(fs 访问仅 `pipeline/precheck.ts` 的 exists 与 `pdf/katex-css.ts` 的 read 两处,均依赖注入、默认 `node:fs`,可整体替换);GUI 主进程 `src/main/`;UI `src/renderer/`(vanilla TS + 原生 DOM,不引前端框架);依赖方向单向 core←main←renderer 不反向
+- 分层:转换核心 `src/core/` 纯逻辑、常态零 IO 可测试(fs 访问仅 `src/core/pipeline/precheck.ts` 的 exists 与 `src/core/pdf/katex-css.ts` 的 read 两处,均依赖注入、默认 `node:fs`,可整体替换);GUI 主进程 `src/main/`;UI `src/renderer/`(vanilla TS + 原生 DOM,不引前端框架);依赖方向单向 core←main←renderer 不反向
 - **转换在主进程执行**(docx 库为 Node 原生;printToPDF 走系统字体,中文零配置);renderer 经 IPC 触发
-- IPC:channel 名单源 `main/ipc/channels.ts`;`contextIsolation` + preload 白名单 + 进度 `webContents.send` 推送;拖放取路径用 `webUtils.getPathForFile`(File.path 已移除)
-- 未来扩展格式只需在 `core/convert.ts` 注册表登记 renderer
-- 中文/字体策略:docx 走 `docx/theme.ts` 集中配置 `font: { ascii: 'Calibri', eastAsia: '微软雅黑', hAnsi: 'Calibri' }`(Normal 样式,程序内可覆盖,宋体作备选配置项);pdf 走 Windows 系统字体零配置(Linux 部署需 CSS @font-face 内嵌 noto-cjk,后置)
-- 标题编号计数单源:`core/markdown/heading-numbering.ts` 共享纯函数(docx prescan 与 pdf xref 共用;无 h1 文档章节引用统一 Word 口径「1」,CSS counter 同口径)
-- 双管线的语义色与高亮色板各有一处单源(`core/style/colors.ts` 与 `core/style/hljs-palette.ts`),两侧渲染模块只从那里取值
+- IPC:channel 名单源 `src/main/ipc/channels.ts`;`contextIsolation` + preload 白名单 + 进度 `webContents.send` 推送;拖放取路径用 `webUtils.getPathForFile`(File.path 已移除)
+- 未来扩展格式只需在 `src/core/convert.ts` 注册表登记 renderer
+- 中文/字体策略:docx 走 `src/core/docx/theme.ts` 集中配置 `font: { ascii: 'Calibri', eastAsia: '微软雅黑', hAnsi: 'Calibri' }`(Normal 样式,程序内可覆盖,宋体作备选配置项);pdf 走 Windows 系统字体零配置(Linux 部署需 CSS @font-face 内嵌 noto-cjk,后置)
+- 标题编号计数单源:`src/core/markdown/heading-numbering.ts` 共享纯函数(docx prescan 与 pdf xref 共用;无 h1 文档章节引用统一 Word 口径「1」,CSS counter 同口径)
+- 双管线的语义色与高亮色板各有一处单源(`src/core/style/colors.ts` 与 `src/core/style/hljs-palette.ts`),两侧渲染模块只从那里取值
 - 决策本体与其背景/备选方案在 `docs/adr/`(一决策一文件,`ls docs/adr/` 取下一个序号);上面几条是**写码时会撞上**的那几条,不是决策记录
 
 ## 代码地图
 > 骨架以实际目录树为准;括注是**职责一句**,不是「本目录只有这些文件」的保证 —— 新增文件时顺手补一行。
 
 - `src/core/` 纯转换逻辑,常态零 IO(仅预检 exists / `loadKatexCss` read 两处 fs 访问经依赖注入),可测试
-  - 根:`convert.ts`(格式注册表 + `convert(md, format, options)` 统一入口;pdf 分支不构建 remark AST;页面设置/ConvertFormat 契约单源在 settings-defaults,不在此转手)/`ipc-contract.ts`(跨进程契约类型单源:ConvertProgressPayload/ConvertMode、BatchItem/BatchProgressInfo/BatchResult、UiState/RecentFile 等纯数据形状;main 实现侧与 renderer 共同 import,type-only 编译期擦除)/`cancel.ts`(取消错误码与 CancellationGuard 契约单源,降级通道不得吞取消)/`resource-limits.ts`(公式与图片资源预算单源,docx/pdf 共用)/`preload-api.ts`(preload 暴露面类型单源,归 core 以消除 renderer→main 反向依赖)
+  - 根:`src/core/convert.ts`(格式注册表 + `convert(md, format, options)` 统一入口;pdf 分支不构建 remark AST;页面设置/ConvertFormat 契约单源在 settings-defaults,不在此转手)/`src/core/ipc-contract.ts`(跨进程契约类型单源:ConvertProgressPayload/ConvertMode、BatchItem/BatchProgressInfo/BatchResult、UiState/RecentFile 等纯数据形状;main 实现侧与 renderer 共同 import,type-only 编译期擦除)/`src/core/cancel.ts`(取消错误码与 CancellationGuard 契约单源,降级通道不得吞取消)/`src/core/resource-limits.ts`(公式与图片资源预算单源,docx/pdf 共用)/`src/core/preload-api.ts`(preload 暴露面类型单源,归 core 以消除 renderer→main 反向依赖)
   - `pipeline/`:parse.ts(remark→mdast)/frontmatter.ts(YAML 手写解析)/merge.ts(多文件合并)/precheck.ts(转换前预检)
   - `markdown/`:slug.ts/cross-ref.ts(交叉引用契约正则族单源)/heading-numbering.ts(标题编号计数共享纯函数)/html-whitelist.ts(行内 HTML 白名单 docx/pdf 单源)/comment.ts(批注语法 remark 插件)/mermaid.ts/ai-cleanup.ts(AI 输出清理)/obsidian.ts(Obsidian 双链兼容)/image-size.ts(图片尺寸属性解析)/image-path-policy.ts(本地图片可信路径边界策略单源)/table-width.ts(表格列宽信号解析)
   - `image/`:image-resolver.ts(类型+optional exists)/image-type.ts(魔数嗅探)/image-warning.ts(警告工厂)
   - `settings/`:settings-defaults.ts(默认值+页面几何 PAPER_SIZES_MM/mmToTwips+ConvertFormat 单源)/presets.ts(内置预设目录:排版+页面+完整交付链的快照)/typography.ts
   - `style/`:colors.ts(双管线语义色单源)/hljs-palette.ts(GitHub Light 高亮色板单源)
   - `util/`:encoding.ts(编码预检)/mdast-utils.ts/error-message.ts(Error→message 归一单源)/text-escape.ts(escapeHtml/decodeEntities/escapeRegExp 集中)
-  - `i18n.ts` + `i18n/`:逻辑层(t() 插值/applyStaticTexts/KeyedWarning)+ 注册表(`i18n/index.ts` 导出面,`zh.ts` 键集唯一事实源 / `en.ts` 全量 satisfies / `ja.ts` 等其余语言 Partial 回退链 当前语言→en→key;Language 类型从注册表派生)
+  - `src/core/i18n.ts` + `i18n/`:逻辑层(t() 插值/applyStaticTexts/KeyedWarning)+ 注册表(`src/core/i18n/index.ts` 导出面,`src/core/i18n/zh.ts` 键集唯一事实源 / `src/core/i18n/en.ts` 全量 satisfies / `src/core/i18n/ja.ts` 等其余语言 Partial 回退链 当前语言→en→key;Language 类型从注册表派生)
   - `docx/`:render.ts(编排器)/theme.ts(字体集中配置,eastAsia 勿散落硬编码)/ctx.ts(渲染上下文,选项构造时解析默认)/headers.ts(section 页眉装配)/chrome.ts(封面/目录/页眉页脚)/prescan.ts/numbering.ts(编号配置)/template-import.ts(模板浅导入,零 IO)/handlers/(节点处理器:heading/table/captions/equations/code-block/code-highlight/image-run/link-xref/inline-html/fallback/content/math/bookmark)
   - `pdf/`:render.ts(编排器)/template.ts(HTML 组装+页眉页脚 chrome+CSP/sanitize 防护)/template-css.ts(文档模板 CSS 生成)/katex-css.ts(KaTeX CSS 加载,唯一 fs 注入点)/postprocess.ts/metadata.ts/bookmarks.ts(pdf-lib 书签注入)/mermaid.ts/rules/(markdown-it 规则覆盖:caption/equation/xref/html/image/table/heading-id/shared)
 - `src/main/`:Electron 主进程
-  - `index.ts`:组合根;`menu.ts`:应用菜单;`smoke.ts`:**冒烟唯一实现**(编译进 `dist/main/smoke.js` 随包分发,故解包产物也能跑 `--smoke`;主进程 `--smoke` 分支直连该编译产物,仓内不留第二份实现或 dev 侧转调入口)
+  - `src/main/index.ts`:组合根;`src/main/menu.ts`:应用菜单;`src/main/smoke.ts`:**冒烟唯一实现**(编译进 `dist/main/smoke.js` 随包分发,故解包产物也能跑 `--smoke`;主进程 `--smoke` 分支直连该编译产物,仓内不留第二份实现或 dev 侧转调入口)
   - `windows/`:main-window.ts/preview.ts(预览窗+尺寸记忆)/title-bar-overlay.ts(Windows 标题栏 overlay 配色与高度常量单源)/web-contents-registry.ts(ctxByWebContents 注册表,窗口层不反向依赖 IPC 层)
-  - `ipc/`:channels.ts(channel 名单源+恒等测试守护)/register.ts(handler 注册,导入类 handler 走 importFileViaDialog 模板)/logic.ts(纯逻辑)/output-allowlist.ts(shell 打开产物的会话级白名单,renderer 触达宿主文件系统的唯一入口)/types.ts(只做 re-export,剪贴板契约声明在 `core/ipc-contract.ts`)
+  - `ipc/`:channels.ts(channel 名单源+恒等测试守护)/register.ts(handler 注册,导入类 handler 走 importFileViaDialog 模板)/logic.ts(纯逻辑)/output-allowlist.ts(shell 打开产物的会话级白名单,renderer 触达宿主文件系统的唯一入口)/types.ts(只做 re-export,剪贴板契约声明在 `src/core/ipc-contract.ts`)
   - `converter/`:index.ts(编排)/single.ts(参数校验+读取 md,渲染之后交给骨架)/output-skeleton.ts(单文件与合并共用的输出骨架 `emitConvertedArtifact`,含 `renderPdf`/`runAfterConvert`;同模块是为避免 single↔skeleton 成环)/batch.ts/merge.ts/paths.ts(扩展名判定单源)/context.ts(buildConvertContext)/preprocess.ts(解码→frontmatter 隔离→Obsidian/AI 预处理→原样拼回,所有入口共用的准备编排)/artifact-writer.ts(产物提交:同目录唯一临时文件 + 硬链接独占提交,单文件/批量/合并共用)
   - `persist/`:settings.ts/ui-state.ts/atomic-json.ts(原子写)/preset-file.ts(设置与预设文件的纯形状校验 + 预设解析/合并)
   - `services/`:image-downloader.ts(外链下载:私网拦截+20MB 上限,`allowPrivateAddresses` 可放宽)/mermaid-service.ts/temp-html.ts(randomUUID+'wx')/resource-dirs.ts/web-hardening.ts(窗口导航加固)/session-permissions.ts(session 权限默认拒绝收口)
-  - `preload.cts`:contextBridge 白名单暴露 `window.api`(编译为 CJS;暴露面类型取 `core/preload-api.ts`)
+  - `preload.cts`:contextBridge 白名单暴露 `window.api`(编译为 CJS;暴露面类型取 `src/core/preload-api.ts`)
 - `src/renderer/`:GUI UI(vanilla TS + 原生 DOM)
-  - `index.html` + `style/`(base/drop/settings/dialogs 四文件)/`lang-bootstrap.js`(FOUC 缓解)
-  - 关于窗:`about.html`/`about.ts`/`about-preload.cjs`
-  - `renderer.ts`:组合根;`dom/refs.ts`:DOM 引用
+  - `index.html` + `style/`(base/drop/settings/dialogs 四文件)/`src/renderer/lang-bootstrap.js`(FOUC 缓解)
+  - 关于窗:`about.html`/`src/renderer/about.ts`/`src/renderer/about-preload.cjs`
+  - `src/renderer/renderer.ts`:组合根;`src/renderer/dom/refs.ts`:DOM 引用
   - `state/`:pure.ts(纯函数含 errorMessage()/STAGE_TEXT)/state.ts(批量契约类型自 main 单源导入 + renderer 唯一 store)
-  - `settings/`:settings-controls-table.ts(**设置声明表**:键→控件→读/写→复位处置→依赖登记,零 DOM 纯数据,回显类型由它从 `AppSettings` 派生)/settings-panel.ts(加载/回填/持久化写回+分组 persist 单源;`controlDom` 是声明表↔DOM 的唯一接缝)/settings-save.ts(写路径单源 + 跨模块共享的失败重试台账)/settings-preset-actions.ts(预设弹窗/保存/删除/导入导出)/settings-logic.ts(纯函数直测)/settings-drawer.ts + `settings-bindings.ts` 与 `settings-bindings-{preset,typography,headerwatermark,numbering,convert,app}.ts`(按 `index.html` 的 `data-group` 同口径接线,控件 id/name 零触碰)
-  - `convert/`:convert-flow.ts + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)+ `file-list.ts`
+  - `settings/`:settings-controls-table.ts(**设置声明表**:键→控件→读/写→复位处置→依赖登记,零 DOM 纯数据,回显类型由它从 `AppSettings` 派生)/settings-panel.ts(加载/回填/持久化写回+分组 persist 单源;`controlDom` 是声明表↔DOM 的唯一接缝)/settings-save.ts(写路径单源 + 跨模块共享的失败重试台账)/settings-preset-actions.ts(预设弹窗/保存/删除/导入导出)/settings-logic.ts(纯函数直测)/settings-drawer.ts + `src/renderer/settings/settings-bindings.ts` 与 `settings-bindings-{preset,typography,headerwatermark,numbering,convert,app}.ts`(按 `index.html` 的 `data-group` 同口径接线,控件 id/name 零触碰)
+  - `convert/`:convert-flow.ts + `events/`(convert-actions/dialogs-events/drop/selection/index 组合)+ `src/renderer/convert/file-list.ts`
   - `ui/`(dialogs.ts/dom-ops.ts(DOM 操作原语 + translate 注入适配)/recent-files.ts(bindRecentFilesEvents 范式)/toast.ts/first-run-guide.ts(首启引导))
   - `wizard/`:book-wizard.ts(向导外壳/导航/打开关闭+付印提交)/wizard-steps.ts(步骤渲染·版式步:模板/封面/页眉页脚/水印)/wizard-steps-delivery.ts(步骤渲染·交付步:合并源/目录/付印+当前步渲染)/wizard-fields.ts(字段校验绑定+共用 DOM/radio 零件)/wizard-runtime.ts(草稿/容器/步序单例,防环)/wizard-state.ts(向导状态管理纯 reducer)
 - `test/`:验收测试体系(acceptance.mjs 入口 + common/ harness + **四个段目录按被测主体归属**:`core/`(src/core 渲染主题)+ `main/`(主进程层)+ `renderer/`(UI 层)+ `gates/`(门禁树 `gates/**` 与机制层 `shared/**` 的守护段)+ fixtures/ 静态样例数据;样例生成器 `gates/fixtures/gen-fixtures.mjs`、视觉自查 `tools/visual-check.mjs`、electron 桩 `test/common/electron-mock*.mjs`、几何判定层 `shared/geometry/` 均已按归属迁出 test/);`gates/smoke/check-build-fresh.mjs`(构建新鲜度守卫,`start` 与 `test:smoke` 前置)
   - **沙箱副本闭包**(守护见 `test/gates/contract-single-source.test.js` (e) 节,判定原语 `auditCopySet` 在 `test/common/copy-closure-audit.js`):部分段会把生产脚本**逐字节复制**进系统临时区的沙盒再执行(如 `install-smoke` 复制 gates/artifacts 与 gates/smoke 的 5 份脚本、shared/paths.js 与 shared/userdata.js)。因沙盒内无 `node_modules` 且只复制被点名的文件,副本必须满足三条:① 只允许 `node:` 内建依赖(裸包名必失败);② 相对 import 的目标必须**同在副本集合内**;③ 不得有死副本(无同集合入边且未登记为沙盒入口者判红)。副本集合由**代码里的复制调用扫出**(`copyFileSync`/`copyFile`/`cpSync`),不硬编码文件名 —— 新增复制点会被自动纳入。
   - **入口登记需人工同步**:`SANDBOX_ENTRY_EVIDENCE`(同在 `test/common/copy-closure-audit.js`)登记那些「被复制但沙盒内由测试直接执行、因而没有上游 import」的副本。漏登记**判红**而非静默放过(刻意取舍),故新增/删除沙箱复制点时必须同步该表。登记需附「提及它 + 带执行类调用」的行作为证据,否则视为无证据。
   - **已知覆盖边界**:运行时拼装的复制列表、多层别名链、跨目录整树复制**解析不出**,只登记不判红。若将来用「运行时拼装列表」复制 JS 模块,本守护不会自动纳入,需人工扩 `resolveCopySource` 或新增复制机制 scope。
-- `tools/`:工具树(七个文件平铺,无子目录;`build/` 与 `dev/` 于 ADR-050 合并而成;`tools-stay-in-tools` 边界规则判它零跨树出边,只许引 `shared/` 与自身):`copy-renderer.mjs`(静态资源拷贝,`build` 步骤)/`svg-to-ico.mjs`(SVG → ICO,`icons` 步骤,读同目录 `icon.svg` 写 `icon.ico`)/`visual-check.mjs`(视觉自查,`ui:shots`)/`visual-preload.cjs` 与 `visual-about-preload.cjs`(上面那个工具的两个窗桩;项目根经 `--m2w-root=` 注入,桩不自算)/`renderer-coverage-report.mjs`(被 c8 排除层的只读覆盖率报告)/`setup-env.ps1`(一次性写 Electron 镜像环境变量)。目录名**不表达**「是否在 CI/release 链内」——该信号在 `package.json` scripts 与上一张「门禁接入点」表两处。
+- `tools/`:工具树(七个文件平铺,无子目录;`build/` 与 `dev/` 于 ADR-050 合并而成;`tools-stay-in-tools` 边界规则判它零跨树出边,只许引 `shared/` 与自身):`tools/copy-renderer.mjs`(静态资源拷贝,`build` 步骤)/`tools/svg-to-ico.mjs`(SVG → ICO,`icons` 步骤,读同目录 `icon.svg` 写 `icon.ico`)/`tools/visual-check.mjs`(视觉自查,`ui:shots`)/`tools/visual-preload.cjs` 与 `tools/visual-about-preload.cjs`(上面那个工具的两个窗桩;项目根经 `--m2w-root=` 注入,桩不自算)/`tools/renderer-coverage-report.mjs`(被 c8 排除层的只读覆盖率报告)/`setup-env.ps1`(一次性写 Electron 镜像环境变量)。目录名**不表达**「是否在 CI/release 链内」——该信号在 `package.json` scripts 与上一张「门禁接入点」表两处。
 
 ## 测试体系(按内容主题零注册,新增=新建段文件)
 - 目录组织标准(段目录**镜像一棵被断言的树**,按被测主体归属;目录内按内容主题命名):`test/core/` = `src/core` 渲染主题段 /`test/main/` = `src/main` 主进程层主题段 /`test/renderer/` = `src/renderer` UI 层主题段(纯函数/状态机/CSS 令牌恒等)/ `test/gates/` = `gates/**` 门禁树与 `shared/**` 机制层的契约/恒等守护段(跨域守护段)
   - **归属判例(跨层段)**:归属看**被测主体**,断言穿过别层不改变归属 —— 被测主体在 `src/main`、core 仅作被断言的接收方时,段归 `test/main/`(例:`test/main/mermaid-warning-channel.test.js` 测 main 侧渲染服务与 converter 接线,core 的 warning 通道是被断言对象)。
   - **同模块多段口径**:同一被测模块可按内容主题拆多段,文件名带主题后缀,不要求一段覆盖模块全部行为(例:`test/main/atomic-json.test.js` 断言落盘/队列/失败清理,`test/main/atomic-json-durability.test.js` 断言 fsync 时点与耐久性)。
-  - **段目录须镜像一棵被断言的树**(判据:段目录名必须是顶层某棵树的目录名 —— `core`/`main`/`renderer` 对应 `src/` 的三个子目录,`gates` 对应顶层 `gates/`;`common` `fixtures` `acceptance` 三个 harness/数据区名被显式排除)。这条替代了早先的「三目录恒等」表述:新增被断言的树配同名段目录即可,不必改判据文字;新增杂物抽屉(如 `test/pending/`,历史上真存在过的暂存区,其存废断言由 `test/core/core-resources.test.js` 覆盖)因顶层找不到同名树而判红。判据实现与判红文案在 `shared/test-common-surface.js` 的 `checkSegmentMirrors`,由 `gates/repo/check-test-numbering.mjs` 与 `check-temp-cleanup.mjs` 各自 fail closed;漏登记的测试子目录由同一单源的「扫描面等式」另管,两条各管一件事。
+  - **段目录须镜像一棵被断言的树**(判据:段目录名必须是顶层某棵树的目录名 —— `core`/`main`/`renderer` 对应 `src/` 的三个子目录,`gates` 对应顶层 `gates/`;`common` `fixtures` `acceptance` 三个 harness/数据区名被显式排除)。这条替代了早先的「三目录恒等」表述:新增被断言的树配同名段目录即可,不必改判据文字;新增杂物抽屉(如 `test/pending/`,历史上真存在过的暂存区,其存废断言由 `test/core/core-resources.test.js` 覆盖)因顶层找不到同名树而判红。判据实现与判红文案在 `shared/test-common-surface.js` 的 `checkSegmentMirrors`,由 `gates/repo/check-test-numbering.mjs` 与 `gates/repo/check-temp-cleanup.mjs` 各自 fail closed;漏登记的测试子目录由同一单源的「扫描面等式」另管,两条各管一件事。
 - 静态样例入 `test/fixtures/`,三个子目录**一律按内容命名**:`docs/`(生成器落盘的渲染输入样例文档)+ `input/`(最小输入桩:最小 md 与图像桩)+ `manual/`(人工目检长文档)。**不按「谁生成」或「被谁读」命名** —— 「生成 vs 手工」这个区分由生成器落盘的 README 首行「勿手改」+ `check:fixtures` 漂移门禁表达,不再占一条命名轴;改名见 [ADR-052](adr/ADR-052-夹具区按内容命名并归位输入桩.md)。产物 `output/artifacts` + `output/smoke`(可清理重建,smoke 自清理)
-- 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`ru` 是已裁撤语言,`i18n-registry.test.js` 拿它当「裁撤回归守卫」的样例(`isLanguage("ru") === false`),回加该语言会撞红这条断言**
+- 断言写可验证事实(解包 OOXML/产物字符串/读回),不写无断言日志;恒等守护段 `test/core/identity-guards.test.js` 锁已知双源(zh 文案/MAX_RECENT_FILES/设置合并双侧/白名单扫描);`test/core/i18n-registry.test.js` 锁语言注册表(en=zh 全量/Partial 键集 ⊆ zh/回退链/htmlLang/settings 往返)。**注意:`ru` 是已裁撤语言,`test/core/i18n-registry.test.js` 拿它当「裁撤回归守卫」的样例(`isLanguage("ru") === false`),回加该语言会撞红这条断言**
 - 验收样例生成器:`npm run gen:fixtures`(需先 build)/`npm run check:fixtures` 漂移校验(EOL 归一化,`.gitattributes` 双保险;CI 门禁步骤)
 
 ## 验证基线

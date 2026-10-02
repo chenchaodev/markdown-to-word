@@ -3,7 +3,7 @@
 > 适用：renderer 层所有新增 / 修改的界面元素。视觉基准样稿：`docs/design/ui-mockup.html`（v3 基线 + v4r2 差异注记；重绘记 ROADMAP）。设置分组与**预设作用域（内置 / 自定义两种形态）**以 `docs/design/settings-ia.md` §1.5 为准。
 >
 > **单一来源声明**：本节 token 实现时落为 renderer CSS 变量（`:root` 与 `html[data-theme="dark"]` 两套取值），
-> 任何样式不得绕开 token 硬编码 hex / px——与 `core/docx/theme.ts` 集中字体配置同一纪律。
+> 任何样式不得绕开 token 硬编码 hex / px——与 `src/core/docx/theme.ts` 集中字体配置同一纪律。
 
 ## 1. Design Tokens
 
