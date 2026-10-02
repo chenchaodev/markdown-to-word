@@ -41,19 +41,14 @@ npm run typecheck    # TypeScript 类型检查
 
 | Prefix | 用途 |
 |--------|------|
-| `feat:` | 新功能 |
-| `fix:` | 修复 |
-| `docs:` | 文档 |
-| `chore:` | 杂务（构建、CI 等） |
-| `refactor:` | 重构 |
 | `perf:` | 性能优化 |
 | `test:` | 测试 |
 
-**示例**：`feat: 新增导出 PDF 书签目录功能`
+完整 prefix 清单见项目 [AGENTS.md](AGENTS.md)「规则」节；本仓另加严上表两项。
 
-提交前请确保：
-- 通过 `npm run typecheck`、`npm run lint`、`npm run build`
-- `git status` 只包含本逻辑单元的文件
+**示例**：`perf: 缓存 docx 主题解析结果`
+
+提交前请确保本地通过 `npm run typecheck`、`npm run lint`、`npm run build`（提交纪律的完整口径见全局配置目录 `AGENTS.md` 第七节；`git status` 只含本逻辑单元的文件是同一条纪律的 git 侧）。
 
 ## 分支与 PR 流程
 
@@ -64,7 +59,7 @@ npm run typecheck    # TypeScript 类型检查
 
 ## 文档驱动约定
 
-本项目遵循文档驱动开发（见 [AGENTS.md](AGENTS.md)）：需求/设计文档 → 规划文档 → 开发前确认。**规划即契约**，开发中不反复更新，收尾统一同步。
+本项目遵循文档驱动开发：需求/设计文档 → 规划文档 → 开发前确认。**规划即契约**，开发中不反复更新，收尾统一同步。以上三步是面向外部贡献者的最短路径；完整的规划 / 开发 / 收尾流程纪律见全局配置目录 `WORKFLOW.md` 二、三、六节。
 
 ## 许可证
 
