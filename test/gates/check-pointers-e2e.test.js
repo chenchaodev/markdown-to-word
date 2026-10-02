@@ -36,7 +36,15 @@ import path from "node:path";
 import { createCaseSuite } from "../common/case.js";
 import { ROOT } from "../common/paths.js";
 import { withTempResource } from "../common/temp-resource.js";
-import { checkLedger } from "../../gates/repo/check-pointers.mjs";
+import { checkLedger, TITLE_LIMIT, WHY_LIMIT, WHY_LIMIT_DONE } from "../../gates/repo/check-pointers.mjs";
+
+/**
+ * **超上限的夹具长度必须跟着判据常量走** —— 写死 21 字 / 150 字时，上限一改这两条 case 就红。
+ * 另注：超「已完成」节上限的那段内容必须**超过更严的那档、但不超过其余节的宽限档**，
+ * 否则「上限压根没生效」与「上限对所有节生效」两种实现会给出完全相同的输出。
+ */
+const OVER_TITLE = "长".repeat(TITLE_LIMIT + 1);
+const OVER_WHY = "因".repeat(WHY_LIMIT_DONE + 1);
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -285,7 +293,7 @@ export async function run() {
         REGISTRY_RULE,
         registryRow("REQ-001", "在办", "第一条", "无阻塞"),
         registryRow("REQ-001", "在办", "换个写法重复登记", "无阻塞"),
-        registryRow("REQ-002", "在办", "这条标题故意写得很长很长很长很长以便超上限", "无阻塞"),
+        registryRow("REQ-002", "在办", OVER_TITLE, "无阻塞"),
         "",
         "## 号段",
         "",
@@ -300,7 +308,7 @@ export async function run() {
         },
         (out, code) => {
           assert.equal(code, 1, `坏台账必须非零退出:\n${out}`);
-          for (const re of [/重号/, /标题列 21 字 > 20/, /头部没有「结论去向」行/]) {
+          for (const re of [/重号/, new RegExp(`标题列 ${TITLE_LIMIT + 1} 字 > ${TITLE_LIMIT}`), /头部没有「结论去向」行/]) {
             assert(re.test(out), `诊断未出现 ${re}:\n${out}`);
           }
           // 三处计数必须一致:退出码非零、结论行的失败条数、逐条打印的判红行数。
@@ -369,7 +377,7 @@ export async function run() {
         "",
         REGISTRY_HEADER,
         REGISTRY_RULE,
-        registryRow("REQ-001", "在办", "这条标题故意写得很长很长很长很长以便超上限", "无阻塞"),
+        registryRow("REQ-001", "在办", OVER_TITLE, "无阻塞"),
         "",
         "## 号段",
         "",
@@ -385,7 +393,7 @@ export async function run() {
         (out, code) => {
           assert.equal(code, 1, `违反必须非零退出(否则「转判红」只是改了个提示文字):\n${out}`);
           // 「已生效」的措辞,不是一句已经完成的计划 —— 否则后来者读输出会以为还没开始管。
-          assert(/标题列 21 字 > 20\(上限 20 字已生效\)/.test(out), `标题列上限须以已生效措辞报出:\n${out}`);
+          assert(new RegExp(`标题列 ${TITLE_LIMIT + 1} 字 > ${TITLE_LIMIT}\\(上限 ${TITLE_LIMIT} 字已生效\\)`).test(out), `标题列上限须以已生效措辞报出:\n${out}`);
           assert(/三选一,已生效/.test(out), `结论去向取值域须以已生效措辞报出:\n${out}`);
           assert(!/只出声/.test(out), `转判红后不许再自称只出声:\n${out}`);
           assert(!/转判红条件/.test(out), `提示里不该留着已完成的计划:\n${out}`);
@@ -464,10 +472,10 @@ export async function run() {
     });
 
     await s.case("「已完成」节的更严上限真的生效,同样长度的内容在别的节合法", async () => {
-      // 150 字:超「已完成」节的更严上限、未超其余节的宽限上限 ⇒ **两节各放一条**,
+      // 长度取「已完成」档上限 +1:超更严那档、未超其余节的宽限档 ⇒ **两节各放一条**,
       // 只该命中已完成那一条。只放一条的话,「上限压根没生效」与「上限对所有节生效」
       // 这两种实现会给出**完全相同**的输出 —— 必须有对照才区分得开。
-      const long = "因".repeat(150);
+      const long = OVER_WHY;
       const doneRow = registryRow("REQ-003", "已完成", "已完成的一条", long);
       const todoRow = registryRow("REQ-004", "待拍板", "待拍板的一条", long);
       const body = [
@@ -494,11 +502,11 @@ export async function run() {
       ];
       await withRepo({ "README.md": ROOT_README, "docs/REQ.md": body.join("\n") }, (out, code) => {
         assert.equal(code, 1, `已完成节的超限必须判红:\n${out}`);
-        const hits = verdictLines(out).filter((line) => /判断依据 150 字 >/.test(line));
+        const hits = verdictLines(out).filter((line) => new RegExp(`判断依据 ${OVER_WHY.length} 字 >`).test(line));
         assert.equal(hits.length, 1, `只该命中已完成节那一条,实得 ${hits.length} 条\n${out}`);
         // 命中必须是按「已完成」那一档判的,不是其余节的宽限上限。
-        assert(/判断依据 150 字 > 100/.test(hits[0] ?? ""), `必须是按已完成节那一档判的:${hits[0] ?? "无"}`);
-        assert(!/判断依据 150 字 > 200/.test(out), `其余节的同长度内容合法,不该按宽限上限命中:\n${out}`);
+        assert(new RegExp(`判断依据 ${OVER_WHY.length} 字 > ${WHY_LIMIT_DONE}`).test(hits[0] ?? ""), `必须是按已完成节那一档判的:${hits[0] ?? "无"}`);
+        assert(!new RegExp(`判断依据 ${OVER_WHY.length} 字 > ${WHY_LIMIT}\\b`).test(out), `其余节的同长度内容合法,不该按宽限上限命中:\n${out}`);
         // 行号从夹具本身算出来,不写死 —— 写死过一次,夹具一改就变成**假失败**,
         // 而假失败会让人去改断言而不是改实现,正好掩盖真问题。
         // 真正要证明的是**区分**:两节各有一条同样长度,只有按已完成判的那条该命中,
