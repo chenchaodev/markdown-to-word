@@ -59,9 +59,32 @@
 // **拆分后没有任何机器会判这一族**(配置仓那份不含本判据且它的项目根恒 null ⇒ 双侧皆无执行体);
 // 缓解只有 `docs/DEV-GUIDE.md` 记一条维护者手动跑上游全量门禁的命令,**不引入任何代码路径/环境变量/开关**。
 //
+// ---- 代码扩展名引用只分类、不判定(与跨仓档同一处置) ----
+// `REF_FORMS` 三条正则都以 `\.md` 收尾 ⇒ 文档里以 `.mjs` / `.ts` / `.js` / `.cjs` 结尾的**反引号**
+// 路径引用**一条都判不到**(形态级漏法:文件在扫描面内、写法不在正则里,与第 1 档补 markdown 链接
+// 形态是同一类漏法)。**为什么不扩 `REF_FORMS`**:扩了会立刻把本仓上百处「路径形态但仓内无此文件」
+// 的引用判红,而其中绝大多数是**路径前缀腐坏**(文件真身搬了家,文档还写着旧路径)。那是墙,不是精度 ——
+// 墙的代价是这一族被整体关掉,而关掉时连那少数真断链也一起放过。**份数不写死**:想知道当下那个数,
+// 把 `REF_FORMS` 第 2 条的扩展名临时扩进来跑一次 `node gates/repo/check-docs.mjs`,
+// 结论行的判红条数就是它(判据本体即取数命令,故此处只记命令不记数值)。
+//
+// **为什么只分类、不判定**:这一族要判红,判红基准是**人的判断** —— 「文件真的搬走了」(该改文档)与
+// 「文档记的是决策史」(ADR 里引的那个 `.mjs` 属于当时那个世界,今天本就不该存在)这两类在正则眼里
+// **完全一样**,必须分开裁决,正则给不出这个区别。故本档恒不判红,只报
+// 「分类 N 处 · 判定 0 处 · 未判,非『查过没问题』」。这与跨仓路径(ADR-054 决定四)是**同一处置**:
+// 结构上同类的问题(判红基准不可达 / 不可由正则裁决)用同一套语言。
+//
+// **为什么本档不做存在性解析(这不是省事,是会被算错的)**:「解析基准与判定档一致」在这里的最强形式
+// 是**根本不引入第二个基准** —— 本档只数形态、不解析。若在这里调 `resolveRef`,那几百次分类用解析会
+// **灌进「引用解析 … 判定 N 处」那个计数**,而那个数的口径是「判定档解析过多少处」,被分类灌进来后
+// 它就不再是自己声称的那个量(实测会从三位数跳到四位数)。**为一个分类计数去污染一个已判定的自报数字,
+// 比不解析更坏。** 故:真要解析只有一条路(本文件唯一的解析实现 `resolveRef`),而本档不需要解析 ⇒ 不调。
+//
+// **份数不写死**:随文档增删而变,运行时数出来、汇总行报出(与 `EXCLUDE_DIRS` 的份数同一处置)。
+//
 // ---- 零覆盖必须出声(实施约束 6) ----
-// 「跨仓路径判定 0 处」与「载体形态零覆盖」一律进结论行的 `覆盖:不全(...)`。本门禁从不说
-// 「0 错误」而不说覆盖 —— 「触发 0 处 = 零覆盖,不是『查过没问题』」。
+// 「跨仓路径判定 0 处」「代码扩展名引用判定 0 处」与「载体形态零覆盖」一律进结论行的
+// `覆盖:不全(...)`。本门禁从不说「0 错误」而不说覆盖 —— 「触发 0 处 = 零覆盖,不是『查过没问题』」。
 //
 // ---- 不做 ----
 // 不给本门禁加任何模式开关、环境变量或「载体不可达即自动降级」的逃生阀:能随时关掉的判据等于给
@@ -612,6 +635,62 @@ export function classifyCrossRepoRefs(files, readFile, resolveInProject, skipRow
         stats.classified += 1;
       }
     });
+  }
+  return { stats };
+}
+
+// ---------------------------- 代码扩展名引用(只分类,不判定;同 ADR-054 决定四的处置)
+
+/**
+ * 代码扩展名引用形态 —— **与 `REF_FORMS` 第 2 条(反引号)同形,只把收尾的扩展名集合换掉**。
+ *
+ * ⚠️ **不复用 `REF_FORMS` 的正则对象,也不从它的正则派生出本条**:那些对象带 `g` 标志、在各档间
+ * 共享 `lastIndex`,改动它们就是改动**判定面**。另立一条正则,两条判据面在结构上相邻、在对象上互不
+ * 触碰 —— 「形态相同、扩展名不同」这件事必须一眼能从代码上看出来,而不是靠改一处波及两处。
+ *
+ * 扩展名按**长度降序**排列(`mjs`/`cjs` 在 `js` 之前)。这不是正确性必需(收尾的反引号把扩展名锚死,
+ * `x.mjs` 不可能被 `js` 分支吃掉),而是让「读到哪一个分支」与「读到的那个串」始终一致。
+ */
+const CODE_REF_EXTS = ['mjs', 'cjs', 'ts', 'js'];
+
+/** 反引号包裹 + 上述扩展名收尾的路径。`{1,2}` 前缀与首字符集与 `REF_FORMS` 逐字同形。 */
+const CODE_REF_RE = new RegExp(
+  '`((?:\\.{1,2}\\/)*[A-Za-z0-9_一-龥][\\w.\\/一-龥-]*\\.(?:' + CODE_REF_EXTS.join('|') + '))`',
+  'gu',
+);
+
+/**
+ * 代码扩展名引用 —— **只分类,不做判定**(处置与跨仓路径同形,理由见文件头同名小节)。
+ *
+ * **分类的对象是「形态」,不是「有效性」**:命中与否只看「反引号包裹 + 收尾是代码扩展名」,
+ * **本档不查该路径在本仓存不存在**。故本档**没有任何解析入参**(与 `classifyCrossRepoRefs` 那三个
+ * 入参不同:跨仓档要消歧「本仓解析得到吗」,本档连这个问题都不问)。
+ *
+ * 扫描面与跳过面**逐字沿用判定档**:`maskFencedLines`(围栏是示例不是活指针)+ `isHistoricalLine`
+ * (摘要/历史变更行记的是过去的状态)。**`docs/adr/` 不豁免** —— 它是活载体,引用照常分类
+ * (是否豁免只由 `EXCLUDE_DIRS` 决定,本档不另设口径)。
+ *
+ * ⚠️ **不套 `skipReason`**:豁免表逐条都是 `.md` 指针的语义(条件性载体 / docs 骨架 / 占位记号),
+ * 对代码扩展名一条都不适用;套上去只会让「形态计数」依赖一张与本族无关的表。
+ *
+ * @param files    本仓扫描范围
+ * @param readFile 读本仓文件(rel → 文本)
+ * @returns `{ stats }`;`stats.classified` = 分类处数,`stats.byExt` = 按扩展名分项。
+ *   **恒不产出判红**(返回对象里没有错误通道,与 `classifyCrossRepoRefs` 同形)。
+ */
+export function classifyCodeRefs(files, readFile) {
+  const stats = { files: files.length, classified: 0, byExt: {} };
+  for (const file of files) {
+    for (const line of maskFencedLines(readFile(file))) {
+      if (!line) continue;
+      if (isHistoricalLine(line)) continue;
+      CODE_REF_RE.lastIndex = 0;
+      for (const m of line.matchAll(CODE_REF_RE)) {
+        stats.classified += 1;
+        const ext = m[1].slice(m[1].lastIndexOf('.') + 1);
+        stats.byExt[ext] = (stats.byExt[ext] ?? 0) + 1;
+      }
+    }
   }
   return { stats };
 }
@@ -1518,6 +1597,10 @@ export function main() {
     makeCrossRepoRowSkipper(readFile),
   );
 
+  // 代码扩展名引用:**只分类,不判定**(文件头同名小节)。⚠️ **本档刻意不调 `resolveRef`** ——
+  // 它的解析次数会灌进下面「引用解析 … 判定 N 处」那个计数,而那个计数的口径是判定档的解析量。
+  const codeRefs = classifyCodeRefs(files, readFile);
+
   const pErrors = [
     ...checkExistence(root, files, readFile, ledgerSkip),
     ...checkSections(root, files, readFile, ledgerSkip),
@@ -1545,6 +1628,25 @@ export function main() {
       + ` · **判定 0 处 · 未判,非「查过没问题」**`
       + ' —— 判红基准在仓外(全局配置目录),本仓不可达;拆分后无任何机器判这一族'
       + (crossRepo.stats.freeTextRows ? ` · 台账形态表体行 ${crossRepo.stats.freeTextRows} 行未参与分类(见 makeCrossRepoRowSkipper)` : ''),
+  );
+
+  // 代码扩展名引用:与跨仓档**同一措辞骨架**(分类 N 处 · 判定 0 处 · 未判,非「查过没问题」),
+  // 但**零命中必须出声** —— 那一档恒绿(判红基准不可由正则裁决),「扫描面内一条都没有」与
+  // 「有 N 条但一条都没判」是两种完全不同的覆盖事实,合成一句话就看不出本仓到底有没有这种写法。
+  const codeExtByExt = CODE_REF_EXTS
+    .filter((ext) => codeRefs.stats.byExt[ext])
+    .map((ext) => `.${ext} ${codeRefs.stats.byExt[ext]} 处`)
+    .join(' · ');
+  console.log(
+    `  · 代码扩展名引用(只分类,未判):检查 ${codeRefs.stats.files} 份 · 分类 ${codeRefs.stats.classified} 处`
+      + (codeExtByExt ? `(${codeExtByExt})` : '')
+      + ` · **判定 0 处 · 未判,非「查过没问题」**`
+      + ' —— 判红基准是人的判断(「文件真的搬走了」与「文档记的是决策史」两类只能分开裁决),正则给不出'
+      + (codeRefs.stats.classified === 0
+        ? ' ⇒ **零覆盖(扫描面内一条代码扩展名引用都没有)** —— 本档的形态正则若被改窄/删掉,'
+          + '这里就会变成 0 而没人发现;若 `REF_FORMS` 反被人扩了扩展名,本档不会归零(它自带正则),'
+          + '那时要处理的是**两档重叠**,不是零覆盖'
+        : ''),
   );
 
   console.log(
@@ -1592,8 +1694,8 @@ export function main() {
     : '已排除 0 个文件';
   console.log(
     pErrors.length === 0
-      ? `项目模式通过:扫描 ${files.length} 个文件,0 错误(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径只分类未判);${excludedNote}`
-      : `项目模式失败:${pErrors.length} 错误 / 扫描 ${files.length} 个文件(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径只分类未判);${excludedNote}`,
+      ? `项目模式通过:扫描 ${files.length} 个文件,0 错误(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径与代码扩展名引用只分类未判);${excludedNote}`
+      : `项目模式失败:${pErrors.length} 错误 / 扫描 ${files.length} 个文件(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径与代码扩展名引用只分类未判);${excludedNote}`,
   );
   // ⚠️ **错误条数必须在打印之后、`pErrors` 追加载体形态错误之后再取** ——
   // `pErrors` 是**先打印、后追加**的:载体形态判据的 errors 在 `runCarrierChecks` 之后才 push 进来。
@@ -1616,6 +1718,17 @@ export function main() {
   // 不是「判定后发现没问题」。不推进 gaps 的话,「0 错误」里就掺了没判的那一族。
   gaps.push(`跨仓路径未判(分类 ${crossRepo.stats.classified} 处 · 判定 0 处,判红基准在仓外不可达)`);
   if (crossRepo.stats.freeTextRows) gaps.push(`跨仓路径台账形态表体行 ${crossRepo.stats.freeTextRows} 行未判`);
+  // ⚠️ **代码扩展名引用的 gap 恒进,零命中也进**(与跨仓档同一处置):本族在本仓**永远**是「未判」,
+  // 不是「判定后发现没问题」。**零命中时用另一句措辞**:那是「这一族在本仓零覆盖」——
+  // 恒绿的一族若在扫描面里彻底没有对象,必须看得见,否则「没人写这种引用」与「这一族没人管」无法区分。
+  // ⚠️ **零覆盖这一声是本档形态正则的存活探针,不是 `REF_FORMS` 的**:本档**自带**正则(不复用
+  // `REF_FORMS` 的对象),故 `REF_FORMS` 被人扩扩展名时本档**不会**跟着归零 —— 那时的失效形态是
+  // 「两档重叠」,由本档的非零计数加上文件头注释提醒,不是靠这一声。
+  gaps.push(
+    codeRefs.stats.classified === 0
+      ? '代码扩展名引用零覆盖(形态 0 处 · 判定 0 处,未判,非「查过没问题」)'
+      : `代码扩展名引用未判(分类 ${codeRefs.stats.classified} 处 · 判定 0 处,判红基准需人工裁决「文件真的搬走了」与「文档记的是决策史」)`,
+  );
   if (carrier.examined === 0) gaps.push(`载体形态 ${carrierIds} 零覆盖`);
 
   console.log(
