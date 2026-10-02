@@ -62,9 +62,11 @@ export const TOOLCHAIN_FILES = Object.freeze({
 
 /**
  * 负向自检载体:链上的 `*:selftest` **不是门禁**,是被它们守的那道门禁的探针。
- * 登记 npm script → 载体文件,两头都要用:
+ * 登记 npm script → 载体文件,三处都要用:
  *   - 归类:链上新出现的 `*:selftest` 靠它落到「探针载体」这一类,而不是被当成无主门禁;
- *   - 反查:每个载体文件都必须被某道门禁登记为探针,否则它是一段没人认领的漂移风险代码。
+ *   - 反查:每个载体文件都必须被某道门禁登记为探针,否则它是一段没人认领的漂移风险代码;
+ *   - 在链对账(R5c):每个载体 script 都必须真挂在链上,否则链上少了一道负向夹具而无人判红。
+ *   后两条是一对:被认领只说明它有归属,在链才说明它还在跑。
  * @type {Readonly<Record<string, string>>}
  */
 export const PROBE_CARRIER_SCRIPTS = Object.freeze({
@@ -816,13 +818,16 @@ function isDirectory(target) {
 /**
  * 注册表自检(判定本体,可注入纯函数 —— 三种驱动器消费的就是它)。
  *
- * 五组判据:
+ * 六组判据:
  *   R1 链上的每个门禁调用点都被登记(在链上却不在册 = 新增门禁忘了登记探针);
  *   R2 workflow 上的每个调用点都被登记(裸调路径专用 —— 只登记 npm script 会漏掉它);
  *   R3 **每道门禁必带 ≥1 道探针**,每道探针都写清「为什么它能证明会被判红」,且载体真实存在;
  *   R4 每道门禁都登记了判定本体,指针可解析(模块存在 + 确实导出该名字);
- *   R5 接入点与实际调用位置**双向**一致(声明在链上的必须在链上;声明仅本地的不得出现在链上
- *      或 workflow 上 —— 后者是「本地检查被悄悄挪进链」的反向漂移)。
+ *   R5 接入点与实际调用位置**双向**一致(R5a 声明在链/workflow 上的必须真在那条路上;
+ *      R5b 声明仅本地的不得出现在链上或 workflow 上 —— 后者是「本地检查被悄悄挪进链」的反向漂移);
+ *   R5c 每个登记在册的负向自检载体 script 都必须真挂在链上(R1 豁免了载体的「须有归属」,
+ *      而登记项的 npmScripts 里一条 selftest 都没有 ⇒ R5b 对载体天然恒绿;缺这一条时把载体
+ *      摘下链是零判红的空隙)。
  * 外加一条反查:每个登记在册的自检载体都必须被某道门禁认领为探针。
  *
  * @param {import("./protocol.mjs").GateCtx} [ctx] 注入面。`deps.registry` 与 `deps.invocations`
@@ -1022,6 +1027,31 @@ export function checkGateRegistry(ctx = {}) {
         fail("access-mismatch", `门禁 ${entry.id} 声明接入点为「仅本地手动」,但 npm run ${hit.name} 出现在 ${sources} —— 本地检查被挪进链/workflow 要走裁决,不能顺手改`);
       }
     }
+  }
+
+  // R5c:登记在册的负向自检载体必须真挂在链上。
+  // 为什么这条不是 R5b 的重复:上面那条从「发现面」出发核「登记项声称的接入点与实际位置」,
+  // 而登记项的 npmScripts 里一条 selftest 都没有(实测 34 个登记项含 selftest 的为 0)
+  // ⇒ 那条路径对载体天然恒绿;R1 的 claimedScript() 又把载体整个豁免掉(它不是门禁)。
+  // 两侧一夹,「把某条 `*:selftest` 从链上摘掉」既不算无主调用点、也不算接入点漂移,
+  // 于是链上凭空少一道负向夹具,而没有任何判据会红。载体「有人认领」与载体「还在跑」是两件事,
+  // 后者就是这条判据。
+  /** @type {Set<string>} */
+  const onChainNpmScripts = new Set();
+  for (const hit of discovered.values()) {
+    if (hit.kind === "npm" && hit.onChain) onChainNpmScripts.add(hit.name);
+  }
+  for (const [script, carrierFile] of Object.entries(PROBE_CARRIER_SCRIPTS)) {
+    if (onChainNpmScripts.has(script)) continue;
+    const hit = discovered.get(`npm:${script}`);
+    const where = hit === undefined
+      ? "发现面里根本没有它(package.json 的 scripts 没有把它挂到任何链上)"
+      : `实际位置是 onChain=${String(hit.onChain)} onWorkflow=${String(hit.onWorkflow)}(${[...hit.sources].join(",")})`;
+    fail(
+      "probe-carrier-offchain",
+      `负向自检载体 ${script}(载体文件 ${carrierFile})不在任何门禁链上:${where} —— `
+        + "链上因此少了一道负向夹具,它被改坏或被整条删掉都不会有任何判红。载体被认领只说明它有归属,不说明它还在跑",
+    );
   }
 
   return problems;

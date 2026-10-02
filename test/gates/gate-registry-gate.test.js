@@ -455,6 +455,45 @@ export async function run() {
       );
     });
 
+    await suite.case("载体 script 不在链上 → probe-carrier-offchain(把链上那道负向夹具摘掉,无人判红)", () => {
+      // 真实事故形态:从 verify:ci 上摘掉一条 `*:selftest`。判据必须只靠「发现面」判红 ——
+      // 登记项一个字节都不动(载体仍被认领、npmScripts 里也从不含 selftest)。
+      // 只改内存里的注入对象,真实 package.json 一个字节都不碰。
+      const found = discoverInvocations(ctx);
+      const script = "check:temp-cleanup:selftest";
+      const hit = found.get(`npm:${script}`);
+      if (hit === undefined) throw new Error(`发现面里没有 ${script},夹具前提不成立(链解析面变了?)`);
+      // 只把「在链上」这个事实翻掉,来源标注照旧(模拟它从链上消失、但登记项仍写着它)
+      found.set(`npm:${script}`, { ...hit, onChain: false, sources: new Set(["已不在链上"]) });
+
+      const codes = checkGateRegistry({ deps: { invocations: found } }).map((p) => p.code);
+      expectCode(codes, "probe-carrier-offchain");
+      // 判红必须**只**来自 R5c:反向锚点证明判据没有顺带把别的口径搅浑
+      const noise = codes.filter((code) => code !== "probe-carrier-offchain");
+      if (noise.length > 0) throw new Error(`R5c 之外还冒出了别的 code(夹具注入面不干净):${noise.join(",")}`);
+
+      // 三步验法的第三步:撤回注入后必须复绿 —— 否则这条判据是恒红的
+      const restored = checkGateRegistry({ deps: { invocations: discoverInvocations(ctx) } }).map((p) => p.code);
+      if (restored.includes("probe-carrier-offchain")) {
+        throw new Error(`撤回注入后仍报 probe-carrier-offchain(恒红判据):${restored.join(",")}`);
+      }
+      // 更强的锚点:把链上**所有**载体都摘掉也必须逐条判红 —— 证明判据逐个 script 求值,
+      // 而不是只看第一个就收工
+      const allOff = discoverInvocations(ctx);
+      for (const key of Object.keys(PROBE_CARRIER_SCRIPTS)) {
+        const carrier = allOff.get(`npm:${key}`);
+        if (carrier === undefined) throw new Error(`发现面里没有 ${key},全体脱链夹具前提不成立`);
+        allOff.set(`npm:${key}`, { ...carrier, onChain: false });
+      }
+      const allCodes = checkGateRegistry({ deps: { invocations: allOff } }).map((p) => p.code);
+      const offCount = allCodes.filter((code) => code === "probe-carrier-offchain").length;
+      if (offCount !== Object.keys(PROBE_CARRIER_SCRIPTS).length) {
+        throw new Error(
+          `把 ${Object.keys(PROBE_CARRIER_SCRIPTS).length} 条载体全部摘下链,只判红 ${offCount} 条(判据提前收工?):${[...new Set(allCodes)].join(",")}`,
+        );
+      }
+    });
+
     await suite.case("探针没写理由 → probe-reason-missing", () => {
       expectCode(
         codesOf((r) => {
