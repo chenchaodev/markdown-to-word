@@ -1,0 +1,1646 @@
+// 文档指针门禁判定本体(vendored,只含**项目模式**)——零依赖,仅 node: 内建模块 + shared/paths.js。
+//
+// ---- 出处与基线 ----
+// 本文件的内容**逐字搬自**全局配置目录 `tools/check-pointers.mjs`,基线 commit `72f072a`
+// (sha256 `4a82b448…d46e3c0b`)。搬移依据见本仓 `docs/adr/ADR-054-配置仓与项目仓门禁拆分本仓落地.md`
+// 决定一(完全拆分 · 只含项目模式)。
+//
+// **配置仓独占的部分已物理删除**(约 1294 行,不留注释掉的死代码),包括:
+// `collectScope` / `SCAN_DIRS` / `EXTRA_SCAN_FILES` / `PROJECT_SIDE` / `PROJECT_DIR` /
+// `PROJECT_PROBE` 的模式判定用途 / `CONFIG_REPO_DOC_PREFIXES` / `CONFIG_REPO_DOC_FILES` /
+// `isConfigRepoDoc` / `COPY_LIST_FILE` / `COPY_LIST_HEADING` / `copyListLeftColumn` /
+// `TOPIC_MAP` / `POINTER_LINE` / `LEGACY_DOC_NAMES` / `LEGACY_NAME_EXEMPT` /
+// `LEGACY_NAME_EXEMPT_PREFIXES` / `V2_REPLACEMENTS` / `checkTopics` / `checkTemplateVersion` /
+// `checkLedgerLimits` 及其常量 / `TEMPLATE_VERSION_LINE` / `VERSION_FILE` /
+// `listTemplateVersionCandidates` / `CONFIG_REF_ORDER` / `atConfigRepo` / `PROBE_MISSED_NOTE` /
+// `existsDir` / `checkResolutionBasis` / `PREFIX_REQUIRED_SCOPE` / `GLOBAL_PREFIX_WINDOW` /
+// `checkLegacyDocNames` / `RETIRED` 播报 / `main` 里按侧别计退出码的那几段。
+// `skipReason` 收敛为只保留**项目模式**那一支(三条跨仓/条件性载体豁免 + 两条与模式无关的豁免)。
+// `collectProjectScope` 的项目侧收集逻辑、`EXCLUDE_DIRS` 的 `project` 一支**原样保留**。
+//
+// ⚠️ **判据从此两份,规则演进要改两处** —— 这是**本仓自己欠的义务**,不是上游的:全局配置目录那份
+// 仍兼做它自己那侧(配置仓 + 跨仓全量)的判定。ADR-016 备选方案 3 已否决「留配置仓共用」,故无
+// 机器对读;唯一的对冲是本文件头的基线记录 + 上面的删除清单,供人工重核。
+//
+// ---- 为什么仓根取 shared/paths.js 的 ROOT(不是自算) ----
+// 上游那句 `join(dirname(fileURLToPath(import.meta.url)), '..')` 在**上游的位置**是对的,在**本仓
+// 的位置**会算成 `gates/` ⇒ 所有存在性判定全 false 而**静默零覆盖**。故本文件 import
+// `shared/paths.js` 的 `ROOT`(全仓唯一允许自算仓根的位置,见 `gates/repo/check-import-boundary.mjs`
+// 规则 no-self-computed-root)。**本文件内不得再出现第二处仓根字面量。**
+//
+// ---- PROJECT_ROOT 恒等于扫描根(实施约束 3) ----
+// 上游是 `PROJECT_ROOT = atConfigRepo || !probeHit ? null : process.cwd()`,而
+// `atConfigRepo = (cwd === ROOT)`。**在本仓仓根运行时 `atConfigRepo` 恒真** ⇒ `PROJECT_ROOT` 恒 null
+// ⇒ 项目模式永不进入、退出码回落 ⇒ **零项目覆盖 + exit 0** —— 这是「以为被查过」的最坏形态,
+// 且是**双向失真**:判红侧夹具恒红(测试失效)、豁免侧夹具恒绿(**真洞被永久放过**)。
+// 故本文件**物理删除 `atConfigRepo` 与那个三元判定**,`PROJECT_ROOT` 恒等于 `process.cwd()`。
+// 自检因此只需 `cwd` 指向合成仓,不需要 `--root` 参数。
+//
+// ---- resolveRef 收敛为单模式,这是 ADR-014 决定二在单模式下的退化、**不是违反它** ----
+// ADR-014 决定二要求「候选基准只有两档(仓根 / 引用方目录),两模式只差顺序且顺序相反 ⇒ 顺序必须由
+// 调用方显式传参,不许有默认值」。本仓**只有一种模式**(项目模式),于是只剩一档顺序,「相反」这件事
+// 在本仓不存在。但**「顺序必须显式传参、不许有默认值」这半条仍然成立且仍然被守住**:`resolveRef`
+// 的 `order` 形参**没有默认值**,`REF_ORDER` 是本仓唯一的顺序常量,调用点必须显式传。
+// 写成 `resolveRef(base, ref, fromFile)` + `order = REF_ORDER` 会让「顺序」重新变成可省略的参数,
+// 而它恰恰是这套解析里最容易**静默改错**的一档(改错了在正例上完全看不出来)。**不要加默认值。**
+//
+// ---- EXCLUDE_DIRS 在本仓只排除 docs/evidence,绝不排除 docs/adr ----
+// 上游 `EXCLUDE_DIRS.config = ['docs/adr','docs/evidence']`;那条是**配置仓**的口径
+// (上游备选方案第 3 条否决过「只豁免 evidence/ 不豁免 adr/」,因为**上游自己的** `docs/adr/` 是不可回改的
+// 决策史)。**本仓方向相反**:`docs/adr/` 与 `docs/evidence/` 两棵**都是活载体、都在扫描面内**。
+// 把上游那一支抄过来会让本仓的 ADR 静默移出扫描面 ⇒ 覆盖收缩。故本仓只排除 `docs/evidence`
+// (历史快照,把历史语境里的裸文件名判成断链属误报,而「修」误报等于篡改历史)。
+//
+// ---- 跨仓路径只保留分类、不保留判定(ADR-054 决定四) ----
+// 该判据的**判红基准**是全局配置目录的 `exists`/`read`,而其**消歧判据**是「项目里解析不到」;
+// 拆分后两者在本仓指向同一目录,照搬得到的是**确定性假红**(不是精度下降)。故判红那一步替换为
+// **不可判自报**:三条分类口径(裸名无 `/` · 项目里解析不到 · 命中全局指南名或前文带「全局」)原样保留,
+// 输出「分类 N 处 · 判定 0 处 · 未判,非『查过没问题』」并推进结论行的 `覆盖:不全(...)`。
+// **拆分后没有任何机器会判这一族**(配置仓那份不含本判据且它的项目根恒 null ⇒ 双侧皆无执行体);
+// 缓解只有 `docs/DEV-GUIDE.md` 记一条维护者手动跑上游全量门禁的命令,**不引入任何代码路径/环境变量/开关**。
+//
+// ---- 零覆盖必须出声(实施约束 6) ----
+// 「跨仓路径判定 0 处」与「载体形态零覆盖」一律进结论行的 `覆盖:不全(...)`。本门禁从不说
+// 「0 错误」而不说覆盖 —— 「触发 0 处 = 零覆盖,不是『查过没问题』」。
+//
+// ---- 不做 ----
+// 不给本门禁加任何模式开关、环境变量或「载体不可达即自动降级」的逃生阀:能随时关掉的判据等于给
+// 橡皮章留后门。**机械守卫**:`gates/repo/check-docs.selftest.mjs` 断言本文件里读命令行参数的
+// 地方**恰好一处**(下面的入口守卫那一处)、读环境变量的地方**零处** —— 加了开关它立刻红。
+//
+// 退出码:0 = 全过;1 = 有错(逐条打印 `文件:行 → 目标 → 原因`)。
+// 每次运行**最后一行**固定输出「门禁结论」行(见 `main` 末尾)。
+
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { basename, join, posix, resolve } from 'node:path';
+import { ROOT } from '../../shared/paths.js';
+
+/**
+ * 台账载体路径(工作项号台账)。同时是**扫描范围的判定入口**:门禁扫本仓的 `docs/` 就够了,
+ * 不再需要「用 cwd 探针猜是不是项目仓」那一层 —— 本仓**就是**项目仓(ADR-054 决定一)。
+ */
+const PROJECT_PROBE = 'docs/REQ.md';
+
+/**
+ * 扫描根 = `process.cwd()`,**恒定有值**。
+ *
+ * ⚠️ 上游此处是三元判定(`atConfigRepo || !probeHit ? null : cwd`)。在本仓仓根运行时
+ * `atConfigRepo` 恒真 ⇒ 恒 null ⇒ 项目模式永不进入 ⇒ **零项目覆盖 + exit 0**。
+ * 那个判定已**物理删除**,不是注释掉的(实施约束 3;理由与后果见文件头)。
+ */
+const PROJECT_ROOT = resolve(process.cwd());
+
+/**
+ * docs 骨架刻意不含的文件(BACKLOG 已并入 ROADMAP;WPS-COMPAT 是项目可选适配页)。
+ * **本仓自己持有这两份文件**,但规则要求「没有任务时就必须不存在」,故按骨架口径豁免它们的**引用**。
+ */
+const NOT_IN_SKELETON = new Set(['BACKLOG.md', 'WPS-COMPAT.md']);
+
+/**
+ * 非指针的字面引用。**豁免表会腐烂**(上游已因「能修引用就不登记例外」清空过 `NON_HEADING_QUOTES`),
+ * 故每条都要写明「依据是什么、凭什么不会失效」。
+ *
+ * - `_append.md` —— `{agent}_append.md` 的**通配片段**,任何目录下都不存在这个文件名。
+ *   它不会像「已删文件」那样腐烂:没有对应实体,只能当通配写法放过。
+ */
+const REF_ALLOW = new Set(['_append.md']);
+
+/**
+ * **条件性载体** —— 规则要求它们「没有任务时就必须不存在」,于是规则文件对它们的引用在
+ * 「无在办任务」态必然解析不到,会被第 1 档当成悬空指针。这是**规则的预期状态被误判成坏引用**,
+ * 不是坏引用。
+ *
+ * 豁免**只放行规则规定的固定名字**(`PLAN.md` 与 `large/` 下两位号文件),拼错的名字仍会被抓出来。
+ */
+const CONDITIONAL_CARRIERS = /^(docs\/)?(PLAN\.md|large\/(?:NN|\d{2})-[^/]*\.md)$/;
+
+/**
+ * 「指针前文」窗口:判「这句有没有说明指针指向哪个仓」时,取指针**前**这么多个字符。
+ *
+ * 单一常量而非多处各写一个字面量:第 1/3/5 档与跨仓路径判的是**同一件事**(这句指针的基准是不是
+ * 全局配置目录),窗口值一旦在两处漂移,就会出现「豁免按 14 判、分类按 12 判」的**覆盖缺口**。
+ * 窗口值本身仍是经验值,**不是**语义边界。
+ */
+const REF_BEFORE_WINDOW = 14;
+
+/**
+ * 第 3 档例外:「」里引的**不是小节标题**的写法(概念句 / 约束短语 / 条件词)。
+ * 未登记的引号一律按小节名校验。
+ */
+const NON_HEADING_QUOTES = new Set([]);
+
+/**
+ * **扫描范围的排除目录**(仓根相对,posix 分隔,无尾斜杠)。
+ *
+ * ⚠️ **本仓只排除 `docs/evidence`,绝不排除 `docs/adr`** —— 那是**配置仓**的口径(上游
+ * `docs/adr/` 是不可回改的决策史)。本仓的 `docs/adr/` 是**活载体**,排除它就是覆盖收缩
+ * (见文件头同名小节)。
+ *
+ * 排除理由:历史快照里出现的裸文件名描述的是**过去的状态**,按字面判成断链属误报,
+ * 而「修」误报等于篡改历史。**份数不写死**:随新快照增长,运行时数出来、汇总行报出。
+ *
+ * **豁免 ≠ 无门禁**:排除数必须分项可见并推入结论行的 `gaps` —— 静默跳过等于把范围缩小藏起来。
+ */
+const EXCLUDE_DIRS = {
+  project: ['docs/evidence'],
+};
+
+/**
+ * 全局配置目录的指南文件名 —— 项目里引用它们 = **跨仓引用**(指向本仓之外),
+ * 不该在本仓校验存在性/小节名(本仓没有这些文件,查必然误报)。
+ * 判别要点:裸文件名(无目录前缀)且命中此表 ⇒ 跨仓;带 `docs/` 前缀的同名文件是**本仓自己的**,仍要查。
+ *
+ * **名单取上游两版并集**(含 v1 旧名):迁移窗口内两版并存,旧名在本仓仍指向配置仓。
+ * 换规则集时本表是必查项 —— 漏一个名字会让切换当天必判红。
+ */
+const GLOBAL_GUIDE_NAMES = new Set([
+  'AGENTS.md', 'META-GUIDE.md', 'NUMBERING-GUIDE.md', 'WORKFLOW-PLAN.md',
+  'WORKFLOW-DELIVER.md', 'CAMPAIGN-GUIDE.md', 'CODE-GUIDE.md', 'ENV-GUIDE.md',
+  'PUBLISH-GUIDE.md', 'TEMPLATES-GUIDE.md', 'WORKFLOW.md',
+]);
+
+// ---------------------------------------------------------------- 基础设施
+
+function readText(root, relPath) {
+  try {
+    return readFileSync(join(root, relPath), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function existsAt(root, relPath) {
+  try {
+    return statSync(join(root, relPath)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** 去掉围栏代码块,避免示例里的 `# 标题` 被当成真小节。 */
+function stripFences(text) {
+  return text.replace(/^```[\s\S]*?^```/gm, '');
+}
+
+/**
+ * 逐行**遮罩**围栏代码块(块内行替换成空串),行号与原文保持 1:1 对齐。
+ *
+ * 与 `stripFences` 的区别:后者整块删除会让行号错位,而要报 `文件:行` 的检查需要对齐。
+ * 围栏判定只认行首 ``` / ~~~(可带缩进);围栏嵌套不处理。
+ */
+function maskFencedLines(text) {
+  const out = [];
+  let inFence = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*(?:```|~~~)/.test(line)) {
+      inFence = !inFence;
+      out.push('');
+      continue;
+    }
+    out.push(inFence ? '' : line);
+  }
+  return out;
+}
+
+function collectHeadings(text) {
+  const out = [];
+  for (const line of stripFences(text).split(/\r?\n/)) {
+    const m = /^(#{1,6})\s+(.*\S)\s*$/.exec(line);
+    if (m) out.push(m[2]);
+  }
+  return out;
+}
+
+/**
+ * 头部区块:第一个 `## ` 标题之前的部分。
+ *
+ * ⚠️ **本仓没有调用方,却刻意保留并 export**:它是「规则文本 ↔ 判据本体」搬移清单点名的
+ * **共享基础设施**之一,上游那份文件里的第 2 档(模板头部内容相关性)在决定一里随配置仓独占部分
+ * 删掉了,但**这一段取头部区块的纯逻辑属于共享层**,单测搬移(决定五)要直接测它。
+ * 留着不 export 会被「未使用的变量」规则判红,而删掉它等于让后续那一步无测试可测 ——
+ * 两害相权,保留 + export,并在这里写明它为什么没有调用方,免得下一个人当死代码清掉。
+ */
+export function headBlockLines(text) {
+  const lines = text.split(/\r?\n/);
+  const cut = lines.findIndex((l) => /^##\s/.test(l));
+  return lines.slice(0, cut === -1 ? lines.length : cut);
+}
+
+/**
+ * 逐版摘要 / 历史变更行是**记录**,不是指针 —— 其中出现的文件名与引号描述的是过去的状态,
+ * 按字面校验必然误报,且每递增一次版本就复发一次。这类行整体跳过,不做例外登记。
+ *
+ * 该判定同时管第 1 档与第 3 档。
+ */
+function isHistoricalLine(line) {
+  const t = line.trim();
+  return /^>\s*v[\d.]+\s*摘要/.test(t) || /^>\s*历史/.test(t) || /历史(破坏性)?变更[:：]/.test(t);
+}
+
+/** 目标文件标题表的按需缓存工厂(第 3 / 第 5 项 / 跨仓路径共用:一次扫描全仓,多处复用)。 */
+function makeHeadingsOf(readFile) {
+  const cache = new Map();
+  return (ref) => {
+    if (!cache.has(ref)) cache.set(ref, collectHeadings(readFile(ref)));
+    return cache.get(ref);
+  };
+}
+
+/**
+ * 该引用是否属于「不存在也正常」的一类;返回跳过原因,不该跳过则返回 `null`。
+ *
+ * **本仓只有项目模式**,故只有这一支豁免表(上游两模式方向相反,配置侧那一支已随拆分删除)。
+ * 口径不是「文件存不存在」,而是「**这个引用指的不是本仓**」:
+ *   1. 指针前带「全局」前缀            ⇒ 明确跨仓,豁免
+ *   2. 裸文件名命中全局指南名表        ⇒ 跨仓,豁免
+ *   3. 条件性载体(规则要求无任务时不存在)⇒ 豁免
+ *   4. docs 骨架不含此文件 / 非指针字面量 ⇒ 骨架与通配写法,豁免
+ *   5. 其余                            ⇒ 本仓内引用,**要查**
+ *
+ * @param ref     引用目标(仓根或 docs/ 相对)
+ * @param before  指针在行内的前置文本(判「全局」前缀要用)
+ *
+ * **导出理由**:豁免表的**形态**是最容易被悄悄放宽/收紧的地方(每一支都是「不存在也正常」的例外),
+ * 而它的下游效果(第 1/3/5 档判不判红)有时**分不清是哪一支豁免的**。直接对它取证才能把两者分开钉住。
+ */
+export function skipReason(ref, before = '') {
+  if (ref.includes('<') || ref.includes('>')) return '占位符';
+  // 「`docs/xxx.md` 须可点且存在」这类**讲形式要求**的行,`xxx` 是举例不是文件。
+  // 判据用「文件名全由 x 组成」而不是登记 `xxx.md` 这一个名字 —— 后者会像已删文件那样腐烂。
+  if (/^x+\.md$/i.test(basename(ref))) return '举例占位(xxx.md)';
+  // **文件名形态说明**里的占位记号(`0NN` / `NN` / `x.y.z` / `vX.Y` / `YYYYMMDD-HHMMSS`)不是具体文件。
+  // 规则文件讲命名规则时必然这么写(如「文件名 `adr-0NN-短标题.md`」),而被讲的那个文件在本仓通常
+  // 还不存在。误放过面极小:占位记号出现在文件名里,真文件名只会是 `ADR-001-xxx.md`。
+  //
+  // ⚠️ **数字形态刻意不豁免,而它才是真形态**:`\d{8}-\d{6}-…` 看着「像同一形态的另一种写法」,
+  // 实际上**数字在时间戳这里不是「这不是真值」的标记,它就是真值** —— 把它一并放过等于让
+  // 「指向一份并不存在的具体快照」的引用永远不判红,而**坏指针正是这道门禁要治的病**。
+  // 正确的依据是:规则文件讲命名规范时写的是**字母形态**,而真文件一律是**数字形态**,两者不相交。
+  if (/(?:^|[^A-Za-z0-9])(?:0NN|NN|x\.y\.z|vX\.Y|YYYYMMDD-HHMMSS)(?![A-Za-z0-9])/.test(basename(ref))) {
+    return '文件名形态说明(占位记号)';
+  }
+
+  if (/全局/.test(before)) return '跨仓引用(带全局前缀)';
+  if (!ref.includes('/') && GLOBAL_GUIDE_NAMES.has(basename(ref))) return '跨仓引用(全局指南)';
+  if (CONDITIONAL_CARRIERS.test(ref)) return '条件性载体(规则要求无任务时不存在)';
+
+  if (NOT_IN_SKELETON.has(basename(ref))) return 'docs 骨架不含此文件';
+  if (REF_ALLOW.has(ref)) return '非指针字面量';
+  return null;
+}
+
+// ---------------------------------------------------------------- 三档检查
+
+// 第 1 档:`@FILE`、反引号 `FILE`、markdown 链接 `[文字](FILE)` 三种形态,前两种可紧跟「小节名」。
+//
+// **首部必须允许 `(?:\.{1,2}\/)*` 前缀**(相对上级目录):文档树里引用的 `docs/REQ.md` 在两级之上,
+// 只能写 `../../REQ.md` —— 若正则要求首字符是字母数字,这类指针**一条都匹配不到**,本仓会对它们
+// 零覆盖且报 0 错误(**绿灯是假的**)。
+//
+// **第三形态(markdown 链接)**:文档树里最常见的跨文件指针写法就是 `[文字](path.md)`,而这一形态
+// 早期**完全逃过检查** —— 文件在扫描范围内,写法不在正则里,即「范围 ≠ 覆盖」的形态级漏法。
+// 带 scheme 的外链(`https://…`)与协议相对(`//…`)因首字符不在允许集内而天然不匹配。
+const REF_FORMS = [
+  { re: /@((?:\.{1,2}\/)*[A-Za-z0-9_一-龥][\w.\/一-龥-]*\.md)(?:\s*「([^」]*)」)?/gu, via: '@' },
+  { re: /`((?:\.{1,2}\/)*[A-Za-z0-9_一-龥][\w.\/一-龥-]*\.md)`(?:\s*「([^」]*)」)?/gu, via: '`' },
+  { re: /\]\(\s*((?:\.{1,2}\/)*[A-Za-z0-9_一-龥][\w.\/一-龥-]*\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\s*\)/gu, via: '](', link: true },
+];
+
+/** 第 3 档:`FILE.md`「小节名」——「」紧跟文件名(含反引号包裹)即视为主张一个标题。 */
+const SECTION_REF = /((?:\.{1,2}\/)*[A-Za-z0-9_一-龥][\w.\/一-龥-]*\.md)`?\s*「([^」]+)」/gu;
+
+// ------------------------------------------------ 引用解析(单模式)
+
+// ADR-014 决定二:候选基准只有两档(仓根 `''` 与引用方目录 `dir`),**顺序由调用方显式传参**。
+// 本仓只有项目模式 ⇒ 只有一个顺序(引用方目录优先:本仓文档互相引用写的是裸文件名)。
+//
+// ⚠️ **本仓的 `resolveRef` 保留 `order` 形参且不给默认值** —— 这是 ADR-014 决定二在单模式下的
+// **退化**,不是违反它(详见文件头同名小节)。`resolveRef(base, ref, fromFile, order = REF_ORDER)`
+// 那样的写法会让「顺序」重新变成可省略的参数,而它恰是这套解析里最容易**静默改错**的一档。
+
+/** 仓根基准(仓根相对路径里的空串)。 */
+const REF_ROOT_BASE = '';
+/** 引用方所在目录基准。 */
+const REF_DIR_BASE = 'dir';
+
+/** 本仓唯一的候选顺序:**引用方目录优先**、仓根次之。 */
+const REF_ORDER = [REF_DIR_BASE, REF_ROOT_BASE];
+
+/**
+ * **兜底基准**:恒为空表,且**必须恒为空**。
+ *
+ * 它存在的唯一理由是让「兜底解析」这个计数**有处可落** —— 汇总行里那个数字是这套修复的
+ * **诚实性开关**:任何「偷偷加了全仓唯一 basename 兜底」的过宽实现都会让它的候选解析成功,
+ * 从而让这个数从 0 变成正数并出现在汇总行里。
+ */
+const EXTRA_REF_BASES = [];
+
+/** 解析口径的累计计数(由 `resolveRef` 写,`refResolutionStats` 读)。 */
+const refStats = { refs: 0, byDir: 0, byRoot: 0, ambiguous: 0, fallback: 0 };
+
+/** 解析计数的快照(调用方在自报区取,避免边跑边读)。 */
+export function refResolutionStats() {
+  return { ...refStats };
+}
+
+/** 解析计数清零(测试用;门禁运行期不清 —— 计数覆盖整轮运行)。 */
+export function resetRefResolutionStats() {
+  refStats.refs = 0;
+  refStats.byDir = 0;
+  refStats.byRoot = 0;
+  refStats.ambiguous = 0;
+  refStats.fallback = 0;
+}
+
+/** 引用方所在目录(仓根相对,posix 分隔;引用方在根下时是空串)。 */
+function refDirOf(fromFile) {
+  return fromFile && fromFile.includes('/') ? fromFile.slice(0, fromFile.lastIndexOf('/')) : '';
+}
+
+/**
+ * 引用解析 —— **单模式**的一档。
+ *
+ * 候选基准只有两档(`''` = 仓根,`'dir'` = 引用方目录),外加恒空的 `extras`(兜底槽)。
+ * `../` 与 `./` 前缀**只允许按引用方目录解析、不回落仓根**:实测有错写法真实存在
+ * (一份 evidence 里写了 `../docs/adr/…`,真身是 `docs/adr/…`),回落会把它兜绿 ——
+ * 而那正是**判红才有价值**的地方。
+ *
+ * **返回解析后的仓根相对路径(或 `null`),不是布尔值** —— 调用点必须拿这个返回值去取小节标题表:
+ * 只把存在性判定的基准换掉、而后续仍用未解析的裸名取标题,会让**同一批完全正确的引用**全部判
+ * 「目标文件里没有这个小节标题」,且报错文案指不到任何真实文件 —— 那比不修更坏。
+ *
+ * @param base     存在性判据(仓根相对路径 → boolean)。**注入点**:内存夹具靠它。
+ * @param ref      引用原文(仓根相对或引用方目录相对)
+ * @param fromFile 引用方文件(仓根相对)
+ * @param order    候选顺序,**调用方显式传**(本仓恒为 `REF_ORDER`,但不得省略)
+ * @param extras   兜底基准表(恒空的 `EXTRA_REF_BASES`)。**只有它有默认值** —— `order` 没有,
+ *   理由见文件头:它是最容易被静默改错的一档。
+ * @returns 解析后的仓根相对路径;解析不到任何现存文件时返回 `null`
+ */
+export function resolveRef(base, ref, fromFile, order, extras = EXTRA_REF_BASES) {
+  refStats.refs += 1;
+  // 基准拼出来的候选先做 posix 规范化:`../` 必须真的被解析掉,否则返回的 key 与
+  // 标题表的缓存 key 会带着 `..`,报错文案指向一条不存在的路径。
+  const mkDir = () => {
+    const dir = refDirOf(fromFile);
+    return posix.normalize(dir ? `${dir}/${ref}` : ref);
+  };
+  // 显式相对前缀 ⇒ 只走引用方目录一档(不回落);`/` 开头 ⇒ 只走仓根一档(绝对锚定)。
+  const bases = /^\.{1,2}\//.test(ref) ? [REF_DIR_BASE] : (ref.startsWith('/') ? [REF_ROOT_BASE] : order);
+  const probes = [
+    ...bases.map((b) => ({ kind: b === REF_DIR_BASE ? 'dir' : 'root', cand: b === REF_DIR_BASE ? mkDir() : posix.normalize(ref) })),
+    ...extras.map((fn) => ({ kind: 'fallback', cand: fn(ref, fromFile) })),
+  ];
+  // **同一路径只探一次**:引用方在仓根时 `dir` 与仓根两档算出的是**同一个**候选,
+  // 不去重就会被记成「两档都解析得到」的歧义,而那不是歧义 —— 是同一个文件被判了两次。
+  const seenCands = new Set();
+  const uniqueProbes = probes.filter((p) => p.cand !== null && !seenCands.has(p.cand) && seenCands.add(p.cand));
+  const hits = uniqueProbes.filter((p) => base(p.cand));
+  if (!hits.length) return null;
+  // 歧义:两档都解析得到 ⇒ 顺序在替作者做决定。计数是可见的代价,不报出来就成了「静默替人挑一个」。
+  if (hits.length > 1) refStats.ambiguous += 1;
+  const win = hits[0];
+  refStats[win.kind === 'fallback' ? 'fallback' : (win.kind === 'dir' ? 'byDir' : 'byRoot')] += 1;
+  return win.cand;
+}
+
+/**
+ * 判断 `index` 处是否落在**行内代码跨度**里(单反引号成对,`` `` `` 双反引号跨度除外)。
+ *
+ * 只服务第 1 档的链接形态:markdown 渲染器**不会**把代码跨度里的 `](...)` 变成链接,
+ * 所以「文档里演示链接写法」是正当用法。不加这条,新形态会把它当成死链报出来。
+ * 判据 = 该位置之前单反引号的数量为奇数。判错的方向是**不报**(漏报),与本门禁取向一致。
+ */
+function insideCodeSpan(line, index) {
+  const ticks = line.slice(0, index).match(/(?<!`)`(?!`)/g);
+  return ticks !== null && ticks.length % 2 === 1;
+}
+
+/**
+ * 第 1 档:三种指针形态的目标必须在本仓内存在。
+ *
+ * 解析走 `resolveRef`(顺序由本函数按**单模式**显式传参),故本档**不自带模式分支**。
+ *
+ * `base` 是**可注入的存在性判据**(仓根相对路径 → boolean),缺省走真文件系统。
+ * 它是 `resolveRef` 的 base 注入点:存在性与**解析口径**的全部价值都在「哪些形态被认出来、
+ * 跳过面有多宽、基准怎么选」,而它必须能在**内存夹具**上被证伪 —— 落真文件才能测的判据,
+ * 测不到「同目录邻居链接能解析」这件事。
+ */
+export function checkExistence(root, files, readFile, skipRow = () => false, base = null) {
+  const errors = [];
+  const seen = new Set();
+  const existsAtBase = base ?? ((rel) => existsAt(root, rel));
+  for (const file of files) {
+    // 围栏内容整段屏蔽:围栏里的是**示例**,不是活指针 —— ADR 字段骨架里就有一个示范用的
+    // `[ADR-002](ADR-002-短标题.md)`,那个文件在本仓并不存在。
+    const lines = maskFencedLines(readFile(file));
+    lines.forEach((line, idx) => {
+      if (isHistoricalLine(line)) return;
+      // 台账登记表表体行:标题列是自由文本,里面的文件名不是指针(见 `registryDataRows`)。
+      if (skipRow(file, idx + 1)) return;
+      for (const { re, link } of REF_FORMS) {
+        re.lastIndex = 0;
+        for (const m of line.matchAll(re)) {
+          // 链接形态:落在行内代码跨度里的跳过(演示写法,渲染器不建链)
+          if (link && insideCodeSpan(line, m.index)) continue;
+          const ref = m[1];
+          if (skipReason(ref, line.slice(Math.max(0, m.index - REF_BEFORE_WINDOW), m.index))) continue;
+          if (resolveRef(existsAtBase, ref, file, REF_ORDER) === null) {
+            const key = `${file}:${idx + 1}:${ref}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            errors.push(`${file}:${idx + 1} → ${ref} → 目标文件不存在`);
+          }
+        }
+      }
+    });
+  }
+  return errors;
+}
+
+/**
+ * 第 3 档:`FILE「小节名」` 的小节名必须是目标文件里真实存在的标题。
+ *
+ * ⚠️ **`headingsOf` 的入参必须是 `resolveRef` 的返回值,不是 `ref` 原文**。写 `ref` 会造成**半修法**:
+ * 存在性判定的基准换对了,而取标题仍按裸名走 ⇒ 读到空标题表 ⇒ 同一批**完全正确**的引用全部判
+ * 「目标文件里没有这个小节标题」,且报错文案指不到任何真实文件。**那是假红里最坏的一种**
+ * (逼人改正确的内容去将就门禁),比不修更坏。
+ */
+export function checkSections(root, files, readFile, skipRow = () => false, base = null) {
+  const errors = [];
+  const headingsOf = makeHeadingsOf(readFile);
+  const existsAtBase = base ?? ((rel) => existsAt(root, rel));
+  for (const file of files) {
+    readFile(file).split(/\r?\n/).forEach((line, idx) => {
+      if (isHistoricalLine(line)) return;
+      if (skipRow(file, idx + 1)) return;
+      SECTION_REF.lastIndex = 0;
+      for (const m of line.matchAll(SECTION_REF)) {
+        const ref = m[1];
+        const name = m[2].trim();
+        if (skipReason(ref, line.slice(Math.max(0, m.index - REF_BEFORE_WINDOW), m.index)) || NON_HEADING_QUOTES.has(name)) continue;
+        const target = resolveRef(existsAtBase, ref, file, REF_ORDER);
+        if (!target) continue; // 第 1 档已报存在性
+        if (headingsOf(target).some((h) => h.includes(name))) continue;
+        errors.push(`${file}:${idx + 1} → ${target}「${name}」 → 目标文件里没有这个小节标题`);
+      }
+    });
+  }
+  return errors;
+}
+
+/**
+ * 第 5 项:无引号小节引用。第 3 档只认 `FILE「小节名」`,于是这两种同样主张
+ * 「目标文件里存在这个标题」的写法 0 覆盖:
+ *
+ *   阶段 N   —— `AGENTS.md 阶段 0`
+ *   中文序数 —— `CODE-GUIDE.md 四`
+ *
+ * 序号与文件名之间只允许空白/反引号/连接词,中间夹了别的字(如 `AGENTS.md 编号分配 第③条`)不算 ——
+ * 那是「小节 + 节内项」的复合引用。
+ *
+ * **刻意不收 `第 N 条` / `第 N 步`**:那指某小节内**列表项**的序号,不是标题(标题存在性对它无解);
+ * 而且「第 5 条」(第 5 项)与「第 ③ 条」(标号 ③)语义相反,混成一条规则必误报。
+ */
+const ORDINAL_TOKEN = /阶段\s*(\d+)|([一二三四五六七八九十])(?=[\s、，,。;；)）」』]|$)/g;
+const ORDINAL_GAP = /^[\s`]*(?:(?:阶段\s*\d+|与|和|及|、|,|，|\/|／|~|～|-)[\s`]*)*$/;
+const MD_NAME = /(?:\.{1,2}\/)*[A-Za-z0-9_一-龥][\w.\/一-龥-]*\.md/gu;
+
+/**
+ * 第 5 项:`base` 注入点与 `headingsOf` 入参的口径**与第 3 档逐字一致**:
+ * 凡取小节标题表的入参,必须是解析后的路径。
+ */
+export function checkOrdinalSections(root, files, readFile, skipRow = () => false, base = null) {
+  const errors = [];
+  const headingsOf = makeHeadingsOf(readFile);
+  const existsAtBase = base ?? ((rel) => existsAt(root, rel));
+  for (const file of files) {
+    readFile(file).split(/\r?\n/).forEach((line, idx) => {
+      if (isHistoricalLine(line)) return;
+      if (skipRow(file, idx + 1)) return;
+      ORDINAL_TOKEN.lastIndex = 0;
+      for (const t of line.matchAll(ORDINAL_TOKEN)) {
+        const num = t[1] ? `阶段 ${t[1]}` : t[2];
+        const before = line.slice(0, t.index);
+        const names = [...before.matchAll(MD_NAME)];
+        if (!names.length) continue;
+        const last = names[names.length - 1];
+        const ref = last[0];
+        if (!ORDINAL_GAP.test(before.slice(last.index + ref.length))) continue;
+        if (skipReason(ref, before)) continue;
+        const target = resolveRef(existsAtBase, ref, file, REF_ORDER);
+        if (!target) continue; // 第 1 档已报存在性
+        if (headingsOf(target).some((h) => h.includes(num))) continue;
+        errors.push(
+          `${file}:${idx + 1} → ${target} ${num} → 目标文件里没有这个小节标题(无引号形态,第 3 档不覆盖)`,
+        );
+      }
+    });
+  }
+  return errors;
+}
+
+// ------------------------------------------ 跨仓路径(只分类,不判定;ADR-054 决定四)
+
+/**
+ * 跨仓路径 —— **只做分类,不做判定**(ADR-054 决定四)。
+ *
+ * **为什么只剩分类**:该判据的**判红基准**是全局配置目录的 `exists`/`read`,而其**消歧判据**是
+ * 「项目里解析不到」;拆分后两者在本仓**指向同一目录**,照搬得到的是**确定性假红**(不是精度下降)——
+ * 门禁的跨仓存在性检查只看配置仓**根层**,而 ADR-016 在其 `docs/adr/` 下,于是判红那一支必然全错。
+ * 故判红一步整体去掉,替换为**不可判自报**(输出与 `gaps` 两处都写明「未判,非『查过没问题』」)。
+ *
+ * **保留的三条分类口径**(纯本仓判据,不涉及仓外可达性):
+ *   1. 目标**不含 `/`** —— 带目录前缀的路径自带解析基准,而 `docs/` 这类目录**两个仓都有**,
+ *      归属无法判定。裸名没有这个问题。
+ *   2. 该名**在本仓解析不到任何现存文件** —— 消歧判据:本仓自己有的 `AGENTS.md` / `PLAN.md`
+ *      不是跨仓指针。
+ *   3. 且满足二者之一:裸名命中 `GLOBAL_GUIDE_NAMES`,**或**指针前 `REF_BEFORE_WINDOW` 字内带「全局」。
+ *
+ * ⚠️ **拆分后没有任何机器会判这一族**:全局配置目录那份脚本不含本判据(决定三把跨仓判据判给本仓),
+ * 而它在配置仓运行时项目根恒 null ⇒ 双侧皆无执行体。缓解只有 `docs/DEV-GUIDE.md` 记一条维护者
+ * 手动跑上游全量门禁的命令 —— **不引入任何代码路径、环境变量或开关**。
+ *
+ * @param files           本仓扫描范围
+ * @param readFile        读本仓文件(rel → 文本)
+ * @param resolveInProject 消歧判据(rel, fromFile) → 该裸名在本仓里是否解析得到
+ * @param skipRow         表体行跳过器(见 `makeCrossRepoRowSkipper`)
+ * @returns `{ stats }`;`stats.classified` = 分类出的跨仓指针处数,**恒不产出判红**。
+ */
+export function classifyCrossRepoRefs(files, readFile, resolveInProject, skipRow) {
+  const stats = { classified: 0, files: files.length, freeTextRows: 0 };
+
+  /** 归属判定(口径的三条);不满足则不是本项的对象。 */
+  const isCrossRepoRef = (ref, before, fromFile) => (
+    !ref.includes('/')
+    && !resolveInProject(ref, fromFile)
+    && (GLOBAL_GUIDE_NAMES.has(ref) || /全局/.test(before))
+  );
+
+  for (const file of files) {
+    maskFencedLines(readFile(file)).forEach((line, idx) => {
+      if (!line) return;
+      if (isHistoricalLine(line)) return;
+      if (skipRow(file, idx + 1)) {
+        stats.freeTextRows += 1;
+        return;
+      }
+      for (const { re } of REF_FORMS) {
+        re.lastIndex = 0;
+        for (const m of line.matchAll(re)) {
+          const ref = m[1];
+          if (!isCrossRepoRef(ref, line.slice(Math.max(0, m.index - REF_BEFORE_WINDOW), m.index), file)) continue;
+          stats.classified += 1;
+        }
+      }
+      SECTION_REF.lastIndex = 0;
+      for (const m of line.matchAll(SECTION_REF)) {
+        const ref = m[1];
+        if (!isCrossRepoRef(ref, line.slice(Math.max(0, m.index - REF_BEFORE_WINDOW), m.index), file)) continue;
+        if (NON_HEADING_QUOTES.has(m[2].trim())) continue;
+        stats.classified += 1;
+      }
+      ORDINAL_TOKEN.lastIndex = 0;
+      for (const t of line.matchAll(ORDINAL_TOKEN)) {
+        const before = line.slice(0, t.index);
+        const names = [...before.matchAll(MD_NAME)];
+        if (!names.length) continue;
+        const last = names[names.length - 1];
+        const ref = last[0];
+        if (!ORDINAL_GAP.test(before.slice(last.index + ref.length))) continue;
+        if (!isCrossRepoRef(ref, before.slice(Math.max(0, last.index - REF_BEFORE_WINDOW), last.index), file)) continue;
+        stats.classified += 1;
+      }
+    });
+  }
+  return { stats };
+}
+
+// --------------------------------- 台账一致性:工作项号台账的台账内不变量
+//
+// 判据 R1–R7(全部为**台账内**不变量,只需读 `docs/REQ.md` 一个文件):
+//   R1 号唯一 · R2 状态取值域 · R3 号形态 · R4 已用最大号 == 实算最大号
+//   R5 下一个可用号 == 已用最大号+1 · R6 号段连续 · R7 墓碑 ⇔ 划掉(双向)
+//
+// **判红的前提是解析成功**:解析失败时我分不清「用户写错了」与「我读不懂」,故 B1–B6 全部只出声
+// 不判红(B* 落在覆盖度自报区)。这是「判红的前提是解析成功」这条原则的另一个面。
+
+/** 状态取值域(全局配置目录 `REQ-RULES.md` 的「状态取值域」节)。**刻意不含流转边、不含「所有行都要
+ * 收口到终态」**:流转边合法性要 git 历史(本文件至今零外部依赖,只用 `node:fs` / `node:path`);
+ * 「全部收口」会让任何一条在办/待拍板需求长期假红 —— 恒红的门禁和永绿的一样是橡皮章。 */
+const LEDGER_STATUS = ['待拍板', '未开工', '在办', '已完成', '已作废'];
+
+/** 判据清单(只作文档与分母,判定逻辑不按 id 分派)。 */
+const LEDGER_RULES = [
+  'R1 号唯一', 'R2 状态取值域', 'R3 号形态', 'R4 已用最大号', 'R5 下一个可用号',
+  'R6 号段连续', 'R7 墓碑⇔划掉',
+];
+
+/** 台账号形态:**固定三位零填充**且从 1 起。`REQ-000` 是号段的零值占位,不是工作项号。 */
+const LEDGER_ID_RE = /^REQ-\d{3}$/;
+
+/**
+ * 号段表取值格取**前导**号:台账写的是 `REQ-000(零值占位,表示还没分配过号)`,整格相等永远取不到值。
+ * 末尾的 `\b` 兼作四位数拒绝位(`REQ-0030` 不匹配)—— 四位数不在台账的号形态内,
+ * 收紧到它算 R3 判红而非静默通过。
+ */
+const LEDGER_NUM_RE = /^REQ-(\d{3})\b/;
+
+/**
+ * 未填的占位格(`<一句话标题>` / `<状态,取值域见 REQ-RULES.md>` / `<YYYY-MM-DD>`)。
+ * 首个字符不许是空白:否则正文里「x < y > z」这种比较式会被当成占位行。
+ */
+const LEDGER_PLACEHOLDER_RE = /<[^<>\s][^<>]*>/;
+
+/**
+ * 把**行内代码跨度**的内容替换成等长空格(围栏已由 `maskFencedLines` 处理)。
+ *
+ * 占位符判据**必须先做这一步**:`<…>` 形态与**泛型参数**在字面上完全一样 ——
+ * `Pick<AiCleanupSettings, "tidy" | "rewrite">` 是正文里的技术内容,却被判成「未填的占位符」。
+ * 为什么是**假红里最坏的一种**:它不是漏报,是**逼人改正确的内容去将就门禁** ——
+ * 执行方若照着提示去「修」,唯一办法是把那段技术内容删掉或改写掉。
+ * 换成长度相同的空格而非删除,是为了让 `文件:行` 的报错仍能对齐原行号。
+ */
+function maskInlineCode(s) {
+  return s.replace(/`[^`]*`/g, (m) => ' '.repeat(m.length));
+}
+
+/** 去掉反引号。**只脱定界符、保留内容** —— 整段删掉内容会把合法写法 `` `待拍板` `` 判成空值假红。 */
+function stripTicks(s) {
+  return s.replace(/`+/g, '');
+}
+
+/**
+ * 单元格规范化:去反引号 + 去 `~~` + trim。**状态列与号列共用** —— 墓碑行的号写作
+ * `~~REQ-004~~`,号列若不剥 `~~`,每一条合法墓碑都会被 R3 判成形态错。
+ */
+function normalizeLedgerCell(cell) {
+  return stripTicks(cell).replace(/~~/g, '').trim();
+}
+
+/** 表头列名比较时剥掉 markdown 装饰:空白、粗体、反引号、冒号都不参与比较。 */
+function normalizeHeaderCell(cell) {
+  return cell.replace(/[\s*`:：]/g, '');
+}
+
+/**
+ * 把一行 markdown 表格切成单元格(首尾竖线不算分隔符,`\|` 视作转义竖线不切列)。
+ * 列数不足由调用方降级处理(整行不参与判定),本函数不抛异常。
+ */
+function splitTableRow(line) {
+  let t = line.trim();
+  if (t.startsWith('|')) t = t.slice(1);
+  if (t.endsWith('|') && !t.endsWith('\\|')) t = t.slice(0, -1);
+  const cells = [];
+  let cur = '';
+  for (let i = 0; i < t.length; i += 1) {
+    if (t[i] === '\\' && t[i + 1] === '|') {
+      cur += '|';
+      i += 1;
+      continue;
+    }
+    if (t[i] === '|') {
+      cells.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += t[i];
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+function isSeparatorRow(cells) {
+  return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c.trim()));
+}
+
+/**
+ * 表格**结构**判据:台账表块必须严格是「表头 → 分隔行 → 数据行」三段紧邻。
+ *
+ * **为什么必须单独判**:`tableBlocks` 对空行是「块内跳过,不终止」,而 `blockHeadAndRows`
+ * 只把 `block.rows[0]` 当表头、**其余一律当数据行** —— 它**不要求第 2 行是分隔行**。
+ * 于是「数据行被插到表头与分隔行之间」这种破损会被**静默吸收**:真分隔行被当成一条普通数据行跳过,
+ * 错位的行被当成数据读进去 —— **行数照样对得上,门禁照样 exit 0**。
+ *
+ * 解析器宽容是对的(免得对非台账表格误报),但**宽容不能等于无感** —— 结构坏了必须出声。
+ * 故本判据**只对台账表头(含「号」且含「状态」)生效**,不影响其它表格与模板骨架。
+ */
+export function checkTableShape(lines) {
+  const errors = [];
+  for (const block of tableBlocks(lines)) {
+    if (block.rows.length < 2) continue;
+    const [header, second, ...rest] = block.rows;
+    const names = splitTableRow(header.text).map(normalizeHeaderCell);
+    if (!names.some((n) => n.includes('号')) || !names.some((n) => n.includes('状态'))) continue;
+    const sepCells = splitTableRow(second.text);
+    if (isSeparatorRow(sepCells)) {
+      // 关键:tableBlocks 对空行是「跳过不终止」, 块内**看不到**空行 ⇒ 只能比**原始行号**。
+      // 两处都必须行号连号: 表头→分隔行、分隔行→首行数据行。
+      // (只查后一处是**漏判**:空行夹在表头与分隔行之间时, 块内 rows[1] 仍是分隔行,
+      //  isSeparatorRow 为真, 分隔行→数据 那处又没空行 ⇒ 整档判绿。)
+      if (second.lineNo !== header.lineNo + 1) {
+        errors.push(
+          `${PROJECT_PROBE}:${header.lineNo + 1} → 表头(第 ${header.lineNo} 行)与分隔行(第 ${second.lineNo} 行)`
+          + `之间夹了 ${second.lineNo - header.lineNo - 1} 个空行 —— Markdown 表格在空行处断开, 分隔行不再紧邻表头`,
+        );
+      }
+      if (rest.length === 0) continue; // 空节:表头+分隔即全部, 合法
+      if (second.lineNo + 1 !== rest[0].lineNo) {
+        errors.push(
+          `${PROJECT_PROBE}:${second.lineNo + 1} → 分隔行(第 ${second.lineNo} 行)与首行数据行(第 ${rest[0].lineNo} 行)`
+          + `之间夹了 ${rest[0].lineNo - second.lineNo - 1} 个空行 —— Markdown 表格在空行处断开, 后面的行不再属于本表`,
+        );
+      }
+      continue;
+    }
+    errors.push(
+      `${PROJECT_PROBE}:${second.lineNo} → 台账表块缺分隔行:表头(第 ${header.lineNo} 行)下一行应是 \`|---|…\`,`
+      + `实际是数据行「${second.text.slice(0, 40)}」—— 数据行被插到了表头与分隔行之间`,
+    );
+  }
+  return errors;
+}
+
+/**
+ * 表块 = **连续**的 `|` 行;**块内允许夹空行与 `<!-- -->` 注释行**(跳过、不终止)。
+ *
+ * 放宽是必须的:按 markdown 严格语义断表,会让一行被拆到下一块去,后半截行**不可见** ⇒
+ * 实算 max 偏小 ⇒ R4 报成「号段缺行」的假红。
+ */
+function tableBlocks(lines) {
+  const blocks = [];
+  let cur = null;
+  lines.forEach((line, idx) => {
+    if (/^\s*\|/.test(line)) {
+      if (!cur) {
+        cur = { rows: [] };
+        blocks.push(cur);
+      }
+      cur.rows.push({ lineNo: idx + 1, text: line });
+      return;
+    }
+    if (!line.trim() || /^\s*<!--/.test(line)) return; // 块内跳过,不终止
+    cur = null;
+  });
+  return blocks;
+}
+
+/** 表头行(块内第一行)+ 数据行(跳过表头与分隔行)。 */
+function blockHeadAndRows(block) {
+  const [header, ...rest] = block.rows;
+  if (!header) return null;
+  return { header: splitTableRow(header.text), rows: rest.map((r) => ({ ...r, cells: splitTableRow(r.text) })) };
+}
+
+/**
+ * 行号 → 最近的祖先 `## ` 小节标题(取不到则空串)。
+ *
+ * 为什么需要:台账**按状态分节**,而「已完成」节的判断依据上限(≤100)与其余节(≤200)不同 ——
+ * 判上限必须知道行落在哪一节,而表格解析本身不产节信息。
+ */
+function sectionByLine(lines) {
+  const map = new Map();
+  let current = '';
+  lines.forEach((line, idx) => {
+    const m = /^##\s+(.*\S)\s*$/.exec(line);
+    if (m) current = m[1];
+    map.set(idx + 1, current);
+  });
+  return map;
+}
+
+/**
+ * 登记表定位:在所有表块里找**表头同时含「号」与「状态」**的块,**列位置按名取**,
+ * 并**合并全部同构块的行集**。
+ *
+ * 两条识别条件都是必须的:含两个词才能与号段表(表头 `项`/`值`)区分开;按名取列是因为
+ * **列序颠倒是合法写法**,按下标读会把状态列当标题列 ⇒ R2 恒红。
+ *
+ * ⚠️ **必须合并全部同构块,不能只取第一处**:台账按状态分节,各节各是一张同构表。而 R1(号唯一)/
+ * R4(已用最大号)/R6(号段连续)/R7(墓碑⇔划掉)**四条都是跨节判据** —— 只取第一节 ⇒ 其余各节里的
+ * 重号、号段缺口、未划掉的墓碑全部不可见,而门禁仍然 exit 0。
+ *
+ * **列映射逐块取、不共用**:各节的表头宽度可以不同,故把 `headerCount` / `idCol` / `statusCol`
+ * 挂在**每一行**上。共用第一块的列映射会让后面几节整节错位 —— 又是静默假绿。
+ *
+ * @returns `{ rows, blocks }`(行已跨块合并,每行带自己的列映射与 `section`);定位不到 → `null`。
+ */
+function locateRegistry(text) {
+  const lines = maskFencedLines(text);
+  const sections = sectionByLine(lines);
+  let rows = [];
+  let blocks = 0;
+  for (const block of tableBlocks(lines)) {
+    const parsed = blockHeadAndRows(block);
+    if (!parsed) continue;
+    const names = parsed.header.map(normalizeHeaderCell);
+    const idCol = names.findIndex((n) => n.includes('号'));
+    const statusCol = names.findIndex((n) => n.includes('状态'));
+    if (idCol === -1 || statusCol === -1) continue;
+    blocks += 1;
+    const section = sections.get(block.rows[0].lineNo) ?? '';
+    for (const r of parsed.rows) {
+      if (isSeparatorRow(r.cells)) continue;
+      rows.push({ ...r, headerCount: parsed.header.length, idCol, statusCol, section });
+    }
+  }
+  return blocks ? { rows, blocks } : null;
+}
+
+/**
+ * 号段表定位:表头首格 `项`、次格 `值` 的那块;两行按**首格包含**「已用最大号」/「下一个可用号」取
+ * (容忍括注写法),值格取**前导**号。定位不到 → `null`。
+ */
+function locateRangeTable(text) {
+  const lines = maskFencedLines(text);
+  for (const block of tableBlocks(lines)) {
+    const parsed = blockHeadAndRows(block);
+    if (!parsed || parsed.header.length < 2) continue;
+    if (normalizeHeaderCell(parsed.header[0]) !== '项') continue;
+    if (normalizeHeaderCell(parsed.header[1]) !== '值') continue;
+    const out = { max: null, next: null, maxLine: null, nextLine: null };
+    for (const row of parsed.rows) {
+      if (isSeparatorRow(row.cells) || row.cells.length < 2) continue;
+      const key = row.cells[0].includes('已用最大号') ? 'max'
+        : row.cells[0].includes('下一个可用号') ? 'next' : null;
+      if (!key) continue;
+      const m = LEDGER_NUM_RE.exec(row.cells[1]);
+      out[key] = m ? Number(m[1]) : null;
+      out[`${key}Line`] = row.lineNo;
+    }
+    return out;
+  }
+  return null;
+}
+
+/**
+ * 登记表**表体行**的行号集合 —— 第 1/3/5 档逐档跳过用。
+ *
+ * 为什么必须遮:登记表的「一句话标题」列是**自由文本**,人很常在里面写文件名(被引号包着),
+ * 而这三档只认指针形态、不认语义 ⇒ 标题里的文件名会被当成活指针,报出「`docs/REQ.md:22 →
+ * ARCHITECTURE.md` → 目标文件不存在」并 exit 1 —— **报错还完全指错地方**(用户会去建那个文件)。
+ *
+ * ⚠️ **本表随 `locateRegistry` 的跨节合并一起变宽**(各节全进),方向是「**更多表体行被跳过**」,
+ * 即 1/3/5 档在这几行上从「判过」变成「豁免」。判据:跳过面只许沿「表体行是自由文本」这条既有理由
+ * 变宽,不得因别的理由。
+ */
+function registryDataRows(text) {
+  const reg = typeof text === 'string' ? locateRegistry(text) : null;
+  return new Set(reg ? reg.rows.map((r) => r.lineNo) : []);
+}
+
+/** 台账表体行跳过器(按文件缓存一次解析;只对台账文件生效)。 */
+function makeLedgerRowSkipper(readFile) {
+  const cache = new Map();
+  return (file, lineNo) => {
+    if (file !== PROJECT_PROBE) return false;
+    if (!cache.has(file)) cache.set(file, registryDataRows(readFile(file)));
+    return cache.get(file).has(lineNo);
+  };
+}
+
+/**
+ * **台账形态表**的表体行行号集合 —— 跨仓路径分类专用跳过面。
+ *
+ * 口径 = 「表头含「号」列的表块」的表体行(台账登记表与判断依据表都是这个形状)。比
+ * `registryDataRows` 宽一档:后者要求表头**同时**含「号」与「状态」并只认台账一个文件;
+ * 本表认形状不认文件。
+ *
+ * **为什么跨仓路径必须遮**:跨仓指针的**记录**恰好长在这些表里 ——「某文件长期存在一条指向
+ * 退役文件的指针,本轮已改对」这类句子是**事故记录**,里面那个文件名**理应不存在**。
+ * 按字面分类会把它算成一条跨仓裸名,而正确处置是「什么都不用做」。
+ *
+ * **只作用于跨仓路径分类**:第 1/3/5 档的跳过面**不动**(它们判的是本仓内引用,台账表格里的
+ * `docs/xxx.md` 是活指针)。
+ */
+function ledgerLikeTableRows(text) {
+  const out = new Set();
+  for (const block of tableBlocks(maskFencedLines(typeof text === 'string' ? text : ''))) {
+    const parsed = blockHeadAndRows(block);
+    if (!parsed) continue;
+    if (!parsed.header.map(normalizeHeaderCell).some((n) => n.includes('号'))) continue;
+    for (const row of parsed.rows) {
+      if (!isSeparatorRow(row.cells)) out.add(row.lineNo);
+    }
+  }
+  return out;
+}
+
+/** 跨仓路径分类的表体行跳过器(按文件缓存;口径见 `ledgerLikeTableRows`)。 */
+export function makeCrossRepoRowSkipper(readFile) {
+  const cache = new Map();
+  return (file, lineNo) => {
+    if (!cache.has(file)) cache.set(file, ledgerLikeTableRows(readFile(file)));
+    return cache.get(file).has(lineNo);
+  };
+}
+
+const pad3 = (n) => String(n).padStart(3, '0');
+
+/**
+ * 台账内不变量 R1–R7。**纯函数,不做任何 IO** —— 判据全部只依赖台账文本本身。
+ *
+ * @param text `docs/REQ.md` 全文(读不到时传 `null`/`''`)
+ * @returns `{ errors, notes, stats }`:`errors` 进错误流(exit 1);`notes` 是解析盲区与正常态提示,
+ *   只进覆盖度自报区;`stats.invariants` 是本次真正判定过的判据数(分母 `LEDGER_RULES.length`)。
+ */
+export function checkLedger(text) {
+  const errors = [];
+  const notes = [];
+  const stats = { rows: 0, placeholder: 0, badColumn: 0, max: 0, invariants: 0 };
+  const done = new Set();
+
+  if (typeof text !== 'string' || !text.trim()) {
+    notes.push(`${PROJECT_PROBE} 读不到或为空 ⇒ 台账内不变量零覆盖`);
+    return { errors, notes, stats };
+  }
+  const reg = locateRegistry(text);
+  if (!reg) {
+    notes.push(`${PROJECT_PROBE} 登记表表头定位不到(没有同时含「号」与「状态」列的表) ⇒ 台账内不变量零覆盖`);
+    return { errors, notes, stats };
+  }
+  if (reg.blocks > 1) {
+    notes.push(`${PROJECT_PROBE} 登记表按状态分 ${reg.blocks} 节,**已跨节合并判定**(号唯一 / 已用最大号 / 号段连续 / 墓碑四条是跨节判据,只判第一节会静默漏掉其余各节)`);
+  }
+
+  const seen = new Map();
+  const nums = [];
+  for (const row of reg.rows) {
+    // 列数守卫必须排在一切判定之前:标题里一个**未转义**的 `|` 就会让该行错位,错位后读到的
+    // 「状态」格其实是标题 ⇒ R2 假红。列数不符 ⇒ 整行不参与任何判定。
+    // 阈值取**本行所属块**的表头宽度(各节表头可以不同宽),不是第一块的。
+    if (row.cells.length !== row.headerCount) {
+      stats.badColumn += 1;
+      notes.push(
+        `${PROJECT_PROBE}:${row.lineNo} 单元格数 ${row.cells.length} ≠ 表头 ${row.headerCount} ⇒ 该行不参与任何判定(标题里的未转义 \`|\` 会造成错位)`,
+      );
+      continue;
+    }
+    // 骨架原样拷进来时登记表就是一行占位 —— 那不是台账数据,排除但不判错。
+    if (row.cells.some(isPlaceholderCell)) {
+      stats.placeholder += 1;
+      continue;
+    }
+    const rawId = row.cells[row.idCol].trim();
+    if (!rawId) continue; // 空号格:骨架留的续行位,丢弃且不计错
+    const id = normalizeLedgerCell(row.cells[row.idCol]);
+    const status = normalizeLedgerCell(row.cells[row.statusCol]);
+    const struck = stripTicks(row.text).includes('~~');
+
+    if (!LEDGER_ID_RE.test(id) || Number(id.slice(4)) < 1) {
+      errors.push(
+        `${PROJECT_PROBE}:${row.lineNo} → ${id || rawId} → 号形态错:台账号须为 \`REQ-\\d{3}\` 且从 1 起(REQ-000 是号段零值占位,不是工作项号)`,
+      );
+      continue; // 形态错的行不进数值计算,否则实算 max 会被一个垃圾号带偏
+    }
+    done.add('R3');
+
+    if (seen.has(id)) {
+      errors.push(`${PROJECT_PROBE}:${row.lineNo} → ${id} → 重号:该号已在 ${PROJECT_PROBE}:${seen.get(id)} 登记(同号只能有一行)`);
+    } else seen.set(id, row.lineNo);
+    done.add('R1');
+
+    if (!LEDGER_STATUS.includes(status)) {
+      errors.push(
+        `${PROJECT_PROBE}:${row.lineNo} → ${status || '(空)'} → 状态不在取值域内:只能是 ${LEDGER_STATUS.join(' / ')}`,
+      );
+    }
+    done.add('R2');
+
+    if (status === '已作废' && !struck) {
+      errors.push(`${PROJECT_PROBE}:${row.lineNo} → ${id} → 状态是「已作废」但本行没有 \`~~\` 划掉(墓碑行须用 \`~~\` 划掉保留、不删行)`);
+    } else if (struck && status !== '已作废') {
+      errors.push(`${PROJECT_PROBE}:${row.lineNo} → ${id} → 本行划掉了(\`~~\`)但状态是「${status}」:划掉只用于墓碑,状态须为「已作废」`);
+    }
+    done.add('R7');
+
+    nums.push({ num: Number(id.slice(4)), lineNo: row.lineNo });
+  }
+
+  stats.rows = nums.length;
+  const max = nums.length ? Math.max(...nums.map((n) => n.num)) : 0;
+  stats.max = max;
+  if (nums.length) {
+    done.add('R6');
+    const sorted = [...nums].sort((a, b) => a.num - b.num);
+    const have = new Set(sorted.map((r) => r.num));
+    const missing = [];
+    for (let i = 1; i <= max; i += 1) if (!have.has(i)) missing.push(i);
+    if (missing.length) {
+      // 缺口本身没有行号,故锚到缺口前一行(缺口在号段起点时锚到首行)—— 报错不带
+      // `文件:行` 就没法定位,而本门禁所有错误都带。
+      const before = sorted.filter((r) => r.num < missing[0]).pop();
+      const names = missing.map((n) => `REQ-${pad3(n)}`).join(' / ');
+      errors.push(
+        before
+          ? `${PROJECT_PROBE}:${before.lineNo} → 号段不连续:REQ-${pad3(before.num)} 之后缺 ${names}(号不跳号,缺号说明有行被删了)`
+          : `${PROJECT_PROBE}:${sorted[0].lineNo} → 号段不连续:首行之前缺 ${names}(号段必须从 REQ-001 起)`,
+      );
+    }
+  } else {
+    // 「0 错误」里必须看得见「0 判定」—— 登记表没有可判定行时,台账一致性等于没跑。
+    notes.push(`${PROJECT_PROBE} 登记表 0 个可判定数据行 ⇒ 号唯一 / 状态取值域 / 墓碑判据零覆盖`);
+  }
+
+  const range = locateRangeTable(text);
+  if (range && range.max !== null && range.next !== null) {
+    if (range.max !== max) {
+      const dMax = `REQ-${pad3(range.max)}`;
+      const aMax = `REQ-${pad3(max)}`;
+      // 两个方向是**两回事**,措辞必须分开:声明大 ⇒ 登记表少行;声明小 ⇒ 号先发出去后补登记。
+      const over = nums.find((n) => n.num > range.max);
+      errors.push(
+        range.max > max
+          ? `${PROJECT_PROBE}:${range.maxLine} → ${dMax} → 号段缺行:「已用最大号」声明 ${dMax},但登记表实算最大号是 ${aMax}(中间的行没登记或被删了)`
+          : `${PROJECT_PROBE}:${over.lineNo} → 超发号:该行 ${aMax} 超过号段声明的「已用最大号」${dMax}(有号在号段登记之前就发出去了)`,
+      );
+    }
+    done.add('R4');
+    if (range.next !== range.max + 1) {
+      errors.push(
+        `${PROJECT_PROBE}:${range.nextLine} → REQ-${pad3(range.next)} → 「下一个可用号」不等于「已用最大号」+1(应为 REQ-${pad3(range.max + 1)})`,
+      );
+    }
+    done.add('R5');
+  } else {
+    const missingCells = [];
+    if (!range || range.max === null) missingCells.push('已用最大号');
+    if (!range || range.next === null) missingCells.push('下一个可用号');
+    notes.push(
+      `${PROJECT_PROBE} 号段表取不到${missingCells.length ? missingCells.join('与') : '两格'} ⇒ 与号段的一致性判据(已用最大号 / 下一个可用号)零覆盖`,
+    );
+  }
+  if (stats.placeholder) {
+    notes.push(`${PROJECT_PROBE} 登记表有 ${stats.placeholder} 行未填的占位行,已排除(不算错);登记第一条需求时替换掉即可`);
+  }
+
+  stats.invariants = done.size;
+  return { errors, notes, stats };
+}
+
+// ------------------------------------------------- 载体形态判据 C1/C2/C4/C5/C6(已判红)
+//
+// 五条判据的**违反一律进 `errors`**(非零退出)。它们曾整体落在「只出声不判红」区,那段时间是
+// **存量治理期**:规则早已写明上限,但历史台账里已有超限内容,判红当天门禁会一直红 ——
+// 而恒红的门禁和永绿的一样是橡皮章。故先出声让人看得见欠账,存量清零后转判红。
+//
+// ⚠️ **编号有洞是刻意的,不是笔误**:原 C3 管一份已撤销的教训载体。**C4/C5/C6 不重排** ——
+// 这三个号已被 `docs/adr/`、`docs/evidence/` 与 `docs/DEV-GUIDE.md` 引用,往前挪会让历史引用
+// 全部错位。**将来也不要补号**:留一个洞才看得见「这里曾有一条被撤销的判据」。
+//
+// ⚠️ **刻意不设「模式开关」**:能随时关掉的判据等于给橡皮章留后门,下次存量一涨就会「先关掉」,
+// 而没人能查出它曾经红过。转判红是**单向**的。
+//
+// **本模块里只有「违反」进 `errors`**,分流点是 `runCarrierChecks` 内的唯一一处。仍只出声的只有
+// **零覆盖**那几条:它们是「没查」而不是「查了没问题」,但**必须出声**,否则「0 错误」里就掺了
+// 没查的部分 —— 那些 note 带「零覆盖」字样,会被汇入结论行的 `gaps`。
+
+/**
+ * 台账形态的三个字数上限 —— **判据本体的唯一来源**。
+ *
+ * `CARRIER_RULES[].name` 与 C1 / C2 的报错文字都从这三个常量拼,不各写一遍。
+ *
+ * ⚠️ **T2 tombstone(决定三)**:「台账形态上限的**语义对读**」判据(规则文本那一行声明的三个上限
+ * ↔ 本文件这三个常量逐字相同)**不在本仓实现**,故本文件内**没有任何代码读 `DOC-SYSTEM.md`**。
+ * **理由不是「省事」,是归属已裁定**:那条判据的**对象**是全局配置目录 `DOC-SYSTEM.md` 载体表
+ * 那一行,归全局配置目录那份脚本;把它搬下来会让它在本仓指向**自己脚下那份文档**,而对读机制
+ * 要求两侧是**两份独立的拷贝** —— 在本仓,「规则文本」与「判据常量」会落在同一个仓、同一条变更里,
+ * 对读恒真,**判据零价值**(它会永远判绿,而「永远判绿」正是这道门禁最坏的形态)。
+ *
+ * **但这不等于本仓不该有这三个常量**:C1 / C2 归本仓(它们判的对象是本仓的台账),而**判据必须有一个
+ * 数字才能判**,所以这三个常量必须在本仓留一份。全局配置目录那份副本与全局配置目录
+ * `DOC-SYSTEM.md` 之间仍有一道 T2 对读机制守着;**本仓这份与全局文档之间没有机器保证** ——
+ * 那是本条已知且已认领的缺口(改全局文档的三个数字时,本仓这三处要同步改)。
+ */
+const TITLE_LIMIT = 20;
+
+/** 「已完成」节的判断依据上限(≤100),其余节 ≤200(`REQ-RULES.md` 规则 5)。 */
+const WHY_LIMIT_DONE = 100;
+const WHY_LIMIT = 200;
+
+/**
+ * 载体形态判据的清单 + 各自现在管什么(分母 = `CARRIER_RULES.length`)。**现为五条**。
+ *
+ * ⚠️ **取 `scope` 一律按 `id` 查,不要按下标**:C3 已撤销而号不重排(见模块头),
+ * 数组下标因此不再等于判据号 —— 按下标取会把 C4 的文案挂到 C5 的违规提示上,
+ * 那类错**不判红、只报错文字**,能一路跑到线上。
+ */
+const CARRIER_RULES = [
+  { id: 'C1', name: `台账标题列 ≤${TITLE_LIMIT} 字`, scope: `上限 ${TITLE_LIMIT} 字已生效` },
+  { id: 'C2', name: `判断依据 ≤${WHY_LIMIT} 字(已完成节 ≤${WHY_LIMIT_DONE})`, scope: `上限 ${WHY_LIMIT} 字、「已完成」节 ${WHY_LIMIT_DONE} 字已生效` },
+  { id: 'C4', name: 'adr 背景行非空', scope: '「## 背景」是必填节,已生效' },
+  { id: 'C5', name: 'evidence 头部必带「结论去向」且取值合法', scope: '头部「结论去向」三选一,已生效' },
+  { id: 'C6', name: 'evidence 头声明的去向 ↔ adr/·REQ.md 双向对账', scope: '方向 A 去向必须真有该载体,已生效' },
+];
+
+/** 按 `id` 取该判据的 `scope` 文案(取不到即代码与清单脱节,当场炸掉而不是静默串台)。 */
+function carrierScope(id) {
+  const r = CARRIER_RULES.find((x) => x.id === id);
+  if (!r) throw new Error(`CARRIER_RULES 里没有 ${id} —— 判据号与清单脱节`);
+  return r.scope;
+}
+
+/** 字数口径:按**码点**数(不是 UTF-16 码元),中文一字一码点,emoji/生僻字也算一字。 */
+const charLen = (s) => [...s].length;
+
+/**
+ * 剥掉 markdown 装饰(反引号 / 粗体 / 删除线 / 前后空白),只留正文 —— 字数上限只对正文负责。
+ *
+ * `~~` 与 `**`、反引号是**同一类装饰**:台账墓碑号与墓碑标题按划项法写作 `~~REQ-049~~` /
+ * `~~标题~~`,那对 `~~` 是标记不是内容。「装饰不进字数上限」这条口径既然立了,就得剥干净 ——
+ * 少剥一种等于上限随写法漂移。
+ */
+function plainText(cell) {
+  return cell.replace(/`+/g, '').replace(/\*\*/g, '').replace(/~~/g, '').trim();
+}
+
+/**
+ * 台账的「标题列」与「判断依据列」在哪 —— **按列名取,不按下标**(同 `locateRegistry` 的理由)。
+ *
+ * 标题列认「标题」;判断依据列认「为什么停在这」/「为什么停在哪」(规则文本自身用词不统一,
+ * 判据两种都收,否则该列静默零覆盖)。
+ *
+ * @returns `{ titleCol, whyCol }`,列名不存在时为 `-1`。
+ */
+function ledgerTextCols(header) {
+  const names = header.map(normalizeHeaderCell);
+  return {
+    titleCol: names.findIndex((n) => n.includes('标题')),
+    whyCol: names.findIndex((n) => n.includes('为什么停在这') || n.includes('为什么停在哪')),
+  };
+}
+
+/** 未填的占位行不算超限(它是骨架,不是内容)。 */
+const isPlaceholderRow = (row) => row.cells.some(isPlaceholderCell);
+
+function isPlaceholderCell(cell) {
+  return LEDGER_PLACEHOLDER_RE.test(maskInlineCode(cell));
+}
+
+/**
+ * 取出 `## <name>` 小节的正文(到下一个 `## ` / `# ` 为止,不含标题行本身)。
+ * 找不到该小节 → `null`(调用方据此判「小节不存在」,与「存在但空」区分开 ——
+ * 两者的处置不同:前者是写错名字,后者是没填内容)。
+ */
+function sectionBody(lines, name) {
+  let start = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = /^#{1,6}\s+(.*\S)\s*$/.exec(lines[i]);
+    if (m && m[1] === name) { start = i + 1; break; }
+  }
+  if (start === -1) return null;
+  const out = [];
+  for (let i = start; i < lines.length; i += 1) {
+    if (/^#{1,6}\s+/.test(lines[i])) break;
+    out.push(lines[i]);
+  }
+  return out.join('\n').trim();
+}
+
+/**
+ * C1 / C2:台账形态(标题列上限、判断依据列上限)。
+ *
+ * 复用 `locateRegistry` 的**跨节合并**行集 —— 与 R1–R7 同一份解析结果,不另立一套表格解析。
+ *
+ * 「已完成」节靠行上的 `section` 判定,取不到节名时按较宽的 200 字算(判据不确定时取宽,
+ * 方向是**少报**)。
+ *
+ * ⚠️ 节名必须**自己把 section 挂上**:逐块走 `tableBlocks` 时行只有 `{ lineNo, cells }`,
+ * 读到 `row.section` 会恒 `undefined` ⇒「已完成 ≤100 字」那条上限**一次都没生效过**
+ * (全部按 200 字判)。实测:往已完成节塞 150 字,该判据零命中。
+ *
+ * @returns `findings`(每条含文件:行与实测字数);`examined` = 真正量过的数据行数。
+ * 键名用 `findings` 而非 `notes`:它装的是**违反**(超上限),不是提示。分流在
+ * `runCarrierChecks` 做(违反 → `errors`),本函数不决定判不判红。
+ */
+export function checkLedgerShape(text) {
+  const findings = [];
+  let examined = 0;
+  if (typeof text !== 'string' || !text.trim()) return { findings, examined };
+  const reg = locateRegistry(text);
+  if (!reg) return { findings, examined };
+
+  const masked = maskFencedLines(text);
+  const sections = sectionByLine(masked);
+  // 逐块处理:标题/判断依据列的位置是**块级**的(见 `locateRegistry` 的列映射说明)。
+  for (const block of tableBlocks(masked)) {
+    const parsed = blockHeadAndRows(block);
+    if (!parsed) continue;
+    const names = parsed.header.map(normalizeHeaderCell);
+    if (!names.some((n) => n.includes('号')) || !names.some((n) => n.includes('状态'))) continue;
+    const { titleCol, whyCol } = ledgerTextCols(parsed.header);
+    // 节名取本块**首行**所在的 `## ` 小节(与 `locateRegistry` 同一口径);块内同属一节。
+    const section = block.rows.length ? (sections.get(block.rows[0].lineNo) ?? '') : '';
+    for (const row of parsed.rows) {
+      if (isSeparatorRow(row.cells)) continue;
+      if (row.cells.length !== parsed.header.length) continue; // 错位行由列数守卫负责
+      if (isPlaceholderRow(row)) continue;
+      if (titleCol === -1 && whyCol === -1) continue;
+      examined += 1;
+      if (titleCol !== -1) {
+        const n = charLen(plainText(row.cells[titleCol]));
+        if (n > TITLE_LIMIT) {
+          findings.push(`${PROJECT_PROBE}:${row.lineNo} → 标题列 ${n} 字 > ${TITLE_LIMIT}(${carrierScope('C1')})`);
+        }
+      }
+      if (whyCol !== -1) {
+        const cell = row.cells[whyCol];
+        if (!cell.trim()) continue; // 空 = 规则允许(「空表示无阻塞」)
+        const n = charLen(plainText(cell));
+        const limit = section && section.includes('已完成') ? WHY_LIMIT_DONE : WHY_LIMIT;
+        if (n > limit) {
+          findings.push(`${PROJECT_PROBE}:${row.lineNo} → 判断依据 ${n} 字 > ${limit}(${carrierScope('C2')})`);
+        }
+      }
+    }
+  }
+  return { findings, examined };
+}
+
+/**
+ * C4:`adr/` 下每份 ADR 的「背景」节非空。
+ *
+ * 口径:`## 背景` **必须存在且非空**。判「存在」是因为「背景」是 ADR 的必填字段 ——
+ * 一份没有背景的 ADR 无法被复核,而 `adr/` 装的是**会被取代的决定**,复核是它的核心用途。
+ * 占位骨架(`<...>`)算空。
+ *
+ * `README.md` 跳过:它是目录说明书,不是决策条目(骨架里的示例块已被围栏遮罩)。
+ */
+export function checkAdrBackground(files, readFile) {
+  const findings = [];
+  let examined = 0;
+  for (const file of files) {
+    if (!/^docs\/adr\/.*\.md$/.test(file) || basename(file) === 'README.md') continue;
+    const body = sectionBody(maskFencedLines(readFile(file) ?? ''), '背景');
+    examined += 1;
+    if (body === null) {
+      findings.push(`${file} → 没有「## 背景」小节(${carrierScope('C4')})`);
+    } else if (!body || isPlaceholderCell(body)) {
+      findings.push(`${file} → 「## 背景」是空的(${carrierScope('C4')})`);
+    }
+  }
+  return { findings, examined };
+}
+
+/**
+ * C5 的取值域(**三选一**)。
+ *
+ * 域里那个 `ADR-0NN` 是**占位记号**不是字面量 —— 真快照必须能写 `升 adr/ADR-020` 指到具体某条,
+ * 否则所有文件只能各写同一个占位串,「去向」就不成其为去向。故域检查 = 三个字面量 ∪ 带序号形态。
+ * **两条判据的取值口径必须同时改,否则又是一处恒真/恒红。**
+ */
+const EVIDENCE_DESTINATIONS = ['升 adr/ADR-0NN', '落 REQ.md 行', '未升'];
+
+/** 「升 adr/...」的**带序号**形态(域里那个占位记号之外的另一支)。 */
+const EVIDENCE_DEST_NUMBERED = /^升 adr\/ADR-\d{3}$/;
+
+/**
+ * 从头部文本里取出「结论去向」的值(取不到 → `null`)。
+ *
+ * 标签与冒号之间**允许 `**` 强调标记**。规范形态是裸的 `> 结论去向:X`,但实际在写的是
+ * `> **结论去向**：X` —— 而只认裸形态会让加粗形态**解析不到** ⇒ 一份**头部完全正确**的文件
+ * 被报成「头部没有结论去向行」。那是最坏的失败形态:**门禁把人往「把正确的头部删掉」的方向赶**。
+ */
+function parseEvidenceDestination(headText) {
+  const m = /结论去向\**[：:]\s*([^｜|\n]+)/.exec(headText);
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * C5:`evidence/` 下每份快照的**头部**必带「结论去向」,且取值落在三项域内。
+ *
+ * 「头部」的界定 = 文件**前若干行**里第一处非空、非标题行 —— 判据不锁死「第一行」,
+ * 因为快照常有 frontmatter 之类的元信息块在前;但**必须出现在头部**,出现在正文中间不算数。
+ *
+ * @returns `{ findings, examined, parsed }` —— `parsed` 供 C6 双向对账复用(避免二次解析)。
+ */
+export function checkEvidenceHead(files, readFile) {
+  const findings = [];
+  const parsed = [];
+  let examined = 0;
+  for (const file of files) {
+    // `README.md` 是目录说明书、`INDEX.md` 是**脚本生成**的索引(「本表由脚本生成,不手工登记」),
+    // 两者都不是「快照」—— 给生成物补「结论去向」要么违反「不手工登记」,要么得让生成器去 emit
+    // 一条对它毫无意义的去向。一并豁免,口径同类。
+    if (!/^docs\/evidence\/.*\.md$/.test(file) || basename(file) === 'README.md' || basename(file) === 'INDEX.md') continue;
+    examined += 1;
+    const lines = maskFencedLines(readFile(file) ?? '');
+    const head = lines.slice(0, 12).filter((l) => l.trim() && !/^#{1,6}\s/.test(l)).join('\n');
+    const dest = parseEvidenceDestination(head);
+    if (dest === null) {
+      findings.push(`${file} → 头部没有「结论去向」行(三选一:${EVIDENCE_DESTINATIONS.join(' / ')};${carrierScope('C5')})`);
+      continue;
+    }
+    if (!EVIDENCE_DESTINATIONS.includes(dest) && !EVIDENCE_DEST_NUMBERED.test(dest)) {
+      findings.push(`${file} → 结论去向「${dest}」不在取值域内(三选一:${EVIDENCE_DESTINATIONS.join(' / ')}(或「升 adr/ADR-0NN」带上真实序号);${carrierScope('C5')})`);
+      continue;
+    }
+    parsed.push({ file, dest });
+  }
+  return { findings, examined, parsed };
+}
+
+/**
+ * C6:「evidence 头声明的去向」↔「`adr/` · 台账是否真有该载体」**双向对账**。
+ *
+ * 方向 A(声明 → 载体):`升 adr/ADR-0NN` 必须真有那份 ADR 文件。**带序号时按序号查**;
+ * 不带序号(占位形态)只判 `adr/` 目录非空 —— 门禁分不清「还没决定升哪一条」与「写错了」。
+ * `落 REQ.md 行` 必须有台账;`未升` 不对账。
+ *
+ * 方向 B(载体 → 声明):`adr/` 下每份**现行** ADR 若在同一批 evidence 里没有对应的声明,**只出声**
+ * (不是错 —— 决定可以是开会定的,不必然有 evidence 快照)。本函数只产出方向 A 的**违反**。
+ *
+ * ⚠️ 分派条件必须**覆盖两种形态**(占位与带序号)。精确比对 `=== '升 adr/ADR-0NN'` 的话,带序号的串
+ * 虽过了 C5,到了 C6 仍进不来 —— **两处口径不一致,合起来等于方向 A 恒哑**。
+ */
+export function checkEvidenceReconcile(parsed, { adrFiles, hasReq }) {
+  const findings = [];
+  const adrBasenames = adrFiles.map((f) => basename(f));
+  const declared = [];
+  for (const { file, dest } of parsed) {
+    if (dest === '未升') continue;
+    if (dest === '升 adr/ADR-0NN' || EVIDENCE_DEST_NUMBERED.test(dest)) {
+      const m = /(?:ADR|adr)-(\d{3})/.exec(dest);
+      if (m) {
+        if (!adrBasenames.some((b) => b.toLowerCase().includes(m[1].toLowerCase()))) {
+          findings.push(`${file} → 声明「${dest}」但同级 docs/adr/ 下没有序号 ${m[1]} 的 ADR(${carrierScope('C6')})`);
+        }
+        declared.push(m[1]);
+      } else if (!adrFiles.length) {
+        findings.push(`${file} → 声明「${dest}」但 docs/adr/ 下没有任何 ADR(${carrierScope('C6')})`);
+      }
+    } else if (dest === '落 REQ.md 行') {
+      if (!hasReq) findings.push(`${file} → 声明「${dest}」但没有 ${PROJECT_PROBE}(${carrierScope('C6')})`);
+    }
+  }
+  // 方向 B 刻意**不**对每份 ADR 逐个报(决定未必来自 evidence),故没有产出面。
+  return { findings, declared, adrCount: adrFiles.length };
+}
+
+/** 递归列一个目录下的全部 `.md` 相对路径(排除规则与 `collectProjectScope` 的 walk 保持一致)。 */
+function listMdFiles(root, dir) {
+  const out = [];
+  for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+      out.push(...listMdFiles(root, rel));
+    } else if (entry.name.endsWith('.md')) out.push(rel);
+  }
+  return out;
+}
+
+/**
+ * 项目侧的扫描范围:仓根 `*.md` + `docs/` 下递归的全部 `.md`。
+ * 不含 `node_modules/`、点目录等(它们不承载指针契约)。
+ *
+ * `docs/evidence/` 按 `EXCLUDE_DIRS.project` 整棵排除,**排除数随扫描范围一起返回**
+ * (不让排除变成看不见的范围缩小)。⚠️ 排除只针对**指针扫描**(`files`):C5 / C6 这两条载体形态
+ * 判据的对象**正是** `evidence/` 下的快照,若连它们一起排除,这两条判据在任何项目里都恒为
+ * 「零覆盖」—— 即静默死代码。故排除项的路径另装在 `excludedFiles` 里,载体形态检查**只**
+ * 把它们追加进去,指针档一份都不看。
+ *
+ * @returns `{ files, excluded, excludedFiles }` —— `excluded` 为 `{ dir, count }` 列表,
+ *   `excludedFiles` 为被排除目录下的 `.md` 相对路径(载体形态判据专用)。
+ */
+function collectProjectScope(root) {
+  const files = [];
+  const excluded = [];
+  const excludedFiles = [];
+  for (const name of readdirSync(root)) {
+    if (name.endsWith('.md')) files.push(name);
+  }
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(join(root, dir), { withFileTypes: true });
+    } catch {
+      return; // docs/ 不存在(无编号体系项目)—— 静默跳过
+    }
+    for (const entry of entries) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+        if (EXCLUDE_DIRS.project.includes(rel)) {
+          const sub = listMdFiles(root, rel);
+          excluded.push({ dir: rel, count: sub.length });
+          excludedFiles.push(...sub);
+          continue;
+        }
+        walk(rel);
+      } else if (entry.name.endsWith('.md')) files.push(rel);
+    }
+  };
+  walk('docs');
+  return { files: files.sort(), excluded, excludedFiles };
+}
+
+/**
+ * 跑 C1/C2/C4/C5/C6 五条载体形态判据,汇总成 `{ errors, notes, examined }`。
+ *
+ * **分流判据**(本函数是唯一的分流点,别在别处再分一次):
+ * - **违反 ⇒ `errors`**:内容写错了(超上限 / 必填节缺失 / 去向落不到载体)。
+ * - **零覆盖 ⇒ `notes`**:**我读不到 / 没有对象**。判红等于用门禁阻塞「还没建这个载体」这件小事。
+ *   但**必须出声**,否则「0 错误」里就掺了没查的部分 —— 这些 note 带「零覆盖」字样,会被汇入
+ *   结论行的 `gaps`。
+ *
+ * 单独抽出来而不是内联进 `main`:这五条的输入是**多个文件**,内联会让 `main` 继续膨胀。
+ *
+ * @param root   扫描根
+ * @param files  文件范围 = 指针档范围 + `docs/evidence/` 下被排除的快照(载体形态判据专用)
+ * @param readFile 读文件(rel → 文本)
+ */
+function runCarrierChecks(root, files, readFile) {
+  const errors = [];
+  const notes = [];
+  let examined = 0;
+  const bump = (n) => { examined += n; };
+
+  // 结构档先跑:表块坏掉时下面 C1/C2 读到的行数与列都是**解析器的误读**, 报出来只会误导
+  const tbl = checkTableShape(readFile(PROJECT_PROBE).split('\n'));
+  errors.push(...tbl);
+
+  const shape = checkLedgerShape(readFile(PROJECT_PROBE));
+  bump(shape.examined);
+  errors.push(...shape.findings);
+  if (!shape.examined) {
+    notes.push(`${PROJECT_PROBE} 没有可量化的台账数据行(载体不可达或全为骨架占位) ⇒ 标题列/判断依据上限判据零覆盖`);
+  }
+
+  const adr = checkAdrBackground(files, readFile);
+  bump(adr.examined);
+  errors.push(...adr.findings);
+  if (!adr.examined) notes.push('docs/adr/ 下没有 ADR 文件 ⇒ adr 背景判据零覆盖');
+
+  const ev = checkEvidenceHead(files, readFile);
+  bump(ev.examined);
+  errors.push(...ev.findings);
+  if (!ev.examined) notes.push('docs/evidence/ 下没有快照文件 ⇒ 结论去向判据零覆盖');
+
+  const rec = checkEvidenceReconcile(ev.parsed, {
+    adrFiles: files.filter((f) => /^docs\/adr\/.*\.md$/.test(f) && basename(f) !== 'README.md'),
+    hasReq: readFile(PROJECT_PROBE).trim() !== '',
+  });
+  errors.push(...rec.findings);
+  if (ev.examined && !ev.parsed.length) {
+    notes.push('evidence 快照的头部去向全部解析失败 ⇒ 双向对账判据零覆盖(对账以头部的解析为前提)');
+  }
+
+  return { errors, notes, examined };
+}
+
+// ---------------------------------------------------------------- 入口
+
+/**
+ * 门禁主体。**单模式** —— 本仓既是配置仓也是项目仓,不存在「按侧别计退出码」那套机制
+ * (ADR-054 决定四已判该机制作废):退出码只由本仓自己的判红条数决定。
+ *
+ * @returns {number} 退出码(0 = 全过,1 = 有错)
+ */
+export function main() {
+  const root = PROJECT_ROOT;
+  const { files, excluded: excludedDirs, excludedFiles } = collectProjectScope(root);
+  const cache = new Map();
+  const readFile = (rel) => {
+    if (!cache.has(rel)) cache.set(rel, readText(root, rel) ?? '');
+    return cache.get(rel);
+  };
+  const ledgerSkip = makeLedgerRowSkipper(readFile);
+  // 台账一致性在这里算(而不是最后)才有地方把它的解析盲区打进自报区。
+  const ledger = checkLedger(readText(root, PROJECT_PROBE));
+
+  // 跨仓路径:**只分类,不判定**(决定四)。消歧判据 = 「该裸名在**本仓**里解析不到」,
+  // 故用同一档解析顺序 —— 与下面第 1/3/5 档逐字同一档。
+  const crossRepo = classifyCrossRepoRefs(
+    files,
+    readFile,
+    (ref, fromFile) => resolveRef((rel) => existsAt(root, rel), ref, fromFile, REF_ORDER) !== null,
+    makeCrossRepoRowSkipper(readFile),
+  );
+
+  const pErrors = [
+    ...checkExistence(root, files, readFile, ledgerSkip),
+    ...checkSections(root, files, readFile, ledgerSkip),
+    ...checkOrdinalSections(root, files, readFile, ledgerSkip),
+    ...ledger.errors,
+  ];
+  // 逐条打印判红正文(诊断正文是**判据**的产出,不是驱动器的责任;驱动器只决定退出码)。
+  for (const e of pErrors) console.log(e);
+
+  // 解析口径的覆盖度快照:**必须在这里取**,晚一步就覆盖不到本轮。
+  const refProject = refResolutionStats();
+  console.log(
+    `  · 引用解析(单模式 · 引用方目录优先):判定 ${refProject.refs} 处`
+      + ` · 按引用方目录解析 ${refProject.byDir} 处`
+      + ` · 仓根解析 ${refProject.byRoot} 处`
+      + ` · 歧义解析 ${refProject.ambiguous} 处`
+      + ` · 兜底解析 ${refProject.fallback} 处`
+      + (refProject.fallback ? ' ⇒ **非 0 即说明解析过宽**' : '(恒为 0:非 0 即说明有人偷偷加了过宽的兜底基准)'),
+  );
+
+  // 跨仓路径的覆盖度与其它档同一口径,但**必须写明「判定 0 处 · 未判」** —— 这是决定四的
+  // 核心产出:分类数不等于判定数,把它混进「扫描 N 个文件,0 错误」就是「以为被查过」。
+  console.log(
+    `  · 跨仓路径(只分类,未判):检查 ${crossRepo.stats.files} 份 · 分类 ${crossRepo.stats.classified} 处`
+      + ` · **判定 0 处 · 未判,非「查过没问题」**`
+      + ' —— 判红基准在仓外(全局配置目录),本仓不可达;拆分后无任何机器判这一族'
+      + (crossRepo.stats.freeTextRows ? ` · 台账形态表体行 ${crossRepo.stats.freeTextRows} 行未参与分类(见 makeCrossRepoRowSkipper)` : ''),
+  );
+
+  console.log(
+    `  · 存在性 / 小节名 / 无引号小节:检查 ${files.length} 份(`
+      + (excludedDirs.length ? '**不含**下列按前缀整棵豁免的目录)' : '整棵豁免的目录 0 个)'),
+  );
+  // 排除数**逐棵**报出(合成一个总数正是「没人看得出哪几棵没查」的形态)。
+  if (excludedDirs.length) {
+    console.log(
+      `  · 历史快照目录(按前缀整棵豁免 · **未查** · 依据「修误报等于篡改历史」):`
+        + excludedDirs.map((x) => `${x.dir}/ ${x.count} 份`).join(' · ')
+        + ` ⇒ 合计 ${excludedDirs.reduce((n, x) => n + x.count, 0)} 份**不在指针扫描面内**`,
+    );
+  }
+  console.log(
+    `  · 台账一致性(台账内 ${LEDGER_RULES.length} 项不变量):检查 1 份(${PROJECT_PROBE})`
+      + ` · 登记表可判定 ${ledger.stats.rows} 行`
+      + ` · 判据判定 ${ledger.stats.invariants}/${LEDGER_RULES.length} 项`
+      + (ledger.stats.invariants === 0 ? ' ⇒ **零覆盖(台账解析失败,非「查过没问题」)**' : '')
+      + (ledger.notes.length ? ` · 提示/盲区 ${ledger.notes.length} 项(见下,**不判红**)` : ''),
+  );
+
+  // C 组载体形态:**违反进 `pErrors`**(非零退出,与 R1–R7 同级);零覆盖提示只出声。
+  // 载体形态检查的对象**含**被指针档排除的 `docs/evidence/`(结论去向判据量的是那批快照),
+  // 指针档不碰它们 —— 排除是分档的,不是整仓一刀切。
+  const carrier = runCarrierChecks(root, [...files, ...excludedFiles], readFile);
+  const carrierIds = CARRIER_RULES.map((r) => r.id).join('/');
+  for (const e of carrier.errors) {
+    console.log(e);
+    pErrors.push(e);
+  }
+  for (const note of carrier.notes) console.log(`  · 载体盲区提示:${note}`);
+  console.log(
+    `  · 载体形态(${carrierIds},共 ${CARRIER_RULES.length} 条,**已判红**):`
+      + `量过 ${carrier.examined} 处 · 判红 ${carrier.errors.length} 条 · 盲区提示 ${carrier.notes.length} 条`
+      + (carrier.examined === 0 ? ' ⇒ **零覆盖(载体不可达或全为骨架占位)**' : '')
+      + `(盲区提示**不判红**,各条现在管什么见 ${carrierIds})`,
+  );
+
+  for (const note of ledger.notes) console.log(`  · 台账提示:${note}`);
+
+  console.log('各档实际覆盖(分母即该档真实查过的份数):');
+  const excludedNote = excludedDirs.length
+    ? excludedDirs.map((x) => `已排除 ${x.dir}/ 下 ${x.count} 个文件(历史快照,不读/不登记/不入索引)`).join(';')
+    : '已排除 0 个文件';
+  console.log(
+    pErrors.length === 0
+      ? `项目模式通过:扫描 ${files.length} 个文件,0 错误(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径只分类未判);${excludedNote}`
+      : `项目模式失败:${pErrors.length} 错误 / 扫描 ${files.length} 个文件(存在性 / 小节名 / 无引号小节 / 台账一致性 / 载体形态;跨仓路径只分类未判);${excludedNote}`,
+  );
+  // ⚠️ **错误条数必须在打印之后、`pErrors` 追加载体形态错误之后再取** ——
+  // `pErrors` 是**先打印、后追加**的:载体形态判据的 errors 在 `runCarrierChecks` 之后才 push 进来。
+  // 在打印处快照会漏掉载体形态那一族,表现为「项目模式失败:N 错误」而结论行写「0」——
+  // 结论行与退出码双双说谎,正是本条最不能出的错。
+  const errorCount = pErrors.length;
+
+  // ---- 门禁结论行(每次运行**最后一行**,固定前缀)--------------------------------
+  // `覆盖=` 与自报区同口径:「触发 0 处 / 解析失败」这类**零覆盖**记为「不全」,
+  // 而「无对象」(该判据在本仓没有适用对象)不算 —— 两者在门禁规范里是分开的两条。
+  const gaps = [];
+  if (excludedDirs.length) {
+    gaps.push(`历史快照目录按前缀整棵豁免(未查):${excludedDirs.map((x) => `${x.dir} ${x.count} 份`).join(' + ')}`);
+  }
+  if (ledger && ledger.stats.invariants === 0) gaps.push('台账内不变量零覆盖');
+  for (const note of ledger ? ledger.notes : []) {
+    if (note.includes('零覆盖')) gaps.push(note);
+  }
+  // ⚠️ **跨仓路径的「判定 0 处」恒进 gaps**(实施约束 6):它在本仓**永远**是「未判」,
+  // 不是「判定后发现没问题」。不推进 gaps 的话,「0 错误」里就掺了没判的那一族。
+  gaps.push(`跨仓路径未判(分类 ${crossRepo.stats.classified} 处 · 判定 0 处,判红基准在仓外不可达)`);
+  if (crossRepo.stats.freeTextRows) gaps.push(`跨仓路径台账形态表体行 ${crossRepo.stats.freeTextRows} 行未判`);
+  if (carrier.examined === 0) gaps.push(`载体形态 ${carrierIds} 零覆盖`);
+
+  console.log(
+    `门禁结论:已判定 | ${errorCount === 0 ? '通过' : `失败(${errorCount})`} | 模式:项目`
+      + ` | 范围:${files.length} | 覆盖:${gaps.length ? `不全(${gaps.join(';')})` : '完整'}`,
+  );
+
+  // **只返回值,不在本函数里写 `process.exitCode`** —— 写宿主退出码是入口层的事
+  // (入口守卫那一处)。判定本体被注册表 import 时不该顺手改宿主进程的退出码。
+  return errorCount === 0 ? 0 : 1;
+}
+
+// 入口守卫:仅当本文件**就是被执行的入口**时才跑 CLI。写法与 gates/repo/check-docs.mjs 同形
+// (全仓先例),不另创写法。
+//
+// 为什么必须有守卫(不是「整洁」问题,是危险):门禁注册表要能**真 import** 本模块取出判定函数
+// (`main`),而验收段跑在 **Electron** 里 —— 顶层自执行会在 import 本模块的那一刻起判定,
+// 顺手改掉宿主进程的 `process.exitCode`,并把整套台账解析打进别人的输出。守卫之后本模块可被
+// 安全 import,注册表因此能登记它并真 import 出判定函数。
+//
+// ⚠️ **`process.exitCode = main()` 那行必须保持缩进**(自执行探测是行首锚定正则
+// `^process\.exitCode\s*=`:顶格写会被判定本体注册表判成「顶层自执行」而与「可安全 import」
+// 的声明矛盾)。入参先取进局部变量再比较,是为了让「读命令行参数」在本文件里**恰好只出现一次** ——
+// 那是「不读环境变量 / 不加任何开关」这条机械不变量能被机械核对的前提(见文件头「不做」段)。
+const entryArg = process.argv[1];
+if (entryArg !== undefined && resolve(entryArg) === join(ROOT, 'gates', 'repo', 'check-pointers.mjs')) {
+  process.exitCode = main();
+}

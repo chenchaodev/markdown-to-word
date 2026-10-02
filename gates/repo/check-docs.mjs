@@ -1,98 +1,63 @@
-// 指针门禁 + 容量契约门禁薄包装(零依赖,仅 node: 内建模块)。
+// 文档指针门禁的**入口**(判定本体在本仓 `gates/repo/check-pointers.mjs`,本文件只做转出 + 守卫)。
 //
-// 为什么要有这层包装,而不是把门禁的绝对路径直接写进 package.json 的 script:
-// `check-ci-contract.mjs` 的 `SCRIPT_FILE_RE` 会把 package.json script 正文里出现的每个
-// `.mjs` token 拼到**项目根**上判存在性(`C:/Users/<用户>/.config/opencode/tools/…`
-// 拼上项目根当然不存在)→ 契约自检恒红。故 script 里只能写仓内相对路径
-// (`node gates/repo/check-docs.mjs`),而门禁的绝对/环境变量解析必须藏进 .mjs ——
-// 那条断言不扫 .mjs 文件内容。仓内相对路径真实存在即可,门禁的实际载体由本脚本解析。
+// ---- 为什么还留着这一层 ----
+// ① 门禁注册表(`gates/probe/gate-probes/registry.mjs`)把 `judgment.module` 指向**本文件**,
+//    `judgment.export` 指向 `main`。路径不变 ⇒ 注册表、两条以本文件为合成主体的负向夹仓
+//    (沙盒探针与验收段各一条)都不必改。
+// ② `check-ci-contract.mjs` 的 `SCRIPT_FILE_RE` 会把 package.json script 正文里出现的每个
+//    `.mjs` token 拼到**项目根**上判存在性 ⇒ script 里只能写仓内相对路径
+//    (`node gates/repo/check-docs.mjs`)。这条断言不扫 `.mjs` 文件内容,故「门禁本体是哪一个文件」
+//    必须藏进 `.mjs` —— 就是本文件。
 //
-// 门禁本体(判什么、断链/死指针/容量契约怎么算)在全局配置目录 `tools/check-pointers.mjs`,
-// 项目侧**不持有第二份逻辑**:单一事实源不许分叉,规则演进只需改配置仓一处。
-// 本脚本只做三件事:解析门禁路径 → 委托执行 → 退出码原样传出。
+// ---- 判定本体的出处与「判据从此两份」(这是本仓自己欠的义务) ----
+// 判定本体的内容**逐字搬自**全局配置目录 `tools/check-pointers.mjs`,基线 commit `72f072a`
+// (sha256 `4a82b448…d46e3c0b`),并按本仓 `docs/adr/ADR-054-配置仓与项目仓门禁拆分本仓落地.md`
+// 决定一裁掉了配置仓独占的那部分(只留项目模式)。
 //
-// **本检查是本地检查,刻意不在 `verify:ci` 链里**(2026-09-27 起)。理由:门禁载体在
-// 全局配置目录,而 CI workflow 不装也不克隆该目录 ⇒ 在 CI 里必然走下面的「不可达」分支,
-// 恒 `exit 0`。留在链上等于给「文档正在被 CI 检查」的假象,实则从未校验过任何东西。
-// 保留本脚本是因为它**本地确实抓过真问题**(断链、失效小节名指针、已废指针),
-// 成本约 1 秒。请在提交前手动跑 `npm run check:docs`。
-//
-// 退出码:0 = 门禁通过,或门禁不可达而跳过(见下);门禁自身的 1 原样传出。
+// ⚠️ **本仓不持有「唯一一份逻辑」这句话在拆分后已经不成事实** —— 拆分前本文件头写的是
+// 「项目侧不持有第二份逻辑:单一事实源不许分叉,规则演进只需改配置仓一处」,而那正是 ADR-054
+// 决定一要推翻的现状(它导致任何 Fork 出去的 PR 文档指针零覆盖而门禁报成功)。
+// 拆分后的真相是:**判据从此两份,规则演进要改两处**(全局配置目录那份仍判它自己那侧)。
+// 这是本仓自己欠的义务,不是上游的。无机器对读(那需要跨仓可达性,ADR-016 备选方案 3 已否决),
+// 唯一对冲是本体文件头记录的基线 commit 与删除清单,供人工重核。
 //
 // 用法:
-//   node gates/repo/check-docs.mjs           # 校验当前项目仓
-//   M2W_GLOBAL_CONFIG=<配置仓根目录> node gates/repo/check-docs.mjs
-//   node gates/repo/check-docs.mjs --help    # 参数原样透传给门禁
+//   node gates/repo/check-docs.mjs
+//
+// 退出码:0 = 判定通过;1 = 有错(逐条诊断与覆盖度自报打在 stdout,诊断正文由本体产出)。
 
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { ROOT } from '../../shared/paths.js';
+import { main as judgmentMain } from './check-pointers.mjs';
 
 const projectRoot = ROOT;
 
 /**
- * 门禁路径解析:`M2W_GLOBAL_CONFIG` 指向**配置仓根目录**(不是门禁文件本身),
- * 未设置时回退到约定位置 `~/.config/opencode`。
- * @returns {string} 门禁脚本绝对路径
- */
-function resolveGatePath() {
-  const configured = process.env.M2W_GLOBAL_CONFIG?.trim();
-  const configRoot = configured === undefined || configured === '' ? path.join(os.homedir(), '.config', 'opencode') : configured;
-  return path.join(configRoot, 'tools', 'check-pointers.mjs');
-}
-
-// 门禁不可达 ⇒ 打印提示并 exit 0,**不判红**:本检查已不在 CI 链里(见头部说明),
-// 判红只会挡住本地提交,不提供任何保护。但也不许静默 —— 静默跳过的真实含义是
-// 「你以为文档被查过了,其实没有」,那正是这道检查最没用的失败形态。
-// 故必须留一行显眼痕迹。载体路径不对时用 M2W_GLOBAL_CONFIG=<配置仓根目录> 指定。
-/**
- * CLI 主体(判定体 = 委托执行全局指针门禁并原样传出退出码;本函数只做解析与呈现)。
+ * 判定本体入口(转出,本层不持有任何判据)。
  *
- * 导出成 `main(argv) -> number` 而不是顶层 `process.exit`,是为了让门禁注册表
- * (gates/probe/gate-probes/registry.mjs)能把它登记为判定本体指针并**真 import** 解析 ——
- * 进程级 CLI 与其它驱动器消费的是同一个入口,判定只有一份。
- * @param {string[]} [argv] 透传给全局门禁的参数(本仓调用时可不带参)
- * @returns {number} 退出码(0 = 通过,或载体不可达而跳过)
+ * 导出成 `main() -> number` 而不是顶层 `process.exit`,是为了让门禁注册表能把它登记为判定本体
+ * 指针并**真 import** 解析 —— 进程级 CLI 与其它驱动器消费的是同一个入口,判定只有一份。
+ *
+ * 静态 import 本体是安全的:本体的模块级代码**只做常量与函数声明**(扫描根取
+ * `resolve(process.cwd())`,不读盘、不打印、不写宿主退出码),副作用一律在它自己的 `main()` 里。
+ *
+ * 刻意**不接收也不转发任何参数**:本体不接受模式开关 / 环境变量 / `--root`
+ * (「能随时关掉的判据等于给橡皮章留后门」;扫描根恒为 `process.cwd()`)。
+ * @returns {number} 退出码(0 = 全过,1 = 有错)
  */
-export function main(argv = []) {
-  const gatePath = resolveGatePath();
-  // 载体不可达 ⇒ 打印提示并返回 0,**不判红**:本检查已不在 CI 链里(见头部说明),
-  // 判红只会挡住本地提交,不提供任何保护。但也不许静默 —— 静默跳过的真实含义是
-  // 「你以为文档被查过了,其实没有」,那正是这道检查最没用的失败形态。
-  // 故必须留一行显眼痕迹。载体路径不对时用 M2W_GLOBAL_CONFIG=<配置仓根目录> 指定。
-  if (!existsSync(gatePath)) {
-    console.log(
-      `[check:docs] 跳过:未找到全局指针门禁 ${gatePath};设 M2W_GLOBAL_CONFIG=<配置仓根目录> 可启用。CI 环境无此目录属预期。`,
-    );
-    // 判别式改为**两种情形都输出「门禁结论」**,用「已判定 / 未判定」区分(2026-09-30,REQ-097)。
-    // 原先是「载体可达时必含该四字」的**单向**判别式,而本行走的是跳过分支 —— 两端不对称闭合,
-    // 自动化消费者必须特判那句中文跳过文本,才知道「本轮一个指针都没查」。
-    // 退出码不变(两情形都是 0),纯增量 stdout,不命中涉架构任一条。
-    console.log(`门禁结论:未判定 | 跳过(载体不可达) | 模式:配置 | 载体:${gatePath} | 覆盖:无(本轮一个指针都没查)`);
-    return 0;
-  }
-
-  try {
-    // cwd = 项目仓:门禁据此判「项目模式」(探测判据 = cwd 下存在 docs/REQ.md),
-    // 站在配置仓里跑则只跑配置模式。参数原样透传,本仓调用时可不带参。
-    execFileSync(process.execPath, [gatePath, ...argv], { cwd: projectRoot, stdio: 'inherit' });
-    return 0;
-  } catch (error) {
-    // 门禁非 0 退出时 execFileSync 抛错(status 带退出码);取不到就按失败处理。
-    return error instanceof Error && 'status' in error && typeof error.status === 'number' ? error.status : 1;
-  }
+export function main() {
+  return judgmentMain();
 }
 
 // 入口守卫:仅当本文件**就是被执行的入口**时才跑 CLI。写法与
 // gates/probe/gate-probes/coverage-gate.mjs 同形(全仓先例),不另创写法。
 //
-// 为什么必须有守卫(不是「整洁」问题,是危险):main 内部用
-// `execFileSync(process.execPath, …)` 调全局门禁,而验收段跑在 **Electron** 里,
-// `process.execPath` 此时是 electron.exe ⇒ 顶层自执行会在 import 本模块的那一刻起一个
-// **永不退出的 GUI 进程**(2026-10-01 实测:段被框架硬终止,同一批判据纯 Node 下 1.2s 跑完)。
+// 为什么必须有守卫(不是「整洁」问题,是危险):验收段跑在 **Electron** 里,顶层自执行会在
+// import 本模块的那一刻把整套台账判定跑一遍,并顺手改掉宿主进程的 `process.exitCode`。
 // 守卫之后本模块可被安全 import,注册表因此能登记它并真 import 出判定函数。
+//
+// ⚠️ `process.exitCode = main()` 那行**必须保持缩进**(判定本体注册表的顶层自执行探测是行首
+// 锚定正则 `^process\.exitCode\s*=`;顶格写会被判成「顶层自执行」而与「可安全 import」的声明矛盾)。
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.join(projectRoot, 'gates', 'repo', 'check-docs.mjs')) {
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = main();
 }
