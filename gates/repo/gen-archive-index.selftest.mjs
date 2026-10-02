@@ -49,7 +49,10 @@ function createFixture(mutate) {
   writeUnder(dir, `docs/evidence/${ARCHIVE_ORPHAN}`);
   writeUnder(dir, 'docs/evidence/README.md', '# evidence 说明页\n');
   writeUnder(dir, 'docs/REQ.md', `# 需求台账\n\n见 \`${ARCHIVE_HOSTED}\`。\n`);
-  writeUnder(dir, 'docs/LESSONS.md', '# 教训\n\n(不按名引用任何归档原文)\n');
+  // 第二个常驻载体:不放任何归档原文的按名引用,验证「未被引用的原文分流去向记 —」。
+  // 载体名取 CHANGELOG.md 而非 PLAN.md:后者在生成器的 HOST_EXCLUDE_FILES 里(临时载体不入表),
+  // 换成它会让这条夹具退化成「没有第二个载体」,白送一条覆盖。
+  writeUnder(dir, 'docs/CHANGELOG.md', '# 变更日志\n\n(不按名引用任何归档原文)\n');
   // mutate 抛异常时调用方拿不到 dir,其 finally 清不到 → 在这里兜住(临时产物不留残)
   try {
     mutate?.(dir);

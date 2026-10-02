@@ -147,7 +147,6 @@ npm run dist       # 打包 Windows 安装包（NSIS，输出到 release/）
 
 - [工作项号台账](docs/REQ.md)：号与状态的唯一分配源、历史工作项可查
 - [需求台账](docs/REQ.md)：每条需求是什么状态、**为什么停在这**、什么条件下重看（含被否决理由与触发条件）
-- [教训](docs/LESSONS.md)：跨工作项的可复用教训（换个项目还会犯的那类）
 - [开发者手册](docs/DEV-GUIDE.md)：环境、命令、代码地图、验证基线
 - [架构决策](docs/adr/)：为什么这么设计（一决策一文件，含状态与取代关系）
 - [UI 规范](docs/design/ui-guidelines.md) / [设置信息架构](docs/design/settings-ia.md)：改界面前必读
