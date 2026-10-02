@@ -563,26 +563,29 @@ export const GATE_REGISTRY = Object.freeze(
     },
     docs: {
       id: "docs",
-      title: "文档指针门禁(薄包装,载体在全局配置目录)",
+      title: "文档指针门禁(判定本体在本仓,只含项目模式)",
       npmScripts: ["check:docs"],
       command: "node gates/repo/check-docs.mjs",
       modulePath: "gates/repo/check-docs.mjs",
-      access: "local",
+      access: "chain",
       judgment: {
-        module: "gates/repo/check-docs.mjs",
+        module: "gates/repo/check-pointers.mjs",
         export: "main",
-        shaped: "退出码(0 = 通过 / 载体不可达而跳过)",
+        shaped: "退出码(0 = 通过 / 1 = 有错)",
       },
       judgmentNote:
-        "判定体在全局配置仓的 tools/check-pointers.mjs,本仓是薄包装(不持有第二份逻辑);载体不可达时打印「未判定」并 exit 0,故它刻意不在任何链上。"
-        + "REQ-118:本模块已改为 `process.argv[1]` 入口守卫 —— 它此前是段硬超时的**唯一根因**(顶层自执行经 "
-        + "`execFileSync(process.execPath, …)` 在 Electron 里起 electron.exe GUI 进程,永不退出)。"
-        + "守卫之后 import 无副作用,指针走默认的真 import 档。",
+        "判定本体在本仓 gates/repo/check-pointers.mjs:内容逐字搬自全局配置目录的 tools/check-pointers.mjs(基线 commit 72f072a),"
+        + "只保留项目模式、配置仓独占的那部分已物理删除(ADR-054 决定一)。check-docs.mjs 只做「转出 main + 入口守卫」,"
+        + "仍是 npm script check:docs 的执行入口 —— 指针必须指本体而不是转发层,否则本体去掉入口守卫不会被任何判据抓到(实施约束 9)。"
+        + "⚠️ **判据从此两份,规则演进要改两处** —— 这是**本仓自己欠的义务**、不是上游的:全局配置目录那份仍判它自己那侧,"
+        + "ADR-016 备选方案 3 已否决「留配置仓共用」故无机器对读,唯一对冲是本体文件头记录的基线与删除清单。拆分前本仓那句"
+        + "「不持有第二份逻辑 · 规则演进只改配置仓一处」已不成立 —— 那正是任何 Fork 出去的 PR 指针零覆盖而门禁报成功的原因。"
+        + "跨仓路径只保留分类、不保留判定(决定四)且零覆盖必须出声,故本门禁从不说「0 错误」而不说覆盖。",
       probes: [
         {
           kind: "selftest",
           ref: "gates/repo/check-docs.selftest.mjs",
-          why: "自检脚本用夹具目录驱动本包装(含 os.homedir() 回退分支:改写 HOME/USERPROFILE 指向合成 home,不依赖宿主是否装了配置仓),断言参数透传、退出码原样传出、载体不可达时那行显眼痕迹确实打印",
+          why: "自检脚本在系统临时目录现造一个合成项目仓(台账表头 + 台账条目 + 载体),靠 cwd 指向它跑**仓内真门禁** gates/repo/check-pointers.mjs 本体 —— 不复制、不改写、不换根(复制一份进来只会把「规则的演进」冻在夹具里,门禁改了规则夹具还绿)。逐条注入 12 族漂移(退出码回落恒 0 / 目标不存在那一档被摘掉 / 台账只取第一节 / 「已完成」节更严的上限失效 / 跨仓路径被当成「已查过」),断言逐条以非零码判红并给出可分辨的诊断,未漂移时通过",
         },
       ],
     },
