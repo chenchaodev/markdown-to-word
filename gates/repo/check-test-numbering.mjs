@@ -111,11 +111,6 @@ const SNIPPET_MAX = 72;
  * @property {boolean} [cold] true = 按设计不在扫描面内,零命中是预期(输出里分开计数)
  */
 
-/** 命中所在源码行里,字面量起始引号之前的那一段(`title` 键名到值之间的空白) */
-function isTitleKeyedValue(hit) {
-  return /\btitle\s*:\s*$/.test(hit.lineHead);
-}
-
 /** @type {readonly AllowEntry[]} */
 export const ALLOWLIST = Object.freeze([
   {
@@ -127,14 +122,6 @@ export const ALLOWLIST = Object.freeze([
       + '(test/main/settings.test.js 与 test/core/page-setup.test.js 各若干处),故按内容'
       + '特征(所在行/字面量含 paper 或「枚举外值」+ 编号恰为 B5)放行而不按文件登记;同一文件里'
       + '不带 paper 语义的 B5/B13 仍照报。',
-  },
-  {
-    id: 'input-value-under-title-key',
-    file: null,
-    match: (hit) => isTitleKeyedValue(hit) && new RegExp(`^\\s*${hit.token}\\b`).test(hit.literal),
-    why: '被测数据值而非编号引用:`title: "F7"` / `title: "F8 合并"` 这类值是转换输入的'
-      + '标题字面量,编号只是恰好长得像规划编号。按「title 键 + 值以编号开头」的内容'
-      + '组合放行;待这批输入值改成中性名后本条自然零命中,留着无害。',
   },
   {
     id: 'cross-ref-scenario-labels-in-comments',

@@ -194,10 +194,15 @@ export const ALLOWLIST = Object.freeze([
   {
     id: 'userdata-deliberate-duplicate',
     file: 'shared/userdata.js',
-    match: (hit) => hit.callee === 'fs.rmSync' && hit.firstArg === 'dir',
+    match: () => false,
+    cold: true,
     why: '**刻意的重复**:userdata.js 必须保持零内部依赖 —— install-smoke 段把它逐字节复制进'
       + '沙盒,由 gates/smoke/smoke-proc.mjs 按相对路径 import,若它 import 同目录的 temp-resource.js,'
-      + '沙盒里那份副本就解析不到该模块、该段当场红。故它自持一份重试参数,不能收口。',
+      + '沙盒里那份副本就解析不到该模块、该段当场红。故它自持一份重试参数,不能收口。'
+      + 'shared/ 整体不在本门禁扫描面内(扫描面由 test/ 的段目录派生,'
+      + '单源见 shared/test-common-surface.js 的 SCAN_TARGETS),故登记为按设计零命中。'
+      + '`match` 一并置空 —— 若日后 shared/ 进了扫描面,'
+      + '要的是它先判红逼出一次裁决,而不是被一条静默豁免放过。',
   },
   {
     id: 'install-smoke-electron-fs-bypass',
