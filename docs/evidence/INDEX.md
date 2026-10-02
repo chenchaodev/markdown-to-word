@@ -102,3 +102,4 @@
 | [20261001-235000-顶层合并build-dev为tools.md](20261001-235000-顶层合并build-dev为tools.md) | — | 顶层合并build-dev为tools | — |
 | [20261002-000000-Release-notes误取上一版.md](20261002-000000-Release-notes误取上一版.md) | — | Release-notes误取上一版 | [REQ.md](../REQ.md) |
 | [20261002-101500-门禁扫描面mjs盲区.md](20261002-101500-门禁扫描面mjs盲区.md) | — | 门禁扫描面mjs盲区 | [REQ.md](../REQ.md) |
+| [20261002-102000-docs自检夹具判定随环境分化.md](20261002-102000-docs自检夹具判定随环境分化.md) | — | docs自检夹具判定随环境分化 | [REQ.md](../REQ.md) |

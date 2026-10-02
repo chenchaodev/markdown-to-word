@@ -580,7 +580,7 @@ export const GATE_REGISTRY = Object.freeze(
         {
           kind: "selftest",
           ref: "gates/repo/check-docs.selftest.mjs",
-          why: "自检脚本用夹具配置仓目录驱动本包装,断言参数透传、退出码原样传出、载体不可达时那行显眼痕迹确实打印",
+          why: "自检脚本用夹具目录驱动本包装(含 os.homedir() 回退分支:改写 HOME/USERPROFILE 指向合成 home,不依赖宿主是否装了配置仓),断言参数透传、退出码原样传出、载体不可达时那行显眼痕迹确实打印",
         },
       ],
     },
