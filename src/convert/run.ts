@@ -32,7 +32,7 @@ import type { ConvertWarning } from "../core/i18n.js";
 import { isConversionCanceled } from "../core/cancel.js";
 import type { MermaidResolver } from "../core/markdown/mermaid.js";
 import type { AppSettings } from "../core/settings/settings-defaults.js";
-import { commitArtifact } from "./artifact-writer.js";
+import { commitArtifact, type CommitArtifactOptions } from "./artifact-writer.js";
 import { resolveOutputPath, stripMarkdownExt } from "./paths.js";
 import {
   buildConvertContext,
@@ -60,9 +60,18 @@ export interface OutputSkeletonDoc {
   trustedRoots?: readonly string[];
   /** 产物落盘首名(缺省与 sourcePath 同名;合并传 `{基名}-合并`) */
   baseName?: string;
+  /**
+   * 钉死产物路径(CLI 的 `--output`):非空即逐字采用该路径,并**禁重名自动避让**
+   * ——已存在时提交失败而不是悄悄改名(见 artifact-writer 的 renameOnConflict)。
+   * GUI 面恒不传(它要的就是「名 (2).docx」不覆盖用户既有文件)。
+   */
+  pinOutputPath?: string;
   /** 封面元数据(合并专属可选实参,单文件恒不传) */
   metadata?: DocMetadata;
 }
+
+/** 提交器选项的本地别名(PdfPrinter 签名用,避免在类型位重复写长名)。 */
+type CommitOptions = CommitArtifactOptions;
 
 /**
  * pdf 打印能力(宿主注入):把 pdf 产物提交到 preferredPath,返回实际落盘路径。
@@ -77,6 +86,9 @@ export type PdfPrinter = (
   preferredPath: string,
   ctx: ConvertContext,
   onStage?: (stage: string) => void,
+  /** 落盘提交选项(取消闸门 + 重名避让开关);宿主实现必须原样透传给 commitArtifact,
+   *  否则装配层的 pinOutputPath 语义在 pdf 路径上失效(禁避让只对 docx 生效)。 */
+  commit?: CommitOptions,
 ) => Promise<string>;
 
 /** 骨架的运行面入参:与文档面分开的调用期环境 */
@@ -126,7 +138,7 @@ export async function emitConvertedArtifact(
   doc: OutputSkeletonDoc,
   run: OutputSkeletonRun,
 ): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
-  const { markdown, sourcePath, baseDir, trustedRoots, baseName, metadata } = doc;
+  const { markdown, sourcePath, baseDir, trustedRoots, baseName, pinOutputPath, metadata } = doc;
   const { format, settings, ctx, warnings, katexDir, onProgress } = run;
   const { printPdf, mermaidResolver, onAfterCommit } = run;
   // 进度分阶段:docx 沿用粗粒度 render;pdf 由 core 经 onStage 细分
@@ -176,6 +188,7 @@ export async function emitConvertedArtifact(
     onProgress,
     baseName,
     printPdf,
+    pinOutputPath,
   );
   warnings.push(...outWarnings);
 
@@ -193,9 +206,10 @@ export async function emitConvertedArtifact(
 
 /**
  * 渲染产物落盘收尾:
- * 解析输出首选路径(输出目录/超长回落)→ docx 直接提交 / pdf 经注入的宿主打印能力
- * → onProgress("done")。落盘统一经产物提交器(独占创建 + 魔数校验),两种格式、
- * 单文件/批量/合并共用同一提交路径;实际路径可能带重名序号「名 (2).ext」。
+ * 解析输出首选路径(输出目录/超长回落,或 `pinOutputPath` 的逐字路径)→ docx 直接提交 /
+ * pdf 经注入的宿主打印能力 → onProgress("done")。落盘统一经产物提交器(独占创建 +
+ * 魔数校验),两种格式、单文件/批量/合并共用同一提交路径;实际路径可能带重名序号
+ * 「名 (2).ext」(pinOutputPath 形态下禁用,见 OutputSkeletonDoc)。
  * 导出后行为(onAfterCommit)仍由调用方按各自语义执行。
  */
 export async function persistArtifact(
@@ -207,13 +221,25 @@ export async function persistArtifact(
   onProgress?: (stage: string) => void,
   baseName?: string,
   printPdf?: PdfPrinter,
+  pinOutputPath?: string,
 ): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
-  const { outputPath: preferredPath, warnings } = await resolveOutputPath(sourcePath, format, outputDir, baseName);
+  const { outputPath: preferredPath, warnings } = await resolveOutputPath(
+    sourcePath,
+    format,
+    outputDir,
+    baseName,
+    pinOutputPath,
+  );
+  const commitOptions = {
+    beforeCommit: () => throwIfCanceled(ctx),
+    // pinOutputPath:调用方点名了产物路径,重名避让会把产物改名交付
+    renameOnConflict: pinOutputPath === undefined,
+  };
   // 取消闸门:产物已渲染完但用户已取消 → 提交器在写最终路径前复查,取消则零副作用
   // (临时文件在提交器 finally 内清理,不留半成品)。
   let outputPath: string;
   if (artifact.kind === "docx") {
-    outputPath = await commitArtifact(preferredPath, artifact.buffer, { beforeCommit: () => throwIfCanceled(ctx) });
+    outputPath = await commitArtifact(preferredPath, artifact.buffer, commitOptions);
   } else {
     // pdf 分岔:打印能力是宿主注入的整体函数(两遍法/书签/元数据/提交都在其内按序完成)。
     // 缺能力即报错:本层不提供降级的 pdf 路径,否则「产物能不能打印出来」变成一个
@@ -221,7 +247,7 @@ export async function persistArtifact(
     if (!printPdf) {
       throw new Error("pdf 转换需要宿主提供 printPdf 能力(printToPDF 是宿主能力,装配层不自带)");
     }
-    outputPath = await printPdf(artifact, preferredPath, ctx, onProgress);
+    outputPath = await printPdf(artifact, preferredPath, ctx, onProgress, commitOptions);
   }
   onProgress?.("done");
   return { outputPath, warnings };

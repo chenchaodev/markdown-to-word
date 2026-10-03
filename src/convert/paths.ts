@@ -39,8 +39,13 @@ export function stripMarkdownExt(name: string): string {
  * 解析输出首选路径:
  * - outputDir 空串 → 源文件同目录;非空 → outputDir(不存在则创建,失败回落源目录)
  * - 超长路径(>250 字符)→ 回落源目录并警告(Windows MAX_PATH 限制,宿主侧无解)
+ * - **pinPath 非空 → 逐字采用该路径**(CLI 的 `--output`):不套用输出目录、不派生基名、
+ *   不做超长回落。调用方点名了产物路径,任何「替他改主意」都是交付了另一个文件;
+ *   目录不存在仍创建(用户可能要先输出到尚不存在的子目录),创建失败即抛错由调用方
+ *   判为「输出写不了」(退出码 4),不静默回落。
  * - 不做存在性探测:重名序号「名 (2).ext」由产物提交器(artifact-writer)在独占创建时
- *   遇 EEXIST 递增决定。写盘前先 stat 判空必然留下「判空 → 写盘」之间的 TOCTOU 窗口
+ *   遇 EEXIST 递增决定(pinPath 形态下该递增被关闭,见 commitArtifact 的 renameOnConflict)。
+ *   写盘前先 stat 判空必然留下「判空 → 写盘」之间的 TOCTOU 窗口
  *   (批量/多窗口/外部进程并发同名会互相覆盖),故探测逻辑已从本模块移出。
  * 返回 warnings 携带回落原因;调用方负责把 warnings 并入转换结果。
  */
@@ -49,8 +54,22 @@ export async function resolveOutputPath(
   format: ConvertFormat,
   outputDir: string,
   baseName?: string,
+  pinPath?: string,
 ): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
   const warnings: ConvertWarning[] = [];
+  if (pinPath !== undefined && pinPath !== "") {
+    const pinned = path.resolve(pinPath);
+    try {
+      await fs.mkdir(path.dirname(pinned), { recursive: true });
+    } catch (error) {
+      // 原始 fs 错误码指向「哪个系统调用失败」,对人无行动价值;这里给可操作文案。
+      // 不静默回落:pinPath 的语义是「就是这个路径」,换个目录交付等于骗了调用方。
+      throw new Error(
+        `无法创建输出目录(${path.dirname(pinned)}):${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return { outputPath: pinned, warnings };
+  }
   const name = baseName ?? path.basename(filePath).replace(MARKDOWN_EXT_RE, "");
   const ext = format === "docx" ? ".docx" : ".pdf";
   const srcDir = path.dirname(filePath);

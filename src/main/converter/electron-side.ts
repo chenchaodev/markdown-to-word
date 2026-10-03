@@ -20,7 +20,7 @@ import type { PdfArtifact } from "../../core/convert.js";
 import { buildBookmarkTree, injectBookmarks, pageNumbersForNames, type PdfHeading } from "../../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../../core/pdf/metadata.js";
 import { extractHeadings, injectTocPageNumbers } from "../../core/pdf/postprocess.js";
-import { commitArtifact } from "../../convert/artifact-writer.js";
+import { commitArtifact, type CommitArtifactOptions } from "../../convert/artifact-writer.js";
 import { throwIfCanceled, type ConvertContext } from "../../convert/context.js";
 import type { PdfPrinter } from "../../convert/run.js";
 import type { AppSettings } from "../persist/settings.js";
@@ -53,6 +53,7 @@ export const renderPdf: PdfPrinter = async (
   preferredPath: string,
   ctx: ConvertContext,
   onStage?: (stage: string) => void,
+  commit?: CommitArtifactOptions,
 ): Promise<string> => {
   // 单遍打印:写临时 HTML → 隐藏窗口加载 → printToPDF → 返回 bytes(窗口/临时文件 finally 清理)
   const printOnce = async (html: string): Promise<Uint8Array> => {
@@ -110,7 +111,13 @@ export const renderPdf: PdfPrinter = async (
   // 顺序固定:书签 → 元数据(后者经 pdf-lib 整体重存,必须最后执行,否则会丢弃书签)。
   const output = await setPdfMetadata(bookmarked, artifact.metadata);
   // 提交器在写最终路径前再查一次取消(此处到落盘之间仍有 await):取消则不产出文件。
-  return commitArtifact(preferredPath, output, { beforeCommit: () => throwIfCanceled(ctx) });
+  // commit 由装配层传入(取消闸门 + 重名避让开关):spread 在前、本地 beforeCommit 在后,
+  // 故取消闸门永远由宿主侧兜住(不被入参覆盖),而 renameOnConflict 透传给提交器 ——
+  // 漏掉后者会让 pdf 路径绕开 pinOutputPath 的「禁避让」(它是装配层语义,不是宿主的)。
+  return commitArtifact(preferredPath, output, {
+    ...commit,
+    beforeCommit: () => throwIfCanceled(ctx),
+  });
 };
 
 /**

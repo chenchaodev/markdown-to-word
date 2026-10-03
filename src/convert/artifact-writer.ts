@@ -75,6 +75,15 @@ export interface CommitArtifactOptions {
   beforeCommit?: () => void;
   /** 硬链接实现,默认 fs.link */
   link?: LinkFn;
+  /**
+   * 重名时的自动避让(默认 true = 递增「名 (N).ext」,GUI 既有行为)。
+   *
+   * 置 false 即 **pinOutputPath** 语义:调用方显式点名了产物路径(CLI 的 `--output`),
+   * 此时「名 (2).docx」是意外而非贴心——用户写了 out.docx 却拿到另一个文件名,
+   * 脚本按固定名取产物必然取不到。命中已存在路径即抛错(EEXIST 语义),
+   * 绝不静默换名、也绝不覆盖既有文件。
+   */
+  renameOnConflict?: boolean;
 }
 
 /** errno 判定(EEXIST = 名已被占;其他码按语义处理) */
@@ -130,6 +139,7 @@ async function writeTempArtifact(dir: string, ext: string, data: Uint8Array): Pr
 /**
  * 独占提交(与选名同一次操作):首选路径 → 硬链接;EEXIST → 递增序号重试。
  * 环境不支持硬链接时抛可操作错误(不降级为直写最终路径,理由见文件头「硬要求」)。
+ * `renameOnConflict` 为 false(pinOutputPath)时 EEXIST 直接抛错,不换名。
  */
 async function commitExclusive(
   tempPath: string,
@@ -137,6 +147,7 @@ async function commitExclusive(
   stem: string,
   ext: string,
   link: LinkFn,
+  renameOnConflict: boolean,
 ): Promise<string> {
   const dir = path.dirname(preferredPath);
   for (let index = 0; index < MAX_NAME_ATTEMPTS; index++) {
@@ -147,7 +158,13 @@ async function commitExclusive(
       return finalPath;
     } catch (err) {
       const code = errnoCode(err);
-      if (code === "EEXIST") continue; // 已被占(本进程/外部)→ 递增序号
+      if (code === "EEXIST") {
+        // pinOutputPath:调用方点名了这个路径,换名等于交付了另一个文件
+        if (!renameOnConflict) {
+          throw new Error(`产物路径已存在(未启用重名避让,不覆盖既有文件):${preferredPath}`);
+        }
+        continue; // 已被占(本进程/外部)→ 递增序号
+      }
       if (code !== undefined && LINK_UNSUPPORTED_CODES.has(code)) {
         throw new Error(
           `产物提交失败:${finalPath} 所在文件系统不支持硬链接(错误码 ${code}),无法原子提交;` +
@@ -176,7 +193,14 @@ export async function commitArtifact(
   try {
     options.beforeCommit?.(); // 取消/异常:不提交,finally 清临时文件
     const stem = path.basename(preferredPath, rawExt);
-    return await commitExclusive(tempPath, preferredPath, stem, ext, options.link ?? fs.link);
+    return await commitExclusive(
+      tempPath,
+      preferredPath,
+      stem,
+      ext,
+      options.link ?? fs.link,
+      options.renameOnConflict !== false,
+    );
   } finally {
     await fs.rm(tempPath, { force: true }).catch(() => undefined);
   }

@@ -8,6 +8,7 @@
  */
 import type { TemplatePreset } from "../../core/settings/presets.js";
 import { t } from "../../core/i18n.js";
+import { presetSettingsPatch } from "../../core/settings/presets.js";
 import { allPresets, presetDisplayName } from "./settings-logic.js";
 import {
   docxTemplateImportBtn,
@@ -84,31 +85,16 @@ export function applyTemplatePreset(presetId: string): void {
     (p) => p.id === presetId,
   );
   if (!preset) return;
-  state.settings.typography = { ...preset.typography };
-  state.settings.pageSetup = { ...preset.pageSetup };
-  if (preset.headerFooter) state.settings.headerFooter = { ...preset.headerFooter };
-  if (preset.watermark) state.settings.watermark = { ...preset.watermark };
-  if (preset.equationNumbering !== undefined) {
-    state.settings.equationNumbering = preset.equationNumbering;
-  }
-  if (preset.breakBeforeH1 !== undefined) {
-    state.settings.breakBeforeH1 = preset.breakBeforeH1;
-  }
+  // 设置写入的字段集合与判定口径归 core/settings/presets.ts 的 presetSettingsPatch
+  // (GUI 与 CLI 两个交付面共用,免得预设新增可选字段时 CLI 面静默不生效)。
+  const patch = presetSettingsPatch(preset);
+  Object.assign(state.settings, patch);
   state.hydratingSettings = true;
   applySettingsToControls();
   state.hydratingSettings = false;
-  persistSettings({
-    typography: { ...state.settings.typography },
-    pageSetup: { ...state.settings.pageSetup },
-    ...(preset.headerFooter ? { headerFooter: { ...state.settings.headerFooter } } : {}),
-    ...(preset.watermark ? { watermark: { ...state.settings.watermark } } : {}),
-    ...(preset.equationNumbering !== undefined
-      ? { equationNumbering: state.settings.equationNumbering }
-      : {}),
-    ...(preset.breakBeforeH1 !== undefined
-      ? { breakBeforeH1: state.settings.breakBeforeH1 }
-      : {}),
-  });
+  // 持久化同一份 patch(写入面与上面 Object.assign 的字段集合逐字同源,
+  // 不在此处二次枚举 —— 那正是 presetSettingsPatch 被提取出来的原因)。
+  persistSettings(patch);
   // 预设切换即时反馈——toast 列出被覆盖的设置组
   // 预设名经 presetDisplayName 取当前语言文案(内置走字典/自定义走用户命名),
   // 不得直接用 preset.name ——那是中文原文,en/ja 下会与外层英文/日文句子混排。

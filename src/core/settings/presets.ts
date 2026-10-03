@@ -213,6 +213,30 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
 ];
 
 /**
+ * 预设 → 设置 patch 的**唯一应用口径**(纯函数,零 DOM、零 IO)。
+ *
+ * 为什么下沉到 core:同一份「预设带哪些设置字段、可选字段何时才覆盖」的判定
+ * 此前只存在于 renderer's applyTemplatePreset,CLI 交付面要用它就必须
+ * 自己重写一份 —— 两份枚举必然漂移(预设新增可选字段时 CLI 静默不生效)。
+ * 提取后 GUI 与 CLI 共用本函数,漂移面从 N 份降到 1 份。
+ *
+ * 字段集合与 applyTemplatePreset 的历史行为逐字一致:
+ * typography / pageSetup 恒覆盖;headerFooter / watermark / equationNumbering /
+ * breakBeforeH1 仅当预设**定义了**该字段时才覆盖(用户预设 CustomPreset 只携带
+ * 排版 + 页面设置,不得因此把用户已有的页眉/水印/编号重置回默认)。
+ */
+export function presetSettingsPatch(preset: TemplatePreset): Partial<AppSettings> {
+  return {
+    typography: { ...preset.typography },
+    pageSetup: { ...preset.pageSetup },
+    ...(preset.headerFooter ? { headerFooter: { ...preset.headerFooter } } : {}),
+    ...(preset.watermark ? { watermark: { ...preset.watermark } } : {}),
+    ...(preset.equationNumbering !== undefined ? { equationNumbering: preset.equationNumbering } : {}),
+    ...(preset.breakBeforeH1 !== undefined ? { breakBeforeH1: preset.breakBeforeH1 } : {}),
+  };
+}
+
+/**
  * matchesPreset 参与比较的字段清单(单一来源):排版 + 页面设置全字段,
  * 以及完整交付链(页眉页脚/水印/编号)——后者仅当 preset 定义时参与比较。
  * 新增 TypographySettings / PageSetup 字段时在此补一行,漏补会导致
