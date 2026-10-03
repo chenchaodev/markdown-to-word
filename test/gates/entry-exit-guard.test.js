@@ -16,8 +16,10 @@
  *    失败关闭:阶段 ok 却带错误对象、阶段不在码表内、错误为 null/undefined 一律非零;
  * 2. 壳层(编排层,注入 exit/write/flush/armWatchdog,零真实进程):加载失败、ready 抛错、
  *    看门狗到期、非法退出码、门禁自有红灯码各自退出码正确;**work 忘 return 不得退出 0**;
- * 3. 真实进程(端到端,仅本段起一次子进程):生成一个走本守卫的临时入口脚本,分别注入
- *    「载荷加载失败」与「ready 回调内抛错」,断言子进程**真的以非零码退出**且诊断命中阶段标签。
+ * 3. 真实进程(端到端,仅本段起真实子进程):生成走本守卫的临时入口脚本,分别注入「载荷加载
+ *    失败」「ready 回调内抛错」「逃逸异常(兜底监听接住)」与「拆卸是否让出宏任务」,断言子进程
+ *    **真的以非零码退出**且诊断命中阶段标签。第三条路径同时钉住**机制**:拆卸不得在未捕获异常
+ *    的派发窗口内启动,否则 Windows 上以原生崩溃收场、退出码被顶掉(见 case 注释)。
  *    这一层是防"纯函数对、接线错"的锚点 —— 前两层都注入假 exit,接线断了它们不会红。
  *    临时脚本落在系统临时区并在段末删除(构造方式不入库)。
  *
@@ -499,6 +501,44 @@ export async function run() {
       );
       assertIncludes(result.output, "阶段:逃逸异常(runtime)", "须以逃逸异常阶段标注(与入口自身失败可区分)");
       assertIncludes(result.output, "PROBE_ESCAPE_BOOM", "须含原始错误消息");
+    });
+
+    // 防「判定全对、结果被原生崩溃顶掉」:2026-10 CI 上这条路径曾以 3221225477(0xC0000005)
+    // 收场,诊断完整、只有退出码错。上面那条 `code === CRASH` 是它的守门人,但**只覆盖症状**
+    // (崩溃码 != 4);本条覆盖机制:拆卸必须在未捕获异常的派发窗口之外启动。
+    await suite.case("端到端:逃逸异常的拆卸让出一次宏任务(不在致命派发的同一 tick 内启动)", async () => {
+      const result = await runRealEntry(
+        "escape-window-entry.mjs",
+        [
+          `import fs from "node:fs";`,
+          `import { runEntry } from ${JSON.stringify(GUARD_URL)};`,
+          // 装在守卫之前 → 同一次 uncaughtException 派发里先于守卫兜底监听执行。
+          // 这里排的 setImmediate 是「事件循环已重新拿到控制权」的标尺:它在 check 阶段才跑,
+          // 必然晚于本 tick。若守卫在同一 tick 内就拆进程,标尺永远打不出来 —— 那正是
+          // 0xC0000005 的形态。同步写 fd(不经 stdout 流):标尺必须在拆卸前真落到管道里,
+          // 不能被流的异步写吞掉或被拆卸截断。
+          `process.on("uncaughtException", () => {`,
+          `  setImmediate(() => { fs.writeSync(1, "[probe] event-loop-recovered\\n"); });`,
+          `});`,
+          `void runEntry({`,
+          `  entry: "probe-escape-window",`,
+          `  work: () => new Promise(() => { setTimeout(() => { throw new Error("PROBE_ESCAPE_WINDOW_BOOM"); }, 0); }),`,
+          `});`,
+          "",
+        ].join("\n"),
+      );
+      assertEq(result.timedOut, false, "逃逸异常绝不允许挂死");
+      assert(
+        result.code === ENTRY_EXIT.CRASH,
+        `逃逸异常应以崩溃码 ${ENTRY_EXIT.CRASH} 退出,实际 ${String(result.code)}(输出:${result.output})`,
+      );
+      assertIncludes(
+        result.output,
+        "[probe] event-loop-recovered",
+        "拆卸必须让出一次宏任务:app.exit 若在 uncaughtException 派发的同一 tick 内启动,Windows 上以原生崩溃收场并顶掉退出码",
+      );
+      assertIncludes(result.output, "阶段:逃逸异常(runtime)", "让出宏任务不得牺牲阶段标签(诊断仍须完整)");
+      assertIncludes(result.output, "PROBE_ESCAPE_WINDOW_BOOM", "让出宏任务不得牺牲原始错误与堆栈");
     });
   } finally {
     // 走 removeTree(退避重试 + 删后复查):scratch 里的探针段刚被 spawn 完就退,

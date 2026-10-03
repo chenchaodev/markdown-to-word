@@ -15,6 +15,12 @@
  *    降级成 warn,不像纯 Node 那样终止进程),进程继续活着 → 同样挂到超时。
  * 3. **`app.quit()` + `process.exitCode = 1` 会退出 0**:quit 走自身退出路径,实测退出码是 0。
  *    「失败但退出 0」比挂死更糟(门禁变成永远通过),故成功/失败一律用 `app.exit(显式码)`。
+ * 4. **在未捕获异常的派发窗口里拆进程 = 判定被原生崩溃顶掉**:逃逸异常路径上 `finish()`
+ *    是在 uncaughtException 派发里被调起的,它内部 `await flush()` 只把拆卸推到**同一 tick
+ *    的微任务**,致命异常的派发栈尚未退回事件循环(实测:派发内排的 setImmediate 在 exit
+ *    **之后**才跑)。app.exit 同步拆浏览器进程,在这个窗口里拆,Windows runner 上以
+ *    `0xC0000005`(STATUS_ACCESS_VIOLATION)收场 —— 诊断文本已完整落盘、只有退出码被顶掉,
+ *    即「判定对、结果错」。故拆卸一律让出一次宏任务(见 `defaultElectronExit`)。
  *
  * 结构性残余(ESM 语义决定,进程内无解,只能靠外层超时兜底):ESM 在**任何求值之前**先完成
  * 整张模块图的 linking,所以「某个静态 import 解析不到 / 缺导出」这类 link 期失败发生在他
@@ -195,26 +201,43 @@ export async function flushOutput() {
 }
 
 /**
- * 默认退出实现:先写 process.exitCode 再 app.exit(显式码),并在 2s 后仍存活时强制 process.exit。
- * 硬退兜底是"绝不静默挂住"的最后一道:app.exit 若在某平台静默失效,到期按同一码退出
- * (码由决策层给出,兜底不会把失败改成 0)。
+ * 默认退出实现:先同步写 `process.exitCode`,再**让出一次宏任务**后 `app.exit(显式码)`,
+ * 2s 后仍存活时强制 `process.exit(同码)`。硬退兜底是"绝不静默挂住"的最后一道:app.exit
+ * 若在某平台静默失效,到期按同一码退出(码由决策层给出,兜底不会把失败改成 0)。
+ *
+ * **为什么必须让出一次宏任务**:逃逸异常路径上本函数是在 uncaughtException 派发里被调起的,
+ * `finish()` 的 `await flush()` 只把它推到**同一 tick 的微任务** —— 致命异常的派发栈尚未退回
+ * 事件循环(实测标尺:派发内排的 setImmediate 在 app.exit **之后**才跑)。app.exit 是同步拆
+ * 浏览器进程,在那个窗口里拆会在 Windows runner 上以 `0xC0000005` 收场,判定出的退出码被
+ * 原生崩溃顶掉。让出宏任务后拆卸发生在干净栈上(事件循环已重新拿到控制权)。
+ * 代价是收尾晚一个事件循环回合:这段窗口里入口自身的后续代码仍会跑几拍 —— 对门禁入口
+ * 无害(`process.exitCode` 已同步落码,自然退出也拿到同一个码),而换来的是四条共用路径
+ * (正常退出/加载失败/执行期失败/逃逸异常)在任何栈形态下都从干净栈拆卸。
+ *
+ * 不改用无条件 `process.exit()`:`app.exit` 走 Chromium 的有序拆卸(关窗、收 session),
+ * 裸 `process.exit` 是在 Chromium 线程仍活着时直接结束进程,跳过拆卸,原生稳定性更差;
+ * 且各入口的 userData/临时目录清理依赖拆卸期完成。
+ *
  * @param {number} code 退出码
  * @returns {void}
  */
 function defaultElectronExit(code) {
+  // 同步落码:即便后面的拆卸一步都不成立,自然退出也拿到同一个码(不得把失败改成 0)
   process.exitCode = code;
-  try {
-    app.exit(code);
-  } catch (err) {
-    console.error(`[entry] app.exit(${code}) 失效,直接 process.exit:${normalizeError(err)}`);
-    process.exit(code);
-    return;
-  }
-  const timer = setTimeout(() => {
-    console.error(`[entry] app.exit(${code}) 后进程仍存活,强制 process.exit(${code})`);
-    process.exit(code);
-  }, HARD_EXIT_FALLBACK_MS);
-  timer.unref?.();
+  setImmediate(() => {
+    try {
+      app.exit(code);
+    } catch (err) {
+      console.error(`[entry] app.exit(${code}) 失效,直接 process.exit:${normalizeError(err)}`);
+      process.exit(code);
+      return;
+    }
+    const timer = setTimeout(() => {
+      console.error(`[entry] app.exit(${code}) 后进程仍存活,强制 process.exit(${code})`);
+      process.exit(code);
+    }, HARD_EXIT_FALLBACK_MS);
+    timer.unref?.();
+  });
 }
 
 /**
