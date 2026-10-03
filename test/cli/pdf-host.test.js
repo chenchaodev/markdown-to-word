@@ -22,7 +22,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createTempResource, removeTree } from "../common/temp-resource.js";
-import { convertPdfJob } from "../../dist/main/cli-pdf-host.js";
+import { ROOT } from "../common/paths.js";
+import { convertPdfJob, resolvePdfHostKatexDir } from "../../dist/main/cli-pdf-host.js";
 import { exitCodes, readJobResult, writeJobResult } from "../../dist/convert/cli-pdf-job.js";
 import { cloneDefaultSettings } from "../../dist/core/settings/settings-defaults.js";
 
@@ -135,7 +136,37 @@ export async function run() {
     }
     assert(thrown instanceof Error, "结果文件缺失应抛错(否则会被当成成功的空结果)");
 
-    console.log("[ok] cli-pdf-host:pdf 宿主直测通过(真 pdf 魔数 + 结果契约字段 / pinOutputPath 逐字落盘且禁避让 / 失败形态带 error / 结果契约往返与缺失即抛)");
+    // ---------- katex 资源定位:两种启动形态各断言一次 ----------
+    // 抽出 resolvePdfHostKatexDir 就是为了这条:两种形态加载的是**同一段编译产物**,只是前缀
+    // 不同(dev 是 <repo>/dist/main,安装版是 …/app.asar/dist/main),而 app.getAppPath()
+    // 那条候选路径只在 dev 的脚本路径启动形态下才分叉(见宿主文件头那张对照表)。
+    {
+      const devDir = resolvePdfHostKatexDir(path.join(ROOT, "dist", "main"));
+      assert(
+        devDir === path.join(ROOT, "node_modules", "katex", "dist"),
+        `dev 形态应解析到项目根的 node_modules/katex/dist,实际 ${devDir}`,
+      );
+      assert(
+        fs.existsSync(path.join(devDir, "katex.min.css")),
+        "dev 形态解出的目录下应有 katex.min.css(否则公式样式静默不加载)",
+      );
+      // 安装形态:上溯两级落在 app.asar **根**,故另一条候选路径(dev 那条会落到
+      // app.asar/dist/main/node_modules —— 不存在)在这里本就不成立,两条同答案。
+      const asarRoot = path.join(
+        "C:", "Users", "u", "AppData", "Local", "Programs", "MarkdownToWord", "resources", "app.asar",
+      );
+      const packagedDir = resolvePdfHostKatexDir(path.join(asarRoot, "dist", "main"));
+      assert(
+        packagedDir === path.join(asarRoot, "node_modules", "katex", "dist"),
+        `安装形态应解析到 app.asar 根下的 node_modules/katex/dist,实际 ${packagedDir}`,
+      );
+      assert(
+        !packagedDir.includes(path.join("dist", "main")),
+        "安装形态不得停在 dist/main 下(那是只有脚本路径启动才会出现的错位)",
+      );
+    }
+
+    console.log("[ok] cli-pdf-host:pdf 宿主直测通过(真 pdf 魔数 + 结果契约字段 / pinOutputPath 逐字落盘且禁避让 / 失败形态带 error / 结果契约往返与缺失即抛 / katex 资源定位的两种启动形态各断言一次(dev 解出的目录真实存在,安装形态不落在 dist/main 下))");
   } finally {
     removeTree(dir);
   }

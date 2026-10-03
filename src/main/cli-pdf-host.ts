@@ -12,12 +12,26 @@
  * ③ 把结构化结果写进**结果文件**并以约定退出码结束。
  * 换句话说:**它是 CLI 面对装配层的调用点**,能力注入与 GUI 完全同构。
  *
- * ⚠ katexDir 不能用 getKatexDir():那一支以 `app.getAppPath()` 为基准,而本文件是
- * **以脚本路径**启动的(`electron dist/main/cli-pdf-host.js`),此时 appPath 等于脚本所在
- * 目录(实测:脚本放在系统临时区时 appPath 就是那个临时区),getKatexDir() 会指向
- * `dist/main/node_modules/katex/dist` —— 不存在,公式路径必然读不到。
- * 故按 resource-dirs 里 Mermaid 的既有做法,改用**模块自身位置**定位
- * (编译产物恒在 <root>/dist/main/ → 上溯两级即 <root>,打包态即 app.asar)。
+ * ⚠ katexDir 按**模块自身位置**定位(上溯两级),而不是 getKatexDir() 那条
+ * `app.getAppPath()` —— 但理由不是「getKatexDir() 一律不可用」,而是**只有一种启动
+ * 形态下两者会分叉**,那种形态恰是本文件原本的启动方式:
+ *
+ * - **源码检出**(以脚本路径启动:`electron dist/main/cli-pdf-host.js`):appPath 等于**脚本
+ *   所在目录**(实测,脚本放系统临时区时 appPath 就是那个临时区),于是 getKatexDir() 指向
+ *   `dist/main/node_modules/katex/dist` —— 不存在,公式路径必然读不到;而模块自身位置
+ *   上溯两级 = 项目根,正确。
+ * - **已安装形态**(经 `--pdf-host` flag 由应用自身主进程接管,见 main/index.ts):
+ *   appPath 就是 `…/resources/app.asar`,**两条路径给出同一答案**(`app.asar` 下
+ *   `node_modules/katex/dist`,node_modules 随 asar 内置)。此时 getKatexDir() 同样可用。
+ *
+ * ⇒ 选 moduleDir 相对定位是因为它**在两种形态下都对**,而非因为另一条处处坏。
+ * 2026-10-03 实测(真实 win-unpacked 产物):安装版经 `--pdf-host` 转 pdf,带公式的产物
+ * 53628 B、不带公式 42591 B(差 11 KB)且**不含字面 `$a^2`** ⇒ 公式确实被 KaTeX 渲染;
+ * 另在同产物上跑 `--smoke`(它用 getKatexDir())exit 0、pdf 转换成功且**无
+ * `warn.katexCssLoadFailed` 降级行** ⇒ 该形态下 getKatexDir() 亦可用。
+ *
+ * 早期版本此处的注释写作「katexDir 不能用 getKatexDir()」,那是把上表第一行的结论当成了
+ * 普遍结论,会误导后来人以为另一条在打包态也坏 —— 2026-10-03 已按上述实测更正。
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,9 +49,24 @@ import { resolveKatexDir } from "./services/resource-dirs.js";
 /** 本模块的目录(编译产物在 <root>/dist/main/) */
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
-/** katex 资源目录(见文件头「katexDir 不能用 getKatexDir()」) */
+/**
+ * 本宿主的 katex 资源目录 —— 纯路径解析(入参为宿主模块自身目录,可参数化直测)。
+ *
+ * 抽成导出函数是为了让**两种启动形态的判定可被断言**,而不必真起一个 Electron:
+ * dev 形态的模块目录是 `<repo>/dist/main`,已安装形态是 `…/app.asar/dist/main`
+ * (同一段编译产物被两种形态以不同前缀加载),传入即可验「两种形态都指向存在的
+ * node_modules/katex/dist」。理由与两形态的差异见文件头那张对照表。
+ *
+ * @param hostModuleDir 宿主模块自身所在目录(编译产物恒在 `…/dist/main/`)
+ * @returns katex 资源目录(该目录下应有 `katex.min.css` 与 `fonts/`)
+ */
+export function resolvePdfHostKatexDir(hostModuleDir: string): string {
+  return resolveKatexDir(path.resolve(hostModuleDir, "..", ".."));
+}
+
+/** katex 资源目录(见文件头「katexDir 按模块自身位置定位」) */
 function katexDir(): string {
-  return resolveKatexDir(path.resolve(moduleDir, "..", ".."));
+  return resolvePdfHostKatexDir(moduleDir);
 }
 
 /**
