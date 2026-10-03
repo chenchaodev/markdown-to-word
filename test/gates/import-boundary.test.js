@@ -22,7 +22,7 @@
  *    对应诊断(只断言退出码会让「因错误原因失败」蒙混过关);正向锚点证明
  *    夹具通路本身有效(否则负向用例可能只是「脚本跑不起来」)。
  * 3. 独立复核(测试内自带极简 import 抽取器,与被测实现无共享代码):直接从
- *    文本重算四条层向不变量 + 生产依赖覆盖,避免「用被测实现证明被测实现」。
+ *    文本重算逐条层向不变量(含 src/ 顶层登记事实)+ 生产依赖覆盖,避免「用被测实现证明被测实现」。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -35,10 +35,13 @@ import {
   HOST_PROVIDED_RUNTIME,
   LAYER_RULES,
   RESOURCE_ONLY_DEPENDENCIES,
+  SRC_TOP_LAYERS,
   analyze,
+  analyzeSrcTopLayers,
   analyzeTreeBoundaries,
   classifySpecifier,
   collectImports,
+  findUnregisteredSrcLayers,
   isTypeOnlyClause,
   main as boundaryMain,
   selfCheckTreeLayout,
@@ -279,7 +282,7 @@ export async function run() {
       console.log("[ok] import-boundary:真实 src 与 dist 产物双侧零 problem");
     }
 
-    // ================= 3. 独立复核:测试自带抽取器重算四条不变量 =================
+    // ================= 3. 独立复核:测试自带抽取器重算逐条层向不变量 =================
     {
       const srcScan = scanImportsIndependently(SRC_DIR, [".ts", ".cts"]);
       assert(srcScan.size > 0, "独立抽取器未扫到任何 src 文件(抽取器本身失效?)");
@@ -336,6 +339,20 @@ export async function run() {
             if (file.startsWith("main/") && kind === "relative" && layerOf(file, spec) === "renderer") {
               assert(false, `${label}:${file} 不得 import renderer 层 ${spec}(依赖方向单向 core ← main ← renderer)`);
             }
+            // 层向 7:convert 是 headless 装配层,消费面在它之上(ADR-060),
+            // 不得反向依赖 GUI 两层 —— 否则新树里那些「借 main 拿点配置」的 import
+            // 只会因门禁没扫到而全绿(该文件自己批过这一形态)
+            if (file.startsWith("convert/") && kind === "relative") {
+              const layer = layerOf(file, spec);
+              assert(
+                layer !== "main" && layer !== "renderer",
+                `${label}:convert 装配层不得 import ${layer} 层(${file} → ${spec});消费面一律在 convert 之上`,
+              );
+            }
+            // 层向 8:cli 是进程外交付面,renderer 是 GUI 面 —— 引它会把 Electron 拖进纯 node 侧
+            if (file.startsWith("cli/") && kind === "relative" && layerOf(file, spec) === "renderer") {
+              assert(false, `${label}:${file} 不得 import renderer 层 ${spec}(cli 是进程外交付面)`);
+            }
           }
         }
       }
@@ -369,20 +386,22 @@ export async function run() {
           );
         }
       }
-      // 规则表形态:八条层向断言都在
+      // 规则表形态:十条层向断言都在
       for (const id of [
         "core-no-host",
+        "convert-no-gui",
         "core-no-upward",
         "renderer-no-main",
         "preload-no-main",
         "main-no-renderer",
+        "cli-no-renderer",
         "smoke-no-outside-src",
         "renderer-foundation-no-feature-dep",
         "core-pdf-no-fs",
       ]) {
         assert(LAYER_RULES.some((r) => r.id === id), `层向规则表缺 ${id}`);
       }
-      console.log("[ok] import-boundary:独立抽取器复核通过(core 禁宿主/禁上跳、renderer 禁 main、main 禁 renderer、preload 禁上跳、生产依赖覆盖)");
+      console.log("[ok] import-boundary:独立抽取器复核通过(core 禁宿主/禁上跳、convert 禁 GUI 两层、renderer 禁 main、main 禁 renderer、preload 禁上跳、cli 禁 renderer、生产依赖覆盖)");
     }
 
     // ================= 4. 沙盒负向夹具:逐条制造漂移,断言精确诊断 =================
@@ -662,7 +681,72 @@ export async function run() {
           `core/pdf 的 node:url / node:path 是纯字符串运算,应放行,实际 ${result.code}:${result.output}`,
         );
       }
-      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / renderer→main 绝对禁止(含 type-only) / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / 合法 smoke 依赖图不误伤)");
+      // 5l. convert 装配层反向依赖 main → 必须判红(ADR-060 的 convert-no-gui)。
+      // 夹具刻意用**值导入**(不是 import type):main/persist/settings 是 app.getPath
+      // 的持有者,值导入才真的把 Electron 拖进 headless 装配层。
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "convert/single.ts": 'import { loadSettings } from "../main/persist/settings.js";\nexport { loadSettings };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /convert\/single\.ts:import「\.\.\/main\/persist\/settings\.js」违反层向规则 convert-no-gui/,
+          "convert 装配层反向依赖 main",
+        );
+      }
+      // 5m. convert 反向依赖 renderer → 同样判红(与 5l 分开是因为两个目标层的
+      // 失败原因不同,合成一条会让「layer: 列表漏了一个」退化成看不出是哪侧漏放行)
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "convert/single.ts": 'import { el } from "../renderer/dom/refs.js";\nexport { el };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /convert\/single\.ts:import「\.\.\/renderer\/dom\/refs\.js」违反层向规则 convert-no-gui/,
+          "convert 装配层反向依赖 renderer",
+        );
+      }
+      // 5n. cli 引用 renderer → 必须判红(ADR-060 的 cli-no-renderer)
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "cli/index.ts": 'import { el } from "../renderer/dom/refs.js";\nexport { el };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /cli\/index\.ts:import「\.\.\/renderer\/dom\/refs\.js」违反层向规则 cli-no-renderer/,
+          "cli 引用 renderer",
+        );
+      }
+      // 5o. 正向:convert 引 core(向下)与自身、cli 引 convert(向上)与 core 均合法 ——
+      // 若这两条规则的面写错(比如误禁 convert→core 或 core→convert),门禁会在
+      // 装配层落地那天判红一片,而那时补规则的成本正是 ADR-060 后果 3 要消灭的那个。
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          {
+            "core/markdown/parse.ts": "export const parse = () => null;\n",
+            "convert/paths.ts": 'import { sep } from "node:path";\nexport { sep };\n',
+            "convert/single.ts": 'import { parse } from "../core/markdown/parse.js";\nimport { sep } from "./paths.js";\nexport { parse, sep };\n',
+            "cli/index.ts": 'import { parse } from "../convert/single.js";\nimport { sep } from "../convert/paths.js";\nexport { parse, sep };\n',
+          },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(
+          result.code === 0,
+          `convert↓core、cli→convert 的合法依赖图不得误伤,实际 ${result.code}:${result.output}`,
+        );
+      }
+      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / renderer→main 绝对禁止(含 type-only) / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / convert 反向依赖 GUI 两层判红 / cli 引用 renderer 判红 / 合法 smoke、convert→core、cli→convert 依赖图不误伤)");
     }
 
     // ================= 6. 规则原语的单元断言(判定链的接缝) =================
@@ -831,6 +915,99 @@ export async function run() {
         );
       }
       console.log("[ok] import-boundary:树边界规则断言通过(四规则负向判红 / 五类合法引用零误伤 / 缺树自检判红)");
+    }
+
+    // ================= (8) 层向 allow-list:src/ 顶层目录未登记即判红(ADR-060 后果 3)====
+    // 与 (7) 的关系:(7) 守仓根四棵树的跨树引用,本组守「src/ 里新增一层会不会没人管」。
+    // 层向规则本身是 deny-list,scopeMatches 的兜底只认表里写过的名字 ⇒ 新建顶层目录
+    // 不命中任何规则、其反向依赖静默放行。本组断言 allow-list 把这个洞从恒绿变成恒红。
+    {
+      // 8a. 真实仓库当前必须全部已登记。目录列举刻意由本段自己读(不经被测实现),
+      // 免得「读目录那一步」本身写错时被测实现与本断言一起绿。
+      const topDirs = fs
+        .readdirSync(SRC_DIR, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+      const unregistered = topDirs.filter((n) => !SRC_TOP_LAYERS.includes(n));
+      assert(
+        unregistered.length === 0,
+        `真实仓库 src/ 顶层目录应全部登记,未登记:${unregistered.join(",")}(允许面 ${SRC_TOP_LAYERS.join(",")})`,
+      );
+      const realProblems = analyzeSrcTopLayers(SRC_DIR);
+      assert(
+        realProblems.length === 0,
+        `真实仓库 src/ 顶层应全部登记在 SRC_TOP_LAYERS,实际 ${realProblems.length} 项:${realProblems.join(" | ")}`,
+      );
+      // 8b. 预登记:ADR-060 规划中的 convert / cli 必须**现在就**在表内 ——
+      // allow-list 的价值正在于树落地当天就拦住,落地后再补登记等于给新树发过通行证。
+      // 判据写成「在表内」而非「等于 SRC_TOP_LAYERS 的全部取值」,这样将来再加层不必改本断言。
+      for (const planned of ["convert", "cli"]) {
+        assert(
+          SRC_TOP_LAYERS.includes(planned),
+          `SRC_TOP_LAYERS 应预登记 ADR-060 规划的 ${planned}/(落地当天即受治理),实际 ${SRC_TOP_LAYERS.join(",")}`,
+        );
+      }
+
+      // 8c. 反向锚点:合成一棵含未登记顶层 omega/ 的 src 树 → 必须判红并点名 omega。
+      // 这是「新树不再静默放行」的可复现证明:同形状的 src/ 只要多一个目录就翻脸。
+      {
+        const sb = createSandbox({ dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } }, {
+          "core/markdown/parse.ts": "export const parse = () => null;\n",
+          "omega/x.ts": 'import { app } from "electron";\nexport { app };\n',
+        });
+        track(sb.dir);
+        const problems = analyzeSrcTopLayers(sb.srcDir);
+        assert(
+          problems.length === 1 && String(problems[0]).includes("omega"),
+          `含未登记顶层 omega/ 的合成树必须判红并点名 omega,实际:${JSON.stringify(problems)}`,
+        );
+        // 8c-2. 同一棵树走 selfCheckTreeLayout(即门禁 main() 的实际路径)也必须判红。
+        // 只验 analyzeSrcTopLayers 会漏掉「自检没把这条接进 main()」这种失效。
+        const layoutProblems = selfCheckTreeLayout(sb.dir).filter((p) => p.includes("omega"));
+        assert(
+          layoutProblems.length > 0 && layoutProblems.some((p) => p.startsWith("层向规则自检失守:")),
+          `selfCheckTreeLayout 必须对未登记顶层判红(前缀为层向,不得借用树边界前缀),实际:${JSON.stringify(layoutProblems)}`,
+        );
+      }
+
+      // 8d. 只差一个已登记目录的正向对照:同一形状但顶层全部已登记 → 零判红
+      {
+        const sb = createSandbox({ dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } }, {
+          "core/markdown/parse.ts": "export const parse = () => null;\n",
+          "convert/single.ts": 'import { parse } from "../core/markdown/parse.js";\nexport { parse };\n',
+          "cli/index.ts": 'import { parse } from "../convert/single.js";\nexport { parse };\n',
+        });
+        track(sb.dir);
+        const problems = analyzeSrcTopLayers(sb.srcDir);
+        assert(problems.length === 0, `已登记的顶层目录不得误伤,实际判红:${JSON.stringify(problems)}`);
+      }
+
+      // 8e. 只数目录:src 顶层的普通文件(.gitkeep 之类)不是一层,计入即恒红
+      {
+        const sb = createSandbox({ dependencies: {}, devDependencies: {} }, {});
+        writeFileIn(sb.srcDir, ".gitkeep", "");
+        track(sb.dir);
+        const problems = analyzeSrcTopLayers(sb.srcDir);
+        assert(problems.length === 0, `src/ 顶层的普通文件不该被当成未登记层,实际判红:${JSON.stringify(problems)}`);
+      }
+
+      // 8f. 判据原语的两个方向(恒绿 / 恒红都是失效,各自钉一个用例)
+      assert(
+        findUnregisteredSrcLayers(["core", "main", "renderer"]).length === 0,
+        "已登记的顶层目录应零命中",
+      );
+      assert(
+        findUnregisteredSrcLayers(["omega"]).length === 1,
+        "未登记的顶层目录应命中(漏检即恒绿,正是本条要消灭的失效形态)",
+      );
+
+      // 8g. 真实仓库的树布局自检必须整体零问题(含门禁自身的层向自检夹具)
+      const realLayout = selfCheckTreeLayout(ROOT);
+      assert(
+        realLayout.length === 0,
+        `真实仓库自检应零问题,实际 ${realLayout.length} 项:${realLayout.slice(0, 3).join(" | ")}`,
+      );
+      console.log("[ok] import-boundary:层向 allow-list 断言通过(真实 src 零未登记 / 预登记 convert 与 cli / 含 omega/ 的合成树判红并点名 / 已登记与纯文件不误伤 / 真实仓库自检零问题)");
     }
   } finally {
     // 走 removeTree(退避重试 + 删后复查):沙盒里刚写过 dist 副本,Windows 上句柄释放

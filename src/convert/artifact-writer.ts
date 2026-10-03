@@ -17,7 +17,7 @@
  *   (EIO 等)原样上抛,不与「环境不支持」混为一谈。
  * - 任何失败/取消/异常都在 finally 清理临时文件,不留下可被误认成功的最终文件。
  *
- * 依赖方向:本模块只依赖 node 内置,被 paths.ts 的消费方(single.ts)单向调用。
+ * 依赖方向:本模块只依赖 node 内建,被 paths.ts 的消费方(single.ts)单向调用。
  */
 import { randomUUID } from "node:crypto";
 import fs, { type FileHandle } from "node:fs/promises";

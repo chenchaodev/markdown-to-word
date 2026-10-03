@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * 产物提交器验收(位于 test/main/ = 主进程层;src/main/converter/artifact-writer.ts,
- * 测试经 dist/main/converter/artifact-writer.js 直连,electron 环境):
+ * 产物提交器验收(位于 test/main/;src/convert/artifact-writer.ts,
+ * 测试经 dist/convert/artifact-writer.js 直连,无 electron 环境要求):
  * 断言「选名与占位合并为独占提交」的完整契约(端到端转换链路的并发同名回归在
  * converter.test.js,本段只测提交器自身):
  * - 提交成功:首选路径即落盘路径,内容逐字节一致,目录内无临时文件残留;
@@ -23,7 +23,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ARTIFACT_TEMP_PREFIX, commitArtifact } from "../../dist/main/converter/artifact-writer.js";
+import { ARTIFACT_TEMP_PREFIX, commitArtifact } from "../../dist/convert/artifact-writer.js";
 import { removeTree } from "../common/temp-resource.js";
 
 /**

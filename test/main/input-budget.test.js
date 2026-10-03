@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * 输入与目录预算验收(位于 test/main/ = 主进程层;被测 src/main/converter/paths.ts、
- * preprocess.ts、batch.ts、merge.ts,经 dist 直连,electron 环境):
+ * 输入与目录预算验收(位于 test/main/ = 主进程层;被测 src/convert/paths.ts、
+ * main/converter/{preprocess,batch,merge}.ts,经 dist 直连,electron 环境):
  * - collectMarkdownPaths:realpath 规范路径去重(junction/symlink 指回自身或祖先时
  *   终止递归,不再无限展开)+ 深度上限 + 条目数上限,超限经 warnings 上报;
  * - 数千路径(2000 个 md)在预算内完成收集并保持排序口径;
@@ -21,7 +21,7 @@ import {
   collectMarkdownPaths,
   mergeConvertImpl,
 } from "../../dist/main/converter/index.js";
-import { MAX_SCAN_DEPTH, MAX_SCAN_ENTRIES } from "../../dist/main/converter/paths.js";
+import { MAX_SCAN_DEPTH, MAX_SCAN_ENTRIES } from "../../dist/convert/paths.js";
 import { MAX_SOURCE_FILE_BYTES, prepareMarkdown } from "../../dist/main/converter/preprocess.js";
 import { MAX_BATCH_FILES } from "../../dist/main/converter/batch.js";
 import { MAX_MERGE_FILES, MAX_MERGE_TOTAL_BYTES, MERGE_READ_CONCURRENCY } from "../../dist/main/converter/merge.js";
@@ -138,7 +138,7 @@ export async function run() {
       // 条目数上限:单目录塞入超过上限的条目 → 截断并上报(MAX_SCAN_ENTRIES 本身较大,
       // 故此处不真的造 2 万文件,而是断言常量与告警文案口径,避免测试本身成为瓶颈)
       assert(Number.isInteger(MAX_SCAN_ENTRIES) && MAX_SCAN_ENTRIES > 0, "条目数上限应为正整数常量");
-      const { pathScanLimitWarning } = await import("../../dist/main/converter/paths.js");
+      const { pathScanLimitWarning } = await import("../../dist/convert/paths.js");
       assert(
         formatWarning(pathScanLimitWarning("条目数", MAX_SCAN_ENTRIES)).includes(`条目数上限(${MAX_SCAN_ENTRIES})`),
         "条目数上限告警文案口径不符",

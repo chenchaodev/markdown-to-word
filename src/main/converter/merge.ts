@@ -26,7 +26,7 @@ import {
   throwIfCanceled,
   type ConvertContext,
 } from "./context.js";
-import { stripMarkdownExt } from "./paths.js";
+import { stripMarkdownExt } from "../../convert/paths.js";
 import { prepareMarkdown } from "./preprocess.js";
 import { emitConvertedArtifact } from "./output-skeleton.js";
 

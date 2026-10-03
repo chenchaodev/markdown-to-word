@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * 路径收集/输出首选路径解析验收(位于 test/main/ = 主进程层;src/main/converter/paths.ts
- * 经桶导出 converter.ts,测试经 dist/main/converter/index.js,electron 环境):
+ * 路径收集/输出首选路径解析验收(位于 test/main/;src/convert/paths.ts
+ * 经 main/converter 桶再导出,测试经 dist/main/converter/index.js,electron 环境):
  * 实现事实(读源码确认,非显然行为):
  * - skipped 记录传入原串;visit 的 seen 在 stat 前即去重,目录重复传入也只扫一次
  * - 目录递归的返回路径以每层 realpath 规范形式为基准(Windows 上 8.3 短路径会被

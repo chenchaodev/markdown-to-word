@@ -3,7 +3,7 @@
  * (解析/合并/校验/路径处理/数据变换),供直测。
  * 约定:只放不依赖 electron API 的纯逻辑;对话框/文件 IO/窗口/持久化留在 register.ts 薄壳。
  * 依赖边界:运行时依赖仅 node:path、core/(契约 + i18n)与两个 electron 无关的
- * main 纯模块(convert 预设解析合并的 persist/preset-file、路径工具 converter/paths);
+ * 纯模块(预设解析合并的 main/persist/preset-file、路径工具 convert/paths);
  * 凡触达 electron 的类型(main/converter、persist/settings)一律 `import type`,
  * 编译期擦除——故本模块产物可被纯 Node 段直接 import,不必加载 electron mock。
  */
@@ -14,7 +14,7 @@ import type { OperationBusyResult, PrecheckResult, RecentFile } from "../../core
 import type { ConvertWarning, KeyedWarning } from "../../core/i18n.js";
 import { mergePresets, parsePresetsFile } from "../persist/preset-file.js";
 import type { ConvertContext } from "../converter/index.js";
-import { stripMarkdownExt } from "../converter/paths.js";
+import { stripMarkdownExt } from "../../convert/paths.js";
 import { errorMessage } from "../../core/util/error-message.js";
 
 // 错误归一的实现单源在 core/util/error-message.ts:此前本文件与 renderer 的
@@ -170,7 +170,7 @@ export function buildRecentFileEntries(
     .map((p) => ({ path: p, name: path.basename(p), format, ts }));
 }
 
-/** 预览标题/基础名:去 .md/.markdown 扩展(大小写不敏感),其余原样;扩展名判定单源 converter/paths.ts(stripMarkdownExt)。 */
+/** 预览标题/基础名:去 .md/.markdown 扩展(大小写不敏感),其余原样;扩展名判定单源 convert/paths.ts(stripMarkdownExt)。 */
 export function baseNameFromMdPath(mdPath: string): string {
   return stripMarkdownExt(path.basename(mdPath));
 }

@@ -26,7 +26,7 @@ import iconv from "iconv-lite";
 import { app, ipcMain, Menu } from "electron";
 import { registerIpc } from "../../dist/main/ipc/register.js";
 import { IPC_CHANNELS as CH } from "../../dist/main/ipc/channels.js";
-import { MAX_SCAN_DEPTH } from "../../dist/main/converter/paths.js";
+import { MAX_SCAN_DEPTH } from "../../dist/convert/paths.js";
 import { formatWarning, t } from "../../dist/core/i18n.js";
 import { beginWebContentsOperation, finishWebContentsOperation } from "../../dist/main/windows/web-contents-registry.js";
 import { removeTree } from "../common/temp-resource.js";

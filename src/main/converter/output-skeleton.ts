@@ -5,8 +5,8 @@
  * 入参刻意**不含文件列表**:多对一的塌缩在骨架**上游**完成(合并把 N 个文件压成一段
  * markdown,发生在落盘之前),故骨架内部看不到「N 个」进来(见 adr-029 决定)。
  *
- * 依赖方向(单向无环):本模块只向下依赖 core / context / paths / artifact-writer /
- * services / persist;两个消费点 import 本模块,本模块不 import 任何消费点。
+ * 依赖方向(单向无环):本模块只向下依赖 core / convert(paths / artifact-writer) /
+ * context / services / persist;两个消费点 import 本模块,本模块不 import 任何消费点。
  *
  * 刻意**不在**本模块内、相似但不统一的项(理由见 adr-029 决定要点一/三/四/五,
  * 下一个人看到又一份相似代码时答案在那里):
@@ -33,7 +33,8 @@ import { renderMermaidStrict } from "../services/mermaid-service.js";
 import type { AppSettings } from "../persist/settings.js";
 import { hardenWebContents } from "../services/web-hardening.js";
 import { writeTempHtml } from "../services/temp-html.js";
-import { commitArtifact } from "./artifact-writer.js";
+import { commitArtifact } from "../../convert/artifact-writer.js";
+import { resolveOutputPath, stripMarkdownExt } from "../../convert/paths.js";
 import {
   buildConvertContext,
   ConvertCanceledError,
@@ -41,7 +42,6 @@ import {
   throwIfCanceled,
   type ConvertContext,
 } from "./context.js";
-import { resolveOutputPath, stripMarkdownExt } from "./paths.js";
 
 /** 骨架的文档面入参:一段 markdown + 来源路径 + 可选基名 + 解析基准目录/可信根 */
 export interface OutputSkeletonDoc {

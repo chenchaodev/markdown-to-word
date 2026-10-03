@@ -12,7 +12,9 @@
 //      强制)。
 //   3. 层向边界:core 是可复用转换核心(不碰宿主、不反向依赖 GUI 两层),
 //      renderer 不反向依赖 main,preload 不经上跳引用 main。这是单向依赖的
-//      机械断言,替代「靠 code review 记住」的约定。
+//      机械断言,替代「靠 code review 记住」的约定。层向规则本身是 deny-list,
+//      故另配 allow-list:`src/` 顶层目录必须登记在 SRC_TOP_LAYERS(ADR-060 后果 3),
+//      否则新树不命中任何规则、其反向依赖静默放行。
 //
 // 判定输入是**源码文本**而非类型检查结果:门禁要在 tsc 之前跑,且要在
 // 「有人新写了一个 import」的最早时刻就红。正则抽取而非走 TS AST,理由同
@@ -102,6 +104,14 @@ export const LAYER_RULES = Object.freeze([
     reason: 'core 是与宿主无关的可复用转换核心,不得依赖 Electron 宿主',
   },
   {
+    id: 'convert-no-gui',
+    scope: 'convert',
+    forbid: 'layer:main,renderer',
+    reason: 'convert 是 headless 装配层(ADR-060):GUI/CLI/MCP/库四个交付面共用同一套装配,'
+      + '消费面一律在它之上;它一旦反向依赖 GUI 两层,装配层就长出宿主的形状,'
+      + '各交付面不得不逐个绕开自己的宿主代码',
+  },
+  {
     id: 'core-no-upward',
     scope: 'core',
     forbid: 'layer:main,renderer',
@@ -124,6 +134,12 @@ export const LAYER_RULES = Object.freeze([
     scope: 'main',
     forbid: 'layer:renderer',
     reason: 'main 是 GUI 的宿主而非被依赖方,不得反向引用 renderer 内部模块(依赖方向单向 core ← main ← renderer;跨界只经 preload 暴露的 contextBridge API)',
+  },
+  {
+    id: 'cli-no-renderer',
+    scope: 'cli',
+    forbid: 'layer:renderer',
+    reason: 'cli 是进程外的交付面(ADR-060):renderer 是 GUI 面,cli 引它会让纯 node 侧把 Electron 一起拖进来',
   },
   {
     id: 'smoke-no-outside-src',
@@ -160,6 +176,59 @@ export const LAYER_RULES = Object.freeze([
       + '故 core/pdf/** 不得直接 import node:fs',
   },
 ]);
+
+// ---- 层向治理的 allow-list:src/ 顶层目录必须已登记(ADR-060 后果 3)----
+
+/**
+ * `src/` 顶层目录的 **allow-list**:登记 = 「这一层已被某条 LAYER_RULES 的 scope 覆盖」。
+ *
+ * 为什么必须是 allow-list:LAYER_RULES 是 deny-list,而 scopeMatches 的兜底是
+ * `file === scope || file.startsWith(scope + '/')` —— scope 只认表里写过的名字,
+ * 新建的顶层目录不命中**任何**规则,`resolveLayer` 算出的层名也无人比对,
+ * 于是新树的全部反向依赖静默放行、门禁全绿(本仓在 TREE_RULES 的注释里批过这一形态:
+ * deny-list 要逐个枚举,新增目标不在枚举内就退化成一次「枚举已知」)。
+ * allow-list 让未登记的新顶层目录默认非法,不依赖任何人记得补规则。
+ *
+ * 与 TREE_DIRS 的分工:TREE_DIRS 管的是**仓根四棵树**(gates/test/shared/tools)并带
+ * 逻辑名 → 实际目录名的映射;本表管的是 `src/` 内各层,名字即目录名,故不经映射。
+ *
+ * 登记 ≠ 给它留个空位:登记一个没有任何规则 scope 命中的名字,等于把上面那个洞
+ * 原样留在该名字上。故 `convert` / `cli` 虽是尚未落地的层也**在表内** —— 它们各自
+ * 已有 scope 规则(convert-no-gui / cli-no-renderer),树落地当天即受治理。
+ * 反之 `mcp`(ADR-060 步序 3)暂无任何 scope 规则覆盖,故**不登记**:
+ * 登记一个没有规则覆盖的名字等于用「已治理」的假象盖住一个真实的洞,
+ * 等它落地时还得回头补 —— 那正是本条要消灭的动作。
+ */
+export const SRC_TOP_LAYERS = Object.freeze(['cli', 'convert', 'core', 'main', 'renderer']);
+
+/**
+ * 找出未登记的 src/ 顶层目录名(判据的纯函数本体,便于自检与测试直接消费)。
+ * @param {readonly string[]} actualDirs src 顶层的目录名(文件不在其列)
+ * @returns {string[]} 未登记的目录名(已排序);空数组 = 全部已登记
+ */
+export function findUnregisteredSrcLayers(actualDirs) {
+  return actualDirs.filter((name) => !SRC_TOP_LAYERS.includes(name)).sort();
+}
+
+/**
+ * 层向 allow-list 的判定:读 src/ 顶层,未登记的目录名一律判红。
+ *
+ * 只数**目录**:`src/.gitkeep` 之类文件不是一层,计入即恒红。
+ * src/ 不存在时返回空(跳过而非判红):本仓 src/ 常驻,而沙盒调用只铺局部
+ * (判据锚在真实仓库的理由见 ROOT_COMPUTE_SCAN_DIRS 与 TREE_RULES 的注释)。
+ * @param {string} srcDir src 目录绝对路径
+ * @returns {string[]} 判红文案(空数组 = 通过)
+ */
+export function analyzeSrcTopLayers(srcDir) {
+  if (!existsSync(srcDir)) return [];
+  const dirs = readdirSync(srcDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  return findUnregisteredSrcLayers(dirs).map(
+    (name) => `src/ 顶层目录「${name}/」未登记在 SRC_TOP_LAYERS(${SRC_TOP_LAYERS.join('/')})`
+      + ' —— 层向规则按 scope 枚举,未登记的目录不命中任何规则,它的反向依赖将静默放行',
+  );
+}
 
 // ---- 规则 no-self-computed-root:项目根的单一来源 ----
 
@@ -1004,6 +1073,10 @@ function analyzeTreeBoundariesUncached(root) {
 /**
  * 树边界规则的存在性自检:「扫不到就等于没规则」是这类判据最危险的失效形态,
  * 故每次 check:boundary 都验各棵树齐备、规则表覆盖完整、允许元素的首段不是拼错的树名。
+ *
+ * 这里同时挂**层向** allow-list(SRC_TOP_LAYERS)的存在性自检,前缀刻意与树边界那条
+ * 分开(`层向规则自检失守:` 而非 `树边界规则自检失守:`):前者判的是 `src/` 内各层是否
+ * 受层向规则治理,与仓根四棵树无关,混用前缀会让诊断把人引到错误的树上去找原因。
  * @param {string} root 被扫描仓库的根
  * @returns {string[]} 自检问题(空数组 = 通过)
  */
@@ -1011,6 +1084,30 @@ export function selfCheckTreeLayout(root) {
   /** @type {string[]} */
   const problems = [];
   const known = [...Object.keys(TREE_DIRS), ...TREE_BOUNDARY_LITERAL_PREFIXES];
+
+  // 层向 allow-list 的自检:合成顶层目录清单,正反两个方向都钉死(形态同 selfCheckRootComputes:
+  // 内联表 + expect + 文案模板,样例是字符串不落盘、不进版本控制)。
+  // 清单**刻意不展开 SRC_TOP_LAYERS**:自检锚点必须独立于被检常量,否则常量写漏一个名字时
+  // 夹具跟着写漏 → 恒绿(正是本函数要防的失效形态)。恒红方向由「全部已登记」那条兜住。
+  const layerCases = [
+    { name: '全部已登记(应判绿)', dirs: ['cli', 'convert', 'core', 'main', 'renderer'], expect: 0 },
+    { name: '多出一个未登记顶层(应判红)', dirs: ['cli', 'convert', 'core', 'main', 'renderer', 'omega'], expect: 1 },
+    { name: '两个未登记顶层(应判红)', dirs: ['core', 'main', 'renderer', 'omega', 'psi'], expect: 2 },
+  ];
+  for (const testCase of layerCases) {
+    const hits = findUnregisteredSrcLayers(testCase.dirs);
+    if (hits.length !== testCase.expect) {
+      problems.push(
+        `层向规则自检失守「${testCase.name}」:期望命中 ${testCase.expect} 处,实际 ${hits.length} 处`
+        + '(规则恒绿或恒红都是失效)',
+      );
+    }
+  }
+  // 反向锚点:真实仓库的 src/ 顶层必须全部已登记(未登记即新树静默放行)
+  for (const line of analyzeSrcTopLayers(path.join(root, 'src'))) {
+    problems.push(`层向规则自检失守:${line}`);
+  }
+
   for (const rule of TREE_RULES) {
     const scopeDir = TREE_DIRS[rule.scope];
     if (!existsSync(path.join(root, scopeDir))) {
@@ -1105,12 +1202,16 @@ export async function main(argv = []) {
   console.log(
     `[ok] import 边界自检通过(${scopeText}):`
       + `运行时 import 的包均在 dependencies(host 内建 ${Object.keys(HOST_PROVIDED_RUNTIME).join('/')} 除外);`
-      + `core 不依赖宿主且不反向依赖 GUI 两层;renderer 不反向依赖 main;main 不反向依赖 renderer;preload 不上跳引用 main;`
+      + `core 不依赖宿主且不反向依赖 GUI 两层;`
+      + `convert 是 headless 装配层,不反向依赖 main/renderer;`
+      + `renderer 不反向依赖 main;main 不反向依赖 renderer;preload 不上跳引用 main;`
+      + `cli 是进程外交付面,不引用 renderer;`
       + `smoke 不逃出 src/;`
       + `renderer 基础层(dom/state)不反向依赖功能目录;`
       + `core 的 pdf 渲染路径不 import node:fs(能力经入参注入);`
       + `core 的 node: 内建白名单限 ${CORE_NODE_BUILTIN_FILES.length} 个文件;`
       + `项目根单源为 ${ROOT_SOURCE_FILE}(零豁免,ADR-040);`
+      + `src/ 顶层层向 allow-list(未登记即判红):${SRC_TOP_LAYERS.join('/')};`
       + `树边界(ADR-038/043)按实际目录名:`
       + TREE_RULES.map((rule) => `${TREE_DIRS[rule.scope]}→${rule.allow.map(resolveAllowedPrefix).join('/')}`).join(';'),
   );

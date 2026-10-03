@@ -8,8 +8,8 @@
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
-import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
-import type { ConvertWarning, KeyedWarning } from "../../core/i18n.js";
+import type { ConvertFormat } from "../core/settings/settings-defaults.js";
+import type { ConvertWarning, KeyedWarning } from "../core/i18n.js";
 
 /** 目录递归深度上限:超出层级的子目录不再展开(异常深的树不拖垮会话) */
 // 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
@@ -38,7 +38,7 @@ export function stripMarkdownExt(name: string): string {
 /**
  * 解析输出首选路径:
  * - outputDir 空串 → 源文件同目录;非空 → outputDir(不存在则创建,失败回落源目录)
- * - 超长路径(>250 字符)→ 回落源目录并警告(Windows MAX_PATH 限制,Electron 侧无解)
+ * - 超长路径(>250 字符)→ 回落源目录并警告(Windows MAX_PATH 限制,宿主侧无解)
  * - 不做存在性探测:重名序号「名 (2).ext」由产物提交器(artifact-writer)在独占创建时
  *   遇 EEXIST 递增决定。写盘前先 stat 判空必然留下「判空 → 写盘」之间的 TOCTOU 窗口
  *   (批量/多窗口/外部进程并发同名会互相覆盖),故探测逻辑已从本模块移出。
