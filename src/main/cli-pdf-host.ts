@@ -3,7 +3,7 @@
  *
  * 为什么要有这个壳:pdf 的打印能力是 **Electron 宿主能力**(ADR-060 后果 2 ——
  * `printToPDF` 是唯一打印宿主,装配层不自带、缺它即报错不降级)。而 CLI 本身是
- * **纯 node 进程**(零 electron import,见门禁 `cli-no-host`),两者不能同进程。
+ * **纯 node 进程**(零 electron import,见门禁 `faces-no-host`),两者不能同进程。
  * 故 CLI 对 pdf 走「壳自动重入 Electron」:本模块就是被重入的那一侧。
  *
  * 与 `electron-side.ts` 的关系:本模块**不重复实现**打印,只做三件事 ——

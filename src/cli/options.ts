@@ -6,7 +6,7 @@
  * 参数表的每个分支都要起一次真转换才能验证,退出码表尤其验不动。
  *
  * 依赖方向(单向):本模块 → core(设置契约与预设目录) + convert/paths(扩展名判定)。
- * **零 electron**(门禁 `cli-no-host` 判据:见 ADR-060 —— cli 是进程外交付面)。
+ * **零 electron**(门禁 `faces-no-host` 判据:见 ADR-060 —— cli/mcp 是同层的两个进程外交付面)。
  *
  * 设置来源与 GUI 的关系(勿自建 flag → 参数表):CLI 的设置**从 DEFAULT_SETTINGS 起**
  * 再套 `--template` 指名的内置预设,走的是 core/settings/presets.ts 的
@@ -14,12 +14,9 @@
  * CLI **不读**用户 settings.json(GUI 的 loadSettings 经 app.getPath,需 Electron 宿主;
  * CLI 面刻意不引入这条依赖,故它的设置完全由 flag 决定,跨会话可复现)。
  */
-import {
-  cloneDefaultSettings,
-  type AppSettings,
-  type ConvertFormat,
-} from "../core/settings/settings-defaults.js";
-import { TEMPLATE_PRESETS, presetSettingsPatch } from "../core/settings/presets.js";
+import { TEMPLATE_PRESETS } from "../core/settings/presets.js";
+import type { AppSettings, ConvertFormat } from "../core/settings/settings-defaults.js";
+import { resolveDeliverySettings } from "../convert/delivery-settings.js";
 
 /** 退出码表(单一来源;index.ts 与 --help 文案共用,避免两处漂移)。
  *  语义:0 成功 / 1 用法错 / 2 输入读不到 / 3 转换失败 / 4 输出写不了。
@@ -185,17 +182,21 @@ function parseFormat(raw: string | undefined): CliFormat {
  *   不进装配层),CLI 不注入 onAfterCommit 即不触发;写死 none 是第二道保险,
  *   免得将来有人给 CLI 塞进一份带 afterConvert 的设置。
  */
+/**
+ * 由解析结果构造本次转换的设置。
+ *
+ * 实现委托给 `convert/delivery-settings.ts` 的共用基线 —— CLI 与 MCP 是同层两个
+ * adapter 且**零依赖**(ADR-060),这段逻辑只能写在两层之下。保持薄封装是为了让本文件
+ * 仍是「argv → 设置契约」这一件事的声明处。
+ */
 export function resolveCliSettings(options: CliOptions): AppSettings {
-  const base = cloneDefaultSettings();
-  base.outputDir = "";
-  base.afterConvert = "none";
-  if (options.templateId !== undefined) {
-    const preset = TEMPLATE_PRESETS.find((p) => p.id === options.templateId);
-    // parseCliArgs 已校验过 id 存在;这里是类型收窄,不是重复校验
-    if (!preset) throw new CliUsageError(`未知预设:${options.templateId}`);
-    Object.assign(base, presetSettingsPatch(preset));
+  // parseCliArgs 已校验过 id 存在;这里的 throw 只在绕过解析器直调本函数时才会发生,
+  // 故转成用法错形态保持本模块的错误语义单一。
+  try {
+    return resolveDeliverySettings({ templateId: options.templateId });
+  } catch (error) {
+    throw new CliUsageError(error instanceof Error ? error.message : String(error));
   }
-  return base;
 }
 
 /** --format 展开成实际要产出的格式列表(`both` → 两个;其余单元素)。 */

@@ -48,6 +48,7 @@ import { overrideFigureRule, overrideImageRule } from "./rules/image.js";
 import { overrideTableWidthRule } from "./rules/table.js";
 import { overrideHeadingIdRule } from "./rules/heading-id.js";
 import { replaceMermaidPlaceholders } from "./mermaid.js";
+import { MERMAID_LANG } from "../markdown/mermaid.js";
 // 取消与资源预算:守卫由 convert 层构造并注入(signal/deadline 单源),
 // 各阶段边界设检查点;公式与图片预算取值单源 core/resource-limits.ts。
 import { createCancellationGuard } from "../cancel.js";
@@ -142,7 +143,7 @@ function buildMarkdownIt(
       // 非贪婪匹配安全);renderPdfHtml 渲染完后经 mermaidResolver 逐个替换为
       // 内联 SVG(mermaid-svg)/失败降级代码块(mermaid-fallback)。
       // 无 resolver 时不产占位,走原代码块渲染(行为不变)。
-      if (lang === "mermaid" && hasMermaidResolver) {
+      if (lang === MERMAID_LANG && hasMermaidResolver) {
         return `<div class="mermaid">${md.utils.escapeHtml(str)}</div>`;
       }
       if (lang && hljs.getLanguage(lang)) {

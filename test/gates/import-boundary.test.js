@@ -394,9 +394,9 @@ export async function run() {
         "renderer-no-main",
         "preload-no-main",
         "main-no-renderer",
-        "cli-no-renderer",
-        "cli-no-host",
-        "cli-no-outside-src",
+        "faces-no-renderer",
+        "faces-no-host",
+        "faces-no-outside-src",
         "smoke-no-outside-src",
         "renderer-foundation-no-feature-dep",
         "core-pdf-no-fs",
@@ -714,7 +714,8 @@ export async function run() {
           "convert 装配层反向依赖 renderer",
         );
       }
-      // 5n. cli 引用 renderer → 必须判红(ADR-060 的 cli-no-renderer)
+      // 5n. cli 引用 renderer → 必须判红(ADR-060 的 faces-no-renderer;scope 是跨 cli/mcp 两面的
+      // delivery-faces 形态,故 mcp 侧由 5n-2 承担对等锚点)
       {
         const sb = createSandbox(
           { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
@@ -724,11 +725,26 @@ export async function run() {
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
           result,
-          /cli\/index\.ts:import「\.\.\/renderer\/dom\/refs\.js」违反层向规则 cli-no-renderer/,
+          /cli\/index\.ts:import「\.\.\/renderer\/dom\/refs\.js」违反层向规则 faces-no-renderer/,
           "cli 引用 renderer",
         );
       }
-      // 5p. cli import electron → 判红(CLI 必须跑在纯 node 下;宿主能力靠子进程重入)
+      // 5n-2. mcp 侧对等锚点:与 5n 分开是因为两个面的失败原因不同(各自命中 delivery-faces 的
+      // 不同前缀),合成一条会让「某个前缀漏进 scope 列表」退化成看不出是哪侧漏放行
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "mcp/index.ts": 'import { el } from "../renderer/dom/refs.js";\nexport { el };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /mcp\/index\.ts:import「\.\.\/renderer\/dom\/refs\.js」违反层向规则 faces-no-renderer/,
+          "mcp 引用 renderer",
+        );
+      }
+      // 5p. cli import electron → 判红(两个交付面都必须跑在纯 node 下;宿主能力靠子进程重入)
       {
         const sb = createSandbox(
           { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
@@ -738,8 +754,22 @@ export async function run() {
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
           result,
-          /cli\/index\.ts:import「electron」违反层向规则 cli-no-host/,
+          /cli\/index\.ts:import「electron」违反层向规则 faces-no-host/,
           "cli import electron",
+        );
+      }
+      // 5p-2. mcp 侧对等锚点:同一条 faces-no-host 在 mcp/ 前缀上同样生效
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "mcp/index.ts": 'import { app } from "electron";\nexport { app };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /mcp\/index\.ts:import「electron」违反层向规则 faces-no-host/,
+          "mcp import electron",
         );
       }
       // 5q. cli 逃出 src/(../../ 形态)→ 判红。刻意用 test/ 而非 shared/:
@@ -753,8 +783,22 @@ export async function run() {
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
           result,
-          /cli\/index\.ts:import「\.\.\/\.\.\/test\/common\/paths\.js」违反层向规则 cli-no-outside-src/,
+          /cli\/index\.ts:import「\.\.\/\.\.\/test\/common\/paths\.js」违反层向规则 faces-no-outside-src/,
           "cli 逃出 src/",
+        );
+      }
+      // 5q-2. mcp 侧对等锚点:faces-no-outside-src 在 mcp/ 前缀上同样生效
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "mcp/index.ts": 'import { x } from "../../test/common/paths.js";\nexport { x };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /mcp\/index\.ts:import「\.\.\/\.\.\/test\/common\/paths\.js」违反层向规则 faces-no-outside-src/,
+          "mcp 逃出 src/",
         );
       }
       // 5o. 正向:convert 引 core(向下)与自身、cli 引 convert(向上)与 core 均合法 ——
@@ -777,7 +821,7 @@ export async function run() {
           `convert↓core、cli→convert 的合法依赖图不得误伤,实际 ${result.code}:${result.output}`,
         );
       }
-      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / renderer→main 绝对禁止(含 type-only) / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / convert 反向依赖 GUI 两层判红 / cli 引用 renderer、import electron、逃出 src 均判红 / 合法 smoke、convert→core、cli→convert 依赖图不误伤)");
+      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / renderer→main 绝对禁止(含 type-only) / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / convert 反向依赖 GUI 两层判红 / cli 与 mcp 两个交付面引用 renderer、import electron、逃出 src 均判红 / 合法 smoke、convert→core、cli→convert 依赖图不误伤)");
     }
 
     // ================= 6. 规则原语的单元断言(判定链的接缝) =================

@@ -10,6 +10,7 @@ import { codeBlockFontSizePt, ptToHalfPoints } from "../../settings/typography.j
 import { highlightCodeRuns } from "./code-highlight.js";
 import { highlightFallbackWarning, mermaidEmptyWarning, mermaidFailedWarning } from "../../i18n.js";
 import { scaleToFit } from "./image-run.js";
+import { MERMAID_LANG } from "../../markdown/mermaid.js";
 import { warnDedup, type Ctx } from "../ctx.js";
 
 /** 代码块:mermaid 围栏且有 resolver 时渲染为内嵌 PNG 图片(宽超 IMAGE_MAX_WIDTH 等比缩,
@@ -27,7 +28,7 @@ export async function renderCode(
   ctx: Ctx,
   paragraphProps: IParagraphOptions = {},
 ): Promise<Paragraph> {
-  if (node.lang === "mermaid" && ctx.mermaidResolver) {
+  if (node.lang === MERMAID_LANG && ctx.mermaidResolver) {
     try {
       const result = await ctx.mermaidResolver(node.value);
       if (result) {

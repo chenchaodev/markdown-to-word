@@ -86,7 +86,7 @@ function pdfHostEntry(): string {
  *
  * 走 `electron` 包的导出(其 index.js 返回 dist/electron[.exe] 的绝对路径),
  * **不 import electron 本身** —— import 它会把 Electron 拖进 CLI 的依赖图,
- * 那正是门禁 cli-no-host 要挡的形态(CLI 必须是纯 node 进程)。
+ * 那正是门禁 faces-no-host 要挡的形态(CLI 必须是纯 node 进程)。
  * electron 是 devDependency,打包形态不随包分发;打包后的 CLI 由应用自身承载,
  * 不经过本函数(与 ADR-060「打包形态的入口」口径一致)。
  */
