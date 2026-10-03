@@ -126,3 +126,103 @@ pdf 必然要 Electron 宿主（见「后果」第 2 条）。MCP 第一版**只
 - 跨平台成本落点与平台耦合面清单：`docs/evidence/`（事实快照，跨平台决策拍板后再升为决定）
 - 载体命名需同步：ADR-029（输出骨架抽函数）
 - 发布签名现状：ADR-013
+
+## 实施复测（落地后才撞到的约束）
+
+本节记的不是选型论据，而是**决定落地之后才撞到的约束**：每一条要么推翻了上面某条预测，要么给某条决定补上了实施时才显形的具体条件（哪个文件、哪个事件、哪个退出码）。**读者是来改这条决定、或来复用 `src/convert/` 这套装配层的人** —— 选型时的论据对他们没有用处，而这些坑多数已经修完，代码里看不出当初为什么这么写（这正是它们当时静默失败、事后无从查证的直接后果）。按「旧条不改动」的规矩，上面各节一个字不改；凡与上面各节冲突或需要补充之处，**以本节为准**。
+
+条目沿用规划期的**原编号与原日期**（「步序 N」「完成标准 N」均指规划期的划分），便于回溯到当时的提交与台账行；格式沿用原样：现象 → 根因 → 修法 → 复测命令与结果。
+
+### 2026-10-03 · 步序 1 首轮（门禁 + 两个搬迁）
+
+**① ADR-060 后果 5 的「覆盖率墙最先撞」预测落空。**
+现象：`verify:ci` 全绿，c8 四道阈值未红。
+根因：预测对「真正的新代码」成立，但本轮两个文件是**搬迁**不是新写 —— `test/main/` 三个既有段本就覆盖这两个模块，import 路径改后覆盖率跟着走。ADR 那句「`dist/convert/` 若无验收段触达即判红」**对纯搬迁不成立**，仍对后续 `run.ts` / `context.ts` 成立。
+修法：ADR 不改（决策载体，旧条不改动），在此记录口径修正。**下一步 `run.ts` 是新代码，`test/convert/` 段必须在那之前就位。**
+
+**② 规划漏了 `run.ts`，且完成标准 7 依赖步序 2 的产物。**
+现象：搬迁清单只列 4 个既有文件，ADR-060 的主体（`emitConvertedArtifact` 抽成 `run.ts` + 四注入点）不在其中；标准 7 写「跑 `node dist/cli/index.js --help`」而 `src/cli/` 是步序 2 才建的。
+根因：搬迁清单照搬了 explorer 对「四个候选文件」的可搬性结论，那份调研范围本就不含 `output-skeleton.ts`。
+修法：清单补 `run.ts` 为序 0（本步核心）；标准 7 改为「`test/convert/` 段在无 electron 的纯 node 下跑通一次真实 docx 转换」。
+
+**③ 完成标准里混进一条空动作。**
+现象：「`merge.ts:82` 的 cwd 兜底须保持守卫在前」被列为同批陷阱项。
+根因：`merge.ts` 本轮**不搬**（双重穿越），该约束只在搬迁时成立。
+修法：从本步移除；`context.ts` 那批若触及 `merge.ts` 再 reinstate。
+
+**④ 派工漏了测试树类型门禁，子代理夹具带 TS2532。**
+现象：全链停在 `tsc -p tsconfig.test.json` —— `test/gates/import-boundary.test.js:961` 的 `problems[0].includes(...)` 在 `noUncheckedIndexedAccess` 下报「Object is possibly 'undefined'」。fix-2 跑过 eslint 与门禁本体，但没跑测试树 `tsc`。
+根因：我派的三条单命令自检不含 `npm run typecheck`（`tsc --noEmit` 只查 `src/`，测试树是 `tsconfig.test.json` 另一条命令）。
+修法：按本仓既有口径（`check-pointers-e2e.test.js:508` 的 `hits[0] ?? ""`）改为 `String(problems[0]).includes(...)`；复测 `npm run typecheck` exit 0 + 全链绿。
+⚠️ 后续派实现泳道若写测试文件，验证清单必须含 `npm run typecheck`（两条 tsc），不能只跑 `tsc --noEmit`。
+
+**⑤ 主会话在共享载体上连续五次 edit 失败，其中一次真删掉了「## 在办」标题。**
+现象：`docs/REQ.md` 的「## 在办」被误删，靠 `cat -A` 才定位到。
+根因：拿 read 输出的**行号前缀**拼 oldString，且用跨多行的长锚点。
+修法：改共享载体只用**最短唯一锚点**或 `cat -A` 核对不可见字符。已修回，`check:docs` 判绿。
+
+**⑥ 并行泳道确实互删过产物。** fix-1 报告 `src/convert/` 整目录一度消失（重建后稳定，tsc 过）。**写域零重叠是必要条件，不充分** —— 共享可变状态（构建产物目录 / 清理脚本）仍会咬人。收尾已复验两文件在位。
+
+### 2026-10-03 · 步序 1 第二轮（context/image-downloader 搬迁 + Batch B 抽 run.ts）
+
+**⑦ 新增测试段目录要改四处，不是一处。** 这是本规划最大的疏漏，ADR-060 后果 5 与规划载体都只写了「配 `test/convert/` 段」。
+现象：等式判据报「声明 6 个目录,实测 5 个;缺失 test/convert」，且级联成「每条夹具都失败」，症状离根因很远。
+根因：镜像判据（`checkSegmentMirrors`）与等式判据（`checkSurfaceEquality`）是两个独立判据，我只写了前者。实际要改四处：
+1. `shared/test-common-surface.js:47` `SEGMENT_DIRS` —— 声明面
+2. `check-test-numbering.selftest.mjs` `BASE_SHAPE` —— 实测面副本
+3. `check-temp-cleanup.selftest.mjs` `BASE_SHAPE` —— **第二份副本**（同形，漏改则级联失败）
+4. `test/gates/contract-single-source.test.js:568` 的字面量 —— 刻意钉死，**不可派生**（派生即恒真，检测力归零）
+修法：四处全改，两处副本已加注释互相指认。**步序 2 的 `test/cli/` 会撞同一堵墙。**
+⚠️ 这条也说明 ADR-060 后果 5 的表述不完整 —— 但 ADR 是决策载体不改正文，在此记口径修正。
+
+**⑧ ADR 的注入点签名在实现时被细化。** ADR 写 `printPdf?: PdfPrinter`，字面读是 `printPdf(html) → Uint8Array`；实现用**整体搬迁**形态 `printPdf(artifact, preferredPath, ctx, onStage) → Promise<string>`。
+理由：`renderPdf` 内含 pdf 两遍法、书签注入、`setPdfMetadata`（其注释明写「pdf-lib 整体重存，必须最后执行，否则会丢弃书签」）、以及末尾那次 `commitArtifact`。按 bytes 形态拆，这串顺序得在 `persistArtifact` 里重组。整体搬迁让顺序逐字不变。
+**这是对 ADR 的细化而非违背**，记此备查。
+
+**⑨ 完成标准 5 与本步核心动作自相矛盾。** 原写「`single.ts` 零改动」，而 Batch B 的目的正是把它收成薄适配器（函数体必改）。已改为「导出签名逐字不变 ⇒ 四个调用点零改动」。
+
+**⑩ 派工范围两次漏项，根因是拿子代理的报告当授权依据。** 第一次我漏了 `ipc/register.ts`；第二次 fixer 报了 `register.ts:13` 却漏了三个测试文件的 `dist/` 深导入（`test/core/frontmatter-once.test.js:155` · `test/main/input-budget.test.js:25` · `test/main/preprocess.test.js:17,50,66`）—— 漏因是 `dist/` 路径不带 `src/` 前缀，且前者不在 `test/main/` 段。
+**纪律：授权前自己 grep 一遍完整面，不拿子代理的报告替代。** 这次多亏先 grep 才没让它再撞一次墙。
+
+**⑪ 测试段必须在真 node 进程里跑才有意义。** `test/convert/run-headless.test.js` 显式从 env 删掉 `ELECTRON_RUN_AS_NODE` 后 spawn 真 node —— 段本身跑在 `electron.exe` 下，进程内断言证明不了「装配层与宿主无关」，只有真 node 子进程才能。若传递依赖里混进 electron（如 `mermaid-service.ts:362` 的模块顶层 `app.on`），子进程会在 import 期死掉并让段判红。
+
+### 2026-10-03 · 步序 2（CLI）
+
+**① 产物侧判据用「层向规则」表达，而非另写一个闭包遍历器；规则表条数因此多一条。**
+现象：规划写「判据为 `dist/cli/index.js` 及其传递闭包中出现 electron 静态引用即判红」，同时又只让补 `cli-no-outside-src`（`prefix:../../`）一条规则。这两条凑不到一起：`prefix:` 只能判相对 specifier，**表达不出「禁裸包 electron」**；而 `cli` scope 下没有任何一条禁 `bare:electron`，规则表按原样新增后，`dist/cli/index.js` 里 `import "electron"` 在产物面**不会**判红 —— 规划要的那条判据形同虚设。
+另有一个更隐蔽的洞：`cli-no-renderer` 只禁 renderer，`layer:` 不禁 main ⇒ cli 可以合法 `import ../main/converter/electron-side.js`，把 Electron 从传递闭包外侧拖进来。
+修法：不另写闭包遍历器（那会把层的枚举做成一门语言，此后新增 `src/mcp/` 之类还得同步维护枚举），改为**补两条 deny-list 规则**：`cli-no-host`（`bare:electron`）+ `cli-no-outside-src`（`prefix:../../`）。禁 renderer 那条仍在，deny-list 是并集 ⇒ `cli → main → electron` 也被 `cli-no-host` 覆盖。规则表 10 → **12** 条（规划写 10 → 11）。
+产物面判据仍由 `--flavor dist` 提供（`check:boundary:dist`，挂 `build` 之后）；规则本身在 src 面即已生效 —— 源码面比产物面早一步，产物面多判的是 type-only import 擦除与 cjs require 形态。已实测判红判绿双向。
+
+**② pdf 的任务与结果都经文件传，不走 stdout。**
+现象：先按「子进程 stdout 传结果」写，`spawnSync` 接管道时恒定失败 —— 子进程退出码 0、**stdout 全空、无任何 stderr**，看起来像「任务根本没跑」。重定向到文件则完全正常，故障只在真实调用形态下出现。
+修法：结果与任务描述一样走一次性目录里的文件（`convert/cli-pdf-job.ts` 是契约单源）。理由写在该模块的 `writeJobResult` 注释里：stdout 在管道下是异步的，而 `app.exit()` 立即终止进程不等落盘。
+
+**③ pdf 宿主必须显式接管 `window-all-closed`。**
+现象：接上结果文件后仍恒定「退出码 0、无结果文件、无 stderr」。调试时挂的 `setInterval` 一次都没触发 —— 不是异常也不是超时，是进程被**同步**结束、事件循环直接排空。
+根因：Electron 默认「最后一个窗口关闭即退出」。本宿主**没有常驻窗口**，`renderPdf` 建隐藏打印窗口并在 `finally` 里 `destroy` 它，那一下恰好构成「最后一个窗口关闭」，默认处理器随即结束进程，pdf-lib 注入 / 落盘 / 写结果全部来不及。
+修法：入口分支内 `app.on("window-all-closed", () => {})`，结束时机只由 `app.exit(code)` 决定。
+
+**④ `getKatexDir()` 在本宿主下不可用。**
+`resource-dirs` 的 KaTeX 一支以 `app.getAppPath()` 为基准，而本宿主以**脚本路径**启动（`electron dist/main/cli-pdf-host.js`），此时 appPath 等于脚本所在目录 ⇒ 公式路径指向不存在的 `dist/main/node_modules/katex/dist`。改按该文件里 Mermaid 的既有做法用模块自身位置定位（三场景一致，打包态即 `app.asar`）。
+
+**⑤ 转换逻辑与进程编排分两层测，否则覆盖率只能用假豁免盖住。**
+`cli-pdf-host.ts` 初版在模块顶层就 `app.setPath("userData", …)`、且在函数内 `app.exit` ⇒ 既没法被测试 import（会改掉整段宿主的 userData），也不产生覆盖率（`check:coverage-zero` 判红：两个新文件 0%）。
+修法：`convertPdfJob`（只做转换、写结果、**返回**退出码）与入口的 `app.exit` 拆开；userData 重定向与 `window-all-closed` 接管一并移进入口分支。`test/cli/pdf-host.test.js` 在 Electron 宿主里直调 `convertPdfJob` 跑真转换（覆盖 + 可断言），进程编排（spawn / 退出码转发）由 `options.test.js` 的真 node 子进程段负责，两边互补不重叠。
+
+**⑥ `-o` 短选项与 `--format both` 的两处拦截。**
+现象一：只实现 `--output` 时，`-o out.docx` 被当成**输入路径** —— 静默少转一个文件且不报错，是脚本面最难查的一类坑。修法：加短选项表；非 `--` 开头且不在表内的 token 一律判用法错，不再当输入路径。
+现象二：`--format both` 配 `-o` 时，同一路径被 docx 与 pdf 各提交一次，后到那次撞上前次已占用的路径，报错是「产物格式校验失败(.docx 魔数不符)」这种看不懂的形态。修法：解析期判用法错并提示分开跑两次 —— 替调用方猜后缀等于替他改主意。
+
+**⑦ 退出码 4 的判据依赖三处文案匹配（脆弱，已写明出处）。**
+装配层把落盘失败与转换失败都抛成普通 Error、没有错误码，故 CLI 侧只能按文案匹配三处（artifact-writer 的「产物路径已存在」「不支持硬链接」，paths.ts 的「无法创建输出目录」）。已在代码注释里点名三处出处并写明「改文案必须同改这里」，避免它退化成隐式约定。若将来给装配层加错误码，应改为读码；在此之前，「三处文案 + 一处判定」优于「无判定」（脚本至少能区分「重名」与「磁盘满」）。
+
+### 2026-10-03 · 步序 3 开工前
+
+**① 「MCP 进程跑在 Electron 上」的因果接不上，且有两条实测反证。**
+现象：本规划步序 3 第一节写「只暴露 docx；pdf 需 Electron 宿主，**用户已拍板接受**，故 MCP 进程跑在 Electron 上」—— 但同节既然只暴露 docx，这条因果就断了：docx 走纯 node 已实测可行（步序 2 的 CLI 壳 `dist/cli/index.js` 本身就是纯 node，pdf 才在**里面**才 spawn Electron）。把「pdf 需要宿主」直接推成「MCP 进程需要宿主」，等于把一个**子能力**的约束当成了**进程形态**的约束。
+实测证据（两条，均为开工前实测）：
+① **Electron 子进程的 stdout 接到管道时，会在帧前面多吐一个 `\r\n`**（Chromium 噪声）。严格按行解析 JSON 的 MCP 客户端会撞上 —— 这与步序 2 复测 ② 撞的是同一类坑（stdout 在管道下不可靠），方向一致、结论相同：协议通道不能走子进程 stdout。
+② **`electron` 是 devDependency、不在 PATH 上**。MCP 客户端配置里写 `electron <path>` 只在开发检出里成立；打包后的用户手上没有那个二进制路径。
+裁决：**MCP 进程跑纯 node**（已与用户确认）。关键论证是「**pdf 是能力、不是进程形态**」—— 将来 MCP 要 pdf 时，复用步序 2 已建成的机制：纯 node 侧写任务文件 → spawn `dist/main/cli-pdf-host.js` → 读结果文件。协议通道（stdio + JSON-RPC）永远不碰 Electron。这也让「补 pdf」从「重写 MCP 进程形态」降级成「多加一次 spawn」。
+遗留尾巴：真要给 MCP 加 pdf 时，`src/convert/cli-pdf-job.ts` 会被第二个消费方（CLI 与 MCP 共用）⇒ 届时改名为 `pdf-host-job.ts`。**纯机械改名**，但要同批更新引用它的地方。
