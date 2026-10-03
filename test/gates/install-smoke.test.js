@@ -61,6 +61,26 @@ const FIXTURE_VERSION = "9.9.9";
 /** 冒烟入口在 asar 内的相对路径(能力缺口预检的判定对象) */
 const SMOKE_ENTRY = "dist/main/smoke.js";
 /**
+ * 「装机时是否存在把安装目录加入 PATH 的选择能力」这一事实,从**真实**
+ * package.json 的 build.nsis.include 派生 —— 与被测脚本 readBuildFacts() 同一口径。
+ *
+ * 为什么不在夹具里编一个字符串:该字段的唯一用途是让 PATH 断言按配置推导期望值,
+ * 夹具凭空填一个值就等于让测试自说自话,配置改了测试不跟变,断言随即退化成
+ * 恒绿。所以两处 facts 构造共用这一个常量(单一来源),不各写一份。
+ *
+ * 归一规则与被测脚本一致:非字符串/空串 → ""，语义即「本仓没有这个能力」。
+ * 这个兜底方向是**收紧**而非放松:期望值随之退化为「PATH 一条都不许变」。
+ */
+const PATH_OPT_IN_SCRIPT = (() => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+    const include = pkg.build?.nsis?.include;
+    return typeof include === "string" && include !== "" ? include : "";
+  } catch {
+    return "";
+  }
+})();
+/**
  * 桩的「存活信标」延迟(ms):桩在自己启动后延迟这么久才把信标文件写出来。
  *
  * 它必须**晚于**桩收到的硬超时(第 3 段传 --timeout 1500),这样「信标出现」才等价于
@@ -534,6 +554,7 @@ async function runInstallExecuteWithStubs({
       artifactTemplate: "",
       releaseDir: "release",
       perMachine,
+      pathOptInScript: PATH_OPT_IN_SCRIPT,
     },
     timeoutMs: 1000,
     scratchRoot,
@@ -629,7 +650,14 @@ async function runInstallExecuteWithFakeSystem({
   const code = await runInstallFlow({
     installer: path.join(scratchRoot, "fake-installer.exe"),
     installDir,
-    facts: { productName: FIXTURE_PRODUCT, version: FIXTURE_VERSION, artifactTemplate: "", releaseDir: "release", perMachine },
+    facts: {
+      productName: FIXTURE_PRODUCT,
+      version: FIXTURE_VERSION,
+      artifactTemplate: "",
+      releaseDir: "release",
+      perMachine,
+      pathOptInScript: PATH_OPT_IN_SCRIPT,
+    },
     timeoutMs: 1000,
     scratchRoot,
     run: async (spec) => {

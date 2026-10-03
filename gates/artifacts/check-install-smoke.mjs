@@ -57,6 +57,16 @@ const LOG_FILE_NAME = 'install-smoke.log';
 const UNINSTALL_POLL_MS = 120000;
 /** 卸载注册表根(HKCU;electron-builder 的 NSIS 卸载项写在 HKCU) */
 const UNINSTALL_REG_ROOT = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall';
+/**
+ * 用户 PATH 所在的注册表位置(自定义 NSIS 勾选框写入的就是这一处)。
+ *
+ * 为什么单独一条断言:卸载残留那道前后快照比对只认 startMenuTraces() 与卸载
+ * 注册表两处,**HKCU\Environment 对它完全隐形** —— 装完把 PATH 改坏了、卸载又
+ * 没还原,脚本报「零残留」而用户的环境里多了一截。PATH 不在任何现有检查面上。
+ */
+const USER_ENVIRONMENT_KEY = 'HKCU\\Environment';
+/** 用户 PATH 的值名 */
+const USER_PATH_VALUE = 'Path';
 /** 删除卸载注册表项的硬超时(ms) */
 const REGISTRY_MUTATION_TIMEOUT_MS = 30000;
 
@@ -112,6 +122,16 @@ function buildUsage(perMachine) {
  */
 
 /**
+ * 读一个注册表字符串值(注入点;值不存在返回 '')。
+ * @typedef {(keyPath: string, valueName: string) => Promise<string>} RegValueReader
+ */
+
+/**
+ * 跑一次 reg.exe 并返回其 stdout(注入点)。
+ * @typedef {(args: string[]) => Promise<string>} RegRunner
+ */
+
+/**
  * 删除文件/目录(注入点;返回 true = 已删除)。
  * @typedef {(target: string) => boolean} PathRemover
  */
@@ -121,7 +141,7 @@ function buildUsage(perMachine) {
  * @typedef {object} InstallFlowSpec
  * @property {string} installer 安装包路径
  * @property {string} installDir 安装目录
- * @property {{ productName: string, version: string, artifactTemplate: string, releaseDir: string, perMachine: boolean }} facts 打包口径
+ * @property {{ productName: string, version: string, artifactTemplate: string, releaseDir: string, perMachine: boolean, pathOptInScript: string }} facts 打包口径
  * @property {number} timeoutMs 单步硬超时(ms)
  * @property {string} scratchRoot 一次性 userData 与日志的根目录
  * @property {boolean} [installDirOverridden] 安装目录是否由 --install-dir 显式指定
@@ -132,6 +152,7 @@ function buildUsage(perMachine) {
  * @property {RegistryProbe} [queryRegistry] 卸载注册表检索
  * @property {RegistryKeyDeleter} [deleteRegistryKey] 卸载注册表项删除
  * @property {PathRemover} [removePath] 文件/目录删除
+ * @property {RegValueReader} [readRegValue] 读注册表字符串值(用户 PATH 断言用)
  */
 
 /**
@@ -190,6 +211,14 @@ function readBuildFacts(pkgPath) {
     // 写出的 UninstallString 带 /currentuser,故不猜隐式默认 —— 猜错会把非交互环境
     // 的安装按到 Program Files、被 UAC 拦下,却已留下注册表/开始菜单痕迹)。
     perMachine: pkg.build?.nsis?.perMachine === true,
+    // 勾选框写 PATH 这件事由 build.nsis.include 挂载的自定义 NSIS 脚本实现。
+    // 期望值从这里派生而不是写死字符串:门禁自带一份与配置无关的期望,配置改了
+    // 门禁不跟变,就成了漂移校验。include 缺失 = 本仓没有这个能力,断言随之
+    // 退化为「PATH 必须原封不动」,而不是凭空要求某一截增量。
+    pathOptInScript:
+      typeof pkg.build?.nsis?.include === 'string' && pkg.build.nsis.include !== ''
+        ? pkg.build.nsis.include
+        : '',
   };
 }
 
@@ -294,6 +323,80 @@ export async function queryUninstallKeys(keyword) {
     if (matched?.[1] !== undefined) keys.add(matched[1]);
   }
   return [...keys].sort();
+}
+
+/**
+ * 跑 reg.exe 并返回 stdout(注入点实现)。
+ *
+ * 只读,不写任何键 —— 本函数被 PATH 断言使用,而 PATH 是用户的真实环境,
+ * 门禁绝不能顺手改它。reg 不可用时返回空串(调用方据此判定「读不到」)。
+ * @param {string[]} args reg 参数
+ * @returns {Promise<string>} stdout(失败时为空串)
+ */
+export async function runRegQuery(args) {
+  const result = await runProcess({ command: 'reg', args, timeoutMs: REGISTRY_MUTATION_TIMEOUT_MS });
+  if (result.spawnError !== undefined) return '';
+  return result.code === 0 ? result.output : '';
+}
+
+/**
+ * 读一个注册表字符串值。值不存在时返回 '' —— 与「存在但为空」不可区分,
+ * 故调用方只在比较「前后是否一致」时用它,不依赖这个区分。
+ * @param {string} keyPath 完整键路径
+ * @param {string} valueName 值名
+ * @returns {Promise<string>} 值内容(读不到时为空串)
+ */
+export async function readRegStringValue(keyPath, valueName) {
+  const out = await runRegQuery(['query', keyPath, '/v', valueName]);
+  // reg 的输出是「值名<4 空格>REG_SZ<4 空格>数据」,数据可能含空格与分号,
+  // 故按「前两个分隔段之后全部」切分,而不是按空格切。
+  const match = /^\s{4}\S+\s{4}REG_[A-Z_]+\s{4}(.*)$/m.exec(out);
+  return match?.[1] ?? '';
+}
+
+/**
+ * 把用户 PATH 切成条目数组(仅用于比较,不改写原值)。
+ *
+ * 空项(;;)被丢弃:Windows 解析 PATH 时忽略空项,保留它们只会让「装完前后
+ * 语义相同但写法不同」被误判成改动。
+ * @param {string} value PATH 原始值
+ * @returns {string[]} 非空条目
+ */
+export function splitPathEntries(value) {
+  return value
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
+}
+
+/**
+ * 用户 PATH 相对基准是否发生了非预期改动。
+ *
+ * 判定按**条目集合的增删**而非整串相等:安装器在末尾追加一项,顺序不动,
+ * 整串必然变;而用户在两次快照之间自己改了 PATH,那是用户的行为,门禁管不了
+ * 也不该管。真正要抓的是「装完多了一截 / 卸完没还原 / 卸完少了用户原有的」。
+ * @param {object} spec 参数
+ * @param {string} spec.before 比较基准 PATH
+ * @param {string} spec.after 实测 PATH
+ * @param {string} [spec.installDir] 安装目录(after-install 阶段合法的单条增量)
+ * @param {'after-install' | 'after-uninstall'} [spec.phase] 比对阶段
+ * @returns {{ added: string[], removed: string[], ok: boolean }} 相对基准的增删条目与判定
+ */
+export function diffPathEntries({ before, after, installDir = '', phase = 'after-uninstall' }) {
+  const beforeSet = new Set(splitPathEntries(before));
+  const afterSet = new Set(splitPathEntries(after));
+  const added = [...afterSet].filter((entry) => !beforeSet.has(entry));
+  const removed = [...beforeSet].filter((entry) => !afterSet.has(entry));
+  const unchanged = added.length === 0 && removed.length === 0;
+  // 两个阶段各有各的合法结局,混在一起判就会漏:
+  //   after-install —— 未勾选则一条不变;勾选则恰好多出安装目录这一项。
+  //   after-uninstall —— **必须回到原值**。即便用户勾选过、PATH 里合法地
+  //     多过安装目录那一项,卸载后它也该被摘掉;还留着就是卸载摘不掉。
+  //     早先的写法在这里也放过「多出安装目录」,那正好是本断言最该抓的残留,
+  //     等于给最关键的失败面开了口子。
+  const consented = added.length === 1 && added[0] === installDir && removed.length === 0;
+  const ok = phase === 'after-install' ? unchanged || consented : unchanged;
+  return { added, removed, ok };
 }
 
 /**
@@ -510,6 +613,7 @@ export async function runInstallFlow(spec) {
     queryRegistry = queryUninstallKeys,
     deleteRegistryKey = deleteUninstallKey,
     removePath = removeResiduePath,
+    readRegValue = readRegStringValue,
   } = spec;
 
   for (const line of buildExecuteWarning({ installDir, perMachine: facts.perMachine, installDirOverridden })) {
@@ -524,6 +628,9 @@ export async function runInstallFlow(spec) {
   const registryBefore = await queryRegistry(facts.productName);
   const startMenuBefore = startMenuCandidates.filter((candidate) => exists(candidate));
   const installDirExistedBefore = exists(installDir);
+  // 用户 PATH 的「安装前」基线。勾选框写的就是这一处,而它不在开始菜单/卸载
+  // 注册表任何一条现有检查面上,不单独取快照就等于对它完全失明。
+  const pathBefore = await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE);
   if (installDirExistedBefore) {
     console.warn(`[warn] install-smoke: 安装目录已存在(${installDir}),将覆盖安装;若那是一份在用的安装,请先退出应用再重试`);
   }
@@ -553,6 +660,23 @@ export async function runInstallFlow(spec) {
       if (!exists(uninstaller)) {
         const exes = listDir(installDir).filter((name) => name.toLowerCase().endsWith('.exe'));
         problems.push(`静默安装后卸载器不存在:${uninstaller}(安装目录内的 .exe:${exes.join(', ') || '(无)'})`);
+      }
+      // 装完这一刻的 PATH:静默安装下勾选页不跑,期望一条都不变;真出现了别的
+      // 增量,说明有东西绕过了「默认不勾」这条用户同意的前提。
+      const pathAfterInstall = await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE);
+      const installDiff = diffPathEntries({
+        before: pathBefore,
+        after: pathAfterInstall,
+        installDir,
+        phase: 'after-install',
+      });
+      if (!installDiff.ok) {
+        problems.push(
+          `静默安装后用户 PATH 出现了非预期改动(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE}):` +
+            `多出:${installDiff.added.join(' | ') || '(无)'};` +
+            `缺失:${installDiff.removed.join(' | ') || '(无)'}。` +
+            `/S 下勾选框那一页不跑,默认不勾,期望一条都不变。`,
+        );
       }
     }
 
@@ -602,6 +726,39 @@ export async function runInstallFlow(spec) {
       const heal = await healResidue(residueItemsToClean, { deleteRegistryKey, removePath });
       for (const label of heal.healed) console.log(`[install-smoke:heal] 已自动清理:${label}`);
       for (const line of heal.failed) problems.push(`本次新增的残留未能自动清理:${line}`);
+    }
+
+    // ---- 用户 PATH 断言(独立于上面那道残留比对:它够不着 HKCU\Environment) ----
+    // 期望值从 build.nsis.include 派生(装了自定义 NSIS ⇒ 这个能力存在 ⇒ 断言
+    // PATH 相对安装前不得有非预期增删),不是把某一截字符串抄进门禁。
+    const pathAfter = await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE);
+    const pathDiff = diffPathEntries({
+      before: pathBefore,
+      after: pathAfter,
+      installDir,
+      phase: 'after-uninstall',
+    });
+    const pathEntriesBefore = splitPathEntries(pathBefore).length;
+    const pathEntriesAfterInstall = splitPathEntries(await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE)).length;
+    const pathEntriesAfter = splitPathEntries(pathAfter).length;
+    if (!pathDiff.ok) {
+      const detail =
+        `多出:${pathDiff.added.length > 0 ? pathDiff.added.join(' | ') : '(无)'}`
+        + `;缺失:${pathDiff.removed.length > 0 ? pathDiff.removed.join(' | ') : '(无)'}`;
+      problems.push(
+        `卸载后用户 PATH 未回到「安装前」(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE};` +
+          `勾选框由 build.nsis.include=${facts.pathOptInScript || '(未配置)'} 提供):${detail}。` +
+          `多出来的是卸载摘不掉的残留,少掉的是误伤了用户原有配置 —— 两者都要判红。`,
+      );
+    } else {
+      // 「断言跑了」与「跑到了且通过」必须可分辨:结论行带计数与三个阶段的条目数,
+      // 不只靠 exit 0。本仓有守卫静默退 0 骗过门禁的前科。
+      console.log(
+        `[ok] install-smoke: 用户 PATH 断言已执行(2 个阶段均跑到)—— `
+          + `${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE} 条目数:`
+          + `安装前 ${pathEntriesBefore} → 装完 ${pathEntriesAfterInstall} → 卸完 ${pathEntriesAfter};`
+          + `非预期增删 0 项;判据来源 build.nsis.include=${facts.pathOptInScript || '(未配置)'}`,
+      );
     }
   } finally {
     if (userDataDir !== '') disposeUserData(userDataDir);
@@ -709,6 +866,8 @@ export async function main(argv = []) {
         `安装目录已消失:${installDir}`,
         ...startMenuCandidates.map((candidate) => `开始菜单痕迹已清理:${candidate}`),
         `卸载注册表无新增项(检索 ${UNINSTALL_REG_ROOT} 下含「${facts.productName}」的键)`,
+        `用户 PATH 相对「安装前」无非预期增删(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE};` +
+          `静默安装下勾选框不跑,期望一条都不变;勾选框来自 build.nsis.include=${facts.pathOptInScript || '(未配置)'})`,
       ],
     });
     return 0;

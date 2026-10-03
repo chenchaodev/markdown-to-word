@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-169 |
-| 下一个可用号 | REQ-170 |
+| 已用最大号 | REQ-170 |
+| 下一个可用号 | REQ-171 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -25,6 +25,7 @@
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
 | REQ-001 | 中文排版包深化 | 待拍板 | 已交付部分从缺口剔除：按字符首行缩进（docx firstLineChars:200 / pdf text-indent:2em）与 eastAsia 字体已落地。真缺口只剩中文字号制（初号~小七）与中英混排间距，两项 grep 零命中。 | 随时 | 无 |
+| REQ-170 | gates/ 零静态类型兜底 | 待拍板 | gates/ 不在任何 tsconfig 的 include 里,eslint 对 .mjs 不报未定义标识符 ⇒ 三道静态检查全盲。实测:仅把 gates 加进 include 是**空壳**(checkJs 未开,.mjs 根本不检查,仍 0 错);打开 checkJs 后现有 **33** 个类型错误要先清。一个字符的错就是靠 acceptance 真跑才炸出来的 | 下次改 gates/ 下的脚本时;或清理那 33 个既有类型错误时 | docs/DEV-GUIDE.md(门禁接入点) |
 | REQ-002 | 模板深导入 | 待拍板 | 现状是浅导入，只取 Normal/Heading1 的 rPr（字体 + 字号），颜色与段落样式的 OOXML 全量逆映射未做。开工前须单独拍板 core 纯度：读 styles.xml 之外的部件需 node:fs，会让导入边界门禁正确变红（加白名单 = 承认 core 碰宿主能力；下沉 main = 承认模板导入不是 core 职责）。 | 随时 | 无 |
 | REQ-003 | docx 反向导入回 Markdown | 待拍板 | 反向工作流闭环（转出 → 客户改 → 回流）未做。与 REQ-002 共享「读 OOXML 非 styles 部件」这一前置压力，两项一起开工可摊薄。 | 随时 | 无 |
 | REQ-004 | Notion 导入联动 | 待拍板 | Obsidian 兼容已随 3.7.0 交付，余量是 Notion 导出解析与库导入；src/ 内 notion 相关零命中。 | 随时 | 无 |
@@ -45,7 +46,7 @@
 | REQ-164 | 项目根改由 cwd 单一来源 | 已完成 | ROOT 改 cwd 单一来源,9 处入口守卫同改为代码位置自比。**纠正原判据**:实测只有 2 处会崩、7 处寄生沙盒复制。src 对该模块零引用 ⇒ 打包面零风险面 | 再改项目根来源或门禁自定位方式时;REQ-165 删沙盒复制时复核那 7 处的寄生关系已消解 | shared/paths.js · gates/repo/check-import-boundary.mjs(no-self-computed-root 规则与其豁免) |
 | REQ-165 | 沙盒副本机制退役 | 已完成 | 副本闭包机制退役,换白名单式 fail-closed 门禁(三条断言 + 4 组负向锚点),已接进链并登记在册。净减 299 行(取数见提交);原记 905 有误——新门禁自身 758 行未计入 | 新增或改动任何复制点时(白名单须同步改);或新增复制机制(fs.linkSync / fs.cp / 手写 stream)时须扩原语表 | gates/repo/check-copy-sites.mjs · docs/adr/ADR-040-沙盒复制集纳入shared并删除根路径豁免表.md(后记:门禁部分已退役) |
 | REQ-168 | 安装版转发入口零门禁覆盖 | 已完成 | 解包产物门禁加 fail-closed 存在性钉,期望清单读配置声明不写死文件名,声明为空亦判红;真产物 1/1 通过、负向两场景判红;计数进结论行故「没跑到」可分辨 | 改动 `build.extraFiles` 或打包产物布局时;或补真安装器那层断言时 | gates/artifacts/check-unpacked-smoke.mjs(checkForwarders) · test/gates/install-smoke.test.js(第 13 段负向锚点) |
-| REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 待拍板 | 用户提出经同意后把安装目录加入 PATH。可行(electron-builder 有 `nsis.include` 口,写 `HKCU\Environment` 不需提权),但本仓无该挂载点,且有四件事必须与它一起做、缺一条就留下「命令找不到」或卸载残留。关键取舍:`spawn` 不能直接拉 `.cmd` 这条**加 PATH 后依然在**,反而让用户误以为能直接 spawn。建议先做开始菜单快捷方式,PATH 是否代做交用户拍板。逐条分析见「分析在哪」 | 下一次改 `build.nsis` 或打包配置时;或用户明确要求代做 PATH | docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
+| REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 已完成 | 装机时提供默认不勾的 PATH 勾选框。快捷方式方案经实测推翻(入口无参闪退、无原生机制、本机无 PATH 右键菜单)。写入用 WriteRegExpandStr 保住用户 %VAR% 展开 | 改动 `build.nsis.include` 或自定义 NSIS 脚本时;或 electron-builder 升级后 include 钩子位置变化时;或补真安装验证时 | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
 
 ## 在办
 

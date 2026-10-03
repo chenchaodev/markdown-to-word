@@ -131,7 +131,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "license": "LICENSE",
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "include": "build-assets/installer.nsh"
     }
   },
   "devDependencies": {
