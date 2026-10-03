@@ -267,9 +267,9 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
   background:var(--card);border:1px solid var(--line);color:var(--ink-2);
   font-family:var(--font-mono);font-size:.78rem;letter-spacing:.02em}
 
-/* ===== 开发者分区（技术栈 + 命令行与 AI 助手 + 文档入口）
-   分区是页面的第二次叙事转折：前三节讲「产品作为体验」，
-   从这里起讲「需要动手的部分」。用一条发丝线把两段叙事分开，
+/* ===== 开发者分区（技术栈）
+   分区是页面的第二次叙事转折：前面几节讲「装好之后怎么用」，
+   从这里起讲「程序由什么写成」。用一条发丝线把两段叙事分开，
    让访客不读正文也能判断该不该往下看。 ===== */
 .dev-zone{border-top:1px solid var(--line)}
 /* 分区题：比区内内容块高一级，字号高于 .section-title，但不到 h1 */
@@ -277,8 +277,9 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
 .zone-title{font-family:var(--font-display);font-size:clamp(1.6rem,3.4vw,2.15rem);
   font-weight:600;letter-spacing:.02em;line-height:1.3;max-width:var(--measure)}
 .dev-head .section-desc{margin-top:var(--space-md)}
-/* 区内块与块之间靠发丝线分区（§1.3：分区靠 1px 发丝线，禁粗分割条与色块） */
-.dev-zone .dev-block + .dev-block{border-top:1px solid var(--line)}
+/* 块与块之间靠发丝线分区（§1.3：分区靠 1px 发丝线，禁粗分割条与色块）。
+   选择器不带 .dev-zone 前缀：分区之外的多块结构（命令行分区）也按这一条分。 */
+.dev-block + .dev-block{border-top:1px solid var(--line)}
 /* 分区题已占足上边距，紧随其后的第一块收一档，否则题与内容之间会空出一段 */
 .dev-zone > .dev-block:first-of-type{padding-top:var(--space-lg)}
 /* 区内块的题：h2 降一级到 h3，衬线保留但字号收一档，层级才不会读平 */
@@ -290,10 +291,13 @@ h3.block-title{font-family:var(--font-display);font-size:clamp(1.15rem,2.2vw,1.4
 .dev-docs .more-item .doclink{margin-top:6px}
 
 /* ===== CLI & MCP（脚本与 AI 助手入口）
-   与「功能特性」卡片刻意不同形：这里不是安装版程序的能力，
-   故用两栏纸面 + 发丝线区块，不复用 feature-card 的图标卡。 ===== */
+   与「功能特性」卡片刻意不同形：这两块要给完整路径、选项、退出码
+   这类数据，密度高于功能特性那组，故用两栏纸面 + 发丝线区块，
+   不复用 feature-card 的图标卡。 ===== */
+/* 两张卡信息量不同（命令行要列路径、选项、退出码与调用限制），不拉齐等高 ——
+   等高会在短的那张卡底部留出一大片空白。 */
 .cli-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-  gap:var(--space-md)}
+  gap:var(--space-md);align-items:start}
 @media(max-width:640px){.cli-grid{grid-template-columns:1fr}}
 /* min-width:0 让超长代码行收敛为块内横向滚动，不撑破栅格 */
 .cli-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);
@@ -632,8 +636,137 @@ html.js .reveal.is-in{opacity:1;transform:none}
   </div>
 </section>
 
-<!-- ===== 开发者分区：技术栈 · 命令行与 AI 助手 · 文档入口
-     分区 id 供顶栏 04 锚点使用；#tech 作为深链锚点保留在区内原处。 ===== -->
+<!-- ===== 命令行与 AI 助手（装完即可用，不必先构建）
+     id #cli 作为深链锚点保留在原处。这两块用两栏纸面而非 feature-card 的
+     图标卡：要给出完整路径、选项与退出码这类数据，密度高于功能特性那组。 ===== -->
+<section class="section dev-block" id="cli">
+  <div class="container">
+    <span class="kicker reveal">
+      <span class="inline" data-lang="zh">命令行与 AI 助手</span>
+      <span class="inline" data-lang="en">Command Line &amp; AI Assistants</span>
+    </span>
+    <h2 class="section-title reveal">
+      <span class="inline" data-lang="zh">不开界面，也能发起转换</span>
+      <span class="inline" data-lang="en">Convert Without Opening the App</span>
+    </h2>
+    <p class="section-desc reveal">
+      <span class="inline" data-lang="zh">图形界面之外，安装包还带一个命令行入口 <code>m2w.cmd</code>，落在安装根目录、与程序可执行文件并列，写出完整路径即可调用，无需另备运行环境。它调用的是安装包内那份转换代码，与图形界面同一份实现，行为和版本都一致。入口不在 PATH，也没有开始菜单快捷方式，命令行里需写出下面那个完整路径，或先把安装根目录加进 PATH。</span>
+      <span class="inline" data-lang="en">Besides the desktop app, the installer ships a command-line entry point, <code>m2w.cmd</code>, sitting in the install root next to the program executable; call it by its full path and no separate runtime is needed. It runs the conversion code inside the install package, the same implementation the desktop app uses, so behaviour and version match. The entry point is neither on PATH nor given a Start menu shortcut, so the full path below has to be spelled out, or the install root added to PATH first.</span>
+    </p>
+
+    <div class="cli-grid">
+
+      <!-- 命令行 -->
+      <div class="cli-card reveal" style="--d:0ms">
+        <h3>
+          <span class="inline" data-lang="zh">命令行</span>
+          <span class="inline" data-lang="en">Command Line</span>
+        </h3>
+        <p class="cli-sig">%LOCALAPPDATA%\Programs\MarkdownToWord\m2w.cmd <span class="inline" data-lang="zh">&lt;输入路径...&gt; [选项]</span><span class="inline" data-lang="en">&lt;input paths…&gt; [options]</span></p>
+        <pre class="code"><code>"%LOCALAPPDATA%\Programs\MarkdownToWord\m2w.cmd" 笔记.md --format both
+"%LOCALAPPDATA%\Programs\MarkdownToWord\m2w.cmd" ./文章目录 --json</code></pre>
+        <p class="exit-codes">
+          <span class="inline" data-lang="zh"><span class="exit-label">退出码</span><span class="exit-i">0 成功</span> · <span class="exit-i">1 命令行写法有误</span> · <span class="exit-i">2 输入读不到</span> · <span class="exit-i">3 转换失败</span> · <span class="exit-i">4 产物写不出去</span></span>
+          <span class="inline" data-lang="en"><span class="exit-label">Exit codes</span><span class="exit-i">0 success</span> · <span class="exit-i">1 bad usage</span> · <span class="exit-i">2 input unreadable</span> · <span class="exit-i">3 conversion failed</span> · <span class="exit-i">4 output not writable</span></span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh"><strong>选项</strong> · <code>--format docx|pdf|both</code> · <code>-o/--output 路径</code> · <code>--template 预设id</code> · <code>--json</code> · <code>--help</code></span>
+          <span class="inline" data-lang="en"><strong>Options</strong> · <code>--format docx|pdf|both</code> · <code>-o/--output path</code> · <code>--template preset-id</code> · <code>--json</code> · <code>--help</code></span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh"><strong>输出格式</strong> · <code>--format</code> 的三个取值都可用，<code>pdf</code> 与 <code>both</code> 由程序自身排版打印，公式照常渲染。</span>
+          <span class="inline" data-lang="en"><strong>Output format</strong> · All three values of <code>--format</code> work; <code>pdf</code> and <code>both</code> are laid out and printed by the program itself, equations included.</span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh">脚本或客户端不能直接拉起这个 <code>.cmd</code>：Windows 上用 <code>spawn</code> 直接启动会得到 <code>EINVAL</code>，须经 <code>cmd.exe /d /s /c</code> 转发一道。而 <code>cmd /s /c</code> 会剥掉最外层一对引号，路径含空格时写成 <code>""完整路径""</code>。这一层转发由调用方负责。</span>
+          <span class="inline" data-lang="en">A script or a client cannot launch this <code>.cmd</code> directly: on Windows <code>spawn</code> returns <code>EINVAL</code>, so the call has to go through <code>cmd.exe /d /s /c</code>. That command strips the outermost pair of quotes, so a path containing spaces is written as <code>""full path""</code>. The forwarding is the caller's side of the deal.</span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh">从源码检出运行时，入口写作 <code>node dist/cli/index.js</code>，选项与退出码和上面完全一致。</span>
+          <span class="inline" data-lang="en">Run from a source checkout, the same entry is spelled <code>node dist/cli/index.js</code>, with identical options and exit codes.</span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh">产物重名时自动写成「名 (2).docx」，不覆盖既有文件；用 <code>-o</code> 指定路径时不自动改名，该路径已被占用则本次转换直接失败。</span>
+          <span class="inline" data-lang="en">When a name collides, the output becomes “name (2).docx” instead of overwriting; with <code>-o</code> the path is used verbatim, and an occupied path fails the run.</span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh">命令行没有图表渲染宿主，<code>```mermaid</code> 围栏按等宽代码块写入产物。需要图形时用图形界面转换。</span>
+          <span class="inline" data-lang="en">The command line has no diagram renderer, so <code>```mermaid</code> fences land in the output as monospaced code blocks. Use the desktop app when diagrams are needed.</span>
+        </p>
+        <p class="cli-foot">
+          <a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/CLI.md">
+            <span class="inline" data-lang="zh">命令行用法 · 完整说明</span>
+            <span class="inline" data-lang="en">Command Line · full reference</span>
+          </a>
+        </p>
+      </div>
+
+      <!-- MCP -->
+      <div class="cli-card reveal" style="--d:90ms">
+        <h3>
+          <span class="inline" data-lang="zh">MCP 服务端</span>
+          <span class="inline" data-lang="en">MCP Server</span>
+        </h3>
+        <pre class="code"><code>set M2W_ENTRY=dist\mcp\index.js
+cmd.exe /d /s /c ""%LOCALAPPDATA%\Programs\MarkdownToWord\m2w.cmd""</code></pre>
+        <p class="cli-note" style="margin-bottom:var(--space-sm)">
+          <span class="inline" data-lang="zh">同一个转发器加上这个环境变量，跑起来的就是 MCP 服务端。在助手的 MCP 配置里登记该入口并重启助手，工具列表里会出现 <code>convert_markdown</code>，把 Markdown 转成 <code>.docx</code>。</span>
+          <span class="inline" data-lang="en">The same forwarder plus that environment variable runs the MCP server. Register the entry in the assistant's MCP configuration and restart it; the tool <code>convert_markdown</code> then turns Markdown into <code>.docx</code>.</span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh">各家助手的配置写法不一样：有的支持单独的环境变量字段，有的只认命令加参数。上面给的是已验证的命令行形态，配到某个客户端时按那个客户端自己的写法来。</span>
+          <span class="inline" data-lang="en">Every assistant writes its MCP configuration differently: some accept a separate environment block, others only take a command plus arguments. The command line above is the verified form; translate it into whatever the chosen client expects.</span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh">只产出 Word。Mermaid 图表会降级为代码块，并在返回值的 <code>degraded</code> 字段里写明，助手据此可判断这份产物是否需要人工补图。</span>
+          <span class="inline" data-lang="en">Word output only. Mermaid diagrams are degraded to code blocks, and the <code>degraded</code> field of the result says so, so the assistant can tell whether a document needs diagrams added by hand.</span>
+        </p>
+        <p class="cli-foot">
+          <a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/MCP.md">
+            <span class="inline" data-lang="zh">MCP 接入 · 完整说明</span>
+            <span class="inline" data-lang="en">MCP Integration · full reference</span>
+          </a>
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+  <!-- ===== 文档入口（收口命令行分区） ===== -->
+<section class="section dev-block dev-docs" id="dev-docs">
+  <div class="container">
+    <span class="kicker reveal">
+      <span class="inline" data-lang="zh">文档</span>
+      <span class="inline" data-lang="en">Documentation</span>
+    </span>
+    <h3 class="block-title reveal" style="margin:var(--space-md) 0 0">
+      <span class="inline" data-lang="zh">完整说明在哪</span>
+      <span class="inline" data-lang="en">Where the Full References Live</span>
+    </h3>
+    <div class="more-grid reveal">
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>命令行用法</strong> · 语法、选项、内置排版预设、JSON 输出与五档退出码</span>
+        <span class="inline" data-lang="en"><strong>Command Line</strong> · Syntax, options, built-in presets, JSON output, and the five exit codes</span>
+        <div><a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/CLI.md">
+          <span class="inline" data-lang="zh">读文档</span>
+          <span class="inline" data-lang="en">Read the reference</span>
+        </a></div>
+      </div>
+      <div class="more-item">
+        <span class="inline" data-lang="zh"><strong>MCP 接入</strong> · 助手侧配置写法、工具参数、返回值字段与失败重试</span>
+        <span class="inline" data-lang="en"><strong>MCP Integration</strong> · Assistant-side configuration, tool parameters, result fields, and retry on failure</span>
+        <div><a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/MCP.md">
+          <span class="inline" data-lang="zh">读文档</span>
+          <span class="inline" data-lang="en">Read the reference</span>
+        </a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 开发者分区：技术栈
+     分区 id #dev 供顶栏 04 锚点使用；#tech 作为深链锚点保留在区内原处。 ===== -->
 <div class="dev-zone" id="dev">
 
   <div class="container dev-head">
@@ -642,12 +775,12 @@ html.js .reveal.is-in{opacity:1;transform:none}
       <span class="inline" data-lang="en">For Developers</span>
     </span>
     <h2 class="zone-title reveal">
-      <span class="inline" data-lang="zh">自行构建后才能用的部分</span>
-      <span class="inline" data-lang="en">What Works After a Build of Your Own</span>
+      <span class="inline" data-lang="zh">程序由什么写成</span>
+      <span class="inline" data-lang="en">What's Under the Hood</span>
     </h2>
     <p class="section-desc reveal">
-      <span class="inline" data-lang="zh">下面的命令行入口与 MCP 服务端从编译产物启动，需要源码检出、Node.js ≥ 22.13 与一次完整构建。Windows 安装包只含图形界面，不含这两项。只想用图形界面的话，这一分区可以整段跳过。</span>
-      <span class="inline" data-lang="en">The command-line entry point and the MCP server below start from the build output; they need a source checkout, Node.js ≥ 22.13, and a completed build. The Windows installer ships the desktop app only, with neither entry point. Readers after the graphical interface can skip this whole section.</span>
+      <span class="inline" data-lang="zh">这一分区只剩两件事：程序由下列这些组件写成，以及安装包下载后可能要留意的一处系统提示。图形界面、命令行入口与 MCP 服务端都由安装包提供，日常使用不需要先完成构建。</span>
+      <span class="inline" data-lang="en">Two things are left in this section: the components the program is built from, and one system prompt worth knowing about after installing. The desktop app, the command-line entry point and the MCP server all ship with the installer, so everyday use needs no build step.</span>
     </p>
   </div>
 
@@ -677,118 +810,6 @@ html.js .reveal.is-in{opacity:1;transform:none}
     </p>
   </div>
 </section>
-
-<!-- ===== CLI & MCP（脚本与 AI 助手入口）
-       沿用上一轮的判断：不用 feature-card 的图标卡形态 ——
-       那一组描述的是安装版程序实际具备的能力，而这两项需要自行构建后使用。 ===== -->
-  <section class="section dev-block" id="cli">
-  <div class="container">
-    <span class="kicker reveal">
-      <span class="inline" data-lang="zh">命令行与 AI 助手</span>
-      <span class="inline" data-lang="en">Command Line &amp; AI Assistants</span>
-    </span>
-    <h3 class="block-title reveal" style="margin:var(--space-md) 0 var(--space-lg)">
-      <span class="inline" data-lang="zh">不开界面，也能发起转换</span>
-      <span class="inline" data-lang="en">Convert Without Opening the App</span>
-    </h3>
-    <p class="section-desc reveal" style="margin-top:0">
-      <span class="inline" data-lang="zh">除了图形界面，程序还提供命令行入口与 MCP 服务端，可在脚本、批处理与 AI 助手里调用同一套转换能力。两者都从编译产物启动，不随安装版程序分发（安装包里只有图形界面），使用前需先完成构建。</span>
-      <span class="inline" data-lang="en">Besides the desktop app, the program offers a command-line entry point and an MCP server, so scripts, batch jobs, and AI assistants can call the same conversion pipeline. Both start from the build output and are not part of the installer (which ships the desktop app only); build the project first.</span>
-    </p>
-
-    <div class="cli-grid" style="margin-top:var(--space-lg)">
-
-      <!-- 命令行 -->
-      <div class="cli-card reveal" style="--d:0ms">
-        <h3>
-          <span class="inline" data-lang="zh">命令行</span>
-          <span class="inline" data-lang="en">Command Line</span>
-        </h3>
-        <p class="cli-sig">node dist/cli/index.js <span class="inline" data-lang="zh">&lt;输入路径...&gt; [选项]</span><span class="inline" data-lang="en">&lt;input paths…&gt; [options]</span></p>
-        <pre class="code"><code>node dist/cli/index.js 笔记.md --format both
-node dist/cli/index.js ./文章目录 --json</code></pre>
-        <p class="exit-codes">
-          <span class="inline" data-lang="zh"><span class="exit-label">退出码</span><span class="exit-i">0 成功</span> · <span class="exit-i">1 命令行写法有误</span> · <span class="exit-i">2 输入读不到</span> · <span class="exit-i">3 转换失败</span> · <span class="exit-i">4 产物写不出去</span></span>
-          <span class="inline" data-lang="en"><span class="exit-label">Exit codes</span><span class="exit-i">0 success</span> · <span class="exit-i">1 bad usage</span> · <span class="exit-i">2 input unreadable</span> · <span class="exit-i">3 conversion failed</span> · <span class="exit-i">4 output not writable</span></span>
-        </p>
-        <p class="cli-note">
-          <span class="inline" data-lang="zh"><strong>选项</strong> · <code>--format docx|pdf|both</code> · <code>-o/--output 路径</code> · <code>--template 预设id</code> · <code>--json</code> · <code>--help</code></span>
-          <span class="inline" data-lang="en"><strong>Options</strong> · <code>--format docx|pdf|both</code> · <code>-o/--output path</code> · <code>--template preset-id</code> · <code>--json</code> · <code>--help</code></span>
-        </p>
-        <p class="cli-note">
-          <span class="inline" data-lang="zh">产物重名时自动写成「名 (2).docx」，不覆盖既有文件；用 <code>-o</code> 指定路径时不自动改名，该路径已被占用则本次转换直接失败。</span>
-          <span class="inline" data-lang="en">When a name collides, the output becomes “name (2).docx” instead of overwriting; with <code>-o</code> the path is used verbatim, and an occupied path fails the run.</span>
-        </p>
-        <p class="cli-note">
-          <span class="inline" data-lang="zh">命令行没有图表渲染宿主，<code>```mermaid</code> 围栏按等宽代码块写入产物。需要图形时用图形界面转换。</span>
-          <span class="inline" data-lang="en">The command line has no diagram renderer, so <code>```mermaid</code> fences land in the output as monospaced code blocks. Use the desktop app when diagrams are needed.</span>
-        </p>
-        <p class="cli-foot">
-          <a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/CLI.md">
-            <span class="inline" data-lang="zh">命令行用法 · 完整说明</span>
-            <span class="inline" data-lang="en">Command Line · full reference</span>
-          </a>
-        </p>
-      </div>
-
-      <!-- MCP -->
-      <div class="cli-card reveal" style="--d:90ms">
-        <h3>
-          <span class="inline" data-lang="zh">MCP 服务端</span>
-          <span class="inline" data-lang="en">MCP Server</span>
-        </h3>
-        <p class="cli-sig">node dist/mcp/index.js</p>
-        <p class="cli-note" style="margin-bottom:var(--space-sm)">
-          <span class="inline" data-lang="zh">在助手的 MCP 配置里登记该入口并重启助手，工具列表里会出现 <code>convert_markdown</code>，把 Markdown 转成 <code>.docx</code>。</span>
-          <span class="inline" data-lang="en">Register the entry in the assistant's MCP configuration and restart it; the tool <code>convert_markdown</code> then turns Markdown into <code>.docx</code>.</span>
-        </p>
-        <p class="cli-note">
-          <span class="inline" data-lang="zh">只产出 Word。Mermaid 图表会降级为代码块，并在返回值的 <code>degraded</code> 字段里写明，助手据此可判断这份产物是否需要人工补图。</span>
-          <span class="inline" data-lang="en">Word output only. Mermaid diagrams are degraded to code blocks, and the <code>degraded</code> field of the result says so, so the assistant can tell whether a document needs diagrams added by hand.</span>
-        </p>
-        <p class="cli-foot">
-          <a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/MCP.md">
-            <span class="inline" data-lang="zh">MCP 接入 · 完整说明</span>
-            <span class="inline" data-lang="en">MCP Integration · full reference</span>
-          </a>
-        </p>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-  <!-- ===== 文档入口（区内收口） ===== -->
-  <section class="section dev-block dev-docs" id="dev-docs">
-    <div class="container">
-      <span class="kicker reveal">
-        <span class="inline" data-lang="zh">文档</span>
-        <span class="inline" data-lang="en">Documentation</span>
-      </span>
-      <h3 class="block-title reveal" style="margin:var(--space-md) 0 0">
-        <span class="inline" data-lang="zh">完整说明在哪</span>
-        <span class="inline" data-lang="en">Where the Full References Live</span>
-      </h3>
-      <div class="more-grid reveal">
-        <div class="more-item">
-          <span class="inline" data-lang="zh"><strong>命令行用法</strong> · 语法、选项、内置排版预设、JSON 输出与五档退出码</span>
-          <span class="inline" data-lang="en"><strong>Command Line</strong> · Syntax, options, built-in presets, JSON output, and the five exit codes</span>
-          <div><a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/CLI.md">
-            <span class="inline" data-lang="zh">读文档</span>
-            <span class="inline" data-lang="en">Read the reference</span>
-          </a></div>
-        </div>
-        <div class="more-item">
-          <span class="inline" data-lang="zh"><strong>MCP 接入</strong> · 助手侧配置写法、工具参数、返回值字段与失败重试</span>
-          <span class="inline" data-lang="en"><strong>MCP Integration</strong> · Assistant-side configuration, tool parameters, result fields, and retry on failure</span>
-          <div><a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/MCP.md">
-            <span class="inline" data-lang="zh">读文档</span>
-            <span class="inline" data-lang="en">Read the reference</span>
-          </a></div>
-        </div>
-      </div>
-    </div>
-  </section>
 
 </div><!-- /.dev-zone -->
 

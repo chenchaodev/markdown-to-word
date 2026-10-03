@@ -144,14 +144,23 @@ npm run dev        # build + launch Electron
 npm run dist       # package the Windows NSIS installer into release/
 ```
 
-Beyond the desktop app there are two more entry points, both started from the build output, which expose the same conversion capability to scripts and to AI assistants:
+Beyond the desktop app there are two non-interactive entry points, so scripts and AI assistants can drive the same conversion. The installed app ships a forwarder that starts them, and nothing else has to be set up:
+
+```bash
+# installed app: the forwarder sits in the install root, next to MarkdownToWord.exe
+"%LOCALAPPDATA%\Programs\MarkdownToWord\m2w.cmd" notes.md
+```
+
+It lands next to the executable rather than anywhere on PATH, and it gets no Start menu shortcut, so the full path above has to be typed out or the install root added to PATH by hand. That path assumes the default install directory; it changes along with the directory chosen at install time. What it runs is the conversion code carried inside the app, the same implementation the window uses, so behavior and version match.
+
+From a source checkout the two entry points are started straight from the build output instead:
 
 ```bash
 node dist/cli/index.js notes.md   # command line: Markdown → Word / PDF
 node dist/mcp/index.js            # MCP server, for MCP-capable AI assistants
 ```
 
-Both run from a source checkout, so Node.js >= 22.13 with installed dependencies and a completed build are required. The Windows installer contains only the desktop app, not these two entry points. Presets, options, exit codes and JSON output for the command line are in [Command line usage](docs/CLI.md); how to wire the server into an assistant, its tool parameters and its results are in [MCP integration](docs/MCP.md).
+That form needs Node.js >= 22.13 with installed dependencies and a completed build. How each form of the command line is invoked, together with presets, options, exit codes and JSON output, is in [Command line usage](docs/CLI.md); how to wire the server into an assistant, its tool parameters and its results are in [MCP integration](docs/MCP.md).
 
 Tech stack: Electron 43 + TypeScript (ESM); docx 9.x + remark (Word rendering, with remark-gfm / remark-math), markdown-it 14.3 + Electron printToPDF (PDF rendering), KaTeX / Mermaid 11 / highlight.js / pdf-lib, jszip (unpacking .docx templates) and iconv-lite (GBK-compatible decoding).
 
@@ -164,7 +173,7 @@ npm run test:smoke   # Electron smoke test
 npm run test:all     # acceptance + smoke
 ```
 
-Test system: Zero-registration acceptance tests organized by content topic in `test/`, in three layers: `segments` / `main` / `renderer`. Fixtures in `test/fixtures/`, output to `output/`. Segment count is whatever `npm run test` reports.
+Test system: Zero-registration acceptance tests organized by content topic in `test/`; for how the segment directories are split and named, see the 「测试体系」 section of [DEV-GUIDE](docs/DEV-GUIDE.md). Fixtures in `test/fixtures/`, output to `output/`. Segment count is whatever `npm run test` reports.
 
 ### Documentation
 
@@ -182,7 +191,7 @@ Test system: Zero-registration acceptance tests organized by content topic in `t
 - [Dev Guide](docs/DEV-GUIDE.md): Environment, commands, code map, verification baseline
 - [Architecture decisions](docs/adr/): why it is designed this way (one decision per file)
 - [UI guidelines](docs/design/ui-guidelines.md) / [Settings IA](docs/design/settings-ia.md): Read before touching the UI
-- [Command line usage](docs/CLI.md): The command line entry point, run from a source checkout; syntax, options and exit codes
+- [Command line usage](docs/CLI.md): Both forms of the command line entry point (installed app and source checkout); how each is invoked, plus syntax, options and exit codes
 - [MCP integration](docs/MCP.md): How an AI assistant connects to it
 
 **Contributing**

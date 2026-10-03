@@ -128,20 +128,29 @@ npm run dev        # 构建 + 启动 Electron 开发态
 npm run dist       # 打包 Windows 安装包（NSIS，输出到 release/）
 ```
 
-除图形界面外，另有两个从编译产物启动的入口，可在脚本与 AI 助手里调用同一套转换能力：
+除图形界面外，另有两个非交互入口，可在脚本与 AI 助手里调用同一套转换能力。装好本程序后即可在命令行里使用，无需另装 Node.js：
+
+```bash
+# 安装版：转发器在安装根目录，与 MarkdownToWord.exe 并列
+"%LOCALAPPDATA%\Programs\MarkdownToWord\m2w.cmd" 笔记.md
+```
+
+转发器落在安装根目录而非 PATH 里，也没有开始菜单快捷方式，上面的完整路径需要直接写出，或先把安装根目录加进 PATH。上面的路径按默认安装目录写成，安装时若换了目录，路径随之变化。它调用的是安装包内那份转换代码，与图形界面是同一份实现，行为和版本都一致。
+
+从源码检出运行时改用下面两条命令，需要 Node.js >= 22.13 与已装齐的依赖，并先完成构建：
 
 ```bash
 node dist/cli/index.js 笔记.md    # 命令行入口：Markdown → Word / PDF
 node dist/mcp/index.js            # MCP 服务端：供支持 MCP 的 AI 助手调用
 ```
 
-两个入口都要从源码检出运行，需要 Node.js >= 22.13 与已装齐的依赖，并先完成构建；Windows 安装包只含图形界面，不含这两项。命令行入口的预设、选项、退出码与 JSON 输出见 [命令行用法](docs/CLI.md)；服务端在助手里的配置方式、工具参数与返回值见 [MCP 接入](docs/MCP.md)。
+命令行入口两种形态各自的调用方式、预设、选项、退出码与 JSON 输出见 [命令行用法](docs/CLI.md)；服务端在助手里的配置方式、工具参数与返回值见 [MCP 接入](docs/MCP.md)。
 
 技术栈：Electron 43 + TypeScript（ESM）；docx 9.x + remark（remark-gfm 表格/删除线、remark-math 公式，Word 渲染）、jszip（解包 .docx 模板）、markdown-it 14.3 + Electron printToPDF（PDF 渲染）、iconv-lite（GBK 等编码识别）、KaTeX / Mermaid 11 / highlight.js / pdf-lib。
 
 验证与打包命令的完整清单见 [开发者手册](docs/DEV-GUIDE.md) 的「命令」节（`npm run typecheck` / `lint` / `build` / `test` / `test:smoke` 等）。
 
-测试体系：`test/` 下按内容主题零注册，分 `segments` / `main` / `renderer` 三层；样例在 `test/fixtures/`，产物在 `output/`。段数以 `npm run test` 的实际输出为准。
+测试体系：`test/` 下按内容主题零注册，段目录的划分与命名见 [开发者手册](docs/DEV-GUIDE.md) 的「测试体系」节；样例在 `test/fixtures/`，产物在 `output/`。段数以 `npm run test` 的实际输出为准。
 
 ### 文档
 
@@ -159,7 +168,7 @@ node dist/mcp/index.js            # MCP 服务端：供支持 MCP 的 AI 助手�
 - [开发者手册](docs/DEV-GUIDE.md)：环境、命令、代码地图、验证基线
 - [架构决策](docs/adr/)：为什么这么设计（一决策一文件，含状态与取代关系）
 - [UI 规范](docs/design/ui-guidelines.md) / [设置信息架构](docs/design/settings-ia.md)：改界面前必读
-- [命令行用法](docs/CLI.md)：从源码检出运行的命令行入口，含语法、选项与退出码
+- [命令行用法](docs/CLI.md)：安装版与源码检出两种形态的命令行入口，含调用方式、语法、选项与退出码
 - [MCP 接入](docs/MCP.md)：AI 助手接入的完整说明
 
 **参与**
