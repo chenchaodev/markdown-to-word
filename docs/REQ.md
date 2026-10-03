@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-166 |
-| 下一个可用号 | REQ-167 |
+| 已用最大号 | REQ-167 |
+| 下一个可用号 | REQ-168 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -44,6 +44,7 @@
 | REQ-163 | 库模式（npm 包） | 未开工 | 由 REQ-006 拆出。core 纯度已实测达标但打包面为零：本仓 `private: true`、无 `bin`/`exports`/`types`，`tsconfig.json` 无 `declaration` 键 ⇒ dist 不产 `.d.ts`，对外暴露类型需新增该键。与 MCP 无技术共同点故拆号 | 「是否对外发 npm 包」决策后开工 | docs/adr/ADR-060-多层交付面与headless装配层.md |
 | REQ-164 | 项目根改由 cwd 单一来源 | 未开工 | `ROOT`（`shared/paths.js:20`）改 `process.cwd()` 单一来源。代码 2 行，但连带 **9 处入口守卫**须同改（不只 `check-pointers.mjs:1991`）⇒ 否则守卫永不成立、无输出退 0；另 `check-import-boundary.mjs:241-247` 指令要改写。否决：`--root`、fallback 双分支（违 ADR-037）、env 变量（把响亮的 `ERR_MODULE_NOT_FOUND` 换成静默错根）。等 REQ-161 收尾 | REQ-161 收尾后；或改动 `shared/paths.js` 派生依据时重新评估 | docs/evidence/20261003-111453-顶层目录结构与项目根来源改造调研.md |
 | REQ-165 | 沙盒副本机制退役 | 未开工 | 25 个副本里 23 个可删（5 via 只造假数据 + install-smoke 8 份），改「真脚本 + `cwd` 指夹具」；留 A2 两处（必须改写门禁源码）与 tree-mirror（真跑门禁，缺文件当场红，不加判红）。删整套副本闭包机制换白名单式复制点门禁，净减约 905 行，失效方向由 fail-open 翻成 fail-closed。否决：`M2W_ROOT` env、loader 魔法、tree-mirror 判红、npm 装真包。**须在 REQ-164 落地后开工** | REQ-164 收尾后；或复制点数量回升 / per-`via` 断言仍只查 `shared/paths.js` 时重看 | docs/evidence/20261003-111453-顶层目录结构与项目根来源改造调研.md |
+| REQ-167 | 按整体分组重排 CI 脚本顺序 | 未开工 | `verify:ci` 把 `check:coverage-zero:selftest` 排在 `test:coverage` 之前,而该 selftest 声明的契约是「必须紧跟 `test:coverage`」⇒ 链未兑现契约:它读上一轮的陈旧 `coverage-summary.json`,把「真修好了」判成没修。否决:给它加跳过分支(违其声明意图)、单独挪一行(用户裁决并入 CI 整体分组) | 排期重排 `verify:ci` 分组时;或任何一次链在到达 `test:coverage` 之前失败之后 | gates/probe/check-coverage-zero.selftest.mjs:364 |
 
 ## 在办
 
