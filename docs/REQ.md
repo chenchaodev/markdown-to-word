@@ -41,7 +41,6 @@
 | REQ-019 | 模板预设卡化 | 待拍板 | 现状仍是 select；用户 2026-09-26 已裁定暂不执行，需重构预设链路。 | 预设链路重构时 | 无 |
 | REQ-020 | 批量重命名 | 待拍板 | 2026-08-16 当初否决：边缘便利（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-021 | 代码高亮主题切换 | 待拍板 | 2026-08-16 当初否决：仅 pdf 有意义，打印需求趋零（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
-| REQ-045 | CLI 转正 | 未开工 | 2026-08-16 当初否决：无用户需求，调试可走脚本或直调 core。2026-09-29 用户裁决恢复为待拍板。2026-10-03 裁决并入总规划，拆出「装配层 + 门禁 + CLI」为步序 1/2，本号只承载 CLI 面。CLI 的宿主（pdf 需 Electron）、进程外契约与不做发布三项取舍见 ADR-060；第 0 档入口（文件关联/右键菜单/拖拽）依赖 CLI，落地后自然存在，故不做；唯一真缺口「GUI 启动不接收命令行参数」另立号 | 由 REQ-161 步序 2 承接 | docs/adr/ADR-060-多层交付面与headless装配层.md |
 | REQ-162 | 本地 MCP 模式 | 未开工 | 由 REQ-006 拆出。docx-only + mermaid 显式降级：MCP 触发点是 mermaid 不是 pdf（`mermaid-service.ts:362` 顶层 `app.on` 使 import 即需宿主）。不注入 resolver 即零 Electron、窗口收口坑自动消失，降级须进返回值对 agent 可见。每次 call 新 ctx + 强制 deadline（串行队列，MCP 无「关窗口」出口） | 步序 3 开工时移「在办」 | docs/adr/ADR-060-多层交付面与headless装配层.md |
 | REQ-163 | 库模式（npm 包） | 未开工 | 由 REQ-006 拆出。core 纯度已实测达标但打包面为零：本仓 `private: true`、无 `bin`/`exports`/`types`，`tsconfig.json` 无 `declaration` 键 ⇒ dist 不产 `.d.ts`，对外暴露类型需新增该键。与 MCP 无技术共同点故拆号 | 「是否对外发 npm 包」决策后开工 | docs/adr/ADR-060-多层交付面与headless装配层.md |
 | REQ-164 | 项目根改由 cwd 单一来源 | 未开工 | `ROOT`（`shared/paths.js:20`）改 `process.cwd()` 单一来源。代码 2 行，但连带 **9 处入口守卫**须同改（不只 `check-pointers.mjs:1991`）⇒ 否则守卫永不成立、无输出退 0；另 `check-import-boundary.mjs:241-247` 指令要改写。否决：`--root`、fallback 双分支（违 ADR-037）、env 变量（把响亮的 `ERR_MODULE_NOT_FOUND` 换成静默错根）。等 REQ-161 收尾 | REQ-161 收尾后；或改动 `shared/paths.js` 派生依据时重新评估 | docs/evidence/20261003-111453-顶层目录结构与项目根来源改造调研.md |
@@ -62,6 +61,7 @@
 
 | 号 | 标题 | 状态 | 为什么停在这（≤100 字） | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
+| REQ-045 | CLI 转正 | 已完成 | `dist/cli/index.js` 跑 docx/pdf/both;`--output` 钉死路径禁避让;退出码 0~4 各有夹具;`--template` 与 GUI 共用 core 的 `presetSettingsPatch`。pdf 经子进程重入 Electron。未摘 `private` | CLI 要发布为 npm bin、或补第 0 档入口时 | docs/adr/ADR-060-多层交付面与headless装配层.md |
 | REQ-143 | 夹具区三子目录改名与散落文件归位 | 已完成 | 三子目录统一为「内容是什么」:`docs/`+`input/`+`manual/`;图片基线经 `--print-image-baseline` 重登记,sha256 不变。树边界规则零改动 | 夹具区再增第四类内容时 | docs/adr/ADR-052-夹具区按内容命名并归位输入桩.md |
 | REQ-142 | 测试树按被测主体分四目录 | 已完成 | `segments/` 拆 `core/`58+`gates/`17,成四对镜像;段目录判据改「镜像一棵顶层树」+自检。`test/tools/` 删除。段数守恒 75 | 第五棵被断言的树出现时 | docs/adr/ADR-051-段目录按被测主体镜像.md |
 | REQ-157 | 隐藏目录白付内容探针 | 已完成 | 交付时确认：`classifyProfile` 首行对 `hidden` 短路，三项探针结果必被丢弃，故对隐藏项不调探针（守 ADR-037 约束一，按谓词不按目录名）。A/B 与注入实测见 evidence | 派生层新增消费方，或 hidden 短路顺序被改时 | docs/evidence/20261002-210000-隐藏项免内容探针.md |

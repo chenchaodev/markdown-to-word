@@ -120,7 +120,11 @@ export const GATE_REGISTRY = Object.freeze(
     boundary: {
       id: "boundary",
       title: "依赖声明与 import 层向边界门禁",
-      npmScripts: ["check:boundary"],
+      npmScripts: ["check:boundary", "check:boundary:dist"],
+      // check:boundary:dist 是同一门禁的**产物面**调用点(--flavor dist,判 dist 树):
+      // src 面判的是源码文本,产物面额外判「编译后真的成立」—— type-only import 在
+      // dist 里被擦除、cjs require 形态只在产物面可见。两者的判定函数同为 analyze
+      // (flavor 参数不同),故共用一个 judgment 指针,不另开登记项。
       command: "node gates/repo/check-import-boundary.mjs",
       modulePath: "gates/repo/check-import-boundary.mjs",
       access: "chain",

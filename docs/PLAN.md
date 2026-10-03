@@ -11,7 +11,7 @@
 
 ## 下一步（一个动作）
 
-抽出 `src/convert/run.ts`：把 `output-skeleton.ts` 的 `emitConvertedArtifact` 搬进去并落四个注入点（`settings` 入参 · `printPdf?` · `mermaidResolver?` · `onAfterCommit?`），`renderPdf` + `runAfterConvert` 另立 `src/main/converter/electron-side.ts`，`single.ts` 收成薄适配器且导出签名不变。**同批建 `test/convert/` 段**（`run.ts` 是新代码，覆盖率墙对它成立）。
+步序 1（装配层）与步序 2（CLI）均已落地。下一步 = **步序 3 · 本地 MCP 模式**（`REQ-162`，台账已登记）：docx-only + mermaid 显式降级 —— 降级须在返回值里对 agent 可见，每次 call 新 ctx + 强制 deadline（串行队列，MCP 没有「关窗口」这个出口）。步序 4（文件关联 / 右键菜单 / 拖拽 / CLI 作为发布 npm bin）已判定不做，见各自在台账的挂靠行。
 
 ## 相关 ADR 一行结论
 
@@ -93,6 +93,18 @@
 - 新增 `pinOutputPath` 语义：CLI 显式 `-o` 时**禁自动避让** —— GUI 的 `名 (2).docx` 是对的，CLI 里用户写了 `out.docx` 却拿到 `out (2).docx` 是意外
 - **同批激活产物侧判据**：`--flavor dist` 当前是全仓零调用点的死代码。激活须**独立 npm script**（塞进 `check:boundary` 自身会与 `check-ci-contract.mjs:328-333`「boundary 须在 build 之前」冲突），判据为 `dist/cli/index.js` 及其传递闭包中出现 electron 静态引用即判红
 - **同批补第三条层向规则 `cli-no-outside-src`**（ADR-060 后果 3 末句要求，本轮未加）：`cli-no-renderer` 只表达「禁 renderer」，deny-list 未列即放行 ⇒ cli 仍可合法 import `../../shared/`。照 `smoke-no-outside-src` 的 `prefix:../../` 加一条，规则表 10 → 11 条，`test/gates/import-boundary.test.js` 的 id 清单须同步。**推迟到本步的理由**：`src/cli/` 此刻尚不存在，为不存在的 scope 加规则会让自检的「规则 scope 目录不存在」判红（形同虚设诊断）
+
+
+**结果（2026-10-03）**：本步全部验收项落地，命令面按最小集交付。
+
+- 形态与面：`node dist/cli/index.js`，未摘 `private`、未发布。选项为 `--format docx|pdf|both` · `-o/--output` · `--template` · `--json` · `--help`。**退出码 0/1/2/3/4 五档各有夹具**（`test/cli/options.test.js` 在真 node 子进程里逐条实跑）
+- `--template` 走 `core/settings/presets.ts` 新增的 `presetSettingsPatch`，renderer 的 `applyTemplatePreset` 已改为消费同一函数 ⇒ flag → 设置不再是第二份映射
+- pdf 经壳重入：`src/cli/index.ts`（纯 node）拉起 `dist/main/cli-pdf-host.js`（Electron 入口，注入 `renderPdf` 调同一装配层入口）。**任务与结果都经文件传递**，不走 stdout
+- `pinOutputPath` 已进装配层：`OutputSkeletonDoc` 增该字段，经 `resolveOutputPath` 与 `commitArtifact` 的 `renameOnConflict:false` 落到 docx 与 pdf **两条**路径（`PdfPrinter` 新增第 5 参把提交选项透传给宿主侧，否则 pdf 会绕开禁避让）
+- 流：stdout 只出数据（`--json` 出结构化结果数组，含产物路径/警告 kind/耗时），stderr 出人读诊断
+- 门禁：`check:boundary:dist`（`--flavor dist`，挂在 `build` **之后**）已激活并实测判红判绿双向（向 `dist/cli/index.js` 注入 `import "electron"` 即红）。层向规则补两条 —— `cli-no-host`（`bare:electron`）与 `cli-no-outside-src`（`prefix:../../`）—— 规则表 10 → **12** 条
+
+**与规划的偏差（详见「修复项复测」）**：规则表条数比规划多一条（`prefix:../../` 表达不出「禁裸包 electron」，产物面判据要真成立必须另有 `bare:electron` 一条）；判定点也改为**层向规则**而非另写一个闭包遍历器。
 
 ## 步序 3 · MCP（docx-only + mermaid 显式降级）
 
@@ -198,3 +210,34 @@
 | 4 跨平台 | **低** | ADR-013 一旦推翻（采购证书、要公证），回退 = 弃证书 + 改回三处同改 + 门禁回退。**全路径唯一真正难回退的一步** |
 
 **回滚顺序约束**：步序 2、3 依赖步序 1 的装配层 ⇒ 要回滚 1 必须先回滚 2、3。步序 4 无依赖。
+
+### 2026-10-03 · 步序 2（CLI）
+
+**① 产物侧判据用「层向规则」表达，而非另写一个闭包遍历器；规则表条数因此多一条。**
+现象：规划写「判据为 `dist/cli/index.js` 及其传递闭包中出现 electron 静态引用即判红」，同时又只让补 `cli-no-outside-src`（`prefix:../../`）一条规则。这两条凑不到一起：`prefix:` 只能判相对 specifier，**表达不出「禁裸包 electron」**；而 `cli` scope 下没有任何一条禁 `bare:electron`，规则表按原样新增后，`dist/cli/index.js` 里 `import "electron"` 在产物面**不会**判红 —— 规划要的那条判据形同虚设。
+另有一个更隐蔽的洞：`cli-no-renderer` 只禁 renderer，`layer:` 不禁 main ⇒ cli 可以合法 `import ../main/converter/electron-side.js`，把 Electron 从传递闭包外侧拖进来。
+修法：不另写闭包遍历器（那会把层的枚举做成一门语言，此后新增 `src/mcp/` 之类还得同步维护枚举），改为**补两条 deny-list 规则**：`cli-no-host`（`bare:electron`）+ `cli-no-outside-src`（`prefix:../../`）。禁 renderer 那条仍在，deny-list 是并集 ⇒ `cli → main → electron` 也被 `cli-no-host` 覆盖。规则表 10 → **12** 条（规划写 10 → 11）。
+产物面判据仍由 `--flavor dist` 提供（`check:boundary:dist`，挂 `build` 之后）；规则本身在 src 面即已生效 —— 源码面比产物面早一步，产物面多判的是 type-only import 擦除与 cjs require 形态。已实测判红判绿双向。
+
+**② pdf 的任务与结果都经文件传，不走 stdout。**
+现象：先按「子进程 stdout 传结果」写，`spawnSync` 接管道时恒定失败 —— 子进程退出码 0、**stdout 全空、无任何 stderr**，看起来像「任务根本没跑」。重定向到文件则完全正常，故障只在真实调用形态下出现。
+修法：结果与任务描述一样走一次性目录里的文件（`convert/cli-pdf-job.ts` 是契约单源）。理由写在该模块的 `writeJobResult` 注释里：stdout 在管道下是异步的，而 `app.exit()` 立即终止进程不等落盘。
+
+**③ pdf 宿主必须显式接管 `window-all-closed`。**
+现象：接上结果文件后仍恒定「退出码 0、无结果文件、无 stderr」。调试时挂的 `setInterval` 一次都没触发 —— 不是异常也不是超时，是进程被**同步**结束、事件循环直接排空。
+根因：Electron 默认「最后一个窗口关闭即退出」。本宿主**没有常驻窗口**，`renderPdf` 建隐藏打印窗口并在 `finally` 里 `destroy` 它，那一下恰好构成「最后一个窗口关闭」，默认处理器随即结束进程，pdf-lib 注入 / 落盘 / 写结果全部来不及。
+修法：入口分支内 `app.on("window-all-closed", () => {})`，结束时机只由 `app.exit(code)` 决定。
+
+**④ `getKatexDir()` 在本宿主下不可用。**
+`resource-dirs` 的 KaTeX 一支以 `app.getAppPath()` 为基准，而本宿主以**脚本路径**启动（`electron dist/main/cli-pdf-host.js`），此时 appPath 等于脚本所在目录 ⇒ 公式路径指向不存在的 `dist/main/node_modules/katex/dist`。改按该文件里 Mermaid 的既有做法用模块自身位置定位（三场景一致，打包态即 `app.asar`）。
+
+**⑤ 转换逻辑与进程编排分两层测，否则覆盖率只能用假豁免盖住。**
+`cli-pdf-host.ts` 初版在模块顶层就 `app.setPath("userData", …)`、且在函数内 `app.exit` ⇒ 既没法被测试 import（会改掉整段宿主的 userData），也不产生覆盖率（`check:coverage-zero` 判红：两个新文件 0%）。
+修法：`convertPdfJob`（只做转换、写结果、**返回**退出码）与入口的 `app.exit` 拆开；userData 重定向与 `window-all-closed` 接管一并移进入口分支。`test/cli/pdf-host.test.js` 在 Electron 宿主里直调 `convertPdfJob` 跑真转换（覆盖 + 可断言），进程编排（spawn / 退出码转发）由 `options.test.js` 的真 node 子进程段负责，两边互补不重叠。
+
+**⑥ `-o` 短选项与 `--format both` 的两处拦截。**
+现象一：只实现 `--output` 时，`-o out.docx` 被当成**输入路径** —— 静默少转一个文件且不报错，是脚本面最难查的一类坑。修法：加短选项表；非 `--` 开头且不在表内的 token 一律判用法错，不再当输入路径。
+现象二：`--format both` 配 `-o` 时，同一路径被 docx 与 pdf 各提交一次，后到那次撞上前次已占用的路径，报错是「产物格式校验失败(.docx 魔数不符)」这种看不懂的形态。修法：解析期判用法错并提示分开跑两次 —— 替调用方猜后缀等于替他改主意。
+
+**⑦ 退出码 4 的判据依赖三处文案匹配（脆弱，已写明出处）。**
+装配层把落盘失败与转换失败都抛成普通 Error、没有错误码，故 CLI 侧只能按文案匹配三处（artifact-writer 的「产物路径已存在」「不支持硬链接」，paths.ts 的「无法创建输出目录」）。已在代码注释里点名三处出处并写明「改文案必须同改这里」，避免它退化成隐式约定。若将来给装配层加错误码，应改为读码；在此之前，「三处文案 + 一处判定」优于「无判定」（脚本至少能区分「重名」与「磁盘满」）。

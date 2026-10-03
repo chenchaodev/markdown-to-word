@@ -51,6 +51,7 @@ const BASE_SHAPE = Object.freeze({
   // 且级联成「每条夹具都失败」——症状离根因很远。同一形状在
   // check-test-numbering.selftest.mjs 有第二份副本,改一处要记得另一处。
   'test/convert': 1,
+  'test/cli': 2,
   'test/common': 7,
 });
 
@@ -194,7 +195,7 @@ const CASES = [
     // 期望写成与具体数字无关的形态(下限判据只承诺「低于下限即红」,不承诺某个夹具形状
     // 恰好是几 —— 门禁多带一个依赖进来时,这条断言不该跟着改)。
     name: '扫描面塌缩(文件数掉到下限以下)',
-    shape: { 'test/core': 4, 'test/main': 2, 'test/renderer': 2, 'test/gates': 1, 'test/convert': 1, 'test/common': 1 },
+    shape: { 'test/core': 4, 'test/main': 2, 'test/renderer': 2, 'test/gates': 1, 'test/convert': 1, 'test/cli': 2, 'test/common': 1 },
     expect: /只扫到 \d+ 个文件\(下限 50\):扫描面或 walker 失效/,
   },
   {

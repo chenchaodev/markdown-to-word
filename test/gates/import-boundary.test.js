@@ -386,7 +386,7 @@ export async function run() {
           );
         }
       }
-      // 规则表形态:十条层向断言都在
+      // 规则表形态:十二条层向断言都在
       for (const id of [
         "core-no-host",
         "convert-no-gui",
@@ -395,6 +395,8 @@ export async function run() {
         "preload-no-main",
         "main-no-renderer",
         "cli-no-renderer",
+        "cli-no-host",
+        "cli-no-outside-src",
         "smoke-no-outside-src",
         "renderer-foundation-no-feature-dep",
         "core-pdf-no-fs",
@@ -726,6 +728,35 @@ export async function run() {
           "cli 引用 renderer",
         );
       }
+      // 5p. cli import electron → 判红(CLI 必须跑在纯 node 下;宿主能力靠子进程重入)
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "cli/index.ts": 'import { app } from "electron";\nexport { app };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /cli\/index\.ts:import「electron」违反层向规则 cli-no-host/,
+          "cli import electron",
+        );
+      }
+      // 5q. cli 逃出 src/(../../ 形态)→ 判红。刻意用 test/ 而非 shared/:
+      // layer: 形态解析后首段是「..」,这类边正是 layer: 抓不到、只有 prefix: 能抓的
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          { "cli/index.ts": 'import { x } from "../../test/common/paths.js";\nexport { x };\n' },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /cli\/index\.ts:import「\.\.\/\.\.\/test\/common\/paths\.js」违反层向规则 cli-no-outside-src/,
+          "cli 逃出 src/",
+        );
+      }
       // 5o. 正向:convert 引 core(向下)与自身、cli 引 convert(向上)与 core 均合法 ——
       // 若这两条规则的面写错(比如误禁 convert→core 或 core→convert),门禁会在
       // 装配层落地那天判红一片,而那时补规则的成本正是 ADR-060 后果 3 要消灭的那个。
@@ -746,7 +777,7 @@ export async function run() {
           `convert↓core、cli→convert 的合法依赖图不得误伤,实际 ${result.code}:${result.output}`,
         );
       }
-      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / renderer→main 绝对禁止(含 type-only) / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / convert 反向依赖 GUI 两层判红 / cli 引用 renderer 判红 / 合法 smoke、convert→core、cli→convert 依赖图不误伤)");
+      console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / renderer→main 绝对禁止(含 type-only) / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / convert 反向依赖 GUI 两层判红 / cli 引用 renderer、import electron、逃出 src 均判红 / 合法 smoke、convert→core、cli→convert 依赖图不误伤)");
     }
 
     // ================= 6. 规则原语的单元断言(判定链的接缝) =================

@@ -142,6 +142,22 @@ export const LAYER_RULES = Object.freeze([
     reason: 'cli 是进程外的交付面(ADR-060):renderer 是 GUI 面,cli 引它会让纯 node 侧把 Electron 一起拖进来',
   },
   {
+    id: 'cli-no-host',
+    scope: 'cli',
+    forbid: 'bare:electron',
+    reason: 'cli 跑在纯 node 下,import electron 会把 Electron 宿主拖进它的依赖图(且 electron 只是 devDependency,' +
+      '生产安装根本没有)。需要宿主能力时由 cli 用子进程重入 Electron(见 main/cli-pdf-host.ts),不是 import 它',
+  },
+  {
+    id: 'cli-no-outside-src',
+    scope: 'cli',
+    // 同样用 prefix: 形态而非 layer:(理由同 smoke-no-outside-src:resolveLayer 返回顶层
+    // 目录名,../../test/x 归一化后首段是「..」而非 test,layer: 抓不到向上逃逸)
+    forbid: 'prefix:../../',
+    reason: 'cli 的编译产物随 dist/** 分发(build.files 只收 dist/**),凡 ../../ 开头的相对依赖都已指向包外路径,' +
+      '解包后必然跑不起来。与 smoke-no-outside-src 同一纪律:不得引用仓库相对路径、test/ 等不入包路径',
+  },
+  {
     id: 'smoke-no-outside-src',
     scope: 'smoke',
     // 用既有的 prefix: 形态而非 layer:—— resolveLayer 是相对文件目录拼接、不锚定 src 根,
@@ -1205,7 +1221,7 @@ export async function main(argv = []) {
       + `core 不依赖宿主且不反向依赖 GUI 两层;`
       + `convert 是 headless 装配层,不反向依赖 main/renderer;`
       + `renderer 不反向依赖 main;main 不反向依赖 renderer;preload 不上跳引用 main;`
-      + `cli 是进程外交付面,不引用 renderer;`
+      + `cli 是进程外交付面,不引用 renderer、不 import electron、不逃出 src/;`
       + `smoke 不逃出 src/;`
       + `renderer 基础层(dom/state)不反向依赖功能目录;`
       + `core 的 pdf 渲染路径不 import node:fs(能力经入参注入);`
