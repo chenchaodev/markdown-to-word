@@ -53,7 +53,7 @@
 
 | 号 | 标题 | 状态 | 为什么停在哪 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-161 | 多层交付面总规划 | 在办 | 步序 1 开工：装配层 + 门禁 allow-list 改造。搬迁四文件里 `artifact-writer`/`paths` 可直接搬，`context` 要注入 resolver 工厂，`merge`/`batch` 双重穿越留 main。同批处理三个陷阱：`resource-dirs.ts:49` 硬编码输出深度、`context.ts:30` resolverCache LRU、`merge.ts:82` cwd 兜底须保持守卫在前 | 步序 1 完成标准 7 条逐条通过（含沙盒移走 electron 的诚实验收） | docs/adr/ADR-060-多层交付面与headless装配层.md · docs/evidence/20261003-120000-平台耦合面盘点与跨平台成本落点.md |
+| REQ-161 | 多层交付面总规划 | 在办 | 步序 1 已完成并提交（4 个提交）：`src/convert/` 装配层六件，实测零 electron、零 main 反向依赖；`output-skeleton.ts` 一分为二为 `run.ts` + `electron-side.ts`；层向门禁补两条 scope 并改 allow-list，造未登记顶层实测判红；`test/convert/` 段在真 node 子进程跑通 docx。步序 2/3 见 REQ-045/REQ-162 | 整体完成标准 8 条划完（步序 1~3 全落地） | docs/adr/ADR-060-多层交付面与headless装配层.md · docs/evidence/20261003-120000-平台耦合面盘点与跨平台成本落点.md |
 
 ## 已完成
 

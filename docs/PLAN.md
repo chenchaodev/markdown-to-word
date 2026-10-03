@@ -62,13 +62,16 @@
 
 **步序 1 完成标准**（逐条可机械判）：
 
-1. `src/convert/` 存在且**零 `import ... from "electron"`**（grep 判据）
-2. `LAYER_RULES` 加了 `convert-no-gui` / `cli-no-renderer` 两条，且 `src/` 顶层名未登记即判红（造含 `omega/` 的合成树，实测判红）
-3. `check-import-boundary.mjs:1108-1111` 摘要行已同步新规则语义
-4. `test/convert/` 段已配齐且**进入 c8 分母**（不是被 exclude 掉）
-5. `single.ts` 的**导出签名逐字不变**（`convertImpl` 的参数表 + 继续转出 `renderPdf`/`runAfterConvert`）⇒ `batch.ts` / `ipc/register.ts` / `windows/preview.ts` / `test/main/converter.test.js` 四个调用点**零改动**。⚠️ 原写「`single.ts` 零改动」是规划错误：Batch B 的目的正是把它收成薄适配器（函数体必改），该标准与步序 1 的核心动作自相矛盾 |
-6. 全量 `verify:ci` 绿
-7. **诚实验收**：`test/convert/` 段在**无 electron 的纯 node 下**跑通一次真实 docx 转换（不经 Electron、不设 `ELECTRON_RUN_AS_NODE`）—— 这是「装配层真的与宿主无关」的唯一诚实验收，比任何单测都强。⚠️ 原写的 `node dist/cli/index.js --help` 是**步序 2 的产物**，标准 7 依赖它才能跑 ⇒ 属规划错误，已改为纯 node 直调 `run.ts` |
+> **进度：7/7 通过（2026-10-03）**，落在 `1fa2f81` · `539f4f7` · `b43ca58` · `284f5de` 四个提交。
+> ⚠️ 标准 5 的措辞仍不够诚实，已在下方标注实测偏差 —— **别把它当成四个文件都没动过**。
+
+1. `src/convert/` 存在且**零 `import ... from "electron"`**（grep 判据）✅ 实测零命中
+2. `LAYER_RULES` 加了 `convert-no-gui` / `cli-no-renderer` 两条，且 `src/` 顶层名未登记即判红（造含 `omega/` 的合成树，实测判红）✅ 复验：造 `src/omega/x.ts` → exit 1，删掉 → exit 0
+3. `check-import-boundary.mjs:1108-1111` 摘要行已同步新规则语义 ✅
+4. `test/convert/` 段已配齐且**进入 c8 分母**（不是被 exclude 掉）✅ `SEGMENT_DIRS` 已含 `convert`，覆盖门禁绿
+5. `single.ts` 的**导出签名逐字不变**（`convertImpl` 的参数表 + 继续转出 `renderPdf`/`runAfterConvert`）✅ 已复验转出面在（`single.ts:27`）。⚠️ **实测偏差**：四个「调用点」里有**两个其实动了** —— `ipc/register.ts` 与 `windows/preview.ts` 因 `preprocess.ts` 迁移各改了 1 行 import。准确表述是「对 `single.ts` 的调用零改动」，不是「这四个文件零改动」。⚠️ 原写「`single.ts` 零改动」是规划错误：Batch B 的目的正是把它收成薄适配器（函数体必改），该标准与步序 1 的核心动作自相矛盾 |
+6. 全量 `verify:ci` 绿 ✅ `CHAIN_EXIT=0`
+7. **诚实验收**：`test/convert/` 段在**无 electron 的纯 node 下**跑通一次真实 docx 转换（不经 Electron、不设 `ELECTRON_RUN_AS_NODE`）✅ `[ok] convert/run-headless.test.js`。⚠️ 原写的 `node dist/cli/index.js --help` 是**步序 2 的产物**，标准 7 依赖它才能跑 ⇒ 属规划错误，已改为纯 node 直调 `run.ts` |
 
 **同批必须处理的搬迁陷阱**：
 
