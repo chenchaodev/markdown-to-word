@@ -28,11 +28,10 @@
  *    声明有而产物缺、声明整个被删,都判红并点名期望路径与解包目录里实际看到的东西;
  *    通过路径的结论行必须带落位计数(证明断言真的跑了,而不是「无输出即通过」)。
  *
- * 沙箱纪律(硬约束):被测脚本的项目根由脚本自身位置推导(读 package.json、按
- * build.directories.output 找 release),故把生产脚本**逐字节原样**复制到临时沙盒的
- * gates/artifacts 与 gates/smoke/(连同 import 依赖 check-release-artifacts.mjs /
- * smoke-proc.mjs 与 shared/ 下的 paths.js · userdata.js · cli.mjs · fsx.mjs)后再执行 ——
- * 沙盒外不存在可达的真实项目根,沙盒内不存在被改写的实现。
+ * 沙箱纪律(硬约束):被测脚本的项目根由 `process.cwd()` 决定(单一来源 shared/paths.js),
+ * 故把生产脚本**原位**执行、只把 cwd 指到临时沙盒 —— 沙盒外不存在被测脚本能触达的真实项目根,
+ * 沙盒内不存在被改写的实现。被测脚本的仓内 import 由 ESM 按**真实文件位置**解析
+ * (静态 import 与 cwd 无关),所以沙盒里不需要、也不应该再造一份 shared/ 与 gates/ 的副本。
  * 段首/段尾对真实 release/ 做指纹比对,确保真实产物零改动。
  *
  * 「可执行文件」怎么在沙盒里可执行:解包目录里的 .exe 只能是假字节(无法真跑),故用
@@ -80,28 +79,8 @@ const STUB_BEACON_DELAY_MS = 3000;
  * 判红路径一旦看见信标立即返回(不烧满预算)。
  */
 const BEACON_WATCH_MARGIN_MS = 600;
-/**
- * 沙盒内逐字节复制的脚本(生产实现不得被改写),按门禁树的断言域分两组。
- *
- * 分两组而非一张平表:复制点写成 `path.join(ROOT, "<字面目录>", name)` 是**副本闭包门禁
- * 静态可解析**的形态(见 shared/copy-closure.js 的 resolveCopySource:字面量段 + 单层
- * for-of 别名可求值)。写成平表后 `...rel.split("/")` 之类展开对它是不可见的,复制点会
- * 悄悄退化成「未静态解析」登记项,副本集合随之漏掉这 5 份 —— 死副本判红会误报,
- * 且该门禁自身的覆盖面被无声缩小。故字面目录必须留在源码里。
- */
-const SANDBOX_ARTIFACT_SCRIPTS = [
-  "check-unpacked-smoke.mjs",
-  "check-install-smoke.mjs",
-  "check-release-artifacts.mjs",
-];
-const SANDBOX_SMOKE_SCRIPTS = ["smoke-proc.mjs"];
-/** 沙盒内复制的共享机制模块(ADR-049:CLI 解析与文件哈希已从 check-dist-manifest.mjs 下沉到 shared/) */
-const SANDBOX_SHARED_MECHANISMS = ["cli.mjs", "fsx.mjs"];
-/** 沙盒内复制的全部脚本与其落点目录(逐字节一致性子进程断言用) */
-const SANDBOX_SCRIPT_GROUPS = /** @type {[readonly string[], string][]} */ ([
-  [SANDBOX_ARTIFACT_SCRIPTS, "gates/artifacts"],
-  [SANDBOX_SMOKE_SCRIPTS, "gates/smoke"],
-]);
+/** 本段起进程的被测脚本一律在 artifacts 树(smoke 树只被 import,不由本段 spawn) */
+const SANDBOX_ARTIFACTS_DIR = "gates/artifacts";
 /** 桩脚本:假可执行文件的替身,行为由 M2W_STUB_MODE 驱动 */
 const STUB_SOURCE = `// 沙盒桩:扮演「被启动的应用」,行为由 M2W_STUB_MODE 决定。
 import { appendFileSync, writeFileSync } from "node:fs";
@@ -201,7 +180,9 @@ function writeFileIn(root, relative, content) {
 }
 
 /**
- * 新建沙盒:逐字节复制生产脚本 + 夹具 package.json + 假安装包/假解包目录 + 桩脚本。
+ * 新建沙盒:夹具 package.json + 假安装包/假解包目录 + 桩脚本。
+ *
+ * 被测脚本**不复制**:它从仓内原位跑,只靠 cwd 指沙盒(见文件头「沙箱纪律」)。
  * @param {object} [options] 夹具选项
  * @param {boolean} [options.smokeEntryInAsar] app.asar 内是否含冒烟入口(默认含:正向路径)
  * @param {boolean} [options.installer] 是否生成假安装包(默认生成)
@@ -250,33 +231,14 @@ function createSandbox({
   declareExtraFiles = true,
 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX));
-  for (const artifactScript of SANDBOX_ARTIFACT_SCRIPTS) {
-    const target = path.join(root, "gates", "artifacts", artifactScript);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(path.join(ROOT, "gates", "artifacts", artifactScript), target);
-  }
-  for (const smokeScript of SANDBOX_SMOKE_SCRIPTS) {
-    const target = path.join(root, "gates", "smoke", smokeScript);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(path.join(ROOT, "gates", "smoke", smokeScript), target);
-  }
-  // 沙盒内那 3 个脚本都 import 项目根单源 shared/paths.js(ADR-040),故必须逐字节带一份进去,
-  // 否则沙盒里 ERR_MODULE_NOT_FOUND,整段以「脚本起不来」的形式红,而不是被测语义的红。
-  const sharedModule = path.join(root, "shared", "paths.js");
-  fs.mkdirSync(path.dirname(sharedModule), { recursive: true });
-  fs.copyFileSync(path.join(ROOT, "shared", "paths.js"), sharedModule);
-  // CLI 参数解析与文件哈希原语(ADR-049)已下沉到 shared/,那 3 个脚本直接依赖这两个模块,
-  // 故同样必须逐字节带一份 —— 漏带的表现与上面 shared/paths.js 漏带完全相同。
-  for (const mechanism of SANDBOX_SHARED_MECHANISMS) {
-    const target = path.join(root, "shared", mechanism);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(path.join(ROOT, "shared", mechanism), target);
-  }
-  // smoke-proc.mjs 复用 test/common/userdata.js 的清理语义,沙盒内也放一份逐字节副本
-  const userDataModule = path.join(root, "shared", "userdata.js");
-  fs.mkdirSync(path.dirname(userDataModule), { recursive: true });
-  fs.copyFileSync(path.join(ROOT, "shared", "userdata.js"), userDataModule);
-
+  // ⚠ 这里曾逐字节复制 8 份仓内文件(gates/artifacts 与 gates/smoke 的 4 份脚本 +
+  //   shared/ 的 paths.js · userdata.js · cli.mjs · fsx.mjs)。全删:真脚本原位跑,
+  //   它的仓内 import 按文件位置解析,沙盒里放副本只会有「副本与真脚本分叉」这个新风险。
+  //   连带结论:shared/userdata.js 的「零内部依赖」约束**连同它的兜底一起消失** —— 当年
+  //   靠的是「沙盒里那份副本解析不到新依赖 ⇒ ERR_MODULE_NOT_FOUND」这个运行时红。
+  //   现在沙盒里根本没有副本,新依赖由 Node 按真实位置解析,故那条约束不再有判红形态;
+  //   本段也不再需要为它补断言(没有沙盒可断)。真要恢复约束,该加在 userdata.js 的
+  //   层向判据上,不是这里。
   writeFileIn(
     root,
     "package.json",
@@ -346,19 +308,16 @@ function mergeChildEnv(overrides) {
 }
 
 /**
- * 在沙盒内执行检查脚本。
+ * 在沙盒里执行检查脚本(仓内真脚本 + cwd 指沙盒)。
  * @param {string} root 沙盒根
- * @param {string} scriptName 脚本文件名(沙盒内落点目录与生产布局一致:artifacts 树或 smoke 树)
+ * @param {string} scriptName 脚本文件名(须是 SANDBOX_ARTIFACTS_DIR 下的文件)
  * @param {string[]} args CLI 参数
  * @param {Record<string, string>} [env] 子进程环境覆盖
  * @returns {{ code: number | null; output: string; ms: number }} 退出码/合并输出/耗时
  */
 function runScript(root, scriptName, args, env = {}) {
   const started = Date.now();
-  const rel = SANDBOX_SMOKE_SCRIPTS.includes(scriptName)
-    ? path.join("gates", "smoke", scriptName)
-    : path.join("gates", "artifacts", scriptName);
-  const result = spawnSync(NODE, [path.join(root, rel), ...args], {
+  const result = spawnSync(NODE, [path.join(ROOT, SANDBOX_ARTIFACTS_DIR, scriptName), ...args], {
     cwd: root,
     encoding: "utf8",
     timeout: 120_000,
@@ -727,20 +686,18 @@ export async function run() {
   /** @type {Error | null} */
   let failure = null;
   try {
-    // ---------- 0. 沙箱纪律:脚本逐字节一致 + 契约常量非空 ----------
+    // ---------- 0. 沙箱纪律:脚本原位执行 + 契约常量非空 ----------
     {
+      // ⚠ 这里曾有一条「沙盒副本与生产脚本逐字节一致」的断言,随副本机制一并删除:
+      //   它是**自指**的(复制是为了断言复制品等于原件),而真脚本原位执行后该断言
+      //   恒成立且无信息量。防「测的不是被测实现」现在由构造方式本身保证:
+      //   spawn 的目标是 path.join(ROOT, …) 那一份,沙盒里没有任何脚本副本。
       const root = createSandbox();
       sandboxes.push(root);
-      for (const [names, dir] of SANDBOX_SCRIPT_GROUPS) {
-        for (const name of names) {
-          const copy = path.join(root, ...dir.split("/"), name);
-          const original = path.join(ROOT, ...dir.split("/"), name);
-          assert(
-            fs.readFileSync(copy).equals(fs.readFileSync(original)),
-            `沙盒副本应与生产脚本逐字节一致(否则测的不是被测实现):${dir}/${name}`,
-          );
-        }
-      }
+      assert(
+        !fs.existsSync(path.join(root, "gates", "artifacts", "check-unpacked-smoke.mjs")),
+        "沙盒内不应存在被测脚本副本(它从仓内原位跑)",
+      );
       // 标记清单自检:非空且全部取自 smoke 输出的 [smoke] 前缀,否则「缺哪几条」断言失去意义
       assert(SMOKE_MARKERS.length === 5, `诊断标记应为 5 条,实际 ${SMOKE_MARKERS.length}`);
       assert(

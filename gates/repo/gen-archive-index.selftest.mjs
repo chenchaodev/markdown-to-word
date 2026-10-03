@@ -6,15 +6,17 @@
 // 那种漂移正是它要拦的。此处用临时夹具逐条制造这些漂移,断言生成器/校验确实以非零码
 // 拒绝,并断言未漂移时通过。
 //
-// **不修改被测门禁本体**:夹具 = 把生成器原样拷进临时目录的 gates/repo/(它的 projectRoot
-// 由 `new URL('..', import.meta.url)` 推导,故拷贝后 docs/ 自动指向夹具根),配一棵最小
-// docs/ 树。真实仓库只被**读**(baseline 那一条跑真实 docs/ 且带 --check,零写入)。
+// **不修改被测生成器本体,也不复制它**:夹具 = 临时目录里的一棵最小 docs/ 树,而生成器**原位**
+// 从仓内跑、只靠 cwd 指夹具 —— 故它的 docs/ 自动指向夹具根。项目根单一来源是 shared/paths.js 的
+// process.cwd(),而 ESM 静态 import 按**文件位置**解析、与 cwd 无关,所以真生成器的仓内依赖
+// 天然可达,沙盒里不需要再放一份 shared/。
+// 真实仓库只被**读**(baseline 那一条跑真实 docs/ 且带 --check,零写入)。
 //
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则
 // 系统临时区会堆满夹具树。
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
@@ -35,16 +37,11 @@ function writeUnder(root, rel, body = '# fixture\n') {
 }
 
 /**
- * 造一份夹具:拷贝生成器本体 + 最小 docs/ 树(evidence/ 下含本索引与说明页,二者都应被
- * 排除在表外),再由 mutate 打上漂移。
+ * 造一份夹具:最小 docs/ 树(evidence/ 下含本索引与说明页,二者都应被排除在表外),
+ * 再由 mutate 打上漂移。
  */
 function createFixture(mutate) {
   const dir = mkdtempSync(join(tmpdir(), 'm2w-archive-index-selftest-'));
-  mkdirSync(join(dir, 'gates', 'repo'), { recursive: true });
-  copyFileSync(checkerPath, join(dir, 'gates', 'repo', 'gen-archive-index.mjs'));
-  // 被测生成器从 shared/paths.js 取项目根(ADR-040),夹具内必须带一份
-  mkdirSync(join(dir, 'shared'), { recursive: true });
-  copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
   writeUnder(dir, `docs/evidence/${ARCHIVE_HOSTED}`);
   writeUnder(dir, `docs/evidence/${ARCHIVE_ORPHAN}`);
   writeUnder(dir, 'docs/evidence/README.md', '# evidence 说明页\n');
@@ -63,10 +60,10 @@ function createFixture(mutate) {
   return dir;
 }
 
-/** 在夹具上跑生成器;返回退出码与合并输出。`check` = true 时带 --check */
+/** 在夹具上跑生成器(真脚本 + cwd 指夹具);返回退出码与合并输出。`check` = true 时带 --check */
 function runChecker(dir, { check = true } = {}) {
   const args = check ? ['--check'] : [];
-  const result = spawnSync(process.execPath, [join(dir, 'gates', 'repo', 'gen-archive-index.mjs'), ...args], {
+  const result = spawnSync(process.execPath, [checkerPath, ...args], {
     cwd: dir,
     encoding: 'utf8',
     windowsHide: true,
@@ -180,11 +177,12 @@ for (const testCase of CASES) {
       continue;
     }
     const args = testCase.raw ?? (testCase.dir === undefined ? ['--check'] : ['--check']);
-    const result = spawnSync(
-      process.execPath,
-      [testCase.dir === undefined ? join(dir, 'gates', 'repo', 'gen-archive-index.mjs') : checkerPath, ...args],
-      { cwd: dir, encoding: 'utf8', windowsHide: true },
-    );
+    // 两种 dir 都用仓内真脚本:夹具那侧靠 cwd 指夹具,真实仓库那侧 cwd 就是仓根
+    const result = spawnSync(process.execPath, [checkerPath, ...args], {
+      cwd: dir,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
     const code = result.status;
     const output = `${result.stdout}${result.stderr}`;
     const tag = testCase.dir === undefined ? '夹具' : '真实仓库';

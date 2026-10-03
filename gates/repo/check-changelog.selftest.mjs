@@ -4,16 +4,16 @@
 // 文本**,若词表被清空 / 锚点正则被改坏 / 扫描面塌缩,本脚本会打印 `[ok]` 而六类禁词照旧长在
 // CHANGELOG 里。此处用临时夹具逐条制造这些漂移,断言门禁确实以非零码拒绝,并断言未漂移时通过。
 //
-// **不修改被测门禁本体**:夹具 = 把门禁脚本原样拷进临时目录的 gates/repo/(它的 projectRoot
-// 由 shared/paths.js 推导,故拷贝后扫描面自动指向夹具根),连同它的仓内依赖 shared/paths.js
-// 一起拷贝,再放一份夹具 CHANGELOG。真实仓库只被**读**(baseline 那一条跑真实 docs/CHANGELOG.md)。
-// 少拷一个的代价不是「夹具少测一条」而是「门禁在沙盒里直接起不来」:相对 import 解析不到,
-// 那条守护段 test/gates/contract-single-source.test.js 的副本闭包判定会先把它拦下。
+// **不修改被测门禁本体,也不复制它**:夹具 = 临时目录里的一份 docs/CHANGELOG.md,而门禁**原位**
+// 从仓内跑、只靠 cwd 指夹具 —— 故它的扫描面自动指向夹具根。项目根单一来源是
+// shared/paths.js 的 process.cwd(),而 ESM 静态 import 按**文件位置**解析、与 cwd 无关,
+// 所以真脚本的仓内依赖天然可达,沙盒里不需要(也不应该)再放一份 shared/。
+// 真实仓库只被**读**(baseline 那一条跑真实 docs/CHANGELOG.md)。
 //
 // 每条负向夹具须命中一个真实漂移形态,而非人造噪声 —— 依据见各夹具的 why 注释。
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
@@ -44,7 +44,7 @@ const CLEAN = [
 ].join('\n');
 
 /**
- * 造一份夹具:拷贝门禁本体 + shared/paths.js + 一份 CHANGELOG,再由 mutate 打上漂移。
+ * 造一份夹具:一份 docs/CHANGELOG.md,再由 mutate 打上漂移。
  * @param {string} body CHANGELOG 正文
  * @param {(dir: string) => void} [mutate] mutate 抛异常时调用方拿不到 dir,其 finally 清不到
  *   → 在这里兜住(临时产物不留残)
@@ -53,11 +53,6 @@ const CLEAN = [
 function createFixture(body, mutate) {
   const dir = mkdtempSync(join(tmpdir(), 'm2w-changelog-selftest-'));
   try {
-    mkdirSync(join(dir, 'gates', 'repo'), { recursive: true });
-    copyFileSync(checkerPath, join(dir, 'gates', 'repo', 'check-changelog.mjs'));
-    // 被测门禁从 shared/paths.js 取项目根(ADR-040),那是它唯一的仓内依赖,必须一起带进夹具
-    mkdirSync(join(dir, 'shared'), { recursive: true });
-    copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
     mkdirSync(join(dir, 'docs'), { recursive: true });
     writeFileSync(join(dir, 'docs', 'CHANGELOG.md'), body, 'utf8');
     mutate?.(dir);
@@ -68,9 +63,9 @@ function createFixture(body, mutate) {
   return dir;
 }
 
-/** 在夹具上跑门禁;返回退出码与合并输出 */
+/** 在夹具上跑门禁(真脚本 + cwd 指夹具);返回退出码与合并输出 */
 function runChecker(dir, args = []) {
-  const result = spawnSync(process.execPath, [join(dir, 'gates', 'repo', 'check-changelog.mjs'), ...args], {
+  const result = spawnSync(process.execPath, [checkerPath, ...args], {
     cwd: dir,
     encoding: 'utf8',
     windowsHide: true,

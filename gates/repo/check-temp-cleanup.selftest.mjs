@@ -6,12 +6,12 @@
 // 这些漂移,断言门禁确实以非零码拒绝,并断言未漂移时通过。
 //
 // **不修改被测门禁本体**:夹具 = 把门禁脚本原样拷进临时目录的 gates/repo/(它的 projectRoot
-// 由 import.meta.dirname 推导,故拷贝后扫描面自动指向夹具根),连同它的仓内依赖
-// shared/copy-closure.js(lexSource,零 I/O 纯文本层)与
-// shared/test-common-surface.js(测试扫描面单源,零仓内依赖)一起拷贝,配一棵最小测试树。
-// 真实仓库只被**读**(baseline 那一条跑真实 test/ 树)。
-// 少拷一个的代价不是「夹具少测一条」而是「门禁在沙盒里直接起不来」:相对 import 解析不到,
-// 那条守护段 test/gates/contract-single-source.test.js 的副本闭包判定会先把它拦下。
+// 由 cwd 决定,夹具那侧 spawn 的 cwd 指向夹具根),连同它的仓内依赖 shared/copy-closure.js
+// (剥注释,零 I/O 纯文本层)与 shared/test-common-surface.js(测试扫描面单源,零仓内依赖)
+// 一起拷贝,配一棵最小测试树。真实仓库只被**读**(baseline 那一条跑真实 test/ 树)。
+// ⚠ 为何这一处仍保留复制而别的 selftest 已改成「真脚本 + cwd」:其中一条负向用例必须**改写门禁
+//   自己的源码**(内建 SELF_PROBE 的 before/after 对调),对真脚本做不到。
+// 「副本的 import 闭包」由 SANDBOX_COPY_SET + assertCopySetIsClosed 守住(旧闭包门禁退役后的降级形态)。
 //
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则
 // 系统临时区会堆满夹具树。
@@ -19,7 +19,7 @@
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { posix, join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
 import { SEGMENT_DIRS } from '../../shared/test-common-surface.js';
 
@@ -85,7 +85,47 @@ function patchInFixture(dir, relative, from, to) {
   writeFileSync(target, current.replace(from, to), 'utf8');
 }
 
-/** 造一份夹具:拷贝门禁本体 + copy-closure + 按 shape 铺测试树,再由 mutate 打上漂移 */
+/**
+ * 造一份夹具:拷贝门禁本体 + copy-closure + 按 shape 铺测试树,再由 mutate 打上漂移
+ *
+ * 这里是全仓仅存两处「逐字节把仓内文件复制进临时目录」的沙盒之一(另一处是
+ * test/core/clean-artifacts-gate.test.js)。复制集在此**显式列出**,下面的定向断言就是靠它
+ * 守住「副本的相对 import 目标 ⊆ 复制集」—— 旧机制那套闭包门禁整删后,这条降级成这一句断言。
+ */
+const SANDBOX_COPY_SET = Object.freeze([
+  'gates/repo/check-temp-cleanup.mjs',
+  'shared/paths.js',
+  'shared/copy-closure.js',
+  'shared/test-common-surface.js',
+]);
+
+/**
+ * 定向断言:被测门禁副本的每个相对 import 目标都必须同在这个沙盒的复制集内。
+ *
+ * 为何只查这一条、且只在这一处:沙盒里没有 node_modules,裸包名必然解析失败(运行时红,
+ * 已由每条夹具真跑脚本兜住);而相对 import 解析不到时报错**发生在子进程内**,症状是
+ * 「门禁起不来」,离「少了哪一份副本」很远 —— 这正是它值得一条机械断言的原因。
+ * 约 6 行,比重建 auditCopySet 的数据模型便宜两个数量级。
+ * @returns {void}
+ */
+function assertCopySetIsClosed() {
+  const source = readFileSync(join(projectRoot, 'gates', 'repo', 'check-temp-cleanup.mjs'), 'utf8');
+  const specs = [...source.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)(["'])(\.[^"']*)\1/g)].map((m) => m[2]);
+  for (const spec of specs) {
+    const resolved = posix
+      .normalize(posix.join(posix.dirname('gates/repo/check-temp-cleanup.mjs'), spec))
+      .replace(/\\/g, '/');
+    if (!SANDBOX_COPY_SET.includes(resolved)) {
+      throw new Error(
+        `沙盒副本闭包:check-temp-cleanup.mjs 的相对 import「${spec}」指向 ${resolved},`
+        + `不在该沙盒的复制集内(${SANDBOX_COPY_SET.join(', ')})—— 请把它加进复制集`,
+      );
+    }
+  }
+  if (specs.length === 0) throw new Error('沙盒副本闭包:一条相对 import 都没抽到,判据本身失效(恒绿)');
+  console.log(`[ok] temp-cleanup-selftest:沙盒副本闭包(${specs.length} 条相对 import ⊆ 复制集 ${SANDBOX_COPY_SET.length} 项)`);
+}
+
 function createFixture(mutate, shape = BASE_SHAPE) {
   const dir = mkdtempSync(join(tmpdir(), 'm2w-temp-cleanup-selftest-'));
   mkdirSync(join(dir, 'gates', 'repo'), { recursive: true });
@@ -222,6 +262,10 @@ const CASES = [
     expect: /无法识别的参数:oops/,
   },
 ];
+
+// 定向断言先跑:它是本段唯一的静态守护,必须在造任何夹具之前就红(夹具红是「脚本起不来」,
+// 症状离根因远);它自己绿不绿与 spawn 无关。
+assertCopySetIsClosed();
 
 const failures = [];
 for (const testCase of CASES) {

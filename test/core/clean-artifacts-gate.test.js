@@ -109,6 +109,49 @@ function writeFileIn(root, relative, content) {
   return target;
 }
 
+/**
+ * 本沙盒的复制集(逐字节写进沙盒的仓内文件),**显式列出**并由 assertCopySetIsClosed 守护。
+ *
+ * 这里是全仓仅存两处「把仓内文件复制进临时目录」的沙盒之一(另一处是
+ * gates/repo/check-temp-cleanup.selftest.mjs)。两处都在 gates/repo/check-copy-sites.mjs 的
+ * 白名单里登记,但那条门禁只管「有没有无声增殖」,**不判副本的 import 闭包** —— 闭包判定
+ * 降级成下面这一条定向断言。
+ */
+const SANDBOX_COPY_SET = Object.freeze([
+  "gates/artifacts/clean-artifacts.mjs",
+  "shared/paths.js",
+  "gates/repo/repo-manifest.mjs",
+]);
+
+/**
+ * 定向断言:被测脚本的每个相对 import 目标都必须同在这个沙盒的复制集内。
+ *
+ * 为何值得一条机械断言:沙盒里没有 node_modules,漏写一份的报错**发生在子进程内**
+ * (ERR_MODULE_NOT_FOUND),症状是「门禁起不来」,离「少了哪一份副本」很远。
+ * 约 6 行,比重建 auditCopySet 的数据模型便宜两个数量级。
+ * @returns {void}
+ */
+function assertCopySetIsClosed() {
+  const specs = [...SCRIPT_SOURCE.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)(["'])(\.[^"']*)\1/g)]
+    .map((m) => m[2])
+    .filter((spec) => spec !== undefined);
+  for (const spec of specs) {
+    const resolved = path.posix
+      .normalize(path.posix.join("gates/artifacts", spec))
+      .replace(/\\/g, "/");
+    if (!SANDBOX_COPY_SET.includes(resolved)) {
+      throw new Error(
+        `沙盒副本闭包:clean-artifacts.mjs 的相对 import「${spec}」指向 ${resolved},`
+        + `不在该沙盒的复制集内(${SANDBOX_COPY_SET.join(", ")})—— 请把它加进复制集`,
+      );
+    }
+  }
+  if (specs.length === 0) throw new Error("沙盒副本闭包:一条相对 import 都没抽到,判据本身失效(恒绿)");
+  console.log(
+    `[ok] clean-artifacts-gate:沙盒副本闭包(${specs.length} 条相对 import ⊆ 复制集 ${SANDBOX_COPY_SET.length} 项)`,
+  );
+}
+
 /** 新建沙盒:复制生产脚本(逐字节)+ 合法 package.json,登记到白名单 */
 function createSandbox() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX));
@@ -119,8 +162,8 @@ function createSandbox() {
   fs.writeFileSync(path.join(root, "gates", "artifacts", "clean-artifacts.mjs"), SCRIPT_SOURCE, "utf8");
   // 被测脚本从 shared/paths.js 取项目根(ADR-040),并从 gates/repo/repo-manifest.mjs 派生顶层删除
   // 保护区(ADR-037),沙盒内必须各带一份。注意这里是 writeFileSync 而非 copyFileSync ——
-  // 副本闭包门禁的复制点扫描器**看不见**本沙盒,所以「忘了带」不会被 relative-outside-copy-set
-  // 抓到,只能靠本段运行时红兜。
+  // 旧复制点扫描器看不见 write 出来的副本;新门禁的原语表已把 writeFileSync 收进来,
+  // 但闭包那一半仍由上面的 SANDBOX_COPY_SET + assertCopySetIsClosed 负责。
   writeFileIn(root, "shared/paths.js", fs.readFileSync(path.join(ROOT, "shared", "paths.js"), "utf8"));
   writeFileIn(root, "gates/repo/repo-manifest.mjs", fs.readFileSync(path.join(ROOT, "gates", "repo", "repo-manifest.mjs"), "utf8"));
   writePackageJson(root, SANDBOX_PACKAGE);
@@ -344,6 +387,9 @@ function holdDirectory(dir) {
 export const fixtures = null;
 
 export async function run() {
+  // 定向断言先跑:它是本段唯一的静态守护,红的时候症状直接是「少了哪一份副本」,
+  // 而漏写副本在运行时只会表现为「门禁起不来」,离根因很远。
+  assertCopySetIsClosed();
   const realBefore = snapshotRealOutputs();
   /** @type {string[]} */
   const sandboxes = [];

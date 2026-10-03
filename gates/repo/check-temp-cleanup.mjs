@@ -427,7 +427,7 @@ const HELPER_DEF_RE = new RegExp(
  * 只看**第二实参**:缺省即合法(用助手默认重试参数),传了就必须是形状与取值都合法的对象。
  *
  * 与第一条规则的两点刻意不同(都不是随手写的):
- * 1. **抹注释**(复用 test/common/copy-closure.js 的 lexSource(text).code,等长故行号不变):
+ * 1. **抹注释**(复用 shared/copy-closure.js 的 lexSource(text),等长故行号不变):
  *    第一条规则的「不剥注释」是为保守多报 —— 误报能被人一眼看见;而本条若不抹注释,任何
  *    JSDoc 里写一句 `removeTree(dir, { retryDelay: 200 })` 的说明都会被判红,那是**真误报**
  *    (注释不是调用点),且会逼着人把文档改丑来讨好门禁。

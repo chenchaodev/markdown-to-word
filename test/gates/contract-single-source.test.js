@@ -10,55 +10,19 @@
  * - 跨进程类型单源(源码文本判定:类型编译期擦除、产物无痕迹):
  *   ConvertResult 只在 core/ipc-contract.ts 声明,preload / ipc logic / renderer /
  *   converter 侧均不重复声明;preload 的类型依赖只来自 core 契约。
- * - 沙箱副本闭包(源码文本判定;判定纯函数层在 test/common/ 的两个文件,
- *   本段只做遍历、装配与断言 —— 见文件末 (e) 节):
- *   被**逐字节复制**进沙箱并在沙盒内解析的模块,其 import 必须闭合 —— 只允许 `node:`
- *   内建,相对 specifier 的目标必须同在副本集合内。原因:复制点只复制被点名的那几个文件,
- *   不会连带复制它的同目录依赖;一旦给 test/common/userdata.js 加一句
- *   `import … from "./temp-resource.js"`,install-smoke 段的沙盒里那份副本就解析不到该模块,
- *   且报错发生在沙盒子进程内,极难定位。
- *   另一面同样要守:不得出现「复制了却没人用」的死副本 —— 复制点与引用一旦脱节
- *   (典型:使用方的相对 import 被删或改成绝对路径),该副本承载的清理/校验语义会静默消失。
- *   沙盒入口(复制进来就是为了被执行、没有上游 import 的脚本)凭 SANDBOX_ENTRY_EVIDENCE 登记,
- *   登记项受机械抽查(必须在复制行之外存在「提及它 + 带执行类调用」的代码行),不能靠登记把死副本洗白。
- *   判定分两层、都在 test/common/ 且零 node: 依赖(判定口径单源,勿在段内重抄):
- *   - test/common/copy-closure.js:纯文本层(剥注释 / 抽 specifier / 分类 / 相对解析 / 表达式求值);
- *   - test/common/copy-closure-audit.js:扫描 + 审计层(复制点提取 / 闭包审计 / 入口登记抽查);
- *   依赖方向单向:本段 → 审计层 → 文本层。目录遍历与读文件只在本段(它已有 fs/path)。
- * - 测试扫描面单源(shared/test-common-surface.js)与它的三条完整性判据,见文件末 (f) 节:
+ * - 测试扫描面单源(shared/test-common-surface.js)与它的三条完整性判据,见文件末 (e) 节:
  *   段目录集合与门禁扫描面同源;完整性判据是**等式**(声明目录集合 == 磁盘上真实存在的
  *   测试子目录)+ **下限**(walker 整体失效兜底)+ **镜像**(每个段目录须镜像顶层一棵被断言的
  *   树)三条,各管一件事,双向锚点在本段内。
  *
- * ---- 沙盒副本闭包 · 已知覆盖边界(不是「已完全覆盖」,改判定前先读这段)----
- * 静态求值只认写在源码里的形状。以下三类复制源**解析不出**,只登记、不判红:
- * 1) 运行时拼装的列表(如从配置里解析出的 configFiles 之类的 for-of 目标);
- * 2) 多层别名链(一层 const 别名可解,两层以上保守放弃);
- * 3) 跨目录整树复制(cpSync 目录 + node_modules 联接,见审计层 COPY_MECHANISMS 的 tree-mirror):
- *    整棵树都在沙盒里,相对依赖天然闭合,不适用逐文件闭包。
- * 后果:若将来有人用「运行时拼装列表」的方式复制一个 JS 模块,本守护**不会自动纳入**它。
- * 那时需人工扩 copy-closure.js 的 resolveCopySource 支持该形态,或给该复制机制新增一个
- * COPY_MECHANISMS scope;在此之前,这类复制点只出现在 scanCopySites() 的
- * unresolved / treeMirrors 登记里(本段的 [ok] 行会打印数量)。
- *
- * 4) **正则字面量里的 import 形状**(2026-09-30 登记):字符串掩码把「引号是词法记号」与
- *    「引号在字符串内部」区分开了(文档串里的 `require("fs")` 不再被抽成裸包名依赖),
- *    但 lexSource 对正则字面量走 skipRegex、**不**把其中内容标为字符串内部。于是形如
- *    `/import "x"/` 的正则若出现在某个副本里,仍会被抽成 specifier 而判红。
- *    为何不修:正则里出现完整的 import 语句形状在真实代码里极罕见(至今 0 例),而正确
- *    处理需要区分「除号」与「正则起始」在更多上下文里的歧义,收益远小于误伤风险。
- *    后果:这类写法会被判红(保守方向 —— 假红而非假绿)。真出现时人工改写该正则即可。
- *
- * 5) **`writeFileSync` 写出的脚本副本,复制点扫描器看不见**(2026-09-30 登记,ADR-040):
- *    scanCopySites 只认 `copyFileSync`/`copyFile`/`cpSync` 三个机制(COPY_MECHANISMS)。
- *    `test/core/clean-artifacts-gate.test.js` 把 `clean-artifacts.mjs` 的源码用
- *    **writeFileSync** 写进沙盒(还要按用例改写其中一行),故它**不在副本集合里**。
- *    后果:该沙盒若漏写 `shared/paths.js`,`relative-outside-copy-set` **结构上抓不到**
- *    (它压根不在 copies 里),per-via 断言同样覆盖不到(同样因为不在 copies 里)。
- *    唯一的兜底是 `test:coverage` 运行时红(脚本起不来 ⇒ 段失败)。
- *    为何保留 writeFileSync:该段需要对副本**逐字节改写一行**再跑,copyFileSync 做不到。
- *    真要根治需给审计层新增「源码写出」复制机制,届时本条与 ADR-040 的 per-via 断言一并覆盖。
- *
+ * ⚠ 这里曾有 (e) 节「沙盒副本闭包」与它依赖的两层判定(shared/copy-closure.js 的词法层 +
+ *   test/common/copy-closure-audit.js 的扫描审计层),已整删:那套判据方向是 fail-open 的
+ *   (全局并集 / per-via 只查一个硬编码文件 / 解析不出只登记不判红 / writeFileSync 造副本不可见),
+ *   四条形态都写在新门禁 gates/repo/check-copy-sites.mjs 的文件头里。
+ *   「沙盒副本的 import 闭包」这个守护没有随之消失,而是降级成两条**定向断言**
+ *   (gates/repo/check-temp-cleanup.selftest.mjs 与 test/core/clean-artifacts-gate.test.js 各一条:
+ *   副本的相对 import 目标 ⊆ 该沙盒的复制集)—— 重建 auditCopySet 的整个数据模型要贵两个
+ *   数量级,买到的判据却更弱。
  * 纯断言段,无产物输出。
  */
 import fs from "node:fs";
@@ -70,21 +34,6 @@ import {
   kindLabelRegex,
   stripSecLabelSuffix,
 } from "../../dist/core/markdown/cross-ref.js";
-import {
-  COPY_MECHANISMS,
-  SANDBOX_ENTRY_EVIDENCE,
-  auditCopySet,
-  auditEntryEvidence,
-  auditViaCoverage,
-  scanCopySites,
-} from "../common/copy-closure-audit.js";
-import {
-  JS_SOURCE_RE,
-  classifySpecifier,
-  collectSpecifiers,
-  lexSource,
-  resolveRelativeSpecifier,
-} from "../../shared/copy-closure.js";
 import { removeTree } from "../common/temp-resource.js";
 import {
   MIN_SCAN_FILES,
@@ -96,18 +45,6 @@ import {
   judgeScanFloor,
   listScanFiles,
 } from "../../shared/test-common-surface.js";
-
-/**
- * 抽 specifier 的固定入口:code 与掩码必须同源于一次 lexSource,故合成一个返回元组。
- * 写成 `collectSpecifiers(...lexOf(text))` 是为了让「掩码必填」在调用点一眼可见 ——
- * 漏传会直接抛错,不会退回不判引号来处的旧行为。
- * @param {string} text 源文本
- * @returns {[string, Uint8Array]} (code, inString)
- */
-const lexOf = (text) => {
-  const { code, inString } = lexSource(text);
-  return [code, inString];
-};
 import { ROOT } from "../common/paths.js";
 
 const repoRoot = ROOT;
@@ -136,47 +73,8 @@ function assertEq(actual, expected, what) {
   assert(actual === expected, `${what}:实际 ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
 }
 
-/**
- * 违规清单的可读渲染(行号必须出现在里面,否则等于「只知道有问题」)。
- * @param {{ rel: string; line: number; spec: string; detail: string }[]} violations 违规清单
- * @returns {string}
- */
-const renderViolations = (violations) =>
-  violations.map((v) => `${v.rel}:${v.line} 「${v.spec}」→ ${v.detail}`).join("; ");
-
-
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
-
-
-/**
- * 递归列出目录下的 JS/MJS/CJS 源文件(仓库相对 POSIX 路径,按路径排序保证幂序)。
- * 遍历与读文件留在段内(它已有 fs/path):判定层 test/common/copy-closure.js 刻意零 I/O 依赖。
- * @param {string} root 仓库根绝对路径
- * @param {string[]} relDirs 相对目录数组
- * @returns {import("../../shared/copy-closure.js").SourceFile[]}
- */
-function listJsSources(root, relDirs) {
-  /** @type {import("../../shared/copy-closure.js").SourceFile[]} */
-  const files = [];
-  /**
-   * @param {string} absDir 绝对目录
-   * @param {string} relDir 相对目录(POSIX)
-   * @returns {void}
-   */
-  const walk = (absDir, relDir) => {
-    for (const entry of fs.readdirSync(absDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (entry.name === "node_modules") continue;
-      const rel = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
-      if (entry.isDirectory()) walk(path.join(absDir, entry.name), rel);
-      else if (JS_SOURCE_RE.test(entry.name)) {
-        files.push({ path: rel, text: fs.readFileSync(path.join(absDir, entry.name), "utf8") });
-      }
-    }
-  };
-  for (const relDir of relDirs) walk(path.join(root, ...relDir.split("/")), relDir);
-  return files;
-}
 
 /**
  * 造一棵最小夹具测试树:给定的 test/ 子目录,每个目录下 filesPerDir 个文件。
@@ -311,247 +209,7 @@ export async function run() {
   }
   console.log("[ok] contract:preload 类型依赖仅来自 core 契约(ConvertResult 自 core/ipc-contract 取用) 断言通过");
 
-  // ================= (e) 沙箱副本闭包:逐字节复制的模块,其 import 必须闭合 =================
-  // 0. 判定原语的正/负锚点:先证明这套判定真会抓违规(否则真实文件树上的「全绿」无意义)
-  const synthetic = [
-    "// import x from './commented-out.js'", // 1 注释里的 import 不该被抽到
-    "const url = 'https://example.com/a'; // import y from './in-url-comment.js'", // 2 字符串里的 // 不是注释起点
-    "import fs from 'node:fs';", // 3 内建
-    "import { rmSync } from './sibling.mjs';", // 4 相对
-    "const lazy = await import('../shared/util.mjs');", // 5 动态相对
-    "const legacy = require(\"./legacy.cjs\");", // 6 CJS 相对
-    "import 'side-effect-only.mjs';", // 7 副作用导入
-  ].join("\n");
-  const syntheticSpecs = collectSpecifiers(...lexOf(synthetic));
-  assertEq(
-    syntheticSpecs.map((s) => `${s.line}:${classifySpecifier(s.spec)}`).join(","),
-    "3:node,4:relative,5:relative,6:relative,7:bare",
-    "specifier 抽取/分类锚点(注释行不算、字符串里的 // 不误判、行号对齐原文本)",
-  );
-  assertEq(
-    resolveRelativeSpecifier("gates/artifacts/clean-artifacts.mjs", "../../shared/paths.js"),
-    "shared/paths.js",
-    "相对解析锚点:上跳两级(取 gates/artifacts/clean-artifacts.mjs → ../../shared/paths.js 这条真实 import)",
-  );
-  assertEq(
-    resolveRelativeSpecifier("tools/copy-renderer.mjs", "../shared/cli.mjs"),
-    "shared/cli.mjs",
-    "相对解析锚点:上跳一级(取 tools/copy-renderer.mjs → ../shared/cli.mjs 这条真实 import)",
-  );
-  assertEq(
-    resolveRelativeSpecifier("gates/smoke/smoke-report/process.mjs", "../../../shared/fsx.mjs"),
-    "shared/fsx.mjs",
-    "相对解析锚点:上跳三级(子树深度变了也不能解析错)",
-  );
-  assertEq(
-    resolveRelativeSpecifier("test/common/userdata.js", "./temp-resource.js"),
-    "test/common/temp-resource.js",
-    "相对解析锚点:同目录",
-  );
-  assertEq(resolveRelativeSpecifier("a.mjs", "../outside.mjs"), "../outside.mjs", "相对解析锚点:越出仓库根须保留上行前缀");
-
-  // 0b. 字符串掩码锚点(修 check-temp-cleanup.mjs 那条假阳性的判据)。
-  //     起因:白名单的 why 字段用文档串记了历史写法 require("fs").rmSync(…),在
-  //     「抹注释、留字符串」的文本上与真 import 完全同形,被抽成裸包名依赖 → 闭包门禁判红。
-  //     掩码把「引号是词法记号」与「引号在字符串内部」区分开,以下两条锚点守这个区分。
-  //
-  //     正向锚点:文档串里的 import/require 形状必须一个都抽不到。
-  {
-    const docOnly = [
-      `const doc = 'require("fs").rmSync(…)';`,
-      `const doc2 = "…改从 './x.js' 取值…";`,
-      `const doc3 = \`import { a } from "./y.js";\`;`,
-    ].join("\n");
-    assertEq(
-      collectSpecifiers(...lexOf(docOnly)).length,
-      0,
-      "掩码正向锚点:文档串里的 import/require 形状不得被抽成 specifier(否则副本闭包门禁会被自家注释判红)",
-    );
-  }
-  //     同区域共存的负向锚点:掩码只排「字符串内部」,不能把整行/整块一起抹掉 ——
-  //     同一段文本里既有诱饵又有真 import 时,必须恰好抽到真 import 那一个。
-  //     这条是「掩码恒为 true」的探针:若掩码失效成全 1,这里会抽到 0 而非 1。
-  {
-    const mixed = ['const doc = \'require("fs")\';', 'import x from "./real.mjs";'].join("\n");
-    const mixedSpecs = collectSpecifiers(...lexOf(mixed));
-    assertEq(mixedSpecs.length, 1, "掩码负向锚点:同块内诱饵与真 import 共存时,须恰好抽到真 import 那一个");
-    assertEq(mixedSpecs[0]?.spec, "./real.mjs", "掩码负向锚点:抽到的必须是真 import 的 specifier");
-    assertEq(classifySpecifier(mixedSpecs[0]?.spec ?? ""), "relative", "掩码负向锚点:真 import 仍按原口径分类为 relative");
-  }
-  console.log("[ok] contract:副本闭包判定原语锚点(specifier 抽取/分类/相对解析/字符串掩码) 断言通过");
-
-  // 1. 扫出被逐字节复制进沙箱的文件:事实源 = 代码里的复制调用(不硬编码任何文件名)
-  //    扫描面含 shared:项目根单源 shared/paths.js 如今被 6 处复制点复制进沙盒
-  //    (ADR-040),漏了它会让这些副本判「源文件不可读」(texts 里查不到)。
-  const sources = listJsSources(repoRoot, ["test", "gates", "tools", "shared"]);
-  const scan = scanCopySites(sources);
-  /** 仓库相对 POSIX 路径 → 文本 */
-  const texts = new Map(sources.map((f) => [f.path, f.text]));
-  const copiedRels = [...new Set(scan.copies.map((c) => c.rel))].sort();
-  assert(copiedRels.length >= 1, `未扫出任何逐字节复制的模块(复制机制=${COPY_MECHANISMS.map((m) => m.call).join("/")},walker 可能失效)`);
-  for (const rel of copiedRels) {
-    assert(fs.existsSync(path.join(repoRoot, ...rel.split("/"))), `扫出的副本在磁盘上不存在:${rel}(解析器与事实脱节)`);
-  }
-  assert(
-    scan.unresolved.length + scan.treeMirrors.length > 0,
-    "登记类复制点应为非空(若解析器退化成「什么都不报」,这段断言会先红,提示覆盖面被悄悄缩小)",
-  );
-  // 说明:复制点扫描跑在「抹注释、留字符串」的文本上,所以字符串里出现的 `copyFileSync(`
-  // (含本段下面自测夹具用的那行)也会被登记 —— 后果只是多一条「未静态解析」登记项,不会误判红。
-  console.log(
-    `[ok] contract:沙箱副本清单(${copiedRels.length} 个:${copiedRels.join(", ")};登记不判红:未静态解析 ${scan.unresolved.length} 处 / 整树镜像 ${scan.treeMirrors.length} 处)`,
-  );
-
-  // 2. 负向锚点:给某个「当前零依赖」的副本注入一句相对 import,同一套判定必须判红并点名行号
-  //    (夹具对象由扫描结果挑,不写死文件名 —— 守护对象将来会变,判定不能跟着变)
-  const dependencyFree = scan.copies.find((c) =>
-    collectSpecifiers(...lexOf(texts.get(c.rel) ?? "")).every((s) => classifySpecifier(s.spec) === "node"),
-  );
-  assert(dependencyFree !== undefined, `负向夹具缺失:应至少有一个「只依赖 node: 内建」的副本(实际副本 ${copiedRels.length} 个)`);
-  const fixture = /** @type {import("../common/copy-closure-audit.js").CopySite} */ (dependencyFree);
-  const baseText = /** @type {string} */ (texts.get(fixture.rel));
-  const relativeInjection = `${baseText}\nimport { TEMP_PREFIX } from "./temp-resource.js";\n`;
-  /** @type {Map<string, string>} */
-  const injectedTexts = new Map(texts);
-  injectedTexts.set(fixture.rel, relativeInjection);
-  const relativeRed = auditCopySet([fixture], injectedTexts);
-  assertEq(relativeRed.violations.length, 1, `注入相对 import 后应恰好判出一条违规(实际 ${renderViolations(relativeRed.violations)})`);
-  assertEq(relativeRed.violations[0]?.rel, fixture.rel, "违规须点名副本文件");
-  assertEq(relativeRed.violations[0]?.line, relativeInjection.split("\n").length - 1, "违规须命中注入那一行");
-  assertEq(
-    relativeRed.violations[0]?.kind,
-    "relative-outside-copy-set",
-    "违规种类:相对目标不在副本集合内",
-  );
-  const bareInjection = `${baseText}\nimport { something } from "some-bare-package";\n`;
-  /** @type {Map<string, string>} */
-  const bareTexts = new Map(texts);
-  bareTexts.set(fixture.rel, bareInjection);
-  const bareRed = auditCopySet([fixture], bareTexts);
-  assertEq(bareRed.violations.length, 1, `注入裸包名后应恰好判出一条违规(实际 ${renderViolations(bareRed.violations)})`);
-  assertEq(bareRed.violations[0]?.kind, "bare-specifier", "违规种类:裸包名(沙盒内无 node_modules)");
-  assertEq(bareRed.violations[0]?.line, bareInjection.split("\n").length - 1, "裸包名违规须命中注入那一行");
-  // 死副本负向:入边与入口登记都没了 → 必须判红(对应「使用方的相对 import 被删 / 改成绝对路径」)
-  const copyCallLine = `fs.copyFileSync(path.join(ROOT, ${JSON.stringify(fixture.rel)}), target);`;
-  const orphanRed = auditCopySet(
-    [{ rel: fixture.rel, via: fixture.via, line: 1 }],
-    new Map([[fixture.rel, baseText], [fixture.via, copyCallLine]]),
-  );
-  assertEq(orphanRed.orphans.length, 1, "无入边且无入口登记时必须判为死副本");
-  assertEq(orphanRed.orphans[0]?.rel, fixture.rel, "死副本须点名副本文件");
-  // 死副本的正向对照:登记为沙盒入口后不再判红(否则「复制 + 执行」的正常脚本会被误杀)
-  const entryOk = auditCopySet(
-    [{ rel: fixture.rel, via: fixture.via, line: 1 }],
-    new Map([[fixture.rel, baseText], [fixture.via, copyCallLine]]),
-    [{ rel: fixture.rel, via: fixture.via, how: "自测夹具:沙盒内执行" }],
-  );
-  assertEq(entryOk.orphans.length, 0, "登记为沙盒入口后不应判为死副本");
-  // 登记本身的负向锚点:登记项若已不在副本集合里(复制点被删/复制范围变了)必须报失效,
-  // 否则登记会变成「过期也继续生效」的免罪符
-  const staleEntry = auditEntryEvidence(
-    [fixture],
-    injectedTexts,
-    [{ rel: "test/common/not-copied-anymore.mjs", via: fixture.via, how: "自测夹具:构造一条过期登记" }],
-  );
-  assertEq(staleEntry.length, 1, "登记项不在副本集合内时必须报失效");  // 入口证据的负向锚点:只有「提及」没有「执行」的复制点文件不算数
-  // (否则复制点上方拼路径的那一行、或段自身对它的 import,都能把死副本洗白)
-  const mentionOnly = auditEntryEvidence(
-    [fixture],
-    new Map([
-      [fixture.rel, baseText],
-      [fixture.via, `${copyCallLine}\nconst p = path.join(ROOT, ${JSON.stringify(fixture.rel)});\nimport x from ${JSON.stringify(fixture.rel)};`],
-    ]),
-    [{ rel: fixture.rel, via: fixture.via, how: "自测夹具:只有提及没有执行" }],
-  );
-  assertEq(mentionOnly.length, 1, "复制行之外只有「提及」而无执行类调用时,入口登记必须报失效");
-  console.log("[ok] contract:副本闭包负向锚点(相对越界/裸包名/死副本判红,入口登记对照不误杀/过期登记与无执行证据判失效) 断言通过");
-
-  // 2b. per-via 断言的双向锚点(ADR-040 核心防护)。
-  //     auditCopySet 的 relSet 是**所有复制点副本的并集**,所以「A 复制点带了 shared/paths.js」
-  //     会让全局变绿,而「B 复制点忘了带」看不出来。本断言按 via 分组逐个查。
-  //     正向:某个 via 复制了依赖脚本、也复制了 shared/paths.js → 判绿。
-  {
-    const scriptText = `import { ROOT } from "../shared/paths.js";\nexport const r = ROOT;\n`;
-    const okCopies = [
-      { rel: "scripts/probe.mjs", via: "scripts/probe.selftest.mjs", line: 1 },
-      { rel: "shared/paths.js", via: "scripts/probe.selftest.mjs", line: 2 },
-    ];
-    const okTexts = new Map([
-      ["scripts/probe.mjs", scriptText],
-      ["shared/paths.js", "export const ROOT = 1;\n"],
-      ["scripts/probe.selftest.mjs", "copyFileSync(...)"],
-    ]);
-    assertEq(
-      auditViaCoverage(okCopies, okTexts).length,
-      0,
-      "per-via 正向锚点:复制点既复制了依赖脚本也复制了 shared/paths.js,须判绿",
-    );
-  }
-  //     负向:A 复制点带齐了 shared/paths.js、B 复制点漏了 —— 全局并集因此被「填满」而判绿,
-  //     但 B 的沙盒实际会断。这才是 auditCopySet 真正的 fail-open 形态(ADR-040 背景一),
-  //     也正是本断言存在的理由。per-via 必须只点名 B。
-  {
-    const scriptText = `import { ROOT } from "../shared/paths.js";\nexport const r = ROOT;\n`;
-    // A:复制了 scripts/probe-a.mjs 与 shared/paths.js(带齐);B:只复制了 scripts/probe-b.mjs(漏带)
-    const twoViaCopies = [
-      { rel: "scripts/probe-a.mjs", via: "scripts/a.selftest.mjs", line: 1 },
-      { rel: "shared/paths.js", via: "scripts/a.selftest.mjs", line: 2 },
-      { rel: "scripts/probe-b.mjs", via: "scripts/b.selftest.mjs", line: 1 },
-    ];
-    const twoViaTexts = new Map([
-      ["scripts/probe-a.mjs", scriptText],
-      ["scripts/probe-b.mjs", scriptText],
-      ["shared/paths.js", "export const ROOT = 1;\n"],
-      ["scripts/a.selftest.mjs", "copyFileSync(...)"],
-      ["scripts/b.selftest.mjs", "copyFileSync(...)"],
-    ]);
-    // 关键对照:全局并集口径对同一份数据**判绿** —— A 已把 shared/paths.js 放进并集,
-    // 于是 B 的漏带被完全掩盖。这条对照若哪天不再为绿,说明 auditCopySet 已改成真
-    // per-sandbox,届时本断言可退役(断言会失败提醒你)。
-    const unionGreen = auditCopySet(twoViaCopies, twoViaTexts);
-    assertEq(
-      unionGreen.violations.length,
-      0,
-      "对照:全局并集口径对「A 带齐 / B 漏带」判绿 —— 这正是 auditCopySet 的 fail-open,也是 per-via 断言要补的洞",
-    );
-    // per-via 必须抓到,且只点名漏带的那个 via(A 不该被牵连)
-    const gaps = auditViaCoverage(twoViaCopies, twoViaTexts);
-    assertEq(gaps.length, 1, "per-via 负向锚点:A 带齐 / B 漏带时,须恰好判一条红");
-    assertEq(gaps[0]?.via, "scripts/b.selftest.mjs", "per-via 负向锚点:须点名漏带的那个复制点 B");
-    assertEq(gaps[0]?.missing, "shared/paths.js", "per-via 负向锚点:须点名缺的那个文件");
-    assertEq(gaps[0]?.neededBy, "scripts/probe-b.mjs", "per-via 负向锚点:须点名需要它的那个副本");
-  }
-  console.log("[ok] contract:per-via 覆盖断言双向锚点(带齐判绿/漏带判红并点名 via) 断言通过");
-
-  // 3. 真实文件树:副本集合必须闭合,且入口登记必须仍然有效
-  const audit = auditCopySet(scan.copies, texts, SANDBOX_ENTRY_EVIDENCE);
-  assertEq(audit.violations.length, 0, `沙箱副本 import 闭包违规:${renderViolations(audit.violations)}`);
-  const viaGaps = auditViaCoverage(scan.copies, texts);
-  assertEq(
-    viaGaps.length,
-    0,
-    `沙箱复制点漏带项目根单源(每个 via 各自检查):${viaGaps.map((g) => `${g.via} 缺 ${g.missing}(${g.neededBy} 需要它)`).join("; ")}`,
-  );
-  assertEq(
-    audit.orphans.length,
-    0,
-    `沙箱副本存在死副本:${audit.orphans.map((o) => `${o.rel}(复制于 ${o.via})`).join("; ")}`,
-  );
-  const entryProblems = auditEntryEvidence(scan.copies, texts, SANDBOX_ENTRY_EVIDENCE);
-  assertEq(entryProblems.length, 0, `沙盒入口登记失效:${entryProblems.join("; ")}`);
-  // 入边必须真实存在(否则「闭合」可能是空集自洽):既要求总体有边,也要求有边指向
-  // shared/ 下的副本 —— 那些是 ADR-040 起必须随门禁带进沙盒的跨树机制,若没有任何边
-  // 指向它们,「复制 shared/」这件事就没有对象、闭包判定也就无从证明。
-  assert(audit.edges.length >= 1, "副本之间应存在相对 import 入边(全 0 说明提取或判定失效)");
-  assert(
-    audit.edges.some((e) => e.to.startsWith("shared/")),
-    `应有指向 shared/ 下副本的相对入边(实测边:${audit.edges.map((e) => `${e.from} → ${e.to}`).join("; ") || "无"})`,
-  );
-  console.log(
-    `[ok] contract:沙箱副本闭包(${copiedRels.length} 个副本 / ${audit.edges.length} 条相对入边:${audit.edges.map((e) => `${e.from} → ${e.to}`).join("; ")} / 沙盒入口登记 ${SANDBOX_ENTRY_EVIDENCE.length} 项:${SANDBOX_ENTRY_EVIDENCE.map((e) => `${e.rel}[${e.how}]`).join(" | ")}) 断言通过`,
-  );
-
-  // ================= (f) 测试扫描面单源:等式 + 下限,两条判据各管一件事 =================
+  // ================= (e) 测试扫描面单源:等式 + 下限,两条判据各管一件事 =================
   // 等式判据最大的失败形态是**恒绿**,故必须双向证明:
   //   正向 —— 正常仓库下等式成立、文件数满足下限;
   //   负向 —— 造「声明 5 个、磁盘上 6 个」与「声明 5 个、只建成 4 个」的夹具树,断言判红

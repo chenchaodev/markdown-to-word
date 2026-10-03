@@ -1,7 +1,8 @@
 // 门禁探针:dist 清单(check:dist-manifest = node gates/artifacts/check-dist-manifest.mjs --check)。
-// 沙盒 = 合成最小工程:逐字节复制生产脚本(保证跑的是同一份实现,副本哈希写进报告)+
-// 合成 dist + 沙盒内生成的清单,故 npm 脚本的默认参数(dist/ 与 output/artifacts/…)
-// 在沙盒里原样生效,测的就是 npm 跑的那条命令。
+// 沙盒 = 合成最小工程:**真脚本**(从仓内原位跑,只靠 cwd 指沙盒)+ 合成 dist + 沙盒内生成的清单,
+// 故 npm 脚本的默认参数(dist/ 与 output/artifacts/…)在沙盒里原样生效,测的就是 npm 跑的那条命令。
+// 「真脚本 + cwd」取代了原先的逐字节副本:项目根单一来源是 shared/paths.js 的 process.cwd(),
+// 而 ESM 静态 import 按**文件位置**解析、与 cwd 无关 ⇒ 副本永远带不齐仓内依赖,而真脚本自带。
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -14,7 +15,7 @@ import { writeFileIn } from "../sandbox.mjs";
 
 /**
  * dist 清单门禁(`check:dist-manifest`)探针。
- * 沙盒 = 合成最小工程:逐字节复制生产脚本(保证跑的是同一份实现)+ 合成 dist + 生成的清单,
+ * 沙盒 = 合成最小工程:真脚本(报告里的 sha256 取的是仓内那份)+ 合成 dist + 生成的清单,
  * 故 npm 脚本的默认参数(dist/ 与 output/artifacts/dist-manifest.json)原样生效。
  * @param {object} ctx 探针上下文
  * @param {number} ctx.timeoutMs 硬超时
@@ -24,16 +25,7 @@ export async function probeDistManifest(ctx) {
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), `${SANDBOX_PREFIX}manifest-`));
   const node = resolveNode();
   const scriptName = "check-dist-manifest.mjs";
-  fs.mkdirSync(path.join(sandbox, "gates", "artifacts"), { recursive: true });
-  fs.copyFileSync(path.join(ROOT, "gates", "artifacts", scriptName), path.join(sandbox, "gates", "artifacts", scriptName));
-  // 被复制的门禁脚本从 shared/paths.js 取项目根(ADR-040),沙盒内必须带一份,
-  // 否则探针会以「脚本起不来」失败 —— 那是夹具缺陷,不是门禁结论。
-  fs.mkdirSync(path.join(sandbox, "shared"), { recursive: true });
-  fs.copyFileSync(path.join(ROOT, "shared", "paths.js"), path.join(sandbox, "shared", "paths.js"));
-  // CLI 解析与文件哈希已下沉到 shared/(ADR-049),被测脚本直接依赖这两个模块,同样要带一份。
-  for (const mechanism of ["cli.mjs", "fsx.mjs"]) {
-    fs.copyFileSync(path.join(ROOT, "shared", mechanism), path.join(sandbox, "shared", mechanism));
-  }
+  const scriptPath = path.join(ROOT, "gates", "artifacts", scriptName);
   const manifestInput = {
     "main/index.js": "export const main = 1;\n",
     "core/convert.js": "export const convert = 1;\n",
@@ -47,10 +39,9 @@ export async function probeDistManifest(ctx) {
    * @param {string[]} args CLI 参数
    * @returns {Promise<import("../../../smoke/smoke-proc.mjs").ProcessRunResult>} 运行结果
    */
-  // 刻意写成单行且脚本名用字面量(而非上方的 scriptName 变量):副本闭包门禁的沙盒入口
-  // 登记抽查(test/common/copy-closure-audit.js 的 findEntryExecutionLines)要求「复制行之外
-  // 有一行**同时**出现该文件名与执行类调用词」—— 走变量或拆行都认不出,该副本会被判成死副本。
-  const runScript = (args) => runProcess({ command: node.command, args: [path.join(sandbox, "gates", "artifacts", "check-dist-manifest.mjs"), ...args], cwd: sandbox, env: node.env, timeoutMs: ctx.timeoutMs });
+  // 脚本取仓内绝对路径、cwd 指沙盒:被测脚本的 ROOT(= cwd)因此是沙盒,而它的仓内 import
+  // 由 Node 按真实文件位置解析,不需要在沙盒里再造一份。
+  const runScript = (args) => runProcess({ command: node.command, args: [scriptPath, ...args], cwd: sandbox, env: node.env, timeoutMs: ctx.timeoutMs });
 
   /** @type {ProbeCase[]} */
   const cases = [];
@@ -99,10 +90,10 @@ export async function probeDistManifest(ctx) {
     fs.rmSync(sandbox, { recursive: true, force: true, maxRetries: 3 });
   }
 
-  const sha = createHash("sha256").update(fs.readFileSync(path.join(ROOT, "gates", "artifacts", scriptName))).digest("hex");
+  const sha = createHash("sha256").update(fs.readFileSync(scriptPath)).digest("hex");
   return finalizeGate("dist-manifest", {
     sandboxed: true,
-    sandboxInputs: [`gates/artifacts/${scriptName}(逐字节副本 sha256:${sha.slice(0, 12)}…)`, "dist/**(合成)", "output/artifacts/dist-manifest.json(沙盒内生成)"],
+    sandboxInputs: [`gates/artifacts/${scriptName}(仓内真脚本 sha256:${sha.slice(0, 12)}…)`, "dist/**(合成)", "output/artifacts/dist-manifest.json(沙盒内生成)"],
     cases,
   });
 }

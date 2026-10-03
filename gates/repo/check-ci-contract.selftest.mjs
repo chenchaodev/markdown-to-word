@@ -16,7 +16,7 @@
 // 上面每条夹具断言的诊断全都经它产出,展开器一旦恒绿,夹具就只是在验证「什么都没报」。
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
@@ -25,7 +25,7 @@ import { scanTopLevel, topLevel } from './repo-manifest.mjs';
 
 const projectRoot = ROOT;
 const checkerPath = join(projectRoot, 'gates', 'repo', 'check-ci-contract.mjs');
-/** 被测门禁自身的仓库相对路径(复制点要排除它:它由 copyFileSync 逐字节落盘,不是占位文件) */
+/** 被测门禁自身的仓库相对路径(占位文件要排除它:它由夹具外的真脚本跑,不是夹具里的文件) */
 const CHECKER_RELATIVE = join('gates', 'repo', 'check-ci-contract.mjs');
 
 const FLOOR = '22.13.0';
@@ -153,14 +153,9 @@ function createFixture(mutate) {
   for (const placeholder of deriveFixturePlaceholders(FIXTURE_SCRIPTS)) {
     writeFileIn(dir, placeholder, '// fixture\n');
   }
-  copyFileSync(checkerPath, join(dir, 'gates', 'repo', 'check-ci-contract.mjs'));
-  // 被测门禁从 shared/paths.js 取项目根(ADR-040),并从 repo-manifest.mjs 派生顶层(ADR-037),
-  // 链展开走 gates/repo/chain-expand.mjs(全仓单源);夹具内不带这三份的话,夹具会因
-  // ERR_MODULE_NOT_FOUND 失败,而不是因被注入的漂移失败(那会让负向夹具假通过)。
-  mkdirSync(join(dir, 'shared'), { recursive: true });
-  copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
-  copyFileSync(join(projectRoot, 'gates', 'repo', 'repo-manifest.mjs'), join(dir, 'gates', 'repo', 'repo-manifest.mjs'));
-  copyFileSync(join(projectRoot, 'gates', 'repo', 'chain-expand.mjs'), join(dir, 'gates', 'repo', 'chain-expand.mjs'));
+  // 被测门禁**不复制**:它原位从仓内跑、只靠 cwd 指夹具(夹具根的 package.json 就是被测对象)。
+  // 它的仓内依赖(shared/paths.js · repo-manifest.mjs · chain-expand.mjs)由 ESM 按真实文件位置
+  // 解析,天然可达 —— 沙盒里放副本反而会与真脚本分叉。
 
   // mutate 既可改内存中的 manifest(经下方回写落盘),也可直接改 workflow 文件
   mutate({ dir, pkg, lock });
@@ -169,9 +164,9 @@ function createFixture(mutate) {
   return dir;
 }
 
-/** 在夹具内跑契约自检,返回退出码与合并输出 */
+/** 在夹具内跑契约自检(真脚本 + cwd 指夹具),返回退出码与合并输出 */
 function runChecker(dir) {
-  const result = spawnSync(process.execPath, ['gates/repo/check-ci-contract.mjs'], {
+  const result = spawnSync(process.execPath, [checkerPath], {
     cwd: dir,
     encoding: 'utf8',
     windowsHide: true,

@@ -549,7 +549,7 @@ export const ROOT_SOURCE_FILE = 'shared/paths.js';
 
 /**
  * ⚠ 本文件曾有一张 `ROOT_COMPUTE_EXEMPT_FILES` 豁免表(9 条),已按 ADR-040 **整表删除**。
- * 那 9 条全部是「被逐字节复制进沙盒、而沙盒不含 shared/」的脚本,如今 7 处复制点都补了
+ * 那 9 条全部是「被逐字节复制进沙盒、而沙盒不含 shared/」的脚本,如今复制点都补了
  * `shared/paths.js`,故它们改为 import 单源,不再需要豁免。
  * 删表后本规则对全仓**零豁免**(门禁自身 `ROOT_COMPUTE_SELF_EXEMPT` 与单源 `ROOT_SOURCE_FILE` 除外:
  * 前者是规则定义处,后者是根语义定义处,两者都不是「某个实现文件在自算根」)。
@@ -736,8 +736,9 @@ export function findRootComputes(text, options = {}) {
   const hits = new Map();
   // 先抹注释再匹配(复用 copy-closure 的 lexSource,等长故行号不变):文档里为了说明
   // 「历史上长这样」而引用的写法不是可执行代码,判红它只会逼人把注释改写得更含糊。
-  // inString 一并取用:注释抹了但字符串留着,而合成夹具(test/segments/runner-report.test.js
-  // 那类)里的写法是**字符串字面量内部的内容**,判红它必误伤 —— ADR-041 已有同款先例。
+  // ⚠ 面上的四条形态判定不**不过滤字符串内部**(与 findTextLayerViolations 相反的一条取舍):
+  //   那两处形状是 `new URL('..')` / `path.dirname(__dirname)`,出现在文档串里的概率低到
+  //   不值得单开一条遮罩口径。深度判据那侧则用 inString(collectOrigins 需要它)。
   const lexed = lexSource(text);
   const lines = lexed.code.split('\n');
   for (const pattern of ROOT_COMPUTE_PATTERNS) {
@@ -1398,7 +1399,7 @@ function analyzeTreeBoundariesUncached(root) {
     const allowed = rule.allow.map(resolveAllowedPrefix);
     for (const { abs, file } of listSourceFiles(scopeRoot, TREE_SCAN_EXTENSIONS)) {
       const relPath = `${scopeDir}/${file}`;
-      const { code } = lexSource(readFileSync(abs, 'utf8'));
+      const code = lexSource(readFileSync(abs, 'utf8')).code;
       for (const { spec, line } of collectRelativeImportsWithLine(code)) {
         if (classifySpecifier(spec).kind !== 'relative') continue;
         const target = path.posix.normalize(path.posix.join(path.posix.dirname(relPath), spec));

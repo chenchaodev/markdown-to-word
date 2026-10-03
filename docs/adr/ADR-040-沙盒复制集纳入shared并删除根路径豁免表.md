@@ -48,3 +48,12 @@
 - 验证必须**显式跑 `npm run check:gates`**（不在 CI 链上），不能指望 `verify:ci`。`PROTECTED_PATHS` 含 `output` 且 `diffProtectedTree` 是 strict ⇒ 副本若写进真实工作树会以 `protectedTree.unchanged === false` 判红，这就是检测「根指错」的机制。
 - **明确放弃的**：per-sandbox 分组（`auditCopySet` 数据模型重设）。触发重看条件：per-`via` 断言多次漏判、或出现「需要按沙盒差异化复制集」的真实需求。
 - `check-temp-cleanup.mjs` 少一个自算根、多个 `shared/paths.js` 入边；闭包门禁的 `[ok]` 打印会多一项；`clean-artifacts.mjs` 只能靠运行时红来兜（见背景三）。
+## 后记:本 ADR 的门禁部分已退役（2026-10-04）
+
+**上面「决定」里描述的那套门禁（副本闭包 + `auditCopySet` + `SANDBOX_ENTRY_EVIDENCE` 入口登记）已退役**，取代物是 `gates/repo/check-copy-sites.mjs` 的白名单式 fail-closed 门禁。决策记录按「旧条不改动」保留原文，**以本节为准**。
+
+**退役理由不只是「简化」** —— 那套门禁是 fail-open 的，四个具体表现：全局并集（任一沙盒带了 `shared/paths.js`，其余全漏也判绿）· per-sandbox 只查一个硬编码文件 · 解析不出只登记不判红 · 机制白名单只有三个原语且整树镜像永不判红。抽查还查出一处**连登记都不出现**的形态：某个数组字面量 `for…of` 里的复制点，既不在 `copies` 也不在 `unresolved`（表达式求值器把未知标识符当仓库根，返回一个非源码字面量后被静默丢弃）⇒ 「新增复制点会被自动纳入」这句话当时**已经不成立**。
+
+**本 ADR 仍然有效的部分**：复制集纳入 `shared/` 的分层判断仍然成立（两个逐文件沙盒今日仍保留副本），删除根路径豁免表也仍然成立。
+
+**一处本 ADR 未预见、后来才显形的约束**：逐文件沙盒里有一条用例必须**改写门禁自己的源码**，而 `copyFileSync` 做不到这件事 ⇒ 该沙盒的副本不能按「反正不复制就不漏带」的直觉一并删掉。

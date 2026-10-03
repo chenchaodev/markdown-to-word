@@ -5,15 +5,14 @@
 // 本脚本会打印 `[ok]` 而规划编号照旧长在测试树里。此处用临时夹具逐条制造这些漂移,
 // 断言门禁确实以非零码拒绝,并断言未漂移时通过。
 //
-// **不修改被测门禁本体**:夹具 = 把门禁脚本原样拷进临时目录的 gates/repo/(它的 projectRoot
-// 由 import.meta.dirname 推导,故拷贝后扫描面自动指向夹具根),连同它的仓内依赖
-// shared/test-common-surface.js(测试扫描面单源,零仓内依赖)与 shared/paths.js 一起拷贝,
-// 配一棵最小测试树。真实仓库只被**读**(baseline 那一条跑真实 test/ 树)。
-// 少拷一个的代价不是「夹具少测一条」而是「门禁在沙盒里直接起不来」:相对 import 解析不到,
-// 那条守护段 test/gates/contract-single-source.test.js 的副本闭包判定会先把它拦下。
+// **不修改被测门禁本体,也不复制它**:夹具 = 临时目录里的一棵最小测试树,而门禁**原位**从仓内跑、
+// 只靠 cwd 指夹具 —— 故它的扫描面自动指向夹具根。项目根单一来源是 shared/paths.js 的
+// process.cwd(),而 ESM 静态 import 按**文件位置**解析、与 cwd 无关,所以真脚本的仓内依赖
+// (shared/paths.js、shared/test-common-surface.js)天然可达,沙盒里不需要再放一份。
+// 真实仓库只被**读**(baseline 那一条跑真实 test/ 树)。
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
@@ -21,8 +20,6 @@ import { SEGMENT_DIRS } from '../../shared/test-common-surface.js';
 
 const projectRoot = ROOT;
 const checkerPath = join(projectRoot, 'gates', 'repo', 'check-test-numbering.mjs');
-/** 门禁的仓内 import(测试扫描面单源,零仓内依赖),须随门禁一起拷进夹具 */
-const surfacePath = join(projectRoot, 'shared', 'test-common-surface.js');
 
 /** 干净底板内容:不含任何规划编号字面量 */
 const CLEAN = "export const value = 'clean';\n";
@@ -55,17 +52,9 @@ function writeUnder(root, rel, body = CLEAN) {
   writeFileSync(target, body, 'utf8');
 }
 
-/** 造一份夹具:拷贝门禁本体 + 按 shape 铺测试树,再由 mutate 打上漂移 */
+/** 造一份夹具:按 shape 铺一棵最小测试树,再由 mutate 打上漂移 */
 function createFixture(mutate, shape = BASE_SHAPE) {
   const dir = mkdtempSync(join(tmpdir(), 'm2w-test-numbering-selftest-'));
-  mkdirSync(join(dir, 'gates', 'repo'), { recursive: true });
-  copyFileSync(checkerPath, join(dir, 'gates', 'repo', 'check-test-numbering.mjs'));
-  // 被测门禁从 shared/paths.js 取项目根(ADR-040),从 shared/test-common-surface.js
-  // 取扫描面单源,两者都是它的仓内依赖,必须一起带进夹具
-  mkdirSync(join(dir, 'shared'), { recursive: true });
-  copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
-  mkdirSync(join(dir, 'test', 'common'), { recursive: true });
-  copyFileSync(surfacePath, join(dir, 'shared', 'test-common-surface.js'));
   // 段目录镜像判据的判定对象是**顶层**的同名树,夹具不把它们造出来就等于该判据恒红
   for (const name of SEGMENT_DIRS) mkdirSync(join(dir, name), { recursive: true });
   for (const [target, count] of Object.entries(shape)) {
@@ -82,9 +71,9 @@ function createFixture(mutate, shape = BASE_SHAPE) {
   return dir;
 }
 
-/** 在夹具上跑门禁;返回退出码与合并输出 */
+/** 在夹具上跑门禁(真脚本 + cwd 指夹具);返回退出码与合并输出 */
 function runChecker(dir, args = []) {
-  const result = spawnSync(process.execPath, [join(dir, 'gates', 'repo', 'check-test-numbering.mjs'), ...args], {
+  const result = spawnSync(process.execPath, [checkerPath, ...args], {
     cwd: dir,
     encoding: 'utf8',
     windowsHide: true,

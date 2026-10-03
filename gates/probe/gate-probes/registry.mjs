@@ -71,6 +71,7 @@ export const TOOLCHAIN_FILES = Object.freeze({
  */
 export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   "check:contract:selftest": "gates/repo/check-ci-contract.selftest.mjs",
+  "check:copy-sites:selftest": "gates/repo/check-copy-sites.selftest.mjs",
   "check:transform-dispatch:selftest": "gates/repo/check-transform-dispatch.selftest.mjs",
   "check:test-numbering:selftest": "gates/repo/check-test-numbering.selftest.mjs",
   "check:temp-cleanup:selftest": "gates/repo/check-temp-cleanup.selftest.mjs",
@@ -135,6 +136,34 @@ export const GATE_REGISTRY = Object.freeze(
           kind: "segment",
           ref: "test/gates/import-boundary.test.js",
           why: "段内造沙盒负向夹具逐条制造漂移(裸包名未声明、反向层向、越层相对路径等),断言非零退出且命中对应诊断,并有正向锚点证明夹具通路有效",
+        },
+      ],
+    },
+    "copy-sites": {
+      id: "copy-sites",
+      title: "复制点白名单门禁(禁无声增殖)",
+      npmScripts: ["check:copy-sites"],
+      command: "node gates/repo/check-copy-sites.mjs",
+      modulePath: "gates/repo/check-copy-sites.mjs",
+      access: "chain",
+      judgment: {
+        module: "gates/repo/check-copy-sites.mjs",
+        export: "judgeCopySites",
+        shaped: "CopyProblem[]({ kind, file, line?, detail })",
+      },
+      judgmentNote:
+        "判定本体是可注入纯函数(白名单 + 扫描结果进、判红项数组出),CLI 的 main() 只打印 + 出 0/1。"
+        + "指针取 judgeCopySites 而不是 collectCopySites:后者带 fs 遍历(要真实 root),"
+        + "而三条断言(反向等式禁增殖 / 正向等式禁空登记 / 清单一致性禁死登记)全在前者里。"
+        + "⚠ 返回是**富结构数组**而不是 Problem[]:经 protocol.toProblems 归一时,机器码会退化成"
+        + "调用方给的那个 code、message 变成 safeStringify 的 JSON。当前**没有任何驱动器调用它**"
+        + "(CLI 走模块常量 + 自己的 main),故这不是活缺陷;将来接驱动器(沙盒探针 / 验收段)时,"
+        + "要么在驱动侧显式把 kind 映射成机器码,要么改判定返回形状 —— 不要靠归一层默默吞掉每条的 kind。",
+      probes: [
+        {
+          kind: "selftest",
+          ref: "gates/repo/check-copy-sites.selftest.mjs",
+          why: "自检脚本造合成夹具树(不复制门禁本体,靠 cwd 指夹具跑仓内真脚本),逐条注入三种违例并断言各恰好判红且点名:①未登记的文件含复制原语(点名文件与行号)②登记项的文件还在但已无复制原语(六项逐个点名)③声明清单多一项(「已无复制点」与「文件不存在」两形态,且真有复制点的那项不被牵连);另有真实仓库三条断言全过的正向对照 —— 正向不绿,三条负向的「红」都无意义",
         },
       ],
     },

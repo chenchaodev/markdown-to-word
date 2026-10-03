@@ -1,34 +1,20 @@
 // @ts-check
 /**
- * 沙盒副本闭包 · 纯文本层(测试树共享,零 node: 依赖):
- * 把「一段源码文本」变成可断言的词法事实 —— 剥注释、抽 specifier、判 specifier 种类、
- * 解析相对路径、以及对「复制源表达式」做静态求值。
+ * 纯文本词法层(测试树与门禁树共享,零 node: 依赖):
+ * 把「一段源码文本」变成可断言的词法事实 —— 剥注释,并标出「哪些下标在字符串字面量内部」。
  *
- * 为何分两层(本层 / 扫描审计层):见同目录 copy-closure-audit.js 的文件头。两层合起来是
- * 一次完整守护,拆开是因为它们的变化驱动力不同 —— 本层随「源码文本长什么样」变(语言写法、
- * 表达式形态),上层随「仓库里有哪些复制点」变(哪个脚本被复制、沙盒怎么组装)。
+ * 依赖方向单向:守护段 → 本文件。**本文件不 import 上层**,也不 import 任何 node: 内建模块
+ * (零 I/O:不读文件、不遍历目录,只吃字符串)。目录遍历与读文件留在守护段。
  *
- * 依赖方向单向:守护段 → copy-closure-audit.js → 本文件。**本文件不 import 上层**,
- * 也不 import 任何 node: 内建模块(零 I/O:不读文件、不遍历目录,只吃字符串)。
- * 目录遍历与读文件留在守护段(它已有 fs/path)。
- *
- * 本层被上层与守护段共用的符号(JS_SOURCE_RE、SourceFile)刻意放在这里,避免出现第二份定义。
- *
- * ⚠ 已知覆盖边界与行数口径:见守护段 test/gates/contract-single-source.test.js 的文件头
- *   「沙盒副本闭包 · 已知覆盖边界」小节 —— 那里是唯一权威处,本文件不重复,避免两份说法漂移。
+ * ⚠ 这里曾有一整套「沙盒副本闭包」判定(抽 specifier / 分类 / 相对解析 / 复制源表达式求值,
+ *   连同 test/common/copy-closure-audit.js 的扫描审计层),已整删 —— 那套判据方向是 fail-open 的
+ *   (全局并集 / per-via 只查一个文件 / 解析不出只登记 / writeFileSync 造副本不可见),
+ *   取代它的是 gates/repo/check-copy-sites.mjs 的白名单式复制点门禁。
+ *   本文件因此只剩「剥注释」这一件事,以及两个被门禁直接复用的符号。
  */
 
-/** 只把「会被当模块解析的源文件」纳入副本闭包(图片/清单等资源不在范围);遍历侧与扫描层都复用它 */
+/** 只把「会被当模块解析的源文件」纳入扫描面(图片/清单等资源不在范围);遍历侧复用它 */
 export const JS_SOURCE_RE = /\.(?:js|mjs|cjs)$/;
-
-/** 解析上限:一个复制表达式展开出的候选路径数上限(防御正则/别名链失控) */
-const MAX_RESOLVED_ALTS = 64;
-
-/**
- * @typedef {object} SourceFile 待扫描的源文件
- * @property {string} path 仓库相对 POSIX 路径
- * @property {string} text 文件文本
- */
 
 /**
  * @typedef {object} LexResult 词法扫描结果
@@ -38,7 +24,8 @@ const MAX_RESOLVED_ALTS = 64;
  */
 
 /**
- * 词法扫描:抹注释 + 标出「哪些下标在字符串内」。
+ * 词法扫描:抹掉注释,并标出「哪些下标在字符串字面量内部」;字符串内容**原样保留**
+ * (真实 import 的 specifier 本身就是字符串)。
  *
  * 为何要状态机而不是正则:正则分不清 `//` 是注释还是字符串里的 `https://`,抹错一处就会
  * 让后面的引号配对错位,凭空造出「看起来像 import」的假阳性。本实现覆盖行注释 / 块注释 /
@@ -47,11 +34,16 @@ const MAX_RESOLVED_ALTS = 64;
  *
  * 为何要同时产出 inString:真 import 的 specifier 引号是**词法记号**,而文档串里
  * `require("fs")` 的那对引号在**字符串内部** —— 两者在「抹注释、留字符串」的文本上
- * 完全同形,只靠正则分不出来。状态机本来就知道每个下标是否在字符串内,此前没输出这份
- * 知识,故由本函数一并产出,交给 collectSpecifiers 按词法位置判定。
+ * 完全同形,只靠正则不出来。状态机本来就知道每个下标是否在字符串内,故一并产出。
  *
- * ⚠ 掩码最大的失效形态是「恒为 1」(什么都抹 → 闭包门禁恒绿)。故 inString 只标记**严格
- * 内部**,两侧引号恒为 0:真 import 的引号下标因此判 0,能被抽到。
+ * ⚠ inString **不能删**:唯一的消费者 gates/repo/check-import-boundary.mjs 有两处活判据
+ *   用它(`findTextLayerViolations` 的 insideString 过滤 + `collectOrigins` 的声明过滤),
+ *   且该门禁的 selfCheckTextLayerRules 把「去掉字符串遮罩」钉成一条会翻脸的反向锚点
+ *   ⇒ 删它等于删判据,门禁自己会先红。「闭包判定退役」只退役**消费方**,不退役这份事实。
+ *
+ * ⚠ 掩码最大的失效形态是「恒为 1」(什么都抹 → 门禁恒绿)。故标记只覆盖**严格内部**,
+ *   两侧引号恒不算内部:真 import 的引号是词法记号,能被抽到;文档串里的 `require("x")`
+ *   那对引号在字符串内部,被排除。
  *
  * @param {string} text 源文本
  * @returns {LexResult} code 与 inString
@@ -67,7 +59,7 @@ export function lexSource(text) {
     const ch = text[i] ?? "";
     if (ch === '"' || ch === "'" || ch === "`") {
       const end = skipQuoted(text, i);
-      // 只标严格内部(排除两侧引号):引号是记号,判 0 才能让真 import 被 collectSpecifiers 抽到
+      // 只标严格内部(排除两侧引号):引号是记号,判 0 才能让真 import 被抽到
       for (let k = i + 1; k < end - 1; k += 1) inString[k] = 1;
       i = end;
       prev = ch;
@@ -103,16 +95,16 @@ export function lexSource(text) {
 }
 
 /**
- * ⚠ 这里曾有一个 `blankComments(text) -> string` 的窄视图(lexSource 的 code 字段),
- * 已**从导出里删除**,只留 `lexSource` 一条入口。
- * 为何必须删而不是「留着没人调用」:窄视图不产出 inString 掩码,调用方若图省事改用它,
- * 就会绕过 ADR-041 的判据 —— 文档串里的 `require("fs")` 会被抽成真依赖,副本闭包门禁恒绿。
- * 留着同义窄视图 = 留着恒绿退化的入口。需要「只要代码文本」的地方写 `lexSource(text).code`。
+ * ⚠ 这里曾有一个 `blankComments(text) -> string` 的窄视图(现 lexSource 的 code 字段),
+ *   以及 `collectSpecifiers(code, inString)`(掩码必填、用来区分「文档串里的 import 形状」
+ *   与真 import),二者已**随闭包判定一起删除**。
+ *   留下同义窄视图 = 留恒绿退化的入口:调用方若图省事改用它,就会绕过 ADR-041 的判据。
+ *   需要「只要代码文本」的地方写 `lexSource(text).code`。
  */
 
 /**
  * 跳过一段引号字符串/模板(处理转义;模板不递归扫 `${}`)。
- * 词法层最底层的原语,上层(扫描审计层)的实参/环境解析也复用它 —— 故 export,避免两份定义漂移。
+ * 词法层最底层的原语,门禁的实参解析也复用它 —— 故 export,避免两份定义漂移。
  * @param {string} text 源文本
  * @param {number} start 引号所在下标
  * @returns {number} 结束引号之后的下标
@@ -159,235 +151,4 @@ function skipRegex(text, start) {
     i += 1;
   }
   return i;
-}
-
-/**
- * specifier 抽取的四类写法(ESM 静态 / 副作用导入 / 动态 import / CJS require)。
- * `from "x"` 覆盖 import 与 export 两侧(declaration 与 re-export 同形)。
- */
-const SPECIFIER_PATTERNS = [
-  { kind: "static", re: /\bfrom\s*(["'])([^"'\n]+)\1/g },
-  { kind: "side-effect", re: /\bimport\s*(["'])([^"'\n]+)\1/g },
-  { kind: "dynamic", re: /\bimport\s*\(\s*(["'])([^"'\n]+)\1\s*\)/g },
-  { kind: "require", re: /\brequire\s*\(\s*(["'])([^"'\n]+)\1\s*\)/g },
-];
-
-/**
- * 抽取一段代码里的全部模块 specifier 及其行号(行号基于**原文本**,故先过 lexSource)。
- *
- * `inString` 是**必填**:它决定某次匹配是「真 import」还是「文档串里写的 import 形状」。
- * 故意不给默认值 —— 「忘了传掩码就退回旧行为」正是掩码恒绿(闭包门禁失效)的入口,
- * 让漏传在调用点直接抛错,比静默退化成假绿好。
- *
- * 判据落在**引号下标**上(inString[引号位置] === 0 才收):真 import 的引号是词法记号,
- * 掩码判 0;文档串内部的引号判 1,故被排除。
- * @param {string} code lexSource 之后的等长文本
- * @param {Uint8Array} inString lexSource 产出的等长掩码(1 = 该下标在字符串字面量内部)
- * @returns {{ line: number; kind: string; spec: string }[]} specifier 列表
- */
-export function collectSpecifiers(code, inString) {
-  if (inString === undefined || inString === null || typeof inString.length !== "number") {
-    throw new TypeError(
-      "collectSpecifiers(code, inString):inString 必填。请传 lexSource(text).inString —— "
-      + "缺它会让文档串里的 require(\"x\") 被当成真依赖(即本函数退回恒绿)",
-    );
-  }
-  if (inString.length !== code.length) {
-    throw new RangeError(
-      `collectSpecifiers:inString 长度 ${inString.length} 与 code 长度 ${code.length} 不一致`
-      + "(掩码须与 code 同源于一次 lexSource 调用)",
-    );
-  }
-  /** @type {{ line: number; kind: string; spec: string }[]} */
-  const found = [];
-  const seen = new Set();
-  for (const { kind, re } of SPECIFIER_PATTERNS) {
-    // d 标志(hasIndices)取捕获组 1(引号)的精确下标:用 indexOf 反推会在 spec 内含
-    // 相同引号字符时算错位置,而这恰好是文档串的常见形态。
-    const indexed = new RegExp(re.source, `${re.flags.replace(/[gy]/g, "")}dg`);
-    for (const m of code.matchAll(indexed)) {
-      const spec = m[2];
-      const index = m.index;
-      if (spec === undefined || index === undefined) continue;
-      const quoteAt = m.indices?.[1]?.[0];
-      // 引号下标落在字符串内部 → 这是文档串里写的 import 形状,不是真依赖
-      if (quoteAt !== undefined && inString[quoteAt] === 1) continue;
-      const line = code.slice(0, index).split("\n").length;
-      const key = `${line} ${spec}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      found.push({ line, kind, spec });
-    }
-  }
-  return found.sort((a, b) => a.line - b.line);
-}
-
-/**
- * specifier 分类:node 内建 / 相对路径 / 裸包名。
- * @param {string} spec 模块 specifier
- * @returns {"node" | "relative" | "bare"} 分类
- */
-export function classifySpecifier(spec) {
-  if (spec.startsWith("node:")) return "node";
-  if (spec === "." || spec === ".." || spec.startsWith("./") || spec.startsWith("../")) return "relative";
-  return "bare";
-}
-
-/**
- * 相对 specifier 解析为仓库相对 POSIX 路径(纯函数,不碰 fs)。
- * @param {string} fromRel 引用方仓库相对 POSIX 路径
- * @param {string} spec 相对 specifier
- * @returns {string} 目标仓库相对 POSIX 路径(可越过仓库根,此时保留 `../` 前缀)
- */
-export function resolveRelativeSpecifier(fromRel, spec) {
-  const slash = fromRel.lastIndexOf("/");
-  const dir = slash < 0 ? "" : fromRel.slice(0, slash);
-  const segments = `${dir}/${spec}`.split("/");
-  /** @type {string[]} */
-  const stack = [];
-  for (const seg of segments) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") {
-      if (stack.length > 0) stack.pop();
-      else stack.push("..");
-      continue;
-    }
-    stack.push(seg);
-  }
-  return stack.join("/");
-}
-
-/**
- * 求值一条「复制源」表达式,产出候选仓库相对 POSIX 路径。
- *
- * 支持的形态(与仓库现存复制点一一对应,新增形态时在此扩展,不要在调用点写特例):
- * - 字符串字面量:`"test/common/userdata.js"`
- * - `path.join(<root>, "a", "b")` / `join(<root>, 'a', 'b')`:首段为「仓库根别名」时按仓库相对解析
- * - 仓库根别名:`fileURLToPath(new URL('..', import.meta.url))`,或首段的未知标识符(ROOT 约定)
- * - 一层 const 别名:`const checkerPath = join(projectRoot, 'scripts', 'x.mjs')`
- * - for-of 数组展开:`for (const name of LIST) copyFileSync(path.join(ROOT, "scripts", name))`
- * 解析不出(动态列表、os.tmpdir()、多层别名链等)→ 返回 null,由调用方登记为「未静态解析」。
- * @param {string} expr 表达式文本
- * @param {Map<string, string>} constEnv 常量环境
- * @param {Map<string, string>} loopEnv for-of 环境
- * @returns {string[] | null} 候选仓库相对 POSIX 路径(空数组 = 解析到仓库外,不在范围)
- */
-export function resolveCopySource(expr, constEnv, loopEnv) {
-  /**
-   * @param {string} raw 表达式文本
-   * @param {number} depth 递归深度(别名链上限)
-   * @returns {{ segments: string[]; rooted: boolean }[] | null} 候选路径段组合
-   */
-  const step = (raw, depth) => {
-    const text = raw.trim().replace(/^fs\./, "").trim();
-    if (text === "" || depth > 6) return null;
-    // 整体被一对括号包住时才剥外层:用「剥掉尾括号」的正则会顺手吃掉 join(...) 的收尾括号,
-    // 表达式随即配平失败(踩过一次:整棵复制扫描静默返回 0 个副本)
-    if (text.startsWith("(")) {
-      let parenDepth = 0;
-      let end = -1;
-      for (let i = 0; i < text.length; i += 1) {
-        const c = text[i];
-        if (c === "(") parenDepth += 1;
-        else if (c === ")") {
-          parenDepth -= 1;
-          if (parenDepth === 0) {
-            end = i;
-            break;
-          }
-        }
-      }
-      return end === text.length - 1 ? step(text.slice(1, -1), depth + 1) : null;
-    }
-    const quoted = /^(['"])([^'"]*)\1$/.exec(text);
-    if (quoted) {
-      const value = quoted[2];
-      if (value === undefined || value === "") return null;
-      // 字面量路径按仓库相对处理:复制调用里的字面量几乎必然是仓库内路径(仓库外路径会带盘符/绝对前缀)
-      return [{ segments: [value], rooted: true }];
-    }
-    // 仓库根别名:fileURLToPath(new URL('..', import.meta.url)) 一类
-    if (/new URL\(/.test(text) && /import\.meta\.url/.test(text)) return [{ segments: [], rooted: true }];
-    const call = /^(?:path\.)?join\(([\s\S]*)\)$/.exec(text);
-    if (call && call[1] !== undefined) {
-      /** @type {{ segments: string[]; rooted: boolean }[]} */
-      let acc = [{ segments: [], rooted: false }];
-      for (const arg of splitTopLevelArgs(call[1])) {
-        const sub = step(arg, depth + 1);
-        if (sub === null) return null;
-        /** @type {{ segments: string[]; rooted: boolean }[]} */
-        const next = [];
-        for (const base of acc) {
-          for (const s of sub) {
-            const merged = [...base.segments, ...s.segments];
-            if (merged.length > 12) return null;
-            next.push({ segments: merged, rooted: base.rooted || s.rooted });
-          }
-        }
-        if (next.length > MAX_RESOLVED_ALTS) return null;
-        acc = next;
-      }
-      return acc;
-    }
-    if (/^[A-Za-z_$][\w$]*$/.test(text)) {
-      if (constEnv.has(text)) return step(/** @type {string} */ (constEnv.get(text)), depth + 1);
-      const listName = loopEnv.get(text);
-      if (listName !== undefined) {
-        const listInit = constEnv.get(listName);
-        if (listInit === undefined || !listInit.trimStart().startsWith("[")) return null;
-        /** @type {{ segments: string[]; rooted: boolean }[]} */
-        const out = [];
-        for (const member of splitTopLevelArgs(listInit.trim().slice(1, -1))) {
-          const sub = step(member, 0);
-          if (sub === null) return null;
-          out.push(...sub);
-          if (out.length > MAX_RESOLVED_ALTS) return null;
-        }
-        return out;
-      }
-      // 首段(或唯一段)的未知标识符按「仓库根」约定处理(ROOT / projectRoot / repoRoot…)
-      return [{ segments: [], rooted: true }];
-    }
-    return null;
-  };
-  const resolved = step(expr, 0);
-  if (resolved === null) return null;
-  const rels = resolved
-    .filter((a) => a.rooted && a.segments.length > 0)
-    .map((a) => a.segments.join("/"));
-  return [...new Set(rels)];
-}
-
-/**
- * 按顶层逗号切分实参文本(忽略括号/引号内的逗号)。
- * @param {string} text 实参列表文本(不含外层括号)
- * @returns {string[]} 各实参(已 trim)
- */
-function splitTopLevelArgs(text) {
-  /** @type {string[]} */
-  const args = [];
-  let depth = 0;
-  let current = "";
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (ch === '"' || ch === "'" || ch === "`") {
-      const end = skipQuoted(text, i);
-      current += text.slice(i, end);
-      i = end;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") depth += 1;
-    if (ch === ")" || ch === "]" || ch === "}") depth -= 1;
-    if (ch === "," && depth === 0) {
-      args.push(current.trim());
-      current = "";
-      i += 1;
-      continue;
-    }
-    current += ch;
-    i += 1;
-  }
-  if (current.trim() !== "") args.push(current.trim());
-  return args;
 }
