@@ -105,6 +105,12 @@
       "!node_modules/highlight.js/styles/**",
       "!node_modules/**/*.map"
     ],
+    "extraFiles": [
+      {
+        "from": "build-assets/m2w.cmd",
+        "to": "m2w.cmd"
+      }
+    ],
     "win": {
       "target": [
         {
