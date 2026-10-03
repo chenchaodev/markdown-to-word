@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-168 |
-| 下一个可用号 | REQ-169 |
+| 已用最大号 | REQ-169 |
+| 下一个可用号 | REQ-170 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -46,6 +46,7 @@
 | REQ-165 | 沙盒副本机制退役 | 未开工 | 25 个副本里 23 个可删（5 via 只造假数据 + install-smoke 8 份），改「真脚本 + `cwd` 指夹具」；留 A2 两处（必须改写门禁源码）与 tree-mirror（真跑门禁，缺文件当场红，不加判红）。删整套副本闭包机制换白名单式复制点门禁，净减约 905 行，失效方向由 fail-open 翻成 fail-closed。否决：`M2W_ROOT` env、loader 魔法、tree-mirror 判红、npm 装真包。**须在 REQ-164 落地后开工** | REQ-164 收尾后；或复制点数量回升 / per-`via` 断言仍只查 `shared/paths.js` 时重看 | docs/evidence/20261003-111453-顶层目录结构与项目根来源改造调研.md |
 | REQ-167 | 按整体分组重排 CI 脚本顺序 | 未开工 | `verify:ci` 把 `check:coverage-zero:selftest` 排在 `test:coverage` 之前,而该 selftest 声明的契约是「必须紧跟 `test:coverage`」⇒ 链未兑现契约:它读上一轮的陈旧 `coverage-summary.json`,把「真修好了」判成没修。否决:给它加跳过分支(违其声明意图)、单独挪一行(用户裁决并入 CI 整体分组) | 排期重排 `verify:ci` 分组时;或任何一次链在到达 `test:coverage` 之前失败之后 | gates/probe/check-coverage-zero.selftest.mjs:364 |
 | REQ-168 | 安装版转发入口零门禁覆盖 | 待拍板 | 六份文档与官网都已向用户承诺 `m2w.cmd`,但全仓无任何门禁断言它落位 —— `check:install-smoke` 不查该文件、`check:unpacked-smoke` 不经转发器、`check-asar-manifest` 的必需条目不含两个入口(那两项只是漂移校验,gen 与 check 同空仍绿)。`extraFiles` 被删或 `to` 写错 ⇒ 全链仍绿、已装用户的入口静默消失。逐条分析见「分析在哪」 | 下次改动 `build.extraFiles` 或打包产物布局时 | docs/evidence/20261003-180918-命令行exe分发路径调研.md · docs/DEV-GUIDE.md |
+| REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 待拍板 | 用户提出经同意后把安装目录加入 PATH。可行(electron-builder 有 `nsis.include` 口,写 `HKCU\Environment` 不需提权),但本仓无该挂载点,且有四件事必须与它一起做、缺一条就留下「命令找不到」或卸载残留。关键取舍:`spawn` 不能直接拉 `.cmd` 这条**加 PATH 后依然在**,反而让用户误以为能直接 spawn。建议先做开始菜单快捷方式,PATH 是否代做交用户拍板。逐条分析见「分析在哪」 | 下一次改 `build.nsis` 或打包配置时;或用户明确要求代做 PATH | docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
 
 ## 在办
 
