@@ -44,7 +44,6 @@
 | REQ-163 | 库模式（npm 包） | 未开工 | 由 REQ-006 拆出。core 纯度已实测达标但打包面为零：本仓 `private: true`、无 `bin`/`exports`/`types`，`tsconfig.json` 无 `declaration` 键 ⇒ dist 不产 `.d.ts`，对外暴露类型需新增该键。与 MCP 无技术共同点故拆号 | 「是否对外发 npm 包」决策后开工 | docs/adr/ADR-060-多层交付面与headless装配层.md |
 | REQ-164 | 项目根改由 cwd 单一来源 | 未开工 | `ROOT`（`shared/paths.js:20`）改 `process.cwd()` 单一来源。代码 2 行，但连带 **9 处入口守卫**须同改（不只 `check-pointers.mjs:1991`）⇒ 否则守卫永不成立、无输出退 0；另 `check-import-boundary.mjs:241-247` 指令要改写。否决：`--root`、fallback 双分支（违 ADR-037）、env 变量（把响亮的 `ERR_MODULE_NOT_FOUND` 换成静默错根）。等 REQ-161 收尾 | REQ-161 收尾后；或改动 `shared/paths.js` 派生依据时重新评估 | docs/evidence/20261003-111453-顶层目录结构与项目根来源改造调研.md |
 | REQ-165 | 沙盒副本机制退役 | 未开工 | 25 个副本里 23 个可删（5 via 只造假数据 + install-smoke 8 份），改「真脚本 + `cwd` 指夹具」；留 A2 两处（必须改写门禁源码）与 tree-mirror（真跑门禁，缺文件当场红，不加判红）。删整套副本闭包机制换白名单式复制点门禁，净减约 905 行，失效方向由 fail-open 翻成 fail-closed。否决：`M2W_ROOT` env、loader 魔法、tree-mirror 判红、npm 装真包。**须在 REQ-164 落地后开工** | REQ-164 收尾后；或复制点数量回升 / per-`via` 断言仍只查 `shared/paths.js` 时重看 | docs/evidence/20261003-111453-顶层目录结构与项目根来源改造调研.md |
-| REQ-167 | 按整体分组重排 CI 脚本顺序 | 未开工 | `verify:ci` 把 `check:coverage-zero:selftest` 排在 `test:coverage` 之前,而该 selftest 声明的契约是「必须紧跟 `test:coverage`」⇒ 链未兑现契约:它读上一轮的陈旧 `coverage-summary.json`,把「真修好了」判成没修。否决:给它加跳过分支(违其声明意图)、单独挪一行(用户裁决并入 CI 整体分组) | 排期重排 `verify:ci` 分组时;或任何一次链在到达 `test:coverage` 之前失败之后 | gates/probe/check-coverage-zero.selftest.mjs:364 |
 | REQ-168 | 安装版转发入口零门禁覆盖 | 待拍板 | 六份文档与官网都已向用户承诺 `m2w.cmd`,但全仓无任何门禁断言它落位 —— `check:install-smoke` 不查该文件、`check:unpacked-smoke` 不经转发器、`check-asar-manifest` 的必需条目不含两个入口(那两项只是漂移校验,gen 与 check 同空仍绿)。`extraFiles` 被删或 `to` 写错 ⇒ 全链仍绿、已装用户的入口静默消失。逐条分析见「分析在哪」 | 下次改动 `build.extraFiles` 或打包产物布局时 | docs/evidence/20261003-180918-命令行exe分发路径调研.md · docs/DEV-GUIDE.md |
 | REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 待拍板 | 用户提出经同意后把安装目录加入 PATH。可行(electron-builder 有 `nsis.include` 口,写 `HKCU\Environment` 不需提权),但本仓无该挂载点,且有四件事必须与它一起做、缺一条就留下「命令找不到」或卸载残留。关键取舍:`spawn` 不能直接拉 `.cmd` 这条**加 PATH 后依然在**,反而让用户误以为能直接 spawn。建议先做开始菜单快捷方式,PATH 是否代做交用户拍板。逐条分析见「分析在哪」 | 下一次改 `build.nsis` 或打包配置时;或用户明确要求代做 PATH | docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
 
@@ -54,8 +53,6 @@
 
 | 号 | 标题 | 状态 | 为什么停在哪 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-161 | 多层交付面总规划 | 在办 | 步序 1 已完成并提交（4 个提交）：`src/convert/` 装配层六件，实测零 electron、零 main 反向依赖；`output-skeleton.ts` 一分为二为 `run.ts` + `electron-side.ts`；层向门禁补两条 scope 并改 allow-list，造未登记顶层实测判红；`test/convert/` 段在真 node 子进程跑通 docx。步序 2/3 见 REQ-045/REQ-162 | 整体完成标准 8 条划完（步序 1~3 全落地） | docs/adr/ADR-060-多层交付面与headless装配层.md · docs/evidence/20261003-120000-平台耦合面盘点与跨平台成本落点.md |
-| REQ-162 | 本地 MCP 模式 | 在办 | 由 REQ-006 拆出。docx-only + mermaid 显式降级：MCP 触发点是 mermaid 不是 pdf（`mermaid-service.ts:362` 顶层 `app.on` 使 import 即需宿主）。不注入 resolver 即零 Electron、窗口收口坑自动消失，降级须进返回值对 agent 可见。每次 call 新 ctx + 强制 deadline（串行队列，MCP 无「关窗口」出口） | 步序 3 完工后 | docs/adr/ADR-060-多层交付面与headless装配层.md |
 
 ## 已完成
 
@@ -181,6 +178,9 @@
 | REQ-159 | 形态不匹配的指针静默通过 | 已完成 | 已加「只分类不判定」一档并自报；按 ADR-058 收窄到首字符非法，分类数 113→50，自检夹具增至 20 条。收窄造出的「中段字符非法」新洞已记进 ADR-058。 | 决定是否扩 REF_FORMS 首字符集、还是另加一档「未匹配形态自报」（与代码扩展名那档同法，但成因不同：那档是主动摘的，这一族是正则没匹配上）时 | 无 |
 | REQ-160 | 列数不符的号行静默跳过 | 已完成 | 错位行数已推进结论行 gaps，与三族指针同一处置；仍只出声不判红(解析失败非违规)。夹具钉住:错位行同时是重号仍判绿，证明它退出全部台账判据。 | 决定是否把列数不符从「提示」升为判红，还是像 ADR-057 那样另加一档自报 | 无 |
 | REQ-166 | 命令行与 MCP 缺安装版可执行入口 | 已完成 | 复用已装宿主：`RunAsNode` fuse 已开启、asar 对 fs 透明 ⇒ 不引第二套运行时/打包器/依赖。真实解包产物实测 docx·pdf·MCP 三形态全通,pdf 公式确认渲染 | Electron 大版本升级改了 fuse 默认值,或改动 `build.extraFiles` / 打包产物布局时 | docs/adr/ADR-061-多层交付面的已安装入口.md · docs/evidence/20261003-180918-命令行exe分发路径调研.md（事实基线）· docs/evidence/20261003-223213-安装版命令行入口规划与实施复测.md（规划全文与实施复测）|
+| REQ-161 | 多层交付面总规划 | 已完成 | 装配层六件 + CLI/MCP 两个交付面 + 层向门禁四条跨平台期权判据(各配负探针,红→撤回→绿三步实跑)全落地;8 条整体完成标准逐条划完并附证据。载体曾流失,判据原文已从 git 取回入档 | 整体完成标准 8 条划完（步序 1~3 全落地） | docs/adr/ADR-060-多层交付面与headless装配层.md · docs/evidence/20261004-000218-多层交付面总规划原文.md（完成标准清单的权威原文） |
+| REQ-162 | 本地 MCP 模式 | 已完成 | 三条契约(docx-only、降级进返回值、每次 call 新 ctx 与 deadline)全部兑现;真实客户端经已安装入口实测两帧握手、产物正常 | 步序 3 完工后 | docs/adr/ADR-060-多层交付面与headless装配层.md |
+| REQ-167 | 按整体分组重排 CI 脚本顺序 | 已完成 | 28 步按产物依赖重排为静态判定/构建/执行三组,实质只移一条(消费覆盖率数据的 selftest 归第三组)。修正定性:它从来不是硬红,而是 CI 上正路径零覆盖、本地残留数据会拿陈旧数据判绿 | 排期重排 `verify:ci` 分组时;或任何一次链在到达 `test:coverage` 之前失败之后 | gates/probe/check-coverage-zero.selftest.mjs:364 |
 
 ## 已作废
 

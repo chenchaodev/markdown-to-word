@@ -44,6 +44,18 @@
 | `node dist/mcp/index.js` | AI 助手(MCP) | 纯 node,手写最小 JSON-RPC 2.0 over stdio(不引官方 SDK)。只暴露 `convert_markdown`(docx-only);`degraded: ["mermaid"]` 必须出现在返回值里 —— 降级对 agent 不可见即等于造了一台「同样输入偶尔产出不同」的工具。接入示例见 [MCP 接入](MCP.md) |
 | `electron .` | 图形界面 | 唯一的全功能形态(pdf + mermaid) |
 
+**`verify:ci` 按「消费什么产物」分三组**，不按模块归属 —— 判据是依赖关系不是目录归属，所以住在 `gates/probe/` 的某一步也会因为消费覆盖率产物而落在第三组：
+
+| 组 | 判据 | 成员 |
+| --- | --- | --- |
+| A 静态判定 | 只读源码与文本，不消费 `dist/`、不写产物 | 契约与依赖声明 · import 层向 · 变换分派 · 测试编号 · 临时目录清理 · 固定 action · 归档索引 · 文档指针 · CHANGELOG 与发布说明（各含各自的 selftest） |
+| B 构建 + 代码质量 | 产出或消费 `dist/` | `build` → 产物侧层向 → `typecheck` → `lint` |
+| C 执行与判定 | 真跑测试、真跑产物判定、消费覆盖率数据 | 覆盖率 → 零覆盖判定 → 零覆盖判据自检 → 夹具漂移 → 冒烟 → 几何 |
+
+三条红线：`typecheck` 必在 `build` 后（测试树 `import dist/**`，放前面会 typecheck 到过期的类型面）；`check:geometry` 必最后（采样本次 `dist/renderer`）；`REQUIRED_CI_STEPS` 那十一步的**相对顺序**不可破（`gates/repo/check-ci-contract.mjs` 钉的就是它，用逐个 `indexOf` 只钉相对次序、不钉相邻）。
+
+**分组不是注释美学，但也不是为了让链从红变绿。** 本轮重排的实质改动只有一条：覆盖率零覆盖判据的 selftest 原先落在 A 组，而它消费覆盖率汇总文件——那个文件在干净检出里不存在（`output/` 是生成物）。它在干净检出里**本来就是绿的**：那条真实仓库用例是显式两分支设计，无汇总文件时走另一支并断言「非零 + 点名缺失的数据源」。真实收益有两条：**CI 上那条用例第一次会走正分支**，CLI 适配层的正路径不再零覆盖；**本地验的是本次数据**，而不是 `output/coverage/` 里的陈旧残留——那会让「真修好了」被拿上一次的结果判成没修。
+
 `build.files` 与 asar 顶层清单未因此改动(转发器不进归档,只经 `extraFiles` 落在安装根目录);npm 包仍是 `private`、无 `bin`。**前两个交付面已随安装包分发**:安装根目录下有一个转发器 `m2w.cmd`,与 `MarkdownToWord.exe` 并列,运行时设 `ELECTRON_RUN_AS_NODE=1` 后拉应用自身的 exe 去跑 `app.asar` 内的 `dist/cli/index.js`(默认)或 `dist/mcp/index.js`(由 `M2W_ENTRY` 切换)—— 上面两条命令在源码检出里成立,装版用户改用转发器,调用方式见 [命令行用法](CLI.md) 与 [MCP 接入](MCP.md)。转发器不引第二套运行时、不引打包器、不新增依赖,故装版调用的就是本仓那份转换代码,与上面两条命令同一条路径。
 
 **安装版入口的验证方式**:**无 npm script、无门禁覆盖**(见「门禁接入点」表对应行),目前只有手动验证。在解包产物上直接跑转发器并核对产物与退出码:
