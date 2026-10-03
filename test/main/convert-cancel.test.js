@@ -25,7 +25,7 @@ import {
   convertImpl,
   createConvertContext,
 } from "../../dist/main/converter/index.js";
-import { ConvertCanceledError } from "../../dist/main/converter/context.js";
+import { ConvertCanceledError } from "../../dist/convert/context.js";
 import { isConversionCanceled } from "../../dist/core/cancel.js";
 import { backupSettings } from "../common/settings.js";
 import { removeTree } from "../common/temp-resource.js";

@@ -5,7 +5,7 @@
  * 为何需要它:`listen(0)` 让 OS 随机分配端口,而本机实测该分配会落到 6491..7095
  * 这类低位窗口(不只在高端区),窗口里含 `fetch` **在拨号之前**就拒绝的 WHATWG bad port
  * 名单端口(实测 600 次采样命中 8 次,约 1.3%)。一旦命中,`fetch` 连一个包都不发 →
- * 真实 HTTP 客户端(`src/main/services/image-downloader.ts` 的全局 fetch、
+ * 真实 HTTP 客户端(`src/convert/image-downloader.ts` 的全局 fetch、
  * `gates/supply/supply/sca-audit.mjs` 的 `fetchImpl` 默认取全局 fetch)按契约归失败 →
  * 被测侧的「server 收到过请求」类断言恒为 0 而偶发红,且**不缩短任何等待也无重试可加**
  * (请求根本没出去,谈不上超时)。故凡是要让真实客户端连进来的测试 server,

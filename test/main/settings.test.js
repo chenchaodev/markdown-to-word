@@ -721,7 +721,7 @@ export async function run() {
     // 那三项生产零写入者,接进生产映射就成了「设了也不生效」的假开关(步 01 刚清掉的
     // 那类静默失效)。它们由 core convert() 的第 4 参 ConvertTestOverrides 承接。
     const { buildConvertContext, TEST_ONLY_CONTEXT_KEYS } = await import(
-      "../../dist/main/converter/context.js"
+      "../../dist/convert/context.js"
     );
     const builtCtx = await buildConvertContext({
       baseDir: ".",

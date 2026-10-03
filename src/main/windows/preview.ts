@@ -16,7 +16,7 @@ import { convert } from "../../core/convert.js";
 import { escapeHtml } from "../../core/util/text-escape.js";
 import { formatWarning, t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";
-import { createImageResolver } from "../services/image-downloader.js";
+import { createImageResolver } from "../../convert/image-downloader.js";
 import { baseNameFromMdPath, errorMessage } from "../ipc/logic.js";
 import { loadSettings } from "../persist/settings.js";
 import { loadUiState, pickWindowBounds, saveUiState } from "../persist/ui-state.js";

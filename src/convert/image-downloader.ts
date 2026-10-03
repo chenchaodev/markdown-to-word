@@ -1,5 +1,5 @@
 /**
- * 图片解析器(convert context.imageResolver 的 main 侧实现):
+ * 图片解析器(convert context.imageResolver 的装配层实现):
  * - 本地相对路径:仅允许源文档目录或显式可信根目录内,realpath 前后复核边界
  * - http(s):下载 Buffer(默认 10s 超时,timeoutMs 可注入;仅接受 2xx),失败返回 null
  * - 其余(data: 等):返回 null
@@ -25,9 +25,9 @@ import path from "node:path";
 import dns from "node:dns/promises";
 import net from "node:net";
 // 契约单源:ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
-import type { ImageResolver, ImageResolverRequest } from "../../core/image/image-resolver.js";
+import type { ImageResolver, ImageResolverRequest } from "../core/image/image-resolver.js";
 // 契约单源:本地图片可信边界与 precheck/PDF 规则共用 core/pipeline/precheck.ts 策略
-import { createLocalImagePathPolicy } from "../../core/markdown/image-path-policy.js";
+import { createLocalImagePathPolicy } from "../core/markdown/image-path-policy.js";
 
 // 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 const HTTP_TIMEOUT_MS = 10_000;

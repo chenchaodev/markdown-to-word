@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 图片解析器段(src/main/services/image-downloader.ts 纯逻辑层,不起 Electron 窗口):
+ * 图片解析器段(src/convert/image-downloader.ts 纯逻辑层,不起 Electron 窗口):
  * - 本地读取:源目录/显式可信根内相对路径可读;绝对、UNC、越界与链接越界拒绝
  * - http 下载:200 成功返回内容一致的 Buffer;404 / 连接拒绝 → null
  * - 同 URL 缓存:并发去重(在途 Promise 共享,仅成功结果缓存);失败(404/超时)不缓存,
@@ -22,7 +22,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import http from "node:http";
-import { createImageResolver } from "../../dist/main/services/image-downloader.js";
+import { createImageResolver } from "../../dist/convert/image-downloader.js";
 import { formatWarning } from "../../dist/core/i18n.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { prepareForConvert } from "../common/convert-helpers.js";

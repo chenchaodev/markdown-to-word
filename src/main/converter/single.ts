@@ -12,7 +12,7 @@ import type { ConvertWarning } from "../../core/i18n.js";
 import { t } from "../../core/i18n.js";
 import { loadSettings, type AppSettings } from "../persist/settings.js";
 import { MARKDOWN_EXT_RE } from "../../convert/paths.js";
-import { createConvertContext, throwIfCanceled, type ConvertContext } from "./context.js";
+import { createConvertContext, throwIfCanceled, type ConvertContext } from "../../convert/context.js";
 import { prepareMarkdown } from "./preprocess.js";
 import { emitConvertedArtifact } from "./output-skeleton.js";
 

@@ -9,7 +9,7 @@ import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { BatchItem, BatchProgressInfo, BatchResult } from "../../core/ipc-contract.js";
 import { loadSettings } from "../persist/settings.js";
-import { createConvertContext, type ConvertContext } from "./context.js";
+import { createConvertContext, type ConvertContext } from "../../convert/context.js";
 import { isConversionCanceled } from "../../core/cancel.js";
 import { convertImpl, runAfterConvert } from "./single.js";
 

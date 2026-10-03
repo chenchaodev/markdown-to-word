@@ -13,7 +13,7 @@
  * 注入形态与两个消费者的实际需求对齐:
  * - `realpathSync` **必填**:pdf 图片规则(core/pdf/rules/image.ts)与转换预检
  *   (core/pipeline/precheck.ts)都只做同步判定;
- * - `realpath` **可选**:仅 main 侧下载器(core → main/services/image-downloader.ts)
+ * - `realpath` **可选**:仅装配层下载器(core → convert/image-downloader.ts)
  *   在 IO 前后各判一次。未注入时 `resolve` 按既有 `error` 字段返回失败结果而非抛错,
  *   消费者(image-downloader)本就检查 `resolution.error`,故降级路径是自洽的。
  */

@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * 图片请求契约与缓存预算验收(位于 test/main/ = 主进程层;被测
- * src/main/services/image-downloader.ts,经 dist 直连,不起 Electron 窗口):
+ * src/convert/image-downloader.ts,经 dist 直连,不起 Electron 窗口):
  * - 请求契约(request = signal/maxBytes/timeoutMs)在本地与外链两条路径都生效:
  *   maxBytes 超出即中止(本地 stat 预检 + 读后复核、http Content-Length 预检 +
  *   流式累计)、timeoutMs 覆盖 DNS/连接/读取、已取消的请求不再发起 IO;
@@ -22,7 +22,7 @@ import {
   MAX_CACHE_BYTES,
   MAX_CACHE_ENTRIES,
   MAX_RESPONSE_BYTES,
-} from "../../dist/main/services/image-downloader.js";
+} from "../../dist/convert/image-downloader.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { closeTestServer, listenFetchablePort } from "../common/http-server.js";
 

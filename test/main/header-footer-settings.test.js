@@ -92,7 +92,7 @@ export async function run() {
     assert(r5.headerFooter.footerEnabled === true && r5.headerFooter.headerText === "内部资料", "patch 单字段非法应回退默认且不影响其他字段");
 
     // ---- 4. resolveHeaderLogo:读取失败 → 警告 + undefined;非 custom/空路径 → 不读 ----
-    const ctxMod = await import("../../dist/main/converter/context.js");
+    const ctxMod = await import("../../dist/convert/context.js");
     const warnings = /** @type {import("../../src/core/i18n.js").KeyedWarning[]} */ ([]);
     const missing = await ctxMod.resolveHeaderLogo(
       { ...DEFAULT_HEADER_FOOTER, headerMode: "custom", headerLogoPath: "Z:\\no\\such\\logo.png" },

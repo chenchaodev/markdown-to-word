@@ -17,7 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import { updateSettings } from "../../dist/main/persist/settings.js";
 import { createConvertContext, mergeConvertImpl } from "../../dist/main/converter/index.js";
-import { ConvertCanceledError } from "../../dist/main/converter/context.js";
+import { ConvertCanceledError } from "../../dist/convert/context.js";
 import { isConversionCanceled } from "../../dist/core/cancel.js";
 import { backupSettings } from "../common/settings.js";
 import { removeTree } from "../common/temp-resource.js";

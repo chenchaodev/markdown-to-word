@@ -38,7 +38,7 @@ import { parseFrontmatter } from "../../dist/core/pipeline/frontmatter.js";
  * 测试侧的宿主文件系统能力(REF-025 #07 注入点)。
  *
  * core 的 pdf 渲染路径不 import node:fs —— 其两次读(图片路径边界的 realpathSync、
- * KaTeX CSS 读取)必须由调用方注入。生产侧由 main/converter/context.ts 从 node:fs
+ * KaTeX CSS 读取)必须由调用方注入。生产侧由 convert/context.ts 从 node:fs
  * 构造;测试侧用真磁盘实现,这样夹具里的真实文件与符号链接行为与生产一致
  * (测试夹具本就是磁盘上的真文件,用假的 realpath 反而不测真东西)。
  *

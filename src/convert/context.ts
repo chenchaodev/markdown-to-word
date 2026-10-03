@@ -9,21 +9,26 @@
 import { readFileSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ConvertContext as CoreConvertContext } from "../../core/convert.js";
-import type { ConvertWarning } from "../../core/i18n.js";
-import type { ImageResolver } from "../../core/image/image-resolver.js";
-import { sniffImageType } from "../../core/image/image-type.js";
-import { headerLogoLoadFailedWarning } from "../../core/image/image-warning.js";
-import type { HeaderLogoData } from "../../core/docx/chrome.js";
-import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
-import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK, type HeaderFooterSettings, type WatermarkSettings } from "../../core/settings/settings-defaults.js";
-import type { MermaidResolver } from "../../core/markdown/mermaid.js";
+import type { ConvertContext as CoreConvertContext } from "../core/convert.js";
+import type { ConvertWarning } from "../core/i18n.js";
+import type { ImageResolver } from "../core/image/image-resolver.js";
+import { sniffImageType } from "../core/image/image-type.js";
+import { headerLogoLoadFailedWarning } from "../core/image/image-warning.js";
+import type { HeaderLogoData } from "../core/docx/chrome.js";
+import type { DocMetadata } from "../core/pipeline/frontmatter.js";
+import {
+  DEFAULT_HEADER_FOOTER,
+  DEFAULT_WATERMARK,
+  type AppSettings,
+  type HeaderFooterSettings,
+  type WatermarkSettings,
+} from "../core/settings/settings-defaults.js";
+import type { MermaidResolver } from "../core/markdown/mermaid.js";
 // 取消错误码单源于 core/cancel.ts:本层 ConvertCanceledError 继承之,
 // 故 main 取消与 core 渲染期取消同码(ERR_CONVERSION_CANCELLED);消费方
 // (IPC 取消分支、批量汇总)一律用 isConversionCanceled 判定,不认类引用。
-import { ConversionCanceledError } from "../../core/cancel.js";
-import { createImageResolver } from "../services/image-downloader.js";
-import type { AppSettings } from "../persist/settings.js";
+import { ConversionCanceledError } from "../core/cancel.js";
+import { createImageResolver } from "./image-downloader.js";
 
 /** 批量共享 imageResolver:按解析 baseDir + trusted roots 组合键缓存,HTTP 去重缓存跨文件生效。
  *  容量上限(超限淘汰最早条目)——长会话跨多目录使用时不再单调增长。 */
@@ -81,7 +86,7 @@ export function createConvertContext(options: { deadline?: number } = {}): Conve
 }
 
 /**
- * 转换已取消(main 层闸门抛出)。继承 core 的取消错误类型:
+ * 转换已取消(装配层闸门抛出)。继承 core 的取消错误类型:
  * 错误码与渲染期取消一致(ERR_CONVERSION_CANCELLED),name 保持本层历史取值
  * (GUI 文案与既有测试按 name 判定),两者可互相替换。
  */
@@ -121,7 +126,7 @@ export function getImageResolver(baseDir: string, options: ImageResolverOptions 
 }
 
 /**
- * 页眉 logo 文件读取(main 层唯一 IO 点,core 零 IO):
+ * 页眉 logo 文件读取(装配层唯一 IO 点,core 零 IO):
  * 仅 headerMode=custom 且配置了路径时读取;魔数嗅探结果原样传递
  * (webp/null 的逐管线降级与告警在 core 侧 render.ts 统一处理);
  * 读取失败 → keyed 警告 + undefined(降级为无 logo,不中断转换)。
@@ -144,7 +149,7 @@ export async function resolveHeaderLogo(
  * settings → core convert() 上下文映射收敛:
  * convertImpl / mergeConvertImpl / openPreviewWindow 三处统一经此构造,防止
  * pageSetup/typography/breakBeforeH1/toc/imageResolver 逐字重复导致漂移。
- * 改为 async——页眉 logo 需读文件(main 层 IO),三处调用方均为 async 上下文,
+ * 改为 async——页眉 logo 需读文件(装配层 IO),三处调用方均为 async 上下文,
  * await 透传即可。katexDir 由调用方(main 入口层)传入:getKatexDir()(现居
  * resource-dirs.ts)经 electron app.getAppPath() 计算(保证 dev/打包一致),
  * 本 helper 不依赖 electron app,convertImpl 可脱离 Electron 直测(docx 走 MathML
@@ -163,7 +168,7 @@ export interface BuildConvertContextOptions {
   /** markdown 文件所在目录(图片相对路径基准) */
   baseDir: string;
   /**
-   * 本次转换的取消上下文(main 层 ConvertContext):其 signal/deadline 透传给
+   * 本次转换的取消上下文(装配层 ConvertContext):其 signal/deadline 透传给
    * core,使「用户取消 / 关窗放弃 / 时间上限」能到达渲染层检查点与异步回调。
    * 缺省(预览等无取消通道的调用方)则 core 侧无外部取消,行为不变。
    */

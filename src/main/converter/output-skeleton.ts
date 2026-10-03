@@ -41,7 +41,7 @@ import {
   getImageResolver,
   throwIfCanceled,
   type ConvertContext,
-} from "./context.js";
+} from "../../convert/context.js";
 
 /** 骨架的文档面入参:一段 markdown + 来源路径 + 可选基名 + 解析基准目录/可信根 */
 export interface OutputSkeletonDoc {
