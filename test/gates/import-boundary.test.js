@@ -6,12 +6,12 @@
  *
  * 双侧复核(同一套规则分别落在两侧,任一侧漂移都要红):
  * - src 源文本侧:src/**\/*.{ts,cts} 的 bare import 与 package.json 声明求差、
- *   层向规则、core 的 node: 内建白名单;
+ *   层向规则、层向**文本**判据、core 的 node: 内建白名单;
  * - dist 产物侧:dist/**\/*.{js,cjs} 的同一套判定。产物侧多两处真实差异 ——
  *   CommonJS 产物(preload.cjs)走 require 而非 import、type-only 已被编译期
  *   擦除(所以指向 main 的反向引用在产物侧天然不出现 —— 产物侧看不到,只能靠 src 侧断言)。
  *
- * 三层断言:
+ * 四层断言:
  * 1. 声明事实(读文本,不调被测实现):jszip 必须在 dependencies 且不在
  *    devDependencies;9 个传递依赖按 package-lock 实际版本钉死;check:boundary
  *    已入 verify:ci 且紧随 check:contract;ASAR 生产依赖判定里的每个
@@ -23,6 +23,10 @@
  *    夹具通路本身有效(否则负向用例可能只是「脚本跑不起来」)。
  * 3. 独立复核(测试内自带极简 import 抽取器,与被测实现无共享代码):直接从
  *    文本重算逐条层向不变量(含 src/ 顶层登记事实)+ 生产依赖覆盖,避免「用被测实现证明被测实现」。
+ * 4. (9) 组:层向文本判据(LAYER_TEXT_RULES)的两条新规则 + `--flavor dist` 的判红方向。
+ *    与 2 的分工:2 验「import 了什么」,9 验「文件里出现了什么」;9 的每条新规则都跑满
+ *    「构造 ⇒ 判红 ⇒ 撤回 ⇒ 复绿」,并对 `--flavor dist` 造合成违例(2/3 只跑真实 dist 的绿支,
+ *    恒绿与「有判据但从不变红」在那两处不可区分)。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -34,16 +38,21 @@ import {
   FLAVORS,
   HOST_PROVIDED_RUNTIME,
   LAYER_RULES,
+  LAYER_TEXT_RULES,
   RESOURCE_ONLY_DEPENDENCIES,
   SRC_TOP_LAYERS,
+  WINDOWS_ONLY_ENV_VARS,
+  WINDOWS_ONLY_EXECUTABLES,
   analyze,
   analyzeSrcTopLayers,
   analyzeTreeBoundaries,
   classifySpecifier,
   collectImports,
+  findTextLayerViolations,
   findUnregisteredSrcLayers,
   isTypeOnlyClause,
   main as boundaryMain,
+  selfCheckTextLayerRules,
   selfCheckTreeLayout,
 } from "../../gates/repo/check-import-boundary.mjs";
 import { REQUIRED_ENTRIES } from "../../gates/artifacts/check-asar-manifest.mjs";
@@ -349,6 +358,20 @@ export async function run() {
                 `${label}:convert 装配层不得 import ${layer} 层(${file} → ${spec});消费面一律在 convert 之上`,
               );
             }
+            // 层向 7b:convert 是四个交付面共用的无宿主装配单元,自身不得 import electron
+            // (ADR-060 后果 1 明文)。不靠「core 不 import 它」蕴含 —— core 与 convert
+            // 是两棵树,各自独立判。
+            if (file.startsWith("convert/")) {
+              assert(spec !== "electron", `${label}:convert 不得 import electron(${file} → ${spec})`);
+            }
+            // 层向 7c:convert 不得解析到 src/ 之外(按解析结果判,与文件深度无关)。
+            // 独立实现只用 layerOf 的结果首段 —— 与被测实现的 layer:.. 形态同义但各写各的。
+            if (file.startsWith("convert/") && kind === "relative") {
+              assert(
+                layerOf(file, spec) !== "..",
+                `${label}:convert 不得逃出 src/(${file} → ${spec} 解析为 ${layerOf(file, spec)}/…)`,
+              );
+            }
             // 层向 8:cli 是进程外交付面,renderer 是 GUI 面 —— 引它会把 Electron 拖进纯 node 侧
             if (file.startsWith("cli/") && kind === "relative" && layerOf(file, spec) === "renderer") {
               assert(false, `${label}:${file} 不得 import renderer 层 ${spec}(cli 是进程外交付面)`);
@@ -390,6 +413,8 @@ export async function run() {
       for (const id of [
         "core-no-host",
         "convert-no-gui",
+        "convert-no-host",
+        "convert-no-outside-src",
         "core-no-upward",
         "renderer-no-main",
         "preload-no-main",
@@ -1083,6 +1108,414 @@ export async function run() {
         `真实仓库自检应零问题,实际 ${realLayout.length} 项:${realLayout.slice(0, 3).join(" | ")}`,
       );
       console.log("[ok] import-boundary:层向 allow-list 断言通过(真实 src 零未登记 / 预登记 convert 与 cli / 含 omega/ 的合成树判红并点名 / 已登记与纯文件不误伤 / 真实仓库自检零问题)");
+    }
+
+    // ============ (9) 层向文本判据的两条新规则 + 产物侧判红方向(ADR-060 第 9 / 第 4 条)============
+    // 与 (5) 的分工:(5) 验「import 了什么」,本组验「文件里出现了什么」。判据形态不同
+    // (LAYER_RULES 走 specifier,LAYER_TEXT_RULES 走抹注释后的源码文本),故分表(理由见
+    // 被测模块里两张表的分表注释)。它们守的是 ADR-060 第 9 条那四条跨平台期权里**尚未
+    // 被任何规则覆盖**的两条:不 import app.getPath · 不引入 Windows 专属 API。
+    //
+    // 每条新规则都按「构造 ⇒ 判红 ⇒ **撤回 ⇒ 复绿**」四步走完,不是只跑红支:
+    // 只做到红支证明的是「判红存在」,补上复绿才排除「它红得像样但理由是别的」。
+    // 9c 另证伪「--flavor dist 是死代码 / 恒绿」——(2) 与 (3) 只跑过真实 dist 的绿支。
+    {
+      // 9a. 规则表形态:两条文本判据都在,且 scope 覆盖新层三棵树
+      for (const id of ["headless-no-app-getpath", "headless-no-windows-only"]) {
+        assert(
+          LAYER_TEXT_RULES.some((r) => r.id === id),
+          `层向文本判据表缺 ${id}`,
+        );
+      }
+      for (const id of ["headless-no-app-getpath", "headless-no-windows-only"]) {
+        const rule = LAYER_TEXT_RULES.find((r) => r.id === id);
+        assert(rule !== undefined && rule.scope === "headless-faces", `${id} 的 scope 应是 headless-faces`);
+      }
+
+      // 9b. 两条新规则的双向探针(红 → 撤回 → 绿)。
+      // 夹具刻意用**真实命名形态**(convert/paths.ts、cli/options.ts…):判据按相对路径
+      // 前缀匹配 scope,换个假名字就测不到「这个 scope 到底覆不覆盖这棵树」。
+      // 撤回步只改那一个文件里的一行,其余字节不动 —— 复绿因此只能由「撤回」解释。
+      /** @type {{ label: string; pkg: unknown; violating: Record<string, string>; legal: Record<string, string>; pattern: RegExp }[]} */
+      const textCases = [
+        {
+          label: "新层向宿主问路径(app.getPath)",
+          pkg: { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          violating: {
+            "convert/paths.ts": 'import { app } from "electron";\nexport const dir = app.getPath("userData");\n',
+          },
+          // 撤回:路径改为入参(ADR-060 的四个注入点之一),同时 electron 的 import 一并撤掉
+          legal: {
+            "convert/paths.ts": "export function dir(injected: string): string {\n  return injected;\n}\n",
+          },
+          pattern: /convert\/paths\.ts:2 调用 Electron app 的路径解析「app\.getPath\(」违反层向规则 headless-no-app-getpath/,
+        },
+        {
+          label: "新层读 Windows 专属环境变量(%APPDATA%)",
+          pkg: { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          violating: {
+            "cli/options.ts": 'export const base = process.env.APPDATA;\n',
+          },
+          // 撤回:换成跨平台存在的 os.homedir()(POSIX 与 macOS 都有 HOME)
+          legal: {
+            "cli/options.ts": 'import os from "node:os";\nexport const base = os.homedir();\n',
+          },
+          pattern: /cli\/options\.ts:1 读 Windows 专属环境变量「APPDATA」违反层向规则 headless-no-windows-only/,
+        },
+      ];
+      for (const item of textCases) {
+        // 构造 ⇒ 判红
+        const bad = createSandbox(item.pkg, item.violating);
+        track(bad.dir);
+        const redResult = await runCli(["--src", bad.srcDir, "--package", bad.pkgPath]);
+        assertFailure(redResult, item.pattern, `${item.label}(构造后)`);
+        // 撤回 ⇒ 复绿(同形状沙盒,只把那一个文件换成合法写法)
+        const good = createSandbox(item.pkg, item.legal);
+        track(good.dir);
+        const greenResult = await runCli(["--src", good.srcDir, "--package", good.pkgPath]);
+        assert(
+          greenResult.code === 0,
+          `${item.label} 撤回后必须复绿,实际 ${greenResult.code}:${greenResult.output}`,
+        );
+        // 结论行本身会提到两条新规则的 id(那是覆盖度的声明,不是判红),
+        // 故此处只能按 [boundary:fail] 行判 —— 否则这条断言恒红。
+        assert(
+          !greenResult.output.includes("[boundary:fail]"),
+          `撤回后不得有任何 boundary:fail 行:${greenResult.output}`,
+        );
+      }
+
+      // 9b-2. 合法形态必须绿(正向锚点:否则上面的红可能只是「脚本跑不起来」)
+      // 刻意放四种跨平台正当写法:POSIX 环境变量、非 Windows 子进程、platform 守卫、
+      // 以及 core 里正当的 Windows 语义(image-path-policy 的符号链接逃逸判定,
+      // ADR-012 的承重逻辑 —— 判据按层而非按全仓施加就是为了不误伤它)。
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } },
+          {
+            "cli/options.ts": 'export const home = process.env.HOME;\n',
+            "convert/run.ts": 'import { spawnSync } from "node:child_process";\nexport const r = spawnSync("git", ["status"]);\nif (process.platform === "win32") console.log(r);\n',
+            "core/markdown/image-path-policy.ts": 'import path from "node:path";\nexport const abs = path.win32.isAbsolute("C:/x");\n',
+            // 说明性注释里出现 app.getPath 不得判红(它是纪律的书面来源,不是违反)
+            "convert/delivery-settings.ts": "/**\n * GUI 的 loadSettings 经 app.getPath(\"userData\"),需 Electron 宿主。\n */\nexport const n = 1;\n",
+          },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(result.code === 0, `四种跨平台正当写法不得误伤,实际 ${result.code}:${result.output}`);
+      }
+
+      // 9b-3. 原语级双向断言(不经 CLI):把「撤回后复绿」也钉在被测原语上,
+      // 使 CLI 层将来若换了通路,这一层仍然独立地证明规则有牙齿。
+      for (const file of ["convert/paths.ts", "cli/options.ts", "mcp/tools.ts"]) {
+        assert(
+          findTextLayerViolations('const dir = app.getPath("userData");\n', file).length === 1,
+          `原语层:${file} 里的 app.getPath 应命中一次(漏检即恒绿,正是本条要消灭的失效形态)`,
+        );
+        assert(
+          findTextLayerViolations("const dir = injectedDir;\n", file).length === 0,
+          `原语层:${file} 里的合法写法应零命中(恒红同样是失效)`,
+        );
+      }
+      // 作用域对照:同一条形态在 main/ 判绿(main 层有正当的 app.getPath 用途)
+      assert(
+        findTextLayerViolations('const p = app.getPath("userData");\n', "main/persist/settings.ts").length === 0,
+        "main 层不受 headless 文本判据约束(main 层有正当的 app.getPath 用途)",
+      );
+
+      // 9c. 产物侧判红方向:证伪「--flavor dist 是死代码 / 恒绿」。
+      // (2)(3) 只跑真实 dist 的绿支,恒绿与「有判据但从不变红」在这两处不可区分。
+      // 三条夹具分别覆盖 dist 侧独有的两种可见性:cjs 的 require() 形态、
+      // .js 产物里被擦除的类型、以及两条新规则在产物形态下同样生效。
+      /** @type {{ label: string; files: Record<string, string>; pattern: RegExp }[]} */
+      const distRedCases = [
+        {
+          // cjs require:这条形态**只在** dist 侧可见(src 侧 .cts 的 import 写法
+          // 与 .cjs 的 require 写法在 FROM_RE/REQUIRE_RE 里走两条正则),故它是
+          // 「--flavor dist 不是 src 的同义词」最直接的机械证据。
+          label: "产物侧 preload.cjs 以 require 反向引用 main",
+          files: { "main/preload.cjs": 'const logic = require("../main/ipc/logic.js");\nexport { logic };\n' },
+          pattern: /main\/preload\.cjs:import「\.\.\/main\/ipc\/logic\.js」违反层向规则 preload-no-main/,
+        },
+        {
+          // 产物侧 import(非 cjs)形态的反向引用
+          label: "产物侧 renderer/index.js 反向引用 main",
+          files: { "renderer/index.js": 'import { x } from "../main/ipc/channels.js";\nexport { x };\n' },
+          pattern: /renderer\/index\.js:import「\.\.\/main\/ipc\/channels\.js」违反层向规则 renderer-no-main/,
+        },
+        {
+          // 两条新规则在产物形态下同样生效(compiled JS 里注释被 tsc 剥掉,
+          // 故这里不存在「注释遮罩救了它」的可能 —— 判红只可能来自真实调用)
+          label: "产物侧 convert/paths.js 调 app.getPath",
+          files: { "convert/paths.js": 'const dir = app.getPath("userData");\nexport { dir };\n' },
+          pattern: /convert\/paths\.js:1 调用 Electron app 的路径解析「app\.getPath\(」违反层向规则 headless-no-app-getpath/,
+        },
+        {
+          label: "产物侧 cli/index.js 以 cmd.exe 为子进程",
+          files: { "cli/index.js": 'import { spawnSync } from "node:child_process";\nexport const r = spawnSync("cmd.exe", ["/c", "dir"]);\n' },
+          pattern: /cli\/index\.js:2 以 Windows 专属可执行文件为子进程「spawnSync\("cmd\.exe"」违反层向规则 headless-no-windows-only/,
+        },
+        {
+          // 未声明依赖那条也只在产物侧被真实触发(src 侧同一形状由 src 用例覆盖),
+          // 证明 --flavor dist 走的是同一套 analyze 而非另一条更松的旁路
+          label: "产物侧运行时 import 只在 devDependencies",
+          files: { "convert/docx.js": 'import JSZip from "jszip";\nexport { JSZip };\n' },
+          pattern: /convert\/docx\.js:运行时 import「jszip」只在 devDependencies 中声明/,
+        },
+      ];
+      for (const item of distRedCases) {
+        const sb = createSandbox({ dependencies: {}, devDependencies: { electron: "43.0.0", jszip: "3.10.1" } }, item.files);
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath, "--flavor", "dist"]);
+        assertFailure(result, item.pattern, `${item.label}(--flavor dist)`);
+      }
+
+      // 9c-2. 产物侧的**撤回 ⇒ 复绿**:与 9c 同一形状的合法产物树必须零退出。
+      // 缺这一步,9c 的红仍可能是「--flavor dist 恒红」而非「它真的在判这条」。
+      // 与 9c 的沙盒逐项对照,只把「触发判红的那一处」换成合法形态(jszip 移进
+      // dependencies —— 9c 最后一条正是拿它判红的,撤它就得连声明一起撤)。
+      {
+        const sb = createSandbox(
+          { dependencies: { docx: "9.0.0", jszip: "3.10.1" }, devDependencies: { electron: "43.0.0" } },
+          {
+            "main/preload.cjs": 'import { app } from "electron";\nexport { app };\n',
+            "renderer/index.js": 'import { x } from "../core/preload-api.js";\nexport { x };\n',
+            "convert/paths.js": "export function dir(injected) {\n  return injected;\n}\n",
+            "cli/index.js": 'import { spawnSync } from "node:child_process";\nexport const r = spawnSync("git", ["status"]);\n',
+            "convert/docx.js": 'import JSZip from "jszip";\nexport { JSZip };\n',
+          },
+        );
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath, "--flavor", "dist"]);
+        assert(result.code === 0, `合法产物树在 --flavor dist 下必须零退出,实际 ${result.code}:${result.output}`);
+        assert(result.output.includes("import 边界自检通过(dist 产物)"), `合法产物树应给出产物面通过结论:${result.output}`);
+      }
+
+      // 9d. 门禁本体的双向自检必须零问题(它的夹具含 7 红 7 绿,恒绿或恒红都会在这里失守)
+      const textSelfCheck = selfCheckTextLayerRules();
+      assert(
+        textSelfCheck.length === 0,
+        `层向文本判据自检应零问题,实际 ${textSelfCheck.length} 项:${textSelfCheck.join(" | ")}`,
+      );
+
+      // 9e. 真实仓库的新层当前零命中(独立于 CLI:这一条证明门禁没把已收口的代码误判红)
+      {
+        /** @type {{ line: number, id: string, reason: string, what: string }[]} */
+        const realHits = [];
+        for (const dir of ["convert", "cli", "mcp"]) {
+          const abs = path.join(SRC_DIR, dir);
+          const walk = (/** @type {string} */ cur) => {
+            for (const entry of fs.readdirSync(cur, { withFileTypes: true })) {
+              const child = path.join(cur, entry.name);
+              if (entry.isDirectory()) walk(child);
+              else if ([".ts", ".cts"].includes(path.extname(entry.name))) {
+                const rel = path.relative(SRC_DIR, child).split(path.sep).join("/");
+                realHits.push(...findTextLayerViolations(fs.readFileSync(child, "utf8"), rel));
+              }
+            }
+          };
+          if (fs.existsSync(abs)) walk(abs);
+        }
+        assert(
+          realHits.length === 0,
+          `真实 src 新层(convert/cli/mcp)应零命中两条新判据,实际 ${realHits.length} 处:`
+            + realHits.slice(0, 3).map((h) => `${h.id}@${h.line}`).join(" | "),
+        );
+      }
+
+      // 9f. 清单本身的事实钉住:Windows 专属环境变量清单不得为空、不得含 POSIX 也有的名字
+      // (清单写错一个名字就是恒绿或误伤,而清单是判据的分母,须在段内可见)
+      assert(
+        WINDOWS_ONLY_ENV_VARS.includes("APPDATA") && WINDOWS_ONLY_ENV_VARS.includes("LOCALAPPDATA"),
+        "Windows 环境变量清单应含 APPDATA 与 LOCALAPPDATA(它们是 Windows 独有的用户目录变量)",
+      );
+      assert(
+        !WINDOWS_ONLY_ENV_VARS.some((name) => ["HOME", "TMPDIR", "PATH", "USER", "SHELL", "PWD"].includes(name)),
+        "Windows 环境变量清单不得含 POSIX/macOS 同样存在的变量(否则新层的跨平台正当写法会被判红)",
+      );
+      assert(WINDOWS_ONLY_EXECUTABLES.includes("cmd"), "可执行文件清单应含 cmd");
+      assert(
+        !WINDOWS_ONLY_EXECUTABLES.some((name) => ["git", "node", "sh", "bash", "python"].includes(name)),
+        "可执行文件清单不得含跨平台都有的程序名",
+      );
+      console.log(
+        "[ok] import-boundary:层向文本判据双向探针通过"
+        + "(app.getPath 与 Windows 专属 API 各一条:构造判红 / 撤回复绿 / 正向锚点不误伤 / 原语级有牙齿;"
+          + `--flavor dist 五条产物侧判红(cjs require、.js 反向引用、两条新规则、未声明依赖)+ 合法产物树复绿;`
+          + "门禁自检零问题;真实新层零命中;清单事实钉住)",
+      );
+    }
+
+    // ============ (10) convert 层的前两条跨平台期权(ADR-060 第 9 条的第 1、2 项)============
+    // (9) 补的是第 3、4 项(app.getPath / Windows 专属 API),作用于新层三层;本组补第 1、2 项
+    // (不 import electron / 不解析仓库路径)在 **convert** 这一层的剩余缺口 ——
+    // 既有 faces-no-host 与 faces-no-outside-src 的 scope 是 delivery-faces(= cli + mcp),
+    // 不含 convert,而 convert-no-gui 只禁 layer:main,renderer。两项在 convert 上此前零覆盖。
+    //
+    // 每条同样跑满「构造 ⇒ 判红 ⇒ 撤回 ⇒ 复绿」,并各配正向锚点。
+    {
+      const PKG_BOTH = { dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } };
+
+      // 10a. 规则表形态:两条都在,且 forbid 形态与 reason 的关键约束钉住
+      for (const id of ["convert-no-host", "convert-no-outside-src"]) {
+        assert(LAYER_RULES.some((r) => r.id === id), `层向规则表缺 ${id}`);
+      }
+      assert(
+        LAYER_RULES.find((r) => r.id === "convert-no-host")?.forbid === "bare:electron",
+        "convert-no-host 的 forbid 应是 bare:electron",
+      );
+      // forbid 形态钉住:convert-no-outside-src 用 layer:..(按解析结果判、深度无关),
+      // 不是 prefix:../../。10c 用机械证据说明为什么 —— 那条断言在 prefix: 形态下会失败。
+      assert(
+        LAYER_RULES.find((r) => r.id === "convert-no-outside-src")?.forbid === "layer:..",
+        "convert-no-outside-src 的 forbid 应是 layer:..(prefix:../../ 在子目录里会误报合法的 ../../core/)",
+      );
+      // 无重复表达:本组两条只作用于 convert,不得顺带管到 cli/mcp
+      // (那两侧已由 faces-no-host / faces-no-outside-src 以更贴切的 id 表达;
+      //  同一事实两条规则各有一个可改 id,正是两份可漂移的副本)
+      for (const id of ["convert-no-host", "convert-no-outside-src"]) {
+        const rule = LAYER_RULES.find((r) => r.id === id);
+        assert(rule !== undefined && rule.scope === "convert", `${id} 的 scope 应是 convert(不得复用 headless-faces/delivery-faces)`);
+      }
+
+      // 10b. convert-no-host:构造 ⇒ 判红 ⇒ 撤回 ⇒ 复绿
+      {
+        // 构造:值导入(不是 import type)—— type-only 也判红,但值导入才真的把宿主拖进装配层
+        const bad = createSandbox(PKG_BOTH, {
+          "convert/paths.ts": 'import { app } from "electron";\nexport const dir = app.getPath("userData");\n',
+        });
+        track(bad.dir);
+        const red = await runCli(["--src", bad.srcDir, "--package", bad.pkgPath]);
+        assertFailure(red, /convert\/paths\.ts:import「electron」违反层向规则 convert-no-host/, "convert import electron(构造后)");
+        // 撤回:改为注入目录,electron 的 import 一并撤掉
+        const good = createSandbox(PKG_BOTH, {
+          "convert/paths.ts": "export function dir(injected: string): string {\n  return injected;\n}\n",
+        });
+        track(good.dir);
+        const green = await runCli(["--src", good.srcDir, "--package", good.pkgPath]);
+        assert(green.code === 0, `convert-no-host 撤回后必须复绿,实际 ${green.code}:${green.output}`);
+        assert(!green.output.includes("[boundary:fail]"), `撤回后不得有 fail 行:${green.output}`);
+      }
+      // 10b-2. type-only 同样判红:证明规则不因类型擦除而放松(与 renderer-no-main 同一纪律)
+      {
+        const bad = createSandbox(PKG_BOTH, {
+          "convert/context.ts": 'import type { App } from "electron";\nexport type { App };\n',
+        });
+        track(bad.dir);
+        const red = await runCli(["--src", bad.srcDir, "--package", bad.pkgPath]);
+        assertFailure(
+          red,
+          /convert\/context\.ts:type-only import「electron」违反层向规则 convert-no-host/,
+          "convert type-only import electron",
+        );
+      }
+
+      // 10c. convert-no-outside-src:构造 ⇒ 判红 ⇒ 撤回 ⇒ 复绿
+      {
+        const bad = createSandbox(PKG_BOTH, {
+          "convert/paths.ts": 'import { x } from "../../test/common/paths.js";\nexport { x };\n',
+        });
+        track(bad.dir);
+        const red = await runCli(["--src", bad.srcDir, "--package", bad.pkgPath]);
+        assertFailure(
+          red,
+          /convert\/paths\.ts:import「\.\.\/\.\.\/test\/common\/paths\.js」违反层向规则 convert-no-outside-src/,
+          "convert 逃出 src/(构造后)",
+        );
+        // 撤回:改为合法的向下引用
+        const good = createSandbox(PKG_BOTH, {
+          "convert/paths.ts": 'import { convert } from "../core/convert.js";\nexport { convert };\n',
+        });
+        track(good.dir);
+        const green = await runCli(["--src", good.srcDir, "--package", good.pkgPath]);
+        assert(green.code === 0, `convert-no-outside-src 撤回后必须复绿,实际 ${green.code}:${green.output}`);
+      }
+
+      // 10c-2. 形态选择的机械证据:layer:.. 按**解析结果**判,prefix:../../ 按**字面前缀**判。
+      // 同一段源码(`../../core/x` 从 convert/sub/ 出发,解析后落在 src/core/,是合法的),
+      // 在 convert 下判绿 —— 换成 prefix: 形态的 cli(既有 faces-no-outside-src)则判红。
+      // 这条断言是 convert-no-outside-src 选 layer:.. 的**理由本身**;若将来有人
+      // 把它改回 prefix:../../,本条会先红,而不是等到 convert 长出子目录那天误报真代码。
+      {
+        const deep = createSandbox(PKG_BOTH, {
+          "convert/sub/deep.ts": 'import { convert } from "../../core/convert.js";\nexport { convert };\n',
+        });
+        track(deep.dir);
+        const inConvert = await runCli(["--src", deep.srcDir, "--package", deep.pkgPath]);
+        assert(
+          inConvert.code === 0,
+          `convert/sub/ 里解析后落在 src/core 的 ../../core/ 是合法的,不得误报,实际 ${inConvert.code}:${inConvert.output}`,
+        );
+        // 对照:同一段放到 cli/sub/ 下(prefix: 形态的 delivery-faces)判红
+        const asFace = createSandbox(PKG_BOTH, {
+          "cli/sub/deep.ts": 'import { convert } from "../../core/convert.js";\nexport { convert };\n',
+        });
+        track(asFace.dir);
+        const inFace = await runCli(["--src", asFace.srcDir, "--package", asFace.pkgPath]);
+        assertFailure(
+          inFace,
+          /cli\/sub\/deep\.ts:import「\.\.\/\.\.\/core\/convert\.js」违反层向规则 faces-no-outside-src/,
+          "对照:prefix: 形态在子目录里误报同一段合法引用",
+        );
+      }
+
+      // 10d. 正向锚点:convert 的三种合法依赖图必须零误伤
+      // (向下引 core · 引同层兄弟 · 深层子目录里合法的 ../../core)
+      {
+        const sb = createSandbox(PKG_BOTH, {
+          "core/convert.ts": "export const convert = () => null;\n",
+          "convert/paths.ts": 'import { convert } from "../core/convert.js";\nexport { convert };\n',
+          "convert/run.ts": 'import { convert } from "./paths.js";\nexport { convert };\n',
+          "convert/sub/deep.ts": 'import { convert } from "../../core/convert.js";\nexport { convert };\n',
+        });
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(result.code === 0, `convert 的合法依赖图不得误伤,实际 ${result.code}:${result.output}`);
+      }
+
+      // 10e. 原语级双向断言:不经 CLI,使「撤回后复绿」也钉在被测原语上。
+      // 复用 (4) 组已建的沙盒助手,写法与该组一致。
+      {
+        const pkg = { dependencies: { docx: "9.0.0" } };
+        /** @param {string} spec 相对说明符 */
+        const convertProblemsFor = (spec) => {
+          const sb = createSandbox(pkg, { "convert/paths.ts": `import { x } from "${spec}";\nexport { x };\n` });
+          track(sb.dir);
+          return analyze(sb.srcDir, pkg, FLAVORS.src).problems.map(String);
+        };
+        // 逃逸侧
+        assert(
+          convertProblemsFor("../../test/common/paths.js").some((p) => /convert-no-outside-src/.test(p)),
+          "原语层:convert 逃出 src/ 应报 convert-no-outside-src",
+        );
+        // 合法侧(恒红同样是失效,故两个方向都要钉)
+        assert(
+          !convertProblemsFor("../core/convert.js").some((p) => /convert-no-outside-src/.test(p)),
+          "原语层:合法的 ../core 不得报 convert-no-outside-src",
+        );
+      }
+
+      // 10f. 真实仓库:convert 当前零命中本组两条(干净不等于有判据 —— 本组是判据,
+      // 这一条只是确认它没把已收口的代码误判红;机械证据在 10b/10c)
+      // 一次 analyze 覆盖整个 convert 目录即可,不为每个文件各扫一次。
+      {
+        const convertDir = path.join(SRC_DIR, "convert");
+        assert(fs.existsSync(convertDir), "缺少 src/convert/");
+        const relevant = analyze(convertDir, PKG, FLAVORS.src).problems
+          .map(String)
+          .filter((p) => /convert-no-host|convert-no-outside-src/.test(p));
+        assert(
+          relevant.length === 0,
+          `真实 src/convert 应零命中本组两条判据,实际 ${relevant.length} 处:${relevant.slice(0, 3).join(" | ")}`,
+        );
+      }
+      console.log(
+        "[ok] import-boundary:convert 层前两条跨平台期权探针通过"
+        + "(convert-no-host:值导入与 type-only 双侧判红 / 撤回复绿;"
+          + "convert-no-outside-src:../../test 判红 / ../core 复绿 / 子目录里合法的 ../../core 判绿"
+          + "并与 prefix: 形态的 faces-no-outside-src 对照判红;"
+          + "正向锚点零误伤;原语级双向断言;真实 convert 零命中)",
+      );
     }
   } finally {
     // 走 removeTree(退避重试 + 删后复查):沙盒里刚写过 dist 副本,Windows 上句柄释放

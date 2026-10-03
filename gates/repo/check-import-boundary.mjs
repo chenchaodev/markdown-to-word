@@ -93,7 +93,8 @@ export const CORE_NODE_BUILTIN_FILES = Object.freeze([
 /**
  * 层向规则。scope 匹配相对路径;forbid 语义:
  *   bare:<包名>     —— 该 bare specifier 不得出现在此范围内
- *   layer:<层,层>   —— 不得 import 解析后落在这些层下的模块
+ *   layer:<层,层>   —— 不得 import 解析后落在这些层下的模块。`..` 是可取值:
+ *                      向上逃逸的相对说明符归一化后首段恒为 `..`(见 ruleHits 的注释)
  *   prefix:<前缀>   —— 不得使用以此前缀开头的相对 specifier
  */
 export const LAYER_RULES = Object.freeze([
@@ -110,6 +111,43 @@ export const LAYER_RULES = Object.freeze([
     reason: 'convert 是 headless 装配层(ADR-060):GUI/CLI/MCP/库四个交付面共用同一套装配,'
       + '消费面一律在它之上;它一旦反向依赖 GUI 两层,装配层就长出宿主的形状,'
       + '各交付面不得不逐个绕开自己的宿主代码',
+  },
+  {
+    id: 'convert-no-host',
+    scope: 'convert',
+    forbid: 'bare:electron',
+    // 为什么不给 convert 单开一条 scope、也不复用 headless-faces:
+    // ① 复用 headless-faces 会让本条在 cli/mcp 上与既有 faces-no-host **同判据同目标**
+    //    重复报红 —— 同一事实两条规则各有一个 id 可改,正是本文件多处批过的「两份可漂移的副本」。
+    //    合并两表的唯一收益(规则表少一行)远小于两份诊断与两份 id 的漂移代价。
+    // ② scope 用既有的字面 `convert`:它已在 SRC_TOP_LAYERS 里(ADR-060 后果 3 的预登记),
+    //    且 convert-no-gui 用的就是同一个 scope —— 同一棵树的两条纪律共用一个 scope 名,
+    //    「convert 上有哪些规则」因此可在一处读完,不必跨两张表拼。
+    // ③ 命名与 core-no-host 逐字同形(`<层>-no-host`):两个「与宿主无关」的层用同一个 id 词根。
+    // reason 与 faces-no-host 分开写而非共用一个字符串:装配层与交付面的违规后果不同 ——
+    // cli/mcp 引 electron 会把宿主拖进**进程外**的可执行面(生产安装根本没有 electron),
+    // 而 convert 引 electron 会让**共用装配单元**长出 GUI 的形状,四个交付面都得逐个绕开。
+    reason: 'convert 是 headless 装配层(ADR-060),四个交付面共用同一套装配:它一旦 import electron,'
+      + 'GUI 就从「一个可选的交付面」变成装配单元的硬依赖,库模式与 MCP 各自的无宿主进程将被迫带着宿主一起装',
+  },
+  {
+    id: 'convert-no-outside-src',
+    scope: 'convert',
+    // 用 layer:.. 而非 prefix:../../(与 faces-no-outside-src 的选择不同,理由必须写清):
+    // 逃出 src/ 的**语义**是「归一化后落在 src/ 之外」,而 prefix:../../ 表达的是
+    // 「specifier 字面以 ../../ 开头」—— 两者只在 convert 是**扁平单层目录**时等价。
+    // 实测 src/convert/ 现无子目录(唯一子目录就是它自己),故 prefix: 此刻也对;
+    // 但 convert 是仍在长的层(ADR-060 后果 5 点名 run.ts / context.ts 尚待落地),
+    // 一旦长出 convert/<子目录>/,那里的 `../../core/x` 是**合法**的(落在 src/core/),
+    // prefix: 形态会把它判红 —— 一个随目录生长而误报的判据是负资产。
+    // layer: 形态按解析结果判,深度无关,故此条用 layer:..(见 LAYER_RULES 表头的 forbid 语义)。
+    // ⚠ 与 faces-no-outside-src(仍是 prefix:../../)是**同一纪律的两种写法**,
+    //   差异只因该两面的目录形状与本层不同。本轮刻意不改它(超出范围且会牵动既有夹具),
+    //   两面的目录一旦长出子目录,应把那条也换成 layer:.. —— 记在代码里而不是文档里。
+    forbid: 'layer:..',
+    reason: 'convert 的编译产物随 dist/** 分发(build.files 只收 dist/**),凡解析后落在 src/ 之外的相对依赖'
+      + '都已指向包外路径,解包后必然跑不起来;node_modules 资源的位置经入参传进来(ADR-060 后果 4),'
+      + '不得由本层按目录层级反推',
   },
   {
     id: 'core-no-upward',
@@ -246,6 +284,256 @@ export function analyzeSrcTopLayers(srcDir) {
     (name) => `src/ 顶层目录「${name}/」未登记在 SRC_TOP_LAYERS(${SRC_TOP_LAYERS.join('/')})`
       + ' —— 层向规则按 scope 枚举,未登记的目录不命中任何规则,它的反向依赖将静默放行',
   );
+}
+
+// ---- 层向的文本判据:不是「import 了什么」而是「文件里出现了什么」----
+
+/**
+ * Windows 专属环境变量:只由 Windows 设置,macOS / Linux 上恒为 `undefined`。
+ *
+ * 为什么逐个列而不用「凡含 WIN/…」的模糊式:跨平台程序读它们不会抛错,只会静默拿到
+ * `undefined` 并走进一条看起来能跑、实则路径全错的分支 —— 这是最贵的一种错。
+ * 每项的跨平台对应物都存在(`HOME` / `XDG_*` / `os.homedir()` / `os.tmpdir()`),
+ * 故新层读它们没有任何正当理由。
+ *
+ * 已知边界(勿当漏洞读,当已知限制读):本清单**按字面大小写匹配**,而 Windows 上
+ * `process.env` 本身大小写不敏感,故 `process.env.appdata` 是已知绕过面。
+ * 补它是靠改成大小写不敏感的正则 —— 那会连带命中 `SystemRoot` 之类词在注释外的
+ * 普通用法,误伤面大于收益。要收口这个洞,正解是给新层注入路径入参(ADR-060 的
+ * 四个注入点),不是加一条正则。
+ */
+export const WINDOWS_ONLY_ENV_VARS = Object.freeze([
+  'APPDATA',
+  'LOCALAPPDATA',
+  'USERPROFILE',
+  'SystemRoot',
+  'SystemDrive',
+  'windir',
+  'COMSPEC',
+  'PATHEXT',
+  'HOMEDRIVE',
+  'HOMEPATH',
+]);
+
+/**
+ * Windows 专属可执行文件:只随 Windows 发行,macOS / Linux 上 `spawn` 必得 ENOENT。
+ *
+ * 逐项都是**无歧义的 Windows 系统程序名**。清单刻意不含 `where` / `attrib` /
+ * `reg` / `net` 这类与普通英文词同形的名字 —— 判据只认「子进程首参」一种形态,
+ * 误伤面已经压到最小,不值得为多覆盖两个名字把它放大(多写一条豁免表的代价见
+ * `ROOT_COMPUTE_SCAN_DIRS` 上方那段)。注册表与 `cmd /c` 组合技已由 `cmd` 覆盖。
+ */
+export const WINDOWS_ONLY_EXECUTABLES = Object.freeze([
+  'cmd',
+  'powershell',
+  'pwsh',
+  'taskkill',
+  'wmic',
+  'xcopy',
+  'robocopy',
+  'icacls',
+]);
+
+/** 正则元字符转义(清单是单一来源,正则由清单派生,故清单里不能出现元字符) */
+function escapeRegExp(literal) {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** 环境变量清单 → 整词正则(大小写敏感,理由见 WINDOWS_ONLY_ENV_VARS 的已知边界) */
+const WINDOWS_ENV_VAR_RE = new RegExp(
+  `\\b(?:${WINDOWS_ONLY_ENV_VARS.map(escapeRegExp).join('|')})\\b`,
+  'g',
+);
+
+/**
+ * 可执行文件清单 → 「子进程首参为它」的形态正则。
+ *
+ * 只认这一种形态(而不是裸词):`"cmd"` 出现在任何字符串里都不必然是子进程目标,
+ * 而 `spawnSync("cmd.exe", …)` 是。收窄到调用形态换来的是零误伤。
+ * `.exe` 后缀可选:Windows 上 `spawn` 两种写法都解析到同一个程序。
+ */
+const WINDOWS_EXE_SPAWN_RE = new RegExp(
+  '\\b(?:spawnSync|spawn|execFileSync|execFile|execSync|exec)\\s*\\(\\s*[\'"]'
+  + `(?:${WINDOWS_ONLY_EXECUTABLES.map(escapeRegExp).join('|')})(?:\\.exe)?['"]`,
+  'g',
+);
+
+/**
+ * 层向的**文本判据**表。scope 匹配相对路径;patterns 逐条按源码文本判定(判据输入
+ * 是抹掉注释之后的代码,与 import 无关 —— 故与 LAYER_RULES 分表,不混在一起:
+ * 同一张表里放两种判据形态会产生读法歧义,同 TREE_RULES 与 LAYER_RULES 分表的理由)。
+ *
+ * 两条都只作用于 `headless-faces`(convert + cli + mcp,即 ADR-060 的「新层」):
+ * 判的是**新层不得长出宿主与平台的形状**,而 core / main / renderer 各自的纪律
+ * 由既有规则管(尤其 `core/markdown/image-path-policy.ts` 的 `path.win32/posix`
+ * 是符号链接逃逸判定(ADR-012)的承重逻辑,见 CORE_NODE_BUILTIN_FILES 的注释 ——
+ * 那类「为判定 Windows 形态而调用 Windows 语义」的正当用法在新层不存在,
+ * 但在 core 存在,这也是本表按层而不是按全仓施加的原因)。
+ */
+export const LAYER_TEXT_RULES = Object.freeze([
+  {
+    id: 'headless-no-app-getpath',
+    scope: 'headless-faces',
+    patterns: Object.freeze([
+      {
+        id: 'app-getpath-call',
+        label: '调用 Electron app 的路径解析',
+        // getAppPath 一并收:它与 getPath 同为「向宿主问路径」,只禁其一会留一个
+        // 同义绕过口(与 ROOT_COMPUTE_PATTERNS 覆盖 3/4 是同一理由)。
+        re: /\bapp\s*\.\s*get(?:App)?Path\s*\(/g,
+      },
+      {
+        id: 'app-getpath-destructure',
+        label: '从 app 解构路径解析函数',
+        re: /\b(?:const|let|var)\s*\{[^}]*\bgetPath\b[^}]*\}\s*=\s*app\b/g,
+      },
+    ]),
+    reason: '新层(convert/cli/mcp)是四个交付面共用的 headless 装配层,不得向 Electron 宿主问路径:'
+      + 'app.getPath 是 Electron 注入的能力,一调就等于把 Electron 拖进它的依赖图,'
+      + '且各面的路径来源本就不同(GUI 走 userData,CLI/MCP 由入参与 flag 决定)。'
+      + '需要目录就作为入参接进来(ADR-060 的四个注入点)',
+  },
+  {
+    id: 'headless-no-windows-only',
+    scope: 'headless-faces',
+    patterns: Object.freeze([
+      {
+        id: 'windows-env-var',
+        label: '读 Windows 专属环境变量',
+        re: WINDOWS_ENV_VAR_RE,
+      },
+      {
+        id: 'windows-exe-spawn',
+        label: '以 Windows 专属可执行文件为子进程',
+        re: WINDOWS_EXE_SPAWN_RE,
+      },
+    ]),
+    reason: '新层保留跨平台期权(ADR-060 第 9 条):读 Windows 专属环境变量在 macOS/Linux 上恒为 undefined,'
+      + '以 Windows 专属可执行文件为子进程在 macOS/Linux 上必得 ENOENT,两者都不会抛错地退化、'
+      + '只在别的平台上静默走到错分支;两者的跨平台对应物都现成(os.homedir / os.tmpdir / '
+      + 'node:child_process 跑平台都有的程序),故新层引入它们零成本地放弃跨平台',
+  },
+]);
+
+/**
+ * 扫一个文件里的层向文本判据命中项,返回带行号的清单。
+ *
+ * 走 `lexSource`:注释与字符串字面量内部的内容不是可执行代码,判红它只会逼人把
+ * 文档改写得更含糊(与 `findRootComputes` 同一理由;ADR-041 已有字符串遮罩先例)。
+ * 正因如此,`src/cli/options.ts` 与 `src/convert/delivery-settings.ts` 里那两处
+ * 「GUI 的 loadSettings 经 app.getPath,本层刻意不引」的说明注释判绿 —— 它们是
+ * 纪律的来源而不是纪律的违反。
+ * @param {string} text 源码文本
+ * @param {string} file 文件相对 src/ 的 POSIX 路径(只用于 scope 匹配)
+ * @returns {{ line: number, id: string, reason: string, what: string }[]} 命中项(按行号)
+ */
+export function findTextLayerViolations(text, file) {
+  const lexed = lexSource(text);
+  /** @param {number} index @returns {number} */
+  const lineAt = (index) => {
+    let line = 1;
+    for (let i = 0; i < index && i < lexed.code.length; i += 1) {
+      if (lexed.code.charCodeAt(i) === 10) line += 1;
+    }
+    return line;
+  };
+  /** @type {{ line: number, id: string, reason: string, what: string }[]} */
+  const hits = [];
+  for (const rule of LAYER_TEXT_RULES) {
+    if (!scopeMatches(rule.scope, file)) continue;
+    for (const pattern of rule.patterns) {
+      // matchAll 走的是内部克隆的正则,不动共享字面量的 lastIndex(多个文件复用同一
+      // 条 pattern 不会串味);直接用 .test() 会推进 lastIndex,故不用。
+      for (const m of lexed.code.matchAll(pattern.re)) {
+        const start = m.index ?? 0;
+        if (insideString(lexed.inString, start)) continue;
+        hits.push({
+          line: lineAt(start),
+          id: rule.id,
+          reason: rule.reason,
+          what: `${pattern.label}「${m[0].trim()}」`,
+        });
+      }
+    }
+  }
+  return hits.sort((a, b) => a.line - b.line);
+}
+
+/**
+ * 层向文本判据的**双向自检**(纯判定层,不碰真实仓库之外的东西)。
+ *
+ * 为什么必须有:一条「按正则扫文本」的规则最危险的失效形态是**恒绿**(写错却什么都不报),
+ * 与 `selfCheckRootComputes` 同理。此处把两个方向都钉死:
+ *   - 违例形态必须命中(多条:app.getPath / getAppPath / 解构 / %APPDATA% / cmd.exe);
+ *   - 判绿形态必须不命中 —— 且每条都挑了**有牙齿**的那种:去掉注释遮罩、去掉字符串
+ *     遮罩、或把作用域从新层放大到全仓,对应夹具都会翻脸。
+ *
+ * 刻意**不含**「真实仓库新层零命中」这条反向锚点(与 `selfCheckRootComputes` 不同):
+ * `main()` 的 `analyze` 已经对真实 src / dist 跑过同一批判据并在有任何命中时 exit 1,
+ * 再读一遍 src/ 只是把同一件事做第二次。`test/gates/import-boundary.test.js` 那侧
+ * 另有一条断言把「真实 src 与 dist 双侧零 problem」钉住。
+ *
+ * @returns {string[]} 自检问题清单(空数组 = 两个方向都符合预期)
+ */
+export function selfCheckTextLayerRules() {
+  /** @type {{ name: string, file: string, text: string, expect: number }[]} */
+  const cases = [
+    // ---- 违例方向:每条都判红 ----
+    { name: 'convert 调 app.getPath', file: 'convert/paths.ts', text: 'const dir = app.getPath("userData");\n', expect: 1 },
+    { name: 'cli 调 app.getAppPath', file: 'cli/options.ts', text: 'const root = app.getAppPath();\n', expect: 1 },
+    { name: 'mcp 从 app 解构 getPath', file: 'mcp/tools.ts', text: 'const { getPath } = app;\n', expect: 1 },
+    { name: '读 %APPDATA%', file: 'cli/options.ts', text: 'const base = process.env.APPDATA;\n', expect: 1 },
+    { name: '读 %LOCALAPPDATA%', file: 'convert/paths.ts', text: 'const base = process.env.LOCALAPPDATA;\n', expect: 1 },
+    { name: '以 cmd.exe 为子进程', file: 'cli/index.ts', text: 'const r = spawnSync("cmd.exe", ["/c", "dir"]);\n', expect: 1 },
+    { name: '以 powershell 为子进程', file: 'convert/run.ts', text: 'const r = spawn("powershell", ["-c", "ls"]);\n', expect: 1 },
+    // ---- 判绿对照:每条都挑了有牙齿的那种 ----
+    {
+      // 注释遮罩:去掉 lexSource 后本夹具立刻变红(两处说明注释是新层「刻意不引
+      // app.getPath」这条例外的书面来源,判红它等于逼人把注释删掉)。
+      name: '说明为何不用 app.getPath 的注释(应判绿)',
+      file: 'convert/delivery-settings.ts',
+      text: '/**\n * - 不读用户 settings.json —— GUI 的 `loadSettings()` 经 `app.getPath("userData")`,\n *   需 Electron 宿主,两个交付面都是无宿主进程。\n */\nexport const delivery = 1;\n',
+      expect: 0,
+    },
+    {
+      // 字符串遮罩:去掉 insideString 判据后本夹具立刻变红。
+      name: '字符串字面量内的 app.getPath(应判绿)',
+      file: 'cli/options.ts',
+      text: 'const why = "GUI 的 loadSettings 经 app.getPath(userData),CLI 刻意不引";\n',
+      expect: 0,
+    },
+    {
+      // 模板串内的子进程形态:lexSource 按整串跳过模板,去掉遮罩后本夹具立刻变红。
+      name: '模板串内的 cmd.exe(应判绿)',
+      file: 'cli/index.ts',
+      text: 'const doc = `spawnSync("cmd.exe", ["/c", "dir"])`;\n',
+      expect: 0,
+    },
+    {
+      // 作用域对照:同一条形态在 core 判绿(core 有正当理由 —— 见
+      // LAYER_TEXT_RULES 上方那段),把作用域放大到全仓后本夹具立刻变红。
+      name: 'core 层的同一形态(应判绿:core 的 Windows 语义是承重逻辑)',
+      file: 'core/markdown/image-path-policy.ts',
+      text: 'const abs = path.win32.isAbsolute(decoded);\n',
+      expect: 0,
+    },
+    { name: 'POSIX 的 HOME(应判绿)', file: 'cli/options.ts', text: 'const home = process.env.HOME;\n', expect: 0 },
+    { name: '非 Windows 子进程(应判绿)', file: 'cli/index.ts', text: 'const r = spawnSync("git", ["status"]);\n', expect: 0 },
+    { name: 'platform 守卫(应判绿:守卫是跨平台写法的正当形态)', file: 'convert/run.ts', text: 'if (process.platform === "win32") run();\n', expect: 0 },
+    { name: 'main 层不受本表约束(应判绿)', file: 'main/persist/settings.ts', text: 'const p = path.join(app.getPath("userData"), "settings.json");\n', expect: 0 },
+  ];
+  /** @type {string[]} */
+  const problems = [];
+  for (const testCase of cases) {
+    const hits = findTextLayerViolations(testCase.text, testCase.file);
+    if (hits.length !== testCase.expect) {
+      problems.push(
+        `层向文本判据自检失守「${testCase.name}」:期望命中 ${testCase.expect} 处,实际 ${hits.length} 处`
+        + `(规则恒绿或恒红都是失效)`,
+      );
+    }
+  }
+  return problems;
 }
 
 // ---- 规则 no-self-computed-root:项目根的单一来源 ----
@@ -609,6 +897,16 @@ function scopeMatches(scope, file) {
   if (scope === 'delivery-faces') {
     return ['cli/', 'mcp/'].some((prefix) => file.startsWith(prefix));
   }
+  // 新层的文本判据(LAYER_TEXT_RULES 的两条):比 delivery-faces **多一个 convert/** ——
+  // 「不向宿主问路径」「不引入 Windows 专属能力」对装配层的要求与对两个交付面完全相同
+  // (ADR-060 第 9 条把那四条期权写给的是整个新层,不是某一面)。与 delivery-faces 分表
+  // 而不是合并:合并会让 faces-* 三条在 convert/ 上也生效,而那三条的语义(禁 renderer /
+  // 禁 electron / 禁逃出 src/)已由 convert-no-gui 与 ADR-060 的分层单独表达,
+  // 两组规则的判据形态不同(import 说明符 vs 源码文本),混在一个 scope 里会让
+  // 「哪条规则为什么红」不可读。
+  if (scope === 'headless-faces') {
+    return ['convert/', 'cli/', 'mcp/'].some((prefix) => file.startsWith(prefix));
+  }
   return file === scope || file.startsWith(`${scope}/`);
 }
 
@@ -621,6 +919,12 @@ function ruleHits(rule, entry) {
   if (rule.forbid.startsWith('layer:')) {
     if (entry.kind !== 'relative') return false;
     const layers = rule.forbid.slice('layer:'.length).split(',');
+    // `..` 是合法取值:向上逃逸的说明符归一化后首段恒为 `..`(见 resolveLayer),
+    // 故 `layer:..` 表达「解析后落在扫描根之外」,且**与文件深度无关** ——
+    // 这是它比 `prefix:../../` 强的地方(后者只在扁平单层目录里等价,
+    // 目录一旦长出子目录,子目录里合法的 `../../core/x` 会被误报)。
+    // 既有 faces-no-outside-src / smoke-no-outside-src 仍用 prefix: 形态:
+    // 那两面当前是扁平目录,等价;见 convert-no-outside-src 的注释里的后续项。
     return layers.includes(resolveLayer(entry.file, entry.spec));
   }
   if (rule.forbid.startsWith('prefix:')) {
@@ -662,11 +966,22 @@ export function analyze(
   const typeOnlyUsed = new Set();
 
   for (const { abs, file } of listSourceFiles(root, extensions)) {
+    const text = readFileSync(abs, 'utf8');
     // 规则 no-self-computed-root:与 import 无关,按文件判一次(它看的是路径表达式而非 import)
-    for (const hit of findRootComputes(readFileSync(abs, 'utf8'))) {
+    for (const hit of findRootComputes(text)) {
       problems.push(
         `${file}:${hit.line} 自算项目根(${hit.id})—— 项目根的单一来源是 ${ROOT_SOURCE_FILE},`
           + '请 import 它;按目录层级上跳的写法在目录改层级时会静默指错位置,而门禁查不出这种错',
+      );
+    }
+    // 层向文本判据(LAYER_TEXT_RULES):同样与 import 无关,按文件判一次。
+    // ⚠ 两处 find* 共用上面读出的 text,collectImports 仍自己再读一遍(它的签名按
+    // 绝对路径收,是导出给测试段直调的纯函数,改成收文本会改掉那条公开契约)。
+    // 代价是每个文件读两次 —— 真实 src 侧 233 文件,门禁本身已在 3s 量级,
+    // 换「少一次读」去动一条被测试消费的公开签名不划算。
+    for (const hit of findTextLayerViolations(text, file)) {
+      problems.push(
+        `${file}:${hit.line} ${hit.what}违反层向规则 ${hit.id} —— ${hit.reason}`,
       );
     }
     for (const found of collectImports(abs, { cjs })) {
@@ -1217,6 +1532,19 @@ export async function main(argv = []) {
     console.error(`[boundary:fail] 树边界扫描失败:${error.message}`);
     return 1;
   }
+  // 层向文本判据(LAYER_TEXT_RULES)的双向自检:纯判定层,与 --src/--flavor 无关,
+  // 也不需要真实仓库(自检夹具全是内联串)。故不并进上面的 analyze try 块 ——
+  // analyze 抛错时的诊断是「扫描失败」,把自检失守混进去会让两类原因不可分。
+  try {
+    const textSelfCheckProblems = selfCheckTextLayerRules();
+    if (textSelfCheckProblems.length > 0) {
+      for (const problem of textSelfCheckProblems) console.error(`[boundary:fail] ${problem}`);
+      return 1;
+    }
+  } catch (error) {
+    console.error(`[boundary:fail] 层向文本判据自检失败:${error.message}`);
+    return 1;
+  }
   for (const line of result.info) console.log(`[info] boundary:${line}`);
   const allProblems = [...result.problems, ...rootComputeProblems, ...treeBoundaryProblems];
   if (allProblems.length > 0) {
@@ -1230,11 +1558,16 @@ export async function main(argv = []) {
       + `运行时 import 的包均在 dependencies(host 内建 ${Object.keys(HOST_PROVIDED_RUNTIME).join('/')} 除外);`
       + `core 不依赖宿主且不反向依赖 GUI 两层;`
       + `convert 是 headless 装配层,不反向依赖 main/renderer;`
+      + `convert 自身零 electron import(判据 convert-no-host)且零逃出 src/ 的相对依赖(判据 convert-no-outside-src,按解析结果判、深度无关);`
       + `renderer 不反向依赖 main;main 不反向依赖 renderer;preload 不上跳引用 main;`
       + `cli/mcp 两个进程外交付面(同层 adapter)不引用 renderer、不 import electron、不逃出 src/;`
       + `smoke 不逃出 src/;`
       + `renderer 基础层(dom/state)不反向依赖功能目录;`
       + `core 的 pdf 渲染路径不 import node:fs(能力经入参注入);`
+      + `新层(convert/cli/mcp)零 app.getPath / getAppPath 调用(判据 headless-no-app-getpath);`
+      + `新层零 Windows 专属能力:环境变量清单 ${WINDOWS_ONLY_ENV_VARS.length} 项`
+      + `(${WINDOWS_ONLY_ENV_VARS.join('/')})、子进程可执行文件清单 ${WINDOWS_ONLY_EXECUTABLES.length} 项`
+      + `(${WINDOWS_ONLY_EXECUTABLES.join('/')})(判据 headless-no-windows-only);`
       + `core 的 node: 内建白名单限 ${CORE_NODE_BUILTIN_FILES.length} 个文件;`
       + `项目根单源为 ${ROOT_SOURCE_FILE}(零豁免,ADR-040);`
       + `src/ 顶层层向 allow-list(未登记即判红):${SRC_TOP_LAYERS.join('/')};`
