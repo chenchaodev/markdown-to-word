@@ -14,7 +14,7 @@ import {
   prepareMarkdown,
   prepareMarkdownText,
   preprocessMarkdown,
-} from "../../dist/main/converter/preprocess.js";
+} from "../../dist/convert/preprocess.js";
 // 档位 → per-rule 的映射已下沉 core,故从新落点断言(总开关/产物仍经 main 侧断言)。
 import { aiCleanupOptions } from "../../dist/core/markdown/ai-cleanup.js";
 import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
@@ -47,7 +47,7 @@ export async function run() {
       aiCleanup: { ...DEFAULT_SETTINGS.aiCleanup, enabled: true },
       obsidian: { compat: true, attachmentFolder: "Attachments" },
     };
-    const prepared = /** @type {import("../../src/main/converter/preprocess.js").PreparedMarkdown} */ (
+    const prepared = /** @type {import("../../src/convert/preprocess.js").PreparedMarkdown} */ (
       await prepareMarkdown(mdPath, settings)
     );
     assert(prepared.metadata.title === "[[原始标题]]", "frontmatter title 不应被 Obsidian 预处理改写");
@@ -63,7 +63,7 @@ export async function run() {
     // 开关关闭时保持解码文本字节语义；frontmatter 与正文的三种换行均不重写。
     for (const newline of ["\n", "\r\n", "\r"]) {
       const raw = `---${newline}title: [[原始标题]]${newline}---${newline}[[目标]]${newline}`;
-      const untouched = /** @type {import("../../src/main/converter/preprocess.js").PreparedMarkdown} */ (
+      const untouched = /** @type {import("../../src/convert/preprocess.js").PreparedMarkdown} */ (
         prepareMarkdownText(raw, DEFAULT_SETTINGS)
       );
       assert(untouched.markdown === raw, `关闭预处理开关时 ${newline === "\r" ? "CR" : newline === "\r\n" ? "CRLF" : "LF"} 应字节级不变`);

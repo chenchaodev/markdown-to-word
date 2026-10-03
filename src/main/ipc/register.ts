@@ -10,7 +10,7 @@ import type { BatchProgressInfo, BatchResult, ConvertMode, PrecheckResult, UiSta
 import { t, setLanguage, type Language } from "../../core/i18n.js";
 import { precheckMarkdown } from "../../core/pipeline/precheck.js";
 import type { ConvertWarning } from "../../core/i18n.js";
-import { prepareMarkdown } from "../converter/preprocess.js";
+import { prepareMarkdown } from "../../convert/preprocess.js";
 import {
   buildPresetsExportPayload,
   buildRecentFileEntries,

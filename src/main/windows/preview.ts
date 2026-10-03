@@ -23,7 +23,7 @@ import { loadUiState, pickWindowBounds, saveUiState } from "../persist/ui-state.
 import type { WindowBounds } from "../../core/ipc-contract.js";
 import { writeTempHtml } from "../services/temp-html.js";
 import { buildConvertContext } from "../converter/index.js";
-import { prepareMarkdown } from "../converter/preprocess.js";
+import { prepareMarkdown } from "../../convert/preprocess.js";
 import { getKatexDir } from "../services/resource-dirs.js";
 import { renderMermaid } from "../services/mermaid-service.js";
 import { hardenWebContents } from "../services/web-hardening.js";

@@ -22,7 +22,7 @@ import {
   mergeConvertImpl,
 } from "../../dist/main/converter/index.js";
 import { MAX_SCAN_DEPTH, MAX_SCAN_ENTRIES } from "../../dist/convert/paths.js";
-import { MAX_SOURCE_FILE_BYTES, prepareMarkdown } from "../../dist/main/converter/preprocess.js";
+import { MAX_SOURCE_FILE_BYTES, prepareMarkdown } from "../../dist/convert/preprocess.js";
 import { MAX_BATCH_FILES } from "../../dist/main/converter/batch.js";
 import { MAX_MERGE_FILES, MAX_MERGE_TOTAL_BYTES, MERGE_READ_CONCURRENCY } from "../../dist/main/converter/merge.js";
 import { formatWarning } from "../../dist/core/i18n.js";

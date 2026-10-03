@@ -10,11 +10,11 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AppSettings } from "../../core/settings/settings-defaults.js";
-import type { ConvertWarning } from "../../core/i18n.js";
-import { parseFrontmatter, type DocMetadata } from "../../core/pipeline/frontmatter.js";
-import { decodeMarkdown } from "../../core/util/encoding.js";
-import { preprocessBody } from "../../core/markdown/preprocess-body.js";
+import type { AppSettings } from "../core/settings/settings-defaults.js";
+import type { ConvertWarning } from "../core/i18n.js";
+import { parseFrontmatter, type DocMetadata } from "../core/pipeline/frontmatter.js";
+import { decodeMarkdown } from "../core/util/encoding.js";
+import { preprocessBody } from "../core/markdown/preprocess-body.js";
 
 /** 准备结果:markdown 保留完整 frontmatter,body/metadata 是其解析契约。 */
 export interface PreparedMarkdown {

@@ -27,8 +27,10 @@ import {
   type ConvertContext,
 } from "../../convert/context.js";
 import { stripMarkdownExt } from "../../convert/paths.js";
-import { prepareMarkdown } from "./preprocess.js";
-import { emitConvertedArtifact } from "./output-skeleton.js";
+import { prepareMarkdown } from "../../convert/preprocess.js";
+import { emitConvertedArtifact } from "../../convert/run.js";
+import { renderMermaidStrict } from "../services/mermaid-service.js";
+import { renderPdf, runAfterConvert } from "./electron-side.js";
 
 /** 合并源文件数上限:超限直接拒绝,不静默截断(截断会让用户以为全文已合并) */
 // 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
@@ -162,10 +164,11 @@ export async function mergeConvertImpl(
   // 正文渲染只作用于 body,封面/PDF Info 只消费 metadata。
   const mergedFrontmatter = parseFrontmatter(md);
   const baseName = stripMarkdownExt(path.basename(firstFile));
-  // 渲染 → 落盘 → 导出后行为:与单文件共用输出骨架。合并只有单个产物,骨架内的
-  // 副作用闸门在本路径恒真(skipAfterConvert 的唯一写入者是 batchConvertImpl,
-  // 而 batch 只调 convertImpl、从不调 mergeConvertImpl),故导出后行为无条件触发
-  // 一次,与单文件同构;最终取消检查也由骨架在「产物已落盘 → 打开产物」的窗口承担。
+  // 渲染 → 落盘 → 导出后行为:与单文件共用装配层。合并只有单个产物,故本路径恒拥有
+  // 副作用所有权(让位的唯一写入者是 batchConvertImpl,而 batch 只调 convertImpl、
+  // 从不调 mergeConvertImpl)⇒ 导出后行为无条件触发一次,与单文件同构;
+  // 最终取消检查也由装配层在「产物已落盘 → 打开产物」的窗口承担。
+  // 三个宿主能力与单文件同构注入(见 single.ts 的注入点说明)。
   const { outputPath } = await emitConvertedArtifact(
     {
       markdown: { body: mergedFrontmatter.body, metadata: mergedFrontmatter.metadata },
@@ -175,7 +178,17 @@ export async function mergeConvertImpl(
       baseName: `${baseName}-合并`,
       metadata,
     },
-    { format, settings, ctx, warnings, katexDir, onProgress },
+    {
+      format,
+      settings,
+      ctx,
+      warnings,
+      katexDir,
+      onProgress,
+      printPdf: renderPdf,
+      mermaidResolver: renderMermaidStrict,
+      onAfterCommit: (artifactPath) => runAfterConvert(settings.afterConvert, artifactPath, ctx),
+    },
   );
   return { ok: true, outputPath, warnings }; // warnings 与调用方共享同一数组,骨架已并入落盘 warning
 }

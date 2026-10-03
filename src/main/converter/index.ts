@@ -2,13 +2,17 @@
  * 主进程转换编排层 —— 桶导出:实现按职责分模块(同目录单文件),本文件仅 re-export。
  *
  * 模块划分与依赖方向(单向无环):
- * - output-skeleton.ts:emitConvertedArtifact(单文件/合并共用的输出骨架,消费点 2 处)
- *   + renderPdf + runAfterConvert(同模块是避免 single ↔ output-skeleton 成环的必要条件)
- * - single.ts:convertImpl(参数校验 + 读取 md;渲染之后交给骨架,转出 renderPdf/
+ * - convert/run.ts(装配层,零 electron):emitConvertedArtifact(单文件/合并共用的输出骨架,
+ *   消费点 2 处)+ persistArtifact;三个宿主能力经入参注入
+ * - electron-side.ts(GUI 电子侧):renderPdf + runAfterConvert —— 装配层的**能力提供者**,
+ *   持有 BrowserWindow / shell / pdf-lib 触点(与 run.ts 是注入方/被注入方关系,
+ *   故 renderPdf 整体搬迁而非拆成「打印成字节」,见 run.ts 的 PdfPrinter JSDoc)
+ * - single.ts:convertImpl(参数校验 + 读取 md + 注入三个宿主能力;转出 renderPdf/
  *   runAfterConvert 供 batch/测试的导入面零改动)
  * - batch.ts:batchConvertImpl(并发 2 池)
- * - merge.ts:mergeConvertImpl(多文件合并单次转换)
- * 路径解析与落盘提交住在装配层 src/convert/(paths.ts:resolveOutputPath(首选路径,不做存在性探测)
+ * - merge.ts:mergeConvertImpl(多文件合并单次转换 + 注入同三个宿主能力)
+ * 准备编排与路径解析/落盘提交住在装配层 src/convert/(preprocess.ts:解码 → frontmatter 隔离
+ * → 渲染前变换 → 原样拼回,所有入口共用;paths.ts:resolveOutputPath(首选路径,不做存在性探测)
  * / collectMarkdownPaths / filterExistingPaths;artifact-writer.ts:commitArtifact(同目录临时文件 +
  * 硬链接独占提交,四种转换路径落盘唯一入口);context.ts:取消语义
  * (ConvertContext/createConvertContext/ConvertCanceledError/throwIfCanceled)+ getImageResolver

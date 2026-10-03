@@ -115,12 +115,12 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `docx/`:render.ts(编排器)/theme.ts(字体集中配置,eastAsia 勿散落硬编码)/ctx.ts(渲染上下文,选项构造时解析默认)/headers.ts(section 页眉装配)/chrome.ts(封面/目录/页眉页脚)/prescan.ts/numbering.ts(编号配置)/template-import.ts(模板浅导入,零 IO)/handlers/(节点处理器:heading/table/captions/equations/code-block/code-highlight/image-run/link-xref/inline-html/fallback/content/math/bookmark)
   - `pdf/`:render.ts(编排器)/template.ts(HTML 组装+页眉页脚 chrome+CSP/sanitize 防护)/template-css.ts(文档模板 CSS 生成)/katex-css.ts(KaTeX CSS 加载,唯一 fs 注入点)/postprocess.ts/metadata.ts/bookmarks.ts(pdf-lib 书签注入)/mermaid.ts/rules/(markdown-it 规则覆盖:caption/equation/xref/html/image/table/heading-id/shared)
 - `src/convert/`:headless 装配层(ADR-060;门禁 `convert-no-gui` 禁其反向依赖 main/renderer,`SRC_TOP_LAYERS` 未登记即判红)
-  - `context.ts`(buildConvertContext)/`paths.ts`(扩展名判定单源)/`artifact-writer.ts`(产物提交:同目录唯一临时文件 + 硬链接独占提交,单文件/批量/合并共用)/`image-downloader.ts`(外链下载:私网拦截+20MB 上限,`allowPrivateAddresses` 可放宽)
+  - `run.ts`(装配层主体 `emitConvertedArtifact`:渲染→落盘→两道取消闸门→导出后行为;pdf 打印/mermaid/导出后行为三能力靠入参注入,`skipAfterConvert` 不入本层)/`context.ts`(buildConvertContext)/`preprocess.ts`(解码→frontmatter 隔离→Obsidian/AI 预处理→原样拼回,所有入口共用的准备编排)/`paths.ts`(扩展名判定单源)/`artifact-writer.ts`(产物提交:同目录唯一临时文件 + 硬链接独占提交,单文件/批量/合并共用)/`image-downloader.ts`(外链下载:私网拦截+20MB 上限,`allowPrivateAddresses` 可放宽)
 - `src/main/`:Electron 主进程
   - `src/main/index.ts`:组合根;`src/main/menu.ts`:应用菜单;`src/main/smoke.ts`:**冒烟唯一实现**(编译进 `dist/main/smoke.js` 随包分发,故解包产物也能跑 `--smoke`;主进程 `--smoke` 分支直连该编译产物,仓内不留第二份实现或 dev 侧转调入口)
   - `windows/`:main-window.ts/preview.ts(预览窗+尺寸记忆)/title-bar-overlay.ts(Windows 标题栏 overlay 配色与高度常量单源)/web-contents-registry.ts(ctxByWebContents 注册表,窗口层不反向依赖 IPC 层)
   - `ipc/`:channels.ts(channel 名单源+恒等测试守护)/register.ts(handler 注册,导入类 handler 走 importFileViaDialog 模板)/logic.ts(纯逻辑)/output-allowlist.ts(shell 打开产物的会话级白名单,renderer 触达宿主文件系统的唯一入口)/types.ts(只做 re-export,剪贴板契约声明在 `src/core/ipc-contract.ts`)
-  - `converter/`:index.ts(编排)/single.ts(参数校验+读取 md,渲染之后交给骨架)/output-skeleton.ts(单文件与合并共用的输出骨架 `emitConvertedArtifact`,含 `renderPdf`/`runAfterConvert`;同模块是为避免 single↔skeleton 成环)/batch.ts/merge.ts/preprocess.ts(解码→frontmatter 隔离→Obsidian/AI 预处理→原样拼回,所有入口共用的准备编排)
+  - `converter/`:index.ts(编排)/single.ts(薄适配器:校验+读取 md 后交装配层,并注入 pdf 打印/mermaid/导出后行为三能力;转出 `renderPdf`/`runAfterConvert` 以保批量与测试的导入面)/electron-side.ts(Electron 侧:隐藏窗 printToPDF 两遍法 + 书签 + 元数据注入、资源管理器打开产物)/batch.ts/merge.ts
   - `persist/`:settings.ts/ui-state.ts/atomic-json.ts(原子写)/preset-file.ts(设置与预设文件的纯形状校验 + 预设解析/合并)
   - `services/`:mermaid-service.ts/temp-html.ts(randomUUID+'wx')/resource-dirs.ts/web-hardening.ts(窗口导航加固)/session-permissions.ts(session 权限默认拒绝收口)
   - `preload.cts`:contextBridge 白名单暴露 `window.api`(编译为 CJS;暴露面类型取 `src/core/preload-api.ts`)

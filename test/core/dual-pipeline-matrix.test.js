@@ -825,7 +825,7 @@ const MATRIX = [
     anchors: [
       "src/core/docx/chrome.ts:122(tocMode → beginDirty)",
       "src/core/pdf/postprocess.ts:81(injectTocPageNumbers)",
-      "src/main/converter/output-skeleton.ts:245(field 模式两遍打印回填)",
+      "src/main/converter/electron-side.ts:96(field 模式两遍打印回填)",
     ],
     verify: async ({ tocPage }) => {
       must(tocPage.staticDirtyFalse && !tocPage.staticHasDirtyTrue, "toc-page-numbers", "docx static 目录应为 dirty=false(免更新、无页码)");

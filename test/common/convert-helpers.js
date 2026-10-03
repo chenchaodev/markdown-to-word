@@ -152,7 +152,7 @@ export const convertWithFs =
  * 测试侧按裸字符串写样例,就得在调用点前补这一步。
  *
  * 用 core 的 `parseFrontmatter`(单源)而非测试自写拆分:与生产
- * `main/converter/preprocess.ts` 的 `splitFrontmatter` 走同一实现,
+ * `convert/preprocess.ts` 的 `splitFrontmatter` 走同一实现,
  * 「测试断言的 frontmatter 语义」与「生产渲染链的」不会各走一套。
  *
  * @param {string} md 裸 markdown 源(可带 frontmatter)

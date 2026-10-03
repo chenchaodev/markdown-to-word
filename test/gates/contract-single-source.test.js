@@ -565,11 +565,14 @@ export async function run() {
       // 1. 正向:真实仓库等式成立 + 满足下限(否则下面所有负向夹具的「绿」都没意义)
       const real = checkSurfaceEquality(repoRoot);
       assertEq(real.ok, true, `真实仓库的扫描面等式须成立:${formatSurfaceMismatch(real)}`);
-      // 声明面恰好是四个段目录 + common(fixtures 虽有源文件,但按显式理由排除)
+      // 声明面恰好是五个段目录 + common(fixtures 虽有源文件,但按显式理由排除)。
+      // 刻意钉成字面量而非从 SEGMENT_DIRS 派生:派生会让它恒真,检测力归零 ——
+      // 这条断言的职责就是「声明面多了或少了目录就红」,新增测试段必须在此显式登记。
+      // 同一约束另有两处副本:两个 selftest 的 BASE_SHAPE(那边是跟随声明面走,性质相反)。
       assertEq(
         real.declared.join(","),
-        "test/common,test/core,test/gates,test/main,test/renderer",
-        "声明面(单一来源)应恰为这 5 个目录",
+        "test/common,test/convert,test/core,test/gates,test/main,test/renderer",
+        "声明面(单一来源)应恰为这 6 个目录",
       );
       assert(
         !real.measured.includes("test/fixtures"),
@@ -581,7 +584,7 @@ export async function run() {
         true,
         `真实仓库扫描文件数须满足下限(实测 ${realFiles},下限 ${MIN_SCAN_FILES})`,
       );
-      console.log(`[ok] contract:扫描面等式正向(真实仓库声明 ${real.declared.length} 个 == 实测 ${real.measured.length} 个,扫描 ${realFiles} 个文件 ≥ 下限 ${MIN_SCAN_FILES};四段目录各镜像一棵顶层树)`);
+      console.log(`[ok] contract:扫描面等式正向(真实仓库声明 ${real.declared.length} 个 == 实测 ${real.measured.length} 个,扫描 ${realFiles} 个文件 ≥ 下限 ${MIN_SCAN_FILES};各段目录各镜像一棵顶层树)`);
 
       // 2. 正向对照:声明 5 个 / 磁盘 5 个 → 等式成立(否则下面的负向可能只是「恒红」)
       const aligned = makeFixtureTree(SCAN_TARGETS.map((t) => t.dir), 1);
@@ -606,22 +609,24 @@ export async function run() {
         `对照前提:漏扫夹具的文件数应远超下限(实际 ${leakyFiles},下限 ${MIN_SCAN_FILES}),否则证明不了下限抓不到漏扫`,
       );
       assertEq(judgeScanFloor(leakyFiles).ok, true, "下限判据对「漏一个子目录」必须无能为力(它只管 walker 整体失效)");
-      console.log(`[ok] contract:扫描面等式负向(声明 5 / 实测 6 → 判红并点名 test/perf;同树下 ${leakyFiles} 个文件远超下限,下限判绿 —— 证明下限替代不了等式)`);
+      console.log(`[ok] contract:扫描面等式负向(声明 6 / 实测 7 → 判红并点名 test/perf;同树下 ${leakyFiles} 个文件远超下限,下限判绿 —— 证明下限替代不了等式)`);
 
-      // 4. 负向 B:声明 5 个、磁盘只建成 4 个 —— 登记过的目录被删/改名,声明成了空头支票。
+      // 4. 负向 B:声明 6 个、磁盘只建成 5 个 —— 登记过的目录被删/改名,声明成了空头支票。
       // 替身用 test/pending:它历史上真存在过(被删掉的暂存区),与「某个段目录曾经登记过
       // 后来整目录取消」是同一失效形态。
-      const short = makeFixtureTree(["test/core", "test/main", "test/renderer", "test/common"], 1);
+      // 刻意只让 test/gates 缺失:本夹具要验的是「点名那个缺失目录」,缺两个会让断言
+      // 退化成验排序。新增段目录时要把它补进下面的建树清单,别动断言。
+      const short = makeFixtureTree(["test/core", "test/main", "test/renderer", "test/convert", "test/common"], 1);
       sandboxes.push(short);
       const shortResult = checkSurfaceEquality(short);
-      assertEq(shortResult.ok, false, "声明 5 个、磁盘 4 个时等式必须判红");
+      assertEq(shortResult.ok, false, "声明 6 个、磁盘 5 个时等式必须判红");
       assertEq(shortResult.missing.join(","), "test/gates", "须点名磁盘上已经没有测试源文件的那个目录");
       assertEq(shortResult.extra.length, 0, "这一侧不该有多出目录");
       assert(
         formatSurfaceMismatch(shortResult).includes("test/gates"),
         `诊断须点名 test/gates,实际:${formatSurfaceMismatch(shortResult)}`,
       );
-      console.log("[ok] contract:扫描面等式负向(声明 5 / 实测 4 → 判红并点名 test/gates)");
+      console.log("[ok] contract:扫描面等式负向(声明 6 / 实测 5 → 判红并点名 test/gates)");
 
       // 4b. 暂存区不许开回来:替身用 test/pending —— 它历史上真存在过(ADR-038 删掉的那个
       // 暂存区),把它原样摆回磁盘上,等式必须点名判红。

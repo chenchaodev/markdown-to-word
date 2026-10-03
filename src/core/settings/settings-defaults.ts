@@ -196,7 +196,7 @@ export const DEFAULT_WATERMARK: WatermarkSettings = {
 /* ---------- 渲染前变换(分组,不参与预设) ---------- */
 /**
  * AI 清理设置:转换前自动规整 AI 生成的 Markdown。
- * 三层门控各自独立(见 main/converter/preprocess.ts):enabled 是总开关,
+ * 三层门控各自独立(见 convert/preprocess.ts):enabled 是总开关,
  * tidy / rewrite 是它之下两个档位,档位只是分档不是旁路 —— 总开关关闭时
  * preprocessBody 整段跳过,本对象里的档位值不生效。
  */

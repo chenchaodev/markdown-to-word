@@ -4,7 +4,7 @@
  *
  * 被守护的决定(见 docs/adr/ 的对应条目):`core/convert.ts` 的第 1 参由裸字符串
  * 改为阶段产物 `PreprocessedMarkdown = { body, metadata }`。frontmatter 的隔离与
- * 解析只在**上游准备阶段**(`main/converter/preprocess.ts`)做一次,core 只取用。
+ * 解析只在**上游准备阶段**(`convert/preprocess.ts`)做一次,core 只取用。
  *
  * 三条断言,各自防一种回归:
  * - ① **结构**:core 源码零 `parseFrontmatter` 引用。这是「core 不再解析」的**直接**
@@ -152,7 +152,7 @@ register(loaderUrl, import.meta.url);
 
 const load = (rel) => import(pathToFileURL(root + rel).href);
 
-const { prepareMarkdownText } = await load("/dist/main/converter/preprocess.js");
+const { prepareMarkdownText } = await load("/dist/convert/preprocess.js");
 const { convert } = await load("/dist/core/convert.js");
 const { DEFAULT_SETTINGS } = await load("/dist/core/settings/settings-defaults.js");
 

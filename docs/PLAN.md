@@ -66,7 +66,7 @@
 2. `LAYER_RULES` 加了 `convert-no-gui` / `cli-no-renderer` 两条，且 `src/` 顶层名未登记即判红（造含 `omega/` 的合成树，实测判红）
 3. `check-import-boundary.mjs:1108-1111` 摘要行已同步新规则语义
 4. `test/convert/` 段已配齐且**进入 c8 分母**（不是被 exclude 掉）
-5. `single.ts` 及其全部现有调用点**零改动**
+5. `single.ts` 的**导出签名逐字不变**（`convertImpl` 的参数表 + 继续转出 `renderPdf`/`runAfterConvert`）⇒ `batch.ts` / `ipc/register.ts` / `windows/preview.ts` / `test/main/converter.test.js` 四个调用点**零改动**。⚠️ 原写「`single.ts` 零改动」是规划错误：Batch B 的目的正是把它收成薄适配器（函数体必改），该标准与步序 1 的核心动作自相矛盾 |
 6. 全量 `verify:ci` 绿
 7. **诚实验收**：`test/convert/` 段在**无 electron 的纯 node 下**跑通一次真实 docx 转换（不经 Electron、不设 `ELECTRON_RUN_AS_NODE`）—— 这是「装配层真的与宿主无关」的唯一诚实验收，比任何单测都强。⚠️ 原写的 `node dist/cli/index.js --help` 是**步序 2 的产物**，标准 7 依赖它才能跑 ⇒ 属规划错误，已改为纯 node 直调 `run.ts` |
 
@@ -158,6 +158,29 @@
 修法：改共享载体只用**最短唯一锚点**或 `cat -A` 核对不可见字符。已修回，`check:docs` 判绿。
 
 **⑥ 并行泳道确实互删过产物。** fix-1 报告 `src/convert/` 整目录一度消失（重建后稳定，tsc 过）。**写域零重叠是必要条件，不充分** —— 共享可变状态（构建产物目录 / 清理脚本）仍会咬人。收尾已复验两文件在位。
+
+### 2026-10-03 · 步序 1 第二轮（context/image-downloader 搬迁 + Batch B 抽 run.ts）
+
+**⑦ 新增测试段目录要改四处，不是一处。** 这是本规划最大的疏漏，ADR-060 后果 5 与本文件都只写了「配 `test/convert/` 段」。
+现象：等式判据报「声明 6 个目录,实测 5 个;缺失 test/convert」，且级联成「每条夹具都失败」，症状离根因很远。
+根因：镜像判据（`checkSegmentMirrors`）与等式判据（`checkSurfaceEquality`）是两个独立判据，我只写了前者。实际要改四处：
+1. `shared/test-common-surface.js:47` `SEGMENT_DIRS` —— 声明面
+2. `check-test-numbering.selftest.mjs` `BASE_SHAPE` —— 实测面副本
+3. `check-temp-cleanup.selftest.mjs` `BASE_SHAPE` —— **第二份副本**（同形，漏改则级联失败）
+4. `test/gates/contract-single-source.test.js:568` 的字面量 —— 刻意钉死，**不可派生**（派生即恒真，检测力归零）
+修法：四处全改，两处副本已加注释互相指认。**步序 2 的 `test/cli/` 会撞同一堵墙。**
+⚠️ 这条也说明 ADR-060 后果 5 的表述不完整 —— 但 ADR 是决策载体不改正文，在此记口径修正。
+
+**⑧ ADR 的注入点签名在实现时被细化。** ADR 写 `printPdf?: PdfPrinter`，字面读是 `printPdf(html) → Uint8Array`；实现用**整体搬迁**形态 `printPdf(artifact, preferredPath, ctx, onStage) → Promise<string>`。
+理由：`renderPdf` 内含 pdf 两遍法、书签注入、`setPdfMetadata`（其注释明写「pdf-lib 整体重存，必须最后执行，否则会丢弃书签」）、以及末尾那次 `commitArtifact`。按 bytes 形态拆，这串顺序得在 `persistArtifact` 里重组。整体搬迁让顺序逐字不变。
+**这是对 ADR 的细化而非违背**，记此备查。
+
+**⑨ 完成标准 5 与本步核心动作自相矛盾。** 原写「`single.ts` 零改动」，而 Batch B 的目的正是把它收成薄适配器（函数体必改）。已改为「导出签名逐字不变 ⇒ 四个调用点零改动」。
+
+**⑩ 派工范围两次漏项，根因是拿子代理的报告当授权依据。** 第一次我漏了 `ipc/register.ts`；第二次 fixer 报了 `register.ts:13` 却漏了三个测试文件的 `dist/` 深导入（`test/core/frontmatter-once.test.js:155` · `test/main/input-budget.test.js:25` · `test/main/preprocess.test.js:17,50,66`）—— 漏因是 `dist/` 路径不带 `src/` 前缀，且前者不在 `test/main/` 段。
+**纪律：授权前自己 grep 一遍完整面，不拿子代理的报告替代。** 这次多亏先 grep 才没让它再撞一次墙。
+
+**⑪ 测试段必须在真 node 进程里跑才有意义。** `test/convert/run-headless.test.js` 显式从 env 删掉 `ELECTRON_RUN_AS_NODE` 后 spawn 真 node —— 段本身跑在 `electron.exe` 下，进程内断言证明不了「装配层与宿主无关」，只有真 node 子进程才能。若传递依赖里混进 electron（如 `mermaid-service.ts:362` 的模块顶层 `app.on`），子进程会在 import 期死掉并让段判红。
 
 ---
 

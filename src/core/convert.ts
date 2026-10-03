@@ -63,7 +63,7 @@ import type { ImageResourceBudget } from "./resource-limits.js";
  * 就已消费完毕。
  *
  * **为什么是 `{ body, metadata }` 而不是裸字符串**:frontmatter 的隔离与解析在
- * 上游准备阶段(`main/converter/preprocess.ts` 的 `prepareMarkdown`)已经做过一次,
+ * 上游准备阶段(`convert/preprocess.ts` 的 `prepareMarkdown`)已经做过一次,
  * 那次结果连同正文一起作为阶段产物传下来。底座若仍是裸字符串,本层就不得不
  * **为了拿 metadata 再解析一遍**——同一次转换 frontmatter 被解析两次,且没有任何
  * 一处能断言「只解析一次」(裸字符串里看不出它带没带 frontmatter)。结构化入参把
