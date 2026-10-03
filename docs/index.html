@@ -267,12 +267,73 @@ html[data-active-lang="en"] [data-lang="en"].table-row{display:table-row}
   background:var(--card);border:1px solid var(--line);color:var(--ink-2);
   font-family:var(--font-mono);font-size:.78rem;letter-spacing:.02em}
 
+/* ===== 开发者分区（技术栈 + 命令行与 AI 助手 + 文档入口）
+   分区是页面的第二次叙事转折：前三节讲「产品作为体验」，
+   从这里起讲「需要动手的部分」。用一条发丝线把两段叙事分开，
+   让访客不读正文也能判断该不该往下看。 ===== */
+.dev-zone{border-top:1px solid var(--line)}
+/* 分区题：比区内内容块高一级，字号高于 .section-title，但不到 h1 */
+.dev-head{padding:var(--space-2xl) 0 var(--space-md)}
+.zone-title{font-family:var(--font-display);font-size:clamp(1.6rem,3.4vw,2.15rem);
+  font-weight:600;letter-spacing:.02em;line-height:1.3;max-width:var(--measure)}
+.dev-head .section-desc{margin-top:var(--space-md)}
+/* 区内块与块之间靠发丝线分区（§1.3：分区靠 1px 发丝线，禁粗分割条与色块） */
+.dev-zone .dev-block + .dev-block{border-top:1px solid var(--line)}
+/* 分区题已占足上边距，紧随其后的第一块收一档，否则题与内容之间会空出一段 */
+.dev-zone > .dev-block:first-of-type{padding-top:var(--space-lg)}
+/* 区内块的题：h2 降一级到 h3，衬线保留但字号收一档，层级才不会读平 */
+h3.block-title{font-family:var(--font-display);font-size:clamp(1.15rem,2.2vw,1.4rem);
+  font-weight:600;letter-spacing:.02em;line-height:1.35}
+/* 文档入口沿用「更多能力」的发丝线清单形态，不另发明第三种列表 */
+.dev-docs .more-grid{margin-top:var(--space-md)}
+/* 清单项内挂链接：.more-item 本身没有块间距，这里补一条 */
+.dev-docs .more-item .doclink{margin-top:6px}
+
+/* ===== CLI & MCP（脚本与 AI 助手入口）
+   与「功能特性」卡片刻意不同形：这里不是安装版程序的能力，
+   故用两栏纸面 + 发丝线区块，不复用 feature-card 的图标卡。 ===== */
+.cli-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  gap:var(--space-md)}
+@media(max-width:640px){.cli-grid{grid-template-columns:1fr}}
+/* min-width:0 让超长代码行收敛为块内横向滚动，不撑破栅格 */
+.cli-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);
+  padding:var(--space-lg);min-width:0;transition:border-color var(--dur-hover) ease}
+.cli-card:hover{border-color:var(--line-2)}
+.cli-card h3{margin-bottom:var(--space-sm)}
+/* 入口签名行：路径与参数属数据，走 mono */
+.cli-sig{font-family:var(--font-mono);font-size:.8rem;line-height:1.9;color:var(--ink-2);
+  margin:0 0 var(--space-sm);overflow-wrap:anywhere}
+/* 代码块底沿用 --inset（代码块底是 token 的既定用途），底色不另取 */
+.code{font-family:var(--font-mono);font-size:.8rem;line-height:1.9;color:var(--ink);
+  background:var(--inset);border:1px solid var(--line);border-radius:var(--r-sheet);
+  padding:var(--space-sm) var(--space-md);margin:0 0 var(--space-sm);
+  white-space:pre;overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* 块内 code 去掉行内 code 的底色与描边，底与边交给 pre 一层 */
+.code code{background:none;border:none;padding:0;font-size:inherit;border-radius:0}
+.cli-note{font-size:.86rem;line-height:1.8;color:var(--ink-2);margin:0 0 8px}
+.cli-note strong{color:var(--ink);font-weight:600}
+.cli-foot{margin-top:var(--space-md)}
+/* 退出码：五档一行的数据条。刻意不加 overflow-wrap:anywhere ——
+   那会把「产物」这类词从中间劈开；这一行只在 · 分隔处折行即可。 */
+.exit-codes{font-family:var(--font-mono);font-size:.74rem;line-height:2;color:var(--mut);
+  margin:0 0 var(--space-sm)}
+/* 每档整体不折行：窄屏时在 · 分隔处换行，而不是把「产物」劈成两半 */
+.exit-label{color:var(--ink-2);margin-right:.35em}
+.exit-i{white-space:nowrap}
+/* 文档链接：正文内的去处用墨色下划线，朱砂留给「付印」语义 */
+.doclink{display:inline-block;color:var(--ink);border-bottom:1px solid var(--mut);
+  font-size:.86rem;line-height:1.9;
+  transition:color var(--dur-hover) ease,border-color var(--dur-hover) ease}
+.doclink:hover{color:var(--ink-2);border-bottom-color:var(--ink)}
+
 /* ===== Footer ===== */
 .footer{padding:var(--space-xl) 0 var(--space-lg);border-top:1px solid var(--line);
   color:var(--ink-2);font-size:.84rem}
 .footer-inner{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;
   gap:var(--space-md)}
-.footer-links{display:flex;gap:var(--space-lg)}
+/* 条目变多后窄屏必须能折行，否则顶到视口外 */
+.footer-links{display:flex;flex-wrap:wrap;gap:var(--space-sm) var(--space-lg)}
+@media(max-width:640px){.footer-links{gap:var(--space-xs) var(--space-md)}}
 .footer-links a{color:var(--ink-2);transition:color var(--dur-hover) ease}
 .footer-links a:hover{color:var(--ink)}
 .footer-copy{color:var(--ink-2)}
@@ -307,7 +368,7 @@ html.js .reveal.is-in{opacity:1;transform:none}
       <a href="#features" aria-label="功能特性 / Features" title="功能特性 / Features"><span class="tn">01</span><span class="lbl inline" data-lang="zh">功能特性</span><span class="lbl inline" data-lang="en">Features</span></a>
       <a href="#more" aria-label="更多能力 / More Capabilities" title="更多能力 / More Capabilities"><span class="tn">02</span><span class="lbl inline" data-lang="zh">更多能力</span><span class="lbl inline" data-lang="en">More</span></a>
       <a href="#screenshots" aria-label="界面预览 / Screenshots" title="界面预览 / Screenshots"><span class="tn">03</span><span class="lbl inline" data-lang="zh">界面预览</span><span class="lbl inline" data-lang="en">Screenshots</span></a>
-      <a href="#tech" aria-label="技术栈 / Tech Stack" title="技术栈 / Tech Stack"><span class="tn">04</span><span class="lbl inline" data-lang="zh">技术栈</span><span class="lbl inline" data-lang="en">Tech</span></a>
+      <a href="#dev" aria-label="开发者 / For Developers" title="开发者 / For Developers"><span class="tn">04</span><span class="lbl inline" data-lang="zh">开发者</span><span class="lbl inline" data-lang="en">Developers</span></a>
     </nav>
     <div class="lang-toggle" role="group" aria-label="Language">
       <button class="lang-btn" data-set-lang="zh" aria-pressed="true" title="中文">CN</button>
@@ -571,8 +632,27 @@ html.js .reveal.is-in{opacity:1;transform:none}
   </div>
 </section>
 
-<!-- ===== Tech Stack ===== -->
-<section class="section" id="tech">
+<!-- ===== 开发者分区：技术栈 · 命令行与 AI 助手 · 文档入口
+     分区 id 供顶栏 04 锚点使用；#tech 作为深链锚点保留在区内原处。 ===== -->
+<div class="dev-zone" id="dev">
+
+  <div class="container dev-head">
+    <span class="kicker reveal">
+      <span class="inline" data-lang="zh">开发者</span>
+      <span class="inline" data-lang="en">For Developers</span>
+    </span>
+    <h2 class="zone-title reveal">
+      <span class="inline" data-lang="zh">自行构建后才能用的部分</span>
+      <span class="inline" data-lang="en">What Works After a Build of Your Own</span>
+    </h2>
+    <p class="section-desc reveal">
+      <span class="inline" data-lang="zh">下面的命令行入口与 MCP 服务端从编译产物启动，需要源码检出、Node.js ≥ 22.13 与一次完整构建。Windows 安装包只含图形界面，不含这两项。只想用图形界面的话，这一分区可以整段跳过。</span>
+      <span class="inline" data-lang="en">The command-line entry point and the MCP server below start from the build output; they need a source checkout, Node.js ≥ 22.13, and a completed build. The Windows installer ships the desktop app only, with neither entry point. Readers after the graphical interface can skip this whole section.</span>
+    </p>
+  </div>
+
+  <!-- ===== Tech Stack ===== -->
+  <section class="section dev-block" id="tech">
   <div class="container">
     <span class="kicker reveal">
       <span class="inline" data-lang="zh">技术栈</span>
@@ -598,6 +678,120 @@ html.js .reveal.is-in{opacity:1;transform:none}
   </div>
 </section>
 
+<!-- ===== CLI & MCP（脚本与 AI 助手入口）
+       沿用上一轮的判断：不用 feature-card 的图标卡形态 ——
+       那一组描述的是安装版程序实际具备的能力，而这两项需要自行构建后使用。 ===== -->
+  <section class="section dev-block" id="cli">
+  <div class="container">
+    <span class="kicker reveal">
+      <span class="inline" data-lang="zh">命令行与 AI 助手</span>
+      <span class="inline" data-lang="en">Command Line &amp; AI Assistants</span>
+    </span>
+    <h3 class="block-title reveal" style="margin:var(--space-md) 0 var(--space-lg)">
+      <span class="inline" data-lang="zh">不开界面，也能发起转换</span>
+      <span class="inline" data-lang="en">Convert Without Opening the App</span>
+    </h3>
+    <p class="section-desc reveal" style="margin-top:0">
+      <span class="inline" data-lang="zh">除了图形界面，程序还提供命令行入口与 MCP 服务端，可在脚本、批处理与 AI 助手里调用同一套转换能力。两者都从编译产物启动，不随安装版程序分发（安装包里只有图形界面），使用前需先完成构建。</span>
+      <span class="inline" data-lang="en">Besides the desktop app, the program offers a command-line entry point and an MCP server, so scripts, batch jobs, and AI assistants can call the same conversion pipeline. Both start from the build output and are not part of the installer (which ships the desktop app only); build the project first.</span>
+    </p>
+
+    <div class="cli-grid" style="margin-top:var(--space-lg)">
+
+      <!-- 命令行 -->
+      <div class="cli-card reveal" style="--d:0ms">
+        <h3>
+          <span class="inline" data-lang="zh">命令行</span>
+          <span class="inline" data-lang="en">Command Line</span>
+        </h3>
+        <p class="cli-sig">node dist/cli/index.js <span class="inline" data-lang="zh">&lt;输入路径...&gt; [选项]</span><span class="inline" data-lang="en">&lt;input paths…&gt; [options]</span></p>
+        <pre class="code"><code>node dist/cli/index.js 笔记.md --format both
+node dist/cli/index.js ./文章目录 --json</code></pre>
+        <p class="exit-codes">
+          <span class="inline" data-lang="zh"><span class="exit-label">退出码</span><span class="exit-i">0 成功</span> · <span class="exit-i">1 命令行写法有误</span> · <span class="exit-i">2 输入读不到</span> · <span class="exit-i">3 转换失败</span> · <span class="exit-i">4 产物写不出去</span></span>
+          <span class="inline" data-lang="en"><span class="exit-label">Exit codes</span><span class="exit-i">0 success</span> · <span class="exit-i">1 bad usage</span> · <span class="exit-i">2 input unreadable</span> · <span class="exit-i">3 conversion failed</span> · <span class="exit-i">4 output not writable</span></span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh"><strong>选项</strong> · <code>--format docx|pdf|both</code> · <code>-o/--output 路径</code> · <code>--template 预设id</code> · <code>--json</code> · <code>--help</code></span>
+          <span class="inline" data-lang="en"><strong>Options</strong> · <code>--format docx|pdf|both</code> · <code>-o/--output path</code> · <code>--template preset-id</code> · <code>--json</code> · <code>--help</code></span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh">产物重名时自动写成「名 (2).docx」，不覆盖既有文件；用 <code>-o</code> 指定路径时不自动改名，该路径已被占用则本次转换直接失败。</span>
+          <span class="inline" data-lang="en">When a name collides, the output becomes “name (2).docx” instead of overwriting; with <code>-o</code> the path is used verbatim, and an occupied path fails the run.</span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh">命令行没有图表渲染宿主，<code>```mermaid</code> 围栏按等宽代码块写入产物。需要图形时用图形界面转换。</span>
+          <span class="inline" data-lang="en">The command line has no diagram renderer, so <code>```mermaid</code> fences land in the output as monospaced code blocks. Use the desktop app when diagrams are needed.</span>
+        </p>
+        <p class="cli-foot">
+          <a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/CLI.md">
+            <span class="inline" data-lang="zh">命令行用法 · 完整说明</span>
+            <span class="inline" data-lang="en">Command Line · full reference</span>
+          </a>
+        </p>
+      </div>
+
+      <!-- MCP -->
+      <div class="cli-card reveal" style="--d:90ms">
+        <h3>
+          <span class="inline" data-lang="zh">MCP 服务端</span>
+          <span class="inline" data-lang="en">MCP Server</span>
+        </h3>
+        <p class="cli-sig">node dist/mcp/index.js</p>
+        <p class="cli-note" style="margin-bottom:var(--space-sm)">
+          <span class="inline" data-lang="zh">在助手的 MCP 配置里登记该入口并重启助手，工具列表里会出现 <code>convert_markdown</code>，把 Markdown 转成 <code>.docx</code>。</span>
+          <span class="inline" data-lang="en">Register the entry in the assistant's MCP configuration and restart it; the tool <code>convert_markdown</code> then turns Markdown into <code>.docx</code>.</span>
+        </p>
+        <p class="cli-note">
+          <span class="inline" data-lang="zh">只产出 Word。Mermaid 图表会降级为代码块，并在返回值的 <code>degraded</code> 字段里写明，助手据此可判断这份产物是否需要人工补图。</span>
+          <span class="inline" data-lang="en">Word output only. Mermaid diagrams are degraded to code blocks, and the <code>degraded</code> field of the result says so, so the assistant can tell whether a document needs diagrams added by hand.</span>
+        </p>
+        <p class="cli-foot">
+          <a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/MCP.md">
+            <span class="inline" data-lang="zh">MCP 接入 · 完整说明</span>
+            <span class="inline" data-lang="en">MCP Integration · full reference</span>
+          </a>
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+  <!-- ===== 文档入口（区内收口） ===== -->
+  <section class="section dev-block dev-docs" id="dev-docs">
+    <div class="container">
+      <span class="kicker reveal">
+        <span class="inline" data-lang="zh">文档</span>
+        <span class="inline" data-lang="en">Documentation</span>
+      </span>
+      <h3 class="block-title reveal" style="margin:var(--space-md) 0 0">
+        <span class="inline" data-lang="zh">完整说明在哪</span>
+        <span class="inline" data-lang="en">Where the Full References Live</span>
+      </h3>
+      <div class="more-grid reveal">
+        <div class="more-item">
+          <span class="inline" data-lang="zh"><strong>命令行用法</strong> · 语法、选项、内置排版预设、JSON 输出与五档退出码</span>
+          <span class="inline" data-lang="en"><strong>Command Line</strong> · Syntax, options, built-in presets, JSON output, and the five exit codes</span>
+          <div><a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/CLI.md">
+            <span class="inline" data-lang="zh">读文档</span>
+            <span class="inline" data-lang="en">Read the reference</span>
+          </a></div>
+        </div>
+        <div class="more-item">
+          <span class="inline" data-lang="zh"><strong>MCP 接入</strong> · 助手侧配置写法、工具参数、返回值字段与失败重试</span>
+          <span class="inline" data-lang="en"><strong>MCP Integration</strong> · Assistant-side configuration, tool parameters, result fields, and retry on failure</span>
+          <div><a class="doclink" href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/MCP.md">
+            <span class="inline" data-lang="zh">读文档</span>
+            <span class="inline" data-lang="en">Read the reference</span>
+          </a></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /.dev-zone -->
+
 <!-- ===== Footer ===== -->
 <footer class="footer">
   <div class="container footer-inner">
@@ -611,6 +805,14 @@ html.js .reveal.is-in{opacity:1;transform:none}
       <a href="https://github.com/chenchaodev/markdown-to-word/blob/master/LICENSE">
         <span class="inline" data-lang="zh">许可证</span>
         <span class="inline" data-lang="en">License</span>
+      </a>
+      <a href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/CLI.md">
+        <span class="inline" data-lang="zh">命令行用法</span>
+        <span class="inline" data-lang="en">Command Line</span>
+      </a>
+      <a href="https://github.com/chenchaodev/markdown-to-word/blob/master/docs/MCP.md">
+        <span class="inline" data-lang="zh">MCP 接入</span>
+        <span class="inline" data-lang="en">MCP Integration</span>
       </a>
     </nav>
   </div>
