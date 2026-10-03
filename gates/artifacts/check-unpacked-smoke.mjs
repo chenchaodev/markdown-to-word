@@ -10,7 +10,9 @@
 //   - 硬超时必设:到点未退出即硬杀进程树并判红(不留孤儿渲染进程);
 //   - 每次运行一个全新的一次性 userData,并在 finally 里删除(建在 output/ 内);
 //   - 零删除:不碰 release/ 里的任何既有产物(解包目录是 electron-builder 的产物目录,
-//     本脚本只读它);临时目录只写 output/smoke-check/。
+//     本脚本只读它);临时目录只写 output/smoke-check/;
+//   - 随包分发的命令行转发器(build.extraFiles 落在安装根目录、与 exe 并列)必须就位:
+//     只断存在性,不断言其运行行为。
 //
 // 能力缺口已填(2026-09):冒烟实现下沉到 src/main/smoke.ts → dist/main/smoke.js,
 // 编译产物在 build.files 白名单内随包分发。此前 dev-only 入口进不了 app.asar,
@@ -22,7 +24,7 @@
 //   node gates/artifacts/check-unpacked-smoke.mjs --unpacked <dir> --timeout <ms>
 //   node gates/artifacts/check-unpacked-smoke.mjs --exe <file> --launcher <script.mjs>
 
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { isMainModule, parseArgs } from '../../shared/cli.mjs';
 import { toPosix } from '../../shared/fsx.mjs';
@@ -64,9 +66,9 @@ const USAGE = `用法: node gates/artifacts/check-unpacked-smoke.mjs [选项]
   --help             显示本用法`;
 
 /**
- * 读 package.json 的打包口径(productName / 解包目录来源),不可读即抛可读错误。
+ * 读 package.json 的打包口径(productName / 解包目录来源 / extraFiles 落点),不可读即抛可读错误。
  * @param {string} pkgPath package.json 路径
- * @returns {{ productName: string, releaseDir: string }} 打包口径
+ * @returns {{ productName: string, releaseDir: string, extraFiles: { from: string, to: string }[] }} 打包口径
  */
 function readBuildFacts(pkgPath) {
   let pkg;
@@ -80,7 +82,33 @@ function readBuildFacts(pkgPath) {
   return {
     productName,
     releaseDir: typeof pkg.build?.directories?.output === 'string' ? pkg.build.directories.output : DEFAULT_RELEASE_DIR,
+    extraFiles: readExtraFiles(pkg),
   };
+}
+
+/**
+ * 读 build.extraFiles 的声明(转发器落点的**唯一来源**)。
+ *
+ * 为什么从 package.json 取而不是把 `m2w.cmd` 写死在本脚本里:写死等于门禁自带一份与构建
+ * 配置无关的期望,配置改了门禁不会跟着变(仍是漂移校验);从配置取则「extraFiles 被删」会
+ * 让本函数返回空数组 —— 那正是 preflight 里显式判红的情形(见 forwarderProblems)。
+ * @param {unknown} pkg 已解析的 package.json
+ * @returns {{ from: string, to: string }[]} 声明条目(非数组或字段缺失一律当空)
+ */
+function readExtraFiles(pkg) {
+  const declared =
+    pkg !== null && typeof pkg === 'object'
+      ? /** @type {{ extraFiles?: unknown }} */ (pkg).build?.extraFiles
+      : undefined;
+  if (!Array.isArray(declared)) return [];
+  /** @type {{ from: string, to: string }[]} */
+  const entries = [];
+  for (const item of declared) {
+    if (item === null || typeof item !== 'object') continue;
+    const { from, to } = /** @type {{ from?: unknown, to?: unknown }} */ (item);
+    if (typeof from === 'string' && typeof to === 'string') entries.push({ from, to });
+  }
+  return entries;
 }
 
 /**
@@ -89,19 +117,21 @@ function readBuildFacts(pkgPath) {
  * @param {object} spec 目标
  * @param {string} spec.unpackedDir 解包目录
  * @param {string | undefined} spec.exeOption --exe 显式指定的可执行文件
- * @param {{ productName: string }} spec.facts 打包口径
- * @returns {{ problems: string[], warnings: string[], exePath: string }} 预检结论
+ * @param {{ productName: string, extraFiles: { from: string, to: string }[] }} spec.facts 打包口径
+ * @returns {{ problems: string[], warnings: string[], exePath: string, forwarderPaths: string[] }} 预检结论
  */
 function preflight({ unpackedDir, exeOption, facts }) {
   const problems = [];
   const warnings = [];
+  /** @type {string[]} */
+  let forwarderPaths = [];
   if (!existsSync(unpackedDir) || !statSync(unpackedDir).isDirectory()) {
     problems.push(
       `解包目录不存在:${toPosix(path.relative(projectRoot, unpackedDir))};` +
         `请先运行 npm run dist(打包链会生成 <${facts.releaseDir}>/${UNPACKED_DIR_NAME}),` +
         `或用 --unpacked 指向已有解包目录`,
     );
-    return { problems, warnings, exePath: '' };
+    return { problems, warnings, exePath: '', forwarderPaths };
   }
   const asarPath = path.join(unpackedDir, 'resources', 'app.asar');
   if (!existsSync(asarPath)) {
@@ -134,7 +164,67 @@ function preflight({ unpackedDir, exeOption, facts }) {
         `可用 --exe <file> 显式指定,或确认 npm run dist 是否跑完`,
     );
   }
-  return { problems, warnings, exePath };
+  const forwarder = checkForwarders(unpackedDir, facts.extraFiles);
+  problems.push(...forwarder.problems);
+  forwarderPaths = forwarder.present;
+  return { problems, warnings, exePath, forwarderPaths };
+}
+
+/**
+ * 断言 build.extraFiles 声明的转发器在解包目录里**真的落位**(只断存在性,不断言运行行为)。
+ *
+ * 为何必须是 fail-closed 的存在性钉(而不是又一次漂移校验):`check:dist-manifest` /
+ * `check:asar` 拿两个入口与 clean dist 清单逐字节比对,那是漂移校验 —— 清单里没有它们,
+ * 于是 `extraFiles` 被删或 `to` 写错时,gen 与 check 两边一起空,全链仍绿,而已装用户的
+ * 命令行入口静默消失。这里反过来:**期望清单来自 package.json 的声明,判定对象是产物**,
+ * 少一个即红。
+ *
+ * fail-closed 的两个方向都要堵:
+ *   - 声明为空(extraFiles 被删/被改名/读不到)→ 判红,不能「没有期望就没有失败」;
+ *   - 声明有但产物里没有 → 判红,并点名期望路径与解包目录里实际看到的 .cmd/.bat。
+ *
+ * @param {string} unpackedDir 解包目录
+ * @param {{ from: string, to: string }[]} extraFiles package.json build.extraFiles 声明
+ * @returns {{ problems: string[], present: string[] }} 问题列表与已确认落位的转发器路径
+ */
+function checkForwarders(unpackedDir, extraFiles) {
+  const problems = [];
+  const present = [];
+  if (extraFiles.length === 0) {
+    problems.push(
+      'package.json build.extraFiles 未声明任何条目:随安装包分发的命令行入口(转发器)' +
+        '靠 extraFiles 落在安装根目录、与应用可执行文件并列,声明为空即入口不会随包分发;' +
+        'docs/CLI.md · docs/USER-GUIDE.md · docs/MCP.md 与官网都已向用户承诺该入口,故此处判红',
+    );
+    return { problems, present };
+  }
+  for (const entry of extraFiles) {
+    const target = path.join(unpackedDir, entry.to);
+    if (existsSync(target)) {
+      present.push(entry.to);
+      continue;
+    }
+    const actual = listForwarderNames(unpackedDir);
+    problems.push(
+      `随包分发的转发器未落位:期望 ${toPosix(path.relative(projectRoot, target))}` +
+        `(声明 build.extraFiles 的 from=${entry.from} → to=${entry.to});` +
+        `解包目录内实际见到的 .cmd/.bat:${actual.length === 0 ? '(无)' : actual.join(', ')};` +
+        `请确认 build.extraFiles 的 to 落点未被改动、build-assets/${path.basename(entry.from)} 存在、且 dist 链已重跑`,
+    );
+  }
+  return { problems, present };
+}
+
+/**
+ * 解包目录内的 .cmd/.bat 文件名(转发器缺失时用于把「实际看到了什么」摆进诊断)。
+ * @param {string} dir 目录
+ * @returns {string[]} 文件名(字典序;目录不存在返回空数组)
+ */
+function listForwarderNames(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => /\.(cmd|bat)$/i.test(name))
+    .sort((a, b) => a.localeCompare(b));
 }
 
 export async function main(argv = []) {
@@ -171,7 +261,7 @@ export async function main(argv = []) {
   );
   const scratchRoot = path.resolve(projectRoot, options.scratch ?? DEFAULT_SCRATCH_DIR);
 
-  const { problems, warnings, exePath } = preflight({
+  const { problems, warnings, exePath, forwarderPaths } = preflight({
     unpackedDir,
     exeOption: options.exe === undefined ? undefined : path.resolve(projectRoot, options.exe),
     facts,
@@ -219,10 +309,14 @@ export async function main(argv = []) {
     return 1;
   }
   rmSync(scratchRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  // 转发器落位计数写进结论行(哪怕全通也报):「断言跑了」与「断言没跑」必须可分辨 ——
+  // 本仓有同族前科(守卫静默退 0 骗过门禁,CI 上原生崩溃退出码被当成判绿),故这条
+  // 断言不留「无输出即通过」的口子。
   console.log(
     `[ok] 解包产物 smoke 通过:${toPosix(path.relative(projectRoot, exePath))}` +
       ` 以 ${SMOKE_FLAG} 启动后退出码 0,诊断标记齐备(docx 转换 / pdf 转换 / pdf 书签 / renderer 诊断 / IPC 接线);` +
-      `一次性 userData 已清理,release/ 零改动`,
+      `转发器落位已核对 ${facts.extraFiles.length}/${facts.extraFiles.length}(${forwarderPaths.join(', ') || '(无)'}` +
+      `,与 exe 并列落在安装根目录);一次性 userData 已清理,release/ 零改动`,
   );
   return 0;
 }

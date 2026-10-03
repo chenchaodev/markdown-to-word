@@ -23,7 +23,10 @@
  *    警告各自准确(按用户安装不得出现提权/UAC 字样,那是事实错误的引导);
  * 8. 安装部分完成(注册表项 + 开始菜单快捷方式已写、文件未落)时失败:输出点名残留的
  *    具体键与快捷方式路径,并在未提权前提下尽力自愈;安装前就存在的同名键/文件
- *    绝不删除;自愈不改变判定(仍为红)。
+ *    绝不删除;自愈不改变判定(仍为红);
+ * 13. 转发器(build.extraFiles 随包分发的命令行入口)落位是 fail-closed 存在性钉:
+ *    声明有而产物缺、声明整个被删,都判红并点名期望路径与解包目录里实际看到的东西;
+ *    通过路径的结论行必须带落位计数(证明断言真的跑了,而不是「无输出即通过」)。
  *
  * 沙箱纪律(硬约束):被测脚本的项目根由脚本自身位置推导(读 package.json、按
  * build.directories.output 找 release),故把生产脚本**逐字节原样**复制到临时沙盒的
@@ -203,6 +206,10 @@ function writeFileIn(root, relative, content) {
  * @param {boolean} [options.smokeEntryInAsar] app.asar 内是否含冒烟入口(默认含:正向路径)
  * @param {boolean} [options.installer] 是否生成假安装包(默认生成)
  * @param {boolean} [options.perMachine] 夹具 build.nsis.perMachine(默认不设 = 按用户安装)
+ * @param {boolean} [options.forwarderInUnpacked] 解包目录内是否含转发器(默认含:正向路径;
+ *   置 false 造「声明有、产物缺」的漂移,验证转发器落位断言判红)
+ * @param {boolean} [options.declareExtraFiles] 夹具 package.json 是否声明 build.extraFiles
+ *   (默认声明;置 false 造「声明被删」,验证断言不会因「没有期望」而静默放过)
  * @returns {string} 沙盒根目录
  */
 /**
@@ -235,7 +242,13 @@ function makeAsarBytes(entryRelative) {
   return Buffer.concat([header, json]);
 }
 
-function createSandbox({ smokeEntryInAsar = true, installer = true, perMachine = false } = {}) {
+function createSandbox({
+  smokeEntryInAsar = true,
+  installer = true,
+  perMachine = false,
+  forwarderInUnpacked = true,
+  declareExtraFiles = true,
+} = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX));
   for (const artifactScript of SANDBOX_ARTIFACT_SCRIPTS) {
     const target = path.join(root, "gates", "artifacts", artifactScript);
@@ -275,6 +288,10 @@ function createSandbox({ smokeEntryInAsar = true, installer = true, perMachine =
           appId: "com.fixture.app",
           productName: FIXTURE_PRODUCT,
           directories: { output: "release" },
+          // 转发器落位的声明(与真实构建同形):从 build-assets 落到解包/安装根目录。
+          // 判定侧从这份声明取期望清单,故「声明被删」也必须判红(见 forwarderInUnpacked
+          // / declareExtraFiles 两个夹具开关注入的漂移)。
+          ...(declareExtraFiles ? { extraFiles: [{ from: "build-assets/m2w.cmd", to: "m2w.cmd" }] } : {}),
           nsis: {
             artifactName: "${productName}-Setup-${version}.${ext}",
             // 只在显式为 true 时写入:对齐「perMachine 不设 = 按用户安装」的真实构建口径
@@ -288,6 +305,9 @@ function createSandbox({ smokeEntryInAsar = true, installer = true, perMachine =
   );
   if (installer) writeFileIn(root, `release/${FIXTURE_PRODUCT}-Setup-${FIXTURE_VERSION}.exe`, "FAKE-INSTALLER\n");
   writeFileIn(root, `release/win-unpacked/${FIXTURE_PRODUCT}.exe`, "FAKE-EXE-BYTES\n");
+  // 转发器落位(与 exe 同级 = 安装根目录):真实构建经 build.extraFiles 落在这里,
+  // 断言侧只断它「在解包目录里存在」,不读内容也不执行。
+  if (forwarderInUnpacked) writeFileIn(root, "release/win-unpacked/m2w.cmd", "@echo off\r\nrem fixture forwarder\r\n");
   writeFileIn(
     root,
     "release/win-unpacked/resources/app.asar",
@@ -745,6 +765,11 @@ export async function run() {
       );
       assert(result.code === 0, `解包 smoke 正常路径应通过,实际 ${result.code}\n${result.output}`);
       assert(/解包产物 smoke 通过/.test(result.output), `应报告通过文案;实际:${result.output}`);
+      // 「断言跑了」的可分辨判据:通过也必须报落位计数,否则「跑了且通过」与「压根没跑」同形
+      assert(
+        /转发器落位已核对 1\/1\(m2w\.cmd/.test(result.output),
+        `通过结论行应带转发器落位计数(证明断言真的跑了);实际:${result.output}`,
+      );
 
       const trace = readTrace(tracePath);
       assert(trace.length === 1, `桩应只被启动一次,实际 ${trace.length} 次`);
@@ -1285,6 +1310,59 @@ export async function run() {
         "自愈之后仍须报出「新增残留」这条根因(判红不能被自愈掩盖)",
       );
       console.log("[ok] install-smoke:装到一半时点名残留键与快捷方式路径、主动自愈、既有安装不误删、自愈不改判定");
+    }
+
+    // ---------- 13. 转发器落位:存在性钉必须 fail-closed(两个漂移方向都判红) ----------
+    //
+    // 为什么这两条是本段最要紧的负向:其余门禁对转发器都是「漂移校验」(拿它与 clean dist
+    // 清单逐字节比对,清单里没有它 ⇒ extraFiles 被删时 gen 与 check 一起空、全链仍绿)。
+    // 这里要证的是反向的失败也红:声明空了、声明有而产物缺,都必须点名判红。
+    {
+      // 场景 A:声明有、产物缺(extraFiles 的 to 写错落点 / dist 链没把转发器打进去)
+      const missing = createSandbox({ forwarderInUnpacked: false });
+      sandboxes.push(missing);
+      const missingResult = runScript(
+        missing,
+        "check-unpacked-smoke.mjs",
+        ["--scratch", path.join(missing, "scratch"), "--launcher", path.join(missing, "stub.mjs"), "--launcher-runtime", NODE],
+        { M2W_STUB_MODE: "ok" },
+      );
+      assert(
+        missingResult.code === 1,
+        `转发器未落位应判红,实际 ${missingResult.code}\n${missingResult.output}`,
+      );
+      assert(
+        missingResult.output.includes("随包分发的转发器未落位") &&
+          missingResult.output.includes("m2w.cmd") &&
+          missingResult.output.includes("to=m2w.cmd"),
+        `应点名期望路径与声明来源;实际:${missingResult.output}`,
+      );
+      assert(
+        missingResult.output.includes("解包目录内实际见到的 .cmd/.bat:(无)"),
+        `应把「解包目录里实际看到了什么」摆出来(夹具里没有任何 .cmd/.bat);实际:${missingResult.output}`,
+      );
+      assert(/预检未通过,未启动任何进程/.test(missingResult.output), `预检未过不应启动进程;实际:${missingResult.output}`);
+
+      // 场景 B:声明整个被删(extraFiles 键消失)—— 「没有期望」不得等于「没有问题」
+      const undeclared = createSandbox({ declareExtraFiles: false, forwarderInUnpacked: false });
+      sandboxes.push(undeclared);
+      const undeclaredResult = runScript(
+        undeclared,
+        "check-unpacked-smoke.mjs",
+        ["--scratch", path.join(undeclared, "scratch"), "--launcher", path.join(undeclared, "stub.mjs"), "--launcher-runtime", NODE],
+        { M2W_STUB_MODE: "ok" },
+      );
+      assert(
+        undeclaredResult.code === 1,
+        `extraFiles 声明为空必须判红(不能因无期望而静默放过),实际 ${undeclaredResult.code}\n${undeclaredResult.output}`,
+      );
+      assert(
+        undeclaredResult.output.includes("build.extraFiles 未声明任何条目"),
+        `应点名「声明被删」这条根因;实际:${undeclaredResult.output}`,
+      );
+      console.log(
+        "[ok] install-smoke:转发器落位为 fail-closed 存在性钉(声明有而产物缺 / 声明被删 均判红并点名期望与实际)",
+      );
     }
   } catch (error) {
     failure = /** @type {Error} */ (error);
