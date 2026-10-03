@@ -11,7 +11,7 @@
 
 ## 下一步（一个动作）
 
-步序 1（装配层）与步序 2（CLI）均已落地。下一步 = **步序 3 · 本地 MCP 模式**（`REQ-162`，台账已登记）：docx-only + mermaid 显式降级 —— 降级须在返回值里对 agent 可见，每次 call 新 ctx + 强制 deadline（串行队列，MCP 没有「关窗口」这个出口）。步序 4（文件关联 / 右键菜单 / 拖拽 / CLI 作为发布 npm bin）已判定不做，见各自在台账的挂靠行。
+步序 1（装配层）与步序 2（CLI）均已落地。**步序 3 · 本地 MCP 模式正在进行中**（`REQ-162`，台账已移「在办」）：docx-only + mermaid 显式降级 —— 降级须在返回值里对 agent 可见，每次 call 新 ctx + 强制 deadline（串行队列，MCP 没有「关窗口」这个出口）。MCP 进程跑**纯 node**（不跑 Electron），理由与实测证据见下方「修复项复测 · 2026-10-03 · 步序 3 开工前」。步序 4（文件关联 / 右键菜单 / 拖拽 / CLI 作为发布 npm bin）已判定不做，见各自在台账的挂靠行。
 
 ## 相关 ADR 一行结论
 
@@ -116,6 +116,17 @@
 - ⚠️ 降级声明会进工具描述与返回值文案，**对 agent 可见的文案事后撤销比代码贵** ⇒ 开工前先确认降级策略
 - **同批把 `mcp` 登记进 `SRC_TOP_LAYERS` + 补它自己的 scope 规则**（已裁定接受「开工第一天门禁红一次」）：本轮 `SRC_TOP_LAYERS` 刻意**不含** `mcp`，判据是「一个名字进 allow-list 的前提是已有 scope 规则覆盖它」—— 登记一个无规则覆盖的名字，等于用「已治理」的假象盖住真实的洞。`src/mcp/` 落地那天门禁会先判红，逼着同批补规则。这是设计意图，不是缺陷
 
+
+**结果（2026-10-03）**：本步全部验收项落地。`node dist/mcp/index.js` 起一个只含 `convert_markdown` 的 docx-only server，零 electron。
+
+- 三条契约逐条兑现：**只暴露 docx**（pdf 需宿主，不提供）；**不注入 `mermaidResolver`** 且降级在返回值与工具描述里都点名；**每次 call 新 ctx + 强制 deadline**（120s，见 `tools.ts` 取值理由）。
+- 传输层手写最小 JSON-RPC 2.0 over stdio（不引官方 SDK —— 只暴露一个 tool，SDK 的 ajv/zod/express/hono 是纯负担）。stdout 只进协议、诊断一律 stderr、一帧一次 write；串行化保证同一时刻只有一条请求在飞。
+- **降级判定抽到 core**：`MERMAID_LANG` + `containsMermaidCode` 与渲染器共用同一个常量 —— 渲染器原本**静默**把 mermaid 围栏按代码块渲染且不产警告，声明方与渲染方各写一份字面量就会「声明降级但其实渲了图」。
+- **交付面设置基线抽到 `convert/delivery-settings.ts`**：ADR-060 规定 cli 与 mcp 零依赖 ⇒ 这段逻辑只能写在两层之下，cli 已改为消费同一份。
+- 门禁：新增跨面 scope 形态 `delivery-faces` 同时覆盖 `cli/` 与 `mcp/`，三条规则中性改名，**规则表条数不变（仍 12 条）**，未复制三条；`mcp` 已登记进 `SRC_TOP_LAYERS`。
+- 测试：`test/mcp/` 一段。传输层十项（含跨 chunk 半包、handler 抛错不终止 server、notification 不回帧）+ tool 真实转换 + 7 类业务失败。
+
+**与规划的偏差**：进程形态由 Electron 改为纯 node（见「修复项复测 · 步序 3 开工前」）；门禁未采用「开工第一天红一次」而是同批补规则 —— 补完即达规划意图，让门禁红一天不产生额外信息。
 ## 步序 4 · 本规划不做的事（各挂外部事件）
 
 | 事项 | 状态 | 挂钩 |
@@ -241,3 +252,13 @@
 
 **⑦ 退出码 4 的判据依赖三处文案匹配（脆弱，已写明出处）。**
 装配层把落盘失败与转换失败都抛成普通 Error、没有错误码，故 CLI 侧只能按文案匹配三处（artifact-writer 的「产物路径已存在」「不支持硬链接」，paths.ts 的「无法创建输出目录」）。已在代码注释里点名三处出处并写明「改文案必须同改这里」，避免它退化成隐式约定。若将来给装配层加错误码，应改为读码；在此之前，「三处文案 + 一处判定」优于「无判定」（脚本至少能区分「重名」与「磁盘满」）。
+
+### 2026-10-03 · 步序 3 开工前
+
+**① 「MCP 进程跑在 Electron 上」的因果接不上，且有两条实测反证。**
+现象：本规划步序 3 第一节写「只暴露 docx；pdf 需 Electron 宿主，**用户已拍板接受**，故 MCP 进程跑在 Electron 上」—— 但同节既然只暴露 docx，这条因果就断了：docx 走纯 node 已实测可行（步序 2 的 CLI 壳 `dist/cli/index.js` 本身就是纯 node，pdf 才在**里面**才 spawn Electron）。把「pdf 需要宿主」直接推成「MCP 进程需要宿主」，等于把一个**子能力**的约束当成了**进程形态**的约束。
+实测证据（两条，均为开工前实测）：
+① **Electron 子进程的 stdout 接到管道时，会在帧前面多吐一个 `\r\n`**（Chromium 噪声）。严格按行解析 JSON 的 MCP 客户端会撞上 —— 这与步序 2 复测 ② 撞的是同一类坑（stdout 在管道下不可靠），方向一致、结论相同：协议通道不能走子进程 stdout。
+② **`electron` 是 devDependency、不在 PATH 上**。MCP 客户端配置里写 `electron <path>` 只在开发检出里成立；打包后的用户手上没有那个二进制路径。
+裁决：**MCP 进程跑纯 node**（已与用户确认）。关键论证是「**pdf 是能力、不是进程形态**」—— 将来 MCP 要 pdf 时，复用步序 2 已建成的机制：纯 node 侧写任务文件 → spawn `dist/main/cli-pdf-host.js` → 读结果文件。协议通道（stdio + JSON-RPC）永远不碰 Electron。这也让「补 pdf」从「重写 MCP 进程形态」降级成「多加一次 spawn」。
+遗留尾巴：真要给 MCP 加 pdf 时，`src/convert/cli-pdf-job.ts` 会被第二个消费方（CLI 与 MCP 共用）⇒ 届时改名为 `pdf-host-job.ts`。**纯机械改名**，但要同批更新引用它的地方。

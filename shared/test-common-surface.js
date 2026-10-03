@@ -44,7 +44,7 @@ import path from "node:path";
  * gates→gates/**。故新增段目录不必改本文件,新增**被断言的树**才要。
  * @type {readonly string[]}
  */
-export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates", "convert", "cli"]);
+export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates", "convert", "cli", "mcp"]);
 
 /**
  * 不得作为段目录的名字(它们是 harness / 数据区 / 入口,不是被断言的树)。

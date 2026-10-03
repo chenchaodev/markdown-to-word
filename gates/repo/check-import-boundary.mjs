@@ -135,26 +135,30 @@ export const LAYER_RULES = Object.freeze([
     forbid: 'layer:renderer',
     reason: 'main 是 GUI 的宿主而非被依赖方,不得反向引用 renderer 内部模块(依赖方向单向 core ← main ← renderer;跨界只经 preload 暴露的 contextBridge API)',
   },
+  // 下面三条是 cli 与 mcp **共用**的交付面纪律:两者是 ADR-060 定的同层 adapter,
+  // 边界约束逐字相同。scope 用跨两面的 delivery-faces 形态(见 scopeMatches)而不是
+  // 「每个面各写三条」—— 后者会让同一语义有两处可漂移的副本,且新增交付面时
+  // 规则条数要翻倍(deny-list 逐条枚举的代价)。
   {
-    id: 'cli-no-renderer',
-    scope: 'cli',
+    id: 'faces-no-renderer',
+    scope: 'delivery-faces',
     forbid: 'layer:renderer',
-    reason: 'cli 是进程外的交付面(ADR-060):renderer 是 GUI 面,cli 引它会让纯 node 侧把 Electron 一起拖进来',
+    reason: 'cli/mcp 是进程外的两个交付面(ADR-060 的同层 adapter):renderer 是 GUI 面,它们引它会让纯 node 侧把 Electron 一起拖进来',
   },
   {
-    id: 'cli-no-host',
-    scope: 'cli',
+    id: 'faces-no-host',
+    scope: 'delivery-faces',
     forbid: 'bare:electron',
-    reason: 'cli 跑在纯 node 下,import electron 会把 Electron 宿主拖进它的依赖图(且 electron 只是 devDependency,' +
-      '生产安装根本没有)。需要宿主能力时由 cli 用子进程重入 Electron(见 main/cli-pdf-host.ts),不是 import 它',
+    reason: 'cli/mcp 跑在纯 node 下,import electron 会把 Electron 宿主拖进它的依赖图(且 electron 只是 devDependency,' +
+      '生产安装根本没有)。需要宿主能力时由该面用子进程重入 Electron(见 main/cli-pdf-host.ts),不是 import 它',
   },
   {
-    id: 'cli-no-outside-src',
-    scope: 'cli',
+    id: 'faces-no-outside-src',
+    scope: 'delivery-faces',
     // 同样用 prefix: 形态而非 layer:(理由同 smoke-no-outside-src:resolveLayer 返回顶层
     // 目录名,../../test/x 归一化后首段是「..」而非 test,layer: 抓不到向上逃逸)
     forbid: 'prefix:../../',
-    reason: 'cli 的编译产物随 dist/** 分发(build.files 只收 dist/**),凡 ../../ 开头的相对依赖都已指向包外路径,' +
+    reason: 'cli/mcp 的编译产物随 dist/** 分发(build.files 只收 dist/**),凡 ../../ 开头的相对依赖都已指向包外路径,' +
       '解包后必然跑不起来。与 smoke-no-outside-src 同一纪律:不得引用仓库相对路径、test/ 等不入包路径',
   },
   {
@@ -209,13 +213,11 @@ export const LAYER_RULES = Object.freeze([
  * 逻辑名 → 实际目录名的映射;本表管的是 `src/` 内各层,名字即目录名,故不经映射。
  *
  * 登记 ≠ 给它留个空位:登记一个没有任何规则 scope 命中的名字,等于把上面那个洞
- * 原样留在该名字上。故 `convert` / `cli` 虽是尚未落地的层也**在表内** —— 它们各自
- * 已有 scope 规则(convert-no-gui / cli-no-renderer),树落地当天即受治理。
- * 反之 `mcp`(ADR-060 步序 3)暂无任何 scope 规则覆盖,故**不登记**:
- * 登记一个没有规则覆盖的名字等于用「已治理」的假象盖住一个真实的洞,
- * 等它落地时还得回头补 —— 那正是本条要消灭的动作。
+ * 原样留在该名字上。故表内每个名字都必须已被某条规则的 scope 命中 ——
+ * `convert` 由 convert-no-gui 覆盖,`cli` 与 `mcp` 由同一个跨面 scope
+ * (delivery-faces)覆盖,树落地当天即受治理。
  */
-export const SRC_TOP_LAYERS = Object.freeze(['cli', 'convert', 'core', 'main', 'renderer']);
+export const SRC_TOP_LAYERS = Object.freeze(['cli', 'convert', 'core', 'main', 'mcp', 'renderer']);
 
 /**
  * 找出未登记的 src/ 顶层目录名(判据的纯函数本体,便于自检与测试直接消费)。
@@ -599,6 +601,14 @@ function scopeMatches(scope, file) {
   }
   // core 的 pdf 子树:scope 按 src 顶层目录匹配,故 core/pdf/** 需单列形态
   if (scope === 'core-pdf') return file.startsWith('core/pdf/');
+  // 两个进程外交付面(cli 与 mcp,ADR-060 步序 2/3 定的同层 adapter):一个 scope 命中
+  // **两个** src 顶层目录。与 renderer-foundation 同一形态(单条规则约束一组目录),
+  // 区别只在这里要表达的是「同层两棵 adapter 树的共同纪律」,故按前缀列表逐个命中,
+  // 而不是把三条规则复制成六条(deny-list 表的条数即维护成本,同义规则不应有两份)。
+  // 新增同类交付面时只需在此加一个前缀,规则表条数不变。
+  if (scope === 'delivery-faces') {
+    return ['cli/', 'mcp/'].some((prefix) => file.startsWith(prefix));
+  }
   return file === scope || file.startsWith(`${scope}/`);
 }
 
@@ -1106,8 +1116,8 @@ export function selfCheckTreeLayout(root) {
   // 清单**刻意不展开 SRC_TOP_LAYERS**:自检锚点必须独立于被检常量,否则常量写漏一个名字时
   // 夹具跟着写漏 → 恒绿(正是本函数要防的失效形态)。恒红方向由「全部已登记」那条兜住。
   const layerCases = [
-    { name: '全部已登记(应判绿)', dirs: ['cli', 'convert', 'core', 'main', 'renderer'], expect: 0 },
-    { name: '多出一个未登记顶层(应判红)', dirs: ['cli', 'convert', 'core', 'main', 'renderer', 'omega'], expect: 1 },
+    { name: '全部已登记(应判绿)', dirs: ['cli', 'convert', 'core', 'main', 'mcp', 'renderer'], expect: 0 },
+    { name: '多出一个未登记顶层(应判红)', dirs: ['cli', 'convert', 'core', 'main', 'mcp', 'renderer', 'omega'], expect: 1 },
     { name: '两个未登记顶层(应判红)', dirs: ['core', 'main', 'renderer', 'omega', 'psi'], expect: 2 },
   ];
   for (const testCase of layerCases) {
@@ -1221,7 +1231,7 @@ export async function main(argv = []) {
       + `core 不依赖宿主且不反向依赖 GUI 两层;`
       + `convert 是 headless 装配层,不反向依赖 main/renderer;`
       + `renderer 不反向依赖 main;main 不反向依赖 renderer;preload 不上跳引用 main;`
-      + `cli 是进程外交付面,不引用 renderer、不 import electron、不逃出 src/;`
+      + `cli/mcp 两个进程外交付面(同层 adapter)不引用 renderer、不 import electron、不逃出 src/;`
       + `smoke 不逃出 src/;`
       + `renderer 基础层(dom/state)不反向依赖功能目录;`
       + `core 的 pdf 渲染路径不 import node:fs(能力经入参注入);`
