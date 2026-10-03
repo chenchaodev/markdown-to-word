@@ -22,11 +22,18 @@
 // 仍兼做它自己那侧(配置仓 + 跨仓全量)的判定。ADR-016 备选方案 3 已否决「留配置仓共用」,故无
 // 机器对读;唯一的对冲是本文件头的基线记录 + 上面的删除清单,供人工重核。
 //
-// ---- 为什么仓根取 shared/paths.js 的 ROOT(不是自算) ----
+// ---- 为什么仓根取 process.cwd()(不是自算) ----
 // 上游那句 `join(dirname(fileURLToPath(import.meta.url)), '..')` 在**上游的位置**是对的,在**本仓
-// 的位置**会算成 `gates/` ⇒ 所有存在性判定全 false 而**静默零覆盖**。故本文件 import
-// `shared/paths.js` 的 `ROOT`(全仓唯一允许自算仓根的位置,见 `gates/repo/check-import-boundary.mjs`
-// 规则 no-self-computed-root)。**本文件内不得再出现第二处仓根字面量。**
+// 的位置**会算成 `gates/` ⇒ 所有存在性判定全 false 而**静默零覆盖**。根的**语义**唯一定义在
+// `shared/paths.js`(其 `ROOT` 恒等于 `process.cwd()`,见 `gates/repo/check-import-boundary.mjs`
+// 规则 no-self-computed-root);本文件的扫描根与它同值,故直接写 `process.cwd()` 而不 import
+// —— 省掉一次跨树 import 换来的是「本文件不再引用单源」这条**必须解释**的选择,理由是本文件
+// 只用根、不产出根,导入它反而让「谁定义根」在本文件里多出一处读者要核对的说法。
+// **本文件内不得再出现第二处仓根字面量。**
+//
+// ⚠️ 根是 cwd 派生的**环境**值,不是代码事实 —— 入口守卫因此**不能**用根反推本文件路径,
+// 必须用 `fileURLToPath(import.meta.url)`。这条不是风格选择:本门禁被刻意以「cwd 指向合成仓、
+// argv[1] 指向仓内本体」调用,两者恒不相等。详见入口守卫处的注释。
 //
 // ---- PROJECT_ROOT 恒等于扫描根(实施约束 3) ----
 // 上游是 `PROJECT_ROOT = atConfigRepo || !probeHit ? null : process.cwd()`,而
@@ -133,7 +140,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
-import { ROOT } from '../../shared/paths.js';
+import { fileURLToPath } from 'node:url';
 
 /**
  * 台账载体路径(工作项号台账)。同时是**扫描范围的判定入口**:门禁扫本仓的 `docs/` 就够了,
@@ -1987,7 +1994,13 @@ export function main() {
 // `^process\.exitCode\s*=`:顶格写会被判定本体注册表判成「顶层自执行」而与「可安全 import」
 // 的声明矛盾)。入参先取进局部变量再比较,是为了让「读命令行参数」在本文件里**恰好只出现一次** ——
 // 那是「不读环境变量 / 不加任何开关」这条机械不变量能被机械核对的前提(见文件头「不做」段)。
+//
+// 比较的右侧是 `fileURLToPath(import.meta.url)`(本文件的**代码位置**),**不是**
+// `join(ROOT, 'gates', 'repo', check-pointers.mjs)`:根是 cwd 派生的**环境**值,
+// 本门禁被刻意以「cwd 指向合成仓 + argv[1] 指向仓内本体」的方式调用(见 check-docs.selftest.mjs
+// 与 test/gates/check-pointers-e2e.test.js),两者恒不相等 ⇒ 拿 ROOT 反推自身路径会让守卫
+// **永不成立**:无任何输出、退出码 0。方向只能是「用位置事实断言位置」。
 const entryArg = process.argv[1];
-if (entryArg !== undefined && resolve(entryArg) === join(ROOT, 'gates', 'repo', 'check-pointers.mjs')) {
+if (entryArg !== undefined && resolve(entryArg) === fileURLToPath(import.meta.url)) {
   process.exitCode = main();
 }

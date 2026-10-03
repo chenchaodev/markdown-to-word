@@ -3,9 +3,9 @@
  * 测试扫描面 · 单一来源(4 处消费方共用)。
  *
  * 本模块**零仓库内依赖**(只 import node: 内建):门禁自检脚本要把它整份拷进临时夹具树
- * 单独跑,牵连别的模块就得连那份一起拷。项目根由调用方注入 —— 全仓唯一允许自算根的位置
- * 是 shared/paths.js(见 check-import-boundary.mjs 的规则 no-self-computed-root),本模块
- * 刻意不 import ROOT。
+ * 单独跑,牵连别的模块就得连那份一起拷。项目根由调用方注入 —— 全仓唯一**定义**根语义的位置
+ * 是 shared/paths.js(其值恒等于 `process.cwd()`;见 check-import-boundary.mjs 的规则
+ * no-self-computed-root),本模块刻意不 import ROOT。
  *
  * ---- 收口了什么(此前同一份知识散在 4 处,其中 2 处逐字相同)----
  * 1. **段目录集合**(测试发现面):test/acceptance.mjs 交给 runner 的段目录 ·

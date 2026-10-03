@@ -51,6 +51,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ROOT } from '../../shared/paths.js';
 import { expandChainScriptNames, topLevelScriptNames } from './chain-expand.mjs';
 import { auditPackWhitelist, topLevel } from './repo-manifest.mjs';
@@ -531,6 +532,9 @@ export function main(ctx = {}) {
 // 副作用是**改掉宿主进程的 exitCode**(verify:ci 链首步的进程退出码由调用方脚本决定,
 // 一段无关的 import 就能把它改成 1)。守卫之后本模块可被安全 import,注册表因此能
 // 登记它并真 import 出判定本体 checkContract。
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === join(ROOT, 'gates', 'repo', 'check-ci-contract.mjs')) {
+// 守卫右侧用 `fileURLToPath(import.meta.url)`(代码位置)而非 `join(ROOT, …)`(cwd 派生的环境值):
+// 本门禁在两条 workflow 里被**裸调**(`node gates/repo/check-ci-contract.mjs`),自检则以夹具为
+// cwd 运行,两者恒不相等时后者会让守卫永不成立、无输出退 0。
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = main();
 }

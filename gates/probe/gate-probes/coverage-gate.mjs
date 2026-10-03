@@ -23,6 +23,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ROOT } from "./contract.mjs";
 import { parseCoverageScript } from "./gates/coverage.mjs";
 
@@ -572,6 +573,9 @@ export async function main(argv = []) {
   return 0;
 }
 
-if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.join(ROOT, "gates", "probe", "gate-probes", "coverage-gate.mjs")) {
+// 守卫右侧用 `fileURLToPath(import.meta.url)`(代码位置)而非 `join(ROOT, …)`(cwd 派生的环境值):
+// 本门禁经 npm script 在仓根跑、自检则以项目根为 cwd 跑夹具,任何「cwd ≠ 门禁位置」的调用下
+// 后者都会让守卫永不成立、无输出退 0。
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = await main(process.argv.slice(2));
 }

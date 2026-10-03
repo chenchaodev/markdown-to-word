@@ -27,10 +27,8 @@
 // 退出码:0 = 判定通过;1 = 有错(逐条诊断与覆盖度自报打在 stdout,诊断正文由本体产出)。
 
 import path from 'node:path';
-import { ROOT } from '../../shared/paths.js';
+import { fileURLToPath } from 'node:url';
 import { main as judgmentMain } from './check-pointers.mjs';
-
-const projectRoot = ROOT;
 
 /**
  * 判定本体入口(转出,本层不持有任何判据)。
@@ -58,6 +56,11 @@ export function main() {
 //
 // ⚠️ `process.exitCode = main()` 那行**必须保持缩进**(判定本体注册表的顶层自执行探测是行首
 // 锚定正则 `^process\.exitCode\s*=`;顶格写会被判成「顶层自执行」而与「可安全 import」的声明矛盾)。
-if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.join(projectRoot, 'gates', 'repo', 'check-docs.mjs')) {
+//
+// 比较的右侧是 `fileURLToPath(import.meta.url)`(本文件的**代码位置**),**不是**由仓根反推的路径:
+// 仓根是 cwd 派生的**环境**值,而本门禁刻意被以「cwd 指向合成仓、argv[1] 指向仓内本体」调用
+// (见 check-docs.selftest.mjs),两者恒不相等 ⇒ 守卫永不成立、无输出退 0(实测形态)。
+// 方向只能是「用位置事实断言位置」—— 本文件是纯转发层,不再需要仓根本身。
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = main();
 }

@@ -28,7 +28,7 @@
 //   TOOLCHAIN_*          第三方工具步骤(tsc / eslint / 资源拷贝 / 验收段入口):判定体不在本仓。
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { ROOT } from "../../../shared/paths.js";
+import { fileURLToPath } from "node:url";
 import { walkChain } from "../../repo/chain-expand.mjs";
 import { GATE_IDS } from "./contract.mjs";
 import { auditJudgmentRef, makeCtx, problem, runGateCli, topLevelSelfExecutions } from "./protocol.mjs";
@@ -1106,6 +1106,8 @@ function fallbackSelfEntry() {
   };
 }
 
-if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(ROOT, "gates", "probe", "gate-probes", "registry.mjs")) {
+// 守卫右侧用 `fileURLToPath(import.meta.url)`(代码位置)而非由仓根反推的路径(仓根是 cwd 派生的环境值):
+// 本模块被以「cwd 指沙盒 / argv[1] 指仓内本体」调用时两者恒不相等,后者会让守卫永不成立、无输出退 0。
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = await main(process.argv.slice(2));
 }

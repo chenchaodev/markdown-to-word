@@ -15,6 +15,7 @@
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ROOT } from '../../shared/paths.js';
 
 const projectRoot = ROOT;
@@ -240,6 +241,8 @@ export function main(argv) {
 // 任何只想读一下它导出的判定函数的驱动器(门禁注册表 / 验收段)都会顺手改掉工作树文件,
 // 且这种写入极难归因(没人显式跑过它)。守卫之后 import 无副作用,注册表因此能登记它
 // 并真 import 出 main。
-if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.join(projectRoot, 'gates', 'repo', 'gen-archive-index.mjs')) {
+// 守卫右侧用 `fileURLToPath(import.meta.url)`(代码位置)而非 `join(projectRoot, …)`(cwd 派生的
+// 环境值):本门禁被以「cwd 指夹具 / argv[1] 指真实仓本体」调用时两者恒不相等,后者会让守卫永不成立。
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

@@ -63,6 +63,7 @@
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   checkSegmentMirrors,
   checkSurfaceEquality,
@@ -452,6 +453,8 @@ export async function main(argv = []) {
   return 0;
 }
 
-if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.join(projectRoot, 'gates', 'repo', 'check-test-numbering.mjs')) {
+// 守卫右侧用 `fileURLToPath(import.meta.url)`(代码位置)而非 `join(projectRoot, …)`(cwd 派生的
+// 环境值):本门禁被以「cwd 指夹具 / argv[1] 指夹具内副本」调用时两者恒不相等,后者会让守卫永不成立。
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = await main(process.argv.slice(2));
 }
