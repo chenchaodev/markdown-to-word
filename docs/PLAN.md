@@ -166,3 +166,19 @@
 **已核实的可推导事实**（留给后续动手的人省一步）：`REQUIRED_CI_STEPS`（`check-ci-contract.mjs:273-285`）只断言 11 步的相对顺序，**不含** `check:coverage-zero:selftest`；`registry.mjs:78` 只是「脚本名 → 文件路径」映射、不管顺序 ⇒ **移动它不撞任何既有断言**。
 
 **处置（2026-10-03 用户裁决）**：不单独挪一行，**留到按 CI 脚本整体分组重排时一起改** —— 链现在是按「所有 check 排前面 → 再 build/test/coverage」组织的，而这条 selftest 是唯一一条「组织顺序」与「数据依赖顺序」冲突的检查，单独挪会破坏那份组织对称性。已登记为独立工作项（见 `docs/REQ.md`）。**代价**：下一次任何「链在到达 `test:coverage` 之前失败」的情况都会复现同样的误导——本轮已实测被带偏一次。
+
+### 2026-10-03 · 步序 2（安装版转发入口）
+
+**⑪ 落点：`extraFiles` 落安装根目录（`extraResources` 试过并否决）。** 实测 `release/win-unpacked/m2w.cmd` 与 `MarkdownToWord.exe` **同级**，asar 在 `resources\` 下。故 `%~dp0` = 安装根，exe 取 `%~dp0MarkdownToWord.exe`、归档取 `%~dp0resources\app.asar\…`。
+
+**否决 `extraResources` 的理由是可发现性，不是技术**：它会落在 `resources\m2w.cmd`，与 `app.asar` 同级 —— 技术上完全成立（那条形态的五项验证同样全过），但用户找入口时看的是安装根目录（exe 在那儿），转发器埋进 `resources\` 里多了一层、且与「这是个应用资源目录」的直觉冲突。2026-10-03 用户裁决改落安装根目录。
+
+**`build.files` 与 asar 顶层清单一个字都没动**（那两条是本就会判红的红线），两个 `extra*` 键都不在任何门禁判定面内。
+
+**⑫ `.cmd` 转发器形态成立，MCP 走它没坏 stdio 分帧。** 实测：stdout 恰好 2 个 JSON 帧、含 `\r` 的行 0、非 JSON 行 0；启动横幅与 crashpad 噪声都在 stderr。**未加任何缓冲逻辑** —— 这条曾被列为「可能致命、可能要回退到 launcher exe」（那会重新引入打包链），现在可以关闭。附带实测：退出码 0/1/2/4 原样透传；**带空格的路径也通**（完整复制解包目录后 docx/pdf/MCP 全过）。
+
+一个方法论记要：**验证「路径含空格」不必用目录联接** —— `%~dp0` 相对 `.cmd` 自身解析，直接在真实落点跑就是真实形态；要试空格则**复制**一份即可。上一个泳道卡在 `mklink` + `rm -rf` 上被取消，那两条本就不必要（破坏性操作本就不该由我代批）。
+
+**⑬ 不给 `.cmd` 钉 `eol=crlf`。** 有人建议加，理由是入库 LF + `core.autocrlf=true` ⇒ 别的机器构建时包内字节不同。**不采纳**：仓库的 EOL 策略明写「入库统一 LF，检出 EOL 交由各端决定」（2026-08-24 用户确认），而 `.gitattributes` 里那几行 `eol=lf` 追加**每条的理由都是「门禁逐字节比对，CRLF 会让门禁恒红」**——`m2w.cmd` 不被任何门禁逐字节比对，那条理由不成立；cmd.exe 两种行尾都吃（已实测）。故加那行属无理由偏离既定策略。
+
+**未完成（步序 2 尚不能算完）**：① 入口**不在 PATH、无开始菜单快捷方式** —— 落安装根目录已经比埋进 `resources\` 好找得多（与 exe 并列），但用户仍需知道 `%LOCALAPPDATA%\Programs\MarkdownToWord\m2w.cmd` 这个位置，得靠文档写明；② 以上验证是在 `release/win-unpacked/` 上做的，**不是真 NSIS 安装**（`extraFiles` 在安装根目录的落点是 electron-builder 文档化行为 + 解包产物实测三方印证，但仍不是走完安装器）。两项都留给下一步。
