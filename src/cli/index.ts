@@ -22,10 +22,8 @@
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { collectMarkdownPaths } from "../convert/paths.js";
 import { prepareMarkdown } from "../convert/preprocess.js";
 import { createConvertContext } from "../convert/context.js";
@@ -48,9 +46,7 @@ import {
   type CliOptions,
   type CliResultItem,
 } from "./options.js";
-
-/** CLI 自身的模块目录(编译产物在 dist/cli/,源在 src/cli/) */
-const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+import { hostInvocation, isElectronProvidedNode } from "./host-launch.js";
 
 /**
  * 「输出写不了」的判据(退出码 4 的唯一来源)。
@@ -67,31 +63,6 @@ const OUTPUT_UNWRITABLE_MARKERS = ["产物路径已存在", "不支持硬链接"
 
 function isOutputUnwritable(message: string): boolean {
   return OUTPUT_UNWRITABLE_MARKERS.some((marker) => message.includes(marker));
-}
-
-/**
- * pdf 宿主产物路径(dist/main/cli-pdf-host.js)。
- *
- * ⚠ 这是**已知的编译产物深度假设**,与 resource-dirs.ts 的 Mermaid 定位同一形态
- * (编译产物恒在 <root>/dist/cli/ → 上溯一级即 dist/main)。刻意不引 shared/paths.js:
- * 本文件随 dist 分发到打包产物内,而 ROOT 指向**源码仓**,在 asar 内不成立
- * (同 smoke.ts 的打包面纪律)。
- */
-function pdfHostEntry(): string {
-  return path.resolve(moduleDir, "..", "main", "cli-pdf-host.js");
-}
-
-/**
- * 定位 Electron 可执行文件(开发态)。
- *
- * 走 `electron` 包的导出(其 index.js 返回 dist/electron[.exe] 的绝对路径),
- * **不 import electron 本身** —— import 它会把 Electron 拖进 CLI 的依赖图,
- * 那正是门禁 faces-no-host 要挡的形态(CLI 必须是纯 node 进程)。
- * electron 是 devDependency,打包形态不随包分发;打包后的 CLI 由应用自身承载,
- * 不经过本函数(与 ADR-060「打包形态的入口」口径一致)。
- */
-function resolveDevElectron(): string {
-  return String(createRequire(import.meta.url)("electron"));
 }
 
 /** 一次性目录(pdf 任务描述用;mkdtemp 保证每次运行都拿到全新目录) */
@@ -145,21 +116,37 @@ async function convertDocx(
  * convert/cli-pdf-job.ts 的 writeJobResult 注释(Windows 管道 + app.exit 会丢数据)。
  * 两个文件同在一次性目录,由本函数统一回收。
  */
-function convertPdfViaHost(job: CliPdfJob): CliResultItem {
+/**
+ * 经子进程重入宿主跑一次 pdf 转换。**导出供验收段直调**(同 `convertPdfJob` 的先例):
+ * 本文件虽是入口(有守卫、可被 import),但 pdf 拉起路径此前只有 `--format pdf`
+ * 会走到,而没有任何段真跑过 pdf —— 于是 `host-launch` 的判定与 `ELECTRON_RUN_AS_NODE`
+ * 剔除这两处「漏一行就静默失败」的位置全在覆盖率外。直调本函数是覆盖它们的唯一办法
+ * (派生真 node 子进程跑 pdf 则覆盖不到子进程里的判定)。
+ */
+export function convertPdfViaHost(job: CliPdfJob): CliResultItem {
   const tempDir = makeTempDir();
   try {
     const jobPath = path.join(tempDir, "job.json");
     const resultPath = path.join(tempDir, "result.json");
     fs.writeFileSync(jobPath, JSON.stringify(job), "utf8");
-    const run = spawnSync(resolveDevElectron(), [pdfHostEntry(), jobPath, resultPath], {
+    const host = hostInvocation(jobPath, resultPath);
+    const run = spawnSync(host.exe, host.args, {
+      // ⚠ env 必须显式给:不传就是全继承,已安装形态下宿主会跟着以纯 node 启动并崩掉
+      // (ELECTRON_RUN_AS_NODE 泄漏,详见 host-launch.ts 的 hostEnv 注释)
+      env: host.env,
       encoding: "utf8",
       windowsHide: true,
     });
     if (run.error) {
-      // 未找到 Electron 可执行文件 = 环境前置条件未满足,不是转换失败
+      // 宿主可执行文件起不来 = 环境前置条件未满足,不是转换失败。
+      // 已安装形态下这意味着「应用 exe 不可执行」,源码检出形态下是「electron 没装」——
+      // 两者的下一步动作不同,故文案按上下文给,不要笼统说「请先 npm install」。
       process.stderr.write(
-        `[cli] pdf 需要 Electron 宿主,开发态下未能启动:${run.error.message}\n` +
-          "[cli] 请先执行 npm install;或改用 --format docx(pdf 无宿主不可用)\n",
+        isElectronProvidedNode()
+          ? `[cli] pdf 需要宿主应用可执行文件,未能启动:${run.error.message}\n` +
+            "[cli] 请确认本程序已完整安装;或改用 --format docx(pdf 无宿主不可用)\n"
+          : `[cli] pdf 需要 Electron 宿主,开发态下未能启动:${run.error.message}\n` +
+            "[cli] 请先执行 npm install;或改用 --format docx(pdf 无宿主不可用)\n",
       );
       return { input: job.input, format: "pdf", ok: false, warnings: [], elapsedMs: 0, error: run.error.message };
     }

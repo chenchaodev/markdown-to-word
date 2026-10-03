@@ -59,7 +59,7 @@ function assert(cond, msg) {
  * 刻意不接受 electron.exe —— 用它就必须设 ELECTRON_RUN_AS_NODE,那就不是纯 node 了。
  * @returns {string}
  */
-function resolveNode() {
+export function resolveNode() {
   for (const candidate of [process.env.npm_node_execpath, process.execPath]) {
     if (candidate && /node(\.exe)?$/i.test(candidate)) return candidate;
   }

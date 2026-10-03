@@ -19,8 +19,6 @@
  * 故按 resource-dirs 里 Mermaid 的既有做法,改用**模块自身位置**定位
  * (编译产物恒在 <root>/dist/main/ → 上溯两级即 <root>,打包态即 app.asar)。
  */
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app } from "electron";
@@ -31,6 +29,7 @@ import { emitConvertedArtifact } from "../convert/run.js";
 import type { ConvertWarning } from "../core/i18n.js";
 import type { AppSettings } from "../core/settings/settings-defaults.js";
 import { renderPdf } from "./converter/electron-side.js";
+import { preparePdfHostProfile } from "./services/pdf-host-profile.js";
 import { resolveKatexDir } from "./services/resource-dirs.js";
 
 /** 本模块的目录(编译产物在 <root>/dist/main/) */
@@ -111,8 +110,53 @@ function warningKeyOf(warning: ConvertWarning): string {
 }
 
 /**
+ * 以「宿主」角色跑完一次 pdf 任务:装宿主的两项全局设置 → app ready 后转换 → 结束进程。
+ *
+ * 为什么是函数而不是入口块里的语句:宿主有**两个**启动形态,两者必须共用同一段设置,
+ * 否则那份设置只在一半的调用路径上生效(PLAN「步序 1 · 修复项复测 ②」)。
+ * ① 源码检出:`electron dist/main/cli-pdf-host.js <job> <result>`(argv[2]/argv[3]);
+ * ② 已安装:`<产品名>.exe --pdf-host <job> <result>`(flag 之后的两个值,见 main/index.ts)。
+ * ② 尤其不能漏:那份设置在被 import 时**不会**执行(入口守卫不成立),只 import
+ * convertPdfJob 就等于把下面两个坑重新引进来。
+ *
+ * **本函数不解析 argv**:两种形态的 argv 布局不同(脚本路径是否占位、flag 是否在前),
+ * 解析逻辑留在各自入口,这里只收「已取好的 job/result 两个路径」。这样解析不会有两份。
+ *
+ * 两种形态共同的不变量:① `setPath("userData")` 早于 ready;② 装上 window-all-closed
+ * 空处理器。这两条都由本函数承担 —— 漏掉任一条的症状都是**静默**的(见下)。
+ *
+ * @param jobPath 任务描述文件路径(缺省即用法错)
+ * @param resultPath 结果文件路径(缺省即用法错)
+ */
+export function runPdfHost(jobPath: string | undefined, resultPath: string | undefined): void {
+  // ready 之前的宿主设置(重定向 userData + 接管 window-all-closed)已搬进
+  // services/pdf-host-profile.ts,本函数只调用它。搬走的理由是**时序**,不是职责:
+  // 已安装形态要先 await import 本模块才会走到这里,那与「ready 之前完成重定向」冲突。
+  // 该函数幂等,故已安装形态下 main/index.ts 在动态 import 之前先调过一次,这里是第二次。
+  preparePdfHostProfile();
+
+  if (jobPath === undefined || resultPath === undefined) {
+    process.stderr.write("[cli-pdf] 用法:cli-pdf-host <job.json> <result.json>\n");
+    app.exit(exitCodes.usage);
+    return;
+  }
+  void app.whenReady().then(
+    async () => {
+      app.exit(await convertPdfJob(jobPath, resultPath));
+    },
+    (error: unknown) => {
+      process.stderr.write(
+        `[cli-pdf] Electron 启动失败:${error instanceof Error ? error.message : String(error)}\n`,
+      );
+      app.exit(exitCodes.convertFailed);
+    },
+  );
+}
+
+/**
  * 入口守卫:仅当本文件被当作 Electron 主进程启动时才接管生命周期。
- * 被 import(验收段直调 convertPdfJob)时不碰 app 的任何全局状态。
+ * 被 import(验收段直调 convertPdfJob;已安装形态被 main/index.ts 动态 import)时不碰
+ * app 的任何全局状态 —— 宿主设置由调用方显式调 runPdfHost() 承担。
  */
 function isEntryPoint(): boolean {
   const entry = process.argv[1];
@@ -121,38 +165,5 @@ function isEntryPoint(): boolean {
 }
 
 if (isEntryPoint()) {
-  // 一次性 userData:pdf 打印会拉起隐藏 BrowserWindow,Electron 默认把 profile 写到
-  // 真实 %APPDATA% —— CLI 是脚本面,不该在用户真实 profile 里留痕。建在 os.tmpdir() 下
-  // 而非项目 output/:本宿主可能以打包产物形态被拉起,那时项目 output/ 写不进去。
-  // **重定向必须在 app ready 之前**完成(Chromium 在 ready 时已按该路径建好 profile)。
-  app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "m2w-cli-pdf-")));
-
-  // 接管 window-all-closed:空处理器 = 不让窗口生命周期决定进程何时结束。
-  // Electron 的默认行为是「最后一个窗口关闭即退出」。本宿主**没有常驻窗口** ——
-  // printPdf 会建一个隐藏打印窗口并在 finally 里 destroy 它,那一下恰好构成
-  // 「最后一个窗口关闭」,默认处理器随即结束进程:pdf-lib 的书签/元数据注入、产物提交、
-  // 结果文件写入全部来不及执行。
-  // 症状极难自查(2026-10-03 实测):子进程退出码 0、**无任何 stderr**、结果文件不存在,
-  // 看起来像「任务根本没跑」;调试脚本里更怪 —— 挂着的 setInterval 一次都没触发,
-  // 说明不是异常也不是超时,而是进程被**同步**结束、事件循环直接排空。
-  app.on("window-all-closed", () => {});
-
-  const jobArg = process.argv[2];
-  const resultArg = process.argv[3];
-  if (jobArg === undefined || resultArg === undefined) {
-    process.stderr.write("[cli-pdf] 用法:cli-pdf-host <job.json> <result.json>\n");
-    app.exit(exitCodes.usage);
-  } else {
-    void app.whenReady().then(
-      async () => {
-        app.exit(await convertPdfJob(jobArg, resultArg));
-      },
-      (error: unknown) => {
-        process.stderr.write(
-          `[cli-pdf] Electron 启动失败:${error instanceof Error ? error.message : String(error)}\n`,
-        );
-        app.exit(exitCodes.convertFailed);
-      },
-    );
-  }
+  runPdfHost(process.argv[2], process.argv[3]);
 }

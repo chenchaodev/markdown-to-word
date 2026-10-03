@@ -22,6 +22,21 @@ export const exitCodes = Object.freeze({
 
 export type ExitCode = (typeof exitCodes)[keyof typeof exitCodes];
 
+/**
+ * 「以宿主角色运行一次 pdf 任务」的 argv flag —— **跨面单源**。
+ *
+ * 为什么住在本模块:它与 `exitCodes` 同性质 —— cli 侧 spawn 时拼进去、main 侧解析它,
+ * 两侧都是 adapter,互不 import(见文件头:cli → convert 与 main → convert 合法,
+ * cli → main 不合法)。flag 字符串拼错的后果是**静默失效**:CLI spawn 出一个正常启动
+ * 图形界面的进程,宿主侧找不到分支,于是「转换没发生」而退出码仍是 0。
+ * 这类跨面契约拼写不一致必须只有一处。
+ *
+ * 已安装形态用它而不是「脚本路径」形态:那时 `dist/main/cli-pdf-host.js` 落在
+ * `app.asar` 内,Electron 不能把 asar 内的文件当应用路径启动。详见
+ * docs/PLAN.md「步序 1 · 修复项复测 ③」。
+ */
+export const PDF_HOST_FLAG = "--pdf-host";
+
 /** 一次 pdf 转换任务的完整描述(CLI 写文件 → pdf 宿主读文件)。 */
 export interface CliPdfJob {
   /** 输入 markdown 绝对路径 */
