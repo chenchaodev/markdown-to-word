@@ -114,3 +114,47 @@
 ## 修复项复测
 
 <!-- 实施过程中撞到的、与上面判据不符或未预料的事实，逐条追加。与 ADR-060「实施复测」小节同体例。 -->
+
+### 2026-10-03 · 步序 1 开工
+
+**① 步序 1 的范围被低估：一件写成三件。** 规划写的是「宿主可执行文件定位重构」，读代码后发现至少还要做两件事：把宿主的启动设置抽成两种入口共用（见②）、给主进程加 `--pdf-host` 分支（见④）。原因是 `--pdf-host` 不能插在 `--smoke` 那个位置。
+
+**② 宿主的启动设置活在被 import 就不执行的入口守卫里。** `cli-pdf-host.ts` 的 `app.setPath("userData", 临时目录)`（**必须在 ready 之前**，否则 Chromium 已按真实 `%APPDATA%` 建好 profile）与 `app.on("window-all-closed", () => {})`（那个同步杀进程的坑，症状是退出码 0、无 stderr、结果文件不存在）都在 `if (isEntryPoint())` 块内。所以「让已安装应用当宿主」若只做 `import("./cli-pdf-host.js")` 调 `convertPdfJob`，**那两行不会跑** —— 等于把步序 2 修过的坑重新引进来。故必须抽成可复用函数由两处入口共用，而不是各写一份。
+
+**③ asar 对 `fs` 透明 ≠ 可以把 asar 内的文件当应用路径启动。** 实测证明 `ELECTRON_RUN_AS_NODE` 下能直接 `readFileSync` asar 内的 `dist/**`，于是「代码不必挪出 asar」成立（§六）。但**已安装形态不能用脚本路径形态拉起宿主**：`dist/main/cli-pdf-host.js` 落在 `app.asar` 内，Electron 会把它当应用目录去找 `package.json`，起不来。⇒ 已安装形态必须走 flag 形态（`--pdf-host`），源码检出形态保持脚本路径形态不变。**这是「实测通了」到「能用」之间的一步，不该省。**
+
+**④ `--pdf-host` 必须豁免单实例锁，否则静默失效。** `main/index.ts:26` 是 `if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); }`，`--smoke` 已豁免。若 pdf 宿主不豁免：**用户开着图形界面时跑一次 pdf 转换，宿主立刻退出**，CLI 侧拿到的正是②里那个「退出码 0、无 stderr、结果文件不存在」的静默失败 —— 长得像成功。豁免理由必须写进注释，否则后来人会按「与 smoke 一致」把它改回去。
+
+**⑤ `--pdf-host` 不能沿用 `--smoke` 的位置。** smoke 分支在 `app.whenReady()` 内部、且在 `createWindow()` 之后（`main/index.ts:57` 先建窗口）。pdf 宿主不能建主窗口、不能注册 IPC、不能跑启动设置运行时，故必须是一条**取代**整个 GUI 启动流程的分支，而非插在它内部。
+
+**⑥ 判别式取 `process.versions.electron` 是否有值。** 备选的「路径里有没有 app.asar」被否：要读 `argv[1]`，而 CLI 也可能被当脚本以不同相对路径启动，信号随调用方式漂。用一个只描述「本进程是什么」的量，比用「我从哪被叫起来」稳。
+
+**⑦ `--pdf-host` 形态有个「恰好成立」的时序，必须改成结构上确定。** dev 形态在模块顶层同步 `setPath("userData")`，安全；`--pdf-host` 形态则是**先 `await import()` 重模块、再设 profile**。实测那一次成立（真实 `%APPDATA%\MarkdownToWord` 全程未被创建，pdf 正常产出），**但成立不等于安全**：Electron 只保证 `ready` 排在主脚本同步求值之后，那次 import 要拉装配层与 pdf-lib，冷缓存或慢盘上完全可能输给 `ready` —— 而输掉的代价是 Chromium 已在真实路径建好 profile，宿主还在往别处重定向：**往用户真实 profile 里写数据，静默且难查**。
+
+修法是把这两步（`setPath` + `window-all-closed` 空处理器）抽进 `src/main/services/pdf-host-profile.ts`，该模块**只依赖 electron 与 node 内置模块**，故 `main/index.ts` 能**静态**导入并在动态 import **之前**同步调用；重的部分留在 `cli-pdf-host.ts` 仍走动态 import，GUI 启动路径不为它付费。
+
+**该函数必须幂等**：两种入口形态都会调它（重模块兜底 + `main/index.ts` 先调一次），而 `mkdtempSync` 每次建新目录 —— 不加标记会白留一个临时 profile 在 tmpdir 里。实测重构后只产生一个，标记有效。
+
+**判据怎么定的**：不是「跑一次没出问题」，而是「这条顺序在结构上有没有可能输」。凡是涉及 `app.setPath` / ready / 窗口生命周期的顺序，都按后者判。
+
+**⑧ `ELECTRON_RUN_AS_NODE` 会继承进宿主子进程 ⇒ pdf 在安装版必然失败（架构评审实测抓到，已修）。** `spawnSync` 不传 `env` 就是全继承，而已装形态的 launcher 正是设了这个变量让 CLI 以纯 node 跑应用 exe；子进程继承到它就**也**以纯 node 启动，随后以 `SyntaxError: The requested module 'electron' does not provide an export named 'shell'` 崩掉、结果文件不产出（实测退出码 3，pdf 未落盘）。dev 形态同样中招：开发机 shell 里恰好有该变量即中。
+
+**修法必须是 `delete`，不能置 `=0`** —— Electron 只判断该变量**是否存在**、不读取值，实测 `=0` 与 `=1` 同样致命。写成 `env: { ...process.env, ELECTRON_RUN_AS_NODE: "0" }` 是**看起来修了其实没修**。这处不变量现在落在 `host-launch.ts` 的 `hostEnv()`，两种入口形态都必经。
+
+同源的第二个传播路径：`.cmd` 转发器的 `setlocal` **不隔离**环境变量 —— 所以转发器不做任何隔离是「对」的，隔离反而会掩盖这条。`ELECTRON_NO_ASAR` 同样会改变形态（置 1 会让 asar 不再透明、已装形态随即读不到自己的代码），但**本轮未实测「置空是否有效」**，故暂不剔除 —— 凭推测加进剔除列表比留着更危险。
+
+**⑨ 覆盖率门禁判「0% 文件」时，先怀疑自己的测试不够，不要先怀疑工具。** 本轮 `host-launch.ts` 报 `functions 0/6` 且 `fnMap` 为空，我一度判成 c8 的归因异常并准备走豁免。实际是**真实缺口**：那个「直接调纯函数」的测试确实调了 5 个函数，但**判定本身在调用链上** —— `convertPdfViaHost` 是唯一调用者，而它从未执行（`options.test.js` 里那处 `--format pdf` 只是 `expandFormats("pdf")` 的纯函数断言）。补一段**派生纯 node 跑真 pdf** 的验收后，该文件 `functions 0/6 → 6/6`、`cli/index.ts` `7/11 → 10/11`，`pdf-host-profile.ts` 顺带从 0/1 到 1/1，**两个「异常」一起归零，豁免一张都不需要**。
+
+⇒ 门禁那句「要么它是新增死代码(必须补测试或删掉)」是准确判断，而「函数有测试调用」不等于「它在生产路径上被调用」。派生形态的选择也有讲究：**别在 Electron 宿主里再 spawn Electron**（实测整段超时 180s 被硬终止），派生纯 node 才对 —— 既避开嵌套，覆盖面还更大（子进程走 dev 分支，连 `resolveDevElectron` 一并覆盖）。
+
+**⑩ 覆盖率门禁有一个「产物依赖顺序」造成的自锁：真修好了也会被判成没修。** 现象是同一条门禁**连续两轮给出完全相同的数字**（`statements 127/155, functions 0/5`），而同期定向跑同一段已量到 `100 / 6/6`。
+
+因果链（`verify:ci` 的 `&&` 顺序）：
+
+1. `check:coverage-zero:selftest` 的最后一条 case 是「真实仓库当前未漂移」，它拿 `output/coverage/coverage-summary.json` 跑判定；
+2. 而唯一会刷新那个文件的 `test:coverage` 排在 selftest **之后**；
+3. 于是任一次「链在到达 `test:coverage` 之前失败」都会留下判红的 summary → 下一轮 selftest 读到它 → 又红 → `&&` 断开 → **`test:coverage` 永远跑不到** → summary 永不刷新 → 死循环。
+
+**判据**：连续两轮拿到**逐字相同**的覆盖数字，就不是「代码没修好」，而是「读到陈旧产物」——真缺口的数字会随代码变动而变。破解是先手动 `npm run test:coverage` 刷新产物再跑链。
+
+**未修**：这是门禁自身的顺序缺陷（selftest 依赖一个排在它之后的产物），修它要动 `verify:ci` 的 script 顺序或让 selftest 在缺产物时跳过「真实仓库」那条 case —— 属门禁改动，不在本规划范围内，且改之前得先确认门禁那侧的意图（那条 case 大概正是为了防止拿陈旧产物冒充绿）。**记录在此，步序 5 之前需单独拍板。**

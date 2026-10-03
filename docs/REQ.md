@@ -44,7 +44,6 @@
 | REQ-163 | 库模式（npm 包） | 未开工 | 由 REQ-006 拆出。core 纯度已实测达标但打包面为零：本仓 `private: true`、无 `bin`/`exports`/`types`，`tsconfig.json` 无 `declaration` 键 ⇒ dist 不产 `.d.ts`，对外暴露类型需新增该键。与 MCP 无技术共同点故拆号 | 「是否对外发 npm 包」决策后开工 | docs/adr/ADR-060-多层交付面与headless装配层.md |
 | REQ-164 | 项目根改由 cwd 单一来源 | 未开工 | `ROOT`（`shared/paths.js:20`）改 `process.cwd()` 单一来源。代码 2 行，但连带 **9 处入口守卫**须同改（不只 `check-pointers.mjs:1991`）⇒ 否则守卫永不成立、无输出退 0；另 `check-import-boundary.mjs:241-247` 指令要改写。否决：`--root`、fallback 双分支（违 ADR-037）、env 变量（把响亮的 `ERR_MODULE_NOT_FOUND` 换成静默错根）。等 REQ-161 收尾 | REQ-161 收尾后；或改动 `shared/paths.js` 派生依据时重新评估 | docs/evidence/20261003-111453-顶层目录结构与项目根来源改造调研.md |
 | REQ-165 | 沙盒副本机制退役 | 未开工 | 25 个副本里 23 个可删（5 via 只造假数据 + install-smoke 8 份），改「真脚本 + `cwd` 指夹具」；留 A2 两处（必须改写门禁源码）与 tree-mirror（真跑门禁，缺文件当场红，不加判红）。删整套副本闭包机制换白名单式复制点门禁，净减约 905 行，失效方向由 fail-open 翻成 fail-closed。否决：`M2W_ROOT` env、loader 魔法、tree-mirror 判红、npm 装真包。**须在 REQ-164 落地后开工** | REQ-164 收尾后；或复制点数量回升 / per-`via` 断言仍只查 `shared/paths.js` 时重看 | docs/evidence/20261003-111453-顶层目录结构与项目根来源改造调研.md |
-| REQ-166 | 命令行与 MCP 缺安装版可执行入口 | 未开工 | 两个交付面已落地但只有源码检出能用：`private: true` 且无 `bin` ⇒ 无 npm 命令；`build.files` 只收 `dist/**` 且无启动器 ⇒ dist 躺在 asar 里用户够不着；CLI 的 pdf 经 `require("electron")`，而 electron 是开发期依赖 ⇒ 安装版 pdf 不可用。候选路径有两条（Node SEA 自包含 exe / 复用已装 electron.exe 当 node），各要一条新构建链与安装目录布局，未排期 | 排期做安装版命令行入口时；或用户明确要求安装版自带命令行 | docs/evidence/20261003-180918-命令行exe分发路径调研.md |
 
 ## 在办
 
@@ -54,6 +53,7 @@
 |---|---|---|---|---|---|
 | REQ-161 | 多层交付面总规划 | 在办 | 步序 1 已完成并提交（4 个提交）：`src/convert/` 装配层六件，实测零 electron、零 main 反向依赖；`output-skeleton.ts` 一分为二为 `run.ts` + `electron-side.ts`；层向门禁补两条 scope 并改 allow-list，造未登记顶层实测判红；`test/convert/` 段在真 node 子进程跑通 docx。步序 2/3 见 REQ-045/REQ-162 | 整体完成标准 8 条划完（步序 1~3 全落地） | docs/adr/ADR-060-多层交付面与headless装配层.md · docs/evidence/20261003-120000-平台耦合面盘点与跨平台成本落点.md |
 | REQ-162 | 本地 MCP 模式 | 在办 | 由 REQ-006 拆出。docx-only + mermaid 显式降级：MCP 触发点是 mermaid 不是 pdf（`mermaid-service.ts:362` 顶层 `app.on` 使 import 即需宿主）。不注入 resolver 即零 Electron、窗口收口坑自动消失，降级须进返回值对 agent 可见。每次 call 新 ctx + 强制 deadline（串行队列，MCP 无「关窗口」出口） | 步序 3 完工后 | docs/adr/ADR-060-多层交付面与headless装配层.md |
+| REQ-166 | 命令行与 MCP 缺安装版可执行入口 | 在办 | 两个交付面已落地但只有源码检出能用：`private: true` 且无 `bin` ⇒ 无 npm 命令；`build.files` 只收 `dist/**` 且无启动器 ⇒ dist 躺在 asar 里用户够不着；CLI 的 pdf 经 `require("electron")`，而 electron 是开发期依赖 ⇒ 安装版 pdf 不可用。候选路径有两条（Node SEA 自包含 exe / 复用已装 electron.exe 当 node），各要一条新构建链与安装目录布局，未排期 | 排期做安装版命令行入口时；或用户明确要求安装版自带命令行 | docs/evidence/20261003-180918-命令行exe分发路径调研.md |
 
 ## 已完成
 

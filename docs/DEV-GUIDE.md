@@ -40,7 +40,7 @@
 
 | 入口 | 面向 | 形态与限制 |
 | ---- | ---- | ---- |
-| `node dist/cli/index.js <路径...>` | 脚本 / 批处理 | 纯 node。`--format docx` 同进程跑;`pdf` 经**子进程重入 Electron**(入口 `dist/main/cli-pdf-host.js`,任务与结果经临时文件传递,不走 stdout —— Windows 管道下 `app.exit()` 不等 stdout 落盘)。语法、选项、退出码表见 [命令行用法](CLI.md) |
+| `node dist/cli/index.js <路径...>` | 脚本 / 批处理 | 纯 node。`--format docx` 同进程跑;`pdf` 经**子进程重入 Electron**(任务与结果经临时文件传递,不走 stdout —— Windows 管道下 `app.exit()` 不等 stdout 落盘)。宿主拉起有**两种形态**,由 `src/cli/host-launch.ts` 判定:开发态用脚本路径(`electron dist/main/cli-pdf-host.js`),已安装形态用 `--pdf-host` flag(宿主就是应用自身 —— asar 内的脚本路径不能当 Electron 应用路径启动),且子进程 env 必须剔除 `ELECTRON_RUN_AS_NODE`(见该文件 `hostEnv`)。语法、选项、退出码表见 [命令行用法](CLI.md) |
 | `node dist/mcp/index.js` | AI 助手(MCP) | 纯 node,手写最小 JSON-RPC 2.0 over stdio(不引官方 SDK)。只暴露 `convert_markdown`(docx-only);`degraded: ["mermaid"]` 必须出现在返回值里 —— 降级对 agent 不可见即等于造了一台「同样输入偶尔产出不同」的工具。接入示例见 [MCP 接入](MCP.md) |
 | `electron .` | 图形界面 | 唯一的全功能形态(pdf + mermaid) |
 
@@ -133,14 +133,14 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - `src/mcp/`:本地 MCP 交付面(ADR-060,与 cli 同层的第二个 adapter;进程跑纯 node,不引入 electron)
   - `jsonrpc.ts`(最小 JSON-RPC 2.0 over stdio 传输:机制层,不含领域概念;不引官方 SDK 是因为只需 `initialize`/`tools/list`/`tools/call` 三方法,SDK 的类型与生命周期开销大于手写)/`tools.ts`(tool 目录与转换调用:docx-only,不注入 `mermaidResolver`,降级在返回值对 agent 可见)/`index.ts`(入口接线:stdio ↔ 分派)
 - `src/cli/`:CLI 交付面(`node dist/cli/index.js`,ADR-060;门禁 `faces-no-renderer`/`faces-no-host`/`faces-no-outside-src` 三条(与 mcp 共用同一 scope 形态):禁引 renderer、禁 import electron、禁逃出 src/)
-  - `index.ts`(编排:收集输入 → 逐格式跑 → 分流出参 → 取最严重退出码;pdf 经子进程重入 Electron)/`options.ts`(纯函数:argv → 设置契约,退出码语义与 `--template` 映射;`--template` 走 core 的 `presetSettingsPatch`,与 renderer 的 `applyTemplatePreset` 共用同一函数)
+  - `index.ts`(编排:收集输入 → 逐格式跑 → 分流出参 → 取最严重退出码;pdf 经子进程重入 Electron)/`options.ts`(纯函数:argv → 设置契约,退出码语义与 `--template` 映射;`--template` 走 core 的 `presetSettingsPatch`,与 renderer 的 `applyTemplatePreset` 共用同一函数)/`host-launch.ts`(宿主调用判定:已装形态取 `process.execPath` + `--pdf-host` flag,源码检出形态取 `electron` 包 + 脚本路径;判据为 `process.versions.electron` 是否有值;`decideHostInvocation` 是纯函数,故两种上下文可在同一验收进程内各断言一次)
 - `src/main/`:Electron 主进程
   - `src/main/index.ts`:组合根;`src/main/menu.ts`:应用菜单;`src/main/smoke.ts`:**冒烟唯一实现**(编译进 `dist/main/smoke.js` 随包分发,故解包产物也能跑 `--smoke`;主进程 `--smoke` 分支直连该编译产物,仓内不留第二份实现或 dev 侧转调入口);`src/main/cli-pdf-host.ts`:CLI 的 pdf 宿主(Electron 入口,被 `dist/cli/index.js` 以子进程拉起;注入 `renderPdf` 调装配层,结果写文件而非 stdout —— 见该文件头两条 Windows 坑的注释)
   - `windows/`:main-window.ts/preview.ts(预览窗+尺寸记忆)/title-bar-overlay.ts(Windows 标题栏 overlay 配色与高度常量单源)/web-contents-registry.ts(ctxByWebContents 注册表,窗口层不反向依赖 IPC 层)
   - `ipc/`:channels.ts(channel 名单源+恒等测试守护)/register.ts(handler 注册,导入类 handler 走 importFileViaDialog 模板)/logic.ts(纯逻辑)/output-allowlist.ts(shell 打开产物的会话级白名单,renderer 触达宿主文件系统的唯一入口)/types.ts(只做 re-export,剪贴板契约声明在 `src/core/ipc-contract.ts`)
   - `converter/`:index.ts(编排)/single.ts(薄适配器:校验+读取 md 后交装配层,并注入 pdf 打印/mermaid/导出后行为三能力;转出 `renderPdf`/`runAfterConvert` 以保批量与测试的导入面)/electron-side.ts(Electron 侧:隐藏窗 printToPDF 两遍法 + 书签 + 元数据注入、资源管理器打开产物)/batch.ts/merge.ts
   - `persist/`:settings.ts/ui-state.ts/atomic-json.ts(原子写)/preset-file.ts(设置与预设文件的纯形状校验 + 预设解析/合并)
-  - `services/`:mermaid-service.ts/temp-html.ts(randomUUID+'wx')/resource-dirs.ts/web-hardening.ts(窗口导航加固)/session-permissions.ts(session 权限默认拒绝收口)
+  - `services/`:mermaid-service.ts/temp-html.ts(randomUUID+'wx')/resource-dirs.ts/web-hardening.ts(窗口导航加固)/session-permissions.ts(session 权限默认拒绝收口)/pdf-host-profile.ts(pdf 宿主 ready 之前的 userData 重定向与 window-all-closed 接管;**独立成模块的唯一理由是时序** —— 已安装形态须在动态 import 重模块之前同步调它,故它只依赖 electron 与 node 内置模块以便静态导入)
   - `preload.cts`:contextBridge 白名单暴露 `window.api`(编译为 CJS;暴露面类型取 `src/core/preload-api.ts`)
 - `src/renderer/`:GUI UI(vanilla TS + 原生 DOM)
   - `index.html` + `style/`(base/drop/settings/dialogs 四文件)/`src/renderer/lang-bootstrap.js`(FOUC 缓解)
