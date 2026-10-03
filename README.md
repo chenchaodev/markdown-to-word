@@ -128,6 +128,15 @@ npm run dev        # 构建 + 启动 Electron 开发态
 npm run dist       # 打包 Windows 安装包（NSIS，输出到 release/）
 ```
 
+除图形界面外，另有两个从编译产物启动的入口，可在脚本与 AI 助手里调用同一套转换能力：
+
+```bash
+node dist/cli/index.js 笔记.md    # 命令行入口：Markdown → Word / PDF
+node dist/mcp/index.js            # MCP 服务端：供支持 MCP 的 AI 助手调用
+```
+
+两个入口都要从源码检出运行，需要 Node.js >= 22.13 与已装齐的依赖，并先完成构建；Windows 安装包只含图形界面，不含这两项。命令行入口的预设、选项、退出码与 JSON 输出见 [命令行用法](docs/CLI.md)；服务端在助手里的配置方式、工具参数与返回值见 [MCP 接入](docs/MCP.md)。
+
 技术栈：Electron 43 + TypeScript（ESM）；docx 9.x + remark（remark-gfm 表格/删除线、remark-math 公式，Word 渲染）、jszip（解包 .docx 模板）、markdown-it 14.3 + Electron printToPDF（PDF 渲染）、iconv-lite（GBK 等编码识别）、KaTeX / Mermaid 11 / highlight.js / pdf-lib。
 
 验证与打包命令的完整清单见 [开发者手册](docs/DEV-GUIDE.md) 的「命令」节（`npm run typecheck` / `lint` / `build` / `test` / `test:smoke` 等）。
@@ -150,6 +159,8 @@ npm run dist       # 打包 Windows 安装包（NSIS，输出到 release/）
 - [开发者手册](docs/DEV-GUIDE.md)：环境、命令、代码地图、验证基线
 - [架构决策](docs/adr/)：为什么这么设计（一决策一文件，含状态与取代关系）
 - [UI 规范](docs/design/ui-guidelines.md) / [设置信息架构](docs/design/settings-ia.md)：改界面前必读
+- [命令行用法](docs/CLI.md)：从源码检出运行的命令行入口，含语法、选项与退出码
+- [MCP 接入](docs/MCP.md)：AI 助手接入的完整说明
 
 **参与**
 

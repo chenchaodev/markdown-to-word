@@ -144,6 +144,15 @@ npm run dev        # build + launch Electron
 npm run dist       # package the Windows NSIS installer into release/
 ```
 
+Beyond the desktop app there are two more entry points, both started from the build output, which expose the same conversion capability to scripts and to AI assistants:
+
+```bash
+node dist/cli/index.js notes.md   # command line: Markdown → Word / PDF
+node dist/mcp/index.js            # MCP server, for MCP-capable AI assistants
+```
+
+Both run from a source checkout, so Node.js >= 22.13 with installed dependencies and a completed build are required. The Windows installer contains only the desktop app, not these two entry points. Presets, options, exit codes and JSON output for the command line are in [Command line usage](docs/CLI.md); how to wire the server into an assistant, its tool parameters and its results are in [MCP integration](docs/MCP.md).
+
 Tech stack: Electron 43 + TypeScript (ESM); docx 9.x + remark (Word rendering, with remark-gfm / remark-math), markdown-it 14.3 + Electron printToPDF (PDF rendering), KaTeX / Mermaid 11 / highlight.js / pdf-lib, jszip (unpacking .docx templates) and iconv-lite (GBK-compatible decoding).
 
 ```bash
@@ -173,6 +182,8 @@ Test system: Zero-registration acceptance tests organized by content topic in `t
 - [Dev Guide](docs/DEV-GUIDE.md): Environment, commands, code map, verification baseline
 - [Architecture decisions](docs/adr/): why it is designed this way (one decision per file)
 - [UI guidelines](docs/design/ui-guidelines.md) / [Settings IA](docs/design/settings-ia.md): Read before touching the UI
+- [Command line usage](docs/CLI.md): The command line entry point, run from a source checkout; syntax, options and exit codes
+- [MCP integration](docs/MCP.md): How an AI assistant connects to it
 
 **Contributing**
 

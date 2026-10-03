@@ -34,6 +34,20 @@
 
 > 冒烟只有 `npm run test:smoke` 一个入口。绕过 npm 直接 `npx electron . --smoke` 会跳过构建新鲜度守卫、拿旧产物跑,故本文件不列该写法。
 
+### 交付面入口(不经 npm script,直接跑编译产物)
+
+三个交付面共用 `src/convert/` 装配层,各自入口从 `dist/` 起跑,**都不经 npm script**,因为它们是给脚本 / AI 助手直接调用的,不是开发回路的一步:
+
+| 入口 | 面向 | 形态与限制 |
+| ---- | ---- | ---- |
+| `node dist/cli/index.js <路径...>` | 脚本 / 批处理 | 纯 node。`--format docx` 同进程跑;`pdf` 经**子进程重入 Electron**(入口 `dist/main/cli-pdf-host.js`,任务与结果经临时文件传递,不走 stdout —— Windows 管道下 `app.exit()` 不等 stdout 落盘)。语法、选项、退出码表见 [命令行用法](CLI.md) |
+| `node dist/mcp/index.js` | AI 助手(MCP) | 纯 node,手写最小 JSON-RPC 2.0 over stdio(不引官方 SDK)。只暴露 `convert_markdown`(docx-only);`degraded: ["mermaid"]` 必须出现在返回值里 —— 降级对 agent 不可见即等于造了一台「同样输入偶尔产出不同」的工具。接入示例见 [MCP 接入](MCP.md) |
+| `electron .` | 图形界面 | 唯一的全功能形态(pdf + mermaid) |
+
+三者**都不随安装包分发**(`build.files` 只收 `dist/**`,但 npm 包仍是 `private`、无 `bin`),故本节命令只在源码检出里成立;这是发布决策未定的现状,不是遗漏。
+
+改任一交付面的行为前先读 ADR-060 的「入口能力矩阵」:新增入口 = 在那张表加一列,不是重新设计一层。
+
 ## 门禁接入点
 > 接入点四取一:`verify:ci` 链 / `verify:release` 链 / 仅某个 CI workflow 的 job / 仅本地手动。链的成员单源于 `package.json` 的 `verify:ci` / `verify:release` / `dist`,workflow 事实单源于 `.github/workflows/ci.yml` 与 `.github/workflows/release.yml`;两者对链组成的断言由 `check:contract` 守护。
 
