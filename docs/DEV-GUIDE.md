@@ -75,7 +75,7 @@ MCP 形态的判定要点:stdout 上应恰好两个 JSON 帧(启动横幅与 cra
 
 | 门禁类别 | 脚本 | 接入点 |
 | ---- | ---- | ---- |
-| 构建 / 类型 / 风格 | `build` `typecheck` `lint` | `verify:ci` 链 |
+| 构建 / 类型 / 风格 | `build` `typecheck` `lint` | `verify:ci` 链。`lint` 的覆盖面含**三棵非 tsc program 的树**(`gates/**/*.mjs`、`shared/**/*.mjs`、`shared/**/*.js`、`tools/**/*.mjs`)并对它们开 `no-undef` —— 这几棵树不在任何 tsconfig 的 `include` 内,而 `no-undef` 默认不在 `tseslint.configs.recommended` 里(typescript-eslint 刻意关它,因为 TS 自己查),不显式开则标识符拼错两道静态检查都不报、只有 `npm run acceptance` 真跑到才炸(node globals 在 `eslint.config.js` 该块集中声明,勿就地 `eslint-disable`)。**未开 `checkJs`** —— 实测给 `gates/` 开它产生上千条噪声(纯缺 JSDoc 标注的隐式 any ＋ 继承的 `noUncheckedIndexedAccess` ＋ 跨模块 typedef 引用),清零成本与「抓一个字符的错」的诉求差三个数量级(裁决见 `docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md`) |
 | 开发启动 | `dev` `start` | 仅本地手动 |
 | 清理生成目录 | `clean:dist` `clean:release` | `verify:release` 链(`dist` 的首步,只删这两个生成目录) |
 | 清理 c8 的 V8 dump 临时目录 | —(**无 npm script**) | `node gates/artifacts/clean-artifacts.mjs --coverage-temp`。这是**独立的无值布尔开关,不是第四个 `--target` 关键字** —— `--target` 的取值域只有 `dist`/`release`/`all` 三档且被门禁逐字节钉死,加关键字会判红。`--coverage-temp` 的落点钉在 `package.json` 的 `test:coverage` 的 `--temp-directory=` 上。**默认不清**:`clean:dist` 不动它,`--target all` 也不带它 —— 它是测试运行器中间态、不进包,清理理由只是磁盘占用,搭车「删除不可逆」的动作不划算(`.c8-tmp` 实测约 134M) |

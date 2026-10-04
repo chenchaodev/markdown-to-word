@@ -73,4 +73,49 @@ export default tseslint.config(
       "@typescript-eslint/no-require-imports": "off",
     },
   },
+  {
+    // 非 tsc program 的三棵树(gates / shared / tools)开 no-undef(REQ-170)。
+    //
+    // 为什么需要它:`no-undef` 默认不在 tseslint.configs.recommended 里
+    // (typescript-eslint 刻意关掉它,因为 TS 自己查未定义标识符)。而这三棵树不在任何
+    // tsconfig 的 include 内(tsconfig.json 只含 src,tsconfig.test.json 只含 test),
+    // TS 查不到它们 ⇒ 标识符拼错、用了不存在的名字,两道静态检查都不报,只有
+    // `npm run acceptance` 真跑到那一行才炸 —— 门禁脚本的错误发现被推迟到最贵的时刻。
+    //
+    // 为什么不用 tsc checkJs 替代(曾评估并否决):实测给 gates/ 开 checkJs 产生 1028 条
+    // 错误,其中 544 条是参数/绑定/索引隐式 any(纯缺 JSDoc 标注,.mjs 无标注时永远
+    // 满足不了 strict)、106 条是继承的 noUncheckedIndexedAccess(对无标注 JS 无意义)、
+    // 18 条 TS2304 全是跨模块 JSDoc typedef 引用未导入(GateProbeResult 等声明在
+    // contract.mjs 却跨文件直接引用,JSDoc 类型是模块作用域的),**真拼错 0 条**。
+    // 清零那 1028 条等于给 3 万行 JS 逐个补类型注解,与本条诉求(抓一个字符的错)不成比例。
+    // 本块实测存量 1 条(仅 setImmediate 未声明为 global),代价与收益相差三个数量级。
+    //
+    // globals 在此集中声明,勿在文件里就地 eslint-disable:三棵树不在 TS program 内,
+    // ESLint 无从得知 node 内置全局,缺声明即报未定义。
+    files: ["gates/**/*.mjs", "shared/**/*.mjs", "shared/**/*.js", "tools/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        Buffer: "readonly",
+        URL: "readonly",
+        URLSearchParams: "readonly",
+        TextEncoder: "readonly",
+        TextDecoder: "readonly",
+        structuredClone: "readonly",
+        fetch: "readonly",
+        performance: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        setImmediate: "readonly",
+        clearImmediate: "readonly",
+        queueMicrotask: "readonly",
+      },
+    },
+    rules: {
+      "no-undef": "error",
+    },
+  },
 );
