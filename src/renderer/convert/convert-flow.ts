@@ -28,8 +28,8 @@ import {
   type PrecheckWarningGroup,
 } from "../ui/dialogs.js";
 import { setCommandBusyProbe, updateActionButtons } from "./file-list.js";
-import { t } from "../../core/i18n.js";
-import { formatWarning, type ConvertWarning, type I18nKey, type KeyedWarning } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
+import { formatWarning, type ConvertWarning, type I18nKey, type KeyedWarning } from "../../core/i18n/index.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 
 /** 错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */

@@ -22,9 +22,9 @@
  */
 
 /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} ConvertWarning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} ConvertWarning */
 
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { unzipPart, zipContains } from "../common/docx-utils.js";
 import { htmlToPdf } from "../common/pdf-utils.js";
 import { saveArtifact } from "../common/artifacts.js";

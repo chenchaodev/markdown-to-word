@@ -5,7 +5,7 @@
 import { app, BrowserWindow, Menu, ipcMain, nativeTheme } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { t } from "../core/i18n.js";
+import { t } from "../core/i18n/index.js";
 import { IPC_CHANNELS as CH } from "./ipc/channels.js";
 import { openExternalIfHttp } from "./services/web-hardening.js";
 import { getMainWindow } from "./windows/main-window.js";

@@ -39,7 +39,7 @@ function assert(cond, msg) {
 /** 下发给 setTitleBarOverlay 的 overlay 参数(配色 + 高度) */
 /** @typedef {{ color: string, symbolColor: string, height: number }} TitleBarOverlay */
 /** 界面语言(契约单源) */
-/** @typedef {import("../../src/core/i18n.js").Language} Language */
+/** @typedef {import("../../src/core/i18n/index.js").Language} Language */
 /** 主题偏好(契约单源) */
 /** @typedef {import("../../src/core/settings/settings-defaults.js").ThemePreference} ThemePreference */
 /** 一次调用的记录元素(动作名 + 该动作的参数) */

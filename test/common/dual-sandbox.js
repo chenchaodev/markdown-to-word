@@ -17,7 +17,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { convert } from "../../dist/core/convert.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
 import { renderPdfHtml } from "../../dist/core/pdf/render.js";
 import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
@@ -54,7 +54,7 @@ const B = FIXTURES_DIR;
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本文件打的是 dist 产物)。
  */
 /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 
 /**
  * convert() 的类型化别名 + 宿主能力注入点:运行期就是 dist 的 convert 加一次

@@ -10,7 +10,7 @@
  * 依赖方向:本模块 → wizard-fields、wizard-runtime、wizard-steps(封面预览/引用)、
  * core / state / settings-* / convert(单向),不反向引用外壳。
  */
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import { AppSettings } from "../../core/settings/settings-defaults.js";
 import { state } from "../state/state.js";
 import { persistSettings } from "../settings/settings-save.js";

@@ -20,7 +20,7 @@ import { baseName, STAGE_PERCENT, stageText } from "../../state/pure.js";
 import { setError, setProgress, setStatus, translate } from "../../ui/dom-ops.js";
 import { isConvertCommandBlocked, runBatch, runConvert, runMerge } from "../convert-flow.js";
 import { openDialog } from "./selection.js";
-import { t } from "../../../core/i18n.js";
+import { t } from "../../../core/i18n/index.js";
 
 /* ---------- 本域事件绑定(index 组合入口逐域调用) ---------- */
 export function bindConvertActionsEvents(): void {

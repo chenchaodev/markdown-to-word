@@ -34,7 +34,7 @@
  *   applyThemeOn(data-theme 属性应用纯函数:light/dark 设属性,system 移除属性)
  */
 import { DICT, LANGUAGES } from "../../dist/core/i18n/index.js";
-import { setLanguage, t } from "../../dist/core/i18n.js";
+import { setLanguage, t } from "../../dist/core/i18n/index.js";
 import {
   DEFAULT_SETTINGS,
   MAX_CUSTOM_PRESETS,

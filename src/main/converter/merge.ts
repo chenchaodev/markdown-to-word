@@ -12,8 +12,8 @@ import type { ConvertResult } from "../../core/ipc-contract.js";
 // ConvertResult 契约单源 core/ipc-contract.ts(跨进程数据形状);此处 re-export
 // 保持 converter/index.ts 与既有导入面不变,勿在本文件重复声明。
 export type { ConvertResult } from "../../core/ipc-contract.js";
-import type { ConvertWarning } from "../../core/i18n.js";
-import { t } from "../../core/i18n.js";
+import type { ConvertWarning } from "../../core/i18n/index.js";
+import { t } from "../../core/i18n/index.js";
 import { mergeMarkdowns } from "../../core/pipeline/merge.js";
 // 合并结果的 frontmatter 隔离:core convert 不再自己解析(见 core/convert.ts 的
 // PreprocessedMarkdown),而 mergeMarkdowns 按设计**保留首文件 frontmatter 原样**,

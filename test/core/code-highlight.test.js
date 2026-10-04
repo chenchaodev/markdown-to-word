@@ -16,7 +16,7 @@
  */
 import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import hljs from "highlight.js/lib/common";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";

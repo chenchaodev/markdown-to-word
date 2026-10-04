@@ -62,7 +62,7 @@ const fenceWarning = (/** @type {number} */ lineNo) => ({
 
 /**
  * 会阻断合并的未闭合围栏告警:core 的该告警恒带 blocksMerge 信号
- * (见 core/pipeline/precheck.ts 与 core/i18n.ts 的 KeyedWarning)。
+ * (见 core/pipeline/precheck.ts 与 core/i18n/warning.ts 的 KeyedWarning)。
  */
 const blockingFence = (/** @type {number} */ lineNo) => ({
   ...fenceWarning(lineNo),
@@ -185,9 +185,10 @@ export async function run() {
     const flow = await import(distUrl("convert/convert-flow.js"));
     const dialogs = await import(distUrl("ui/dialogs.js"));
     const i18n = await import(pathToFileURL(path.join(ROOT, "dist", "core", "i18n", "index.js")).href);
-    // t / setLanguage 不在 i18n/index.js 的导出面上,按 i18n-registry 段的同款从
-    // core/i18n.js 取(注册表面只出 DICT / LANGUAGES / isLanguage / htmlLangOf)
-    const i18nApi = await import(pathToFileURL(path.join(ROOT, "dist", "core", "i18n.js")).href);
+    // t / setLanguage 现由 core/i18n/index.js 一并再导出(ADR-064 把原 i18n.ts 桶溶进
+    // i18n/ 后,index.ts 是唯一公开桶)。下面这一行与上一行因此取的是同一个模块 ——
+    // 留着是为了不改动本段既有的变量名与用法;新写代码直接用上面的 i18n 即可。
+    const i18nApi = await import(pathToFileURL(path.join(ROOT, "dist", "core", "i18n/index.js")).href);
     const { state } = await import(distUrl("state/state.js"));
     // 结果弹窗会把「模态可见」置起来挡住后续用例;本段只关心预检门
     state.suppressCompleteDialog = true;

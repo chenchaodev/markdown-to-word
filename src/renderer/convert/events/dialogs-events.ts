@@ -48,7 +48,7 @@ import { closeBookWizard } from "../../wizard/book-wizard.js";
 import { closePresetSaveDialog } from "../../settings/settings-preset-actions.js";
 import { setSuppressCompleteDialog } from "../../settings/settings-panel.js";
 import { openDialog } from "./selection.js";
-import { t } from "../../../core/i18n.js";
+import { t } from "../../../core/i18n/index.js";
 
 /** 复制成功反馈的恢复由 ui/dialogs 统一管理(单实例计时器 + 打开即复位),
  *  本域只负责写剪贴板与调用 showCopyFeedback——不改写按钮文案。 */

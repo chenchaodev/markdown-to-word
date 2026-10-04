@@ -4,7 +4,7 @@
  * 取消不降级为 mermaid 渲染失败警告(否则转换会带着未渲染图表继续跑完并报成功)。
  */
 import { decodeEntities, escapeHtml } from "../text/text-escape.js";
-import { mermaidEmptyWarning, mermaidFailedWarning, type ConvertWarning } from "../i18n.js";
+import { mermaidEmptyWarning, mermaidFailedWarning, type ConvertWarning } from "../i18n/index.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import { isConversionCanceled, type CancellationGuard } from "../cancel.js";
 

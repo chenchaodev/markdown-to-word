@@ -293,8 +293,9 @@ export async function run() {
     await import(dist("renderer/settings/settings-logic.js"));
   const table = await import(dist("renderer/settings/settings-controls-table.js"));
   const { state } = await import(dist("renderer/state/state.js"));
-  // t / setLanguage 在 i18n 逻辑层(core/i18n.js);注册表 index.js 只有 DICT/LANGUAGES
-  const i18n = await import(dist("core/i18n.js"));
+  // core/i18n/index.js 是 core/i18n 的唯一公开桶:注册表(DICT / LANGUAGES / isLanguage /
+  // htmlLangOf)与逻辑层(setLanguage / t / applyStaticTexts)都从它出。
+  const i18n = await import(dist("core/i18n/index.js"));
   const panel = await import(dist("renderer/settings/settings-panel.js"));
   const bindings = await import(dist("renderer/settings/settings-bindings.js"));
   const { DEFAULT_SETTINGS } = await import(dist("core/settings/settings-defaults.js"));

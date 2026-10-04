@@ -15,7 +15,7 @@ import { parseImageSizeAttrs, type ImageDim } from "../../image/image-size.js";
 import { createLocalImagePathPolicy } from "../../image/image-path-policy.js";
 import { imageAttrInvalidWarning } from "../../image/image-warning.js";
 import { createDepthTracker } from "./shared.js";
-import { pushWarningOnce, type ConvertWarning } from "../../i18n.js";
+import { pushWarningOnce, type ConvertWarning } from "../../i18n/index.js";
 
 /** 结构化最小契约(与仓库惯例一致,不直接 import markdown-it Token 类型):
  *  applySizeAttrs 只依赖 attrSet 与兄弟 text token 的 type/content。 */

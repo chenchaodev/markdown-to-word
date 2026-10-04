@@ -801,7 +801,7 @@ export async function run() {
     const appBindings = await import(distUrl("renderer/settings/settings-bindings-app.js"));
     // i18n 逻辑层(setLanguage / applyStaticTexts 的实现侧):core/i18n/index.js 只是
     // 注册表(DICT / LANGUAGES),两处不是同一个模块,别混用
-    const i18nLogic = await import(distUrl("core/i18n.js"));
+    const i18nLogic = await import(distUrl("core/i18n/index.js"));
     const outputDirEl = dom.elementFor("outputDirValue");
     const pdfCssEl = dom.elementFor("pdfCssStatus");
     const logoEl = dom.elementFor("headerLogoStatus");

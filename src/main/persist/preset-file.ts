@@ -9,7 +9,7 @@
  * 故 ipc/logic.ts 等纯逻辑层可经本模块取用预设解析/合并,依赖图不触达 electron。
  * 契约类型(ImportPresetsResult 等跨进程形状)单源 core/ipc-contract.ts。
  */
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import type { TypographySettings } from "../../core/settings/typography.js";
 import {
   DEFAULT_TYPOGRAPHY,

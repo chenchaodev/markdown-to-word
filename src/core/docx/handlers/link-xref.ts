@@ -14,7 +14,7 @@ import { LINK_COLOR } from "../theme.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
 import { collectPlainText } from "../../text/mdast-utils.js";
 import { CROSS_REF_KINDS, CROSS_REF_HREF_RE, EQ_REF_HREF_RE, captionLabelKey, crossRefNumberText, isCrossRefDefaultText, type CrossRefHrefKind } from "../../markdown/cross-ref.js";
-import { crossRefNotFoundWarning } from "../../i18n.js";
+import { crossRefNotFoundWarning } from "../../i18n/index.js";
 import { warnDedup, type Ctx, type InlineChild, type RunStyle } from "../ctx.js";
 
 /**

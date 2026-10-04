@@ -13,7 +13,7 @@ import { state } from "../state/state.js";
 import { dropZone } from "../dom/refs.js";
 import { setError } from "./dom-ops.js";
 import { openBookWizard } from "../wizard/book-wizard.js";
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 
 let guideEl: HTMLElement | null = null;
 

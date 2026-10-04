@@ -8,7 +8,7 @@
  * 注入方为 core/pdf/render.ts,能力来自 main 层。
  */
 import path from "node:path";
-import type { ConvertWarning } from "../i18n.js";
+import type { ConvertWarning } from "../i18n/index.js";
 
 /** KaTeX CSS 读取依赖(`read` 必填:本模块不持有任何 node:fs 能力) */
 export interface KatexCssDeps {

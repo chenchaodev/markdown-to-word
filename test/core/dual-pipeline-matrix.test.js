@@ -67,7 +67,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { convert } from "../../dist/core/convert.js";
 import { DEFAULT_KATEX_RESOURCE_LIMITS } from "../../dist/core/resource-limits.js";
 import { ALLOWED_INLINE_TAGS } from "../../dist/core/markdown/html-whitelist.js";
@@ -91,7 +91,7 @@ import { MATRIX_ROW_IDS, assertKeyCoverageRegistered, keyCoverageCounts } from "
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物)。
  */
 /** @typedef {import("../common/dual-sandbox.js").MatrixCtx} MatrixCtx */
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 /** @typedef {import("../../src/core/settings/settings-defaults.js").HeaderFooterSettings} HeaderFooterSettings */
 /** @typedef {import("../../src/core/settings/typography.js").TypographySettings} TypographySettings */

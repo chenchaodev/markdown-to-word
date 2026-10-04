@@ -14,7 +14,7 @@ import { state } from "../../state/state.js";
 import { baseName, errorMessage } from "../../state/pure.js";
 import { setError, setStatus } from "../../ui/dom-ops.js";
 import { appendSelection, clearDragState } from "../file-list.js";
-import { t } from "../../../core/i18n.js";
+import { t } from "../../../core/i18n/index.js";
 
 function showSkippedList(skipped: string[]): void {
   dropSkipped.classList.toggle("hidden", skipped.length === 0);

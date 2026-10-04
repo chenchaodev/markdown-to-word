@@ -13,7 +13,7 @@ import { app, BrowserWindow, dialog, nativeTheme, screen } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import { disposeMermaidService } from "../services/mermaid-service.js";
 import { clipboardTempSources } from "../services/temp-html.js";
 import { loadUiState, pickWindowBounds, saveUiState } from "../persist/ui-state.js";

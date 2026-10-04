@@ -11,7 +11,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AppSettings } from "../core/settings/settings-defaults.js";
-import type { ConvertWarning } from "../core/i18n.js";
+import type { ConvertWarning } from "../core/i18n/index.js";
 import { parseFrontmatter, type DocMetadata } from "../core/pipeline/frontmatter.js";
 import { decodeMarkdown } from "../core/text/encoding.js";
 import { preprocessBody } from "../core/markdown/preprocess-body.js";

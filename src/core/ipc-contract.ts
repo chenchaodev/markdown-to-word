@@ -10,7 +10,7 @@
  * channel 名常量留 main/ipc/channels.ts,持久化 IO 留 main/persist/ui-state.ts,
  * 批量执行实现留 main/converter/batch.ts——实现侧 import 本文件类型,须满足本契约。
  */
-import type { ConvertWarning } from "./i18n.js";
+import type { ConvertWarning } from "./i18n/index.js";
 import type { PageSetup } from "./settings/settings-defaults.js";
 import type { TypographySettings } from "./settings/typography.js";
 

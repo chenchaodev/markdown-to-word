@@ -19,7 +19,7 @@ import {
   chapterNumberFromCounters,
   createHeadingCounters,
 } from "../../markdown/heading-numbering.js";
-import { crossRefNotFoundWarning, pushWarningOnce, type ConvertWarning } from "../../i18n.js";
+import { crossRefNotFoundWarning, pushWarningOnce, type ConvertWarning } from "../../i18n/index.js";
 import { attrDel, createDepthTracker, forEachRefLink, stripTrailingLabel, type LinkScanToken } from "./shared.js";
 
 /** 块级 token 的结构化最小签名(避免深导入 markdown-it/lib/token):在

@@ -19,7 +19,7 @@ import type {
 } from "docx";
 import type { FootnoteDefinition } from "mdast";
 import type { BlockContent } from "mdast";
-import { pushWarningOnce, type ConvertWarning, type KeyedWarning } from "../i18n.js";
+import { pushWarningOnce, type ConvertWarning, type KeyedWarning } from "../i18n/index.js";
 import type { TypographySettings } from "../settings/typography.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import type { ImageResolver } from "../image/image-resolver.js";

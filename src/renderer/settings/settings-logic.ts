@@ -20,7 +20,7 @@ import {
   type ThemePreference,
 } from "../../core/settings/settings-defaults.js";
 import { TEMPLATE_PRESETS, matchesPreset, type TemplatePreset } from "../../core/settings/presets.js";
-import { t, type I18nKey } from "../../core/i18n.js";
+import { t, type I18nKey } from "../../core/i18n/index.js";
 
 /**
  * 预设名本地化(单一来源;settings-panel 的下拉选项、向导步骤 1、套用 toast 共用此口径)。

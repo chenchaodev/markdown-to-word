@@ -37,7 +37,7 @@
  *   sec label 剥离但引用悬空「(?)」;eq 公式引用行为不变。
  */
 import { convert } from "../../dist/core/convert.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart } from "../common/docx-utils.js";

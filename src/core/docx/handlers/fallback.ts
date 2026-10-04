@@ -7,7 +7,7 @@
 import { PageBreak, Paragraph, TextRun } from "docx";
 import type { IParagraphOptions } from "docx";
 import type { Html as MdHtml, Table as MdTable } from "mdast";
-import type { KeyedWarning } from "../../i18n.js";
+import type { KeyedWarning } from "../../i18n/index.js";
 import { CODE_FONT, MUTED_TEXT_GRAY } from "../theme.js";
 import { collectPlainText } from "../../text/mdast-utils.js";
 import { isAllowedInlineHtml } from "../../markdown/html-whitelist.js";

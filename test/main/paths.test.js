@@ -19,7 +19,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/converter/index.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /**

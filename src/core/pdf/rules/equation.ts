@@ -3,7 +3,7 @@
  */
 import type MarkdownIt from "markdown-it";
 import { EQ_LABEL_RE, EQ_REF_HREF_RE, crossRefNumberText, isCrossRefDefaultText } from "../../markdown/cross-ref.js";
-import { pushWarningOnce } from "../../i18n.js";
+import { pushWarningOnce } from "../../i18n/index.js";
 import { createDepthTracker, forEachRefLink } from "./shared.js";
 
 /**

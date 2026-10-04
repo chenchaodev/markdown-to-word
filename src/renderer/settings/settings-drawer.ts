@@ -14,7 +14,7 @@ import {
   settingsOpenBtn,
 } from "../dom/refs.js";
 import { trapFocus, setError, rememberFocusOrigin, restoreFocusOrigin } from "../ui/dom-ops.js";
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 
 /* 焦点陷阱句柄(二次调用防御:先解除旧陷阱再启用新陷阱) */
 let drawerTrap: (() => void) | null = null;

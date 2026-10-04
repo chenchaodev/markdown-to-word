@@ -15,7 +15,7 @@ import path from "node:path";
 import iconv from "iconv-lite";
 import JSZip from "jszip";
 import { updateSettings } from "../../dist/main/persist/settings.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { backupSettings } from "../common/settings.js";
 import { convertImpl } from "../../dist/main/converter/index.js";
 import { removeTree } from "../common/temp-resource.js";

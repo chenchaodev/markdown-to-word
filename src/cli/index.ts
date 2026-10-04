@@ -36,7 +36,7 @@ import {
   type ExitCode,
 } from "../convert/cli-pdf-job.js";
 import type { AppSettings, ConvertFormat } from "../core/settings/settings-defaults.js";
-import type { ConvertWarning } from "../core/i18n.js";
+import type { ConvertWarning } from "../core/i18n/index.js";
 import {
   CliUsageError,
   expandFormats,

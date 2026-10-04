@@ -7,9 +7,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertFormat, ThemePreference } from "../../core/settings/settings-defaults.js";
 import type { BatchProgressInfo, BatchResult, ConvertMode, PrecheckResult, UiState } from "../../core/ipc-contract.js";
-import { t, setLanguage, type Language } from "../../core/i18n.js";
+import { t, setLanguage, type Language } from "../../core/i18n/index.js";
 import { precheckMarkdown } from "../../core/pipeline/precheck.js";
-import type { ConvertWarning } from "../../core/i18n.js";
+import type { ConvertWarning } from "../../core/i18n/index.js";
 import { prepareMarkdown } from "../../convert/preprocess.js";
 import {
   buildPresetsExportPayload,

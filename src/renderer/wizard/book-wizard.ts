@@ -24,7 +24,7 @@
  * ui/dom-ops(焦点陷阱)/ settings-drawer / convert-flow(runMerge)/ wizard-state(纯 reducer);
  * 不反向引用组合根,closeBookWizard 供 dialogs-events 的 Esc 链调用。
  */
-import { t, applyStaticTexts } from "../../core/i18n.js";
+import { t, applyStaticTexts } from "../../core/i18n/index.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { state } from "../state/state.js";
 import { trapFocus } from "../ui/dom-ops.js";

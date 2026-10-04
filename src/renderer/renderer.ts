@@ -21,7 +21,7 @@ import {
 import { initFirstRunGuide } from "./ui/first-run-guide.js";
 import { setError } from "./ui/dom-ops.js";
 import { errorMessage } from "../core/text/error-message.js";
-import { t } from "../core/i18n.js";
+import { t } from "../core/i18n/index.js";
 
 /**
  * window.api 类型单源在 core(PreloadApi,src/core/preload-api.ts),preload 以它标注

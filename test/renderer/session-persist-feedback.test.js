@@ -273,7 +273,7 @@ export async function run() {
     const settingsDrawer = await load("../../dist/renderer/settings/settings-drawer.js");
     const recentFiles = await load("../../dist/renderer/ui/recent-files.js");
     const firstRunGuide = await load("../../dist/renderer/ui/first-run-guide.js");
-    const { t } = await load("../../dist/core/i18n.js");
+    const { t } = await load("../../dist/core/i18n/index.js");
     // 状态元素取自 refs 模块自身:同进程内前序段可能已加载过该模块(元素绑定在
     // 当时的 document stub 上),读自己的 stub 会与被测模块脱节。
     const { DEFAULT_SETTINGS } = await load("../../dist/core/settings/settings-defaults.js");
@@ -282,7 +282,7 @@ export async function run() {
     for (const exported of Object.values(refs)) hardenElementShape(exported);
     // state / i18n 为进程级单例(验收 runner 顺序跑段):本段会改语言与设置,
     // 收尾必须复位,否则后续段的文案/状态断言会被污染。
-    const { setLanguage } = await load("../../dist/core/i18n.js");
+    const { setLanguage } = await load("../../dist/core/i18n/index.js");
     setLanguageRef = setLanguage;
     stateSnapshot = {
       settings: state.settings,

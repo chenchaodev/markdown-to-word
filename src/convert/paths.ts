@@ -9,7 +9,7 @@ import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
 import type { ConvertFormat } from "../core/settings/settings-defaults.js";
-import type { ConvertWarning, KeyedWarning } from "../core/i18n.js";
+import type { ConvertWarning, KeyedWarning } from "../core/i18n/index.js";
 
 /** 目录递归深度上限:超出层级的子目录不再展开(异常深的树不拖垮会话) */
 // 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。

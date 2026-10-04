@@ -1,4 +1,4 @@
-import { setLanguage, applyStaticTexts, isLanguage, t } from "../core/i18n.js";
+import { setLanguage, applyStaticTexts, isLanguage, t } from "../core/i18n/index.js";
 
 declare global {
   interface Window {

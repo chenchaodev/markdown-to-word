@@ -33,7 +33,7 @@ import {
 } from "../file-list.js";
 import { runConvert, isConvertCommandBlocked } from "../convert-flow.js";
 import { openBookWizard } from "../../wizard/book-wizard.js";
-import { t } from "../../../core/i18n.js";
+import { t } from "../../../core/i18n/index.js";
 
 /** 列表边缘自动滚动步长(px/次,dragover 事件粒度)。 */
 const EDGE_SCROLL_STEP_PX = 14;

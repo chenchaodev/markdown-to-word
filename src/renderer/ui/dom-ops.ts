@@ -24,7 +24,7 @@ import {
   statusEl,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { t, type I18nKey } from "../../core/i18n.js";
+import { t, type I18nKey } from "../../core/i18n/index.js";
 
 /** 错误提示红色描边自动消退时长。 */
 const ERROR_FLASH_MS = 1400;

@@ -53,7 +53,7 @@
 | 2 ✅ | `cancel.ts` 拆出 `image/request-guard.ts` | 实测 **5 文件**，**测试段零改动** | 边界明确（22–169 vs 172–296）。实测那 3 个测试段只 import 留在原地的导出，故一处未改。⚠️ **跨文件私有符号有两个而非一个**：除派发时点出的 `raceCancel`，还有 `linkAbort`（`cancel.ts:127`，唯一调用方就是 `runImageRequest`）——它跟着那段时序逻辑一起搬，否则留在 `cancel.ts` 就是本文件内无人调用的孤儿。`raceCancel` 经**既有公开门面** `CancellationGuard.race()` 调用（实现即 `return await raceCancel(work, guard)`，逐字等价），故保持模块私有、不导出、**也不复制**一份到新文件 |
 | 3 ✅ | `image/` 归并（**`style/` 那半已移出本步**） | 实测 **12 文件** | `markdown/image-size.ts`（163 行，零 import）＋ `image-path-policy.ts`（183 行，只引 `node:path`）搬进 `core/image/`，8 处 src import ＋ 3 处测试段改动，测试段**不搬目录**（T3 才搬）。⚠️ **`style/` 并入 `theme.ts` 已移出**：ADR 声明 `theme.ts` 是 docx 私有（项目 `AGENTS.md` 亦定其为 docx 字体与 eastAsia 的集中配置，32 行零 import 叶子），而 `style/` 的两个文件消费方**横跨两条管线**（水印灰被 `docx/chrome`＋`pdf/template` 同引，89 行 hljs 色板被 `docx/handlers/code-highlight`＋`pdf/template-css` 同引）—— 即 `style/` 本身就是「双管线共享视觉层」，搬进单管线私有文件会造出一条 `pdf → docx/theme.ts` 运行期值依赖；且 ADR 对 89 行的 `hljs-palette.ts` 放哪只字未提 |
 | 4 ✅ | 只做三项：`types.ts` 删除 ＋ `output-allowlist.ts` 挪进 `services/` ＋ 建 `core-no-duplicate-export`。**另三项移出本步** | 实测 **6 文件** | ⚠️ 原估「测试耦合最低（`menu` 0 段直接 import）」**估法漏了一整层**：`about-preload` 的耦合根本不在 import 上，而在 `menu.ts:49` 的 `path.join(here, "..", "renderer", …)` **运行时算路径** ＋ `tools/copy-renderer.mjs` 的资产拷贝 ＋ 两个测试段钉住的 dist 位置 ⇒ 移出。**「缩桶」移出**：`main/converter/index.ts` 的 7 个跨层转出背后是**约 10 个测试段经该桶取符号**，属 T3 规模 import 重写。**`main-ipc-no-assembly` 决定不建**（见 ADR-064「已知边界」节的理由） |
-| 5 | **`i18n.ts` → `i18n/` 目录** | **29**（24 运行期 ＋ 5 JSDoc 类型标注） | 放最后：最大且有静默失效风险，前四步把流程跑顺了它才是机械重复 |
+| 5 | **`i18n.ts` → `i18n/` 目录** | **实测 119 处 / 92 文件**（91 真 import 含 24 type-only ＋ 22 JSDoc `import()` ＋ **6 运行期动态**） | 放最后：最大且有静默失效风险，前四步把流程跑顺了它才是机械重复 |
 
 ## 整体完成标准
 
@@ -93,4 +93,5 @@
 | `verify:ci` 在 T5 后链长变长 | 新增门禁被误挂进链 | 查 `gate-index.mjs` 的 `access` 字段；`access:"local"` 出现在链上即判红 |
 | `M2W_ONLY` 段筛选命中数异常 | 段名与镜像路径不同批切，或 basename 语义未改净 | 复核 `runner.js` 的 `EXCLUSIVE_SEGMENTS` 子串语义（`gate-probes` 那条应随 T5 一并消失） |
 | T2 搬走 src 文件后 `check:boundary:dist` 红 | 判据坏了 | **dist 侧扫到了 src 已不存在的陈旧产物**。`build` 脚本是 `tsc && copy-renderer.mjs`、本就不清 dist，清 dist 是 `clean:dist` 的职责 → 跑 dist 面前先 `npm run clean:dist`。⚠️ 这是 `verify:ci` 的结构性缺口（`build → check:boundary:dist` 之间无清理步骤），T2 之前 src 只增不减所以从未暴露；留待 T5 重写链时补 |
+| 按 `from "` 统计 import 面时漏掉运行期动态 `import()` | **grep `from "` 抓不到 `load()` / `dist()` / `distUrl()` / `path.join(ROOT,"dist",…)` 这些形态**。T2 步 5 实测：真实改写面比 `from "` 统计多 6 处动态 import，漏改的后果**不是 tsc 报错而是段在运行时炸**。搬路径类改动必须全量扫形态，并跑一遍含动态 import 的段 |
 | 搬走某文件后某条门禁立刻红 | 判据逻辑坏了 | **该路径被按全路径登记进了某张表**（本轮实测：`CORE_NODE_BUILTIN_FILES` 登记的是 `core/markdown/image-path-policy.ts` 整条路径，且 `test/gates/import-boundary.test.js` 的 9b-2 沙盒夹具用同一个路径当 **map key**，两处必须同批改）。搬文件后必须搜「该路径是否出现在 `gates/` 与 `test/` 的任何登记表、夹具 key、字面路径断言里」，这类耦合不搜不会自己暴露 |

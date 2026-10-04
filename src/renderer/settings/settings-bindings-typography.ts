@@ -16,7 +16,7 @@ import {
   LINE_SPACING_MIN,
   MARGIN_MAX_MM as MARGIN_MAX,
 } from "../../core/settings/settings-defaults.js";
-import { t, type I18nKey } from "../../core/i18n.js";
+import { t, type I18nKey } from "../../core/i18n/index.js";
 import { parseMarginValue, validateNumberRange } from "./settings-logic.js";
 import {
   bodySizeDecBtn,

@@ -27,7 +27,7 @@ import { convert } from "../core/convert.js";
 import type { ConvertFormat } from "../core/settings/settings-defaults.js";
 import type { PdfArtifact, PreprocessedMarkdown } from "../core/convert.js";
 import type { DocMetadata } from "../core/pipeline/frontmatter.js";
-import type { ConvertWarning } from "../core/i18n.js";
+import type { ConvertWarning } from "../core/i18n/index.js";
 // 取消判定按错误码单源(main 闸门与 core 渲染期取消同码,见 core/cancel.ts)
 import { isConversionCanceled } from "../core/cancel.js";
 import type { MermaidResolver } from "../core/markdown/mermaid.js";

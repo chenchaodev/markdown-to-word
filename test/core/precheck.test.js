@@ -9,7 +9,7 @@
 import path from "node:path";
 import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
 import { DICT } from "../../dist/core/i18n/index.js";
-import { formatWarning, setLanguage } from "../../dist/core/i18n.js";
+import { formatWarning, setLanguage } from "../../dist/core/i18n/index.js";
 
 const existsAll = () => true;
 const existsNone = () => false;

@@ -59,7 +59,7 @@ import {
 /** 预设导入纯逻辑结果(实现签名声明的契约) */
 /** @typedef {import("../../src/main/ipc/logic.js").ImportPresetsMergeResult} ImportPresetsMergeResult */
 /** keyed 警告(带 params 的那一支) */
-/** @typedef {import("../../src/core/i18n.js").KeyedWarning} KeyedWarning */
+/** @typedef {import("../../src/core/i18n/index.js").KeyedWarning} KeyedWarning */
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

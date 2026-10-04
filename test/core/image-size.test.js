@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
-import { formatWarning, setLanguage } from "../../dist/core/i18n.js";
+import { formatWarning, setLanguage } from "../../dist/core/i18n/index.js";
 import {
   parseImageSizeAttrs,
   parseImageDim,
@@ -36,8 +36,8 @@ import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
-/** @typedef {import("../../src/core/i18n.js").KeyedWarning} KeyedWarning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/i18n/index.js").KeyedWarning} KeyedWarning */
 /** @typedef {import("../../src/core/image/image-size.js").ImageSizeAttrs} ImageSizeAttrs */
 /** @typedef {import("../../src/core/image/image-size.js").ParsedImageSizeAttrs} ParsedImageSizeAttrs */
 

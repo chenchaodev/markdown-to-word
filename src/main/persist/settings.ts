@@ -47,7 +47,7 @@ import {
   type ObsidianSettings,
   type WatermarkSettings,
 } from "../../core/settings/settings-defaults.js";
-import { isLanguage } from "../../core/i18n.js";
+import { isLanguage } from "../../core/i18n/index.js";
 // 持久化 schema:逐键的「缺失是否合法 / 非法时处置 / 取值域」声明单源(adr-028)。
 // 本模块的形状校验、加载兜底、patch 更新三处都读它,不再各自手写键枚举;
 // 判定与清洗实现在此(需要 node:path 与 preset-file 清洗器,core 侧不得有)。

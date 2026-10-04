@@ -22,7 +22,7 @@ import { state } from "../state/state.js";
 import { syncSuppressCompleteDialog } from "../settings/settings-panel.js";
 import { applyDrawerOpenState } from "../settings/settings-drawer.js";
 import { syncFirstRunGuide } from "./first-run-guide.js";
-import { t, type I18nKey } from "../../core/i18n.js";
+import { t, type I18nKey } from "../../core/i18n/index.js";
 
 /** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。
  *  本值必须与 main 侧 ui-state.ts MAX_RECENT_FILES 恒等(恒等断言由 test 守护);

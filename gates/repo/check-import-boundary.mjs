@@ -531,11 +531,15 @@ export const LAYER_TEXT_RULES = Object.freeze([
       + '只在别的平台上静默走到错分支;两者的跨平台对应物都现成(os.homedir / os.tmpdir / '
       + 'node:child_process 跑平台都有的程序),故新层引入它们零成本地放弃跨平台',
   },
+  // 本条**不带** pending(ADR-064 T2 步 5 转正):DOM 面从原 201 行的 `core/i18n.ts`
+  // 桶里拆进 `core/i18n/dom.ts` 之后,除 dom.ts 外的 core/i18n/** 零命中。
+  // 转正前实测 src 与 dist 双侧各 0 处(见规则上方 exceptFiles 的登记:dom.ts 是唯一
+  // 允许出现 document/window 的文件)。它与 core-text-no-core 同属「建时即绿、已完全
+  // 生效」那一类 —— T2 步 5 之前它带 pending 且实测命中 9 处(全在桶的 applyStaticTexts)。
   {
     id: 'core-i18n-dom-only',
     scope: 'core-i18n',
     exceptFiles: Object.freeze(['core/i18n/dom.ts']),
-    pending: true,
     patterns: Object.freeze([
       {
         id: 'dom-access',
@@ -543,7 +547,7 @@ export const LAYER_TEXT_RULES = Object.freeze([
         // 只认「取到 DOM 对象」与「在宿主树上查元素」两种形态:`document` / `window` 后面
         // 跟成员访问,或直接出现 querySelectorAll。像 `typeof document === "undefined"`
         // 这种**只读全局判存在**的写法不属本判据 —— 它恰是「本模块可能被 main 进程 import
-        // 而不触碰 DOM」的守卫写法(core/i18n.ts 现在就有一处),判红它等于逼人删掉守卫。
+        // 而不触碰 DOM」的守卫写法(core/i18n/dom.ts 里有一处),判红它等于逼人删掉守卫。
         //
         // querySelectorAll 只认词形、不要求紧跟 `(`:src 侧它带泛型实参(`querySelectorAll<T>(`),
         // dist 侧泛型已被编译期擦除(`querySelectorAll(`)。若要求紧跟左括号,同一条违例在两侧
@@ -558,6 +562,47 @@ export const LAYER_TEXT_RULES = Object.freeze([
       + 'index.ts / warning.ts,该层就被绑死在「只能在 renderer 里跑」上 —— 而 60 个消费方里'
       + '有 main 进程那些(main import 本模块不触碰 DOM)。判据只钉「使用面存在且唯一」,'
       + '不钉方向:core 内部依赖图实测近乎无环,方向规则会为它并不存在的病开药',
+  },
+  // ADR-064 为「桶溶进目录」那一步立的第二道判据。**建时即绿**:实测 src 与 dist 双侧
+  // 0 命中(下方两个 pattern 在真实 dom.ts 上都判绿,见 selfCheck 的正反对照夹具)。
+  //
+  // 它守的正是那次拆分最易静默失效的点:把语言状态(currentLanguage / setLanguage 的
+  // 状态)顺手从 t.ts 带一个 export 到 dom.ts,等于给 core/i18n 开了一条绕过「只用面」
+  // 纪律的后门 —— dom.ts 是 core 内唯一碰 DOM 的文件,任何可变绑定从它出去,
+  // 「DOM 面只写不持有状态」这条不变量就名存实亡。t.ts 侧已经先不犯(它的 current 是
+  // 私有 let,只导出读它的 currentLanguage() 函数),本条把同一纪律钉在 dom.ts 上。
+  {
+    id: 'i18n-dom-no-export-let',
+    // scope 精确到**一个文件**(dom.ts)。不用 `core-i18n` + exceptFiles 反向豁免:
+    // 那种写法要求「除 dom.ts 外一律成立」,新增文件时默认落在规则内 —— 而本条要判的
+    // 恰恰只对 dom.ts 成立。scopeMatches 里按去扩展名比较,故 src 的 .ts 源与 dist 的
+    // .js 产物是同一份登记(同 core-i18n 的先例)。
+    scope: 'i18n-dom',
+    // 本条**不带** pending:建时即绿。转正前实测 src 侧 `core/i18n/dom.ts` 真实全貌
+    // 0 处、dist 侧 `.js` 形态 0 处;selfCheck 的四个夹具(两条判红 / 两条判绿)证明
+    // 两个 pattern 各自有牙齿 —— 去掉任一条,对应夹具立刻变红。
+    patterns: Object.freeze([
+      {
+        id: 'export-let-or-var',
+        label: '导出可变声明(let/var)',
+        re: /\bexport\s+(?:let|var)\b/g,
+      },
+      {
+        id: 'export-binding-clause',
+        label: '出现 export { … } 再导出子句',
+        // 这一条**不**去判「子句里的名字是否可变」—— 那要跨语句解析绑定到它的
+        // `let`/`var` 声明,属跨语句符号追踪(同 ADR-064 :236 登记为超出本仓门禁
+        // 架构能力的那一类)。改用一条**等价且可机械判定**的收口:本目录的唯一公开桶是
+        // index.ts,再导出全部由它承担,所以 dom.ts 里任何 `export { … }` 子句要么是
+        // 冗余的,要么正是「把语言状态连带 export 出去」那个失效形态。
+        // 合法内容不受影响:`export function applyStaticTexts` 不匹配任何一条。
+        re: /\bexport\s*\{[^}]*\}/g,
+      },
+    ]),
+    reason: 'core/i18n/dom.ts 是 core 内唯一持有宿主 DOM 的文件,它的职责是「把文案写到树上」,'
+      + '不持有任何状态、更不把状态交出去。它不得 export 可变绑定:那会让语言状态经由'
+      + '唯一碰 DOM 的文件流出去,「DOM 面只写不持有」这条不变量随即失守,而这类改动在'
+      + '桶溶进目录的拆分里极易顺手发生(把 t.ts 的状态变量一起搬过来并带上 export)',
   },
   {
     id: 'main-windows-no-up',
@@ -766,6 +811,35 @@ export function selfCheckTextLayerRules() {
       name: 'core 内部文件之间的转出(应判绿:聚合不是复制)',
       file: 'core/settings/settings-defaults.ts',
       text: 'export { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";\n',
+      expect: 0,
+    },
+    // ---- i18n-dom-no-export-let:scope 精确到一个文件,故两个方向都要用**别的文件名**对照 ----
+    {
+      name: 'dom.ts 导出 let(应判红:可变绑定不得出 DOM 面)',
+      file: 'core/i18n/dom.ts',
+      text: 'let current = "zh";\nexport let current2 = "zh";\n',
+      expect: 1,
+    },
+    {
+      name: 'dom.ts 出现 export { … } 子句(应判红:再导出只由唯一公开桶 index.ts 承担)',
+      file: 'core/i18n/dom.ts',
+      text: 'const current = "zh";\nexport { current };\n',
+      expect: 1,
+    },
+    {
+      // 判绿方向①:dom.ts 唯一该做的事 —— 导出一个函数。两个 pattern 都不匹配它。
+      name: 'dom.ts 导出函数(应判绿:这正是它该有的导出面)',
+      file: 'core/i18n/dom.ts',
+      text: 'export function applyStaticTexts(): void {\n  if (typeof document === "undefined") return;\n}\n',
+      expect: 0,
+    },
+    {
+      // 判绿方向②:作用域对照 —— 同一条形态在**别的** i18n 文件里合法(t.ts 若哪天真的
+      // 需要导出可变绑定,那是它自己的决策,本条管不到也不该管)。把 scope 放大到
+      // core/i18n/** 后本夹具立刻变红。
+      name: 't.ts 里的 export { … }(应判绿:scope 只覆盖 dom.ts 一个文件)',
+      file: 'core/i18n/t.ts',
+      text: 'const current = "zh";\nexport { current };\n',
       expect: 0,
     },
   ];
@@ -1155,6 +1229,13 @@ function scopeMatches(scope, file) {
   // dist 的 .js 产物都命中。
   if (scope === 'core-i18n') {
     return file === 'core/i18n.ts' || file === 'core/i18n.js' || file.startsWith('core/i18n/');
+  }
+  // core/i18n/ 里的 dom.ts 一个文件(判据 i18n-dom-no-export-let 的 scope):按去扩展名
+  // 比较,故 src 的 .ts 源与 dist 的 .js 产物命中同一份登记。上一条 core-i18n 的
+  // `file === 'core/i18n.ts'` 分支在原 201 行的桶删除后已无对应文件,留着是防御性的
+  // (若桶形态回来,scope 仍能命中),不是遗漏。
+  if (scope === 'i18n-dom') {
+    return stripExtension(file) === 'core/i18n/dom';
   }
   if (scope === 'main-windows') return file.startsWith('main/windows/');
   // core 之外的全部文件(判据 core-no-duplicate-export 的 scope):core 契约的 type 被第二个

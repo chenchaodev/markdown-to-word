@@ -9,7 +9,7 @@
  * 分组口径 = index.html 六组 Tab 的 data-group=app。
  */
 import { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
-import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n.js";
+import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n/index.js";
 import { drawerResetBtn } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setStatus } from "../ui/dom-ops.js";

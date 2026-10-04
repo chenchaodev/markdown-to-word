@@ -14,7 +14,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { DEFAULT_TYPOGRAPHY, codeBlockFontSizePt, ptToHalfPoints } from "../../dist/core/settings/typography.js";
 import hljs from "highlight.js/lib/common";
 import { FIXTURES_DIR } from "../common/paths.js";
@@ -22,7 +22,7 @@ import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 
 /**
  * convert 的类型化别名:运行期是共享包装 convertWithFs(= dist 的 convert 注入宿主文件

@@ -23,9 +23,9 @@ import type { MermaidResolver } from "../markdown/mermaid.js";
 import type { ImageResolver } from "../image/image-resolver.js";
 import type { CancellationGuard } from "../cancel.js";
 import type { ImageResourceBudget } from "../resource-limits.js";
-// 仅类型导入(编译期擦除):ConvertWarning 契约单源在 core/i18n.ts,与 settings-defaults
+// 仅类型导入(编译期擦除):ConvertWarning 契约单源在 core/i18n/warning.ts,与 settings-defaults
 // 导入 Language 同款(type-only,不成运行期依赖)
-import type { ConvertWarning } from "../i18n.js";
+import type { ConvertWarning } from "../i18n/index.js";
 import { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";
 import {
   DEFAULT_HEADER_FOOTER,

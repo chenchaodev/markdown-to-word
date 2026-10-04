@@ -8,7 +8,7 @@ import type { Code } from "mdast";
 import { CODE_FONT } from "../theme.js";
 import { codeBlockFontSizePt, ptToHalfPoints } from "../../settings/typography.js";
 import { highlightCodeRuns } from "./code-highlight.js";
-import { highlightFallbackWarning, mermaidEmptyWarning, mermaidFailedWarning } from "../../i18n.js";
+import { highlightFallbackWarning, mermaidEmptyWarning, mermaidFailedWarning } from "../../i18n/index.js";
 import { scaleToFit } from "./image-run.js";
 import { MERMAID_LANG } from "../../markdown/mermaid.js";
 import { warnDedup, type Ctx } from "../ctx.js";

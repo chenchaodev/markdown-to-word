@@ -18,7 +18,7 @@ import {
   DEFAULT_SETTINGS,
   type AppSettings,
 } from "../../core/settings/settings-defaults.js";
-import { htmlLangOf } from "../../core/i18n.js";
+import { htmlLangOf } from "../../core/i18n/index.js";
 import {
   headerLogoDisplayName,
   applySettingsRuntimeEffects,
@@ -67,7 +67,7 @@ import {
 import { state } from "../state/state.js";
 import { setError, setStatus } from "../ui/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
-import { applyStaticTexts, setLanguage, t, LANGUAGES, type I18nKey, type Language } from "../../core/i18n.js";
+import { applyStaticTexts, setLanguage, t, LANGUAGES, type I18nKey, type Language } from "../../core/i18n/index.js";
 // 抽屉副标题文案写入归抽屉模块(本模块只负责由设置值合成文案)
 import { updateDrawerMeta } from "./settings-drawer.js";
 

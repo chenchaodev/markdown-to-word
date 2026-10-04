@@ -21,7 +21,7 @@
  * DOM-free 部分(`mergePendingSavePatch` / `normalizePageSetup` / `reconcileSettingsSave`)
  * 仍在 settings-logic.ts,本模块只做编排。
  */
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
 import { state } from "../state/state.js";
 import { mergePendingSavePatch, normalizePageSetup, reconcileSettingsSave } from "./settings-logic.js";

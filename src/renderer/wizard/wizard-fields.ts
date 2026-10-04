@@ -10,7 +10,7 @@
  * 写路径(persistSettings)自 REF-025 #10 起取自 settings-save 而非 settings-panel,
  * 故本模块不再经设置面板。不反向引用步骤渲染与外壳(两岛均单向 import 本模块)。
  */
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import { MARGIN_MAX_MM, type AppSettings } from "../../core/settings/settings-defaults.js";
 import { state } from "../state/state.js";
 import { hideFieldError, setError, showFieldError } from "../ui/dom-ops.js";

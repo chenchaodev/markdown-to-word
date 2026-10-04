@@ -33,7 +33,7 @@ import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../co
 import { ROOT } from "../common/paths.js";
 
 /** 契约类型的只读引用(编译期擦除) */
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 
 export const meta = {
   description: "渲染选项默认值解析:逐键断言 8 个共有开关 + 页眉页脚 + 目录模式,且两侧渲染层不再自带默认值字面量",

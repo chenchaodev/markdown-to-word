@@ -25,7 +25,7 @@ import { MAX_SCAN_DEPTH, MAX_SCAN_ENTRIES } from "../../dist/convert/paths.js";
 import { MAX_SOURCE_FILE_BYTES, prepareMarkdown } from "../../dist/convert/preprocess.js";
 import { MAX_BATCH_FILES } from "../../dist/main/converter/batch.js";
 import { MAX_MERGE_FILES, MAX_MERGE_TOTAL_BYTES, MERGE_READ_CONCURRENCY } from "../../dist/main/converter/merge.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { backupSettings } from "../common/settings.js";
 
 /**
@@ -68,7 +68,7 @@ export async function run() {
       }
       if (junction) {
         const startedAt = Date.now();
-        /** @type {import("../../src/core/i18n.js").ConvertWarning[]} */
+        /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */
         const warnings = [];
         const result = await collectMarkdownPaths([root], warnings);
         const elapsed = Date.now() - startedAt;
@@ -94,7 +94,7 @@ export async function run() {
       }
       await fs.mkdir(current, { recursive: true });
       await fs.writeFile(path.join(current, "deep.md"), "# 深\n", "utf8");
-      /** @type {import("../../src/core/i18n.js").ConvertWarning[]} */
+      /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */
       const warnings = [];
       const result = await collectMarkdownPaths([deep], warnings);
       assert(!result.files.some((f) => f.endsWith(`${path.sep}deep.md`)), `超深度文件不应被收集,实际 ${JSON.stringify(result.files)}`);
@@ -106,7 +106,7 @@ export async function run() {
       const shallow = path.join(dir, "shallow");
       await fs.mkdir(shallow, { recursive: true });
       await fs.writeFile(path.join(shallow, "top.md"), "# 顶\n", "utf8");
-      /** @type {import("../../src/core/i18n.js").ConvertWarning[]} */
+      /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */
       const shallowWarnings = [];
       const shallowResult = await collectMarkdownPaths([shallow], shallowWarnings);
       assert(

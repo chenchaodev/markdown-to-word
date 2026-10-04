@@ -73,7 +73,7 @@ export async function run() {
 
     const gbkPath = path.join(dir, "gbk.md");
     await fs.writeFile(gbkPath, iconv.encode("# 你好世界\n\n正文\n", "gbk"));
-    const warnings = /** @type {import("../../src/core/i18n.js").KeyedWarning[]} */ ([]);
+    const warnings = /** @type {import("../../src/core/i18n/index.js").KeyedWarning[]} */ ([]);
     const gbkPrepared = await prepareMarkdown(gbkPath, settings, warnings);
     assert(gbkPrepared.markdown.includes("你好世界"), "GBK 应经统一解码链正确读取");
     assert(

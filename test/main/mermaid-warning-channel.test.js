@@ -26,7 +26,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { convert } from "../../dist/core/convert.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import {
   disposeMermaidService,
   MermaidRenderError,
@@ -42,8 +42,8 @@ import { unzipPart } from "../common/docx-utils.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { removeTree } from "../common/temp-resource.js";
 
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
-/** @typedef {import("../../src/core/i18n.js").KeyedWarning} KeyedWarning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/i18n/index.js").KeyedWarning} KeyedWarning */
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

@@ -8,7 +8,7 @@
  *  - 水印角度与不透明度的钳制钩子(上下限是该控件自己的口径,不合进通用路径)。
  * 分组口径 = index.html 六组 Tab 的 data-group=headerwatermark。
  */
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import { headerLogoClearBtn, headerLogoPickBtn } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError } from "../ui/dom-ops.js";

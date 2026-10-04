@@ -10,7 +10,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertContext as CoreConvertContext } from "../core/convert.js";
-import type { ConvertWarning } from "../core/i18n.js";
+import type { ConvertWarning } from "../core/i18n/index.js";
 import type { ImageResolver } from "../core/image/image-resolver.js";
 import { sniffImageType } from "../core/image/image-type.js";
 import { headerLogoLoadFailedWarning } from "../core/image/image-warning.js";

@@ -29,7 +29,7 @@ import {
 import { state } from "../state/state.js";
 import { setError, setStatus, translate } from "../ui/dom-ops.js";
 import { baseName, partitionDuplicates, selectionStatus, truncateMiddle } from "../state/pure.js";
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 
 export function renderSelection(): void {
   const n = state.selectedFiles.length;

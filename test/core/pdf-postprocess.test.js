@@ -21,14 +21,14 @@
 import { buildTocHtml, checkLocalImages, embedExternalImages, extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { renderPdfDocument } from "../../dist/core/pdf/render.js";
 import { HOST_FS } from "../common/convert-helpers.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 
 /**
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物):
  * dist 是 tsc 产物、无类型标注,故警告条目与图片请求约束从 src 单源引用而非内联复制。
  */
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 /** @typedef {import("../../src/core/image/image-resolver.js").ImageResolverRequest} ImageRequest */
 
 // 1x1 PNG 魔数头(mimeFromBuffer → image/png;data URL 前缀 data:image/png;base64,)

@@ -46,7 +46,7 @@ export async function run() {
   });
   try {
     const i18n = await import(distUrl("core/i18n/index.js")); // DICT / 语言注册表
-    const { setLanguage } = await import(distUrl("core/i18n.js")); // 语言状态切换
+    const { setLanguage } = await import(distUrl("core/i18n/index.js")); // 语言状态切换
     const { cloneDefaultSettings } = await import(
       distUrl("core/settings/settings-defaults.js")
     );

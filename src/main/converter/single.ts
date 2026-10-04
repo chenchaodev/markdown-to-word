@@ -11,8 +11,8 @@
  */
 import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
-import type { ConvertWarning } from "../../core/i18n.js";
-import { t } from "../../core/i18n.js";
+import type { ConvertWarning } from "../../core/i18n/index.js";
+import { t } from "../../core/i18n/index.js";
 import { loadSettings, type AppSettings } from "../persist/settings.js";
 import { MARKDOWN_EXT_RE } from "../../convert/paths.js";
 import { createConvertContext, throwIfCanceled, type ConvertContext } from "../../convert/context.js";

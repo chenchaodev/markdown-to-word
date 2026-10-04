@@ -27,7 +27,7 @@
 import { parseMarkdown } from "./pipeline/parse.js";
 import type { DocMetadata } from "./pipeline/frontmatter.js";
 import type { TypographySettings } from "./settings/typography.js";
-import type { ConvertWarning } from "./i18n.js";
+import type { ConvertWarning } from "./i18n/index.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfDocument, type PdfFsCapabilities } from "./pdf/render.js";
 // PdfHeading 契约单源在 pdf/bookmarks.ts(docx 侧无对应物:目录由 Word 域生成)

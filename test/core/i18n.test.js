@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * i18n 测试(src/core/i18n.ts 纯逻辑 + src/main/persist/settings.ts language 字段):
+ * i18n 测试(src/core/i18n/ 纯逻辑 + src/main/persist/settings.ts language 字段):
  * 实现事实(读源码确认):
  * - t():zh 默认输出(与既有文案逐字一致);setLanguage("en") 后输出英文;
  *   参数插值 ${name} 占位(缺失参数保留占位符原样);缺失 key 回退返回 key 本身(不抛错)
@@ -30,7 +30,7 @@ function assert(cond, msg) {
 }
 
 /**
- * 带去重键的结构化警告(与 dist/core/i18n.js 的 KeyedWarning 同形;
+ * 带去重键的结构化警告(与 dist/core/i18n/warning.js 的 KeyedWarning 同形;
  * dist 为无类型标注的编译产物,测试侧显式声明以获得收窄)。
  * @typedef {{ key: string, params?: Record<string, string>, fallback: string }} KeyedWarning
  */
@@ -45,7 +45,7 @@ export async function run() {
   const freshModule = () => freshSettingsModule("i18n");
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
-    const i18n = await import("../../dist/core/i18n.js");
+    const i18n = await import("../../dist/core/i18n/index.js");
 
   // ---- 1. t() 基础:zh 默认输出(与既有文案逐字一致;语言状态经 t() 输出观察,
   //      getLanguage 导出已移除) ----

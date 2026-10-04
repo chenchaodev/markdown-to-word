@@ -54,10 +54,10 @@
  */
 
 /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} ConvertWarning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} ConvertWarning */
 
 import { convert } from "../../dist/core/convert.js";
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { unzipPart } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { docxBufferOf, prepareForConvert } from "../common/convert-helpers.js";

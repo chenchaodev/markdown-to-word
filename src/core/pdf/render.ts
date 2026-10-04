@@ -29,8 +29,8 @@ import hljs from "highlight.js/lib/common";
 import { mmToPx, validatePageSetup } from "../settings/settings-defaults.js";
 // 双管线渲染选项的共有字段与默认值解析单源(adr-030 6-D1/6-D2)
 import { resolveRenderSwitches, type SharedRenderOptions } from "../settings/render-options.js";
-import type { ConvertWarning } from "../i18n.js";
-import { highlightFallbackWarning } from "../i18n.js";
+import type { ConvertWarning } from "../i18n/index.js";
+import { highlightFallbackWarning } from "../i18n/index.js";
 import { buildCoverHtml, buildTemplate } from "./template.js";
 import { buildTemplateCss } from "./template-css.js";
 import { loadKatexCss } from "./katex-css.js";

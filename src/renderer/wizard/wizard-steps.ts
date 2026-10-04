@@ -9,7 +9,7 @@
  * 依赖方向:本模块 → wizard-fields、wizard-runtime、core / state / settings-*
  * (单向),不反向引用外壳。
  */
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import {
   BODY_SIZE_MAX,
   BODY_SIZE_MIN,

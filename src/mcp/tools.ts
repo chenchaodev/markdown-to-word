@@ -28,7 +28,7 @@ import { emitConvertedArtifact } from "../convert/run.js";
 import { resolveDeliverySettings, templatePresetIds } from "../convert/delivery-settings.js";
 import { parseMarkdown } from "../core/pipeline/parse.js";
 import { containsMermaidCode } from "../core/markdown/mermaid.js";
-import type { ConvertWarning } from "../core/i18n.js";
+import type { ConvertWarning } from "../core/i18n/index.js";
 
 /** Tool 名(对 agent 可见的契约,改名会打断已配置的客户端)。 */
 export const TOOL_NAME = "convert_markdown";

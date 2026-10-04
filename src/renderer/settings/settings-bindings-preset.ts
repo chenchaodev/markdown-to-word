@@ -7,7 +7,7 @@
  * settings-bindings.ts(纯搬移零行为改动),编排入口在 settings-bindings。
  */
 import type { TemplatePreset } from "../../core/settings/presets.js";
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import { presetSettingsPatch } from "../../core/settings/presets.js";
 import { allPresets, presetDisplayName } from "./settings-logic.js";
 import {

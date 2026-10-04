@@ -148,7 +148,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
   - `settings/`:settings-defaults.ts(默认值+页面几何 PAPER_SIZES_MM/mmToTwips+ConvertFormat 单源)/presets.ts(内置预设目录:排版+页面+完整交付链的快照)/typography.ts
   - `style/`:colors.ts(双管线语义色单源)/hljs-palette.ts(GitHub Light 高亮色板单源)
   - `text/`:encoding.ts(编码预检)/mdast-utils.ts/error-message.ts(Error→message 归一单源)/text-escape.ts(escapeHtml/decodeEntities/escapeRegExp 集中)
-  - `src/core/i18n.ts` + `i18n/`:逻辑层(t() 插值/applyStaticTexts/KeyedWarning)+ 注册表(`src/core/i18n/index.ts` 导出面,`src/core/i18n/zh.ts` 键集唯一事实源 / `src/core/i18n/en.ts` 全量 satisfies / `src/core/i18n/ja.ts` 等其余语言 Partial 回退链 当前语言→en→key;Language 类型从注册表派生)
+  - `i18n/`:唯一公开桶是 `index.ts`(再导出下面三者,消费方一律引它)+ 翻译表(`zh.ts` 键集唯一事实源 / `en.ts` 全量 satisfies / `ja.ts` 等其余语言 Partial 回退链 当前语言→en→key;`Language` 与 `DICT` 从 `index.ts` 的注册表派生)+ `t.ts`(t 插值 / setLanguage)+ `warning.ts`(KeyedWarning / ConvertWarning / 警告构造器 / pushWarningOnce)+ `dom.ts`(applyStaticTexts —— **core 内唯一允许出现 `document`/`window` 的文件**,判据 `core-i18n-dom-only` 钉住)
   - `docx/`:render.ts(编排器)/theme.ts(字体集中配置,eastAsia 勿散落硬编码)/ctx.ts(渲染上下文,选项构造时解析默认)/headers.ts(section 页眉装配)/chrome.ts(封面/目录/页眉页脚)/prescan.ts/numbering.ts(编号配置)/template-import.ts(模板浅导入,零 IO)/handlers/(节点处理器:heading/table/captions/equations/code-block/code-highlight/image-run/link-xref/inline-html/fallback/content/math/bookmark)
   - `pdf/`:render.ts(编排器)/template.ts(HTML 组装+页眉页脚 chrome+CSP/sanitize 防护)/template-css.ts(文档模板 CSS 生成)/katex-css.ts(KaTeX CSS 加载,唯一 fs 注入点)/postprocess.ts/metadata.ts/bookmarks.ts(pdf-lib 书签注入)/mermaid.ts/rules/(markdown-it 规则覆盖:caption/equation/xref/html/image/table/heading-id/shared)
 - `src/convert/`:headless 装配层(ADR-060;门禁 `convert-no-gui` 禁其反向依赖 main/renderer,`SRC_TOP_LAYERS` 未登记即判红)

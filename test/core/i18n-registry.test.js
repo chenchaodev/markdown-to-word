@@ -23,7 +23,7 @@ import {
   setLanguage,
   t,
   formatWarning,
-} from "../../dist/core/i18n.js";
+} from "../../dist/core/i18n/index.js";
 import {
   backupSettingsFile,
   freshSettingsModule,

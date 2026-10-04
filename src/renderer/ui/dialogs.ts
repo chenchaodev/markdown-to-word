@@ -49,8 +49,8 @@ import {
 } from "./dom-ops.js";
 import { updateActionButtons } from "../convert/file-list.js";
 import { batchSuccessPaths } from "../state/pure.js";
-import { formatWarning, t } from "../../core/i18n.js";
-import type { ConvertWarning } from "../../core/i18n.js";
+import { formatWarning, t } from "../../core/i18n/index.js";
+import type { ConvertWarning } from "../../core/i18n/index.js";
 
 /* 弹窗焦点陷阱句柄:打开时启用,关闭时解除。
  * 防御:show* 均先解除旧句柄再启用新陷阱(二次调用防御)——弹窗未 hide

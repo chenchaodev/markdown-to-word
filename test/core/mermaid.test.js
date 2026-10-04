@@ -25,13 +25,13 @@
  *   内容经 markdown-it escapeHtml,如 --> 呈 --&gt;)。
  * - 非 mermaid 围栏(如 js)不被 mermaid 分支劫持,docx 文本 / pdf hljs 高亮。
  */
-import { formatWarning } from "../../dist/core/i18n.js";
+import { formatWarning } from "../../dist/core/i18n/index.js";
 import { FIXTURES_DIR } from "../common/paths.js";
 import { unzipPart, zipContains } from "../common/docx-utils.js";
 import { saveArtifact } from "../common/artifacts.js";
 import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
 
-/** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
+/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 
 /**
  * convert 的类型化别名:运行期是共享包装 convertWithFs(= dist 的 convert 注入宿主文件

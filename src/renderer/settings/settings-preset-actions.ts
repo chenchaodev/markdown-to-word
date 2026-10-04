@@ -6,7 +6,7 @@
  * 不反向;事件绑定侧(settings-bindings-preset)与 renderer Esc 分支 import 本模块。
  */
 import { TEMPLATE_PRESETS } from "../../core/settings/presets.js";
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import {
   buildCustomPresetEntry,
   customPresetNameFromId,

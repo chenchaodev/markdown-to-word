@@ -9,7 +9,7 @@
  * 分组口径 = index.html 六组 Tab 的 data-group=convert。
  * 顶栏格式分段(group=mirror,抽屉外)在编排根 settings-bindings.ts 接线。
  */
-import { t } from "../../core/i18n.js";
+import { t } from "../../core/i18n/index.js";
 import {
   outputDirPick,
   outputDirReset,

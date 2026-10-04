@@ -16,7 +16,7 @@ import { decodeEntities, escapeHtml, escapeRegExp } from "../text/text-escape.js
 import { PDF_TOC_MAX_LEVEL } from "./rules/heading-id.js";
 import { mimeFromBuffer } from "../image/image-type.js";
 import { imageLoadFailedWarning, imageLoadFailureWarning, imageNotFoundWarning, unrecognizedImageWarning } from "../image/image-warning.js";
-import type { ConvertWarning } from "../i18n.js";
+import type { ConvertWarning } from "../i18n/index.js";
 import type { PdfHeading } from "./bookmarks.js";
 import type { ImageResolver } from "../image/image-resolver.js";
 import { createCancellationGuard, isConversionCanceled } from "../cancel.js";

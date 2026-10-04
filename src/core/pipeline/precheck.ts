@@ -24,8 +24,8 @@ import {
   type SourceRange,
   type SourceRangeQuery,
 } from "../markdown/source-ranges.js";
-import type { ConvertWarning, KeyedWarning } from "../i18n.js";
-import { crossRefNotFoundWarning, unlabeledCodeBlockWarning } from "../i18n.js";
+import type { ConvertWarning, KeyedWarning } from "../i18n/index.js";
+import { crossRefNotFoundWarning, unlabeledCodeBlockWarning } from "../i18n/index.js";
 import { imageNotFoundWarning } from "../image/image-warning.js";
 
 /** 标签定义:{#(sec|eq|fig|tab):label}(label 含前导 #,见 core/markdown/cross-ref.ts) */
@@ -94,7 +94,7 @@ const FENCE_CLOSE_RE = /^( {0,3})(`{3,}|~{3,})[ \t]*$/;
 /** 引用块标记:`>` 前至多 3 空格,其后至多 1 个空白;逐层剥离 */
 const QUOTE_PREFIX_RE = /^ {0,3}>[ \t]?/;
 
-/* ================= 静默丢内容告警构造(本模块自持,不进 i18n.ts 逻辑层) ================= */
+/* ================= 静默丢内容告警构造(本模块自持,不进 i18n/warning.ts 收口) ================= */
 
 /** ① 告警:不报定界符实例(全文一条),报出来也没法逐个改 —— 关键是让用户知道该改什么 */
 function unsupportedMathDelimiterWarning(): KeyedWarning {
@@ -127,7 +127,7 @@ function unpairedMathDelimiterWarning(snippet: string): KeyedWarning {
  * 键名带类型语义(…No = 行号),与 ④ 的 lineText(行内容,string)不共用 `line` ——
  * 同一键在两条告警上异型会让渲染层按字符串/按数字使用时踩雷。
  * blocksMerge:五类里唯一会连带吞掉**别的文件**的一类(合并时跨越文件边界),
- * 故带该信号让合并流程阻断(字段语义见 core/i18n.ts 的 KeyedWarning)。
+ * 故带该信号让合并流程阻断(字段语义见 core/i18n/warning.ts 的 KeyedWarning)。
  * 措辞只说事实:内容照样显示,只是变成一个代码块 —— 早前写成「不显示」是错的,
  * 用户按那句理解会以为「该消失却还在」(GUI 实测 2026-09-27 反馈)。
  */

@@ -11,7 +11,7 @@ import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { CustomPreset } from "../../core/settings/settings-defaults.js";
 import type { OperationBusyResult, PrecheckResult, RecentFile } from "../../core/ipc-contract.js";
-import type { ConvertWarning, KeyedWarning } from "../../core/i18n.js";
+import type { ConvertWarning, KeyedWarning } from "../../core/i18n/index.js";
 import { mergePresets, parsePresetsFile } from "../persist/preset-file.js";
 import type { ConvertContext } from "../converter/index.js";
 import { stripMarkdownExt } from "../../convert/paths.js";

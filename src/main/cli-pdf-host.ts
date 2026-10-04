@@ -40,7 +40,7 @@ import { createConvertContext } from "../convert/context.js";
 import { exitCodes, readJob, writeJobResult } from "../convert/cli-pdf-job.js";
 import { prepareMarkdown } from "../convert/preprocess.js";
 import { emitConvertedArtifact } from "../convert/run.js";
-import type { ConvertWarning } from "../core/i18n.js";
+import type { ConvertWarning } from "../core/i18n/index.js";
 import type { AppSettings } from "../core/settings/settings-defaults.js";
 import { renderPdf } from "./converter/electron-side.js";
 import { preparePdfHostProfile } from "./services/pdf-host-profile.js";
