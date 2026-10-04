@@ -316,14 +316,31 @@ export async function run() {
         formatMirrorMismatch(nopeResult).includes("顶层没有可镜像的 nope/"),
         `镜像诊断须点名 nope 缺顶层镜像树,实际:${formatMirrorMismatch(nopeResult)}`,
       );
-      // harness / 数据区 / 入口三个名字显式排除在镜像面外:即便顶层真有同名树也不许当段目录
-      const harness = checkSegmentMirrors(nope, ["harness"]);
-      assertEq(harness.ok, false, "harness 是 harness 不是被断言的树,登记成段目录必须判红");
-      assert(
-        formatMirrorMismatch(harness).includes("harness/数据区/入口名"),
-        `镜像诊断须点明 harness 被排除的理由,实际:${formatMirrorMismatch(harness)}`,
+      // `fixtures` / `acceptance` 两个名字显式禁止当段目录:它们是数据区与入口,
+      // 即便顶层真有同名树也不许往里塞段。
+      //
+      // ⚠ **本段原先在这里断的是 `harness`,T3 步 6 起它不再是禁止项** —— harness 已
+      // 登记为**自指层**段目录(被测主体就是 `test/harness/**` 自己),豁免「必须镜像」
+      // 的依据从「禁止表」搬到了 `NON_MIRROR_SEGMENT_DIRS`。故禁止表少一项、豁免表多一项,
+      // 两处必须同批改(否则「以为豁免了、实际被禁止」)。下面两格分别断这两张表的新形状。
+      for (const banned of ["fixtures", "acceptance"]) {
+        const rejected = checkSegmentMirrors(nope, [banned]);
+        assertEq(rejected.ok, false, `${banned} 是数据区/入口名,登记成段目录必须判红`);
+        // 诊断文案里的三字诀是**一张**表的共称(「harness/数据区/入口名」,harness 如今
+        // 已不在表内,但共称沿用未改),故这里按共称断言而非按被点名的那一项。
+        assert(
+          formatMirrorMismatch(rejected).includes("harness/数据区/入口名"),
+          `镜像诊断须点明 ${banned} 被排除的理由,实际:${formatMirrorMismatch(rejected)}`,
+        );
+      }
+      // harness 是**段目录**(自指层)且豁免镜像义务 —— 这一格与上面那两格方向相反,
+      // 两张表语义相近而相反,分开断才不会被「混用后恰好判红」蒙过去。
+      assertEq(
+        checkSegmentMirrors(nope, ["harness"]).ok,
+        true,
+        "harness 是自指层段目录(主体 = test/harness/**),豁免镜像义务而非被禁止",
       );
-      console.log("[ok] contract:段目录镜像判据负向(声明 test/nope 与 test/harness → 判红并点名;等式判不出的那一侧由它兜住)");
+      console.log("[ok] contract:段目录镜像判据负向(声明 test/nope、test/fixtures、test/acceptance → 判红并点名;harness 自指层豁免镜像;等式判不出的那一侧由它兜住)");
 
       // 5. 下限的分工:目录集合与磁盘一致、但文件数塌到下限以下 —— 等式判绿,只有下限判红
       const collapsed = makeFixtureTree(SCAN_TARGETS.map((t) => t.dir), 1);

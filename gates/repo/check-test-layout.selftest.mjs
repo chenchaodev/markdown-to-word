@@ -321,6 +321,104 @@ const CASES = [
     expect: /test\/harness\/helper\.test\.js → test-harness-not-segment/,
     expectAbsent: /test\/behavior\/cross\.test\.js/,
   },
+  {
+    // ---- L8 窄口子(T3 步 6):harness 是自指层,段必须声明且指向本层 ----
+    //
+    // 旧形态是「harness 下不得有 *.test.js」。下面四条把它换成「声明 + 指向本层」:
+    // 三条 fail-closed 各一夹具 + 一条反向锚点。**每条断一个方向** —— 缺了「声明指向
+    // 别处判红」那一格,声明通道就退化成万能后门(声明 `src/core/whatever.ts` 即可绕过 L4)。
+    // ⚠ 底板必须同时造出 `test/harness/runner.js`(主体候选),否则「元素必须真实存在」
+    //   那条判据会以「文件不存在」的形式误伤本组夹具。
+    name: "L8:自指层的段未 export const covers → 判红并点名",
+    judgeOnly: true,
+    extra: {
+      [`test/harness/runner.js`]: "export const runAll = 1;\n",
+      [`${TEST_REL}/harness/decl-missing.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:自指层里未声明 covers。 */",
+        "export const meta = { description: 'harness-decl-missing' };",
+        "export async function run() { return 1; }",
+        "",
+      ].join("\n"),
+    },
+    expect: new RegExp(`${TEST_REL}/harness/decl-missing\\.test\\.js → test-harness-not-segment:.*未 export const covers`),
+  },
+  {
+    name: "L8:自指层的段 covers 是空数组 → 判红(空声明与缺声明等效)",
+    judgeOnly: true,
+    extra: {
+      [`test/harness/runner.js`]: "export const runAll = 1;\n",
+      [`${TEST_REL}/harness/decl-empty.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:自指层里写了空 covers。 */",
+        "export const covers = [];",
+        "export const meta = { description: 'harness-decl-empty' };",
+        "export async function run() { return 1; }",
+        "",
+      ].join("\n"),
+    },
+    expect: new RegExp(`${TEST_REL}/harness/decl-empty\\.test\\.js → test-harness-not-segment:.*covers 是空数组`),
+  },
+  {
+    // 这条是窄口子的**牙齿**:声明了,但元素全指向别处 ⇒ 仍判红。
+    // 少了它,「随便声明一个别的层」就成了绕过 L4 的后门,窄化等于没做。
+    name: "L8:自指层的段 covers 指向本层之外 → 判红(声明通道不是万能后门)",
+    judgeOnly: true,
+    extra: {
+      ["src/core/real.ts"]: "export const real = 1;\n",
+      [`test/harness/runner.js`]: "export const runAll = 1;\n",
+      [`${TEST_REL}/harness/decl-foreign.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:自指层里声明的元素全指向别处。 */",
+        'export const covers = ["src/core/real.ts"];',
+        "export const meta = { description: 'harness-decl-foreign' };",
+        "export async function run() { return 1; }",
+        "",
+      ].join("\n"),
+    },
+    expect: new RegExp(`${TEST_REL}/harness/decl-foreign\\.test\\.js → test-harness-not-segment:.*没有元素指向本层`),
+  },
+  {
+    // 反向锚点:声明齐备且确有元素指向本层 ⇒ L8 与 L4 双绿。
+    // 缺它的话,上面三条可能只是「恒红」—— 没人能证明合法形态真的能过。
+    // 它同时钉住 L4 的「harness 主体根」:元素落在 `test/harness/**` 下时 L4 必须认它
+    // 为本层主体(主体根 = `test/harness/`,而不是顶层树 `harness/`)。
+    name: "L8/L4:自指层的段声明指向 test/harness/** → 两族皆绿(harness 主体根生效)",
+    judgeOnly: true,
+    extra: {
+      [`test/harness/runner.js`]: "export const runAll = 1;\n",
+      [`${TEST_REL}/harness/decl-ok.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:自指层里声明指向本层主体。 */",
+        'export const covers = ["test/harness/runner.js"];',
+        "export const meta = { description: 'harness-decl-ok' };",
+        "export async function run() { return 1; }",
+        "",
+      ].join("\n"),
+    },
+    expect: null,
+    expectAbsent: new RegExp(`${TEST_REL}/harness/decl-ok\\.test\\.js → (test-harness-not-segment|test-layer-self-hosted)`),
+  },
+  {
+    // L4 主体根的**同名不同根**反向锚点:自指层的段若声明的是顶层树 `gates/`,L4 必须判红 ——
+    // 证明 rootsOf 的 harness 分支指向 `test/harness/` 而非 `harness/`。
+    // 去掉那个分支时这一条会全绿(元素 `gates/...` 恰好落在默认分支算出的根下)。
+    name: "L4:自指层的段声明指向顶层 gates/ 树(同名不同根)→ 判红",
+    judgeOnly: true,
+    extra: {
+      ["gates/repo/real.mjs"]: "export const real = 1;\n",
+      [`test/harness/runner.js`]: "export const runAll = 1;\n",
+      [`${TEST_REL}/harness/decl-toptree.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:自指层里声明指向同名顶层树。 */",
+        'export const covers = ["gates/repo/real.mjs"];',
+        "export const meta = { description: 'harness-decl-toptree' };",
+        "export async function run() { return 1; }",
+        "",
+      ].join("\n"),
+    },
+    expect: new RegExp(`${TEST_REL}/harness/decl-toptree\\.test\\.js → (test-harness-not-segment|test-layer-self-hosted)`),
+  },
   // ---- 抽取层:extractImports 逐形态直测 ----
   // 为什么需要这一档(而上面各族的行为夹具不够):`import("…")` 的两种形态靠「在抹注释后的
   // code 里那个下标是否仍以 import( 开头」区分,而**两半各自都可能被另一条路径兜住** ——
@@ -861,11 +959,15 @@ const CASES = [
     expect: /L4 test-layer-self-hosted 判红 \d+ 项.*L5 test-layer-cross-import 命中 \d+ 处.*L7 test-top-dirs-exact 多 \d+ \/ 缺 \d+.*L8 test-harness-not-segment 判红 \d+ 项/,
   },
   {
-    name: "真实仓库:--enforce exit 非零且逐条点名三个零本层主体的段",
+    name: "真实仓库:--enforce exit 非零(L4 已零判红,余下是 L7 缺 tools/)且四族计数自洽",
     realRepo: true,
     args: ["--enforce"],
     expectCode: 1,
-    expect: /test\/core\/runner-report\.test\.js → test-layer-self-hosted/,
+    // T3 步 6 起 L4 的两格都归零(零本层主体 0 / 段 import 段 0)—— 这一条把它钉住:
+    // 「自指层 + 声明通道 + 数据抽离」三件事任何一件回退,这里立刻翻脸。
+    // 退出码仍是 1,因为 L7「缺 test/tools/」尚未处置(空目录,`discoverSurfaceDirs`
+    // 只把含测试源文件的目录算进实测面,登记空目录会让等式恒红)。
+    expect: /L4 test-layer-self-hosted 判红 0 项\(零本层主体 0 \/ 段 import 段 0/,
   },
 ];
 

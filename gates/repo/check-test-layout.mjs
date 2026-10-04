@@ -8,7 +8,9 @@
 //      「搬去 `test/behavior/` 并写 `covers`」的处置指引。
 //   ③ test-top-dirs-exact(L7):`test/` 顶层**目录**集合 == 镜像源派生集 ∪ {behavior, harness}。
 //      多一个少一个都判红。
-//   ④ test-harness-not-segment(L8):`test/harness/` 下不得出现 `*.test.js`。
+//   ④ test-harness-not-segment(L8):`test/harness/` 是**自指层**(主体根 = 它自己);
+//      其下的段**必须**声明 `covers` 且至少一个元素指向 `test/harness/**`
+//      (未声明 / 空声明 / 元素全指向别处,三者各自判红)。
 //
 // ---- L4 为什么必须判「零命中」而不是只判「import 落在别处」 ----
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
@@ -100,6 +102,24 @@ export const SEGMENT_EXT = ".test.js";
  * 性质的常量:镜像源那一半从磁盘派生,这里登记的是**派生之外的豁免位**,两者不会互相漂移。
  */
 export const NON_MIRROR_TOP_DIRS = Object.freeze(["behavior", "harness"]);
+/**
+ * **自指层**的段目录名(L4 主体根 + L8 窄口子的作用域标记)。
+ *
+ * 「自指」= 它的被测主体就是它自己:测「测试框架自身」的段(`runner-report` /
+ * `test-common-helpers` / `dual-pipeline-decision-ledger`)主体全在 `test/harness/**`。
+ * 它与 `behavior` 的区别要分清:behavior 是**横跨多层**(被测主体在别处,位置不表达被测层),
+ * harness 是**主体在本目录内**(被测代码与测试框架同处一树)。
+ *
+ * 单列成常量(与 `BEHAVIOR_DIR` 同款理由):L4 的 `rootsOf` 分支与 L8 的窄口子都按它判定,
+ * 与 `NON_MIRROR_TOP_DIRS` 里那一项指的是同一个目录 —— 两处各写一份字面量就是一处可漂移
+ * 的副本,漂移后果是 harness 段静默失去 L8 约束(无人声明也无人报错)。
+ */
+export const HARNESS_DIR = "harness";
+/**
+ * **自指层主体根**的前缀(仓相对 POSIX)。L4 的「本层主体根」与 L8 的「元素须指向本层」
+ * 用的是同一个前缀常量 —— 写成两处字面量就会出现「L4 认它、L8 不认它」的裂缝。
+ */
+export const HARNESS_ROOT = `${TEST_REL}/${HARNESS_DIR}/`;
 /**
  * 跨层段的段目录名(L6 的作用域标记)。
  *
@@ -249,7 +269,19 @@ export function deriveMirrorLayers(ctx) {
     topTrees,
     layers,
     /** @param {string} layer @returns {string[]} */
-    rootsOf: (layer) => (srcSet.has(layer) ? [`src/${layer}/`, `dist/${layer}/`] : [`${layer}/`]),
+    rootsOf: (layer) => {
+      // `harness` 是**自指层**(T3 步 6):它的被测主体就是它自己 —— 测「测试框架自身」的段
+      // (runner-report / test-common-helpers / dual-pipeline-decision-ledger)主体全在
+      // `test/harness/**`。它的主体根因此**不是** `harness/`(仓顶层树,收的是门禁脚本)而是
+      // `test/harness/`。走的是与 src 镜像层同形的判定路径:一个层一个主体根前缀。
+      //
+      // 为什么必须单列而不能靠段自己声明:`harness` 同时出现在 `topTrees` 里(它是
+      // TREE_DIRS 的四棵顶层树之一),若沿用 `rootsOf` 的默认分支,主体根会算成 `harness/`,
+      // 于是 `covers: ["test/harness/runner.js"]` 落在根外 → L4 恒判红。这正是本分支
+      // 存在的理由:层名相同不代表主体根相同,主体根必须指向**被测代码所在处**。
+      if (layer === HARNESS_DIR) return [HARNESS_ROOT];
+      return srcSet.has(layer) ? [`src/${layer}/`, `dist/${layer}/`] : [`${layer}/`];
+    },
   };
 }
 
@@ -492,7 +524,14 @@ export function checkTestLayout(base = {}) {
   stats.segments = segments.length;
 
   // ---- 判据一 L4 + 判据二 L5:逐段判定(两族共用一次读取) ----
-  const layerSet = new Set(mirror.layers);
+  // L4/L5 的作用域层集合 = 镜像源派生集 ∪ {harness}(T3 步 6 的自指层)。
+  //
+  // ⚠ `harness` **刻意不进 `mirror.layers`**:那个数组的成员要参与 L7 的顶层目录集合
+  // 等式(派生集 ∪ NON_MIRROR_TOP_DIRS),把 harness 塞进去会让它同时出现在等式两侧 ——
+  // 集合相等判据虽然会去重、结果不变,但 `topTrees` 会多出一项,L7 诊断文案的
+  // 「顶层树」清单随之失真(它列的是仓根四棵树,不是 test/ 下的段目录)。
+  // 故只在**这里**(L4/L5 的作用域)补一项,派生集本身不动。
+  const layerSet = new Set([...mirror.layers, HARNESS_DIR]);
   // L5 豁免表:先读表,再逐条判。表本身的读错/键名错先判红(它们会让整张表静默失效)。
   const { entries: l5Exemptions, problems: l5ExemptionProblems } = base.l5Exemptions
     ? { entries: base.l5Exemptions, problems: [] }
@@ -711,16 +750,59 @@ export function checkTestLayout(base = {}) {
     }
   }
 
-  // ---- 判据四 L8:harness 下不得有段 ----
+  // ---- 判据四 L8:自指层(harness)下的段必须声明 covers 且指向本层 ----
+  //
+  // ---- 为什么从「一律禁止」窄化成「声明 + 指向本层」(T3 步 6)----
+  //
+  // 旧形态是「`test/harness/` 下不得出现 `*.test.js`」,理由是「harness 收的是测试框架
+  // 自身,而它在 harness/ 下没有任何被测层可归属」。**后半句今天不成立了**:`harness` 已
+  // 登记为**自指层**(段目录,主体根 = `test/harness/` 自己),测「测试框架自身」的段
+  // (`runner-report` / `test-common-helpers` / `dual-pipeline-decision-ledger`)主体就在
+  // 它下面。旧形态与新事实直接冲突:那三个段要么被禁(则测试框架自身无人测,断言集恒真
+  // 就没人发现),要么违规(则门禁逼人把它们挪去一个主体并不在那里的目录 —— 回到挂错层)。
+  //
+  // 窄化后的三条 fail-closed(每条都有 selftest 夹具):
+  //   ① **未声明 covers → 判红**:不许「段悄悄住在 harness 里」。声明是 harness 段存在的
+  //      前提,不是可选注释 —— 否则「它测的到底是什么」无从核对。
+  //   ② **covers 为空 → 判红**:与 L6 对 behavior 段同款(空声明与缺声明等效)。
+  //   ③ **covers 没有任何元素指向本层(`test/harness/`)→ 判红**:这是开口子的**牙齿**。
+  //      只写「有个声明」就能过关的话,`covers: ["src/core/whatever.ts"]` 会把 harness 段
+  //      变成绕过 L4 的后门 —— 那与不窄化没有区别。必须至少一个元素真的落在
+  //      `test/harness/**`,即「它确实在测测试框架自身」。
+  //
+  // ⚠ 判红文案里**不再**有「没有任何被测层可归属」—— 那句话描述的是被本步推翻的旧事实。
   for (const file of segments) {
-    if (!file.startsWith(`${TEST_REL}/harness/`)) continue;
-    stats.l8Violations += 1;
-    problems.push(
-      `${file} → test-harness-not-segment:test/harness/ 下出现段文件 —— harness 收的是测试框架自身`
-      + "(runner / assert / 夹具助手),它们由段 import 而不被 runner 发现。"
-      + `段名去掉 ${SEGMENT_EXT} 后缀即被 test/harness/runner.js 的 readdir 过滤发现并单独起进程,`
-      + "而它在 harness/ 下没有任何被测层可归属",
-    );
+    if (!file.startsWith(HARNESS_ROOT)) continue;
+    const declared = extractCovers(ctx.readText(file));
+    if (declared === null) {
+      stats.l8Violations += 1;
+      problems.push(
+        `${file} → test-harness-not-segment:${HARNESS_DIR}/ 下的段未 export const covers`
+          + ` —— ${HARNESS_DIR} 是**自指层**:测「测试框架自身」的段主体就在它下面`
+          + `(如 \`${HARNESS_ROOT}runner.js\`),位置即被测层。不声明就没有任何东西能核对`
+          + "「这一段到底在测什么」—— 旧形态之所以禁掉 harness 下的段,正是因为「测测试框架"
+          + "自身的段无处安放」,而那个前提已随自指层的登记失效。补声明,并让至少一个元素落在"
+          + ` \`${HARNESS_ROOT}\` 下`,
+      );
+      continue;
+    }
+    if (declared.length === 0) {
+      stats.l8Violations += 1;
+      problems.push(
+        `${file} → test-harness-not-segment:${HARNESS_DIR}/ 下的段 covers 是空数组`
+          + " —— 空声明与缺声明在判据上等效:两者都没说清被测对象,却只有一种能判红",
+      );
+      continue;
+    }
+    if (!declared.some((element) => element.startsWith(HARNESS_ROOT))) {
+      stats.l8Violations += 1;
+      problems.push(
+        `${file} → test-harness-not-segment:${HARNESS_DIR}/ 下的段 covers 没有元素指向本层`
+          + `(要求至少一个元素以 \`${HARNESS_ROOT}\` 开头,实际 ${declared.join(", ")})`
+          + " —— 自指层的段必须真的在测测试框架自身;声明别处的主体会让本条开口子变成"
+          + "绕过 L4 的后门(那与当初一律禁止没有区别)",
+      );
+    }
   }
 
   return { problems, info, stats, l5ExemptionCount: l5ByKey.size };

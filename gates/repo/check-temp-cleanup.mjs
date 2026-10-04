@@ -239,7 +239,7 @@ export const ALLOWLIST = Object.freeze([
   },
   {
     id: 'test-common-helpers-illegal-retry-params',
-    file: 'test/core/test-common-helpers.test.js',
+    file: 'test/harness/test-common-helpers.test.js',
     match: () => false,
     cold: true,
     why: '`test-common-helpers.test.js` **刻意**给 removeTree 喂非法与极小重试参数'
@@ -300,7 +300,7 @@ export const ALLOWLIST = Object.freeze([
 export const OPTION_ALLOWLIST = Object.freeze([
   {
     id: 'test-common-helpers-illegal-retry-probe',
-    file: 'test/core/test-common-helpers.test.js',
+    file: 'test/harness/test-common-helpers.test.js',
     // 刻意给 removeTree 喂非法与极小重试参数:证明「失败如实上报」而非吞掉
     match: (hit) => hit.args.includes('maxRetries: -1'),
     // ⚠️ 这里**刻意不写行号** —— 上一版写的是 `L344`/`L369`,而那条锚点所在的段每次

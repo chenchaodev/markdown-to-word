@@ -74,6 +74,8 @@ export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   "check:copy-sites:selftest": "gates/repo/check-copy-sites.selftest.mjs",
   "check:transform-dispatch:selftest": "gates/repo/check-transform-dispatch.selftest.mjs",
   "check:test-numbering:selftest": "gates/repo/check-test-numbering.selftest.mjs",
+  "check:plan-in-progress:selftest": "gates/repo/check-plan-in-progress.selftest.mjs",
+  "check:tscheck-coverage:selftest": "gates/repo/check-tscheck-coverage.selftest.mjs",
   "check:src-layout:selftest": "gates/repo/check-src-layout.selftest.mjs",
   "check:test-layout:selftest": "gates/repo/check-test-layout.selftest.mjs",
   "check:temp-cleanup:selftest": "gates/repo/check-temp-cleanup.selftest.mjs",
@@ -198,6 +200,57 @@ export const GATE_REGISTRY = Object.freeze(
           kind: "selftest",
           ref: "gates/repo/check-test-numbering.selftest.mjs",
           why: "自检脚本把门禁原样拷进临时仓,注入未登记编号 / 白名单失效 / 扫描面塌缩等漂移并断言判红",
+        },
+      ],
+    },
+    "tscheck-coverage": {
+      id: "tscheck-coverage",
+      title: "测试树 @ts-check 覆盖率门禁",
+      npmScripts: ["check:tscheck-coverage"],
+      command: "node gates/repo/check-tscheck-coverage.mjs",
+      modulePath: "gates/repo/check-tscheck-coverage.mjs",
+      access: "chain",
+      judgment: { module: "gates/repo/check-tscheck-coverage.mjs", export: "analyze", shaped: "{ problems, guarded, exempt }" },
+      probes: [
+        {
+          kind: "selftest",
+          ref: "gates/repo/check-tscheck-coverage.selftest.mjs",
+          why: "自检脚本注入缺标注 / 空文件 / 扫描面塌缩 / 豁免目录失效 / checkJs 被改成 true 等漂移,断言判据逐条判红,并断言未漂移时通过",
+        },
+      ],
+    },
+    "plan-in-progress": {
+      id: "plan-in-progress",
+      title: "PLAN 状态与「当前在跑」对读门禁(标记 🔄 的子步 × 人工声明)",
+      npmScripts: ["check:plan-in-progress"],
+      command: "node gates/repo/check-plan-in-progress.mjs",
+      modulePath: "gates/repo/check-plan-in-progress.mjs",
+      // 仅本地手动,**不进链**:判据读的是 `docs/PLAN.md` 的当前瞬时状态,而本仓的子步标记在
+      // 「有会话正在跑」期间本来就常年带 🔄(T3-5 / T3-6 / T3-4d-3 三处)。挂进 verify:ci 会在
+      // 任何一个会话开工期间把链打成红的,而红的原因(谁在跑)对 CI 毫无意义 —— 这正是
+      // check-src-layout 当初不进链的同一条理由(判据建时即红 ⇒ 进不了链 ⇒ 等于不存在)。
+      // 它的调用时机是**主会话开工前/收尾后各跑一次**,由人判断红的原因;而它的载体(负向夹具)
+      // 进链 —— 载体是纯夹具、不读真实载体,恒绿恒红都不受真实状态影响,故不受这条理由约束。
+      // ⚠ R5b 双向:登记 local 就不得出现在任何链上,反之亦然。改这一格必须同批改 verify:ci。
+      access: "local",
+      judgment: {
+        module: "gates/repo/check-plan-in-progress.mjs",
+        export: "checkPlanInProgress",
+        shaped: "{ problems: string[], stats }",
+      },
+      judgmentNote:
+        "判定本体是可注入纯函数(读文本 / 扫描面下限全经 ctx),CLI 的 main() 只打印 + 出 0/1。"
+        + "指针取 checkPlanInProgress(判定)而不是 parsePlanSteps(抽取):双向对读与那五条判红判据"
+        + "全在前者里,后者只是它的一档。"
+        + "⚠ 判据的另一半**不由门禁强制**:PLAN.md 的「措辞纪律」要求「宣布下一步必须同句给出子会话"
+        + "task id」,而门禁能对读状态、判不了「一句话是不是宣称了已派」—— 故那一条只落载体。"
+        + "⚠ 本门禁**故意不带白名单/豁免口**:它要判红的就是「标记与声明不一致」,任何「传参把自己"
+        + "摘出去」的口子都会让它退化成橡皮章。扫描面下限是形参,但它只管「塌缩这一档」,不是白名单。",
+      probes: [
+        {
+          kind: "selftest",
+          ref: "gates/repo/check-plan-in-progress.selftest.mjs",
+          why: "自检脚本在合成 PLAN.md 文本上求值判定本体(纯函数档直接 import 并注入 ctx),共 26 条夹具逐条注入漂移并断言判红:①标记 🔄 而全文无声明行(本轮反复发生的那一格)+ 多处 🔄 必须全部点名 ②声明写着「无」却有 🔄(另一种缺失形态)③声明点名已完成/暂停/受阻子步(✅/⏸/⛔ 三种标记各自一格)④声明指向已不存在的子步 ⑤声明与标记双向逐一对上才绿(正向锚点,没有它则「恒红」的退化实现能让全部负向夹具通过)⑥部分一致时两个方向同时判红 ⑦两行声明 / 空声明 / 重复点名 ⑧正文里提到声明标签不算声明(行首锚定的回归守护)⑨阶段表自限定首格不补小节前缀 ⑩子步表中间有空行时空行后的 🔄 行不得被当表头吃掉(**PLAN.md 实测有两处空行,被吃掉的正是带 🔄 的子步 5** —— 漏掉目标行 ⇒ 对它恒绿,是本门禁最坏的一格)⑪同一小节两行解析出同一 id ⑫首格是整句话的表不贡献子步行 ⑬扫描面塌缩 / 载体读不到;外加四条进程级夹具(判定不成立 exit 1 且点名、成立 exit 0、未知参数判红、--help 出口 0)与一条**只断言不变量**的真实仓库对照(不抛错 + 判红代号全在已登记集合内 + 计数自洽;断言它绿会把夹具钉死在缺陷状态上)",
         },
       ],
     },

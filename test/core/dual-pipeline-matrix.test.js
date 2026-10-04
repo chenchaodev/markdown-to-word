@@ -85,7 +85,7 @@ import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../ha
 import { FIXTURES_DIR, ROOT } from "../harness/paths.js";
 // 台账侧声明的矩阵行 id 与双管线键集合(本段在 assertMatrixShape 里反向断言行集合与
 // covers 覆盖与之逐字相符,见 dual-pipeline-decision-ledger.test.js 的机制说明)
-import { MATRIX_ROW_IDS, assertKeyCoverageRegistered, keyCoverageCounts } from "./dual-pipeline-decision-ledger.test.js";
+import { MATRIX_ROW_IDS, assertKeyCoverageRegistered, keyCoverageCounts } from "../harness/dual-pipeline-registry.js";
 
 /**
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物)。

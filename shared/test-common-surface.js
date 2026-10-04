@@ -50,32 +50,49 @@ import path from "node:path";
  * 而 `discoverSurfaceDirs` 只把「至少含一个测试源文件」的目录算进实测面 ⇒ 空目录
  * 登记进来会让 checkSurfaceEquality 判 `missing: test/tools` 而恒红。目录先建、内容
  * 待有真主体时再登记(登记那一刻要同批补两个 selftest 的 BASE_SHAPE)。
+ *
+ * ⚠ **`harness` 在本数组里**(T3 步 6 加):它的被测主体就是它自己 —— `runner-report` /
+ * `test-common-helpers` / `dual-pipeline-decision-ledger` 三个段测的是测试框架自身与
+ * 其登记数据,主体全在 `test/harness/**`。此前它们住在 `test/core/`,于是「主体所在目录」
+ * 与「段的可归属目录」没有交集,L4 判红而任何声明都只能靠撒谎变绿。harness 由此成为
+ * **自指层**:它的主体根就是 `test/harness/` 自己(见 `check-test-layout.mjs` 的
+ * `rootsOf` 对 `harness` 的分支)。登记那一刻必须同批:① 本数组 ② `NON_MIRROR_DIR_NAMES`
+ * 移出 `harness`(那张表语义是「禁止」)③ `NON_MIRROR_SEGMENT_DIRS` 收入 `harness`
+ * ④ `SCAN_TARGETS` 的 harness 条目改为**并集**谓词(见那里的注释)⑤ 两个 selftest 的
+ * `BASE_SHAPE`(那边 harness 的文件扩展名要跟段口径一致)。
  * @type {readonly string[]}
  */
-export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates", "convert", "cli", "mcp", "shared", "behavior"]);
+export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates", "convert", "cli", "mcp", "shared", "behavior", "harness"]);
 
 /**
- * 不得作为段目录的名字(它们是 harness / 数据区 / 入口,不是被断言的树)。
- * 显式列出而非「顶层没有同名树就放行」——否则把段塞进 test/harness 也能过镜像判据。
+ * 不得作为段目录的名字(它们是数据区 / 入口,不是被断言的树)。
+ * 显式列出而非「顶层没有同名树就放行」——否则把段塞进 test/fixtures 也能过镜像判据。
  *
  * ⚠ 语义是「**禁止**当段目录」,不是「允许存在但豁免镜像义务」—— 往这里加 `behavior`
- *   会把跨层段目录变成**禁止**项(T3 步 4c 实测:两道文本门禁立刻判红「behavior 是
- *   harness/数据区/入口名」)。「允许存在但不要求镜像」是另一张表的职责:
+ *   或 `harness` 会把它们变成**禁止**项(T3 步 4c / 步 6 实测:两道文本门禁立刻判红
+ *   「behavior 是 数据区/入口名」)。「允许存在但不要求镜像」是另一张表的职责:
  *   `gates/repo/check-test-layout.mjs` 的 `NON_MIRROR_TOP_DIRS`(它管 L7 的顶层目录集合),
- *   以及 checkSegmentMirrors 里对 `behavior` 的显式跳过。两张表语义相近而方向相反,
- *   混用会得到「以为豁免了、实际被禁止」的结果。
+ *   以及 checkSegmentMirrors 里对 `NON_MIRROR_SEGMENT_DIRS` 的显式跳过。两张表语义相近
+ *   而方向相反,混用会得到「以为豁免了、实际被禁止」的结果。
+ *
+ * ⚠ `harness` 曾在本表里(T3 步 6 之前),现已移出:它已从「不得放段的抽屉」变成
+ * 「自指段目录」。留着会让 `checkSegmentMirrors` 把它判成 offender,而它明明是段目录。
  * @type {readonly string[]}
  */
-const NON_MIRROR_DIR_NAMES = Object.freeze(["harness", "fixtures", "acceptance"]);
+const NON_MIRROR_DIR_NAMES = Object.freeze(["fixtures", "acceptance"]);
 
 /**
- * 「是段目录,但不要求镜像一棵顶层树」的**唯一**段目录名(ADR-062 的 `test/behavior/`)。
+ * 「是段目录,但不要求镜像一棵顶层树」的段目录名集合。
  *
  * 它与 `NON_MIRROR_DIR_NAMES` 是**方向相反**的两张表,混用会得到「以为豁免了、
  * 实际被禁止」的结果(见 checkSegmentMirrors 里那处分支的注释)。
- * @type {string}
+ *
+ * - `behavior`(ADR-062):一个段横跨多层是它的**定义**,不对应任何一棵被断言的树;
+ * - `harness`(T3 步 6):**自指层** —— 它的被测主体是它自己(`test/harness/**`),
+ *   同样不镜像任何顶层树。两者豁免的是同一条义务,故同表。
+ * @type {ReadonlySet<string>}
  */
-const NON_MIRROR_SEGMENT_DIR = "behavior";
+const NON_MIRROR_SEGMENT_DIRS = new Set(["behavior", "harness"]);
 
 /** 段文件判定(与 test/harness/runner.js 的 discoverSegments 同口径:只收 *.test.js) */
 const isSegmentFile = (/** @type {string} */ name) => name.endsWith(".test.js");
@@ -86,20 +103,51 @@ const isSegmentFile = (/** @type {string} */ name) => name.endsWith(".test.js");
  * 而不是靠「它恰好不在目标里」蒙对。
  * @type {readonly { dir: string, accept: (name: string) => boolean }[]}
  */
-export const SCAN_TARGETS = Object.freeze([
+/**
+ * 把「段目录派生的目标」与「额外的非段目标」按目录**合并**:同一目录出现两次时取谓词的
+ * **并集**,而不是让两个条目各自扫一遍。
+ *
+ * 为什么需要它(T3 步 6 实测):`harness` 进了 `SEGMENT_DIRS` 之后,派生那半会为它产出一条
+ * `accept = *.test.js`,而下面那条显式的 harness 目标 `accept = *.js|.mjs` 仍在 —— 两条同
+ * dir 的目标会让 `listScanFiles` 把每个 harness 文件**收两遍**(`.test.js` 同时满足两个谓词),
+ * 于是 `SCAN_TARGETS.map(dir)` 里 `test/harness` 出现两次,`checkSurfaceEquality` 的
+ * `declared` 也多一项,而 `contract-single-source` 那条**字面量**断言会当场判红。
+ * 与其去重 `files`(治标、且掩盖「两份登记」这件事),不如在**建表**这一步就合并 ——
+ * 同一目录的两个谓词本来就是「都要扫」的并集语义。
+ *
+ * @param {readonly { dir: string, accept: (name: string) => boolean }[]} targets 原始目标
+ * @returns {{ dir: string, accept: (name: string) => boolean }[]} 按目录合并后的目标
+ */
+function mergeScanTargets(targets) {
+  /** @type {Map<string, Array<(name: string) => boolean>>} */
+  const byDir = new Map();
+  for (const target of targets) {
+    const list = byDir.get(target.dir) ?? [];
+    list.push(target.accept);
+    byDir.set(target.dir, list);
+  }
+  return [...byDir.entries()].map(([dir, accepts]) => (accepts.length === 1
+    ? { dir, accept: /** @type {(name: string) => boolean} */ (accepts[0]) }
+    : { dir, accept: (/** @type {string} */ name) => accepts.some((fn) => fn(name)) }));
+}
+
+export const SCAN_TARGETS = Object.freeze(mergeScanTargets([
   ...SEGMENT_DIRS.map((name) => ({ dir: `test/${name}`, accept: isSegmentFile })),
   // test/harness 下 harness 与桩件的实际载体是 .mjs(ESM 显式扩展名),只收 .js 会让它们
   // 落在这两道文本门禁的扫描面之外 —— 同一批文件在 tsc / eslint 口径里却要被当作源文件
   // 逐个校验。谓词只收 .js 会造成「别的门禁看得见、这两道看不见」的非对称盲区,故此处
-  // 必须与三处口径对齐:本文件 SOURCE_FILE_RE(实测面)、test/core/tscheck-coverage.test.js
+  // 必须与三处口径对齐:本文件 SOURCE_FILE_RE(实测面)、gates/repo/check-tscheck-coverage.mjs
   // 的 SOURCE_EXT_RE(@ts-check 覆盖面)、eslint.config.js 的 NON_PROGRAM_EXTS
   // (allowDefaultProject 生成 glob 的纳入集)。
   //
   // ⚠ 这一行与上面的排除名单是**两处**独立的登记,改名时必须同批改(T3 步 1 实测):
   // 只改排除名单而漏了这里,两道文本门禁的扫描面会指向一个不存在的目录 → walker 扫到
   // 0 个文件 → 判据恒绿且**不报任何错**(本仓反复批过的「恒绿即失效」形态)。
+  //
+  // ⚠ `harness` 同时也是段目录(T3 步 6),故这条与上面派生出的那条同 dir —— 由
+  // `mergeScanTargets` 取并集(本谓词已是 `*.test.js` 的超集,合并后行为不变)。
   { dir: "test/harness", accept: (/** @type {string} */ name) => /\.(?:js|mjs)$/.test(name) },
-]);
+]));
 
 /** 显式排除目录(仓库相对 POSIX 路径;前缀匹配)。samples 是被测样例数据本身,不是断言。 */
 const EXCLUDED_DIRS = Object.freeze(["samples"]);
@@ -292,15 +340,17 @@ export function checkSegmentMirrors(root, segmentDirs = SEGMENT_DIRS) {
       reasons.push(`「${head}」是 harness/数据区/入口名,不是被断言的树`);
       continue;
     }
-    // `behavior` 是**段目录**,但它不对应任何一棵被断言的顶层树(ADR-062:一个段横跨多层
-    // 正是它的定义)⇒ 豁免「必须镜像」这条义务,但**不豁免**它作为段目录的存在 ——
-    // 它在 SEGMENT_DIRS 里、被 runner 发现、被 L6 的 covers 判据管。
+    // `behavior` / `harness` 是**段目录**,但它们不对应任何一棵被断言的顶层树 ⇒ 豁免
+    // 「必须镜像」这条义务,但**不豁免**它们作为段目录的存在 —— 它们在 SEGMENT_DIRS 里、
+    // 被 runner 发现、被 `check-test-layout.mjs` 的 L6(声明 covers)与 L8 窄口子管。
+    //   - `behavior`(ADR-062):一个段横跨多层正是它的定义;
+    //   - `harness`(T3 步 6):自指层,被测主体就是 `test/harness/**` 自己。
     //
     // 为什么单列而不并进 NON_MIRROR_DIR_NAMES:那张表的语义是「**禁止**当段目录」
-    // (harness / fixtures / acceptance),把 behavior 放进去等于把跨层段目录变成禁止项 ——
-    // 实测两道文本门禁会立刻判红「behavior 是 harness/数据区/入口名」。两张表语义相近
+    // (fixtures / acceptance),把 behavior 或 harness 放进去等于把它们变成禁止项 ——
+    // 实测两道文本门禁会立刻判红「behavior 是 数据区/入口名」。两张表语义相近
     // 而方向相反,必须分开,否则「以为豁免了、实际被禁止」。
-    if (head === NON_MIRROR_SEGMENT_DIR) continue;
+    if (NON_MIRROR_SEGMENT_DIRS.has(head)) continue;
     if (!candidates.has(head)) {
       offenders.push(`test/${name}`);
       reasons.push(
