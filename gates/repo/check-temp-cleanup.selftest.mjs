@@ -53,7 +53,7 @@ const BASE_SHAPE = Object.freeze({
   'test/convert': 1,
   'test/cli': 2,
   'test/mcp': 1,
-  'test/common': 7,
+  'test/harness': 7,
 });
 
 /** 合法形态的助手调用与单文件删除(第一条与第二条规则都不得判红) */
@@ -133,14 +133,14 @@ function createFixture(mutate, shape = BASE_SHAPE) {
   // 被测门禁从 shared/paths.js 取项目根(ADR-040),连同它唯一的仓内依赖一起带进夹具
   mkdirSync(join(dir, 'shared'), { recursive: true });
   copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
-  mkdirSync(join(dir, 'test', 'common'), { recursive: true });
+  mkdirSync(join(dir, 'test', 'harness'), { recursive: true });
   copyFileSync(copyClosurePath, join(dir, 'shared', 'copy-closure.js'));
   // 扫描面单源同样随门禁拷进来(它零 node: 依赖之外的仓内依赖,拷这一份就够)
   copyFileSync(surfacePath, join(dir, 'shared', 'test-common-surface.js'));
   // 段目录镜像判据的判定对象是**顶层**的同名树,夹具不把它们造出来就等于该判据恒红
   for (const name of SEGMENT_DIRS) mkdirSync(join(dir, name), { recursive: true });
   for (const [target, count] of Object.entries(shape)) {
-    const ext = target === 'test/common' ? '.js' : '.test.js';
+    const ext = target === 'test/harness' ? '.js' : '.test.js';
     for (let i = 0; i < count; i += 1) writeUnder(dir, `${target}/case-${i}${ext}`);
   }
   // mutate 抛异常时调用方拿不到 dir,其 finally 清不到 → 在这里兜住(临时产物不留残)
@@ -185,7 +185,7 @@ const CASES = [
     name: 'JSDoc 注释里的正确用法不报 → 通过',
     mutate: (dir) => writeUnder(
       dir,
-      'test/common/helpers.js',
+      'test/harness/helpers.js',
       '/**\n * 删除沙盒:removeTree(dir, { retryDelay: 200 })\n */\nexport const cleanup = () => undefined;\n',
     ),
     expect: null,
@@ -236,7 +236,7 @@ const CASES = [
     // 期望写成与具体数字无关的形态(下限判据只承诺「低于下限即红」,不承诺某个夹具形状
     // 恰好是几 —— 门禁多带一个依赖进来时,这条断言不该跟着改)。
     name: '扫描面塌缩(文件数掉到下限以下)',
-    shape: { 'test/core': 4, 'test/main': 2, 'test/renderer': 2, 'test/gates': 1, 'test/convert': 1, 'test/cli': 2, 'test/mcp': 1, 'test/common': 1 },
+    shape: { 'test/core': 4, 'test/main': 2, 'test/renderer': 2, 'test/gates': 1, 'test/convert': 1, 'test/cli': 2, 'test/mcp': 1, 'test/harness': 1 },
     expect: /只扫到 \d+ 个文件\(下限 50\):扫描面或 walker 失效/,
   },
   {

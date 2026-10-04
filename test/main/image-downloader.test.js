@@ -17,17 +17,17 @@
  * http server 生命周期 try/finally 保证清理(closeAllConnections 防 keep-alive 挂起)。
  * 端口口径:startServer 一律 listen(0) 随机端口,故须避开 fetch 建连前就拒绝的
  *   「bad port」名单 —— 否则计数类断言会以「实际 0」形态偶发红。名单与重试逻辑
- *   单一来源在 test/common/http-server.js(与另两处自建 server 的段共用)。
+ *   单一来源在 test/harness/http-server.js(与另两处自建 server 的段共用)。
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import http from "node:http";
 import { createImageResolver } from "../../dist/convert/image-downloader.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { prepareForConvert } from "../common/convert-helpers.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { closeTestServer, listenFetchablePort } from "../common/http-server.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { prepareForConvert } from "../harness/convert-helpers.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { closeTestServer, listenFetchablePort } from "../harness/http-server.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "input", "g1-tiny.png");
 
@@ -54,7 +54,7 @@ function localResolver(timeoutMs) {
 /**
  * 启动本地 http server:固定 status + body 响应(delayMs 可选,响应前延迟),getCount() 返回请求次数
  * 端口为 `listen(0)` 随机分配并避开 fetch 拒连名单(共用助手 `listenFetchablePort`)——
- * 计数类断言读的是 server 侧计数器,前提是请求真发出去了(口径依据见 test/common/http-server.js)。
+ * 计数类断言读的是 server 侧计数器,前提是请求真发出去了(口径依据见 test/harness/http-server.js)。
  * @param {number} status 响应状态码
  * @param {string | Buffer} body 响应体
  * @param {number} [delayMs] 响应前延迟(毫秒)

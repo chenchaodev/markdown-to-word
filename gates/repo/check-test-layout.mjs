@@ -13,7 +13,7 @@
 // ---- L4 为什么必须判「零命中」而不是只判「import 落在别处」 ----
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
 // 而那正是最该被抓的形态:`test/core/runner-report.test.js`(797 行)import 的是
-// `test/common/runner.js`(测试框架自身),`test/gates/entry-exit-guard.test.js` 测的是
+// `test/harness/runner.js`(测试框架自身),`test/gates/entry-exit-guard.test.js` 测的是
 // `shared/entry-guard.mjs`,`test/gates/contract-single-source.test.js` 零 `gates/` import。
 // 「至少一个」这条下界(而非「不许越界」那条上界)才是 L4 的全部内容。
 //
@@ -45,7 +45,7 @@
 //     树边界登记),本门禁读它而不是重抄一遍。
 // ⚠ 这与 `SEGMENT_DIRS`(当前硬编码在 `shared/test-common-surface.js:47`)无关:
 // 那张表**将在 T2/P2 被删除**,故本门禁**不得**依赖它 —— 段的发现机制是
-// `test/common/runner.js` 逐目录 `readdir` 过滤 `.endsWith(".test.js")`,**纯 glob、
+// `test/harness/runner.js` 逐目录 `readdir` 过滤 `.endsWith(".test.js")`,**纯 glob、
 // 无注册表**,本门禁照此发现,不读任何段目录清单。
 //
 // ---- L5 为什么**恒报告**、连 `--enforce` 也不参与退出码(ADR-064 的节奏) ----
@@ -85,7 +85,7 @@ import { isTypeOnlyClause, TREE_DIRS } from "./check-import-boundary.mjs";
 
 /** 被判定的子树(单一来源:扫描面只此一处登记) */
 export const TEST_REL = "test";
-/** 段的扩展名(发现机制与 `test/common/runner.js` 的 readdir 过滤逐字一致) */
+/** 段的扩展名(发现机制与 `test/harness/runner.js` 的 readdir 过滤逐字一致) */
 export const SEGMENT_EXT = ".test.js";
 /**
  * 允许存在但**不是镜像源**的两个顶层目录。
@@ -401,7 +401,7 @@ export function checkTestLayout(base = {}) {
       problems.push(
         `${file} → test-layer-self-hosted:段 import 段(${[...new Set(segmentImports.map((e) => e.resolved))].join(", ")})`
         + " —— 段是发现与隔离的单位,段间 import 让失败不可归因且让被 import 的段双跑。"
-        + "共用部分抽进非段助手(当前在 test/common/,T3 迁到 test/harness/)",
+        + "共用部分抽进非段助手(当前在 test/harness/(T3 步 1 已迁),harness/)",
       );
     }
 
@@ -462,7 +462,7 @@ export function checkTestLayout(base = {}) {
     problems.push(
       `${file} → test-harness-not-segment:test/harness/ 下出现段文件 —— harness 收的是测试框架自身`
       + "(runner / assert / 夹具助手),它们由段 import 而不被 runner 发现。"
-      + `段名去掉 ${SEGMENT_EXT} 后缀即被 test/common/runner.js 的 readdir 过滤发现并单独起进程,`
+      + `段名去掉 ${SEGMENT_EXT} 后缀即被 test/harness/runner.js 的 readdir 过滤发现并单独起进程,`
       + "而它在 harness/ 下没有任何被测层可归属",
     );
   }

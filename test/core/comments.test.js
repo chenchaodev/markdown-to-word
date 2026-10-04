@@ -5,10 +5,10 @@
  * 保留、批注内容(含 rich 加粗/链接)存在、多批注 id 唯一、author 固定;
  * 表格单元格内批注生效;链接与 {#eq:label} 语法不受影响;pdf 路线原样输出。
  */
-import { FIXTURES_DIR } from "../common/paths.js";
-import { zipContains, unzipPart } from "../common/docx-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { zipContains, unzipPart } from "../harness/docx-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
 /** 主样例:正文/表格单元格批注 + rich 内容 + 既有语法回归(链接、{#eq:label}) */
 const commentMd = `# 批注测试

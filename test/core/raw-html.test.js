@@ -8,11 +8,11 @@
  * w:val="yellow"、strike → <w:strike/>、underline → <w:u w:val="single"/>、
  * 换行 → <w:br/>(TextRun break: 1)。
  */
-import { unzipPart } from "../common/docx-utils.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
 /** 主样例:白名单标签 + 危险样例(gen-fixtures 落盘为 docs/raw-html.md) */
 const htmlMd = `# 白名单测试

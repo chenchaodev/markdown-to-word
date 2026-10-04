@@ -12,7 +12,7 @@ import {
 } from "../../shared/paths.js";
 
 // 路径常量的单一来源在 shared/paths.js(项目根在那里唯一定义,取值恒等于 `process.cwd()`)。
-// 本文件保留同名再导出,是测试树的历史入口:约 40 个段经 `../common/paths.js` 取值,
+// 本文件保留同名再导出,是测试树的历史入口:约 40 个段经 `../harness/paths.js` 取值,
 // 改导入路径属纯机械 churn 且无收益,故维持转出面不变。
 export { ARTIFACTS_DIR, FAILURES_DIR, FIXTURES_DIR, ROOT, SMOKE_DIR };
 

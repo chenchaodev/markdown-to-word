@@ -33,9 +33,9 @@ import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { createCaseSuite } from "../common/case.js";
-import { ROOT } from "../common/paths.js";
-import { withTempResource } from "../common/temp-resource.js";
+import { createCaseSuite } from "../harness/case.js";
+import { ROOT } from "../harness/paths.js";
+import { withTempResource } from "../harness/temp-resource.js";
 import { checkLedger, TITLE_LIMIT, WHY_LIMIT, WHY_LIMIT_DONE } from "../../gates/repo/check-pointers.mjs";
 
 /**

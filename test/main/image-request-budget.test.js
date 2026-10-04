@@ -12,7 +12,7 @@
  * 请求契约与缓存预算(共用同一 dist 实现,断言不重复)。
  * http server 生命周期 try/finally 保证清理(closeAllConnections 防 keep-alive 挂起)。
  * 端口口径:本段的计数类断言读 server 侧计数器,前提是 fetch 真把请求拨出去了,故
- *   listen(0) 须避开 fetch 建连前就拒绝的 bad port 名单(共用助手,见 test/common/http-server.js)。
+ *   listen(0) 须避开 fetch 建连前就拒绝的 bad port 名单(共用助手,见 test/harness/http-server.js)。
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -23,8 +23,8 @@ import {
   MAX_CACHE_ENTRIES,
   MAX_RESPONSE_BYTES,
 } from "../../dist/convert/image-downloader.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { closeTestServer, listenFetchablePort } from "../common/http-server.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { closeTestServer, listenFetchablePort } from "../harness/http-server.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "input", "g1-tiny.png");
 

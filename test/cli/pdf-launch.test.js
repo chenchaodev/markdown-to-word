@@ -25,8 +25,8 @@ export const fixtures = null;
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { ROOT } from "../common/paths.js";
-import { createTempResource, removeTree } from "../common/temp-resource.js";
+import { ROOT } from "../harness/paths.js";
+import { createTempResource, removeTree } from "../harness/temp-resource.js";
 // node 解析器复用同段 options.test.js 的那份:各写一份「怎么找真 node」正是本仓
 // 反复吃过亏的地方(退出码、temp 前缀、跨面契约都栽在「两处各写一遍」上)。
 import { resolveNode } from "./options.test.js";

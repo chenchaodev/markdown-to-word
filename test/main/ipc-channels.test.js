@@ -14,8 +14,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { IPC_CHANNELS } from "../../dist/main/ipc/channels.js";
-import { assert, createCaseSuite } from "../common/case.js";
-import { ROOT } from "../common/paths.js";
+import { assert, createCaseSuite } from "../harness/case.js";
+import { ROOT } from "../harness/paths.js";
 
 const distMain = path.join(ROOT, "dist", "main");
 
@@ -28,7 +28,7 @@ const distMain = path.join(ROOT, "dist", "main");
 function parseMirror(src, file) {
   const mirrorMatch = src.match(/const CH = \{([\s\S]*?)\};/);
   assert(mirrorMatch, `${file} 未找到 CH 镜像对象(产物结构变化)`);
-  // 共享 assert(test/common/case.js)不带 asserts 签名,匹配组在此显式收窄
+  // 共享 assert(test/harness/case.js)不带 asserts 签名,匹配组在此显式收窄
   const mirrorBody = mirrorMatch?.[1] ?? "";
   /** @type {Record<string, string>} */
   const mirror = {};

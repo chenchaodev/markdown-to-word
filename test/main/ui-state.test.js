@@ -10,7 +10,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
-import { removeFile, removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 /** 最近文件条目(跨进程契约单源;本段经动态 import 拿产物实例,类型按契约取) */
 /** @typedef {import("../../src/core/ipc-contract.js").RecentFile} RecentFile */

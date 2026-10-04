@@ -37,8 +37,8 @@ import {
   describePdfDegradation,
   resolveSmokeOutDir,
 } from "../../dist/main/smoke.js";
-import { ROOT } from "../common/paths.js";
-import { removeTree } from "../common/temp-resource.js";
+import { ROOT } from "../harness/paths.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /** 编译产物路径(冒烟实现;build.files 收 dist/** → 天然随包) */
 const SMOKE_JS = path.join(ROOT, "dist", "main", "smoke.js");

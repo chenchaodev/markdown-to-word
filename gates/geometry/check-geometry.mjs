@@ -90,7 +90,7 @@
  *   M2W_GEOMETRY_VIEWPORT_SETTLE_MS 视口落定等待上限 ms(默认 10000)
  *   M2W_GEOMETRY_VIEWPORT_COMPENSATIONS 视口取整补偿最大额外次数(默认 2)
  * 退出码:0 全绿 / 1 实测红灯 / 2 有档位未测量(未测量 ≠ 通过)/ 4 入口自身崩溃
- *   (载荷加载失败、ready 回调内异常、加载看门狗超时;与判定结论无关,详见 test/common/entry-guard.mjs)
+ *   (载荷加载失败、ready 回调内异常、加载看门狗超时;与判定结论无关,详见 shared/entry-guard.mjs)
  */
 import { app } from "electron";
 import { runEntry } from "../../shared/entry-guard.mjs";

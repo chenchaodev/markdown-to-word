@@ -17,10 +17,10 @@ import {
   headingSpacingTwips,
 } from "../../dist/core/settings/typography.js";
 import { mergeSettingsWithDefaults } from "../../dist/renderer/settings/settings-logic.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
-import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
+import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import fs from "node:fs/promises";
 
 /**

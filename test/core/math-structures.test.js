@@ -58,10 +58,10 @@
 
 import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { docxBufferOf, prepareForConvert } from "../common/convert-helpers.js";
-import { FIXTURES_DIR } from "../common/paths.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { docxBufferOf, prepareForConvert } from "../harness/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
 
 // 本段只断言公式结构与容器内降级的产物形态,不产出人工实测样例(公式常规渲染与
 // 列表/引用块常规排版分别由 segments/formula.test.js、segments/eq-numbering.test.js、

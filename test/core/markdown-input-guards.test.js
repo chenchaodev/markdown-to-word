@@ -25,11 +25,11 @@
 /** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} ConvertWarning */
 
 import { formatWarning } from "../../dist/core/i18n/index.js";
-import { unzipPart, zipContains } from "../common/docx-utils.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
-import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
+import { unzipPart, zipContains } from "../harness/docx-utils.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../harness/convert-helpers.js";
+import { FIXTURES_DIR, KATEX_DIR } from "../harness/paths.js";
 
 // 本段只断言输入守卫的产物形态,不产出人工实测样例(公式常规渲染由
 // segments/formula.test.js、segments/eq-numbering.test.js,常规批注由

@@ -29,8 +29,8 @@ import {
   watermarkDmlRotation,
 } from "../../dist/core/settings/settings-defaults.js";
 import { WATERMARK_GRAY, WATERMARK_INK } from "../../dist/core/style/colors.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
 /**
  * 断言辅助。

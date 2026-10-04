@@ -12,11 +12,11 @@ import { mergeMarkdowns } from "../../dist/core/pipeline/merge.js";
 import { extractHeadings, injectTocPageNumbers } from "../../dist/core/pdf/postprocess.js";
 import { renderPdfDocument } from "../../dist/core/pdf/render.js";
 import { pageNumbersForNames } from "../../dist/core/pdf/bookmarks.js";
-import { unzipPart } from "../common/docx-utils.js";
+import { unzipPart } from "../harness/docx-utils.js";
 import { PDFDocument } from "pdf-lib";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf, HOST_FS } from "../common/convert-helpers.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf, HOST_FS } from "../harness/convert-helpers.js";
 
 const fileA = `# 第一章 A
 

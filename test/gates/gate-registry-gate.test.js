@@ -33,8 +33,8 @@ import {
 } from "../../gates/probe/gate-probes/registry.mjs";
 import { GATE_IDS } from "../../gates/probe/gate-probes/contract.mjs";
 import { auditJudgmentRef, makeCtx, resolveJudgment } from "../../gates/probe/gate-probes/protocol.mjs";
-import { createCaseSuite } from "../common/case.js";
-import { ROOT } from "../common/paths.js";
+import { createCaseSuite } from "../harness/case.js";
+import { ROOT } from "../harness/paths.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头):本段断言的是门禁
 // 注册表自身的行为,产物是一组判定结论,不是可供 GUI 拖入实测的 md 样例。

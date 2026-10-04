@@ -16,7 +16,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /* 类型取自 src(真接口所在):dist 不产 .d.ts,interface 在 JS 里被擦除,
    从 dist 推断只会拿到 defaultJsonWriterDeps 的字面量形状(缺可选依赖面字段),

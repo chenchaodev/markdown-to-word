@@ -25,7 +25,7 @@
  * - settingsFilePath = app.getPath("userData")/settings.json(无注入点)→ 测试备份真实文件、
  *   finally 恢复;模块级 settingsCache 惰性缓存 → 每场景用 query-string 动态 import 取
  *   全新模块实例(实证:Node ESM 同文件不同 query = 独立实例,缓存按 URL 键;
- *   备份/全新实例样板已迁移 test/common/settings.js 公共助手)
+ *   备份/全新实例样板已迁移 test/harness/settings.js 公共助手)
  * - sanitizePageSetup/sanitizeTypography/sanitizePatch 均未导出 → 经 updateSettings 公开
  *   路径断言(patch 合并 + sanitize + 持久化 + 返回 next)
  * - isValidSettings:整文件形状校验纯函数直测——任一字段非法
@@ -53,8 +53,8 @@ import {
   SETTINGS_SCHEMA,
   SHAPE_CHECKED_ENTRIES,
 } from "../../dist/core/settings/settings-schema.js";
-import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
-import { removeFile, removeTree } from "../common/temp-resource.js";
+import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
+import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 /**
  * 形状校验夹具(合法完整对象):「可缺字段」声明为可选——旧文件兼容用例经 delete

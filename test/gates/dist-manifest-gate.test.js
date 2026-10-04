@@ -23,8 +23,8 @@ import {
 } from "../../gates/artifacts/check-dist-manifest.mjs";
 import { evaluateFreshness, main as buildFreshMain } from "../../gates/smoke/check-build-fresh.mjs";
 import { copyRenderer } from "../../tools/copy-renderer.mjs";
-import { ROOT } from "../common/paths.js";
-import { removeFile, removeTree } from "../common/temp-resource.js";
+import { ROOT } from "../harness/paths.js";
+import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 /**
  * 清单结构视图:被测的 gates/artifacts/check-dist-manifest.mjs 为无类型标注的 JS,

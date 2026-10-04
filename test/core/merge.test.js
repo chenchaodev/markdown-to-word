@@ -10,10 +10,10 @@ import { mergeMarkdowns } from "../../dist/core/pipeline/merge.js";
 import { injectBookmarks, buildBookmarkTree } from "../../dist/core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
 import { extractHeadings } from "../../dist/core/pdf/postprocess.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
 /**
  * 递归收集目录下全部 .md(含子目录)。

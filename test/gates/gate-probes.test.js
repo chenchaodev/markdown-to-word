@@ -30,8 +30,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { REPORT_RELATIVE, formatSummary, isReportPassing, resolveGateSelection, runGateProbes } from "../../gates/probe/check-gate-probes.mjs";
-import { createCaseSuite } from "../common/case.js";
-import { ROOT } from "../common/paths.js";
+import { createCaseSuite } from "../harness/case.js";
+import { ROOT } from "../harness/paths.js";
 
 /* ---- 「报告不含绝对路径」判据(纯函数,判据面与呈现面分开)---- */
 

@@ -5,7 +5,7 @@
  *
  * 为何值得抽(盘点结论见本文件末「重复面」):
  * 1) 真值断言的复制面最大(本轮盘点 65 份局部副本:segments 29 / main 27 / renderer 9,
- *    外加 test/common/case.js 的无前缀导出版):实现逐字相同,只有前缀里的段名不同 ——
+ *    外加 test/harness/case.js 的无前缀导出版):实现逐字相同,只有前缀里的段名不同 ——
  *    差异只在「谁写的」,不在「判什么」,属纯噪声,漂移方向还相反(有人写成模板串版本,
  *    读起来像两套机制);
  * 2) 相等断言有三份逐字相同的副本(headings / image-type / presets),而它们与本文件
@@ -343,7 +343,7 @@ export function captureAssertionFailure(fn) {
 /* ---------- 重复面盘点(留档:本文件为何只收这 8 条,以及哪些差异是刻意的) ----------
 
 真值断言:本轮盘点 65 份局部副本(segments 29 / main 27 / renderer 9),各写一份
-  `if (!cond) throw new Error(\`<段名> 断言失败:\${msg}\`)`,外加 test/common/case.js 导出的
+  `if (!cond) throw new Error(\`<段名> 断言失败:\${msg}\`)`,外加 test/harness/case.js 导出的
   无前缀版(供已接入 case 契约的段用)。逐字相同,仅前缀段名不同。
   刻意保留的差异:case.js 那份**不带前缀**(它是 case 契约的对外口,段名由报告行给出,
   再拼一次前缀会变成 "segments/utils 断言失败:… 断言失败:")。迁移时勿顺手统一。
@@ -359,6 +359,6 @@ export function captureAssertionFailure(fn) {
   - assertFailure(result, pattern, label) 三处同名但语义各段不同(退出码/诊断/不回吐栈
     的组合不一样),属**段内契约**而非通用断言,强行统一会把差异抹平;
   - 各段的 JSON/正则/目录树断言(本身已是自带可读输出的整体比较),拆出来只会换名字;
-  - 文本子串计数(countOf)已在 test/common/dual-extract.js 单源(产物结构 → 事实),
+  - 文本子串计数(countOf)已在 test/harness/dual-extract.js 单源(产物结构 → 事实),
     不在本文件重复实现一份,避免两处计数口径漂移。
 */

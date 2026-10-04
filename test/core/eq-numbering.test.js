@@ -8,18 +8,18 @@
  * 未知 label → 「式 (?)」+ 警告;行内公式不编号。
  */
 import { formatWarning } from "../../dist/core/i18n/index.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../common/convert-helpers.js";
-// 「命中哪一条」的读法单源(见 test/common/dual-extract.js):引用文本与跳转目标绑在同一条
+import { unzipPart } from "../harness/docx-utils.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../harness/convert-helpers.js";
+// 「命中哪一条」的读法单源(见 test/harness/dual-extract.js):引用文本与跳转目标绑在同一条
 // 链接上判,不另抄裸字符串。
-import { docxLinkBody, pdfLinkBody } from "../common/dual-extract.js";
+import { docxLinkBody, pdfLinkBody } from "../harness/dual-extract.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
  /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
-import { FIXTURES_DIR, KATEX_DIR } from "../common/paths.js";
+import { FIXTURES_DIR, KATEX_DIR } from "../harness/paths.js";
 
 /** 主样例:公式编号 + 交叉引用(含行内公式/悬空引用),gen-fixtures 落盘为 docs/eq-numbering.md */
 const mainMd = `# 公式编号测试

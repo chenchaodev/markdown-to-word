@@ -9,7 +9,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_HEADER_FOOTER } from "../../dist/core/settings/settings-defaults.js";
-import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
+import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

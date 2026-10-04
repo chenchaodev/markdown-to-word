@@ -9,11 +9,11 @@
  * document.xml 经 r:id 引用(关系 Id 随机生成,动态比对)。
  */
 import { convert } from "../../dist/core/convert.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { docxBufferOf, prepareForConvert } from "../common/convert-helpers.js";
-import { docxTocAnchors } from "../common/dual-extract.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { docxBufferOf, prepareForConvert } from "../harness/convert-helpers.js";
+import { docxTocAnchors } from "../harness/dual-extract.js";
 
 /** 主样例:标题编号 + 内部锚点/外部链接 + h1-h6(gen-fixtures 落盘为 docs/heading-links.md) */
 const linkMd = `---

@@ -19,8 +19,8 @@ import { updateSettings } from "../../dist/main/persist/settings.js";
 import { createConvertContext, mergeConvertImpl } from "../../dist/main/converter/index.js";
 import { ConvertCanceledError } from "../../dist/convert/context.js";
 import { isConversionCanceled } from "../../dist/core/cancel.js";
-import { backupSettings } from "../common/settings.js";
-import { removeTree } from "../common/temp-resource.js";
+import { backupSettings } from "../harness/settings.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

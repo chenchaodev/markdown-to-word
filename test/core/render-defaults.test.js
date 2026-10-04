@@ -29,8 +29,8 @@ import {
   resolveRenderSwitches,
   resolveTocMode,
 } from "../../dist/core/settings/render-options.js";
-import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../common/convert-helpers.js";
-import { ROOT } from "../common/paths.js";
+import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../harness/convert-helpers.js";
+import { ROOT } from "../harness/paths.js";
 
 /** 契约类型的只读引用(编译期擦除) */
 /** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
@@ -191,7 +191,7 @@ export async function run() {
   // ---- 7. 产物级:两侧在「不传任何开关」时产出的形态一致(证明默认值真的一致) ----
   // 类型层断言到此为止;这一条补上「默认值在两侧真的落到产物里」的可执行事实。
   const { convert } = await import("../../dist/core/convert.js");
-  const { unzipPart } = await import("../common/docx-utils.js");
+  const { unzipPart } = await import("../harness/docx-utils.js");
   const md = "# 默认值样例\n\n正文一段。\n\n$$\nE = mc^2\n$$\n";
   const docx = asDocxArtifact(await convert(prepareForConvert(md), "docx", { fs: HOST_FS, baseDir: ROOT, warnings: [], title: "标题" }));
   const pdf = asPdfArtifact(await convert(prepareForConvert(md), "pdf", { fs: HOST_FS, baseDir: ROOT, title: "标题", warnings: [] }));

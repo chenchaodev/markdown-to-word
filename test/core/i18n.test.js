@@ -10,14 +10,14 @@
  *   未注册值非法;sanitizePatch 非法值回退 "zh"、合法值保留;loadSettings 旧文件兜底 "zh"
  * - 磁盘备份/恢复模式与 settings.test.js 一致(settings.ts 无注入点,只能读写真实路径;
  *   模块级 settingsCache 惰性缓存 → 每场景用 query-string 动态 import 取全新模块实例;
- *   备份/全新实例样板已迁移 test/common/settings.js 公共助手)
+ *   备份/全新实例样板已迁移 test/harness/settings.js 公共助手)
  */
 import fs from "node:fs/promises";
 import { app } from "electron";
 import { convert } from "../../dist/core/convert.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { prepareForConvert } from "../common/convert-helpers.js";
-import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { prepareForConvert } from "../harness/convert-helpers.js";
+import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 
 /**
  * 断言辅助。

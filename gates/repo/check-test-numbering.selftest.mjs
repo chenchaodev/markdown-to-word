@@ -43,7 +43,7 @@ const BASE_SHAPE = Object.freeze({
   'test/convert': 1,
   'test/cli': 2,
   'test/mcp': 1,
-  'test/common': 6,
+  'test/harness': 6,
 });
 
 function writeUnder(root, rel, body = CLEAN) {
@@ -58,7 +58,7 @@ function createFixture(mutate, shape = BASE_SHAPE) {
   // 段目录镜像判据的判定对象是**顶层**的同名树,夹具不把它们造出来就等于该判据恒红
   for (const name of SEGMENT_DIRS) mkdirSync(join(dir, name), { recursive: true });
   for (const [target, count] of Object.entries(shape)) {
-    const ext = target === 'test/common' ? '.js' : '.test.js';
+    const ext = target === 'test/harness' ? '.js' : '.test.js';
     for (let i = 0; i < count; i += 1) writeUnder(dir, `${target}/case-${i}${ext}`);
   }
   // mutate 抛异常时调用方拿不到 dir,其 finally 清不到 → 在这里兜住(临时产物不留残)
@@ -153,7 +153,7 @@ const CASES = [
     // 期望写成与具体数字无关的形态(下限判据只承诺「低于下限即红」,不承诺某个夹具形状
     // 恰好是几 —— 门禁多带一个依赖进来时,这条断言不该跟着改)。
     name: '扫描面塌缩(文件数掉到下限以下)',
-    shape: { 'test/core': 4, 'test/main': 2, 'test/renderer': 2, 'test/gates': 1, 'test/convert': 1, 'test/cli': 2, 'test/mcp': 1, 'test/common': 1 },
+    shape: { 'test/core': 4, 'test/main': 2, 'test/renderer': 2, 'test/gates': 1, 'test/convert': 1, 'test/cli': 2, 'test/mcp': 1, 'test/harness': 1 },
     expect: /只扫到 \d+ 个文件\(下限 50\):扫描面或 walker 失效/,
   },
   {

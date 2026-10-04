@@ -7,9 +7,9 @@
  */
 import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
 import { PDFDocument } from "pdf-lib";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
 /** 主样例:frontmatter 元数据 + 章节编号 + 分页(gen-fixtures 落盘为 docs/pdf-meta.md) */
 const pdfMetaMd = `---

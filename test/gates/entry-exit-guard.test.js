@@ -31,10 +31,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { ROOT } from "../common/paths.js";
-import { createAsserter } from "../common/assert.js";
-import { createCaseSuite } from "../common/case.js";
-import { removeTree } from "../common/temp-resource.js";
+import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
+import { removeTree } from "../harness/temp-resource.js";
 import {
   DEFAULT_LOAD_WATCHDOG_MS,
   ENTRY_EXIT,
@@ -389,7 +389,7 @@ export async function run() {
       // 覆盖采集环境(c8 只注入 NODE_V8_COVERAGE 一个)对入口探针必须剥掉:探针只验退出码
       // 与诊断,不执行 dist/**,而覆盖写手挂在它的退出路径上 —— Windows runner 上活着的
       // Electron 主进程硬退(app.exit)时回写覆盖会以 0xC0000005 访问冲突取代真实退出码,
-      // 断言因此以与被测行为无关的方式判红。同一约束的段内嵌套版见 test/common/runner.js
+      // 断言因此以与被测行为无关的方式判红。同一约束的段内嵌套版见 test/harness/runner.js
       /** @type {NodeJS.ProcessEnv} */
       const childEnv = { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: "1" };
       delete childEnv.NODE_V8_COVERAGE;

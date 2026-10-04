@@ -32,8 +32,8 @@ import {
   createConvertContext,
   mergeConvertImpl,
 } from "../../dist/main/converter/index.js";
-import { backupSettings } from "../common/settings.js";
-import { removeTree } from "../common/temp-resource.js";
+import { backupSettings } from "../harness/settings.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /** 记录到的 shell 副作用(动作 + 被作用的产物路径) */
 /** @typedef {{ action: "open" | "show-in-folder", path: string }} ShellCall */

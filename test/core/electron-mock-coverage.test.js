@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * electron mock 边界静态守护段(位于 test/core/ = 跨域守护段;被测为
- * test/common/electron-mock.mjs 的命名导出集合与 src 的 electron 具名 import 事实,
+ * test/harness/electron-mock.mjs 的命名导出集合与 src 的 electron 具名 import 事实,
  * 纯 Node/纯 Electron 皆可跑,不依赖 dist):
  *
  * 为什么要有本段:electron 包是 CJS,命名导入会抛 SyntaxError,故 gen-fixtures 用
@@ -12,7 +12,7 @@
  *    五种形态,证明判定链本身有效,否则下面的红可能只是「抽取器坏了」);
  * 2. src/main、src/core 对 electron 的运行时具名 import 集合 == 钉死常量,且每一项
  *    都在 mock 的导出里(缺项即红,并指名应补的导出);
- * 3. test/ 侧(生成器会 import 的 common/segments/main/renderer)同样全覆盖;
+ * 3. test/ 侧(生成器会 import 的 harness/segments/main/renderer)同样全覆盖;
  * 4. core 侧零 electron import(层向 core-no-host 的旁证,见 import-boundary 段)。
  *
  * 钉死常量的用意:集合漂移(新增/删除 electron 用法)必须显式改本段与 mock,
@@ -20,7 +20,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 
 /** src 侧被 mock 覆盖的 electron 运行时绑定(新增/删除用法须同步改本常量与 electron-mock.mjs) */
@@ -169,7 +169,7 @@ export async function run() {
   }
 
   // ---- 2. src 侧:具名 import 集合钉死 + mock 全覆盖 ----
-  const mock = await import("../common/electron-mock.mjs");
+  const mock = await import("../harness/electron-mock.mjs");
   const mockExports = new Set(Object.keys(mock));
   assert(mockExports.size > 0, "electron-mock 未导出任何命名成员(mock 失效?)");
 
@@ -184,14 +184,14 @@ export async function run() {
     const missing = srcNames.filter((n) => !mockExports.has(n));
     assert(
       missing.length === 0,
-      `electron-mock 缺少 src 用到的命名导出:${missing.join(",")}(补进 test/common/electron-mock.mjs;否则依赖它的段在纯 Node 下 import 失败)`,
+      `electron-mock 缺少 src 用到的命名导出:${missing.join(",")}(补进 test/harness/electron-mock.mjs;否则依赖它的段在纯 Node 下 import 失败)`,
     );
     console.log(`[ok] electron-mock-coverage:src 侧 ${srcNames.length} 个 electron 绑定全部被 mock 覆盖`);
   }
 
   // ---- 3. test/ 侧:生成器会 import 的段与共享 helper 同样全覆盖 ----
   {
-    const roots = [...SEGMENT_DIRS, "common"].map((d) => path.join(ROOT, "test", d));
+    const roots = [...SEGMENT_DIRS, "harness"].map((d) => path.join(ROOT, "test", d));
     /** @type {{ required: Set<string>, namespaceFiles: string[] }} */
     const merged = { required: new Set(), namespaceFiles: [] };
     for (const dir of roots) {

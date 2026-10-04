@@ -29,7 +29,7 @@ import { IPC_CHANNELS as CH } from "../../dist/main/ipc/channels.js";
 import { MAX_SCAN_DEPTH } from "../../dist/convert/paths.js";
 import { formatWarning, t } from "../../dist/core/i18n/index.js";
 import { beginWebContentsOperation, finishWebContentsOperation } from "../../dist/main/windows/web-contents-registry.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

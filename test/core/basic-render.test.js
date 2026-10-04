@@ -17,10 +17,10 @@ import { renderDocx } from "../../dist/core/docx/render.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
 import { DEFAULT_TYPOGRAPHY, codeBlockFontSizePt, ptToHalfPoints } from "../../dist/core/settings/typography.js";
 import hljs from "highlight.js/lib/common";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
 /** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 

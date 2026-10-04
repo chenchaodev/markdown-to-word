@@ -7,7 +7,7 @@
  * 模拟手段:BrowserWindow.prototype.webContents getter 临时替换(converter.test.js 同款
  * 模式,descriptor 一律 try/finally 恢复;每段跑在独立子进程里,污染不外溢,
  * try/finally 仍是段内卫生,兼防本段后续断言读到被污染的原型)。
- * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/common/runner.js),窗口懒创建、
+ * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/harness/runner.js),窗口懒创建、
  * 单例复用;段末由本段自己 disposeMermaidService() 收尾并等临时 HTML 回收干净,
  * **不再依赖入口的 app.quit()**(入口已不持有任何段窗口)。
  */

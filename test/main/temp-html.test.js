@@ -14,7 +14,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { writeTempHtml } from "../../dist/main/services/temp-html.js";
-import { removeFile } from "../common/temp-resource.js";
+import { removeFile } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

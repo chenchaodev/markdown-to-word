@@ -18,9 +18,9 @@ import { parseMarkdown } from "../../dist/core/pipeline/parse.js";
 import { renderDocx } from "../../dist/core/docx/render.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
 import hljs from "highlight.js/lib/common";
-import { unzipPart } from "../common/docx-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { convertWithFs, pdfHtmlOf } from "../common/convert-helpers.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { convertWithFs, pdfHtmlOf } from "../harness/convert-helpers.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */

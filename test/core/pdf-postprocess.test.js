@@ -20,9 +20,9 @@
  */
 import { buildTocHtml, checkLocalImages, embedExternalImages, extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { renderPdfDocument } from "../../dist/core/pdf/render.js";
-import { HOST_FS } from "../common/convert-helpers.js";
+import { HOST_FS } from "../harness/convert-helpers.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
-import { FIXTURES_DIR } from "../common/paths.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
 
 /**
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物):

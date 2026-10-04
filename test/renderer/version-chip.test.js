@@ -28,7 +28,7 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /**

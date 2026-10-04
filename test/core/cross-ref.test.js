@@ -39,15 +39,15 @@
 import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { docxBufferOf, pdfHtmlOf, HOST_FS, prepareForConvert } from "../common/convert-helpers.js";
-// 「命中哪一条」的读法单源:docx 读链接体、pdf 读 <a> 体(见 test/common/dual-extract.js)。
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { docxBufferOf, pdfHtmlOf, HOST_FS, prepareForConvert } from "../harness/convert-helpers.js";
+// 「命中哪一条」的读法单源:docx 读链接体、pdf 读 <a> 体(见 test/harness/dual-extract.js)。
 // 只看「锚点是否存在」判不出命中了哪一条 —— 同名 label(fig:same / tab:same)下必须把
 // 链接体内的编号文本与跳转目标绑在一起看,故两段(本段与 dual-pipeline-matrix 段)都调它,
 // 不再各抄一份裸字符串。
-import { docxLinkBody, pdfLinkBody } from "../common/dual-extract.js";
+import { docxLinkBody, pdfLinkBody } from "../harness/dual-extract.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */

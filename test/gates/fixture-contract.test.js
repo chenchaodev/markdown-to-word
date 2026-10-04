@@ -26,8 +26,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT, FIXTURES_DIR } from "../common/paths.js";
-import { discoverSegments } from "../common/runner.js";
+import { ROOT, FIXTURES_DIR } from "../harness/paths.js";
+import { discoverSegments } from "../harness/runner.js";
 import {
   FIXTURE_SEGMENT_DIRS,
   IMAGE_DIGEST_BASELINE,

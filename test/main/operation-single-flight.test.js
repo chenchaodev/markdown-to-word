@@ -19,7 +19,7 @@
  * - 预检异常:缺文件/目录不再静默返回空数组,而是单条可观察失败警告
  *   (key=warn.precheckFailed)且主进程留痕;合法文件的正常警告仍原样返回。
  *
- * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/common/runner.js),自建
+ * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/harness/runner.js),自建
  * BrowserWindow 作事件源并在 finally 销毁,注册表占用与产物目录均段内自持,
  * 不依赖入口退出兜底,也不假设任何跨段状态。
  */
@@ -34,9 +34,9 @@ import {
   hasWebContentsOperation,
 } from "../../dist/main/windows/web-contents-registry.js";
 import { updateSettings } from "../../dist/main/persist/settings.js";
-import { backupSettings } from "../common/settings.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { removeTree } from "../common/temp-resource.js";
+import { backupSettings } from "../harness/settings.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

@@ -57,8 +57,8 @@ import {
   startMenuTraces,
 } from "../../gates/artifacts/check-install-smoke.mjs";
 import { SMOKE_MARKERS } from "../../gates/smoke/smoke-proc.mjs";
-import { ROOT } from "../common/paths.js";
-import { removeFile } from "../common/temp-resource.js";
+import { ROOT } from "../harness/paths.js";
+import { removeFile } from "../harness/temp-resource.js";
 
 /** 沙盒名前缀(临时目录,便于识别残留) */
 const SANDBOX_PREFIX = "m2w-install-smoke-";

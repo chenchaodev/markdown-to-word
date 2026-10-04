@@ -36,11 +36,11 @@ import {
 import { convertImpl, createConvertContext } from "../../dist/main/converter/index.js";
 import { getKatexDir } from "../../dist/main/services/resource-dirs.js";
 import { updateSettings } from "../../dist/main/persist/settings.js";
-import { backupSettings } from "../common/settings.js";
-import { asDocxArtifact, prepareForConvert } from "../common/convert-helpers.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { removeTree } from "../common/temp-resource.js";
+import { backupSettings } from "../harness/settings.js";
+import { asDocxArtifact, prepareForConvert } from "../harness/convert-helpers.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 /** @typedef {import("../../src/core/i18n/index.js").KeyedWarning} KeyedWarning */

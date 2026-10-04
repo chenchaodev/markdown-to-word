@@ -7,7 +7,7 @@
  * 纯函数段,无产物输出(故无失败快照)。
  */
 import { decodeEntities, escapeRegExp } from "../../dist/core/text/text-escape.js";
-import { assert, createCaseSuite } from "../common/case.js";
+import { assert, createCaseSuite } from "../harness/case.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;

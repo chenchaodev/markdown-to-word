@@ -47,7 +47,7 @@ const PRINT_IMAGE_BASELINE = process.argv.includes("--print-image-baseline");
 
 /**
  * 候选测试段目录(= test/acceptance.mjs 交给 runAll 的同一份数组,单一来源在
- * test/common/test-common-surface.js 的 SEGMENT_DIRS)。
+ * test/harness/test-common-surface.js 的 SEGMENT_DIRS)。
  * 恒等由「同一对象」保证,不再需要两处各写一份 + 文本比对;真正的守门断言在
  * test/gates/fixture-contract.test.js(它守的是「acceptance 确实拿这份数组喂 runner」)。
  */
@@ -334,7 +334,7 @@ async function registerElectronMock() {
   if (typeof register !== "function") {
     throw new Error("当前 Node 不支持 module.register,无法在纯 Node 下加载段模块(需 Node >= 20.6)");
   }
-  register("../../test/common/electron-mock-loader.mjs", import.meta.url);
+  register("../../test/harness/electron-mock-loader.mjs", import.meta.url);
 }
 
 /** 段模块 import 失败的归一化诊断(段名 + 归因;区分 dist 缺失与 mock 缺命名导出)
@@ -360,7 +360,7 @@ function describeImportFailure(name, err) {
     const exportName = missingExport[2] ?? "?";
     // 仅当出错的模块确为 electron(经 electron-mock loader 解析)时,才归因到 electron-mock
     if (/electron/i.test(moduleName)) {
-      return `${name}:段模块 import 失败——electron-mock 缺命名导出「${exportName}」(补进 test/common/electron-mock.mjs;自动断言见 test/core/electron-mock-coverage.test.js)`;
+      return `${name}:段模块 import 失败——electron-mock 缺命名导出「${exportName}」(补进 test/harness/electron-mock.mjs;自动断言见 test/core/electron-mock-coverage.test.js)`;
     }
     return `${name}:段模块 import 失败——模块 ${moduleName} 未导出「${exportName}」(该模块自身的导出问题,**不是** electron-mock;若它确应提供此导出请补齐,否则检查它的调用方)`;
   }

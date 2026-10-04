@@ -26,7 +26,7 @@ export const fixtures = null;
 import fs from "node:fs";
 import path from "node:path";
 import { PassThrough } from "node:stream";
-import { createTempResource, removeTree } from "../common/temp-resource.js";
+import { createTempResource, removeTree } from "../harness/temp-resource.js";
 import {
   asRequest,
   dispatch,

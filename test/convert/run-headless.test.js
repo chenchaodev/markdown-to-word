@@ -34,8 +34,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { ROOT } from "../common/paths.js";
-import { createTempResource, removeTree } from "../common/temp-resource.js";
+import { ROOT } from "../harness/paths.js";
+import { createTempResource, removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

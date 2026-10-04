@@ -31,9 +31,9 @@ import {
 import { registerIpc } from "../../dist/main/ipc/register.js";
 import { IPC_CHANNELS as CH } from "../../dist/main/ipc/channels.js";
 import { updateSettings } from "../../dist/main/persist/settings.js";
-import { backupSettings } from "../common/settings.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { removeTree } from "../common/temp-resource.js";
+import { backupSettings } from "../harness/settings.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

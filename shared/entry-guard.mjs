@@ -3,7 +3,7 @@
  * 门禁/测试入口的失败路径守卫(五个 Electron 入口共用**一份**实现,判定层纯函数 + 壳层薄):
  *   gates/geometry/check-geometry.mjs(几何门禁,兼 worker 角色)、gates/geometry/geometry/worker.mjs(角色体)、
  *   tools/visual-check.mjs(视觉自查)、test/acceptance.mjs(验收父进程)、
- *   test/common/segment-host.mjs(段子进程宿主)。
+ *   test/harness/segment-host.mjs(段子进程宿主)。
  *
  * 为什么需要它(Electron 43 + ESM 主入口,以下三条均为本机实测事实,非推断):
  * 1. **加载期抛错 = 静默挂死**:主模块求值抛错时 Electron 只打一句

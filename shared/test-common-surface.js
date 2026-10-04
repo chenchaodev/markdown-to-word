@@ -48,12 +48,12 @@ export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates", 
 
 /**
  * 不得作为段目录的名字(它们是 harness / 数据区 / 入口,不是被断言的树)。
- * 显式列出而非「顶层没有同名树就放行」——否则把段塞进 test/common 也能过镜像判据。
+ * 显式列出而非「顶层没有同名树就放行」——否则把段塞进 test/harness 也能过镜像判据。
  * @type {readonly string[]}
  */
-const NON_MIRROR_DIR_NAMES = Object.freeze(["common", "fixtures", "acceptance"]);
+const NON_MIRROR_DIR_NAMES = Object.freeze(["harness", "fixtures", "acceptance"]);
 
-/** 段文件判定(与 test/common/runner.js 的 discoverSegments 同口径:只收 *.test.js) */
+/** 段文件判定(与 test/harness/runner.js 的 discoverSegments 同口径:只收 *.test.js) */
 const isSegmentFile = (/** @type {string} */ name) => name.endsWith(".test.js");
 
 /**
@@ -64,13 +64,17 @@ const isSegmentFile = (/** @type {string} */ name) => name.endsWith(".test.js");
  */
 export const SCAN_TARGETS = Object.freeze([
   ...SEGMENT_DIRS.map((name) => ({ dir: `test/${name}`, accept: isSegmentFile })),
-  // test/common 下 harness 与桩件的实际载体是 .mjs(ESM 显式扩展名),只收 .js 会让它们
+  // test/harness 下 harness 与桩件的实际载体是 .mjs(ESM 显式扩展名),只收 .js 会让它们
   // 落在这两道文本门禁的扫描面之外 —— 同一批文件在 tsc / eslint 口径里却要被当作源文件
   // 逐个校验。谓词只收 .js 会造成「别的门禁看得见、这两道看不见」的非对称盲区,故此处
   // 必须与三处口径对齐:本文件 SOURCE_FILE_RE(实测面)、test/core/tscheck-coverage.test.js
   // 的 SOURCE_EXT_RE(@ts-check 覆盖面)、eslint.config.js 的 NON_PROGRAM_EXTS
   // (allowDefaultProject 生成 glob 的纳入集)。
-  { dir: "test/common", accept: (/** @type {string} */ name) => /\.(?:js|mjs)$/.test(name) },
+  //
+  // ⚠ 这一行与上面的排除名单是**两处**独立的登记,改名时必须同批改(T3 步 1 实测):
+  // 只改排除名单而漏了这里,两道文本门禁的扫描面会指向一个不存在的目录 → walker 扫到
+  // 0 个文件 → 判据恒绿且**不报任何错**(本仓反复批过的「恒绿即失效」形态)。
+  { dir: "test/harness", accept: (/** @type {string} */ name) => /\.(?:js|mjs)$/.test(name) },
 ]);
 
 /** 显式排除目录(仓库相对 POSIX 路径;前缀匹配)。test/fixtures 是被测样例数据本身,不是断言。 */

@@ -27,7 +27,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 import { installDomStub, makeElement, makeClassList, fireListener } from "./dom-stub.js";
 // 单向读几何规格(纯规格文件,不反向依赖生产侧:见 assertTableContract 的注)
 import {

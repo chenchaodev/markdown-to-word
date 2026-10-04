@@ -19,7 +19,7 @@
  */
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 import { installDomStub, makeElement } from "./dom-stub.js";
 
 /**

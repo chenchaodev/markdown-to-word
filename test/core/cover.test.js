@@ -11,11 +11,11 @@
  * 触发条件:仅 frontmatter(parseFrontmatter 的 metadata.title);context.title 不触发
  * (convert.js 对 docx/pdf 均只传 options.metadata)。无 frontmatter → 双格式无封面。
  */
-import { unzipPart } from "../common/docx-utils.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
 /** 主样例:frontmatter 封面验收(gen-fixtures 落盘为 docs/cover.md) */
 const coverMd = `---

@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * 段子进程宿主(逐段隔离执行模型的子进程入口,一次只跑一个段):
- * 父进程 test/common/runner.js 用同一 Electron 可执行文件派生本文件,注入三件东西:
+ * 父进程 test/harness/runner.js 用同一 Electron 可执行文件派生本文件,注入三件东西:
  * - M2W_SEGMENT_FILE:待跑段文件绝对路径(段清单与 M2W_ONLY 筛选都在父进程做,子进程只跑指定段);
  * - M2W_SEGMENT_RESULT:结果回传文件绝对路径;
  * - M2W_SEGMENT_USER_DATA:本段专属 userData 目录(父进程创建,退出后由父进程删除)。
@@ -111,7 +111,7 @@ async function runHostedSegment() {
 
 if (!segmentFile || !resultPath) {
   console.error(
-    `[fail] 段子进程宿主缺少环境变量(${SEGMENT_FILE_ENV}/${SEGMENT_RESULT_ENV}):应由 test/common/runner.js 派发,勿直接运行`,
+    `[fail] 段子进程宿主缺少环境变量(${SEGMENT_FILE_ENV}/${SEGMENT_RESULT_ENV}):应由 test/harness/runner.js 派发,勿直接运行`,
   );
   app.exit(EXIT_USAGE);
 } else {

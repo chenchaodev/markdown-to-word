@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 import {
   collectEnvironmentFingerprint,
   formatFingerprintJson,

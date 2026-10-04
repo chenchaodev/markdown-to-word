@@ -10,7 +10,7 @@
  *   回答「harness 这一轮跑哪些**顶层**段」;段内自己 runAll/discoverSegments 要跑哪些段
  *   由该调用显式声明(only 参数),不受外层筛选词影响 —— 否则段内自测(如本框架的
  *   runner-report 自测段)会被外层筛选词滤空,且隔离模型下(M2W_ONLY 单段调试)恒红。
- * - 执行模型(默认):父进程为每段派生**独立 Electron 子进程**(test/common/segment-host.mjs),
+ * - 执行模型(默认):父进程为每段派生**独立 Electron 子进程**(test/harness/segment-host.mjs),
  *   段内崩溃/悬挂/超时只终结该段(超时由父进程真杀进程树,非 race 后放弃),其余段照常跑完;
  *   每段独立 userData 目录(见 test/common/userdata.js),退出即清理,故段间零状态串扰。
  * - 并发(零状态串扰的另一面收益):设 M2W_TEST_CONCURRENCY=n 让编排器用 n 个槽位并发跑段
@@ -21,7 +21,7 @@
  *   同一纪律:并发面/选择面只属顶层编排,段内自跑是夹具进程)。
  * - 回退模型(仅供二分定位):设 M2W_ACCEPTANCE_INPROC=1 切回同进程顺序执行 +
  *   看门狗(race 后放弃,悬挂段无法终止,靠入口收尾硬退出释放);生产/CI 走默认隔离模型。
- * - case 级契约(可选):段内用 test/common/case.js 的 createCaseSuite 登记具名 case,
+ * - case 级契约(可选):段内用 test/harness/case.js 的 createCaseSuite 登记具名 case,
  *   run() 返回 `{ cases }` 即可;隔离模型下由子进程结构化回传(形状与同进程一致),
  *   runner 聚合后由入口打印 case 级报告。段内 case 失败同样把整段判失败
  *   (错误聚合为一条 Error),未接入的旧段行为不变(抛错即段失败)。

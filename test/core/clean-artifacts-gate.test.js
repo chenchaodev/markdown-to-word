@@ -50,8 +50,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ROOT } from "../common/paths.js";
-import { removeFile, removeTree } from "../common/temp-resource.js";
+import { ROOT } from "../harness/paths.js";
+import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 const SCRIPT_SOURCE = fs.readFileSync(path.join(ROOT, "gates", "artifacts", "clean-artifacts.mjs"), "utf8");
 const SCRIPT_SHA256 = createHash("sha256").update(SCRIPT_SOURCE).digest("hex");

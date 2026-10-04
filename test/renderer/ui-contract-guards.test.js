@@ -23,7 +23,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 
 /**
  * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值

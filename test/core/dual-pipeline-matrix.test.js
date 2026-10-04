@@ -26,11 +26,11 @@
  * 故:MATRIX 留在本文件;共享契约一律 import core 单源。
  *
  * 拆岛后的职责边界(本段只剩「行定义与判定」):
- * - test/common/dual-extract.js:双侧产物提取器(docx XML / 书签 / 目录锚点 / 链接体、
+ * - test/harness/dual-extract.js:双侧产物提取器(docx XML / 书签 / 目录锚点 / 链接体、
  *   pdf 目录条目 / 标题锚点 / 出现次数)——通用单源,被本段与其他读同种产物的段共用;
- * - test/common/dual-samples.js:原 21 行的行输入样例(其中 5 个经本段 re-export 落盘为
+ * - test/harness/dual-samples.js:原 21 行的行输入样例(其中 5 个经本段 re-export 落盘为
  *   验收样例,契约仍只在段层声明);
- * - test/common/dual-sandbox.js:沙箱装配(真跑双侧 convert + 解包提取 → MatrixCtx)
+ * - test/harness/dual-sandbox.js:沙箱装配(真跑双侧 convert + 解包提取 → MatrixCtx)
  *   与计数守卫桩;
  *   依赖单向:本段 → 上述三岛 + core dist;三岛之间不反向依赖段。
  *
@@ -78,11 +78,11 @@ import {
   watermarkDmlRotation,
 } from "../../dist/core/settings/settings-defaults.js";
 import { WATERMARK_GRAY } from "../../dist/core/style/colors.js";
-import { docxBookmarks, docxLinkBody, docxTocAnchors, pdfHeadingIds, pdfLinkBody, pdfTocItems } from "../common/dual-extract.js";
-import { buildMatrixCtx } from "../common/dual-sandbox.js";
-import { captionBeforeH1Md, captionLabelMd, deepHeadingsMd, katexBoundaryMd, mainMd } from "../common/dual-samples.js";
-import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../common/convert-helpers.js";
-import { FIXTURES_DIR, ROOT } from "../common/paths.js";
+import { docxBookmarks, docxLinkBody, docxTocAnchors, pdfHeadingIds, pdfLinkBody, pdfTocItems } from "../harness/dual-extract.js";
+import { buildMatrixCtx } from "../harness/dual-sandbox.js";
+import { captionBeforeH1Md, captionLabelMd, deepHeadingsMd, katexBoundaryMd, mainMd } from "../harness/dual-samples.js";
+import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../harness/convert-helpers.js";
+import { FIXTURES_DIR, ROOT } from "../harness/paths.js";
 // 台账侧声明的矩阵行 id 与双管线键集合(本段在 assertMatrixShape 里反向断言行集合与
 // covers 覆盖与之逐字相符,见 dual-pipeline-decision-ledger.test.js 的机制说明)
 import { MATRIX_ROW_IDS, assertKeyCoverageRegistered, keyCoverageCounts } from "./dual-pipeline-decision-ledger.test.js";
@@ -90,7 +90,7 @@ import { MATRIX_ROW_IDS, assertKeyCoverageRegistered, keyCoverageCounts } from "
 /**
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物)。
  */
-/** @typedef {import("../common/dual-sandbox.js").MatrixCtx} MatrixCtx */
+/** @typedef {import("../harness/dual-sandbox.js").MatrixCtx} MatrixCtx */
 /** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 /** @typedef {import("../../src/core/settings/settings-defaults.js").HeaderFooterSettings} HeaderFooterSettings */
@@ -172,7 +172,7 @@ function must(cond, rowId, msg) {
  * (10.8pt 与 11pt 都被 OOXML 的半磅粒度取整到同一值),只看 `<w:sz w:val=..>` 判不出
  * 「哪一个字号属于谁」。绑定到 run 文本后,每处取值都能单独锁定。
  *
- * 本地定义而非入 test/common/dual-extract.js:该模块由多段共用,加导出等于让本次
+ * 本地定义而非入 test/harness/dual-extract.js:该模块由多段共用,加导出等于让本次
  * 改动扩散到本泳道之外;此断言只服务本行的三个取值点,局部定义更贴边界。
  *
  * @param {string} xml document.xml 文本
@@ -1488,7 +1488,7 @@ async function docxXmlOf(buffer) {
 
 export async function run() {
   assertMatrixShape();
-  // 双侧产物由沙箱装配(见 test/common/dual-sandbox.js):逐维度真跑一次 convert,
+  // 双侧产物由沙箱装配(见 test/harness/dual-sandbox.js):逐维度真跑一次 convert,
   // 解包 / 提取后作为各行 verify 的入参 —— 禁止只列元数据不验证。
   const ctx = await buildMatrixCtx();
   // 6-C2 新增四行的产物(排版 / h1 分页 / 页眉页脚 / 水印)在此并入同一 ctx,

@@ -26,10 +26,10 @@
  * - 非 mermaid 围栏(如 js)不被 mermaid 分支劫持,docx 文本 / pdf hljs 高亮。
  */
 import { formatWarning } from "../../dist/core/i18n/index.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { unzipPart, zipContains } from "../common/docx-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { unzipPart, zipContains } from "../harness/docx-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
 /** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 

@@ -14,12 +14,12 @@
  */
 import { DEFAULT_TYPOGRAPHY } from "../../dist/core/settings/typography.js";
 import { convert } from "../../dist/core/convert.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { HOST_FS, asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf, prepareForConvert } from "../common/convert-helpers.js";
-import { docxTocAnchors } from "../common/dual-extract.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { HOST_FS, asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf, prepareForConvert } from "../harness/convert-helpers.js";
+import { docxTocAnchors } from "../harness/dual-extract.js";
 
 /** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
  *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
@@ -93,7 +93,7 @@ export async function run() {
     throw new Error("断言失败:静态目录 dirty 属性应为 false(免更新路线)");
   }
   // 8a-3:cachedEntries 静态条目 → 目录内超链接指向标题书签(w:hyperlink 带 w:history 属性,
-  // 提取口径见 test/common/dual-extract.js 的 docxTocAnchors:目录条目 = 内部锚点
+  // 提取口径见 test/harness/dual-extract.js 的 docxTocAnchors:目录条目 = 内部锚点
   // <w:hyperlink w:history="1" w:anchor="…">,并排除 fig/tab/eq- 题注锚点)
   const mainTocAnchors = docxTocAnchors(docxXml);
   if (!mainTocAnchors.includes("第一章")) {

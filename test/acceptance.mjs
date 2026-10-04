@@ -11,18 +11,18 @@
  * 2. main/ = 被测主体为 src/main 的主题段(含零 Electron API 的纯逻辑直测);
  * 3. renderer/ = 被测主体为 src/renderer 的主题段(纯函数/状态机/CSS 令牌恒等)。
  *
- * 执行模型(adr-015 正式口径):**每段一个独立 Electron 子进程**(宿主 test/common/
- * segment-host.mjs,编排见 test/common/runner.js),段内崩溃/悬挂/超时只终结该段,
+ * 执行模型(adr-015 正式口径):**每段一个独立 Electron 子进程**(宿主 test/harness/
+ * segment-host.mjs,编排见 test/harness/runner.js),段内崩溃/悬挂/超时只终结该段,
  * 父进程跑完全部段后汇总;每段独立 userData 目录,退出即清理(见 test/common/userdata.js)。
  * 设 M2W_ACCEPTANCE_INPROC=1 可切回旧的同进程顺序 + 看门狗模型(仅供二分定位)。
- * 段目录集合取自 test/common/test-common-surface.js 的 SEGMENT_DIRS(单一来源)。
+ * 段目录集合取自 shared/test-common-surface.js 的 SEGMENT_DIRS(单一来源)。
  *
  * 单段筛选(开发迭代提速):设环境变量 M2W_ONLY=子串[,子串...] 只跑段名
  * 含任一子串的段(大小写不敏感,如 M2W_ONLY=basic-render 或 M2W_ONLY=mermaid,pdf-meta);
  * 不设 = 全量运行,行为不变。筛选在父进程做,子进程只跑被选中的段。
  *
  * 报告两级:段级(下方 [ok]/[fail] 行 + 总览)对全部段;case 级(段内接入
- * test/common/case.js 的具名 case,run() 返回 { cases })额外打印「段名 › case 名:
+ * test/harness/case.js 的具名 case,run() 返回 { cases })额外打印「段名 › case 名:
  * 消息」明细与通过数,失败段的日志与产物快照见 output/artifacts/failures/<段名>/。
  *
  * 用法: npm run test(需已 build;等价 npx electron test/acceptance.mjs)
@@ -57,8 +57,8 @@ const ENTRY = "acceptance";
 const tempUserData = redirectUserData(app, createTempUserData("m2w-acceptance-"));
 
 /**
- * 打印总耗时与最慢的 5 段(段结果形状单一来源在 test/common/runner.js)。
- * @param {import("./common/runner.js").SegmentResultEntry[]} results 段结果
+ * 打印总耗时与最慢的 5 段(段结果形状单一来源在 test/harness/runner.js)。
+ * @param {import("./harness/runner.js").SegmentResultEntry[]} results 段结果
  * @param {number} totalStart 全量开始的 Date.now() 时刻
  */
 function printStats(results, totalStart) {
@@ -78,16 +78,16 @@ app.on("window-all-closed", () => {});
 
 /**
  * 载荷加载阶段:编排器(runner.js)走动态 import,加载失败带「模块加载期」标签非零退出。
- * @returns {Promise<typeof import("./common/runner.js")>} runner 模块命名空间
+ * @returns {Promise<typeof import("./harness/runner.js")>} runner 模块命名空间
  */
 async function loadPayload() {
-  return import("./common/runner.js");
+  return import("./harness/runner.js");
 }
 
 /**
  * 入口执行期(app ready 回调体):跑完全部段 → 打印段级/case 级报告 → 给出退出码。
  * 退出码与冲刷由壳层统一收口,本函数只负责判定与收尾清理。
- * @param {typeof import("./common/runner.js")} runner runner 模块
+ * @param {typeof import("./harness/runner.js")} runner runner 模块
  * @returns {Promise<number>} 退出码(0 全绿 / 1 有段失败或超时段)
  */
 async function work(runner) {

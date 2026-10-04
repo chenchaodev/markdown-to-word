@@ -23,10 +23,10 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { FIXTURES_DIR, ROOT } from "../common/paths.js";
-import { cleanupTempResources, createTempResource } from "../common/temp-resource.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { FIXTURES_DIR, ROOT } from "../harness/paths.js";
+import { cleanupTempResources, createTempResource } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助。

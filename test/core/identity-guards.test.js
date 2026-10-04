@@ -23,8 +23,8 @@ import { MAX_RECENT_FILES as MAIN_MAX_RECENT_FILES } from "../../dist/main/persi
 import { mergeSettingsWithDefaults } from "../../dist/renderer/settings/settings-logic.js";
 import { isAllowedInlineHtml } from "../../dist/core/markdown/html-whitelist.js";
 import { normalizeInlineHtml, parseInlineHtml } from "../../dist/core/docx/handlers/inline-html.js";
-import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
-import { ROOT } from "../common/paths.js";
+import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
+import { ROOT } from "../harness/paths.js";
 
 /**
  * 断言辅助。

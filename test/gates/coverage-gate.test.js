@@ -43,8 +43,8 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { createCaseSuite } from "../common/case.js";
-import { withTempResource } from "../common/temp-resource.js";
+import { createCaseSuite } from "../harness/case.js";
+import { withTempResource } from "../harness/temp-resource.js";
 import {
   BASELINE_RELATIVE,
   BASELINE_SHAPE_PREFIX,

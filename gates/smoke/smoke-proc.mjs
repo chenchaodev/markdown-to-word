@@ -60,7 +60,7 @@ export const DEFAULT_SMOKE_TIMEOUT_MS = 180000;
  */
 
 /**
- * 硬杀子进程及其派生进程。做法与 test/common/runner.js 的 killProcessTree 一致
+ * 硬杀子进程及其派生进程。做法与 test/harness/runner.js 的 killProcessTree 一致
  * (该函数未导出,故此处按同一约定实现):Windows 无进程组,`taskkill /T` 才能连带
  * 终止 Electron 拉起的渲染/GPU 进程;其它平台用 SIGKILL。
  * @param {import('node:child_process').ChildProcess} child 子进程句柄

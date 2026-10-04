@@ -28,8 +28,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ROOT } from "../common/paths.js";
-import { removeTree } from "../common/temp-resource.js";
+import { ROOT } from "../harness/paths.js";
+import { removeTree } from "../harness/temp-resource.js";
 import {
   BASELINE_SCHEMA,
   DEFAULT_BASELINE,

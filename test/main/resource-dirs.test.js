@@ -16,7 +16,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import { getKatexDir, getMermaidDir, resolveKatexDir, resolveMermaidDir } from "../../dist/main/services/resource-dirs.js";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

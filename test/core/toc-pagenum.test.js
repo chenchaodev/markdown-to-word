@@ -11,9 +11,9 @@
 import { injectTocPageNumbers, extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { pageNumbersForNames } from "../../dist/core/pdf/bookmarks.js";
 import { PDFDocument } from "pdf-lib";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
 const md = `# 第一章
 

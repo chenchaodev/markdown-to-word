@@ -23,7 +23,7 @@ import {
   main as asarMain,
 } from "../../gates/artifacts/check-asar-manifest.mjs";
 import { main as releaseMain } from "../../gates/artifacts/check-release-artifacts.mjs";
-import { removeFile, removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 const FIXTURE_VERSION = "9.9.9";
 const FIXTURE_PRODUCT = "FixtureApp";

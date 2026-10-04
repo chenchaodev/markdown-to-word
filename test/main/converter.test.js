@@ -26,10 +26,10 @@ import { BrowserWindow, shell } from "electron";
 import { loadSettings, updateSettings } from "../../dist/main/persist/settings.js";
 import { renderPdf } from "../../dist/main/converter/single.js";
 import { DEFAULT_SETTINGS } from "../../dist/core/settings/settings-defaults.js";
-import { backupSettings, backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../common/settings.js";
-import { createAsserter } from "../common/assert.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { convertWithFs } from "../common/convert-helpers.js";
+import { backupSettings, backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
+import { createAsserter } from "../harness/assert.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { convertWithFs } from "../harness/convert-helpers.js";
 import {
   batchConvertImpl,
   buildConvertContext,
@@ -40,7 +40,7 @@ import {
   getImageResolver,
   mergeConvertImpl,
 } from "../../dist/main/converter/index.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 // 样例迁 fixtures 体系(静态文件直接放 test/fixtures/input/,不接 gen-fixtures
 // 生成器——check:fixtures 只覆盖 segments 段导出的 docs fixtures 对象)

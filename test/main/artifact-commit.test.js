@@ -24,7 +24,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { ARTIFACT_TEMP_PREFIX, commitArtifact } from "../../dist/convert/artifact-writer.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

@@ -21,8 +21,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createTempResource, removeTree } from "../common/temp-resource.js";
-import { ROOT } from "../common/paths.js";
+import { createTempResource, removeTree } from "../harness/temp-resource.js";
+import { ROOT } from "../harness/paths.js";
 import { convertPdfJob, resolvePdfHostKatexDir } from "../../dist/main/cli-pdf-host.js";
 import { exitCodes, readJobResult, writeJobResult } from "../../dist/convert/cli-pdf-job.js";
 import { cloneDefaultSettings } from "../../dist/core/settings/settings-defaults.js";

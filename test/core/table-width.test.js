@@ -29,8 +29,8 @@ import {
   twipsToPx,
 } from "../../dist/core/settings/settings-defaults.js";
 import { TABLE_BORDER_BLACK } from "../../dist/core/docx/theme.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { convertWithFs, pdfHtmlOf } from "../common/convert-helpers.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { convertWithFs, pdfHtmlOf } from "../harness/convert-helpers.js";
 
 /** 产物契约类型取自 src 单源(dist 是 tsc 产物、无类型标注,kind 会被拓宽为 string,
  *  不能直接作为收窄入参)。 */

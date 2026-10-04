@@ -25,7 +25,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 import {
   baseNameFromMdPath,
   buildPresetsExportPayload,

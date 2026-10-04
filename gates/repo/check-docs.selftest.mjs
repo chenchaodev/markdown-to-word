@@ -18,9 +18,9 @@
 // **夹具复制一份真实门禁进来只会把「规则的演进」也冻在夹具里** —— 那样门禁改了规则夹具还绿,
 // 夹具就变成了规则的第二份冻结副本。
 //
-// ⚠️ **本文件刻意不用 `test/common/temp-resource.js` 的 `removeTree`**:树的允许面是
+// ⚠️ **本文件刻意不用 `test/harness/temp-resource.js` 的 `removeTree`**:树的允许面是
 // `gates` / `shared` / `test/fixtures`(`gates/repo/check-import-boundary.mjs` 的
-// `gates-stay-in-gates` 规则),`test/common/` **不在允许面内** ⇒ 引用它会被那道门禁判红;
+// `gates-stay-in-gates` 规则),`test/harness/` **不在允许面内** ⇒ 引用它会被那道门禁判红;
 // 而 `check-temp-cleanup` 的扫描面是 `test/**`(`shared/test-common-surface.js` 的
 // `SCAN_TARGETS` 单源),**不扫 `gates/`** —— 同仓另外 5 个 `gates/repo/*.selftest.mjs`
 // 同样直接用 `rmSync(dir, { recursive: true, force: true })`。故此处照既有先例,

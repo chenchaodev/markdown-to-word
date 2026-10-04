@@ -24,7 +24,7 @@ import {
   ClipboardTempRegistry,
   writeTempMarkdown,
 } from "../../dist/main/services/temp-html.js";
-import { removeFile, removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

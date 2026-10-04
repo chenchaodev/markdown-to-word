@@ -2,7 +2,7 @@
 /**
  * electron 最小 mock(供 gen-fixtures 纯 Node 环境使用):
  * electron 包是 CJS(默认导出 exe 路径字符串),命名导入会抛 SyntaxError;
- * 段模块依赖链(如 test/common/pdf-utils.js 的 BrowserWindow)需要命名导出,
+ * 段模块依赖链(如 test/harness/pdf-utils.js 的 BrowserWindow)需要命名导出,
  * 但模块顶层只做 import 声明、方法在 run() 内才被调用,空实现即可满足。
  *
  * 边界契约:本文件的命名导出集合必须覆盖 src/main、src/core 对 electron 的全部

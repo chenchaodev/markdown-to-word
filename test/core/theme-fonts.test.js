@@ -26,9 +26,9 @@ import {
   RULE_GRAY,
   SECONDARY_TEXT_GRAY,
 } from "../../dist/core/docx/theme.js";
-import { FIXTURES_DIR, ROOT } from "../common/paths.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { docxBufferOf, prepareForConvert } from "../common/convert-helpers.js";
+import { FIXTURES_DIR, ROOT } from "../harness/paths.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { docxBufferOf, prepareForConvert } from "../harness/convert-helpers.js";
 
 /**
  * 断言辅助。

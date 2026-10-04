@@ -17,7 +17,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 import { DICT, LANGUAGES, htmlLangOf, isLanguage } from "../../dist/core/i18n/index.js";
 import {
   setLanguage,
@@ -28,7 +28,7 @@ import {
   backupSettingsFile,
   freshSettingsModule,
   settingsJsonPath,
-} from "../common/settings.js";
+} from "../harness/settings.js";
 
 /**
  * 断言辅助。

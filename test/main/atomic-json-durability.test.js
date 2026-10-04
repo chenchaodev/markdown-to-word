@@ -23,7 +23,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /** @typedef {import("../../src/main/persist/atomic-json.js").JsonWriterDeps} JsonWriterDeps */
 /** @typedef {import("../../src/main/persist/atomic-json.js").DurableFileHandle} DurableFileHandle */

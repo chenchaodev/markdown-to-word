@@ -26,7 +26,7 @@ import { MAX_SOURCE_FILE_BYTES, prepareMarkdown } from "../../dist/convert/prepr
 import { MAX_BATCH_FILES } from "../../dist/main/converter/batch.js";
 import { MAX_MERGE_FILES, MAX_MERGE_TOTAL_BYTES, MERGE_READ_CONCURRENCY } from "../../dist/main/converter/merge.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
-import { backupSettings } from "../common/settings.js";
+import { backupSettings } from "../harness/settings.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

@@ -8,9 +8,9 @@
 import { buildBookmarkTree, injectBookmarks, lookupNamedDest } from "../../dist/core/pdf/bookmarks.js";
 import { extractHeadings } from "../../dist/core/pdf/postprocess.js";
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "pdf-lib";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
 /**
  * 书签树节点(dist 编译产物无类型标注,层级形状由 buildBookmarkTree 实现约定;

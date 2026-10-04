@@ -4,11 +4,11 @@
  * 双格式共用同一 typography 契约;docx 断言字号/字体/对齐/标题编号关闭,
  * pdf 断言模板 CSS 参数化;双格式产物落盘。
  */
-import { FIXTURES_DIR } from "../common/paths.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
 /** 主样例:排版设置正文(字号/行距/缩进/对齐,gen-fixtures 落盘为 docs/typography.md) */
 const typoMd = `# 排版设置测试

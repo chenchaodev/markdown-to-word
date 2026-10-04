@@ -11,8 +11,8 @@
  * - 恶意 CSS(含 </style> 提前闭合序列)→ 被剥离,不产生第二个 <style> 边界(注入防护)
  * - 输出 HTML 带 CSP meta(预览/打印窗口内容安全基线)
  */
-import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
 const md = `# 标题
 

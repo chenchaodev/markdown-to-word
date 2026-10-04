@@ -20,7 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/converter/index.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
-import { removeFile, removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

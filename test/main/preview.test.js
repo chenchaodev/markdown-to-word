@@ -8,7 +8,7 @@
  *   比对展示页前等导航真正提交(loadFile 结算 ≠ getURL 已更新,慢机上会读到上一代);
  * - 窗口关闭后刷新安全退出:关闭前的在途刷新不 loadFile、不写注册表、临时文件不残留;
  * - loadFile 未 settle 时关闭:该次刷新结算后不留孤儿窗口与临时文件。
- * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/common/runner.js),窗口与
+ * 生命周期:本段跑在逐段独立的 Electron 子进程内(见 test/harness/runner.js),窗口与
  * 临时 HTML 全程自持,finally 里逐个 destroy 并等回收落定,不依赖入口退出兜底。
  */
 import fs from "node:fs/promises";
@@ -17,7 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import iconv from "iconv-lite";
 import { openPreviewWindow, previews, requestPreviewRefresh } from "../../dist/main/windows/preview.js";
-import { removeFile, removeTree } from "../common/temp-resource.js";
+import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

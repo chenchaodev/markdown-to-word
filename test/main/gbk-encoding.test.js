@@ -16,9 +16,9 @@ import iconv from "iconv-lite";
 import JSZip from "jszip";
 import { updateSettings } from "../../dist/main/persist/settings.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
-import { backupSettings } from "../common/settings.js";
+import { backupSettings } from "../harness/settings.js";
 import { convertImpl } from "../../dist/main/converter/index.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 const GBK_MD = "# GBK 中文标题\n\n正文内容 你好世界\n";
 

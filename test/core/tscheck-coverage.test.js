@@ -19,7 +19,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 
 /**
  * 不参与类型门禁的显式豁免目录(相对 test/)。

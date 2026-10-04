@@ -5,9 +5,9 @@
  * - 给定 frontmatter title 与 context.metadata.title 不同 → 产物封面用 metadata.title;
  * - 不传 metadata → 回落 frontmatter(既有行为不变)。
  */
-import { unzipPart } from "../common/docx-utils.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
 const md = `---
 title: frontmatter标题

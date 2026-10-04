@@ -41,13 +41,13 @@
  * 带走整轮验收,悬挂夹具在同进程内无法被终止),只跑与模型无关的 case 契约/旧段/筛选断言。
  *
  * 沙盒纪律:临时段文件与本段造出的失败目录在 finally 整体删除,不残留;断言不依赖
- * test/common/case.js 的 assert(被测件自身出错时不能用被测件判红),一律直接 throw。
+ * test/harness/case.js 的 assert(被测件自身出错时不能用被测件判红),一律直接 throw。
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../common/paths.js";
-import { removeFile, removeTree } from "../common/temp-resource.js";
-import { CONCURRENCY_ENV, ONLY_ENV, describeChildExitCode, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../common/runner.js";
+import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../harness/paths.js";
+import { removeFile, removeTree } from "../harness/temp-resource.js";
+import { CONCURRENCY_ENV, ONLY_ENV, describeChildExitCode, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../harness/runner.js";
 
 /** 沙盒目录名前缀(mkdtemp 在其后附 6 位随机后缀;尾部短横线便于识别残留目录) */
 const SANDBOX_PREFIX = "runner-report-selftest-";
@@ -86,8 +86,8 @@ const SANDBOX_DIR_NAME = path.basename(SANDBOX);
  */
 const segName = (file) => `${SANDBOX_DIR_NAME}/${file}`;
 
-/** 沙盒段 → 仓库内 case 契约模块的相对路径(output/tmp/<沙盒>/ → test/common/) */
-const CASE_MODULE = "../../../test/common/case.js";
+/** 沙盒段 → 仓库内 case 契约模块的相对路径(output/tmp/<沙盒>/ → test/harness/) */
+const CASE_MODULE = "../../../test/harness/case.js";
 
 const FAIL_SEG = segName("cases-fail.test.js");
 const PASS_SEG = segName("cases-pass.test.js");
@@ -115,7 +115,7 @@ const B_USERDATA_FILE = "state-b-userdata.txt";
 const CONCURRENCY_FILE = "env-report-concurrency.txt";
 
 /**
- * 段结果项(runAll 汇总项的类型;契约单源在 test/common/runner.js,此处按签名派生)。
+ * 段结果项(runAll 汇总项的类型;契约单源在 test/harness/runner.js,此处按签名派生)。
  * @typedef {Awaited<ReturnType<typeof runAll>>["results"][number]} SegmentResultEntry
  */
 
@@ -274,7 +274,7 @@ function setupSandbox(isolating) {
   // Windows 上会以 `0xC0000005 STATUS_ACCESS_VIOLATION`(偶发 `0x80000003` STATUS_BREAKPOINT)
   // 取代真实退出码 —— 父进程只看到 3221225477,「段崩溃应上报退出码 7」这条断言便以与被测行为
   // 无关的方式判红(CI 间歇复现,见 docs/REQ.md REQ-135)。
-  // 本机实测(真实 test/common/segment-host.mjs + 本夹具,提高并发以放大):
+  // 本机实测(真实 test/harness/segment-host.mjs + 本夹具,提高并发以放大):
   // 同步硬退 17/150 拿不到 7;让一轮且永不返回则 0/150 与 0/200。让**轮数**而非毫秒是关键 ——
   // 轮数随已完成工作量伸缩,而 CI 的并发负载正是把失败率推高的那个变量。
   // 「永不返回」这半句同样不可省:让出后 `process.exit` 不再同步生效,若 run() 正常返回,

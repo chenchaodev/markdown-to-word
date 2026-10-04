@@ -41,7 +41,7 @@ export const SMOKE_TIMEOUT_MS = 240_000;
  *
  * `shared` 会在清单内:项目根单源是 `shared/paths.js`,而沙盒内执行的
  * `tools/copy-renderer.mjs`(经 buildSandbox)与 `gates/fixtures/gen-fixtures.mjs`
- * → `test/common/paths.js`(经 probeFixtures)都会 import 它。缺它 ⇒ 沙盒内构建
+ * → `test/harness/paths.js`(经 probeFixtures)都会 import 它。缺它 ⇒ 沙盒内构建
  * 以「资源拷贝 exit 1」失败,而该失败原先只降级成装饰性 advisory(见 report.mjs)。
  * 这条注释是历史教训的记录,不再是「记得手动加一条」的理由 —— 清单已派生,新增顶层树自动在内。
  */

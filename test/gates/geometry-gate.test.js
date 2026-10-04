@@ -46,7 +46,7 @@ import {
 } from "../../shared/geometry/geometry-core.mjs";
 import { buildViewportSettledScript, parseMeasureScript } from "../../shared/geometry/geometry-page.mjs";
 import { LIVENESS_PATHS, checkPathLiveness, mediaConditions } from "../../gates/geometry/geometry/driver.mjs";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 
 /** 场景表项(契约单源 geometry-spec) @typedef {typeof SCENARIOS[number]} Scenario */
 /** 门禁采样结果 @typedef {Parameters<typeof runGeometryGate>[0][number]} GeometrySample */

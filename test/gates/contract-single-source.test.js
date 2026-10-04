@@ -34,7 +34,7 @@ import {
   kindLabelRegex,
   stripSecLabelSuffix,
 } from "../../dist/core/markdown/cross-ref.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeTree } from "../harness/temp-resource.js";
 import {
   MIN_SCAN_FILES,
   SCAN_TARGETS,
@@ -45,7 +45,7 @@ import {
   judgeScanFloor,
   listScanFiles,
 } from "../../shared/test-common-surface.js";
-import { ROOT } from "../common/paths.js";
+import { ROOT } from "../harness/paths.js";
 
 const repoRoot = ROOT;
 const srcRoot = path.join(repoRoot, "src");
@@ -222,13 +222,13 @@ export async function run() {
       // 1. 正向:真实仓库等式成立 + 满足下限(否则下面所有负向夹具的「绿」都没意义)
       const real = checkSurfaceEquality(repoRoot);
       assertEq(real.ok, true, `真实仓库的扫描面等式须成立:${formatSurfaceMismatch(real)}`);
-      // 声明面恰好是七个段目录 + common(fixtures 虽有源文件,但按显式理由排除)。
+      // 声明面恰好是七个段目录 + harness(fixtures 虽有源文件,但按显式理由排除)。
       // 刻意钉成字面量而非从 SEGMENT_DIRS 派生:派生会让它恒真,检测力归零 ——
       // 这条断言的职责就是「声明面多了或少了目录就红」,新增测试段必须在此显式登记。
       // 同一约束另有两处副本:两个 selftest 的 BASE_SHAPE(那边是跟随声明面走,性质相反)。
       assertEq(
         real.declared.join(","),
-        "test/cli,test/common,test/convert,test/core,test/gates,test/main,test/mcp,test/renderer",
+        "test/cli,test/convert,test/core,test/gates,test/harness,test/main,test/mcp,test/renderer",
         "声明面(单一来源)应恰为这 8 个目录",
       );
       assert(
@@ -273,7 +273,7 @@ export async function run() {
       // 后来整目录取消」是同一失效形态。
       // 刻意只让 test/gates 缺失:本夹具要验的是「点名那个缺失目录」,缺两个会让断言
       // 退化成验排序。新增段目录时要把它补进下面的建树清单,别动断言。
-      const short = makeFixtureTree(["test/core", "test/main", "test/renderer", "test/convert", "test/cli", "test/mcp", "test/common"], 1);
+      const short = makeFixtureTree(["test/core", "test/main", "test/renderer", "test/convert", "test/cli", "test/mcp", "test/harness"], 1);
       sandboxes.push(short);
       const shortResult = checkSurfaceEquality(short);
       assertEq(shortResult.ok, false, "声明 8 个、磁盘 7 个时等式必须判红");
@@ -307,13 +307,13 @@ export async function run() {
         `镜像诊断须点名 nope 缺顶层镜像树,实际:${formatMirrorMismatch(nopeResult)}`,
       );
       // harness / 数据区 / 入口三个名字显式排除在镜像面外:即便顶层真有同名树也不许当段目录
-      const harness = checkSegmentMirrors(nope, ["common"]);
-      assertEq(harness.ok, false, "common 是 harness 不是被断言的树,登记成段目录必须判红");
+      const harness = checkSegmentMirrors(nope, ["harness"]);
+      assertEq(harness.ok, false, "harness 是 harness 不是被断言的树,登记成段目录必须判红");
       assert(
         formatMirrorMismatch(harness).includes("harness/数据区/入口名"),
-        `镜像诊断须点明 common 被排除的理由,实际:${formatMirrorMismatch(harness)}`,
+        `镜像诊断须点明 harness 被排除的理由,实际:${formatMirrorMismatch(harness)}`,
       );
-      console.log("[ok] contract:段目录镜像判据负向(声明 test/nope 与 test/common → 判红并点名;等式判不出的那一侧由它兜住)");
+      console.log("[ok] contract:段目录镜像判据负向(声明 test/nope 与 test/harness → 判红并点名;等式判不出的那一侧由它兜住)");
 
       // 5. 下限的分工:目录集合与磁盘一致、但文件数塌到下限以下 —— 等式判绿,只有下限判红
       const collapsed = makeFixtureTree(SCAN_TARGETS.map((t) => t.dir), 1);

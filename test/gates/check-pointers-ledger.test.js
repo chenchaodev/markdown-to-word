@@ -16,7 +16,7 @@
  */
 import assert from "node:assert/strict";
 import { checkLedger, checkTableShape } from "../../gates/repo/check-pointers.mjs";
-import { createCaseSuite } from "../common/case.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;

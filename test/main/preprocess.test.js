@@ -18,7 +18,7 @@ import {
 // 档位 → per-rule 的映射已下沉 core,故从新落点断言(总开关/产物仍经 main 侧断言)。
 import { aiCleanupOptions } from "../../dist/core/markdown/ai-cleanup.js";
 import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
-import { removeTree } from "../common/temp-resource.js";
+import { removeTree } from "../harness/temp-resource.js";
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

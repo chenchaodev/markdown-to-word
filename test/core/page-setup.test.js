@@ -14,10 +14,10 @@
  * - src/core/pdf/template-css.ts buildTemplateCss:
  *   @page { size: ${paper}${" landscape"}; margin: ${top}mm ${right}mm ${bottom}mm ${left}mm; }
  */
-import { FIXTURES_DIR } from "../common/paths.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { htmlToPdf } from "../common/pdf-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { htmlToPdf } from "../harness/pdf-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
 import {
   DEFAULT_PAGE_SETUP,
   MARGIN_MAX_MM,
@@ -25,7 +25,7 @@ import {
   correctPageSetup,
   validatePageSetup,
 } from "../../dist/core/settings/settings-defaults.js";
-import { asPdfArtifact, convertWithFs, docxBufferOf } from "../common/convert-helpers.js";
+import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
 const md = `页面设置验收:纸张与边距参数化。\n`;
 

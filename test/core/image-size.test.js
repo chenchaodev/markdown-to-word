@@ -31,10 +31,10 @@ import {
   twipsToPx,
   mmToPx,
 } from "../../dist/core/settings/settings-defaults.js";
-import { FIXTURES_DIR } from "../common/paths.js";
-import { unzipPart } from "../common/docx-utils.js";
-import { saveArtifact } from "../common/artifacts.js";
-import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../common/convert-helpers.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { saveArtifact } from "../harness/artifacts.js";
+import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
 /** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 /** @typedef {import("../../src/core/i18n/index.js").KeyedWarning} KeyedWarning */

@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * 测试公共 helper 自测段(位于 test/core/ = 跨域守护段;纯 Node,不依赖 dist):
- * 被测件是 test/common/assert.js(公共断言集)与 test/common/temp-resource.js(临时资源生命周期)。
+ * 被测件是 test/harness/assert.js(公共断言集)与 test/harness/temp-resource.js(临时资源生命周期)。
  *
  * 为何值得有这一段:两个 helper 本身是「判定别的段对不对」的工具,一旦它们自身静默失真
  * (断言恒真、清理假装成功),全树 100+ 段的通过率就不再有信息量。故本段对两条线都做
@@ -39,8 +39,8 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { captureAssertionFailure, createAsserter } from "../common/assert.js";
-import { createCaseSuite } from "../common/case.js";
+import { captureAssertionFailure, createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 import {
   REMOVE_MAX_RETRIES,
   REMOVE_RETRY_DELAY,
@@ -51,7 +51,7 @@ import {
   removeResource,
   removeTree,
   withTempResource,
-} from "../common/temp-resource.js";
+} from "../harness/temp-resource.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -59,7 +59,7 @@ export const fixtures = null;
 const suite = createCaseSuite();
 
 /** 契约类型的只读引用(编译期擦除) */
-/** @typedef {import("../common/temp-resource.js").TempResource} TempResource */
+/** @typedef {import("../harness/temp-resource.js").TempResource} TempResource */
 
 // 断言集在本段的自测对象之内(不拿被测件判被测件的失败路径),
 // 故用 createAsserter 产出的同一组断言做正向判定,负向判定走 captureAssertionFailure

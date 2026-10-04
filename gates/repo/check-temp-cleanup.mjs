@@ -1,6 +1,6 @@
 // 测试树临时目录清理收敛门禁(纯文本判定,无产物、幂等,exit 0/1)。
 //
-// 守护的契约(test/common/temp-resource.js 的 removeTree 是测试树唯一的目录删除助手):
+// 守护的契约(test/harness/temp-resource.js 的 removeTree 是测试树唯一的目录删除助手):
 // 临时目录是**一次性沙盒**,Windows 上「进程刚退出、句柄未释放」会让裸 fs.rm 直接抛
 // EBUSY/EPERM,把段判成失败;而吞错的写法又把删不掉的目录静默留在系统临时区,谁也
 // 看不出。removeTree 两头都堵:EBUSY/EPERM 退避重试 + **删后复查是否真的消失**,
@@ -17,7 +17,7 @@
 //
 // ---- 扫描面(单一来源:shared/test-common-surface.js)----
 //   test/core/**/*.test.js · test/main/**/*.test.js · test/renderer/**/*.test.js
-//   test/gates/**/*.test.js · test/common/**/*.{js,mjs}
+//   test/gates/**/*.test.js · test/harness/**/*.{js,mjs}
 // 排除 test/fixtures(被测样例数据本身,不是清理动作)。
 // **不扫 gates/ tools/**:那里是生产/门禁脚本,rmSync 是被测语义本身(gates/artifacts/
 // clean-artifacts.mjs 的保护区、gate-probes/sandbox.mjs 的 junction 摘除),不是「临时目录清理」。
@@ -186,7 +186,7 @@ function splitTopLevelArgs(args) {
 export const ALLOWLIST = Object.freeze([
   {
     id: 'temp-resource-removeTree-impl',
-    file: 'test/common/temp-resource.js',
+    file: 'test/harness/temp-resource.js',
     match: (hit) => hit.callee === 'fs.rmSync' && hit.firstArg === 'target',
     why: '本门禁的收口终点本身:removeTree 是测试树唯一的目录删除助手,它实现里那行 '
       + '`fs.rmSync(target, { recursive: true, force: true, maxRetries, retryDelay })` '
@@ -666,7 +666,7 @@ export async function main(argv = []) {
       + `本次命中 ${result.allowHits} 条,按设计零命中 ${result.allowCold} 条)`,
     );
     console.error(
-      '[temp-cleanup:fail] 临时目录删除一律走 test/common/temp-resource.js 的 removeTree'
+      '[temp-cleanup:fail] 临时目录删除一律走 test/harness/temp-resource.js 的 removeTree'
       + '(EBUSY/EPERM 退避重试 + 删后复查):原「删不掉就抛」的调用点显式判 `outcome.ok` 后再抛,'
       + '原「吞错」的调用点仍吞错但走助手。若确属刻意保留,请在 gates/repo/check-temp-cleanup.mjs 的 '
       + 'ALLOWLIST 加条目并写明依据(按内容匹配,勿按行号登记 —— 行号会随他处改动漂移)。'

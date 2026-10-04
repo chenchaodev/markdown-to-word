@@ -24,8 +24,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { assert, createCaseSuite } from "../common/case.js";
-import { ROOT } from "../common/paths.js";
+import { assert, createCaseSuite } from "../harness/case.js";
+import { ROOT } from "../harness/paths.js";
 import {
   checkExistence,
   checkOrdinalSections,
