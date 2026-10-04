@@ -66,6 +66,7 @@
 | 5 | L4 真违例 17 段归位 ＋「6 拆 3 合」 ＋ `M2W_ONLY` 段名与镜像路径**同批切** | 17 段 | ⏸ |
 
 **子步 1 的三条经验（换目录时最易踩的三类）**：① **同一文件里可能有多处独立登记**，只改已知的那处会让另一处的扫描面指向不存在的目录 ⇒ walker 扫到 0 文件 ⇒ **判据恒绿且不报任何错**（本次是 `shared/test-common-surface.js` 的 `NON_MIRROR_DIR_NAMES` ＋ `SCAN_TARGETS`，后者差点漏）。② **路径的形态比路径本身多**：分段数组 `join(dir, 'test', 'common')`、数组元素裸名 `"common"`、正则转义 `core/util/`、跨行写成 `test/common/`＋换行＋文件名 —— 前两类不在任何一种「子串」形态里，只有全量测试暴露。③ **合成夹具里的路径字面量有断言耦合**，不是可以顺手统一的；执行方改了 5 处后被迫回退。
+⚠️ **遗留判据缺口**：`check:temp-cleanup` 的扫描面覆盖 `test/` 但**不含 `samples/`** ⇒ 今后仍有产物落进 `samples/` 时没有任何判据会红。durable 的修法是 ADR-062 P3 的 `check-samples.mjs`（其职责正是「生成物 vs 手工物」的目录准入判据），本步只补了 ignore 规则这条近路。
 
 **遗留清理项**：`test/**` 11 处 ＋ `gates/**` 3 处指向**在 `test/common` 时代就不存在**的文件（`userdata.js`、`copy-closure-audit.js` 等）。刻意未改 —— 改了只是把陈旧挪个位置、反而掩盖。须单独清理。
 
@@ -108,6 +109,7 @@
 | `M2W_ONLY` 段筛选命中数异常 | 段名与镜像路径不同批切，或 basename 语义未改净 | 复核 `runner.js` 的 `EXCLUSIVE_SEGMENTS` 子串语义（`gate-probes` 那条应随 T5 一并消失） |
 | T2 搬走 src 文件后 `check:boundary:dist` 红 | 判据坏了 | **dist 侧扫到了 src 已不存在的陈旧产物**。`build` 脚本是 `tsc && copy-renderer.mjs`、本就不清 dist，清 dist 是 `clean:dist` 的职责 → 跑 dist 面前先 `npm run clean:dist`。⚠️ 这是 `verify:ci` 的结构性缺口（`build → check:boundary:dist` 之间无清理步骤），T2 之前 src 只增不减所以从未暴露；留待 T5 重写链时补 |
 | 按 `from "` 统计 import 面时漏掉运行期动态 `import()` | **grep `from "` 抓不到 `load()` / `dist()` / `distUrl()` / `path.join(ROOT,"dist",…)` 这些形态**。T2 步 5 实测：真实改写面比 `from "` 统计多 6 处动态 import，漏改的后果**不是 tsc 报错而是段在运行时炸**。搬路径类改动必须全量扫形态，并跑一遍含动态 import 的段 |
+| 搬目录后,某个**按路径登记**的东西悄悄失效 | 那个东西看起来无关 | 这一类**比「判据恒绿」更严重**:失效的若是 `.gitignore` 规则,测试产物就从「被忽略」变成「可跟踪」,`git add -A` 会把它**提交进仓**。T3 步 2 实测:`.gitignore` 里 `test/fixtures/manual/*.{docx,pdf}` 两条按路径登记的规则在搬家后失效,一个全量测试跑出的 PDF 被提交进仓(`git check-ignore` 对旧路径仍命中 ⇒ 证明是回归不是新行为)。**扫一遍所有按路径登记的地方**:`.gitignore`、各门禁扫描面、夹具 map key、白名单条目。⚠️ 判据侧的扫描面失效只是恒绿,**ignore 规则失效会主动污染源码树** |
 | 改事实源头后,某个 selftest 悄悄失配 | 改的是夹具输入,`expect` 正则会跟着一起失效 | **按子串做的盲替换只覆盖一种形态**:T2 步 1 实测漏了「正则转义斜杠」(`expect: /…core/util/…/`)与「路径分段数组」(`join(src, 'core', 'util')`)两类。改名/搬路径类改动必须**按形态枚举**再 grep,不能只搜字面路径 |
 | 定向检查全绿,但 `verify:ci` 红 | 定向检查覆盖不到链上别处 | **定向绿只证明我修的那几处好了**。T2 收尾实测:两次全链各暴露一个缺陷,且第二个被第一个掩盖(第一轮死在 transform-dispatch,压根没走到 archive-index)⇒ 后面可能还藏着第三层,必须跑到链尾 |
 | 某道门禁的 selftest 坏了却没人发现 | selftest 本身有 bug | **它可能连 npm script 都没有**。T2 实测 `check:src-layout:selftest` / `check:test-layout:selftest` 从未建过 ⇒ 无入口、不在链上、`PROBE_CARRIER_SCRIPTS` 里没有 ⇒ R5c「载体必须真挂在链上」无从校验,坏了四个提交都没人发现。**载体是门禁有牙齿的唯一证明,不是可选项** |
