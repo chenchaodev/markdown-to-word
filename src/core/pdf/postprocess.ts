@@ -19,7 +19,8 @@ import { imageLoadFailedWarning, imageLoadFailureWarning, imageNotFoundWarning, 
 import type { ConvertWarning } from "../i18n.js";
 import type { PdfHeading } from "./bookmarks.js";
 import type { ImageResolver } from "../image/image-resolver.js";
-import { createCancellationGuard, createGuardedImageResolver, isConversionCanceled } from "../cancel.js";
+import { createCancellationGuard, isConversionCanceled } from "../cancel.js";
+import { createGuardedImageResolver } from "../image/request-guard.js";
 import { ImageBudgetLedger, resolveImageBudget, type ImageResourceBudget } from "../resource-limits.js";
 
 /**

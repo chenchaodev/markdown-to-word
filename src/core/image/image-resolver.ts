@@ -6,7 +6,7 @@
 
 /**
  * 单次图片解析请求的约束(渲染层 → resolver 注入):
- * 由 core/cancel.ts 的 createGuardedImageResolver 构造(每次请求一份,
+ * 由 core/image/request-guard.ts 的 createGuardedImageResolver 构造(每次请求一份,
  * 含独立 AbortController),实现方必须同时遵守三者:
  * - signal:取消或单请求时限到达即中止 IO(挂 abort 监听;已 aborted 时不再发起请求);
  * - maxBytes:单图字节上限,超过即中止读取/下载(不等响应体读完);

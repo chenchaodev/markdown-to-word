@@ -67,7 +67,8 @@ import {
 } from "../image/image-warning.js";
 // 取消与资源预算:守卫由 convert 层构造并注入(signal/deadline 单源),
 // 图片 resolver 在此包上请求契约(信号/单请求时限/单图与文档字节预算)。
-import { createCancellationGuard, createGuardedImageResolver } from "../cancel.js";
+import { createCancellationGuard } from "../cancel.js";
+import { createGuardedImageResolver } from "../image/request-guard.js";
 import { ImageBudgetLedger, resolveImageBudget } from "../resource-limits.js";
 
 /**

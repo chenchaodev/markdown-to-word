@@ -76,7 +76,7 @@
     {
       "file": "src/core/image/image-resolver.ts",
       "category": "empty-module",
-      "reason": "图片解析回调的类型契约(interface + type alias,零运行时代码)。判定依据:产物 dist/core/image/image-resolver.js 只有 `export {};`;覆盖率报告记 statements 0/33、functions 0/1。解析能力本身由 core/cancel 与 main/image-downloader 的段覆盖,与本类型模块无关。"
+      "reason": "图片解析回调的类型契约(interface + type alias,零运行时代码)。判定依据:产物 dist/core/image/image-resolver.js 只有 `export {};`;覆盖率报告记 statements 0/33、functions 0/1。解析能力本身由 core/image/request-guard 与 main/image-downloader 的段覆盖,与本类型模块无关。"
     },
     {
       "file": "src/main/ipc/types.ts",

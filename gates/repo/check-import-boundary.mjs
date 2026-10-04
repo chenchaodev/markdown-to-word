@@ -35,7 +35,8 @@
 //
 // ---- 本阶段的 pending 机制:每条规则自带标记,而不是一个全局开关 ----
 //
-// T0 阶段新建的 6 条判据(4 条 core 目录准入 + 2 条层向文本判据)带 `pending: true`:
+// T0 阶段新建的 6 条判据(4 条 core 目录准入 + 2 条层向文本判据)当初一律带 pending: true;
+// T2 每转正一条就摘掉一条标记,所以「还剩几条」是变的 —— 要数字去看规则表派生,别手数:
 // 它们照常参与扫描与计数,但命中归入 `info` 通道、**不进 `problems`**,故不影响退出码 ——
 // 门禁仍 exit 0,同时输出里逐条列出「哪几条 pending 规则当前命中几处」。
 // `analyze()` 的 `info` 语义:**只作提示、不参与 exit code 的诊断**(两种来源:
@@ -286,7 +287,7 @@ export const LAYER_RULES = Object.freeze([
   // 目录级边界为什么必须用 prefix: 形态:resolveLayer 只返回**顶层**目录名,core 内部的
   // 目录级边界在 layer: 形态下与 core 自身的层不可区分(见 ruleHits 的 prefix: 注释)。
   //
-  // 下面四条带 `pending: true`(见文件头的 pending 机制):本阶段它们只报告、不判红,
+  // 本组四条里当前仍带 `pending: true` 的那些(见文件头的 pending 机制):本阶段只报告、不判红,
   // T2 搬完文件后**逐条删掉该标记**即转 fail-closed —— 删标记这个动作就是 T2 的进度记录。
   {
     id: 'core-markdown-no-pipeline',
@@ -299,11 +300,15 @@ export const LAYER_RULES = Object.freeze([
       + '解析之后的变换却住在 markdown/ 里,是 core 内唯一的运行期环;这条边不该存在,'
       + '而不是「该换个方向」',
   },
+  // 本条**不带** pending(ADR-064 T2 步 2 转正):T2 把图片请求级守卫从 core/cancel.ts
+  // 搬进 core/image/request-guard.ts,转正前实测 src 与 dist 双侧零命中。新搬入的文件
+  // 只新增 ../cancel.js(取消原语)与 ../resource-limits.js(预算取值)两条边,加上同目录
+  // 的 ./image-resolver.js(纯类型)—— 三条都不落在本条禁的三个前缀里。故它与
+  // core-text-no-core 同属「建时即绿、已完全生效」那一类,不是「已知违反、待搬迁后转判红」。
   {
     id: 'core-image-no-markdown',
     scope: 'core-image',
     forbid: 'prefix:../markdown/,../docx/,../pdf/',
-    pending: true,
     reason: 'core/image/ 是图片这一份职责的归并处(解析、类型嗅探、尺寸、路径策略),'
       + '它对 markdown / docx / pdf 三条边都不该存在:图片处理不依赖 markdown 语义、'
       + '也不属于任何一条渲染管线。实测现无这三条边,故钉住的是**准入**而非现状描述',
@@ -323,7 +328,7 @@ export const LAYER_RULES = Object.freeze([
     scope: 'core-text',
     // T2 步 1 已把 util/ 落成 text/,规则名与 scope 随之改掉 —— 规则名指向一个
     // 不存在的目录就是代码里的假话。本条**不带** pending: 它建时即绿(T2 前后都绿),
-    // 属于「已完全生效」的判据,不是那六条「已知违反、待搬迁后转判红」的。
+    // 属于「已完全生效」的判据,不是那些「已知违反、待搬迁后转判红」的。
     allowTypeOnly: true,
     forbid: 'prefix:../',
     reason: 'core/text/ 放的是与业务无关的文本与错误处理原语(编码探测、HTML 实体、'
@@ -1798,7 +1803,7 @@ export async function main(argv = []) {
       + `renderer 基础层(dom/state)不反向依赖功能目录;`
       + `core 的 pdf 渲染路径不 import node:fs(能力经入参注入);`
       + `core 内部目录准入、core/i18n 的 DOM 使用面、main/windows 不上跳 menu`
-      + `—— 这六条判据带 pending 标记,本阶段只报告不判红(命中数见上方 pending 汇总行),`
+      + `—— 当前这 ${[...LAYER_RULES, ...LAYER_TEXT_RULES].filter((r) => r.pending === true).length} 条判据带 pending 标记(条数由规则表派生,转正一条即自动少一条,不手数),本阶段只报告不判红(命中数见上方 pending 汇总行),`
       + `T2 删掉标记即转 fail-closed;`
       + `新层(convert/cli/mcp)零 app.getPath / getAppPath 调用(判据 headless-no-app-getpath);`
       + `新层零 Windows 专属能力:环境变量清单 ${WINDOWS_ONLY_ENV_VARS.length} 项`
