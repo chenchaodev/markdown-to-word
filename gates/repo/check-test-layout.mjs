@@ -1,6 +1,6 @@
 // test 布局门禁(纯文本判定,无产物、幂等,exit 0/1)。
 //
-// ---- 四族判据 ----
+// ---- 判据一览(五族 + 扫描面两档)----
 //   ① test-layer-self-hosted(L4):`test/<R>/**/<m>.test.js` 必须 import **至少一个**
 //      解析后落在 `<R>/` 对应主体根内的模块。零命中即判红并点名该段。
 //   ② test-layer-cross-import(L5):`test/<L>/**` 不得 import **别的层**的
@@ -50,23 +50,48 @@
 // `test/harness/runner.js` 逐目录 `readdir` 过滤 `.endsWith(".test.js")`,**纯 glob、
 // 无注册表**,本门禁照此发现,不读任何段目录清单。
 //
-// ---- L5 为什么**恒报告**、连 `--enforce` 也不参与退出码(ADR-064 的节奏) ----
+// ---- 强制等级:判据登记表 `CRITERIA` + 唯一分流漏斗 `report(id, line)` ----
+//
+// 每一族判据发出形如 `<对象> → <机器 id>:<诊断>` 的一行。**这行进 problems 还是 info,
+// 不由任何调用点决定,只由本文件的 `CRITERIA` 表决定** —— 全门禁只有一个分流出口:
+//
+//   report(id, line)  →  查 CRITERIA  →  `pending === true` ? info : problems
+//
+// 判定本体里不再有第二处 push 到 problems / info 的代码路径(要加一族判据只能经 report),
+// 而 CLI 上**没有任何开关能改变这一档**:命令行一档来自表,不是来自 argv。
+//
+// **缺标记即 fail-closed**:表里查不到 = 进 problems。漏登记的那一族按 fail-closed 处理,
+// 但那正是要防的失效形态 —— 登记表的全部意义是「谁该判红」有一个声明处,漏登记等于那一族
+// 的强制等级无人负责。故漏斗查不到时**额外**追加一条 `criteria-unregistered:<id>` 判红:
+// 不抛异常(那会把一族的漏登记变成整场崩溃,掩盖其余判红)、不静默归 problems(那样从输出里
+// 看不出它漏了)、也不丢弃(那等于让这一族静默消失)。
+//
+// `pending: true` 是**唯一**的 report-only 标记,且必须同时给非空 `pendingReason`。
+// 它**不是形参、不是 CLI 开关**:能传参就能把自己摘出去,那本身是 fail-open ——
+// report-only 是一个**声明**,声明只改源码。当前待转正的族数:
+//
+//   grep -nE '^\s*pending: true,$' gates/repo/check-test-layout.mjs
+//
+// **切换点 = 删掉那一行的 `pending: true`**(连带它的 `pendingReason`)。
+// ⚠ 登记表与源码发出的 id 集合**双向相等**由 selftest 的 `sourceAudit` 一档独立钉住:
+// 它读本文件源码(不是夹具副本)抽出全部 `→ <机器 id>:` 的 id,与 `CRITERIA` 两个方向都比 ——
+// 漏登记(源码有、表里没有)与僵尸行(表里有、源码已删)各红一次:后者会让上面那条 grep 的
+// 命中数说谎,而那正是「还剩几族待转正」的唯一读数。
+//
+// ---- L5 曾恒报告:为什么曾那样,以及它凭什么能转正 ----
 // L5 在 T1 建时**当前即红**,且**已知会误伤合理跨层**:实测
 // `test/behavior/heading-scale.test.js` import `dist/renderer/settings/settings-logic.js`
 // 做 token 对照,`test/shared/geometry-gate.test.js` import `shared/geometry/*`
 // (几何 core 本就归 shared),这类跨层是**有意的**。把这种误伤做成 fail-closed,
-// 会逼人去删正确的测试或塞豁免表 —— 那比判红本身更坏。
-// 故 L5 的命中归 **`info` 通道、结构上不参与退出码**:`checkTestLayout()` 返回的
-// `problems` 里**恒不含** L5 项,`--enforce` 也只看 `problems`。这不是一个可配置的
-// 开关(不给「从命令行把它摘出去」的口子 —— 那本身是 fail-open),而是模块内的
-// 单一事实源常量 `L5_PENDING`,grep 行锚即 T2/T3 的进度记录:
+// 会逼人去删正确的测试或塞豁免表 —— 那比判红本身更坏。故它当时拿的是 report-only 一档。
 //
-//   grep -nE '^\s*L5_PENDING = true,$' gates/repo/check-test-layout.mjs
-//
-// **切换点(ADR-064 T3 末)**:跨层测试全部搬进 `test/behavior/` 并写 `covers` 之后,
-// 把 `L5_PENDING` 改为 `false`,`judgeL5()` 的命中即从 `info` 改道进 `problems`,
-// `--enforce` 随之对它 fail-closed。切换的前置条件是 info 通道的命中数归零 ——
-// 在它还非零时切,是把已知违例固化成基线。
+// **转正的前置条件是「未登记命中归零」,不是字面的「命中数 == 0」**:已登记、带非空 reason、
+// 且当前仍真的命中(stale 检查通过)的豁免项是**合法现状**,不是待办。所以「命中总数不为零」
+// 本身不构成阻塞;构成阻塞的是三条 fail-closed 里任一条为红 —— 未登记命中非零 / reason 为空
+// / stale 非零。在那个条件下 L5 已转 fail-closed,即 `CRITERIA` 里 `test-layer-cross-import`
+// 那行**不带** `pending: true`。豁免命中在判定本体里 `continue` 掉、根本到不了分流点,
+// 因此豁免表在真仓库上实测不产生任何 info 行 —— 那是设计:表项是「已审过的合法现状」,
+// 不是待办噪声。
 //
 // ---- 形状:判定本体 = `checkTestLayout(ctx)`(可注入、零 IO 副作用) ----
 // 与 check-src-layout.mjs / check-copy-sites.mjs 同一范式(全仓门禁判定协议,见
@@ -150,14 +175,98 @@ export const MIN_SCANNED_FILES = 100;
 export const L5_EXEMPTIONS_REL = "gates/repo/test-layout.cross-import-exemptions.json";
 
 /**
- * ⚠ L5 恒报告标记(机制与切换点见文件头「L5 为什么恒报告」一节)。
+ * ⚠ **判据登记表(强制等级的唯一声明处)**。
  *
- * **刻意不是形参、不是 CLI 开关**:ctx 注入白名单/下限是为了让自检脚本能在合成目录上求值
- * 同一份判据;而「L5 是否参与退出码」若可注入,就等于给了「从调用点把它摘出去」的口子 ——
- * 那本身是 fail-open(能传参就能让自己绿)。它是模块内的单一事实源,切换靠改这一行。
+ * 一行 = 一个机器 id。**键必须是源码里实际发出的那个 id**(即诊断行里 `→ <id>:` 那一段),
+ * 而不是 L4–L8 的编号:按编号建表会漏掉三族不带编号的判据
+ * (`scan-surface-missing` / `scan-surface-collapsed` / `l5-exemption-stale` / 豁免表本身
+ * 的读表与键名两档),而漏登记的后果就是那一族的强制等级无人负责。
+ *
+ * 字段:
+ *   - `id` —— 漏斗 `report(id, line)` 的查表键,与源码发出的机器 id 逐字相等;
+ *   - `title` —— 人读的一行判据名(诊断与自检报告用);
+ *   - `pending` —— **缺省即 fail-closed**。`true` = report-only(命中进 info、结构上不参与退出码),
+ *     且**必须**同时给非空 `pendingReason`(写不出理由就不该挂待办标记);
+ *   - `pendingReason` —— 为什么这一族还不能转判红;也是转正时要先核掉的那条。
+ *
+ * **不可注入**(与 `LAYER_RULES` 同层):能传参就能把自己摘出去,那本身是 fail-open。
+ * 唯一例外是自检用的 `criteriaOverride`,它**只允许删行、不允许加 `pending`** ——
+ * 见 `resolveCriteria` 的注释与 selftest 里那两条夹具的说明。
+ *
+ * ⚠ **它与「哪些族存在」是耦合的**:改判据集合必须同改这张表,反向亦然。漏了任一边,
+ * selftest 的 `sourceAudit` 那一档立刻红(它对两个方向都断言)。
  */
-export const L5_PENDING = true;
-const USAGE = "用法: node gates/repo/check-test-layout.mjs [--enforce] [--help]";
+export const CRITERIA = Object.freeze([
+  Object.freeze({
+    id: "scan-surface-missing",
+    title: "扫描面读不到(test/ 或 src/ 子树):门禁什么也没查而输出是 exit 0,判红",
+  }),
+  Object.freeze({
+    id: "scan-surface-collapsed",
+    title: "扫描面塌缩(段数掉到下限以下):四族判据在零扫描面下会全绿,判红",
+  }),
+  Object.freeze({
+    id: "test-layer-self-hosted",
+    title: "L4 段必须自托管(至少一个引用落在本层主体根内,且不得段 import 段)",
+  }),
+  Object.freeze({
+    id: "test-layer-cross-import",
+    title: "L5 跨层 import:未登记判红 / 已登记但 reason 为空判红(走豁免表)",
+  }),
+  Object.freeze({
+    id: "l5-exemption-table",
+    title: "L5 豁免表自身失效(读不到 / 缺 entries 数组 / 表项键名写错):整张表静默失效,判红",
+  }),
+  Object.freeze({
+    id: "l5-exemption-stale",
+    title: "L5 豁免表项当前不再命中(stale,ratchet):否则表只增不减、失效项永远占位",
+  }),
+  Object.freeze({
+    id: "behavior-covers-declared",
+    title: "L6 covers 声明:behavior 段必须声明且非空,每个元素必须在磁盘上真实存在",
+  }),
+  Object.freeze({
+    id: "test-harness-not-segment",
+    title: "L8 自指层(harness)下的段必须声明 covers 且至少一个元素指向本层",
+  }),
+  Object.freeze({
+    id: "test-top-dirs-exact",
+    title: "L7 test/ 顶层目录集合必须恰好等于镜像源派生集 ∪ {behavior, harness}:多一个缺一个都判红",
+    pending: true,
+    pendingReason:
+      "L7 已知多 0 / **缺 1**(`test/tools/` 空目录已裁决不建)。缺的那一档不是「还没做」而是"
+      + "「期望状态里就没有它」—— 把它做成 report-only 是为了让 L7 不挡住其余各族转判红,"
+      + "而不是承认 L7 已成立。转正前必须处置缺的那一档(把它移出派生集,或建出真实内容),"
+      + "而不是给判据加豁免。",
+  }),
+]);
+
+/**
+ * 按 id 查**本轮生效的**登记表(不是模块常量 —— 删行覆盖下两者不同)。
+ * 查不到即**判红**(fail-closed),并额外追加一条 `criteria-unregistered:<id>`:
+ * 不抛异常(会把一族的漏登记变成整场崩溃,盖住其余判红)、不静默归 problems(那样从输出里
+ * 看不出它漏了)、也不丢弃(那等于让这一族的命中静默消失)。
+ *
+ * ⚠ 那条告警的文案**刻意不写成 ` → <id>:` 形状**:它是「漏斗对自己的告警」而不是一族判据。
+ * 若写成那个形状,selftest 的 sourceAudit 会把它当成一个待登记的族抽出来,
+ * 而登记它又等于让「漏登记」本身变成一件可配置的事 —— 机制给自己开了个后门。
+ * @param {string} id 源码发出的机器 id
+ * @param {readonly { id: string }[]} criteria 本轮生效的登记表
+ * @param {string[]} sink 判红通道
+ * @returns {boolean} 该族是否在登记表里
+ */
+function isRegistered(id, criteria, sink) {
+  if (criteria.some((entry) => entry.id === id)) return true;
+  sink.push(
+    `判据登记表 → 强制等级漏登记:criteria-unregistered:${id}:源码发出了一族未登记在 CRITERIA 里的判据`
+    + ` —— 它的强制等级因此无人负责(缺标记本会按 fail-closed 处理,但那不等于「有人决定过」)。`
+    + `在 CRITERIA 里补一行(id 与本处逐字相同,缺 pending 即 fail-closed),`
+    + `或确认该族已被删除、连它的 report 调用一起去掉`,
+  );
+  return false;
+}
+
+const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exemptions] [--help]";
 
 /**
  * @typedef {object} DirEntry 一个目录项(注入面用的最小形状)
@@ -182,7 +291,7 @@ const USAGE = "用法: node gates/repo/check-test-layout.mjs [--enforce] [--help
  * @property {number} l4Violations L4 判红条数(零本层主体 + 段 import 段)
  * @property {number} l4NoOwnSubject 零本层主体的段数
  * @property {number} l4SegmentImports 段 import 段的条数
- * @property {number} l5Hits L5 跨层命中数(**恒不进 problems**,见 L5_PENDING)
+ * @property {number} l5Hits L5 跨层命中数(进哪个通道由 CRITERIA 决定)
  * @property {number} l7Extra 多出的顶层目录数
  * @property {number} l7Missing 缺失的顶层目录数
  * @property {number} l8Violations L8 判红条数
@@ -402,11 +511,12 @@ export function foreignLayerOf(resolved, mirror) {
 }
 
 /**
- * 判定本体(可注入纯函数):四族判据 + 扫描面下界。
+ * 判定本体(可注入纯函数):五族判据 + 扫描面下界。
  *
- * L5 的命中走 `info` 而非 `problems`(恒报告,连 `--enforce` 也不拦 —— 见文件头)。
- * @param {Partial<TestLayoutCtx>} [base] 注入面(见 makeTestLayoutCtx)
- * @returns {{ problems: string[], info: string[], stats: TestLayoutStats }}
+ * 全部诊断经唯一出口 `report(id, line)`,进 `problems` 还是 `info` 由 `CRITERIA` 决定
+ * (见文件头「强制等级」一节)。判定本体的 IO 注入面**不含**登记表:那是不可注入的模块常量。
+ * @param {Partial<TestLayoutCtx> & { criteriaOverride?: readonly { id: string, pending?: boolean }[] }} [base] 注入面(见 makeTestLayoutCtx)
+ * @returns {{ problems: string[], info: string[], stats: TestLayoutStats, l5ExemptionCount: number }}
  */
 /**
  * 读 L5 豁免表。**只认二元组**,缺字段的表项直接判红而不是被跳过 ——
@@ -469,12 +579,67 @@ export function renderL5ExemptionsBaseline(hits) {
   )}\n`;
 }
 
+/**
+ * 取本轮生效的判据登记表。
+ *
+ * **默认是模块常量 `CRITERIA`,刻意不可注入**(能传参就能把自己摘出去,那本身是 fail-open)。
+ * 唯一例外是自检用的 `criteriaOverride`,且它**只允许删行**:
+ * 新增一行或加 `pending: true` 一律抛错 ——
+ * 注入口一旦能「加待办标记」,就成了「可配置即假话」的后门,自检夹具就会退化成
+ * 「让门禁按我想要的方式过」。这里的判据形状是**子集**而不是任意表。
+ *
+ * @param {{ criteriaOverride?: readonly { id: string, title?: string, pending?: boolean, pendingReason?: string }[] }} [base]
+ * @returns {readonly { id: string, title?: string, pending?: boolean, pendingReason?: string }[]}
+ */
+function resolveCriteria(base) {
+  const override = base.criteriaOverride;
+  if (override === undefined) return CRITERIA;
+  if (!Array.isArray(override)) throw new Error("criteriaOverride 必须是数组");
+  const known = new Map(CRITERIA.map((entry) => [entry.id, entry]));
+  const allow = new Set();
+  for (const row of override) {
+    const original = known.get(row?.id);
+    if (original === undefined) {
+      throw new Error(`criteriaOverride 只允许删行,不得新增:${String(row?.id)}`);
+    }
+    // 逐字段对读:允许的是「同一行的一个子集」,不是「重新描述这一行」。
+    if ((row.pending ?? false) !== (original.pending ?? false)) {
+      throw new Error(`criteriaOverride 只允许删行,不得改 pending:${row.id}`);
+    }
+    allow.add(row.id);
+  }
+  return CRITERIA.filter((entry) => allow.has(entry.id));
+}
+
 export function checkTestLayout(base = {}) {
   const ctx = makeTestLayoutCtx(base);
+  const criteria = resolveCriteria(base);
+  /** 机器 id → 该族的强制等级 */
+  const channelOf = new Map(criteria.map((entry) => [entry.id, entry.pending === true ? "info" : "problems"]));
   /** @type {string[]} */
   const problems = [];
   /** @type {string[]} */
   const info = [];
+  /**
+   * **唯一分流出口**:每条诊断都必须经它进 `problems` 或 `info`,进哪一档由 `CRITERIA` 决定。
+   *
+   * 查不到该 id ⇒ 按 fail-closed 进 problems **并**额外记一条 `criteria-unregistered:<id>`:
+   * 三种「看似合理」的处理都不行 —— 抛异常会把一族的漏登记变成整场崩溃、盖住其余判红;
+   * 静默归 problems 则从输出里看不出它漏了;丢弃则那一族的命中静默消失。
+   * @param {string} id 源码发出的机器 id
+   * @param {string} line 完整诊断行
+   * @returns {void}
+   */
+  const report = (id, line) => {
+    const channel = channelOf.get(id);
+    if (channel === undefined) {
+      // 未登记 ⇒ 诊断本身按 fail-closed 进 problems,并**额外**追一条 criteria-unregistered。
+      problems.push(line);
+      isRegistered(id, criteria, problems);
+      return;
+    }
+    (channel === "info" ? info : problems).push(line);
+  };
   /** @type {TestLayoutStats} */
   const stats = {
     files: 0,
@@ -498,7 +663,8 @@ export function checkTestLayout(base = {}) {
   try {
     files = collectTestFiles(ctx);
   } catch (error) {
-    problems.push(
+    report(
+      "scan-surface-missing",
       `${TEST_REL}/ → scan-surface-missing:读不到 ${TEST_REL}/ 子树(`
       + `${error instanceof Error ? error.message : String(error)}) —— 扫描面为空是最坏的失效形态`
       + "(门禁从这一刻起什么也没查而输出是 exit 0),故判红",
@@ -512,7 +678,8 @@ export function checkTestLayout(base = {}) {
   try {
     mirror = deriveMirrorLayers(ctx);
   } catch (error) {
-    problems.push(
+    report(
+      "scan-surface-missing",
       `src/ → scan-surface-missing:读不到 src/ 子树(`
       + `${error instanceof Error ? error.message : String(error)}) —— 镜像源集合派生的输入缺失时,`
       + "L7 只能按空集比对并把全部顶层目录判成「多一个」(恒红且无信息量),故判红",
@@ -536,15 +703,18 @@ export function checkTestLayout(base = {}) {
   const { entries: l5Exemptions, problems: l5ExemptionProblems } = base.l5Exemptions
     ? { entries: base.l5Exemptions, problems: [] }
     : loadL5Exemptions(ctx.root);
-  for (const problem of l5ExemptionProblems) problems.push(`${L5_EXEMPTIONS_REL}:${problem}`);
+  for (const problem of l5ExemptionProblems) {
+    report("l5-exemption-table", `${L5_EXEMPTIONS_REL} → l5-exemption-table:${problem}`);
+  }
   /** 豁免表键 → 表项 */
   const l5ByKey = new Map();
   // 键名校验放在**这里**而不是 loadL5Exemptions 里:注入面(ctx.l5Exemptions)也必须过同一道
   // 校验 —— 否则一条键名写错的注入表项会得到一个永不命中的键、被静默跳过。
   for (const [index, entry] of l5Exemptions.entries()) {
     if (typeof entry?.segment !== "string" || typeof entry?.specifier !== "string") {
-      problems.push(
-        `${L5_EXEMPTIONS_REL}:第 ${index + 1} 项缺 segment 或 specifier`
+      report(
+        "l5-exemption-table",
+        `${L5_EXEMPTIONS_REL} → l5-exemption-table:第 ${index + 1} 项缺 segment 或 specifier`
         + "(键名写错会让整条豁免静默失效 —— 它拿到的键永远命中不上)",
       );
       continue;
@@ -583,7 +753,8 @@ export function checkTestLayout(base = {}) {
     if (ownHits.length === 0 && !coversOwn) {
       stats.l4NoOwnSubject += 1;
       stats.l4Violations += 1;
-      problems.push(
+      report(
+        "test-layer-self-hosted",
         `${file} → test-layer-self-hosted:该段解析后**没有 import 任何 ${layer} 层的主体**`
         + `(本层主体根 ${own.join(" 或 ")})—— 「不许 import 别层」这类上界规则在它身上会全绿,`
         + `而它恰恰是最该被抓的形态。三条正当出路:搬进真正被测的那一层;`
@@ -602,7 +773,8 @@ export function checkTestLayout(base = {}) {
     if (segmentImports.length > 0) {
       stats.l4SegmentImports += 1;
       stats.l4Violations += 1;
-      problems.push(
+      report(
+        "test-layer-self-hosted",
         `${file} → test-layer-self-hosted:段 import 段(${[...new Set(segmentImports.map((e) => e.resolved))].join(", ")})`
         + " —— 段是发现与隔离的单位,段间 import 让失败不可归因且让被 import 的段双跑。"
         + "共用部分抽进非段助手(当前在 test/harness/(T3 步 1 已迁),harness/)",
@@ -630,7 +802,8 @@ export function checkTestLayout(base = {}) {
         l5HitKeys.add(key);
         if (exemption.reason.trim() === "") {
           stats.l5ExemptionsEmptyReason += 1;
-          problems.push(
+          report(
+            "test-layer-cross-import",
             `${file} → test-layer-cross-import:命中已在豁免表登记(${entry.resolved}),但 reason 是空的`
             + ` —— 豁免表的存在意义就是「这一次跨层为什么合法」,空理由让表退化成「见谅」。`
             + `补上理由,或把它从表里删掉(那说明它不该被豁免)`,
@@ -639,14 +812,15 @@ export function checkTestLayout(base = {}) {
         continue;
       }
       stats.l5Unregistered += 1;
-      const message = `${file} → test-layer-cross-import:${layer} 层的段 import 了 ${target} 层的主体 `
+      report(
+        "test-layer-cross-import",
+        `${file} → test-layer-cross-import:${layer} 层的段 import 了 ${target} 层的主体 `
         + `(${entry.resolved})—— 三条正当出路:① 它只是夹具输入/常量/规格/格式化函数(换个值段仍成立)`
         + ` → 按 (段, 说明符) 登记进 ${L5_EXEMPTIONS_REL} 并写明理由;`
         + `② 本段真的执行别层实现并对它的行为下断言 → 那是被测对象的一部分,`
         + `把该段搬进 test/behavior/ 并在段内写 covers(声明它横跨哪几层);`
-        + `③ 主体判错了层 → 搬进真正被测的那一层`;
-      if (L5_PENDING) info.push(message);
-      else problems.push(message);
+        + `③ 主体判错了层 → 搬进真正被测的那一层`,
+      );
     }
   }
 
@@ -655,7 +829,8 @@ export function checkTestLayout(base = {}) {
   for (const [key, entry] of l5ByKey) {
     if (l5HitKeys.has(key)) continue;
     stats.l5StaleExemptions += 1;
-    problems.push(
+    report(
+      "l5-exemption-stale",
       `${entry.segment} → l5-exemption-stale:豁免表登记了 (${entry.specifier}),但本次扫描没有命中它`
       + " —— 代码删了或改名了,豁免必须同批删掉。留着它,表只会单调增长、"
       + "失效项永远占着位子(这正是 ratchet 要防的)",
@@ -663,8 +838,9 @@ export function checkTestLayout(base = {}) {
   }
 
   if (stats.segments < ctx.minScannedFiles) {
-    problems.push(
-      `scan-surface-collapsed:${TEST_REL}/ 下只扫到 ${stats.segments} 个段文件`
+    report(
+      "scan-surface-collapsed",
+      `${TEST_REL}/ → scan-surface-collapsed:${TEST_REL}/ 下只扫到 ${stats.segments} 个段文件`
       + `(下限 ${ctx.minScannedFiles})—— walker 可能已失效,而四族判据在零扫描面下会「全绿」`,
     );
   }
@@ -679,7 +855,8 @@ export function checkTestLayout(base = {}) {
   for (const name of actualDirs) {
     if (expectedSet.has(name)) continue;
     stats.l7Extra += 1;
-    problems.push(
+    report(
+      "test-top-dirs-exact",
       `${TEST_REL}/${name} → test-top-dirs-exact:${TEST_REL}/ 顶层多出目录「${name}/」`
       + ` —— 顶层目录集合必须恰好等于镜像源派生集(${mirror.srcLayers.join("/")} + 顶层树 `
       + `${mirror.topTrees.join("/")})∪{${NON_MIRROR_TOP_DIRS.join(", ")}}。`
@@ -689,7 +866,8 @@ export function checkTestLayout(base = {}) {
   for (const name of expectedDirs) {
     if (actualSet.has(name)) continue;
     stats.l7Missing += 1;
-    problems.push(
+    report(
+      "test-top-dirs-exact",
       `${TEST_REL}/${name} → test-top-dirs-exact:${TEST_REL}/ 顶层缺目录「${name}/」`
       + ` —— 少一个与多一个同样是集合不等的两档:派生集里有的层必须有自己的段目录,`
       + "否则该层的段会散在别处,而「一段对应一层」的不变量无从核对",
@@ -723,7 +901,8 @@ export function checkTestLayout(base = {}) {
       // 强制所有段写声明会把「没写」与「写了但撒谎」混成同一档,反而降低判据的分辨率。
       if (!isBehavior) continue;
       stats.l6Violations += 1;
-      problems.push(
+      report(
+        "behavior-covers-declared",
         `${file} → behavior-covers-declared:behavior 段未 export const covers`
         + " —— 它的定义就是横跨多层(位置不表达被测层),被测对象只能靠声明自证。"
         + "缺声明时「它到底测什么」无从核对,L6 与 L4 都失去抓手",
@@ -732,7 +911,8 @@ export function checkTestLayout(base = {}) {
     }
     if (declared.length === 0) {
       stats.l6Violations += 1;
-      problems.push(
+      report(
+        "behavior-covers-declared",
         `${file} → behavior-covers-declared:covers 是空数组`
         + " —— 空声明与缺声明在判据上等效:两者都没说清被测对象,却只有一种能判红",
       );
@@ -741,7 +921,8 @@ export function checkTestLayout(base = {}) {
     for (const element of declared) {
       if (ctx.fileExists(element)) continue;
       stats.l6Violations += 1;
-      problems.push(
+      report(
+        "behavior-covers-declared",
         `${file} → behavior-covers-declared:covers 元素「${element}」在磁盘上不存在`
         + " —— 元素是仓库相对 POSIX 路径,判据直接对磁盘核对。"
         + "这是本条唯一挡得住「随便写个字符串就过」的判据:声明里混进不存在的路径,"
@@ -776,7 +957,8 @@ export function checkTestLayout(base = {}) {
     const declared = extractCovers(ctx.readText(file));
     if (declared === null) {
       stats.l8Violations += 1;
-      problems.push(
+      report(
+        "test-harness-not-segment",
         `${file} → test-harness-not-segment:${HARNESS_DIR}/ 下的段未 export const covers`
           + ` —— ${HARNESS_DIR} 是**自指层**:测「测试框架自身」的段主体就在它下面`
           + `(如 \`${HARNESS_ROOT}runner.js\`),位置即被测层。不声明就没有任何东西能核对`
@@ -788,7 +970,8 @@ export function checkTestLayout(base = {}) {
     }
     if (declared.length === 0) {
       stats.l8Violations += 1;
-      problems.push(
+      report(
+        "test-harness-not-segment",
         `${file} → test-harness-not-segment:${HARNESS_DIR}/ 下的段 covers 是空数组`
           + " —— 空声明与缺声明在判据上等效:两者都没说清被测对象,却只有一种能判红",
       );
@@ -796,7 +979,8 @@ export function checkTestLayout(base = {}) {
     }
     if (!declared.some((element) => element.startsWith(HARNESS_ROOT))) {
       stats.l8Violations += 1;
-      problems.push(
+      report(
+        "test-harness-not-segment",
         `${file} → test-harness-not-segment:${HARNESS_DIR}/ 下的段 covers 没有元素指向本层`
           + `(要求至少一个元素以 \`${HARNESS_ROOT}\` 开头,实际 ${declared.join(", ")})`
           + " —— 自指层的段必须真的在测测试框架自身;声明别处的主体会让本条开口子变成"
@@ -809,7 +993,11 @@ export function checkTestLayout(base = {}) {
 }
 
 /**
- * CLI 主体:读盘 → 判定 → 打印 → 按 `--enforce` 出 0/1(判定逻辑全在 checkTestLayout 里)。
+ * CLI 主体:读盘 → 判定 → 打印 → 按 `problems` 出 0/1(判定逻辑全在 checkTestLayout 里)。
+ *
+ * ⚠ **没有 `--enforce`,也没有任何「只报告不拦」的开关**。该开关一旦存在,
+ * 「哪些族进哪档」的知识就同时存在于登记表与命令行两处 —— 又一处可漂移的副本,
+ * 而命令行那一处还是运行期可变的那一处。强制等级只由 `CRITERIA` 声明。
  * @param {string[]} [argv] 参数数组
  * @returns {number} 退出码
  */
@@ -828,8 +1016,8 @@ function writeL5ExemptionsBaseline() {
   const { info, stats } = checkTestLayout();
   /** @type {Map<string, {segment: string, specifier: string}>} */
   const hits = new Map();
-  // 未登记的跨层命中在 L5_PENDING=true 时进 info 通道;转判红后它们进 problems。
-  // 两个通道都扫,否则这个入口在转判红那天就生成不出东西。
+  // 未登记的跨层命中进哪一档由 CRITERIA 决定。两个通道都扫,否则一旦该族在登记表里
+  // 换了档,这个生成入口就生成不出东西 —— 而那正是它最需要工作的那一天。
   for (const line of [...info, ...checkTestLayout().problems]) {
     const m = /^(\S+) → test-layer-cross-import:.*层的主体 \(([^)]+)\)/.exec(line);
     if (m === null) continue;
@@ -849,7 +1037,7 @@ export function main(argv = []) {
   /** @type {Record<string, string | boolean>} */
   let options;
   try {
-    options = parseArgs(argv, { booleans: ["enforce", "help", "write-l5-exemptions"], usage: USAGE });
+    options = parseArgs(argv, { booleans: ["help", "write-l5-exemptions"], usage: USAGE });
   } catch (error) {
     // 未知参数一律失败:静默按默认跑一遍报绿就是「假通过」
     console.error(`[test-layout:fail] ${error instanceof Error ? error.message : String(error)}`);
@@ -859,18 +1047,23 @@ export function main(argv = []) {
     return writeL5ExemptionsBaseline();
   }
   if (options.help === true) {
+    // ⚠ 两个计数**由 CRITERIA 派生**,不写死:写死的数字在加一族/删一族那天会静默说谎,
+    // 而「还剩几族 report-only」正是待转正进度唯一的读数。
+    const failClosed = CRITERIA.length - CRITERIA.filter((entry) => entry.pending === true).length;
+    const reportOnly = CRITERIA.length - failClosed;
     console.log(
       [
         USAGE,
-        "  --enforce  把 L4 / L7 / L8 的判红项转成非零退出(默认只报告:ADR-064 的 T1 阶段这几族",
-        "            判据当前即红,一建就 fail-closed 会让它进不了 verify:ci;切换点见文件头)。",
-        `  ⚠ L5(test-layer-cross-import)恒报告:即便 --enforce 也不参与退出码(L5_PENDING = ${String(L5_PENDING)}),`,
-        "            因为它已知会误伤有意的跨层测试;切换点见文件头「L5 为什么恒报告」一节。",
+        "  --write-l5-exemptions  把当前未登记的跨层 import 写成豁免表基线(reason 留空待人工补)。",
+        "                        只写不判,绝不进 verify:ci。",
+        `  强制等级(由本文件 CRITERIA 派生):${failClosed} 族 fail-closed(命中即非零退出) /`
+        + ` ${reportOnly} 族 report-only(命中只报告,结构上不计退出码)。`,
+        "  ⚠ 没有 --enforce:命令行不能改变任何一族的强制等级,那是 fail-open 的口子。",
+        "    待转正的族数 = `grep -nE '^\\s*pending: true,$' gates/repo/check-test-layout.mjs` 的命中行数。",
       ].join("\n"),
     );
     return 0;
   }
-  const enforce = options.enforce === true;
   const { problems, info, stats, l5ExemptionCount } = checkTestLayout();
 
   const counts = [
@@ -879,8 +1072,9 @@ export function main(argv = []) {
     + `层内段 ${stats.layerSegments} / 共 ${stats.segments} 段)`,
     `L5 test-layer-cross-import 命中 ${stats.l5Hits} 处`
       + `(豁免 ${l5ExemptionCount} 条 / 未登记判红 ${stats.l5Unregistered} / 空 reason 判红 ${stats.l5ExemptionsEmptyReason}`
-      + ` / stale 判红 ${stats.l5StaleExemptions};${L5_PENDING ? "命中恒报告,不计退出码" : "命中已转判红"})`,
-    `L7 test-top-dirs-exact 多 ${stats.l7Extra} / 缺 ${stats.l7Missing}`,
+      + ` / stale 判红 ${stats.l5StaleExemptions})`,
+    `L7 test-top-dirs-exact 多 ${stats.l7Extra} / 缺 ${stats.l7Missing}`
+      + "(report-only:命中只报告,不计退出码)",
     `L6 behavior-covers-declared 判红 ${stats.l6Violations} 项`
       + `(behavior 段缺 covers / covers 为空 / covers 元素在磁盘上不存在;`
       + `covers 同时是正常段目录「零层 import」时的 L4 声明通道)`,
@@ -891,24 +1085,14 @@ export function main(argv = []) {
   for (const line of info) console.log(`[test-layout:pending] ${line}`);
 
   if (problems.length === 0) {
-    console.log(`[ok] test 布局四族判据通过${enforce ? "(--enforce)" : "(报告模式)"}:${counts}`);
+    console.log(`[ok] test 布局判据通过:${counts}`);
     return 0;
   }
 
-  const stream = enforce ? console.error : console.log;
-  const tag = enforce ? "fail" : "report";
-  for (const problem of problems) stream(`[test-layout:${tag}] ${problem}`);
-  if (!enforce) {
-    console.log(
-      `[report] test 布局四族判据当前判红 ${problems.length} 项,未转成非零退出(报告模式):${counts}。`
-      + `点名文件:${named.join(", ")}。加 --enforce 即 fail-closed(ADR-064 的 T1 节奏:`
-      + "T1 只建判据不搬文件,T2/T3 搬完并写 covers 后才把 --enforce 固化进 verify:ci)",
-    );
-    return 0;
-  }
+  for (const problem of problems) console.error(`[test-layout:fail] ${problem}`);
   console.error(
-    `[test-layout:fail] test 布局四族判据不成立,共 ${problems.length} 项:${counts}`
-    + `(L5 的 ${stats.l5Hits} 处恒报告,不在本计数内)`,
+    `[test-layout:fail] test 布局判据不成立,共 ${problems.length} 项:${counts}。`
+    + `点名文件:${named.join(", ")}。`,
   );
   return 1;
 }

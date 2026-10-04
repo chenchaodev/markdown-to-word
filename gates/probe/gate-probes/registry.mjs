@@ -839,16 +839,33 @@ export const GATE_REGISTRY = Object.freeze(
       judgmentNote:
         "判定本体是可注入纯函数(读文本 / 列目录 / 扫描面下限全经 ctx),CLI 的 main() 只打印 + 出 0/1。"
         + "⚠ 指针取 checkTestLayout(判定)而不是 collectTestFiles(遍历)或 extractImports(抽取):"
-        + "四族判据与扫描面下界全在前者里,后两者是它的内部两档。"
-        + "⚠ 返回分**两个通道**:problems(参与退出码)与 info(**恒不参与**,L5 的命中走这里)。"
-        + "这不是可选约定而是 L5 的节奏表达(ADR-064:L5 已知会误伤有意的跨层测试,T3 末才转判红),"
-        + "由模块常量 L5_PENDING 单点控制 —— 刻意**不是形参也不是 CLI 开关**,否则等于给了"
-        + "「从调用点把它摘出去」的口子。",
+        + "五族判据与扫描面下界全在前者里,后两者是它的内部两档。"
+        + "⚠ 返回分**两个通道**:problems(参与退出码)与 info(不参与)。哪一族进哪一档由判定本体"
+        + "内那张 CRITERIA 登记表决定(唯一分流出口 report(id,line);缺标记即 fail-closed),"
+        + "CLI 上**没有**任何开关能改变这一档。**不复述表里的状态** —— 状态会变,复述即漂移源。"
+        + "读它:`grep -nE '^\\s*pending: true,$' gates/repo/check-test-layout.mjs`(待转正族数)。",
       probes: [
         {
           kind: "selftest",
           ref: "gates/repo/check-test-layout.selftest.mjs",
-          why: "自检脚本在系统临时目录造合成仓根(含 src/ 与 test/)、靠 cwd 指夹具跑**仓内真门禁**(纯函数档直接 import 判定本体并注入 ctx),共 44 条夹具:①L4 零本层主体判红(核心格)+ 段 import 段判红 + 本层 dist 主体判绿 + type-only 的 src/ 类型引用判绿(产物不产 .d.ts,不得误判)②L5 跨层命中走 info 且诊断含「搬去 test/behavior/ 并写 covers」指引、同层判绿、type-only 跨层判绿、**只有 L5 违例时 --enforce 仍 exit 0** ③L7 多一个/少一个判红、恰好等于派生集判绿、**src/ 新增子目录后期望集合跟着变**(证明是派生不是登记)、只数目录不数文件 ④L8 harness 下有段判红、只有非段文件判绿 ⑤抽取层直测 import(\"…\") 的注释/代码两种形态各收一条且标记不同、副作用导入、文档串与模板串里的伪 import 不算引用 ⑥扫描面塌缩/根不存在/src 缺失三档判红;外加两条只读真实仓库的正向对照",
+          // 条数会随判据增减而变,故按全局 AGENTS.md §三.4 写取数命令而不是写死数值。
+          why: "自检脚本在系统临时目录造合成仓根(含 src/ 与 test/)、靠 cwd 指夹具跑**仓内真门禁**"
+            + "(纯函数档直接 import 判定本体并注入 ctx);夹具条数取 "
+            + "`node gates/repo/check-test-layout.selftest.mjs 2>&1 | tail -1` 的末句。"
+            + "覆盖面:①L4 零本层主体判红(核心格)+ 段 import 段判红 + 本层 dist 主体判绿 + "
+            + "type-only 的 src/ 类型引用判绿(产物不产 .d.ts,不得误判)②L5 跨层命中进 problems"
+            + "且诊断含「搬去 test/behavior/ 并写 covers」指引、同层判绿、type-only 跨层判绿、"
+            + "豁免表三条 fail-closed(未登记 / 空 reason / stale)与表项粒度 ③L7 多一个/少一个"
+            + "走 info 且**不计退出码**(report-only)、恰好等于派生集两通道皆空、"
+            + "**src/ 新增子目录后期望集合跟着变**(证明是派生不是登记)、只数目录不数文件 ④L8 "
+            + "自指层三条 fail-closed + 声明指向本层的反向锚点 ⑤CRITERIA 登记表三道"
+            + "「没有一族漏登记」的机械判红(结构层漏斗未登记即红 / 静态层源码 id 集合与登记表"
+            + "**双向**相等,含两个变异夹具证明有牙齿 / 语义层 pending 必带非空 reason)"
+            + "⑥抽取层直测 import(\"…\") 的注释/代码两种形态各收一条且标记不同、副作用导入、"
+            + "文档串与模板串里的伪 import 不算引用 ⑦扫描面塌缩/根不存在/src 缺失三档判红 "
+            + "⑧进程级:判红 exit 1、零判红 exit 0、**report-only 族 exit 0 与 fail-closed 族 "
+            + "exit 1 成对存在**、--help 的强制等级计数由表派生、--enforce 已不存在;外加两条"
+            + "只读真实仓库的正向对照",
         },
       ],
     },

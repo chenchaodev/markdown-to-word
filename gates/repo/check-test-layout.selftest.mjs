@@ -23,12 +23,13 @@
 // 因此 check:temp-cleanup 扫不到、也不该扫到它(该门禁刻意不扫 gates/:那里 rmSync 是被测语义)。
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ROOT } from "../../shared/paths.js";
 import {
   checkTestLayout,
+  CRITERIA,
   extractImports,
   MIN_SCANNED_FILES,
   NON_MIRROR_TOP_DIRS,
@@ -130,6 +131,7 @@ function writeUnder(root, rel, body) {
  * @param {object} [opts]
  * @param {number} [opts.minScannedFiles] 扫描面下限
  * @param {{segment: string, specifier: string, reason: string}[]} [opts.l5Exemptions] L5 豁免表(注入面)
+ * @param {{ id: string }[]} [opts.criteriaOverride] 判据登记表覆盖(⚠ 只允许删行,见下)
  * @returns {{ problems: string[], info: string[], stats: import("./check-test-layout.mjs").TestLayoutStats }}
  */
 function judge(extra, opts = {}) {
@@ -145,6 +147,11 @@ function judge(extra, opts = {}) {
       minScannedFiles: opts.minScannedFiles ?? 0,
       // l5Exemptions 注入:走 base 的注入面,不读真实数据文件 ⇒ 夹具与真实仓库互不影响
       l5Exemptions: opts.l5Exemptions ?? [],
+      // ⚠ 删行口是自检专用,且**只允许删行**。它必须永远是「拿掉一行让漏斗查不到」这一个方向 ——
+      // 一旦它能新增表项或加 `pending: true`,注入口就成了「可配置即假话」的后门:
+      // 自检夹具能调档 ⇒ 生产调用点也能调档 ⇒ fail-open。另两个方向由门禁的
+      // `resolveCriteria` 抛错挡住 —— 那是硬检查,不是这里的约定。
+      ...(opts.criteriaOverride === undefined ? {} : { criteriaOverride: opts.criteriaOverride }),
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -187,6 +194,39 @@ function runAt(cwd, args) {
   });
   return { code: result.status, output: `${result.stdout}${result.stderr}` };
 }
+
+/**
+ * `sourceAudit` 一档的判据:**读门禁本体源码**(不是夹具副本)抽出全部机器 id,与 `CRITERIA`
+ * 双向对账。
+ *
+ * ⚠ **这一格与门禁本体的行锚形态刻意耦合**,下一个人看到它红时**不要去「修」它**:
+ * 它靠「诊断行里出现 `→ <id>:`」这一个约定把源码里的判据族抽出来。改文案形状(把 id 挪走、
+ * 或 id 前不再有 ` → `)会让本档红 —— 那正是它的牙齿。真要改形状,就把本档与门禁一起改成
+ * 抽 `report("…")` 的第一个实参(两者等价,后者更不依赖文案),**不要两边各改一半**。
+ * 连带约束:门禁文件头提到某个 id 时不要写成 ` → <id>:` 的形状(会被当源码里的 id 抽出来)。
+ *
+ * 双向对账:第一向(源码有、表里没有)= 漏登记;第二向(表里有、源码已删)= **僵尸行** ——
+ * 后者会让门禁文件头那条 grep 进度锚的命中数说谎,而那正是「还剩几族待转正」的唯一读数。
+ * @returns {{ sourceOnly: string[], tableOnly: string[] }} 两向差集(都为空即平)
+ */
+function auditSourceCriteria(sourceOverride = undefined, tableOverride = undefined) {
+  const source = sourceOverride ?? readFileSync(checkerPath, "utf8");
+  const ids = new Set([...source.matchAll(/→\s*([a-z][a-z0-9-]*):/g)].map((m) => m[1] ?? ""));
+  const table = new Set((tableOverride ?? CRITERIA).map((entry) => entry.id));
+  return {
+    sourceOnly: [...ids].filter((id) => !table.has(id)).sort(),
+    tableOnly: [...table].filter((id) => !ids.has(id)).sort(),
+  };
+}
+
+/**
+ * report-only 族数:**由 `CRITERIA` 派生**,不写死。
+ *
+ * 写死的数字在加一族 / 删一族 / 转正一族那天会静默说谎,而「还剩几族待转正」
+ * 正是唯一进度读数(门禁文件头那条 grep 锚的命中数)。自检里凡是要断言这个数的地方
+ * 一律现算,让「数字不是手写的」这件事本身被钉住。
+ */
+const PENDING_ROWS = CRITERIA.filter((entry) => entry.pending === true).length;
 
 /**
  * 一个**本层主体齐备但另有一处跨层引用**的段。
@@ -560,13 +600,15 @@ const CASES = [
     expect: null,
   },
   {
-    name: "L5:跨层 import → 命中 info 通道,且诊断含「搬去 test/behavior/ 并写 covers」指引",
+    name: "L5:跨层 import → 命中且进 problems(转 fail-closed),诊断含「搬去 test/behavior/ 并写 covers」指引",
     judgeOnly: true,
     extra: {
       [`${TEST_REL}/core/heading-scale.test.js`]: crossLayerSegment("core", "../../dist/renderer/settings/settings-logic.js"),
     },
-    expectInfo: /test\/core\/heading-scale\.test\.js → test-layer-cross-import:core 层的段 import 了 renderer 层的主体[\s\S]*搬进 test\/behavior\/ 并在段内写 covers/,
-    expect: null,
+    // expectInfo: null —— **与 expect 互不替代**:本族已转 fail-closed,诊断只该出现在 problems;
+    // 若实现仍走 info,expect 会红而这一格是第二道(反之亦然)。两格都在才证明「只进 problems」。
+    expect: /test\/core\/heading-scale\.test\.js → test-layer-cross-import:core 层的段 import 了 renderer 层的主体[\s\S]*搬进 test\/behavior\/ 并在段内写 covers/,
+    expectInfo: null,
   },
   {
     // 「代码里的 import("x") 是**运行期**动态 import,注释里的才是类型引用」这格的反向锚点。
@@ -583,19 +625,21 @@ const CASES = [
         + '  const other = await import("../../dist/renderer/settings/settings-logic.js");\n'
         + "  return [subject, other];\n}\n",
     },
-    expectInfo: /test\/core\/dynamic-cross\.test\.js → test-layer-cross-import:core 层的段 import 了 renderer 层的主体/,
-    expect: null,
+    expect: /test\/core\/dynamic-cross\.test\.js → test-layer-cross-import:core 层的段 import 了 renderer 层的主体/,
+    expectInfo: null,
   },
   {
-    // L5 恒报告的核心夹具:跨层命中**不进** problems/problems 为空 —— 它不是「轻判红」,
-    // 而是结构上与退出码无关(门禁文件头「L5 为什么恒报告」)。
-    name: "L5:跨层命中不进 problems(恒报告,连 --enforce 也不拦)",
+    // L5 转 fail-closed 的核心夹具:跨层命中**进 problems**,info 通道一条都没有。
+    // 它与上面两条合起来才是完整的「转正」证明:那两条钉诊断文案,这条钉**通道归属**。
+    // **原地由「恒报告」那一条反转而来**(不是删掉换一条新的):被反转的那一格一旦丢了,
+    // 「命中到底进哪一档」就只剩文案在钉 —— 而文案两个通道都会带着走,那种实现照样全绿。
+    name: "L5:跨层命中进 problems 且不进 info(转判红)",
     judgeOnly: true,
     extra: {
       [`${TEST_REL}/core/heading-scale.test.js`]: crossLayerSegment("core", "../../dist/renderer/settings/settings-logic.js"),
     },
-    expectInfo: /test-layer-cross-import/,
-    expect: null,
+    expect: /test-layer-cross-import/,
+    expectInfo: null,
   },
   {
     // type-only 的跨层引用不算跨层:编译期擦除,与 check-import-boundary 的 allowTypeOnly 同款取舍。
@@ -613,26 +657,33 @@ const CASES = [
     expectInfo: null,
     expect: null,
   },
-  // ---- L7 ----
+  // ---- L7(report-only 档:命中进 info,结构上不计退出码)----
+  // ⚠ 下面这一整族改的是**断言读哪条通道**:L7 在 CRITERIA 里带 `pending: true`,故命中走 info。
+  // 每条都同时钉「info 里有」与「problems 里没有」(`expect: null`),
+  // 只钉一侧的话「两通道都有」或「两通道都空」的实现能混过去。
   {
-    name: "L7:多一个杂物顶层目录 → 判红并点名",
+    name: "L7:多一个杂物顶层目录 → 报告并点名(info 通道,不计退出码)",
     judgeOnly: true,
     extra: { [`${TEST_REL}/misc/junk.test.js`]: NO_OWN_SUBJECT },
-    expect: /test\/misc → test-top-dirs-exact:test\/ 顶层多出目录「misc\/」/,
+    expectInfo: /test\/misc → test-top-dirs-exact:test\/ 顶层多出目录「misc\/」/,
+    expect: null,
   },
   {
-    name: "L7:少一个镜像源层目录 → 判红并点名",
+    name: "L7:少一个镜像源层目录 → 报告并点名(info 通道)",
     judgeOnly: true,
     // 判据本体不删目录(夹具只经 writeUnder 加文件),故少的那一层用「base 里去掉」表达:
     // 这里改为断言「派生集里 src/ 少一层时,该层被判缺」—— 用只读派生函数验更直接。
-    expect: /test-top-dirs-exact/,
+    expectInfo: /test-top-dirs-exact/,
     deriveMissing: true,
   },
   {
-    name: "L7:恰好等于派生集∪{behavior,harness} → 判绿(反向锚点)",
+    name: "L7:恰好等于派生集∪{behavior,harness} → 两通道皆空(反向锚点)",
     judgeOnly: true,
     extra: {},
     expect: null,
+    // ⚠ 本条转 report-only 后**必须补这一格**:否则 `expect: null` 会「因为错误的原因绿」——
+    // problems 为空不再是因为集合相等,而是因为 L7 的命中根本不进 problems。
+    expectInfo: null,
   },
   {
     // 「是派生不是登记」的唯一机械证据:src/ 多一个子目录 ⇒ 期望集合跟着多一层。
@@ -643,26 +694,31 @@ const CASES = [
       "src/pipeline/.gitkeep": "",
       [`${TEST_REL}/core/pad-new.test.js`]: wellFormedSegment("core"),
     },
-    expect: /test\/pipeline → test-top-dirs-exact:test\/ 顶层缺目录「pipeline\/」/,
+    expectInfo: /test\/pipeline → test-top-dirs-exact:test\/ 顶层缺目录「pipeline\/」/,
+    expect: null,
   },
   {
     // 上一条的对侧:新层一旦建出自己的段目录,集合就平了。少这一格则「判缺」可能是因为
     // 别的理由(比如只数了目录没看层),而不是真的在核对集合。
-    name: "L7:src/ 新增子目录且建出对应段目录 → 判绿(缺的那一档确实因建齐而消失)",
+    name: "L7:src/ 新增子目录且建出对应段目录 → 两通道皆空(缺的那一档确实因建齐而消失)",
     judgeOnly: true,
     extra: {
       "src/pipeline/.gitkeep": "",
       [`${TEST_REL}/pipeline/parse.test.js`]: wellFormedSegment("core").replaceAll("../../dist/core/", "../../dist/pipeline/"),
     },
     expect: null,
+    // ⚠ 同上:转 report-only 后必须补,否则这条会因「命中不进 problems」而继续绿。
+    expectInfo: null,
   },
   {
     // 反向锚点:顶层目录集合相等只数**目录**。test/acceptance.mjs 是段入口(已登记在注册表
     // TOOLCHAIN_FILES),把它计入即恒红 —— 与 check-import-boundary 的 analyzeSrcTopLayers 同取舍。
-    name: "L7:只数目录(顶层的 acceptance.mjs 不判红)",
+    name: "L7:只数目录(顶层的 acceptance.mjs 两通道都不出)",
     judgeOnly: true,
     extra: { [`${TEST_REL}/acceptance.mjs`]: "export const meta = {};\n" },
     expect: null,
+    // ⚠ 同上:这一格原本是「expect: null」的三条之一,转 report-only 后不补就会失去牙齿。
+    expectInfo: null,
   },
   {
     // 判据 id 自身也要钉住。**为什么单独一条**:上面那两条 L7 夹具的期望里写了
@@ -672,7 +728,8 @@ const CASES = [
     name: "L7 判据 id 逐字为 test-top-dirs-exact",
     judgeOnly: true,
     extra: { [`${TEST_REL}/misc/junk.test.js`]: NO_OWN_SUBJECT },
-    expect: /→ test-top-dirs-exact:/,
+    expectInfo: /→ test-top-dirs-exact:/,
+    expect: null,
   },
   // ---- L8 ----
   {
@@ -792,10 +849,10 @@ const CASES = [
     judgeOnly: true,
     extra: { [`${TEST_REL}/core/cross.test.js`]: crossLayerSegment("core", "../../dist/main/other.mjs") },
     l5Exemptions: [],
-    // L5_PENDING 仍为 true ⇒ 未登记命中走 **info** 通道(info 断言与 problems 断言互不替代,
-    // 见 runner 里那段注释)。转判红那一刻起它会改走 problems,届时这条夹具要改 expect。
-    expect: null,
-    expectInfo: /test\/core\/cross\.test\.js → test-layer-cross-import:.*未登记|test\/core\/cross\.test\.js → test-layer-cross-import:/,
+    // L5 已转 fail-closed ⇒ 未登记命中进 **problems**。expectInfo: null 是第二道:
+    // 只断 problems 的话,「两通道都进」的实现照样绿。
+    expect: /test\/core\/cross\.test\.js → test-layer-cross-import:core 层的段 import 了 main 层的主体 \(dist\/main\/other\.mjs\)/,
+    expectInfo: null,
   },
   {
     name: "L5 豁免表:登记且带 reason → 判绿(本层主体齐备的段 + 已登记的跨层)",
@@ -855,8 +912,8 @@ const CASES = [
     l5Exemptions: [
       { segment: `${TEST_REL}/core/cross.test.js`, specifier: "dist/main/one.mjs", reason: "夹具:one 的合法豁免" },
     ],
-    expect: null,
-    expectInfo: /test\/core\/cross\.test\.js → test-layer-cross-import:.*\(dist\/main\/other\.mjs\)/,
+    expect: /test\/core\/cross\.test\.js → test-layer-cross-import:.*\(dist\/main\/other\.mjs\)/,
+    expectInfo: null,
   },
   {
     name: "L5 豁免表:键名写错(缺 specifier)→ 表本身判红(跳过它等于给静默失效开口子)",
@@ -865,42 +922,119 @@ const CASES = [
     l5Exemptions: [{ segment: `${TEST_REL}/core/x.test.js`, reason: "没有 specifier 键" }],
     expect: /第 1 项缺 segment 或 specifier/,
   },
-  // ---- 进程级档:默认 vs --enforce 的退出码 ----
+  // ---- 判据登记表 CRITERIA:三道「没有一族漏登记」的机械判红 ----
+  //
+  // ① 结构层:漏斗查不到 id ⇒ 追加 `criteria-unregistered:<id>` 判红(下面两条夹具);
+  // ② 静态层:源码 id 集合 ⟷ CRITERIA 双向相等(下面 sourceAudit 一档);
+  // ③ 语义层:`pending: true` 必须带非空 `pendingReason`(下面那条)。
+  // 三者缺一:去掉①则漏登记一族只能靠②事后发现;去掉②则①只在运行到那一族时才生效;
+  // 去掉③则「挂个待办标记但说不出为什么」与「说得出为什么」在门禁上不可区分。
   {
-    name: "默认模式判红时仍 exit 0(报告模式)",
-    cli: true,
+    // ① 结构层:从登记表里摘掉 L4 那一行,再跑一棵 L4 红树 ⇒ 必须出现 criteria-unregistered。
+    //
+    // ⚠ 关于「exit 1」:本条是 judgeOnly 档(不 spawn),而漏斗删行口**刻意不进 CLI** ——
+    // 能从命令行换档就是 fail-open,那正是本次要拆掉的东西。所以 exit 1 不在这里断言,
+    // 而是**合成**出来的:`report` 把 unregistered 的诊断推进 `problems`,而
+    // `main()` 的退出码就是 `problems.length === 0 ? 0 : 1`(链路上由下面
+    // 「判红 ⇒ exit 1」那条 CLI 夹具钉住)。此处断言的是那个前提本身 —— 诊断进了 problems。
+    //
+    // 少这一格的话,「漏登记一族只能静默丢弃」无人发现:一族命中凭空消失,在门禁上表现为
+    // **更绿**而不是更红 —— 纯文本门禁最坏的失效形态。
+    name: "CRITERIA 漏登记:摘掉 L4 那行 ⇒ 该族命中既进 problems 也追加 criteria-unregistered",
+    judgeOnly: true,
     extra: { [`${TEST_REL}/core/runner-report.test.js`]: NO_OWN_SUBJECT },
-    expectCode: 0,
-    expect: /\[report\] test 布局四族判据当前判红 \d+ 项,未转成非零退出/,
+    // ⚠ 这个覆盖**只允许删行**。删行口是自检专用的单向口:若它能新增表项或加 `pending: true`,
+    // 注入口就成了「可配置即假话」的后门(自检能调档 ⇒ 生产也能调档 ⇒ fail-open)。
+    // 另两个方向由门禁的 `resolveCriteria` 抛错挡住,见那处注释。
+    criteriaOverride: CRITERIA.filter((entry) => entry.id !== "test-layer-self-hosted"),
+    expect: /criteria-unregistered:test-layer-self-hosted/,
+    // ⚠ 与 expect 互不替代:漏斗不能因为「查不到档」就把**原诊断**也吞了 ——
+    // 那才是真的让一族静默消失(只记一条登记表告警、命中本身不见)。
+    expectAlso: /runner-report\.test\.js → test-layer-self-hosted:该段解析后/,
   },
   {
-    name: "--enforce 与默认模式退出码不同(同一棵有判红的树:0 vs 1)",
+    // ① 的对侧:摘掉**没有任何命中**的那一行(L8)⇒ 不产生 criteria-unregistered。
+    // 少这一格的话,「漏斗查不到即判红」就变成了「查不到即恒红」——
+    // 那会逼人给登记表塞满永不命中的行,机制反而被绕过。
+    name: "CRITERIA 漏登记:摘掉没有任何命中的那行 ⇒ 不产生 criteria-unregistered",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/core/runner-report.test.js`]: NO_OWN_SUBJECT },
+    criteriaOverride: CRITERIA.filter((entry) => entry.id !== "test-harness-not-segment"),
+    expect: /runner-report\.test\.js → test-layer-self-hosted:该段解析后/,
+    expectAbsent: /criteria-unregistered:/,
+  },
+  {
+    // ⚠ 「缺标记即 fail-closed」的反锚点:不写 pending 的一律判红。
+    // 少这一格时,「查表失败 ⇒ 进 problems」这一半没人证明 —— 实现若把查不到直接 return,
+    // 上面两条也照样绿(它们只证「会记一条 criteria-unregistered」)。
+    // 本条用的就是**默认表**(没有 criteriaOverride),跑一棵树证明 L4 红在 problems 里。
+    name: "CRITERIA 默认 fail-closed:表里不带 pending 的一律判红",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/core/runner-report.test.js`]: NO_OWN_SUBJECT },
+    expect: /runner-report\.test\.js → test-layer-self-hosted:该段解析后/,
+    // 反向:report-only 那一族在同一棵树上真的没进 problems ⇒ 两个方向都在,才算「按表分流」。
+    expectAbsent: /test-top-dirs-exact/,
+  },
+  {
+    // ③ 语义层:`pending: true` 缺 `pendingReason` ⇒ 红(变异实验:删掉 L7 的 reason 即红)。
+    // 静态档直接读**导出的 CRITERIA**,不重跑判定 —— 这条断言的是「表本身」而非「某次运行」。
+    // ⚠ 只断「非空」不校验内容:理由是给人读的判断,门禁能机械判的只有「有没有写」。
+    name: "CRITERIA 语义:每个 pending: true 都带非空 pendingReason",
+    sourceAudit: true,
+  },
+  {
+    // ② 静态层的**变异证明**:往源码里塞一条**未登记**的判据族 ⇒ 本档立刻红。
+    // 本条不 spawn、不改真实文件:它在内存里把一份「源码副本」喂给同一个抽取器,
+    // 断言该副本被判为「源码有、表里没有」。缺这一格的话,「双向相等」可能只是
+    // 抽取器的正则写错了(抽不出任何 id ⇒ 两边都空 ⇒ 平)——那种实现下本体登记全错也不红。
+    name: "CRITERIA 静态层变异:源码多出一族未登记 ⇒ sourceAudit 判红(变异实验)",
+    sourceAuditMutation: true,
+  },
+  {
+    // ② 的第二向变异:表里多一行**源码已不再发出**的僵尸行 ⇒ 本档立刻红。
+    // 它守的是「进度 grep 锚的命中数不说谎」—— 僵尸行会让那行数虚高,
+    // 于是「还剩几族待转正」这个唯一读数开始骗人,而没人会去核对它。
+    name: "CRITERIA 静态层变异:表里多一行僵尸行 ⇒ sourceAudit 判红(变异实验)",
+    sourceAuditMutation: "zombie",
+  },
+  // ---- 进程级档:退出码与两通道的接线 ----
+  // ⚠ 这一族原先成对存在「默认档 exit 0 / --enforce exit 1」。`--enforce` 已删(不留兼容):
+  // 该开关一旦存在,「哪些族进哪档」的知识就同时存在于 CRITERIA 与命令行两处。
+  // 下面几条改为钉「判红即 exit 1」＋「report-only 族不改退出码」这一对新事实。
+  {
+    name: "判红 ⇒ exit 1(无开关:命令行不能改变任何一族的强制等级)",
     cli: true,
     extra: { [`${TEST_REL}/core/runner-report.test.js`]: NO_OWN_SUBJECT },
-    args: ["--enforce"],
     expectCode: 1,
     expect: /test\/core\/runner-report\.test\.js → test-layer-self-hosted/,
   },
   {
-    name: "--enforce 在无判红时仍 exit 0(反向锚点:证明上一条的红来自判红而非开关本身)",
+    name: "零判红 ⇒ exit 0(反向锚点:证明上一条的红来自判红本身)",
     cli: true,
     extra: {},
-    args: ["--enforce"],
     expectCode: 0,
-    expect: /\[ok\] test 布局四族判据通过\(--enforce\)/,
+    expect: /\[ok\] test 布局判据通过/,
   },
   {
-    // L5 恒报告的进程级证据:整棵树**只有** L5 命中,--enforce 仍必须 exit 0。
-    // 少了这一格,「L5 不参与退出码」只是纯函数档的约定,CLI 档接线错了无人发现。
-    // 段仍 import 本层主体(同 crossLayerSegment 的纪律),故这棵树真的只有 L5 一族红。
-    name: "L5:只有跨层违例时 --enforce 仍 exit 0(info 通道逐条打印)",
+    // ⚠ 本条与下一条**必须成对存在**:一条钉「report-only 族不改退出码」,一条钉
+    // 「fail-closed 族改退出码」。少了任一条,「L7 到底有没有真的只报告」就无人证明 ——
+    // 只断 exit 1 的话,「恒 exit 0」的旧实现也能全绿。
+    // 树里只有 L7 一族红(段在已登记的层内且本层主体齐备,故 L4/L5/L6/L8 都不命中)。
+    name: "report-only 族:整棵树只有 L7 命中 ⇒ exit 0,且诊断逐条打在 info 行上",
+    cli: true,
+    extra: { [`${TEST_REL}/misc/junk.test.js`]: NO_OWN_SUBJECT },
+    expectCode: 0,
+    expect: /\[test-layout:pending\] test\/misc → test-top-dirs-exact:test\/ 顶层多出目录「misc\/」/,
+  },
+  {
+    // 与上一条成对的 fail-closed 侧:同样只有一族红,但那一族已转判红 ⇒ exit 1。
+    name: "fail-closed 族:整棵树只有 L5 跨层命中 ⇒ exit 1(转判红的进程级证据)",
     cli: true,
     extra: {
       [`${TEST_REL}/core/heading-scale.test.js`]: crossLayerSegment("core", "../../dist/renderer/settings/settings-logic.js"),
     },
-    args: ["--enforce"],
-    expectCode: 0,
-    expect: /\[test-layout:pending\] test\/core\/heading-scale\.test\.js → test-layer-cross-import/,
+    expectCode: 1,
+    expect: /\[test-layout:fail\] test\/core\/heading-scale\.test\.js → test-layer-cross-import/,
   },
   {
     // 计数器的夹具:上面两条只钉住「缺目录」那条**诊断文案**,钉不住 `stats.l7Missing` 这个
@@ -913,36 +1047,50 @@ const CASES = [
     // 铺段),故删它不动扫描面,不会顺带引出「扫描面塌缩」那条无关判红 —— 那样这条夹具
     // 验的就变成两族判据的叠加,`l7Missing` 塌了也被别的原因顶住出口码。
     extra: {},
-    // 必须带 --enforce:默认档是报告模式,**有**判红也 exit 0(那是 ADR-064 的 T1 节奏本身)。
-    // 少了这个开关,本条会以 exit=0 失败,而失败原因是「档位选错」不是「l7Missing 没被钉住」。
-    args: ["--enforce"],
-    expectCode: 1,
+    // ⚠ L7 是 report-only ⇒ 这一格的退出码是 **0**:它验的是**计数与诊断**,不是退出码
+    // (退出码由上面那对成对夹具负责)。此前这里带 `--enforce` 拿 exit 1,开关删掉后必须改。
+    expectCode: 0,
     // `expect` 必须是真 regex:判据档用 `expect === null` 表示「零判红」,而本条在进程级档
-    // 里恰恰**有**一条判红(缺 shared/)。故这里钉它自己的那行诊断。
+    // 里恰恰**有**一条诊断(缺 shared/,打在 info 行上)。
     expect: /test\/shared → test-top-dirs-exact:test\/ 顶层缺目录「shared\/」/,
     expectCount: /L7 test-top-dirs-exact 多 0 \/ 缺 1/,
     removeTopDir: "shared",
   },
   {
-    name: "默认模式输出四族计数并点名判红文件(验收口径 ①②)",
+    name: "输出五族计数并点名判红文件(验收口径 ①②)",
     cli: true,
     extra: {
       [`${TEST_REL}/core/runner-report.test.js`]: NO_OWN_SUBJECT,
       [`${TEST_REL}/misc/junk.test.js`]: NO_OWN_SUBJECT,
     },
-    expectCode: 0,
+    // 树里 L4 与 L7 各一条:L4 已转 fail-closed ⇒ 整场 exit 1(L7 的那条只影响 info 通道)。
+    expectCode: 1,
     expect: /L4 test-layer-self-hosted 判红 1 项.*L5 test-layer-cross-import 命中 \d+ 处.*L7 test-top-dirs-exact 多 1 \/ 缺 0.*L8 test-harness-not-segment 判红 0 项.*点名文件:.*runner-report/s,
   },
   {
-    name: "--help 打印四族口径并 exit 0",
+    name: "--help 打印由登记表派生的强制等级计数并 exit 0",
     cli: true,
     extra: {},
     args: ["--help"],
     expectCode: 0,
-    expect: /L5\(test-layer-cross-import\)恒报告:即便 --enforce 也不参与退出码/,
+    // 两个数都由 CRITERIA 现算,**不写死条数**:加一族/删一族那天写死的数字会静默说谎,
+    // 而「还剩几族 report-only」正是待转正进度唯一的读数。
+    expect: new RegExp(
+      `强制等级\\(由本文件 CRITERIA 派生\\):${CRITERIA.length - PENDING_ROWS} 族 fail-closed`
+      + `.*${PENDING_ROWS} 族 report-only`,
+      "s",
+    ),
   },
   {
-    name: "未知参数(不得静默按报告模式跑一遍)",
+    name: "--enforce 已不存在(不得静默忽略未知参数)",
+    cli: true,
+    extra: {},
+    args: ["--enforce"],
+    expectCode: 1,
+    expect: /无法识别的选项:--enforce/,
+  },
+  {
+    name: "未知参数(不得静默按默认跑一遍)",
     cli: true,
     extra: {},
     args: ["--oops"],
@@ -950,24 +1098,22 @@ const CASES = [
     expect: /无法识别的选项:--oops/,
   },
   {
-    // 正向对照:真实仓库只被读。判红面是**当前事实**(T1 不搬任何文件),故断言写成
-    // 「四族计数自洽且退出码 0」而不是写死条数 —— 写死会在 T2/T3 搬完文件那天变成一条
-    // 自己把自己判红的夹具。
-    name: "真实仓库:默认模式 exit 0 且输出四族计数",
+    // 正向对照:真实仓库只被读。断言写成「计数自洽且退出码 0」而不是写死条数 ——
+    // 写死会在判据集合变动那天变成一条自己把自己判红的夹具。
+    name: "真实仓库:exit 0 且输出五族计数(L7 缺 1 走 info 通道,不计退出码)",
     realRepo: true,
     expectCode: 0,
     expect: /L4 test-layer-self-hosted 判红 \d+ 项.*L5 test-layer-cross-import 命中 \d+ 处.*L7 test-top-dirs-exact 多 \d+ \/ 缺 \d+.*L8 test-harness-not-segment 判红 \d+ 项/,
   },
   {
-    name: "真实仓库:--enforce exit 非零(L4 已零判红,余下是 L7 缺 tools/)且四族计数自洽",
+    name: "真实仓库:L4/L5/L6/L8 判红数自洽(自指层 + 声明通道 + 豁免表三件事任何一件回退都翻脸)",
     realRepo: true,
-    args: ["--enforce"],
-    expectCode: 1,
-    // T3 步 6 起 L4 的两格都归零(零本层主体 0 / 段 import 段 0)—— 这一条把它钉住:
-    // 「自指层 + 声明通道 + 数据抽离」三件事任何一件回退,这里立刻翻脸。
-    // 退出码仍是 1,因为 L7「缺 test/tools/」尚未处置(空目录,`discoverSurfaceDirs`
-    // 只把含测试源文件的目录算进实测面,登记空目录会让等式恒红)。
-    expect: /L4 test-layer-self-hosted 判红 0 项\(零本层主体 0 \/ 段 import 段 0/,
+    expectCode: 0,
+    // L4 的两格都归零(零本层主体 0 / 段 import 段 0)、L5 未登记/空 reason/stale 三档归零 ——
+    // 后三档正是「L5 凭什么能转正」那个裁决的机械证据;L5 命中数不为零是合法的
+    // (命中已登记在豁免表里且带非空 reason,豁免命中在判定本体里 continue、不产生 info 行)。
+    // 退出码是 0,因为 L7「缺 test/tools/」是 report-only 档(空目录,已裁决不建)。
+    expect: /L4 test-layer-self-hosted 判红 0 项\(零本层主体 0 \/ 段 import 段 0.*未登记判红 0 \/ 空 reason 判红 0 \/ stale 判红 0/s,
   },
 ];
 
@@ -975,6 +1121,67 @@ const CASES = [
 const failures = [];
 for (const testCase of CASES) {
   try {
+    if (testCase.sourceAuditMutation !== undefined) {
+      // 变异档:给同一个抽取器喂一份**改过的**源码/表,断言它**判红**。
+      // 为什么不 spawn 也不写文件:变异要证明的是「抽取器 + 对账逻辑有牙齿」,
+      // 而牙齿在逻辑上;真去改本体文件反而让自检变成一个会写工作树的脚本。
+      // 反过来说:如果这份变异**没有**判红,那本体上的那条正向断言就毫无意义 ——
+      // 「两向都空即平」的抽取器能让任意错登记全绿(见这条夹具的注释)。
+      const source = readFileSync(checkerPath, "utf8");
+      const zombie = testCase.sourceAuditMutation === "zombie";
+      const drift = zombie
+        ? auditSourceCriteria(source, [...CRITERIA, { id: "test-family-deleted-long-ago" }])
+        : auditSourceCriteria(
+          `${source}\n// 变异:多出一族未登记的判据\nconst _x = "y → test-new-family:某段命中";\n`,
+        );
+      const caught = zombie ? drift.tableOnly.length > 0 : drift.sourceOnly.length > 0;
+      if (caught) {
+        console.log(`[ok] test-layout-selftest:${testCase.name}(变异被拦截:${zombie ? "僵尸行" : "漏登记"})`);
+      } else {
+        failures.push(
+          `${testCase.name}:变异未被拦截(${zombie ? "僵尸行" : "漏登记"})⇒ 本档的抽取器没有牙齿`,
+        );
+      }
+      continue;
+    }
+    if (testCase.sourceAudit === true) {
+      // 静态档:读**门禁本体源码**,不 spawn、不碰夹具。它断两件事,各自独立可归因:
+      //   ① 源码 id 集合 ⟷ CRITERIA **双向**相等(第一向=漏登记,第二向=僵尸行);
+      //   ② 每个 `pending: true` 带非空 `pendingReason`(语义层)。
+      // ⚠ ① 与本体行锚形态**刻意耦合**(见 auditSourceCriteria 的注释),不要去「修」它。
+      // ⚠ ② 之所以只断「非空」而不校验理由内容:理由是给人读的判断,门禁能机械判的只有
+      // 「有没有写」—— 试图校验内容就变成门禁替人下结论,而那正是判据不该做的事。
+      const drift = auditSourceCriteria();
+      const noReason = CRITERIA
+        .filter((entry) => entry.pending === true && (entry.pendingReason ?? "").trim() === "")
+        .map((entry) => entry.id);
+      if (drift.sourceOnly.length > 0) {
+        failures.push(
+          `${testCase.name}:源码发出但 CRITERIA 未登记的 id:${drift.sourceOnly.join(", ")}`
+          + "(漏登记 ⇒ 那一族的强制等级无人负责;在 CRITERIA 里补一行,或确认该族已删、连 report 一起去)",
+        );
+        continue;
+      }
+      if (drift.tableOnly.length > 0) {
+        failures.push(
+          `${testCase.name}:CRITERIA 里有僵尸行(源码已不再发出):${drift.tableOnly.join(", ")}`
+          + "(僵尸行让门禁文件头那条 grep 进度锚的命中数说谎 —— 那正是「还剩几族待转正」的唯一读数)",
+        );
+        continue;
+      }
+      if (noReason.length > 0) {
+        failures.push(
+          `${testCase.name}:pending: true 但 pendingReason 为空的族:${noReason.join(", ")}`
+          + "(挂待办标记却说不出为什么,与说得清为什么在门禁上不可区分)",
+        );
+        continue;
+      }
+      console.log(
+        `[ok] test-layout-selftest:${testCase.name}`
+        + `(双向相等:${CRITERIA.length} 族 / report-only ${PENDING_ROWS} 族且每族都有 pendingReason)`,
+      );
+      continue;
+    }
     if (testCase.unit === true) {
       // 抽取层直测:断言条数与逐条 (spec, typeOnly, resolved),顺序按「值在前、注释型在后」
       // (实现里两半的收集顺序)。断条数是这一档的重点:多收一条(同一条被收两遍)在逐条比对里
@@ -1009,12 +1216,14 @@ for (const testCase of CASES) {
         const dir = createFixture({});
         try {
           rmSync(join(dir, ...`${TEST_REL}/renderer`.split("/")), { recursive: true, force: true });
-          const { problems } = checkTestLayout({ root: dir, minScannedFiles: 0 });
-          const joined = problems.join("\n");
+          const { problems, info } = checkTestLayout({ root: dir, minScannedFiles: 0 });
+          // L7 是 report-only 档 ⇒ 命中在 info 通道。读错通道的话这条会以「零判红」绿,
+          // 而它验的恰恰是「判缺那一档还在」—— 症状与根因隔着一个通道,最难归因。
+          const joined = `${problems.join("\n")}\n${info.join("\n")}`;
           if (/test\/renderer → test-top-dirs-exact:test\/ 顶层缺目录「renderer\/」/.test(joined)) {
             console.log(`[ok] test-layout-selftest:${testCase.name}(漂移被拦截)`);
           } else {
-            failures.push(`${testCase.name}:期望点名缺目录 renderer,实际\n${joined || "(零判红)"}`);
+            failures.push(`${testCase.name}:期望点名缺目录 renderer,实际\n${joined.trim() || "(两通道皆空)"}`);
           }
         } finally {
           rmSync(dir, { recursive: true, force: true });
@@ -1026,6 +1235,7 @@ for (const testCase of CASES) {
         missingRoot: testCase.missingRoot,
         skipSrc: testCase.skipSrc,
         l5Exemptions: testCase.l5Exemptions,
+        criteriaOverride: testCase.criteriaOverride,
       });
       const joined = problems.join("\n");
       const infoJoined = info.join("\n");
@@ -1059,6 +1269,15 @@ for (const testCase of CASES) {
         continue;
       }
       if (testCase.expect.test(joined)) {
+        // expectAlso 是**第二条必须同时成立**的正向断言,与 expect 互不替代:
+        // 「登记表里漏了一行」这一格只证「会记一条告警」,不证「原诊断还在」——
+        // 实现若把查不到档那一族的诊断一并吞掉,expect 照样绿(告警照样记)。
+        if (testCase.expectAlso !== undefined && !testCase.expectAlso.test(joined)) {
+          failures.push(
+            `${testCase.name}:期望 problems 同时匹配 ${testCase.expectAlso},实际\n${joined}`,
+          );
+          continue;
+        }
         console.log(`[ok] test-layout-selftest:${testCase.name}(漂移被拦截 / ${statsText})`);
       } else {
         failures.push(`${testCase.name}:期望判红项匹配 ${testCase.expect},实际\n${joined || "(零判红)"}`);
