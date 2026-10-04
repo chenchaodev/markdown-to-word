@@ -63,7 +63,10 @@
 | 2 ✅ | `test/fixtures/` → **仓库顶层** `samples/`（与 `test/` 平级） | 三子目录 **56 文件逐字节全等**（sha256 全表 ＋ 树哈希） | ✅ 已完成，L7 实测「多 **0**／缺 3」。⚠️ **代码引用 0 处**：230 处消费方全走 `shared/paths.js` 的 `FIXTURES_DIR` 常量，只改那一个常量即全生效；真正要改的是 4 处**绕过常量的硬编码路径**（`path.join(root,"test","fixtures",…)`）。`gates/fixtures`（生成器）**零逻辑改动**，其 `GENERATED_DOCS_DIR` 由常量派生、`IMAGE_DIGEST_BASELINE` 的键是无前缀相对路径 |
 | 3 ✅ | 镜像填充：`test/shared/`（2 段真搬）；**`test/tools/` 不建** | 8 个候选段里**只有 2 个该搬**；`test/gates/` 20→18 | ✅ 已完成，L7 实测「多 0／缺 **2**」。`entry-exit-guard` ＋ `geometry-gate` 搬进 `test/shared/`（零真实 import 改动，同深度故路径原样成立）。**L4 真改善**：零本层主体 37→36；**L5 60→58**；总判红 42→39 |
 | 3b | `test/tools/` **待有主体再来** | 全仓**无一个段的被测主体是 `tools/`** | ⏸ 唯一真 `tools/` import 是 `dist-manifest-gate` 的 `copy-renderer.mjs` 一行，而它 3 个被测脚本 2 个在 `gates/` ⇒ 镜像规则只对得上 1/3 |
-| 4 | `test/behavior/` 归位（L5 那 60 处跨层命中） | 60 处 / 36 段 | ⏸ |
+| 4a ✅ | **改挂**「目录名与被测层不符」的段（只动目录、不动断言、不写 `covers`） | 13 个候选**只 4 个真改挂** → `test/convert/`；L4 零本层主体 **36→32**、L5 **58→54**、总判红 40→36 | ✅ 已完成，134 段全绿。⚠️ **执行方先做了一层切分并纠正我**：36 个「零本层主体」里**只有 7 个有跨层直接 import**，另 **29 个是零层 import**（经 harness／子进程／字符串路径间接到达）⇒ 后者属 T1 已实测的「间接到达」组，**不在本步**。我给的 13 段清单里 **4 项与 L4 判红的真实原因不符**：`settings-controls`／`ui-contract-guards`（零静态层 import，运行时按路径加载）、`header-footer-settings`（经 harness 助手到达 main）、`ui-state`（**模板串动态 import 带 query string**，文本层抽取解析不了）—— 它们 L4 红**不是挂错层而是判据看不见主体**，搬目录不会转绿 |
+| 4b | 给 B 档建 **L5 豁免机制**（ratchet 式，对应 L1 豁免表） | 普查实测 B 档 **29 处 / 18 段** | ⏸ |
+| 4c | A 档搬 `test/behavior/` ＋ 建 **L6**（`covers` 判据）＋ `covers` 扩展到正常段目录 | A 档 **24 处 / 10 段** ＋ 4a 遗留 3 段 ＋ 29 段间接到达 | ⏸ |
+
 | 5 | L4 真违例 17 段归位 ＋「6 拆 3 合」 ＋ `M2W_ONLY` 段名与镜像路径**同批切** | 17 段 | ⏸ |
 
 **子步 1 的三条经验（换目录时最易踩的三类）**：① **同一文件里可能有多处独立登记**，只改已知的那处会让另一处的扫描面指向不存在的目录 ⇒ walker 扫到 0 文件 ⇒ **判据恒绿且不报任何错**（本次是 `shared/test-common-surface.js` 的 `NON_MIRROR_DIR_NAMES` ＋ `SCAN_TARGETS`，后者差点漏）。② **路径的形态比路径本身多**：分段数组 `join(dir, 'test', 'common')`、数组元素裸名 `"common"`、正则转义 `core/util/`、跨行写成 `test/common/`＋换行＋文件名 —— 前两类不在任何一种「子串」形态里，只有全量测试暴露。③ **合成夹具里的路径字面量有断言耦合**，不是可以顺手统一的；执行方改了 5 处后被迫回退。

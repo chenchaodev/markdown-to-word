@@ -25,7 +25,7 @@
  *
  * 刻意**不在本段碰 pdf**:pdf 的打印能力是宿主注入的(PRINT_PDF),纯 node 下缺省会
  * 明确报错(那是正确行为,不是缺陷),在这里断言它等于把「无宿主」当常态固化下来。
- * pdf 链路由 test/main/ 的段在 Electron 宿主下覆盖。
+ * pdf 链路由 test/convert/ 的段在 Electron 宿主下覆盖。
  *
  * 样例与产物全部放一次性临时目录(createTempResource 分配、removeTree 退避重试清理),
  * 不污染 output/artifacts。

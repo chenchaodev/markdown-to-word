@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 图片请求契约与缓存预算验收(位于 test/main/ = 主进程层;被测
+ * 图片请求契约与缓存预算验收(位于 test/convert/ = 镜像 src/convert 的段目录;被测
  * src/convert/image-downloader.ts,经 dist 直连,不起 Electron 窗口):
  * - 请求契约(request = signal/maxBytes/timeoutMs)在本地与外链两条路径都生效:
  *   maxBytes 超出即中止(本地 stat 预检 + 读后复核、http Content-Length 预检 +

@@ -266,7 +266,7 @@ export const ALLOWLIST = Object.freeze([
   },
   {
     id: 'artifact-commit-error-code-literals',
-    file: 'test/main/artifact-commit.test.js',
+    file: 'test/convert/artifact-commit.test.js',
     match: () => false,
     cold: true,
     why: 'L226-291 的 EPERM/EBUSY 是错误码字面量(硬链接原子提交失败分支的桩),不是删除动作。'

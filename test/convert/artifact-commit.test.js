@@ -1,6 +1,7 @@
 // @ts-check
 /**
- * 产物提交器验收(位于 test/main/;src/convert/artifact-writer.ts,
+ * 产物提交器验收(位于 test/convert/ = 镜像 src/convert 的段目录;被测
+ * src/convert/artifact-writer.ts,
  * 测试经 dist/convert/artifact-writer.js 直连,无 electron 环境要求):
  * 断言「选名与占位合并为独占提交」的完整契约(端到端转换链路的并发同名回归在
  * converter.test.js,本段只测提交器自身):
