@@ -94,7 +94,7 @@ export const COPY_SITE_WHITELIST = Object.freeze([
       + "副本落在夹具的 gates/repo/ 下,故它的仓内 import 也必须逐字节带一份。",
   },
   {
-    file: "test/core/clean-artifacts-gate.test.js",
+    file: "test/gates/clean-artifacts-gate.test.js",
     copies: Object.freeze([
       "gates/artifacts/clean-artifacts.mjs",
       "shared/paths.js",

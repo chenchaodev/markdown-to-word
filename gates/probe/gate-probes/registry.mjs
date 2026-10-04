@@ -447,7 +447,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/core/clean-artifacts-gate.test.js",
+          ref: "test/gates/clean-artifacts-gate.test.js",
           why: "验收段以进程级 CLI 语义逐条断言:合法目标预演/删除/幂等、连根 *.tsbuildinfo 只删同名普通文件、越界 target 与缺参一律非零且零删除、目标被占用时的错误码族,并用「只改 TARGET_DIRS 一行」的夹具触达 CLI 上不可触达的删除级守卫",
         },
       ],

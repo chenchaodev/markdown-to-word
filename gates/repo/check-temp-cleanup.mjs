@@ -230,7 +230,7 @@ export const ALLOWLIST = Object.freeze([
   },
   {
     id: 'clean-artifacts-occupied-fixture',
-    file: 'test/core/clean-artifacts-gate.test.js',
+    file: 'test/gates/clean-artifacts-gate.test.js',
     match: () => false,
     cold: true,
     why: 'L555-592 段**刻意**用 CWD 占用夹具复现「删不掉」:断言错误码属 EPERM/EBUSY/EACCES 族、'

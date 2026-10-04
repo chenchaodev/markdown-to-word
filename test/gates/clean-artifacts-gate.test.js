@@ -1,6 +1,7 @@
 // @ts-check
 /**
- * clean-artifacts 清理守卫段(位于 test/core/ = 跨域守护段;被测为
+ * clean-artifacts 清理守卫段(位于 test/gates/ = 本段自测 gates/artifacts/ 门禁自身;
+ * 被测为
  * gates/artifacts/clean-artifacts.mjs 的**进程级 CLI 语义**,纯 Node 子进程调用,不经 dist
  * 编译产物、不启 Electron、不触发 electron-builder):
  *
@@ -54,21 +55,15 @@ import { ROOT } from "../harness/paths.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 /**
- * 本段测哪一层:**不是 core**(见头注第一行「位于 test/core/ = 跨域守护段; 被测为
- * gates/artifacts/clean-artifacts.mjs 的**进程级 CLI 语义**」)。
+ * 本段测哪一层(ADR-062 L4 声明通道):**gates**。判据静态看不见它的原因与「跑不到」
+ * 无关:被测件**根本不在 import 图上** —— 段首把
+ * `gates/artifacts/clean-artifacts.mjs` `readFileSync` 成 `SCRIPT_SOURCE` 并算 SHA256,
+ * 再连同其相对 import 闭包复制进沙盒,由纯 node 子进程以 argv 执行。
  *
- * 被测主体是 `gates/artifacts/clean-artifacts.mjs` 的进程级 CLI 语义 —— 段首把它
- * `readFileSync` 成 `SCRIPT_SOURCE` 并算 SHA256,再连同其相对 import 闭包复制进沙盒,
- * 由纯 node 子进程执行。判据静态看不见它的原因与「跑不到」无关:被测件**根本不在
- * import 图上**(是子进程 argv + 磁盘副本)。
- *
- * ⚠ **本段位于 `test/core/` 是挂错层**:主体在 `gates/` 树,归宿应是 `test/gates/`
- * (该目录已存在,收 `gates/**` 门禁自身的段)。故此处声明的是**真实主体**
- * (`gates/artifacts/clean-artifacts.mjs`),**不是**任何 core 路径 —— 声明本层能让
- * L4 判绿,但那是撒谎。真实后果是:L4 仍判红(元素不落在 core 主体根 `src/core/` 或
- * `dist/core/` 下),而那正是**正确**的判红 —— 它准确表达「这一段住在错的层」。
- * 搬去 `test/gates/` 之后同一份声明即刻生效(gates 层主体根就是 `gates/`),无需再改。
- * 搬目录是 T3 后续步骤,不在本段授权范围。
+ * 本段此前住在 `test/core/`(挂错层:主体在 `gates/` 树),T3 步 5 已搬至 `test/gates/`。
+ * 搬完同一份声明即刻生效 —— gates 是顶层树,其主体根就是 `gates/`,声明元素正落在其下,
+ * 无需为搬家改过任何元素。`ROOT` 取 `process.cwd()`(见 shared/paths.js),与段所处目录
+ * 深度无关,故两条 `../harness/` import 在 `test/gates/` 下同样成立。
  */
 export const covers = ["gates/artifacts/clean-artifacts.mjs"];
 

@@ -31,6 +31,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
 import { createTempResource, removeTree } from "../harness/temp-resource.js";
 import {
@@ -51,19 +52,6 @@ import { TEMPLATE_PRESETS, presetSettingsPatch } from "../../dist/core/settings/
  */
 function assert(cond, msg) {
   if (!cond) throw new Error(`cli 断言失败:${msg}`);
-}
-
-/**
- * 解析**真 node** 可执行文件:验收入口跑在 Electron 里(process.execPath 是
- * electron.exe),故优先取 npm 注入的 node_execpath,再退回按名找 node。
- * 刻意不接受 electron.exe —— 用它就必须设 ELECTRON_RUN_AS_NODE,那就不是纯 node 了。
- * @returns {string}
- */
-export function resolveNode() {
-  for (const candidate of [process.env.npm_node_execpath, process.execPath]) {
-    if (candidate && /node(\.exe)?$/i.test(candidate)) return candidate;
-  }
-  return process.platform === "win32" ? "node.exe" : "node";
 }
 
 /**

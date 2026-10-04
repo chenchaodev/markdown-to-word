@@ -26,10 +26,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ROOT } from "../harness/paths.js";
+// node 解析器取全仓单一来源(原先本段 import 同目录的 options.test.js,那是**段 import 段**,
+// 与 check-test-layout.mjs 的 L4 冲突:段是发现与隔离的单位,段间 import 让失败不可归因
+// 且让被 import 的段双跑)。改由非段助手承载,单一来源这条纪律不变。
+import { resolveNode } from "../harness/node-exec.js";
 import { createTempResource, removeTree } from "../harness/temp-resource.js";
-// node 解析器复用同段 options.test.js 的那份:各写一份「怎么找真 node」正是本仓
-// 反复吃过亏的地方(退出码、temp 前缀、跨面契约都栽在「两处各写一遍」上)。
-import { resolveNode } from "./options.test.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**cli**,判据静态看不见本段的主体 ——
