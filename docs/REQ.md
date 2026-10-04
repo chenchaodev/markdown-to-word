@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-178 |
-| 下一个可用号 | REQ-179 |
+| 已用最大号 | REQ-179 |
+| 下一个可用号 | REQ-180 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -48,6 +48,7 @@
 | REQ-176 | 装机 PATH 的四条运行期分支未验 | 待拍板 | 装机 PATH 有四条分支至今只有编译期或推理证据:① 勾选框 UI 那条路(新开关只覆盖 /S,PathPageCreate / PathPageLeave 未真跑)② 卸载时用户改过 PATH 的 dropRecords 分支(两轮背靠背,碰不到)③ M2W_PATH_MAX 超长守卫 ④ WM_SETTINGCHANGE 的实际生效 —— 门禁只验注册表值,不验环境变量在真实会话里是否可见。 | 有人手测勾选框 UI、或构造得出超长 PATH 时 | docs/adr/ADR-063-装机PATH勾选支的显式开关.md |
 | REQ-177 | 门禁无「ADR 编号唯一」判据 | 待拍板 | docs/adr/ 下同时出现两个 ADR-062 时,check:docs 与整链都是绿的 —— 没有一条判据比对文件名前缀的编号唯一性。本轮真发生:并发会话占了 ADR-062,而另一条泳道照派活时拿到的过期号也写成了 062,重号静默通过直到人工 ls 才看见。载体编号是引用定位的依据,重号会让引用指向不明确。 | 下次改 ADR 编号分配或 docs 扫描面时 | gates/repo/check-pointers.mjs(载体形态判据) |
 | REQ-178 | 卸载残留检查抢跑在卸载器收尾之前 | 待拍板 | 卸载后的残留检查只等安装目录消失(:769 的 waitGone 只盯 installDir),紧接着就拍残留快照(:772)。而卸载器删目录与删注册表键、开始菜单快捷方式并非同一刻完成 ⇒ 第一轮(无等待余量)被判出 2 条残留并要求人工 reg delete,而独立复核时那两条早已消失。同一个卸载器二进制在第二轮零残留 ⇒ 门禁抢跑,不是卸载器缺陷。假阳性比没有检查更坏:它会训练人忽略这条判红。 | 下次改烟测的卸载后残留检查时 | gates/artifacts/check-install-smoke.mjs(:769 waitGone 只等 installDir · :772 collectRunResidue) |
+| REQ-179 | 发版纪律漏了 Release 由 workflow 建 | 待拍板 | tag 推送会触发 .github/workflows/release.yml,它的最后一步就是 gh release create —— Release 本该由它建,人只负责打 tag 与推送。本次手动建了 Release,workflow 撞「a release with the same tag name already exists」整条 run 变红(前面十几步全绿,含 verify:release)。仓库与全局发布纪律都没交代 Release 由谁建 ⇒ 下一个人会再踩。 | 下次发版前读 .github/workflows/release.yml;或改发布纪律时 | .github/workflows/release.yml(末步 gh release create) |
 
 ## 在办
 
