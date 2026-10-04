@@ -136,6 +136,10 @@
 | ② | **L11 定义改三档缺一即红** | 实测按字面执行会**当场判红 29 项**（有载体 13／无载体 29，其中 9 项就在 `verify:ci` 上） |
 | ③ | **同意 P6 的两段合并**（848 行） | 与 `ADR-062:202` 撤掉的那三份（1609 行）**不是同一批**；且这是 **1 主体合 1 段**（不变式要的形态），`:202` 撤的是 **3 主体合 1 段**＝制造偏宽 |
 | ④ | **`smoke` 的机制自测要补**（CI 多起一次 Electron） | 它是三个 ⛔ 阻塞项里唯一「不补就不能开始删除」的；P6 一旦开始删除就不可逆，那时沙盒层已没了、再想补依赖的正是它 |
+
+> ⚠️ **裁决 ④ 的前提已被实测推翻（2026-10-05）**：原写「CI 多起一次 Electron」，那是**主会话转述方案评审的未核实断言**。实测切入点定为 `gates/smoke/smoke-proc.mjs#collectSmokeProblems`（`:236-259`，**已 export 的纯函数**，入参 `{code,signal,timedOut,output,spawnError}` → `string[]`）⇒ **纯函数夹具零 Electron 增量**，比原预算更省。裁决本身（「机制自测要补」）**不变且仍成立**；变的只是代价估计。**留档防后人重犯**：这是本会话第三次「转述而未核实」被推翻（前两次：`ADR-062:216` 误引 · 「`build-fresh` 诊断含具体文件名」是假的）。
+
+> ⚠️ **裁决 ④ 的前提已被实测推翻（2026-10-05）**：原写「CI 多起一次 Electron」，那是**主会话转述方案评审的未核实断言**。实测切入点定为 `gates/smoke/smoke-proc.mjs#collectSmokeProblems`（`:236-259`，**已 export 的纯函数**，入参 `{code,signal,timedOut,output,spawnError}` → `string[]`）⇒ **纯函数夹具零 Electron 增量**，比原预算更省。裁决本身（「机制自测要补」）**不变且仍成立**；变的只是代价估计。**留档防后人重犯**：这是本会话第三次「转述而未核实」被推翻（前两次：`ADR-062:216` 误引 · 「`build-fresh` 诊断含具体文件名」是假的）。
 | ⑤ | **S5 改 `discoverSegments` 为递归**，段名前缀改相对 `test/` 的路径 | ⚠️ **原 S5 目标路径 `test/gates/repo/` 站不住**：`discoverSegments`（`test/harness/runner.js:181-196`）是 `readdir` **非递归**，而全仓 `test/` 下**零个二级目录** ⇒ 段永远不被发现、永远不跑，**且 L4/L5/L7 与豁免表全都看不见这个矛盾**（那几处的扫描面是递归的）⇒ 静默失效。选「段留一级」则违 ADR-062「位置即身份」的立论；选 `SEGMENT_DIRS` 增 `gates/repo` 则段名前缀只剩 basename（`repo/gate-index.test.js`），丢掉 `gates` 那层身份。 |
 | ⑥ | **S3 的注册表留 5 字段**，`modulePath` 与 `judgment.module` 不合一 | 实测两者语义不同：`docs` 那条 `modulePath` 指 `check-docs.mjs`（本体）而 `judgment.module` 指 `check-pointers.mjs`（判定体），注册表注释明写「指针必须指本体而不是转发层」⇒ 压成一个字段会让转发层门禁的指针语义被压缩。ADR-062 那句「≈140 行 / 4 字段」需同步订正。 |
 
