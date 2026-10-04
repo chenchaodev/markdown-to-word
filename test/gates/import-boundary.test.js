@@ -18,7 +18,9 @@
  *    node_modules 条目都归属某个生产依赖(devDependencies 的包不会被
  *    electron-builder 收进包,把它们算进生产依赖判定就是假绿)。
  * 2. 判定逻辑(直接 import 被测模块的纯函数 + CLI main()):真实 src/dist
- *    两侧均零 problem;沙盒负向夹具逐条制造漂移,断言非零退出 **且** 命中
+ *    两侧均零 problem;pending 规则命中归 info、不进 problems 的分流也在此钉住
+ *    (否则「零 problem」与「那几条规则被删了」不可区分);沙盒负向夹具逐条制造漂移,
+ *    断言非零退出 **且** 命中
  *    对应诊断(只断言退出码会让「因错误原因失败」蒙混过关);正向锚点证明
  *    夹具通路本身有效(否则负向用例可能只是「脚本跑不起来」)。
  * 3. 独立复核(测试内自带极简 import 抽取器,与被测实现无共享代码):直接从
@@ -39,6 +41,7 @@ import {
   HOST_PROVIDED_RUNTIME,
   LAYER_RULES,
   LAYER_TEXT_RULES,
+  PENDING_PREFIX,
   RESOURCE_ONLY_DEPENDENCIES,
   SRC_TOP_LAYERS,
   WINDOWS_ONLY_ENV_VARS,
@@ -270,6 +273,10 @@ export async function run() {
     }
 
     // ================= 2. 判定逻辑:真实 src / dist 双侧零 problem =================
+    // 「零 problem」的含义要说清:非 pending 判据当前零命中;带 `pending: true` 的那几条
+    // (T0 新建、待 T2 转判红)命中归入 info、不进 problems,故它们当前有命中也不影响本断言。
+    // 下面两行断言把这个分流本身钉住 —— 否则「零 problem」与「那几条规则被删了」在断言上
+    // 不可区分(两者都表现为 problems 为空),等于给恒绿开了口子。
     {
       const srcResult = analyze(SRC_DIR, PKG, FLAVORS.src);
       assert(
@@ -288,7 +295,42 @@ export async function run() {
         distResult.problems.length === 0,
         `dist 产物侧应零 problem,实际 ${distResult.problems.length} 项:${distResult.problems.slice(0, 5).join(" | ")}`,
       );
-      console.log("[ok] import-boundary:真实 src 与 dist 产物双侧零 problem");
+
+      // 分流断言(守的是「pending 只报告不判红」这个机制本身):
+      // ① 带 pending 标记的规则一张都不能混进 problems —— T2 逐条删标记后本断言持续成立,
+      //    因为删完标记的前提就是那些边已搬走、真代码零命中;
+      // ② info 里的 pending 行必须带前缀 —— 「静默放过」与「漏判」在退出码上都表现为 0,
+      //    只有把这批命中显式说出来才区分得开,故前缀不可省。
+      const pendingIds = [...LAYER_RULES, ...LAYER_TEXT_RULES]
+        .filter((r) => r.pending === true)
+        .map((r) => r.id);
+      for (const [label, result] of [["src", srcResult], ["dist", distResult]]) {
+        const leaked = result.problems.filter((line) =>
+          pendingIds.some((id) => line.includes(`层向规则 ${id}`)),
+        );
+        assert(
+          leaked.length === 0,
+          `${label} 侧:pending 规则的命中不得进 problems(它只报告不判红),实际混入 ${leaked.length} 项:${leaked.slice(0, 3).join(" | ")}`,
+        );
+        const pendingLines = result.info.filter((line) => line.startsWith(PENDING_PREFIX));
+        assert(
+          pendingLines.every((line) => pendingIds.some((id) => line.includes(`层向规则 ${id}`))),
+          `info 里的 [pending] 行必须点名某条 pending 规则:${pendingLines.filter((line) => !pendingIds.some((id) => line.includes(`层向规则 ${id}`))).join(" | ")}`,
+        );
+      }
+      // pending 命中数按规则 id 可见(门禁输出另有汇总是同一份数据的 CLI 面表现)
+      assert(
+        srcResult.pendingHits instanceof Map,
+        "analyze 应返回 pendingHits(Map<规则 id, 命中处数>),pending 命中数才可被逐条报出",
+      );
+      for (const [id, count] of srcResult.pendingHits) {
+        assert(pendingIds.includes(id), `pendingHits 里的 ${id} 不在带 pending 标记的规则表中`);
+        assert(Number.isInteger(count) && count > 0, `${id} 的 pending 命中数应为正整数,实际 ${String(count)}`);
+      }
+      console.log(
+        "[ok] import-boundary:真实 src 与 dist 产物双侧零 problem"
+          + `(pending 规则命中归 info、不进 problems;当前 src 侧 ${srcResult.pendingHits.size} 条 pending 规则有命中)`,
+      );
     }
 
     // ================= 3. 独立复核:测试自带抽取器重算逐条层向不变量 =================
@@ -1432,10 +1474,17 @@ export async function run() {
       }
 
       // 10c-2. 形态选择的机械证据:layer:.. 按**解析结果**判,prefix:../../ 按**字面前缀**判。
-      // 同一段源码(`../../core/x` 从 convert/sub/ 出发,解析后落在 src/core/,是合法的),
-      // 在 convert 下判绿 —— 换成 prefix: 形态的 cli(既有 faces-no-outside-src)则判红。
-      // 这条断言是 convert-no-outside-src 选 layer:.. 的**理由本身**;若将来有人
-      // 把它改回 prefix:../../,本条会先红,而不是等到 convert 长出子目录那天误报真代码。
+      // 同一段源码(`../../core/x` 从 <层>/sub/ 出发,解析后落在 src/core/,是合法的),
+      // 在 convert 与 cli 两侧**都判绿**。
+      //
+      // ⚠ 这里原先断言的是「cli 侧判红」,那是 prefix:../../ 形态的**误报**被当成证据:
+      // faces-no-outside-src 与 smoke-no-outside-src 已改成 layer:..(ADR-064 结清的预登记债),
+      // 于是同一段合法的 `../../core/x` 不再被报出。**这正是那次改写的收益** ——
+      // 原来误报、现在不报,一个随目录生长而误报的判据是负资产。
+      // 本条现在的守护对象没变,只是极性翻转:它证明判据确实按**解析结果**而不是
+      // **字面前缀**判。若将来有人把 forbid 改回 prefix:../../,本条会先红(误报回来),
+      // 而不是等到 cli/mcp 长出子目录那天误报真代码。
+      // 10a 另有三条规则的 forbid 形态断言把「同形」这件事钉在表上,不依赖本条的运行结果。
       {
         const deep = createSandbox(PKG_BOTH, {
           "convert/sub/deep.ts": 'import { convert } from "../../core/convert.js";\nexport { convert };\n',
@@ -1446,16 +1495,38 @@ export async function run() {
           inConvert.code === 0,
           `convert/sub/ 里解析后落在 src/core 的 ../../core/ 是合法的,不得误报,实际 ${inConvert.code}:${inConvert.output}`,
         );
-        // 对照:同一段放到 cli/sub/ 下(prefix: 形态的 delivery-faces)判红
+        assert(
+          !inConvert.output.includes("[boundary:fail]"),
+          `convert/sub/ 的合法引用不得产生任何 fail 行:${inConvert.output}`,
+        );
+        // 同形对照:同一段放到 cli/sub/ 下同样判绿 —— prefix: 形态下它会被误报,layer: 形态下不报
         const asFace = createSandbox(PKG_BOTH, {
           "cli/sub/deep.ts": 'import { convert } from "../../core/convert.js";\nexport { convert };\n',
         });
         track(asFace.dir);
         const inFace = await runCli(["--src", asFace.srcDir, "--package", asFace.pkgPath]);
-        assertFailure(
-          inFace,
-          /cli\/sub\/deep\.ts:import「\.\.\/\.\.\/core\/convert\.js」违反层向规则 faces-no-outside-src/,
-          "对照:prefix: 形态在子目录里误报同一段合法引用",
+        assert(
+          inFace.code === 0,
+          `cli/sub/ 里解析后落在 src/core 的 ../../core/ 是合法的,layer: 形态不得误报`
+            + `(prefix:../../ 形态下它会被误报,那正是这次改写修掉的误报),实际 ${inFace.code}:${inFace.output}`,
+        );
+        assert(
+          !inFace.output.includes("[boundary:fail]"),
+          `cli/sub/ 的合法引用不得产生任何 fail 行:${inFace.output}`,
+        );
+      }
+
+      // 10c-3. 「逃出 src/」三条规则现已**同形**:一律 layer:..(按解析结果判、深度无关)。
+      // convert-no-outside-src 本来就是 layer:..;faces- / smoke- 两条已从 prefix:../../ 改写成
+      // layer:..(ADR-064 结清这笔预登记债)。这里把三处的 forbid 逐条钉住,理由与 10c-2 的
+      // 运行结果互补:10c-2 证明「layer: 形态不误报」,本条证明「三条都真的是 layer: 形态」——
+      // 只钉运行结果的话,有人把某一条悄悄改回 prefix:../../ 而那段源码恰好不在沙盒里,
+      // 断言是不会响的。
+      for (const id of ["convert-no-outside-src", "faces-no-outside-src", "smoke-no-outside-src"]) {
+        assert(
+          LAYER_RULES.find((r) => r.id === id)?.forbid === "layer:..",
+          `${id} 的 forbid 应是 layer:..(三条逃出 src/ 的判据现已同形;prefix:../../ 只在扁平单层目录里`
+            + `与它等价,目录一旦长出子目录,子目录里合法的 ../../core/x 会被误报)`,
         );
       }
 

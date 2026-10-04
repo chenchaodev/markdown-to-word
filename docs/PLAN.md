@@ -38,7 +38,7 @@
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | **T0.0** | 并入 REQ-170：给 `gates`/`shared`/`tools` 三棵非 program 树开 `no-undef`。**实测否决了 ADR 原定的 `tsconfig.gates.json` ＋ `checkJs` 方案**（1028 条噪声 vs 1 条），改判已写回 ADR-064 | ✅ 已提交 `51f80bb` |
-| **T0** | 建 src 侧判据，不搬文件：`check-src-layout.mjs`（`src-file-header` ＋ `src-no-duplicate-basename`）＋ `check-import-boundary.mjs` 加 4 条内部边界 ＋ 2 条文本判据 ＋ 结清 `prefix:../../` 债。**两条判据建时即红，故默认只报告、`--enforce` 才 fail-closed** | 🔄 两条泳道在跑 |
+| **T0** | 建 src 侧判据，不搬文件：`check-src-layout.mjs`（`src-file-header` 红 6 ＋ `src-no-duplicate-basename` 红 0/白名单 3 组）＋ `check-import-boundary.mjs` 加 4 条内部边界 ＋ 2 条文本判据 ＋ 结清 `prefix:../../` 债。**6 条新判据建时即红，故一律带 `pending: true`**（命中归 `info` 通道、不进 `problems`；T2 逐条删标记即转 fail-closed，**删标记本身就是进度记录**） | ✅ 已完成 |
 | **T1** | 建 `check-test-layout.mjs`，**只接 L4/L5/L7/L8**，report 模式。产出「位置错位 N 项」＝后续搬迁的权威工作量清单（替代 grep 估算） | ⏸ |
 | **T2** | `src/` 搬迁 5 步，每步自带测试 import 修（**步内不可分割、步间可独立回退**）。⚠️ **86 处 import 重写全部推到 T3**，与 T2 的重写永不交错 | ⏸ |
 | **T3** | 测试树搬迁：harness 归位（删 `test/common/paths.js` 的 86 处）＋ `samples/` 归位 ＋ 镜像填充 ＋ 6 拆 3 合 ＋ `behavior/` 归位。`M2W_ONLY` 段名与镜像路径**同批切** | ⏸ |

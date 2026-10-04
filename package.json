@@ -92,7 +92,8 @@
     "verify:release": "npm run verify:ci && npm run dist",
     "dist": "npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest && electron-builder --win nsis --x64 --publish never && npm run check:dist-manifest && npm run check:asar && npm run check:release && npm run check:signature && npm run check:unpacked-smoke",
     "check:copy-sites": "node gates/repo/check-copy-sites.mjs",
-    "check:copy-sites:selftest": "node gates/repo/check-copy-sites.selftest.mjs"
+    "check:copy-sites:selftest": "node gates/repo/check-copy-sites.selftest.mjs",
+    "check:src-layout": "node gates/repo/check-src-layout.mjs"
   },
   "build": {
     "appId": "com.markdown.tools.m2w",

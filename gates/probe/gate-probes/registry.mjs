@@ -731,6 +731,38 @@ export const GATE_REGISTRY = Object.freeze(
         },
       ],
     },
+    "src-layout": {
+      id: "src-layout",
+      title: "src 布局门禁(文件头注释 + 层内同名 basename)",
+      npmScripts: ["check:src-layout"],
+      command: "node gates/repo/check-src-layout.mjs",
+      modulePath: "gates/repo/check-src-layout.mjs",
+      // 仅本地手动,不是链上步骤:两族判据在 T0 建时**当前即红**(ADR-064 的 T0 阶段),
+      // 一建就 fail-closed 会让它当场进不了 verify:ci —— 门禁进不了链等于不存在,而
+      // 「链上少一道判据」对注册表是不可见的(本表只核链上/workflow 上的调用点)。
+      // 默认跑法是报告模式(退出码 0、只报两族计数);`--enforce` 才 fail-closed。
+      // 切换点见 gates/repo/check-src-layout.mjs 文件头「T0 只报告 → T2 转判红」一节。
+      access: "local",
+      judgment: {
+        module: "gates/repo/check-src-layout.mjs",
+        export: "checkSrcLayout",
+        shaped: "{ problems: string[], stats }",
+      },
+      judgmentNote:
+        "判定本体是可注入纯函数(读文本 / 列目录 / 白名单 / 扫描面下限全经 ctx),CLI 的 main() 只打印 + 出 0/1。"
+        + "白名单是**形参**而不是模块常量:这样自检脚本能在合成目录上先红后绿,而不需要"
+        + "「从命令行换一份白名单」的口子 —— 那本身就是一个 fail-open(能传白名单就能把自己摘出去)。"
+        + "白名单受三条 fail-closed 断言约束(未登记即红 / 登记项必须真的同名且同层 / 搬走了即死登记判红),"
+        + "所以它不会退化成「同名一律放行」。⚠ 指针取 checkSrcLayout(判定)而不是 collectSrcFiles"
+        + "(遍历):后者只列文件,两族判据与三条断言全在前者里。",
+      probes: [
+        {
+          kind: "selftest",
+          ref: "gates/repo/check-src-layout.selftest.mjs",
+          why: "自检脚本在系统临时目录造合成 src/、靠 cwd 指夹具跑**仓内真门禁**(纯函数档直接 import 判定本体并注入 ctx),逐条断言:①首行不是 /** 注释块判红并点名路径与行号(含单星注释、shebang 之后那一行两个变体)②合法首行判绿 ③同层两个非 index 同名文件判红并点名两个完整路径 ④白名单只放行登记过的那三组对位实现、第四组未登记的同名仍判红 ⑤index 豁免与跨顶层目录同名均判绿 ⑥白名单缺 why / 路径搬走 / basename 不对名三条形态各自判红 ⑦扫描面塌缩判红 ⑧默认模式与 --enforce 的退出码不同(0 vs 1,且 --enforce 在无判红时仍 0)⑨未知参数判红;外加一条只读真实仓库的正向对照",
+        },
+      ],
+    },
     "dual-matrix": {
       id: "dual-matrix",
       title: "双管线矩阵键覆盖登记门禁",

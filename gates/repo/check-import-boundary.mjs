@@ -15,6 +15,8 @@
 //      机械断言,替代「靠 code review 记住」的约定。层向规则本身是 deny-list,
 //      故另配 allow-list:`src/` 顶层目录必须登记在 SRC_TOP_LAYERS(ADR-060 后果 3),
 //      否则新树不命中任何规则、其反向依赖静默放行。
+//      另含 core 内部的**目录准入**判据(markdown / image / pipeline / util / i18n 五个
+//      子目录):它们钉的是「某条边不存在」而非方向,理由见 LAYER_RULES 里那组规则的注释。
 //
 // 判定输入是**源码文本**而非类型检查结果:门禁要在 tsc 之前跑,且要在
 // 「有人新写了一个 import」的最早时刻就红。正则抽取而非走 TS AST,理由同
@@ -30,6 +32,26 @@
 //
 // 源码子树(--src)与依赖声明(--package)分开指定:编译产物(dist/)与仓库根的
 // package.json 是一对,但两者不同层;合成一个根目录参数会逼着脚本去猜声明在哪。
+//
+// ---- 本阶段的 pending 机制:每条规则自带标记,而不是一个全局开关 ----
+//
+// T0 阶段新建的 6 条判据(4 条 core 目录准入 + 2 条层向文本判据)带 `pending: true`:
+// 它们照常参与扫描与计数,但命中归入 `info` 通道、**不进 `problems`**,故不影响退出码 ——
+// 门禁仍 exit 0,同时输出里逐条列出「哪几条 pending 规则当前命中几处」。
+// `analyze()` 的 `info` 语义:**只作提示、不参与 exit code 的诊断**(两种来源:
+// 未使用的依赖声明,以及 pending 规则的命中)。
+//
+// 为什么是**逐规则标记**而不是同批 check-src-layout.mjs 那种 `--enforce` 全局开关:
+// 全局开关一关就把既有层向规则的 fail-closed 语义一并改掉 —— 那是另一种改动,且与
+// 「既有判据本就已生效」在输出上无法区分。ADR-064 的节奏是「T0 只报告 → T2 逐条转判红」,
+// 逐条标记让 T2 的进度记录就是**删标记这个动作本身**:可 grep、可 review,
+// 「删掉哪一条」与「哪一条从何时开始判红」一一对应,不存在「开关一开全转红」的不可分性。
+// T2 核对进度的命令(行锚形态,避开下面对该标记的散文提及):
+//   grep -nE '^\s*pending: true,$' gates/repo/check-import-boundary.mjs
+//
+// ⚠ pending 不是永久豁免:pending 期间它的命中数不参与退出码,若长期命中而没人删标记,
+// 这条判据就退化成一次「枚举已知」。故 pending 规则**逐处**打印(可见 ≠ 可忽略):
+// 静默放过与漏判在退出码上都表现为 0,只有把命中显式说出来才区分得开。
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -48,6 +70,16 @@ export const FLAVORS = Object.freeze({
 });
 
 // ---- 规则表(单一来源;诊断文案与判定同处,避免两处漂移)----
+
+/**
+ * pending 规则命中在 `info` 里的行前缀(机制见文件头)。
+ *
+ * 为什么要有可辨识前缀:未使用声明那类 info 行是「事实陈述」,pending 命中是「已知违反、
+ * 本阶段放过」—— 两类混在同一通道里时,读者无法从一行字判断它是否参与退出码。
+ * 前缀让「哪些行是 pending」在输出上机器可 grep(`grep '^\[info\] boundary:\[pending\]'`),
+ * 也让「静默放过」这件事在任何一次 CI 日志里都留得下痕迹。
+ */
+export const PENDING_PREFIX = '[pending] ';
 
 /**
  * 宿主内建模块:由 Electron 运行时注入,不随包分发,因此只能是 devDependency。
@@ -141,9 +173,8 @@ export const LAYER_RULES = Object.freeze([
     // 一旦长出 convert/<子目录>/,那里的 `../../core/x` 是**合法**的(落在 src/core/),
     // prefix: 形态会把它判红 —— 一个随目录生长而误报的判据是负资产。
     // layer: 形态按解析结果判,深度无关,故此条用 layer:..(见 LAYER_RULES 表头的 forbid 语义)。
-    // ⚠ 与 faces-no-outside-src(仍是 prefix:../../)是**同一纪律的两种写法**,
-    //   差异只因该两面的目录形状与本层不同。本轮刻意不改它(超出范围且会牵动既有夹具),
-    //   两面的目录一旦长出子目录,应把那条也换成 layer:.. —— 记在代码里而不是文档里。
+    // faces-no-outside-src / smoke-no-outside-src 原是同一纪律的 prefix: 写法(那两面的目录
+    // 当时是扁平的,故 prefix: 恰好等价);ADR-064 已把那两条也换成 layer:..,三条现已同形态。
     forbid: 'layer:..',
     reason: 'convert 的编译产物随 dist/** 分发(build.files 只收 dist/**),凡解析后落在 src/ 之外的相对依赖'
       + '都已指向包外路径,解包后必然跑不起来;node_modules 资源的位置经入参传进来(ADR-060 后果 4),'
@@ -193,20 +224,28 @@ export const LAYER_RULES = Object.freeze([
   {
     id: 'faces-no-outside-src',
     scope: 'delivery-faces',
-    // 同样用 prefix: 形态而非 layer:(理由同 smoke-no-outside-src:resolveLayer 返回顶层
-    // 目录名,../../test/x 归一化后首段是「..」而非 test,layer: 抓不到向上逃逸)
-    forbid: 'prefix:../../',
+    // 用 layer:.. 而非 prefix:../../(与 convert-no-outside-src 同一选择,理由见那里的注释):
+    // 「逃出 src/」的语义是「解析后落在 src/ 之外」,而 prefix:../../ 表达的是「说明符字面以
+    // ../../ 开头」—— 两者只在 cli/mcp 是**扁平单层目录**时等价(实测 src/cli 与 src/mcp
+    // 现无子目录,故两种写法此刻同判)。两面一旦长出子目录,那里的 `../../core/x` 解析后落在
+    // src/core/、是**合法**的,prefix: 会把它判红 —— 一个随目录生长而误报的判据是负资产。
+    // layer: 按解析结果判、与文件深度无关。故本条已从 prefix: 换成 layer:(ADR-064 结清
+    // 这笔预登记债);此前注释里「本轮刻意不改 / 应把那条也换成 layer:..」的后续项已了结。
+    forbid: 'layer:..',
     reason: 'cli/mcp 的编译产物随 dist/** 分发(build.files 只收 dist/**),凡 ../../ 开头的相对依赖都已指向包外路径,' +
       '解包后必然跑不起来。与 smoke-no-outside-src 同一纪律:不得引用仓库相对路径、test/ 等不入包路径',
   },
   {
     id: 'smoke-no-outside-src',
     scope: 'smoke',
-    // 用既有的 prefix: 形态而非 layer:—— resolveLayer 是相对文件目录拼接、不锚定 src 根,
-    // 故 ../../test/x 归一化后首段是「..」而非「test」,layer: 形态抓不到向上逃逸。
-    // 而本规则的意图正是「不得逃出 src/」:smoke 编译产物在 dist/main/,凡 ../../ 开头
-    // 的依赖都已在包外(build.files 只收 dist/**),解包后必然跑不起来。
-    forbid: 'prefix:../../',
+    // 用 layer:.. 而非 prefix:../../(理由同 faces-no-outside-src 与 convert-no-outside-src):
+    // 本规则的意图是「不得逃出 src/」,即按**解析结果**判。prefix:../../ 表达的是「说明符字面
+    // 以 ../../ 开头」,两者只在 smoke 是扁平单层文件时等价;smoke 一旦搬进子目录
+    // (dist/main/ 之下),那里合法的 `../../core/x` 会被 prefix: 误报。
+    // resolveLayer 不锚定 src 根、只做「相对文件目录拼接 + 取首段」,故向上逃逸的说明符
+    // 归一化后首段恒为 `..` —— `layer:..` 恰好表达「解析后落在扫描根之外」,且与深度无关。
+    // 本条已从 prefix: 换成 layer:(ADR-064 结清这笔预登记债)。
+    forbid: 'layer:..',
     reason: '冒烟须能在打包产物里运行(build.files 只收 dist/**),smoke 不得逃出 src/(即不得引用仓库相对路径、test/ 等不入包路径);test 侧只做薄转调',
   },
   {
@@ -232,6 +271,66 @@ export const LAYER_RULES = Object.freeze([
     reason: 'core 的 pdf 渲染路径不做文件 IO:其两次读(图片路径边界的 realpathSync、'
       + 'KaTeX CSS 读取)经 RenderPdfHtmlOptions.fs 由 main 注入(REF-025 #07),'
       + '故 core/pdf/** 不得直接 import node:fs',
+  },
+  // 下面四条是 core 的**目录准入**判据(ADR-064)。它们与上面那些层向规则的性质不同,
+  // 故在此成组登记并共用一段理由 —— 那段理由是这组判据的成立前提,逐条抄一遍必然漂移:
+  //
+  // **为什么只钉「某条边不存在」而不钉方向**:实测 core/ 内部 9 个子目录的运行期依赖图
+  // 几乎是一片 DAG(docx 与 pdf 之间唯一一条边是 type-only,image/util/style/settings 是
+  // 叶子),唯一的运行期环是 markdown ⇄ pipeline,且成因是**一个文件放错目录**
+  // (ai-cleanup 是「解析之后的变换」,却住在 markdown/ 里)。既然图本身近乎无环,
+  // 「A 不得依赖 B」这种方向规则就为它并不存在的病开药 —— 每一加就红。对照 renderer/:
+  // 那边实测 5 对双向、47 条 feature 间边,所以那边才只能约束基础层(renderer-foundation)。
+  // 故这四条一律写成「这一条边**不存在**」:判据对象是**边是否存在**,不是边指向何处。
+  //
+  // 目录级边界为什么必须用 prefix: 形态:resolveLayer 只返回**顶层**目录名,core 内部的
+  // 目录级边界在 layer: 形态下与 core 自身的层不可区分(见 ruleHits 的 prefix: 注释)。
+  //
+  // 下面四条带 `pending: true`(见文件头的 pending 机制):本阶段它们只报告、不判红,
+  // T2 搬完文件后**逐条删掉该标记**即转 fail-closed —— 删标记这个动作就是 T2 的进度记录。
+  {
+    id: 'core-markdown-no-pipeline',
+    scope: 'core-markdown',
+    forbid: 'prefix:../pipeline/',
+    pending: true,
+    reason: 'core/markdown/ 只放 markdown 语义原语(slug / cross-ref / comment / 表格宽度 / '
+      + 'source-ranges 等),「解析之后」的那一步归 pipeline/。两者的唯一反向边是 '
+      + 'markdown/ai-cleanup.ts 对 pipeline/{frontmatter,parse} 的 2 条 import —— 它是'
+      + '解析之后的变换却住在 markdown/ 里,是 core 内唯一的运行期环;这条边不该存在,'
+      + '而不是「该换个方向」',
+  },
+  {
+    id: 'core-image-no-markdown',
+    scope: 'core-image',
+    forbid: 'prefix:../markdown/,../docx/,../pdf/',
+    pending: true,
+    reason: 'core/image/ 是图片这一份职责的归并处(解析、类型嗅探、尺寸、路径策略),'
+      + '它对 markdown / docx / pdf 三条边都不该存在:图片处理不依赖 markdown 语义、'
+      + '也不属于任何一条渲染管线。实测现无这三条边,故钉住的是**准入**而非现状描述',
+  },
+  {
+    id: 'core-pipeline-no-render',
+    scope: 'core-pipeline',
+    forbid: 'prefix:../docx/,../pdf/',
+    pending: true,
+    reason: 'core/pipeline/ 是解析与预检层,渲染由 docx / pdf 两条管线各自承担;'
+      + '解析层一旦引渲染层,「先解析后渲染」的单向次序就被倒过来,两条管线的共用地形'
+      + '会开始携带某一管线的形状。实测 pipeline 对 markdown / util / image 的边是设计意图,'
+      + '唯独对 docx / pdf 两条边不存在',
+  },
+  {
+    id: 'core-util-no-core',
+    scope: 'core-util',
+    // scope 与 id 都用目录现状名 util/(`core/text/` 尚未落地)。规则名指向一个不存在的
+    // 目录就是代码里的假话 —— 目录改名的同一批改动里把这两处一并改掉即可。
+    allowTypeOnly: true,
+    forbid: 'prefix:../',
+    pending: true,
+    reason: 'core/util/ 放的是与业务无关的文本与错误处理原语(编码探测、HTML 实体、'
+      + 'Error 归一),对 core 内其他目录的**值**依赖一条都不该有:原语一旦知道业务知识,'
+      + '它就再也不能被任何目录放心复用。type-only 边豁免(allowTypeOnly)—— 类型是'
+      + '编译期产物,实测 util/mdast-utils.ts 对 markdown/comment.js 的那条边正是 import type,'
+      + '运行期零依赖,豁免它不等于放过一条运行期边',
   },
 ]);
 
@@ -369,6 +468,19 @@ const WINDOWS_EXE_SPAWN_RE = new RegExp(
  * 是符号链接逃逸判定(ADR-012)的承重逻辑,见 CORE_NODE_BUILTIN_FILES 的注释 ——
  * 那类「为判定 Windows 形态而调用 Windows 语义」的正当用法在新层不存在,
  * 但在 core 存在,这也是本表按层而不是按全仓施加的原因)。
+ *
+ * **可选字段 `exceptFiles`**:逐文件豁免(去扩展名比较,故 .ts 源与 .js 产物同一份写法)。
+ * 为什么需要它:本表其余规则的 scope 是「一层职责类别」,判据对整个 scope 一律成立;
+ * 但 core/i18n/ 里 DOM 的使用面被刻意收在 dom.ts 一个文件里(ADR-064:core 内唯一碰
+ * DOM 的文件),判据若按 scope 一刀切,就会把「唯一该碰 DOM 的文件」也判红 —— 规则与它
+ * 要保护的不变量直接冲突。不开这个字段只有两条路:把 scope 缩到只剩 dom.ts(判据归零,
+ * 等于没有规则),或整条豁免 core/i18n/(同一条路的粗放版)。豁免是**逐文件**的、且必须
+ * 逐个列出:「除某文件外一律成立」一旦写成「某一类除外」,登记缺失就退化成静默放行。
+ *
+ * **可选字段 `pending`**(语义见文件头的 pending 机制):`pending: true` 的规则命中后归入
+ * `info`、不进 `problems`,本阶段只报告不判红;T2 搬完文件后逐条删掉该标记即转 fail-closed。
+ * 表内带标记的是 `core-i18n-dom-only` 与 `main-windows-no-up` 两条;`headless-*` 两条不带
+ * (它们建起即判红,那才是这批判据的常态形态)。
  */
 export const LAYER_TEXT_RULES = Object.freeze([
   {
@@ -413,6 +525,53 @@ export const LAYER_TEXT_RULES = Object.freeze([
       + '只在别的平台上静默走到错分支;两者的跨平台对应物都现成(os.homedir / os.tmpdir / '
       + 'node:child_process 跑平台都有的程序),故新层引入它们零成本地放弃跨平台',
   },
+  {
+    id: 'core-i18n-dom-only',
+    scope: 'core-i18n',
+    exceptFiles: Object.freeze(['core/i18n/dom.ts']),
+    pending: true,
+    patterns: Object.freeze([
+      {
+        id: 'dom-access',
+        label: '触碰宿主 DOM',
+        // 只认「取到 DOM 对象」与「在宿主树上查元素」两种形态:`document` / `window` 后面
+        // 跟成员访问,或直接出现 querySelectorAll。像 `typeof document === "undefined"`
+        // 这种**只读全局判存在**的写法不属本判据 —— 它恰是「本模块可能被 main 进程 import
+        // 而不触碰 DOM」的守卫写法(core/i18n.ts 现在就有一处),判红它等于逼人删掉守卫。
+        //
+        // querySelectorAll 只认词形、不要求紧跟 `(`:src 侧它带泛型实参(`querySelectorAll<T>(`),
+        // dist 侧泛型已被编译期擦除(`querySelectorAll(`)。若要求紧跟左括号,同一条违例在两侧
+        // 的命中数会不一样(实测 5 vs 9)—— 一条判据在 src / dist 两侧报出不同的数量,读者
+        // 无从判断哪边对。同一行报两次(document. 一次、querySelectorAll 一次)是有意的:
+        // 诊断点名的是**构造**而非行数,两条构造各自可读。
+        re: /\b(?:document|window)\s*\.\s*|\bquerySelectorAll\b/g,
+      },
+    ]),
+    reason: 'core/i18n/ 是与宿主无关的文案层:翻译表、语言状态、警告构造器三项都与 DOM 无关,'
+      + '只有 dom.ts 一个文件持有「把文案刷到宿主树上」这一份职责。DOM 一旦散进 t.ts / '
+      + 'index.ts / warning.ts,该层就被绑死在「只能在 renderer 里跑」上 —— 而 60 个消费方里'
+      + '有 main 进程那些(main import 本模块不触碰 DOM)。判据只钉「使用面存在且唯一」,'
+      + '不钉方向:core 内部依赖图实测近乎无环,方向规则会为它并不存在的病开药',
+  },
+  {
+    id: 'main-windows-no-up',
+    scope: 'main-windows',
+    pending: true,
+    patterns: Object.freeze([
+      {
+        id: 'up-to-menu',
+        label: '上跳引用菜单模块',
+        // 只认 `../menu.js` 这一条说明符前缀,不做更宽的上跳:main/windows/ 对 main 其余
+        // 目录(services / persist / ipc / converter)的边是正常调用,唯独 menu 是**反向**边
+        // —— 菜单定位窗口,窗口不该反过来知道菜单(ADR-064 把 about 窗从 menu 移进 windows/
+        // 正是为了让这条边单向)。故只钉这一条,不是「不得上跳」。
+        re: /from\s+['"]\.\.\/menu\.js['"]/g,
+      },
+    ]),
+    reason: 'main/windows/ 是窗口的持有方,菜单是它的调用方;反过来知道菜单,窗口就与「有哪些菜单项」'
+      + '这件 GUI 决策绑死(改菜单结构要动窗口)。与本表其余规则同一性质:钉的是这条边不存在,'
+      + '不是「windows 该往哪依赖」—— main/windows/ 对 services / persist / converter 的边是正常的',
+  },
 ]);
 
 /**
@@ -425,7 +584,7 @@ export const LAYER_TEXT_RULES = Object.freeze([
  * 纪律的来源而不是纪律的违反。
  * @param {string} text 源码文本
  * @param {string} file 文件相对 src/ 的 POSIX 路径(只用于 scope 匹配)
- * @returns {{ line: number, id: string, reason: string, what: string }[]} 命中项(按行号)
+ * @returns {{ line: number, id: string, reason: string, what: string, pending: boolean }[]} 命中项(按行号)
  */
 export function findTextLayerViolations(text, file) {
   const lexed = lexSource(text);
@@ -437,10 +596,14 @@ export function findTextLayerViolations(text, file) {
     }
     return line;
   };
-  /** @type {{ line: number, id: string, reason: string, what: string }[]} */
+  /** @type {{ line: number, id: string, reason: string, what: string, pending: boolean }[]} */
   const hits = [];
   for (const rule of LAYER_TEXT_RULES) {
     if (!scopeMatches(rule.scope, file)) continue;
+    // 逐文件豁免(可选字段,理由见 LAYER_TEXT_RULES 表头)。按去扩展名比较,故同一份
+    // exceptFiles 同时约束 src 的 .ts 源与 dist 的 .js 产物(同 isCoreBuiltinAllowed)。
+    // 放在 scope 匹配之后、patterns 之前:豁免的是**整个文件**,不是某几条形态。
+    if (rule.exceptFiles?.some((allowed) => stripExtension(allowed) === stripExtension(file))) continue;
     for (const pattern of rule.patterns) {
       // matchAll 走的是内部克隆的正则,不动共享字面量的 lastIndex(多个文件复用同一
       // 条 pattern 不会串味);直接用 .test() 会推进 lastIndex,故不用。
@@ -452,6 +615,9 @@ export function findTextLayerViolations(text, file) {
           id: rule.id,
           reason: rule.reason,
           what: `${pattern.label}「${m[0].trim()}」`,
+          // pending 随命中项一起带出(不读规则表第二遍):分流由 analyze() 决定
+          // 归 problems 还是 info,判据本体对两种分流一视同仁(见文件头 pending 机制)。
+          pending: rule.pending === true,
         });
       }
     }
@@ -894,6 +1060,22 @@ function scopeMatches(scope, file) {
   }
   // core 的 pdf 子树:scope 按 src 顶层目录匹配,故 core/pdf/** 需单列形态
   if (scope === 'core-pdf') return file.startsWith('core/pdf/');
+  // core 的其余内部子目录:与 core-pdf 同一形态(单列而非靠兜底分支),逐个写出而不是
+  // 用 `core-<名字>` 反推目录 —— 反推写法在名字与目录名不同构时会静默失配(恒绿),
+  // 而本表的形态收敛只省四行字面量。
+  if (scope === 'core-markdown') return file.startsWith('core/markdown/');
+  if (scope === 'core-image') return file.startsWith('core/image/');
+  if (scope === 'core-pipeline') return file.startsWith('core/pipeline/');
+  if (scope === 'core-util') return file.startsWith('core/util/');
+  // core/i18n 与别的 core 子目录**不同构**:目录化之前的现状是「文件 core/i18n.ts」与
+  // 「目录 core/i18n/」**两者并存**(前者待拆进后者)。scope 必须同时命中两者 ——
+  // 只命中一种,拆分完成那天判据会因文件换了位置而静默失效(恒绿),而恒绿的规则等于
+  // 没有规则。两侧形态都按去扩展名比较(同 preload / smoke 的先例),故 src 的 .ts 源与
+  // dist 的 .js 产物都命中。
+  if (scope === 'core-i18n') {
+    return file === 'core/i18n.ts' || file === 'core/i18n.js' || file.startsWith('core/i18n/');
+  }
+  if (scope === 'main-windows') return file.startsWith('main/windows/');
   // 两个进程外交付面(cli 与 mcp,ADR-060 步序 2/3 定的同层 adapter):一个 scope 命中
   // **两个** src 顶层目录。与 renderer-foundation 同一形态(单条规则约束一组目录),
   // 区别只在这里要表达的是「同层两棵 adapter 树的共同纪律」,故按前缀列表逐个命中,
@@ -928,8 +1110,7 @@ function ruleHits(rule, entry) {
     // 故 `layer:..` 表达「解析后落在扫描根之外」,且**与文件深度无关** ——
     // 这是它比 `prefix:../../` 强的地方(后者只在扁平单层目录里等价,
     // 目录一旦长出子目录,子目录里合法的 `../../core/x` 会被误报)。
-    // 既有 faces-no-outside-src / smoke-no-outside-src 仍用 prefix: 形态:
-    // 那两面当前是扁平目录,等价;见 convert-no-outside-src 的注释里的后续项。
+    // 「逃出 src/」这三条(convert / faces / smoke)现已一律用 layer:..。
     return layers.includes(resolveLayer(entry.file, entry.spec));
   }
   if (rule.forbid.startsWith('prefix:')) {
@@ -938,6 +1119,12 @@ function ruleHits(rule, entry) {
     // renderer),故 layer: 形态表达不了 renderer 内部的边 —— 要约束 renderer 内部的
     // 方向只能用相对说明符前缀,而一个方向往往要同时禁多个目标目录。
     if (entry.kind !== 'relative') return false;
+    // 可选的 type-only 豁免(allowTypeOnly):仅本形态支持,其余三条 forbid 分支不读该字段。
+    // 为什么只豁免 type-only 而不豁免整类说明符:词法层已经区分 import type(见
+    // isTypeOnlyClause 与 collectImports),豁免可以精确到「这一条边是编译期产物」。
+    // 豁免整类(如「凡带 type 说明符即放过」)会把值 import 一起放过,判据退化成
+    // 「这条边不存在」而非「这条运行期边不存在」—— 而运行期依赖图才是本规则的判据对象。
+    if (rule.allowTypeOnly === true && entry.typeOnly) return false;
     const prefixes = rule.forbid.slice('prefix:'.length).split(',').map((p) => p.trim()).filter(Boolean);
     return prefixes.some((p) => entry.spec.startsWith(p));
   }
@@ -954,8 +1141,17 @@ function ruleHits(rule, entry) {
 }
 
 /**
- * 边界判定。返回 { problems, info };info 只作提示(未使用声明),
- * 不参与 exit code。
+ * 边界判定。返回 { problems, info }。
+ *
+ * 两个通道的语义(判红的唯一依据是 `problems`,`info` 一律不参与 exit code):
+ *   - `problems`:非 pending 规则的命中 + 依赖声明差集 → 门禁判红;
+ *   - `info`    :两类只作提示的诊断 ——
+ *                 ① 未使用的依赖声明(仅 typeOnlyAware 形态下报,见下);
+ *                 ② **pending 规则的命中**:规则照常扫描、照常计数,但本阶段只报告。
+ * 两者都在 `main()` 里逐条打印,故「知道但暂时放过」与「漏判」在输出上可区分。
+ *
+ * 第三个返回值 `pendingHits`(Map<规则 id, 命中处数>)只服务于汇总是
+ * 「有 N 条 pending 规则当前命中 M 处」—— 两个数都要有,而 `info` 是给人读的逐条文案。
  * @param root 被扫描源码子树
  * @param pkg package.json 解析结果
  * @param options { extensions, cjs, typeOnlyAware }
@@ -969,6 +1165,13 @@ export function analyze(
   const info = [];
   const runtimeUsed = new Set();
   const typeOnlyUsed = new Set();
+  /**
+   * pending 规则的命中数:rule id → 处数。单独计一份而不从 info 里反解,
+   * 是因为汇总是「有 N 条 pending 规则当前命中 M 处」——两个数都得有,
+   * 而 info 是给人读的逐条文案,不是计数来源。
+   * @type {Map<string, number>}
+   */
+  const pendingHits = new Map();
 
   for (const { abs, file } of listSourceFiles(root, extensions)) {
     const text = readFileSync(abs, 'utf8');
@@ -985,9 +1188,13 @@ export function analyze(
     // 代价是每个文件读两次 —— 真实 src 侧 233 文件,门禁本身已在 3s 量级,
     // 换「少一次读」去动一条被测试消费的公开签名不划算。
     for (const hit of findTextLayerViolations(text, file)) {
-      problems.push(
-        `${file}:${hit.line} ${hit.what}违反层向规则 ${hit.id} —— ${hit.reason}`,
-      );
+      const line = `${file}:${hit.line} ${hit.what}违反层向规则 ${hit.id} —— ${hit.reason}`;
+      if (hit.pending) {
+        info.push(`${PENDING_PREFIX}${line}`);
+        pendingHits.set(hit.id, (pendingHits.get(hit.id) ?? 0) + 1);
+        continue;
+      }
+      problems.push(line);
     }
     for (const found of collectImports(abs, { cjs })) {
       const entry = { ...found, file };
@@ -1036,9 +1243,13 @@ export function analyze(
         if (!scopeMatches(rule.scope, file)) continue;
         if (!ruleHits(rule, entry)) continue;
         const kindText = entry.typeOnly ? 'type-only ' : '';
-        problems.push(
-          `${file}:${kindText}import「${entry.spec}」违反层向规则 ${rule.id} —— ${rule.reason}`,
-        );
+        const line = `${file}:${kindText}import「${entry.spec}」违反层向规则 ${rule.id} —— ${rule.reason}`;
+        if (rule.pending === true) {
+          info.push(`${PENDING_PREFIX}${line}`);
+          pendingHits.set(rule.id, (pendingHits.get(rule.id) ?? 0) + 1);
+          continue;
+        }
+        problems.push(line);
       }
     }
   }
@@ -1058,7 +1269,7 @@ export function analyze(
     }
   }
 
-  return { problems, info };
+  return { problems, info, pendingHits };
 }
 
 /**
@@ -1551,6 +1762,23 @@ export async function main(argv = []) {
     return 1;
   }
   for (const line of result.info) console.log(`[info] boundary:${line}`);
+  // pending 命中汇总:必须独立成行。逐处 info 行只在 info 非空时才有,而「零命中」与
+  // 「有命中但被静默吞掉」在那一处无从区分 —— 退出码两者都是 0,故这里显式报出
+  // 「有 N 条 pending 规则当前命中 M 处(不判红)」,让「知道但暂时放过」可见。
+  // 这行只在有命中时打:pending 规则当前干净时不必噪声,但也不靠它证明「零命中」
+  // (那条反向锚点由门禁内的自检与验收段各自独立承担)。
+  if (result.pendingHits.size > 0) {
+    const total = [...result.pendingHits.values()].reduce((sum, n) => sum + n, 0);
+    const detail = [...result.pendingHits.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([id, count]) => `${id} ${count} 处`)
+      .join('、');
+    console.log(
+      `[info] boundary:pending 规则当前命中 ${total} 处(共 ${result.pendingHits.size} 条规则:${detail})`
+        + '—— 本阶段只报告不判红(不进 problems、不参与退出码);'
+        + 'T2 搬完文件后逐条删掉对应规则的 `pending: true` 即转 fail-closed,删标记就是 T2 的进度记录',
+    );
+  }
   const allProblems = [...result.problems, ...rootComputeProblems, ...treeBoundaryProblems];
   if (allProblems.length > 0) {
     for (const problem of allProblems) console.error(`[boundary:fail] ${problem}`);
@@ -1569,6 +1797,9 @@ export async function main(argv = []) {
       + `smoke 不逃出 src/;`
       + `renderer 基础层(dom/state)不反向依赖功能目录;`
       + `core 的 pdf 渲染路径不 import node:fs(能力经入参注入);`
+      + `core 内部目录准入、core/i18n 的 DOM 使用面、main/windows 不上跳 menu`
+      + `—— 这六条判据带 pending 标记,本阶段只报告不判红(命中数见上方 pending 汇总行),`
+      + `T2 删掉标记即转 fail-closed;`
       + `新层(convert/cli/mcp)零 app.getPath / getAppPath 调用(判据 headless-no-app-getpath);`
       + `新层零 Windows 专属能力:环境变量清单 ${WINDOWS_ONLY_ENV_VARS.length} 项`
       + `(${WINDOWS_ONLY_ENV_VARS.join('/')})、子进程可执行文件清单 ${WINDOWS_ONLY_EXECUTABLES.length} 项`
