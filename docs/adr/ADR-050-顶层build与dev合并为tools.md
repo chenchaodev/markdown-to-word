@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 现行 |
+| 状态 | 部分被 [ADR-062](ADR-062-测试树位置即身份与门禁元框架瘦身.md) 取代 —— 只取代其「两树合并为受管树 `tools/`」的**后果面**：`tools/visual-check.mjs` / `visual-preload.cjs` / `visual-about-preload.cjs`（实测这三件是 geometry 门禁的页面探针，与门禁共用 `shared/geometry/geometry-spec.mjs` 的视口口径与 preload 前缀）迁入 `gates/geometry/`。`copy-renderer` 留在 `tools/`、`tools-stay-in-tools` 树边界规则、路径常量存活性断言一条不动。**正文按规矩未改动** |
 | 日期 | 2026-10-02 |
 | 取代 | **部分取代 [ADR-044](ADR-044-工具树不纳入树边界治理改由路径常量存活性断言看守.md)** —— 只取代其「工具树（`build/` `dev/`）不纳入树边界治理」这一结论；路径常量存活性断言（`driver.mjs` 的 `root` / `entryScriptPath` / `preload` / `styleDir` 逐个校验）**继续承担**运行时路径依赖的看守职责，一条不动 · **部分取代 [ADR-038](ADR-038-gates-test-shared三层与跨树边界.md)** —— 只取代其「不产生断言的产物生产与人工目检分列 `build/` 与 `dev/`」一句（两树合为 `tools/`）；三层划分、其余四条规则、`test/` 与 `shared/` 两层定位一条不动。**两份旧条目的正文均按规矩未改动** |
 | 关联 | [ADR-049](ADR-049-工具函数下沉shared与clean-artifacts归位.md)（①②，本条是其步骤 ③ 的前提）· [ADR-043](ADR-043-树边界规则allowlist与shared零跨树出边.md) · [ADR-038](ADR-038-gates-test-shared三层与跨树边界.md) · [ADR-044](ADR-044-工具树不纳入树边界治理改由路径常量存活性断言看守.md) · [REQ-144](../REQ.md) |
