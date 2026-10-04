@@ -82,12 +82,12 @@
       "probe": "gates/probe/gate-probes/gates/app.mjs",
       "probeLines": 196,
       "capability": "沙盒里真启 Electron 跑 --smoke",
-      "successor": "test/behavior/packaged-smoke.test.js",
+      "successor": "test/behavior/packaged-smoke.test.js ＋ gates/smoke/smoke-proc.selftest.mjs(S1b 新建)",
       "successorState": "partial",
-      "lost": "丢「冒烟脚本自身被改坏时仍绿」这一格 —— 段测的是打包产物,探针测的是**冒烟机制本身**",
-      "fix": "S1 新建冒烟机制 selftest。⚠️ 代价:要在 CI 里真起一次 Electron(ADR-062:215 已接受 20 个段跑 Electron,但没接受再多起一次)",
+      "lost": "丢的是**进程级 / 端到端档**(真起一个 Electron 跑 `--smoke`)。S1b 已把判定本体(`collectSmokeProblems` ＋ `SMOKE_MARKERS` 的恒等)用 22 条纯函数夹具全覆盖 —— 即原表所记「冒烟脚本自身被改坏时仍绿」那一格**已补齐**;但探针 `capability` 字段写的是「沙盒里真启 Electron 跑 --smoke」,那一层能力在 S4 删沙盒后无人承接。⚠️ 故本条**不改成 `exists`** —— 改成 `exists` 就是把缺口藏起来,与本表起草时那次「我第一版把 smoke 标成 exists(理由「承接文件存在」)」是同一个错。",
+      "fix": "S1b 已落地:新建 `gates/smoke/smoke-proc.selftest.mjs`(403 行 / 22 条夹具 ＋ 2 条内建档),登记进 `PROBE_CARRIER_SCRIPTS` 与 `GATE_REGISTRY.smoke.probes[]`,挂 `verify:ci`。⚠️ **本条原写的代价「要在 CI 里真起一次 Electron」是错的** —— 那是主会话转述方案评审的未核实断言。实测切入点 `collectSmokeProblems`(`gates/smoke/smoke-proc.mjs:236-257`)**已 export 且是纯函数**(入参 `{code,signal,timedOut,output,spawnError}` → `string[]`)⇒ 纯函数夹具**零 Electron 增量**,比原预算更省。**刻意放弃的端到端档**已写进 selftest 头注(`:26-34`),两条理由:① 判定本体没有 CLI 可跑,照抄那一档只会得到一个「跑不起来」的档位;② `--smoke` 的参数解析住在 `src/main/index.ts:19` 与 `src/main/smoke.ts`,与本族「退出码 ＋ 五条 marker」这条口径不同源。**写进头注是必须的** —— 否则会留下「以为守住了」的窗口。",
       "severity": "高",
-      "blocksP6": true
+      "blocksP6": false
     },
     {
       "id": "registry",

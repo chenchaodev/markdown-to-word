@@ -90,6 +90,10 @@ export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   // 探针覆盖,探针一删就无人接手。二者都必须挂在链上(R5c):载体被认领只说明它有归属。
   "check:fixtures:selftest": "gates/fixtures/gen-fixtures.selftest.mjs",
   "check:build-fresh:selftest": "gates/smoke/check-build-fresh.selftest.mjs",
+  // smoke 族的判定面(collectSmokeProblems)是纯函数、输入全是合成对象,故载体不起任何进程、
+  // 不写任何文件(比「跑在临时目录里」更强一档)。原 P6 将删的沙盒探针覆盖的是「真启一次
+  // Electron」,本载体覆盖的是「判定面本身会不会退化成恒绿」——两者不是同一格。
+  "check:smoke-proc:selftest": "gates/smoke/smoke-proc.selftest.mjs",
 });
 
 /* ---------- 门禁注册表 ---------- */
@@ -521,6 +525,16 @@ export const GATE_REGISTRY = Object.freeze(
           why: "沙盒探针在副本里真启一次 Electron 冒烟:锚点断言 exit 0 且五条标记齐备,负向用 append 覆写桩掉转换核心,断言非 0 且缺 convert ok 标记",
         },
         { kind: "segment", ref: "test/behavior/packaged-smoke.test.js", why: "验收段锁「退出码 0 + 五条标记 = 通过 / 非零 = 判红」这条判定口径与标记恒等" },
+        {
+          // 判定面(collectSmokeProblems)的负向夹具:段只在链内跑一次正例 + 两个负例(退出码 1、
+          // 缺两条 marker),判定退化时它照样绿 —— 这一族是**恒绿**形态(SMOKE_MARKERS 与实现面
+          // 的唯一契约就住在被测函数里)。**刻意无进程级档**:smoke-proc.mjs 无 main()、无
+          // argv 入口守卫,是纯原语库;而真起 Electron 的端到端档其被测对象(--smoke 参数解析在
+          // src/main/index.ts:19、实现面在 src/main/smoke.ts)散到本族之外,与本族判据不同源。
+          kind: "selftest",
+          ref: "gates/smoke/smoke-proc.selftest.mjs",
+          why: "22 条纯函数夹具 + 前提自检 + 一组注入/撤销成对:不写任何文件、不起任何进程(输入全为合成对象,连临时目录都不需要)。逐档覆盖四族判据 —— 退出码族(非 0 判红且**诊断逐字写出实际码** / signal 非空即 code 为 null 时仍须判红)、标记缺失族(缺一条只点名它 / 缺三条三条全点名且顺序与清单一致 / 输出为空五条全点名 / 附带「期望全部命中」清单)、spawnError 族(判红且点名 error.message / 与退出码族互斥不重复)、超时族(报「已硬杀进程树」/ 与退出码族互斥 / unterminated 才追加「可能残留进程」/ 与 spawnError 是并列 if 两族都报);另有边界档把**包含判定的精度**钉死(token 差一个尾字符即判红)、把「标记出现在非预期位置仍判绿」钉为既有口径(与 smoke-report/markers.mjs 的「只做文本包含判定」同口径,收紧是一次口径变更、须显式改本夹具)、以及 label 逐字透传与 markers 覆盖入参两格参数透传。每条负向档都断言 `problems` 非空 + 命中预期片段 + `expectCount`(条数)+ `forbid`/`forbidNamed`(不多说别的)—— **恒绿防护**;前提自检回读确认正向合成输出真的含全部 token(否则夹具会因没造出成功运行而全绿);成对档断「同一份输出换掉退出码就翻面」(防「怎么都判红」的退化实现)。",
+        },
       ],
     },
     geometry: {

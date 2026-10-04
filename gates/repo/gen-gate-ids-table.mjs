@@ -45,6 +45,7 @@ export function renderTable(j) {
   L.push("2. **「`registry.mjs` 只许改 `PROBE_CARRIER_SCRIPTS`」—— 这条约束站不住。** R3 的反向检查要求每个 carrier **必须被某道门禁的 `probes[]` 认领**，否则判 `probe-carrier-orphan`；只登记 carrier 实测得 2 条 orphan。S1a 因此在 `GATE_REGISTRY.fixtures` 与 `GATE_REGISTRY[\"build-fresh\"]` 的 `probes[]` 各加一条认领项。");
   L.push("3. **`blocksP6` 与 `successorState` 可以自相矛盾。** S1a 执行方翻了 `successorState` 却没清 `blocksP6` ⇒「完全承接」与「阻塞删除」并存。`judgeDrift` 已把这一格做成判据。");
   L.push("4. **`ADR-062:78` 的 L8 定义与实装不符。** 那里写「`test/harness/*.test.js` 必须与同目录 `*.js`/`.mjs` 同名」，而实装的 `test-harness-not-segment` 是「**必须声明 `covers` 且至少一个元素指向本层**」（T5-a 改的）。按 ADR 字面查会得出「四个 harness 段的模块全不同名 ⇒ L8 全红」的**假结论** —— 实测四段的模块分别是 `runner.js`／`assert.js`+`temp-resource.js`+`case.js`／`dual-pipeline-registry.js`，**本就不该同名**。ADR 那一行待订正。", "");
+  L.push("5. **「补 `smoke` 的机制自测要在 CI 里真起一次 Electron」—— 当初也是转述而未核实。**那个代价估计来自主会话转述方案评审,实测切入点 `collectSmokeProblems`(`gates/smoke/smoke-proc.mjs:236-257`)**已 export 且是纯函数** ⇒ 纯函数夹具**零 Electron 增量**。裁决本身(机制自测要补)不变,变的只是代价。**连同上面第 1 条,这是本会话第三次「转述而未核实」被实测推翻**(前两次:`ADR-062:216` 误引 · 「`build-fresh` 诊断含具体文件名」是假的)⇒ **派发前提必须由执行方亲自核实,不能照抄评审或照抄转述**。");
   L.push("## 未跑 / 不在范围", "");
   L.push("- **未跑** `npm test` / `verify:ci` / 任何聚合门禁链（本表是数据与文档，不含断言）");
   L.push("- 本表所有行数与存在性均为**实测**，非转述评审", "");
