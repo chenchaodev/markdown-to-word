@@ -30,6 +30,20 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测的 `dist/renderer/renderer.js` 由子进程 `--input-type=module -e` 的**字符串内
+ * `import(file://…)`** 载入(URL 逐段拼进脚本文本),段内零 renderer import。
+ *
+ * 主体依据(头注明写):头注第一行写「标题区版本号徽章段(src/renderer/renderer.ts 末尾那次
+ * getVersion 调用)」,三条断言全部对那处 `.then(...)` 的 reject 分支输出下判。状态行那条
+ * 断言落在既有通道 `setError` 上,故一并声明其定义处。
+ */
+export const covers = [
+  "src/renderer/renderer.ts",
+  "src/renderer/ui/dom-ops.ts",
+];
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 /**
  * --input-type=module -e 里的 import 只接受 file:// URL(裸 Windows 路径会被当未知协议)。

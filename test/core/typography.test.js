@@ -10,6 +10,23 @@ import { htmlToPdf } from "../harness/pdf-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**core**,判据静态看不见本段的主体 —— 全链路经
+ * `test/harness/convert-helpers.js` 的 `convertWithFs` 到达 core,段内零 core import。
+ *
+ * 主体依据(头注 + 段内实现指针注释):头注写「双格式共用同一 typography 契约;docx 断言
+ * 字号/字体/对齐/标题编号关闭,pdf 断言模板 CSS 参数化」。两处消费点各一份:
+ * - docx 侧 `docx/render.ts`(styles.default 的 size = bodySizePt × 2 与 eastAsia 字体)
+ *   与 `docx/handlers/inline-html.ts` 的 `renderBodyParagraph`(段内第 56/62 行注释逐条
+ *   指名它算 spacing.line=360 与 indent.firstLineChars=200);
+ * - pdf 侧 `pdf/template-css.ts` 的 `buildTemplateCss`(font-size/text-indent/text-align)。
+ */
+export const covers = [
+  "src/core/docx/render.ts",
+  "src/core/docx/handlers/inline-html.ts",
+  "src/core/pdf/template-css.ts",
+];
+
 /** 主样例:排版设置正文(字号/行距/缩进/对齐,gen-fixtures 落盘为 docs/typography.md) */
 const typoMd = `# 排版设置测试
 

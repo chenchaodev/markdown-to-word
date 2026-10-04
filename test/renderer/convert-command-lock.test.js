@@ -13,6 +13,29 @@ import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测的四个 dist renderer 模块由 `await import(pathToFileURL(...).href)` 的**运行期
+ * 动态 import** 载入(路径逐段 `path.join` 拼出,不在 import 语句位置),段内零
+ * renderer import。
+ *
+ * 主体依据(头注 + 段内实现位置):头注写「renderer 转换命令/预检 single-flight 直测」,
+ * 逐条对应到四处实现:
+ * - `convert/convert-flow.ts` —— `withPrecheck` / `isConvertCommandBlocked`(命令锁与预检单飞);
+ * - `ui/dialogs.ts` —— `showPrecheckDialog` / `closePrecheckDialog`(预检报告 Promise 单实例
+ *   与四条关闭路径的结算);
+ * - `state/state.ts` —— `state.mode`(转换 mode 也计入锁那一格);
+ * - `convert/events/convert-actions.ts` —— 导入它以挂上菜单命令侧的锁判定;
+ *   `convert/events/dialogs-events.ts` —— 段末读其 src 文本断 Esc 关闭链与菜单命令的走向。
+ */
+export const covers = [
+  "src/renderer/convert/convert-flow.ts",
+  "src/renderer/ui/dialogs.ts",
+  "src/renderer/state/state.ts",
+  "src/renderer/convert/events/convert-actions.ts",
+  "src/renderer/convert/events/dialogs-events.ts",
+];
+
+/**
  * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
  * (cond 为假即抛,后续代码无须再判空)。
  * @param {unknown} cond

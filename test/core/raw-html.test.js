@@ -14,6 +14,22 @@ import { saveArtifact } from "../harness/artifacts.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**core**,判据静态看不见本段的主体 —— 全链路经
+ * `test/harness/convert-helpers.js` 的 `convertWithFs` 到达 core,段内零 core import。
+ *
+ * 主体依据(头注 + 段内实现指针注释):头注写「内联格式白名单测试:双格式一致」。白名单的
+ * **单一实现**在 `markdown/html-whitelist.ts`(其文件头写明「原 docx/render.ts 与
+ * pdf/render.ts 各持一份逐字副本,抽取后任何标签集变更只改此处」);两侧扫描器按该文件头
+ * 登记的双向同步指针各自声明。段内第 104-110 行的实现指针注释亦点名
+ * `overrideHtmlRules`(pdf 侧)与 `normalizeInlineHtml`(docx 侧)。
+ */
+export const covers = [
+  "src/core/markdown/html-whitelist.ts",
+  "src/core/docx/handlers/inline-html.ts",
+  "src/core/pdf/rules/html.ts",
+];
+
 /** 主样例:白名单标签 + 危险样例(gen-fixtures 落盘为 docs/raw-html.md) */
 const htmlMd = `# 白名单测试
 

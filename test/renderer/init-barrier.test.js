@@ -17,6 +17,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "../harness/paths.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测源文件由 `fs.readFileSync(path.join(ROOT, "src", "renderer", "renderer.ts"))` 的
+ * **字符串路径**读入,不是 import 语句,故 L4 的 import 图上看不到它。
+ *
+ * 主体依据(头注明写):头注第一行写「启动屏障段(src/renderer/renderer.ts 的组合根初始化编排)」,
+ * 五组断言全部是对该文件文本的结构断言(屏障 Promise.all 汇合两路初始化、隐藏早于 await、
+ * 揭示在 finally、事件绑定先于屏障、首屏焦点落在揭示之后)。
+ */
+export const covers = ["src/renderer/renderer.ts"];
+
 const SRC = fs.readFileSync(
   path.join(ROOT, "src", "renderer", "renderer.ts"),
   "utf8",

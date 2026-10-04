@@ -10,6 +10,23 @@ import { zipContains, unzipPart } from "../harness/docx-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**core**,判据静态看不见本段的主体 —— 全链路经
+ * `test/harness/convert-helpers.js` 的 `convertWithFs` 到达 core,段内零 core import。
+ *
+ * 主体依据(头注 + import 图):头注写「批注验收:行内 `[锚定文本]{批注=内容}` → docx 批注」,
+ * 断言全部落在 comments.xml / document.xml 的批注结构上。两处主体:
+ * - `markdown/comment.ts` 是该语法的解析实现(头注描述的语法即其文件头的契约);
+ * - `docx/handlers/content.ts` 的 `case "comment"` 是产出 commentRangeStart/End/Reference
+ *   与批注容器收集的那一处(断言 1/2/3 逐条对它的输出下判)。
+ *
+ * 元素是仓库相对 POSIX 路径(判据直接对磁盘核对,且不引入段文件相对的位置耦合)。
+ */
+export const covers = [
+  "src/core/markdown/comment.ts",
+  "src/core/docx/handlers/content.ts",
+];
+
 /** 主样例:正文/表格单元格批注 + rich 内容 + 既有语法回归(链接、{#eq:label}) */
 const commentMd = `# 批注测试
 

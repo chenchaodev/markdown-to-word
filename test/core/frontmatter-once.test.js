@@ -29,6 +29,27 @@ import { FIXTURES_DIR, ROOT } from "../harness/paths.js";
 import { cleanupTempResources, createTempResource } from "../harness/temp-resource.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**core 为主**(判据静态看不见本段的主体 ——
+ * 结构断言经 `fs.readFileSync` 读 src 文本、计数断言经子进程跑 dist,段内零 core import)。
+ *
+ * 主体依据(头注明写):头注写「被守护的决定:`core/convert.ts` 的第 1 参由裸字符串改为阶段
+ * 产物 …… frontmatter 的隔离与解析只在**上游准备阶段**(`convert/preprocess.ts`)做一次,
+ * core 只取用」。故声明:
+ * - `src/core/convert.ts` —— 断言 ① 对它零 `parseFrontmatter` 代码引用(头注称之为
+ *   「core 不再解析」的直接证据);
+ * - `src/core/pipeline/frontmatter.ts` —— 断言 ② 的 ESM loader 就地改写它的
+ *   `parseFrontmatter` 并计数,计数恒 1 断的是 core 侧不再二次解析;
+ * - `src/convert/preprocess.ts` —— **跨层元素**:断言 ② 的 `afterPrepare === 1` 断的是
+ *   上游准备阶段恰好解析一次(本段因此横跨 core 与 convert 两层;被守护的决定仍属 core,
+ *   故段留在 test/core/,是否改归 test/behavior/ 由 T3 后续裁决)。
+ */
+export const covers = [
+  "src/core/convert.ts",
+  "src/core/pipeline/frontmatter.ts",
+  "src/convert/preprocess.ts",
+];
+
+/**
  * 断言辅助。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息

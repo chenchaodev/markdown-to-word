@@ -9,6 +9,19 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**core**,判据静态看不见本段的主体 —— 全链路经
+ * `test/harness/convert-helpers.js` 的 `convertWithFs` 到达 core,段内零 core import。
+ *
+ * 主体依据(头注):头注写「convert 的 context.metadata 优先于 frontmatter 解析出的
+ * metadata」—— 被守护的**那一个决定**是 core 的覆盖语义实现:`core/convert.ts` 里的
+ * `const metadata = context.metadata ?? md.metadata`(其 ConvertContext.metadata 字段
+ * 注释写「显式文档元数据(封面用);优先于阶段产物已解析出的 frontmatter metadata」)。
+ * 封面渲染那两侧(`docx/chrome.ts` / `pdf/template.ts`)是本段的断言落点而非被测决定,
+ * 覆盖它们的是 cover.test.js,故此处不重复声明。
+ */
+export const covers = ["src/core/convert.ts"];
+
 const md = `---
 title: frontmatter标题
 author: frontmatter作者

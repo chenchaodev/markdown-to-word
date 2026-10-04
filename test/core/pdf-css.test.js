@@ -14,6 +14,21 @@
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**core**,判据静态看不见本段的主体 —— 全链路经
+ * `test/harness/convert-helpers.js` 的 `convertWithFs` 到达 core,段内零 core import。
+ *
+ * 主体依据(头注 + 段内实现指针):头注写「渲染时追加到默认模板 CSS 之后(同一 `<style>`
+ * 内后声明覆盖默认样式)」与「输出 HTML 带 CSP meta」。两处实现:
+ * - `pdf/render.ts` 把 `options.pdfCss` 拼到 `buildTemplateCss(...)` 结果之后(追加点);
+ * - `pdf/template.ts` 的 `sanitizeStyleCss`(`</style>` 注入序列剥离)与 `TEMPLATE_CSP`
+ *   (CSP meta)。段内第 76 行注释亦点名 `sanitizeStyleCss`。
+ */
+export const covers = [
+  "src/core/pdf/render.ts",
+  "src/core/pdf/template.ts",
+];
+
 const md = `# 标题
 
 正文段落。

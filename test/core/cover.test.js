@@ -17,6 +17,21 @@ import { saveArtifact } from "../harness/artifacts.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**core**,判据静态看不见本段的主体 —— 全链路经
+ * `test/harness/convert-helpers.js` 的 `convertWithFs` 到达 core,段内零 core import。
+ *
+ * 主体依据(**头注明写**):头注逐条点名两个被调函数与其所在文件,故以头注为准 ——
+ * `renderCoverPage(dist/core/docx/render.js)` 与 `buildCoverHtml(dist/core/pdf/template.js)`。
+ * 核对磁盘后的落点:两个函数今日定义在 `docx/chrome.ts` 与 `pdf/template.ts`
+ * (`docx/render.ts` 只 import 并调用它),故声明定义处而非头注写的调用处 ——
+ * 元素要指向被测模块在磁盘上的真实位置(L6 第三条逐个对磁盘核对)。
+ */
+export const covers = [
+  "src/core/docx/chrome.ts",
+  "src/core/pdf/template.ts",
+];
+
 /** 主样例:frontmatter 封面验收(gen-fixtures 落盘为 docs/cover.md) */
 const coverMd = `---
 title: 封面验收文档
