@@ -1,0 +1,105 @@
+{
+  "_comment": "P6「7 个 GATE_IDS 逐个对账」的机器可核 companion(ADR-062:246 的前置硬门)。markdown 版见 docs/evidence/20261004-225514-gate-ids-对账表.md",
+  "_schema": {
+    "key": "id",
+    "successorState": [
+      "exists",
+      "partial",
+      "to-create"
+    ],
+    "note": "successorState=to-create 的条目是 S1 必须补齐的缺口;ADR-062:250 明写「任何一道门禁若无载体,先补 .selftest.mjs,本阶段才允许开始」。blocksP6=true 的条目未补齐前 P6 不得进入 S4(删除步骤)。 ⚠️ successorState 是**能力承接度**,不是「文件在不在」—— 把 partial 标成 exists 会把缺口藏起来(主会话第一版就犯了这个错,把 smoke 的机制缺口标成了 exists)。",
+    "measuredAt": "2026-10-04",
+    "measuredBy": "docs/REQ.md REQ-180 T5-b(方案评审 + 主会话实测复核)",
+    "stateMeaning": {
+      "exists": "完全承接:该文件覆盖探针的全部能力",
+      "partial": "部分承接:该文件只覆盖一部分能力,缺口在 lost 字段里逐条写明",
+      "to-create": "无承接:P6 后该能力无人接手,successor 指向 S1 要新建的文件"
+    }
+  },
+  "families": [
+    {
+      "id": "fixtures",
+      "probe": "gates/probe/gate-probes/gates/fixtures.mjs",
+      "probeLines": 119,
+      "capability": "在沙盒副本里改/删一个真实 fixture，断言 gen-fixtures.mjs --check 判红**并点名该 fixture**",
+      "successor": "gates/fixtures/gen-fixtures.selftest.mjs",
+      "successorState": "to-create",
+      "lost": "点名能力(诊断含具体文件名)将丢失 —— 若新夹具只断言退出码非 0,这一格就没了",
+      "fix": "S1 新建:临时目录造 samples/docs/,改一个文件字节 → 断言 exit≠0 且诊断含该文件名;再删一个 → 断言点名",
+      "severity": "中",
+      "blocksP6": true
+    },
+    {
+      "id": "coverage",
+      "probe": "gates/probe/gate-probes/gates/coverage.mjs",
+      "probeLines": 271,
+      "capability": "拿 package.json 的真实 c8 参数向量跑人造低覆盖 ⇒ 对任意阈值取值都成立(刻意不写死阈值)",
+      "successor": "gates/probe/check-coverage-zero.selftest.mjs",
+      "successorState": "partial",
+      "lost": "阈值那格不丢(由 coverage-gate.mjs 静态面 requireFlags ＋ 基线比对接手);丢的是动态面「人造低覆盖必须 exit 非 0」",
+      "fix": "无需新建。但需核 test/gates/coverage-gate.test.js 是否仍逐项核对 coverage-baseline.json 与 package.json 的 c8 参数向量",
+      "severity": "低",
+      "blocksP6": false
+    },
+    {
+      "id": "dist-manifest",
+      "probe": "gates/probe/gate-probes/gates/dist-manifest.mjs",
+      "probeLines": 99,
+      "capability": "合成最小工程 ＋ 真脚本原位跑、只靠 cwd 指沙盒(不是副本 —— ESM 按文件位置解析)",
+      "successor": "test/gates/dist-manifest-gate.test.js",
+      "successorState": "exists",
+      "lost": "不丢",
+      "fix": "无需改。但 S4 删探针时,gates/repo/check-copy-sites.mjs:106 对该文件的登记项必须同批删",
+      "severity": "低",
+      "blocksP6": false
+    },
+    {
+      "id": "dual-matrix",
+      "probe": "gates/probe/gate-probes/gates/dual-matrix.mjs",
+      "probeLines": 194,
+      "capability": "必须真启 Electron;两类负向:删 covers 标记 / 塞未登记键",
+      "successor": "test/core/dual-pipeline-matrix.test.js",
+      "successorState": "partial",
+      "lost": "**可能丢「键漏写会被抓住」这一格** —— 段正常跑只证明断言没漂,证明不了「忘写」。ADR-062:214 明写该段不拆(1515 行)",
+      "fix": "S1 核实该段是否注入故障;若无,补两条负向(删 covers 标记 / 塞未登记键)",
+      "severity": "中高",
+      "blocksP6": "verify"
+    },
+    {
+      "id": "build-fresh",
+      "probe": "(无独立文件,由 gates/probe/gate-probes/report.mjs 编排、以 test:smoke 前置形态跑,见 contract.mjs:105-109)",
+      "probeLines": 0,
+      "capability": "构建新鲜度:dist 比 src 旧时 gates/smoke/check-build-fresh.mjs 判红",
+      "successor": "gates/smoke/check-build-fresh.selftest.mjs",
+      "successorState": "to-create",
+      "lost": "**整个能力无人接手** —— check-build-fresh.mjs(101 行)全仓无 selftest",
+      "fix": "S1 新建:临时目录造 src/dist,touch src 使其新于 dist → 断言 exit≠0 且诊断含具体文件",
+      "severity": "中高",
+      "blocksP6": true
+    },
+    {
+      "id": "smoke",
+      "probe": "gates/probe/gate-probes/gates/app.mjs",
+      "probeLines": 196,
+      "capability": "沙盒里真启 Electron 跑 --smoke",
+      "successor": "test/behavior/packaged-smoke.test.js",
+      "successorState": "partial",
+      "lost": "丢「冒烟脚本自身被改坏时仍绿」这一格 —— 段测的是打包产物,探针测的是**冒烟机制本身**",
+      "fix": "S1 新建冒烟机制 selftest。⚠️ 代价:要在 CI 里真起一次 Electron(ADR-062:215 已接受 20 个段跑 Electron,但没接受再多起一次)",
+      "severity": "高",
+      "blocksP6": true
+    },
+    {
+      "id": "registry",
+      "probe": "gates/probe/gate-probes/gates/registry.mjs",
+      "probeLines": 452,
+      "capability": "构造合成的坏注册表注入故障,断言 code 分类(R1–R5c)",
+      "successor": "gates/repo/check-test-layout.mjs",
+      "successorState": "exists",
+      "lost": "不丢且变强(R1–R5c 五条 → L11＋L12 两条);但覆盖面缩小:R1/R2(发现面:链＋workflow 每个调用点必须有归属)**整条消失**",
+      "fix": "gate-index.test.js 对 L11/L12 逐条负向夹具红(ADR-062:250 已有此判据)",
+      "severity": "低",
+      "blocksP6": false
+    }
+  ]
+}

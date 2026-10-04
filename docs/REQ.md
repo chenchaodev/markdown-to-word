@@ -61,7 +61,7 @@
 | 号 | 标题 | 状态 | 为什么停在哪 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
 | REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 在办 | 配置与门禁断言已落地(装卸两阶段 PATH 断言、期望值从 build.nsis.include 派生、写用 WriteRegExpandStr 保住 %VAR% 展开、超长不静默)。**但真实构建失败**:electron-builder 真实上下文里没有 MUI_PAGE_FUNCTION_CUSTOM,`npm run dist` 挂在 installer.nsh:108;上一轮的「编译通过」是**最小脚手架**证的,脚手架替真构建兜住了这个缺宏。真实安装验证未跑 | installer.nsh 在真实构建里编过之后;或真安装验证跑通之后 | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
-| REQ-180 | 源码树改一职责一文件并补内部边界判据 | 在办 | T0/T0.0/T1/T2/T3 五阶段落地，阶段全链 `verify:ci` 退出码 0。**T5-a 已完成**：`--enforce` 与 `L5_PENDING` 删除，改 `CRITERIA` 表 ＋ `report` 漏斗，L5 转 fail-closed ⇒ 顺带修掉 `check:test-layout` 链上恒 exit 0 的恒绿门禁。**下一阶段不是「L1 ratchet」**：现装只有 L4–L8 ⇒ T4 实为 **L5 豁免表** ratchet。 | src 层边界要增删时；或 T4/T5 要动 `check-test-layout.mjs` 的 `access` / 链归属时 | docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md · docs/evidence/20261004-103703-src结构诊断与目标结构评判.md |
+| REQ-180 | 源码树改一职责一文件并补内部边界判据 | 在办 | T0/T0.0/T1/T2/T3 五阶段落地，阶段全链 `verify:ci` 退出码 0。**T5-a 已完成**：`--enforce` 与 `L5_PENDING` 删除，改 `CRITERIA` 表 ＋ `report` 漏斗，L5 转 fail-closed ⇒ 顺带修掉 `check:test-layout` 链上恒 exit 0 的恒绿门禁。**下一阶段不是「L1 ratchet」**：现装只有 L4–L8 ⇒ T4 实为 **L5 豁免表** ratchet。 | src 层边界要增删时；或 T4/T5 要动 `check-test-layout.mjs` 的 `access` / 链归属时 | docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md · docs/evidence/20261004-103703-src结构诊断与目标结构评判.md · docs/evidence/20261004-225514-gate-ids-对账表.md（T5-b 的 S0 对账表，P6 删除步骤的硬门） |
 
 ## 已完成
 
