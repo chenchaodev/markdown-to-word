@@ -208,21 +208,54 @@ function describeValue(v) {
 }
 
 /**
- * 列出候选测试段(目录内文件名排序,保证幂序)。
+ * 递归列出目录下的段文件(相对该目录的 posix 路径;同层按文件名码位序,同层文件先于其子目录)。
+ * 递归而非单层:段路径镜像被测主体路径(ADR-062「位置即身份」),故段会放进二级目录
+ * (如 test/gates/repo/)—— 单层扫描会漏掉它们,而漏掉的段恰好走「无 fixtures → 跳过」分支,
+ * 产物不完整也没人知道。与 runner.js 的 listSegmentFiles 同口径(两处各自实现是因为它们
+ * 分别面向异步/同步 API,口径由 fixture-contract.test.js 的对读断言强制同形)。
+ * @param {string} dir 目录绝对路径
+ * @param {string} relPrefix 递归内部用的相对前缀
+ * @returns {string[]} 相对 dir 的 posix 路径(发现顺序)
+ */
+function listSegmentFilesRecursive(dir, relPrefix = "") {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const files = [];
+  const subdirs = [];
+  for (const entry of entries) {
+    const rel = relPrefix === "" ? entry.name : `${relPrefix}/${entry.name}`;
+    if (entry.isDirectory()) subdirs.push({ name: entry.name, rel });
+    else if (entry.name.endsWith(".test.js")) files.push(rel);
+  }
+  for (const sub of subdirs) files.push(...listSegmentFilesRecursive(path.join(dir, sub.name), sub.rel));
+  return files;
+}
+
+/**
+ * 列出候选测试段(目录内递归,同层文件名排序,保证幂序)。
  * 只读目录项、不读源码:「有没有 fixture」由 import 后的显式契约决定,不做文本预筛。
  * @returns {{name: string, file: string, relDir: string, baseName: string}[]}
  */
 export function listCandidateSegments() {
   const segments = [];
+  // 去重键 = 段文件的解析后绝对路径:段目录表出现祖先/后代对(如同时含 gates 与 gates/repo)
+  // 时同一文件会被两条路径各列一次,不按该键去重就会 import 它两次(重复跑契约校验、
+  // README 里多一行)。口径与 runner.js discoverSegmentsDetailed 的去重键同源。
+  const seen = new Set();
   for (const relDir of FIXTURE_SEGMENT_DIRS) {
     const dir = path.join(ROOT, "test", relDir);
-    for (const file of fs.readdirSync(dir).sort()) {
-      if (!file.endsWith(".test.js")) continue;
+    for (const relFile of listSegmentFilesRecursive(dir)) {
+      const file = path.join(dir, relFile);
+      if (seen.has(file)) continue;
+      seen.add(file);
       segments.push({
-        name: `${relDir}/${file}`,
-        file: path.join(dir, file),
+        // 段名与 relDir 都带子目录(二级段 = gates/repo/y.test.js):段名必须与 runner 的
+        // discoverSegments 逐字一致(判据见 test/gates/fixture-contract.test.js 第 2 组),
+        // relDir 则直接进 README 的 `test/<relDir>/<baseName>.test.js` 一列。
+        name: `${relDir}/${relFile}`,
+        file,
         relDir,
-        baseName: file.slice(0, -".test.js".length),
+        baseName: path.basename(relFile, ".test.js"),
       });
     }
   }

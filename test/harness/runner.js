@@ -80,6 +80,19 @@ const LOG_TAIL_LIMIT = 200 * 1024;
  */
 const EXCLUSIVE_SEGMENTS = ["gate-probes"];
 
+/**
+ * 段发现阶段的重复诊断文案(判据与文案同处一地:两类成因只此两种,别在调用点临时编话术)。
+ * - 重复发现 = 同一文件被多个段目录各发现一次(段目录表出现祖先/后代对):按首次登记去重,
+ *   同一段不会被跑两遍;
+ * - 段名撞名 = 两个**不同**文件算出了同一个段名:段名是失败产物目录名与报告排序的键,
+ *   撞名会让两者互相覆盖(runAll 末尾按段名建索引时后者覆盖前者且不报错)。
+ * @type {Record<SegmentDiscoveryIssue["kind"], string>}
+ */
+const DISCOVERY_ISSUE_DETAIL = {
+  重复发现: "同一文件被多个段目录发现,已按首次登记去重(同一段不会被跑两遍)",
+  段名撞名: "两个不同文件算出了同一个段名,报告排序与失败产物目录会互相覆盖",
+};
+
 /* ---------- 本文件契约类型(单一来源,消费方 import type 用) ---------- */
 
 /**
@@ -88,9 +101,24 @@ const EXCLUSIVE_SEGMENTS = ["gate-probes"];
 
 /**
  * @typedef {object} SegmentDescriptor 段描述(发现阶段产出)
- * @property {string} dir 段所在目录绝对路径
- * @property {string} file 段文件名
- * @property {string} name 段名(目录前缀 + 文件名,如 segments/basic-render.test.js)
+ * @property {string} dir 段文件**所在**目录绝对路径(嵌套段 = 二级子目录,非段根目录)
+ * @property {string} file 段文件名(不含子目录)
+ * @property {string} name 段名(目录前缀 + 文件名,如 segments/basic-render.test.js;
+ *   二级段为 gates/repo/x.test.js,前缀相对 rootDir)
+ */
+
+/**
+ * @typedef {object} SegmentDiscoveryIssue 段发现阶段的重复诊断(按「类别 + 段名」归并:
+ *   同一段名的多个来源合成一条,而不是按出现次数逐条列)
+ * @property {"重复发现" | "段名撞名"} kind
+ * @property {string} name 涉及的段名
+ * @property {string[]} sources 参与该问题的来源描述(段目录绝对路径 + 各自登记出的段名)
+ */
+
+/**
+ * @typedef {object} SegmentDiscoveryResult 段发现结果
+ * @property {SegmentDescriptor[]} segments 去重后的段清单(顺序 = 发现顺序)
+ * @property {SegmentDiscoveryIssue[]} issues 重复诊断(空数组 = 无重复)
  */
 
 /**
@@ -169,30 +197,166 @@ function isExclusiveSegment(s) {
 }
 
 /**
- * 按传入目录顺序发现全部测试段文件(目录内按文件名排序);
- * 返回 { dir, file, name },name 带目录前缀(如 segments/basic-render.test.js),
- * 避免跨目录重名混淆,也便于阅读。
+ * 段名的目录部分:段名 = `<段目录相对 rootDir 的路径>/<段文件相对段目录的路径>`(一律 posix 分隔)。
+ * rootDir 缺省、或段目录不在 rootDir 之内(含 `..` 前缀)时,前缀回落 `path.basename(dir)`。
+ * 回落不是可选而是必须:段内自跑用的沙盒在 test/ 树外(如 output/tmp/runner-report-selftest-*),
+ * 强制按 testRoot 求相对会得到 `../../output/tmp/…` 这种段名 —— 而段名同时是失败产物目录名
+ * (output/artifacts/failures/<段名>/)与 M2W_ONLY 的匹配面,含 `..` 会顶到产物目录之外,
+ * 段内那批由沙盒目录名派生的段名常量也会全断。故「目录不在 rootDir 内」与「没传 rootDir」
+ * 走同一条回落分支。
+ * @param {string} dir 段目录绝对路径
+ * @param {string | undefined} rootDir 段树根目录(顶层验收入口传 test/ 根)
+ * @returns {string} 段名前缀(无尾斜杠)
+ */
+function segmentPrefix(dir, rootDir) {
+  if (typeof rootDir === "string" && rootDir.trim() !== "") {
+    const rel = path.relative(path.resolve(rootDir), path.resolve(dir));
+    if (rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel)) {
+      return rel.split(path.sep).join("/");
+    }
+  }
+  return path.basename(dir);
+}
+
+/**
+ * 递归列出一个段目录下的全部段文件(相对该目录的 posix 路径)。
+ * 排序口径:同层按**文件名码位序**(与旧的单层 `.sort()` 逐字等价),同层的段文件先于其子目录里
+ * 的段 —— 故顶层段名在递归化后逐字不变,变的只是它后面多了二级段。
+ * 只收 `*.test.js` 的**文件**:叫 `x.test.js` 的目录不收(旧的 readdir 分不清文件与目录)。
+ * 不跟随符号链接:`Dirent.isDirectory()` 对链接恒为 false,既挡住递归环,也不让「链接进来的
+ * 目录」被静默纳入发现面。
+ * @param {string} dir 段目录绝对路径
+ * @param {string} relPrefix 该目录在段目录内的相对 posix 路径前缀(递归内部用)
+ * @returns {Promise<string[]>} 相对 dir 的 posix 路径列表(发现顺序)
+ */
+async function listSegmentFiles(dir, relPrefix = "") {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  /** @type {string[]} */
+  const files = [];
+  /** @type {{ name: string, rel: string }[]} */
+  const subdirs = [];
+  for (const entry of entries) {
+    const rel = relPrefix === "" ? entry.name : `${relPrefix}/${entry.name}`;
+    if (entry.isDirectory()) subdirs.push({ name: entry.name, rel });
+    else if (entry.name.endsWith(".test.js")) files.push(rel);
+  }
+  for (const sub of subdirs) {
+    files.push(...(await listSegmentFiles(path.join(dir, sub.name), sub.rel)));
+  }
+  return files;
+}
+
+/**
+ * 记一条重复诊断(**按「类别 + 段名」归并**:同一段名的多个来源合成一条,不按出现次数逐条列)。
+ * @param {Map<string, SegmentDiscoveryIssue>} issues 诊断登记表(键 = 类别 + 段名)
+ * @param {SegmentDiscoveryIssue} issue 待记诊断(已有同键时只并入来源)
+ * @returns {void}
+ */
+function recordDiscoveryIssue(issues, issue) {
+  // 键用 JSON 编码的二元组而非字符串拼接:段名是文件路径,理论上可含任意分隔符字符,
+  // 拼接出的键存在歧义(两对 kind+name 撞成同一个键),归并就会吞掉一条诊断。
+  const key = JSON.stringify([issue.kind, issue.name]);
+  const existing = issues.get(key);
+  if (existing === undefined) {
+    issues.set(key, { kind: issue.kind, name: issue.name, sources: [...issue.sources] });
+    return;
+  }
+  for (const source of issue.sources) {
+    if (!existing.sources.includes(source)) existing.sources.push(source);
+  }
+}
+
+/**
+ * 发现全部测试段并连带报出重复诊断(段清单的单一来源;discoverSegments 是它的薄包装)。
+ * 按传入目录顺序发现,目录内递归、同层按文件名排序;返回 { dir, file, name },name 是
+ * `<段名前缀>/<段文件相对段目录的 posix 路径>`(如 core/basic-render.test.js、
+ * gates/repo/x.test.js),避免跨目录重名混淆,也便于阅读。
+ * 去重键 = 段文件的**解析后绝对路径**:段目录表里出现祖先/后代对(如同时含 `gates` 与
+ * `gates/repo`)时同一文件会被两条路径各发现一次,不按该键去重就会被跑两遍 —— 而
+ * runAll 末尾按段名建索引(`new Map(segments.map(…))`)对同名者是后者覆盖前者且不报错,
+ * 于是「跑两遍」表现为 case 合计翻倍与报告行数对不上,极难归因。
+ * 重复**只告警不抛错**:祖先/后代目录对是段树分叉(ADR-062 的「位置即身份」把段放进二级
+ * 目录)之后的正常形态,不该让整轮验收红;但也绝不静默 —— 诊断按段名归并后逐条 console.warn。
  * only 的三态语义见 resolveOnlySelection:未声明=读 M2W_ONLY(顶层默认)/ null=不筛选
  * (段内嵌套编排)/ 字符串=按词筛。筛选对完整段名做大小写不敏感的包含匹配。
  * @param {string[]} dirs 段目录绝对路径(按此顺序发现)
- * @param {{ only?: string | null }} [options] 发现面的显式声明
- * @returns {Promise<SegmentDescriptor[]>}
+ * @param {{ only?: string | null, rootDir?: string }} [options] 发现面的显式声明
+ * @returns {Promise<SegmentDiscoveryResult>}
  */
-export async function discoverSegments(dirs, { only } = {}) {
+export async function discoverSegmentsDetailed(dirs, { only, rootDir } = {}) {
   /** @type {SegmentDescriptor[]} */
   const found = [];
+  /** @type {Map<string, { name: string, dir: string }>} 去重键 = 段文件解析后绝对路径 */
+  const byAbsPath = new Map();
+  /** @type {Map<string, { abs: string, dir: string }>} 段名 → 当前登记该名的文件(撞名检测) */
+  const byName = new Map();
+  /** @type {Map<string, SegmentDiscoveryIssue>} 重复诊断登记表 */
+  const issues = new Map();
+
   for (const dir of dirs) {
-    const prefix = path.basename(dir);
-    const entries = await fs.readdir(dir);
-    for (const f of entries.filter((f) => f.endsWith(".test.js")).sort()) {
-      found.push({ dir, file: f, name: `${prefix}/${f}` });
+    const prefix = segmentPrefix(dir, rootDir);
+    for (const rel of await listSegmentFiles(dir)) {
+      const parts = rel.split("/");
+      const file = /** @type {string} */ (parts[parts.length - 1]);
+      const subPath = parts.slice(0, -1).join(path.sep);
+      // dir 取**段文件所在目录**(嵌套时是子目录)而非段根目录:下游 path.join(s.dir, s.file)
+      // 是段文件绝对路径的唯一来源,file 字段也才真的是「文件名」
+      const fileDir = subPath === "" ? dir : path.join(dir, subPath);
+      const abs = path.resolve(fileDir, file);
+      const name = `${prefix}/${rel}`;
+      const owner = byAbsPath.get(abs);
+      if (owner !== undefined) {
+        // 同一文件被多个段目录发现:按首次登记去重(不产生第二次登记)
+        recordDiscoveryIssue(issues, {
+          kind: "重复发现",
+          name: owner.name,
+          sources: [`${owner.dir}(首次登记为 ${owner.name})`, `${dir}(再次发现为 ${name})`],
+        });
+        continue;
+      }
+      const clash = byName.get(name);
+      if (clash !== undefined && clash.abs !== abs) {
+        recordDiscoveryIssue(issues, {
+          kind: "段名撞名",
+          name,
+          sources: [`${clash.dir}(登记为 ${name})`, `${fileDir}(登记为 ${name})`],
+        });
+      }
+      byAbsPath.set(abs, { name, dir });
+      byName.set(name, { abs, dir: fileDir });
+      found.push({ dir: fileDir, file, name });
     }
   }
+
   const selection = resolveOnlySelection(only);
-  if (selection === null) return found;
-  const needles = selection.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (needles.length === 0) return found;
-  return found.filter((s) => needles.some((n) => s.name.toLowerCase().includes(n)));
+  const needles = selection === null ? [] : selection.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const segments = needles.length === 0
+    ? found
+    : found.filter((s) => needles.some((n) => s.name.toLowerCase().includes(n)));
+  return { segments, issues: [...issues.values()] };
+}
+
+/**
+ * 按传入目录顺序发现全部测试段文件(递归到二级及更深的子目录,目录内按文件名排序);
+ * 返回 { dir, file, name },name 带目录前缀(如 segments/basic-render.test.js),
+ * 避免跨目录重名混淆,也便于阅读。
+ * 重复诊断(同一文件被多个段目录发现 / 两个不同文件算出同一个段名)在这里转成 console.warn;
+ * 要断言诊断内容本身(而不是只看它被印出来)请用 discoverSegmentsDetailed。
+ * only 与 rootDir 的语义见 discoverSegmentsDetailed。
+ * @param {string[]} dirs 段目录绝对路径(按此顺序发现)
+ * @param {{ only?: string | null, rootDir?: string }} [options] 发现面的显式声明
+ * @returns {Promise<SegmentDescriptor[]>}
+ */
+export async function discoverSegments(dirs, options = {}) {
+  const { segments, issues } = await discoverSegmentsDetailed(dirs, options);
+  for (const issue of issues) {
+    console.warn(
+      `[warn] discoverSegments:${issue.kind}「${issue.name}」:${DISCOVERY_ISSUE_DETAIL[issue.kind]};`
+        + `段名 ${issue.name} 的来源:${issue.sources.join(" / ")}`,
+    );
+  }
+  return segments;
 }
 
 /**
@@ -844,6 +1008,8 @@ export function resolveIsolation(options = {}) {
  * options.only:段选择的显式声明(三态语义见 resolveOnlySelection):未声明 = 顶层默认读
  *   M2W_ONLY(既有单段筛选用法);null = 不筛选(段内嵌套编排跑全量);字符串 = 只跑命中段。
  * options.concurrency:并发槽位数,默认取 resolveConcurrency(未设/非法 → 1,即逐字等价的串行)。
+ * options.rootDir:段树根目录(test/ 根),只影响段名的目录前缀(见 discoverSegments);
+ *   缺省回落段目录 basename,故段内沙盒(在 test/ 树外)不传也能得到干净段名。
  * 调度形态:命中 EXCLUSIVE_SEGMENTS 的独占段**整轮先以并发 1 跑完**(它们对工作树指纹敏感,
  * 与其它段并发必假红),其余段交给 n 槽并发池(段间零状态串扰,并发安全);结果最终按**发现
  * 顺序**输出,故 [ok] 列表、case 合计与 [stats] 最慢段都与完成顺序无关。
@@ -855,13 +1021,13 @@ export function resolveIsolation(options = {}) {
  * 返回 { results, hung };results 每项 = { file, ok, ms, error?, timedOut?,
  * cases?, failureDir? }。
  * @param {string[]} dirs 段目录(按此顺序发现)
- * @param {{ segmentTimeoutMs?: number, isolate?: boolean, only?: string | null, concurrency?: number }} [options]
+ * @param {{ segmentTimeoutMs?: number, isolate?: boolean, only?: string | null, concurrency?: number, rootDir?: string }} [options]
  * @returns {Promise<{ results: SegmentResultEntry[], hung: boolean }>}
  */
 export async function runAll(dirs, options = {}) {
   const timeout = Number(options.segmentTimeoutMs ?? 0);
   const isolate = resolveIsolation(options);
-  const segments = await discoverSegments(dirs, { only: options.only });
+  const segments = await discoverSegments(dirs, { only: options.only, rootDir: options.rootDir });
   // 解析两次是刻意的:夹取只该约束「真正派生 worker 的地方」(池内 worker 数 = min(并发, 段数)),
   // 而输出模式跟的是**请求的档位** —— 设了并发就一律走管道转发,于是「M2W_TEST_CONCURRENCY=4 +
   // 单段筛选」这种最常见的本地复现姿势也验得到读端 utf8 解码(否则该模式只在全量轮次出现,

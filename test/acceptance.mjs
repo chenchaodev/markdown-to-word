@@ -101,6 +101,10 @@ async function work(runner) {
     segmentTimeoutMs: Number(
       process.env.M2W_ACCEPTANCE_SEGMENT_TIMEOUT_MS ?? 180000,
     ),
+    // 段名 = 相对 test/ 根的路径:段放进二级目录(如 test/gates/repo/)后,段名仍是
+    // gates/repo/y.test.js 而不是 repo/y.test.js。testRoot 由本入口持有(runner 只拿到
+    // 段目录绝对路径);缺省时回落段目录 basename,段内沙盒(在 test/ 树外)不传也干净。
+    rootDir: testRoot,
   });
   // REF-024:0 段必须判红。段筛选词拼错时发现面返回空清单,旧实现照常打印
   // 「全部 0 段通过」并 return 0 —— 一个 typo 就把整轮门禁静默关掉。这比崩溃更危险:

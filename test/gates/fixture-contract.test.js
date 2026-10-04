@@ -23,11 +23,18 @@
  *    逐条点名文件 + 全部一致的正向锚点。守的是「夹具漂移必须在 --check 里可见」——
  *    旧实现只逐字节比对被样例引用到的图片,未被引用的夹具与「源副本同时被改」都在
  *    判据之外,曾因此把夹具漂移误判成代码回归(见 gates/fixtures/gen-fixtures.mjs 文件头)。
+ * 6. 段发现的递归性与去重(临时合成树,mkdtemp 在系统临时区,不落 test/ 树):
+ *    二级/三级段被发现且段名是相对 rootDir 的完整相对路径、rootDir 缺省回落到段目录
+ *    basename、祖先/后代段目录对不重复登记(且按段名归并报出,不是静默去重)、
+ *    两个不同文件算出同一个段名须报「段名撞名」、only 筛选对含多斜杠的完整段名仍生效。
+ *    守的是「段放进二级目录后仍会被发现」—— 旧实现是单层 readdir,二级段永远不被发现
+ *    也不被判红(生成器与 runner 同时漏,两边的对读恒等成立)。
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { ROOT, FIXTURES_DIR } from "../harness/paths.js";
-import { discoverSegments } from "../harness/runner.js";
+import { discoverSegments, discoverSegmentsDetailed } from "../harness/runner.js";
 import {
   FIXTURE_SEGMENT_DIRS,
   IMAGE_DIGEST_BASELINE,
@@ -64,6 +71,83 @@ function assert(cond, msg) {
  */
 const seg = (baseName) => ({ baseName });
 
+/**
+ * 递归列出目录下的段文件(相对该目录的 posix 路径;同层按文件名码位序,同层文件先于其子目录)。
+ * 与 gen-fixtures / runner 各有一份实现:这里要的是**独立第三份** —— 对读断言只有在两侧
+ * 实现互不复用时才有检测力,复用任何一方都会退化成自证。
+ * @param {string} dir 目录绝对路径
+ * @param {string} relPrefix 递归内部用的相对前缀
+ * @returns {string[]} 相对 dir 的 posix 路径(发现顺序)
+ */
+function listTestFilesRecursive(dir, relPrefix = "") {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const files = [];
+  const subdirs = [];
+  for (const entry of entries) {
+    const rel = relPrefix === "" ? entry.name : `${relPrefix}/${entry.name}`;
+    if (entry.isDirectory()) subdirs.push({ name: entry.name, rel });
+    else if (entry.name.endsWith(".test.js")) files.push(rel);
+  }
+  for (const sub of subdirs) files.push(...listTestFilesRecursive(path.join(dir, sub.name), sub.rel));
+  return files;
+}
+
+/**
+ * 递归写入一棵合成段树(只造空壳段文件:发现面只读目录项,不 import 内容)。
+ * @param {string} root 树根绝对路径
+ * @param {string[]} relFiles 相对 root 的 posix 段文件路径
+ * @returns {void}
+ */
+function makeSyntheticTree(root, relFiles) {
+  for (const rel of relFiles) {
+    const target = path.join(root, ...rel.split("/"));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, "export async function run() {}\n", "utf8");
+  }
+}
+
+/**
+ * 建临时树根:系统临时区里的 mkdtemp(天然唯一;两套验收同时跑也不会互删 —— 段内沙盒的
+ * 唯一化理由同 setupSandbox 的注释)。
+ * @returns {string} 树根绝对路径
+ */
+function makeTreeRoot() {
+  return fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "m2w-fixture-contract-"));
+}
+
+/**
+ * 删掉合成树:合成段文件绝不能留在 test/ 树外被 lint/typecheck 扫到,更不能留在 test/ 树内
+ * 被生成器与 runner 当成真段发现(那正是 fixture-contract 自己要防的事)。
+ * @param {string} dir 树根绝对路径
+ * @returns {void}
+ */
+function dropSyntheticTree(dir) {
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
+
+/**
+ * 段名清单(断言消息用)。
+ * @param {{name: string}[]} segments 段描述
+ * @returns {string} 逗号分隔的段名
+ */
+const namesOf = (segments) => segments.map((s) => s.name).join(",");
+
+/**
+ * 取清单里唯一的一项(项数 ≠ 1 即抛,免去调用点逐处 `arr[0]` 的下标收窄,也免得
+ * 「断言长度」与「断言首项」写两遍时其中一遍被漏改)。
+ * @template T
+ * @param {T[]} items 清单
+ * @param {string} label 失败标签
+ * @returns {T} 唯一一项
+ */
+function sole(items, label) {
+  if (items.length !== 1 || items[0] === undefined) {
+    throw new Error(`fixture-contract 断言失败:${label}:清单须恰含 1 项,实际 ${items.length} 项`);
+  }
+  return items[0];
+}
+
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
@@ -91,18 +175,19 @@ export async function run() {
       new RegExp(`runAll\\(\\s*${derivedName}\\b`).test(acceptanceSrc),
       `acceptance.mjs 的 runAll 实参须是派生的 ${derivedName}(当前未找到;等于「import 了却没喂 runner」)`,
     );
+    // 递归口径(与 gen-fixtures 的 listSegmentFilesRecursive / runner 的 listSegmentFiles 同形):
+    // 段路径镜像被测主体路径 ⇒ 段会落在二级目录(如 test/gates/repo/),单层扫描会漏掉它们。
     for (const relDir of FIXTURE_SEGMENT_DIRS) {
       const dir = path.join(ROOT, "test", relDir);
       assert(fs.existsSync(dir), `扫描目录不存在:${relDir}`);
-      const onDisk = fs
-        .readdirSync(dir)
-        .filter((f) => f.endsWith(".test.js"))
-        .sort();
-      assert(onDisk.length > 0, `扫描目录内无 *.test.js:${relDir}`);
+      const onDisk = listTestFilesRecursive(dir);
+      assert(onDisk.length > 0, `扫描目录内(递归)无 *.test.js:${relDir}`);
       const found = discovered.filter((s) => s.relDir === relDir).map((s) => path.basename(s.file));
+      // 本组的判据是「生成器在一级+二级都发现得到」:二级段在本仓尚不存在(0 个二级目录),
+      // 故这条断言今天恒等于一级口径 —— 真正的二级覆盖在下面第 7 组的合成树上。
       assert(
-        found.join(",") === onDisk.join(","),
-        `${relDir} 目录内的段文件与生成器发现结果不一致:磁盘=${onDisk.join(",")} 生成器=${found.join(",")}`,
+        found.join(",") === onDisk.filter((f) => !f.includes("/")).join(","),
+        `${relDir} 目录内的一级段文件与生成器发现结果不一致:磁盘=${onDisk.join(",")} 生成器=${found.join(",")}`,
       );
     }
     console.log(`[ok] fixture-contract:段目录单源(同一数组对象)+ acceptance 喂 runner + 与文件系统一致(${FIXTURE_SEGMENT_DIRS.join(",")})`);
@@ -115,7 +200,11 @@ export async function run() {
     delete process.env.M2W_ONLY;
     let runnerNames;
     try {
-      const found = await discoverSegments(FIXTURE_SEGMENT_DIRS.map((d) => path.join(ROOT, "test", d)));
+      // rootDir = test/ 根(与 test/acceptance.mjs 传给 runAll 的是同一个):段名必须两侧同源,
+      // 否则段放进二级目录后生成器给 gates/repo/y.test.js 而 runner 给 repo/y.test.js
+      const found = await discoverSegments(FIXTURE_SEGMENT_DIRS.map((d) => path.join(ROOT, "test", d)), {
+        rootDir: path.join(ROOT, "test"),
+      });
       runnerNames = found.map((s) => s.name).sort();
     } finally {
       if (saved === undefined) delete process.env.M2W_ONLY;
@@ -316,5 +405,165 @@ export async function run() {
     console.log(
       `[ok] fixture-contract:图片夹具字节基线 ${foundKeys.length} 张全覆盖 + 漂移/未登记/残留三类判红点名 + 全部一致判绿`,
     );
+  }
+
+  // ================= 7. 段发现的递归性 / 去重 / rootDir 两分支 =================
+  // 全部在系统临时区(mkdtemp,不落 test/ 树)的合成树上跑:合成段文件一旦留在 test/ 树内
+  // 就会被生成器与 lint/typecheck 当成真段,残留即是事故(同第 4 组的纪律)。
+  {
+    /** @type {string[]} */
+    const roots = [];
+    try {
+      /* ---- 7.1 递归发现 + 段名形态(显式 rootDir:相对 rootDir 的完整相对路径) ---- */
+      const tree = makeTreeRoot();
+      roots.push(tree);
+      // 段目录刻意放在 pkg/ 之下:两级路径才能让「显式 rootDir」与「缺省回落」两条分支
+      // 给出**不同**的前缀(basename ≠ 相对路径),只把段目录放在树根下的话两条分支
+      // 逐字相同,回落分支等于没被断言到。
+      makeSyntheticTree(tree, [
+        "pkg/core/top.test.js",
+        "pkg/core/alpha.test.js",
+        "pkg/gates/w.test.js",
+        "pkg/gates/repo/y.test.js",
+        "pkg/gates/repo/deep/z.test.js",
+        // 非段文件不得被发现(只看 *.test.js)
+        "pkg/gates/notes.md",
+        // 叫 .test.js 的**目录**不得被当成段登记(旧的 readdir 分不清文件与目录)
+        "pkg/gates/decoy.test.js/readme.md",
+      ]);
+      const coreDir = path.join(tree, "pkg", "core");
+      const gatesDir = path.join(tree, "pkg", "gates");
+      const explicit = await discoverSegments([coreDir, gatesDir], { only: null, rootDir: tree });
+      const explicitNames = explicit.map((s) => s.name);
+      assert(
+        explicitNames.join(",")
+          === "pkg/core/alpha.test.js,pkg/core/top.test.js,pkg/gates/w.test.js,pkg/gates/repo/y.test.js,pkg/gates/repo/deep/z.test.js",
+        `递归发现应含二级与三级段且段名为相对 rootDir 的完整相对路径,实际 ${namesOf(explicit)}`,
+      );
+      // ③/④ 形态:嵌套段名(段名是失败产物目录名与 M2W_ONLY 的匹配面,形态必须稳定)。
+      // 判据取「相对其所在段目录还多一层」:段目录在 pkg/ 下,故阈值是 > 3 段
+      const multiSlash = explicitNames.filter((n) => n.split("/").length > 3);
+      assert(
+        multiSlash.join(",") === "pkg/gates/repo/y.test.js,pkg/gates/repo/deep/z.test.js",
+        `嵌套段名应恰为两段(pkg/gates/repo/… 与 pkg/gates/repo/deep/…),实际 ${multiSlash.join(",") || "无"}`,
+      );
+      // 非段文件与「叫 .test.js 的目录」都不得登记为段
+      assert(
+        explicitNames.every((n) => n.endsWith(".test.js") && !n.includes("decoy") && !n.includes("notes")),
+        `只该登记段文件(*.test.js),不该含 notes.md 或叫 .test.js 的目录,实际 ${namesOf(explicit)}`,
+      );
+      // 段描述自洽:dir 必须是段文件**所在**目录(嵌套段为更深子目录),file 不含子目录
+      for (const s of explicit) {
+        const abs = path.resolve(s.dir, s.file);
+        assert(
+          fs.existsSync(abs) && abs.endsWith(s.file),
+          `段描述应指向真实存在的段文件且 file 不含子目录:${s.name} → ${abs}`,
+        );
+        const shown = path.relative(tree, abs).split(path.sep).join("/");
+        assert(shown === s.name, `段名须等于段文件相对 rootDir 的路径:${s.name} vs ${shown}`);
+      }
+
+      /* ---- 7.2 rootDir 缺省 → 回落段目录 basename(树在 test/ 树外,正是段内沙盒的形态) ---- */
+      // 树在系统临时区、不在 test/ 之下:若强制按 testRoot 求相对,段名会变成 ../../…,
+      // 而段名同时是失败产物目录名与筛选匹配面,含 .. 就会顶到 output/artifacts 之外
+      const fallback = await discoverSegments([coreDir, gatesDir], { only: null });
+      const fallbackNames = fallback.map((s) => s.name);
+      assert(
+        fallbackNames.join(",") === "core/alpha.test.js,core/top.test.js,gates/w.test.js,gates/repo/y.test.js,gates/repo/deep/z.test.js",
+        `缺省 rootDir 应回落到段目录 basename 作为前缀(而非相对路径),实际 ${namesOf(fallback)}`,
+      );
+      assert(
+        fallbackNames.every((n) => !n.includes("..") && !path.isAbsolute(n)),
+        `回落分支的段名不得含 .. 或绝对路径(段名会当产物目录名用),实际 ${namesOf(fallback)}`,
+      );
+      // 回落 vs 显式:段文件集合相同,只有前缀不同 ⇒ 两分支都不丢段
+      const fallbackFiles = fallback.map((s) => path.resolve(s.dir, s.file)).sort();
+      const explicitFiles = explicit.map((s) => path.resolve(s.dir, s.file)).sort();
+      assert(
+        fallbackFiles.join(",") === explicitFiles.join(","),
+        "rootDir 两分支发现的段文件集合应相同(前缀不同而已)",
+      );
+      // 边界:传了 rootDir 但段目录在它之外 → 同样回落 basename,绝不产出 ../ 前缀
+      // (真实对应形态:段内沙盒在 output/tmp/ 下,而 rootDir 是 test/ 根)
+      const outside = await discoverSegments([gatesDir], { only: null, rootDir: ROOT });
+      assert(
+        namesOf(outside) === "gates/w.test.js,gates/repo/y.test.js,gates/repo/deep/z.test.js",
+        `段目录不在 rootDir 之内时应回落 basename 而不是产出 ../ 前缀,实际 ${namesOf(outside)}`,
+      );
+      // 同一边界的另一侧:rootDir 是段目录的祖先(tmp 根)时给完整相对路径,两种传法都自洽
+      const inside = await discoverSegments([gatesDir], { only: null, rootDir: os.tmpdir() });
+      assert(
+        namesOf(inside).startsWith(`${path.basename(tree)}/pkg/gates/`),
+        `rootDir 为祖先目录时应给完整相对路径(含临时树自身那层),实际 ${namesOf(inside)}`,
+      );
+
+      /* ---- 7.3 去重:祖先/后代段目录对不得重复登记 ---- */
+      // gates 递归已含 gates/repo 下的两段;段目录表里再加 gates/repo 时同一文件会被发现两次
+      const detailed = await discoverSegmentsDetailed([gatesDir, path.join(gatesDir, "repo")], {
+        only: null,
+        rootDir: tree,
+      });
+      const dupNames = detailed.segments.map((s) => s.name);
+      const dupSet = new Set(dupNames);
+      assert(
+        dupNames.length === 3 && dupSet.size === 3,
+        `祖先/后代段目录对(gates 与 gates/repo)不得重复登记:实际 ${dupNames.length} 条,去重后 ${dupSet.size} 条,清单 ${namesOf(detailed.segments)}`,
+      );
+      assert(
+        dupNames.join(",") === "pkg/gates/w.test.js,pkg/gates/repo/y.test.js,pkg/gates/repo/deep/z.test.js",
+        `去重后应保留每段一次(段名取首次登记的完整相对路径),实际 ${namesOf(detailed.segments)}`,
+      );
+      // 去重**必须不静默**:按段名归并后逐条报出(两段被重复发现 ⇒ 恰两条),各含两个来源
+      const dupIssues = detailed.issues.filter((i) => i.kind === "重复发现");
+      assert(
+        dupIssues.map((i) => i.name).join(",") === "pkg/gates/repo/y.test.js,pkg/gates/repo/deep/z.test.js",
+        `「重复发现」诊断须按段名逐条报出(两个被重复发现的段各一条),实际 ${JSON.stringify(detailed.issues)}`,
+      );
+      for (const issue of dupIssues) {
+        assert(
+          issue.sources.length === 2
+            && (issue.sources[0] ?? "").includes("pkg")
+            && (issue.sources[1] ?? "").includes("pkg"),
+          `重复诊断须列出两个来源(哪两个段目录各发现了它),实际 ${JSON.stringify(issue.sources)}`,
+        );
+      }
+
+      /* ---- 7.4 段名撞名:两个不同文件算出同一个段名须报出,且不吞掉任何一段 ---- */
+      const otherRoot = makeTreeRoot();
+      roots.push(otherRoot);
+      makeSyntheticTree(otherRoot, ["pkg/gates/w.test.js"]);
+      const collide = await discoverSegmentsDetailed([gatesDir, path.join(otherRoot, "pkg", "gates")], {
+        only: null,
+      });
+      const collideIssue = collide.issues.find((i) => i.kind === "段名撞名");
+      assert(
+        collideIssue !== undefined && collideIssue.name === "gates/w.test.js",
+        `两个不同文件算出同一个段名应报「段名撞名」并点名,实际 ${JSON.stringify(collide.issues)}`,
+      );
+      assert(
+        collide.segments.length === 4,
+        `撞名不得吞掉任何一段(runAll 末尾按段名建索引会后者覆盖前者),实际 ${collide.segments.length} 段:${namesOf(collide.segments)}`,
+      );
+
+      /* ---- 7.5 筛选面:only 仍按完整段名做包含匹配(递归后段名变长,含多斜杠) ---- */
+      const filtered = await discoverSegments([gatesDir], { only: "repo/y", rootDir: tree });
+      assert(
+        sole(filtered, "only=repo/y 应只命中 pkg/gates/repo/y.test.js").name === "pkg/gates/repo/y.test.js",
+        `only 筛选须对含多斜杠的完整段名生效,实际 ${namesOf(filtered)}`,
+      );
+      const topFiltered = await discoverSegments([gatesDir], { only: "w", rootDir: tree });
+      assert(
+        sole(topFiltered, "only=w 应只命中 pkg/gates/w.test.js").name === "pkg/gates/w.test.js",
+        `only 筛选对一级段名仍生效,实际 ${namesOf(topFiltered)}`,
+      );
+
+      console.log(
+        "[ok] fixture-contract:段发现递归性(二级/三级段 + 完整相对段名 + 非段文件与 .test.js 目录不入册)+ "
+          + "rootDir 两条分支(显式相对路径 / 缺省与越界回落 basename,段名无 ..)+ "
+          + "祖先/后代目录对去重并按段名归并报出 + 段名撞名报出且不吞段 + only 筛选对多斜杠段名生效",
+      );
+    } finally {
+      for (const dir of roots) dropSyntheticTree(dir);
+    }
   }
 }
