@@ -716,33 +716,6 @@ export async function run() {
     await mFallback.whenSettingsIdle();
     console.log(`[ok] settings:逐键语义表 ${KEY_SEMANTICS.length} 键 × 三轴(角色/缺失合法/处置档)+ version 参数断言通过`);
 
-    // ---- 7e. 4-4 映射面:生产侧不得把 3 个仅测试注入的上下文字段接进来 ----
-    // 护栏不是「比对一份声明」,而是真的跑一次 buildConvertContext 看产物:
-    // 那三项生产零写入者,接进生产映射就成了「设了也不生效」的假开关(步 01 刚清掉的
-    // 那类静默失效)。它们由 core convert() 的第 4 参 ConvertTestOverrides 承接。
-    const { buildConvertContext, TEST_ONLY_CONTEXT_KEYS } = await import(
-      "../../dist/convert/context.js"
-    );
-    const builtCtx = await buildConvertContext({
-      baseDir: ".",
-      title: "设置 schema 护栏",
-      settings: fellBack,
-      imageResolver: async () => null,
-    });
-    for (const testOnly of TEST_ONLY_CONTEXT_KEYS) {
-      assert(
-        !(testOnly in builtCtx),
-        `${testOnly} 生产零注入,不得出现在 buildConvertContext 产出的上下文里`,
-      );
-    }
-    for (const k of [
-      "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering",
-      "pdfCss", "headerFooter", "watermark",
-    ]) {
-      assert(k in builtCtx, `生产上下文应映射设置键 ${k}`);
-    }
-    console.log(`[ok] settings:生产上下文映射不含 ${TEST_ONLY_CONTEXT_KEYS.length} 个仅测试注入字段`);
-
     // ---- 8. 旧 settings.json 兼容(缺 toc/outputDir/typography)→ 其余保留 + 兜底默认 ----
     await fs.writeFile(
       settingsFile,

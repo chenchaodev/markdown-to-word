@@ -1,10 +1,10 @@
 // @ts-check
 /**
- * 页眉页脚设置主进程层验收:
+ * 页眉页脚设置主进程层验收(只管持久化那一半):
  * - sanitize 往返:旧档无 headerFooter 字段 → 默认(现状行为);非法值逐字段回退;
  *   合法值保留(updateSettings patch 路径同语义)
- * - resolveHeaderLogo:路径不存在 → undefined + warn.headerLogoLoadFailed keyed 警告
- *   (降级为无 logo,不抛错);非 custom 模式 / 空路径 → 不读文件直接 undefined
+ * 页眉 logo 读取(resolveHeaderLogo)自本段拆出,落在 test/convert/header-logo.test.js ——
+ * 它的断言对象自始是 convert 的实现,不在 main 层。
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -91,22 +91,7 @@ export async function run() {
     const r5 = await mod3.updateSettings({ headerFooter: { ...valid, footerEnabled: "nope" } });
     assert(r5.headerFooter.footerEnabled === true && r5.headerFooter.headerText === "内部资料", "patch 单字段非法应回退默认且不影响其他字段");
 
-    // ---- 4. resolveHeaderLogo:读取失败 → 警告 + undefined;非 custom/空路径 → 不读 ----
-    const ctxMod = await import("../../dist/convert/context.js");
-    const warnings = /** @type {import("../../src/core/i18n/index.js").KeyedWarning[]} */ ([]);
-    const missing = await ctxMod.resolveHeaderLogo(
-      { ...DEFAULT_HEADER_FOOTER, headerMode: "custom", headerLogoPath: "Z:\\no\\such\\logo.png" },
-      warnings,
-    );
-    assert(missing === undefined, "读取失败应返回 undefined(降级为无 logo)");
-    assert(
-      warnings.length === 1 && warnings[0]?.key === "warn.headerLogoLoadFailed",
-      "读取失败应产生 warn.headerLogoLoadFailed keyed 警告",
-    );
-    const skipped = await ctxMod.resolveHeaderLogo({ ...DEFAULT_HEADER_FOOTER, headerLogoPath: "C:\\x.png" });
-    assert(skipped === undefined, "非 custom 模式不应读 logo 文件");
-
-    console.log("[ok] header-footer(main):sanitize 往返(旧档默认/非法回退/合法保留/patch)+ logo 读取失败降级 断言通过");
+    console.log("[ok] header-footer(main):sanitize 往返(旧档默认/非法回退/合法保留/patch)断言通过");
   } finally {
     await restore();
   }

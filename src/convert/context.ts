@@ -162,7 +162,7 @@ export async function resolveHeaderLogo(
  * 为什么不用「遍历一张表 + 展开」:下游(main 各入口与测试)打的是 dist 产物,dist 无
  * 类型标注,展开一个推导不出成员的值会让这些调用点**丢掉全部字段类型**(按字段取值即
  * 报 TS2339)。故分组以字面量分段表达,「加了不该加的字段」由测试真跑一次
- * `buildConvertContext` 并断言产物键集来守(见 test/main/settings.test.js 7e)。
+ * `buildConvertContext` 并断言产物键集来守(见 test/convert/context-mapping.test.js)。
  */
 export interface BuildConvertContextOptions {
   /** markdown 文件所在目录(图片相对路径基准) */
