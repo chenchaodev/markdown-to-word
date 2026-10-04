@@ -20,8 +20,11 @@
 //   test/gates/**/*.test.js · test/harness/**/*.{js,mjs}
 // 排除 samples(被测样例数据本身,不是清理动作)。
 // **不扫 gates/ tools/**:那里是生产/门禁脚本,rmSync 是被测语义本身(gates/artifacts/
-// clean-artifacts.mjs 的保护区、gate-probes/sandbox.mjs 的 junction 摘除),不是「临时目录清理」。
-// gates/probe/gate-probes/sandbox.mjs 的 removeJunction 因此登记为按设计不在扫描面的条目。
+// clean-artifacts.mjs 的保护区等),不是「临时目录清理」。
+// ⚠ S4 删沙盒层时,ALLOWLIST 里那条 `gate-probes-junction-removal`(登记
+// `sandbox.mjs` 的 `removeJunction`)已随该文件同批删 —— 那条是全表最后一条 `cold: true` 的
+// 「按设计零命中」登记,删后**零条**:gates/ 与 tools/ 整体不入扫描面,故它们内部任何删除动作
+// 都不构成缺口,也不再需要登记位。
 // 清单与 walker(递归列目录)都从单源取,本文件不再自持一份:同一份清单写两遍的代价是
 // 「新增测试子目录要改 N 处,漏改的那处扫不到且静默恒绿」。
 //
@@ -287,20 +290,7 @@ export const ALLOWLIST = Object.freeze([
     why: 'L226-291 的 EPERM/EBUSY 是错误码字面量(硬链接原子提交失败分支的桩),不是删除动作。'
       + '本段的沙盒目录已收口。',
   },
-  {
-    id: 'gate-probes-junction-removal',
-    file: 'gates/probe/gate-probes/sandbox.mjs',
-    match: () => false,
-    cold: true,
-    // ⚠ **S4 删 `gates/probe/` 时本条目必须同批删**(它登记的那个文件随之消失)。
-    // 它现在恒不判红、也不会因文件消失而判红(`cold: true` ⇒ 不计入 staleAllow;gates/ 又不在
-    // 扫描面内)⇒ **单靠门禁发现不了它变成死登记**,故在此留明示。
-    why: 'removeJunction 是 **junction 的 Windows 绕行**:同一段代码在纯 node 下可用、在 Electron 里'
-      + '会抛 `Path is a directory`,故按 unlinkSync → rmdirSync → 纯 node 子进程三级降级,'
-      + '且三条都**非递归**(只摘链接,绝不碰真实 node_modules 目录)。gates/ tools/ 整体不在本门禁'
-      + '扫描面内(那里 rmSync 是被测语义本身),登记为按设计零命中。',
-  },
-]);
+  ]);
 
 /**
  * 第二条规则(助手调用点选项用法)的白名单。与 ALLOWLIST 分开而非合并:

@@ -32,12 +32,12 @@
 // 正卡在自己的顶层 await 上」)。本表自身是纯数据表、无顶层 await,但**规则本身**仍成立:
 // 一条指向本表的 `enforcement` 指针在 S4 之后会变成真自指,由 gate-index.selftest.mjs 判红。
 //
-// ---- 与旧 registry.mjs 的关系(并存期)----
-// `gates/probe/gate-probes/registry.mjs` 仍在(S4 才删),它承载 R1–R5c 五组判据与三种驱动器。
-// 本步**双跑**:`gate-index.selftest.mjs` 断言两表在共有字段上逐条相等、且 id 集合完全一致。
-// ⚠ 本表**不**被旧 registry.mjs 引用(反向也不成立),两者之间唯一的机器对读在 selftest 里。
-//
-// ---- 本表被谁读 ----
+// ---- 与旧 registry.mjs 的关系 ----
+// 旧表 `gates/probe/gate-probes/registry.mjs`(1378 行,承载 R1–R5c)已随 **S4** 整体删除。
+// 本表与它曾**双跑并存**(S3 建立本表时),那份对读已在 S4 随旧表一起退场 ——
+// `gate-index.selftest.mjs` 里那一臂(`auditDualRunConsistency`)整条删除,**未冻结成字面基线**:
+// 冻结即「复述表里的状态」,状态会变、复述即漂移源,且冻结的那份此后无人改动 ⇒ 恒绿的假对照。
+// ⇒ 本表的独立对读现由 `test/gates/repo/gate-index.test.js` 承担(不 import 旧表、在链上)。
 // `gates/repo/check-test-layout.mjs` 静态 import 它(路径单源于该门禁的
 // `GATE_INDEX_MODULE_REL`)。**不要**在这里 import 判定本体(判定侧已 import 本表,反向即成环)。
 //
@@ -314,24 +314,6 @@ export const GATE_INDEX = Object.freeze(
       access: ACCESS_OFFCHAIN,
       modulePath: "gates/repo/check-plan-in-progress.mjs",
       judgment: { module: "gates/repo/check-plan-in-progress.mjs", export: "checkPlanInProgress", shaped: "{ problems: string[], stats }" },
-    },
-    "gate-probes": {
-      id: "gate-probes",
-      npmScripts: ["check:gates"],
-      access: ACCESS_OFFCHAIN,
-      // ⚠ **指针改指到本表自己**(S4-0 起;此前是 `gates/probe/gate-probes/registry.mjs`)。
-      // 三条理由:① 本项登记的判定面在 S4 后仍有意义 —— 「这张表自身是否成立」;S4 删掉
-      // registry.mjs 之后承载它的就是本表 ＋ `check:gate-index:selftest` 那个载体。
-      // ② 删项会让双跑对读少一侧独立来源(从「两份表互相证伪」退化成「一张表自我确认」),
-      // 而 S4 后旧表就没了 ⇒ 那时无人对读。③ 本项是 `check:gate-index:selftest` 这个载体的
-      // **唯一认领者**,删项 ⇒ R3 判 `probe-carrier-orphan`。
-      // ⚠ **旧表 `registry.mjs` 同一项的 `modulePath` 必须同批改成同一个值**:selftest 对旧表
-      // 内联 judgment 那一条改比「新表 judgment.module == 旧表 modulePath」,两边不一致即判红。
-      modulePath: "gates/repo/gate-index.mjs",
-      // ⚠ `export` 指的是**数据表**而不是判定函数 —— 这是「本表存不下内联函数字面量」的既有
-      // 形态(旧表那条是函数字面量)。判定由消费方(check-test-layout 的 L11/L12)＋载体承担,
-      // 不是这张表的某个导出。**故「禁自指」那条规则只作用于 `enforcement` 字段**,本字段不在其内。
-      judgment: { module: "gates/repo/gate-index.mjs", export: "GATE_INDEX", shaped: "Readonly<Record<string, GateIndexEntry>>(数据表;表自身是否成立由 check:gate-index:selftest 判)" },
     },
     "install-smoke": {
       id: "install-smoke",

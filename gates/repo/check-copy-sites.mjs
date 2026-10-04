@@ -109,19 +109,6 @@ export const COPY_SITE_WHITELIST = Object.freeze([
       + "故用 writeFileSync 写副本。改造前本段对旧扫描器完全不可见 —— 那正是旧闭包门禁的头号盲区。",
   },
   {
-    file: "gates/probe/gate-probes/gates/coverage.mjs",
-    copies: null,
-    why: "c8 配置清单由 package.json 的 test:coverage 参数向量解析而来(运行时列表,源码里没有路径字面量)。"
-      + "⚠ 该探针的 `parseCoverageScript` 已迁到 `gates/repo/coverage-baseline-io.mjs`,但**本文件仍含复制原语**"
-      + "(解析出的配置文件被复制进沙盒),故本行不因那次迁移失效。S4 删 `gates/probe/` 时本行须同批删。",
-  },
-  {
-    file: "gates/probe/gate-probes/sandbox.mjs",
-    copies: null,
-    why: "createTreeSandbox:整树镜像 TREE_MIRROR_PATHS + node_modules 目录联接。"
-      + "刻意**不给它判红** —— 它在沙盒里真跑门禁,缺文件当场就红,性质是「自带判据」而不是静默。",
-  },
-  {
     file: "tools/copy-renderer.mjs",
     copies: null,
     why: "构建产物复制(src 静态资源 → dist/renderer),不是沙盒副本;源是目录遍历结果,无路径字面量。",

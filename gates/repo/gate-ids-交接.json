@@ -1,7 +1,14 @@
 {
-  "_comment": "P6「7 个 GATE_IDS 逐个对账」的机器可核 companion(ADR-062:246 的前置硬门)。markdown 版见 docs/evidence/20261004-225514-gate-ids-对账表.md",
+  "_comment": "P6「7 个 GATE_IDS 逐个对账」的机器可核 companion(ADR-062:246 的前置硬门,⚠️ S4 后已退役 —— 退役标记全文见 `_schema.retired`)。markdown 版见 docs/evidence/20261004-225514-gate-ids-对账表.md",
   "_schema": {
     "key": "id",
+    "retired": {
+      "retiredAt": "2026-10-05",
+      "by": "ADR-062 P6 / S4(删沙盒层)",
+      "status": "本表不再是 P6 前置硬门;它保留在链上(`check:gate-ids-table`)只为「md 与 JSON 不漂移」这一条自身成立性判据继续成立",
+      "probeFieldSemantics": "S4 已删沙盒层,`probe` 字段是**历史记录**(记录 S4 删掉的那个文件是谁),不再是可解析路径",
+      "doNot": "勿据 `probe` 字段的存在与否判红,也勿据本表的 state 字段推断当前承接状态 —— 承接现状的单源是 `gates/repo/gate-index.mjs` 与各 `.selftest.mjs`"
+    },
     "successorState": [
       "exists",
       "partial",

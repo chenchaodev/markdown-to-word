@@ -50,7 +50,6 @@
     "check:coverage-zero": "node gates/repo/check-coverage-zero.mjs --zero",
     "check:coverage-zero:selftest": "node gates/repo/check-coverage-zero.selftest.mjs",
     "report:coverage-renderer": "node tools/renderer-coverage-report.mjs",
-    "check:gates": "node gates/probe/check-gate-probes.mjs",
     "test:all": "npm run test && npm run test:smoke",
     "check:smoke-report": "node gates/smoke/smoke-report.mjs",
     "check:pack-size": "node gates/artifacts/pack-size.mjs",

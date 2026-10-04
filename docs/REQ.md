@@ -61,7 +61,6 @@
 | REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 在办 | 配置与门禁断言已落地(装卸两阶段 PATH 断言、期望值从 build.nsis.include 派生、写用 WriteRegExpandStr 保住 %VAR% 展开、超长不静默)。**但真实构建失败**:electron-builder 真实上下文里没有 MUI_PAGE_FUNCTION_CUSTOM,`npm run dist` 挂在 installer.nsh:108;上一轮的「编译通过」是**最小脚手架**证的,脚手架替真构建兜住了这个缺宏。真实安装验证未跑 | installer.nsh 在真实构建里编过之后;或真安装验证跑通之后 | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
 | REQ-180 | 源码树改一职责一文件并补内部边界判据 | 在办 | **本号只承载 ADR-064**：源码树搬迁 T0/T0.0/T1/T2 已落地；T5（门禁元框架退役）＝ ADR-064:154 的 T5，也等于 ADR-062 的 P6 —— T5-a 已完成（删 `--enforce`/`L5_PENDING`，改 `CRITERIA` ＋ `report` 漏斗），T5-b 的 S0 对账表已出、S1a 已补两族，**⛔ 仅 `smoke` 1 族仍阻塞**。⚠️ **测试树搬迁（T3）与豁免表 ratchet（T4）归 REQ-173**。| src 层边界要增删时；或 T4/T5 要动 `check-test-layout.mjs` 的 `access` / 链归属时 | docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md · docs/evidence/20261004-225514-gate-ids-对账表.md |
 | REQ-173 | 测试树改为位置即身份并瘦身门禁元框架 | 在办 | **测试树搬迁（`PLAN.md` T3）＋ 豁免表 ratchet（T4）已落地**：L4 判红自 45 归零（零本层主体 37→0／段 import 段 2→0），L5 60→25、L7 → 多 0/缺 0；T4-a 把 ADR-072 的「`reason` ≥20 字」落成机器判据。⚠️ **ADR 的 L1–L3/L9–L12 仍未实现**（代码里只有 L4–L8 五族），C1 未达成 ⇒ 批次拆分专项（REQ-184）**前置判据尚不存在**。 | src 层边界要增删时；或要落地 ADR-062 的 L1（镜像完整性）时 —— 它是 REQ-184 的前置 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
-| REQ-181 | 门禁注册表自检无链上位置 | 在办 | **三条判据的归宿已定**：R5b（`access` 与链上位置双向一致）**已由 S2 的 L12 `gate-chain-membership` 交付并上链**；R1／R5a（链上新门禁与裸调路径无人登记）与 R5c（载体没人认领／不在链上）**已由 S5 的 `test/gates/repo/gate-index.test.js` 交付并上链**。⚠️ **剩最后一里**：`check:gates` 仍不在任何链上，等 S4 随沙盒层删掉后本号才转已完成。 | ADR-062 P6 门禁元框架退役时一并定 —— 那时 `check:gates` 本就要重写 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 
 ## 已完成
 
@@ -196,6 +195,7 @@
 | REQ-172 | 安装器加开关以真跑 PATH 勾选支 | 已完成 | 开关 /M2W_ADD_PATH=1 落在 preInit,复用勾选框那同一个 flag,customInstall 的判定一字未改。两轮真跑:默认支 9→9→9、勾选支 9→10→9,卸载后逐条同序回基线。真跑还抓出 /D= 吞参数的坑:装到不存在的路径,报错指不到真因。决定见 ADR-063。 | 烟测能跑到勾选支并通过 | docs/adr/ADR-063-装机PATH勾选支的显式开关.md |
 | REQ-170 | gates/ 标识符级静态兜底 | 已完成 | 以 eslint `no-undef` 覆盖三棵非 program 树(标识符级)。**`checkJs` 实测否决**:上千条噪声、真拼错 0 条。反证:注入未定义标识符即判红并点名行号。类型级未覆盖,原记「33 个类型错误」与实测不符 | 门禁脚本开始 import dist/**(会把整个 dist 拉进检查范围);或决定补 JSDoc 标注做类型级覆盖时 | docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md · docs/DEV-GUIDE.md(门禁接入点) |
 | REQ-186 | smoke-report 整族链上零覆盖 | 已完成 | **已闭合**：`smoke-report.selftest.mjs`(32 档，零 spawn)已登记并挂 `verify:ci`，实测 32/32 绿。顺带把 `markers.mjs` 头注「与 `collectSmokeProblems` 同口径」这句**无人执行的承诺**变成可执行断言。 | —— | 实测 `gates/smoke/` 清单；`package.json` 三条链均不含 `check:smoke-report` |
+| REQ-181 | 门禁注册表自检无链上位置 | 已完成 | **已闭合**：R5b 由 S2 的 L12 `gate-chain-membership` 交付；R1／R5a／R5c 由 S5 的 `test/gates/repo/gate-index.test.js` 交付；S4 已删 `check:gates`，「注册表自检无链上位置」不再存在。 | —— | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 
 ## 已作废
 
