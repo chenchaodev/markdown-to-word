@@ -10,8 +10,9 @@
  * 验收入口本身跑在 Electron 里(段宿主是 electron.exe),故在**本进程**内 import
  * 装配层只能证明「electron 宿主下能跑」,证明不了「与宿主无关」—— 若 run.ts 的
  * 依赖链里混进 electron,本进程照样绿。故本段派生一个**真 node** 子进程
- * (不设 ELECTRON_RUN_AS_NODE,不经 electron;解析口径同 core/clean-artifacts-gate.test.js
- * 的 resolveNode),在那里 import 装配层并跑完整 docx 转换:
+ * (不设 ELECTRON_RUN_AS_NODE,不经 electron;解析口径取
+ * test/harness/node-exec.js 的 resolveNode —— 全仓单一来源),在那里 import 装配层
+ * 并跑完整 docx 转换:
  * 只要依赖链里有任何一个 electron import(哪怕只是 mermaid-service 的模块顶层
  * `app.on("will-quit")`),该子进程就会在 import 期抛错,本段红。
  *
@@ -34,6 +35,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
 import { createTempResource, removeTree } from "../harness/temp-resource.js";
 
@@ -64,19 +66,6 @@ export const covers = [
  */
 function assert(cond, msg) {
   if (!cond) throw new Error(`convert-run-headless 断言失败:${msg}`);
-}
-
-/**
- * 解析**真 node** 可执行文件:验收入口跑在 Electron 里(process.execPath 是
- * electron.exe),故优先取 npm 注入的 node_execpath,再退回按名找 node。
- * 刻意不接受 electron.exe —— 用它就必须设 ELECTRON_RUN_AS_NODE,那就不是纯 node 了。
- * @returns {string}
- */
-function resolveNode() {
-  for (const candidate of [process.env.npm_node_execpath, process.execPath]) {
-    if (candidate && /node(\.exe)?$/i.test(candidate)) return candidate;
-  }
-  return process.platform === "win32" ? "node.exe" : "node";
 }
 
 /**

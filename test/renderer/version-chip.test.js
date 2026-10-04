@@ -28,6 +28,7 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
 
 /**
@@ -63,14 +64,6 @@ const DOM_STUB = path.resolve(here, "./dom-stub.js");
  */
 function assert(cond, msg) {
   if (!cond) throw new Error(`version-chip 断言失败:${msg}`);
-}
-
-/** 解析 node 可执行文件:验收入口跑在 Electron 里(process.execPath 是 electron.exe) */
-function resolveNode() {
-  for (const candidate of [process.env.npm_node_execpath, process.execPath]) {
-    if (candidate && /node(\.exe)?$/i.test(candidate)) return candidate;
-  }
-  return process.platform === "win32" ? "node.exe" : "node";
 }
 
 const NODE = resolveNode();

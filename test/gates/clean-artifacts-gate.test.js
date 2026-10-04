@@ -51,6 +51,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 
@@ -97,14 +98,6 @@ const SANDBOXES = new Set();
  */
 function assert(cond, msg) {
   if (!cond) throw new Error(`clean-artifacts-gate 断言失败:${msg}`);
-}
-
-/** 解析 node 可执行文件:验收入口跑在 Electron 里(process.execPath 是 electron.exe) */
-function resolveNode() {
-  for (const candidate of [process.env.npm_node_execpath, process.execPath]) {
-    if (candidate && /node(\.exe)?$/i.test(candidate)) return candidate;
-  }
-  return process.platform === "win32" ? "node.exe" : "node";
 }
 
 const NODE = resolveNode();

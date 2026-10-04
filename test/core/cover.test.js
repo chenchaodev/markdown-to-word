@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * 封面页测试(双格式,新段):
- * docx:renderCoverPage(dist/core/docx/render.js)——frontmatter metadata.title 存在时
+ * docx:renderCoverPage(dist/core/docx/chrome.js)——frontmatter metadata.title 存在时
  * 置于文档最前:标题 44 half-points(=22pt,docx 库 size 单位为 half-points)居中加粗
  * (<w:sz w:val="44"/> + <w:b/> + <w:jc w:val="center"/>),author/date 居中灰字
  * (<w:sz w:val="22"/> + <w:color w:val="808080"/>),末尾 PageBreak 独占一页。

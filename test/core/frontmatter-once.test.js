@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 import { unzipPart } from "../harness/docx-utils.js";
+import { resolveNode } from "../harness/node-exec.js";
 import { FIXTURES_DIR, ROOT } from "../harness/paths.js";
 import { cleanupTempResources, createTempResource } from "../harness/temp-resource.js";
 
@@ -57,14 +58,6 @@ export const covers = [
  */
 function assert(cond, msg) {
   if (!cond) throw new Error(`frontmatter-once 断言失败:${msg}`);
-}
-
-/** 解析 node 可执行文件:验收入口跑在 Electron 里(process.execPath 是 electron.exe)。 */
-function resolveNode() {
-  for (const candidate of [process.env.npm_node_execpath, process.execPath]) {
-    if (candidate && /node(\.exe)?$/i.test(candidate)) return candidate;
-  }
-  return process.platform === "win32" ? "node.exe" : "node";
 }
 
 const NODE = resolveNode();

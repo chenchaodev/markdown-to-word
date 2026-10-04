@@ -43,6 +43,10 @@
  * 结果)覆盖:调用序、退出码判红、超时判红、残留比对、一次性 userData 清理都走真实分支,
  * 只是不碰系统;残留自愈由「假系统」替身(内存里的注册表键/开始菜单痕迹 + 记账删除器)
  * 驱动,能验证「删哪些/不删哪些」,同样不碰系统。
+ *
+ * node 可执行文件解析**刻意不收口**到 test/harness/node-exec.js:本段候选链多一项
+ * `process.env.NODE`(尊重显式 `NODE=` 覆盖),canonical 不含该项。抹平会改动本段
+ * --launcher 桩实际被哪个 node 拉起的行为,属本段自己的口径,故保留私有实现。
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";

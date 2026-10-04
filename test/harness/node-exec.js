@@ -4,7 +4,7 @@
  *
  * ## 为什么收口到本模块
  *
- * 本函数此前有 **6 份逐字相同的副本**(散在 `test/cli/options.test.js`、
+ * 本函数此前有 **4 份逐字相同的副本**(散在 `test/cli/options.test.js`、
  * `test/convert/run-headless.test.js`、`test/core/frontmatter-once.test.js`、
  * `test/gates/clean-artifacts-gate.test.js`、`test/gates/install-smoke.test.js`、
  * `test/renderer/version-chip.test.js`)。副本本身就是缺陷:「怎么找真 node」是**一条跨面
