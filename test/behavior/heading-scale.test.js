@@ -24,6 +24,15 @@ import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../ha
 import fs from "node:fs/promises";
 
 /**
+ * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
+ * 在磁盘上真实存在」,元素是**仓库相对 POSIX 路径**。
+ */
+export const covers = [
+  "src/core/settings/typography.ts",
+  "src/renderer/settings/settings-logic.ts",
+];
+
+/**
  * 断言辅助。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息

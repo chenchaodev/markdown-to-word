@@ -415,7 +415,7 @@ export const GATE_REGISTRY = Object.freeze(
           ref: "smoke",
           why: "沙盒探针在副本里真启一次 Electron 冒烟:锚点断言 exit 0 且五条标记齐备,负向用 append 覆写桩掉转换核心,断言非 0 且缺 convert ok 标记",
         },
-        { kind: "segment", ref: "test/gates/packaged-smoke.test.js", why: "验收段锁「退出码 0 + 五条标记 = 通过 / 非零 = 判红」这条判定口径与标记恒等" },
+        { kind: "segment", ref: "test/behavior/packaged-smoke.test.js", why: "验收段锁「退出码 0 + 五条标记 = 通过 / 非零 = 判红」这条判定口径与标记恒等" },
       ],
     },
     geometry: {

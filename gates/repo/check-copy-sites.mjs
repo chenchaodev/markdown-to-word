@@ -2,7 +2,7 @@
 //
 // ---- 它取代了什么、为什么换方向 ----
 // 此前是「沙盒副本闭包」机制三层:shared/copy-closure.js 的词法层 + test/common/copy-closure-audit.js
-// 的扫描审计层 + 守护段 test/gates/contract-single-source.test.js 的 (e) 节。
+// 的扫描审计层 + 守护段 test/behavior/contract-single-source.test.js 的 (e) 节。
 // 那套机制的判据方向是 fail-open 的,四种表现都被实测确认过:
 //   ① 全局并集:auditCopySet 的副本集合是**所有复制点副本的并集**,任一 via 带了
 //      shared/paths.js,其余沙盒全漏也判绿(ADR-040 背景一);

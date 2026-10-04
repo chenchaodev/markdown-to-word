@@ -23,6 +23,15 @@ import path from "node:path";
 import { ROOT } from "../harness/paths.js";
 import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 
+/**
+ * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
+ * 在磁盘上真实存在」,元素是**仓库相对 POSIX 路径**。
+ */
+export const covers = [
+  "test/harness/electron-mock.mjs",
+  "shared/test-common-surface.js",
+];
+
 /** src 侧被 mock 覆盖的 electron 运行时绑定(新增/删除用法须同步改本常量与 electron-mock.mjs) */
 const SRC_REQUIRED = [
   "BrowserWindow",

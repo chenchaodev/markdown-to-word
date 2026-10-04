@@ -55,6 +55,7 @@ const BASE_SHAPE = Object.freeze({
   'test/mcp': 1,
   'test/harness': 7,
   'test/shared': 2,
+  'test/behavior': 2,
 });
 
 /** 合法形态的助手调用与单文件删除(第一条与第二条规则都不得判红) */
@@ -237,7 +238,7 @@ const CASES = [
     // 期望写成与具体数字无关的形态(下限判据只承诺「低于下限即红」,不承诺某个夹具形状
     // 恰好是几 —— 门禁多带一个依赖进来时,这条断言不该跟着改)。
     name: '扫描面塌缩(文件数掉到下限以下)',
-    shape: { 'test/core': 4, 'test/main': 2, 'test/renderer': 2, 'test/gates': 1, 'test/convert': 1, 'test/cli': 2, 'test/mcp': 1, 'test/harness': 1, 'test/shared': 1 },
+    shape: { 'test/core': 4, 'test/main': 2, 'test/renderer': 2, 'test/gates': 1, 'test/convert': 1, 'test/cli': 2, 'test/mcp': 1, 'test/harness': 1, 'test/shared': 1, 'test/behavior': 1 },
     expect: /只扫到 \d+ 个文件\(下限 50\):扫描面或 walker 失效/,
   },
   {

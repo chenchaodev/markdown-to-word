@@ -218,6 +218,27 @@ const TYPE_ONLY_SRC_REF = [
   "",
 ].join("\n");
 
+/**
+ * 一个 behavior 夹具段:`covers` 声明形态可配。
+ *
+ * 行为段**不 import 任何层主体**(它的定义就是横跨多层),所以 L4 天然不适用它 ——
+ * 这条夹具只验 L6。`covers` 传 `null` 表示整条声明缺席。
+ * @param {string[] | null} covers 声明元素;null = 不写声明
+ * @returns {string}
+ */
+function behaviorSegment(covers) {
+  return [
+    "// @ts-check",
+    "/** 夹具段:behavior 段(横跨多层,不 import 任何层主体)。 */",
+    ...(covers === null
+      ? []
+      : ["/** 本段横跨的层:仓库相对 POSIX 路径。 */", `export const covers = [${covers.map((c) => JSON.stringify(c)).join(", ")}];`]),
+    "export const meta = { description: 'behavior' };",
+    "export async function run() { return 1; }",
+    "",
+  ].join("\n");
+}
+
 const CASES = [
   {
     name: "夹具基线(每层段都 import 本层主体、顶层目录集合恰好等于派生集∪{behavior,harness})→ 零判红",
@@ -275,7 +296,11 @@ const CASES = [
     name: "L4:behavior/ 与 harness/ 下的段不参与 L4(判据只管镜像层目录)",
     judgeOnly: true,
     extra: {
-      [`${TEST_REL}/behavior/cross.test.js`]: NO_OWN_SUBJECT,
+      // behavior 下这个段**必须带合法 covers**:本夹具的断言是「L4/L5 不参与 behavior」,
+      // 而 L6(T3 步 4c 建)对 behavior 段是生效的 —— 不给它 covers,L6 会判红,而那正是
+      // 本夹具**不该**断的那一格。故这里给它一份齐备声明,把 L6 的影响从本夹具里摘干净。
+      [`src/core/real.ts`]: "export const real = 1;\n",
+      [`${TEST_REL}/behavior/cross.test.js`]: behaviorSegment(["src/core/real.ts"]),
       [`${TEST_REL}/harness/helper.test.js`]: NO_OWN_SUBJECT,
     },
     // harness 下有段是 L8 的判红(不是 L4),behavior 下的段两族都不管
@@ -566,6 +591,86 @@ const CASES = [
     extra: {},
     minScannedFiles: BASE_PAD + 1000,
     expect: /scan-surface-collapsed:.*只扫到 \d+ 个段文件\(下限 \d+\)/,
+  },
+  // ---- L6:behavior 段的 covers 声明 ----
+  // 三条 fail-closed 各有夹具。**第三条(元素必须真实存在)是这条判据唯一挡得住
+  // 「随便写个字符串就过」的判据** —— 只钉前两条的话,判据退化成「看你写没写」,
+  // 而「写了」几乎不携带信息(ADR-062:76 的原话:这是关键)。
+  {
+    name: "L6:behavior 段未 export const covers → 判红并点名",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/behavior/decl.test.js`]: behaviorSegment(null) },
+    expect: /test\/behavior\/decl\.test\.js → behavior-covers-declared:behavior 段未 export const covers/,
+  },
+  {
+    name: "L6:covers 是空数组 → 判红(空声明与缺声明等效,不能只判后者)",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/behavior/empty.test.js`]: behaviorSegment([]) },
+    expect: /test\/behavior\/empty\.test\.js → behavior-covers-declared:covers 是空数组/,
+  },
+  {
+    // 有牙齿的那一条:元素指向磁盘上不存在的文件。
+    name: "L6:covers 元素在磁盘上不存在 → 判红(否则「随便写个字符串」就能过)",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/behavior/ghost.test.js`]: behaviorSegment(["src/core/nope.ts"]) },
+    expect: /test\/behavior\/ghost\.test\.js → behavior-covers-declared:covers 元素「src\/core\/nope\.ts」在磁盘上不存在/,
+  },
+  {
+    name: "L6:covers 元素逐个核对(多个里有一个不存在 → 点名那一个)",
+    judgeOnly: true,
+    extra: {
+      [`src/core/real.ts`]: "export const real = 1;\n",
+      [`${TEST_REL}/behavior/partial.test.js`]: behaviorSegment(["src/core/real.ts", "src/core/ghost.ts"]),
+    },
+    expect: /covers 元素「src\/core\/ghost\.ts」在磁盘上不存在/,
+  },
+  {
+    // 判绿方向:声明齐备且元素真实存在 → 零判红。缺它的话,前三条可能只是「恒红」。
+    name: "L6:behavior 段 covers 非空且元素都存在 → 判绿",
+    judgeOnly: true,
+    extra: {
+      [`src/core/real.ts`]: "export const real = 1;\n",
+      // covers 元素不限定在 src/(见判据文件头理由 ③):非 src 的主体也是合法覆盖面,
+      // 故这里刻意用一个 shared/ 下的元素,顺带证明「不限目录前缀」这条不是写在注释里的空话。
+      [`shared/paths.js`]: "export const ROOT = '/x';\n",
+      [`${TEST_REL}/behavior/ok.test.js`]: behaviorSegment(["src/core/real.ts", "shared/paths.js"]),
+    },
+    expect: null,
+  },
+  {
+    // covers 扩展到正常段目录后的那一格:段没有本层 import,但声明自己测本层
+    // ⇒ L4 的声明通道生效、判绿。**这格是 ADR-062:86 那条「不改 L4 判据、改给声明通道」
+    // 的存在证明** —— 去掉它就等于把机制建了却不验证它真能解决那 29 个段的问题。
+    name: "covers 扩展:零本层 import 的段声明自己测本层 → L4 判绿(声明通道)",
+    judgeOnly: true,
+    extra: {
+      [`src/core/real.ts`]: "export const real = 1;\n",
+      [`${TEST_REL}/core/declared.test.js`]: behaviorSegment(["src/core/real.ts"]),
+    },
+    expect: null,
+    expectAbsent: /test\/core\/declared\.test\.js → test-layer-self-hosted/,
+  },
+  {
+    // 声明通道的边界:声明的是**别层**就不算本层主体 —— 否则「随便声明一个别的层」
+    // 就成了绕过 L4 的后门,那与不建通道无异。
+    name: "covers 扩展:声明的元素不落在本层主体根 → L4 仍判红(不是万能后门)",
+    judgeOnly: true,
+    extra: {
+      [`src/main/real.ts`]: "export const real = 1;\n",
+      [`${TEST_REL}/core/other-layer.test.js`]: behaviorSegment(["src/main/real.ts"]),
+    },
+    expect: /test\/core\/other-layer\.test\.js → test-layer-self-hosted/,
+  },
+  {
+    // 正常段目录写了 covers 也要受约束:写了空数组 / 指向不存在,都判红。
+    // 不钉这一格的话,「正常段目录的 covers 是可选的」会被读成「随便写」。
+    name: "L6 扩展:正常段目录写了空 covers → 判红(声明通道不接受空声明)",
+    judgeOnly: true,
+    extra: {
+      [`src/core/real.ts`]: "export const real = 1;\n",
+      [`${TEST_REL}/core/empty-decl.test.js`]: behaviorSegment([]),
+    },
+    expect: /test\/core\/empty-decl\.test\.js → behavior-covers-declared:covers 是空数组/,
   },
   // ---- 进程级档:默认 vs --enforce 的退出码 ----
   {

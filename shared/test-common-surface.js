@@ -52,14 +52,30 @@ import path from "node:path";
  * 待有真主体时再登记(登记那一刻要同批补两个 selftest 的 BASE_SHAPE)。
  * @type {readonly string[]}
  */
-export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates", "convert", "cli", "mcp", "shared"]);
+export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates", "convert", "cli", "mcp", "shared", "behavior"]);
 
 /**
  * 不得作为段目录的名字(它们是 harness / 数据区 / 入口,不是被断言的树)。
  * 显式列出而非「顶层没有同名树就放行」——否则把段塞进 test/harness 也能过镜像判据。
+ *
+ * ⚠ 语义是「**禁止**当段目录」,不是「允许存在但豁免镜像义务」—— 往这里加 `behavior`
+ *   会把跨层段目录变成**禁止**项(T3 步 4c 实测:两道文本门禁立刻判红「behavior 是
+ *   harness/数据区/入口名」)。「允许存在但不要求镜像」是另一张表的职责:
+ *   `gates/repo/check-test-layout.mjs` 的 `NON_MIRROR_TOP_DIRS`(它管 L7 的顶层目录集合),
+ *   以及 checkSegmentMirrors 里对 `behavior` 的显式跳过。两张表语义相近而方向相反,
+ *   混用会得到「以为豁免了、实际被禁止」的结果。
  * @type {readonly string[]}
  */
 const NON_MIRROR_DIR_NAMES = Object.freeze(["harness", "fixtures", "acceptance"]);
+
+/**
+ * 「是段目录,但不要求镜像一棵顶层树」的**唯一**段目录名(ADR-062 的 `test/behavior/`)。
+ *
+ * 它与 `NON_MIRROR_DIR_NAMES` 是**方向相反**的两张表,混用会得到「以为豁免了、
+ * 实际被禁止」的结果(见 checkSegmentMirrors 里那处分支的注释)。
+ * @type {string}
+ */
+const NON_MIRROR_SEGMENT_DIR = "behavior";
 
 /** 段文件判定(与 test/harness/runner.js 的 discoverSegments 同口径:只收 *.test.js) */
 const isSegmentFile = (/** @type {string} */ name) => name.endsWith(".test.js");
@@ -276,6 +292,15 @@ export function checkSegmentMirrors(root, segmentDirs = SEGMENT_DIRS) {
       reasons.push(`「${head}」是 harness/数据区/入口名,不是被断言的树`);
       continue;
     }
+    // `behavior` 是**段目录**,但它不对应任何一棵被断言的顶层树(ADR-062:一个段横跨多层
+    // 正是它的定义)⇒ 豁免「必须镜像」这条义务,但**不豁免**它作为段目录的存在 ——
+    // 它在 SEGMENT_DIRS 里、被 runner 发现、被 L6 的 covers 判据管。
+    //
+    // 为什么单列而不并进 NON_MIRROR_DIR_NAMES:那张表的语义是「**禁止**当段目录」
+    // (harness / fixtures / acceptance),把 behavior 放进去等于把跨层段目录变成禁止项 ——
+    // 实测两道文本门禁会立刻判红「behavior 是 harness/数据区/入口名」。两张表语义相近
+    // 而方向相反,必须分开,否则「以为豁免了、实际被禁止」。
+    if (head === NON_MIRROR_SEGMENT_DIR) continue;
     if (!candidates.has(head)) {
       offenders.push(`test/${name}`);
       reasons.push(

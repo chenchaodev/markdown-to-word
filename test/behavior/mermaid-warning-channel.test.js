@@ -42,6 +42,16 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 
+/**
+ * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
+ * 在磁盘上真实存在」,元素是**仓库相对 POSIX 路径**。
+ */
+export const covers = [
+  "src/main/services/mermaid-service.ts",
+  "src/core/i18n/index.ts",
+  "src/main/converter/index.ts",
+];
+
 /** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
 /** @typedef {import("../../src/core/i18n/index.js").KeyedWarning} KeyedWarning */
 

@@ -14,7 +14,7 @@
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
 // 而那正是最该被抓的形态:`test/core/runner-report.test.js`(797 行)import 的是
 // `test/harness/runner.js`(测试框架自身),`test/shared/entry-exit-guard.test.js` 测的是
-// `shared/entry-guard.mjs`,`test/gates/contract-single-source.test.js` 零 `gates/` import。
+// `shared/entry-guard.mjs`,`test/behavior/contract-single-source.test.js` 零 `gates/` import。
 // 「至少一个」这条下界(而非「不许越界」那条上界)才是 L4 的全部内容。
 //
 // ---- L4 的「本层主体根」是什么 ----
@@ -50,7 +50,7 @@
 //
 // ---- L5 为什么**恒报告**、连 `--enforce` 也不参与退出码(ADR-064 的节奏) ----
 // L5 在 T1 建时**当前即红**,且**已知会误伤合理跨层**:实测
-// `test/core/heading-scale.test.js` import `dist/renderer/settings/settings-logic.js`
+// `test/behavior/heading-scale.test.js` import `dist/renderer/settings/settings-logic.js`
 // 做 token 对照,`test/shared/geometry-gate.test.js` import `shared/geometry/*`
 // (几何 core 本就归 shared),这类跨层是**有意的**。把这种误伤做成 fail-closed,
 // 会逼人去删正确的测试或塞豁免表 —— 那比判红本身更坏。
@@ -76,7 +76,7 @@
 // (验收段在 Electron 里跑,而它 import 本模块的时刻不该决定整场验收的退出码);而注册表
 // R4b 会逐项对账「judgment.load 声明」与「顶层是否自执行」的事实。守卫写法与
 // check-src-layout.mjs / check-import-boundary.mjs / check-changelog.mjs 同形。
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { isMainModule, parseArgs } from "../../shared/cli.mjs";
 import { lexSource } from "../../shared/copy-closure.js";
@@ -100,6 +100,14 @@ export const SEGMENT_EXT = ".test.js";
  * 性质的常量:镜像源那一半从磁盘派生,这里登记的是**派生之外的豁免位**,两者不会互相漂移。
  */
 export const NON_MIRROR_TOP_DIRS = Object.freeze(["behavior", "harness"]);
+/**
+ * 跨层段的段目录名(L6 的作用域标记)。
+ *
+ * 单列成常量而不是在 L6 里写字面量 `"behavior"`:判据本体与 `NON_MIRROR_TOP_DIRS` 里那一项
+ * 指的是同一个目录,两处各写一份字面量就是一处可漂移的副本 —— 而漂移的后果是 L6 静默
+ * 失去作用域(behavior 段不再被要求声明,而没人会注意到)。
+ */
+export const BEHAVIOR_DIR = "behavior";
 /**
  * 扫描面(段)文件数下限:walker 整体失效(零段)时四族判据会「全绿」,而恒绿是纯文本门禁
  * 最坏的失效形态(没人会去看一个总是 exit 0 的脚本)。取实测值的约 3/4
@@ -127,6 +135,7 @@ const USAGE = "用法: node gates/repo/check-test-layout.mjs [--enforce] [--help
  * @property {string} root 求值根
  * @property {(relative: string) => string} readText 读仓库相对文本
  * @property {(relative: string) => DirEntry[]} listDir 列仓库相对目录
+ * @property {(relative: string) => boolean} fileExists 判仓库相对路径是否存在(L6 核 covers 元素用)
  * @property {number} minScannedFiles 扫描面段数下限(0 = 关闭该判据,合成夹具用)
  */
 
@@ -171,6 +180,7 @@ export function makeTestLayoutCtx(base = {}) {
       base.listDir
       ?? ((relative) => readdirSync(path.join(root, ...relative.split("/")), { withFileTypes: true })
         .map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }))),
+    fileExists: base.fileExists ?? ((relative) => existsSync(path.join(root, ...relative.split("/")))),
     minScannedFiles: base.minScannedFiles ?? MIN_SCANNED_FILES,
   };
 }
@@ -244,6 +254,46 @@ export function deriveMirrorLayers(ctx) {
  * @param {string} file 文件的仓库相对 POSIX 路径(解析相对说明符的基准)
  * @returns {{ spec: string, typeOnly: boolean, resolved: string | null }[]}
  */
+/**
+ * 抽一个段声明的 `covers`(ADR-062 L6)。
+ *
+ * 认的是**字面量数组**:只接受 `export const covers = ["…", …]` 与
+ * `export const covers = [...]` 里全是字符串字面量的形态。刻意不解析变量引用
+ * (`covers = SOME_LIST`):那会让 L6 的第三条(元素必须真实存在)退化成「追一个值再判」,
+ * 而追值就得引入求值器 —— 一旦判据自己开始算,「声明与代码不同步」这类漂移就查不出来了。
+ * 判据看不懂的写法按「未声明」处理(behavior 段即判红),不按「声明了但内容未知」放过。
+ *
+ * 走 `lexSource` 抹注释(与 extractImports 同款取舍):说明文字里写
+ * `export const covers = [...]` 不构成声明。
+ *
+ * @param {string} text 段文件文本
+ * @returns {string[] | null} 声明的元素;`null` = 未声明
+ */
+export function extractCovers(text) {
+  const lexed = lexSource(text);
+  const DECL_RE = /\bexport\s+const\s+covers\s*=\s*\[([\s\S]*?)\]/g;
+  /** @type {string[] | null} */
+  let found = null;
+  for (const m of lexed.code.matchAll(DECL_RE)) {
+    const at = m.index ?? 0;
+    if (lexed.inString[at] === 1) continue;
+    // 括号里的每个元素都必须是字符串字面量;出现任何非字面量内容(标识符 / 数字 / 嵌套调用)
+    // 就判定据看不懂该写法 —— 按「未声明」处理,不在这里猜。
+    const inner = m[1] ?? "";
+    const stripped = inner.replace(/\/\/[^\n]*/g, "").trim();
+    if (stripped === "") {
+      found = found ?? [];
+      continue;
+    }
+    const elements = [...stripped.matchAll(/(["'])((?:\\.|(?!\1)[^\\])*)\1/g)];
+    const consumed = elements.reduce((sum, el) => sum + el[0].length, 0);
+    const punctuation = stripped.replace(/\s+/g, "").replace(/(["'])((?:\\.|(?!\1)[^\\])*)\1/g, "").replace(/,/g, "");
+    if (punctuation !== "" || consumed === 0) return null;
+    found = elements.map((el) => el[2] ?? "");
+  }
+  return found;
+}
+
 export function extractImports(text, file) {
   const lexed = lexSource(text);
   /** @type {{ spec: string, typeOnly: boolean, resolved: string | null }[]} */
@@ -329,6 +379,7 @@ export function checkTestLayout(base = {}) {
     l7Extra: 0,
     l7Missing: 0,
     l8Violations: 0,
+    l6Violations: 0,
   };
 
   /** @type {string[]} */
@@ -372,20 +423,30 @@ export function checkTestLayout(base = {}) {
     if (!layerSet.has(layer)) continue;
     stats.layerSegments += 1;
     const own = mirror.rootsOf(layer);
-    const imports = extractImports(ctx.readText(file), file);
+    const source = ctx.readText(file);
+    const imports = extractImports(source, file);
+    // L4 的**声明通道**(ADR-062:86):段可以直接 import 本层主体,也可以用 covers 声明
+    // 自己测的是本层。ADR-062 已否决「改成传递闭包」—— 那会让 `test/core/comments.test.js`
+    // 这类段恒绿(它经 harness 助手间接到达 core,闭包一算就是 core 主体,而它其实只是
+    // 「借」了 core 的模块)。声明通道与闭包的区别在于:闭包是判据替段推断,声明是段自己
+    // 写明,且写错会被 L6 的第三条判红(元素必须在磁盘上真实存在)。
+    const covers = extractCovers(source);
+    const coversOwn = covers !== null && covers.some((element) => own.some((p) => element.startsWith(p)));
 
     // L4 上界:至少一个解析后落在本层主体根内的引用。
     // type-only 引用**计入**「至少一个」—— 形如 `@typedef {import("../../src/core/i18n.js")…}`
     // 的类型引用是本仓的必需形态(产物不产 .d.ts,见文件头),把它判红等于逼人删掉类型标注。
     const ownHits = imports.filter((entry) => entry.resolved !== null && own.some((p) => entry.resolved.startsWith(p)));
-    if (ownHits.length === 0) {
+    if (ownHits.length === 0 && !coversOwn) {
       stats.l4NoOwnSubject += 1;
       stats.l4Violations += 1;
       problems.push(
         `${file} → test-layer-self-hosted:该段解析后**没有 import 任何 ${layer} 层的主体**`
         + `(本层主体根 ${own.join(" 或 ")})—— 「不许 import 别层」这类上界规则在它身上会全绿,`
-        + `而它恰恰是最该被抓的形态。要么搬进真正被测的那一层,要么它测的其实是测试框架/门禁自身:`
-        + `那种段归 test/behavior/ 并在 covers 里写明被测对象`,
+        + `而它恰恰是最该被抓的形态。三条正当出路:搬进真正被测的那一层;`
+        + `它测的其实是测试框架/门禁自身 → 归 test/behavior/ 并在 covers 里写明被测对象;`
+        + `它经 harness 助手/子进程间接到达本层(判据静态看不见)→ 留在原处并 export const covers `
+        + `声明它测的是本层(声明里至少一个元素要落在本层主体根 ${own.join(" 或 ")} 下)`,
       );
     }
 
@@ -455,6 +516,60 @@ export function checkTestLayout(base = {}) {
     );
   }
 
+  // ---- 判据五 L6:行为段的 covers 声明(ADR-062:76)----
+  //
+  // **`covers` 元素是什么、为什么是那个形态**(ADR-062 只给了语义,形态由本判据定):
+  // 元素是**仓库相对 POSIX 路径**,指向被测模块在磁盘上的真实位置(如
+  // `src/core/cancel.ts`、`test/harness/electron-mock.mjs`、`gates/smoke/smoke-proc.mjs`)。
+  // 三条理由:
+  //   ① **可解析且能真验** —— L6 的第三条(指向不存在的模块即判红)要求判据手里有一个
+  //      权威的「这个路径存不存在」口径;仓库相对路径直接对磁盘判,不需要任何猜测。
+  //   ② **不引入位置耦合** —— 若用段文件相对的 `../../src/…`,段一换目录声明就得跟着改。
+  //      本仓刚在 T3 步 3/4a 搬了 15 个段,那种写法会产生 15 处纯机械的声明漂移,
+  //      而 `shared/paths.js` 存在的全部理由就是消灭这一类耦合(见其文件头)。
+  //   ③ **不限定在 src/** —— 跨层段的主体未必是 src 模块:`electron-mock-coverage`
+  //      守的是 `test/harness/electron-mock.mjs` 的导出集,`packaged-smoke` 还守
+  //      `gates/smoke/smoke-proc.mjs`。故只要求「在磁盘上存在」,不加目录前缀限制 ——
+  //      加了就得为「主体不是 src」单开例外,而那正是本条要覆盖的一半场景。
+  // 判绿条件:behavior 段**必须**声明且非空、每个元素都存在;正常段目录**不强制**声明,
+  // 但一旦声明就同样受「非空 + 元素存在」约束(否则声明通道本身就能撒谎)。
+  for (const file of segments) {
+    const layer = file.split("/")[1] ?? "";
+    const isBehavior = layer === BEHAVIOR_DIR;
+    const declared = extractCovers(ctx.readText(file));
+    if (declared === null) {
+      // 只有 behavior 段缺声明才判红:正常段目录的 covers 是**可选的声明通道**
+      // (给「零层 import、经 harness/子进程间接到达本层」那批段用的,ADR-062:86),
+      // 强制所有段写声明会把「没写」与「写了但撒谎」混成同一档,反而降低判据的分辨率。
+      if (!isBehavior) continue;
+      stats.l6Violations += 1;
+      problems.push(
+        `${file} → behavior-covers-declared:behavior 段未 export const covers`
+        + " —— 它的定义就是横跨多层(位置不表达被测层),被测对象只能靠声明自证。"
+        + "缺声明时「它到底测什么」无从核对,L6 与 L4 都失去抓手",
+      );
+      continue;
+    }
+    if (declared.length === 0) {
+      stats.l6Violations += 1;
+      problems.push(
+        `${file} → behavior-covers-declared:covers 是空数组`
+        + " —— 空声明与缺声明在判据上等效:两者都没说清被测对象,却只有一种能判红",
+      );
+      continue;
+    }
+    for (const element of declared) {
+      if (ctx.fileExists(element)) continue;
+      stats.l6Violations += 1;
+      problems.push(
+        `${file} → behavior-covers-declared:covers 元素「${element}」在磁盘上不存在`
+        + " —— 元素是仓库相对 POSIX 路径,判据直接对磁盘核对。"
+        + "这是本条唯一挡得住「随便写个字符串就过」的判据:声明里混进不存在的路径,"
+        + "要么是写错,要么是把还没打算实现的东西算成已覆盖",
+      );
+    }
+  }
+
   // ---- 判据四 L8:harness 下不得有段 ----
   for (const file of segments) {
     if (!file.startsWith(`${TEST_REL}/harness/`)) continue;
@@ -506,6 +621,9 @@ export function main(argv = []) {
     + `层内段 ${stats.layerSegments} / 共 ${stats.segments} 段)`,
     `L5 test-layer-cross-import 命中 ${stats.l5Hits} 处(${L5_PENDING ? "恒报告,不计退出码" : "已转判红"})`,
     `L7 test-top-dirs-exact 多 ${stats.l7Extra} / 缺 ${stats.l7Missing}`,
+    `L6 behavior-covers-declared 判红 ${stats.l6Violations} 项`
+      + `(behavior 段缺 covers / covers 为空 / covers 元素在磁盘上不存在;`
+      + `covers 同时是正常段目录「零层 import」时的 L4 声明通道)`,
     `L8 test-harness-not-segment 判红 ${stats.l8Violations} 项`,
   ].join(";");
   const named = problems.map((problem) => problem.split(" → ")[0] ?? problem);

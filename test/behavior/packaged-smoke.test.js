@@ -40,6 +40,16 @@ import {
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 
+/**
+ * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
+ * 在磁盘上真实存在」,元素是**仓库相对 POSIX 路径**。
+ */
+export const covers = [
+  "src/main/smoke.ts",
+  "src/main/converter/index.ts",
+  "gates/smoke/smoke-proc.mjs",
+];
+
 /** 编译产物路径(冒烟实现;build.files 收 dist/** → 天然随包) */
 const SMOKE_JS = path.join(ROOT, "dist", "main", "smoke.js");
 /** 源码路径 */

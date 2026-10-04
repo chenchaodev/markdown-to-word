@@ -216,7 +216,7 @@ export const ALLOWLIST = Object.freeze([
   },
   {
     id: 'input-budget-selfloop-junction-async-only',
-    file: 'test/main/input-budget.test.js',
+    file: 'test/behavior/input-budget.test.js',
     // 只放行**异步** fs.rm:同步 rmSync 形态仍判红,故这条不会退化成「整文件放行」
     match: (hit) => hit.callee === 'fs.rm' && hit.firstArg === 'dir',
     why: '**实测收敛会回归**(2026-09-29,本机):本段沙盒里造了 junction 环'
