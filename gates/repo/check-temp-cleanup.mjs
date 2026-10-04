@@ -292,6 +292,9 @@ export const ALLOWLIST = Object.freeze([
     file: 'gates/probe/gate-probes/sandbox.mjs',
     match: () => false,
     cold: true,
+    // ⚠ **S4 删 `gates/probe/` 时本条目必须同批删**(它登记的那个文件随之消失)。
+    // 它现在恒不判红、也不会因文件消失而判红(`cold: true` ⇒ 不计入 staleAllow;gates/ 又不在
+    // 扫描面内)⇒ **单靠门禁发现不了它变成死登记**,故在此留明示。
     why: 'removeJunction 是 **junction 的 Windows 绕行**:同一段代码在纯 node 下可用、在 Electron 里'
       + '会抛 `Path is a directory`,故按 unlinkSync → rmdirSync → 纯 node 子进程三级降级,'
       + '且三条都**非递归**(只摘链接,绝不碰真实 node_modules 目录)。gates/ tools/ 整体不在本门禁'

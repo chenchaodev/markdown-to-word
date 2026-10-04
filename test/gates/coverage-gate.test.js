@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * coverage 门禁基线守护段(位于 test/core/;被测为 package.json 的 test:coverage 参数
- * 向量与 gates/probe/gate-probes/coverage-baseline.json 的一致性,以及豁免清单与真实编译
+ * 向量与 gates/repo/coverage-baseline.json 的一致性,以及豁免清单与真实编译
  * 产物/测试引用面的自洽性 —— 不测任何业务能力)。
  *
  * 为什么要有这一段:`--all` 打开后,「不可达文件」(新增且从未被 import 的死代码,应当
@@ -24,7 +24,7 @@
  *    会让静态面全绿而动态面只报一句「未找到 coverage-summary.json」。这一组有正反双向
  *    夹具(在临时根里造 package.json,故静态面读参数向量的那一步必须可注入 root)。
  *
- * 「清单外的新 0% 文件」这一面(动态数据)由 `node gates/probe/gate-probes/coverage-gate.mjs
+ * 「清单外的新 0% 文件」这一面(动态数据)由 `node gates/repo/check-coverage-zero.mjs
  * --zero` 承担,必须紧跟 test:coverage 执行(覆盖率数据是那一次运行的产物),故不放本段。
  * 该面同时**回传基线的结构诊断**(基线能解析但字段被改时判红并点名是哪个字段不对,
  * 因为它是唯一挂在 npm script 上的判定面,结构诊断只挂在静态面等于没有);它的回归守护
@@ -34,7 +34,7 @@
  * 第五组断言是 **`--all` 面的聚合计数**(REQ-123):两个面读的是同一份 `loadBaseline`,
  * 基线结构损坏时同一条病因会被两面各报一次(`X` 与 `基线结构损坏:X`)⇒ 呈现两行都保留
  * (删一行会让人以为只有一个面在报,而那正是这道结构诊断当初的盲区),但 `共 N 项` 只计一次。
- * 判据面是 coverage-gate.mjs 导出的 `aggregateProblems`(纯函数),夹具用**合成基线**造出
+ * 判据面是 check-coverage-zero.mjs 导出的 `aggregateProblems`(纯函数),夹具用**合成基线**造出
  * 结构损坏,并逐条核对「静态面原文 X 在动态面确有 `基线结构损坏:X`」——先证明重复真实存在,
  * 再证明计数把它收了。
  *
@@ -55,7 +55,7 @@ import {
   auditStatic,
   auditZeroFiles,
   loadBaseline,
-} from "../../gates/probe/gate-probes/coverage-gate.mjs";
+} from "../../gates/repo/check-coverage-zero.mjs";
 
 /**
  * 判断一条问题属于哪类(按文本特征;未识别的归入「其它」,并在段末断言「无未识别分类」,
@@ -153,7 +153,7 @@ export async function run() {
   });
 
   // 结构诊断只此一处实现:动态面 auditZeroFiles 直接复用 loadBaseline 的 problems(不另造
-  // 第二套结构校验,见 gates/probe/check-coverage-zero.selftest.mjs 的负向夹具)。若有人在
+  // 第二套结构校验,见 gates/repo/check-coverage-zero.selftest.mjs 的负向夹具)。若有人在
   // auditStatic 里另写一份结构校验,这里会红 —— 同一条不变量有两个权威判定时,改一处忘
   // 另一处必然漂移,而漂移的方向通常是「少判一条」。
   await suite.case("静态面的基线结构问题逐条来自 loadBaseline(结构诊断只有一处实现)", () => {
@@ -367,7 +367,7 @@ export async function run() {
     });
 
     // 负向:整个 --temp-directory 都没传。它与 --reports-dir 的守卫强度**刻意不同**
-    // (只守存在性、无取值比对,理由见 coverage-gate.mjs 的 ① 与基线 note),所以这格必须
+    // (只守存在性、无取值比对,理由见 check-coverage-zero.mjs 的 ① 与基线 note),所以这格必须
     // 钉住两件事:① 指名该 flag;③ 对它**一声不吭**。少了后半句,下一个人就能「顺手补上
     // 取值比对」而不被任何东西拦下 —— 而那只会造出一处无人判红、必然静默过期的登记文本。
     await suite.case("负向:整个 --temp-directory 都没传 → ① 指名该 flag,取值判据刻意不参与", async () => {

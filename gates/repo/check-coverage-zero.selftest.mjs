@@ -1,7 +1,7 @@
-// 覆盖率零覆盖面门禁(coverage-gate.mjs --zero)自身的回归守护(负向夹具)。
+// 覆盖率零覆盖面门禁(`gates/repo/check-coverage-zero.mjs --zero`)自身的回归守护(负向夹具)。
 //
 // `npm run check:coverage-zero` 是 verify:ci 链里**唯一**执行者只有一处的那道动态面:
-// c8 的 json-summary 与 gates/probe/gate-probes/coverage-baseline.json 的零覆盖模块清单必须一致。
+// c8 的 json-summary 与 gates/repo/coverage-baseline.json 的零覆盖模块清单必须一致。
 // 它的失效形态全是「静默放宽」——`--all` 打开后全局百分比会把「清单外的新 0% 文件」按体量
 // 摊薄(一个 20 行的新死代码在 ~1.8 万条语句里只值 0.1pp),而这道门禁正是为堵这个洞而存在。
 // 若它被改成恒绿(判据写错 / 集合比较反了 / 豁免失效方向漏了),没有任何其他检查能发现:
@@ -32,10 +32,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
-import { auditZeroFiles, BASELINE_RELATIVE, SUMMARY_RELATIVE } from './gate-probes/coverage-gate.mjs';
+import { auditZeroFiles, BASELINE_RELATIVE, SUMMARY_RELATIVE } from './check-coverage-zero.mjs';
 
 const projectRoot = ROOT;
-const gatePath = join(projectRoot, 'gates', 'probe', 'gate-probes', 'coverage-gate.mjs');
+const gatePath = join(projectRoot, 'gates', 'repo', 'check-coverage-zero.mjs');
 
 /**
  * SUMMARY_RELATIVE 派生的正则片段:夹具的期望文案要断言的就是这个路径。
@@ -248,7 +248,10 @@ const CASES = [
   },
   {
     name: '基线文件不存在 → 判红(清单是单一登记处,缺它等于无人看守)',
-    expect: /基线文件不存在:gates\/probe\/gate-probes\/coverage-baseline\.json/,
+    // ⚠ 这条**刻意写死路径而不从 BASELINE_RELATIVE 派生**(与上面 SUMMARY_PATTERN 派生
+    // 的做法不同):派生即恒真 —— 基线落点若被改错,派生的期望会跟着一起改,这条夹具就再也
+    // 抓不到它。它是「基线文件在哪」这条登记的唯一反向锚点,故落点迁移必须同批改这里。
+    expect: /基线文件不存在:gates\/repo\/coverage-baseline\.json/,
     create: () => {
       const made = createFixture(writeConsistentSummary);
       rmSync(join(made, ...BASELINE_RELATIVE.split('/')));

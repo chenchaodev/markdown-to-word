@@ -111,7 +111,9 @@ export const COPY_SITE_WHITELIST = Object.freeze([
   {
     file: "gates/probe/gate-probes/gates/coverage.mjs",
     copies: null,
-    why: "c8 配置清单由 package.json 的 test:coverage 参数向量解析而来(运行时列表,源码里没有路径字面量)。",
+    why: "c8 配置清单由 package.json 的 test:coverage 参数向量解析而来(运行时列表,源码里没有路径字面量)。"
+      + "⚠ 该探针的 `parseCoverageScript` 已迁到 `gates/repo/coverage-baseline-io.mjs`,但**本文件仍含复制原语**"
+      + "(解析出的配置文件被复制进沙盒),故本行不因那次迁移失效。S4 删 `gates/probe/` 时本行须同批删。",
   },
   {
     file: "gates/probe/gate-probes/sandbox.mjs",

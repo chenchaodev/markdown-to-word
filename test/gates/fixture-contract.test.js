@@ -35,6 +35,7 @@ import os from "node:os";
 import path from "node:path";
 import { ROOT, FIXTURES_DIR } from "../harness/paths.js";
 import { discoverSegments, discoverSegmentsDetailed } from "../harness/runner.js";
+import { removeTree } from "../harness/temp-resource.js";
 import {
   FIXTURE_SEGMENT_DIRS,
   IMAGE_DIGEST_BASELINE,
@@ -123,7 +124,8 @@ function makeTreeRoot() {
  * @returns {void}
  */
 function dropSyntheticTree(dir) {
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收失败并返回结果)
+  removeTree(dir);
 }
 
 /**

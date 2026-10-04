@@ -20,15 +20,25 @@
 //   并回传 loadBaseline 的结构诊断(基线能解析但结构损坏时判红并点名是哪个字段不对 ——
 //   结构诊断只此一个来源,静态面不在任何 npm script 上,不能指望它兜底)。
 //   必须紧跟 test:coverage 执行(见 --zero 用法),故不放在验收段里。
+//
+// ---- 依赖方向(迁出 `gates/probe/` 的那一步,勿改回头)----
+// 本判定本体的**两个只读输入面**(c8 参数向量 ＋ 基线表及其结构校验)住在同目录的
+// `coverage-baseline-io.mjs`。那个模块零顶层 IO 且不依赖任何沙盒模块,故本文件与
+// `gates/probe/gate-probes/gates/coverage.mjs` 各自**单向**依赖它,彼此不 import。
+// 此前本文件住在 `gates/probe/gate-probes/`,为拿项目根与参数向量 import 了沙盒的
+// `contract.mjs`(它顶层执行 `topLevel(ROOT)` ⇒ import 即 IO)与 `gates/coverage.mjs`,
+// 传递拖进 6 个沙盒模块;而 S4 要删整个 `gates/probe/` ⇒ 那条依赖方向必须先掉头。
+// 三个符号(BASELINE_RELATIVE / METRICS / loadBaseline)在此**转出**而不是各自再定义一份:
+// 消费方(验收段 `test/gates/coverage-gate.test.js`、selftest)与诊断文案都按「从判定本体取」
+// 的既有形态引用,转出即保持单一来源,复制一份则两处会漂移。
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ROOT } from "./contract.mjs";
-import { parseCoverageScript } from "./gates/coverage.mjs";
+import { ROOT } from "../../shared/paths.js";
+import { BASELINE_RELATIVE, METRICS, loadBaseline, parseCoverageScript } from "./coverage-baseline-io.mjs";
 
-/** 覆盖率基线文件(仓库相对;阈值与豁免的唯一登记处) */
-export const BASELINE_RELATIVE = "gates/probe/gate-probes/coverage-baseline.json";
+export { BASELINE_RELATIVE, METRICS, loadBaseline };
 
 /**
  * c8 json-summary 产物(动态面唯一数据源)
@@ -48,9 +58,6 @@ export const SUMMARY_RELATIVE = "output/coverage/coverage-summary.json";
  * 刻意的:两侧登记的值本就该逐字相同。
  */
 export const EXPECTED_REPORTS_DIR = SUMMARY_RELATIVE.slice(0, SUMMARY_RELATIVE.lastIndexOf("/"));
-
-/** 四个覆盖率指标(与 c8 的 --statements/--branches/--functions/--lines 一一对应) */
-export const METRICS = Object.freeze(["statements", "branches", "functions", "lines"]);
 
 /** 合法豁免分类:空模块(无可执行语句)/ 运行时入口(结构上不可单测) */
 export const EXEMPTION_CATEGORIES = Object.freeze(["empty-module", "runtime-entry"]);
@@ -136,42 +143,6 @@ export function isEmptyModuleArtifact(artifactPath) {
   if (code === "") return true;
   // tsc 对「只有类型导出」的模块输出 `export {};`(可能带分号/空白差异)
   return /^export\s*\{\s*\}\s*;?$/.test(code);
-}
-
-/**
- * 读基线文件并做结构校验。
- * @param {string} [root] 仓库根
- * @returns {{ baseline: Record<string, any> | null, problems: string[] }} 基线与结构问题
- */
-export function loadBaseline(root = ROOT) {
-  /** @type {string[]} */
-  const problems = [];
-  const baselinePath = path.join(root, BASELINE_RELATIVE);
-  if (!fs.existsSync(baselinePath)) {
-    return { baseline: null, problems: [`基线文件不存在:${BASELINE_RELATIVE}`] };
-  }
-  /** @type {any} */
-  let baseline;
-  try {
-    baseline = JSON.parse(fs.readFileSync(baselinePath, "utf8"));
-  } catch (error) {
-    return { baseline: null, problems: [`基线文件不是合法 JSON:${error instanceof Error ? error.message : String(error)}`] };
-  }
-  if (baseline.baselineSchema !== 1) problems.push(`baselineSchema 应为 1,实际 ${JSON.stringify(baseline.baselineSchema)}`);
-  if (!Array.isArray(baseline.note) || baseline.note.length === 0) problems.push("基线缺 note(必须写明本表的存在理由与维护方式)");
-  if (typeof baseline.headroomPp !== "number" || baseline.headroomPp < 0) problems.push("headroomPp 必须是 ≥0 的数值(阈值允许比实测值低多少的显式余量)");
-  for (const key of ["floor", "measured", "thresholds"]) {
-    if (typeof baseline[key] !== "object" || baseline[key] === null) {
-      problems.push(`基线缺 ${key} 段`);
-      continue;
-    }
-    for (const metric of METRICS) {
-      if (typeof baseline[key][metric] !== "number") problems.push(`${key}.${metric} 必须是数值(当前 ${JSON.stringify(baseline[key][metric])})`);
-    }
-  }
-  if (!Array.isArray(baseline.requireFlags) || baseline.requireFlags.length === 0) problems.push("基线缺 requireFlags");
-  if (!Array.isArray(baseline.exemptions)) problems.push("基线缺 exemptions 数组");
-  return { baseline, problems };
 }
 
 /**

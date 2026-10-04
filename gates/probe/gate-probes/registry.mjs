@@ -81,7 +81,7 @@ export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   "check:temp-cleanup:selftest": "gates/repo/check-temp-cleanup.selftest.mjs",
   "check:archive-index:selftest": "gates/repo/gen-archive-index.selftest.mjs",
   "check:gate-ids-table:selftest": "gates/repo/gen-gate-ids-table.selftest.mjs",
-  "check:coverage-zero:selftest": "gates/probe/check-coverage-zero.selftest.mjs",
+  "check:coverage-zero:selftest": "gates/repo/check-coverage-zero.selftest.mjs",
   "check:docs:selftest": "gates/repo/check-docs.selftest.mjs",
   "check:changelog:selftest": "gates/repo/check-changelog.selftest.mjs",
   "check:release-notes:selftest": "gates/repo/release-notes.selftest.mjs",
@@ -421,15 +421,15 @@ export const GATE_REGISTRY = Object.freeze(
       id: "coverage-zero",
       title: "coverage 零覆盖基线门禁",
       npmScripts: ["check:coverage-zero"],
-      command: "node gates/probe/gate-probes/coverage-gate.mjs --zero",
-      modulePath: "gates/probe/gate-probes/coverage-gate.mjs",
+      command: "node gates/repo/check-coverage-zero.mjs --zero",
+      modulePath: "gates/repo/check-coverage-zero.mjs",
       access: "chain",
-      judgment: { module: "gates/probe/gate-probes/coverage-gate.mjs", export: "auditZeroFiles", shaped: "{ problems, zeroFiles, total }" },
+      judgment: { module: "gates/repo/check-coverage-zero.mjs", export: "auditZeroFiles", shaped: "{ problems, zeroFiles, total }" },
       judgmentNote: "本仓判定协议的样板:判定本体是可注入纯函数(root 进、problems 出),main() 只打印 + 出 0/1",
       probes: [
         {
           kind: "selftest",
-          ref: "gates/probe/check-coverage-zero.selftest.mjs",
+          ref: "gates/repo/check-coverage-zero.selftest.mjs",
           why: "自检脚本造合成 coverage-summary.json 与基线,逐条注入「0% 文件未登记豁免 / 豁免已失效 / 基线文件缺失 / 基线可解析但结构损坏」并断言判红",
         },
         { kind: "segment", ref: "test/gates/coverage-gate.test.js", why: "验收段直接 import 判定本体,覆盖静态面(参数向量 / 阈值锚定 / 豁免自洽 / 结构诊断单一来源);动态面须紧跟 test:coverage 取覆盖率数据,故由 selftest 守护而非本段" },
@@ -440,9 +440,9 @@ export const GATE_REGISTRY = Object.freeze(
       title: "coverage 阈值门禁",
       npmScripts: ["test:coverage"],
       command: "c8 <参数向量取自 package.json 的 test:coverage> electron test/acceptance.mjs",
-      modulePath: "gates/probe/gate-probes/coverage-gate.mjs",
+      modulePath: "gates/repo/check-coverage-zero.mjs",
       access: "chain",
-      judgment: { module: "gates/probe/gate-probes/coverage-gate.mjs", export: "auditStatic", shaped: "{ problems, detail }" },
+      judgment: { module: "gates/repo/check-coverage-zero.mjs", export: "auditStatic", shaped: "{ problems, detail }" },
       judgmentNote:
         "阈值判定体是 c8 本身(第三方工具);本仓持有的判定面是 coverage-gate 的**静态面** —— "
         + "参数向量(须含 --all / --check-coverage / 四阈值 / 豁免对应的 --exclude)、阈值与基线锚定、豁免条目与真实产物的自洽。"
@@ -701,7 +701,11 @@ export const GATE_REGISTRY = Object.freeze(
       title: "门禁阴性探针编排门禁(含注册表自检)",
       npmScripts: ["check:gates"],
       command: "node gates/probe/check-gate-probes.mjs",
-      modulePath: "gates/probe/gate-probes/registry.mjs",
+      // ⚠ **S4-0 起改指到 `gates/repo/gate-index.mjs`**(与新表同一项同批改)。
+      // 依据:gate-index.selftest.mjs 的双跑对读对「旧表 judgment 是内联函数」那一条改比
+      // 「新表 judgment.module == 旧表 modulePath」—— 故这两处必须同值,否则该夹具判红。
+      // 语义上这是本表的**继任者**(S4 后由它承载「表自身是否成立」这条判定面)。
+      modulePath: "gates/repo/gate-index.mjs",
       access: "local",
       // 刻意**内联**而不是写成指向本模块的指针:驱动器解析指针时会 `import()` 那个模块,
       // 而本模块此刻正卡在自己的顶层 await 上 —— 自指会死锁(实测:unsettled top-level await)。

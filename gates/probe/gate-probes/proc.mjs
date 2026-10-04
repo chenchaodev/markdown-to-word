@@ -1,7 +1,14 @@
-// 解释器/可执行文件解析与命令行分词。被测门禁必须在**正确的宿主**里跑,否则测到的是
+// 解释器/可执行文件解析。被测门禁必须在**正确的宿主**里跑,否则测到的是
 // 「用 Electron 当 node 跑脚本」这类假故障:node 解析要兼容「段内跑在 Electron 里」
-// (ELECTRON_RUN_AS_NODE),分词要处理 c8 参数里的引号 glob(按空白裸切会把引号切下来,
-// glob 失效 → 覆盖率报告为空 → 门禁假绿)。本文件零 IO 副作用,可直测。
+// (ELECTRON_RUN_AS_NODE)。本文件零 IO 副作用,可直测。
+//
+// ⚠ **shell 风格分词已迁出**(迁到 `gates/repo/coverage-baseline-io.mjs` 的 `tokenizeCommand`):
+// 它原先只被 c8 探针的 `parseCoverageScript` 用,而那个函数的唯一职责是解析
+// package.json 的 `test:coverage` 参数向量 —— 判定本体 `gates/repo/check-coverage-zero.mjs`
+// 与探针共用同一份向量,故它必须住在**两者都不依赖沙盒**的地方。留在本文件会让那条共用
+// 读取点反向依赖 `contract.mjs`(顶层执行 `topLevel(ROOT)` ⇒ import 即 IO),判定本体就迁不出去。
+// 「c8 参数里有引号 glob,按空白裸切会把引号切下来 → glob 失效 → 覆盖率报告为空 → 门禁假绿」
+// 这条踩坑记录随函数一起迁到新模块的文件头注,勿在本文件留副本(会漂移)。
 import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "./contract.mjs";
@@ -38,35 +45,3 @@ export function resolveElectron() {
   return /electron(\.exe)?$/i.test(path.basename(process.execPath)) ? process.execPath : null;
 }
 
-/**
- * shell 风格分词:双引号内为字面量(含 = 与通配符),其余按空白切。
- * c8 参数向量里有 `--include="dist/**"`,按空白裸切会连引号一起切下来导致 glob 失效。
- * @param {string} input 命令行
- * @returns {string[]} 参数序列
- */
-export function tokenizeCommand(input) {
-  /** @type {string[]} */
-  const tokens = [];
-  let current = "";
-  let inQuote = false;
-  let started = false;
-  for (const ch of input) {
-    if (ch === '"') {
-      inQuote = !inQuote;
-      started = true;
-      continue;
-    }
-    if (!inQuote && /\s/.test(ch)) {
-      if (started) {
-        tokens.push(current);
-        current = "";
-        started = false;
-      }
-      continue;
-    }
-    current += ch;
-    started = true;
-  }
-  if (started) tokens.push(current);
-  return tokens;
-}

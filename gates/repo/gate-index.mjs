@@ -178,16 +178,16 @@ export const GATE_INDEX = Object.freeze(
       id: "coverage-zero",
       npmScripts: ["check:coverage-zero"],
       access: ACCESS_CHAIN,
-      modulePath: "gates/probe/gate-probes/coverage-gate.mjs",
-      judgment: { module: "gates/probe/gate-probes/coverage-gate.mjs", export: "auditZeroFiles", shaped: "{ problems, zeroFiles, total }" },
+      modulePath: "gates/repo/check-coverage-zero.mjs",
+      judgment: { module: "gates/repo/check-coverage-zero.mjs", export: "auditZeroFiles", shaped: "{ problems, zeroFiles, total }" },
     },
     coverage: {
       id: "coverage",
       npmScripts: ["test:coverage"],
       access: ACCESS_CHAIN,
-      modulePath: "gates/probe/gate-probes/coverage-gate.mjs",
-      // 阈值判定体是 c8 本身(第三方工具);本仓持有的判定面是 coverage-gate 的**静态面**。
-      judgment: { module: "gates/probe/gate-probes/coverage-gate.mjs", export: "auditStatic", shaped: "{ problems, detail }" },
+      // 阈值判定体是 c8 本身(第三方工具);本仓持有的判定面是 coverage 门的**静态面**。
+      modulePath: "gates/repo/check-coverage-zero.mjs",
+      judgment: { module: "gates/repo/check-coverage-zero.mjs", export: "auditStatic", shaped: "{ problems, detail }" },
     },
     fixtures: {
       id: "fixtures",
@@ -319,13 +319,19 @@ export const GATE_INDEX = Object.freeze(
       id: "gate-probes",
       npmScripts: ["check:gates"],
       access: ACCESS_OFFCHAIN,
-      modulePath: "gates/probe/gate-probes/registry.mjs",
-      // ⚠ 旧表这一项是**内联判定本体**(函数字面量,注释明写是为避免 import 时自指卡死)。
-      // 本表是数据表,存不了函数 ⇒ 改记指针,而指针指向的正是旧表自己声明的兜底形态
-      // (registry.mjs 的 `fallbackSelfEntry` 逐字写着这个 module + export 组合)。
-      // ⚠ S4 删掉 registry.mjs 时这一行必须同批改(它今天就是 S4 前唯一一处「判定体指针
-      // 指向另一张表」的登记项)。
-      judgment: { module: "gates/probe/gate-probes/registry.mjs", export: "checkGateRegistry", shaped: "Problem[]" },
+      // ⚠ **指针改指到本表自己**(S4-0 起;此前是 `gates/probe/gate-probes/registry.mjs`)。
+      // 三条理由:① 本项登记的判定面在 S4 后仍有意义 —— 「这张表自身是否成立」;S4 删掉
+      // registry.mjs 之后承载它的就是本表 ＋ `check:gate-index:selftest` 那个载体。
+      // ② 删项会让双跑对读少一侧独立来源(从「两份表互相证伪」退化成「一张表自我确认」),
+      // 而 S4 后旧表就没了 ⇒ 那时无人对读。③ 本项是 `check:gate-index:selftest` 这个载体的
+      // **唯一认领者**,删项 ⇒ R3 判 `probe-carrier-orphan`。
+      // ⚠ **旧表 `registry.mjs` 同一项的 `modulePath` 必须同批改成同一个值**:selftest 对旧表
+      // 内联 judgment 那一条改比「新表 judgment.module == 旧表 modulePath」,两边不一致即判红。
+      modulePath: "gates/repo/gate-index.mjs",
+      // ⚠ `export` 指的是**数据表**而不是判定函数 —— 这是「本表存不下内联函数字面量」的既有
+      // 形态(旧表那条是函数字面量)。判定由消费方(check-test-layout 的 L11/L12)＋载体承担,
+      // 不是这张表的某个导出。**故「禁自指」那条规则只作用于 `enforcement` 字段**,本字段不在其内。
+      judgment: { module: "gates/repo/gate-index.mjs", export: "GATE_INDEX", shaped: "Readonly<Record<string, GateIndexEntry>>(数据表;表自身是否成立由 check:gate-index:selftest 判)" },
     },
     "install-smoke": {
       id: "install-smoke",

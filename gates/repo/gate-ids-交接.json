@@ -32,12 +32,12 @@
     {
       "id": "coverage",
       "probe": "gates/probe/gate-probes/gates/coverage.mjs",
-      "probeLines": 271,
+      "probeLines": 230,
       "capability": "拿 package.json 的真实 c8 参数向量跑人造低覆盖 ⇒ 对任意阈值取值都成立(刻意不写死阈值)",
-      "successor": "gates/probe/check-coverage-zero.selftest.mjs",
+      "successor": "gates/repo/check-coverage-zero.selftest.mjs",
       "successorState": "partial",
-      "lost": "阈值那格不丢(由 coverage-gate.mjs 静态面 requireFlags ＋ 基线比对接手);丢的是动态面「人造低覆盖必须 exit 非 0」",
-      "fix": "无需新建。但需核 test/gates/coverage-gate.test.js 是否仍逐项核对 coverage-baseline.json 与 package.json 的 c8 参数向量",
+      "lost": "阈值那格不丢(由 gates/repo/check-coverage-zero.mjs 静态面 requireFlags ＋ 基线比对接手);丢的是动态面「人造低覆盖必须 exit 非 0」",
+      "fix": "无需新建。但需核 test/gates/coverage-gate.test.js 是否仍逐项核对 coverage-baseline.json 与 package.json 的 c8 参数向量。⚠ S4-0 起承接者已迁到 `gates/repo/check-coverage-zero.selftest.mjs`(此前在 `gates/probe/` 下、即本表的删除范围内 —— 那正是这条对账表当时记 `blocksP6: false` 却仍在删范围内的原因);探针侧随 parseCoverageScript 迁出而少了约 40 行,probeLines 已同步",
       "severity": "低",
       "blocksP6": false
     },
