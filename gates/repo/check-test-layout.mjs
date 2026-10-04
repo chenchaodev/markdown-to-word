@@ -85,10 +85,11 @@
 // (几何 core 本就归 shared),这类跨层是**有意的**。把这种误伤做成 fail-closed,
 // 会逼人去删正确的测试或塞豁免表 —— 那比判红本身更坏。故它当时拿的是 report-only 一档。
 //
-// **转正的前置条件是「未登记命中归零」,不是字面的「命中数 == 0」**:已登记、带非空 reason、
+// **转正的前置条件是「未登记命中归零」,不是字面的「命中数 == 0」**:已登记、reason 达标、
 // 且当前仍真的命中(stale 检查通过)的豁免项是**合法现状**,不是待办。所以「命中总数不为零」
-// 本身不构成阻塞;构成阻塞的是三条 fail-closed 里任一条为红 —— 未登记命中非零 / reason 为空
-// / stale 非零。在那个条件下 L5 已转 fail-closed,即 `CRITERIA` 里 `test-layer-cross-import`
+// 本身不构成阻塞;构成阻塞的是三条 fail-closed 里任一条为红 —— 未登记命中非零 / reason 不合格
+// (空**或**不足 `REASON_MIN_CHARS` 字)/ stale 非零。在那个条件下 L5 已转 fail-closed,即
+// `CRITERIA` 里 `test-layer-cross-import`
 // 那行**不带** `pending: true`。豁免命中在判定本体里 `continue` 掉、根本到不了分流点,
 // 因此豁免表在真仓库上实测不产生任何 info 行 —— 那是设计:表项是「已审过的合法现状」,
 // 不是待办噪声。
@@ -167,12 +168,40 @@ export const MIN_SCANNED_FILES = 100;
  * 跨层 import」就仍然判红。
  *
  * 表项的合法性由三条 fail-closed 撑着(判据见 judgeL5Exemptions 的注释):未登记判红、
- * reason 为空判红、**stale 判红**(登记了却当前不再命中 —— ratchet 的全部意义:否则删掉
+ * reason 不合格判红(空**或**不足 `REASON_MIN_CHARS` 字)、**stale 判红**(登记了却当前不再命中
+ * —— ratchet 的全部意义:否则删掉
  * 代码而豁免永远留着,表只会单调增长)。
  *
  * 豁免的判准写在数据文件的 `exemptionCriterion` 字段里(单一来源,改判准只改那一处)。
  */
 export const L5_EXEMPTIONS_REL = "gates/repo/test-layout.cross-import-exemptions.json";
+
+/**
+ * L5 豁免表 `reason` 的**最低码点数**。声明出处:`ADR-062` 的 L2「每条豁免须有
+ * `reason`(≥20 字)」—— 在此之前这道门槛**只写在 ADR 里、门禁上没有任何机器判据**
+ * (判定本体只判 `trim()` 后为空),故「≥20 字」长期是一句无人执行的散文。
+ *
+ * 单列成常量而不是在判定本体里写裸字面量 `20`:ADR-062:72 是它的声明出处,而门禁里
+ * `L5_EXEMPTIONS_REL` / `PENDING_PREFIX` 这类可 grep 的锚是同款做法 —— 判据得追得到它的出处。
+ *
+ * ⚠ **数字符,不是数字节,也不是数字符宽度**;且数的是**码点**:
+ *   - 先 `trim()` 再数 —— 首尾空白不该计入理由的篇幅(缩进排版不是理由)。
+ *   - 数码点(`[...s].length`)而非 `String.prototype.length`:后者数的是 UTF-16 **单元**,
+ *     一条用非 BMP 字符(emoji / 汉字扩展区)写的理由在 `.length` 下会被算成两倍 ——
+ *     门槛就成了可绕过的。本表现有 `reason` 全是 BMP 中文,两者当前相等,但那是数据事实,
+ *     不是判据保证。自检里有一格专门拿非 BMP 字符钉住这个口径。
+ *
+ * @type {number}
+ */
+export const REASON_MIN_CHARS = 20;
+
+/**
+ * `reason` 的有效字数:**先 trim,再数码点**。判定本体与「恰好等于门槛」那格自检的同口径来源
+ * (自检经诊断里回显的字数断言,不直接调本函数 —— 用被测实现造夹具会让那一格自证)。
+ * @param {string} text 待量的 `reason` 原文
+ * @returns {number} trim 后的码点数
+ */
+const reasonChars = (text) => [...text.trim()].length;
 
 /**
  * ⚠ **判据登记表(强制等级的唯一声明处)**。
@@ -211,7 +240,7 @@ export const CRITERIA = Object.freeze([
   }),
   Object.freeze({
     id: "test-layer-cross-import",
-    title: "L5 跨层 import:未登记判红 / 已登记但 reason 为空判红(走豁免表)",
+    title: "L5 跨层 import:未登记判红 / 已登记但 reason 为空或不足 20 字判红(走豁免表)",
   }),
   Object.freeze({
     id: "l5-exemption-table",
@@ -553,8 +582,9 @@ const l5ExemptionKey = (segment, specifier) => `${segment}\u0000${specifier}`;
  * 生成 L5 豁免表基线(ADR-062:92 的做法:「生成 → 逐条人工补 reason → 转判红」的第一步)。
  *
  * ⚠ **刻意不填 reason**:填占位符等于让「忘了写理由」与「写了理由」在门禁上不可区分 ——
- * 而 reason 为空正是这张表唯一能机械判红的东西之一。生成出来的表必然因 reason 为空而红,
- * 那是**设计**:逼使用者逐条看过再填。
+ * 而 reason 不合格正是这张表唯一能机械判红的东西之一。生成出来的表必然因 reason 为空而红,
+ * 那是**设计**:逼使用者逐条看过再填。空 reason 是「不足门槛」那一档的**特例**(0 < 20),
+ * 故本入口的产物天然红 —— 它是生成入口,不是判据,永远 exit 0。
  * @param {{segment: string, specifier: string}[]} hits 当前命中的 (段, 说明符) 对,已去重
  * @returns {string} 可写入数据文件的 JSON 文本
  */
@@ -565,11 +595,13 @@ export function renderL5ExemptionsBaseline(hits) {
   return `${JSON.stringify(
     {
       _comment: "L5 豁免表 —— 由 `node gates/repo/check-test-layout.mjs --write-l5-exemptions` 生成。"
-        + "**每条 reason 必须人工补**:空 reason 会判红(这是刻意的,见门禁本体同名函数注释)。",
+        + `**每条 reason 必须人工补**:空 reason 会判红(这是刻意的,见门禁本体同名函数注释);`
+        + `补的内容还须 ≥${REASON_MIN_CHARS} 字(按码点计)。`,
       _schema: {
         key: "entries[].segment + entries[].specifier",
         granularity: "一个表项只覆盖这一条说明符;同段将来新增的跨层 import 仍判红。",
-        reason: "必填且非空。写不出合法理由的命中应改 import 或把该段归 test/behavior/,不得进表。",
+        reason: `必填、且 trim 后 ≥${REASON_MIN_CHARS} **字**(按码点计)。`
+          + "写不出合法理由的命中应改 import 或把该段归 test/behavior/,不得进表。",
         ratchet: "表项必须当前仍真的命中,否则判红(stale)。",
       },
       entries,
@@ -655,6 +687,7 @@ export function checkTestLayout(base = {}) {
     l6Violations: 0,
     l5Unregistered: 0,
     l5ExemptionsEmptyReason: 0,
+    l5ExemptionsShortReason: 0,
     l5StaleExemptions: 0,
   };
 
@@ -787,7 +820,9 @@ export function checkTestLayout(base = {}) {
     // 三条 fail-closed(ADR-062 的 L5 豁免表形态,判据与豁免判准的单一来源都在
     // L5_EXEMPTIONS_REL 那份数据文件里):
     //   ① 未登记的跨层 import 判红 —— 默认形态,不因为「它看起来像顺带的」就放过;
-    //   ② reason 为空判红 —— 空理由等于没登记理由,表就退化成「见谅」;
+    //   ② reason 不合格判红 —— **分两档**:空(没写)与不足 `REASON_MIN_CHARS` 字(写了但太短)。
+    //      两档分开报而不合并成一档:病因不同(忘了写 vs 写得不够),而「见谅」式的一句话
+    //      与空白在门禁上原本不可区分 —— 合并就等于让「短理由」继续合法;
     //   ③ stale 判红 —— 登记了却当前不再命中(代码删了/改名了),必须从表里删掉。
     //      这一条是 ratchet 的全部意义:没有它,表只会单调增长,失效项永远留着。
     for (const entry of imports) {
@@ -800,13 +835,24 @@ export function checkTestLayout(base = {}) {
       const exemption = l5ByKey.get(key);
       if (exemption !== undefined) {
         l5HitKeys.add(key);
-        if (exemption.reason.trim() === "") {
+        const chars = reasonChars(exemption.reason);
+        if (chars === 0) {
           stats.l5ExemptionsEmptyReason += 1;
           report(
             "test-layer-cross-import",
             `${file} → test-layer-cross-import:命中已在豁免表登记(${entry.resolved}),但 reason 是空的`
             + ` —— 豁免表的存在意义就是「这一次跨层为什么合法」,空理由让表退化成「见谅」。`
             + `补上理由,或把它从表里删掉(那说明它不该被豁免)`,
+          );
+        } else if (chars < REASON_MIN_CHARS) {
+          stats.l5ExemptionsShortReason += 1;
+          report(
+            "test-layer-cross-import",
+            `${file} → test-layer-cross-import:命中已在豁免表登记(${entry.resolved}),`
+            + `但 reason 只有 ${chars} 字,不足门槛 ${REASON_MIN_CHARS} 字`
+            + ` —— 与「空」分开判:这一档是**写了但没写够**。不到门槛的理由挡不住下一次「先豁免、`
+            + `回头再补」,表就退化成一句「见谅」。补到说得出「为什么这次跨层合法」的长度,`
+            + `或把它从表里删掉(那说明它不该被豁免)`,
           );
         }
         continue;
@@ -1006,7 +1052,8 @@ export function checkTestLayout(base = {}) {
  *
  * **只写不判**:它读真实仓库、覆盖数据文件、exit 0。刻意**不**预先填 reason ——
  * 填占位符会让「忘了写理由」与「写了理由」在门禁上不可区分。生成出来的表因 reason 为空
- * 必然判红,那是设计:逼使用者逐条看过、补上理由或把那条从表里删掉。
+ * 必然判红(空是「不足 20 字」那一档的特例),那是设计:逼使用者逐条看过、补上理由
+ * 或把那条从表里删掉。**该产物在门禁上红是预期结果,不是本入口的缺陷** —— 它 exit 0。
  *
  * ⚠ 它是**生成入口**,不是判据:任何人都能跑它把表洗成当前形状 ⇒ 它绝不能进 verify:ci
  *   (package.json 的链里没有它,别加)。
@@ -1028,7 +1075,9 @@ function writeL5ExemptionsBaseline() {
   console.log(
     `[test-layout:baseline] 已写入 ${L5_EXEMPTIONS_REL}:${hits.size} 条未登记的跨层 import`
     + `(本次 L5 命中 ${stats.l5Hits} 处;已登记的 ${stats.l5Hits - hits.size} 处不在其中)`
-    + `\n  ⚠ reason 一律留空 —— 请逐条人工补;补不出来的那些说明**不该被豁免**,把它们从表里删掉。`,
+    + `\n  ⚠ reason 一律留空 —— 请逐条人工补(补的内容须 ≥${REASON_MIN_CHARS} 字);`
+    + `补不出来的那些说明**不该被豁免**,把它们从表里删掉。`
+    + `\n  ⚠ 本入口 exit 0,但它写出的表在门禁上必然判红(空 reason)—— 那是刻意的,见本函数注释。`,
   );
   return 0;
 }
@@ -1054,8 +1103,8 @@ export function main(argv = []) {
     console.log(
       [
         USAGE,
-        "  --write-l5-exemptions  把当前未登记的跨层 import 写成豁免表基线(reason 留空待人工补)。",
-        "                        只写不判,绝不进 verify:ci。",
+        "  --write-l5-exemptions  把当前未登记的跨层 import 写成豁免表基线(reason 留空待人工补,",
+        `                        人工补的内容须 ≥${REASON_MIN_CHARS} 字)。只写不判,绝不进 verify:ci。`,
         `  强制等级(由本文件 CRITERIA 派生):${failClosed} 族 fail-closed(命中即非零退出) /`
         + ` ${reportOnly} 族 report-only(命中只报告,结构上不计退出码)。`,
         "  ⚠ 没有 --enforce:命令行不能改变任何一族的强制等级,那是 fail-open 的口子。",
@@ -1072,6 +1121,7 @@ export function main(argv = []) {
     + `层内段 ${stats.layerSegments} / 共 ${stats.segments} 段)`,
     `L5 test-layer-cross-import 命中 ${stats.l5Hits} 处`
       + `(豁免 ${l5ExemptionCount} 条 / 未登记判红 ${stats.l5Unregistered} / 空 reason 判红 ${stats.l5ExemptionsEmptyReason}`
+      + ` / 不足 ${REASON_MIN_CHARS} 字判红 ${stats.l5ExemptionsShortReason}`
       + ` / stale 判红 ${stats.l5StaleExemptions})`,
     `L7 test-top-dirs-exact 多 ${stats.l7Extra} / 缺 ${stats.l7Missing}`
       + "(report-only:命中只报告,不计退出码)",

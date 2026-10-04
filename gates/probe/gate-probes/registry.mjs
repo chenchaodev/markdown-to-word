@@ -856,7 +856,7 @@ export const GATE_REGISTRY = Object.freeze(
             + "覆盖面:①L4 零本层主体判红(核心格)+ 段 import 段判红 + 本层 dist 主体判绿 + "
             + "type-only 的 src/ 类型引用判绿(产物不产 .d.ts,不得误判)②L5 跨层命中进 problems"
             + "且诊断含「搬去 test/behavior/ 并写 covers」指引、同层判绿、type-only 跨层判绿、"
-            + "豁免表三条 fail-closed(未登记 / 空 reason / stale)与表项粒度 ③L7 多一个/少一个"
+            + "豁免表四条 fail-closed(未登记 / reason 为空 / reason 不足门槛 / stale)与表项粒度 ③L7 多一个/少一个"
             + "走 info 且**不计退出码**(report-only)、恰好等于派生集两通道皆空、"
             + "**src/ 新增子目录后期望集合跟着变**(证明是派生不是登记)、只数目录不数文件 ④L8 "
             + "自指层三条 fail-closed + 声明指向本层的反向锚点 ⑤CRITERIA 登记表三道"

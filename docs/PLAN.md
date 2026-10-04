@@ -105,7 +105,6 @@
 **对 ADR-197 两道证据的订正**：第二道（`test:coverage` 的 0% 集合）**不是无效、是低分辨率** —— `test:coverage` 是 `c8 --include="dist/**"`，度量**被测产物 `dist/`** 而非测试文件，所以拆段丢断言**可以让某个 `dist/` 文件归零**；但 ADR 点名的失效形态「漏搬的那组本来就是重复断言或已被别的段覆盖」**恰好落在这道证据的盲区里**（重复的被漏 ⇒ 一个 `dist/` 文件都不会归零）。
 - ~~**`check:test-layout` 在 `verify:ci` 上恒 exit 0**~~ —— **已消除（T5-a）** 实测它的 script 是 `node gates/repo/check-test-layout.mjs`，**没有任何调用点传 `--enforce`**（`package.json` 与 `.github/` 全仓零命中），而 `:901 if (!enforce)` 之后走报告档 **exit 0** ⇒ **一条链上的恒绿门禁**，正是本工作项一直在打的「判据恒绿」形态。**连带两处文案失准**：`:894` 的 ok 消息写「四族」（实际五族 ＋ 8 个机器 id）、`:865` 的 usage 写 `--enforce` 覆盖「L4 / L7 / L8」而实现（`:893`/`:901`）覆盖 problems 全体。**⇒ 我先前把 usage 文案当成了实现，这是第二次犯「文档≠实现」的错。**修法见 T5-a：删 `--enforce`，改由源码内的判据登记表分流（`docs/PLAN.md` T5-a 子步）
 
-当前在跑: T4
 
 ## 完成标准
 
@@ -128,7 +127,7 @@
 | **T1** | 建 `check-test-layout.mjs`（L4/L5/L7/L8），report 模式。**实测 45 项**：L4 判红 39（零本层主体 37 ＋ 段 import 段 2）· L5 跨层 60 处/36 段（恒报告）· L7 多 2（`common` `fixtures`）缺 4（`behavior` `harness` `shared` `tools`）· L8 0。⚠️ 其中 20 段是**间接到达本层**（8 段经 `test/` 内非段助手、12 段经路径串/子进程）——位置是对的，属 L4 假阳性，处置见 ADR-062 | ✅ 已完成 |
 |  **T2**  |  `src/` 搬迁 5 步，每步自带测试 import 修（**步内不可分割、步间可独立回退**）。⚠️ **86 处 import 重写全部推到 T3**，与 T2 的重写永不交错  |  ✅ 五步全部落地并逐阶段收尾（`05d41c1` ＋ 五步提交），阶段全链 `verify:ci` exit 0  |
 |  **T3**  |  测试树搬迁：harness 归位（删 `test/common/paths.js` 的 86 处）＋ `samples/` 归位 ＋ 镜像填充 ＋ 6 拆 3 合 ＋ `behavior/` 归位。`M2W_ONLY` 段名与镜像路径**同批切**  |  ✅ 主体完成，遗留 4 项各有处置（见子步表）：`3b` ⏸ 裁决不建 `test/tools/`（待有主体再来）· `4b-iii` ⛔ 受阻于 `--enforce` 一刀切，待 T5 的按判据分级强制机制 · `5` ⏸ 剩余两项押后（REQ-184 / P6）· `9` ⛔ 用户裁决不做  |
-| **T4** | 豁免表 ratchet：`--write-baseline` 生成 → 逐条补 `reason` ＋ `coveredBy` → 转判红 |  🔄 **T4-a 在跑**（`reason` ≥20 字这道 ADR-062:72 的门槛当前从未被强制，24 条实测 49–194 字 ⇒ 零数据工作量）· **`coveredBy` 已押后**（用户裁决，见 REQ-185）· 转判红那半已随 T5-a 完成 |
+| **T4** | 豁免表 ratchet：`--write-baseline` 生成 → 逐条补 `reason` ＋ `coveredBy` → 转判红 |  ✅ **T4-a 已完成**（`reason` ≥20 字：`REASON_MIN_CHARS = 20` 具名常量、码点计数 ＋ trim；判定分「空」与「不足」两档；24 条实测 49–194 字故零数据工作量；selftest 71→74，含「恰好等于门槛不得判红」那格）· **`coveredBy` 已押后**（用户裁决，见 REQ-185）· 转判红那半随 T5-a 完成 |
 | **T5** | 门禁元框架退役 ＋ 收尾：删沙盒层（**前置硬门：7 个 `GATE_IDS` 逐个对账**）＋ `registry.mjs`→`gate-index.mjs` ＋ DEV-GUIDE 重写 | ✅ **T5-a 已完成** · 剩余 **T5-b** ⏸（按判据分级强制机制：删 `--enforce` 与 `L5_PENDING`，改 `CRITERIA` 表 ＋ `report` 漏斗，L5 转判红）**＋ 剩余 T5-b**：删沙盒层（**前置硬门：7 个 `GATE_IDS` 逐个对账**）＋ `registry.mjs`→`gate-index.mjs` ＋ DEV-GUIDE 重写 |
 
 ### T2 的五步与排序理由
@@ -153,7 +152,7 @@
 | 4b ✅ | L5 豁免表机制 ＋ 基线（**25 条**）| 29 处命中 → 豁免 25 ／**表外 3** ／空 reason 0 ／stale 0 | ✅ 机制与表已就位（59 条夹具守），**转判红暂缓** —— 前置条件「表外零说不出理由的命中」不成立：那 3 处说得清为什么跨层，但**不该豁免**（真的执行别层实现并对其行为下断言 ⇒ 属 A 档「断言跨层接缝」，归宿是 `behavior/` ＋ `covers`）。处置见 4b-i |
 | 4b-i ✅ | 拆出真正的跨层接缝段 ＋ **`check:test-layout` 进 `verify:ci`** | L5 未登记 3→**1**；stale 摘 1 条（25→24） | ✅ `image-seam` 进 `behavior/`。⚠️ 加链的**直接后果**：不同步改 `registry.mjs` 的 `access` 会被 R5b 判 `access-mismatch`，实测两个段当即红 —— **进链与改 access 必须同批** |
 | 4b-ii ✅ | 处置剩下 2 处 → **`test/convert/`**（非 `behavior/`） | L5 未登记 1→**0**；命中 25（豁免 24／stale 0） | ✅ ① → `context-mapping.test.js` ② → `header-logo.test.js`，断言调用点守恒（移出 15／移入 15）。⚠️ **我原先的裁决前提被推翻**：①② 的断言对象**本身**就是 `src/convert/context.ts` 的函数 ⇒ **单层**，不是接缝；放进 behavior/ 会造出「不跨层的 behavior 段」而 **L6 抓不到** |
-| 4b-iii | **L5 转判红** ＋ 清理 `L5_PENDING` | 前置已达成：未登记 0、stale 0、空 reason 0 |  ✅ 已完成（2026-10-04）：`--enforce` 与 `L5_PENDING` 均已删除，改为 `CRITERIA` 登记表 ＋ 唯一 `report(id, line)` 漏斗；L5 转 fail-closed、L7 留 report-only 且带必填 `pendingReason`。**selftest 71 条全过，其中 6 条是新增的负向夹具**（漏斗未登记即红 / 摘无命中行不产生误红 / 默认 fail-closed 反锚点 / pending 必带 reason / 两个 sourceAudit 变异 / report-only 与 fail-closed 成对） |
+| 4b-iii | **L5 转判红** ＋ 清理 `L5_PENDING` | 前置已达成：未登记 0、stale 0、空 reason 0、**不足 20 字 0**（该门槛 2026-10-04 由 T4-a 补上） |  ✅ 已完成（2026-10-04）：`--enforce` 与 `L5_PENDING` 均已删除，改为 `CRITERIA` 登记表 ＋ 唯一 `report(id, line)` 漏斗；L5 转 fail-closed、L7 留 report-only 且带必填 `pendingReason`。**selftest 74 条全过，其中 6 条是新增的负向夹具**（漏斗未登记即红 / 摘无命中行不产生误红 / 默认 fail-closed 反锚点 / pending 必带 reason / 两个 sourceAudit 变异 / report-only 与 fail-closed 成对） |
 
 | 4c ✅ | 10 个跨层段搬 `test/behavior/` ＋ 建 **L6** ＋ `covers` 扩展到正常段目录 | **L5 54→29**、L4 零本层主体 **32→29**、L7 →「多 0/缺 0」（`test/tools/` 已裁决不建，`discoverSurfaceDirs` 只算含源文件的目录）→「多 0/缺 1」、L6 0 判红、总判红 36→**32** | ✅ 已完成，134 段全绿。L6 三条 fail-closed（缺失／空／**指向不存在**）**用变异实验逐条证明有牙齿**（摘掉任一条，对应夹具立刻翻脸）。`covers` 元素＝**仓库相对 POSIX 路径**，理由：不引入位置耦合（`shared/paths.js` 存在的全部理由就是消灭这类耦合）、可对磁盘真验、不限定 `src/`。⚠️ `covers` 通道**建好但一格未用**（那 29 个间接到达段的声明是 4d），故 L4 数字**未被 L6 掩盖** |
 

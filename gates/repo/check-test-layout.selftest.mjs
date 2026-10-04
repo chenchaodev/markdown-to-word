@@ -33,6 +33,7 @@ import {
   extractImports,
   MIN_SCANNED_FILES,
   NON_MIRROR_TOP_DIRS,
+  REASON_MIN_CHARS,
   TEST_REL,
 } from "./check-test-layout.mjs";
 
@@ -859,7 +860,7 @@ const CASES = [
     judgeOnly: true,
     extra: { [`${TEST_REL}/core/cross.test.js`]: crossLayerSegment("core", "../../dist/main/other.mjs") },
     l5Exemptions: [
-      { segment: `${TEST_REL}/core/cross.test.js`, specifier: "dist/main/other.mjs", reason: "夹具:借常量当期望值" },
+      { segment: `${TEST_REL}/core/cross.test.js`, specifier: "dist/main/other.mjs", reason: "夹具:借 convert 的常量当期望值,不执行其实现" },
     ],
     expect: null,
   },
@@ -876,6 +877,51 @@ const CASES = [
     extra: { [`${TEST_REL}/core/cross.test.js`]: crossLayerSegment("core", "../../dist/main/other.mjs") },
     l5Exemptions: [{ segment: `${TEST_REL}/core/cross.test.js`, specifier: "dist/main/other.mjs", reason: "   " }],
     expect: /reason 是空的/,
+  },
+  {
+    // 「写了但没写够」这一档(ADR-062:72 的 ≥20 字)。与上面「空」分开,因为病因不同:
+    // 空 = 忘了写,不足 = 写了但一句「见谅」—— 后者若不判红,表就退化成一列橡皮图章。
+    //
+    // ⚠ **这格顺带钉住「字是码点不是 UTF-16 单元」**:夹具串取 `REASON_MIN_CHARS - 10` 个
+    // 非 BMP 汉字(𠮷,1 个码点 = 2 个 UTF-16 单元)⇒ 码点数 10 < 20 判红,
+    // 而按 `.length` 数会得到 20 ⇒ 放行。口径写错时这格立刻红(实现侧的 `.length` 退化)。
+    // 用真实汉字而非 emoji:emoji 在本仓 UI 规范里是被点名禁的形态,夹具也不该顺手带一个。
+    name: "L5 豁免表:reason 少于 20 字 → 判红,且诊断与「空」那一档可区分(码点口径,非 UTF-16 单元)",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/core/cross.test.js`]: crossLayerSegment("core", "../../dist/main/other.mjs") },
+    l5Exemptions: [
+      {
+        segment: `${TEST_REL}/core/cross.test.js`,
+        specifier: "dist/main/other.mjs",
+        reason: "𠮷".repeat(REASON_MIN_CHARS - 10),
+      },
+    ],
+    expect: new RegExp(
+      `命中已在豁免表登记\\(dist/main/other\\.mjs\\),但 reason 只有 ${REASON_MIN_CHARS - 10} 字,`
+      + `不足门槛 ${REASON_MIN_CHARS} 字`,
+    ),
+    // 「两种病因在诊断上可区分」的反向断言:只断 expect 的话,实现把两档合成同一句
+    // 「reason 不合格」也照样绿 —— 而那正是本项要求分开报的根据(空 = 没写,不足 = 写得不够)。
+    expectAbsent: /reason 是空的/,
+  },
+  {
+    // **恰好等于门槛那一格**(最容易写坏的一格:`>=` 与 `>` 的差别就翻脸)。
+    // 夹具串由 `REASON_MIN_CHARS` 个码点构成,且**故意含一个非 BMP 汉字** ⇒
+    // `[...s].length === 20` 而 `s.length === 21`。两点保证「与被测实现同口径」:
+    //   ① 串长由常量现算(常量一改这格自动跟着走,不会变成陈旧断言);
+    //   ② 非 BMP 那一位让 `.length` 口径算出的数与码点口径不同 ⇒ 若实现用 `.length`,
+    //      上面那格(不足)会先红,这格则证明绿不是因为「两边恰好相等」蒙对。
+    name: "L5 豁免表:reason 恰好等于 20 字 → 判绿(阈值边界:正好达标不得判红)",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/core/cross.test.js`]: crossLayerSegment("core", "../../dist/main/other.mjs") },
+    l5Exemptions: [
+      {
+        segment: `${TEST_REL}/core/cross.test.js`,
+        specifier: "dist/main/other.mjs",
+        reason: `${"字".repeat(REASON_MIN_CHARS - 1)}𠮷`,
+      },
+    ],
+    expect: null,
   },
   {
     // stale(ratchet):登记了却当前不再命中 —— 代码删了/改名了,豁免必须同批删掉。
@@ -1109,11 +1155,33 @@ const CASES = [
     name: "真实仓库:L4/L5/L6/L8 判红数自洽(自指层 + 声明通道 + 豁免表三件事任何一件回退都翻脸)",
     realRepo: true,
     expectCode: 0,
-    // L4 的两格都归零(零本层主体 0 / 段 import 段 0)、L5 未登记/空 reason/stale 三档归零 ——
-    // 后三档正是「L5 凭什么能转正」那个裁决的机械证据;L5 命中数不为零是合法的
-    // (命中已登记在豁免表里且带非空 reason,豁免命中在判定本体里 continue、不产生 info 行)。
+    // L4 的两格都归零(零本层主体 0 / 段 import 段 0)、L5 未登记/空 reason/不足门槛/stale 四档归零 ——
+    // 后四档正是「L5 凭什么能转正」那个裁决的机械证据;L5 命中数不为零是合法的
+    // (命中已登记在豁免表里且 reason 达标,豁免命中在判定本体里 continue、不产生 info 行)。
+    // ⚠ 其中「不足 N 字判红 0」这一档同时是**「真实豁免表现有数据全部达标」的机器证据**:
+    //   加门槛最坏的失效形态是「把现有 24 条全判红」,而这一档归零就是它的反证。
+    //   它必须由判定本体**在真实仓库上**跑出来(不是读数据文件自己数字符)——
+    //   否则就绕开了「walk 到那 24 条命中」这一步,证明不了门禁本身不误伤。
     // 退出码是 0,因为 L7「缺 test/tools/」是 report-only 档(空目录,已裁决不建)。
-    expect: /L4 test-layer-self-hosted 判红 0 项\(零本层主体 0 \/ 段 import 段 0.*未登记判红 0 \/ 空 reason 判红 0 \/ stale 判红 0/s,
+    expect: new RegExp(
+      `L4 test-layer-self-hosted 判红 0 项\\(零本层主体 0 \\/ 段 import 段 0.*`
+      + `未登记判红 0 \\/ 空 reason 判红 0 \\/ 不足 ${REASON_MIN_CHARS} 字判红 0 \\/ stale 判红 0`,
+      "s",
+    ),
+  },
+  {
+    // 「加了门槛却把现有数据全判红」的**反证**,且刻意与上面那条分开:
+    // 上面那条断言的是四档计数全零(退出码层面),这条额外钉住**豁免表本身非空**
+    // (`豁免 [1-9]\d* 条`)—— 少了那半句,「不足 N 字判红 0」在表被清空时也会照样成立,
+    // 而那恰恰是这道门槛最该防的失效形态(表空了 ⇒ 门槛一次也没被真正验证过 ⇒ 恒绿)。
+    // ⚠ 计数由判定本体在**真实仓库**上跑出来,不是读数据文件自己数字符 ——
+    //   后者绕开了「walk 到那些命中」这一步,证明不了门禁本体不误伤。
+    name: "真实仓库:豁免表非空且 0 条因 reason 长度判红(门槛不误伤现有数据,且非空真被验证过)",
+    realRepo: true,
+    expectCode: 0,
+    expect: new RegExp(
+      `豁免 [1-9]\\d* 条 \\/ 未登记判红 0 \\/ 空 reason 判红 0 \\/ 不足 ${REASON_MIN_CHARS} 字判红 0`,
+    ),
   },
 ];
 
