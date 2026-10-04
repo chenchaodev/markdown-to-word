@@ -121,9 +121,9 @@
 | **S1b** ✅ | 补 `smoke` 的**冒烟机制自身**(⚠️ 原写「需 CI 真起一次 Electron」——**该前提已被实测推翻**,见下方裁决④订正) | 新建 `gates/smoke/smoke-proc.selftest.mjs`(403 行 / **22 条纯函数夹具 ＋ 2 条内建档**,判定本体 `smoke-proc.mjs:236-257` **一行未改**),自跑 **24/24 绿**;登记两处(`PROBE_CARRIER_SCRIPTS:96` ＋ `GATE_REGISTRY.smoke.probes[]:527-537`,缺一会被 R3 判 `probe-carrier-orphan`),挂 `verify:ci`。6 个真实变异(摘 marker 过滤 / token 匹配写松 / 点名写成笼统 / 退出码分支写反 / 吞 spawnError 族 / 吞超时族)**6/6 全被拦**。⚠️ **刻意放弃进程级/端到端档**,理由已写进头注 `:26-34`(判定本体无 CLI 可跑;`--smoke` 参数解析住在 `src/main/` 侧,与本族口径不同源)。 |
 | **S1c** ✅ | **取 `sandbox.mjs` 的工作树指纹子系统单独取出，挂在已在链上的 `check:temp-cleanup`** | 新建 `gates/repo/protected-tree.mjs`(151 行)；`sandbox.mjs` **301 → 178 行**、被取符号 grep **零命中**；`check-temp-cleanup` 707 → 762 行。夹具 **14 → 16 条全绿且一条未删未失效**，新增两条为「门禁跑的过程中写坏了真实工作树(指纹判红并点名)」与「只增删 `node_modules` 顶层项(哨兵判红)」；`check-import-boundary` **退出码 0**（新增的 `protected-tree → repo-manifest` 边命中既有 `gates-stay-in-gates` 允许面，**无需裁决**）。⚠️ **规模订正**：本行原写「约 58 行」**低估** —— 真正要搬的是 `snapshotProtectedTree`(84-105) ＋ `diffProtectedTree`(113-133) ＋ **未 export 的 `collectProtectedEntries`(41-78)** ＋ `describeChangedFiles`(142-163) ＋ 随之失效的 import/常量。⚠️ **顺带修掉一处真缺陷**：`nodeModulesIntact` 原判「跑前压根没有 `node_modules`」（未装依赖的检出、临时夹具）为不完好；沙盒层只在真实仓库求值故从未暴露，挂到可注入根的门禁上会变成**每条夹具都红**的假红。改为「存在性与项数都未变」。 |
 | S2 ✅ | L11（**三档缺一即红**，fail-closed）＋ L12（`chain`/`offchain` 两值 ＋ L12c 待转正声明）落地，**先在 `check-test-layout.mjs`** | `CRITERIA` **9 → 11 条**（新增 `gate-has-carrier` fail-closed ＋ `gate-chain-membership` pending），实测**恰好 2 条 pending**（`test-top-dirs-exact` ＋ `gate-chain-membership`，都带理由）。链展开与链根**全部 import 自 `chain-expand.mjs` 单源，未复制任何一份逻辑或链根表**（`CHAIN_ROOTS` 两处字面一致，`uniq -c` 得 2）。自测 **74 → 104 条**全过（+30）。门禁 exit 0，L11 实测 **档1a 16/39 ＋ 档1b 23/39 ＋ 档2 0 ＋ 档3 0**，**未加任何豁免条目压绿**。⚠️ **执行方推翻了我派发时的两条形态**（详见 ADR-062 的「S2 实测订正」节）：①「两个候选载体」不能是两个路径 —— 多道门禁共用一个验收段是既有事实，路径派生最好的一种也只覆盖 16/39，改为「存在／引用」两形态；② L12 不得逐条核对全部 `npmScripts` —— 与注册表 R5a 明文裁决冲突，只核 `npmScripts[0]`。 |
-| S3 | 写 `gate-index.mjs`，**与旧 registry 并存** | 新旧对同一注册表给出相同 code 集合 ⚠️ **本步须同时补 L11 的「清单有而树里无」那一档**：门禁本体被删除时会静默离开 L11 的判定面，今天靠注册表 R4 与 `check-import-boundary` 兜着，但 **R1–R5c 全部随 S4 消失** ⇒ 不在 S3 补则届时无人守。理由见 ADR-062 同节。 |
+| S3 | 写 `gate-index.mjs`，**与旧 registry 并存** | 新旧对同一注册表给出相同 code 集合 ⚠️ **本步须同时补 L11 的「清单有而树里无」那一档**：门禁本体被删除时会静默离开 L11 的判定面，今天靠注册表 R4 与 `check-import-boundary` 兜着，但 **R1–R5c 全部随 S4 消失** ⇒ 不在 S3 补则届时无人守。理由见 ADR-062 同节。 ⚠️ **另须承接 R5c**：现装「登记进 `PROBE_CARRIER_SCRIPTS` 的载体必须在链上」只由 `check:gates` 执行，而 **`check:gates` 不在任何链上**（`docs/DEV-GUIDE.md:100` 明写「仅本地手动」）⇒ **今天就没在守**；该概念本身随 S4 消失 ⇒ 届时彻底无人守。新 `gate-index.mjs` 的 `npmScripts` 让 L11/L12 有条件接住它。 |
 | S4 | 删沙盒层 islands ＋ `gates/` 6 探针 ＋ `check:gates` | **`grep -rn "gate-probes|check-gate-probes"` 零命中** ＋ `gate-index` 仍 exit 0 |
-| **S5-0** ⏳ | ⚠️ **S5 的前置**：把段发现改成递归 —— `discoverSegments`（`test/harness/runner.js:181-196`）＋ `gates/fixtures/gen-fixtures.mjs:219` ＋ `test/gates/fixture-contract.test.js:98` **三处同批**（后者头注明写「生成器段名集合 == runner 的 `discoverSegments` 结果」⇒ 只改 runner 会让该段当场判红） | 合成临时目录里造二级目录树，断言 ①二级段被发现且段名为完整相对路径 ②祖先/后代目录对**不重复登记**（现装 `discoverSegments` 无去重，`runner.js:924` 的 `new Map(name→i)` 会让同名段静默互相覆盖）③`rootDir` 缺省时回落 `basename`（回落是必须的：`runner-report.test.js:87` 的沙盒在 `output/tmp/` 不在 `test/` 树内，强制 `relative(testRoot)` 会打断该段 811 行断言）。⚠️ **不得与 S5 合并同日做**。 |
+| **S5-0** ⏳ | ⚠️ **S5 的前置**：把段发现改成递归 —— `discoverSegments`（`test/harness/runner.js:181-196`）＋ `gates/fixtures/gen-fixtures.mjs:219` ＋ `test/gates/fixture-contract.test.js:98` **三处同批**（后者头注明写「生成器段名集合 == runner 的 `discoverSegments` 结果」⇒ 只改 runner 会让该段当场判红） | 合成临时目录里造二级目录树，断言 ①二级段被发现且段名为完整相对路径 ②祖先/后代目录对**不重复登记**（现装 `discoverSegments` 无去重，`runner.js:924` 的 `new Map(name→i)` 会让同名段静默互相覆盖）③`rootDir` 缺省时回落 `basename`（回落是必须的：`runner-report.test.js:87` 的沙盒在 `output/tmp/` 不在 `test/` 树内，强制 `relative(testRoot)` 会打断该段 811 行断言）。⚠️ **不得与 S5 合并同日做**。 ⚠️ **本步同时是 REQ-184 的硬前置**（2026-10-05 实测新发现）：ora-2 评审说 `supply-chain` 那 4 个主体的镜像路径「全部可推导」，但今日实测 `test/gates/supply/supply`、`test/gates/smoke`、`test/dist/main`、`test/shared/geometry`、`test/gates/geometry/geometry` **5 条一条都不存在**；而段发现非递归 ⇒ 拆出的段放进这些新目录后**永远不被发现、永不运行，而 L4/L5/L7 与豁免表全绿**。 |
 | S5 | 合并 `gate-probes.test.js`(293) ＋ `gate-registry-gate.test.js`(555) → `test/gates/repo/gate-index.test.js`；`EXCLUSIVE_SEGMENTS` 删 `gate-probes` | `grep -n "gate-probes" test/harness/runner.js` 零命中 |
 | S6 | DEV-GUIDE 接入点表同步 | `grep -n "check:gates" docs/DEV-GUIDE.md` 零命中 |
 
@@ -158,6 +158,21 @@
 
 当前在跑: T5
 
+## REQ-184 的五项（测试段拆分/合并专项 · 判据已由独立评审从「行数」改成「主体数」）
+
+> ⚠️ **原「6 拆 3 合」批次（B1–B7）的前提已被独立评审推翻**：按行数拆 = 1 个偏宽段换 3 个偏宽段，**离目标态更远**；合并方向同样撞 `ADR-062:116`（同模块多段口径已被明文删除）。⇒ 正确问法不是「这些段大不大」，是「这几段的**主体是不是一个**」。评审原文逐字落盘在 [`docs/evidence/20261004-205551-测试段拆分合并的架构结论独立评审.md`](evidence/20261004-205551-测试段拆分合并的架构结论独立评审.md)（用户裁决本号按该结论操作）。
+>
+> 今日实测复核（评审是 10-04 的，段数与文件位置已变）：主体数 4／3／3 **全部成立**；`geometry-gate` 实为**跨两棵树 3 主体**（比评审所述更强）；`observability` 实为 **3 主体**（评审漏数了 `gates/smoke/smoke-report`）；`import-boundary` 的「主体含混」成立；「canonical `test/harness/node-exec.js` 已被正确 import」成立（7 个文件，含 `install-smoke`），且该段仍有 **20 个本地顶层 function** ⇒ 去重确实未做。
+
+| 项 | 段 | 动作 | 机器可判完成判据 |
+|---|---|---|---|
+| **R1** ⏳ | `test/gates/supply-chain.test.js`(1678) | **拆 4 个主体**：`check-supply-chain`／`gen-sbom`／`gen-licenses`／`collect-license-fulltext` 各一段 | 4 条镜像路径下各有段且**每段只 import 自己那个主体**；L4 全绿、L5 零跨层 |
+| **R2** ⏳ | `test/gates/observability.test.js`(1349) | **拆 3 个主体**（`gates/smoke/smoke-proc`／`gates/smoke/smoke-report`／`dist/main/smoke`） | 同上；⚠️ 跨层的两段各走各的镜像路径 |
+| **R3** ⏳ | `test/shared/geometry-gate.test.js`(1214) | **拆 3 个主体**，跨 `shared/` 与 `gates/` 两棵树 | 同上 |
+| **R4** ⏳ | `test/gates/install-smoke.test.js`(1730) | **只去重、不拆**：20 个本地顶层 function 里的进程/沙盒族归到已有的 canonical `test/harness/node-exec.js` | 该段顶层 function 数下降且 `node-exec` 的 import 数上升；**段数不变**；连带按 L8 补 1:1 selftest |
+| **R5** ⏳ | `test/gates/import-boundary.test.js`(1612) | **不做拆分** —— 段 import `gates/artifacts/check-asar-manifest.mjs` 而注册表 `modulePath` 记 `gates/repo/check-import-boundary.mjs` ⇒ 主体含混，拆会把 1 个含混固化成 2 个含混 | 先做**主体认定**（两处对齐）；那是 R1–R3 同一件事的前置 |
+
+> ⚠️ **R1–R3 全部以 S5-0（段发现递归化）落地为前置** —— 见 S5-0 行那条实测：三者的新镜像目录今日一条都不存在，而非递归的段发现会让拆出的段**永不运行且门禁全绿**。
 ## 完成标准
 
 1. `src/` 19 条取证里 7 条要动的全部落地（i18n 目录化 · cancel 拆分 · image 归并 · util→text 改名 · style 并入 theme · main 四项搬迁 · 11 条新判据在位）
