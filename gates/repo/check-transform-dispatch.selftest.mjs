@@ -43,7 +43,7 @@ function createFixture(mutate) {
   writeUnder(src, 'core/convert.ts');
   for (let i = 0; i < DOCX_FILES; i += 1) writeUnder(src, `core/docx/part-${i}.ts`);
   for (let i = 0; i < PDF_FILES; i += 1) writeUnder(src, `core/pdf/part-${i}.ts`);
-  for (let i = 0; i < UTIL_FILES; i += 1) writeUnder(src, `core/util/helper-${i}.ts`);
+  for (let i = 0; i < UTIL_FILES; i += 1) writeUnder(src, `core/text/helper-${i}.ts`);
   for (let i = 0; i < SHELL_FILES; i += 1) writeUnder(src, `main/converter/shell-${i}.ts`);
   // 两处枚举点:分派 1 + 档位映射 1,都在 core/markdown/(与门禁的硬约束同形)
   writeUnder(src, 'core/markdown/dispatch.ts', 'export const dispatch = (o) => o.aiCleanup;\n');
@@ -114,7 +114,7 @@ const CASES = [
     name: '枚举点落到 core/markdown 之外(有人重新造了一条通路)',
     mutate: ({ src }) => {
       writeUnder(src, 'core/markdown/level-map.ts');
-      writeUnder(src, 'core/util/escaper.ts', 'export const e = (o) => o.obsidian;\n');
+      writeUnder(src, 'core/text/escaper.ts', 'export const e = (o) => o.obsidian;\n');
     },
     expect: /枚举点 core\/util\/escaper\.ts 不在 core\/markdown\/ 下/,
   },

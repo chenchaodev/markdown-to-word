@@ -49,7 +49,7 @@
 
 | 步 | 内容 | 触点 | 为什么这个顺序 |
 |---|---|---|---|
-| 1 | `util/`→`text/` ＋ `settings-*` 改名 | 3 段 | 纯改名零逻辑，先跑通「搬＋修测试＋验」这套动作 |
+| 1 ✅ | `util/`→`text/`（**只改目录名，4 个文件名不动**） | 实测 **33 处 / 27 文件** | 纯改名零逻辑，先跑通「搬＋修测试＋验」这套动作。⚠️ **原估「3 段」是错的**，原计划的 `settings-*` 改名已移出：实测 `settings-defaults` 有 **66 处真 import** ＋ 8 处 JSDoc ＋ 约 35 处注释提及，且给出的理由「两个文件名无法区分 schema 与 defaults」**不成立** —— 文件名里就写着 `schema` 与 `defaults`，本就可 grep。66 处改写的风险不抵这点收益 |
 | 2 | `cancel.ts` 拆出 `image/request-guard.ts` | 3 段 | 边界明确（22–169 vs 172–296） |
 | 3 | `image/` 归并 ＋ `style/` 并入 `theme.ts` | 1+ | 影响面小，依赖步 2 已就位 |
 | 4 | `main/` 四项（about-window ／ about-preload 迁入 ／ output-allowlist ／ 删 types.ts ／ 缩桶） | 1 | 测试耦合最低（`menu` 实测 0 段直接 import） |

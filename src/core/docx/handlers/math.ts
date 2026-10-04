@@ -38,7 +38,7 @@
  *   mstyle 仅 \color / \small 等特殊构造产出。
  */
 import katex from "katex";
-import { decodeEntities } from "../../util/text-escape.js";
+import { decodeEntities } from "../../text/text-escape.js";
 // 资源边界单源:公式来自用户 markdown(不可信输入),宏展开与信任指令的边界
 // 取值与 pdf 管线(@mdit/plugin-katex 转发同一份 DEFAULT_KATEX_RESOURCE_LIMITS)一致
 import { DEFAULT_KATEX_RESOURCE_LIMITS, hasUntrustedTexCommand } from "../../resource-limits.js";

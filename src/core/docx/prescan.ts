@@ -12,7 +12,7 @@
 import type { Root, Paragraph as MdParagraph } from "mdast";
 import { buildCaptionContext, type CaptionInfo } from "./handlers/captions.js";
 import { buildEquationContext, type EquationContext } from "./handlers/equations.js";
-import { collectPlainText } from "../util/mdast-utils.js";
+import { collectPlainText } from "../text/mdast-utils.js";
 import { stripSecLabelSuffix } from "../markdown/cross-ref.js";
 import {
   bumpHeadingCounter,

@@ -304,7 +304,12 @@ export async function run() {
       const pendingIds = [...LAYER_RULES, ...LAYER_TEXT_RULES]
         .filter((r) => r.pending === true)
         .map((r) => r.id);
-      for (const [label, result] of [["src", srcResult], ["dist", distResult]]) {
+      // 必须显式标注元组类型:不标注时 TS 把二维数组的元素类型推成「所有元素的并集」,
+      // 于是 result 被推成 `string | 分析结果` —— 凭空多出本不该有的 string 分支
+      // (表现为 result.info 不存在、result 可能 undefined)。这不是门禁的返回类型问题。
+      /** @type {[string, typeof srcResult][]} */
+      const sides = [["src", srcResult], ["dist", distResult]];
+      for (const [label, result] of sides) {
         const leaked = result.problems.filter((line) =>
           pendingIds.some((id) => line.includes(`层向规则 ${id}`)),
         );

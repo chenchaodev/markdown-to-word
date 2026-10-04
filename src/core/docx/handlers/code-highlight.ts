@@ -9,12 +9,12 @@ import hljs from "highlight.js/lib/common";
 import { TextRun } from "docx";
 import { CODE_FONT } from "../theme.js";
 import { HLJS_PALETTE, type HljsTokenStyle } from "../../style/hljs-palette.js";
-// 实体解码单源:统一用 core/utils.ts decodeEntities,删除本模块私有实现。
+// 实体解码单源:统一用 core/texts.ts decodeEntities,删除本模块私有实现。
 // 语义差异核实结论:hljs 输出实体域仅为 &lt;/&gt;/&quot;/&#x27;/&amp;(转义 & < > " '),
 // utils 版对该域逐形态与原实现结果逐一等价(含 "&amp;lt;" 等二次解码防护场景:
 // utils 命名实体先于 &amp; 解码 + 单遍语义一致);utils 版额外覆盖任意数值实体与
 // &nbsp;,为覆盖广者,完整性校验(解码拼接 === 原文)行为不变。
-import { decodeEntities } from "../../util/text-escape.js";
+import { decodeEntities } from "../../text/text-escape.js";
 
 /**
  * 扫描 hljs 高亮 HTML:span 开 / span 闭 / 文本 三态,类栈处理嵌套

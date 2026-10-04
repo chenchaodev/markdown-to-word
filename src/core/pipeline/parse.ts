@@ -4,7 +4,7 @@ import remarkMath from "remark-math";
 import { remarkComment } from "../markdown/comment.js";
 import type { Node, Root, Heading } from "mdast";
 import { uniqueSlug } from "../markdown/slug.js";
-import { collectPlainText as collectText } from "../util/mdast-utils.js";
+import { collectPlainText as collectText } from "../text/mdast-utils.js";
 // 章节 label 正则族单源:SEC_LABEL_RE 定义于 core/cross-ref.ts
 import { SEC_LABEL_RE } from "../markdown/cross-ref.js";
 // 表格列宽信号:分隔行 dash 比例 → 百分比,纯函数单源 markdown/table-width.ts

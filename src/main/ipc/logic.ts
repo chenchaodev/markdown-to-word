@@ -15,9 +15,9 @@ import type { ConvertWarning, KeyedWarning } from "../../core/i18n.js";
 import { mergePresets, parsePresetsFile } from "../persist/preset-file.js";
 import type { ConvertContext } from "../converter/index.js";
 import { stripMarkdownExt } from "../../convert/paths.js";
-import { errorMessage } from "../../core/util/error-message.js";
+import { errorMessage } from "../../core/text/error-message.js";
 
-// 错误归一的实现单源在 core/util/error-message.ts:此前本文件与 renderer 的
+// 错误归一的实现单源在 core/text/error-message.ts:此前本文件与 renderer 的
 // state/pure.ts 各留一份逐字相同的定义。上面的 import 供本模块内部使用,此处
 // re-export 以保持既有导入路径不变(register.ts / windows/preview.ts 均从此处取)。
 export { errorMessage };

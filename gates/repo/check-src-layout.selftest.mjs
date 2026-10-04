@@ -182,7 +182,7 @@ const CASES = [
     // 单星注释是「有注释」但不是「文件头」:这一格挡住的正是「把双星当单星写」的省事修法
     name: "src-file-header:首行是单星注释而不是双星 → 判红",
     judgeOnly: true,
-    extra: { "core/util/merge.ts": "/* 临时说明,不是文件头。 */\nexport const merge = 1;\n" },
+    extra: { "core/text/merge.ts": "/* 临时说明,不是文件头。 */\nexport const merge = 1;\n" },
     expect: /src\/core\/util\/merge\.ts:1 → src-file-header/,
   },
   {
@@ -223,7 +223,7 @@ const CASES = [
   {
     name: "src-no-duplicate-basename:同组三个同名文件仍只报一条并点名全部路径",
     judgeOnly: true,
-    extra: { "core/docx/handlers/dup.ts": CLEAN, "core/pipeline/dup.ts": CLEAN, "core/util/dup.ts": CLEAN },
+    extra: { "core/docx/handlers/dup.ts": CLEAN, "core/pipeline/dup.ts": CLEAN, "core/text/dup.ts": CLEAN },
     expect: /src\/core\/docx\/handlers\/dup\.ts \+ src\/core\/pipeline\/dup\.ts \+ src\/core\/util\/dup\.ts → src-no-duplicate-basename/,
   },
   {

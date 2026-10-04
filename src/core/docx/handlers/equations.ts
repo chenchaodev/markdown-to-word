@@ -20,7 +20,7 @@ import {
   TextRun,
 } from "docx";
 import type { IParagraphOptions, ParagraphChild } from "docx";
-import { collectPlainText } from "../../util/mdast-utils.js";
+import { collectPlainText } from "../../text/mdast-utils.js";
 import { EQ_LABEL_RE } from "../../markdown/cross-ref.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
 import { CODE_FONT, MUTED_TEXT_GRAY } from "../theme.js";

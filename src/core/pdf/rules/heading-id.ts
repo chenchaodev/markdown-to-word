@@ -14,7 +14,7 @@
  */
 import type MarkdownIt from "markdown-it";
 import { uniqueSlug } from "../../markdown/slug.js";
-import { decodeEntities } from "../../util/text-escape.js";
+import { decodeEntities } from "../../text/text-escape.js";
 import type { PdfHeading } from "../bookmarks.js";
 import { attrDel } from "./shared.js";
 

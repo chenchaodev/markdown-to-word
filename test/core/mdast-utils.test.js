@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * mdast 工具直测段(src/core/util/mdast-utils.ts 纯函数:
+ * mdast 工具直测段(src/core/text/mdast-utils.ts 纯函数:
  * 此前仅经 toc/captions 间接触达,无专属段):
  * 实现事实(读源码确认):
  * - collectPlainText:递归拼接子树 value(text/inlineCode 等含 value 的节点);
@@ -9,7 +9,7 @@
  *   均以本函数为纯文本来源,批注内容混入会污染锚文本;
  * - 无 value 且无 children 的节点 → "";空 children → ""。
  */
-import { collectPlainText } from "../../dist/core/util/mdast-utils.js";
+import { collectPlainText } from "../../dist/core/text/mdast-utils.js";
 
 /**
  * 断言辅助。

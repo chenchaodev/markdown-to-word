@@ -1,12 +1,12 @@
 // @ts-check
 /**
- * 通用文本工具直测:src/core/util/text-escape.ts 单分支补齐(接入 case 级报告)。
+ * 通用文本工具直测:src/core/text/text-escape.ts 单分支补齐(接入 case 级报告)。
  * - decodeNumeric 非法码点(20-21 行):数值实体码点越界(> 0x10FFFF)返回原样不抛;
  *   合法码点正常解码(含增补平面代理对)。
  * - escapeRegExp(35-36 行):正则特殊字符全部转义,结果可安全字面匹配。
  * 纯函数段,无产物输出(故无失败快照)。
  */
-import { decodeEntities, escapeRegExp } from "../../dist/core/util/text-escape.js";
+import { decodeEntities, escapeRegExp } from "../../dist/core/text/text-escape.js";
 import { assert, createCaseSuite } from "../common/case.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)

@@ -13,7 +13,7 @@ import { BrowserWindow, screen } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { convert } from "../../core/convert.js";
-import { escapeHtml } from "../../core/util/text-escape.js";
+import { escapeHtml } from "../../core/text/text-escape.js";
 import { formatWarning, t } from "../../core/i18n.js";
 import type { ConvertWarning } from "../../core/i18n.js";
 import { createImageResolver } from "../../convert/image-downloader.js";

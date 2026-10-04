@@ -8,10 +8,10 @@ export function isMarkdown(filePath: string): boolean {
   return /\.(md|markdown)$/i.test(filePath);
 }
 
-// 错误归一的实现单源在 core/util/error-message.ts:此前此处与 main 的 ipc/logic.ts
+// 错误归一的实现单源在 core/text/error-message.ts:此前此处与 main 的 ipc/logic.ts
 // 各留一份逐字相同的定义(两边注释都写着「原…N 处内联拼写收敛于此」)。此处改为
 // re-export 以保持既有导入路径不变。
-export { errorMessage } from "../../core/util/error-message.js";
+export { errorMessage } from "../../core/text/error-message.js";
 
 export function baseName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;

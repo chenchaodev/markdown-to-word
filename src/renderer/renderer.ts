@@ -20,7 +20,7 @@ import {
 } from "./ui/recent-files.js";
 import { initFirstRunGuide } from "./ui/first-run-guide.js";
 import { setError } from "./ui/dom-ops.js";
-import { errorMessage } from "../core/util/error-message.js";
+import { errorMessage } from "../core/text/error-message.js";
 import { t } from "../core/i18n.js";
 
 /**

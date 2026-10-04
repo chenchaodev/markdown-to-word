@@ -276,7 +276,7 @@ export const LAYER_RULES = Object.freeze([
   // 故在此成组登记并共用一段理由 —— 那段理由是这组判据的成立前提,逐条抄一遍必然漂移:
   //
   // **为什么只钉「某条边不存在」而不钉方向**:实测 core/ 内部 9 个子目录的运行期依赖图
-  // 几乎是一片 DAG(docx 与 pdf 之间唯一一条边是 type-only,image/util/style/settings 是
+  // 几乎是一片 DAG(docx 与 pdf 之间唯一一条边是 type-only,image/text/style/settings 是
   // 叶子),唯一的运行期环是 markdown ⇄ pipeline,且成因是**一个文件放错目录**
   // (ai-cleanup 是「解析之后的变换」,却住在 markdown/ 里)。既然图本身近乎无环,
   // 「A 不得依赖 B」这种方向规则就为它并不存在的病开药 —— 每一加就红。对照 renderer/:
@@ -319,14 +319,14 @@ export const LAYER_RULES = Object.freeze([
       + '唯独对 docx / pdf 两条边不存在',
   },
   {
-    id: 'core-util-no-core',
-    scope: 'core-util',
-    // scope 与 id 都用目录现状名 util/(`core/text/` 尚未落地)。规则名指向一个不存在的
-    // 目录就是代码里的假话 —— 目录改名的同一批改动里把这两处一并改掉即可。
+    id: 'core-text-no-core',
+    scope: 'core-text',
+    // T2 步 1 已把 util/ 落成 text/,规则名与 scope 随之改掉 —— 规则名指向一个
+    // 不存在的目录就是代码里的假话。本条**不带** pending: 它建时即绿(T2 前后都绿),
+    // 属于「已完全生效」的判据,不是那六条「已知违反、待搬迁后转判红」的。
     allowTypeOnly: true,
     forbid: 'prefix:../',
-    pending: true,
-    reason: 'core/util/ 放的是与业务无关的文本与错误处理原语(编码探测、HTML 实体、'
+    reason: 'core/text/ 放的是与业务无关的文本与错误处理原语(编码探测、HTML 实体、'
       + 'Error 归一),对 core 内其他目录的**值**依赖一条都不该有:原语一旦知道业务知识,'
       + '它就再也不能被任何目录放心复用。type-only 边豁免(allowTypeOnly)—— 类型是'
       + '编译期产物,实测 util/mdast-utils.ts 对 markdown/comment.js 的那条边正是 import type,'
@@ -1066,7 +1066,7 @@ function scopeMatches(scope, file) {
   if (scope === 'core-markdown') return file.startsWith('core/markdown/');
   if (scope === 'core-image') return file.startsWith('core/image/');
   if (scope === 'core-pipeline') return file.startsWith('core/pipeline/');
-  if (scope === 'core-util') return file.startsWith('core/util/');
+  if (scope === 'core-text') return file.startsWith('core/text/');
   // core/i18n 与别的 core 子目录**不同构**:目录化之前的现状是「文件 core/i18n.ts」与
   // 「目录 core/i18n/」**两者并存**(前者待拆进后者)。scope 必须同时命中两者 ——
   // 只命中一种,拆分完成那天判据会因文件换了位置而静默失效(恒绿),而恒绿的规则等于

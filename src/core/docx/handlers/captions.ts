@@ -12,7 +12,7 @@
 import type { Node, Root, Paragraph as MdParagraph } from "mdast";
 import { AlignmentType, Paragraph, TextRun } from "docx";
 import type { ParagraphChild } from "docx";
-import { collectPlainText } from "../../util/mdast-utils.js";
+import { collectPlainText } from "../../text/mdast-utils.js";
 import { captionFontSizePt, ptToHalfPoints } from "../../settings/typography.js";
 import { CAPTION_PREFIX_RE, captionLabelKey, kindLabelRegex } from "../../markdown/cross-ref.js";
 import { docxBookmarkId } from "../../markdown/slug.js";
