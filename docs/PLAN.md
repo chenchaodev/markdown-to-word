@@ -106,6 +106,47 @@
 - ~~**`check:test-layout` 在 `verify:ci` 上恒 exit 0**~~ —— **已消除（T5-a）** 实测它的 script 是 `node gates/repo/check-test-layout.mjs`，**没有任何调用点传 `--enforce`**（`package.json` 与 `.github/` 全仓零命中），而 `:901 if (!enforce)` 之后走报告档 **exit 0** ⇒ **一条链上的恒绿门禁**，正是本工作项一直在打的「判据恒绿」形态。**连带两处文案失准**：`:894` 的 ok 消息写「四族」（实际五族 ＋ 8 个机器 id）、`:865` 的 usage 写 `--enforce` 覆盖「L4 / L7 / L8」而实现（`:893`/`:901`）覆盖 problems 全体。**⇒ 我先前把 usage 文案当成了实现，这是第二次犯「文档≠实现」的错。**修法见 T5-a：删 `--enforce`，改由源码内的判据登记表分流（`docs/PLAN.md` T5-a 子步）
 
 
+
+## T5-b 分步计划（P6 门禁元框架退役）
+
+**依据**：`ADR-062:246`（P6 前置硬门 ＝ 7 个 `GATE_IDS` 逐个对账）＋ `:281`（回滚前先确认对账表仍在且全绿）＋ `:285`（唯一不可 `git revert` 的是删除动作）。
+
+| 步 | 内容 | 机器可判完成判据 |
+|---|---|---|
+| **S0** ✅ | **只写对账表 ＋ JSON，不删任何东西** | 已完成。7 族齐、`successorState` 与磁盘一致、**`grep -rn "gate-probes"` 命中数与做之前逐字相同**（证明零删除） |
+| **S1a** 🔄 | 补 `fixtures` 的**点名能力** ＋ `build-fresh` 的**整个能力**（两个新 selftest）；核实 `dual-matrix` 是否注入故障 | 每个新 selftest 不注入时 exit 0、**注入故障后 exit≠0 且诊断含预期文件名** |
+| **S1b** ⏳ | 补 `smoke` 的**冒烟机制自身**（需 CI 真起一次 Electron） | 同上三档 |
+| S2 | L11（三档缺一即红）＋ L12（`chain`/`offchain` 两值 ＋ L12c 待转正声明）落地，**先在 `check-test-layout.mjs`** | `--help` 的强制等级行含 L11/L12；selftest 条数增加 |
+| S3 | 写 `gate-index.mjs`，**与旧 registry 并存** | 新旧对同一注册表给出相同 code 集合 |
+| S4 | 删沙盒层 islands ＋ `gates/` 6 探针 ＋ `check:gates` | **`grep -rn "gate-probes|check-gate-probes"` 零命中** ＋ `gate-index` 仍 exit 0 |
+| S5 | 合并 `gate-probes.test.js`(293) ＋ `gate-registry-gate.test.js`(555) → `test/gates/repo/gate-index.test.js`；`EXCLUSIVE_SEGMENTS` 删 `gate-probes` | `grep -n "gate-probes" test/harness/runner.js` 零命中 |
+| S6 | DEV-GUIDE 接入点表同步 | `grep -n "check:gates" docs/DEV-GUIDE.md` 零命中 |
+
+**S4 是唯一的不可逆点**，被夹在两个可回退步之间（S3 纯新增、S5/S6 可独立回退）⇒ **S1 那三项缺口必须在 S4 之前全部补齐**。
+
+### 四条裁决（2026-10-04，均已落进 ADR-062）
+
+| # | 裁决 | 依据 |
+|---|---|---|
+| ① | **取 `sandbox.mjs` 的 `snapshotProtectedTree`/`diffProtectedTree`（约 58 行）** 挂 `check:temp-cleanup` | L11a/L11b 顶替不了「门禁在跑的过程中写坏了真实工作树」那一格；取 58 行符合 `ADR-062:144` 原裁决「保住这一个判据，不保留 301 行的通用沙盒」 |
+| ② | **L11 定义改三档缺一即红** | 实测按字面执行会**当场判红 29 项**（有载体 13／无载体 29，其中 9 项就在 `verify:ci` 上） |
+| ③ | **同意 P6 的两段合并**（848 行） | 与 `ADR-062:202` 撤掉的那三份（1609 行）**不是同一批**；且这是 **1 主体合 1 段**（不变式要的形态），`:202` 撤的是 **3 主体合 1 段**＝制造偏宽 |
+| ④ | **`smoke` 的机制自测要补**（CI 多起一次 Electron） | 它是三个 ⛔ 阻塞项里唯一「不补就不能开始删除」的；P6 一旦开始删除就不可逆，那时沙盒层已没了、再想补依赖的正是它 |
+
+### ⚠️ 本表会让门禁把它的行当子步行（栽了两次，记下来）
+
+给 `PLAN.md` **加一张带状态列的表**，它的每一行都会被 `check-plan-in-progress` 解析成子步行
+（首格剥出 id 后补最近含 `T<数字>` 的小节标题前缀）。今天栽了两次：先是 B1–B7 批次表、再是本表。
+⇒ **两个后果**：① 表里任何 🔄 都要进「当前在跑」声明行（本表的 `T5-b-S1a` 与 T5 阶段行的 `T` 都得声明）；
+② **只想给人看的进度就别在表里放 🔄** —— 用文字「进行中」，否则你会莫名多出两个要维护的 id。
+
+### 已改掉的两处「我原本会照搬」的东西
+
+- 评审的 S0 完成判据「每行 successor 指向的文件存在」**内部矛盾**（S1 才是创建它们的步骤）⇒ 改成 `exists`/`to-create` 两态，落盘时扩成三态。
+- 我第一版把 `smoke` 标成 `exists`（理由「承接文件存在」）——**那等于把缺口藏起来** ⇒ 改 `partial`，教训写进 `_schema.note`。
+
+当前在跑: T5 · T5-b-S1a
+
 ## 完成标准
 
 1. `src/` 19 条取证里 7 条要动的全部落地（i18n 目录化 · cancel 拆分 · image 归并 · util→text 改名 · style 并入 theme · main 四项搬迁 · 11 条新判据在位）
@@ -128,7 +169,7 @@
 |  **T2**  |  `src/` 搬迁 5 步，每步自带测试 import 修（**步内不可分割、步间可独立回退**）。⚠️ **86 处 import 重写全部推到 T3**，与 T2 的重写永不交错  |  ✅ 五步全部落地并逐阶段收尾（`05d41c1` ＋ 五步提交），阶段全链 `verify:ci` exit 0  |
 |  **T3**  |  测试树搬迁：harness 归位（删 `test/common/paths.js` 的 86 处）＋ `samples/` 归位 ＋ 镜像填充 ＋ 6 拆 3 合 ＋ `behavior/` 归位。`M2W_ONLY` 段名与镜像路径**同批切**  |  ✅ 主体完成，遗留 4 项各有处置（见子步表）：`3b` ⏸ 裁决不建 `test/tools/`（待有主体再来）· `4b-iii` ⛔ 受阻于 `--enforce` 一刀切，待 T5 的按判据分级强制机制 · `5` ⏸ 剩余两项押后（REQ-184 / P6）· `9` ⛔ 用户裁决不做  |
 | **T4** | 豁免表 ratchet：`--write-baseline` 生成 → 逐条补 `reason` ＋ `coveredBy` → 转判红 |  ✅ **T4-a 已完成**（`reason` ≥20 字：`REASON_MIN_CHARS = 20` 具名常量、码点计数 ＋ trim；判定分「空」与「不足」两档；24 条实测 49–194 字故零数据工作量；selftest 71→74，含「恰好等于门槛不得判红」那格）· **`coveredBy` 已押后**（用户裁决，见 REQ-185）· 转判红那半随 T5-a 完成 |
-| **T5** | 门禁元框架退役 ＋ 收尾：删沙盒层（**前置硬门：7 个 `GATE_IDS` 逐个对账**）＋ `registry.mjs`→`gate-index.mjs` ＋ DEV-GUIDE 重写 | ✅ **T5-a 已完成** · 剩余 **T5-b** ⏸（按判据分级强制机制：删 `--enforce` 与 `L5_PENDING`，改 `CRITERIA` 表 ＋ `report` 漏斗，L5 转判红）**＋ 剩余 T5-b**：删沙盒层（**前置硬门：7 个 `GATE_IDS` 逐个对账**）＋ `registry.mjs`→`gate-index.mjs` ＋ DEV-GUIDE 重写 |
+| **T5** | 门禁元框架退役 ＋ 收尾：删沙盒层（**前置硬门：7 个 `GATE_IDS` 逐个对账**）＋ `registry.mjs`→`gate-index.mjs` ＋ DEV-GUIDE 重写 |  🔄 **T5-a 已完成** · **T5-b 进行中（S0 ✅ → S1a 🔄 → S1b → S2 → S3 → S4 → S5 → S6）**。分步与机器可判完成判据见下「T5-b 分步计划」；**S0 对账表**（P6 删除步骤的硬门）见 `docs/evidence/20261004-225514-gate-ids-对账表.md`，结论 **⛔ 3 族阻塞 ＋ ⚠️ 1 族待核实** |
 
 ### T2 的五步与排序理由
 
