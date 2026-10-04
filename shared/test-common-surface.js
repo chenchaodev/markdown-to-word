@@ -77,8 +77,8 @@ export const SCAN_TARGETS = Object.freeze([
   { dir: "test/harness", accept: (/** @type {string} */ name) => /\.(?:js|mjs)$/.test(name) },
 ]);
 
-/** 显式排除目录(仓库相对 POSIX 路径;前缀匹配)。test/fixtures 是被测样例数据本身,不是断言。 */
-const EXCLUDED_DIRS = Object.freeze(["test/fixtures"]);
+/** 显式排除目录(仓库相对 POSIX 路径;前缀匹配)。samples 是被测样例数据本身,不是断言。 */
+const EXCLUDED_DIRS = Object.freeze(["samples"]);
 
 /**
  * 扫描文件数下限:walker 静默失效(目录改名 / 权限)会退化成「零文件全过」,那是假通过。
@@ -90,7 +90,7 @@ export const MIN_SCAN_FILES = 50;
 const SOURCE_FILE_RE = /\.(?:js|mjs|cjs)$/;
 
 /**
- * 排除前缀判定(带 / 边界,避免 test/fixturesX 误判)。
+ * 排除前缀判定(带 / 边界,避免 samplesX 误判)。
  * @param {string} rel 仓库相对 POSIX 路径
  * @returns {boolean}
  */

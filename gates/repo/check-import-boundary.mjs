@@ -1680,6 +1680,13 @@ export const TREE_RULES = Object.freeze([
     id: 'gates-stay-in-gates',
     scope: 'gates',
     reason: '门禁树只许引用门禁树自身、共享机制层,以及测试树的夹具数据(只读)',
+    // 允许面里保留死条目 `test/fixtures`:ADR-062 P3 已把数据区搬到顶层 `samples/`,但
+    // **实测没有任何 import 说明符指向 samples/** —— 样例是静态数据(图片 / md),230 处
+    // 消费方全部经 shared/paths.js 的 FIXTURES_DIR 常量取路径,而该常量已改指 samples/。
+    // 故这里不需要换成 'samples';而换成 'samples' 会让本规则的自检判红(见下方
+    // selfCheckTreeRules:允许元素首段必须是已登记树名或字面前缀 dist,samples 两者皆非
+    // —— 把新顶层树登记进去属 ADR-062 P3 的后续子步)。死条目无害:允许面是 allow-list,
+    // 多列一项只会更宽松,而当前无人用到它。
     allow: Object.freeze(['gates', 'shared', 'test/fixtures']),
   },
   {
@@ -1707,7 +1714,7 @@ const TREE_SCAN_EXTENSIONS = Object.freeze(['.js', '.mjs', '.cjs']);
 /**
  * 把允许面元素(逻辑树名)解析成实际的仓库相对前缀。
  * 首段是已登记树名则换成实际目录名,否则按字面前缀处理。
- * @param {string} element 允许面元素,如 'gates' / 'test/fixtures' / 'dist'
+ * @param {string} element 允许面元素,如 'gates' / 'samples' / 'dist'
  * @returns {string} 实际的仓库相对 POSIX 前缀
  */
 function resolveAllowedPrefix(element) {
@@ -1780,7 +1787,7 @@ function analyzeTreeBoundariesUncached(root) {
       for (const { spec, line } of collectRelativeImportsWithLine(code)) {
         if (classifySpecifier(spec).kind !== 'relative') continue;
         const target = path.posix.normalize(path.posix.join(path.posix.dirname(relPath), spec));
-        // 按**路径段**比而非 startsWith:否则 test/fixtures-old/ 会被 test/fixtures 放行
+        // 按**路径段**比而非 startsWith:否则 samples-old/ 会被 samples 放行
         const ok = allowed.some((prefix) => target === prefix || target.startsWith(`${prefix}/`));
         if (ok) continue;
         problems.push(

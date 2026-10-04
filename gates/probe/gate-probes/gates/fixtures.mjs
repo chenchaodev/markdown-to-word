@@ -26,7 +26,7 @@ export async function probeFixtures(ctx) {
     runProcess({ command: node.command, args: [script, "--check"], cwd: ctx.sandbox, env: node.env, timeoutMs: ctx.timeoutMs });
 
   const anchor = await runCheck();
-  const docsDir = path.join(ctx.sandbox, "test", "fixtures", "docs");
+  const docsDir = path.join(ctx.sandbox, "samples", "docs");
   const target = fs
     .readdirSync(docsDir)
     .filter((name) => name.endsWith(".md") && name !== "README.md")

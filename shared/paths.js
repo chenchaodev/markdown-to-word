@@ -30,8 +30,10 @@ import path from "node:path";
  */
 export const ROOT = process.cwd();
 
-/** 验收样例(静态文件,随仓库维护) */
-export const FIXTURES_DIR = path.join(ROOT, "test", "fixtures");
+/** 验收样例(静态文件,随仓库维护)。
+ *  ADR-062 P3:数据区迁到**仓库顶层**的 `samples/`(与 `test/` 平级,不是 `test/samples/`)
+ *  —— 它是被测输入,不是测试树的内部实现,故不进 `test/`。 */
+export const FIXTURES_DIR = path.join(ROOT, "samples");
 /** 验收断言产物(按主题命名,无编号) */
 export const ARTIFACTS_DIR = path.join(ROOT, "output", "artifacts");
 /** smoke 临时产物(运行时自清理) */

@@ -87,9 +87,9 @@ const PROBE_MAX_DEPTH = 3;
  * 冻结是因为它会被 `scanTopLevel` 直接交给 `classifyProfile`:那份纯函数不写它,
  * 一旦某个调用点就地造一个字面量,「探针没跑」与「探针跑了但三项皆 false」就再也分不开,
  * 而那正是本条要保留的可区分性。
- * @type {Readonly<{ hasCode: boolean, docMajority: boolean, hasLockfileMarker: boolean }>}
+ * @type {Readonly<{ hasCode: boolean, hasDoc: boolean, docMajority: boolean, hasLockfileMarker: boolean }>}
  */
-const NO_PROFILE = Object.freeze({ hasCode: false, docMajority: false, hasLockfileMarker: false });
+const NO_PROFILE = Object.freeze({ hasCode: false, hasDoc: false, docMajority: false, hasLockfileMarker: false });
 
 /* ---------- 纯函数:内容剖面 → 类别(判据单源,不含条目名) ---------- */
 
@@ -109,6 +109,7 @@ const NO_PROFILE = Object.freeze({ hasCode: false, docMajority: false, hasLockfi
  * @property {boolean} isScriptTree 是否被 npm script 以文件路径直接驱动
  * @property {string | null} configRole 文件形态的声明角色:tsconfig / manifest / lockfile / null
  * @property {boolean} hasDoc 文件是否文档扩展名
+ * @property {boolean} hasDocDeep 目录内(非仅直接子项)是否存在文档文件 —— 素材/样例树的形态信号
  */
 
 /**
@@ -136,6 +137,11 @@ export function classifyProfile(p) {
   if (p.isCheckTree) return { category: CATEGORY.VERIFY, reason: "不发出产物的编译配置把它列为检查面" };
   if (p.isScriptTree) return { category: CATEGORY.VERIFY, reason: "被 npm script 以文件路径直接驱动" };
   if (p.hasCode) return { category: CATEGORY.SHARED, reason: "有代码但无声明指向(机制树,按默认档保护)" };
+  // 无代码、但文档在树内(而非直接子项)⇒ 段与门禁消费的素材/样例树(samples/ 是当前唯一一处)。
+  // 归 OTHER 有两个后果:它不进镜像集(探针沙盒缺它,段在沙盒里抛 ENOENT),且退出删除保护。
+  // 判据只认形态(无代码 + 深层有文档 + 根非文档树),**不认目录名** —— 具名白名单等于把
+  // 第二份「有哪些树」写进代码,那正是本门禁要消灭的东西。
+  if (p.hasDocDeep) return { category: CATEGORY.VERIFY, reason: "无代码但树内有文档(素材/样例树,验收面输入)" };
   return { category: CATEGORY.OTHER, reason: "既无代码也无文档、无声明指向(素材/生成目录)" };
 }
 
@@ -438,7 +444,7 @@ function packWhitelistSegments(build) {
  * 目录的第一层探针(只 `readdir` 一层 + 读直接子项里的声明 JSON):有没有代码文件、
  * 直接子项是否以 Markdown 为多数、有没有安装树指纹。
  * @param {string} absDir 目录绝对路径
- * @returns {{ hasCode: boolean, docMajority: boolean, hasLockfileMarker: boolean }}
+ * @returns {{ hasCode: boolean, hasDoc: boolean, docMajority: boolean, hasLockfileMarker: boolean }}
  */
 function probeDirectChildren(absDir) {
   /** @type {string[]} */
@@ -466,15 +472,16 @@ function probeDirectChildren(absDir) {
     }
     if (DOC_EXTENSIONS.has(ext) && isFile(abs)) directDoc += 1;
   }
-  return { hasCode, docMajority: directDoc > 0 && directDoc * 2 > names.length, hasLockfileMarker };
+  return { hasCode, hasDoc: directDoc > 0, docMajority: directDoc > 0 && directDoc * 2 > names.length, hasLockfileMarker };
 }
 
 /**
  * 目录的深层探针:在预算内找任意一层的代码文件(第一层没找到时才跑)。
  * @param {string} absDir 目录绝对路径
- * @returns {boolean} 是否存在代码文件
+ * @param {ReadonlySet<string>} [exts] 目标扩展名集(默认代码集;传 DOC_EXTENSIONS 即成为文档探针)
+ * @returns {boolean} 是否存在该类文件
  */
-function probeHasCodeDeep(absDir) {
+function probeHasCodeDeep(absDir, exts = CODE_EXTENSIONS) {
   /** @type {Array<{ abs: string, depth: number }>} */
   const queue = readdirSync(absDir).map((name) => ({ abs: path.join(absDir, name), depth: 1 }));
   let visited = 0;
@@ -498,7 +505,7 @@ function probeHasCodeDeep(absDir) {
       }
       continue;
     }
-    if (isFileEntry && CODE_EXTENSIONS.has(path.extname(item.abs))) return true;
+    if (isFileEntry && exts.has(path.extname(item.abs))) return true;
   }
   return false;
 }
@@ -568,6 +575,7 @@ export function scanTopLevel(root = ROOT) {
       isDirectory: isDir,
       hidden,
       hasCode,
+      hasDocDeep: probe ? direct.hasDoc || probeHasCodeDeep(path.join(root, entry.name), DOC_EXTENSIONS) : false,
       docMajority: direct.docMajority,
       hasLockfileMarker: direct.hasLockfileMarker,
       gitignored: decl.ignored.has(entry.name),

@@ -114,8 +114,8 @@ const CASES = [
     expect: null,
   },
   {
-    name: '排除目录 test/fixtures 里的编号不报 → 通过',
-    mutate: (dir) => writeUnder(dir, 'test/fixtures/manual/plan.test.js', "export const note = 'D-02 手工清单';\n"),
+    name: '排除目录 samples 里的编号不报 → 通过',
+    mutate: (dir) => writeUnder(dir, 'samples/manual/plan.test.js', "export const note = 'D-02 手工清单';\n"),
     expect: null,
   },
   {

@@ -13,7 +13,7 @@
  * - 落盘统一经产物提交器(artifact-writer,独占创建 + 魔数校验):并发同名转换不再互相
  *   覆盖,序号「名 (2).ext」由提交器遇 EEXIST 递增(1b/1c 为编排层端到端回归;
  *   能确定性证伪旧「先判空再写」的 24 路并发在 artifact-commit.test.js)
- * - 样例源文件入 fixtures 体系(test/fixtures/input/);
+ * - 样例源文件入 fixtures 体系(samples/input/);
  *   运行时副本/产物放 os.tmpdir() 独立目录,finally 整体删除,不污染 output/smoke
  */
 import fs from "node:fs/promises";
@@ -42,7 +42,7 @@ import {
 } from "../../dist/main/converter/index.js";
 import { removeTree } from "../harness/temp-resource.js";
 
-// 样例迁 fixtures 体系(静态文件直接放 test/fixtures/input/,不接 gen-fixtures
+// 样例迁 fixtures 体系(静态文件直接放 samples/input/,不接 gen-fixtures
 // 生成器——check:fixtures 只覆盖 segments 段导出的 docs fixtures 对象)
 const SAMPLE_MD_PATH = path.join(FIXTURES_DIR, "input", "converter-sample.md");
 const PNG_1PX_PATH = path.join(FIXTURES_DIR, "input", "g4-preview.png");

@@ -122,7 +122,7 @@ export const COPY_SITE_WHITELIST = Object.freeze([
   {
     file: "gates/fixtures/gen-fixtures.mjs",
     copies: null,
-    why: "验收样例的产物复制(段导出的图片 → test/fixtures/),源是运行期收集的清单,无路径字面量。",
+    why: "验收样例的产物复制(段导出的图片 → samples/),源是运行期收集的清单,无路径字面量。",
   },
 ]);
 

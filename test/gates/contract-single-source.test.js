@@ -232,8 +232,8 @@ export async function run() {
         "声明面(单一来源)应恰为这 8 个目录",
       );
       assert(
-        !real.measured.includes("test/fixtures"),
-        `排除清单里的 test/fixtures 不得出现在实测面(它是样例数据):${real.measured.join(", ")}`,
+        !real.measured.includes("samples"),
+        `排除清单里的 samples 不得出现在实测面(它是样例数据):${real.measured.join(", ")}`,
       );
       const realFiles = listScanFiles(repoRoot).length;
       assertEq(

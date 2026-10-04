@@ -984,6 +984,13 @@ export async function run() {
 
       // 7d. 路径段安全:引 test/fixtures-old/ 必须判红 —— 若按 startsWith 匹配会被
       // 允许面 test/fixtures 误放行(这正是把「只写 test/ 就放行整棵测试树」的洞补上)
+      //
+      // ⚠ 这个负例**刻意仍用 test/fixtures**,不跟着 ADR-062 P3 的 samples/ 搬家走:
+      // 它的作用是「证明某个前缀的**同级兄弟**不被 startsWith 误放行」,所以必须紧贴
+      // 一个**当前真在允许面里**的前缀。允许面里的 test/fixtures 在 P3 之后已是死条目
+      // (实测没有任何 import 说明符指向 samples/ —— 样例是静态数据,230 处消费方全走
+      // FIXTURES_DIR 常量)。等 P3 把允许面换成 samples 时,本负例要与之同批改成
+      // samples-old。
       {
         const sb = treeSandbox({ "gates/g.mjs": 'import { x } from "../test/fixtures-old/thing.js";\nexport { x };\n' });
         const problems = analyzeTreeBoundaries(sb.dir);

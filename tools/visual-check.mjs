@@ -115,7 +115,7 @@ const ENTRY = "visual-check";
  * @returns {string[]}
  */
 const fixtures = (names) =>
-  names.map((n) => path.join(root, "test", "fixtures", "docs", n));
+  names.map((n) => path.join(root, "samples", "docs", n));
 
 /** @param {number} ms @returns {Promise<void>} */
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));

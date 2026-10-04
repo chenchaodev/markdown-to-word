@@ -8,14 +8,14 @@
  * **逐个动态 import 后读显式契约**——不预筛源码、不解析注释:
  * - `fixtures`:key=场景名,value=md 字符串;不产出样例的段显式写 `fixtures = null`;
  * - `meta.description`:README 索引文案(显式字段,取代「取文件头 JSDoc 首行」)。
- * 落盘 test/fixtures/docs/<段基名>[-<场景>].md,复制 md 中引用的本地图片
+ * 落盘 samples/docs/<段基名>[-<场景>].md,复制 md 中引用的本地图片
  * (引用路径不改写,GUI 按 md 所在目录解析),最后生成 README.md 索引。
  * 幂等:同一输入重复生成结果逐字节一致。
  *
  * 图片夹具另有**字节基线**判据(与「复制」正交,两条都要过):
  * - 「复制」只覆盖**被生成样例引用到**的图片(源 ↔ docs/ 副本),回答的是
  *   「生成产物是否新鲜」;
- * - 「基线」覆盖 test/fixtures 下**全部**图片夹具(磁盘派生,见 listImageFixtures),
+ * - 「基线」覆盖 samples 下**全部**图片夹具(磁盘派生,见 listImageFixtures),
  *   回答的是「夹具本身有没有漂移」。两者的失效面互补:未被任何样例引用的夹具
  *   (manual/images/、input/ 下的图)从前者眼里根本不存在,而**源与副本同时被改**
  *   (如批量截断、重新导出)时后者恒绿 —— 曾发生的真实误判正是后者:
@@ -71,7 +71,7 @@ export const SEGMENT_EXEMPTIONS = [];
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg"]);
 
 /**
- * 图片夹具字节基线:`相对 test/fixtures 的 POSIX 路径` → `sha256`。
+ * 图片夹具字节基线:`相对 samples 的 POSIX 路径` → `sha256`。
  *
  * 为什么需要它(与上方 imageCopies 正交,不是重复):
  * imageCopies 只比对**被生成样例引用到**的图片,回答「生成产物新鲜吗」;
@@ -95,7 +95,7 @@ export const IMAGE_DIGEST_BASELINE = {
 };
 
 /**
- * 列出 test/fixtures 下**全部**图片夹具(递归,排除 docs/ 生成目录),键为 POSIX 相对路径。
+ * 列出 samples 下**全部**图片夹具(递归,排除 docs/ 生成目录),键为 POSIX 相对路径。
  *
  * 覆盖面判据是「磁盘上有什么」而非手写清单:新增图片夹具自动进入比对范围,
  * 漏改一处不会退化成「扫不到」(那与本条要治的病同型)。IO 全部经入参注入根目录,

@@ -84,7 +84,7 @@ export function checkPathLiveness(exists = fs.existsSync) {
 }
 
 const fixtures = (names) =>
-  names.map((n) => path.join(root, "test", "fixtures", "docs", n));
+  names.map((n) => path.join(root, "samples", "docs", n));
 
 const envNumber = (name, fallback) => {
   const raw = process.env[name];
