@@ -116,7 +116,7 @@ const CASES = [
       writeUnder(src, 'core/markdown/level-map.ts');
       writeUnder(src, 'core/text/escaper.ts', 'export const e = (o) => o.obsidian;\n');
     },
-    expect: /枚举点 core\/util\/escaper\.ts 不在 core\/markdown\/ 下/,
+    expect: /枚举点 core\/text\/escaper\.ts 不在 core\/markdown\/ 下/,
   },
   {
     // 防空过:扫描面塌缩时「零命中」是假通过,必须自己报红。
@@ -131,7 +131,7 @@ const CASES = [
   },
   {
     name: '枚举点计数面扫描面塌缩(core 树被裁剪)',
-    mutate: ({ src }) => rmSync(join(src, 'core', 'util'), { recursive: true, force: true }),
+    mutate: ({ src }) => rmSync(join(src, 'core', 'text'), { recursive: true, force: true }),
     expect: /枚举点计数面只扫到 24 个文件\(下限 40\):扫描面或谓词失效/,
   },
   {

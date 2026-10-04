@@ -74,6 +74,8 @@ export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   "check:copy-sites:selftest": "gates/repo/check-copy-sites.selftest.mjs",
   "check:transform-dispatch:selftest": "gates/repo/check-transform-dispatch.selftest.mjs",
   "check:test-numbering:selftest": "gates/repo/check-test-numbering.selftest.mjs",
+  "check:src-layout:selftest": "gates/repo/check-src-layout.selftest.mjs",
+  "check:test-layout:selftest": "gates/repo/check-test-layout.selftest.mjs",
   "check:temp-cleanup:selftest": "gates/repo/check-temp-cleanup.selftest.mjs",
   "check:archive-index:selftest": "gates/repo/gen-archive-index.selftest.mjs",
   "check:coverage-zero:selftest": "gates/probe/check-coverage-zero.selftest.mjs",

@@ -183,7 +183,7 @@ const CASES = [
     name: "src-file-header:首行是单星注释而不是双星 → 判红",
     judgeOnly: true,
     extra: { "core/text/merge.ts": "/* 临时说明,不是文件头。 */\nexport const merge = 1;\n" },
-    expect: /src\/core\/util\/merge\.ts:1 → src-file-header/,
+    expect: /src\/core\/text\/merge\.ts:1 → src-file-header/,
   },
   {
     name: "src-no-duplicate-basename:同层两个非 index 同名文件 → 判红并点名两个完整路径",
@@ -224,7 +224,7 @@ const CASES = [
     name: "src-no-duplicate-basename:同组三个同名文件仍只报一条并点名全部路径",
     judgeOnly: true,
     extra: { "core/docx/handlers/dup.ts": CLEAN, "core/pipeline/dup.ts": CLEAN, "core/text/dup.ts": CLEAN },
-    expect: /src\/core\/docx\/handlers\/dup\.ts \+ src\/core\/pipeline\/dup\.ts \+ src\/core\/util\/dup\.ts → src-no-duplicate-basename/,
+    expect: /src\/core\/docx\/handlers\/dup\.ts \+ src\/core\/pipeline\/dup\.ts \+ src\/core\/text\/dup\.ts → src-no-duplicate-basename/,
   },
   {
     // 死登记:搬完文件忘了删白名单,清单会越养越宽而白名单越宽判红面越小 —— 这条断言是

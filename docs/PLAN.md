@@ -94,4 +94,7 @@
 | `M2W_ONLY` 段筛选命中数异常 | 段名与镜像路径不同批切，或 basename 语义未改净 | 复核 `runner.js` 的 `EXCLUSIVE_SEGMENTS` 子串语义（`gate-probes` 那条应随 T5 一并消失） |
 | T2 搬走 src 文件后 `check:boundary:dist` 红 | 判据坏了 | **dist 侧扫到了 src 已不存在的陈旧产物**。`build` 脚本是 `tsc && copy-renderer.mjs`、本就不清 dist，清 dist 是 `clean:dist` 的职责 → 跑 dist 面前先 `npm run clean:dist`。⚠️ 这是 `verify:ci` 的结构性缺口（`build → check:boundary:dist` 之间无清理步骤），T2 之前 src 只增不减所以从未暴露；留待 T5 重写链时补 |
 | 按 `from "` 统计 import 面时漏掉运行期动态 `import()` | **grep `from "` 抓不到 `load()` / `dist()` / `distUrl()` / `path.join(ROOT,"dist",…)` 这些形态**。T2 步 5 实测：真实改写面比 `from "` 统计多 6 处动态 import，漏改的后果**不是 tsc 报错而是段在运行时炸**。搬路径类改动必须全量扫形态，并跑一遍含动态 import 的段 |
+| 改事实源头后,某个 selftest 悄悄失配 | 改的是夹具输入,`expect` 正则会跟着一起失效 | **按子串做的盲替换只覆盖一种形态**:T2 步 1 实测漏了「正则转义斜杠」(`expect: /…core/util/…/`)与「路径分段数组」(`join(src, 'core', 'util')`)两类。改名/搬路径类改动必须**按形态枚举**再 grep,不能只搜字面路径 |
+| 定向检查全绿,但 `verify:ci` 红 | 定向检查覆盖不到链上别处 | **定向绿只证明我修的那几处好了**。T2 收尾实测:两次全链各暴露一个缺陷,且第二个被第一个掩盖(第一轮死在 transform-dispatch,压根没走到 archive-index)⇒ 后面可能还藏着第三层,必须跑到链尾 |
+| 某道门禁的 selftest 坏了却没人发现 | selftest 本身有 bug | **它可能连 npm script 都没有**。T2 实测 `check:src-layout:selftest` / `check:test-layout:selftest` 从未建过 ⇒ 无入口、不在链上、`PROBE_CARRIER_SCRIPTS` 里没有 ⇒ R5c「载体必须真挂在链上」无从校验,坏了四个提交都没人发现。**载体是门禁有牙齿的唯一证明,不是可选项** |
 | 搬走某文件后某条门禁立刻红 | 判据逻辑坏了 | **该路径被按全路径登记进了某张表**（本轮实测：`CORE_NODE_BUILTIN_FILES` 登记的是 `core/markdown/image-path-policy.ts` 整条路径，且 `test/gates/import-boundary.test.js` 的 9b-2 沙盒夹具用同一个路径当 **map key**，两处必须同批改）。搬文件后必须搜「该路径是否出现在 `gates/` 与 `test/` 的任何登记表、夹具 key、字面路径断言里」，这类耦合不搜不会自己暴露 |
