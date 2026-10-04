@@ -18,9 +18,17 @@
 让一个新写的测试段能在**不读任何文档**的前提下 O(1) 定位到唯一目标文件：路径算出来而不是选出来。同时让 `src/` 的每个文件只承担一份职责、职责可从路径读出。门禁元框架从约 3.6k 行压到约 140 行，并补上真正缺失的命名与归属判据。
 
 ## 下一步
+**T3 阶段收尾已完成**（全链 `verify:ci` exit 0 ＋ 台账同步）。**当前无任何子会话在跑** —— 本节即为「在跑什么」的显式声明，与 `gates/repo/check-plan-in-progress.mjs` 双向对读；该门禁在「有子步标进行中但本节没声明」时判红。
 
-**收 T0 两条泳道（fix-1 建 `check-src-layout.mjs` / fix-2 加 6 条 core 内部判据并结清 `prefix:../../` 债），交叉核对后合并提交，并把两条新判据的实测红位写回 ADR-064 的「已知边界」。**
+> ⚠️ 原文此处写的是「收 T0 两条泳道（fix-1 / fix-2）」—— **落后 10 个提交**，写它的时候 T0/T0.0 早已完成（`51f80bb`）。**这不是门禁能抓的形态**：`check-plan-in-progress` 只对读「进行中」标记，而陈旧的「下一步」不是标记。**它靠人读**，所以记在这里。
 
+**接下来的顺序，以及唯一的硬依赖**：
+
+1. **T5 的「按判据分级强制机制」先做** —— 它是 `4b-iii`（L5 转判红）唯一的解锁项。实测 `--enforce` 是 **L4/L5/L7/L8 一刀切**的开关，L4 与 L7 未就位会整体锁住它 ⇒ **不分级就永远转不了判红**。⚠️ 所以 T5 不是排在 T4 之后，而是 `4b-iii` 的**前置**。
+2. **T4 豁免表 ratchet** —— L5 那张 `gates/repo/test-layout.cross-import-exemptions.json`：`--write-baseline` 生成 → 逐条补 `reason` ＋ `coveredBy` → 转判红。⚠️ 我先前口述的「T4 ＝ L1 豁免表」**说法有误**：现装判据**只有 L4–L8 五族**，ADR 里的 L1 在代码中**不存在**，T4 动的是 L5 的豁免表。
+3. **T5 其余** —— 删沙盒层（前置硬门：7 个 `GATE_IDS` 逐个对账）＋ `registry.mjs` → `gate-index.mjs` ＋ DEV-GUIDE 重写。
+
+**已押后、不在本序列内**：REQ-184（测试段批量拆分与合并专项）· REQ-181（`check:gates` 无链上位置，随 P6 一起定）· REQ-182（`samples/` 准入判据，随 P3）· REQ-183（ADR-197 对策订正，随 ADR-062 下次修订）。
 ## 措辞纪律（给主会话；**不由门禁强制**）
 
 **宣布下一步时必须同句给出子会话 task id；给不出 id 就明说「待派」，不许写「现在派」。**
@@ -114,8 +122,8 @@
 | **T0.0** | 并入 REQ-170：给 `gates`/`shared`/`tools` 三棵非 program 树开 `no-undef`。**实测否决了 ADR 原定的 `tsconfig.gates.json` ＋ `checkJs` 方案**（1028 条噪声 vs 1 条），改判已写回 ADR-064 | ✅ 已提交 `51f80bb` |
 | **T0** | 建 src 侧判据，不搬文件：`check-src-layout.mjs`（`src-file-header` 红 6 ＋ `src-no-duplicate-basename` 红 0/白名单 3 组）＋ `check-import-boundary.mjs` 加 4 条内部边界 ＋ 2 条文本判据 ＋ 结清 `prefix:../../` 债。**6 条新判据建时即红，故一律带 `pending: true`**（命中归 `info` 通道、不进 `problems`；T2 逐条删标记即转 fail-closed，**删标记本身就是进度记录**） | ✅ 已完成 |
 | **T1** | 建 `check-test-layout.mjs`（L4/L5/L7/L8），report 模式。**实测 45 项**：L4 判红 39（零本层主体 37 ＋ 段 import 段 2）· L5 跨层 60 处/36 段（恒报告）· L7 多 2（`common` `fixtures`）缺 4（`behavior` `harness` `shared` `tools`）· L8 0。⚠️ 其中 20 段是**间接到达本层**（8 段经 `test/` 内非段助手、12 段经路径串/子进程）——位置是对的，属 L4 假阳性，处置见 ADR-062 | ✅ 已完成 |
-| **T2** | `src/` 搬迁 5 步，每步自带测试 import 修（**步内不可分割、步间可独立回退**）。⚠️ **86 处 import 重写全部推到 T3**，与 T2 的重写永不交错 | ⏸ |
-| **T3** | 测试树搬迁：harness 归位（删 `test/common/paths.js` 的 86 处）＋ `samples/` 归位 ＋ 镜像填充 ＋ 6 拆 3 合 ＋ `behavior/` 归位。`M2W_ONLY` 段名与镜像路径**同批切** | ⏸ |
+|  **T2**  |  `src/` 搬迁 5 步，每步自带测试 import 修（**步内不可分割、步间可独立回退**）。⚠️ **86 处 import 重写全部推到 T3**，与 T2 的重写永不交错  |  ✅ 五步全部落地并逐阶段收尾（`05d41c1` ＋ 五步提交），阶段全链 `verify:ci` exit 0  |
+|  **T3**  |  测试树搬迁：harness 归位（删 `test/common/paths.js` 的 86 处）＋ `samples/` 归位 ＋ 镜像填充 ＋ 6 拆 3 合 ＋ `behavior/` 归位。`M2W_ONLY` 段名与镜像路径**同批切**  |  ✅ 主体完成，遗留 4 项各有处置（见子步表）：`3b` ⏸ 裁决不建 `test/tools/`（待有主体再来）· `4b-iii` ⛔ 受阻于 `--enforce` 一刀切，待 T5 的按判据分级强制机制 · `5` ⏸ 剩余两项押后（REQ-184 / P6）· `9` ⛔ 用户裁决不做  |
 | **T4** | 豁免表 ratchet：`--write-baseline` 生成 → 逐条补 `reason` ＋ `coveredBy` → 转判红 | ⏸ |
 | **T5** | 门禁元框架退役 ＋ 收尾：删沙盒层（**前置硬门：7 个 `GATE_IDS` 逐个对账**）＋ `registry.mjs`→`gate-index.mjs` ＋ DEV-GUIDE 重写 | ⏸ |
 

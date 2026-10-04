@@ -60,7 +60,7 @@
 | 号 | 标题 | 状态 | 为什么停在哪 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
 | REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 在办 | 配置与门禁断言已落地(装卸两阶段 PATH 断言、期望值从 build.nsis.include 派生、写用 WriteRegExpandStr 保住 %VAR% 展开、超长不静默)。**但真实构建失败**:electron-builder 真实上下文里没有 MUI_PAGE_FUNCTION_CUSTOM,`npm run dist` 挂在 installer.nsh:108;上一轮的「编译通过」是**最小脚手架**证的,脚手架替真构建兜住了这个缺宏。真实安装验证未跑 | installer.nsh 在真实构建里编过之后;或真安装验证跑通之后 | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
-| REQ-180 | 源码树改一职责一文件并补内部边界判据 | 在办 | T0/T0.0/T1/T2 五步落地,阶段全链 verify:ci 退出码 0;六条新判据三条已转正、四条仍带 pending。计划三项移出:settings-* 改名与 style/ 并入 theme.ts(理由不成立)、main-ipc-no-assembly(超出本仓门禁能力)、缩桶与 about-* 迁入(成本被低估)。步 5 实测 119 处触点而非 ADR 估的 29。下一阶段 T3 测试树搬迁,承 L1 ratchet | 决定开工时(T0.0 起：先补 gates 静态类型兜底再建判据，与 ADR-062 同构两阶段)；或 src 层边界要增删时 | docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md · docs/evidence/20261004-103703-src结构诊断与目标结构评判.md |
+| REQ-180 | 源码树改一职责一文件并补内部边界判据 | 在办 | T0/T0.0/T1/T2/T3 五阶段落地，阶段全链 `verify:ci` 退出码 0；逐条数字见 `PLAN.md` 子步表（**本表不抄可运行数字**）。**下一阶段不是「L1 ratchet」**：现装判据只有 L4–L8 五族，ADR 的 L1–L3/L9–L12 在代码中不存在 ⇒ T4 实为 **L5 豁免表** ratchet。 | src 层边界要增删时；或 T4/T5 要动 `check-test-layout.mjs` 的 `access` / 链归属时 | docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md · docs/evidence/20261004-103703-src结构诊断与目标结构评判.md |
 
 ## 已完成
 
