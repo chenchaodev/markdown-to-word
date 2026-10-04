@@ -31,7 +31,34 @@
 - **取数命令就是判据本体**：`node gates/repo/check-plan-in-progress.mjs`。**它不在 `verify:ci` 上**（`access: "local"`）—— 判据读的是本载体的当前瞬时状态，而有会话在跑期间 🔄 本来就常年存在，红给 CI 看没有意义；调用时机是**开工前与收尾后各跑一次**，由人判断红的原因。它的负向夹具（纯合成文本、不读本载体）**在链上**。
 
 
-当前在跑: T3-8
+当前在跑: T3-9
+
+## T3 最后一项的批次划分（子步 8 实测后修正，**与 ADR-062:197/201 的名单不同**）
+
+**ADR 点名的 6 个拆分对象已失效**：`dist-manifest-gate` 实测 **394 行**、`release-artifact-gate` **564 行**已不算大文件；而 `import-boundary` **1611 行**从未被点名却排第 3。**照 ADR 原文派发会拆错对象。**
+
+| 批 | 对象 | 拆/合 | 连带面 | 关键约束 |
+|---|---|---|---|---|
+| **B1** | `check-pointers-{e2e,ledger,refs}` | 3 合 1 | **0 处**（三份均未被 `registry.mjs` 登记） | **跨文件 case 名零重名**（62 条去重仍 62）⇒ ADR:198 点名的「同名 case 撞车被静默覆盖」失效形态**不成立**。合并后约 1609 行，按三层留分隔注释，将来按层再切是机械操作 |
+| **B2** | `import-boundary.test.js` 1611 | 拆 2 | `registry.mjs` ×1 | 10 个编号块边界干净；**本批连带面最便宜的大文件** |
+| **B3** | `install-smoke.test.js` 1725 | 拆 3 | **6 处**（registry ×2 ＋ temp-cleanup ALLOWLIST ×1 ＋ node-exec ×2 ＋ packaged-smoke ×1） | helper 区 649 行要在 3 份重复，或抽非段模块（先例：`resolveNode`） |
+| **B4** | `observability.test.js` 1348 | 拆 2 | **6 处** | ⚠️ `:366-372` 有跨全文件的 `process.noAsar` 快照，**必须整份跟块 6-10 走** |
+| **B5** | `geometry-gate.test.js` 1213 | 拆 2 | 2 处 ＋ 3 处注释 | 编号块最多（15 个） |
+| **B6**（可选） | `settings-controls.test.js` 1306 | 拆 2-3 | **0 处** | 零连带面但收益低；renderer 层段，拆后段数增加＝启动开销增加 |
+| **B7**（高风险） | `supply-chain.test.js` 1677 | **待定** | registry ×5 | 🔴 **`run()` 是单个 `withTempDir` 闭包，全文无编号块** ⇒ ADR:197 的失效形态（漏搬一组断言仍全绿）在此**无机械抓手**。若要做**必须先补编号块**再拆，两步走 |
+
+**出批次（附实测理由）**：
+
+- `dist-manifest-gate`（394 行）＋ `release-artifact-gate`（564 行）—— 已不算大文件，拆了收益低于风险（两者 `ref` 各有 2 条登记要改）
+- `dual-pipeline-matrix.test.js`（1515 行）—— ADR:216 已明文否决（「它守的是一张矩阵，矩阵就该在一个文件里」）；且拆它必然把 `assertMatrixShape`（14 处 `must`）复制成多份或抽成跨段模块，**两条路都违背单一来源**；且刚被 T3-6 碰过（1 行改动），此刻拆会让两份 diff 混在一份 review 里
+- **`M2W_ONLY` 段名改完整相对路径 —— 移出 T3，绑定 P6**。三条实测理由：① **不改零代价**，`EXCLUSIVE_SEGMENTS = ["gate-probes"]` 是**子串包含**匹配（`runner.js:193`/`:168`），段名加 `test/` 前缀后 `.includes("gate-probes")` 仍为 `true`，**无任何现存判据因此变红**；② **收益为零**，`SEGMENT_DIRS` 全是一层且目录名互不相同，basename 无歧义；③ **现在改要重设计 811 行的 `runner-report.test.js`** —— 它的沙盒段在 `test/` 树外，完整相对路径对它无意义，工作量与拆一个大文件同级。⚠️ **ADR:201 对改后形态的描述与实测不符**（写的 `gates/probe/…` 既不含 `test/` 前缀、也不该有 `probe/` 子目录）
+
+## 已知判据缺口（随 T3 一并记账）
+
+- **`check:gates` 不被任何脚本调用** —— 它是独立手跑的门禁。而它正是 **R5b**（`access` 与链上位置双向一致）与 **R5c**（登记进 `PROBE_CARRIER_SCRIPTS` 的必须在链上）的**唯一执行者** ⇒ 这两条规则**只靠人记得跑才生效**。与本轮修掉的「悬空 selftest」、`check:temp-cleanup` 漏 `samples/` 同形状。**未接链是取舍不是缺陷**：接上去会让 7 个探针族（含 `test:smoke`、`test:coverage`）每次 CI 都跑
+- **ADR:197 的断言基线取法对 2/9 个候选失效**：`dual-pipeline-matrix` 四类全 0 而真值是 **212 处 `must(`**（照 ADR 对账会**误判通过**）；`check-pointers-refs` 的 79% 藏在 wrapper 内。**实施侧已按逐文件实测口径对账**；ADR 本身是否要改**待用户裁决**（改 ADR 属规则文件改动）
+- **ADR:197 的第二道证据（`test:coverage` 的 0% 集合）对本项保护接近于零** —— 实测该集合 5 条**全是 `src/**` 文件，没有一条是测试段** ⇒ 拆测试段不会让它产生任何变化。它能防「覆盖率整体塌陷」，防不住「某段漏搬断言」。**第一道（断言数对账）是唯一有效的那道**
+- **`samples/manifest.json` 与 `gates/repo/check-samples.mjs` 均不存在**（ADR:193/118/243 描述的漂移比对属 P3 未做的产出）⇒ 拆分**不因它阻塞**
 
 ## 完成标准
 
@@ -86,7 +113,8 @@
 | 5 ⏸ | L4 真违例归位 ＋「6 拆 3 合」 ＋ `M2W_ONLY` 段名与镜像路径**同批切** | L4 判红 **7→5** | ⏸ **仅剩两项**（L4 真违例归位已由 T3-6 做掉）：`clean-artifacts-gate` 搬 `test/gates/`（同一份 `covers` 即刻生效）、`resolveNode` 抽成 `test/harness/node-exec.js`。零本层主体 5→4、段 import 段 2→1。**6 拆 3 合 ＋ `M2W_ONLY` 同批切仍未做** |
 | 6 | 三类「主体无处安放」的段各给归宿（改 L4／L8）| 剩余 4 零本层主体 ＋ 1 段 import 段 | ✅ 已完成：**L4 判红 5→0**（零本层主体 4→0 / 段 import 段 1→0），L8 改窄口子，`tscheck-coverage` 转门禁 |
 | 7 | **「状态 ↔ 真实在跑」对读判据**：新建 `gates/repo/check-plan-in-progress.mjs`，把「标记为进行中的子步」与「一行人工声明」双向对读 | 子步行的形态（首格剥出 id）＋ 一行人工声明 | ✅ 已完成（门禁建时即红：本载体当时有三处进行中标记而零声明行 —— 这正是要证明它有牙齿的那次实测；把无人做的标记改掉、或补上声明行即转绿。⚠ 本格**不得在解释里再复述那个标记**：判据是「任一格含它即进行中」，解释里写一次会让这一行永远退不出去） |
-| 8 | **重新测量「6 拆 3 合」范围**（ADR-062:197 点名的 6 个已失效：`dist-manifest-gate` 实测 **394 行**、`release-artifact-gate` **564 行** 已不算大文件；而 `import-boundary` **1611**、`dual-pipeline-matrix` **1515** 从未被点名）| 段行数排名（≥800）＋ 每候选的拆分边界 ＋ **断言调用数基线**（ADR 对策「总和不得减少」，拆完就取不到了）＋ `check-pointers-*` 三份的 case 名全集与跨文件重名 ＋ `M2W_ONLY` 波及面与 P6 前置依赖 | 🔄 进行中（只读勘察，不落盘）|
+| 8 | **重新测量「6 拆 3 合」范围**（ADR-062:197 点名的 6 个已失效：`dist-manifest-gate` 实测 **394 行**、`release-artifact-gate` **564 行** 已不算大文件；而 `import-boundary` **1611**、`dual-pipeline-matrix` **1515** 从未被点名）| 段行数排名（≥800）＋ 每候选的拆分边界 ＋ **断言调用数基线**（ADR 对策「总和不得减少」，拆完就取不到了）＋ `check-pointers-*` 三份的 case 名全集与跨文件重名 ＋ `M2W_ONLY` 波及面与 P6 前置依赖 | ✅ 已完成：三条实测推翻了 ADR 原文，见下「T3 最后一项的批次划分」|
+| 9 | **B1 ·「3 合」**：`test/gates/` 三份 `check-pointers-*`（e2e/ledger/refs）合并为一份 | **两道机械对账**：case 名集合 **62 条逐条 diff 为空** ＋ 断言判定点数 **185 处**（e2e 50 ＋ ledger 66 ＋ refs 69；refs 的 79% 藏在 `assertEq`/`assertNoErrors` wrapper 内，只数 `assert(` 会少算 54）| 🔄 进行中 |
 
 **子步 1 的三条经验（换目录时最易踩的三类）**：① **同一文件里可能有多处独立登记**，只改已知的那处会让另一处的扫描面指向不存在的目录 ⇒ walker 扫到 0 文件 ⇒ **判据恒绿且不报任何错**（本次是 `shared/test-common-surface.js` 的 `NON_MIRROR_DIR_NAMES` ＋ `SCAN_TARGETS`，后者差点漏）。② **路径的形态比路径本身多**：分段数组 `join(dir, 'test', 'common')`、数组元素裸名 `"common"`、正则转义 `core/util/`、跨行写成 `test/common/`＋换行＋文件名 —— 前两类不在任何一种「子串」形态里，只有全量测试暴露。③ **合成夹具里的路径字面量有断言耦合**，不是可以顺手统一的；执行方改了 5 处后被迫回退。
 ⚠️ **遗留判据缺口**：`check:temp-cleanup` 的扫描面覆盖 `test/` 但**不含 `samples/`** ⇒ 今后仍有产物落进 `samples/` 时没有任何判据会红。durable 的修法是 ADR-062 P3 的 `check-samples.mjs`（其职责正是「生成物 vs 手工物」的目录准入判据），本步只补了 ignore 规则这条近路。
