@@ -1,6 +1,7 @@
 // @ts-check
 /**
- * 入口失败路径守卫自测段(位于 test/core/ = 跨域守护段;被测为 test/common/entry-guard.mjs,
+ * 入口失败路径守卫自测段(位于 test/shared/ = 镜像 shared/ 的段目录;被测为
+ * shared/entry-guard.mjs,
  * 即几何门禁 / 视觉自查 / 验收父进程 / 段子进程宿主五个 Electron 入口共用的失败路径实现):
  *
  * 为什么必须有这一段:这些入口是**门禁**。入口失败时的两种坏表现都会让 CI 失去信号 ——

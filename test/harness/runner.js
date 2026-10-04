@@ -590,7 +590,7 @@ function drainPipes(streams) {
  * 1. **读端必须显式 `setEncoding("utf8")`**(由调用方在挂 data 之前做):管道只搬字节,
  *    损坏发生在读端 —— 不设编码时 Node 按 latin1 解码,会把 UTF-8 中文打成乱码,且事后
  *    无法修复。制表符不受影响:它是单字节,任何编码都不动它。仓库现成反例见
- *    test/gates/entry-exit-guard.test.js(Electron 子进程 + pipe + setEncoding("utf8")
+ *    test/shared/entry-exit-guard.test.js(Electron 子进程 + pipe + setEncoding("utf8")
  *    + 断言中文输出,长期为绿)。
  * 2. **只按 "\n" 切行做前缀,不得碰 "\t" 与 "\r"**:列对齐类输出里制表符有语义;行拆分器
  *    保留半行余量(chunk 边界不与行边界对齐,不能按 chunk 直接加前缀),进程退出时 flush

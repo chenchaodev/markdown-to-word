@@ -15,7 +15,7 @@
  * 任何"跳过"都必须以 finding 形式显式出现,禁止静默通过。
  *
  * 判定全部为纯函数,采样由外部注入 —— 真实窗口采样见 gates/geometry/check-geometry.mjs,
- * 合成样本负探针见 test/gates/geometry-gate.test.js。故门禁判定不依赖人工目检,
+ * 合成样本负探针见 test/shared/geometry-gate.test.js。故门禁判定不依赖人工目检,
  * 判定逻辑本身可在无 Electron 环境下完整验证。
  */
 import {

@@ -41,10 +41,18 @@ import path from "node:path";
  *
  * 判据不是「恰好这三个」,而是**每个段目录都镜像一棵顶层被断言的树**(见
  * checkSegmentMirrors):core→src/core、main→src/main、renderer→src/renderer、
- * gates→gates/**。故新增段目录不必改本文件,新增**被断言的树**才要。
+ * gates→gates/**、shared→shared/**(ADR-062:97「P 以 gates|shared|tools/ 开头 ⇒
+ * M = test/<P>」的镜像规则)。故新增段目录不必改本文件,新增**被断言的树**才要。
+ *
+ * ⚠ **`tools` 刻意不在本数组里**,尽管 `tools/` 是真实存在的顶层树:ADR-062 的目标结构
+ * 里有 `test/tools/`,但**当前没有任何段的被测主体真在 `tools/`**(`dist-manifest-gate`
+ * 的三个被测脚本里两个在 `gates/`、一个在 `tools/`,主体跨树,故留在 `test/gates/`)。
+ * 而 `discoverSurfaceDirs` 只把「至少含一个测试源文件」的目录算进实测面 ⇒ 空目录
+ * 登记进来会让 checkSurfaceEquality 判 `missing: test/tools` 而恒红。目录先建、内容
+ * 待有真主体时再登记(登记那一刻要同批补两个 selftest 的 BASE_SHAPE)。
  * @type {readonly string[]}
  */
-export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates", "convert", "cli", "mcp"]);
+export const SEGMENT_DIRS = Object.freeze(["core", "main", "renderer", "gates", "convert", "cli", "mcp", "shared"]);
 
 /**
  * 不得作为段目录的名字(它们是 harness / 数据区 / 入口,不是被断言的树)。

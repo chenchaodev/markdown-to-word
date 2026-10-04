@@ -228,7 +228,7 @@ export async function run() {
       // 同一约束另有两处副本:两个 selftest 的 BASE_SHAPE(那边是跟随声明面走,性质相反)。
       assertEq(
         real.declared.join(","),
-        "test/cli,test/convert,test/core,test/gates,test/harness,test/main,test/mcp,test/renderer",
+        "test/cli,test/convert,test/core,test/gates,test/harness,test/main,test/mcp,test/renderer,test/shared",
         "声明面(单一来源)应恰为这 8 个目录",
       );
       assert(
@@ -273,7 +273,7 @@ export async function run() {
       // 后来整目录取消」是同一失效形态。
       // 刻意只让 test/gates 缺失:本夹具要验的是「点名那个缺失目录」,缺两个会让断言
       // 退化成验排序。新增段目录时要把它补进下面的建树清单,别动断言。
-      const short = makeFixtureTree(["test/core", "test/main", "test/renderer", "test/convert", "test/cli", "test/mcp", "test/harness"], 1);
+      const short = makeFixtureTree(["test/core", "test/main", "test/renderer", "test/convert", "test/cli", "test/mcp", "test/harness", "test/shared"], 1);
       sandboxes.push(short);
       const shortResult = checkSurfaceEquality(short);
       assertEq(shortResult.ok, false, "声明 8 个、磁盘 7 个时等式必须判红");

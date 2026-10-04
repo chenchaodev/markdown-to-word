@@ -430,7 +430,7 @@ export const GATE_REGISTRY = Object.freeze(
       probes: [
         {
           kind: "segment",
-          ref: "test/gates/geometry-gate.test.js",
+          ref: "test/shared/geometry-gate.test.js",
           why: "验收段按规格合成「应当全绿」的样本后,逐类注入二十余种故障(缺场景 / 不可见 / 视口不匹配 / 档位未生效 / 溢出 / 裁切 / 抽屉错组乱序门控反向 …),断言**失败的规则名与场景**都命中",
         },
       ],

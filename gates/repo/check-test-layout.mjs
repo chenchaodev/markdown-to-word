@@ -13,7 +13,7 @@
 // ---- L4 为什么必须判「零命中」而不是只判「import 落在别处」 ----
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
 // 而那正是最该被抓的形态:`test/core/runner-report.test.js`(797 行)import 的是
-// `test/harness/runner.js`(测试框架自身),`test/gates/entry-exit-guard.test.js` 测的是
+// `test/harness/runner.js`(测试框架自身),`test/shared/entry-exit-guard.test.js` 测的是
 // `shared/entry-guard.mjs`,`test/gates/contract-single-source.test.js` 零 `gates/` import。
 // 「至少一个」这条下界(而非「不许越界」那条上界)才是 L4 的全部内容。
 //
@@ -51,7 +51,7 @@
 // ---- L5 为什么**恒报告**、连 `--enforce` 也不参与退出码(ADR-064 的节奏) ----
 // L5 在 T1 建时**当前即红**,且**已知会误伤合理跨层**:实测
 // `test/core/heading-scale.test.js` import `dist/renderer/settings/settings-logic.js`
-// 做 token 对照,`test/gates/geometry-gate.test.js` import `shared/geometry/*`
+// 做 token 对照,`test/shared/geometry-gate.test.js` import `shared/geometry/*`
 // (几何 core 本就归 shared),这类跨层是**有意的**。把这种误伤做成 fail-closed,
 // 会逼人去删正确的测试或塞豁免表 —— 那比判红本身更坏。
 // 故 L5 的命中归 **`info` 通道、结构上不参与退出码**:`checkTestLayout()` 返回的

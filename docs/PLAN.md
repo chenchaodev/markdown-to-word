@@ -61,7 +61,8 @@
 |---|---|---|---|
 | 1 ✅ | `test/common/` → `test/harness/` | 实测 **113 文件改写**（真实 import 273 处 ＋ 字面断言/运行期字符串 3 ＋ 裸名字数组元素 2 ＋ 字面量断言 1 ＋ 合成夹具清单 1 ＋ 散文约 40 处）；17 个文件内容逐字未动 | ✅ 已完成，四族判据实测 L4 39/134、L5 60、L7 多1/缺3、L8 0 |
 | 2 ✅ | `test/fixtures/` → **仓库顶层** `samples/`（与 `test/` 平级） | 三子目录 **56 文件逐字节全等**（sha256 全表 ＋ 树哈希） | ✅ 已完成，L7 实测「多 **0**／缺 3」。⚠️ **代码引用 0 处**：230 处消费方全走 `shared/paths.js` 的 `FIXTURES_DIR` 常量，只改那一个常量即全生效；真正要改的是 4 处**绕过常量的硬编码路径**（`path.join(root,"test","fixtures",…)`）。`gates/fixtures`（生成器）**零逻辑改动**，其 `GENERATED_DOCS_DIR` 由常量派生、`IMAGE_DIGEST_BASELINE` 的键是无前缀相对路径 |
-| 3 | 镜像填充：建 `test/shared/` 与 `test/tools/`（L7「缺」里的另两个） | 待测 | ⏸ |
+| 3 ✅ | 镜像填充：`test/shared/`（2 段真搬）；**`test/tools/` 不建** | 8 个候选段里**只有 2 个该搬**；`test/gates/` 20→18 | ✅ 已完成，L7 实测「多 0／缺 **2**」。`entry-exit-guard` ＋ `geometry-gate` 搬进 `test/shared/`（零真实 import 改动，同深度故路径原样成立）。**L4 真改善**：零本层主体 37→36；**L5 60→58**；总判红 42→39 |
+| 3b | `test/tools/` **待有主体再来** | 全仓**无一个段的被测主体是 `tools/`** | ⏸ 唯一真 `tools/` import 是 `dist-manifest-gate` 的 `copy-renderer.mjs` 一行，而它 3 个被测脚本 2 个在 `gates/` ⇒ 镜像规则只对得上 1/3 |
 | 4 | `test/behavior/` 归位（L5 那 60 处跨层命中） | 60 处 / 36 段 | ⏸ |
 | 5 | L4 真违例 17 段归位 ＋「6 拆 3 合」 ＋ `M2W_ONLY` 段名与镜像路径**同批切** | 17 段 | ⏸ |
 
@@ -110,6 +111,7 @@
 | T2 搬走 src 文件后 `check:boundary:dist` 红 | 判据坏了 | **dist 侧扫到了 src 已不存在的陈旧产物**。`build` 脚本是 `tsc && copy-renderer.mjs`、本就不清 dist，清 dist 是 `clean:dist` 的职责 → 跑 dist 面前先 `npm run clean:dist`。⚠️ 这是 `verify:ci` 的结构性缺口（`build → check:boundary:dist` 之间无清理步骤），T2 之前 src 只增不减所以从未暴露；留待 T5 重写链时补 |
 | 按 `from "` 统计 import 面时漏掉运行期动态 `import()` | **grep `from "` 抓不到 `load()` / `dist()` / `distUrl()` / `path.join(ROOT,"dist",…)` 这些形态**。T2 步 5 实测：真实改写面比 `from "` 统计多 6 处动态 import，漏改的后果**不是 tsc 报错而是段在运行时炸**。搬路径类改动必须全量扫形态，并跑一遍含动态 import 的段 |
 | 搬目录后,某个**按路径登记**的东西悄悄失效 | 那个东西看起来无关 | 这一类**比「判据恒绿」更严重**:失效的若是 `.gitignore` 规则,测试产物就从「被忽略」变成「可跟踪」,`git add -A` 会把它**提交进仓**。T3 步 2 实测:`.gitignore` 里 `test/fixtures/manual/*.{docx,pdf}` 两条按路径登记的规则在搬家后失效,一个全量测试跑出的 PDF 被提交进仓(`git check-ignore` 对旧路径仍命中 ⇒ 证明是回归不是新行为)。**扫一遍所有按路径登记的地方**:`.gitignore`、各门禁扫描面、夹具 map key、白名单条目。⚠️ 判据侧的扫描面失效只是恒绿,**ignore 规则失效会主动污染源码树** |
+| 某判据在本地与干净克隆上答案不同 | 判据逻辑没问题,是**载体本身不可提交** | 空目录 git 不跟踪 ⇒ 留着它则本地「缺 1」、新克隆「缺 2」。**答案取决于克隆方式的判据就是坏判据**。T3 步 3 实测;两条都不选:① 留空目录(不确定)② 放 `.gitkeep`(为满足判据而造文件,本仓规则反复否决的那类)③ 硬凑一个主体不符的段。**选「让状态回到确定」** —— 移掉空目录、L7 如实报缺,等真有主体再填 |
 | 改事实源头后,某个 selftest 悄悄失配 | 改的是夹具输入,`expect` 正则会跟着一起失效 | **按子串做的盲替换只覆盖一种形态**:T2 步 1 实测漏了「正则转义斜杠」(`expect: /…core/util/…/`)与「路径分段数组」(`join(src, 'core', 'util')`)两类。改名/搬路径类改动必须**按形态枚举**再 grep,不能只搜字面路径 |
 | 定向检查全绿,但 `verify:ci` 红 | 定向检查覆盖不到链上别处 | **定向绿只证明我修的那几处好了**。T2 收尾实测:两次全链各暴露一个缺陷,且第二个被第一个掩盖(第一轮死在 transform-dispatch,压根没走到 archive-index)⇒ 后面可能还藏着第三层,必须跑到链尾 |
 | 某道门禁的 selftest 坏了却没人发现 | selftest 本身有 bug | **它可能连 npm script 都没有**。T2 实测 `check:src-layout:selftest` / `check:test-layout:selftest` 从未建过 ⇒ 无入口、不在链上、`PROBE_CARRIER_SCRIPTS` 里没有 ⇒ R5c「载体必须真挂在链上」无从校验,坏了四个提交都没人发现。**载体是门禁有牙齿的唯一证明,不是可选项** |
