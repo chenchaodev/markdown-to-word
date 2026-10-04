@@ -763,6 +763,39 @@ export const GATE_REGISTRY = Object.freeze(
         },
       ],
     },
+    "test-layout": {
+      id: "test-layout",
+      title: "test 布局门禁(段位置 / 同层自由跨层禁止 / 顶层目录集合 / harness 非段)",
+      npmScripts: ["check:test-layout"],
+      command: "node gates/repo/check-test-layout.mjs",
+      modulePath: "gates/repo/check-test-layout.mjs",
+      // 仅本地手动,不是链上步骤:四族判据在 T1 建时**当前即红**(ADR-062/064 的 T1 阶段),
+      // 一建就 fail-closed 会让它当场进不了 verify:ci —— 门禁进不了链等于不存在,而
+      // 「链上少一道判据」对注册表是不可见的(本表只核链上/workflow 上的调用点)。
+      // 默认跑法是报告模式(退出码 0、只报四族计数);`--enforce` 才 fail-closed。
+      // 切换点见 gates/repo/check-test-layout.mjs 文件头。
+      access: "local",
+      judgment: {
+        module: "gates/repo/check-test-layout.mjs",
+        export: "checkTestLayout",
+        shaped: "{ problems: string[], info: string[], stats }",
+      },
+      judgmentNote:
+        "判定本体是可注入纯函数(读文本 / 列目录 / 扫描面下限全经 ctx),CLI 的 main() 只打印 + 出 0/1。"
+        + "⚠ 指针取 checkTestLayout(判定)而不是 collectTestFiles(遍历)或 extractImports(抽取):"
+        + "四族判据与扫描面下界全在前者里,后两者是它的内部两档。"
+        + "⚠ 返回分**两个通道**:problems(参与退出码)与 info(**恒不参与**,L5 的命中走这里)。"
+        + "这不是可选约定而是 L5 的节奏表达(ADR-064:L5 已知会误伤有意的跨层测试,T3 末才转判红),"
+        + "由模块常量 L5_PENDING 单点控制 —— 刻意**不是形参也不是 CLI 开关**,否则等于给了"
+        + "「从调用点把它摘出去」的口子。",
+      probes: [
+        {
+          kind: "selftest",
+          ref: "gates/repo/check-test-layout.selftest.mjs",
+          why: "自检脚本在系统临时目录造合成仓根(含 src/ 与 test/)、靠 cwd 指夹具跑**仓内真门禁**(纯函数档直接 import 判定本体并注入 ctx),共 44 条夹具:①L4 零本层主体判红(核心格)+ 段 import 段判红 + 本层 dist 主体判绿 + type-only 的 src/ 类型引用判绿(产物不产 .d.ts,不得误判)②L5 跨层命中走 info 且诊断含「搬去 test/behavior/ 并写 covers」指引、同层判绿、type-only 跨层判绿、**只有 L5 违例时 --enforce 仍 exit 0** ③L7 多一个/少一个判红、恰好等于派生集判绿、**src/ 新增子目录后期望集合跟着变**(证明是派生不是登记)、只数目录不数文件 ④L8 harness 下有段判红、只有非段文件判绿 ⑤抽取层直测 import(\"…\") 的注释/代码两种形态各收一条且标记不同、副作用导入、文档串与模板串里的伪 import 不算引用 ⑥扫描面塌缩/根不存在/src 缺失三档判红;外加两条只读真实仓库的正向对照",
+        },
+      ],
+    },
     "dual-matrix": {
       id: "dual-matrix",
       title: "双管线矩阵键覆盖登记门禁",
