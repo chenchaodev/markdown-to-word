@@ -824,9 +824,10 @@ export const GATE_REGISTRY = Object.freeze(
       npmScripts: ["check:test-layout"],
       command: "node gates/repo/check-test-layout.mjs",
       modulePath: "gates/repo/check-test-layout.mjs",
-      // T3 步 4b-i 起**以报告模式进链**:四族判据建时即红,按 fail-closed 入链会让
-      // verify:ci 当场红。**进链与 fail-closed 是两件事** —— 先以报告模式进链,让链上
-      // 看得见四族实际计数;各判据转 fail-closed 时,链上那份守护才开始拦。
+// **本条曾以「四族」记,已订正为五族**(L6 `behavior-covers-declared` 是第五族)。另:**下面
+// 「报告模式进链」这段机制已不存在** —— T5-a 删掉了 `--enforce` 与 `L5_PENDING`,改为
+// `CRITERIA` 登记表逐族声明强制等级(`pending: true` 即 report-only 且必填理由)。**现在本体
+// 在链上就是真 fail-closed**(`problems.length === 0 ? 0 : 1`),不再有「只报告」的档位。
       // ⚠️ L5 豁免表(gates/repo/test-layout.cross-import-exemptions.json)的内容
       // **不在 selftest 覆盖内** —— selftest 只守机制、跑合成夹具。所以本体必须在链上,
       // 否则那张表在 CI 里无人守护:转 fail-closed 也拦不住新增的未登记跨层 import。

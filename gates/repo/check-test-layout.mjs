@@ -154,7 +154,7 @@ export const HARNESS_ROOT = `${TEST_REL}/${HARNESS_DIR}/`;
  */
 export const BEHAVIOR_DIR = "behavior";
 /**
- * 扫描面(段)文件数下限:walker 整体失效(零段)时四族判据会「全绿」,而恒绿是纯文本门禁
+ * 扫描面(段)文件数下限:walker 整体失效(零段)时五族判据会「全绿」,而恒绿是纯文本门禁
  * 最坏的失效形态(没人会去看一个总是 exit 0 的脚本)。取实测值的约 3/4
  * (实测 134 段 → 下限 100),只在「塌缩」这一档报红,不随日常增删段抖动。
  */
@@ -203,7 +203,7 @@ export const CRITERIA = Object.freeze([
   }),
   Object.freeze({
     id: "scan-surface-collapsed",
-    title: "扫描面塌缩(段数掉到下限以下):四族判据在零扫描面下会全绿,判红",
+    title: "扫描面塌缩(段数掉到下限以下):五族判据在零扫描面下会全绿,判红",
   }),
   Object.freeze({
     id: "test-layer-self-hosted",
@@ -841,7 +841,7 @@ export function checkTestLayout(base = {}) {
     report(
       "scan-surface-collapsed",
       `${TEST_REL}/ → scan-surface-collapsed:${TEST_REL}/ 下只扫到 ${stats.segments} 个段文件`
-      + `(下限 ${ctx.minScannedFiles})—— walker 可能已失效,而四族判据在零扫描面下会「全绿」`,
+      + `(下限 ${ctx.minScannedFiles})—— walker 可能已失效,而五族判据在零扫描面下会「全绿」`,
     );
   }
 
