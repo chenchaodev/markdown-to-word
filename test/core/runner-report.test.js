@@ -49,6 +49,23 @@ import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../harness
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 import { CONCURRENCY_ENV, ONLY_ENV, describeChildExitCode, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../harness/runner.js";
 
+/**
+ * 本段测哪一层:**不是 core**(见头注第一行「runner 自测段(被测 = 测试框架自身:
+ * 执行模型 + case 级报告 + 失败 artifact)」)。
+ *
+ * 被测主体是 `test/harness/runner.js` 的执行模型(逐段子进程隔离 / case 级报告 /
+ * 失败产物 / 并发面),段内 11 个具名导入逐个对它的行为下断言。
+ *
+ * ⚠ **本段主体在 `test/harness/`,而 L8(`test-harness-not-segment`)规定该目录下
+ * 不得有段** —— 主体与「段的可归属目录」在本仓**没有交集**:harness 不是被测层
+ * (L7 把 harness 列为「允许存在但不是镜像源」的非镜像目录),而 runner 是测试框架自身。
+ * 故此处声明真实主体 `test/harness/runner.js`,**不声明任何 core 路径**(那会让 L4
+ * 判绿但违背事实)。L4 因此仍判红 —— 那条判红在此**无法靠声明解决**,它是「主体无处安放」
+ * 的真实暴露,须由 T3 后续裁决(可选归宿:与 `test/gates/` 同款的收容,或为 harness
+ * 主体专设一个非镜像段目录并在 L7 的豁免位登记)。本段授权只到加声明,故如实留红。
+ */
+export const covers = ["test/harness/runner.js"];
+
 /** 沙盒目录名前缀(mkdtemp 在其后附 6 位随机后缀;尾部短横线便于识别残留目录) */
 const SANDBOX_PREFIX = "runner-report-selftest-";
 

@@ -50,6 +50,34 @@ function capture(match, index) {
 
 const read = (/** @type {string[]} */ ...rel) => fs.readFileSync(path.join(ROOT, ...rel), "utf8");
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**(复核确认 —— 头注第一行「阶段 4
+ * 视觉/无障碍契约守护段(**纯静态断言,零 DOM / 零 Electron**)」)。
+ * 判据静态看不见的原因:被测件是五份 **CSS/HTML 资产**,由 `read(...)` 的
+ * `fs.readFileSync` **字符串路径**读入 —— 既不是 import 语句也不是模块,判据的
+ * import 图上看不到它们。
+ *
+ * 主体依据(头注七组逐条对应这五个文件):
+ * - `style/base.css` —— 令牌定义处(头注 (1)「每个 var(--x) 都必须在 base.css 里定义」)、
+ *   (2) `--feed-h` 与 `.feed` 锁高、(3) 对比度实算的主窗侧取值、(4) 视觉债回归;
+ * - `style/drop.css` 与 `style/dialogs.css` —— (1) 引用了哪些令牌、(4) 向导源行三列网格;
+ * - `index.html` —— (5) 无障碍静态契约(tablist/tabpanel 双向关联、role=alert + aria-controls、
+ *   valuetext/describedby、role/aria-atomic、aria-busy、#copyLive live region 四要件)与
+ *   (6) `label[for]` ↔ id 自洽;
+ * - `about.html` —— (6) about 窗自带令牌覆盖/双来源深色/降低动态效果,以及 (5) 的
+ *   about 版本可见标签。
+ *
+ * 末尾动态 import 的 `shared/geometry/geometry-spec.mjs` 只借 `CONSTANT_GROUPS` /
+ * `SLOT_INVARIANTS` 作规格对照表(头注 (7),已在 L5 豁免表登记),不是被测主体,不声明。
+ */
+export const covers = [
+  "src/renderer/style/base.css",
+  "src/renderer/style/drop.css",
+  "src/renderer/style/dialogs.css",
+  "src/renderer/index.html",
+  "src/renderer/about.html",
+];
+
 const STYLE_DIR = ["src", "renderer", "style"];
 /** 去注释后再做规则/令牌解析:注释里出现的选择器与令牌名(如「见 .feed)」)不是声明 */
 const stripComments = (/** @type {string} */ css) => css.replace(/\/\*[\s\S]*?\*\//g, "");

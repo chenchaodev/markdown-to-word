@@ -36,6 +36,37 @@ import {
 } from "../../shared/geometry/geometry-spec.mjs";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**(复核确认 —— 头注第一行「设置抽屉逐控件
+ * 基线段」+ 第 15 行「DOM 来自**真实 index.html**」,主体确在 renderer)。
+ * 判据静态看不见的原因:七个被测 dist 模块由 `await import(dist(...))` 的**运行期动态
+ * import** 载入(`path.join` 逐段拼出),另有两处对 `src/renderer/**` 的**字符串路径**文本读取。
+ *
+ * 主体依据(头注三条行为 + 段内加载位置):
+ * - `settings/settings-panel.ts` —— `applySettingsToControls`(hydrate 那条)与三道手写门控的
+ *   实现落点(段内 1163/1205 行逐条核对门控/effect 的 `where` 必须是本模块真实存在的导出);
+ * - `settings/settings-bindings.ts` —— bind 那条(逐控件 change 写回并走 `persistSettings`);
+ * - `settings/settings-controls-table.ts` —— 43 个值控件的登记表与 `resetSettingsToDefaults`
+ *   (reset 那条 + 声明表与 `DEFAULT_SETTINGS` 的键集交叉校验);
+ * - `settings/settings-logic.ts` —— `mergeSettingsWithDefaults` / `outputDirReset` 等被逐控件调用的纯函数;
+ * - `state/state.ts` —— 被断言的 `state.settings` 写回落点;
+ * - `index.html` —— 头注明写的「真实 index.html」:控件 id 集合与 radio 分组成员由此解析;
+ * - `dom/refs.ts` —— 段末读其 src 文本做 refs↔index.html 的控件 id 交叉校验。
+ *
+ * 静态 import 的 `shared/geometry/geometry-spec.mjs` 只借 `DRAWER_CONTROL_KEYS` /
+ * `DRAWER_GROUP_BY_KEY` 作规格对照表(已在 L5 豁免表登记),`dist/core/**` 三个动态
+ * 加载的 i18n / DEFAULT_SETTINGS / TEMPLATE_PRESETS 作期望值与基线,均非被测行为,不声明。
+ */
+export const covers = [
+  "src/renderer/settings/settings-panel.ts",
+  "src/renderer/settings/settings-bindings.ts",
+  "src/renderer/settings/settings-controls-table.ts",
+  "src/renderer/settings/settings-logic.ts",
+  "src/renderer/state/state.ts",
+  "src/renderer/index.html",
+  "src/renderer/dom/refs.ts",
+];
+
+/**
  * 断言失败即抛错;声明为断言函数使类型收窄。
  * @param {unknown} cond
  * @param {string} msg

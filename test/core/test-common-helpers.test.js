@@ -53,6 +53,27 @@ import {
   withTempResource,
 } from "../harness/temp-resource.js";
 
+/**
+ * 本段测哪一层:**不是 core**(见头注第 2 行「测试公共 helper 自测段(位于 test/core/
+ * = 跨域守护段;纯 Node,不依赖 dist): 被测件是 test/harness/assert.js(公共断言集)与
+ * test/harness/temp-resource.js(临时资源生命周期)」)。
+ *
+ * 主体两条,均由头注明写:`test/harness/assert.js`(每条断言的失败消息必须含实际值 +
+ * 期望值 + 差异位置 —— 头注论证「只测不抛错不够,恒真的断言同样不抛错」)与
+ * `test/harness/temp-resource.js`(删除失败必须显式暴露)。`test/harness/case.js`
+ * 是 case 契约的登记入口,随 assert 一并声明。
+ *
+ * ⚠ **同 runner-report 段**:主体在 `test/harness/`,而 L8 规定该目录下不得有段,
+ * harness 又不是被测层(L7 的非镜像豁免位)⇒ 主体与「段的可归属目录」无交集。
+ * 此处声明真实主体、**不声明任何 core 路径**,L4 因此仍判红 —— 那是「主体无处安放」的
+ * 真实暴露,非声明可解,须由 T3 后续裁决。本段授权只到加声明,故如实留红。
+ */
+export const covers = [
+  "test/harness/assert.js",
+  "test/harness/temp-resource.js",
+  "test/harness/case.js",
+];
+
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 

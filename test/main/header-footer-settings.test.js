@@ -12,6 +12,23 @@ import { DEFAULT_HEADER_FOOTER } from "../../dist/core/settings/settings-default
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**main**,判据静态看不见本段的主体 ——
+ * 被测的 `dist/main/persist/settings.js` 经 `test/harness/settings.js` 的
+ * `freshSettingsModule()` 进入,那里是**模板串动态 import**
+ * (`import(\`../../dist/main/persist/settings.js?${tag}=${freshSeq++}\`)`,
+ *  整条说明符在运行时才成形),L4 的静态 import 抽取看不见它 ⇒ 段内零 main 层 import。
+ *
+ * 主体依据(头注明写 + 断言落点):头注第一行写「页眉页脚设置主进程层验收(只管持久化
+ * 那一半)」,四条断言逐条对 `persist/settings.ts` 下判 —— 旧档缺 `headerFooter` 兜底默认、
+ * 非法值逐字段回退、合法值保留、`updateSettings` patch 路径同语义。
+ *
+ * 另 import 的 `dist/core/settings/settings-defaults.js` 只取 `DEFAULT_HEADER_FOOTER`
+ * 作**夹具基线**(合法值/非法值的起点都从它派生),已在 L5 豁免表登记;断言对象是 main 的
+ * 持久化实现,故不声明 core 层元素。
+ */
+export const covers = ["src/main/persist/settings.ts"];
+
+/**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息

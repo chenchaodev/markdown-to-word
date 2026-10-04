@@ -12,6 +12,23 @@ import path from "node:path";
 import { app } from "electron";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**main**,判据静态看不见本段的主体 ——
+ * 被测的 `dist/main/persist/ui-state.js` 经段内 `freshModule()` 进入,那是**模板串
+ * 动态 import 带 query string**(`import(\`../../dist/main/persist/ui-state.js?case=${seq++}\`)`,
+ * 用于每场景取全新模块实例绕开缓存),说明符在运行时才成形 ⇒ L4 静态抽取看不见它,
+ * 段内零 main 层 import(直接 import 的 `dist/core/...` 仅有类型用途,见下)。
+ *
+ * 主体依据(**头注明写**):头注第一行写「UI 状态持久化测试(src/main/persist/ui-state.ts
+ * 纯逻辑层;测试经 dist/main/persist/ui-state.js)」—— 主体逐字给出。全部断言
+ * (宽松校验 / mutation queue 内读改写不丢 / 全新实例读盘复核 / 写失败不更新缓存且
+ * 错误上抛、队列不截断)都落在该文件的 `loadUiState` / `saveUiState` / `DEFAULT_UI_STATE` 上。
+ *
+ * 另 type-only 引用的 `src/core/ipc-contract.js`(`RecentFile` 类型)不声明:dist 不产
+ * `.d.ts`,类型引用只能指 `src/`,但它是纯类型、不是被测主体(与判据的 type-only 放行同款取舍)。
+ */
+export const covers = ["src/main/persist/ui-state.ts"];
+
 /** 最近文件条目(跨进程契约单源;本段经动态 import 拿产物实例,类型按契约取) */
 /** @typedef {import("../../src/core/ipc-contract.js").RecentFile} RecentFile */
 

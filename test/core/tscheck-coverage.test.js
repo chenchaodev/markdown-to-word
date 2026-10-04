@@ -33,6 +33,21 @@ const EXEMPT_DIRS = [];
 
 const TEST_DIR = path.join(ROOT, "test");
 
+/**
+ * 本段测哪一层:**不是 core**(见头注第一行「测试树 `@ts-check` 覆盖率守护段(位于
+ * test/core/ = 跨域守护段;纯 Node 逻辑,不启 Electron)」)。
+ *
+ * 主体是**工具链口径**而非任何被测层:被守护的契约由头注指明「见 tsconfig.test.json
+ * 头注」,三条断言全部落在它与测试树自身上 —— ① `test/` 每个源文件带 `// @ts-check`;
+ * ② 豁免目录必须真实存在非空;③ `tsconfig.test.json` 仍是 `checkJs: false` 且写明原因。
+ * 段内零 import(除 `node:fs` / `node:path` 与 `harness/paths.js` 的 `ROOT`)。
+ *
+ * ⚠ 与 runner-report / test-common-helpers 同型:主体在**工具链配置**(`tsconfig.test.json`)
+ * 与测试树自身,不在任何被测层内。此处声明真实主体、**不声明任何 core 路径**,
+ * L4 因此仍判红 —— 那是「主体不属于任何层」的真实暴露,非声明可解,须由 T3 后续裁决。
+ */
+export const covers = ["tsconfig.test.json"];
+
 /** 参与门禁的源文件扩展名。 */
 const SOURCE_EXT_RE = /\.(js|mjs|cjs)$/;
 
