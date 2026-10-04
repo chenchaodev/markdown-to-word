@@ -68,6 +68,20 @@
 // 为何不查「传了 options 却被门禁白名单掩盖」:白名单按「文件 × 首参」放行**删除动作**,
 // 与第二实参的取值正交 —— 一个被白名单放行的删除点仍会被本规则独立判红。两条规则不互相遮掩。
 //
+// ---- 判据 0:真实工作树零注入(ADR-062 裁决从沙盒层取出的那一格)----
+// 本门禁与「临时目录不该有残留」同属「工作树不该被改动」这一族,故把「跑前一份指纹 /
+// 跑后一份指纹 / 取差」挂在这里。判定本体在 gates/repo/protected-tree.mjs(与本文件同目录;
+// 被保护路径从 gates/repo/repo-manifest.mjs 派生,不是手写枚举)。
+//
+// 为什么这一格非它莫属、顶不掉:「让门禁挂在链上跑一次」发现不了「门禁在跑的过程中写坏了
+// 真实工作树」——「跑过」这件事没有可判定的机器事实(自指悖论),只有前后两份指纹之差能把它
+// 变成一个退出码。存在性断言与「载体不得自我屏蔽」守的都是「门禁文件本身没被改坏」,与本格正交。
+//
+// 代价与它对应的义务:指纹集含 output/(派生单源),故**并发写同一棵工作树会确定性判红**
+// ——例如一边跑验收段(写 output/artifacts/)一边跑本门禁。这与沙盒探针当年必须独占槽位是
+// 同一类确定性假红:处理方式是「无并发改动时重跑」,**不给「加开关降级成建议项」留口子**
+// (那等于永久删掉这道守护)。
+//
 // ---- 正面锚点(防空门禁)----
 // 规则写错会表现为「恒绿」,而恒绿是这类文本门禁最危险的失效形态(没人会去看一个
 // 总是 exit 0 的脚本)。故本脚本内建 SELF_PROBE:把某个**已收口**的调用点在收口**之前**
@@ -87,6 +101,7 @@ import {
   listScanFiles,
 } from '../../shared/test-common-surface.js';
 import { ROOT } from '../../shared/paths.js';
+import { describeChangedFiles, diffProtectedTree, snapshotProtectedTree } from './protected-tree.mjs';
 
 const projectRoot = ROOT;
 const USAGE = '用法: node gates/repo/check-temp-cleanup.mjs [--help]';
@@ -508,10 +523,15 @@ export function scanFile(rel) {
 
 /**
  * 全树判定。allowCold 是白名单统计(按设计零命中的条目数),只作输出,不参与 exit code。
+ *
+ * `base.root` 只为夹具而存在(selftest 在临时目录里逐点调用本函数);缺省即模块级
+ * projectRoot,故既有的零参调用点行为不变。
+ * @param {{ root?: string }} [base] 注入面(目前只有根)
  * @returns {{ problems: DeleteHit[], optionProblems: OptionHit[], allowHits: number, allowCold: number, files: number, staleAllow: string[], deleteCalls: number, helperCalls: number }}
  */
-export function analyze() {
-  const files = listScanFiles(projectRoot);
+export function analyze(base = {}) {
+  const root = base.root ?? projectRoot;
+  const files = listScanFiles(root);
   /** @type {DeleteHit[]} */
   const problems = [];
   /** @type {OptionHit[]} */
@@ -521,7 +541,7 @@ export function analyze() {
   let helperCalls = 0;
 
   for (const rel of files) {
-    const text = readFileSync(path.join(projectRoot, ...rel.split('/')), 'utf8');
+    const text = readFileSync(path.join(root, ...rel.split('/')), 'utf8');
     for (const hit of scanText(text, rel)) {
       deleteCalls += 1;
       const index = ALLOWLIST.findIndex(
@@ -592,7 +612,14 @@ export function runSelfProbe() {
   return [...deleteProbes, ...optionProbes];
 }
 
-export async function main(argv = []) {
+/**
+ * 门禁入口。`base.root` 只为夹具而存在(缺省即模块级 projectRoot,零参调用行为不变)。
+ * @param {string[]} [argv]
+ * @param {{ root?: string }} [base] 注入面
+ * @returns {Promise<number>} 退出码
+ */
+export async function main(argv = [], base = {}) {
+  const root = base.root ?? projectRoot;
   if (argv.includes('--help')) {
     console.log(USAGE);
     return 0;
@@ -602,6 +629,10 @@ export async function main(argv = []) {
     console.error(`[temp-cleanup:fail] 无法识别的参数:${unknown.join(' ')}(${USAGE})`);
     return 1;
   }
+
+  // 判据 0 的「跑前」快照:取在**任何判定之前**(含自检探针),这样「本次运行写了工作树」
+  // 归因得到的是整趟运行,而不是某一条规则的中途。
+  const treeBefore = snapshotProtectedTree(root);
 
   const probe = runSelfProbe();
   for (const item of probe) {
@@ -615,7 +646,7 @@ export async function main(argv = []) {
 
   // 判据 1:扫描面**等式**(声明目录集合 == 磁盘上真实存在的测试子目录)。先于 analyze 跑 ——
   // 漏登记的目录会让 analyze 抛 ENOENT,那时只剩一句「扫描失败」,看不出是哪个目录漏了。
-  const surface = checkSurfaceEquality(projectRoot);
+  const surface = checkSurfaceEquality(root);
   if (!surface.ok) {
     console.error(
       `[temp-cleanup:fail] 扫描面等式不成立:${formatSurfaceMismatch(surface)}`
@@ -628,7 +659,7 @@ export async function main(argv = []) {
   // 段目录**镜像一棵被断言的树**(与 check-test-numbering.mjs 同判据同文案单源):
   // 等式管「声明与磁盘一致」,这条管「声明本身合法」—— 枚举里混进一个不镜像任何树的
   // 目录(如暂存区)时,等式与下限都会照样判绿,只有这条拦得住。
-  const mirror = checkSegmentMirrors(projectRoot);
+  const mirror = checkSegmentMirrors(root);
   if (!mirror.ok) {
     console.error(
       `[temp-cleanup:fail] 段目录镜像判据不成立:${formatMirrorMismatch(mirror)}`
@@ -639,7 +670,7 @@ export async function main(argv = []) {
 
   let result;
   try {
-    result = analyze();
+    result = analyze({ root });
   } catch (error) {
     console.error(`[temp-cleanup:fail] 扫描失败:${error instanceof Error ? error.message : String(error)}`);
     return 1;
@@ -692,10 +723,34 @@ export async function main(argv = []) {
     return 1;
   }
 
+  // 判据 0:跑后取第二份指纹,与跑前那份取差。变化即「本次运行写坏了真实工作树」。
+  const treeAfter = snapshotProtectedTree(root);
+  const tree = diffProtectedTree(treeBefore, treeAfter);
+  if (!tree.unchanged || !tree.nodeModulesIntact) {
+    for (const file of tree.changedFiles) {
+      console.error(`[temp-cleanup:fail] 本次运行期间真实工作树被改动:${file}`);
+    }
+    console.error(
+      `[temp-cleanup:fail] 本次运行期间真实工作树指纹不一致`
+      + `(变化路径:${tree.changedPaths.join(',') || '(无)'};变化文件 ${tree.changedFiles.length} 个;`
+      + `node_modules 哨兵${tree.nodeModulesIntact ? '完好' : '已被增删'})`,
+    );
+    const diagnosis = describeChangedFiles(tree.changedFiles, root);
+    if (diagnosis !== '') console.error(`[temp-cleanup:fail] ${diagnosis}`);
+    console.error(
+      '[temp-cleanup:fail] 本门禁与它 import 的任何模块都**不得写工作树**(判定输入是文件文本与磁盘快照,纯只读)。'
+      + '真出现门禁自身写工作树,是纪律被破坏;若变化文件全部落在 output/ 且时间与并发写入吻合,'
+      + '则是工作树正被别的会话/别的段并发改动 —— 请在无并发改动时重跑。'
+      + '**不要**为绕开它加「忽略 output/」的开关:那等于把这一格永久删掉。',
+    );
+    return 1;
+  }
+
   console.log(
     `[ok] 测试树临时目录清理扫描通过:扫描 ${result.files} 个文件 / ${result.deleteCalls} 处目录删除,`
     + `无裸写;白名单 ${ALLOWLIST.length} 条(本次命中 ${result.allowHits} 条,按设计零命中 ${result.allowCold} 条);`
-    + `助手调用点选项用法 ${result.helperCalls} 处全合规;自检探针 ${probe.length} 条全过`,
+    + `助手调用点选项用法 ${result.helperCalls} 处全合规;自检探针 ${probe.length} 条全过;`
+    + `工作树指纹前后一致(被保护路径 ${Object.keys(treeBefore.fingerprints).length} 个 + node_modules 哨兵)`,
   );
   return 0;
 }

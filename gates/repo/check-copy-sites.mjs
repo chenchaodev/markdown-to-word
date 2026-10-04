@@ -85,13 +85,18 @@ export const COPY_SITE_WHITELIST = Object.freeze([
   {
     file: "gates/repo/check-temp-cleanup.selftest.mjs",
     copies: Object.freeze([
+      // S1c 起:门禁本体 import 了这两个,副本落在夹具的 gates/repo/ 下,必须逐字节带一份
+      "gates/repo/protected-tree.mjs",
+      "gates/repo/repo-manifest.mjs",
       "gates/repo/check-temp-cleanup.mjs",
       "shared/paths.js",
       "shared/copy-closure.js",
       "shared/test-common-surface.js",
     ]),
     why: "夹具要跑门禁本体,而其中一条负向用例必须改写门禁自己的源码(内建 SELF_PROBE 的 before/after 对调);"
-      + "副本落在夹具的 gates/repo/ 下,故它的仓内 import 也必须逐字节带一份。",
+      + "副本落在夹具的 gates/repo/ 下,故它的仓内 import 也必须逐字节带一份。"
+        + "⚠️ `protected-tree.mjs` 与 `repo-manifest.mjs` 是 S1c 新入复制面的两条:前者是工作树指纹的承接体,"
+        + "后者是它 `PROTECTED_PATHS` 的派生源(取 `topLevel(root).protectedTreePaths`,**复用而非复制**)。",
   },
   {
     file: "test/gates/clean-artifacts-gate.test.js",

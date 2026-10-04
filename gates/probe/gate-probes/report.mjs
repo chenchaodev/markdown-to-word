@@ -11,7 +11,10 @@ import { probeDistManifest } from "./gates/dist-manifest.mjs";
 import { probeDualMatrix } from "./gates/dual-matrix.mjs";
 import { probeFixtures } from "./gates/fixtures.mjs";
 import { probeRegistry } from "./gates/registry.mjs";
-import { buildSandbox, createTreeSandbox, describeChangedFiles, diffProtectedTree, removeSandbox, snapshotProtectedTree } from "./sandbox.mjs";
+// 被测对象在 S1c 被搬出沙盒层（保住「门禁跑在真实工作树上」这一格判据，见 ADR-062 裁决①）。
+// ⚠️ 三个符号改从承接体取；`sandbox.mjs` 与本文件同属 S4 删除对象，届时这条 import 一并消失。
+import { buildSandbox, createTreeSandbox, removeSandbox } from "./sandbox.mjs";
+import { describeChangedFiles, diffProtectedTree, snapshotProtectedTree } from "../../repo/protected-tree.mjs";
 
 // TS 的 JS 模式下 JSDoc typedef 是**文件作用域**:不显式引入就会解析失败并静默退化为 any,
 // 使下游(段)的回调参数变成隐式 any 而报 TS7006。下列 typedef 只作类型引入,无运行时开销。

@@ -96,6 +96,10 @@ function patchInFixture(dir, relative, from, to) {
  */
 const SANDBOX_COPY_SET = Object.freeze([
   'gates/repo/check-temp-cleanup.mjs',
+  // 判据 0 的判定本体:门禁 import 它,不拷则夹具里 import 解析不到、门禁起不来
+  'gates/repo/protected-tree.mjs',
+  // protected-tree.mjs 的仓内依赖(它按派生单源取被保护路径,不 import S4 将删的 contract.mjs)
+  'gates/repo/repo-manifest.mjs',
   'shared/paths.js',
   'shared/copy-closure.js',
   'shared/test-common-surface.js',
@@ -132,6 +136,15 @@ function createFixture(mutate, shape = BASE_SHAPE) {
   const dir = mkdtempSync(join(tmpdir(), 'm2w-temp-cleanup-selftest-'));
   mkdirSync(join(dir, 'gates', 'repo'), { recursive: true });
   copyFileSync(checkerPath, join(dir, 'gates', 'repo', 'check-temp-cleanup.mjs'));
+  // 判据 0 的承接体与它的依赖(原型 scanTopLevel 会读夹具根的顶层声明,故必须在场)
+  copyFileSync(
+    join(projectRoot, 'gates', 'repo', 'protected-tree.mjs'),
+    join(dir, 'gates', 'repo', 'protected-tree.mjs'),
+  );
+  copyFileSync(
+    join(projectRoot, 'gates', 'repo', 'repo-manifest.mjs'),
+    join(dir, 'gates', 'repo', 'repo-manifest.mjs'),
+  );
   // 被测门禁从 shared/paths.js 取项目根(ADR-040),连同它唯一的仓内依赖一起带进夹具
   mkdirSync(join(dir, 'shared'), { recursive: true });
   copyFileSync(join(projectRoot, 'shared', 'paths.js'), join(dir, 'shared', 'paths.js'));
@@ -262,6 +275,63 @@ const CASES = [
     name: '未知参数(不得静默按默认扫描面跑一遍报绿)',
     raw: ['oops'],
     expect: /无法识别的参数:oops/,
+  },
+  {
+    // 判据 0(真实工作树零注入)的负向夹具。这一格是 ADR-062 裁决「从沙盒层取出来、挂到
+    // check:temp-cleanup」的唯一存在理由:门禁跑的过程中把真实工作树改坏,必须判红。
+    //
+    // 注入方式与上面那条 SELF_PROBE 夹具同形:改写门禁副本的源码,在跑前快照**之后**、
+    // 跑后快照之前插一次真实的写。写的是被保护路径 package.json(顶层声明文件,指纹集必含),
+    // 故 changedPaths 与 changedFiles 两路都会命中。
+    //
+    // 为何必须造「门禁自己写」而不是「门禁跑之前树就已经脏」:后者两份快照相同、恒判绿,
+    // 证明不了任何事 —— 本判据的对象是**本次运行期间**发生的变化。
+    name: '门禁跑的过程中写坏了真实工作树(指纹判红并点名)',
+    mutate: (dir) => {
+      // 门禁副本只 import 了 node:fs 的 readFileSync,故连 import 行一并改掉再插写入
+      patchInFixture(
+        dir,
+        'gates/repo/check-temp-cleanup.mjs',
+        "import { readFileSync } from 'node:fs';",
+        "import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';",
+      );
+      patchInFixture(
+        dir,
+        'gates/repo/check-temp-cleanup.mjs',
+        '  const treeBefore = snapshotProtectedTree(root);',
+        [
+          '  const treeBefore = snapshotProtectedTree(root);',
+          // 写派生集里确实存在的被保护路径。**不写 package.json**:夹具根没有包清单,
+          // 它压根不在该根派生的 protectedTreePaths 内(写了也不会被指纹看见 —— 这正是
+          // 「派生而非手写枚举」的正确行为,不是判据漏判)。
+          "  writeFileSync(path.join(root, 'shared', 'injected-by-gate.js'), 'export const x = 1;\\n', 'utf8');",
+        ].join('\n'),
+      );
+    },
+    expect: /本次运行期间真实工作树指纹不一致[\s\S]*变化路径:[^\n]*shared[\s\S]*shared\/injected-by-gate\.js/,
+  },
+  {
+    // 反向锚点:同一格判据的反方向。node_modules 哨兵单独被增删(工作树文件一个没动)
+    // 也必须判红 —— 否则哨兵那一路是恒绿的装饰。
+    name: '运行期间只增删 node_modules 顶层项(哨兵判红,变化路径为空)',
+    mutate: (dir) => {
+      patchInFixture(
+        dir,
+        'gates/repo/check-temp-cleanup.mjs',
+        "import { readFileSync } from 'node:fs';",
+        "import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';",
+      );
+      patchInFixture(
+        dir,
+        'gates/repo/check-temp-cleanup.mjs',
+        '  const treeBefore = snapshotProtectedTree(root);',
+        [
+          '  const treeBefore = snapshotProtectedTree(root);',
+          "  mkdirSync(path.join(root, 'node_modules', 'injected-pkg'), { recursive: true });",
+        ].join('\n'),
+      );
+    },
+    expect: /node_modules 哨兵已被增删/,
   },
 ];
 

@@ -1,23 +1,18 @@
-// 沙盒与真实工作树守护:工程副本的建/构建/清,以及「真实工作树零注入」的内容指纹。
+// 沙盒建/构建/清:工程副本的建(整树镜像 + node_modules 联接)、沙盒内构建、删沙盒。
 //
 // 沙箱纪律的落点全在这里(其它 island 只调用,不自行摸文件系统根):
-// - 一切故障注入只发生在系统临时目录的副本里;node_modules 以目录联接挂入,清理时先摘
-//   链接再删目录(绝不递归真实依赖);
-// - 探针前后对真实工作树做内容指纹(相对路径 + 字节数 + SHA-256)+ node_modules 哨兵,
-//   不一致即由 report 层判红;
-// - 报告自身所在目录从指纹里豁免:它是探针的产物,不算工作树被改动。
+// 一切故障注入只发生在系统临时目录的副本里;node_modules 以目录联接挂入,清理时先摘
+// 链接再删目录(绝不递归真实依赖)。
+//
+// 「真实工作树零注入」的内容指纹**不在本文件**:它必须活过 S4(删 gates/probe/ 这一步),
+// 落点是 gates/repo/protected-tree.mjs,由已在链上的 gates/repo/check-temp-cleanup.mjs 调用。
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PROTECTED_PATHS, REPORT_DIR_RELATIVE, ROOT, SANDBOX_PREFIX, TREE_MIRROR_PATHS } from "./contract.mjs";
+import { ROOT, SANDBOX_PREFIX, TREE_MIRROR_PATHS } from "./contract.mjs";
 import { runProcess } from "../../smoke/smoke-proc.mjs";
 import { resolveNode } from "./proc.mjs";
-
-// TS 的 JS 模式下 JSDoc typedef 是**文件作用域**:不显式引入就会解析失败并静默退化为 any,
-// 使下游(段)的回调参数变成隐式 any 而报 TS7006。下列 typedef 只作类型引入,无运行时开销。
-/** @typedef {import("./contract.mjs").ProtectedTreeState} ProtectedTreeState */
 
 /**
  * 在沙盒内写文件(自动建父目录)。
@@ -31,124 +26,6 @@ export function writeFileIn(root, relative, content) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content);
   return target;
-}
-
-/**
- * 收集被保护路径下的全部文件条目(仓库相对 POSIX 路径 → 「字节数:内容哈希前 16」)。
- * 报告自身所在目录(REPORT_DIR_RELATIVE)被跳过:它是探针的产物,不算工作树被改动。
- * @returns {Map<string, string>} 条目表
- */
-function collectProtectedEntries() {
-  /** @type {Map<string, string>} */
-  const entries = new Map();
-  for (const relative of PROTECTED_PATHS) {
-    const label = relative.split(path.sep).join("/");
-    const absolute = path.join(ROOT, relative);
-    if (!fs.existsSync(absolute)) {
-      entries.set(label, "<absent>");
-      continue;
-    }
-    /**
-     * @param {string} dir 当前目录
-     * @param {string} prefix 当前目录的仓库相对前缀
-     * @returns {void}
-     */
-    const walk = (dir, prefix) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-        const relativeChild = `${prefix}/${entry.name}`;
-        if (relativeChild === REPORT_DIR_RELATIVE || relativeChild.startsWith(`${REPORT_DIR_RELATIVE}/`)) continue;
-        const child = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          walk(child, relativeChild);
-          continue;
-        }
-        if (!entry.isFile()) continue;
-        const bytes = fs.readFileSync(child);
-        entries.set(relativeChild, `${bytes.length}:${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}`);
-      }
-    };
-    if (fs.statSync(absolute).isDirectory()) {
-      walk(absolute, label);
-    } else {
-      const bytes = fs.readFileSync(absolute);
-      entries.set(label, `${bytes.length}:${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}`);
-    }
-  }
-  return entries;
-}
-
-/**
- * 真实工作树指纹快照(被保护路径 + 逐文件条目 + node_modules 哨兵)。
- * @returns {ProtectedTreeState} 快照
- */
-export function snapshotProtectedTree() {
-  const entries = collectProtectedEntries();
-  /** @type {Record<string, string>} */
-  const fingerprints = {};
-  for (const relative of PROTECTED_PATHS) {
-    const label = relative.split(path.sep).join("/");
-    fingerprints[label] = [...entries.entries()]
-      .filter(([file]) => file === label || file.startsWith(`${label}/`))
-      .map(([file, hash]) => `${file}:${hash}`)
-      .sort()
-      .join("|");
-  }
-  const nodeModules = path.join(ROOT, "node_modules");
-  return {
-    fingerprints,
-    entries,
-    nodeModules: {
-      exists: fs.existsSync(nodeModules),
-      topLevelEntries: fs.existsSync(nodeModules) ? fs.readdirSync(nodeModules).length : 0,
-    },
-  };
-}
-
-/**
- * 比对两份工作树快照,返回发生变化(或消失)的路径与具体文件。
- * @param {ProtectedTreeState} before 探针前
- * @param {ProtectedTreeState} after 探针后
- * @returns {{ unchanged: boolean, changedPaths: string[], changedFiles: string[], nodeModulesIntact: boolean }}
- */
-export function diffProtectedTree(before, after) {
-  /** @type {string[]} */
-  const changedPaths = [];
-  for (const [label, fingerprint] of Object.entries(before.fingerprints)) {
-    if (after.fingerprints[label] !== fingerprint) changedPaths.push(label);
-  }
-  /** @type {string[]} */
-  const changedFiles = [];
-  for (const [file, hash] of after.entries) {
-    if (before.entries.get(file) !== hash) changedFiles.push(file);
-  }
-  for (const file of before.entries.keys()) {
-    if (!after.entries.has(file)) changedFiles.push(file);
-  }
-  return {
-    unchanged: changedPaths.length === 0,
-    changedPaths,
-    changedFiles: [...new Set(changedFiles)].sort(),
-    nodeModulesIntact: after.nodeModules.exists && after.nodeModules.topLevelEntries === before.nodeModules.topLevelEntries,
-  };
-}
-
-/**
- * 变化文件的时间诊断(仅用于控制台,故允许含时间戳 —— 报告 JSON 仍保持确定性)。
- * 用途:区分「探针自己写脏了工作树」与「工作树正被别的会话并发修改」——后者会误报,
- * 两者都要让人一眼看出:外部改动的文件 mtime 会正好落在探针运行窗口内。
- * @param {string[]} changedFiles 变化文件(仓库相对)
- * @returns {string} 诊断行(无变化返回空串)
- */
-export function describeChangedFiles(changedFiles) {
-  if (changedFiles.length === 0) return "";
-  const now = Date.now();
-  const shown = changedFiles.slice(0, 8).map((file) => {
-    const abs = path.join(ROOT, file);
-    if (!fs.existsSync(abs)) return `${file}(已不存在)`;
-    return `${file}(修改于 ${Math.round((now - fs.statSync(abs).mtimeMs) / 1000)}s 前)`;
-  });
-  const more = changedFiles.length > shown.length ? ` 等 ${changedFiles.length} 个文件` : "";
-  return `变化文件:${shown.join(";")}${more} —— 若修改时间落在本次探针运行窗口内,多半是工作树被其它会话并发修改(本项会误报,请在无并发改动时重跑);否则说明探针写脏了真实工作树,须按沙箱纪律排查`;
 }
 
 /**
