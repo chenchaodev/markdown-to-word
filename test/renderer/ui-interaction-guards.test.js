@@ -45,6 +45,42 @@ import { ROOT } from "../harness/paths.js";
 import { installDomStub, fireListener, makeElement, makeKeyEvent } from "./dom-stub.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测的 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
+ * (路径 `path.join` 逐段拼出),另有对 `index.html` 的**字符串路径**文本断言,段内零
+ * renderer import。
+ *
+ * 主体依据(头注 + 段内加载位置):头注写「阶段 4 UX 缺口回归段(可观察行为 + 源契约双层断言)」。
+ * 逐条对应:
+ * - `convert/events/selection.ts` —— (1) 队列行 Enter/Space 不穿透拖放区、(1b) 忙碌两态;
+ * - `ui/dialogs.ts` —— (1c) 模态关闭后动作按钮重算(覆盖批量/完成/预检报告三条关闭路径)、
+ *   (4) 取消态与批量弹窗标题、(5) `showProgress/hideProgress` 的 aria-busy;
+ * - `convert/file-list.ts` —— (1b) 可拖拽判定与悬停提示收敛为纯路径;
+ * - `state/state.ts` —— 被驱动的状态单例;
+ * - `settings/settings-panel.ts` —— (2) 动态节点不被 `applyStaticTexts` 覆盖、
+ *   (6)(7) AI 清理分档与 tocMode 下拉的显隐重算;
+ * - `settings/settings-bindings-app.ts` —— (2) 语言切换钩子 `appWriteHooks.languageSelect`
+ *   与 `refreshDynamicSettingsText` 那条链;
+ * - `ui/dom-ops.ts` —— (3) 复制反馈与读屏播报写入的那一侧;
+ * - `convert/convert-flow.ts` —— 命令锁与预检收口(被上述几条共同驱动);
+ * - `index.html` —— (2) 「动态状态节点一律不带 data-i18n」与静态回退逐字一致那两组断言。
+ *
+ * 另加载 `dist/core/i18n/index.js` 取字典与 `htmlLangOf` 作**期望值/格式化函数**
+ * (夹具输入,本段不替 i18n 下断言),故不声明 core 层元素。
+ */
+export const covers = [
+  "src/renderer/convert/events/selection.ts",
+  "src/renderer/ui/dialogs.ts",
+  "src/renderer/convert/file-list.ts",
+  "src/renderer/state/state.ts",
+  "src/renderer/settings/settings-panel.ts",
+  "src/renderer/settings/settings-bindings-app.ts",
+  "src/renderer/ui/dom-ops.ts",
+  "src/renderer/convert/convert-flow.ts",
+  "src/renderer/index.html",
+];
+
+/**
  * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
  * (cond 为假即抛,后续代码无须再判空)。
  * @param {unknown} cond

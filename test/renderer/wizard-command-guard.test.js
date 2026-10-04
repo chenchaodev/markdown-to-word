@@ -16,6 +16,30 @@ import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测的 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
+ * (路径 `path.join` 逐段拼出),另有对 `wizard/book-wizard.ts` 的**字符串路径**文本断言,
+ * 段内零 renderer import。
+ *
+ * 主体依据(头注 + 段内加载位置):头注写「renderer 向导命令守卫与预检按钮忙态测试」。逐条对应:
+ * - `convert/convert-flow.ts` —— 向导打开(模态)期间背景命令阻断、预检按钮忙态探针与点击
+ *   守卫同源、付印链 single-flight 借的锁;
+ * - `wizard/wizard-runtime.ts` —— 向导 skip/下一步/上一步/付印入口的统一前置校验与步序;
+ * - `wizard/book-wizard.ts` —— 付印链的 docx → pdf 依次执行,以及段末读其 src 文本断
+ *   「前序留下前台模态时第二次格式转换按单一明确结果拦下」;
+ * - `convert/events/convert-actions.ts` —— 背景快捷键侧的阻断;
+ * - `convert/file-list.ts` 与 `state/state.ts` —— 被驱动的状态与文件列表单例。
+ */
+export const covers = [
+  "src/renderer/convert/convert-flow.ts",
+  "src/renderer/wizard/wizard-runtime.ts",
+  "src/renderer/wizard/book-wizard.ts",
+  "src/renderer/convert/events/convert-actions.ts",
+  "src/renderer/convert/file-list.ts",
+  "src/renderer/state/state.ts",
+];
+
+/**
  * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
  * (cond 为假即抛,后续代码无须再判空)。
  * @param {unknown} cond

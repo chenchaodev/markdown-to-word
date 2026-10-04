@@ -38,6 +38,25 @@ import { ROOT } from "../harness/paths.js";
 import { createTempResource, removeTree } from "../harness/temp-resource.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**convert**,判据静态看不见本段的主体 ——
+ * 被测的装配层由派生**纯 node 子进程**的**脚本文本内 import** 载入(URL 经
+ * `distUrl(...)` 逐段拼进 `CHILD_SCRIPT` 字符串,不在 import 语句位置),段内零 convert import。
+ *
+ * 主体依据(**头注明写**):头注写「被测主体 = dist/convert/run.js(emitConvertedArtifact /
+ * persistArtifact)与其依赖链(dist/convert/preprocess.js · context.js · artifact-writer.js ·
+ * paths.js + dist/core/**)」。故声明 convert 层自身那五处;`dist/core/**` 是它的**下游
+ * 依赖**(docx 全链路的渲染在 core),本段对 core 无独立断言(不测 core 的任何行为,
+ * 只借它证明装配层不经 electron),故不声明 —— 声明通道要求元素是**被测主体**。
+ */
+export const covers = [
+  "src/convert/run.ts",
+  "src/convert/preprocess.ts",
+  "src/convert/context.ts",
+  "src/convert/artifact-writer.ts",
+  "src/convert/paths.ts",
+];
+
+/**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息

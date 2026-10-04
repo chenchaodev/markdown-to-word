@@ -32,6 +32,22 @@ import { createTempResource, removeTree } from "../harness/temp-resource.js";
 import { resolveNode } from "./options.test.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**cli**,判据静态看不见本段的主体 ——
+ * 被测的 `dist/cli/index.js` 由派生**纯 node 子进程**经 `spawnSync` 以 argv 拉起
+ * (路径 `path.join(ROOT, "dist", "cli", "index.js")` 逐段拼出,不在 import 语句位置),
+ * 段内零 cli import。
+ *
+ * 主体依据(**头注明写**):头注第一行写「位于 test/cli/,镜像 src/cli/index.ts 的
+ * convertPdfViaHost 及其调用的 host-launch 判定」,并逐条点名两处「漏一行就静默失败」的
+ * 位置 —— ① `host-launch.ts` 的上下文判定(已装/dev 两条拉起形态选哪条);② `hostEnv()`
+ * 剔除 `ELECTRON_RUN_AS_NODE`。两处正是本段全部断言的落点。
+ */
+export const covers = [
+  "src/cli/index.ts",
+  "src/cli/host-launch.ts",
+];
+
+/**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息

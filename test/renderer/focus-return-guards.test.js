@@ -23,6 +23,29 @@ import { ROOT } from "../harness/paths.js";
 import { installDomStub, makeElement } from "./dom-stub.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测的 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
+ * (路径 `path.join` 逐段拼出,不在 import 语句位置),段内零 renderer import。
+ *
+ * 主体依据(头注 + 实现位置):头注写「契约(浮层「关掉后焦点回到哪」是键盘可用性的地基):
+ * 打开前记下来源(rememberFocusOrigin),关闭时原样归还(restoreFocusOrigin)」,并逐条点名
+ * 抽屉 / 预设保存弹窗 / 弹窗三种浮层。故声明:
+ * - `ui/dom-ops.ts` —— `rememberFocusOrigin` / `restoreFocusOrigin` / `trapFocus` 的定义处
+ *   (三个浮层模块都从它 import,「按栈记」那条语义也落在它);
+ * - `settings/settings-drawer.ts` 与 `settings/settings-preset-actions.ts` —— 抽屉与预设弹窗
+ *   的记/还调用点(头注「关抽屉才回顶栏 ⚙」「关弹窗只回抽屉内那一层」两格);
+ * - `ui/dialogs.ts` —— 弹窗的记/还调用点与「来源已失效时退到可见主操作钮」那一格;
+ * - `state/state.ts` —— 抽屉落当前激活分组 Tab 那一格读的状态单例。
+ */
+export const covers = [
+  "src/renderer/ui/dom-ops.ts",
+  "src/renderer/settings/settings-drawer.ts",
+  "src/renderer/settings/settings-preset-actions.ts",
+  "src/renderer/ui/dialogs.ts",
+  "src/renderer/state/state.ts",
+];
+
+/**
  * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
  * (cond 为假即抛,后续代码无须再判空)。
  * @param {unknown} cond

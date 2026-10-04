@@ -20,6 +20,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "../harness/paths.js";
 
+/**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测对象是 `src/renderer/style/base.css` 的文本,由 `fs.readFileSync(cssPath)` 的
+ * **字符串路径**读入,既不是 import 语句也不是模块。
+ *
+ * 主体依据(头注):头注写「base.css 深色令牌因 CSS 语法限制必须双写 —— 普通规则与 @media
+ * 内规则无法合并,只能逐行镜像」,并写明「本段将两块规则体逐行锁恒等」。被测主体就是那一个
+ * CSS 文件本身,故元素是它(仓库相对 POSIX 路径,判据直接对磁盘核对)。
+ *
+ * 注:主体不是 `.ts` 模块不构成例外 —— covers 元素只要求「在磁盘上真实存在」,
+ * 不限定在 src/(见门禁文件头理由 ③)。
+ */
+export const covers = ["src/renderer/style/base.css"];
+
 const cssPath = path.join(ROOT, "src", "renderer", "style", "base.css");
 
 /**

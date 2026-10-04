@@ -19,6 +19,27 @@ import { ROOT } from "../harness/paths.js";
 import { fireListener, installDomStub } from "./dom-stub.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测的向导模块由 `await import(distUrl("renderer/wizard/book-wizard.js"))` 的
+ * **运行期动态 import** 载入(路径 `path.join` 逐段拼出),段内零 renderer import。
+ *
+ * 主体依据(头注 + 段内加载位置):头注写「成书向导「每次打开同步最新设置 + 步骤名随语言
+ * 刷新」回归段」,并写明「外壳在 open 时重建(而非复用首次构建的 DOM)」。故主体是:
+ * - `wizard/book-wizard.ts` —— 向导外壳与各步骤控件的构建/重建那一处(头注四条断言的主落点);
+ * - `state/state.ts` —— 「各步骤控件在构建期读 `state.settings`」与「向导外改过设置后再开
+ *   必须显示新值」那两格读的状态单例。
+ *
+ * 另加载 `dist/core/i18n/index.js`(DICT / 语言注册表 / `setLanguage`)与
+ * `dist/core/settings/settings-defaults.js` 作**夹具输入**(文案单源与设置基线;本段只在
+ * 「关掉自动目录后回填值仍是上次那个」这类格子里借它们造前置态,不对它们下断言),
+ * 故不声明 core 层元素。
+ */
+export const covers = [
+  "src/renderer/wizard/book-wizard.ts",
+  "src/renderer/state/state.ts",
+];
+
+/**
  * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
  * (cond 为假即抛,后续代码无须再判空)。
  * @param {unknown} cond

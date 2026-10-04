@@ -18,6 +18,27 @@ import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 四个被测 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
+ * (路径 `path.join` 逐段拼出,不在 import 语句位置),段内零 renderer import。
+ *
+ * 主体依据(头注 + 段内加载位置):头注写「renderer 命令入口事件边界与 single-flight 行为
+ * 测试」。逐条对应四处实现:
+ * - `convert/events/selection.ts` —— 拖放区/队列行的目标判定与 Enter/Space 边界那一格;
+ * - `convert/convert-flow.ts` —— Ctrl+Enter 连发与转换按钮重复点击只起一条预检链;
+ * - `convert/events/convert-actions.ts` —— 预检中/模态打开时快捷键与新命令的统一阻断;
+ * - `state/state.ts` —— 状态单例(加载它以取得被测模块共用的那一批状态);
+ * - `index.html` —— 头注最后一格「舞台容器角色不再声明为 button」是对该文件文本的断言。
+ */
+export const covers = [
+  "src/renderer/convert/events/selection.ts",
+  "src/renderer/convert/convert-flow.ts",
+  "src/renderer/convert/events/convert-actions.ts",
+  "src/renderer/state/state.ts",
+  "src/renderer/index.html",
+];
+
+/**
  * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
  * (cond 为假即抛,后续代码无须再判空)。
  * @param {unknown} cond

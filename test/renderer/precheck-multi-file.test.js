@@ -39,6 +39,33 @@ import { ROOT } from "../harness/paths.js";
 import { installDomStub, fireListener, makeElement } from "./dom-stub.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测的 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
+ * (路径 `path.join` 逐段拼出),另有几处对 `src/renderer/**` 的**字符串路径**文本断言,
+ * 段内零 renderer import。
+ *
+ * 主体依据(头注 + 段内加载位置):头注写「预检覆盖批量 / 合并路径 + 报告对话框按文件分组」。
+ * 逐条对应:
+ * - `convert/convert-flow.ts` —— 逐文件预检的发起侧、决策门、预检期单实例、以及第 26 组
+ *   「调用点不再自带 withPrecheck」与三个命令函数自带 `precheckedCommand(` 的源契约;
+ * - `ui/dialogs.ts` —— 报告对话框的渲染(按文件分组的 h3 组头、单组扁平、同名回退全路径);
+ * - `convert/events/selection.ts` —— 粘贴直转(selection 域)那一格;
+ * - `state/state.ts` —— `state.mode` / `lastBatchResult` 等状态单例的断言落点;
+ * - `style/base.css` 与 `style/dialogs.css` —— 第 25 组两条 `flex:none` 的源契约断言。
+ *
+ * 另加载 `dist/core/i18n/index.js` 取三语言字典作**期望值**(判据上的「夹具输入/规格」,
+ * 非被测行为:本段不替 i18n 下断言,只拿它的文案当比对基准),故不声明 core 层元素。
+ */
+export const covers = [
+  "src/renderer/convert/convert-flow.ts",
+  "src/renderer/ui/dialogs.ts",
+  "src/renderer/convert/events/selection.ts",
+  "src/renderer/state/state.ts",
+  "src/renderer/style/base.css",
+  "src/renderer/style/dialogs.css",
+];
+
+/**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息

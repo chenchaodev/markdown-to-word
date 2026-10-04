@@ -14,6 +14,34 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 
 /**
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
+ * 被测的 dist 模块由 `await load("../../dist/renderer/…")` 的**运行期动态 import** 载入
+ * (相对路径经 `path.resolve` 拼出,不在 import 语句位置),段内零 renderer import。
+ *
+ * 主体依据(头注 + 段内加载位置):头注写「renderer 持久化失败反馈直测」并逐条点名:
+ * - `state/state.ts` —— 会话持久化单一写入点(`renderSelection` / `renderMultiList` /
+ *   `moveItem` 每次变更只发一次 `uiStateSet`,内容未变的纯重渲染不重复 mutation);
+ * - `convert/file-list.ts` —— 多文件列表的变更与移动那一侧;
+ * - `settings/settings-panel.ts` 与 `settings/settings-drawer.ts` —— 设置保存失败
+ *   (`persistSettings`)与抽屉开合两处 ui-state 写入;
+ * - `ui/recent-files.ts` 与 `ui/first-run-guide.ts` —— 清空最近与首启引导两处写入;
+ * - `dom/refs.js` 对应的 `dom/refs.ts` —— 被驱动的 DOM 元素解析。
+ *
+ * 另加载 `dist/core/i18n/index.js` 的 `t` 与 `dist/core/settings/settings-defaults.js` 的
+ * `DEFAULT_SETTINGS` 作**夹具输入**(文案单源与设置基线,本段不替它们下断言),故不声明
+ * core 层元素。
+ */
+export const covers = [
+  "src/renderer/state/state.ts",
+  "src/renderer/convert/file-list.ts",
+  "src/renderer/settings/settings-panel.ts",
+  "src/renderer/settings/settings-drawer.ts",
+  "src/renderer/ui/recent-files.ts",
+  "src/renderer/ui/first-run-guide.ts",
+  "src/renderer/dom/refs.ts",
+];
+
+/**
  * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
  * (cond 为假即抛,后续代码无须再判空)。
  * @param {unknown} cond
