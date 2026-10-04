@@ -114,8 +114,9 @@
 | 步 | 内容 | 机器可判完成判据 |
 |---|---|---|
 | **S0** ✅ | **只写对账表 ＋ JSON，不删任何东西** | 已完成。7 族齐、`successorState` 与磁盘一致、**`grep -rn "gate-probes"` 命中数与做之前逐字相同**（证明零删除） |
-| **S1a** 🔄 | 补 `fixtures` 的**点名能力** ＋ `build-fresh` 的**整个能力**（两个新 selftest）；核实 `dual-matrix` 是否注入故障 | 每个新 selftest 不注入时 exit 0、**注入故障后 exit≠0 且诊断含预期文件名** |
+|  **S1a** ✅  |  补 `fixtures` 的**点名能力** ＋ `build-fresh` 的**整个能力**（两个新 selftest，已挂 `verify:ci`）；核实 `dual-matrix` |  两条 selftest 各自不注入时 exit 0、**四个方向的注入各红一次**（改 fixture 内容／把点名能力改成不点名／前拨 src mtime／把判定改成 `if (false)`），并钉住「注入本身失败 ⇒ 也判红」。⚠️ **判据的一处订正**：原写「诊断含预期文件名」**只对 `fixtures` 成立** —— `build-fresh` 的诊断恒为固定文案、不含文件名（实测），该格按「不假装断言」处理。`dual-matrix` 核实为**段内无注入**（负向只在探针侧，段文件头 59-65 自陈）⇒ 维持 `partial`。 |
 | **S1b** ⏳ | 补 `smoke` 的**冒烟机制自身**（需 CI 真起一次 Electron） | 同上三档 |
+| **S1c** ⏳ | **取 `sandbox.mjs` 的 `snapshotProtectedTree` / `diffProtectedTree`（约 58 行）单独取出，挂在已在链上的 `check:temp-cleanup`**（连同 `PROTECTED_PATHS`）| `check-temp-cleanup` 的判定里出现工作树指纹 ＋ **它能被一条负向夹具判红**（在临时目录里改坏工作树 ⇒ exit≠0）|
 | S2 | L11（三档缺一即红）＋ L12（`chain`/`offchain` 两值 ＋ L12c 待转正声明）落地，**先在 `check-test-layout.mjs`** | `--help` 的强制等级行含 L11/L12；selftest 条数增加 |
 | S3 | 写 `gate-index.mjs`，**与旧 registry 并存** | 新旧对同一注册表给出相同 code 集合 |
 | S4 | 删沙盒层 islands ＋ `gates/` 6 探针 ＋ `check:gates` | **`grep -rn "gate-probes|check-gate-probes"` 零命中** ＋ `gate-index` 仍 exit 0 |
@@ -145,7 +146,7 @@
 - 评审的 S0 完成判据「每行 successor 指向的文件存在」**内部矛盾**（S1 才是创建它们的步骤）⇒ 改成 `exists`/`to-create` 两态，落盘时扩成三态。
 - 我第一版把 `smoke` 标成 `exists`（理由「承接文件存在」）——**那等于把缺口藏起来** ⇒ 改 `partial`，教训写进 `_schema.note`。
 
-当前在跑: T5 · T5-b-S1a
+当前在跑: T5
 
 ## 完成标准
 

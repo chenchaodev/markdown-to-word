@@ -84,6 +84,11 @@ export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   "check:docs:selftest": "gates/repo/check-docs.selftest.mjs",
   "check:changelog:selftest": "gates/repo/check-changelog.selftest.mjs",
   "check:release-notes:selftest": "gates/repo/release-notes.selftest.mjs",
+  // REQ-180 T5-b S1a 新增两格。fixtures 的承重能力是「点名」(诊断含被改/删的那个 fixture
+  // 文件名),build-fresh 的承重能力是「dist 比 src 旧时判红」—— 两者原先只由 P6 将删的沙盒
+  // 探针覆盖,探针一删就无人接手。二者都必须挂在链上(R5c):载体被认领只说明它有归属。
+  "check:fixtures:selftest": "gates/fixtures/gen-fixtures.selftest.mjs",
+  "check:build-fresh:selftest": "gates/smoke/check-build-fresh.selftest.mjs",
 });
 
 /* ---------- 门禁注册表 ---------- */
@@ -428,6 +433,13 @@ export const GATE_REGISTRY = Object.freeze(
           ref: "fixtures",
           why: "沙盒探针在工程副本里改一个 fixture 的内容、再删掉它,断言门禁两次都判红且点名该 fixture",
         },
+        {
+          // REQ-180 T5-b S1a:接替沙盒探针(P6 删探针后的唯一承接),认领它是为了让
+          // PROBE_CARRIER_SCRIPTS 的登记不被判成孤儿(R3 的反向检查要求载体有人认领)。
+          kind: "selftest",
+          ref: "gates/fixtures/gen-fixtures.selftest.mjs",
+          why: "自检脚本在系统临时目录造合成工程树(段模块 + 按字节基线登记的五张图片夹具)、靠 cwd 指夹具跑**仓内真门禁**(不复制本体,规则演进不被冻在夹具里),逐条注入漂移(改一个 fixture 的内容 / 删一个 / 改 README 索引 / 改一张图片夹具字节 / 新增一张未登记图片),断言每次都 exit 非 0 **且点名被改的那个文件名或图片相对路径**;另有一条反向锚点:只漂移 beta-extra 时点名集合**只**含它(证明「点名」不是把所有产物名列一遍),以及一条正向锚点要求 exit 0 时零 [check] 诊断",
+        },
       ],
     },
     "build-fresh": {
@@ -445,6 +457,13 @@ export const GATE_REGISTRY = Object.freeze(
           why: "沙盒探针把一个源码文件的 mtime 推到产物之后,断言门禁判红并给出「请先运行 npm run build」",
         },
         { kind: "segment", ref: "test/gates/dist-manifest-gate.test.js", why: "验收段对 evaluateFreshness 做纯函数直测,不依赖真实仓库时间" },
+        {
+          // REQ-180 T5-b S1a:接替沙盒探针(P6 删探针后的唯一承接)。这一格原先**只**有段,
+          // 而段只在链内跑一次正例 —— 判定退化成一个从不成立的比较时它照样绿。
+          kind: "selftest",
+          ref: "gates/smoke/check-build-fresh.selftest.mjs",
+          why: "自检脚本在系统临时目录造合成 src/dist 树并把 mtime 钉死在固定时刻(不用「现在」,避免时间戳精度把夹具变成 flaky),逐条注入漂移(src 顶层文件晚于 dist / 只在嵌套子目录里的文件晚于 dist 以守递归 / dist 不存在 / dist 存在但为空),断言判红且诊断含可执行指引;另有边界一格钉死「两侧 mtime 相等判绿」(比较是严格大于)、一组注入/撤销成对夹具(撤销后必须回到判绿,且对照组证明判红只归因于被改的那个文件),以及进程级四格(未漂移 exit 0 且无输出 / 漂移 exit 1 带 [build-fresh:fail] 前缀 / 源码目录不存在判红 / 未知参数判红 / --help 出口 0)",
+        },
       ],
     },
     smoke: {
