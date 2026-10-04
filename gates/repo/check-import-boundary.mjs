@@ -484,8 +484,9 @@ const WINDOWS_EXE_SPAWN_RE = new RegExp(
  *
  * **可选字段 `pending`**(语义见文件头的 pending 机制):`pending: true` 的规则命中后归入
  * `info`、不进 `problems`,本阶段只报告不判红;T2 搬完文件后逐条删掉该标记即转 fail-closed。
- * 表内带标记的是 `core-i18n-dom-only` 与 `main-windows-no-up` 两条;`headless-*` 两条不带
- * (它们建起即判红,那才是这批判据的常态形态)。
+ * 表内带标记的是 `core-i18n-dom-only`、`main-windows-no-up` 与 `core-no-duplicate-export`
+ * 三条;`headless-*` 两条不带(它们建起即判红,那才是这批判据的常态形态)。
+ * 哪几条带标记**不在此手数** —— 以文件头那条 grep 命令为准(转正一条即自动少一条)。
  */
 export const LAYER_TEXT_RULES = Object.freeze([
   {
@@ -576,6 +577,50 @@ export const LAYER_TEXT_RULES = Object.freeze([
     reason: 'main/windows/ 是窗口的持有方,菜单是它的调用方;反过来知道菜单,窗口就与「有哪些菜单项」'
       + '这件 GUI 决策绑死(改菜单结构要动窗口)。与本表其余规则同一性质:钉的是这条边不存在,'
       + '不是「windows 该往哪依赖」—— main/windows/ 对 services / persist / converter 的边是正常的',
+  },
+  // ADR-064 判据表的 `core-no-duplicate-export`。**本条仍带 `pending: true`,不转正** ——
+  // 建它的动机是删掉 `main/ipc/types.ts`(5 行纯 `export type` 转出),但删掉它之后
+  // 实测仍有 3 处同形状的转出(见下方实测),故它是「已知违反、待清理」而非「建时即绿」。
+  // 登记为真实违反的 3 处(T2 步 4 实测,src 侧):
+  //   main/converter/merge.ts:14  export type { ConvertResult } from "../../core/ipc-contract.js"
+  //   main/persist/settings.ts:63 export { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js"
+  //   main/persist/settings.ts:66 export type { ExportPresetsResult, ... } from "../../core/ipc-contract.js"
+  // 三处的源头均已逐个核实确在 core 声明(ConvertResult / ExportPresetsResult /
+  // ImportDocxTemplateResult / AppSettings),故它们与 types.ts 是同一形状的转出。
+  // ADR-064 :232 写的「白名单在 main/ipc/types.ts 删除后为空」与实测不符,按实测记。
+  {
+    id: 'core-no-duplicate-export',
+    scope: 'outside-core',
+    // 白名单为空:本条不带 `exceptFiles`。将来若确有正当的转出(例如某交付面为兼容
+    // 而 re-export 一份),按 `exceptFiles` 逐文件登记并写明理由 ——「某一类除外」写成
+    // 登记缺失即静默放行,故不许有粗放形态。
+    pending: true,
+    patterns: Object.freeze([
+      {
+        id: 'reexport-core-type',
+        label: '把 core 契约的 type 转出给第二个文件',
+        // 只认两种形态,因为只有这两种能**逐字**判出「转的是 type」:
+        //   ① `export type { … } from "…/core/…"` —— type 说明符紧跟 export;
+        //   ② `export { …, type X, … } from "…/core/…"` —— 花括号内带 `type` 修饰符。
+        // 刻意**不**覆盖两种形态(它们都是已知边界,不是遗漏):
+        //   - `export { 值 } from ".../core/…"`(不带 type 修饰符,如 renderer/state/pure.ts
+        //     转出 core/text 的 errorMessage 函数):判据的对象是「core 契约的 type」,
+        //     值转出不是它,放开是定义使然而非漏判。
+        //   - `export * from ".../core/…"`:实测全树 0 处。补它需要一份「哪些符号是 type」
+        //     的跨文件事实,超出本门禁的数据模型(同 ADR-064 :236 登记的已知边界)。
+        // 说明符只认含 `/core/` 段的那一种:从 src/ 内任一相对位置走到 core/ 必然经过该段,
+        // 故它与文件深度无关;`/core/` 的两侧斜杠同时排掉 `score/`、`corefoo/` 这类同形词。
+        re: /\bexport\s+(?:type\s*\{[^}]*\}|\{[^}]*\btype\s+[A-Za-z_$][\w$]*[^}]*\})\s*from\s*['"][^'"]*\/core\/[^'"]*['"]/g,
+      },
+    ]),
+    reason: 'core 契约(如 core/ipc-contract.ts 的 ConvertResult、core/settings/settings-defaults.ts 的 '
+      + 'AppSettings)是跨进程数据形状的单源,同名概念在 src 内只允许存在一份(ADR-064 的立论)。'
+      + '第二个文件把它 `export type` 出去,消费方就能从那个文件取到同一个类型 —— 于是「声明处」'
+      + '与「取用处」不再同名同路径,契约改名或搬家时必然漏改一半,类型系统也拦不住(两处声明都合法)。'
+      + 'scope 只覆盖 core 之外:core 内部的文件互相转出(如 settings-defaults 转 typography 的类型)'
+      + '是该层对外 API 面的正常聚合,判它会把「聚合」与「复制」混为一谈;`export * from` 与'
+      + '跨文件符号来源追踪属 ADR-064 :236 已登记的已知边界。**产物侧天然判不到**:'
+      + 'type-only 转出被编译期整体擦除、`type` 修饰符也被擦除,故本条只有 src 侧有牙齿(实测 dist 侧 0 处)'
   },
 ]);
 
@@ -692,6 +737,37 @@ export function selfCheckTextLayerRules() {
     { name: '非 Windows 子进程(应判绿)', file: 'cli/index.ts', text: 'const r = spawnSync("git", ["status"]);\n', expect: 0 },
     { name: 'platform 守卫(应判绿:守卫是跨平台写法的正当形态)', file: 'convert/run.ts', text: 'if (process.platform === "win32") run();\n', expect: 0 },
     { name: 'main 层不受本表约束(应判绿)', file: 'main/persist/settings.ts', text: 'const p = path.join(app.getPath("userData"), "settings.json");\n', expect: 0 },
+    // ---- core-no-duplicate-export:两个方向都要钉,否则「恒绿」与「恒红」都看不出来 ----
+    {
+      // 违例方向 ①:export type 整段转出(main/ipc/types.ts 被删前的那一行原样)。
+      name: '把 core 契约整段 export type 转出(应判红)',
+      file: 'main/persist/settings.ts',
+      text: 'export type { ExportPresetsResult } from "../../core/ipc-contract.js";\n',
+      expect: 1,
+    },
+    {
+      // 违例方向 ②:混在值里、带 `type` 修饰符的那一种(两条分支不是同一条正则的别名,
+      // 去掉任一分支本夹具立刻变绿)。
+      name: '混合子句里带 type 修饰符的转出(应判红)',
+      file: 'main/persist/settings.ts',
+      text: 'export { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";\n',
+      expect: 1,
+    },
+    {
+      // 判绿方向:同样的形状但转的是**值**且不带 type 修饰符 —— 判据的对象是「type」,
+      // 把它判红等于逼人把定义改成「连函数也不许转出」,那是本条刻意不覆盖的已知边界。
+      name: '只转值不带 type 修饰符(应判绿:判据只管 type)',
+      file: 'renderer/state/pure.ts',
+      text: 'export { errorMessage } from "../../core/text/error-message.js";\n',
+      expect: 0,
+    },
+    {
+      // 判绿方向:core 内部的文件互相转出是 API 面聚合,不是复制(scope 只覆盖 core 之外)。
+      name: 'core 内部文件之间的转出(应判绿:聚合不是复制)',
+      file: 'core/settings/settings-defaults.ts',
+      text: 'export { DEFAULT_TYPOGRAPHY, type TypographySettings } from "./typography.js";\n',
+      expect: 0,
+    },
   ];
   /** @type {string[]} */
   const problems = [];
@@ -1081,6 +1157,10 @@ function scopeMatches(scope, file) {
     return file === 'core/i18n.ts' || file === 'core/i18n.js' || file.startsWith('core/i18n/');
   }
   if (scope === 'main-windows') return file.startsWith('main/windows/');
+  // core 之外的全部文件(判据 core-no-duplicate-export 的 scope):core 契约的 type 被第二个
+  // 文件转出,判据对象是「core 之外的文件」,故按**排除**写而不是按前缀枚举 —— src 顶层目录
+  // 会随 ADR-060/064 增减,枚举前缀会在新增目录那天静默漏判(恒绿)。
+  if (scope === 'outside-core') return !file.startsWith('core/');
   // 两个进程外交付面(cli 与 mcp,ADR-060 步序 2/3 定的同层 adapter):一个 scope 命中
   // **两个** src 顶层目录。与 renderer-foundation 同一形态(单条规则约束一组目录),
   // 区别只在这里要表达的是「同层两棵 adapter 树的共同纪律」,故按前缀列表逐个命中,

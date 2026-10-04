@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * shell 产物白名单段(位于 test/main/ = 被测主体为 src/main 的主进程层段;被测为
- * src/main/ipc/output-allowlist.ts,经 dist/main/ipc/output-allowlist.js,electron 环境):
+ * src/main/services/output-allowlist.ts,经 dist/main/services/output-allowlist.js,electron 环境):
  *
  * 白名单是 renderer 触达宿主文件系统的唯一入口(shell.openPath / showItemInFolder),
  * 集合怎么存直接决定能不能被绕开。本段把三条收口各自钉成可证伪断言:
@@ -21,7 +21,7 @@ import {
   createOutputAllowlist,
   normalizeOutputPath,
   OUTPUT_ALLOWLIST_MAX_ENTRIES,
-} from "../../dist/main/ipc/output-allowlist.js";
+} from "../../dist/main/services/output-allowlist.js";
 import { removeFile, removeTree } from "../common/temp-resource.js";
 
 /**

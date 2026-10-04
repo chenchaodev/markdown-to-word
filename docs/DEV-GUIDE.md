@@ -160,10 +160,10 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - `src/main/`:Electron 主进程
   - `src/main/index.ts`:组合根;`src/main/menu.ts`:应用菜单;`src/main/smoke.ts`:**冒烟唯一实现**(编译进 `dist/main/smoke.js` 随包分发,故解包产物也能跑 `--smoke`;主进程 `--smoke` 分支直连该编译产物,仓内不留第二份实现或 dev 侧转调入口);`src/main/cli-pdf-host.ts`:CLI 的 pdf 宿主(Electron 入口,被 `dist/cli/index.js` 以子进程拉起;注入 `renderPdf` 调装配层,结果写文件而非 stdout —— 见该文件头两条 Windows 坑的注释)
   - `windows/`:main-window.ts/preview.ts(预览窗+尺寸记忆)/title-bar-overlay.ts(Windows 标题栏 overlay 配色与高度常量单源)/web-contents-registry.ts(ctxByWebContents 注册表,窗口层不反向依赖 IPC 层)
-  - `ipc/`:channels.ts(channel 名单源+恒等测试守护)/register.ts(handler 注册,导入类 handler 走 importFileViaDialog 模板)/logic.ts(纯逻辑)/output-allowlist.ts(shell 打开产物的会话级白名单,renderer 触达宿主文件系统的唯一入口)/types.ts(只做 re-export,剪贴板契约声明在 `src/core/ipc-contract.ts`)
+  - `ipc/`:channels.ts(channel 名单源+恒等测试守护)/register.ts(handler 注册,导入类 handler 走 importFileViaDialog 模板)/logic.ts(纯逻辑)
   - `converter/`:index.ts(编排)/single.ts(薄适配器:校验+读取 md 后交装配层,并注入 pdf 打印/mermaid/导出后行为三能力;转出 `renderPdf`/`runAfterConvert` 以保批量与测试的导入面)/electron-side.ts(Electron 侧:隐藏窗 printToPDF 两遍法 + 书签 + 元数据注入、资源管理器打开产物)/batch.ts/merge.ts
   - `persist/`:settings.ts/ui-state.ts/atomic-json.ts(原子写)/preset-file.ts(设置与预设文件的纯形状校验 + 预设解析/合并)
-  - `services/`:mermaid-service.ts/temp-html.ts(randomUUID+'wx')/resource-dirs.ts/web-hardening.ts(窗口导航加固)/session-permissions.ts(session 权限默认拒绝收口)/pdf-host-profile.ts(pdf 宿主 ready 之前的 userData 重定向与 window-all-closed 接管;**独立成模块的唯一理由是时序** —— 已安装形态须在动态 import 重模块之前同步调它,故它只依赖 electron 与 node 内置模块以便静态导入)
+  - `services/`:output-allowlist.ts(shell 打开产物的会话级白名单,renderer 触达宿主文件系统的唯一入口)/mermaid-service.ts/temp-html.ts(randomUUID+'wx')/resource-dirs.ts/web-hardening.ts(窗口导航加固)/session-permissions.ts(session 权限默认拒绝收口)/pdf-host-profile.ts(pdf 宿主 ready 之前的 userData 重定向与 window-all-closed 接管;**独立成模块的唯一理由是时序** —— 已安装形态须在动态 import 重模块之前同步调它,故它只依赖 electron 与 node 内置模块以便静态导入)
   - `preload.cts`:contextBridge 白名单暴露 `window.api`(编译为 CJS;暴露面类型取 `src/core/preload-api.ts`)
 - `src/renderer/`:GUI UI(vanilla TS + 原生 DOM)
   - `index.html` + `style/`(base/drop/settings/dialogs 四文件)/`src/renderer/lang-bootstrap.js`(FOUC 缓解)

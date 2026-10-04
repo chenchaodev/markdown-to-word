@@ -8,7 +8,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 // 跨进程契约类型单源 core/(ipc-contract + settings-defaults + frontmatter):
 // preload 只做 type-only 依赖(编译期擦除,无运行时依赖,沙箱下不受 ESM 加载限制),
-// 不从 main 实现模块(persist/settings、ipc/types、converter/merge)反向取类型。
+// 不从 main 实现模块(persist/settings、converter/merge)反向取类型。
 import type {
   BatchOperationBusyResult,
   BatchProgressInfo,

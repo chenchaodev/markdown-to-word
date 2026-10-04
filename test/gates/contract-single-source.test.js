@@ -181,7 +181,6 @@ export async function run() {
   const noRedeclare = [
     "main/preload.cts",
     "main/ipc/logic.ts",
-    "main/ipc/types.ts",
     "main/converter/merge.ts",
     "main/converter/index.ts",
     "main/persist/settings.ts",

@@ -78,12 +78,7 @@
       "category": "empty-module",
       "reason": "图片解析回调的类型契约(interface + type alias,零运行时代码)。判定依据:产物 dist/core/image/image-resolver.js 只有 `export {};`;覆盖率报告记 statements 0/33、functions 0/1。解析能力本身由 core/image/request-guard 与 main/image-downloader 的段覆盖,与本类型模块无关。"
     },
-    {
-      "file": "src/main/ipc/types.ts",
-      "category": "empty-module",
-      "reason": "剪贴板契约的兼容 re-export(`export type { ClipboardReadResult } from …`),产物 `export {};`,报告记 statements 0/5、functions 0/1。契约单源已归位 core/ipc-contract.ts,本文件只为维持 register.ts 的导入面。"
-    },
-    {
+        {
       "file": "src/main/index.ts",
       "category": "runtime-entry",
       "reason": "Electron 主进程入口:import 即触发单实例锁、建窗、注册 IPC 与生命周期,段内无法 import 它(那正是「启动 Electron」本身);测试里出现的 dist/main/index.js 只是夹具字符串/asar 期望条目,不是 import(guard 用模块说明符位置的正则核对)。它的端到端行为由 test:smoke(`electron . --smoke`)在真实运行时覆盖,覆盖率统计跑的 acceptance 段不含 smoke。关键接线另有静态断言守护(test/main/session-permission-deny.test.js 断言入口调用 applyDefaultDenyPermissions(session.defaultSession))。实测报告记 statements 0/83。"

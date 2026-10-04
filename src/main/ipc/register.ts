@@ -57,14 +57,14 @@ import { getMainWindow } from "../windows/main-window.js";
 import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
 import { buildAppMenu } from "../menu.js";
 import { IPC_CHANNELS as CH } from "./channels.js";
-import { createOutputAllowlist } from "./output-allowlist.js";
+import { createOutputAllowlist } from "../services/output-allowlist.js";
 import {
   clipboardTempDir,
   clipboardTempSources,
   clipboardTitle,
   writeTempMarkdown,
 } from "../services/temp-html.js";
-import type { ClipboardReadResult } from "./types.js";
+import type { ClipboardReadResult } from "../../core/ipc-contract.js";
 import { openPreviewWindow, previews, requestPreviewRefresh } from "../windows/preview.js";
 import {
   beginWebContentsOperation,
@@ -203,7 +203,7 @@ async function importFileViaDialog<T extends ImportPresetsResult | ImportPdfCssR
  * 仅放行本会话成功转换产物的输出路径(各转换 handler 成功时登记)。被攻破的
  * renderer 原本可借主进程打开任意文件;白名单外路径拒绝并返回错误,renderer
  * 走既有错误提示通道展示。白名单的绑定/规范化/上限三条收口与单源实现见
- * ./output-allowlist.ts(勿在此另写一份字符串集合)。 */
+ * ../services/output-allowlist.ts(勿在此另写一份字符串集合)。 */
 const outputAllowlist = createOutputAllowlist();
 
 /** 登记本会话产物路径:目标不存在/非文件/路径非法时不登记并留痕(不静默放过) */
