@@ -2,7 +2,7 @@
 /**
  * 图片控制增强段:Pandoc 风格尾随尺寸属性 + figure 题注绑定。
  * 覆盖五类断言(零注册):
- * (a) 语法解析纯函数直测(core/markdown/image-size.ts:词法/校验范围/边界);
+ * (a) 语法解析纯函数直测(core/image/image-size.ts:词法/校验范围/边界);
  * (b) docx 产物断言(EMU 尺寸换算 / figure 居中 jc / 属性文本剥除);
  * (c) pdf 产物断言(style 注入 / fig-image 类 / 属性文本剥除);
  * (d) 非法值警告断言(keyed 警告 zh/en 双语言 + 默认尺寸降级);
@@ -23,7 +23,7 @@ import {
   isFigureParagraph,
   IMAGE_SIZE_PX_MAX,
   IMAGE_SIZE_PERCENT_MAX,
-} from "../../dist/core/markdown/image-size.js";
+} from "../../dist/core/image/image-size.js";
 import {
   DEFAULT_PAGE_SETUP,
   PAPER_SIZES_MM,
@@ -38,8 +38,8 @@ import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../common/convert-
 
 /** @typedef {import("../../src/core/i18n.js").ConvertWarning} Warning */
 /** @typedef {import("../../src/core/i18n.js").KeyedWarning} KeyedWarning */
-/** @typedef {import("../../src/core/markdown/image-size.js").ImageSizeAttrs} ImageSizeAttrs */
-/** @typedef {import("../../src/core/markdown/image-size.js").ParsedImageSizeAttrs} ParsedImageSizeAttrs */
+/** @typedef {import("../../src/core/image/image-size.js").ImageSizeAttrs} ImageSizeAttrs */
+/** @typedef {import("../../src/core/image/image-size.js").ParsedImageSizeAttrs} ParsedImageSizeAttrs */
 
 /**
  * convert 的类型化别名:运行期是共享包装 convertWithFs(= dist 的 convert 注入宿主文件

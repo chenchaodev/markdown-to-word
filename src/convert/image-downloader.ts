@@ -27,7 +27,7 @@ import net from "node:net";
 // 契约单源:ImageResolver 类型收敛 core/image-resolver.ts,此处仅实现
 import type { ImageResolver, ImageResolverRequest } from "../core/image/image-resolver.js";
 // 契约单源:本地图片可信边界与 precheck/PDF 规则共用 core/pipeline/precheck.ts 策略
-import { createLocalImagePathPolicy } from "../core/markdown/image-path-policy.js";
+import { createLocalImagePathPolicy } from "../core/image/image-path-policy.js";
 
 // 刻意非用户可配:环境/资源类硬边界,进设置面板即成「调坏即出事」的旋钮。
 const HTTP_TIMEOUT_MS = 10_000;

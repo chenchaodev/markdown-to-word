@@ -120,7 +120,7 @@ export const CORE_NODE_BUILTIN_FILES = Object.freeze([
   'core/pdf/katex-css.ts',
   'core/pdf/rules/image.ts',
   'core/pipeline/merge.ts',
-  'core/markdown/image-path-policy.ts',
+  'core/image/image-path-policy.ts',
 ]);
 
 /**
@@ -469,7 +469,7 @@ const WINDOWS_EXE_SPAWN_RE = new RegExp(
  *
  * 两条都只作用于 `headless-faces`(convert + cli + mcp,即 ADR-060 的「新层」):
  * 判的是**新层不得长出宿主与平台的形状**,而 core / main / renderer 各自的纪律
- * 由既有规则管(尤其 `core/markdown/image-path-policy.ts` 的 `path.win32/posix`
+ * 由既有规则管(尤其 `core/image/image-path-policy.ts` 的 `path.win32/posix`
  * 是符号链接逃逸判定(ADR-012)的承重逻辑,见 CORE_NODE_BUILTIN_FILES 的注释 ——
  * 那类「为判定 Windows 形态而调用 Windows 语义」的正当用法在新层不存在,
  * 但在 core 存在,这也是本表按层而不是按全仓施加的原因)。
@@ -684,7 +684,7 @@ export function selfCheckTextLayerRules() {
       // 作用域对照:同一条形态在 core 判绿(core 有正当理由 —— 见
       // LAYER_TEXT_RULES 上方那段),把作用域放大到全仓后本夹具立刻变红。
       name: 'core 层的同一形态(应判绿:core 的 Windows 语义是承重逻辑)',
-      file: 'core/markdown/image-path-policy.ts',
+      file: 'core/image/image-path-policy.ts',
       text: 'const abs = path.win32.isAbsolute(decoded);\n',
       expect: 0,
     },

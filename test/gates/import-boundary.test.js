@@ -1242,7 +1242,7 @@ export async function run() {
           {
             "cli/options.ts": 'export const home = process.env.HOME;\n',
             "convert/run.ts": 'import { spawnSync } from "node:child_process";\nexport const r = spawnSync("git", ["status"]);\nif (process.platform === "win32") console.log(r);\n',
-            "core/markdown/image-path-policy.ts": 'import path from "node:path";\nexport const abs = path.win32.isAbsolute("C:/x");\n',
+            "core/image/image-path-policy.ts": 'import path from "node:path";\nexport const abs = path.win32.isAbsolute("C:/x");\n',
             // 说明性注释里出现 app.getPath 不得判红(它是纪律的书面来源,不是违反)
             "convert/delivery-settings.ts": "/**\n * GUI 的 loadSettings 经 app.getPath(\"userData\"),需 Electron 宿主。\n */\nexport const n = 1;\n",
           },

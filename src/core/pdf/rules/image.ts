@@ -2,7 +2,7 @@
  * pdf 图片规则:
  * 1. 路径改写:仅边界校验通过的本地相对路径转 file:// URL,越界路径置空防 Chromium 读取;
  * 2. 尺寸属性:image 后紧跟的完整 {width=…}/{height=…} 属性块文本
- *    (core/markdown/image-size.ts 单源解析)注入 style——width 百分比原样注入
+ *    (core/image/image-size.ts 单源解析)注入 style——width 百分比原样注入
  *    (CSS 相对容器宽,与「百分比=相对正文内容宽度」语义天然一致);height 百分比
  *    按内容宽换算为 px 注入(打印场景 CSS height 百分比相对容器高、容器高度不定,
  *    与语义不符);px 值原样注入。属性文本从输出中剥除;非法值走 keyed 警告;
@@ -11,8 +11,8 @@
  */
 import { pathToFileURL } from "node:url";
 import type MarkdownIt from "markdown-it";
-import { parseImageSizeAttrs, type ImageDim } from "../../markdown/image-size.js";
-import { createLocalImagePathPolicy } from "../../markdown/image-path-policy.js";
+import { parseImageSizeAttrs, type ImageDim } from "../../image/image-size.js";
+import { createLocalImagePathPolicy } from "../../image/image-path-policy.js";
 import { imageAttrInvalidWarning } from "../../image/image-warning.js";
 import { createDepthTracker } from "./shared.js";
 import { pushWarningOnce, type ConvertWarning } from "../../i18n.js";

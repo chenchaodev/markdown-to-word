@@ -7,7 +7,7 @@
  * - AI 静默丢内容四类(见下方「静默丢内容」小节):本工具不认的写法会让内容**无声消失**,
  *   用户付印后才发现没了,故转换前逐条告知。它是体检不是改写,不受 AI 清理档位开关管辖
  *   (ADR-021);零 IO 纯字符串/AST 判定,不新增 node: 内建依赖(ADR-018)。
- * 本地图片边界策略由 core/markdown/image-path-policy.ts 的 createLocalImagePathPolicy
+ * 本地图片边界策略由 core/image/image-path-policy.ts 的 createLocalImagePathPolicy
  * 统一提供(REF-025 #07 自本模块迁出):先做原始 src 与词法路径校验,再 realpath 后
  * 复核规范路径,symlink/junction 不得把读取目标带出可信根。策略模块自身不持有
  * node:fs 能力,realpathSync 由本层注入(见下方调用点)。
@@ -16,7 +16,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { visit } from "unist-util-visit";
 import { parseMarkdown } from "./parse.js";
-import { createLocalImagePathPolicy } from "../markdown/image-path-policy.js";
+import { createLocalImagePathPolicy } from "../image/image-path-policy.js";
 import { ALLOWED_INLINE_TAGS } from "../markdown/html-whitelist.js";
 import {
   createSourceRangeQuery,

@@ -57,7 +57,7 @@ import {
   type SharedRenderOptions,
 } from "../settings/render-options.js";
 import { isAllowedInlineHtml } from "../markdown/html-whitelist.js";
-import { isFigureParagraph } from "../markdown/image-size.js";
+import { isFigureParagraph } from "../image/image-size.js";
 import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
 import { headingNumberingOptions, numberingOptions } from "./numbering.js";

@@ -279,7 +279,7 @@ pdf 必然要 Electron 宿主（见「后果」第 2 条）。MCP 第一版**只
 
 **刻意不覆盖的两处，理由各不同**：
 
-- `path.win32` / `path.posix` **不判红** —— `core/markdown/image-path-policy.ts` 的符号链接逃逸判定（ADR-012）靠它们做双向比对，是承重逻辑。新规则**按层施加**正是为了不误伤它，探针里钉了 core 侧判绿锚点。
+- `path.win32` / `path.posix` **不判红** —— `core/image/image-path-policy.ts` 的符号链接逃逸判定（ADR-012）靠它们做双向比对，是承重逻辑。新规则**按层施加**正是为了不误伤它，探针里钉了 core 侧判绿锚点。
 - `process.platform === "win32"` 守卫**不判红** —— 那是跨平台代码探测平台的正确形态，禁它等于禁跨平台。已钉判绿锚点。
 
 **两处已知边界（如实记，不粉饰）**：

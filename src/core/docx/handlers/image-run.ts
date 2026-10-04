@@ -5,7 +5,7 @@
  * 显式尺寸绕过 scaleToFit 上限(用户意图优先);独立成段图片(figure)由
  * render.ts 判定后走 renderFigureParagraph 居中渲染。
  * 双管线对应:src/core/pdf/rules/image.ts(路径 file:// 改写 / 尺寸属性注入 /
- * figure 识别);尺寸属性解析与 figure 判定单源 core/markdown/image-size.ts
+ * figure 识别);尺寸属性解析与 figure 判定单源 core/image/image-size.ts
  * (pdf 侧头注指向本侧 isFigureParagraph 契约)。差异:本侧 resolver 加载字节经
  * ImageRun 内嵌、超宽经 scaleToFit 等比缩到上限;pdf 侧本地图保持 file:// 由
  * Chromium 渲染、height 百分比按内容区宽换算为 px。修改尺寸属性/figure 判定
@@ -23,8 +23,8 @@ import {
   unrecognizedImageWarning,
   webpSkippedWarning,
 } from "../../image/image-warning.js";
-import type { ImageSizeAttrs } from "../../markdown/image-size.js";
-import { resolveImageDisplaySize } from "../../markdown/image-size.js";
+import type { ImageSizeAttrs } from "../../image/image-size.js";
+import { resolveImageDisplaySize } from "../../image/image-size.js";
 import type { Ctx, ImageLoadResult, InlineChild, RunStyle } from "../ctx.js";
 
 /** 图片显示宽度上限(px):宽超过则等比缩到该宽度(不放大),行内图片与 mermaid PNG 共用 */
@@ -80,7 +80,7 @@ async function resolveImageCached(ctx: Ctx, url: string): Promise<ImageLoadResul
 /** 行内图片:经 resolver 加载为 ImageRun;失败或 webp 时占位文本。
  *  尺寸规则:能解析出 PNG/JPEG 尺寸时按 scaleToFit(上限 IMAGE_MAX_WIDTH,不放大);
  *  无法解析尺寸(其他格式/畸形数据)→ IMAGE_FALLBACK_WIDTH×IMAGE_FALLBACK_HEIGHT 兜底。
- *  sizeAttrs(尾随 {width=…}/{height=…} 解析结果,见 core/markdown/image-size.ts)
+ *  sizeAttrs(尾随 {width=…}/{height=…} 解析结果,见 core/image/image-size.ts)
  *  存在且非空时改走 resolveImageDisplaySize——百分比相对 ctx.config.contentWidthPx、
  *  只给一维按原图宽高等比缩放、两维都给按给定值;显式尺寸绕过 scaleToFit 上限
  *  (用户意图优先)。原图尺寸不可解析时以兜底尺寸作为等比基准。

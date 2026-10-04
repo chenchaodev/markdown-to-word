@@ -25,7 +25,7 @@ import { inlineHtmlItemsToRuns, normalizeInlineHtml, parseInlineHtml } from "./i
 import { pushLinkRuns } from "./link-xref.js";
 import { imageToDocx } from "./image-run.js";
 import { imageAttrInvalidWarning } from "../../image/image-warning.js";
-import { takeImageSizeAttrs } from "../../markdown/image-size.js";
+import { takeImageSizeAttrs } from "../../image/image-size.js";
 import { renderCode } from "./code-block.js";
 import { renderContainerMath } from "./equations.js";
 import { listContentIndent } from "../numbering.js";
