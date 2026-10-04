@@ -173,6 +173,10 @@
 | **R5** ⏳ | `test/gates/import-boundary.test.js`(1612) | **不做拆分** —— 段 import `gates/artifacts/check-asar-manifest.mjs` 而注册表 `modulePath` 记 `gates/repo/check-import-boundary.mjs` ⇒ 主体含混，拆会把 1 个含混固化成 2 个含混 | 先做**主体认定**（两处对齐）；那是 R1–R3 同一件事的前置 |
 
 > ⚠️ **R1–R3 全部以 S5-0（段发现递归化）落地为前置** —— 见 S5-0 行那条实测：三者的新镜像目录今日一条都不存在，而非递归的段发现会让拆出的段**永不运行且门禁全绿**。
+> **D1（主体判据）的成本实测 —— 2026-10-05**：137 段里**只有 40 段声明 `export const covers`**（评审记 39，多的 1 个是 S1d 新建那段），**97 段未声明**：`core` 43／`main` 24／`gates` 16／`convert` 6／`renderer` 3／`cli` 2／`shared` 2／`mcp` 1。已有 125 个元素、去重 69，其中 60 个指向 `src`/`dist`、9 个指向仓内树。
+>
+> ⚠️ **D1 的设计必须容纳「刻意不写 covers」，不能只做「必须声明」** —— `test/harness/dual-pipeline-decision-ledger.test.js:72` 明写「本段**刻意不写** `export const covers`」，理由之一是「零主体、声明 core 即撒谎」。**逼着人写不实声明，比不写更坏**（与 `REQ-185` 的 `coveredBy` 同一判断）。⇒ D1 若要落地，得先有第三态（声明／显式豁免＋理由），否则 97 段里会有一批靠撒谎过关。
+>
 ## 完成标准
 
 1. `src/` 19 条取证里 7 条要动的全部落地（i18n 目录化 · cancel 拆分 · image 归并 · util→text 改名 · style 并入 theme · main 四项搬迁 · 11 条新判据在位）
