@@ -62,6 +62,20 @@
 ; with un. in the uninstall section")。
 !define M2W_RESTORE_FN "un.m2w.RestorePath"
 
+; 命令行开关名(静默安装下表达「勾选」)。名字只写这一处,preInit 的 GetOptions
+; 与各处诊断文案都从这里取 —— 改名字不会漏改某一处。
+;
+; 为什么带 =VALUE 而不是一个裸标志:NSIS 的 ${GetOptions} 对裸标志也能工作,但
+; 带值能顺带把「用户以为自己传了、其实拼错了」这件事在 DetailPrint 里显出来,
+; 且给日后加第二个值留了位置。不写 /M2W_NO_PATH 之类的反向开关:反向开关会让
+; 「忘了传」与「显式不要」同形,而本仓要的恰恰是后者不存在 —— 唯一状态就是
+; 「有没有这个开关」。
+;
+; ${GetOptions} 读的是 $CMDLINE(NSIS 内建 Var,含全部原始参数),拿它当第一参数
+; 即可,不必像 MultiUser 那样先把参数收进自己的 Var。开关大小写不敏感(NSIS 的
+; GetOptions 语义),且必须出现在引号外 —— 与 NSIS 其它开关同一套规则。
+!define M2W_OPT_IN_SWITCH "/M2W_ADD_PATH=1"
+
 ; 本安装器动过 PATH 的记录。两份都要:before 用来精确还原,written 用来分辨
 ; 「还是我写的那份」与「用户后来改过」。
 ;
@@ -177,9 +191,14 @@
   "把安装目录添加到用户 PATH(默认不勾选;勾选后需重开终端才生效)" \
   "Add the install folder to my user PATH (off by default; reopen your terminal afterwards for it to take effect)"
 
-; 勾选页的三个 Var 只被 installer-only 的那一段用到(customPageAfterChangeDir 与
-; customInstall 都在 !ifndef BUILD_UNINSTALLER 里),所以守卫起来 —— 否则卸载器那趟
-; 会报 "warning 6001: Variable \"M2W_Page\" not referenced or never set"。
+; 勾选页的三个 Var 只被 installer-only 的那一段用到(customPageAfterChangeDir、
+; customInstall 与 preInit 都在 !ifndef BUILD_UNINSTALLER 里),所以守卫起来 ——
+; 否则卸载器那趟会报 "warning 6001: Variable \"M2W_Page\" not referenced or
+; never set"。
+;
+; M2W_AddToPath 就是勾选框与命令行开关**共用**的那一个 opt-in 状态:勾选框在
+; m2w.PathPageLeave 里写它,customInstall 读它,preInit 也写它。三处同一个 Var,
+; 不另建并行状态 —— 另建一条就等于两套写入逻辑,迟早漂。
 !ifndef BUILD_UNINSTALLER
   Var M2W_Page
   Var M2W_CheckBox
@@ -253,6 +272,53 @@
 ; ----------------------------------------------------------------------------
 ;  Apply / restore.
 ; ----------------------------------------------------------------------------
+
+; --- 命令行开关(静默安装下也能勾选) -------------------------------------------
+;
+; 为什么要它:/S 时 PageEx custom 那一页整个不跑,勾选框永远没机会被点,而唯一能
+; 触到写入逻辑的时机是 customInstall。自动化安装(含本仓的 install-smoke 门禁)
+; 因此**永远走不到勾选支** —— 那条支路此前只在注释与推理层面成立,一次都没真跑过。
+; 这个开关把同一个 opt-in 状态在页面之外置上,让勾选支第一次能被真跑。
+;
+; 为什么放在 preInit(即 installer.nsi 的 .onInit 内):
+;   时序上必须早于 customInstall 调 ApplyPath —— preInit 在 installer.nsi:55,
+;   customInstall 在 installSection.nsh:81(安装段内),前者必然在前。
+;   同时它也在 initMultiUser(:77)之前,所以 $INSTDIR 尚未被改写;而 ApplyPath 用的是
+;   $INSTDIR 本身(不是这里的值),故无需在此解析目录 —— 这里只置 flag,判定与写入
+;   全部留给 ApplyPath,不在此重复一遍。
+;   为什么不放 .onInit 之外的自定义 Function:preInit 已经是 electron-builder 的
+;   官方钩子,不需要自己找回调点。
+;
+; 为什么复用 M2W_AddToPath 而不是新 Var:见上面该 Var 的注释。customInstall 那条
+; `${If} $M2W_AddToPath == "1"` 因此**一字未改**,开关与勾选框走的是同一条判定。
+;
+; ⚠ 默认不勾的保证没有被削弱:不带这个开关时本宏什么都不做(flag 保持空串),
+; `${If} $M2W_AddToPath == "1"}` 为假 ⇒ 一条 PATH 都不动,与加开关之前逐字节一致。
+;
+; ⚠ 整段必须按 BUILD_UNINSTALLER 守卫:installer.nsi 的 .onInit 里 preInit 是
+; **无条件** insert 的(第 55 行,不在任何 BUILD_UNINSTALLER 分支内),所以卸载器
+; 那趟也会展开本宏。而 $M2W_AddToPath 与 ${StrStr} 都是 installer-only(见上),
+; 不守卫就是:卸载器那趟引用一个不存在的 Var ⇒ warning 6001,加上 StrStr 预热
+; 也被守卫掉 ⇒ 连 ${StrStr} 宏都不存在 ⇒ 编译期直接失败。
+!ifndef BUILD_UNINSTALLER
+!macro preInit
+  ; 用 ${StrStr} 而不是 ${GetOptions}:后者属于 FileFunc,且它靠 Exch/Push 做寄存器
+  ; 上下文的保存与恢复 —— 那套动作对「插入点的栈深」有前提要求,而本宏的插入点
+  ; 是 electron-builder 的 .onInit(它自己已经压过栈)。实测直接内联 ${GetOptions}
+  ; 会报 "Usage: StrCpy $(user_var: output) ..."。${StrStr} 是本文件已在用的机制
+  ; (ApplyPath 里同一行写法),在 .onInit 里插入已知可用。
+  ;
+  ; 两端补空格再整段匹配(与 ApplyPath 里 ${StrStr} 的用法同一条理由):不补的话
+  ; 传 /M2W_ADD_PATH=1 会连带匹配到 /M2W_ADD_PATH=10,/M2W_ADD_PATH=1x 也算命中。
+  StrCpy $1 " $CMDLINE "
+  ${StrStr} $0 $1 " ${M2W_OPT_IN_SWITCH} "
+  ${If} $0 != ""
+    StrCpy $M2W_AddToPath "1"
+    DetailPrint "[m2w] 检测到 ${M2W_OPT_IN_SWITCH},将把安装目录加入用户 PATH(卸载时自动还原)"
+  ${EndIf}
+!macroend
+!endif ; !ifndef BUILD_UNINSTALLER
+
 !macro customInstall
   ${If} $M2W_AddToPath == "1"
     Call m2w.ApplyPath

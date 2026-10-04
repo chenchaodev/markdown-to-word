@@ -48,7 +48,14 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { defaultInstallDir, runInstallFlow, startMenuTraces } from "../../gates/artifacts/check-install-smoke.mjs";
+import {
+  defaultInstallDir,
+  diffPathEntries,
+  runInstallFlow,
+  runInstallFlowBothLoops,
+  samePathEntries,
+  startMenuTraces,
+} from "../../gates/artifacts/check-install-smoke.mjs";
 import { SMOKE_MARKERS } from "../../gates/smoke/smoke-proc.mjs";
 import { ROOT } from "../common/paths.js";
 import { removeFile } from "../common/temp-resource.js";
@@ -704,6 +711,99 @@ async function runInstallExecuteWithFakeSystem({
   return { code, registry, traces, deletedKeys, removedPaths, launchCalls: launched };
 }
 
+/** 沙盒里的「安装前」用户 PATH(两条,便于肉眼核对增删) */
+const FAKE_PATH_BEFORE = `C:\\tools\\alpha;C:\\tools\\beta`;
+/**
+ * PATH opt-in 开关字面量。
+ *
+ * 必须与 gates/artifacts/check-install-smoke.mjs 的同名常量、以及
+ * build-assets/installer.nsh 的 !define M2W_OPT_IN_SWITCH 三处一致。
+ * 故意不解析 .nsh 去取:解析 NSIS 源码会把测试绑死在脚本语法上,而开关名写错时
+ * 三处一起错反而判定恒绿 —— 那比"改一处漏一处"更危险(ADR-062 有记)。
+ */
+const OPT_IN_SWITCH = "/M2W_ADD_PATH=1";
+
+/**
+ * 装一个会改用户 PATH 的假系统:按 opt-in 开关决定装完加不加安装目录,卸载时还原。
+ *
+ * 它照抄 build-assets/installer.nsh 的**可观测行为**(追加而非覆盖、卸完全部摘掉),
+ * 于是「门禁的两轮判定」能在不碰真实注册表的前提下被真跑一遍。
+ *
+ * @param {object} spec 场景
+ * @param {string} spec.installDir 假安装目录
+ * @param {string} spec.scratchRoot 临时根
+ * @param {boolean} [spec.honorsSwitch] 假安装器是否认 opt-in 开关(默认 true)
+ * @param {boolean} [spec.restoreOnUninstall] 卸载时是否还原 PATH(默认 true)
+ * @param {boolean} [spec.restoreReorders] 还原时是否把条目顺序打乱(默认 false)
+ * @param {string} [spec.optInSwitch] 要传给安装器的 PATH opt-in 开关
+ * @returns {Promise<{ code: number, calls: string[], pathReads: string[], finalPath: string }>} 运行结果
+ */
+async function runInstallWithFakePath({
+  installDir,
+  scratchRoot,
+  honorsSwitch = true,
+  restoreOnUninstall = true,
+  restoreReorders = false,
+  optInSwitch = "",
+}) {
+  /** @type {string[]} */
+  const calls = [];
+  /** @type {string[]} */
+  const pathReads = [];
+  let pathValue = FAKE_PATH_BEFORE;
+  let installed = false;
+  let consented = false;
+  const exePath = path.join(installDir, `${FIXTURE_PRODUCT}.exe`);
+  const uninstallerPath = path.join(installDir, `Uninstall ${FIXTURE_PRODUCT}.exe`);
+  const exists = (/** @type {string} */ target) => {
+    if (target === installDir || target === exePath || target === uninstallerPath) return installed;
+    return false;
+  };
+  const code = await runInstallFlow({
+    installer: path.join(scratchRoot, "fake-installer.exe"),
+    installDir,
+    facts: {
+      productName: FIXTURE_PRODUCT,
+      version: FIXTURE_VERSION,
+      artifactTemplate: "",
+      releaseDir: "release",
+      perMachine: false,
+      pathOptInScript: PATH_OPT_IN_SCRIPT,
+    },
+    timeoutMs: 1000,
+    scratchRoot,
+    optInSwitch,
+    run: async (spec) => {
+      calls.push(`${path.basename(spec.command)} ${spec.args.join(" ")}`.trim());
+      if (spec.command.endsWith("fake-installer.exe")) {
+        installed = true;
+        // 认不认开关由 honorsSwitch 决定:置 false 就模拟「传了开关也没反应」——
+        // 那正是「勾了却没生效」这个失败面,门禁必须能抓它。
+        consented = honorsSwitch && spec.args.some((arg) => arg.startsWith("/M2W_ADD_PATH"));
+        if (consented) pathValue = `${FAKE_PATH_BEFORE};${installDir}`;
+        return okResult("[fixture] installed\n");
+      }
+      installed = false;
+      if (restoreOnUninstall) {
+        // 还原成原值。打乱顺序用来验证「逐条同序」那道断言(集合口径下它完全隐形)。
+        pathValue = restoreReorders ? [...FAKE_PATH_BEFORE.split(";")].reverse().join(";") : FAKE_PATH_BEFORE;
+      }
+      return okResult("[fixture] uninstalled\n");
+    },
+    launchSmoke: async () => okResult(stubSuccessOutput()),
+    exists,
+    listDir: () => [`${FIXTURE_PRODUCT}.exe`, `Uninstall ${FIXTURE_PRODUCT}.exe`],
+    queryRegistry: async () => [],
+    deleteRegistryKey: async () => true,
+    removePath: () => true,
+    readRegValue: async () => {
+      pathReads.push(pathValue);
+      return pathValue;
+    },
+  });
+  return { code, calls, pathReads, finalPath: pathValue };
+}
+
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
@@ -1347,6 +1447,251 @@ export async function run() {
       );
       console.log(
         "[ok] install-smoke:转发器落位为 fail-closed 存在性钉(声明有而产物缺 / 声明被删 均判红并点名期望与实际)",
+      );
+    }
+
+    // ---------- 14. PATH 两轮(默认支 + 勾选支):两段逻辑都被真跑 ----------
+    //
+    // 这一段存在的理由:此前勾选支一次都没被执行过 —— /S 下勾选页不跑,写入与
+    // 还原只在注释与推理层面成立。这里用假 PATH 走**真实**判定分支(不碰注册表),
+    // 把两轮各自该绿/该红的面都钉住。
+    {
+      // 纯函数层先钉住语义(比较器是判定的地基,塌了就什么都不用验了)
+      const unchangedCase = diffPathEntries({ before: FAKE_PATH_BEFORE, after: FAKE_PATH_BEFORE, phase: "after-install" });
+      assert(unchangedCase.unchanged === true, "PATH 无增删时 unchanged 应为真");
+      assert(unchangedCase.consented === false, "PATH 无增删时 consented 应为假(它要求恰好多出安装目录)");
+      assert(unchangedCase.ok === true, "after-install 阶段 unchanged 应放行");
+
+      const consentedCase = diffPathEntries({
+        before: FAKE_PATH_BEFORE,
+        after: `${FAKE_PATH_BEFORE};C:\\Program Files\\X`,
+        installDir: "C:\\Program Files\\X",
+        phase: "after-install",
+      });
+      assert(consentedCase.consented === true, "恰好多出安装目录这一项时应为 consented");
+      assert(consentedCase.unchanged === false, "多出一项时 unchanged 应为假");
+
+      // 「多出两条」不是 consented —— 只加一条、且加的正是安装目录才算
+      const twoAdded = diffPathEntries({
+        before: FAKE_PATH_BEFORE,
+        after: `${FAKE_PATH_BEFORE};C:\\X;C:\\Y`,
+        installDir: "C:\\X",
+        phase: "after-install",
+      });
+      assert(twoAdded.consented === false, "多出两条时不得判 consented(否则「只准加一条」形同虚设)");
+      // 「加的不是安装目录」也不是 consented
+      const wrongDir = diffPathEntries({
+        before: FAKE_PATH_BEFORE,
+        after: `${FAKE_PATH_BEFORE};C:\\SomewhereElse`,
+        installDir: "C:\\X",
+        phase: "after-install",
+      });
+      assert(wrongDir.consented === false, "多出的不是安装目录时不得判 consented");
+      // after-uninstall 阶段即便多出安装目录也必须判红(卸载摘不掉)
+      const leftover = diffPathEntries({
+        before: FAKE_PATH_BEFORE,
+        after: `${FAKE_PATH_BEFORE};C:\\X`,
+        installDir: "C:\\X",
+        phase: "after-uninstall",
+      });
+      assert(leftover.ok === false, "卸载后仍多出安装目录必须判红(那正是卸载摘不掉的残留)");
+
+      // samePathEntries:集合相等但顺序变了 —— 集合口径放过它,逐条同序不放过
+      const reordered = samePathEntries("C:\\a;C:\\b;C:\\c", "C:\\c;C:\\b;C:\\a");
+      assert(reordered.same === false, "条目集合相同但顺序不同时,逐条同序必须判为不一致");
+      assert(reordered.beforeEntries.length === reordered.afterEntries.length, "两侧条目数应相同");
+      assert(samePathEntries("C:\\a;C:\\b", "C:\\a;C:\\b").same === true, "完全同序应判为一致");
+
+      const root = createSandbox();
+      sandboxes.push(root);
+
+      // 默认支:不带开关 → 装完一条都不变,卸完逐条同序回到基线
+      const plain = await withCapturedOutput(() =>
+        runInstallWithFakePath({
+          installDir: path.join(root, "installed", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-plain"),
+        }),
+      );
+      assert(plain.result.code === 0, `默认支应通过,实际 ${plain.result.code}\n${plain.output}`);
+      assert(
+        plain.result.calls[0]?.includes("/M2W_ADD_PATH") === false,
+        `默认支不传 opt-in 开关,实际 ${JSON.stringify(plain.result.calls[0])}`,
+      );
+      // 装完那一刻的 PATH 必须是**基线本身**(证明「装完」取的是步骤 1 的快照,
+      // 而不是卸载完又读了一次 —— 那处早先写错了,两个数字会恒等)
+      assert(
+        plain.result.pathReads[1] === FAKE_PATH_BEFORE,
+        `默认支装完 PATH 应与基线逐字节相同,实际 ${JSON.stringify(plain.result.pathReads[1])}`,
+      );
+      assert(
+        /安装前 2 → 装完 2 → 卸完 2/.test(plain.output),
+        `默认支结论行应报三个阶段的条目数;实际:${plain.output}`,
+      );
+
+      // 勾选支:带开关 → 装完恰好多出安装目录这一项,卸完逐条同序回到基线
+      const consentedDir = path.join(root, "installed2", FIXTURE_PRODUCT);
+      const consented = await withCapturedOutput(() =>
+        runInstallWithFakePath({
+          installDir: consentedDir,
+          scratchRoot: path.join(root, "scratch-consent"),
+          optInSwitch: OPT_IN_SWITCH,
+        }),
+      );
+      assert(consented.result.code === 0, `勾选支应通过,实际 ${consented.result.code}\n${consented.output}`);
+      assert(
+        consented.result.calls[0]?.includes("/M2W_ADD_PATH=1") === true,
+        `勾选支必须把 opt-in 开关传给安装器,实际 ${JSON.stringify(consented.result.calls[0])}`,
+      );
+      assert(
+        (consented.result.calls[0]?.indexOf(OPT_IN_SWITCH) ?? -1) <
+          (consented.result.calls[0]?.indexOf("/D=") ?? -1),
+        `开关必须排在 /D= 之前(NSIS 把 /D= 到行尾当安装目录),实际 ${JSON.stringify(consented.result.calls[0])}`,
+      );
+      assert(
+        consented.result.pathReads[1] === `${FAKE_PATH_BEFORE};${consentedDir}`,
+        `勾选支装完 PATH 应恰好多出安装目录这一项,实际 ${JSON.stringify(consented.result.pathReads[1])}`,
+      );
+      assert(
+        /安装前 2 → 装完 3 → 卸完 2/.test(consented.output),
+        `勾选支结论行应报 2 → 3 → 2;实际:${consented.output}`,
+      );
+      assert(
+        consented.result.finalPath === FAKE_PATH_BEFORE,
+        `勾选支卸完后应逐字节回到基线,实际 ${JSON.stringify(consented.result.finalPath)}`,
+      );
+
+      // 负向 A:传了开关但安装器没反应(勾了却没生效)—— 必须判红。
+      // 这正是断「具名结论」而非断 ok 的意义:ok 在这里会放行。
+      const ignored = await withCapturedOutput(() =>
+        runInstallWithFakePath({
+          installDir: path.join(root, "installed3", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-ignored"),
+          optInSwitch: OPT_IN_SWITCH,
+          honorsSwitch: false,
+        }),
+      );
+      assert(ignored.result.code === 1, `传了开关却没写入 PATH 应判红,实际 ${ignored.result.code}\n${ignored.output}`);
+      assert(
+        /静默安装后用户 PATH 不符合本轮期望/.test(ignored.output),
+        `应点名「装完 PATH 不符合本轮期望」;实际:${ignored.output}`,
+      );
+      assert(
+        /期望:恰好多出安装目录这一项/.test(ignored.output),
+        `应说清本轮期望是什么;实际:${ignored.output}`,
+      );
+
+      // 负向 B:卸载没还原 —— 必须判红(残留)
+      const notRestored = await withCapturedOutput(() =>
+        runInstallWithFakePath({
+          installDir: path.join(root, "installed4", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-notrestored"),
+          optInSwitch: OPT_IN_SWITCH,
+          restoreOnUninstall: false,
+        }),
+      );
+      assert(
+        notRestored.result.code === 1,
+        `卸载未还原 PATH 应判红,实际 ${notRestored.result.code}\n${notRestored.output}`,
+      );
+      assert(
+        /卸载后用户 PATH 未回到「安装前」/.test(notRestored.output),
+        `应报出「卸载后未回到安装前」;实际:${notRestored.output}`,
+      );
+
+      // 负向 C:还原了但顺序被打乱 —— 集合口径看不见,逐条同序能抓住
+      const reorderedBack = await withCapturedOutput(() =>
+        runInstallWithFakePath({
+          installDir: path.join(root, "installed5", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-reordered"),
+          optInSwitch: OPT_IN_SWITCH,
+          restoreReorders: true,
+        }),
+      );
+      assert(
+        reorderedBack.result.code === 1,
+        `卸载只还原集合但打乱顺序应判红,实际 ${reorderedBack.result.code}\n${reorderedBack.output}`,
+      );
+      assert(
+        /逐条同序.*没回到基线/.test(reorderedBack.output),
+        `应报出「集合没变但逐条同序没回到基线」;实际:${reorderedBack.output}`,
+      );
+
+      // 两轮驱动:两轮都跑完才汇总,且带轮次标签。
+      // 这里只关心「驱动是否真的发起了两轮、且第二轮带上了开关」,故把文件存在性
+      // 判据搭成最简(装完存在、卸完消失),不去模拟 PATH —— PATH 的语义由上面
+      // 四个场景各自验。这里若把 exists 恒置 false,第一轮就会因「安装目录不存在」
+      // 判红,测到的就不是驱动而是文件存在性了。
+      /** @type {string[]} */
+      const driverCalls = [];
+      let driverInstalled = false;
+      // 假 PATH 也得跟着开关动:否则第二轮会因「传了开关却没多出安装目录」判红 ——
+      // 那是门禁**正确**地抓到了不一致,不是驱动有 bug。
+      let driverPath = FAKE_PATH_BEFORE;
+      const driverDir = path.join(root, "installed6", FIXTURE_PRODUCT);
+      const driverExe = path.join(driverDir, `${FIXTURE_PRODUCT}.exe`);
+      const driverUninstaller = path.join(driverDir, `Uninstall ${FIXTURE_PRODUCT}.exe`);
+      const bothLoops = await withCapturedOutput(() =>
+        runInstallFlowBothLoops({
+          installer: path.join(root, "fake-installer.exe"),
+          installDir: driverDir,
+          facts: {
+            productName: FIXTURE_PRODUCT,
+            version: FIXTURE_VERSION,
+            artifactTemplate: "",
+            releaseDir: "release",
+            perMachine: false,
+            pathOptInScript: PATH_OPT_IN_SCRIPT,
+          },
+          timeoutMs: 1000,
+          scratchRoot: path.join(root, "scratch-both"),
+          run: async (spec) => {
+            driverCalls.push(spec.args.join(" "));
+            if (spec.command.endsWith("fake-installer.exe")) {
+              driverInstalled = true;
+              if (spec.args.some((arg) => arg.startsWith("/M2W_ADD_PATH"))) driverPath = `${FAKE_PATH_BEFORE};${driverDir}`;
+              return okResult("[fixture] installed\n");
+            }
+            driverInstalled = false;
+            driverPath = FAKE_PATH_BEFORE;
+            return okResult("[fixture] uninstalled\n");
+          },
+          launchSmoke: async () => okResult(stubSuccessOutput()),
+          exists: (target) =>
+            target === driverDir || target === driverExe || target === driverUninstaller ? driverInstalled : false,
+          listDir: () => [`${FIXTURE_PRODUCT}.exe`, `Uninstall ${FIXTURE_PRODUCT}.exe`],
+          queryRegistry: async () => [],
+          deleteRegistryKey: async () => true,
+          removePath: () => true,
+          readRegValue: async () => driverPath,
+        }),
+      );
+      assert(bothLoops.result === 0, `两轮驱动应通过,实际 ${bothLoops.result}\n${bothLoops.output}`);
+      assert(/默认支/.test(bothLoops.output), `两轮驱动应跑默认支;实际:${bothLoops.output}`);
+      assert(/勾选支/.test(bothLoops.output), `两轮驱动应跑勾选支;实际:${bothLoops.output}`);
+      // 驱动真的把开关传下去了(第一轮不带、第二轮带)—— 否则两轮跑的是同一件事。
+      // driverCalls 混着安装与卸载两类调用(每轮各两条),故按"含 /S /D="筛出安装轮次。
+      const driverInstalls = driverCalls.filter((line) => line.includes("/D="));
+      assert(driverInstalls.length === 2, `驱动应发起两次安装,实际 ${driverInstalls.length} 次:${JSON.stringify(driverCalls)}`);
+      assert(
+        driverInstalls[0]?.includes(OPT_IN_SWITCH) === false,
+        `驱动第一轮不应带开关,实际 ${JSON.stringify(driverInstalls[0])}`,
+      );
+      assert(
+        driverInstalls[1]?.includes(OPT_IN_SWITCH) === true,
+        `驱动第二轮应带开关 ${OPT_IN_SWITCH},实际 ${JSON.stringify(driverInstalls[1])}`,
+      );
+      // ⚠ 次序本身也是断言:NSIS 的 /D= 会把「从 /D= 到行尾」整段当安装目录。
+      // 开关排在 /D= 之后时,真安装器把 InstallLocation 写成
+      // "...\MarkdownToWord M2W_ADD_PATH=1",装到不存在的目录、报错完全指不到
+      // 真正原因(实测踩过)。所以「开关必须在 /D= 之前」要钉住,不能靠人记得。
+      const switchArg = driverInstalls[1]?.indexOf(OPT_IN_SWITCH) ?? -1;
+      const dirArg = driverInstalls[1]?.indexOf("/D=") ?? -1;
+      assert(
+        switchArg !== -1 && dirArg !== -1 && switchArg < dirArg,
+        `开关必须排在 /D= 之前(NSIS 把 /D= 到行尾当目录),实际 ${JSON.stringify(driverInstalls[1])}`,
+      );
+      console.log(
+        "[ok] install-smoke:PATH 两轮(默认支一条不变 + 勾选支恰好多一条)判定正确,负向面(没写入/没还原/顺序乱)均判红",
       );
     }
   } catch (error) {

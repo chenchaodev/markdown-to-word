@@ -8,6 +8,12 @@
 //   3. 静默卸载(<安装目录>/Uninstall <productName>.exe /S)→ 校验安装目录、开始菜单、
 //      卸载注册表相对「安装前」没有新增残留(前后快照比对,不硬编码键名/图标名)。
 //
+// --execute 会把上面这套生命周期跑**两轮**(见 ADR-062):
+//   默认支 —— 不带 PATH opt-in 开关,装完用户 PATH 必须一条都不变(用户同意的前提);
+//   勾选支 —— 带 /M2W_ADD_PATH=1,装完必须恰好多出安装目录这一项,卸完后逐条同序回到基线。
+// 两轮都跑完整生命周期,而不是第二轮只验 PATH:带开关装完应用也得起得来、卸得干净。
+// 只跑默认支的话,写入与还原这两段逻辑在真机上一次都没执行过。
+//
 // 安装目录按**构建口径**推导,不猜 electron-builder 的隐式默认:build.nsis.perMachine
 // 显式为 true → %ProgramFiles%\<productName>(所有用户,需提权);否则按当前用户
 // → %LOCALAPPDATA%\Programs\<productName>(无需提权)。把「实际装在哪」猜错,非交互
@@ -82,7 +88,8 @@ function buildUsage(perMachine) {
                      真实执行会真的往该目录安装)
   --timeout <ms>      单步硬超时(ms,默认 ${DEFAULT_SMOKE_TIMEOUT_MS})
   --scratch <dir>     一次性 userData 与日志的根目录(默认 ${toPosix(DEFAULT_SCRATCH_DIR)})
-  --execute           真实执行(默认只预演;执行前会打印警告)
+  --execute           真实执行(默认只预演;执行前会打印警告)。会跑两轮:默认支 +
+                     带 ${PATH_OPT_IN_SWITCH} 的勾选支(见 ADR-062)
   --help              显示本用法`;
 }
 
@@ -145,6 +152,8 @@ function buildUsage(perMachine) {
  * @property {number} timeoutMs 单步硬超时(ms)
  * @property {string} scratchRoot 一次性 userData 与日志的根目录
  * @property {boolean} [installDirOverridden] 安装目录是否由 --install-dir 显式指定
+ * @property {string} [optInSwitch] PATH opt-in 开关(默认空 = 本轮不传,即「未勾选」那一支)
+ * @property {string} [loopLabel] 轮次标签(只进诊断文案,不参与判定)
  * @property {CommandRunner} [run] 外部命令执行器(默认 runProcess)
  * @property {SmokeLauncher} [launchSmoke] smoke 启动器(默认 runSmokeProcess)
  * @property {PathProbe} [exists] 路径存在性判定
@@ -175,6 +184,7 @@ export function buildExecuteWarning({ installDir, perMachine, installDirOverridd
     `   - 安装范围:${perMachine ? '所有用户(build.nsis.perMachine = true)' : '仅当前用户(build.nsis.perMachine 未开启)'}`,
     '   - 写注册表:HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\…',
     '   - 写开始菜单:%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\…',
+    '   - 写用户 PATH(仅勾选支):HKCU\\Environment\\Path 会临时多出安装目录这一项,卸载时由安装器摘掉',
     elevated
       ? '   - 提权:需要管理员权限(目标在 Program Files 下,安装器会弹 UAC;非交互环境可能被拦下)'
       : '   - 提权:不需要管理员权限(目标在用户级目录,安装器不会弹提权窗)',
@@ -375,12 +385,17 @@ export function splitPathEntries(value) {
  * 判定按**条目集合的增删**而非整串相等:安装器在末尾追加一项,顺序不动,
  * 整串必然变;而用户在两次快照之间自己改了 PATH,那是用户的行为,门禁管不了
  * 也不该管。真正要抓的是「装完多了一截 / 卸完没还原 / 卸完少了用户原有的」。
+ *
+ * 返回值把两个具名结论**都**带出来(`unchanged` / `consented`),而 ok 只是
+ * 「按阶段哪个合法」的合成结果。调用方要「必须恰好是勾选后的那一种」时,必须
+ * 断具名的那一个,不能断 ok —— ok 在 after-install 阶段对两种都放行,直接用它
+ * 就等于把「本该多一条却没多」当成通过。
  * @param {object} spec 参数
  * @param {string} spec.before 比较基准 PATH
  * @param {string} spec.after 实测 PATH
  * @param {string} [spec.installDir] 安装目录(after-install 阶段合法的单条增量)
  * @param {'after-install' | 'after-uninstall'} [spec.phase] 比对阶段
- * @returns {{ added: string[], removed: string[], ok: boolean }} 相对基准的增删条目与判定
+ * @returns {{ added: string[], removed: string[], unchanged: boolean, consented: boolean, ok: boolean }} 相对基准的增删条目与判定
  */
 export function diffPathEntries({ before, after, installDir = '', phase = 'after-uninstall' }) {
   const beforeSet = new Set(splitPathEntries(before));
@@ -396,7 +411,27 @@ export function diffPathEntries({ before, after, installDir = '', phase = 'after
   //     等于给最关键的失败面开了口子。
   const consented = added.length === 1 && added[0] === installDir && removed.length === 0;
   const ok = phase === 'after-install' ? unchanged || consented : unchanged;
-  return { added, removed, ok };
+  return { added, removed, unchanged, consented, ok };
+}
+
+/**
+ * 逐条同序比较两个 PATH 的条目(比 diffPathEntries 更严:它只比集合增删)。
+ *
+ * 为什么卸完还要这一道:「回到基线」的字面要求是**逐条同序**,而集合相等放过
+ * 「条目都在但被重排了」。重排对用户同样有影响(优先级变了),且它恰好是「用
+ * 拼接/拆分重建 PATH 而不是精确还原」这类实现错误的典型症状 —— 那种错误在
+ * 集合口径下完全隐形。
+ * @param {string} before 基线 PATH
+ * @param {string} after 实测 PATH
+ * @returns {{ same: boolean, beforeEntries: string[], afterEntries: string[] }} 逐条比较结论与两侧条目
+ */
+export function samePathEntries(before, after) {
+  const beforeEntries = splitPathEntries(before);
+  const afterEntries = splitPathEntries(after);
+  const same =
+    beforeEntries.length === afterEntries.length &&
+    beforeEntries.every((entry, index) => entry === afterEntries[index]);
+  return { same, beforeEntries, afterEntries };
 }
 
 /**
@@ -578,6 +613,10 @@ function printPlan({ installer, installDir, exePath, uninstaller, checks, perMac
       `安装目录按构建口径推导(可用 --install-dir 覆盖)`,
   );
   console.log(`[dry-run] install-smoke: 步骤 1/3 静默安装:${commandLine(installer, ['/S', `/D=${installDir}`])}`);
+  console.log(
+    `[dry-run] install-smoke: 本次 --execute 会跑**两轮**完整生命周期:`
+      + `默认支(不带 PATH 开关,期望装完一条不变) + 勾选支(带 ${PATH_OPT_IN_SWITCH},期望恰好多出安装目录这一项)`,
+  );
   console.log(`[dry-run] install-smoke:   校验 安装目录存在:${installDir}`);
   console.log(`[dry-run] install-smoke:   校验 应用可执行文件存在:${exePath}`);
   console.log(`[dry-run] install-smoke:   校验 卸载器存在:${uninstaller}`);
@@ -595,6 +634,10 @@ function printPlan({ installer, installDir, exePath, uninstaller, checks, perMac
 
 /**
  * 真实执行:安装 → 启动 smoke → 静默卸载 → 残留比对。
+ *
+ * 一轮 = 一次完整的生命周期。「带不带 PATH opt-in 开关」是这一层的**参数**
+ * (`optInSwitch`),不是两套流程:两轮必须走同一段代码,否则「默认支绿、勾选支红」
+ * 到底是行为差异还是实现分叉就分不清了。
  * @param {InstallFlowSpec} spec 参数与依赖
  * @returns {Promise<number>} 退出码(0 = 三步全过)
  */
@@ -606,6 +649,8 @@ export async function runInstallFlow(spec) {
     timeoutMs,
     scratchRoot,
     installDirOverridden = false,
+    optInSwitch = '',
+    loopLabel = '',
     run = runProcess,
     launchSmoke = runSmokeProcess,
     exists = existsSync,
@@ -616,8 +661,19 @@ export async function runInstallFlow(spec) {
     readRegValue = readRegStringValue,
   } = spec;
 
+  // 轮次标签只出现在**诊断**文案里,不参与判定:它让「两轮里哪一轮红了」一眼可辨,
+  // 但不改变任何通过/失败结论(否则给标签就能操纵门禁)。
+  const tag = loopLabel === '' ? '' : `[${loopLabel}] `;
+  // ⚠ opt-in 开关必须排在 /D= **之前**,这是 NSIS 的硬约束,不是风格问题:
+  // `/D=` 会把「从 /D= 到行尾」整段都当成安装目录。实测把开关放在 /D= 之后时,
+  // 真安装器把 InstallLocation 写成了
+  //   "C:\...\Programs\MarkdownToWord M2W_ADD_PATH=1"
+  // 于是装到了一个不存在的目录、勾选支的 PATH 断言随之判红 —— 而报错信息
+  // (「安装目录不存在」)完全指不到真正的原因。故此处固定这个次序,勿调换。
+  const installArgs = optInSwitch === '' ? ['/S', `/D=${installDir}`] : ['/S', optInSwitch, `/D=${installDir}`];
+
   for (const line of buildExecuteWarning({ installDir, perMachine: facts.perMachine, installDirOverridden })) {
-    console.log(line);
+    console.log(tag + line);
   }
 
   const exePath = path.join(installDir, `${facts.productName}.exe`);
@@ -632,20 +688,24 @@ export async function runInstallFlow(spec) {
   // 注册表任何一条现有检查面上,不单独取快照就等于对它完全失明。
   const pathBefore = await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE);
   if (installDirExistedBefore) {
-    console.warn(`[warn] install-smoke: 安装目录已存在(${installDir}),将覆盖安装;若那是一份在用的安装,请先退出应用再重试`);
+    console.warn(`[warn] ${tag}install-smoke: 安装目录已存在(${installDir}),将覆盖安装;若那是一份在用的安装,请先退出应用再重试`);
   }
 
   const problems = [];
   /** @type {string[]} */
   const logChunks = [];
   let userDataDir = '';
+  // 「装完」这一刻的 PATH 快照。必须在此刻取并存到轮次末尾:等到断言阶段再读,
+  // 卸载早已跑完,「装完」就恒等于「卸完」,两个数字看着一致却毫无信息量。
+  // 初值取基线,保证「安装失败没走到那一步」时也不会拿空串去比。
+  let pathAfterInstall = pathBefore;
 
   try {
     // ---- 步骤 1:静默安装 ----
-    console.log(`[info] install-smoke: 步骤 1/3 静默安装 ${commandLine(installer, ['/S', `/D=${installDir}`])}`);
-    const install = await run({ command: installer, args: ['/S', `/D=${installDir}`], timeoutMs });
+    console.log(`[info] ${tag}install-smoke: 步骤 1/3 静默安装 ${commandLine(installer, installArgs)}`);
+    const install = await run({ command: installer, args: installArgs, timeoutMs });
     logChunks.push(install.output);
-    problems.push(...commandProblems('静默安装', install));
+    problems.push(...commandProblems('静默安装', install).map((line) => tag + line));
     if (problems.length > 0) {
       problems.push(
         facts.perMachine
@@ -655,27 +715,31 @@ export async function runInstallFlow(spec) {
               'assisted 安装包在无 UI 环境下可能仍弹界面,请在交互式终端重试,或先用 /S 单独验证安装器行为',
       );
     } else {
-      if (!exists(installDir)) problems.push(`静默安装后安装目录不存在:${installDir}(/S 未生效或装到了别处)`);
-      if (!exists(exePath)) problems.push(`静默安装后应用可执行文件不存在:${exePath}`);
+      if (!exists(installDir)) problems.push(`${tag}静默安装后安装目录不存在:${installDir}(/S 未生效或装到了别处)`);
+      if (!exists(exePath)) problems.push(`${tag}静默安装后应用可执行文件不存在:${exePath}`);
       if (!exists(uninstaller)) {
         const exes = listDir(installDir).filter((name) => name.toLowerCase().endsWith('.exe'));
-        problems.push(`静默安装后卸载器不存在:${uninstaller}(安装目录内的 .exe:${exes.join(', ') || '(无)'})`);
+        problems.push(`${tag}静默安装后卸载器不存在:${uninstaller}(安装目录内的 .exe:${exes.join(', ') || '(无)'})`);
       }
-      // 装完这一刻的 PATH:静默安装下勾选页不跑,期望一条都不变;真出现了别的
-      // 增量,说明有东西绕过了「默认不勾」这条用户同意的前提。
-      const pathAfterInstall = await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE);
+      // 装完这一刻的 PATH。两轮走**同一个** diffPathEntries,但要求不同的具名结论:
+      //   默认轮(optInSwitch 为空):必须 unchanged —— 一条都不许动。
+      //   勾选轮(optInSwitch 非空):必须 consented —— 恰好多出安装目录这一项。
+      // 这里断的是具名结论而不是 ok:ok 在 after-install 阶段对 unchanged 与 consented
+      // 都放行,用它就等于「勾了却没生效」也算通过 —— 那正是本轮要抓的失败面。
+      pathAfterInstall = await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE);
       const installDiff = diffPathEntries({
         before: pathBefore,
         after: pathAfterInstall,
         installDir,
         phase: 'after-install',
       });
-      if (!installDiff.ok) {
+      const installVerdict = optInSwitch === '' ? installDiff.unchanged : installDiff.consented;
+      if (!installVerdict) {
         problems.push(
-          `静默安装后用户 PATH 出现了非预期改动(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE}):` +
+          `${tag}静默安装后用户 PATH 不符合本轮期望(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE}):` +
             `多出:${installDiff.added.join(' | ') || '(无)'};` +
-            `缺失:${installDiff.removed.join(' | ') || '(无)'}。` +
-            `/S 下勾选框那一页不跑,默认不勾,期望一条都不变。`,
+            `缺失:${installDiff.removed.join(' | ') || '(无)'};` +
+            `期望:${optInSwitch === '' ? '一条都不变(未勾选,/S 下勾选页不跑)' : `恰好多出安装目录这一项(${installDir})`}。`,
         );
       }
     }
@@ -683,27 +747,27 @@ export async function runInstallFlow(spec) {
     // ---- 步骤 2:从安装目录启动并跑 smoke ----
     if (problems.length === 0) {
       userDataDir = createUserData(scratchRoot);
-      console.log(`[info] install-smoke: 步骤 2/3 启动并跑 smoke ${describeSmokeCommand({ exePath, userDataDir })}`);
+      console.log(`[info] ${tag}install-smoke: 步骤 2/3 启动并跑 smoke ${describeSmokeCommand({ exePath, userDataDir })}`);
       const launch = await launchSmoke({ exePath, userDataDir, timeoutMs });
       logChunks.push(launch.output);
-      problems.push(...collectSmokeProblems(launch, { label: '安装后 smoke' }));
+      problems.push(...collectSmokeProblems(launch, { label: `${tag}安装后 smoke` }));
     }
 
     // ---- 步骤 3:静默卸载 ----
     if (exists(uninstaller)) {
-      console.log(`[info] install-smoke: 步骤 3/3 静默卸载 ${commandLine(uninstaller, ['/S'])}`);
+      console.log(`[info] ${tag}install-smoke: 步骤 3/3 静默卸载 ${commandLine(uninstaller, ['/S'])}`);
       const uninstall = await run({ command: uninstaller, args: ['/S'], timeoutMs });
       logChunks.push(uninstall.output);
-      problems.push(...commandProblems('静默卸载', uninstall));
+      problems.push(...commandProblems('静默卸载', uninstall).map((line) => tag + line));
     } else {
-      console.warn('[warn] install-smoke: 跳过静默卸载(卸载器不存在,无可执行文件)');
+      console.warn(`[warn] ${tag}install-smoke: 跳过静默卸载(卸载器不存在,无可执行文件)`);
     }
 
     // ---- 残留比对(相对安装前快照)+ 尽力自愈(只删本次新增) ----
     if (installDirExistedBefore) {
-      problems.push(`安装目录在安装前就已存在,无法判定本次安装是否留痕:${installDir}`);
+      problems.push(`${tag}安装目录在安装前就已存在,无法判定本次安装是否留痕:${installDir}`);
     } else if (!(await waitGone(exists, installDir, Math.min(timeoutMs, UNINSTALL_POLL_MS)))) {
-      problems.push(`静默卸载后安装目录仍存在:${installDir}(可能应用仍在运行或文件被占用)`);
+      problems.push(`${tag}静默卸载后安装目录仍存在:${installDir}(可能应用仍在运行或文件被占用)`);
     }
     const residue = await collectRunResidue({
       productName: facts.productName,
@@ -719,18 +783,27 @@ export async function runInstallFlow(spec) {
       // 根因入 problems:即便自愈把痕迹全清掉,「安装/卸载没留下干净的系统」这件事本身
       // 仍是失败 —— 自愈只减少用户善后成本,不能把判定洗成绿。
       problems.push(
-        `本次运行新增了安装残留(相对「安装前」快照确认,共 ${residueItemsToClean.length} 项;` +
+        `${tag}本次运行新增了安装残留(相对「安装前」快照确认,共 ${residueItemsToClean.length} 项;` +
           `安装前就存在的同名对象不属本次、一律不清理):` +
           `${residueItemsToClean.map((item) => item.path).join(' | ')}`,
       );
       const heal = await healResidue(residueItemsToClean, { deleteRegistryKey, removePath });
-      for (const label of heal.healed) console.log(`[install-smoke:heal] 已自动清理:${label}`);
-      for (const line of heal.failed) problems.push(`本次新增的残留未能自动清理:${line}`);
+      for (const label of heal.healed) console.log(`[install-smoke:heal] ${tag}已自动清理:${label}`);
+      for (const line of heal.failed) problems.push(`${tag}本次新增的残留未能自动清理:${line}`);
     }
 
     // ---- 用户 PATH 断言(独立于上面那道残留比对:它够不着 HKCU\Environment) ----
     // 期望值从 build.nsis.include 派生(装了自定义 NSIS ⇒ 这个能力存在 ⇒ 断言
     // PATH 相对安装前不得有非预期增删),不是把某一截字符串抄进门禁。
+    //
+    // 卸载后的口径:**逐条同序**回到基线,不只是集合无增删。
+    // 集合口径放过「条目都在但被重排」,而重排恰好是「用拼接/拆分重建 PATH 而
+    // 不是精确还原」这类实现错误的典型症状(那种错误在集合口径下完全隐形),
+    // 且重排会改掉用户各条目的优先级。
+    //
+    // ⚠ 「装完」的计数取自**步骤 1 当时**存下的快照。早先的写法在这里又读了一次
+    // 实时值 —— 那时卸载早已跑完,于是「装完」永远等于「卸完」,两个数字看着
+    // 一致却毫无信息量(勾选轮要报的正是「装完比装前多一条」)。
     const pathAfter = await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE);
     const pathDiff = diffPathEntries({
       before: pathBefore,
@@ -738,26 +811,33 @@ export async function runInstallFlow(spec) {
       installDir,
       phase: 'after-uninstall',
     });
+    const ordered = samePathEntries(pathBefore, pathAfter);
     const pathEntriesBefore = splitPathEntries(pathBefore).length;
-    const pathEntriesAfterInstall = splitPathEntries(await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE)).length;
-    const pathEntriesAfter = splitPathEntries(pathAfter).length;
+    const pathEntriesAfterInstall = splitPathEntries(pathAfterInstall).length;
+    const pathEntriesAfter = ordered.afterEntries.length;
     if (!pathDiff.ok) {
       const detail =
         `多出:${pathDiff.added.length > 0 ? pathDiff.added.join(' | ') : '(无)'}`
         + `;缺失:${pathDiff.removed.length > 0 ? pathDiff.removed.join(' | ') : '(无)'}`;
       problems.push(
-        `卸载后用户 PATH 未回到「安装前」(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE};` +
+        `${tag}卸载后用户 PATH 未回到「安装前」(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE};` +
           `勾选框由 build.nsis.include=${facts.pathOptInScript || '(未配置)'} 提供):${detail}。` +
           `多出来的是卸载摘不掉的残留,少掉的是误伤了用户原有配置 —— 两者都要判红。`,
+      );
+    } else if (!ordered.same) {
+      problems.push(
+        `${tag}卸载后用户 PATH 的条目集合没变但**逐条同序**没回到基线` +
+          `(条目被重排,会改掉各条目的优先级):`
+          + `期望[${ordered.beforeEntries.join(' | ')}];实测[${ordered.afterEntries.join(' | ')}]。`,
       );
     } else {
       // 「断言跑了」与「跑到了且通过」必须可分辨:结论行带计数与三个阶段的条目数,
       // 不只靠 exit 0。本仓有守卫静默退 0 骗过门禁的前科。
       console.log(
-        `[ok] install-smoke: 用户 PATH 断言已执行(2 个阶段均跑到)—— `
+        `[ok] ${tag}install-smoke: 用户 PATH 断言已执行(2 个阶段均跑到)—— `
           + `${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE} 条目数:`
           + `安装前 ${pathEntriesBefore} → 装完 ${pathEntriesAfterInstall} → 卸完 ${pathEntriesAfter};`
-          + `非预期增删 0 项;判据来源 build.nsis.include=${facts.pathOptInScript || '(未配置)'}`,
+          + `非预期增删 0 项;逐条同序与基线一致;判据来源 build.nsis.include=${facts.pathOptInScript || '(未配置)'}`,
       );
     }
   } finally {
@@ -781,9 +861,58 @@ export async function runInstallFlow(spec) {
   }
   rmSync(scratchRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   console.log(
-    '[ok] 安装/启动/卸载冒烟通过:静默安装 → 安装目录下以 ' +
+    `[ok] ${tag}安装/启动/卸载冒烟通过:静默安装 → 安装目录下以 ` +
       `${SMOKE_FLAG} 启动退出码 0 且诊断标记齐备 → 静默卸载后安装目录/开始菜单/卸载注册表均无新增残留;一次性 userData 已清理`,
   );
+  return 0;
+}
+
+/**
+ * PATH opt-in 开关名,与 build-assets/installer.nsh 里的 !define 同名同值。
+ *
+ * 为什么门禁里写死这一行、而不是去解析 installer.nsh:解析 NSIS 源码去取一个
+ * !define 的值,会把门禁绑死在「脚本语法」上(改个引号风格就读不到了),而这不是
+ * 门禁该负责的事。两处同名的代价是「改开关名要同时改两处」,已写进 ADR-062;
+ * 反过来若门禁从脚本推导,开关名写错时门禁会跟着一起错、判定恒绿 —— 那更糟。
+ * ⚠ 改 installer.nsh 的 !define 时,这里必须同步。
+ */
+const PATH_OPT_IN_SWITCH = '/M2W_ADD_PATH=1';
+
+/**
+ * 真实执行:**两轮**完整生命周期。
+ *
+ * 为什么必须两轮:第一轮(默认)证明「不勾选 ⇒ PATH 一条不变」这条用户同意的前提
+ * 没被绕过;第二轮(带开关)证明「勾选 ⇒ 恰好多出安装目录这一项,且卸载后逐条同序
+ * 回到基线」。只跑第一轮的话,写入与还原这两段代码在真机上一次都没执行过 ——
+ * 它们此前只在注释与推理层面成立。
+ *
+ * 两轮都跑完整生命周期(装 → 启动 smoke → 卸),而不是「第一轮跑全流程、第二轮
+ * 只跑 PATH」:第二轮同样要确认「带开关安装后应用仍然起得来、卸载仍然干净」。
+ *
+ * 轮次顺序固定为「默认 → 勾选」:先跑不写 PATH 的那轮,，万一它就出了问题,不会
+ * 在已经动过用户 PATH 的状态上叠加第二个变量。
+ *
+ * @param {Omit<InstallFlowSpec, 'optInSwitch' | 'loopLabel'>} baseSpec 两轮共用的参数与依赖
+ * @returns {Promise<number>} 退出码(0 = 两轮全过)
+ */
+export async function runInstallFlowBothLoops(baseSpec) {
+  const loops = [
+    { loopLabel: '默认支', optInSwitch: '' },
+    { loopLabel: '勾选支', optInSwitch: PATH_OPT_IN_SWITCH },
+  ];
+  /** @type {number[]} */
+  const codes = [];
+  for (const { loopLabel, optInSwitch } of loops) {
+    console.log(`\n[info] install-smoke: ===== ${loopLabel}${optInSwitch === '' ? '(不带 PATH 开关)' : `(带 PATH 开关 ${optInSwitch})`} =====`);
+    codes.push(await runInstallFlow({ ...baseSpec, optInSwitch, loopLabel }));
+  }
+  // 两轮都跑完再汇总:任一轮红了仍要把另一轮跑完,否则「是开关的问题还是安装
+  // 本身的问题」无从分辨 —— 而这正是两轮相对于一轮的全部价值。
+  const failed = loops.filter((_, index) => codes[index] !== 0).map((loop) => loop.loopLabel);
+  if (failed.length > 0) {
+    console.error(`[install-smoke:fail] 两轮中判红:${failed.join('、')}(两轮均已执行完毕)`);
+    return 1;
+  }
   return 0;
 }
 
@@ -866,13 +995,14 @@ export async function main(argv = []) {
         `安装目录已消失:${installDir}`,
         ...startMenuCandidates.map((candidate) => `开始菜单痕迹已清理:${candidate}`),
         `卸载注册表无新增项(检索 ${UNINSTALL_REG_ROOT} 下含「${facts.productName}」的键)`,
-        `用户 PATH 相对「安装前」无非预期增删(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE};` +
-          `静默安装下勾选框不跑,期望一条都不变;勾选框来自 build.nsis.include=${facts.pathOptInScript || '(未配置)'})`,
+        `用户 PATH 相对「安装前」无非预期增删(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE})——`
+          + `默认支期望一条都不变,勾选支期望恰好多出安装目录这一项;卸完后两支都须逐条同序回到基线;`
+          + `勾选框来自 build.nsis.include=${facts.pathOptInScript || '(未配置)'}`,
       ],
     });
     return 0;
   }
-  return runInstallFlow({ installer, installDir, facts, timeoutMs, scratchRoot, installDirOverridden });
+  return runInstallFlowBothLoops({ installer, installDir, facts, timeoutMs, scratchRoot, installDirOverridden });
 }
 
 if (isMainModule(import.meta.url)) {
