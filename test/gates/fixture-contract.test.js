@@ -184,12 +184,17 @@ export async function run() {
       assert(fs.existsSync(dir), `扫描目录不存在:${relDir}`);
       const onDisk = listTestFilesRecursive(dir);
       assert(onDisk.length > 0, `扫描目录内(递归)无 *.test.js:${relDir}`);
-      const found = discovered.filter((s) => s.relDir === relDir).map((s) => path.basename(s.file));
-      // 本组的判据是「生成器在一级+二级都发现得到」:二级段在本仓尚不存在(0 个二级目录),
-      // 故这条断言今天恒等于一级口径 —— 真正的二级覆盖在下面第 7 组的合成树上。
+      // 两侧同口径:都取「相对扫描目录的 POSIX 路径」,**都含二级**。
+      // ⚠️ 原实现在一级段上是恒等的(当时零个二级目录),所以写成了 basename ＋ 只比一级;
+      // S5 建了本仓第一个二级段后那个前提失效 —— basename 会把二级段拍平、一级过滤会把它
+      // 滤掉,两侧集合不等。判据本意(注释原文)是「生成器在一级+二级都发现得到」,故按本意对齐。
+      const found = discovered
+        .filter((s) => s.relDir === relDir)
+        .map((s) => path.relative(dir, s.file).split(path.sep).join("/"))
+        .sort();
       assert(
-        found.join(",") === onDisk.filter((f) => !f.includes("/")).join(","),
-        `${relDir} 目录内的一级段文件与生成器发现结果不一致:磁盘=${onDisk.join(",")} 生成器=${found.join(",")}`,
+        found.join(",") === [...onDisk].sort().join(","),
+        `${relDir} 目录内的段文件(递归,含二级)与生成器发现结果不一致:磁盘=${onDisk.join(",")} 生成器=${found.join(",")}`,
       );
     }
     console.log(`[ok] fixture-contract:段目录单源(同一数组对象)+ acceptance 喂 runner + 与文件系统一致(${FIXTURE_SEGMENT_DIRS.join(",")})`);
