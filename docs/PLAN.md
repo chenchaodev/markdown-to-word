@@ -70,6 +70,8 @@
 - **ADR-062:198 的「三份合并为一份」经用户裁决不做**（2026-10-04）。**理由**：合并的唯一收益是省两次 Electron 子进程启动（实测 `runner.js:406` 确实每段起一个进程），但代价是合出 1609 行 —— 正是本仓正在拆的那一类行数量级；而 ADR 点名的失效形态「同名 case 撞车被静默覆盖」经实测**零重名**（62 条去重仍 62），即合并要防的风险本就不存在。**收益小 ＋ 要防的风险不存在 ＋ 代价是更大的文件** ⇒ 不做。✅ **该冲突已消除**：用户裁决「直接改 ADR-062 那三处」，已订正 `:198`（撤销该条并写明实测理由：62 条 case 名跨文件零重名 ⇒ 点名的失效形态不成立）＋ `:197`（名单与两道证据按实测重写）＋ `:210`（理由订正为「守的是一个主体」，并标出「L1 的 `covers`」是目标态非现状）＋ 新增一条「现装状态」说明，一次性覆盖 `:202` 与完成标准 C1 的同类引用
 
 
+- ⛔ **`gates/smoke/smoke-report/**` 整族链上零覆盖**（571 行）—— `check:smoke-report` 不在 `verify:ci`／`verify:release`／`dist` 任何一条链上，也不在任何 `.selftest.mjs` 里。⚠️ **这是 S0 对账表自己漏掉的**：那份表自称是 `ADR-062:246` 的前置硬门，却按 7 个 `GATE_IDS` 编号，**编号口径不含「不在 `GATE_IDS` 里的门禁族」** ⇒ 覆盖面有缺口，已另开 **REQ-186** 记账。不阻塞 P6（它不在被删的沙盒层里），但 P6 之后元框架瘦身收口时必须一并纳入。
+
 ## 拆分/合并到底有什么架构好处（**已按独立评审订正**，2026-10-04）
 
 ⚠️ **本节第一版结论错了两处，已核实后改写**（左列是我原写的，右列是实际）：
@@ -115,17 +117,18 @@
 |---|---|---|
 | **S0** ✅ | **只写对账表 ＋ JSON，不删任何东西** | 已完成。7 族齐、`successorState` 与磁盘一致、**`grep -rn "gate-probes"` 命中数与做之前逐字相同**（证明零删除） |
 |  **S1a** ✅  |  补 `fixtures` 的**点名能力** ＋ `build-fresh` 的**整个能力**（两个新 selftest，已挂 `verify:ci`）；核实 `dual-matrix` |  两条 selftest 各自不注入时 exit 0、**四个方向的注入各红一次**（改 fixture 内容／把点名能力改成不点名／前拨 src mtime／把判定改成 `if (false)`），并钉住「注入本身失败 ⇒ 也判红」。⚠️ **判据的一处订正**：原写「诊断含预期文件名」**只对 `fixtures` 成立** —— `build-fresh` 的诊断恒为固定文案、不含文件名（实测），该格按「不假装断言」处理。`dual-matrix` 核实为**段内无注入**（负向只在探针侧，段文件头 59-65 自陈）⇒ 维持 `partial`。 |
+| **S1d** ✅ | 补 `dual-matrix` 负向的**新承接点**（新建 `test/harness/dual-pipeline-key-coverage.test.js`，判「判定不是恒真断言」）＋ 让 `build-fresh` 的**诊断真的点名文件**（`collectStaleFiles` ＋ `STALE_FILE_LIST_LIMIT`，**接口变更**） | `build-fresh` selftest **13→15 条**全过；新段单跑绿（`M2W_ONLY=dual-pipeline-key-coverage`）。⚠️ **顺带修掉一处注册表说谎**：`build-fresh` 的 `judgment.shaped` 原写 `{ fresh, reason }`，实现实际返回 `string[]`。⚠️ **矩阵段 `test/core/dual-pipeline-matrix.test.js` 一行未改**。 |
 | **S1b** ⏳ | 补 `smoke` 的**冒烟机制自身**（需 CI 真起一次 Electron） | 同上三档 |
 | **S1c** ⏳ | **取 `sandbox.mjs` 的 `snapshotProtectedTree` / `diffProtectedTree`（约 58 行）单独取出，挂在已在链上的 `check:temp-cleanup`**（连同 `PROTECTED_PATHS`）| `check-temp-cleanup` 的判定里出现工作树指纹 ＋ **它能被一条负向夹具判红**（在临时目录里改坏工作树 ⇒ exit≠0）|
 | S2 | L11（三档缺一即红）＋ L12（`chain`/`offchain` 两值 ＋ L12c 待转正声明）落地，**先在 `check-test-layout.mjs`** | `--help` 的强制等级行含 L11/L12；selftest 条数增加 |
 | S3 | 写 `gate-index.mjs`，**与旧 registry 并存** | 新旧对同一注册表给出相同 code 集合 |
 | S4 | 删沙盒层 islands ＋ `gates/` 6 探针 ＋ `check:gates` | **`grep -rn "gate-probes|check-gate-probes"` 零命中** ＋ `gate-index` 仍 exit 0 |
-| S5 | 合并 `gate-probes.test.js`(293) ＋ `gate-registry-gate.test.js`(555) → `test/gates/repo/gate-index.test.js`；`EXCLUSIVE_SEGMENTS` 删 `gate-probes` | `grep -n "gate-probes" test/harness/runner.js` 零命中 |
+| S5 | ⚠️ 递归化**是前置**，须先单独落地并验证，不得与合并同日做。 合并 `gate-probes.test.js`(293) ＋ `gate-registry-gate.test.js`(555) → `test/gates/repo/gate-index.test.js`；`EXCLUSIVE_SEGMENTS` 删 `gate-probes` | `grep -n "gate-probes" test/harness/runner.js` 零命中 |
 | S6 | DEV-GUIDE 接入点表同步 | `grep -n "check:gates" docs/DEV-GUIDE.md` 零命中 |
 
 **S4 是唯一的不可逆点**，被夹在两个可回退步之间（S3 纯新增、S5/S6 可独立回退）⇒ **S1 那三项缺口必须在 S4 之前全部补齐**。
 
-### 四条裁决（2026-10-04，均已落进 ADR-062）
+### 裁决（2026-10-04；①–④ 已落进 ADR-062，⑤⑥ 待落）
 
 | # | 裁决 | 依据 |
 |---|---|---|
@@ -133,6 +136,8 @@
 | ② | **L11 定义改三档缺一即红** | 实测按字面执行会**当场判红 29 项**（有载体 13／无载体 29，其中 9 项就在 `verify:ci` 上） |
 | ③ | **同意 P6 的两段合并**（848 行） | 与 `ADR-062:202` 撤掉的那三份（1609 行）**不是同一批**；且这是 **1 主体合 1 段**（不变式要的形态），`:202` 撤的是 **3 主体合 1 段**＝制造偏宽 |
 | ④ | **`smoke` 的机制自测要补**（CI 多起一次 Electron） | 它是三个 ⛔ 阻塞项里唯一「不补就不能开始删除」的；P6 一旦开始删除就不可逆，那时沙盒层已没了、再想补依赖的正是它 |
+| ⑤ | **S5 改 `discoverSegments` 为递归**，段名前缀改相对 `test/` 的路径 | ⚠️ **原 S5 目标路径 `test/gates/repo/` 站不住**：`discoverSegments`（`test/harness/runner.js:181-196`）是 `readdir` **非递归**，而全仓 `test/` 下**零个二级目录** ⇒ 段永远不被发现、永远不跑，**且 L4/L5/L7 与豁免表全都看不见这个矛盾**（那几处的扫描面是递归的）⇒ 静默失效。选「段留一级」则违 ADR-062「位置即身份」的立论；选 `SEGMENT_DIRS` 增 `gates/repo` 则段名前缀只剩 basename（`repo/gate-index.test.js`），丢掉 `gates` 那层身份。 |
+| ⑥ | **S3 的注册表留 5 字段**，`modulePath` 与 `judgment.module` 不合一 | 实测两者语义不同：`docs` 那条 `modulePath` 指 `check-docs.mjs`（本体）而 `judgment.module` 指 `check-pointers.mjs`（判定体），注册表注释明写「指针必须指本体而不是转发层」⇒ 压成一个字段会让转发层门禁的指针语义被压缩。ADR-062 那句「≈140 行 / 4 字段」需同步订正。 |
 
 ### ⚠️ 本表会让门禁把它的行当子步行（栽了两次，记下来）
 

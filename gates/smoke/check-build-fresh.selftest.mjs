@@ -26,10 +26,20 @@
 // 因此 check:temp-cleanup 扫不到、也不该扫到它(该门禁刻意不扫 gates/:那里 rmSync 是
 // 被测语义)。
 //
-// ⚠ 关于「诊断可归因」的如实记录:本门禁的诊断**不点名具体文件**(正文恒为
-// 「构建产物过期(存在晚于 dist 的 src 改动),请先运行 npm run build」)。故归因由本脚本
-// 自己建立:夹具知道**自己动了哪个文件**,并断言「动它 ⇒ 红;把它撤销 ⇒ 绿」。
-// 想要「诊断里带出文件名」得改判定本体,不在本自测的范围内。
+// ✅ 关于「诊断可归因」:判定本体 `evaluateFreshness` 的每条问题**点名具体的 src 相对路径**
+// (REQ-180 T5-b S1d 的接口变更:此前正文恒为「构建产物过期(存在晚于 dist 的 src 改动),
+// 请先运行 npm run build」,不含文件名 —— 那是把「产物过期」说成了一句要自己去 git status
+// 的话)。故本自检**逐字断言诊断里出现被前拨的那个文件名**,不再由夹具自证归因。
+//
+// 三格把「点名」钉死,少一格都会退化:
+//   - 单文件 ⇒ 点名它,且**不出现**别的 src 文件(证明不是「把所有 src 文件名列一遍」);
+//   - 两个文件同时晚于 dist ⇒ **两个都点名**(裁决是「点名全部」,不是「只点最早/最新的那个」;
+//     只点一个的写法会让「修完一个再跑又冒出一个」,来回几次才能收敛);
+//   - 过期文件数超过 STALE_FILE_LIST_LIMIT ⇒ 只列前 N 个但**必给总数**,且总数写的是真实个数
+//     (证明上限不是隐瞒:截断只影响列举,计数永远完整)。
+//
+// ⚠ 元素类型刻意保持 `string[]`(判定本体的返回形状,理由在它自己的 JSDoc 里):富结构体
+// 经 protocol.mjs 的 toProblems() 归一时只保留 code + message,文件清单字段会被整段丢掉。
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
@@ -57,10 +67,17 @@ const SRC_SECONDS = 1_700_000_000;
 const DIST_SECONDS = SRC_SECONDS + 86_400;
 const STALE_SECONDS = DIST_SECONDS + 86_400;
 
-/** 合成树里铺的文件(相对树根的 POSIX 路径);含嵌套子目录,顺带覆盖 collectMaxMtime 的递归 */
+/**
+ * 合成树里铺的文件(相对树根的 POSIX 路径);含嵌套子目录,顺带覆盖 collectMaxMtime 的递归。
+ *
+ * `src/core/extra/*` 是为「超过点名上限」那一格准备的:上限是 3,要让诊断真的走到截断分支
+ * 就必须有 4 个以上的过期文件,而夹具又不能改动判定本体的上限常量(那是门禁的行为)。
+ */
 const TREE_FILES = Object.freeze({
   'src/core/convert.ts': 'export const x = 1;\n',
   'src/core/nested/deep.ts': 'export const y = 2;\n',
+  'src/core/extra/e1.ts': 'export const e1 = 1;\n',
+  'src/core/extra/e2.ts': 'export const e2 = 2;\n',
   'dist/core/convert.js': 'exports.x = 1;\n',
   'dist/core/nested/deep.js': 'exports.y = 2;\n',
 });
@@ -144,16 +161,37 @@ const PURE_CASES = [
   },
   {
     // 本门禁存在的全部理由:改了 src 忘了 build,产物比源码旧。
-    name: 'src 顶层文件晚于 dist → 判红且给出可执行指引',
+    // 点名那一格:诊断里必须出现**被前拨的那个文件的相对路径**。路径是相对 `--src` 目录的
+    // POSIX 形态(`core/convert.ts`),不是文件名片段 —— 断言相对路径才能证明诊断指的是
+    // 「src 树里的哪一个」,而不只是「convert 这几个字出现在句子里」。
+    name: 'src 顶层文件晚于 dist → 判红、点名该文件、给出可执行指引',
     stale: 'src/core/convert.ts',
-    expect: /存在晚于 dist 的 src 改动.*npm run build/,
+    expect: /存在晚于 dist 的 src 改动.*源码侧 core\/convert\.ts.*npm run build/,
+    // 反向:诊断不得顺手把别的 src 文件也列上(「点名」不是「把所有文件名列一遍」)
+    forbid: ['core/nested/deep.ts', 'core/extra/e1.ts'],
   },
   {
     // 反向锚点(防「递归被摘掉」):只在**嵌套子目录**里的那个文件被改,一样必须判红。
     // 只覆盖顶层的话,把 walk 换成只读一层目录的实现也能全绿。
-    name: 'src 嵌套子目录里的文件晚于 dist → 判红(递归不可被摘掉)',
+    name: 'src 嵌套子目录里的文件晚于 dist → 判红且点名它(递归不可被摘掉)',
     stale: 'src/core/nested/deep.ts',
-    expect: /存在晚于 dist 的 src 改动/,
+    expect: /存在晚于 dist 的 src 改动.*源码侧 core\/nested\/deep\.ts/,
+    forbid: ['core/convert.ts'],
+  },
+  {
+    // 多文件裁决的第一格:两个文件同时晚于 dist ⇒ **两个都点名**。这是「点名全部」而非
+    // 「只点最早/最新的那个」的落地断言 —— 只点一个的写法在这一格上会少一个名字而判红。
+    name: '两个 src 文件同时晚于 dist → 判红且两个都点名(裁决:点名全部)',
+    stale: ['src/core/convert.ts', 'src/core/nested/deep.ts'],
+    expect: /存在晚于 dist 的 src 改动.*源码侧 core\/convert\.ts.*core\/nested\/deep\.ts.*共 2 个/,
+  },
+  {
+    // 多文件裁决的第二格:超过 STALE_FILE_LIST_LIMIT(3)时只列前 3 个,**总数必须是真的**。
+    // 这一格是「上限不构成隐瞒」的机器守护:把上限去掉或把计数写成 3 的常量都会红。
+    name: '过期文件数超过点名上限 → 只列前 N 个但必给真实总数(上限不是隐瞒)',
+    stale: ['src/core/convert.ts', 'src/core/extra/e1.ts', 'src/core/extra/e2.ts', 'src/core/nested/deep.ts'],
+    expect: /存在晚于 dist 的 src 改动.*源码侧 core\/convert\.ts.*core\/extra\/e1\.ts.*core\/extra\/e2\.ts.*共 4 个,只列前 3 个/,
+    forbid: ['core/nested/deep.ts'],
   },
   {
     name: 'dist 目录不存在 → 判红并要求先 build',
@@ -182,10 +220,12 @@ const CLI_CASES = [
     expect: /^\s*$/,
   },
   {
-    name: 'src 晚于 dist → exit 1 且带 [build-fresh:fail] 前缀与「请先运行 npm run build」',
+    // 进程级也要点名:纯函数档点名了不等于 CLI 那一侧点着名 —— main() 的呈现层若把问题
+    // 数组换成一句常量文案,纯函数档照样绿。这里从 CLI 的真实 stdout/stderr 断言文件名。
+    name: 'src 晚于 dist → exit 1、带 [build-fresh:fail] 前缀、点名该文件与重建指引',
     stale: 'src/core/convert.ts',
     expectCode: 1,
-    expect: /\[build-fresh:fail\].*存在晚于 dist 的 src 改动.*请先运行 npm run build/,
+    expect: /\[build-fresh:fail\].*存在晚于 dist 的 src 改动.*源码侧 core\/convert\.ts.*请先运行 npm run build/,
   },
   {
     // 判定本体对「src 不存在」恒绿(见文件头「已知边界」),挡住它的是 CLI 的前置守卫。
@@ -233,7 +273,11 @@ function materialize(testCase) {
     }
     return root;
   }
+  // stale 接受字符串或字符串数组(多文件裁决那两格要同时钉住多个文件)
   if (typeof testCase.stale === 'string') pinFile(root, testCase.stale, STALE_SECONDS);
+  else if (Array.isArray(testCase.stale)) {
+    for (const rel of testCase.stale) pinFile(root, rel, STALE_SECONDS);
+  }
   if (testCase.removeDist === true) rmSync(join(root, 'dist'), { recursive: true, force: true });
   if (testCase.emptyDist === true) {
     for (const rel of Object.keys(TREE_FILES).filter((r) => r.startsWith(DIST_PREFIX))) {
@@ -260,10 +304,16 @@ for (const testCase of PURE_CASES) {
       }
       continue;
     }
-    if (testCase.expect.test(joined)) {
+    // forbid 独立于 expect:它断的是「诊断还多说了不该说的」—— 一个把所有 src 文件名
+    // 串进诊断的退化实现能通过 expect,但过不了 forbid。两者缺一,「点名」都可能被做成假的。
+    const forbiddenHits = (testCase.forbid ?? []).filter((needle) => joined.includes(needle));
+    if (testCase.expect.test(joined) && forbiddenHits.length === 0) {
       console.log(`[ok] build-fresh-selftest:${testCase.name}(漂移被拦截 / ${problems.length} 条问题)`);
     } else {
-      failures.push(`${testCase.name}:期望问题清单匹配 ${testCase.expect},实际\n${joined || '(零问题 —— 判定在此形态上恒绿了)'}`);
+      const extra = forbiddenHits.length > 0
+        ? `\n(诊断里出现了不该出现的名字:${forbiddenHits.join(", ")} —— 「点名」必须是点名那一个,不是列一遍)`
+        : '';
+      failures.push(`${testCase.name}:期望问题清单匹配 ${testCase.expect},实际\n${joined || '(零问题 —— 判定在此形态上恒绿了)'}${extra}`);
     }
   } catch (error) {
     failures.push(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
@@ -291,6 +341,12 @@ for (const testCase of PURE_CASES) {
     const restored = evaluateFreshness({ srcDir: join(root, 'src'), distDir: join(root, 'dist') });
     const problems = [];
     if (drifted.length === 0) problems.push(`前拨 ${SRC_PREFIX}core/convert.ts 的 mtime 后应判红,实际零问题`);
+    // 「归因」这一格现在是**真断言**:诊断正文里必须出现被前拨的那个文件的相对路径。
+    // 判红的措辞再对、但点不出是哪个文件,归因仍然不成立 —— 那正是把判定退化成
+    // 「src 树里有文件就红」的形态。
+    if (drifted.length > 0 && !drifted.join('\n').includes('core/convert.ts')) {
+      problems.push(`判红诊断未点名被前拨的文件 core/convert.ts,实际:${drifted.join(" | ")}`);
+    }
     if (control.length !== 0) {
       problems.push(`对照组(${SRC_PREFIX}renderer 不存在 ⇒ srcMax 为 null ⇒ 跳过该族)应判绿,实际:${control.join(" | ")}`);
     }

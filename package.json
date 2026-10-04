@@ -94,7 +94,7 @@
     "check:install-smoke": "node gates/artifacts/check-install-smoke.mjs",
     "clean:dist": "node gates/artifacts/clean-artifacts.mjs --target dist",
     "clean:release": "node gates/artifacts/clean-artifacts.mjs --target release",
-    "verify:ci": "npm run check:contract && npm run check:contract:selftest && npm run check:boundary && npm run check:copy-sites && npm run check:copy-sites:selftest && npm run check:transform-dispatch && npm run check:transform-dispatch:selftest && npm run check:test-numbering && npm run check:test-numbering:selftest && npm run check:tscheck-coverage && npm run check:tscheck-coverage:selftest && npm run check:test-layout && npm run check:src-layout:selftest && npm run check:test-layout:selftest && npm run check:temp-cleanup && npm run check:temp-cleanup:selftest && npm run check:pinned-actions && npm run check:archive-index && npm run check:archive-index:selftest && npm run check:docs && npm run check:docs:selftest && npm run check:changelog && npm run check:release-notes && npm run check:release-notes:selftest && npm run check:changelog:selftest && npm run check:plan-in-progress:selftest && npm run build && npm run check:boundary:dist && npm run typecheck && npm run lint && npm run test:coverage && npm run check:coverage-zero && npm run check:coverage-zero:selftest && npm run check:fixtures && npm run check:fixtures:selftest && npm run check:build-fresh:selftest && npm run test:smoke && npm run check:geometry",
+    "verify:ci": "npm run check:contract && npm run check:contract:selftest && npm run check:boundary && npm run check:copy-sites && npm run check:copy-sites:selftest && npm run check:transform-dispatch && npm run check:transform-dispatch:selftest && npm run check:test-numbering && npm run check:test-numbering:selftest && npm run check:tscheck-coverage && npm run check:tscheck-coverage:selftest && npm run check:test-layout && npm run check:src-layout:selftest && npm run check:test-layout:selftest && npm run check:temp-cleanup && npm run check:temp-cleanup:selftest && npm run check:pinned-actions && npm run check:archive-index && npm run check:gate-ids-table && npm run check:gate-ids-table:selftest && npm run check:archive-index:selftest && npm run check:docs && npm run check:docs:selftest && npm run check:changelog && npm run check:release-notes && npm run check:release-notes:selftest && npm run check:changelog:selftest && npm run check:plan-in-progress:selftest && npm run build && npm run check:boundary:dist && npm run typecheck && npm run lint && npm run test:coverage && npm run check:coverage-zero && npm run check:coverage-zero:selftest && npm run check:fixtures && npm run check:fixtures:selftest && npm run check:build-fresh:selftest && npm run test:smoke && npm run check:geometry",
     "verify:release": "npm run verify:ci && npm run dist",
     "dist": "npm run clean:dist && npm run clean:release && npm run build && npm run gen:dist-manifest && electron-builder --win nsis --x64 --publish never && npm run check:dist-manifest && npm run check:asar && npm run check:release && npm run check:signature && npm run check:unpacked-smoke",
     "check:copy-sites": "node gates/repo/check-copy-sites.mjs",
@@ -102,7 +102,10 @@
     "check:src-layout": "node gates/repo/check-src-layout.mjs",
     "check:src-layout:selftest": "node gates/repo/check-src-layout.selftest.mjs",
     "check:test-layout": "node gates/repo/check-test-layout.mjs",
-    "check:test-layout:selftest": "node gates/repo/check-test-layout.selftest.mjs"
+    "check:test-layout:selftest": "node gates/repo/check-test-layout.selftest.mjs",
+    "check:gate-ids-table": "node gates/repo/gen-gate-ids-table.mjs --check",
+    "gen:gate-ids-table": "node gates/repo/gen-gate-ids-table.mjs",
+    "check:gate-ids-table:selftest": "node gates/repo/gen-gate-ids-table.selftest.mjs"
   },
   "build": {
     "appId": "com.markdown.tools.m2w",

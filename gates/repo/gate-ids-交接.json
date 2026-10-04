@@ -58,12 +58,12 @@
       "probe": "gates/probe/gate-probes/gates/dual-matrix.mjs",
       "probeLines": 194,
       "capability": "必须真启 Electron;两类负向:删 covers 标记 / 塞未登记键",
-      "successor": "test/core/dual-pipeline-matrix.test.js",
-      "successorState": "partial",
-      "lost": "**可能丢「键漏写会被抓住」这一格** —— 段正常跑只证明断言没漂,证明不了「忘写」。ADR-062:214 明写该段不拆(1515 行)",
-      "fix": "S1 核实该段是否注入故障;若无,补两条负向(删 covers 标记 / 塞未登记键)",
+      "successor": "test/harness/dual-pipeline-key-coverage.test.js",
+      "successorState": "exists",
+      "lost": "判红能力不丢,承接位置变了(见 fix)。⚠ 丢的是**载体形态**:探针是「工程副本 + 真起 Electron + 改段源码」那一路,承接段是「读段源码文本 + 直接 import 已抽出的判定本体」。故矩阵段内 assertMatrixShape 那层面的其它负向(行 id 重复/锚点越界等)不在承接段的能力内 —— 那些由矩阵段自身正向跑覆盖,探针删除后不再有负向守护",
+      "fix": "已完成(REQ-180 T5-b S1d)。**先实测再选形态**,结论:不必导出矩阵段的 assertMatrixShape —— 它零入参、读模块级 MATRIX,负向能造成的唯一故障是「改段源码」,真实工作树不许改 ⇒ 又得回到工程副本 + 起 Electron(等于把探针重做一遍);且负向夹具若是段,还会撞 L4「段 import 段」判红。而两类负向的判定本体 assertKeyCoverageRegistered **早已**是非段模块 test/harness/dual-pipeline-registry.js 的导出函数(T3 步 6 从台账段抽出),故新段直接消费它,零改动 1515 行的矩阵段。承接段入参是真数据(从矩阵段源码文本解析 26 行 id/covers,先与 MATRIX_ROW_IDS 行数与 id 集合对账,解析失效即判红);两类负向各配「撤销 ⇒ 判绿」,并断言两条诊断互不相同。⚠ 抓不到:矩阵段到判据本体的接线、键集合完备性",
       "severity": "中高",
-      "blocksP6": "verify"
+      "blocksP6": false
     },
     {
       "id": "build-fresh",
@@ -72,8 +72,8 @@
       "capability": "构建新鲜度:dist 比 src 旧时 gates/smoke/check-build-fresh.mjs 判红",
       "successor": "gates/smoke/check-build-fresh.selftest.mjs",
       "successorState": "exists",
-      "lost": "不丢。⚠ 与本文件原 fix 字段的一处**事实订正**:该门禁的诊断**不点名具体文件**(正文恒为「构建产物过期(存在晚于 dist 的 src 改动),请先运行 npm run build」),故「诊断含具体文件」这一格在原门禁上**不存在**,夹具不假装断言它;归因改由夹具自证(它知道动了哪个文件,并断言「动它⇒红、撤销⇒绿、且对照组证明判红只归因于那个文件」)",
-      "fix": "已完成(REQ-180 T5-b S1a)。合成 src/dist 树、mtime 钉死在固定时刻(不用「现在」,避免时间戳精度把夹具变成 flaky;默认 src 旧/dist 新,负向把**单个** src 文件前拨 —— 回拨单个文件造不成漂移,因为判定取 max);五条负向(src 顶层文件晚于 dist / 只在嵌套子目录里的文件晚于 dist 以守递归 / dist 不存在 / dist 存在但为空)+ 边界一格(两侧 mtime 相等判绿,比较是严格大于)+ 注入/撤销成对夹具 + 进程级五格(含 CLI 的 existsSync 前置守卫:源码目录不存在判红 —— 判定本体对 src 缺失恒绿,挡住它的是 CLI 那层,故只在进程级档断言)。⚠ 判定本体 evaluateFreshness 已是「路径进、问题数组出」,**未为可注入而改动门禁本体**",
+      "lost": "不丢。⚠ 本条含一处**已由用户裁决并落地的接口变更**(REQ-180 T5-b S1d):判定本体 evaluateFreshness 的每条问题现在**点名具体 src 相对路径**(此前正文恒为「构建产物过期(存在晚于 dist 的 src 改动),请先运行 npm run build」,不含文件名)。故「诊断含具体文件」这一格从「不存在的格」变成了**真断言**",
+      "fix": "S1a 部分不变(合成 src/dist 树、mtime 钉死在固定时刻、边界格与注入/撤销成对夹具、进程级档)。⚠ S1d 改判定本体一处:新增 collectStaleFiles + STALE_FILE_LIST_LIMIT,诊断正文点名过期文件(相对 --src 目录的 POSIX 路径)。返回形状**仍是 string[]**:实测 protocol.mjs 的 toProblems() 只保留 code + message/text/summary,富结构体里的 files 字段会被整段丢掉 ⇒ 文件名必须写进正文。**多文件裁决:点名全部、按新到旧排;超过 3 个只列前 3 个并必给真实总数**(上限不构成隐瞒:截断只影响列举,计数永远完整)—— 三格由夹具逐字钉住(单文件点名且不出现别的文件名 / 两个都点名 / 超上限只列前 N 个但总数为真)。⚠ 同步 registry.mjs 的 judgment.shaped:旧值 `{ fresh, reason }` 与实现对不上(实现一直是 string[]),一条会骗人的注释比没有注释更糟,已改正",
       "severity": "中高",
       "blocksP6": false
     },

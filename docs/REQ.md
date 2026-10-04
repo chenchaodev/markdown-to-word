@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-185 |
-| 下一个可用号 | REQ-186 |
+| 已用最大号 | REQ-186 |
+| 下一个可用号 | REQ-187 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -48,6 +48,7 @@
 | REQ-178 | 卸载残留检查抢跑在卸载器收尾之前 | 待拍板 | 卸载后的残留检查只等安装目录消失(:769 的 waitGone 只盯 installDir),紧接着就拍残留快照(:772)。而卸载器删目录与删注册表键、开始菜单快捷方式并非同一刻完成 ⇒ 第一轮(无等待余量)被判出 2 条残留并要求人工 reg delete,而独立复核时那两条早已消失。同一个卸载器二进制在第二轮零残留 ⇒ 门禁抢跑,不是卸载器缺陷。假阳性比没有检查更坏:它会训练人忽略这条判红。 | 下次改烟测的卸载后残留检查时 | gates/artifacts/check-install-smoke.mjs(:769 waitGone 只等 installDir · :772 collectRunResidue) |
 | REQ-179 | 发版纪律漏了 Release 由 workflow 建 | 待拍板 | tag 推送会触发 .github/workflows/release.yml,它的最后一步就是 gh release create —— Release 本该由它建,人只负责打 tag 与推送。本次手动建了 Release,workflow 撞「a release with the same tag name already exists」整条 run 变红(前面十几步全绿,含 verify:release)。仓库与全局发布纪律都没交代 Release 由谁建 ⇒ 下一个人会再踩。 | 下次发版前读 .github/workflows/release.yml;或改发布纪律时 | .github/workflows/release.yml(末步 gh release create) |
 | REQ-181 | 门禁注册表自检无链上位置 | 未开工 | 实测 `check:gates` 全仓零调用，是独立手跑的门禁；而它正是 R5b（`access` 与链上位置双向一致）与 R5c（登记进 `PROBE_CARRIER_SCRIPTS` 的必须在链上）的唯一执行者 ⇒ 这两条规则只靠人记得跑才生效，与本轮修掉的「悬空 selftest」同形状。**未接链是取舍不是缺陷**：接上去会让 7 个探针族（含 `test:smoke`、`test:coverage`）每次 CI 都跑。 | ADR-062 P6 门禁元框架退役时一并定 —— 那时 `check:gates` 本就要重写 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
+| REQ-186 | smoke-report 整族链上零覆盖 | 未开工 | 实测 `gates/smoke/smoke-report/**` 共 571 行，`check:smoke-report` 不在 `verify:ci`／`verify:release`／`dist` 任一条链上，也不在任何 `.selftest.mjs` 里。⚠️ S0 对账表按 7 个 `GATE_IDS` 编号，**该口径不含不在 `GATE_IDS` 里的门禁族**，故漏登。不阻塞 P6（不在被删沙盒层内），P6 收口时须纳入。 | 元框架瘦身收口时 | 实测 `gates/smoke/` 清单；`package.json` 三条链均不含 `check:smoke-report` |
 | REQ-182 | samples/ 目录无准入判据 | 待拍板 | 实测 `check:temp-cleanup` 扫描面覆盖 `test/` 但不含 `samples/`，今后产物落进 `samples/` 时没有判据会红；durable 的修法是 ADR-062 P3 的 `check-samples.mjs`（「生成物 vs 手工物」的目录准入），本轮只补了 `.gitignore` 那条近路。实测 `manifest.json` 与该门禁均不存在，属 P3 未做的产出。 | ADR-062 P3 开工时 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 | REQ-183 | ADR-197 的拆分对账对策失效 | 待拍板 | 实测 ADR 的拆分对账对策两处失效：:198 点名的「同名 case 撞车被静默覆盖」不成立（三份 62 条 case 名跨文件零重名）；:197 第二道证据「叠加 `test:coverage` 的 0% 集合比对」无效——该集合 5 条全是 `src/**` 文件、无一条是测试段。第一道（断言调用数对账）仍唯一有效，但取法对 2/9 个候选失效，照 ADR 对账会误判通过。实施侧已按逐文件实测口径对账，ADR 未改。 | 随 REQ-184 的大文件拆分一起做（断言器白名单的补充）；ADR-062 `:197` 已于 2026-10-04 订正 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 | REQ-184 | 测试段批量拆分与合并专项 | 未开工 | 「6 拆 3 合」批次（B1–B7）经用户裁决全部押后，改单独专项。**独立评审订正了前一版结论**：主导约束不是文件大小而是 ADR-062:64-65 的不变式（段路径 ⟺ 主体路径的机械变换），而 :116 已明文删除「同模块多段口径」⇒ 按主题后缀切同一主体已被判死。正解法是问「主体是一个还是多个」。⚠️ 与 ADR:197/198/210 冲突未修正；逐条裁决表见 PLAN.md 同名节。 | 专项立项时；主体判据（D1：主体账目对读）落地后 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md · docs/evidence/20261004-205551-测试段拆分合并的架构结论独立评审.md（评审原文，逐字未改） · docs/PLAN.md「拆分/合并到底有什么架构好处」 |
@@ -60,7 +61,7 @@
 | 号 | 标题 | 状态 | 为什么停在哪 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
 | REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 在办 | 配置与门禁断言已落地(装卸两阶段 PATH 断言、期望值从 build.nsis.include 派生、写用 WriteRegExpandStr 保住 %VAR% 展开、超长不静默)。**但真实构建失败**:electron-builder 真实上下文里没有 MUI_PAGE_FUNCTION_CUSTOM,`npm run dist` 挂在 installer.nsh:108;上一轮的「编译通过」是**最小脚手架**证的,脚手架替真构建兜住了这个缺宏。真实安装验证未跑 | installer.nsh 在真实构建里编过之后;或真安装验证跑通之后 | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
-| REQ-180 | 源码树改一职责一文件并补内部边界判据 | 在办 | **本号只承载 ADR-064**：源码树搬迁 T0/T0.0/T1/T2 已落地；T5（门禁元框架退役）＝ ADR-064:154 的 T5，也等于 ADR-062 的 P6 —— T5-a 已完成（删 `--enforce`/`L5_PENDING`，改 `CRITERIA` ＋ `report` 漏斗），T5-b 的 S0 对账表已出、S1a 已补两族，**⛔ 仅 `smoke` 1 族仍阻塞**。⚠️ **测试树搬迁（T3）与豁免表 ratchet（T4）归 REQ-173**。 | src 层边界要增删时；或 T4/T5 要动 `check-test-layout.mjs` 的 `access` / 链归属时 | docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md · docs/evidence/20261004-225514-gate-ids-对账表.md |
+| REQ-180 | 源码树改一职责一文件并补内部边界判据 | 在办 | **本号只承载 ADR-064**：源码树搬迁 T0/T0.0/T1/T2 已落地；T5（门禁元框架退役）＝ ADR-064:154 的 T5，也等于 ADR-062 的 P6 —— T5-a 已完成（删 `--enforce`/`L5_PENDING`，改 `CRITERIA` ＋ `report` 漏斗），T5-b 的 S0 对账表已出、S1a 已补两族，**⛔ 仅 `smoke` 1 族仍阻塞**。⚠️ **测试树搬迁（T3）与豁免表 ratchet（T4）归 REQ-173**。| src 层边界要增删时；或 T4/T5 要动 `check-test-layout.mjs` 的 `access` / 链归属时 | docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md · docs/evidence/20261004-225514-gate-ids-对账表.md |
 | REQ-173 | 测试树改为位置即身份并瘦身门禁元框架 | 在办 | **测试树搬迁（`PLAN.md` T3）＋ 豁免表 ratchet（T4）已落地**：L4 判红自 45 归零（零本层主体 37→0／段 import 段 2→0），L5 60→25、L7 → 多 0/缺 0；T4-a 把 ADR-072 的「`reason` ≥20 字」落成机器判据。⚠️ **ADR 的 L1–L3/L9–L12 仍未实现**（代码里只有 L4–L8 五族），C1 未达成 ⇒ 批次拆分专项（REQ-184）**前置判据尚不存在**。 | src 层边界要增删时；或要落地 ADR-062 的 L1（镜像完整性）时 —— 它是 REQ-184 的前置 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 
 ## 已完成

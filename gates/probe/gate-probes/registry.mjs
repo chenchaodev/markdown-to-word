@@ -80,6 +80,7 @@ export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   "check:test-layout:selftest": "gates/repo/check-test-layout.selftest.mjs",
   "check:temp-cleanup:selftest": "gates/repo/check-temp-cleanup.selftest.mjs",
   "check:archive-index:selftest": "gates/repo/gen-archive-index.selftest.mjs",
+  "check:gate-ids-table:selftest": "gates/repo/gen-gate-ids-table.selftest.mjs",
   "check:coverage-zero:selftest": "gates/probe/check-coverage-zero.selftest.mjs",
   "check:docs:selftest": "gates/repo/check-docs.selftest.mjs",
   "check:changelog:selftest": "gates/repo/check-changelog.selftest.mjs",
@@ -380,6 +381,32 @@ export const GATE_REGISTRY = Object.freeze(
         },
       ],
     },
+    "gate-ids-table": {
+      id: "gate-ids-table",
+      title: "P6 对账表 ↔ JSON 漂移门禁(ADR-062:246 前置硬门的守门人)",
+      npmScripts: ["check:gate-ids-table", "gen:gate-ids-table"],
+      command: "node gates/repo/gen-gate-ids-table.mjs --check",
+      modulePath: "gates/repo/gen-gate-ids-table.mjs",
+      access: "chain",
+      judgment: {
+        module: "gates/repo/gen-gate-ids-table.mjs",
+        export: "judgeDrift",
+        shaped: "{ problems: string[], families: number }",
+      },
+      judgmentNote:
+        "判定体 `judgeDrift` 的 IO 全经入参(`jsonPath`/`mdPath`/`checkMd`)⇒ selftest 能在临时目录上跑,"
+        + "**不读也不写真实工作树** —— 否则这条判据自己就退化成「只测真实文件」的恒绿判据(真实文件永远一致⇒永远绿)。"
+        + "结构校验(恰好 7 族 / `successorState` 取值域 / `exists` 与 `blocksP6` 不得自相矛盾 / 不得缺 `successor`)"
+        + "与字节比对(`checkMd`)是**两层**:写盘模式走结构校验、只判定模式再加比对 —— 否则「md 陈旧 ⇒ 拒绝写入」会死锁。"
+        + "**不复述族数与承接度** —— 那些状态会变,复述即漂移源(同 `test-layout` 那条 judgmentNote 的同款理由)。",
+      probes: [
+        {
+          kind: "selftest",
+          ref: "gates/repo/gen-gate-ids-table.selftest.mjs",
+          why: "12 条夹具全在临时目录上跑:md 被改一行 / md 整体被换 / `successorState` 非法 / `exists` 与 `blocksP6` 自相矛盾 / 族数≠7 / 缺 `successor` / JSON 读不到 / JSON 非法 / md 读不到 / `checkMd:false` 的两条(写盘模式不得被漂移死锁、且不是免检通道)。每档都断言 `problems` 非空 —— **恒绿防护**。",
+        },
+      ],
+    },
     "coverage-zero": {
       id: "coverage-zero",
       title: "coverage 零覆盖基线门禁",
@@ -449,7 +476,13 @@ export const GATE_REGISTRY = Object.freeze(
       command: "node gates/smoke/check-build-fresh.mjs",
       modulePath: "gates/smoke/check-build-fresh.mjs",
       access: "chain",
-      judgment: { module: "gates/smoke/check-build-fresh.mjs", export: "evaluateFreshness", shaped: "{ fresh, reason }" },
+      // ⚠ shaped 是**归一前的真实返回形状**,不是设计意图。旧值 `{ fresh, reason }` 与实现对不上
+      // (实现一直是 `string[]`),照它读代码的人会去找一个不存在的解构 —— 一条会骗人的注释
+      // 比没有注释更糟。现值同时是**接口契约**:每条问题是**点名了具体 src 相对路径的字符串**
+      // (REQ-180 T5-b S1d 的变更,判红形态由 gates/smoke/check-build-fresh.selftest.mjs 逐字钉住)。
+      // 刻意仍是 string[] 而非 `{ code, message, files }`:protocol.mjs 的 toProblems() 归一只保留
+      // code + message/text/summary 一个字段,结构体里的文件清单会被整段丢掉 —— 放进正文才三条驱动路径一致。
+      judgment: { module: "gates/smoke/check-build-fresh.mjs", export: "evaluateFreshness", shaped: "string[](每条问题点名具体 src 相对路径;多文件时点名全部、超上限只列前几个并给出真实总数)" },
       probes: [
         {
           kind: "sandbox",
@@ -462,7 +495,7 @@ export const GATE_REGISTRY = Object.freeze(
           // 而段只在链内跑一次正例 —— 判定退化成一个从不成立的比较时它照样绿。
           kind: "selftest",
           ref: "gates/smoke/check-build-fresh.selftest.mjs",
-          why: "自检脚本在系统临时目录造合成 src/dist 树并把 mtime 钉死在固定时刻(不用「现在」,避免时间戳精度把夹具变成 flaky),逐条注入漂移(src 顶层文件晚于 dist / 只在嵌套子目录里的文件晚于 dist 以守递归 / dist 不存在 / dist 存在但为空),断言判红且诊断含可执行指引;另有边界一格钉死「两侧 mtime 相等判绿」(比较是严格大于)、一组注入/撤销成对夹具(撤销后必须回到判绿,且对照组证明判红只归因于被改的那个文件),以及进程级四格(未漂移 exit 0 且无输出 / 漂移 exit 1 带 [build-fresh:fail] 前缀 / 源码目录不存在判红 / 未知参数判红 / --help 出口 0)",
+          why: "自检脚本在系统临时目录造合成 src/dist 树并把 mtime 钉死在固定时刻(不用「现在」,避免时间戳精度把夹具变成 flaky),逐条注入漂移(src 顶层文件晚于 dist / 只在嵌套子目录里的文件晚于 dist 以守递归 / dist 不存在 / dist 存在但为空),断言判红、**诊断逐字点名被前拨的那个文件**且诊断不含别的 src 文件名(证明不是「把所有文件名列一遍」);多文件那一格钉死「点名全部」,超上限那一格钉死「只列前 N 个但必给真实总数」(上限不构成隐瞒);另有边界一格钉死「两侧 mtime 相等判绿」(比较是严格大于)、一组注入/撤销成对夹具(撤销后必须回到判绿,且对照组证明判红只归因于被改的那个文件 —— 该格同时断言诊断点名了它),以及进程级六格(未漂移 exit 0 且无输出 / 漂移 exit 1 带 [build-fresh:fail] 前缀且**CLI 的真实输出里也有文件名** / 源码目录不存在判红 / dist 不存在判红 / 未知参数判红 / --help 出口 0)",
         },
       ],
     },
@@ -905,6 +938,15 @@ export const GATE_REGISTRY = Object.freeze(
           kind: "sandbox",
           ref: "dual-matrix",
           why: "沙盒探针只改副本里矩阵段的那一行,断言形状守护判红(矩阵键漏写会被当场抓住)",
+        },
+        {
+          // REQ-180 T5-b S1d:接替沙盒探针(P6 删探针后的承接)。不导出矩阵段的
+          // assertMatrixShape(它零入参、读模块级 MATRIX,负向只能靠改段源码 ⇒ 又得回到工程副本
+          // + 起 Electron,等于把探针重做一遍;而负向夹具若是段,还会撞 L4「段 import 段」),
+          // 直接消费已抽成非段模块的判定本体 assertKeyCoverageRegistered(dual-pipeline-registry.js)。
+          kind: "segment",
+          ref: "test/harness/dual-pipeline-key-coverage.test.js",
+          why: "验收段从矩阵段源码文本解析出真实 26 行的 covers(先与 MATRIX_ROW_IDS 行数+id 集合对账,解析失效即判红而非静默返回空表),对判定本体 assertKeyCoverageRegistered 注入两类负向:① 把某行的 covers 改成 [] 与把该行整个移出覆盖表(键零覆盖),断言抛错且**诊断点名是哪个键**;② 给某行塞一个当前未登记的键(登记漂移),断言抛错且诊断点名行与键。两类各与「撤销 ⇒ 判绿」成对,并断言两条诊断互不相同。抓不到:矩阵段到判据本体的接线(由矩阵段自己「形状守护之后才打印逐键覆盖数」的正向顺序证明)与键集合完备性",
         },
       ],
     },
