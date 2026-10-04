@@ -76,7 +76,7 @@
 // (验收段在 Electron 里跑,而它 import 本模块的时刻不该决定整场验收的退出码);而注册表
 // R4b 会逐项对账「judgment.load 声明」与「顶层是否自执行」的事实。守卫写法与
 // check-src-layout.mjs / check-import-boundary.mjs / check-changelog.mjs 同形。
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isMainModule, parseArgs } from "../../shared/cli.mjs";
 import { lexSource } from "../../shared/copy-closure.js";
@@ -114,6 +114,21 @@ export const BEHAVIOR_DIR = "behavior";
  * (实测 134 段 → 下限 100),只在「塌缩」这一档报红,不随日常增删段抖动。
  */
 export const MIN_SCANNED_FILES = 100;
+/**
+ * L5 跨层 import 的**豁免表**(数据文件路径,与门禁本体分离 —— 本体里那份会是可漂移的副本)。
+ *
+ * 形态是 `(段路径, 说明符)` **二元组**,不是段级全放行:一张段级表项就能掩盖该段将来
+ * 所有新增的跨层 import,而那正是这张表要拦的东西。粒度收到说明符一级,「同段新增一条
+ * 跨层 import」就仍然判红。
+ *
+ * 表项的合法性由三条 fail-closed 撑着(判据见 judgeL5Exemptions 的注释):未登记判红、
+ * reason 为空判红、**stale 判红**(登记了却当前不再命中 —— ratchet 的全部意义:否则删掉
+ * 代码而豁免永远留着,表只会单调增长)。
+ *
+ * 豁免的判准写在数据文件的 `exemptionCriterion` 字段里(单一来源,改判准只改那一处)。
+ */
+export const L5_EXEMPTIONS_REL = "gates/repo/test-layout.cross-import-exemptions.json";
+
 /**
  * ⚠ L5 恒报告标记(机制与切换点见文件头「L5 为什么恒报告」一节)。
  *
@@ -361,6 +376,67 @@ export function foreignLayerOf(resolved, mirror) {
  * @param {Partial<TestLayoutCtx>} [base] 注入面(见 makeTestLayoutCtx)
  * @returns {{ problems: string[], info: string[], stats: TestLayoutStats }}
  */
+/**
+ * 读 L5 豁免表。**只认二元组**,缺字段的表项直接判红而不是被跳过 ——
+ * 跳过等于给「写错键名」开了一个静默放行的口。
+ * @param {string} [root] 仓库根(默认真实仓库)
+ * @returns {{ entries: { segment: string, specifier: string, reason: string }[], problems: string[] }}
+ */
+export function loadL5Exemptions(root = ROOT) {
+  const file = path.join(root, ...L5_EXEMPTIONS_REL.split("/"));
+  /** @type {{ segment: string, specifier: string, reason: string }[]} */
+  let entries = [];
+  /** @type {string[]} */
+  const problems = [];
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    return { entries, problems: [`豁免表读不到或不是合法 JSON:${L5_EXEMPTIONS_REL}(${error instanceof Error ? error.message : String(error)})`] };
+  }
+  const list = Array.isArray(raw?.entries) ? raw.entries : null;
+  if (list === null) {
+    return { entries, problems: [`豁免表缺 entries 数组:${L5_EXEMPTIONS_REL}`] };
+  }
+  // 条目本身**不**在这里校验键名:那件事由判定本体统一做(它同时要管注入面)。
+  // 这里只负责把原样条目交出去 —— 判定本体对「非对象项」也判红,不静默跳过。
+  entries = list;
+  return { entries, problems };
+}
+
+/** 豁免表的键(段路径 + 说明符) */
+const l5ExemptionKey = (segment, specifier) => `${segment}\u0000${specifier}`;
+
+/**
+ * 生成 L5 豁免表基线(ADR-062:92 的做法:「生成 → 逐条人工补 reason → 转判红」的第一步)。
+ *
+ * ⚠ **刻意不填 reason**:填占位符等于让「忘了写理由」与「写了理由」在门禁上不可区分 ——
+ * 而 reason 为空正是这张表唯一能机械判红的东西之一。生成出来的表必然因 reason 为空而红,
+ * 那是**设计**:逼使用者逐条看过再填。
+ * @param {{segment: string, specifier: string}[]} hits 当前命中的 (段, 说明符) 对,已去重
+ * @returns {string} 可写入数据文件的 JSON 文本
+ */
+export function renderL5ExemptionsBaseline(hits) {
+  const entries = [...hits]
+    .sort((a, b) => (a.segment === b.segment ? a.specifier.localeCompare(b.specifier) : a.segment.localeCompare(b.segment)))
+    .map((hit) => ({ segment: hit.segment, specifier: hit.specifier, reason: "" }));
+  return `${JSON.stringify(
+    {
+      _comment: "L5 豁免表 —— 由 `node gates/repo/check-test-layout.mjs --write-l5-exemptions` 生成。"
+        + "**每条 reason 必须人工补**:空 reason 会判红(这是刻意的,见门禁本体同名函数注释)。",
+      _schema: {
+        key: "entries[].segment + entries[].specifier",
+        granularity: "一个表项只覆盖这一条说明符;同段将来新增的跨层 import 仍判红。",
+        reason: "必填且非空。写不出合法理由的命中应改 import 或把该段归 test/behavior/,不得进表。",
+        ratchet: "表项必须当前仍真的命中,否则判红(stale)。",
+      },
+      entries,
+    },
+    null,
+    2,
+  )}\n`;
+}
+
 export function checkTestLayout(base = {}) {
   const ctx = makeTestLayoutCtx(base);
   /** @type {string[]} */
@@ -380,6 +456,9 @@ export function checkTestLayout(base = {}) {
     l7Missing: 0,
     l8Violations: 0,
     l6Violations: 0,
+    l5Unregistered: 0,
+    l5ExemptionsEmptyReason: 0,
+    l5StaleExemptions: 0,
   };
 
   /** @type {string[]} */
@@ -414,6 +493,31 @@ export function checkTestLayout(base = {}) {
 
   // ---- 判据一 L4 + 判据二 L5:逐段判定(两族共用一次读取) ----
   const layerSet = new Set(mirror.layers);
+  // L5 豁免表:先读表,再逐条判。表本身的读错/键名错先判红(它们会让整张表静默失效)。
+  const { entries: l5Exemptions, problems: l5ExemptionProblems } = base.l5Exemptions
+    ? { entries: base.l5Exemptions, problems: [] }
+    : loadL5Exemptions(ctx.root);
+  for (const problem of l5ExemptionProblems) problems.push(`${L5_EXEMPTIONS_REL}:${problem}`);
+  /** 豁免表键 → 表项 */
+  const l5ByKey = new Map();
+  // 键名校验放在**这里**而不是 loadL5Exemptions 里:注入面(ctx.l5Exemptions)也必须过同一道
+  // 校验 —— 否则一条键名写错的注入表项会得到一个永不命中的键、被静默跳过。
+  for (const [index, entry] of l5Exemptions.entries()) {
+    if (typeof entry?.segment !== "string" || typeof entry?.specifier !== "string") {
+      problems.push(
+        `${L5_EXEMPTIONS_REL}:第 ${index + 1} 项缺 segment 或 specifier`
+        + "(键名写错会让整条豁免静默失效 —— 它拿到的键永远命中不上)",
+      );
+      continue;
+    }
+    l5ByKey.set(l5ExemptionKey(entry.segment, entry.specifier), {
+      segment: entry.segment,
+      specifier: entry.specifier,
+      reason: typeof entry.reason === "string" ? entry.reason : "",
+    });
+  }
+  /** 本轮真的命中过的豁免表键(用于 stale 检测) */
+  const l5HitKeys = new Set();
   for (const file of segments) {
     const layer = file.split("/")[1] ?? "";
     // 非镜像层目录下的段(behavior / harness / 当前的 common、fixtures)**不参与 L4/L5**:
@@ -467,19 +571,56 @@ export function checkTestLayout(base = {}) {
     }
 
     // L5:跨层。type-only 引用**不算**跨层(编译期擦除,与 check-import-boundary 的
-    // allowTypeOnly 钩子同款取舍);命中恒进 info,不参与退出码。
+    // allowTypeOnly 钩子同款取舍)。
+    //
+    // 三条 fail-closed(ADR-062 的 L5 豁免表形态,判据与豁免判准的单一来源都在
+    // L5_EXEMPTIONS_REL 那份数据文件里):
+    //   ① 未登记的跨层 import 判红 —— 默认形态,不因为「它看起来像顺带的」就放过;
+    //   ② reason 为空判红 —— 空理由等于没登记理由,表就退化成「见谅」;
+    //   ③ stale 判红 —— 登记了却当前不再命中(代码删了/改名了),必须从表里删掉。
+    //      这一条是 ratchet 的全部意义:没有它,表只会单调增长,失效项永远留着。
     for (const entry of imports) {
       if (entry.resolved === null || entry.typeOnly) continue;
       if (own.some((p) => entry.resolved.startsWith(p))) continue;
       const target = foreignLayerOf(entry.resolved, mirror);
       if (target === null) continue;
       stats.l5Hits += 1;
+      const key = l5ExemptionKey(file, entry.resolved);
+      const exemption = l5ByKey.get(key);
+      if (exemption !== undefined) {
+        l5HitKeys.add(key);
+        if (exemption.reason.trim() === "") {
+          stats.l5ExemptionsEmptyReason += 1;
+          problems.push(
+            `${file} → test-layer-cross-import:命中已在豁免表登记(${entry.resolved}),但 reason 是空的`
+            + ` —— 豁免表的存在意义就是「这一次跨层为什么合法」,空理由让表退化成「见谅」。`
+            + `补上理由,或把它从表里删掉(那说明它不该被豁免)`,
+          );
+        }
+        continue;
+      }
+      stats.l5Unregistered += 1;
       const message = `${file} → test-layer-cross-import:${layer} 层的段 import 了 ${target} 层的主体 `
-        + `(${entry.resolved})—— 同层自由、跨层归 behavior:把该段搬进 test/behavior/ 并在段内写 `
-        + `covers(声明它横跨哪几层),这样「一个段对应一层」的不变量与「确有跨层行为」两件事都还成立`;
+        + `(${entry.resolved})—— 三条正当出路:① 它只是夹具输入/常量/规格/格式化函数(换个值段仍成立)`
+        + ` → 按 (段, 说明符) 登记进 ${L5_EXEMPTIONS_REL} 并写明理由;`
+        + `② 本段真的执行别层实现并对它的行为下断言 → 那是被测对象的一部分,`
+        + `把该段搬进 test/behavior/ 并在段内写 covers(声明它横跨哪几层);`
+        + `③ 主体判错了层 → 搬进真正被测的那一层`;
       if (L5_PENDING) info.push(message);
       else problems.push(message);
     }
+  }
+
+  // ---- L5 豁免表的 stale 检测(ratchet)----
+  // 在段循环**之外**:它要问的是「表里有没有当前不再命中的项」,与哪一段无关。
+  for (const [key, entry] of l5ByKey) {
+    if (l5HitKeys.has(key)) continue;
+    stats.l5StaleExemptions += 1;
+    problems.push(
+      `${entry.segment} → l5-exemption-stale:豁免表登记了 (${entry.specifier}),但本次扫描没有命中它`
+      + " —— 代码删了或改名了,豁免必须同批删掉。留着它,表只会单调增长、"
+      + "失效项永远占着位子(这正是 ratchet 要防的)",
+    );
   }
 
   if (stats.segments < ctx.minScannedFiles) {
@@ -582,7 +723,7 @@ export function checkTestLayout(base = {}) {
     );
   }
 
-  return { problems, info, stats };
+  return { problems, info, stats, l5ExemptionCount: l5ByKey.size };
 }
 
 /**
@@ -590,15 +731,50 @@ export function checkTestLayout(base = {}) {
  * @param {string[]} [argv] 参数数组
  * @returns {number} 退出码
  */
+/**
+ * `--write-l5-exemptions`:把当前命中的 (段, 说明符) 对去重后写成豁免表基线。
+ *
+ * **只写不判**:它读真实仓库、覆盖数据文件、exit 0。刻意**不**预先填 reason ——
+ * 填占位符会让「忘了写理由」与「写了理由」在门禁上不可区分。生成出来的表因 reason 为空
+ * 必然判红,那是设计:逼使用者逐条看过、补上理由或把那条从表里删掉。
+ *
+ * ⚠ 它是**生成入口**,不是判据:任何人都能跑它把表洗成当前形状 ⇒ 它绝不能进 verify:ci
+ *   (package.json 的链里没有它,别加)。
+ * @returns {number} 退出码
+ */
+function writeL5ExemptionsBaseline() {
+  const { info, stats } = checkTestLayout();
+  /** @type {Map<string, {segment: string, specifier: string}>} */
+  const hits = new Map();
+  // 未登记的跨层命中在 L5_PENDING=true 时进 info 通道;转判红后它们进 problems。
+  // 两个通道都扫,否则这个入口在转判红那天就生成不出东西。
+  for (const line of [...info, ...checkTestLayout().problems]) {
+    const m = /^(\S+) → test-layer-cross-import:.*层的主体 \(([^)]+)\)/.exec(line);
+    if (m === null) continue;
+    hits.set(l5ExemptionKey(m[1], m[2]), { segment: m[1], specifier: m[2] });
+  }
+  const target = path.join(ROOT, ...L5_EXEMPTIONS_REL.split("/"));
+  writeFileSync(target, renderL5ExemptionsBaseline([...hits.values()]), "utf8");
+  console.log(
+    `[test-layout:baseline] 已写入 ${L5_EXEMPTIONS_REL}:${hits.size} 条未登记的跨层 import`
+    + `(本次 L5 命中 ${stats.l5Hits} 处;已登记的 ${stats.l5Hits - hits.size} 处不在其中)`
+    + `\n  ⚠ reason 一律留空 —— 请逐条人工补;补不出来的那些说明**不该被豁免**,把它们从表里删掉。`,
+  );
+  return 0;
+}
+
 export function main(argv = []) {
   /** @type {Record<string, string | boolean>} */
   let options;
   try {
-    options = parseArgs(argv, { booleans: ["enforce", "help"], usage: USAGE });
+    options = parseArgs(argv, { booleans: ["enforce", "help", "write-l5-exemptions"], usage: USAGE });
   } catch (error) {
     // 未知参数一律失败:静默按默认跑一遍报绿就是「假通过」
     console.error(`[test-layout:fail] ${error instanceof Error ? error.message : String(error)}`);
     return 1;
+  }
+  if (options["write-l5-exemptions"] === true) {
+    return writeL5ExemptionsBaseline();
   }
   if (options.help === true) {
     console.log(
@@ -613,13 +789,15 @@ export function main(argv = []) {
     return 0;
   }
   const enforce = options.enforce === true;
-  const { problems, info, stats } = checkTestLayout();
+  const { problems, info, stats, l5ExemptionCount } = checkTestLayout();
 
   const counts = [
     `L4 test-layer-self-hosted 判红 ${stats.l4Violations} 项`
     + `(零本层主体 ${stats.l4NoOwnSubject} / 段 import 段 ${stats.l4SegmentImports};`
     + `层内段 ${stats.layerSegments} / 共 ${stats.segments} 段)`,
-    `L5 test-layer-cross-import 命中 ${stats.l5Hits} 处(${L5_PENDING ? "恒报告,不计退出码" : "已转判红"})`,
+    `L5 test-layer-cross-import 命中 ${stats.l5Hits} 处`
+      + `(豁免 ${l5ExemptionCount} 条 / 未登记判红 ${stats.l5Unregistered} / 空 reason 判红 ${stats.l5ExemptionsEmptyReason}`
+      + ` / stale 判红 ${stats.l5StaleExemptions};${L5_PENDING ? "命中恒报告,不计退出码" : "命中已转判红"})`,
     `L7 test-top-dirs-exact 多 ${stats.l7Extra} / 缺 ${stats.l7Missing}`,
     `L6 behavior-covers-declared 判红 ${stats.l6Violations} 项`
       + `(behavior 段缺 covers / covers 为空 / covers 元素在磁盘上不存在;`

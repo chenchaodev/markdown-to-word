@@ -1,0 +1,137 @@
+{
+  "_comment": "L5(test-layer-cross-import)的豁免表 —— 「(段路径, 说明符)」二元组,不是段级全放行。数据文件与门禁本体分离:本体里那份会是可漂移的副本,而本仓反复批过那种副本。生成入口:`node gates/repo/check-test-layout.mjs --write-l5-exemptions`(生成后必须逐条人工补 reason,reason 为空即判红)。",
+  "_schema": {
+    "key": "entries[].segment + entries[].specifier",
+    "granularity": "一个表项只覆盖**这一条说明符**;同段将来新增的跨层 import 仍判红(这是刻意的:段级放行会让一张表项掩盖该段未来所有跨层边)。",
+    "reason": "必填且非空 —— 写不出合法理由的命中不得进表,应改 import 或把该段归 test/behavior/。",
+    "ratchet": "表项必须**当前仍真的命中**,否则判红(stale)。删掉代码却不删表项会让豁免表单调增长、失效项永远留着 —— ratchet 的全部意义就是防这个。"
+  },
+  "exemptionCriterion": "豁免的判准:这次跨层 import 在本段里**只提供数据、常量、规格表或格式化函数**,本段的断言对象仍是本层的主体 —— 换个夹具值段仍成立。**不**豁免的情形:这次跨层 import 让本段真的执行别层的实现并对它的行为下断言(那部分行为就是被测对象的一部分,豁免等于把跨层行为藏进表里)。",
+  "entries": [
+    {
+      "segment": "test/cli/host-launch.test.js",
+      "specifier": "dist/convert/cli-pdf-job.js",
+      "reason": "刻意取跨面单源的 PDF_HOST_FLAG 而不在本段写字面量 —— 断言的是 cli 侧读 flag 的行为,不是 job 契约本身(那是 cli-pdf-job 段的事)。取单源是刻意的:两边各写一份字面量就会漂移。"
+    },
+    {
+      "segment": "test/cli/options.test.js",
+      "specifier": "dist/convert/cli-pdf-job.js",
+      "reason": "exitCodes / readJob 取自 job 契约单源,只作本段断言的期望值(退出码表、读 job 结果的形状);被测主体是 cli 参数解析本身。"
+    },
+    {
+      "segment": "test/cli/options.test.js",
+      "specifier": "dist/core/settings/presets.js",
+      "reason": "TEMPLATE_PRESETS / presetSettingsPatch 作夹具输入:本段要验的是「cli 生成的 patch 能被预设逻辑接受」,预设表本身由 presets 段覆盖。"
+    },
+    {
+      "segment": "test/convert/image-downloader.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "formatWarning 当对照物用:断言的是 resolver 返回 null / Buffer,文案格式化只是把警告读成人能读的那一步,格式化语义由 i18n 段覆盖。"
+    },
+    {
+      "segment": "test/convert/preprocess.test.js",
+      "specifier": "dist/core/settings/settings-defaults.js",
+      "reason": "DEFAULT_SETTINGS 作夹具输入(一段完整设置的起点),不是断言对象 —— 被测的是 preprocess 如何处理它。"
+    },
+    {
+      "segment": "test/convert/preprocess.test.js",
+      "specifier": "dist/core/markdown/ai-cleanup.js",
+      "reason": "aiCleanupOptions 是**被测对象 preprocess 自己要调的协作方**:断言全部落在 preprocess 的输出(PreparedMarkdown)上,不直接断言 ai-cleanup 的行为(那由 ai-cleanup 自己那段覆盖)。"
+    },
+    {
+      "segment": "test/convert/preprocess.test.js",
+      "specifier": "dist/core/pipeline/precheck.js",
+      "reason": "precheckMarkdown 同上:preprocess 把准备好的正文交给它,本段断言的是「交给 precheck 的正文对不对」,不是 precheck 的判定语义。"
+    },
+    {
+      "segment": "test/gates/dist-manifest-gate.test.js",
+      "specifier": "tools/copy-renderer.mjs",
+      "reason": "发布侧关注点:本段守 check-dist-manifest + check-build-fresh + copy-renderer 三者一套(清单/新鲜度/静态资源拷贝)。ADR-062:173 已否决把 gates/shared/tools 的测试塞进 test/behavior/,故留在 test/gates/;copy-renderer 在本段是三件套之一,不是「顺带借一下」。"
+    },
+    {
+      "segment": "test/gates/fixture-contract.test.js",
+      "specifier": "shared/test-common-surface.js",
+      "reason": "恒等断言的对象就是 SEGMENT_DIRS 这**同一个数组对象**(契约单源),本段要证明生成器与验收入口读的是同一份;取 shared 单源正是本段的主题。"
+    },
+    {
+      "segment": "test/gates/observability.test.js",
+      "specifier": "dist/main/smoke.js",
+      "reason": "SMOKE_MARKER 是恒等对照:本段断言「实现里埋的 marker 与门禁认的 marker 是同一个值」,取实现侧单源刻意不写字面量。"
+    },
+    {
+      "segment": "test/main/converter.test.js",
+      "specifier": "dist/core/settings/settings-defaults.js",
+      "reason": "DEFAULT_SETTINGS 作夹具基线(「旧版缺某字段」类场景需要一个已知完整的设置起点),断言对象是 main 的转换编排。"
+    },
+    {
+      "segment": "test/main/gbk-encoding.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "formatWarning 当对照物:断言的是警告的 key 与参数(编码判定在 main 侧),格式化只是读出文案那一步。"
+    },
+    {
+      "segment": "test/main/header-footer-settings.test.js",
+      "specifier": "dist/core/settings/settings-defaults.js",
+      "reason": "DEFAULT_HEADER_FOOTER 作夹具基线(合法值/非法值的起点都从它派生),断言对象是 main 的 sanitize 往返。"
+    },
+    {
+      "segment": "test/main/ipc-register.test.js",
+      "specifier": "dist/convert/paths.js",
+      "reason": "MAX_SCAN_DEPTH 只作期望值:断言「扫描触顶时 main 侧按同一上限报警告」,上限本身是 convert 的单源,刻意不写字面量。"
+    },
+    {
+      "segment": "test/main/ipc-register.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "formatWarning / t 当对照物:断言的是 IPC 返回的警告 key 与通道,读文案只是把结果显示出来。"
+    },
+    {
+      "segment": "test/main/paths.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "formatWarning 当对照物:断言对象是 main 的路径校验行为,文案格式化不参与判定。"
+    },
+    {
+      "segment": "test/main/settings.test.js",
+      "specifier": "dist/core/settings/settings-defaults.js",
+      "reason": "DEFAULT_PAGE_SETUP / DEFAULT_WATERMARK / validatePageSetup 作夹具与期望值:断言的是 main 侧持久化的逐键语义,默认值与校验器取 core 单源刻意不复制。"
+    },
+    {
+      "segment": "test/main/settings.test.js",
+      "specifier": "dist/core/settings/typography.js",
+      "reason": "DEFAULT_TYPOGRAPHY 作夹具基线,断言对象是 main 的 sanitize/patch 行为。"
+    },
+    {
+      "segment": "test/main/settings.test.js",
+      "specifier": "dist/core/settings/settings-schema.js",
+      "reason": "PERSISTED_KEYS / SETTINGS_SCHEMA / SHAPE_CHECKED_ENTRIES 等是契约单源,本段断言「main 写盘的键集与 schema 一致」—— 取 schema 本身就是该断言的对照物,不是顺带借用。"
+    },
+    {
+      "segment": "test/renderer/settings-controls.test.js",
+      "specifier": "shared/geometry/geometry-spec.mjs",
+      "reason": "DRAWER_CONTROL_KEYS / DRAWER_GROUP_BY_KEY 是抽屉控件的规格对照表:本段逐控件断言渲染与回填,用它来枚举「该有哪些控件、该归哪组」以免本段另写一份清单。"
+    },
+    {
+      "segment": "test/renderer/settings-logic.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "DICT / LANGUAGES 作对照物:断言的是三语化的键命中与兜底(取哪张表),字典本身由 i18n 段覆盖。(同一对在本段出现两次 import,一条表项覆盖两次 —— 同文件同说明符,理由相同。"
+    },
+    {
+      "segment": "test/renderer/settings-logic.test.js",
+      "specifier": "dist/core/settings/settings-defaults.js",
+      "reason": "DEFAULT_SETTINGS / cloneDefaultSettings / correctPageSetup 作夹具与期望值:断言对象是 renderer 的 merge/sanitize 逻辑,默认值取 core 单源避免两处漂移。"
+    },
+    {
+      "segment": "test/renderer/settings-logic.test.js",
+      "specifier": "dist/core/settings/presets.js",
+      "reason": "TEMPLATE_PRESETS 作夹具输入:断言「预设说明走三语化 + 缺键回退 hint 原文」这条 renderer 侧逻辑。"
+    },
+    {
+      "segment": "test/renderer/ui-contract-guards.test.js",
+      "specifier": "shared/geometry/geometry-spec.mjs",
+      "reason": "CONSTANT_GROUPS / SLOT_INVARIANTS 是规格对照表:本段是纯静态 CSS 令牌契约断言,靠它来核对「样式表里的常量分组与规格一致」—— 规格就是判据本身。"
+    },
+    {
+      "segment": "test/shared/geometry-gate.test.js",
+      "specifier": "gates/geometry/geometry/driver.mjs",
+      "reason": "判定层与采样层共用同一份规格:LIVENESS_PATHS / checkPathLiveness / mediaConditions 是**被测判定层(shared/geometry)的输入规格**(存活路径表、可求值的媒体查询条件),本段断言的是判定结果;真窗口采样由 driver 那侧承担,两者互不依赖。"
+    }
+  ]
+}

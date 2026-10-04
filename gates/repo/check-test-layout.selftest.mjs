@@ -95,6 +95,14 @@ function createFixture(extra = {}) {
   // ② test/ 的每个顶层目录都要在(纪律 ①)。behavior/ 与 harness/ 建空目录:T3 才建立内容。
   for (const top of BASE_TEST_TOPS) mkdirSync(join(dir, ...`${TEST_REL}/${top}`.split("/")), { recursive: true });
   // ③ 底板段:每层铺够 BASE_PAD 段,每段都 import 本层主体 ⇒ 基线零判红。
+  // ③' L5 豁免表:合成根里也必须有一份(真实仓里有,判据从 `ctx.root` 读它)。
+  // 缺了它,每条进程级夹具都会先被「豁免表读不到」判红 —— 症状离根因很远。
+  // 底板给一份**空表**:各夹具要豁免什么就自己注入(ctx.l5Exemptions),不在这里预置。
+  writeUnder(
+    dir,
+    "gates/repo/test-layout.cross-import-exemptions.json",
+    `${JSON.stringify({ _comment: "夹具底板:空豁免表。", entries: [] }, null, 2)}\n`,
+  );
   for (let i = 0; i < BASE_PAD; i += 1) {
     const layer = BASE_SRC_LAYERS[i % BASE_SRC_LAYERS.length] ?? "core";
     writeUnder(dir, `${TEST_REL}/${layer}/pad-${i}.test.js`, wellFormedSegment(layer));
@@ -121,6 +129,7 @@ function writeUnder(root, rel, body) {
  * @param {Readonly<Record<string, string>>} extra 仓库相对 POSIX 路径 → 正文
  * @param {object} [opts]
  * @param {number} [opts.minScannedFiles] 扫描面下限
+ * @param {{segment: string, specifier: string, reason: string}[]} [opts.l5Exemptions] L5 豁免表(注入面)
  * @returns {{ problems: string[], info: string[], stats: import("./check-test-layout.mjs").TestLayoutStats }}
  */
 function judge(extra, opts = {}) {
@@ -131,7 +140,12 @@ function judge(extra, opts = {}) {
   try {
     if (opts.missingRoot === true) rmSync(dir, { recursive: true, force: true });
     if (opts.skipSrc === true) rmSync(join(dir, "src"), { recursive: true, force: true });
-    return checkTestLayout({ root: dir, minScannedFiles: opts.minScannedFiles ?? 0 });
+    return checkTestLayout({
+      root: dir,
+      minScannedFiles: opts.minScannedFiles ?? 0,
+      // l5Exemptions 注入:走 base 的注入面,不读真实数据文件 ⇒ 夹具与真实仓库互不影响
+      l5Exemptions: opts.l5Exemptions ?? [],
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -672,6 +686,87 @@ const CASES = [
     },
     expect: /test\/core\/empty-decl\.test\.js → behavior-covers-declared:covers 是空数组/,
   },
+  // ---- L5 豁免表:三条 fail-closed + 表项粒度 ----
+  // 注入面是 ctx.l5Exemptions(与 readText / listDir / fileExists 同一形态):合成目录上
+  // 求值同一批判据,不 spawn、不碰真实工作树。
+  {
+    name: "L5 豁免表:未登记的跨层 import 判红(默认形态,不因「看起来顺带」而放过)",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/core/cross.test.js`]: crossLayerSegment("core", "../../dist/main/other.mjs") },
+    l5Exemptions: [],
+    // L5_PENDING 仍为 true ⇒ 未登记命中走 **info** 通道(info 断言与 problems 断言互不替代,
+    // 见 runner 里那段注释)。转判红那一刻起它会改走 problems,届时这条夹具要改 expect。
+    expect: null,
+    expectInfo: /test\/core\/cross\.test\.js → test-layer-cross-import:.*未登记|test\/core\/cross\.test\.js → test-layer-cross-import:/,
+  },
+  {
+    name: "L5 豁免表:登记且带 reason → 判绿(本层主体齐备的段 + 已登记的跨层)",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/core/cross.test.js`]: crossLayerSegment("core", "../../dist/main/other.mjs") },
+    l5Exemptions: [
+      { segment: `${TEST_REL}/core/cross.test.js`, specifier: "dist/main/other.mjs", reason: "夹具:借常量当期望值" },
+    ],
+    expect: null,
+  },
+  {
+    name: "L5 豁免表:reason 为空 → 判红(空理由等于没登记理由,表会退化成「见谅」)",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/core/cross.test.js`]: crossLayerSegment("core", "../../dist/main/other.mjs") },
+    l5Exemptions: [{ segment: `${TEST_REL}/core/cross.test.js`, specifier: "dist/main/other.mjs", reason: "" }],
+    expect: /命中已在豁免表登记\(dist\/main\/other\.mjs\),但 reason 是空的/,
+  },
+  {
+    name: "L5 豁免表:reason 只有空白 → 同样判红(不得按 trim 后非空放过)",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/core/cross.test.js`]: crossLayerSegment("core", "../../dist/main/other.mjs") },
+    l5Exemptions: [{ segment: `${TEST_REL}/core/cross.test.js`, specifier: "dist/main/other.mjs", reason: "   " }],
+    expect: /reason 是空的/,
+  },
+  {
+    // stale(ratchet):登记了却当前不再命中 —— 代码删了/改名了,豁免必须同批删掉。
+    // 没有这一条,表只会单调增长、失效项永远留着,而门禁对它们一声不吭。
+    name: "L5 豁免表:登记项当前不再命中(stale)→ 判红(ratchet)",
+    judgeOnly: true,
+    extra: {},
+    l5Exemptions: [
+      { segment: `${TEST_REL}/core/gone.test.js`, specifier: "dist/main/vanished.mjs", reason: "曾经合法,代码已删" },
+    ],
+    expect: /test\/core\/gone\.test\.js → l5-exemption-stale/,
+  },
+  {
+    // 表项粒度:一张 (段, 说明符) 表项**不得**掩盖该段将来新增的另一条跨层 import。
+    // 这条是「粒度收到说明符一级」的全部意义 —— 段级全放行会让一张表项变成万能后门。
+    name: "L5 豁免表:粒度不足以掩盖新增命中(同段另一条跨层仍判红)",
+    judgeOnly: true,
+    extra: {
+      // 段 import **两条**跨层(main/one + main/other),表里只登记 one ⇒ other 未登记判红、
+      // one 命中(故不 stale)。这正是「粒度收到说明符一级」:一张表项只覆盖它那一条。
+      // (只 import other 而登记 one 也能证同一件事,但那样 one 会变成 stale ——
+      //  那是 ratchet 的另一条判据,会把这格变成「同时断两件事」,症状出了也不好归因。)
+      [`${TEST_REL}/core/cross.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:本层主体齐备,另有两处跨层引用(只为验豁免表的粒度)。 */",
+        'import { subject } from "../../dist/core/subject.js";',
+        'import { one } from "../../dist/main/one.mjs";',
+        'import { other } from "../../dist/main/other.mjs";',
+        "export const meta = { description: 'granularity' };",
+        "export async function run() { return [subject, one, other]; }",
+        "",
+      ].join("\n"),
+    },
+    l5Exemptions: [
+      { segment: `${TEST_REL}/core/cross.test.js`, specifier: "dist/main/one.mjs", reason: "夹具:one 的合法豁免" },
+    ],
+    expect: null,
+    expectInfo: /test\/core\/cross\.test\.js → test-layer-cross-import:.*\(dist\/main\/other\.mjs\)/,
+  },
+  {
+    name: "L5 豁免表:键名写错(缺 specifier)→ 表本身判红(跳过它等于给静默失效开口子)",
+    judgeOnly: true,
+    extra: {},
+    l5Exemptions: [{ segment: `${TEST_REL}/core/x.test.js`, reason: "没有 specifier 键" }],
+    expect: /第 1 项缺 segment 或 specifier/,
+  },
   // ---- 进程级档:默认 vs --enforce 的退出码 ----
   {
     name: "默认模式判红时仍 exit 0(报告模式)",
@@ -828,6 +923,7 @@ for (const testCase of CASES) {
         minScannedFiles: testCase.minScannedFiles,
         missingRoot: testCase.missingRoot,
         skipSrc: testCase.skipSrc,
+        l5Exemptions: testCase.l5Exemptions,
       });
       const joined = problems.join("\n");
       const infoJoined = info.join("\n");
