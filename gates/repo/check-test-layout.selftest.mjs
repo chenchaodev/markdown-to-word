@@ -28,14 +28,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ROOT } from "../../shared/paths.js";
 import {
+  ACCESS_CHAIN,
+  ACCESS_OFFCHAIN,
   checkTestLayout,
   CRITERIA,
   extractImports,
+  GATE_EXEMPTIONS_REL,
+  loadGateExemptions,
+  judgeL11Carrier,
+  judgeL12ChainMembership,
+  makeGateRegistryCtx,
   MIN_SCANNED_FILES,
   NON_MIRROR_TOP_DIRS,
   REASON_MIN_CHARS,
   TEST_REL,
 } from "./check-test-layout.mjs";
+// 链根从**单源**取(与判定本体同一处 import),不在夹具里手抄一份 ——
+// 手抄的那份会在判定本体换链根时静默说谎,而那一格正是「判定面含哪几条链」的牙齿。
+import { CHAIN_ROOTS } from "./chain-expand.mjs";
 
 const projectRoot = ROOT;
 const checkerPath = join(projectRoot, "gates", "repo", "check-test-layout.mjs");
@@ -148,6 +158,15 @@ function judge(extra, opts = {}) {
       minScannedFiles: opts.minScannedFiles ?? 0,
       // l5Exemptions 注入:走 base 的注入面,不读真实数据文件 ⇒ 夹具与真实仓库互不影响
       l5Exemptions: opts.l5Exemptions ?? [],
+      // ⚠ **合成根必须把门禁清单也注入掉**,理由与上面那条同款但更硬:合成根里没有 `gates/`
+      // 也没有 `package.json` 的 scripts 表,若让它读**真实注册表**,L11 会把 39 项门禁全判成
+      // 「无载体」(合成根里当然没有载体)、L12 会因读不到 package.json 而判红 —— 于是
+      // **每一条既有夹具都会先被 L11/L12 判红**,症状离根因隔着一整族判据。
+      // 合成树里**没有登记任何门禁**是如实的(它就是一个 test/ 布局的合成根),
+      // 故这里注入空清单;L11/L12 的正面与负向夹具各自在下面那一族里单独求值。
+      gateRegistry: opts.gateRegistry ?? {},
+      // 门禁级豁免表同理:合成根里没有那张数据文件,让它去读会命中「读不到 → 判红」那一档。
+      gateExemptions: opts.gateExemptions ?? [],
       // ⚠ 删行口是自检专用,且**只允许删行**。它必须永远是「拿掉一行让漏斗查不到」这一个方向 ——
       // 一旦它能新增表项或加 `pending: true`,注入口就成了「可配置即假话」的后门:
       // 自检夹具能调档 ⇒ 生产调用点也能调档 ⇒ fail-open。另两个方向由门禁的
@@ -293,6 +312,46 @@ function behaviorSegment(covers) {
     "",
   ].join("\n");
 }
+
+/**
+ * L11/L12 判定本体的注入夹具(纯函数档,不 spawn、不碰真实工作树)。
+ *
+ * **为什么这两族不走 `judge()` 而直调判定本体**:它们的面是**门禁清单 + scripts 表**,
+ * 与 test/ 树无关。走 `judge()` 得在合成根里造一整棵 test/ 树,却一行都用不上 ——
+ * 而更糟的是它会让「L11/L12 的命中」与「L4–L8 的命中」混进同一个 `problems`,症状出了
+ * 无法归因。故这两族有独立的注入面与独立的档位断言。
+ *
+ * @param {object} opts
+ * @param {readonly Record<string, object>} opts.gates 注入的门禁清单
+ * @param {Record<string, string>} [opts.scripts] 注入的 scripts 表(缺省取 package.json 真实表)
+ * @param {string[]} [opts.existingFiles] 声明「存在」的文件(替 fileExists)
+ * @param {Record<string, string>} [opts.segmentBodies] 段路径 → 正文(替「验收段引用」那一档)
+ * @param {{gate: string, reason: string}[]} [opts.exemptions] 门禁级豁免表
+ * @param {"l11" | "l12"} opts.family 跑哪一族
+ * @returns {{ problems: string[], stats: Record<string, number> }}
+ */
+function judgeGate(  { gates, scripts, existingFiles = [], segmentBodies = {}, exemptions = [], family }) {
+  const resolved = scripts ?? JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8")).scripts;
+  const { gates: normalized } = makeGateRegistryCtx(gates);
+  if (family === "l11") {
+    const present = new Set(existingFiles);
+    return judgeL11Carrier({
+      deps: { fileExists: (rel) => present.has(rel), segmentBodies: new Map(Object.entries(segmentBodies)) },
+      gates: normalized,
+      exemptions,
+    });
+  }
+  return judgeL12ChainMembership({ gates: normalized, scripts: resolved });
+}
+
+/** L11/L12 夹具的最小门禁清单项(只填判定要用的字段,其余由 makeGateRegistryCtx 补判红)。 */
+const GATE = (id, extra = {}) => ({
+  id,
+  access: ACCESS_CHAIN,
+  npmScripts: [`check:${id}`],
+  modulePath: `gates/repo/check-${id}.mjs`,
+  ...extra,
+});
 
 const CASES = [
   {
@@ -1043,6 +1102,326 @@ const CASES = [
     name: "CRITERIA 静态层变异:表里多一行僵尸行 ⇒ sourceAudit 判红(变异实验)",
     sourceAuditMutation: "zombie",
   },
+  // ---- L11 gate-has-carrier:三档各一 + 豁免表三档 fail-closed + stale ----
+  // L11 的核心命题:**每道门禁都要有「有人能证明它坏掉时会红」的载体**。
+  // 三档逐条钉:档 1(有载体)/ 档 2(无载体但在豁免表)/ 档 3(两者皆无 → 红)。
+  //
+  // ⚠ **每档都断言 `problems` 非空或为空的具体形状**,且负向档用 `expectAlso` 钉住诊断正文 ——
+  // 只断 `problems.length > 0` 的话,「判红的原因与本档无关」也能过(例如因为别的门禁缺载体),
+  // 而那种夹具在实现改坏时仍然全绿。
+  {
+    // 档 1a:同名 selftest 载体存在 → 零判红。**这格缺了的话,下面那两条负向档可能只是「恒红」**。
+    name: "L11 档1:门禁有同名 selftest 载体 → 判绿",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    existingFiles: ["gates/repo/check-alpha.selftest.mjs"],
+    expect: null,
+  },
+  {
+    // 档 1a 的前缀变体:实测 `check-release-notes.mjs` 的载体叫 `release-notes.selftest.mjs`
+    // (去掉了 `check-` 前缀)。只认带前缀的那一种会把这种合法命名判红 ⇒ 逼人改文件名。
+    name: "L11 档1:载体名去掉 check- 前缀也算命中(实测 check-release-notes 的真实形态)",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    existingFiles: ["gates/repo/alpha.selftest.mjs"],
+    expect: null,
+  },
+  {
+    // 档 1b:没有同名 selftest,但某个验收段的正文引用了该门禁的**无扩展名仓库相对路径**。
+    // 这一档是 ADR-062 原判据改不掉的那一半:实测**多道门禁共用一个验收段**是本仓既有事实
+    // (`test/gates/supply-chain.test.js` 同时是 sbom/sca/licenses/fulltext 四项的载体),
+    // 纯路径派生对「共用段」结构性无解 ⇒ 没有这一档,那 23 项会当场判红。
+    name: "L11 档1:无同名 selftest,但有验收段引用该门禁的仓库相对路径 → 判绿(共用段形态)",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    segmentBodies: { "test/gates/shared.test.js": 'import x from "../../gates/repo/check-alpha.mjs";\n' },
+    expect: null,
+  },
+  {
+    // 档 2:无载体但已登记豁免且 reason 达标 → 判绿。
+    name: "L11 档2:无载体但在门禁级豁免表登记且 reason 达标 → 判绿",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    exemptions: [{ gate: "alpha", reason: "该门禁的判定面由链上验收段一并覆盖,已逐条审过,补载体会重复跑同一批负向夹具" }],
+    expect: null,
+  },
+  {
+    // 档 3:两者皆无 → 判红。**这格是 L11 存在的全部意义**:它抓的是「无人能证明这道门禁坏掉时会红」。
+    name: "L11 档3:既无同名载体也无验收段引用且不在豁免表 → 判红并点名该门禁",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    expect: /alpha → gate-has-carrier:该门禁\(gates\/repo\/check-alpha\.mjs\)既没有同名 selftest 载体[\s\S]*没有任何验收段引用它/,
+    // 反向断言:诊断必须点名**两条正当出路**。只断「判红」的话,一条只会说「缺载体」的
+    // 诊断同样能过,而那等于逼人猜该怎么办。
+    expectAlso: /补一份负向载体[\s\S]*登记进 .*并写明理由/,
+  },
+  {
+    // 档 3 的**可归因性**:两门禁里只有一个缺载体,诊断必须只点名那一个。
+    // 少了 expectAbsent,「逐条点名」这件事无人证明 —— 实现若每条都点名全表也照样绿。
+    name: "L11 档3:两门禁中只有一个缺载体 → 只点名缺的那个",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha"), beta: GATE("beta") },
+    existingFiles: ["gates/repo/check-beta.selftest.mjs"],
+    expect: /alpha → gate-has-carrier/,
+    expectAbsent: /beta → gate-has-carrier/,
+  },
+  {
+    // 档 1b 的**收窄口径**:basename 口径会把「正文里偶然出现过这个词」当成载体(假绿)。
+    // 实测放宽到 basename 时 `smoke` 会匹配到 14 个段。收窄后这一格必须判红。
+    name: "L11 档1b 的口径是「无扩展名的完整仓库相对路径」,不是 basename(否则正文偶然出现即算载体)",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    // 只出现 basename,不出现完整路径 ⇒ 不算载体。
+    segmentBodies: { "test/gates/misc.test.js": '// 这里只是提到了 check-alpha 这个名字\nexport const x = 1;\n' },
+    expect: /alpha → gate-has-carrier/,
+  },
+  {
+    // 豁免表三档 fail-closed ①:**读表本身**失败 → 判红。走 `loadGateExemptions` 的真实读盘
+    // 路径(不是注入面):注入面按构造永远「读得到」,那一档就无人验证了。
+    // 静默当空表会让表里那些合法表项一并失效,而门禁只是变红 —— 没人知道红的原因是表坏了。
+    name: "L11 豁免表:读不到 → 判红(不得静默当空表,须走真实读盘路径)",
+    gateExemptionLoad: "missing",
+    expect: /门禁级豁免表读不到或不是合法 JSON/,
+  },
+  {
+    // ① 的第二形态:文件在,但**不是合法 JSON**(比如被一次坏合并截断)。
+    // 缺它的话,「不是合法 JSON」这一半无人发现 —— 而它与「文件不在」的处置是同一条分支,
+    // 两者的失效形态相同(表静默消失)。
+    name: "L11 豁免表:文件在但不是合法 JSON → 判红(坏合并会让整张表静默消失)",
+    gateExemptionLoad: "corrupt",
+    expect: /门禁级豁免表读不到或不是合法 JSON/,
+  },
+  {
+    // ②:缺 entries 数组 → 判红。**这是最隐蔽的一档**:JSON 合法、文件在,但没有 `entries` 键
+    // ⇒ `Array.isArray(undefined)` 为 false。若实现写成 `raw.entries ?? []`,这张表会被
+    // 永久当成空表,而门禁只会一直落档 3,没人知道表本身坏了。
+    name: "L11 豁免表:合法 JSON 但缺 entries 数组 → 判红(不得按 ?? [] 当空表)",
+    gateExemptionLoad: "no-entries",
+    expect: /门禁级豁免表缺 entries 数组/,
+  },
+  {
+    // ① 的正向对照:表真的读得到(哪怕是空的)才不报上面那三档。
+    // 缺它的话,「读不到」那一档可能是因为「永远读不到」而恒红 —— 那不是 fail-closed,是恒红。
+    name: "L11 豁免表:表读得到(空表) → 三档皆不报",
+    gateExemptionLoad: "empty",
+    expect: null,
+  },
+  {
+    // 豁免表 ②:键名写错(缺 gate)→ 判红。跳过它等于给「写错键名」开了一个静默放行的口:
+    // 它拿到的键永远命中不上,于是那道门禁一直落档 3,而没人知道表里其实有一条。
+    name: "L11 豁免表:表项缺 gate 键 → 判红(键名写错会让豁免静默失效)",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    exemptions: [{ reason: "没有 gate 键,这条豁免拿到的键永远命中不上" }],
+    expect: /第 1 项缺 gate/,
+  },
+  {
+    // 档 2 的 reason 门槛:与 L5 同判准(≥REASON_MIN_CHARS 字,按码点)。
+    // 写不出「为什么这道门禁可以没有载体」时,该做的是补载体而不是塞进表里。
+    name: "L11 豁免表:登记了但 reason 不足门槛 → 判红(空/见谅式理由挡不住下次先豁免后补)",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    exemptions: [{ gate: "alpha", reason: "见谅" }],
+    expect: new RegExp(
+      `alpha → gate-has-carrier:该门禁无载体、已在门禁级豁免表登记.*但 reason 只有 2 字,不足门槛 ${REASON_MIN_CHARS} 字`,
+      "s",
+    ),
+  },
+  {
+    // stale(ratchet):登记了却当前**已有**载体 ⇒ 表项必须同批删掉。
+    // 没有这一条,表只会单调增长、失效项永远占着位子,而门禁对它们一声不吭。
+    name: "L11 豁免表:表项当前不再需要(门禁已补上载体)→ 判红(ratchet)",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    existingFiles: ["gates/repo/check-alpha.selftest.mjs"],
+    exemptions: [{ gate: "alpha", reason: "曾经合法,载体后来补上了,这条表项应当同批删掉才符合 ratchet 的要求" }],
+    expect: /alpha → gate-has-carrier:门禁级豁免表登记了 alpha,但它现在已有载体/,
+  },
+  {
+    // stale 的第二种形态:门禁已从清单里消失。载体判据不看它,但表项仍在 ⇒ 同样判红。
+    name: "L11 豁免表:表项的门禁已不在清单里 → 判红(门禁已删,豁免必须同批删掉)",
+    gateFamily: "l11",
+    gates: { alpha: GATE("alpha") },
+    existingFiles: ["gates/repo/check-alpha.selftest.mjs"],
+    exemptions: [{ gate: "gone-gate", reason: "这道门禁已经不存在了,表项本该在同一次改动里被删掉" }],
+    expect: /gone-gate → gate-has-carrier:门禁级豁免表登记了 gone-gate,但门禁清单里没有这一项/,
+  },
+  {
+    // 门禁清单缺字段 ⇒ 判红**而不是跳过**:跳过等于让那道门禁从 L11/L12 两族里凭空消失,
+    // 而消失形态是「门禁变绿」而不是「变红」—— 纯文本门禁最坏的失效形态。
+    name: "L11 门禁清单:缺 modulePath → 判红(不得跳过,跳过会让这道门禁凭空消失)",
+    gateFamily: "l11",
+    registryProblems: true,
+    gates: { alpha: { id: "alpha", access: ACCESS_CHAIN, npmScripts: ["check:alpha"] } },
+    expect: /门禁清单 alpha 缺 modulePath/,
+  },
+  // ---- L12 / L12c gate-chain-membership:两向 + 取值域 + pendingChain ----
+  {
+    // L12 的**正向锚点**:声明 chain 且接入点真在链上 → 零判红。
+    // 缺它的话,下面两条负向夹具可能只是「恒红」—— 没人能证明合法形态真的能过。
+    name: "L12 正向锚点:access=chain 且接入点真在链上 → 零判红",
+    gateFamily: "l12",
+    gates: { alpha: GATE("alpha", { npmScripts: ["check:contract"] }) },
+    expect: null,
+  },
+  {
+    // 两向之一:chain 的**必须**真在链上。声明在链上而实际不在 =「没人跑它」的最短路径。
+    name: "L12 方向一:access=chain 但接入点不在任何链上 → 判红",
+    gateFamily: "l12",
+    gates: { alpha: GATE("alpha", { npmScripts: ["check:never-on-any-chain"] }) },
+    expect: /alpha → gate-chain-membership:access 声明 chain,但 `check:never-on-any-chain` 不在 verify:ci \/ verify:release \/ dist 任一条链上/,
+  },
+  {
+    // 两向之二:offchain 的**不得**在链上。声明与事实相反同样是无声的漂移。
+    name: "L12 方向二:access=offchain 但接入点真在链上 → 判红(声明与事实相反)",
+    gateFamily: "l12",
+    gates: { alpha: GATE("alpha", { access: ACCESS_OFFCHAIN, npmScripts: ["check:contract"] }) },
+    expect: /alpha → gate-chain-membership:access 声明 offchain,但 `check:contract` 真在 verify:ci \/ verify:release \/ dist 上/,
+  },
+  {
+    // 反向锚点:offchain 且确实不在链上 → 零判红。
+    name: "L12 反向锚点:access=offchain 且接入点确实不在链上 → 零判红",
+    gateFamily: "l12",
+    gates: { alpha: GATE("alpha", { access: ACCESS_OFFCHAIN, npmScripts: ["check:never-on-any-chain"] }) },
+    expect: null,
+  },
+  {
+    // 取值域:现装注册表的三值(`local`/`workflow`)不在两值域内 —— 这是当前**唯一会红**的一档,
+    // 也是 L12 标 report-only 的全部理由(此刻转 fail-closed 会当场判红 13 项)。
+    name: "L12 取值域:access=local(未迁移的旧值)→ 判红并点名它是旧值",
+    gateFamily: "l12",
+    gates: { alpha: GATE("alpha", { access: "local", npmScripts: ["check:never-on-any-chain"] }) },
+    expect: /alpha → gate-chain-membership:access 取值「local」不在取值域内\(只允许 chain \/ offchain\) —— 它是 ADR-062 S3 尚未迁移的旧值/,
+  },
+  {
+    // workflow 那一档与二分不对齐(在 CI 上但不在 verify:ci 链上),这是两值化的直接理由。
+    name: "L12 取值域:access=workflow 同样判红(该档与二分不对齐,ADR-062 S3 会把它收敁)",
+    gateFamily: "l12",
+    gates: { alpha: GATE("alpha", { access: "workflow", npmScripts: ["check:never-on-any-chain"] }) },
+    expect: /access 取值「workflow」不在取值域内/,
+  },
+  {
+    // L12c:offchain 带 pendingChain 且理由达标 → 零判红(这一格是 L12c 存在的正向证明)。
+    name: "L12c:offchain 带 pendingChain 且理由达标 → 零判红(显式登记是合法形态)",
+    gateFamily: "l12",
+    gates: {
+      alpha: GATE("alpha", {
+        access: ACCESS_OFFCHAIN,
+        npmScripts: ["check:never-on-any-chain"],
+        pendingChain: "本应进链,但它当前判红项数与链上验收段重复,待 S3 一并迁移",
+      }),
+    },
+    expect: null,
+  },
+  {
+    // L12c 的负档:声明了却写不出理由 ⇒ 与「没声明」在门禁上不可区分,而那正是它要消灭的失效形态。
+    name: "L12c:offchain 带 pendingChain 但理由不足门槛 → 判红(挂着标记却说不出为什么)",
+    gateFamily: "l12",
+    gates: {
+      alpha: GATE("alpha", {
+        access: ACCESS_OFFCHAIN,
+        npmScripts: ["check:never-on-any-chain"],
+        pendingChain: "见谅",
+      }),
+    },
+    expect: new RegExp(
+      `alpha → gate-chain-membership:声明了 pendingChain,但理由只有 2 字,不足门槛 ${REASON_MIN_CHARS} 字`,
+    ),
+  },
+  {
+    // pendingChain **只对 offchain 有意义**:access=chain 却带它,声明本身自相矛盾
+    // (它已在链上,「本应进链」无从谈起)。判红而不是放过。
+    name: "L12c:access=chain 却带 pendingChain → 判红(声明自相矛盾)",
+    gateFamily: "l12",
+    gates: {
+      alpha: GATE("alpha", {
+        npmScripts: ["check:contract"],
+        pendingChain: "本应进链",
+      }),
+    },
+    expect: /alpha → gate-chain-membership/,
+  },
+  {
+    // **递归展开**的牙齿:门禁挂在子脚本上、而子脚本被链根引用 ⇒ 必须在链上。
+    // 判据若退化成扁平 `split('&&')`,这一格立刻判红 —— 那正是 chain-expand.mjs 单源化的理由
+    // (「门禁在链上」被静默降级成「不在链上」而没有任何东西报红)。
+    name: "L12:门禁挂在子脚本上、子脚本被链根引用 → 零判红(证明走的是递归展开而非扁平 split)",
+    gateFamily: "l12",
+    scripts: {
+      "verify:ci": "npm run ci:static && npm run check:alpha",
+      "ci:static": "npm run check:static",
+      "check:static": "node gates/repo/check-static.mjs",
+      "check:alpha": "node gates/repo/check-alpha.mjs",
+      "verify:release": "npm run verify:ci && npm run dist",
+      dist: "npm run clean:dist",
+      "clean:dist": "node tools/clean.mjs",
+    },
+    gates: { alpha: GATE("alpha", { npmScripts: ["check:alpha"] }) },
+    expect: null,
+  },
+  {
+    // 与上一条成对:子脚本**没有**被链根引用时,扁平实现会**判绿**(看不见内层),
+    // 递归实现才判红。少了它,上一格可能只是「碰巧对」。
+    name: "L12:门禁挂在子脚本上但子脚本不在链上 → 判红(递归展开看得见内层,扁平 split 看不见)",
+    gateFamily: "l12",
+    scripts: {
+      "verify:ci": "npm run check:static",
+      "check:static": "node gates/repo/check-static.mjs",
+      "check:alpha": "node gates/repo/check-alpha.mjs",
+      "verify:release": "npm run verify:ci && npm run dist",
+      dist: "npm run clean:dist",
+      "clean:dist": "node tools/clean.mjs",
+    },
+    gates: { alpha: GATE("alpha", { npmScripts: ["check:alpha"] }) },
+    expect: /alpha → gate-chain-membership:access 声明 chain/,
+  },
+  {
+    // **CHAIN_ROOTS 派生**的牙齿:门禁的接入点**只被一条非链根 script 引用**时判红,
+    // 而诊断必须**逐字列出全部三条链根**。若实现把链根写死成两条(漏了 dist)、
+    // 或诊断只列其中一部分,这一格就会翻脸。
+    // ⚠ `dev:loop` 是第四条 script,**没有任何链根引用它** ⇒ `check:alpha` 不可达。
+    // (⚠ 别把它挂在 `dist` 下面:`dist` 本身就是链根,挂上去就可达了 —— 那正是下一格。)
+    // ⚠ 断言从 `CHAIN_ROOTS` **现算**该串(不手抄):手抄的那份会在链根变更时静默说谎,
+    // 而「判定面含哪几条链」正是本条要钉的东西。
+    name: "L12:门禁只被非链根 script 引用 → 判红,且诊断逐字列出全部 CHAIN_ROOTS",
+    gateFamily: "l12",
+    gates: { alpha: GATE("alpha", { npmScripts: ["check:alpha"] }) },
+    scripts: {
+      "verify:ci": "npm run check:contract",
+      "verify:release": "npm run verify:ci && npm run dist",
+      dist: "npm run clean:dist",
+      "clean:dist": "node tools/clean.mjs",
+      "dev:loop": "npm run check:alpha",
+      "check:alpha": "node gates/repo/check-alpha.mjs",
+      "check:contract": "node gates/repo/check-ci-contract.mjs",
+    },
+    expect: new RegExp(
+      `不在 ${CHAIN_ROOTS.map((root) => root.replace(/:/g, "\\:")).join(" \\/ ")} 任一条链上`,
+    ),
+  },
+  {
+    // 与上一条成对:同一条 script,在**它自己就是链根的子命令**的形态下必须在链上。
+    // 缺它的话,上一格可能只是「因为判据恒红」—— 这一格证明判定面**认得出**在链上的形态。
+    name: "L12:门禁挂在 dist 链根自身的 script 上 → 零判红(与上一条成对,证明不是恒红)",
+    gateFamily: "l12",
+    gates: { alpha: GATE("alpha", { npmScripts: ["dist-only:check"] }) },
+    scripts: {
+      "verify:ci": "npm run check:contract",
+      "verify:release": "npm run verify:ci && npm run dist",
+      dist: "npm run dist-only:check",
+      "dist-only:check": "node gates/artifacts/check-dist-only.mjs",
+      "check:contract": "node gates/repo/check-ci-contract.mjs",
+    },
+    expect: null,
+  },
+  {
+    // 门禁清单缺 access ⇒ 判红(取值域判据无从核对),不得跳过。
+    name: "L12 门禁清单:缺 access → 判红(取值域判据无从核对)",
+    gateFamily: "l12",
+    registryProblems: true,
+    gates: { alpha: { id: "alpha", npmScripts: ["check:alpha"], modulePath: "gates/repo/check-alpha.mjs" } },
+    expect: /门禁清单 alpha 缺 access/,
+  },
   // ---- 进程级档:退出码与两通道的接线 ----
   // ⚠ 这一族原先成对存在「默认档 exit 0 / --enforce exit 1」。`--enforce` 已删(不留兼容):
   // 该开关一旦存在,「哪些族进哪档」的知识就同时存在于 CRITERIA 与命令行两处。
@@ -1274,6 +1653,93 @@ for (const testCase of CASES) {
           `${testCase.name}:期望 ${wantSorted.length} 条 [${shape(wantSorted).join(" · ")}],`
           + `实际 ${actualSorted.length} 条 [${shape(actualSorted).join(" · ")}]`,
         );
+      }
+      continue;
+    }
+    if (testCase.gateExemptionLoad !== undefined) {
+      // 读表档:走 `loadGateExemptions` 的**真实读盘路径**(临时合成根),
+      // 而不是注入面 —— 注入面按构造永远「读得到」,那一档就无人验证了。
+      // 四种形态各一:文件不在 / 文件在但 JSON 坏了 / JSON 合法但缺 entries / 表读得到。
+      const dir = mkdtempSync(join(tmpdir(), "m2w-gate-exempt-selftest-"));
+      try {
+        if (testCase.gateExemptionLoad === "corrupt") {
+          writeUnder(dir, GATE_EXEMPTIONS_REL, "{ this is not json ");
+        } else if (testCase.gateExemptionLoad === "no-entries") {
+          writeUnder(dir, GATE_EXEMPTIONS_REL, `${JSON.stringify({ _comment: "缺 entries 键" }, null, 2)}\n`);
+        } else if (testCase.gateExemptionLoad === "empty") {
+          writeUnder(dir, GATE_EXEMPTIONS_REL, `${JSON.stringify({ entries: [] }, null, 2)}\n`);
+        }
+        const { problems: loaded } = loadGateExemptions(dir);
+        const joined = loaded.join("\n");
+        if (testCase.expect === null ? loaded.length === 0 : testCase.expect.test(joined)) {
+          console.log(`[ok] test-layout-selftest:${testCase.name}(${loaded.length} 条读表诊断)`);
+        } else {
+          failures.push(
+            `${testCase.name}:期望${testCase.expect === null ? "零读表诊断" : `匹配 ${testCase.expect}`},`
+            + `实际 ${loaded.length} 条\n${joined || "(零诊断)"}`,
+          );
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+      continue;
+    }
+    if (testCase.gateFamily !== undefined) {
+      // L11/L12 档:直调判定本体。**不 spawn、不建合成 test/ 树** —— 这两族的面是
+      // 「门禁清单 + scripts 表」,与 test/ 树无关(理由见 judgeGate 的注释)。
+      //
+      // ⚠ `registryProblems: true` 那一格读的是**清单归一阶段**的 problems,不是判定本体的:
+      // 「缺字段 → 判红」发生在 makeGateRegistryCtx 里,而 makeGateRegistryCtx 同时也是
+      // 判定本体的入参准备 —— 那道门在归一阶段,不在 judgeL11/judgeL12 里。
+      const raw = testCase.registryProblems === true
+        ? makeGateRegistryCtx(testCase.gates).problems
+        : judgeGate({
+          family: testCase.gateFamily,
+          gates: testCase.gates,
+          scripts: testCase.scripts,
+          existingFiles: testCase.existingFiles ?? [],
+          segmentBodies: testCase.segmentBodies ?? {},
+          exemptions: testCase.exemptions ?? [],
+        }).problems;
+      // ⚠ 恒绿防护:判据表若有 id 未登记,那些命中会被 `report` 额外追一条
+      // `criteria-unregistered:`;而本档直调判定本体、**不经漏斗**,故此处显式核对
+      // 「发出的 id 全在 CRITERIA 里」—— 让「判定本体与登记表脱节」这一格有牙齿。
+      const declared = new Set(CRITERIA.map((entry) => entry.id));
+      const expectedId = testCase.gateFamily === "l11" ? "gate-has-carrier" : "gate-chain-membership";
+      if (!declared.has(expectedId)) {
+        failures.push(
+          `${testCase.name}:判定本体发出的 id ${expectedId} 不在 CRITERIA 里 —— 它的强制等级无人负责`,
+        );
+        continue;
+      }
+      const joined = raw.join("\n");
+      const statsText = `problems=${raw.length}`;
+      if (testCase.expectAbsent !== undefined && testCase.expectAbsent.test(joined)) {
+        failures.push(
+          `${testCase.name}:期望**不**出现 ${testCase.expectAbsent},实际命中\n${joined}`,
+        );
+        continue;
+      }
+      if (testCase.expect === null) {
+        // ⚠ 恒绿防护:`expect: null` 必须**真的**断「零命中」。它与「实现恒抛异常/恒返回空」
+        // 只差一层 —— 故这里额外要求 problems 是数组且长度为 0,而不是「没有报错就算过」。
+        if (Array.isArray(raw) && raw.length === 0) {
+          console.log(`[ok] test-layout-selftest:${testCase.name}(零判红 / ${statsText})`);
+        } else {
+          failures.push(
+            `${testCase.name}:期望零判红,实际 ${Array.isArray(raw) ? raw.length : "非数组"}\n${joined}`,
+          );
+        }
+        continue;
+      }
+      if (testCase.expect.test(joined)) {
+        if (testCase.expectAlso !== undefined && !testCase.expectAlso.test(joined)) {
+          failures.push(`${testCase.name}:期望 problems 同时匹配 ${testCase.expectAlso},实际\n${joined}`);
+          continue;
+        }
+        console.log(`[ok] test-layout-selftest:${testCase.name}(漂移被拦截 / ${statsText})`);
+      } else {
+        failures.push(`${testCase.name}:期望判红项匹配 ${testCase.expect},实际\n${joined || "(零判红)"}`);
       }
       continue;
     }

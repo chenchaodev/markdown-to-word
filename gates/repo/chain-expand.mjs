@@ -30,6 +30,25 @@
 // 判定严格强于它。
 
 /**
+ * npm script 链的**根**(展开面 = 这三条链的全部 `npm run` 子链)。
+ *
+ * ⚠ **`gates/probe/gate-probes/registry.mjs:39` 另有一份逐字相同的副本,待 S3 改为从此处 import。**
+ * 本条之所以先落在这里而不是留在注册表侧:门禁的「链归属」判据(L12)要读链根,而那段判定
+ * 本体住在 `gates/repo/check-test-layout.mjs`;注册表侧与判定侧各写一份链根表,就是本仓反复
+ * 批过的那种「两份可漂移的副本」—— 链根少一条时 L12 会在**零诊断**的情况下退化成「什么都不查」
+ * (门禁从那一刻起恒绿),而没有任何东西会报红。把定义放在链解析本模块里,两个消费方从同一处取,
+ * 漂移面收敛到「复制的那一份」这一个点,且它有 grep 锚。
+ *
+ * 三条链的语义(为什么正好是这三条):`verify:ci` 是 CI 的验收入口、`verify:release` 是发布入口
+ * (形态断言要求它恰为 `verify:ci` + `dist`,见文件头)、`dist` 是打包与产物校验那一段。
+ * **新增一条链根必须同改这里** —— 它是「门禁在不在链上」这条判据的判定面,漏改则那条判据对
+ * 新链恒真。
+ *
+ * @type {readonly string[]}
+ */
+export const CHAIN_ROOTS = Object.freeze(["verify:ci", "verify:release", "dist"]);
+
+/**
  * 整段就是 `npm run [开关…] <name>` 时,取其 script 名。
  *
  * 允许脚本名前夹带 npm 开关(`--silent` 抑制 run 头噪声):开关不参与脚本名捕获。
