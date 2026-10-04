@@ -888,9 +888,10 @@ export function classifyUnmatchedPathRefs(files, readFile) {
 
 // --------------------------------- 台账一致性:工作项号台账的台账内不变量
 //
-// 判据 R1–R7(全部为**台账内**不变量,只需读 `docs/REQ.md` 一个文件):
+// 判据 R1–R8(全部为**台账内**不变量,只需读 `docs/REQ.md` 一个文件):
 //   R1 号唯一 · R2 状态取值域 · R3 号形态 · R4 已用最大号 == 实算最大号
 //   R5 下一个可用号 == 已用最大号+1 · R6 号段连续 · R7 墓碑 ⇔ 划掉(双向)
+//   R8 状态 ⇔ 所在节(相容;节名不认识时**只出声**不判红)
 //
 // **判红的前提是解析成功**:解析失败时我分不清「用户写错了」与「我读不懂」,故 B1–B6 全部只出声
 // 不判红(B* 落在覆盖度自报区)。这是「判红的前提是解析成功」这条原则的另一个面。
@@ -900,10 +901,31 @@ export function classifyUnmatchedPathRefs(files, readFile) {
  * 「全部收口」会让任何一条在办/待拍板需求长期假红 —— 恒红的门禁和永绿的一样是橡皮章。 */
 const LEDGER_STATUS = ['待拍板', '未开工', '在办', '已完成', '已作废'];
 
+/**
+ * 「状态 ⇔ 所在节」的相容表 —— 节名 → **该节允许的状态集合**。R8 的唯一来源。
+ *
+ * ⚠️ **与 R2 是两件事,不可互相替代**:R2 只判「状态词在不在取值域内」,而取值域是**扁平**的
+ * (`LEDGER_STATUS` 五个词)——「已完成」在取值域内,于是一行**状态与所在节不符**(已完成的活留在
+ * 「待拍板」节)**两条都判绿**。实测:把三行改成「已完成」却仍留在「待拍板」节,整档报
+ * 「判据判定 7/7 项」全绿。而 R8 手里**同时有 `status` 与 `row.section`**
+ * (`locateRegistry` 已把节名挂到每一行上),却从没拿两者比对过 —— 数据全在,只差这一次比对。
+ *
+ * **键是节名且必须逐字相等**:节名取 `sectionByLine` 的 `## ` 标题原文,带括号注记的写法
+ * (`## 已完成(≤100 字)`)取不到键 ⇒ 落入「节不认识」那一档 ⇒ R8 对该行**不出声**(见
+ * `checkLedger` 里 `sectionUnknown` 的处理:出声说「零覆盖」,不静默当通过)。
+ * 这是**刻意从严**的方向:宁可报「没查」,也不把不认识节名当成「相容」。
+ */
+const SECTION_STATUS = {
+  待拍板: ['待拍板', '未开工'],
+  在办: ['在办'],
+  已完成: ['已完成'],
+  已作废: ['已作废'],
+};
+
 /** 判据清单(只作文档与分母,判定逻辑不按 id 分派)。 */
 const LEDGER_RULES = [
   'R1 号唯一', 'R2 状态取值域', 'R3 号形态', 'R4 已用最大号', 'R5 下一个可用号',
-  'R6 号段连续', 'R7 墓碑⇔划掉',
+  'R6 号段连续', 'R7 墓碑⇔划掉', 'R8 状态⇔所在节',
 ];
 
 /** 台账号形态:**固定三位零填充**且从 1 起。`REQ-000` 是号段的零值占位,不是工作项号。 */
@@ -985,50 +1007,67 @@ function isSeparatorRow(cells) {
 }
 
 /**
- * 表格**结构**判据:台账表块必须严格是「表头 → 分隔行 → 数据行」三段紧邻。
+ * 表格**结构**判据(C7):台账表块必须严格是「表头 → 分隔行 → 数据行…」**逐行紧邻**。
  *
  * **为什么必须单独判**:`tableBlocks` 对空行是「块内跳过,不终止」,而 `blockHeadAndRows`
- * 只把 `block.rows[0]` 当表头、**其余一律当数据行** —— 它**不要求第 2 行是分隔行**。
- * 于是「数据行被插到表头与分隔行之间」这种破损会被**静默吸收**:真分隔行被当成一条普通数据行跳过,
- * 错位的行被当成数据读进去 —— **行数照样对得上,门禁照样 exit 0**。
+ * 只把 `block.rows[0]` 当表头、**其余一律当数据行** —— 它**不要求第 2 行是分隔行**,
+ * 也**看不到块内夹着的空行**。于是「数据行被插到表头与分隔行之间」这种破损会被**静默吸收**:
+ * 真分隔行被当成一条普通数据行跳过,错位的行被当成数据读进去 —— **行数照样对得上,门禁照样 exit 0**。
  *
  * 解析器宽容是对的(免得对非台账表格误报),但**宽容不能等于无感** —— 结构坏了必须出声。
  * 故本判据**只对台账表头(含「号」且含「状态」)生效**,不影响其它表格与模板骨架。
+ *
+ * ⚠️ **判据必须作用在原始行序列上,不能作用在 `rows` 上**:`rows` 只收数据行,**空行早就被
+ * 过滤掉了** —— 在它上面判「有没有空行」等于判一个恒假命题(恒绿判据)。故此处比的是
+ * `block.rows[i].lineNo` 的**连号**,那才是空行留下的唯一痕迹。
+ *
+ * ⚠️ **只比「相邻元素之间」,不比末行之后**:表块最后一个数据行**后面**的空行是 Markdown
+ * 里正常的表块终止(后面通常紧跟 `## ` 小节),判它红等于逼人删掉正常排版。
+ *
+ * @param lines 遮罩后的原始行序列
+ * @returns `{ findings, examined }` —— `examined` = 真正判过的登记表块数(零覆盖自报的分母)。
  */
 export function checkTableShape(lines) {
-  const errors = [];
+  const findings = [];
+  let examined = 0;
+  const sections = sectionByLine(lines);
   for (const block of tableBlocks(lines)) {
     if (block.rows.length < 2) continue;
     const [header, second, ...rest] = block.rows;
     const names = splitTableRow(header.text).map(normalizeHeaderCell);
     if (!names.some((n) => n.includes('号')) || !names.some((n) => n.includes('状态'))) continue;
+    examined += 1;
+    // 节名取本块**首行**所在的 `## ` 小节(与 `locateRegistry` 同一口径)。取不到 → 退化成
+    // 「台账」这个泛称,**不因此跳过判据**:节名只是诊断正文的一部分,判据本身不依赖它。
+    const section = sections.get(header.lineNo) ?? '';
+    const where = section ? `「${section}」节` : '台账';
     const sepCells = splitTableRow(second.text);
-    if (isSeparatorRow(sepCells)) {
-      // 关键:tableBlocks 对空行是「跳过不终止」, 块内**看不到**空行 ⇒ 只能比**原始行号**。
-      // 两处都必须行号连号: 表头→分隔行、分隔行→首行数据行。
-      // (只查后一处是**漏判**:空行夹在表头与分隔行之间时, 块内 rows[1] 仍是分隔行,
-      //  isSeparatorRow 为真, 分隔行→数据 那处又没空行 ⇒ 整档判绿。)
-      if (second.lineNo !== header.lineNo + 1) {
-        errors.push(
-          `${PROJECT_PROBE}:${header.lineNo + 1} → 表头(第 ${header.lineNo} 行)与分隔行(第 ${second.lineNo} 行)`
-          + `之间夹了 ${second.lineNo - header.lineNo - 1} 个空行 —— Markdown 表格在空行处断开, 分隔行不再紧邻表头`,
-        );
-      }
-      if (rest.length === 0) continue; // 空节:表头+分隔即全部, 合法
-      if (second.lineNo + 1 !== rest[0].lineNo) {
-        errors.push(
-          `${PROJECT_PROBE}:${second.lineNo + 1} → 分隔行(第 ${second.lineNo} 行)与首行数据行(第 ${rest[0].lineNo} 行)`
-          + `之间夹了 ${rest[0].lineNo - second.lineNo - 1} 个空行 —— Markdown 表格在空行处断开, 后面的行不再属于本表`,
-        );
-      }
+    if (!isSeparatorRow(sepCells)) {
+      findings.push(
+        `${PROJECT_PROBE}:${second.lineNo} → 台账表块缺分隔行:表头(第 ${header.lineNo} 行)下一行应是 \`|---|…\`,`
+        + `实际是数据行「${second.text.slice(0, 40)}」—— 数据行被插到了表头与分隔行之间(${carrierScope('C7')})`,
+      );
       continue;
     }
-    errors.push(
-      `${PROJECT_PROBE}:${second.lineNo} → 台账表块缺分隔行:表头(第 ${header.lineNo} 行)下一行应是 \`|---|…\`,`
-      + `实际是数据行「${second.text.slice(0, 40)}」—— 数据行被插到了表头与分隔行之间`,
-    );
+    // 块内元素序列:表头 → 分隔行 → 第 1..n 个数据行。**只比相邻元素之间的原始行号连号** ——
+    // 空行与 `<!-- -->` 注释行都被 `tableBlocks` 跳过,它们只在这处留下行号的空洞。
+    const elements = [
+      { label: `表头(第 ${header.lineNo} 行)`, lineNo: header.lineNo },
+      { label: `分隔行(第 ${second.lineNo} 行)`, lineNo: second.lineNo },
+      ...rest.map((r, i) => ({ label: `第 ${i + 1} 个数据行(第 ${r.lineNo} 行)`, lineNo: r.lineNo })),
+    ];
+    for (let i = 0; i + 1 < elements.length; i += 1) {
+      const a = elements[i];
+      const b = elements[i + 1];
+      if (b.lineNo === a.lineNo + 1) continue;
+      const gap = b.lineNo - a.lineNo - 1;
+      findings.push(
+        `${PROJECT_PROBE}:${a.lineNo + 1} → ${where}登记表块内空行:${a.label}与${b.label}`
+        + `之间夹了 ${gap} 行 —— Markdown 表格在空行处断开, 后面的行不再属于本表(${carrierScope('C7')})`,
+      );
+    }
   }
-  return errors;
+  return { findings, examined };
 }
 
 /**
@@ -1208,7 +1247,7 @@ export function makeCrossRepoRowSkipper(readFile) {
 const pad3 = (n) => String(n).padStart(3, '0');
 
 /**
- * 台账内不变量 R1–R7。**纯函数,不做任何 IO** —— 判据全部只依赖台账文本本身。
+ * 台账内不变量 R1–R8。**纯函数,不做任何 IO** —— 判据全部只依赖台账文本本身。
  *
  * @param text `docs/REQ.md` 全文(读不到时传 `null`/`''`)
  * @returns `{ errors, notes, stats }`:`errors` 进错误流(exit 1);`notes` 是解析盲区与正常态提示,
@@ -1217,7 +1256,7 @@ const pad3 = (n) => String(n).padStart(3, '0');
 export function checkLedger(text) {
   const errors = [];
   const notes = [];
-  const stats = { rows: 0, placeholder: 0, badColumn: 0, max: 0, invariants: 0 };
+  const stats = { rows: 0, placeholder: 0, badColumn: 0, max: 0, invariants: 0, sectionUnknown: 0 };
   const done = new Set();
 
   if (typeof text !== 'string' || !text.trim()) {
@@ -1270,12 +1309,53 @@ export function checkLedger(text) {
     } else seen.set(id, row.lineNo);
     done.add('R1');
 
-    if (!LEDGER_STATUS.includes(status)) {
+    const statusInDomain = LEDGER_STATUS.includes(status);
+    if (!statusInDomain) {
+      // R2 的措辞**必须自带「所在节也要一起改」这条信息** —— R8 在本行**不参与判定**(见下),
+      // 若这句只说「状态列非法」,用户改完状态列仍可能把行留在错的节里,而**再没有一条判据会提**。
+      // ⚠️ **不能说「去 X 节」**:域外状态下用户还不知道该改成哪个状态,指不出具体的节 ⇒ 误导。
+      // 只陈述「两处要一起改」这个动作,不预设目标。
       errors.push(
-        `${PROJECT_PROBE}:${row.lineNo} → ${status || '(空)'} → 状态不在取值域内:只能是 ${LEDGER_STATUS.join(' / ')}`,
+        `${PROJECT_PROBE}:${row.lineNo} → ${status || '(空)'} → 状态不在取值域内:只能是 ${LEDGER_STATUS.join(' / ')}`
+          + ` —— 状态流转要**同时**改状态列与所在节(${PROJECT_PROBE} 的节就是状态分节),`
+          + `改完状态列后确认该行落在与新状态相容的那一节`,
       );
     }
     done.add('R2');
+
+    // R8:状态 ⇔ 所在节。紧邻 R2 —— **两条判的是同一格的不同侧面,分开写就会出现「R2 判过、
+    // R8 没判」而统计上仍算已判定**的那类缝。数据现成(`row.section` 由 `locateRegistry` 挂上)。
+    //
+    // ⚠️ **域外状态 ⇒ R8 不参与判定(不是判绿)**:`SECTION_STATUS` 的每个相容集都由
+    // `LEDGER_STATUS` 的成员构成,故一个**取值域外**的状态(如「审核中」)对**任何**节都不相容
+    // —— R8 的结论完全由 `status` 单独决定,`row.section` 不提供任何信息。那样每行会被报两次
+    // **同一个根因**,而判红条数是这条门禁的一等不变量(三处计数必须相等),
+    // 重复诊断纯粹是给「不许说谎」那几条断言加维护面。**根因只报一次**(R2 那条已把两条动作说全)。
+    //
+    // ⚠️ **节名不认识 ⇒ 不判红、只出声**:节名取 `## ` 标题原文,`## 已完成(≤100 字)` 这类
+    // 带注记的写法取不到键。判红它会是**假红**(内容完全正确,门禁却逼人去改节名),
+    // 那是「逼人改正确的内容去将就门禁」—— 与 `maskInlineCode` 那条注释同一个不可接受的形态。
+    // 但**静默当通过更坏**(恒绿判据),故计入 `sectionUnknown` 并推进 notes / 结论行。
+    //
+    // 两条「不参与」的**次序**:先看域外(状态本身非法)再看节名 —— 域外时**不**计 `sectionUnknown`,
+    // 因为那行的状态列已经判红、用户会先改它;把节名问题混进同一次报错只会让根因难认。
+    if (!statusInDomain) {
+      // 不参与 R8:`done` 不加 R8 ⇒ 该行退出这条判据的判定(统计上可见,不是静默放过)。
+    } else {
+      const allowed = SECTION_STATUS[row.section];
+      if (allowed === undefined) {
+        stats.sectionUnknown += 1;
+      } else {
+        if (!allowed.includes(status)) {
+          errors.push(
+            `${PROJECT_PROBE}:${row.lineNo} → ${id} → 状态与所在节不符:本行在「${row.section}」节,`
+              + `而该节只允许状态 ${allowed.join(' / ')}(实际状态是「${status || '(空)'}」)`
+              + ` —— 状态流转要同时改状态列与所在节(${PROJECT_PROBE} 的节就是状态分节)`,
+          );
+        }
+        done.add('R8');
+      }
+    }
 
     if (status === '已作废' && !struck) {
       errors.push(`${PROJECT_PROBE}:${row.lineNo} → ${id} → 状态是「已作废」但本行没有 \`~~\` 划掉(墓碑行须用 \`~~\` 划掉保留、不删行)`);
@@ -1310,6 +1390,15 @@ export function checkLedger(text) {
   } else {
     // 「0 错误」里必须看得见「0 判定」—— 登记表没有可判定行时,台账一致性等于没跑。
     notes.push(`${PROJECT_PROBE} 登记表 0 个可判定数据行 ⇒ 号唯一 / 状态取值域 / 墓碑判据零覆盖`);
+  }
+  if (stats.sectionUnknown > 0) {
+    // ⚠️ 这条 note 带「零覆盖」字样 ⇒ 会被汇入结论行 `gaps`。**必须出声**:R8 对这些行
+    // 完全没判,而 R8 的分母已经计入 `LEDGER_RULES.length` —— 不出声就是「把没查的说成查过」。
+    notes.push(
+      `${PROJECT_PROBE} 有 ${stats.sectionUnknown} 行落在 R8 不认识的节里`
+        + `(节名取 \`## \` 标题原文;相容表只认 ${Object.keys(SECTION_STATUS).join(' / ')})`
+        + ` ⇒ 「状态 ⇔ 所在节」判据对这些行零覆盖`,
+    );
   }
 
   const range = locateRangeTable(text);
@@ -1348,9 +1437,9 @@ export function checkLedger(text) {
   return { errors, notes, stats };
 }
 
-// ------------------------------------------------- 载体形态判据 C1/C2/C4/C5/C6(已判红)
+// ------------------------------------------------- 载体形态判据 C1/C2/C4/C5/C6/C7(已判红)
 //
-// 五条判据的**违反一律进 `errors`**(非零退出)。它们曾整体落在「只出声不判红」区,那段时间是
+// 六条判据的**违反一律进 `errors`**(非零退出)。它们曾整体落在「只出声不判红」区,那段时间是
 // **存量治理期**:规则早已写明上限,但历史台账里已有超限内容,判红当天门禁会一直红 ——
 // 而恒红的门禁和永绿的一样是橡皮章。故先出声让人看得见欠账,存量清零后转判红。
 //
@@ -1391,7 +1480,7 @@ export const WHY_LIMIT_DONE = 150;
 export const WHY_LIMIT = 250;
 
 /**
- * 载体形态判据的清单 + 各自现在管什么(分母 = `CARRIER_RULES.length`)。**现为五条**。
+ * 载体形态判据的清单 + 各自现在管什么(分母 = `CARRIER_RULES.length`)。**现为六条**。
  *
  * ⚠️ **取 `scope` 一律按 `id` 查,不要按下标**:C3 已撤销而号不重排(见模块头),
  * 数组下标因此不再等于判据号 —— 按下标取会把 C4 的文案挂到 C5 的违规提示上,
@@ -1403,6 +1492,7 @@ const CARRIER_RULES = [
   { id: 'C4', name: 'adr 背景行非空', scope: '「## 背景」是必填节,已生效' },
   { id: 'C5', name: 'evidence 头部必带「结论去向」且取值合法', scope: '头部「结论去向」三选一,已生效' },
   { id: 'C6', name: 'evidence 头声明的去向 ↔ adr/·REQ.md 双向对账', scope: '方向 A 去向必须真有该载体,已生效' },
+  { id: 'C7', name: '登记表块内无空行(表头→分隔行→数据行逐行紧邻)', scope: '表块内不许夹空行,已生效' },
 ];
 
 /** 按 `id` 取该判据的 `scope` 文案(取不到即代码与清单脱节,当场炸掉而不是静默串台)。 */
@@ -1472,7 +1562,7 @@ function sectionBody(lines, name) {
 /**
  * C1 / C2:台账形态(标题列上限、判断依据列上限)。
  *
- * 复用 `locateRegistry` 的**跨节合并**行集 —— 与 R1–R7 同一份解析结果,不另立一套表格解析。
+ * 复用 `locateRegistry` 的**跨节合并**行集 —— 与 R1–R8 同一份解析结果,不另立一套表格解析。
  *
  * 「已完成」节靠行上的 `section` 判定,取不到节名时按较宽的 200 字算(判据不确定时取宽,
  * 方向是**少报**)。
@@ -1708,15 +1798,15 @@ function collectProjectScope(root) {
 }
 
 /**
- * 跑 C1/C2/C4/C5/C6 五条载体形态判据,汇总成 `{ errors, notes, examined }`。
+ * 跑 C1/C2/C4/C5/C6/C7 六条载体形态判据,汇总成 `{ errors, notes, examined }`。
  *
  * **分流判据**(本函数是唯一的分流点,别在别处再分一次):
- * - **违反 ⇒ `errors`**:内容写错了(超上限 / 必填节缺失 / 去向落不到载体)。
+ * - **违反 ⇒ `errors`**:内容写错了(超上限 / 必填节缺失 / 去向落不到载体 / 表块内夹空行)。
  * - **零覆盖 ⇒ `notes`**:**我读不到 / 没有对象**。判红等于用门禁阻塞「还没建这个载体」这件小事。
  *   但**必须出声**,否则「0 错误」里就掺了没查的部分 —— 这些 note 带「零覆盖」字样,会被汇入
  *   结论行的 `gaps`。
  *
- * 单独抽出来而不是内联进 `main`:这五条的输入是**多个文件**,内联会让 `main` 继续膨胀。
+ * 单独抽出来而不是内联进 `main`:这六条的输入是**多个文件**,内联会让 `main` 继续膨胀。
  *
  * @param root   扫描根
  * @param files  文件范围 = 指针档范围 + `docs/evidence/` 下被排除的快照(载体形态判据专用)
@@ -1729,8 +1819,12 @@ function runCarrierChecks(root, files, readFile) {
   const bump = (n) => { examined += n; };
 
   // 结构档先跑:表块坏掉时下面 C1/C2 读到的行数与列都是**解析器的误读**, 报出来只会误导
-  const tbl = checkTableShape(readFile(PROJECT_PROBE).split('\n'));
-  errors.push(...tbl);
+  const tbl = checkTableShape(maskFencedLines(readFile(PROJECT_PROBE)));
+  bump(tbl.examined);
+  errors.push(...tbl.findings);
+  if (!tbl.examined) {
+    notes.push(`${PROJECT_PROBE} 定位不到登记表块(表头须同时含「号」与「状态」) ⇒ 表块结构判据零覆盖`);
+  }
 
   const shape = checkLedgerShape(readFile(PROJECT_PROBE));
   bump(shape.examined);
@@ -1890,7 +1984,7 @@ export function main() {
       + (ledger.notes.length ? ` · 提示/盲区 ${ledger.notes.length} 项(见下,**不判红**)` : ''),
   );
 
-  // C 组载体形态:**违反进 `pErrors`**(非零退出,与 R1–R7 同级);零覆盖提示只出声。
+  // C 组载体形态:**违反进 `pErrors`**(非零退出,与 R1–R8 同级);零覆盖提示只出声。
   // 载体形态检查的对象**含**被指针档排除的 `docs/evidence/`(结论去向判据量的是那批快照),
   // 指针档不碰它们 —— 排除是分档的,不是整仓一刀切。
   const carrier = runCarrierChecks(root, [...files, ...excludedFiles], readFile);
@@ -1946,6 +2040,12 @@ export function main() {
   // 与三族的「判定 0 处 = 没人管」不同性质,恒进会把真话报成缺口。
   if (ledger && ledger.stats.badColumn > 0) {
     gaps.push(`台账错位行 ${ledger.stats.badColumn} 行未判(列数 ≠ 表头,该行已退出全部台账判据)`);
+  }
+  // ⚠️ **R8 的零覆盖同样恒进 gaps**,理由与上面那条相同但更硬:错位行是「解析失败」,
+  // 而节名不认识是**判据覆盖面**本身短了一块 —— R8 的分母仍算在 `LEDGER_RULES.length` 里,
+  // 不推进来的话「8/8 项」会被读成「八条都判过了」。
+  if (ledger && ledger.stats.sectionUnknown > 0) {
+    gaps.push(`「状态 ⇔ 所在节」有 ${ledger.stats.sectionUnknown} 行零覆盖(所在节名不在相容表内,该行未参与 R8)`);
   }
   // ⚠️ **跨仓路径的「判定 0 处」恒进 gaps**(实施约束 6):它在本仓**永远**是「未判」,
   // 不是「判定后发现没问题」。不推进 gaps 的话,「0 错误」里就掺了没判的那一族。
