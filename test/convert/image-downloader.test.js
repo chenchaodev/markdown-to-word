@@ -8,6 +8,7 @@
  * - 缺失检查并入 resolver 失败路径(convert 层 stat 预扫已移除),resolver
  *   返回 null → 转换 warnings 追加统一文案「图片加载失败: <src>」(本地缺失有警告,
  *   存在的本地图片无警告;文案三处统一见 core/image-warning.ts)
+ *   ⚠ 该断言是 **core convert 的警告接线**(跨层),已拆到 test/behavior/image-seam.test.js
  * - exists 轻量存在性通道:本地存在 → true / 缺失 → false / data: 退回完整解析
  * - SSRF 加固:默认拦截私网/回环(127.0.0.1 目标在 fetch 前被拦,server 计数 0);
  *   本地 server 测试场景经第三参 opt-in({ allowPrivateAddresses: true })放行
@@ -23,9 +24,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import http from "node:http";
 import { createImageResolver } from "../../dist/convert/image-downloader.js";
-import { formatWarning } from "../../dist/core/i18n/index.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
-import { prepareForConvert } from "../harness/convert-helpers.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { closeTestServer, listenFetchablePort } from "../harness/http-server.js";
 
@@ -254,28 +253,10 @@ export async function run() {
     throw new Error("image-downloader 断言失败:连接拒绝应返回 null");
   }
 
-  // ---- 断言 10:缺失检查并入 resolver 失败路径(单次 IO),统一警告文案 ----
-  // convert 层 stat 预扫已移除:docx 侧经 imageToDocx 失败路径、pdf 侧经
-  // checkLocalImages,均走本 resolver 返回 null → 警告统一为「图片加载失败: <src>」。
-  const { convert } = await import("../../dist/core/convert.js");
-  const wMissing = /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */ ([]);
-  await convert(prepareForConvert("![缺图](missing-xxx.png)"), "docx", {
-    baseDir: FIXTURES_DIR,
-    imageResolver: createImageResolver(FIXTURES_DIR),
-    warnings: wMissing,
-  });
-  if (!wMissing.some((w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-xxx.png"))) {
-    throw new Error("image-downloader 断言失败:缺失本地图片应产生统一「图片加载失败:」警告");
-  }
-  const wOk = /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */ ([]);
-  await convert(prepareForConvert("![有图](./input/g1-tiny.png)"), "docx", {
-    baseDir: FIXTURES_DIR,
-    imageResolver: createImageResolver(FIXTURES_DIR),
-    warnings: wOk,
-  });
-  if (wOk.length !== 0) {
-    throw new Error(`image-downloader 断言失败:存在的本地图片不应产生警告,实际 ${wOk.join(";")}`);
-  }
+  // ---- 缺失检查并入 resolver 失败路径(单次 IO),统一警告文案 ----
+  // ⚠ 这条断言已拆到 test/behavior/image-seam.test.js:它的断言对象是 **core convert 的
+  //   警告接线**(跑 core 的 convert()、断言它产出的 warnings),与本段的单层主体不同。
+  //   本段因此不再 import dist/core/convert.js 与 dist/core/i18n/index.js。
 
   console.log("[ok] image-downloader:本地/远程读取、失败兜底、并发去重、失败不缓存(重试)、超时注入与 MR-3 私网默认拦截断言通过");
   // 放宽理由:本段留存的产物是原始 PNG 样例(docx/pdf 之外),共享 helper 的

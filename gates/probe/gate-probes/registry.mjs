@@ -771,12 +771,13 @@ export const GATE_REGISTRY = Object.freeze(
       npmScripts: ["check:test-layout"],
       command: "node gates/repo/check-test-layout.mjs",
       modulePath: "gates/repo/check-test-layout.mjs",
-      // 仅本地手动,不是链上步骤:四族判据在 T1 建时**当前即红**(ADR-062/064 的 T1 阶段),
-      // 一建就 fail-closed 会让它当场进不了 verify:ci —— 门禁进不了链等于不存在,而
-      // 「链上少一道判据」对注册表是不可见的(本表只核链上/workflow 上的调用点)。
-      // 默认跑法是报告模式(退出码 0、只报四族计数);`--enforce` 才 fail-closed。
-      // 切换点见 gates/repo/check-test-layout.mjs 文件头。
-      access: "local",
+      // T3 步 4b-i 起**以报告模式进链**:四族判据建时即红,按 fail-closed 入链会让
+      // verify:ci 当场红。**进链与 fail-closed 是两件事** —— 先以报告模式进链,让链上
+      // 看得见四族实际计数;各判据转 fail-closed 时,链上那份守护才开始拦。
+      // ⚠️ L5 豁免表(gates/repo/test-layout.cross-import-exemptions.json)的内容
+      // **不在 selftest 覆盖内** —— selftest 只守机制、跑合成夹具。所以本体必须在链上,
+      // 否则那张表在 CI 里无人守护:转 fail-closed 也拦不住新增的未登记跨层 import。
+      access: "chain",
       judgment: {
         module: "gates/repo/check-test-layout.mjs",
         export: "checkTestLayout",

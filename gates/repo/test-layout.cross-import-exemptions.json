@@ -24,11 +24,6 @@
       "reason": "TEMPLATE_PRESETS / presetSettingsPatch 作夹具输入:本段要验的是「cli 生成的 patch 能被预设逻辑接受」,预设表本身由 presets 段覆盖。"
     },
     {
-      "segment": "test/convert/image-downloader.test.js",
-      "specifier": "dist/core/i18n/index.js",
-      "reason": "formatWarning 当对照物用:断言的是 resolver 返回 null / Buffer,文案格式化只是把警告读成人能读的那一步,格式化语义由 i18n 段覆盖。"
-    },
-    {
       "segment": "test/convert/preprocess.test.js",
       "specifier": "dist/core/settings/settings-defaults.js",
       "reason": "DEFAULT_SETTINGS 作夹具输入(一段完整设置的起点),不是断言对象 —— 被测的是 preprocess 如何处理它。"
