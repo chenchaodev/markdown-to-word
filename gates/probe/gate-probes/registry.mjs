@@ -94,6 +94,12 @@ export const PROBE_CARRIER_SCRIPTS = Object.freeze({
   // 不写任何文件(比「跑在临时目录里」更强一档)。原 P6 将删的沙盒探针覆盖的是「真启一次
   // Electron」,本载体覆盖的是「判定面本身会不会退化成恒绿」——两者不是同一格。
   "check:smoke-proc:selftest": "gates/smoke/smoke-proc.selftest.mjs",
+  // ADR-062 S3 新增:门禁索引(gates/repo/gate-index.mjs,本表的 S3 继任者)的双跑一致性守护。
+  // 判据面是「两张表 + 若干条 `enforcement` 指针」,不是 test/ 树,故载体零 IO、零临时目录。
+  // 与本表自己的宿主判据(`checkGateRegistry`)分工:它守**表与表之间**的一致性与指针完整性,
+  // 那不属 R1–R5c 任何一条(S4 之后那五条全删,而它要守的东西届时**只有**这个载体)。
+  "check:gate-index:selftest": "gates/repo/gate-index.selftest.mjs",
+  "check:smoke-report:selftest": "gates/smoke/smoke-report.selftest.mjs",
 });
 
 /* ---------- 门禁注册表 ---------- */
@@ -713,6 +719,15 @@ export const GATE_REGISTRY = Object.freeze(
           why: "探针对**合成的**注册表逐条注入故障(抽掉一道门禁的探针 / 让新出现的调用点无人登记 / 让判定本体指针指向不存在的导出 / 让探针指向不存在的载体 / 改错接入点),断言本门禁逐条判红 —— 即「注册表自己证明自己不是恒绿」",
         },
         { kind: "segment", ref: "test/gates/gate-registry-gate.test.js", why: "验收段直接 import 判定本体,对每条判据逐条做正负夹具" },
+        {
+          // ADR-062 S3 新增:门禁索引(gates/repo/gate-index.mjs,本表的 S3 继任者)的双跑一致性
+          // 守护。**认领它是为了让 PROBE_CARRIER_SCRIPTS 的登记不被判成孤儿**(R3 的反向检查
+          // 要求每个 carrier 被某道门禁认领);语义上也确实归本门禁:本门禁守的是「注册表这张表
+          // 自身是否成立」,那个载体守的是「这张表与它的继任者逐条对得上 + 指针完整」。
+          kind: "selftest",
+          ref: "gates/repo/gate-index.selftest.mjs",
+          why: "自检脚本零 IO、零临时目录(夹具是纯对象字面量,真实表只被读),逐条断言:①新旧两表 id 集合完全一致且共有字段逐条相等,并用**合成表的变异**证明审计有牙齿(某项 npmScripts 换序 / docs 的 modulePath 被压成 judgment.module / 新表多一项 / 新表少一项 / 内联 judgment 那条的例外口径写错)②access 只 chain-offchain、且空表判红(恒绿防护)③每条 enforcement 指针真能 import() 到、导出名存在、**无一条指向本表自身**(禁自指,负向夹具用合成表造一条自指指针)④带指针的门禁逐条点名(指针被整条删掉时不许全绿)。**恒绿防护**:每条都断言审计返回的是数组且逐条比对诊断文案,不是只看条数",
+        },
       ],
     },
     docs: {
@@ -789,12 +804,16 @@ export const GATE_REGISTRY = Object.freeze(
       modulePath: "gates/supply/supply/gen-sbom.mjs",
       access: "local",
       judgment: { module: "gates/supply/supply/gen-sbom.mjs", export: "diffSbom", shaped: "漂移数组" },
-      probes: [
-        {
+      probes: [        {
           kind: "segment",
           ref: "test/gates/supply-chain.test.js",
           why: "验收段断言 CycloneDX 1.6 SBOM 的离线确定性与 --check 漂移检测(同一 lockfile 两次生成逐字节相同,改动即漂移)",
         },
+          {
+            kind: "selftest",
+            ref: "gates/smoke/smoke-report.selftest.mjs",
+            why: "smoke-report 整族 571 行此前链上零覆盖、不在任何 selftest 里(S0 对账表按 7 个 GATE_IDS 编号,那个口径不含不在 GATE_IDS 里的门禁族,故当时漏登 ⇒ REQ-186)。本档守「报告层与门禁层对同一份输出不得给出不同结论」——smoke-report/markers.mjs 头注那句「与 collectSmokeProblems 同口径」原本是无人执行的承诺(两处各自遍历 SMOKE_MARKERS 各自算 missing,无第三方比对),本档把它变成可执行断言。刻意零 spawn:入口 smoke-report.mjs 的 isMainModule 守卫若失效,import 即执行 main() 并在具备前置条件时真的起 Electron(默认 180s 硬超时)。",
+          },
       ],
     },
     sca: {

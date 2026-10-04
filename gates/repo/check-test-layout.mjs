@@ -1,6 +1,6 @@
 // test 布局门禁(纯文本判定,无产物、幂等,exit 0/1)。
 //
-// ---- 判据一览(七族 + 扫描面两档)----
+// ---- 判据一览(八族 + 扫描面两档)----
 //   ① test-layer-self-hosted(L4):`test/<R>/**/<m>.test.js` 必须 import **至少一个**
 //      解析后落在 `<R>/` 对应主体根内的模块。零命中即判红并点名该段。
 //   ② test-layer-cross-import(L5):`test/<L>/**` 不得 import **别的层**的
@@ -14,10 +14,13 @@
 //   ⑥ gate-chain-membership(L12 / L12c):门禁的**接入点归属**。取值域两值
 //      (`chain` / `offchain`),两向核对:`chain` 的真在链上、`offchain` 的不得在链上;
 //      `offchain` 可带 `pendingChain` 显式登记「本应进链、因 <理由> 未转正」(L12c)。
-//      ⚠ L12/L12c 当前是 report-only:`CRITERIA` 里带 `pending: true`,理由与转正条件见那一行。
+//      **已转 fail-closed**(2026-10-05,ADR-062 S3):取值域迁移完成 —— 清单侧
+//      `gates/repo/gate-index.mjs` 已两值化,迁移后清掉取值域那一档的剩余命中数为零。
 //   ⑦ test-harness-not-segment(L8):`test/harness/` 是**自指层**(主体根 = 它自己);
 //      其下的段**必须**声明 `covers` 且至少一个元素指向 `test/harness/**`
 //      (未声明 / 空声明 / 元素全指向别处,三者各自判红)。
+//   ⑧ gate-module-present(L11b):**清单在册而树里无** —— 门禁本体被删除 / 改名时判红。
+//      这一档与 `gate-has-carrier` 的处置不同(补载体 vs 恢复本体或删登记项),故单列一个 id。
 //
 // ---- L4 为什么必须判「零命中」而不是只判「import 落在别处」 ----
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
@@ -120,17 +123,20 @@ import { isTypeOnlyClause, TREE_DIRS } from "./check-import-boundary.mjs";
 // 链展开(递归展开 / 顶层视图)与链根都是**全仓单源**:本门禁不自带一份链解析,
 // 也不自带一份链根表(见 chain-expand.mjs 文件头「为什么必须收敛到一处」)。
 import { CHAIN_ROOTS, expandChainScriptNames } from "./chain-expand.mjs";
-// 门禁清单(L11 载体 / L12 链归属的判定面)。**静态 import,不走 ctx** —— 它是代码里的常量
+// 门禁索引(L11 载体 / L12 链归属的判定面)。**静态 import,不走 ctx** —— 它是代码里的常量
 // 表而非磁盘数据,与 readText/listDir 那套 IO 注入面不同性质。替身由 base.gateRegistry
 // 注入(见 makeGateRegistryCtx 的注释),理由同 `l5Exemptions`:自检要在合成根上求值。
 //
-// ⚠ **S3 将改这一处**(以及本行下面 `GATE_INDEX_MODULE_REL` 那一个常量):ADR-062 的 P6 把
-// `registry.mjs` 重写成 `gates/repo/gate-index.mjs`,S4 删掉整个沙盒层。本门禁对清单的
-// **结构**依赖刻意收窄到三项 —— `id` / `access` / `npmScripts` / `modulePath` ——
-// 都是 S3 明文保留的字段(`probes[].ref` 与 `judgmentNote` 被删,故本门禁一个都不读:
-// 读 `probes[].ref` 会让 L11 退化成「注册表自己声明的载体存在吗」,那正是注册表 R3 的既有职责,
-// 两处各判一次同一件事 = 一处可漂移的副本)。
-import { GATE_REGISTRY } from "../probe/gate-probes/registry.mjs";
+// 本门禁对索引的**结构**依赖刻意收窄到四项 —— `id` / `access` / `npmScripts` / `modulePath` ——
+// (`judgment` / `enforcement` 两个字段本门禁一个都不读:前者是驱动器协议的事,后者是「强制等级
+// 表在哪」的指针,与 L11/L12 两条判据无关)。`probes[]` 与 `judgmentNote` 在旧 `registry.mjs` 里
+// 就有而本门禁一个都不读:读 `probes[].ref` 会让 L11 退化成「注册表自己声明的载体存在吗」,那
+// 正是注册表 R3 的既有职责,两处各判一次同一件事 = 一处可漂移的副本。
+//
+// ⚠ **S3 已改这一处**(2026-10-05):清单从 `gates/probe/gate-probes/registry.mjs` 换成
+// `gates/repo/gate-index.mjs`(ADR-062 的 P6)。**两表并存**:旧表随 S4 整体删除,它承载的
+// R1–R5c 与三种驱动器在本步一条不动。双跑一致性由 `gate-index.selftest.mjs` 断言。
+import { ACCESS_CHAIN, ACCESS_OFFCHAIN, GATE_INDEX, GATE_INDEX_MODULE_REL as GATE_INDEX_SELF_REL } from "./gate-index.mjs";
 
 /** 被判定的子树(单一来源:扫描面只此一处登记) */
 export const TEST_REL = "test";
@@ -198,14 +204,18 @@ export const MIN_SCANNED_FILES = 100;
 export const L5_EXEMPTIONS_REL = "gates/repo/test-layout.cross-import-exemptions.json";
 
 /**
- * 门禁清单的模块路径(仓相对 POSIX)。**S3 将把这一处改成 `gates/repo/gate-index.mjs`。**
+ * 门禁索引的模块路径(仓相对 POSIX)。**S3 已把它从 `gates/probe/gate-probes/registry.mjs`
+ * 改成 `gates/repo/gate-index.mjs`**;旧表在 S4 整体删除。
  *
- * 单独成为常量而不是在 import 语句与诊断文案里各写一遍:该路径是「S3 过渡期」的唯一改动点
- * (import 语句本身必须逐字匹配,故诊断与豁免表诊断需要引用它),两处各写一份就是一处
- * 会在 S3 被漏改的副本 —— 而漏改的后果是**判据读到错误模块或读不到**。
+ * 单独成为常量而不是在 import 语句与诊断文案里各写一遍:该路径出现在诊断文案里(判红时
+ * 点名「哪张表错了」),两处各写一份就是一处会与 import 语句漂移的副本 —— 而漂移的后果是
+ * **诊断点名一张表、判据实际读的是另一张**。
+ *
+ * ⚠ 值从 `gate-index.mjs` **转出**而不是在本文件重写:那张表是自身路径的单一事实源,
+ * 两处各写一份则「禁自指」规则(指针不得指向本表)会在 S4 后指向一个错的文件。
  * @type {string}
  */
-export const GATE_INDEX_MODULE_REL = "gates/probe/gate-probes/registry.mjs";
+export const GATE_INDEX_MODULE_REL = GATE_INDEX_SELF_REL;
 
 /**
  * L11 门禁级豁免表(数据文件路径,与门禁本体分离 —— 本体里那份会是可漂移的副本)。
@@ -213,9 +223,9 @@ export const GATE_INDEX_MODULE_REL = "gates/probe/gate-probes/registry.mjs";
  * 形态是**门禁 id 一元组**(不是 npm script、不是段路径):L11 的判定对象是「一道门禁有没有
  * 载体」,载体挂在门禁上,故键只能是门禁 id。
  *
- * ⚠ **本表在本步是空表**:实测(L11 三档跑在真实仓库上)当前**零命中** —— 39 项登记门禁里
- * 16 项有同名 selftest 载体、23 项被某个验收段引用(见 judgeL11Carrier 的注释),无一落到
- * 档 3。表按 ADR-062 的形态先建成骨架(键名校验 / 读表 / stale 三档 fail-**closed** 全部就位),
+ * ⚠ **本表是空表**:实测(L11 三档跑在真实仓库上)当前**零命中** —— 在册门禁里一部分有同名
+ * selftest 载体、其余被某个验收段引用(见 judgeL11Carrier 的注释),无一落到档 3。表按
+ * ADR-062 的形态先建成骨架(键名校验 / 读表 / stale 三档 fail-**closed** 全部就位),
  * 而不是等第一次命中再建 —— 那正是「第一次命中」时最需要它的时刻。
  *
  * ⚠ **它不可从本文件现有的任何常量派生**,故必须新建而不是复用:
@@ -226,15 +236,26 @@ export const GATE_INDEX_MODULE_REL = "gates/probe/gate-probes/registry.mjs";
  */
 export const GATE_EXEMPTIONS_REL = "gates/repo/test-layout.gate-exemptions.json";
 
-/** 门禁「接入点归属」的取值域(ADR-062 L12:两值)。`chain` 的真在链上,`offchain` 的不得在。 */
-export const ACCESS_CHAIN = "chain";
-export const ACCESS_OFFCHAIN = "offchain";
+/**
+ * 门禁「接入点归属」的取值域(ADR-062 L12:两值)。`chain` 的真在链上,`offchain` 的不得在。
+ *
+ * ⚠ **从 `gate-index.mjs` 转出而不是在这里重写**:取值域是**那张表的字段契约**(它写
+ * `access: "chain"` / `"offchain"`),定义权在表那一侧。两处各写一份字面量,表改了取值名
+ * 而判定侧没跟上时,判据会把**全部 39 项**报成「取值域非法」—— 而那正是本门禁最难归因的
+ * 一类红(诊断指向每一项,而真因是常量漂移)。
+ */
+export { ACCESS_CHAIN, ACCESS_OFFCHAIN };
 
 /**
- * **未转正的旧取值**(现装注册表仍在用,ADR-062 S3 会把它们收成 `offchain`)。
+ * **未转正的旧取值**(`local` / `workflow`)。
  *
  * 单列成常量而不是在判定本体里写字面量:它们是「取值域不合法的证据」,而取值域一旦合法
  * 就该整体消失 —— 让判据能**指名道姓**地说出「哪个旧值还剩几项」,比只报「取值域非法」可归因。
+ *
+ * ⚠ **`gate-index.mjs` 已无这两个取值**(S3 的迁移完成),本常量当前**只**在两处发挥作用:
+ * ① 诊断文案点名旧值;② 并存期的旧 `registry.mjs` 若被谁原样搬进新表,判据会指名道姓地说出
+ * 「它是 S3 尚未迁移的旧值」。**不删** —— 删掉它就只剩「取值域非法」一句,读者无从判断
+ * 该改字面名还是该改语义。
  * @type {readonly string[]}
  */
 export const LEGACY_ACCESS_VALUES = Object.freeze(["local", "workflow"]);
@@ -331,7 +352,7 @@ export const CRITERIA = Object.freeze([
       + "而不是承认 L7 已成立。转正前必须处置缺的那一档(把它移出派生集,或建出真实内容),"
       + "而不是给判据加豁免。",
   }),
-  // ---- ADR-062 的 L11 / L12(本步新增两族)----
+  // ---- ADR-062 的 L11 / L12(S2 新增两族,S3 补第三族并给 L12 转正)----
   Object.freeze({
     // ⚠ **L11 的四档共用这一个 id**(载体缺失 / 豁免表读不到 / 表项键名错 / 表项已失效)。
     // 与 L5 拆成 `l5-exemption-table` + `l5-exemption-stale` 两行的取舍相反,理由:
@@ -344,24 +365,31 @@ export const CRITERIA = Object.freeze([
       + "豁免表读不到 / 缺 entries / 表项键名错 / 表项已不再需要(stale)也归本行判红",
   }),
   Object.freeze({
+    // ⚠ **单列一族而不是并进上面的 `gate-has-carrier`**:那一族的四档处置**完全同一件**
+    // (「这道门禁没有载体」→ 补载体或登记豁免);本档的处置是另一件 —— **恢复门禁本体,
+    // 或把登记项删掉**(两者都不是「补载体」)。并进去的话,读者拿到「缺载体,补一份
+    // `.selftest.mjs`」的指引去做的事根本解不开这一档(补多少个载体都没用:树里没有那个模块)。
+    //
+    // **为什么必须有这一档**(S2 明确留下的缺口):判定面曾收窄到「本求值根里真实存在的门禁」
+    // (见下方 checkTestLayout 里那段注释),门禁本体被**删除**时它会静默离开判定面。那天靠
+    // 旧注册表 R4(`judgment.module` 指针解析不到)与 check-import-boundary 兜着,
+    // **但 R1–R5c 全部随 S4 消失**,届时这道缺口无人守。
+    id: "gate-module-present",
+    title:
+      "L11b 清单在册而树里无:索引登记的门禁其 modulePath 在求值根里不存在 → 判红"
+      + "(门禁本体被删/改名会让它静默离开 L11 的判定面,而它的载体、链归属同时无人核对)",
+  }),
+  Object.freeze({
     // L12 与 L12c **共用这一个 id**:L12c 是 L12 的取值域为两值之后才生效的**附加档**
     // (offchain 可带 pendingChain 声明「本应进链、因 <理由> 未转正」),两者的前置与转正时机
     // 完全相同(都要等 S3 的取值域迁移)。拆两行会让「还剩几族待转正」这个唯一进度读数虚增。
+    //
+    // ✅ **已转 fail-closed(2026-10-05,S3)**:转正的前置是「一次取值域迁移 + 剩余命中为零」,
+    // 两条都兑现了 —— 清单侧 `gate-index.mjs` 已把旧表的 `local` / `workflow` 逐条收成
+    // `offchain`,迁移后本族清掉取值域那一档的剩余命中数为零(取数命令见 `main()` 的结论行)。
+    // 转正只删 `pending: true` 与 `pendingReason`,判定本体一行未改。
     id: "gate-chain-membership",
     title: "L12 链归属:access 取值域只 chain/offchain,chain 的真在链上、offchain 的不得在链上",
-    // ⚠ 转正条件与它此刻为什么是 report-only,见下方 pendingReason 全文。
-    pending: true,
-    pendingReason:
-      "**取值域尚未两值化**:现装 `registry.mjs` 的 access 仍是三值(`chain` 26 / `local` 11 /"
-      + " `workflow` 2,2026-10-05 实测),而 L12 的取值域是 `chain`/`offchain` 两值。"
-      + "此刻若让 L12 转 fail-closed,那 13 项(`local`+`workflow`)会**当场判红** —— 而它们"
-      + "并不是违例(它们确实不在链上),只是**取值名**还没被 S3 收敁。"
-      + "把它们做成 fail-closed 等于逼人现在就改注册表的 access 字段,而 ADR-062 的 P6 已把"
-      + "「两值化」划在 S3(注册表重写)那一步 —— 在 S3 之前改 access 会与 S3 的整体重写打架。"
-      + "**转正的前置是一次取值域迁移**,不是「命中数归零」:①S3 把 13 项的 `local`/`workflow`"
-      + " 逐条改为 `offchain`(`workflow` 那 2 项降格为「不在链上」,DEV-GUIDE 的门禁接入点表"
-      + " 补偿);②本族清掉取值域那一档后剩下的命中数必须为零(否则是真违例,不是过渡态)。"
-      + "在那之前本族只报告不改退出码 —— **转正只删这一行的 `pending: true`**,连带 pendingReason。",
   }),
   ]);
 
@@ -419,6 +447,7 @@ const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exempti
  * @property {number} l7Extra 多出的顶层目录数
  * @property {number} l7Missing 缺失的顶层目录数
  * @property {number} l8Violations L8 判红条数
+ * @property {number} l11MissingModule L11b「清单在册而树里无」判红条数
  */
 
 /**
@@ -747,20 +776,19 @@ export function loadGateExemptions(root = ROOT) {
 }
 
 /**
- * 门禁清单的注入面归一(真实注册表 → 判定本体要的最小形状)。
+ * 门禁索引的注入面归一(真实索引 → 判定本体要的最小形状)。
  *
- * **为什么注入的是「清单」而不是「模块路径」**:模块路径是本文件的静态 import(见文件头),
+ * **为什么注入的是「表的内容」而不是「模块路径」**:模块路径是本文件的静态 import(见文件头),
  * 注入路径就得动态 import,而判定本体是**同步**纯函数 —— 动态 import 会把它变成 async,
  * 那会让 CLI 的 `main()` 与链上每个调用点的形态都变。可注入的是**表的内容**,
  * 与 `l5Exemptions` 同一形态:自检在合成根上求值同一批判据,不 spawn、不碰真实工作树。
  *
  * 只取四项(`id` / `access` / `npmScripts` / `modulePath`)的理由见文件头 import 处那段注释
- * —— `probes[]` 一个都不读:读它会让 L11 退化成「注册表自己声明的载体存在吗」,那正是注册表
- * R3 的既有职责,两处各判一次同一件事 = 一处可漂移的副本。
+ * —— `judgment` / `enforcement` / `probes[]` 一个都不读。
  *
  * 缺字段**判红而不是跳过**:跳过等于让那道门禁从 L11/L12 两族里凭空消失,而消失形态是
  * 「门禁变绿」而不是「变红」——纯文本门禁最坏的失效形态。
- * @param {readonly Record<string, {id?: string, access?: string, npmScripts?: readonly string[], modulePath?: string}>} | undefined} [source] 注入的清单(缺省即真实注册表)
+ * @param {readonly Record<string, {id?: string, access?: string, npmScripts?: readonly string[], modulePath?: string}>} | undefined} [source] 注入的索引(缺省即真实 `gate-index.mjs`)
  * @returns {{ gates: readonly { id: string, access: string, npmScripts: readonly string[], modulePath: string, pendingChain?: unknown }[], problems: string[] }}
  */
 export function makeGateRegistryCtx(source = undefined) {
@@ -768,22 +796,22 @@ export function makeGateRegistryCtx(source = undefined) {
   const gates = [];
   /** @type {string[]} */
   const problems = [];
-  const table = source ?? GATE_REGISTRY;
+  const table = source ?? GATE_INDEX;
   for (const [key, entry] of Object.entries(table)) {
     if (typeof entry?.id !== "string" || entry.id === "") {
-      problems.push(`门禁清单第 ${key} 项缺 id —— 键名写错会让这道门禁在 L11/L12 两族里凭空消失`);
+      problems.push(`门禁索引第 ${key} 项缺 id —— 键名写错会让这道门禁在 L11/L12 两族里凭空消失`);
       continue;
     }
     if (typeof entry.access !== "string" || entry.access === "") {
-      problems.push(`门禁清单 ${entry.id} 缺 access —— 取值域判据无从核对`);
+      problems.push(`门禁索引 ${entry.id} 缺 access —— 取值域判据无从核对`);
       continue;
     }
     if (!Array.isArray(entry.npmScripts)) {
-      problems.push(`门禁清单 ${entry.id} 缺 npmScripts 数组 —— 链归属判据要拿它与链展开对账`);
+      problems.push(`门禁索引 ${entry.id} 缺 npmScripts 数组 —— 链归属判据要拿它与链展开对账`);
       continue;
     }
     if (typeof entry.modulePath !== "string" || entry.modulePath === "") {
-      problems.push(`门禁清单 ${entry.id} 缺 modulePath —— 载体判据要拿它推导候选载体路径`);
+      problems.push(`门禁索引 ${entry.id} 缺 modulePath —— 载体判据要拿它推导候选载体路径`);
       continue;
     }
     gates.push({
@@ -936,15 +964,16 @@ export function judgeL11Carrier({ deps, gates, exemptions = [] }) {
  * 「不在链上」而没有任何东西判红(那份重复实现的失效机制,见 chain-expand.mjs 文件头)。
  *
  * 三档:
- *   ① **取值域**:`access` 必须是 `chain` / `offchain`;`local` / `workflow` 是**未迁移的旧值**
- *      (判红并点名)—— 这是当前唯一会红的一档。
+ *   ① **取值域**:`access` 必须是 `chain` / `offchain`;`local` / `workflow` 是 **S3 的旧取值**
+ *      (判红并点名)。⚠ `gate-index.mjs` 已迁移完毕,本档在真实仓库上**恒为零命中** ——
+ *      它留着的理由是「旧 `registry.mjs` 的三值若被谁原样搬进新表,判据要指名道姓地说出来」。
  *   ② **链归属两向**:`chain` 的每个 `npmScripts` 都真在 `CHAIN_ROOTS` 的某条链上;
  *      `offchain` 的**一个都不在**。
  *   ③ **L12c**:`offchain` 可带 `pendingChain` 显式登记「本应进链、因 <理由> 未转正」;
  *      带了就要求理由非空且达标(≥`REASON_MIN_CHARS` 字)。
  *
- * ⚠ **`pendingChain` 是本步新造的字段**(现装注册表零先例,命名与语义由本判据定义,不是照抄)。
- * 造它的理由:像 `check:src-layout`(判红 + `local` + 零机器看守)那种**刻意**的链外状态,
+ * ⚠ **`pendingChain` 是 S2 新造的字段**(`gate-index.mjs` 里当前零先例,命名与语义由本判据定义,
+ * 不是照抄)。造它的理由:像 `check:src-layout`(判红 + 刻意链外 + 零机器看守)那种状态,
  * 目前只写在注释里,与「有人忘了挂上链」在门禁上不可区分。`pendingChain` 让前者可登记。
  *
  * ⚠ **只核 `npmScripts[0]`(接入点代表脚本),不是全部 script** —— 这是**沿用注册表 R5a 的既有
@@ -987,9 +1016,10 @@ export function judgeL12ChainMembership({ gates, scripts }) {
       problems.push(
         `${gate.id} → gate-chain-membership:access 取值「${gate.access}」不在取值域内`
         + `(只允许 ${ACCESS_CHAIN} / ${ACCESS_OFFCHAIN})`
-        + `${legacy ? " —— 它是 ADR-062 S3 尚未迁移的旧值" : ""}`
+        + `${legacy ? ` —— 它是 ADR-062 S3 的旧取值(gate-index.mjs 已把它收成 ${ACCESS_OFFCHAIN})` : ""}`
         + "。两值化的理由:三值里 `workflow` 那档(在 CI 上但不在 verify:ci 链上)与二分不对齐,"
-        + "使「门禁在不在链上」这个问题没有唯一答案。迁移期请勿就地改注册表(与 S3 的整体重写冲突)",
+        + `使「门禁在不在链上」这个问题没有唯一答案。改法:改 ${GATE_INDEX_MODULE_REL} 里那一项的 access`
+        + "(旧 `registry.mjs` 的三值是 S4 前的并存态,它随 S4 整体删除,**不要**改那里)",
       );
       continue;
     }
@@ -1127,6 +1157,7 @@ export function checkTestLayout(base = {}) {
     l11WithCarrier: 0,
     l11Exempted: 0,
     l11Missing: 0,
+    l11MissingModule: 0,
     l11Stale: 0,
     l11ShortReason: 0,
     l11TableProblems: 0,
@@ -1484,9 +1515,9 @@ export function checkTestLayout(base = {}) {
     }
   }
 
-  // ---- ADR-062 L11 / L12:门禁必有载体 + 链归属(2026-10-05 新增两族)----
+  // ---- ADR-062 L11 / L11b / L12:门禁必有载体 + 清单在册而树里无 + 链归属 ----
   //
-  // 两族的判定面都在**门禁清单**上,而清单的注入面刻意只取四项字段(理由见文件头)。
+  // 三族的判定面都在**门禁索引**上,而索引的注入面刻意只取四项字段(理由见文件头)。
   // 段的正文在这里**只读一次**:L11 的档 1b 要拿它判「有无验收段引用该门禁」,而段列表
   // 上面已经算出来了 —— 重读一遍会让同一批文件在一次判定里被读两次(IO 翻倍,且两次读到
   // 的内容理论上可以不同,那种不一致会让「档 1b 是否命中」变得不可复现)。
@@ -1497,21 +1528,40 @@ export function checkTestLayout(base = {}) {
   for (const problem of gateRegistryProblems) {
     report("gate-has-carrier", `${GATE_INDEX_MODULE_REL} → gate-has-carrier:${problem}`);
   }
-  // ---- 判定面收窄到「本求值根里真实存在的门禁」----
+  // ---- 判定面收窄到「本求值根里真实存在的门禁」+ 反向一档 L11b ----
   //
-  // ⚠ **这不是省事的过滤,是一条范畴边界**:门禁清单是模块常量(描述**真实仓库**),而
-  // `ctx.fileExists` / `ctx.readText` 都以**求值根**为准。拿真实清单去问一棵合成根
-  // (自检在临时目录里造的那棵)会让 L11 把 39 项门禁全判成「无载体」—— 那不是真违例,
+  // ⚠ **收窄不是省事的过滤,是一条范畴边界**:门禁索引是模块常量(描述**真实仓库**),而
+  // `ctx.fileExists` / `ctx.readText` 都以**求值根**为准。拿真实索引去问一棵合成根
+  // (自检在临时目录里造的那棵)会让 L11 把每一项门禁全判成「无载体」—— 那不是真违例,
   // 是**跨树比对**(合成根里本来就没有 `gates/`,它是一棵只造 `test/` 布局的合成树)。
   // 载体与门禁本体必须在**同一棵树**里,「这道门禁坏掉时有人会红吗」这个问题才有意义。
   //
-  // ⚠ **残余缺口(如实记下,不由本判据补)**:门禁本体被**删除**时它会静默离开判定面。
-  // 那不由 L11 守 —— 删掉一个门禁模块会让注册表的 `judgment.module` 指针解析不到,
-  // 那由注册表 R4 与 check-import-boundary 判红。本族只守「在册的门禁有没有载体」。
-  // ⚠ 本条同时是**自检夹具能跑**的前提:合成根没有 `gates/` ⇒ 判定面为空 ⇒ L11/L12 不命中,
-  // 于是既有 70+ 条夹具不会被两族判红盖住(症状离根因隔着一整族判据,最难归因)。
-  // L11/L12 的正负向夹具在 selftest 里**直调判定本体**单独求值,见 judgeGate。
-  const gates = allGates.filter((gate) => ctx.fileExists(gate.modulePath));
+  // ⚠ **但收窄本身会开一个洞:门禁本体被删除时它静默离开判定面。** S2 把这个洞记为
+  // 「残余缺口」,理由是「今天有旧注册表 R4 兜着」—— 而 **R1–R5c 全部随 S4 消失**,
+  // 届时无人守。故 L11b 补上反向一档:索引在册而树里无 → 判红。
+  //
+  // ⚠ **L11b 自身也必须收窄,否则它会恒红**:合成根上「索引在册的每一项都不在树里」是
+  // **事实**而不是违例(那棵树里根本没有 `gates/`,它不是门禁索引描述的那棵仓)。
+  // 分界线取「**索引模块自己在不在本求值根里**」:它在了,才说明这棵树是索引描述的那棵树,
+  // 那一档的「缺」才是真缺;它不在,整段(判定面 + L11b + L11 + L12)与本轮无关 ——
+  // 这与下面「判定面非空才读豁免表与 package.json」是同一条边界,只是这里要判的是
+  // 「树的身份」而不是「门禁的数量」。
+  const indexInRoot = ctx.fileExists(GATE_INDEX_MODULE_REL);
+  const gates = indexInRoot ? allGates.filter((gate) => ctx.fileExists(gate.modulePath)) : [];
+  if (indexInRoot) {
+    for (const gate of allGates) {
+      if (ctx.fileExists(gate.modulePath)) continue;
+      stats.l11MissingModule += 1;
+      report(
+        "gate-module-present",
+        `${GATE_INDEX_MODULE_REL} → gate-module-present:${gate.id} 在索引里在册,但门禁本体 `
+        + `${gate.modulePath} 在本求值根里不存在 —— 它已静默离开 L11/L12 的判定面:`
+        + "它的载体无人核对、它挂没挂链上也无人核对。两条正当出路:① 把 ${gate.modulePath} 恢复回来"
+        + "(改名了就同批把索引里的 modulePath 改成新名字);② 这道门禁确实已删 ⇒ 把这一项从索引里删掉,"
+        + "别让索引留着一个指向空处的登记项",
+      );
+    }
+  }
 
   // L11 的门禁级豁免表:三档 fail-closed(读不到 / 缺 entries / 表项键名错 / stale)。
   //
@@ -1663,13 +1713,14 @@ export function main(argv = []) {
     `L11 gate-has-carrier 判红 ${stats.l11Missing + stats.l11Stale + stats.l11ShortReason + stats.l11TableProblems + stats.l11BadEntries} 项`
       + `(有载体 ${stats.l11WithCarrier} / 豁免 ${stats.l11Exempted} / 无载体判红 ${stats.l11Missing}`
       + ` / 豁免表失效 ${stats.l11TableProblems} / 表项键名错 ${stats.l11BadEntries}`
-      + ` / reason 不足 ${REASON_MIN_CHARS} 字判红 ${stats.l11ShortReason} / stale 判红 ${stats.l11Stale})`,
-    `L12 gate-chain-membership 报告 ${stats.l12BadDomain + stats.l12ChainNotOnChain + stats.l12OffChainOnChain} 项`
+      + ` / reason 不足 ${REASON_MIN_CHARS} 字判红 ${stats.l11ShortReason} / stale 判红 ${stats.l11Stale})`
+      + `;L11b gate-module-present 判红 ${stats.l11MissingModule} 项(索引在册而树里无:门禁本体被删/改名)`
+      + "(判定面 = 本求值根里索引模块在场的那些门禁;合成根上索引模块不在场 ⇒ L11/L11b/L12 整段不适用)",
+    `L12 gate-chain-membership 判红 ${stats.l12BadDomain + stats.l12ChainNotOnChain + stats.l12OffChainOnChain} 项`
       + `(chain ${stats.l12OnChain} / offchain ${stats.l12OffChain}`
       + ` / 取值域外判红 ${stats.l12BadDomain}`
       + ` / chain 却不在链判红 ${stats.l12ChainNotOnChain} / offchain 却在链判红 ${stats.l12OffChainOnChain}`
-      + ` / pendingChain 声明 ${stats.l12DeclaredPending}、其中理由不足 ${stats.l12ShortPendingReason})`
-      + "(report-only:命中只报告,不计退出码 —— 它的前置是 S3 的 access 取值域两值化)",
+      + ` / pendingChain 声明 ${stats.l12DeclaredPending}、其中理由不足 ${stats.l12ShortPendingReason})`,
   ].join(";");
   const named = problems.map((problem) => problem.split(" → ")[0] ?? problem);
 

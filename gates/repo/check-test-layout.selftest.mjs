@@ -34,6 +34,7 @@ import {
   CRITERIA,
   extractImports,
   GATE_EXEMPTIONS_REL,
+  GATE_INDEX_MODULE_REL,
   loadGateExemptions,
   judgeL11Carrier,
   judgeL12ChainMembership,
@@ -142,6 +143,7 @@ function writeUnder(root, rel, body) {
  * @param {object} [opts]
  * @param {number} [opts.minScannedFiles] 扫描面下限
  * @param {{segment: string, specifier: string, reason: string}[]} [opts.l5Exemptions] L5 豁免表(注入面)
+ * @param {readonly Record<string, object>} [opts.gateRegistry] 门禁索引(注入面;缺省 = 空索引)
  * @param {{ id: string }[]} [opts.criteriaOverride] 判据登记表覆盖(⚠ 只允许删行,见下)
  * @returns {{ problems: string[], info: string[], stats: import("./check-test-layout.mjs").TestLayoutStats }}
  */
@@ -1249,11 +1251,84 @@ const CASES = [
   {
     // 门禁清单缺字段 ⇒ 判红**而不是跳过**:跳过等于让那道门禁从 L11/L12 两族里凭空消失,
     // 而消失形态是「门禁变绿」而不是「变红」—— 纯文本门禁最坏的失效形态。
-    name: "L11 门禁清单:缺 modulePath → 判红(不得跳过,跳过会让这道门禁凭空消失)",
+    name: "L11 门禁索引:缺 modulePath → 判红(不得跳过,跳过会让这道门禁凭空消失)",
     gateFamily: "l11",
     registryProblems: true,
     gates: { alpha: { id: "alpha", access: ACCESS_CHAIN, npmScripts: ["check:alpha"] } },
-    expect: /门禁清单 alpha 缺 modulePath/,
+    expect: /门禁索引 alpha 缺 modulePath/,
+  },
+  // ---- L11b gate-module-present:清单在册而树里无(S3 补的那一档)----
+  //
+  // **为什么这一族在 S2 缺、到 S3 才补**:S2 把 L11 的判定面收窄到「本求值根里真实存在的门禁」,
+  // 门禁本体被**删除**时它会静默离开判定面。那天靠旧 registry.mjs 的 R4(`judgment.module` 指针
+  // 解析不到)与 check-import-boundary 兜着 —— 但 **R1–R5c 全部随 S4 消失**,届时无人守。
+  //
+  // **为什么这一族不走 `judgeGate`(直调判定本体)**:它判的是「判定面**怎么圈**」,而圈法在
+  // `checkTestLayout` 里(判据本体拿不到 ctx.fileExists 之外的求值根身份)。故这三格走 `judge()`
+  // 在合成根上求值 —— 合成根必须**先放一份索引模块占位**(那是「本根就是索引描述的那棵树」的
+  // 判据),否则整段与本轮无关。
+  {
+    name: "L11b:索引在册而门禁本体不在树里(本体被删/改名)→ 判红并点名该门禁与它的 modulePath",
+    judgeOnly: true,
+    extra: {
+      // 索引模块在场 ⇒ 本求值根就是索引描述的那棵树(L11b 的范畴边界,见判定本体里的注释)。
+      [GATE_INDEX_MODULE_REL]: "export const GATE_INDEX = {};\n",
+      // scripts 表:L12 的输入。`check:beta` 真在 verify:ci 链上(它只判 beta,那一格与本族无关)。
+      "package.json": `${JSON.stringify({
+        scripts: {
+          "verify:ci": "npm run check:beta",
+          "verify:release": "npm run verify:ci && npm run dist",
+          dist: "npm run clean:dist",
+          "clean:dist": "node tools/clean.mjs",
+          "check:beta": "node gates/repo/check-beta.mjs",
+        },
+      })}\n`,
+      "gates/repo/check-beta.mjs": "export const beta = 1;\n",
+      "gates/repo/check-beta.selftest.mjs": "export const covered = 1;\n",
+      // `gates/repo/check-gone.mjs` **刻意不造**:它就是被删掉的那一道门禁。
+    },
+    gateRegistry: {
+      beta: { id: "beta", access: ACCESS_CHAIN, npmScripts: ["check:beta"], modulePath: "gates/repo/check-beta.mjs" },
+      gone: { id: "gone", access: ACCESS_CHAIN, npmScripts: ["check:gone"], modulePath: "gates/repo/check-gone.mjs" },
+    },
+    expect: /→ gate-module-present:gone 在索引里在册,但门禁本体 gates\/repo\/check-gone\.mjs 在本求值根里不存在/,
+  },
+  {
+    // **反向锚点**:索引在册的每一项都在树里 ⇒ 本族零判红。缺它的话,上一格可能只是「恒红」——
+    // 而 L11b 的正确形态恰恰是「平时全绿,删掉一个模块才红」。
+    name: "L11b:索引在册而每一项都在树里 → 零判红(反向锚点:证明上一格的红来自缺件本身)",
+    judgeOnly: true,
+    extra: {
+      [GATE_INDEX_MODULE_REL]: "export const GATE_INDEX = {};\n",
+      "package.json": `${JSON.stringify({
+        scripts: {
+          "verify:ci": "npm run check:beta",
+          "verify:release": "npm run verify:ci && npm run dist",
+          dist: "npm run clean:dist",
+          "clean:dist": "node tools/clean.mjs",
+          "check:beta": "node gates/repo/check-beta.mjs",
+        },
+      })}\n`,
+      "gates/repo/check-beta.mjs": "export const beta = 1;\n",
+      "gates/repo/check-beta.selftest.mjs": "export const covered = 1;\n",
+    },
+    gateRegistry: {
+      beta: { id: "beta", access: ACCESS_CHAIN, npmScripts: ["check:beta"], modulePath: "gates/repo/check-beta.mjs" },
+    },
+    expect: null,
+  },
+  {
+    // **范畴边界的反向锚点(与前两格成对)**:索引模块**不在**本求值根里 ⇒ 这一棵树不是索引描述的
+    // 那棵树(合成根就是这样:它只造 test/ 布局,根本没有 gates/),此时「在册而树里无」是**事实**
+    // 而不是违例。少了这一格,L11b 会恒红,而恒红是纯文本门禁最坏的失效形态。
+    name: "L11b:索引模块不在本求值根里(合成根)→ 本族与 L11/L12 整段不适用,零判红",
+    judgeOnly: true,
+    extra: {},
+    gateRegistry: {
+      gone: { id: "gone", access: ACCESS_CHAIN, npmScripts: ["check:gone"], modulePath: "gates/repo/check-gone.mjs" },
+    },
+    expectAbsent: /gate-module-present/,
+    expect: null,
   },
   // ---- L12 / L12c gate-chain-membership:两向 + 取值域 + pendingChain ----
   {
@@ -1286,16 +1361,17 @@ const CASES = [
     expect: null,
   },
   {
-    // 取值域:现装注册表的三值(`local`/`workflow`)不在两值域内 —— 这是当前**唯一会红**的一档,
-    // 也是 L12 标 report-only 的全部理由(此刻转 fail-closed 会当场判红 13 项)。
-    name: "L12 取值域:access=local(未迁移的旧值)→ 判红并点名它是旧值",
+    // 取值域:旧表的三值(`local`/`workflow`)不在两值域内。**S3 迁移完成后本档在真实仓库上恒为零
+    // 命中**,它留着的理由是「旧 registry.mjs 的三值若被原样搬进新表,判据要指名道姓地说出来」。
+    name: "L12 取值域:access=local(S3 的旧取值)→ 判红并点名它是旧值",
     gateFamily: "l12",
     gates: { alpha: GATE("alpha", { access: "local", npmScripts: ["check:never-on-any-chain"] }) },
-    expect: /alpha → gate-chain-membership:access 取值「local」不在取值域内\(只允许 chain \/ offchain\) —— 它是 ADR-062 S3 尚未迁移的旧值/,
+    expect: /alpha → gate-chain-membership:access 取值「local」不在取值域内\(只允许 chain \/ offchain\) —— 它是 ADR-062 S3 的旧取值\(gate-index\.mjs 已把它收成 offchain\)/,
   },
   {
-    // workflow 那一档与二分不对齐(在 CI 上但不在 verify:ci 链上),这是两值化的直接理由。
-    name: "L12 取值域:access=workflow 同样判红(该档与二分不对齐,ADR-062 S3 会把它收敁)",
+    // workflow 那一档与二分不对齐(在 CI 上但不在三条链上),这是两值化的直接理由。
+    // 它也是 `gate-index.mjs` 里 `env` / `supply` 两项的真实迁移路径(降格为 offchain)。
+    name: "L12 取值域:access=workflow 同样判红(该档与二分不对齐,已收成 offchain)",
     gateFamily: "l12",
     gates: { alpha: GATE("alpha", { access: "workflow", npmScripts: ["check:never-on-any-chain"] }) },
     expect: /access 取值「workflow」不在取值域内/,
@@ -1416,11 +1492,11 @@ const CASES = [
   },
   {
     // 门禁清单缺 access ⇒ 判红(取值域判据无从核对),不得跳过。
-    name: "L12 门禁清单:缺 access → 判红(取值域判据无从核对)",
+    name: "L12 门禁索引:缺 access → 判红(取值域判据无从核对)",
     gateFamily: "l12",
     registryProblems: true,
     gates: { alpha: { id: "alpha", npmScripts: ["check:alpha"], modulePath: "gates/repo/check-alpha.mjs" } },
-    expect: /门禁清单 alpha 缺 access/,
+    expect: /门禁索引 alpha 缺 access/,
   },
   // ---- 进程级档:退出码与两通道的接线 ----
   // ⚠ 这一族原先成对存在「默认档 exit 0 / --enforce exit 1」。`--enforce` 已删(不留兼容):
@@ -1769,6 +1845,9 @@ for (const testCase of CASES) {
         missingRoot: testCase.missingRoot,
         skipSrc: testCase.skipSrc,
         l5Exemptions: testCase.l5Exemptions,
+        // L11b 一族要注入门禁索引(它判的是「判定面怎么圈」,圈法在 checkTestLayout 里)。
+        // 缺省仍是空表 —— 合成树里没有 gates/,如实。
+        gateRegistry: testCase.gateRegistry,
         criteriaOverride: testCase.criteriaOverride,
       });
       const joined = problems.join("\n");
