@@ -54,6 +54,16 @@
       "reason": "SMOKE_MARKER 是恒等对照:本段断言「实现里埋的 marker 与门禁认的 marker 是同一个值」,取实现侧单源刻意不写字面量。"
     },
     {
+      "segment": "test/gates/supply/supply/supply-common.test.js",
+      "specifier": "shared/fsx.mjs",
+      "reason": "本段要断言的不变量是**引用相等**:supply-common.mjs 转出的 hashBuffer/toPosix/writeFileAtomic 与 fsx.mjs 里那三个是同一个函数对象(===),即「本层只复用既有单源、不就地复刻」。fsx 的三个绑定在本段只作比较的另一端,从不单独调用、也不对它们的行为下断言(断言对象始终是 gates 层 supply-common.mjs 的导出面),故不属「执行别层实现并对其行为下断言」那一档;先例见 test/gates/fixture-contract.test.js → shared/test-common-surface.js(同样是拿 shared 单源当恒等断言的另一端)。不能改成间接验证:不 import 就拿不到「同一性」的比对对象;退而求其次改成源码文本断言(检查 supply-common 仍写着 from '../../../shared/fsx.mjs')有已实测的假绿窗口 —— import 行与转出行都留着、只在后面加一句 const toPosix = (v) => v 就复刻了一份,文本断言照样绿,而本段这条会红。行为等价断言同样挡不住:复刻一份行为相同的实现仍然分叉。"
+    },
+    {
+      "segment": "test/gates/supply/supply/supply-common.test.js",
+      "specifier": "shared/cli.mjs",
+      "reason": "同上,isMainModule 也只作引用相等的比对端:断言的是 supply-common.mjs 转出的就是 shared/cli.mjs 里那一个函数对象,本段从不单独调用它、也不对 cli 层行为下断言(主模块判定本身由 shared 层自己的段覆盖)。同一段里 gates/repo/print-env-fingerprint.mjs 的 runCommand 属本层内 import,不需登记。"
+    },
+    {
       "segment": "test/main/converter.test.js",
       "specifier": "dist/core/settings/settings-defaults.js",
       "reason": "DEFAULT_SETTINGS 作夹具基线(「旧版缺某字段」类场景需要一个已知完整的设置起点),断言对象是 main 的转换编排。"
