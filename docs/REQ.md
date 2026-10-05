@@ -52,7 +52,6 @@
 | 号 | 标题 | 状态 | 为什么停在哪 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
 | REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 在办 | 配置与门禁断言已落地(装卸两阶段 PATH 断言、期望值从 build.nsis.include 派生、写用 WriteRegExpandStr 保住 %VAR% 展开、超长不静默)。**但真实构建失败**:electron-builder 真实上下文里没有 MUI_PAGE_FUNCTION_CUSTOM,`npm run dist` 挂在 installer.nsh:108;上一轮的「编译通过」是**最小脚手架**证的,脚手架替真构建兜住了这个缺宏。真实安装验证未跑 | installer.nsh 在真实构建里编过之后;或真安装验证跑通之后 | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
-| REQ-182 | samples/ 目录无准入判据 | 在办 | **用户 2026-10-05 重新裁决：新建载体** —— 原拍板「并入 ADR-062 P3 的 `check-samples.mjs`」**已失效**（那载体从不存在，而重看条件已到）。`gates/repo/check-samples.mjs` 已落地，两条判据：`samples/**` 不得有代码文件（扩展名闭集、大小写归一）＋ 任一子树列不出来即判红。真实仓判红 0，已登记 `check:samples` 进链与索引。 | —— | gates/repo/check-samples.mjs · gates/repo/check-samples.selftest.mjs · test/gates/repo/samples-gate.test.js |
 
 ## 已完成
 
@@ -198,6 +197,7 @@
 | REQ-176 | 装机 PATH 的五项运行期分支未验 | 已完成 | **已闭合「写清单」这件事**：清单落在 `ADR-063` 的「未验项的手测清单」节，逐项给前置/步骤/预期。⚠️ **原写「四条」是漏计** —— 「未验」实测**五项**（漏了 `DetailPrint` 在 `/S` 下的可见性）。**五条本身仍未验**，需真实 Windows 会话手测。 | —— | docs/adr/ADR-063-装机PATH勾选支的显式开关.md「未验项的手测清单」节 · build-assets/installer.nsh |
 | REQ-174 | CHANGELOG 门禁未覆盖五类工程状态词 | 已完成 | **已闭合**：判据 `internal-term` 补四个词（`依赖升级`/`测试补齐`/`目录重组`/`类型开关`）。`文件拆分` **刻意不加**——它语义有争议（本产品导出时长文档本来就会拆），并留反向钉子夹具钉住该裁决。⚠️ 该判据在真实条目区**仍零覆盖**，证据全来自夹具。 | 条目区首次出现那四个词之一被合法使用时（走 ALLOWLIST 按内容豁免） | gates/repo/check-changelog.mjs（`INTERNAL_TERMS`）· gates/repo/check-changelog.selftest.mjs |
 | REQ-188 | 承重共享库 supply-common 缺契约面 | 已完成 | **已闭合**：新建 supply-common 契约段（35 case 绿）。⚠️ **本号补登记**——活先干、号后取。⚠️ **断言变异无可信数据**：首版全报「失败 0 条」，根因是 Node 缓存 ESM、改坏未被重读。豁免已登记并经删表项变异自证。 | —— | test/gates/supply/supply/supply-common.test.js · gates/repo/test-layout.cross-import-exemptions.json |
+| REQ-182 | samples/ 目录无准入判据 | 已完成 | **已闭合**：载体 `gates/repo/check-samples.mjs` 两条判据 —— `samples/**` 不得有代码文件（扩展名闭集、大小写归一）＋ 任一子树列不出来即判红。真实仓判红 0，已进 `verify:ci` 与索引（`access:chain`）。 | samples/ 定位重议时（出现「该放代码的子路径」） | gates/repo/check-samples.mjs · gates/repo/check-samples.selftest.mjs · test/gates/repo/samples-gate.test.js |
 ## 已作废
 
 = 需求被**终审否决**，`~~` 划掉保留、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
