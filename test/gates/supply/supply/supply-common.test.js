@@ -25,6 +25,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// 仓根取单源,不按本文件位置自算 —— 门禁 gates/repo/check-import-boundary.mjs 的
+// no-self-computed-root 对 `test/harness/paths.js` 单点豁免,其余任何自算写法即判红。
+// 自算的代价是「深度耦合」:目录一挪,全仓这类行会一起错,而每处都「看起来对」。
+import { ROOT } from "../../../harness/paths.js";
 import { createCaseSuite } from "../../../harness/case.js";
 import { removeTree } from "../../../harness/temp-resource.js";
 import { hashBuffer as fsxHashBuffer, toPosix as fsxToPosix, writeFileAtomic as fsxWriteFileAtomic } from "../../../../shared/fsx.mjs";
@@ -170,8 +174,8 @@ function makeSandboxLock(dir, name = "package-lock.json") {
   return { path: filePath, lock };
 }
 
-/** 门禁本体的仓内绝对目录(第 9 组读源码算覆盖面用) */
-const SUPPLY_GATE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../gates/supply/supply");
+/** 门禁本体的仓内绝对目录(第 9 组读源码算覆盖面用) —— 由仓根单源派生,不按本文件位置自算 */
+const SUPPLY_GATE_DIR = path.join(ROOT, "gates", "supply", "supply");
 
 /** 五个门禁本体的文件名(它们是 supply-common 的全部生产消费方) */
 const GATE_BODIES = ["check-supply-chain.mjs", "gen-sbom.mjs", "gen-licenses.mjs", "sca-audit.mjs", "collect-license-fulltext.mjs"];
@@ -211,9 +215,6 @@ function readImportedNames(source) {
   }
   return [...names];
 }
-
-/** 仓根(段在 test/gates/supply/supply/ 下,上溯四级) */
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 /** 能消费 supply-common 的两棵树:门禁本体与测试段(其余树不 import 它) */
 const CONSUMER_TREES = ["gates", "test"];
@@ -260,7 +261,7 @@ function readExternallyReferencedNames(exportedNames) {
   ]);
   const referenced = new Set();
   for (const tree of CONSUMER_TREES) {
-    for (const file of listCodeFiles(path.join(REPO_ROOT, tree))) {
+    for (const file of listCodeFiles(path.join(ROOT, tree))) {
       if (excluded.has(path.resolve(file))) continue;
       for (const match of fs.readFileSync(file, "utf8").matchAll(scanner)) {
         if (match[0] !== undefined) referenced.add(match[0]);
