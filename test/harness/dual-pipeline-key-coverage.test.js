@@ -56,6 +56,7 @@ import {
   keyCoverageCounts,
 } from "./dual-pipeline-registry.js";
 import { ROOT } from "./paths.js";
+import { normalizeEol } from "./eol.js";
 
 /**
  * 本段测哪一层(ADR-062 L4/L8 声明通道):**harness** ——「本层主体根就是 `test/harness/`
@@ -84,7 +85,7 @@ const MATRIX_SEGMENT_REL = "test/core/dual-pipeline-matrix.test.js";
  * 匹配的是矩阵行的字段序(`id` → `mode` → `covers` 三行相邻)。这个序是**当前**写法,
  * 不是契约 —— 所以 {@link readMatrixCoversByRow} 的调用方必须拿 `MATRIX_ROW_IDS` 对账,
  * 写法一变就对不上并判红,而不是静默返回半张表。
- * @param {string} text 矩阵段源码
+ * @param {string} text 矩阵段源码(调用方须先归一 EOL,见 {@link readMatrixCoversByRow})
  * @returns {Record<string, string[]>} 行 id → 覆盖的键
  */
 function extractCoversByRow(text) {
@@ -105,7 +106,12 @@ function extractCoversByRow(text) {
  * @returns {Record<string, string[]>} 行 id → 覆盖的键
  */
 function readMatrixCoversByRow() {
-  const text = fs.readFileSync(path.join(ROOT, ...MATRIX_SEGMENT_REL.split("/")), "utf8");
+  // 读入点归一 EOL(不是改匹配式):矩阵段的字段序在检出态是 CRLF 还是 LF 由各端 autocrlf 决定
+  // (`.gitattributes` 有意不钉 `test/core/**`),而 {@link extractCoversByRow} 的匹配式里是**裸 `\n`
+  // 字面量** —— CRLF 检出下它一条都匹配不上,抽出空表,判据会以「与本次改动无关」的行数红挂掉。
+  // 归一只放过纯行尾差异:内容差异一字不动,仍由下面两道恒绿防护与负向本体照常抓住。
+  // 归一在**读入侧** ⇒ 本文件未来新增的任何字面量匹配都自动免疫,不必逐处加 `\r?`。
+  const text = normalizeEol(fs.readFileSync(path.join(ROOT, ...MATRIX_SEGMENT_REL.split("/")), "utf8"));
   const coversByRow = extractCoversByRow(text);
   // 防护一:行数。解析口径失效(字段序改了 / 匹配式写错)时这里返回半张表甚至空表,
   // 而空表会让下面每条负向都「判红」—— 那正是恒绿防护要拦的假通过。
