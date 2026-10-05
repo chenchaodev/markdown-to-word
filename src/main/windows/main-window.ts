@@ -58,10 +58,11 @@ export function createWindow(): BrowserWindow {
   );
   // 窗口最大化状态记忆(关闭时最大化 → 启动恢复 maximize())
   const restoreMaximized = loadUiState().isMaximized;
-  // 窗口/任务栏图标指向钤印新标(build/icon.ico)。dev 下 app 根即仓库根;
-  // 打包版 electron-builder 已把同源图标烧进 exe(build/ 不随 asar 分发),existsSync
-  // 兜底回退 exe 默认图标,两形态一致。
-  const windowIcon = path.join(app.getAppPath(), "build", "icon.ico");
+  // 窗口/任务栏图标指向钤印新标(tools/icon.ico,与 build.win.icon 同源同文件)。
+  // dev 下 app 根即仓库根,该路径可解析;打包版 app 根是 app.asar,而图标由
+  // electron-builder 烧进 exe、刻意不随 asar 分发(见 build.files 只收 dist/**),
+  // 故 existsSync 落空 → 不传 icon → Windows 回退 exe 内烧进的同一图标,两形态一致。
+  const windowIcon = path.join(app.getAppPath(), "tools", "icon.ico");
   const win = new BrowserWindow({
     // 默认尺寸放大(960×680)配合自绘标题栏与更宽的设置面板布局
     width: 960,

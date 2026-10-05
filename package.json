@@ -131,6 +131,7 @@
       }
     ],
     "win": {
+      "icon": "tools/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -146,6 +147,7 @@
     },
     "nsis": {
       "oneClick": false,
+      "installerIcon": "tools/icon.ico",
       "allowToChangeInstallationDirectory": true,
       "license": "LICENSE",
       "artifactName": "${productName}-Setup-${version}.${ext}",
