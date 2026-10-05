@@ -53,7 +53,7 @@
 
 | 号 | 标题 | 状态 | 为什么停在哪 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 在办 | 配置与门禁断言已落地(装卸两阶段 PATH 断言、期望值从 build.nsis.include 派生、写用 WriteRegExpandStr 保住 %VAR% 展开、超长不静默)。**但真实构建失败**:electron-builder 真实上下文里没有 MUI_PAGE_FUNCTION_CUSTOM,`npm run dist` 挂在 installer.nsh:108;上一轮的「编译通过」是**最小脚手架**证的,脚手架替真构建兜住了这个缺宏。真实安装验证未跑 | installer.nsh 在真实构建里编过之后;或真安装验证跑通之后 | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
+| REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 在办 | **NSIS 真实构建已通过**（2026-10-05 实测 `npm run dist` exit 0：`build.nsis.include` 指向 `build-assets/installer.nsh` 且编译通过；`:226` 明写「**刻意不写** `MUI_PAGE_FUNCTION_CUSTOM`」）⇒ **原记的「真实构建失败 / 挂在 `:108`」已过期**，`:108` 现在只是一行注释。⚠️ **真实安装验证仍未跑**（装完核对 PATH 勾选与快捷方式）。 | 真安装验证跑通之后（装完核对 PATH 勾选与快捷方式） | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
 | REQ-184 | 测试段批量拆分与合并专项| 在办 | **R1 ✅ R2 ✅ R3/R4/R5 撤销**；R2 于 2026-10-05 按**主体数 2** 落地（段数 142→143），断言零丢失经主会话**同法比对** 184→188（+4 完全对上：共用 helper 函数体复制两份）。⚠️ **原前置 D1 已实测否决**（REQ-189）：`covers` 是主体清单不是 import 清单，那族判据做不了。⇒ **主体数目前只能靠人读源码数**，这是本专项已知的未闭合缺口。| 下次要拆分某个段时（即判断「该拆成几段」的那一刻）| docs/PLAN.md「REQ-184 的五项」节 · ADR-062「2026-10-05 追加」节|
 
 ## 已完成
