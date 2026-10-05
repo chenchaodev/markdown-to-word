@@ -188,11 +188,15 @@
 
 | 项 | 内容 | 机器可判完成判据 |
 |---|---|---|
-| **C1** ⏳ | **TS 段口径**：定「段路径镜像 `src/**`、import 侧指向 `dist/**` 同名产物」，并加机器判据锁住这个配对 | 判据两档：① 段住在 `test/<X>/**` 而其被测 import 落在 `dist/**` 时，该段镜像的 `src/<X>/**` 源文件**必须真实存在**；② 镜像 `src/**` 的段，其被测 import **必须**落在同名编译产物上。零判红 ＋ 每档有能变红的负向夹具 |
-| **C2** ⏳ | **索引路径守卫**：任一索引项的 `modulePath`／`judgment.module` **必须是 git 跟踪的源文件** | 一条同时抓住两个洞 —— 落在待删范围内（今天的 `coverage` 承接者）与指向构建产物（`dist/main/smoke.js`）。落点 `gates/repo/gate-index.selftest.mjs`（该载体已是索引自身成立性的单源），并须有**能变红**的合成表夹具 |
-| **C3** ⏳ | **L4 第三档**：段 import **别的层**的门禁主体 ⇒ 判红，除非豁免表登记并给理由 | 实测现存一处会判红：`test/shared/geometry-gate.test.js` 住 `test/shared/` 却 import `gates/geometry/geometry/driver.mjs`，靠 import 了同层的 `geometry-core` 蒙混过「零本层主体」。**该处要么改段位置、要么登记豁免，二选一须在汇报里说明** |
+| **C1** ✅ | **TS 段口径**：定「段路径镜像 `src/**`、import 侧指向 `dist/**` 同名产物」，并加机器判据锁住这个配对 | 判据两档：① 段住在 `test/<X>/**` 而其被测 import 落在 `dist/**` 时，该段镜像的 `src/<X>/**` 源文件**必须真实存在**；② 镜像 `src/**` 的段，其被测 import **必须**落在同名编译产物上。零判红 ＋ 每档有能变红的负向夹具  **✅ 2026-10-05 落地**：判据 `test-dist-artifact-source-mirror`（产物侧，真实仓覆盖 **170 处**被测 import）＋ `test-segment-mirror-same-name`（段侧）。口径 = **被测 import ＝ 解析后落在 `dist/**` 的值引用**，排除五类各有依据（裸包名/`node:`/第三方包**天然 `resolved === null`，是排除事实不是排除代码** · `test/harness/**`（140 段对它 289 处引用，算进分母会让判据退化成「谁引用助手最多」）· 其它段（L4 已判红）· type-only（73 处 `src/**` ＋ 1 处 `dist/**`，算进分母就变成「类型标注写对没有」）· `src/**` 值引用（实测恒为 0 —— tsc 不产 `.d.ts`，类型只能指 `src/`、值只能指 `dist/`））。⚠️ **档二分母在真实仓只有 4 段** —— 这是「段路径镜像 `src/**`」不变式**当前的实际达成度**（103 个 src 层段里只有 4 段逐段对得上真实源），不是判据写窄；拿 103 当分母会把 99 段判红，而那 99 段的处置是改段名、属改名纪律。**该族是随命名收敛而增大的棘轮，不是广覆盖的网。** |
+| **C2** ✅ | **索引路径守卫**：任一索引项的 `modulePath`／`judgment.module` **必须是 git 跟踪的源文件** | 一条同时抓住两个洞 —— 落在待删范围内（今天的 `coverage` 承接者）与指向构建产物（`dist/main/smoke.js`）。落点 `gates/repo/gate-index.selftest.mjs`（该载体已是索引自身成立性的单源），并须有**能变红**的合成表夹具  **✅ 2026-10-05 落地**（随 `4f8936b`）：判据 `auditSourceFilePointers` 在 `gates/repo/gate-index.selftest.mjs`，载体 31 → **41 条**夹具。口径只用「是不是 git 跟踪路径」一个问句，**不叠**「必须是 `.mjs`」「必须在 `gates/` 下」—— 既有事实是 `smoke.modulePath` 指 `src/main/smoke.ts`、`dual-matrix` 指 `test/core/*.test.js`，叠白名单会误伤（已用反向锚点夹具钉住）。用 `git ls-files -z` 读**索引**而非工作树 ⇒ 天然离线、`dist/` 永远不在跟踪集里 ⇒ **结果可复现**（不用 `existsSync` 的理由：它随本机 build 状态翻转）。**离线/异常一律 fail closed 判红**，不降级 report-only（理由与该载体头「删掉后不许留 report-only 的『无法对读』占位」同源）。真实索引 **76 条指针（38 项 × 2 字段）全部跟踪、判红 0**；**未改索引**。 |
+| **C3** ✅ | **L4 第三档**：段 import **别的层**的门禁主体 ⇒ 判红，除非豁免表登记并给理由 | 实测现存一处会判红：`test/shared/geometry-gate.test.js` 住 `test/shared/` 却 import `gates/geometry/geometry/driver.mjs`，靠 import 了同层的 `geometry-core` 蒙混过「零本层主体」。**该处要么改段位置、要么登记豁免，二选一须在汇报里说明**  **✅ 2026-10-05 落地**（随 `5a0639a`）：判据 `test-layer-gate-subject` —— `layerSet` 段且层名 ≠ `gates` ⇒ 其值引用落在 `gates/**` 时判红，除非按 `(段, 说明符)` 登记且 `reason` ≥ 20 码点；stale 检测（ratchet）一并有。⚠️ **`test/gates/**` 的段 import 门禁树刻意不参与**（那是 L11 档 1b 的载体形态）—— 实测不加这个作用域排除时真实仓判红 **31 项**、全部是门禁段在测门禁 ⇒ 该作用域差是踩出来并钉进夹具的。**现存一处处置 ＝ 登记豁免、不迁段**（理由三条见 `docs/REQ.md` REQ-187 与提交 `5a0639a`；`docs/PLAN.md` 的 R3 已裁决撤销对该段的拆分，搬段等于推翻那条裁决）。 |
 
 > ⚠️ **三条都不是「补散文」**：C1／C3 改 `gates/repo/check-test-layout.mjs`（同属一条泳道，同一文件），C2 改 `gates/repo/gate-index.selftest.mjs`（另一条泳道，**可并行**）。
+> **C1/C2/C3 三条的主会话独立验证**（真变异，非空操作）：C3 未登记短路 ⇒ selftest exit 1、恰 **2/125** 失败；C1 档一恒通过 ⇒ exit 1、恰 **1/125** 失败；两次还原后全绿。C8（REQ-177）另两次：唯一性短路 ⇒ 恰红「两份 ADR-062 判红并点名」，位数短路 ⇒ 恰红两位数形态夹具。C2 的真实索引 76 条指针判红 0。
+>
+> ⚠️ **两笔如实留账**：① C3 的 `GATE_SUBJECT_EXEMPTIONS` 暂置**模块常量**而非数据文件（执行方泳道只可写两个 `.mjs`、禁 `gates/**` 其余文件，无法新建 JSON）—— 判红方向仍 fail-closed，但**与另两张豁免表「数据文件与本体分离」的形态不一致**；迁移路径已就位（常量 ＋ `base.gateSubjectExemptions` 注入面），迁到数据文件是一次纯搬运。**主会话裁决：本步不扩范围，登记为待办。** ② C1 档二的分母只有 4 段（见 C1 行内说明），**不是缺陷但也不是广覆盖** —— 若日后要它变成真正的网，得先有一批段改用镜像路径命名，那是改名纪律、不属本族。
+>
 
 ## 完成标准
 
