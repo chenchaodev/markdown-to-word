@@ -592,20 +592,43 @@ console.log(`[ok] samples-selftest:基线全绿(${CASES.length}/${CASES.length})
 /* ---------- 第二步:变异实验(真改源文件 + 子进程重新 import) ---------- */
 
 /**
+ * 把折行统一成 LF;再按目标文件**自身**的折行放回去。
+ *
+ * ⚠ 锚点为什么必须行尾无关:`from`/`to` 是 LF 写死的字面量,而判定本体的**检出形态由各端
+ * autocrlf 决定**(`* text=auto` + Windows runner 的 `core.autocrlf=true` ⇒ 检出即 CRLF)。
+ * 拿 LF 锚点直接去 `includes` 一份 CRLF 源码,恒不命中 —— 而失败形态是「找不到锚点」,
+ * 看着像锚点写错了,实则是行尾,于是本地(LF)绿、CI(CRLF)恒红。
+ * 故:定位与替换都在**归一后的副本**上进行,落盘前再按原文件的折行放回去 ——
+ * 变异窗口内不改动判定本体的行尾,`finally` 仍按 `original` 逐字节还原。
+ * @param {string} lfText 折行已归一为 LF 的文本
+ * @param {string} eol 原文件实际使用的折行
+ * @returns {string} 按 `eol` 折行的文本
+ */
+function withFileEol(lfText, eol) {
+  return eol === "\n" ? lfText : lfText.replace(/\n/g, eol);
+}
+
+/**
  * 真变异:把判定本体源文件里的 `from` 改成 `to`,跑一遍全部夹具,再逐字还原。
  *
  * ⚠ **必须是真改变行为**:断言 `from !== to` 只是最弱的一道闸,真正保证「变异有效」的是
  * 随后「该失败的夹具确实失败了」这一格 —— 若改的那段不在判定路径上,夹具会全绿,
  * `mustFail` 立刻报「应失败却仍绿」,本轮判红。
- * @param {string} from 原字面量
- * @param {string} to 替换字面量
+ * @param {string} from 原字面量(按 LF 书写)
+ * @param {string} to 替换字面量(按 LF 书写)
  * @returns {{ failures: string[], passed: string[] }} 变异后失败 / 通过的夹具名
  */
 function mutateAndRun(from, to) {
   const original = readFileSync(checkerPath, "utf8");
-  if (!original.includes(from)) throw new Error(`变异定位失败:判定本体里找不到 ${JSON.stringify(from)}`);
+  // 归一到 LF 再定位:锚点与检出行尾解耦(见 withFileEol 的注)。
+  // `from`/`to` 也各自归一,这样即便日后有人从 CRLF 文件里把锚点原样粘进来,仍能命中。
+  const eol = original.includes("\r\n") ? "\r\n" : "\n";
+  const probe = original.replace(/\r\n/g, "\n");
+  const anchor = from.replace(/\r\n/g, "\n");
+  const replacement = to.replace(/\r\n/g, "\n");
+  if (!probe.includes(anchor)) throw new Error(`变异定位失败:判定本体里找不到 ${JSON.stringify(anchor)}`);
   if (from === to) throw new Error(`变异是空操作(${JSON.stringify(from)} → ${JSON.stringify(to)}):结论会是假的`);
-  const mutated = original.replace(from, to);
+  const mutated = withFileEol(probe.replace(anchor, replacement), eol);
   if (mutated === original) throw new Error("变异未改变文件内容:结论会是假的");
   writeFileSync(checkerPath, mutated, "utf8");
   /** @type {string[]} */
