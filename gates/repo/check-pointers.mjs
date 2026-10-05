@@ -895,6 +895,11 @@ export function classifyUnmatchedPathRefs(files, readFile) {
 //
 // **判红的前提是解析成功**:解析失败时我分不清「用户写错了」与「我读不懂」,故 B1–B6 全部只出声
 // 不判红(B* 落在覆盖度自报区)。这是「判红的前提是解析成功」这条原则的另一个面。
+//
+// ⚠️ **列数守卫是这条原则的例外,且例外理由不是「它不是解析失败」**:它确实是解析失败,但它的
+// 后果不是「读不懂一行」而是「**整行退出全部判定**」—— 静默退出全部判定会让门禁把**没判**的
+// 行说成**判过**的行,那比假红坏得多。故守卫**保留退出**(按列名下标取值在错位行上会读到别的列)
+// **并同时判红**。判红与退出是两件事:一个管「说得准」,一个管「说得全」。
 
 /** 状态取值域(全局配置目录 `REQ-RULES.md` 的「状态取值域」节)。**刻意不含流转边、不含「所有行都要
  * 收口到终态」**:流转边合法性要 git 历史(本文件至今零外部依赖,只用 `node:fs` / `node:path`);
@@ -1252,11 +1257,22 @@ const pad3 = (n) => String(n).padStart(3, '0');
  * @param text `docs/REQ.md` 全文(读不到时传 `null`/`''`)
  * @returns `{ errors, notes, stats }`:`errors` 进错误流(exit 1);`notes` 是解析盲区与正常态提示,
  *   只进覆盖度自报区;`stats.invariants` 是本次真正判定过的判据数(分母 `LEDGER_RULES.length`)。
+ *   `stats.columnGuarded` 是**进过列数守卫的行数** —— 守卫自己的存活探针,恒 0 即零覆盖出声。
  */
 export function checkLedger(text) {
   const errors = [];
   const notes = [];
-  const stats = { rows: 0, placeholder: 0, badColumn: 0, max: 0, invariants: 0, sectionUnknown: 0 };
+  const stats = {
+    rows: 0,
+    placeholder: 0,
+    badColumn: 0,
+    // 「进过列数守卫的行数」—— 守卫的存活探针(见函数末尾的零覆盖出声)。与 `badColumn` 是一对:
+    // 一个是「判到几行」,一个是「其中判出不符几行」,后者恒 0 时无法区分「干净」与「守卫没跑」。
+    columnGuarded: 0,
+    max: 0,
+    invariants: 0,
+    sectionUnknown: 0,
+  };
   const done = new Set();
 
   if (typeof text !== 'string' || !text.trim()) {
@@ -1278,10 +1294,20 @@ export function checkLedger(text) {
     // 列数守卫必须排在一切判定之前:标题里一个**未转义**的 `|` 就会让该行错位,错位后读到的
     // 「状态」格其实是标题 ⇒ R2 假红。列数不符 ⇒ 整行不参与任何判定。
     // 阈值取**本行所属块**的表头宽度(各节表头可以不同宽),不是第一块的。
+    //
+    // ⚠️ **「退出全部判定」留着,但退出必须同时硬失败**。原先这一格只 `notes.push` 不判红,于是
+    // 出现过这个形态:门禁把这一行说成「通过」,而它**一条台账判据都没被查过** —— 静默退出全部
+    // 判定会让门禁把没判的说成判过。退出是**解析安全**问题(按列名下标取值在错位行上会读到
+    // 别的列),判红是**账本完整性**问题,两件事都要做:退出保不出现假红,判红保不出现假绿。
+    // 诊断必须带 文件:行 / 实际格数 / 期望列数 / 所在节 —— 本门禁所有 errors 都带定位。
+    stats.columnGuarded += 1;
     if (row.cells.length !== row.headerCount) {
       stats.badColumn += 1;
-      notes.push(
-        `${PROJECT_PROBE}:${row.lineNo} 单元格数 ${row.cells.length} ≠ 表头 ${row.headerCount} ⇒ 该行不参与任何判定(标题里的未转义 \`|\` 会造成错位)`,
+      errors.push(
+        `${PROJECT_PROBE}:${row.lineNo} → ${row.section ? `「${row.section}」节` : '台账'} → 列数错位:`
+          + `该行 ${row.cells.length} 格 ≠ 表头 ${row.headerCount} 列`
+          + ' ⇒ 该行已退出全部台账判据(重号 / 状态取值域 / 墓碑一条都没判它)'
+          + ' —— 标题里的未转义 `|` 会造成错位,补齐或转义该竖线',
       );
       continue;
     }
@@ -1432,6 +1458,16 @@ export function checkLedger(text) {
   if (stats.placeholder) {
     notes.push(`${PROJECT_PROBE} 登记表有 ${stats.placeholder} 行未填的占位行,已排除(不算错);登记第一条需求时替换掉即可`);
   }
+  // ⚠️ **列数守卫的「零覆盖」也要出声**,否则守卫恒失效是**不可见**的:守卫一改坏(阈值取错、
+  // 条件写反、整段被摘),`badColumn` 恒为 0,而门禁**照样 exit 0** —— 那正是这条判据自己
+  // 曾经的样子(只出声 ⇒ 门禁说「通过」而那一行一条都没判)。判据的存活要有可见的探针。
+  // **分母取「进过守卫的行数」**而不是表块数:守卫是逐行判的,0 行进过 = 它没在跑。
+  if (stats.columnGuarded === 0) {
+    notes.push(
+      `${PROJECT_PROBE} 列数守卫 0 行进过判定 ⇒ 列数不符这条判据零覆盖`
+        + '(守卫恒不命中时,错位行会带着「查过了」的假象通过)',
+    );
+  }
 
   stats.invariants = done.size;
   return { errors, notes, stats };
@@ -1572,16 +1608,24 @@ function sectionBody(lines, name) {
  * 读到 `row.section` 会恒 `undefined` ⇒「已完成 ≤100 字」那条上限**一次都没生效过**
  * (全部按 200 字判)。实测:往已完成节塞 150 字,该判据零命中。
  *
- * @returns `findings`(每条含文件:行与实测字数);`examined` = 真正量过的数据行数。
+ * ⚠️ **列数守卫在这里是第二个落点,必须与 `checkLedger` 那处同判红**:本函数**逐块**重走一遍
+ * `tableBlocks`,与 `locateRegistry` 的合并行集是**两次独立解析** —— 只在 R 族那处判红,本函数
+ * 里的 `continue` 仍然是**无声的洞**:C1/C2 的 `examined` 会静默少掉这一行,而「标题列/判断依据
+ * 上限对该行零判」这件事没有任何一处会说出来。两族的分母是分开的(`LEDGER_RULES` vs
+ * `CARRIER_RULES`),一个洞不会被另一个洞的判红填上。
+ *
+ * @returns `findings`(每条含文件:行与实测字数);`examined` = 真正量过的数据行数;
+ *   `guarded` = 真正进过列数守卫的行数(守卫的存活探针,恒 0 即零覆盖出声)。
  * 键名用 `findings` 而非 `notes`:它装的是**违反**(超上限),不是提示。分流在
  * `runCarrierChecks` 做(违反 → `errors`),本函数不决定判不判红。
  */
 export function checkLedgerShape(text) {
   const findings = [];
   let examined = 0;
-  if (typeof text !== 'string' || !text.trim()) return { findings, examined };
+  let guarded = 0;
+  if (typeof text !== 'string' || !text.trim()) return { findings, examined, guarded };
   const reg = locateRegistry(text);
-  if (!reg) return { findings, examined };
+  if (!reg) return { findings, examined, guarded };
 
   const masked = maskFencedLines(text);
   const sections = sectionByLine(masked);
@@ -1596,7 +1640,18 @@ export function checkLedgerShape(text) {
     const section = block.rows.length ? (sections.get(block.rows[0].lineNo) ?? '') : '';
     for (const row of parsed.rows) {
       if (isSeparatorRow(row.cells)) continue;
-      if (row.cells.length !== parsed.header.length) continue; // 错位行由列数守卫负责
+      guarded += 1;
+      if (row.cells.length !== parsed.header.length) {
+        // 退出保留(按列名下标取值在错位行上会读到别的列),但**退出必须同时判红** ——
+        // 静默退出全部判定会让门禁把没判的说成判过。措辞与 `checkLedger` 那处**分工不重复**:
+        // 那处说「退出全部台账判据」(R 族),这里说「C1/C2 对这一行零判」(载体族)。
+        findings.push(
+          `${PROJECT_PROBE}:${row.lineNo} → ${section ? `「${section}」节` : '台账'} → 列数错位:`
+            + `该行 ${row.cells.length} 格 ≠ 表头 ${parsed.header.length} 列`
+            + ' ⇒ 标题列 / 判断依据上限对该行零判(未量字数)',
+        );
+        continue;
+      }
       if (isPlaceholderRow(row)) continue;
       if (titleCol === -1 && whyCol === -1) continue;
       examined += 1;
@@ -1617,7 +1672,7 @@ export function checkLedgerShape(text) {
       }
     }
   }
-  return { findings, examined };
+  return { findings, examined, guarded };
 }
 
 /** `docs/adr/` 下的**决策条目**(目录说明书 `README.md` 不是决策条目,与 C4 同一豁免口径)。 */
@@ -1928,6 +1983,14 @@ function runCarrierChecks(root, files, readFile) {
   if (!shape.examined) {
     notes.push(`${PROJECT_PROBE} 没有可量化的台账数据行(载体不可达或全为骨架占位) ⇒ 标题列/判断依据上限判据零覆盖`);
   }
+  // ⚠️ **列数守卫的存活探针**:`examined === 0` 那条 note 分不清「表里没有可量的行」与
+  // 「守卫把每一行都挡掉了」—— 后者正是「静默退出全部判定」那个洞的形态,必须单独出声。
+  if (shape.guarded === 0) {
+    notes.push(
+      `${PROJECT_PROBE} 载体族的列数守卫 0 行进过判定 ⇒ 该族的列数不符判据零覆盖`
+        + '(守卫恒不命中时,错位行会带着「量过了」的假象通过)',
+    );
+  }
 
   const adr = checkAdrBackground(files, readFile);
   bump(adr.examined);
@@ -2135,8 +2198,9 @@ export function main() {
   // 一条都不查它)。原先它只在自报区打一行「不参与判定」——**那一行在 CI 输出里没人读**,
   // 而结论行是唯一保证被读到的一行。不推进来的话,「这 N 行我没查」就只存在于一个不会被看的
   // 地方,`通过` 会被误读成「全查过了」—— 这正是 ADR-056 撤销的那类假绿。
-  // **不判红**:按 ADR-055 的定性,列数守卫是「解析失败」不是「违规」,判红会有假红风险
-  // (标题里一个未转义的 `|` 就触发)。
+  // **已升判红**:原先按「解析失败 ≠ 违规」只出声,但那条定性只覆盖了「报错措辞」,
+  // 漏了「整行退出全部判定」这个后果 —— 静默退出全部判定会让门禁把**没判**的行说成**判过**的行。
+  // 「退出判定」本身保留(按列名下标取值在错位行上会读到别的列),但退出必须同时硬失败。
   // **为什么是条件式而非像三族那样恒进**:0 错位行说的是「没有行被跳过」——那是**真的查过了**,
   // 与三族的「判定 0 处 = 没人管」不同性质,恒进会把真话报成缺口。
   if (ledger && ledger.stats.badColumn > 0) {

@@ -8,14 +8,17 @@
  * 不可分辨**。故本段每档都配判红侧的 case:正例只说明「没报错」,负例才说明「真的在判」。
  *
  * **为什么夹具全内联**:两个函数都是纯函数(零 IO),台账文本又必须精确控制到格
- * (六格行的宽度直接决定该行会不会被列数守卫静默排除),落文件反而更难看出意图。
+ * (六格行的宽度直接决定该行会不会被列数守卫挡下 —— 挡下的行**既退出全部判定又判红**),
+ * 落文件反而更难看出意图。
  * 不复制判据逻辑:夹具只是台账文本,判红/出声的判定完全交给被测函数。
  *
  * **为什么不给判据编号**:本段断言的是「台账内不变量」这一整组性质,断言文案用编号
  * 指代会让后来者误以为是某一条判据的编号,而编号本身随时可能重排。
  */
 import assert from "node:assert/strict";
-import { checkLedger, checkTableShape } from "../../gates/repo/check-pointers.mjs";
+// → 导出是为了让测试段引用它们(段里若内联字面量,上限一改就会把测试让成失效夹具 ——
+//   本会话此前已因此红过 4 条)。另见上面 `OVER_TITLE` 那条同源纪律的 e2e 段写法。
+import { checkLedger, checkLedgerShape, checkTableShape, TITLE_LIMIT } from "../../gates/repo/check-pointers.mjs";
 import { createCaseSuite } from "../harness/case.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
@@ -32,8 +35,8 @@ const pad3 = (n) => String(n).padStart(3, "0");
  * 台账数据行的**六格**形态,与 `fixture` 的表头逐列对齐(号 / 标题 / 状态 / 为什么停在这 /
  * 什么条件下重看 / 分析在哪)。
  *
- * ⚠️ 格数必须跟表头一致,否则整行会被列数守卫静默排除 —— 那不是「判红」而是「不判定」:
- * 行数变 0 ⇒ 号唯一 / 状态取值域 / 墓碑三条零覆盖,而门禁仍然 exit 0。
+ * ⚠️ 格数必须跟表头一致 —— 但**理由已经变了**:列数不符的行现在**判红**(原先只出声)。
+ * 改这个格数会让整段夹具转红,那是真阳性,不是「夹具失效」。
  * @param {string} id 号格(墓碑号写作删除线形态)
  * @param {string} title 标题格
  * @param {string} status 状态格
@@ -78,6 +81,10 @@ const goodRows = (n) =>
   Array.from({ length: n }, (_, i) => row(`REQ-${pad3(i + 1)}`, `需求 ${i + 1}`, "待拍板"));
 
 // ---- 台账表结构档的固定三行(表头 / 分隔行 / 一条数据行)----
+//
+// ⚠️ `DATA_ROW` 的格数必须与 `HDR` 一致(各 6 格)。这一档测的是表**块结构**,不测列数;
+// 但列数守卫是**读 `docs/REQ.md` 的**,不走这三行常量,故这里改错不会立刻转红 —— 而一旦
+// 有人把这三行也接到列数守卫上,不一致就会变成真阳性。留一句注释免得下一个人以为随意。
 const HDR = "| 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |";
 const SEP = "|---|---|---|---|---|---|";
 const DATA_ROW = "| REQ-001 | 甲 | 待拍板 | 原因 | 条件 | 无 |";
@@ -335,18 +342,71 @@ export async function run() {
       assert.match(r7.join("\n"), /本行划掉了/);
     });
 
-    await suite.case("列数不符(标题里未转义的竖线)⇒ 整行不参与判定 + 只出声", () => {
+    // ⚠️ 这一族是**「静默退出全部判定」**那一类:行被列数守卫挡掉后,号唯一 / 状态取值域 /
+    // 墓碑 / 上限**一条都没判过**,而门禁若只出声就会说「通过」—— 那是把没判的说成判过。
+    // **每条都必须有「撤回后复绿」那一步**:只做「构造 ⇒ 判红」分不清「判据在判」与「夹具写坏别的」。
+
+    await suite.case("列数不符(标题里未转义的竖线)⇒ 判红 + 该行仍退出全部判定", () => {
+      // 坏行只有 5 格:标题里那个未转义的竖线把行切成了 5 格(表头 6 列)。
+      const bad = "| REQ-004 | 改 a | b 的配置 | 未开工 | 2026-09-27 |";
+      // ⚠️ **号段声明 max=3 而台账里有一行 REQ-004** —— 这不是写错,是**退出行为的探针**:
+      // 若那一行**参与**实算,`max` 就是 4 ≠ 声明的 3 ⇒ R4 会再报一条「号段缺行」。
+      // 故「恰好 1 条判红」这条断言**同时**钉住了两件事:判红在(1 条),且退出也在(没有第 2 条)。
+      const text = fixture({ max: 3, next: 4, rows: [...goodRows(3), bad] });
+      const r = checkLedger(text);
+      // 行号**从夹具本身算出来**,不写死(写死过就会在夹具一改时变成假失败,而假失败会让人
+      // 去改断言而不是改实现 —— 与上面 R8 那条同一教训)。
+      const lineNo = text.split("\n").indexOf(bad) + 1;
+      assert.equal(r.stats.badColumn, 1, "错位行必须计入 badColumn");
+      assert.equal(r.errors.length, 1, `列数不符只该报一条(第 2 条会是「号段缺行」,即退出失效):${JSON.stringify(r.errors)}`);
+      // 诊断四要素:文件:行 / 所在节 / 实际格数 / 期望列数 —— 缺任一条就没法定位。
+      assert.match(String(r.errors[0]), new RegExp(`^docs/REQ\\.md:${lineNo} → `), "报错必须带 文件:行");
+      assert.match(String(r.errors[0]), /「待拍板」节/, "必须点名所在节");
+      assert.match(String(r.errors[0]), /该行 5 格 ≠ 表头 6 列/, "必须同时给出实际格数与期望列数");
+      assert.equal(r.stats.max, 3, "错位行不得进数值计算(实算最大号仍是被判过的 3 行里的最大)");
+    });
+
+    await suite.case("列数不符的行退出判定 ⇒ 它同时是个重号也不报(判红不得顺手把退出改掉)", () => {
+      // 「判红」与「退出」是两件事:判红是**账本完整性**(说得全),退出是**解析安全**(说得准)。
+      // 只加判红不保留退出,会让 R2 读错列(标题里的竖线把「状态」格挤走)⇒ R2 假红。
+      // 夹具刻意让错位行**号格与上一行相同** ⇒ 它若参与判定就是重号;它退出 ⇒ 不报。
       const r = checkLedger(
         fixture({
-          max: 3,
-          next: 4,
-          // 坏行只有 5 格:标题里那个未转义的竖线把行切成了 5 格(表头 6 列)
-          rows: [...goodRows(3), "| REQ-004 | 改 a | b 的配置 | 未开工 | 2026-09-27 |"],
+          max: 1,
+          next: 2,
+          rows: [row("REQ-001", "需求一", "待拍板"), "| REQ-001 | 改 a | b 的配置 | 未开工 | 2026-09-27 |"],
         }),
       );
-      assert.deepEqual(r.errors, [], JSON.stringify(r.errors));
-      assert.equal(r.stats.badColumn, 1);
-      assert.ok(r.notes.some((n) => /单元格数 5 ≠ 表头 6/.test(n)), JSON.stringify(r.notes));
+      assert.equal(r.errors.length, 1, `只该有列数错位那一条(重号被退出吞掉):${JSON.stringify(r.errors)}`);
+      assert.match(String(r.errors[0]), /列数错位/);
+      // ⚠️ **forbid 必须钉「重号那一条的诊断形态」而不是裸词「重号」** —— 裸词会命中
+      // 列数错位诊断正文里列举的「重号 / 状态取值域 / 墓碑」,那是**说明**不是违规。
+      assert(
+        !/→ 重号:该号已在/.test(r.errors.join("\n")),
+        `错位行退出判定 ⇒ 号唯一判不到它:${JSON.stringify(r.errors)}`,
+      );
+    });
+
+    await suite.case("列数不符撤回:同一行改回 6 格 ⇒ 复绿(证明上两条是本判据判的,不是夹具写坏)", () => {
+      const r = checkLedger(
+        fixture({ max: 4, next: 5, rows: [...goodRows(3), row("REQ-004", "需求四", "待拍板")] }),
+      );
+      assert.deepEqual(r.errors, [], `撤回后应复绿:${JSON.stringify(r.errors)}`);
+      assert.equal(r.stats.badColumn, 0, "撤回后不得再计错位行");
+      assert.equal(r.stats.invariants, 8, "撤回后八项都真正判定过(不是靠退出判定变绿)");
+      // 撤回后**这一行真的进了判定**:实算最大号从 3 变成 4,与号段声明一致。
+      assert.equal(r.stats.max, 4, "撤回后 REQ-004 进判 ⇒ 实算最大号是 4");
+    });
+
+    await suite.case("列数守卫的存活探针:好台账的行数进过守卫,且不自称零覆盖", () => {
+      // 守卫恒不命中时 `badColumn` 恒 0,而门禁照样 exit 0 —— **不可见**。故分母取
+      // 「进过守卫的行数」(`columnGuarded`):真台账恒 > 0,只有守卫没跑时才为 0 而必须出声。
+      const good = checkLedger(fixture({ max: 3, next: 4, rows: goodRows(3) }));
+      assert.equal(good.stats.columnGuarded, 3, "三行都该进过守卫");
+      assert(
+        !good.notes.some((n) => /列数守卫 0 行/.test(n)),
+        `好台账不该自称零覆盖:${JSON.stringify(good.notes)}`,
+      );
     });
 
     await suite.case("列序颠倒 ⇒ 仍 0 错(列位置按表头名取,不下标)", () => {
@@ -424,6 +484,51 @@ export async function run() {
       );
       assert.equal(next.errors.length, 1, JSON.stringify(next.errors));
       assert.match(String(next.errors[0]), /「下一个可用号」不等于/);
+    });
+  });
+
+  // ============ 台账形态上限档(checkLedgerShape · C1/C2 的列数守卫落点)============
+  //
+  // ⚠️ **这一段钉的是列数守卫的第二个落点**。守卫在判据本体里有两处:`checkLedger` 那一处
+  // 管 R 族(重号 / 状态 / 墓碑),本函数这一处管**载体族**(标题列 / 判断依据的字数上限)。
+  // 两处是**两次独立解析**(`locateRegistry` 合并行集 vs 本函数逐块走 `tableBlocks`),
+  // 分母也分开(`LEDGER_RULES` vs `CARRIER_RULES`)—— 只改一处,另一处仍是**无声的洞**:
+  // 本函数里的 `continue` 照样让 `examined` 静默少掉那一行,而「上限对这一行零判」没人说。
+
+  await suite.describe("台账形态上限(列数守卫 · 第二个落点)", async () => {
+    await suite.case("列数不符 ⇒ 判红并点名行号、所在节、实际格数与期望列数", () => {
+      // 夹具的表头是 6 列(号/标题/状态/为什么停在这/什么条件下重看/分析在哪),坏行 5 格。
+      // ⚠️ **标题格刻意超 C1 上限**:错位后那一行**不再量字数**,若守卫被改回静默 `continue`,
+      // 这条 finding 会消失 ⇒ 判红消失;而若守卫改成「错位也照量」,读到的列是别的列
+      // ⇒ 报出的是**假的**标题列超限。两种漂移这一条都抓得到。
+      const bad = `| REQ-001 | ${"长".repeat(TITLE_LIMIT + 1)} | 待拍板 | 无阻塞 | 随时 |`;
+      const text = fixture({ max: 1, next: 2, rows: [bad] });
+      const r = checkLedgerShape(text);
+      const lineNo = text.split("\n").indexOf(bad) + 1;
+      assert.equal(r.findings.length, 1, `只该有列数错位那一条:${JSON.stringify(r.findings)}`);
+      assert.match(
+        String(r.findings[0]),
+        new RegExp(`^docs/REQ\\.md:${lineNo} → `),
+        `报错必须带 文件:行,实际 ${r.findings[0]}`,
+      );
+      assert.match(String(r.findings[0]), /「待拍板」节/, "必须点名所在节");
+      assert.match(String(r.findings[0]), /该行 5 格 ≠ 表头 6 列/, "必须同时给出实际格数与期望列数");
+      // **退出保留**:错位行不进 `examined`(C1/C2 对它零判,这是解析安全的必要代价)。
+      assert.equal(r.examined, 0, "错位行不得进字数统计");
+    });
+
+    await suite.case("列数不符撤回:同一行改回 6 格 ⇒ 复绿(证明上条是本判据判的,不是夹具写坏)", () => {
+      const r = checkLedgerShape(fixture({ max: 1, next: 2, rows: [row("REQ-001", "需求一", "待拍板")] }));
+      assert.deepEqual(r.findings, [], `撤回后应复绿:${JSON.stringify(r.findings)}`);
+      assert.equal(r.examined, 1, "撤回后这一行真的被量了(不是靠退出判定变绿)");
+    });
+
+    await suite.case("好台账 ⇒ 0 错,且守卫的行数分母非 0(存活探针)", () => {
+      // `guarded` 是**守卫自己的**分母:恒 0 时无法区分「表里没有行」与「守卫没跑」。
+      const r = checkLedgerShape(fixture({ max: 3, next: 4, rows: goodRows(3) }));
+      assert.deepEqual(r.findings, [], JSON.stringify(r.findings));
+      assert.equal(r.guarded, 3, "三行都该进过守卫");
+      assert.equal(r.examined, 3, "三行都该被量过字数");
     });
   });
 
