@@ -37,7 +37,9 @@ import path from "node:path";
 import { createCaseSuite } from "../harness/case.js";
 import { ROOT } from "../harness/paths.js";
 import { withTempResource } from "../harness/temp-resource.js";
-import { checkLedger, TITLE_LIMIT, WHY_LIMIT, WHY_LIMIT_DONE } from "../../gates/repo/check-pointers.mjs";
+import { checkLedger } from "../../gates/repo/check-pointers.mjs";
+// → 上限常量取**全仓单点持有**那一份(`shared/`),门禁已不再导出这三个常量。
+import { TITLE_LIMIT, WHY_LIMIT, WHY_LIMIT_DONE } from "../../shared/markdown-table.mjs";
 
 /**
  * **超上限的夹具长度必须跟着判据常量走** —— 写死 21 字 / 150 字时，上限一改这两条 case 就红。

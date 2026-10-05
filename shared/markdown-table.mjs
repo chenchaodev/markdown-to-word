@@ -16,27 +16,36 @@
 /**
  * 台账「一句话标题」列的字数上限(字)。
  *
- * ⚠️ **本仓暂有两份,这是已知的、有意的中间态**:这三个数原本硬编码在
- * `gates/repo/check-pointers.mjs` 的载体形态判据常量里(其 C1 / C2 报错文字从这三个常量拼)。
- * 写工具不能从那里 import(见模块头),所以唯一一份落在这里;**下一阶段(尚未做)门禁会改为
- * 从本模块 import 并删掉本地那份**。在那之前两份并存,改数值必须同时改两处
- * (本文件 · `gates/repo/check-pointers.mjs` 的三个同名导出)。
+ * ✅ **全仓单点持有**:这三个数在本仓**只有这一处声明**,所有消费方一律 import 本模块 ——
+ * `gates/repo/check-pointers.mjs`(载体形态判据 C1 / C2 的判红与 `CARRIER_RULES` 文案都从
+ * 这三个常量拼,本仓**不再另留一份**)、`tools/req-edit.mjs`(写侧列宽预判),
+ * 以及 `gates/repo/check-docs.selftest.mjs` 与 `test/gates/` 下两段单测的**夹具长度**。
  *
- * **不要在本文件之外再加第三份** —— 这三个数是判据的一部分,每多一份就多一个能单独漂移的副本。
+ * 之所以能单点持有:`shared/` 是 `gates` 与 `tools` **唯一共同的合法依赖**
+ * (`gates/repo/check-import-boundary.mjs` 的 `TREE_RULES`,两侧 allow 面都含 `shared`),
+ * 门禁与写工具因此能引同一份而互不越界。门禁侧那份副本已按 `docs/PLAN.md` 泳道 #06 删除。
+ *
+ * **不要在本文件之外再加第二份** —— 这三个数是判据的一部分,每多一份就多一个能单独漂移的副本。
+ *
+ * ⚠️ **与全局配置目录那三份之间没有机器对读**(既有缺口,已认领):改数值要同时改四处 ——
+ * 本文件 · 全局配置仓门禁常量 · 全局 `DOC-SYSTEM.md` 载体表那一行 · 本仓 `AGENTS.md` 那一行,
+ * 而只有前两处之间那一对有 T2 强制对读。理由链见 `gates/repo/check-pointers.mjs` 里
+ * C1 / C2 判据上方那段 T2 tombstone 注释(**归一后仍成立**:位置从 `gates/` 变成 `shared/`,
+ * 但「本仓必须留一份」这件事不变)。
  */
 export const TITLE_LIMIT = 30;
 
 /**
  * 台账「判断依据」列的字数上限(字),「已完成」节之外各节适用。
  *
- * 与 `TITLE_LIMIT` 同属那份「两份并存」的中间态,理由见该常量注释。
+ * 与 `TITLE_LIMIT` 同属那份单点持有,理由见该常量注释。
  */
 export const WHY_LIMIT = 250;
 
 /**
  * 「已完成」节「判断依据」列的字数上限(字)—— 比其余节更紧,故单独一个常量。
  *
- * 与 `TITLE_LIMIT` 同属那份「两份并存」的中间态,理由见该常量注释。
+ * 与 `TITLE_LIMIT` 同属那份单点持有,理由见该常量注释。
  */
 export const WHY_LIMIT_DONE = 150;
 
@@ -92,15 +101,38 @@ export function splitTableRow(line) {
 /**
  * 一组单元格是否为表格分隔行(`|---|---|`)。
  *
- * **并集自两份既有实现**:台账门禁给出基础判据(每格都匹配 `^:?-+:?$`),PLAN 子步门禁给出
- * 「先剥 `` ` `` 与 `*` 再测」这一步。取并集而非二选一:剥掉装饰后基础判据照样匹配,
- * **不会让真分隔行漏判**,而漏判真分隔行的后果是把它当数据行读进去(行数照样对得上,判据照样绿)。
+ * **判据 = 每格 trim 后逐格匹配 `^:?-+:?$`**(逐格全满足;**不得**弱化成「任一格满足」——
+ * 那会让「单格带装饰的正常数据行」被误当整行分隔行而豁免全部台账判据)。
+ *
+ * ⚠️ **这里曾取过「并集」,2026-10-05 已反转回窄口径 —— 反转理由比原裁决更重要,勿"顺手统一"回去**:
+ *
+ * - **原裁决(§7.1)要求取并集**:两份既有实现不同,门禁那份只 `trim()`,PLAN 子步门禁那份先剥
+ *   反引号与星号再测。取并集的表面理由是「剥掉装饰后基础判据照样匹配,不会让真分隔行漏判」,
+ *   而漏判真分隔行的后果是把它当数据行读进去(行数照样对得上、判据照样绿)。
+ * - **那条理由的前提已消解**:它描述的受害者是 PLAN 子步门禁,而该门禁已于 2026-10-05 随其载体
+ *   `docs/PLAN.md` 一并退役。**剩下的唯一消费者是台账门禁,而宽口径对它是净损害** —— 方向相反。
+ * - **宽口径在门禁侧造成真·假绿(本仓实测,非推断)**:GFM 只认**第二行是真 delimiter** 才把整块
+ *   当表格;反引号包住横线的伪分隔行**不是**合法 delimiter row,于是整块在 GitHub 上**渲染成
+ *   普通段落、根本不是表格** —— 表形状已破坏,而 C7 的判红点之一正是「表头下一行必须是分隔行」。
+ *   实测:宽口径下 `checkTableShape` 对那张坏表 findings=0(**绿**),窄口径下判红。
+ *   更隐蔽的一处:伪分隔行出现在**表块中段**时,`locateRegistry` 会把它当分隔行跳过 ⇒ 它**不进
+ *   数据行集** ⇒ R 族「号形态错」对它**零判且零出声**。窄口径下它进数据行集、被判红。
+ * - **⚠️「197 份真实 md 跑出 0 差异」不是放宽的理由**:那份语料 **100% 是正例**,一条带装饰的
+ *   伪分隔行都没有 ⇒ 0 差异只证明「本仓现有文件判定不变」,对**负空间零证明力**。「我这份语料里
+ *   没有反例」对「判据对反例是否正确」什么也没说。**负向性质只能用负向夹具钉住** ——
+ *   见 `test/gates/check-pointers-ledger.test.js` 的「伪分隔行」那几条 case;谁把这里改回宽口径,
+ *   那些 case 立刻红。
+ *
+ * **对写侧工具无代价**(`tools/req-edit.mjs` 的锚点定位也用它):实测对真实台账
+ * `docs/REQ.md` 的 4 个登记表块**零影响**(每块的分隔行号与数据行集合逐字相同);畸形输入下
+ * 方向也安全 —— 伪分隔行被当**数据行**,于是走 `assertRowShape` 与列宽校验(响亮失败),
+ * 而非被静默跳过。
  *
  * @param {string[]} cells 格数组(由 `splitTableRow` 产出)
  * @returns {boolean} 是分隔行则 `true`;空数组按「不是」处理
  */
 export function isSeparatorRow(cells) {
-  return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.replace(/[`*]/g, '').trim()));
+  return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.trim()));
 }
 
 /**
@@ -136,12 +168,21 @@ export function normalizeLedgerCell(cell) {
  *
  * 为什么必须遮:示例代码块里的 `|` 开头的行与 `## 标题` 会被当成真表格行与真小节,
  * 而本层的调用方要报 `文件:行`,行号错位会让整份诊断指错地方。
- * 围栏判定只认行首 ``` / ~~~(可带缩进);围栏嵌套不处理。
+ * 围栏判定只认行首的反引号三连 / 波浪号三连(可带缩进);围栏嵌套不处理。
+ *
+ * ⚠️ **本注释里不得出现反引号三连的字面量** —— TS 的 JSDoc 解析器把它当代码块起点,
+ * 紧随其后的 `@param` 会被吞成代码块**内容**而非标签,该参数的类型随即整个失效
+ * (报 TS7006 隐式 any,且现象与「忘了写 @param」无法区分)。要指代围栏标记就用
+ * 「反引号三连」这种文字形态。判据:`gates/repo/check-tscheck-coverage.mjs` 守覆盖面,
+ * 但**不守单条 JSDoc 是否真被解析** —— 这类错只有 tsc 报得出。
  *
  * @param {string} text 文件全文
  * @returns {string[]} 遮罩后的行序列(长度与行数一致,行号 1:1 对齐)
+ *
+ * 导出供 `gates/repo/check-pointers.mjs` 直接消费(该门禁要报 `文件:行`,故必须用本函数
+ * 而不是整块删除围栏的写法 —— 两者区别见该文件里 `stripFences` 的对比注释)。
  */
-function maskFencedLines(text) {
+export function maskFencedLines(text) {
   const out = [];
   let inFence = false;
   for (const line of text.split(/\r?\n/)) {
@@ -161,16 +202,20 @@ function maskFencedLines(text) {
  * 为什么需要:台账**按状态分节**,而「已完成」节的字数上限与其余节不同 —— 判上限必须知道行落在哪一节,
  * 而表格解析本身不产节信息。
  *
+ * 导出供 `gates/repo/check-pointers.mjs` 直接消费(台账判据要按节判「已完成」节的字数上限)。
+ *
  * @param {string[]} lines 已遮罩的行序列
  * @returns {Map<number, string>} 行号(1 起)→ 所属 `## ` 小节名
  */
-function sectionByLine(lines) {
+export function sectionByLine(lines) {
   /** @type {Map<number, string>} */
   const map = new Map();
   let current = '';
   lines.forEach((line, idx) => {
     const m = /^##\s+(.*\S)\s*$/.exec(line);
-    if (m) current = m[1];
+    // 捕获组由 `(.*\S)` 保证非空(整条正则要求行尾有非空白字符)⇒ `?? ''` 恒不触发,
+    // 它只是把 `string | undefined` 收窄成 `string` 以过 `noUncheckedIndexedAccess`。
+    if (m) current = m[1] ?? '';
     map.set(idx + 1, current);
   });
   return map;
@@ -191,17 +236,26 @@ function sectionByLine(lines) {
  *   `splitTableRow(block.header.text)` 拿;`rows` 每项已带切好的 `cells`。
  */
 export function tableBlocks(lines) {
-  /** @type {Array<{ rows: Array<{ lineNo: number, text: string }> }>} */
+  // ⚠️ `rows` 标成**首元素必有**的元组(`[T, ...T[]]`),不是 `T[]`:建块那一刻就把触发行
+  // push 进去了(`cur` 只在 push 行时创建),故每个块的 `rows` 恒非空 —— 调用方
+  // `const [header, ...rest] = block.rows` 解构出的 `header` 因此永不为 undefined。
+  // 标成 `T[]` 会让下游在 `noUncheckedIndexedAccess` 下拿到 `T | undefined` 而被迫加守卫,
+  // 而那个守卫**没有分支可走**(空块不存在),只会诱使人写下永不触发的兜底。
+  /** @type {Array<{ rows: [{ lineNo: number, text: string }, ...Array<{ lineNo: number, text: string }>] }>} */
   const raw = [];
-  /** @type {{ rows: Array<{ lineNo: number, text: string }> } | null} */
+  /** @type {{ rows: [{ lineNo: number, text: string }, ...Array<{ lineNo: number, text: string }>] } | null} */
   let cur = null;
   lines.forEach((line, idx) => {
     if (/^\s*\|/.test(line)) {
-      if (!cur) {
-        cur = { rows: [] };
+      const row = { lineNo: idx + 1, text: line };
+      if (cur) cur.rows.push(row);
+      else {
+        // ⚠️ **建块时就把触发行放进去**,不是「先建空块再 push」—— 后者让上面那个
+        // 「首元素必有」的标注在创建那一刻是假的(空数组赋给非空元组),类型检查当场翻脸。
+        // 两种写法产出的块内容逐字相同,只是这一种让标注与代码同真。
+        cur = { rows: [row] };
         raw.push(cur);
       }
-      cur.rows.push({ lineNo: idx + 1, text: line });
       return;
     }
     if (!line.trim() || /^\s*<!--/.test(line)) return; // 块内跳过,不终止
@@ -309,17 +363,19 @@ export function rangeTable(text) {
   for (const block of tableBlocks(lines)) {
     const header = splitTableRow(block.header.text);
     if (header.length < 2) continue;
-    if (normalizeHeaderCell(header[0]) !== '项') continue;
-    if (normalizeHeaderCell(header[1]) !== '值') continue;
+    // 上一行的 `length < 2` 已保证两格都在 ⇒ 这里的 `?? ''` 恒不触发,只为收窄下标取值。
+    if (normalizeHeaderCell(header[0] ?? '') !== '项') continue;
+    if (normalizeHeaderCell(header[1] ?? '') !== '值') continue;
     /** @type {{ max: string | null, next: string | null, maxLine: number | null, nextLine: number | null }} */
     const out = { max: null, next: null, maxLine: null, nextLine: null };
     for (const row of block.rows) {
       if (isSeparatorRow(row.cells) || row.cells.length < 2) continue;
+      // 同上:`row.cells.length < 2` 已在上方守卫 ⇒ 首格必存在,`?? ''` 恒不触发。
       const value = row.cells[1] ?? '';
-      if (row.cells[0].includes('已用最大号')) {
+      if ((row.cells[0] ?? '').includes('已用最大号')) {
         out.max = value;
         out.maxLine = row.lineNo;
-      } else if (row.cells[0].includes('下一个可用号')) {
+      } else if ((row.cells[0] ?? '').includes('下一个可用号')) {
         out.next = value;
         out.nextLine = row.lineNo;
       }

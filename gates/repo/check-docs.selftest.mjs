@@ -40,7 +40,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ROOT } from '../../shared/paths.js';
-import { TITLE_LIMIT, WHY_LIMIT_DONE } from './check-pointers.mjs';
+// → 上限常量取**全仓单点持有**那一份(`shared/`),不取门禁 —— 门禁已不再导出这三个常量。
+import { TITLE_LIMIT, WHY_LIMIT_DONE } from '../../shared/markdown-table.mjs';
 
 // **超上限夹具的长度必须跟着判据常量走** —— 写死 21 / 120 字面量时，上限一改就红。
 const OVER_TITLE = '长'.repeat(TITLE_LIMIT + 1);

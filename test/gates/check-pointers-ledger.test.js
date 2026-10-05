@@ -16,9 +16,11 @@
  * 指代会让后来者误以为是某一条判据的编号,而编号本身随时可能重排。
  */
 import assert from "node:assert/strict";
-// → 导出是为了让测试段引用它们(段里若内联字面量,上限一改就会把测试让成失效夹具 ——
-//   本会话此前已因此红过 4 条)。另见上面 `OVER_TITLE` 那条同源纪律的 e2e 段写法。
-import { checkLedger, checkLedgerShape, checkTableShape, TITLE_LIMIT } from "../../gates/repo/check-pointers.mjs";
+import { checkLedger, checkLedgerShape, checkTableShape } from "../../gates/repo/check-pointers.mjs";
+// → 段里若内联字面量,上限一改就会把测试让成失效夹具(本会话此前已因此红过 4 条);
+//   取**全仓单点持有**那一份(`shared/`),门禁已不再导出这三个常量。
+//   另见上面 `OVER_TITLE` 那条同源纪律的 e2e 段写法。
+import { TITLE_LIMIT } from "../../shared/markdown-table.mjs";
 import { createCaseSuite } from "../harness/case.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
@@ -88,6 +90,19 @@ const goodRows = (n) =>
 const HDR = "| 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |";
 const SEP = "|---|---|---|---|---|---|";
 const DATA_ROW = "| REQ-001 | 甲 | 待拍板 | 原因 | 条件 | 无 |";
+
+/**
+ * 反引号字符(代码标点),用 `String.fromCharCode(96)` 拼而**不写字面量**。
+ *
+ * 为什么不写字面量:反引号是本仓的雷 —— 注释里出现反引号三连会让 TS 的 JSDoc 解析器把紧随
+ * 其后的 `@param` 吞成代码块**内容**而非标签,该参数类型整个失效(判据见
+ * `shared/markdown-table.mjs` 里 `maskFencedLines` 的同条警告)。
+ *
+ * ⚠️ **也不许用任何别的引号代替**(如双引号):本段要钉的收窄只剥**反引号**与**星号**两种装饰,
+ * 换成双引号的话那些夹具在**收窄被撤掉时仍然绿** ⇒ 钉子钉空(实测踩过:三条 case 全照过)。
+ * @type {string}
+ */
+const BT = String.fromCharCode(96);
 
 export async function run() {
   const suite = createCaseSuite();
@@ -596,6 +611,134 @@ export async function run() {
       // 判它红等于逼人删掉正常排版。
       const r = checkTableShape(["## 待拍板", "", HDR, SEP, DATA_ROW, "", "## 在办", "", "尾注"]);
       assert.deepEqual(r.findings, [], JSON.stringify(r.findings));
+    });
+
+    // ---- C7 的负向锚点:带装饰的**伪分隔行**紧跟表头 ----
+    //
+    // ⚠️ **这几条是本轮收窄的唯一防线**,钉的是 `shared/markdown-table.mjs` 里
+    // `isSeparatorRow` 的**窄**口径(只 trim,不剥反引号/星号)。**下一个人若「顺手统一」把它
+    // 改回宽口径**(那份先剥装饰再测,理由是 §7.1「取并集」),
+    // 下面两条会立刻红** —— 那正是本轮成因,故必须留。
+    //
+    // **为什么必须判红**:GFM 只认第二行是**真 delimiter** 才把整块当表格。反引号包住横线的
+    // 那一行**不是**合法 delimiter row ⇒ 整块在 GitHub 上**渲染成普通段落、根本不是表格**
+    // ⇒ 表形状已破坏。宽口径把它当合法分隔行放过 ⇒ `findings=0`(实测过的**假绿**)。
+    //
+    // ⚠️ **「197 份真实 md 跑出 0 差异」不能拿来给放宽背书**:那份语料 100% 是正例,
+    // 一条带装饰的伪分隔行都没有 ⇒ 0 差异只证明「本仓现有文件判定不变」,对**负空间零证明力**。
+    // 负向性质只能用**负向夹具**钉住,就是下面这几条。
+    //
+    // ⚠️ 伪分隔行里的**反引号用 `BT` 拼出,不写字面量**:反引号是本仓的雷 —— 注释里出现
+    // 反引号三连会让 TS 的 JSDoc 解析器把紧随其后的 `@param` 吞成代码块内容
+    // (判据见 `shared/markdown-table.mjs` 里 `maskFencedLines` 的同条警告)。
+    //
+    // ⚠️ **`BT` 必须用 `String.fromCharCode(96)` 拼,不能写 `'"'` 或任何别的引号** ——
+    // 宽口径只剥**反引号**与**星号**这两种装饰,双引号包住的 `---` 它照样不剥 ⇒ 那种夹具
+    // 在收窄被撤掉时**仍然绿**(实测:撤掉收窄,三条 case 全部照过 ⇒ 钉子钉了个空),
+    // 看着「有负向夹具」实则零证明力。这正是本仓已有教训「正例语料的 0 差异对负空间零证明力」
+    // 的同一种病,发生在夹具这一层。
+
+    await suite.case("C7 负向:表头下一行是带反引号装饰的伪分隔行 ⇒ 判红(不是分隔行,整块不是表格)", () => {
+      const c = BT; // 反引号
+      const pseudoSep = `| ${c}---${c} | ${c}---${c} | ${c}---${c} | ${c}---${c} | ${c}---${c} | ${c}---${c} |`;
+      const r = checkTableShape(["## 在办", "", HDR, pseudoSep, DATA_ROW]);
+      assert.ok(r.findings.length > 0, `伪分隔行必须判红,实得 ${JSON.stringify(r.findings)}`);
+      // 判红要落在**形状族**:即「表头下一行不是分隔行」,而不是别的族偶然出声。
+      assert.match(String(r.findings[0]), /缺分隔行/);
+      assert.match(String(r.findings[0]), /表头\(第 3 行\)下一行/);
+    });
+
+    await suite.case("C7 负向:伪分隔行去掉装饰 ⇒ 复绿(证明上条是收窄判的,不是夹具写坏)", () => {
+      // 撤回:同样两行,只把装饰去掉。复绿即证明判红来自「带装饰」这一条收窄,
+      // 而非表格本身形状坏 —— 否则上条可能是被别的判据偶然抓住的。
+      const r = checkTableShape(["## 在办", "", HDR, SEP, DATA_ROW]);
+      assert.deepEqual(r.findings, [], `撤回装饰后应复绿:${JSON.stringify(r.findings)}`);
+      assert.equal(r.examined, 1, "撤回后仍应判过一个登记表块(不是靠退出判定变绿)");
+    });
+
+    await suite.case("C7 负向:带星号装饰的伪分隔行 ⇒ 同样判红(收窄覆盖两种装饰字符)", () => {
+      const pseudoSep = "| *---* | *---* | *---* | *---* | *---* | *---* |";
+      const r = checkTableShape(["## 在办", "", HDR, pseudoSep, DATA_ROW]);
+      assert.ok(r.findings.length > 0, `星号装饰的伪分隔行也必须判红,实得 ${JSON.stringify(r.findings)}`);
+      assert.match(String(r.findings[0]), /缺分隔行/);
+    });
+
+    // ⚠️ **这一条与上面两条方向不同,钉的是 R 族(不是 C7)**,且它挡的是一个**已经真发生过的回归**。
+    //
+    // **形态**:伪分隔行不在表头之后,而在**表块中段**(表头+分隔行+数据行+伪分隔行+数据行)。
+    // 宽口径下 `locateRegistry` 把它当分隔行跳过 ⇒ 它**不进数据行集** ⇒ R 族「号形态错」
+    // 对它**零判且零出声** —— 门禁对一行「`---`」当号的数据行说「通过」。窄口径下它进
+    // 数据行集、被判红(实测:宽 errors=0 / 窄 errors=1「`---` → 号形态错」)。
+    //
+    // **为什么必须单独钉**:上面两条只覆盖「伪分隔行紧跟表头」,那条路径由 C7 兜住;
+    // 中段这条路径 **C7 不判**(C7 只判「表头下一行必须是分隔行」与「相邻元素间不许夹空行」),
+    // 所以**只有 R 族能兜** —— C7 绿 + R 族也绿 = 该行彻底无人判。
+    await suite.case("R 族负向:伪分隔行在表块中段 ⇒ 仍进数据行集被「号形态错」判红", () => {
+      const c = BT;
+      const pseudoSep = `| ${c}---${c} | ${c}---${c} | ${c}---${c} | ${c}---${c} | ${c}---${c} | ${c}---${c} |`;
+      const text = [
+        "## 在办", "",
+        HDR, SEP,
+        DATA_ROW,
+        pseudoSep,
+        "| REQ-002 | 乙 | 待拍板 | 原因 | 条件 | 无 |",
+        "",
+      ].join("\n");
+      const r = checkLedger(text);
+      const hit = r.errors.filter((e) => /号形态错/.test(String(e)));
+      assert.equal(hit.length, 1,
+        `中段伪分隔行必须进数据行集并被判「号形态错」(宽口径下它被当分隔行跳过 ⇒ 零判零出声),实得 errors=${JSON.stringify(r.errors)}`);
+      // 反向自证:它确实**不是**被别的判据偶然抓住的 —— 号形态错这条只对数据行生效。
+      assert.match(String(hit[0]), /---/, "诊断正文应点名那行的实际内容(裸横线串)");
+    });
+  });
+
+  // ============ 分隔行判据档(钉「窄口径的两个方向都别被破坏」)============
+
+  // ⚠️ **这一档钉的是「收窄不能被反向放宽」** —— 即上面 C7 那些条的**另一半**。
+  // 「单格带装饰的**正常数据行**」必须**仍参与全部台账判据**:
+  // 若有人把 `shared/markdown-table.mjs` 的 `isSeparatorRow` 内部那个逐格全满足(逐格)语义
+  // 弱化成「任一格满足」,那么 `| REQ-002 | `---` | … |` 这一行会被**整行**误当成分隔行跳过 ⇒
+  // **该行退出全部台账判据且一声不响**(行数照样对得上,其它判据照样绿)。
+  // 那是与 C7 那几条**方向相反**的另一种静默:那几条是「坏的当好的放过」,这几种是「好的当坏的豁免」。
+  await suite.describe("分隔行判据(窄口径 · 防反向放宽)", async () => {
+    await suite.case("单格带装饰的正常数据行 ⇒ 仍参与 R 族判据(超发号被抓到)", () => {
+      const c = BT;
+      const text = [
+        "## 号段", "",
+        "| 项 | 值 |", "|---|---|",
+        "| 已用最大号 | REQ-001(台账声明) |",
+        "| 下一个可用号 | REQ-002 |",
+        "", "## 待拍板", "",
+        HDR, SEP,
+        "| REQ-001 | 正常行 | 待拍板 | 原因 | 条件 | 无 |",
+        `| REQ-002 | ${c}---${c} | 待拍板 | 原因 | 条件 | 无 |`,
+        "",
+      ].join("\n");
+      const r = checkLedger(text);
+      const hit = r.errors.filter((e) => /超发号/.test(String(e)));
+      assert.equal(hit.length, 1, `装饰数据行仍应参与 R 族判定,实得 errors=${JSON.stringify(r.errors)}`);
+    });
+
+    await suite.case("单格带装饰的正常数据行 ⇒ 仍参与载体形态判据(判断依据字数被抓到)", () => {
+      const c = BT;
+      const long = "因".repeat(260); // 越过 WHY_LIMIT,取自全仓单点持有而非内联字面量
+      const text = [
+        "## 号段", "",
+        "| 项 | 值 |", "|---|---|",
+        "| 已用最大号 | REQ-001(台账声明) |",
+        "| 下一个可用号 | REQ-002 |",
+        "", "## 待拍板", "",
+        HDR, SEP,
+        "| REQ-001 | 正常行 | 待拍板 | 原因 | 条件 | 无 |",
+        `| REQ-002 | ${c}---${c} | 待拍板 | ${long} | 条件 | 无 |`,
+        "",
+      ].join("\n");
+      const r = checkLedgerShape(text);
+      // 关键:这一行**进过列数守卫**(guarded)且**被量了字数**(examined)——
+      // 若它被误当整行分隔行跳过,guarded 会是 1 而不是 2。
+      assert.equal(r.guarded, 2, `装饰数据行应进列数守卫,实得 guarded=${r.guarded}`);
+      assert.match(String(r.findings[0]), /判断依据 260 字 > 250/);
     });
   });
 

@@ -137,6 +137,16 @@
       "segment": "test/shared/geometry-gate.test.js",
       "specifier": "gates/geometry/geometry/driver.mjs",
       "reason": "判定层与采样层共用同一份规格:LIVENESS_PATHS / checkPathLiveness / mediaConditions 是**被测判定层(shared/geometry)的输入规格**(存活路径表、可求值的媒体查询条件),本段断言的是判定结果;真窗口采样由 driver 那侧承担,两者互不依赖。"
+    },
+    {
+      "segment": "test/gates/check-pointers-e2e.test.js",
+      "specifier": "shared/markdown-table.mjs",
+      "reason": "只取三个列上限常量当**夹具长度**(OVER_TITLE / OVER_WHY 按上限+1 构造超限行),断言对象是本层门禁 checkLedger 的判红行为,不是 shared 的解析行为 —— 换个上限值本段仍成立。取单源是刻意的:内联字面量会让上限一改就把夹具变成失效夹具(本仓已因此红过 4 条)。"
+    },
+    {
+      "segment": "test/gates/check-pointers-ledger.test.js",
+      "specifier": "shared/markdown-table.mjs",
+      "reason": "同 e2e 段:只取 TITLE_LIMIT 作超标题列夹具的长度,断言对象是本层 checkLedgerShape / checkTableShape 的判红与「退出保留」行为。取单源而非写字面量,理由同上 —— 夹具长度必须跟着判据常量走。"
     }
   ]
 }

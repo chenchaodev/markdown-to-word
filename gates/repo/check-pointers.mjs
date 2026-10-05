@@ -141,6 +141,20 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// → 台账形态三个列上限的**全仓单点持有**在 `shared/`(它与 `shared/paths.js` 是本文件仅有的两处
+//   跨树依赖,两侧都在 `TREE_RULES` 的 `gates-stay-in-gates` allow 面内)。归一前本文件另有一份
+//   同名常量,写工具因 `tools-stay-in-tools` 引不到 `gates/` 才被迫在 `shared/` 落一份 ——
+//   那份曾造成「改数值要改两处」,现已消除,理由链见下方 C1 / C2 上方的 T2 tombstone 注释。
+// → 表格**解析层**同样在那一份里单点持有:切格 / 分隔行 / 表块 / 登记表定位 / 围栏遮罩 / 节名映射 /
+//   表头与单元格归一 九个解析函数本文件**零私有副本**,一律从 `shared/markdown-table.mjs` 取。
+//   归一前本文件另有一整套同名私有实现(其中 `tableBlocks` / `locateRegistry` 的返回形状与
+//   `shared/` 那份不同,见下面两处消费点的注释),现已消除 —— 判据本体一行未动,判据行为见
+//   `isSeparatorRow` 那条「并集」说明。
+import {
+  TITLE_LIMIT, WHY_LIMIT, WHY_LIMIT_DONE,
+  splitTableRow, isSeparatorRow, tableBlocks, locateRegistry,
+  maskFencedLines, sectionByLine, normalizeHeaderCell, normalizeLedgerCell, ledgerTextCols,
+} from '../../shared/markdown-table.mjs';
 
 /**
  * 台账载体路径(工作项号台账)。同时是**扫描范围的判定入口**:门禁扫本仓的 `docs/` 就够了,
@@ -247,26 +261,6 @@ function existsAt(root, relPath) {
 /** 去掉围栏代码块,避免示例里的 `# 标题` 被当成真小节。 */
 function stripFences(text) {
   return text.replace(/^```[\s\S]*?^```/gm, '');
-}
-
-/**
- * 逐行**遮罩**围栏代码块(块内行替换成空串),行号与原文保持 1:1 对齐。
- *
- * 与 `stripFences` 的区别:后者整块删除会让行号错位,而要报 `文件:行` 的检查需要对齐。
- * 围栏判定只认行首 ``` / ~~~(可带缩进);围栏嵌套不处理。
- */
-function maskFencedLines(text) {
-  const out = [];
-  let inFence = false;
-  for (const line of text.split(/\r?\n/)) {
-    if (/^\s*(?:```|~~~)/.test(line)) {
-      inFence = !inFence;
-      out.push('');
-      continue;
-    }
-    out.push(inFence ? '' : line);
-  }
-  return out;
 }
 
 function collectHeadings(text) {
@@ -964,70 +958,20 @@ function maskInlineCode(s) {
   return s.replace(/`[^`]*`/g, (m) => ' '.repeat(m.length));
 }
 
-/** 去掉反引号。**只脱定界符、保留内容** —— 整段删掉内容会把合法写法 `` `待拍板` `` 判成空值假红。 */
-function stripTicks(s) {
-  return s.replace(/`+/g, '');
-}
-
-/**
- * 单元格规范化:去反引号 + 去 `~~` + trim。**状态列与号列共用** —— 台账里可能残留
- * 早期形态的号格(写作 `~~REQ-004~~`),不剥 `~~` 会被 R3 判成形态错。这是**兼容性**处理,
- * 现行规则不再要求任何行划线。
- */
-function normalizeLedgerCell(cell) {
-  return stripTicks(cell).replace(/~~/g, '').trim();
-}
-
-/** 表头列名比较时剥掉 markdown 装饰:空白、粗体、反引号、冒号都不参与比较。 */
-function normalizeHeaderCell(cell) {
-  return cell.replace(/[\s*`:：]/g, '');
-}
-
-/**
- * 把一行 markdown 表格切成单元格(首尾竖线不算分隔符,`\|` 视作转义竖线不切列)。
- * 列数不足由调用方降级处理(整行不参与判定),本函数不抛异常。
- */
-function splitTableRow(line) {
-  let t = line.trim();
-  if (t.startsWith('|')) t = t.slice(1);
-  if (t.endsWith('|') && !t.endsWith('\\|')) t = t.slice(0, -1);
-  const cells = [];
-  let cur = '';
-  for (let i = 0; i < t.length; i += 1) {
-    if (t[i] === '\\' && t[i + 1] === '|') {
-      cur += '|';
-      i += 1;
-      continue;
-    }
-    if (t[i] === '|') {
-      cells.push(cur.trim());
-      cur = '';
-      continue;
-    }
-    cur += t[i];
-  }
-  cells.push(cur.trim());
-  return cells;
-}
-
-function isSeparatorRow(cells) {
-  return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c.trim()));
-}
-
 /**
  * 表格**结构**判据(C7):台账表块必须严格是「表头 → 分隔行 → 数据行…」**逐行紧邻**。
  *
- * **为什么必须单独判**:`tableBlocks` 对空行是「块内跳过,不终止」,而 `blockHeadAndRows`
- * 只把 `block.rows[0]` 当表头、**其余一律当数据行** —— 它**不要求第 2 行是分隔行**,
- * 也**看不到块内夹着的空行**。于是「数据行被插到表头与分隔行之间」这种破损会被**静默吸收**:
- * 真分隔行被当成一条普通数据行跳过,错位的行被当成数据读进去 —— **行数照样对得上,门禁照样 exit 0**。
+ * **为什么必须单独判**:`tableBlocks` 对空行是「块内跳过,不终止」,而它**只把块首行当表头、
+ * 其余一律当数据行** —— 它**不要求第 2 行是分隔行**,也**看不到块内夹着的空行**。于是
+ * 「数据行被插到表头与分隔行之间」这种破损会被**静默吸收**:真分隔行被当成一条普通数据行跳过,
+ * 错位的行被当成数据读进去 —— **行数照样对得上,门禁照样 exit 0**。
  *
  * 解析器宽容是对的(免得对非台账表格误报),但**宽容不能等于无感** —— 结构坏了必须出声。
  * 故本判据**只对台账表头(含「号」且含「状态」)生效**,不影响其它表格与模板骨架。
  *
  * ⚠️ **判据必须作用在原始行序列上,不能作用在 `rows` 上**:`rows` 只收数据行,**空行早就被
  * 过滤掉了** —— 在它上面判「有没有空行」等于判一个恒假命题(恒绿判据)。故此处比的是
- * `block.rows[i].lineNo` 的**连号**,那才是空行留下的唯一痕迹。
+ * 各元素 `lineNo` 的**连号**,那才是空行留下的唯一痕迹。
  *
  * ⚠️ **只比「相邻元素之间」,不比末行之后**:表块最后一个数据行**后面**的空行是 Markdown
  * 里正常的表块终止(后面通常紧跟 `## ` 小节),判它红等于逼人删掉正常排版。
@@ -1039,9 +983,14 @@ export function checkTableShape(lines) {
   const findings = [];
   let examined = 0;
   const sections = sectionByLine(lines);
+  // ⚠️ 形状来自 `shared/markdown-table.mjs` 的 `tableBlocks`:`header` 与 `rows` **已分开**
+  // (且每行的 `cells` 已切好),块首行**不在** `rows` 里 —— 故这里取「第 2 行」要从 `rows[0]` 取,
+  // 而「块内至少两行(表头 + 分隔行)」这个门槛在**新形状下是 `rows.length < 1`**
+  // (旧形状下 `rows` 含表头,故写的是 `< 2`)。两者等价,别照旧形状的数照抄。
   for (const block of tableBlocks(lines)) {
-    if (block.rows.length < 2) continue;
-    const [header, second, ...rest] = block.rows;
+    if (block.rows.length < 1) continue;
+    const { header } = block;
+    const [second, ...rest] = block.rows;
     const names = splitTableRow(header.text).map(normalizeHeaderCell);
     if (!names.some((n) => n.includes('号')) || !names.some((n) => n.includes('状态'))) continue;
     examined += 1;
@@ -1049,8 +998,7 @@ export function checkTableShape(lines) {
     // 「台账」这个泛称,**不因此跳过判据**:节名只是诊断正文的一部分,判据本身不依赖它。
     const section = sections.get(header.lineNo) ?? '';
     const where = section ? `「${section}」节` : '台账';
-    const sepCells = splitTableRow(second.text);
-    if (!isSeparatorRow(sepCells)) {
+    if (!isSeparatorRow(second.cells)) {
       findings.push(
         `${PROJECT_PROBE}:${second.lineNo} → 台账表块缺分隔行:表头(第 ${header.lineNo} 行)下一行应是 \`|---|…\`,`
         + `实际是数据行「${second.text.slice(0, 40)}」—— 数据行被插到了表头与分隔行之间(${carrierScope('C7')})`,
@@ -1079,109 +1027,26 @@ export function checkTableShape(lines) {
 }
 
 /**
- * 表块 = **连续**的 `|` 行;**块内允许夹空行与 `<!-- -->` 注释行**(跳过、不终止)。
- *
- * 放宽是必须的:按 markdown 严格语义断表,会让一行被拆到下一块去,后半截行**不可见** ⇒
- * 实算 max 偏小 ⇒ R4 报成「号段缺行」的假红。
- */
-function tableBlocks(lines) {
-  const blocks = [];
-  let cur = null;
-  lines.forEach((line, idx) => {
-    if (/^\s*\|/.test(line)) {
-      if (!cur) {
-        cur = { rows: [] };
-        blocks.push(cur);
-      }
-      cur.rows.push({ lineNo: idx + 1, text: line });
-      return;
-    }
-    if (!line.trim() || /^\s*<!--/.test(line)) return; // 块内跳过,不终止
-    cur = null;
-  });
-  return blocks;
-}
-
-/** 表头行(块内第一行)+ 数据行(跳过表头与分隔行)。 */
-function blockHeadAndRows(block) {
-  const [header, ...rest] = block.rows;
-  if (!header) return null;
-  return { header: splitTableRow(header.text), rows: rest.map((r) => ({ ...r, cells: splitTableRow(r.text) })) };
-}
-
-/**
- * 行号 → 最近的祖先 `## ` 小节标题(取不到则空串)。
- *
- * 为什么需要:台账**按状态分节**,而「已完成」节的判断依据上限(≤100)与其余节(≤200)不同 ——
- * 判上限必须知道行落在哪一节,而表格解析本身不产节信息。
- */
-function sectionByLine(lines) {
-  const map = new Map();
-  let current = '';
-  lines.forEach((line, idx) => {
-    const m = /^##\s+(.*\S)\s*$/.exec(line);
-    if (m) current = m[1];
-    map.set(idx + 1, current);
-  });
-  return map;
-}
-
-/**
- * 登记表定位:在所有表块里找**表头同时含「号」与「状态」**的块,**列位置按名取**,
- * 并**合并全部同构块的行集**。
- *
- * 两条识别条件都是必须的:含两个词才能与号段表(表头 `项`/`值`)区分开;按名取列是因为
- * **列序颠倒是合法写法**,按下标读会把状态列当标题列 ⇒ R2 恒红。
- *
- * ⚠️ **必须合并全部同构块,不能只取第一处**:台账按状态分节,各节各是一张同构表。而 R1(号唯一)/
- * R4(已用最大号)/R6(号段连续)/R8(状态⇔所在节)**三条都是跨节判据** —— 只取第一节 ⇒ 其余各节里的
- * 重号、号段缺口、状态与节不符全部不可见,而门禁仍然 exit 0。
- *
- * **列映射逐块取、不共用**:各节的表头宽度可以不同,故把 `headerCount` / `idCol` / `statusCol`
- * 挂在**每一行**上。共用第一块的列映射会让后面几节整节错位 —— 又是静默假绿。
- *
- * @returns `{ rows, blocks }`(行已跨块合并,每行带自己的列映射与 `section`);定位不到 → `null`。
- */
-function locateRegistry(text) {
-  const lines = maskFencedLines(text);
-  const sections = sectionByLine(lines);
-  let rows = [];
-  let blocks = 0;
-  for (const block of tableBlocks(lines)) {
-    const parsed = blockHeadAndRows(block);
-    if (!parsed) continue;
-    const names = parsed.header.map(normalizeHeaderCell);
-    const idCol = names.findIndex((n) => n.includes('号'));
-    const statusCol = names.findIndex((n) => n.includes('状态'));
-    if (idCol === -1 || statusCol === -1) continue;
-    blocks += 1;
-    const section = sections.get(block.rows[0].lineNo) ?? '';
-    for (const r of parsed.rows) {
-      if (isSeparatorRow(r.cells)) continue;
-      rows.push({ ...r, headerCount: parsed.header.length, idCol, statusCol, section });
-    }
-  }
-  return blocks ? { rows, blocks } : null;
-}
-
-/**
  * 号段表定位:表头首格 `项`、次格 `值` 的那块;两行按**首格包含**「已用最大号」/「下一个可用号」取
  * (容忍括注写法),值格取**前导**号。定位不到 → `null`。
+ *
+ * ⚠️ 这里**不**用 `shared/` 的 `rangeTable`:那份刻意**返回原始文本不解析数字**(形态对不对
+ * 属判据),而本门禁的 R4 / R5 要拿数字与实算值比,解析在这一层发生。两者不是同一件事。
  */
 function locateRangeTable(text) {
   const lines = maskFencedLines(text);
   for (const block of tableBlocks(lines)) {
-    const parsed = blockHeadAndRows(block);
-    if (!parsed || parsed.header.length < 2) continue;
-    if (normalizeHeaderCell(parsed.header[0]) !== '项') continue;
-    if (normalizeHeaderCell(parsed.header[1]) !== '值') continue;
+    const header = splitTableRow(block.header.text);
+    if (header.length < 2) continue;
+    if (normalizeHeaderCell(header[0] ?? '') !== '项') continue;
+    if (normalizeHeaderCell(header[1] ?? '') !== '值') continue;
     const out = { max: null, next: null, maxLine: null, nextLine: null };
-    for (const row of parsed.rows) {
+    for (const row of block.rows) {
       if (isSeparatorRow(row.cells) || row.cells.length < 2) continue;
       const key = row.cells[0].includes('已用最大号') ? 'max'
         : row.cells[0].includes('下一个可用号') ? 'next' : null;
       if (!key) continue;
-      const m = LEDGER_NUM_RE.exec(row.cells[1]);
+      const m = LEDGER_NUM_RE.exec(row.cells[1] ?? '');
       out[key] = m ? Number(m[1]) : null;
       out[`${key}Line`] = row.lineNo;
     }
@@ -1233,10 +1098,8 @@ function makeLedgerRowSkipper(readFile) {
 function ledgerLikeTableRows(text) {
   const out = new Set();
   for (const block of tableBlocks(maskFencedLines(typeof text === 'string' ? text : ''))) {
-    const parsed = blockHeadAndRows(block);
-    if (!parsed) continue;
-    if (!parsed.header.map(normalizeHeaderCell).some((n) => n.includes('号'))) continue;
-    for (const row of parsed.rows) {
+    if (!splitTableRow(block.header.text).map(normalizeHeaderCell).some((n) => n.includes('号'))) continue;
+    for (const row of block.rows) {
       if (!isSeparatorRow(row.cells)) out.add(row.lineNo);
     }
   }
@@ -1486,29 +1349,27 @@ export function checkLedger(text) {
 // 没查的部分 —— 那些 note 带「零覆盖」字样,会被汇入结论行的 `gaps`。
 
 /**
- * 台账形态的三个字数上限 —— **判据本体的唯一来源**。
+ * 台账形态的三个字数上限 —— **判据本体在别处,本文件只 import**。
  *
- * `CARRIER_RULES[].name` 与 C1 / C2 的报错文字都从这三个常量拼,不各写一遍。
+ * 三者的**唯一声明**是 `shared/markdown-table.mjs`(全仓单点持有,理由见那里的注释),本文件
+ * 在文件头 import 它们;`CARRIER_RULES[].name` 与 C1 / C2 的报错文字都从这三个常量拼,
+ * 不各写一遍。**本文件不再导出这三个常量** —— 留着转发出口等于开第二条取值路径,
+ * 而它们的值一旦要改,只有一处该改。
  *
  * ⚠️ **T2 tombstone(决定三)**:「台账形态上限的**语义对读**」判据(规则文本那一行声明的三个上限
- * ↔ 本文件这三个常量逐字相同)**不在本仓实现**,故本文件内**没有任何代码读 `DOC-SYSTEM.md`**。
+ * ↔ 本仓这三个数字逐字相同)**不在本仓实现**,故本文件内**没有任何代码读 `DOC-SYSTEM.md`**。
  * **理由不是「省事」,是归属已裁定**:那条判据的**对象**是全局配置目录 `DOC-SYSTEM.md` 载体表
  * 那一行,归全局配置目录那份脚本;把它搬下来会让它在本仓指向**自己脚下那份文档**,而对读机制
  * 要求两侧是**两份独立的拷贝** —— 在本仓,「规则文本」与「判据常量」会落在同一个仓、同一条变更里,
  * 对读恒真,**判据零价值**(它会永远判绿,而「永远判绿」正是这道门禁最坏的形态)。
  *
- * **但这不等于本仓不该有这三个常量**:C1 / C2 归本仓(它们判的对象是本仓的台账),而**判据必须有一个
- * 数字才能判**,所以这三个常量必须在本仓留一份。全局配置目录那份副本与全局配置目录
- * `DOC-SYSTEM.md` 之间仍有一道 T2 对读机制守着;**本仓这份与全局文档之间没有机器保证** ——
- * 那是本条已知且已认领的缺口(改全局文档的三个数字时,本仓这三处要同步改)。
+ * **但这不等于本仓不该有这三个数字**:C1 / C2 归本仓(它们判的对象是本仓的台账),而**判据必须有一个
+ * 数字才能判**,所以这三个数字必须在本仓留一份 —— 归一后**这一份的位置是 `shared/markdown-table.mjs`
+ * 而不是本文件**,`gates/` 与 `tools/` 引同一份(它是两侧唯一共同的合法依赖,见 `TREE_RULES`)。
+ * 全局配置目录那份副本与全局配置目录 `DOC-SYSTEM.md` 之间仍有一道 T2 对读机制守着;
+ * **本仓这一份与全局文档之间没有机器保证** —— 那是本条已知且已认领的缺口
+ * (改全局文档的三个数字时,本仓 `shared/markdown-table.mjs` 那三处要同步改)。
  */
-// → 导出是为了让测试段引用它们。另一份上游门禁也导出了同三个。
-// 段里若内联字面量,上限一改就会把测试让成失效夹具(本会话已因此红 4 条)。
-export const TITLE_LIMIT = 30;
-
-/** 「已完成」节的判断依据上限(≤100),其余节 ≤200(`REQ-RULES.md` 规则 5)。 */
-export const WHY_LIMIT_DONE = 150;
-export const WHY_LIMIT = 250;
 
 /**
  * 载体形态判据的清单 + 各自现在管什么(分母 = `CARRIER_RULES.length`)。**现为七条**。
@@ -1548,21 +1409,10 @@ function plainText(cell) {
   return cell.replace(/`+/g, '').replace(/\*\*/g, '').replace(/~~/g, '').trim();
 }
 
-/**
- * 台账的「标题列」与「判断依据列」在哪 —— **按列名取,不按下标**(同 `locateRegistry` 的理由)。
- *
- * 标题列认「标题」;判断依据列认「为什么停在这」/「为什么停在哪」(规则文本自身用词不统一,
- * 判据两种都收,否则该列静默零覆盖)。
- *
- * @returns `{ titleCol, whyCol }`,列名不存在时为 `-1`。
- */
-function ledgerTextCols(header) {
-  const names = header.map(normalizeHeaderCell);
-  return {
-    titleCol: names.findIndex((n) => n.includes('标题')),
-    whyCol: names.findIndex((n) => n.includes('为什么停在这') || n.includes('为什么停在哪')),
-  };
-}
+// 台账的「标题列」与「判断依据列」在哪 —— **按列名取,不按下标**(同 `locateRegistry` 的理由)——
+// 由 `shared/markdown-table.mjs` 的 `ledgerTextCols` 单点持有(本文件原有一份私有副本,已删)。
+// 标题列认「标题」;判断依据列认「为什么停在这」/「为什么停在哪」(规则文本自身用词不统一,
+// 判据两种都收,否则该列静默零覆盖)。列名不存在时对应项为 `-1`。
 
 /** 未填的占位行不算超限(它是骨架,不是内容)。 */
 const isPlaceholderRow = (row) => row.cells.some(isPlaceholderCell);
@@ -1625,24 +1475,27 @@ export function checkLedgerShape(text) {
   const masked = maskFencedLines(text);
   const sections = sectionByLine(masked);
   // 逐块处理:标题/判断依据列的位置是**块级**的(见 `locateRegistry` 的列映射说明)。
+  // ⚠️ **这一遍是刻意的第二次独立解析**,不合并进 `locateRegistry` 的行集(理由见本函数 JSDoc
+  // 「列数守卫是第二个落点」那条)。形状来自 `shared/` 的 `tableBlocks`:`header` 与 `rows` 已分开,
+  // 故表头取 `block.header`(切格靠 `splitTableRow`),表头列数即 `headerCells.length`。
   for (const block of tableBlocks(masked)) {
-    const parsed = blockHeadAndRows(block);
-    if (!parsed) continue;
-    const names = parsed.header.map(normalizeHeaderCell);
+    const headerCells = splitTableRow(block.header.text);
+    const names = headerCells.map(normalizeHeaderCell);
     if (!names.some((n) => n.includes('号')) || !names.some((n) => n.includes('状态'))) continue;
-    const { titleCol, whyCol } = ledgerTextCols(parsed.header);
+    const { titleCol, whyCol } = ledgerTextCols(headerCells);
     // 节名取本块**首行**所在的 `## ` 小节(与 `locateRegistry` 同一口径);块内同属一节。
-    const section = block.rows.length ? (sections.get(block.rows[0].lineNo) ?? '') : '';
-    for (const row of parsed.rows) {
+    // 表头恒存在(`tableBlocks` 建块那一刻就放进去了),故不需要旧形状里那个 `rows.length` 三元。
+    const section = sections.get(block.header.lineNo) ?? '';
+    for (const row of block.rows) {
       if (isSeparatorRow(row.cells)) continue;
       guarded += 1;
-      if (row.cells.length !== parsed.header.length) {
+      if (row.cells.length !== headerCells.length) {
         // 退出保留(按列名下标取值在错位行上会读到别的列),但**退出必须同时判红** ——
         // 静默退出全部判定会让门禁把没判的说成判过。措辞与 `checkLedger` 那处**分工不重复**:
         // 那处说「退出全部台账判据」(R 族),这里说「C1/C2 对这一行零判」(载体族)。
         findings.push(
           `${PROJECT_PROBE}:${row.lineNo} → ${section ? `「${section}」节` : '台账'} → 列数错位:`
-            + `该行 ${row.cells.length} 格 ≠ 表头 ${parsed.header.length} 列`
+            + `该行 ${row.cells.length} 格 ≠ 表头 ${headerCells.length} 列`
             + ' ⇒ 标题列 / 判断依据上限对该行零判(未量字数)',
         );
         continue;
