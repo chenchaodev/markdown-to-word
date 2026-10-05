@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-187 |
-| 下一个可用号 | REQ-188 |
+| 已用最大号 | REQ-188 |
+| 下一个可用号 | REQ-189 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -197,6 +197,7 @@
 | REQ-187 | 补三条判据缺口（TS段口径·索引路径守卫·L4第三档） | 已完成 | **已闭合**：C1 两档（TS 段口径）＋ C2（**76 条指针判红 0**）＋ C3（段不得跨层引门禁主体，命中 1 处登记豁免）全部落地。`CRITERIA` 12→15、fail-closed 11→14，selftest 31→**125 条**。 | —— | gates/repo/check-test-layout.mjs · gates/repo/gate-index.selftest.mjs · docs/PLAN.md「REQ-187 的三条判据」节 |
 | REQ-176 | 装机 PATH 的五项运行期分支未验 | 已完成 | **已闭合「写清单」这件事**：清单落在 `ADR-063` 的「未验项的手测清单」节，逐项给前置/步骤/预期。⚠️ **原写「四条」是漏计** —— 「未验」实测**五项**（漏了 `DetailPrint` 在 `/S` 下的可见性）。**五条本身仍未验**，需真实 Windows 会话手测。 | —— | docs/adr/ADR-063-装机PATH勾选支的显式开关.md「未验项的手测清单」节 · build-assets/installer.nsh |
 | REQ-174 | CHANGELOG 门禁未覆盖五类工程状态词 | 已完成 | **已闭合**：判据 `internal-term` 补四个词（`依赖升级`/`测试补齐`/`目录重组`/`类型开关`）。`文件拆分` **刻意不加**——它语义有争议（本产品导出时长文档本来就会拆），并留反向钉子夹具钉住该裁决。⚠️ 该判据在真实条目区**仍零覆盖**，证据全来自夹具。 | 条目区首次出现那四个词之一被合法使用时（走 ALLOWLIST 按内容豁免） | gates/repo/check-changelog.mjs（`INTERNAL_TERMS`）· gates/repo/check-changelog.selftest.mjs |
+| REQ-188 | 承重共享库 supply-common 缺契约面 | 已完成 | **已闭合**：新建 supply-common 契约段（35 case 绿）。⚠️ **本号补登记**——活先干、号后取。⚠️ **断言变异无可信数据**：首版全报「失败 0 条」，根因是 Node 缓存 ESM、改坏未被重读。豁免已登记并经删表项变异自证。 | —— | test/gates/supply/supply/supply-common.test.js · gates/repo/test-layout.cross-import-exemptions.json |
 ## 已作废
 
 = 需求被**终审否决**，`~~` 划掉保留、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
