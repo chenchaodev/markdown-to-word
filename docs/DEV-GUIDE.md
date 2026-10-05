@@ -30,6 +30,9 @@
 | `npm run gen:fixtures` | 验收样例生成器(需先 build) |
 | `npm run check:fixtures` | fixtures 漂移校验(幂等,exit 0/1;CI 门禁步骤) |
 | `npm run icons` | SVG 图标转 ICO(`tools/svg-to-ico.mjs`) |
+| `npm run req:pool` | 台账开工扫池:列出「待拍板」＋「在办」两节(`tools/req-edit.mjs pool`,**只读**)。列错位行只报位置、不输出其字段 |
+| `npm run req:next` | 台账取号:只打印下一个可用号并**只从号段格读**(`tools/req-edit.mjs next`,**只读**) |
+| `node tools/req-edit.mjs <cmd>` | 台账写入口其余四条命令(**不经 npm,直接调 node**):`show <号>`(一字段一行;**该行列数与表头不符时非零退出,不吐半截字段**)· `add` · `set <号> <键>=<值>…` · `move <号> <目标节>`。⚠️ 写命令**不在 `verify:ci` 链上**,且带 TOCTOU 防线(文件在你读之后被改过即拒绝写入);台账**默认是 CRLF 检出**(`core.autocrlf=true`),工具按文件既有行尾回接、**不归一化** |
 | `npm run check:docs` | 文档指针门禁(**判定本体在本仓 `gates/repo/check-pointers.mjs`,零配置 ⇒ 已在 `verify:ci` 链里**,排在 `check:docs:selftest` 之前)。**跨仓路径只分类不判定** ⇒ 结论行会自报「分类 N 处 · 判定 0 处」并把「覆盖」标为不全 —— **那行既不是通过也不是失败,是「没查」** |
 
 > 冒烟只有 `npm run test:smoke` 一个入口。绕过 npm 直接 `npx electron . --smoke` 会跳过构建新鲜度守卫、拿旧产物跑,故本文件不列该写法。

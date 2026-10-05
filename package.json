@@ -38,6 +38,8 @@
     "dev": "npm run build && electron .",
     "start": "node gates/smoke/check-build-fresh.mjs && electron .",
     "test": "npm run build && electron test/acceptance.mjs",
+    "req:pool": "node tools/req-edit.mjs pool",
+    "req:next": "node tools/req-edit.mjs next",
     "gen:fixtures": "node gates/fixtures/gen-fixtures.mjs",
     "check:fixtures": "node gates/fixtures/gen-fixtures.mjs --check",
     "check:fixtures:selftest": "node gates/fixtures/gen-fixtures.selftest.mjs",
