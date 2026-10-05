@@ -159,6 +159,8 @@ const SANDBOX_PACKAGES = {
   "node_modules/opt-lib": { version: "1.0.0", devOptional: true, license: "MIT" },
   "node_modules/dev-tool": { version: "2.0.0", dev: true },
   "node_modules/no-license": { version: "0.1.0" },
+  "node_modules/outer-lib/node_modules/mid-lib": { version: "1.0.0", license: "MIT" },
+  "node_modules/outer-lib/node_modules/mid-lib/node_modules/leaf-lib": { version: "1.0.0", license: "MIT" },
 };
 
 /**
@@ -962,6 +964,28 @@ export async function run() {
         // 解析不到必须返回 null:静默当成「无该依赖」会让依赖图凭空少边
         assert(resolveDepPath(lock, "", "根本没装") === null, "未安装的包必须返回 null");
         assert(resolveDepPath(lock, "node_modules/prod-lib", "也没装") === null, "深层引入方找不到的包同样返回 null");
+
+        // 中间层判别:答案必须落在「本层与顶层之间」,否则上溯是「逐级」还是「直接跳顶层」分不出来。
+        //
+        // 为什么必须专门造这个形状:两种实现只差在**探针序列**上 —— 逐级探
+        // [本层 → 各中间层 → 顶层],跳顶层只探 [本层 → 顶层],两次探针**完全一致**。
+        // 上面 6 条断言的答案全落在本层或顶层:逐级确实多探了一个候选
+        // (node_modules/prod-lib/node_modules/both-lib),但那个候选不在 lock 里,
+        // 于是「多探一次」不改变答案 ⇒ 把逐级压成跳顶层的变异全段仍绿。
+        // 深度本身不是判别维度,**答案所在的层级**才是。
+        const midLibPath = "node_modules/outer-lib/node_modules/mid-lib";
+        const leafLibPath = "node_modules/outer-lib/node_modules/mid-lib/node_modules/leaf-lib";
+        const midFromLeaf = resolveDepPath(lock, leafLibPath, "mid-lib");
+        assert(midFromLeaf === midLibPath, `中间层命中点应被逐级上溯取到 ${midLibPath},实际 ${String(midFromLeaf)}`);
+        // 负面对照:顶层确实没有同名条目。把「顶层没有」从碰巧变成被断言的事实 ——
+        // 否则上面那条会同时满足两种实现,夹具本身就恒绿。
+        assert(resolveDepPath(lock, "", "mid-lib") === null, "反面对照:顶层不应有同名条目,否则中间层那条会同时满足逐级与跳顶层");
+        // 反向对照:顶层**也**放同名包时,就近优先仍须命中中间层 —— 证明上一条不是靠
+        // 「顶层恰好没有」蒙对的。此形状下两种实现的答案恰好也分得开(中间层 vs 顶层)。
+        const shadowLock = { ...lock, packages: { ...lock.packages, "node_modules/mid-lib": { version: "9.9.9", license: "MIT" } } };
+        assert(resolveDepPath(shadowLock, "", "mid-lib") === "node_modules/mid-lib", "反向对照的对照:顶层同名条目确实存在");
+        const shadowFromLeaf = resolveDepPath(shadowLock, leafLibPath, "mid-lib");
+        assert(shadowFromLeaf === midLibPath, `顶层同名存在时就近优先仍须命中 ${midLibPath},实际 ${String(shadowFromLeaf)}`);
       });
     });
 
