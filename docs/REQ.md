@@ -46,7 +46,6 @@
 | REQ-194 | 台账与计划的表格维护：脚本化单一写入口 | 待拍板 | 用户 2026-10-05 提出：表格维护代价高且常不准。**裁决不换分隔符**（列按名取，改列名不判红而是静默零覆盖；竖列化会推翻「事实与理由同一行同刻可读」）。**采纳脚本化**：形状不动、md 仍是唯一事实源。已实测失准：列数错位只出声不判红 · 同上限两套字面。**同日裁决**：脚本落 `templates/docs-init/` · `set` 多列且改状态自动搬行 · `move` 状态由目标节推导 · **撤销墓碑记号**（与状态列同步的冗余字段，号不复用靠 R6）。⚠️ PLAN.md 侧归 REQ-193。 | 随时；或第 2 次因改表格而踩到列数错位时（那说明脚本入口确有必要，从待拍板转未开工） | docs/evidence/20261005-123518-台账表格维护代价与脚本化方案.md |
 | REQ-196 | L1 未实现：段↔主体一对一无看守 | 未开工 | **ADR-062:102 已记「『段 ↔ 主体一对一』目前没有任何机器看守」，而台账此前无条目跟它**。这是 REQ-184「主体数只能靠人读源码数」的**原理性出口**（L1 ＝ 每个镜像源模块有对应段或登记豁免），⚠️ **但代价极高**：实测 **103 个 src 层段里只有 4 段**逐段对得上真实源 ⇒ 要么补约 100 段、要么登记约 100 条豁免。`coveredBy` 那条路已随 REQ-185 撤销。⚠️ 连带：ADR-062:100 的「现装状态」已过期，引用前须重测。 | 有人决定补那约 100 段或登记约 100 条豁免时；或有人为「段→模块」映射找到比 L1 更便宜的口径时 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md（L1 行 :71 · 现装状态块 :100）· docs/PLAN.md「T4」行 |
 | REQ-197 | 临时资源泄漏只报警不拦，真保证仅 3/143 段 | 未开工 | **跑 `verify:ci` 时实测**：退出钩子（`temp-resource.js:288`）在 Windows 上真漏了一次临时资源（EPERM，同前缀积 **16** 个未清）。它**设计上 report-only**（头注：兜底非保证），而头注称保证来自段末 `cleanupTempResources` ——**实测只 3/143 段 import** ⇒ 保证分母 **2%**。⚠️ 它打 `[fail]` 前缀、与真红 `[<id>:fail]` 同形（本会话已误判一次）。 | 要改它的措辞（换前缀）或让它参与退出码时；或清理盘上残留并给那 16 个 EPERM 归因时 | test/harness/temp-resource.js:249（cleanupTempResources）· :275-290（退出钩子与头注） |
-| REQ-198 | 打包图标三处未接线 | 未开工 | **用户实见：软件本体与安装包图标不对** —— `win.icon` 与 `nsis.installerIcon` 全未设 ⇒ 回退到 **Electron 默认图标**。⚠️ **坏的是三处**：asar 头部**既无 `build/icon.ico` 也无 `tools/icon.ico`**，而 `main-window.ts:64` 指向 `<appPath>/build/icon.ico`、仓里**没有 `build/`** ⇒ **窗口/任务栏图标同样断**。素材齐备。 | 三处接线落地并重打包、用户装后确认图标都对之后 | package.json（`build.win.icon` 与 `build.nsis`）· src/main/windows/main-window.ts:61-64 · tools/svg-to-ico.mjs |
 
 ## 在办
 
@@ -207,6 +206,7 @@
 | REQ-191 | supply-common 段断言变异缺可信数据 | 已完成 | **已闭合**：35 条夹具 = **35 条真变异**，每条起**全新 node 子进程**加载被改坏的实现（绕开 Node 按 URL 缓存 ESM 那个根因）。全部**恰好打红、互不串扰**，两个误分类计数均为 **0**。⚠️ 三处验不了的已如实记（一条已登记为 REQ-195）。 | —— | 见判断依据 |
 | REQ-195 | resolveDepPath 逐级上溯曾无断言 | 已完成 | **已闭合**：夹具加两条中间层条目，7-C 加 5 条断言（判别主断言 ＋「顶层无同名」负面对照 ＋ shadow 反向对照），diff **+24/-0 纯加法**。**忠实变异模型下新断言恰红**（逐级→中间层 vs 跳顶层→`null`），旧断言仍通过 ⇒ 缺口闭合。 | —— | test/gates/supply/supply/supply-common.test.js（case 7-C）· gates/supply/supply/supply-common.mjs:1028-1041 |
 | REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 已完成 | **已闭合（用户人工验证）**：装后 PATH 写入生效、卸载后 PATH 移除生效、快捷方式确认，验收无问题。⚠️ 验证对象是**图标接线修复前**的 4.0.1；该修复会动 `build.nsis` ⇒ 重打包后建议再跑一遍手测清单。 | 图标接线修复重打包后（会动 `build.nsis`）再跑一遍 `ADR-063` 的手测清单 | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
+| REQ-198 | 打包图标三处未接线 | 已完成 | **已闭合**：三处接线落地（`win.icon` / `nsis.installerIcon` / `main-window.ts` 路径），**用户装后确认图标正常**。⚠️ `build.files` **刻意不加**——会踩 `check:contract` 与 `check:asar`。 | 用户日后报任务栏图标异常时（`existsSync` 兜底不足以覆盖任务栏，需另立需求解 asar 顶层约束） | package.json（`build.win.icon` · `build.nsis.installerIcon`）· src/main/windows/main-window.ts:61-65 · tools/icon.ico |
 ## 已作废
 
 = 需求被**终审否决**，`~~` 划掉保留、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
