@@ -321,7 +321,7 @@ export const GATE_EXEMPTIONS_REL = "gates/repo/test-layout.gate-exemptions.json"
  * 「只提供规格」合法登记的边会**连 C3 一起豁免掉** ⇒ C3 在真实仓库上恒为零命中,
  * 即「建了机制但没有任何一处真的判过红」。那与没有这一族不可区分。
  *
- * ⚠ **本表当前只有一条表项**,是实测判红的现存一处(见该表项的 reason)。
+ * ⚠ **本表当前只有一条表项**,是实测判红的现存一处(见数据文件里该表项的 reason)。
  * 后续新增命中时,`--write-l5-exemptions` 那样的生成入口**刻意不提供**:
  * 本表的表项**不是「先豁免后补理由」的正当形态** —— 它登记的是「这个段的层归属是对的,
  * 而门禁主体在这里是被测输入」,写不出这句话就说明该搬段而不是该登记。
@@ -329,19 +329,14 @@ export const GATE_EXEMPTIONS_REL = "gates/repo/test-layout.gate-exemptions.json"
  * 表项合法性由三条 fail-closed 撑着:键名写错判红 / reason 不达标判红(空**或**不足
  * `REASON_MIN_CHARS` 字)/ **stale 判红**(登记了却当前不再命中 —— ratchet 的全部意义)。
  *
- * @type {readonly { segment: string, specifier: string, reason: string }[]}
+ * ⚠ **数据文件与本体分离**(与另两张豁免表同款):本体里那份常量会是可漂移的副本,而
+ * 本仓反复批过那种副本。表项的演进(段被搬走 / import 被删)因此**表现为对数据文件的
+ * 编辑**,而判据本体一行不动 —— 这与「改判据语义」在 diff 上彻底分开。
+ *
+ * 豁免的判准写在数据文件的 `exemptionCriterion` 字段里(单一来源,改判准只改那一处)。
+ * @type {string}
  */
-export const GATE_SUBJECT_EXEMPTIONS = Object.freeze([
-  Object.freeze({
-    segment: "test/shared/geometry-gate.test.js",
-    specifier: "gates/geometry/geometry/driver.mjs",
-    reason:
-      "本段的断言对象是同层的 shared/geometry/geometry-core.mjs(几何判定层,门禁 geometry 的 judgment 本体),"
-      + "它落在 test/shared/ 是对的;driver.mjs 在本段里**只提供输入规格**(存活路径表 LIVENESS_PATHS /"
-      + "可求值媒体条件 mediaConditions / 存活检查 checkPathLiveness),本段据此合成采样样本并断言判定结果,"
-      + "真实窗口采样由 gates/geometry/check-geometry.mjs 那侧承担、两者互不依赖 —— 故段的层归属无需变更。",
-  }),
-]);
+export const GATE_SUBJECT_EXEMPTIONS_REL = "gates/repo/test-layout.gate-subject-exemptions.json";
 
 /**
  * `dist/**` 产物扩展名 → 其镜像 `src/**` 源文件的**候选**扩展名(按 `tsconfig.json` 的
@@ -1036,6 +1031,57 @@ export function loadGateExemptions(root = ROOT) {
 }
 
 /**
+ * 读 C3 的门禁主体豁免表。**三档 fail-closed**,与 `loadL5Exemptions` /
+ * `loadGateExemptions` 同形:① 读不到 / 不是合法 JSON → 判红;② 缺 `entries` 数组 →
+ * 判红;③ 表项键名错 → 判红(由判定本体统一做,那样注入面也过同一道校验)。
+ *
+ * ⚠ **为什么「表读不到」这一档判红而不是当空表**(这是搬成数据文件**新引入**的一档 ——
+ * 落在模块常量形态时它根本不存在,因为表与本体同体、读不到就是编译不过):
+ *
+ *   - **静默当空表 = fail-open。** 空表会让每一条门禁边落进「未登记」,于是**症状看起来
+ *     仍然正确**(判红),但**归因彻底错位**:输出点名的是某一段的层归属有问题,而真因是
+ *     豁免表不见了。那正是本仓反复批过的「诊断指向 A、真因是 B」—— 处置指引会把人
+ *     领去搬段,搬完表还是红的,而表仍然没人找。
+ *   - **「读不到」与「查过了、全无豁免」在门禁上不可区分**:两者都产出「零条表项」。
+ *     区别只存在于**门禁没跑的那一次** —— 而门禁恰恰不能靠「它跑过了」来担保,因为
+ *     恒绿与恒红一样都是没人看的结果。
+ *   - **判红的那一侧至少可归因**:三条读表诊断各自点明表路径与失败原因,读者立刻知道
+ *     该去修表;而当空表放过去,门禁只会说「某段 import 了门禁树」。
+ *
+ * ⚠ 代价是「表被删 ⇒ 整仓红」—— 但那**就是**正确方向:一条已审过的豁免凭空消失时,
+ * 门禁必须让人重新看见它,而不是安静地按「没人豁免过」处理。与另两张表同判准。
+ *
+ * 条目**不**在这里校验键名(与另两张同款取舍):校验由判定本体统一做,否则一条键名写错的
+ * 注入表项会拿到一个永不命中的键、被静默跳过。
+ * @param {string} [root] 仓库根(默认真实仓库)
+ * @returns {{ entries: { segment: string, specifier: string, reason: string }[], problems: string[] }}
+ */
+export function loadGateSubjectExemptions(root = ROOT) {
+  const file = path.join(root, ...GATE_SUBJECT_EXEMPTIONS_REL.split("/"));
+  /** @type {{ segment: string, specifier: string, reason: string }[]} */
+  let entries = [];
+  /** @type {string[]} */
+  const problems = [];
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    return {
+      entries,
+      problems: [`门禁主体豁免表读不到或不是合法 JSON:${GATE_SUBJECT_EXEMPTIONS_REL}(${error instanceof Error ? error.message : String(error)})`
+        + " —— 表读不到时若按空表处理,每一条门禁边都会落进「未登记」而症状看起来仍然正确,"
+        + "但归因指向的是段的层归属而不是表不见了(处置会把人领去搬段,搬完表还是红的)。故判红"],
+    };
+  }
+  const list = Array.isArray(raw?.entries) ? raw.entries : null;
+  if (list === null) {
+    return { entries, problems: [`门禁主体豁免表缺 entries 数组:${GATE_SUBJECT_EXEMPTIONS_REL}`] };
+  }
+  entries = list;
+  return { entries, problems };
+}
+
+/**
  * 门禁索引的注入面归一(真实索引 → 判定本体要的最小形状)。
  *
  * **为什么注入的是「表的内容」而不是「模块路径」**:模块路径是本文件的静态 import(见文件头),
@@ -1634,10 +1680,16 @@ export function checkTestLayout(base = {}) {
 
   // ---- C3 的门禁主体豁免表:读表 + 键名校验(stale 检测在段循环之外)----
   //
-  // ⚠ **表本体是模块常量** `GATE_SUBJECT_EXEMPTIONS`(数据与判定本体分离,理由见那处注释),
+  // ⚠ **表本体是数据文件**(与判定本体分离,理由见 GATE_SUBJECT_EXEMPTIONS_REL 的注释);
   // 注入面 `base.gateSubjectExemptions` 让自检在合成根上求值同一批判据 ——
-  // 与 `l5Exemptions` / `gateExemptions` 两处注入面同款。
-  const c3Entries = base.gateSubjectExemptions ?? GATE_SUBJECT_EXEMPTIONS;
+  // 与 `l5Exemptions` / `gateExemptions` 两处注入面同款,且**刻意保留**:注入面是判据
+  // 在合成根上求值的唯一途径(自检不能 spawn、也不该读真实工作树)。
+  const { entries: c3Entries, problems: c3ExemptionProblems } = base.gateSubjectExemptions
+    ? { entries: base.gateSubjectExemptions, problems: [] }
+    : loadGateSubjectExemptions(ctx.root);
+  for (const problem of c3ExemptionProblems) {
+    report("test-layer-gate-subject", `${GATE_SUBJECT_EXEMPTIONS_REL} → test-layer-gate-subject:${problem}`);
+  }
   stats.c3Exemptions = c3Entries.length;
   /** @type {Map<string, { segment: string, specifier: string, reason: string }>} */
   const c3ByKey = new Map();

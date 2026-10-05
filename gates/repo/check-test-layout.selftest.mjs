@@ -35,7 +35,10 @@ import {
   extractImports,
   GATE_EXEMPTIONS_REL,
   GATE_INDEX_MODULE_REL,
+  GATE_SUBJECT_EXEMPTIONS_REL,
+  L5_EXEMPTIONS_REL,
   loadGateExemptions,
+  loadGateSubjectExemptions,
   judgeL11Carrier,
   judgeL12ChainMembership,
   makeGateRegistryCtx,
@@ -122,14 +125,16 @@ function createFixture(extra = {}) {
   // ② test/ 的每个顶层目录都要在(纪律 ①)。behavior/ 与 harness/ 建空目录:T3 才建立内容。
   for (const top of BASE_TEST_TOPS) mkdirSync(join(dir, ...`${TEST_REL}/${top}`.split("/")), { recursive: true });
   // ③ 底板段:每层铺够 BASE_PAD 段,每段都 import 本层主体 ⇒ 基线零判红。
-  // ③' L5 豁免表:合成根里也必须有一份(真实仓里有,判据从 `ctx.root` 读它)。
+  // ③' 豁免表:合成根里也必须有一份(真实仓里有,判据从 `ctx.root` 读它)。
   // 缺了它,每条进程级夹具都会先被「豁免表读不到」判红 —— 症状离根因很远。
   // 底板给一份**空表**:各夹具要豁免什么就自己注入(ctx.l5Exemptions),不在这里预置。
-  writeUnder(
-    dir,
-    "gates/repo/test-layout.cross-import-exemptions.json",
-    `${JSON.stringify({ _comment: "夹具底板:空豁免表。", entries: [] }, null, 2)}\n`,
-  );
+  //
+  // ⚠ **两张表都要造**:C3 的表搬成数据文件后,进程级夹具走的是与 L5 同款的读盘路径
+  // (`judge()` 那侧靠注入面绕开,进程级这侧没有注入面可用)。少造一张 ⇒ C3 先被
+  // 「表读不到」判红,那是一条与夹具本意无关的红。
+  for (const rel of [L5_EXEMPTIONS_REL, GATE_SUBJECT_EXEMPTIONS_REL]) {
+    writeUnder(dir, rel, `${JSON.stringify({ _comment: "夹具底板:空豁免表。", entries: [] }, null, 2)}\n`);
+  }
   for (let i = 0; i < BASE_PAD; i += 1) {
     const layer = BASE_SRC_LAYERS[i % BASE_SRC_LAYERS.length] ?? "core";
     writeUnder(dir, `${TEST_REL}/${layer}/pad-${i}.test.js`, wellFormedSegment(layer));
@@ -185,10 +190,11 @@ function judge(extra, opts = {}) {
       gateRegistry: opts.gateRegistry ?? {},
       // 门禁级豁免表同理:合成根里没有那张数据文件,让它去读会命中「读不到 → 判红」那一档。
       gateExemptions: opts.gateExemptions ?? [],
-      // C3 的门禁主体豁免表**必须显式注入空表**:它的缺省值是**真实仓库那条表项**
-      // (判据本体里的模块常量,理由见 check-test-layout.mjs 里 GATE_SUBJECT_EXEMPTIONS 的注释),
-      // 而那条表项在合成根上必然 stale(stale 检测会判红)⇒ 不注入的话**每条夹具**都会
-      // 多出一条与本夹具无关的红,症状离根因隔着一整族判据。
+      // C3 的门禁主体豁免表**必须显式注入空表**:合成根里没有那张数据文件,不注入就会命中
+      // 「表读不到 → 判红」那一档(见 check-test-layout.mjs 里 loadGateSubjectExemptions 的
+      // 注释:那一档**刻意判红**,不静默当空表)⇒ 每条夹具都会多出一条与本夹具无关的红,
+      // 症状离根因隔着一整族判据。底板(`createFixture`)也造了一份空表给**进程级**夹具用,
+      // 那一条路径没有注入面可走。
       gateSubjectExemptions: opts.gateSubjectExemptions ?? [],
       // ⚠ 删行口是自检专用,且**只允许删行**。它必须永远是「拿掉一行让漏斗查不到」这一个方向 ——
       // 一旦它能新增表项或加 `pending: true`,注入口就成了「可配置即假话」的后门:
@@ -1600,6 +1606,39 @@ const CASES = [
     expect: null,
   },
   {
+    // C3 豁免表三档 fail-closed ①:**读表本身**失败 → 判红。走 `loadGateSubjectExemptions`
+    // 的真实读盘路径(不是注入面):注入面按构造永远「读得到」,那一档就无人验证了。
+    //
+    // ⚠ 这一档是**搬成数据文件新引入**的(落在模块常量形态时它不存在 —— 表与本体同体,
+    // 读不到就是编译不过)。静默当空表的后果在 C3 上比另两张表更隐蔽:空表让每一条门禁边
+    // 落进「未登记」,**症状看起来仍然正确**(确实判红了),但归因指向的是「段的层归属可疑」
+    // 而不是「表不见了」—— 处置会把人领去搬段,搬完表还是红的,而表仍然没人找。
+    name: "C3 豁免表:读不到 → 判红(不得静默当空表,须走真实读盘路径)",
+    gateSubjectExemptionLoad: "missing",
+    expect: /门禁主体豁免表读不到或不是合法 JSON/,
+  },
+  {
+    // ① 的第二形态:文件在,但**不是合法 JSON**(比如被一次坏合并截断)。
+    name: "C3 豁免表:文件在但不是合法 JSON → 判红(坏合并会让整张表静默消失)",
+    gateSubjectExemptionLoad: "corrupt",
+    expect: /门禁主体豁免表读不到或不是合法 JSON/,
+  },
+  {
+    // ②:缺 entries 数组 → 判红。**这是最隐蔽的一档**:JSON 合法、文件在,但没有 `entries` 键
+    // ⇒ `Array.isArray(undefined)` 为 false。若实现写成 `raw.entries ?? []`,这张表会被
+    // 永久当成空表,而门禁只会一直报「未登记」,没人知道表本身坏了。
+    name: "C3 豁免表:合法 JSON 但缺 entries 数组 → 判红(不得按 ?? [] 当空表)",
+    gateSubjectExemptionLoad: "no-entries",
+    expect: /门禁主体豁免表缺 entries 数组/,
+  },
+  {
+    // ① 的正向对照:表真的读得到(哪怕是空的)才不报上面那三档。
+    // 缺它的话,「读不到」那一档可能是因为「永远读不到」而恒红 —— 那不是 fail-closed,是恒红。
+    name: "C3 豁免表:表读得到(空表) → 三档皆不报",
+    gateSubjectExemptionLoad: "empty",
+    expect: null,
+  },
+  {
     // 豁免表 ②:键名写错(缺 gate)→ 判红。跳过它等于给「写错键名」开了一个静默放行的口:
     // 它拿到的键永远命中不上,于是那道门禁一直落档 3,而没人知道表里其实有一条。
     name: "L11 豁免表:表项缺 gate 键 → 判红(键名写错会让豁免静默失效)",
@@ -2166,6 +2205,34 @@ for (const testCase of CASES) {
           writeUnder(dir, GATE_EXEMPTIONS_REL, `${JSON.stringify({ entries: [] }, null, 2)}\n`);
         }
         const { problems: loaded } = loadGateExemptions(dir);
+        const joined = loaded.join("\n");
+        if (testCase.expect === null ? loaded.length === 0 : testCase.expect.test(joined)) {
+          console.log(`[ok] test-layout-selftest:${testCase.name}(${loaded.length} 条读表诊断)`);
+        } else {
+          failures.push(
+            `${testCase.name}:期望${testCase.expect === null ? "零读表诊断" : `匹配 ${testCase.expect}`},`
+            + `实际 ${loaded.length} 条\n${joined || "(零诊断)"}`,
+          );
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+      continue;
+    }
+    if (testCase.gateSubjectExemptionLoad !== undefined) {
+      // C3 读表档:走 `loadGateSubjectExemptions` 的**真实读盘路径**(临时合成根),
+      // 理由与上面 L11 那条逐字同款 —— 注入面按构造永远「读得到」,那一档就无人验证。
+      // 四种形态各一:文件不在 / 文件在但 JSON 坏了 / JSON 合法但缺 entries / 表读得到。
+      const dir = mkdtempSync(join(tmpdir(), "m2w-gate-subject-exempt-selftest-"));
+      try {
+        if (testCase.gateSubjectExemptionLoad === "corrupt") {
+          writeUnder(dir, GATE_SUBJECT_EXEMPTIONS_REL, "{ this is not json ");
+        } else if (testCase.gateSubjectExemptionLoad === "no-entries") {
+          writeUnder(dir, GATE_SUBJECT_EXEMPTIONS_REL, `${JSON.stringify({ _comment: "缺 entries 键" }, null, 2)}\n`);
+        } else if (testCase.gateSubjectExemptionLoad === "empty") {
+          writeUnder(dir, GATE_SUBJECT_EXEMPTIONS_REL, `${JSON.stringify({ entries: [] }, null, 2)}\n`);
+        }
+        const { problems: loaded } = loadGateSubjectExemptions(dir);
         const joined = loaded.join("\n");
         if (testCase.expect === null ? loaded.length === 0 : testCase.expect.test(joined)) {
           console.log(`[ok] test-layout-selftest:${testCase.name}(${loaded.length} 条读表诊断)`);

@@ -1,0 +1,17 @@
+{
+  "_comment": "C3(test-layer-gate-subject)的门禁主体豁免表 —— 「(段路径, 说明符)」二元组,与 L5 那张同款粒度。数据文件与门禁本体分离:本体里那份会是可漂移的副本,而本仓反复批过那种副本。⚠ 本表**刻意不提供生成入口**(L5 那张有 `--write-l5-exemptions`):本表的表项不是「先豁免后补理由」的正当形态 —— 它登记的是「这个段的层归属是对的,而门禁主体在这里是被测输入」,写不出这句话就说明该搬段而不是该登记。",
+  "_schema": {
+    "key": "entries[].segment + entries[].specifier",
+    "granularity": "一个表项只覆盖**这一条说明符**;同段将来新增的任何一条 `gates/` 跨层边仍判红(段级放行会让一张表项掩盖该段未来所有门禁边,而那正是本族要拦的东西)。",
+    "reason": "必填、且 trim 后 ≥20 **字**(按码点计,与 L5 豁免表同门槛)。写不出合法理由的命中应把段搬去 `test/gates/`,不得进表。",
+    "ratchet": "表项必须**当前仍真的命中**,否则判红(stale)。段被搬走或那条 import 删了之后豁免必须同批删掉 —— 否则表只增不减、失效项永远占位。"
+  },
+  "exemptionCriterion": "豁免的判准:这个段的**层归属是对的**,而 `gates/` 树里的那个模块在本段里**只作被测输入**(提供规格 / 常量 / 判定表),本段的断言对象仍是本层主体。**不**豁免的情形:段的主体其实在 `gates/` ⇒ 该搬去 `test/gates/` 对应路径,登记豁免等于把「段挂错层」这一族判据藏进表里。⚠ **L5 豁免表里已登记的边不豁免本族**:L5 问「这次 import 是不是只提供数据」,C3 问「这个段住在这一层对不对」,两者问的不是同一个问题 —— 实测 `test/shared/geometry-gate.test.js → gates/geometry/geometry/driver.mjs` 正是这种形态(它已按「只提供规格」合法通过 L5),而 C3 仍判红。",
+  "entries": [
+    {
+      "segment": "test/shared/geometry-gate.test.js",
+      "specifier": "gates/geometry/geometry/driver.mjs",
+      "reason": "本段的断言对象是同层的 shared/geometry/geometry-core.mjs(几何判定层,门禁 geometry 的 judgment 本体),它落在 test/shared/ 是对的;driver.mjs 在本段里**只提供输入规格**(存活路径表 LIVENESS_PATHS /可求值媒体条件 mediaConditions / 存活检查 checkPathLiveness),本段据此合成采样样本并断言判定结果,真实窗口采样由 gates/geometry/check-geometry.mjs 那侧承担、两者互不依赖 —— 故段的层归属无需变更。"
+    }
+  ]
+}
