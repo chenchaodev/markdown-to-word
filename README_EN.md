@@ -173,7 +173,7 @@ npm run test:smoke   # Electron smoke test
 npm run test:all     # acceptance + smoke
 ```
 
-Test system: Zero-registration acceptance tests organized by content topic in `test/`; for how the segment directories are split and named, see the 「测试体系」 section of [DEV-GUIDE](docs/DEV-GUIDE.md). Fixtures in `test/fixtures/`, output to `output/`. Segment count is whatever `npm run test` reports.
+Test system: Zero-registration acceptance tests organized by content topic in `test/`; for how the segment directories are split and named, see the 「测试体系」 section of [DEV-GUIDE](docs/DEV-GUIDE.md). Fixtures in `samples/`, output to `output/`. Segment count is whatever `npm run test` reports.
 
 ### Documentation
 

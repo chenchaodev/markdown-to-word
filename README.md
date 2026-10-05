@@ -150,7 +150,7 @@ node dist/mcp/index.js            # MCP 服务端：供支持 MCP 的 AI 助手�
 
 验证与打包命令的完整清单见 [开发者手册](docs/DEV-GUIDE.md) 的「命令」节（`npm run typecheck` / `lint` / `build` / `test` / `test:smoke` 等）。
 
-测试体系：`test/` 下按内容主题零注册，段目录的划分与命名见 [开发者手册](docs/DEV-GUIDE.md) 的「测试体系」节；样例在 `test/fixtures/`，产物在 `output/`。段数以 `npm run test` 的实际输出为准。
+测试体系：`test/` 下按内容主题零注册，段目录的划分与命名见 [开发者手册](docs/DEV-GUIDE.md) 的「测试体系」节；样例在 `samples/`，产物在 `output/`。段数以 `npm run test` 的实际输出为准。
 
 ### 文档
 

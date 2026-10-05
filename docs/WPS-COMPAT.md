@@ -4,7 +4,7 @@
 
 ## 实测指引
 
-1. 用 `test/fixtures/docs/` 验收样例(gen-fixtures 生成,覆盖各功能域)或自写 md 转换 docx
+1. 用 `samples/docs/` 验收样例(gen-fixtures 生成,覆盖各功能域)或自写 md 转换 docx
 2. Word 打开产物,按下方矩阵逐项核对,更新「Word」列
 3. WPS 打开同一产物,逐项核对,更新「WPS」列
 4. 记录格式:✅ 通过 / ⚠️ 问题(现象 + 复现步骤 + 截图) / ⬜ **本轮未逐项记录**(≠ 不通过)
