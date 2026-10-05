@@ -973,9 +973,12 @@ export function renderL5ExemptionsBaseline(hits) {
     .map((hit) => ({ segment: hit.segment, specifier: hit.specifier, reason: "" }));
   return `${JSON.stringify(
     {
-      _comment: "L5 豁免表 —— 由 `node gates/repo/check-test-layout.mjs --write-l5-exemptions` 生成。"
+      _comment: "L5 豁免表 —— **初版**由 `node gates/repo/check-test-layout.mjs --write-l5-exemptions` 生成,"
         + `**每条 reason 必须人工补**:空 reason 会判红(这是刻意的,见门禁本体同名函数注释);`
-        + `补的内容还须 ≥${REASON_MIN_CHARS} 字(按码点计)。`,
+        + `补的内容还须 ≥${REASON_MIN_CHARS} 字(按码点计)。`
+        + " ⚠⚠ **本表此后只能手工追加,绝不可重跑那个生成入口** —— 它是**整表覆写**且只写"
+        + "「当前未登记」的命中,重跑会把本表已有的条目连同全部手写 reason 一并删除(无警告、无备份)。"
+        + " 新增命中时:先 `git checkout` 本文件,再照同样格式手工补那一条。",
       _schema: {
         key: "entries[].segment + entries[].specifier",
         granularity: "一个表项只覆盖这一条说明符;同段将来新增的跨层 import 仍判红。",
@@ -2109,6 +2112,9 @@ export function checkTestLayout(base = {}) {
  *
  * ⚠ 它是**生成入口**,不是判据:任何人都能跑它把表洗成当前形状 ⇒ 它绝不能进 verify:ci
  *   (package.json 的链里没有它,别加)。
+ *
+ * ⚠⚠ **它只收「当前未登记」的命中,却整表覆写** —— 表里只要已有一条豁免,重跑就会把
+ *   已登记条目连同全部手写 reason 一起删掉,无警告、无备份。表已有条目时别跑它。
  * @returns {number} 退出码
  */
 function writeL5ExemptionsBaseline() {
@@ -2157,6 +2163,11 @@ export function main(argv = []) {
         USAGE,
         "  --write-l5-exemptions  把当前未登记的跨层 import 写成豁免表基线(reason 留空待人工补,",
         `                        人工补的内容须 ≥${REASON_MIN_CHARS} 字)。只写不判,绝不进 verify:ci。`,
+        "  ⚠⚠ **它是整表覆写,且只写「当前未登记」的命中** —— 表里只要已有一条豁免,重跑就会把",
+        "                        已登记条目连同**全部手写 reason 一起删掉**,且**不警告、不留备份**。",
+        "                        表已有条目时**不要重跑**:先 `git checkout -- gates/repo/"
+          + "test-layout.cross-import-exemptions.json`,",
+        "                        再照本节说的「追加」手工补那一条(表项的键是 (段, 说明符) 二元组)。",
         `  强制等级(由本文件 CRITERIA 派生):${failClosed} 族 fail-closed(命中即非零退出) /`
         + ` ${reportOnly} 族 report-only(命中只报告,结构上不计退出码)。`,
         // ⚠ report-only 的族**逐个点名**:只给一个计数的话,「哪几族待转正」这件事就得回到源码里

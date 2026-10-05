@@ -1,5 +1,5 @@
 {
-  "_comment": "L5(test-layer-cross-import)的豁免表 —— 「(段路径, 说明符)」二元组,不是段级全放行。数据文件与门禁本体分离:本体里那份会是可漂移的副本,而本仓反复批过那种副本。生成入口:`node gates/repo/check-test-layout.mjs --write-l5-exemptions`(生成后必须逐条人工补 reason,reason 为空即判红)。",
+  "_comment": "L5(test-layer-cross-import)的豁免表 —— 「(段路径, 说明符)」二元组,不是段级全放行。数据文件与门禁本体分离:本体里那份会是可漂移的副本,而本仓反复批过那种副本。⚠⚠ **本表此后只能手工追加,绝不可重跑生成入口**:`node gates/repo/check-test-layout.mjs --write-l5-exemptions` 是**整表覆写**且只写「当前未登记」的命中 —— 重跑会把本表已有条目连同全部手写 reason 一并删除(无警告、无备份)。新增命中时:先 `git checkout` 本文件,再照同样格式手工补那一条;reason 为空即判红。",
   "_schema": {
     "key": "entries[].segment + entries[].specifier",
     "granularity": "一个表项只覆盖**这一条说明符**;同段将来新增的跨层 import 仍判红(这是刻意的:段级放行会让一张表项掩盖该段未来所有跨层边)。",
