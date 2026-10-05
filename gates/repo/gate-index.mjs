@@ -138,6 +138,15 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "gates/repo/check-temp-cleanup.mjs",
       judgment: { module: "gates/repo/check-temp-cleanup.mjs", export: "analyze", shaped: "{ problems, optionProblems, staleAllow }" },
     },
+    samples: {
+      id: "samples",
+      // ⚠ `npmScripts[0]` 是接入点(L12 只核它);`:selftest` 那条是载体,登记它是为了
+      // 格①/格② 的对读能认出「谁在跑这个载体」—— 那两族自己从磁盘派生载体清单。
+      npmScripts: ["check:samples", "check:samples:selftest"],
+      access: ACCESS_CHAIN,
+      modulePath: "gates/repo/check-samples.mjs",
+      judgment: { module: "gates/repo/check-samples.mjs", export: "checkSamples", shaped: "{ problems: string[], stats }" },
+    },
     "check-changelog": {
       id: "check-changelog",
       npmScripts: ["check:changelog"],
