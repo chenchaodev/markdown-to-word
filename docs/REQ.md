@@ -42,9 +42,7 @@
 | REQ-021 | 代码高亮主题切换 | 待拍板 | 2026-08-16 当初否决：仅 pdf 有意义，打印需求趋零（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-163 | 库模式（npm 包） | 未开工 | 由 REQ-006 拆出。core 纯度已实测达标但打包面为零：本仓 `private: true`、无 `bin`/`exports`/`types`，`tsconfig.json` 无 `declaration` 键 ⇒ dist 不产 `.d.ts`，对外暴露类型需新增该键。与 MCP 无技术共同点故拆号 | 「是否对外发 npm 包」决策后开工 | docs/adr/ADR-060-多层交付面与headless装配层.md |
 | REQ-174 | CHANGELOG 门禁判据比发布纪律窄一档 | 待拍板 | 门禁 6 类判据的总则是「只写用户在界面/文档/行为上可观察到的变化」,比 `PUBLISH-GUIDE` 内容标准①窄一档——后者明说「非用户感知层的内容可以进,判据是有没有长期后果」。方向为**过严**:规则点名允许的安全加固与迁移步骤类条目会被本门禁判红(这类条目天然要提门禁与实现,直接命中禁内部工程词),而唯一绕法是加 ALLOWLIST,等于把判据当成错的。**不在下游单方面放宽**:判据口径来自全局 `PUBLISH-GUIDE`,本仓那份是下游落地,单独松会让两侧脱节,须向配置仓提 | 真要写第一条安全加固或迁移步骤条目时;或决定向配置仓提该口径修正时 | 无 |
-| REQ-175 | 烟测残留检查漏掉安装账本键 | 待拍板 | 烟测的残留检查只认 Uninstall 注册表根、开始菜单、安装目录三处,而安装器写的账本键 M2W_LEDGER_KEY(装与卸都靠它对账,含 InstallLocation)**不在这三处之内** ⇒ 门禁对它失明。本轮真跑的事故里被污染的 InstallLocation 就落在那个键上,门禁当时是绿的,靠人工清掉。应把该键纳入残留检查面。 | 下次改烟测的残留检查面时 | gates/artifacts/check-install-smoke.mjs(残留检查面) |
 | REQ-176 | 装机 PATH 的四条运行期分支未验 | 待拍板 | 装机 PATH 有四条分支至今只有编译期或推理证据:① 勾选框 UI 那条路(新开关只覆盖 /S,PathPageCreate / PathPageLeave 未真跑)② 卸载时用户改过 PATH 的 dropRecords 分支(两轮背靠背,碰不到)③ M2W_PATH_MAX 超长守卫 ④ WM_SETTINGCHANGE 的实际生效 —— 门禁只验注册表值,不验环境变量在真实会话里是否可见。 | 有人手测勾选框 UI、或构造得出超长 PATH 时 | docs/adr/ADR-063-装机PATH勾选支的显式开关.md |
-| REQ-178 | 卸载残留检查抢跑在卸载器收尾之前 | 待拍板 | 卸载后的残留检查只等安装目录消失(:769 的 waitGone 只盯 installDir),紧接着就拍残留快照(:772)。而卸载器删目录与删注册表键、开始菜单快捷方式并非同一刻完成 ⇒ 第一轮(无等待余量)被判出 2 条残留并要求人工 reg delete,而独立复核时那两条早已消失。同一个卸载器二进制在第二轮零残留 ⇒ 门禁抢跑,不是卸载器缺陷。假阳性比没有检查更坏:它会训练人忽略这条判红。 | 下次改烟测的卸载后残留检查时 | gates/artifacts/check-install-smoke.mjs(:769 waitGone 只等 installDir · :772 collectRunResidue) |
 | REQ-182 | samples/ 目录无准入判据 | 未开工 | **已拍板：并入 ADR-062 P3 的 `check-samples.mjs`，本轮不做临时判据。** 实测 `samples/` 55 文件、**0 个 `.mjs/.js`**；`check-temp-cleanup.mjs:21` 已明写「排除 samples（被测样例数据本身，不是清理动作）」⇒ **缺口不是清理，是目录准入**。而 `ADR-062:170` 已把 `check-samples.mjs` 列在 P3 ⇒ 现在补的临时判据迁移后要重取基线，纯浪费。 | ADR-062 P3 开工时 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 | REQ-183 | ADR-197 的拆分对账对策失效 | 未开工 | **已拍板：随 REQ-184 的大文件拆分一起修，不单独动。** 实测失效两处：`:198` 点名的「同名 case 撞车被静默覆盖」**不成立**（三份 62 条 case 名跨文件**零重名**）；`:197` 第二道证据「叠加 `test:coverage` 的 0% 集合比对」**无效**（该集合 5 条全是 `src/**`、无一条是测试段）。第一道（断言调用数对账）仍唯一有效，但对 2/9 个候选失效 ⇒ **要补的是第二道证据，不是重写判据**。拆分批次定下来时一并订正 ADR。 | 随 REQ-184 的大文件拆分一起做（断言器白名单的补充）；ADR-062 `:197` 已于 2026-10-04 订正 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 | REQ-184 | 测试段批量拆分与合并专项 | 未开工 | **已按独立评审重裁：判据不是行数，是主体数** —— 评审 B1 证明按行数拆＝1 个偏宽段换 3 个偏宽段、离目标态更远；合并方向同样撞 `ADR-062:116`（同模块多段口径已被明文删除）。裁决 **3 做 1 不做**：`supply-chain`／`observability`／`geometry-gate` **拆主体**、`install-smoke` **只去重**、`import-boundary` **不做**（先做主体认定）；合并维持撤销。 | **两个前置，缺一不可**：① 主体判据 D1（段↔主体账目对读）落地 —— 今日实测 `covers` 只在 L6(仅 `behavior`)与 L8(仅 `harness`)被查、39 个声明全是单向无反向索引；② `docs/PLAN.md` 的 **S5-0 段发现递归化**落地 —— R1–R3 的新镜像目录今日实测 5 条一条都不存在，非递归的段发现会让拆出的段永不运行而门禁全绿 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md · docs/evidence/20261004-205551-测试段拆分合并的架构结论独立评审.md（评审原文，逐字未改） · docs/PLAN.md「拆分/合并到底有什么架构好处」 |
@@ -57,7 +55,6 @@
 | 号 | 标题 | 状态 | 为什么停在哪 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
 | REQ-169 | 安装版入口可发现性:快捷方式与 PATH | 在办 | 配置与门禁断言已落地(装卸两阶段 PATH 断言、期望值从 build.nsis.include 派生、写用 WriteRegExpandStr 保住 %VAR% 展开、超长不静默)。**但真实构建失败**:electron-builder 真实上下文里没有 MUI_PAGE_FUNCTION_CUSTOM,`npm run dist` 挂在 installer.nsh:108;上一轮的「编译通过」是**最小脚手架**证的,脚手架替真构建兜住了这个缺宏。真实安装验证未跑 | installer.nsh 在真实构建里编过之后;或真安装验证跑通之后 | build-assets/installer.nsh · gates/artifacts/check-install-smoke.mjs(两阶段 PATH 断言) · docs/evidence/20261003-180918-命令行exe分发路径调研.md §十二 |
-| REQ-187 | 补三条判据缺口（TS段口径·索引路径守卫·L4第三档） | 在办 | **用户裁决，三条都要机器看守**：① **TS 段口径**（段镜像 `src/**`、import 指向 `dist/**` 同名产物并锁住配对）；② **索引路径守卫** —— **已交付**：`auditSourceFilePointers` 要求 `modulePath`／`judgment.module` 必须是 git 跟踪的源文件（真实索引判红 0）；③ **L4 第三档**（段 import 别的层门禁主体判红）。①③ 在飞，② 已随 `4f8936b` 落地。 | —— | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md（「2026-10-05 用户裁决」节） |
 
 ## 已完成
 
@@ -197,6 +194,9 @@
 | REQ-173 | 测试树改为位置即身份并瘦身门禁元框架 | 已完成 | **已完成**：T3 测试树搬迁 ＋ T4-a 豁免表 ratchet 落地（L4 45→0、L5 60→25、L7 多 0/缺 0、`reason` ≥20 字成机器判据）；L11/L12 与 P6 元框架退役同批完成。残项见 REQ-184／185。 | —— | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 | REQ-179 | 发版纪律漏了 Release 由 workflow 建 | 已完成 | **已闭合，且是台账漏关**：登记后 3 分钟即落地（`4adb3da` → `db0ffa3`），修复已在 `DEV-GUIDE.md:204-207`。主会话逐点核对该段五项（Release 归 workflow · 不要手动建 · 撞车收拾顺序 · 轻量 tag 须显式推送）齐备。 | —— | .github/workflows/release.yml(末步 gh release create) |
 | REQ-177 | 门禁无「ADR 编号唯一」判据 | 已完成 | **已闭合**：新增判据 **C8**（`checkAdrNumberForm`）。形态只判 `docs/adr/`、唯一性判整个扫描面且**刻意不豁免 `docs/evidence/`**（两者作用域刻意不对称）。主会话**真变异双验**：两处短路各 exit 1 且只红自己那几条夹具。 | —— | gates/repo/check-pointers.mjs（判据 C8 `checkAdrNumberForm`）· gates/repo/check-docs.selftest.mjs |
+| REQ-175 | 烟测残留检查漏掉安装账本键 | 已完成 | **已闭合**，⚠️ **原措辞已订正**：`M2W_LEDGER_KEY` 与 electron-builder 的 `INSTALL_REGISTRY_KEY` **是同一个键**，而 `InstallLocation` **不是本仓账本写的**。残留面三处 → 四处。 | —— | gates/artifacts/check-install-smoke.mjs（`queryLedgerKeys`） |
+| REQ-178 | 卸载残留检查抢跑在卸载器收尾之前 | 已完成 | **已闭合**：删 `waitGone`（只等安装目录消失），改等**本次新增残留集合真的清空** —— 判据是状态不是固定延时。依据 `uninstaller.nsh`：`DeleteRegKey` 在段末、`RMDir /r` 在中段 ⇒ **抢跑是必然的**。烧完预算仍照实判红。 | —— | gates/artifacts/check-install-smoke.mjs（`waitUninstallerSettled`） |
+| REQ-187 | 补三条判据缺口（TS段口径·索引路径守卫·L4第三档） | 已完成 | **已闭合**：C1 两档（TS 段口径）＋ C2（**76 条指针判红 0**）＋ C3（段不得跨层引门禁主体，命中 1 处登记豁免）全部落地。`CRITERIA` 12→15、fail-closed 11→14，selftest 31→**125 条**。 | —— | gates/repo/check-test-layout.mjs · gates/repo/gate-index.selftest.mjs · docs/PLAN.md「REQ-187 的三条判据」节 |
 ## 已作废
 
 = 需求被**终审否决**，`~~` 划掉保留、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
