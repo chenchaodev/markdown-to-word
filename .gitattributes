@@ -29,6 +29,14 @@ test/fixtures/**/*.svg binary
 # 落盘 LF;autocrlf 下 checkout 转 CRLF 会让 check:archive-index 在 CI 上恒红。
 docs/evidence/INDEX.md text eol=lf
 
+# EOL 策略(同 TEST-1 的道理,但这条的判据更硬):门禁 GATE_IDS 对账表是
+# 「脚本从 JSON 渲染 + 逐字符全等比对」的产物。gen-gate-ids-table.mjs 的 renderTable()
+# 用 L.join("\n") 落 LF,而 judgeDrift() 的 `cur !== expected`(该文件 :99)两侧
+# 都不过 normalizeEol —— 与 gen-archive-index 不同,这里链路上没有任何 EOL 归一,
+# 所以 Windows runner 的 autocrlf 检出(CRLF)与渲染结果(LF)恒不相等,
+# check:gate-ids-table 恒红。EOL 不该由各端 autocrlf 决定,故钉 LF。
+docs/evidence/20261004-225514-gate-ids-对账表.md text eol=lf
+
 # EOL 策略(同 TEST-1 的道理):门禁按文本解析 workflow yml,而 release-notes 变异
 # 测试的两条判据对行尾敏感(CRLF 下匹配不上 ⇒ 变异「未生效」,CI 上恒红)。
 # Windows runner 的 autocrlf=true 会把检出转成 CRLF,而门禁读的是文本语义,
