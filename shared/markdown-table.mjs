@@ -47,7 +47,8 @@ export const WHY_LIMIT_DONE = 150;
  * - 台账门禁(`gates/repo/check-pointers.mjs` 的 `splitTableRow`)提供:①**收整行、自己 trim**;
  *   ②尾竖线的 `!endsWith('\\|')` 判据 —— 一行以转义竖线结尾时那个竖线是**内容不是分隔符**,
  *   照 `endsWith('|')` 剥掉会把末格内容吃掉。
- * - PLAN 子步门禁(`gates/repo/check-plan-in-progress.mjs` 的 `splitTableRow`)提供:切格主循环
+ * - 已退役的 PLAN 子步门禁(原 `gates/repo/check-plan-in-progress.mjs`,2026-10-05 随其载体
+ *   `docs/PLAN.md` 一并退役,原文取回见 git 历史)提供:切格主循环
  *   与「`\|` 还原成字面 `|`」的还原口径。
  *
  * **刻意不照搬 PLAN 门禁的「无条件剥首竖线」**:那是靠调用方(`parsePlanSteps`)先 trim 才成立的

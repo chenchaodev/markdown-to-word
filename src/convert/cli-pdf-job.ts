@@ -33,7 +33,7 @@ export type ExitCode = (typeof exitCodes)[keyof typeof exitCodes];
  *
  * 已安装形态用它而不是「脚本路径」形态:那时 `dist/main/cli-pdf-host.js` 落在
  * `app.asar` 内,Electron 不能把 asar 内的文件当应用路径启动。详见
- * docs/PLAN.md「步序 1 · 修复项复测 ③」。
+ * `docs/evidence/20261003-223213-安装版命令行入口规划与实施复测.md`「修复项复测 · 2026-10-03 · 步序 1 开工 ③」。
  */
 export const PDF_HOST_FLAG = "--pdf-host";
 

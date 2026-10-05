@@ -324,13 +324,6 @@ export const GATE_INDEX = Object.freeze(
     // 分开判,而 L12 判的是「在不在三条链上」—— 本段各项的接入点确实一条链都不在
     // (本段项数会随新增门禁变 —— 本段 = 全部 `offchain` 减去上面那两道 workflow 项,取它跑
     //  `node -e "import('./gates/repo/gate-index.mjs').then(m=>{const t=m.GATE_INDEX;console.log(Object.keys(t).filter(k=>t[k].access==='offchain'&&k!=='env'&&k!=='supply').length)})"`)。
-    "plan-in-progress": {
-      id: "plan-in-progress",
-      npmScripts: ["check:plan-in-progress"],
-      access: ACCESS_OFFCHAIN,
-      modulePath: "gates/repo/check-plan-in-progress.mjs",
-      judgment: { module: "gates/repo/check-plan-in-progress.mjs", export: "checkPlanInProgress", shaped: "{ problems: string[], stats }" },
-    },
     "install-smoke": {
       id: "install-smoke",
       npmScripts: ["check:install-smoke"],

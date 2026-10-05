@@ -10,7 +10,7 @@
  * ② `electron` 是 devDependency 不在 PATH,客户端配置里写 `electron <path>` 只在开发
  * 检出里成立。将来 MCP 要 pdf 时也不必改这一点:pdf 是**能力**不是进程形态,复用
  * CLI 已建成的机制(纯 node 侧写任务文件 → spawn `dist/main/cli-pdf-host.js` → 读结果
- * 文件)即可。详见 docs/PLAN.md「修复项复测 · 步序 3 开工前」。
+ * 文件)即可。详见 `docs/evidence/20261004-000218-多层交付面总规划原文.md`「修复项复测 · 2026-10-03 · 步序 3 开工前」。
  */
 import { serveStdio, type RpcHandlers, type RpcRequest } from "./jsonrpc.js";
 import { callConvertMarkdown, TOOL_NAME, TOOL_SPEC } from "./tools.js";
