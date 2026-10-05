@@ -49,7 +49,7 @@
       "reason": "恒等断言的对象就是 SEGMENT_DIRS 这**同一个数组对象**(契约单源),本段要证明生成器与验收入口读的是同一份;取 shared 单源正是本段的主题。"
     },
     {
-      "segment": "test/gates/observability.test.js",
+      "segment": "test/gates/smoke/smoke-report.test.js",
       "specifier": "dist/main/smoke.js",
       "reason": "SMOKE_MARKER 是恒等对照:本段断言「实现里埋的 marker 与门禁认的 marker 是同一个值」,取实现侧单源刻意不写字面量。"
     },

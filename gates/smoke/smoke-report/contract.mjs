@@ -8,7 +8,7 @@ export { projectRoot };
 // 类型引用运行期擦除,不产生运行期依赖)。
 //
 // 降级标记为何在此按字面登记(而不是 import src/main/smoke.ts 的常量):那个模块
-// import electron,纯 node 进程链不到它的命名导出。漂移由 test/gates/observability.test.js
+// import electron,纯 node 进程链不到它的命名导出。漂移由 test/gates/smoke/smoke-report.test.js
 // 断言与 dist/main/smoke.js 的 SMOKE_MARKER.pdfDegraded 恒等来守。
 
 
@@ -83,7 +83,7 @@ export const EXIT = Object.freeze({ pass: 0, fail: 1, notRun: 2 });
  *
  * 出处是 src/main/smoke.ts 的 SMOKE_MARKER.pdfDegraded(唯一实现在 src/,dev 侧入口
  * 只转调),这里不能 import 它:该模块 import electron,纯 node 进程里链不到命名导出。
- * 故此处按字面登记 + 由 test/gates/observability.test.js 断言与
+ * 故此处按字面登记 + 由 test/gates/smoke/smoke-report.test.js 断言与
  * dist/main/smoke.js 的 SMOKE_MARKER.pdfDegraded 恒等(漂移即判红),口径与
  * test/gates/packaged-smoke.test.js 对 SMOKE_MARKERS 的恒等守护同款。
  */

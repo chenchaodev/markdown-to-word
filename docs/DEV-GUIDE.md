@@ -95,8 +95,8 @@ MCP 形态的判定要点:stdout 上应恰好两个 JSON 帧(启动横幅与 cra
 | 环境指纹 | `check:env` | 仅 `ci.yml` 主 job 与 `release.yml` 的指纹步骤(不进任何链) |
 | 供应链 | `check:supply` | 仅 `ci.yml` 的 `supply-chain` job 与 `release.yml` 的供应链步骤 —— 需联网查 advisory 库,刻意不并入本地链(否则「代码有问题」与「网络抖动」共用一个退出码) |
 | 供应链子步骤的独立入口 | `gen:sbom` `check:sbom` `gen:licenses` `check:sca` `collect:license-fulltext`(按需收集许可证全文副本) | 判定入口是 `check:supply`(它 import 同一批模块);这五条是同批模块的独立 CLI 入口,离线部分由 `test/gates/supply-chain.test.js` 在链内覆盖 |
-| 包体 | `check:pack-size` | 仅本地手动(需真实安装包实测;判定逻辑由 `test/gates/observability.test.js` 在链内以沙盒覆盖) |
-| 冒烟报告 | `check:smoke-report` | 仅本地手动(判定逻辑同上,由 `test/gates/observability.test.js` 在链内覆盖) |
+| 包体 | `check:pack-size` | 仅本地手动(需真实安装包实测;判定逻辑由 `test/gates/artifacts/pack-size.test.js` 在链内以沙盒覆盖) |
+| 冒烟报告 | `check:smoke-report` | 仅本地手动(判定逻辑同上,由 `test/gates/smoke/smoke-report.test.js` 在链内覆盖) |
 | GUI 视觉自查 | `ui:shots` | 仅本地手动(`tools/visual-check.mjs`)。**发版前需重跑** —— 它的产出 `output/artifacts/ui-v4/` 是 `docs/images/ui-*.jpg` 的来源,界面一改那批图就过期;README / 官网首页 / 用户指南都靠它们展示 |
 | 安装烟测 | `check:install-smoke` | 仅本地手动,默认预演模式零系统副作用;真实装卸须显式 `--execute`(沙盒内的进程级行为由 `test/gates/install-smoke.test.js` 在链内覆盖) |
 | 安装版命令行入口(`m2w.cmd`) | —(**无 npm script**) | **无门禁覆盖**,四档之外(任何档都没有执行体)。现有门禁够不到它:`check:asar` 只核 `app.asar` 内的内容(归档顶层白名单只有 dist/node_modules/package.json,转发器在归档之外,不在其判定面),`check:unpacked-smoke` 与 `check:install-smoke` 走的是应用 exe 的 `--smoke`、不经转发器,`check:install-smoke` 的安装目录校验也只点 exe 与卸载器。**后果**:`build.extraFiles` 被删或 `to` 写错时全链仍绿,而已装用户手上的入口静默消失,只有本文件「交付面入口」节那套手动验证能发现 |
