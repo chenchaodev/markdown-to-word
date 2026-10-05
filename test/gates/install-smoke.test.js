@@ -27,6 +27,10 @@
  * 13. 转发器(build.extraFiles 随包分发的命令行入口)落位是 fail-closed 存在性钉:
  *    声明有而产物缺、声明整个被删,都判红并点名期望路径与解包目录里实际看到的东西;
  *    通过路径的结论行必须带落位计数(证明断言真的跑了,而不是「无输出即通过」)。
+ * 15. 残留检查面含**安装账本键**,且判的是它指向的路径(两个方向:键留着 / 键没了目录留着),
+ *    既有安装与他人的键不误伤;
+ * 16. 卸载后的残留快照等「卸载器收尾」(残留集合清空)再拍:卸载器滞后清理不判红(无假阳性),
+ *    而永久残留仍判红(证明等待没有把前一条的判红吃掉)。
  *
  * 沙箱纪律(硬约束):被测脚本的项目根由 `process.cwd()` 决定(单一来源 shared/paths.js),
  * 故把生产脚本**原位**执行、只把 cwd 指到临时沙盒 —— 沙盒外不存在被测脚本能触达的真实项目根,
@@ -587,6 +591,9 @@ async function runInstallExecuteWithStubs({
     exists,
     listDir,
     queryRegistry,
+    // 沙盒纪律:账本键检索换成恒空替身 —— 真的那个会 reg query 整棵 HKCU\Software
+    // (实测 ~1.4s,且读的是用户真实注册表)。本段不覆盖账本键,那由第 15 段专门驱动。
+    queryLedger: async () => [],
     // 沙盒纪律:自愈的删除类副作用一律换成记账替身,绝不落到真实注册表/文件系统
     deleteRegistryKey: async (key) => {
       deletedKeys.push(key);
@@ -698,6 +705,8 @@ async function runInstallExecuteWithFakeSystem({
     exists,
     listDir: () => [`${FIXTURE_PRODUCT}.exe`, `Uninstall ${FIXTURE_PRODUCT}.exe`],
     queryRegistry: async () => [...registry],
+    // 沙盒纪律:账本键检索换成恒空替身(见 runInstallExecuteWithStubs 里的同一条注)。
+    queryLedger: async () => [],
     deleteRegistryKey: async (key) => {
       deletedKeys.push(key);
       if (!canDelete) return false;
@@ -798,6 +807,8 @@ async function runInstallWithFakePath({
     exists,
     listDir: () => [`${FIXTURE_PRODUCT}.exe`, `Uninstall ${FIXTURE_PRODUCT}.exe`],
     queryRegistry: async () => [],
+    // 沙盒纪律:账本键检索换成恒空替身(见 runInstallExecuteWithStubs 里的同一条注)。
+    queryLedger: async () => [],
     deleteRegistryKey: async () => true,
     removePath: () => true,
     readRegValue: async () => {
@@ -806,6 +817,184 @@ async function runInstallWithFakePath({
     },
   });
   return { code, calls, pathReads, finalPath: pathValue };
+}
+
+/**
+ * 假系统里「安装账本键」的键名(键名本身不带产品名 —— 真机上它是 `{APP_GUID}`,
+ * 由 electron-builder 从 appId 派生;被测脚本不硬编码它,按 `InstallLocation` 值检索+归属)。
+ */
+const FIXTURE_LEDGER_KEY = "HKCU\\Software\\{fixture-app-guid}";
+/** 假系统里「别人家」的账本键(同机器上别的 Electron 应用也各有一个,不得算成本次残留) */
+const FIXTURE_OTHER_LEDGER_KEY = "HKCU\\Software\\{someone-elses-guid}";
+/** 别人家那个键的 InstallLocation —— 同样含本产品名字样以外的内容,归属判据据此把它排除 */
+const FIXTURE_OTHER_LEDGER_VALUE = "C:\\Users\\someone\\AppData\\Local\\Programs\\SomeoneElse";
+
+/**
+ * 用「假系统」跑安装脚本的 --execute 路径,驱动**残留检查面**的两处缺口。
+ *
+ * 假系统把卸载器该做的系统改动收进内存状态:账本键(带 `InstallLocation`)、
+ * 卸载注册表项、开始菜单快捷方式、以及它们指向的目录。删除类副作用(自愈)仍走记账替身,
+ * 绝不落到真实注册表/文件系统。
+ *
+ * 两个正交的调节钮 —— 这是本段最要紧的设计:两处缺口必须能**分别**变红,而「等卸载器收尾」
+ * 那处(等残留集合清空)天然会把另一处的判红一起等掉,若不拆开就分不清是哪处在起作用:
+ *   - `ledgerOutcome`:账本键在卸载后的归宿(决定缺口①判红);
+ *   - `latePolls`:卸载器派生临时副本的滞后(注册表/快捷方式/账本键在第几次残留采样之后才
+ *     真正消失),决定缺口② —— 滞后存在时必须**等干净**(绿),不等就抢跑(红)。
+ *
+ * @param {object} spec 场景
+ * @param {string} spec.installDir 假安装目录
+ * @param {string} spec.scratchRoot 临时根
+ * @param {boolean} [spec.perMachine] 构建口径(默认 false = 按用户安装)
+ * @param {'clean' | 'keyLeft' | 'pathLeft'} [spec.ledgerOutcome] 卸载后账本键的归宿:
+ *   `clean` = 键与目录都清干净;`keyLeft` = 键留着(指向的目录已消失);
+ *   `pathLeft` = 键删了但它装完时指向的目录留着(需靠「装完那一刻记下的 InstallLocation」才判得到)
+ * @param {string} [spec.pollutedSuffix] 装完时写进 InstallLocation 的污染后缀(复现 `/D=` 吞参数那次)
+ * @param {number} [spec.latePolls] 卸载器滞后:前 N 次残留采样仍脏,第 N+1 次才干净
+ * @param {number} [spec.timeoutMs] 单步超时(同时是「等收尾」的预算上限)
+ * @param {boolean} [spec.preExistingLedger] 安装前是否已存在一个账本键(既有安装不该被判本次残留)
+ * @param {boolean} [spec.installDirExistedBefore] 安装目录在安装前就已存在(那一轮判不了「留痕」,不该白等收尾)
+ * @param {boolean} [spec.otherAppLedger] 安装前是否存在「别人家」的账本键(不得算成本次残留)
+ * @param {boolean} [spec.leaveRegistry] 卸载后是否留下卸载注册表项与快捷方式(缺口②的滞后面)
+ * @returns {Promise<{ code: number, ledgerKeys: Set<string>, deletedKeys: string[], removedPaths: string[], ledgerProbes: number, registryProbes: number }>} 运行后状态
+ */
+async function runInstallWithFakeResidue({
+  installDir,
+  scratchRoot,
+  perMachine = false,
+  ledgerOutcome = "clean",
+  pollutedSuffix = "",
+  latePolls = 0,
+  timeoutMs = 1000,
+  preExistingLedger = false,
+  otherAppLedger = false,
+  leaveRegistry = false,
+  installDirExistedBefore = false,
+}) {
+  /** 卸载器滞后计数:卸载完成后,前 latePolls 次残留采样仍返回「未清干净」 */
+  let cleanupsPending = 0;
+  let uninstalled = false;
+  let installed = false;
+  let ledgerPresent = preExistingLedger;
+  let registryPresent = false;
+  let tracePresent = false;
+  const exePath = path.join(installDir, `${FIXTURE_PRODUCT}.exe`);
+  const uninstallerPath = path.join(installDir, `Uninstall ${FIXTURE_PRODUCT}.exe`);
+  const shortcut = startMenuTraces(FIXTURE_PRODUCT).find((trace) => trace.kind === "shortcut");
+  assert(shortcut !== undefined, "开始菜单痕迹清单应含 .lnk 快捷方式形态");
+  const shortcutPath = shortcut.path;
+  // 装完时账本键里写的那个 InstallLocation 值(污染后缀复现 `/D=` 把开关吞进目录名那次)。
+  const ledgerLocation = `${installDir}${pollutedSuffix}`;
+
+  /**
+   * 当前假系统里的账本键清单(被测脚本按这个形状收账本键的检索结果)。
+   * @returns {{ key: string, installLocation: string }[]} 账本键与其 InstallLocation 值
+   */
+  const ledgerEntries = () => {
+    /** @type {{ key: string, installLocation: string }[]} */
+    const entries = [];
+    if (otherAppLedger) entries.push({ key: FIXTURE_OTHER_LEDGER_KEY, installLocation: FIXTURE_OTHER_LEDGER_VALUE });
+    if (ledgerPresent) {
+      entries.push({ key: FIXTURE_LEDGER_KEY, installLocation: preExistingLedger ? `${installDir}-旧安装` : ledgerLocation });
+    }
+    return entries;
+  };
+
+  /**
+   * 推进「卸载器临时副本的清理进度」一格 —— 每次残留采样调一次。
+   *
+   * 滞后期内注册表项/快捷方式/账本键都还在(文件与安装目录此刻已经没了,这正是真机上
+   * 那个窗口);滞后耗尽后按场景的真实归宿落地(clean = 清干净,keyLeft = 键留着)。
+   * `latePolls: 0` 时第一次采样就落地,等价于「卸载器同步清完了」。
+   */
+  const advanceCleanup = () => {
+    if (cleanupsPending > 0) {
+      cleanupsPending -= 1;
+      return;
+    }
+    ledgerPresent = ledgerOutcome === "keyLeft";
+    registryPresent = leaveRegistry;
+    tracePresent = leaveRegistry;
+  };
+
+  const exists = (/** @type {string} */ target) => {
+    if (target === installDir) return installDirExistedBefore || installed;
+    if (target === exePath || target === uninstallerPath) return installed;
+    if (target === shortcutPath) return tracePresent;
+    // 账本键装完时指向的那个目录:默认**不存在**(复现 `/D=` 吞参数那次 —— 污染值指向的
+    // 目录压根没被创建,残留的是键本身);`pathLeft` 场景下它真的被留下了。
+    if (target === ledgerLocation) return ledgerOutcome === "pathLeft";
+    return false;
+  };
+
+  let ledgerProbes = 0;
+  let registryProbes = 0;
+  /** @type {string[]} */
+  const deletedKeys = [];
+  /** @type {string[]} */
+  const removedPaths = [];
+  const code = await runInstallFlow({
+    installer: path.join(scratchRoot, "fake-installer.exe"),
+    installDir,
+    facts: {
+      productName: FIXTURE_PRODUCT,
+      version: FIXTURE_VERSION,
+      artifactTemplate: "",
+      releaseDir: "release",
+      perMachine,
+      pathOptInScript: PATH_OPT_IN_SCRIPT,
+    },
+    timeoutMs,
+    scratchRoot,
+    run: async (spec) => {
+      if (spec.command.endsWith("fake-installer.exe")) {
+        installed = true;
+        ledgerPresent = true;
+        registryPresent = true;
+        tracePresent = true;
+        return okResult("[fixture] installed\n");
+      }
+      installed = false;
+      // 卸载器派生临时副本:文件先没,注册表/快捷方式/账本键随后才没。滞后期数在**卸载之后**
+      // 才计数 —— 「安装前」与「装完」那两次采样不能消耗它,否则模拟的窗口根本不在卸载段里。
+      uninstalled = true;
+      cleanupsPending = latePolls;
+      return okResult("[fixture] uninstalled\n");
+    },
+    launchSmoke: async () => okResult(stubSuccessOutput()),
+    exists,
+    listDir: () => [`${FIXTURE_PRODUCT}.exe`, `Uninstall ${FIXTURE_PRODUCT}.exe`],
+    queryRegistry: async () => {
+      registryProbes += 1;
+      // 每次残留采样恰好调它一次,且是那一次的第一个探针 ⇒ 用它当「本次采样」的唯一计时点。
+      if (uninstalled) advanceCleanup();
+      return registryPresent ? [FIXTURE_NEW_KEY] : [];
+    },
+    queryLedger: async () => {
+      ledgerProbes += 1;
+      return ledgerEntries();
+    },
+    deleteRegistryKey: async (key) => {
+      deletedKeys.push(key);
+      if (key === FIXTURE_NEW_KEY) registryPresent = false;
+      if (key === FIXTURE_LEDGER_KEY) ledgerPresent = false;
+      return true;
+    },
+    removePath: (target) => {
+      removedPaths.push(target);
+      if (target === shortcutPath) tracePresent = false;
+      return true;
+    },
+    readRegValue: async () => FAKE_PATH_BEFORE,
+  });
+  return {
+    code,
+    ledgerKeys: new Set(ledgerPresent ? [FIXTURE_LEDGER_KEY] : []),
+    deletedKeys,
+    removedPaths,
+    ledgerProbes,
+    registryProbes,
+  };
 }
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
@@ -1664,6 +1853,8 @@ export async function run() {
             target === driverDir || target === driverExe || target === driverUninstaller ? driverInstalled : false,
           listDir: () => [`${FIXTURE_PRODUCT}.exe`, `Uninstall ${FIXTURE_PRODUCT}.exe`],
           queryRegistry: async () => [],
+          // 沙盒纪律:账本键检索换成恒空替身(见 runInstallExecuteWithStubs 里的同一条注)。
+          queryLedger: async () => [],
           deleteRegistryKey: async () => true,
           removePath: () => true,
           readRegValue: async () => driverPath,
@@ -1696,6 +1887,266 @@ export async function run() {
       );
       console.log(
         "[ok] install-smoke:PATH 两轮(默认支一条不变 + 勾选支恰好多一条)判定正确,负向面(没写入/没还原/顺序乱)均判红",
+      );
+    }
+
+    // ---------- 15. 残留检查面缺口①:安装账本键,且判的是它指向的路径 ----------
+    //
+    // 为什么这一段最要紧:真跑事故里被污染的 `InstallLocation` 就落在那个键上,而门禁当时
+    // 是绿的(靠人工清掉)。旧检查面只认 Uninstall 注册表根 + 开始菜单 + 安装目录三处。
+    //
+    // 判法刻意**不是**「这个键还在不在」—— 键里存的是路径,所以两个方向都要判:
+    //   A. 键留着(指向的目录已消失)= 注册表残留(键本身就是「装过」的证据,留着它下次装
+    //      到同一目录会被 multiUser.nsh:26 当成既有安装);
+    //   B. 键没了、但它装完时指向的目录留着 = 目录残留(靠「装完那一刻记下 InstallLocation」
+    //      才判得到 —— 卸载后键已删,再读就无从知道它指向哪)。
+    {
+      const root = createSandbox();
+      sandboxes.push(root);
+      const shortcut = startMenuTraces(FIXTURE_PRODUCT).find((trace) => trace.kind === "shortcut");
+      assert(shortcut !== undefined, "开始菜单痕迹清单应含 .lnk 快捷方式形态");
+      const shortcutPath = shortcut.path;
+
+      // A1 负向:卸载后账本键留着 —— 必须判红、点名键、并被自愈清掉。
+      //    注意账本残留是**永久**的(不随卸载收尾消失),故它不会被「等收尾」等掉 ——
+      //    这正是两处缺口不互相掩盖的原因之一。
+      const keyLeft = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-keyleft"),
+          ledgerOutcome: "keyLeft",
+        }),
+      );
+      assert(keyLeft.result.code === 1, `账本键残留应判红,实际 ${keyLeft.result.code}\n${keyLeft.output}`);
+      assert(
+        keyLeft.output.includes(FIXTURE_LEDGER_KEY),
+        `失败输出应点名残留的账本键完整键名;实际:${keyLeft.output}`,
+      );
+      assert(
+        keyLeft.output.includes("本次运行新增了安装残留"),
+        `应报出「新增残留」这条根因;实际:${keyLeft.output}`,
+      );
+      assert(
+        keyLeft.result.deletedKeys.join("|") === FIXTURE_LEDGER_KEY,
+        `账本键应被自愈清掉(沙盒记账替身);实际 ${JSON.stringify(keyLeft.result.deletedKeys)}`,
+      );
+      // ⚠ 这一格刻意是**永久**残留(不随卸载收尾消失),而门禁此刻正在跑「等卸载器收尾」那个
+      // 预算 —— 若那个等待把它等掉了,本格就再也判不红,门禁对账本键重新失明(回到出事那天
+      // 的状态)。故本段三条负向夹具在结构上就是「熬过等待仍判红」的证据。
+      // 「等满预算」这个事实本身由第 16 段在缺口②自己的检查面上断言(放在这里会让两段
+      // 共用一张票,变异实验就分不出是哪处在起作用)。
+
+      // A2 负向:键删了,但它装完时指向的目录留着 —— 方向 B。
+      //    InstallLocation 带上污染后缀,复现 `/D=` 吞掉 PATH 开关那次写出来的值。
+      const pollutedSuffix = " M2W_ADD_PATH=1";
+      const pathLeft = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed2", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-pathleft"),
+          ledgerOutcome: "pathLeft",
+          pollutedSuffix,
+        }),
+      );
+      assert(pathLeft.result.code === 1, `账本指向的目录残留应判红,实际 ${pathLeft.result.code}\n${pathLeft.output}`);
+      assert(
+        pathLeft.output.includes(`${path.join(root, "installed2", FIXTURE_PRODUCT)}${pollutedSuffix}`),
+        `应点名账本键装完时指向的那个目录(含污染后缀,原样可核对);实际:${pathLeft.output}`,
+      );
+
+      // A3 负向:「污染值」这一条不能靠「精确等于安装目录」判 —— `/D=` 吞参数那次写出来的
+      //    InstallLocation 正是多了后缀的值,精确相等会把它整个漏掉。
+      const pollutedKeyLeft = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed3", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-polluted"),
+          ledgerOutcome: "keyLeft",
+          pollutedSuffix,
+        }),
+      );
+      assert(
+        pollutedKeyLeft.result.code === 1,
+        `InstallLocation 被污染时账本键仍应判红(不得因「不等于安装目录」而漏掉),实际 ${pollutedKeyLeft.result.code}\n${pollutedKeyLeft.output}`,
+      );
+      assert(
+        pollutedKeyLeft.output.includes(FIXTURE_LEDGER_KEY),
+        `污染场景下也应点名账本键;实际:${pollutedKeyLeft.output}`,
+      );
+
+      // A4 反向(防误伤):安装前就存在的账本键 = 既有安装,删它就是误删用户的东西。
+      const preExisting = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed4", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-preexisting"),
+          preExistingLedger: true,
+        }),
+      );
+      assert(
+        preExisting.result.code === 0,
+        `既有安装的账本键不属本次残留,不该判红;实际 ${preExisting.result.code}\n${preExisting.output}`,
+      );
+      assert(
+        preExisting.result.deletedKeys.length === 0,
+        `安装前就存在的账本键绝不删除;实际 ${JSON.stringify(preExisting.result.deletedKeys)}`,
+      );
+
+      // A5 反向(防误伤):同机器上别的 Electron 应用也各有一个带 InstallLocation 的键 ——
+      //    归属判据(该值含本产品名)必须把它排除,否则门禁会去删别人的安装键。
+      const otherApp = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed5", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-otherapp"),
+          otherAppLedger: true,
+        }),
+      );
+      assert(
+        otherApp.result.code === 0,
+        `别人的账本键不得算成本次残留;实际 ${otherApp.result.code}\n${otherApp.output}`,
+      );
+      assert(
+        !otherApp.output.includes(FIXTURE_OTHER_LEDGER_KEY),
+        `别人的键不该出现在残留/清理报告里;实际:${otherApp.output}`,
+      );
+      assert(
+        otherApp.result.deletedKeys.length === 0 && otherApp.result.removedPaths.length === 0,
+        `别人的账本键与快捷方式都不得动;实际 ${JSON.stringify(otherApp.result.deletedKeys)} / ${JSON.stringify(otherApp.result.removedPaths)}`,
+      );
+
+      // A6 正向:干净卸载 → 绿,且账本键确实被查过(不是「压根没查所以没红」)。
+      const clean = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed6", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-clean"),
+        }),
+      );
+      assert(clean.result.code === 0, `干净卸载应通过,实际 ${clean.result.code}\n${clean.output}`);
+      assert(
+        clean.result.ledgerProbes >= 2,
+        `账本键必须真被查过(安装前 + 卸载后各至少一次),实际查了 ${clean.result.ledgerProbes} 次`,
+      );
+      assert(
+        /安装目录\/开始菜单\/卸载注册表\/安装账本键/.test(clean.output),
+        `通过结论行应报出四处检查面;实际:${clean.output}`,
+      );
+      assert(!clean.result.removedPaths.includes(shortcutPath), "干净路径不应有删除动作");
+      console.log(
+        "[ok] install-smoke:账本键纳入残留检查面(键留着/键没了目录留着 两个方向均判红并被自愈),既有安装与他人键不误伤",
+      );
+    }
+
+    // ---------- 16. 残留检查面缺口②:拍快照前要等卸载器收尾,而不是只等安装目录 ----------
+    //
+    // 这一段要证的是**没有假阳性**:卸载器派生临时副本自行完成删除,父进程退出时它可能
+    // 才刚开始删注册表。旧口径只等 installDir 消失就拍快照 ⇒ 第一轮被判出残留并要求人工
+    // `reg delete`,而独立复核时那两条早已消失(同一个卸载器二进制第二轮零残留)。
+    // 假阳性比没有检查更坏:它会训练人忽略这条判红。
+    //
+    // 收尾判据是**状态**:等本次新增的残留集合真的清空。固定 sleep 做不到这一点 ——
+    // 阈值猜短了照样假阳性,猜长了白等,机器一慢就重新欠账。
+    {
+      const root = createSandbox();
+      sandboxes.push(root);
+      const shortcut = startMenuTraces(FIXTURE_PRODUCT).find((trace) => trace.kind === "shortcut");
+      assert(shortcut !== undefined, "开始菜单痕迹清单应含 .lnk 快捷方式形态");
+      const shortcutPath = shortcut.path;
+
+      // 负向夹具:卸载注册表项与快捷方式在头两次残留采样里仍在(临时副本还没删完),
+      // 第三次才消失 —— 模拟真机上那个「目录早没了、键还没删」的窗口。
+      // `leaveRegistry: false` = 滞后结束后它们真的被清掉(即这是**假阳性**那一侧:
+      // 独立复核时它们早已消失,门禁判红就是错的)。
+      const late = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-late"),
+          latePolls: 2,
+          timeoutMs: 8000,
+        }),
+      );
+      assert(
+        late.result.code === 0,
+        `卸载器滞后清理不得判红(等收尾就是为消除这类假阳性),实际 ${late.result.code}\n${late.output}`,
+      );
+      assert(
+        !late.output.includes("本次运行新增了安装残留"),
+        `滞后清理收敛后不应报残留;实际:${late.output}`,
+      );
+      assert(
+        late.result.registryProbes >= 3,
+        `必须真的轮询等到收敛(至少 3 次采样),实际 ${late.result.registryProbes} 次 —— `
+          + `若只有 1 次,说明没等就拍了快照,这条断言就成了一张空票`,
+      );
+      assert(
+        late.result.deletedKeys.length === 0 && late.result.removedPaths.length === 0,
+        `最终收敛 ⇒ 无需自愈(实际删了 ${JSON.stringify(late.result.deletedKeys)} / ${JSON.stringify(late.result.removedPaths)})`,
+      );
+
+      // 同一次滞后的另一面:账本键也滞后。正向仍须是绿 —— 判据是状态,不是某个面的特例。
+      const lateLedger = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed2", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-lateledger"),
+          ledgerOutcome: "clean",
+          latePolls: 2,
+          timeoutMs: 8000,
+        }),
+      );
+      assert(
+        lateLedger.result.code === 0,
+        `账本键滞后清理同样应等到收敛,实际 ${lateLedger.result.code}\n${lateLedger.output}`,
+      );
+      assert(
+        lateLedger.result.ledgerProbes >= 3,
+        `账本键也必须被轮询等到(至少 3 次采样),实际 ${lateLedger.result.ledgerProbes} 次`,
+      );
+
+      // 反向:真残留(永久存在)不能被「等收尾」等掉 —— 烧完预算后必须照实判红。
+      // 残留刻意放在**卸载注册表项 + 快捷方式**上(账本键留干净):账本键那面归第 15 段,
+      // 这里用它当证据就变成两条缺口共用一张票,变异实验就分不出是哪处在起作用了。
+      const permanent = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed3", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-permanent"),
+          ledgerOutcome: "clean",
+          leaveRegistry: true,
+          timeoutMs: 1000,
+        }),
+      );
+      assert(
+        permanent.result.code === 1,
+        `永久残留必须判红(等收尾不得把真残留等掉),实际 ${permanent.result.code}\n${permanent.output}`,
+      );
+      assert(
+        permanent.output.includes(FIXTURE_NEW_KEY) && permanent.output.includes(shortcutPath),
+        `应逐项点名卸载注册表项与快捷方式;实际:${permanent.output}`,
+      );
+      assert(
+        /等待卸载器收尾 \d+ms\(上限 \d+ms\)后本次新增残留仍未清空/.test(permanent.output),
+        `等满预算这一事实本身应被报出来(它排除了「只是慢」这一解释);实际:${permanent.output}`,
+      );
+
+      // 既有安装那一轮:「安装目录」这一项本来就判不了,不该为此白等整个收尾预算。
+      const preexistingDir = await withCapturedOutput(() =>
+        runInstallWithFakeResidue({
+          installDir: path.join(root, "installed4", FIXTURE_PRODUCT),
+          scratchRoot: path.join(root, "scratch-preexistingdir"),
+          leaveRegistry: true,
+          installDirExistedBefore: true,
+          timeoutMs: 8000,
+        }),
+      );
+      assert(
+        preexistingDir.result.code === 1,
+        `卸载注册表项残留仍须判红;实际 ${preexistingDir.result.code}\n${preexistingDir.output}`,
+      );
+      assert(
+        preexistingDir.output.includes(FIXTURE_NEW_KEY),
+        `既有目录那一轮同样要逐项点名(跳过等待 ≠ 跳过判定);实际:${preexistingDir.output}`,
+      );
+      assert(
+        !/等待卸载器收尾/.test(preexistingDir.output),
+        `安装目录安装前就存在那一轮不等收尾(那一项判不了,等它只是白等预算);实际:${preexistingDir.output}`,
+      );
+      console.log(
+        "[ok] install-smoke:卸载后残留快照等「卸载器收尾」(残留集合清空)再拍,滞后清理不判红(无假阳性),真残留仍判红",
       );
     }
   } catch (error) {

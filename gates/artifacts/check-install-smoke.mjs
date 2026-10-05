@@ -6,7 +6,30 @@
 //   2. 从安装目录启动并跑 --smoke → 校验退出码 0 且诊断标记齐备(判定面与解包目录同构,
 //      标记清单与进程硬杀等原语单一来源在 gates/smoke/smoke-proc.mjs);
 //   3. 静默卸载(<安装目录>/Uninstall <productName>.exe /S)→ 校验安装目录、开始菜单、
-//      卸载注册表相对「安装前」没有新增残留(前后快照比对,不硬编码键名/图标名)。
+//      卸载注册表、**安装账本键**相对「安装前」没有新增残留(前后快照比对,不硬编码键名/
+//      图标名/账本键名 —— 账本键按「带 InstallLocation 值且该值含产品名」检索+归属)。
+//
+// ⚠ 残留检查面为什么是四处而不是三处(曾经的第四个缺口,ADR-063 记的真跑事故):
+//   安装器写的账本键 `HKCU\Software\{APP_GUID}`(build-assets/installer.nsh 的
+//   M2W_LEDGER_KEY,与 electron-builder 的 INSTALL_REGISTRY_KEY 逐字同键)带
+//   `InstallLocation`,而那一面只认 Uninstall 注册表根 + 开始菜单 + 安装目录 ⇒ 对它
+//   完全失明。真出过事:`/D=` 把 PATH 开关吞进目录名那次,安装器把 InstallLocation
+//   写成了一个不存在的目录,门禁当时是绿的,那个键靠人工清掉。
+//   判法**不是**「这个键还在不在」—— 键里存的是路径,判的是它指向的东西有没有跟着消失。
+//   两个方向都要判:键留着(即便它指向的目录已经没了)= 注册表残留;键没了但它指向的目录
+//   留着 = 目录残留。后者要在「装完那一刻」把 InstallLocation 的值**记下来**才判得了
+//   —— 卸载后键若已被删,再读就无从知道它指向哪,而那正是要抓的那一种。
+//
+// ⚠ 残留快照之前要等「卸载器收尾」,而不是只等安装目录消失(曾经的另一个缺口):
+//   NSIS 卸载器派生临时副本自行完成删除,**父进程退出 ≠ 卸载结束**。而卸载段里的动作
+//   有固定次序(卸载器模板 uninstaller.nsh):customUnInstall 在段首(:156)、文件与安装
+//   目录删除在中段(`RMDir /r $INSTDIR`,:187)、快捷方式删除随后(:190-207)、
+//   `DeleteRegKey` **在段末**(:250-254)。故「安装目录已消失」在结构上就早于注册表与
+//   快捷方式的清理 —— 只等它必然抢跑。收尾判据因此取**「本次新增的残留集合为空」**
+//   (上面那几处的并集):这是对上面那个次序的直接建模,而不是对耗时的估计。
+//   固定 sleep 是这类判据最坏的形态:猜短了照样假阳性,猜长了白等,机器负载一变就重新
+//   欠账。而假阳性比没有检查更坏 —— 它会训练人忽略这条判红。真的残留则烧完预算后照实
+//   判红(判据是状态,不是时长)。
 //
 // --execute 会把上面这套生命周期跑**两轮**(见 ADR-062):
 //   默认支 —— 不带 PATH opt-in 开关,装完用户 PATH 必须一条都不变(用户同意的前提);
@@ -75,6 +98,22 @@ const USER_ENVIRONMENT_KEY = 'HKCU\\Environment';
 const USER_PATH_VALUE = 'Path';
 /** 删除卸载注册表项的硬超时(ms) */
 const REGISTRY_MUTATION_TIMEOUT_MS = 30000;
+/**
+ * 安装账本键的**值名**(不是键名 —— 键名是 `{APP_GUID}`,由 electron-builder 从 appId
+ * 派生,写死它就等于把门禁绑死在上游的派生算法上,漂移时门禁跟着一起错、判定恒绿)。
+ *
+ * 这个值名是账本键的指纹:electron-builder 的 `registryAddInstallInfo` 与本仓的
+ * `ApplyPath` 往同一个键里写 `InstallLocation`/`KeepShortcuts`/`ShortcutName`/
+ * `M2WPathBefore`/`M2WPathWritten`(installer.nsh:95 的 M2W_LEDGER_KEY 与 multiUser.nsh:8
+ * 的 INSTALL_REGISTRY_KEY 逐字同键)。按值名检索 + 按「InstallLocation 含产品名」归属,
+ * 既不硬编码键名,也不会把别人的安装键算成本次残留。
+ */
+const LEDGER_LOCATION_VALUE = 'InstallLocation';
+/** 账本键的检索根(HKCU;perMachine 安装的账本键在 HKLM,故随口径切换) */
+const LEDGER_REG_ROOT_HKCU = 'HKCU\\Software';
+const LEDGER_REG_ROOT_HKLM = 'HKLM\\Software';
+/** 账本键检索的硬超时(ms):HKLM 整树检索实测十几秒,给足但有硬上限 */
+const LEDGER_QUERY_TIMEOUT_MS = 60000;
 
 /**
  * 用法文本(安装目录默认值随构建口径变化,故由函数生成而非模块级常量)。
@@ -124,6 +163,11 @@ function buildUsage(perMachine) {
  */
 
 /**
+ * 查安装账本键里与关键字相关的键及其 InstallLocation 值(注入点)。
+ * @typedef {(keyword: string, options?: { perMachine?: boolean }) => Promise<{ key: string, installLocation: string }[]>} LedgerProbe
+ */
+
+/**
  * 删除卸载注册表项(注入点;返回 true = 已删除)。
  * @typedef {(keyPath: string) => Promise<boolean>} RegistryKeyDeleter
  */
@@ -159,6 +203,7 @@ function buildUsage(perMachine) {
  * @property {PathProbe} [exists] 路径存在性判定
  * @property {DirLister} [listDir] 目录项列举
  * @property {RegistryProbe} [queryRegistry] 卸载注册表检索
+ * @property {LedgerProbe} [queryLedger] 安装账本键检索
  * @property {RegistryKeyDeleter} [deleteRegistryKey] 卸载注册表项删除
  * @property {PathRemover} [removePath] 文件/目录删除
  * @property {RegValueReader} [readRegValue] 读注册表字符串值(用户 PATH 断言用)
@@ -336,6 +381,58 @@ export async function queryUninstallKeys(keyword) {
 }
 
 /**
+ * 真实注册表检索:列出「带 `InstallLocation` 值、且该值里含关键字」的账本键。
+ *
+ * 检索按**值名**(`/f <值名> /v /e`)而不是键名,再按**值数据含产品名**归属:
+ *   - 不按键名 → 无需复刻 electron-builder 的 APP_GUID 派生(appId → UUIDv5),那个算法
+ *     一旦上游改,写死的键名会让门禁查一个不存在的键 ⇒ 恒绿(那比失明更坏:看着在查);
+ *   - 按值数据归属 → 只认「指向本产品」的键。同机器上别的 Electron 应用也各有一个带
+ *     InstallLocation 的键,不归属就会把它们算成本次残留。
+ *
+ * 归属判据取「InstallLocation 含产品名」而非「等于安装目录」:实测里真出现过
+ * InstallLocation 被写成 `"...\\Programs\\MarkdownToWord M2W_ADD_PATH=1"`(PATH 开关被
+ * `/D=` 吞进目录名)这种污染值,精确相等会把它漏掉 —— 而那恰恰是本项要抓的失败面。
+ * @param {string} keyword 关键字(产品名)
+ * @param {object} [options] 选项
+ * @param {boolean} [options.perMachine] 是否按机器安装(账本键随之在 HKLM)
+ * @returns {Promise<{ key: string, installLocation: string }[]>} 命中的账本键与其 InstallLocation 值
+ */
+export async function queryLedgerKeys(keyword, { perMachine = false } = {}) {
+  const root = perMachine ? LEDGER_REG_ROOT_HKLM : LEDGER_REG_ROOT_HKCU;
+  const result = await runProcess({
+    command: 'reg',
+    args: ['query', root, '/s', '/f', LEDGER_LOCATION_VALUE, '/v', '/e'],
+    timeoutMs: LEDGER_QUERY_TIMEOUT_MS,
+  });
+  if (result.spawnError !== undefined) return [];
+  /** @type {{ key: string, installLocation: string }[]} */
+  const found = [];
+  let currentKey = '';
+  let currentValue = '';
+  /** 把已收集的一对(键,值)落盘(遇到下一个键或段落结束时调用) */
+  const flush = () => {
+    if (currentKey !== '' && currentValue.toLowerCase().includes(keyword.toLowerCase())) {
+      found.push({ key: currentKey, installLocation: currentValue });
+    }
+    currentKey = '';
+    currentValue = '';
+  };
+  for (const line of result.output.split(/\r?\n/)) {
+    const key = /^\s*(HKEY_[A-Z_]+\\[^\s]+)\s*$/.exec(line);
+    if (key?.[1] !== undefined) {
+      flush();
+      currentKey = key[1];
+      continue;
+    }
+    // reg 的输出是「值名<4 空格>REG_SZ<4 空格>数据」,与 readRegStringValue 同一形态。
+    const value = /^\s{4}\S+\s{4}REG_[A-Z_]+\s{4}(.*)$/.exec(line);
+    if (value?.[1] !== undefined && currentKey !== '') currentValue = value[1];
+  }
+  flush();
+  return found;
+}
+
+/**
  * 跑 reg.exe 并返回 stdout(注入点实现)。
  *
  * 只读,不写任何键 —— 本函数被 PATH 断言使用,而 PATH 是用户的真实环境,
@@ -477,15 +574,26 @@ function manualCleanupCommand({ kind, path: target }) {
 /**
  * 相对「安装前」快照判定本次运行新增的残留(只认新增 —— 安装前就存在的同名对象属于
  * 既有安装,删它就是误删用户的东西)。
+ *
+ * 账本键那两项的判法(键与它指向的路径,两个方向各自成立,缺一不可):
+ *   - `ledgerKeys`:装完时新出现、卸完仍在的账本键。键留着就是注册表残留,**即便它指向的
+ *     目录已经没了** —— 那个键本身就是「装过」的证据,留着它下次装到同一目录时会被当成
+ *     既有安装(`multiUser.nsh:26` 读 InstallLocation 决定 $INSTDIR)。
+ *   - `ledgerPaths`:取「装完那一刻」记下的 `ledgerInstallLocations`(而不是卸完再读 ——
+ *     键若已被删掉,卸完就无从知道它指向哪,而「键没了目录留着」正是要抓的那一种)。
  * @param {object} spec 参数
  * @param {string} spec.productName 产品名
  * @param {string} spec.installDir 安装目录
  * @param {boolean} spec.installDirExistedBefore 安装目录在安装前是否已存在
  * @param {string[]} spec.registryBefore 安装前的卸载注册表键
  * @param {string[]} spec.startMenuBefore 安装前已存在的开始菜单痕迹路径
+ * @param {{ key: string, installLocation: string }[]} spec.ledgerBefore 安装前的账本键
+ * @param {string[]} spec.ledgerInstallLocations 装完那一刻账本键里的 InstallLocation 值
  * @param {RegistryProbe} spec.queryRegistry 卸载注册表检索
+ * @param {LedgerProbe} spec.queryLedger 账本键检索
  * @param {PathProbe} spec.exists 路径存在性判定
- * @returns {Promise<{ registryKeys: string[], startMenuPaths: string[], installDirPath: string | null }>} 本次新增残留
+ * @param {boolean} spec.perMachine 构建口径(账本键随之在 HKLM)
+ * @returns {Promise<RunResidue>} 本次新增残留
  */
 async function collectRunResidue({
   productName,
@@ -493,34 +601,85 @@ async function collectRunResidue({
   installDirExistedBefore,
   registryBefore,
   startMenuBefore,
+  ledgerBefore,
+  ledgerInstallLocations,
   queryRegistry,
+  queryLedger,
   exists,
+  perMachine,
 }) {
   const registryAfter = await queryRegistry(productName);
   const registryKeys = registryAfter.filter((key) => !registryBefore.includes(key));
   const startMenuPaths = startMenuTraces(productName)
     .map((trace) => trace.path)
     .filter((target) => !startMenuBefore.includes(target) && exists(target));
+  const ledgerAfter = await queryLedger(productName, { perMachine });
+  const ledgerKeysBefore = ledgerBefore.map((entry) => entry.key);
+  // 「键没了但目录留着」:装完时记下的路径,卸完还在 ⇒ 残留。与 installDir 相同的路径
+  // 交给 installDirPath 那条报(同一件事报两遍只会稀释诊断信息)。
+  const ledgerPaths = [
+    ...new Set(
+      ledgerInstallLocations.filter(
+        (target) =>
+          target !== '' &&
+          target.toLowerCase() !== installDir.toLowerCase() &&
+          exists(target),
+      ),
+    ),
+  ];
   return {
     registryKeys,
     startMenuPaths,
     installDirPath: installDirExistedBefore || !exists(installDir) ? null : installDir,
+    ledgerKeys: ledgerAfter.filter((entry) => !ledgerKeysBefore.includes(entry.key)).map((entry) => entry.key),
+    ledgerPaths,
   };
 }
 
 /**
  * 把残留摊平成可点名、可自愈的清单(键与路径原样带出,便于人工核对)。
- * @param {{ registryKeys: string[], startMenuPaths: string[], installDirPath: string | null }} residue 残留
+ * @param {RunResidue} residue 残留
  * @returns {{ kind: 'registry' | 'shortcut' | 'dir', path: string }[]} 残留项
  */
 function residueItems(residue) {
   /** @type {{ kind: 'registry' | 'shortcut' | 'dir', path: string }[]} */
   const items = residue.registryKeys.map((key) => ({ kind: /** @type {const} */ ('registry'), path: key }));
+  // 账本键与卸载注册表项同类:都是 HKCU 下的注册表键,自愈走同一个 `reg delete`。
+  items.push(...residue.ledgerKeys.map((key) => ({ kind: /** @type {const} */ ('registry'), path: key })));
   for (const target of residue.startMenuPaths) {
     items.push({ kind: target.toLowerCase().endsWith('.lnk') ? 'shortcut' : 'dir', path: target });
   }
+  for (const target of residue.ledgerPaths) items.push({ kind: 'dir', path: target });
   if (residue.installDirPath !== null) items.push({ kind: 'dir', path: residue.installDirPath });
   return items;
+}
+
+/**
+ * 本次运行新增的残留(相对「安装前」快照;安装前就存在的同名对象一律不算本次)。
+ * @typedef {object} RunResidue
+ * @property {string[]} registryKeys 卸载注册表新增键
+ * @property {string[]} startMenuPaths 开始菜单新增痕迹路径
+ * @property {string | null} installDirPath 仍在的安装目录(null = 已清)
+ * @property {string[]} ledgerKeys 安装账本键新增键
+ * @property {string[]} ledgerPaths 账本键装完时指向、卸完仍在的目录
+ */
+
+/**
+ * 残留是否已清空(「卸载器收尾」的判据)。
+ *
+ * 为什么是「集合为空」而不是「安装目录消失」:见文件头 —— 卸载段里 DeleteRegKey 在段末,
+ * 目录删除在中段,故只等目录必然抢跑。这里等的是**状态**(集合真的空了),不是时长。
+ * @param {RunResidue} residue 残留
+ * @returns {boolean} true = 无残留
+ */
+function residueSettled(residue) {
+  return (
+    residue.registryKeys.length === 0 &&
+    residue.startMenuPaths.length === 0 &&
+    residue.installDirPath === null &&
+    residue.ledgerKeys.length === 0 &&
+    residue.ledgerPaths.length === 0
+  );
 }
 
 /**
@@ -550,19 +709,31 @@ async function healResidue(items, { deleteRegistryKey, removePath }) {
 }
 
 /**
- * 轮询等待某路径消失(卸载器派生临时副本完成删除需要时间)。
- * @param {PathProbe} exists 路径判定
- * @param {string} target 目标路径
+ * 轮询等待「卸载器收尾」—— 本次新增的残留集合清空。
+ *
+ * 收尾判据(为什么不是固定 sleep,依据见文件头与 collectRunResidue 的注):
+ *   等的是**状态**:卸载器派生临时副本自行完成删除,父进程退出时它可能才刚开始删注册表;
+ *   而卸载段的动作次序固定(目录删除在中段、DeleteRegKey 在段末),故「目录消失」在结构上
+ *   就早于注册表与快捷方式的清理。集合清空 = 卸载器该做的都做完了,是与那段次序对齐的
+ *   终态判据。固定 sleep 是最坏形态:阈值猜短了照样假阳性,猜长了白等,机器一慢就重新
+ *   欠账 —— 而假阳性会训练人忽略这条判红。
+ *
+ * 真的残留不因此被放过:烧完预算后返回最后一次快照,照实判红(判据是状态,不是时长)。
+ * @param {() => Promise<RunResidue>} collect 采集一次残留
+ * @param {(residue: RunResidue) => boolean} isSettled 残留是否已清空
  * @param {number} timeoutMs 等待上限
- * @returns {Promise<boolean>} true = 已消失
+ * @returns {Promise<{ residue: RunResidue, settled: boolean, waitedMs: number }>} 最后一次残留与是否收尾
  */
-async function waitGone(exists, target, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (exists(target)) {
-    if (Date.now() >= deadline) return false;
+async function waitUninstallerSettled(collect, isSettled, timeoutMs) {
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutMs;
+  let residue = await collect();
+  while (!isSettled(residue)) {
+    if (Date.now() >= deadline) break;
     await new Promise((resolve) => setTimeout(resolve, 500));
+    residue = await collect();
   }
-  return true;
+  return { residue, settled: isSettled(residue), waitedMs: Date.now() - startedAt };
 }
 
 /**
@@ -656,6 +827,7 @@ export async function runInstallFlow(spec) {
     exists = existsSync,
     listDir = (dir) => (existsSync(dir) ? readdirSync(dir) : []),
     queryRegistry = queryUninstallKeys,
+    queryLedger = queryLedgerKeys,
     deleteRegistryKey = deleteUninstallKey,
     removePath = removeResiduePath,
     readRegValue = readRegStringValue,
@@ -687,6 +859,9 @@ export async function runInstallFlow(spec) {
   // 用户 PATH 的「安装前」基线。勾选框写的就是这一处,而它不在开始菜单/卸载
   // 注册表任何一条现有检查面上,不单独取快照就等于对它完全失明。
   const pathBefore = await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE);
+  // 安装账本键的「安装前」基线。同一理由:它带 InstallLocation,不在上面任何一条现有
+  // 检查面上(真跑事故就是靠人工清掉它的)。
+  const ledgerBefore = await queryLedger(facts.productName, { perMachine: facts.perMachine });
   if (installDirExistedBefore) {
     console.warn(`[warn] ${tag}install-smoke: 安装目录已存在(${installDir}),将覆盖安装;若那是一份在用的安装,请先退出应用再重试`);
   }
@@ -699,6 +874,9 @@ export async function runInstallFlow(spec) {
   // 卸载早已跑完,「装完」就恒等于「卸完」,两个数字看着一致却毫无信息量。
   // 初值取基线,保证「安装失败没走到那一步」时也不会拿空串去比。
   let pathAfterInstall = pathBefore;
+  // 「装完」这一刻账本键里的 InstallLocation 值。必须在装完就记下:卸完再读就读不到
+  // 了(键已删),而「键没了但它指向的目录留着」正是要抓的那一种残留。
+  let ledgerInstallLocations = [];
 
   try {
     // ---- 步骤 1:静默安装 ----
@@ -727,6 +905,10 @@ export async function runInstallFlow(spec) {
       // 这里断的是具名结论而不是 ok:ok 在 after-install 阶段对 unchanged 与 consented
       // 都放行,用它就等于「勾了却没生效」也算通过 —— 那正是本轮要抓的失败面。
       pathAfterInstall = await readRegValue(USER_ENVIRONMENT_KEY, USER_PATH_VALUE);
+      // 装完这一刻账本键指向哪(记下来,卸完据此判「键没了目录留着」)。
+      ledgerInstallLocations = (await queryLedger(facts.productName, { perMachine: facts.perMachine }))
+        .filter((entry) => !ledgerBefore.some((before) => before.key === entry.key))
+        .map((entry) => entry.installLocation);
       const installDiff = diffPathEntries({
         before: pathBefore,
         after: pathAfterInstall,
@@ -766,18 +948,41 @@ export async function runInstallFlow(spec) {
     // ---- 残留比对(相对安装前快照)+ 尽力自愈(只删本次新增) ----
     if (installDirExistedBefore) {
       problems.push(`${tag}安装目录在安装前就已存在,无法判定本次安装是否留痕:${installDir}`);
-    } else if (!(await waitGone(exists, installDir, Math.min(timeoutMs, UNINSTALL_POLL_MS)))) {
+    }
+    // 拍快照前先等**卸载器收尾**(残留集合清空),而不是只等安装目录消失 —— 依据见文件头:
+    // 卸载段里 DeleteRegKey 在段末、目录删除在中段,只等目录必然抢跑。收尾判据是状态
+    // (集合真的空了),不是固定 sleep。安装目录原本就在的那一轮不等(那一项本来就判不了)。
+    const collectResidue = () =>
+      collectRunResidue({
+        productName: facts.productName,
+        installDir,
+        installDirExistedBefore,
+        registryBefore,
+        startMenuBefore,
+        ledgerBefore,
+        ledgerInstallLocations,
+        queryRegistry,
+        queryLedger,
+        exists,
+        perMachine: facts.perMachine,
+      });
+    const settleBudgetMs = Math.min(timeoutMs, UNINSTALL_POLL_MS);
+    const { residue, settled, waitedMs } = installDirExistedBefore
+      ? { residue: await collectResidue(), settled: true, waitedMs: 0 }
+      : await waitUninstallerSettled(collectResidue, residueSettled, settleBudgetMs);
+    if (residue.installDirPath !== null) {
+      // 等收尾之后仍报这一条:它是「文件被占用/应用仍在跑」那类原因的直接指路,
+      // 比下面那条泛泛的残留清单更可操作。
       problems.push(`${tag}静默卸载后安装目录仍存在:${installDir}(可能应用仍在运行或文件被占用)`);
     }
-    const residue = await collectRunResidue({
-      productName: facts.productName,
-      installDir,
-      installDirExistedBefore,
-      registryBefore,
-      startMenuBefore,
-      queryRegistry,
-      exists,
-    });
+    if (!settled) {
+      // 收不了尾不改变判定:这一条只说明「等满了预算仍非空」,真正的判红依据仍是下面
+      // 逐项点名的残留(以及「等满」这个事实本身 —— 它排除了「只是慢」这一解释)。
+      console.warn(
+        `[warn] ${tag}install-smoke: 等待卸载器收尾 ${waitedMs}ms(上限 ${settleBudgetMs}ms)后本次新增残留仍未清空;` +
+          `若独立复核时这些痕迹已消失,那是本次运行的真实残留而不是判红口径的问题`,
+      );
+    }
     const residueItemsToClean = residueItems(residue);
     if (residueItemsToClean.length > 0) {
       // 根因入 problems:即便自愈把痕迹全清掉,「安装/卸载没留下干净的系统」这件事本身
@@ -862,7 +1067,8 @@ export async function runInstallFlow(spec) {
   rmSync(scratchRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   console.log(
     `[ok] ${tag}安装/启动/卸载冒烟通过:静默安装 → 安装目录下以 ` +
-      `${SMOKE_FLAG} 启动退出码 0 且诊断标记齐备 → 静默卸载后安装目录/开始菜单/卸载注册表均无新增残留;一次性 userData 已清理`,
+      `${SMOKE_FLAG} 启动退出码 0 且诊断标记齐备 → 静默卸载并等收尾后,安装目录/开始菜单/卸载注册表/安装账本键`
+      + `四处均无新增残留;一次性 userData 已清理`,
   );
   return 0;
 }
@@ -995,6 +1201,11 @@ export async function main(argv = []) {
         `安装目录已消失:${installDir}`,
         ...startMenuCandidates.map((candidate) => `开始菜单痕迹已清理:${candidate}`),
         `卸载注册表无新增项(检索 ${UNINSTALL_REG_ROOT} 下含「${facts.productName}」的键)`,
+        `安装账本键已清理(检索 ${facts.perMachine ? LEDGER_REG_ROOT_HKLM : LEDGER_REG_ROOT_HKCU} 下带 `
+          + `${LEDGER_LOCATION_VALUE} 值的键,并按该值含「${facts.productName}」归属 —— 不硬编码 {APP_GUID});`
+          + `且装完时它指向的目录也已消失(「键没了目录留着」与「键留着目录没了」两个方向都判)`,
+        `拍上面几项的残留快照之前会等「卸载器收尾」:等本次新增的残留集合真的清空`
+          + `(卸载段里 DeleteRegKey 在段末、目录删除在中段,只等目录必然抢跑;判据是状态不是固定延时)`,
         `用户 PATH 相对「安装前」无非预期增删(${USER_ENVIRONMENT_KEY}\\${USER_PATH_VALUE})——`
           + `默认支期望一条都不变,勾选支期望恰好多出安装目录这一项;卸完后两支都须逐条同序回到基线;`
           + `勾选框来自 build.nsis.include=${facts.pathOptInScript || '(未配置)'}`,
