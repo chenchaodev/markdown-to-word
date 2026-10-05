@@ -95,10 +95,10 @@ export async function run() {
   // ============ 台账内不变量(checkLedger)============
 
   await suite.describe("台账内不变量", async () => {
-    await suite.case("好台账 ⇒ 0 错(八项都真正判定过)", () => {
+    await suite.case("好台账 ⇒ 0 错(七项都真正判定过)", () => {
       const r = checkLedger(fixture({ max: 3, next: 4, rows: goodRows(3) }));
       assert.deepEqual(r.errors, [], `好台账应 0 错:${JSON.stringify(r.errors)}`);
-      assert.equal(r.stats.invariants, 8, "八项判据都应真正判定过");
+      assert.equal(r.stats.invariants, 7, "七项判据都应真正判定过");
       assert.equal(r.stats.sectionUnknown, 0, "好台账不该有「落在 R8 不认识的节里」的行");
     });
 
@@ -149,7 +149,7 @@ export async function run() {
       assert.match(r.errors.join("\n"), /状态不在取值域内/);
       assert(!/状态与所在节不符/.test(r.errors.join("\n")), `R8 不该参与域外状态:${JSON.stringify(r.errors)}`);
       // 统计上**看得见**这一行退出了 R8:`done` 不含 R8 ⇒ invariants 少 1。
-      assert.equal(r.stats.invariants, 7, "域外状态的行退出 R8 ⇒ invariants 少 1(分母仍是 8)");
+      assert.equal(r.stats.invariants, 6, "域外状态的行退出 R8 ⇒ invariants 少 1(分母是 7 项)");
     });
 
     await suite.case("R8 仍生效:域内状态 + 错节 ⇒ 判红(跳过分支不得把 R8 一起关掉)", () => {
@@ -166,7 +166,7 @@ export async function run() {
       assert.equal(r.errors.length, 1, `域内状态错节必须判红:${JSON.stringify(r.errors)}`);
       assert.match(String(r.errors[0]), /状态与所在节不符/);
       assert(!/状态不在取值域内/.test(String(r.errors[0])), `域内状态不该被 R2 判:${r.errors[0]}`);
-      assert.equal(r.stats.invariants, 8, "域内状态的行照常参与 R8");
+      assert.equal(r.stats.invariants, 7, "域内状态的行照常参与 R8");
     });
 
     // ============ R8「状态 ⇔ 所在节」的负向锚点 ============
@@ -207,7 +207,7 @@ export async function run() {
         }),
       );
       assert.deepEqual(r.errors, [], `撤回后应复绿:${JSON.stringify(r.errors)}`);
-      assert.equal(r.stats.invariants, 8, "撤回后 R8 仍应真正判定过(不是靠退出判定变绿)");
+      assert.equal(r.stats.invariants, 7, "撤回后 R8 仍应真正判定过(不是靠退出判定变绿)");
     });
 
     await suite.case("R8 相容的两支都要绿:「待拍板」节里的「未开工」行不判红", () => {
@@ -224,7 +224,7 @@ export async function run() {
 
     await suite.case("R8 负向:「已作废」墓碑行留在「待拍板」节 ⇒ 判红(墓碑必须落在「已作废」节)", () => {
       // 这条是**真实台账上实测踩到的那一种**:REQ-006 的墓碑行划掉了、状态也写了「已作废」,
-      // 却仍留在「待拍板」节(R7 判绿、R2 判绿)。故单列一条把那个形态钉住。
+      // 却仍留在「待拍板」节(R2 判绿)。故单列一条把那个形态钉住。
       const tomb = "| ~~REQ-002~~ | ~~需求二~~ | 已作废 | 无阻塞 | 随时 | 无 |";
       const r = checkLedger(
         fixture({ max: 2, next: 3, rows: [row("REQ-001", "需求一", "待拍板"), tomb], section: "待拍板" }),
@@ -246,7 +246,7 @@ export async function run() {
       );
       assert.deepEqual(r.errors, [], JSON.stringify(r.errors));
       assert.equal(r.stats.sectionUnknown, 1, "节名不认识必须计入 sectionUnknown");
-      assert.equal(r.stats.invariants, 7, "R8 未判定 ⇒ invariants 少 1(分母仍是 8)");
+      assert.equal(r.stats.invariants, 6, "R8 未判定 ⇒ invariants 少 1(分母是 7 项)");
       assert.ok(
         r.notes.some((n) => /零覆盖/.test(n) && /所在节/.test(n)),
         `零覆盖必须出声:${JSON.stringify(r.notes)}`,
@@ -316,34 +316,11 @@ export async function run() {
       assert.equal(r.stats.max, 3, "形态错的行不得带偏实算最大号");
     });
 
-    await suite.case("墓碑 ⇔ 划掉(双向)⇒ 两头都判红", () => {
-      // 正向:状态已作废却没划掉;反向:划掉了但状态不是已作废。墓碑号写作删除线形态,
-      // 若号格不剥删除线,两条都会先被号形态错判掉 ⇒ 双向都测不到。
-      const r = checkLedger(
-        fixture({
-          max: 4,
-          next: 5,
-          rows: [
-            row("REQ-001", "a", "待拍板"),
-            row("REQ-002", "b", "~~待拍板~~"),
-            row("~~REQ-003~~", "c", "已作废"),
-            row("REQ-004", "d", "已作废"),
-          ],
-        }),
-      );
-      // ⚠️ **断言按 R7 的诊断筛,不按总数**。本夹具的两条「已作废」行落在「待拍板」节,
-      // R8(状态 ⇔ 所在节)会**正确地**再报两条 —— 那是真阳性,不是噪声。
-      // 断言总数就等于把本 case 焊死在「除 R7 外所有判据都恰好报 0 条」上:
-      // 任何一族增减都会把它变成**假失败**,而假失败会让人去改断言而不是改实现。
-      // 本 case 的主体是 R7 双向,R8 有自己的 case 钉(以及「好台账 0 错」那道总闸)。
-      const r7 = r.errors.filter((e) => /状态是「已作废」但本行没有|本行划掉了/.test(e));
-      assert.equal(r7.length, 2, `R7 双向各一条:${JSON.stringify(r.errors)}`);
-      assert.match(r7.join("\n"), /状态是「已作废」但本行没有/);
-      assert.match(r7.join("\n"), /本行划掉了/);
-    });
+    // R7「墓碑 ⇔ 划掉」已于 2026-10-05 撤销(墓碑行不再要求 `~~` 划线),
+    // 原「双向各判一条」的 case 随判据同批撤销 —— 探针与判据同生共死,不留僵尸行。
 
     // ⚠️ 这一族是**「静默退出全部判定」**那一类:行被列数守卫挡掉后,号唯一 / 状态取值域 /
-    // 墓碑 / 上限**一条都没判过**,而门禁若只出声就会说「通过」—— 那是把没判的说成判过。
+    // 上限**一条都没判过**,而门禁若只出声就会说「通过」—— 那是把没判的说成判过。
     // **每条都必须有「撤回后复绿」那一步**:只做「构造 ⇒ 判红」分不清「判据在判」与「夹具写坏别的」。
 
     await suite.case("列数不符(标题里未转义的竖线)⇒ 判红 + 该行仍退出全部判定", () => {
@@ -380,7 +357,7 @@ export async function run() {
       assert.equal(r.errors.length, 1, `只该有列数错位那一条(重号被退出吞掉):${JSON.stringify(r.errors)}`);
       assert.match(String(r.errors[0]), /列数错位/);
       // ⚠️ **forbid 必须钉「重号那一条的诊断形态」而不是裸词「重号」** —— 裸词会命中
-      // 列数错位诊断正文里列举的「重号 / 状态取值域 / 墓碑」,那是**说明**不是违规。
+      // 列数错位诊断正文里列举的「重号 / 状态取值域 / 状态⇔所在节」,那是**说明**不是违规。
       assert(
         !/→ 重号:该号已在/.test(r.errors.join("\n")),
         `错位行退出判定 ⇒ 号唯一判不到它:${JSON.stringify(r.errors)}`,
@@ -393,7 +370,7 @@ export async function run() {
       );
       assert.deepEqual(r.errors, [], `撤回后应复绿:${JSON.stringify(r.errors)}`);
       assert.equal(r.stats.badColumn, 0, "撤回后不得再计错位行");
-      assert.equal(r.stats.invariants, 8, "撤回后八项都真正判定过(不是靠退出判定变绿)");
+      assert.equal(r.stats.invariants, 7, "撤回后七项都真正判定过(不是靠退出判定变绿)");
       // 撤回后**这一行真的进了判定**:实算最大号从 3 变成 4,与号段声明一致。
       assert.equal(r.stats.max, 4, "撤回后 REQ-004 进判 ⇒ 实算最大号是 4");
     });
@@ -490,7 +467,7 @@ export async function run() {
   // ============ 台账形态上限档(checkLedgerShape · C1/C2 的列数守卫落点)============
   //
   // ⚠️ **这一段钉的是列数守卫的第二个落点**。守卫在判据本体里有两处:`checkLedger` 那一处
-  // 管 R 族(重号 / 状态 / 墓碑),本函数这一处管**载体族**(标题列 / 判断依据的字数上限)。
+  // 管 R 族(重号 / 状态取值域),本函数这一处管**载体族**(标题列 / 判断依据的字数上限)。
   // 两处是**两次独立解析**(`locateRegistry` 合并行集 vs 本函数逐块走 `tableBlocks`),
   // 分母也分开(`LEDGER_RULES` vs `CARRIER_RULES`)—— 只改一处,另一处仍是**无声的洞**:
   // 本函数里的 `continue` 照样让 `examined` 静默少掉那一行,而「上限对这一行零判」没人说。

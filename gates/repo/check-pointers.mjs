@@ -890,7 +890,7 @@ export function classifyUnmatchedPathRefs(files, readFile) {
 //
 // 判据 R1–R8(全部为**台账内**不变量,只需读 `docs/REQ.md` 一个文件):
 //   R1 号唯一 · R2 状态取值域 · R3 号形态 · R4 已用最大号 == 实算最大号
-//   R5 下一个可用号 == 已用最大号+1 · R6 号段连续 · R7 墓碑 ⇔ 划掉(双向)
+//   R5 下一个可用号 == 已用最大号+1 · R6 号段连续 · R8 状态⇔所在节(R7 已撤销,见 LEDGER_RULES)
 //   R8 状态 ⇔ 所在节(相容;节名不认识时**只出声**不判红)
 //
 // **判红的前提是解析成功**:解析失败时我分不清「用户写错了」与「我读不懂」,故 B1–B6 全部只出声
@@ -930,8 +930,10 @@ const SECTION_STATUS = {
 /** 判据清单(只作文档与分母,判定逻辑不按 id 分派)。 */
 const LEDGER_RULES = [
   'R1 号唯一', 'R2 状态取值域', 'R3 号形态', 'R4 已用最大号', 'R5 下一个可用号',
-  'R6 号段连续', 'R7 墓碑⇔划掉', 'R8 状态⇔所在节',
+  'R6 号段连续', 'R8 状态⇔所在节',
 ];
+// ⚠️ R7「墓碑 ⇔ 划掉」已于 2026-10-05 撤销(墓碑行不再要求 `~~` 划线),**R8 保留原号不重排** ——
+// 编号是历史标识,重排会断掉既有 ADR 与裁决对它的引用。
 
 /** 台账号形态:**固定三位零填充**且从 1 起。`REQ-000` 是号段的零值占位,不是工作项号。 */
 const LEDGER_ID_RE = /^REQ-\d{3}$/;
@@ -968,8 +970,9 @@ function stripTicks(s) {
 }
 
 /**
- * 单元格规范化:去反引号 + 去 `~~` + trim。**状态列与号列共用** —— 墓碑行的号写作
- * `~~REQ-004~~`,号列若不剥 `~~`,每一条合法墓碑都会被 R3 判成形态错。
+ * 单元格规范化:去反引号 + 去 `~~` + trim。**状态列与号列共用** —— 台账里可能残留
+ * 早期形态的号格(写作 `~~REQ-004~~`),不剥 `~~` 会被 R3 判成形态错。这是**兼容性**处理,
+ * 现行规则不再要求任何行划线。
  */
 function normalizeLedgerCell(cell) {
   return stripTicks(cell).replace(/~~/g, '').trim();
@@ -1131,8 +1134,8 @@ function sectionByLine(lines) {
  * **列序颠倒是合法写法**,按下标读会把状态列当标题列 ⇒ R2 恒红。
  *
  * ⚠️ **必须合并全部同构块,不能只取第一处**:台账按状态分节,各节各是一张同构表。而 R1(号唯一)/
- * R4(已用最大号)/R6(号段连续)/R7(墓碑⇔划掉)**四条都是跨节判据** —— 只取第一节 ⇒ 其余各节里的
- * 重号、号段缺口、未划掉的墓碑全部不可见,而门禁仍然 exit 0。
+ * R4(已用最大号)/R6(号段连续)/R8(状态⇔所在节)**三条都是跨节判据** —— 只取第一节 ⇒ 其余各节里的
+ * 重号、号段缺口、状态与节不符全部不可见,而门禁仍然 exit 0。
  *
  * **列映射逐块取、不共用**:各节的表头宽度可以不同,故把 `headerCount` / `idCol` / `statusCol`
  * 挂在**每一行**上。共用第一块的列映射会让后面几节整节错位 —— 又是静默假绿。
@@ -1285,7 +1288,7 @@ export function checkLedger(text) {
     return { errors, notes, stats };
   }
   if (reg.blocks > 1) {
-    notes.push(`${PROJECT_PROBE} 登记表按状态分 ${reg.blocks} 节,**已跨节合并判定**(号唯一 / 已用最大号 / 号段连续 / 墓碑四条是跨节判据,只判第一节会静默漏掉其余各节)`);
+    notes.push(`${PROJECT_PROBE} 登记表按状态分 ${reg.blocks} 节,**已跨节合并判定**(号唯一 / 已用最大号 / 号段连续 / 状态⇔所在节四条是跨节判据,只判第一节会静默漏掉其余各节)`);
   }
 
   const seen = new Map();
@@ -1306,7 +1309,7 @@ export function checkLedger(text) {
       errors.push(
         `${PROJECT_PROBE}:${row.lineNo} → ${row.section ? `「${row.section}」节` : '台账'} → 列数错位:`
           + `该行 ${row.cells.length} 格 ≠ 表头 ${row.headerCount} 列`
-          + ' ⇒ 该行已退出全部台账判据(重号 / 状态取值域 / 墓碑一条都没判它)'
+          + ' ⇒ 该行已退出全部台账判据(重号 / 状态取值域 / 状态⇔所在节一条都没判它)'
           + ' —— 标题里的未转义 `|` 会造成错位,补齐或转义该竖线',
       );
       continue;
@@ -1320,7 +1323,6 @@ export function checkLedger(text) {
     if (!rawId) continue; // 空号格:骨架留的续行位,丢弃且不计错
     const id = normalizeLedgerCell(row.cells[row.idCol]);
     const status = normalizeLedgerCell(row.cells[row.statusCol]);
-    const struck = stripTicks(row.text).includes('~~');
 
     if (!LEDGER_ID_RE.test(id) || Number(id.slice(4)) < 1) {
       errors.push(
@@ -1383,13 +1385,6 @@ export function checkLedger(text) {
       }
     }
 
-    if (status === '已作废' && !struck) {
-      errors.push(`${PROJECT_PROBE}:${row.lineNo} → ${id} → 状态是「已作废」但本行没有 \`~~\` 划掉(墓碑行须用 \`~~\` 划掉保留、不删行)`);
-    } else if (struck && status !== '已作废') {
-      errors.push(`${PROJECT_PROBE}:${row.lineNo} → ${id} → 本行划掉了(\`~~\`)但状态是「${status}」:划掉只用于墓碑,状态须为「已作废」`);
-    }
-    done.add('R7');
-
     nums.push({ num: Number(id.slice(4)), lineNo: row.lineNo });
   }
 
@@ -1415,7 +1410,7 @@ export function checkLedger(text) {
     }
   } else {
     // 「0 错误」里必须看得见「0 判定」—— 登记表没有可判定行时,台账一致性等于没跑。
-    notes.push(`${PROJECT_PROBE} 登记表 0 个可判定数据行 ⇒ 号唯一 / 状态取值域 / 墓碑判据零覆盖`);
+    notes.push(`${PROJECT_PROBE} 登记表 0 个可判定数据行 ⇒ 号唯一 / 状态取值域 / 状态⇔所在节判据零覆盖`);
   }
   if (stats.sectionUnknown > 0) {
     // ⚠️ 这条 note 带「零覆盖」字样 ⇒ 会被汇入结论行 `gaps`。**必须出声**:R8 对这些行
@@ -1545,8 +1540,8 @@ const charLen = (s) => [...s].length;
 /**
  * 剥掉 markdown 装饰(反引号 / 粗体 / 删除线 / 前后空白),只留正文 —— 字数上限只对正文负责。
  *
- * `~~` 与 `**`、反引号是**同一类装饰**:台账墓碑号与墓碑标题按划项法写作 `~~REQ-049~~` /
- * `~~标题~~`,那对 `~~` 是标记不是内容。「装饰不进字数上限」这条口径既然立了,就得剥干净 ——
+ * `~~` 与 `**`、反引号是**同一类装饰**:那对 `~~` 是标记不是内容(早期形态的台账出现过,
+ * 现行规则已不再产生)。「装饰不进字数上限」这条口径既然立了,就得剥干净 ——
  * 少剥一种等于上限随写法漂移。
  */
 function plainText(cell) {
@@ -2194,7 +2189,7 @@ export function main() {
     if (note.includes('零覆盖')) gaps.push(note);
   }
   // ⚠️ **错位行只要 >0 就进 gaps**(REQ-160,与三族指针同一处置)。
-  // 列数 ≠ 表头 ⇒ 该行 `continue` 掉,**退出全部台账判据**(号唯一 / 号段连续 / 上限 / 墓碑
+  // 列数 ≠ 表头 ⇒ 该行 `continue` 掉,**退出全部台账判据**(号唯一 / 号段连续 / 上限
   // 一条都不查它)。原先它只在自报区打一行「不参与判定」——**那一行在 CI 输出里没人读**,
   // 而结论行是唯一保证被读到的一行。不推进来的话,「这 N 行我没查」就只存在于一个不会被看的
   // 地方,`通过` 会被误读成「全查过了」—— 这正是 ADR-056 撤销的那类假绿。
