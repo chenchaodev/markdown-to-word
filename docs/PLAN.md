@@ -182,6 +182,18 @@
 >
 > ⚠️ **D1 的设计必须容纳「刻意不写 covers」，不能只做「必须声明」** —— `test/harness/dual-pipeline-decision-ledger.test.js:72` 明写「本段**刻意不写** `export const covers`」，理由之一是「零主体、声明 core 即撒谎」。**逼着人写不实声明，比不写更坏**（与 `REQ-185` 的 `coveredBy` 同一判断）。⇒ D1 若要落地，得先有第三态（声明／显式豁免＋理由），否则 97 段里会有一批靠撒谎过关。
 >
+## REQ-187 的三条判据（用户 2026-10-05 逐条裁决，**全部要求机器看守，不接受只有散文**）
+
+> ⚠️ **执行次序**：`R2`（REQ-184 的 `observability` 拆三段）**必须等 C1 与 C3 落地** —— 它的完成判据要跑 `check-test-layout.mjs`，与判据泳道并行会读到中间态的真阳性。**C2 与 C1/C3 可并行**（不同文件）。
+
+| 项 | 内容 | 机器可判完成判据 |
+|---|---|---|
+| **C1** ⏳ | **TS 段口径**：定「段路径镜像 `src/**`、import 侧指向 `dist/**` 同名产物」，并加机器判据锁住这个配对 | 判据两档：① 段住在 `test/<X>/**` 而其被测 import 落在 `dist/**` 时，该段镜像的 `src/<X>/**` 源文件**必须真实存在**；② 镜像 `src/**` 的段，其被测 import **必须**落在同名编译产物上。零判红 ＋ 每档有能变红的负向夹具 |
+| **C2** ⏳ | **索引路径守卫**：任一索引项的 `modulePath`／`judgment.module` **必须是 git 跟踪的源文件** | 一条同时抓住两个洞 —— 落在待删范围内（今天的 `coverage` 承接者）与指向构建产物（`dist/main/smoke.js`）。落点 `gates/repo/gate-index.selftest.mjs`（该载体已是索引自身成立性的单源），并须有**能变红**的合成表夹具 |
+| **C3** ⏳ | **L4 第三档**：段 import **别的层**的门禁主体 ⇒ 判红，除非豁免表登记并给理由 | 实测现存一处会判红：`test/shared/geometry-gate.test.js` 住 `test/shared/` 却 import `gates/geometry/geometry/driver.mjs`，靠 import 了同层的 `geometry-core` 蒙混过「零本层主体」。**该处要么改段位置、要么登记豁免，二选一须在汇报里说明** |
+
+> ⚠️ **三条都不是「补散文」**：C1／C3 改 `gates/repo/check-test-layout.mjs`（同属一条泳道，同一文件），C2 改 `gates/repo/gate-index.selftest.mjs`（另一条泳道，**可并行**）。
+
 ## 完成标准
 
 1. `src/` 19 条取证里 7 条要动的全部落地（i18n 目录化 · cancel 拆分 · image 归并 · util→text 改名 · style 并入 theme · main 四项搬迁 · 11 条新判据在位）
