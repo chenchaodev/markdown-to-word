@@ -1437,9 +1437,9 @@ export function checkLedger(text) {
   return { errors, notes, stats };
 }
 
-// ------------------------------------------------- 载体形态判据 C1/C2/C4/C5/C6/C7(已判红)
+// ------------------------------------- 载体形态判据 C1/C2/C4/C5/C6/C7/C8(已判红)
 //
-// 六条判据的**违反一律进 `errors`**(非零退出)。它们曾整体落在「只出声不判红」区,那段时间是
+// 七条判据的**违反一律进 `errors`**(非零退出)。它们曾整体落在「只出声不判红」区,那段时间是
 // **存量治理期**:规则早已写明上限,但历史台账里已有超限内容,判红当天门禁会一直红 ——
 // 而恒红的门禁和永绿的一样是橡皮章。故先出声让人看得见欠账,存量清零后转判红。
 //
@@ -1480,7 +1480,7 @@ export const WHY_LIMIT_DONE = 150;
 export const WHY_LIMIT = 250;
 
 /**
- * 载体形态判据的清单 + 各自现在管什么(分母 = `CARRIER_RULES.length`)。**现为六条**。
+ * 载体形态判据的清单 + 各自现在管什么(分母 = `CARRIER_RULES.length`)。**现为七条**。
  *
  * ⚠️ **取 `scope` 一律按 `id` 查,不要按下标**:C3 已撤销而号不重排(见模块头),
  * 数组下标因此不再等于判据号 —— 按下标取会把 C4 的文案挂到 C5 的违规提示上,
@@ -1493,6 +1493,7 @@ const CARRIER_RULES = [
   { id: 'C5', name: 'evidence 头部必带「结论去向」且取值合法', scope: '头部「结论去向」三选一,已生效' },
   { id: 'C6', name: 'evidence 头声明的去向 ↔ adr/·REQ.md 双向对账', scope: '方向 A 去向必须真有该载体,已生效' },
   { id: 'C7', name: '登记表块内无空行(表头→分隔行→数据行逐行紧邻)', scope: '表块内不许夹空行,已生效' },
+  { id: 'C8', name: 'adr 文件名前缀编号:形态合规且同号只允许一份', scope: 'ADR-0NN 形态(大写前缀 + 三位零填充 + 非空短标题)且同一编号全仓只允许一份文件,已生效' },
 ];
 
 /** 按 `id` 取该判据的 `scope` 文案(取不到即代码与清单脱节,当场炸掉而不是静默串台)。 */
@@ -1619,6 +1620,9 @@ export function checkLedgerShape(text) {
   return { findings, examined };
 }
 
+/** `docs/adr/` 下的**决策条目**(目录说明书 `README.md` 不是决策条目,与 C4 同一豁免口径)。 */
+const isAdrEntry = (file) => /^docs\/adr\/.*\.md$/.test(file) && basename(file) !== 'README.md';
+
 /**
  * C4:`adr/` 下每份 ADR 的「背景」节非空。
  *
@@ -1632,7 +1636,7 @@ export function checkAdrBackground(files, readFile) {
   const findings = [];
   let examined = 0;
   for (const file of files) {
-    if (!/^docs\/adr\/.*\.md$/.test(file) || basename(file) === 'README.md') continue;
+    if (!isAdrEntry(file)) continue;
     const body = sectionBody(maskFencedLines(readFile(file) ?? ''), '背景');
     examined += 1;
     if (body === null) {
@@ -1640,6 +1644,98 @@ export function checkAdrBackground(files, readFile) {
     } else if (!body || isPlaceholderCell(body)) {
       findings.push(`${file} → 「## 背景」是空的(${carrierScope('C4')})`);
     }
+  }
+  return { findings, examined };
+}
+
+/**
+ * ADR 载体文件名的**规范形态**:`ADR-` + **三位零填充**序号 + `-` + 非空短标题 + `.md`。
+ *
+ * 取成「恰好三位」而不是「一至多位」:`0NN` 是**定位用**的载体编号,而定位的可靠性来自
+ * **位数固定**(等宽才能按字典序读出先后)。放开到四位等于承认总有一天会出现 `ADR-1000`
+ * 与 `ADR-0623` 并存,那时「按序号排序」与「按字符串排序」分道扬镳,而重号判据的正则
+ * 也要跟着分两支。**固定三位是让「编号」这件事可判的前提,不是文风偏好。**
+ *
+ * ⚠️ 这条形态判据**只对 `docs/adr/` 下的文件施加**:`docs/evidence/` 按时间戳命名
+ * (载体表规定),拿 ADR 的形态去判它等于判一条它不适用的规则 ⇒ 满树假红。
+ */
+const ADR_CANONICAL_RE = /^ADR-(\d{3})-(.+)\.md$/;
+
+/**
+ * 判一个 `docs/adr/` 下的文件名**为什么**不合规范形态(合规范 ⇒ `null`)。
+ *
+ * **逐项点名而不是只说「不合形态」**:同一条判据下有四种互不相同的写法错误,只回一句
+ * 「文件名不合规」会把「忘了加前缀」「序号写成两位」「漏了短标题」压成同一类,改的人
+ * 只能自己去猜。诊断正文是判据的产出(见文件头),多写一句前缀比对多跑一轮便宜得多。
+ */
+function adrNameFault(name) {
+  const m = /^ADR-(\d*)(.*)$/.exec(name);
+  if (!m) return '文件名不以 `ADR-` 开头(ADR 载体的编号前缀缺失或被改名)';
+  if (m[1].length === 0) return '`ADR-` 之后不是数字序号';
+  if (m[1].length !== 3) return `序号 \`${m[1]}\` 是 ${m[1].length} 位,载体编号固定三位零填充`;
+  if (!ADR_CANONICAL_RE.test(name)) return '序号之后不是 `-短标题.md`(缺分隔符、短标题或扩展名)';
+  return null;
+}
+
+/**
+ * C8:`docs/adr/` 下 ADR 载体编号的**形态**与**唯一性**。
+ *
+ * 触发事故:并发会话占了 `ADR-062`,另一条泳道照派活时拿到的**过期号也写成 062**,两份
+ * 文件同时在位,而 `check:docs` 与整链**都是绿的** —— 没有任何一条判据比对文件名前缀的
+ * 编号。载体编号是**引用定位的依据**,重号让「`ADR-062`」这个引用指向不明确,而修法
+ * (改其中一份的号)必须由人裁决「哪一份才是那次决定」,机器只能把两份都点出来。
+ *
+ * **两条判据、两个不同的作用域(刻意不对称)**:
+ * - **形态**(只判 `docs/adr/` 下非 README 的文件):那是个**目录契约** —— 这个目录装的是
+ *   ADR,里面每个非说明文件都得是合规 ADR 名。与 C4 同一覆盖面。
+ * - **唯一性**(判**整个扫描面**上任何名字合规的 ADR 文件,**不看它在哪个目录**):那是个
+ *   **标识符契约** —— `ADR-0NN` 在 `docs/` 各处被裸引用(不带路径,例如计划表里写
+ *   「ADR-062 那句…」),所以「这个编号对应哪一份文件」是全仓性质,不是目录性质。
+ *   ⚠️ **这一条刻意不豁免 `docs/evidence/`**,尽管那棵树按前缀整棵豁免了指针扫描面。
+ *   理由:那处豁免的依据是「快照里提到的**别人**的文件名描述的是过去的状态,按字面判成
+ *   断链属误报,修误报等于篡改历史」;而本判据的对象是**文件自己的名字**,不是它正文里
+ *   的引用 —— 一份叫 `ADR-062-…md` 的快照放在哪儿都不会让「`ADR-062`」变明确。**豁免
+ *   的理由不迁移,故不豁免。** 实测代价为 0(证据目录现无一份文件匹配该形态),收益是
+ *   「有人把 ADR 草稿拷进 evidence/」这条现实路径当场响。
+ *
+ * **形态不合规的文件不进唯一性池**:它连一个可比的编号都取不出来,硬凑一个(如 `ADR-6`→`006`)
+ * 会造出「两个不同号被判成重号」的假红。形态那条已经点名了它,一条根因只报一次。
+ *
+ * @returns `findings`(每条含文件与具体形态原因 / 冲突的两份文件);`examined` = 真正量过的对象数。
+ */
+export function checkAdrNumbering(files) {
+  const findings = [];
+  let examined = 0;
+  /** 序号 → 文件列表(判定与报错都靠它,「是哪两份」只能从这里取)。 */
+  const byNumber = new Map();
+
+  for (const file of files) {
+    const name = basename(file);
+    if (isAdrEntry(file)) {
+      examined += 1;
+      const fault = adrNameFault(name);
+      if (fault) {
+        findings.push(`${file} → 文件名不合 ADR 载体形态:${fault}(${carrierScope('C8')})`);
+        continue; // 取不出可比编号 ⇒ 不进唯一性池(见 JSDoc「同根因只报一次」)
+      }
+    } else if (!ADR_CANONICAL_RE.test(name)) {
+      continue; // 既不是 adr/ 下的决策条目、名字也不合规 ⇒ 不是本判据的对象
+    } else {
+      examined += 1;
+    }
+    const num = ADR_CANONICAL_RE.exec(name)[1];
+    if (!byNumber.has(num)) byNumber.set(num, []);
+    byNumber.get(num).push(file);
+  }
+
+  // 排序后报出:文件系统列举顺序不保证稳定,不排序则同一份仓两次运行可能给出不同的点名顺序。
+  for (const num of [...byNumber.keys()].sort()) {
+    const group = byNumber.get(num);
+    if (group.length < 2) continue;
+    findings.push(
+      `${group.slice().sort().join('、')} → 同一个 ADR 编号 ${num} 出现在 ${group.length} 份文件上`
+        + `(载体编号是引用定位的依据,重号让「ADR-${num}」指向不明确;${carrierScope('C8')})`,
+    );
   }
   return { findings, examined };
 }
@@ -1798,7 +1894,7 @@ function collectProjectScope(root) {
 }
 
 /**
- * 跑 C1/C2/C4/C5/C6/C7 六条载体形态判据,汇总成 `{ errors, notes, examined }`。
+ * 跑 C1/C2/C4/C5/C6/C7/C8 七条载体形态判据,汇总成 `{ errors, notes, examined }`。
  *
  * **分流判据**(本函数是唯一的分流点,别在别处再分一次):
  * - **违反 ⇒ `errors`**:内容写错了(超上限 / 必填节缺失 / 去向落不到载体 / 表块内夹空行)。
@@ -1806,7 +1902,7 @@ function collectProjectScope(root) {
  *   但**必须出声**,否则「0 错误」里就掺了没查的部分 —— 这些 note 带「零覆盖」字样,会被汇入
  *   结论行的 `gaps`。
  *
- * 单独抽出来而不是内联进 `main`:这六条的输入是**多个文件**,内联会让 `main` 继续膨胀。
+ * 单独抽出来而不是内联进 `main`:这七条的输入是**多个文件**,内联会让 `main` 继续膨胀。
  *
  * @param root   扫描根
  * @param files  文件范围 = 指针档范围 + `docs/evidence/` 下被排除的快照(载体形态判据专用)
@@ -1838,13 +1934,18 @@ function runCarrierChecks(root, files, readFile) {
   errors.push(...adr.findings);
   if (!adr.examined) notes.push('docs/adr/ 下没有 ADR 文件 ⇒ adr 背景判据零覆盖');
 
+  const adrNum = checkAdrNumbering(files);
+  bump(adrNum.examined);
+  errors.push(...adrNum.findings);
+  if (!adrNum.examined) notes.push('docs/adr/ 下没有 ADR 文件 ⇒ adr 编号形态/唯一判据零覆盖');
+
   const ev = checkEvidenceHead(files, readFile);
   bump(ev.examined);
   errors.push(...ev.findings);
   if (!ev.examined) notes.push('docs/evidence/ 下没有快照文件 ⇒ 结论去向判据零覆盖');
 
   const rec = checkEvidenceReconcile(ev.parsed, {
-    adrFiles: files.filter((f) => /^docs\/adr\/.*\.md$/.test(f) && basename(f) !== 'README.md'),
+    adrFiles: files.filter(isAdrEntry),
     hasReq: readFile(PROJECT_PROBE).trim() !== '',
   });
   errors.push(...rec.findings);
