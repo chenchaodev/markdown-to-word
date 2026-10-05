@@ -21,6 +21,12 @@
 //      (未声明 / 空声明 / 元素全指向别处,三者各自判红)。
 //   ⑧ gate-module-present(L11b):**清单在册而树里无** —— 门禁本体被删除 / 改名时判红。
 //      这一档与 `gate-has-carrier` 的处置不同(补载体 vs 恢复本体或删登记项),故单列一个 id。
+//   ⑨ test-dist-artifact-source-mirror(C1 档一):段的**被测 import**落在 `dist/**` 时,
+//      该产物的镜像源文件(按 tsc 的 emit 规则反推扩展名)必须在 `src/**` 下**真实存在**。
+//   ⑩ test-segment-mirror-same-name(C1 档二):段路径镜像某个真实存在的 `src/**` 源文件时,
+//      它的被测 import **必须**落在那同一个源文件的**同名**编译产物上。
+//   ⑪ test-layer-gate-subject(C3 / L4 第三档):段住在**非门禁层**却 import `gates/` 树
+//      ⇒ 判红,除非在**门禁主体豁免表**登记并给出达标理由(判准与 L5 那张表不同,见下)。
 //
 // ---- L4 为什么必须判「零命中」而不是只判「import 落在别处」 ----
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
@@ -48,6 +54,50 @@
 // `import("…")` 出现在**代码**里是运行期动态 import,出现在**注释**里才是类型引用 ——
 // 两者字面同形,靠 `lexSource` 的「抹注释」结果区分(代码里那个下标在 code 中仍是
 // `import(`,注释里那个已被抹成空格)。
+//
+// ---- C1 的口径:什么算「被测 import」(C1 两档共用,单一定义) ----
+//
+// 段的 import 一共五类,只有一类进 C1 两档。**逐类给出排除依据**,不写「显然不是被测的」:
+//   ① `node:` 内建 / 第三方包(`electron`／`jszip`／`pdf-lib`／`highlight.js`／`iconv-lite`)
+//      —— 裸包名,`extractImports` 的 `add()` 只对 `spec.startsWith(".")` 产出 `resolved`,
+//      故它们**天然** `resolved === null`。它们不是被测对象,也不是仓内产物。
+//   ② `test/harness/**`(测试助手层)—— **测试框架自身**,L4 已把 `harness` 登记为自指层
+//      (主体根 = `test/harness/` 自己)。助手不是被测源;实测 140 段对它有 289 处引用,
+//      把它算进「被测」会让分母失真、判据退化成「谁引用助手最多」。
+//   ③ 其它段(`test/**/<x>.test.js`)—— L4 的「段 import 段」那一档已经判红;C1 再判一次
+//      是同一事实报两遍,只会在归因时让人分不清是哪一档的处置。
+//   ④ **type-only 引用** —— 编译期擦除。它不是「段取得被测对象的手段」,而是一句类型标注。
+//      ⚠ 仓内确有 73 处 `src/**` 的 type-only 引用与 1 处 `dist/**` 的
+//      (`test/main/settings.test.js:104` 的 `typeof import("../../dist/main/persist/settings.js")`),
+//      **把它们算进分母会把 C1 变成「类型标注写对没有」的检查** —— 那不是这一族要拦的东西。
+//      与 L4/L5 排除 type-only 同款取舍(同一个 `isTypeOnlyClause`,不另立口径)。
+//   ⑤ **`src/**` 的值引用** —— C1 两档的**判据对象都是 `dist/**`**,源侧只用来做存在性核对
+//      (C1 档二还要用它算「同名产物」)。源侧的值引用本身不构成一档:实测 140 段对 `src/**`
+//      的值引用**恒为 0**(tsc 不产 `.d.ts`,故类型只能指 `src/`、值只能指 `dist/`)。
+//
+// ⇒ 收敂成一句:**被测 import = 解析后落在 `dist/**` 的值引用**。C1 两档都只认这一类。
+//
+// ---- C1 两档的分工(为什么不是一个判据) ----
+//   档一(`test-dist-artifact-source-mirror`)问的是**产物侧**:这个 `dist/**` 产物背后
+//   有没有真源文件。它抓的是「段 import 了一个 src 已删 / 从未存在的产物」——
+//   `dist/` 是 gitignored 的(`.gitignore:3`),所以**判据不能问「产物在不在版本控制里」**
+//   (那对构建产物恒为否),只能**按构建产物路径反推源路径**再问源文件在不在磁盘上。
+//   档二(`test-segment-mirror-same-name`)问的是**段侧**:段路径既然镜像了某个 `src/**`
+//   源文件,它的被测 import 就**必须**落在那同一个源文件的同名产物上。它抓的是
+//   「段自称在测 X、实际测的是 Y」—— 段名与被测对象脱钩。
+//   ⚠ 两档的**处置不同**(补源文件 / 补 import 或改段名),故各占一个 id 而不是合成一档。
+//
+// ---- C3 与 L5 的分工(为什么不是同一族的第二档) ----
+// L5 与 C3 都在同一批边上判,但**问的问题不同**,处置也不同:
+//   - L5 问「这次跨层 import 在本段里**是不是只提供数据/常量/规格**」⇒ 处置是搬去
+//     `test/behavior/` 并写 `covers`,或登记进 L5 豁免表。
+//   - C3 问「这个段**住在这一层**对不对」—— 它伸手进了 `gates/` 树,而 `gates/` 是仓里
+//     放门禁判定本体的树。一个段住在 `test/shared/` 却 import 门禁判定本体,**即使那次
+//     import 真的只提供数据**,段的位置也已经可疑了(它到底在测 shared 还是在测门禁?)。
+// ⇒ **L5 表里已登记的边不豁免 C3**:实测 `test/shared/geometry-gate.test.js →
+//   gates/geometry/geometry/driver.mjs` 正是这种形态(L5 表里那条 reason 156 字、
+//   已按「只提供规格」合法通过 L5),而 C3 仍判红。C3 的处置是**换层**(搬去 `test/gates/`)
+//   或**登记门禁主体豁免表**并说明为什么段住在这一层是对的。
 //
 // ---- 镜像源集合为什么从磁盘派生(两层来源) ----
 //   - `src/` 的直接子目录:**从磁盘列**。这是本门禁派生的一半,新增/合并层自动跟随。
@@ -181,6 +231,19 @@ export const HARNESS_ROOT = `${TEST_REL}/${HARNESS_DIR}/`;
  * 失去作用域(behavior 段不再被要求声明,而没人会注意到)。
  */
 export const BEHAVIOR_DIR = "behavior";
+
+/**
+ * **门禁层**的段目录名(C3 的作用域排除项 —— `test/gates/**` 的段不参与 C3)。
+ *
+ * 单列成常量而不是在 C3 里写字面量 `"gates"`:段目录名与 `GATES_TREE` 的树前缀是同一个
+ * 名字在两处出现,各写一份字面量时改名只改一半的后果是「C3 突然把门禁段全判红」
+ * (实测 31 项)—— 而那正是判据最容易归因失败的一类红。
+ *
+ * ⚠ 它与 {@link GATES_TREE} 是**两个不同的字面量**(`"gates"` vs `"gates/"`):前者是
+ * `test/` 下的**段目录名**,后者是仓根下的**树前缀**。写成同一个常量会让「段目录」
+ * 与「树」这两个不同层级的概念共用一个值。
+ */
+export const GATES_DIR = "gates";
 /**
  * 扫描面(段)文件数下限:walker 整体失效(零段)时五族判据会「全绿」,而恒绿是纯文本门禁
  * 最坏的失效形态(没人会去看一个总是 exit 0 的脚本)。取实测值的约 3/4
@@ -235,6 +298,100 @@ export const GATE_INDEX_MODULE_REL = GATE_INDEX_SELF_REL;
  * @type {string}
  */
 export const GATE_EXEMPTIONS_REL = "gates/repo/test-layout.gate-exemptions.json";
+
+/**
+ * C3(`test-layer-gate-subject`)的门禁主体豁免表 —— **一张新表,不复用 L5 那张**。
+ *
+ * 形态是 `(段路径, 说明符)` **二元组**,与 L5 同款粒度:一张段级表项会让该段将来新增的
+ * 任何一条 `gates/` 跨层边都被放行,而那正是这张表要拦的东西。
+ *
+ * ⚠ **为什么必须新建而不是复用 `L5_EXEMPTIONS_REL`**(理由见文件头「C3 与 L5 的分工」):
+ * 两张表**问的不是同一个问题** —— L5 问「这次 import 是不是只提供数据」,C3 问
+ * 「这个段住在这一层对不对」。若并表,`test/shared/geometry-gate.test.js` 那条已按
+ * 「只提供规格」合法登记的边会**连 C3 一起豁免掉** ⇒ C3 在真实仓库上恒为零命中,
+ * 即「建了机制但没有任何一处真的判过红」。那与没有这一族不可区分。
+ *
+ * ⚠ **本表当前只有一条表项**,是实测判红的现存一处(见该表项的 reason)。
+ * 后续新增命中时,`--write-l5-exemptions` 那样的生成入口**刻意不提供**:
+ * 本表的表项**不是「先豁免后补理由」的正当形态** —— 它登记的是「这个段的层归属是对的,
+ * 而门禁主体在这里是被测输入」,写不出这句话就说明该搬段而不是该登记。
+ *
+ * 表项合法性由三条 fail-closed 撑着:键名写错判红 / reason 不达标判红(空**或**不足
+ * `REASON_MIN_CHARS` 字)/ **stale 判红**(登记了却当前不再命中 —— ratchet 的全部意义)。
+ *
+ * @type {readonly { segment: string, specifier: string, reason: string }[]}
+ */
+export const GATE_SUBJECT_EXEMPTIONS = Object.freeze([
+  Object.freeze({
+    segment: "test/shared/geometry-gate.test.js",
+    specifier: "gates/geometry/geometry/driver.mjs",
+    reason:
+      "本段的断言对象是同层的 shared/geometry/geometry-core.mjs(几何判定层,门禁 geometry 的 judgment 本体),"
+      + "它落在 test/shared/ 是对的;driver.mjs 在本段里**只提供输入规格**(存活路径表 LIVENESS_PATHS /"
+      + "可求值媒体条件 mediaConditions / 存活检查 checkPathLiveness),本段据此合成采样样本并断言判定结果,"
+      + "真实窗口采样由 gates/geometry/check-geometry.mjs 那侧承担、两者互不依赖 —— 故段的层归属无需变更。",
+  }),
+]);
+
+/**
+ * `dist/**` 产物扩展名 → 其镜像 `src/**` 源文件的**候选**扩展名(按 `tsconfig.json` 的
+ * `outDir: dist` + `module: NodeNext` 的 emit 规则反推,**不是**一份登记的镜像源清单)。
+ *
+ * ⚠ **为什么候选是「一组」而不是一个**:`.js` 产物可能来自 `.ts`(常规)、`.tsx`(JSX)或
+ * **`.js` 本身**(`allowJs` 形态)。实测仓内 `src/renderer/lang-bootstrap.js` 就是后者 ——
+ * 它是 git 跟踪的源文件,而 tsc 把它原样复制到 `dist/renderer/lang-bootstrap.js`
+ * (实测两文件字节数相同)。**只认 `.ts` 会把这类合法产物判红**,而 `.js` 的判红才是
+ * 本族要抓的「src 已删 / 从未有」形态。`.mjs` ← `.mts`、`.cjs` ← `.cts` 是 NodeNext 的
+ * 模块后缀配对。
+ *
+ * ⚠ **判据据此推的是「源侧」的存在性,不是「产物侧」的在版本控制里**:见头注「C1 档一」。
+ * @type {Readonly<Record<string, readonly string[]>>}
+ */
+export const ARTIFACT_SOURCE_EXTS = Object.freeze({
+  ".js": Object.freeze([".ts", ".tsx", ".js"]),
+  ".mjs": Object.freeze([".mts"]),
+  ".cjs": Object.freeze([".cts"]),
+});
+
+/**
+ * `src/**` 源文件扩展名 → 它编译出的 `dist/**` 产物扩展名(C1 档二算「同名产物」用)。
+ *
+ * 与 {@link ARTIFACT_SOURCE_EXTS} 是**互逆关系**(那份「产物 → 哪些源可能产出它」,
+ * 这份「源 → 它产出哪个产物」)。两份方向不同、用途不同,故各写一份;⚠ 若 tsc 的
+ * emit 规则变了(新增后缀配对),**两份必须同批改** —— 档一靠前者抓「源不存在」,
+ * 档二靠后者算「同名产物」,任一份单独漂移的后果是同一族的两档给出互相矛盾的结论
+ * (一份说「产物无源」、另一份说「段没落在同名产物上」)。
+ *
+ * `.ts` / `.tsx` → `.js`、`.mts` → `.mjs`、`.cts` → `.cjs`、`.js` → `.js`。
+ * @type {Readonly<Record<string, string>>}
+ */
+export const SOURCE_ARTIFACT_EXTS = Object.freeze({
+  ".ts": ".js",
+  ".tsx": ".js",
+  ".mts": ".mjs",
+  ".cts": ".cjs",
+  ".js": ".js",
+});
+
+/** 编译产物树与源树的仓相对前缀(各写一份的代价:两处字面量各改一半 ⇒ 判据静默恒红/恒绿) */
+export const DIST_TREE = "dist/";
+export const SRC_TREE = "src/";
+
+/**
+ * **门禁树**的仓相对前缀(C3 的判据面)。
+ *
+ * ⚠ **为什么是常量而不是从 `TREE_DIRS` 派生**:`TREE_DIRS` 的四个值是 `gates` / `shared` /
+ * `tools` / `test`,「哪一个是门禁树」**不是**那棵树的结构属性、而是它的**角色** ——
+ * 判据要问的是「段有没有把手伸进门禁判定的本体」,而 `gates/` 是仓里放门禁本体的位置。
+ * 从 `TREE_DIRS` 里挑一个(`topTrees[0]` 之类)会得到一个**随表序漂移**的答案:
+ * 表里换一行顺序,C3 的判据面就静默变成 `shared/` —— 而那正是「判据指向了另一棵树」
+ * 这一类最难归因的红。写成字面量并在此单列,是刻意的。
+ *
+ * 另注:**它与 L5 的豁免表覆盖面不同**。L5 判「跨层 import」不限哪棵树;C3 只问 `gates/`。
+ * `rootsOf("gates")` 同样是 `["gates/"]`,与本常量一致(两处若漂移,C3 与 L4 的主体根
+ * 会对同一段给出不同结论 —— 判据面必须单源)。
+ */
+export const GATES_TREE = "gates/";
 
 /**
  * 门禁「接入点归属」的取值域(ADR-062 L12:两值)。`chain` 的真在链上,`offchain` 的不得在。
@@ -391,6 +548,28 @@ export const CRITERIA = Object.freeze([
     id: "gate-chain-membership",
     title: "L12 链归属:access 取值域只 chain/offchain,chain 的真在链上、offchain 的不得在链上",
   }),
+  // ---- REQ-187 的 C1(TS 段口径)与 C3(L4 第三档),2026-10-05 用户裁决 ----
+  Object.freeze({
+    // ⚠ 档一与档二**各占一个 id**:处置不同(补源文件 vs 补 import / 改段名)——
+    // 与 L11 拆 `gate-has-carrier` / `gate-module-present` 同款取舍(见那两行的注释)。
+    // 合并会让「补错了东西」在诊断里看不出是哪一档的处置。
+    id: "test-dist-artifact-source-mirror",
+    title:
+      "C1 档一(产物侧):段的被测 import 落在 dist/** 时,该产物的镜像 src/** 源文件必须真实存在"
+      + "(按构建产物路径反推,不看 git 跟踪状态 —— dist/ 是 gitignored 的)",
+  }),
+  Object.freeze({
+    id: "test-segment-mirror-same-name",
+    title:
+      "C1 档二(段侧):段路径镜像某个真实存在的 src/** 源文件时,它的被测 import 必须落在"
+      + "那同一个源文件的同名编译产物上(段名与被测对象不得脱钩)",
+  }),
+  Object.freeze({
+    id: "test-layer-gate-subject",
+    title:
+      "C3(L4 第三档):段住在非门禁层却 import gates/ 树的模块 ⇒ 判红,除非在门禁主体豁免表"
+      + "登记并给出达标理由(与 L5 豁免表**分表**:L5 问「是否只提供数据」,C3 问「层归属对不对」)",
+  }),
   ]);
 
 /**
@@ -448,6 +627,15 @@ const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exempti
  * @property {number} l7Missing 缺失的顶层目录数
  * @property {number} l8Violations L8 判红条数
  * @property {number} l11MissingModule L11b「清单在册而树里无」判红条数
+ * @property {number} c1Artifacts C1 判据对象(落在 dist/** 的值引用)总数 —— 分母,读数用
+ * @property {number} c1MirrorMissing C1 档一判红条数(产物无镜像源)
+ * @property {number} c1MirroredSegments C1 档二的判据对象(段路径镜像了某个 src 源文件的段数)
+ * @property {number} c1SameNameMissing C1 档二判红条数(镜像段未落在同名产物上)
+ * @property {number} c3Hits C3 命中数(非门禁层的段 import 了 gates/ 树的模块)
+ * @property {number} c3Unregistered C3 未登记判红条数
+ * @property {number} c3ShortReason C3 已登记但 reason 不达标判红条数
+ * @property {number} c3Exemptions 门禁主体豁免表项数
+ * @property {number} c3Stale 门禁主体豁免表 stale 判红条数
  */
 
 /**
@@ -659,6 +847,67 @@ export function foreignLayerOf(resolved, mirror) {
   for (const layer of mirror.layers) {
     if (resolved.startsWith(`src/${layer}/`) || resolved.startsWith(`dist/${layer}/`)) return layer;
     if (resolved.startsWith(`${layer}/`)) return layer;
+  }
+  return null;
+}
+
+/**
+ * C1 的「被测 import」单一定义(两档共用;五类排除的逐条依据见文件头同名小节)。
+ *
+ * 收敂成一句:**解析后落在 `dist/**` 的值引用**。裸包名 / `node:` 内建 / 第三方包
+ * `resolved === null`;`test/harness/**`(测试框架自身)与其它段(段 import 段已由 L4
+ * 判红)不在 `dist/` 下;type-only 引用是编译期擦除的类型标注、不是取得被测对象的手段。
+ *
+ * ⚠ **这一条不得改成「解析成功即算」**:那会把 289 处 harness 引用与 73 处 `src/**`
+ * type-only 引用算进分母,C1 于是退化成「谁引用助手最多 / 类型标注写对没有」的检查。
+ * @param {{ resolved: string | null, typeOnly: boolean }} entry `extractImports` 的一条
+ * @returns {boolean} 是否是 C1 两档的判据对象
+ */
+export function isSubjectImport(entry) {
+  return entry.resolved !== null && !entry.typeOnly && entry.resolved.startsWith(DIST_TREE);
+}
+
+/**
+ * 一个 `dist/**` 产物的镜像源文件候选路径(仓相对 POSIX,按声明顺序)。
+ *
+ * ⚠ 返回的是**一组**候选而不是单个路径:`.js` 产物可能来自 `.ts` / `.tsx` / `.js` 三种源
+ * (见 `ARTIFACT_SOURCE_EXTS` 的注释,`src/renderer/lang-bootstrap.js` 是仓内既有的第三种先例)。
+ * 调用方逐个问 `fileExists`,**任一命中即算有源** —— 判红只发生在**全都不命中**时。
+ * @param {string} artifact 仓相对产物路径(以 `dist/` 开头)
+ * @returns {string[]} 镜像源候选路径(产物路径未知后缀时为空数组)
+ */
+export function mirrorSourceCandidates(artifact) {
+  const dot = artifact.lastIndexOf(".");
+  if (dot < 0) return [];
+  const candidates = ARTIFACT_SOURCE_EXTS[artifact.slice(dot)];
+  if (candidates === undefined) return [];
+  const stem = artifact.slice(0, dot);
+  if (!stem.startsWith(DIST_TREE)) return [];
+  return candidates.map((ext) => `${SRC_TREE}${stem.slice(DIST_TREE.length)}${ext}`);
+}
+
+/**
+ * 一个段的路径镜像了哪个真实存在的 `src/**` 源文件(C1 档二的判据对象)。
+ *
+ * 形态是 `test/<X>/<rest>.test.js` ⇔ `src/<X>/<rest>.<srcExt>` —— **相对路径逐段对应**,
+ * 不是 basename 匹配。后者会把 `test/core/preprocess.test.js` 认成镜像
+ * `src/convert/preprocess.ts`(实测仓内确有 `test/convert/preprocess.test.js` 与
+ * `src/convert/preprocess.ts`,但它们不在同一层目录下),那是**跨层的巧合同名**。
+ *
+ * 段深度**不限**:S5-0 的递归化之后段名是完整相对路径(如
+ * `gates/supply/supply/gen-sbom.test.js`),逐段对应天然覆盖嵌套形态。
+ * @param {string} segment 段路径(仓相对 POSIX,以 `.test.js` 结尾)
+ * @param {(relative: string) => boolean} [fileExists] **仓相对**路径的存在性判据
+ *   (缺省走真实磁盘 —— 合成根上的自检必须注入 `ctx.fileExists`,见 `makeTestLayoutCtx`)
+ * @returns {{ source: string, artifact: string } | null} 镜像到的源文件与它的同名产物;未镜像时 null
+ */
+export function mirroredSourceOf(segment, fileExists = (relative) => existsSync(path.join(ROOT, ...relative.split("/")))) {
+  if (!segment.startsWith(`${TEST_REL}/`) || !segment.endsWith(SEGMENT_EXT)) return null;
+  const stem = segment.slice(`${TEST_REL}/`.length, -SEGMENT_EXT.length);
+  for (const [sourceExt, artifactExt] of Object.entries(SOURCE_ARTIFACT_EXTS)) {
+    const source = `${SRC_TREE}${stem}${sourceExt}`;
+    if (!fileExists(source)) continue;
+    return { source, artifact: `${DIST_TREE}${stem}${artifactExt}` };
   }
   return null;
 }
@@ -1169,6 +1418,15 @@ export function checkTestLayout(base = {}) {
     l12OffChainOnChain: 0,
     l12DeclaredPending: 0,
     l12ShortPendingReason: 0,
+    c1Artifacts: 0,
+    c1MirrorMissing: 0,
+    c1MirroredSegments: 0,
+    c1SameNameMissing: 0,
+    c3Hits: 0,
+    c3Unregistered: 0,
+    c3ShortReason: 0,
+    c3Exemptions: 0,
+    c3Stale: 0,
   };
 
   /** @type {string[]} */
@@ -1363,6 +1621,160 @@ export function checkTestLayout(base = {}) {
     );
   }
 
+  // ---- C3 的门禁主体豁免表:读表 + 键名校验(stale 检测在段循环之外)----
+  //
+  // ⚠ **表本体是模块常量** `GATE_SUBJECT_EXEMPTIONS`(数据与判定本体分离,理由见那处注释),
+  // 注入面 `base.gateSubjectExemptions` 让自检在合成根上求值同一批判据 ——
+  // 与 `l5Exemptions` / `gateExemptions` 两处注入面同款。
+  const c3Entries = base.gateSubjectExemptions ?? GATE_SUBJECT_EXEMPTIONS;
+  stats.c3Exemptions = c3Entries.length;
+  /** @type {Map<string, { segment: string, specifier: string, reason: string }>} */
+  const c3ByKey = new Map();
+  for (const [index, entry] of c3Entries.entries()) {
+    if (typeof entry?.segment !== "string" || typeof entry?.specifier !== "string") {
+      report(
+        "test-layer-gate-subject",
+        `门禁主体豁免表 → test-layer-gate-subject:第 ${index + 1} 项缺 segment 或 specifier`
+        + "(键名写错会让整条豁免静默失效 —— 它拿到的键永远命中不上)",
+      );
+      continue;
+    }
+    c3ByKey.set(l5ExemptionKey(entry.segment, entry.specifier), {
+      segment: entry.segment,
+      specifier: entry.specifier,
+      reason: typeof entry.reason === "string" ? entry.reason : "",
+    });
+  }
+  /** 本轮真的命中过的门禁主体豁免表键(用于 stale 检测) */
+  const c3HitKeys = new Set();
+
+  // ⚠ **「本求值根是不是索引描述的那棵树」这条边界**在此**求值一次**、下面 L11/L12 整段复用
+  // 同一个值(那边不再重算 —— 两处各算一次的话,将来有人给其中一处加上/去掉别的条件,
+  // 就会出现「L11 认为在这棵树上、C3 认为不在」而没有任何东西报红)。
+  //
+  // ⚠ **C3 的判定与 stale 都受这条边界约束**,理由与 L11 那条**同款、只是换了对象**:
+  // 这张表描述的是**真实仓库**,而 `ctx.fileExists` 以**求值根**为准。在一棵只造 `test/`
+  // 布局的合成树上,表里那条表项必然 stale(那段不在这儿),于是**每一条合成夹具**都会
+  // 多出一条与它无关的 stale 红 —— 症状离根因隔着一整族判据。「它现在 stale」在合成根上
+  // **不是事实,是范畴错误**(那棵树根本不是这张表描述的那棵仓)。
+  const indexInRoot = ctx.fileExists(GATE_INDEX_MODULE_REL);
+
+  // ---- REQ-187 C1:TS 段口径两档(被测 import 的定义见文件头同名小节)----
+  //
+  // ⚠ **这一段与上面的 L4/L5 逐段循环刻意分开**,而不是塞进那个循环里:
+  // C1 的判据对象是「段 → dist/** 产物」的**边**,L4/L5 的作用域是 `layerSet` 内的段
+  // (behavior / harness 不参与)。两者口径不同 —— `test/behavior/**` 段的定义就是横跨多层,
+  // 它 import `dist/**` 完全正常,把它算进 C1 的分母会让这一族恒红。
+  // 故这里**另起一个只扫 `layerSet` 段的循环**,并复用已读好的段正文?—— 不能复用:
+  // 那个循环的 `source` / `imports` 是块内局部变量,而 C1 要在**同一批段**上再走一遍
+  // (判据不同 ⇒ 处置不同 ⇒ 两处独立的诊断)。重读一次段正文是刻意的:它让 C1 的每一格
+  // 夹具只可能因 C1 判红,不会与 L4/L5 的修复耦合在一起。
+  for (const file of segments) {
+    const layer = file.split("/")[1] ?? "";
+    if (!layerSet.has(layer)) continue;
+    const imports = extractImports(ctx.readText(file), file);
+
+    // ---- C1 档一(产物侧):产物背后必须有真源文件 ----
+    for (const entry of imports.filter((e) => isSubjectImport(e))) {
+      stats.c1Artifacts += 1;
+      const candidates = mirrorSourceCandidates(entry.resolved ?? "");
+      if (candidates.some((candidate) => ctx.fileExists(candidate))) continue;
+      stats.c1MirrorMissing += 1;
+      report(
+        "test-dist-artifact-source-mirror",
+        `${file} → test-dist-artifact-source-mirror:被测 import 落在编译产物 ${entry.resolved},`
+        + `但它的镜像源文件全部不存在(${candidates.join(" 或 ")})—— 段的身份是**源文件**、`
+        + "编译产物只是取得手段(TS 段的必然形态),产物没有源就是「源已删 / 从未存在 / 路径写错」。"
+        + `处置:① 源确实存在但路径不同 → 改 import 到正确的产物路径;`
+        + "② 源已删或从未存在 ⇒ 这个段没有可测对象,搬走或随源一起删",
+      );
+    }
+
+    // ---- C1 档二(段侧):段路径镜像了 src 源文件 ⇒ 被测 import 必须落在同名产物上 ----
+    //
+    // ⚠ **判据对象是「段路径镜像了某个真实存在的源文件」这件事**,不是「段住在 src 层目录」
+    // —— 后者的分母是 103 段而其中 99 段**刻意不按 basename 镜像源**(实测:103 段里只有 4 段
+    // 的路径逐段对得上真实源文件)。拿 103 当分母会把 99 段判红,而那 99 段判红的处置
+    // 是「改段名」—— 那是**改名纪律**,不属于这一族。分母收窄到「真镜像」的那几段,
+    // 这一族问的才是它该问的:「你既然自称镜像 X,那你的被测 import 就得是 X 的产物」。
+    //
+    // ⚠ **写成 `if (...) { … }` 而不是 `if (未镜像) continue`**:档二的「未镜像」必须**只**
+    // 跳过档二自己,不能连带跳掉下面的 C3 —— 用 `continue` 时那一格会让 C3 在所有
+    // 非镜像段(实测 140 段里有 136 段)上**静默消失**,而症状是「C3 命中 0 处」这种
+    // 看不出根因的读数。两族在同一趟循环里就必须各自用块级门。
+    const mirrors = mirroredSourceOf(file, ctx.fileExists);
+    if (mirrors !== null) {
+      stats.c1MirroredSegments += 1;
+      if (!imports.some((entry) => entry.resolved === mirrors.artifact && !entry.typeOnly)) {
+        stats.c1SameNameMissing += 1;
+        report(
+          "test-segment-mirror-same-name",
+          `${file} → test-segment-mirror-same-name:段路径镜像了真实存在的源文件 ${mirrors.source},`
+          + `但它没有任何被测 import 落在同名编译产物 ${mirrors.artifact} 上`
+          + " —— 段名与被测对象脱钩(自称在测 X、实际测的是 Y)。处置:① 段确实在测 X ⇒ 补上对该产物的"
+          + "import;② 段在测的是别的东西 ⇒ 把段搬到它真正被测的那一层(段名不必镜像)",
+        );
+      }
+    }
+
+    // ---- C3(L4 第三档):非门禁层的段 import 门禁树 ⇒ 判红,除非已登记 ----
+    //
+    // ⚠ **`test/gates/**` 的段是门禁段本身**,它们 import 门禁树是**定义的**而非可疑的
+    // (L11 的档 1b「验收段引用该门禁」正建立在这一点上:`test/gates/*.test.js` import
+    // `gates/repo/check-*.mjs` 是门禁的**载体形态**)。故作用域是「`layerSet` 段 **且**
+    // 层名 ≠ `gates`」—— 这与 L4/L5 的作用域(`layerSet` 全体)差一档,差在这一档上,
+    // 漏掉它会让 C3 在真实仓库上判红 31 项(实测),而那 31 项全是门禁段在测门禁。
+    if (layer === GATES_DIR || !indexInRoot) continue;
+    //
+    // ⚠ **与 L5 那段循环的 `continue` 无关**:L5 对已登记的边 `continue` 掉了,而 C3 要对
+    // **同一条边**独立判一次(`test/shared/geometry-gate.test.js → driver.mjs` 正是这种形态:
+    // 它在 L5 表里合法存在,而 C3 仍判红)。两族的处置不同,不能共用一次判定。
+    for (const entry of imports) {
+      if (entry.resolved === null || entry.typeOnly) continue;
+      if (!entry.resolved.startsWith(GATES_TREE)) continue;
+      stats.c3Hits += 1;
+      const exemption = c3ByKey.get(l5ExemptionKey(file, entry.resolved));
+      if (exemption !== undefined) {
+        c3HitKeys.add(l5ExemptionKey(file, entry.resolved));
+        const chars = reasonChars(exemption.reason);
+        if (chars < REASON_MIN_CHARS) {
+          stats.c3ShortReason += 1;
+          report(
+            "test-layer-gate-subject",
+            `${file} → test-layer-gate-subject:命中已在门禁主体豁免表登记(${entry.resolved}),`
+            + `但 reason 只有 ${chars} 字,不足门槛 ${REASON_MIN_CHARS} 字 —— 与 L5 豁免同判准:`
+            + "本表登记的是「这个段的层归属是对的、门禁主体在这里是被测输入」,"
+            + "写不出这句话就说明该搬段而不是该登记",
+          );
+        }
+        continue;
+      }
+      stats.c3Unregistered += 1;
+      report(
+        "test-layer-gate-subject",
+        `${file} → test-layer-gate-subject:${layer} 层的段 import 了门禁树的模块(${entry.resolved})`
+        + ` —— 它住在 ${layer}/ 却在测 gates/ 树里的东西,段的位置已经可疑(它到底在测 ${layer} 还是在测门禁?)。`
+        + "⚠ **L5 豁免表不能豁免这一族**:L5 问「这次 import 是不是只提供数据」,本族问「段住在这一层对不对」。"
+        + `处置:① 段的主体其实在 gates/ ⇒ 搬到 test/gates/ 对应路径;`
+        + `② 段的主体确实在 ${layer}/、门禁主体在这里只当被测输入 ⇒ 按 (段, 说明符) 登记进门禁主体豁免表并写明理由`,
+      );
+    }
+  }
+
+  // ---- C3 豁免表的 stale 检测(ratchet):登记了却当前不再命中 ----
+  // 与 L5 的 stale 同款:**表项当前仍真的命中才是合法现状**。段被搬走 / import 被删之后,
+  // 表项必须同批删掉 —— 否则表只增不减、失效项永远占位,而门禁对它们一声不吭。
+  // ⚠ 受 `indexInRoot` 约束(理由见上面 `indexInRoot` 的注释):合成根上「stale」是范畴错误。
+  for (const [key, entry] of (indexInRoot ? c3ByKey : [])) {
+    if (c3HitKeys.has(key)) continue;
+    stats.c3Stale += 1;
+    report(
+      "test-layer-gate-subject",
+      `${entry.segment} → test-layer-gate-subject:门禁主体豁免表登记了 (${entry.specifier}),`
+      + "但本次扫描没有命中它 —— 段被搬走或那条 import 删了,豁免必须同批删掉",
+    );
+  }
+
   if (stats.segments < ctx.minScannedFiles) {
     report(
       "scan-surface-collapsed",
@@ -1546,7 +1958,9 @@ export function checkTestLayout(base = {}) {
   // 那一档的「缺」才是真缺;它不在,整段(判定面 + L11b + L11 + L12)与本轮无关 ——
   // 这与下面「判定面非空才读豁免表与 package.json」是同一条边界,只是这里要判的是
   // 「树的身份」而不是「门禁的数量」。
-  const indexInRoot = ctx.fileExists(GATE_INDEX_MODULE_REL);
+  //
+  // ⚠ `indexInRoot` **在 C3 那节就已经求值过一次**(见那里同名注释:两处各算一次的话,
+  // 将来有人只给其中一处加条件,就会出现「L11 认为在这棵树上、C3 认为不在」而无红)。
   const gates = indexInRoot ? allGates.filter((gate) => ctx.fileExists(gate.modulePath)) : [];
   if (indexInRoot) {
     for (const gate of allGates) {
@@ -1721,6 +2135,13 @@ export function main(argv = []) {
       + ` / 取值域外判红 ${stats.l12BadDomain}`
       + ` / chain 却不在链判红 ${stats.l12ChainNotOnChain} / offchain 却在链判红 ${stats.l12OffChainOnChain}`
       + ` / pendingChain 声明 ${stats.l12DeclaredPending}、其中理由不足 ${stats.l12ShortPendingReason})`,
+    `C1 test-dist-artifact-source-mirror 判红 ${stats.c1MirrorMissing} 项`
+      + `(被测 import 落在 dist/** 共 ${stats.c1Artifacts} 处,按构建产物路径反推的镜像源全部不存在者判红)`,
+    `C1 test-segment-mirror-same-name 判红 ${stats.c1SameNameMissing} 项`
+      + `(段路径镜像了真实源文件的段共 ${stats.c1MirroredSegments} 段,未落在同名编译产物上者判红)`,
+    `C3 test-layer-gate-subject 命中 ${stats.c3Hits} 处`
+      + `(豁免 ${stats.c3Exemptions} 条 / 未登记判红 ${stats.c3Unregistered}`
+      + ` / 不足 ${REASON_MIN_CHARS} 字判红 ${stats.c3ShortReason} / stale 判红 ${stats.c3Stale})`,
   ].join(";");
   const named = problems.map((problem) => problem.split(" → ")[0] ?? problem);
 

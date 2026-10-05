@@ -105,6 +105,20 @@ function createFixture(extra = {}) {
   const dir = mkdtempSync(join(tmpdir(), "m2w-test-layout-selftest-"));
   // ① src/ 的每一层都要有目录(纪律 ②)。放一个 .gitkeep 即可:判据只看目录名。
   for (const layer of BASE_SRC_LAYERS) writeUnder(dir, `src/${layer}/.gitkeep`, "");
+  // ①' C1 档一要「按构建产物路径反推镜像源」,而底板段 import 的产物是
+  // `dist/<层>/subject.js` ⇒ 必须在 `src/<层>/subject.ts` 造出那个源文件,否则**每一条**
+  // 既有夹具都会先被 C1 判红(症状离根因隔着一整族判据,最难归因)。
+  // ⚠ 只造**源**、不造 `dist/`:C1 问的是「产物背后有没有源」,不是「产物在不在磁盘上」
+  // (`dist/` 是 gitignored 的构建产物,它的存在性由构建新鲜度门禁管,不由这一族管)。
+  for (const layer of BASE_SRC_LAYERS) writeUnder(dir, `src/${layer}/subject.ts`, "export const subject = 1;\n");
+  // ①'' C1 档一要按**产物路径反推**源路径,`.mjs` 产物反推的是 `.mts` 源(NodeNext 的模块
+  // 后缀配对)。L5 那一族的夹具用 `dist/main/other.mjs` / `one.mjs` 做跨层说明符,故这两个
+  // 源也得在 —— 否则那几条夹具会先被 C1 判红,验的就变成两族判据的叠加。
+  writeUnder(dir, "src/main/other.mts", "export const other = 1;\n");
+  writeUnder(dir, "src/main/one.mts", "export const one = 1;\n");
+  // 另一族跨层说明符用 `.js` 产物(反推 `.ts` 源)。
+  writeUnder(dir, "src/renderer/settings/settings-logic.ts", "export const scale = 1;\n");
+  writeUnder(dir, "src/main/persist/ui-state.ts", "export const state = 1;\n");
   // ② test/ 的每个顶层目录都要在(纪律 ①)。behavior/ 与 harness/ 建空目录:T3 才建立内容。
   for (const top of BASE_TEST_TOPS) mkdirSync(join(dir, ...`${TEST_REL}/${top}`.split("/")), { recursive: true });
   // ③ 底板段:每层铺够 BASE_PAD 段,每段都 import 本层主体 ⇒ 基线零判红。
@@ -144,6 +158,8 @@ function writeUnder(root, rel, body) {
  * @param {number} [opts.minScannedFiles] 扫描面下限
  * @param {{segment: string, specifier: string, reason: string}[]} [opts.l5Exemptions] L5 豁免表(注入面)
  * @param {readonly Record<string, object>} [opts.gateRegistry] 门禁索引(注入面;缺省 = 空索引)
+ * @param {{segment: string, specifier: string, reason: string}[]} [opts.gateSubjectExemptions]
+ *   C3 的门禁主体豁免表(注入面;缺省 = 空表,理由见 `judge` 里那段注释)
  * @param {{ id: string }[]} [opts.criteriaOverride] 判据登记表覆盖(⚠ 只允许删行,见下)
  * @returns {{ problems: string[], info: string[], stats: import("./check-test-layout.mjs").TestLayoutStats }}
  */
@@ -169,6 +185,11 @@ function judge(extra, opts = {}) {
       gateRegistry: opts.gateRegistry ?? {},
       // 门禁级豁免表同理:合成根里没有那张数据文件,让它去读会命中「读不到 → 判红」那一档。
       gateExemptions: opts.gateExemptions ?? [],
+      // C3 的门禁主体豁免表**必须显式注入空表**:它的缺省值是**真实仓库那条表项**
+      // (判据本体里的模块常量,理由见 check-test-layout.mjs 里 GATE_SUBJECT_EXEMPTIONS 的注释),
+      // 而那条表项在合成根上必然 stale(stale 检测会判红)⇒ 不注入的话**每条夹具**都会
+      // 多出一条与本夹具无关的红,症状离根因隔着一整族判据。
+      gateSubjectExemptions: opts.gateSubjectExemptions ?? [],
       // ⚠ 删行口是自检专用,且**只允许删行**。它必须永远是「拿掉一行让漏斗查不到」这一个方向 ——
       // 一旦它能新增表项或加 `pending: true`,注入口就成了「可配置即假话」的后门:
       // 自检夹具能调档 ⇒ 生产调用点也能调档 ⇒ fail-open。另两个方向由门禁的
@@ -314,6 +335,17 @@ function behaviorSegment(covers) {
     "",
   ].join("\n");
 }
+
+/**
+ * C3 那一族夹具的**树身份占位**:在合成根里放一份索引模块文件。
+ *
+ * C3 整段(判定 + stale)受「本求值根是不是索引描述的那棵树」这条边界约束(理由见门禁本体里
+ * `indexInRoot` 的注释):豁免表描述的是真实仓库,而 `ctx.fileExists` 以求值根为准 ——
+ * 合成根上「stale」不是事实而是范畴错误。少了这份占位,本族每一条夹具都会零命中,
+ * 而症状是「C3 全绿」—— 看不出是作用域没开。
+ * @type {Readonly<Record<string, string>>}
+ */
+const C3_TREE_IDENTITY = { [GATE_INDEX_MODULE_REL]: "export const GATE_INDEX = {};\n" };
 
 /**
  * L11/L12 判定本体的注入夹具(纯函数档,不 spawn、不碰真实工作树)。
@@ -767,6 +799,9 @@ const CASES = [
     extra: {
       "src/pipeline/.gitkeep": "",
       [`${TEST_REL}/pipeline/parse.test.js`]: wellFormedSegment("core").replaceAll("../../dist/core/", "../../dist/pipeline/"),
+      // ⚠ C1 档一:这一段 import 的产物是 `dist/pipeline/subject.js`,其镜像源
+      // `src/pipeline/subject.ts` **必须在** —— 少了它本夹具会先被 C1 判红,而它要验的是 L7。
+      ["src/pipeline/subject.ts"]: "export const subject = 1;\n",
     },
     expect: null,
     // ⚠ 同上:转 report-only 后必须补,否则这条会因「命中不进 problems」而继续绿。
@@ -902,6 +937,362 @@ const CASES = [
       [`${TEST_REL}/core/empty-decl.test.js`]: behaviorSegment([]),
     },
     expect: /test\/core\/empty-decl\.test\.js → behavior-covers-declared:covers 是空数组/,
+  },
+  // ---- REQ-187 C1:TS 段口径两档(每档:负向夹具 + 反向锚点 + 口径钉住)----
+  //
+  // ⚠ **底板已按纪律 ⑤ 加了一格**:`src/<层>/subject.ts` 必须存在,否则底板段 import 的
+  // `dist/<层>/subject.js` 会被 C1 档一判红,每条夹具都先被它盖住。
+  {
+    // 档一负向:产物 `dist/core/orphan.js` 的镜像源三个候选全不存在 ⇒ 判红。
+    // 这条抓的是「段 import 了一个 src 已删 / 从未存在的产物」——`dist/` 是 gitignored 的,
+    // 所以判据**按构建产物路径反推源路径**再问源在不在磁盘上,而**不是**问产物在不在版本控制里
+    // (那对任何构建产物恒为否 ⇒ 判据恒红)。
+    name: "C1 档一:被测 import 落在 dist/** 而镜像源全部不存在 → 判红(按产物路径反推源,不看 git 跟踪)",
+    judgeOnly: true,
+    extra: {
+      [`${TEST_REL}/core/orphan.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:import 了一个镜像源不存在的编译产物。 */",
+        'import { subject } from "../../dist/core/orphan.js";',
+        "export const meta = { description: 'c1-orphan' };",
+        "export async function run() { return subject; }",
+        "",
+      ].join("\n"),
+    },
+    expect: /test\/core\/orphan\.test\.js → test-dist-artifact-source-mirror:被测 import 落在编译产物 dist\/core\/orphan\.js,但它的镜像源文件全部不存在\(src\/core\/orphan\.ts 或 src\/core\/orphan\.tsx 或 src\/core\/orphan\.js\)/,
+  },
+  {
+    // 档一反向锚点:同样的段,但镜像源造齐 ⇒ 零判红。缺它的话上一条可能只是「恒红」。
+    name: "C1 档一:镜像源真实存在 → 判绿(反向锚点:证明上一条的红来自缺源本身)",
+    judgeOnly: true,
+    extra: {
+      ["src/core/present.ts"]: "export const subject = 1;\n",
+      [`${TEST_REL}/core/present.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:import 的产物有真实镜像源。 */",
+        'import { subject } from "../../dist/core/present.js";',
+        "export const meta = { description: 'c1-present' };",
+        "export async function run() { return subject; }",
+        "",
+      ].join("\n"),
+    },
+    expect: null,
+    expectAbsent: /test-dist-artifact-source-mirror/,
+  },
+  {
+    // `.js` 源那一档:`allowJs` 形态(src/renderer/lang-bootstrap.js 是仓内先例)。
+    // 只认 `.ts` 的实现会把这种合法产物判红 ⇒ 少了它,「镜像源候选是一组」这个决定无人守。
+    name: "C1 档一:产物来自 .js 源(allowJs 形态)也算有源,不得判红",
+    judgeOnly: true,
+    extra: {
+      ["src/core/from-js-source.js"]: "export const subject = 1;\n",
+      [`${TEST_REL}/core/from-js-source.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:产物镜像的是 .js 源而非 .ts 源。 */",
+        'import { subject } from "../../dist/core/from-js-source.js";',
+        "export const meta = { description: 'c1-from-js' };",
+        "export async function run() { return subject; }",
+        "",
+      ].join("\n"),
+    },
+    expect: null,
+  },
+  {
+    // 口径钉住(反向):**只有 `dist/**` 的值引用算被测 import**。
+    // `test/harness/**`(测试框架自身)、裸包名、`node:` 内建、`src/**` 的值引用
+    // 都不算 —— 把它们算进分母,C1 会退化成「谁引用助手最多 / 类型标注写对没有」的检查。
+    // 这条同时钉住「type-only 的 `dist/**` 引用**也不算**」(编译期擦除,不是取得手段)。
+    name: "C1 口径:只有 dist/** 的值引用算被测 import(harness / 裸包名 / node: / src 值引用 / type-only 都不算)",
+    judgeOnly: true,
+    extra: {
+      // 这四条若被误算成被测 import,它们背后都没有 src/** 源 ⇒ C1 档一会判红
+      ["test/harness/no-source-helper.js"]: "export const helper = 1;\n",
+      [`${TEST_REL}/core/subject.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:除本层产物外,只引用助手 / 裸包名 / node: / src 值引用 / dist 的 type-only 引用。 */",
+        'import { helper } from "../harness/no-source-helper.js";',
+        'import jszip from "jszip";',
+        'import fs from "node:fs";',
+        'import { subject } from "../../dist/core/subject.js";',
+        '/** @typedef {import("../../dist/core/typeonly-absent.js").T} T */',
+        "export const meta = { description: 'c1-scope' };",
+        "/** @param {T} v @returns {unknown} */",
+        "export function run(v) { return [subject, helper, jszip, fs, v]; }",
+        "",
+      ].join("\n"),
+    },
+    // `dist/core/typeonly-absent.js` 的镜像源**刻意不存在** —— 若 type-only 被算成被测 import,
+    // 这一条立刻红。它是「type-only 不算」这个口径的唯一机械证据。
+    expect: null,
+    expectAbsent: /test-dist-artifact-source-mirror/,
+  },
+  {
+    // 档二负向:段路径镜像了真实存在的源文件,却没 import 同名产物 ⇒ 判红。
+    // 这一族抓的是「段自称在测 X、实际测的是 Y」——段名与被测对象脱钩。
+    name: "C1 档二:段路径镜像真实源文件却未落在同名编译产物上 → 判红(段名与被测对象脱钩)",
+    judgeOnly: true,
+    extra: {
+      ["src/core/decoupled.ts"]: "export const decoupled = 1;\n",
+      // 段 import 的是本层的**另一个**产物(有源 ⇒ 档一不红),唯独不碰同名产物。
+      [`${TEST_REL}/core/decoupled.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:镜像 src/core/decoupled.ts,却只 import 别的产物。 */",
+        'import { subject } from "../../dist/core/subject.js";',
+        "export const meta = { description: 'c1-decoupled' };",
+        "export async function run() { return subject; }",
+        "",
+      ].join("\n"),
+    },
+    expect: /test\/core\/decoupled\.test\.js → test-segment-mirror-same-name:段路径镜像了真实存在的源文件 src\/core\/decoupled\.ts,但它没有任何被测 import 落在同名编译产物 dist\/core\/decoupled\.js 上/,
+  },
+  {
+    // 档二反向锚点:镜像 + 落在同名产物 ⇒ 零判红。
+    name: "C1 档二:镜像段 import 了同名编译产物 → 判绿(反向锚点:证明上一条的红来自脱钩本身)",
+    judgeOnly: true,
+    extra: {
+      ["src/core/coupled.ts"]: "export const coupled = 1;\n",
+      [`${TEST_REL}/core/coupled.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:镜像 src/core/coupled.ts 且 import 它的同名产物。 */",
+        'import { coupled } from "../../dist/core/coupled.js";',
+        "export const meta = { description: 'c1-coupled' };",
+        "export async function run() { return coupled; }",
+        "",
+      ].join("\n"),
+    },
+    expect: null,
+    expectAbsent: /test-segment-mirror-same-name/,
+  },
+  {
+    // 档二的分母**不是**「住在 src 层目录」,而是「段路径逐段对得上真实源文件」。
+    // 底板 136 段里只有个位数镜像源 —— 若实现把分母放宽成「住在 src 层目录」,
+    // 这一条(段住在 `core/` 但段名不对应任何源文件)会**跟着红**,而它本该绿。
+    // 变异实验实测:把 `mirroredSourceOf` 换成恒返回对象时,本夹具立刻红。
+    name: "C1 档二分母:段住在 src 层目录但段名不对应任何源文件 → 不参与档二(分母是真镜像,不是层归属)",
+    judgeOnly: true,
+    extra: { [`${TEST_REL}/core/name-unrelated.test.js`]: wellFormedSegment("core") },
+    expect: null,
+    expectAbsent: /test-segment-mirror-same-name/,
+  },
+  {
+    // 档二的镜像是**相对路径逐段对应**,不是 basename 匹配。这一条钉住跨层巧合同名:
+    // `test/core/preprocess.test.js` 与 `src/convert/preprocess.ts` 同 basename 但不同层目录,
+    // basename 口径会把它认成镜像 → 要求它 import `dist/core/preprocess.js`。
+    name: "C1 档二:同名但跨层的源文件不算镜像(逐段对应,不是 basename 匹配)",
+    judgeOnly: true,
+    extra: {
+      ["src/convert/preprocess.ts"]: "export const pre = 1;\n",
+      // 段住在 test/core/ 而同名源在 src/convert/ ⇒ 不构成镜像 ⇒ 档二不适用。
+      [`${TEST_REL}/core/preprocess.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:与 src/convert/preprocess.ts 同 basename 但不同层目录。 */",
+        'import { subject } from "../../dist/core/subject.js";',
+        "export const meta = { description: 'c1-crosslayer-same-name' };",
+        "export async function run() { return subject; }",
+        "",
+      ].join("\n"),
+    },
+    expect: null,
+    expectAbsent: /test-segment-mirror-same-name/,
+  },
+  // ---- REQ-187 C3:L4 第三档(段住在非门禁层却 import 门禁树)----
+  //
+  // ⚠ 作用域与 L4/L5 差一档:**`test/gates/**` 的段不参与 C3**(门禁段 import 门禁树是
+  // L11 档 1b 的载体形态)。漏掉这一档的实测后果是 C3 在真实仓库上判红 31 项。
+  //
+  // ⚠ **C3 整段还受 `indexInRoot` 约束**(见门禁本体里同名注释:豁免表描述真实仓库,而
+  // `ctx` 以求值根为准 ⇒ 合成根上「stale」是范畴错误)。故本族每一条夹具的 `extra` 都
+  // 铺上 `C3_TREE_IDENTITY`(定义见 `behaviorSegment` 之后)—— 那是「本根就是这张表描述的
+  // 那棵树」的判据,与 L11b 那几格同款。缺了它,本族每一条夹具都会**零命中**
+  // (症状是「C3 全绿」,看不出是作用域没开)。
+  {
+    // C3 负向:段住在 test/shared/ 却 import gates/ 树 ⇒ 判红。
+    // 它是本族存在的**全部意义**:L4 的两档(零本层主体 / 段 import 段)都不覆盖这一形态 ——
+    // 这段 import 了同层的 geometry-core,过「零本层主体」;它 import 的又不是段,过「段 import 段」。
+    name: "C3:段住在非门禁层却 import 门禁树 → 判红(L4 两档都不覆盖这一形态)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      // 本层主体齐备 ⇒ L4 第一档不红;被 import 的不是段 ⇒ L4 第二档不红。
+      ["shared/subject.mjs"]: "export const subject = 1;\n",
+      ["gates/geometry/geometry/driver.mjs"]: "export const LIVENESS_PATHS = [];\n",
+      [`${TEST_REL}/shared/borrowed.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:住在 shared/ 却 import 门禁树的模块。 */",
+        'import { subject } from "../../shared/subject.mjs";',
+        'import { LIVENESS_PATHS } from "../../gates/geometry/geometry/driver.mjs";',
+        "export const meta = { description: 'c3-borrowed' };",
+        "export async function run() { return [subject, LIVENESS_PATHS]; }",
+        "",
+      ].join("\n"),
+    },
+    expect: /test\/shared\/borrowed\.test\.js → test-layer-gate-subject:shared 层的段 import 了门禁树的模块\(gates\/geometry\/geometry\/driver\.mjs\)/,
+  },
+  {
+    // C3 的**核心命题**:L5 豁免表**不能**豁免 C3。这一条同时断两族判红 ——
+    // 段既过了 L5(已按「只提供规格」登记)仍被 C3 判红。
+    // 少了它,并表的实现(把 C3 也挂到 L5 那张表上)会全绿,而那一族在真实仓库上
+    // 就恒为零命中 —— 与「没建这一族」不可区分。
+    name: "C3:L5 豁免表已登记该边 **不能** 豁免 C3(两族问的不是同一个问题)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      ["shared/subject.mjs"]: "export const subject = 1;\n",
+      ["gates/geometry/geometry/driver.mjs"]: "export const LIVENESS_PATHS = [];\n",
+      [`${TEST_REL}/shared/borrowed.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:住在 shared/ 却 import 门禁树的模块(L5 已按「只提供规格」登记)。 */",
+        'import { subject } from "../../shared/subject.mjs";',
+        'import { LIVENESS_PATHS } from "../../gates/geometry/geometry/driver.mjs";',
+        "export const meta = { description: 'c3-l5-registered' };",
+        "export async function run() { return [subject, LIVENESS_PATHS]; }",
+        "",
+      ].join("\n"),
+    },
+    l5Exemptions: [
+      {
+        segment: `${TEST_REL}/shared/borrowed.test.js`,
+        specifier: "gates/geometry/geometry/driver.mjs",
+        reason: "夹具:driver 在本段里只提供输入规格 LIVENESS_PATHS,本段断言的是 shared/subject 的判定结果",
+      },
+    ],
+    // L5 那一族零命中(豁免生效)——只断 expect 的话,并表的实现照样绿。
+    expect: /test\/shared\/borrowed\.test\.js → test-layer-gate-subject/,
+    expectAbsent: /test-layer-cross-import:shared 层的段 import 了/,
+  },
+  {
+    // C3 豁免表登记 + reason 达标 → 判绿(这一格是本族「显式登记是合法形态」的存在证明)。
+    name: "C3:命中已在门禁主体豁免表登记且 reason 达标 → 判绿(显式登记是合法形态)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      ["shared/subject.mjs"]: "export const subject = 1;\n",
+      ["gates/geometry/geometry/driver.mjs"]: "export const LIVENESS_PATHS = [];\n",
+      [`${TEST_REL}/shared/borrowed.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:住在 shared/ 却 import 门禁树的模块(已登记豁免)。 */",
+        'import { subject } from "../../shared/subject.mjs";',
+        'import { LIVENESS_PATHS } from "../../gates/geometry/geometry/driver.mjs";',
+        "export const meta = { description: 'c3-exempted' };",
+        "export async function run() { return [subject, LIVENESS_PATHS]; }",
+        "",
+      ].join("\n"),
+    },
+    // ⚠ **L5 也要登记**:一条真实的「非门禁层 import 门禁树」在真实仓里是**两张表都登记**
+    // (L5 那张按「只提供规格」、C3 那张按「层归属对」)。只登记 C3 表的话 L5 仍会判红,
+    // 本夹具就变成「验两族判据的叠加」—— 症状出了分不清是哪一族。
+    l5Exemptions: [
+      {
+        segment: `${TEST_REL}/shared/borrowed.test.js`,
+        specifier: "gates/geometry/geometry/driver.mjs",
+        reason: "夹具:driver 在本段里只提供输入规格 LIVENESS_PATHS,本段断言的是 shared/subject 的判定结果",
+      },
+    ],
+    gateSubjectExemptions: [
+      {
+        segment: `${TEST_REL}/shared/borrowed.test.js`,
+        specifier: "gates/geometry/geometry/driver.mjs",
+        reason: "本段的断言对象是同层的 shared/subject.mjs,门禁主体在本段里只当被测输入规格用,段的层归属无需变更",
+      },
+    ],
+    expect: null,
+    expectAbsent: /test-layer-gate-subject/,
+  },
+  {
+    // 豁免表 reason 不达门槛 ⇒ 判红。与 L5 同判准:写不出「为什么段的层归属是对的」
+    // 时,该做的是搬段,而不是把它塞进表里。
+    name: "C3:已登记但 reason 不足 20 字 → 判红(挂表项却说不出为什么段的层归属对)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      ["shared/subject.mjs"]: "export const subject = 1;\n",
+      ["gates/geometry/geometry/driver.mjs"]: "export const LIVENESS_PATHS = [];\n",
+      [`${TEST_REL}/shared/borrowed.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:住在 shared/ 却 import 门禁树的模块(豁免 reason 太短)。 */",
+        'import { subject } from "../../shared/subject.mjs";',
+        'import { LIVENESS_PATHS } from "../../gates/geometry/geometry/driver.mjs";',
+        "export const meta = { description: 'c3-short-reason' };",
+        "export async function run() { return [subject, LIVENESS_PATHS]; }",
+        "",
+      ].join("\n"),
+    },
+    gateSubjectExemptions: [
+      { segment: `${TEST_REL}/shared/borrowed.test.js`, specifier: "gates/geometry/geometry/driver.mjs", reason: "见谅" },
+    ],
+    expect: new RegExp(
+      `test/shared/borrowed\\.test\\.js → test-layer-gate-subject:命中已在门禁主体豁免表登记\\(gates/geometry/geometry/driver\\.mjs\\),`
+      + `但 reason 只有 2 字,不足门槛 ${REASON_MIN_CHARS} 字`,
+    ),
+  },
+  {
+    // stale(ratchet):登记了却当前不再命中(段被搬走 / 那条 import 删了)。
+    // 没有这一条,表只会单调增长、失效项永远留着,而门禁对它们一声不吭。
+    name: "C3 豁免表:登记项当前不再命中(stale)→ 判红(ratchet)",
+    judgeOnly: true,
+    extra: { ...C3_TREE_IDENTITY },
+    gateSubjectExemptions: [
+      {
+        segment: `${TEST_REL}/shared/gone.test.js`,
+        specifier: "gates/geometry/geometry/vanished.mjs",
+        reason: "曾经合法,段后来被搬到 test/gates/ 下,这条表项本该在同一次改动里删掉",
+      },
+    ],
+    expect: /test\/shared\/gone\.test\.js → test-layer-gate-subject:门禁主体豁免表登记了 \(gates\/geometry\/geometry\/vanished\.mjs\),但本次扫描没有命中它/,
+  },
+  {
+    // 键名写错 ⇒ 表项本身判红。跳过它等于给「写错键名」开了一个静默放行的口:
+    // 它拿到的键永远命中不上,于是那条边一直落档未登记,而没人知道表里其实有一条。
+    name: "C3 豁免表:表项缺 specifier 键 → 判红(键名写错会让豁免静默失效)",
+    judgeOnly: true,
+    extra: {},
+    gateSubjectExemptions: [{ segment: `${TEST_REL}/shared/x.test.js`, reason: "没有 specifier 键" }],
+    expect: /门禁主体豁免表 → test-layer-gate-subject:第 1 项缺 segment 或 specifier/,
+  },
+  {
+    // 作用域反向锚点:`test/gates/**` 的段 import 门禁树是**定义的**(L11 档 1b 的载体形态),
+    // 不该被 C3 判红。少了它,C3 在真实仓库上会判红 31 项(实测)。
+    name: "C3 作用域:test/gates/** 的段 import 门禁树 → 判绿(门禁段 import 门禁是载体形态)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      // gates 层段 import gates 层本体 + shared 层 ⇒ L4/L5 两族都不红,只剩 C3 可能红。
+      ["gates/repo/check-alpha.mjs"]: "export const alpha = 1;\n",
+      ["gates/fixtures/gen-fixtures.mjs"]: "export const gen = 1;\n",
+      [`${TEST_REL}/gates/alpha.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:门禁段 import 门禁本体(L11 档 1b 的载体形态)。 */",
+        'import { alpha } from "../../gates/repo/check-alpha.mjs";',
+        'import { gen } from "../../gates/fixtures/gen-fixtures.mjs";',
+        "export const meta = { description: 'c3-gate-segment' };",
+        "export async function run() { return [alpha, gen]; }",
+        "",
+      ].join("\n"),
+    },
+    expect: null,
+    expectAbsent: /test-layer-gate-subject/,
+  },
+  {
+    // type-only 的门禁树引用不算 C3 命中(编译期擦除,与 L4/L5 同款取舍)。
+    name: "C3 口径:type-only 的门禁树引用不算命中(编译期擦除)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      ["shared/subject.mjs"]: "export const subject = 1;\n",
+      ["gates/geometry/geometry/driver.mjs"]: "export const config = 1;\n",
+      [`${TEST_REL}/shared/typeonly.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:只有一处 type-only 的门禁树引用。 */",
+        'import { subject } from "../../shared/subject.mjs";',
+        '/** @typedef {import("../../gates/geometry/geometry/driver.mjs").config} C */',
+        "export const meta = { description: 'c3-typeonly' };",
+        "/** @param {C} c @returns {unknown} */",
+        "export function run(c) { return [subject, c]; }",
+        "",
+      ].join("\n"),
+    },
+    expect: null,
+    expectAbsent: /test-layer-gate-subject/,
   },
   // ---- L5 豁免表:三条 fail-closed + 表项粒度 ----
   // 注入面是 ctx.l5Exemptions(与 readText / listDir / fileExists 同一形态):合成目录上
@@ -1638,6 +2029,35 @@ const CASES = [
       `豁免 [1-9]\\d* 条 \\/ 未登记判红 0 \\/ 空 reason 判红 0 \\/ 不足 ${REASON_MIN_CHARS} 字判红 0`,
     ),
   },
+  {
+    // **C1 两档在真实仓库上零判红的机器证据**,且两个分母都由判定本体在**真实仓库**上跑出来
+    // (不是读数据文件自己数)—— 后者绕开了「walk 到那 170 处被测 import」这一步,
+    // 证明不了门禁本体不误伤。
+    // ⚠ 分母**必须**同时断:「判红 0」在分母为 0 时也成立,那正是「这一族什么也没查」。
+    // 实测分母:被测 import 落在 dist/** 的 170 处 / 段路径镜像了真实源文件的 4 段。
+    name: "真实仓库:C1 两档判红 0 项且两个分母都非零(不误伤,且证明真被验证过)",
+    realRepo: true,
+    expectCode: 0,
+    expect: new RegExp(
+      `C1 test-dist-artifact-source-mirror 判红 0 项\\(被测 import 落在 dist/\\*\\* 共 [1-9]\\d* 处,`
+      + `按构建产物路径反推的镜像源全部不存在者判红\\);`
+      + `C1 test-segment-mirror-same-name 判红 0 项\\(段路径镜像了真实源文件的段共 [1-9]\\d* 段,`
+      + `未落在同名编译产物上者判红\\)`,
+    ),
+  },
+  {
+    // **C3 在真实仓库上的四档归零 + 豁免表非空且真被命中**。
+    // ⚠ 两侧都要断:只断「未登记判红 0」的话,表被清空时它照样成立,而那正是这道豁免最该防的
+    // 失效形态(表空了 ⇒ 表项与 stale 一次也没被验证过 ⇒ 恒绿)。「命中 [1-9]\d* 处」证明
+    // 表项**当前真的命中**(否则它会被 stale 判红,与「stale 判红 0」同义但方向相反)。
+    name: "真实仓库:C3 命中已被登记且四档归零(豁免表非空、reason 达标、stale 为零)",
+    realRepo: true,
+    expectCode: 0,
+    expect: new RegExp(
+      `C3 test-layer-gate-subject 命中 [1-9]\\d* 处\\(豁免 [1-9]\\d* 条 \\/ 未登记判红 0`
+      + ` \\/ 不足 ${REASON_MIN_CHARS} 字判红 0 \\/ stale 判红 0\\)`,
+    ),
+  },
 ];
 
 /** @type {string[]} */
@@ -1848,6 +2268,7 @@ for (const testCase of CASES) {
         // L11b 一族要注入门禁索引(它判的是「判定面怎么圈」,圈法在 checkTestLayout 里)。
         // 缺省仍是空表 —— 合成树里没有 gates/,如实。
         gateRegistry: testCase.gateRegistry,
+        gateSubjectExemptions: testCase.gateSubjectExemptions,
         criteriaOverride: testCase.criteriaOverride,
       });
       const joined = problems.join("\n");
