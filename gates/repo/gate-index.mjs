@@ -1,7 +1,9 @@
 // 门禁索引(S3):**全部门禁的接入点与判定体指针一张表**,判据面是 L11(载体)＋ L12(链归属)。
 //
 // ---- 本表是什么、不是什么 ----
-// 它是**数据表**,不是判定体:39 项登记项,每项 6 个键(其中 `enforcement` 可选)。
+// 它是**数据表**,不是判定体:登记项数与每项键数都随新增门禁 / 字段变,故**不复述数值**,
+// 只说「怎么重新取到它」:
+//   node -e "import('./gates/repo/gate-index.mjs').then(m=>{const t=m.GATE_INDEX,k=Object.keys(t);console.log(k.length+' 项;每项键数 '+[...new Set(k.map(x=>Object.keys(t[x]).length))].sort().join('/')+' 个(enforcement 可选)')})"
 // 两条判据(check-test-layout.mjs 的 L11 / L12)从它读,别的什么都不读。
 //
 // ---- 为什么 `modulePath` 与 `judgment.module` 是两个字段(压成一个会丢信息)----
@@ -20,9 +22,12 @@
 //
 // ---- `enforcement` 是指针不是清单(同 registry.mjs:846 已写的那句理由)----
 // 强制等级的状态会变、复述即漂移源(与 T5-a「强制等级留门禁源码」同源)。故这里只存
-// `<模块相对路径>#<导出名>`,真有分级表的门禁才写这一条 —— 当前只有两道:
-//   - `check-test-layout.mjs#CRITERIA`(11 族判据登记表)
-//   - `check-import-boundary.mjs#LAYER_RULES`(18 条层向规则的 deny-list)
+// `<模块相对路径>#<导出名>`,真有分级表的门禁才写这一条 —— 当前**只有两道**(带这条的项会随新增
+// 门禁增减;要重新取它跑 `node -e "import('./gates/repo/gate-index.mjs').then(m=>console.log(Object.keys(m.GATE_INDEX).filter(k=>m.GATE_INDEX[k].enforcement).join(',')))"`):
+//   - `check-test-layout.mjs#CRITERIA`(判据登记表;族数会随增删判据变,取它跑
+//     `node -e "import('./gates/repo/check-test-layout.mjs').then(m=>console.log(m.CRITERIA.length))"`)
+//   - `check-import-boundary.mjs#LAYER_RULES`(层向规则的 deny-list;条数同理,取它跑
+//     `node -e "import('./gates/repo/check-import-boundary.mjs').then(m=>console.log(m.LAYER_RULES.length))"`)
 // 其余门禁**没有**这一条:白名单 / 豁免表(如 `check-temp-cleanup` 的 `ALLOWLIST`、
 // `check-changelog` 的规则表)语义是「豁免」不是「强制等级」,给它们编一个指针会让读的人
 // 以为那里也有一张分级表。
@@ -60,7 +65,7 @@ export const ACCESS_CHAIN = "chain";
 export const ACCESS_OFFCHAIN = "offchain";
 
 /**
- * @typedef {object} GateIndexEntry 一项门禁登记(6 个键,`enforcement` 可选)
+ * @typedef {object} GateIndexEntry 一项门禁登记(键集见下方各 `@property`;`enforcement` 可选)
  * @property {string} id 门禁 id(全表唯一;与旧 registry.mjs 的 id 集合逐条相等)
  * @property {readonly string[]} npmScripts 驱动这道门禁的 npm script,判定侧在前
  *   (`gen:*` / 开发侧入口不是接入点的定义,见 check-test-layout.mjs 判定本体头注)
@@ -314,9 +319,11 @@ export const GATE_INDEX = Object.freeze(
     },
 
     /* ---------- 仅本地手动(旧表的 local 档,逐条改为 offchain)---------- */
-    // ⚠ 下面 11 项在旧 registry.mjs 里是 `access: "local"`。改成两值域里的 `offchain`
+    // ⚠ 本段各项在旧 registry.mjs 里是 `access: "local"`。改成两值域里的 `offchain`
     // **不是降格**:旧表 R5b 的三值分支(registry.mjs:1270/:1276)要求 local 与 workflow
-    // 分开判,而 L12 判的是「在不在三条链上」—— 这 11 项的接入点确实一条链都不在。
+    // 分开判,而 L12 判的是「在不在三条链上」—— 本段各项的接入点确实一条链都不在
+    // (本段项数会随新增门禁变 —— 本段 = 全部 `offchain` 减去上面那两道 workflow 项,取它跑
+    //  `node -e "import('./gates/repo/gate-index.mjs').then(m=>{const t=m.GATE_INDEX;console.log(Object.keys(t).filter(k=>t[k].access==='offchain'&&k!=='env'&&k!=='supply').length)})"`)。
     "plan-in-progress": {
       id: "plan-in-progress",
       npmScripts: ["check:plan-in-progress"],

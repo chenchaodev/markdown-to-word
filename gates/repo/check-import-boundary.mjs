@@ -252,11 +252,16 @@ export const LAYER_RULES = Object.freeze([
   {
     id: 'renderer-foundation-no-feature-dep',
     scope: 'renderer-foundation',
-    // 分层口径(REF-025 #13):renderer 内部**不**整体分层 —— 实测 convert / settings /
-    // ui / wizard 四个功能目录两两互依(5 对双向、共 29 条目录边),它们是平铺协作的
+    // 分层口径(REF-025 #13):renderer 内部**不**整体分层 —— convert / settings /
+    // ui / wizard 四个功能目录**互有依赖**(彼此之间有向边密布,不是单向层级),它们是平铺协作的
     // peer 模块,对它们断言「方向」会一加就红。故只约束**基础层**:元素映射(dom/)与
-    // 纯函数核+store(state/)。实测这两层在全部 29 条边中**无任何出边**,即它们是叶子,
-    // 任何功能模块都依赖它们、它们不依赖任何功能目录 —— 这条是真不变量,机械可判。
+    // 纯函数核+store(state/)。**这两层无任何出边**,即它们是叶子,
+    // 任何功能模块都依赖它们、它们不依赖任何功能目录 —— 这条是真不变量,且**机械可判**:
+    // 它就是本规则自身(上面那个 `forbid` + `renderer-foundation` scope),跑
+    // `npm run check:boundary` 即得,不必在注释里复述边数。
+    // ⚠ 边数与「几对双向」随源码增删 import 漂移(旧注释里的数字已与实测不符),
+    // 要重新取当前值跑下面这条普查(输出:`功能目录间 N 条目录边、M 对双向;dom/ 与 state/ 出边 0 条`):
+    //   node -e "const{readdirSync,readFileSync,existsSync:f}=require('node:fs'),path=require('node:path');const R='src/renderer',F=['convert','settings','ui','wizard'],B=['dom','state'];const w=(d,a=[])=>{for(const e of readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);e.isDirectory()?w(p,a):/\.(ts|cts|mts)$/.test(e.name)&&a.push(p)}return a};const E=new Set();for(const x of w(R))for(const m of readFileSync(x,'utf8').matchAll(/(?:^|[^\w$])from\s+[\"'](\.[^\"']+)[\"']/g)){let a=path.resolve(path.dirname(x),m[1]),y=path.extname(a);y&&(a=a.slice(0,-y.length));const h=[a+'.ts',a+'.js',a+'.cts',path.join(a,'index.ts')].find(f);if(!h)continue;const r=path.relative(R,h).split(path.sep);r[0]!=='..'&&E.add(path.relative(R,x).split(path.sep).slice(0,-1).join('/')+' -> '+r[0])}const fe=[...E].filter(e=>{const[p,q]=e.split(' -> ');return F.includes(p)&&F.includes(q)});let bi=0;for(let i=0;i<F.length;i++)for(let j=i+1;j<F.length;j++)E.has(F[i]+' -> '+F[j])&&E.has(F[j]+' -> '+F[i])&&bi++;console.log('功能目录间 '+fe.length+' 条目录边、'+bi+' 对双向;dom/ 与 state/ 出边 '+[...E].filter(e=>B.includes(e.split(' -> ')[0])).length+' 条')"
     // 它守住的是两条语义:pure.ts「零 DOM 依赖」与 refs.ts「无业务知识」;一旦反向
     // 依赖,这两条不变量就名存实亡(比如 refs 里塞进设置项判断)。
     forbid: 'prefix:../convert/,../settings/,../ui/,../wizard/',
@@ -276,12 +281,15 @@ export const LAYER_RULES = Object.freeze([
   // 下面四条是 core 的**目录准入**判据(ADR-064)。它们与上面那些层向规则的性质不同,
   // 故在此成组登记并共用一段理由 —— 那段理由是这组判据的成立前提,逐条抄一遍必然漂移:
   //
-  // **为什么只钉「某条边不存在」而不钉方向**:实测 core/ 内部 9 个子目录的运行期依赖图
+  // **为什么只钉「某条边不存在」而不钉方向**:实测 core/ 内部子目录的运行期依赖图
   // 几乎是一片 DAG(docx 与 pdf 之间唯一一条边是 type-only,image/text/style/settings 是
   // 叶子),唯一的运行期环是 markdown ⇄ pipeline,且成因是**一个文件放错目录**
   // (ai-cleanup 是「解析之后的变换」,却住在 markdown/ 里)。既然图本身近乎无环,
   // 「A 不得依赖 B」这种方向规则就为它并不存在的病开药 —— 每一加就红。对照 renderer/:
-  // 那边实测 5 对双向、47 条 feature 间边,所以那边才只能约束基础层(renderer-foundation)。
+  // 那边功能目录之间有向边密布(还夹着若干对双向),所以那边才只能约束基础层
+  // (renderer-foundation;当前边数取它跑 `LAYER_RULES` 里那条规则上方注明的普查命令)。
+  // ⚠ 子目录数与边数都随源码增删漂移,故此处不复述数值(子目录数取它跑
+  // `node -e "const{readdirSync}=require('node:fs');console.log(readdirSync('src/core',{withFileTypes:true}).filter(e=>e.isDirectory()).length)"`)。
   // 故这四条一律写成「这一条边**不存在**」:判据对象是**边是否存在**,不是边指向何处。
   //
   // 目录级边界为什么必须用 prefix: 形态:resolveLayer 只返回**顶层**目录名,core 内部的

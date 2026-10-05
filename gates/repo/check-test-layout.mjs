@@ -398,8 +398,9 @@ export const GATES_TREE = "gates/";
  *
  * ⚠ **从 `gate-index.mjs` 转出而不是在这里重写**:取值域是**那张表的字段契约**(它写
  * `access: "chain"` / `"offchain"`),定义权在表那一侧。两处各写一份字面量,表改了取值名
- * 而判定侧没跟上时,判据会把**全部 39 项**报成「取值域非法」—— 而那正是本门禁最难归因的
- * 一类红(诊断指向每一项,而真因是常量漂移)。
+ * 而判定侧没跟上时,判据会把**表里全部登记项**报成「取值域非法」—— 而那正是本门禁最难归因的
+ * 一类红(诊断指向每一项,而真因是常量漂移)。登记项数随新增门禁变,要重新取它跑
+ * `node -e "import('./gates/repo/gate-index.mjs').then(m=>console.log(Object.keys(m.GATE_INDEX).length))"`。
  */
 export { ACCESS_CHAIN, ACCESS_OFFCHAIN };
 

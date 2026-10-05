@@ -238,7 +238,7 @@ export function auditNpmScripts(table) {
  *
  * ⚠ **为什么值得真 `import()` 而不是只查文件存在**:表里的指针有一类失效形态是「文件在、
  * 但导出名改了」—— 只查存在性对它完全无感,而那正是「改对外接口无人发现」那类漂移。
- * 已实测确认 39 项的 `judgment.module` **全部零顶层自执行**(顶层 `process.exit` /
+ * 已实测确认**全表每一项**的 `judgment.module` **全部零顶层自执行**(顶层 `process.exit` /
  * `process.exitCode =` / 顶层 `main()` 调用一条都没有)⇒ 真 import 是安全的。
  *
  * @param {Readonly<Record<string, object>>} table 门禁表
@@ -302,7 +302,7 @@ export async function auditJudgmentPointers(table, options = {}) {
  *   - `status !== 0` / `error` / `stdout` 不是字符串 / 解析出空集 ⇒ 一律返回 `null`,
  *     由 `auditSourceFilePointers` 转成那一条「未经跟踪核对」的判红(fail closed)。
  *   - **不缓存**:夹具逐条现取,缓存会让「同一进程内两次 git 状态不同」这类漂移看不出来;
- *     38 项索引跑一次 `ls-files` 的代价可忽略。
+ *     全表跑一次 `ls-files` 的代价可忽略。
  *
  * @param {string} [cwd] 仓根
  * @returns {Set<string> | null} 跟踪路径集(仓相对 POSIX);取不到即 null
@@ -769,7 +769,8 @@ const CASES = [
   },
   // ---- ⑦ modulePath / judgment.module 必须是 git 跟踪的源文件(REQ-187 C2)----
   {
-    // **正向锚点**:真实表 38 项的 76 条指针全部是 git 跟踪的路径。这一格缺了的话,
+    // **正向锚点**:真实表**每一项**的两条指针(`modulePath` 与 `judgment.module`,即项数 x2)
+    // 全部是 git 跟踪的路径。这一格缺了的话,
     // 下面几条负向可能只是「恒红」—— 而恒红的守卫与恒绿的守卫一样没用。
     name: "源文件指针:真实表每条 modulePath / judgment.module 都是 git 跟踪的源文件(锚点)",
     /** @returns {string[]} */
@@ -886,7 +887,7 @@ const CASES = [
     // **覆盖面自检(与 `enforcement` 那一族同形,但靠真变异而不是靠复述)**:把真实表里
     // **每一项的 `modulePath` 整条删掉**(合成副本,不动真实表)⇒ 审计必须逐项点名。
     // 「恒返回空数组」与「只审 `judgment.module` 一个字段」这两种退化实现在这一格下都失败
-    // (后者会把 38 项的 `modulePath` 全跳过 ⇒ 零 problems)。若有人把 `fields` 那个元组删窄,
+    // (后者会把**每一项**的 `modulePath` 全跳过 ⇒ 零 problems)。若有人把 `fields` 那个元组删窄,
     // 或删空表那一档,这一格立刻红。
     name: "源文件指针覆盖面:整条删掉全表 modulePath ⇒ 逐项点名(只审一个字段的退化实现会失败)",
     /** @returns {string[]} */

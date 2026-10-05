@@ -276,14 +276,18 @@ export function checkContract(ctx = {}) {
   // 【2026-10-04 更正】原文的前提有三处与本仓现状不符,故该结论已反转:
   // ① **脚本在本仓**。被调用的是 `gates/repo/` 下的脚本,扫的是**本仓** `docs/`,不依赖
   //    workflow 克隆配置仓 ⇒ 「扫描范围恒为空」不成立。
-  // ② **两族判据在本仓就地判定**。台账内不变量与载体形态(C1/C2/C4/C5/C6/C7)在本仓有实现,
-  //    链上输出可见「台账一致性…判据判定 8/8 项」与「载体形态(共 6 条,已判红)」
+  // ② **两族判据在本仓就地判定**。台账内不变量与载体形态两族在本仓有实现,
+  //    链上输出可见 `check-pointers.mjs` 逐族自报「判据判定 N/N 项」与「载体形态(…,已判红)」
   //    ⇒ 「实则从未校验过任何东西」不成立。
+  //    ⚠ 两族各自的**条数**会随判据增删变(判据 id 清单与条数都不在此复述):要取当前值跑
+  //    `node gates/repo/check-pointers.mjs`,看输出里「台账一致性」与「载体形态」那两行的括号。
   // ③ **不可达的那部分不再静默**。跨仓路径那一档的判红基准确实仍在仓外、本仓不可达,但
   //    它已**自报**「判定 0 处 · 未判,非「查过没问题」」,并把「覆盖:不全」推进结论行
   //    ⇒ 正是原文反对留在链上的那个「假象」,被这个机制本身消掉了。
-  // 处置:check:docs **保留在链内**(现为链内第 13/14 位),且**仍不列入 REQUIRED_CI_STEPS**
+  // 处置:check:docs **保留在链内**,且**仍不列入 REQUIRED_CI_STEPS**
   // —— 在链内是事实,但本表只钉「必备且顺序即依赖」的那几步,`check:docs` 不属此列。
+  // (它在 `verify:ci` 里的**位次**随链增减变,故不复述:要取当前位次跑
+  //  `node -e "const p=require('./package.json').scripts['verify:ci'].split('&&').map(s=>s.trim().replace(/^npm run /,''));console.log('第 '+(p.indexOf('check:docs')+1)+'/'+p.length+' 位')"`。)
   // build 产出 dist/ 编译产物,测试与 fixture 校验都跑 dist;check:geometry 收尾(采样
   // dist/renderer,须在 build 之后、且是链内最后一步)。
   const REQUIRED_CI_STEPS = [
