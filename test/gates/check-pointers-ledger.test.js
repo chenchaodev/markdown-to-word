@@ -438,6 +438,56 @@ export async function run() {
       assert.ok(r.notes.some((n) => /未填的占位行/.test(n)), JSON.stringify(r.notes));
     });
 
+    // ============ 占位识别的**边界**:按形态豁免,不按内容豁免 ============
+    //
+    // ⚠️ 这两条是一对,少任何一条都留着一个静默的洞:
+    //  · 缺**负向**锚点 ⇒ 占位识别放宽成「含有 `<…>`」时无人发现(裸写的泛型被当占位丢弃,
+    //    该行从未被任何判据检查过,随后号段连续检查反推出**误导性**的「缺号,行被删了」);
+    //  · 缺**正向**锚点 ⇒ 占位识别收紧过头时无人发现(模板骨架行被拉进判定 ⇒ 假红)。
+    // 两条都只钉**形态**,不钉具体号 —— 台账在长,号会变。
+
+    await suite.case("号合法但非号格含泛型 ⇒ 仍受判(不得被当占位丢弃)", () => {
+      // 复刻真实缺陷的形态:号与状态都合法,只有「为什么停在这」格里写了**裸**泛型。
+      // ⚠️ 刻意**不带反引号**:`maskInlineCode` 挡的是带反引号的泛型,裸写的它挡不住 ——
+      // 靠遮罩躲过这条 case 等于没钉住。
+      // 「是否被丢弃」用 `max` 钉:丢弃的行不进数值计算 ⇒ 实算最大号会掉到 2。
+      // ⚠️ 断言**反过来**也钉一条:它**不是**占位行,故 `placeholder` 必须是 0。
+      const r = checkLedger(
+        fixture({
+          max: 3,
+          next: 4,
+          rows: [
+            row("REQ-001", "需求一", "待拍板"),
+            `| REQ-002 | 需求二 | 待拍板 | 入参声明为 Partial<AppSettings>,与语义相反 | 随时 | 无 |`,
+            row("REQ-003", "需求三", "待拍板"),
+          ],
+        }),
+      );
+      assert.equal(r.stats.placeholder, 0, `含泛型的数据行不是占位行:${JSON.stringify(r.notes)}`);
+      assert.equal(r.stats.max, 3, "含泛型的行必须参与实算最大号(被丢弃 ⇒ 实算掉到 2)");
+      assert.deepEqual(r.errors, [], `号段连续,不该报错:${JSON.stringify(r.errors)}`);
+      assert.ok(
+        !/号段不连续/.test(r.errors.join("\n")),
+        "被丢弃的行会让号段连续检查报出误导性的「缺号,行被删了」",
+      );
+    });
+
+    await suite.case("骨架占位行(整格就是 <…>)⇒ 仍被排除(收紧过头会假红)", () => {
+      // 形态取自全局配置目录 `templates/docs-init/REQ.md` 的骨架行:**带着合法号**
+      // (`REQ-001`),且**多个格**同时是 `<…>`。
+      // ⚠️ 这正是「改成「号合法就不算占位」」那种守卫会踩的坑:它会把模板自己的占位行
+      // 拉进重号 / 状态取值域判定 ⇒ 初始化仓库第一次跑门禁就假红。故必须钉住。
+      // 判据出口:被排除 ⇒ 不参与重号(R7)判定 ⇒ 号段声明 max=0 也**不**报「超发号」。
+      const skeleton =
+        "| REQ-001 | <一句话标题> | 待拍板 | <还没决定要不要做;空表示无人反对,直接开工即可>"
+        + " | <等哪个信号出现才重看;不设触发条件写「随时」>"
+        + " | <docs/adr/ADR-0NN-*.md 或 docs/evidence/<文件名>;没有写「无」> |";
+      const r = checkLedger(fixture({ max: 0, next: 1, rows: [skeleton] }));
+      assert.equal(r.stats.placeholder, 1, `骨架行必须被识别为占位:${JSON.stringify(r.notes)}`);
+      assert.ok(r.notes.some((n) => /未填的占位行/.test(n)), JSON.stringify(r.notes));
+      assert.deepEqual(r.errors, [], `占位行不是错:${JSON.stringify(r.errors)}`);
+    });
+
     await suite.case("零行 ⇒ 0 错 + 点名「零判定」", () => {
       const r = checkLedger(fixture({ max: 0, next: 1, rows: [] }));
       assert.deepEqual(r.errors, [], JSON.stringify(r.errors));

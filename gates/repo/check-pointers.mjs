@@ -940,10 +940,23 @@ const LEDGER_ID_RE = /^REQ-\d{3}$/;
 const LEDGER_NUM_RE = /^REQ-(\d{3})\b/;
 
 /**
- * 未填的占位格(`<一句话标题>` / `<状态,取值域见 REQ-RULES.md>` / `<YYYY-MM-DD>`)。
+ * 未填的占位格(`<一句话标题>` / `<状态,取值域见 REQ-RULES.md>` / `<YYYY-MM-DD>`)——
+ * **整格锚定**:该格 trim 后**整体**就是 `<…>`,不是「格里有 `<…>`」。
+ *
+ * ⚠️ **为什么必须锚定**(曾把一条真实数据行静默丢弃):旧形态 `/<[^<>\s][^<>]*>/` 是「**含有**」,
+ * 于是「为什么停在这」格里写泛型(`Partial<AppSettings>`)的数据行**整行被当骨架占位丢弃** ——
+ * `:1181` 那句 `continue` 不出声,该行**从未**被重号 / 状态取值域 / 状态⇔所在节任何一条判据检查过,
+ * 随后号段连续检查反推出**误导性**的「缺 REQ-226,说明有行被删了」。行根本没被删。
+ * 这类假绿比假红危险:假红逼人改正确内容,假绿让账本缺一行还报告「通过」。
+ * 行内代码遮罩(`maskInlineCode`)挡的是**带反引号**的泛型,裸写的泛型它挡不住 ⇒ 只能靠形态区分。
+ *
+ * **为什么不能改成「号是合法 `REQ-0NN` 就不算占位」**:模板骨架行(`templates/docs-init/REQ.md`)
+ * 带着**合法号**(`REQ-001 | <一句话标题> | …`),按号区分会把模板自己的占位行拉进判定 ⇒ 假红。
+ * **按形态豁免,不按内容豁免**(同配置仓 `tools/AGENTS.md` V11 的口径):数字形态必须受检。
+ *
  * 首个字符不许是空白:否则正文里「x < y > z」这种比较式会被当成占位行。
  */
-const LEDGER_PLACEHOLDER_RE = /<[^<>\s][^<>]*>/;
+const LEDGER_PLACEHOLDER_RE = /^<[^<>\s][^<>]*>$/;
 
 /**
  * 把**行内代码跨度**的内容替换成等长空格(围栏已由 `maskFencedLines` 处理)。
@@ -1418,7 +1431,9 @@ function plainText(cell) {
 const isPlaceholderRow = (row) => row.cells.some(isPlaceholderCell);
 
 function isPlaceholderCell(cell) {
-  return LEDGER_PLACEHOLDER_RE.test(maskInlineCode(cell));
+  // trim 在这里做(不在正则里做):`:1547` 传进来的是**整节正文**(已 trim),`:1181` / `:1418`
+  // 传进来的是**表格格**(两侧带空格)。整格锚定的正则要求 trim 后整体匹配,故归一化只做一处。
+  return LEDGER_PLACEHOLDER_RE.test(maskInlineCode(cell).trim());
 }
 
 /**
