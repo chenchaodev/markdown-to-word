@@ -32,10 +32,10 @@
 
 - [ ] 两处仓库文本与实测冲突的数字已订正，且各有机器可复算的出处：`check-import-boundary.mjs` 那条普查命令按 feature 根目录折叠后与注释所写一致（连带订正同文件里 rule `reason` 串中的同一处错误说法 —— 它会被门禁输出直接印出来）；ADR-064 第 15 条的文件头缺失数 = 实测 6 且扫描面写对。
 - [ ] 第三处**不动仓库**且已书面记明理由：当前 `pending: true` 实测 5 条，而门禁文件头写的是 T0 当时的 6 条并已附「条数是派生的，别手数」的警告 —— 那是**评审自己转述错了**，不是仓库说错。已落 `docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md` §一.2。
-- [ ] renderer feature 目录间零 import，且该不变量由一条已转正（`--enforce`）的门禁守住；四处反向注册 handler 删除，`state.ts` 的「模块级可变状态全部收敛于此」这句自述重新成立。
+- [ ] renderer feature 目录间零 import，且该不变量由一条已转正（`--enforce`）的门禁守住；**跨 feature 的反向注册槽清零**（计数口径与 `recentRefreshHandler` 的保留见 `docs/adr/ADR-071-两处判据的形态裁决.md`，判据原文是「四处」已不适用），`state.ts` 的「模块级可变状态全部收敛于此」这句自述重新成立。
 - [ ] 转换阶段与降级是穷尽类型化契约：新增一个阶段或降级形态时，漏改任一交付面**编译红**；mcp 侧为预测降级而做的第二次 markdown 解析已消失。
 - [ ] 产物覆盖率高可见：renderer 不再是排除项，且任何 `--exclude` 条目若不在台账豁免清单内则门禁判红（反向对读生效）；`check:src-layout` 在 `verify:ci` 链上以 fail-closed 运行。
-- [ ] 测试体系形态达标：段契约未变而宿主分两档；**全部**段接入具名 case（段数是派生值，取 `find test -name '*.test.js' | wc -l`，本文件不复制数字）；段内零本地顶层 `assert`；门禁自测走合成根表格且**断言一条未删**。
+- [ ] 测试体系形态达标：段契约未变而宿主分两档；**全部**段接入具名 case（段数是派生值，取 `find test -name '*.test.js' | wc -l`，本文件不复制数字）；段内零本地顶层断言**实现**（要禁的是自带 `throw` 的第二份实现，不是叫 `assert` 的名字；`@returns {asserts cond}` 的委派型窄化壳合规 —— 措辞与裁决见 `docs/adr/ADR-071-两处判据的形态裁决.md`）；门禁自测走合成根表格且**断言一条未删**。
 
 ## 修复项复测
 
@@ -67,9 +67,9 @@
 **#05b 的最大杠杆不是「逐条改夹具」，是「删掉陈旧的手写类型注解」**（2026-10-06 实测）：271 条里相当大一块不是夹具写错，而是 **`declaration` 打开之前为了让测试能过、手写进测试文件里的替代性 JSDoc 注解** —— 典型是 `/** @returns {{ typography: object, … }} */`,注释里常写着「dist 编译产物无 `.d.ts`,字面量会被推成 never[]」这类理由。产物现在带声明了，**那些注解的前提已失效，而且 `@returns` 会覆盖推断** ⇒ 函数体改对了也不生效。实测：**删掉 `settings-logic.test.js` 里 `preset()` 上方一条 `@returns`，单文件当场少 10 条错误**；同一个文件另两处同类（`wizard-state.test.js` 手抄了一份 `WizardDraft`、`convert-helpers.js` 的 5 条 typedef 指 `src/`）也是同一病因。**故处理顺序必须是：① 查报错处附近有无手写 `@returns`/`@type`/`@param` → 有先删，让类型从产物声明推断 ② 删完还红才是夹具真写错 ③ 此时才按 `dist/*.d.ts` 的真实契约补注解。禁止与产物声明并存第二份手写类型 —— 那正是 ADR-069 要拆的错配。：#10 是 44 文件的 renderer 重构，而「renderer 层的类型面从不存在」正是它最缺的那道护栏；回退等于把计划里最大的风险留在一个没有类型看守的层上改。**代价是多出一整相的机械工作量**，这一条已计入，不藏。**唯一红线：不得用 `any`／`@ts-ignore`／摘 `// @ts-check` 把数字刷绿** —— 那会让这一步从「装上安全网」变成「装上一个恒绿的面具」，比不做更坏。
 | #06 | REQ-217 | 进度、降级、能力三者一并类型化 | `src/core/convert.ts` · `src/core/pipeline/*` · `src/core/{pdf,docx}/render.ts` · `src/convert/{run,context}.ts` · `src/mcp/tools.ts` · `src/renderer/state/pure.ts` | 阶段为穷尽判别联合，漏一个 kind 编译红；降级由 core 登记、交付面透传；两处 `ConvertContext` 改名完成 | `npm run typecheck` · 受影响段 | 必须在 #05 之后（要有类型面才谈得上「漏改编译红」） | 未开始 |
 | #07 | REQ-219 | 验收宿主分两档，段契约一字不改 | `test/harness/{runner,segment-host}.js` · `shared/test-common-surface.js` | 纯 node 档段不需要 userData 重定向；新增门禁判「node 档闭包内不得出现 electron」 | `npm run test` | 串行 | 未开始 |
-| #08 | REQ-220 | 断言与具名 case 收敛成一套，并机器强制 | `test/harness/{assert,case}.js` · 各段 `*.test.js` · `gates/repo/check-test-layout.mjs`（新判据） | **全部**段接入具名 case（段数取 `find test -name '*.test.js' | wc -l`，不复制数字）；段内零本地顶层 `assert`；新判据先报告后转正 | `npm run test` · `npm run check:test-layout` | 必须在 #07 之后（共用 harness） | 未开始 |
+| #08 | REQ-220 | 断言与具名 case 收敛成一套，并机器强制 | `test/harness/{assert,case}.js` · 各段 `*.test.js` · `gates/repo/check-test-layout.mjs`（新判据） | **全部**段接入具名 case（段数取 `find test -name '*.test.js' | wc -l`，不复制数字）；段内零本地顶层断言**实现**（自带 `throw` 的重写体要清零，`@returns {asserts cond}` 的委派型窄化壳合规，裁决见 `docs/adr/ADR-071-两处判据的形态裁决.md`）；新判据先报告后转正 | `npm run test` · `npm run check:test-layout` | 必须在 #07 之后（共用 harness） | 未开始 |
 | #09 | REQ-221 | 门禁自测走合成根表格化 | 新增合成根 harness · `test/gates/**` | 每道门禁的「合成树 + 期望问题清单」退化为一张表；**断言一条未删** | `npm run test` | 必须在 #08 之后（表格化要用统一断言库） | 未开始 |
-| #10 | REQ-218 | renderer 注入式重构 | `src/renderer/**` | feature 间零 import 且该判据已转正；四处反向注册 handler 删除；模块级可变状态收敛进 store | `npm run typecheck` · `npm run test` · 覆盖率四项不低于开工前 | 串行，且**按 feature 目录分四个可独立回滚的提交** | 未开始 |
+| #10 | REQ-218 | renderer 注入式重构 | `src/renderer/**` | feature 间零 import 且该判据已转正；**跨 feature 的反向注册槽清零**（按机制数不按点位；`recentRefreshHandler` 由组合根注册、已是目标形态须保留；判据原文「四处」已由 `docs/adr/ADR-071-两处判据的形态裁决.md` 取代）；模块级可变状态收敛进 store | `npm run typecheck` · `npm run test` · 覆盖率四项不低于开工前 | 串行，且**按 feature 目录分四个可独立回滚的提交** | 未开始 |
 
 **相的划分**：#01 单独成相（其余各步都引用它的数字）· #02+#03 一相（写域不重叠）· #04 · #05 · #06 · #07+#08+#09 一相（测试体系形态，三步有内部依赖）· #10 单独成相（最大最险，独立回滚）。
 

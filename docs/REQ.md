@@ -69,8 +69,6 @@
 | REQ-225 | 落盘失败码的登记完整性无看守 | 待拍板 | CLI 判「输出写不了」改为读错误码后,兜底方向是「码缺失按最一般的转换失败处理(退出码 3)」。方向本身是对的——不把不确定当确定。但它带来一个无红光的失效形态:将来新增一个落盘失败点若忘了在 OUTPUT_UNWRITABLE_CODES 登记码,症状只是退出码从 4 静默变成 3,没有任何门禁会红,而脚本化调用方读到的是「转换失败」而非「输出写不了」——两者的处置动作不同。需要一道判据把「每个落盘失败 throw 点都登记了码」变成可机械判定。 | 新增落盘失败点时;或有人要求脚本化调用方能区分这两类失败时 | 无 |
 | REQ-226 | 两个 merge 函数入参类型与语义相反 | 待拍板 | mergeSettingsWithDefaults 与 mergePendingSavePatch 入参声明为 Partial<AppSettings>,而 Partial 是浅的,子块仍要求字段齐全;但这两个函数的意义就是把残缺设置块补齐,测试刻意传残缺子块并断言走默认 —— 类型与语义相反。ADR-069 打开产物类型面后才可见(dist 此前无 .d.ts,任何调用都「合法」)。修法:入参改深 partial,属改对外接口须升 ADR,故单独立项。 | 要动这两个函数的签名时 | docs/adr/ADR-069-dist产出声明文件.md |
 | REQ-227 | harness 传入的转换上下文不完整 | 待拍板 | ConvertContext 必填 baseDir / cancelRequested / cancel() / signal,而 harness 的 60+ 个调用点只传 {baseDir, warnings, ...} —— 其余靠 dist 无声明时被当作 any 才没炸,ADR-069 打开类型面后暴露。属潜在运行期缺口而非排版问题。修法:harness 统一封装带默认值的构造器(60+ 处只需一处)。未擅自改:塞真实 AbortSignal 属改测试运行期行为。 | 要动 harness 的转换入口时 | docs/adr/ADR-069-dist产出声明文件.md |
-| REQ-229 | 断言收敛判据与仓库自带绕法冲突 | 待拍板 | #08 判据「段内零本地顶层 assert」与 assert.js:197-201 自带绕法直接冲突:TS 禁止从解构模式调用断言函数(TS2775),仓库给的官方绕法正是「段内包一层带 @returns {asserts cond} 的本地函数」。实测 8 个段命中(gates/supply 6 段 + main/converter + check-pointers-refs),且它们恰是 case 化最彻底的样板。按字面执行会判红样板本身,后续 125 段推广反复撞同一堵墙。 | #08 开工前必须裁决;或那 8 段的 @returns {asserts cond} 必要性下降时(ADR-069 带 .d.ts 后可能被并行泳道删掉) | docs/PLAN.md 步序 #08 |
-| REQ-230 | ADR-065 四处反向注册的组成待裁决 | 待拍板 | ADR-065 §二称「四处反向注册 handler」但未逐个点名,组成口径不明。已实测三点:commandBusyProbe 的槽(file-list.ts:204)与注册(convert-flow.ts:69)是同一机制两端;settings-save.ts:54 的 hooks 槽是真实反向注册但 ADR 未计;recentRefreshHandler 由 renderer.ts:142 组合根注册,已是目标形态。因未点名,无法判定 ADR 所指具体四项,需裁决按机制数还是按点位算。 | #10 开工前;或按字面执行「删四处」会误删已是目标形态的组合根注入时 | docs/adr/ADR-065-renderer功能层注入式重构.md |
 
 ## 在办
 
@@ -238,6 +236,8 @@
 | REQ-216 | 运行时行为对齐收口 | 已完成 | 已交付并复测：警告去重经单源入列后 docx 与 pdf 口径一致；CLI 改读错误码并经变异夹具自证改文案不影响判定；HTML max 镜像已有门禁看守。另补齐 pdf 跨进程丢码的回归(退出码 4 不再掉进兜底档 3)。 | 新增第 4 条输出失败文案时；警告种类增加时 | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md |
 | REQ-223 | 就地整改批次 | 已完成 | 已交付：settings-schema.ts 按 ADR-064 第 17 条改名为 schema.ts(逐字节等价、零残留引用、不新增同名组)；DOM stub 注释订正为与隔离模型一致。ADR-064 第 15 条数字归 REQ-214；console 前缀统一经评估撤除，见 PLAN。 | 无（已拍板要做） | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md |
 | REQ-215 | 覆盖率与门禁补盲 | 已完成 | 已交付并全链验过：豁免对读改严格双射(指向已删文件的幽灵 exclude 已删)；renderer 整层排除撤销，改为三条逐文件 runtime-entry 登记，阈值 90/85/90/90 未下调；两道门禁上链转 fail-closed。verify:ci 44 步全绿。 | 覆盖率阈值按 headroomPp 下调时；新增整层排除时 | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md |
+| REQ-229 | 断言收敛判据与仓库自带绕法冲突 | 已完成 | 判据措辞定为「零本地顶层断言实现」:禁自带 throw 的重写体,@returns {asserts cond} 的委派型窄化壳合规。那 8 段是没迁完的副本而非正当豁免,样板 supply-common.test.js:100-102 自证。 | #08 判据实现时;或 ADR-069 带 .d.ts 后 @returns {asserts cond} 必要性下降时 | docs/adr/ADR-071-两处判据的形态裁决.md |
+| REQ-230 | ADR-065 四处反向注册的组成待裁决 | 已完成 | 计数口径定为跨 feature 的槽、不按点位;recentRefreshHandler 由 renderer.ts:142 组合根注册、已是目标形态须保留。当前须清零的只有 stageChangedHandler 一处。ADR-065 状态行已标取代。 | #10 施工时;或新增跨 feature 反向注册槽时 | docs/adr/ADR-071-两处判据的形态裁决.md |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
