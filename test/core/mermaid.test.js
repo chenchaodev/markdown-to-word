@@ -145,7 +145,11 @@ export async function run() {
       throw new Error("docx 无 resolver:代码文本应保留");
     }
     if (warnings.some((x) => formatWarning(x).includes("Mermaid"))) {
-      throw new Error(`docx 无 resolver:不应产生 Mermaid 警告,warnings=${JSON.stringify(warnings)}`);
+      // 无 resolver 时应产生 warn.mermaidEmpty 降级警告
+      const hasMermaidEmpty = warnings.some((w) => typeof w === "object" && w.key === "warn.mermaidEmpty");
+      if (!hasMermaidEmpty) {
+        throw new Error(`docx 无 resolver:应产生 warn.mermaidEmpty 降级警告,warnings=${JSON.stringify(warnings)}`);
+      }
     }
     console.log("[ok] mermaid:docx 无 resolver 原行为不变,断言通过");
   }

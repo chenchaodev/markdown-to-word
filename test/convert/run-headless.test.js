@@ -195,11 +195,11 @@ export async function run() {
       `产物魔数应为 ZIP/OOXML(PK\\x03\\x04),实际 ${[...head].map((b) => b.toString(16).padStart(2, "0")).join(" ")}`,
     );
 
-    // 缺省 mermaid = 不注入:该代码块按普通围栏渲染,故**不应**出现 mermaid 失败 warning。
+    // 缺省 mermaid = 不注入:该代码块按普通围栏渲染,故应产生 mermaidEmpty 降级警告。
     const warnings = result.warnings ?? [];
     assert(
-      !warnings.some((w) => typeof w === "object" && w !== null && "key" in w && String(w.key).startsWith("warn.mermaid")),
-      `未注入 mermaidResolver 时不应产生 mermaid 失败 warning,实际 ${JSON.stringify(warnings)}`,
+      warnings.some((w) => typeof w === "object" && w !== null && "key" in w && w.key === "warn.mermaidEmpty"),
+      `未注入 mermaidResolver 时应产生 warn.mermaidEmpty 降级警告,实际 ${JSON.stringify(warnings)}`,
     );
 
     // 产物目录零临时文件残留(提交器 finally 清理);驱动脚本是本段自建的,单独排除。

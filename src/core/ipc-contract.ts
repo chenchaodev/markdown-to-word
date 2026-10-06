@@ -10,7 +10,7 @@
  * channel 名常量留 main/ipc/channels.ts,持久化 IO 留 main/persist/ui-state.ts,
  * 批量执行实现留 main/converter/batch.ts——实现侧 import 本文件类型,须满足本契约。
  */
-import type { ConvertWarning } from "./i18n/index.js";
+import type { ConvertWarning, WarningKey } from "./i18n/index.js";
 import type { PageSetup } from "./settings/settings-defaults.js";
 import type { TypographySettings } from "./settings/typography.js";
 
@@ -101,6 +101,8 @@ export interface ConvertResult {
   error?: string;
   /** 非致命警告(如缺失本地图片),成功时可能携带;元素为 ConvertWarning(keyed) */
   warnings?: ConvertWarning[];
+  /** 发生的降级(由 warnings 中的 KeyedWarning 派生,去重;为空则无降级) */
+  degradations?: WarningKey[];
   /** 用户主动取消(非错误) */
   canceled?: boolean;
 }
