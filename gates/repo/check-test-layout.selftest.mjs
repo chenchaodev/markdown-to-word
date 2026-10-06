@@ -313,7 +313,7 @@ const NO_OWN_SUBJECT = [
 /** 一个 type-only 引用指 src/ 的段:除该类型引用外不 import 任何本层主体 */
 const TYPE_ONLY_SRC_REF = [
   "// @ts-check",
-  "/** 夹具段:唯一的本层引用是 type-only 的 src/ 类型引用(dist/ 不产 .d.ts,故合法且必需)。 */",
+  "/** 夹具段:唯一的本层引用是 type-only 的类型引用(该形态一律放行)。 */",
   "/** @typedef {import(\"../../src/core/i18n.js\").ConvertWarning} Warning */",
   "export const meta = { description: 'type-only-src-ref' };",
   "/** @param {Warning} w @returns {Warning} */",
@@ -418,7 +418,9 @@ const CASES = [
     expect: null,
   },
   {
-    // type-only 放行:本仓产物不产 .d.ts,类型引用只能指 src/。把它判红等于逼人删掉类型标注。
+    // type-only 放行:类型引用不判红,否则等于逼人删掉类型标注。⚠ 该理由原文写的是
+    // 「本仓产物不产 .d.ts,类型引用只能指 src/」—— 该前提已随 ADR-069 失效(现在类型也指
+    // `dist/`),但**放行口径不变**:本条与「指 src/ 还是 dist/」无关。
     name: "L4:唯一的本层引用是 type-only 的 src/ 类型引用 → 判绿(不得判红)",
     judgeOnly: true,
     extra: { [`${TEST_REL}/core/render-defaults.test.js`]: TYPE_ONLY_SRC_REF },

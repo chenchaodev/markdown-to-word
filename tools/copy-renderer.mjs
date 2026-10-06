@@ -3,8 +3,10 @@
 // 显式按文件名拷贝而非扩展名通配——dist/renderer 是混合目录(tsc 编译的 pure.js 等
 // 也在其中),按 .js 通配清理/拷贝会误伤编译产物。
 // css 拆入 src/renderer/style/ 子目录,html/css 拷贝与清理为
-// 递归遍历(保持相对路径);tsc 未开 declaration,只产出 .js/.js.map,
-// 递归清理 .html/.css 不会误删编译产物。
+// 递归遍历(保持相对路径);递归清理 .html/.css 不会误删编译产物。
+// ⚠ 原注释的理由写的是「tsc 未开 declaration,只产出 .js/.js.map」—— ADR-069 已开
+// `declaration: true`,dist/ 现在**也产 `.d.ts` / `.d.cts`**。清理范围仍然安全(只按
+// .html/.css 后缀删,声明文件不属这两类),但理由已变(见 REQ-233)。
 //
 // 构建边界(清理范围刻意保守):本脚本在 tsc 之后运行,只对自己拷贝过的东西
 // 负责——递归 html/css + 两个显式单文件。tsc 的 .js/.js.map 不在管辖范围

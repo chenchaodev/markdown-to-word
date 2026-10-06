@@ -50,15 +50,18 @@
 //   - `src/` 的直接子目录 R → `src/R/` **与** `dist/R/`(源与产物都算本层主体);
 //   - 仓顶层树 R(gates/shared/tools)→ 只有 `R/`。
 // 为什么 `src/R/` 与 `dist/R/` 都算:本仓的验收段跑**产物**(`dist/` 是 tsc 输出,
-// 覆盖率与 `test:smoke` 的新鲜度门禁都以它为准),而类型引用只能指 `src/`
-// (见下节)。只认其一会把另一半合法形态判红。
+// 覆盖率与 `test:smoke` 的新鲜度门禁都以它为准),而类型引用历史上只能指 `src/`
+// (前提已随 ADR-069 失效,见下节)。只认其一会把另一半合法形态判红。
 //
 // ---- 值 import 与 type-only 引用必须分开(否则合法形态被误判) ----
-// 本仓的 `dist/` **不产 `.d.ts`**(tsconfig.test.json 的 checkJs 关闭、产物只发 JS),
-// 所以测试段里有一批**类型引用只能指 `src/`**:实测形如
-// `test/core/render-defaults.test.js:36` 的
-// `@typedef {import("../../src/core/i18n.js").ConvertWarning} Warning`。
-// 这些引用合法且必需(改成指 `dist/` 会因缺声明文件而失去类型),**不得判红**。
+// ⚠ **下面这三条形态描述写于 `declaration: true`(ADR-069)落地之前,前提已失效**:那时
+// `dist/` 不产 `.d.ts`,故测试段里有一批**类型引用只能指 `src/`**(形如
+// `@typedef {import("../../src/core/i18n.js").ConvertWarning} Warning`)。产物现在带声明
+// 文件,测试的类型引用已全量改指 `dist/`,那类 `src/` typedef 在真实段里已不复存在。
+// **判据逻辑未受影响**:下面自述的「src/R 与 dist/R 都算主体根」「type-only 计入 ownHits」
+// 「C1 两档排除 type-only」三条对 src→dist 的翻转同样成立,过时的只是「类型只能指 src」
+// 这个前提(见 REQ-233)。
+// type-only 引用合法且必需(判红等于逼人删掉类型标注),这一点与它指 `src/` 还是 `dist/` 无关。
 // 判据因此复用 `check-import-boundary.mjs` 导出的 `isTypeOnlyClause`(词法层已区分
 // `import type` 与行内 `type` 说明符),并对 JSDoc 里的 `import("…")` 形态单列一条:
 // `import("…")` 出现在**代码**里是运行期动态 import,出现在**注释**里才是类型引用 ——
@@ -83,7 +86,9 @@
 //      与 L4/L5 排除 type-only 同款取舍(同一个 `isTypeOnlyClause`,不另立口径)。
 //   ⑤ **`src/**` 的值引用** —— C1 两档的**判据对象都是 `dist/**`**,源侧只用来做存在性核对
 //      (C1 档二还要用它算「同名产物」)。源侧的值引用本身不构成一档:实测 140 段对 `src/**`
-//      的值引用**恒为 0**(tsc 不产 `.d.ts`,故类型只能指 `src/`、值只能指 `dist/`)。
+//      的值引用**恒为 0**。⚠ 原注释的理由「tsc 不产 `.d.ts`,故类型只能指 `src/`」已随
+//      ADR-069 的 `declaration: true` 失效(现在类型也指 `dist/`);该实测结论本身未被复核,
+//      要依赖它须先重测(已登记 REQ-233)。
 //
 // ⇒ 收敂成一句:**被测 import = 解析后落在 `dist/**` 的值引用**。C1 两档都只认这一类。
 //
@@ -1579,7 +1584,9 @@ export function checkTestLayout(base = {}) {
 
     // L4 上界:至少一个解析后落在本层主体根内的引用。
     // type-only 引用**计入**「至少一个」—— 形如 `@typedef {import("../../src/core/i18n.js")…}`
-    // 的类型引用是本仓的必需形态(产物不产 .d.ts,见文件头),把它判红等于逼人删掉类型标注。
+    // 的类型引用在本仓长期是必需形态,把它判红等于逼人删掉类型标注。⚠ 该举例写于 ADR-069 之前
+    // (见文件头),现已改指 `dist/`;**「type-only 计入」这条判据口径不变** —— 它与类型引用
+    // 指哪棵树无关,故本条的判据逻辑不需要跟着 ADR-069 改。
     const ownHits = imports.filter((entry) => entry.resolved !== null && own.some((p) => entry.resolved.startsWith(p)));
     if (ownHits.length === 0 && !coversOwn) {
       stats.l4NoOwnSubject += 1;
