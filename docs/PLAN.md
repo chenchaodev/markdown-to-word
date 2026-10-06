@@ -24,7 +24,9 @@
 
 ## 下一步
 
-把 `gates/repo/check-import-boundary.mjs` 第 264 行那条内嵌普查命令按 feature **根目录**折叠重写（现版取 from 侧用的是父目录链，`convert/events/*.ts` 被算成 `convert/events` 而非 `convert`），并把同段注释里的 `13/3` 一并改成重算值；改完跑 `npm run check:boundary`。
+清掉 `test/renderer/settings-logic.test.js` 里最后 9 条类型错误（全在夹具侧：不完整/过窄的对象字面量）。这是 typecheck 归零的唯一阻塞项 —— 归零后按「修复项复测」那节跑 `verify:ci`，绿了才提交。
+
+三条测绘的结论底账在 `docs/evidence/20261006-141113-三份只读测绘事实地图与接手须知.md`，含 §二「接手须知」三条踩空点（新增 evidence 后必须跑 `gen:archive-index` · 段数只写指针不写数字 · 三类测量口径错误）。#08 与 #10 开工前先看该文件 §三/§五，两处判据与 ADR 组成歧义已登记 REQ-229 / REQ-230。
 
 ## 完成标准
 
