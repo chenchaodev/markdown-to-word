@@ -29,7 +29,9 @@ export const fixtures = null;
  * 取值 —— 原段传的是 main 侧 loadSettings 的产物(一份逐键兜底后的完整设置),换成本
  * 文件里这一份形状完整的设置,两条键集判定一字不改。故此处就地声明形状:既不经 main
  * 往返,也不取 settings-defaults 单源(那会给本段平白添一条跨层 import)。
- * @type {import("../../src/core/settings/settings-defaults.js").AppSettings}
+ * 类型指向 dist 产物声明(ADR-069 后产物带 .d.ts):指向 src 是 declaration 打开前的
+ * 替代品,已失效 —— 形状照旧由本段就地声明,但类型面与被测物归一,免得分叉。
+ * @type {import("../../dist/core/settings/settings-defaults.js").AppSettings}
  */
 const settings = {
   version: 1,

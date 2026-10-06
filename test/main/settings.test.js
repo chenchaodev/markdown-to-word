@@ -56,6 +56,13 @@ import {
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 
+/** 设置契约(单源:core/settings/settings-defaults) */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").AppSettings} AppSettings */
+/** 页面设置契约 */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").PageSetup} PageSetup */
+/** schema 表的键联合(用于「表内不可能出现的键名」这类反向断言) */
+/** @typedef {import("../../dist/core/settings/schema.js").SettingsSchemaEntry} SettingsSchemaEntry */
+
 /**
  * 形状校验夹具(合法完整对象):「可缺字段」声明为可选——旧文件兼容用例经 delete
  * 去掉这些键来模拟旧档;取值声明为 unknown,因为同组用例也刻意塞非法值断言整文件拒绝。
@@ -91,6 +98,41 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`settings 断言失败:${msg}`);
 }
 
+/**
+ * 越界 patch 投喂口:本段有一批用例**刻意**送非法 patch(updateSettings 的清洗面
+ * 正是被测对象:枚举外值 / 非布尔 / 非字符串 / 缺字段 / 白名单外键各自回退默认)。
+ * updateSettings 的声明入参是 Partial<AppSettings>(合格 patch 的类型),故这些
+ * 刻意越界的字面量无法直接传入 —— 它们模拟的是「renderer 送了脏数据」这一现实,
+ * 而不是一份写错了的设置。
+ *
+ * 故收口在此单点:入参按 unknown 收(照实描述「来路不明的 patch」),内部一次
+ * cast 到被测函数的声明入参类型,返回值仍是 AppSettings(后续断言照常受类型检查)。
+ * 只此一处 cast,不在各调用点散落。
+ *
+ * @param {{ updateSettings: (patch: Partial<AppSettings>) => Promise<AppSettings> }} mod settings 模块实例
+ * @param {unknown} patch 刻意越界的 patch(非法枚举 / 错类型 / 缺字段 / 白名单外键)
+ * @returns {Promise<AppSettings>} 清洗合并后的完整设置
+ */
+const patchDirty = (mod, patch) => mod.updateSettings(/** @type {Partial<AppSettings>} */ (patch));
+
+/**
+ * 「旧文件兼容」副本:去掉给定键模拟旧 settings.json 缺该键(逐键 delete)。
+ * 显式重贴 ValidSettingsFixture 标注是必要的 —— 上游 mod.isValidSettings(validSettings)
+ * 的类型守卫会把 validSettings 收窄成 AppSettings,那会把 toc/outputDir 等
+ * 「可缺字段」变成必填,delete 随即判红(TS2790)。旧文件兼容用例要的正是
+ * 「这些键可缺」这一形状,故在此把形状显式复位。
+ *
+ * @param {ValidSettingsFixture} base 完整形状夹具
+ * @param {readonly string[]} dropped 要去掉的键
+ * @returns {Record<string, unknown>} 缺这些键的逐键扫描副本
+ */
+const withoutKeys = (base, dropped) => {
+  /** @type {Record<string, unknown>} */
+  const copy = { ...base };
+  for (const key of dropped) delete copy[key];
+  return copy;
+};
+
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
@@ -109,7 +151,8 @@ export async function run() {
     const mod = await freshModule();
 
     // ---- 1. sanitizePageSetup 数值钳制:0 边界保留、负值/超限钳回;非法枚举回退 ----
-    const r1 = await mod.updateSettings({
+    // 越界面(B5 / reverse):被测的就是枚举回退,故经 patchDirty 投喂
+    const r1 = await patchDirty(mod, {
       pageSetup: {
         marginTop: -5, marginBottom: 0, marginLeft: 301, marginRight: 300,
         paper: "B5", orientation: "reverse",
@@ -124,7 +167,8 @@ export async function run() {
     assert(r1.pageSetup.orientation === DEFAULT_PAGE_SETUP.orientation, "orientation 枚举外值应回退默认");
 
     // ---- 2. sanitizePageSetup 非数回退默认；几何非法值确定性收缩并 warning ----
-    const r2 = await mod.updateSettings({
+    // 越界面:NaN / -999 / 缺 paper·orientation(缺字段沿用当前值)
+    const r2 = await patchDirty(mod, {
       pageSetup: { marginTop: 0, marginBottom: 300, marginLeft: NaN, marginRight: -999 },
     });
     assert(r2.pageSetup.marginTop === 0, "0 边界保留");
@@ -132,10 +176,11 @@ export async function run() {
     assert(r2.pageSetup.marginLeft === r1.pageSetup.marginLeft, "NaN 应回退当前 pageSetup 左边距");
     assert(r2.pageSetup.marginRight === 0, "-999 应钳制到 0");
     validatePageSetup(r2.pageSetup);
-    const r2PartialBase = await mod.updateSettings({
+    // 局部 pageSetup patch:只给部分边距 / 只给纸张,被测的是「按当前值合并、不重置」
+    const r2PartialBase = await patchDirty(mod, {
       pageSetup: { marginTop: 11, marginBottom: 12, marginLeft: 13, marginRight: 14 },
     });
-    const r2Partial = await mod.updateSettings({ pageSetup: { paper: "A5" } });
+    const r2Partial = await patchDirty(mod, { pageSetup: { paper: "A5" } });
     assert(
       r2Partial.pageSetup.marginTop === r2PartialBase.pageSetup.marginTop &&
         r2Partial.pageSetup.marginBottom === r2PartialBase.pageSetup.marginBottom &&
@@ -168,20 +213,22 @@ export async function run() {
     );
 
     // ---- 3. sanitizeTypography 字号/行距边界值与越界值 ----
-    const r3 = await mod.updateSettings({ typography: { bodySizePt: 8, lineSpacing: 1.0 } });
+    // typography 局部 patch:只给部分字段(缺字段由清洗器补默认)
+    const r3 = await patchDirty(mod, { typography: { bodySizePt: 8, lineSpacing: 1.0 } });
     assert(r3.typography.bodySizePt === 8, "bodySizePt 8 边界应保留");
     assert(r3.typography.lineSpacing === 1.0, "lineSpacing 1.0 边界应保留");
-    const r4 = await mod.updateSettings({ typography: { bodySizePt: 24, lineSpacing: 2.5 } });
+    const r4 = await patchDirty(mod, { typography: { bodySizePt: 24, lineSpacing: 2.5 } });
     assert(r4.typography.bodySizePt === 24, "bodySizePt 24 边界应保留");
     assert(r4.typography.lineSpacing === 2.5, "lineSpacing 2.5 边界应保留");
-    const r5 = await mod.updateSettings({
+    // 越界面:7.9/0.9 越界 + 空字体 + align 枚举外值(right)
+    const r5 = await patchDirty(mod, {
       typography: { bodySizePt: 7.9, lineSpacing: 0.9, fontAscii: "", align: "right" },
     });
     assert(r5.typography.bodySizePt === DEFAULT_TYPOGRAPHY.bodySizePt, "bodySizePt 7.9 越界应回退默认");
     assert(r5.typography.lineSpacing === DEFAULT_TYPOGRAPHY.lineSpacing, "lineSpacing 0.9 越界应回退默认");
     assert(r5.typography.fontAscii === DEFAULT_TYPOGRAPHY.fontAscii, "空字体应回退默认");
     assert(r5.typography.align === DEFAULT_TYPOGRAPHY.align, "align 枚举外值(right)应回退默认");
-    const r6 = await mod.updateSettings({
+    const r6 = await patchDirty(mod, {
       typography: {
         bodySizePt: 24.1, lineSpacing: 2.6, fontEastAsia: "宋体",
         firstLineIndent: false, headingNumbering: false,
@@ -194,7 +241,8 @@ export async function run() {
     assert(r6.typography.headingNumbering === false, "布尔字段应保留");
 
     // ---- 4. 非法枚举/类型回退(format/afterConvert/version/breakBeforeH1) ----
-    const r7 = await mod.updateSettings({
+    // 越界面:四个键各自枚举外/错类型/非当前版本,应各自回退默认
+    const r7 = await patchDirty(mod, {
       format: "html", afterConvert: "email", version: 2, breakBeforeH1: "yes",
     });
     assert(r7.format === "docx", "format 枚举外值(html)应回退默认 docx");
@@ -207,13 +255,13 @@ export async function run() {
     assert(r8.equationNumbering === false, "合法布尔(equationNumbering)应保留");
     const r8b = await mod.updateSettings({ tocMode: "field" });
     assert(r8b.tocMode === "field", "合法 tocMode(field)应保留");
-    const r8c = await mod.updateSettings({ tocMode: "bogus" });
+    const r8c = await patchDirty(mod, { tocMode: "bogus" });
     assert(r8c.tocMode === "static", "非法 tocMode 应回退默认 static");
 
     // ---- 5. sanitizePatch 白名单:未知键过滤 + 键集合同构(schema 表为准) ----
     // 原先这里是 18 个键名的全量硬编码副本;改为遍历 schema 表断言,键集合同构由
     // 「表派生」保证,不再需要在测试里复写一遍键名(键名一改这里就漏)。
-    const r9 = await mod.updateSettings({ evil: "x", xss: 1, format: "pdf" });
+    const r9 = await patchDirty(mod, { evil: "x", xss: 1, format: "pdf" });
     assert(!("evil" in r9) && !("xss" in r9), "白名单外键应被过滤(不写入)");
     assert(r9.format === "pdf", "白名单内键应正常生效");
     const persistedKeys = SETTINGS_SCHEMA.filter((e) => e.role === "persisted").map((e) => e.key);
@@ -237,7 +285,7 @@ export async function run() {
     // ---- 5b. pdfCss:合法 string 保留 / 非 string 回退默认空串 ----
     const r9b = await mod.updateSettings({ pdfCss: "body { color: red; }" });
     assert(r9b.pdfCss === "body { color: red; }", "pdfCss 合法 string 应保留");
-    const r9c = await mod.updateSettings({ pdfCss: 123 });
+    const r9c = await patchDirty(mod, { pdfCss: 123 });
     assert(r9c.pdfCss === "", "pdfCss 非 string 应回退默认空串");
     const r9d = await mod.updateSettings({ pdfCss: "" });
     assert(r9d.pdfCss === "", "pdfCss 空串应保留(清除语义)");
@@ -247,9 +295,9 @@ export async function run() {
     assert(r9e.theme === "dark", "theme 合法值(dark)应保留");
     const r9f = await mod.updateSettings({ theme: "light" });
     assert(r9f.theme === "light", "theme 合法值(light)应保留");
-    const r9g = await mod.updateSettings({ theme: "blue" });
+    const r9g = await patchDirty(mod, { theme: "blue" });
     assert(r9g.theme === "system", "theme 枚举外值(blue)应回退默认 system");
-    const r9h = await mod.updateSettings({ theme: 123 });
+    const r9h = await patchDirty(mod, { theme: 123 });
     assert(r9h.theme === "system", "theme 非字符串应回退默认 system");
 
     // ---- 5d. 渲染前变换两组(adr-021 两档 + adr-024 分组):合法保留 / 非布尔回退默认 /
@@ -277,12 +325,12 @@ export async function run() {
       afterPresetImport.aiCleanup.tidy === false && afterPresetImport.aiCleanup.rewrite === false,
       "导入预设不得丢失 AI 清理两档(两档不入预设)",
     );
-    const rTierBad = await mod.updateSettings({ aiCleanup: { enabled: "yes", tidy: 1 } });
+    const rTierBad = await patchDirty(mod, { aiCleanup: { enabled: "yes", tidy: 1 } });
     assert(
       JSON.stringify(rTierBad.aiCleanup) === JSON.stringify({ enabled: false, tidy: true, rewrite: true }),
       `块内非布尔应逐字段回退默认(总开关关、两档开),实际 ${JSON.stringify(rTierBad.aiCleanup)}`,
     );
-    const rObsidianBad = await mod.updateSettings({ obsidian: { compat: "yes", attachmentFolder: 3 } });
+    const rObsidianBad = await patchDirty(mod, { obsidian: { compat: "yes", attachmentFolder: 3 } });
     assert(
       JSON.stringify(rObsidianBad.obsidian) === JSON.stringify({ compat: false, attachmentFolder: "Attachments" }),
       `obsidian 块内非布尔/非字符串应逐字段回退默认,实际 ${JSON.stringify(rObsidianBad.obsidian)}`,
@@ -562,26 +610,20 @@ export async function run() {
     });
     assert(mod.isValidSettings(validSettings) === true, "合法完整对象应通过形状校验(合法值保留)");
     // 旧文件兼容:缺 toc/outputDir 视为合法(loadSettings 兜底)
-    const legacySettings = { ...validSettings };
-    delete legacySettings.toc;
-    delete legacySettings.outputDir;
+    const legacySettings = withoutKeys(validSettings, ["toc", "outputDir"]);
     assert(mod.isValidSettings(legacySettings) === true, "缺 toc/outputDir 的旧文件应通过形状校验");
     // equationNumbering 缺失(旧文件)视为合法,存在则须为布尔
-    const legacyNoEq = { ...validSettings };
-    delete legacyNoEq.equationNumbering;
+    const legacyNoEq = withoutKeys(validSettings, ["equationNumbering"]);
     assert(mod.isValidSettings(legacyNoEq) === true, "缺 equationNumbering 的旧文件应通过形状校验");
     // pdfCss 缺失(旧文件)视为合法,存在则须为 string
-    const legacyNoPdfCss = { ...validSettings };
-    delete legacyNoPdfCss.pdfCss;
+    const legacyNoPdfCss = withoutKeys(validSettings, ["pdfCss"]);
     assert(mod.isValidSettings(legacyNoPdfCss) === true, "缺 pdfCss 的旧文件应通过形状校验");
     // language 缺失(旧文件)视为合法;非法/未注册值亦不整文件拒绝
     // (语言裁撤迁移:ko/fr/ru 用户字段级兜底 zh,其余偏好保留),见 loadSettings
-    const legacyNoLang = { ...validSettings };
-    delete legacyNoLang.language;
+    const legacyNoLang = withoutKeys(validSettings, ["language"]);
     assert(mod.isValidSettings(legacyNoLang) === true, "缺 language 的旧文件应通过形状校验");
     // theme 缺失(旧文件)视为合法,存在则须为 system/light/dark
-    const legacyNoTheme = { ...validSettings };
-    delete legacyNoTheme.theme;
+    const legacyNoTheme = withoutKeys(validSettings, ["theme"]);
     assert(mod.isValidSettings(legacyNoTheme) === true, "缺 theme 的旧文件应通过形状校验");
     assert(mod.isValidSettings({ ...validSettings, theme: "dark" }) === true, "theme dark 应通过形状校验");
     assert(mod.isValidSettings({ ...validSettings, theme: "system" }) === true, "theme system 应通过形状校验");
@@ -672,7 +714,9 @@ export async function run() {
     // version 已移出被校验键集合,但仍按声明的格式版本判定(不升位)
     assert(CURRENT_SETTINGS_VERSION === 1, "settings.json 格式版本应保持 1(adr-028 决定要点二:不升位)");
     assert(
-      !SETTINGS_SCHEMA.some((e) => e.key === "version"),
+      // e.key 收窄成 string 再比:本条断言的正是「表内没有 version 这个键」,
+      // 而 version 已不在 schema 的键联合里(联合类型会直接判本条恒真/恒假)
+      !SETTINGS_SCHEMA.some((e) => /** @type {string} */ (e.key) === "version"),
       "version 不应是表内条目(表不得被版本号选取,否则 schema 被自身校验)",
     );
     assert(mod.isValidSettings({ ...validSettings, version: 2 }) === false, "version 非当前格式版本应整文件拒绝");
@@ -812,9 +856,10 @@ export async function run() {
       s4.typography.bodySizePt === 14 && s4.typography.align === "left" && s4.typography.fontEastAsia === "宋体",
       "合法 typography 应保留",
     );
+    const saved = s4.customPresets[0];
     assert(
-      s4.customPresets.length === 1 && s4.customPresets[0].name === "存档模板" &&
-      s4.customPresets[0].typography.bodySizePt === 14 && s4.customPresets[0].pageSetup.marginBottom === 200,
+      s4.customPresets.length === 1 && saved !== undefined && saved.name === "存档模板" &&
+      saved.typography.bodySizePt === 14 && saved.pageSetup.marginBottom === 200,
       "合法 customPresets 应原样读取(名称/typography/pageSetup 保留)",
     );
 
@@ -825,8 +870,9 @@ export async function run() {
     const [rA, rB, rC, rD] = await Promise.all([
       mod.updateSettings({ format: "pdf", toc: true, breakBeforeH1: true }),
       mod.updateSettings({ format: "docx", afterConvert: "open" }),
-      mod.updateSettings({ pageSetup: { marginTop: 12.5, marginBottom: 20, marginLeft: 30, marginRight: 40 } }),
-      mod.updateSettings({ typography: { bodySizePt: 13 } }),
+      // 局部块 patch(只给部分边距 / 只给字号):被测的是「不同字段并发互不覆盖」
+      patchDirty(mod, { pageSetup: { marginTop: 12.5, marginBottom: 20, marginLeft: 30, marginRight: 40 } }),
+      patchDirty(mod, { typography: { bodySizePt: 13 } }),
     ]);
     // 每个调用返回各自合并结果(调用间互不吞并)
     assert(rA.format === "pdf" && rA.toc === true && rA.breakBeforeH1 === true, "并发调用 1 应返回自身合并结果");
@@ -914,7 +960,9 @@ export async function run() {
 console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文件回退/并发写队列 断言通过");
 
     // ---- 11. customPresets:合法保留/非法丢弃/同名去重/上限截断/非数组回退 ----
-    const r11 = await mod.updateSettings({
+    // 全组越界:条目字段残缺 / pageSetup 非对象 / 元素非对象 / 整键非数组,
+    // 被测的正是 sanitizeCustomPresets 的逐条清洗与丢弃,故经 patchDirty 投喂
+    const r11 = await patchDirty(mod, {
       customPresets: [
         { name: "我的模板", typography: { bodySizePt: 13, fontEastAsia: "宋体" }, pageSetup: { marginTop: -5, paper: "A4", orientation: "portrait", marginBottom: 20, marginLeft: 30, marginRight: 40 } },
         { name: "", typography: {}, pageSetup: {} }, // 空名称 → 丢弃
@@ -924,22 +972,25 @@ console.log("[ok] settings:钳制边界/枚举回退/白名单/损坏与旧文�
       ],
     });
     assert(r11.customPresets.length === 1, `customPresets 应只保留 1 条合法条目,实际 ${JSON.stringify(r11.customPresets)}`);
-    assert(r11.customPresets[0].name === "我的模板", "合法条目名称应保留");
-    assert(r11.customPresets[0].typography.bodySizePt === 13, "合法 typography 字段应保留");
-    assert(r11.customPresets[0].typography.fontEastAsia === "宋体", "部分 typography 字段应保留(缺失字段回退默认)");
-    assert(r11.customPresets[0].pageSetup.marginTop === 0, "pageSetup 应经钳制(-5 → 0)");
-    assert(r11.customPresets[0].pageSetup.paper === "A4", "pageSetup 枚举应保留");
+    const kept = r11.customPresets[0];
+    assert(kept !== undefined, "唯一保留的条目应可取到");
+    assert(kept.name === "我的模板", "合法条目名称应保留");
+    assert(kept.typography.bodySizePt === 13, "合法 typography 字段应保留");
+    assert(kept.typography.fontEastAsia === "宋体", "部分 typography 字段应保留(缺失字段回退默认)");
+    assert(kept.pageSetup.marginTop === 0, "pageSetup 应经钳制(-5 → 0)");
+    assert(kept.pageSetup.paper === "A4", "pageSetup 枚举应保留");
 
+    /** @type {{ name: string, typography: object, pageSetup: object }[]} */
     const many = [];
     for (let i = 0; i < 12; i++) many.push({ name: `p${i}`, typography: {}, pageSetup: {} });
-    const r12 = await mod.updateSettings({ customPresets: many });
+    const r12 = await patchDirty(mod, { customPresets: many });
     assert(r12.customPresets.length === 10, `customPresets 应截断到 10,实际 ${r12.customPresets.length}`);
     assert(
-      r12.customPresets[0].name === "p0" && r12.customPresets[9].name === "p9",
+      r12.customPresets[0]?.name === "p0" && r12.customPresets[9]?.name === "p9",
       "截断应保留先保存的 10 条",
     );
 
-    const r13 = await mod.updateSettings({ customPresets: "nope" });
+    const r13 = await patchDirty(mod, { customPresets: "nope" });
     assert(Array.isArray(r13.customPresets) && r13.customPresets.length === 0, "customPresets 非数组应回退 []");
     console.log("[ok] settings:customPresets 校验(合法保留/非法丢弃/同名去重/上限 10/非数组回退)断言通过");
   } finally {

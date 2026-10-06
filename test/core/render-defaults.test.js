@@ -33,7 +33,7 @@ import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../ha
 import { ROOT } from "../harness/paths.js";
 
 /** 契约类型的只读引用(编译期擦除) */
-/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
 
 export const meta = {
   description: "渲染选项默认值解析:逐键断言 8 个共有开关 + 页眉页脚 + 目录模式,且两侧渲染层不再自带默认值字面量",
@@ -61,7 +61,10 @@ function deepEqual(actual, expected) {
   return JSON.stringify(actual) === JSON.stringify(expected);
 }
 
-/** 显式值透传用的 typography:与 DEFAULT_TYPOGRAPHY 每一项都不同 */
+/** 显式值透传用的 typography:与 DEFAULT_TYPOGRAPHY 每一项都不同
+ *  (align 是字面量联合,裸对象字面量会推成 string 而与 TypographySettings 不兼容
+ *   —— 整对象标注一次即可,不必逐字段断言) */
+/** @type {import("../../dist/core/settings/typography.js").TypographySettings} */
 const EXPLICIT_TYPOGRAPHY = {
   ...DEFAULT_TYPOGRAPHY,
   fontAscii: "Consolas",
@@ -89,13 +92,15 @@ const EXPECTED_DEFAULTS = {
 export async function run() {
   // ---- 1. 空输入:8 个键逐键落回期望默认值 ----
   const empty = resolveRenderSwitches({});
+  // EXPECTED_DEFAULTS 的键是动态的(`Object.entries` 出 string),而 ResolvedRenderSwitches
+  // 是 interface(无隐式索引签名),故经 unknown 取 Record 视图后按键取值。
+  // 为什么走 unknown 中转:interface 不能直接断言成 Record<string, unknown>(两者无足够重叠),
+  // 而 unknown 中转不会丢检查 —— 断言目标仍是 Record<string, unknown>。
+  const emptyView = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (empty));
   for (const [key, expected] of Object.entries(EXPECTED_DEFAULTS)) {
     assert(
-      deepEqual(
-        /** @type {Record<string, unknown>} */ (empty)[key],
-        expected,
-      ),
-      `空输入时 ${key} 应解析为默认值(实际 ${JSON.stringify(/** @type {Record<string, unknown>} */ (empty)[key])})`,
+      deepEqual(emptyView[key], expected),
+      `空输入时 ${key} 应解析为默认值(实际 ${JSON.stringify(emptyView[key])})`,
     );
   }
   // 键集合本身也要锁:新增键忘了在此登记即判红(默认值台账的机械化守卫)
@@ -133,7 +138,14 @@ export async function run() {
   assert(explicit.watermark.text === "机密", "watermark 显式值应原样透传");
 
   // ---- 4. 水印的部分字段:缺省字段补默认,给定字段不被覆盖 ----
-  const partial = resolveRenderSwitches({ watermark: { text: "仅文字" } });
+  // 契约上 SharedRenderOptions.watermark 是 WatermarkSettings(四字段全必填),
+  // 而本用例要测的正是 resolveRenderSwitches 里 `{ ...DEFAULT_WATERMARK, ...x }`
+  // 那一层的「缺省补默认」—— 局部缺字段是被测行为,不是夹具写错。
+  // 处置沿用本文件下方 resolveHeaderFooter 同一口径(never 中转):只放宽这一个
+  // 「局部缺字段」事实,不打穿其他检查。
+  const partial = resolveRenderSwitches({
+    watermark: /** @type {never} */ ({ text: "仅文字" }),
+  });
   assert(partial.watermark.text === "仅文字", "水印给定字段应保留");
   assert(
     partial.watermark.angle === DEFAULT_WATERMARK.angle,

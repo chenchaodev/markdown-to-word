@@ -145,19 +145,26 @@ export async function run() {
 
   // ---- 断言 4b:exists 轻量存在性通道(本地 fs.access,免整读) ----
   // 存在 → true;缺失(ENOENT)→ false;data: 等非本地路径退回完整解析(null → false)。
-  if ((await local.exists("./input/g1-tiny.png")) !== true) {
+  // exists 是可选注入成员(ImageResolver.exists?),故先判空并把它收进局部常量:
+  // 契约面「可缺省」在此被断言为「本实现必提供」(缺省即 resolver 未实现该通道,
+  // 后面五条断言会整段失去意义),不靠 `!` 或默认值糊过去。
+  const exists = local.exists;
+  if (exists === undefined) {
+    throw new Error("image-downloader 断言失败:createImageResolver 应注入 exists 轻量存在性通道");
+  }
+  if ((await exists("./input/g1-tiny.png")) !== true) {
     throw new Error("image-downloader 断言失败:exists 对存在的本地图片应返回 true");
   }
-  if ((await local.exists(PNG_PATH)) !== false) {
+  if ((await exists(PNG_PATH)) !== false) {
     throw new Error("image-downloader 断言失败:exists 应拒绝存在的绝对路径");
   }
-  if ((await local.exists("\\\\server\\share\\image.png")) !== false) {
+  if ((await exists("\\\\server\\share\\image.png")) !== false) {
     throw new Error("image-downloader 断言失败:exists 应拒绝 UNC 路径");
   }
-  if ((await local.exists("./missing-xxx.png")) !== false) {
+  if ((await exists("./missing-xxx.png")) !== false) {
     throw new Error("image-downloader 断言失败:exists 对缺失本地文件应返回 false");
   }
-  if ((await local.exists("data:image/png;base64,AAAA")) !== false) {
+  if ((await exists("data:image/png;base64,AAAA")) !== false) {
     throw new Error("image-downloader 断言失败:exists 对 data: URI 应退回完整解析得 false");
   }
 
@@ -197,7 +204,8 @@ export async function run() {
 
     // ---- 断言 6:同 URL 并发去重(两次调用同一 Promise,结果同一引用) ----
     const [a, b] = await Promise.all([resolver(url), resolver(url)]);
-    if (a !== b || !a.equals(b)) {
+    // 并发去重的正向判据是「同一引用」,故 null 也要显式排除(缓存命中不会返回 null)。
+    if (a === null || b === null || a !== b || !a.equals(b)) {
       throw new Error("image-downloader 断言失败:并发同 URL 应命中同一缓存 Promise");
     }
     if (srv200.getCount() !== 1) {

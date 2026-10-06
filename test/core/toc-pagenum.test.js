@@ -102,12 +102,10 @@ export async function run() {
   const doc = await PDFDocument.load(new Uint8Array(pass1));
   const headings = extractHeadings(art.html);
   if (headings.length === 0) throw new Error("目录带页码(adr-007) 断言失败:未提取到标题");
-  // slug → 页码 映射(dist 为无类型标注的编译产物,测试侧显式字典视图)
-  const pageNumbers = /** @type {Record<string, number>} */ (
-    pageNumbersForNames(
-      doc,
-      headings.map((h) => h.id),
-    )
+  // slug → 页码 映射(返回类型由产物声明给出,无需测试侧再标一次)
+  const pageNumbers = pageNumbersForNames(
+    doc,
+    headings.map((h) => h.id),
   );
   const pageCount = doc.getPageCount();
   for (const h of headings) {

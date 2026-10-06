@@ -15,6 +15,10 @@
     "outDir": "dist",
     "rootDir": "src",
     "sourceMap": true,
+    // 产物带声明文件(ADR-069):测试的类型引用改指产物而非源码,类型面与被测物归一。
+    // 打包侧由 package.json build.files 的 `!dist/**/*.d.ts` 挡在包外,
+    // 故这批文件只存在于 dist/ 目录,不随安装包分发。
+    "declaration": true,
     // 增量编译:生成 .tsbuildinfo 缓存上次编译状态,只重编译受影响文件,提速重复 typecheck/build
     "incremental": true
   },

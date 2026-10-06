@@ -14,9 +14,10 @@ import { htmlToPdf } from "../harness/pdf-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../harness/convert-helpers.js";
 
-/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
- *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
- /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** 产物契约类型取自 dist 产物声明(ADR-069 起 declaration 已打开,`kind` 在 .d.ts 里是
+ *  "docx" | "pdf" 的判别联合,不再是拓宽的 string,故本段按产物声明取类型即可)。 */
+ /** @typedef {import("../../dist/core/convert.js").ConvertArtifact} ConvertArtifact */
+
 
 /** 主样例:GFM 任务列表(已完成/待办/普通项,gen-fixtures 落盘为 docs/task-list.md) */
 const taskMd = `# 任务列表测试

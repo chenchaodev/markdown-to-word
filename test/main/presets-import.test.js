@@ -17,15 +17,15 @@ import {
 } from "../../dist/main/persist/preset-file.js";
 
 /** 预设条目(契约单源) */
-/** @typedef {import("../../src/core/settings/settings-defaults.js").CustomPreset} CustomPreset */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").CustomPreset} CustomPreset */
 /** 排版字段(契约单源;夹具可只给部分字段) */
-/** @typedef {import("../../src/core/settings/typography.js").TypographySettings} TypographySettings */
+/** @typedef {import("../../dist/core/settings/typography.js").TypographySettings} TypographySettings */
 /** 页面字段(契约单源;夹具可只给部分字段) */
-/** @typedef {import("../../src/core/settings/settings-defaults.js").PageSetup} PageSetup */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").PageSetup} PageSetup */
 /** 解析结果(实现签名声明的契约) */
-/** @typedef {import("../../src/main/persist/preset-file.js").ParsePresetsResult} ParsePresetsResult */
+/** @typedef {import("../../dist/main/persist/preset-file.js").ParsePresetsResult} ParsePresetsResult */
 /** 合并结果(实现签名声明的契约) */
-/** @typedef {import("../../src/main/persist/preset-file.js").MergePresetsResult} MergePresetsResult */
+/** @typedef {import("../../dist/main/persist/preset-file.js").MergePresetsResult} MergePresetsResult */
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -50,7 +50,7 @@ const preset = (name, typography = {}, pageSetup = {}) =>
   /** @type {CustomPreset} */ ({ name, typography, pageSetup });
 
 /**
- * 解析预设文件(经 dist 跑实现;dist 无类型标注,返回形状按实现签名声明的契约取)。
+ * 解析预设文件(经 dist 跑实现与取类型;返回形状按实现签名声明的契约取)。
  * @param {string} text 预设文件文本
  * @returns {ParsePresetsResult} 解析结果
  */

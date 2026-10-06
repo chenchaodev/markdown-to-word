@@ -1,7 +1,8 @@
 /**
  * 转换入口:md → 目标格式产物(无 IO、无 Electron,便于测试与复用)。
  * **当前实现是二分分支,不是格式注册表** —— `format === "pdf"` 走 HTML 路线,其余落到 docx 路线。
- * 全库共 6 处 format 分支跨 3 层(本文件、main/converter 的 single/merge/paths),
+ * 全库共 6 处 format 分支跨 3 层(本文件 · `src/convert/run.ts`×2 · `src/convert/paths.ts` ·
+ * `src/cli/index.ts`;路径写全 `src/` 前缀是因为本注释所在文件在 core/,写裸名会被读成 core 下的同名文件),
  * 故新增格式须逐处改判定,而不是「往注册表加一条目」。裁决见 campaign REF-025 计划项 #01 与 D-02。
  * docx → Buffer;pdf → HTML 文档 + 页码页脚模板(printToPDF 由主进程执行)。
  * 图片等外部资源经 context 注入,保持 core 纯逻辑。

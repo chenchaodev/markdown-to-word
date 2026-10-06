@@ -75,11 +75,16 @@ function stable(value) {
 
 /**
  * 把白名单表达式按 micromark 方式拆为 html/text 节点流(docx 扫描器输入形态)。
+ * 元素按 mdast 的 `Html` / `Text` 节点(带 `type` 判别字面量)构造 —— 扫描器契约是
+ * `PhrasingContent[]`,夹具须与它真正收到的形状一致(此前按 `{type: string}` 构造,
+ * 判别字面量被拓宽成 string,与契约对不上)。
  * @param {string} expr 行内 html 表达式
- * @returns {{ type: string; value: string }[]} 节点流
+ * @returns {import("mdast").PhrasingContent[]} 节点流
  */
 function splitHtmlNodes(expr) {
-  /** @type {{ type: string; value: string }[]} */
+  // 空数组字面量默认推断为 never[]/宽泛元组,推不出判别字面量 —— 此处标注是必要的:
+  // 删掉则 pushes 的 "text"/"html" 被拓宽成 string,退回与契约对不上的老形状。
+  /** @type {import("mdast").PhrasingContent[]} */
   const nodes = [];
   let last = 0;
   const tagRe = /<[^<>]*>/g; // 循环外持有 lastIndex 才能推进(字面量置于循环内会死循环)
@@ -99,7 +104,7 @@ function splitHtmlNodes(expr) {
  */
 function docxScannerAccepts(expr) {
   return normalizeInlineHtml(splitHtmlNodes(expr)).some(
-    (/** @type {{ type: string; value: string }} */ n) => n.type === "html" && n.value === expr,
+    (n) => n.type === "html" && n.value === expr,
   );
 }
 
@@ -118,8 +123,17 @@ export async function run() {
     );
   }
   // stageText:默认输出 = 字典 zh 值;translate 注入时键名契约 convert.stage.*
-  const fakeT = (/** @type {string} */ key, /** @type {Record<string, unknown>} */ params) =>
-    interpolate(DICT_ZH[key] ?? `<<missing:${key}>>`, params);
+  /**
+   * 测试注入的翻译函数:键名契约同 i18n 字典 zh。
+   * params 声明为可选 —— stageText 的契约只传 key,formatRecentTime 才传 params;
+   * 必填形参会让同一注入函数在两处都不满足函数类型兼容性(少参可兼容,多参不行)。
+   * @param {string} key 字典键
+   * @param {Record<string, unknown>} [params] 插值参数
+   * @returns {string} 插值后的文案
+   */
+  function fakeT(key, params) {
+    return interpolate(DICT_ZH[key] ?? `<<missing:${key}>>`, params);
+  }
   for (const stage of Object.keys(STAGE_TEXT)) {
     assert(stageText(stage) === DICT_ZH[`convert.stage.${stage}`], `stageText(${stage}) 默认输出应等于字典 zh 值`);
     assert(
@@ -174,6 +188,10 @@ export async function run() {
 
     // 场景 1:旧版合法文件(缺 toc/equationNumbering/outputDir/pdfCss/language/theme/
     // typography/customPresets)→ 双侧各自兜底后关键字段应一致
+    // 标注使字面量受契约校验:不标则 version: 1 / format: "pdf" / orientation: "landscape"
+    // 被拓宽成 number/string,与 Partial<AppSettings> 对不上(下方 fullRaw 展开自本对象,
+    // 故此处一处标注同时覆盖两个场景的顶层字段)。
+    /** @type {Partial<import("../../dist/core/settings/settings-defaults.js").AppSettings>} */
     const legacyRaw = {
       version: 1, format: "pdf", afterConvert: "open", breakBeforeH1: true,
       pageSetup: { paper: "Letter", orientation: "landscape", marginTop: 10, marginBottom: 20, marginLeft: 30, marginRight: 40 },
@@ -181,9 +199,12 @@ export async function run() {
     await fs.writeFile(settingsJsonPath(), JSON.stringify(legacyRaw), "utf8");
     const mainLoaded = mod.loadSettings(); // 全新模块实例,直读磁盘
     const merged1 = mergeSettingsWithDefaults(legacyRaw);
-    const sampledKeys = ["version", "format", "afterConvert", "breakBeforeH1", "toc", "equationNumbering",
+    // 抽样键集按 const 取字面量联合:否则 k 被拓宽成 string,索引 AppSettings 报 TS7053。
+    const sampledKeys = /** @type {const} */ ([
+      "version", "format", "afterConvert", "breakBeforeH1", "toc", "equationNumbering",
       "outputDir", "pdfCss", "language", "theme", "pageSetup", "typography", "customPresets", "headerFooter",
-      "aiCleanup", "obsidian"];
+      "aiCleanup", "obsidian",
+    ]);
     for (const k of sampledKeys) {
       assert(
         stable(mainLoaded[k]) === stable(merged1[k]),
@@ -200,8 +221,15 @@ export async function run() {
     // typography 须含 headingScale/headingSpacing——customPresets 条目 main 侧
     // 逐字段 sanitize 会补默认值,renderer 整体透传不补(见下方语义差异注释),
     // 条目缺新字段时双侧产出即失一致,故「完整合法文件」夹具必须字段齐全
-    const fullTypography = { fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 14, lineSpacing: 2.0, firstLineIndent: false, align: "left", headingNumbering: false, captionNumbering: false, headingScale: "standard", headingSpacing: "standard" };
-    const fullPageSetup = { paper: "Letter", orientation: "landscape", marginTop: 10, marginBottom: 20, marginLeft: 30, marginRight: 40 };
+    // typography/pageSetup 在两处复用(顶层 + customPresets 条目),故标注在此对象上,
+    // 一次覆盖两个消费点;标的是契约类型本身(非宽松超集),字面量仍逐字段受校验。
+    const fullTypography = /** @type {import("../../dist/core/settings/settings-defaults.js").TypographySettings} */ ({
+      fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 14, lineSpacing: 2.0, firstLineIndent: false, align: "left", headingNumbering: false, captionNumbering: false, headingScale: "standard", headingSpacing: "standard",
+    });
+    const fullPageSetup = /** @type {import("../../dist/core/settings/settings-defaults.js").PageSetup} */ ({
+      paper: "Letter", orientation: "landscape", marginTop: 10, marginBottom: 20, marginLeft: 30, marginRight: 40,
+    });
+    /** @type {Partial<import("../../dist/core/settings/settings-defaults.js").AppSettings>} */
     const fullRaw = {
       ...legacyRaw,
       toc: false, equationNumbering: false, outputDir: "C:\\tmp\\out",
@@ -259,11 +287,16 @@ export async function run() {
   // 且内容均不丢失(结构差异记录:docx 合并粒度 = 单个完整表达式)。
   const adjacentExpr = "<code>x</code><kbd>y</kbd>";
   assert(isAllowedInlineHtml(adjacentExpr) === true, "相邻两组表达式整串应被白名单接受");
-  const adjacentNodes = normalizeInlineHtml(splitHtmlNodes(adjacentExpr)).filter((n) => n.type === "html");
+  const adjacentNodes = normalizeInlineHtml(splitHtmlNodes(adjacentExpr)).filter(
+    (n) => n.type === "html",
+  );
+  // 判据逐字比对两个合并出的原串;noUncheckedIndexedAccess 下按下标取可能为 undefined,
+  // 故先解构并判空 —— 不靠 `!` 或默认值糊掉(判据要能因「只合并出一个节点」而红)。
+  const [firstExpr, secondExpr] = adjacentNodes;
   assert(
     adjacentNodes.length === 2 &&
-      adjacentNodes[0].value === "<code>x</code>" &&
-      adjacentNodes[1].value === "<kbd>y</kbd>",
+      firstExpr !== undefined && firstExpr.value === "<code>x</code>" &&
+      secondExpr !== undefined && secondExpr.value === "<kbd>y</kbd>",
     `docx 扫描器应将相邻表达式合并为两个独立 html 节点,实际 ${JSON.stringify(adjacentNodes.map((n) => n.value))}`,
   );
   // parseInlineHtml 对合法表达式的内容重建:文本项拼接 = 剥除全部标签后的纯文本

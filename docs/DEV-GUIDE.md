@@ -25,7 +25,7 @@
 | `npm run dist` | electron-builder 打包 NSIS 安装包(输出 `release/`;链内含产物核对,见「门禁接入点」) |
 | `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`;段目录集合取自 `shared/test-common-surface.js` 的 `SEGMENT_DIRS`,共 **10 个** —— `core` `main` `renderer` `gates` `convert` `cli` `mcp` `shared` `behavior` `harness`,该导出即验收入口发现面的唯一单源;需先 build;新增测试=新建段文件零注册) |
 | `npm run test:smoke` | 冒烟自测(`electron . --smoke`,前置构建新鲜度守卫) |
-| `npm run test:coverage` | c8 覆盖率报告(自动验证的 `dist/**` 全树,**含 renderer 层**;结构性不可测的 Electron 入口 / preload / 纯类型模块 / 关于窗三件套按 `gates/repo/coverage-baseline.json` 的豁免清单逐文件登记并排除。豁免清单与 `--exclude` 是**严格双射**,任一侧多出一条未登记的即判红) |
+| `npm run test:coverage` | c8 覆盖率报告(扫描面 = `dist/` 下**全部 `.js` 产物**,**含 renderer 层**;`declaration: true` 产出的 `.d.ts` **不进扫描面** —— 收窄理由与那条被否掉的替代写法见 `gates/repo/coverage-baseline.json` 的 `note` 里「`--include` 为什么收成 `dist/**/*.js`」那条,ADR-073 记裁决)。结构性不可测的 Electron 入口 / preload / 纯类型模块 / 关于窗三件套按 `gates/repo/coverage-baseline.json` 的豁免清单逐文件登记并排除。豁免清单与 `--exclude` 是**严格双射**,任一侧多出一条未登记的即判红。**改 `--include` / `--exclude` 就是改分母,`measured` 四项必须在干净树手工重测**(本门禁不核对 `measured` 与真实覆盖率,这是唯一靠人守的一环) |
 | `npm run test:all` | 验收 + 冒烟 |
 | `npm run gen:fixtures` | 验收样例生成器(需先 build) |
 | `npm run check:fixtures` | fixtures 漂移校验(幂等,exit 0/1;CI 门禁步骤) |

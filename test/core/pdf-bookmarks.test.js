@@ -12,11 +12,6 @@ import { FIXTURES_DIR } from "../harness/paths.js";
 import { htmlToPdf } from "../harness/pdf-utils.js";
 import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
-/**
- * 书签树节点(dist 编译产物无类型标注,层级形状由 buildBookmarkTree 实现约定;
- * 测试侧显式声明以便按 children 逐层收窄)。
- * @typedef {{ title: string, children?: BookmarkNode[] }} BookmarkNode
- */
 
 /**
  * 断言 PDF 大纲首条目:Title(中文)与 Dest[0] 页面 PDFRef(与 smoke assertOutline 同款)。
@@ -80,7 +75,7 @@ export async function run() {
   // 1. 提取 + 建树:三级标题 → 扁平列表 → 嵌套树(h1 顶层,h2/h3 挂最近上级)
   const headings = extractHeadings(artifact.html);
   if (headings.length !== 4) throw new Error(`extractHeadings 数量异常: ${headings.length}`);
-  const tree = /** @type {BookmarkNode[]} */ (buildBookmarkTree(headings));
+  const tree = buildBookmarkTree(headings);
   const root = tree[0];
   if (tree.length !== 1 || !root || root.title !== "书签一级标题") {
     throw new Error("书签树:h1 未作顶层");

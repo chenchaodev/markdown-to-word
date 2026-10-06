@@ -21,8 +21,8 @@
  * word/document.xml、word/comments.xml 的具体产物,不直接 import 内部函数。
  */
 
-/** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
-/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} ConvertWarning */
+/** @typedef {import("../../dist/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
 
 import { formatWarning } from "../../dist/core/i18n/index.js";
 import { unzipPart, zipContains } from "../harness/docx-utils.js";
@@ -49,7 +49,7 @@ const UNTRUSTED_SPAN_OPEN =
 async function renderPdf(md, title) {
   /** @type {ConvertWarning[]} */
   const warnings = [];
-  const artifact = /** @type {ConvertArtifact} */ (
+  const artifact = (
     await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, title, warnings, katexDir: KATEX_DIR })
   );
   return { html: pdfHtmlOf(artifact), warns: warnings.map((w) => formatWarning(w)) };
@@ -61,7 +61,7 @@ async function renderPdf(md, title) {
  * @returns {Promise<{ buffer: Buffer; document: string; comments: string | null }>} docx 产物与其两个 XML 部件
  */
 async function renderDocxParts(md) {
-  const artifact = /** @type {ConvertArtifact} */ (
+  const artifact = (
     await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const buffer = docxBufferOf(artifact);
@@ -213,7 +213,7 @@ export async function run() {
   console.log("[ok] PDF 路线:批注语法原样输出(不解析)");
 
   // ================= 落盘产物(供人工核对) =================
-  const pdfArtifact = /** @type {ConvertArtifact} */ (
+  const pdfArtifact = (
     await convertWithFs("$$\nE = mc^2\n$$\n\n行内 $\\href{http://example.com/a}{y}$。\n", "pdf", {
       baseDir: FIXTURES_DIR,
       title: "输入守卫",

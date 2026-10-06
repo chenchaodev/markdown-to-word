@@ -47,6 +47,25 @@ function assert(cond, msg) {
 
 const POLL = 100;
 
+/**
+ * 假转换上下文:装配层 ConvertContext 的真形状(cancelRequested 只读标志 +
+ * cancel() 置位 + signal)。取消**次数**不进 ctx —— 契约没有这个字段 ——
+ * 需要计数时由调用侧自备计数器(见 caseCancels),读数走闭包而非属性,
+ * 顺带避开「assert 收窄字面量后再比较无交集」那类误报。
+ * @returns {import("../../dist/main/converter/index.js").ConvertContext} 假转换上下文
+ */
+function fakeConvertCtx() {
+  const controller = new AbortController();
+  return {
+    cancelRequested: false,
+    cancel() {
+      this.cancelRequested = true;
+      controller.abort();
+    },
+    signal: controller.signal,
+  };
+}
+
 /** 假流程状态(时钟 / 活动操作数 / 窗口是否已销毁) */
 /** @typedef {{ clock: number, active: number, destroyed: boolean }} FlowState */
 /** 计划步骤:每次 delay 推进时钟后执行一步,可改状态(可传 null 占位) */
@@ -59,14 +78,6 @@ const POLL = 100;
  *   confirm?: false | ((state: FlowState) => boolean),
  *   releaseOnCancel?: boolean,
  * }} FlowOptions */
-
-/**
- * 取数值(经函数取值:前一次 `assert(v === N)` 会把 v 收窄成字面量,
- * 而两次断言之间实现会改变该值——直接再比较会误报「无交集」)。
- * @param {number} value 数值
- * @returns {number} 原值
- */
-const num = (value) => value;
 
 /**
  * 假流程依赖:状态机 + 调用记录。
@@ -239,13 +250,13 @@ export async function run() {
   // ---------- 7. 注册表级交错:取消 → 释放 → 新任务 → 旧 token 不得误删 ----------
   {
     const id = 9101;
-    const ctxA = { canceled: 0, cancel() { this.canceled++; } };
+    const ctxA = fakeConvertCtx();
     const tokenA = beginWebContentsOperation(id, "single", ctxA);
     assert(tokenA !== null && hasWebContentsOperation(id), "首个操作应占用成功");
-    assert(cancelWebContentsOperation(id) === true && num(ctxA.canceled) === 1, "放弃转换应取消当前操作一次");
-    assert(cancelWebContentsOperation(id) === true && num(ctxA.canceled) === 2, "注册仍在时重复取消仍指向当前操作");
+    assert(cancelWebContentsOperation(id) === true && ctxA.cancelRequested === true, "放弃转换应取消当前操作");
+    assert(cancelWebContentsOperation(id) === true && ctxA.cancelRequested === true, "注册仍在时重复取消仍指向当前操作");
     assert(finishWebContentsOperation(id, tokenA) === true, "旧任务 finally 应释放自身 token");
-    const ctxB = { canceled: 0, cancel() { this.canceled++; } };
+    const ctxB = fakeConvertCtx();
     const tokenB = beginWebContentsOperation(id, "precheck", ctxB);
     assert(tokenB !== null, "旧操作释放后同 id 应可被新任务占用");
     assert(finishWebContentsOperation(id, tokenA) === false, "旧 token 的 compare-and-delete 应被拒绝");
@@ -285,7 +296,7 @@ export async function run() {
     const event = { sender: win.webContents };
 
     // 8.1 keep 选择:不取消、不关窗、不残留 close 放行标记(下次仍弹确认)
-    const keepCtx = { canceled: 0, cancel() { this.canceled++; } };
+    const keepCtx = fakeConvertCtx();
     const keepToken = beginWebContentsOperation(senderId, "single", keepCtx);
     dialog.showMessageBox = async () => {
       dialogCalls.push("keep");
@@ -293,12 +304,13 @@ export async function run() {
     };
     try {
       await confirmCloseDuringConvert(win);
-      assert(keepCtx.canceled === 0, "keep 选择不应取消进行中的转换");
+      assert(keepCtx.cancelRequested === false, "keep 选择不应取消进行中的转换");
       assert(!win.isDestroyed(), "keep 选择不应关窗");
       await confirmCloseDuringConvert(win);
       assert(dialogCalls.length === 2, "keep 分支不得残留 close 放行标记(第二次关闭仍应弹确认)");
-      assert(!win.isDestroyed() && keepCtx.canceled === 0, "重复确认后仍不应动转换与窗口");
+      assert(!win.isDestroyed() && keepCtx.cancelRequested === false, "重复确认后仍不应动转换与窗口");
     } finally {
+      assert(keepToken !== null, "keep 分支的注册 token 不应为空");
       finishWebContentsOperation(senderId, keepToken);
     }
 

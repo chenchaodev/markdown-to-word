@@ -125,5 +125,7 @@ export async function run() {
     throw new Error(`PDF 元数据断言失败: title=${pdfTitle} author=${pdfAuthor}`);
   }
   console.log(`[ok] PDF 元数据:title="${pdfTitle}" author="${pdfAuthor}" 读回一致`);
-  await saveArtifact("footnotes", { docx: docxBuffer, pdf: footnotePdfMeta });
+  // setPdfMetadata 的返回类型是 Uint8Array(pdf-lib 契约),而落盘要 Buffer
+  // (node:fs writeFile)—— 边界上显式转一次,而不是把 Buffer 断言成 Uint8Array
+  await saveArtifact("footnotes", { docx: docxBuffer, pdf: Buffer.from(footnotePdfMeta) });
 }

@@ -44,6 +44,23 @@ function assert(cond, msg) {
 /** 假 IpcMainInvokeEvent(runWithCtx 仅读 sender.id;守卫路径不触达 BrowserWindow) */
 const fakeEvent = { sender: { id: -999999 } };
 
+/**
+ * 假转换上下文:装配层 ConvertContext 的真形状(cancelRequested 只读标志 +
+ * cancel() 置位 + signal),供本段手工预占 webContents 注册表。
+ * @returns {import("../../dist/main/converter/index.js").ConvertContext} 假转换上下文
+ */
+function fakeConvertCtx() {
+  const controller = new AbortController();
+  return {
+    cancelRequested: false,
+    cancel() {
+      this.cancelRequested = true;
+      controller.abort();
+    },
+    signal: controller.signal,
+  };
+}
+
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
@@ -102,7 +119,7 @@ export async function run() {
   // ---- 3.1 同一 webContents 的转换/预检共享 single-flight:第二次明确 busy ----
   // 本段手工预占注册表(仅验 busy 形状与守卫优先级);真实并发调用 handler
   // 「同时最多一个活动操作」由 operation-single-flight.test.js 断言。
-  const busyCtx = { cancel() {} };
+  const busyCtx = fakeConvertCtx();
   const busyToken = beginWebContentsOperation(fakeEvent.sender.id, "single", busyCtx);
   assert(busyToken !== null, "测试应先占用 sender operation");
   try {

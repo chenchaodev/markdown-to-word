@@ -7,10 +7,11 @@
     "⚠ **豁免清单与 `--exclude` 是严格双射**(静态面 ⑦ 双向判红):清单侧每条必须在 `--exclude` 里,`--exclude` 里每条也必须在清单侧。单向那一版留下的洞是实测过的 —— 一条指向已删除源文件的 `--exclude=dist/main/ipc/types.js` 在源文件被删后一直留着而门禁永远绿。故整层/前缀排除同样判红:需要排除某一层时代价为逐文件登记(那正是让这层的体量变成可见数字的代价)。⚠ requireFlags 里的 `--exclude` **只守「这个选项存在」**(判定读的是选项名,不含取值),所以那里刻意不枚举具体排除项 —— 枚举即多一处无人对读的清单,而逐条对应关系由上面那条双射判据独家担任。",
     "维护顺序(勿跳步):① 在**干净树**上跑重测命令拿到实测值 → ② 人工确认阈值 → ③ 把 measured 与 thresholds 一起写回本表 → ④ package.json 的 test:coverage 阈值须与本表 thresholds 逐项相同。",
     "⚠ **为什么第①步不能省:本门禁不核对 measured 与真实覆盖率**。静态面只核 thresholds 与 floor 与余量与参数向量与豁免清单,动态面 `--zero` 只核 0% 文件集合 —— **没有任何一面把 measured 拿去跟一次真实运行对读**。后果实测过:renderer 整层排除撤销后,沿用撤销前测出的 measured(四项全部略高于真实值,正是「分母变小」的特征),静态面照样 exit 0 通过。⇒ **凡改动 `--include` / `--exclude`(即改分母),measured 必须手工重测**,它不像 thresholds 那样有机器看守。这条是本表唯一一处「靠人守」的环节。",
+    "⚠ **`--include` 为什么收成 `dist/**/*.js`(`declaration: true` 之后;勿改回 `dist/**`,改回会被动态面当场抓住)**:c8 的**默认** exclude 列表里本来就有 `**/*.d.ts`(`@istanbuljs/schema/default-exclude`),声明文件不进报告是 c8 的既有行为。但 yargs 的数组语义是「传了 `--exclude` 就整体替换默认数组」—— 本仓为逐文件登记豁免而写了 9 条显式 `--exclude`,于是那份默认列表被**整体顶掉**,`declaration: true`(ADR-069)产出的 159 个 `.d.ts` 一并进了报告。它们无可执行语句却各带 1 个 wrapper function 与若干 statement,记成 0% ⇒ 动态面 159 项判红(且 total 被压到 71%,同时打穿四个阈值)。**收窄 `--include` 而不是补 `--exclude=**/*.d.ts`**:静态面 ⑦ 要求 `--exclude` 与豁免清单严格双射,而豁免条目的键是**单个源文件路径**(经 distArtifactOf 映射),glob 无法登记 ⇒ 加那条 glob 等于当场判红,解它就得改判据本体。另有一条走不通:改用 c8 的 `--extension=.js/.cjs` 同样能挡住,但那是 `--include` 之外的**第二处收窄机制**,requireFlags 记不到它、也没有任何判据与它对读,删掉它不会有任何门禁变红 —— 与本表通篇「多处登记必留机器对读」的取向相反。收窄 `--include` 至少让「扫描面收紧」这件事仍是 requireFlags 里一个**被点名的收紧面选项**(删掉 `--include` 这个选项本身即判红)。⚠ **别把 requireFlags 读成取值看守:它只核选项名在不在**(`check-coverage-zero.mjs:237` 把 `--include=dist/**/*.js` 砍成 `include` 再只判 `flagValue(...) === null`),取值没有任何机器判据与它对读 —— 与本表 note 第 9 条「measured 是唯一靠人守的环节」同族,是**第二处靠人守**的地方。两种写法的实际暴露面相同:取值一旦被改宽,`.d.ts` 立刻进分母、动态面当场以 159 条具名判红把它指出来(不是静默劣化),故此处补取值比对判据的收益是「让报错早一轮」而非「防住漏报」—— 那是独立的一笔账,不在本轮。⚠ 此收窄同时把 `.cjs`/`.mjs` 一并移出报告面:当前 `dist` 下 `.mjs` 为 0、`.cjs` 仅 2 份且都在豁免清单与 `--exclude` 里(实测两种写法产出的报告键集完全相同),故对数字无影响;**将来若新增不由 tsc 产出的 `.cjs`,须回头看这条**。⚠ `package.json` 的 `build.files` 里那条 `!dist/**/*.d.ts` 是 npm 打包白名单,与 c8 的扫描面是两套东西,互不作用,别拿它当已排除的凭据。",
     "重测命令就是 `npm run test:coverage` 本身(它的 c8 参数向量在本仓唯一的阈值来源;此处刻意不转抄,转抄即多一处会静默过期且无人判红的文本)。实测值同时出现在 stdout 的 All files 行与 output/coverage/coverage-summary.json 的 total.*.pct(产物落点由 test:coverage 的 --reports-dir 显式登记,与 coverage-gate.mjs 的 SUMMARY_RELATIVE 目录部分逐字相同 —— 该一致性由静态面判红,故此处不复述取值)。",
     "不要为了变绿而单下调 thresholds:thresholds 必须落在 [floor, measured] 区间内,且不得低于 measured − headroomPp。headroomPp 是「阈值允许比上一次干净树实测低多少」的显式余量(阈值本来就该低于实测值,否则门禁在干净树上也会红)。这条规则拦的是静默降级:实测值是独立测出来的、不会跟着阈值走,阈值一降就超余量 → 判红;要合法下调,必须先在干净树重测并把 measured 一起改(于是「实测值掉了几个点」本身变成 diff 里可见的回归),或者去改 floor(更显眼)。",
     "measured 为 null 表示「尚未在干净树登记实测值」,此时门禁判红(阈值失去锚点,等于没人看守)。",
-    "headroomPp 的取法:取「干净树实测 − 拟定阈值」在四个指标上的**最大值**,向上取整到整数(它只界定「允许的余量」,不影响阈值严格度本身)。上一版干净树实测算出的 5(最大差距在 branches,4.03pp,上取整 5)已随 measured 刷新按公式重算为 4(最大差距 3.59pp);**每次刷新 measured 后须按同一公式重算**,否则余量会与实测漂移脱钩。余量取值属**人工裁决**,不是门禁能自动推导的量,故不挂在任何工作项下。",
+    "headroomPp 的取法:取「干净树实测 − 拟定阈值」在四个指标上的**最大值**,向上取整到整数(它只界定「允许的余量」,不影响阈值严格度本身)。上一版干净树实测算出的 5(最大差距在 branches,4.03pp,上取整 5)已随 measured 刷新按公式重算为 4(最大差距 3.59pp);**每次刷新 measured 后须按同一公式重算**,否则余量会与实测漂移脱钩。`--include` 收窄为只收 `.js`(ADR-073)那版实测的最大差距仍在 branches(3.93pp,上取整 4),故 headroomPp 维持 4 未变。余量取值属**人工裁决**,不是门禁能自动推导的量,故不挂在任何工作项下。",
     "referenceSandbox 是在**沙盒副本**里测到的参考值(工作树当时有并行改动、6/113 段因沙盒缺 docs/.github 与在途 WIP 失败,数值偏低,仅供参考,不得直接当 measured 用)。⚠ 它记录的 flags 含已撤销的整层 renderer 排除,那是带日期的历史记录而非当前参数向量的描述,不要拿它的 flags 与 package.json 对读。它同时是「阈值不需要下调」的证据:排除 6 个豁免文件后 statements 92.71% / branches 88.56% / functions 92.72%,本表 thresholds 四项对 measured 全部达标(数值见 thresholds / measured 字段,勿在此处转抄)。",
     "renderer 层已纳入统计(整层排除已撤销,不再有「有意为之但无台账」的排除)。它的 ratchet 不另设阈值:renderer 落在全局分母里,任何回退都直接压低 total 并被现有四个阈值与 floor 拦住;而剩下三条例外(关于窗三件套)是**逐文件可见**的,不是整层静默抹掉。要看该层自身的实测聚合,取 renderer 段在本次 coverage-summary.json 里的 covered/total **逐文件求和后**再算百分比(不对文件 pct 求平均 —— 后者让大小文件等权,数字随拆分方式漂移)。",
     "为什么不用 c8 的 --per-file(它看起来正好能堵「平均值稀释」):实测 94 个文件里有 33 个低于任一现阈值(最低的 src/core/image/image-type.ts 54.7%、src/main/smoke.ts 44.9%),--per-file 会要求先补齐几十个文件才能过,不是可落地的收紧手段,故改用显式的 0% 集合核对。",
@@ -27,10 +28,10 @@
     "lines": 85
   },
   "measured": {
-    "statements": 92.97,
-    "branches": 88.92,
-    "functions": 93.19,
-    "lines": 92.97
+    "statements": 93.01,
+    "branches": 88.93,
+    "functions": 93.27,
+    "lines": 93.01
   },
   "thresholds": {
     "statements": 90,
@@ -61,7 +62,7 @@
     "--reporter=json-summary",
     "--reports-dir",
     "--temp-directory",
-    "--include=dist/**",
+    "--include=dist/**/*.js",
     "--exclude"
   ],
   "requireExcludesInFlag": true,
@@ -105,6 +106,11 @@
       "file": "src/renderer/lang-bootstrap.js",
       "category": "runtime-entry",
       "reason": "首屏 FOUC 缓解脚本:IIFE 在同步执行期读 localStorage 并写 document.documentElement.lang,没有任何导出可供 import;它只在 index.html 的 <head> 里被浏览器加载一次。契约由 test/core/i18n-registry.test.js 读源码断言「必须读 m2w.htmlLang 镜像、不得回退为内置 code→htmlLang 映射」守护。它是 src/renderer 下唯一不由 tsc 编译的 .js(tsc 不处理 .cjs/.js 输入),由 tools/copy-renderer.mjs 原样拷贝,故 c8 报告里的键同样是产物路径。"
+    },
+    {
+      "file": "src/core/settings/merge-patch.ts",
+      "category": "empty-module",
+      "reason": "设置 patch 形状的跨进程单源(两条声明,`type DeepMergedBlock` + `export type SettingsMergePatch`,唯一 import 是 `import type { AppSettings }`,无任何运行期语句)。判定依据:实测编译产物 dist/core/settings/merge-patch.js 恰为 50 字节、内容是 `export {};` 加一行 `//# sourceMappingURL=merge-patch.js.map`(node 读产物 + cat 直读核对),与 isEmptyModuleArtifact 的判据一致;未登记会以 0% 混进分母。它不是死代码:它承载 SettingsMergePatch / DeepMergedBlock 这份单源声明,被 renderer 两个 merge 函数(renderer/settings/settings-logic.ts 的 mergeSettingsWithDefaults、settings-save.ts 的 mergePendingSavePatch)、草稿台账、preload 暴露面与实现(core/preload-api.ts、main/preload.cts)、跨进程 settingsSet(main/ipc/register.ts)与持久化合并(main/persist/settings.ts)共用 —— 类型随被描述的域(AppSettings 住在 core/settings)走,否则 PreloadApi 引不到它(详见 ADR-072 这次迁位与 core-no-duplicate-export 族)。凭什么不会失效:只要它仍是纯类型模块就成立,门禁 gates/repo/check-coverage-zero.mjs 每次都用 isEmptyModuleArtifact 从产物形态核对分类 —— 若哪天它长出运行期代码,产物不再是 `export {};`,这条豁免立即判红,失效是被发现的。"
     }
   ]
 }

@@ -27,8 +27,12 @@ export const fixtures = null;
 /** 纯 Node 段(零 Electron API) */
 export async function run() {
   // ---- 1. 叶子节点:value 直取 ----
-  assert(collectPlainText({ type: "text", value: "Hello" }) === "Hello", "text 节点应返回 value");
-  assert(collectPlainText({ type: "inlineCode", value: "x=1" }) === "x=1", "inlineCode value 应计入纯文本");
+  // 夹具直接用裸字面量:产物声明的入参是 mdast `Node`(type + 可选 value/children),
+  // 这几份节点本身就落在该形状内,无需测试侧再标一次。
+  const textNode = { type: "text", value: "Hello" };
+  const inlineCodeNode = { type: "inlineCode", value: "x=1" };
+  assert(collectPlainText(textNode) === "Hello", "text 节点应返回 value");
+  assert(collectPlainText(inlineCodeNode) === "x=1", "inlineCode value 应计入纯文本");
 
   // ---- 2. 容器节点:children 递归拼接(保序) ----
   const para = {
@@ -67,8 +71,10 @@ export async function run() {
   assert(collectPlainText(mixed) === "前锚后", "comment 混排应保留锚文本、剔除批注内容");
 
   // ---- 4. 边界:空节点 / 空 children ----
-  assert(collectPlainText({ type: "break" }) === "", "无 value 无 children 的节点应返回空串");
-  assert(collectPlainText({ type: "paragraph", children: [] }) === "", "空 children 应返回空串");
+  const breakNode = { type: "break" };
+  const emptyPara = { type: "paragraph", children: [] };
+  assert(collectPlainText(breakNode) === "", "无 value 无 children 的节点应返回空串");
+  assert(collectPlainText(emptyPara) === "", "空 children 应返回空串");
 
   console.log("[ok] mdast-utils:collectPlainText value 直取/递归拼接/comment 只计 anchor/空边界 断言通过");
 }

@@ -22,9 +22,8 @@ import { createCancellationGuard } from "../../dist/core/cancel.js";
 import { unzipPart } from "../harness/docx-utils.js";
 import { docxBufferOf, convertWithFs, pdfHtmlOf } from "../harness/convert-helpers.js";
 
-/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
- *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
- /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
+
 
 /**
  * 断言 promise 以取消错误码失败(错误码单源 core/cancel.ts)。
@@ -93,7 +92,7 @@ export async function run() {
   {
     /** @type {string[]} */
     const stages = [];
-    const artifact = /** @type {ConvertArtifact} */ (await convertWithFs("# 标题\n\n正文\n", "pdf", {
+    const artifact = (await convertWithFs("# 标题\n\n正文\n", "pdf", {
       baseDir: ".",
       deadline: Date.now() + 60_000,
       onStage: (/** @type {string} */ stage) => stages.push(stage),
@@ -107,7 +106,7 @@ export async function run() {
       }
     }
     // docx 侧同样:未到期 deadline 不影响渲染
-    const docx = /** @type {ConvertArtifact} */ (
+    const docx = (
       await convertWithFs("# 标题\n\n正文\n", "docx", { baseDir: ".", deadline: Date.now() + 60_000 })
     );
     if (docx.kind !== "docx" || docxBufferOf(docx).length === 0) {
@@ -144,7 +143,7 @@ export async function run() {
   // ---- 3b. 取消不被图片 warning 吞掉:docx 取消后不产出任何「图片加载失败」警告 ----
   {
     const controller = new AbortController();
-    /** @type {unknown[]} */
+    /** @type {ConvertWarning[]} */
     const warnings = [];
     const pending = convertWithFs("![图](x.png)\n\n![图2](y.png)", "docx", {
       baseDir: ".",
@@ -196,7 +195,7 @@ export async function run() {
   // ---- 5. mermaid 占位替换:resolver 永不结算 + 取消 → 上抛取消,不降级为渲染失败 ----
   {
     const controller = new AbortController();
-    /** @type {unknown[]} */
+    /** @type {ConvertWarning[]} */
     const warnings = [];
     const guard = createCancellationGuard({ signal: controller.signal });
     const pending = replaceMermaidPlaceholders(
@@ -244,16 +243,16 @@ export async function run() {
         }
       }
     }
-    /** @type {unknown[]} */
+    /** @type {ConvertWarning[]} */
     const warnings = [];
-    const docx = /** @type {ConvertArtifact} */ (
+    const docx = (
       await convertWithFs(`$$\n${untrusted}\n$$`, "docx", { baseDir: ".", warnings })
     );
     const xml = await unzipPart(docxBufferOf(docx), "word/document.xml");
     if (xml.includes("<m:oMath") || !xml.includes("includegraphics")) {
       throw new Error("core-resources 断言失败:docx 恶意 TeX 应降级为源码且不产出 oMath");
     }
-    const pdf = /** @type {ConvertArtifact} */ (
+    const pdf = (
       await convertWithFs(`$$\n${untrusted}\n$$`, "pdf", { baseDir: ".", warnings: [] })
     );
     if (!pdfHtmlOf(pdf).includes("katex-error")) {
@@ -266,7 +265,7 @@ export async function run() {
   {
     // 200 项求和:公式很大但合法,maxSize 只约束显式尺寸不约束公式宽度 → 正常渲染
     const bigTex = Array.from({ length: 200 }, (_, i) => `x_{${i}}`).join("+");
-    const docx = /** @type {ConvertArtifact} */ (
+    const docx = (
       await convertWithFs(`$$\n${bigTex}\n$$`, "docx", { baseDir: ".", warnings: [] })
     );
     if (docx.kind !== "docx" || docxBufferOf(docx).length === 0) {
@@ -286,10 +285,9 @@ export async function run() {
     if (budget.concurrency !== 3 || budget.maxImages < 8 || budget.maxDocumentBytes <= budget.maxImageBytes) {
       throw new Error(`core-resources 断言失败:图片预算默认值异常,budget=${JSON.stringify(budget)}`);
     }
-    // 放宽理由:dist 产物无类型标注,DEFAULT_IMAGE_RESOURCE_BUDGET 经 Object.freeze
-    // 被推断为字面量类型(maxImages: 512),与本断言「注入任意正整数小预算」的
-    // 测试意图不符;比较前显式拓宽为 number,运行时判定逻辑不变。
-    if (/** @type {number} */ (resolveImageBudget({ maxImages: 2, requestTimeoutMs: undefined }).maxImages) !== 2) {
+    // 直接比较产物返回值:resolveImageBudget 的返回类型是 ImageResourceBudget
+    // (maxImages 为 number),此前那层拓宽是 dist 无 .d.ts 时的残留。
+    if (resolveImageBudget({ maxImages: 2, requestTimeoutMs: undefined }).maxImages !== 2) {
       throw new Error("core-resources 断言失败:预算覆盖未生效");
     }
     if (resolveImageBudget({ requestTimeoutMs: undefined }).requestTimeoutMs !== budget.requestTimeoutMs) {

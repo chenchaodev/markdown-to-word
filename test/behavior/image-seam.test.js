@@ -36,7 +36,7 @@ export async function run() {
   // convert 层 stat 预扫已移除:docx 侧经 imageToDocx 失败路径、pdf 侧经
   // checkLocalImages,均走本 resolver 返回 null → 警告统一为「图片加载失败: <src>」。
   const { convert } = await import("../../dist/core/convert.js");
-  const wMissing = /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */ ([]);
+  const wMissing = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
   await convert(prepareForConvert("![缺图](missing-xxx.png)"), "docx", {
     baseDir: FIXTURES_DIR,
     imageResolver: createImageResolver(FIXTURES_DIR),
@@ -45,7 +45,7 @@ export async function run() {
   if (!wMissing.some((w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-xxx.png"))) {
     throw new Error("image-downloader 断言失败:缺失本地图片应产生统一「图片加载失败:」警告");
   }
-  const wOk = /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */ ([]);
+  const wOk = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
   await convert(prepareForConvert("![有图](./input/g1-tiny.png)"), "docx", {
     baseDir: FIXTURES_DIR,
     imageResolver: createImageResolver(FIXTURES_DIR),

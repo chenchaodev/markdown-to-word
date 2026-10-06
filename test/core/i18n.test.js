@@ -29,11 +29,9 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`i18n 断言失败:${msg}`);
 }
 
-/**
- * 带去重键的结构化警告(与 dist/core/i18n/warning.js 的 KeyedWarning 同形;
- * dist 为无类型标注的编译产物,测试侧显式声明以获得收窄)。
- * @typedef {{ key: string, params?: Record<string, string>, fallback: string }} KeyedWarning
- */
+/** 带去重键的结构化警告:取产物声明(此前测试侧手抄了一份,params 已漂移成
+ *  Record<string, string>,与真实的 string | number 不同)。 */
+ /** @typedef {import("../../dist/core/i18n/index.js").KeyedWarning} KeyedWarning */
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -61,7 +59,13 @@ export async function run() {
     assert(i18n.t("recent.time.monthDay", { month: 8, day: 16 }) === "8/16", "en 数字参数插值应生效");
 
     // ---- 3. 缺失 key 回退 key 本身;缺失参数保留占位符 ----
-    assert(i18n.t("no.such.key") === "no.such.key", "缺失 key 应回退 key 本身(不抛错)");
+    // 「字典里没有的 key」走 tByKey 而非 t():t 的 key 参数受 Dict 字面量联合约束
+    // (拼错即编译报错),而这条用例要验的恰恰是**不在联合内**的 key 的运行期行为 ——
+    // tByKey 正是 src/core/i18n/t.ts 为「动态 key 场景」留的那个原始实现,它刻意不经
+    // core/i18n 的再导出面。ESM 下它与上面那份 i18n 解析到**同一个** t.js 实例,
+    // 故语言状态(setLanguage("en"))对它同样生效,回退链走的是当前语言。
+    const i18nRaw = await import("../../dist/core/i18n/t.js");
+    assert(i18nRaw.tByKey("no.such.key") === "no.such.key", "缺失 key 应回退 key 本身(不抛错)");
     assert(i18n.t("convert.done.status") === "Conversion complete: ${outputPath}", "缺失参数应保留占位符原样");
 
     // ---- 4. 切回 zh(模块级状态可反复切换) ----

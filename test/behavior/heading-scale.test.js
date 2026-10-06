@@ -187,9 +187,16 @@ export async function run() {
     assert(loaded.typography.headingScale === "standard", "非法 headingScale 应被 sanitize 钳制回 standard");
     assert(loaded.typography.headingSpacing === "standard", "缺失 headingSpacing 应兜底 standard");
     // renderer 侧 mergeSettingsWithDefaults 同语义兜底(双侧防御)
+    // 夹具按「旧档 typography 只带部分字段」构造,而入参声明是**浅层** Partial<AppSettings>
+    // (typography 若出现须字段齐全),实现却是逐字段深合并
+    // (`typography: { ...DEFAULT_SETTINGS.typography, ...source.typography }`)。
+    // 即声明面比运行期契约窄 —— 故只在这一处标注「此处深合并兜底是本段要守的行为」,
+    // 外层对象与其余字段仍由 Partial<AppSettings> 逐字段校验(不整体 cast 掉推断)。
     const merged = mergeSettingsWithDefaults({
       ...DEFAULT_SETTINGS_MERGE_SEED(),
-      typography: { fontAscii: "Arial" },
+      typography: /** @type {import("../../dist/core/settings/settings-defaults.js").TypographySettings} */ ({
+        fontAscii: "Arial",
+      }),
     });
     assert(merged.typography.headingScale === "standard", "renderer 合并缺字段 typography 应兜底 headingScale=standard");
     assert(merged.typography.headingSpacing === "standard", "renderer 合并缺字段 typography 应兜底 headingSpacing=standard");
@@ -216,7 +223,12 @@ export async function run() {
   }
 }
 
-/** mergeSettingsWithDefaults 输入种子(顶层必填字段的合法占位;仅测 typography 兜底) */
+/**
+ * mergeSettingsWithDefaults 输入种子(顶层必填字段的合法占位;仅测 typography 兜底)
+ * 标注返回类型使字面量(version: 1 / format / paper / orientation)受契约校验 ——
+ * 不标则被拓宽成 number/string,与 `Partial<AppSettings>` 对不上。
+ * @returns {Partial<import("../../dist/core/settings/settings-defaults.js").AppSettings>} 顶层合法占位
+ */
 function DEFAULT_SETTINGS_MERGE_SEED() {
   return {
     version: 1,

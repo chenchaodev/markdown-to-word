@@ -40,7 +40,15 @@ export const fixtures = {
 };
 
 // 纸张 → 纵向 twips(宽, 高)= round(mm × 56.6929),来源 PAPER_SIZES_MM
-/** @type {Record<string, [number, number]>} 纸张 → 纵向 twips(宽, 高) */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").PageSetup} PageSetup */
+/**
+ * 纸张枚举取 PageSetup.paper 的字面量联合(单源,勿在本段另抄一份纸名)。
+ * 有了它,`paper` 传给 validatePageSetup 时仍是字面量而非 string。
+ * @typedef {PageSetup["paper"]} Paper
+ */
+/** @typedef {PageSetup["orientation"]} Orientation */
+
+/** @type {Record<Paper, [number, number]>} 纸张 → 纵向 twips(宽, 高) */
 const PAPERS_TWIPS = {
   A4: [11906, 16838], // 210×297
   A3: [16838, 23811], // 297×420
@@ -49,7 +57,7 @@ const PAPERS_TWIPS = {
   Legal: [12240, 20160], // 215.9×355.6
 };
 
-/** @type {Record<string, [number, number]>} 纸张 → 纵向 mm(宽, 高) */
+/** @type {Record<Paper, [number, number]>} 纸张 → 纵向 mm(宽, 高) */
 const PAPERS_MM = {
   A4: [210, 297],
   A3: [297, 420],
@@ -59,6 +67,7 @@ const PAPERS_MM = {
 };
 
 // 边距组 1(四值互异,防属性错位):20/40/30/15 mm → 1134/2268/1701/850 twips
+/** @type {Pick<PageSetup, "marginTop" | "marginRight" | "marginBottom" | "marginLeft">} 边距组 1 */
 const M1 = { marginTop: 20, marginRight: 40, marginBottom: 30, marginLeft: 15 };
 const M1_PGMAR = '<w:pgMar w:top="1134" w:right="2268" w:bottom="1701" w:left="850"';
 const M1_PDF = "margin: 20mm 40mm 30mm 15mm;";
@@ -106,11 +115,11 @@ export async function run() {
   console.log("[ok] 页面设置:边距参数化(20/40/30/15 vs 25/32)docx+pdf 输出不同,断言通过");
 
   // 3. landscape + 非 A4(docx 库自动交换:landscape 下 w:w=纸高、w:h=纸宽,勿手动交换)
-  for (const paper of ["Legal", "A5"]) {
+  for (const paper of /** @type {readonly Paper[]} */ (["Legal", "A5"])) {
     const size = PAPERS_TWIPS[paper];
     if (!size) throw new Error(`页面设置断言失败:纸张尺寸表缺少 ${paper}`);
     const [w, h] = size;
-    const pageSetup = { paper, orientation: "landscape", ...M1 };
+    const pageSetup = /** @type {PageSetup} */ ({ paper, orientation: "landscape", ...M1 });
     lastDocx = await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup });
     const xml = await unzipPart(docxBufferOf(lastDocx), "word/document.xml");
     const pgSz = `<w:pgSz w:w="${h}" w:h="${w}" w:orient="landscape"`;
@@ -131,9 +140,12 @@ export async function run() {
   }
 
   // 3.1 核心 validator:五种纸张 × 两种方向均按视觉尺寸计算内容区
-  for (const [paper, [portraitWidth, portraitHeight]] of Object.entries(PAPERS_MM)) {
-    for (const orientation of ["portrait", "landscape"]) {
-      const pageSetup = { paper, orientation, ...M1 };
+  // Object.entries 的返回类型退化为 [string, T][];经元组标注把 paper 收回 Paper 联合
+  for (const [paper, [portraitWidth, portraitHeight]]
+    of /** @type {Array<[Paper, [number, number]]>} */ (Object.entries(PAPERS_MM))) {
+    // orientation 收成字面量联合:裸数组会推成 string[] 而与 PageSetup.orientation 不兼容
+    for (const orientation of /** @type {readonly Orientation[]} */ (["portrait", "landscape"])) {
+      const pageSetup = /** @type {PageSetup} */ ({ paper, orientation, ...M1 });
       const geometry = validatePageSetup(pageSetup);
       const expectedWidth = orientation === "landscape" ? portraitHeight : portraitWidth;
       const expectedHeight = orientation === "landscape" ? portraitWidth : portraitHeight;
@@ -233,6 +245,14 @@ export async function run() {
   if (atMinimum.contentWidthMm !== MIN_PAGE_CONTENT_MM) {
     throw new Error("页面几何 validator:内容区恰好等于最小值应通过");
   }
+  // 这批**故意非法**的 pageSetup 正是被测输入(未知纸张/未知方向/内容区为零或负/
+  // 边距越界)。字段名与边距仍取自 PageSetup(打错字段名即判红),而 paper/orientation
+  // 刻意放宽成 string —— 它们必须能承载「不在 PageSetup 联合内的值」,否则这批
+  // 夹具根本写不出来。收紧到 PageSetup 的那一步只发生在下面的调用点(见那里的说明)。
+  /** @type {Array<{
+   *   name: string,
+   *   value: Omit<PageSetup, "paper" | "orientation"> & { paper: string, orientation: string },
+   * }>} */
   const invalidPageSetups = [
     {
       name: "未知纸张",
@@ -315,7 +335,11 @@ export async function run() {
   for (const { name, value } of invalidPageSetups) {
     let rejected = false;
     try {
-      validatePageSetup(value);
+      // validatePageSetup 的入参类型是「**已合法**的 PageSetup」(它自己不校验,
+      // 校验正是被测行为),故这里必须把上面的非法夹具收敛回该类型 —— 这是本段
+      // 唯一一处类型与运行期事实不符,且它记述的就是「运行期事实:非法的 PageSetup
+      // 会被拒收」。unknown 中转不抹掉字段级检查(上面那份标注已经在做那件事)。
+      validatePageSetup(/** @type {PageSetup} */ (/** @type {unknown} */ (value)));
     } catch (error) {
       rejected = error instanceof RangeError;
     }

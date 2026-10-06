@@ -25,6 +25,7 @@ import type {
   UiState,
 } from "../core/ipc-contract.js";
 import type { AppSettings } from "../core/settings/settings-defaults.js";
+import type { SettingsMergePatch } from "../core/settings/merge-patch.js";
 import type { DocMetadata } from "../core/pipeline/frontmatter.js";
 // preload 暴露面的类型单源在 core(此前是本文件内的 `typeof api` 推导,导致 renderer
 // 只能反向 type-only import 本文件 —— 全库唯一一条 renderer→main 依赖,靠门禁的
@@ -124,7 +125,7 @@ const api: PreloadApi = {
     };
   },
   settingsGet: (): Promise<AppSettings> => ipcRenderer.invoke(CH.settingsGet),
-  settingsSet: (patch: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke(CH.settingsSet, patch),
+  settingsSet: (patch: SettingsMergePatch): Promise<AppSettings> => ipcRenderer.invoke(CH.settingsSet, patch),
   /** 主题变更后通知 main 同步 Windows 标题栏 overlay 配色
    *  (传主题偏好;system 由 main 经 nativeTheme 解析实际生效主题)。 */
   syncTitleBarOverlay: (theme: "system" | "light" | "dark"): Promise<void> =>

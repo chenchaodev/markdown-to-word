@@ -32,9 +32,6 @@ import { TABLE_BORDER_BLACK } from "../../dist/core/docx/theme.js";
 import { unzipPart } from "../harness/docx-utils.js";
 import { convertWithFs, pdfHtmlOf } from "../harness/convert-helpers.js";
 
-/** 产物契约类型取自 src 单源(dist 是 tsc 产物、无类型标注,kind 会被拓宽为 string,
- *  不能直接作为收窄入参)。 */
- /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
 
 /**
  * 断言辅助。
@@ -122,7 +119,7 @@ export async function run() {
   // ================= (c) pdf 产物断言 =================
   /** @type {unknown[]} */
   const pdfWarnings = [];
-  const pdf = /** @type {ConvertArtifact} */ (
+  const pdf = (
     await convertWithFs(docxMd, "pdf", { baseDir: ".", warnings: pdfWarnings })
   );
   const tables = pdfHtmlOf(pdf).match(/<table[\s\S]*?<\/table>/g) ?? [];
@@ -152,7 +149,7 @@ export async function run() {
     "| a | b |",
     "",
   ].join("\n");
-  const edgePdf = /** @type {ConvertArtifact} */ (
+  const edgePdf = (
     await convertWithFs(edgeMd, "pdf", { baseDir: ".", warnings: [] })
   );
   const edgeTables = pdfHtmlOf(edgePdf).match(/<table[\s\S]*?<\/table>/g) ?? [];

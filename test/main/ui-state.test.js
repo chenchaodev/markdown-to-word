@@ -24,13 +24,13 @@ import { removeFile, removeTree } from "../harness/temp-resource.js";
  * (宽松校验 / mutation queue 内读改写不丢 / 全新实例读盘复核 / 写失败不更新缓存且
  * 错误上抛、队列不截断)都落在该文件的 `loadUiState` / `saveUiState` / `DEFAULT_UI_STATE` 上。
  *
- * 另 type-only 引用的 `src/core/ipc-contract.js`(`RecentFile` 类型)不声明:dist 不产
- * `.d.ts`,类型引用只能指 `src/`,但它是纯类型、不是被测主体(与判据的 type-only 放行同款取舍)。
+ * 另 type-only 引用的 `dist/core/ipc-contract.js`(`RecentFile` 类型)不声明:它是纯类型、
+ * 不是被测主体(与判据的 type-only 放行同款取舍)。
  */
 export const covers = ["src/main/persist/ui-state.ts"];
 
 /** 最近文件条目(跨进程契约单源;本段经动态 import 拿产物实例,类型按契约取) */
-/** @typedef {import("../../src/core/ipc-contract.js").RecentFile} RecentFile */
+/** @typedef {import("../../dist/core/ipc-contract.js").RecentFile} RecentFile */
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。

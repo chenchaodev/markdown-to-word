@@ -53,8 +53,8 @@
  * - 同一容器同类降级经 warnDedup 去重(同类型同容器只报一次)。
  */
 
-/** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
-/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} ConvertWarning */
+/** @typedef {import("../../dist/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
 
 import { convert } from "../../dist/core/convert.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
@@ -85,7 +85,7 @@ const FORMULA_DEGRADED = "公式解析失败,降级为 TeX 源码";
 async function renderDocxXml(md, extra) {
   /** @type {ConvertWarning[]} */
   const warnings = [];
-  const artifact = /** @type {ConvertArtifact} */ (
+  const artifact = (
     await convert(prepareForConvert(md), "docx", { baseDir: FIXTURES_DIR, warnings, ...extra })
   );
   return {
@@ -808,7 +808,7 @@ export async function run() {
   );
   await saveArtifact("math-structures", {
     docx: docxBufferOf(
-      /** @type {ConvertArtifact} */ (
+      (
         await convert(prepareForConvert(showcaseMd), "docx", { baseDir: FIXTURES_DIR, warnings: [] })
       ),
     ),

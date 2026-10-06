@@ -13,14 +13,7 @@
  */
 import { parseFrontmatter as parseFrontmatterRaw } from "../../dist/core/pipeline/frontmatter.js";
 
-/**
- * 解析结果契约:metadata 字段取自 src 的 DocMetadata 单源(dist 是 tsc 产物、
- * 无类型标注,空对象字面量会被推断为 {},键访问即报错)。
- * @typedef {{ metadata: import("../../src/core/pipeline/frontmatter.js").DocMetadata; body: string }} FrontmatterResult
- */
-
-/** 按 src 契约收窄的解析入口(运行时仍是 dist 产物,类型只取自 src) */
- /** @type {(md: string) => FrontmatterResult} */
+// parseFrontmatter 直接用产物导出的签名(ADR-069 起 dist 带 .d.ts,不再需要收窄包装)
 const parseFrontmatter = parseFrontmatterRaw;
 
 /**

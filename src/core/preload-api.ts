@@ -18,6 +18,7 @@
  */
 import type { DocMetadata } from "./pipeline/frontmatter.js";
 import type { AppSettings } from "./settings/settings-defaults.js";
+import type { SettingsMergePatch } from "./settings/merge-patch.js";
 import type {
   BatchOperationBusyResult,
   BatchProgressInfo,
@@ -69,7 +70,10 @@ export type PreloadApi = {
   /** 订阅批量进度;返回退订函数 */
   onBatchProgress: (cb: (info: BatchProgressInfo) => void) => () => void;
   settingsGet: () => Promise<AppSettings>;
-  settingsSet: (patch: Partial<AppSettings>) => Promise<AppSettings>;
+  /** patch 形状 = `SettingsMergePatch`(core/settings/merge-patch.ts 单源):顶层浅可选,
+   *  逐字段兜底的那五块块内也浅可选(块清单见该文件的 `DeepMergedBlock`,此处不逐键重述)。
+   *  出参恒为完整 `AppSettings`(main 侧兜底后),故只放宽入参。 */
+  settingsSet: (patch: SettingsMergePatch) => Promise<AppSettings>;
   /** 主题变更后通知 main 同步 Windows 标题栏 overlay 配色
    *  (传主题偏好;system 由 main 经 nativeTheme 解析实际生效主题)。 */
   syncTitleBarOverlay: (theme: "system" | "light" | "dark") => Promise<void>;

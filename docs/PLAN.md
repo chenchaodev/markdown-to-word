@@ -24,9 +24,11 @@
 
 ## 下一步
 
-清掉 `test/renderer/settings-logic.test.js` 里最后 9 条类型错误（全在夹具侧：不完整/过窄的对象字面量）。这是 typecheck 归零的唯一阻塞项 —— 归零后按「修复项复测」那节跑 `verify:ci`，绿了才提交。
+#05 与 #05b 已落地:测试树 271 条类型错误清零(src 与 test 双向 `error TS` 均为 0),随 REQ-222 与 REQ-226/227 作为一个原子提交合入 —— 两者不能拆:REQ-222 单独落地必红(`declaration: true` 让 159 个 `.d.ts` 落进 c8 分母,动态面 159 项判红),REQ-226/227 单独落地则绿。
 
-三条测绘的结论底账在 `docs/evidence/20261006-141113-三份只读测绘事实地图与接手须知.md`，含 §二「接手须知」三条踩空点（新增 evidence 后必须跑 `gen:archive-index` · 段数只写指针不写数字 · 三类测量口径错误）。#08 与 #10 开工前先看该文件 §三/§五，两处判据与 ADR 组成歧义已登记 REQ-229 / REQ-230。
+**下一步按步序表开 #06**（进度·降级·能力三者一并类型化,REQ-217)。它排在最前是因为 #10 的注入式重构要靠类型面兜住「漏改一个交付面」,而那道护栏正是 #06 建出来的;`docs/evidence/20261006-141113-三份只读测绘事实地图与接手须知.md` §四 是 #06 的实测底账(其中 `STAGE_PERCENT: Record<string, number>` 若不同步收紧,`convert-actions.ts` 的查表会**静默**走 `?? 0`,编译面无事而批量进度条不动 —— 那是最可能出岔子的一处)。#08 与 #10 开工前分别先看该文件 §三 与 §五。
+
+三条测绘的结论底账同上，含该文件 §二「接手须知」三条踩空点（新增 evidence 后必须跑 `gen:archive-index` · 段数只写指针不写数字 · 三类测量口径错误）。
 
 ## 完成标准
 
@@ -59,8 +61,8 @@
 | #02 | REQ-223 | 就地整改：改名与注释订正，不动结构 | `src/core/settings/settings-schema.ts` → `schema.ts` 及其引用方 · `test/renderer/dom-stub.js` · **`gates/repo/` 3 处路径字面量（见下注）** | 改名后「文件名 = 唯一职责」重新成立且**不新增同名组**；DOM stub 注释与隔离模型一致 | `npm run typecheck` · `npm run check:src-layout` · `npm run check:boundary` | 可与 #03 并行编辑（写域不重叠） | **通过 2026-10-06** |
 | #03 | REQ-216 | 三处「单源存在但未生效」收口 | `src/core/i18n/warning.ts` · `src/core/pdf/{render,postprocess}.ts` · `src/core/pipeline/precheck.ts` · `src/convert/{artifact-writer,paths,cli-pdf-job}.ts` · `src/cli/{index,options}.ts` · `src/main/cli-pdf-host.ts` | 同一输入下 docx 与 pdf 的警告条数口径一致（需断言）· CLI 判输出失败不再依赖文案 · `max` 有机器看守 | `npm run typecheck` · `npm run test` | 可与 #02 并行编辑，门禁在相末跑 | **通过 2026-10-06**（144 段 / 242 case 全绿） |
 | #04 | REQ-215 | 补网：把最弱的一层纳入可见范围 | `package.json`（覆盖率口径 + 链组成）· `gates/repo/check-coverage-zero.mjs` · `gates/repo/coverage-baseline.json` · `gates/repo/check-html-const-mirror.mjs` · 6 个缺文件头的 `src` 文件 | 豁免对读双向生效（任一方向缺登记即红）· renderer 进统计且**阈值未下调** · `check:src-layout` 与 `check:html-const-mirror` 上链并 fail-closed | `npm run test:coverage` · `npm run check:coverage-zero` · `npm run verify:ci` | 串行（改链组成，按全局配置目录 `tools/AGENTS.md` 走门禁改动的连带项） | **通过 2026-10-06**（`verify:ci` 44 步全绿） |
-| #05 | REQ-222 | 让产物带 `.d.ts`，测试的类型面对齐被测物 | `tsconfig.json` · `package.json`（打包清单）· `gates/artifacts/check-*.mjs` · `test/**` 的 `@typedef`（约 40 文件） | 声明文件产出且不进安装包；产物清单门禁绿；测试 `@typedef` 指向产物 | `npm run typecheck` · `npm run build` · `npm run check:dist-manifest` | 串行 | 配置侧完成，**类型侧转入 #05b** |
-| #05b | REQ-222 | **修测试树的 271 条新暴露类型错误** | `test/main/**`(100) · `test/core/**`(94) · `test/renderer/**`(41) · `test/behavior/**`(18) · `test/convert/**`(12) · `test/harness/**`(6) —— 四个泳道按目录切，写域互不重叠 | 六个目录各自的 `error TS` 行数为 0；**零 `any`／`@ts-ignore`／`@ts-nocheck`／摘 `// @ts-check`**；断言强度未被削弱 | `npx tsc -p tsconfig.test.json`（**看全量，不看尾部**）· 受影响段 | 四泳道并行编辑，**门禁由主会话相末跑一次** | 进行中 |
+| #05 | REQ-222 | 让产物带 `.d.ts`，测试的类型面对齐被测物 | `tsconfig.json` · `package.json`（打包清单）· `gates/artifacts/check-*.mjs` · `test/**` 的 `@typedef`（约 40 文件） | 声明文件产出且不进安装包；产物清单门禁绿；测试 `@typedef` 指向产物 | `npm run typecheck` · `npm run build` · `npm run check:dist-manifest` | 串行 | **通过 2026-10-06**（类型面见 #05b；打包侧连带项：`.d.ts` 与 `.d.cts` 均已排除出包，见 ADR-073） |
+| #05b | REQ-222 | **修测试树的 271 条新暴露类型错误** | `test/main/**`(100) · `test/core/**`(94) · `test/renderer/**`(41) · `test/behavior/**`(18) · `test/convert/**`(12) · `test/harness/**`(6) —— 四个泳道按目录切，写域互不重叠 | 六个目录各自的 `error TS` 行数为 0；**零 `any`／`@ts-ignore`／`@ts-nocheck`／摘 `// @ts-check`**；断言强度未被削弱 | `npx tsc -p tsconfig.test.json`（**看全量，不看尾部**）· 受影响段 | 四泳道并行编辑，**门禁由主会话相末跑一次** | **通过 2026-10-06**（src 与 test 双向 `error TS` 均为 0；随 REQ-222 与 REQ-226/227 原子提交落地） |
 
 **#05 的范围在执行期变了一次，记在此处**：原以为「开 `declaration` + 把 `@typedef` 从 `src/` 改指 `dist/`」是个小改动，实测**打开了整个测试树的类型面**—— 产物此前不带 `.d.ts`，故测试里每一处 `import … from "../../dist/…"` 的类型都等同于 `any`，**对产物的引用从来没被类型检查过**。真实类型一到位，积压的「夹具类型没写准」一次性判红 **271 条**（`TS2345` 109 / `TS2322` 35 / `TS2740` 24 / `TS2339` 20 / `TS2739` 15 / `TS2532` 15），分布如上表。运行期行为一直是对的；新可见的只是「夹具从未对照它真正跑的东西验过」—— 那正是 ADR-069 要拆的那个错配。
 

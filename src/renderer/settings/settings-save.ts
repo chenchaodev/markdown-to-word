@@ -23,6 +23,7 @@
  */
 import { t } from "../../core/i18n/index.js";
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
+import type { SettingsMergePatch } from "../../core/settings/merge-patch.js";
 import { state } from "../state/state.js";
 import { mergePendingSavePatch, normalizePageSetup, reconcileSettingsSave } from "./settings-logic.js";
 
@@ -65,8 +66,10 @@ let settingsSaveRevision = 0;
 
 /** 保存失败后待重试的草稿 patch(失败不丢编辑内容):下一次保存与新 patch 合并后
  *  一并提交,成功即清空;否则失败期间编辑的字段只存在于 renderer 内存。
- *  **抽屉与向导写的是同一份** —— 跨模块各自维护草稿会在交替写入时丢字段。 */
-let pendingSavePatch: Partial<AppSettings> = {};
+ *  **抽屉与向导写的是同一份** —— 跨模块各自维护草稿会在交替写入时丢字段。
+ *  形状 = `SettingsMergePatch`(core 单源,与 IPC `settingsSet` 同一处声明):草稿装的是
+ *  `mergePendingSavePatch` 的产物,而后者对逐字段兜底的五块产出的是**块内部分字段**的对象。 */
+let pendingSavePatch: SettingsMergePatch = {};
 
 /** 最近一次失败反馈写入状态区的原文:成功保存后据此精确复位(不误清其它流程提示)。 */
 let pendingSaveFailureText: string | null = null;

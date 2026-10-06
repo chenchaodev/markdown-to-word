@@ -11,6 +11,9 @@ import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../dist/core/markdo
 export const fixtures = null;
 
 export async function run() {
+  // 标注为元组数组(非默认的 (string)[]):把「每条必是 [用例名, 输入] 二元组」写进类型,
+  // 否则 noUncheckedIndexedAccess 下解构出 `string | undefined`
+  /** @type {Array<[string, string]>} */
   const valid = [
     ["纯文本", "普通文本"],
     ["空串", ""],
@@ -31,6 +34,7 @@ export async function run() {
     }
   }
 
+  /** @type {Array<[string, string]>} */
   const invalid = [
     ["带属性", '<strong class="x">a</strong>'],
     ["未闭合", "<strong>a"],

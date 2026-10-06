@@ -47,9 +47,7 @@ export async function run() {
       aiCleanup: { ...DEFAULT_SETTINGS.aiCleanup, enabled: true },
       obsidian: { compat: true, attachmentFolder: "Attachments" },
     };
-    const prepared = /** @type {import("../../src/convert/preprocess.js").PreparedMarkdown} */ (
-      await prepareMarkdown(mdPath, settings)
-    );
+    const prepared = await prepareMarkdown(mdPath, settings);
     assert(prepared.metadata.title === "[[原始标题]]", "frontmatter title 不应被 Obsidian 预处理改写");
     assert(prepared.metadata.author === "测试", "frontmatter CRLF 应完整解析");
     assert(
@@ -63,9 +61,7 @@ export async function run() {
     // 开关关闭时保持解码文本字节语义；frontmatter 与正文的三种换行均不重写。
     for (const newline of ["\n", "\r\n", "\r"]) {
       const raw = `---${newline}title: [[原始标题]]${newline}---${newline}[[目标]]${newline}`;
-      const untouched = /** @type {import("../../src/convert/preprocess.js").PreparedMarkdown} */ (
-        prepareMarkdownText(raw, DEFAULT_SETTINGS)
-      );
+      const untouched = prepareMarkdownText(raw, DEFAULT_SETTINGS);
       assert(untouched.markdown === raw, `关闭预处理开关时 ${newline === "\r" ? "CR" : newline === "\r\n" ? "CRLF" : "LF"} 应字节级不变`);
       assert(untouched.body === `[[目标]]${newline}`, "关闭预处理时 body 应保持原文");
       assert(untouched.metadata.title === "[[原始标题]]", "换行变体不应影响 frontmatter metadata");
@@ -73,7 +69,9 @@ export async function run() {
 
     const gbkPath = path.join(dir, "gbk.md");
     await fs.writeFile(gbkPath, iconv.encode("# 你好世界\n\n正文\n", "gbk"));
-    const warnings = /** @type {import("../../src/core/i18n/index.js").KeyedWarning[]} */ ([]);
+    // 空数组无推断来源,须标注;指向 dist 产物声明(被测物的类型单源,ADR-069 后产物带 .d.ts),
+// 不再指向 src —— 后者是 declaration 打开前的替代品,现已失效且会与产物声明分叉。
+const warnings = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
     const gbkPrepared = await prepareMarkdown(gbkPath, settings, warnings);
     assert(gbkPrepared.markdown.includes("你好世界"), "GBK 应经统一解码链正确读取");
     assert(
@@ -85,7 +83,11 @@ export async function run() {
       dir,
     );
     assert(
-      precheckWarnings.some((warning) => warning.key === "warn.imageNotFound"),
+      // 警告联合面是 string | KeyedWarning:本段要的是带 key 的那支,
+      // 故先按 typeof 收窄(否则 string 支上不存在 .key)。
+      precheckWarnings.some(
+        (warning) => typeof warning !== "string" && warning.key === "warn.imageNotFound",
+      ),
       "准备后的正文仍应交给 precheck 做静态检查",
     );
 
@@ -158,11 +160,13 @@ export async function run() {
 
     // (3) 反向对照:结构改写开时三类痕迹确实被改写(证明传参是活的,不是恒 false)
     const bothOnOut = preprocessMarkdown(tierMd, tierSettings(true, true));
+    // 「产物真的不同」先于下面的逐字节等值断言:等值断言会把两侧收窄成各自的字面量,
+    // 其后的 !== 就被 tsc 判为「无交集」(TS2367)而写不出。两条断言都在,顺序调整不删判据。
+    assert(bothOnOut !== tidyOnlyOut, "结构改写开关必须真的改变产物(否则传参是死的)");
     assert(
       bothOnOut === '# 小节\n\n正文见与 "引号"\n- 项一',
       `两档全开时结构改写档应生效(清 [1]/emoji、标题上移一级),实际 ${JSON.stringify(bothOnOut)}`,
     );
-    assert(bothOnOut !== tidyOnlyOut, "结构改写开关必须真的改变产物(否则传参是死的)");
     console.log("[ok] preprocess:总开关开 + 结构改写关 → 产物与结构改写档引入前逐字节一致(总开关关/两档全关的零改动对照)");
   } finally {
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)

@@ -24,6 +24,16 @@ function assert(cond, msg) {
 }
 
 /**
+ * 假窗口 → BrowserWindow 的入参收窄:hardenWebContents 的入参是 electron 的
+ * BrowserWindow(175 个成员),而本段只消费其 webContents 上的
+ * setWindowOpenHandler / on 两个成员 —— 假窗口按被消费的那两个面如实建模,
+ * 注入契约面时在此单点收窄。
+ * @param {{ webContents: unknown }} win 假窗口(只实现被消费的两个 webContents 成员)
+ * @returns {import("electron").BrowserWindow} 契约面的窗口引用
+ */
+const asBrowserWindow = (win) => /** @type {import("electron").BrowserWindow} */ (/** @type {unknown} */ (win));
+
+/**
  * 构造假 BrowserWindow:捕获 setWindowOpenHandler / will-navigate 注册的 handler
  * @returns {{
  *   windowOpen?: (details: { url: string }) => { action: string },
@@ -52,7 +62,7 @@ function captureHandlers() {
       },
     },
   };
-  hardenWebContents(fakeWin);
+  hardenWebContents(asBrowserWindow(fakeWin));
   return captured;
 }
 

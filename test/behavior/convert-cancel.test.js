@@ -59,6 +59,20 @@ async function artifactsOf(dir) {
   return (await fs.readdir(dir)).filter((name) => name.endsWith(".docx"));
 }
 
+/**
+ * 取第 i 个源文件:files 长度由上面的循环固定,越界即夹具自身写错。
+ * 显式判空并给出可读失败信息(不用 `!` 或默认值糊掉)—— 取消路径上「文件不存在」
+ * 会让断言在错误的环节红,掩盖真正的取消语义。
+ * @param {readonly string[]} files 源文件列表
+ * @param {number} index 序号
+ * @returns {string} 源文件绝对路径
+ */
+function sourceAt(files, index) {
+  const file = files[index];
+  assert(typeof file === "string" && file.length > 0, `第 ${index} 个源文件缺失(共 ${files.length} 个)`);
+  return file;
+}
+
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
@@ -105,7 +119,7 @@ export async function run() {
       /** @type {Error | undefined} */
       let error;
       try {
-        await convertImpl(files[0], "docx", undefined, ctx);
+        await convertImpl(sourceAt(files, 0), "docx", undefined, ctx);
       } catch (err) {
         error = /** @type {Error} */ (err);
       }
@@ -125,7 +139,7 @@ export async function run() {
       /** @type {Error | undefined} */
       let error;
       try {
-        await convertImpl(files[0], "docx", (/** @type {string} */ stage) => {
+        await convertImpl(sourceAt(files, 0), "docx", (/** @type {string} */ stage) => {
           if (stage === "render") ctx.cancel();
         }, ctx);
       } catch (err) {
@@ -160,7 +174,7 @@ export async function run() {
     // ---- 4. 对照组:未到期 deadline 与未取消转换照常产出(透传不误伤) ----
     {
       const ctx = createConvertContext({ deadline: Date.now() + 60_000 });
-      const result = await convertImpl(files[0], "docx", undefined, ctx);
+      const result = await convertImpl(sourceAt(files, 0), "docx", undefined, ctx);
       assert(typeof result.outputPath === "string" && result.outputPath.length > 0, "未到期 deadline 应正常产出");
       assert((await artifactsOf(srcDir)).length === 1, "对照组应产出 1 个产物");
       const batch = await batchConvertImpl(files.slice(1, 3), "docx");

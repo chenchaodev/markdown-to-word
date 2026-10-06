@@ -16,10 +16,11 @@ export async function run() {
   const suite = createCaseSuite();
   // decodeNumeric 非法码点:越界(0x110000 / 1114112)返回原样(不抛、不解码)
   await suite.case("decodeNumeric 非法码点原样返回", () => {
-    for (const [input, label] of [
+    // 元组数组(非默认的 (string)[]):noUncheckedIndexedAccess 下解构出 `string | undefined`
+    for (const [input, label] of /** @type {Array<[string, string]>} */ ([
       ["&#x110000;", "十六进制越界码点"],
       ["&#1114112;", "十进制越界码点"],
-    ]) {
+    ])) {
       const out = decodeEntities(input);
       assert(out === input, `${label}(${input})应原样返回,实际 ${out}`);
     }

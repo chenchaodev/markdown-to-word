@@ -18,12 +18,13 @@ import {
 export const fixtures = null;
 
 /**
- * 向导草稿(与 src/renderer/wizard/wizard-state.ts 的 WizardDraft 同形;
- * dist 编译产物无类型标注,空数组字面量会被推成 never[],此处按源码契约声明)。
- * @typedef {object} WizardDraft
- * @property {{ title: string, author: string, date: string }} cover
- * @property {string[]} sources
- * @property {string} format
+ * 向导草稿:**直接取产物侧的类型**,不再在测试里维护一份同形副本。
+ * 此前本文件手抄了一份 `WizardDraft`,理由写的是「dist 编译产物无类型标注,空数组
+ * 字面量会被推成 never[]」—— 那条理由在 `declaration` 打开后已失效(ADR-069):
+ * 产物带 `.d.ts` 后 `sources` 的元素类型就在声明里。手抄副本的真实代价是**契约改一处
+ * 这份不跟着改,而没有任何判据会响** —— 它会被本文件自己用出来的那次调用判红,
+ * 但只在有人碰 `wizard-state.ts` 的形状时才暴露。
+ * @typedef {import("../../dist/renderer/wizard/wizard-state.js").WizardDraft} WizardDraft
  */
 
 export async function run() {

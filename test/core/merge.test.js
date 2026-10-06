@@ -84,7 +84,8 @@ export async function run() {
   const bookmarked = await injectBookmarks(new Uint8Array(mergedPdf), buildBookmarkTree(headings));
   const finalPdf = await setPdfMetadata(bookmarked, mergedArtifact.metadata);
   console.log(`[ok] merge:合并 ${mdFiles.length} 文件,提取标题 ${headings.length} 条,书签注入完成`);
-  await saveArtifact("merged-manual", { pdf: finalPdf });
+  // setPdfMetadata 返回 Uint8Array(pdf-lib 契约),落盘要 Buffer(node:fs)—— 边界显式转
+  await saveArtifact("merged-manual", { pdf: Buffer.from(finalPdf) });
 
   // 括号配对 URL:绝对 URL 含括号原样保留;相对路径含括号重定位为合并基准下的相对引用
   if (!bracketMerged.includes("https://example.com/a(b).png")) {

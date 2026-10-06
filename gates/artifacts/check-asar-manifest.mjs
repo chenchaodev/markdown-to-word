@@ -6,10 +6,11 @@
 //   1. 归档本身可用:存在、非空、可被 @electron/asar 解析;
 //   2. 结构:顶层只允许 dist / node_modules / package.json(挡住误打包的脚本、
 //      夹具、密钥等本不该进包的文件);
-//   3. 排除项:全包不得出现任何 .map —— build.files 用两条负向 glob(dist 与
-//      node_modules 各一条)把 sourcemap 挡在包外(覆盖率映射与本地调试仍读 dist/
-//      原文件,tsconfig 的 sourceMap 照开;交付物既不需要它们,也不该带出内部
-//      源码路径与依赖的调试残留);
+//   3. 排除项:全包不得出现任何 .map / 声明文件(.d.ts 与 .d.cts)—— build.files 用负向 glob 把
+//      sourcemap(dist 与 node_modules 各一条)与声明文件(dist 一条)挡在包外
+//      (覆盖率映射与本地调试仍读 dist/ 原文件,tsconfig 的 sourceMap 与
+//      declaration 都照开;交付物既不需要它们,也不该带出内部源码路径、
+//      依赖的调试残留与只在测试侧消费的类型面);
 //   4. 入口与资源:package.json(版本须等于仓库版本)、主进程入口、renderer 入口、
 //      core 入口、KaTeX(pdf 公式字体/css)与 Mermaid(IIFE 产物)资源必须在包内;
 //      另含「devDependencies 中的生产包不得出现在 ASAR 生产依赖判定」的自检:
@@ -19,7 +20,7 @@
 //      gates/repo/check-import-boundary.mjs 判定,两者不可互相替代;
 //   5. 内容:与 clean build 的 dist 清单逐项核对(路径 + 大小 + SHA-256),
 //      证明「打进去的 dist 就是刚构建的那份 clean dist」。清单收的是 dist/
-//      全量(含 .map),故第 3 层被有意排除的 .map 条目在逐项核对时跳过 ——
+//      全量(含 .map 与 .d.ts),故第 3 层被有意排除的条目在逐项核对时跳过 ——
 //      否则它们会被误报成「包内缺失」,淹没真正的问题。
 //
 // 依赖:复用 electron-builder 已带的 @electron/asar(不新增依赖),只走其公开 API
@@ -80,15 +81,28 @@ export const REQUIRED_ENTRIES = [
 export const REQUIRED_PREFIXES = [{ group: 'renderer 样式', prefix: 'dist/renderer/style/', suffix: '.css', atLeast: 1 }];
 
 /**
- * 包内禁止出现的文件后缀(全包,不分区)。package.json 的 build.files 用两条负向
- * glob(dist 与 node_modules 各一条)把 sourcemap 挡在包外。
+ * 包内禁止出现的文件后缀(全包,不分区)。package.json 的 build.files 用负向
+ * glob(dist 与 node_modules 各一条)把 sourcemap 挡在包外,`.d.ts` 同理。
  *
  * 为什么两处都要挡:dist/ 侧的 .map 是本仓 tsc 产物(覆盖率门禁 c8 靠它把覆盖率映射
  * 回 .ts,本地调试也要用,故 dist/ 目录本身仍留着);node_modules 侧的 .map 是各依赖
  * 随包分发的调试残留,实测占现存包 .map 总量的绝大多数。两者都只在「打进安装包」
  * 这一层被排除。
+ *
+ * `.d.ts` / `.d.cts`(ADR-069):dist/ 侧的声明文件只服务于**测试的类型面**(测试的类型引用指
+ * 产物而非源码),运行期与交付物都不消费它;node_modules 侧的声明文件由 electron-builder
+ * 的默认排除表挡住,build.files 里那条针对 dist 的声明文件负向 glob 是**显式声明**
+ * 这一意图 —— 「靠上游默认」不是判据,漏一次升级就会静默打进包里。
+ *
+ * ⚠ **`.d.cts` 必须单列,不能靠 `.d.ts` 顺带覆盖**:本判据用 `endsWith` 匹配后缀
+ * (见 isExcludedDistArtifact),而 `.d.cts` **不以 `.d.ts` 结尾** —— 实测 `src/main/preload.cts`
+ * 是仓内唯一 `.cts` 输入,`declaration: true` 让 tsc 为它产出 `dist/main/preload.d.cts`,
+ * 它既躲得过 build.files 里原先那条只收 `.d.ts` 的负向 glob(实测 minimatch 对 `.d.cts` 不匹配),
+ * 也躲得过本清单里的 `.d.ts`。两处同时漏 ⇒ 类型面进安装包而**全仓无任何门禁会红**。
+ * 判据形态是「按后缀枚举」而非「按声明文件前缀」,故新增一种声明扩展名时
+ * **两处都要各加一条**:这里加后缀、`build.files` 加负向 glob。
  */
-export const FORBIDDEN_ARCHIVE_SUFFIXES = ['.map'];
+export const FORBIDDEN_ARCHIVE_SUFFIXES = ['.map', '.d.ts', '.d.cts'];
 
 /**
  * 是否为「有意排除出包」的产物(与 FORBIDDEN_ARCHIVE_SUFFIXES 同一事实源,
@@ -288,9 +302,9 @@ export async function main(argv = []) {
       if (manifest !== undefined) {
         const mismatched = [];
         for (const entry of manifest.files) {
-          // 清单收的是 dist/ 全量(含 .map),而 build.files 有意把 .map 排除出包:
-          // 这些条目「包内没有」是预期结果,判它们缺失会把真正的问题淹掉。
-          // 反向(包内多出 .map)由第 3 层的禁止条目断言单独负责,不留缺口。
+          // 清单收的是 dist/ 全量(含 .map 与声明文件),而 build.files 有意把它们
+          // 排除出包:这些条目「包内没有」是预期结果,判它们缺失会把真正的问题淹掉。
+          // 反向(包内多出这些后缀)由第 3 层的禁止条目断言单独负责,不留缺口。
           if (isExcludedDistArtifact(entry.path)) {
             skippedExcluded += 1;
             continue;

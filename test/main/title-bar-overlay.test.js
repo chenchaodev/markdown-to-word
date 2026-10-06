@@ -30,6 +30,15 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`title-bar-overlay 断言失败:${msg}`);
 }
 
+/**
+ * 已销毁的假窗口 → syncTitleBarOverlay 的入参收窄:该函数第一参是 electron 的
+ * BrowserWindow(175 个成员),而「空安全」这条断言只需其中 isDestroyed 一面 ——
+ * 假窗口按被消费的那一面如实建模,注入契约面时在此单点收窄。
+ * @param {{ isDestroyed: () => boolean }} win 已销毁的假窗口
+ * @returns {import("electron").BrowserWindow} 契约面的窗口引用
+ */
+const asBrowserWindow = (win) => /** @type {import("electron").BrowserWindow} */ (/** @type {unknown} */ (win));
+
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
@@ -65,7 +74,7 @@ export async function run() {
 
   // ---- 空安全:不抛错即通过(setTitleBarOverlay 失败路径由警告留痕,不中断) ----
   syncTitleBarOverlay(null, "dark");
-  const fakeDestroyed = { isDestroyed: () => true };
+  const fakeDestroyed = asBrowserWindow({ isDestroyed: () => true });
   syncTitleBarOverlay(fakeDestroyed, "light");
   console.log("[ok] title-bar-overlay:syncTitleBarOverlay 空引用/已销毁安全 断言通过");
 }

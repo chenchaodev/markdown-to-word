@@ -61,6 +61,7 @@ export async function run() {
   console.log(`[ok] isMarkdown:${passCases.length} 通过 + ${rejectCases.length} 拒绝(.md/.markdown 大小写变体/非 md/无扩展名)`);
 
   // ---------- baseName ----------
+  /** @type {[input: string, expected: string][]} */
   const baseCases = [
     // win32 反斜杠路径
     ["C:\\Users\\chenc\\docs\\a.md", "a.md"],
@@ -120,6 +121,7 @@ export async function run() {
   console.log("[ok] truncateMiddle:短文本原样/长文本首 55 尾 32 保留+省略号/自定义 max=20/中文 断言通过");
 
   // ---------- stageText ----------
+  /** @type {[stage: string, expected: string][]} */
   const stageCases = [
     ["read", "正在读取文件…"],
     ["render", "正在渲染文档…"],
@@ -175,10 +177,11 @@ export async function run() {
   // ---------- actionableError(错误码 → 可操作文案,未识别透传) ----------
   /**
    * @param {string} key
-   * @param {Record<string, string>} [params]
+   * @param {Record<string, string | number>} [params]
    * @returns {string}
    */
   const fakeT = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
+  /** @type {[message: string, expectedKey: string][]} */
   const errCases = [
     ["EBUSY: resource busy or locked, open 'C:\\a.docx'", "error.fileBusy"],
     ["ENOENT: no such file or directory, open 'C:\\gone.md'", "error.fileNotFound"],
@@ -240,6 +243,7 @@ export async function run() {
   // ---------- formatRecentTime(最近转换相对时间) ----------
   // 固定 now = 2026-08-13 15:00(本地时间构造,避免时区波动;全部断言注入 now)
   const NOW = new Date(2026, 7, 13, 15, 0).getTime();
+  /** @type {[ts: number, now: number, expected: string][]} */
   const cases = [
     // [ts, now, 期望]
     [new Date(2026, 7, 13, 9, 5).getTime(), NOW, "今天 09:05"], // 当天:补零

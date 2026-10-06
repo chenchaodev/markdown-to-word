@@ -42,11 +42,11 @@ import { removeTree } from "../harness/temp-resource.js";
 /** 转换上下文(取消标志 + 取消入口) */
 /** @typedef {ReturnType<typeof createConvertContext>} ConvertCtx */
 /** 批量进度事件(跨进程契约单源) */
-/** @typedef {import("../../src/core/ipc-contract.js").BatchProgressInfo} BatchProgress */
+/** @typedef {import("../../dist/core/ipc-contract.js").BatchProgressInfo} BatchProgress */
 /** 批量汇总结果(取实现签名,避免与契约的可选字段形状漂移) */
 /** @typedef {Awaited<ReturnType<typeof batchConvertImpl>>} BatchResult */
 /** 单文件/合并转换返回(跨进程契约单源;error 由 ipc 层补,直调实现层恒为成功分支) */
-/** @typedef {import("../../src/core/ipc-contract.js").ConvertResult} ConvertResult */
+/** @typedef {import("../../dist/core/ipc-contract.js").ConvertResult} ConvertResult */
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -353,6 +353,7 @@ export async function run() {
       });
       assert(result.okCount === snapshotFiles.length, "快照批量应全部成功");
       for (const item of result.items) {
+        assert(item.outputPath !== undefined, `快照批量成功项应带 outputPath:${item.file}`);
         const zip = await JSZip.loadAsync(await fs.readFile(item.outputPath));
         const documentXml = zip.file("word/document.xml");
         assert(documentXml !== null, `产物应含 word/document.xml:${item.file}`);

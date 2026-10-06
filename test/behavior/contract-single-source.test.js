@@ -125,10 +125,15 @@ export async function run() {
     if (typeof def.defaultText !== "string" || typeof def.danglingText !== "string" || typeof def.kindName !== "string") {
       throw new Error(`contract 断言失败:CROSS_REF_KINDS.${kind} 缺 defaultText/danglingText/kindName`);
     }
-    if (!Array.isArray(def.defaultTexts) || def.defaultTexts.length === 0) {
+    // 声明类型 defaultTexts 是非空只读元组(长度 1|2),与 0 比较被判「无交集」(TS2367)。
+    // 但本守卫守的是**运行期产物**:src 的声明与 dist 的实际值可以不一致(改声明未重建、
+    // 或产物被别处覆写),此时类型说「非空」而值可能是空数组。故按声明的**只读字符串数组
+    // 上界**读取 —— 不是放宽断言(仍与 0 比、仍判空集),只是不依赖这条恒真声明。
+    const defaultTexts = /** @type {readonly string[]} */ (def.defaultTexts);
+    if (!Array.isArray(def.defaultTexts) || defaultTexts.length === 0) {
       throw new Error(`contract 断言失败:CROSS_REF_KINDS.${kind} 缺 defaultTexts(默认文本集)`);
     }
-    if (!def.defaultTexts.includes(def.defaultText)) {
+    if (!defaultTexts.includes(def.defaultText)) {
       throw new Error(`contract 断言失败:CROSS_REF_KINDS.${kind} 的 defaultTexts 应含 defaultText`);
     }
   }

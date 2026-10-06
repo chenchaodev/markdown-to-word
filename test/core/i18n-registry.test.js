@@ -24,11 +24,17 @@ import {
   t,
   formatWarning,
 } from "../../dist/core/i18n/index.js";
+// tByKey 刻意**不经** core/i18n 的再导出面(它是同目录内部件,见 src/core/i18n/index.ts
+// 的说明);本段要验的「字典里没有的 key」与「枚举全字典键」两处正是它那个动态 key
+// 场景,故直接从兄弟模块取(与本仓其他段直取 dist 子模块同款做法)。
+import { tByKey } from "../../dist/core/i18n/t.js";
 import {
   backupSettingsFile,
   freshSettingsModule,
   settingsJsonPath,
 } from "../harness/settings.js";
+
+/** @typedef {import("../../dist/core/i18n/zh.js").Dict} Dict */
 
 /**
  * 断言辅助。
@@ -87,8 +93,11 @@ export async function run() {
   // ja 已全量翻译(无天然缺口),夹具升级为全字典级不变量:ja 下遍历全部 zh 键,
   // t() 永不返回裸 key——任何键缺失于 ja 时必落 en 文案(en satisfies 全量兜底)
   setLanguage("ja");
+  // zhKeys 来自 Object.keys(DICT.zh),元素是运行期 string;t 的 key 受 Dict 联合约束,
+  // 而「枚举全字典键逐个验」正是动态 key 场景 —— 走 tByKey(它与 t 共用同一实现与
+  // 同一条回退链,差别只在 key 是否受编译期约束)
   for (const key of zhKeys) {
-    assert(t(key) !== key, `ja 下键 ${key} 不应回退裸 key(en 全量兜底失效?)`);
+    assert(tByKey(key) !== key, `ja 下键 ${key} 不应回退裸 key(en 全量兜底失效?)`);
   }
   // en 直接命中抽查(不经 zh)
   setLanguage("en");
@@ -97,7 +106,9 @@ export async function run() {
   setLanguage("ja");
   const keyed = { key: "no.such.key", params: { error: "E" }, fallback: "兜底文案" };
   assert(formatWarning(keyed) === "兜底文案", "两级均缺失时 formatWarning 应回退 fallback");
-  assert(t("no.such.key") === "no.such.key", "两级均缺失时 t() 应回退 key 本身");
+  // 「字典里没有的 key」走 tByKey:它的 key 参数是 string,正是 src/core/i18n/t.ts
+  // 为「动态 key 场景」留的原始实现(t() 的 key 受 Dict 联合约束,收不进不存在的键)
+  assert(tByKey("no.such.key") === "no.such.key", "两级均缺失时 tByKey() 应回退 key 本身");
   // 已译键不受回退链影响:ja 直接命中
   assert(t("app.title") === DICT.ja["app.title"], "ja 已译键应直接命中,不经 en");
   setLanguage("zh");
@@ -218,8 +229,15 @@ export async function run() {
     "ja.warn.pathScanLimit 不应沿用中文原文",
   );
   // zh 值为默认语言口径,须与「已停止收集」语义一致(调用侧 kind/limit 插值后成句)
+  // DICT 的值类型是 `string | undefined`(zh 是 Partial<Record<Dict, string>>),
+  // 缺键正是「翻译缺失」—— 但本条断言的是 zh 原文的内容,故显式断掉而不是
+  // 让 `undefined.includes` 抛在断言之外
+  const zhScanLimit = DICT.zh["warn.pathScanLimit"];
+  if (typeof zhScanLimit !== "string") {
+    throw new Error("zh.warn.pathScanLimit 缺文案");
+  }
   assert(
-    DICT.zh["warn.pathScanLimit"].includes("已停止收集"),
+    zhScanLimit.includes("已停止收集"),
     "zh.warn.pathScanLimit 应说明扫描已停止收集(用户需知情截断)",
   );
   setLanguage("en");
@@ -234,6 +252,8 @@ export async function run() {
   // 内置预设说明按 hintI18nKey 三语化:任一语言缺键会退化成英文兜底(中文界面口径不一)
   // 或裸键(用户看到 "preset.hintPaper"),故此处逐键断言三语命中、无插值占位符、
   // en/ja 译文不沿用中文原文。
+  /** 预设说明键:取 Dict 字面量联合(t 的 key 参数类型),拼错即编译报错 */
+  /** @type {Array<Dict>} */
   const presetHintKeys = [
     "preset.hintDefault",
     "preset.hintPaper",

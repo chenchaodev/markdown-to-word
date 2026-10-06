@@ -16,6 +16,10 @@ export const fixtures = null;
 /** slug.ts 三函数单测 */
 export async function run() {
   // ---------- slugify ----------
+  // 标注为**元组**数组而非默认的 (string)[]:后者解构出的是 `string | undefined`
+  // (noUncheckedIndexedAccess),把「每条样例必是 [输入, 期望] 二元组」这一事实
+  // 写进类型,而不是让 6 个调用点各判一次空
+  /** @type {Array<[string, string]>} */
   const slugCases = [
     // 中文保留 + 空白转连字符
     ["冒烟测试 中文标题", "冒烟测试-中文标题"],
@@ -65,6 +69,8 @@ export async function run() {
   console.log("[ok] uniqueSlug:-2/-3 递增、不同标题不递增、同基数跨原文去重 断言通过");
 
   // ---------- docxBookmarkId ----------
+  // 元组数组(同 slugCases):expected 为 null 表示「该输入走截断分支」,不断言具体值
+  /** @type {Array<[string, string | null]>} */
   const bookmarkCases = [
     // 数字开头 → 前缀 h-(空格先兜底转连字符)
     ["1 标题", "h-1-标题"],
@@ -79,6 +85,7 @@ export async function run() {
     // 中文截断(BMP 单码元)
     ["中".repeat(50), null],
   ];
+  /** @type {Array<[string, string]>} */
   const truncated = [];
   for (const [input, expected] of bookmarkCases) {
     const actual = docxBookmarkId(input);

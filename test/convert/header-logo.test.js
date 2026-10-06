@@ -27,7 +27,9 @@ export const fixtures = null;
  * 合法页眉页脚设置(只取形状):resolveHeaderLogo 只读 headerMode / headerLogoPath 两键,
  * 其余字段与默认值同形即可 —— 原段取自 core 的 DEFAULT_HEADER_FOOTER,换成本地这份
  * 同形字面量判定不变,且不给本段添跨层 import。
- * @type {import("../../src/core/settings/settings-defaults.js").HeaderFooterSettings}
+ * 类型指向 dist 产物声明(ADR-069 后产物带 .d.ts):指向 src 是 declaration 打开前的
+ * 替代品,已失效 —— 就地声明形状的意图不变,类型面与被测物归一。
+ * @type {import("../../dist/core/settings/settings-defaults.js").HeaderFooterSettings}
  */
 const headerFooter = {
   headerMode: "default",
@@ -38,7 +40,7 @@ const headerFooter = {
 };
 
 export async function run() {
-  const warnings = /** @type {import("../../src/core/i18n/index.js").KeyedWarning[]} */ ([]);
+  const warnings = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
   const missing = await resolveHeaderLogo(
     { ...headerFooter, headerMode: "custom", headerLogoPath: "Z:\\no\\such\\logo.png" },
     warnings,

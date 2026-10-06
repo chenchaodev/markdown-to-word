@@ -25,12 +25,11 @@ import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
 import { removeTree } from "../harness/temp-resource.js";
 
-/** @typedef {import("../../src/main/persist/atomic-json.js").JsonWriterDeps} JsonWriterDeps */
-/** @typedef {import("../../src/main/persist/atomic-json.js").DurableFileHandle} DurableFileHandle */
-/** @typedef {import("../../src/main/persist/atomic-json.js").JsonWriter} JsonWriter */
+/** @typedef {import("../../dist/main/persist/atomic-json.js").JsonWriterDeps} JsonWriterDeps */
+/** @typedef {import("../../dist/main/persist/atomic-json.js").DurableFileHandle} DurableFileHandle */
+/** @typedef {import("../../dist/main/persist/atomic-json.js").JsonWriter} JsonWriter */
 
-// dist 无 .d.ts,createJsonWriter 的形参被推断成 FileHandle 等具体实现签名;
-// 本段按 src 契约注入替身句柄,故统一经此 cast 收口(只放宽入参,不放宽被测行为)。
+// 本段按产物声明的契约注入替身句柄,故统一经此 cast 收口(只放宽入参,不放宽被测行为)。
 const createWriter = /** @type {(deps?: JsonWriterDeps) => JsonWriter} */ (
   /** @type {unknown} */ (createJsonWriter)
 );

@@ -51,15 +51,42 @@ import {
 } from "../../dist/main/windows/web-contents-registry.js";
 
 /** 预设条目(契约单源) */
-/** @typedef {import("../../src/core/settings/settings-defaults.js").CustomPreset} CustomPreset */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").CustomPreset} CustomPreset */
 /** 排版字段(契约单源;夹具可只给部分字段) */
-/** @typedef {import("../../src/core/settings/typography.js").TypographySettings} TypographySettings */
+/** @typedef {import("../../dist/core/settings/typography.js").TypographySettings} TypographySettings */
 /** 页面字段(契约单源;夹具可只给部分字段) */
-/** @typedef {import("../../src/core/settings/settings-defaults.js").PageSetup} PageSetup */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").PageSetup} PageSetup */
 /** 预设导入纯逻辑结果(实现签名声明的契约) */
-/** @typedef {import("../../src/main/ipc/logic.js").ImportPresetsMergeResult} ImportPresetsMergeResult */
+/** @typedef {import("../../dist/main/ipc/logic.js").ImportPresetsMergeResult} ImportPresetsMergeResult */
 /** keyed 警告(带 params 的那一支) */
-/** @typedef {import("../../src/core/i18n/index.js").KeyedWarning} KeyedWarning */
+/** @typedef {import("../../dist/core/i18n/index.js").KeyedWarning} KeyedWarning */
+/** 转换上下文(契约单源:装配层 ConvertContext,经桶导出) */
+/** @typedef {import("../../dist/main/converter/index.js").ConvertContext} ConvertContext */
+/** runConvertTask 的注入依赖(契约单源) */
+/** @typedef {import("../../dist/main/ipc/logic.js").ConvertTaskDeps} ConvertTaskDeps */
+/** busy 结果(契约单源) */
+/** @typedef {import("../../dist/main/ipc/logic.js").BusyResult} BusyResult */
+/** 预检三出口联合(契约单源) */
+/** @typedef {import("../../dist/main/ipc/logic.js").PrecheckOutcome} PrecheckOutcome */
+
+/**
+ * 假转换上下文:装配层 ConvertContext 的真形状(cancelRequested 只读标志 +
+ * cancel() 置位 + signal),供 runConvertTask / webContents 注册表的注入面使用。
+ * 不再额外挂 `id` 之类测试专用字段 —— 「ctx 每次新建不复用」改由对象引用
+ * 本身区分(见 makeDeps 的 refs 数组),免得夹具比契约多出字段。
+ * @returns {ConvertContext} 假转换上下文
+ */
+function fakeConvertCtx() {
+  const controller = new AbortController();
+  return {
+    cancelRequested: false,
+    cancel() {
+      this.cancelRequested = true;
+      controller.abort();
+    },
+    signal: controller.signal,
+  };
+}
 
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
@@ -103,8 +130,10 @@ export async function run() {
   console.log("[ok] errorMessage:Error/字符串/null/对象 归一断言通过");
 
   // ---------- buildRecentFileEntries ----------
+  // 42 是刻意混入的非字符串:被测的正是 buildRecentFileEntries 逐元素过滤
+  // 非字符串/空串的守卫,故整组按 string[] 标注(不逐个元素收窄)。
   const entries = buildRecentFileEntries(
-    ["C:/docs/a.md", "", "C:/docs/b.pdf", 42, "C:/docs/c.MD"],
+    /** @type {string[]} */ (["C:/docs/a.md", "", "C:/docs/b.pdf", 42, "C:/docs/c.MD"]),
     "docx",
     123456,
   );
@@ -188,28 +217,50 @@ export async function run() {
   console.log("[ok] IPC 入参守卫:isString/isStringArray/isConvertFormat 断言通过");
 
   // ---------- runConvertTask(自 index.ts runWithCtx 抽出,deps 注入直测) ----------
+  // 出口形态常量:与 register.ts 的 onCanceled / onBusy 真实返回同形
+  // (取消含 canceled:true 扩展字段、busy 恒三键),不拿裸字符串占位 ——
+  // runConvertTask 的返回联合是 `T | BusyResult | {ok:false,error}`,
+  // 裸字符串既不在联合里、也读不出 ok/error 字段。
+  /** @type {{ ok: false, canceled: true, error: string }} */
+  const canceledOutcome = { ok: false, canceled: true, error: "已取消" };
+  /** @type {{ ok: false, error: string }} */
+  const failedOutcome = { ok: false, error: "" };
+  /** @type {BusyResult} */
+  const busyOutcome = operationBusyResult("已有操作正在进行");
+  /**
+   * 抛错任务:声明返回 Promise<Failure> 是必要的 —— 恒抛的箭头函数会被推成
+   * Promise<void>,那会让 runConvertTask 的 T 落到 void,返回联合里就再也读不到
+   * ok/error。声明的是「本用例的任务值域 = 失败归一结果的形状」。
+   * @param {string} message 抛出的错误文案
+   * @returns {Promise<{ ok: false, error: string }>} 恒抛,故无实际返回值
+   */
+  const throwing = async (message) => {
+    throw new Error(message);
+  };
   /** 构造带事件记录的 mock deps(镜像 index.ts 真实注入:ctx 新建/注册/注销 + 取消判定) */
   /**
    * @param {{ canceledErrors?: unknown[] }} [options] 视为「取消错误」的异常实例集合
    * @returns {{
    *   log: (string | number)[][],
-   *   deps: {
-   *     createContext: () => { id: number },
-   *     registerCtx: (ctx: { id: number }) => boolean,
-   *     unregisterCtx: () => void,
-   *     isCanceledError: (err: unknown) => boolean,
-   *   },
-   * }} 事件记录 + 注入依赖
+   *   refs: ConvertContext[],
+   *   deps: ConvertTaskDeps,
+   * }} 事件记录 + 已新建 ctx 引用序列 + 注入依赖
    */
   function makeDeps({ canceledErrors = [] } = {}) {
     const log = /** @type {(string | number)[][]} */ ([]);
-    let seq = 0;
+    /** 新建序 → ctx 引用:「每次新建不复用」断言靠引用可辨(不靠夹具自造字段) */
+    const refs = /** @type {ConvertContext[]} */ ([]);
     return {
       log,
+      refs,
       deps: {
-        createContext: () => ({ id: ++seq }),
+        createContext: () => {
+          const ctx = fakeConvertCtx();
+          refs.push(ctx);
+          return ctx;
+        },
         registerCtx: (ctx) => {
-          log.push(["register", ctx.id]);
+          log.push(["register", refs.indexOf(ctx) + 1]);
           return true; // 占用成功(镜像注册表接受首次操作)
         },
         unregisterCtx: () => log.push(["unregister"]),
@@ -220,8 +271,8 @@ export async function run() {
 
   // 1. 成功路径:任务值透传;register → task → finally unregister
   {
-    const { deps, log } = makeDeps();
-    const result = await runConvertTask(deps, async (/** @type {{ id: number }} */ ctx) => `ok:${ctx.id}`, () => "canceled", () => "busy");
+    const { deps, log, refs } = makeDeps();
+    const result = await runConvertTask(deps, async (ctx) => `ok:${refs.indexOf(ctx) + 1}`, () => canceledOutcome, () => busyOutcome);
     assert(result === "ok:1", `成功路径应透传任务值,实际 ${JSON.stringify(result)}`);
     assert(
       JSON.stringify(log) === JSON.stringify([["register", 1], ["unregister"]]),
@@ -232,46 +283,55 @@ export async function run() {
   {
     const cancelErr = new Error("canceled");
     const { deps, log } = makeDeps({ canceledErrors: [cancelErr] });
-    const onCanceledResult = { ok: false, canceled: true, error: "已取消" };
+    /** @type {{ ok: false, canceled: true, error: string }} */
+    const onCanceledResult = canceledOutcome;
     const result = await runConvertTask(
       deps,
+      /** @returns {Promise<{ ok: false, error: string }>} */
       async () => {
         throw cancelErr;
       },
       () => onCanceledResult,
-      () => "busy",
+      () => busyOutcome,
     );
     assert(result === onCanceledResult, "取消路径应原样返回 onCanceled() 结果");
     assert(log[log.length - 1]?.[0] === "unregister", "取消路径 finally 也应注销引用(避免悬挂)");
   }
   // 3. 非取消错误归一:{ ok:false, error } 且 error 经 errorMessage(Error→message/非 Error→String)
+  //    isPrecheckFailureOutcome 就是实现侧那条「非数组非 busy 即失败出口」的判定,
+  //    故用它把 runConvertTask 的归一出口收窄到 { ok:false, error } 再读字段。
   {
     const { deps } = makeDeps();
-    const r1 = await runConvertTask(deps, async () => {
-      throw new Error("磁盘错误");
-    }, () => "canceled", () => "busy");
-    assert(r1.ok === false && r1.error === "磁盘错误", `Error 应归一为 { ok:false, error:message },实际 ${JSON.stringify(r1)}`);
-    const r2 = await runConvertTask(deps, async () => {
+    const r1 = await runConvertTask(deps, () => throwing("磁盘错误"), () => failedOutcome, () => busyOutcome);
+    assert(
+      !isOperationBusyResult(r1) && r1.ok === false && r1.error === "磁盘错误",
+      `Error 应归一为 { ok:false, error:message },实际 ${JSON.stringify(r1)}`,
+    );
+    /** @returns {Promise<{ ok: false, error: string }>} */
+    const throwingRaw = async () => {
       throw "裸字符串错误";
-    }, () => "canceled", () => "busy");
-    assert(r2.ok === false && r2.error === "裸字符串错误", "非 Error 抛出值应 String 归一");
+    };
+    const r2 = await runConvertTask(deps, throwingRaw, () => failedOutcome, () => busyOutcome);
+    assert(
+      !isOperationBusyResult(r2) && r2.ok === false && r2.error === "裸字符串错误",
+      "非 Error 抛出值应 String 归一",
+    );
   }
   // 4. ctx 每次调用新建不复用(「取消后复位」语义)+ 失败不残留注册
   {
-    const { deps, log } = makeDeps();
-    await runConvertTask(deps, async (/** @type {{ id: number }} */ ctx) => ctx.id, () => "canceled", () => "busy"); // 第一次
-    await runConvertTask(deps, async (/** @type {{ id: number }} */ ctx) => ctx.id, () => "canceled", () => "busy"); // 第二次
+    const { deps, log, refs } = makeDeps();
+    await runConvertTask(deps, async (ctx) => refs.indexOf(ctx) + 1, () => failedOutcome, () => busyOutcome); // 第一次
+    await runConvertTask(deps, async (ctx) => refs.indexOf(ctx) + 1, () => failedOutcome, () => busyOutcome); // 第二次
     const ctxIds = log.filter((e) => e[0] === "register").map((e) => e[1]);
     assert(ctxIds.length === 2 && ctxIds[0] !== ctxIds[1], `每次调用应新建 ctx,实际 ${JSON.stringify(ctxIds)}`);
+    assert(refs.length === 2 && refs[0] !== refs[1], "两次调用应拿到两个不同的 ctx 引用");
     assert(log.filter((e) => e[0] === "unregister").length === 2, "每次调用结束都应注销");
   }
   // 5. 任务抛错时后续仍可正常执行(finally 先于返回值落地,无悬挂注册)
   {
-    const { deps, log } = makeDeps();
-    await runConvertTask(deps, async () => {
-      throw new Error("x");
-    }, () => "canceled", () => "busy").catch(() => undefined);
-    const ok = await runConvertTask(deps, async (/** @type {{ id: number }} */ ctx) => ctx.id, () => "canceled", () => "busy");
+    const { deps, log, refs } = makeDeps();
+    await runConvertTask(deps, () => throwing("x"), () => failedOutcome, () => busyOutcome).catch(() => undefined);
+    const ok = await runConvertTask(deps, async (ctx) => refs.indexOf(ctx) + 1, () => failedOutcome, () => busyOutcome);
     assert(ok === 2, `失败后再次调用应拿到新 ctx(id=2)正常完成,实际 ${JSON.stringify(ok)}`);
     assert(log.filter((e) => e[0] === "unregister").length === 2, "失败+成功两次调用各注销一次");
   }
@@ -281,16 +341,19 @@ export async function run() {
     let taskCount = 0;
     let unregisterCount = 0;
     const deps = {
-      createContext: () => ({ id: ++createCount, cancel() {} }),
+      createContext: () => {
+        createCount += 1;
+        return fakeConvertCtx();
+      },
       registerCtx: () => false,
-      unregisterCtx: () => { unregisterCount++; },
+      unregisterCtx: () => { unregisterCount += 1; },
       isCanceledError: () => false,
     };
-    const busy = { ok: false, busy: true, error: "已有操作正在进行" };
+    const busy = operationBusyResult("已有操作正在进行");
     const result = await runConvertTask(
       deps,
-      async () => { taskCount++; return "unexpected"; },
-      () => "canceled",
+      async () => { taskCount += 1; return "unexpected"; },
+      () => failedOutcome,
       () => busy,
     );
     assert(result === busy, "注册冲突应原样返回 onBusy 结果");
@@ -321,11 +384,14 @@ export async function run() {
       "警告数组出口应原样透传(成功语义不变)");
     assert(same !== warnings, "归一应返回新数组,不与调用方数组共享引用");
 
-    const busyOutcome = normalizePrecheckOutcome({ ...operationBusyResult("忙"), extra: 1 });
+    // 多余键经中间变量投喂:新鲜字面量会触发 excess-property 判定,而本条
+    // 断言的正是「归一出口把多余键丢掉」—— 故先落到变量(解除新鲜性)再传入
+    const busyWithExtra = { ...operationBusyResult("忙"), extra: 1 };
+    const busyOutcome = normalizePrecheckOutcome(busyWithExtra);
     assert(isOperationBusyResult(busyOutcome) && Object.keys(busyOutcome).sort().join(",") === "busy,error,ok",
       "busy 出口应重建为稳定三键(多余键被丢弃)");
 
-    const failed = { ok: false, error: "ENOENT: no such file" };
+    const failed = /** @type {{ ok: false, error: string }} */ ({ ok: false, error: "ENOENT: no such file" });
     assert(isPrecheckFailureOutcome(failed) === true, "异常归一结果应判定为预检失败出口");
     assert(isPrecheckFailureOutcome([]) === false && isPrecheckFailureOutcome(operationBusyResult("忙")) === false,
       "警告数组/busy 不应被判为预检失败");
@@ -342,21 +408,23 @@ export async function run() {
   console.log("[ok] busy 形状单源 + 预检三出口归一(数组透传/busy 稳定/异常可观察) 断言通过");
 
   // ---------- webContents operation registry ----------
-  const firstCtx = { id: 1, canceled: false, cancel() { this.canceled = true; } };
+  // 三个 ctx 均按 ConvertContext 真形状构造(不再挂 id/canceled 等契约外字段);
+  // 「cancel 指向当前操作」改看契约自带的 cancelRequested 标志。
+  const firstCtx = fakeConvertCtx();
   const firstToken = beginWebContentsOperation(7001, "single", firstCtx);
   assert(firstToken !== null, "首个操作应注册成功");
   assert(hasWebContentsOperation(7001), "占用后 hasWebContentsOperation 应为真");
-  assert(beginWebContentsOperation(7001, "batch", { id: 2, cancel() {} }) === null,
+  assert(beginWebContentsOperation(7001, "batch", fakeConvertCtx()) === null,
     "同一 webContents 的第二个操作应拒绝");
   assert(getWebContentsOperation(7001)?.kind === "single", "注册表应保留首个操作类型");
   assert(getWebContentsOperation(7001)?.context === firstCtx, "被拒操作不得替换已占用 context");
   assert(cancelWebContentsOperation(7001) === true, "存在活动操作时 cancel 应返回 true");
-  assert(firstCtx.canceled === true, "cancel 应指向当前活动操作");
+  assert(firstCtx.cancelRequested === true, "cancel 应指向当前活动操作");
 
   assert(finishWebContentsOperation(7001, firstToken) === true, "当前 token 应先释放首个操作");
   assert(!hasWebContentsOperation(7001), "释放后 hasWebContentsOperation 应为假");
   assert(cancelWebContentsOperation(7001) === false, "无活动操作时 cancel 应返回 false(空操作)");
-  const secondCtx = { id: 3, cancel() {} };
+  const secondCtx = fakeConvertCtx();
   const secondToken = beginWebContentsOperation(7001, "precheck", secondCtx);
   assert(secondToken !== null, "旧操作结束后同 key 应可注册新操作");
   assert(finishWebContentsOperation(7001, firstToken) === false,
@@ -365,7 +433,7 @@ export async function run() {
   assert(finishWebContentsOperation(7001, secondToken) === true, "当前 token 应可释放操作");
   assert(getWebContentsOperation(7001) === undefined, "当前 token 释放后注册表应为空");
   // 不同 webContents 互不干扰(多窗口隔离)
-  const otherToken = beginWebContentsOperation(7002, "merge", { id: 4, cancel() {} });
+  const otherToken = beginWebContentsOperation(7002, "merge", fakeConvertCtx());
   assert(otherToken !== null && hasWebContentsOperation(7002), "另一 webContents 应可独立占用");
   assert(!hasWebContentsOperation(7001), "7001 释放后不应牵连 7002");
   finishWebContentsOperation(7002, otherToken);

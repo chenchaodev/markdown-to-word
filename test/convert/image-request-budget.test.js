@@ -153,8 +153,11 @@ export async function run() {
       const cancelled = await resolver(`http://127.0.0.1:${srv.port}/cancelled.png`, requestOf({ signal: controller.signal }));
       assert(cancelled === null, "已取消的请求应直接返回 null");
       assert(srv.getCount() === before, `已取消的请求不应发出网络请求,计数 ${before} → ${srv.getCount()}`);
-      // exists 通道同样短路
-      assert((await resolver.exists(`http://127.0.0.1:${srv.port}/cancelled2.png`, requestOf({ signal: controller.signal }))) === false,
+      // exists 通道同样短路。exists 是可选注入成员(ImageResolver.exists?):
+      // 本实现必提供(缺省则这条断言整段无意义),故先判空再收进局部常量。
+      const exists = resolver.exists;
+      assert(exists !== undefined, "createImageResolver 应注入 exists 轻量存在性通道");
+      assert((await exists(`http://127.0.0.1:${srv.port}/cancelled2.png`, requestOf({ signal: controller.signal }))) === false,
         "已取消的 exists 请求应返回 false");
       console.log("[ok] image-request-budget:已取消的请求不发起 IO(计数保持不变)");
     }
@@ -172,9 +175,17 @@ export async function run() {
         assert(buf !== null, `缓存预算准备阶段下载失败:${u}`);
       }
       const afterWarmup = srv.getCount();
-      // 最早的 URL(已被淘汰)与最后的 URL(仍在缓存内)各再请求一次
-      const evicted = await resolver(urls[0], requestOf());
-      const cached = await resolver(urls[urls.length - 1], requestOf());
+      // 最早的 URL(已被淘汰)与最后的 URL(仍在缓存内)各再请求一次。
+      // 两端点都取数组下标(可能 undefined):显式判空并给出可读失败信息 ——
+      // 用端点值才是这条断言的判据,取中点等于没测。
+      const evictedUrl = urls[0];
+      const cachedUrl = urls[urls.length - 1];
+      assert(
+        typeof evictedUrl === "string" && typeof cachedUrl === "string",
+        `缓存预算场景的 URL 列表应非空(实际 ${urls.length} 条)`,
+      );
+      const evicted = await resolver(evictedUrl, requestOf());
+      const cached = await resolver(cachedUrl, requestOf());
       assert(evicted !== null && cached !== null, "缓存预算场景两次请求都应成功");
       assert(srv.getCount() === afterWarmup + 1, `被淘汰的 URL 应重新下载(计数 +1),实际 +${srv.getCount() - afterWarmup}`);
       console.log(`[ok] image-request-budget:成功缓存按条目上限淘汰(70 个 URL 后最早条目重新下载)`);

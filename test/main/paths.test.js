@@ -214,8 +214,9 @@ export async function run() {
     // 回落后的 candidate 不再二次检查长度——源目录 + 超长 baseName 仍 >250 时原样返回 ----
     const longName = "x".repeat(260);
     const longOut = await resolveOutputPath(srcMd, "docx", targetDir, longName);
+    const [longWarning] = longOut.warnings;
     assert(
-      longOut.warnings.length === 1 && formatWarning(longOut.warnings[0]).includes("输出路径过长"),
+      longOut.warnings.length === 1 && longWarning !== undefined && formatWarning(longWarning).includes("输出路径过长"),
       `超长路径:应恰一条「输出路径过长」警告,实际 ${JSON.stringify(longOut.warnings)}`,
     );
     assert(path.dirname(longOut.outputPath) === srcDir, "超长路径:未回落源目录");
@@ -228,8 +229,9 @@ export async function run() {
     const blocker = path.join(dir, "blocker.txt");
     await fs.writeFile(blocker, "blocker", "utf8");
     const badOut = await resolveOutputPath(srcMd, "docx", blocker);
+    const [badWarning] = badOut.warnings;
     assert(
-      badOut.warnings.length === 1 && formatWarning(badOut.warnings[0]).includes("输出目录不可用"),
+      badOut.warnings.length === 1 && badWarning !== undefined && formatWarning(badWarning).includes("输出目录不可用"),
       `mkdir 失败:应恰一条「输出目录不可用」警告,实际 ${JSON.stringify(badOut.warnings)}`,
     );
     assert(path.dirname(badOut.outputPath) === srcDir, "mkdir 失败:未回落源目录");

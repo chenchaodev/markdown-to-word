@@ -52,9 +52,6 @@ export const covers = [
   "src/main/converter/index.ts",
 ];
 
-/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
-/** @typedef {import("../../src/core/i18n/index.js").KeyedWarning} KeyedWarning */
-
 /**
  * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
  * @param {unknown} cond 判定条件
@@ -70,9 +67,9 @@ const MD_BAD_MERMAID = "# 图表\n\n```mermaid\ngraph TD;\nA[unclosed\n```\n";
 
 /**
  * 取 warnings 中指定 key 的那一条(只认 keyed 警告,字符串警告不含 key)。
- * @param {Warning[]} warnings 警告数组
+ * @param {import("../../dist/core/i18n/warning.js").ConvertWarning[]} warnings 警告数组
  * @param {string} key 字典 key
- * @returns {KeyedWarning | null} 命中的警告或 null
+ * @returns {import("../../dist/core/i18n/warning.js").KeyedWarning | null} 命中的警告或 null
  */
 function pickKeyed(warnings, key) {
   for (const w of warnings) {
@@ -103,7 +100,7 @@ export async function run() {
     console.log(`[ok] mermaid-warning-channel:严格模式失败抛 MermaidRenderError(reason=${JSON.stringify(reason)})`);
 
     // ---- 2+3+4. core 既有 warning 通道:严格模式带原因,只降级模式不带;降级不回归 ----
-    /** @type {Warning[]} */
+    /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
     const strictWarnings = [];
     const strictDocx = asDocxArtifact(
       await convert(prepareForConvert(MD_BAD_MERMAID), "docx", {
@@ -129,7 +126,7 @@ export async function run() {
     );
 
     // ---- 3. 对照组:同一份文档走只降级模式 → 同一通道,但只有无原因的 warn.mermaidEmpty ----
-    /** @type {Warning[]} */
+    /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
     const looseWarnings = [];
     await convert(prepareForConvert(MD_BAD_MERMAID), "docx", {
       baseDir: FIXTURES_DIR,

@@ -26,10 +26,10 @@ import { FIXTURES_DIR } from "../harness/paths.js";
 
 /**
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物):
- * dist 是 tsc 产物、无类型标注,故警告条目与图片请求约束从 src 单源引用而非内联复制。
+ * 警告条目与图片请求约束的类型取自产物声明(不再内联复制形状)。
  */
-/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
-/** @typedef {import("../../src/core/image/image-resolver.js").ImageResolverRequest} ImageRequest */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
+/** @typedef {import("../../dist/core/image/image-resolver.js").ImageResolverRequest} ImageRequest */
 
 // 1x1 PNG 魔数头(mimeFromBuffer → image/png;data URL 前缀 data:image/png;base64,)
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -188,7 +188,12 @@ export async function run() {
     if (calls.filter((c) => c === "https://x.example/1.png").length !== 1) {
       throw new Error(`postprocess 断言失败:同 URL 应只下载一次,calls=${JSON.stringify(calls)}`);
     }
-    if (warnings.length !== 1 || formatWarning(warnings[0]) !== "图片加载失败: https://x.example/bad.png") {
+    // 「恰一条且文案为 X」:解构首条 + 余下条数,一次断掉条数与文案两件事
+    // (noUncheckedIndexedAccess 下 `ws[0]` 带 undefined,而 `length !== 1 ||` 的
+    //  短路并不会替它收窄 —— 拆成解构才收得住)
+    const [onlyBad, ...extraBad] = warnings;
+    if (onlyBad === undefined || extraBad.length > 0
+      || formatWarning(onlyBad) !== "图片加载失败: https://x.example/bad.png") {
       throw new Error(`postprocess 断言失败:失败 URL 应恰一条统一警告,warnings=${JSON.stringify(warnings)}`);
     }
     console.log("[ok] postprocess:embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败)断言通过");
@@ -235,7 +240,9 @@ export async function run() {
     let maxActive = 0;
     /** @type {Warning[]} */
     const warnings = [];
-    const resolver = async (/** @type {string} */ src, /** @type {ImageRequest} */ request) => {
+    // request 在契约里是**可选**第 2 参(ImageResolver 签名,渲染层始终传入);
+    // 夹具形参照契约写成可选,故下面那道 `!request` 守卫才是真实存在的检查
+    const resolver = async (/** @type {string} */ src, /** @type {ImageRequest | undefined} */ request) => {
       if (!request || request.signal === undefined || request.maxBytes <= 0 || request.timeoutMs <= 0) {
         throw new Error("resolver request 契约未注入");
       }
@@ -249,7 +256,9 @@ export async function run() {
     if (maxActive > 3) {
       throw new Error(`postprocess 断言失败:本地图片检查应使用有界并发(<=3),实际 ${maxActive}`);
     }
-    if (warnings.length !== 1 || formatWarning(warnings[0]) !== "图片加载失败: 7.png") {
+    const [only7, ...extra7] = warnings;
+    if (only7 === undefined || extra7.length > 0
+      || formatWarning(only7) !== "图片加载失败: 7.png") {
       throw new Error(`postprocess 断言失败:本地图片 warning 应按文档顺序稳定,warnings=${JSON.stringify(warnings)}`);
     }
     console.log("[ok] postprocess:本地图片有界并发 + request 契约 + warning 顺序稳定");
@@ -291,7 +300,9 @@ export async function run() {
     const warnings = [];
     /** @type {{url: string, request: ImageRequest}[]} */
     const calls = [];
-    const resolver = async (/** @type {string} */ url, /** @type {ImageRequest} */ request) => {
+    // request 形参照契约写成可选(见上一处同款说明);此处断言渲染层**确实**传了它
+    const resolver = async (/** @type {string} */ url, /** @type {ImageRequest | undefined} */ request) => {
+      if (!request) throw new Error("渲染层未注入 resolver request 契约");
       calls.push({ url, request });
       return Buffer.concat([PNG_MAGIC, Buffer.from(url.slice(-5, -4))]);
     };
@@ -336,7 +347,9 @@ export async function run() {
     if (out !== html || Date.now() - startedAt >= 1000) {
       throw new Error("postprocess 断言失败:单请求超时应快速降级并保留原 URL");
     }
-    if (warnings.length !== 1 || formatWarning(warnings[0]) !== "图片加载失败: https://x.example/hang.png") {
+    const [onlyHang, ...extraHang] = warnings;
+    if (onlyHang === undefined || extraHang.length > 0
+      || formatWarning(onlyHang) !== "图片加载失败: https://x.example/hang.png") {
       throw new Error(`postprocess 断言失败:超时 warning 应稳定,warnings=${JSON.stringify(warnings)}`);
     }
     console.log("[ok] postprocess:永不 resolve 的外链 resolver 在单请求超时内降级");
@@ -354,7 +367,9 @@ export async function run() {
     if (Date.now() - startedAt >= 1000) {
       throw new Error("postprocess 断言失败:本地图片检查的单请求超时应生效");
     }
-    if (warnings.length !== 1 || formatWarning(warnings[0]) !== "图片加载失败: hang.png") {
+    const [onlyHangLocal, ...extraHangLocal] = warnings;
+    if (onlyHangLocal === undefined || extraHangLocal.length > 0
+      || formatWarning(onlyHangLocal) !== "图片加载失败: hang.png") {
       throw new Error(`postprocess 断言失败:本地图片超时 warning 应稳定,warnings=${JSON.stringify(warnings)}`);
     }
     console.log("[ok] postprocess:本地图片检查的单请求超时降级");
@@ -368,7 +383,9 @@ export async function run() {
     const controller = new AbortController();
     /** @type {AbortSignal | undefined} */
     let requestSignal;
-    const resolver = (/** @type {string} */ _url, /** @type {ImageRequest} */ request) => {
+    const resolver = (/** @type {string} */ _url, /** @type {ImageRequest | undefined} */ request) => {
+      // 契约上 request 可选、渲染层必传;缺了就无法验证 abort 传播,直接判失败
+      if (!request) throw new Error("渲染层未注入 resolver request 契约");
       requestSignal = request.signal;
       return new Promise((_resolve, reject) => {
         request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
@@ -410,10 +427,12 @@ export async function run() {
     const controller = new AbortController();
     const pending = checkLocalImages(
       ["a.png"],
-      (/** @type {string} */ _src, /** @type {ImageRequest} */ request) =>
-        new Promise((_resolve, reject) => {
+      (/** @type {string} */ _src, /** @type {ImageRequest | undefined} */ request) => {
+        if (!request) throw new Error("渲染层未注入 resolver request 契约");
+        return new Promise((_resolve, reject) => {
           request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
-        }),
+        });
+      },
       warnings,
       { signal: controller.signal, requestTimeoutMs: 1000 },
     );
@@ -464,9 +483,12 @@ export async function run() {
         `postprocess 断言失败:数量预算 10 时应只请求 10 次并对其余 ${count - 10} 张稳定告警,calls=${calls} warnings=${cappedWarnings.length}`,
       );
     }
-    if (formatWarning(cappedWarnings[0]) !== "图片加载失败: https://x.example/10.png") {
+    // 首条同样要断掉 noUncheckedIndexedAccess 带来的 undefined(缺失即报错,不当空文案比)
+    const firstCapped = cappedWarnings[0];
+    if (firstCapped === undefined
+      || formatWarning(firstCapped) !== "图片加载失败: https://x.example/10.png") {
       throw new Error(
-        `postprocess 断言失败:超预算 warning 应从第 11 张起按文档顺序入列,首个=${formatWarning(cappedWarnings[0])}`,
+        `postprocess 断言失败:超预算 warning 应从第 11 张起按文档顺序入列,首个=${JSON.stringify(cappedWarnings[0] ?? null)}`,
       );
     }
     console.log(

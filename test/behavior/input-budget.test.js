@@ -23,6 +23,7 @@ import {
 } from "../../dist/main/converter/index.js";
 import { MAX_SCAN_DEPTH, MAX_SCAN_ENTRIES } from "../../dist/convert/paths.js";
 import { MAX_SOURCE_FILE_BYTES, prepareMarkdown } from "../../dist/convert/preprocess.js";
+import { DEFAULT_SETTINGS } from "../../dist/core/settings/settings-defaults.js";
 import { MAX_BATCH_FILES } from "../../dist/main/converter/batch.js";
 import { MAX_MERGE_FILES, MAX_MERGE_TOTAL_BYTES, MERGE_READ_CONCURRENCY } from "../../dist/main/converter/merge.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
@@ -78,7 +79,7 @@ export async function run() {
       }
       if (junction) {
         const startedAt = Date.now();
-        /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */
+        /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
         const warnings = [];
         const result = await collectMarkdownPaths([root], warnings);
         const elapsed = Date.now() - startedAt;
@@ -104,7 +105,7 @@ export async function run() {
       }
       await fs.mkdir(current, { recursive: true });
       await fs.writeFile(path.join(current, "deep.md"), "# 深\n", "utf8");
-      /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */
+      /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
       const warnings = [];
       const result = await collectMarkdownPaths([deep], warnings);
       assert(!result.files.some((f) => f.endsWith(`${path.sep}deep.md`)), `超深度文件不应被收集,实际 ${JSON.stringify(result.files)}`);
@@ -116,7 +117,7 @@ export async function run() {
       const shallow = path.join(dir, "shallow");
       await fs.mkdir(shallow, { recursive: true });
       await fs.writeFile(path.join(shallow, "top.md"), "# 顶\n", "utf8");
-      /** @type {import("../../src/core/i18n/index.js").ConvertWarning[]} */
+      /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
       const shallowWarnings = [];
       const shallowResult = await collectMarkdownPaths([shallow], shallowWarnings);
       assert(
@@ -156,6 +157,13 @@ export async function run() {
     }
 
     // ================= 4. 单文件体积上限:拒绝而非截断 =================
+    // 准备链声明的入参是完整 AppSettings(体积闸门本身与设置无关,但契约要求完整对象);
+    // 变换两块按本段意图显式给出:Obsidian 关、AI 清理三档全关(不改正文)。
+    const prepareSettings = {
+      ...DEFAULT_SETTINGS,
+      obsidian: { ...DEFAULT_SETTINGS.obsidian, compat: false, attachmentFolder: "" },
+      aiCleanup: { ...DEFAULT_SETTINGS.aiCleanup, enabled: false, tidy: false, rewrite: false },
+    };
     {
       const big = path.join(dir, "big.md");
       // 稀疏写入:只落一个超过上限的头部(不真正占用 32MB 磁盘)
@@ -168,7 +176,7 @@ export async function run() {
       /** @type {Error | undefined} */
       let error;
       try {
-        await prepareMarkdown(big, { obsidian: { compat: false, attachmentFolder: "" }, aiCleanup: { enabled: false, tidy: false, rewrite: false } });
+        await prepareMarkdown(big, prepareSettings);
       } catch (err) {
         error = /** @type {Error} */ (err);
       }
@@ -176,7 +184,7 @@ export async function run() {
       // 正常文件不受影响
       const small = path.join(dir, "small.md");
       await fs.writeFile(small, "# 小\n\n正文\n", "utf8");
-      const prepared = await prepareMarkdown(small, { obsidian: { compat: false, attachmentFolder: "" }, aiCleanup: { enabled: false, tidy: false, rewrite: false } });
+      const prepared = await prepareMarkdown(small, prepareSettings);
       assert(prepared.markdown.includes("# 小"), "正常文件应正常准备");
       console.log(`[ok] input-budget:prepareMarkdown 单文件上限 ${MAX_SOURCE_FILE_BYTES} 生效(拒绝不截断)`);
     }

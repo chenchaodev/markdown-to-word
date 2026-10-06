@@ -91,11 +91,17 @@ import { MATRIX_ROW_IDS, assertKeyCoverageRegistered, keyCoverageCounts } from "
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物)。
  */
 /** @typedef {import("../harness/dual-sandbox.js").MatrixCtx} MatrixCtx */
-/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
-/** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
-/** @typedef {import("../../src/core/settings/settings-defaults.js").HeaderFooterSettings} HeaderFooterSettings */
-/** @typedef {import("../../src/core/settings/typography.js").TypographySettings} TypographySettings */
-/** @typedef {import("../../src/core/settings/settings-defaults.js").WatermarkSettings} WatermarkSettings */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
+/**
+ * convertTyped 的 context 实参类型:ConvertContext 去掉由包装注入的 `fs`(宿主
+ * 文件系统能力),其余字段由各调用点原样提供。此前标注 Record<string, unknown>,
+ * 那把 convert() 真正要求的 `baseDir` 一并吞掉了。
+ * @typedef {Omit<import("../../dist/core/convert.js").ConvertContext, "fs">} Ctx
+ */
+/** @typedef {import("../../dist/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").HeaderFooterSettings} HeaderFooterSettings */
+/** @typedef {import("../../dist/core/settings/typography.js").TypographySettings} TypographySettings */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").WatermarkSettings} WatermarkSettings */
 
 /**
  * 本段的完整断言上下文 = 沙箱 21 行的字段 + 6-C2 新增四行的字段。
@@ -1293,7 +1299,7 @@ function assertMatrixShape() {
 
 /** convert() 的类型化包装:注入宿主文件系统能力(与 dual-sandbox 同款,零渲染差异) */
 const convertTyped =
-  /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
+  /** @type {(md: string, format: "docx" | "pdf", context: Ctx) => Promise<ConvertArtifact>} */ (
     (md, format, context) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context })
   );
 
@@ -1334,6 +1340,9 @@ async function buildExtendedCtx() {
   const B = FIXTURES_DIR;
   // ---- 正文字体/字号/行距/缩进/对齐:非默认取值,否则「读了设置」与「落回默认」不可区分 ----
   const typoMd = "正文一段。\n\n第二段。\n";
+  // align / headingScale / headingSpacing 是字面量联合,裸对象字面量会把它们推成
+  // string 而与 TypographySettings 不兼容 —— 整对象标注一次,不必逐字段断言
+  /** @type {import("../../dist/core/settings/typography.js").TypographySettings} */
   const typography = {
     ...DEFAULT_TYPOGRAPHY,
     fontAscii: "Consolas",
@@ -1395,11 +1404,11 @@ async function buildExtendedCtx() {
 
   // ---- 页眉页脚三模式 ----
   const chromeMd = "# 页眉页脚样例\n\n正文一段。\n";
-  // 类型来源取 src 契约:DEFAULT_HEADER_FOOTER 来自 dist(无 .d.ts),字面量成员会被
-  // 拓宽成 string,故显式标注数组元素类型而非依赖推断
+  // 三模式 × 设置对象:标注元组形状,才能解构出 [mode, settings] 两个已知类型
+  // (否则解构出的是联合类型,mode 与 settings 混在一起)
   /** @type {["default" | "custom" | "none", HeaderFooterSettings][]} */
   const chromeModes = [
-    ["default", /** @type {HeaderFooterSettings} */ (DEFAULT_HEADER_FOOTER)],
+    ["default", DEFAULT_HEADER_FOOTER],
     [
       "custom",
       /** @type {HeaderFooterSettings} */ ({

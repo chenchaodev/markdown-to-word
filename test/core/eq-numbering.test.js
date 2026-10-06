@@ -16,10 +16,12 @@ import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../harnes
 // 链接上判,不另抄裸字符串。
 import { docxLinkBody, pdfLinkBody } from "../harness/dual-extract.js";
 
-/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
- *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
- /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+
 import { FIXTURES_DIR, KATEX_DIR } from "../harness/paths.js";
+
+/** 警告收集器元素类型:取自产物声明(ADR-069 起 dist 带 .d.ts,契约以产物为准);
+ *  裸 `const x = []` 无处可推断,须显式标注 —— 它就是 ConvertContext.warnings 的元素类型。 */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
 
 /** 主样例:公式编号 + 交叉引用(含行内公式/悬空引用),gen-fixtures 落盘为 docs/eq-numbering.md */
 const mainMd = `# 公式编号测试
@@ -44,9 +46,9 @@ export const meta = { description: "公式编号 + 交叉引用测试:" };
 export const fixtures = { main: mainMd };
 
 export async function run() {
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const mainWarnings = [];
-  const mainDocx = /** @type {ConvertArtifact} */ (
+  const mainDocx = (
     await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: mainWarnings })
   );
   const mainXml = await unzipPart(docxBufferOf(mainDocx), "word/document.xml");
@@ -94,9 +96,9 @@ export async function run() {
   // ---------- 孤立 label 警告(equations.ts:52-53) ----------
   // 依据(dist/core/docx/handlers/equations.ts):`{#eq:label}` 独立段前无公式 → 追加警告
   // 「公式 label 前无公式,已忽略: {#eq:label}」并同样跳过渲染。
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const orphanWarnings = [];
-  const orphanDocx = /** @type {ConvertArtifact} */ (
+  const orphanDocx = (
     await convertWithFs("{#eq:orphan}\n\n正文", "docx", { baseDir: FIXTURES_DIR, warnings: orphanWarnings })
   );
   if (!orphanWarnings.some((w) => formatWarning(w) === "公式 label 前无公式,已忽略: {#eq:orphan}")) {
@@ -109,7 +111,7 @@ export async function run() {
   console.log("[ok] docx 孤立公式 label:警告 + 标记行不渲染 断言通过");
 
   const katexDir = KATEX_DIR;
-  const mainPdf = /** @type {ConvertArtifact} */ (
+  const mainPdf = (
     await convertWithFs(mainMd, "pdf", { baseDir: FIXTURES_DIR, title: "公式编号验收", warnings: [], katexDir })
   );
   const mainHtml = pdfHtmlOf(mainPdf);
@@ -141,14 +143,14 @@ export async function run() {
   // ---------- 悬空公式引用去重(双侧经共享 i18n.pushWarningOnce,键 = key + JSON(params)) ----------
   // 同一未知 label 被引用 N 次 → docx/pdf 各只报 1 条(防 GUI 警告列表刷屏)
   const dupMd = "$$\nE = mc^2\n$$\n\n{#eq:dup}\n\n悬空 [式](#eq:ghost)、[式](#eq:ghost)、[公式](#eq:ghost)。";
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const dupDocxWarnings = [];
   await convertWithFs(dupMd, "docx", { baseDir: FIXTURES_DIR, warnings: dupDocxWarnings });
   const dupDocxCount = dupDocxWarnings.filter((w) => formatWarning(w) === "交叉引用未找到公式 label: ghost").length;
   if (dupDocxCount !== 1) {
     throw new Error(`去重断言失败:docx 悬空公式引用 ×3 应只报 1 条,实际 ${dupDocxCount}`);
   }
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const dupPdfWarnings = [];
   await convertWithFs(dupMd, "pdf", { baseDir: FIXTURES_DIR, title: "去重", warnings: dupPdfWarnings, katexDir });
   const dupPdfCount = dupPdfWarnings.filter(
@@ -163,7 +165,7 @@ export async function run() {
   // 此前 pdf 要求 label 段为唯一纯 text child,粗斜体包裹的 **{#eq:x}** 不命中 →
   // 登记失败且标记行按普通段落显示;docx collectPlainText 本就宽松,双格式一致。
   const boldLabelMd = "$$\nG = h\n$$\n\n**{#eq:bold-lab}**\n\n如 [式](#eq:bold-lab) 所示。";
-  const boldLabelPdf = /** @type {ConvertArtifact} */ (await convertWithFs(boldLabelMd, "pdf", {
+  const boldLabelPdf = (await convertWithFs(boldLabelMd, "pdf", {
     baseDir: FIXTURES_DIR,
     warnings: [],
     katexDir,
@@ -178,7 +180,7 @@ export async function run() {
   if (!pdfLinkBody(boldLabelHtml, "eq:bold-lab").includes("式 (1)")) {
     throw new Error("断言失败:粗斜体包裹 label 的交叉引用未替换为「式 (1)」");
   }
-  const boldLabelDocx = /** @type {ConvertArtifact} */ (
+  const boldLabelDocx = (
     await convertWithFs(boldLabelMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const boldLabelXml = await unzipPart(docxBufferOf(boldLabelDocx), "word/document.xml");
@@ -198,7 +200,7 @@ export async function run() {
   // 运行期行为不变(元素非字符串时同样抛错),关开关场景 warnings 为空数组。
   /** @type {string[]} */
   const offWarnings = [];
-  const offDocx = /** @type {ConvertArtifact} */ (await convertWithFs(mainMd, "docx", {
+  const offDocx = (await convertWithFs(mainMd, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: offWarnings,
     equationNumbering: false,
@@ -221,7 +223,7 @@ export async function run() {
   }
   console.log("[ok] docx 公式编号开关关闭:公式不编号/label 段隐藏/引用保持原文本 断言通过");
 
-  const offPdf = /** @type {ConvertArtifact} */ (await convertWithFs(mainMd, "pdf", {
+  const offPdf = (await convertWithFs(mainMd, "pdf", {
     baseDir: FIXTURES_DIR,
     title: "公式编号验收",
     warnings: [],

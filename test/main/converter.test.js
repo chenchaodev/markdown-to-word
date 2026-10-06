@@ -29,7 +29,7 @@ import { DEFAULT_SETTINGS } from "../../dist/core/settings/settings-defaults.js"
 import { backupSettings, backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import { createAsserter } from "../harness/assert.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
-import { convertWithFs } from "../harness/convert-helpers.js";
+import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 import {
   batchConvertImpl,
   buildConvertContext,
@@ -48,8 +48,16 @@ const SAMPLE_MD_PATH = path.join(FIXTURES_DIR, "input", "converter-sample.md");
 const PNG_1PX_PATH = path.join(FIXTURES_DIR, "input", "g4-preview.png");
 
 /** 单文件/合并转换返回(跨进程契约单源) */
-/** @typedef {import("../../src/core/ipc-contract.js").ConvertResult} ConvertResult */
-/** 转换上下文(取消标志 + 取消入口) */
+/** @typedef {import("../../dist/core/ipc-contract.js").ConvertResult} ConvertResult */
+/** 转换产物(判别式联合 docx | pdf) */
+/** @typedef {import("../../dist/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** PDF 产物(renderPdf 的入参形状) */
+/** @typedef {import("../../dist/core/convert.js").PdfArtifact} PdfArtifact */
+/** 批量进度项(批量进度回调的入参形状) */
+/** @typedef {import("../../dist/core/ipc-contract.js").BatchProgressInfo} BatchProgressInfo */
+/** 转换格式(契约单源) */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").ConvertFormat} ConvertFormat */
+/** 转换上下文(取消标志 + 取消入口 + signal) */
 /** @typedef {ReturnType<typeof createConvertContext>} ConvertCtx */
 
 /**
@@ -69,13 +77,25 @@ const { assertBytes } = createAsserter("converter");
  * 合并转换(经 dist 跑实现;返回形状按跨进程契约取——实现层失败直接抛错,
  * error 字段由 ipc 层补,直调恒为成功分支,读它只为失败信息留全上下文)。
  * @param {string[]} files 源文件
- * @param {string} format 产物格式
+ * @param {ConvertFormat} format 产物格式
  * @param {(stage: string) => void} [onProgress] 进度回调
  * @param {ConvertCtx} [ctx] 取消上下文(默认新建)
  * @returns {Promise<ConvertResult>} 合并结果
  */
 const mergeFiles = (files, format, onProgress, ctx = createConvertContext()) =>
   /** @type {Promise<ConvertResult>} */ (mergeConvertImpl(files, format, onProgress, ctx));
+
+/**
+ * 断言某产物是 pdf 判别支(renderPdf 的入参是 PdfArtifact,而 convert 返回的是
+ * docx|pdf 联合):用判别式收窄而非 cast —— 收窄失败即当场抛错,读代码的人
+ * 看得见「这里要求产物确为 pdf」这条前提。
+ * @param {ConvertArtifact} artifact 待判产物
+ * @returns {PdfArtifact} pdf 产物
+ */
+function expectPdfArtifact(artifact) {
+  const narrowed = asPdfArtifact(artifact);
+  return narrowed;
+}
 
 /**
  * 取 docx 产物包内条目文本(缺条目即断言失败,不用可选链静默放过)。
@@ -199,7 +219,10 @@ export async function run() {
       new Set(dupBatchPaths).size === 3,
       `同文件批量应得到 3 个互异产物,实际 ${JSON.stringify(dupBatchPaths)}`,
     );
-    for (const batchPath of dupBatchPaths) await fs.stat(batchPath);
+    for (const batchPath of dupBatchPaths) {
+      assert(batchPath !== undefined, "批量成功项应带 outputPath");
+      await fs.stat(batchPath);
+    }
     console.log("[ok] converter:同文件批量 3 份(池内并发 → 3 个互异产物共存)");
 
     // ---- 2. 批量转换:3 成功 + 1 缺失 → 汇总逐条正确 + 产物存在 ----
@@ -586,14 +609,15 @@ export async function run() {
       const snapshotBatch = await batchConvertImpl(
         batchFiles.slice(0, 2),
         "docx",
-        (/** @type {string} */ stage) => {
-          if (stage === "read") liveSettings.breakBeforeH1 = false;
+        (/** @type {BatchProgressInfo} */ info) => {
+          if (info.stage === "read") liveSettings.breakBeforeH1 = false;
         },
       );
       assert(snapshotBatch.okCount === 2, "快照批量转换应完成两项");
       assert(sizeOf(snapshotOpenCalls) === 1, `批量 after-convert 只应执行一次,实际 ${snapshotOpenCalls.length} 次`);
       for (const item of snapshotBatch.items) {
         assert(!!item.ok, "快照批量应全部成功");
+        assert(item.outputPath !== undefined, "快照批量成功项应带 outputPath");
         const zip = await JSZip.loadAsync(await fs.readFile(item.outputPath));
         const xml = await entryText(zip, "word/document.xml");
         assert(xml.includes("<w:pageBreakBefore/>"), "批次中途修改设置不得混合本批次配置");
@@ -723,8 +747,10 @@ export async function run() {
         toc: true,
         tocMode: "static",
       });
+      // 先按判别式收窄到 pdf 支,再叠加结构化标题 —— renderPdf 的入参就是 PdfArtifact,
+      // 收窄让「本用例确在处理 pdf 产物」这条前提显式化(而非整块 cast 掉判别式)。
       const structuredArtifact = {
-        ...artifact,
+        ...expectPdfArtifact(artifact),
         headings: [{ level: 1, id: "结构化甲", text: "结构化甲(取自结构化数据)" }],
       };
       const structuredOut = await renderPdf(
@@ -738,7 +764,7 @@ export async function run() {
         `renderPdf 应优先用产物透传的结构化标题,实际 ${JSON.stringify(structuredTitles)}`,
       );
       // 兼容层回退:同一 HTML 不带 headings 时,标题回退自 HTML 反解析(行为等价)
-      const fallbackOut = await renderPdf(artifact, path.join(dir, "fallback-headings.pdf"), createConvertContext());
+      const fallbackOut = await renderPdf(expectPdfArtifact(artifact), path.join(dir, "fallback-headings.pdf"), createConvertContext());
       const fallbackTitles = await outlineTitles(await fs.readFile(fallbackOut));
       assert(
         JSON.stringify(fallbackTitles) === JSON.stringify(["结构化甲", "结构化乙"]),

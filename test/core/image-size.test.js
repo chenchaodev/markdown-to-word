@@ -36,23 +36,14 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
-/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
-/** @typedef {import("../../src/core/i18n/index.js").KeyedWarning} KeyedWarning */
-/** @typedef {import("../../src/core/image/image-size.js").ImageSizeAttrs} ImageSizeAttrs */
-/** @typedef {import("../../src/core/image/image-size.js").ParsedImageSizeAttrs} ParsedImageSizeAttrs */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
+/** @typedef {import("../../dist/core/i18n/index.js").KeyedWarning} KeyedWarning */
+/** @typedef {import("../../dist/core/image/image-size.js").ImageSizeAttrs} ImageSizeAttrs */
 
-/**
- * convert 的类型化别名:运行期是共享包装 convertWithFs(= dist 的 convert 注入宿主文件
- * 系统能力 fs,REF-025 #07 起 pdf 渲染路径不再自带 node:fs),渲染行为不变,只把返回类型
- * 对齐到 src 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind
- * 被拓宽为 string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
- * 入参保持宽松(本段按运行时事实传上下文,上下文契约由 core 自身类型守护)。
- * @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>}
- */
-const convertTyped =
-  /** @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>} */ (
-    convertWithFs
-  );
+// convertTyped = 共享包装 convertWithFs(= dist 的 convert 注入宿主文件系统能力 fs)。
+// 运行期与渲染行为不变;此前在此手写返回类型是因为 dist 不带 .d.ts,
+// ADR-069 起产物已自带声明,故直接用之。
+const convertTyped = convertWithFs;
 
 /**
  * @param {unknown} cond 判定条件
@@ -64,33 +55,26 @@ function assert(cond, msg) {
 }
 
 /**
- * 解析尺寸属性块:返回值按 src 契约标注——dist 无类型标注,attrs 被推断为 {},
- * 直接取 width/height 会被判为不存在。
- * @param {string} text 属性块文本
- * @returns {ParsedImageSizeAttrs} 解析结果
- */
-function parseSizeAttrs(text) {
-  return /** @type {ParsedImageSizeAttrs} */ (parseImageSizeAttrs(text));
-}
-
-/**
  * 取 markdown 首段的 phrasing children(本段只判定「图片是否独立成段」)。
+ *
+ * 返回类型即 isFigureParagraph 的入参形状 `readonly { type; value? }[]` —— 该函数
+ * 只读这两项(见 src/core/image/image-size.ts),与 mdast 的 PhrasingContent 兼容:
+ * 每个 mdast 节点都有 `type: string`,`value` 仅 Literal 子类有、其余为可选缺失。
  * @param {string} md markdown 源(单段样例)
- * @returns {unknown[]} 首段 children
+ * @returns {readonly { type: string; value?: string }[]} 首段 children
  */
 function firstParagraphChildren(md) {
   const first = parseMarkdown(md).children[0];
   if (first === undefined || !("children" in first)) {
     throw new Error(`image-size 断言失败:样例首块应为段落,实际 ${first === undefined ? "无内容" : first.type}`);
   }
-  return /** @type {unknown[]} */ (first.children);
+  return /** @type {readonly { type: string; value?: string }[]} */ (first.children);
 }
 
 /** 内容区宽(px)契约值:A4 纵向默认边距(docx 与 pdf 各自换算链同源验证用) */
-// 放宽理由:DEFAULT_PAGE_SETUP 来自 dist(无类型标注)故 paper 拓宽为 string;
-// 默认值按 src 契约就是 "A4",此处按 PAPER_SIZES_MM 的键联合收窄。
+// paper 的类型由产物声明给出(PageSetup["paper"]),已是 PAPER_SIZES_MM 的键,直接索引
 const CONTENT_WIDTH_MM =
-  PAPER_SIZES_MM[/** @type {keyof typeof PAPER_SIZES_MM} */ (DEFAULT_PAGE_SETUP.paper)].width -
+  PAPER_SIZES_MM[DEFAULT_PAGE_SETUP.paper].width -
   DEFAULT_PAGE_SETUP.marginLeft -
   DEFAULT_PAGE_SETUP.marginRight; // 146mm
 const DOCX_CONTENT_WIDTH_PX = twipsToPx(mmToTwips(CONTENT_WIDTH_MM)); // 8277/15 ≈ 551.8
@@ -119,52 +103,46 @@ export const fixtures = null;
 export async function run() {
   // ================= (a) 语法解析纯函数直测 =================
   // 合法:百分比 / 像素 / 组合 / 宽容空白 / 小数
-  assert(parseSizeAttrs("{width=50%}").attrs.width?.unit === "%", "{width=50%} 应解析为 %");
-  assert(parseSizeAttrs("{width=300}").attrs.width?.unit === "px", "{width=300} 应解析为 px");
-  const combo = parseSizeAttrs("{width=50% height=30%}");
+  assert(parseImageSizeAttrs("{width=50%}").attrs.width?.unit === "%", "{width=50%} 应解析为 %");
+  assert(parseImageSizeAttrs("{width=300}").attrs.width?.unit === "px", "{width=300} 应解析为 px");
+  const combo = parseImageSizeAttrs("{width=50% height=30%}");
   assert(combo.attrs.width?.value === 50 && combo.attrs.height?.value === 30, "组合属性应双维解析");
-  assert(parseSizeAttrs("{ width = 12.5 }").attrs.width?.value === 12.5, "空白与小数应容忍");
-  assert(parseSizeAttrs("{WIDTH=50%}").attrs.width?.value === 50, "键名大小写归一");
+  assert(parseImageSizeAttrs("{ width = 12.5 }").attrs.width?.value === 12.5, "空白与小数应容忍");
+  assert(parseImageSizeAttrs("{WIDTH=50%}").attrs.width?.value === 50, "键名大小写归一");
   // 非法:负数 / 非数值 / 超范围 / 零
   for (const bad of ["{width=-3}", "{height=abc}", "{width=150%}", "{width=0}", `{width=${IMAGE_SIZE_PX_MAX + 1}}`]) {
-    const parsed = parseSizeAttrs(bad);
+    const parsed = parseImageSizeAttrs(bad);
     assert(parsed.hasSizeKeys && Object.keys(parsed.attrs).length === 0, `${bad} 应判非法且无合法维度`);
     assert(parsed.invalid.length === 1, `${bad} 应产出一条 invalid 记录`);
   }
   assert(IMAGE_SIZE_PERCENT_MAX === 100, "百分比上限应为 100");
   // 边界:非属性块 / 无尺寸键花括号文本原样保留(hasSizeKeys=false 不剥除)
-  assert(!parseSizeAttrs("普通文本").hasSizeKeys, "普通文本不应识别为属性块");
-  assert(!parseSizeAttrs("{}").hasSizeKeys, "空花括号不应识别(hasSizeKeys=false)");
-  assert(!parseSizeAttrs("{foo=bar}").hasSizeKeys, "无尺寸键的花括号文本不应识别");
-  assert(parseSizeAttrs("{width=50% #id}").invalid.length === 0, "未知键静默忽略不告警");
+  assert(!parseImageSizeAttrs("普通文本").hasSizeKeys, "普通文本不应识别为属性块");
+  assert(!parseImageSizeAttrs("{}").hasSizeKeys, "空花括号不应识别(hasSizeKeys=false)");
+  assert(!parseImageSizeAttrs("{foo=bar}").hasSizeKeys, "无尺寸键的花括号文本不应识别");
+  assert(parseImageSizeAttrs("{width=50% #id}").invalid.length === 0, "未知键静默忽略不告警");
   // parseImageDim 边界直测
   assert(parseImageDim("99.9%")?.value === 99.9, "小数百分比应合法");
   assert(parseImageDim("-5") === null, "负数应非法");
   assert(parseImageDim("1e3") === null, "科学计数法应非法(词法不含 e)");
   // resolveImageDisplaySize:一维等比 / 两维不保持比例 / 百分比基准
-  // (入参按 src 契约标注:dist 无类型标注,字面量对象会被推断为 {} 而拒绝多余属性)
-  const disp = /** @type {{width: number, height: number}} */ (
-    resolveImageDisplaySize(
-      /** @type {{width: number, height: number}} */ ({ width: 800, height: 400 }),
-      /** @type {ImageSizeAttrs} */ ({ width: { unit: "px", value: 200 } }),
-      500,
-    )
+  // (入参/返回值类型均由产物声明给出,此处不再手写标注)
+  const disp = resolveImageDisplaySize(
+    { width: 800, height: 400 },
+    { width: { unit: "px", value: 200 } },
+    500,
   );
   assert(disp.width === 200 && disp.height === 100, "只给宽应按原图比例缩高");
-  const disp2 = /** @type {{width: number, height: number}} */ (
-    resolveImageDisplaySize(
-      /** @type {{width: number, height: number}} */ ({ width: 800, height: 400 }),
-      /** @type {ImageSizeAttrs} */ ({ width: { unit: "px", value: 200 }, height: { unit: "px", value: 300 } }),
+  const disp2 = resolveImageDisplaySize(
+      { width: 800, height: 400 },
+      { width: { unit: "px", value: 200 }, height: { unit: "px", value: 300 } },
       500,
-    )
   );
   assert(disp2.width === 200 && disp2.height === 300, "两维都给不保持比例(Pandoc 一致)");
-  const disp3 = /** @type {{width: number, height: number}} */ (
-    resolveImageDisplaySize(
-      /** @type {{width: number, height: number}} */ ({ width: 800, height: 400 }),
-      /** @type {ImageSizeAttrs} */ ({ height: { unit: "%", value: 20 } }),
+  const disp3 = resolveImageDisplaySize(
+      { width: 800, height: 400 },
+      { height: { unit: "%", value: 20 } },
       500,
-    )
   );
   assert(disp3.height === 100 && disp3.width === 200, "百分比相对内容区宽 + 一维等比");
   // isFigureParagraph:独立成段图片(+尾随属性块)/ 非独立段落

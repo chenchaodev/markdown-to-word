@@ -23,7 +23,7 @@ import path from "node:path";
 import { applyDefaultDenyPermissions } from "../../dist/main/services/session-permissions.js";
 import { ROOT } from "../harness/paths.js";
 
-/** @typedef {import("../../src/main/services/session-permissions.js").PermissionDenyHost} PermissionDenyHost */
+/** @typedef {import("../../dist/main/services/session-permissions.js").PermissionDenyHost} PermissionDenyHost */
 /** 权限 handler 的宽松签名(本段只关心「回不回答、答什么」,不关心 Electron 的具体形参类型) */
 /** @typedef {(...args: any[]) => any} LooseHandler */
 

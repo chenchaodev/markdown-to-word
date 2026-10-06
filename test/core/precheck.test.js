@@ -11,9 +11,21 @@ import { precheckMarkdown } from "../../dist/core/pipeline/precheck.js";
 import { DICT } from "../../dist/core/i18n/index.js";
 import { formatWarning, setLanguage } from "../../dist/core/i18n/index.js";
 
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
+/** @typedef {import("../../dist/core/i18n/index.js").KeyedWarning} KeyedWarning */
+
 const existsAll = () => true;
 const existsNone = () => false;
 const realpathIdentity = (/** @type {string} */ candidate) => candidate;
+
+/**
+ * precheckMarkdown 的元素类型是 ConvertWarning(= `string | KeyedWarning`,见
+ * src/core/i18n/warning.ts),而预检产出的每一条都经 warning.ts 的构造器造出、
+ * 即恒为 keyed 分支。本段断言读的却是 `key` 字段,故先按 discriminant(`typeof`)
+ * 收窄出 keyed 分支,再比 key —— 直接取 `.key` 在 `string` 分支上并不成立。
+ * @type {(w: ConvertWarning) => w is KeyedWarning}
+ */
+const isKeyedWarning = (w) => typeof w !== "string";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -35,7 +47,7 @@ export async function run() {
     exists: existsNone,
     realpathSync: realpathIdentity,
   });
-  if (!img.some((w) => w.key === "warn.imageNotFound")) {
+  if (!img.some((w) => isKeyedWarning(w) && w.key === "warn.imageNotFound")) {
     throw new Error("应检测缺失本地图片");
   }
   console.log("[ok] precheck:缺失本地图片被检出");
@@ -45,7 +57,7 @@ export async function run() {
     exists: existsNone,
     realpathSync: realpathIdentity,
   });
-  if (remote.some((w) => w.key === "warn.imageNotFound")) {
+  if (remote.some((w) => isKeyedWarning(w) && w.key === "warn.imageNotFound")) {
     throw new Error("远程图片不应报缺失");
   }
   console.log("[ok] precheck:远程图片跳过检查");
@@ -63,10 +75,10 @@ export async function run() {
   };
   const absoluteWarning = precheckMarkdown(`![图](${absoluteOutside})`, boundaryRoot, boundaryDeps);
   const uncWarning = precheckMarkdown("![图](//server/share/image.png)", boundaryRoot, boundaryDeps);
-  if (!absoluteWarning.some((w) => w.key === "warn.imageNotFound")) {
+  if (!absoluteWarning.some((w) => isKeyedWarning(w) && w.key === "warn.imageNotFound")) {
     throw new Error("绝对本地图片路径应被拒绝");
   }
-  if (!uncWarning.some((w) => w.key === "warn.imageNotFound")) {
+  if (!uncWarning.some((w) => isKeyedWarning(w) && w.key === "warn.imageNotFound")) {
     throw new Error("UNC 本地图片路径应被拒绝");
   }
   if (boundaryExistsCalls !== 0) {
@@ -79,7 +91,7 @@ export async function run() {
     exists: existsAll,
     realpathSync: realpathIdentity,
   });
-  if (!untrustedTraversal.some((w) => w.key === "warn.imageNotFound")) {
+  if (!untrustedTraversal.some((w) => isKeyedWarning(w) && w.key === "warn.imageNotFound")) {
     throw new Error("未显式授予可信根时,父目录越界路径应拒绝");
   }
   const trustedTraversal = precheckMarkdown("![图](../trusted-assets/pic.png)", boundaryRoot, {
@@ -87,7 +99,7 @@ export async function run() {
     trustedRoots: [trustedRoot],
     realpathSync: realpathIdentity,
   });
-  if (trustedTraversal.some((w) => w.key === "warn.imageNotFound")) {
+  if (trustedTraversal.some((w) => isKeyedWarning(w) && w.key === "warn.imageNotFound")) {
     throw new Error("显式可信根内的父目录相对路径应允许");
   }
 
@@ -102,7 +114,7 @@ export async function run() {
     },
     realpathSync: (/** @type {string} */ candidate) => (candidate === linkedCandidate ? canonicalOutside : candidate),
   });
-  if (!linkedWarning.some((w) => w.key === "warn.imageNotFound") || linkedExistsCalled) {
+  if (!linkedWarning.some((w) => isKeyedWarning(w) && w.key === "warn.imageNotFound") || linkedExistsCalled) {
     throw new Error("realpath 后的 symlink/junction 越界路径应在 exists 前拒绝");
   }
   console.log("[ok] precheck:本地图片绝对/UNC/越界/可信根/链接规范路径边界断言通过");
@@ -111,7 +123,7 @@ export async function run() {
   const dangling = precheckMarkdown("见 [章节](#sec:ghost) 与 [公式](#eq:x)。", "/tmp", {
     exists: existsAll,
   });
-  if (!dangling.some((w) => w.key === "warn.crossRefNotFound")) {
+  if (!dangling.some((w) => isKeyedWarning(w) && w.key === "warn.crossRefNotFound")) {
     throw new Error("应检测悬空交叉引用");
   }
   console.log("[ok] precheck:悬空交叉引用被检出");
@@ -120,21 +132,21 @@ export async function run() {
   const defined = precheckMarkdown("章节 {#sec:a}\n\n见 [章节](#sec:a)。", "/tmp", {
     exists: existsAll,
   });
-  if (defined.some((w) => w.key === "warn.crossRefNotFound")) {
+  if (defined.some((w) => isKeyedWarning(w) && w.key === "warn.crossRefNotFound")) {
     throw new Error("已定义标签不应报悬空");
   }
   console.log("[ok] precheck:已定义标签不报悬空");
 
   // 6) 未标注语言代码块 → unlabeledCodeBlockWarning
   const code = precheckMarkdown("```\nplain\n```", "/tmp", { exists: existsAll });
-  if (!code.some((w) => w.key === "warn.unlabeledCodeBlock")) {
+  if (!code.some((w) => isKeyedWarning(w) && w.key === "warn.unlabeledCodeBlock")) {
     throw new Error("应检测未标注语言代码块");
   }
   console.log("[ok] precheck:未标注语言代码块被检出");
 
   // 7) 标注语言代码块不报
   const coded = precheckMarkdown("```js\nx\n```", "/tmp", { exists: existsAll });
-  if (coded.some((w) => w.key === "warn.unlabeledCodeBlock")) {
+  if (coded.some((w) => isKeyedWarning(w) && w.key === "warn.unlabeledCodeBlock")) {
     throw new Error("已标注语言不应报");
   }
   console.log("[ok] precheck:已标注语言代码块不报");
@@ -154,12 +166,13 @@ export async function run() {
   /**
    * 预检一段 markdown,只取四类新检查的告警 key(保持出现顺序)。
    * @param {string} md markdown 源码
-   * @returns {any[]} 命中的 keyed 告警
+   * @returns {KeyedWarning[]} 命中的 keyed 告警(filter 的 `typeof === "object"`
+   *   即 ConvertWarning 二元结构的 keyed 侧 discriminant,收窄后元素必有 key)
    */
   const silentLoss = (md) =>
-    precheckMarkdown(md, "/tmp", { exists: existsAll, realpathSync: realpathIdentity }).filter(
-      (w) => typeof w === "object" && SILENT_LOSS_KEYS.has(w.key),
-    );
+    precheckMarkdown(md, "/tmp", { exists: existsAll, realpathSync: realpathIdentity })
+      .filter(isKeyedWarning)
+      .filter((w) => SILENT_LOSS_KEYS.has(w.key));
   /**
    * 断言一段 markdown 的四类新检查告警恰为 expected(逐条比对;反向用例传 [])。
    * @param {string} label 用例名(进失败消息)
@@ -194,7 +207,10 @@ export async function run() {
   ]);
   expectSilentLoss("②正向:段落内 div", "段落里的 <div>块</div> 标签", ["warn.htmlTagNotAllowed"]);
   const tagWarning = silentLoss("<table><tr><td>x</td></tr></table>")[0];
-  if (tagWarning.params.tag !== "table") {
+  // 索引取值带 undefined;键存在性是本用例的**被测行为**(不是它的前提),故显式断掉:
+  // 没报出来就以断言失败报出,而不是炸在下一步的 `.params` 上。
+  if (!tagWarning) throw new Error("②未报出 warn.htmlTagNotAllowed");
+  if (tagWarning.params?.tag !== "table") {
     throw new Error(`②应报出具体标签名,实际 ${JSON.stringify(tagWarning.params)}`);
   }
   // 白名单内 14 个行内标签逐个不报
@@ -237,7 +253,7 @@ export async function run() {
   const expectFenceLines = (label, md, expected) => {
     const actual = silentLoss(md)
       .filter((w) => w.key === "warn.unclosedCodeFence")
-      .map((w) => w.params.lineNo);
+      .map((w) => w.params?.lineNo);
     if (actual.length !== expected.length || expected.some((lineNo, i) => actual[i] !== lineNo)) {
       throw new Error(`${label}:期望行号 [${expected.join(",")}],实际 [${actual.join(",")}]`);
     }
@@ -290,7 +306,8 @@ export async function run() {
     "warn.tableLikeNotParsed",
   ]);
   const tableWarning = silentLoss("| 列1 | 列2 |\n| 数据1 | 数据2 |")[0];
-  if (tableWarning.params.lineText !== "| 列1 | 列2 |") {
+  if (!tableWarning) throw new Error("④未报出 warn.tableLikeNotParsed");
+  if (tableWarning.params?.lineText !== "| 列1 | 列2 |") {
     throw new Error(`④应回显首行内容(params.lineText),实际 ${JSON.stringify(tableWarning.params)}`);
   }
   expectSilentLoss("④反向:正常 gfm 表格", "| a | b |\n| --- | --- |\n| 1 | 2 |", []);
@@ -313,7 +330,7 @@ export async function run() {
   const expectTableLikeLines = (label, md, expectedLines) => {
     const actual = silentLoss(md)
       .filter((w) => w.key === "warn.tableLikeNotParsed")
-      .map((w) => w.params.lineText);
+      .map((w) => w.params?.lineText);
     if (actual.length !== expectedLines.length || expectedLines.some((line, i) => actual[i] !== line)) {
       throw new Error(`${label}:期望回显 [${expectedLines.join(" / ")}],实际 [${actual.join(" / ")}]`);
     }
@@ -361,7 +378,8 @@ export async function run() {
     "/tmp",
     { exists: existsNone, realpathSync: realpathIdentity },
   );
-  const combinedKeys = combined.map((w) => w.key);
+  // 顺序断言读的是每条的 key,故先收窄出 keyed 分支(见 isKeyedWarning 的说明)
+  const combinedKeys = combined.filter(isKeyedWarning).map((w) => w.key);
   const expectedCombined = [
     "warn.imageNotFound",
     "warn.unsupportedMathDelimiter",
@@ -465,8 +483,13 @@ export async function run() {
   // 16) 未闭合围栏文案:插值正确,且不得再出现「内容不显示」这类与事实相反的说法
   //     (旧文案写的是「不显示」,用户按那句理解成「该消失却还在」——GUI 实测反馈)
   const fenceWarning = runPrecheck("正常段落\n\n```js\nconst a = 1;\n").find(
-    (w) => typeof w === "object" && w.key === "warn.unclosedCodeFence",
+    (w) => isKeyedWarning(w) && w.key === "warn.unclosedCodeFence",
   );
+  // find() 的返回类型带 undefined;先显式断掉,再交给 formatWarning(缺这条告警本身
+  // 就是被测行为出错,不该以 TypeError 形式炸在断言之外)
+  if (fenceWarning === undefined) {
+    throw new Error("未闭合围栏未产生 warn.unclosedCodeFence 告警");
+  }
   /** @type {Array<[string, string]>} */
   const fenceTexts = [];
   // 各语言「行号 + 3」的说法(验证 3 被插值在行号位上,而非文中随便出现个数字)
@@ -504,8 +527,8 @@ export async function run() {
    *   ② **带 params 的警告**:指向**不同对象**的同类问题各自保留一条(去重不得吃掉定位信息)。
    * 只有 ① 能防刷屏,只有 ② 能防「去重把可定位信息也吞了」—— 合起来才与 docx/pdf
    * 转换期警告的 warnDedupKey 口径(key + JSON(params))完全一致。 */
-  const countBy = (/** @type {any[]} */ ws, /** @type {string} */ key) =>
-    ws.filter((w) => typeof w === "object" && w.key === key).length;
+  /** @type {(ws: readonly ConvertWarning[], key: string) => number} */
+  const countBy = (ws, key) => ws.filter((w) => isKeyedWarning(w) && w.key === key).length;
 
   // ① 无 params 的两类:未标注语言的代码块 / 不被支持的公式定界符
   const unlabeledMd = Array.from({ length: 4 }, (_, i) => `\`\`\`\nplain ${i}\n\`\`\`\n`).join("\n");

@@ -19,7 +19,8 @@ import {
   type PageSetupCorrectionResult,
   type ThemePreference,
 } from "../../core/settings/settings-defaults.js";
-import { TEMPLATE_PRESETS, matchesPreset, type TemplatePreset } from "../../core/settings/presets.js";
+import { TEMPLATE_PRESETS, matchesPreset, type PresetMatchSettings, type TemplatePreset } from "../../core/settings/presets.js";
+import type { SettingsMergePatch } from "../../core/settings/merge-patch.js";
 import { t, type I18nKey } from "../../core/i18n/index.js";
 
 /**
@@ -137,7 +138,7 @@ export function clampMargin(value: number): number {
  */
 export function resolvePresetSelection(
   customPresets: readonly CustomPreset[],
-  settings: AppSettings,
+  settings: PresetMatchSettings,
   currentValue: string,
 ): string {
   const all = allPresets(customPresets);
@@ -176,7 +177,7 @@ export function normalizePageSetup(
  * 恒等断言由 test 侧守护段落地。
  */
 export function mergeSettingsWithDefaults(
-  loaded: Partial<AppSettings>,
+  loaded: SettingsMergePatch,
   onPageSetupError?: (error: string) => void,
 ): AppSettings {
   const source = loaded ?? {};
@@ -260,6 +261,10 @@ function mergeBlock<T extends object>(a: T | undefined, b: T | undefined): T | u
   return { ...a, ...b };
 }
 
+// 设置合并入参 `SettingsMergePatch` 与它的块清单已迁到 core/settings/merge-patch.ts
+// (与 AppSettings 同域):该形状要穿过 preload 暴露面与 main 侧 IPC/持久化,而 core
+// 不得反向依赖 renderer —— 留在本文件则 `PreloadApi` 无从引它。此处只消费,不复制。
+
 /**
  * 待重试草稿 patch 与新 patch 的合并(纯函数):块级字段逐字段合并、标量后者覆盖。
  * 用途:上次保存失败而保留的草稿必须并入下一次提交,否则失败期间编辑的字段会
@@ -267,10 +272,10 @@ function mergeBlock<T extends object>(a: T | undefined, b: T | undefined): T | u
  * 静默分叉。pending 更早、next 为用户最新编辑,故 next 覆盖 pending。
  */
 export function mergePendingSavePatch(
-  pending: Partial<AppSettings>,
-  next: Partial<AppSettings>,
-): Partial<AppSettings> {
-  const merged: Partial<AppSettings> = { ...pending, ...next };
+  pending: SettingsMergePatch,
+  next: SettingsMergePatch,
+): SettingsMergePatch {
+  const merged: SettingsMergePatch = { ...pending, ...next };
   const pageSetup = mergeBlock(pending.pageSetup, next.pageSetup);
   if (pageSetup) merged.pageSetup = pageSetup;
   const typography = mergeBlock(pending.typography, next.typography);

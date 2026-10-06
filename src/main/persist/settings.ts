@@ -35,6 +35,7 @@ import type {
   SettingsMigrationNotice,
 } from "../../core/settings/settings-defaults.js";
 import { correctPageSetup } from "../../core/settings/settings-defaults.js";
+import type { SettingsMergePatch } from "../../core/settings/merge-patch.js";
 import {
   DEFAULT_SETTINGS,
   DEFAULT_AI_CLEANUP,
@@ -377,8 +378,20 @@ export function whenSettingsIdle(): Promise<void> {
   return writeSettingsJson.drain();
 }
 
-/** 合并 + 持久化 + 返回;patch 按 DEFAULT_SETTINGS 键白名单校验,非法值回退默认。 */
-export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+/** 合并 + 持久化 + 返回;patch 按 DEFAULT_SETTINGS 键白名单校验,非法值回退默认。
+ *  patch 形状 = core/settings/merge-patch.ts 的 `SettingsMergePatch`(与 `settingsSet`
+ *  暴露面同一处单源):逐字段兜底的五块允许块内只带部分字段。
+ *
+ *  ⚠ **那五块对「块内省略字段」的处置不是同一种,入参放宽后必须知道差别**:
+ *  `sanitizePatch` 里 typography / headerFooter / watermark / aiCleanup / obsidian 五块
+ *  都以 `DEFAULT_*` 起手再逐字段覆盖 ⇒ **省略的字段被重置为默认值,不是保留用户当前值**;
+ *  而 `pageSetup` 走 `sanitizePageSetup(value, current.pageSetup, …)`,以 current 合并 ⇒
+ *  省略的边距**保留**。这正是 `DeepMergedBlock` 不含 `pageSetup` 的真实原因
+ *  (不是「没有消费方需要」)。
+ *  ⇒ 对那五块而言,局部块 patch 是**整块重置**语义,不是「只改我给的那几项」。
+ *  当前生产入口 `persistSettings` 仍收 `Partial<AppSettings>` 且各调用方展开完整块,
+ *  故该形态暂不可达;一旦有人改送局部块,须先决定这五块要不要改成以 current 兜底。 */
+export async function updateSettings(patch: SettingsMergePatch): Promise<AppSettings> {
   return writeSettingsJson.enqueue(async (write) => {
     const current = loadSettings();
     const next: AppSettings = {

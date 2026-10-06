@@ -22,20 +22,12 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 
-/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
 
-/**
- * convert 的类型化别名:运行期是共享包装 convertWithFs(= dist 的 convert 注入宿主文件
- * 系统能力 fs,REF-025 #07 起 pdf 渲染路径不再自带 node:fs),渲染行为不变,只把返回类型
- * 对齐到 src 契约——dist 是 tsc 产物、无 .d.ts,直接 import 时联合成员的 kind
- * 被拓宽为 string,判别式收窄(共享的 asDocxArtifact / asPdfArtifact)因而不可用。
- * 入参保持宽松(本段按运行时事实传上下文,上下文契约由 core 自身类型守护)。
- * @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>}
- */
-const convertTyped =
-  /** @type {(md: string, format: "docx" | "pdf", context: unknown) => Promise<import("../../src/core/convert.js").ConvertArtifact>} */ (
-    convertWithFs
-  );
+// convertTyped = 共享包装 convertWithFs(= dist 的 convert 注入宿主文件系统能力 fs,
+// REF-025 #07 起 pdf 渲染路径不再自带 node:fs)。运行期与渲染行为不变;
+// 此前在此手写返回类型是因为 dist 不带 .d.ts,ADR-069 起产物已自带声明,故直接用之。
+const convertTyped = convertWithFs;
 
 // 全要素中英混排样例(md 字符串原样保留;图片引用 ./input/g1-tiny.png,由 imageResolver 基准到 FIXTURES_DIR)
 const markdown = `# G1 验证文档 中文标题

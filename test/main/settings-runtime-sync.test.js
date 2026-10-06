@@ -39,24 +39,30 @@ function assert(cond, msg) {
 /** 下发给 setTitleBarOverlay 的 overlay 参数(配色 + 高度) */
 /** @typedef {{ color: string, symbolColor: string, height: number }} TitleBarOverlay */
 /** 界面语言(契约单源) */
-/** @typedef {import("../../src/core/i18n/index.js").Language} Language */
+/** @typedef {import("../../dist/core/i18n/index.js").Language} Language */
 /** 主题偏好(契约单源) */
-/** @typedef {import("../../src/core/settings/settings-defaults.js").ThemePreference} ThemePreference */
+/** @typedef {import("../../dist/core/settings/settings-defaults.js").ThemePreference} ThemePreference */
+/** 运行时副作用注入面(契约单源) */
+/** @typedef {import("../../dist/main/ipc/register.js").SettingsRuntimeDeps} SettingsRuntimeDeps */
 /** 一次调用的记录元素(动作名 + 该动作的参数) */
 /** @typedef {(string | TitleBarOverlay | FakeWindow | null)[]} CallRecord */
 
 /**
+ * 假窗口 → BrowserWindow 的入参收窄:SettingsRuntimeDeps.syncOverlay 的
+ * 第二参与 syncTitleBarOverlay 的第一参都是 electron 的 BrowserWindow
+ * (175 个成员),而本段只需其中 isDestroyed / setTitleBarOverlay 两面 ——
+ * 假窗口按「被消费的那两面」如实建模,注入契约面时在此单点收窄。
+ * 不用 fake-window 形态冒充整类:那会让读者以为夹具实现了 175 个成员。
+ * @param {FakeWindow | null} win 假窗口
+ * @returns {import("electron").BrowserWindow | null} 契约面的窗口引用
+ */
+const asMainWindow = (win) => /** @type {import("electron").BrowserWindow | null} */ (/** @type {unknown} */ (win));
+
+/**
  * 记录调用序的假触点(返回值即调用序列,便于断言「调了谁、传了什么」)。
+ * deps 的类型即契约面 SettingsRuntimeDeps(注入点签名不得比契约宽)。
  * @param {FakeWindow | null} [win] 假窗口
- * @returns {{
- *   calls: CallRecord[],
- *   deps: {
- *     setLanguage: (lang: Language) => void,
- *     buildMenu: () => void,
- *     syncOverlay: (pref: ThemePreference, target: FakeWindow | null) => void,
- *     resolveMainWindow: () => FakeWindow | null,
- *   },
- * }} 调用序列 + 注入依赖
+ * @returns {{ calls: CallRecord[], deps: SettingsRuntimeDeps }} 调用序列 + 注入依赖
  */
 function spyDeps(win = null) {
   const calls = /** @type {CallRecord[]} */ ([]);
@@ -65,9 +71,9 @@ function spyDeps(win = null) {
     deps: {
       setLanguage: (/** @type {Language} */ lang) => calls.push(["setLanguage", lang]),
       buildMenu: () => calls.push(["buildMenu"]),
-      syncOverlay: (/** @type {ThemePreference} */ pref, /** @type {FakeWindow | null} */ target) =>
-        calls.push(["syncOverlay", pref, target]),
-      resolveMainWindow: () => win,
+      syncOverlay: (/** @type {ThemePreference} */ pref, target) =>
+        calls.push(["syncOverlay", pref, /** @type {FakeWindow | null} */ (/** @type {unknown} */ (target))]),
+      resolveMainWindow: () => asMainWindow(win),
     },
   };
 }
@@ -169,16 +175,17 @@ export async function run() {
     "syncOverlay 第二参应为 resolveMainWindow() 解析结果");
 
   // ---- 4. overlay 真链路:真实 syncTitleBarOverlay + 假窗口 → 写入对应配色 ----
-  for (const theme of ["light", "dark"]) {
+  // const 标注:数组元素推成 "light"|"dark" 字面量联合(否则 theme 会退化成 string)
+  for (const theme of /** @type {const} */ (["light", "dark"])) {
     const fw = fakeWindow();
     applySettingsRuntimeSync(
       { language: "zh", theme: "system" },
-      { language: "zh", theme: theme },
+      { language: "zh", theme },
       {
         setLanguage: () => {},
         buildMenu: () => {},
         syncOverlay: (pref, win) => syncTitleBarOverlay(win, pref),
-        resolveMainWindow: () => fw.win,
+        resolveMainWindow: () => asMainWindow(fw.win),
       },
     );
     if (process.platform === "win32") {
@@ -205,7 +212,7 @@ export async function run() {
       setLanguage: () => {},
       buildMenu: () => {},
       syncOverlay: (pref, win) => syncTitleBarOverlay(win, pref),
-      resolveMainWindow: () => sysFw.win,
+      resolveMainWindow: () => asMainWindow(sysFw.win),
     },
   );
   if (process.platform === "win32") {

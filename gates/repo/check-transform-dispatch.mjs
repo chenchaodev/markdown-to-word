@@ -57,6 +57,7 @@ export const ENUMERATION_EXCLUSIONS = Object.freeze([
   { path: 'core/i18n', why: 'i18n 键名字典(settings.aiCleanup 之类),不是设置消费' },
   { path: 'core/settings/settings-defaults.ts', why: '设置形状与默认值的声明单源,按定义就是这批键的家' },
   { path: 'core/settings/schema.ts', why: '持久化 schema 表(逐键声明取值域与校验档位),与上一条同类:声明不是枚举(adr-028 决定要点三)' },
+  { path: 'core/settings/merge-patch.ts', why: '设置补丁的形状单源(DeepMergedBlock 逐块列举 + SettingsMergePatch 派生),按定义就是这批键的第二个家;此处无分派也无档位映射,与前两条同类' },
 ]);
 
 /**

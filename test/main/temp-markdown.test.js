@@ -37,7 +37,7 @@ function assert(cond, msg) {
 }
 
 /** 最近文件条目(跨进程契约单源) */
-/** @typedef {import("../../src/core/ipc-contract.js").RecentFile} RecentFile */
+/** @typedef {import("../../dist/core/ipc-contract.js").RecentFile} RecentFile */
 
 /**
  * 取待消费句柄数(经属性读取:前一次 `assert(pendingCount === N)` 会把它收窄成字面量,

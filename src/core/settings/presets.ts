@@ -260,8 +260,20 @@ const PRESET_COMPARE_FIELDS = {
   watermark: ["text", "angle", "opacity", "gray"],
 } as const;
 
+/**
+ * `matchesPreset` 的入参读取面(参 ADR-070):排版与页面设置**无条件**读取,故必填;
+ * 交付链四块(headerFooter / watermark / equationNumbering / breakBeforeH1)在实现里
+ * 各有「缺任一侧即视为该项不参与比较」的分支,故可选。
+ *
+ * 这不是随手放宽:该四块**是否参与比较**本就随 preset 是否携带它们而定
+ * (用户自定义预设只携带排版 + 页面设置),把它们声明成必填会让「只传两块」
+ * 这一正当调用无法表达 —— 声明面比运行期契约窄(详见 ADR-070 背景与后果)。
+ */
+export type PresetMatchSettings = Pick<AppSettings, "typography" | "pageSetup">
+  & Partial<Pick<AppSettings, "headerFooter" | "watermark" | "equationNumbering" | "breakBeforeH1">>;
+
 /** 当前排版与页面设置是否与某预设完全一致(renderer 回填时选中对应模板)。 */
-export function matchesPreset(preset: TemplatePreset, settings: AppSettings): boolean {
+export function matchesPreset(preset: TemplatePreset, settings: PresetMatchSettings): boolean {
   const typographyOk = PRESET_COMPARE_FIELDS.typography.every(
     (field) => preset.typography[field] === settings.typography[field],
   );
@@ -269,18 +281,20 @@ export function matchesPreset(preset: TemplatePreset, settings: AppSettings): bo
     (field) => preset.pageSetup[field] === settings.pageSetup[field],
   );
   const presetHeaderFooter = preset.headerFooter;
+  const settingsHeaderFooter = settings.headerFooter;
   const headerFooterOk =
     !presetHeaderFooter ||
-    !settings.headerFooter ||
+    !settingsHeaderFooter ||
     PRESET_COMPARE_FIELDS.headerFooter.every(
-      (field) => presetHeaderFooter[field] === settings.headerFooter[field],
+      (field) => presetHeaderFooter[field] === settingsHeaderFooter[field],
     );
   const presetWatermark = preset.watermark;
+  const settingsWatermark = settings.watermark;
   const watermarkOk =
     !presetWatermark ||
-    !settings.watermark ||
+    !settingsWatermark ||
     PRESET_COMPARE_FIELDS.watermark.every(
-      (field) => presetWatermark[field] === settings.watermark[field],
+      (field) => presetWatermark[field] === settingsWatermark[field],
     );
   const equationNumberingOk =
     preset.equationNumbering === undefined ||

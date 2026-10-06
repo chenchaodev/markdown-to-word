@@ -49,9 +49,15 @@ import { docxBufferOf, pdfHtmlOf, HOST_FS, prepareForConvert } from "../harness/
 // 不再各抄一份裸字符串。
 import { docxLinkBody, pdfLinkBody } from "../harness/dual-extract.js";
 
-/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
- *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
- /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
+/** @typedef {import("../../dist/core/convert.js").ConvertArtifact} Artifact */
+/**
+ * 本包装的 context 实参类型:ConvertContext 去掉由包装注入的 `fs`(宿主文件系统
+ * 能力),其余字段(baseDir / warnings / title 等)由各调用点原样提供。
+ * 此前标注为 Record<string, unknown>,那把 convert() 真正要求的 `baseDir`
+ * 一并吞掉了 —— 契约形状不该由一个宽到无信息的 Record 代替。
+ * @typedef {Omit<import("../../dist/core/convert.js").ConvertContext, "fs">} Ctx
+ */
 
 /**
  * convert() 的宿主能力注入包装(REF-025 #07):core 的 pdf 渲染路径不 import node:fs,
@@ -61,14 +67,15 @@ import { docxLinkBody, pdfLinkBody } from "../harness/dual-extract.js";
  * 第 1 参仍是裸 markdown 字符串:frontmatter 隔离经 `prepareForConvert` 在包装内做
  * (core 的 convert 第 1 参是 `{ body, metadata }` 阶段产物,不再自己解析 frontmatter)。
  *
- * @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>}
+ * @type {(md: string, format: "docx" | "pdf", context: Ctx) => Promise<Artifact>}
  */
-const convertInjected = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
+const convertInjected = /** @type {(md: string, format: "docx" | "pdf", context: Ctx) => Promise<Artifact>} */ (
   (md, format, context) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context })
 );
 
-/** 警告收集器:元素为 ConvertWarning(string 或 KeyedWarning),dist 产物无类型导出,
- *  故以 unknown[] 如实标注(断言统一经 formatWarning 归一为文案后比较)。 */
+/** 警告收集器:元素即 ConvertWarning(= `string | KeyedWarning`,见
+ *  src/core/i18n/warning.ts),也就是 ConvertContext.warnings 的元素类型。
+ *  断言统一经 formatWarning 归一为文案后比较,故两种形态都能过。 */
 const B = FIXTURES_DIR;
 
 export const meta = { description: "题注/章节交叉引用测试(docx + pdf 双格式):" };
@@ -107,9 +114,9 @@ $$
 export async function run() {
   const MD = fixtures.main; // 主样例来自命名导出(gen-fixtures 落盘为 docs/cross-ref.md)
   // ============ 场景 A:主样例(h1 + 图/表/章节/公式 + 悬空) ============
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const warnings = [];
-  const docx = /** @type {ConvertArtifact} */ (await convertInjected(MD, "docx", { baseDir: B, warnings }));
+  const docx = (await convertInjected(MD, "docx", { baseDir: B, warnings }));
   const xml = await unzipPart(docxBufferOf(docx), "word/document.xml");
   const has = (/** @type {string} */ s) => xml.includes(s);
 
@@ -155,9 +162,9 @@ export async function run() {
   if (!has('<w:t xml:space="preserve">式 (1)</w:t>')) throw new Error('docx 公式引用文本非「式 (1)」');
 
   // ============ 场景 B:pdf 主样例 ============
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const warningsP = [];
-  const pdf = /** @type {ConvertArtifact} */ (
+  const pdf = (
     await convertInjected(MD, "pdf", { baseDir: B, warnings: warningsP, title: "t" })
   );
   const html = pdfHtmlOf(pdf);
@@ -220,8 +227,8 @@ export async function run() {
 
 见 [图](#fig:a) 与 [图](#fig:b)。
 `;
-  const o1 = /** @type {ConvertArtifact} */ (await convertInjected(mdOrder1, "docx", { baseDir: B, warnings: [] }));
-  const o2 = /** @type {ConvertArtifact} */ (await convertInjected(mdOrder2, "docx", { baseDir: B, warnings: [] }));
+  const o1 = (await convertInjected(mdOrder1, "docx", { baseDir: B, warnings: [] }));
+  const o2 = (await convertInjected(mdOrder2, "docx", { baseDir: B, warnings: [] }));
   const x1 = await unzipPart(docxBufferOf(o1), "word/document.xml");
   const x2 = await unzipPart(docxBufferOf(o2), "word/document.xml");
   if (!x1.includes('<w:t xml:space="preserve">图 1.1</w:t>') || !x1.includes('<w:t xml:space="preserve">图 1.2</w:t>')) {
@@ -230,7 +237,7 @@ export async function run() {
   if (!x2.includes('<w:t xml:space="preserve">图 1.2</w:t>')) {
     throw new Error("docx 顺序 2:交换题注顺序后 [图](#fig:a) 引用编号未跟随(应图 1.2)");
   }
-  const pOrder2 = /** @type {ConvertArtifact} */ (
+  const pOrder2 = (
     await convertInjected(mdOrder2, "pdf", { baseDir: B, warnings: [], title: "t" })
   );
   if (!pdfHtmlOf(pOrder2).includes(">图 1.2</a>")) {
@@ -244,12 +251,12 @@ export async function run() {
 
 见 [章节](#sec:s3)。
 `;
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const dW = [];
-  const dD = /** @type {ConvertArtifact} */ (await convertInjected(mdNoH1, "docx", { baseDir: B, warnings: dW }));
+  const dD = (await convertInjected(mdNoH1, "docx", { baseDir: B, warnings: dW }));
   const dX = await unzipPart(docxBufferOf(dD), "word/document.xml");
   if (!dX.includes('<w:t xml:space="preserve">3</w:t>')) throw new Error('docx 无 h1 场景 [章节](#sec:s3) 非「3」(前导未出现级跳过)');
-  const dP = /** @type {ConvertArtifact} */ (
+  const dP = (
     await convertInjected(mdNoH1, "pdf", { baseDir: B, warnings: [], title: "t" })
   );
   const dPHtml = pdfHtmlOf(dP);
@@ -266,9 +273,9 @@ export async function run() {
 
 图: 图一 {#fig:a}
 `;
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const capOffW = [];
-  const capOffD = /** @type {ConvertArtifact} */ (await convertInjected(mdCapOff, "docx", {
+  const capOffD = (await convertInjected(mdCapOff, "docx", {
     baseDir: B,
     warnings: capOffW,
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: false },
@@ -280,7 +287,7 @@ export async function run() {
   if (capOffX.includes('<w:bookmarkStart w:name="fig-a"')) {
     throw new Error("docx captionNumbering 关:不应生成 fig-a 书签");
   }
-  const capOffP = /** @type {ConvertArtifact} */ (await convertInjected(mdCapOff, "pdf", {
+  const capOffP = (await convertInjected(mdCapOff, "pdf", {
     baseDir: B,
     warnings: [],
     title: "t",
@@ -295,9 +302,9 @@ export async function run() {
 
 见 [章节](#sec:s1)。
 `;
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const hnOffW = [];
-  const hnOffD = /** @type {ConvertArtifact} */ (await convertInjected(mdHnOff, "docx", {
+  const hnOffD = (await convertInjected(mdHnOff, "docx", {
     baseDir: B,
     warnings: hnOffW,
     typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
@@ -309,7 +316,7 @@ export async function run() {
   if (!hnOffW.some((w) => formatWarning(w) === "交叉引用未找到章节 label: sec:s1")) {
     throw new Error("docx headingNumbering 关:缺少悬空章节警告");
   }
-  const hnOffP = /** @type {ConvertArtifact} */ (await convertInjected(mdHnOff, "pdf", {
+  const hnOffP = (await convertInjected(mdHnOff, "pdf", {
     baseDir: B,
     warnings: [],
     title: "t",
@@ -325,7 +332,7 @@ export async function run() {
 
 图: 图甲
 `;
-  const gNoH1 = /** @type {ConvertArtifact} */ (
+  const gNoH1 = (
     await convertInjected(mdNoH1Cap, "docx", { baseDir: B, warnings: [] })
   );
   const gNoH1X = await unzipPart(docxBufferOf(gNoH1), "word/document.xml");
@@ -338,7 +345,7 @@ export async function run() {
 
 图: {#fig:a}
 `;
-  const gEmpty = /** @type {ConvertArtifact} */ (
+  const gEmpty = (
     await convertInjected(mdEmptyCap, "docx", { baseDir: B, warnings: [] })
   );
   const gEmptyX = await unzipPart(docxBufferOf(gEmpty), "word/document.xml");
@@ -365,7 +372,7 @@ export async function run() {
 
 图: 乙图
 `;
-  const hnOffCapD = /** @type {ConvertArtifact} */ (await convertInjected(mdCapContinuous, "docx", {
+  const hnOffCapD = (await convertInjected(mdCapContinuous, "docx", {
     baseDir: B,
     warnings: [],
     typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false },
@@ -377,7 +384,7 @@ export async function run() {
   if (!hnOffCapX.includes('<w:t xml:space="preserve">图 2 乙图</w:t>')) {
     throw new Error("图编号断言失败:headingNumbering 关时次章图应连续编号「图 2」(不得按章重置为「图 1」)");
   }
-  const hnOffCapP = /** @type {ConvertArtifact} */ (await convertInjected(mdCapContinuous, "pdf", {
+  const hnOffCapP = (await convertInjected(mdCapContinuous, "pdf", {
     baseDir: B,
     warnings: [],
     title: "t",
@@ -410,9 +417,9 @@ export async function run() {
 
 见 [图](#fig:same) 与 [表](#tab:same)。另见 [图](#fig:onlytab) 与 [表](#tab:onlyfig)。
 `;
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const nsW = [];
-  const nsD = /** @type {ConvertArtifact} */ (await convertInjected(mdNs, "docx", { baseDir: B, warnings: nsW }));
+  const nsD = (await convertInjected(mdNs, "docx", { baseDir: B, warnings: nsW }));
   const nsX = await unzipPart(docxBufferOf(nsD), "word/document.xml");
   if (!nsX.includes('<w:bookmarkStart w:name="fig-same"') || !nsX.includes('<w:bookmarkStart w:name="tab-same"')) {
     throw new Error("docx 同名 label:fig/tab 题注都应生成各自书签(互不覆盖)");
@@ -435,9 +442,9 @@ export async function run() {
   if (nsW.some((w) => formatWarning(w).includes("same"))) {
     throw new Error("docx 同名 label 的 fig/tab 引用不应产生悬空警告");
   }
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const nsPW = [];
-  const nsP = /** @type {ConvertArtifact} */ (
+  const nsP = (
     await convertInjected(mdNs, "pdf", { baseDir: B, title: "t", warnings: nsPW })
   );
   const nsHtml = pdfHtmlOf(nsP);
@@ -466,14 +473,14 @@ export async function run() {
 
 见 [图](#fig:dup)。
 `;
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const dupW = [];
-  const dupD = /** @type {ConvertArtifact} */ (await convertInjected(mdDup, "docx", { baseDir: B, warnings: dupW }));
+  const dupD = (await convertInjected(mdDup, "docx", { baseDir: B, warnings: dupW }));
   const dupX = await unzipPart(docxBufferOf(dupD), "word/document.xml");
   if (!docxLinkBody(dupX, "fig-dup").includes("图 2")) {
     throw new Error("docx 同 kind 重名 label:应后写覆盖(命中后一个题注编号 图 2)");
   }
-  const dupP = /** @type {ConvertArtifact} */ (
+  const dupP = (
     await convertInjected(mdDup, "pdf", { baseDir: B, title: "t", warnings: [] })
   );
   if (!pdfLinkBody(pdfHtmlOf(dupP), "fig:dup").includes("图 2")) {

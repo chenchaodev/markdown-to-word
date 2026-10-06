@@ -8,8 +8,6 @@
 import JSZip from "jszip";
 import { importDocxTemplate } from "../../dist/core/docx/template-import.js";
 
-/** 提取结果契约取自 src 单源(dist 产物无类型标注,初始空对象会被推断为 {}) */
- /** @typedef {import("../../src/core/docx/template-import.js").TemplateExtracted} TemplateExtracted */
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 
@@ -67,7 +65,7 @@ export const fixtures = { main: stylesXml };
 export async function run() {
   // 案例 1:纵向 A4(11906×16838 twips)+ 1440 twips(25.4mm)边距
   const buf1 = await buildDocx(stylesXml, docXml(11906, 16838, 1440));
-  const r1 = /** @type {TemplateExtracted} */ (await importDocxTemplate(buf1));
+  const r1 = await importDocxTemplate(buf1);
   // 字体:标题样式(Heading1)优先 → Georgia / 黑体;字号取 Normal 24 half-pt → 12pt
   if (r1.typography.fontAscii !== "Georgia") throw new Error(`模板导入(adr-008) 断言失败:字体应为 Georgia,实得 ${r1.typography.fontAscii}`);
   if (r1.typography.fontEastAsia !== "黑体") throw new Error(`模板导入(adr-008) 断言失败:中文字体应为 黑体,实得 ${r1.typography.fontEastAsia}`);
@@ -91,7 +89,7 @@ export async function run() {
   const letterLandW = 15840; // 279.4mm
   const letterLandH = 12240; // 215.9mm
   const buf2 = await buildDocx(stylesXml, docXml(letterLandW, letterLandH, 720));
-  const r2 = /** @type {TemplateExtracted} */ (await importDocxTemplate(buf2));
+  const r2 = await importDocxTemplate(buf2);
   if (r2.pageSetup.paper !== "Letter") throw new Error(`模板导入(adr-008) 断言失败:纸张应为 Letter,实得 ${r2.pageSetup.paper}`);
   if (r2.pageSetup.orientation !== "landscape") throw new Error(`模板导入(adr-008) 断言失败:朝向应为 landscape`);
   for (const k of /** @type {("marginTop" | "marginBottom" | "marginLeft" | "marginRight")[]} */ ([

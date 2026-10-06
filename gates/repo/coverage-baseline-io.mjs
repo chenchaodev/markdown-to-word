@@ -35,7 +35,8 @@ export const BASELINE_RELATIVE = "gates/repo/coverage-baseline.json";
 
 /**
  * shell 风格分词:双引号内为字面量(含 = 与通配符),其余按空白切。
- * c8 参数向量里有 `--include="dist/**"`,按空白裸切会连引号一起切下来导致 glob 失效。
+ * c8 参数向量里有带引号的 `--include`(取值是 dist 下的 glob,内含 `*` 连写),按空白裸切会连引号
+ * 一起切下来导致 glob 失效。
  * @param {string} input 命令行
  * @returns {string[]} 参数序列
  */

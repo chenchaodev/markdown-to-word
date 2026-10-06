@@ -53,8 +53,19 @@ const B = FIXTURES_DIR;
 /**
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本文件打的是 dist 产物)。
  */
-/** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
-/** @typedef {import("../../src/core/i18n/index.js").ConvertWarning} Warning */
+/** @typedef {import("../../dist/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
+
+/**
+ * 本文件 convertTyped 的上下文入参:core 转换上下文的全部字段,**外加必填的 `baseDir`**。
+ *
+ * ⚠ 与 convert-helpers 的同名约束同源同理由(单一类型定义在 convert-helpers.js,
+ * 此处只转引):此前入参写 `Record<string, unknown>`,把 core 必填的 `baseDir`
+ * 一并抹平,编译器便不再检查它。这是**纯类型**约束,运行期不注入任何字段 ——
+ * 60+ 调用点无一省略 `baseDir`,凭空补默认值反而是改行为。
+ *
+ * @typedef {import("./convert-helpers.js").ConvertContextWithBaseDir} ConvertContextWithBaseDir
+ */
 
 /**
  * convert() 的类型化别名 + 宿主能力注入点:运行期就是 dist 的 convert 加一次
@@ -76,7 +87,7 @@ const B = FIXTURES_DIR;
  * (core 的 convert 第 1 参是 `{ body, metadata }` 阶段产物,不再自己解析 frontmatter),
  * 故下面 60+ 个调用点无一需要知道那个形状。
  */
-const convertTyped = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>, overrides?: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
+const convertTyped = /** @type {(md: string, format: "docx" | "pdf", context: ConvertContextWithBaseDir, overrides?: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
   (md, format, context, overrides) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context }, overrides)
 );
 
@@ -93,6 +104,18 @@ const convertTyped = /** @type {(md: string, format: "docx" | "pdf", context: Re
  *   dispose: () => void,
  * }}} 计数器与注入用 guard
  */
+/** @typedef {import("../../dist/core/cancel.js").CancellationGuard} CancellationGuard */
+
+/**
+ * 计数守卫:桩在运行期是恒等函数,只把「被检查了几次」记到 counter 上。
+ *
+ * ⚠ `@returns` 给的 `guard: CancellationGuard` 是**必需**的:没有上下文类型时,对象字面量
+ * 按各成员各自推断,`race` 会被推成单态 `(p: Promise<unknown>) => Promise<unknown>`,
+ * 而契约里它是**泛型方法** `race<T>(work: Promise<T>): Promise<T>` —— 单态箭头赋不进泛型签名,
+ * 4 个调用点全判红(TS2322)。给足上下文类型后 TS 以泛型签名推断本箭头,不必手写第二份签名。
+ *
+ * @returns {{ counter: { checks: number }, guard: CancellationGuard }}
+ */
 function countingGuard() {
   const counter = { checks: 0 };
   return {
@@ -103,8 +126,8 @@ function countingGuard() {
       throwIfCanceled() {
         counter.checks += 1;
       },
-      race: (/** @type {Promise<unknown>} */ p) => p,
-      remainingMs: (/** @type {number} */ fallback) => fallback,
+      race: (p) => p,
+      remainingMs: (fallback) => fallback,
       dispose() {},
     },
   };

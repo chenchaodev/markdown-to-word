@@ -6,6 +6,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron"
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertFormat, ThemePreference } from "../../core/settings/settings-defaults.js";
+import type { SettingsMergePatch } from "../../core/settings/merge-patch.js";
 import type { BatchProgressInfo, BatchResult, ConvertMode, PrecheckResult, UiState } from "../../core/ipc-contract.js";
 import { t, setLanguage, type Language } from "../../core/i18n/index.js";
 import { precheckMarkdown } from "../../core/pipeline/precheck.js";
@@ -576,7 +577,7 @@ export function registerIpc(): void {
   // before 取落盘前的权威值(缓存对象,updateSettings 产出新对象不污染它)→ 判定差异。
   ipcMain.handle(
     CH.settingsSet,
-    async (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
+    async (_event, patch: SettingsMergePatch): Promise<AppSettings> => {
       const before = loadSettings();
       const next = await updateSettings(patch);
       applySettingsRuntimeSync(before, next);

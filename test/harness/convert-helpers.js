@@ -11,15 +11,13 @@ import { parseFrontmatter } from "../../dist/core/pipeline/frontmatter.js";
  * `@ts-check` 的年代这靠运行时事实成立;全量启用类型门禁后会集体报
  * `TS18048: 'x.html' is possibly 'undefined'`(实测占全树错误的大头)。
  *
- * 类型来源必须是 **src 契约单源**而非 dist:dist 是 tsc 产物、无 `.d.ts`,
- * `import("../../dist/core/convert.js").ConvertArtifact` 解析不到导出 → TS2694 →
- * 收窄函数返回类型静默退化为 `any`,整棵测试树的类型门禁随之失效(2026-09-26 实测)。
+ * 类型来源是 **dist 契约**(ADR-069):此前这组 typedef 指向 `src/`,理由写的是「dist 是
+ * tsc 产物、无 `.d.ts`,指向它会 TS2694」—— 那条前提已随 `declaration` 打开而失效。
+ * 指向 src 才是 ADR-069 要拆的那个错配:**跑的是产物、类型却查的是源码**,两者不同一个东西。
  *
- * 入参取 `unknown` 的理由:测试运行期消费的是 dist 产物,而 dist 无 `.d.ts`,
- * TS 只能从 .js 推断出 `kind: string`,与 src 契约的 `kind: "pdf" | "docx"` 不兼容
- * → 若把 src 联合写进入参,每个调用点都得先 cast 一次,纯属重复。因此这里:
- * 入参 `unknown` → 运行期校验判别式 → 一次性 cast 回精确类型。
- * 对 dist 推断与 src 类型两种调用方都成立,且**只放宽入参、不放宽返回值**。
+ * 入参取 `unknown` 的理由:下面两个收窄函数按判别字段(`kind`)收窄,而 `ConvertArtifact`
+ * 的判别联合现在由**产物声明**提供,不必再手写第二份。调用方传什么都先落 `unknown`,
+ * 运行期校验判别式,再一次性 cast 回精确类型 —— **只放宽入参、不放宽返回值**。
  *
  * 收窄手法:原生 `if + 判别式检查`,不依赖断言函数 —— 断言函数只收窄「传入的引用」,
  * 对 `artifact.kind === "pdf"` 这种布尔表达式无效。
@@ -28,11 +26,25 @@ import { parseFrontmatter } from "../../dist/core/pipeline/frontmatter.js";
  * 失败信息必须指明实际拿到的 kind,便于段内定位。
  */
 
-/** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
-/** @typedef {import("../../src/core/convert.js").PreprocessedMarkdown} PreprocessedMarkdown */
-/** @typedef {import("../../src/core/convert.js").DocxArtifact} DocxArtifact */
-/** @typedef {import("../../src/core/convert.js").PdfArtifact} PdfArtifact */
-/** @typedef {import("../../src/core/pdf/render.js").PdfFsCapabilities} PdfFsCapabilities */
+/** @typedef {import("../../dist/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../dist/core/convert.js").PreprocessedMarkdown} PreprocessedMarkdown */
+/** @typedef {import("../../dist/core/convert.js").DocxArtifact} DocxArtifact */
+/** @typedef {import("../../dist/core/convert.js").PdfArtifact} PdfArtifact */
+/** @typedef {import("../../dist/core/pdf/render.js").PdfFsCapabilities} PdfFsCapabilities */
+/** @typedef {import("../../dist/core/convert.js").ConvertContext} ConvertContext */
+
+/**
+ * 本包装的上下文入参:core 转换上下文的全部字段,**外加必填的 `baseDir`**。
+ *
+ * 为什么不直接用 `ConvertContext`:它其余字段都是可选的,而 core 的 `baseDir`
+ * 是必填项;用 `Record<string, unknown>` 写则把它一并抹平(此前的写法),编译器
+ * 便不再检查这个必填项。交叉 `Pick<ConvertContext, "baseDir">` 让**必填性**留在
+ * 类型面上,同时不重复 core 的字段清单(字段增删仍以 core 声明为单一来源)。
+ *
+ * ⚠ 这是**纯类型**约束,运行期不注入任何字段(理由见 `convertWithFs` 的说明)。
+ *
+ * @typedef {Record<string, unknown> & Pick<ConvertContext, "baseDir">} ConvertContextWithBaseDir
+ */
 
 /**
  * 测试侧的宿主文件系统能力(REF-025 #07 注入点)。
@@ -133,13 +145,21 @@ export function docxBufferOf(artifact) {
  * 第 1 参仍是**裸 markdown 字符串**而非阶段产物:frontmatter 隔离在包装内做
  * (`prepareForConvert`),调用点无一处需要知道 core 的入参形状。
  *
+ * ⚠ `context` 的类型**在类型面上要求 `baseDir`**(见 `ConvertContextWithBaseDir`),
+ * 运行期一字不改:此前 60+ 调用点只传 `{baseDir, warnings, …}`,其余字段靠
+ * 「无声明即 any」才没炸 —— 那是产物无 `.d.ts` 时期的假象(ADR-069)。声明补齐后
+ * core 的必填项要显式化,而**不给它兜一个运行期默认值**:core 只在 pdf 分支把
+ * `baseDir` 交给图片边界判定(经 `path.resolve`),`undefined` 与 `""` 在那里
+ * 行为并不等价,凭空补默认值等于改行为。实测 60+ 调用点**无一省略** `baseDir`
+ * (唯一三处「省略」是注释里的散文提及),故此处只需把既有事实写进类型。
+ *
  * @param {string} md markdown 源
  * @param {"docx" | "pdf"} format 目标格式
- * @param {Record<string, unknown>} context 转换上下文
+ * @param {ConvertContextWithBaseDir} context 转换上下文(必填 `baseDir`)
  * @returns {Promise<ConvertArtifact>} 产物(判别式收窄请用 asDocxArtifact / asPdfArtifact)
  */
 export const convertWithFs =
-  /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
+  /** @type {(md: string, format: "docx" | "pdf", context: ConvertContextWithBaseDir) => Promise<ConvertArtifact>} */ (
     (md, format, context) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context })
   );
 

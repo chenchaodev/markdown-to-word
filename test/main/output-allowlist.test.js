@@ -131,8 +131,9 @@ export async function run() {
       assert(bounded.allow(p), `批量产物 ${i} 应入白名单`);
     }
     assert(bounded.size() === 3, `条目数应被上限约束为 3,实际 ${bounded.size()}`);
-    assert(bounded.resolveOpenable(made[0]) === null, "最旧条目应被淘汰");
-    assert(bounded.resolveOpenable(made[1]) === null, "次旧条目应被淘汰");
+    const [oldest, secondOldest] = made;
+    assert(oldest !== undefined && bounded.resolveOpenable(oldest) === null, "最旧条目应被淘汰");
+    assert(secondOldest !== undefined && bounded.resolveOpenable(secondOldest) === null, "次旧条目应被淘汰");
     for (const p of made.slice(3)) {
       assert(bounded.resolveOpenable(p) !== null, `近期条目 ${path.basename(p)} 不应被淘汰`);
     }

@@ -79,8 +79,17 @@ function assert(cond, msg) {
   if (!cond) throw new Error(`settings-logic 断言失败:${msg}`);
 }
 
-/** @param {string} name @returns {{ name: string, typography: object, pageSetup: object }} */
-const preset = (name) => ({ name, typography: {}, pageSetup: {} });
+// 预设夹具取**真实的默认形状**而非空对象字面量(ADR-069 的类型面对齐)。
+// ⚠ 此处**刻意不再手写 `@returns`**:原注解写的是 `{typography: object, pageSetup: object}`,
+// 理由是「dist 编译产物无类型标注」—— 那条前提在 `declaration` 打开后已失效(ADR-069)。
+// 留着它的害处不只类型不准:**JSDoc `@returns` 会覆盖推断**,于是函数体改成什么样都不生效,
+// 且文件里十几处 `preset(...)` 调用点全被这条陈旧注解拖判红。类型从函数体推断即可 ——
+// `cloneDefaultSettings()` 的返回类型来自产物声明,`CustomPreset` 要的形状它本就满足。
+/** @param {string} name */
+const preset = (name) => {
+  const base = cloneDefaultSettings();
+  return { name, typography: base.typography, pageSetup: base.pageSetup };
+};
 
 /** 合并后的完整设置(dist 编译产物无类型标注,取 mergeSettingsWithDefaults 的返回形状)。 */
 /** @typedef {ReturnType<typeof mergeSettingsWithDefaults>} AppSettings */
@@ -156,8 +165,16 @@ export async function run() {
   console.log("[ok] validatePresetName:空名/纯空白/同名(trim 比较)/达上限文案/合法 → null 断言通过");
 
   // ---------- customPresetToTemplate ----------
-  const typography = { fontAscii: "Arial", fontEastAsia: "宋体" };
-  const pageSetup = { paper: "A4" };
+  // 契约要的是完整的 TypographySettings / PageSetup,而夹具原先只给一两个字段。
+// 注意保留**原引用**:下面那条断言校验的是 `tpl.typography === typography`(同一对象),
+// 所以这里用「按默认补齐后再覆盖少数字段」,而不是就地散着写两份字面量。
+const presetBase = cloneDefaultSettings();
+const typography = { ...presetBase.typography, fontAscii: "Arial", fontEastAsia: "宋体" };
+// 标注契约类型(非 `any`):`paper: "A4"` 写进新对象字面量时会被拓宽成 `string`,
+// 而 PageSetup["paper"] 是五值联合。此处只补回联合、**值一个不动** ——
+// 下方「原引用映射」断言依赖的仍是同一个 `pageSetup` 对象。
+/** @type {AppSettings["pageSetup"]} */
+const pageSetup = { ...presetBase.pageSetup, paper: "A4" };
   const tpl = customPresetToTemplate({ name: "我的模板", typography, pageSetup });
   assert(
     tpl.id === `${CUSTOM_PRESET_ID_PREFIX}我的模板` &&
@@ -174,9 +191,13 @@ export async function run() {
   for (let i = 0; i < TEMPLATE_PRESETS.length; i++) {
     assert(combined[i] === TEMPLATE_PRESETS[i], "allPresets:硬编码预设应原样在前");
   }
+  // 按下标取值在 noUncheckedIndexedAccess 下是 `T | undefined`,直接 `.id` 会判红。
+  // 用解构 + `?.`:**取不到时 `undefined?.id === 期望` 为 false,断言照样失败** ——
+  // 强度未被削弱,只是不再要求作者先写一遍判空。
+  const [firstCustom, secondCustom] = combined.slice(TEMPLATE_PRESETS.length);
   assert(
-    combined[TEMPLATE_PRESETS.length].id === `${CUSTOM_PRESET_ID_PREFIX}我的模板` &&
-      combined[TEMPLATE_PRESETS.length + 1].id === `${CUSTOM_PRESET_ID_PREFIX}简报二`,
+    firstCustom?.id === `${CUSTOM_PRESET_ID_PREFIX}我的模板` &&
+      secondCustom?.id === `${CUSTOM_PRESET_ID_PREFIX}简报二`,
     "allPresets:自定义项应追加末尾且 id 带 custom: 前缀",
   );
   assert(allPresets([]).length === TEMPLATE_PRESETS.length, "allPresets:空自定义列表 → 仅硬编码内置预设(TEMPLATE_PRESETS.length 项)");
@@ -203,6 +224,12 @@ export async function run() {
   // ---------- resolvePresetSelection(自定义预设不被弹回硬编码项) ----------
   const paperTpl = TEMPLATE_PRESETS.find((p) => p.id === "paper");
   assert(paperTpl, "TEMPLATE_PRESETS 应含 paper(学术论文)预设");
+  // ⚠ 刻意保持只给 `{typography, pageSetup}`:`resolvePresetSelection` 内部只经 `matchesPreset`
+  // 读这些块,补齐其余字段会**改变匹配结果**(实测:补默认后「选中项不一致 → 回退全局匹配
+  // paper」那条判红),即为了让类型通过而悄悄改掉了被测语义。
+  // 入参此后已按此收窄成 `PresetMatchSettings`(`Pick<AppSettings, "typography" | "pageSetup">`
+  // 再叠加四个可选块,见 core/settings/presets.ts,裁决见 ADR-070)—— 本夹具的窄形状正落在
+  // 该类型的合法范围内,故这处「刻意保持窄」仍然必要,不是历史遗留。
   const paperLike = () => ({
     typography: { ...paperTpl.typography },
     pageSetup: { ...paperTpl.pageSetup },
@@ -226,6 +253,7 @@ export async function run() {
     "选中项已不存在 → 回退全局匹配",
   );
   // 4. 无任何匹配 → default
+  // 同上:刻意保持只给这两块,补默认会改变 matchesPreset 的比较结果(见 paperLike 处说明)
   const off = {
     typography: { ...paperTpl.typography, bodySizePt: 99 },
     pageSetup: { ...paperTpl.pageSetup },
@@ -254,17 +282,33 @@ export async function run() {
       "aiCleanup",
       "obsidian",
     ];
-    const defaultsView = /** @type {Record<string, unknown>} */ (DEFAULT_SETTINGS);
-    const cloned = cloneDefaultSettings();
-    const clonedView = /** @type {Record<string, unknown>} */ (cloned);
-    for (const group of GROUP_KEYS) {
-      assert(
-        clonedView[group] !== defaultsView[group],
-        `${group} 应为新建对象,不得与 DEFAULT_SETTINGS 共用引用`,
-      );
-    }
-    const again = cloneDefaultSettings();
-    const againView = /** @type {Record<string, unknown>} */ (again);
+    /**
+ * 按**运行期键名**做「非同一引用」比对用的索引视图。
+ *
+ * ⚠ 这是一次有意的动态索引:`GROUP_KEYS` 是运行时数组,而 `AppSettings` 没有索引签名,
+ * 故必须显式转成索引视图。转换**经 `unknown` 中转**才合法 —— 直接转会被 TS2352 判红
+ * (理由是两个类型「无足够重叠」),这不是可以随手 `as` 掉的噪音,而是 TS 在提醒你这一步
+ * 跨出了静态可知的范围。
+ *
+ * ⚠ 这里**刻意不写第二份 `AppSettings` 形状**:形状的唯一来源是产物声明
+ * (`dist/core/settings/settings-defaults.d.ts`)。测试里再抄一份就又回到了 ADR-069
+ * 要拆的那个错配 —— 跑的是产物、查的是手写副本。
+ */
+/** @param {AppSettings} settings */
+const indexedView = (settings) =>
+  /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (settings));
+
+const defaultsView = indexedView(DEFAULT_SETTINGS);
+const cloned = cloneDefaultSettings();
+const clonedView = indexedView(cloned);
+for (const group of GROUP_KEYS) {
+  assert(
+    clonedView[group] !== defaultsView[group],
+    `${group} 应为新建对象,不得与 DEFAULT_SETTINGS 共用引用`,
+  );
+}
+const again = cloneDefaultSettings();
+const againView = indexedView(again);
     for (const group of GROUP_KEYS) {
       assert(againView[group] !== clonedView[group], `两次调用的 ${group} 互非同一引用`);
     }
@@ -422,6 +466,10 @@ export async function run() {
   );
   let migrationWarning = null;
   let migrationWarningCount = 0;
+  // 标注契约类型(非 `any`):`kind`/`persistence`/`reasons[]` 写在对象字面量里会被拓宽成
+  // `string`/`string[]`,而 AppSettings["migration"] 是字面量联合。此处只把字面量联合补回,
+  // **运行时值与下方「同一 migration 只提示一次」断言完全不变**。
+  /** @type {AppSettings} */
   const migrationLoaded = {
     ...DEFAULT_SETTINGS,
     pageSetup: { ...DEFAULT_SETTINGS.pageSetup, marginBottom: 1000 },
@@ -500,10 +548,22 @@ export async function run() {
     onFailure: () => {},
   });
   // 成功路径:apply 收到 main 权威值(下方断言即校验其字段与控件映射)
-  const successControls = controlValues(/** @type {AppSettings} */ (successApplied));
+  // ⚠ 此前这里是 `controlValues(/** @type {AppSettings} */ (successApplied))` —— 一个**不成立的断言**:
+  // successApplied 的类型是 `AppSettings | null`,把 null 直接断言成 AppSettings 属 TS2352,
+  // 且断言之后 `successApplied.theme` 会落到 `never` 上(前一个条件用 `?.` 已把它收窄成 null)。
+  // 正确写法:先显式判空,并让「为空」这条路径**自己失败**,再取值 —— 断言强度不降反升
+  // (原来 null 会静默走进 `?.` 的 false 分支,现在直接报「apply 未被调用」)。
+  // ⚠ 这里必须经**读取函数**取值(与上方 lastFailure 同一手法):`successApplied` 的赋值
+  // 发生在 `apply` 回调内部,流分析看不到那一次赋值,故直接读时它仍被收窄成初始 `null`;
+  // 再叠加下面的 `!== null` 判空就被压成 `never`,`.format`/`.theme` 随即判红。
+  // 读取函数返回的是**声明类型** `AppSettings | null`,判空后正常收窄为 `AppSettings`。
+  const lastApplied = () => successApplied;
+  const appliedValue = lastApplied();
+  assert(appliedValue !== null, "保存成功时 apply 必须被调用");
+  const successControls = controlValues(appliedValue);
   assert(
-    successSave === "saved" && successApplied?.format === "pdf" &&
-      successControls.format === "pdf" && successApplied.theme === "dark",
+    successSave === "saved" && appliedValue.format === "pdf" &&
+      successControls.format === "pdf" && appliedValue.theme === "dark",
     "保存成功应以 main 权威值回填 state/控件",
   );
   console.log("[ok] reconcileSettingsSave:失败保留草稿不回滚/过期请求让位/成功权威回填断言通过");
@@ -691,8 +751,13 @@ export async function run() {
       name: presetDisplayName(paperPreset),
       groups: "Typography · Numbering",
     });
+    // dictText 的返回是 `string | undefined`(缺键即 undefined)。此处**先判存在再取值**:
+    // 不能用 `?? ""` —— `"x".includes("")` 恒为 true,那会把断言变成永真、等于悄悄删掉它。
+    // 缺键时下面这条 assert 直接失败,与旧写法(`includes` 收到非串参数)同样判红,只是更早更明确。
+    const localizedPaperName = dictText(code, "preset.paper");
+    assert(localizedPaperName !== undefined, `${code}:字典应注册 preset.paper 键`);
     assert(
-      toast.includes(dictText(code, "preset.paper")),
+      toast.includes(localizedPaperName),
       `${code}:套用 toast 应含本语言预设名(实测 ${JSON.stringify(toast)})`,
     );
     if (code === "zh") continue;
@@ -761,7 +826,11 @@ export async function run() {
   console.log("[ok] validateNumberRange:范围内/边界/越界/NaN 断言通过");
 
   // ---------- settingsToControlValues(设置对象 → 控件回填值映射) ----------
-  const customSettings = {
+  // 整对象按 AppSettings 标注(ADR-069:类型面与被测物归一后的直接收益)—— 此前这份夹具
+  // 是裸字面量,`format` / `paper` / `orientation` / `align` / `afterConvert` 全被推成
+  // `string`,而契约要的是各自的字面量并集。指 `src/` 时这层不匹配被推断掩盖,指 `dist/`
+  // 后立刻判红:那正是「测试跑的是产物、类型查的是源码」这个错配被拆穿的样子。
+  const customSettings = /** @type {AppSettings} */ ({
     ...DEFAULT_SETTINGS,
     format: "pdf",
     pageSetup: {
@@ -778,7 +847,7 @@ export async function run() {
     },
     afterConvert: "open",
     outputDir: "C:\\out",
-  };
+  });
   const cv = controlValues(customSettings);
   assert(cv.paper === "A3" && cv.orientation === "landscape", "paper/orientation 映射");
   // 边距四条各自成条目(不再聚成 margins 子表):控件与键一一对应,
@@ -847,7 +916,9 @@ export async function run() {
   // 漏一条(忘记声明)与多一条(声明了却没进映射)都判红
   const table = await import("../../dist/renderer/settings/settings-controls-table.js");
   // dist 为编译产物、元素可空推断出 undefined,故整表取形状一次(放宽理由同 controlValues)
-  const tableRows = /** @type {{ kind: string; key: string }[]} */ (table.controlTable());
+  // dist 为编译产物、整表是只读的(`Object.freeze` 推成 readonly)—— 目标类型也写 readonly,
+  // 否则「可变数组」的目标类型本身不成立,这条 cast 会被判红(不是被测物有问题)
+  const tableRows = /** @type {readonly { kind: string; key: string }[]} */ (table.controlTable());
   const declaredValueKeys = tableRows
     .filter((r) => r.kind === "value")
     .map((r) => r.key)
@@ -886,7 +957,9 @@ export async function run() {
     };
   };
   // 显式 light/dark → 设 data-theme 属性
-  for (const theme of ["light", "dark"]) {
+  // `@type {const}` 断言保住两个字面量(`@type {const}` 是 TS 5.0+ 的 JSDoc 写法):
+  // 裸数组字面量在 for-of 里会被推成 `string[]`,而契约要的是 ThemePreference。
+  for (const theme of /** @type {const} */ (["light", "dark"])) {
     const target = makeTarget();
     applyThemeOn(target, theme);
     const setCall = recordAt(target.calls, 0);

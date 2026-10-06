@@ -21,9 +21,14 @@ import { FIXTURES_DIR } from "../harness/paths.js";
 import { HOST_FS, asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf, prepareForConvert } from "../harness/convert-helpers.js";
 import { docxTocAnchors } from "../harness/dual-extract.js";
 
-/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
- *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
- /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../dist/core/convert.js").ConvertTestOverrides} ConvertTestOverrides */
+/** @typedef {import("../../dist/core/convert.js").ConvertArtifact} Artifact */
+/** @typedef {import("../../dist/core/settings/typography.js").TypographySettings} TypographySettings */
+/**
+ * 本包装 context 实参的类型:ConvertContext 去掉由包装注入的 `fs`(宿主文件系统能力)。
+ * 此前标注 Record<string, unknown>,那把 convert() 真正要求的 `baseDir` 一并吞掉了。
+ * @typedef {Omit<import("../../dist/core/convert.js").ConvertContext, "fs">} Ctx
+ */
 
 /**
  * convert() + 宿主文件系统能力 + 第 4 参显式项覆盖。
@@ -37,11 +42,11 @@ import { docxTocAnchors } from "../harness/dual-extract.js";
  *
  * @param {string} md markdown 源
  * @param {"docx" | "pdf"} format 目标格式
- * @param {Record<string, unknown>} context 转换上下文
- * @param {Record<string, unknown>} overrides 显式项覆盖
- * @returns {Promise<ConvertArtifact>} 产物
+ * @param {Ctx} context 转换上下文(baseDir 等由调用点给全;fs 由包装注入)
+ * @param {ConvertTestOverrides} overrides 显式项覆盖(convert 第 4 参)
+ * @returns {Promise<Artifact>} 产物
  */
-const convertWithOverrides = /** @type {(md: string, format: "docx" | "pdf", context: Record<string, unknown>, overrides: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
+const convertWithOverrides = /** @type {(md: string, format: "docx" | "pdf", context: Ctx, overrides: ConvertTestOverrides) => Promise<Artifact>} */ (
   (md, format, context, overrides) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context }, overrides)
 );
 
@@ -82,7 +87,7 @@ export const meta = { description: "TOC 静态目录 + 图/表题注编号测试
 export const fixtures = { main: mainMd };
 
 export async function run() {
-  const mainDocx = /** @type {ConvertArtifact} */ (
+  const mainDocx = (
     await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const docxXml = await unzipPart(docxBufferOf(mainDocx), "word/document.xml");
@@ -100,7 +105,7 @@ export async function run() {
     throw new Error(`断言失败:静态目录条目缺少指向标题书签的超链接(实得:${mainTocAnchors.join(",")})`);
   }
   // field 模式 → beginDirty:true(Word/WPS 打开弹更新提示并注入真实页码),条目仍指向书签
-  const fieldToc = /** @type {ConvertArtifact} */ (
+  const fieldToc = (
     await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], tocMode: "field" })
   );
   const fieldDoc = await unzipPart(docxBufferOf(fieldToc), "word/document.xml");
@@ -119,14 +124,14 @@ export async function run() {
     throw new Error("断言失败:孤立「图:」行应按普通段落保留原文");
   }
   // 8a-4:toc 关闭 → docx 无 TOC 指令
-  const noToc = /** @type {ConvertArtifact} */ (
+  const noToc = (
     await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: false })
   );
   if ((await unzipPart(docxBufferOf(noToc), "word/document.xml")).includes("TOC")) {
     throw new Error("断言失败:toc:false 时 document.xml 不应含 TOC 指令");
   }
   // 8b-3:captionNumbering 显式关闭(不再借 typography 绕道)→ 题注行按普通段落(原文保留)
-  const noCaption = /** @type {ConvertArtifact} */ (await convertWithOverrides(mainMd, "docx", {
+  const noCaption = (await convertWithOverrides(mainMd, "docx", {
     baseDir: FIXTURES_DIR, warnings: [],
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: true },
   }, { captionNumbering: false }));
@@ -135,7 +140,7 @@ export async function run() {
   }
   console.log("[ok] docx 静态目录 + 题注编号:TOC 免更新/条目超链接/编号注入/孤立行/开关 断言通过");
 
-  const mainPdf = /** @type {ConvertArtifact} */ (
+  const mainPdf = (
     await convertWithFs(mainMd, "pdf", { baseDir: FIXTURES_DIR, title: "题注与目录验收", warnings: [] })
   );
   const mainHtml = pdfHtmlOf(mainPdf);
@@ -155,7 +160,7 @@ export async function run() {
     throw new Error("断言失败:孤立「图:」行不应标记为 fig-caption");
   }
   // 8a-5:toc 关闭 → PDF 无目录
-  const pdfNoToc = /** @type {ConvertArtifact} */ (
+  const pdfNoToc = (
     await convertWithFs(mainMd, "pdf", { baseDir: FIXTURES_DIR, title: "题注与目录验收", warnings: [], toc: false })
   );
   if (pdfHtmlOf(pdfNoToc).includes('class="toc"')) {
@@ -178,7 +183,7 @@ export async function run() {
 
 见 [图](#fig:v) 与 [章节](#sec:s1)。
 `;
-  /** @type {(headingNumbering: boolean, captionNumbering: boolean) => Record<string, unknown>} */
+  /** @type {(headingNumbering: boolean, captionNumbering: boolean) => TypographySettings} */
   const typo = (headingNumbering, captionNumbering) => ({
     ...DEFAULT_TYPOGRAPHY,
     headingNumbering,
@@ -188,15 +193,15 @@ export async function run() {
    * 同一设置上下文 + 同一显式项覆盖下取双格式产物(docx 解包 XML + pdf HTML)。
    * `overrides` 是 convert() 的第 4 参 ConvertTestOverrides,与上下文分开传 ——
    * 生产 ConvertContext 不含这三个字段,借它传会在类型层就被判红。
-   * @param {Record<string, unknown>} context 追加到 ConvertContext 的设置
-   * @param {Record<string, unknown>} overrides 显式项覆盖(headingNumbering / captionNumbering)
+   * @param {Partial<Ctx>} context 追加到 ConvertContext 的设置(baseDir/warnings 由本层补全)
+   * @param {ConvertTestOverrides} overrides 显式项覆盖(headingNumbering / captionNumbering)
    * @returns {Promise<{ docx: string; pdf: string }>} 双格式断言面
    */
   const bothFormats = async (context, overrides) => {
-    const docxArtifact = /** @type {ConvertArtifact} */ (
+    const docxArtifact = (
       await convertWithOverrides(explicitMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], ...context }, overrides)
     );
-    const pdfArtifact = /** @type {ConvertArtifact} */ (
+    const pdfArtifact = (
       await convertWithOverrides(explicitMd, "pdf", { baseDir: FIXTURES_DIR, title: "显式项契约", warnings: [], ...context }, overrides)
     );
     return {

@@ -22,11 +22,10 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { convertWithFs, pdfHtmlOf } from "../harness/convert-helpers.js";
 
-/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
- *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
- /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
- /** 色板条目契约取自 src 单源(HLJS_PALETTE: Record<string, HljsTokenStyle>) */
- /** @typedef {import("../../src/core/style/hljs-palette.js").HljsTokenStyle} HljsTokenStyle */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
+
+ /** 色板条目契约取自产物声明(HLJS_PALETTE: Record<string, HljsTokenStyle>) */
+ /** @typedef {import("../../dist/core/style/hljs-palette.js").HljsTokenStyle} HljsTokenStyle */
 
 // 3 行 ts 代码:关键字/数字/注释(特殊字符)/函数名/内置类型/模板字符串
 const MD_TS =
@@ -127,7 +126,7 @@ export async function run() {
   // 坏语言注册是本用例的触发手段(注册/编译期即抛错),按 hljs 的 Language 契约收窄夹具形状
   hljs.registerLanguage("broken", () => /** @type {import("highlight.js").Language} */ ({ match: "x", begin: /y/ }));
   try {
-    /** @type {unknown[]} */
+    /** @type {ConvertWarning[]} */
     const brokenWarnings = [];
     const brokenBuffer = await renderDocx(parseMarkdown("```broken\nif (a < b) {}\n```\n"), {
       warnings: brokenWarnings,
@@ -151,13 +150,13 @@ export async function run() {
     // 触发手段与 6 相同(注册编译期即抛错的坏语言),故两段的失败路径完全同源。
     const DUPES = 3;
     const dupMd = Array.from({ length: DUPES }, (_, i) => `\`\`\`broken\nconst x${i} = 1;\n\`\`\`\n`).join("\n");
-    /** @type {unknown[]} */
+    /** @type {ConvertWarning[]} */
     const dupDocxWarnings = [];
     await renderDocx(parseMarkdown(dupMd), { warnings: dupDocxWarnings });
     const dupDocxCount = dupDocxWarnings.filter(
       (w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken",
     ).length;
-    /** @type {unknown[]} */
+    /** @type {ConvertWarning[]} */
     const dupPdfWarnings = [];
     await convertWithFs(dupMd, "pdf", { baseDir: ".", warnings: dupPdfWarnings });
     const dupPdfCount = dupPdfWarnings.filter(
@@ -172,16 +171,16 @@ export async function run() {
     // 反向锚点:去重不能吃掉**不同语言**各自的降级 —— 两门坏语言应各报 1 条
     hljs.registerLanguage("broken2", () => /** @type {import("highlight.js").Language} */ ({ match: "x", begin: /y/ }));
     try {
-      /** @type {unknown[]} */
+      /** @type {ConvertWarning[]} */
       const twoLangDocx = [];
       await renderDocx(parseMarkdown("```broken\na\n```\n\n```broken2\nb\n```\n"), { warnings: twoLangDocx });
-      /** @type {unknown[]} */
+      /** @type {ConvertWarning[]} */
       const twoLangPdf = [];
       await convertWithFs("```broken\na\n```\n\n```broken2\nb\n```\n", "pdf", {
         baseDir: ".",
         warnings: twoLangPdf,
       });
-      const countLang = (/** @type {readonly unknown[]} */ ws) =>
+      const countLang = (/** @type {readonly ConvertWarning[]} */ ws) =>
         ws.filter((w) => formatWarning(w).startsWith("代码高亮失败,已降级为纯文本:")).length;
       if (countLang(twoLangDocx) !== 2 || countLang(twoLangPdf) !== 2) {
         throw new Error(
@@ -212,7 +211,7 @@ export async function run() {
     }
   }
   // 7b. pdf 侧 .hljs-* CSS 由同一色板生成(buildHljsCss 产物逐条进模板)
-  const pdfArt = /** @type {ConvertArtifact} */ (await convertWithFs(MD_TS, "pdf", { baseDir: "." }));
+  const pdfArt = (await convertWithFs(MD_TS, "pdf", { baseDir: "." }));
   const hljsCss = buildHljsCss();
   if (!pdfHtmlOf(pdfArt).includes(hljsCss)) {
     throw new Error("code-highlight 断言失败:pdf 模板 CSS 应包含 buildHljsCss 单源生成产物");

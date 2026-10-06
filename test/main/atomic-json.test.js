@@ -18,11 +18,11 @@ import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
 import { removeTree } from "../harness/temp-resource.js";
 
-/* 类型取自 src(真接口所在):dist 不产 .d.ts,interface 在 JS 里被擦除,
-   从 dist 推断只会拿到 defaultJsonWriterDeps 的字面量形状(缺可选依赖面字段),
-   注入 deps 就会被判成多余属性。与 atomic-json-durability.test.js 同一约定。 */
-/** @typedef {import("../../src/main/persist/atomic-json.js").JsonWriterDeps} JsonWriterDeps */
-/** @typedef {import("../../src/main/persist/atomic-json.js").JsonWriter} JsonWriter */
+/* 类型取自 dist 产物声明(ADR-069 起 declaration 已打开,interface 不再在 JS 里被擦除,
+   import 产物即拿到 JsonWriterDeps / JsonWriter 的声明面,不必绕 src)。
+   与 atomic-json-durability.test.js 同一约定。 */
+/** @typedef {import("../../dist/main/persist/atomic-json.js").JsonWriterDeps} JsonWriterDeps */
+/** @typedef {import("../../dist/main/persist/atomic-json.js").JsonWriter} JsonWriter */
 
 const createWriter = /** @type {(deps?: JsonWriterDeps) => JsonWriter} */ (
   /** @type {unknown} */ (createJsonWriter)
@@ -105,8 +105,8 @@ export async function run() {
     // 但不能再调用公开 writer(否则会等待自己)。两个任务交错发起时,第二个
     // 任务必须在第一个提交缓存后读取当前值。
     const mutationFile = path.join(dir, "mutation.json");
-    // dist 产物不带类型标注:enqueue 是 writer 上的附加成员,按实现声明的契约取
-    const mutationWriter = /** @type {import("../../src/main/persist/atomic-json.js").JsonWriter} */ (
+    // enqueue 是 writer 上的附加成员:按产物声明的 JsonWriter 契约取
+    const mutationWriter = /** @type {import("../../dist/main/persist/atomic-json.js").JsonWriter} */ (
       createJsonWriter()
     );
     const current = { left: false, right: false };

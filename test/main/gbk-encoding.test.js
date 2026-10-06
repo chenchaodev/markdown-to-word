@@ -46,12 +46,9 @@ export async function run() {
     await fs.writeFile(gbkMd, iconv.encode(GBK_MD, "gbk"));
 
     const result = await convertImpl(gbkMd, "docx");
-    // 警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案
+    // 警告为 ConvertWarning(含 KeyedWarning 支),断言经 formatWarning 格式化后的最终文案
     assert(
-      // 这里标 any 而非 unknown:formatWarning(w) 形参是具体类型,unknown 传不进去。
-      // 根因是 dist 产物无 .d.ts(见 REQ-089),真正的修法是让 build 出声明文件,
-      // 不是在测试里猜一个类型 —— 猜错反而让这处断言失去类型保护。
-      result.warnings.some((/** @type {any} */ w) => formatWarning(w).includes("已按 GBK 编码读取")),
+      result.warnings.some((w) => formatWarning(w).includes("已按 GBK 编码读取")),
       `warnings 缺少 GBK 警告: ${JSON.stringify(result.warnings)}`,
     );
     const zip = await JSZip.loadAsync(await fs.readFile(result.outputPath));

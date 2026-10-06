@@ -20,9 +20,8 @@ import path from "node:path";
 import { FIXTURES_DIR, KATEX_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../harness/convert-helpers.js";
 
-/** 产物契约类型取自 src 单源:dist 是 tsc 产物、无类型标注,其 convert() 返回值里
- *  kind 被拓宽为 string,不能直接作为收窄 helper 的入参。 */
- /** @typedef {import("../../src/core/convert.js").ConvertArtifact} ConvertArtifact */
+/** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
+
 
 /** 主样例:行内/分式/上下标/开方公式(gen-fixtures 落盘为 docs/formula.md) */
 const formulaMd = `# 公式测试
@@ -51,7 +50,7 @@ export const fixtures = { main: formulaMd, degrade: degradeMd };
 
 export async function run() {
   const katexDir = KATEX_DIR;
-  const formulaDocx = /** @type {ConvertArtifact} */ (
+  const formulaDocx = (
     await convertWithFs(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], katexDir })
   );
   const formulaDocument = await unzipPart(docxBufferOf(formulaDocx), "word/document.xml");
@@ -73,7 +72,7 @@ export async function run() {
   }
   console.log("[ok] docx 公式:m:oMath 与 分式/行内上下标/开方/display 求和 序列化齐全");
 
-  const formulaPdf = /** @type {ConvertArtifact} */ (await convertWithFs(formulaMd, "pdf", {
+  const formulaPdf = (await convertWithFs(formulaMd, "pdf", {
     baseDir: FIXTURES_DIR, title: "公式测试", warnings: [], katexDir,
   }));
   const formulaHtml = pdfHtmlOf(formulaPdf);
@@ -95,9 +94,9 @@ export async function run() {
   // (KaTeX 无障碍注解,非可见文本),故不可用「不含 \frac{1}{2}」作断言。
   const containerMd =
     "- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n\n> $$\n> \\frac{1}{2}\n> $$\n";
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const containerWarnings = [];
-  const containerPdf = /** @type {ConvertArtifact} */ (
+  const containerPdf = (
     await convertWithFs(containerMd, "pdf", {
       baseDir: FIXTURES_DIR,
       title: "容器内公式",
@@ -130,9 +129,9 @@ export async function run() {
   // 依据(dist/core/pdf/katex-css.ts):katexDir 无效时 readFileSync 抛错 → catch 返回 ""
   // 并经 warnings 通道上报 warn.katexCssLoadFailed(失败可见性,此前静默)。
   // renderPdfHtml 不抛错;公式仍渲染为 KaTeX HTML(仅缺字体样式)。
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const badKatexWarnings = [];
-  const badKatexPdf = /** @type {ConvertArtifact} */ (await convertWithFs(formulaMd, "pdf", {
+  const badKatexPdf = (await convertWithFs(formulaMd, "pdf", {
     baseDir: FIXTURES_DIR,
     title: "公式测试",
     warnings: badKatexWarnings,
@@ -160,7 +159,7 @@ export async function run() {
     throw new Error("公式断言失败:loadKatexCss 未走注入 read(无效 katexDir 应产出注入内容而非空串)");
   }
   // 注入 read 自身失败 → 与 fs 失败同通道:空串 + warn.katexCssLoadFailed(不回落真实 fs)
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const injectWarnings = [];
   const injectFailed = loadKatexCss(KATEX_DIR, injectWarnings, {
     read: () => {
@@ -181,9 +180,9 @@ export async function run() {
   // renderBlock case "math" / pushRuns case "inlineMath")渲染为 TextRun 等宽灰字
   // (CODE_FONT=Consolas,color 888888)并追加警告「公式解析失败,降级为 TeX 源码: …」,
   // 不产出 m:oMath(整式降级,不混排)。失败样例:未闭合分组 \frac{1}{。
-  /** @type {unknown[]} */
+  /** @type {ConvertWarning[]} */
   const degradeWarnings = [];
-  const degradeDocx = /** @type {ConvertArtifact} */ (
+  const degradeDocx = (
     await convertWithFs(degradeMd, "docx", { baseDir: FIXTURES_DIR, warnings: degradeWarnings })
   );
   const degradeDocument = await unzipPart(docxBufferOf(degradeDocx), "word/document.xml");
@@ -229,7 +228,7 @@ $$
 \\bigcup_{i=1}^{n} A_i
 $$
 `;
-  const fallbackDocx = /** @type {ConvertArtifact} */ (
+  const fallbackDocx = (
     await convertWithFs(fallbackMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const fallbackDocument = await unzipPart(docxBufferOf(fallbackDocx), "word/document.xml");
