@@ -234,7 +234,7 @@ const MATRIX = [
     docxExtract: "document.xml 无 `title:`/`author:` 原文行;metadata.title 走封面",
     pdfExtract: "HTML 无 `title:`/`author:` 原文行;metadata.title 走封面",
     anchors: [
-      "src/core/convert.ts:160(先剥离,渲染只吃 body)",
+      "src/core/convert.ts:87(先剥离,渲染只吃 body)",
       "src/core/pipeline/frontmatter.ts:53",
       "src/core/docx/render.ts:215(封面页)",
       "src/core/pdf/template.ts:153(封面 + page-break)",
