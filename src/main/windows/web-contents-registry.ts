@@ -3,14 +3,14 @@
  * IPC handler 原子占用,convert:cancel 与主窗关闭共享当前操作;释放使用 token
  * compare-and-delete,旧任务不得删除后继操作。
  */
-import type { ConvertContext } from "../converter/index.js";
+import type { ConversionHandle } from "../converter/index.js";
 
 export type WebContentsOperationKind = "single" | "batch" | "merge" | "precheck";
 
 export interface WebContentsOperation {
   token: symbol;
   kind: WebContentsOperationKind;
-  context: ConvertContext;
+  context: ConversionHandle;
 }
 
 const operationsByWebContents = new Map<number, WebContentsOperation>();
@@ -23,7 +23,7 @@ const operationsByWebContents = new Map<number, WebContentsOperation>();
 export function beginWebContentsOperation(
   webContentsId: number,
   kind: WebContentsOperationKind,
-  context: ConvertContext,
+  context: ConversionHandle,
 ): symbol | null {
   if (operationsByWebContents.has(webContentsId)) return null;
   const token = Symbol(kind);

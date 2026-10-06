@@ -34,13 +34,8 @@ import type { MermaidResolver } from "../core/markdown/mermaid.js";
 import type { AppSettings } from "../core/settings/settings-defaults.js";
 import { commitArtifact, type CommitArtifactOptions } from "./artifact-writer.js";
 import { resolveOutputPath, stripMarkdownExt } from "./paths.js";
-import {
-  buildConvertContext,
-  ConvertCanceledError,
-  getImageResolver,
-  throwIfCanceled,
-  type ConvertContext,
-} from "./context.js";
+import { ConvertCanceledError, throwIfCanceled, type ConversionHandle } from "./cancellation.js";
+import { buildConvertContext, getImageResolver } from "./context.js";
 
 /** 骨架的文档面入参:一段 markdown + 来源路径 + 可选基名 + 解析基准目录/可信根 */
 export interface OutputSkeletonDoc {
@@ -84,7 +79,7 @@ type CommitOptions = CommitArtifactOptions;
 export type PdfPrinter = (
   artifact: PdfArtifact,
   preferredPath: string,
-  ctx: ConvertContext,
+  ctx: ConversionHandle,
   onStage?: (stage: string) => void,
   /** 落盘提交选项(取消闸门 + 重名避让开关);宿主实现必须原样透传给 commitArtifact,
    *  否则装配层的 pinOutputPath 语义在 pdf 路径上失效(禁避让只对 docx 生效)。 */
@@ -96,7 +91,7 @@ export interface OutputSkeletonRun {
   format: ConvertFormat;
   settings: AppSettings;
   /** 取消上下文:signal/deadline 透传 core;两道闸门与导出后行为的复查都读它 */
-  ctx: ConvertContext;
+  ctx: ConversionHandle;
   /** 警告收集器(与调用方共享同一数组,返回值即它;准备期 warning 由调用方先写入) */
   warnings: ConvertWarning[];
   /** 公式资源目录(pdf 用;docx 走 MathML 不需要) */
@@ -217,7 +212,7 @@ export async function persistArtifact(
   sourcePath: string,
   format: ConvertFormat,
   outputDir: string,
-  ctx: ConvertContext,
+  ctx: ConversionHandle,
   onProgress?: (stage: string) => void,
   baseName?: string,
   printPdf?: PdfPrinter,

@@ -48,11 +48,11 @@ function assert(cond, msg) {
 const POLL = 100;
 
 /**
- * 假转换上下文:装配层 ConvertContext 的真形状(cancelRequested 只读标志 +
+ * 假转换上下文:装配层 ConversionHandle 的真形状(cancelRequested 只读标志 +
  * cancel() 置位 + signal)。取消**次数**不进 ctx —— 契约没有这个字段 ——
  * 需要计数时由调用侧自备计数器(见 caseCancels),读数走闭包而非属性,
  * 顺带避开「assert 收窄字面量后再比较无交集」那类误报。
- * @returns {import("../../dist/main/converter/index.js").ConvertContext} 假转换上下文
+ * @returns {import("../../dist/main/converter/index.js").ConversionHandle} 假转换上下文
  */
 function fakeConvertCtx() {
   const controller = new AbortController();

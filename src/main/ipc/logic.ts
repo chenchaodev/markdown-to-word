@@ -13,7 +13,7 @@ import type { CustomPreset } from "../../core/settings/settings-defaults.js";
 import type { OperationBusyResult, PrecheckResult, RecentFile } from "../../core/ipc-contract.js";
 import type { ConvertWarning, KeyedWarning } from "../../core/i18n/index.js";
 import { mergePresets, parsePresetsFile } from "../persist/preset-file.js";
-import type { ConvertContext } from "../converter/index.js";
+import type { ConversionHandle } from "../converter/index.js";
 import { stripMarkdownExt } from "../../convert/paths.js";
 import { errorMessage } from "../../core/text/error-message.js";
 
@@ -47,9 +47,9 @@ export function compareVersions(a: string, b: string): number {
 /** runConvertTask 的环境依赖(由 register.ts 注入真实实现,测试注入 mock)。 */
 export interface ConvertTaskDeps {
   /** 新建转换 context(每次调用新建,取消标志不复用)。 */
-  createContext: () => ConvertContext;
+  createContext: () => ConversionHandle;
   /** 按 key 原子注册 context;返回 false 表示已有活动操作。 */
-  registerCtx: (ctx: ConvertContext) => boolean;
+  registerCtx: (ctx: ConversionHandle) => boolean;
   /** compare-and-delete 注销本任务 token(finally 路径)。 */
   unregisterCtx: () => void;
   /** 取消错误判定(register.ts:err instanceof ConvertCanceledError)。 */
@@ -126,7 +126,7 @@ export function normalizePrecheckOutcome(outcome: PrecheckOutcome): PrecheckResu
 
 export async function runConvertTask<T>(
   deps: ConvertTaskDeps,
-  task: (ctx: ConvertContext) => Promise<T>,
+  task: (ctx: ConversionHandle) => Promise<T>,
   onCanceled: () => T | { ok: false; error: string },
   onBusy: () => T | BusyResult,
 ): Promise<T | BusyResult | { ok: false; error: string }> {

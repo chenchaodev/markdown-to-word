@@ -9,7 +9,8 @@ import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { BatchItem, BatchProgressInfo, BatchResult } from "../../core/ipc-contract.js";
 import { loadSettings } from "../persist/settings.js";
-import { createConvertContext, type ConvertContext } from "../../convert/context.js";
+import type { ConversionHandle } from "../../convert/cancellation.js";
+import { createConvertContext } from "../../convert/context.js";
 import { isConversionCanceled } from "../../core/cancel.js";
 import { convertImpl, runAfterConvert } from "./single.js";
 
@@ -39,7 +40,7 @@ export async function batchConvertImpl(
   files: string[],
   format: ConvertFormat,
   onProgress?: (info: BatchProgressInfo) => void,
-  ctx: ConvertContext = createConvertContext(),
+  ctx: ConversionHandle = createConvertContext(),
   katexDir?: string,
 ): Promise<BatchResult> {
   if (files.length > MAX_BATCH_FILES) {
@@ -47,7 +48,7 @@ export async function batchConvertImpl(
   }
   // 深拷贝:loadSettings 返回模块级缓存对象本体,直接沿用会让批次中途的设置改写渗入本批次
   const settingsSnapshot = structuredClone(loadSettings());
-  const batchCtx: ConvertContext = {
+  const batchCtx: ConversionHandle = {
     get cancelRequested() {
       return ctx.cancelRequested;
     },

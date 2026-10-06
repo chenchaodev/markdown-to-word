@@ -45,7 +45,7 @@ import {
   createConvertContext,
   filterExistingPaths,
   mergeConvertImpl,
-  type ConvertContext,
+  type ConversionHandle,
   type ConvertResult,
 } from "../converter/index.js";
 // 取消判定按错误码单源(ERR_CONVERSION_CANCELLED,core/cancel.ts):main 层的
@@ -90,7 +90,7 @@ const REPO_SLUG = "chenchaodev/markdown-to-word";
 async function runWithCtx<T>(
   event: Electron.IpcMainInvokeEvent,
   kind: WebContentsOperationKind,
-  fn: (ctx: ConvertContext, win: BrowserWindow | null) => Promise<T>,
+  fn: (ctx: ConversionHandle, win: BrowserWindow | null) => Promise<T>,
   onCanceled: () => T | { ok: false; error: string },
   onBusy: () => T | BusyResult,
 ): Promise<T | BusyResult | { ok: false; error: string }> {

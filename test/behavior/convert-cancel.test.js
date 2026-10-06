@@ -25,7 +25,7 @@ import {
   convertImpl,
   createConvertContext,
 } from "../../dist/main/converter/index.js";
-import { ConvertCanceledError } from "../../dist/convert/context.js";
+import { ConvertCanceledError } from "../../dist/convert/cancellation.js";
 import { isConversionCanceled } from "../../dist/core/cancel.js";
 import { backupSettings } from "../harness/settings.js";
 import { removeTree } from "../harness/temp-resource.js";

@@ -21,11 +21,8 @@ import { mergeMarkdowns } from "../../core/pipeline/merge.js";
 // 刻意不在本步改 mergeMarkdowns 的返回形状(那会牵动 core 合并纯逻辑与其测试段)。
 import { parseFrontmatter } from "../../core/pipeline/frontmatter.js";
 import { loadSettings } from "../persist/settings.js";
-import {
-  createConvertContext,
-  throwIfCanceled,
-  type ConvertContext,
-} from "../../convert/context.js";
+import { throwIfCanceled, type ConversionHandle } from "../../convert/cancellation.js";
+import { createConvertContext } from "../../convert/context.js";
 import { stripMarkdownExt } from "../../convert/paths.js";
 import { prepareMarkdown } from "../../convert/preprocess.js";
 import { emitConvertedArtifact } from "../../convert/run.js";
@@ -111,7 +108,7 @@ export async function mergeConvertImpl(
   files: string[],
   format: ConvertFormat,
   onProgress?: (stage: string) => void,
-  ctx: ConvertContext = createConvertContext(),
+  ctx: ConversionHandle = createConvertContext(),
   katexDir?: string,
   metadata?: DocMetadata,
 ): Promise<ConvertResult> {

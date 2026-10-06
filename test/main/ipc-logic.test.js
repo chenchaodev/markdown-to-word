@@ -60,8 +60,8 @@ import {
 /** @typedef {import("../../dist/main/ipc/logic.js").ImportPresetsMergeResult} ImportPresetsMergeResult */
 /** keyed 警告(带 params 的那一支) */
 /** @typedef {import("../../dist/core/i18n/index.js").KeyedWarning} KeyedWarning */
-/** 转换上下文(契约单源:装配层 ConvertContext,经桶导出) */
-/** @typedef {import("../../dist/main/converter/index.js").ConvertContext} ConvertContext */
+/** 转换上下文(契约单源:装配层 ConversionHandle,经桶导出) */
+/** @typedef {import("../../dist/main/converter/index.js").ConversionHandle} ConversionHandle */
 /** runConvertTask 的注入依赖(契约单源) */
 /** @typedef {import("../../dist/main/ipc/logic.js").ConvertTaskDeps} ConvertTaskDeps */
 /** busy 结果(契约单源) */
@@ -70,11 +70,11 @@ import {
 /** @typedef {import("../../dist/main/ipc/logic.js").PrecheckOutcome} PrecheckOutcome */
 
 /**
- * 假转换上下文:装配层 ConvertContext 的真形状(cancelRequested 只读标志 +
+ * 假转换上下文:装配层 ConversionHandle 的真形状(cancelRequested 只读标志 +
  * cancel() 置位 + signal),供 runConvertTask / webContents 注册表的注入面使用。
  * 不再额外挂 `id` 之类测试专用字段 —— 「ctx 每次新建不复用」改由对象引用
  * 本身区分(见 makeDeps 的 refs 数组),免得夹具比契约多出字段。
- * @returns {ConvertContext} 假转换上下文
+ * @returns {ConversionHandle} 假转换上下文
  */
 function fakeConvertCtx() {
   const controller = new AbortController();
@@ -242,14 +242,14 @@ export async function run() {
    * @param {{ canceledErrors?: unknown[] }} [options] 视为「取消错误」的异常实例集合
    * @returns {{
    *   log: (string | number)[][],
-   *   refs: ConvertContext[],
+   *   refs: ConversionHandle[],
    *   deps: ConvertTaskDeps,
    * }} 事件记录 + 已新建 ctx 引用序列 + 注入依赖
    */
   function makeDeps({ canceledErrors = [] } = {}) {
     const log = /** @type {(string | number)[][]} */ ([]);
     /** 新建序 → ctx 引用:「每次新建不复用」断言靠引用可辨(不靠夹具自造字段) */
-    const refs = /** @type {ConvertContext[]} */ ([]);
+    const refs = /** @type {ConversionHandle[]} */ ([]);
     return {
       log,
       refs,
@@ -408,7 +408,7 @@ export async function run() {
   console.log("[ok] busy 形状单源 + 预检三出口归一(数组透传/busy 稳定/异常可观察) 断言通过");
 
   // ---------- webContents operation registry ----------
-  // 三个 ctx 均按 ConvertContext 真形状构造(不再挂 id/canceled 等契约外字段);
+  // 三个 ctx 均按 ConversionHandle 真形状构造(不再挂 id/canceled 等契约外字段);
   // 「cancel 指向当前操作」改看契约自带的 cancelRequested 标志。
   const firstCtx = fakeConvertCtx();
   const firstToken = beginWebContentsOperation(7001, "single", firstCtx);

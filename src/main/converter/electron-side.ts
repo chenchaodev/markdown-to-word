@@ -21,7 +21,7 @@ import { buildBookmarkTree, injectBookmarks, pageNumbersForNames, type PdfHeadin
 import { setPdfMetadata } from "../../core/pdf/metadata.js";
 import { extractHeadings, injectTocPageNumbers } from "../../core/pdf/postprocess.js";
 import { commitArtifact, type CommitArtifactOptions } from "../../convert/artifact-writer.js";
-import { throwIfCanceled, type ConvertContext } from "../../convert/context.js";
+import { throwIfCanceled, type ConversionHandle } from "../../convert/cancellation.js";
 import type { PdfPrinter } from "../../convert/run.js";
 import type { AppSettings } from "../persist/settings.js";
 import { hardenWebContents } from "../services/web-hardening.js";
@@ -51,7 +51,7 @@ function resolvePdfHeadings(artifact: PdfArtifact): PdfHeading[] {
 export const renderPdf: PdfPrinter = async (
   artifact: PdfArtifact,
   preferredPath: string,
-  ctx: ConvertContext,
+  ctx: ConversionHandle,
   onStage?: (stage: string) => void,
   commit?: CommitArtifactOptions,
 ): Promise<string> => {
@@ -133,7 +133,7 @@ export const renderPdf: PdfPrinter = async (
 export async function runAfterConvert(
   action: AppSettings["afterConvert"],
   outputPath: string,
-  ctx?: ConvertContext,
+  ctx?: ConversionHandle,
 ): Promise<void> {
   if (action === "none") return;
   if (ctx?.cancelRequested) return; // 取消闸门:最后一刻复查,取消后不打开产物

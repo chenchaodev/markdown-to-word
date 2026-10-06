@@ -45,9 +45,9 @@ function assert(cond, msg) {
 const fakeEvent = { sender: { id: -999999 } };
 
 /**
- * 假转换上下文:装配层 ConvertContext 的真形状(cancelRequested 只读标志 +
+ * 假转换上下文:装配层 ConversionHandle 的真形状(cancelRequested 只读标志 +
  * cancel() 置位 + signal),供本段手工预占 webContents 注册表。
- * @returns {import("../../dist/main/converter/index.js").ConvertContext} 假转换上下文
+ * @returns {import("../../dist/main/converter/index.js").ConversionHandle} 假转换上下文
  */
 function fakeConvertCtx() {
   const controller = new AbortController();

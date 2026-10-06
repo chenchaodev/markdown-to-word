@@ -15,7 +15,8 @@ import type { ConvertWarning } from "../../core/i18n/index.js";
 import { t } from "../../core/i18n/index.js";
 import { loadSettings, type AppSettings } from "../persist/settings.js";
 import { MARKDOWN_EXT_RE } from "../../convert/paths.js";
-import { createConvertContext, throwIfCanceled, type ConvertContext } from "../../convert/context.js";
+import { throwIfCanceled, type ConversionHandle } from "../../convert/cancellation.js";
+import { createConvertContext } from "../../convert/context.js";
 import { prepareMarkdown } from "../../convert/preprocess.js";
 import { emitConvertedArtifact } from "../../convert/run.js";
 import { renderMermaidStrict } from "../services/mermaid-service.js";
@@ -30,7 +31,7 @@ export { renderPdf, runAfterConvert } from "./electron-side.js";
  * 转换实现:读取 md → core 注册表渲染 → 落盘(同目录同名换扩展名)。
  * 纯函数便于冒烟自测与未来 CLI 复用;进度经 onProgress 上报。
  * pdf 链路:core 产出 HTML → 写临时文件 → 隐藏窗口 loadFile → printToPDF。
- * 取消:ctx 默认新建(「取消后复位」语义);skipAfterConvert 经 ctx 携带(见 ConvertContext)。
+ * 取消:ctx 默认新建(「取消后复位」语义);skipAfterConvert 经 ctx 携带(见 ConversionHandle)。
  * ctx 的 signal/deadline 透传给 core(见 buildConvertContext 的 convert 入参):渲染层各
  * 检查点与图片/图表回调都能感知取消,不必等整篇渲染结束;渲染期抛出的 core 取消错误在
  * 装配层归一为 ConvertCanceledError(main 面取消判定只认本层类型,与 merge 同构)。
@@ -41,7 +42,7 @@ export async function convertImpl(
   filePath: string,
   format: ConvertFormat,
   onProgress?: (stage: string) => void,
-  ctx: ConvertContext = createConvertContext(),
+  ctx: ConversionHandle = createConvertContext(),
   katexDir?: string,
   settingsSnapshot?: AppSettings,
 ): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
