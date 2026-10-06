@@ -261,7 +261,13 @@ export const LAYER_RULES = Object.freeze([
     // `npm run check:boundary` 即得,不必在注释里复述边数。
     // ⚠ 边数与「几对双向」随源码增删 import 漂移(旧注释里的数字已与实测不符),
     // 要重新取当前值跑下面这条普查(输出:`功能目录间 N 条目录边、M 对双向;dom/ 与 state/ 出边 0 条`):
-    //   node -e "const{readdirSync,readFileSync,existsSync:f}=require('node:fs'),path=require('node:path');const R='src/renderer',F=['convert','settings','ui','wizard'],B=['dom','state'];const w=(d,a=[])=>{for(const e of readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);e.isDirectory()?w(p,a):/\.(ts|cts|mts)$/.test(e.name)&&a.push(p)}return a};const E=new Set();for(const x of w(R))for(const m of readFileSync(x,'utf8').matchAll(/(?:^|[^\w$])from\s+[\"'](\.[^\"']+)[\"']/g)){let a=path.resolve(path.dirname(x),m[1]),y=path.extname(a);y&&(a=a.slice(0,-y.length));const h=[a+'.ts',a+'.js',a+'.cts',path.join(a,'index.ts')].find(f);if(!h)continue;const r=path.relative(R,h).split(path.sep);r[0]!=='..'&&E.add(path.relative(R,x).split(path.sep).slice(0,-1).join('/')+' -> '+r[0])}const fe=[...E].filter(e=>{const[p,q]=e.split(' -> ');return F.includes(p)&&F.includes(q)});let bi=0;for(let i=0;i<F.length;i++)for(let j=i+1;j<F.length;j++)E.has(F[i]+' -> '+F[j])&&E.has(F[j]+' -> '+F[i])&&bi++;console.log('功能目录间 '+fe.length+' 条目录边、'+bi+' 对双向;dom/ 与 state/ 出边 '+[...E].filter(e=>B.includes(e.split(' -> ')[0])).length+' 条')"
+    //   node -e "const{readdirSync,readFileSync,existsSync:f}=require('node:fs'),path=require('node:path');const R='src/renderer',F=['convert','settings','ui','wizard'],B=['dom','state'];const w=(d,a=[])=>{for(const e of readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);e.isDirectory()?w(p,a):/\.(ts|cts|mts)$/.test(e.name)&&a.push(p)}return a};const E=new Set();for(const x of w(R))for(const m of readFileSync(x,'utf8').matchAll(/(?:^|[^\w$])from\s+[\"'](\.[^\"']+)[\"']/g)){let a=path.resolve(path.dirname(x),m[1]),y=path.extname(a);y&&(a=a.slice(0,-y.length));const h=[a+'.ts',a+'.js',a+'.cts',path.join(a,'index.ts')].find(f);if(!h)continue;const r=path.relative(R,h).split(path.sep);r[0]!=='..'&&E.add(path.relative(R,x).split(path.sep)[0]+' -> '+r[0])}const fe=[...E].filter(e=>{const[p,q]=e.split(' -> ');return F.includes(p)&&F.includes(q)&&p!==q});let bi=0;for(let i=0;i<F.length;i++)for(let j=i+1;j<F.length;j++)E.has(F[i]+' -> '+F[j])&&E.has(F[j]+' -> '+F[i])&&bi++;console.log('功能目录间 '+fe.length+' 条目录边、'+bi+' 对双向;dom/ 与 state/ 出边 '+[...E].filter(e=>B.includes(e.split(' -> ')[0])).length+' 条')"
+    // ⚠ 这条命令的 from 侧必须取 `split(path.sep)[0]`(功能**根**目录名),不能取 `.slice(0,-1)`
+    // (父目录链):后者会把 `convert/events/*.ts` 算成 `convert/events` 而非 `convert`,
+    // 于是漏记 `convert → settings` 与 `convert → wizard` 两条边、并把 `convert → convert`
+    // 这类 feature 内部边误计为 feature 边(自报 13 边/3 对,其中 4 条是自环;按根目录折叠
+    // 重算是 11 边/5 对)。故 filter 里那条 `p!==q` 不是冗余,是去掉自环的那一步。
+    // 教训:改正令时**连带改正它旁边写的数字**(若两侧都有),否则下一个读者仍读到旧值。
     // 它守住的是两条语义:pure.ts「零 DOM 依赖」与 refs.ts「无业务知识」;一旦反向
     // 依赖,这两条不变量就名存实亡(比如 refs 里塞进设置项判断)。
     forbid: 'prefix:../convert/,../settings/,../ui/,../wizard/',
@@ -283,8 +289,15 @@ export const LAYER_RULES = Object.freeze([
   //
   // **为什么只钉「某条边不存在」而不钉方向**:实测 core/ 内部子目录的运行期依赖图
   // 几乎是一片 DAG(docx 与 pdf 之间唯一一条边是 type-only,image/text/style/settings 是
-  // 叶子),唯一的运行期环是 markdown ⇄ pipeline,且成因是**一个文件放错目录**
-  // (ai-cleanup 是「解析之后的变换」,却住在 markdown/ 里)。既然图本身近乎无环,
+  // 叶子),唯一像环的地方是 markdown ⇄ pipeline,但那是**目录级** 2 环 —— 两侧引用的文件集
+  // **不相交**(`ai-cleanup` → `pipeline/{frontmatter,parse}`,而 `pipeline/parse` →
+  // `markdown/{comment,slug,cross-ref,table-width}`,后者都不引 `ai-cleanup`),故文件粒度
+  // 无环,它要防的只是**一个文件放错目录**(ai-cleanup 是「解析之后的变换」却住在 markdown/)。
+  // ⚠ 别把它说成「唯一的运行期环」:src 唯一的**文件级**运行期环在 `core/i18n/` 四文件
+  // (`index`/`t`/`dom`/`warning`,全值边),由 ADR-064「已知边界」节论证过为何当前安全、
+  // 为何不拆(拆 `registry.ts` 反而把「键集唯一事实源」散成两处)。本组四条目录准入判据与那个
+  // 环无关,不要拿「存在环」当它们转正的理由。
+  // 既然图本身近乎无环,
   // 「A 不得依赖 B」这种方向规则就为它并不存在的病开药 —— 每一加就红。对照 renderer/:
   // 那边功能目录之间有向边密布(还夹着若干对双向),所以那边才只能约束基础层
   // (renderer-foundation;当前边数取它跑 `LAYER_RULES` 里那条规则上方注明的普查命令)。
@@ -305,7 +318,8 @@ export const LAYER_RULES = Object.freeze([
     reason: 'core/markdown/ 只放 markdown 语义原语(slug / cross-ref / comment / 表格宽度 / '
       + 'source-ranges 等),「解析之后」的那一步归 pipeline/。两者的唯一反向边是 '
       + 'markdown/ai-cleanup.ts 对 pipeline/{frontmatter,parse} 的 2 条 import —— 它是'
-      + '解析之后的变换却住在 markdown/ 里,是 core 内唯一的运行期环;这条边不该存在,'
+      + '解析之后的变换却住在 markdown/ 里,是 core 内唯一的**目录级** 2 环(文件粒度两侧引用集'
+      + '不相交,故无文件级环;src 唯一的文件级运行期环在 core/i18n/ 四文件,与本条无关);这条边不该存在,'
       + '而不是「该换个方向」',
   },
   // 本条**不带** pending(ADR-064 T2 步 2 转正):T2 把图片请求级守卫从 core/cancel.ts
