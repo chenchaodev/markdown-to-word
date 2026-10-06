@@ -105,7 +105,7 @@
     },
     {
       "segment": "test/main/settings.test.js",
-      "specifier": "dist/core/settings/settings-schema.js",
+      "specifier": "dist/core/settings/schema.js",
       "reason": "PERSISTED_KEYS / SETTINGS_SCHEMA / SHAPE_CHECKED_ENTRIES 等是契约单源,本段断言「main 写盘的键集与 schema 一致」—— 取 schema 本身就是该断言的对照物,不是顺带借用。"
     },
     {

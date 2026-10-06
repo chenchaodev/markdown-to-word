@@ -2,10 +2,15 @@
 /**
  * renderer 段共用 DOM stub(dist renderer 模块在 Node 段直接 import,需要一个最小 DOM)。
  *
- * 跨段共享约定(与 convert-command-lock 段同款):dist 模块在一个进程内只 import 一次,
- * dom/refs 的元素解析发生在首个 import 段;后跑的段若自建 document,拿到的将是另一批
- * 元素,监听器/断言都对不上。故元素表与 window 监听器表挂在
+ * 复用约定(作用域 = **单个段内**):dist renderer 模块在一个进程内只 import 一次,
+ * dom/refs 的元素解析发生在该进程第一次 import 时;同一段里若后续用例再自建
+ * document,拿到的将是另一批元素,监听器/断言都对不上。故元素表与 window 监听器表挂在
  * globalThis.__m2wRendererDomStub 上复用,getElementById 始终命中同一批实例。
+ *
+ * ⚠️ 这层复用**不是**跨段的:验收模型是每段一个独立 Electron 子进程(adr-015,
+ * test/harness/runner.js 派生 segment-host.mjs),各段 globalThis 互不可见,
+ * 「前序段留下的 host」在现行模型下不存在。同一段内多次调用 installDomStub 才是
+ * 复用键真正生效的场景(同一进程内模块缓存已固定,重建 document 只会产出另一批实例)。
  *
  * 元素工厂接口保持与既有段兼容(listener 单类型单槽),另加本段需要的
  * children / attributes / remove / isConnected / fire 等钩子。
@@ -23,7 +28,7 @@
  */
 
 /**
- * 读全局槽位(如 document / window / 跨段共享宿主)。
+ * 读全局槽位(如 document / window / 段内共享宿主)。
  *
  * 放宽理由:Node 段以最小 stub 顶替浏览器全局,stub 只实现被测路径触及的成员,
  * 完整 DOM 全局契约由浏览器提供;这些键也不在 lib.dom 的 Window 类型上,
@@ -331,7 +336,7 @@ export function installDomStub({
 } = {}) {
   const originalDocument = globalSlot("document");
   const originalWindow = globalSlot("window");
-  // 前序段可能已建 host(且未带 created 流水)——按需补齐,共享同一实例
+  // 同段内先前那次 installDomStub 可能已建 host(且未带 created 流水)——按需补齐,共享同一实例
   const existing = globalSlot("__m2wRendererDomStub");
   /** @type {DomStubHost} */
   const host = /** @type {DomStubHost} */ (existing ?? {
@@ -352,7 +357,7 @@ export function installDomStub({
   let currentActive = /** @type {StubElement} */ (activeElement ?? host.elements.get("__active__") ?? null);
 
   /**
-   * 给元素装上「真的落焦」的 focus()。跨段共享的元素表里可能已有前序段造的
+   * 给元素装上「真的落焦」的 focus()。段内共享的元素表里可能已有上一次安装造的
    * 元素(其 focus 是空操作),故对存量元素一并补装。
    * ⚠️ 直接用导出的 makeElement 造的元素不在元素表里、拿不到这层装配 ——
    * 段内自造的探针元素若也要参与焦点断言,须显式过一次本函数。

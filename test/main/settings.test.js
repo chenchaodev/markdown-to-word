@@ -52,7 +52,7 @@ import {
   PERSISTED_KEYS,
   SETTINGS_SCHEMA,
   SHAPE_CHECKED_ENTRIES,
-} from "../../dist/core/settings/settings-schema.js";
+} from "../../dist/core/settings/schema.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 

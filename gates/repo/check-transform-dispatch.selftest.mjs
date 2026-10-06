@@ -91,7 +91,7 @@ const CASES = [
     mutate: ({ src }) => {
       writeUnder(src, 'core/i18n/zh-CN.ts', 'export const settings = { aiCleanup: "x" };\n');
       writeUnder(src, 'core/settings/settings-defaults.ts', 'export const obsidian = 1;\n');
-      writeUnder(src, 'core/settings/settings-schema.ts', 'export const aiCleanup = 1;\n');
+      writeUnder(src, 'core/settings/schema.ts', 'export const aiCleanup = 1;\n');
     },
     expect: null,
   },

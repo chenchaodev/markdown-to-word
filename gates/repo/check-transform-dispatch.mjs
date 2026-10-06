@@ -56,7 +56,7 @@ export const EXPECTED_ENUMERATION_POINTS = 2;
 export const ENUMERATION_EXCLUSIONS = Object.freeze([
   { path: 'core/i18n', why: 'i18n 键名字典(settings.aiCleanup 之类),不是设置消费' },
   { path: 'core/settings/settings-defaults.ts', why: '设置形状与默认值的声明单源,按定义就是这批键的家' },
-  { path: 'core/settings/settings-schema.ts', why: '持久化 schema 表(逐键声明取值域与校验档位),与上一条同类:声明不是枚举(adr-028 决定要点三)' },
+  { path: 'core/settings/schema.ts', why: '持久化 schema 表(逐键声明取值域与校验档位),与上一条同类:声明不是枚举(adr-028 决定要点三)' },
 ]);
 
 /**

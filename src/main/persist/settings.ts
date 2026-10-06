@@ -59,7 +59,7 @@ import {
   type SettingDomain,
   type SettingsFallbackSlot,
   type SettingsSchemaEntry,
-} from "../../core/settings/settings-schema.js";
+} from "../../core/settings/schema.js";
 export { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings-defaults.js";
 // 跨进程结果契约单源 core/ipc-contract.ts;此处 re-export 保持 ipc/register.ts
 // 既有导入面(实现不消费这些类型,仅类型转发)。
@@ -225,7 +225,7 @@ function matchesDomain(domain: SettingDomain, value: unknown): boolean {
 
 /**
  * 整文件形状校验:参与校验的键由 schema 表推导(处置档 = reject-whole-file 者,
- * 见 settings-schema.ts 文件头的推论),任一非法即视为损坏、整体回退默认;
+ * 见 schema.ts 文件头的推论),任一非法即视为损坏、整体回退默认;
  * pageSetup / typography / headerFooter / watermark / customPresets / language
  * 六键不参与整文件拒绝(各自理由见 schema 表内注释),交由加载兜底。
  * 导出供直测:loadSettings 的「整文件回退 + pageSetup 迁移」语义由本函数判定,
@@ -418,7 +418,7 @@ function sanitizePatch(patch: unknown, current: AppSettings): Partial<AppSetting
   if (typeof patch !== "object" || patch === null || Array.isArray(patch)) return {};
   const src = patch as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  // version 单独一行:它不在 schema 表内(表不得被格式版本选取,见 settings-schema.ts),
+  // version 单独一行:它不在 schema 表内(表不得被格式版本选取,见 schema.ts),
   // 故按声明的格式版本判定而非按逐键规则。
   if ("version" in src) {
     out.version = src.version === CURRENT_SETTINGS_VERSION ? CURRENT_SETTINGS_VERSION : DEFAULT_SETTINGS.version;
