@@ -240,6 +240,31 @@ export async function run() {
     assert(r6.typography.firstLineIndent === false, "布尔字段应保留");
     assert(r6.typography.headingNumbering === false, "布尔字段应保留");
 
+    // ⚠ **局部块是「整块重置」,不是「只改我给的那几项」** —— 本用例把这条钉住。
+    // sanitizeTypography 以 DEFAULT_TYPOGRAPHY 起手再逐字段覆盖,故块内省略的字段一律
+    // 回到默认值。⚠ pageSetup 走的是**另一套**语义(以 current 合并、省略的边距保留),
+    // 两者不可混谈 —— `SettingsMergePatch`(core/settings/merge-patch.ts)不放开 pageSetup
+    // 正是为此(ADR-072)。这条语义此前只写在注释里、**无任何断言**,而同一文件对
+    // pageSetup 侧的「缺边距不重置」是有断言的 —— 那个不对称正是它一直没被发现的原因。
+    // 前置播种非默认值:否则「省略字段回默认」在初始本就是默认时会**永真**,测不到任何东西。
+    const seeded = await patchDirty(mod, {
+      typography: { fontAscii: "Inter", align: "left", firstLineIndent: false, bodySizePt: 14 },
+    });
+    assert(seeded.typography.fontAscii === "Inter", "前置:整块应能写入非默认值");
+    assert(seeded.typography.align === "left", "前置:合法枚举的非默认值应保留");
+    assert(seeded.typography.firstLineIndent === false, "前置:布尔非默认值应保留");
+    const rPartial = await patchDirty(mod, { typography: { bodySizePt: 8 } });
+    assert(rPartial.typography.bodySizePt === 8, "局部块给出的字段应生效");
+    assert(
+      rPartial.typography.fontAscii === DEFAULT_TYPOGRAPHY.fontAscii,
+      "局部块**省略**的字段应回到默认 —— 局部块是整块重置,不是逐字段合并",
+    );
+    assert(rPartial.typography.align === DEFAULT_TYPOGRAPHY.align, "同上:省略的 align 回默认");
+    assert(
+      rPartial.typography.firstLineIndent === DEFAULT_TYPOGRAPHY.firstLineIndent,
+      "同上:省略的 firstLineIndent 回默认",
+    );
+
     // ---- 4. 非法枚举/类型回退(format/afterConvert/version/breakBeforeH1) ----
     // 越界面:四个键各自枚举外/错类型/非当前版本,应各自回退默认
     const r7 = await patchDirty(mod, {
