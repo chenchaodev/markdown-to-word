@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-227 |
-| 下一个可用号 | REQ-228 |
+| 已用最大号 | REQ-228 |
+| 下一个可用号 | REQ-229 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -69,6 +69,7 @@
 | REQ-225 | 落盘失败码的登记完整性无看守 | 待拍板 | CLI 判「输出写不了」改为读错误码后,兜底方向是「码缺失按最一般的转换失败处理(退出码 3)」。方向本身是对的——不把不确定当确定。但它带来一个无红光的失效形态:将来新增一个落盘失败点若忘了在 OUTPUT_UNWRITABLE_CODES 登记码,症状只是退出码从 4 静默变成 3,没有任何门禁会红,而脚本化调用方读到的是「转换失败」而非「输出写不了」——两者的处置动作不同。需要一道判据把「每个落盘失败 throw 点都登记了码」变成可机械判定。 | 新增落盘失败点时;或有人要求脚本化调用方能区分这两类失败时 | 无 |
 | REQ-226 | 两个 merge 函数入参类型与语义相反 | 待拍板 | mergeSettingsWithDefaults 与 mergePendingSavePatch 入参声明为 Partial<AppSettings>,而 Partial 是浅的,子块仍要求字段齐全;但这两个函数的意义就是把残缺设置块补齐,测试刻意传残缺子块并断言走默认 —— 类型与语义相反。ADR-069 打开产物类型面后才可见(dist 此前无 .d.ts,任何调用都「合法」)。修法:入参改深 partial,属改对外接口须升 ADR,故单独立项。 | 要动这两个函数的签名时 | docs/adr/ADR-069-dist产出声明文件.md |
 | REQ-227 | harness 传入的转换上下文不完整 | 待拍板 | ConvertContext 必填 baseDir / cancelRequested / cancel() / signal,而 harness 的 60+ 个调用点只传 {baseDir, warnings, ...} —— 其余靠 dist 无声明时被当作 any 才没炸,ADR-069 打开类型面后暴露。属潜在运行期缺口而非排版问题。修法:harness 统一封装带默认值的构造器(60+ 处只需一处)。未擅自改:塞真实 AbortSignal 属改测试运行期行为。 | 要动 harness 的转换入口时 | docs/adr/ADR-069-dist产出声明文件.md |
+| REQ-228 | 测试直跑 src 绕过产物面 | 待拍板 | temp-markdown.test.js:203-205 用 await import 直接加载 src 的 ipc/register、ipc/channels、persist/ui-state,绕过「测试跑的是产物」这条不变量(ADR-069 核心)。实测证实 --include=dist/** 把直跑的 src 挡在覆盖率统计外,故这段 IPC 路径跑了但没计入。须改跑 dist 或登记为有意直跑。 | 要动 temp-markdown 段或覆盖率统计面时 | docs/adr/ADR-069-dist产出声明文件.md |
 
 ## 在办
 
