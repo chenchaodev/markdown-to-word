@@ -378,7 +378,7 @@ export async function run() {
 
   // ---------- 预检结果归一(警告数组 / busy / 异常三出口) ----------
   {
-    const warnings = [{ key: "warn.unlabeledCodeBlock", fallback: "代码块未标注语言,可能无法正确高亮排版" }];
+    const warnings = /** @type {KeyedWarning[]} */ ([{ key: "warn.unlabeledCodeBlock", fallback: "代码块未标注语言,可能无法正确高亮排版" }]);
     const same = normalizePrecheckOutcome(warnings);
     assert(Array.isArray(same) && same.length === 1 && same[0] === warnings[0],
       "警告数组出口应原样透传(成功语义不变)");

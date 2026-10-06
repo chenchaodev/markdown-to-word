@@ -110,17 +110,43 @@ export async function run() {
     // 9a. string 直通
     assert(i18n.formatWarning("纯文本警告") === "纯文本警告", "formatWarning:string 应原样返回");
     // 9b. KeyedWarning key 命中 + 插值(zh)
+    /** @type {KeyedWarning} */
     const keyed = { key: "warn.imageLoadFailed", params: { src: "a.png" }, fallback: "图片加载失败: a.png" };
     assert(i18n.formatWarning(keyed) === "图片加载失败: a.png", "formatWarning:key 命中应走字典插值(zh)");
     // 9c. KeyedWarning key 缺失 → 回退 fallback
+    // ⚠ 须经 unknown 中转:字面量的 key 与 WarningKey 不重叠,直接 cast 会撞 TS2352
+    const missingKey = /** @type {unknown} */ ({
+      key: "warn.no.such.key",
+      params: { x: 1 },
+      fallback: "兜底文案",
+    });
     assert(
-      i18n.formatWarning({ key: "warn.no.such.key", params: { x: 1 }, fallback: "兜底文案" }) === "兜底文案",
+      i18n.formatWarning(/** @type {KeyedWarning} */ (missingKey)) === "兜底文案",
       "formatWarning:key 缺失应回退 fallback",
     );
     // 9d. en 下 keyed 警告走英文字典(语言切换后警告跟随)
     i18n.setLanguage("en");
     assert(i18n.formatWarning(keyed) === "Failed to load image: a.png", "formatWarning:en 应输出英文文案");
     i18n.setLanguage("zh");
+
+    // 9e. 字典外的 key 必须编译红。@ts-expect-error 是自校验的:若收窄失效,
+    //    本行不再报错,@ts-expect-error 自己会红 —— 不需要额外机制看守。
+    i18n.formatWarning({
+      // @ts-expect-error 字典外 key 应被拒(本行若不再报错,本注释自己会红)
+      key: "warn.no.such.key",
+      params: { x: 1 },
+      fallback: "兜底文案",
+    });
+    // 9f. warn.precheckFailed 已入字典(此前是有 key 无字典条目的孤儿:
+    //    代码侧存在而三份字典都没有,用户看到的是 fallback 原文而非翻译后的提示)
+    assert(
+      i18n.formatWarning({
+        key: "warn.precheckFailed",
+        params: { error: "boom" },
+        fallback: "预检失败,已跳过预检: boom",
+      }) === "预检失败,已跳过预检: boom",
+      "warn.precheckFailed 应经字典渲染",
+    );
 
     // ---- 10. en 键集运行期一致性抽查(编译期已由 EN 类型锁定,此处冒烟) ----
     const zhKeys = Object.keys(i18n.DICT.zh).sort();

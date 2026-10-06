@@ -460,6 +460,7 @@ const dict = {
     "warn.imageAttrInvalid": "画像サイズ属性が無効のため無視しました: ${attr}(${src})",
     "warn.headerLogoLoadFailed": "ヘッダーロゴの読み込みに失敗したため無視しました: ${src}",
     "warn.unlabeledCodeBlock": "コードブロックに言語指定がありません。強調が正しくない可能性があります",
+    "warn.precheckFailed": "事前チェックに失敗しました。事前チェックをスキップ: ${error}",
     // 変換前チェック「AI のsilent drop」4 種:tag/lineText/snippet は推送期のソース原文
     // (en と同じ口径で訳さない)。lineNo は行番号(数値、挿值のみ)。2 つのキー名は
     // 共有しない(同名異型を避ける)。文面は結果(プレーンテキストとして印刷/内容が破棄)と

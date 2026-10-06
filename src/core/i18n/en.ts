@@ -468,6 +468,7 @@ const dict = {
     "warn.imageAttrInvalid": "Invalid image size attribute, ignored: ${attr} (${src})",
     "warn.headerLogoLoadFailed": "Failed to load header logo, ignored: ${src}",
     "warn.unlabeledCodeBlock": "Code block has no language tag; highlighting may be incorrect",
+    "warn.precheckFailed": "Precheck failed, precheck skipped: ${error}",
     // 转换预检「AI 静默丢内容」四类:tag/lineText/snippet 为推送期的源码原文(不译,同
     // warn.unsupportedBlockInContainer 口径);lineNo 为行号(数字,照插值不译);
     // 两者的键名不共用,避免同名异型。文案须写清后果(按普通文字印出/内容被丢弃)

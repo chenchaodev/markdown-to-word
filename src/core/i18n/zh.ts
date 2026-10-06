@@ -470,6 +470,10 @@ const dict = {
     "warn.imageAttrInvalid": "图片尺寸属性无效,已忽略: ${attr}(${src})",
     "warn.headerLogoLoadFailed": "页眉 logo 加载失败,已忽略: ${src}",
     "warn.unlabeledCodeBlock": "代码块未标注语言,可能无法正确高亮排版",
+    // 预检失败(携带失败原因;renderer 按警告展示,不阻断主流程)。
+    // 此前该 key 在代码里存在而三份字典都没有 —— 用户看到的是 fallback 原文而非
+    // 翻译后的提示,且无任何门禁会红。收窄 KeyedWarning.key 后它必须入字典。
+    "warn.precheckFailed": "预检失败,已跳过预检: ${error}",
     // 转换预检「AI 静默丢内容」四类:tag/lineText/snippet 为推送期的源码原文,
     // lineNo 为行号(number);两者的键名不共用,避免同名异型
     "warn.unsupportedMathDelimiter": "`\\(` / `\\[` 不是本工具支持的公式定界符,会按普通文字印出而不渲染公式;请改用 `$…$`(行内)或 `$$…$$`(独立成行)",

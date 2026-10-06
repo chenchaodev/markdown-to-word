@@ -35,6 +35,7 @@ import {
 } from "../harness/settings.js";
 
 /** @typedef {import("../../dist/core/i18n/zh.js").Dict} Dict */
+/** @typedef {import("../../dist/core/i18n/index.js").KeyedWarning} KeyedWarning */
 
 /**
  * 断言辅助。
@@ -104,7 +105,12 @@ export async function run() {
   assert(t("app.title") === DICT.en["app.title"], "en 当前语言应直接命中 en 字典");
   // 两级均缺失才回退 fallback / 裸 key(既有语义保持)
   setLanguage("ja");
-  const keyed = { key: "no.such.key", params: { error: "E" }, fallback: "兜底文案" };
+  // ⚠ 须经 unknown 中转:字面量的 key 与 WarningKey 不重叠,直接 cast 会撞 TS2352
+  const keyed = /** @type {KeyedWarning} */ (/** @type {unknown} */ ({
+    key: "no.such.key",
+    params: { error: "E" },
+    fallback: "兜底文案",
+  }));
   assert(formatWarning(keyed) === "兜底文案", "两级均缺失时 formatWarning 应回退 fallback");
   // 「字典里没有的 key」走 tByKey:它的 key 参数是 string,正是 src/core/i18n/t.ts
   // 为「动态 key 场景」留的原始实现(t() 的 key 受 Dict 联合约束,收不进不存在的键)

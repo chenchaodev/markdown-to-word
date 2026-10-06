@@ -13,6 +13,31 @@
  * 原语,不持有任何语言状态;此前它们与语言状态、DOM 面挤在一个 201 行的桶里。
  */
 import { tByKey } from "./t.js";
+import type { Dict } from "./zh.js";
+
+/**
+ * 警告 key 的合法取值 = 字典里全部 `warn.*` 键。
+ *
+ * 为什么收窄而不是留 `string`:警告 key 经 IPC 传到 renderer 后由 tByKey 查表,
+ * 字典里没有的 key 会**静默**走回退链(显示原始 key 或 fallback 文案)—— 实测发生过
+ * 一次:`warn.precheckFailed` 在代码里存在而三份字典都没有,用户看到的是兜底文案
+ * 而非翻译后的提示,且没有任何门禁会红。收窄后「代码发了字典没有的 key」变成编译错误。
+ *
+ * 为什么用 Extract 而不是直接用 Dict:Dict 有 465 个键,只有 28 个是 warn.* ——
+ * 直接用 Dict 会把 437 个无关键(dialog.* / menu.* / convert.stage.* 等)也放进合法集。
+ *
+ * ⚠ 那个显式例外 `convert.merge.blockedUnclosedFence`:它是**合并阻断告警**,却住在
+ * convert.merge.* 命名空间里而非 warn.* —— 命名不一致,但它是用户可见文案、key 被
+ * convert-flow.ts 引用,改命名是另一件事。显式列出来而不是放宽成前缀规则
+ * (`convert.merge.${string}` 会放进 blockedUnclosedFenceMore 等**非**警告键)。
+ * 新增非 warn.* 的警告 key 时,必须在这里显式加一条 —— 那正是要人判断的时刻。
+ *
+ * ⚠ 收窄的代价要说清:`fallback` 字段从类型系统看变成「构造不出 key 缺失的
+ * KeyedWarning」而不可达。但 tByKey 的运行期回退链仍在、formatWarning 的
+ * `text === w.key ? w.fallback : text` 仍在 —— 它从「常态路径」降级为「动态 key 的防御」。
+ * 这是有意的:让不一致从运行期静默兜底变成编译期错误。
+ */
+export type WarningKey = Extract<Dict, `warn.${string}`> | "convert.merge.blockedUnclosedFence";
 
 /**
  * keyed 警告(i18n 收口):core 生成的警告不再硬编码中文文案,
@@ -20,7 +45,7 @@ import { tByKey } from "./t.js";
  * 保证 zh 界面行为等价)。经 IPC 原样传到 renderer,显示层 formatWarning 按当前语言格式化。
  */
 export interface KeyedWarning {
-  key: string;
+  key: WarningKey;
   params?: Record<string, string | number>;
   /** 缺失 key 时的兜底文案(= 现有中文原文逐字保留) */
   fallback: string;
