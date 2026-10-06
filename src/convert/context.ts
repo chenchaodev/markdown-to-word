@@ -12,6 +12,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertContext as CoreConvertContext } from "../core/convert.js";
 import type { ConvertWarning } from "../core/i18n/index.js";
+// 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
+import type { ConvertStage } from "../core/ipc-contract.js";
 import type { ImageResolver } from "../core/image/image-resolver.js";
 import { sniffImageType } from "../core/image/image-type.js";
 import { headerLogoLoadFailedWarning } from "../core/image/image-warning.js";
@@ -142,7 +144,7 @@ export interface BuildConvertContextOptions {
   /** Mermaid 渲染服务(单例隐藏窗口;core 层 mermaidResolver 契约,见 src/core/markdown/mermaid.ts) */
   mermaidResolver?: MermaidResolver;
   /** PDF 渲染子阶段回调(parse/inline/mermaid/katex,透传 core ConvertContext) */
-  onStage?: (stage: string) => void;
+  onStage?: (stage: ConvertStage) => void;
 }
 
 /**

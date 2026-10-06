@@ -69,8 +69,8 @@ export function bindConvertActionsEvents(): void {
     if (info.mode !== state.mode) return;
     const text = stageText(info.stage, translate);
     if (text !== info.stage) setStatus(text); // 未知阶段原样兜底,不覆盖状态栏
-    const percent = STAGE_PERCENT[info.stage];
-    if (percent !== undefined) setProgress(percent);
+    // STAGE_PERCENT 的键集即 ConvertStage(info.stage 的类型),查表不可能落空 ⇒ 无兜底
+    setProgress(STAGE_PERCENT[info.stage]);
     if (info.stage === "print") cancelBtn.disabled = true;
   });
 
@@ -85,7 +85,7 @@ export function bindConvertActionsEvents(): void {
     setStatus(text);
     // 批量进度:已完成 (index-1)/total 个文件 + 当前文件阶段权重 /total
     const base = ((info.index - 1) / info.total) * 100;
-    const step = (STAGE_PERCENT[info.stage] ?? 0) / info.total;
+    const step = STAGE_PERCENT[info.stage] / info.total;
     setProgress(base + step);
   });
 

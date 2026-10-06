@@ -12,6 +12,8 @@
 import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { ConvertWarning } from "../../core/i18n/index.js";
+// 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
+import type { ConvertStage } from "../../core/ipc-contract.js";
 import { t } from "../../core/i18n/index.js";
 import { loadSettings, type AppSettings } from "../persist/settings.js";
 import { MARKDOWN_EXT_RE } from "../../convert/paths.js";
@@ -41,7 +43,7 @@ export { renderPdf, runAfterConvert } from "./electron-side.js";
 export async function convertImpl(
   filePath: string,
   format: ConvertFormat,
-  onProgress?: (stage: string) => void,
+  onProgress?: (stage: ConvertStage) => void,
   ctx: ConversionHandle = createConvertContext(),
   katexDir?: string,
   settingsSnapshot?: AppSettings,

@@ -13,6 +13,10 @@ export function isMarkdown(filePath: string): boolean {
 // re-export 以保持既有导入路径不变。
 export { errorMessage } from "../../core/text/error-message.js";
 
+// 阶段键联合单源 core/ipc-contract.ts:type-only,编译期擦除,不破坏本文件「除
+// errorMessage 外零 import」的运行时纯函数约束。
+import type { ConvertStage } from "../../core/ipc-contract.js";
+
 export function baseName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
 }
@@ -34,11 +38,10 @@ export function truncateMiddle(text: string, max = 88): string {
  * 未知键原样兜底(向后兼容:旧/新阶段混发均不破)。
  * 本文件零 import 约束:zh 文案作为默认输出保留于此(与 i18n 字典 convert.stage.*
  * 的 zh 值逐字一致),translate 注入时按阶段键名翻译(调用处传 t)。
+ * 键集取自 core/ipc-contract.ts 的 `ConvertStage`(发射侧同用一份联合):新增阶段
+ * 在此与 STAGE_PERCENT 两张表漏改即编译红,勿在旁另写一份阶段清单。
  */
-export const STAGE_TEXT: Record<
-  "read" | "render" | "done" | "parse" | "inline" | "mermaid" | "katex" | "print",
-  string
-> = {
+export const STAGE_TEXT: Record<ConvertStage, string> = {
   read: "正在读取文件…",
   render: "正在渲染文档…",
   done: "正在完成…",
@@ -64,7 +67,7 @@ export function stageText(
  * → print(85) → done(95);docx 沿用 read/render/done(render=70 兼容保留,
  * 仅 docx 链路发射)。单调递增,不回退。
  */
-export const STAGE_PERCENT: Record<string, number> = {
+export const STAGE_PERCENT: Record<ConvertStage, number> = {
   read: 15,
   parse: 30,
   inline: 45,

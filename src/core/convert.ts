@@ -38,6 +38,8 @@ import { parseMarkdown } from "./pipeline/parse.js";
 import type { DocMetadata } from "./pipeline/frontmatter.js";
 import type { TypographySettings } from "./settings/typography.js";
 import type { ConvertWarning } from "./i18n/index.js";
+// 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
+import type { ConvertStage } from "./ipc-contract.js";
 import { renderDocx } from "./docx/render.js";
 import { renderPdfDocument, type PdfFsCapabilities } from "./pdf/render.js";
 // PdfHeading 契约单源在 pdf/bookmarks.ts(docx 侧无对应物:目录由 Word 域生成)
@@ -155,7 +157,7 @@ export interface ConvertContext {
    * 缺省不上报(core 层零依赖,行为不变)。协议只增不改:旧消费方对未知
    * stage 键原样兜底(renderer 的 stageText 对未知键透传)。
    */
-  onStage?: (stage: string) => void;
+  onStage?: (stage: ConvertStage) => void;
 }
 
 /**

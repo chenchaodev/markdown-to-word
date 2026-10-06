@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
-import type { ConvertResult } from "../../core/ipc-contract.js";
+import type { ConvertResult, ConvertStage } from "../../core/ipc-contract.js";
 // ConvertResult 契约单源 core/ipc-contract.ts(跨进程数据形状);此处 re-export
 // 保持 converter/index.ts 与既有导入面不变,勿在本文件重复声明。
 export type { ConvertResult } from "../../core/ipc-contract.js";
@@ -107,7 +107,7 @@ function commonBaseDir(dirs: string[]): string {
 export async function mergeConvertImpl(
   files: string[],
   format: ConvertFormat,
-  onProgress?: (stage: string) => void,
+  onProgress?: (stage: ConvertStage) => void,
   ctx: ConversionHandle = createConvertContext(),
   katexDir?: string,
   metadata?: DocMetadata,

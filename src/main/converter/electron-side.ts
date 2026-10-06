@@ -17,6 +17,8 @@
 import { BrowserWindow, shell } from "electron";
 import { PDFDocument } from "pdf-lib";
 import type { PdfArtifact } from "../../core/convert.js";
+// 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
+import type { ConvertStage } from "../../core/ipc-contract.js";
 import { buildBookmarkTree, injectBookmarks, pageNumbersForNames, type PdfHeading } from "../../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../../core/pdf/metadata.js";
 import { extractHeadings, injectTocPageNumbers } from "../../core/pdf/postprocess.js";
@@ -52,7 +54,7 @@ export const renderPdf: PdfPrinter = async (
   artifact: PdfArtifact,
   preferredPath: string,
   ctx: ConversionHandle,
-  onStage?: (stage: string) => void,
+  onStage?: (stage: ConvertStage) => void,
   commit?: CommitArtifactOptions,
 ): Promise<string> => {
   // 单遍打印:写临时 HTML → 隐藏窗口加载 → printToPDF → 返回 bytes(窗口/临时文件 finally 清理)

@@ -28,6 +28,8 @@ import type { ConvertFormat } from "../core/settings/settings-defaults.js";
 import type { PdfArtifact, PreprocessedMarkdown } from "../core/convert.js";
 import type { DocMetadata } from "../core/pipeline/frontmatter.js";
 import type { ConvertWarning } from "../core/i18n/index.js";
+// 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
+import type { ConvertStage } from "../core/ipc-contract.js";
 // 取消判定按错误码单源(main 闸门与 core 渲染期取消同码,见 core/cancel.ts)
 import { isConversionCanceled } from "../core/cancel.js";
 import type { MermaidResolver } from "../core/markdown/mermaid.js";
@@ -80,7 +82,7 @@ export type PdfPrinter = (
   artifact: PdfArtifact,
   preferredPath: string,
   ctx: ConversionHandle,
-  onStage?: (stage: string) => void,
+  onStage?: (stage: ConvertStage) => void,
   /** 落盘提交选项(取消闸门 + 重名避让开关);宿主实现必须原样透传给 commitArtifact,
    *  否则装配层的 pinOutputPath 语义在 pdf 路径上失效(禁避让只对 docx 生效)。 */
   commit?: CommitOptions,
@@ -96,7 +98,7 @@ export interface OutputSkeletonRun {
   warnings: ConvertWarning[];
   /** 公式资源目录(pdf 用;docx 走 MathML 不需要) */
   katexDir?: string;
-  onProgress?: (stage: string) => void;
+  onProgress?: (stage: ConvertStage) => void;
   /**
    * pdf 打印能力:docx 路径不消费它,故可省;**pdf 路径缺省即报错,不降级** ——
    * 降级会把「本机装了什么」变成一条可静默关闭的开关(headless 面无 Electron 时
@@ -162,7 +164,7 @@ export async function emitConvertedArtifact(
         // (warn.mermaidFailed),降级渲染仍由 core 负责(代码块,内容不丢)。
         // 不注入则该键整体缺席 —— core 侧据此按普通代码块渲染(见 mermaidResolver 的 JSDoc)。
         ...(mermaidResolver ? { mermaidResolver } : {}),
-        ...(format === "pdf" ? { onStage: (stage: string) => onProgress?.(stage) } : {}),
+        ...(format === "pdf" ? { onStage: (stage: ConvertStage) => onProgress?.(stage) } : {}),
       }),
     );
   } catch (err) {
@@ -213,7 +215,7 @@ export async function persistArtifact(
   format: ConvertFormat,
   outputDir: string,
   ctx: ConversionHandle,
-  onProgress?: (stage: string) => void,
+  onProgress?: (stage: ConvertStage) => void,
   baseName?: string,
   printPdf?: PdfPrinter,
   pinOutputPath?: string,

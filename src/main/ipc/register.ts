@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertFormat, ThemePreference } from "../../core/settings/settings-defaults.js";
 import type { SettingsMergePatch } from "../../core/settings/merge-patch.js";
-import type { BatchProgressInfo, BatchResult, ConvertMode, PrecheckResult, UiState } from "../../core/ipc-contract.js";
+import type { BatchProgressInfo, BatchResult, ConvertMode, ConvertStage, PrecheckResult, UiState } from "../../core/ipc-contract.js";
 import { t, setLanguage, type Language } from "../../core/i18n/index.js";
 import { precheckMarkdown } from "../../core/pipeline/precheck.js";
 import type { ConvertWarning } from "../../core/i18n/index.js";
@@ -347,7 +347,7 @@ export function registerIpc(): void {
         "single",
         async (ctx, win) => {
           // progress payload 带 mode 标识,renderer 直接消费归属(不再按调用上下文推断)
-          const send = (stage: string): void =>
+          const send = (stage: ConvertStage): void =>
             win?.webContents.send(CH.convertProgress, { stage, mode: "single" satisfies ConvertMode });
           const { outputPath, warnings } = await convertImpl(filePath, format, send, ctx, getKatexDir());
           allowOutputPath(outputPath); // 产物路径入 shell 白名单
@@ -484,7 +484,7 @@ export function registerIpc(): void {
         "merge",
         async (ctx, win) => {
           // 与单文件同通道,payload.mode = "merge" 区分归属
-          const send = (stage: string): void =>
+          const send = (stage: ConvertStage): void =>
             win?.webContents.send(CH.convertProgress, { stage, mode: "merge" satisfies ConvertMode });
           const result = await mergeConvertImpl(files, format, send, ctx, getKatexDir(), metadata);
           if (result.ok) {

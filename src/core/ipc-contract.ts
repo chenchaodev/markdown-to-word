@@ -37,10 +37,22 @@ export type BatchOperationBusyResult = OperationBusyResult & {
 /** 转换模式标识(convert:progress payload.mode;批量走 convert:batchProgress 独立通道,mode 预留)。 */
 export type ConvertMode = "single" | "batch" | "merge";
 
+/**
+ * 转换阶段键(穷尽判别联合)。
+ *
+ * 为什么住在本文件:两个消费方(ConvertProgressPayload.stage、BatchProgressInfo.stage)
+ * 都在这儿,而阶段字面量的发射点散布在 core/convert.ts、convert/run.ts、
+ * core/pdf/render.ts 与 main/converter/* —— 契约与发射面各在一处时,
+ * 「新增阶段漏改某侧」只能靠人记;两侧共用一份联合后,发射点写错字面量即编译红。
+ *
+ * 本模块产物是 `export {}`(纯类型),已在覆盖率豁免清单内,加类型不新增豁免、不动分母。
+ */
+export type ConvertStage = "read" | "render" | "done" | "parse" | "inline" | "mermaid" | "katex" | "print";
+
 /** convert:progress 事件 payload(main → renderer 推送)。 */
 export interface ConvertProgressPayload {
-  /** 阶段键(read/render/done + pdf 细分 parse/inline/mermaid/katex/print) */
-  stage: string;
+  /** 阶段键(联合成员见 `ConvertStage`;文案与百分比映射在 renderer/state/pure.ts) */
+  stage: ConvertStage;
   /** 发起本次转换的入口模式(renderer 直接消费,不再按调用上下文推断) */
   mode: ConvertMode;
 }
@@ -52,7 +64,8 @@ export interface BatchProgressInfo {
   index: number;
   total: number;
   file: string;
-  stage: string;
+  /** 阶段键(联合成员见 `ConvertStage`) */
+  stage: ConvertStage;
 }
 
 /** 批量单文件结果(BatchResult.items 元素)。 */

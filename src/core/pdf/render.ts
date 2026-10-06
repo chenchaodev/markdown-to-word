@@ -30,6 +30,8 @@ import { mmToPx, validatePageSetup } from "../settings/settings-defaults.js";
 // 双管线渲染选项的共有字段与默认值解析单源(adr-030 6-D1/6-D2)
 import { resolveRenderSwitches, type SharedRenderOptions } from "../settings/render-options.js";
 import type { ConvertWarning } from "../i18n/index.js";
+// 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
+import type { ConvertStage } from "../ipc-contract.js";
 import { highlightFallbackWarning, pushWarningOnce } from "../i18n/index.js";
 import { buildCoverHtml, buildTemplate } from "./template.js";
 import { buildTemplateCss } from "./template-css.js";
@@ -104,7 +106,7 @@ export interface RenderPdfHtmlOptions extends SharedRenderOptions {
    *  与外链内嵌)/ mermaid(占位替换)/ katex(KaTeX 样式装载)四个阶段键,
    *  经 main/converter.ts 的 onProgress 通道转发为 convert:progress;
    *  缺省不上报,行为不变。 */
-  onStage?: (stage: string) => void;
+  onStage?: (stage: ConvertStage) => void;
 }
 
 /**

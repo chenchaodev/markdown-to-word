@@ -7,7 +7,7 @@
  */
 import path from "node:path";
 import type { ConvertFormat } from "../../core/settings/settings-defaults.js";
-import type { BatchItem, BatchProgressInfo, BatchResult } from "../../core/ipc-contract.js";
+import type { BatchItem, BatchProgressInfo, BatchResult, ConvertStage } from "../../core/ipc-contract.js";
 import { loadSettings } from "../persist/settings.js";
 import type { ConversionHandle } from "../../convert/cancellation.js";
 import { createConvertContext } from "../../convert/context.js";
@@ -87,7 +87,7 @@ export async function batchConvertImpl(
       const index = next++;
       if (index >= total) return;
       const file = files[index]!; // index < total 已守卫,必然存在
-      const send = (stage: string): void =>
+      const send = (stage: ConvertStage): void =>
         onProgress?.({ index: index + 1, total, file: path.basename(file), stage });
       try {
         const { outputPath, warnings } = await convertImpl(

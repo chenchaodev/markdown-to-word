@@ -5,6 +5,8 @@
  * (a) renderer state/pure.ts STAGE_TEXT / formatRecentTime 的 zh 默认文案 ↔
  *     core i18n 字典(zh.ts)convert.stage.* / recent.time.* 逐字相等
  *     (pure 层零 import 约束导致 zh 原文双份,漂移在此即时暴露);
+ *     同段 (a-2) 另守 STAGE_TEXT ↔ STAGE_PERCENT ↔ 契约阶段字面量三者的键集
+ *     双向恒等(renderer-pure.test.js 那条只查了单向);
  * (b) MAX_RECENT_FILES:main persist/ui-state.ts(导出常量)↔ renderer ui/recent-files.ts
  *     (模块私有未导出——经源码文本提取恒等断言,改任一侧未同步即失败);
  * (c) 设置默认值防御性合并双侧关键字段抽样一致:main persist/settings.ts
@@ -18,7 +20,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DICT } from "../../dist/core/i18n/index.js";
-import { STAGE_TEXT, stageText, formatRecentTime } from "../../dist/renderer/state/pure.js";
+import { STAGE_TEXT, STAGE_PERCENT, stageText, formatRecentTime } from "../../dist/renderer/state/pure.js";
 import { MAX_RECENT_FILES as MAIN_MAX_RECENT_FILES } from "../../dist/main/persist/ui-state.js";
 import { mergeSettingsWithDefaults } from "../../dist/renderer/settings/settings-logic.js";
 import { isAllowedInlineHtml } from "../../dist/core/markdown/html-whitelist.js";
@@ -142,6 +144,47 @@ export async function run() {
     );
   }
   assert(stageText("no-such-stage") === "no-such-stage", "未知阶段键应原样兜底");
+
+  // ---------- (a-2) 阶段键集三向恒等:STAGE_TEXT ↔ STAGE_PERCENT ↔ 契约字面量 ----------
+  // 既有断言只查了单向(STAGE_TEXT ⊆ STAGE_PERCENT,见 test/renderer/renderer-pure.test.js),
+  // 漏了反向:STAGE_PERCENT 多出一个永不被消费的键,单向断言照样绿。
+  // 这一段补双向 + 与契约字面量比对;两表任一被改回 Record<string, ...>(放宽)时,
+  // 编译期穷尽性同时失效,这里是唯一还响的看守。
+  //
+  // ⚠ 字面量清单**刻意不从 ConvertStage 类型派生**:联合与两表同源,派生即恒真断言
+  // (无判别力),正是「看似有看守实则没有」。改联合时本清单必须同改。
+  const CONTRACT_STAGES = /** @type {const} */ ([
+    "read", "render", "done", "parse", "inline", "mermaid", "katex", "print",
+  ]);
+  for (const key of Object.keys(STAGE_TEXT)) {
+    assert(
+      key in STAGE_PERCENT,
+      `STAGE_PERCENT 缺 ${key} 键(STAGE_TEXT 与 STAGE_PERCENT 键集应双向相等)`,
+    );
+  }
+  for (const key of Object.keys(STAGE_PERCENT)) {
+    assert(
+      key in STAGE_TEXT,
+      `STAGE_TEXT 缺 ${key} 键(STAGE_TEXT 与 STAGE_PERCENT 键集应双向相等)`,
+    );
+  }
+  // 两表键集恰好等于契约字面量(既不缺也不多);排序后逐字比对,不用逐元素 find 嵌套
+  const expectedStageKeys = [...CONTRACT_STAGES].sort().join(",");
+  /**
+   * 键集归一为排序串(对象比较用)。
+   * @param {Record<string, unknown>} obj 待取键的对象
+   * @returns {string} 排序后的键名串
+   */
+  const sortedKeys = (obj) => Object.keys(obj).sort().join(",");
+  assert(
+    sortedKeys(STAGE_TEXT) === expectedStageKeys,
+    `STAGE_TEXT 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_TEXT)}`,
+  );
+  assert(
+    sortedKeys(STAGE_PERCENT) === expectedStageKeys,
+    `STAGE_PERCENT 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_PERCENT)}`,
+  );
+  console.log("[ok] identity-guards:(a-2) STAGE_TEXT ↔ STAGE_PERCENT 键集双向相等且恰好等于契约阶段字面量 断言通过");
 
   // formatRecentTime 四分支:默认输出 ↔ recent.time.* 模板插值结果逐字相等
   const now = new Date(2026, 7, 24, 12, 0).getTime(); // 本地 2026-08-24 12:00
