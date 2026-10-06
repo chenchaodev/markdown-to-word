@@ -25,6 +25,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { collectMarkdownPaths } from "../convert/paths.js";
+// 「输出写不了」的错误码取值域单源(装配层抛出点自带 code,判定侧只读码不读文案)
+import { OUTPUT_UNWRITABLE_CODES as OUTPUT_UNWRITABLE_CODE_TABLE } from "../convert/artifact-writer.js";
 import { prepareMarkdown } from "../convert/preprocess.js";
 import { createConvertContext } from "../convert/context.js";
 import { emitConvertedArtifact } from "../convert/run.js";
@@ -49,20 +51,35 @@ import {
 import { hostInvocation, isElectronProvidedNode } from "./host-launch.js";
 
 /**
- * 「输出写不了」的判据(退出码 4 的唯一来源)。
+ * 「输出写不了」的判据(退出码 4 的唯一来源):读**错误码**,不匹配文案。
  *
- * 形态上这是**文案匹配**,脆弱;之所以仍这么做:装配层把落盘失败与转换失败都抛成普通
- * Error,没有错误码可判(骨架层不产错误分类)。三处文案都是本仓自己写的且带固定措辞:
- * artifact-writer 的「产物路径已存在」与「不支持硬链接」,paths.ts 的「无法创建输出目录」。
- * 改动那三处文案时必须同改这里 —— 这不是隐式约定,故写明出处。
+ * 形态上是 `error.code ∈ {三个码}`。此前这一族靠**匹配三条中文文案**,而文案是
+ * 「给人看」的、随时会被改 —— 改一次措辞(如「产物路径已存在」→「输出路径已被占用」)
+ * 就让判据**静默失效**:退出码从 4 悄悄变成 3,而没有任何东西报红,脚本侧只是
+ * 「重试策略错了」。码由抛出点自带(artifact-writer / paths.ts 的
+ * `outputUnwritableError`),因此改文案不影响判定。
  *
- * 若将来给装配层加了错误码,本函数应改为读码;在那之前,「三处文案 + 一处判定」
- * 优于「无判定」(脚本无法区分「重名」与「磁盘满」,只能全部当失败处理)。
+ * ⚠ **兜底档为什么是「判失败」而不是「当成功」**:读不到码意味着「这条失败不属于
+ * 任何已登记的『写不了』类别」,处置是按**最一般的转换失败**(退出码 3)处理 ——
+ * 保留原始 `item.error` 文案不丢信息。反过来若兜底成「不是写不了 ⇒ 成功」,
+ * 任何未登记的落盘失败都会被报成成功,那是把不确定当确定,比判错类别严重得多。
+ * 换言之:码缺失时**只损失分类精度,不损失失败判定**。
+ *
+ * 新增一个「写不了」的失败点时,同批在 artifact-writer 的
+ * `OUTPUT_UNWRITABLE_CODES` 登记(该表的注释写明了这条耦合)。
  */
-const OUTPUT_UNWRITABLE_MARKERS = ["产物路径已存在", "不支持硬链接", "无法创建输出目录"] as const;
+const OUTPUT_UNWRITABLE_CODES: ReadonlySet<string> = new Set<string>(
+  Object.values(OUTPUT_UNWRITABLE_CODE_TABLE),
+);
 
-function isOutputUnwritable(message: string): boolean {
-  return OUTPUT_UNWRITABLE_MARKERS.some((marker) => message.includes(marker));
+/** 从抛错对象上取稳定错误码(只认 `code` 字段上的非空字符串,其余一律 undefined) */
+function errorCodeOf(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | undefined)?.code;
+  return typeof code === "string" && code !== "" ? code : undefined;
+}
+
+function isOutputUnwritable(item: CliResultItem): boolean {
+  return item.errorCode !== undefined && OUTPUT_UNWRITABLE_CODES.has(item.errorCode);
 }
 
 /** 一次性目录(pdf 任务描述用;mkdtemp 保证每次运行都拿到全新目录) */
@@ -186,6 +203,8 @@ export function convertPdfViaHost(job: CliPdfJob): CliResultItem {
       warnings: result.warnings,
       elapsedMs: result.elapsedMs,
       error: message,
+      // 码由宿主跨进程透传而来:缺它则 pdf 的落盘失败会落兜底档(3)而非 4
+      ...(result.errorCode !== undefined ? { errorCode: result.errorCode } : {}),
     };
   } finally {
     cleanupTempDir(tempDir);
@@ -224,7 +243,17 @@ async function convertOne(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`[cli] 转换失败(${input} → ${format}):${message}\n`);
-    return { input, format, ok: false, warnings: [], elapsedMs: Date.now() - started, error: message };
+    const code = errorCodeOf(error);
+    return {
+      input,
+      format,
+      ok: false,
+      warnings: [],
+      elapsedMs: Date.now() - started,
+      error: message,
+      // 码随失败项一起上报(itemExitCode 只读它判 4);无码即未登记分类,按兜底档走
+      ...(code !== undefined ? { errorCode: code } : {}),
+    };
   }
 }
 
@@ -250,10 +279,10 @@ function warningKey(warning: unknown): string {
   return "warning";
 }
 
-/** 单项失败的退出码:落盘类文案 → 4(输出写不了),其余 → 3(转换失败) */
+/** 单项失败的退出码:落盘类错误码 → 4(输出写不了),其余 → 3(转换失败,含码缺失的兜底) */
 function itemExitCode(item: CliResultItem): ExitCode {
   if (item.ok) return exitCodes.ok;
-  if (item.error !== undefined && isOutputUnwritable(item.error)) return exitCodes.outputUnwritable;
+  if (isOutputUnwritable(item)) return exitCodes.outputUnwritable;
   return exitCodes.convertFailed;
 }
 

@@ -380,6 +380,17 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "gates/repo/check-src-layout.mjs",
       judgment: { module: "gates/repo/check-src-layout.mjs", export: "checkSrcLayout", shaped: "{ problems: string[], stats }" },
     },
+    "html-const-mirror": {
+      id: "html-const-mirror",
+      npmScripts: ["check:html-const-mirror"],
+      access: ACCESS_OFFCHAIN,
+      // 与 `src-layout` 同款形态:判定本体默认只报告(ADR-064 的 T0 节奏),
+      // `--enforce` 才 fail-closed。**刻意不进 verify:ci** —— 加链由主会话在收尾时统一做。
+      // 负向夹具在 `test/gates/repo/html-const-mirror-gate.test.js`(不是 `.selftest.mjs` 载体:
+      // 格② 要求载体有**在链上**的 script 跑它,而本门禁此刻刻意未上链)。
+      modulePath: "gates/repo/check-html-const-mirror.mjs",
+      judgment: { module: "gates/repo/check-html-const-mirror.mjs", export: "judgeHtmlConstMirror", shaped: "{ problems: MirrorProblem[], stats }" },
+    },
     "dual-matrix": {
       id: "dual-matrix",
       // ⚠ 零 npm script:不是 npm script 门禁,而是验收段内的一道门禁(由 M2W_ONLY 单独跑)。

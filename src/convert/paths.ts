@@ -2,12 +2,17 @@
  * 路径收集与输出路径解析:
  * resolveOutputPath(输出目录/超长回落)、collectMarkdownPaths(目录递归收集)、
  * filterExistingPaths(会话恢复保序过滤)。
+ * 「输出写不了」的失败点抛带**稳定错误码**的错(码单源在 artifact-writer 的
+ * OUTPUT_UNWRITABLE_CODES;消费方 cli/index.ts 据此判退出码 4,不匹配文案)。
  * 目录扫描有预算:realpath 规范路径去重(junction/symlink 环不再无限递归)、
  * 深度与条目数上限;超限停止收集并经 warnings 通道上报(不静默截断)。
  */
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
+// 「输出写不了」的稳定错误码单源在 artifact-writer(落盘侧的两个失败点也在那里);
+// 本模块的 mkdir 失败是同一族第三个失败点,故从那里取码而不是就地写字面量。
+import { OUTPUT_UNWRITABLE_CODES, outputUnwritableError } from "./artifact-writer.js";
 import type { ConvertFormat } from "../core/settings/settings-defaults.js";
 import type { ConvertWarning, KeyedWarning } from "../core/i18n/index.js";
 
@@ -64,7 +69,10 @@ export async function resolveOutputPath(
     } catch (error) {
       // 原始 fs 错误码指向「哪个系统调用失败」,对人无行动价值;这里给可操作文案。
       // 不静默回落:pinPath 的语义是「就是这个路径」,换个目录交付等于骗了调用方。
-      throw new Error(
+      // 错误码 OUTPUT_DIR_UNAVAILABLE:与 artifact-writer 的两个「写不了」码同族,
+      // cli/index.ts 据此判退出码 4(见 OUTPUT_UNWRITABLE_CODES 的注释)。
+      throw outputUnwritableError(
+        OUTPUT_UNWRITABLE_CODES.dirUnavailable,
         `无法创建输出目录(${path.dirname(pinned)}):${error instanceof Error ? error.message : String(error)}`,
       );
     }

@@ -103,6 +103,7 @@
     "check:copy-sites:selftest": "node gates/repo/check-copy-sites.selftest.mjs",
     "check:src-layout": "node gates/repo/check-src-layout.mjs",
     "check:src-layout:selftest": "node gates/repo/check-src-layout.selftest.mjs",
+    "check:html-const-mirror": "node gates/repo/check-html-const-mirror.mjs",
     "check:test-layout": "node gates/repo/check-test-layout.mjs",
     "check:test-layout:selftest": "node gates/repo/check-test-layout.selftest.mjs",
     "check:gate-ids-table": "node gates/repo/gen-gate-ids-table.mjs --check",

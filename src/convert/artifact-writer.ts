@@ -91,6 +91,45 @@ function errnoCode(err: unknown): string | undefined {
   return (err as NodeJS.ErrnoException | undefined)?.code;
 }
 
+/**
+ * 「输出写不了」错误的**稳定错误码**取值域(单源,ASCII 标识符)。
+ *
+ * 为什么要有码而不只是文案:消费方(cli/index.ts 判退出码 4)此前靠**匹配三条中文
+ * 文案**来判定「输出写不了」—— 改一次文案就静默失效(判据消失,退出码从 4 变 3,
+ * 且没有任何东西报红)。码是判定的**契约**,文案只是给人看的。
+ *
+ * ⚠ **新增一个「写不了」的失败点时,必须同批在 cli/index.ts 的 OUTPUT_UNWRITABLE_CODES
+ * 登记**,否则它落到兜底档(见 cli/index.ts 的注释):保守判失败,但拿不到 4 这个
+ * 「换个输出目录就能解决」的可操作语义。
+ */
+export const OUTPUT_UNWRITABLE_CODES = Object.freeze({
+  /** pinOutputPath(CLI --output)点名了已存在的路径:不覆盖既有文件 */
+  pathExists: "OUTPUT_PATH_EXISTS",
+  /** 目标文件系统不支持硬链接 ⇒ 无法原子提交(Windows 非 NTFS / 跨设备等) */
+  linkUnsupported: "OUTPUT_LINK_UNSUPPORTED",
+  /** pinPath 的父目录建不出来(被文件占住 / 无权限) */
+  dirUnavailable: "OUTPUT_DIR_UNAVAILABLE",
+} as const);
+
+/** 「输出写不了」错误码的联合类型 */
+export type OutputUnwritableCode =
+  (typeof OUTPUT_UNWRITABLE_CODES)[keyof typeof OUTPUT_UNWRITABLE_CODES];
+
+/**
+ * 携带稳定错误码的输出失败(码用 `code` 字段,与 node 的 `NodeJS.ErrnoException.code`
+ * 同名同义 —— 消费方读 `err.code` 即可,不必先判类型)。
+ *
+ * 为什么用 Error 的 `code` 字段而不是自定义类:装配层跨进程边界(cli ↔ pdf 宿主)
+ * 只传 `message` 字符串,自定义类在序列化后会退化成 message;而 `code` 是纯 ASCII
+ * 标识符,任何将来的结构化通道都能原样带走。
+ */
+export function outputUnwritableError(code: OutputUnwritableCode, message: string): Error {
+  // NodeJS.ErrnoException 正是「带 code 的 Error」的官方类型;赋值前声明类型而非 any
+  const error = new Error(message) as NodeJS.ErrnoException;
+  error.code = code;
+  return error;
+}
+
 /** 首部字节是否命中该扩展名任一合法魔数 */
 function hasMagic(data: Uint8Array, signatures: ReadonlyArray<ReadonlyArray<number>>): boolean {
   return signatures.some((signature) => signature.every((byte, index) => data[index] === byte));
@@ -161,12 +200,16 @@ async function commitExclusive(
       if (code === "EEXIST") {
         // pinOutputPath:调用方点名了这个路径,换名等于交付了另一个文件
         if (!renameOnConflict) {
-          throw new Error(`产物路径已存在(未启用重名避让,不覆盖既有文件):${preferredPath}`);
+          throw outputUnwritableError(
+            OUTPUT_UNWRITABLE_CODES.pathExists,
+            `产物路径已存在(未启用重名避让,不覆盖既有文件):${preferredPath}`,
+          );
         }
         continue; // 已被占(本进程/外部)→ 递增序号
       }
       if (code !== undefined && LINK_UNSUPPORTED_CODES.has(code)) {
-        throw new Error(
+        throw outputUnwritableError(
+          OUTPUT_UNWRITABLE_CODES.linkUnsupported,
           `产物提交失败:${finalPath} 所在文件系统不支持硬链接(错误码 ${code}),无法原子提交;` +
             `未产生最终文件。请把输出目录改到本地磁盘等支持硬链接的位置后重试。`,
         );

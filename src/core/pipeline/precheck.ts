@@ -7,6 +7,9 @@
  * - AI 静默丢内容四类(见下方「静默丢内容」小节):本工具不认的写法会让内容**无声消失**,
  *   用户付印后才发现没了,故转换前逐条告知。它是体检不是改写,不受 AI 清理档位开关管辖
  *   (ADR-021);零 IO 纯字符串/AST 判定,不新增 node: 内建依赖(ADR-018)。
+ * 警告入列一律经单源 i18n.pushWarningOnce(去重键 = i18n.warnDedupKey = key + JSON(params)),
+ * 与 docx 侧 ctx.warnedKeys / pdf 侧各规则集合同口径:同一份文档里的**同类**问题
+ * 不再产生 N 条逐字相同的提示。哪些警告带可定位参数、哪些不带,见 warnedKeys 处的逐条说明。
  * 本地图片边界策略由 core/image/image-path-policy.ts 的 createLocalImagePathPolicy
  * 统一提供(REF-025 #07 自本模块迁出):先做原始 src 与词法路径校验,再 realpath 后
  * 复核规范路径,symlink/junction 不得把读取目标带出可信根。策略模块自身不持有
@@ -25,7 +28,7 @@ import {
   type SourceRangeQuery,
 } from "../markdown/source-ranges.js";
 import type { ConvertWarning, KeyedWarning } from "../i18n/index.js";
-import { crossRefNotFoundWarning, unlabeledCodeBlockWarning } from "../i18n/index.js";
+import { crossRefNotFoundWarning, pushWarningOnce, unlabeledCodeBlockWarning } from "../i18n/index.js";
 import { imageNotFoundWarning } from "../image/image-warning.js";
 
 /** 标签定义:{#(sec|eq|fig|tab):label}(label 含前导 #,见 core/markdown/cross-ref.ts) */
@@ -186,13 +189,35 @@ export function precheckMarkdown(
   const defined = new Set<string>();
   const refs: Array<{ kind: string; label: string }> = [];
   const warnings: ConvertWarning[] = [];
+  /**
+   * 警告去重键集合(生命周期 = 本次 precheck 调用),**入列一律经单源**
+   * `i18n.pushWarningOnce`(键口径 = `i18n.warnDedupKey` = key + JSON(params))。
+   *
+   * ⚠ 此前本模块是「判据直推 `warnings.push`」,与 docx 侧 `warnDedup` / pdf 侧
+   * `pushWarningOnce` 口径分叉:同一份 markdown 里 N 个**同类**问题产生 N 条
+   * 逐字相同的警告,而双管线的转换期警告早已是「同 key + 同 params 只报 1 条」。
+   * 收敛到单源后,预检弹窗与 GUI 警告列表的「重复即噪音」口径一致。
+   *
+   * 逐条说明哪些警告**该**被去重、哪些不该(判据 = 该警告是否携带可定位参数):
+   *  - `warn.unlabeledCodeBlock` **无 params**:N 个未标注语言的代码块曾产生 N 条
+   *    逐字相同、且不带任何定位信息的行(用户无从据它们区分是哪一个块)⇒ 去重为 1 条,
+   *    与 docx 侧「同一门坏语言只报一次」同源同理。
+   *  - `warn.crossRefNotFound` / `warn.imageNotFound` / `warn.tableLikeNotParsed` /
+   *    `warn.htmlTagNotAllowed` / `warn.unclosedCodeFence` / `warn.unpairedMathDelimiter`
+   *    **带 params**(ref / src / lineText / tag / lineNo / snippet):指向**不同对象**
+   *    的同类问题各自保留一条,只有「同 key + 同 params」的重复被折叠 —— 折叠的必然是
+   *    两行一模一样的提示,不是可定位信息。
+   */
+  const warnedKeys = new Set<string>();
+  const warn = (warning: KeyedWarning): void => {
+    pushWarningOnce(warnedKeys, warnings, warning);
+  };
   // 静默丢内容四类的中间产物:掩码区间(源码偏移)/白名单外标签/未配对 $ 片段
   const ranges: SourceRange[] = [];
   // 围栏判定另用一份窄掩码(仅 HTML/公式块):见 RAW_TEXT_SOURCE_NODES 的理由
   const rawTextRanges: SourceRange[] = [];
   const disallowedTags = new Set<string>();
   const unpairedMath: string[] = [];
-  const unpairedMathSeen = new Set<string>();
 
   // mdast 节点异构,字段按需访问;visit 的树参数与节点类型此处统一放宽
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -208,10 +233,10 @@ export function precheckMarkdown(
       const url: string = node.url ?? "";
       if (!url || REMOTE_RE.test(url)) return;
       const resolution = localImagePolicy.resolveSync(url);
-      if (!resolution.filePath || !exists(resolution.filePath)) warnings.push(imageNotFoundWarning(url));
+      if (!resolution.filePath || !exists(resolution.filePath)) warn(imageNotFoundWarning(url));
     } else if (node.type === "code") {
       const lang: string = node.lang ?? "";
-      if (!lang.trim()) warnings.push(unlabeledCodeBlockWarning());
+      if (!lang.trim()) warn(unlabeledCodeBlockWarning());
     } else if (node.type === "text") {
       const value: string = node.value ?? "";
       let m: RegExpExecArray | null;
@@ -219,11 +244,11 @@ export function precheckMarkdown(
       while ((m = DEF_RE.exec(value))) defined.add(`${m[1]!}:${m[2]!}`);
       // ③ 只在 text 节点上判定:行内代码 / 围栏 / 公式节点都不是 text,
       // 故「代码里的 $」「已正常解析的 $x^2$」天然不进入本判据
+      // ⚠ 片段级去重**不在此处做**:它是判据的中间产物收敛,最终入列由 warn()
+      // 经单源去重(键含 snippet)完成 —— 两处各持一份 seen 集合才是「重复即噪音」
+      // 这条纪律被抄成两份实现的入口。
       const snippet = unpairedMathSnippet(value);
-      if (snippet !== null && !unpairedMathSeen.has(snippet)) {
-        unpairedMathSeen.add(snippet);
-        unpairedMath.push(snippet);
-      }
+      if (snippet !== null) unpairedMath.push(snippet);
     } else if (node.type === "html") {
       const value: string = node.value ?? "";
       collectDisallowedHtmlTags(value, disallowedTags);
@@ -236,7 +261,7 @@ export function precheckMarkdown(
 
   for (const ref of refs) {
     if (!defined.has(`${ref.kind}:${ref.label}`)) {
-      warnings.push(crossRefNotFoundWarning(ref.kind, `#${ref.kind}:${ref.label}`));
+      warn(crossRefNotFoundWarning(ref.kind, `#${ref.kind}:${ref.label}`));
     }
   }
 
@@ -245,12 +270,12 @@ export function precheckMarkdown(
   const lines = splitSourceLines(content);
   const fenceStarts = findUnclosedCodeFences(lines, buildMaskedRanges(rawTextRanges), ranges);
   const masked = buildMaskedRanges(ranges);
-  if (hasUnsupportedMathDelimiter(content, masked)) warnings.push(unsupportedMathDelimiterWarning());
-  for (const tag of [...disallowedTags].sort()) warnings.push(htmlTagNotAllowedWarning(tag));
-  for (const start of fenceStarts) warnings.push(unclosedCodeFenceWarning(start + 1));
-  for (const snippet of unpairedMath) warnings.push(unpairedMathDelimiterWarning(snippet));
+  if (hasUnsupportedMathDelimiter(content, masked)) warn(unsupportedMathDelimiterWarning());
+  for (const tag of [...disallowedTags].sort()) warn(htmlTagNotAllowedWarning(tag));
+  for (const start of fenceStarts) warn(unclosedCodeFenceWarning(start + 1));
+  for (const snippet of unpairedMath) warn(unpairedMathDelimiterWarning(snippet));
   for (const lineText of findTableLikeNotParsed(lines, masked)) {
-    warnings.push(tableLikeNotParsedWarning(lineText));
+    warn(tableLikeNotParsedWarning(lineText));
   }
   return warnings;
 }

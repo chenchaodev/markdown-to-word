@@ -276,8 +276,87 @@ export async function run() {
       JSON.parse(blocked.stdout)[0].error.includes("无法创建输出目录"),
       "该失败应给出可操作的错误文案,而不是裸的 fs 错误码",
     );
+    // 2j. 判定读的是**错误码**而非文案:失败项须带稳定的 ASCII 码,且不依赖任何中文措辞
+    const blockedItem = JSON.parse(blocked.stdout)[0];
+    assert(
+      blockedItem.errorCode === "OUTPUT_DIR_UNAVAILABLE",
+      `失败项应带稳定错误码 OUTPUT_DIR_UNAVAILABLE,实际 ${JSON.stringify(blockedItem.errorCode)}`,
+    );
+    assert(
+      JSON.parse(pinAgain.stdout)[0].errorCode === "OUTPUT_PATH_EXISTS",
+      "pinOutputPath 撞既有文件应带码 OUTPUT_PATH_EXISTS",
+    );
+    assert(
+      tooBigItems[0].errorCode === undefined,
+      `未登记分类的失败不应被伪造成某个「写不了」码(实际 ${JSON.stringify(tooBigItems[0].errorCode)})`,
+    );
 
     console.log("[ok] cli:真 node 子进程跑通(单文件 docx 魔数 / --json 结构化流 / 目录递归收集 / --output 逐字落盘 + 禁避让判 4;退出码 0·1·2·3·4 逐条有夹具)");
+
+    /* ============ 三、「输出写不了」判文案 ⇒ 读错误码(改文案不影响判定) ============ */
+    // 2k. 判定面:同一条失败,只在**文案**上改动 ⇒ 退出码与错误码都不变。
+    // 这一格是本项存在的理由:判定此前靠匹配三条中文文案,改一次措辞就让退出码从 4
+    // 悄悄变成 3,而没有任何东西报红。这里把 dist 里那三段文案整体换成哨兵词
+    // (换完之后原文案一个都不剩),再跑同一条命令,断言退出码仍是 4、码仍是原码。
+    const mutatedRun = mutateAndRun([src, "--output", pinned, "--json"]);
+    const mutatedItem = pinJsonItem(mutatedRun);
+    assert(
+      mutatedRun.code === exitCodes.outputUnwritable,
+      `换掉全部中文文案后仍应退出 4,实际 ${mutatedRun.code}:${mutatedRun.stderr.slice(-200)}`,
+    );
+    assert(
+      mutatedItem.errorCode === "OUTPUT_PATH_EXISTS",
+      `换掉文案后错误码应不变,实际 ${JSON.stringify(mutatedItem.errorCode)}`,
+    );
+    assert(
+      mutatedItem.error.includes("ZZZ-ALPHA"),
+      `本夹具的前提是文案真的被换掉了(否则这一格是空跑):${mutatedItem.error}`,
+    );
+    assert(
+      !mutatedItem.error.includes("产物路径已存在"),
+      "夹具前提:产物文案已被换成哨兵词,原词不应仍在",
+    );
+
+    /**
+     * 取 --json 结果数组的单项(结构化流的唯一消费方式)。
+     * @param {{stdout: string}} run runCli 的返回
+     * @returns {any} 结果项
+     */
+    function pinJsonItem(run) {
+      const parsed = JSON.parse(run.stdout);
+      assert(Array.isArray(parsed) && parsed.length === 1, "--json 应输出单元素数组");
+      return parsed[0];
+    }
+
+    /**
+     * 先把 dist 里两处「输出写不了」的文案整体替换成哨兵词,再跑一次 CLI 并返回结果项。
+     * 跑完在 finally 里**逐字节还原** dist —— 本段跑的是真 node 子进程,读的是 dist 产物,
+     * 不还原会污染同一次验收里其余段(产物目录是共享可变状态)。
+     * @param {string[]} args CLI 参数
+     * @returns {{stdout: string, stderr: string, code: number}} runCli 的返回
+     */
+    function mutateAndRun(args) {
+      const writer = path.join(ROOT, "dist", "convert", "artifact-writer.js");
+      const pathsFile = path.join(ROOT, "dist", "convert", "paths.js");
+      const saved = {
+        writer: fs.readFileSync(writer, "utf8"),
+        paths: fs.readFileSync(pathsFile, "utf8"),
+      };
+      try {
+        fs.writeFileSync(
+          writer,
+          saved.writer
+            .replaceAll("产物路径已存在", "ZZZ-ALPHA")
+            .replaceAll("不支持硬链接", "ZZZ-BETA"),
+          "utf8",
+        );
+        fs.writeFileSync(pathsFile, saved.paths.replaceAll("无法创建输出目录", "ZZZ-DELTA"), "utf8");
+        return runCli(args);
+      } finally {
+        fs.writeFileSync(writer, saved.writer, "utf8");
+        fs.writeFileSync(pathsFile, saved.paths, "utf8");
+      }
+    }
   } finally {
     removeTree(dir);
   }

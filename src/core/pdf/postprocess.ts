@@ -11,12 +11,16 @@
  * 修改目录层级/标题提取/图片内嵌口径须同步核对 src/core/docx/prescan.ts。
  * 稳定口径:并发上限内完成全部检查后,警告按文档顺序统一入列(不按异步完成
  * 顺序),取消不降级为图片失败警告(经守卫上抛)。
+ * ⚠ **本模块所有警告入列一律经单源 `i18n.pushWarningOnce`**(去重键 = `i18n.warnDedupKey`
+ * = key + JSON(params)),不再有自持的 URL 键集合:此前 embedExternalImages 私持一份
+ * `Set<url>`,键口径与 docx 侧 / pdf rules/* 不同源,同一 src 在两种警告下会互相吞并。
  */
 import { decodeEntities, escapeHtml, escapeRegExp } from "../text/text-escape.js";
 import { PDF_TOC_MAX_LEVEL } from "./rules/heading-id.js";
 import { mimeFromBuffer } from "../image/image-type.js";
 import { imageLoadFailedWarning, imageLoadFailureWarning, imageNotFoundWarning, unrecognizedImageWarning } from "../image/image-warning.js";
-import type { ConvertWarning } from "../i18n/index.js";
+import type { ConvertWarning, KeyedWarning } from "../i18n/index.js";
+import { pushWarningOnce } from "../i18n/index.js";
 import type { PdfHeading } from "./bookmarks.js";
 import type { ImageResolver } from "../image/image-resolver.js";
 import { createCancellationGuard, isConversionCanceled } from "../cancel.js";
@@ -198,18 +202,23 @@ export async function checkLocalImages(
       return { ok: false, notFound, error: err };
     }
   });
-  // 全部检查完成后按文档顺序入列警告(并发完成顺序不参与,保证稳定可测)
+  // 全部检查完成后按文档顺序入列警告(并发完成顺序不参与,保证稳定可测)。
+  // 去重经共享单源 pushWarningOnce:`unique` 已按 src 去重,故每 src 至多一条候选,
+  // 但入列仍走单源而不是直推 —— 否则「同一 src 的检查与外链内嵌走两条路」
+  // 这类改动会让两处的去重口径悄悄分叉(历史上 embedExternalImages 就分叉过一次)。
+  const warnedKeys = new Set<string>();
   for (const [index, src] of unique.entries()) {
     const check = checks[index]!; // mapWithConcurrency 保序返回等长数组
     if (check.ok) continue;
-    warnings.push(check.notFound ? imageNotFoundWarning(src) : imageLoadFailureWarning(src, check.error));
+    pushWarningOnce(warnedKeys, warnings, check.notFound ? imageNotFoundWarning(src) : imageLoadFailureWarning(src, check.error));
   }
 }
 
 /** 单个外链 URL 的内嵌结果(成功为 data URL,失败保留原 URL + 按文档顺序入列警告) */
 interface ExternalImageResult {
   dataUrl?: string;
-  warning?: ConvertWarning;
+  /** 失败警告:经共享 pushWarningOnce 入列,故此处收窄为 KeyedWarning(CannotWarning 无去重键) */
+  warning?: KeyedWarning;
 }
 
 /**
@@ -221,7 +230,8 @@ interface ExternalImageResult {
  * 即真正进入 HTML 文档的字节数,含 base64 膨胀)、单请求时限、并发。
  * 替换改单遍 cursor 分段(仿 replaceMermaidPlaceholders)——一次遍历按出现
  * 顺序处理全部外链 img 标签后拼接,不再逐 URL 全文扫描替换;
- * 警告在替换遍历中按文档顺序入列(同 URL 多处出现只入列一次)。
+ * 警告在替换遍历中按文档顺序入列(同 URL 多处出现只入列一次),去重经共享单源
+ * `i18n.pushWarningOnce`(键口径 = `i18n.warnDedupKey`,与 docx 侧及 pdf rules/* 一致)。
  */
 export async function embedExternalImages(
   html: string,
@@ -274,18 +284,20 @@ export async function embedExternalImages(
 
   // cursor 单遍拼接:命中的 match 精确替换其 src 属性(escapeRegExp 防子串误替换),
   // 失败/未命中原样保留(cursor 不动);末尾补齐剩余原文;
-  // 警告同步按文档顺序入列(同 URL 只在首次出现处入列一次)
+  // 警告同步按文档顺序入列,去重经**共享单源** pushWarningOnce(键 = key + JSON(params),
+  // i18n.warnDedupKey):⚠ 此前这里是自持 `new Set<string>()` 且**以 URL 为键** —— 与
+  // docx 侧 / pdf rules/* 的键口径不同源(那条路的键含 warning key,故同一 src 在
+  // 「属性非法」与「加载失败」两种警告下各自成条;URL 键则两种警告互相吞并)。
+  // 集合生命周期 = 本次调用(= 单次渲染),与 rules/* 的集合同理互不冲突。
   let out = "";
   let cursor = 0;
-  const warned = new Set<string>();
+  const warnedKeys = new Set<string>();
   for (const mt of matches) {
     const result = byUrl.get(mt.url);
     if (!result) continue;
     if (result.warning) {
-      if (!warned.has(mt.url)) {
-        warned.add(mt.url);
-        warnings.push(result.warning);
-      }
+      // 同 URL 多处出现只在首次入列一次(urls 已去重,此处再按键兜住文档顺序的重复 match)
+      pushWarningOnce(warnedKeys, warnings, result.warning);
       continue;
     }
     out += html.slice(cursor, mt.index);

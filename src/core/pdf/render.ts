@@ -30,7 +30,7 @@ import { mmToPx, validatePageSetup } from "../settings/settings-defaults.js";
 // 双管线渲染选项的共有字段与默认值解析单源(adr-030 6-D1/6-D2)
 import { resolveRenderSwitches, type SharedRenderOptions } from "../settings/render-options.js";
 import type { ConvertWarning } from "../i18n/index.js";
-import { highlightFallbackWarning } from "../i18n/index.js";
+import { highlightFallbackWarning, pushWarningOnce } from "../i18n/index.js";
 import { buildCoverHtml, buildTemplate } from "./template.js";
 import { buildTemplateCss } from "./template-css.js";
 import { loadKatexCss } from "./katex-css.js";
@@ -126,12 +126,24 @@ function replaceTaskCheckboxes(html: string): string {
     .replace(/<label[^>]*class="task-list-item-label"[^>]*>([\s\S]*?)<\/label>/g, "$1");
 }
 
+/**
+ * 组装 markdown-it 实例。
+ *
+ * `warnedKeys` 是**本次渲染的去重键集合**(生命周期 = 一次 renderPdfDocument),
+ * 经单源 `i18n.pushWarningOnce` 入列警告。⚠ 此前本文件的 highlight 回调是
+ * `warnings.push(highlightFallbackWarning(lang))` 直推:同一份 markdown 里 N 个
+ * 用**同一门坏语言**的代码块就产生 N 条逐字相同的警告,而 docx 侧
+ * (`docx/handlers/code-block.ts` 经 `warnDedup`)只产生 1 条 —— 双侧口径分叉,
+ * 且 GUI 警告列表被同一句话刷屏。去重键口径单源 `i18n.warnDedupKey`(key + JSON(params)),
+ * 与 docx 侧 `ctx.warning.warnedKeys` 及 pdf 各规则(`rules/image.ts` 等)完全一致。
+ */
 function buildMarkdownIt(
   hasMermaidResolver: boolean,
   headingNumbering: boolean,
   captionNumbering: boolean,
   equationNumbering: boolean,
   warnings: ConvertWarning[],
+  warnedKeys: Set<string>,
 ): MarkdownIt {
   const md = new MarkdownIt({
     html: true,
@@ -154,8 +166,9 @@ function buildMarkdownIt(
             "</code></pre>"
           );
         } catch {
-          // 语言包异常时回退转义输出 + 上报降级警告(与 docx 侧同 key 同文案口径)
-          warnings.push(highlightFallbackWarning(lang));
+          // 语言包异常时回退转义输出 + 上报降级警告(与 docx 侧同 key 同文案口径;
+          // 去重也同源:同一门坏语言的 N 个代码块只报 1 条,见 buildMarkdownIt 的 warnedKeys 注)
+          pushWarningOnce(warnedKeys, warnings, highlightFallbackWarning(lang));
         }
       }
       return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code></pre>`;
@@ -270,12 +283,16 @@ export async function renderPdfDocument(
   const pageGeometry = validatePageSetup(pageSetup);
   // warnings 提前创建——buildMarkdownIt 的 highlight 回调需经此上报高亮降级警告
   const warnings: ConvertWarning[] = options.warnings ?? [];
+  // 高亮降级警告的去重键集合(生命周期 = 本次渲染;与 docx 侧 ctx.warning.warnedKeys 同口径,
+  // 键含 warning key 故与 rules/* 各自持有的集合互不冲突)
+  const warnedKeys = new Set<string>();
   const md = buildMarkdownIt(
     options.mermaidResolver !== undefined,
     headingNumbering,
     captionNumbering,
     equationNumbering,
     warnings,
+    warnedKeys,
   );
   const localImageSrcs: string[] = [];
   // 正文内容区宽(px,96dpi)= 内容区 mm ÷ 25.4 × 96(landscape 视觉宽度为

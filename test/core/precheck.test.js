@@ -497,4 +497,53 @@ export async function run() {
     }
   }
   console.log("[ok] precheck:围栏文案三语言插值正确 + 无「不显示」类反事实措辞");
+
+  /* ================= 警告去重口径(入列一律经单源 i18n.pushWarningOnce) =================
+   * 判据分两半,缺一不可:
+   *   ① **无 params 的警告**:N 个同类问题 ⇒ 1 条(去重;此前 N 条逐字相同的提示刷屏)。
+   *   ② **带 params 的警告**:指向**不同对象**的同类问题各自保留一条(去重不得吃掉定位信息)。
+   * 只有 ① 能防刷屏,只有 ② 能防「去重把可定位信息也吞了」—— 合起来才与 docx/pdf
+   * 转换期警告的 warnDedupKey 口径(key + JSON(params))完全一致。 */
+  const countBy = (/** @type {any[]} */ ws, /** @type {string} */ key) =>
+    ws.filter((w) => typeof w === "object" && w.key === key).length;
+
+  // ① 无 params 的两类:未标注语言的代码块 / 不被支持的公式定界符
+  const unlabeledMd = Array.from({ length: 4 }, (_, i) => `\`\`\`\nplain ${i}\n\`\`\`\n`).join("\n");
+  const unlabeledRun = runPrecheck(unlabeledMd);
+  if (countBy(unlabeledRun, "warn.unlabeledCodeBlock") !== 1) {
+    throw new Error(
+      `4 个未标注语言代码块应只报 1 条,实际 ${countBy(unlabeledRun, "warn.unlabeledCodeBlock")} 条`,
+    );
+  }
+  // 反向锚点:该用例本身要真的产出这条警告(否则「只报 1 条」可能是「报 0 条」恒绿)
+  if (countBy(runPrecheck("```\nplain\n```\n"), "warn.unlabeledCodeBlock") !== 1) {
+    throw new Error("单个未标注语言代码块应报 1 条(反向锚点:证明上一格不是「报 0 条」恒绿)");
+  }
+  if (countBy(runPrecheck("行内 \\(x\\) 与 另一处 \\[y\\]"), "warn.unsupportedMathDelimiter") !== 1) {
+    throw new Error("多处不被支持的公式定界符应只报 1 条(该警告无 params,无定位信息)");
+  }
+
+  // ② 带 params 的五类:指向不同对象的同类问题各自保留一条
+  /** @type {Array<[string, string, (p: string) => boolean, string]>} */
+  const distinctCases = [
+    ["warn.imageNotFound", "![a](./a.png)\n\n![b](./b.png)\n", existsNone, "不同 src"],
+    ["warn.crossRefNotFound", "见 [一](#sec:a) 与 [二](#sec:b)。", existsAll, "不同 label"],
+    ["warn.htmlTagNotAllowed", "段落里的 <div>一</div>\n\n另一段 <blink>x</blink>", existsAll, "不同 tag"],
+    ["warn.unpairedMathDelimiter", "甲 $x^2 未闭合\n\n乙 $y_1 未闭合", existsAll, "不同 snippet"],
+    [
+      "warn.tableLikeNotParsed",
+      "| 列1 | 列2 |\n| 数据1 | 数据2 |\n\n| 甲 | 乙 |\n| 丙 | 丁 |",
+      existsAll,
+      "不同首行",
+    ],
+  ];
+  for (const [key, md, exists, why] of distinctCases) {
+    const got = countBy(precheckMarkdown(md, "/tmp", { exists, realpathSync: realpathIdentity }), key);
+    if (got !== 2) {
+      throw new Error(`${key}(${why})应各保留 2 条,实际 ${got} 条`);
+    }
+  }
+  console.log(
+    "[ok] precheck:警告去重口径与双管线一致(无 params 的同类折叠为 1 条 / 带 params 的不同对象各保留一条)",
+  );
 }

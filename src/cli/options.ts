@@ -218,4 +218,14 @@ export interface CliResultItem {
   elapsedMs: number;
   /** 失败原因(人读文案);ok 为真时缺席 */
   error?: string;
+  /**
+   * 失败分类的**稳定错误码**(ASCII;来自抛出点的 `error.code`);ok 为真时缺席。
+   *
+   * 与 `error` 分开的原因:文案是给人读的、随时会改,而「这一类失败的处置」
+   * (退出码)必须由一个改不动的契约决定。`index.ts` 判退出码 4 只读本字段,
+   * 不读 `error` —— 故改文案不影响判定(断言见 test/cli/options.test.js)。
+   *
+   * 缺席 = 该失败未登记分类 ⇒ 按最一般的「转换失败」处理(保守,不当成功)。
+   */
+  errorCode?: string;
 }

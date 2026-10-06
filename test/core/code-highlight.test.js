@@ -143,6 +143,56 @@ export async function run() {
       throw new Error("code-highlight 断言失败:hljs 抛错降级不应有高亮色(<w:color)");
     }
     console.log("[ok] code-highlight:hljs 抛错降级等宽 + 高亮降级警告 断言通过");
+
+    // ---- 6b. 去重口径双侧一致:N 个**同一门坏语言**的代码块 ⇒ docx 与 pdf 各只报 1 条 ----
+    // 判据面:同一份 markdown 里 N 个同类问题,**两侧**的警告条数必须一致(各 1)。
+    // 此前 pdf 侧是 `warnings.push(highlightFallbackWarning(lang))` 直推(无去重),
+    // docx 侧经 `warnDedup` → 同一份文档里 pdf 侧 N 条、docx 侧 1 条,口径分叉。
+    // 触发手段与 6 相同(注册编译期即抛错的坏语言),故两段的失败路径完全同源。
+    const DUPES = 3;
+    const dupMd = Array.from({ length: DUPES }, (_, i) => `\`\`\`broken\nconst x${i} = 1;\n\`\`\`\n`).join("\n");
+    /** @type {unknown[]} */
+    const dupDocxWarnings = [];
+    await renderDocx(parseMarkdown(dupMd), { warnings: dupDocxWarnings });
+    const dupDocxCount = dupDocxWarnings.filter(
+      (w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken",
+    ).length;
+    /** @type {unknown[]} */
+    const dupPdfWarnings = [];
+    await convertWithFs(dupMd, "pdf", { baseDir: ".", warnings: dupPdfWarnings });
+    const dupPdfCount = dupPdfWarnings.filter(
+      (w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken",
+    ).length;
+    if (dupDocxCount !== 1 || dupPdfCount !== 1) {
+      throw new Error(
+        `code-highlight 断言失败:${DUPES} 个坏语言代码块应两侧各报 1 条,`
+        + `实际 docx=${dupDocxCount} pdf=${dupPdfCount}(口径分叉)`,
+      );
+    }
+    // 反向锚点:去重不能吃掉**不同语言**各自的降级 —— 两门坏语言应各报 1 条
+    hljs.registerLanguage("broken2", () => /** @type {import("highlight.js").Language} */ ({ match: "x", begin: /y/ }));
+    try {
+      /** @type {unknown[]} */
+      const twoLangDocx = [];
+      await renderDocx(parseMarkdown("```broken\na\n```\n\n```broken2\nb\n```\n"), { warnings: twoLangDocx });
+      /** @type {unknown[]} */
+      const twoLangPdf = [];
+      await convertWithFs("```broken\na\n```\n\n```broken2\nb\n```\n", "pdf", {
+        baseDir: ".",
+        warnings: twoLangPdf,
+      });
+      const countLang = (/** @type {readonly unknown[]} */ ws) =>
+        ws.filter((w) => formatWarning(w).startsWith("代码高亮失败,已降级为纯文本:")).length;
+      if (countLang(twoLangDocx) !== 2 || countLang(twoLangPdf) !== 2) {
+        throw new Error(
+          `code-highlight 断言失败:两门坏语言应各报 1 条(共 2 条),`
+          + `实际 docx=${countLang(twoLangDocx)} pdf=${countLang(twoLangPdf)}`,
+        );
+      }
+    } finally {
+      hljs.unregisterLanguage("broken2");
+    }
+    console.log("[ok] code-highlight:高亮降级警告去重口径双侧一致(N 个同类各 1 条 / 不同语言各保留)断言通过");
   } finally {
     hljs.unregisterLanguage("broken");
   }

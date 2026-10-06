@@ -121,8 +121,18 @@ export async function convertPdfJob(jobPath: string, resultPath: string): Promis
       error instanceof Error && error.name === "ConvertCanceledError"
         ? exitCodes.ok
         : exitCodes.convertFailed;
+    // 错误码必须跨进程边界透传:CLI 侧判「输出写不了」读的是码而非文案,
+    // 不透传则 pdf 的落盘失败在 CLI 侧掉进兜底档(退出码 3)而不是 4 ——
+    // 那是把一个已登记的失败类别静默降级成「未知失败」。
+    const errorCode = (error as { code?: unknown } | undefined)?.code;
     try {
-      writeJobResult(resultPath, { ok: false, warnings: [], elapsedMs: 0, error: message });
+      writeJobResult(resultPath, {
+        ok: false,
+        warnings: [],
+        elapsedMs: 0,
+        error: message,
+        ...(typeof errorCode === "string" && errorCode !== "" ? { errorCode } : {}),
+      });
     } catch {
       // 结果文件本身写不了(磁盘满 / 权限):退出码已足够让 CLI 判定,不叠加第二个错误
     }
