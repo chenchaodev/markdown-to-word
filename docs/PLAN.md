@@ -54,9 +54,8 @@
 | 步 | 工作项 | 目标 | 可写文件（不重叠） | 退出条件 | 门禁 | 并行 | 结果 |
 |---|---|---|---|---|---|---|---|
 | #01 | REQ-214 | 订正仓库文本与实测冲突的数字（2 处），并把第三处记为「评审自己错了、仓库对」 | `gates/repo/check-import-boundary.mjs`（仅注释、那条普查命令、rule `reason` 串）· `docs/adr/ADR-064-*.md`（第 15 条数字与扫描面） | 普查命令按根目录折叠后与注释一致；`reason` 串里同一处错误说法一并订正（它会被门禁输出直接印出）；ADR-064 第 15 条 = 6 且扫描面写对；`pending:true` 处**不动仓库**且理由已落 evidence | `npm run check:boundary` · `npm run check:docs` | 串行（后续步都引用这些数字） | 通过 2026-10-06 |
-| #02 | REQ-223 | 就地整改：改名与注释订正，不动结构 | `src/core/settings/settings-schema.ts` → `schema.ts` 及其引用方 · `test/renderer/dom-stub.js` · **`gates/repo/` 3 处路径字面量（见下注）** | 改名后「文件名 = 唯一职责」重新成立且**不新增同名组**；DOM stub 注释与隔离模型一致 | `npm run typecheck` · `npm run check:src-layout` · `npm run check:boundary` | 可与 #03 并行编辑（写域不重叠） | 静态门禁通过 2026-10-06，验收段待相末 |
-| #02b | REQ-223 | console 前缀统一（**从 #02 拆出，排在 #03 落地之后**） | `src/**` 的 36 处 `console.*` | 前缀风格统一，且**不建日志框架** | `npm run lint` · `npm run test` | **串行**，理由见下 | 未开始 |
-| #03 | REQ-216 | 三处「单源存在但未生效」收口 | `src/core/i18n/warning.ts` · `src/core/pdf/{render,postprocess}.ts` · `src/core/pipeline/precheck.ts` · `src/core/docx/ctx.ts` · `src/convert/artifact-writer.ts` · `src/cli/index.ts` · `src/renderer/index.html` | 同一输入下 docx 与 pdf 的警告条数口径一致（需断言）· CLI 判输出失败不再依赖文案 · `max` 有机器看守 | `npm run typecheck` · `M2W_ONLY=warning,mermaid,cli` | 可与 #02 并行编辑，门禁在相末跑 | 未开始 |
+| #02 | REQ-223 | 就地整改：改名与注释订正，不动结构 | `src/core/settings/settings-schema.ts` → `schema.ts` 及其引用方 · `test/renderer/dom-stub.js` · **`gates/repo/` 3 处路径字面量（见下注）** | 改名后「文件名 = 唯一职责」重新成立且**不新增同名组**；DOM stub 注释与隔离模型一致 | `npm run typecheck` · `npm run check:src-layout` · `npm run check:boundary` | 可与 #03 并行编辑（写域不重叠） | **通过 2026-10-06** |
+| #03 | REQ-216 | 三处「单源存在但未生效」收口 | `src/core/i18n/warning.ts` · `src/core/pdf/{render,postprocess}.ts` · `src/core/pipeline/precheck.ts` · `src/convert/{artifact-writer,paths,cli-pdf-job}.ts` · `src/cli/{index,options}.ts` · `src/main/cli-pdf-host.ts` | 同一输入下 docx 与 pdf 的警告条数口径一致（需断言）· CLI 判输出失败不再依赖文案 · `max` 有机器看守 | `npm run typecheck` · `npm run test` | 可与 #02 并行编辑，门禁在相末跑 | **通过 2026-10-06**（144 段 / 242 case 全绿） |
 | #04 | REQ-215 | 补网：把最弱的一层纳入可见范围 | `package.json`（覆盖率口径 + 链组成）· `gates/repo/check-coverage-zero.mjs` · `gates/repo/coverage-baseline.json` · 6 个缺文件头的 `src` 文件 | 豁免对读双向生效（任一方向缺登记即红）· renderer 进 ratchet 且**不设新阈值** · `check:src-layout` 上链且 fail-closed 绿 | `npm run test:coverage` · `npm run check:coverage-zero` · `npm run verify:ci` | 串行（改链组成，按全局配置目录 `tools/AGENTS.md` 走门禁改动的连带项） | 未开始 |
 | #05 | REQ-222 | 让产物带 `.d.ts`，测试的类型面对齐被测物 | `tsconfig.json` · `package.json`（打包清单）· `gates/artifacts/check-dist-manifest.mjs` · `test/**` 的 `@typedef` | 声明文件产出且不进安装包；产物清单门禁绿；测试 `@typedef` 指向产物 | `npm run typecheck` · `npm run build` | 串行（与 #04 共写 `package.json`） | 未开始 |
 | #06 | REQ-217 | 进度、降级、能力三者一并类型化 | `src/core/convert.ts` · `src/core/pipeline/*` · `src/core/{pdf,docx}/render.ts` · `src/convert/{run,context}.ts` · `src/mcp/tools.ts` · `src/renderer/state/pure.ts` | 阶段为穷尽判别联合，漏一个 kind 编译红；降级由 core 登记、交付面透传；两处 `ConvertContext` 改名完成 | `npm run typecheck` · 受影响段 | 必须在 #05 之后（要有类型面才谈得上「漏改编译红」） | 未开始 |
@@ -69,7 +68,7 @@
 
 **一处执行期扩域（2026-10-06）**：#02 的写域最初漏了 `gates/repo/`。改名一个文件会打断**任何持有该路径字面量的门禁** —— 实测命中 3 处（`check-transform-dispatch.mjs` 的枚举排除项、其 selftest 的负向夹具、`test-layout.cross-import-exemptions.json` 的 specifier），不改则这三道门禁必红。执行泳道按「不改则必红」自行补了那 3 行并主动上报越界，属正确处置；**漏列 `gates/` 是派发时的规划错误，不是它的**。教训：**改名的写域必须包含「按路径字面量引用该文件的全部门禁与夹具」** —— 这类引用不落在 import 图里，只能靠 grep 路径字符串找出来。
 
-**一处执行期拆步（2026-10-06）**：console 前缀统一原属 #02，但它要动的 `src/core/i18n/**` 正是 #03 的写域，而它本身只是措辞统一（评审已裁决**不建日志框架** —— 没有日志文件、没有遥测，且冒烟 marker 输出是协议）。为一个低价值改动开一条写冲突不划算，故拆成 #02b 并排在 #03 落地之后串行做。**这不是难度调整，是写域调整**：#02 与 #03 能并行的前提是写域不重叠，把 console 摘出去才让那个前提成立。
+**一处执行期撤步（2026-10-06，原 #02b「console 前缀统一」）**：评审裁决「**不建日志框架**」——本仓没有日志文件、没有遥测，且冒烟输出的 marker 是被 `smoke-report.mjs` 解析的**协议**，加一层抽象只有成本没有收益。那条裁决已落 evidence §二，是本项真正的产出。剩下的机械部分（36 处调用的前缀措辞统一）经复评**撤除，不做**：架构收益为零，而它要动的 `src/**` 覆盖面与后续 #06、#10 两步的写域高度重叠 —— 为纯样式 churn 制造三次写冲突与三次回归风险不划算。**撤除而不是搁置**：它不是「等有空再做」，是「评估后判定不值得做」。若日后有人认为统一前缀有诊断价值，重新评估即可，不必视为欠账。
 
 ## 整体完成标准
 
