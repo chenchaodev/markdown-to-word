@@ -1,3 +1,17 @@
+/**
+ * 关于窗脚本(about.html 的唯一脚本):版本徽标、更新检查状态行、四条外链与初始焦点。
+ *
+ * 为什么整页挂在一个 DOMContentLoaded 回调里:关于窗是**一次性静态页**,没有可复用的
+ * 生命周期,拆成多模块只会给一个不进任何长驻场景的页面凭空造出层间依赖方向(renderer →
+ * renderer),而 renderer 层的层向门禁正是按「单向 core←main←renderer」在守。
+ *
+ * 不变量在哪:
+ * ① 所有外链都 `preventDefault` 后改走 `window.aboutApi.openExternal` —— 页面开在应用内,
+ *    让 `<a>` 真的导航会把整个关于窗换成外部站点,用户失去返回入口,且绕过了主进程侧的
+ *    URL 校验。新增外链时这条必须照抄。
+ * ② 版本号只填徽标,含义由紧邻的可见标签承担(about.version),不借 app.versionTitle。
+ * ③ 初始焦点落在本页唯一主动作「查看使用手册」;落焦顺序与视觉序一致,Shift+Tab 可原路退回。
+ */
 import { setLanguage, applyStaticTexts, isLanguage, t } from "../core/i18n/index.js";
 
 declare global {

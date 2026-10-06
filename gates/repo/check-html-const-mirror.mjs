@@ -21,15 +21,18 @@
 // 先红后绿,而不需要「从命令行换一份登记表」的口子 —— 那本身就是一个 fail-open
 // (能传登记表就能把自己摘出去)。
 //
-// ---- ⚠️ 默认只报告,不判红(ADR-064 的 T0 节奏)----
-// 本判据在落地时**当前即红**(登记的镜像对在 HTML 里取不到属性、或与常量不等 ——
-// 见结论行),一建就 fail-closed 会让它进不了 verify:ci,而门禁进不了链等于不存在
-// (「链上少一道判据」没有任何机器会发现)。故默认 exit 0、只报告;`--enforce` 才判红。
-// **切换点(ADR-064 T2)**:两侧手写字面量收敂到只剩本表登记的那几对之后,把 --enforce
-// 的默认关闭语义去掉,并由主会话把 script 挂进 verify:ci。
+// ---- ✅ 已转 fail-closed 并上链(ADR-064 的 T2)----
+// 本判据落地时**当前即红**(登记的镜像对在 HTML 里取不到属性、或与常量不等 —— 见结论行),
+// 一建就 fail-closed 会让它进不了 verify:ci,而门禁进不了链等于不存在。收敂完成后:
+//   - npm script `check:html-const-mirror` 自身带 `--enforce`,已挂进 `verify:ci`;
+//   - `gate-index.mjs` 的 `access` 同步改为 `chain`,由 check-test-layout 的 L12 双向
+//     守住(声明 chain 就必须在链上,且链上就不得声明 offchain);
+//   - **`main()` 的默认分支仍是「不带 --enforce 即只报告」**,这不是遗留:默认分支的
+//     回归守护在 `test/gates/repo/html-const-mirror-gate.test.js` 的 CLI 档(报告模式
+//     exit 0 与 --enforce 退出码不同两格),把它删掉会让那两格变成恒红断言。
 // 取数命令(判据本体即取数命令,故这里只记命令不记数值):
-//   node gates/repo/check-html-const-mirror.mjs            # 报告模式:计数 + 逐条点名
-//   node gates/repo/check-html-const-mirror.mjs --enforce  # 判红模式:非零退出
+//   npm run check:html-const-mirror             # 链上跑的形态:带 --enforce,非零退出即判红
+//   node gates/repo/check-html-const-mirror.mjs  # 报告模式:计数 + 逐条点名(仅供排查)
 //
 // ---- 「取不到」一律判红,不静默放过 ----
 // 三种「查不到」在本门禁上与「查过了且相等」**不可区分**,放过去就是恒绿:
@@ -67,11 +70,12 @@ import { ROOT } from "../../shared/paths.js";
  * (改了常量没改 HTML)恰恰是本门禁唯一要抓的东西 —— 它必须是一次显式的代码改动,
  * review 才看得见。这与 check-copy-sites.mjs 头注「原语表不能被派生」同一条理由。
  *
- * ⚠️ **本表当前只登记 `max` 这一对**:`min="0"`(对应 `MARGIN_MIN_MM`)、`step="0.5"`、
- * `bodySizePt` 的 `min="8"`/`max="24"`(对应 `BODY_SIZE_MIN/MAX`)、`lineSpacing` 的
- * `min="1"`/`max="2.5"` 都是**同一种形态的手写镜像**,但它们不在本次收口范围内。
- * 它们与本表的关系是「加一行即覆盖」,故在此逐个点名,避免「本门禁已经守住了
- * HTML 与 core 的对称」这个**过宽的印象**被后来者当成事实。
+ * ⚠️ **`step` 刻意不登记**:`step="0.5"`(页边距四框与 bodySizePt)与 `step="0.05"`
+ * (lineSpacing / watermarkOpacity)同样是手写字面量,但 core **没有对应常量** —— 实测
+ * `src/core` 全树无 step 取值常量(grep `step` 只命中 i18n 文案与 CSS),wizard 侧也把它写成
+ * 字符串字面量。它们不是「某常量的镜像」,没有可比对的另一半,登记进来只会逼出一个
+ * 不存在的常量或一条恒红的判据。要让 step 也被守住,先在 core 建常量(那是独立一步),
+ * 本表随之加行即可。
  *
  * @type {readonly MirrorPair[]}
  */
@@ -87,6 +91,64 @@ export const MIRROR_PAIRS = Object.freeze([
       + "声明两者对称,但注释不是判据)。漂移的后果是双向的:core 放宽而输入框没放宽,"
       + "用户在面板里够不到新范围;core 收紧而输入框没收,用户能输入一个随后被"
       + "validatePageSetup 拒绝的值,且界面没有任何提示。",
+  }),
+  Object.freeze({
+    id: "margin-min",
+    htmlRel: "src/renderer/index.html",
+    attribute: "min",
+    inputIds: Object.freeze(["marginTop", "marginBottom", "marginLeft", "marginRight"]),
+    tsRel: "src/core/settings/settings-defaults.ts",
+    constantName: "MARGIN_MIN_MM",
+    why: "与 margin-max 成对:下限同样是手写镜像,消费面是 validatePageSetup 的范围判定"
+      + "与 clampPageMargins 的钳制。max 那侧漂移已判红、min 这侧若不守,就会出现"
+      + "「下限比 core 松」—— 用户输入负边距,界面看着正常而产出文档的页边距为负。",
+  }),
+  Object.freeze({
+    id: "body-size-min",
+    htmlRel: "src/renderer/index.html",
+    attribute: "min",
+    inputIds: Object.freeze(["bodySizePt"]),
+    tsRel: "src/core/settings/settings-defaults.ts",
+    constantName: "BODY_SIZE_MIN",
+    why: "正文字号下限:BODY_SIZE_MIN 的手写镜像,消费面是 typography 范围校验与"
+      + "wizard 侧 numberHook 的钳制。与 max 拆成两条登记是因为两个方向各自的失效后果"
+      + "不同(下限松 = 用户能输入无法渲染的字号;上限松 = 用户能输入文档撑爆的字号),"
+      + "诊断文案要分别指名是哪一侧。",
+  }),
+  Object.freeze({
+    id: "body-size-max",
+    htmlRel: "src/renderer/index.html",
+    attribute: "max",
+    inputIds: Object.freeze(["bodySizePt"]),
+    tsRel: "src/core/settings/settings-defaults.ts",
+    constantName: "BODY_SIZE_MAX",
+    why: "正文字号上限:BODY_SIZE_MAX 的手写镜像,消费面同上(typography 范围校验 +"
+      + "wizard numberHook 钳制)。注意 core/docx/template-import.ts 里那个 pt>=8&&pt<=24"
+      + "是**独立写死的第三份**,本门禁不管它 —— 那是模板导入的接受域,与设置面板的输入域"
+      + "是两个契约,见该行注释。",
+  }),
+  Object.freeze({
+    id: "line-spacing-min",
+    htmlRel: "src/renderer/index.html",
+    attribute: "min",
+    inputIds: Object.freeze(["lineSpacing"]),
+    tsRel: "src/core/settings/settings-defaults.ts",
+    constantName: "LINE_SPACING_MIN",
+    why: "行距倍数下限:LINE_SPACING_MIN 的手写镜像。core 侧写入点是"
+      + "docx/handlers/inline-html.ts(Math.round(lineSpacing × 240))与"
+      + "pdf/template-css.ts(line-height) —— 两处都按倍数直乘,**没有下限兜底**,"
+      + "所以范围只在这一层与 HTML 上体现;0 及以下会产出零行距/负行距的排版。",
+  }),
+  Object.freeze({
+    id: "line-spacing-max",
+    htmlRel: "src/renderer/index.html",
+    attribute: "max",
+    inputIds: Object.freeze(["lineSpacing"]),
+    tsRel: "src/core/settings/settings-defaults.ts",
+    constantName: "LINE_SPACING_MAX",
+    why: "行距倍数上限:LINE_SPACING_MAX 的手写镜像,失效后果同上(过大的倍数会让 docx 的"
+      + "行距值超出 Word 允许范围而被静默改写)。slider 的 max 与 number 输入的 max 必须同源,"
+      + "故两者共用这一条登记。",
   }),
 ]);
 
@@ -309,8 +371,9 @@ export function main(argv = []) {
     console.log(
       [
         USAGE,
-        "  --enforce  把判红项转成非零退出(默认只报告:ADR-064 的 T0 阶段本判据当前即红,",
-        "            一建就 fail-closed 会让它进不了 verify:ci;切换点见文件头)。",
+        "  --enforce  把判红项转成非零退出。npm script `check:html-const-mirror` 自带本开关",
+        "            并已在 verify:ci 链上;不带它跑(报告模式)只打印计数与逐条点名、不判红 ——",
+        "            该默认分支的回归守护在 test/gates/repo/html-const-mirror-gate.test.js 的 CLI 档。",
       ].join("\n"),
     );
     return 0;
@@ -338,8 +401,8 @@ export function main(argv = []) {
   if (!enforce) {
     console.log(
       `[report] HTML 手写镜像与 core 常量对称当前判红 ${problems.length} 项,未转成非零退出(报告模式):${counts}。`
-      + `逐条:${named.join(", ")}。加 --enforce 即 fail-closed(ADR-064 的 T0 节奏:`
-      + "T0 只报告,T2 收敂完存量镜像后才把 --enforce 固化进 verify:ci)",
+      + `逐条:${named.join(", ")}。加 --enforce 即 fail-closed(链上的 npm script 自带该开关;`
+      + "不带它跑只作排查用 —— 链上判红原因永远是「--enforce 那一遍红了」,不是「有人忘了加开关」)",
     );
     return 0;
   }

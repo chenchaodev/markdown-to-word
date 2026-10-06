@@ -25,7 +25,7 @@
 | `npm run dist` | electron-builder 打包 NSIS 安装包(输出 `release/`;链内含产物核对,见「门禁接入点」) |
 | `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`;段目录集合取自 `shared/test-common-surface.js` 的 `SEGMENT_DIRS`,共 **10 个** —— `core` `main` `renderer` `gates` `convert` `cli` `mcp` `shared` `behavior` `harness`,该导出即验收入口发现面的唯一单源;需先 build;新增测试=新建段文件零注册) |
 | `npm run test:smoke` | 冒烟自测(`electron . --smoke`,前置构建新鲜度守卫) |
-| `npm run test:coverage` | c8 覆盖率报告(自动验证的 core/main 产物;GUI renderer 编排层按测试边界排除,renderer 断言仍由 acceptance 执行) |
+| `npm run test:coverage` | c8 覆盖率报告(自动验证的 `dist/**` 全树,**含 renderer 层**;结构性不可测的 Electron 入口 / preload / 纯类型模块 / 关于窗三件套按 `gates/repo/coverage-baseline.json` 的豁免清单逐文件登记并排除。豁免清单与 `--exclude` 是**严格双射**,任一侧多出一条未登记的即判红) |
 | `npm run test:all` | 验收 + 冒烟 |
 | `npm run gen:fixtures` | 验收样例生成器(需先 build) |
 | `npm run check:fixtures` | fixtures 漂移校验(幂等,exit 0/1;CI 门禁步骤) |
@@ -51,7 +51,7 @@
 
 | 组 | 判据 | 成员 |
 | --- | --- | --- |
-| A 静态判定 | 只读源码与文本，不消费 `dist/`、不写产物 | 契约与依赖声明 · import 层向 · 变换分派 · 测试编号 · 临时目录清理 · 固定 action · 归档索引 · 文档指针 · CHANGELOG 与发布说明（各含各自的 selftest） |
+| A 静态判定 | 只读源码与文本，不消费 `dist/`、不写产物 | 契约与依赖声明 · import 层向 · 变换分派 · 测试编号 · 临时目录清理 · 固定 action · 归档索引 · 文档指针 · 源码树布局 · HTML 常量镜像 · CHANGELOG 与发布说明（各含各自的 selftest） |
 | B 构建 + 代码质量 | 产出或消费 `dist/` | `build` → 产物侧层向 → `typecheck` → `lint` |
 | C 执行与判定 | 真跑测试、真跑产物判定、消费覆盖率数据 | 覆盖率 → 零覆盖判定 → 零覆盖判据自检 → 夹具漂移 → 冒烟 → 几何 |
 
@@ -78,7 +78,7 @@ MCP 形态的判定要点:stdout 上应恰好两个 JSON 帧(启动横幅与 cra
 >
 > **接入点口径有两套并存,各有各的适用场合,本文件不裁决哪套对**(裁决属架构决定)。**发版分档看上面那四档** —— 它区分「在链上」与「只在 workflow 的某个 job 上」,而这个区分是发版时要用的;**机器判定看注册表 `gates/repo/gate-index.mjs` 的 `access` 字段**,它的取值域只有 `chain` 与 `offchain` 两值(定义在同模块导出的 `ACCESS_CHAIN` / `ACCESS_OFFCHAIN`),判据侧是 `check:test-layout` 的 L11 / L12。差别集中在 `check:env` 与 `check:supply` 两项:它们只出现在 workflow 的 job 上,四档里有位置(第三个档),而注册表按两值域只能记 `offchain`。
 >
-> ⚠️ **「本体 offchain、但 selftest 在链内」是一种真实存在的形态,共两处**:`check:src-layout`、`check:smoke-report`(两处的对应行已标注)。**含义:链上只跑了它们的自检,本体不在链上** —— 自检绿不蕴含本体在链上跑过。读表时不要因为看到 `:selftest` 在 `verify:ci` 链里就推断本体也在链上;本体是否在链上,取 `package.json` 的 `verify:ci` 展开与注册表 `access` 两处对读。（原第三处 `check:plan-in-progress` 随 `docs/PLAN.md` 载体删除同批退役 —— 载体没了即无对象可读,判据本体与自检一并删除。）
+> ⚠️ **「本体 offchain、但 selftest 在链内」是一种真实存在的形态,现只剩一处**:`check:smoke-report`(对应行已标注)。**含义:链上只跑了它的自检,本体不在链上** —— 自检绿不蕴含本体在链上跑过。读表时不要因为看到 `:selftest` 在 `verify:ci` 链里就推断本体也在链上;本体是否在链上,取 `package.json` 的 `verify:ci` 展开与注册表 `access` 两处对读。（另两处 `check:src-layout` / `check:html-const-mirror` 已转正:本体上链且 npm script 自带 `--enforce`。原第三处 `check:plan-in-progress` 随 `docs/PLAN.md` 载体删除同批退役 —— 载体没了即无对象可读,判据本体与自检一并删除。）
 >
 > **完整成员以 `package.json` 的 `verify:ci` 为准;本表是分类视角,不是成员清单。** 新增门禁若不在表里,以上两句都不因此失效 —— 分类是给人读的视角,成员单源在 `package.json`,漏登记分类不会让门禁漏跑,但会让本表失去「照着判断接入点」的作用。
 
@@ -91,14 +91,15 @@ MCP 形态的判定要点:stdout 上应恰好两个 JSON 帧(启动横幅与 cra
 | 验收测试 | `test` `test:all` | 仅本地手动 —— 链内跑的是带插桩的 `test:coverage`,不在这里再插一遍(裁决见 [ADR-016](adr/ADR-016-门禁链内全量验收只跑一遍.md)) |
 | 验收样例 | `check:fixtures`(漂移校验) | `verify:ci` 链 |
 | 验收样例(重生成) | `gen:fixtures` | 仅本地手动 |
-| 覆盖率 | `test:coverage` `check:coverage-zero` | `verify:ci` 链 |
-| renderer 覆盖率报告 | `report:coverage-renderer` | 仅本地手动 |
+| 覆盖率 | `test:coverage` `check:coverage-zero` | `verify:ci` 链。**renderer 层已纳入统计**(整层排除已撤销):它不另设阈值,而是落在全局分母里 —— 任何回退直接压低 `total` 并被现有四个阈值与 `floor` 拦住;剩余三条例外(关于窗三件套)在 `gates/repo/coverage-baseline.json` 的豁免清单里逐文件登记。⚠ 豁免清单与 `--exclude` 是严格双射,任一侧多出一条未登记的即判红 |
+| renderer 分层覆盖率(只读聚合) | `report:coverage-renderer` | 仅本地手动。⚠ 该脚本按「`dist/renderer` 是被排除层」的前提写的(它从 `test:coverage` 那份产物聚合);renderer 纳入统计后这份产物里只剩**无 source map 的那两份**(`about-preload.cjs` / `lang-bootstrap.js`,键是产物路径),其余 renderer 文件经 source map 重映射成 `src/renderer/**`。要看该层完整聚合,按 `coverage-baseline.json` note 里写明的口径(逐文件 covered/total 求和后再算百分比)自己从 `output/coverage/coverage-summary.json` 取 |
 | 冒烟 | `test:smoke` | `verify:ci` 链 |
 | 几何 | `check:geometry` | `verify:ci` 链。判据是**结构不变式**而非像素快照（后者会因平台/主题/字体差异假红）：主窗舞台的槽位/视口/响应式档位，**外加设置抽屉的 40 个控件**（存在且可见 · 组归属 · 组内视觉序 · 无水平裁切/越界 · 三种门控形态的收起与灰禁双向）。选择器与控件清单的单源在 `shared/geometry/geometry-spec.mjs` |
 | 复制点白名单 | `check:copy-sites` `check:copy-sites:selftest` | `verify:ci` 链。判据本体 `gates/repo/check-copy-sites.mjs`(详见本文件「代码地图」节 `test/` 条) |
 | 测试树 `@ts-check` 覆盖率 | `check:tscheck-coverage` `check:tscheck-coverage:selftest` | `verify:ci` 链。判据本体 `gates/repo/check-tscheck-coverage.mjs`;它此前是段(`test/core/tscheck-coverage.test.js`),因被测主体「测试树的类型门禁口径」不属于任何被测层而搬成门禁 |
 | 测试树布局(段目录 / 顶层目录 / `covers` / 层向) | `check:test-layout` `check:test-layout:selftest` | `verify:ci` 链。判据本体 `gates/repo/check-test-layout.mjs`;判据族逐条登记在它的 `CRITERIA`(族数随增删变动,**不在此抄数**),其中 L7 当前是 `pending`(见该常量表内的 `pendingReason`) |
-| 源码树布局(文件头注释 / 同层重名) | `check:src-layout` `check:src-layout:selftest` | ⚠️ **本体 offchain、仅 selftest 在 `verify:ci` 链内** —— 链上只跑自检,`check:src-layout` 本体不在任何链上(见本节开头「接入点口径有两套并存」那条)。判据本体 `gates/repo/check-src-layout.mjs` |
+| 源码树布局(文件头注释 / 同层重名) | `check:src-layout` `check:src-layout:selftest` | `verify:ci` 链(A 组静态判定)。判据本体 `gates/repo/check-src-layout.mjs`,**npm script 自带 `--enforce`** ⇒ 链上跑的形态是 fail-closed。判定本体的 `main()` 仍保留「不带 `--enforce` 即只报告」的默认分支,那不是遗留:该分支的回归守护在 selftest 的「默认模式 exit 0」与「两模式退出码不同」两格 |
+| HTML 手写镜像 ↔ core 常量 | `check:html-const-mirror` | `verify:ci` 链(A 组静态判定)。判据本体 `gates/repo/check-html-const-mirror.mjs`,**npm script 自带 `--enforce`**;登记表 `MIRROR_PAIRS` 是判定本体的**形参**而非 CLI 可传项(能传登记表就能把自己摘出去)。⚠ `step` 属性**不在登记表内** —— core 全树没有 step 取值常量,它是「无对应物的手写值」而非镜像;负向夹具在 `test/gates/repo/html-const-mirror-gate.test.js`(段,不是 `.selftest.mjs` 载体) |
 | 门禁索引表自身 | `check:gate-index:selftest` | `verify:ci` 链。**只有自检有 npm script**(`check:gate-index` 不存在),本体是纯数据表 `gates/repo/gate-index.mjs`,由 `check:test-layout` 的 L11 / L12 两条判据消费 |
 | 临时目录清理收口 | `check:temp-cleanup` `check:temp-cleanup:selftest` | `verify:ci` 链。判据本体 `gates/repo/check-temp-cleanup.mjs`(与 `check:test-numbering` 各自 fail closed 读同一单源的镜像判据,见「测试体系」节) |
 | 样例树准入 | `check:samples` `check:samples:selftest` | `verify:ci` 链。判据本体 `gates/repo/check-samples.mjs`;只判**文件层形态**(扩展名 / 子树可读性),不解析任何 md 正文 |
@@ -220,6 +221,7 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - **改动判据 / 门禁本体(含本文件这些指针)当轮就跑全量** —— 该判据见全局配置目录 `WORKFLOW.md` 四(测试);本仓另加一条:**影响面判不出来**(改动落在「命令」节任何一条都覆盖不到的位置)时同样当轮跑,不留到提交前
 - **筛段不会静默假通过**:筛选词命中 0 个段即判红(`test/harness/runner.js` 的段筛选三态契约),故「只跑受影响段」不存在「筛选词拼错 → 打印全部 0 段通过 → 退出 0」的失效形态
 - **文件头写了 `// @ts-check` ≠ 它被 typecheck 检查过** —— 判据是**有没有人从 `tsconfig.test.json` 的 `include`（只有 `test`）所及的面 import 它**：没被引到的文件不进编译程序，标注形同虚设。实测踩过：`shared/markdown-table.mjs` 带着标注长期躺着 8 条 `noUncheckedIndexedAccess` 错，只因门禁当时还是私有实现、没有任何 `test/` 文件引它；直到解析层归一让测试直接引它，欠账才浮出。**新增被检查文件时确认它真的在程序里**，不要以「我加了标注」为准
+- ⚠ **`… | tail -N; echo "exit=$?"` 报的不是被验命令的退出码，是 `tail` 的（恒为 0）** —— 管道里最后一段的退出码会覆盖整条管道，于是「验证失败」被印成 `exit=0`，而人正是照这个 `exit=0` 记「已验过」的。实测踩过：据此判定 `typecheck` 通过并提交，实则真实退出码是 1，仓里带着 4 条 `TS2304`/`TS7006`/`TS2353` 直到下一次跑整链才暴露。**正确写法二选一**：先 `set -o pipefail` 再用 `$?`，或直接取 `${PIPESTATUS[0]}`。**判据：凡是用 `$?` 取退出码，先确认那个位置前面没有 `|`** —— 与上一条同族，都是「看起来验过了」与「真的验过了」之间的缝
 - 全量验收在链内的唯一一次是 `verify:ci` 的 `test:coverage`(见 [ADR-016](adr/ADR-016-门禁链内全量验收只跑一遍.md)),本条不与它重复;发版前的全套走 `verify:release`,不由本条覆盖
 - **谁跑哪一档门禁(子代理跑定向、`verify:ci` 链级由主会话兜底)见全局配置目录 `AGENTS.md` 第八节(并行任务)**;本仓的档位定义在上面「验证分两档」,链的组成见「门禁接入点」表
 - 门禁红了怎么办(不得为「看是不是还红」重跑整链、三级定位法)见全局配置目录 `WORKFLOW.md` 四(测试)

@@ -376,18 +376,23 @@ export const GATE_INDEX = Object.freeze(
     "src-layout": {
       id: "src-layout",
       npmScripts: ["check:src-layout"],
-      access: ACCESS_OFFCHAIN,
+      access: ACCESS_CHAIN,
+      // ⚠ 本体的 npm script 带 `--enforce`(fail-closed),而判定本体的 `main()` 仍保留
+      // 「不带 --enforce 即只报告」的默认分支 —— 那条默认分支的**回归守护在 selftest 里**
+      // (`check-src-layout.selftest.mjs` 的「默认模式判红时仍 exit 0」与「--enforce 与
+      // 默认模式退出码不同」两格),去掉它会让那两格变成恒红断言。链上跑的形态由 script 决定。
       modulePath: "gates/repo/check-src-layout.mjs",
       judgment: { module: "gates/repo/check-src-layout.mjs", export: "checkSrcLayout", shaped: "{ problems: string[], stats }" },
     },
     "html-const-mirror": {
       id: "html-const-mirror",
       npmScripts: ["check:html-const-mirror"],
-      access: ACCESS_OFFCHAIN,
-      // 与 `src-layout` 同款形态:判定本体默认只报告(ADR-064 的 T0 节奏),
-      // `--enforce` 才 fail-closed。**刻意不进 verify:ci** —— 加链由主会话在收尾时统一做。
-      // 负向夹具在 `test/gates/repo/html-const-mirror-gate.test.js`(不是 `.selftest.mjs` 载体:
-      // 格② 要求载体有**在链上**的 script 跑它,而本门禁此刻刻意未上链)。
+      access: ACCESS_CHAIN,
+      // 与 `src-layout` 同款形态:判定本体的 `main()` 默认只报告,`--enforce` 才 fail-closed;
+      // **加 enforce 的决定落在 npm script 上**(`--enforce`),判定本体默认分支不动(其回归守护
+      // 在验收段 `test/gates/repo/html-const-mirror-gate.test.js` 的 CLI 档那几格)。
+      // 负向夹具是段而不是 `.selftest.mjs` 载体:后者受「载体必须有在链上的 script 跑它」的
+      // 约束,而门禁上链与载体建立必须同批发生(载体先于链存在会先判红)。
       modulePath: "gates/repo/check-html-const-mirror.mjs",
       judgment: { module: "gates/repo/check-html-const-mirror.mjs", export: "judgeHtmlConstMirror", shaped: "{ problems: MirrorProblem[], stats }" },
     },

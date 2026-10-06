@@ -3,13 +3,16 @@
   "note": [
     "coverage 门禁的阈值与豁免基线:c8 阈值(收紧面) + 结构性不可测文件的显式豁免(可见面)。单源:`test/gates/coverage-gate.test.js` 逐项核对本表与 package.json 的 test:coverage 参数向量。",
     "存在的理由:`--all` 打开后,「不可达文件」与「结构性不可测文件」混进同一个百分比 —— 前者(新增且从未被 import 的死代码)应当被抓,后者(Electron 入口、纯类型模块)不该让所有代码一起降分。平均值同时掩盖两者,是本门禁最大的盲区。",
-    "本表把后者逐条显式列出来(每条写明为何无法单测,并给出可复算的判定依据),让前者无处藏身:清单外的新 0% 文件由 `node gates/repo/check-coverage-zero.mjs --zero` 显式判红;清单本身也被守护(条目字段缺失/理由为空/文件已不存在/分类与真实产物形态不符/豁免已失效/新增空模块未登记,任一情况都判红)。",
+    "本表把后者逐条显式列出来(每条写明为何无法单测,并给出可复算的判定依据),让前者无处藏身:清单外的新 0% 文件由 `node gates/repo/check-coverage-zero.mjs --zero` 显式判红;清单本身也被守护(条目字段缺失/理由为空/文件已不存在/分类与真实产物形态不符/豁免已失效/新增空模块未登记/清单与 `--exclude` 双向对读,任一情况都判红)。",
+    "⚠ **豁免清单与 `--exclude` 是严格双射**(静态面 ⑦ 双向判红):清单侧每条必须在 `--exclude` 里,`--exclude` 里每条也必须在清单侧。单向那一版留下的洞是实测过的 —— 一条指向已删除源文件的 `--exclude=dist/main/ipc/types.js` 在源文件被删后一直留着而门禁永远绿。故整层/前缀排除同样判红:需要排除某一层时代价为逐文件登记(那正是让这层的体量变成可见数字的代价)。⚠ requireFlags 里的 `--exclude` **只守「这个选项存在」**(判定读的是选项名,不含取值),所以那里刻意不枚举具体排除项 —— 枚举即多一处无人对读的清单,而逐条对应关系由上面那条双射判据独家担任。",
     "维护顺序(勿跳步):① 在**干净树**上跑重测命令拿到实测值 → ② 人工确认阈值 → ③ 把 measured 与 thresholds 一起写回本表 → ④ package.json 的 test:coverage 阈值须与本表 thresholds 逐项相同。",
+    "⚠ **为什么第①步不能省:本门禁不核对 measured 与真实覆盖率**。静态面只核 thresholds 与 floor 与余量与参数向量与豁免清单,动态面 `--zero` 只核 0% 文件集合 —— **没有任何一面把 measured 拿去跟一次真实运行对读**。后果实测过:renderer 整层排除撤销后,沿用撤销前测出的 measured(四项全部略高于真实值,正是「分母变小」的特征),静态面照样 exit 0 通过。⇒ **凡改动 `--include` / `--exclude`(即改分母),measured 必须手工重测**,它不像 thresholds 那样有机器看守。这条是本表唯一一处「靠人守」的环节。",
     "重测命令就是 `npm run test:coverage` 本身(它的 c8 参数向量在本仓唯一的阈值来源;此处刻意不转抄,转抄即多一处会静默过期且无人判红的文本)。实测值同时出现在 stdout 的 All files 行与 output/coverage/coverage-summary.json 的 total.*.pct(产物落点由 test:coverage 的 --reports-dir 显式登记,与 coverage-gate.mjs 的 SUMMARY_RELATIVE 目录部分逐字相同 —— 该一致性由静态面判红,故此处不复述取值)。",
     "不要为了变绿而单下调 thresholds:thresholds 必须落在 [floor, measured] 区间内,且不得低于 measured − headroomPp。headroomPp 是「阈值允许比上一次干净树实测低多少」的显式余量(阈值本来就该低于实测值,否则门禁在干净树上也会红)。这条规则拦的是静默降级:实测值是独立测出来的、不会跟着阈值走,阈值一降就超余量 → 判红;要合法下调,必须先在干净树重测并把 measured 一起改(于是「实测值掉了几个点」本身变成 diff 里可见的回归),或者去改 floor(更显眼)。",
     "measured 为 null 表示「尚未在干净树登记实测值」,此时门禁判红(阈值失去锚点,等于没人看守)。",
     "headroomPp 的取法:取「干净树实测 − 拟定阈值」在四个指标上的**最大值**,向上取整到整数(它只界定「允许的余量」,不影响阈值严格度本身)。上一版干净树实测算出的 5(最大差距在 branches,4.03pp,上取整 5)已随 measured 刷新按公式重算为 4(最大差距 3.59pp);**每次刷新 measured 后须按同一公式重算**,否则余量会与实测漂移脱钩。余量取值属**人工裁决**,不是门禁能自动推导的量,故不挂在任何工作项下。",
-    "referenceSandbox 是在**沙盒副本**里测到的参考值(工作树当时有并行改动、6/113 段因沙盒缺 docs/.github 与在途 WIP 失败,数值偏低,仅供参考,不得直接当 measured 用)。它同时是「阈值不需要下调」的证据:排除 6 个豁免文件后 statements 92.71% / branches 88.56% / functions 92.72%,本表 thresholds 四项对 measured 全部达标(数值见 thresholds / measured 字段,勿在此处转抄)。",
+    "referenceSandbox 是在**沙盒副本**里测到的参考值(工作树当时有并行改动、6/113 段因沙盒缺 docs/.github 与在途 WIP 失败,数值偏低,仅供参考,不得直接当 measured 用)。⚠ 它记录的 flags 含已撤销的整层 renderer 排除,那是带日期的历史记录而非当前参数向量的描述,不要拿它的 flags 与 package.json 对读。它同时是「阈值不需要下调」的证据:排除 6 个豁免文件后 statements 92.71% / branches 88.56% / functions 92.72%,本表 thresholds 四项对 measured 全部达标(数值见 thresholds / measured 字段,勿在此处转抄)。",
+    "renderer 层已纳入统计(整层排除已撤销,不再有「有意为之但无台账」的排除)。它的 ratchet 不另设阈值:renderer 落在全局分母里,任何回退都直接压低 total 并被现有四个阈值与 floor 拦住;而剩下三条例外(关于窗三件套)是**逐文件可见**的,不是整层静默抹掉。要看该层自身的实测聚合,取 renderer 段在本次 coverage-summary.json 里的 covered/total **逐文件求和后**再算百分比(不对文件 pct 求平均 —— 后者让大小文件等权,数字随拆分方式漂移)。",
     "为什么不用 c8 的 --per-file(它看起来正好能堵「平均值稀释」):实测 94 个文件里有 33 个低于任一现阈值(最低的 src/core/image/image-type.ts 54.7%、src/main/smoke.ts 44.9%),--per-file 会要求先补齐几十个文件才能过,不是可落地的收紧手段,故改用显式的 0% 集合核对。",
     "别把本表当生成物:阈值与豁免的取舍是人的判断,故意不做 --write 自动重生成,免得一次自动重写把收紧面悄悄放宽(同 gates/repo/pinned-actions.baseline.json 的取向)。",
     "阈值漂移由两层独立看守,职责不同、缺一不可(负探针实测,勿合并成一层):① 本表的静态面(逐项核对 package.json 参数向量与 thresholds)能抓**任何**幅度漂移,含 90→89 这种微调;② 探针 gates/coverage.mjs 拿真实参数向量跑人造低覆盖,只在阈值被调到**低过沙盒自身覆盖率**时才红(实测四项全调 1 才红,单调 statements=89 仍绿)。故「探针绿」不等于「阈值没被改过」,微调漂移归本表静态面管。",
@@ -24,10 +27,10 @@
     "lines": 85
   },
   "measured": {
-    "statements": 93.12,
-    "branches": 88.59,
-    "functions": 93.02,
-    "lines": 93.12
+    "statements": 92.97,
+    "branches": 88.92,
+    "functions": 93.19,
+    "lines": 92.97
   },
   "thresholds": {
     "statements": 90,
@@ -59,7 +62,7 @@
     "--reports-dir",
     "--temp-directory",
     "--include=dist/**",
-    "--exclude=dist/renderer/**"
+    "--exclude"
   ],
   "requireExcludesInFlag": true,
   "exemptions": [
@@ -87,6 +90,21 @@
       "file": "src/main/preload.cts",
       "category": "runtime-entry",
       "reason": "preload 脚本:由渲染进程在 window 创建时加载,依赖 window 与 ipcRenderer 全局注入,单测环境没有这些宿主。其契约由 renderer 段按「window.api 形状」静态断言(segments/ui-contract-guards、command-entry-guard 等),不由覆盖率统计。产物为 dist/main/preload.cjs,实测报告记 statements 0/166。"
+    },
+    {
+      "file": "src/renderer/about.ts",
+      "category": "runtime-entry",
+      "reason": "关于窗脚本:模块顶层即 document.addEventListener(\"DOMContentLoaded\", …),import 它需要一个真实的 document —— 验收段跑在 Electron 主进程上下文里没有 DOM,故「能 import」这件事本身不成立(段内对它的断言是读文本 + 门禁层的 HTML↔常量对读,不是运行时)。渲染层其余文件都有对应的零 DOM 段,唯独这一份没有,故它是 renderer 纳入覆盖率后仅剩的三条例外之一。"
+    },
+    {
+      "file": "src/renderer/about-preload.cjs",
+      "category": "runtime-entry",
+      "reason": "关于窗 preload:Electron preload 由 window 创建时加载,依赖 contextBridge / ipcRenderer 全局注入,且必须以 CJS 形态被 Electron 装载(测试侧无法 import 一个 .cjs preload 并让它在真实 preload 语境里生效)。它的契约由 test/main/ipc-channels.test.js 对 dist 两份产物做 channel 文本恒等断言守护,不由覆盖率统计。产物为 dist/renderer/about-preload.cjs(该文件无 source map,故 c8 报告里的键就是产物路径)。"
+    },
+    {
+      "file": "src/renderer/lang-bootstrap.js",
+      "category": "runtime-entry",
+      "reason": "首屏 FOUC 缓解脚本:IIFE 在同步执行期读 localStorage 并写 document.documentElement.lang,没有任何导出可供 import;它只在 index.html 的 <head> 里被浏览器加载一次。契约由 test/core/i18n-registry.test.js 读源码断言「必须读 m2w.htmlLang 镜像、不得回退为内置 code→htmlLang 映射」守护。它是 src/renderer 下唯一不由 tsc 编译的 .js(tsc 不处理 .cjs/.js 输入),由 tools/copy-renderer.mjs 原样拷贝,故 c8 报告里的键同样是产物路径。"
     }
   ]
 }

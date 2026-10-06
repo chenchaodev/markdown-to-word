@@ -1,3 +1,18 @@
+/**
+ * 两条管线共用的解析底座:remark 插件集在这里**一次性**钉死,下游只拿 AST。
+ *
+ * 为什么插件集不交给调用方配置:GFM / 数学 / 批注三族一旦允许按调用点增减,同一份 markdown
+ * 在不同入口会解析出不同 AST,而标题 id、表格列宽这些信号是挂在 AST 上的(见下方
+ * `declare module "mdast"`)。插件增删即信号增删,漂移面在两处以上。
+ *
+ * 不变量在哪:
+ * ① 本文件是 `data.id` / `data.secLabel` / `data.colWidthsPct` 的**唯一写入点** —— 消费端
+ *    (docx 书签与内部锚点、renderTable 列宽、pdf 侧 markdown-it 对位规则)只读不写。
+ * ② 表格列宽走 markdown/table-width.ts 纯函数与 pdf 侧共用,故本文件只提供"回读源码
+ *    下一行"这一步;pdf 侧不经此路径(mdast 不保留分隔行)。
+ * ③ mdast 的 `declare module "mdast"` 是**公共契约**:删掉它,上面的信号在消费端即失明,
+ *    且 TypeScript 不会报错(消费端读的是 `any` 形态的 data)。
+ */
 import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";

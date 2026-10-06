@@ -6,7 +6,8 @@
 //
 // 本文件把「后者」变成**显式、带理由、可审计**的清单(基线文件),并对清单本身设防:
 // 条目字段缺失/理由为空/文件已不存在/分类与实际产物形态不符/豁免已失效(文件其实被
-// 覆盖了)/新增空模块未登记 —— 任一情况都判红。清单是收紧手段(让豁免可见),不是放宽
+// 覆盖了)/新增空模块未登记/豁免清单与 `--exclude` **双向**对读(任一侧多出一条未登记的
+// 即判红)—— 任一情况都判红。清单是收紧手段(让豁免可见),不是放宽
 // 口子:清单之外的新 0% 文件由 auditZeroFiles 显式判红,而不是被平均值稀释。
 //
 // 两个审计面:
@@ -379,15 +380,39 @@ export function auditStatic(root = ROOT) {
         "要么登记 category=empty-module 并写明理由,要么确认它确实有可执行语句",
     );
   }
-  // ⑦ 豁免必须真的在 --exclude 里(否则它们会进报告,结构性不可测文件照样拖低全仓)
+  // ⑦ 豁免清单 ↔ --exclude 的**双向**对读(两侧必须逐条相等,任一侧多出一条即判红)
+  //
+  // 为什么必须是双向而不是单向:单向那一版只查「清单里的每一条都在 --exclude 里」,于是
+  // `--exclude` 可以**多出**任意条目而无人看守 —— 而多出来的那一条正是本门禁最该抓的形态:
+  // 它让一个文件(或一整层)在报告面上静默消失,而清单侧毫无痕迹。实测过的具体形态:
+  // `--exclude=dist/main/ipc/types.js` 在源文件 `src/main/ipc/types.ts` 被删后一直留着,
+  // 门禁永远绿 —— 那是一条指向不存在产物的幽灵条目,读的人会以为那份产物已被核对过。
+  //
+  // 为什么不给「整层 / 失效条目」开一个可登记的逃生口:整层排除正是本门禁要消灭的那种
+  // **不可见**(它把一层的体量从分母里整体抹掉,且清单侧看不出任何痕迹)。需要排除某一层时,
+  // 代价是**逐文件登记** —— 那正是让这层的体量变成可见数字的代价。故两侧刻意要求严格双射:
+  // `--exclude` 里出现任何未登记条目即判红(幽灵条目与整层排除同判)。
   if (baseline.requireExcludesInFlag === true) {
     const excludeValues = flags
       .filter((flag) => flag.startsWith("--exclude="))
       .map((flag) => flag.slice("--exclude=".length));
-    for (const artifact of Object.keys(artifactToSrc)) {
+    const exemptArtifacts = new Set(Object.keys(artifactToSrc));
+    for (const artifact of exemptArtifacts) {
       if (!excludeValues.includes(artifact)) {
         problems.push(`豁免条目 ${artifactToSrc[artifact]} 未出现在 test:coverage 的 --exclude 参数里(它会进报告并拖低全仓覆盖率)`);
       }
+    }
+    // 反向:清单外的排除项。诊断措辞带「豁免条目」四字是刻意的 —— 验收段
+    // test/gates/coverage-gate.test.js 的 classify() 按文本特征分桶,这一族问题必须落进
+    // 「豁免清单自洽」那一桶(它断言真实面上零判红),落到未识别的兜底桶会让那一格在
+    // 真实漂移发生时先报「未归类」而把病因藏起来。
+    for (const value of excludeValues) {
+      if (exemptArtifacts.has(value)) continue;
+      problems.push(
+        `豁免条目与 --exclude 未对读:test:coverage 的 --exclude 里有 ${value},但豁免清单里没有对应条目`
+          + "(指向已不存在产物的幽灵条目会永远绿,且让人误以为那份产物已被核对过;整层/前缀排除会把一层的体量"
+          + "从分母里静默抹掉。两条修法:删掉这条 --exclude,或把对应源文件逐条登记进 exemptions 并写明理由)",
+      );
     }
   }
   return {

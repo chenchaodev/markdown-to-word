@@ -44,21 +44,57 @@ export const fixtures = null;
 const GATE_REL = "gates/repo/check-html-const-mirror.mjs";
 
 /**
+ * 下面四格负向夹具统一判**这一对**(页边距 `max` ↔ `MARGIN_MAX_MM`)。
+ *
+ * 为什么钉住一对而不是「默认全表」:这几格验的是判据**本身**的行为(不等 / 属性缺失 /
+ * 标签缺失 / 常量取不到,四种「查不到或不等」都必须判红),与登记表里还有哪几对无关。
+ * 早期形态让它们跑默认全表,于是往登记表加一对 `min` 属性的镜像就会让四格同时假红 ——
+ * 那是夹具形状与判据无关的一处耦合,不是判据出问题。
+ */
+/**
+ * 取登记表里的一对作为本段合成基准;**空表即抛错**。
+ *
+ * 两条理由合成这一格:① `noUncheckedIndexedAccess` 下 `MIRROR_PAIRS[0]` 是
+ * `MirrorPair | undefined`,而本段每一格都以基准对合成 HTML/TS —— 若基准是 undefined,
+ * 下面所有格子会在「没有基准」上空转并**全部判绿**(纯文本门禁最坏的失效形态)。
+ * ② 用「函数内抛错后返回」而不是 `@type` 断言:前者的类型来自真实收窄,后者是一句谎;
+ * 而登记表被清空这件事本身就该响(与门禁自身那条「登记表空 ⇒ 判红」判据同向)。
+ */
+function anchorPair() {
+  const found = MIRROR_PAIRS.find((pair) => pair.id === "margin-max") ?? MIRROR_PAIRS[0];
+  if (found === undefined) {
+    throw new Error("镜像登记表为空:本段需要至少一对作为合成基准,否则每格都会空转判绿");
+  }
+  return found;
+}
+const ANCHOR_PAIR = anchorPair();
+
+/** 合成夹具里常量与「正确」HTML 取值共用的那个字面量(两侧同源,故相等) */
+const SYNTHETIC_LITERAL = "1000";
+
+/**
  * 合成一份 HTML + TS 文本,注入 ctx 求值同一份判据(合成根不落任何盘)。
- * @param {{ max?: string | null, ids?: readonly string[], ts?: string }} [opts] 变异开关
- *   `max: null` = 让 input 标签上**没有** max 属性;`ids` 少一个 = 该 input 标签不存在;
- *   `ts` 整段替换 = 改常量那一行的写法。
+ *
+ * ⚠ **形状全部从所判的那一对派生**(属性名取 `pair.attribute`、input id 取 `pair.inputIds`、
+ * 常量取 `pair.constantName`),所以登记表加对 / 换属性即自动跟随 —— 早期形态把
+ * 「所有对都用 `max`、且登记表只有一对」写死在这几格里,加一对 `min` 镜像就会假红。
+ * 整张表**逐对逐 input 的覆盖面**由下面「覆盖面」那一格单独负责,两处职责不重叠。
+ * @param {{ pair?: MirrorPair, value?: string | null, ids?: readonly string[], ts?: string }} [opts] 变异开关
+ *   `pair` = 判哪一对(缺省 `ANCHOR_PAIR`);`value: null` = 让 input 标签上**没有**该属性;
+ *   `ids` 少一个 = 该 input 标签不存在;`ts` 整段替换 = 改常量那一行的写法。
  * @returns {{ problems: MirrorProblem[], stats: MirrorStats }}
  */
 function judgeSynthetic(opts = {}) {
-  const ids = opts.ids ?? ["marginTop", "marginBottom", "marginLeft", "marginRight"];
-  const max = opts.max === undefined ? "1000" : opts.max;
+  const pair = opts.pair ?? ANCHOR_PAIR;
+  const ids = opts.ids ?? pair.inputIds;
+  const value = opts.value === undefined ? SYNTHETIC_LITERAL : opts.value;
+  const attr = `${pair.attribute}="${value}"`;
   const html = [
     '<div class="mm-grid">',
-    ...ids.map((id) => `<input type="number" id="${id}" class="tin" min="0"${max === null ? "" : ` max="${max}"`} step="0.5" />`),
+    ...ids.map((id) => `<input type="number" id="${id}" class="tin"${value === null ? "" : ` ${attr}`} />`),
     "</div>",
   ].join("\n");
-  const ts = opts.ts ?? "export const MARGIN_MIN_MM = 0;\nexport const MARGIN_MAX_MM = 1000;\n";
+  const ts = opts.ts ?? `export const ${pair.constantName} = ${SYNTHETIC_LITERAL};\n`;
   /** @type {Record<string, string>} */
   const files = {
     "src/renderer/index.html": html,
@@ -70,11 +106,18 @@ function judgeSynthetic(opts = {}) {
       if (text === undefined) throw new Error(`ENOENT: 合成树里没有 ${relative}`);
       return text;
     },
+    pairs: [pair],
   });
 }
 
 /** @typedef {import("../../../gates/repo/check-html-const-mirror.mjs").MirrorProblem} MirrorProblem */
 /** @typedef {import("../../../gates/repo/check-html-const-mirror.mjs").MirrorStats} MirrorStats */
+/**
+ * 门禁侧的 `MirrorPair` 是**模块内** typedef(未 `export`),故本段按形状本地声明一份。
+ * ⚠ 两处形状要同步:门禁那份加字段而这里没跟上时,本段会因「对象字面量含多余属性」
+ * 判红 —— 那是本条该响的,不是误伤。
+ * @typedef {{ id: string, htmlRel: string, attribute: string, inputIds: readonly string[], tsRel: string, constantName: string, why: string }} MirrorPair
+ */
 
 /** 把 problems 拼成可正则匹配的文本 */
 const joined = (/** @type {readonly MirrorProblem[]} */ problems) =>
@@ -103,7 +146,7 @@ export async function run() {
     // ⚠ 若这一格判绿,本门禁就是恒绿的:真实仓当前相等,恒绿与「判据真的在工作」
     // 在正向锚点上完全不可区分,只有负向合成输入能区分。
     await suite.case("负向夹具:HTML 的 max 与 MARGIN_MAX_MM 不一致 ⇒ 判红并点名两侧取值(证明有牙齿)", () => {
-      const { problems, stats } = judgeSynthetic({ max: "500" });
+      const { problems, stats } = judgeSynthetic({ value: "500" });
       const text = joined(problems);
       assert(
         /margin-max → mismatch/.test(text),
@@ -120,7 +163,7 @@ export async function run() {
     });
 
     await suite.case("负向夹具:HTML 侧 max 属性缺失 ⇒ 判红(不是「按无镜像放过」)", () => {
-      const { problems } = judgeSynthetic({ max: null });
+      const { problems } = judgeSynthetic({ value: null });
       const text = joined(problems);
       assert(
         /attribute-missing/.test(text) && text.includes('没有 max 属性'),
@@ -177,15 +220,23 @@ export async function run() {
       const grids = [];
       for (const pair of MIRROR_PAIRS) {
         for (const target of pair.inputIds) {
+          // 属性名取 `pair.attribute`(**不写死 `max`**):登记表里有 `min` / `step` 的镜像对,
+          // 写死 `max` 会让那些对合成出「属性缺失」而不是「值漂移」,本格随即假红 ——
+          // 那是夹具形状与判据耦合的失效形态,不是判据出问题。
+          // 取值两侧同源(HTML 与 TS 常量用同一个 SYNTHETIC_LITERAL),故判据比较的是
+          // 「HTML 值 vs TS 常量」是否自洽,与该对真实取值无关 ⇒ 不必按对取真实常量值。
           // 只有 target 用错值,其余一律与常量相等 ⇒ 判红数恰为 1,且只点名 target
           const html = `<div class="mm-grid">\n${pair.inputIds
-            .map((id) => `<input id="${id}" max="${id === target ? "900" : "1000"}" />`)
+            .map(
+              (id) =>
+                `<input id="${id}" ${pair.attribute}="${id === target ? "900" : SYNTHETIC_LITERAL}" />`,
+            )
             .join("\n")}\n</div>`;
           const { problems } = judgeHtmlConstMirror({
             readText: (relative) =>
               relative === pair.htmlRel
                 ? html
-                : `export const ${pair.constantName} = 1000;\n`,
+                : `export const ${pair.constantName} = ${SYNTHETIC_LITERAL};\n`,
             pairs: [pair],
           });
           const text = joined(problems);
