@@ -1,9 +1,18 @@
 /**
  * 转换入口:md → 目标格式产物(无 IO、无 Electron,便于测试与复用)。
  * **当前实现是二分分支,不是格式注册表** —— `format === "pdf"` 走 HTML 路线,其余落到 docx 路线。
- * 全库共 6 处 format 分支跨 3 层(本文件 · `src/convert/run.ts`×2 · `src/convert/paths.ts` ·
- * `src/cli/index.ts`;路径写全 `src/` 前缀是因为本注释所在文件在 core/,写裸名会被读成 core 下的同名文件),
- * 故新增格式须逐处改判定,而不是「往注册表加一条目」。裁决见 campaign REF-025 计划项 #01 与 D-02。
+ * 全库的 `format` 类型分支落在下列 5 个点,跨 3 层(本文件 · `src/convert/run.ts`×2 ·
+ * `src/convert/paths.ts` · `src/cli/index.ts`),故新增格式须逐处改判定,而不是「往注册表
+ * 加一条目」。**这份清单是手工维护的索引**:加/删分支时同批改这里,别让它与实现漂走。
+ * ⚠ 曾写「共 6 处」而括号内只列 5 项 —— 第 6 处候选 `src/convert/run.ts:241` 判的是
+ * `artifact.kind`(产物判别)而非 `format`,不是同一族判定,别为凑数把它算进来。
+ * 同样不算本清单的还有 `cli/options.ts` 与 `renderer/wizard/book-wizard.ts` 里的 `"both"`:
+ * 那属 `CliFormat`(一个 flag 展开成两个格式)的映射。
+ * ⚠ 本清单**刻意不写可自动复算的 grep 指针**:唯一能稳定匹配这 5 处的模式也会命中本注释
+ * 自己那行散文(注释里出现 `format === "pdf"` 字样),滤注释行就得叠第二道正则,而叠错的
+ * 代价是「指针算出来的数」本身不可信 —— 比一个手工维护、可用眼睛扫的短清单更坏。
+ * ⚠ 路径写全 `src/` 前缀是因为本注释所在文件在 core/,写裸名会被读成 core 下的同名文件。
+ * 裁决见 campaign REF-025 计划项 #01 与 D-02。
  * docx → Buffer;pdf → HTML 文档 + 页码页脚模板(printToPDF 由主进程执行)。
  * 图片等外部资源经 context 注入,保持 core 纯逻辑。
  *
