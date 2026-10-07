@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 // no-self-computed-root 对 `test/harness/paths.js` 单点豁免,其余任何自算写法即判红。
 // 自算的代价是「深度耦合」:目录一挪,全仓这类行会一起错,而每处都「看起来对」。
 import { ROOT } from "../../../harness/paths.js";
+import { createAsserter } from "../../../harness/assert.js";
 import { createCaseSuite } from "../../../harness/case.js";
 import { removeTree } from "../../../harness/temp-resource.js";
 import { hashBuffer as fsxHashBuffer, toPosix as fsxToPosix, writeFileAtomic as fsxWriteFileAtomic } from "../../../../shared/fsx.mjs";
@@ -90,15 +91,17 @@ import {
 
 const suite = createCaseSuite();
 
+const { assert: harnessAssert } = createAsserter("supply-common");
+
 /**
- * 断言辅助(局部版:case 级用 test/harness/case.js 的 assert,这里用于非 case 上下文)。
- * 声明为断言函数,让 `assert(x !== undefined)` 之后 TS 真正收窄类型。
+ * 窄化壳:非 case 上下文用;harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构
+ * 模式调断言函数),而本段下游代码依赖收窄 ⇒ 保留一层带窄化签名的壳,体内只委派。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`supply-common 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /**

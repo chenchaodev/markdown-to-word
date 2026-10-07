@@ -22,6 +22,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createAsserter } from "../harness/assert.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import {
@@ -32,15 +33,7 @@ import {
   EXPECTED_SIGNATURE_STATUS,
 } from "../../gates/artifacts/check-signature-status.mjs";
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`signature-status 断言失败:${msg}`);
-}
+const { assert } = createAsserter("signature-status");
 
 /**
  * 读取仓库内文本文件。

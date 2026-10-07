@@ -65,6 +65,7 @@ import {
   startMenuTraces,
 } from "../../gates/artifacts/check-install-smoke.mjs";
 import { SMOKE_MARKERS } from "../../gates/smoke/smoke-proc.mjs";
+import { createAsserter } from "../harness/assert.js";
 import { ROOT } from "../harness/paths.js";
 import { removeFile } from "../harness/temp-resource.js";
 
@@ -160,14 +161,17 @@ if (mode === "hang") {
 }
 `;
 
+const { assert: harnessAssert } = createAsserter("install-smoke");
+
 /**
- * 断言辅助(条件不成立即抛错,给后续行收窄用)。
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
- * @returns {asserts cond} 条件不成立即抛错
+ * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`install-smoke 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /**

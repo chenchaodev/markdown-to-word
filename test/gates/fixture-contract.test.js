@@ -33,6 +33,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createAsserter } from "../harness/assert.js";
 import { ROOT, FIXTURES_DIR } from "../harness/paths.js";
 import { discoverSegments, discoverSegmentsDetailed } from "../harness/runner.js";
 import { removeTree } from "../harness/temp-resource.js";
@@ -55,15 +56,7 @@ const HARDCODED_DIR_RE = /path\.join\(testRoot,\s*"([^"]+)"\)/g;
 /** acceptance.mjs 里「由 SEGMENT_DIRS 派生出段目录数组」的那一行 */
 const DERIVED_DIRS_RE = /const\s+([A-Za-z_$][\w$]*)\s*=\s*SEGMENT_DIRS\.map\(/;
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`fixture-contract 断言失败:${msg}`);
-}
+const { assert } = createAsserter("fixture-contract");
 
 /**
  * 段对象(planFixtureOutputs 只用 baseName)。

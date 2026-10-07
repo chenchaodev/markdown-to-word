@@ -23,6 +23,7 @@ import {
   main as asarMain,
 } from "../../gates/artifacts/check-asar-manifest.mjs";
 import { main as releaseMain } from "../../gates/artifacts/check-release-artifacts.mjs";
+import { createAsserter } from "../harness/assert.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 const FIXTURE_VERSION = "9.9.9";
@@ -71,13 +72,17 @@ const FIXTURE_PRODUCT = "FixtureApp";
  * @property {{version: string, path: string, size: number, sha512: string}} latestYml
  */
 
+const { assert: harnessAssert } = createAsserter("release-artifact-gate");
+
 /**
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败说明
- * @returns {asserts cond} 条件不成立即抛错(供后续行收窄)
+ * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`release-artifact-gate 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /**

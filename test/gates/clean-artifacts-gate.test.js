@@ -51,6 +51,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createAsserter } from "../harness/assert.js";
 import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
@@ -90,15 +91,7 @@ const SANDBOX_PACKAGE = {
 /** 本段自建沙盒白名单:runClean 的唯一合法执行域 */
 const SANDBOXES = new Set();
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`clean-artifacts-gate 断言失败:${msg}`);
-}
+const { assert } = createAsserter("clean-artifacts-gate");
 
 const NODE = resolveNode();
 

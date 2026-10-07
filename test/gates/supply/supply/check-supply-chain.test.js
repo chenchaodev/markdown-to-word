@@ -19,6 +19,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { createAsserter } from "../../../harness/assert.js";
 import { createCaseSuite } from "../../../harness/case.js";
 import { ROOT } from "../../../harness/paths.js";
 import { removeTree } from "../../../harness/temp-resource.js";
@@ -27,16 +28,7 @@ import { formatSupplyLog, runSupplyChecks } from "../../../../gates/supply/suppl
 
 const suite = createCaseSuite();
 
-/**
- * 断言辅助(局部版:case 级用 test/harness/case.js 的 assert,这里用于非 case 上下文)。
- * 声明为断言函数,让 `assert(x !== undefined)` 之后 TS 真正收窄类型。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`check-supply-chain 断言失败:${msg}`);
-}
+const { assert } = createAsserter("check-supply-chain");
 
 /**
  * 临时目录 + 兜底清理(测试对象是夹具,finally 保证不留残留)。

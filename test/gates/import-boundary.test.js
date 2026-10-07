@@ -33,6 +33,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createAsserter } from "../harness/assert.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import {
@@ -77,15 +78,7 @@ const DECLARED_TRANSITIVE_DEPS = {
   "unist-util-visit": "5.1.0",
 };
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`import-boundary 断言失败:${msg}`);
-}
+const { assert } = createAsserter("import-boundary");
 
 /**
  * 跑被测脚本的 CLI main():吞掉 console 输出,返回 { code, output }。

@@ -23,6 +23,7 @@ import {
 } from "../../gates/artifacts/check-dist-manifest.mjs";
 import { evaluateFreshness, main as buildFreshMain } from "../../gates/smoke/check-build-fresh.mjs";
 import { copyRenderer } from "../../tools/copy-renderer.mjs";
+import { createAsserter } from "../harness/assert.js";
 import { ROOT } from "../harness/paths.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 
@@ -33,15 +34,7 @@ import { removeFile, removeTree } from "../harness/temp-resource.js";
  * @typedef {{ schema: string; fileCount: number; totalSize: number; files: ManifestEntry[] }} Manifest
  */
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`dist-manifest-gate 断言失败:${msg}`);
-}
+const { assert } = createAsserter("dist-manifest-gate");
 
 /**
  * 临时目录 + 兜底清理:测试对象是夹具,finally 保证不留残留(支持异步回调)。

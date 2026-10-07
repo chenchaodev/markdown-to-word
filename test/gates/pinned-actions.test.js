@@ -28,6 +28,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createAsserter } from "../harness/assert.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import {
@@ -63,15 +64,7 @@ const SANDBOX_ACTIONS = {
 const PINNED_LINE =
   "      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0";
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`pinned-actions 断言失败:${msg}`);
-}
+const { assert } = createAsserter("pinned-actions");
 
 /**
  * 取数组第 i 项并断言存在(noUncheckedIndexedAccess 下不引入非空断言)。

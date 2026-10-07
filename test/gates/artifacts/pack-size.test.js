@@ -25,6 +25,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createAsserter } from "../../harness/assert.js";
 import { ROOT } from "../../harness/paths.js";
 import { removeFile, removeTree } from "../../harness/temp-resource.js";
 import {
@@ -48,14 +49,18 @@ const SANDBOX_INSTALLER = "MarkdownToWord-Setup-9.9.9.exe";
 const SANDBOX_EXE = "MarkdownToWord.exe";
 const ASAR_ALIGN = 4;
 
+// 前缀沿用原值 `observability` 而非段名:失败消息文本是既有行为,不顺手统一
+const { assert: harnessAssert } = createAsserter("observability");
+
 /**
- * 断言辅助。
- * @param {unknown} cond 条件
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
+ * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`observability 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /**
