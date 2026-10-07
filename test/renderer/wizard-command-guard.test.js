@@ -14,6 +14,20 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
+import { createAsserter } from "../harness/assert.js";
+
+const { assert: harnessAssert } = createAsserter("wizard-command-guard");
+
+/**
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
+function assert(cond, msg) {
+  harnessAssert(cond, msg);
+}
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
@@ -38,17 +52,6 @@ export const covers = [
   "src/renderer/convert/file-list.ts",
   "src/renderer/state/state.ts",
 ];
-
-/**
- * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
- * (cond 为假即抛,后续代码无须再判空)。
- * @param {unknown} cond
- * @param {string} msg
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`wizard-command-guard 断言失败:${msg}`);
-}
 
 /**
  * classList stub:只实现被测代码触及的成员,另加整类替换/列举(外壳按 class 串建类)。

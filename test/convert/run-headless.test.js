@@ -38,6 +38,7 @@ import { pathToFileURL } from "node:url";
 import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
 import { createTempResource, removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**convert**,判据静态看不见本段的主体 ——
@@ -58,15 +59,8 @@ export const covers = [
   "src/convert/paths.ts",
 ];
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`convert-run-headless 断言失败:${msg}`);
-}
+// 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
+const { assert } = createAsserter("convert-run-headless");
 
 /**
  * 取 dist 模块的 **file:// URL** 供子进程 import。

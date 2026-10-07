@@ -37,16 +37,10 @@ import {
 } from "../../dist/mcp/jsonrpc.js";
 import { callConvertMarkdown, TOOL_NAME } from "../../dist/mcp/tools.js";
 import { buildHandlers } from "../../dist/mcp/index.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`mcp 断言失败:${msg}`);
-}
+// 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
+const { assert } = createAsserter("mcp");
 
 /**
 /** docx 魔数:OOXML 是 ZIP 容器(PK\x03\x04) */

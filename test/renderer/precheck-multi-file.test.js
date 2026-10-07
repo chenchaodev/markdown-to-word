@@ -37,6 +37,20 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { installDomStub, fireListener, makeElement } from "./dom-stub.js";
+import { createAsserter } from "../harness/assert.js";
+
+const { assert: harnessAssert } = createAsserter("precheck-multi-file");
+
+/**
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
+function assert(cond, msg) {
+  harnessAssert(cond, msg);
+}
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
@@ -64,16 +78,6 @@ export const covers = [
   "src/renderer/style/base.css",
   "src/renderer/style/dialogs.css",
 ];
-
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`precheck-multi-file 断言失败:${msg}`);
-}
 
 /** 冲刷微任务与宏任务,让 void 启动的命令链跑到下一个挂起点。 */
 async function flush() {

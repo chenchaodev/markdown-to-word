@@ -25,20 +25,24 @@ import {
 } from "../../dist/convert/image-downloader.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { closeTestServer, listenFetchablePort } from "../harness/http-server.js";
+import { createAsserter } from "../harness/assert.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "input", "g1-tiny.png");
 
 /** 本段断言消息前缀(共用助手的失败消息按段定位用) */
 const LABEL = "image-request-budget 断言失败";
 
+const { assert: harnessAssert } = createAsserter("image-request-budget");
+
 /**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`image-request-budget 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /** 本地测试 server 句柄 */

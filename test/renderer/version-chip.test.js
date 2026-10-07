@@ -30,6 +30,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
+
+// 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
+const { assert } = createAsserter("version-chip");
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
@@ -54,17 +58,6 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const url = (abs) => pathToFileURL(abs).href;
 const DIST_RENDERER = path.join(ROOT, "dist", "renderer");
 const DOM_STUB = path.resolve(here, "./dom-stub.js");
-
-/**
- * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
- * (cond 为假即抛,后续代码无须再判空)。
- * @param {unknown} cond
- * @param {string} msg
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`version-chip 断言失败:${msg}`);
-}
 
 const NODE = resolveNode();
 

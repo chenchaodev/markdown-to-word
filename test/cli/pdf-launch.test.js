@@ -31,6 +31,7 @@ import { ROOT } from "../harness/paths.js";
 // 且让被 import 的段双跑)。改由非段助手承载,单一来源这条纪律不变。
 import { resolveNode } from "../harness/node-exec.js";
 import { createTempResource, removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**cli**,判据静态看不见本段的主体 ——
@@ -48,15 +49,8 @@ export const covers = [
   "src/cli/host-launch.ts",
 ];
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`cli/pdf-launch 断言失败:${msg}`);
-}
+// 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
+const { assert } = createAsserter("cli/pdf-launch");
 
 /**
  * 在纯 node 子进程里跑一次真 pdf 转换。

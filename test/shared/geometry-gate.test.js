@@ -47,6 +47,9 @@ import {
 import { buildViewportSettledScript, parseMeasureScript } from "../../shared/geometry/geometry-page.mjs";
 import { LIVENESS_PATHS, checkPathLiveness, mediaConditions } from "../../gates/geometry/geometry/driver.mjs";
 import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
+
+const { assert: harnessAssert } = createAsserter("geometry-gate");
 
 /** 场景表项(契约单源 geometry-spec) @typedef {typeof SCENARIOS[number]} Scenario */
 /** 门禁采样结果 @typedef {Parameters<typeof runGeometryGate>[0][number]} GeometrySample */
@@ -75,12 +78,15 @@ import { ROOT } from "../harness/paths.js";
  */
 
 /**
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄(如 `pick` 判控件存在后直接返回它)⇒ 这里保留一层带窄化签名的壳,
+ * 函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败说明
  * @returns {asserts cond} 条件不成立即抛错(供后续行收窄)
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`geometry-gate 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /**

@@ -16,6 +16,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
+
+// 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
+const { assert } = createAsserter("init-barrier");
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
@@ -32,17 +36,6 @@ const SRC = fs.readFileSync(
   path.join(ROOT, "src", "renderer", "renderer.ts"),
   "utf8",
 );
-
-/**
- * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
- * (cond 为假即抛,后续代码无须再判空)。
- * @param {unknown} cond
- * @param {string} msg
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`init-barrier 断言失败:${msg}`);
-}
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;

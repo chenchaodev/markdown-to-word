@@ -67,16 +67,20 @@ import {
   validateNumberRange,
   validatePresetName,
 } from "../../dist/renderer/settings/settings-logic.js";
+import { createAsserter } from "../harness/assert.js";
+
+const { assert: harnessAssert } = createAsserter("settings-logic");
 
 /**
- * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
- * (cond 为假即抛,后续代码无须再判空)。
- * @param {unknown} cond
- * @param {string} msg
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄(如判 `appliedValue !== null` 后直读其 `.format`、判字典键存在后
+ * 直传给 `includes`)⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`settings-logic 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 // 预设夹具取**真实的默认形状**而非空对象字面量(ADR-069 的类型面对齐)。

@@ -21,6 +21,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { installDomStub, makeElement } from "./dom-stub.js";
+import { createAsserter } from "../harness/assert.js";
+
+// 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
+const { assert } = createAsserter("focus-return-guards");
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
@@ -44,17 +48,6 @@ export const covers = [
   "src/renderer/ui/dialogs.ts",
   "src/renderer/state/state.ts",
 ];
-
-/**
- * 断言失败即抛错;声明为断言函数,使类型检查在断言通过后收窄被测值
- * (cond 为假即抛,后续代码无须再判空)。
- * @param {unknown} cond
- * @param {string} msg
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`focus-return-guards 断言失败:${msg}`);
-}
 
 /** 取元素 id(失败消息用)。 */
 const idOf = (/** @type {{ id?: string }} */ el) => `#${el?.id ?? "?"}`;

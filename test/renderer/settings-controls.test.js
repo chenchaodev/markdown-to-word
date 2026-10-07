@@ -28,6 +28,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
+
+const { assert: harnessAssert } = createAsserter("settings-controls");
+
+/**
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
+ * @param {unknown} cond 判定条件
+ * @param {string} msg 失败消息
+ * @returns {asserts cond}
+ */
+function assert(cond, msg) {
+  harnessAssert(cond, msg);
+}
 import { installDomStub, makeElement, makeClassList, fireListener } from "./dom-stub.js";
 // 单向读几何规格(纯规格文件,不反向依赖生产侧:见 assertTableContract 的注)
 import {
@@ -65,16 +79,6 @@ export const covers = [
   "src/renderer/index.html",
   "src/renderer/dom/refs.ts",
 ];
-
-/**
- * 断言失败即抛错;声明为断言函数使类型收窄。
- * @param {unknown} cond
- * @param {string} msg
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`settings-controls 断言失败:${msg}`);
-}
 
 /**
  * 深比较(复位保留类断言要比较整块设置,不能只比引用)。
