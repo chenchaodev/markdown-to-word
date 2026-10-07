@@ -77,6 +77,6 @@ export {
   warnDedupKey,
   pushWarningOnce,
 } from "./warning.js";
-export type { KeyedWarning, ConvertWarning, WarningKey } from "./warning.js";
+export type { KeyedWarning, ConvertWarning } from "./warning.js";
 // DOM 面(core 内唯一碰 document 的那份职责,由本桶再导出以维持既有导入面)。
 export { applyStaticTexts } from "./dom.js";

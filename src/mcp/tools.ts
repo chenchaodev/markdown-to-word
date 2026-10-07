@@ -26,7 +26,9 @@ import { prepareMarkdown } from "../convert/preprocess.js";
 import { createConvertContext } from "../convert/context.js";
 import { emitConvertedArtifact } from "../convert/run.js";
 import { resolveDeliverySettings, templatePresetIds } from "../convert/delivery-settings.js";
-import type { ConvertWarning, WarningKey } from "../core/i18n/index.js";
+import { parseMarkdown } from "../core/pipeline/parse.js";
+import { containsMermaidCode } from "../core/markdown/mermaid.js";
+import type { ConvertWarning } from "../core/i18n/index.js";
 
 /** Tool 名(对 agent 可见的契约,改名会打断已配置的客户端)。 */
 export const TOOL_NAME = "convert_markdown";
@@ -80,15 +82,15 @@ export interface McpArtifactResult {
   outputPath: string;
   /** 警告 key 列表 */
   warnings: string[];
-  /** 本项发生的降级;无则空数组 */
-  degraded: WarningKey[];
+  /** 本项发生的降级(目前只有 mermaid);无则空数组 */
+  degraded: string[];
 }
 
 /** 结构化结果(进 structuredContent)。 */
 export interface McpConvertResult {
   artifacts: McpArtifactResult[];
   /** 全部产物的降级并集(给 agent 一眼可判的汇总) */
-  degraded: WarningKey[];
+  degraded: string[];
   /** 总耗时(ms) */
   elapsedMs: number;
 }
@@ -179,6 +181,9 @@ async function convertOne(
 ): Promise<McpArtifactResult> {
   const warnings: ConvertWarning[] = [];
   const prepared = await prepareMarkdown(file, settings, warnings, "warn.gbkEncoding");
+  // 降级判定在渲染**之前**:不注入 resolver 时 core 会静默按代码块渲染,
+  // 渲染完再回头查就晚了(产物里已经没有任何线索能区分「本来就没有图」与「图没渲出来」)。
+  const degraded = containsMermaidCode(parseMarkdown(prepared.body)) ? ["mermaid"] : [];
 
   const result = await emitConvertedArtifact(
     {
@@ -193,14 +198,14 @@ async function convertOne(
       // 每次 call 新 ctx + 强制 deadline(见文件头第 3 条)
       ctx: createConvertContext({ deadline: Date.now() + CONVERT_DEADLINE_MS }),
       warnings,
-      // mermaidResolver 刻意不注入 ⇒ 降级;已在装配层由 warnings 派生 degraded
+      // mermaidResolver 刻意不注入 ⇒ 降级,已在上面算进 degraded
     },
   );
   return {
     input: file,
     outputPath: result.outputPath,
     warnings: result.warnings.map(warningKey),
-    degraded: result.degradations ?? [],
+    degraded,
   };
 }
 

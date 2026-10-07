@@ -43,9 +43,6 @@ export async function renderCode(
       const reason = err instanceof Error ? err.message : String(err);
       ctx.warning.list?.push(mermaidFailedWarning(reason));
     }
-  } else if (node.lang === MERMAID_LANG) {
-    // 无 resolver 时降级为代码块，记录降级警告
-    ctx.warning.list?.push(mermaidEmptyWarning());
   }
   // 代码块字号:由正文字号推导(单源 codeBlockFontSizePt),highlights 路径与
   // 等宽兜底路径共用同一取值 —— 两条路径曾各读 theme 常量,故换算只在此处做一次

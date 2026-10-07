@@ -27,7 +27,7 @@ import { convert } from "../core/convert.js";
 import type { ConvertFormat } from "../core/settings/settings-defaults.js";
 import type { PdfArtifact, PreprocessedMarkdown } from "../core/convert.js";
 import type { DocMetadata } from "../core/pipeline/frontmatter.js";
-import type { ConvertWarning, WarningKey } from "../core/i18n/index.js";
+import type { ConvertWarning } from "../core/i18n/index.js";
 // 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
 import type { ConvertStage } from "../core/ipc-contract.js";
 // 取消判定按错误码单源(main 闸门与 core 渲染期取消同码,见 core/cancel.ts)
@@ -134,7 +134,7 @@ export interface OutputSkeletonRun {
 export async function emitConvertedArtifact(
   doc: OutputSkeletonDoc,
   run: OutputSkeletonRun,
-): Promise<{ outputPath: string; warnings: ConvertWarning[]; degradations: WarningKey[] }> {
+): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
   const { markdown, sourcePath, baseDir, trustedRoots, baseName, pinOutputPath, metadata } = doc;
   const { format, settings, ctx, warnings, katexDir, onProgress } = run;
   const { printPdf, mermaidResolver, onAfterCommit } = run;
@@ -198,11 +198,7 @@ export async function emitConvertedArtifact(
     throwIfCanceled(ctx);
     await onAfterCommit(outputPath);
   }
-  const degradations = warnings
-    .filter((w): w is import("../core/i18n/index.js").KeyedWarning => typeof w !== "string")
-    .map((w) => w.key);
-  const uniqueDegradations = [...new Set(degradations)];
-  return { outputPath, warnings, degradations: uniqueDegradations };
+  return { outputPath, warnings };
 }
 
 /**

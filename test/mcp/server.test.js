@@ -238,8 +238,8 @@ export async function run() {
     assert(Array.isArray(ok.content) && /** @type {any} */ (ok.content[0]).type === "text", "应同时给人读文本");
 
     // 3b. **降级必须可见**:含 mermaid 必声明,不含则不声明
-    assert(structured.degraded.includes("warn.mermaidEmpty"), "含 mermaid 的文档必须在 degraded 里点名 warn.mermaidEmpty");
-    assert(structured.artifacts[0].degraded.includes("warn.mermaidEmpty"), "降级也应逐产物点名 warn.mermaidEmpty");
+    assert(structured.degraded.includes("mermaid"), "含 mermaid 的文档必须在 degraded 里点名 mermaid");
+    assert(structured.artifacts[0].degraded.includes("mermaid"), "降级也应逐产物点名");
     assert(/** @type {any} */ (ok.content[0]).text.includes("mermaid"), "人读文案也须点名降级,不能只在结构化字段里");
     const plainResult = await callConvertMarkdown({ input: plain });
     const plainStructured = /** @type {any} */ (plainResult.structuredContent);
@@ -265,7 +265,7 @@ export async function run() {
     const dirResult = await callConvertMarkdown({ input: dir });
     const dirStructured = /** @type {any} */ (dirResult.structuredContent);
     assert(dirStructured.artifacts.length === 2, `目录内两个 md 应各产一个,实际 ${dirStructured.artifacts.length}`);
-    assert(dirStructured.degraded.includes("warn.mermaidEmpty"), "目录输入的降级应取并集");
+    assert(dirStructured.degraded.includes("mermaid"), "目录输入的降级应取并集");
 
     // 3e. 业务失败一律 isError(不是 JSON-RPC error):模型要看得见才能改参数重试
     for (const [args, label] of [
