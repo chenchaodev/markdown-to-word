@@ -16,7 +16,7 @@
  */
 import { batchBtn, cancelBtn, convertBtn, mergeBtn } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
-import { baseName, STAGE_PERCENT, stageText } from "../../state/pure.js";
+import { baseName, STAGE_INTERRUPTIBLE, STAGE_PERCENT, stageText } from "../../state/pure.js";
 import { setError, setProgress, setStatus, translate } from "../../ui/dom-ops.js";
 import { isConvertCommandBlocked, runBatch, runConvert, runMerge } from "../convert-flow.js";
 import { openDialog } from "./selection.js";
@@ -63,15 +63,16 @@ export function bindConvertActionsEvents(): void {
   // payload 带 mode 标识,直接与 state.mode 比对做归属判定(不再按调用
   // 上下文硬编码模式清单),转换结束后的迟到事件(mode 已复位为 null)直接忽略。
   // 单文件/合并只有阶段键(无百分比),按 STAGE_PERCENT 映射近似进度。
-  // pdf 链路细分 parse/inline/mermaid/katex/print 阶段键;print(printToPDF)
-  // 不可中断 → 取消按钮置灰,防无效点击。
+  // pdf 链路细分 parse/inline/mermaid/katex/print 阶段键。**可中断性是阶段属性而非
+  // 交付面属性**(同一段 print 在 GUI 与 CLI 都发,CLI 只是没有取消按钮),故查
+  // STAGE_INTERRUPTIBLE 表而非在此特判某个阶段键:表缺键/新增阶段时编译期就红。
   state.unsubscribeProgress = window.api.onConvertProgress((info) => {
     if (info.mode !== state.mode) return;
     const text = stageText(info.stage, translate);
     if (text !== info.stage) setStatus(text); // 未知阶段原样兜底,不覆盖状态栏
     // STAGE_PERCENT 的键集即 ConvertStage(info.stage 的类型),查表不可能落空 ⇒ 无兜底
     setProgress(STAGE_PERCENT[info.stage]);
-    if (info.stage === "print") cancelBtn.disabled = true;
+    if (!STAGE_INTERRUPTIBLE[info.stage]) cancelBtn.disabled = true;
   });
 
   state.unsubscribeBatchProgress = window.api.onBatchProgress((info) => {

@@ -39,7 +39,7 @@ export function truncateMiddle(text: string, max = 88): string {
  * 本文件零 import 约束:zh 文案作为默认输出保留于此(与 i18n 字典 convert.stage.*
  * 的 zh 值逐字一致),translate 注入时按阶段键名翻译(调用处传 t)。
  * 键集取自 core/ipc-contract.ts 的 `ConvertStage`(发射侧同用一份联合):新增阶段
- * 在此与 STAGE_PERCENT 两张表漏改即编译红,勿在旁另写一份阶段清单。
+ * 在此与 STAGE_PERCENT / STAGE_INTERRUPTIBLE 漏改即编译红,勿在旁另写一份阶段清单。
  */
 export const STAGE_TEXT: Record<ConvertStage, string> = {
   read: "正在读取文件…",
@@ -76,6 +76,36 @@ export const STAGE_PERCENT: Record<ConvertStage, number> = {
   render: 70,
   print: 85,
   done: 95,
+};
+
+/**
+ * 阶段 → 该阶段能否被用户取消(消费点:取消按钮是否置灰)。
+ *
+ * **① 它是「阶段」属性,不是「交付面」属性。**
+ * 原先「宿主能力是否可中断」被设想成按交付面声明(如 CLI.interruptible),方向是错的:
+ * `src/main/cli-pdf-host.ts` 复用 `src/main/converter/electron-side.ts` 的 `renderPdf`,
+ * 所以 **CLI 的 pdf 转换同样会发 `print` 阶段** —— 声明「CLI 不可中断」等于描述一个
+ * 并不存在的消费点(CLI 本就没有取消按钮)。真实的知识主语是 `printToPDF` 这个
+ * **原子调用本身不可中断**(electron-side.ts 在调用前上报 `onStage?.("print")`,
+ * 期间无取消检查点),renderer 只是消费了这个事实。
+ *
+ * **② 为什么是 `Record<ConvertStage, boolean>` 而非 `Set<ConvertStage>`。**
+ * `Record` 的键集受联合约束 ⇒ 新增转换阶段时本表**缺键即编译红**,判据等级与上方
+ * STAGE_TEXT / STAGE_PERCENT 同档(ADR-066 决定 1「新增阶段必须同时改联合与这些表」)。
+ * `Set` 做不到这点:少写一个成员不报任何错,新增阶段会静默沿用「可中断」默认值。
+ *
+ * **③ 取值为正(`true` = 可中断)**,与 STAGE_PERCENT 的正向取值口径一致,避免读表处
+ * 再做一次取反。
+ */
+export const STAGE_INTERRUPTIBLE: Record<ConvertStage, boolean> = {
+  read: true,
+  render: true,
+  done: true,
+  parse: true,
+  inline: true,
+  mermaid: true,
+  katex: true,
+  print: false, // printToPDF 是原子调用,期间无取消检查点(见上方 ①)
 };
 
 /* ---------- 最近转换相对时间 ---------- */

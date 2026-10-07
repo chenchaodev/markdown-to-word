@@ -5,8 +5,9 @@
  * (a) renderer state/pure.ts STAGE_TEXT / formatRecentTime 的 zh 默认文案 ↔
  *     core i18n 字典(zh.ts)convert.stage.* / recent.time.* 逐字相等
  *     (pure 层零 import 约束导致 zh 原文双份,漂移在此即时暴露);
- *     同段 (a-2) 另守 STAGE_TEXT ↔ STAGE_PERCENT ↔ 契约阶段字面量三者的键集
- *     双向恒等(renderer-pure.test.js 那条只查了单向);
+ *     同段 (a-2) 另守 STAGE_TEXT ↔ STAGE_PERCENT ↔ STAGE_INTERRUPTIBLE ↔ 契约阶段
+ *     字面量四者的键集双向恒等,并钉死「仅 print 不可中断」的取值(renderer-pure.test.js
+ *     那条只查了单向);
  * (b) MAX_RECENT_FILES:main persist/ui-state.ts(导出常量)↔ renderer ui/recent-files.ts
  *     (模块私有未导出——经源码文本提取恒等断言,改任一侧未同步即失败);
  * (c) 设置默认值防御性合并双侧关键字段抽样一致:main persist/settings.ts
@@ -20,7 +21,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DICT } from "../../dist/core/i18n/index.js";
-import { STAGE_TEXT, STAGE_PERCENT, stageText, formatRecentTime } from "../../dist/renderer/state/pure.js";
+import { STAGE_TEXT, STAGE_PERCENT, STAGE_INTERRUPTIBLE, stageText, formatRecentTime } from "../../dist/renderer/state/pure.js";
 import { MAX_RECENT_FILES as MAIN_MAX_RECENT_FILES } from "../../dist/main/persist/ui-state.js";
 import { mergeSettingsWithDefaults } from "../../dist/renderer/settings/settings-logic.js";
 import { isAllowedInlineHtml } from "../../dist/core/markdown/html-whitelist.js";
@@ -184,7 +185,26 @@ export async function run() {
     sortedKeys(STAGE_PERCENT) === expectedStageKeys,
     `STAGE_PERCENT 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_PERCENT)}`,
   );
-  console.log("[ok] identity-guards:(a-2) STAGE_TEXT ↔ STAGE_PERCENT 键集双向相等且恰好等于契约阶段字面量 断言通过");
+  // STAGE_INTERRUPTIBLE 纳入同一条等式:它是第三张受联合约束的表,同样不得多/缺键。
+  // 漏键在编译期已红(Record<ConvertStage, boolean>),但「改回 Record<string, boolean>」
+  // 放宽的那档只有运行期这条断言还响 —— 与上方两表同一处境,故同批守。
+  assert(
+    sortedKeys(STAGE_INTERRUPTIBLE) === expectedStageKeys,
+    `STAGE_INTERRUPTIBLE 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_INTERRUPTIBLE)}`,
+  );
+  // 语义锚:键集相等只证明「每个阶段都有决策」,不证明「决策内容对」——
+  // 把 print 的值写反(标成可中断)时上面的键集断言照样绿。这里逐阶段钉死取值。
+  // 不可中断者取自 printToPDF 本身是原子调用(electron-side.ts 调用前上报 print,
+  // 期间无取消检查点),是阶段物理属性,不随交付面变(CLI 的 pdf 同样走 print)。
+  // 遍历用 Object.entries(同本段上方 STAGE_TEXT 那处):键类型随表走,
+  // 用裸 string 索引 Record<ConvertStage, boolean> 在 @ts-check 下会被判无索引签名。
+  for (const [key, interruptible] of Object.entries(STAGE_INTERRUPTIBLE)) {
+    assert(
+      interruptible === (key !== "print"),
+      `STAGE_INTERRUPTIBLE.${key} 应为 ${key !== "print"}(仅 print(printToPDF 原子调用)不可中断)`,
+    );
+  }
+  console.log("[ok] identity-guards:(a-2) STAGE_TEXT ↔ STAGE_PERCENT ↔ STAGE_INTERRUPTIBLE 键集双向相等且恰好等于契约阶段字面量;仅 print 不可中断 断言通过");
 
   // formatRecentTime 四分支:默认输出 ↔ recent.time.* 模板插值结果逐字相等
   const now = new Date(2026, 7, 24, 12, 0).getTime(); // 本地 2026-08-24 12:00
