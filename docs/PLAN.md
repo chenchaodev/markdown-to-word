@@ -11,7 +11,7 @@
 - `docs/adr/ADR-062`：测试树位置即身份；门禁元框架瘦身。「段 ↔ 主体一对一目前无机器看守」是本计划要收窄的已知缺口。
 - `docs/adr/ADR-064`：文件名 = 唯一职责；含 19 条处置表与 12 条目录准入判据。**其第 2 条已裁决 `ConvertContext` 改名，本计划是执行它而非重议它**；其第 15 条的数字已过期（见下方「下一步」）。
 - `docs/adr/ADR-065`：renderer 四个功能目录之间零 import，跨功能协作经组合根注入。
-- `docs/adr/ADR-066`：转换进度、降级清单与交付面能力一并类型化。
+- `docs/adr/ADR-066`：转换进度与降级清单类型化。**其决定 3（交付面能力声明）已撤步不做**，见 `docs/evidence/20261007-083000-ADR-066决定3能力声明撤步裁决.md`。
 - `docs/adr/ADR-067`：验收段契约不变，宿主拆成 node 与 electron 两档。
 - `docs/adr/ADR-068`：门禁自测走合成根表格化，不合并段。
 - `docs/adr/ADR-069`：构建产物带 `.d.ts`，与「是否对外发包」解耦。
@@ -26,7 +26,7 @@
 
 #05 与 #05b 已落地:测试树 271 条类型错误清零(src 与 test 双向 `error TS` 均为 0),随 REQ-222 与 REQ-226/227 作为一个原子提交合入 —— 两者不能拆:REQ-222 单独落地必红(`declaration: true` 让 159 个 `.d.ts` 落进 c8 分母,动态面 159 项判红),REQ-226/227 单独落地则绿。
 
-**下一步按步序表开 #06**（进度·降级·能力三者一并类型化,REQ-217)。它排在最前是因为 #10 的注入式重构要靠类型面兜住「漏改一个交付面」,而那道护栏正是 #06 建出来的;`docs/evidence/20261006-141113-三份只读测绘事实地图与接手须知.md` §四 是 #06 的实测底账(其中 `STAGE_PERCENT: Record<string, number>` 若不同步收紧,`convert-actions.ts` 的查表会**静默**走 `?? 0`,编译面无事而批量进度条不动 —— 那是最可能出岔子的一处)。#08 与 #10 开工前分别先看该文件 §三 与 §五。
+**下一步按步序表开 #06**（进度与降级两者类型化,REQ-217 —— 原写的「能力」已撤步,裁决见 `docs/evidence/20261007-083000-ADR-066决定3能力声明撤步裁决.md`)。它排在最前是因为 #10 的注入式重构要靠类型面兜住「漏改一个交付面」,而那道护栏正是 #06 建出来的;`docs/evidence/20261006-141113-三份只读测绘事实地图与接手须知.md` §四 是 #06 的实测底账(其中 `STAGE_PERCENT: Record<string, number>` 若不同步收紧,`convert-actions.ts` 的查表会**静默**走 `?? 0`,编译面无事而批量进度条不动 —— 那是最可能出岔子的一处)。#08 与 #10 开工前分别先看该文件 §三 与 §五。
 
 三条测绘的结论底账同上，含该文件 §二「接手须知」三条踩空点（新增 evidence 后必须跑 `gen:archive-index` · 段数只写指针不写数字 · 三类测量口径错误）。
 
@@ -67,7 +67,7 @@
 **#05 的范围在执行期变了一次，记在此处**：原以为「开 `declaration` + 把 `@typedef` 从 `src/` 改指 `dist/`」是个小改动，实测**打开了整个测试树的类型面**—— 产物此前不带 `.d.ts`，故测试里每一处 `import … from "../../dist/…"` 的类型都等同于 `any`，**对产物的引用从来没被类型检查过**。真实类型一到位，积压的「夹具类型没写准」一次性判红 **271 条**（`TS2345` 109 / `TS2322` 35 / `TS2740` 24 / `TS2339` 20 / `TS2739` 15 / `TS2532` 15），分布如上表。运行期行为一直是对的；新可见的只是「夹具从未对照它真正跑的东西验过」—— 那正是 ADR-069 要拆的那个错配。
 
 **#05b 的最大杠杆不是「逐条改夹具」，是「删掉陈旧的手写类型注解」**（2026-10-06 实测）：271 条里相当大一块不是夹具写错，而是 **`declaration` 打开之前为了让测试能过、手写进测试文件里的替代性 JSDoc 注解** —— 典型是 `/** @returns {{ typography: object, … }} */`,注释里常写着「dist 编译产物无 `.d.ts`,字面量会被推成 never[]」这类理由。产物现在带声明了，**那些注解的前提已失效，而且 `@returns` 会覆盖推断** ⇒ 函数体改对了也不生效。实测：**删掉 `settings-logic.test.js` 里 `preset()` 上方一条 `@returns`，单文件当场少 10 条错误**；同一个文件另两处同类（`wizard-state.test.js` 手抄了一份 `WizardDraft`、`convert-helpers.js` 的 5 条 typedef 指 `src/`）也是同一病因。**故处理顺序必须是：① 查报错处附近有无手写 `@returns`/`@type`/`@param` → 有先删，让类型从产物声明推断 ② 删完还红才是夹具真写错 ③ 此时才按 `dist/*.d.ts` 的真实契约补注解。禁止与产物声明并存第二份手写类型 —— 那正是 ADR-069 要拆的错配。：#10 是 44 文件的 renderer 重构，而「renderer 层的类型面从不存在」正是它最缺的那道护栏；回退等于把计划里最大的风险留在一个没有类型看守的层上改。**代价是多出一整相的机械工作量**，这一条已计入，不藏。**唯一红线：不得用 `any`／`@ts-ignore`／摘 `// @ts-check` 把数字刷绿** —— 那会让这一步从「装上安全网」变成「装上一个恒绿的面具」，比不做更坏。
-| #06 | REQ-217 | 进度、降级、能力三者一并类型化 | `src/core/convert.ts` · `src/core/pipeline/*` · `src/core/{pdf,docx}/render.ts` · `src/convert/{run,context}.ts` · `src/mcp/tools.ts` · `src/renderer/state/pure.ts` · `src/renderer/convert/events/convert-actions.ts`（阶段联合一改必经过它:两处查表 + 一处 `stage === "print"` 特判,不在原清单里会留下编译红点或静默错数点,见 ADR-066 §背景二） | 阶段为穷尽判别联合，漏一个 kind 编译红；降级由 core 登记、交付面透传；两处 `ConvertContext` 改名完成 | `npm run typecheck` · 受影响段 | 必须在 #05 之后（要有类型面才谈得上「漏改编译红」） | 未开始 |
+| #06 | REQ-217 | 进度与降级两者类型化（能力声明已撤步,见 ADR-066 状态栏） | `src/core/convert.ts` · `src/core/pipeline/*` · `src/core/{pdf,docx}/render.ts` · `src/convert/{run,context}.ts` · `src/mcp/tools.ts` · `src/renderer/state/pure.ts` · `src/renderer/convert/events/convert-actions.ts`（阶段联合一改必经过它:两处查表 + 一处 `stage === "print"` 特判,不在原清单里会留下编译红点或静默错数点,见 ADR-066 §背景二） | 阶段为穷尽判别联合，漏一个 kind 编译红；降级由 core 登记、交付面透传；两处 `ConvertContext` 改名完成 | `npm run typecheck` · 受影响段 | 必须在 #05 之后（要有类型面才谈得上「漏改编译红」） | 未开始 |
 | #07 | REQ-219 | 验收宿主分两档，段契约一字不改 | `test/harness/{runner,segment-host}.js` · `shared/test-common-surface.js` | 纯 node 档段不需要 userData 重定向；新增门禁判「node 档闭包内不得出现 electron」 | `npm run test` | 串行 | 未开始 |
 | #08 | REQ-220 | 断言与具名 case 收敛成一套，并机器强制 | `test/harness/{assert,case}.js` · 各段 `*.test.js` · `gates/repo/check-test-layout.mjs`（新判据） | **全部**段接入具名 case（段数取 `find test -name '*.test.js' | wc -l`，不复制数字）；段内零本地顶层断言**实现**（自带 `throw` 的重写体要清零，`@returns {asserts cond}` 的委派型窄化壳合规，裁决见 `docs/adr/ADR-071-两处判据的形态裁决.md`）；新判据先报告后转正 | `npm run test` · `npm run check:test-layout` | 必须在 #07 之后（共用 harness） | 未开始 |
 | #09 | REQ-221 | 门禁自测走合成根表格化 | 新增合成根 harness · `test/gates/**` | 每道门禁的「合成树 + 期望问题清单」退化为一张表；**断言一条未删** | `npm run test` | 必须在 #08 之后（表格化要用统一断言库） | 未开始 |
