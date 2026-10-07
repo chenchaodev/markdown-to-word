@@ -55,6 +55,7 @@ import {
 } from "../../dist/core/settings/schema.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
 /** 设置契约(单源:core/settings/settings-defaults) */
 /** @typedef {import("../../dist/core/settings/settings-defaults.js").AppSettings} AppSettings */
@@ -88,14 +89,17 @@ import { removeFile, removeTree } from "../harness/temp-resource.js";
  *   },
  * }} ValidSettingsFixture */
 
+const { assert: harnessAssert } = createAsserter("settings");
+
 /**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`settings 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /**

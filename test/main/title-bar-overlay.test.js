@@ -19,16 +19,9 @@ import {
   TITLE_BAR_OVERLAY_COLORS,
   TITLE_BAR_OVERLAY_HEIGHT,
 } from "../../dist/main/windows/title-bar-overlay.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`title-bar-overlay 断言失败:${msg}`);
-}
+const { assert } = createAsserter("title-bar-overlay");
 
 /**
  * 已销毁的假窗口 → syncTitleBarOverlay 的入参收窄:该函数第一参是 electron 的

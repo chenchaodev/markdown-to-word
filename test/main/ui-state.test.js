@@ -11,6 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**main**,判据静态看不见本段的主体 ——
@@ -32,14 +33,17 @@ export const covers = ["src/main/persist/ui-state.ts"];
 /** 最近文件条目(跨进程契约单源;本段经动态 import 拿产物实例,类型按契约取) */
 /** @typedef {import("../../dist/core/ipc-contract.js").RecentFile} RecentFile */
 
+const { assert: harnessAssert } = createAsserter("ui-state");
+
 /**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`ui-state 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)

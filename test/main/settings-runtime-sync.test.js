@@ -23,15 +23,19 @@ import {
   TITLE_BAR_OVERLAY_COLORS,
   TITLE_BAR_OVERLAY_HEIGHT,
 } from "../../dist/main/windows/title-bar-overlay.js";
+import { createAsserter } from "../harness/assert.js";
+
+const { assert: harnessAssert } = createAsserter("settings-runtime-sync");
 
 /**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`settings-runtime-sync 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /** 假 BrowserWindow(overlay 只需 isDestroyed + setTitleBarOverlay 两个面) */

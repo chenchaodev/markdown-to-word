@@ -60,18 +60,19 @@ const PNG_1PX_PATH = path.join(FIXTURES_DIR, "input", "g4-preview.png");
 /** 转换上下文(取消标志 + 取消入口 + signal) */
 /** @typedef {ReturnType<typeof createConvertContext>} ConvertCtx */
 
+// 真值断言与逐字节比对都取公共单源:逐字节比对是本段原先那层窄化壳给不出的能力
+const { assert: harnessAssert, assertBytes } = createAsserter("converter");
+
 /**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`converter 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
-
-// 逐字节比对取公共断言集(本段自带的 assert 只判真假,给不出首个差异字节)
-const { assertBytes } = createAsserter("converter");
 
 /**
  * 合并转换(经 dist 跑实现;返回形状按跨进程契约取——实现层失败直接抛错,

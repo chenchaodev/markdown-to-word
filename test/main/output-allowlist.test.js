@@ -23,16 +23,9 @@ import {
   OUTPUT_ALLOWLIST_MAX_ENTRIES,
 } from "../../dist/main/services/output-allowlist.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`output-allowlist 断言失败:${msg}`);
-}
+const { assert } = createAsserter("output-allowlist");
 
 export const meta = { description: "shell 产物白名单:绑定真实产物/路径规范化/条目有界" };
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)

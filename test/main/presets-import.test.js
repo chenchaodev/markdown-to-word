@@ -15,6 +15,7 @@ import {
   mergePresets,
   parsePresetsFile,
 } from "../../dist/main/persist/preset-file.js";
+import { createAsserter } from "../harness/assert.js";
 
 /** 预设条目(契约单源) */
 /** @typedef {import("../../dist/core/settings/settings-defaults.js").CustomPreset} CustomPreset */
@@ -27,14 +28,17 @@ import {
 /** 合并结果(实现签名声明的契约) */
 /** @typedef {import("../../dist/main/persist/preset-file.js").MergePresetsResult} MergePresetsResult */
 
+const { assert: harnessAssert } = createAsserter("presets-import");
+
 /**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`presets-import 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /**

@@ -17,16 +17,9 @@ import path from "node:path";
 import { app } from "electron";
 import { getKatexDir, getMermaidDir, resolveKatexDir, resolveMermaidDir } from "../../dist/main/services/resource-dirs.js";
 import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`resource-dirs 断言失败:${msg}`);
-}
+const { assert } = createAsserter("resource-dirs");
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;

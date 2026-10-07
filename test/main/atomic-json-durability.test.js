@@ -24,6 +24,7 @@ import os from "node:os";
 import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
 import { removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
 /** @typedef {import("../../dist/main/persist/atomic-json.js").JsonWriterDeps} JsonWriterDeps */
 /** @typedef {import("../../dist/main/persist/atomic-json.js").DurableFileHandle} DurableFileHandle */
@@ -34,15 +35,7 @@ const createWriter = /** @type {(deps?: JsonWriterDeps) => JsonWriter} */ (
   /** @type {unknown} */ (createJsonWriter)
 );
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`atomic-json-durability 断言失败:${msg}`);
-}
+const { assert } = createAsserter("atomic-json-durability");
 
 /**
  * 断电模拟句柄:writeFile 只把内容前 3 字节交给「页缓存」(真实落盘到目标路径),

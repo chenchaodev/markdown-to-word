@@ -21,16 +21,9 @@ import path from "node:path";
 import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/converter/index.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`paths 断言失败:${msg}`);
-}
+const { assert } = createAsserter("paths");
 
 /**
  * 集合差异的可读诊断(供失败消息用):排序后逐行列出「多出/缺失」,并附两侧全集。

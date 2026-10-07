@@ -17,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
 import { removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
 /* 类型取自 dist 产物声明(ADR-069 起 declaration 已打开,interface 不再在 JS 里被擦除,
    import 产物即拿到 JsonWriterDeps / JsonWriter 的声明面,不必绕 src)。
@@ -28,14 +29,17 @@ const createWriter = /** @type {(deps?: JsonWriterDeps) => JsonWriter} */ (
   /** @type {unknown} */ (createJsonWriter)
 );
 
+const { assert: harnessAssert } = createAsserter("atomic-json");
+
 /**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游代码依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond}
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`atomic-json 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)

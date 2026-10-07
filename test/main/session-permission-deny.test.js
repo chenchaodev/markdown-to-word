@@ -22,20 +22,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { applyDefaultDenyPermissions } from "../../dist/main/services/session-permissions.js";
 import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
 
 /** @typedef {import("../../dist/main/services/session-permissions.js").PermissionDenyHost} PermissionDenyHost */
 /** 权限 handler 的宽松签名(本段只关心「回不回答、答什么」,不关心 Electron 的具体形参类型) */
 /** @typedef {(...args: any[]) => any} LooseHandler */
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`session-permission-deny 断言失败:${msg}`);
-}
+const { assert } = createAsserter("session-permission-deny");
 
 export const meta = { description: "session 权限三通道默认拒绝:request/check/device 均注册且拒绝" };
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)

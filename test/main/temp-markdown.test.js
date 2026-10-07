@@ -25,16 +25,9 @@ import {
   writeTempMarkdown,
 } from "../../dist/main/services/temp-html.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助:条件不成立即抛错,消息带本段前缀便于定位。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {asserts cond}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`temp-markdown 断言失败:${msg}`);
-}
+const { assert } = createAsserter("temp-markdown");
 
 /** 最近文件条目(跨进程契约单源) */
 /** @typedef {import("../../dist/core/ipc-contract.js").RecentFile} RecentFile */
