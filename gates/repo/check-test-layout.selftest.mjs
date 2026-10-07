@@ -76,7 +76,15 @@ const BASE_TEST_TOPS = Object.freeze([
 
 /**
  * 一段「本层主体齐备」的段:import 本层的 dist/ 产物 + 一处 type-only 的 src/ 类型引用
- * (后者是本仓必需形态,见门禁文件头「值 import 与 type-only 引用必须分开」)。
+ * (后者是本仓必需形态,见门禁文件头「值 import 与 type-only 引用必须分开」),
+ * **并已接入具名 case 契约**(REQ-220 #08 族二)。
+ *
+ * ⚠ **为什么底板段必须接 case 契约**:两族新判据都是 report-only ⇒ 命中走 `info` 通道,
+ * 而多条既有夹具断言 `expectInfo: null`(info 必须为空)。底板段若不接契约,那些夹具会先被
+ * 与本族无关的 info 命中顶住,验的就不再是它们本要验的那一格 —— 这与纪律 ①②③ 同源:
+ * **底板必须先满足全部判据**,否则每条夹具都先被无关的红/报告盖住。
+ * 同理族一:底板段**刻意不带**本地 `assert` 重写体(那一族要「零本地顶层断言实现」)。
+ *
  * @param {string} layer 层名
  * @returns {string}
  */
@@ -84,11 +92,16 @@ function wellFormedSegment(layer) {
   const distRoot = BASE_SRC_LAYERS.includes(layer) ? `../../dist/${layer}/subject.js` : `../../${layer}/subject.mjs`;
   return [
     "// @ts-check",
-    "/** 夹具段:本层主体齐备。 */",
+    "/** 夹具段:本层主体齐备,且已接入具名 case 契约(见本函数注释「为什么底板段必须接 case」)。 */",
     `import { subject } from "${distRoot}";`,
+    "import { assert as harnessAssert, createCaseSuite } from \"../harness/case.js\";",
     `/** @typedef {import("../../src/${layer}/types.js").Options} Options */`,
     "export const meta = { description: 'well-formed' };",
-    "export async function run() { return subject; }",
+    "export async function run() {",
+    "  const suite = createCaseSuite();",
+    '  await suite.case("subject 可取到", () => { harnessAssert(subject !== undefined, "subject 必须已取到"); });',
+    "  return { cases: suite.results };",
+    "}",
     "",
   ].join("\n");
 }
@@ -294,8 +307,13 @@ function crossLayerSegment(layer, spec) {
     "/** 夹具段:本层主体齐备,另有一处跨层引用(只为验 L5)。 */",
     `import { subject } from "${ownRoot}";`,
     `import { other } from "${spec}";`,
+    "import { createCaseSuite } from \"../harness/case.js\";",
     "export const meta = { description: 'cross-layer' };",
-    "export async function run() { return [subject, other]; }",
+    "export async function run() {",
+    "  const suite = createCaseSuite();",
+    '  await suite.case("两处引用都取到", () => { if (subject === undefined || other === undefined) throw new Error("缺引用"); });',
+    "  return { cases: suite.results };",
+    "}",
     "",
   ].join("\n");
 }
@@ -723,9 +741,12 @@ const CASES = [
       [`${TEST_REL}/core/dynamic-cross.test.js`]:
         'import { subject } from "../../dist/core/subject.js";\n'
         + 'export const meta = { description: "dynamic-cross" };\n'
-        + 'export async function run() {\n'
+        + 'import { createCaseSuite } from "../harness/case.js";\n'
+        + "export async function run() {\n"
+        + "  const suite = createCaseSuite();\n"
+        + '  await suite.case("dynamic cross", () => {});\n'
         + '  const other = await import("../../dist/renderer/settings/settings-logic.js");\n'
-        + "  return [subject, other];\n}\n",
+        + "  return { cases: suite.results, subject, other };\n}\n",
     },
     expect: /test\/core\/dynamic-cross\.test\.js → test-layer-cross-import:core 层的段 import 了 renderer 层的主体/,
     expectInfo: null,
@@ -752,9 +773,11 @@ const CASES = [
     extra: {
       [`${TEST_REL}/main/temp-markdown.test.js`]:
         'import { subject } from "../../dist/main/persist/ui-state.js";\n'
+        + 'import { createCaseSuite } from "../harness/case.js";\n'
         + '/** @typedef {import("../../src/core/ipc-contract.js").RecentFile} RecentFile */\n'
         + 'export const meta = { description: "type-only-cross" };\n'
-        + "/** @param {RecentFile} f @returns {unknown} */\nexport function run(f) { return [subject, f]; }\n",
+        + "export async function run(f) { const suite = createCaseSuite();"
+        + ' await suite.case("type-only cross", () => {}); return { cases: suite.results, subject, f }; }\n',
     },
     expectInfo: null,
     expect: null,
@@ -1410,8 +1433,13 @@ const CASES = [
         'import { subject } from "../../dist/core/subject.js";',
         'import { one } from "../../dist/main/one.mjs";',
         'import { other } from "../../dist/main/other.mjs";',
+        'import { createCaseSuite } from "../harness/case.js";',
         "export const meta = { description: 'granularity' };",
-        "export async function run() { return [subject, one, other]; }",
+        "export async function run() {",
+        "  const suite = createCaseSuite();",
+        '  await suite.case("两处跨层都取到", () => { if (one === undefined || other === undefined) throw new Error("缺引用"); });',
+        "  return { cases: suite.results, subject };",
+        "}",
         "",
       ].join("\n"),
     },
@@ -1427,6 +1455,197 @@ const CASES = [
     extra: {},
     l5Exemptions: [{ segment: `${TEST_REL}/core/x.test.js`, reason: "没有 specifier 键" }],
     expect: /第 1 项缺 segment 或 specifier/,
+  },
+  // ---- REQ-220 #08 族一:段内零本地顶层断言实现 ----
+  //
+  // ⚠ 本族**当前是 report-only 档**(`CRITERIA` 那行带 `pending: true`)⇒ 命中走 info 通道。
+  // 每条负向夹具都同时钉「info 里有」与「problems 里没有」(`expect: null`),只钉一侧的话
+  // 「两通道都进」或「两通道都空」的实现能混过去。
+  //
+  // ⚠ **判定面必须是「段」而不是 `test/**` 全体**:`test/harness/` 下的断言助手自己就有**真的**
+  // 顶层 `export function assert` 且自带 `throw`(它们是断言实现本体)。若实现扫全 `test/**`,
+  // 它会去红它自己要收敛的那个源。少了下面那条反向锚点,这个收窄无人守。
+  {
+    name: "#08 族一:段内顶层 assert 函数体自带 throw → 报告(info 通道,不计退出码)",
+    judgeOnly: true,
+    extra: {
+      [`${TEST_REL}/core/local-assert.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:段内自实现了一份断言逻辑(带 throw 的重写体)。 */",
+        'import { subject } from "../../dist/core/subject.js";',
+        'import { createCaseSuite } from "../harness/case.js";',
+        "function assert(cond, msg) {",
+        "  if (!cond) throw new Error(`local-assert 断言失败:${msg}`);",
+        "}",
+        "export const meta = { description: 'local-assert' };",
+        "export async function run() {",
+        "  const suite = createCaseSuite();",
+        '  await suite.case("assert 收窄生效", () => { assert(subject !== undefined, "subject 必须已取到"); });',
+        "  return { cases: suite.results };",
+        "}",
+        "",
+      ].join("\n"),
+    },
+    expectInfo: new RegExp(`${TEST_REL}/core/local-assert\\.test\\.js:\\d+ → test-segment-local-assert-impl:.*自带 throw`),
+    expect: null,
+  },
+  {
+    // **反向锚点(仓内实例数为 0,本夹具现造)**:ADR-071 明确合规形态是 `@returns {asserts cond}`
+    // 的**委派型窄化壳** —— 函数体只调 harness 断言、不含自己的 `throw`。少了这一格,上面那条
+    // 可能只是「恒红」:实现若按名字判(段内出现 `assert` 就红),而这条壳完全合规,没人能发现。
+    // 这也是 ADR-071 决定一的全部意义所在:判据禁的是**第二份实现**,不是这个函数名。
+    name: "#08 族一:段内委派型窄化壳(只调 harness、体内无 throw)→ 零报告(反向锚点,ADR-071 合规形态)",
+    judgeOnly: true,
+    extra: {
+      ["test/harness/case.js"]: "export const assert = () => {};\nexport const createCaseSuite = () => ({});\n",
+      [`${TEST_REL}/core/delegating-shell.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:段内的 assert 是委派型窄化壳(ADR-071 判它合规)。 */",
+        'import { subject } from "../../dist/core/subject.js";',
+        'import { assert as harnessAssert, createCaseSuite } from "../harness/case.js";',
+        "/**",
+        " * @param {unknown} cond",
+        " * @param {string} msg",
+        " * @returns {asserts cond}",
+        " */",
+        "function assert(cond, msg) {",
+        "  harnessAssert(cond, `delegating-shell 断言失败:${msg}`);",
+        "}",
+        "export const meta = { description: 'delegating-shell' };",
+        "export async function run() {",
+        "  const suite = createCaseSuite();",
+        '  await suite.case("壳把断言委派给 harness", () => { assert(subject !== undefined, "subject 必须已取到"); });',
+        "  return { cases: suite.results };",
+        "}",
+        "",
+      ].join("\n"),
+    },
+    expectInfo: null,
+    expect: null,
+  },
+  {
+    // **判定面的收窄(反向锚点)**:harness 下的助手自己有自带 `throw` 的顶层 `export function
+    // assert`(它们是断言实现本体,不是段)。若实现扫全 `test/**`(而不是 `segments`),它会去红
+    // **它自己要收敛的那个源** —— 那一族会恒红,而症状看不出是哪一处判据错了。
+    // 少了这一格,「判定面 = 段」这件事无人守:实现改成扫全树,上面两条仍然全绿。
+    name: "#08 族一:判定面是段而非 test/** 全体(非段助手里的顶层 assert 不判红)",
+    judgeOnly: true,
+    extra: {
+      // 刻意放在 test/harness/ 下且**不是段**(文件名不以 .test.js 结尾)⇒ 它不在 `segments` 里。
+      ["test/harness/assert.js"]: [
+        "// @ts-check",
+        "/** 夹具:harness 助手里的断言实现本体(非段,不在族的判定面上)。 */",
+        "export function assert(cond, msg) {",
+        "  if (!cond) throw new Error(msg);",
+        "}",
+        "",
+      ].join("\n"),
+      [`${TEST_REL}/core/plain.test.js`]: wellFormedSegment("core"),
+    },
+    expectInfo: null,
+    expect: null,
+  },
+  // ---- REQ-220 #08 族二:每段接入具名 case ----
+  //
+  // ⚠ **判据必须按「有无 import … case.js」判,不能按「文件里有没有 createCaseSuite 这三个字」判**:
+  // 下面那条「只在夹具串里合成别的段」的夹具就是这条的牙齿 —— 按字面判它会过关(它文件里确实
+  // 写着 `createCaseSuite`),而它自己并不接 case 契约。
+  {
+    name: "#08 族二:段未 import case 契约模块 → 报告(info 通道,不计退出码)",
+    judgeOnly: true,
+    extra: {
+      [`${TEST_REL}/core/no-case-import.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:本层主体齐备,但没有接入具名 case 契约。 */",
+        'import { subject } from "../../dist/core/subject.js";',
+        "export const meta = { description: 'no-case-import' };",
+        "export async function run() { return subject; }",
+        "",
+      ].join("\n"),
+    },
+    expectInfo: new RegExp(
+      `${TEST_REL}/core/no-case-import\\.test\\.js → test-segment-named-case:该段没有 import case 契约模块`,
+    ),
+    expect: null,
+  },
+  {
+    // **「机器能判的先判红」那一档的牙齿**:import 了契约模块、却一次没调 `.case(`(建了 suite
+    // 只用 `describe`)。只按 import 判的实现会放过它 —— 而它正是裁决要求如实报出的那一段。
+    name: "#08 族二:import 了契约模块却一次没调 .case( → 报告(建了 suite 只用 describe 不算接入)",
+    judgeOnly: true,
+    extra: {
+      ["test/harness/case.js"]: "export const createCaseSuite = () => ({});\n",
+      [`${TEST_REL}/core/suite-only.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:import 了契约、建了 suite,却只调 describe 从不调 case。 */",
+        'import { subject } from "../../dist/core/subject.js";',
+        'import { createCaseSuite } from "../harness/case.js";',
+        "export const meta = { description: 'suite-only' };",
+        "export async function run() {",
+        "  const suite = createCaseSuite();",
+        '  await suite.describe("分组", async () => subject);',
+        "  return { cases: suite.results };",
+        "}",
+        "",
+      ].join("\n"),
+    },
+    expectInfo: new RegExp(
+      `${TEST_REL}/core/suite-only\\.test\\.js → test-segment-named-case:该段 import 了 case 契约模块 .*但正文里没有任何`,
+    ),
+    expect: null,
+  },
+  {
+    // **按 import 判而不按字面判的牙齿**:这一段在**夹具字符串**里合成别的段(把别的段的
+    // import 行拼出来送进沙盒),文件正文里确实写着 `createCaseSuite` 与 `suite.case(` ——
+    // 按「有没有这几个字」判它会过关,而它自己并不接 case 契约。`extractImports` 的 inString
+    // 守卫把夹具串里的 import 行排除掉了,故它如实判红。
+    name: "#08 族二:只在夹具串里合成别的段的段不算接入(按 import 判,不按 createCaseSuite 这几个字)",
+    judgeOnly: true,
+    extra: {
+      ["test/harness/case.js"]: "export const createCaseSuite = () => ({});\n",
+      // harness 段必须声明 covers 且指向本层,否则它会先被 L8 判红(那是与本族无关的一档)。
+      ["test/harness/runner.js"]: "export const runAll = 1;\n",
+      [`${TEST_REL}/harness/synth.test.js`]: [
+        "// @ts-check",
+        '/** 夹具段:harness 段,但只在夹具串里合成别的段(自己并不接 case 契约)。 */',
+        'export const covers = ["test/harness/runner.js"];',
+        'const CASE_MODULE = "../../../test/harness/case.js";',
+        "export const synthesized = [",
+        '  `import { createCaseSuite } from "${CASE_MODULE}";`,',
+        "];",
+        "export const meta = { description: 'synth-only' };",
+        "export async function run() { return synthesized; }",
+        "",
+      ].join("\n"),
+    },
+    expectInfo: new RegExp(
+      `${TEST_REL}/harness/synth\\.test\\.js → test-segment-named-case:该段没有 import case 契约模块`,
+    ),
+    expect: null,
+  },
+  {
+    // **反向锚点**:import 了契约 + 至少一处 `.case(` ⇒ 零报告。缺它的话,本族可能只是「恒红」——
+    // 而「恒红」与「建了族」在退出码上不可区分(它当前是 report-only,恒绿恒红都不改退出码)。
+    name: "#08 族二:已 import 契约模块且至少调一次 .case( → 零报告(反向锚点)",
+    judgeOnly: true,
+    extra: {
+      ["test/harness/case.js"]: "export const assert = () => {};\nexport const createCaseSuite = () => ({});\n",
+      [`${TEST_REL}/core/cased.test.js`]: [
+        "// @ts-check",
+        "/** 夹具段:接入了具名 case 契约。 */",
+        'import { subject } from "../../dist/core/subject.js";',
+        'import { assert as harnessAssert, createCaseSuite } from "../harness/case.js";',
+        "export const meta = { description: 'cased' };",
+        "export async function run() {",
+        "  const suite = createCaseSuite();",
+        '  await suite.case("subject 可取到", () => { harnessAssert(subject !== undefined, "subject 必须已取到"); });',
+        "  return { cases: suite.results };",
+        "}",
+        "",
+      ].join("\n"),
+    },
+    expectInfo: null,
+    expect: null,
   },
   // ---- 判据登记表 CRITERIA:三道「没有一族漏登记」的机械判红 ----
   //

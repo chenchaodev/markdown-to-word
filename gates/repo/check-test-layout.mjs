@@ -37,6 +37,14 @@
 //      它的被测 import **必须**落在那同一个源文件的**同名**编译产物上。
 //   ⑪ test-layer-gate-subject(C3 / L4 第三档):段住在**非门禁层**却 import `gates/` 树
 //      ⇒ 判红,除非在**门禁主体豁免表**登记并给出达标理由(判准与 L5 那张表不同,见下)。
+//   ⑫ test-segment-local-assert-impl(REQ-220 #08 族一):段里的**顶层** `function assert(`
+//      函数体**自带 `throw`** ⇒ 判红。禁的是断言逻辑的第二份实现,不是「段内出现 assert 这个
+//      名字」—— `@returns {asserts cond}` 的委派型窄化壳(体内只调 harness 断言)合规,
+//      裁决见 `docs/adr/ADR-071-两处判据的形态裁决.md`。判定面是**段**,不是 `test/**`:
+//      `test/harness/case.js` 自己就有一个自带 throw 的顶层 assert,按 test/** 全扫会去红
+//      它自己要收敛的那个源。两族当前都是 report-only(转正 = 删 `CRITERIA` 那行的 pending)。
+//   ⑬ test-segment-named-case(REQ-220 #08 族二):每段必须 import case 契约模块**且**至少
+//      有一处 `.case(` 调用 ⇒ 否则判红。两个条件缺一不可(见下「两族的判定面与读盘」)。
 //
 // ---- L4 为什么必须判「零命中」而不是只判「import 落在别处」 ----
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
@@ -246,6 +254,14 @@ export const HARNESS_ROOT = `${TEST_REL}/${HARNESS_DIR}/`;
  * 失去作用域(behavior 段不再被要求声明,而没人会注意到)。
  */
 export const BEHAVIOR_DIR = "behavior";
+/**
+ * case 级断言契约模块的**仓库相对 POSIX 路径**(「每段接入具名 case」那一族的判据对象)。
+ *
+ * 单列成常量而不是在判据本体里写字符串字面量:该族的判据形态是「解析后落在这个路径上的
+ * **值引用**」,而路径字面量要同时出现在「常量」与「诊断文案」两处 —— 两处各写一份就是一处
+ * 可漂移的副本(常量改了诊断还指向旧路径,而门禁只按常量判 ⇒ 诊断开始说谎)。
+ */
+export const CASE_MODULE_REL = `${HARNESS_ROOT}case.js`;
 
 /**
  * **门禁层**的段目录名(C3 的作用域排除项 —— `test/gates/**` 的段不参与 C3)。
@@ -581,6 +597,41 @@ export const CRITERIA = Object.freeze([
       "C3(L4 第三档):段住在非门禁层却 import gates/ 树的模块 ⇒ 判红,除非在门禁主体豁免表"
       + "登记并给出达标理由(与 L5 豁免表**分表**:L5 问「是否只提供数据」,C3 问「层归属对不对」)",
   }),
+  // ---- REQ-220(#08)的两族:段内零本地顶层断言实现 / 每段接入具名 case(2026-10-07 上链)----
+  Object.freeze({
+    // ⚠ **判的是「自带 `throw` 的重写体」而不是「段内出现 `assert` 这个名字」**(ADR-071 决定一)。
+    // 合规形态是 `@returns {asserts cond}` 的委派型窄化壳:函数体只调 harness 断言、不含自己
+    // 的 `throw`。按名字判会把合规壳也判红,而 ADR-071 明确它是保留形态。
+    id: "test-segment-local-assert-impl",
+    title:
+      "段内零本地顶层断言实现:段里的**顶层** function assert( 函数体自带 throw ⇒ 判红"
+      + "(禁的是断言逻辑的第二份实现,不是 assert 这个名字;@returns {asserts cond} 的委派型"
+      + "窄化壳合规 —— 措辞与形态裁决见 ADR-071)",
+    pending: true,
+    pendingReason:
+      "新增时仓内已有大量段带本地重写体(逐段清零是 #08 的后续步骤,本步不动任何段)。"
+      + "先只报告:让存量段在清零前就 fail-closed 等于让整场门禁恒红,而恒红与「判据没生效」"
+      + "在退出码上不可区分。**转正动作 = 删掉本行的 pending: true 与 pendingReason,判定本体"
+      + "一行不改**;不给任何段开豁免表(ADR-071 决定一:新判据不设豁免)。",
+  }),
+  Object.freeze({
+    // ⚠ **判据按「有无 import … case.js」判,且还要求至少一处 `.case(` 调用**,两个条件缺一
+    // 不可:只按 import 判 → 有段建了 suite 却只用 describe 从不调 case,它照样过关;
+    // 只按「文件里有 createCaseSuite 这三个字」判 → 只在夹具串里合成别的段的段
+    // (`test/harness/runner-report.test.js`)会被误算成已接入,分母永远少一段。
+    id: "test-segment-named-case",
+    title:
+      "每段接入具名 case:段必须 import case 契约模块**且**至少有一处 `.case(` 调用 ⇒ 否则判红"
+      + "(import 是必要条件不是充分条件 —— 建了 suite 只用 describe 不调 case 的段如实判红,"
+      + "该形态是否为合法例外待后续裁决)",
+    pending: true,
+    pendingReason:
+      "新增时绝大多数段尚未接入该契约,清零是 #08 的后续步骤。"
+      + "**转正动作 = 删掉本行的 pending: true 与 pendingReason,判定本体一行不改**。"
+      + "⚠ 已知待裁决点:有段建了 suite、只用 describe 不用 case,按「机器能判的先判红」裁决"
+      + "如实判红,而它是否为合法例外待后续裁决 —— **不得**为此开豁免白名单(ADR-071:5"
+      + "明写「新判据不设豁免」)。",
+  }),
   ]);
 
 /**
@@ -647,6 +698,10 @@ const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exempti
  * @property {number} c3ShortReason C3 已登记但 reason 不达标判红条数
  * @property {number} c3Exemptions 门禁主体豁免表项数
  * @property {number} c3Stale 门禁主体豁免表 stale 判红条数
+ * @property {number} localAssertImpl 段内自带 throw 的顶层 assert 实现数(族一)
+ * @property {number} noNamedCase 未接入具名 case 的段数(族二)
+ * @property {number} noCaseImport 其中「没 import 契约模块」的段数(族二的两档可分别归因)
+ * @property {number} noCaseCall 其中「import 了却一次没调 `.case(`」的段数
  */
 
 /**
@@ -895,6 +950,116 @@ export function mirrorSourceCandidates(artifact) {
   const stem = artifact.slice(0, dot);
   if (!stem.startsWith(DIST_TREE)) return [];
   return candidates.map((ext) => `${SRC_TREE}${stem.slice(DIST_TREE.length)}${ext}`);
+}
+
+/**
+ * 段内**顶层**的 `assert` 函数声明(族一的判据对象;ADR-071 定的机器口径)。
+ *
+ * **只认顶层、不认对象方法** —— 判据形态是「段自己实现了第二份断言逻辑」,而
+ * `assert.js` 的 `createAsserter` 那种「返回对象的 `assert` 方法」是 harness 本体的实现,
+ * 不在段内、更不是段的第二份实现。少这一条收窄,判据会去红 harness 自己的实现。
+ *
+ * **只判 `throw` 而不是「有没有叫 `assert` 的函数」**(ADR-071 决定一):合规形态是
+ * `@returns {asserts cond}` 的**委派型窄化壳** —— 函数体只调 harness 断言、不含自己的
+ * `throw`。故本函数对每个声明返回「函数体是否自带 `throw`」,由调用方决定怎么报。
+ *
+ * 走 `lexSource` 抹注释(与 `extractImports` / `extractCovers` 同款取舍):说明文字里写
+ * `function assert(cond) {}` 不构成声明。**行首锚**保证「顶层」—— 缩进的 `function assert`
+ * 是嵌套在别的函数里的局部声明,不在判据面上。
+ *
+ * @param {string} text 段文件文本
+ * @returns {{ line: number, hasThrow: boolean }[]} 逐个顶层 `assert` 声明(1 基行号 + 自带 throw)
+ */
+export function findTopLevelAssertDecls(text) {
+  const lexed = lexSource(text);
+  // 行首 + 可选 `export` + 可选 `async`:`export async function assert(` / `export function`
+  // / `async function` / `function` 四种形态都在内,少一种就是一个漏判面。
+  const DECL_RE = /(^|\n)[ \t]*(?:export\s+)?(?:async\s+)?function\s+assert\s*\(/g;
+  /** @type {{ line: number, hasThrow: boolean }[]} */
+  const out = [];
+  for (const m of lexed.code.matchAll(DECL_RE)) {
+    // ⚠ `at` 必须是**声明本身**的下标,不是 `(^|\n)` 那个前缀的下标 —— 后者落在上一行的
+    // 换行符上,直接拿来数行号会整段偏移一行。`m[1]` 是前缀(`^` 时为空串,长度 0)。
+    const at = (m.index ?? 0) + (m[1]?.length ?? 0);
+    if (lexed.inString[at] === 1) continue;
+    // 括号配平取函数体。⚠ 必须走 `code` 而非原文:原文里字符串中的 `{`/`}` 会让配平错位
+    //(`lexSource` 抹注释但**保留字符串内容**),配平错位就会把函数体截短或延长。
+    const open = lexed.code.indexOf("{", at);
+    if (open < 0) continue;
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < lexed.code.length; i += 1) {
+      const ch = lexed.code[i];
+      if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) { close = i; break; }
+      }
+    }
+    out.push({
+      line: lexed.code.slice(0, at).split("\n").length,
+      hasThrow: bodyHasOwnThrow(lexed, open, close),
+    });
+  }
+  return out;
+}
+
+/**
+ * 这个函数体**自带 `throw`** 没有(段内自己实现断言逻辑的机器口径)。
+ *
+ * ⚠ 三个词法守卫缺一不可,少任何一个都是一类假命中/假放行:
+ *   - `inString` —— 段里常写「本段原本的写法是 `if (!cond) throw ...`」这类**说明串**,
+ *     照字面数会把「注释掉的重写体」算成「实现了」;
+ *   - 前驱非 `.` 且非标识符字符 —— `obj.throw` / `throwError` 这类**不是 throw 语句**;
+ *   - 配平边界 —— 只在函数体的 `close` 之内数,段里另一处无关的 `throw` 不算本函数体的。
+ * @param {{ code: string, inString: Uint8Array }} lexed `lexSource` 的结果
+ * @param {number} open 函数体 `{` 的下标
+ * @param {number} close 函数体 `}` 的下标;配平未闭合时传 -1(取到文末)
+ * @returns {boolean} 函数体内是否有自己的 `throw`
+ */
+function bodyHasOwnThrow(lexed, open, close) {
+  const end = close < 0 ? lexed.code.length : close + 1;
+  const body = lexed.code.slice(open, end);
+  for (const m of body.matchAll(/(^|[^\w$.])throw[^\w$]/g)) {
+    const at = open + (m.index ?? 0);
+    if (lexed.inString[at] === 1) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 这个段**接入了具名 case 契约**没有(族二的判据对象)。
+ *
+ * ⚠ **必须按「有无 `import … case.js`」判,不能按「文件里有没有 `createCaseSuite` 这三个字」判**:
+ * `test/harness/runner-report.test.js` 只在**夹具字符串**里合成别的段(它把别的段的 import
+ * 行拼出来送进沙盒),自己并不接 case 契约 —— 按字面判会把它误算成已接入,那一族的分母就
+ * 永远少一段。`extractImports` 已经带 inString 守卫,故夹具串里的 import 行抽不出来。
+ *
+ * **`import` 只是必要条件,不是充分条件**:裁决要求「机器能判的先判红」,故本函数还要求
+ * 段内**真的调用了 `case`**。实测有段建了 suite 却只用 `describe` 从不调 `case` ——
+ * 它 import 了 case.js 却没接契约,机器看得见这一层,就如实报。
+ *
+ * ⚠ `case` 调用点也要过 inString 守卫:同一批「只在夹具串里出现 `suite.case(…)`」的段
+ * 不能因此被算成已接入(理由同上)。
+ *
+ * @param {string} text 段文件文本
+ * @param {string} file 段的仓库相对 POSIX 路径(解析相对说明符的基准)
+ * @returns {{ imported: boolean, caseCalls: number }} 是否 import 了 case 契约 + `case` 调用点数
+ */
+export function caseContractState(text, file) {
+  const imported = extractImports(text, file).some(
+    (entry) => entry.resolved === CASE_MODULE_REL && !entry.typeOnly,
+  );
+  const lexed = lexSource(text);
+  let caseCalls = 0;
+  // `.case(` 的接收者是 suite 变量(`suite` / `s` / 任何别的名字),故只锚**属性访问**这一
+  // 形状,不锚具体接收者名 —— 锚死变量名等于把判据与段的命名习惯绑在一起。
+  for (const m of lexed.code.matchAll(/\.\s*case\s*\(/g)) {
+    if (lexed.inString[m.index] === 1) continue;
+    caseCalls += 1;
+  }
+  return { imported, caseCalls };
 }
 
 /**
@@ -1492,6 +1657,10 @@ export function checkTestLayout(base = {}) {
     c3ShortReason: 0,
     c3Exemptions: 0,
     c3Stale: 0,
+    localAssertImpl: 0,
+    noNamedCase: 0,
+    noCaseImport: 0,
+    noCaseCall: 0,
   };
 
   /** @type {string[]} */
@@ -2000,6 +2169,71 @@ export function checkTestLayout(base = {}) {
     }
   }
 
+  // ---- REQ-220(#08)的两族:段内零本地顶层断言实现 + 每段接入具名 case ----
+  //
+  // ⚠ **为什么这两族挂在 `segments` 上、而不是遍历 `files` 或自写 walker**:段是「被测一段」
+  // 这个单位,`segments`(在 segments 计算那一步已按 SEGMENT_EXT 切出)就是它的全集;而
+  // `test/harness/case.js` 本身**真的**有一个顶层 `export function assert` 且自带 `throw`
+  // (它就是 case 契约模块的实现本体),`test/harness/` 下还有一批非段助手文件。
+  // 按 `test/**` 全扫,第一族会去红它自己要收敛的那个源 —— 这不是「误伤宽了」,是判据指向了
+  // 错误的判定面:被禁的是「**段内**自己实现一遍断言逻辑」,不是「仓里有断言实现」。
+  //
+  // ⚠ **读盘**:这两族对**每一个段**都要读正文,而 L6/L8 那些循环是就地读的、没有缓存
+  // (见下面 L11 那段的读盘纪律说明:同一批文件读两次会让命中不可复现)。故这里**自己读一遍**,
+  // 而不是「复用 L6/L8 已读的文本」—— 那两个循环把正文读在块内局部变量里,循环一结束就没了。
+  // 这里只读一次、只在自己的循环里用,不与别的循环共享,故不构成「同一批文件被读两次」的
+  // 那种不可复现风险(那一档的风险来自「两次读到的内容可以不同」,而这里只有一次读)。
+  for (const file of segments) {
+    const source = ctx.readText(file);
+
+    // ---- 族一:段内零本地顶层断言实现(禁的是自带 `throw` 的第二份实现)----
+    //
+    // 措辞与形态裁决见 ADR-071 决定一:判「函数体是否自带 `throw`」而不是「有没有叫 assert
+    // 的顶层函数」—— 后者会把 `@returns {asserts cond}` 的委派型窄化壳一起判红,而那正是
+    // ADR-071 明确保留的合规形态(`assert.js` 的指引原话就是「在段内包一层调用本 helper」)。
+    for (const decl of findTopLevelAssertDecls(source)) {
+      if (!decl.hasThrow) continue;
+      stats.localAssertImpl += 1;
+      report(
+        "test-segment-local-assert-impl",
+        `${file}:${decl.line} → test-segment-local-assert-impl:这一行的**顶层** assert 函数体自带 throw`
+          + " —— 判据禁的是断言逻辑的第二份实现,不是「段内出现 assert 这个名字」。"
+          + "处置:把函数体改成委派型窄化壳(`@returns {asserts cond}` + 只调 harness 断言、"
+          + "体内不含自己的 throw),而不是给这一段开豁免(ADR-071 决定一:新判据不设豁免)",
+      );
+    }
+
+    // ---- 族二:每段接入具名 case ----
+    //
+    // ⚠ 两个条件都要断:**import 了契约模块** 且 **至少调过一次 `.case(`**。只断 import 会
+    // 让「建了 suite 却只用 describe 从不调 case」的段过关(裁决:机器能判的先判红);
+    // 只按「文件里有没有 createCaseSuite 这几个字」判会把「只在夹具串里合成别的段」的段误算
+    // 成已接入,分母永远少一段。口径细节见 `caseContractState` 的注释。
+    const contract = caseContractState(source, file);
+    if (contract.imported && contract.caseCalls > 0) continue;
+    stats.noNamedCase += 1;
+    if (!contract.imported) {
+      stats.noCaseImport += 1;
+      report(
+        "test-segment-named-case",
+        `${file} → test-segment-named-case:该段没有 import case 契约模块 ${CASE_MODULE_REL}`
+          + " —— 段必须接入具名 case:createCaseSuite 建 suite、逐条 suite.case(...) 登记用例,"
+          + "runner 与入口报告才有 case 级粒度(否则一段失败只报一个匿名错误)。处置:import "
+          + `${CASE_MODULE_REL} 并把断言收进 suite.case(...) 之内`,
+      );
+    } else {
+      stats.noCaseCall += 1;
+      report(
+        "test-segment-named-case",
+        `${file} → test-segment-named-case:该段 import 了 case 契约模块 ${CASE_MODULE_REL},`
+          + "但正文里没有任何 `.case(` 调用(只建了 suite 或只用 describe)—— import 了契约却"
+          + "不接进去,等于「声明了却不用」,case 级粒度名存实亡。处置:把断言收进"
+          + "suite.case(...) 之内。⚠ 按「机器能判的先判红」裁决如实报出:该形态是否算合法例外"
+          + "待后续裁决,判据本步不为其开豁免(ADR-071:5「新判据不设豁免」)",
+      );
+    }
+  }
+
   // ---- ADR-062 L11 / L11b / L12:门禁必有载体 + 清单在册而树里无 + 链归属 ----
   //
   // 三族的判定面都在**门禁索引**上,而索引的注入面刻意只取四项字段(理由见文件头)。
@@ -2223,6 +2457,12 @@ export function main(argv = []) {
     `C3 test-layer-gate-subject 命中 ${stats.c3Hits} 处`
       + `(豁免 ${stats.c3Exemptions} 条 / 未登记判红 ${stats.c3Unregistered}`
       + ` / 不足 ${REASON_MIN_CHARS} 字判红 ${stats.c3ShortReason} / stale 判红 ${stats.c3Stale})`,
+    `段内本地断言实现 test-segment-local-assert-impl 判红 ${stats.localAssertImpl} 项`
+      + "(顶层 assert 函数体自带 throw;@returns {asserts cond} 的委派型窄化壳合规)"
+      + "(report-only:命中只报告,不计退出码)",
+    `具名 case test-segment-named-case 未接入 ${stats.noNamedCase} 段`
+      + `(未 import 契约模块 ${stats.noCaseImport} / import 了却一次没调 .case( ${stats.noCaseCall};`
+      + `分母是全部 ${stats.segments} 段)(report-only:命中只报告,不计退出码)`,
   ].join(";");
   const named = problems.map((problem) => problem.split(" → ")[0] ?? problem);
 
