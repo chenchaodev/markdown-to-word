@@ -50,7 +50,7 @@ import {
   PDF_FOOTER_TEMPLATE,
 } from "./pdf/template.js";
 import type { HeaderLogoData } from "./docx/chrome.js";
-import type { MermaidResolver } from "./markdown/mermaid.js";
+import { containsMermaidCode, type MermaidResolver } from "./markdown/mermaid.js";
 // 契约单源:ImageResolver 类型收敛于 core/image/image-resolver.ts(此处仅类型导入)
 import type { ImageResolver } from "./image/image-resolver.js";
 // 页面设置与格式契约单源在 settings-defaults.ts;本文件不再转手 re-export(双入口
@@ -186,6 +186,31 @@ export interface DocxArtifact {
   kind: "docx";
   /** 可直接落盘的 .docx 文件内容 */
   buffer: Buffer;
+  /**
+   * 「本宿主无 mermaid 能力,且本文档确实含 mermaid 围栏」—— 故这些围栏按普通代码块出图。
+   *
+   * **① 它是宿主事实的透传,不是「core 降级了什么」的通用清单。**
+   * 判据只有「有没有 mermaid 能力」这一个二值事实,不分类、不计数、不定位:曾经试过的
+   * `degradations` 形态(从全部 `KeyedWarning` 派生)会把纯告知型的 `warn.gbkEncoding`
+   * 一起报成降级,而「按 key 分降级/告知」是伪穷尽(`imageLoadFailed` 一个键就含数量
+   * 预算耗尽/超时/字节预算耗尽三种成因,见 core/image/request-guard.ts 与
+   * core/i18n/warning.ts「不设通用 severity 字段」的同构理由)。那个形态已回滚。
+   *
+   * **② 为什么只有 docx 分支有这个字段。**
+   * pdf 分支不产 mermaid 占位(pdf/render.ts 的 hasMermaidResolver 为假时直接走普通
+   * 代码块),且 pdf 分支**不做 remark 解析**(见本文件 pdf 分支注释:双管线有意的不对称,
+   * 传原文让 markdown-it 在 renderPdfDocument 内解析)—— 要在 pdf 面判定就得新增一次
+   * AST 构建,不划算,故不做。**将来若 pdf 面也需要此事实,该字段的语义要重新裁决,
+   * 不要顺手扩到 pdf 分支。**
+   *
+   * **③ 与 `warnings` 正交。**
+   * 无 mermaid 能力时两条管线都不发警告(mermaid.ts 的 MERMAID_LANG 注释自述「静默」),
+   * 所以交付面从 `warnings` 里推不出这件事,此前只能在渲染前自行二次解析预判;
+   * 现在这层判定落在 core,由装配层原样透传给交付面。
+   *
+   * **判定复用本文件 docx 分支已解析出的 `ast`,不新增解析** —— 见下方 docx 分支注释。
+   */
+  mermaidDegraded?: boolean;
 }
 
 export interface PdfArtifact {
@@ -300,8 +325,16 @@ export async function convert(
     // 是双管线有意差异,见头注释)
     guard.throwIfCanceled(); // 同步解析(remark + 全文预扫)前复查:长文本不必解析完才退出
     const ast = parseMarkdown(body);
+    // 「宿主无 mermaid 能力 ⇒ 文档里的 mermaid 围栏按普通代码块渲染」这一宿主事实由 core
+    // 显式判定并随产物带出(见 DocxArtifact.mermaidDegraded 的 JSDoc:为何只有 docx 分支有、
+    // 为何与 warnings 正交)。**此处复用上方已解析出的 `ast`,不新增解析** —— 判定挂在
+    // 同作用域的这两行旁边是零成本的;下一个人看到 containsMermaidCode(parseMarkdown(...))
+    // 的写法请注意那正是本步要消掉的第二次解析,别把它「搬」回这里。
+    // 注入与否用局部量 mermaidResolver 判(已与 guard.race 竞速包装过),与上方注入判定同源。
+    const mermaidDegraded = mermaidResolver === undefined && containsMermaidCode(ast);
     return {
       kind: "docx",
+      mermaidDegraded,
       buffer: await renderDocx(ast, {
         imageResolver: context.imageResolver,
         guard,

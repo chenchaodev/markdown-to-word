@@ -5,11 +5,11 @@
  * 1. **只暴露 docx**。pdf 需要 Electron 宿主(打印是宿主能力,装配层不自带);
  *    MCP 进程跑纯 node,故不提供。将来要加时复用 CLI 已建成的机制(纯 node 侧写任务
  *    文件 → spawn `dist/main/cli-pdf-host.js` → 读结果文件),协议通道不必碰 Electron。
- * 2. **不注入 mermaidResolver**。因此 mermaid 围栏按普通代码块渲染(core 既有契约,
- *    静默不产警告)—— 但**降级必须对 agent 可见**:返回值带 `degraded`,否则这台工具
+ * 2. **不注入 mermaidResolver**。因此含 mermaid 围栏的文档会降级为普通代码块(core 既有
+ *    契约,静默不产警告)—— 但**降级必须对 agent 可见**:返回值带 `degraded`,否则这台工具
  *    就是「同样输入、偶尔产出不同」的那一类(agent 拿到的 docx 有图无图全看运气)。
- *    「有没有 mermaid」由 core 的 `containsMermaidCode` 判定,与渲染器共用同一个
- *    `MERMAID_LANG` 常量,不会声明了降级其实渲了图。
+ *    「有没有 mermaid」由 core 在转换时判定并随产物带出(`DocxArtifact.mermaidDegraded`),
+ *    与渲染器共用同一个 `MERMAID_LANG` 常量,不会声明了降级其实渲了图;本面只做透传。
  * 3. **每次 call 一个新 ctx + 强制 deadline**。新 ctx 是因为 `ConvertContext` 承载
  *    取消标志,复用会让上一次超时/取消污染下一次(历史 bug fd40480 的同类);
  *    deadline 是因为 CLI 那种「等多久是人的决定」的出口在 MCP 里不存在 ——
@@ -26,8 +26,6 @@ import { prepareMarkdown } from "../convert/preprocess.js";
 import { createConvertContext } from "../convert/context.js";
 import { emitConvertedArtifact } from "../convert/run.js";
 import { resolveDeliverySettings, templatePresetIds } from "../convert/delivery-settings.js";
-import { parseMarkdown } from "../core/pipeline/parse.js";
-import { containsMermaidCode } from "../core/markdown/mermaid.js";
 import type { ConvertWarning } from "../core/i18n/index.js";
 
 /** Tool 名(对 agent 可见的契约,改名会打断已配置的客户端)。 */
@@ -181,9 +179,6 @@ async function convertOne(
 ): Promise<McpArtifactResult> {
   const warnings: ConvertWarning[] = [];
   const prepared = await prepareMarkdown(file, settings, warnings, "warn.gbkEncoding");
-  // 降级判定在渲染**之前**:不注入 resolver 时 core 会静默按代码块渲染,
-  // 渲染完再回头查就晚了(产物里已经没有任何线索能区分「本来就没有图」与「图没渲出来」)。
-  const degraded = containsMermaidCode(parseMarkdown(prepared.body)) ? ["mermaid"] : [];
 
   const result = await emitConvertedArtifact(
     {
@@ -198,9 +193,13 @@ async function convertOne(
       // 每次 call 新 ctx + 强制 deadline(见文件头第 3 条)
       ctx: createConvertContext({ deadline: Date.now() + CONVERT_DEADLINE_MS }),
       warnings,
-      // mermaidResolver 刻意不注入 ⇒ 降级,已在上面算进 degraded
+      // mermaidResolver 刻意不注入 ⇒ 本面无 mermaid 能力(见文件头第 2 条)
     },
   );
+  // 降级事实**从装配层返回值读**(core 解析时判定、随产物带出、装配层原样透传)。
+  // 本面不自行解析:core 的判定复用它自己已构建的 ast(见 core/convert.ts docx 分支),
+  // 渲染前再解析一次纯属重复 —— 那次重复解析已被本步消掉,别把它加回来。
+  const degraded = result.mermaidDegraded ? ["mermaid"] : [];
   return {
     input: file,
     outputPath: result.outputPath,

@@ -26,6 +26,10 @@ import path from "node:path";
 import { convert } from "../core/convert.js";
 import type { ConvertFormat } from "../core/settings/settings-defaults.js";
 import type { PdfArtifact, PreprocessedMarkdown } from "../core/convert.js";
+// DocxArtifact 走 core 的类型单源(曾手写 `{ kind: "docx"; buffer: Uint8Array }` 窄类型,
+// 那是 core 契约的另一份拷贝:core 给 DocxArtifact 加字段时本层会静默看不到,降级事实就是这么
+// 被吞掉的。落盘只用 buffer,故类型放宽到完整产物不带来实现变化)
+import type { DocxArtifact } from "../core/convert.js";
 import type { DocMetadata } from "../core/pipeline/frontmatter.js";
 import type { ConvertWarning } from "../core/i18n/index.js";
 // 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
@@ -134,7 +138,7 @@ export interface OutputSkeletonRun {
 export async function emitConvertedArtifact(
   doc: OutputSkeletonDoc,
   run: OutputSkeletonRun,
-): Promise<{ outputPath: string; warnings: ConvertWarning[] }> {
+): Promise<{ outputPath: string; warnings: ConvertWarning[]; mermaidDegraded?: boolean }> {
   const { markdown, sourcePath, baseDir, trustedRoots, baseName, pinOutputPath, metadata } = doc;
   const { format, settings, ctx, warnings, katexDir, onProgress } = run;
   const { printPdf, mermaidResolver, onAfterCommit } = run;
@@ -198,7 +202,12 @@ export async function emitConvertedArtifact(
     throwIfCanceled(ctx);
     await onAfterCommit(outputPath);
   }
-  return { outputPath, warnings };
+  // mermaidDegraded 是**产物上的宿主事实的透传**(core 解析时判定,见 DocxArtifact 的
+  // JSDoc),本层**不重做判定** —— 在这里再判一次,就是把那次多余解析换个位置。
+  // 交付面(MCP)据此对 agent 声明降级;不消费它的交付面(GUI/CLI)读不读都一样。
+  // 只在 docx 分支有值:core 该字段只产于 docx 分支(见 DocxArtifact.mermaidDegraded ②)。
+  const mermaidDegraded = artifact.kind === "docx" && artifact.mermaidDegraded === true;
+  return { outputPath, warnings, ...(mermaidDegraded ? { mermaidDegraded } : {}) };
 }
 
 /**
@@ -210,7 +219,7 @@ export async function emitConvertedArtifact(
  * 导出后行为(onAfterCommit)仍由调用方按各自语义执行。
  */
 export async function persistArtifact(
-  artifact: PdfArtifact | { kind: "docx"; buffer: Uint8Array },
+  artifact: PdfArtifact | DocxArtifact,
   sourcePath: string,
   format: ConvertFormat,
   outputDir: string,
