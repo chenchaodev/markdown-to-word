@@ -607,12 +607,13 @@ export const CRITERIA = Object.freeze([
       "段内零本地顶层断言实现:段里的**顶层** function assert( 函数体自带 throw ⇒ 判红"
       + "(禁的是断言逻辑的第二份实现,不是 assert 这个名字;@returns {asserts cond} 的委派型"
       + "窄化壳合规 —— 措辞与形态裁决见 ADR-071)",
-    pending: true,
-    pendingReason:
-      "新增时仓内已有大量段带本地重写体(逐段清零是 #08 的后续步骤,本步不动任何段)。"
-      + "先只报告:让存量段在清零前就 fail-closed 等于让整场门禁恒红,而恒红与「判据没生效」"
-      + "在退出码上不可区分。**转正动作 = 删掉本行的 pending: true 与 pendingReason,判定本体"
-      + "一行不改**;不给任何段开豁免表(ADR-071 决定一:新判据不设豁免)。",
+    // 2026-10-07 转正:存量段已按目录分四笔清零(判定本体一行未改,只删 pending 两项)。
+    // 不开豁免表(ADR-071 决定一:新判据不设豁免)。
+    //
+    // ⚠ 注意:① 委派型窄化壳是**目标形态而非过渡**。清零的 85 段里有相当比例依赖 `@returns
+    // {asserts cond}` 的类型收窄(实测各目录 44%~63%),而 assert.js:198-201 明写公共件
+    // 刻意不声明该收窄(TS2775 禁从解构模式调断言函数)⇒ 要让它们彻底并进 createAsserter,
+    // 前提是给 harness 的 assert 加窄化签名,那是公共件改动、不在 REQ-220 写域。
   }),
   Object.freeze({
     // ⚠ **判据按「有无 import … case.js」判,且还要求至少一处 `.case(` 调用**,两个条件缺一
