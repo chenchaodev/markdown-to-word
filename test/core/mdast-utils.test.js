@@ -10,16 +10,9 @@
  * - 无 value 且无 children 的节点 → "";空 children → ""。
  */
 import { collectPlainText } from "../../dist/core/text/mdast-utils.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`mdast-utils 断言失败:${msg}`);
-}
+const { assert } = createAsserter("mdast-utils");
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;

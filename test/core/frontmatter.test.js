@@ -12,19 +12,12 @@
  * - body = md.slice(match[0].length)(frontmatter 块整体剥除,含其后的换行)
  */
 import { parseFrontmatter as parseFrontmatterRaw } from "../../dist/core/pipeline/frontmatter.js";
+import { createAsserter } from "../harness/assert.js";
 
 // parseFrontmatter 直接用产物导出的签名(ADR-069 起 dist 带 .d.ts,不再需要收窄包装)
 const parseFrontmatter = parseFrontmatterRaw;
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`frontmatter 断言失败:${msg}`);
-}
+const { assert } = createAsserter("frontmatter");
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;

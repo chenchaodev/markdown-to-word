@@ -31,6 +31,7 @@ import {
 } from "../../dist/core/settings/render-options.js";
 import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../harness/convert-helpers.js";
 import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
 
 /** 契约类型的只读引用(编译期擦除) */
 /** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
@@ -41,15 +42,7 @@ export const meta = {
 // 本段无验收样例:断言对象是默认值解析函数与其调用点,不是某份 markdown 的产物
 export const fixtures = null;
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败说明
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`render-defaults 断言失败:${msg}`);
-}
+const { assert } = createAsserter("render-defaults");
 
 /**
  * 逐键深比较(不用 JSON.stringify 比字符串:键序不同的两个同值对象会被误判为不等)。

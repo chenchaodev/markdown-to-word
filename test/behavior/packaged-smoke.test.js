@@ -39,6 +39,7 @@ import {
 } from "../../dist/main/smoke.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
+import { createAsserter } from "../harness/assert.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -59,14 +60,17 @@ const SANDBOX_PREFIX = "m2w-packaged-smoke-";
 /** 公式样式缺失的警告键(pdf 渲染层上报,与 src/main/smoke.ts 的判定同源) */
 const KATEX_WARNING_KEY = "warn.katexCssLoadFailed";
 
+const { assert: harnessAssert } = createAsserter("packaged-smoke");
+
 /**
- * 断言辅助(条件不成立即抛错,给后续行收窄用)。
+ * 窄化壳:harness 的 assert 刻意不声明 `asserts cond`(TS2775 禁从解构模式调断言函数),
+ * 而本段下游依赖收窄 ⇒ 这里保留一层带窄化签名的壳,函数体只委派、不自带判定逻辑。
  * @param {unknown} cond 判定条件
  * @param {string} msg 失败消息
  * @returns {asserts cond} 条件不成立即抛错
  */
 function assert(cond, msg) {
-  if (!cond) throw new Error(`packaged-smoke 断言失败:${msg}`);
+  harnessAssert(cond, msg);
 }
 
 /**

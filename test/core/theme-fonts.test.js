@@ -29,16 +29,9 @@ import {
 import { FIXTURES_DIR, ROOT } from "../harness/paths.js";
 import { unzipPart } from "../harness/docx-utils.js";
 import { docxBufferOf, prepareForConvert } from "../harness/convert-helpers.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`theme-fonts 断言失败:${msg}`);
-}
+const { assert } = createAsserter("theme-fonts");
 
 /** 样例:覆盖 theme 常量的四类消费点(行内代码/链接/引用块/分隔线) */
 const sampleMd = `# 主题字体断言

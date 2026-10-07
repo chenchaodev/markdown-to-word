@@ -22,6 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "../harness/paths.js";
 import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
+import { createAsserter } from "../harness/assert.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -61,15 +62,7 @@ const TEST_REQUIRED = ["BrowserWindow", "Menu", "app", "dialog", "ipcMain", "nat
 const ELECTRON_IMPORT_RE =
   /^[ \t]*import\s+(type\s+)?((?:(?!\bimport\b)[^;])*?)\s*from\s*(['"])electron\3[ \t]*;?[ \t]*$/gm;
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`electron-mock-coverage 断言失败:${msg}`);
-}
+const { assert } = createAsserter("electron-mock-coverage");
 
 /**
  * 抽出一份源码里对 electron 的**运行时**绑定名(type-only 说明符编译期已擦除,

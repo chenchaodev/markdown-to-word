@@ -16,17 +16,9 @@ import {
 import { headerLogoLoadFailedWarning } from "../../dist/core/image/image-warning.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
+import { createAsserter } from "../harness/assert.js";
 
-
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`header-footer 断言失败:${msg}`);
-}
+const { assert } = createAsserter("header-footer");
 
 /**
  * 收集 docx 中匹配部件名的全部文本(如 word/header*.xml)。

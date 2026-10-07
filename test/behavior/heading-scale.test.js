@@ -22,6 +22,9 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import fs from "node:fs/promises";
+import { createAsserter } from "../harness/assert.js";
+
+const { assert } = createAsserter("heading-scale");
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -31,16 +34,6 @@ export const covers = [
   "src/core/settings/typography.ts",
   "src/renderer/settings/settings-logic.ts",
 ];
-
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`heading-scale 断言失败:${msg}`);
-}
 
 /** 主样例:h1/h2/h3 + 一段正文(字号/间距断言锚点) */
 const md = `# 标题排版粒度

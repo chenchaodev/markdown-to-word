@@ -28,6 +28,7 @@ import { isAllowedInlineHtml } from "../../dist/core/markdown/html-whitelist.js"
 import { normalizeInlineHtml, parseInlineHtml } from "../../dist/core/docx/handlers/inline-html.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -42,15 +43,7 @@ export const covers = [
   "src/renderer/settings/settings-logic.ts",
 ];
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`identity-guards 断言失败:${msg}`);
-}
+const { assert } = createAsserter("identity-guards");
 
 /**
  * i18n 模板插值(镜像 t() 的 ${name} 占位语义,仅测试用)。

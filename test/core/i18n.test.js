@@ -18,16 +18,9 @@ import { convert } from "../../dist/core/convert.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { prepareForConvert } from "../harness/convert-helpers.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`i18n 断言失败:${msg}`);
-}
+const { assert } = createAsserter("i18n");
 
 /** 带去重键的结构化警告:取产物声明(此前测试侧手抄了一份,params 已漂移成
  *  Record<string, string>,与真实的 string | number 不同)。 */

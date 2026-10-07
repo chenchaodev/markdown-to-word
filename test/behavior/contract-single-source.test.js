@@ -46,6 +46,7 @@ import {
   listScanFiles,
 } from "../../shared/test-common-surface.js";
 import { ROOT } from "../harness/paths.js";
+import { createAsserter } from "../harness/assert.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -62,15 +63,7 @@ const srcRoot = path.join(repoRoot, "src");
 /** @param {string} rel 相对 src 的 POSIX 路径 */
 const readSrc = (rel) => fs.readFileSync(path.join(srcRoot, rel), "utf8");
 
-/**
- * 断言辅助(本段 (e) 节用;前缀与本段既有内联 throw 保持一致)。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`contract 断言失败:${msg}`);
-}
+const { assert } = createAsserter("contract");
 
 /**
  * 相等断言(附实际/期望,避免「不等」三个字无处可查)。

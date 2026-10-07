@@ -31,16 +31,9 @@ import {
 import { WATERMARK_GRAY, WATERMARK_INK } from "../../dist/core/style/colors.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
+import { createAsserter } from "../harness/assert.js";
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`watermark 断言失败:${msg}`);
-}
+const { assert } = createAsserter("watermark");
 
 /**
  * 取 docx 内的 header 部件名与其 XML 文本。

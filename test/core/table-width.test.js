@@ -31,17 +31,9 @@ import {
 import { TABLE_BORDER_BLACK } from "../../dist/core/docx/theme.js";
 import { unzipPart } from "../harness/docx-utils.js";
 import { convertWithFs, pdfHtmlOf } from "../harness/convert-helpers.js";
+import { createAsserter } from "../harness/assert.js";
 
-
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`table-width 断言失败:${msg}`);
-}
+const { assert } = createAsserter("table-width");
 
 /** 内容区总宽(DXA/twips)契约值:A4 纵向默认边距(docx 渲染同链路换算) */
 const CONTENT_WIDTH_MM =

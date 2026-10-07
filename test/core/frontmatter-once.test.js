@@ -23,6 +23,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { createAsserter } from "../harness/assert.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 import { unzipPart } from "../harness/docx-utils.js";
 import { resolveNode } from "../harness/node-exec.js";
@@ -50,15 +51,7 @@ export const covers = [
   "src/convert/preprocess.ts",
 ];
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`frontmatter-once 断言失败:${msg}`);
-}
+const { assert } = createAsserter("frontmatter-once");
 
 const NODE = resolveNode();
 

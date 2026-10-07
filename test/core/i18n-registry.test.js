@@ -33,19 +33,12 @@ import {
   freshSettingsModule,
   settingsJsonPath,
 } from "../harness/settings.js";
+import { createAsserter } from "../harness/assert.js";
 
 /** @typedef {import("../../dist/core/i18n/zh.js").Dict} Dict */
 /** @typedef {import("../../dist/core/i18n/index.js").KeyedWarning} KeyedWarning */
 
-/**
- * 断言辅助。
- * @param {unknown} cond 判定条件
- * @param {string} msg 失败消息
- * @returns {void}
- */
-function assert(cond, msg) {
-  if (!cond) throw new Error(`i18n-registry 断言失败:${msg}`);
-}
+const { assert } = createAsserter("i18n-registry");
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
