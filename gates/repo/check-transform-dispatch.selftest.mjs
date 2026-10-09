@@ -8,11 +8,29 @@
 //
 // **不修改被测门禁本体**,夹具一律造在 os.tmpdir() 下并在 finally 清理(测试对象是
 // 夹具,不是本仓库文件)。真实仓库只被**读**(baseline 那一条跑真实 src 树)。
+//
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一)----
+//
+// 用 `shared/case.js` 的 `createCaseSuite`,夹具表 11 条逐条 `await suite.case(档名, () => runCase(档))`。
+// 门禁树接的是落在 shared/ 的真实现:`gates-stay-in-gates` 的允许面只有 `gates` / `shared` /
+// `test/fixtures`,`test/` 整棵树不在其中,故引不到 `test/harness/case.js`。
+//
+// **不用合成根 harness**:本文件的判定走 spawn CLI,入参是**夹具树路径**(`--src <夹具>/src`)或
+// 直接跑真实 src 树,而 harness 的表只收「树型路径 → 正文 + 问题清单正则」且判定体须回吐
+// **问题清单** —— 入参是「一条 argv + 一棵树」而非「树 + 问题清单」,两侧都不对型,塞进去是
+// 假接入(ADR-068:bespoke 留在原处)。接 case 契约解决的是另一件事:让「档数」成为可机械计数的
+// 单位(`gates-selftest-named-case` 判的就是它),迁移后分母由 `suite.results.length` 给出(= 11)。
+//
+// ⚠ **「夹具自身可信」这一格不新造 case**:本文件是四兄弟里最薄的一份(无 throw、无 forbid),
+// 夹具可信度由夹具表第 1 / 2 条(真实仓库未漂移 / 夹具基线未漂移)承担 —— 它们任何一条红,
+// 都说明「夹具 ≠ 真实仓同构」这个前提破了,后面的负向档随之失去意义。迁移后 case 级 catch
+// 额外拿到一格:造夹具过程自身抛异常时**只记该 case 失败**,后面的档照旧跑(旧实现会连壳一起崩)。
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { assert, createCaseSuite } from '../../shared/case.js';
 import { ROOT } from '../../shared/paths.js';
 
 const projectRoot = ROOT;
@@ -147,35 +165,55 @@ const CASES = [
   },
 ];
 
-const failures = [];
-for (const testCase of CASES) {
-  let dir;
+const suite = createCaseSuite();
+
+/**
+ * 跑一档并按声明核对结果(收进 `suite.case` 的断言体,抛错只记该档失败、不中断后续档)。
+ *
+ * 两种声明互斥:`expect: null`(要求 exit 0)与 `expect`(要求 exit≠0 且命中)。
+ *
+ * 搬迁口径:原 `failures.push(...)` 逐条改成 `assert(条件, 消息)` —— **消息逐字沿用**,原
+ * `[ok]` 打印保留。造夹具在 try 之外、与搬迁前一致:那时它抛错会崩掉整个脚本,现在由 case 级
+ * catch 收成「该档失败」,这一格由 case 契约承担,不额外加代码。
+ * @param {object} testCase 夹具表里的一档
+ */
+function runCase(testCase) {
+  const dir = createFixture(testCase.mutate ?? (() => {}));
   try {
-    dir = createFixture(testCase.mutate ?? (() => {}));
     const { code, output } = runChecker(argsFor(testCase, dir));
     if (testCase.expect === null) {
-      if (code === 0) {
-        console.log(`[ok] transform-dispatch-selftest:${testCase.name}(门禁通过,exit 0)`);
-      } else {
-        failures.push(`${testCase.name}:期望通过,实际 exit ${code}\n${output}`);
-      }
-      continue;
+      assert(code === 0, `${testCase.name}:期望通过,实际 exit ${code}\n${output}`);
+      console.log(`[ok] transform-dispatch-selftest:${testCase.name}(门禁通过,exit 0)`);
+      return;
     }
-    if (code !== 0 && testCase.expect.test(output)) {
-      console.log(`[ok] transform-dispatch-selftest:${testCase.name}(漂移被拦截,exit ${code})`);
-    } else {
-      failures.push(
-        `${testCase.name}:期望 exit≠0 且输出匹配 ${testCase.expect},实际 exit ${code}\n${output}`,
-      );
-    }
+    assert(
+      code !== 0 && testCase.expect.test(output),
+      `${testCase.name}:期望 exit≠0 且输出匹配 ${testCase.expect},实际 exit ${code}\n${output}`,
+    );
+    console.log(`[ok] transform-dispatch-selftest:${testCase.name}(漂移被拦截,exit ${code})`);
   } finally {
-    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[transform-dispatch-selftest:fail] ${failure}`);
-  console.error(`[transform-dispatch-selftest:fail] 分派点门禁回归守护失败,共 ${failures.length}/${CASES.length} 条`);
+// 夹具表逐档收进 case:**档名即 case 名**(逐字沿用搬迁前 `failures.push` 记账用的 `testCase.name`)。
+for (const testCase of CASES) {
+  await suite.case(testCase.name, () => runCase(testCase));
+}
+
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 与搬迁前 `failures[]` 判定等价(任一档失败即非零退出),**分母也是同一个**:搬迁前写
+// `CASES.length`,搬迁后由 `suite.results.length` 自然给出。两侧一旦不等,说明有档没接进
+// case —— 那正是 `gates-selftest-named-case` 要抓的形态。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) {
+    console.error(`[transform-dispatch-selftest:fail] ${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  }
+  console.error(
+    `[transform-dispatch-selftest:fail] 分派点门禁回归守护失败,共 ${failedCases.length}/${cases.length} 条`,
+  );
   process.exit(1);
 }
-console.log(`[ok] transform-dispatch-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);
+console.log(`[ok] transform-dispatch-selftest:${cases.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);

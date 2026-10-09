@@ -15,11 +15,30 @@
 //
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则
 // 系统临时区会堆满夹具树。
+//
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一)----
+//
+// 用 `shared/case.js` 的 `createCaseSuite`,`suite.case(档名, () => …)` 建一次、逐档登记。
+// 门禁树接的是落在 shared/ 的真实现:`gates-stay-in-gates` 的允许面只有 `gates` / `shared` /
+// `test/fixtures`,`test/` 整棵树不在其中,故引不到 `test/harness/case.js`。
+//
+// **不用合成根 harness**:本文件的判定走 spawn CLI(夹具里那份门禁副本 + cwd 指夹具根),入参是
+// **夹具树路径**(以及两条改门禁源码的 mutate),而 harness 的表只收「树型路径 → 正文 + 问题清单
+// 正则」且判定体须回吐**问题清单** —— 入参与返回两侧都不对型,塞进去是假接入(ADR-068:bespoke
+// 留在原处)。接 case 契约解决的是另一件事:让「档数」成为可机械计数的单位
+// (`gates-selftest-named-case` 判的就是它),迁移后分母由 `suite.results.length` 给出
+// (= 夹具表 16 + 表外的「沙盒副本闭包」1 = 17;旧分母 16 不含那块静态断言,这是**可见性增加**)。
+//
+// ⚠ **表外那块的次序语义**:`assertCopySetIsClosed()` 今天在主循环前无条件先跑,它红的时候后面
+// 16 条一条都不该跑。迁移后把它收成**第一个** case,`await` 的书写次序即执行次序,这一格不丢。
+// 它表内三处 throw(含「一条相对 import 都没抽到 ⇒ 判据本身失效」那条自我否定断言)原样留在
+// case 体内 —— 现在由 case 级 catch 收成「该 case 失败」,语义等价且更强。
 
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { posix, join } from 'node:path';
+import { assert, createCaseSuite } from '../../shared/case.js';
 import { ROOT } from '../../shared/paths.js';
 import { SEGMENT_DIRS } from '../../shared/test-common-surface.js';
 
@@ -337,48 +356,71 @@ const CASES = [
 
 // 定向断言先跑:它是本段唯一的静态守护,必须在造任何夹具之前就红(夹具红是「脚本起不来」,
 // 症状离根因远);它自己绿不绿与 spawn 无关。
-assertCopySetIsClosed();
+//
+// 收成**第一个** case(档名固定为「沙盒副本闭包」),守住「主循环前无条件先跑」的次序语义:
+// 它红的时候后面 16 条一条都不该跑。`[ok]` 行里那两条动态值(抽到的相对 import 条数 / 复制集
+// 项数)随之进日志,不再进档名;表内三处 throw 原样留在 case 体内,由 case 级 catch 收成
+// 「该 case 失败」。
+const suite = createCaseSuite();
+await suite.case('沙盒副本闭包', () => assertCopySetIsClosed());
 
-const failures = [];
-for (const testCase of CASES) {
+/**
+ * 跑一档并按声明核对结果(收进 `suite.case` 的断言体,抛错只记该档失败、不中断后续档)。
+ *
+ * 两种声明互斥:`expect: null`(要求 exit 0)与 `expect`(要求 exit≠0 且命中)。
+ *
+ * 搬迁口径:原 `failures.push(...)` 逐条改成 `assert(条件, 消息)` —— **消息逐字沿用**(含
+ * 「夹具 / 真实仓库」那个 tag 前缀),原 `[ok]` 打印保留。造夹具失败那一格原来 push 后
+ * `continue`(createFixture 自己已清理),现在改成抛出同一条消息,由 case 级 catch 收成
+ * 「该档失败」—— 同样不打断后续档。
+ * @param {object} testCase 夹具表里的一档
+ */
+function runCase(testCase) {
   let dir;
   try {
-    // `dir` 显式给出 = 跑真实仓库(只读);否则造夹具并在 finally 清理
-    try {
-      dir = testCase.dir ?? createFixture(testCase.mutate, testCase.shape);
-    } catch (error) {
-      // createFixture 抛异常时它自己已清理;这里只登记,不让一条夹具的构造失败
-      // 打断整批(否则后面的夹具一条都跑不到,报告里也看不出是哪条坏了)
-      failures.push(
-        `夹具 ${testCase.name}:造夹具抛异常:${error instanceof Error ? error.message : String(error)}`,
-      );
-      continue;
-    }
+    // `dir` 显式给出 = 跑真实仓库(只读);否则造夹具并在下方 finally 清理
+    dir = testCase.dir ?? createFixture(testCase.mutate, testCase.shape);
+  } catch (error) {
+    throw new Error(
+      `夹具 ${testCase.name}:造夹具抛异常:${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  try {
     const { code, output } = runChecker(dir, testCase.raw ?? []);
     const tag = testCase.dir === undefined ? '夹具' : '真实仓库';
     if (testCase.expect === null) {
-      if (code === 0) {
-        console.log(`[ok] temp-cleanup-selftest:${testCase.name}(门禁通过,exit 0)`);
-      } else {
-        failures.push(`${tag} ${testCase.name}:期望通过,实际 exit ${code}\n${output}`);
-      }
-      continue;
+      assert(code === 0, `${tag} ${testCase.name}:期望通过,实际 exit ${code}\n${output}`);
+      console.log(`[ok] temp-cleanup-selftest:${testCase.name}(门禁通过,exit 0)`);
+      return;
     }
-    if (code !== 0 && testCase.expect.test(output)) {
-      console.log(`[ok] temp-cleanup-selftest:${testCase.name}(漂移被拦截,exit ${code})`);
-    } else {
-      failures.push(
-        `${tag} ${testCase.name}:期望 exit≠0 且输出匹配 ${testCase.expect},实际 exit ${code}\n${output}`,
-      );
-    }
+    assert(
+      code !== 0 && testCase.expect.test(output),
+      `${tag} ${testCase.name}:期望 exit≠0 且输出匹配 ${testCase.expect},实际 exit ${code}\n${output}`,
+    );
+    console.log(`[ok] temp-cleanup-selftest:${testCase.name}(漂移被拦截,exit ${code})`);
   } finally {
     if (testCase.dir === undefined && dir !== undefined) rmSync(dir, { recursive: true, force: true });
   }
 }
 
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[temp-cleanup-selftest:fail] ${failure}`);
-  console.error(`[temp-cleanup-selftest:fail] 临时目录清理门禁回归守护失败,共 ${failures.length}/${CASES.length} 条`);
+// 夹具表逐档收进 case:**档名即 case 名**(逐字沿用搬迁前 `failures.push` 记账用的 `testCase.name`)。
+for (const testCase of CASES) {
+  await suite.case(testCase.name, () => runCase(testCase));
+}
+
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 与搬迁前 `failures[]` 判定等价(任一档失败即非零退出),**分母也换成同一个**:搬迁前写
+// `CASES.length`(16,不含表外那块),搬迁后由 `suite.results.length` 自然给出 17 —— 两侧一旦
+// 不等,说明有档没接进 case,那正是 `gates-selftest-named-case` 要抓的形态。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) {
+    console.error(`[temp-cleanup-selftest:fail] ${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  }
+  console.error(
+    `[temp-cleanup-selftest:fail] 临时目录清理门禁回归守护失败,共 ${failedCases.length}/${cases.length} 条`,
+  );
   process.exit(1);
 }
-console.log(`[ok] temp-cleanup-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);
+console.log(`[ok] temp-cleanup-selftest:${cases.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);

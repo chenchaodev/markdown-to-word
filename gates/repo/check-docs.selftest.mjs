@@ -34,11 +34,32 @@
 //
 // ⚠️ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则系统临时区
 // 会堆满夹具树。真实仓库只被**读**(本体只读 `cwd` 下那棵合成仓)。
+//
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一)----
+//
+// 用 `shared/case.js` 的 `createCaseSuite`,夹具表 35 条逐条 `await suite.case(档名, () => runCase(档))`。
+// 门禁树接的是落在 shared/ 的真实现:`gates-stay-in-gates` 的允许面只有 `gates` / `shared` /
+// `test/fixtures`,`test/` 整棵树不在其中,故引不到 `test/harness/case.js`。
+//
+// **不用合成根 harness**:本文件的判定走 spawn CLI(真门禁 + cwd 指合成仓),入参是**合成仓树路径**
+// 与逐档 overrides,而 harness 的表只收「树型路径 → 正文 + 问题清单正则」且判定体须回吐
+// **问题清单** —— 本文件的断言是「退出码 + 一组 require/forbid 正则」,入参与返回两侧都不对型,
+// 塞进去是假接入(ADR-068:bespoke 留在原处)。接 case 契约解决的是另一件事:让「档数」成为可
+// 机械计数的单位(`gates-selftest-named-case` 判的就是它),迁移后分母由 `suite.results.length`
+// 给出(= 35)。
+//
+// ⚠️ **档名的两处去占位**(裁决):`标题列超上限…` 与 `「已完成」节…` 两条的 `name:` 原是含
+// `${}` 的模板串,迁进 case 名时把动态值摘掉(固定为 `标题列超上限(字 > )→ …` 与
+// `「已完成」节的判断依据超该节更严的上限(字 > )→ …`),实测字数与上限在**失败消息**里出声
+// (那一半今天已经在出声,原样保留)。其余 33 条逐字不动。
+// ⚠️ **四条「撤回 ⇒ 复绿」成对档**(列数守卫撤回 / R8 撤回 / C8 唯一撤回 / C7 撤回)各自仍是
+// 独立 case,不合并 —— 它们证明的是「上一条红在本判据上」,合并即丢掉这一半。
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { assert, createCaseSuite } from '../../shared/case.js';
 import { ROOT } from '../../shared/paths.js';
 // → 上限常量取**全仓单点持有**那一份(`shared/`),不取门禁 —— 门禁已不再导出这三个常量。
 import { TITLE_LIMIT, WHY_LIMIT_DONE } from '../../shared/markdown-table.mjs';
@@ -246,7 +267,9 @@ const CASES = [
     require: [/号段不连续/, /REQ-002/],
   },
   {
-    name: `标题列超上限(${OVER_TITLE.length} 字 > ${TITLE_LIMIT})→ 判红并同时报出实测字数与上限`,
+    // 档名去占位(裁决):动态字数与上限不再进 case 名,固定成这句;实测值与上限在失败消息里
+    // 出声(下面那条 require 与转储的门禁输出都带着它们,那一半今天已经在出声)。
+    name: '标题列超上限(字 > )→ 判红并同时报出实测字数与上限',
     overrides: {
       'docs/REQ.md': [
         '# 台账',
@@ -269,7 +292,8 @@ const CASES = [
   {
     // 这一条专打「已完成节更严的那档上限」:超过该档上限一字、但不超过其余节的宽限档。
     // 若那档上限被摘掉(或节名判定失效),它会按较宽的上限判绿 —— 而 120 < 200 恰好蒙混过关。
-    name: `「已完成」节的判断依据超该节更严的上限(${OVER_WHY.length} 字 > ${WHY_LIMIT_DONE})→ 判红并报出该节的上限`,
+    // 档名去占位(裁决):与上一条同一条规则,动态字数与上限移进失败消息(require 那条已带着)。
+    name: '「已完成」节的判断依据超该节更严的上限(字 > )→ 判红并报出该节的上限',
     overrides: {
       'docs/REQ.md': [
         '# 台账',
@@ -973,11 +997,20 @@ const CASES = [
   },
 ];
 
-const failures = [];
-for (const testCase of CASES) {
-  let dir;
+const suite = createCaseSuite();
+
+/**
+ * 造合成仓、跑门禁,并按该档的声明核对结果(收进 `suite.case` 的断言体,抛错只记该档失败、
+ * 不中断后续档)。
+ *
+ * 搬迁口径:原 `failures.push(...)` 逐条改成 `assert(条件, 消息)` —— **消息逐字沿用**,原
+ * `[ok]` 打印保留。原来那条「夹具执行抛异常」的 catch 分支改成重新抛出**同一条消息**,由 case
+ * 级 catch 收成「该档失败」—— 一样不打断后续档,消息也一字不改。
+ * @param {object} testCase 夹具表里的一档
+ */
+function runCase(testCase) {
+  const dir = mkdtempSync(join(tmpdir(), 'm2w-docs-selftest-'));
   try {
-    dir = mkdtempSync(join(tmpdir(), 'm2w-docs-selftest-'));
     writeSyntheticRepo(dir, testCase.overrides ?? {});
     const { code, output } = runGate(dir);
     /** @type {string[]} */
@@ -991,25 +1024,35 @@ for (const testCase of CASES) {
     for (const re of testCase.forbid ?? []) {
       if (re.test(output)) problems.push(`输出命中了不该出现的 ${re}`);
     }
-    if (problems.length === 0) {
-      console.log(`[ok] docs-selftest:${testCase.name}(符合预期,exit ${String(code)})`);
-    } else {
-      failures.push(`${testCase.name}:${problems.join(';')}\n--- 输出 ---\n${output}`);
-    }
+    assert(problems.length === 0, `${testCase.name}:${problems.join(';')}\n--- 输出 ---\n${output}`);
+    console.log(`[ok] docs-selftest:${testCase.name}(符合预期,exit ${String(code)})`);
   } catch (error) {
-    // 一条夹具的构造/执行异常不许打断整批(否则后面的夹具一条都跑不到,报告里也看不出是哪条坏了)
-    failures.push(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
+    // 一条夹具的构造/执行异常只记本档失败(旧实现 push 后继续跑后面的档,case 级 catch 承担同一格)
+    throw new Error(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
   } finally {
-    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[docs-selftest:fail] ${failure}`);
-  console.error(`[docs-selftest:fail] 指针门禁回归守护失败,共 ${failures.length}/${CASES.length} 条`);
+// 夹具表逐档收进 case:**档名即 case 名**(逐字沿用搬迁前 `failures.push` 记账用的 `testCase.name`)。
+for (const testCase of CASES) {
+  await suite.case(testCase.name, () => runCase(testCase));
+}
+
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 与搬迁前 `failures[]` 判定等价(任一档失败即非零退出),**分母也是同一个**:搬迁前写
+// `CASES.length`,搬迁后由 `suite.results.length` 自然给出。两侧一旦不等,说明有档没接进
+// case —— 那正是 `gates-selftest-named-case` 要抓的形态。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) {
+    console.error(`[docs-selftest:fail] ${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  }
+  console.error(`[docs-selftest:fail] 指针门禁回归守护失败,共 ${failedCases.length}/${cases.length} 条`);
   process.exit(1);
 }
 console.log(
-  `[ok] docs-selftest:${CASES.length} 条夹具全部符合预期`
+  `[ok] docs-selftest:${cases.length} 条夹具全部符合预期`
     + '(好台账判绿 / 各类漂移按可分辨诊断判红 / 跨仓、代码扩展名引用、未匹配形态的路径引用三族只分类未判且自报 / 三族零覆盖出声)',
 );

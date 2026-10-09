@@ -14,11 +14,31 @@
 // **直锚点**:直接对展开器求值,钉住「递归视图看得见内层 / 顶层视图不递归 /
 // 成环与悬空引用必被回报 / 菱形依赖不算环 / 叶子命令序 = 执行序」。那一段不是可选的:
 // 上面每条夹具断言的诊断全都经它产出,展开器一旦恒绿,夹具就只是在验证「什么都没报」。
+//
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一)----
+//
+// 用 `shared/case.js` 的 `createCaseSuite`:夹具表 42 条逐条
+// `await suite.case(档名, () => runCase(档))`,表外七段锚点**一段一个 case**(档名取该段
+// `[ok] contract-selftest:…` 行的领起子句,去掉 `${}` 动态占位,占位值移进失败消息 / 日志)。
+// 门禁树接的是落在 shared/ 的真实现:`gates-stay-in-gates` 的允许面只有 `gates` / `shared` /
+// `test/fixtures`,`test/` 整棵树不在其中,故引不到 `test/harness/case.js`。
+//
+// **不用合成根 harness**:本文件的判定走 spawn CLI(真门禁 + cwd 指夹具树),入参是**夹具树路径**
+// 与逐档 mutate 回调,而 harness 的表只收「树型路径 → 正文 + 问题清单正则」且判定体须回吐
+// **问题清单** —— 两侧都不对型,塞进去是假接入(ADR-068:bespoke 留在原处)。接 case 契约解决的
+// 是另一件事:让「档数」成为可机械计数的单位(`gates-selftest-named-case` 判的就是它),迁移后
+// 分母由 `suite.results.length` 给出(= CASES 42 + 表外 7 = 49;旧分母只数 CASES,表外那几段
+// 的成败只体现在退出码上,看不见条数)。
+//
+// ⚠ **夹具循环原来没有 catch**:`createFixture` / `patchInFixture` 抛异常(夹具自身不可信,
+// 如锚点段落被改写后替换落空)会崩掉整个脚本,后面的档一条都跑不到。迁移后这一格由 case
+// 契约承担(case 内抛错只记该 case 失败),故**不额外加代码**;throw 原样留在 case 体内。
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { assert, createCaseSuite } from '../../shared/case.js';
 import { ROOT } from '../../shared/paths.js';
 import { expandChainScriptNames, topLevelScriptNames, walkChain } from './chain-expand.mjs';
 import { scanTopLevel, topLevel } from './repo-manifest.mjs';
@@ -540,29 +560,57 @@ const CASES = [
   },
 ];
 
-const failures = [];
-for (const testCase of CASES) {
+const suite = createCaseSuite();
+
+/**
+ * 跑一档夹具并按声明核对结果(收进 `suite.case` 的断言体,抛错只记该档失败、不中断后续档)。
+ *
+ * 两种声明互斥:`expect: null`(要求 exit 0)与 `expect`(要求 exit≠0 且命中)。
+ *
+ * 搬迁口径:原 `failures.push(...)` 逐条改成 `assert(条件, 消息)` —— **消息逐字沿用**,原
+ * `[ok]` 打印保留。`createFixture` 仍在 try 之外、与搬迁前一致:那时夹具构造异常会崩掉整个
+ * 脚本,现在由 case 级 catch 天然兜住,记成「该档失败」—— 这一格由 case 契约承担,不额外加代码。
+ * @param {object} testCase 夹具表里的一档
+ */
+function runCase(testCase) {
   const dir = createFixture(testCase.mutate);
   try {
     const { code, output } = runChecker(dir);
     if (testCase.expect === null) {
-      if (code === 0) {
-        console.log(`[ok] contract-selftest:${testCase.name}(自检通过,exit 0)`);
-      } else {
-        failures.push(`${testCase.name}:期望通过,实际 exit ${code}\n${output}`);
-      }
-      continue;
+      assert(code === 0, `${testCase.name}:期望通过,实际 exit ${code}\n${output}`);
+      console.log(`[ok] contract-selftest:${testCase.name}(自检通过,exit 0)`);
+      return;
     }
-    if (code !== 0 && testCase.expect.test(output)) {
-      console.log(`[ok] contract-selftest:${testCase.name}(漂移被拦截,exit ${code})`);
-    } else {
-      failures.push(
-        `${testCase.name}:期望 exit≠0 且输出匹配 ${testCase.expect},实际 exit ${code}\n${output}`,
-      );
-    }
+    assert(
+      code !== 0 && testCase.expect.test(output),
+      `${testCase.name}:期望 exit≠0 且输出匹配 ${testCase.expect},实际 exit ${code}\n${output}`,
+    );
+    console.log(`[ok] contract-selftest:${testCase.name}(漂移被拦截,exit ${code})`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// 夹具表逐档收进 case:**档名即 case 名**(逐字沿用搬迁前 `failures.push` 记账用的 `testCase.name`)。
+for (const testCase of CASES) {
+  await suite.case(testCase.name, () => runCase(testCase));
+}
+
+/* ---------- 表外锚点的失败收集器(每条 case 开始时重置,case 末统一 assert) ---------- */
+// 搬迁前这两个收集器是文件级的(`expandFailures` / `manifestFailures`),由文件末统一判退出;
+// 现在每条 case 自己收自己那条 —— **条件与消息文案一行未改**,变了的只是归户:一条 anchor
+// 失败只让它自己那个 case 红,不牵累同文件其它 case;退出码语义不变(任一 case 失败即非零)。
+let expandFailures = [];
+let manifestFailures = [];
+
+/** 断言辅助(失败项收集口径与上面一致) */
+function checkExpander(condition, message) {
+  if (!condition) expandFailures.push(message);
+}
+
+/** 断言辅助(失败项收集口径与上面的夹具一致) */
+function checkAnchor(condition, message) {
+  if (!condition) manifestFailures.push(message);
 }
 
 /* ================= 链展开器的直锚点(展开层本身必须有自检) =================
@@ -574,102 +622,100 @@ for (const testCase of CASES) {
  *   ② 顶层视图**不**递归(只返回一层)—— 与 ① 是一对,少任一条语义就有一半判据失效;
  *   ③ 成环不挂死且被回报 —— 静默跳过 = 恒绿。
  * 外加两条把「收敛」这件事本身钉住:菱形依赖(两父调同一子)不得被当成环,未定义 script 必须回报。
+ *
+ * **这块整体是一个 case**:档名取本段 `[ok]` 行的领起子句,收集器在 case 开始时重置、case 末
+ * 统一 assert —— 一条 anchor 失守只让这一个 case 红,与搬迁前「这一段自己判退出」等价。
  */
-const expandFailures = [];
 
-/** 断言辅助(失败项收集口径与上面一致) */
-function checkExpander(condition, message) {
-  if (!condition) expandFailures.push(message);
-}
+await suite.case('链展开器直锚点(递归两层 / 顶层不递归 / 成环与悬空回报 / 菱形非环 / 叶子执行序)', () => {
+  expandFailures = [];
 
-/** 三层链:a → b → c,外加一个叶子命令与一个 npm 开关形态的调用 */
-const EXPAND_SCRIPTS = {
-  a: 'npm run b && echo step-a',
-  b: 'npm run --silent c',
-  c: 'echo step-c',
-  // 菱形:a 与 d 都调 b。b 不是环,两次出现都要如实计出(去重会让计数类断言自欺)。
-  d: 'npm run b',
-  // 真环:loop → loop2 → loop。
-  loop: 'npm run loop2',
-  loop2: 'npm run loop',
-  // 悬空引用:调用了不存在的脚本。
-  dangling: 'npm run nowhere',
-};
+  /** 三层链:a → b → c,外加一个叶子命令与一个 npm 开关形态的调用 */
+  const EXPAND_SCRIPTS = {
+    a: 'npm run b && echo step-a',
+    b: 'npm run --silent c',
+    c: 'echo step-c',
+    // 菱形:a 与 d 都调 b。b 不是环,两次出现都要如实计出(去重会让计数类断言自欺)。
+    d: 'npm run b',
+    // 真环:loop → loop2 → loop。
+    loop: 'npm run loop2',
+    loop2: 'npm run loop',
+    // 悬空引用:调用了不存在的脚本。
+    dangling: 'npm run nowhere',
+  };
 
-const expanded = expandChainScriptNames(EXPAND_SCRIPTS, 'a');
-// 深度优先:a 的段序是 b、echo step-a ⇒ 先收 b,再收 b 的后代 c,最后叶子不参与。
-checkExpander(
-  expanded.join(',') === 'b,c',
-  `递归展开失守「嵌套两层」:a → b → c 期望 b,c,实际 ${expanded.join(',') || '空'}`,
-);
-// npm 开关形态(`npm run --silent c`)必须被认出来 —— 窄的正则会让它在链上凭空消失。
-checkExpander(
-  expanded.includes('c'),
-  `递归展开失守:脚本名前的 npm 开关(--silent)让内层调用消失(实际 ${expanded.join(',') || '空'})`,
-);
+  const expanded = expandChainScriptNames(EXPAND_SCRIPTS, 'a');
+  // 深度优先:a 的段序是 b、echo step-a ⇒ 先收 b,再收 b 的后代 c,最后叶子不参与。
+  checkExpander(
+    expanded.join(',') === 'b,c',
+    `递归展开失守「嵌套两层」:a → b → c 期望 b,c,实际 ${expanded.join(',') || '空'}`,
+  );
+  // npm 开关形态(`npm run --silent c`)必须被认出来 —— 窄的正则会让它在链上凭空消失。
+  checkExpander(
+    expanded.includes('c'),
+    `递归展开失守:脚本名前的 npm 开关(--silent)让内层调用消失(实际 ${expanded.join(',') || '空'})`,
+  );
 
-// 顶层视图:同一份 scripts,a 的顶层只有 b(不递归到 c)。
-const aTopLevel = topLevelScriptNames(EXPAND_SCRIPTS, 'a');
-checkExpander(
-  aTopLevel.names.join(',') === 'b' && !aTopLevel.missing,
-  `顶层视图失守「不递归」:a 的顶层子 script 期望恰为 b,实际 ${aTopLevel.names.join(',') || '空'}(missing=${String(aTopLevel.missing)})`,
-);
-checkExpander(
-  !aTopLevel.names.includes('c'),
-  `顶层视图失守:它递归到了内层(c)—— 「verify:release 恰为 verify:ci + dist」那条形态断言会被架空`,
-);
-// 未定义 script 由 missing 回报,而不是静默给空数组(判红权在调用方,但事实必须传出去)。
-checkExpander(
-  topLevelScriptNames(EXPAND_SCRIPTS, 'nope').missing,
-  '顶层视图失守:未定义的 script 未被 missing 回报(静默空数组 = 恒绿)',
-);
+  // 顶层视图:同一份 scripts,a 的顶层只有 b(不递归到 c)。
+  const aTopLevel = topLevelScriptNames(EXPAND_SCRIPTS, 'a');
+  checkExpander(
+    aTopLevel.names.join(',') === 'b' && !aTopLevel.missing,
+    `顶层视图失守「不递归」:a 的顶层子 script 期望恰为 b,实际 ${aTopLevel.names.join(',') || '空'}(missing=${String(aTopLevel.missing)})`,
+  );
+  checkExpander(
+    !aTopLevel.names.includes('c'),
+    `顶层视图失守:它递归到了内层(c)—— 「verify:release 恰为 verify:ci + dist」那条形态断言会被架空`,
+  );
+  // 未定义 script 由 missing 回报,而不是静默给空数组(判红权在调用方,但事实必须传出去)。
+  checkExpander(
+    topLevelScriptNames(EXPAND_SCRIPTS, 'nope').missing,
+    '顶层视图失守:未定义的 script 未被 missing 回报(静默空数组 = 恒绿)',
+  );
 
-// 成环:必须终止并回报环路径(a → b → a 那样的首尾同名序列)。
-/** @type {string[][]} */
-const cycles = [];
-/** @type {string[]} */
-const missingSeen = [];
-expandChainScriptNames(EXPAND_SCRIPTS, 'loop', {
-  onCycle: (path) => cycles.push(path),
-  onMissing: (name) => missingSeen.push(name),
+  // 成环:必须终止并回报环路径(a → b → a 那样的首尾同名序列)。
+  /** @type {string[][]} */
+  const cycles = [];
+  /** @type {string[]} */
+  const missingSeen = [];
+  expandChainScriptNames(EXPAND_SCRIPTS, 'loop', {
+    onCycle: (path) => cycles.push(path),
+    onMissing: (name) => missingSeen.push(name),
+  });
+  checkExpander(
+    cycles.length === 1 && cycles[0]?.join('>') === 'loop>loop2>loop',
+    `成环保护失守:期望回报 1 条环路径 loop>loop2>loop,实际 ${cycles.length} 条:${cycles.map((p) => p.join('>')).join(' | ') || '无'}(未挂死,但环没被看见 = 恒绿)`,
+  );
+  // 悬空引用必须回报 missing,而不是当作叶子命令或静默跳过。
+  expandChainScriptNames(EXPAND_SCRIPTS, 'dangling', { onMissing: (name) => missingSeen.push(name) });
+  checkExpander(
+    missingSeen.includes('nowhere'),
+    `未定义 script 未被回报(实际回报 ${missingSeen.join(',') || '无'})—— 调用方会以为链是空的`,
+  );
+
+  // 菱形不是环:a → b 与 d → b,两次出现都要计出。
+  /** @type {string[][]} */
+  const diamondCycles = [];
+  const diamond = expandChainScriptNames(EXPAND_SCRIPTS, 'd', { onCycle: (p) => diamondCycles.push(p) });
+  checkExpander(
+    diamond.join(',') === 'b,c' && diamondCycles.length === 0,
+    `菱形依赖失守:d → b → c 期望 b,c 且零环,实际 ${diamond.join(',') || '空'}(环 ${diamondCycles.length} 条)`,
+  );
+
+  // 叶子命令序列 = 深度优先的真实执行序(探针取 c8 参数向量走的就是这条路径)。
+  /** @type {string[]} */
+  const leaves = [];
+  walkChain(EXPAND_SCRIPTS, 'a', { onLeaf: (leaf) => leaves.push(leaf.text) });
+  checkExpander(
+    leaves.join(' | ') === 'echo step-c | echo step-a',
+    `叶子命令序失守:期望 "echo step-c | echo step-a"(深度优先 = 执行序),实际 "${leaves.join(' | ')}"`,
+  );
+
+  // 判据全部核对完才结算:一条都对上时才打 `[ok]`(一条 anchor 失守就让本 case 失败)。
+  assert(expandFailures.length === 0, expandFailures.join('; '));
+  console.log(
+    `[ok] contract-selftest:链展开器直锚点(递归两层 / 顶层不递归 / 成环与悬空回报 / 菱形非环 / 叶子执行序)全部通过`,
+  );
 });
-checkExpander(
-  cycles.length === 1 && cycles[0]?.join('>') === 'loop>loop2>loop',
-  `成环保护失守:期望回报 1 条环路径 loop>loop2>loop,实际 ${cycles.length} 条:${cycles.map((p) => p.join('>')).join(' | ') || '无'}(未挂死,但环没被看见 = 恒绿)`,
-);
-// 悬空引用必须回报 missing,而不是当作叶子命令或静默跳过。
-expandChainScriptNames(EXPAND_SCRIPTS, 'dangling', { onMissing: (name) => missingSeen.push(name) });
-checkExpander(
-  missingSeen.includes('nowhere'),
-  `未定义 script 未被回报(实际回报 ${missingSeen.join(',') || '无'})—— 调用方会以为链是空的`,
-);
-
-// 菱形不是环:a → b 与 d → b,两次出现都要计出。
-/** @type {string[][]} */
-const diamondCycles = [];
-const diamond = expandChainScriptNames(EXPAND_SCRIPTS, 'd', { onCycle: (p) => diamondCycles.push(p) });
-checkExpander(
-  diamond.join(',') === 'b,c' && diamondCycles.length === 0,
-  `菱形依赖失守:d → b → c 期望 b,c 且零环,实际 ${diamond.join(',') || '空'}(环 ${diamondCycles.length} 条)`,
-);
-
-// 叶子命令序列 = 深度优先的真实执行序(探针取 c8 参数向量走的就是这条路径)。
-/** @type {string[]} */
-const leaves = [];
-walkChain(EXPAND_SCRIPTS, 'a', { onLeaf: (leaf) => leaves.push(leaf.text) });
-checkExpander(
-  leaves.join(' | ') === 'echo step-c | echo step-a',
-  `叶子命令序失守:期望 "echo step-c | echo step-a"(深度优先 = 执行序),实际 "${leaves.join(' | ')}"`,
-);
-
-if (expandFailures.length > 0) {
-  for (const failure of expandFailures) console.error(`[contract-selftest:fail] ${failure}`);
-  console.error(`[contract-selftest:fail] 链展开器直锚点失败,共 ${expandFailures.length} 项`);
-  process.exit(1);
-}
-console.log(
-  `[ok] contract-selftest:链展开器直锚点(递归两层 / 顶层不递归 / 成环与悬空回报 / 菱形非环 / 叶子执行序)全部通过`,
-);
 
 /* ================= 顶层派生的双向锚点(ADR-037 后果:派生层本身必须有自检) =================
  *
@@ -681,14 +727,11 @@ console.log(
  *      同时钉住一处**有意的边界**(既无代码也无文档、无声明指向的裸目录不进保护集),否则将来
  *      有人「顺手收紧」时不会知道 clean-artifacts-gate 的正向锚点依赖这条边界。
  *   ③ 真实仓库上只断言关系(不写具体名字 —— 写名字就是新造一处枚举)。
+ *
+ * **这一段拆成五个 case**(①②③ + 占位文件派生 + 反例树):档名各取该段 `[ok] contract-selftest:…`
+ * 行的领起子句(去掉 `${}` 动态占位),收集器在每条 case 开始时重置、case 末统一 assert ——
+ * 一条 anchor 失守只让它自己那个 case 红,与搬迁前「这一段自己判退出」等价。
  */
-
-const manifestFailures = [];
-
-/** 断言辅助(失败项收集口径与上面的夹具一致) */
-function checkAnchor(condition, message) {
-  if (!condition) manifestFailures.push(message);
-}
 
 /**
  * 任意名的合成顶层树:顶层名与本仓真实名字**刻意不同**,故「类别由内容决定」这件事一旦被破坏,
@@ -754,197 +797,254 @@ const SYNTHETIC_EXPECTED = {
   zeta: 'artifact',
 };
 
-const syntheticRoot = mkdtempSync(join(tmpdir(), 'm2w-manifest-selftest-'));
-try {
+/**
+ * 建一棵**全部用任意名**的合成顶层树并扫描(用完由调用方 `rmSync` 清理)。
+ *
+ * 树与期望表都是模块级常量,这里只负责「落盘 + 扫描」这一步 —— 三条 case 共用同一棵树的构造
+ * 口径,免得各写一份后两处漂移。
+ * @returns {{ root: string, synthetic: ReturnType<typeof scanTopLevel> }} 临时根与扫描结果
+ */
+function scanSyntheticTopLevel() {
+  const root = mkdtempSync(join(tmpdir(), 'm2w-manifest-selftest-'));
   for (const [relative, content] of Object.entries(SYNTHETIC_TOP_LEVEL)) {
-    writeFileIn(syntheticRoot, relative, content);
+    writeFileIn(root, relative, content);
   }
-  const synthetic = scanTopLevel(syntheticRoot);
-  const actual = synthetic.entries.map((entry) => `${entry.name}=${entry.category}`).join(',');
-  const expected = Object.keys(SYNTHETIC_EXPECTED)
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => `${name}=${SYNTHETIC_EXPECTED[name]}`)
-    .join(',');
-  checkAnchor(
-    actual === expected,
-    `顶层分类派生失守「改名不改类别」:合成树(全部任意名)实际 ${actual},期望 ${expected}`,
-  );
-  console.log(
-    `[ok] contract-selftest:顶层分类派生(任意名合成树 ${synthetic.entries.length} 个顶层,类别与名字无关) 断言通过`,
-  );
-
-  // ② 新增顶层目录自动跟进(负向锚点的对象就叫 eta)
-  checkAnchor(
-    synthetic.mirrorPaths.includes('eta'),
-    `新增顶层目录 eta 未自动进镜像集(实际 ${synthetic.mirrorPaths.join(',')})—— 「零处手改」失效`,
-  );
-  checkAnchor(
-    synthetic.cleanProtectedSegments.includes('eta'),
-    `新增顶层目录 eta 未自动进删除保护区(实际 ${synthetic.cleanProtectedSegments.join(',')})`,
-  );
-  checkAnchor(
-    !synthetic.cleanProtectedSegments.includes('kappa') && !synthetic.mirrorPaths.includes('kappa'),
-    '裸目录 kappa(无代码/无文档/无声明)不该进保护集与镜像集 —— clean-artifacts-gate 的守卫可达性正向锚点依赖这条边界',
-  );
-  // 交付面与安装树:输出树必须整树镜像(测试 import 产物),锁文件不镜像但受保护
-  checkAnchor(synthetic.mirrorPaths.includes('omega'), '编译输出树 omega 应整树进镜像集(测试 import 的是产物)');
-
-  // 上面那条锚点测不到「已存在」以外的情形 —— 合成树里 omega/ 是在盘的,而真实干净检出上
-  // 它定义上不存在(本门禁两个调用点都排在 build 之前)。11e5c4c(按存在性过滤交付面)与
-  // 4832c09(只改 buildOutputNames 不改 mirrorPaths)两次逃逸正是从这个缺口过去的。
-  // 这里用一棵**声明了编译输出树、但磁盘上没有它**的树把该形态钉住;派生而非复制定义,
-  // 免得两棵树日后漂移。
-  const cleanCheckoutRoot = mkdtempSync(join(tmpdir(), 'm2w-manifest-clean-'));
-  try {
-    const absentOnDisk = new Set(['omega', 'zeta']); // omega = tsconfig outDir;zeta = 打包输出目录
-    for (const [relative, content] of Object.entries(SYNTHETIC_TOP_LEVEL)) {
-      if (absentOnDisk.has(relative.split('/')[0])) continue;
-      writeFileIn(cleanCheckoutRoot, relative, content);
-    }
-    const cleanCheckout = scanTopLevel(cleanCheckoutRoot);
-    const declaredAbsentStillMirrored =
-      !cleanCheckout.names.includes('omega') && cleanCheckout.mirrorPaths.includes('omega');
-    checkAnchor(
-      declaredAbsentStillMirrored,
-      '声明为编译输出树但此刻磁盘上不存在时仍须进镜像集 —— 否则 fixtures / dual-matrix 这两个' +
-        `不调 buildSandbox 的探针在干净检出上 import 不到产物(names=${cleanCheckout.names.join(',')}` +
-        ` mirrorPaths=${cleanCheckout.mirrorPaths.join(',')})`,
-    );
-    // 同一形态下「删除保护区」那条不变量也要有牙齿,且不能靠「集合恰好是空的」蒙过去。
-    //
-    // 只断言「产物名不在保护区」在这棵树上**恒真**(cleanProtectedSegments 出自 readdir,
-    // 而 omega/zeta 按构造不在盘 ⇒ 该集**不可能**有它们 —— 这正是上面 REQ-128 那段说的
-    // 空洞为真,换个位置重犯不算修好)。所以改成**对照**断言:同一个派生函数、同一棵树,
-    // 「在盘的普通树 eta 进保护集」与「不在盘的产物名不进保护集」必须同时成立。
-    //
-    // 牙齿在哪:若派生出错让保护集恒为空(分类判据整条失效),或把 `cleanable` 的构成写坏
-    // (如误把 build.files 正向首段里的顶层文件也当产物),本条立刻红 —— 前者丢掉 eta,
-    // 后者会让在盘形态那条(以及 fileForm 反例树那条)红。
-    const declaredAbsentCleanlySplit =
-      cleanCheckout.cleanProtectedSegments.includes('eta') &&
-      [...cleanCheckout.buildOutputNames, ...cleanCheckout.packOutputNames].every(
-        (name) => !cleanCheckout.cleanProtectedSegments.includes(name),
-      );
-    checkAnchor(
-      declaredAbsentCleanlySplit,
-      '干净检出形态下删除保护区的判定失守「在盘的普通树进、声明为产物但不在盘的树不进」:'
-        + `eta 在保护集=${cleanCheckout.cleanProtectedSegments.includes('eta')},`
-        + `buildOutput=${cleanCheckout.buildOutputNames.join(',') || '空'},`
-        + `packOutput=${cleanCheckout.packOutputNames.join(',') || '空'},`
-        + `cleanProtectedSegments=${cleanCheckout.cleanProtectedSegments.join(',') || '空'}`,
-    );
-    // 打印挂在真实结果上:checkAnchor 只收集不抛,无条件打印「断言通过」会在锚点失败时
-    // 也打出来 —— 一条会撒谎的通过记录比没有更坏。
-    if (declaredAbsentStillMirrored && declaredAbsentCleanlySplit) {
-      console.log(
-        '[ok] contract-selftest:声明存在但磁盘不存在的编译输出树仍进镜像集、且与在盘的普通树'
-          + '在删除保护区上分野(干净检出语义,该形态下断言真被求值) 断言通过',
-      );
-    }
-  } finally {
-    rmSync(cleanCheckoutRoot, { recursive: true, force: true });
-  }
-  checkAnchor(
-    !synthetic.mirrorPaths.includes('lock-a.json') && synthetic.cleanProtectedSegments.includes('lock-a.json'),
-    '锁文件不该进镜像集(依赖是联接挂入的),但应在删除保护区里',
-  );
-  checkAnchor(
-    !synthetic.cleanProtectedSegments.includes('omega') && !synthetic.cleanProtectedSegments.includes('zeta'),
-    '声明为产物的目录(编译输出树 / 打包输出目录)不该出现在删除保护区里,否则清理脚本会拒绝自己的目标',
-  );
-  console.log('[ok] contract-selftest:新增顶层目录自动进镜像集与删除保护区(含「裸目录不进」这条有意边界) 断言通过');
-} finally {
-  rmSync(syntheticRoot, { recursive: true, force: true });
+  return { root, synthetic: scanTopLevel(root) };
 }
 
-// 占位文件清单的派生:自身也必须有锚点(否则「派生恒为空」会静默放过)
-const derivedPlaceholders = deriveFixturePlaceholders(FIXTURE_SCRIPTS);
-checkAnchor(derivedPlaceholders.length > 0, '占位文件派生为空(抽取规则失效,夹具会因「引用的文件不存在」误红)');
-checkAnchor(
-  derivedPlaceholders.includes('gates/artifacts/clean-artifacts.mjs') && !derivedPlaceholders.includes(CHECKER_RELATIVE),
-  `占位文件派生失守:应含一条门禁脚本、不含被逐字节复制的被测门禁本身(实际 ${derivedPlaceholders.join(',')})`,
-);
-const placeholderProbe = deriveFixturePlaceholders({
-  ...FIXTURE_SCRIPTS,
-  'check:probe': 'node gates/extra-gate.mjs && echo done',
+// ① 改名不改类别 —— 造一棵**全部用任意名**的顶层目录树,断言类别仍落在同一档。若判据里混进
+//    任何具体目录名(哪怕只是 if (name === '…')),这一条必红。这比「源码里不许出现目录名」的
+//    文本扫描更硬:它直接证明名字不参与判定。
+// 档名取本段 `[ok]` 行的领起子句(去占位后即此固定串)。
+await suite.case('顶层分类派生(任意名合成树,类别与名字无关)', () => {
+  manifestFailures = [];
+  const { root, synthetic } = scanSyntheticTopLevel();
+  try {
+    const actual = synthetic.entries.map((entry) => `${entry.name}=${entry.category}`).join(',');
+    const expected = Object.keys(SYNTHETIC_EXPECTED)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => `${name}=${SYNTHETIC_EXPECTED[name]}`)
+      .join(',');
+    checkAnchor(
+      actual === expected,
+      `顶层分类派生失守「改名不改类别」:合成树(全部任意名)实际 ${actual},期望 ${expected}`,
+    );
+    assert(manifestFailures.length === 0, manifestFailures.join('; '));
+    console.log(
+      `[ok] contract-selftest:顶层分类派生(任意名合成树 ${synthetic.entries.length} 个顶层,类别与名字无关) 断言通过`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
-checkAnchor(
-  placeholderProbe.includes('gates/extra-gate.mjs') && placeholderProbe.length === derivedPlaceholders.length + 1,
-  `占位文件派生失守:新增一条引用后应恰好多出一个占位(实际 ${placeholderProbe.join(',')})`,
-);
-console.log(
-  `[ok] contract-selftest:夹具占位文件从命令正文派生(${derivedPlaceholders.length} 个,新增引用自动跟上) 断言通过`,
+
+// 上面那条锚点测不到「已存在」以外的情形 —— 合成树里 omega/ 是在盘的,而真实干净检出上
+// 它定义上不存在(本门禁两个调用点都排在 build 之前)。11e5c4c(按存在性过滤交付面)与
+// 4832c09(只改 buildOutputNames 不改 mirrorPaths)两次逃逸正是从这个缺口过去的。
+// 这里用一棵**声明了编译输出树、但磁盘上没有它**的树把该形态钉住;派生而非复制定义,
+// 免得两棵树日后漂移。
+await suite.case(
+  '声明存在但磁盘不存在的编译输出树仍进镜像集、且与在盘的普通树在删除保护区上分野(干净检出语义,该形态下断言真被求值)',
+  () => {
+    manifestFailures = [];
+    const cleanCheckoutRoot = mkdtempSync(join(tmpdir(), 'm2w-manifest-clean-'));
+    try {
+      const absentOnDisk = new Set(['omega', 'zeta']); // omega = tsconfig outDir;zeta = 打包输出目录
+      for (const [relative, content] of Object.entries(SYNTHETIC_TOP_LEVEL)) {
+        if (absentOnDisk.has(relative.split('/')[0])) continue;
+        writeFileIn(cleanCheckoutRoot, relative, content);
+      }
+      const cleanCheckout = scanTopLevel(cleanCheckoutRoot);
+      const declaredAbsentStillMirrored =
+        !cleanCheckout.names.includes('omega') && cleanCheckout.mirrorPaths.includes('omega');
+      checkAnchor(
+        declaredAbsentStillMirrored,
+        '声明为编译输出树但此刻磁盘上不存在时仍须进镜像集 —— 否则 fixtures / dual-matrix 这两个' +
+          `不调 buildSandbox 的探针在干净检出上 import 不到产物(names=${cleanCheckout.names.join(',')}` +
+          ` mirrorPaths=${cleanCheckout.mirrorPaths.join(',')})`,
+      );
+      // 同一形态下「删除保护区」那条不变量也要有牙齿,且不能靠「集合恰好是空的」蒙过去。
+      //
+      // 只断言「产物名不在保护区」在这棵树上**恒真**(cleanProtectedSegments 出自 readdir,
+      // 而 omega/zeta 按构造不在盘 ⇒ 该集**不可能**有它们 —— 这正是下面 REQ-128 那段说的
+      // 空洞为真,换个位置重犯不算修好)。所以改成**对照**断言:同一个派生函数、同一棵树,
+      // 「在盘的普通树 eta 进保护集」与「不在盘的产物名不进保护集」必须同时成立。
+      //
+      // 牙齿在哪:若派生出错让保护集恒为空(分类判据整条失效),或把 `cleanable` 的构成写坏
+      // (如误把 build.files 正向首段里的顶层文件也当产物),本条立刻红 —— 前者丢掉 eta,
+      // 后者会让在盘形态那条(以及 fileForm 反例树那条)红。
+      const declaredAbsentCleanlySplit =
+        cleanCheckout.cleanProtectedSegments.includes('eta') &&
+        [...cleanCheckout.buildOutputNames, ...cleanCheckout.packOutputNames].every(
+          (name) => !cleanCheckout.cleanProtectedSegments.includes(name),
+        );
+      checkAnchor(
+        declaredAbsentCleanlySplit,
+        '干净检出形态下删除保护区的判定失守「在盘的普通树进、声明为产物但不在盘的树不进」:'
+          + `eta 在保护集=${cleanCheckout.cleanProtectedSegments.includes('eta')},`
+          + `buildOutput=${cleanCheckout.buildOutputNames.join(',') || '空'},`
+          + `packOutput=${cleanCheckout.packOutputNames.join(',') || '空'},`
+          + `cleanProtectedSegments=${cleanCheckout.cleanProtectedSegments.join(',') || '空'}`,
+      );
+      assert(manifestFailures.length === 0, manifestFailures.join('; '));
+      // 打印挂在真实结果上:一条会撒谎的通过记录比没有更坏(判据全过才打)。
+      if (declaredAbsentStillMirrored && declaredAbsentCleanlySplit) {
+        console.log(
+          '[ok] contract-selftest:声明存在但磁盘不存在的编译输出树仍进镜像集、且与在盘的普通树'
+            + '在删除保护区上分野(干净检出语义,该形态下断言真被求值) 断言通过',
+        );
+      }
+    } finally {
+      rmSync(cleanCheckoutRoot, { recursive: true, force: true });
+    }
+  },
 );
 
-// ③ 真实仓库:只断言关系,不写具体名字
-const real = topLevel(projectRoot);
-checkAnchor(new Set(real.mirrorPaths).size === real.mirrorPaths.length, '镜像集有重复项');
-checkAnchor(
-  // 豁免集恰好是「单源声明为编译输出树的那一个名字」——它按 ADR-042 由 tsconfig outDir
-  // 声明并入镜像集,而干净检出上它定义上不存在(本门禁两个调用点都排在 build 之前)。
-  // 这不是放宽判据,是同一条意图(镜像集不得含拼错的路径)在新口径下的重述。
-  real.mirrorPaths.every((name) => real.names.includes(name) || real.buildOutputNames.includes(name)),
-  `镜像集含既不存在、也未声明为编译输出树的顶层(拼错路径才会命中):` +
-    `${real.mirrorPaths.filter((name) => !real.names.includes(name) && !real.buildOutputNames.includes(name)).join(',')}`,
-);
-checkAnchor(
-  real.protectedTreePaths.length >= real.mirrorPaths.length &&
-    real.mirrorPaths.every((name) => real.protectedTreePaths.includes(name)),
-  '指纹集应覆盖镜像集(沙盒带过去的每个面都要能看出「真实工作树被写过」)',
-);
-checkAnchor(
-  real.buildOutputNames.every((name) => real.mirrorPaths.includes(name)),
-  '编译输出树不在镜像集里 —— 沙盒内测试 import 的是产物,不带过去必然失败',
-);
-/* ---- 「删除保护区 ∩ 声明为产物的顶层名 = ∅」这条不变量在 CI 上的**可判红性**(REQ-128)
- *
- * 先说清旧写法的失效形态:断言的迭代方向虽然已经从「磁盘侧」换成「声明侧」,**被检查的集合
- * 仍是磁盘派生的**(`cleanProtectedSegments` 出自 `scanTopLevel` 的 `readdirSync(root)`)。
- * CI 上本门禁排在 build 之前(`ci.yml` 的 fail-fast 裸调在 `npm ci` 之前,`verify:ci` 第 1 步
- * 在 build 之前),dist / release 不在盘 ⇒ 那个交集**定义上为空** ⇒ `.every()` 恒真。方向换了
- * 而集合来源没换,空洞为真只是换了张脸。
- *
- * 结论:这条不变量**不能**只在真实仓库上断言 —— 它的可判反例要求「声明为产物的名字此刻在盘
- * 且在盘上是顶层**文件**」,真实仓库形态上恒不成立。于是拆成两半,两半在 CI 上都有牙齿:
- *
- *   ① 声明侧恒被求值(真实仓库,**不枚举磁盘**):域由 D1 钉住非空;D2/D3 只走声明 —— 改
- *      tsconfig 的 `outDir` 或 package.json 的 `directories.output` 就能撞红,与 dist 在不在盘无关。
- *   ② 派生侧真能产出该交集(合成树,见下方 fileFormRoot):`cleanable` 的「是文件则剔除」那道
- *      过滤(`repo-manifest.mjs` 的 `isDirectory !== false`)会把这种名字放回保护区。它是 ① 那条
- *      `.every()` 的**可判反例证明**:派生若退化成「恒不含声明为产物的名字」,它立刻红,而那条
- *      `.every()` 也就真的成了同义反复。
- */
-const realDeclaredArtifacts = [...real.buildOutputNames, ...real.packOutputNames];
-// D1:**两个**声明各自非空、无重复,且并起来无重复 —— 下面每条声明侧 `.every()` 的域都由它保证
-// 非空,否则那些又空洞为真。只查并集是不够的:`packOutputNames` 还在时并集非空,而
-// `buildOutputNames` 空了(声明识别的 outDir 键失效)照样恒过 —— 那正是要拦的漂移。
-checkAnchor(
-  real.buildOutputNames.length > 0 &&
-    real.packOutputNames.length > 0 &&
-    new Set(realDeclaredArtifacts).size === realDeclaredArtifacts.length,
-  `声明为产物的顶层名派生为空或有重复(编译输出树 ${real.buildOutputNames.join(',') || '空'} /`
-    + `打包输出目录 ${real.packOutputNames.join(',') || '空'})—— 下面的声明侧不相交断言会空洞为真`,
-);
-// D2:两个声明各指一个顶层。撞名让「清理目标」与「打包输出」两处定义分叉,而下游只认其中一处。
-checkAnchor(
-  real.buildOutputNames.every((name) => !real.packOutputNames.includes(name)),
-  '编译输出树与打包输出目录声明为同一个顶层(都是 '
-    + `${real.buildOutputNames.filter((name) => real.packOutputNames.includes(name)).join(',')})—— `
-    + '清理目标与打包输出两处定义分叉',
-);
-// D3:产物名不得撞包清单 / 锁文件 / 验收产物根 —— 这三类都被强制拉进保护区或镜像集
-// (`artifactRoots` 那道 `||`、锁文件按文件粒度进指纹集),撞名等于让清理脚本拒绝自己的目标。
-const realArtifactCollisions = realDeclaredArtifacts.filter(
-  (name) => name === real.manifestName || name === real.lockfileName || real.artifactRootNames.includes(name),
-);
-checkAnchor(
-  realArtifactCollisions.length === 0,
-  `声明为产物的顶层与「包清单 / 锁文件 / 验收产物根」相交:${realArtifactCollisions.join(',')}`,
-);
-checkAnchor(
-  realDeclaredArtifacts.every((name) => !real.cleanProtectedSegments.includes(name)),
-  '删除保护区与「声明为产物的目录」相交(清理脚本会拒绝自己的目标)',
-);
+// ② 新增顶层目录自动进保护集与镜像集 —— 「零处需要手改」的可执行版本:断言点名那个新目录。
+//    同时钉住一处**有意的边界**(既无代码也无文档、无声明指向的裸目录不进保护集),否则将来
+//    有人「顺手收紧」时不会知道 clean-artifacts-gate 的正向锚点依赖这条边界。
+// 档名取本段 `[ok]` 行的领起子句。
+await suite.case('新增顶层目录自动进镜像集与删除保护区(含「裸目录不进」这条有意边界)', () => {
+  manifestFailures = [];
+  const { root, synthetic } = scanSyntheticTopLevel();
+  try {
+    // 新增顶层目录自动跟进(负向锚点的对象就叫 eta)
+    checkAnchor(
+      synthetic.mirrorPaths.includes('eta'),
+      `新增顶层目录 eta 未自动进镜像集(实际 ${synthetic.mirrorPaths.join(',')})—— 「零处手改」失效`,
+    );
+    checkAnchor(
+      synthetic.cleanProtectedSegments.includes('eta'),
+      `新增顶层目录 eta 未自动进删除保护区(实际 ${synthetic.cleanProtectedSegments.join(',')})`,
+    );
+    checkAnchor(
+      !synthetic.cleanProtectedSegments.includes('kappa') && !synthetic.mirrorPaths.includes('kappa'),
+      '裸目录 kappa(无代码/无文档/无声明)不该进保护集与镜像集 —— clean-artifacts-gate 的守卫可达性正向锚点依赖这条边界',
+    );
+    // 交付面与安装树:输出树必须整树镜像(测试 import 产物),锁文件不镜像但受保护
+    checkAnchor(synthetic.mirrorPaths.includes('omega'), '编译输出树 omega 应整树进镜像集(测试 import 的是产物)');
+    checkAnchor(
+      !synthetic.mirrorPaths.includes('lock-a.json') && synthetic.cleanProtectedSegments.includes('lock-a.json'),
+      '锁文件不该进镜像集(依赖是联接挂入的),但应在删除保护区里',
+    );
+    checkAnchor(
+      !synthetic.cleanProtectedSegments.includes('omega') && !synthetic.cleanProtectedSegments.includes('zeta'),
+      '声明为产物的目录(编译输出树 / 打包输出目录)不该出现在删除保护区里,否则清理脚本会拒绝自己的目标',
+    );
+    assert(manifestFailures.length === 0, manifestFailures.join('; '));
+    console.log('[ok] contract-selftest:新增顶层目录自动进镜像集与删除保护区(含「裸目录不进」这条有意边界) 断言通过');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// 占位文件清单的派生:自身也必须有锚点(否则「派生恒为空」会静默放过)
+// 档名取本段 `[ok]` 行的领起子句。
+await suite.case('夹具占位文件从命令正文派生(新增引用自动跟上)', () => {
+  manifestFailures = [];
+  const derivedPlaceholders = deriveFixturePlaceholders(FIXTURE_SCRIPTS);
+  checkAnchor(derivedPlaceholders.length > 0, '占位文件派生为空(抽取规则失效,夹具会因「引用的文件不存在」误红)');
+  checkAnchor(
+    derivedPlaceholders.includes('gates/artifacts/clean-artifacts.mjs') && !derivedPlaceholders.includes(CHECKER_RELATIVE),
+    `占位文件派生失守:应含一条门禁脚本、不含被逐字节复制的被测门禁本身(实际 ${derivedPlaceholders.join(',')})`,
+  );
+  const placeholderProbe = deriveFixturePlaceholders({
+    ...FIXTURE_SCRIPTS,
+    'check:probe': 'node gates/extra-gate.mjs && echo done',
+  });
+  checkAnchor(
+    placeholderProbe.includes('gates/extra-gate.mjs') && placeholderProbe.length === derivedPlaceholders.length + 1,
+    `占位文件派生失守:新增一条引用后应恰好多出一个占位(实际 ${placeholderProbe.join(',')})`,
+  );
+  assert(manifestFailures.length === 0, manifestFailures.join('; '));
+  console.log(
+    `[ok] contract-selftest:夹具占位文件从命令正文派生(${derivedPlaceholders.length} 个,新增引用自动跟上) 断言通过`,
+  );
+});
+
+// ③ 真实仓库:只断言关系,不写具体名字 —— 写名字就是新造一处枚举。
+// 档名取本段 `[ok]` 行的领起子句(去占位后即此固定串)。
+await suite.case('真实仓库顶层派生的关系不变量', () => {
+  manifestFailures = [];
+  const real = topLevel(projectRoot);
+  checkAnchor(new Set(real.mirrorPaths).size === real.mirrorPaths.length, '镜像集有重复项');
+  checkAnchor(
+    // 豁免集恰好是「单源声明为编译输出树的那一个名字」——它按 ADR-042 由 tsconfig outDir
+    // 声明并入镜像集,而干净检出上它定义上不存在(本门禁两个调用点都排在 build 之前)。
+    // 这不是放宽判据,是同一条意图(镜像集不得含拼错的路径)在新口径下的重述。
+    real.mirrorPaths.every((name) => real.names.includes(name) || real.buildOutputNames.includes(name)),
+    `镜像集含既不存在、也未声明为编译输出树的顶层(拼错路径才会命中):` +
+      `${real.mirrorPaths.filter((name) => !real.names.includes(name) && !real.buildOutputNames.includes(name)).join(',')}`,
+  );
+  checkAnchor(
+    real.protectedTreePaths.length >= real.mirrorPaths.length &&
+      real.mirrorPaths.every((name) => real.protectedTreePaths.includes(name)),
+    '指纹集应覆盖镜像集(沙盒带过去的每个面都要能看出「真实工作树被写过」)',
+  );
+  checkAnchor(
+    real.buildOutputNames.every((name) => real.mirrorPaths.includes(name)),
+    '编译输出树不在镜像集里 —— 沙盒内测试 import 的是产物,不带过去必然失败',
+  );
+  /* ---- 「删除保护区 ∩ 声明为产物的顶层名 = ∅」这条不变量在 CI 上的**可判红性**(REQ-128)
+   *
+   * 先说清旧写法的失效形态:断言的迭代方向虽然已经从「磁盘侧」换成「声明侧」,**被检查的集合
+   * 仍是磁盘派生的**(`cleanProtectedSegments` 出自 `scanTopLevel` 的 `readdirSync(root)`)。
+   * CI 上本门禁排在 build 之前(`ci.yml` 的 fail-fast 裸调在 `npm ci` 之前,`verify:ci` 第 1 步
+   * 在 build 之前),dist / release 不在盘 ⇒ 那个交集**定义上为空** ⇒ `.every()` 恒真。方向换了
+   * 而集合来源没换,空洞为真只是换了张脸。
+   *
+   * 结论:这条不变量**不能**只在真实仓库上断言 —— 它的可判反例要求「声明为产物的名字此刻在盘
+   * 且在盘上是顶层**文件**」,真实仓库形态上恒不成立。于是拆成两半,两半在 CI 上都有牙齿:
+   *
+   *   ① 声明侧恒被求值(真实仓库,**不枚举磁盘**):域由 D1 钉住非空;D2/D3 只走声明 —— 改
+   *      tsconfig 的 `outDir` 或 package.json 的 `directories.output` 就能撞红,与 dist 在不在盘无关。
+   *   ② 派生侧真能产出该交集(合成树,见下方 fileFormRoot):`cleanable` 的「是文件则剔除」那道
+   *      过滤(`repo-manifest.mjs` 的 `isDirectory !== false`)会把这种名字放回保护区。它是 ① 那条
+   *      `.every()` 的**可判反例证明**:派生若退化成「恒不含声明为产物的名字」,它立刻红,而那条
+   *      `.every()` 也就真的成了同义反复。
+   */
+  const realDeclaredArtifacts = [...real.buildOutputNames, ...real.packOutputNames];
+  // D1:**两个**声明各自非空、无重复,且并起来无重复 —— 下面每条声明侧 `.every()` 的域都由它保证
+  // 非空,否则那些又空洞为真。只查并集是不够的:`packOutputNames` 还在时并集非空,而
+  // `buildOutputNames` 空了(声明识别的 outDir 键失效)照样恒过 —— 那正是要拦的漂移。
+  checkAnchor(
+    real.buildOutputNames.length > 0 &&
+      real.packOutputNames.length > 0 &&
+      new Set(realDeclaredArtifacts).size === realDeclaredArtifacts.length,
+    `声明为产物的顶层名派生为空或有重复(编译输出树 ${real.buildOutputNames.join(',') || '空'} /`
+      + `打包输出目录 ${real.packOutputNames.join(',') || '空'})—— 下面的声明侧不相交断言会空洞为真`,
+  );
+  // D2:两个声明各指一个顶层。撞名让「清理目标」与「打包输出」两处定义分叉,而下游只认其中一处。
+  checkAnchor(
+    real.buildOutputNames.every((name) => !real.packOutputNames.includes(name)),
+    '编译输出树与打包输出目录声明为同一个顶层(都是 '
+      + `${real.buildOutputNames.filter((name) => real.packOutputNames.includes(name)).join(',')})—— `
+      + '清理目标与打包输出两处定义分叉',
+  );
+  // D3:产物名不得撞包清单 / 锁文件 / 验收产物根 —— 这三类都被强制拉进保护区或镜像集
+  // (`artifactRoots` 那道 `||`、锁文件按文件粒度进指纹集),撞名等于让清理脚本拒绝自己的目标。
+  const realArtifactCollisions = realDeclaredArtifacts.filter(
+    (name) => name === real.manifestName || name === real.lockfileName || real.artifactRootNames.includes(name),
+  );
+  checkAnchor(
+    realArtifactCollisions.length === 0,
+    `声明为产物的顶层与「包清单 / 锁文件 / 验收产物根」相交:${realArtifactCollisions.join(',')}`,
+  );
+  checkAnchor(
+    realDeclaredArtifacts.every((name) => !real.cleanProtectedSegments.includes(name)),
+    '删除保护区与「声明为产物的目录」相交(清理脚本会拒绝自己的目标)',
+  );
+  checkAnchor(real.manifestName !== null, '认不出包清单(声明识别的键失效)');
+  checkAnchor(real.lockfileName !== null, '认不出锁文件(声明识别的键失效)');
+  checkAnchor(
+    real.entries.every((entry) => entry.reason !== ''),
+    '有顶层条目没有判定依据(诊断会退化成「未知」)',
+  );
+  assert(manifestFailures.length === 0, manifestFailures.join('; '));
+  console.log(
+    `[ok] contract-selftest:真实仓库顶层派生的关系不变量(${real.entries.length} 个顶层,类别 ${[...new Set(real.entries.map((e) => e.category))].sort().join('/')}) 断言通过`,
+  );
+});
 
 // ② 派生侧的可判反例:一棵**声明为产物的名字在盘上是顶层文件**的合成树。
 //
@@ -953,70 +1053,73 @@ checkAnchor(
 // 恒真。此树里 outDir 声明指向 `notes.md`(一个已存在的顶层 Markdown 文件),类别判定把它归为
 // `doc`(受保护),而它是文件 ⇒ 不进 `cleanable` ⇒ 落进删除保护区。两道过滤**同时**被点到,
 // 所以这棵树正是那条不变量的反例,而不是同义反复。
-const fileFormRoot = mkdtempSync(join(tmpdir(), 'm2w-manifest-fileform-'));
-try {
-  const fileFormManifest = {
-    name: 'fileform',
-    version: '1.0.0',
-    scripts: {},
-    build: { files: ['notes.md'], directories: { output: 'out' } },
-  };
-  writeFileIn(fileFormRoot, 'pkg.json', `${JSON.stringify(fileFormManifest, null, 2)}\n`);
-  writeFileIn(fileFormRoot, 'lock.json', `${JSON.stringify({ name: 'fileform', lockfileVersion: 3 }, null, 2)}\n`);
-  writeFileIn(
-    fileFormRoot,
-    'tsconfig.json',
-    `${JSON.stringify({ compilerOptions: { outDir: 'notes.md', rootDir: 'src' }, include: ['src'] }, null, 2)}\n`,
-  );
-  writeFileIn(fileFormRoot, 'src/impl.ts', 'export const a = 1;\n');
-  writeFileIn(fileFormRoot, 'notes.md', '# notes\n');
-  const fileForm = scanTopLevel(fileFormRoot);
-  const declaredNameIsTopLevelFile =
-    fileForm.buildOutputNames.join(',') === 'notes.md' && fileForm.names.includes('notes.md');
-  checkAnchor(
-    declaredNameIsTopLevelFile,
-    `「声明为产物的名字在盘上是顶层文件」这棵反例树没搭成:声明派生出 `
-      + `${fileForm.buildOutputNames.join(',') || '空'},顶层有 ${fileForm.names.join(',')} —— `
-      + '下面那条可达性锚点在别的形态上求值,等于没测',
-  );
-  const fileFormCollides = fileForm.cleanProtectedSegments.includes('notes.md');
-  checkAnchor(
-    fileFormCollides,
-    '派生退化「声明为产物的名字恒不进删除保护区」:产物名同时是一个已存在的顶层**文件**时,'
-      + '`cleanable` 的「是文件则剔除」过滤必须把它放回保护区,否则真实仓库上'
-      + '「保护区 ∩ 声明为产物 = ∅」那条断言退化成同义反复(实际 cleanProtectedSegments='
-      + `${fileForm.cleanProtectedSegments.join(',') || '空'})`,
-  );
-  if (declaredNameIsTopLevelFile && fileFormCollides) {
-    console.log(
-      '[ok] contract-selftest:删除保护区与「声明为产物的顶层名」不相交 —— 反例树(产物名 = 顶层文件)'
-        + '证明该不变量在 CI 上可判红,真实仓库上恒绿不是空洞为真',
-    );
-  }
-} finally {
-  rmSync(fileFormRoot, { recursive: true, force: true });
-}
-checkAnchor(real.manifestName !== null, '认不出包清单(声明识别的键失效)');
-checkAnchor(real.lockfileName !== null, '认不出锁文件(声明识别的键失效)');
-checkAnchor(
-  real.entries.every((entry) => entry.reason !== ''),
-  '有顶层条目没有判定依据(诊断会退化成「未知」)',
-);
-console.log(
-  `[ok] contract-selftest:真实仓库顶层派生的关系不变量(${real.entries.length} 个顶层,类别 ${[...new Set(real.entries.map((e) => e.category))].sort().join('/')}) 断言通过`,
+// 档名取本段 `[ok]` 行的领起子句。
+await suite.case(
+  '删除保护区与「声明为产物的顶层名」不相交 —— 反例树(产物名 = 顶层文件)证明该不变量在 CI 上可判红,真实仓库上恒绿不是空洞为真',
+  () => {
+    manifestFailures = [];
+    const fileFormRoot = mkdtempSync(join(tmpdir(), 'm2w-manifest-fileform-'));
+    try {
+      const fileFormManifest = {
+        name: 'fileform',
+        version: '1.0.0',
+        scripts: {},
+        build: { files: ['notes.md'], directories: { output: 'out' } },
+      };
+      writeFileIn(fileFormRoot, 'pkg.json', `${JSON.stringify(fileFormManifest, null, 2)}\n`);
+      writeFileIn(fileFormRoot, 'lock.json', `${JSON.stringify({ name: 'fileform', lockfileVersion: 3 }, null, 2)}\n`);
+      writeFileIn(
+        fileFormRoot,
+        'tsconfig.json',
+        `${JSON.stringify({ compilerOptions: { outDir: 'notes.md', rootDir: 'src' }, include: ['src'] }, null, 2)}\n`,
+      );
+      writeFileIn(fileFormRoot, 'src/impl.ts', 'export const a = 1;\n');
+      writeFileIn(fileFormRoot, 'notes.md', '# notes\n');
+      const fileForm = scanTopLevel(fileFormRoot);
+      const declaredNameIsTopLevelFile =
+        fileForm.buildOutputNames.join(',') === 'notes.md' && fileForm.names.includes('notes.md');
+      checkAnchor(
+        declaredNameIsTopLevelFile,
+        `「声明为产物的名字在盘上是顶层文件」这棵反例树没搭成:声明派生出 `
+          + `${fileForm.buildOutputNames.join(',') || '空'},顶层有 ${fileForm.names.join(',')} —— `
+          + '下面那条可达性锚点在别的形态上求值,等于没测',
+      );
+      const fileFormCollides = fileForm.cleanProtectedSegments.includes('notes.md');
+      checkAnchor(
+        fileFormCollides,
+        '派生退化「声明为产物的名字恒不进删除保护区」:产物名同时是一个已存在的顶层**文件**时,'
+          + '`cleanable` 的「是文件则剔除」过滤必须把它放回保护区,否则真实仓库上'
+          + '「保护区 ∩ 声明为产物 = ∅」那条断言退化成同义反复(实际 cleanProtectedSegments='
+          + `${fileForm.cleanProtectedSegments.join(',') || '空'})`,
+      );
+      assert(manifestFailures.length === 0, manifestFailures.join('; '));
+      if (declaredNameIsTopLevelFile && fileFormCollides) {
+        console.log(
+          '[ok] contract-selftest:删除保护区与「声明为产物的顶层名」不相交 —— 反例树(产物名 = 顶层文件)'
+            + '证明该不变量在 CI 上可判红,真实仓库上恒绿不是空洞为真',
+        );
+      }
+    } finally {
+      rmSync(fileFormRoot, { recursive: true, force: true });
+    }
+  },
 );
 
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[contract-selftest:fail] ${failure}`);
-  console.error(`[contract-selftest:fail] 契约自检回归守护失败,共 ${failures.length}/${CASES.length} 条夹具`);
-  process.exit(1);
-}
-if (manifestFailures.length > 0) {
-  for (const failure of manifestFailures) console.error(`[contract-selftest:fail] ${failure}`);
-  console.error(`[contract-selftest:fail] 顶层派生锚点失败,共 ${manifestFailures.length} 项`);
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 与搬迁前 `failures[]` + `expandFailures` + `manifestFailures` 三段判定等价(任一段失败即非零
+// 退出),**分母也换成同一个**:搬迁前只数 `CASES.length`(表外那几段的条数不可见),迁移后由
+// `suite.results.length` 自然给出(= CASES 42 + 表外 7 = 49)。两侧一旦不等,说明有档没接进
+// case —— 那正是 `gates-selftest-named-case` 要抓的形态。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) {
+    console.error(`[contract-selftest:fail] ${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  }
+  console.error(`[contract-selftest:fail] 契约自检回归守护失败,共 ${failedCases.length}/${cases.length} 条夹具`);
   process.exit(1);
 }
 console.log(
-  `[ok] contract-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截);`
+  `[ok] contract-selftest:${cases.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截);`
   + '链展开器直锚点与顶层派生锚点全部通过',
 );
