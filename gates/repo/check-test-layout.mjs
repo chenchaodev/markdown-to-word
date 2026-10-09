@@ -45,6 +45,17 @@
 //      它自己要收敛的那个源。两族当前都是 report-only(转正 = 删 `CRITERIA` 那行的 pending)。
 //   ⑬ test-segment-named-case(REQ-220 #08 族二):每段必须 import case 契约模块**且**至少
 //      有一处 `.case(` 调用 ⇒ 否则判红。两个条件缺一不可(见下「两族的判定面与读盘」)。
+//   ⑭ gates-selftest-named-case(REQ-221 #09 族一):**门禁树侧**的同一形态 ——
+//      每个 `gates/**/*.selftest.mjs` 必须 import case 契约模块(`shared/case.js` 真实现,
+//      门禁树引不到 `test/harness/` 见 ADR-074 决定一)**且**至少有一处 `.case(` 调用。
+//      ⚠ **它与 ⑬ 不是同一个 id**:判据面不同(`test/**` vs `gates/**`)、对象不同(段 vs
+//      门禁自测)、契约模块路径不同(门面 vs 真实现)。`report(id, line)` 与 `isRegistered`
+//      都按单个 id 归因,并表会让「哪一侧没接入」在读数上无法分开。
+//   ⑮ gates-selftest-surface-collapsed(REQ-221 #09 扫描面):门禁自测份数掉到下限以下 ⇒ 判红。
+//      ⚠ **与 `scan-surface-collapsed` 分立**:处置不同(段侧 walker 失效 vs `.selftest.mjs`
+//      发现规则写错 / `gates/` 被搬走),复用会让两者的强制等级读数无法分别归因。
+//      而 `scan-surface-missing` **复用**:它的 title 本就写成「读不到(test/ 或 src/)子树」
+//      的双树形态,处置两树完全相同。
 //
 // ---- L4 为什么必须判「零命中」而不是只判「import 落在别处」 ----
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
@@ -264,6 +275,21 @@ export const BEHAVIOR_DIR = "behavior";
 export const CASE_MODULE_REL = `${HARNESS_ROOT}case.js`;
 
 /**
+ * **门禁自测侧**的 case 契约模块仓库相对 POSIX 路径(判据对象是 `gates/` 树下的 `.selftest.mjs`)。
+ *
+ * ⚠ **它与 {@link CASE_MODULE_REL} 是两个不同的精确路径,且都不是「另一个」**:
+ * ADR-074 后果第一条明写 `caseContractState` 白名单的是**一个精确路径** ——
+ * 段若改引 `shared/case.js`,`resolved` 不等值 ⇒ 走「没 import 契约模块」那一档判红。
+ * 那条裁决说的是**段侧不许改引真实现**(门面不开绕过形态),**不是**全仓只许有一个契约路径:
+ * 门禁树引不到 `test/harness/case.js`(`gates-stay-in-gates` 的允许面里没有 `test/harness`),
+ * 它要接同一套契约就必须引 `shared/` 侧的真实现(ADR-074 决定一)。
+ * 故这里是**第二个白名单项**,由 `caseContractState` 的形参显式传入 —— 缺省值仍是
+ * `CASE_MODULE_REL`,段侧那一族的判定一行不改。
+ * @type {string}
+ */
+export const GATES_CASE_MODULE_REL = "shared/case.js";
+
+/**
  * **门禁层**的段目录名(C3 的作用域排除项 —— `test/gates/**` 的段不参与 C3)。
  *
  * 单列成常量而不是在 C3 里写字面量 `"gates"`:段目录名与 `GATES_TREE` 的树前缀是同一个
@@ -418,6 +444,40 @@ export const SRC_TREE = "src/";
  * 会对同一段给出不同结论 —— 判据面必须单源)。
  */
 export const GATES_TREE = "gates/";
+
+/**
+ * **门禁自测扫描根**(仓相对 POSIX 目录名,walker 的起点 —— 与 {@link GATES_TREE} 是同一棵
+ * 树的两种形态:后者带尾斜杠是因为它拿去做 `startsWith` 的前缀,walker 要的是能直接
+ * `ctx.listDir(relDir)` 的**目录名**,故去掉尾斜杠。**从 `GATES_TREE` 派生而不是另写一份
+ * 字面量**:两处各写一个 `gates`,漂移后果是「门禁树搬走了而自测扫描面还指着旧处」——
+ * 而那一族在零扫描面下会全绿(见 {@link MIN_SELFTEST_FILES})。
+ * @type {string}
+ */
+export const GATES_SELFTEST_ROOT = GATES_TREE.slice(0, -1);
+
+/**
+ * 门禁自测文件的扩展名(判据面的「什么算一份自测」的唯一声明处)。
+ *
+ * ⚠ **它与 L11 载体派生里那个 `.selftest.mjs` 是同一个扩展名**,故那处也引这个常量而不是
+ * 各写一份:「什么算载体」与「什么算自测」是两个概念,但**指的是同一批文件**,漂移会让
+ * L11 说「有载体」而自测扫描面看不见它。
+ * @type {string}
+ */
+export const GATES_SELFTEST_EXT = ".selftest.mjs";
+
+/**
+ * 扫描面(门禁自测)文件数下限:`.selftest.mjs` 的发现规则写错 / `gates/` 被搬走时,这一族
+ * 判据会在零扫描面下「全绿」,而恒绿是纯文本门禁最坏的失效形态(没人会去看一个总是
+ * exit 0 的脚本)。取实测值的约 3/4(实测 20 份 → 下限 15),只在「塌缩」这一档报红,
+ * 不随日常增删自测抖动。
+ *
+ * ⚠ **它不可复用 {@link MIN_SCANNED_FILES}**:两者的**分母集合不同**
+ * (`test/` 下的 `.test.js` vs `gates/` 下的 `.selftest.mjs`),复用会恒红;而改同一个常量的值
+ * 则两棵树共用一个数字,改任一棵会连带改另一棵 —— 那正是本文件里「两处各写一份字面量」
+ * 那条纪律的反面。两棵树各有一个下限,是它们分母不同的**记账**,不是重复。
+ * @type {number}
+ */
+export const MIN_SELFTEST_FILES = 15;
 
 /**
  * 门禁「接入点归属」的取值域(ADR-062 L12:两值)。`chain` 的真在链上,`offchain` 的不得在。
@@ -630,6 +690,49 @@ export const CRITERIA = Object.freeze([
     // 如实判红」是站着的裁决,而它「是否为合法例外待后续裁决」记在本条 title 里;
     // ② **不得**为本族开豁免白名单(ADR-071:5 明写「新判据不设豁免」)。
   }),
+  // ---- REQ-221(#09)门禁树侧的一族 + 一档扫描面:判据面扩到 `gates/**`(2026-10-09 上链)----
+  Object.freeze({
+    // ⚠ **它与上面 `test-segment-named-case` 同款形态但不是同一个 id**:判据面不同
+    // (`test/**` vs `gates/**`)、对象不同(段 vs 门禁自测)、契约模块路径不同
+    // (`test/harness/case.js` 门面 vs `shared/case.js` 真实现,ADR-074 决定一)。
+    // 而 `report(id, line)` 只接**一个** id、`isRegistered` 也按单个 id 统计 ——
+    // 并表会让「哪一侧没接入」在读数上无法分别归因。切分先例见 `gate-has-carrier`
+    // 与 `gate-module-present` 那一对。
+    //
+    // ⚠ **形态照抄段侧那一族(两个条件缺一不可)**:只按 import 判 → 建了 suite 却只用
+    // describe 的自测照样过关;只按「文件里有 createCaseSuite 这三个字」判 → 夹具串里
+    // 合成的形态会被误算成已接入,分母永远少一份。口径细节见 `caseContractState` 的注释。
+    id: "gates-selftest-named-case",
+    title:
+      "门禁树侧每份自测接入具名 case:`gates/**/*.selftest.mjs` 必须 import case 契约模块"
+      + `(${GATES_CASE_MODULE_REL})**且**至少有一处 \`.case(\` 调用 ⇒ 否则判红`
+      + "(与段侧同名形态那一族**不是同一个 id**:判据面不同、对象不同、契约模块路径不同 ——"
+      + "门禁树引不到 test/harness/,它接的是 ADR-074 决定一落在 shared/ 的真实现)",
+    // 转正不在本步范围内:ADR-071 决定一的「新判据不设豁免 · 先报告后转正」在本族沿用 ——
+    // 存量清零与本族上链分两笔,第一轮带 pending 是合规形态。
+    pending: true,
+    pendingReason:
+      "本族随 #09 的判据面扩到 `gates/**` 同批上链,**先报告后转正**(ADR-071 决定一:"
+      + "新判据不设豁免,但可先挂 report-only)。转正的前置是门禁自测接入 case 契约的那一笔"
+      + "落地(实测当前 20 份自测**零接入**,而其中多份的断言机制还是 14 份复制的"
+      + "`failures[]` 循环 —— 见 ADR-074 背景一)。⚠ 转正前须先处置这几类**装不进表**的形态"
+      + "(入参是回调体 / 零注入面的判定体),它们不是「漏接入」而是「还没搬」:"
+      + "判据本步不为其开豁免表,也不用降级口径把它们算作已接入。",
+  }),
+  Object.freeze({
+    // ⚠ **与 `scan-surface-collapsed` 分立而不复用**:段侧那一档的处置是「walker 整体失效」,
+    // 本档的处置是「`.selftest.mjs` 的发现规则写错 / `gates/` 被搬走」——
+    // 前者去查 `ctx.listDir(TEST_REL)`,后者去查扫描根常量与扩展名,拿到诊断的人做的事不同。
+    // 而 `report(id, line)` 只接一个 id、`isRegistered` 按单个 id 统计,复用会让强制等级
+    // 读数无法分别归因。切分先例同 `gate-has-carrier` / `gate-module-present`。
+    //
+    // ⚠ `scan-surface-missing` 则**复用**(它不另立):它的 title 本就写成「读不到
+    // (test/ 或 src/)子树」的双树形态、处置两树完全相同。
+    id: "gates-selftest-surface-collapsed",
+    title:
+      "门禁自测扫描面塌缩(`.selftest.mjs` 份数掉到下限以下):新族在零扫描面下会全绿,判红"
+      + "(下限独立于段侧那一档 —— 两棵树的分母集合不同,共用一个数字会让改任一棵连带改另一棵)",
+  }),
   ]);
 
 /**
@@ -672,6 +775,10 @@ const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exempti
  * @property {(relative: string) => DirEntry[]} listDir 列仓库相对目录
  * @property {(relative: string) => boolean} fileExists 判仓库相对路径是否存在(L6 核 covers 元素用)
  * @property {number} minScannedFiles 扫描面段数下限(0 = 关闭该判据,合成夹具用)
+ * @property {number} minSelftestFiles 扫描面(门禁自测)份数下限(0 = 关闭该判据,合成夹具用)
+ *   —— ⚠ **它与 `minScannedFiles` 不可共用**:两者的分母集合不同(`test/` 下的 `.test.js` vs
+ *   `gates/` 下的 `.selftest.mjs`),合成根上两者都在场时共用一个下限会让其中一档恒红。
+ *   `0 = 关闭` 是必需的:自检在合成根上求值时若带着真实下限,新族会在**每一条**夹具上判红。
  */
 
 /**
@@ -700,6 +807,10 @@ const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exempti
  * @property {number} noNamedCase 未接入具名 case 的段数(族二)
  * @property {number} noCaseImport 其中「没 import 契约模块」的段数(族二的两档可分别归因)
  * @property {number} noCaseCall 其中「import 了却一次没调 `.case(`」的段数
+ * @property {number} gateSelftests 门禁自测文件数(新族的分母 = 它的判定面全集)
+ * @property {number} gatesNoNamedCase 未接入具名 case 的门禁自测份数(门禁树侧族)
+ * @property {number} gatesNoCaseImport 其中「没 import 契约模块」的份数
+ * @property {number} gatesNoCaseCall 其中「import 了却一次没调 `.case(`」的份数
  */
 
 /**
@@ -731,18 +842,26 @@ export function makeTestLayoutCtx(base = {}) {
         .map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }))),
     fileExists: base.fileExists ?? ((relative) => existsSync(path.join(root, ...relative.split("/")))),
     minScannedFiles: base.minScannedFiles ?? MIN_SCANNED_FILES,
+    minSelftestFiles: base.minSelftestFiles ?? MIN_SELFTEST_FILES,
   };
 }
 
 /**
- * 列出 `test/` 下的全部文件(仓库相对 POSIX 路径,已排序)。
+ * 列出一棵子树下的全部文件(仓库相对 POSIX 路径,已排序),按 `accept` 过滤。
  *
- * ctx.listDir 抛错**不在此吞掉**:调用方要把「test/ 读不到」判红(路径写错时静默按空集
+ * ⚠ ctx.listDir 抛错**不在此吞掉**:调用方要把「子树读不到」判红(路径写错时静默按空集
  * 通过,门禁从那一刻起什么也没查,而输出是 exit 0 —— 这是最坏的失效形态)。
+ *
+ * ⚠ **它是 `collectTestFiles` 与门禁自测扫描面的唯一 walker**,不是新写的一份:那 10 行里
+ * 有两处**非平凡**约定 —— 跳过 `node_modules`(它在被扫树里出现时会把上万份依赖文件算进
+ * 分母)、**不吞 `ctx.listDir` 抛错**(理由见上)。另写一份就是复制这两条约定并让它们
+ * 各自漂移,而漂移的失效形态是**恒绿**:一条 walker 静默收零份,所有族判据一起「全绿」。
  * @param {TestLayoutCtx} ctx 注入面
+ * @param {string} root 仓库相对目录(被扫子树的根)
+ * @param {(relative: string) => boolean} accept 文件筛选(全收就传恒真)
  * @returns {string[]} 文件相对路径
  */
-export function collectTestFiles(ctx) {
+export function collectFilesUnder(ctx, root, accept) {
   /** @type {string[]} */
   const files = [];
   /**
@@ -754,11 +873,36 @@ export function collectTestFiles(ctx) {
       if (entry.name === "node_modules") continue;
       const rel = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
       if (entry.isDirectory) walk(rel);
-      else files.push(rel);
+      else if (accept(rel)) files.push(rel);
     }
   };
-  walk(TEST_REL);
+  walk(root);
   return files.sort();
+}
+
+/**
+ * 列出 `test/` 下的全部文件(仓库相对 POSIX 路径,已排序)。
+ *
+ * 段侧的发现口径是「全收」:分族在拿到全集之后各自按扩展名切(见 `segments` 那一步),
+ * 在 walker 里就按扩展名过滤会把「哪些族按什么口径发现」的知识搬进 IO 层。
+ * @param {TestLayoutCtx} ctx 注入面
+ * @returns {string[]} 文件相对路径
+ */
+export function collectTestFiles(ctx) {
+  return collectFilesUnder(ctx, TEST_REL, () => true);
+}
+
+/**
+ * 列出 `gates/` 下的门禁自测文件(任意深度下的 `*.selftest.mjs`)。
+ *
+ * ⚠ **过滤在 walker 里做**:这一族的判据对象**就是**「一份 `.selftest.mjs`」,把它按扩展名
+ * 切在 collector 里,判据本体拿到的是它要的形状,分母(`stats.gateSelftests`)读出来也**就是**
+ * 分母本身 —— 段侧那种「先全收、再按 SEGMENT_EXT 切」在这里会多出一个可与分母漂移的中间量。
+ * @param {TestLayoutCtx} ctx 注入面
+ * @returns {string[]} 门禁自测文件相对路径
+ */
+export function collectGateSelftestFiles(ctx) {
+  return collectFilesUnder(ctx, GATES_SELFTEST_ROOT, (rel) => rel.endsWith(GATES_SELFTEST_EXT));
 }
 
 /**
@@ -1027,27 +1171,33 @@ function bodyHasOwnThrow(lexed, open, close) {
 }
 
 /**
- * 这个段**接入了具名 case 契约**没有(族二的判据对象)。
+ * 这个文件**接入了具名 case 契约**没有(两族共用的判据对象)。
  *
- * ⚠ **必须按「有无 `import … case.js`」判,不能按「文件里有没有 `createCaseSuite` 这三个字」判**:
+ * ⚠ **必须按「有无 `import … <契约模块>`」判,不能按「文件里有没有 `createCaseSuite` 这三个字」判**:
  * `test/harness/runner-report.test.js` 只在**夹具字符串**里合成别的段(它把别的段的 import
  * 行拼出来送进沙盒),自己并不接 case 契约 —— 按字面判会把它误算成已接入,那一族的分母就
  * 永远少一段。`extractImports` 已经带 inString 守卫,故夹具串里的 import 行抽不出来。
  *
  * **`import` 只是必要条件,不是充分条件**:裁决要求「机器能判的先判红」,故本函数还要求
- * 段内**真的调用了 `case`**。实测有段建了 suite 却只用 `describe` 从不调 `case` ——
- * 它 import 了 case.js 却没接契约,机器看得见这一层,就如实报。
+ * 文件内**真的调用了 `case`**。实测有段建了 suite 却只用 `describe` 从不调 `case` ——
+ * 它 import 了契约模块却没接契约,机器看得见这一层,就如实报。
  *
- * ⚠ `case` 调用点也要过 inString 守卫:同一批「只在夹具串里出现 `suite.case(…)`」的段
+ * ⚠ `case` 调用点也要过 inString 守卫:同一批「只在夹具串里出现 `suite.case(…)`」的文件
  * 不能因此被算成已接入(理由同上)。
  *
- * @param {string} text 段文件文本
- * @param {string} file 段的仓库相对 POSIX 路径(解析相对说明符的基准)
+ * ⚠ **契约模块路径由调用方传入而不是在这里写死**:段侧与门禁树侧的合法契约模块**不同**
+ * (`test/harness/case.js` 门面 vs `shared/case.js` 真实现,ADR-074 决定一),而本函数
+ * **只认一个精确路径**(不是黑名单所有其它路径 —— 改引另一个路径即「没接入」,如实判红)。
+ * 缺省是段侧那条,故段侧调用点的判定一行未改。
+ *
+ * @param {string} text 段 / 门禁自测文件文本
+ * @param {string} file 文件的仓库相对 POSIX 路径(解析相对说明符的基准)
+ * @param {string} [moduleRel] 契约模块的仓库相对 POSIX 路径(缺省 = 段侧门面)
  * @returns {{ imported: boolean, caseCalls: number }} 是否 import 了 case 契约 + `case` 调用点数
  */
-export function caseContractState(text, file) {
+export function caseContractState(text, file, moduleRel = CASE_MODULE_REL) {
   const imported = extractImports(text, file).some(
-    (entry) => entry.resolved === CASE_MODULE_REL && !entry.typeOnly,
+    (entry) => entry.resolved === moduleRel && !entry.typeOnly,
   );
   const lexed = lexSource(text);
   let caseCalls = 0;
@@ -1361,7 +1511,10 @@ export function judgeL11Carrier({ deps, gates, exemptions = [] }) {
     const dir = noExt.split("/").slice(0, -1).join("/");
     return {
       noExt,
-      carriers: [`${dir}/${stem}.selftest.mjs`, `${dir}/${stem.replace(/^check-/, "")}.selftest.mjs`],
+      carriers: [
+        `${dir}/${stem}${GATES_SELFTEST_EXT}`,
+        `${dir}/${stem.replace(/^check-/, "")}${GATES_SELFTEST_EXT}`,
+      ],
     };
   };
   /**
@@ -1659,6 +1812,10 @@ export function checkTestLayout(base = {}) {
     noNamedCase: 0,
     noCaseImport: 0,
     noCaseCall: 0,
+    gateSelftests: 0,
+    gatesNoNamedCase: 0,
+    gatesNoCaseImport: 0,
+    gatesNoCaseCall: 0,
   };
 
   /** @type {string[]} */
@@ -2021,6 +2178,73 @@ export function checkTestLayout(base = {}) {
       `${TEST_REL}/ → scan-surface-collapsed:${TEST_REL}/ 下只扫到 ${stats.segments} 个段文件`
       + `(下限 ${ctx.minScannedFiles})—— walker 可能已失效,而五族判据在零扫描面下会「全绿」`,
     );
+  }
+
+  // ---- REQ-221(#09)门禁树侧:扫描面 + 每份自测接入具名 case ----
+  //
+  // ⚠ **整段受 `indexInRoot` 约束**,解法与 L11 / L11b / C3 **完全同源**(理由见 `indexInRoot`
+  // 那条注释,只是换了对象):合成根里**没有 `gates/` 子树**(只有 C3 那几条夹具显式铺了
+  // `gates/repo/*.mjs`),新 collector 在那里会抛;而在一棵只造 `test/` 布局的合成树上,
+  // 「`gates/` 里没有自测」**不是事实而是范畴错误**(它不是门禁索引描述的那棵树)。
+  // ⇒ 「`gates/` 读不到」经**复用的** `scan-surface-missing` 判红(它那一条 title 本就写成
+  // 双树形态、处置两树相同),而**整段判定面**在索引模块不在场时整段不适用。
+  if (indexInRoot) {
+    /** @type {string[]} */
+    let gateSelftests;
+    try {
+      gateSelftests = collectGateSelftestFiles(ctx);
+    } catch (error) {
+      report(
+        "scan-surface-missing",
+        `${GATES_SELFTEST_ROOT}/ → scan-surface-missing:读不到 ${GATES_SELFTEST_ROOT}/ 子树(`
+        + `${error instanceof Error ? error.message : String(error)}) —— 门禁自测的扫描面为空时`
+        + "新族会「全绿」(零分母时没有任何一份自测被判红,而那正是恒绿这一最坏失效形态)",
+      );
+      gateSelftests = [];
+    }
+    stats.gateSelftests = gateSelftests.length;
+
+    // 塌缩另立 id(处置与段侧那一档不同,理由见 CRITERIA 里那两行的注释)。
+    if (gateSelftests.length < ctx.minSelftestFiles) {
+      report(
+        "gates-selftest-surface-collapsed",
+        `${GATES_SELFTEST_ROOT}/ → gates-selftest-surface-collapsed:${GATES_SELFTEST_ROOT}/ 下只扫到 `
+        + `${gateSelftests.length} 份 ${GATES_SELFTEST_EXT} 自测(下限 ${ctx.minSelftestFiles})`
+        + `—— ${GATES_SELFTEST_EXT} 的发现规则可能写错、或门禁树被搬走了,而新族在零扫描面下会「全绿」`,
+      );
+    }
+
+    // ---- 族:每份门禁自测接入具名 case(与段侧同名形态那一族**不同 id**)----
+    //
+    // ⚠ **读盘**:这里对每份自测读一次正文。与段侧那两族同款理由(同一批文件读两次会让
+    // 「是否命中」不可复现),故**不复用**任何别的循环已读好的文本 —— 那些正文都读在块内
+    // 局部变量里,循环一结束就没了。
+    for (const file of gateSelftests) {
+      const contract = caseContractState(ctx.readText(file), file, GATES_CASE_MODULE_REL);
+      if (contract.imported && contract.caseCalls > 0) continue;
+      stats.gatesNoNamedCase += 1;
+      if (!contract.imported) {
+        stats.gatesNoCaseImport += 1;
+        report(
+          "gates-selftest-named-case",
+          `${file} → gates-selftest-named-case:该门禁自测没有 import case 契约模块 ${GATES_CASE_MODULE_REL}`
+            + " —— 门禁自测也要接入具名 case:createCaseSuite 建 suite、逐条 suite.case(...) 登记用例,"
+            + "case 数才能成为护栏的唯一计数单位(否则这一族的分母是「文件数」而不是「用例数」,"
+            + "而删掉一整个 case 不改变任何可数的东西)。⚠ 门禁树**引不到** "
+            + "test/harness/case.js(`gates-stay-in-gates` 的允许面里没有它,ADR-074 已否决给它加 allow),"
+            + `故这一侧接的是落在 shared/ 的真实现。处置:import ${GATES_CASE_MODULE_REL} `
+            + "并把断言收进 suite.case(...) 之内",
+        );
+      } else {
+        stats.gatesNoCaseCall += 1;
+        report(
+          "gates-selftest-named-case",
+          `${file} → gates-selftest-named-case:该门禁自测 import 了 case 契约模块 ${GATES_CASE_MODULE_REL},`
+            + "但正文里没有任何 `.case(` 调用(只建了 suite 或只用裸断言)—— import 了契约却不接进去,"
+            + "等于「声明了却不用」,case 级粒度名存实亡。处置:把断言收进 suite.case(...) 之内",
+        );
+      }
+    }
   }
 
   // ---- 判据三 L7:顶层目录集合相等 ----
@@ -2423,6 +2647,21 @@ export function main(argv = []) {
   }
   const { problems, info, stats, l5ExemptionCount } = checkTestLayout();
 
+  /**
+   * 一族的「强制等级」后缀 —— **由 {@link CRITERIA} 派生,不写死**。
+   *
+   * ⚠ **为什么不能写死**(2026-10-09 实测踩到):#08 把两族转正时删掉了 `CRITERIA` 那两行的
+   * `pending: true`,却没删结论行里硬编的 `(report-only…)` 字面量 ⇒ 门禁**实际是 fail-closed**、
+   * 退出码也真的非零,而输出却写着「命中只报告,不计退出码」。**诊断开始说谎**,读的人会得出
+   * 「#08 的转正没生效」的错误结论。写死的等级标签与写死的计数是同一类病:在「加一族 / 删一族 /
+   * 转正一族」那天静默说谎,而「还剩几族待转正」正是唯一进度读数。
+   * @param {string} id 判据族 id
+   * @returns {string} 该族当前强制等级的结论行片段
+   */
+  const enforcement = (id) => (CRITERIA.find((entry) => entry.id === id)?.pending === true
+    ? "(report-only:命中只报告,不计退出码)"
+    : "(fail-closed:命中即非零退出)");
+
   const counts = [
     `L4 test-layer-self-hosted 判红 ${stats.l4Violations} 项`
     + `(零本层主体 ${stats.l4NoOwnSubject} / 段 import 段 ${stats.l4SegmentImports};`
@@ -2432,7 +2671,7 @@ export function main(argv = []) {
       + ` / 不足 ${REASON_MIN_CHARS} 字判红 ${stats.l5ExemptionsShortReason}`
       + ` / stale 判红 ${stats.l5StaleExemptions})`,
     `L7 test-top-dirs-exact 多 ${stats.l7Extra} / 缺 ${stats.l7Missing}`
-      + "(report-only:命中只报告,不计退出码)",
+      + enforcement("test-top-dirs-exact"),
     `L6 behavior-covers-declared 判红 ${stats.l6Violations} 项`
       + `(behavior 段缺 covers / covers 为空 / covers 元素在磁盘上不存在;`
       + `covers 同时是正常段目录「零层 import」时的 L4 声明通道)`,
@@ -2457,10 +2696,14 @@ export function main(argv = []) {
       + ` / 不足 ${REASON_MIN_CHARS} 字判红 ${stats.c3ShortReason} / stale 判红 ${stats.c3Stale})`,
     `段内本地断言实现 test-segment-local-assert-impl 判红 ${stats.localAssertImpl} 项`
       + "(顶层 assert 函数体自带 throw;@returns {asserts cond} 的委派型窄化壳合规)"
-      + "(report-only:命中只报告,不计退出码)",
+      + enforcement("test-segment-local-assert-impl"),
     `具名 case test-segment-named-case 未接入 ${stats.noNamedCase} 段`
       + `(未 import 契约模块 ${stats.noCaseImport} / import 了却一次没调 .case( ${stats.noCaseCall};`
-      + `分母是全部 ${stats.segments} 段)(report-only:命中只报告,不计退出码)`,
+      + `分母是全部 ${stats.segments} 段)` + enforcement("test-segment-named-case"),
+    `门禁自测接入具名 case gates-selftest-named-case 未接入 ${stats.gatesNoNamedCase} 份`
+      + `(未 import 契约模块 ${stats.gatesNoCaseImport} / import 了却一次没调 .case( ${stats.gatesNoCaseCall};`
+      + `分母是 ${GATES_SELFTEST_ROOT}/** 下全部 ${stats.gateSelftests} 份 ${GATES_SELFTEST_EXT})`
+      + enforcement("gates-selftest-named-case"),
   ].join(";");
   const named = problems.map((problem) => problem.split(" → ")[0] ?? problem);
 

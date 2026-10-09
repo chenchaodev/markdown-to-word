@@ -36,6 +36,9 @@ import {
   GATE_EXEMPTIONS_REL,
   GATE_INDEX_MODULE_REL,
   GATE_SUBJECT_EXEMPTIONS_REL,
+  GATES_CASE_MODULE_REL,
+  GATES_SELFTEST_EXT,
+  GATES_SELFTEST_ROOT,
   L5_EXEMPTIONS_REL,
   loadGateExemptions,
   loadGateSubjectExemptions,
@@ -234,7 +237,11 @@ function writeUnder(root, rel, body) {
  * 这里显式把下限关掉,让每条夹具只验它要验的那一格)。
  * @param {Readonly<Record<string, string>>} extra 仓库相对 POSIX 路径 → 正文
  * @param {object} [opts]
- * @param {number} [opts.minScannedFiles] 扫描面下限
+ * @param {number} [opts.minScannedFiles] 扫描面下限(段侧)
+ * @param {number} [opts.minSelftestFiles] 扫描面下限(门禁自测侧)
+ *   —— ⚠ **两个下限都要显式关掉**,缺一个就有一条与夹具本意无关的红等着:合成根里段数够
+ *   BASE_PAD 而 `.selftest.mjs` 通常零份(只有铺了 `gates/` 的少数夹具有),带着真实下限
+ *   时新族会在**每一条**夹具上先报「扫描面塌缩」—— 症状离根因隔着一整族判据。
  * @param {{segment: string, specifier: string, reason: string}[]} [opts.l5Exemptions] L5 豁免表(注入面)
  * @param {readonly Record<string, object>} [opts.gateRegistry] 门禁索引(注入面;缺省 = 空索引)
  * @param {{segment: string, specifier: string, reason: string}[]} [opts.gateSubjectExemptions]
@@ -253,6 +260,8 @@ function judge(extra, opts = {}) {
     return checkTestLayout({
       root: dir,
       minScannedFiles: opts.minScannedFiles ?? 0,
+      // ⚠ 门禁自测侧的扫描面下限**同样要显式关掉**,理由见本函数 JSDoc 里那两个下限的注释。
+      minSelftestFiles: opts.minSelftestFiles ?? 0,
       // l5Exemptions 注入:走 base 的注入面,不读真实数据文件 ⇒ 夹具与真实仓库互不影响
       l5Exemptions: opts.l5Exemptions ?? [],
       // ⚠ **合成根必须把门禁清单也注入掉**,理由与上面那条同款但更硬:合成根里没有 `gates/`
@@ -1716,6 +1725,133 @@ const CASES = [
     expectInfo: null,
     expect: null,
   },
+  // ---- REQ-221(#09)门禁树侧:每份自测接入具名 case(与段侧同名形态那一族**不同 id**)----
+  //
+  // ⚠ **本族每一条夹具都必须铺 `C3_TREE_IDENTITY`**:门禁树侧整段受 `indexInRoot` 约束
+  // (与 C3 / L11b 同款范畴边界,理由见判定本体里 `indexInRoot` 的注释)—— 合成根里没有
+  // `gates/` 子树,那是「这棵树不是门禁索引描述的那棵树」,不是「门禁自测一份都没有」。
+  // 缺了它,本族每一条夹具都**零命中**(症状是「全绿」,看不出是作用域没开)。
+  //
+  // ⚠ **本族当前是 report-only**(CRITERIA 里 `pending: true`),故命中走 `info` 通道 ——
+  // 断言必须落在 `expectInfo` 上,落在 `expect`(problems)上会因「期望零判红」而恒绿。
+  {
+    // 档 1:没 import 契约模块 ⇒ 命中(第一格)。这一格是本族的**全部意义**:门禁自测今天
+    // 实测零接入(ADR-074 背景一),不判它就等于「判据面扩了但一个数都没报」。
+    name: "#09 门禁树侧:自测没 import case 契约模块 → 命中(第一格,门禁树引的是 shared/ 真实现)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      ["gates/repo/check-demo.selftest.mjs"]: [
+        "// @ts-check",
+        "/** 夹具门禁自测:裸断言,没接 case 契约。 */",
+        'import { demo } from "./check-demo.mjs";',
+        "export async function run() {",
+        '  if (demo !== 1) throw new Error("demo 漂移");',
+        "}",
+        "",
+      ].join("\n"),
+      ["gates/repo/check-demo.mjs"]: "export const demo = 1;\n",
+    },
+    expectInfo: new RegExp(
+      `gates/repo/check-demo\\.selftest\\.mjs → gates-selftest-named-case:该门禁自测没有 import `
+      + `case 契约模块 ${GATES_CASE_MODULE_REL.replace(/\//g, "\\/")}`,
+    ),
+    // ⚠ `expect: null` 与 `expectInfo` **互不替代**:前者钉「report-only 命中不进 problems」
+    // (即本族当前**不改退出码**,这是它挂 pending 的直接后果),后者钉「它真的被报出来了」。
+    // 只断前者则本族恒绿(任何实现都过),只断后者则「命中被吞进 problems」无人发现。
+    expect: null,
+  },
+  {
+    // 档 2:import 了契约却一次没调 `.case(` ⇒ 命中(第二格)。两个条件缺一不可,与段侧同款:
+    // 只断 import 会让「建了 suite 却只用 describe」的自测过关(裁决:机器能判的先判红)。
+    name: "#09 门禁树侧:import 了契约却一次没调 .case( → 命中(第二格,只断 import 会漏这一档)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      ["gates/repo/check-demo.selftest.mjs"]: [
+        "// @ts-check",
+        "/** 夹具门禁自测:import 了契约、建了 suite,却只调 describe 从不调 case。 */",
+        `import { createCaseSuite } from "${posixRelativeSpecifier("gates/repo", GATES_CASE_MODULE_REL)}";`,
+        "export async function run() {",
+        "  const suite = createCaseSuite();",
+        '  await suite.describe("分组", async () => {});',
+        "  return { cases: suite.results };",
+        "}",
+        "",
+      ].join("\n"),
+      [GATES_CASE_MODULE_REL]: "export const createCaseSuite = () => ({});\n",
+    },
+    expectInfo: new RegExp(
+      `gates/repo/check-demo\\.selftest\\.mjs → gates-selftest-named-case:该门禁自测 import 了 `
+      + `case 契约模块 .*但正文里没有任何`,
+    ),
+    expect: null,
+  },
+  {
+    // **反向锚点**:import 了契约 + 至少一处 `.case(` ⇒ 本族零命中。
+    // 缺它的话,上面那两条可能只是「恒红」—— 而恒红与「这一族根本没生效」在读数上不可区分。
+    // ⚠ 它同时钉住「契约模块路径是 `shared/case.js` 而不是 `test/harness/case.js`」:
+    // 后者若被误当成门禁树侧的合法契约路径,本族在真实仓上会**恒绿**(实测 20 份零导入
+    // `shared/case.js`,而它们也都没引门面 —— 但门禁树根本引不到门面,那条路径是伪口径)。
+    name: "#09 门禁树侧:已 import shared/ 契约且至少调一次 .case( → 零命中(反向锚点)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      ["gates/repo/check-demo.selftest.mjs"]: [
+        "// @ts-check",
+        "/** 夹具门禁自测:已接入具名 case 契约(引 shared/ 真实现)。 */",
+        `import { createCaseSuite } from "${posixRelativeSpecifier("gates/repo", GATES_CASE_MODULE_REL)}";`,
+        "export async function run() {",
+        "  const suite = createCaseSuite();",
+        '  await suite.case("demo 取到", () => {});',
+        "  return { cases: suite.results };",
+        "}",
+        "",
+      ].join("\n"),
+      [GATES_CASE_MODULE_REL]: "export const createCaseSuite = () => ({});\n",
+    },
+    expectInfo: null,
+    expect: null,
+  },
+  {
+    // **跨族隔离的反向锚点**:门禁自测的接入状态**不计入**段侧的 `segments`。
+    // 少这一格的话,把自测数塞进 `stats.segments` 的实现(复用段侧分母最省事的一种写法)
+    // 会让本族与 `scan-surface-collapsed` / `test-top-dirs-exact` 三族**零连带**这条性质
+    // 无人核对 —— 那三族的结论行数字会随自测增删漂,而它们各自的夹具都察觉不到。
+    name: "#09 门禁树侧:自测份数不进段侧分母(与既有三族零连带)",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      ["gates/repo/check-demo.selftest.mjs"]: "export const covered = 1;\n",
+    },
+    // 段侧两族零命中 + 本族命中数**只数自测那一份**:两族分母都没被自测撑大。
+    expectAbsent: /scan-surface-collapsed|test-top-dirs-exact:test\/ 顶层多出目录/,
+    expectInfo: /gates-selftest-named-case/,
+    expect: null,
+  },
+  {
+    // 扫描面塌缩(另立 id 那一档):`.selftest.mjs` 份数掉到下限以下 ⇒ 判红。
+    // ⚠ 走的是**新 id**而不是段侧那一档:处置不同(发现规则写错 / 门禁树被搬走 vs walker 失效),
+    // 复用会让两者的强制等级读数无法分别归因。
+    name: "#09 门禁自测扫描面塌缩(份数掉到下限以下)→ 判红 gates-selftest-surface-collapsed",
+    judgeOnly: true,
+    extra: { ...C3_TREE_IDENTITY },
+    minSelftestFiles: 1000,
+    expect: new RegExp(
+      `gates-selftest-surface-collapsed:${GATES_SELFTEST_ROOT}/ 下只扫到 \\d+ 份 `
+      + `${GATES_SELFTEST_EXT.replace(/\./g, "\\.")} 自测\\(下限 1000\\)`,
+    ),
+  },
+  {
+    // **范畴边界的反向锚点**(与 L11b 那格成对):索引模块不在本求值根里 ⇒ 门禁树侧整段
+    // 不适用。少了这一格,新族会在每一条没铺 `gates/` 的合成夹具上抛「读不到 gates/ 子树」
+    // 或恒判塌缩,而恒红是纯文本门禁最坏的失效形态。
+    name: "#09 门禁树侧:索引模块不在本求值根里(合成根)→ 整段不适用,不报塌缩也不报未接入",
+    judgeOnly: true,
+    extra: {},
+    expectAbsent: /gates-selftest-surface-collapsed|gates-selftest-named-case|读不到 gates\/ 子树/,
+    expect: null,
+  },
   // ---- 判据登记表 CRITERIA:三道「没有一族漏登记」的机械判红 ----
   //
   // ① 结构层:漏斗查不到 id ⇒ 追加 `criteria-unregistered:<id>` 判红(下面两条夹具);
@@ -2387,6 +2523,25 @@ const CASES = [
       + ` \\/ 不足 ${REASON_MIN_CHARS} 字判红 0 \\/ stale 判红 0\\)`,
     ),
   },
+  {
+    // **门禁树侧那族的分母在真实仓库上非零**(= 它真的被验证过,不是恒绿)。
+    //
+    // ⚠ 分母**必须**断:「未接入 0 份」在分母为 0 时也成立,而那正是这一族最坏的失效形态
+    // (`.selftest.mjs` 的发现规则写错 / 扫描根常量漂了 ⇒ 一份都扫不到 ⇒ 零命中 ⇒ 全绿)。
+    // 合成根那几条反向锚点证明不了这一格:合成根里本来就常常零份自测。
+    //
+    // ⚠ **命中数写死是不允许的**:这一族随 #09 的搬迁逐份归零,写死会在搬迁那天变成一条
+    // 自己把自己判红的夹具。故只断「分母非零」+「未接入数 ≤ 分母」(后者的正则天然成立,
+    // 它的作用是把分母与命中数**写进同一条断言**,让读数时不必回头找另一条)。
+    name: "真实仓库:门禁自测那族的分母非零(证明真被扫到,不是零扫描面下的恒绿)",
+    realRepo: true,
+    expectCode: 0,
+    expect: new RegExp(
+      `gates-selftest-named-case 未接入 \\d+ 份\\(未 import 契约模块 \\d+ \\/ `
+      + `import 了却一次没调 \\.case\\( \\d+;分母是 ${GATES_SELFTEST_ROOT}/\\*\\* 下全部 `
+      + `[1-9]\\d* 份 \\.selftest\\.mjs\\)`,
+    ),
+  },
 ];
 
 /** @type {string[]} */
@@ -2619,6 +2774,7 @@ for (const testCase of CASES) {
       }
       const { problems, info, stats } = judge(testCase.extra ?? {}, {
         minScannedFiles: testCase.minScannedFiles,
+        minSelftestFiles: testCase.minSelftestFiles,
         missingRoot: testCase.missingRoot,
         skipSrc: testCase.skipSrc,
         l5Exemptions: testCase.l5Exemptions,
