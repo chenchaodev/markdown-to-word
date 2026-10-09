@@ -75,7 +75,7 @@
   **⚠ 这三件抓不到「接了契约之后删掉一整个 case」** —— import 还在、`.case(` 从 20 次变 19 次仍 ≥1，照样绿。「源码抽出的 case 名集合 ⟷ 登记名册」两向差集是**本步未交付项**，已记入下方余留清单。
 - **② case 内部的断言条数与期望值不被削减 —— 靠搬迁四步，不靠机器**：先冻结旧计数 → **建名册再搬**（名册是搬完补的就只是新代码的复述，零证明力）→ 逐行对账「旧 case 名 / 旧 `expect` 正则 / 新表该行 `expect`」三样 → 反向扫放宽（`/具体串/` 变 `/^/`、`expectCount` 从 2 变 1、`forbid` 合行时丢失）。删一条 assert 或放宽一个正则都不改变任何可数的东西。
 - **③ 本批不存在「名册两侧同改」的风险面**，因为没有名册。**名册建起来那一刻**，它自带「删 case + 删册 是一次改动、判据看不见」这个半齿上限，届时必须写明，**不得在汇报里说成「机器保证了断言一条未删」**。
-- 判据面扩到 `gates/**` 时 **`scan-surface-missing` 复用、塌缩另立 id**（处置不同，且 `report(id,line)` 只接一个 id，两棵树共用一个 id 会让强制等级读数无法分别归因）。 | `npm run test` · `npm run check:test-layout` · `npm run check:boundary` · `npm run typecheck` · `npm run check:tscheck-coverage` | 必须在 #08 之后（**成立**：自测段今天零个用统一断言库，实测零命中；且「断言一条未删」需要一个可机械计数的单位，现状三种机制零个能计数）。⚠ 两条裁决已落 [`ADR-074`](adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md)：契约落点（甲案）与护栏真实边界。**开工前实测另发现 PLAN 未列的一层前置**：瓶颈不是断言形态而是**判定体有没有注入面** —— 3 处零参/零导出须先拆、1 处判定体住在测试侧，详见 ADR-074 背景二 | **批次一完成 2026-10-09，#09 整体未完成**（基础设施三项 + 样板迁移 `check-src-layout.selftest.mjs`；`verify:ci` 退出码 0。过程中有一条 `[fail] 进程退出时仍有临时资源未清理(EPERM)` —— 已归因是 `REQ-197` 已登记的 Windows 偶发、非本轮引入，且 harness 自己的临时目录前缀残留为 0。**余留 19 段与「名册两向差集」判据均未做，见下方清单**；本行在余留项全部落地前不写「通过」） |
+- 判据面扩到 `gates/**` 时 **`scan-surface-missing` 复用、塌缩另立 id**（处置不同，且 `report(id,line)` 只接一个 id，两棵树共用一个 id 会让强制等级读数无法分别归因）。 | `npm run test` · `npm run check:test-layout` · `npm run check:boundary` · `npm run typecheck` · `npm run check:tscheck-coverage` | 必须在 #08 之后（**成立**：自测段今天零个用统一断言库，实测零命中；且「断言一条未删」需要一个可机械计数的单位，现状三种机制零个能计数）。⚠ 两条裁决已落 [`ADR-074`](adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md)：契约落点（甲案）与护栏真实边界。**开工前实测另发现 PLAN 未列的一层前置**：瓶颈不是断言形态而是**判定体有没有注入面** —— 3 处零参/零导出须先拆、1 处判定体住在测试侧，详见 ADR-074 背景二 | **批次一完成 2026-10-09，#09 整体未完成**（基础设施三项 + 样板迁移 `check-src-layout.selftest.mjs`；`verify:ci` 退出码 0。过程中有一条 `[fail] 进程退出时仍有临时资源未清理(EPERM)` —— 已归因是 `REQ-197` 已登记的 Windows 偶发、非本轮引入，且 harness 自己的临时目录前缀残留为 0。**余留 19 段与「名册两向差集」判据均未做，见下方清单**；本行在余留项全部落地前不写「通过」）· **批次二完成 2026-10-09**（`gen-gate-ids-table` · `release-notes` · `smoke-proc` 三份接入具名 case 契约、**不进 harness** —— 判据就是下方「两档」条；对账口径：字面量 grep 集合零删除零改动，`suite.results.length` 与旧分母 `CASES.length + 2` 相等；三份 selftest 直跑 exit 0。余留份数相应变为 16，**不手数**，取 `gates-selftest-named-case` 的未接入计数） |
 
 ⚠ **#09 写域订正（2026-10-07 实测）**：原写域 `test/gates/**` 里有**零个**门禁自测段 —— 那里是 24 个普通测试段（runner 跑）。20 段自测全在 `gates/**/*.selftest.mjs`（`find gates -name '*.selftest.mjs'`），且 `check-test-layout.selftest.mjs:23` 明写「该门禁刻意不扫 gates/」。按原写域派工会写错地方。
 ⚠ **harness 落点定 `shared/` 而非 `test/harness/`**：`check-import-boundary.mjs:2015` 的 `gates-stay-in-gates` 允许面是 `['gates','shared','test/fixtures']`，不含 `test/` ⇒ `gates/**` 引用 `test/harness/*` 会判红（实测现状零引用，改即红）。`shared/` 是唯一可行位置，且它**不在** `check-test-numbering` 与 `check-temp-cleanup` 的 `SCAN_TARGETS` 内 ⇒ 无写域外溢。⚠ **行号订正（2026-10-09）**：原写 `:1702` 是 2026-10-07 的行号，复核时该行已移到 `:2015`（同一条规则，被 `TREE_RULES` 表重构推后）。**裸行号会随无关编辑漂移** —— 引用这条规则优先按规则 id `gates-stay-in-gates` 定位。
@@ -85,6 +85,12 @@
 余留分四组，各组处置：
 
 - **判定体已导出、形态一致的一组** → 按组推进，**每组一条提交**，组内先建 case 名册再搬（ADR-074 后果节「搬迁四步」，次序不可换）。
+- ⚠ **「进 harness」与「接 case 契约」是两档，2026-10-09 实测厘清，别混着排**（读码两个候选得出，改变了后续批次顺序）：
+  - **harness 现有 schema 只覆盖「树型 + 问题清单」这一类** —— `{name, files: 路径→正文, expect: 正则, expectCount?}`。**无树型档、无 `expectClean`、无 `forbid`、无 `remove`**。
+  - 样板段 `check-src-layout` 之所以能迁，是因为它**恰好同时具备树型档与问题清单档**；下一个候选立刻就不成立：`smoke-proc` 判据收的是**结果对象**（无树、用 `expectClean` + `forbid` + `forbidNamed`）· `check-transform-dispatch` 判的是**退出码**且用例靠 `mutate({dir,src})` 回调。
+  - ⇒ **退出码/无树用例硬塞进 problems 数组 = 把「问题清单」撑成通用返回通道**，恰是 ADR-074 后果节点名要防的退化。**不许那样迁。**
+  - ⇒ **多数段的正路是「只接 case 契约、不用 harness」**：接契约让用例数成为可机械计数的单位（`gates-selftest-named-case` 判的就是它，也是名册判据的前置），harness 是另一档。
+  - **扩 harness schema（加树型可选 / `expectClean` / `forbid`）是一个独立决定**，不在本工作项默认范围内 —— 要扩先裁决它会不会把 harness 变成通用框架。
 - **判定体须与迁段同批拆/搬的 4 段**（`check-changelog` · `check-test-numbering` · `gen-archive-index` 的判定体无注入面；`gate-index` 的五个审计函数住在 selftest 内） → ⚠ **拆与迁同批做**，不拆成独立的「先拆完 4 处」一步 —— 那会与迁段顺序整个搞反（ADR-074 决定二）。
 - **永久不进表的 2 段**（`smoke-report` 32 档全回调体 · `check-tscheck-coverage` 16 条全闭包） → 留在原处保持 bespoke。改写成数据形态要动的是自测的判定逻辑本身，**那是另一种改动，不是表格化**。
 - **其余部分承接段** → 表内部分进 harness，`prepare` / `mutate` / `forbid` / 变异窗口等 bespoke 留在原处（ADR-068「bespoke 留在原处」）。

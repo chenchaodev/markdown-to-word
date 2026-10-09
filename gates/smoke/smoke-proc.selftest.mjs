@@ -38,13 +38,27 @@
 // 唯一的 IO 是 ESM 静态 import 读取被测模块自身(判定本体的仓内依赖 shared/userdata.js
 // 只有函数定义、无顶层副作用)。
 //
-// ✅ 恒绿防护落在三处,少一格都会退化:
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一 / ADR-068 bespoke 留在原处)----
+//
+// 用 `shared/case.js` 的 `createCaseSuite`,夹具表逐条 `await suite.case(用例名, () => …)`。
+// 门禁树接的是**落在 shared/ 的真实现**:`gates-stay-in-gates` 的允许面只有
+// `gates` / `shared` / `test/fixtures`(`gates/repo/check-import-boundary.mjs` 的 TREE_RULES),
+// `test/` 整棵树不在其中,故引不到 `test/harness/case.js`。
+//
+// **不用合成根 harness**:本档零临时目录、零 spawn、零文件写入,判定体
+// `collectSmokeProblems` 直接 import;而 harness 的表只收「树型路径 → 正文 + 问题清单正则」
+// 且判定体须回吐**问题清单** —— 本档的入参是纯数据(退出码 / 输出串 / spawnError / markers),
+// **入参与 harness 不对型**,塞进去是假接入。接 case 契约解决的是另一件事:让「用例数」成为
+// 可机械计数的单位(`gates-selftest-named-case` 判的就是它)。
+//
+// ✅ 恒绿防护落在三处,少一格都会退化(三处的断言体现在住在各自的 `suite.case` 之内):
 //   - 每条负向档都断言 `problems.length > 0` **且**命中预期片段(空数组 ⇒ 夹具报错);
 //   - 每条负向档都带 `forbid`(断言诊断**没有**多说什么 —— 一个把所有 marker 与所有失败原因
 //     串成一段话、或反过来什么都不说的退化实现,两头都要被拦);
 //   - 合成输出由 `okOutput()` 统一生成,并在正向锚点档**回读确认它真的含全部 token** ——
 //     否则「夹具因为没造出成功运行」而全绿,那正是本脚本要拦的假通过。
 
+import { assert, createCaseSuite } from '../../shared/case.js';
 import { SMOKE_MARKERS, collectSmokeProblems } from './smoke-proc.mjs';
 
 /** 全部诊断标记都齐、且退出码为 0 的一份合成运行(正向锚点的输入) */
@@ -79,55 +93,54 @@ function namedSegment(joined) {
   return matched === null ? '' : /** @type {RegExpExecArray} */ (matched)[1];
 }
 
-/** @type {string[]} */
-const failures = [];
+const suite = createCaseSuite();
 
 /**
- * 跑一档并按声明核对结果。三种声明互斥:`expectClean`(要求零问题)、`expect`(要求非空且
- * 命中)、以及可叠加的 `forbid` / `expectCount`。
+ * 跑一档并按声明核对结果(收进 `suite.case` 的断言体,抛错只记该档失败、不中断后续档)。
+ *
+ * 三种声明互斥:`expectClean`(要求零问题)、`expect`(要求非空且命中)、以及可叠加的
+ * `forbid` / `expectCount`。
+ *
+ * ⚠ **一条档内的多条判据仍要一次跑完**(收进 `wrong[]` 最后一次性 throw),不能撞上第一条就
+ * 抛:判红原因往往同时有「非空」「命中」「条数」「forbid」几条,一次全报出来才不用反复重跑
+ * 定位。case 级「不中断后续档」是**档与档之间**的粒度,与档内全报不冲突。
  * @param {object} testCase 用例
  */
-function run(testCase) {
-  try {
-    const problems = collectSmokeProblems(testCase.result, { label: testCase.label ?? LABEL, markers: testCase.markers });
-    const joined = problems.join('\n');
-    /** @type {string[]} */
-    const wrong = [];
-    if (testCase.expectClean === true) {
-      if (problems.length !== 0) wrong.push(`期望零问题,实际 ${problems.length} 条:${joined}`);
-    } else {
-      // 恒绿防护:先断「非空」,再断「命中」。顺序重要 —— 一个恒绿实现会在这里被第一条拦下,
-      // 报出的根因指向「判定不判红」而不是「措辞变了」。
-      if (problems.length === 0) {
-        wrong.push('期望判红,实际零问题 —— 判定在该形态上恒绿了(夹具故障没注入成功,或判据本身退化了)');
-      } else if (!testCase.expect.test(joined)) {
-        wrong.push(`期望问题清单匹配 ${testCase.expect},实际:${joined}`);
-      }
+function check(testCase) {
+  const problems = collectSmokeProblems(testCase.result, { label: testCase.label ?? LABEL, markers: testCase.markers });
+  const joined = problems.join('\n');
+  /** @type {string[]} */
+  const wrong = [];
+  if (testCase.expectClean === true) {
+    if (problems.length !== 0) wrong.push(`期望零问题,实际 ${problems.length} 条:${joined}`);
+  } else {
+    // 恒绿防护:先断「非空」,再断「命中」。顺序重要 —— 一个恒绿实现会在这里被第一条拦下,
+    // 报出的根因指向「判定不判红」而不是「措辞变了」。
+    if (problems.length === 0) {
+      wrong.push('期望判红,实际零问题 —— 判定在该形态上恒绿了(夹具故障没注入成功,或判据本身退化了)');
+    } else if (!testCase.expect.test(joined)) {
+      wrong.push(`期望问题清单匹配 ${testCase.expect},实际:${joined}`);
     }
-    if (testCase.expectCount !== undefined && problems.length !== testCase.expectCount) {
-      wrong.push(`期望恰好 ${String(testCase.expectCount)} 条问题,实际 ${problems.length} 条:${joined}`);
-    }
-    const forbiddenHits = (testCase.forbid ?? []).filter((needle) => joined.includes(needle));
-    if (forbiddenHits.length > 0) {
-      wrong.push(`诊断里出现了不该出现的片段:${forbiddenHits.join(' / ')} —— 该族判定必须只说自己那一族的事`);
-    }
-    // forbidNamed 单独对着「点名段」判:诊断末尾那句「期望全部命中」会列出全部 token,而部分
-    // label 本身就是 token 的子串(label「pdf 书签」⊂ token「[smoke] pdf 书签 ok:」)——
-    // 拿整段正文匹配会把「附带的期望清单」误报成「多点名了一条」。
-    const named = namedSegment(joined);
-    const namedHits = (testCase.forbidNamed ?? []).filter((needle) => named.includes(needle));
-    if (namedHits.length > 0) {
-      wrong.push(`点名段里出现了不该出现的 marker:${namedHits.join(' / ')} —— 点名必须只点缺的那几条(实际点名段:${named})`);
-    }
-    if (wrong.length > 0) {
-      failures.push(`${testCase.name}:${wrong.join('; ')}`);
-    } else {
-      const shown = testCase.expectClean === true ? '零问题' : `${problems.length} 条问题`;
-      console.log(`[ok] smoke-proc-selftest:${testCase.name}(${shown})`);
-    }
-  } catch (error) {
-    failures.push(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
   }
+  if (testCase.expectCount !== undefined && problems.length !== testCase.expectCount) {
+    wrong.push(`期望恰好 ${String(testCase.expectCount)} 条问题,实际 ${problems.length} 条:${joined}`);
+  }
+  const forbiddenHits = (testCase.forbid ?? []).filter((needle) => joined.includes(needle));
+  if (forbiddenHits.length > 0) {
+    wrong.push(`诊断里出现了不该出现的片段:${forbiddenHits.join(' / ')} —— 该族判定必须只说自己那一族的事`);
+  }
+  // forbidNamed 单独对着「点名段」判:诊断末尾那句「期望全部命中」会列出全部 token,而部分
+  // label 本身就是 token 的子串(label「pdf 书签」⊂ token「[smoke] pdf 书签 ok:」)——
+  // 拿整段正文匹配会把「附带的期望清单」误报成「多点名了一条」。
+  const named = namedSegment(joined);
+  const namedHits = (testCase.forbidNamed ?? []).filter((needle) => named.includes(needle));
+  if (namedHits.length > 0) {
+    wrong.push(`点名段里出现了不该出现的 marker:${namedHits.join(' / ')} —— 点名必须只点缺的那几条(实际点名段:${named})`);
+  }
+  // 判据全部核对完才结算:一条都对上时打 [ok] 并带上「几条问题」,有任何一条对不上就抛出去。
+  assert(wrong.length === 0, wrong.join('; '));
+  const shown = testCase.expectClean === true ? '零问题' : `${problems.length} 条问题`;
+  console.log(`[ok] smoke-proc-selftest:${testCase.name}(${shown})`);
 }
 
 /* ---------- 夹具表 ---------- */
@@ -352,7 +365,8 @@ const CASES = [
 ];
 
 /* ---------- 前提自检:夹具自身可信(恒绿防护的最内层) ---------- */
-{
+// case 名逐字沿用搬迁前记账用的档名「前提自检」(旧实现写成 `failures.push("前提自检:…")`)。
+await suite.case('前提自检', () => {
   const problems = [];
   if (SMOKE_MARKERS.length === 0) problems.push('SMOKE_MARKERS 为空 —— 全部夹具都会因「没有标记可缺」而失去意义');
   const tokens = SMOKE_MARKERS.map((m) => m.token);
@@ -364,20 +378,21 @@ const CASES = [
   if (notHit.length > 0) {
     problems.push(`正向锚点的合成输出没含全这些 token:${notHit.join(' / ')} —— okOutput() 不可信,全绿是假通过`);
   }
-  if (problems.length > 0) {
-    failures.push(`前提自检:${problems.join('; ')}`);
-  } else {
-    console.log(`[ok] smoke-proc-selftest:前提自检(${String(SMOKE_MARKERS.length)} 条标记、token 互异、正向合成输出含全部 token)`);
-  }
-}
+  assert(problems.length === 0, `前提自检:${problems.join('; ')}`);
+  console.log(`[ok] smoke-proc-selftest:前提自检(${String(SMOKE_MARKERS.length)} 条标记、token 互异、正向合成输出含全部 token)`);
+});
 
-for (const testCase of CASES) run(testCase);
+// 夹具表逐档收进 case:**档名即 case 名**(逐字沿用搬迁前 `run()` 记账用的 `testCase.name`)。
+for (const testCase of CASES) {
+  await suite.case(testCase.name, () => check(testCase));
+}
 
 /* ---------- 注入 / 撤销成对(防「怎么都判红」的退化实现) ---------- */
 // 只做「注入 ⇒ 红」时,一个 `return ["boom"]` 的退化实现能让上面全部负向档通过(它们只断非空,
 // 只有 forbid 与 expect 会拦 —— 但那些都是逐档的,漏写一档就漏一处)。这一组把「同一份输出,
 // 换掉退出码就翻面」做成显式断言:判红必须**跟着输入走**。
-{
+// case 名逐字沿用搬迁前记账用的档名「注入/撤销成对」(旧实现写成 `failures.push("注入/撤销成对:…")`)。
+await suite.case('注入/撤销成对', () => {
   const base = { code: 0, signal: null, timedOut: false, output: okOutput() };
   const green = collectSmokeProblems(base, { label: LABEL });
   const red = collectSmokeProblems({ ...base, code: 5 }, { label: LABEL });
@@ -387,17 +402,22 @@ for (const testCase of CASES) run(testCase);
   if (green.length === 0 && red.length > 0 && red.join('\n') === green.join('\n')) {
     problems.push('判红与判绿的诊断正文完全相同 —— 诊断没有跟着判定结论走');
   }
-  if (problems.length > 0) {
-    failures.push(`注入/撤销成对:${problems.join('; ')}`);
-  } else {
-    console.log('[ok] smoke-proc-selftest:注入非零退出码判红、撤销后判绿(判定跟着输入走)');
-  }
-}
+  assert(problems.length === 0, `注入/撤销成对:${problems.join('; ')}`);
+  console.log('[ok] smoke-proc-selftest:注入非零退出码判红、撤销后判绿(判定跟着输入走)');
+});
 
-const total = CASES.length + 2;
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[smoke-proc-selftest:fail] ${failure}`);
-  console.error(`[smoke-proc-selftest:fail] smoke 判定本体回归守护失败,共 ${failures.length}/${total} 条`);
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 与搬迁前 `failures[]` 判定等价(任一档失败即非零退出),**分母也是同一个**:搬迁前写
+// `CASES.length + 2`(夹具表 + 前提自检 + 注入/撤销成对),搬迁后由 `suite.results.length`
+// 自然给出。两侧一旦不等,说明有档没接进 case —— 那正是 `gates-selftest-named-case`
+// 要抓的形态。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) {
+    console.error(`[smoke-proc-selftest:fail] ${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  }
+  console.error(`[smoke-proc-selftest:fail] smoke 判定本体回归守护失败,共 ${failedCases.length}/${cases.length} 条`);
   process.exit(1);
 }
-console.log(`[ok] smoke-proc-selftest:${total} 条夹具全部符合预期(全绿通过 / 逐族判红)`);
+console.log(`[ok] smoke-proc-selftest:${cases.length} 条夹具全部符合预期(全绿通过 / 逐族判红)`);
