@@ -29,11 +29,31 @@
 //
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则系统
 // 临时区会堆满夹具树。本脚本全部写操作都落在 mkdtemp 出来的目录里、**不碰真实工作树**。
+//
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一)----
+//
+// 用 `shared/case.js` 的 `createCaseSuite` 建一次 suite:夹具表 7 条逐条
+// `await suite.case(档名, () => …)`,表外两块(恒绿防护 / 归因摘录)各成一个 case,共 9 条
+// (= 搬迁前的 `CASES.length + 2`,一个不多一个不少)。门禁树接的是落在 shared/ 的真实现:
+// `gates-stay-in-gates` 的允许面只有 `gates` / `shared` / `test/fixtures`,`test/` 整棵树不在
+// 其中,故引不到 `test/harness/case.js`。
+//
+// **不用合成根 harness**:本文件的判定是 spawn 仓内门禁本体 + cwd 指合成夹具树,断言落在
+// 「退出码 + 点名集合 + 诊断文案」上;而 harness 的表只收「树型路径 → 正文 + 问题清单正则」
+// 且判定体须回吐**问题清单** —— 入参是「一棵夹具树 + 一组退出码 / 点名断言」,与 harness
+// 不对型,塞进去是假接入(ADR-068:bespoke 留在原处)。接 case 契约解决的是另一件事:让
+// 「用例数」成为可机械计数的单位(`gates-selftest-named-case` 判的就是它)。
+//
+// ⚠ **异常归属的搬迁**:`buildTree` 抛异常(夹具不可信,旧实现登记「夹具执行抛异常」并继续
+// 跑后面的档)改由 case 级 catch 收成「该 case 失败」—— 一样不中断后续 case,消息等价(见
+// 主循环体内那处 try/catch)。表外两块原本不在 try 内,抛异常会崩掉整个脚本;现在同样由
+// case 级 catch 收住,失败面更可见。
 
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { assert, createCaseSuite } from '../../shared/case.js';
 import { FIXTURES_DIR, ROOT } from '../../shared/paths.js';
 import { IMAGE_DIGEST_BASELINE } from './gen-fixtures.mjs';
 import { SEGMENT_DIRS } from '../../shared/test-common-surface.js';
@@ -251,41 +271,47 @@ const CASES = [
   },
 ];
 
-/** @type {string[]} */
-const failures = [];
+const suite = createCaseSuite();
+
+// 夹具表逐档收进 case:**档名即 case 名**(逐字沿用搬迁前 `failures.push` 记账用的 `testCase.name`)。
 for (const testCase of CASES) {
-  /** @type {string | undefined} */
-  let root;
-  try {
-    root = buildTree(testCase.mutate ?? undefined);
-    const run = runGate(root, ['--check']);
-    const { products, images } = parseDiagnostics(run.output);
-    const problems = [];
-    if (run.code !== testCase.expectCode) {
-      problems.push(`期望 exit=${String(testCase.expectCode)},实际 exit=${String(run.code)}`);
+  await suite.case(testCase.name, () => {
+    /** @type {string | undefined} */
+    let root;
+    // 造夹具单独一段:它抛异常 = 夹具不可信(buildTree 自己已在抛异常前清掉半棵合成树),
+    // 旧实现登记「夹具执行抛异常」并继续跑后面的档;现在抛同一条消息,由 case 级 catch 收成
+    // 「该 case 失败」—— 同样不中断后续 case。
+    try {
+      root = buildTree(testCase.mutate ?? undefined);
+    } catch (error) {
+      throw new Error(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
     }
-    // 点名集合必须**逐个相同**(有序无关):既不许漏点,也不许多点。
-    const wantProducts = [...(testCase.expectProducts ?? [])].sort();
-    if (products.slice().sort().join(",") !== wantProducts.join(",")) {
-      problems.push(`期望点名的产物集合为 [${wantProducts.join(", ")}],实际 [${products.join(", ")}]`);
+    try {
+      const run = runGate(root, ['--check']);
+      const { products, images } = parseDiagnostics(run.output);
+      const problems = [];
+      if (run.code !== testCase.expectCode) {
+        problems.push(`期望 exit=${String(testCase.expectCode)},实际 exit=${String(run.code)}`);
+      }
+      // 点名集合必须**逐个相同**(有序无关):既不许漏点,也不许多点。
+      const wantProducts = [...(testCase.expectProducts ?? [])].sort();
+      if (products.slice().sort().join(",") !== wantProducts.join(",")) {
+        problems.push(`期望点名的产物集合为 [${wantProducts.join(", ")}],实际 [${products.join(", ")}]`);
+      }
+      const wantImages = [...(testCase.expectImages ?? [])].sort();
+      if (images.length !== wantImages.length || wantImages.some((rel) => !images.some((line) => line.includes(rel)))) {
+        problems.push(`期望点名的图片为 [${wantImages.join(", ")}],实际诊断:\n${images.join("\n") || "(无图片诊断)"}`);
+      }
+      if (testCase.expectOutput !== undefined && !testCase.expectOutput.test(run.output)) {
+        problems.push(`诊断文案不匹配 ${testCase.expectOutput},实际:\n${run.output}`);
+      }
+      // 逐项核对全攒完才结算:消息逐字沿用旧实现 `failures.push` 的那一条(档名 + 各条问题)。
+      assert(problems.length === 0, `${testCase.name}:${problems.join("; ")}`);
+      console.log(`[ok] fixtures-selftest:${testCase.name}(exit ${String(run.code)})`);
+    } finally {
+      if (root !== undefined) rmSync(root, { recursive: true, force: true });
     }
-    const wantImages = [...(testCase.expectImages ?? [])].sort();
-    if (images.length !== wantImages.length || wantImages.some((rel) => !images.some((line) => line.includes(rel)))) {
-      problems.push(`期望点名的图片为 [${wantImages.join(", ")}],实际诊断:\n${images.join("\n") || "(无图片诊断)"}`);
-    }
-    if (testCase.expectOutput !== undefined && !testCase.expectOutput.test(run.output)) {
-      problems.push(`诊断文案不匹配 ${testCase.expectOutput},实际:\n${run.output}`);
-    }
-    if (problems.length > 0) {
-      failures.push(`${testCase.name}:${problems.join("; ")}`);
-      continue;
-    }
-    console.log(`[ok] fixtures-selftest:${testCase.name}(exit ${String(run.code)})`);
-  } catch (error) {
-    failures.push(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    if (root !== undefined) rmSync(root, { recursive: true, force: true });
-  }
+  });
 }
 
 /* ---------- 恒绿防护:门禁失效 / 夹具失真都不许静默绿 ---------- */
@@ -293,7 +319,13 @@ for (const testCase of CASES) {
 // 而门禁改成静默跳过),此时所有负向夹具都会因为「诊断没点名」而红 —— 已经够了。此处再钉
 // 一条:正向锚点的 exit 0 必须在**真的没有** [check] 诊断时成立,不能靠「exit 0 但诊断里
 // 有一堆点名」蒙混(那说明判定顺序被换过,产物比对没真跑)。
-{
+// 表外两块各成一个 case(**档名固定**,逐字取旧 `failures.push` 的领起子句),位置保持在 CASES
+// 循环之后 —— 搬迁前它们就在主循环后面跑,`await` 的书写次序即执行次序,这一格不丢。
+// case 名逐字沿用搬迁前记账用的档名「正向锚点的「真绿」形态」(旧实现写成
+// `failures.push("正向锚点的「真绿」形态:…")`)。
+await suite.case('正向锚点的「真绿」形态', () => {
+  // buildTree(null) 在旧实现里不在 try 内:抛异常会崩掉整个脚本。现在由 case 级 catch 收成
+  // 该 case 失败 —— 失败面更可见(整脚本崩掉只剩一条 stack,且归因摘录那一块再也不跑)。
   const root = buildTree(null);
   try {
     const run = runGate(root, ['--check']);
@@ -303,22 +335,19 @@ for (const testCase of CASES) {
     if (products.length > 0) problems.push(`产物比对面竟有点名诊断:${products.join(", ")}(判定顺序可能被换过)`);
     if (images.length > 0) problems.push(`图片夹具面竟有诊断:\n${images.join("\n")}`);
     if (!/--check 通过/.test(run.output)) problems.push(`缺「--check 通过」结论行:\n${run.output}`);
-    if (problems.length > 0) {
-      failures.push(`正向锚点的「真绿」形态:${problems.join("; ")}`);
-    } else {
-      console.log('[ok] fixtures-selftest:正向锚点的真绿形态(exit 0 + 零点名诊断 + 有「--check 通过」结论行)');
-    }
-  } catch (error) {
-    failures.push(`正向锚点的真绿形态:抛异常:${error instanceof Error ? error.message : String(error)}`);
+    // 消息逐字沿用旧实现 `failures.push` 的那一条(档名 + 各条问题)。
+    assert(problems.length === 0, `正向锚点的「真绿」形态:${problems.join("; ")}`);
+    console.log('[ok] fixtures-selftest:正向锚点的真绿形态(exit 0 + 零点名诊断 + 有「--check 通过」结论行)');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}
+});
 
 /* ---------- 归因:诊断里那句能定位到文件的话,原文长什么样 ---------- */
 // 上表断言的是「名字出现在点名集合里」。这里额外把**可读的那一段原文**打出来,
 // 便于人眼确认诊断确实能定位(而不只是名字出现过)。判定与断言在上面,这里只输出。
-{
+// case 名逐字沿用搬迁前记账用的档名「归因摘录」(旧实现写成 `failures.push("归因摘录:…")`)。
+await suite.case('归因摘录', () => {
   const root = buildTree((dir) => {
     appendFileSync(join(dir, 'samples', 'docs', PRODUCT_ALPHA), '\n<!-- 故意漂移 -->\n', 'utf8');
   });
@@ -328,21 +357,23 @@ for (const testCase of CASES) {
       .split(/\r?\n/)
       .filter((line) => line.includes(PRODUCT_ALPHA))
       .join("\n");
-    if (excerpt === "") {
-      failures.push(`归因摘录:诊断里找不到 ${PRODUCT_ALPHA} 的任何一行 —— 点名能力已丢失`);
-    } else {
-      console.log(`[ok] fixtures-selftest:归因摘录(诊断原文含 ${PRODUCT_ALPHA}):\n${excerpt}`);
-    }
-  } catch (error) {
-    failures.push(`归因摘录:抛异常:${error instanceof Error ? error.message : String(error)}`);
+    // 消息逐字沿用旧实现 `failures.push` 的那一条。
+    assert(excerpt !== "", `归因摘录:诊断里找不到 ${PRODUCT_ALPHA} 的任何一行 —— 点名能力已丢失`);
+    console.log(`[ok] fixtures-selftest:归因摘录(诊断原文含 ${PRODUCT_ALPHA}):\n${excerpt}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}
+});
 
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[fixtures-selftest:fail] ${failure}`);
-  console.error(`[fixtures-selftest:fail] fixtures 漂移门禁回归守护失败,共 ${failures.length}/${CASES.length + 2} 条`);
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 与搬迁前 `failures[]` 判定等价(任一档失败即非零退出),**分母也是同一个**:搬迁前写
+// `CASES.length + 2`(夹具表 7 条 + 表外两块),搬迁后由 `suite.results.length` 自然给出 9。
+// 两侧一旦不等,说明有档没接进 case —— 那正是 `gates-selftest-named-case` 要抓的形态。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) console.error(`[fixtures-selftest:fail] ${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  console.error(`[fixtures-selftest:fail] fixtures 漂移门禁回归守护失败,共 ${failedCases.length}/${cases.length} 条`);
   process.exit(1);
 }
-console.log(`[ok] fixtures-selftest:${CASES.length + 2} 条夹具全部符合预期(未漂移通过 / 注入漂移后判红且点名该 fixture)`);
+console.log(`[ok] fixtures-selftest:${cases.length} 条夹具全部符合预期(未漂移通过 / 注入漂移后判红且点名该 fixture)`);

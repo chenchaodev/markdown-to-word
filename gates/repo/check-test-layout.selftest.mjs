@@ -21,11 +21,32 @@
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则系统临时区
 // 会堆满夹具树。本脚本全部写操作都落在 mkdtemp 出来的目录里,**不碰真实工作树**,
 // 因此 check:temp-cleanup 扫不到、也不该扫到它(该门禁刻意不扫 gates/:那里 rmSync 是被测语义)。
+//
+// ---- 形态:接入具名 case 契约,但**不接合成根 harness** ----
+//
+// 夹具表 143 条逐条收成 `await suite.case(档名, () => runOne(档))`,suite 由
+// `shared/case.js` 的 `createCaseSuite` 建一次(ADR-074 决定一:门禁树接的是落在 shared/ 的
+// 真实现 —— `gates-stay-in-gates` 的允许面只有 `gates` / `shared` / `test/fixtures`,
+// `test/` 整棵树不在其中,引不到 `test/harness/case.js`)。case 内失败即抛、由 case 级 catch
+// 收成**该条**失败,不中断后续档 —— 一次跑完可见全部失败面。
+//
+// **为什么本档不进合成根 harness**(`shared/gate-selftest-harness.mjs`,ADR-068):
+// 本档的判定面是**problems / info 双通道**加**退出码**,入参是 ctx 注入面(判据登记表 / 豁免表 /
+// 两个扫描面下限)与夹具树,而 harness 的表只收「树型路径 → 正文 + 问题清单正则」且判定体须
+// 回吐**问题清单** —— 入参与返回两侧都不对型,塞进去是假接入(bespoke 留在原处)。case 契约
+// 解决的是另一件事:让「档数」成为可机械计数的单位(`gates-selftest-named-case` 判的就是它),
+// 迁移后分母由 `suite.results.length` 给出。
+//
+// ⚠ 与旧实现的**唯一**行为差别(记账从 `failures[]` 换成 suite):旧实现把异常的 stack 拼进
+// 失败消息里一并打印,新实现由 case 契约单独存 `CaseResult.stack`(失败消息仍是逐字沿用的
+// 那条 message),栈不展开在逐条 fail 日志里;逐档成败、退出码与汇总口径都不变。
+// 143 条档名逐字沿用搬迁前的 `name:` 值 —— 一条不改、不合并、不新增。
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createCaseSuite } from "../../shared/case.js";
 import { ROOT } from "../../shared/paths.js";
 import {
   ACCESS_CHAIN,
@@ -2544,338 +2565,337 @@ const CASES = [
   },
 ];
 
-/** @type {string[]} */
-const failures = [];
-for (const testCase of CASES) {
-  try {
-    if (testCase.sourceAuditMutation !== undefined) {
-      // 变异档:给同一个抽取器喂一份**改过的**源码/表,断言它**判红**。
-      // 为什么不 spawn 也不写文件:变异要证明的是「抽取器 + 对账逻辑有牙齿」,
-      // 而牙齿在逻辑上;真去改本体文件反而让自检变成一个会写工作树的脚本。
-      // 反过来说:如果这份变异**没有**判红,那本体上的那条正向断言就毫无意义 ——
-      // 「两向都空即平」的抽取器能让任意错登记全绿(见这条夹具的注释)。
-      const source = readFileSync(checkerPath, "utf8");
-      const zombie = testCase.sourceAuditMutation === "zombie";
-      const drift = zombie
-        ? auditSourceCriteria(source, [...CRITERIA, { id: "test-family-deleted-long-ago" }])
-        : auditSourceCriteria(
-          `${source}\n// 变异:多出一族未登记的判据\nconst _x = "y → test-new-family:某段命中";\n`,
-        );
-      const caught = zombie ? drift.tableOnly.length > 0 : drift.sourceOnly.length > 0;
-      if (caught) {
-        console.log(`[ok] test-layout-selftest:${testCase.name}(变异被拦截:${zombie ? "僵尸行" : "漏登记"})`);
-      } else {
-        failures.push(
-          `${testCase.name}:变异未被拦截(${zombie ? "僵尸行" : "漏登记"})⇒ 本档的抽取器没有牙齿`,
-        );
-      }
-      continue;
-    }
-    if (testCase.sourceAudit === true) {
-      // 静态档:读**门禁本体源码**,不 spawn、不碰夹具。它断两件事,各自独立可归因:
-      //   ① 源码 id 集合 ⟷ CRITERIA **双向**相等(第一向=漏登记,第二向=僵尸行);
-      //   ② 每个 `pending: true` 带非空 `pendingReason`(语义层)。
-      // ⚠ ① 与本体行锚形态**刻意耦合**(见 auditSourceCriteria 的注释),不要去「修」它。
-      // ⚠ ② 之所以只断「非空」而不校验理由内容:理由是给人读的判断,门禁能机械判的只有
-      // 「有没有写」—— 试图校验内容就变成门禁替人下结论,而那正是判据不该做的事。
-      const drift = auditSourceCriteria();
-      const noReason = CRITERIA
-        .filter((entry) => entry.pending === true && (entry.pendingReason ?? "").trim() === "")
-        .map((entry) => entry.id);
-      if (drift.sourceOnly.length > 0) {
-        failures.push(
-          `${testCase.name}:源码发出但 CRITERIA 未登记的 id:${drift.sourceOnly.join(", ")}`
-          + "(漏登记 ⇒ 那一族的强制等级无人负责;在 CRITERIA 里补一行,或确认该族已删、连 report 一起去)",
-        );
-        continue;
-      }
-      if (drift.tableOnly.length > 0) {
-        failures.push(
-          `${testCase.name}:CRITERIA 里有僵尸行(源码已不再发出):${drift.tableOnly.join(", ")}`
-          + "(僵尸行让门禁文件头那条 grep 进度锚的命中数说谎 —— 那正是「还剩几族待转正」的唯一读数)",
-        );
-        continue;
-      }
-      if (noReason.length > 0) {
-        failures.push(
-          `${testCase.name}:pending: true 但 pendingReason 为空的族:${noReason.join(", ")}`
-          + "(挂待办标记却说不出为什么,与说得清为什么在门禁上不可区分)",
-        );
-        continue;
-      }
-      console.log(
-        `[ok] test-layout-selftest:${testCase.name}`
-        + `(双向相等:${CRITERIA.length} 族 / report-only ${PENDING_ROWS} 族且每族都有 pendingReason)`,
-      );
-      continue;
-    }
-    if (testCase.unit === true) {
-      // 抽取层直测:断言条数与逐条 (spec, typeOnly, resolved),顺序按「值在前、注释型在后」
-      // (实现里两半的收集顺序)。断条数是这一档的重点:多收一条(同一条被收两遍)在逐条比对里
-      // 也看得见,但断条数能让失败消息直接指出「多了/少了几条」。
-      const refs = extractImports(testCase.text, testCase.file);
-      const actual = refs.map((r) => ({ spec: r.spec, typeOnly: r.typeOnly, resolved: r.resolved }));
-      const want = testCase.expectRefs;
-      const shape = (/** @type {{ spec: string, typeOnly: boolean, resolved?: string | null }[]} */ list) =>
-        list.map((r) => `${r.spec}|typeOnly=${String(r.typeOnly)}|resolved=${String(r.resolved ?? null)}`);
-      const actualSorted = [...actual].sort((a, b) => a.spec.localeCompare(b.spec));
-      const wantSorted = [...want].sort((a, b) => a.spec.localeCompare(b.spec));
-      const same = actualSorted.length === wantSorted.length
-        && actualSorted.every((r, i) => {
-          const w = wantSorted[i];
-          return w !== undefined && r.spec === w.spec && r.typeOnly === w.typeOnly
-            && (r.resolved ?? null) === (w.resolved ?? null);
-        });
-      if (same) {
-        console.log(`[ok] test-layout-selftest:${testCase.name}(${actual.length} 条 / ${shape(actual).join(" · ")})`);
-      } else {
-        failures.push(
-          `${testCase.name}:期望 ${wantSorted.length} 条 [${shape(wantSorted).join(" · ")}],`
-          + `实际 ${actualSorted.length} 条 [${shape(actualSorted).join(" · ")}]`,
-        );
-      }
-      continue;
-    }
-    if (testCase.gateExemptionLoad !== undefined) {
-      // 读表档:走 `loadGateExemptions` 的**真实读盘路径**(临时合成根),
-      // 而不是注入面 —— 注入面按构造永远「读得到」,那一档就无人验证了。
-      // 四种形态各一:文件不在 / 文件在但 JSON 坏了 / JSON 合法但缺 entries / 表读得到。
-      const dir = mkdtempSync(join(tmpdir(), "m2w-gate-exempt-selftest-"));
-      try {
-        if (testCase.gateExemptionLoad === "corrupt") {
-          writeUnder(dir, GATE_EXEMPTIONS_REL, "{ this is not json ");
-        } else if (testCase.gateExemptionLoad === "no-entries") {
-          writeUnder(dir, GATE_EXEMPTIONS_REL, `${JSON.stringify({ _comment: "缺 entries 键" }, null, 2)}\n`);
-        } else if (testCase.gateExemptionLoad === "empty") {
-          writeUnder(dir, GATE_EXEMPTIONS_REL, `${JSON.stringify({ entries: [] }, null, 2)}\n`);
-        }
-        const { problems: loaded } = loadGateExemptions(dir);
-        const joined = loaded.join("\n");
-        if (testCase.expect === null ? loaded.length === 0 : testCase.expect.test(joined)) {
-          console.log(`[ok] test-layout-selftest:${testCase.name}(${loaded.length} 条读表诊断)`);
-        } else {
-          failures.push(
-            `${testCase.name}:期望${testCase.expect === null ? "零读表诊断" : `匹配 ${testCase.expect}`},`
-            + `实际 ${loaded.length} 条\n${joined || "(零诊断)"}`,
-          );
-        }
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-      continue;
-    }
-    if (testCase.gateSubjectExemptionLoad !== undefined) {
-      // C3 读表档:走 `loadGateSubjectExemptions` 的**真实读盘路径**(临时合成根),
-      // 理由与上面 L11 那条逐字同款 —— 注入面按构造永远「读得到」,那一档就无人验证。
-      // 四种形态各一:文件不在 / 文件在但 JSON 坏了 / JSON 合法但缺 entries / 表读得到。
-      const dir = mkdtempSync(join(tmpdir(), "m2w-gate-subject-exempt-selftest-"));
-      try {
-        if (testCase.gateSubjectExemptionLoad === "corrupt") {
-          writeUnder(dir, GATE_SUBJECT_EXEMPTIONS_REL, "{ this is not json ");
-        } else if (testCase.gateSubjectExemptionLoad === "no-entries") {
-          writeUnder(dir, GATE_SUBJECT_EXEMPTIONS_REL, `${JSON.stringify({ _comment: "缺 entries 键" }, null, 2)}\n`);
-        } else if (testCase.gateSubjectExemptionLoad === "empty") {
-          writeUnder(dir, GATE_SUBJECT_EXEMPTIONS_REL, `${JSON.stringify({ entries: [] }, null, 2)}\n`);
-        }
-        const { problems: loaded } = loadGateSubjectExemptions(dir);
-        const joined = loaded.join("\n");
-        if (testCase.expect === null ? loaded.length === 0 : testCase.expect.test(joined)) {
-          console.log(`[ok] test-layout-selftest:${testCase.name}(${loaded.length} 条读表诊断)`);
-        } else {
-          failures.push(
-            `${testCase.name}:期望${testCase.expect === null ? "零读表诊断" : `匹配 ${testCase.expect}`},`
-            + `实际 ${loaded.length} 条\n${joined || "(零诊断)"}`,
-          );
-        }
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-      continue;
-    }
-    if (testCase.gateFamily !== undefined) {
-      // L11/L12 档:直调判定本体。**不 spawn、不建合成 test/ 树** —— 这两族的面是
-      // 「门禁清单 + scripts 表」,与 test/ 树无关(理由见 judgeGate 的注释)。
-      //
-      // ⚠ `registryProblems: true` 那一格读的是**清单归一阶段**的 problems,不是判定本体的:
-      // 「缺字段 → 判红」发生在 makeGateRegistryCtx 里,而 makeGateRegistryCtx 同时也是
-      // 判定本体的入参准备 —— 那道门在归一阶段,不在 judgeL11/judgeL12 里。
-      const raw = testCase.registryProblems === true
-        ? makeGateRegistryCtx(testCase.gates).problems
-        : judgeGate({
-          family: testCase.gateFamily,
-          gates: testCase.gates,
-          scripts: testCase.scripts,
-          existingFiles: testCase.existingFiles ?? [],
-          segmentBodies: testCase.segmentBodies ?? {},
-          exemptions: testCase.exemptions ?? [],
-        }).problems;
-      // ⚠ 恒绿防护:判据表若有 id 未登记,那些命中会被 `report` 额外追一条
-      // `criteria-unregistered:`;而本档直调判定本体、**不经漏斗**,故此处显式核对
-      // 「发出的 id 全在 CRITERIA 里」—— 让「判定本体与登记表脱节」这一格有牙齿。
-      const declared = new Set(CRITERIA.map((entry) => entry.id));
-      const expectedId = testCase.gateFamily === "l11" ? "gate-has-carrier" : "gate-chain-membership";
-      if (!declared.has(expectedId)) {
-        failures.push(
-          `${testCase.name}:判定本体发出的 id ${expectedId} 不在 CRITERIA 里 —— 它的强制等级无人负责`,
-        );
-        continue;
-      }
-      const joined = raw.join("\n");
-      const statsText = `problems=${raw.length}`;
-      if (testCase.expectAbsent !== undefined && testCase.expectAbsent.test(joined)) {
-        failures.push(
-          `${testCase.name}:期望**不**出现 ${testCase.expectAbsent},实际命中\n${joined}`,
-        );
-        continue;
-      }
-      if (testCase.expect === null) {
-        // ⚠ 恒绿防护:`expect: null` 必须**真的**断「零命中」。它与「实现恒抛异常/恒返回空」
-        // 只差一层 —— 故这里额外要求 problems 是数组且长度为 0,而不是「没有报错就算过」。
-        if (Array.isArray(raw) && raw.length === 0) {
-          console.log(`[ok] test-layout-selftest:${testCase.name}(零判红 / ${statsText})`);
-        } else {
-          failures.push(
-            `${testCase.name}:期望零判红,实际 ${Array.isArray(raw) ? raw.length : "非数组"}\n${joined}`,
-          );
-        }
-        continue;
-      }
-      if (testCase.expect.test(joined)) {
-        if (testCase.expectAlso !== undefined && !testCase.expectAlso.test(joined)) {
-          failures.push(`${testCase.name}:期望 problems 同时匹配 ${testCase.expectAlso},实际\n${joined}`);
-          continue;
-        }
-        console.log(`[ok] test-layout-selftest:${testCase.name}(漂移被拦截 / ${statsText})`);
-      } else {
-        failures.push(`${testCase.name}:期望判红项匹配 ${testCase.expect},实际\n${joined || "(零判红)"}`);
-      }
-      continue;
-    }
-    if (testCase.judgeOnly === true) {
-      // 「少一个镜像源层目录」那一档无法只经 writeUnder 表达(判据只加文件、不删目录),
-      // 故单独走一条:在合成根里删掉一层的段目录后再判定。
-      if (testCase.deriveMissing === true) {
-        const dir = createFixture({});
-        try {
-          rmSync(join(dir, ...`${TEST_REL}/renderer`.split("/")), { recursive: true, force: true });
-          const { problems, info } = checkTestLayout({ root: dir, minScannedFiles: 0 });
-          // L7 是 report-only 档 ⇒ 命中在 info 通道。读错通道的话这条会以「零判红」绿,
-          // 而它验的恰恰是「判缺那一档还在」—— 症状与根因隔着一个通道,最难归因。
-          const joined = `${problems.join("\n")}\n${info.join("\n")}`;
-          if (/test\/renderer → test-top-dirs-exact:test\/ 顶层缺目录「renderer\/」/.test(joined)) {
-            console.log(`[ok] test-layout-selftest:${testCase.name}(漂移被拦截)`);
-          } else {
-            failures.push(`${testCase.name}:期望点名缺目录 renderer,实际\n${joined.trim() || "(两通道皆空)"}`);
-          }
-        } finally {
-          rmSync(dir, { recursive: true, force: true });
-        }
-        continue;
-      }
-      const { problems, info, stats } = judge(testCase.extra ?? {}, {
-        minScannedFiles: testCase.minScannedFiles,
-        minSelftestFiles: testCase.minSelftestFiles,
-        missingRoot: testCase.missingRoot,
-        skipSrc: testCase.skipSrc,
-        l5Exemptions: testCase.l5Exemptions,
-        // L11b 一族要注入门禁索引(它判的是「判定面怎么圈」,圈法在 checkTestLayout 里)。
-        // 缺省仍是空表 —— 合成树里没有 gates/,如实。
-        gateRegistry: testCase.gateRegistry,
-        gateSubjectExemptions: testCase.gateSubjectExemptions,
-        criteriaOverride: testCase.criteriaOverride,
-        // 本族这一条要验的正是「段没接入 ⇒ 判红」,故它的合成段必须保持裸形态 ——
-        // 它是唯一一条**不自带** case.js 桩的族二夹具(自带桩就会被桩的存在带过)。
-        keepSegmentsCaseBare: testCase.keepSegmentsCaseBare,
-      });
-      const joined = problems.join("\n");
-      const infoJoined = info.join("\n");
-      const statsText = `stats=${JSON.stringify(stats)}`;
-      // info 通道的断言独立于 problems:两族语义不同(前者恒报告、后者参与退出码),
-      // 合成一条 if 会让「info 判绿」与「problems 判红」两格互相掩盖。
-      // expectAbsent 断「不该红的一处没红」:与 expect 断「该红的一处红了」互不替代 ——
-      // 判据作用域写宽了(把不该管的目录也纳入)时,expect 那几格仍全绿,只有这一格翻脸。
-      if (testCase.expectAbsent !== undefined && testCase.expectAbsent.test(joined)) {
-        failures.push(
-          `${testCase.name}:期望**不**出现 ${testCase.expectAbsent},实际命中\n${joined}`,
-        );
-        continue;
-      }
-      if (testCase.expectInfo !== undefined) {
-        const ok = testCase.expectInfo === null ? info.length === 0 : testCase.expectInfo.test(infoJoined);
-        if (!ok) {
-          failures.push(
-            `${testCase.name}:info 通道期望${testCase.expectInfo === null ? "零命中" : `匹配 ${testCase.expectInfo}`},`
-            + `实际 ${info.length} 条\n${infoJoined || "(零命中)"}`,
-          );
-          continue;
-        }
-      }
-      if (testCase.expect === null) {
-        if (problems.length === 0) {
-          console.log(`[ok] test-layout-selftest:${testCase.name}(零判红 / ${statsText})`);
-        } else {
-          failures.push(`${testCase.name}:期望零判红,实际 ${problems.length} 条\n${joined}`);
-        }
-        continue;
-      }
-      if (testCase.expect.test(joined)) {
-        // expectAlso 是**第二条必须同时成立**的正向断言,与 expect 互不替代:
-        // 「登记表里漏了一行」这一格只证「会记一条告警」,不证「原诊断还在」——
-        // 实现若把查不到档那一族的诊断一并吞掉,expect 照样绿(告警照样记)。
-        if (testCase.expectAlso !== undefined && !testCase.expectAlso.test(joined)) {
-          failures.push(
-            `${testCase.name}:期望 problems 同时匹配 ${testCase.expectAlso},实际\n${joined}`,
-          );
-          continue;
-        }
-        console.log(`[ok] test-layout-selftest:${testCase.name}(漂移被拦截 / ${statsText})`);
-      } else {
-        failures.push(`${testCase.name}:期望判红项匹配 ${testCase.expect},实际\n${joined || "(零判红)"}`);
-      }
-      continue;
-    }
+const suite = createCaseSuite();
 
-    // 进程级档:真实仓库那两条只读,其余在合成目录里以 cwd 指夹具跑仓内真脚本
-    const run = testCase.realRepo === true
-      ? runAt(projectRoot, testCase.args ?? [])
-      : runChecker(
-          testCase.extra ?? {},
-          testCase.args ?? [],
-          testCase.removeTopDir,
-          { keepSegmentsCaseBare: testCase.keepSegmentsCaseBare },
-        );
-    // expectCount 独立于 expect:前者钉**计数器**(结论行那一档),后者钉**诊断文案**。
-    // 合成一条 if 会让「文案对但计数错」与「计数对但文案错」互相掩盖 ——
-    // 上面那条 L7 缺档夹具的变异实验正是这么躲过去的。
-    if (testCase.expectCount !== undefined && !testCase.expectCount.test(run.output)) {
-      failures.push(
-        `${testCase.name}:期望结论行匹配 ${testCase.expectCount},实际 exit=${String(run.code)}\n${run.output}`,
+/**
+ * 跑一档夹具(收进 `suite.case` 的断言体;抛错只记该档失败,不中断后续档)。
+ *
+ * 搬迁口径:原 `failures.push(消息)` 逐条改成 `throw new Error(消息)` —— **消息逐字沿用**;
+ * 原「按分支 continue 到下一档」改成 `return`(push 后紧跟 continue 的成对形态,continue 随
+ * push 一并消失);原循环外那条兜底 catch(它把异常 stack 拼进失败消息)整条删除,异常由
+ * case 级 catch 收成这一档失败。
+ * @param {object} testCase 夹具表里的一档
+ */
+function runOne(testCase) {
+  if (testCase.sourceAuditMutation !== undefined) {
+    // 变异档:给同一个抽取器喂一份**改过的**源码/表,断言它**判红**。
+    // 为什么不 spawn 也不写文件:变异要证明的是「抽取器 + 对账逻辑有牙齿」,
+    // 而牙齿在逻辑上;真去改本体文件反而让自检变成一个会写工作树的脚本。
+    // 反过来说:如果这份变异**没有**判红,那本体上的那条正向断言就毫无意义 ——
+    // 「两向都空即平」的抽取器能让任意错登记全绿(见这条夹具的注释)。
+    const source = readFileSync(checkerPath, "utf8");
+    const zombie = testCase.sourceAuditMutation === "zombie";
+    const drift = zombie
+      ? auditSourceCriteria(source, [...CRITERIA, { id: "test-family-deleted-long-ago" }])
+      : auditSourceCriteria(
+        `${source}\n// 变异:多出一族未登记的判据\nconst _x = "y → test-new-family:某段命中";\n`,
       );
-      continue;
+    const caught = zombie ? drift.tableOnly.length > 0 : drift.sourceOnly.length > 0;
+    if (caught) {
+      console.log(`[ok] test-layout-selftest:${testCase.name}(变异被拦截:${zombie ? "僵尸行" : "漏登记"})`);
+    } else {
+      throw new Error(
+        `${testCase.name}:变异未被拦截(${zombie ? "僵尸行" : "漏登记"})⇒ 本档的抽取器没有牙齿`,
+      );
     }
-    if (run.code !== testCase.expectCode || !testCase.expect.test(run.output)) {
-      failures.push(
-        `${testCase.name}:期望 exit=${testCase.expectCode} 且输出匹配 ${testCase.expect},`
-        + `实际 exit=${String(run.code)}\n${run.output}`,
+    return;
+  }
+  if (testCase.sourceAudit === true) {
+    // 静态档:读**门禁本体源码**,不 spawn、不碰夹具。它断两件事,各自独立可归因:
+    //   ① 源码 id 集合 ⟷ CRITERIA **双向**相等(第一向=漏登记,第二向=僵尸行);
+    //   ② 每个 `pending: true` 带非空 `pendingReason`(语义层)。
+    // ⚠ ① 与本体行锚形态**刻意耦合**(见 auditSourceCriteria 的注释),不要去「修」它。
+    // ⚠ ② 之所以只断「非空」而不校验理由内容:理由是给人读的判断,门禁能机械判的只有
+    // 「有没有写」—— 试图校验内容就变成门禁替人下结论,而那正是判据不该做的事。
+    const drift = auditSourceCriteria();
+    const noReason = CRITERIA
+      .filter((entry) => entry.pending === true && (entry.pendingReason ?? "").trim() === "")
+      .map((entry) => entry.id);
+    if (drift.sourceOnly.length > 0) {
+      throw new Error(
+        `${testCase.name}:源码发出但 CRITERIA 未登记的 id:${drift.sourceOnly.join(", ")}`
+        + "(漏登记 ⇒ 那一族的强制等级无人负责;在 CRITERIA 里补一行,或确认该族已删、连 report 一起去)",
       );
-      continue;
+    }
+    if (drift.tableOnly.length > 0) {
+      throw new Error(
+        `${testCase.name}:CRITERIA 里有僵尸行(源码已不再发出):${drift.tableOnly.join(", ")}`
+        + "(僵尸行让门禁文件头那条 grep 进度锚的命中数说谎 —— 那正是「还剩几族待转正」的唯一读数)",
+      );
+    }
+    if (noReason.length > 0) {
+      throw new Error(
+        `${testCase.name}:pending: true 但 pendingReason 为空的族:${noReason.join(", ")}`
+        + "(挂待办标记却说不出为什么,与说得清为什么在门禁上不可区分)",
+      );
     }
     console.log(
       `[ok] test-layout-selftest:${testCase.name}`
-      + `(exit ${String(run.code)}${testCase.realRepo === true ? " / 只读真实仓库" : ""})`,
+      + `(双向相等:${CRITERIA.length} 族 / report-only ${PENDING_ROWS} 族且每族都有 pendingReason)`,
     );
-  } catch (error) {
-    // 一条夹具的构造/求值抛异常只登记,不让它打断整批(否则后面的夹具一条都跑不到,
-    // 报告里也看不出是哪一条坏了)
-    failures.push(
-      `${testCase.name}:抛异常:${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    return;
+  }
+  if (testCase.unit === true) {
+    // 抽取层直测:断言条数与逐条 (spec, typeOnly, resolved),顺序按「值在前、注释型在后」
+    // (实现里两半的收集顺序)。断条数是这一档的重点:多收一条(同一条被收两遍)在逐条比对里
+    // 也看得见,但断条数能让失败消息直接指出「多了/少了几条」。
+    const refs = extractImports(testCase.text, testCase.file);
+    const actual = refs.map((r) => ({ spec: r.spec, typeOnly: r.typeOnly, resolved: r.resolved }));
+    const want = testCase.expectRefs;
+    const shape = (/** @type {{ spec: string, typeOnly: boolean, resolved?: string | null }[]} */ list) =>
+      list.map((r) => `${r.spec}|typeOnly=${String(r.typeOnly)}|resolved=${String(r.resolved ?? null)}`);
+    const actualSorted = [...actual].sort((a, b) => a.spec.localeCompare(b.spec));
+    const wantSorted = [...want].sort((a, b) => a.spec.localeCompare(b.spec));
+    const same = actualSorted.length === wantSorted.length
+      && actualSorted.every((r, i) => {
+        const w = wantSorted[i];
+        return w !== undefined && r.spec === w.spec && r.typeOnly === w.typeOnly
+          && (r.resolved ?? null) === (w.resolved ?? null);
+      });
+    if (same) {
+      console.log(`[ok] test-layout-selftest:${testCase.name}(${actual.length} 条 / ${shape(actual).join(" · ")})`);
+    } else {
+      throw new Error(
+        `${testCase.name}:期望 ${wantSorted.length} 条 [${shape(wantSorted).join(" · ")}],`
+        + `实际 ${actualSorted.length} 条 [${shape(actualSorted).join(" · ")}]`,
+      );
+    }
+    return;
+  }
+  if (testCase.gateExemptionLoad !== undefined) {
+    // 读表档:走 `loadGateExemptions` 的**真实读盘路径**(临时合成根),
+    // 而不是注入面 —— 注入面按构造永远「读得到」,那一档就无人验证了。
+    // 四种形态各一:文件不在 / 文件在但 JSON 坏了 / JSON 合法但缺 entries / 表读得到。
+    const dir = mkdtempSync(join(tmpdir(), "m2w-gate-exempt-selftest-"));
+    try {
+      if (testCase.gateExemptionLoad === "corrupt") {
+        writeUnder(dir, GATE_EXEMPTIONS_REL, "{ this is not json ");
+      } else if (testCase.gateExemptionLoad === "no-entries") {
+        writeUnder(dir, GATE_EXEMPTIONS_REL, `${JSON.stringify({ _comment: "缺 entries 键" }, null, 2)}\n`);
+      } else if (testCase.gateExemptionLoad === "empty") {
+        writeUnder(dir, GATE_EXEMPTIONS_REL, `${JSON.stringify({ entries: [] }, null, 2)}\n`);
+      }
+      const { problems: loaded } = loadGateExemptions(dir);
+      const joined = loaded.join("\n");
+      if (testCase.expect === null ? loaded.length === 0 : testCase.expect.test(joined)) {
+        console.log(`[ok] test-layout-selftest:${testCase.name}(${loaded.length} 条读表诊断)`);
+      } else {
+        throw new Error(
+          `${testCase.name}:期望${testCase.expect === null ? "零读表诊断" : `匹配 ${testCase.expect}`},`
+          + `实际 ${loaded.length} 条\n${joined || "(零诊断)"}`,
+        );
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    return;
+  }
+  if (testCase.gateSubjectExemptionLoad !== undefined) {
+    // C3 读表档:走 `loadGateSubjectExemptions` 的**真实读盘路径**(临时合成根),
+    // 理由与上面 L11 那条逐字同款 —— 注入面按构造永远「读得到」,那一档就无人验证。
+    // 四种形态各一:文件不在 / 文件在但 JSON 坏了 / JSON 合法但缺 entries / 表读得到。
+    const dir = mkdtempSync(join(tmpdir(), "m2w-gate-subject-exempt-selftest-"));
+    try {
+      if (testCase.gateSubjectExemptionLoad === "corrupt") {
+        writeUnder(dir, GATE_SUBJECT_EXEMPTIONS_REL, "{ this is not json ");
+      } else if (testCase.gateSubjectExemptionLoad === "no-entries") {
+        writeUnder(dir, GATE_SUBJECT_EXEMPTIONS_REL, `${JSON.stringify({ _comment: "缺 entries 键" }, null, 2)}\n`);
+      } else if (testCase.gateSubjectExemptionLoad === "empty") {
+        writeUnder(dir, GATE_SUBJECT_EXEMPTIONS_REL, `${JSON.stringify({ entries: [] }, null, 2)}\n`);
+      }
+      const { problems: loaded } = loadGateSubjectExemptions(dir);
+      const joined = loaded.join("\n");
+      if (testCase.expect === null ? loaded.length === 0 : testCase.expect.test(joined)) {
+        console.log(`[ok] test-layout-selftest:${testCase.name}(${loaded.length} 条读表诊断)`);
+      } else {
+        throw new Error(
+          `${testCase.name}:期望${testCase.expect === null ? "零读表诊断" : `匹配 ${testCase.expect}`},`
+          + `实际 ${loaded.length} 条\n${joined || "(零诊断)"}`,
+        );
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    return;
+  }
+  if (testCase.gateFamily !== undefined) {
+    // L11/L12 档:直调判定本体。**不 spawn、不建合成 test/ 树** —— 这两族的面是
+    // 「门禁清单 + scripts 表」,与 test/ 树无关(理由见 judgeGate 的注释)。
+    //
+    // ⚠ `registryProblems: true` 那一格读的是**清单归一阶段**的 problems,不是判定本体的:
+    // 「缺字段 → 判红」发生在 makeGateRegistryCtx 里,而 makeGateRegistryCtx 同时也是
+    // 判定本体的入参准备 —— 那道门在归一阶段,不在 judgeL11/judgeL12 里。
+    const raw = testCase.registryProblems === true
+      ? makeGateRegistryCtx(testCase.gates).problems
+      : judgeGate({
+        family: testCase.gateFamily,
+        gates: testCase.gates,
+        scripts: testCase.scripts,
+        existingFiles: testCase.existingFiles ?? [],
+        segmentBodies: testCase.segmentBodies ?? {},
+        exemptions: testCase.exemptions ?? [],
+      }).problems;
+    // ⚠ 恒绿防护:判据表若有 id 未登记,那些命中会被 `report` 额外追一条
+    // `criteria-unregistered:`;而本档直调判定本体、**不经漏斗**,故此处显式核对
+    // 「发出的 id 全在 CRITERIA 里」—— 让「判定本体与登记表脱节」这一格有牙齿。
+    const declared = new Set(CRITERIA.map((entry) => entry.id));
+    const expectedId = testCase.gateFamily === "l11" ? "gate-has-carrier" : "gate-chain-membership";
+    if (!declared.has(expectedId)) {
+      throw new Error(
+        `${testCase.name}:判定本体发出的 id ${expectedId} 不在 CRITERIA 里 —— 它的强制等级无人负责`,
+      );
+    }
+    const joined = raw.join("\n");
+    const statsText = `problems=${raw.length}`;
+    if (testCase.expectAbsent !== undefined && testCase.expectAbsent.test(joined)) {
+      throw new Error(
+        `${testCase.name}:期望**不**出现 ${testCase.expectAbsent},实际命中\n${joined}`,
+      );
+    }
+    if (testCase.expect === null) {
+      // ⚠ 恒绿防护:`expect: null` 必须**真的**断「零命中」。它与「实现恒抛异常/恒返回空」
+      // 只差一层 —— 故这里额外要求 problems 是数组且长度为 0,而不是「没有报错就算过」。
+      if (Array.isArray(raw) && raw.length === 0) {
+        console.log(`[ok] test-layout-selftest:${testCase.name}(零判红 / ${statsText})`);
+      } else {
+        throw new Error(
+          `${testCase.name}:期望零判红,实际 ${Array.isArray(raw) ? raw.length : "非数组"}\n${joined}`,
+        );
+      }
+      return;
+    }
+    if (testCase.expect.test(joined)) {
+      if (testCase.expectAlso !== undefined && !testCase.expectAlso.test(joined)) {
+        throw new Error(`${testCase.name}:期望 problems 同时匹配 ${testCase.expectAlso},实际\n${joined}`);
+      }
+      console.log(`[ok] test-layout-selftest:${testCase.name}(漂移被拦截 / ${statsText})`);
+    } else {
+      throw new Error(`${testCase.name}:期望判红项匹配 ${testCase.expect},实际\n${joined || "(零判红)"}`);
+    }
+    return;
+  }
+  if (testCase.judgeOnly === true) {
+    // 「少一个镜像源层目录」那一档无法只经 writeUnder 表达(判据只加文件、不删目录),
+    // 故单独走一条:在合成根里删掉一层的段目录后再判定。
+    if (testCase.deriveMissing === true) {
+      const dir = createFixture({});
+      try {
+        rmSync(join(dir, ...`${TEST_REL}/renderer`.split("/")), { recursive: true, force: true });
+        const { problems, info } = checkTestLayout({ root: dir, minScannedFiles: 0 });
+        // L7 是 report-only 档 ⇒ 命中在 info 通道。读错通道的话这条会以「零判红」绿,
+        // 而它验的恰恰是「判缺那一档还在」—— 症状与根因隔着一个通道,最难归因。
+        const joined = `${problems.join("\n")}\n${info.join("\n")}`;
+        if (/test\/renderer → test-top-dirs-exact:test\/ 顶层缺目录「renderer\/」/.test(joined)) {
+          console.log(`[ok] test-layout-selftest:${testCase.name}(漂移被拦截)`);
+        } else {
+          throw new Error(`${testCase.name}:期望点名缺目录 renderer,实际\n${joined.trim() || "(两通道皆空)"}`);
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+      return;
+    }
+    const { problems, info, stats } = judge(testCase.extra ?? {}, {
+      minScannedFiles: testCase.minScannedFiles,
+      minSelftestFiles: testCase.minSelftestFiles,
+      missingRoot: testCase.missingRoot,
+      skipSrc: testCase.skipSrc,
+      l5Exemptions: testCase.l5Exemptions,
+      // L11b 一族要注入门禁索引(它判的是「判定面怎么圈」,圈法在 checkTestLayout 里)。
+      // 缺省仍是空表 —— 合成树里没有 gates/,如实。
+      gateRegistry: testCase.gateRegistry,
+      gateSubjectExemptions: testCase.gateSubjectExemptions,
+      criteriaOverride: testCase.criteriaOverride,
+      // 本族这一条要验的正是「段没接入 ⇒ 判红」,故它的合成段必须保持裸形态 ——
+      // 它是唯一一条**不自带** case.js 桩的族二夹具(自带桩就会被桩的存在带过)。
+      keepSegmentsCaseBare: testCase.keepSegmentsCaseBare,
+    });
+    const joined = problems.join("\n");
+    const infoJoined = info.join("\n");
+    const statsText = `stats=${JSON.stringify(stats)}`;
+    // info 通道的断言独立于 problems:两族语义不同(前者恒报告、后者参与退出码),
+    // 合成一条 if 会让「info 判绿」与「problems 判红」两格互相掩盖。
+    // expectAbsent 断「不该红的一处没红」:与 expect 断「该红的一处红了」互不替代 ——
+    // 判据作用域写宽了(把不该管的目录也纳入)时,expect 那几格仍全绿,只有这一格翻脸。
+    if (testCase.expectAbsent !== undefined && testCase.expectAbsent.test(joined)) {
+      throw new Error(
+        `${testCase.name}:期望**不**出现 ${testCase.expectAbsent},实际命中\n${joined}`,
+      );
+    }
+    if (testCase.expectInfo !== undefined) {
+      const ok = testCase.expectInfo === null ? info.length === 0 : testCase.expectInfo.test(infoJoined);
+      if (!ok) {
+        throw new Error(
+          `${testCase.name}:info 通道期望${testCase.expectInfo === null ? "零命中" : `匹配 ${testCase.expectInfo}`},`
+          + `实际 ${info.length} 条\n${infoJoined || "(零命中)"}`,
+        );
+      }
+    }
+    if (testCase.expect === null) {
+      if (problems.length === 0) {
+        console.log(`[ok] test-layout-selftest:${testCase.name}(零判红 / ${statsText})`);
+      } else {
+        throw new Error(`${testCase.name}:期望零判红,实际 ${problems.length} 条\n${joined}`);
+      }
+      return;
+    }
+    if (testCase.expect.test(joined)) {
+      // expectAlso 是**第二条必须同时成立**的正向断言,与 expect 互不替代:
+      // 「登记表里漏了一行」这一格只证「会记一条告警」,不证「原诊断还在」——
+      // 实现若把查不到档那一族的诊断一并吞掉,expect 照样绿(告警照样记)。
+      if (testCase.expectAlso !== undefined && !testCase.expectAlso.test(joined)) {
+        throw new Error(
+          `${testCase.name}:期望 problems 同时匹配 ${testCase.expectAlso},实际\n${joined}`,
+        );
+      }
+      console.log(`[ok] test-layout-selftest:${testCase.name}(漂移被拦截 / ${statsText})`);
+    } else {
+      throw new Error(`${testCase.name}:期望判红项匹配 ${testCase.expect},实际\n${joined || "(零判红)"}`);
+    }
+    return;
+  }
+
+  // 进程级档:真实仓库那两条只读,其余在合成目录里以 cwd 指夹具跑仓内真脚本
+  const run = testCase.realRepo === true
+    ? runAt(projectRoot, testCase.args ?? [])
+    : runChecker(
+        testCase.extra ?? {},
+        testCase.args ?? [],
+        testCase.removeTopDir,
+        { keepSegmentsCaseBare: testCase.keepSegmentsCaseBare },
+      );
+  // expectCount 独立于 expect:前者钉**计数器**(结论行那一档),后者钉**诊断文案**。
+  // 合成一条 if 会让「文案对但计数错」与「计数对但文案错」互相掩盖 ——
+  // 上面那条 L7 缺档夹具的变异实验正是这么躲过去的。
+  if (testCase.expectCount !== undefined && !testCase.expectCount.test(run.output)) {
+    throw new Error(
+      `${testCase.name}:期望结论行匹配 ${testCase.expectCount},实际 exit=${String(run.code)}\n${run.output}`,
     );
   }
+  if (run.code !== testCase.expectCode || !testCase.expect.test(run.output)) {
+    throw new Error(
+      `${testCase.name}:期望 exit=${testCase.expectCode} 且输出匹配 ${testCase.expect},`
+      + `实际 exit=${String(run.code)}\n${run.output}`,
+    );
+  }
+  console.log(
+    `[ok] test-layout-selftest:${testCase.name}`
+    + `(exit ${String(run.code)}${testCase.realRepo === true ? " / 只读真实仓库" : ""})`,
+  );
 }
 
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[test-layout-selftest:fail] ${failure}`);
-  console.error(`[test-layout-selftest:fail] test 布局门禁回归守护失败,共 ${failures.length}/${CASES.length} 条`);
+// 夹具表逐档收进 case:**档名即 case 名**(逐字沿用搬迁前 failures.push 记账用的 testCase.name)。
+for (const testCase of CASES) {
+  await suite.case(testCase.name, () => runOne(testCase));
+}
+
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 与搬迁前 failures[] 判定等价(任一档失败即非零退出)。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) console.error(`[test-layout-selftest:fail] ${failure.name}:${failure.message ?? "(无失败消息)"}`);
+  console.error(`[test-layout-selftest:fail] test 布局门禁回归守护失败,共 ${failedCases.length}/${cases.length} 条`);
   process.exit(1);
 }
 console.log(`[ok] test-layout-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);

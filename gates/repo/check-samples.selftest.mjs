@@ -21,12 +21,32 @@
 //   ④ 逐条记录「变异后哪几条夹具失败 / 哪几条仍绿」—— **互不串扰**是可归因性的证据。
 //
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删。
+//
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一)----
+//
+// 用 `shared/case.js` 的 `createCaseSuite` 建一次 suite:**基线 25 条逐档**
+// `await suite.case(档名, () => runCase(档))`,**MUTATIONS 两组各成一个 case**(档名逐字取
+// `id`),共 27 条。门禁树接的是落在 shared/ 的真实现:`gates-stay-in-gates` 的允许面只有
+// `gates` / `shared` / `test/fixtures`,`test/` 整棵树不在其中,故引不到 `test/harness/case.js`。
+//
+// **不用合成根 harness**:本文件的判定走 spawn —— judge 档由子进程从磁盘 import 判定本体,
+// CLI 档跑仓内真门禁,入参是**夹具树路径**与注入的 `listDir` / `thrown`;而 harness 的表只收
+// 「树型路径 → 正文 + 问题清单正则」且判定体须回吐**问题清单** —— 两侧都不对型,塞进去是假接入
+// (ADR-068:bespoke 留在原处)。接 case 契约解决的是另一件事:让「用例数」成为可机械计数的
+// 单位(`gates-selftest-named-case` 判的就是它)。
+//
+// ⚠ **子进程求值机制一行不改**(`evaluatorSource` / `judgeInChild` / `readExportInChild` /
+// `runChecker` / `runAt` / `runOnBareRoot`):静态 import 判定本体会让变异实验因模块缓存失效、
+// 结论全假(见文件头那条长注)。case 契约只搬**断言归属**,不搬求值路径。
+// ⚠ **基线不通过 ⇒ 变异实验全部作废**这段短路守卫原位保留(CASES 循环之后、变异实验之前):
+// 丢了它,「基线本身坏了」的状态下仍会去跑变异实验,结论全挂在 harness 自身的故障上。
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { assert, createCaseSuite } from "../../shared/case.js";
 import { ROOT } from "../../shared/paths.js";
 
 const projectRoot = ROOT;
@@ -563,31 +583,38 @@ function runCase(testCase) {
 /* ---------- 第一步:未变异的基线必须全绿(harness 本身先证明能跑通) ---------- */
 
 console.log(`[samples-selftest] 基线:${CASES.length} 条夹具,判定本体 ${checkerRel}(未变异)`);
-const baselineFailures = [];
+const suite = createCaseSuite();
+
+// 基线循环即 case 循环:**档名即 case 名**(逐字沿用搬迁前 `failures.push` 记账用的 `testCase.name`,
+// 含全角符号原样)。旧实现那层 try/catch(登记「抛异常」+ stack)由 case 级 catch 承担:case 内
+// 抛错只记该 case 失败、不中断后续 case,与旧 `baselineFailures.push` 后继续跑等价。
 for (const testCase of CASES) {
-  try {
+  await suite.case(testCase.name, () => {
     const problems = runCase(testCase);
-    if (problems.length === 0) {
-      // 计数打进 [ok] 行而不是失败列表 —— 它是可读性信息,一旦混进失败判定,
-      // 每一��� judge 夹具都会「失败」,而症状离根因隔着一整个 harness。
-      // 计数打进 [ok] 行而不是失败列表 —— 它是可读性信息,一旦混进失败判定,
-      // 每一条 judge 夹具都会「失败」,而症状离根因隔着一整个 harness。
-      const detail = testCase.kind === "judge" ? ` / stats=${lastJudgeStats}` : "";
-      console.log(`[ok] samples-selftest:${testCase.name}${detail}`);
-    } else baselineFailures.push(`${testCase.name}:${problems.join(" / ")}`);
-  } catch (error) {
-    baselineFailures.push(`${testCase.name}:抛异常:${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-  }
+    assert(problems.length === 0, problems.join(" / "));
+    // 计数打进 [ok] 行而不是失败列表 —— 它是可读性信息,一旦混进失败判定,
+    // 每一��� judge 夹具都会「失败」,而症状离根因隔着一整个 harness。
+    // 计数打进 [ok] 行而不是失败列表 —— 它是可读性信息,一旦混进失败判定,
+    // 每一条 judge 夹具都会「失败」,而症状离根因隔着一整个 harness。
+    const detail = testCase.kind === "judge" ? ` / stats=${lastJudgeStats}` : "";
+    console.log(`[ok] samples-selftest:${testCase.name}${detail}`);
+  });
 }
-if (baselineFailures.length > 0) {
-  for (const failure of baselineFailures) console.error(`[samples-selftest:fail] 基线 ${failure}`);
+// 保留今天的短路守卫:**CASES 循环之后、变异实验之前**,基线不通过就**不许**跑变异实验 ——
+// 丢了这一段,「基线本身坏了」的状态下仍会去跑变异实验,结论全挂在 harness 自身的故障上
+// (本载体显式拒绝在这种状态下谈「有牙齿」)。N/M 取 failedCases.length / cases.length。
+// `cases` 在变异 case 入列前取快照,故这里与末行的分母都是基线 25 条。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (suite.hasFailures) {
+  for (const failure of failedCases) console.error(`[samples-selftest:fail] 基线 ${failure.name}:${failure.message ?? "(无失败消息)"}`);
   console.error(
-    `[samples-selftest:fail] 基线 ${baselineFailures.length}/${CASES.length} 条不通过 —— `
+    `[samples-selftest:fail] 基线 ${failedCases.length}/${cases.length} 条不通过 —— `
     + "变异实验全部作废:结论会挂在 harness 自身的故障上(本载体显式拒绝在这种状态下谈「有牙齿」)",
   );
   process.exit(1);
 }
-console.log(`[ok] samples-selftest:基线全绿(${CASES.length}/${CASES.length}),harness 本身能跑通`);
+console.log(`[ok] samples-selftest:基线全绿(${cases.length}/${cases.length}),harness 本身能跑通`);
 
 /* ---------- 第二步:变异实验(真改源文件 + 子进程重新 import) ---------- */
 
@@ -728,34 +755,36 @@ const MUTATIONS = [
   },
 ];
 
-const mutationFailures = [];
+// 两组变异各成一个 case:**档名逐字取 `mutation.id`**(旧实现 `failures.push` 记账用的同一个
+// 领起子句),位置在短路守卫之后。`mutateAndRun` 与 `withFileEol` 一行不改 —— 它的 throw 由
+// case 级 catch 收成该 case 失败,与今天「MUTATIONS 循环 catch 后 push」等价。
 for (const mutation of MUTATIONS) {
-  /** @type {{ failures: string[], passed: string[] }} */
-  let result;
-  try {
-    result = mutateAndRun(mutation.from, mutation.to);
-  } catch (error) {
-    mutationFailures.push(`${mutation.id}:变异本身失败:${error instanceof Error ? error.message : String(error)}`);
-    continue;
-  }
-  const missedFail = mutation.mustFail.filter((frag) => !result.failures.some((name) => name.includes(frag)));
-  const missedPass = mutation.mustPass.filter((frag) => !result.passed.some((name) => name.includes(frag)));
-  const line = `${mutation.id}:失败 ${result.failures.length} 条 / 通过 ${result.passed.length} 条`
-    + `(应失败的未失败 ${missedFail.length} · 应通过的未通过 ${missedPass.length})`;
-  if (missedFail.length === 0 && missedPass.length === 0) {
-    console.log(`[ok] samples-selftest:变异实验 · ${line}`);
-    console.log(`     ⇒ ${mutation.note}`);
-    console.log(`     失败的夹具:${result.failures.join(" ; ")}`);
-    continue;
-  }
-  mutationFailures.push(
-    `${line}\n  应失败却仍绿的夹具片段:${missedFail.join(" | ")}\n`
-    + `  应通过却变红的夹具片段:${missedPass.join(" | ")}\n  实际失败清单:${result.failures.join(" ; ")}`,
-  );
+  await suite.case(mutation.id, () => {
+    const result = mutateAndRun(mutation.from, mutation.to);
+    // 双清单(应失败却仍绿 / 应通过却变红)是「互不串扰」这句结论的可判形式,一行不删。
+    const missedFail = mutation.mustFail.filter((frag) => !result.failures.some((name) => name.includes(frag)));
+    const missedPass = mutation.mustPass.filter((frag) => !result.passed.some((name) => name.includes(frag)));
+    const line = `${mutation.id}:失败 ${result.failures.length} 条 / 通过 ${result.passed.length} 条`
+      + `(应失败的未失败 ${missedFail.length} · 应通过的未通过 ${missedPass.length})`;
+    if (missedFail.length === 0 && missedPass.length === 0) {
+      console.log(`[ok] samples-selftest:变异实验 · ${line}`);
+      console.log(`     ⇒ ${mutation.note}`);
+      console.log(`     失败的夹具:${result.failures.join(" ; ")}`);
+      return;
+    }
+    // 失败消息逐字沿用旧实现 `mutationFailures.push` 的那一条(双清单 + 实际失败清单)。
+    assert(
+      missedFail.length === 0 && missedPass.length === 0,
+      `${line}\n  应失败却仍绿的夹具片段:${missedFail.join(" | ")}\n`
+      + `  应通过却变红的夹具片段:${missedPass.join(" | ")}\n  实际失败清单:${result.failures.join(" ; ")}`,
+    );
+  });
 }
 
+// 走到这里基线已全绿(上面的守卫拦过),故 `suite.failures` 只会是变异两组自身。
+const mutationFailures = suite.failures;
 if (mutationFailures.length > 0) {
-  for (const failure of mutationFailures) console.error(`[samples-selftest:fail] ${failure}`);
+  for (const failure of mutationFailures) console.error(`[samples-selftest:fail] ${failure.name}:${failure.message ?? "(无失败消息)"}`);
   console.error(
     `[samples-selftest:fail] 变异实验失败,共 ${mutationFailures.length}/${MUTATIONS.length} 组 —— `
     + "「负向夹具有牙齿」这个结论不成立(要么判据改不坏,要么该组夹具根本没在验它)",
@@ -763,7 +792,8 @@ if (mutationFailures.length > 0) {
   process.exit(1);
 }
 
+// 分母走 `cases.length`(基线 25 条的快照,在变异 case 入列前取),口径仍是「25 条夹具 + 2 组变异」。
 console.log(
-  `[ok] samples-selftest:${CASES.length} 条夹具全部符合预期;`
+  `[ok] samples-selftest:${cases.length} 条夹具全部符合预期;`
   + `${MUTATIONS.length} 组变异实验各自只打红对应判据的夹具(互不串扰),还原后基线复绿`,
 );
